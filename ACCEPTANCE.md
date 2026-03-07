@@ -60,52 +60,52 @@
 
 ### 單元驗收
 
-- [ ] `buildRoad(grid, {x:2,y:5}, {x:6,y:5}, ROAD_2LANE)` 在 (2,5)~(6,5) 共 5 格建道路
-- [ ] 中間格子 (3,5) 的 `roadFlags` 包含 EAST 和 WEST
-- [ ] 端點格子 (2,5) 的 `roadFlags` 只包含 EAST
-- [ ] `ROAD_2LANE` 屬性：lanes=2, speedLimit=50, capacity=中
-- [ ] `ROAD_6LANE` 屬性：lanes=6, speedLimit=60, capacity=高
-- [ ] 在水域格子建路回傳 `{ success: false, reason: 'WATER_TILE' }`
-- [ ] 資金 1000，建路成本 1500 → 回傳 `{ success: false, reason: 'INSUFFICIENT_FUNDS' }`
-- [ ] 建路成功後資金正確扣除
+- [x] `buildRoad(grid, {x:2,y:5}, {x:6,y:5}, ROAD_2LANE)` 在 (2,5)~(6,5) 共 5 格建道路
+- [x] 中間格子 (3,5) 的 `roadFlags` 包含 EAST 和 WEST
+- [x] 端點格子 (2,5) 的 `roadFlags` 只包含 EAST
+- [x] `ROAD_2LANE` 屬性：lanes=2, speedLimit=50, capacity=中
+- [x] `ROAD_6LANE` 屬性：lanes=6, speedLimit=60, capacity=高
+- [x] 在水域格子建路回傳 `{ success: false, reason: 'WATER_TILE' }`
+- [x] 資金 1000，建路成本 1500 → 回傳 `{ success: false, reason: 'INSUFFICIENT_FUNDS' }`
+- [x] 建路成功後資金正確扣除
 
 ### 路網圖驗收
 
-- [ ] 建一條路後，路網圖節點數 = 2（兩個端點），邊數 = 1
-- [ ] 兩條路交叉後，交叉點成為新節點，邊數正確拆分
-- [ ] `isConnected(network, A, B)` 在有路連接時回傳 `true`
-- [ ] 拆除中間路段後 `isConnected` 回傳 `false`
+- [x] 建一條路後，路網圖節點數 = 2（兩個端點），邊數 = 1
+- [x] 兩條路交叉後，交叉點成為新節點，邊數正確拆分
+- [x] `isConnected(network, A, B)` 在有路連接時回傳 `true`
+- [x] 拆除中間路段後 `isConnected` 回傳 `false`
 
 ### 交叉路口驗收
 
-- [ ] 水平路 + 垂直路交叉 → 交叉格 `intersectionType` = `CROSS`（4 方向）
-- [ ] 水平路 + 垂直路 T 接 → `intersectionType` = `T_JUNCTION`（3 方向）
-- [ ] 交叉口預設 `trafficControl` = `TRAFFIC_LIGHT`
-- [ ] 切換後 `trafficControl` = `ROUNDABOUT`
+- [x] 水平路 + 垂直路交叉 → 交叉格 `intersectionType` = `CROSS`（4 方向）
+- [x] 水平路 + 垂直路 T 接 → `intersectionType` = `T_JUNCTION`（3 方向）
+- [x] 交叉口預設 `trafficControl` = `TRAFFIC_LIGHT`
+- [x] 切換後 `trafficControl` = `ROUNDABOUT`
 
 ### 道路升級驗收
 
-- [ ] 2 車道升 4 車道後，`lanes` = 4, `speedLimit` = 50, `capacity` 增加
-- [ ] 升級費用 = 新道路成本 - 舊道路成本
-- [ ] 升級後旁邊格子的 `maxDensity` 從 LOW 變為 HIGH
+- [x] 2 車道升 4 車道後，`lanes` = 4, `speedLimit` = 50, `capacity` 增加
+- [x] 升級費用 = 新道路成本 - 舊道路成本
+- [x] 升級後旁邊格子的 `maxDensity` 從 LOW 變為 HIGH
 
 ### 曲線道路驗收
 
-- [ ] 給定 3 個控制點，產生的格子序列形成平滑曲線
-- [ ] 曲線路段每個格子的 `roadFlags` 正確指向前後格子方向
-- [ ] 曲線與直線交叉處正確產生交叉口
+- [x] 給定 3 個控制點，產生的格子序列形成平滑曲線
+- [x] 曲線路段每個格子的 `roadFlags` 正確指向前後格子方向
+- [x] 曲線與直線交叉處正確產生交叉口
 
 ### 高架橋與隧道驗收
 
-- [ ] 同一格 (5,5) 有 elevation=0 的路和 elevation=1 的高架路，兩者獨立
-- [ ] 高架路不與平面路產生交叉口
-- [ ] 高架路建設成本 = 平面路 × 1.5（或設定的倍率）
-- [ ] 隧道可穿越 terrainType=MOUNTAIN 的格子
+- [x] 同一格 (5,5) 有 elevation=0 的路和 elevation=1 的高架路，兩者獨立
+- [x] 高架路不與平面路產生交叉口
+- [x] 高架路建設成本 = 平面路 × 1.5（或設定的倍率）
+- [x] 隧道可穿越 terrainType=MOUNTAIN 的格子
 
 ### 系統驗收
 
-- [ ] 連續建 100 條道路，路網圖結構正確無斷裂
-- [ ] 拆除重建反覆 50 次，路網圖一致性不破壞
+- [x] 連續建 100 條道路，路網圖結構正確無斷裂
+- [x] 拆除重建反覆 50 次，路網圖一致性不破壞
 
 ---
 
