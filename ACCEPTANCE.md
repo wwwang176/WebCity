@@ -169,48 +169,48 @@
 
 ### 單元驗收 — 基本
 
-- [ ] 新建居民物件包含所有必要屬性，且有唯一 id
-- [ ] 遷入居民被分配到有空房的住宅建築
+- [x] 新建居民物件包含所有必要屬性，且有唯一 id
+- [x] 遷入居民被分配到有空房的住宅建築
 
 ### 單元驗收 — 生命週期
 
-- [ ] age=5 的居民在下一 tick 變 age=6，lifeStage 從 BABY 變 CHILD
-- [ ] age=12 → 13：CHILD → TEEN
-- [ ] age=18 → 19：TEEN → ADULT
-- [ ] age=65 → 66：ADULT → SENIOR
-- [ ] CHILD 在小學覆蓋範圍內 → education 提升為 ELEMENTARY
-- [ ] TEEN 在高中覆蓋範圍外 → education 不提升
-- [ ] 居民死亡後從人口列表移除
-- [ ] 成年已婚居民有機率生育，新居民 age=0
+- [x] age=5 的居民在下一 tick 變 age=6，lifeStage 從 BABY 變 CHILD
+- [x] age=12 → 13：CHILD → TEEN
+- [x] age=18 → 19：TEEN → ADULT
+- [x] age=65 → 66：ADULT → SENIOR
+- [x] CHILD 在小學覆蓋範圍內 → education 提升為 ELEMENTARY
+- [x] TEEN 在高中覆蓋範圍外 → education 不提升
+- [x] 居民死亡後從人口列表移除
+- [x] 成年已婚居民有機率生育，新居民 age=0
 
 ### 單元驗收 — 就業
 
-- [ ] 成年 + education=UNIVERSITY → 優先匹配辦公區工作
-- [ ] education=NONE → 只匹配工業/低階商業
-- [ ] 有兩個可用工作，距離近的優先被選擇
-- [ ] 失業居民 happiness 每 tick -5
-- [ ] 找到工作後 happiness 恢復
+- [x] 成年 + education=UNIVERSITY → 優先匹配辦公區工作
+- [x] education=NONE → 只匹配工業/低階商業
+- [x] 有兩個可用工作，距離近的優先被選擇
+- [x] 失業居民 happiness 每 tick -5
+- [x] 找到工作後 happiness 恢復
 
 ### 單元驗收 — 滿意度
 
-- [ ] 通勤 < 5 格 → happiness +10
-- [ ] 通勤 > 20 格 → happiness -15
-- [ ] 周圍有公園 → happiness +5
-- [ ] 汙染 > 50 → happiness -10
-- [ ] happiness < 20 持續 5 tick → 觸發遷出
+- [x] 通勤 < 5 格 → happiness +10
+- [x] 通勤 > 20 格 → happiness -15
+- [x] 周圍有公園 → happiness +5
+- [x] 汙染 > 50 → happiness -10
+- [x] happiness < 20 持續 5 tick → 觸發遷出
 
 ### 單元驗收 — 遷入/遷出
 
-- [ ] 有空房 + 有工作 + 城市 attractiveness > 50 → 每 tick 遷入 1~3 人
-- [ ] 無空房 → 遷入數 = 0
-- [ ] 遷出居民釋放住房（building 的 residents 減少）
-- [ ] 遷出居民釋放工作崗位
+- [x] 有空房 + 有工作 + 城市 attractiveness > 50 → 每 tick 遷入 1~3 人
+- [x] 無空房 → 遷入數 = 0
+- [x] 遷出居民釋放住房（building 的 residents 減少）
+- [x] 遷出居民釋放工作崗位
 
 ### 系統驗收
 
-- [ ] 模擬 100 tick：人口從 0 成長到合理數量（有住房+工作的前提下）
-- [ ] 大量斷電 → 居民滿意度下降 → 人口流失可觀察到
-- [ ] 蓋大學後，一段時間居民教育程度提升
+- [x] 模擬 100 tick：人口從 0 成長到合理數量（有住房+工作的前提下）
+- [x] 大量斷電 → 居民滿意度下降 → 人口流失可觀察到
+- [x] 蓋大學後，一段時間居民教育程度提升
 
 ---
 
