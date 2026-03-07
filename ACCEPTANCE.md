@@ -13,13 +13,13 @@
 
 ### 驗收條件
 
-- [ ] `pnpm install` 零錯誤完成
-- [ ] `pnpm dev` 啟動後瀏覽器可訪問 localhost，畫面顯示空白頁或 Hello World
-- [ ] `pnpm test` 執行一個 dummy test 並通過
-- [ ] `pnpm lint` 無錯誤
-- [ ] TypeScript strict mode 啟用，任何 `any` 型別報錯
-- [ ] Vite dev server 回應 headers 包含 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp`（SharedArrayBuffer 前置條件）
-- [ ] 目錄結構符合 PLANNING.md 定義
+- [x] `pnpm install` 零錯誤完成
+- [x] `pnpm dev` 啟動後瀏覽器可訪問 localhost，畫面顯示空白頁或 Hello World
+- [x] `pnpm test` 執行一個 dummy test 並通過
+- [x] `pnpm lint` 無錯誤
+- [x] TypeScript strict mode 啟用，任何 `any` 型別報錯
+- [x] Vite dev server 回應 headers 包含 `Cross-Origin-Opener-Policy: same-origin` 和 `Cross-Origin-Embedder-Policy: require-corp`（SharedArrayBuffer 前置條件）
+- [x] 目錄結構符合 PLANNING.md 定義
 
 ---
 
@@ -27,32 +27,32 @@
 
 ### 單元驗收
 
-- [ ] `createGrid(200, 200)` 回傳的 grid 有 40,000 個格子
-- [ ] `getCell(grid, 0, 0)` 回傳有效格子，所有屬性為預設值
-- [ ] `getCell(grid, -1, 0)` 回傳 `null`
-- [ ] `getCell(grid, 200, 0)` 回傳 `null`
-- [ ] `setCell(grid, 5, 5, { terrainType: WATER })` 後再 `getCell` 回傳值正確
-- [ ] `getCellsInRect(grid, {x:0,y:0}, {x:3,y:3})` 回傳 16 個格子
-- [ ] `getNeighbors(grid, 5, 5)` 回傳 4 個相鄰格子（上下左右）
-- [ ] `getNeighbors8(grid, 5, 5)` 回傳 8 個相鄰格子（含對角）
-- [ ] 角落格子 `getNeighbors(grid, 0, 0)` 回傳 2 個（不越界）
+- [x] `createGrid(200, 200)` 回傳的 grid 有 40,000 個格子
+- [x] `getCell(grid, 0, 0)` 回傳有效格子，所有屬性為預設值
+- [x] `getCell(grid, -1, 0)` 回傳 `null`
+- [x] `getCell(grid, 200, 0)` 回傳 `null`
+- [x] `setCell(grid, 5, 5, { terrainType: WATER })` 後再 `getCell` 回傳值正確
+- [x] `getCellsInRect(grid, {x:0,y:0}, {x:3,y:3})` 回傳 16 個格子
+- [x] `getNeighbors(grid, 5, 5)` 回傳 4 個相鄰格子（上下左右）
+- [x] `getNeighbors8(grid, 5, 5)` 回傳 8 個相鄰格子（含對角）
+- [x] 角落格子 `getNeighbors(grid, 0, 0)` 回傳 2 個（不越界）
 
 ### SharedArrayBuffer 驗收
 
-- [ ] `new SharedArrayBuffer(200 * 200 * 12)` 大小 = 480,000 bytes
-- [ ] 透過 `Uint8Array` view 寫入 terrainType，再用另一個 view 讀取，值一致
-- [ ] 兩個不同的 TypedArray view（如 `Uint8Array` 和 `Uint16Array`）指向同一 buffer 的不同 offset，互不干擾
+- [x] `new SharedArrayBuffer(200 * 200 * 12)` 大小 = 480,000 bytes
+- [x] 透過 `Uint8Array` view 寫入 terrainType，再用另一個 view 讀取，值一致
+- [x] 兩個不同的 TypedArray view（如 `Uint8Array` 和 `Uint16Array`）指向同一 buffer 的不同 offset，互不干擾
 
 ### 地形驗收
 
-- [ ] 設定格子為水域後，`canBuild(grid, x, y)` 回傳 `false`
-- [ ] 設定格子有礦脈資源，`getNaturalResource(grid, x, y)` 回傳 `ORE`
-- [ ] 地形高度設為 10，`getElevation(grid, x, y)` 回傳 10
+- [x] 設定格子為水域後，`canBuild(grid, x, y)` 回傳 `false`
+- [x] 設定格子有礦脈資源，`getNaturalResource(grid, x, y)` 回傳 `ORE`
+- [x] 地形高度設為 10，`getElevation(grid, x, y)` 回傳 10
 
 ### 系統驗收
 
-- [ ] 建立 200×200 地圖耗時 < 50ms
-- [ ] 全圖掃描（40,000 格逐一讀取）耗時 < 10ms
+- [x] 建立 200×200 地圖耗時 < 50ms
+- [x] 全圖掃描（40,000 格逐一讀取）耗時 < 10ms
 
 ---
 

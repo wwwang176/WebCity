@@ -10,18 +10,18 @@
 
 ### 1.1 專案環境建置
 
-- [ ] 初始化 pnpm 專案（package.json）
-- [ ] 安裝核心依賴（TypeScript, Vite, Three.js, Preact/Solid）
-- [ ] 安裝開發依賴（Vitest, ESLint, Prettier）
-- [ ] 設定 tsconfig.json（strict mode, path alias）
-- [ ] 設定 vite.config.ts（含 COOP/COEP headers for SharedArrayBuffer）
-- [ ] 設定 vitest.config.ts
-- [ ] 設定 ESLint + Prettier 規則
-- [ ] 建立目錄結構（core/, renderer/, workers/, ui/, input/, audio/, save/）
-- [ ] 建立 index.html 入口
-- [ ] 建立 src/main.ts 入口
-- [ ] 驗證 `pnpm dev` 可正常啟動
-- [ ] 驗證 `pnpm test` 可正常執行
+- [x] 初始化 pnpm 專案（package.json）
+- [x] 安裝核心依賴（TypeScript, Vite, Three.js, Preact/Solid）
+- [x] 安裝開發依賴（Vitest, ESLint, Prettier）
+- [x] 設定 tsconfig.json（strict mode, path alias）
+- [x] 設定 vite.config.ts（含 COOP/COEP headers for SharedArrayBuffer）
+- [x] 設定 vitest.config.ts
+- [x] 設定 ESLint + Prettier 規則
+- [x] 建立目錄結構（core/, renderer/, workers/, ui/, input/, audio/, save/）
+- [x] 建立 index.html 入口
+- [x] 建立 src/main.ts 入口
+- [x] 驗證 `pnpm dev` 可正常啟動
+- [x] 驗證 `pnpm test` 可正常執行
 
 ---
 
@@ -29,29 +29,29 @@
 
 ### 2.1 Grid 資料結構
 
-- [ ] **TEST**: 建立指定大小的網格（如 200×200），所有格子初始化為預設值
-- [ ] **TEST**: 用 (x, y) 座標查詢格子，回傳格子資料
-- [ ] **TEST**: 超出邊界的座標查詢回傳 null 或拋出錯誤
-- [ ] **TEST**: 設定格子屬性（terrainType, zoneType 等）
-- [ ] **TEST**: 批次查詢（取得一個矩形範圍內的所有格子）
-- [ ] **TEST**: 取得格子的相鄰格子（上下左右 / 含對角八方向）
-- [ ] 實作 Grid 類別
-- [ ] 實作 GridQuery 工具函式
+- [x] **TEST**: 建立指定大小的網格（如 200×200），所有格子初始化為預設值
+- [x] **TEST**: 用 (x, y) 座標查詢格子，回傳格子資料
+- [x] **TEST**: 超出邊界的座標查詢回傳 null 或拋出錯誤
+- [x] **TEST**: 設定格子屬性（terrainType, zoneType 等）
+- [x] **TEST**: 批次查詢（取得一個矩形範圍內的所有格子）
+- [x] **TEST**: 取得格子的相鄰格子（上下左右 / 含對角八方向）
+- [x] 實作 Grid 類別
+- [x] 實作 GridQuery 工具函式
 
 ### 2.2 SharedArrayBuffer 記憶體佈局
 
-- [ ] **TEST**: 建立 SharedArrayBuffer，每格 12 bytes，總大小正確
-- [ ] **TEST**: 透過 TypedArray 讀寫特定格子的特定屬性
-- [ ] **TEST**: 多個 TypedArray view 指向同一塊 buffer 能正確讀寫
-- [ ] 實作 GridBuffer 類別（封裝 SharedArrayBuffer 操作）
+- [x] **TEST**: 建立 SharedArrayBuffer，每格 12 bytes，總大小正確
+- [x] **TEST**: 透過 TypedArray 讀寫特定格子的特定屬性
+- [x] **TEST**: 多個 TypedArray view 指向同一塊 buffer 能正確讀寫
+- [x] 實作 GridBuffer 類別（封裝 SharedArrayBuffer 操作）
 
 ### 2.3 地形系統
 
-- [ ] **TEST**: 設定格子地形類型（平地/水/山/森林）
-- [ ] **TEST**: 設定格子高度值（elevation）
-- [ ] **TEST**: 水域格子不可建設
-- [ ] **TEST**: 查詢自然資源分佈（礦/石油/肥沃土地/森林）
-- [ ] 實作 Terrain 模組
+- [x] **TEST**: 設定格子地形類型（平地/水/山/森林）
+- [x] **TEST**: 設定格子高度值（elevation）
+- [x] **TEST**: 水域格子不可建設
+- [x] **TEST**: 查詢自然資源分佈（礦/石油/肥沃土地/森林）
+- [x] 實作 Terrain 模組
 
 ---
 
