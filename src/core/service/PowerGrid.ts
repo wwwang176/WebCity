@@ -1,0 +1,61 @@
+import { Grid } from '../grid/Grid';
+import { RoadType } from '../road/types';
+
+export interface PowerPlant {
+  x: number;
+  y: number;
+  output: number;
+  pollution: number;
+  type: 'wind' | 'solar' | 'coal' | 'gas' | 'nuclear';
+}
+
+export class PowerGrid {
+  private plants: PowerPlant[] = [];
+  private powered = new Set<string>();
+
+  addPlant(plant: PowerPlant): void {
+    this.plants.push(plant);
+  }
+
+  calculateCoverage(grid: Grid): Set<string> {
+    this.powered.clear();
+    for (const plant of this.plants) {
+      this.bfsPower(grid, plant.x, plant.y);
+    }
+    return this.powered;
+  }
+
+  isPowered(x: number, y: number): boolean {
+    return this.powered.has(`${x},${y}`);
+  }
+
+  getTotalOutput(): number {
+    return this.plants.reduce((sum, p) => sum + p.output, 0);
+  }
+
+  private bfsPower(grid: Grid, startX: number, startY: number): void {
+    const queue: [number, number][] = [[startX, startY]];
+    const visited = new Set<string>();
+    visited.add(`${startX},${startY}`);
+    this.powered.add(`${startX},${startY}`);
+
+    while (queue.length > 0) {
+      const [x, y] = queue.shift()!;
+      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      for (const [dx, dy] of dirs) {
+        const nx = x + dx!;
+        const ny = y + dy!;
+        const key = `${nx},${ny}`;
+        if (visited.has(key)) continue;
+        const cell = grid.getCell(nx, ny);
+        if (!cell) continue;
+        // Power travels through roads and buildings
+        if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) {
+          visited.add(key);
+          this.powered.add(key);
+          queue.push([nx, ny]);
+        }
+      }
+    }
+  }
+}
