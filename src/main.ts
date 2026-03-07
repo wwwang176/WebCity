@@ -1,4 +1,12 @@
+import { Game } from './Game';
+import { createGameUI } from './ui/GameUI';
+
 const app = document.getElementById('app');
 if (app) {
-  app.innerHTML = '<h1>WebCity</h1><p>City Builder Simulation</p>';
+  app.innerHTML = '';
+  app.style.display = 'block';
+
+  const game = new Game(app);
+  const ui = createGameUI(game);
+  document.body.appendChild(ui);
 }
