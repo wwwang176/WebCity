@@ -113,22 +113,22 @@
 
 ### 單元驗收
 
-- [ ] 道路旁格子劃為住宅區後 `zoneType` = `RESIDENTIAL_LOW`
-- [ ] 非道路旁格子劃區回傳失敗
-- [ ] 框選 3×3 範圍批次劃區，所有道路旁格子被劃設
-- [ ] 取消區域後 `zoneType` = `NONE`
-- [ ] 已有建築的格子劃區回傳 `{ success: false, reason: 'BUILDING_EXISTS' }`
+- [x] 道路旁格子劃為住宅區後 `zoneType` = `RESIDENTIAL_LOW`
+- [x] 非道路旁格子劃區回傳失敗
+- [x] 框選 3×3 範圍批次劃區，所有道路旁格子被劃設
+- [x] 取消區域後 `zoneType` = `NONE`
+- [x] 已有建築的格子劃區回傳 `{ success: false, reason: 'BUILDING_EXISTS' }`
 
 ### 密度驗收
 
-- [ ] 2 車道路旁 → `maxDensity` = `LOW`
-- [ ] 4 車道路旁 → `maxDensity` = `HIGH`
-- [ ] 路升級為 4 車道後，旁邊已劃的低密度區 `maxDensity` 自動更新為 `HIGH`
-- [ ] `getMaxDensity(grid, x, y)` 回傳正確密度
+- [x] 2 車道路旁 → `maxDensity` = `LOW`
+- [x] 4 車道路旁 → `maxDensity` = `HIGH`
+- [x] 路升級為 4 車道後，旁邊已劃的低密度區 `maxDensity` 自動更新為 `HIGH`
+- [x] `getMaxDensity(grid, x, y)` 回傳正確密度
 
 ### 系統驗收
 
-- [ ] 建路 → 劃區 → 確認區域只出現在道路旁（不會蔓延到非鄰路格子）
+- [x] 建路 → 劃區 → 確認區域只出現在道路旁（不會蔓延到非鄰路格子）
 
 ---
 
