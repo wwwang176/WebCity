@@ -52,7 +52,7 @@ export class WaterFlow {
 
     while (currentAmount > 0) {
       const direction = this.flow.get(this.cellKey(currentX, currentY));
-      if (!direction || direction === '') break;
+      if (!direction || direction.length === 0) break;
 
       const offset = getDirectionOffset(direction);
       const nextX = currentX + offset.dx;
