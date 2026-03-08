@@ -949,7 +949,42 @@
 - Phase 10: 公共服務（消防/警察/醫療調度 — 有單元測試，無 UI）
 - Phase 11: 區域劃分與政策（District/Specialization — 有單元測試，無 UI）
 
-**已修復 Bug 數量：** 44 個（BUG-001 ~ BUG-044）
+**已修復 Bug 數量：** 45 個（BUG-001 ~ BUG-045）
 **Bug 待修數量：** 0
 **單元測試：** 291/291 通過
-**瀏覽器驗證輪數：** 45 輪
+**瀏覽器驗證輪數：** 46 輪
+
+### BUG-045: 水力 BFS 無法穿越電廠位置，導致水網斷連 ✅ 已修復
+- **位置**: `src/core/service/PowerGrid.ts`, `src/core/service/WaterNetwork.ts`, `src/core/simulation/SimulationLoop.ts`
+- **問題**: 電廠(2,2)和水廠(4,2)放在相鄰格子，但兩者位置不在道路上。電力 BFS 從(2,2)出發能直接擴散到鄰近道路，但水力 BFS 從(4,2)出發到達(3,2)後被(2,2)阻擋（無道路無建築），導致水網無法連通到主幹道。結果：電覆蓋 84 格 vs 水覆蓋只有 5 格，建築因缺水不生長。
+- **修復**:
+  1. `PowerGrid.bfsPower()` 和 `WaterNetwork.bfsWater()` 新增可選 `infra?: Set<string>` 參數
+  2. BFS 擴散條件從 `roadType !== NONE || buildingId !== 0` 改為 `roadType !== NONE || buildingId !== 0 || infra?.has(key)`
+  3. `SimulationLoop.tick()` 收集所有電廠+水廠位置為 `infrastructurePositions` Set，傳遞給兩個 BFS
+  4. 修復後：電覆蓋 73 格 = 水覆蓋 73 格，27/27 zone 都有電有水
+
+### 新增已驗證功能（第四十六輪測試 — BUG-045 修復 + 端到端完整流程驗證）
+- ✅ **BUG-045 修復驗證** — 電力 73 格 = 水力 73 格，27/27 zone 全部供電供水
+- ✅ **端到端完整新遊戲流程**:
+  1. 主選單→New Game→Day 1, Year 1, $50,000, Pop 0
+  2. 建路（橫貫 x=0-6 + 縱貫 y=2-20 + 3 橫路 = 46 格，$10,000）
+  3. 劃區（9R + 4C + 12I = 27 格）
+  4. 10 秒 3x 速度 → 27 棟建築全部生長
+  5. 17 居民遷入，Happiness 56%
+  6. Balance +$28/tick，資金 $45K→$96K 正成長
+- ✅ **建築成長完整** — 27/27 zone 全部建成（修復前：0/16 因缺水不長）
+- ✅ **車輛交通** — 9 輛車在路上行駛，路徑正確
+- ✅ **Overlay 7 種全部正常** — power/water/pollution/landValue/zone/traffic/none 切換無錯
+- ✅ **Power Overlay 截圖** — 黃色覆蓋層清晰顯示道路沿線+zone 區域電力傳輸
+- ✅ **存檔成功** — Slot 99 "E2E Test Save" 寫入 IndexedDB
+- ✅ **拆除功能** — buildingId=2/zoneType=1 → buildingId=0/zoneType=0（完全清除）
+- ✅ **子系統完整**:
+  - WeatherRenderer: update/dayNight/season/rain/snow 12 方法
+  - BuildingUpgrade: canUpgrade/tryUpgrade/shouldDowngrade/tryDowngrade
+  - AudioManager: 11 方法（init/BGM/SFX/volume/mute）
+  - Clock season: summer→autumn 季節轉換正常
+  - Pollution: ground=60, noise=20（工業區附近）
+  - LandValue: 66（商業建築）
+- ✅ **經濟穩定** — Year 2, Funds $96K, Balance +$28/tick, Income $24.66, Expenses $4.60
+- ✅ 零 Console 錯誤
+- ✅ 全部 291 單元測試通過

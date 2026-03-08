@@ -15,10 +15,10 @@ export class WaterNetwork {
     this.plants.push(plant);
   }
 
-  calculateCoverage(grid: Grid): Set<string> {
+  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
     this.supplied.clear();
     for (const plant of this.plants) {
-      this.bfsWater(grid, plant.x, plant.y);
+      this.bfsWater(grid, plant.x, plant.y, infrastructurePositions);
     }
     // Extend coverage to zoned cells adjacent to supplied road cells
     const toAdd: string[] = [];
@@ -56,7 +56,7 @@ export class WaterNetwork {
     return this.plants;
   }
 
-  private bfsWater(grid: Grid, startX: number, startY: number): void {
+  private bfsWater(grid: Grid, startX: number, startY: number, infra?: Set<string>): void {
     const queue: [number, number][] = [[startX, startY]];
     const visited = new Set<string>();
     visited.add(`${startX},${startY}`);
@@ -72,7 +72,8 @@ export class WaterNetwork {
         if (visited.has(key)) continue;
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;
-        if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) {
+        // Water travels through roads, buildings, and infrastructure (plants)
+        if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key)) {
           visited.add(key);
           this.supplied.add(key);
           queue.push([nx, ny]);

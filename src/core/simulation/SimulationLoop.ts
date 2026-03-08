@@ -32,8 +32,12 @@ export class SimulationLoop {
     this.state.budget = tickBudget(this.state.budget);
 
     // 3. Services (power/water coverage)
-    this.state.power.calculateCoverage(this.state.grid);
-    this.state.water.calculateCoverage(this.state.grid);
+    // Collect all infrastructure positions so BFS can traverse through plants
+    const infraPositions = new Set<string>();
+    for (const p of this.state.power.getPlants()) infraPositions.add(`${p.x},${p.y}`);
+    for (const p of this.state.water.getPlants()) infraPositions.add(`${p.x},${p.y}`);
+    this.state.power.calculateCoverage(this.state.grid, infraPositions);
+    this.state.water.calculateCoverage(this.state.grid, infraPositions);
 
     // 3.5. Pollution & land value: update every 10 ticks (performance)
     if (this.state.clock.tick % 10 === 0) {

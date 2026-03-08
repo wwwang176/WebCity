@@ -17,10 +17,10 @@ export class PowerGrid {
     this.plants.push(plant);
   }
 
-  calculateCoverage(grid: Grid): Set<string> {
+  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
     this.powered.clear();
     for (const plant of this.plants) {
-      this.bfsPower(grid, plant.x, plant.y);
+      this.bfsPower(grid, plant.x, plant.y, infrastructurePositions);
     }
     // Extend coverage to zoned cells adjacent to powered road cells
     const toAdd: string[] = [];
@@ -58,7 +58,7 @@ export class PowerGrid {
     return this.plants;
   }
 
-  private bfsPower(grid: Grid, startX: number, startY: number): void {
+  private bfsPower(grid: Grid, startX: number, startY: number, infra?: Set<string>): void {
     const queue: [number, number][] = [[startX, startY]];
     const visited = new Set<string>();
     visited.add(`${startX},${startY}`);
@@ -74,8 +74,8 @@ export class PowerGrid {
         if (visited.has(key)) continue;
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;
-        // Power travels through roads and buildings
-        if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) {
+        // Power travels through roads, buildings, and infrastructure (plants)
+        if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key)) {
           visited.add(key);
           this.powered.add(key);
           queue.push([nx, ny]);
