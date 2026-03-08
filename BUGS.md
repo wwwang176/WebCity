@@ -841,3 +841,14 @@
 - ✅ **交通車輛** — 22 輛車行駛中，完整 BFS 路徑（20 步），currentIndex 追蹤移動
 - ✅ **稅率系統** — R/C/I/O 各 9%（預設值）
 - ✅ 零 Console 錯誤（僅 Chrome 擴充套件通訊錯誤，非遊戲本身）
+
+### 新增已驗證功能（第三十九輪測試 — 市民、序列化、壓力測試完整驗證）
+- ✅ **市民系統** — 1009 位完整屬性（id, age, lifeStage, education, incomeLevel, happiness, health）
+- ✅ **年齡分佈** — 20s/30s/40s/50s 多種年齡段
+- ✅ **教育等級** — NONE/ELEMENTARY/HIGH_SCHOOL/UNIVERSITY 分佈
+- ✅ **收入等級** — LOW/MEDIUM/HIGH 分佈
+- ✅ **建築等級分佈** — L1:2, L2:51, L3:6（升級系統運作正常）
+- ✅ **序列化完整性** — AutoSave 包含 version/grid(575 cells)/clock/budget/taxRates/powerPlants/waterPlants/citizens(1009)
+- ✅ **2000-tick 乾淨壓力測試** — 1687ms, 零 NaN, $35K→$142K, Pop 95, 46 棟建築
+- ✅ **交通路段** — 27 個路段有車輛，23 輛活躍
+- ✅ 零 Console 錯誤
