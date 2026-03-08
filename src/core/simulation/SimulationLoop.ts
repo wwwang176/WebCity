@@ -178,9 +178,9 @@ export class SimulationLoop {
     const grid = this.state.grid;
     const roads: { x: number; y: number }[] = [];
 
-    // Collect road locations (sample every 2 cells for performance)
-    for (let y = 0; y < grid.height; y += 2) {
-      for (let x = 0; x < grid.width; x += 2) {
+    // Collect all road locations
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (cell && cell.roadType > 0) roads.push({ x, y });
       }
@@ -189,24 +189,56 @@ export class SimulationLoop {
     if (roads.length < 2) return;
 
     for (let i = 0; i < spawnCount; i++) {
-      // Pick random start and end roads near buildings
       const start = roads[Math.floor(Math.random() * roads.length)]!;
       const end = roads[Math.floor(Math.random() * roads.length)]!;
       if (start.x === end.x && start.y === end.y) continue;
 
-      // Build simple L-shaped path
-      const path: string[] = [];
-      const dx = end.x > start.x ? 1 : -1;
-      const dy = end.y > start.y ? 1 : -1;
-      for (let x = start.x; x !== end.x + dx; x += dx) {
-        path.push(`${x},${start.y}`);
-      }
-      for (let y = start.y + dy; y !== end.y + dy; y += dy) {
-        path.push(`${end.x},${y}`);
-      }
-      if (path.length >= 2) {
+      // BFS along road cells to find path
+      const path = this.bfsRoadPath(start, end, grid);
+      if (path && path.length >= 2) {
         this.state.traffic.addVehicle(path);
       }
     }
+  }
+
+  private bfsRoadPath(
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+    grid: { getCell(x: number, y: number): { roadType: number } | null; width: number; height: number },
+  ): string[] | null {
+    const key = (x: number, y: number) => `${x},${y}`;
+    const target = key(end.x, end.y);
+    const visited = new Set<string>();
+    const queue: { x: number; y: number; path: string[] }[] = [
+      { x: start.x, y: start.y, path: [key(start.x, start.y)] },
+    ];
+    visited.add(key(start.x, start.y));
+
+    // Limit BFS depth to avoid long searches
+    let steps = 0;
+    const maxSteps = 500;
+
+    while (queue.length > 0 && steps < maxSteps) {
+      steps++;
+      const current = queue.shift()!;
+      if (key(current.x, current.y) === target) {
+        return current.path;
+      }
+
+      const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+      for (const [dx, dy] of dirs) {
+        const nx = current.x + dx!;
+        const ny = current.y + dy!;
+        const nk = key(nx, ny);
+        if (visited.has(nk)) continue;
+        if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
+        const cell = grid.getCell(nx, ny);
+        if (!cell || cell.roadType === 0) continue;
+        visited.add(nk);
+        queue.push({ x: nx, y: ny, path: [...current.path, nk] });
+      }
+    }
+
+    return null; // No path found
   }
 }
