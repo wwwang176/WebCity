@@ -125,9 +125,9 @@ export class SceneManager {
   }
 
   zoomCamera(delta: number): void {
-    const frustumSize = 60;
+    const currentSize = (this.camera.top - this.camera.bottom) || 60;
     const aspect = this.camera.right / (this.camera.top || 1);
-    const newSize = Math.max(10, Math.min(200, frustumSize + delta));
+    const newSize = Math.max(10, Math.min(200, currentSize + delta));
     this.camera.left = -newSize * aspect / 2;
     this.camera.right = newSize * aspect / 2;
     this.camera.top = newSize / 2;

@@ -797,3 +797,14 @@
 - ✅ **春季雨滴** — isRaining=true, rainSystem 3000 顆粒子，場景活躍
 - ✅ 零 Console 錯誤
 - ✅ 全部 291 單元測試通過
+
+### BUG-044: 滾輪縮放不會累積 ✅ 已修復
+- **位置**: `src/renderer/SceneManager.ts` — `zoomCamera()`
+- **問題**: zoomCamera 使用硬編碼 `frustumSize = 60`，每次計算 `newSize = 60 + delta`，導致縮放不會累積（總是從預設值偏移一步）
+- **修復**: 改用 `currentSize = (this.camera.top - this.camera.bottom) || 60`，讓縮放基於當前實際視野大小累積
+
+### 新增已驗證功能（第三十六輪測試 — 縮放累積 + 快速切換 + 生產建置）
+- ✅ **BUG-044 修復** — 縮放現在正確累積（30→15 after 10 zoom-ins → 45 after 20 zoom-outs）
+- ✅ **快速工具切換** — 50 次連續鍵盤切換 (R/C/I/O/B/D/X)，零錯誤
+- ✅ **Production Build** — `pnpm build` 成功 (1.14s, ~545KB main chunk)
+- ✅ 零 Console 錯誤
