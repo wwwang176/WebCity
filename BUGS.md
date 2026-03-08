@@ -861,3 +861,11 @@
 - ✅ **截圖視覺驗證** — 等角 3D 視角、綠色地圖、道路(黑方塊)、建築(彩色方塊)、水域(藍)、車輛(紅)
 - ✅ **UI 完整** — 左上資訊面板、右上統計、底部工具欄、RCI 條、速度控制、Tax Rate slider
 - ✅ 零 Console 錯誤
+
+### 新增已驗證功能（第四十一輪測試 — 存檔多 slot、稅率滑桿、拖拽、預覽線）
+- ✅ **多 slot 存檔** — 6 個存檔正常（Slot 0 AutoSave + Slot 5 Round41-Test, 40KB）
+- ✅ **Tax Rate slider** — 拖拽調整 9%→15%，四種稅率同步更新
+- ✅ **範圍 Demolish** — 拖拽選取 7 棟建築一次全部清除（buildingId+zoneType 歸零）
+- ✅ **Road 預覽線** — dragStart 設定後 previewLine 正確建立（場景 +1 子物件），清除時正確移除
+- ✅ **Grid Cursor** — PlaneGeometry 半透明白色 mesh，追蹤滑鼠位置
+- ✅ 零 Console 錯誤（23 條均為 Chrome 擴充套件通訊，非遊戲本身）
