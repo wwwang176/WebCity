@@ -74,12 +74,16 @@ export class SceneManager {
     const dir = new THREE.DirectionalLight(0xffffff, 0.8);
     dir.position.set(50, 80, 50);
     dir.castShadow = true;
-    dir.shadow.mapSize.width = 2048;
-    dir.shadow.mapSize.height = 2048;
-    dir.shadow.camera.left = -100;
-    dir.shadow.camera.right = 100;
-    dir.shadow.camera.top = 100;
-    dir.shadow.camera.bottom = -100;
+    dir.shadow.mapSize.width = 4096;
+    dir.shadow.mapSize.height = 4096;
+    dir.shadow.bias = -0.0005;
+    dir.shadow.normalBias = 0.02;
+    dir.shadow.camera.near = 1;
+    dir.shadow.camera.far = 200;
+    dir.shadow.camera.left = -60;
+    dir.shadow.camera.right = 60;
+    dir.shadow.camera.top = 60;
+    dir.shadow.camera.bottom = -60;
     Object.defineProperty(self, 'directionalLight', {
       value: dir,
       writable: false,
