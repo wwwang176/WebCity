@@ -7,6 +7,9 @@ export interface WaterPlant {
   output: number;
 }
 
+const PLANT_RANGE = 10;
+const RELAY_RANGE = 2;
+
 export class WaterNetwork {
   private plants: WaterPlant[] = [];
   private supplied = new Set<string>();
@@ -26,27 +29,6 @@ export class WaterNetwork {
     for (const plant of this.plants) {
       this.bfsWater(grid, plant.x, plant.y, infrastructurePositions);
     }
-    // Extend coverage to zoned cells adjacent to supplied road cells
-    const toAdd: string[] = [];
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-    for (const key of this.supplied) {
-      const [px, py] = key.split(',').map(Number);
-      const cell = grid.getCell(px!, py!);
-      if (cell && cell.roadType !== RoadType.NONE) {
-        for (const [dx, dy] of dirs) {
-          const nx = px! + dx!;
-          const ny = py! + dy!;
-          const nkey = `${nx},${ny}`;
-          if (!this.supplied.has(nkey)) {
-            const ncell = grid.getCell(nx, ny);
-            if (ncell && ncell.zoneType !== 0) {
-              toAdd.push(nkey);
-            }
-          }
-        }
-      }
-    }
-    for (const k of toAdd) this.supplied.add(k);
     return this.supplied;
   }
 
@@ -62,28 +44,40 @@ export class WaterNetwork {
     return this.plants;
   }
 
+  /**
+   * BFS with range-based coverage:
+   * - Plant: covers radius PLANT_RANGE (no road needed)
+   * - Road/building: relays coverage RELAY_RANGE further
+   * - Empty land: consumes range, cannot relay
+   */
   private bfsWater(grid: Grid, startX: number, startY: number, infra?: Set<string>): void {
-    const queue: [number, number][] = [[startX, startY]];
-    const visited = new Set<string>();
-    visited.add(`${startX},${startY}`);
-    this.supplied.add(`${startX},${startY}`);
+    const rangeMap = new Map<string, number>();
+    const startKey = `${startX},${startY}`;
+    rangeMap.set(startKey, PLANT_RANGE);
+    this.supplied.add(startKey);
+
+    const queue: [number, number, number][] = [[startX, startY, PLANT_RANGE]];
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
 
     while (queue.length > 0) {
-      const [x, y] = queue.shift()!;
-      const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+      const [x, y, range] = queue.shift()!;
       for (const [dx, dy] of dirs) {
         const nx = x + dx!;
         const ny = y + dy!;
         const key = `${nx},${ny}`;
-        if (visited.has(key)) continue;
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;
-        // Water travels through roads, buildings, and infrastructure (plants)
-        if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key)) {
-          visited.add(key);
-          this.supplied.add(key);
-          queue.push([nx, ny]);
-        }
+
+        const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
+        const newRange = Math.max(isRelay ? RELAY_RANGE : 0, range - 1);
+
+        if (newRange <= 0) continue;
+        const prev = rangeMap.get(key) ?? 0;
+        if (newRange <= prev) continue;
+
+        rangeMap.set(key, newRange);
+        this.supplied.add(key);
+        queue.push([nx, ny, newRange]);
       }
     }
   }

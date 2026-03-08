@@ -1,40 +1,765 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
 import { ZoneType } from '../core/grid/types';
 
-const ZONE_COLORS: Record<number, number> = {
-  [ZoneType.RESIDENTIAL_LOW]: 0x66bb6a,
-  [ZoneType.RESIDENTIAL_HIGH]: 0x43a047,
-  [ZoneType.COMMERCIAL_LOW]: 0x42a5f5,
-  [ZoneType.COMMERCIAL_HIGH]: 0x1e88e5,
-  [ZoneType.INDUSTRIAL]: 0xffa726,
-  [ZoneType.OFFICE]: 0xab47bc,
+// ===== Deterministic pseudo-random based on position =====
+function hash(x: number, y: number): number {
+  let h = (x * 374761393 + y * 668265263 + 1013904223) | 0;
+  h = ((h ^ (h >> 13)) * 1274126177) | 0;
+  return ((h ^ (h >> 16)) >>> 0) / 4294967296;
+}
+
+// ===== Part tagging via vertex colors =====
+// R = part type (0=wall, 1=roof), G = zone category, B = reserved
+const PART_WALL = 0.0;
+const PART_FOLIAGE = 0.5;
+const PART_ROOF = 1.0;
+
+function tagPart(geo: THREE.BufferGeometry, part: number): void {
+  const count = geo.getAttribute('position').count;
+  const arr = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    arr[i * 3] = part;
+    arr[i * 3 + 1] = 0; // zone set later
+    arr[i * 3 + 2] = 0;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+}
+
+// Zone category constants (encoded in vertex color G channel)
+const ZONE_CAT: Record<number, number> = {
+  [ZoneType.RESIDENTIAL_LOW]:  0.0,
+  [ZoneType.RESIDENTIAL_HIGH]: 0.2,
+  [ZoneType.COMMERCIAL_LOW]:   0.4,
+  [ZoneType.COMMERCIAL_HIGH]:  0.6,
+  [ZoneType.INDUSTRIAL]:       0.8,
+  [ZoneType.OFFICE]:           1.0,
 };
 
+function stampZoneCategory(geo: THREE.BufferGeometry, cat: number): void {
+  const attr = geo.getAttribute('color') as THREE.BufferAttribute;
+  const arr = attr.array as Float32Array;
+  for (let i = 0; i < attr.count; i++) {
+    arr[i * 3 + 1] = cat;
+  }
+}
+
+// ===== Color Palettes (realistic, zone-distinguishable) =====
+const ZONE_PALETTES: Record<number, number[]> = {
+  [ZoneType.RESIDENTIAL_LOW]:  [
+    0xf0ece4, // white render
+    0xe8e0d0, // warm cream
+    0xc47050, // red brick
+    0xd4a870, // buff/sandstone
+    0xe0d8c8, // pale ivory
+    0xb85838, // dark red brick
+    0xd8c8a0, // honey stone
+    0xe8dcd0, // off-white
+    0xc8906c, // salmon brick
+    0xd0c4a8, // pale yellow stone
+    0xf0e8dc, // bright cream
+    0xa86040, // terracotta brick
+  ],
+  [ZoneType.RESIDENTIAL_HIGH]: [
+    0xe0d4b8, // Paris cream stone
+    0xc8c0b0, // warm gray
+    0xd8ccac, // pale yellow stone
+    0xb87858, // Amsterdam brick
+    0xe4dcd0, // off-white plaster
+    0xd0c4a0, // honey limestone
+    0xc4a880, // sandstone
+    0xd8d0c0, // light cream
+  ],
+  [ZoneType.COMMERCIAL_LOW]:   [
+    0xd8c888, // warm yellow
+    0xe8e0d0, // white plaster
+    0xc87050, // brick red
+    0xb8c8d8, // pale blue
+    0xd4c4a0, // warm cream
+    0xd0b870, // golden
+    0xe0d0b8, // light sand
+    0xc0a878, // tan
+  ],
+  [ZoneType.COMMERCIAL_HIGH]:  [
+    0x78a8c0, // blue-green glass
+    0xc8b890, // warm limestone
+    0x88b0a0, // green glass
+    0xa0a8b0, // steel gray
+    0xd8d4d0, // white modern
+    0x90a8b8, // light blue glass
+    0xb8a880, // sandstone classic
+    0x80a0b8, // teal glass
+  ],
+  [ZoneType.INDUSTRIAL]:       [
+    0xb0b4b8, // silver metal
+    0xa86048, // red brick factory
+    0xd0ccc8, // white panel
+    0xa07050, // rust/corten steel
+    0x808480, // dark gray
+    0xc0b8b0, // light concrete
+    0x907060, // weathered brick
+    0xb8b0a0, // beige concrete
+  ],
+  [ZoneType.OFFICE]:           [
+    0x88b0c8, // light blue glass
+    0x607890, // deep blue glass
+    0xc8ccd0, // white modern
+    0xb8a890, // warm stone base
+    0x80a8a0, // green glass
+    0xa0b4c0, // steel blue
+    0x98a8b0, // cool gray
+    0x70a0b8, // teal
+  ],
+};
+
+// ===== Height ranges per zone =====
 const ZONE_HEIGHTS: Record<number, { min: number; max: number }> = {
-  [ZoneType.RESIDENTIAL_LOW]: { min: 0.3, max: 0.8 },
+  [ZoneType.RESIDENTIAL_LOW]:  { min: 0.25, max: 0.7 },
   [ZoneType.RESIDENTIAL_HIGH]: { min: 1.0, max: 3.0 },
-  [ZoneType.COMMERCIAL_LOW]: { min: 0.4, max: 0.9 },
-  [ZoneType.COMMERCIAL_HIGH]: { min: 1.2, max: 2.5 },
-  [ZoneType.INDUSTRIAL]: { min: 0.5, max: 1.2 },
-  [ZoneType.OFFICE]: { min: 1.5, max: 4.0 },
+  [ZoneType.COMMERCIAL_LOW]:   { min: 0.4, max: 1.0 },
+  [ZoneType.COMMERCIAL_HIGH]:  { min: 1.2, max: 2.8 },
+  [ZoneType.INDUSTRIAL]:       { min: 0.4, max: 1.0 },
+  [ZoneType.OFFICE]:           { min: 1.5, max: 4.5 },
 };
 
-// Infrastructure buildingId markers
+// ===== Building Shader =====
+const BUILDING_VERT = /* glsl */ `
+#include <common>
+#include <shadowmap_pars_vertex>
+
+varying vec3 vNormal;
+varying vec3 vLocalPos;
+varying vec3 vWorldPos;
+varying vec3 vBldgColor;
+varying float vPartType;
+varying float vZoneCat;
+
+void main() {
+  vLocalPos = position;
+
+  #ifdef USE_COLOR
+    vPartType = color.r;
+    vZoneCat = color.g;
+  #else
+    vPartType = 0.0;
+    vZoneCat = 0.0;
+  #endif
+
+  #ifdef USE_INSTANCING_COLOR
+    vBldgColor = instanceColor;
+  #else
+    vBldgColor = vec3(0.7);
+  #endif
+
+  #ifdef USE_INSTANCING
+    mat4 world = modelMatrix * instanceMatrix;
+  #else
+    mat4 world = modelMatrix;
+  #endif
+
+  vec4 wPos = world * vec4(position, 1.0);
+  vWorldPos = wPos.xyz;
+  vNormal = normalize(mat3(world) * normal);
+  gl_Position = projectionMatrix * viewMatrix * wPos;
+
+  // Shadow map: transformedNormal required by shadowmap_vertex
+  vec3 transformedNormal = vNormal;
+  vec4 worldPosition = wPos;
+  #include <shadowmap_vertex>
+}
+`;
+
+const BUILDING_FRAG = /* glsl */ `
+precision highp float;
+
+#include <common>
+#include <packing>
+#include <shadowmap_pars_fragment>
+
+varying vec3 vNormal;
+varying vec3 vLocalPos;
+varying vec3 vWorldPos;
+varying vec3 vBldgColor;
+varying float vPartType;
+varying float vZoneCat;
+
+float hash21(vec2 p) {
+  p = fract(p * vec2(233.34, 851.73));
+  p += dot(p, p + 23.45);
+  return fract(p.x * p.y);
+}
+
+// === Independent roof color palettes per zone ===
+vec3 getRoofColor(float zoneCat, float h) {
+  // Residential Low: clay tiles, slate
+  if (zoneCat < 0.1) {
+    if (h < 0.17) return vec3(0.35, 0.22, 0.14); // dark brown tiles
+    if (h < 0.33) return vec3(0.58, 0.30, 0.18); // terracotta red
+    if (h < 0.50) return vec3(0.40, 0.38, 0.36); // slate gray
+    if (h < 0.67) return vec3(0.45, 0.28, 0.16); // warm brown
+    if (h < 0.83) return vec3(0.52, 0.34, 0.22); // cedar brown
+    return vec3(0.32, 0.30, 0.28);                // dark slate
+  }
+  // Residential High: Paris zinc, dark slate
+  if (zoneCat < 0.3) {
+    if (h < 0.25) return vec3(0.45, 0.45, 0.48); // zinc gray
+    if (h < 0.50) return vec3(0.30, 0.30, 0.32); // dark slate
+    if (h < 0.75) return vec3(0.38, 0.36, 0.34); // warm dark gray
+    return vec3(0.35, 0.38, 0.42);                // blue-gray slate
+  }
+  // Commercial Low: European shop roofs
+  if (zoneCat < 0.5) {
+    if (h < 0.20) return vec3(0.55, 0.28, 0.16); // terracotta
+    if (h < 0.40) return vec3(0.35, 0.22, 0.14); // dark brown
+    if (h < 0.60) return vec3(0.38, 0.36, 0.34); // dark gray
+    if (h < 0.80) return vec3(0.42, 0.25, 0.15); // warm brown tile
+    return vec3(0.30, 0.30, 0.28);                // charcoal
+  }
+  // Commercial High: flat modern roofs
+  if (zoneCat < 0.7) {
+    if (h < 0.33) return vec3(0.32, 0.34, 0.36); // dark flat gray
+    if (h < 0.66) return vec3(0.38, 0.42, 0.40); // green-gray (copper patina)
+    return vec3(0.28, 0.30, 0.32);                // charcoal
+  }
+  // Industrial: metal roofing
+  if (zoneCat < 0.9) {
+    if (h < 0.25) return vec3(0.55, 0.56, 0.58); // light silver metal
+    if (h < 0.50) return vec3(0.40, 0.40, 0.42); // medium gray metal
+    if (h < 0.75) return vec3(0.50, 0.35, 0.25); // rusted metal
+    return vec3(0.35, 0.36, 0.38);                // dark metal
+  }
+  // Office: modern flat roofs
+  if (h < 0.33) return vec3(0.30, 0.32, 0.35); // dark gray flat
+  if (h < 0.66) return vec3(0.25, 0.28, 0.30); // very dark
+  return vec3(0.35, 0.35, 0.38);                // medium gray
+}
+
+void main() {
+  vec3 n = normalize(vNormal);
+
+  // Two-directional lighting
+  vec3 sunDir = normalize(vec3(0.5, 0.8, 0.3));
+  float sunDiff = max(dot(n, sunDir), 0.0);
+  vec3 fillDir = normalize(vec3(-0.6, 0.3, -0.4));
+  float fillDiff = max(dot(n, fillDir), 0.0);
+  float lighting = 0.42 + 0.45 * sunDiff + 0.13 * fillDiff;
+
+  bool isFoliage = vPartType > 0.35 && vPartType < 0.65;
+  bool isRoof = vPartType > 0.8 || (n.y > 0.85 && vPartType < 0.1);
+  bool isFloor = n.y < -0.85;
+
+  vec3 color;
+
+  if (isFoliage) {
+    // Green foliage with variation based on position
+    float fh = hash21(vWorldPos.xz * 3.7);
+    vec3 baseGreen = mix(vec3(0.18, 0.35, 0.12), vec3(0.25, 0.45, 0.15), fh);
+    // Darker at bottom, lighter at top
+    float topFade = smoothstep(0.0, 0.25, vWorldPos.y);
+    color = baseGreen * (0.7 + 0.3 * topFade);
+    color *= lighting;
+  } else if (isFloor) {
+    color = vBldgColor * 0.3;
+  } else if (isRoof) {
+    float rh = hash21(floor(vWorldPos.xz * 1.01));
+    color = getRoofColor(vZoneCat, rh);
+    color *= lighting;
+  } else {
+    // === WALL — zone-specific patterns ===
+    float y = vWorldPos.y;
+    float wallU;
+    if (abs(n.x) > abs(n.z)) {
+      wallU = vWorldPos.z;
+    } else {
+      wallU = vWorldPos.x;
+    }
+    bool onWall = abs(n.y) < 0.3 && y > 0.06;
+
+    // ---- RESIDENTIAL LOW: painted siding, no window grid ----
+    if (vZoneCat < 0.1) {
+      color = vBldgColor * 0.9;
+      if (onWall) {
+        // Subtle horizontal siding lines
+        float board = fract(y / 0.06);
+        float line = smoothstep(0.0, 0.06, board) * smoothstep(0.12, 0.06, board);
+        color = vBldgColor * (0.88 - line * 0.06);
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.65 + 0.35 * ao;
+    }
+
+    // ---- RESIDENTIAL HIGH: medium-spaced windows ----
+    else if (vZoneCat < 0.3) {
+      float floorH = 0.25;
+      float winW = 0.2;
+      float fy = y / floorH;
+      float fx = wallU / winW;
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      bool inWin = onWall &&
+                   fracX > 0.2 && fracX < 0.8 &&
+                   fracY > 0.25 && fracY < 0.68;
+      if (inWin) {
+        vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 7.13;
+        float lit = hash21(wid);
+        if (lit > 0.4) {
+          float w = hash21(wid + 77.7);
+          color = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+        } else {
+          color = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
+        }
+      } else if (onWall && (fracY > 0.92 || fracY < 0.08)) {
+        color = vBldgColor * 0.72;
+      } else {
+        color = vBldgColor * 0.88;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    }
+
+    // ---- COMMERCIAL LOW: storefront glass bottom, simple wall above ----
+    else if (vZoneCat < 0.5) {
+      if (onWall && y < 0.22) {
+        // Large storefront glass
+        float glassU = fract(wallU / 0.25);
+        bool inGlass = glassU > 0.06 && glassU < 0.94;
+        if (inGlass) {
+          float r = hash21(floor(vec2(wallU / 0.25, 0.0)) + vWorldPos.xz * 3.7);
+          color = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
+        } else {
+          color = vBldgColor * 0.6; // mullion
+        }
+      } else if (onWall) {
+        // Upper wall — sparse small windows
+        float floorH = 0.3;
+        float winW = 0.22;
+        float fy = y / floorH;
+        float fx = wallU / winW;
+        float fracY = fract(fy);
+        float fracX = fract(fx);
+        bool inWin = fracX > 0.3 && fracX < 0.7 && fracY > 0.3 && fracY < 0.65;
+        if (inWin) {
+          vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 5.3;
+          float lit = hash21(wid);
+          color = lit > 0.5 ? mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8
+                            : vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
+        } else {
+          color = vBldgColor * 0.85;
+        }
+      } else {
+        color = vBldgColor * 0.85;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    }
+
+    // ---- COMMERCIAL HIGH: dense glass curtain wall ----
+    else if (vZoneCat < 0.7) {
+      float floorH = 0.22;
+      float winW = 0.1;
+      float fy = y / floorH;
+      float fx = wallU / winW;
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      bool inWin = onWall &&
+                   fracX > 0.08 && fracX < 0.92 &&
+                   fracY > 0.12 && fracY < 0.82;
+      if (inWin) {
+        vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 7.13;
+        float lit = hash21(wid);
+        if (lit > 0.3) {
+          float w = hash21(wid + 77.7);
+          color = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
+        } else {
+          color = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
+        }
+      } else {
+        color = vBldgColor * 0.5; // narrow mullions
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    }
+
+    // ---- INDUSTRIAL: corrugated metal, large doors ----
+    else if (vZoneCat < 0.9) {
+      if (onWall) {
+        // Horizontal corrugation ridges
+        float ridge = fract(y / 0.08);
+        float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
+        color = vBldgColor * (0.72 + shade * 0.18);
+
+        // Large loading door at ground level
+        float doorU = fract(wallU / 0.35);
+        if (y < 0.18 && doorU > 0.12 && doorU < 0.88) {
+          color = vBldgColor * 0.4 + vec3(0.02, 0.02, 0.01);
+          // Horizontal door slats
+          float slat = fract(y / 0.03);
+          color *= 0.9 + 0.1 * step(0.5, slat);
+        }
+      } else {
+        color = vBldgColor * 0.78;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.65 + 0.35 * ao;
+    }
+
+    // ---- OFFICE: dense window grid ----
+    else {
+      float floorH = 0.25;
+      float winW = 0.125;
+      float fy = y / floorH;
+      float fx = wallU / winW;
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      bool inWin = onWall &&
+                   fracX > 0.15 && fracX < 0.85 &&
+                   fracY > 0.2 && fracY < 0.72;
+      if (inWin) {
+        vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 7.13;
+        float lit = hash21(wid);
+        if (lit > 0.35) {
+          float w = hash21(wid + 77.7);
+          color = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+        } else {
+          color = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
+        }
+      } else if (onWall && (fracY > 0.92 || fracY < 0.08)) {
+        color = vBldgColor * 0.7;
+      } else {
+        color = vBldgColor * 0.88;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    }
+  }
+
+  // Apply shadow from directional light
+  #if NUM_DIR_LIGHT_SHADOWS > 0
+    float shadow = getShadow(
+      directionalShadowMap[0],
+      directionalLightShadows[0].shadowMapSize,
+      directionalLightShadows[0].shadowIntensity,
+      directionalLightShadows[0].shadowBias,
+      directionalLightShadows[0].shadowRadius,
+      vDirectionalShadowCoord[0]
+    );
+    color *= 0.45 + 0.55 * shadow;
+  #endif
+
+  gl_FragColor = vec4(color, 1.0);
+}
+`;
+
+function createBuildingMaterial(): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: THREE.UniformsUtils.merge([
+      THREE.UniformsLib.lights,
+    ]),
+    vertexShader: BUILDING_VERT,
+    fragmentShader: BUILDING_FRAG,
+    vertexColors: true,
+    lights: true,
+  });
+}
+
+let _buildingMaterial: THREE.ShaderMaterial | null = null;
+function getBuildingMaterial(): THREE.ShaderMaterial {
+  if (!_buildingMaterial) _buildingMaterial = createBuildingMaterial();
+  return _buildingMaterial;
+}
+
+// ===== Geometry Builders =====
+
+// -- Residential Low: houses with yards/garages --
+
+function makeResLowV1(): THREE.BufferGeometry {
+  // House with pitched roof + detached garage
+  const body = new THREE.BoxGeometry(0.36, 0.32, 0.34);
+  body.translate(-0.08, 0.16, -0.06);
+  tagPart(body, PART_WALL);
+  const roof = new THREE.ConeGeometry(0.32, 0.18, 4);
+  roof.rotateY(Math.PI / 4);
+  roof.translate(-0.08, 0.41, -0.06);
+  tagPart(roof, PART_ROOF);
+  // Garage
+  const garage = new THREE.BoxGeometry(0.2, 0.18, 0.22);
+  garage.translate(0.22, 0.09, 0.18);
+  tagPart(garage, PART_WALL);
+  const gRoof = new THREE.BoxGeometry(0.22, 0.03, 0.24);
+  gRoof.translate(0.22, 0.195, 0.18);
+  tagPart(gRoof, PART_ROOF);
+  // Front hedge
+  const hedge = new THREE.BoxGeometry(0.3, 0.08, 0.06);
+  hedge.translate(-0.08, 0.04, 0.25);
+  tagPart(hedge, PART_FOLIAGE);
+  // Garden tree
+  const trunk = new THREE.CylinderGeometry(0.015, 0.02, 0.15, 5);
+  trunk.translate(0.28, 0.075, -0.22);
+  tagPart(trunk, PART_WALL);
+  const canopy = new THREE.SphereGeometry(0.1, 5, 4);
+  canopy.translate(0.28, 0.2, -0.22);
+  tagPart(canopy, PART_FOLIAGE);
+  return mergeGeometries([body, roof, garage, gRoof, hedge, trunk, canopy])!;
+}
+
+function makeResLowV2(): THREE.BufferGeometry {
+  // Wide bungalow + garden shed
+  const body = new THREE.BoxGeometry(0.5, 0.26, 0.36);
+  body.translate(0, 0.13, -0.06);
+  tagPart(body, PART_WALL);
+  const porch = new THREE.BoxGeometry(0.18, 0.14, 0.1);
+  porch.translate(0.18, 0.07, 0.15);
+  tagPart(porch, PART_WALL);
+  const shed = new THREE.BoxGeometry(0.14, 0.16, 0.14);
+  shed.translate(-0.22, 0.08, 0.22);
+  tagPart(shed, PART_WALL);
+  const shedRoof = new THREE.BoxGeometry(0.16, 0.02, 0.16);
+  shedRoof.translate(-0.22, 0.17, 0.22);
+  tagPart(shedRoof, PART_ROOF);
+  // Side bushes
+  const bush1 = new THREE.SphereGeometry(0.06, 5, 4);
+  bush1.translate(0.32, 0.06, -0.28);
+  tagPart(bush1, PART_FOLIAGE);
+  const bush2 = new THREE.SphereGeometry(0.05, 5, 4);
+  bush2.translate(0.32, 0.05, -0.16);
+  tagPart(bush2, PART_FOLIAGE);
+  // Back garden tree
+  const trunk = new THREE.CylinderGeometry(0.015, 0.02, 0.18, 5);
+  trunk.translate(-0.08, 0.09, -0.32);
+  tagPart(trunk, PART_WALL);
+  const canopy = new THREE.SphereGeometry(0.12, 5, 4);
+  canopy.translate(-0.08, 0.24, -0.32);
+  tagPart(canopy, PART_FOLIAGE);
+  return mergeGeometries([body, porch, shed, shedRoof, bush1, bush2, trunk, canopy])!;
+}
+
+function makeResLowV3(): THREE.BufferGeometry {
+  // Narrow townhouse with steep roof + small yard wall
+  const body = new THREE.BoxGeometry(0.32, 0.4, 0.4);
+  body.translate(0, 0.2, -0.04);
+  tagPart(body, PART_WALL);
+  const roof = new THREE.ConeGeometry(0.3, 0.22, 4);
+  roof.rotateY(Math.PI / 4);
+  roof.translate(0, 0.51, -0.04);
+  tagPart(roof, PART_ROOF);
+  // Low yard wall / fence
+  const fence = new THREE.BoxGeometry(0.4, 0.06, 0.03);
+  fence.translate(0.05, 0.03, 0.22);
+  tagPart(fence, PART_WALL);
+  // Front hedge row
+  const hedge1 = new THREE.BoxGeometry(0.14, 0.07, 0.05);
+  hedge1.translate(-0.12, 0.035, 0.22);
+  tagPart(hedge1, PART_FOLIAGE);
+  const hedge2 = new THREE.BoxGeometry(0.14, 0.07, 0.05);
+  hedge2.translate(0.22, 0.035, 0.22);
+  tagPart(hedge2, PART_FOLIAGE);
+  // Corner bush
+  const bush = new THREE.SphereGeometry(0.07, 5, 4);
+  bush.translate(-0.25, 0.07, 0.28);
+  tagPart(bush, PART_FOLIAGE);
+  return mergeGeometries([body, roof, fence, hedge1, hedge2, bush])!;
+}
+
+// -- Residential High --
+
+function makeResHighV1(): THREE.BufferGeometry {
+  const main = new THREE.BoxGeometry(0.6, 0.8, 0.55);
+  main.translate(0, 0.4, 0);
+  tagPart(main, PART_WALL);
+  const top = new THREE.BoxGeometry(0.4, 0.25, 0.35);
+  top.translate(0, 0.925, 0);
+  tagPart(top, PART_ROOF);
+  return mergeGeometries([main, top])!;
+}
+
+function makeResHighV2(): THREE.BufferGeometry {
+  const body = new THREE.BoxGeometry(0.45, 1.0, 0.45);
+  body.translate(0, 0.5, 0);
+  tagPart(body, PART_WALL);
+  const cap = new THREE.BoxGeometry(0.5, 0.06, 0.5);
+  cap.translate(0, 1.03, 0);
+  tagPart(cap, PART_ROOF);
+  return mergeGeometries([body, cap])!;
+}
+
+function makeResHighV3(): THREE.BufferGeometry {
+  const wing1 = new THREE.BoxGeometry(0.6, 0.7, 0.3);
+  wing1.translate(0, 0.35, -0.1);
+  tagPart(wing1, PART_WALL);
+  const wing2 = new THREE.BoxGeometry(0.3, 0.7, 0.6);
+  wing2.translate(-0.15, 0.35, 0.15);
+  tagPart(wing2, PART_WALL);
+  return mergeGeometries([wing1, wing2])!;
+}
+
+// -- Commercial Low --
+
+function makeComLowV1(): THREE.BufferGeometry {
+  const body = new THREE.BoxGeometry(0.6, 0.4, 0.55);
+  body.translate(0, 0.2, 0);
+  tagPart(body, PART_WALL);
+  const awning = new THREE.BoxGeometry(0.65, 0.03, 0.15);
+  awning.translate(0, 0.35, 0.32);
+  tagPart(awning, PART_ROOF);
+  return mergeGeometries([body, awning])!;
+}
+
+function makeComLowV2(): THREE.BufferGeometry {
+  const body = new THREE.BoxGeometry(0.7, 0.35, 0.5);
+  body.translate(0, 0.175, 0);
+  tagPart(body, PART_WALL);
+  const sign = new THREE.BoxGeometry(0.55, 0.06, 0.02);
+  sign.translate(0, 0.38, 0.26);
+  tagPart(sign, PART_ROOF);
+  return mergeGeometries([body, sign])!;
+}
+
+function makeComLowV3(): THREE.BufferGeometry {
+  const body = new THREE.BoxGeometry(0.5, 0.4, 0.5);
+  body.translate(0, 0.2, 0);
+  tagPart(body, PART_WALL);
+  const entry = new THREE.BoxGeometry(0.15, 0.3, 0.08);
+  entry.translate(0, 0.15, 0.29);
+  tagPart(entry, PART_WALL);
+  return mergeGeometries([body, entry])!;
+}
+
+// -- Commercial High --
+
+function makeComHighV1(): THREE.BufferGeometry {
+  const base = new THREE.BoxGeometry(0.6, 0.4, 0.6);
+  base.translate(0, 0.2, 0);
+  tagPart(base, PART_WALL);
+  const tower = new THREE.BoxGeometry(0.45, 0.8, 0.45);
+  tower.translate(0, 0.8, 0);
+  tagPart(tower, PART_WALL);
+  return mergeGeometries([base, tower])!;
+}
+
+function makeComHighV2(): THREE.BufferGeometry {
+  const body = new THREE.CylinderGeometry(0.28, 0.3, 1.0, 8);
+  body.translate(0, 0.5, 0);
+  tagPart(body, PART_WALL);
+  const cap = new THREE.CylinderGeometry(0.32, 0.32, 0.05, 8);
+  cap.translate(0, 1.025, 0);
+  tagPart(cap, PART_ROOF);
+  return mergeGeometries([body, cap])!;
+}
+
+// -- Industrial: factories with yards --
+
+function makeIndV1(): THREE.BufferGeometry {
+  // Factory + small utility shed
+  const body = new THREE.BoxGeometry(0.5, 0.38, 0.45);
+  body.translate(-0.04, 0.19, -0.04);
+  tagPart(body, PART_WALL);
+  const chimney = new THREE.CylinderGeometry(0.06, 0.08, 0.4, 6);
+  chimney.translate(0.15, 0.58, -0.15);
+  tagPart(chimney, PART_WALL);
+  // Utility shed
+  const shed = new THREE.BoxGeometry(0.18, 0.16, 0.2);
+  shed.translate(0.26, 0.08, 0.2);
+  tagPart(shed, PART_WALL);
+  return mergeGeometries([body, chimney, shed])!;
+}
+
+function makeIndV2(): THREE.BufferGeometry {
+  // Warehouse + loading dock area
+  const body = new THREE.BoxGeometry(0.55, 0.28, 0.5);
+  body.translate(0, 0.14, -0.05);
+  tagPart(body, PART_WALL);
+  const dock = new THREE.BoxGeometry(0.3, 0.06, 0.15);
+  dock.translate(0, 0.03, 0.28);
+  tagPart(dock, PART_WALL);
+  return mergeGeometries([body, dock])!;
+}
+
+function makeIndV3(): THREE.BufferGeometry {
+  // Double chimney factory + yard wall
+  const body = new THREE.BoxGeometry(0.48, 0.32, 0.42);
+  body.translate(0, 0.16, 0);
+  tagPart(body, PART_WALL);
+  const ch1 = new THREE.CylinderGeometry(0.05, 0.07, 0.35, 6);
+  ch1.translate(-0.12, 0.495, -0.12);
+  tagPart(ch1, PART_WALL);
+  const ch2 = new THREE.CylinderGeometry(0.05, 0.07, 0.3, 6);
+  ch2.translate(0.12, 0.47, -0.12);
+  tagPart(ch2, PART_WALL);
+  // Compound wall
+  const wall = new THREE.BoxGeometry(0.5, 0.1, 0.03);
+  wall.translate(0, 0.05, 0.26);
+  tagPart(wall, PART_WALL);
+  return mergeGeometries([body, ch1, ch2, wall])!;
+}
+
+// -- Office --
+
+function makeOfficeV1(): THREE.BufferGeometry {
+  const body = new THREE.BoxGeometry(0.5, 1.0, 0.5);
+  body.translate(0, 0.5, 0);
+  tagPart(body, PART_WALL);
+  const antenna = new THREE.CylinderGeometry(0.015, 0.015, 0.2, 4);
+  antenna.translate(0, 1.1, 0);
+  tagPart(antenna, PART_ROOF);
+  return mergeGeometries([body, antenna])!;
+}
+
+function makeOfficeV2(): THREE.BufferGeometry {
+  const b1 = new THREE.BoxGeometry(0.6, 0.5, 0.6);
+  b1.translate(0, 0.25, 0);
+  tagPart(b1, PART_WALL);
+  const b2 = new THREE.BoxGeometry(0.45, 0.4, 0.45);
+  b2.translate(0, 0.7, 0);
+  tagPart(b2, PART_WALL);
+  const b3 = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+  b3.translate(0, 1.05, 0);
+  tagPart(b3, PART_ROOF);
+  return mergeGeometries([b1, b2, b3])!;
+}
+
+function makeOfficeV3(): THREE.BufferGeometry {
+  const body = new THREE.BoxGeometry(0.65, 0.8, 0.5);
+  body.translate(0, 0.4, 0);
+  tagPart(body, PART_WALL);
+  const equip = new THREE.BoxGeometry(0.2, 0.1, 0.15);
+  equip.translate(0.15, 0.85, 0.1);
+  tagPart(equip, PART_ROOF);
+  return mergeGeometries([body, equip])!;
+}
+
+// ===== Variant Registry =====
+type GeoBuilder = () => THREE.BufferGeometry;
+
+const VARIANTS: Record<number, GeoBuilder[]> = {
+  [ZoneType.RESIDENTIAL_LOW]:  [makeResLowV1, makeResLowV2, makeResLowV3],
+  [ZoneType.RESIDENTIAL_HIGH]: [makeResHighV1, makeResHighV2, makeResHighV3],
+  [ZoneType.COMMERCIAL_LOW]:   [makeComLowV1, makeComLowV2, makeComLowV3],
+  [ZoneType.COMMERCIAL_HIGH]:  [makeComHighV1, makeComHighV2],
+  [ZoneType.INDUSTRIAL]:       [makeIndV1, makeIndV2, makeIndV3],
+  [ZoneType.OFFICE]:           [makeOfficeV1, makeOfficeV2, makeOfficeV3],
+};
+
+// ===== Infrastructure buildingId markers =====
 const INFRA_POWER_ID = 254;
 const INFRA_WATER_ID = 253;
 
+interface BuildingData { x: number; y: number; level: number }
+
 export class BuildingRenderer {
-  private instancedMeshes: Map<number, THREE.InstancedMesh> = new Map();
-  private zonePlanes: THREE.InstancedMesh[] = [];
-  private infraMeshes: THREE.Mesh[] = [];
-  private readonly maxPerType = 5000;
+  private meshes: (THREE.InstancedMesh | THREE.Mesh)[] = [];
+  private readonly maxPerVariant = 3000;
 
   build(scene: THREE.Scene, grid: Grid): void {
     this.dispose(scene);
 
-    // Collect buildings by zone type, empty zoned cells, and infrastructure
-    const buildingsByZone = new Map<number, { x: number; y: number; level: number }[]>();
+    const buildingsByZone = new Map<number, BuildingData[]>();
     const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
     const infraCells: { x: number; y: number; type: 'power' | 'water' }[] = [];
 
@@ -43,7 +768,6 @@ export class BuildingRenderer {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
 
-        // Infrastructure plants (no zone, special buildingId)
         if (cell.buildingId === INFRA_POWER_ID) {
           infraCells.push({ x, y, type: 'power' });
           continue;
@@ -54,75 +778,110 @@ export class BuildingRenderer {
         }
 
         if (cell.zoneType !== ZoneType.NONE) {
-          if (cell.buildingId > 0) {
-            if (!buildingsByZone.has(cell.zoneType)) {
-              buildingsByZone.set(cell.zoneType, []);
-            }
+          if (cell.buildingId > 0 && cell.buildingId < INFRA_WATER_ID) {
+            if (!buildingsByZone.has(cell.zoneType)) buildingsByZone.set(cell.zoneType, []);
             buildingsByZone.get(cell.zoneType)!.push({
               x, y,
               level: Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1)),
             });
-          } else {
-            if (!emptyZonesByType.has(cell.zoneType)) {
-              emptyZonesByType.set(cell.zoneType, []);
-            }
+          } else if (cell.buildingId === 0) {
+            if (!emptyZonesByType.has(cell.zoneType)) emptyZonesByType.set(cell.zoneType, []);
             emptyZonesByType.get(cell.zoneType)!.push({ x, y });
           }
         }
       }
     }
 
-    // Render infrastructure plants
     this.buildInfrastructure(scene, infraCells);
-
-    // Render zone ground overlays for empty zoned cells
     this.buildZoneOverlays(scene, emptyZonesByType);
+    this.buildVariantBuildings(scene, buildingsByZone);
+  }
 
+  private buildVariantBuildings(scene: THREE.Scene, buildingsByZone: Map<number, BuildingData[]>): void {
     const matrix = new THREE.Matrix4();
+    const scale = new THREE.Matrix4();
+    const rotation = new THREE.Matrix4();
+    const color = new THREE.Color();
+    const material = getBuildingMaterial();
 
     for (const [zoneType, buildings] of buildingsByZone) {
-      const color = ZONE_COLORS[zoneType] ?? 0x888888;
+      const variants = VARIANTS[zoneType];
+      if (!variants || variants.length === 0) continue;
+
+      const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
       const heightRange = ZONE_HEIGHTS[zoneType] ?? { min: 0.3, max: 1.0 };
-      const count = Math.min(buildings.length, this.maxPerType);
+      const zoneCat = ZONE_CAT[zoneType] ?? 0;
 
-      const geometry = new THREE.BoxGeometry(0.7, 1, 0.7);
-      geometry.translate(0, 0.5, 0); // Pivot at bottom
-      const material = new THREE.MeshLambertMaterial({ color });
-      const mesh = new THREE.InstancedMesh(geometry, material, count);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-
-      for (let i = 0; i < count; i++) {
-        const b = buildings[i]!;
-        const levelFactor = b.level / 3;
-        const height = heightRange.min + (heightRange.max - heightRange.min) * levelFactor;
-        // Use deterministic pseudo-random height variation based on position
-        const variation = 1.0 + (((b.x * 7 + b.y * 13) % 10) / 10 - 0.5) * 0.3;
-        const finalHeight = height * variation;
-
-        matrix.makeScale(1, finalHeight, 1);
-        matrix.setPosition(b.x, 0.05, b.y);
-        mesh.setMatrixAt(i, matrix);
+      const buckets: BuildingData[][] = variants.map(() => []);
+      for (const b of buildings) {
+        const vi = Math.floor(hash(b.x, b.y) * variants.length) % variants.length;
+        buckets[vi]!.push(b);
       }
 
-      mesh.instanceMatrix.needsUpdate = true;
-      scene.add(mesh);
-      this.instancedMeshes.set(zoneType, mesh);
+      for (let vi = 0; vi < variants.length; vi++) {
+        const bucket = buckets[vi]!;
+        if (bucket.length === 0) continue;
+
+        const geometry = variants[vi]!();
+        // Stamp zone category into vertex color G channel
+        stampZoneCategory(geometry, zoneCat);
+
+        const count = Math.min(bucket.length, this.maxPerVariant);
+        const mesh = new THREE.InstancedMesh(geometry, material, count);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+
+        for (let i = 0; i < count; i++) {
+          const b = bucket[i]!;
+          const h = hash(b.x, b.y);
+          const h2 = hash(b.x + 100, b.y + 100);
+          const h3 = hash(b.x + 200, b.y + 200);
+
+          const levelFactor = b.level / 3;
+          const baseHeight = heightRange.min + (heightRange.max - heightRange.min) * levelFactor;
+          const heightVar = 1.0 + (h2 - 0.5) * 0.35;
+          const finalHeight = baseHeight * heightVar;
+
+          const widthVar = 0.85 + h3 * 0.3;
+          const depthVar = 0.85 + hash(b.x + 300, b.y + 300) * 0.3;
+
+          const rotIndex = Math.floor(hash(b.x + 400, b.y + 400) * 4);
+          rotation.makeRotationY((rotIndex * Math.PI) / 2);
+
+          scale.makeScale(widthVar, finalHeight, depthVar);
+          matrix.multiplyMatrices(scale, rotation);
+          matrix.setPosition(b.x, 0.05, b.y);
+          mesh.setMatrixAt(i, matrix);
+
+          const baseColor = palette[Math.floor(h * palette.length) % palette.length]!;
+          color.set(baseColor);
+          const hsl = { h: 0, s: 0, l: 0 };
+          color.getHSL(hsl);
+          hsl.h += (h2 - 0.5) * 0.03;
+          hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + (h3 - 0.5) * 0.1));
+          hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + (h - 0.5) * 0.1));
+          color.setHSL(hsl.h, hsl.s, hsl.l);
+          mesh.setColorAt(i, color);
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        scene.add(mesh);
+        this.meshes.push(mesh);
+      }
     }
   }
 
   private buildZoneOverlays(scene: THREE.Scene, emptyZonesByType: Map<number, { x: number; y: number }[]>): void {
     const matrix = new THREE.Matrix4();
     for (const [zoneType, cells] of emptyZonesByType) {
-      const color = ZONE_COLORS[zoneType] ?? 0x888888;
-      const count = Math.min(cells.length, this.maxPerType);
+      const palette = ZONE_PALETTES[zoneType];
+      const baseColor = palette ? palette[0]! : 0x888888;
+      const count = Math.min(cells.length, this.maxPerVariant);
       const geometry = new THREE.PlaneGeometry(0.9, 0.9);
       geometry.rotateX(-Math.PI / 2);
       const material = new THREE.MeshBasicMaterial({
-        color,
-        transparent: true,
-        opacity: 0.35,
-        depthWrite: false,
+        color: baseColor, transparent: true, opacity: 0.35, depthWrite: false,
       });
       const mesh = new THREE.InstancedMesh(geometry, material, count);
       for (let i = 0; i < count; i++) {
@@ -132,16 +891,15 @@ export class BuildingRenderer {
       }
       mesh.instanceMatrix.needsUpdate = true;
       scene.add(mesh);
-      this.zonePlanes.push(mesh);
+      this.meshes.push(mesh);
     }
   }
 
   private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: 'power' | 'water' }[]): void {
     for (const inf of cells) {
       const isPower = inf.type === 'power';
-      const color = isPower ? 0xffeb3b : 0x03a9f4;
+      const clr = isPower ? 0xffeb3b : 0x03a9f4;
 
-      // Base building
       const baseGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
       baseGeo.translate(0, 0.3, 0);
       const baseMat = new THREE.MeshLambertMaterial({ color: isPower ? 0x555555 : 0x4a6a7a });
@@ -149,56 +907,43 @@ export class BuildingRenderer {
       base.position.set(inf.x, 0.05, inf.y);
       base.castShadow = true;
       scene.add(base);
-      this.infraMeshes.push(base);
+      this.meshes.push(base);
 
       if (isPower) {
-        // Chimney / smokestack
-        const chimneyGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.5, 6);
-        chimneyGeo.translate(0, 0.25, 0);
-        const chimneyMat = new THREE.MeshLambertMaterial({ color: 0x777777 });
-        const chimney = new THREE.Mesh(chimneyGeo, chimneyMat);
-        chimney.position.set(inf.x + 0.2, 0.65, inf.y - 0.15);
-        chimney.castShadow = true;
-        scene.add(chimney);
-        this.infraMeshes.push(chimney);
+        const chGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.5, 6);
+        chGeo.translate(0, 0.25, 0);
+        const chMat = new THREE.MeshLambertMaterial({ color: 0x777777 });
+        const ch = new THREE.Mesh(chGeo, chMat);
+        ch.position.set(inf.x + 0.2, 0.65, inf.y - 0.15);
+        ch.castShadow = true;
+        scene.add(ch);
+        this.meshes.push(ch);
       } else {
-        // Water tower dome
         const domeGeo = new THREE.SphereGeometry(0.25, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
         const domeMat = new THREE.MeshLambertMaterial({ color: 0x29b6f6 });
         const dome = new THREE.Mesh(domeGeo, domeMat);
         dome.position.set(inf.x, 0.65, inf.y);
         scene.add(dome);
-        this.infraMeshes.push(dome);
+        this.meshes.push(dome);
       }
 
-      // Color indicator on top
-      const indicatorGeo = new THREE.BoxGeometry(0.15, 0.08, 0.15);
-      const indicatorMat = new THREE.MeshBasicMaterial({ color });
-      const indicator = new THREE.Mesh(indicatorGeo, indicatorMat);
-      indicator.position.set(inf.x - 0.2, 0.7, inf.y + 0.2);
-      scene.add(indicator);
-      this.infraMeshes.push(indicator);
+      const indGeo = new THREE.BoxGeometry(0.15, 0.08, 0.15);
+      const indMat = new THREE.MeshBasicMaterial({ color: clr });
+      const ind = new THREE.Mesh(indGeo, indMat);
+      ind.position.set(inf.x - 0.2, 0.7, inf.y + 0.2);
+      scene.add(ind);
+      this.meshes.push(ind);
     }
   }
 
   dispose(scene: THREE.Scene): void {
-    for (const mesh of this.instancedMeshes.values()) {
+    for (const mesh of this.meshes) {
       scene.remove(mesh);
       mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
+      const mat = mesh.material;
+      if (Array.isArray(mat)) mat.forEach(m => m.dispose());
+      else if (mat !== getBuildingMaterial()) (mat as THREE.Material).dispose();
     }
-    this.instancedMeshes.clear();
-    for (const mesh of this.zonePlanes) {
-      scene.remove(mesh);
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
-    }
-    this.zonePlanes = [];
-    for (const mesh of this.infraMeshes) {
-      scene.remove(mesh);
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
-    }
-    this.infraMeshes = [];
+    this.meshes = [];
   }
 }

@@ -11,7 +11,7 @@ const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.ONE_WAY]: 0.55,
 };
 
-const SIDEWALK_WIDTH = 0.08;
+const SIDEWALK_WIDTH = 0.14;
 const SIDEWALK_HEIGHT = 0.04;
 const ROAD_Y = 0.025;
 const SIDEWALK_Y = 0.05;
@@ -35,6 +35,7 @@ export class RoadRenderer {
   private sidewalkMesh: THREE.InstancedMesh | null = null;
   private markingMesh: THREE.InstancedMesh | null = null;
   private crosswalkMesh: THREE.InstancedMesh | null = null;
+  private stopLineMesh: THREE.InstancedMesh | null = null;
   private readonly maxRoads = 10000;
 
   build(scene: THREE.Scene, grid: Grid): void {
@@ -56,6 +57,7 @@ export class RoadRenderer {
     this.buildSidewalks(scene, roadCells);
     this.buildLaneMarkings(scene, roadCells);
     this.buildCrosswalkMarkings(scene, roadCells);
+    this.buildStopLines(scene, roadCells);
   }
 
   private buildRoadSurface(scene: THREE.Scene, cells: RoadCell[]): void {
@@ -153,9 +155,17 @@ export class RoadRenderer {
   }
 
   private buildLaneMarkings(scene: THREE.Scene, cells: RoadCell[]): void {
-    // Dashed center lines for straight road segments
+    // Dashed center lines for straight road segments (skip cells adjacent to intersections)
     type Marking = { x: number; z: number; rotY: number };
     const markings: Marking[] = [];
+
+    // Build set of intersection positions to check neighbors
+    const cellMap = new Map<string, RoadCell>();
+    const intersections = new Set<string>();
+    for (const c of cells) {
+      cellMap.set(`${c.x},${c.y}`, c);
+      if (countBits(c.roadFlags) >= 3) intersections.add(`${c.x},${c.y}`);
+    }
 
     for (const r of cells) {
       const connections = countBits(r.roadFlags);
@@ -166,19 +176,30 @@ export class RoadRenderer {
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
       const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-      // Only straight segments (N+S or E+W)
+      // Only straight segments (N+S or E+W) — 4 dashes per cell (uniform 0.15 gaps)
+      // Only skip outermost dash facing intersection (crosswalk overlap); keep inner dash near stop line
       if (hasN && hasS) {
-        markings.push({ x: r.x, z: r.y, rotY: 0 });
+        const intN = intersections.has(`${r.x},${r.y - 1}`);
+        const intS = intersections.has(`${r.x},${r.y + 1}`);
+        if (!intN) markings.push({ x: r.x, z: r.y - 0.375, rotY: 0 });
+        markings.push({ x: r.x, z: r.y - 0.125, rotY: 0 });
+        markings.push({ x: r.x, z: r.y + 0.125, rotY: 0 });
+        if (!intS) markings.push({ x: r.x, z: r.y + 0.375, rotY: 0 });
       } else if (hasE && hasW) {
-        markings.push({ x: r.x, z: r.y, rotY: Math.PI / 2 });
+        const intW = intersections.has(`${r.x - 1},${r.y}`);
+        const intE = intersections.has(`${r.x + 1},${r.y}`);
+        if (!intW) markings.push({ x: r.x - 0.375, z: r.y, rotY: Math.PI / 2 });
+        markings.push({ x: r.x - 0.125, z: r.y, rotY: Math.PI / 2 });
+        markings.push({ x: r.x + 0.125, z: r.y, rotY: Math.PI / 2 });
+        if (!intE) markings.push({ x: r.x + 0.375, z: r.y, rotY: Math.PI / 2 });
       }
     }
 
     if (markings.length === 0) return;
 
-    // Dashed line: thin white strip
-    const geo = new THREE.BoxGeometry(0.03, 0.005, 0.35);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xdddddd });
+    // Dashed center line: ~12cm wide, ~1.2m long per dash
+    const geo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa });
     const count = Math.min(markings.length, this.maxRoads);
     this.markingMesh = new THREE.InstancedMesh(geo, mat, count);
 
@@ -200,59 +221,61 @@ export class RoadRenderer {
   }
 
   private buildCrosswalkMarkings(scene: THREE.Scene, cells: RoadCell[]): void {
-    // Crosswalk stripes at intersections (3+ connections)
+    // Crosswalks go on the neighboring cells that connect INTO an intersection
     type CWStrip = { x: number; z: number; sx: number; sz: number };
     const strips: CWStrip[] = [];
 
+    // Build lookup for quick neighbor check
+    const cellMap = new Map<string, RoadCell>();
+    for (const c of cells) cellMap.set(`${c.x},${c.y}`, c);
+
+    const stripeCount = 12;
+    const stripeGap = 0.042;
+    const stripeLen = 0.11;
+    // Place stripes near the end of the cell closest to the intersection
+    const cwOffset = 0.35;
+
     for (const r of cells) {
       const connections = countBits(r.roadFlags);
-      if (connections < 3) continue;
+      if (connections < 3) continue; // only intersections
 
-      const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
-      const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
-      const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
-      const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
+      // For each direction connected to this intersection,
+      // place crosswalk on that neighbor cell, near the intersection end
+      const neighbors: [number, number, number, number][] = [
+        // [dx, dy, dirFlag, dirFromNeighbor] — neighbor coords & which direction faces intersection
+        // N neighbor is at (x, y-1), crosswalk at its south end (z + offset)
+        [0, -1, RoadDirection.NORTH, RoadDirection.SOUTH],
+        [0,  1, RoadDirection.SOUTH, RoadDirection.NORTH],
+        [1,  0, RoadDirection.EAST,  RoadDirection.WEST],
+        [-1, 0, RoadDirection.WEST,  RoadDirection.EAST],
+      ];
 
-      // Place crosswalk stripes perpendicular to each connected direction
-      const stripeCount = 3;
-      const stripeGap = 0.12;
-      const stripeLen = 0.25;
-      const offset = 0.35;
+      for (const [dx, dy, dirFlag] of neighbors) {
+        if (!(r.roadFlags & dirFlag)) continue;
+        const nb = cellMap.get(`${r.x + dx},${r.y + dy}`);
+        if (!nb) continue;
 
-      if (hasN) {
-        for (let s = 0; s < stripeCount; s++) {
-          strips.push({
-            x: r.x - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
-            z: r.y - offset,
-            sx: 0.06, sz: stripeLen,
-          });
-        }
-      }
-      if (hasS) {
-        for (let s = 0; s < stripeCount; s++) {
-          strips.push({
-            x: r.x - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
-            z: r.y + offset,
-            sx: 0.06, sz: stripeLen,
-          });
-        }
-      }
-      if (hasE) {
-        for (let s = 0; s < stripeCount; s++) {
-          strips.push({
-            x: r.x + offset,
-            z: r.y - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
-            sx: stripeLen, sz: 0.06,
-          });
-        }
-      }
-      if (hasW) {
-        for (let s = 0; s < stripeCount; s++) {
-          strips.push({
-            x: r.x - offset,
-            z: r.y - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
-            sx: stripeLen, sz: 0.06,
-          });
+        // Crosswalk is perpendicular to the road direction
+        if (dx === 0) {
+          // Vertical road neighbor — crosswalk is horizontal stripes
+          const zPos = nb.y + (-dy) * cwOffset; // near intersection end
+          for (let s = 0; s < stripeCount; s++) {
+            strips.push({
+              x: nb.x - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
+              z: zPos,
+              sx: 0.025, sz: stripeLen,
+            });
+          }
+        } else {
+          // Horizontal road neighbor — crosswalk is vertical stripes
+          const xPos = nb.x + (-dx) * cwOffset;
+          for (let s = 0; s < stripeCount; s++) {
+            strips.push({
+              x: xPos,
+              z: nb.y - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
+              sx: stripeLen, sz: 0.025,
+            });
+          }
         }
       }
     }
@@ -260,7 +283,7 @@ export class RoadRenderer {
     if (strips.length === 0) return;
 
     const geo = new THREE.BoxGeometry(1, 0.005, 1);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xeeeeee });
+    const mat = new THREE.MeshBasicMaterial({ color: 0xbbbbbb });
     const count = Math.min(strips.length, this.maxRoads * 4);
     this.crosswalkMesh = new THREE.InstancedMesh(geo, mat, count);
 
@@ -276,8 +299,78 @@ export class RoadRenderer {
     scene.add(this.crosswalkMesh);
   }
 
+  private buildStopLines(scene: THREE.Scene, cells: RoadCell[]): void {
+    // Stop lines on cells adjacent to intersections (right-hand drive = drive on LEFT)
+    // Stop line is on the LEFT half of the road (incoming lane), between crosswalk and intersection
+    type StopLine = { x: number; z: number; sx: number; sz: number };
+    const lines: StopLine[] = [];
+
+    const cellMap = new Map<string, RoadCell>();
+    for (const c of cells) cellMap.set(`${c.x},${c.y}`, c);
+
+    // Stop line position: closer to intersection than crosswalk
+    // Crosswalk is at cwOffset=0.35 from center, stop line at 0.25 (between crosswalk and intersection)
+    const stopOffset = 0.25;
+    const halfLane = 0.15; // half the road width for one lane side
+
+    for (const r of cells) {
+      const connections = countBits(r.roadFlags);
+      if (connections < 3) continue;
+
+      const neighbors: [number, number, number][] = [
+        [0, -1, RoadDirection.NORTH],
+        [0,  1, RoadDirection.SOUTH],
+        [1,  0, RoadDirection.EAST],
+        [-1, 0, RoadDirection.WEST],
+      ];
+
+      for (const [dx, dy, dirFlag] of neighbors) {
+        if (!(r.roadFlags & dirFlag)) continue;
+        const nb = cellMap.get(`${r.x + dx},${r.y + dy}`);
+        if (!nb) continue;
+
+        if (dx === 0) {
+          // Vertical road: stop line is horizontal, on LEFT side (right-hand drive)
+          // Vehicle approaching from south (dy=1): drives on left (x - offset)
+          // Vehicle approaching from north (dy=-1): drives on left (x + offset) — wait, right-hand drive means left side of road
+          const zPos = nb.y + (-dy) * stopOffset;
+          // Right-hand drive: incoming lane is on the LEFT side of the road
+          // For N→S traffic (dy=-1, approaching intersection from north): left side = +x
+          // For S→N traffic (dy=1, approaching intersection from south): left side = -x
+          const laneX = nb.x + dy * halfLane;
+          lines.push({ x: laneX, z: zPos, sx: halfLane * 2, sz: 0.012 });
+        } else {
+          // Horizontal road: stop line is vertical, on LEFT side
+          const xPos = nb.x + (-dx) * stopOffset;
+          // For W→E traffic (dx=1): left side = -z
+          // For E→W traffic (dx=-1): left side = +z
+          const laneZ = nb.y - dx * halfLane;
+          lines.push({ x: xPos, z: laneZ, sx: 0.012, sz: halfLane * 2 });
+        }
+      }
+    }
+
+    if (lines.length === 0) return;
+
+    const geo = new THREE.BoxGeometry(1, 0.005, 1);
+    const mat = new THREE.MeshBasicMaterial({ color: 0xbbbbbb });
+    const count = Math.min(lines.length, this.maxRoads * 4);
+    this.stopLineMesh = new THREE.InstancedMesh(geo, mat, count);
+
+    const matrix = new THREE.Matrix4();
+    for (let i = 0; i < count; i++) {
+      const s = lines[i]!;
+      matrix.makeScale(s.sx, 1, s.sz);
+      matrix.setPosition(s.x, MARKING_Y, s.z);
+      this.stopLineMesh.setMatrixAt(i, matrix);
+    }
+
+    this.stopLineMesh.instanceMatrix.needsUpdate = true;
+    scene.add(this.stopLineMesh);
+  }
+
   dispose(scene: THREE.Scene): void {
-    const meshes = [this.roadMesh, this.sidewalkMesh, this.markingMesh, this.crosswalkMesh];
+    const meshes = [this.roadMesh, this.sidewalkMesh, this.markingMesh, this.crosswalkMesh, this.stopLineMesh];
     for (const mesh of meshes) {
       if (mesh) {
         scene.remove(mesh);
@@ -289,5 +382,6 @@ export class RoadRenderer {
     this.sidewalkMesh = null;
     this.markingMesh = null;
     this.crosswalkMesh = null;
+    this.stopLineMesh = null;
   }
 }
