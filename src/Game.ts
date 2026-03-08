@@ -6,6 +6,7 @@ import { BuildingRenderer } from './renderer/BuildingRenderer';
 import { VehicleRenderer } from './renderer/VehicleRenderer';
 import { OverlayRenderer } from './renderer/OverlayRenderer';
 import { GridCursor } from './renderer/GridCursor';
+import { WeatherRenderer } from './renderer/WeatherRenderer';
 import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
@@ -23,6 +24,7 @@ export class Game {
   private buildingRenderer: BuildingRenderer;
   private vehicleRenderer: VehicleRenderer;
   private overlayRenderer: OverlayRenderer;
+  private weatherRenderer: WeatherRenderer;
   private gridCursor: GridCursor;
   private state: GameState;
   private simLoop: SimulationLoop;
@@ -61,6 +63,8 @@ export class Game {
     this.buildingRenderer = new BuildingRenderer();
     this.vehicleRenderer = new VehicleRenderer();
     this.overlayRenderer = new OverlayRenderer();
+
+    this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
 
     // Build initial scene
     this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
@@ -301,6 +305,10 @@ export class Game {
 
     // Animate terrain (water)
     this.terrainRenderer.update(dt);
+
+    // Update weather visuals (day/night cycle, rain/snow, seasonal colors)
+    const gameSpeed = this.paused ? 0 : this.speed;
+    this.weatherRenderer.update(dt, gameSpeed, this.state.clock.getSeason());
   }
 
   private updateCursorColor(): void {

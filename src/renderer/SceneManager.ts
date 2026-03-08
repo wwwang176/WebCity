@@ -8,6 +8,11 @@ export class SceneManager {
   private callbacks: ((dt: number) => void)[] = [];
   private lastTime = 0;
 
+  // Lights (public for weather/day-night control)
+  readonly ambientLight!: THREE.AmbientLight;
+  readonly directionalLight!: THREE.DirectionalLight;
+  readonly hemisphereLight!: THREE.HemisphereLight;
+
   // Camera state
   private cameraAngle = Math.PI / 4; // 45 degrees isometric
   private cameraDistance = 50;
@@ -58,22 +63,35 @@ export class SceneManager {
   }
 
   private setupLights(): void {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
-    this.scene.add(ambient);
+    // Use Object.defineProperty to assign readonly properties from helper method
+    const self = this as SceneManager;
 
-    const directional = new THREE.DirectionalLight(0xffffff, 0.8);
-    directional.position.set(50, 80, 50);
-    directional.castShadow = true;
-    directional.shadow.mapSize.width = 2048;
-    directional.shadow.mapSize.height = 2048;
-    directional.shadow.camera.left = -100;
-    directional.shadow.camera.right = 100;
-    directional.shadow.camera.top = 100;
-    directional.shadow.camera.bottom = -100;
-    this.scene.add(directional);
+    Object.defineProperty(self, 'ambientLight', {
+      value: new THREE.AmbientLight(0xffffff, 0.6),
+      writable: false,
+    });
+    this.scene.add(this.ambientLight);
 
-    const hemi = new THREE.HemisphereLight(0x87ceeb, 0x556633, 0.3);
-    this.scene.add(hemi);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+    dir.position.set(50, 80, 50);
+    dir.castShadow = true;
+    dir.shadow.mapSize.width = 2048;
+    dir.shadow.mapSize.height = 2048;
+    dir.shadow.camera.left = -100;
+    dir.shadow.camera.right = 100;
+    dir.shadow.camera.top = 100;
+    dir.shadow.camera.bottom = -100;
+    Object.defineProperty(self, 'directionalLight', {
+      value: dir,
+      writable: false,
+    });
+    this.scene.add(this.directionalLight);
+
+    Object.defineProperty(self, 'hemisphereLight', {
+      value: new THREE.HemisphereLight(0x87ceeb, 0x556633, 0.3),
+      writable: false,
+    });
+    this.scene.add(this.hemisphereLight);
   }
 
   private updateCameraPosition(): void {
