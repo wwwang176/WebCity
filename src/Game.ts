@@ -24,7 +24,7 @@ import { getMilestone } from './core/milestone/Milestone';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 
 
-export type ToolType = 'select' | 'road' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
 
 export interface SelectedBuilding {
   x: number;
@@ -237,7 +237,7 @@ export class Game {
       case '4': this.setTool('zone_c'); break;
       case '5': this.setTool('zone_i'); break;
       case '6': this.setTool('zone_o'); break;
-      case '7': this.setTool('road'); break;
+      case '7': this.setTool('road_2lane'); break;
       case '8': this.setTool('power'); break;
       case '9': this.setTool('water'); break;
       case '0': this.setTool('demolish'); break;
@@ -292,7 +292,10 @@ export class Game {
         this.audioManager.playSfx('click');
         break;
       }
-      case 'road': {
+      case 'road':
+      case 'road_rural':
+      case 'road_2lane':
+      case 'road_4lane': {
         const result = this.roadBuilder.buildRoad(
           { x: x1, y: y1 }, { x: x2, y: y2 },
           this.currentRoadType,
@@ -671,6 +674,9 @@ export class Game {
     const toolColors: Record<ToolType, number> = {
       select: 0xffffff,
       road: 0x424242,
+      road_rural: 0x424242,
+      road_2lane: 0x424242,
+      road_4lane: 0x424242,
       zone_r: 0x4caf50,
       zone_c: 0x2196f3,
       zone_i: 0xffa726,
@@ -684,8 +690,17 @@ export class Game {
     this.gridCursor.setOpacity(this.currentTool === 'demolish' ? 0.6 : 0.3);
   }
 
+  isRoadTool(tool?: ToolType): boolean {
+    const t = tool ?? this.currentTool;
+    return t === 'road' || t === 'road_rural' || t === 'road_2lane' || t === 'road_4lane';
+  }
+
   setTool(tool: ToolType): void {
     this.currentTool = tool;
+    // Road subtypes set the roadType
+    if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
+    else if (tool === 'road_2lane') this.currentRoadType = RoadType.TWO_LANE;
+    else if (tool === 'road_4lane') this.currentRoadType = RoadType.FOUR_LANE;
     // Auto-switch overlay when selecting infrastructure tools
     if (tool === 'power') {
       this.setOverlay('power');
@@ -792,7 +807,7 @@ export class Game {
   }
 
   private updatePreviewLine(): void {
-    if (!this.dragStart || this.currentTool !== 'road') {
+    if (!this.dragStart || !this.isRoadTool()) {
       this.clearPreviewLine();
       this.previewCost = null;
       return;

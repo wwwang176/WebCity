@@ -4,7 +4,7 @@ import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 
 const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
-  [RoadType.TWO_LANE]: 0.7,
+  [RoadType.TWO_LANE]: 0.6,
   [RoadType.FOUR_LANE]: 0.85,
   [RoadType.SIX_LANE]: 0.95,
   [RoadType.HIGHWAY]: 0.95,
