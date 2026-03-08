@@ -60,10 +60,42 @@ export class RoadRenderer {
   }
 
   private buildRoadSurface(scene: THREE.Scene, cells: RoadCell[]): void {
-    // Full-width road surface — adjacent cells connect seamlessly
+    // Two-strip method: each cell emits 1-2 strips of constant width w
+    // so intersections are just overlapping strips, not full-cell fill
+    type Strip = { x: number; z: number; sx: number; sz: number; roadType: number };
+    const strips: Strip[] = [];
+
+    for (const r of cells) {
+      const w = ROAD_WIDTHS[r.roadType] ?? 0.7;
+      const half = w / 2;
+
+      const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+      const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
+      const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+      const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
+      const hasVert = hasN || hasS;
+      const hasHoriz = hasE || hasW;
+
+      // Vertical (N-S) strip — always w wide in X
+      if (hasVert || !hasHoriz) {
+        const zMin = hasN ? -0.5 : -half;
+        const zMax = hasS ? 0.5 : half;
+        strips.push({ x: r.x, z: r.y + (zMin + zMax) / 2, sx: w, sz: zMax - zMin, roadType: r.roadType });
+      }
+
+      // Horizontal (E-W) strip — always w wide in Z
+      if (hasHoriz) {
+        const xMin = hasW ? -0.5 : -half;
+        const xMax = hasE ? 0.5 : half;
+        strips.push({ x: r.x + (xMin + xMax) / 2, z: r.y, sx: xMax - xMin, sz: w, roadType: r.roadType });
+      }
+    }
+
+    if (strips.length === 0) return;
+
     const geometry = new THREE.BoxGeometry(1, 0.05, 1);
     const material = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
-    const count = Math.min(cells.length, this.maxRoads);
+    const count = Math.min(strips.length, this.maxRoads * 2);
     this.roadMesh = new THREE.InstancedMesh(geometry, material, count);
     this.roadMesh.receiveShadow = true;
     this.roadMesh.frustumCulled = false;
@@ -72,35 +104,14 @@ export class RoadRenderer {
     const color = new THREE.Color();
 
     for (let i = 0; i < count; i++) {
-      const r = cells[i]!;
-      const w = ROAD_WIDTHS[r.roadType] ?? 0.7;
-      const connections = countBits(r.roadFlags);
+      const s = strips[i]!;
 
-      const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
-      const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
-      const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
-      const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
-
-      // Compute asymmetric road extents — extend only toward connected directions
-      let xMin = -w / 2, xMax = w / 2, zMin = -w / 2, zMax = w / 2;
-      if (hasW) xMin = -0.5;
-      if (hasE) xMax = 0.5;
-      if (hasN) zMin = -0.5;
-      if (hasS) zMax = 0.5;
-      // L-bend and intersection: fill full cell to avoid corner gaps
-      if (connections >= 3 || (connections === 2 && ((hasN || hasS) && (hasE || hasW)))) {
-        xMin = -0.5; xMax = 0.5; zMin = -0.5; zMax = 0.5;
-      }
-
-      let sx = xMax - xMin, sz = zMax - zMin;
-      const cx = (xMin + xMax) / 2, cz = (zMin + zMax) / 2;
-
-      matrix.makeScale(sx, 1, sz);
-      matrix.setPosition(r.x + cx, ROAD_Y, r.y + cz);
+      matrix.makeScale(s.sx, 1, s.sz);
+      matrix.setPosition(s.x, ROAD_Y, s.z);
       this.roadMesh.setMatrixAt(i, matrix);
 
       // Asphalt color varies by road type
-      const cfg = ROAD_CONFIGS[r.roadType as keyof typeof ROAD_CONFIGS];
+      const cfg = ROAD_CONFIGS[s.roadType as keyof typeof ROAD_CONFIGS];
       const base = cfg ? Math.max(0.18, 0.30 - cfg.lanes * 0.02) : 0.25;
       color.setRGB(base, base, base + 0.01);
       this.roadMesh.setColorAt(i, color);
@@ -160,8 +171,11 @@ export class RoadRenderer {
   }
 
   private buildLaneMarkings(scene: THREE.Scene, cells: RoadCell[]): void {
-    // Dashed center lines for straight road segments (skip cells adjacent to intersections)
-    type Marking = { x: number; z: number; rotY: number };
+    // Lane markings differ by road type:
+    // RURAL: no markings
+    // TWO_LANE: dashed center line
+    // FOUR_LANE: 3 lines (left lane divider + center line + right lane divider)
+    type Marking = { x: number; z: number; rotY: number; offsetPerp: number };
     const markings: Marking[] = [];
 
     // Build set of intersection positions to check neighbors
@@ -173,6 +187,9 @@ export class RoadRenderer {
     }
 
     for (const r of cells) {
+      // Skip RURAL roads — no lane markings
+      if (r.roadType === RoadType.RURAL) continue;
+
       const connections = countBits(r.roadFlags);
       if (connections !== 2) continue;
 
@@ -181,22 +198,35 @@ export class RoadRenderer {
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
       const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-      // Only straight segments (N+S or E+W) — 4 dashes per cell (uniform 0.15 gaps)
-      // Only skip outermost dash facing intersection (crosswalk overlap); keep inner dash near stop line
+      const isFourLane = r.roadType === RoadType.FOUR_LANE || r.roadType === RoadType.SIX_LANE;
+      const w = ROAD_WIDTHS[r.roadType] ?? 0.7;
+      // For FOUR_LANE: lane offsets at +/- quarter-width from center
+      const laneOffset = w / 4;
+
+      // Perpendicular offsets for the lines we want to draw
+      // TWO_LANE: [0] (center only)
+      // FOUR_LANE: [-laneOffset, 0, +laneOffset] (left divider, center, right divider)
+      const offsets = isFourLane ? [-laneOffset, 0, laneOffset] : [0];
+
+      // Only straight segments (N+S or E+W) — 4 dashes per cell
       if (hasN && hasS) {
         const intN = intersections.has(`${r.x},${r.y - 1}`);
         const intS = intersections.has(`${r.x},${r.y + 1}`);
-        if (!intN) markings.push({ x: r.x, z: r.y - 0.375, rotY: 0 });
-        markings.push({ x: r.x, z: r.y - 0.125, rotY: 0 });
-        markings.push({ x: r.x, z: r.y + 0.125, rotY: 0 });
-        if (!intS) markings.push({ x: r.x, z: r.y + 0.375, rotY: 0 });
+        for (const off of offsets) {
+          if (!intN) markings.push({ x: r.x, z: r.y - 0.375, rotY: 0, offsetPerp: off });
+          markings.push({ x: r.x, z: r.y - 0.125, rotY: 0, offsetPerp: off });
+          markings.push({ x: r.x, z: r.y + 0.125, rotY: 0, offsetPerp: off });
+          if (!intS) markings.push({ x: r.x, z: r.y + 0.375, rotY: 0, offsetPerp: off });
+        }
       } else if (hasE && hasW) {
         const intW = intersections.has(`${r.x - 1},${r.y}`);
         const intE = intersections.has(`${r.x + 1},${r.y}`);
-        if (!intW) markings.push({ x: r.x - 0.375, z: r.y, rotY: Math.PI / 2 });
-        markings.push({ x: r.x - 0.125, z: r.y, rotY: Math.PI / 2 });
-        markings.push({ x: r.x + 0.125, z: r.y, rotY: Math.PI / 2 });
-        if (!intE) markings.push({ x: r.x + 0.375, z: r.y, rotY: Math.PI / 2 });
+        for (const off of offsets) {
+          if (!intW) markings.push({ x: r.x - 0.375, z: r.y, rotY: Math.PI / 2, offsetPerp: off });
+          markings.push({ x: r.x - 0.125, z: r.y, rotY: Math.PI / 2, offsetPerp: off });
+          markings.push({ x: r.x + 0.125, z: r.y, rotY: Math.PI / 2, offsetPerp: off });
+          if (!intE) markings.push({ x: r.x + 0.375, z: r.y, rotY: Math.PI / 2, offsetPerp: off });
+        }
       }
     }
 
@@ -205,7 +235,7 @@ export class RoadRenderer {
     // Dashed center line: ~12cm wide, ~1.2m long per dash
     const geo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
     const mat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa });
-    const count = Math.min(markings.length, this.maxRoads);
+    const count = Math.min(markings.length, this.maxRoads * 3);
     this.markingMesh = new THREE.InstancedMesh(geo, mat, count);
     this.markingMesh.frustumCulled = false;
 
@@ -214,7 +244,10 @@ export class RoadRenderer {
 
     for (let i = 0; i < count; i++) {
       const m = markings[i]!;
-      matrix.makeTranslation(m.x, MARKING_Y, m.z);
+      // Apply perpendicular offset: for N-S road (rotY=0), offset is in X; for E-W (rotY=PI/2), offset is in Z
+      const perpX = m.rotY === 0 ? m.offsetPerp : 0;
+      const perpZ = m.rotY !== 0 ? m.offsetPerp : 0;
+      matrix.makeTranslation(m.x + perpX, MARKING_Y, m.z + perpZ);
       if (m.rotY !== 0) {
         rot.makeRotationY(m.rotY);
         matrix.multiply(rot);

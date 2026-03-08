@@ -1,5 +1,6 @@
 import { Game, type ToolType, type SelectedBuilding } from '../Game';
 import { ZoneType } from '../core/grid/types';
+import { RoadType, ROAD_CONFIGS } from '../core/road/types';
 
 interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
 interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[] }
@@ -33,6 +34,13 @@ const ALL_TOOLS: SubTool[] = [
   ...STANDALONE_TOOLS,
   ...ZONE_GROUP.items,
   ...INFRA_GROUP.items,
+];
+
+interface RoadOption { type: RoadType; label: string; icon: string; }
+const ROAD_OPTIONS: RoadOption[] = [
+  { type: RoadType.RURAL, label: 'Rural', icon: '\u{1F6A7}' },
+  { type: RoadType.TWO_LANE, label: '2-Lane', icon: '\u{1F6E3}' },
+  { type: RoadType.FOUR_LANE, label: '4-Lane', icon: '\u{1F6E4}' },
 ];
 
 const STYLES = `
@@ -449,6 +457,41 @@ const STYLES = `
   }
   #mute-btn:hover { color: #c0d0e8; }
   #mute-btn.muted { color: #ef5350; }
+
+  /* ===== Road Type Selector ===== */
+  #road-type-selector {
+    position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+    display: none; gap: 4px; align-items: stretch;
+    background: rgba(8, 12, 28, 0.92);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(100,180,255,0.15);
+    border-radius: 12px; padding: 6px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    animation: subPanelIn 0.15s ease-out;
+    z-index: 15;
+  }
+  #road-type-selector.visible { display: flex; }
+  .rt-btn {
+    pointer-events: auto;
+    background: rgba(25, 35, 60, 0.7);
+    border: 2px solid rgba(100,180,255,0.1);
+    border-radius: 10px; color: #8899b0;
+    padding: 6px 12px; cursor: pointer;
+    font-size: 11px; font-weight: 500;
+    transition: all 0.15s ease;
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+    min-width: 72px;
+  }
+  .rt-btn:hover { background: rgba(40, 55, 90, 0.6); color: #c0d0e8; }
+  .rt-btn.active {
+    background: rgba(40, 70, 130, 0.6);
+    border-color: rgba(66, 165, 245, 0.5);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(66, 165, 245, 0.15);
+  }
+  .rt-btn .rt-icon { font-size: 16px; line-height: 1; }
+  .rt-btn .rt-cost { font-size: 9px; opacity: 0.5; }
 `;
 
 export function createGameUI(game: Game): HTMLElement {
@@ -578,6 +621,17 @@ export function createGameUI(game: Game): HTMLElement {
       </button>
     </div>
 
+    <!-- Road Type Selector -->
+    <div id="road-type-selector">
+      ${ROAD_OPTIONS.map(r => `
+        <button class="rt-btn" data-road-type="${r.type}">
+          <span class="rt-icon">${r.icon}</span>
+          <span>${r.label}</span>
+          <span class="rt-cost">$${ROAD_CONFIGS[r.type].cost}/tile</span>
+        </button>
+      `).join('')}
+    </div>
+
     <!-- Overlay Indicator -->
     <div id="overlay-indicator">
       <span class="oi-label">Overlay:</span>
@@ -701,6 +755,16 @@ export function createGameUI(game: Game): HTMLElement {
       muteBtn.innerHTML = muted ? '&#128264;' : '&#128266;';
     });
   }
+
+  // Road type selector buttons
+  ui.querySelectorAll('.rt-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const roadType = parseInt((btn as HTMLElement).dataset['roadType'] ?? '2', 10) as RoadType;
+      game.currentRoadType = roadType;
+      updateUI();
+    });
+  });
 
   // Tax slider is now inside Economy modal (bound dynamically in updateEconomyPanel)
 
@@ -1120,15 +1184,28 @@ export function createGameUI(game: Game): HTMLElement {
       }
     }
 
+    // Active tool button (standalone + sub-panel items)
+    const currentTool = game.getToolType();
+
     // Tool display (top bar)
     const toolEl = ui.querySelector('#info-tool');
     if (toolEl) {
       const costStr = game.previewCost != null ? ` $${game.previewCost}` : '';
-      toolEl.textContent = `${game.getToolType()}${costStr}`;
+      const roadLabel = currentTool === 'road'
+        ? (ROAD_OPTIONS.find(r => r.type === game.currentRoadType)?.label ?? 'Road')
+        : '';
+      toolEl.textContent = `${game.getToolType()}${roadLabel ? ` (${roadLabel})` : ''}${costStr}`;
     }
 
-    // Active tool button (standalone + sub-panel items)
-    const currentTool = game.getToolType();
+    // Road type selector visibility and active state
+    const roadSelector = ui.querySelector('#road-type-selector') as HTMLElement;
+    if (roadSelector) {
+      roadSelector.classList.toggle('visible', currentTool === 'road');
+      ui.querySelectorAll('.rt-btn').forEach(btn => {
+        const rt = parseInt((btn as HTMLElement).dataset['roadType'] ?? '0', 10);
+        btn.classList.toggle('active', rt === game.currentRoadType);
+      });
+    }
     ui.querySelectorAll('.tb-btn').forEach(btn => {
       const tool = (btn as HTMLElement).dataset['tool'];
       btn.classList.toggle('active', tool === currentTool);

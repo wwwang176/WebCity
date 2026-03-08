@@ -47,16 +47,15 @@ export class SceneManager {
     // Lights
     this.setupLights();
 
-    // Resize handler
+    // Resize handler — preserve current zoom (top/bottom), only adjust aspect ratio (left/right)
     window.addEventListener('resize', () => {
       const w = container.clientWidth;
       const h = container.clientHeight;
       const a = w / h;
-      const fs = 60;
+      const fs = (this.camera.top - this.camera.bottom) || 60;
       this.camera.left = -fs * a / 2;
       this.camera.right = fs * a / 2;
-      this.camera.top = fs / 2;
-      this.camera.bottom = -fs / 2;
+      // Keep top/bottom unchanged to preserve zoom level
       this.camera.updateProjectionMatrix();
       this.renderer.setSize(w, h);
     });
