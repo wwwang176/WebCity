@@ -663,11 +663,21 @@
 - ✅ 零 Console 錯誤
 - ✅ 全部 291 單元測試通過
 
-### 未完成功能
-- ⚠️ 部分進階子系統仍需完善：
-  - District 畫區 UI + 區域政策（BUG-011 殘留）
-  - 車輛路線仍為隨機道路（BUG-036）
-  - 公共交通 UI 未整合
-  - 消防/警察/醫療 dispatch 邏輯未驗證
-  - 災害預警/疏散/連鎖效應未整合（核心破壞邏輯已運作）
-  - 教育系統未整合到遊戲循環
+### 新增已驗證功能（第二十五～二十六輪測試 — Bug 修復 + 程式碼審查驗證）
+**修復 5 個待修 bug（待修清零）：**
+- ✅ **BUG-034** — tickAccumulator 上限（`Math.min(acc, tickInterval*10)`）已確認存在
+- ✅ **BUG-035** — toolbar `flex-wrap: wrap` 已確認存在
+- ✅ **BUG-036** — 車輛從住宅→商業/工業/辦公，fallback 隨機道路（程式碼審查 + 單元測試通過）
+- ✅ **BUG-037** — 建路失敗通知 "Cannot build road: water in the way" 等 5 種原因（程式碼審查確認）
+- ✅ **BUG-040** — toolbar 按鈕 `stopPropagation` 防止 canvas 搶事件（瀏覽器互動驗證 Road/Demolish 點擊正確）
+- ✅ Production Build 968ms 成功
+- ✅ 全部 291 單元測試通過
+
+### 待修 bug 數量：0
+
+### 未整合的進階子系統（有程式碼+單元測試，但無遊戲循環/UI）
+- District 畫區 UI + 區域政策
+- 公共交通 7 系統（Bus/Metro/Rail/Tram/Ferry/Taxi/Airport）
+- 教育系統（educateTick 未被呼叫）
+- 預警/水流/自然資源管理
+- 消防/警察/醫療服務調度
