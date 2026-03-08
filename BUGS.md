@@ -538,5 +538,20 @@
 - 經濟/交通詳細面板（ENHANCE-003）
 - 道路連續渲染（ENHANCE-001）
 
+### 新增已驗證功能（第十七輪測試 — 鍵盤快捷鍵 + 建築面板 + 存檔 + 視窗自適應）
+- ✅ 空格鍵暫停/恢復（Space toggle paused=true/false）
+- ✅ `=`/`+` 加速（1→2→3，正確限制最大 3x）
+- ✅ `-` 減速（3→2→1，正確限制最小 1x）
+- ✅ 建築資訊面板四種區域完整：
+  - Residential: "Small House" Level 1
+  - Commercial: "Small Shop" Level 1
+  - Industrial: "Small Factory" Level 1
+  - Office: "Small Office" Level ★★☆, Workers 15, Tax $30/tick
+- ✅ IndexedDB 存檔驗證（Slot 0: AutoSave 118KB, Slot 1: TestSave 38KB，獨立運作）
+- ✅ 視窗 800×600 自適應（Canvas 正確縮放，工具列換行兩排，面板可讀）
+- ✅ 視窗恢復 1280×800 正常（工具列回到一排）
+- ✅ 零 Console 錯誤
+- ✅ 全部 291 單元測試通過
+
 ### 未完成功能
 - ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）
