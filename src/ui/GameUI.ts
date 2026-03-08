@@ -337,7 +337,11 @@ export function createGameUI(game: Game): HTMLElement {
 
     taxSlider.addEventListener('input', () => {
       const rate = parseInt(taxSlider.value, 10);
-      game.getState().taxRates.residential = rate;
+      const taxes = game.getState().taxRates;
+      taxes.residential = rate;
+      taxes.commercial = rate;
+      taxes.industrial = rate;
+      taxes.office = rate;
       if (taxDisplay) taxDisplay.textContent = `${rate}%`;
     });
   }

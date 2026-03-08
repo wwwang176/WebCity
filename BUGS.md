@@ -390,6 +390,18 @@
 - **嚴重性**: 中 — 視覺上不真實，但不影響核心遊戲邏輯
 - **狀態**: 待修
 
+### 新增已驗證功能（第十一輪測試 — 稅率修復 + 建築升級調查）
+- ✅ 稅率滑桿修復驗證（設 14% → residential/commercial/industrial/office 全部 = 14）
+- ✅ 建築升級未整合確認（SimulationLoop 8 步中缺 buildingUpgrade，已記錄於 BUG-011）
+- ✅ Load Game 第二次點擊正常（首次可能因 Vite HMR 延遲未觸發）
+- ✅ 存檔載入後人口回歸正確值（135，非注入的 500）
+- ✅ 零 Console 錯誤
+
+### BUG-038: 稅率滑桿只影響住宅稅率 ✅ 已修復
+- **位置**: `src/ui/GameUI.ts` 第 340 行
+- **問題**: tax-slider 的 input handler 只更新 `taxRates.residential`，commercial/industrial/office 不受影響
+- **修復**: 同時更新所有四個稅率
+
 ### UI/渲染改進需求
 
 #### ENHANCE-001: 道路渲染改進 — 連續道路外觀
