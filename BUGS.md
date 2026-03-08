@@ -869,3 +869,10 @@
 - ✅ **Road 預覽線** — dragStart 設定後 previewLine 正確建立（場景 +1 子物件），清除時正確移除
 - ✅ **Grid Cursor** — PlaneGeometry 半透明白色 mesh，追蹤滑鼠位置
 - ✅ 零 Console 錯誤（23 條均為 Chrome 擴充套件通訊，非遊戲本身）
+
+### 新增已驗證功能（第四十二輪測試 — Load Game 完整恢復 + 截圖驗證）
+- ✅ **Load Game 存檔列表** — 主選單→Load Game 顯示 6 個存檔（名稱/Slot/日期/大小）
+- ✅ **Load Game 完整恢復** — Slot 5 載入：tick 2207, funds $150,879, pop 95, buildings 46, roads 70
+- ✅ **載入後遊戲繼續運行** — tick 2207→2257, 資金 $150K→$153K（50 tick 正常增長）
+- ✅ **截圖驗證** — 載入後城市視覺完整：道路/建築/水域/地形全部正確渲染
+- ✅ **序列化保真** — taxRates/citizens/grid/clock/budget 全部精確恢復
