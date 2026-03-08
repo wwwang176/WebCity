@@ -589,9 +589,21 @@
 - ✅ 零 Console 錯誤
 - ✅ 全部 291 單元測試通過
 
+### 新增已驗證功能（第二十輪測試 — 災害系統 + Production Build）
+- ✅ **地震災害** — 手動觸發 intensity=70%, radius=10：摧毀 10 棟建築（damage>0.5）
+- ✅ **災害通知** — 畫面上方正確顯示「Earthquake at (25,39)! Intensity: 70%」
+- ✅ **建築摧毀** — buildingId 正確設為 0，渲染即時更新（消失的建築）
+- ✅ **Production Build 成功** — `vite build` 1.14s 完成
+  - Game chunk: 544KB (gzip: 138KB) — 含 Three.js
+  - GameUI chunk: 13KB (gzip: 3.8KB)
+  - index chunk: 25KB (gzip: 7.9KB)
+- ✅ 零 Console 錯誤
+- ✅ 全部 291 單元測試通過
+
 ### 未完成功能
 - ⚠️ 部分進階子系統仍需完善：
   - District 畫區 UI + 區域政策（BUG-011 殘留）
   - 車輛路線仍為隨機道路（BUG-036）
   - 公共交通 UI 未整合
   - 消防/警察/醫療 dispatch 邏輯未驗證
+  - 災害預警/疏散/連鎖效應未整合（核心破壞邏輯已運作）
