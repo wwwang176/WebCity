@@ -112,6 +112,10 @@ export class SceneManager {
     const right = new THREE.Vector3(Math.cos(this.cameraAngle), 0, Math.sin(this.cameraAngle));
     this.cameraTarget.addScaledVector(right, dx);
     this.cameraTarget.addScaledVector(forward, dz);
+    // Clamp camera target to map bounds with small margin
+    const margin = 10;
+    this.cameraTarget.x = Math.max(-margin, Math.min(60 + margin, this.cameraTarget.x));
+    this.cameraTarget.z = Math.max(-margin, Math.min(60 + margin, this.cameraTarget.z));
     this.updateCameraPosition();
   }
 

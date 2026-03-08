@@ -784,3 +784,16 @@
 - ✅ **1000-tick 壓力測試** — 731ms, 零 NaN/Infinity/crash, Pop 81, $136K, Balance +$61/tick
 - ✅ **城市穩定運行** — 建築 53→54, Happiness 58%→53%（微降屬正常波動）
 - ✅ 零 Console 錯誤
+
+### BUG-043: 相機平移無邊界限制 ✅ 已修復
+- **位置**: `src/renderer/SceneManager.ts` — `panCamera()`
+- **問題**: WASD 平移相機無任何邊界限制，可無限飛離地圖（x=-353 等）
+- **修復**: 新增 cameraTarget clamp，限制在 [-10, 70]（地圖 0-60 ± 10 margin）
+
+### 新增已驗證功能（第三十五輪測試 — 音效/相機/春雨/邊界修復）
+- ✅ **音效系統** — AudioManager 運行中（audioContext.state="running"），BGM 播放，muted toggle 正常
+- ✅ **SFX 播放** — playSfx('click') 無錯誤
+- ✅ **BUG-043 修復** — 相機平移現在 clamp 在 [-10, 70]，不會飛出地圖外
+- ✅ **春季雨滴** — isRaining=true, rainSystem 3000 顆粒子，場景活躍
+- ✅ 零 Console 錯誤
+- ✅ 全部 291 單元測試通過
