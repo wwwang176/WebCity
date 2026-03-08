@@ -20,6 +20,7 @@ import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
+import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 
 export type ToolType = 'select' | 'road' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
 
@@ -375,6 +376,9 @@ export class Game {
         // Milestone detection
         this.checkMilestone();
 
+        // Random disaster events (small chance per tick)
+        this.checkRandomDisaster();
+
         // Auto-save
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
           const data = serializeGameState(this.state);
@@ -596,6 +600,46 @@ export class Game {
       this.audioManager.playSfx('milestone');
       this.onUIUpdate?.();
     }
+  }
+
+  private checkRandomDisaster(): void {
+    // ~0.1% chance per tick (roughly once per 1000 ticks / ~4 game months)
+    if (Math.random() > 0.001) return;
+    const pop = this.state.citizens.getPopulation();
+    if (pop < 50) return; // no disasters in tiny cities
+
+    const types = [DisasterType.EARTHQUAKE, DisasterType.TORNADO, DisasterType.FOREST_FIRE];
+    const type = types[Math.floor(Math.random() * types.length)]!;
+    const x = Math.floor(Math.random() * this.state.grid.width);
+    const y = Math.floor(Math.random() * this.state.grid.height);
+    const intensity = 0.3 + Math.random() * 0.5;
+
+    const disaster = createDisaster(type, x, y, intensity);
+
+    // Apply damage to buildings in radius
+    for (let dy = -disaster.radius; dy <= disaster.radius; dy++) {
+      for (let dx = -disaster.radius; dx <= disaster.radius; dx++) {
+        const bx = x + dx;
+        const by = y + dy;
+        const cell = this.state.grid.getCell(bx, by);
+        if (!cell || cell.buildingId === 0) continue;
+        const damage = calculateDamage(disaster, bx, by);
+        if (damage > 0.5) {
+          // Destroy building
+          this.state.grid.setCell(bx, by, { buildingId: 0 });
+        }
+      }
+    }
+
+    // Play disaster sound and show notification
+    this.audioManager.playSfx('disaster');
+    const names: Record<string, string> = {
+      EARTHQUAKE: 'Earthquake', TORNADO: 'Tornado', FOREST_FIRE: 'Forest Fire'
+    };
+    this.notification = `Disaster: ${names[type] ?? type} at (${x},${y})! Intensity: ${Math.round(intensity * 100)}%`;
+    this.notificationTimer = 10;
+    this.renderDirty = true;
+    this.onUIUpdate?.();
   }
 
   getNotification(): string | null {

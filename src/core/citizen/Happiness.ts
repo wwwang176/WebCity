@@ -38,8 +38,11 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
     happiness -= 15;
   }
 
-  // Tax
-  if (factors.taxRate > 15) happiness -= 10;
+  // Tax (graduated penalty for high rates)
+  if (factors.taxRate >= 20) happiness -= 35;
+  else if (factors.taxRate >= 18) happiness -= 25;
+  else if (factors.taxRate >= 15) happiness -= 15;
+  else if (factors.taxRate >= 12) happiness -= 5;
   else if (factors.taxRate < 8) happiness += 5;
 
   // Services

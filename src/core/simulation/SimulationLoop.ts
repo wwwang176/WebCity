@@ -2,6 +2,7 @@ import { type GameState } from './GameState';
 import { tickBudget } from '../economy/Budget';
 import { calculateRCIDemand } from '../economy/RCIDemand';
 import { migrationTick } from '../citizen/Migration';
+import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 
 export class SimulationLoop {
   private state: GameState;
@@ -41,6 +42,9 @@ export class SimulationLoop {
       this.lastAgeYear = currentYear;
       this.state.citizens.ageTick();
     }
+
+    // 5.5. Update citizen happiness based on actual city conditions
+    this.updateCitizenHappiness();
 
     // 6. Migration - citizens move in/out
     this.runMigration();
@@ -113,17 +117,87 @@ export class SimulationLoop {
 
   private runMigration(): void {
     const pop = this.state.citizens.getPopulation();
-    // Empty city is attractive to first settlers; as pop grows, use actual happiness
-    const avgHappiness = pop === 0 ? 70 : Math.max(40, 70 - pop * 0.01);
+    // Use actual average citizen happiness; empty city gets default 70
+    let avgHappiness = 70;
+    if (pop > 0) {
+      let totalHappiness = 0;
+      for (const c of this.state.citizens.citizens) {
+        totalHappiness += c.happiness;
+      }
+      avgHappiness = totalHappiness / pop;
+    }
     const city = {
       jobOpenings: this.countJobOpenings(),
       vacantHomes: this.countVacantHomes(),
       avgHappiness,
       taxRate: this.state.taxRates.residential ?? 9,
-      pollution: 5,
-      crimeRate: 5,
+      pollution: this.getAvgPollution(),
+      crimeRate: this.getAvgCrime(),
     };
     migrationTick(this.state.citizens, city);
+  }
+
+  private updateCitizenHappiness(): void {
+    const taxRate = this.state.taxRates.residential ?? 9;
+    const pop = this.state.citizens.getPopulation();
+    if (pop === 0) return;
+
+    // Calculate employment ratio for the city
+    const totalJobs = this.countTotalJobs();
+    const adultCount = this.state.citizens.citizens.filter(
+      c => c.age > 18 && c.age <= 65
+    ).length;
+    const employmentRate = adultCount > 0 ? Math.min(1, totalJobs / adultCount) : 1;
+    const avgPollution = this.getAvgPollution();
+    const avgCrime = this.getAvgCrime();
+
+    for (const citizen of this.state.citizens.citizens) {
+      const factors: HappinessFactors = {
+        commuteDistance: 10,  // average commute
+        hasPark: false,
+        pollution: avgPollution,
+        noiseLevel: 0,
+        crimeRate: avgCrime,
+        isEmployed: citizen.age <= 18 || citizen.age > 65 || Math.random() < employmentRate,
+        taxRate,
+        serviceCoverage: 2,
+      };
+      citizen.happiness = calculateHappiness(citizen, factors);
+    }
+  }
+
+  private countTotalJobs(): number {
+    let jobs = 0;
+    for (let y = 0; y < this.state.grid.height; y++) {
+      for (let x = 0; x < this.state.grid.width; x++) {
+        const cell = this.state.grid.getCell(x, y);
+        if (cell && cell.buildingId > 0 && cell.zoneType >= 3) {
+          jobs += 5;
+        }
+      }
+    }
+    return jobs;
+  }
+
+  private getAvgPollution(): number {
+    let total = 0;
+    let count = 0;
+    for (let y = 0; y < this.state.grid.height; y++) {
+      for (let x = 0; x < this.state.grid.width; x++) {
+        const cell = this.state.grid.getCell(x, y);
+        if (cell && (cell.buildingId > 0 || cell.zoneType > 0)) {
+          total += cell.pollution;
+          count++;
+        }
+      }
+    }
+    return count > 0 ? total / count : 0;
+  }
+
+  private getAvgCrime(): number {
+    // Crime is not tracked per-cell in the grid; estimate from population density
+    const pop = this.state.citizens.getPopulation();
+    return Math.min(50, pop * 0.02); // low crime at low pop, scales up
   }
 
   private countVacantHomes(): number {

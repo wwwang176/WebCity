@@ -34,6 +34,21 @@ export function createGameUI(game: Game): HTMLElement {
         color: #eee;
         padding: 8px 12px;
       }
+      .panel-toggle {
+        pointer-events: auto;
+        background: none;
+        border: none;
+        color: #888;
+        cursor: pointer;
+        font-size: 10px;
+        float: right;
+        padding: 0 4px;
+        line-height: 1;
+      }
+      .panel-toggle:hover { color: #fff; }
+      .ui-panel.collapsed .panel-body { display: none; }
+      .ui-panel.collapsed { padding: 4px 8px; }
+      .ui-panel.collapsed .panel-toggle { transform: rotate(180deg); }
       #toolbar {
         position: absolute;
         bottom: 20px;
@@ -194,17 +209,28 @@ export function createGameUI(game: Game): HTMLElement {
     </style>
     <div id="notification"></div>
     <div id="info-panel" class="ui-panel">
-      <div id="info-date"></div>
-      <div id="info-funds"></div>
-      <div id="info-pop"></div>
+      <button class="panel-toggle" data-panel="info-panel">&#9660;</button>
+      <div class="panel-body">
+        <div id="info-date"></div>
+        <div id="info-funds"></div>
+        <div id="info-pop"></div>
+      </div>
     </div>
     <div id="stats-panel" class="ui-panel">
-      <div id="stats-income"></div>
-      <div id="stats-tool"></div>
+      <button class="panel-toggle" data-panel="stats-panel">&#9660;</button>
+      <div class="panel-body">
+        <div id="stats-income"></div>
+        <div id="stats-tool"></div>
+        <div id="stats-happiness" style="font-size:12px;color:#aaa;margin-top:2px"></div>
+        <canvas id="stats-chart" width="140" height="60" style="margin-top:4px;border-radius:4px;background:rgba(0,0,0,0.3)"></canvas>
+      </div>
     </div>
     <div id="tax-panel" class="ui-panel">
-      <div class="tax-label">Tax Rate: <span class="tax-value" id="tax-display">9%</span></div>
-      <input type="range" id="tax-slider" min="1" max="20" step="1" value="9">
+      <button class="panel-toggle" data-panel="tax-panel">&#9660;</button>
+      <div class="panel-body">
+        <div class="tax-label">Tax Rate: <span class="tax-value" id="tax-display">9%</span></div>
+        <input type="range" id="tax-slider" min="1" max="20" step="1" value="9">
+      </div>
     </div>
     <div id="toolbar">
       ${TOOL_BUTTONS.map(b => `
@@ -244,6 +270,21 @@ export function createGameUI(game: Game): HTMLElement {
       <button id="mute-btn" title="Toggle Sound">&#128266;</button>
     </div>
   `;
+
+  // Panel collapse/expand toggles
+  ui.querySelectorAll('.panel-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const panelId = (btn as HTMLElement).dataset['panel'];
+      if (panelId) {
+        const panel = ui.querySelector(`#${panelId}`);
+        if (panel) panel.classList.toggle('collapsed');
+      }
+    });
+  });
+
+  // Statistics chart data (rolling history)
+  const chartHistory = { pop: [] as number[], income: [] as number[], happiness: [] as number[] };
+  const CHART_MAX = 50; // Keep last 50 data points
 
   // Tool buttons
   ui.querySelectorAll('.tool-btn').forEach(btn => {
@@ -412,6 +453,67 @@ export function createGameUI(game: Game): HTMLElement {
       if (rciR) rciR.style.height = `${Math.max(5, (rci.residential + 100) / 2)}%`;
       if (rciC) rciC.style.height = `${Math.max(5, (rci.commercial + 100) / 2)}%`;
       if (rciI) rciI.style.height = `${Math.max(5, (rci.industrial + 100) / 2)}%`;
+    }
+
+    // Happiness display
+    const happyEl = ui.querySelector('#stats-happiness') as HTMLElement;
+    if (happyEl) {
+      const citizens = state.citizens.citizens;
+      if (citizens.length > 0) {
+        const avg = Math.round(citizens.reduce((s: number, c: { happiness: number }) => s + c.happiness, 0) / citizens.length);
+        happyEl.textContent = `Happiness: ${avg}%`;
+      } else {
+        happyEl.textContent = 'Happiness: --';
+      }
+    }
+
+    // Statistics chart (population over time)
+    const pop = state.citizens.getPopulation();
+    const income = Math.floor(state.budget.income - state.budget.expenses);
+    const citizens2 = state.citizens.citizens;
+    const avgH = citizens2.length > 0 ? Math.round(citizens2.reduce((s: number, c: { happiness: number }) => s + c.happiness, 0) / citizens2.length) : 50;
+    chartHistory.pop.push(pop);
+    chartHistory.income.push(income);
+    chartHistory.happiness.push(avgH);
+    if (chartHistory.pop.length > CHART_MAX) { chartHistory.pop.shift(); chartHistory.income.shift(); chartHistory.happiness.shift(); }
+
+    const canvas = ui.querySelector('#stats-chart') as HTMLCanvasElement;
+    if (canvas) {
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        const w = canvas.width, h = canvas.height;
+        ctx.clearRect(0, 0, w, h);
+
+        // Draw population line (green)
+        const maxPop = Math.max(10, ...chartHistory.pop);
+        ctx.strokeStyle = '#4caf50';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < chartHistory.pop.length; i++) {
+          const x = (i / (CHART_MAX - 1)) * w;
+          const y = h - (chartHistory.pop[i]! / maxPop) * (h - 4) - 2;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Draw happiness line (yellow)
+        ctx.strokeStyle = '#ffeb3b';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let i = 0; i < chartHistory.happiness.length; i++) {
+          const x = (i / (CHART_MAX - 1)) * w;
+          const y = h - (chartHistory.happiness[i]! / 100) * (h - 4) - 2;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+
+        // Labels
+        ctx.fillStyle = '#4caf50';
+        ctx.font = '8px sans-serif';
+        ctx.fillText(`Pop: ${pop}`, 2, 8);
+        ctx.fillStyle = '#ffeb3b';
+        ctx.fillText(`Happy: ${avgH}%`, 70, 8);
+      }
     }
   }
 
