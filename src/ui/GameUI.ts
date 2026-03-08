@@ -245,6 +245,28 @@ const STYLES = `
     to { transform: translateX(-50%) translateY(0); opacity: 1; }
   }
 
+  /* ===== Overlay Indicator ===== */
+  #overlay-indicator {
+    position: absolute; top: 46px; right: 12px;
+    pointer-events: auto;
+    display: none; align-items: center; gap: 8px;
+    background: rgba(8, 12, 28, 0.88);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(100,180,255,0.15);
+    border-radius: 8px; padding: 6px 10px 6px 14px;
+    color: #b0c4de; font-size: 12px; font-weight: 500;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  }
+  #overlay-indicator.visible { display: flex; }
+  #overlay-indicator .oi-label { opacity: 0.6; }
+  #overlay-indicator .oi-name { color: #e3f2fd; font-weight: 600; }
+  #overlay-close {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 5px; color: #8899b0; cursor: pointer;
+    font-size: 11px; padding: 2px 8px; transition: all 0.15s;
+  }
+  #overlay-close:hover { background: rgba(239,83,80,0.3); color: #ef5350; border-color: rgba(239,83,80,0.4); }
+
   /* ===== Building Panel ===== */
   #building-panel {
     position: absolute; top: 56px; left: 12px;
@@ -556,6 +578,13 @@ export function createGameUI(game: Game): HTMLElement {
       </button>
     </div>
 
+    <!-- Overlay Indicator -->
+    <div id="overlay-indicator">
+      <span class="oi-label">Overlay:</span>
+      <span class="oi-name" id="oi-name"></span>
+      <button id="overlay-close">Close</button>
+    </div>
+
     <!-- Building Panel -->
     <div id="building-panel" class="g-panel">
       <div class="bp-title" id="bp-name"></div>
@@ -633,6 +662,16 @@ export function createGameUI(game: Game): HTMLElement {
       updateUI();
     });
   });
+
+  // Overlay close button
+  const overlayCloseBtn = ui.querySelector('#overlay-close');
+  if (overlayCloseBtn) {
+    overlayCloseBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      game.setOverlay('none');
+      updateUI();
+    });
+  }
 
   // Speed buttons
   ui.querySelectorAll('.sp-btn').forEach(btn => {
@@ -1101,6 +1140,23 @@ export function createGameUI(game: Game): HTMLElement {
     const infraGroupBtn = ui.querySelector('[data-group-toggle="infra"]');
     if (zoneGroupBtn) zoneGroupBtn.classList.toggle('active', zoneTools.has(currentTool));
     if (infraGroupBtn) infraGroupBtn.classList.toggle('active', infraTools.has(currentTool));
+
+    // Overlay indicator
+    const overlayIndicator = ui.querySelector('#overlay-indicator') as HTMLElement;
+    const overlayName = ui.querySelector('#oi-name') as HTMLElement;
+    if (overlayIndicator && overlayName) {
+      const ov = (game as any).overlayRenderer?.getOverlay?.() as string | undefined;
+      if (ov && ov !== 'none') {
+        const names: Record<string, string> = {
+          power: 'Power', water: 'Water', zone: 'Zones',
+          traffic: 'Traffic', pollution: 'Pollution', landValue: 'Land Value',
+        };
+        overlayName.textContent = names[ov] ?? ov;
+        overlayIndicator.classList.add('visible');
+      } else {
+        overlayIndicator.classList.remove('visible');
+      }
+    }
 
     // Speed buttons
     ui.querySelectorAll('.sp-btn').forEach(btn => {
