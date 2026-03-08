@@ -3,7 +3,7 @@ import { SceneManager } from './renderer/SceneManager';
 import { TerrainRenderer } from './renderer/TerrainRenderer';
 import { RoadRenderer } from './renderer/RoadRenderer';
 import { BuildingRenderer } from './renderer/BuildingRenderer';
-import { VehicleRenderer } from './renderer/VehicleRenderer';
+import { VehicleRenderer, type VehicleData } from './renderer/VehicleRenderer';
 import { OverlayRenderer } from './renderer/OverlayRenderer';
 import { GridCursor } from './renderer/GridCursor';
 import { WeatherRenderer } from './renderer/WeatherRenderer';
@@ -383,6 +383,20 @@ export class Game {
 
     // Update cursor color based on tool
     this.updateCursorColor();
+
+    // Update vehicles
+    const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
+      const pos = v.path[v.currentIndex];
+      if (!pos) return null;
+      const [xStr, yStr] = pos.split(',');
+      return {
+        id: v.id,
+        x: Number(xStr),
+        y: Number(yStr),
+        type: 'car' as VehicleData['type'],
+      };
+    }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
+    this.vehicleRenderer.update(vehicleData);
 
     // Animate terrain (water)
     this.terrainRenderer.update(dt);

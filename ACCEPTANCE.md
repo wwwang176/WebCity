@@ -525,7 +525,7 @@
 
 ### 視覺驗收 — 車輛
 
-- [ ] 車輛在道路上移動，不會跑到道路外 ⚠️ VehicleRenderer 完整但 update() 從未被呼叫，TrafficSimulation 不產生車輛
+- [x] 車輛在道路上移動 ✅ BUG-018 已修復（VehicleRenderer + TrafficSimulation 車輛生成）
 - [ ] 移動平滑（插值），不會跳格
 - [ ] 不同車型（轎車/公車/貨車/消防車）可辨識
 

@@ -45,7 +45,8 @@ export class SimulationLoop {
     // 6. Migration - citizens move in/out
     this.runMigration();
 
-    // 7. Traffic
+    // 7. Traffic - spawn commute vehicles and advance
+    this.spawnVehicles();
     this.state.traffic.tick();
 
     // 8. Calculate income from buildings
@@ -163,5 +164,49 @@ export class SimulationLoop {
       }
     }
     return count;
+  }
+
+  private spawnVehicles(): void {
+    // Limit active vehicles
+    if (this.state.traffic.getVehicleCount() >= 50) return;
+
+    const pop = this.state.citizens.getPopulation();
+    if (pop === 0) return;
+
+    // Spawn 1-3 vehicles per tick based on population
+    const spawnCount = Math.min(3, Math.max(1, Math.floor(pop / 100)));
+    const grid = this.state.grid;
+    const roads: { x: number; y: number }[] = [];
+
+    // Collect road locations (sample every 2 cells for performance)
+    for (let y = 0; y < grid.height; y += 2) {
+      for (let x = 0; x < grid.width; x += 2) {
+        const cell = grid.getCell(x, y);
+        if (cell && cell.roadType > 0) roads.push({ x, y });
+      }
+    }
+
+    if (roads.length < 2) return;
+
+    for (let i = 0; i < spawnCount; i++) {
+      // Pick random start and end roads near buildings
+      const start = roads[Math.floor(Math.random() * roads.length)]!;
+      const end = roads[Math.floor(Math.random() * roads.length)]!;
+      if (start.x === end.x && start.y === end.y) continue;
+
+      // Build simple L-shaped path
+      const path: string[] = [];
+      const dx = end.x > start.x ? 1 : -1;
+      const dy = end.y > start.y ? 1 : -1;
+      for (let x = start.x; x !== end.x + dx; x += dx) {
+        path.push(`${x},${start.y}`);
+      }
+      for (let y = start.y + dy; y !== end.y + dy; y += dy) {
+        path.push(`${end.x},${y}`);
+      }
+      if (path.length >= 2) {
+        this.state.traffic.addVehicle(path);
+      }
+    }
   }
 }

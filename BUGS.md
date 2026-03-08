@@ -60,11 +60,11 @@
 - 建路成功 → playSfx('build')，劃區 → playSfx('zone')，拆除 → playSfx('demolish')，Select 點擊 → playSfx('click')
 - GameUI 新增靜音按鈕（toggleMute）
 
-### BUG-018: VehicleRenderer 從未接收車輛資料 — 看不到車輛
-- **位置**: `src/renderer/VehicleRenderer.ts`, `src/core/traffic/TrafficSimulation.ts`
-- **問題**: VehicleRenderer.update() 在遊戲循環中從未被呼叫，TrafficSimulation.vehicles 永遠為空
-- **嚴重性**: 中
-- **狀態**: 待做
+### BUG-018: VehicleRenderer 從未接收車輛資料 — 看不到車輛 ✅ 已修復
+- **修復**:
+  1. SimulationLoop 新增 spawnVehicles()，基於人口在道路上生成通勤車輛（L 型路徑）
+  2. Game.ts update() 新增 vehicleRenderer.update()，將 TrafficSimulation.vehicles 轉換為 VehicleData
+  3. 瀏覽器實測：紅色小方塊在道路上移動
 
 ### BUG-019: 建築資訊面板未實現 — Select 工具點擊無反應 ✅ 已修復
 - **修復**: handleToolAction 新增 'select' case，讀取 grid cell 的 buildingId 並用 getBuildingType() 取得資料
@@ -192,6 +192,9 @@
 - ✅ WASD 平移相機
 
 ### 未完成功能
-- ⚠️ 車輛渲染（BUG-018：VehicleRenderer 未接收資料）
 - ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）
 - ⚠️ 道路預估成本顯示（BUG-022 部分未完成）
+- ⚠️ 稅率滑桿 UI（Phase 17 未實現）
+- ⚠️ 背景音樂（Phase 19 只有音效無 BGM）
+- ⚠️ UI 面板展開/收合
+- ⚠️ 拆除預覽高亮
