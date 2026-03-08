@@ -808,3 +808,22 @@
 - ✅ **快速工具切換** — 50 次連續鍵盤切換 (R/C/I/O/B/D/X)，零錯誤
 - ✅ **Production Build** — `pnpm build` 成功 (1.14s, ~545KB main chunk)
 - ✅ 零 Console 錯誤
+
+### 新增已驗證功能（第三十七輪測試 — 視窗縮放 + UI 面板 + 完整互動驗證）
+- ✅ **視窗縮放響應** — 1920→800x600→400x300→1920 全程 canvas/camera 正確更新，無 NaN
+- ✅ **滾輪縮放累積** — 60→35(zoom in 5x)→85(zoom out 10x)，修復後正確累積
+- ✅ **縮放極限** — min=10, max=200 正確 clamp
+- ✅ **Camera Pan/Rotate API** — panCamera/rotateCamera 正常移動相機
+- ✅ **Camera 邊界 Clamp** — 極端平移後相機被限制在 [-10, 70] 範圍
+- ✅ **速度控制** — pause/1x/2x/3x 切換正常，暫停時 tick 不前進
+- ✅ **UI 即時更新** — Date/Funds/Population/Balance/Happiness 全部正確顯示
+- ✅ **Zone 機制** — 只有道路相鄰格子可劃區（isAdjacentToRoad 驗證正確）
+- ✅ **基礎設施連接** — 電廠/水廠需道路連接才能供電供水，連接後建築立即生長
+- ✅ **建築資訊面板** — Select 工具點擊建築顯示 building-panel（Large House, Level ★★★, Residents 8）
+- ✅ **RCI 指標條** — R(綠100%), C(藍64.75%), I(橙55%) 正確反映需求
+- ✅ **Demolish 功能** — 建築/zone/道路全部清除（buildingId→0, zoneType→0）
+- ✅ **通知系統** — "Cannot build road: insufficient funds" 正確顯示（timer=4s）
+- ✅ **AutoSave** — Slot 0 "AutoSave" 成功寫入 IndexedDB（37KB）
+- ✅ **Loading Screen** — 主選單→New Game 時顯示 "Loading WebCity..." 進度條
+- ✅ 零 Console 錯誤
+- ✅ 全部 291 單元測試通過
