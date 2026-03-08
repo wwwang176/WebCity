@@ -300,6 +300,17 @@ export class Game {
         if (result.success && result.cost) {
           this.state.budget.funds -= result.cost;
           this.audioManager.playSfx('build');
+        } else if (!result.success && result.reason) {
+          const reasonMessages: Record<string, string> = {
+            WATER_TILE: 'water in the way',
+            MOUNTAIN_TILE: 'mountain in the way',
+            BUILDING_EXISTS: 'building in the way',
+            OUT_OF_BOUNDS: 'out of bounds',
+            INSUFFICIENT_FUNDS: 'insufficient funds',
+          };
+          const msg = reasonMessages[result.reason] ?? result.reason;
+          this.notification = `Cannot build road: ${msg}`;
+          this.notificationTimer = 4;
         }
         this.renderDirty = true;
         break;

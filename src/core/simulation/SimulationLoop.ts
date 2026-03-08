@@ -421,20 +421,35 @@ export class SimulationLoop {
     const spawnCount = Math.min(3, Math.max(1, Math.floor(pop / 100)));
     const grid = this.state.grid;
     const roads: { x: number; y: number }[] = [];
+    const residentialCells: { x: number; y: number }[] = [];
+    const workCells: { x: number; y: number }[] = [];
 
-    // Collect all road locations
+    // Collect road locations and building locations by type
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
-        if (cell && cell.roadType > 0) roads.push({ x, y });
+        if (!cell) continue;
+        if (cell.roadType > 0) roads.push({ x, y });
+        if (cell.buildingId > 0) {
+          if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) {
+            residentialCells.push({ x, y });
+          } else if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH ||
+                     cell.zoneType === ZoneType.INDUSTRIAL || cell.zoneType === ZoneType.OFFICE) {
+            workCells.push({ x, y });
+          }
+        }
       }
     }
 
     if (roads.length < 2) return;
 
+    // Use building cells for start/end if available, fallback to random roads
+    const startPool = residentialCells.length > 0 ? residentialCells : roads;
+    const endPool = workCells.length > 0 ? workCells : roads;
+
     for (let i = 0; i < spawnCount; i++) {
-      const start = roads[Math.floor(Math.random() * roads.length)]!;
-      const end = roads[Math.floor(Math.random() * roads.length)]!;
+      const start = startPool[Math.floor(Math.random() * startPool.length)]!;
+      const end = endPool[Math.floor(Math.random() * endPool.length)]!;
       if (start.x === end.x && start.y === end.y) continue;
 
       // BFS along road cells to find path

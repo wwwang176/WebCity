@@ -290,7 +290,8 @@ export function createGameUI(game: Game): HTMLElement {
 
   // Tool buttons
   ui.querySelectorAll('.tool-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const tool = (btn as HTMLElement).dataset['tool'] as ToolType;
       game.setTool(tool);
       updateUI();
