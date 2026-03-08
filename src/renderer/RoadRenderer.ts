@@ -60,15 +60,17 @@ export class RoadRenderer {
   }
 
   private buildRoadSurface(scene: THREE.Scene, cells: RoadCell[]): void {
-    // Two-strip method: each cell emits 1-2 strips of constant width w
-    // so intersections are just overlapping strips, not full-cell fill
+    // Two-strip method: each cell emits 1-2 strips whose width comes from
+    // the neighboring road type in that axis, so mixed intersections (e.g.
+    // 4-lane × 2-lane) naturally become rectangular.
     type Strip = { x: number; z: number; sx: number; sz: number; roadType: number };
     const strips: Strip[] = [];
 
-    for (const r of cells) {
-      const w = ROAD_WIDTHS[r.roadType] ?? 0.7;
-      const half = w / 2;
+    // Lookup map for neighbor road types
+    const cellMap = new Map<string, RoadCell>();
+    for (const c of cells) cellMap.set(`${c.x},${c.y}`, c);
 
+    for (const r of cells) {
       const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
       const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
@@ -76,15 +78,28 @@ export class RoadRenderer {
       const hasVert = hasN || hasS;
       const hasHoriz = hasE || hasW;
 
-      // Vertical (N-S) strip — always w wide in X
+      // Infer per-axis road type from neighbors; fall back to cell's own type
+      const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
+      const nN = hasN ? cellMap.get(`${r.x},${r.y - 1}`) : null;
+      const nS = hasS ? cellMap.get(`${r.x},${r.y + 1}`) : null;
+      const nE = hasE ? cellMap.get(`${r.x + 1},${r.y}`) : null;
+      const nW = hasW ? cellMap.get(`${r.x - 1},${r.y}`) : null;
+      const vertW = ROAD_WIDTHS[(nN ?? nS)?.roadType ?? r.roadType] ?? ownW;
+      const horizW = ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW;
+
+      // Vertical (N-S) strip — width from vertical neighbors
       if (hasVert || !hasHoriz) {
+        const w = hasVert ? vertW : ownW;
+        const half = w / 2;
         const zMin = hasN ? -0.5 : -half;
         const zMax = hasS ? 0.5 : half;
         strips.push({ x: r.x, z: r.y + (zMin + zMax) / 2, sx: w, sz: zMax - zMin, roadType: r.roadType });
       }
 
-      // Horizontal (E-W) strip — always w wide in Z
+      // Horizontal (E-W) strip — width from horizontal neighbors
       if (hasHoriz) {
+        const w = horizW;
+        const half = w / 2;
         const xMin = hasW ? -0.5 : -half;
         const xMax = hasE ? 0.5 : half;
         strips.push({ x: r.x + (xMin + xMax) / 2, z: r.y, sx: xMax - xMin, sz: w, roadType: r.roadType });
@@ -127,25 +142,39 @@ export class RoadRenderer {
     type Strip = { x: number; z: number; sx: number; sz: number };
     const strips: Strip[] = [];
 
+    const cellMap = new Map<string, RoadCell>();
+    for (const c of cells) cellMap.set(`${c.x},${c.y}`, c);
+
     for (const r of cells) {
-      const w = ROAD_WIDTHS[r.roadType] ?? 0.7;
-      const half = w / 2;
       const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
       const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
       const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-      // Connected: extend to 0.5 for seamless join; non-connected: extend to cover corners
-      const cap = half + SIDEWALK_WIDTH / 2;
-      const le = hasW ? 0.5 : cap;
-      const re = hasE ? 0.5 : cap;
-      const te = hasN ? 0.5 : cap;
-      const be = hasS ? 0.5 : cap;
+      // Per-axis width from neighbors (same logic as buildRoadSurface)
+      const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
+      const nN = hasN ? cellMap.get(`${r.x},${r.y - 1}`) : null;
+      const nS = hasS ? cellMap.get(`${r.x},${r.y + 1}`) : null;
+      const nE = hasE ? cellMap.get(`${r.x + 1},${r.y}`) : null;
+      const nW = hasW ? cellMap.get(`${r.x - 1},${r.y}`) : null;
+      const vertW = (hasN || hasS) ? (ROAD_WIDTHS[(nN ?? nS)?.roadType ?? r.roadType] ?? ownW) : ownW;
+      const horizW = (hasE || hasW) ? (ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW) : ownW;
 
-      if (!hasN) strips.push({ x: r.x + (re - le) / 2, z: r.y - half, sx: le + re, sz: SIDEWALK_WIDTH });
-      if (!hasS) strips.push({ x: r.x + (re - le) / 2, z: r.y + half, sx: le + re, sz: SIDEWALK_WIDTH });
-      if (!hasW) strips.push({ x: r.x - half, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be });
-      if (!hasE) strips.push({ x: r.x + half, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be });
+      // N/S sidewalks use horizW (horizontal road width), E/W use vertW
+      const hHalf = horizW / 2;
+      const vHalf = vertW / 2;
+
+      const capH = hHalf + SIDEWALK_WIDTH / 2;
+      const capV = vHalf + SIDEWALK_WIDTH / 2;
+      const le = hasW ? 0.5 : capH;
+      const re = hasE ? 0.5 : capH;
+      const te = hasN ? 0.5 : capV;
+      const be = hasS ? 0.5 : capV;
+
+      if (!hasN) strips.push({ x: r.x + (re - le) / 2, z: r.y - hHalf, sx: le + re, sz: SIDEWALK_WIDTH });
+      if (!hasS) strips.push({ x: r.x + (re - le) / 2, z: r.y + hHalf, sx: le + re, sz: SIDEWALK_WIDTH });
+      if (!hasW) strips.push({ x: r.x - vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be });
+      if (!hasE) strips.push({ x: r.x + vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be });
     }
 
     if (strips.length === 0) return;
