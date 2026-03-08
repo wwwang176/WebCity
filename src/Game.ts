@@ -218,6 +218,8 @@ export class Game {
     }, { passive: false });
 
     window.addEventListener('keydown', (e) => {
+      // Prevent default for F1-F6 (overlay toggles)
+      if (/^f[1-6]$/i.test(e.key)) e.preventDefault();
       this.keys.add(e.key.toLowerCase());
       this.handleKeyDown(e.key.toLowerCase());
     });
@@ -257,6 +259,13 @@ export class Game {
         this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
         this.onUIUpdate?.();
         break;
+      // Overlay toggles
+      case 'f1': this.toggleOverlay('power'); break;
+      case 'f2': this.toggleOverlay('water'); break;
+      case 'f3': this.toggleOverlay('pollution'); break;
+      case 'f4': this.toggleOverlay('landValue'); break;
+      case 'f5': this.toggleOverlay('traffic'); break;
+      case 'f6': this.toggleOverlay('zone'); break;
     }
   }
 
@@ -487,6 +496,15 @@ export class Game {
   setOverlay(type: OverlayType): void {
     const data = this.buildOverlayData(type);
     this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data);
+    this.onUIUpdate?.();
+  }
+
+  private toggleOverlay(type: OverlayType): void {
+    if (this.overlayRenderer.getOverlay() === type) {
+      this.setOverlay('none');
+    } else {
+      this.setOverlay(type);
+    }
   }
 
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
@@ -514,6 +532,22 @@ export class Game {
           case 'traffic': {
             const density = this.state.traffic.getSegmentDensity(key);
             value = density * 20;
+            break;
+          }
+          case 'pollution': {
+            const cell = grid.getCell(x, y);
+            if (cell) value = Math.min(100, cell.pollution * 100 / 255);
+            break;
+          }
+          case 'landValue': {
+            const cell = grid.getCell(x, y);
+            if (cell && cell.buildingId > 0) value = Math.min(100, cell.landValue * 100 / 255);
+            break;
+          }
+          case 'crime': {
+            // Crime is estimated from population density, not per-cell yet
+            const cell = grid.getCell(x, y);
+            if (cell && cell.buildingId > 0) value = 20; // placeholder
             break;
           }
           default:
