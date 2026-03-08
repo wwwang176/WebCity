@@ -852,3 +852,12 @@
 - ✅ **2000-tick 乾淨壓力測試** — 1687ms, 零 NaN, $35K→$142K, Pop 95, 46 棟建築
 - ✅ **交通路段** — 27 個路段有車輛，23 輛活躍
 - ✅ 零 Console 錯誤
+
+### 新增已驗證功能（第四十輪測試 — 3D 渲染、Overlay、鍵盤快捷鍵、截圖驗證）
+- ✅ **3D 場景結構** — 14 子物件：3 燈光 + 10 Mesh + 1 Points 粒子系統
+- ✅ **4 渲染器** — BuildingRenderer/RoadRenderer/TerrainRenderer/WeatherRenderer 全部存在
+- ✅ **鍵盤快捷鍵 100%** — 1-7(工具)/Escape/Delete/Space(暫停)/+-(速度) 全部正確
+- ✅ **Overlay 切換** — power/water/pollution/landValue/traffic/zone 全部 toggle on/off 正確
+- ✅ **截圖視覺驗證** — 等角 3D 視角、綠色地圖、道路(黑方塊)、建築(彩色方塊)、水域(藍)、車輛(紅)
+- ✅ **UI 完整** — 左上資訊面板、右上統計、底部工具欄、RCI 條、速度控制、Tax Rate slider
+- ✅ 零 Console 錯誤
