@@ -351,6 +351,23 @@
 - **嚴重性**: 低 — 僅影響小視窗使用者
 - **狀態**: 待修
 
+### 新增已驗證功能（第十輪測試 — 滑鼠互動 + UI 元件 + 里程碑）
+- ✅ 工具列按鈕點擊切換（Road 按鈕 → Tool: road 正確反映）
+- ✅ 滑鼠拖曳建路（canvas 拖曳 → $3600 扣除 → 16 條新路）
+- ✅ 面板收合/展開（▼ 按鈕切換 → Funds/Pop 隱藏/顯示）
+- ✅ 速度控制按鈕（暫停 paused=true → 3x speed=3 正確）
+- ✅ 稅率滑桿互動（form_input 9%→15% → residential 稅率同步更新）
+- ✅ 稅率影響幸福度（15% → Happiness 64%→50%，恢復 9% 後回升）
+- ✅ 建築資訊面板顯示/隱藏（Select 點建築 → 面板 visible → 點空地 → hidden）
+- ✅ RCI 需求指標條（R/C/I 三色柱狀圖高度反映需求差異）
+- ✅ 統計圖表歷史曲線（黃色 Happiness 曲線，可見加稅跌幅和恢復）
+- ✅ 拆除工具清除建築+區域（buildingId=0, zoneType=0）
+- ✅ Demolish 按鈕高亮紅色 + 預估成本顯示 (Est: $3600)
+- ✅ 靜音按鈕切換（🔊 ↔ 🔇 圖示變化）
+- ✅ 里程碑通知（Pop 500 → "Tiny Town!" + Unlocked: fire_service, police, bus）
+- ✅ 日夜循環視覺效果（深藍夜空）
+- ✅ 零 Console 錯誤
+
 ### BUG-037: 建路遇到水域/山脈時整段靜默失敗
 - **位置**: `src/core/road/RoadBuilder.ts` — `buildRoad()` 第 24-29 行
 - **問題**: buildRoad 預先檢查路徑上所有格子，只要有一格是水域或山脈，整條路（包含有效部分）全部取消，
