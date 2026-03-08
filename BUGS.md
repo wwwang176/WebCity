@@ -626,6 +626,48 @@
 - ✅ **Balance 正確反映** — 拆除工業建築後 Balance $121→$118/tick（稅收減少）
 - ✅ 零 Console 錯誤
 
+### 新增已驗證功能（第二十三輪測試 — 建築面板/Overlay/存檔/子系統分析）
+- ✅ **建築資訊面板 L3** — Large House: Level ★★★, Residents 8, Tax $28/tick, Zone: Residential (Low)
+- ✅ **建築資訊面板 L2** — Medium House: Level ★★☆, Residents 6, Tax $18/tick
+- ✅ **建築資訊面板四種區域完整**:
+  - Commercial L3: Large Shop ★★★
+  - Industrial L2: Medium Factory ★★☆
+  - Office L2: Medium Office ★★☆, Workers 30, Tax $60/tick
+- ✅ **Power Overlay (F1)** — 黃色清晰高亮有電覆蓋區域
+- ✅ **Zone Overlay (F6)** — 多色分區底色清晰顯示（綠/藍/橙/紫）
+- ✅ **Pollution Overlay (F3)** — 工業區 pollution=180，住宅區 pollution=0，數據正確
+- ✅ **Toggle 切換** — 同一 F-key 再按關閉 overlay
+- ✅ **多存檔插槽** — 4 個獨立存檔（Slot 0 AutoSave 34KB, Slot 1 TestSave 37KB, Slot 2 R23-MultiSlotTest, Slot 3 R21-SubsystemTest 35KB）
+- ✅ **Production Build** — `vite build` 1.28s 成功（Game 544KB, GameUI 13KB, index 27KB）
+- ✅ **日夜循環視覺** — 粉紅黃昏 → 淺藍天空，持續正確循環
+- ✅ 零 Console 錯誤
+- ✅ 全部 291 單元測試通過
+
+### 子系統整合狀態總結（第二十三輪分析）
+
+**已整合且運作正常：**
+- Grid, Road, Zone, Building（生長/升級/降級）
+- Citizen（遷入/遷出/老化/死亡/幸福度）
+- Economy（RCI/稅收/預算/地價）
+- Power/Water（BFS 覆蓋）
+- Traffic（車輛生成/移動/密度）
+- Pollution（ground/noise 擴散 + 回寫 grid）
+- Save/Load（IndexedDB 完整序列化）
+- Overlay（6 種 + F1-F6 快捷鍵）
+- Weather（日夜/四季/雨雪粒子）
+- Disaster（地震/龍捲風/森林火災 + 建築破壞）
+- Milestone（6 階段人口門檻通知）
+- Audio（音效 + 背景音樂 + 靜音）
+
+**有程式碼但未整合到遊戲循環（僅單元測試通過）：**
+- District 管理（DistrictManager/PolicyManager/Specialization）— 無 UI
+- 公共交通 7 系統（Bus/Metro/Rail/Tram/Ferry/Taxi/Airport）— 無 GameState/UI
+- 教育系統（educateTick 存在但未被呼叫）— 無 UI
+- 預警系統（WarningSystem）— 無 GameState
+- 水流系統（WaterFlow）— 無 GameState
+- 自然資源管理（NaturalResourceManager）— 無 GameState
+- 消防/警察/醫療服務調度 — 僅里程碑引用，無實作
+
 ### 未完成功能
 - ⚠️ 部分進階子系統仍需完善：
   - District 畫區 UI + 區域政策（BUG-011 殘留）
@@ -633,3 +675,4 @@
   - 公共交通 UI 未整合
   - 消防/警察/醫療 dispatch 邏輯未驗證
   - 災害預警/疏散/連鎖效應未整合（核心破壞邏輯已運作）
+  - 教育系統未整合到遊戲循環
