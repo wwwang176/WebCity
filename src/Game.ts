@@ -10,7 +10,7 @@ import { WeatherRenderer } from './renderer/WeatherRenderer';
 import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
-import { RoadType } from './core/road/types';
+import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, TerrainType } from './core/grid/types';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
@@ -67,6 +67,9 @@ export class Game {
   private previewLine: THREE.Line | null = null;
   private lastMilestoneId: string | null = null;
   private notificationTimer = 0;
+  private vehiclePrevPositions = new Map<number, { x: number; y: number }>();
+  private tickProgress = 0; // 0..1 interpolation between ticks
+  previewCost: number | null = null; // estimated cost during road drag
 
   constructor(container: HTMLElement, loadedState?: GameState) {
     const mapSize = loadedState ? loadedState.grid.width : 60;
@@ -353,9 +356,20 @@ export class Game {
     if (!this.paused) {
       const tickInterval = this.state.clock.getTickInterval() / 1000;
       this.tickAccumulator += dt;
+      this.tickProgress = tickInterval > 0 ? this.tickAccumulator / tickInterval : 1;
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
+        // Snapshot vehicle positions before tick advances them
+        this.vehiclePrevPositions.clear();
+        for (const v of this.state.traffic.vehicles) {
+          const pos = v.path[v.currentIndex];
+          if (pos) {
+            const [px, py] = pos.split(',');
+            this.vehiclePrevPositions.set(v.id, { x: Number(px), y: Number(py) });
+          }
+        }
         this.simLoop.tick();
+        this.tickProgress = 0;
 
         // Milestone detection
         this.checkMilestone();
@@ -384,15 +398,28 @@ export class Game {
     // Update cursor color based on tool
     this.updateCursorColor();
 
-    // Update vehicles
+    // Update vehicles with smooth interpolation
     const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
       const pos = v.path[v.currentIndex];
       if (!pos) return null;
       const [xStr, yStr] = pos.split(',');
+      const targetX = Number(xStr);
+      const targetY = Number(yStr);
+
+      // Interpolate from previous position
+      const prev = this.vehiclePrevPositions.get(v.id);
+      let x = targetX;
+      let y = targetY;
+      if (prev) {
+        const t = Math.min(1, this.tickProgress);
+        x = prev.x + (targetX - prev.x) * t;
+        y = prev.y + (targetY - prev.y) * t;
+      }
+
       return {
         id: v.id,
-        x: Number(xStr),
-        y: Number(yStr),
+        x,
+        y,
         type: 'car' as VehicleData['type'],
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
@@ -428,6 +455,8 @@ export class Game {
       water: 0x03a9f4,
     };
     this.gridCursor.setColor(toolColors[this.currentTool] ?? 0xffffff);
+    // Demolish tool gets higher opacity for red highlight preview
+    this.gridCursor.setOpacity(this.currentTool === 'demolish' ? 0.6 : 0.3);
   }
 
   setTool(tool: ToolType): void {
@@ -505,6 +534,7 @@ export class Game {
   private updatePreviewLine(): void {
     if (!this.dragStart || this.currentTool !== 'road') {
       this.clearPreviewLine();
+      this.previewCost = null;
       return;
     }
     this.clearPreviewLine();
@@ -523,6 +553,12 @@ export class Game {
       points.push(new THREE.Vector3(x2, 0.2, y));
     }
     if (points.length < 2) return;
+
+    // Calculate estimated cost
+    const roadConfig = ROAD_CONFIGS[this.currentRoadType];
+    this.previewCost = points.length * roadConfig.cost;
+    this.onUIUpdate?.();
+
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     const material = new THREE.LineBasicMaterial({ color: 0x4fc3f7, linewidth: 2, transparent: true, opacity: 0.6 });
     this.previewLine = new THREE.Line(geometry, material);

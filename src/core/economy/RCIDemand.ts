@@ -18,10 +18,10 @@ export function calculateRCIDemand(state: RCIState): RCIDemandValues {
     (state.jobOpenings * 2 + 30) - state.residentialSupply
   ));
   const cDemand = Math.min(100, Math.max(-100,
-    (state.population * 0.5) - state.commercialSupply
+    (state.population * 0.5 + 10) - state.commercialSupply
   ));
   const iDemand = Math.min(100, Math.max(-100,
-    (state.commercialSupply * 0.8 + state.exportDemand) - state.industrialSupply
+    (state.commercialSupply * 0.8 + state.exportDemand + 5) - state.industrialSupply
   ));
 
   return { residential: rDemand, commercial: cDemand, industrial: iDemand };

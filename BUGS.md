@@ -102,6 +102,23 @@
 - **問題**: Load Game 按鈕呼叫 `onLoadGame(1)` (slot 1)，但 AutoSaver 存到 slot 0
 - **修復**: 改為 `onLoadGame(0)` — 載入 AutoSave slot
 
+### BUG-026: 空城市商業/工業建築不生長 — 雞生蛋問題 ✅ 已修復
+- **位置**: `src/core/economy/RCIDemand.ts`
+- **問題**: 商業需求 = `population * 0.5 - supply`，人口 0 時需求 0，商業不生長 → 無工作 → 無遷入
+- **修復**: 商業需求加入基礎值 +10，工業需求加入 +5，確保初始階段有少量商業/工業生長
+
+### BUG-027: 拖曳建路無預估成本顯示 ✅ 已修復
+- **位置**: `src/Game.ts` — `updatePreviewLine()`
+- **修復**: 計算預覽路線格數 × 道路單價，顯示在 UI 右上角 `Tool: road (Est: $2200)`
+
+### BUG-028: 拆除工具游標不夠醒目 ✅ 已修復
+- **位置**: `src/Game.ts`, `src/renderer/GridCursor.ts`
+- **修復**: 新增 `setOpacity()` 方法，拆除工具時游標不透明度提高到 0.6（預設 0.3）
+
+### BUG-029: 車輛移動跳格無插值 ✅ 已修復
+- **位置**: `src/Game.ts`
+- **修復**: 追蹤每輛車的前一個位置，渲染時根據 tickProgress 在兩個位置之間線性插值
+
 ### BUG-025: Overlay 覆蓋圖完全透明 — 無實際資料 ✅ 已修復
 - **位置**: `src/Game.ts` — `setOverlay()`
 - **問題**: `setOverlay()` 呼叫 `overlayRenderer.setOverlay()` 時未傳入 `data` 參數，導致所有值為 0，覆蓋圖完全透明不可見

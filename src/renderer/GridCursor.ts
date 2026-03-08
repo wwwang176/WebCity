@@ -41,6 +41,10 @@ export class GridCursor {
     (this.mesh.material as THREE.MeshBasicMaterial).color.set(color);
   }
 
+  setOpacity(opacity: number): void {
+    (this.mesh.material as THREE.MeshBasicMaterial).opacity = opacity;
+  }
+
   dispose(scene: THREE.Scene): void {
     scene.remove(this.mesh);
     this.mesh.geometry.dispose();
