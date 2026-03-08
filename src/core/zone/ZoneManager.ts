@@ -23,7 +23,10 @@ export class ZoneManager {
     const cell = this.grid.getCell(x, y);
     if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
 
-    if (cell.buildingId !== 0) return { success: false, reason: 'BUILDING_EXISTS' };
+    // Skip roads
+    if (cell.roadType !== RoadType.NONE) return { success: false, reason: 'ROAD_EXISTS' };
+    // Skip infrastructure (power=254, water=253)
+    if (cell.buildingId === 254 || cell.buildingId === 253) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
 
     if (!this.isAdjacentToRoad(x, y)) {
       return { success: false, reason: 'NOT_ADJACENT_TO_ROAD' };

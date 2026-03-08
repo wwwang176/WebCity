@@ -26,24 +26,54 @@ export class TrafficSimulation {
     return vehicle;
   }
 
-  tick(): void {
+  /**
+   * @param canAdvance Optional callback to check if a vehicle can move from current to next cell.
+   *                   Used by traffic lights to block vehicles at red lights.
+   */
+  tick(canAdvance?: (current: string, next: string) => boolean): void {
+    // Phase 1: Identify cells with vehicles directly blocked by red lights
+    const waitingAt = new Set<string>();
+    for (const v of this.vehicles) {
+      if (v.arrived || v.currentIndex >= v.path.length - 1) continue;
+      const currentNode = v.path[v.currentIndex]!;
+      const nextNode = v.path[v.currentIndex + 1]!;
+      if (canAdvance && !canAdvance(currentNode, nextNode)) {
+        waitingAt.add(currentNode);
+      }
+    }
+
+    // Phase 2: Cascade — vehicles whose next cell is blocked also wait
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const v of this.vehicles) {
+        if (v.arrived || v.currentIndex >= v.path.length - 1) continue;
+        const currentNode = v.path[v.currentIndex]!;
+        if (waitingAt.has(currentNode)) continue; // already waiting
+        const nextNode = v.path[v.currentIndex + 1]!;
+        if (waitingAt.has(nextNode)) {
+          waitingAt.add(currentNode);
+          changed = true;
+        }
+      }
+    }
+
+    // Phase 3: Move non-waiting vehicles
     for (const v of this.vehicles) {
       if (v.arrived) continue;
 
-      const currentNode = v.path[v.currentIndex];
-      if (currentNode) {
-        this.decrementSegment(currentNode);
-      }
-
       if (v.currentIndex < v.path.length - 1) {
+        const currentNode = v.path[v.currentIndex]!;
+        if (waitingAt.has(currentNode)) continue; // queued behind red light
+
+        this.decrementSegment(currentNode);
         v.currentIndex++;
-        const nextNode = v.path[v.currentIndex];
-        if (nextNode) {
-          this.incrementSegment(nextNode);
-        }
+        this.incrementSegment(v.path[v.currentIndex]!);
       }
 
       if (v.currentIndex >= v.path.length - 1) {
+        const lastNode = v.path[v.currentIndex];
+        if (lastNode) this.decrementSegment(lastNode);
         v.arrived = true;
       }
     }

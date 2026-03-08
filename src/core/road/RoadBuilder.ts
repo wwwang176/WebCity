@@ -1,5 +1,5 @@
 import { Grid } from '../grid/Grid';
-import { TerrainType } from '../grid/types';
+import { TerrainType, ZoneType } from '../grid/types';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, RoadDirection, ROAD_CONFIGS, type BuildRoadResult, type Position } from './types';
 
@@ -20,22 +20,31 @@ export class RoadBuilder {
     const cells = this.getCellsBetween(from, to);
     const config = ROAD_CONFIGS[roadType];
 
-    // Check for water/mountain/buildings
+    // Check for water/mountain/infrastructure
     for (const pos of cells) {
       const cell = this.grid.getCell(pos.x, pos.y);
       if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
       if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
-      if (cell.buildingId !== 0) return { success: false, reason: 'BUILDING_EXISTS' };
+      // Block infrastructure (power=254, water=253) but allow zoned buildings
+      if (cell.buildingId === 254 || cell.buildingId === 253) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
     }
 
     // Check funds
     const totalCost = cells.length * config.cost;
     if (funds < totalCost) return { success: false, reason: 'INSUFFICIENT_FUNDS' };
 
-    // Build road
+    // Build road — clear zoned buildings/zones along the path
     for (let i = 0; i < cells.length; i++) {
       const pos = cells[i]!;
+      const curr = this.grid.getCell(pos.x, pos.y);
+      if (curr && curr.roadType === RoadType.NONE) {
+        // Clear building and zone if present (non-infrastructure)
+        if (curr.buildingId !== 0 || curr.zoneType !== ZoneType.NONE) {
+          this.grid.setCell(pos.x, pos.y, { buildingId: 0, zoneType: ZoneType.NONE });
+        }
+      }
+
       let flags = 0;
 
       // Connect to previous cell

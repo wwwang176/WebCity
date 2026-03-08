@@ -4,13 +4,14 @@ import { TerrainRenderer } from './renderer/TerrainRenderer';
 import { RoadRenderer } from './renderer/RoadRenderer';
 import { BuildingRenderer } from './renderer/BuildingRenderer';
 import { VehicleRenderer, type VehicleData } from './renderer/VehicleRenderer';
+import { TrafficLightRenderer } from './renderer/TrafficLightRenderer';
 import { OverlayRenderer } from './renderer/OverlayRenderer';
 import { GridCursor } from './renderer/GridCursor';
 import { WeatherRenderer } from './renderer/WeatherRenderer';
 import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
-import { RoadType, ROAD_CONFIGS } from './core/road/types';
+import { RoadType, RoadDirection, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, TerrainType } from './core/grid/types';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
@@ -59,6 +60,7 @@ export class Game {
   private roadRenderer: RoadRenderer;
   private buildingRenderer: BuildingRenderer;
   private vehicleRenderer: VehicleRenderer;
+  private trafficLightRenderer: TrafficLightRenderer;
   private overlayRenderer: OverlayRenderer;
   private weatherRenderer: WeatherRenderer;
   private gridCursor: GridCursor;
@@ -123,6 +125,7 @@ export class Game {
     this.roadRenderer = new RoadRenderer();
     this.buildingRenderer = new BuildingRenderer();
     this.vehicleRenderer = new VehicleRenderer();
+    this.trafficLightRenderer = new TrafficLightRenderer();
     this.overlayRenderer = new OverlayRenderer();
 
     this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
@@ -516,6 +519,9 @@ export class Game {
     if (this.renderDirty) {
       this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
       this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
+      // Sync traffic lights with current intersections
+      this.syncTrafficLights();
+      this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
       // Refresh active overlay so it reflects new roads/buildings/coverage
       const currentOverlay = this.overlayRenderer.getOverlay();
       if (currentOverlay && currentOverlay !== 'none') {
@@ -523,6 +529,9 @@ export class Game {
       }
       this.renderDirty = false;
     }
+
+    // Update traffic light colors every frame
+    this.trafficLightRenderer.update(this.state.trafficLights.getLights());
 
     // Update cursor color based on tool
     this.updateCursorColor();
@@ -541,40 +550,47 @@ export class Game {
       let heading = this.vehicleHeadings.get(v.id) ?? 0;
 
       if (prev) {
-        const t = Math.min(1, this.tickProgress);
-
-        // Gather 4 points for Catmull-Rom: P0, P1(=prev), P2(=target), P3
-        const p0raw = v.currentIndex >= 2 ? v.path[v.currentIndex - 2] : null;
-        const p3raw = v.path[v.currentIndex + 1] ?? null;
-
-        let p0x: number, p0y: number, p3x: number, p3y: number;
-        if (p0raw) {
-          const [a, b] = p0raw.split(',');
-          p0x = Number(a); p0y = Number(b);
+        // If vehicle didn't move (e.g. blocked by red light), stay in place
+        if (prev.x === targetX && prev.y === targetY) {
+          x = prev.x;
+          y = prev.y;
+          // Keep existing heading, don't interpolate
         } else {
-          // Extrapolate: mirror prev around itself
-          p0x = prev.x - (targetX - prev.x);
-          p0y = prev.y - (targetY - prev.y);
-        }
-        if (p3raw) {
-          const [a, b] = p3raw.split(',');
-          p3x = Number(a); p3y = Number(b);
-        } else {
-          // Extrapolate: mirror target beyond itself
-          p3x = targetX + (targetX - prev.x);
-          p3y = targetY + (targetY - prev.y);
-        }
+          const t = Math.min(1, this.tickProgress);
 
-        // Catmull-Rom position
-        x = catmullRom(t, p0x, prev.x, targetX, p3x);
-        y = catmullRom(t, p0y, prev.y, targetY, p3y);
+          // Gather 4 points for Catmull-Rom: P0, P1(=prev), P2(=target), P3
+          const p0raw = v.currentIndex >= 2 ? v.path[v.currentIndex - 2] : null;
+          const p3raw = v.path[v.currentIndex + 1] ?? null;
 
-        // Catmull-Rom tangent for smooth heading
-        const dx = catmullRomDeriv(t, p0x, prev.x, targetX, p3x);
-        const dz = catmullRomDeriv(t, p0y, prev.y, targetY, p3y);
-        if (Math.abs(dx) > 0.0001 || Math.abs(dz) > 0.0001) {
-          heading = Math.atan2(-dz, dx);
-          this.vehicleHeadings.set(v.id, heading);
+          let p0x: number, p0y: number, p3x: number, p3y: number;
+          if (p0raw) {
+            const [a, b] = p0raw.split(',');
+            p0x = Number(a); p0y = Number(b);
+          } else {
+            // Extrapolate: mirror prev around itself
+            p0x = prev.x - (targetX - prev.x);
+            p0y = prev.y - (targetY - prev.y);
+          }
+          if (p3raw) {
+            const [a, b] = p3raw.split(',');
+            p3x = Number(a); p3y = Number(b);
+          } else {
+            // Extrapolate: mirror target beyond itself
+            p3x = targetX + (targetX - prev.x);
+            p3y = targetY + (targetY - prev.y);
+          }
+
+          // Catmull-Rom position
+          x = catmullRom(t, p0x, prev.x, targetX, p3x);
+          y = catmullRom(t, p0y, prev.y, targetY, p3y);
+
+          // Catmull-Rom tangent for smooth heading
+          const dx = catmullRomDeriv(t, p0x, prev.x, targetX, p3x);
+          const dz = catmullRomDeriv(t, p0y, prev.y, targetY, p3y);
+          if (Math.abs(dx) > 0.0001 || Math.abs(dz) > 0.0001) {
+            heading = Math.atan2(-dz, dx);
+            this.vehicleHeadings.set(v.id, heading);
+          }
         }
       }
 
@@ -614,6 +630,39 @@ export class Game {
     // Update weather visuals (day/night cycle, rain/snow, seasonal colors)
     const gameSpeed = this.paused ? 0 : this.speed;
     this.weatherRenderer.update(dt, gameSpeed, this.state.clock.getSeason());
+  }
+
+  /** Scan the grid for intersections (3+ road connections) and sync traffic lights */
+  private syncTrafficLights(): void {
+    const grid = this.state.grid;
+    const tls = this.state.trafficLights;
+    const seen = new Set<string>();
+
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (!cell || cell.roadType === 0) continue;
+        let dirs = 0;
+        if (cell.roadFlags & RoadDirection.NORTH) dirs++;
+        if (cell.roadFlags & RoadDirection.SOUTH) dirs++;
+        if (cell.roadFlags & RoadDirection.EAST) dirs++;
+        if (cell.roadFlags & RoadDirection.WEST) dirs++;
+        if (dirs >= 3) {
+          const key = `${x},${y}`;
+          seen.add(key);
+          if (!tls.getLight(x, y)) {
+            tls.addLight(x, y);
+          }
+        }
+      }
+    }
+
+    // Remove lights for intersections that no longer exist
+    for (const light of tls.getLights()) {
+      if (!seen.has(`${light.x},${light.y}`)) {
+        tls.removeLight(light.x, light.y);
+      }
+    }
   }
 
   private updateCursorColor(): void {

@@ -66,7 +66,12 @@ export class SimulationLoop {
 
     // 7. Traffic - spawn commute vehicles and advance
     this.spawnVehicles();
-    this.state.traffic.tick();
+    this.state.trafficLights.tick();
+    this.state.traffic.tick((current, next) => {
+      const [cx, cy] = current.split(',').map(Number);
+      const [nx, ny] = next.split(',').map(Number);
+      return this.state.trafficLights.canPass(cx!, cy!, nx!, ny!);
+    });
 
     // 8. Calculate income from buildings
     this.calculateIncome();

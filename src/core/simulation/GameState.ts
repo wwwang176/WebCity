@@ -2,6 +2,7 @@ import { Grid } from '../grid/Grid';
 import { RoadNetwork } from '../road/RoadNetwork';
 import { CitizenManager } from '../citizen/CitizenManager';
 import { TrafficSimulation } from '../traffic/TrafficSimulation';
+import { TrafficLightSystem } from '../traffic/TrafficLights';
 import { PowerGrid } from '../service/PowerGrid';
 import { WaterNetwork } from '../service/WaterNetwork';
 import { GameClock } from './GameClock';
@@ -17,6 +18,7 @@ export interface GameState {
   roadNetwork: RoadNetwork;
   citizens: CitizenManager;
   traffic: TrafficSimulation;
+  trafficLights: TrafficLightSystem;
   power: PowerGrid;
   water: WaterNetwork;
   clock: GameClock;
@@ -35,6 +37,7 @@ export function createGameState(width = 200, height = 200): GameState {
     roadNetwork: new RoadNetwork(),
     citizens: new CitizenManager(),
     traffic: new TrafficSimulation(),
+    trafficLights: new TrafficLightSystem(),
     power: new PowerGrid(),
     water: new WaterNetwork(),
     clock: new GameClock(),
