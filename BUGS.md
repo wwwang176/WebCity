@@ -988,3 +988,24 @@
 - ✅ **經濟穩定** — Year 2, Funds $96K, Balance +$28/tick, Income $24.66, Expenses $4.60
 - ✅ 零 Console 錯誤
 - ✅ 全部 291 單元測試通過
+
+### 新增已驗證功能（第四十七輪測試 — 存檔載入往返 + 建築降級 + Production Build）
+- ✅ **存檔載入往返完整性** — Slot 99 "E2E Test Save" 重整頁面後載入：
+  - Population: 17（完全匹配）
+  - Funds: $76,007（匹配存檔時 ~$76K）
+  - Buildings: 27, Roads: 46, Zones: 27（全部匹配）
+  - Power: 73 格, Water: 73 格（BUG-045 修復後的正確值）
+  - PowerPlants: 1, WaterPlants: 1（序列化/反序列化正確）
+  - TaxRates: R/C/I/O 各 9%（匹配）
+  - RCI 需求: R=100, C=12.5, I=11.8（活躍需求）
+  - 4 輛車在路上行駛
+- ✅ **存檔列表 UI** — 7 個存檔正確顯示（Slot 0~5 + Slot 99），可滾動，Back 按鈕正常
+- ✅ **建築降級驗證** — 拆除主幹道斷電斷水後：
+  - 電力 73→12 格、水力 73→12 格（22 zone 斷聯）
+  - `shouldDowngrade(2,12, {serviceCov:2})` = true（2 < 3 觸發）
+  - `tryDowngrade` 成功：Medium Shop (id=8, L2) → Small Shop (id=7, L1)
+  - 降級機制完全正確，隨機抽樣（30/3600 格/tick）自然需要多 tick 命中
+- ✅ **道路重建恢復** — 重建幹道後電力/水力立即恢復 73 格
+- ✅ **建築等級正確映射** — L1:21, L2:6, L3:0（使用 BUILDING_TYPES 正確判定，非 ID 範圍）
+- ✅ **Production Build** — 984ms 成功（Game 546KB, GameUI 14KB, index 28KB）
+- ✅ **全部 291 單元測試通過**（28 測試檔）
