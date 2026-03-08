@@ -1,5 +1,4 @@
 import { Game, type ToolType } from '../Game';
-import { type GameState } from '../core/simulation/GameState';
 
 const TOOL_BUTTONS: { tool: ToolType; label: string; key: string; color: string }[] = [
   { tool: 'select', label: 'Select', key: '1', color: '#ffffff' },
@@ -201,7 +200,7 @@ export function createGameUI(game: Game): HTMLElement {
 
     // Date
     const dateEl = ui.querySelector('#info-date');
-    if (dateEl) dateEl.textContent = `Day ${clock.getDay()} | Month ${clock.getMonth() + 1} | Year ${clock.getYear() + 1}`;
+    if (dateEl) dateEl.textContent = `Day ${(clock.getDay() % 30) + 1} | Month ${(clock.getMonth() % 12) + 1} | Year ${clock.getYear() + 1}`;
 
     // Funds
     const fundsEl = ui.querySelector('#info-funds');
@@ -234,6 +233,17 @@ export function createGameUI(game: Game): HTMLElement {
         btn.classList.toggle('active', !game.paused && game.speed === parseInt(speed ?? '1'));
       }
     });
+
+    // RCI bars
+    const rci = state.rciDemand;
+    if (rci) {
+      const rciR = ui.querySelector('#rci-r') as HTMLElement;
+      const rciC = ui.querySelector('#rci-c') as HTMLElement;
+      const rciI = ui.querySelector('#rci-i') as HTMLElement;
+      if (rciR) rciR.style.height = `${Math.max(5, (rci.residential + 100) / 2)}%`;
+      if (rciC) rciC.style.height = `${Math.max(5, (rci.commercial + 100) / 2)}%`;
+      if (rciI) rciI.style.height = `${Math.max(5, (rci.industrial + 100) / 2)}%`;
+    }
   }
 
   game.setOnUIUpdate(updateUI);

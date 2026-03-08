@@ -183,7 +183,7 @@ describe('TramSystem', () => {
   it('should create stops on fixed tracks', () => {
     const tram = new TramSystem();
     const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(5, 0);
+    tram.addStop(5, 0);
     expect(s1.type).toBe(TransportType.TRAM);
     expect(tram.getStops()).toHaveLength(2);
   });

@@ -1,5 +1,5 @@
 import { Grid } from '../grid/Grid';
-import { getBuildingType, getBuildingsForZone, type BuildingType } from './types';
+import { getBuildingType, getBuildingsForZone } from './types';
 
 export interface UpgradeConditions {
   serviceCoverageCount: number;

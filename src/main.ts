@@ -23,6 +23,7 @@ function startGame(): void {
           app.innerHTML = '';
           app.style.display = 'block';
           const game = new Game(app);
+          (window as unknown as Record<string, unknown>).__game = game;
           const ui = createGameUI(game);
           document.body.appendChild(ui);
         });

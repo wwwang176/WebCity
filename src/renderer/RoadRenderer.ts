@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
-import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
+import { RoadType, ROAD_CONFIGS } from '../core/road/types';
 
 const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.3,

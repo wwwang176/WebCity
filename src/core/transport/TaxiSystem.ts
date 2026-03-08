@@ -1,7 +1,6 @@
 import {
   TransportType,
   TransportStop,
-  TransportRoute,
   TransportVehicle,
 } from './types';
 

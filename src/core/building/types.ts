@@ -39,10 +39,14 @@ export const BUILDING_TYPES: BuildingType[] = [
   { id: 13, name: 'Small Factory', zoneType: ZoneType.INDUSTRIAL, density: 'LOW', level: 1, residents: 0, workers: 10, taxRevenue: 20, appearanceId: 300 },
   { id: 14, name: 'Medium Factory', zoneType: ZoneType.INDUSTRIAL, density: 'LOW', level: 2, residents: 0, workers: 20, taxRevenue: 40, appearanceId: 301 },
   { id: 15, name: 'Large Factory', zoneType: ZoneType.INDUSTRIAL, density: 'LOW', level: 3, residents: 0, workers: 40, taxRevenue: 70, appearanceId: 302 },
-  // Office
-  { id: 16, name: 'Small Office', zoneType: ZoneType.OFFICE, density: 'HIGH', level: 1, residents: 0, workers: 30, taxRevenue: 60, appearanceId: 400 },
-  { id: 17, name: 'Medium Office', zoneType: ZoneType.OFFICE, density: 'HIGH', level: 2, residents: 0, workers: 60, taxRevenue: 120, appearanceId: 401 },
-  { id: 18, name: 'Office Tower', zoneType: ZoneType.OFFICE, density: 'HIGH', level: 3, residents: 0, workers: 120, taxRevenue: 220, appearanceId: 402 },
+  // Office Low
+  { id: 16, name: 'Small Office', zoneType: ZoneType.OFFICE, density: 'LOW', level: 1, residents: 0, workers: 15, taxRevenue: 30, appearanceId: 400 },
+  { id: 17, name: 'Medium Office', zoneType: ZoneType.OFFICE, density: 'LOW', level: 2, residents: 0, workers: 30, taxRevenue: 60, appearanceId: 401 },
+  { id: 18, name: 'Large Office', zoneType: ZoneType.OFFICE, density: 'LOW', level: 3, residents: 0, workers: 50, taxRevenue: 100, appearanceId: 402 },
+  // Office High
+  { id: 19, name: 'Office Building', zoneType: ZoneType.OFFICE, density: 'HIGH', level: 1, residents: 0, workers: 40, taxRevenue: 80, appearanceId: 403 },
+  { id: 20, name: 'Office Complex', zoneType: ZoneType.OFFICE, density: 'HIGH', level: 2, residents: 0, workers: 80, taxRevenue: 160, appearanceId: 404 },
+  { id: 21, name: 'Office Tower', zoneType: ZoneType.OFFICE, density: 'HIGH', level: 3, residents: 0, workers: 150, taxRevenue: 280, appearanceId: 405 },
 ];
 
 export function getBuildingType(id: number): BuildingType | undefined {

@@ -7,6 +7,10 @@ import { WaterNetwork } from '../service/WaterNetwork';
 import { GameClock } from './GameClock';
 import { type BudgetState } from '../economy/Budget';
 import { type TaxRates, DEFAULT_TAX_RATES } from '../economy/Tax';
+import { type RCIDemandValues } from '../economy/RCIDemand';
+import { BuildingGrowth } from '../building/BuildingGrowth';
+import { BuildingUpgrade } from '../building/BuildingUpgrade';
+import { PollutionManager } from '../environment/Pollution';
 
 export interface GameState {
   grid: Grid;
@@ -18,11 +22,16 @@ export interface GameState {
   clock: GameClock;
   budget: BudgetState;
   taxRates: TaxRates;
+  rciDemand: RCIDemandValues;
+  buildingGrowth: BuildingGrowth;
+  buildingUpgrade: BuildingUpgrade;
+  pollution: PollutionManager;
 }
 
 export function createGameState(width = 200, height = 200): GameState {
+  const grid = new Grid(width, height);
   return {
-    grid: new Grid(width, height),
+    grid,
     roadNetwork: new RoadNetwork(),
     citizens: new CitizenManager(),
     traffic: new TrafficSimulation(),
@@ -37,5 +46,9 @@ export function createGameState(width = 200, height = 200): GameState {
       loanInterestRate: 0.05,
     },
     taxRates: { ...DEFAULT_TAX_RATES },
+    rciDemand: { residential: 50, commercial: 50, industrial: 50 },
+    buildingGrowth: new BuildingGrowth(grid),
+    buildingUpgrade: new BuildingUpgrade(grid),
+    pollution: new PollutionManager(width, height),
   };
 }

@@ -22,28 +22,40 @@ const ZONE_HEIGHTS: Record<number, { min: number; max: number }> = {
 
 export class BuildingRenderer {
   private instancedMeshes: Map<number, THREE.InstancedMesh> = new Map();
+  private zonePlanes: THREE.InstancedMesh[] = [];
   private readonly maxPerType = 5000;
 
   build(scene: THREE.Scene, grid: Grid): void {
     this.dispose(scene);
 
-    // Collect buildings by zone type
+    // Collect buildings by zone type AND empty zoned cells for zone overlay
     const buildingsByZone = new Map<number, { x: number; y: number; level: number }[]>();
+    const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
 
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
-        if (cell && cell.buildingId > 0 && cell.zoneType !== ZoneType.NONE) {
-          if (!buildingsByZone.has(cell.zoneType)) {
-            buildingsByZone.set(cell.zoneType, []);
+        if (cell && cell.zoneType !== ZoneType.NONE) {
+          if (cell.buildingId > 0) {
+            if (!buildingsByZone.has(cell.zoneType)) {
+              buildingsByZone.set(cell.zoneType, []);
+            }
+            buildingsByZone.get(cell.zoneType)!.push({
+              x, y,
+              level: Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1)),
+            });
+          } else {
+            if (!emptyZonesByType.has(cell.zoneType)) {
+              emptyZonesByType.set(cell.zoneType, []);
+            }
+            emptyZonesByType.get(cell.zoneType)!.push({ x, y });
           }
-          buildingsByZone.get(cell.zoneType)!.push({
-            x, y,
-            level: Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1)),
-          });
         }
       }
     }
+
+    // Render zone ground overlays for empty zoned cells
+    this.buildZoneOverlays(scene, emptyZonesByType);
 
     const matrix = new THREE.Matrix4();
 
@@ -78,6 +90,31 @@ export class BuildingRenderer {
     }
   }
 
+  private buildZoneOverlays(scene: THREE.Scene, emptyZonesByType: Map<number, { x: number; y: number }[]>): void {
+    const matrix = new THREE.Matrix4();
+    for (const [zoneType, cells] of emptyZonesByType) {
+      const color = ZONE_COLORS[zoneType] ?? 0x888888;
+      const count = Math.min(cells.length, this.maxPerType);
+      const geometry = new THREE.PlaneGeometry(0.9, 0.9);
+      geometry.rotateX(-Math.PI / 2);
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+      });
+      const mesh = new THREE.InstancedMesh(geometry, material, count);
+      for (let i = 0; i < count; i++) {
+        const c = cells[i]!;
+        matrix.setPosition(c.x, 0.02, c.y);
+        mesh.setMatrixAt(i, matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      scene.add(mesh);
+      this.zonePlanes.push(mesh);
+    }
+  }
+
   dispose(scene: THREE.Scene): void {
     for (const mesh of this.instancedMeshes.values()) {
       scene.remove(mesh);
@@ -85,5 +122,11 @@ export class BuildingRenderer {
       (mesh.material as THREE.Material).dispose();
     }
     this.instancedMeshes.clear();
+    for (const mesh of this.zonePlanes) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    this.zonePlanes = [];
   }
 }

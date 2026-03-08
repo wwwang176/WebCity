@@ -20,6 +20,27 @@ export class WaterNetwork {
     for (const plant of this.plants) {
       this.bfsWater(grid, plant.x, plant.y);
     }
+    // Extend coverage to zoned cells adjacent to supplied road cells
+    const toAdd: string[] = [];
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    for (const key of this.supplied) {
+      const [px, py] = key.split(',').map(Number);
+      const cell = grid.getCell(px!, py!);
+      if (cell && cell.roadType !== RoadType.NONE) {
+        for (const [dx, dy] of dirs) {
+          const nx = px! + dx!;
+          const ny = py! + dy!;
+          const nkey = `${nx},${ny}`;
+          if (!this.supplied.has(nkey)) {
+            const ncell = grid.getCell(nx, ny);
+            if (ncell && ncell.zoneType !== 0) {
+              toAdd.push(nkey);
+            }
+          }
+        }
+      }
+    }
+    for (const k of toAdd) this.supplied.add(k);
     return this.supplied;
   }
 

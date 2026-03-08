@@ -4,8 +4,8 @@ import { ZoneType } from '../../grid/types';
 import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { ZoneManager } from '../../zone/ZoneManager';
-import { BuildingGrowth, type GrowthConditions } from '../BuildingGrowth';
-import { BuildingUpgrade, type UpgradeConditions } from '../BuildingUpgrade';
+import { BuildingGrowth } from '../BuildingGrowth';
+import { BuildingUpgrade } from '../BuildingUpgrade';
 import { getBuildingType } from '../types';
 
 function setupWithBuilding(): { grid: Grid; upgrade: BuildingUpgrade } {

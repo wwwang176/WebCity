@@ -1,4 +1,4 @@
-import { CellData, DEFAULT_CELL, BYTES_PER_CELL, type Position } from './types';
+import { CellData, BYTES_PER_CELL, type Position } from './types';
 
 export class Grid {
   readonly width: number;

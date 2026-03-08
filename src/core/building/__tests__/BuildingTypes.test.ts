@@ -24,9 +24,12 @@ describe('BuildingTypes', () => {
     expect(b!.workers).toBeGreaterThan(0);
   });
 
-  it('should return office buildings as HIGH density only', () => {
+  it('should return office buildings with both LOW and HIGH density', () => {
     const offices = BUILDING_TYPES.filter((b) => b.zoneType === ZoneType.OFFICE);
-    expect(offices.every((b) => b.density === 'HIGH')).toBe(true);
+    const lowDensity = offices.filter((b) => b.density === 'LOW');
+    const highDensity = offices.filter((b) => b.density === 'HIGH');
+    expect(lowDensity.length).toBeGreaterThan(0);
+    expect(highDensity.length).toBeGreaterThan(0);
   });
 
   it('should find buildings for zone+density+level', () => {

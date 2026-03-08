@@ -49,9 +49,6 @@ export function findPath(
         node = node.parent ? open.get(node.parent) ?? closed.has(node.parent) ? null : null : null;
       }
       // Rebuild path from parents
-      const result: string[] = [];
-      let cur: string | null = to;
-      const parentMap = new Map<string, string | null>();
       // We need to track parents differently
       return rebuildPath(from, to, network, costs);
     }

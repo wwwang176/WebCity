@@ -1,4 +1,3 @@
-import { TransportType, TransportStop } from './types';
 
 export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 

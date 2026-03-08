@@ -29,7 +29,7 @@ describe('ZoneManager', () => {
 
   it('should batch zone a rectangular area', () => {
     const { grid, zone } = setupGridWithRoad();
-    const results = zone.setZoneRect(
+    zone.setZoneRect(
       { x: 5, y: 4 },
       { x: 10, y: 4 },
       ZoneType.COMMERCIAL_LOW,

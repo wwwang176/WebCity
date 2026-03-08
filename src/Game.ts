@@ -135,7 +135,7 @@ export class Game {
     }
   }
 
-  private setupInput(container: HTMLElement): void {
+  private setupInput(_container: HTMLElement): void {
     const canvas = this.sceneManager.getCanvas();
 
     canvas.addEventListener('mousemove', (e) => {
@@ -215,14 +215,18 @@ export class Game {
 
   private handleToolAction(x1: number, y1: number, x2: number, y2: number): void {
     switch (this.currentTool) {
-      case 'road':
-        this.roadBuilder.buildRoad(
+      case 'road': {
+        const result = this.roadBuilder.buildRoad(
           { x: x1, y: y1 }, { x: x2, y: y2 },
           this.currentRoadType,
           this.state.budget.funds,
         );
+        if (result.success && result.cost) {
+          this.state.budget.funds -= result.cost;
+        }
         this.renderDirty = true;
         break;
+      }
       case 'zone_r':
         this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_LOW);
         break;
