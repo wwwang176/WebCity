@@ -54,6 +54,10 @@ export class PowerGrid {
     return this.plants.reduce((sum, p) => sum + p.output, 0);
   }
 
+  getPlants(): readonly PowerPlant[] {
+    return this.plants;
+  }
+
   private bfsPower(grid: Grid, startX: number, startY: number): void {
     const queue: [number, number][] = [[startX, startY]];
     const visited = new Set<string>();

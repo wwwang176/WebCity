@@ -1,6 +1,9 @@
 import { createGameState, type GameState } from '../simulation/GameState';
 import { type CellData, DEFAULT_CELL } from '../grid/types';
 import { type GameSpeed } from '../simulation/GameClock';
+import { type PowerPlant } from '../service/PowerGrid';
+import { type WaterPlant } from '../service/WaterNetwork';
+import { type Citizen } from '../citizen/types';
 
 interface SerializedCell {
   x: number;
@@ -33,6 +36,9 @@ interface SerializedState {
     industrial: number;
     office: number;
   };
+  powerPlants?: PowerPlant[];
+  waterPlants?: WaterPlant[];
+  citizens?: Citizen[];
 }
 
 function isCellDefault(cell: CellData): boolean {
@@ -100,6 +106,9 @@ export function serializeGameState(state: GameState): string {
       industrial: state.taxRates.industrial,
       office: state.taxRates.office,
     },
+    powerPlants: [...state.power.getPlants()],
+    waterPlants: [...state.water.getPlants()],
+    citizens: state.citizens.citizens.map(c => ({ ...c })),
   };
 
   return JSON.stringify(serialized);
@@ -132,6 +141,19 @@ export function deserializeGameState(json: string): GameState {
   state.taxRates.commercial = saved.taxRates.commercial;
   state.taxRates.industrial = saved.taxRates.industrial;
   state.taxRates.office = saved.taxRates.office;
+
+  // Restore power/water plants
+  if (saved.powerPlants) {
+    for (const p of saved.powerPlants) state.power.addPlant(p);
+  }
+  if (saved.waterPlants) {
+    for (const p of saved.waterPlants) state.water.addPlant(p);
+  }
+
+  // Restore citizens
+  if (saved.citizens) {
+    for (const c of saved.citizens) state.citizens.createCitizen(c);
+  }
 
   return state;
 }

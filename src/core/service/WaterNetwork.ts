@@ -52,6 +52,10 @@ export class WaterNetwork {
     return this.plants.reduce((sum, p) => sum + p.output, 0);
   }
 
+  getPlants(): readonly WaterPlant[] {
+    return this.plants;
+  }
+
   private bfsWater(grid: Grid, startX: number, startY: number): void {
     const queue: [number, number][] = [[startX, startY]];
     const visited = new Set<string>();
