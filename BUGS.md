@@ -299,5 +299,38 @@
   3. Deserializer 還原時呼叫 addPlant() 和 createCitizen()
   4. 向下相容：舊存檔缺少這些欄位時使用空陣列
 
+### 新增已驗證功能（第八輪測試 — 實際滑鼠互動 + UI 完整測試）
+- ✅ 滑鼠拖拉建路（left_click_drag：hover → drag → road placed，L 型路 25 格 $5000）
+- ✅ 滑鼠拖拉劃區（Residential 拖拉建 2×3 = 6 格住宅區）
+- ✅ 滑鼠拖拉劃商業區（1 格商業區正確建立）
+- ✅ 滑鼠點擊拆除（hover + click 在 demolish 模式下清除格子）
+- ✅ 鍵盤快捷鍵完整（5→zone_i, 7→demolish 正確切換）
+- ✅ 速度控制按鈕（暫停 paused=true → 3x speed=3 正確設定）
+- ✅ 建築生長完整（18R + 6C + 6I = 30 棟全部建成）
+- ✅ 人口遷入（0→60 居民，幸福度 65%）
+- ✅ 存檔/讀檔 UI 完整循環（save slot 0 → 重整 → Load Game 按鈕 → 城市正確還原）
+- ✅ 讀檔資料完整性（roads:86, zones:r18/c6/i6, buildings:30, powerPlants:1, waterPlants:1, pop:60）
+- ✅ 鏡頭縮放（scroll up = zoom in, scroll down = zoom out）
+- ✅ 稅率滑桿 UI（拖拉 9%→13%，gameState.taxRates.residential = 13 正確同步）
+- ✅ 稅率影響幸福度（13% >= 12% → -5 懲罰 → 幸福度 65%→61%）
+- ✅ 視窗 Resize 自適應（1218x711 → 786x454 → 1266x654，Canvas 正確重設大小，不變形）
+- ✅ 全部 291 單元測試通過（28 測試檔，0 失敗）
+- ✅ 主選單顯示正確（WebCity 標題 + New Game / Load Game + v0.1.0 版本號）
+- ✅ 冬季雪花粒子正確顯示（Month 11-12）
+
+### BUG-034: requestAnimationFrame 非焦點分頁暫停導致 tick 延遲
+- **位置**: `src/Game.ts` — `update()`
+- **問題**: 分頁失去焦點時 rAF 暫停，tickAccumulator 持續累積（最高 475 秒），
+  恢復焦點後只有每幀處理 1 tick，需數分鐘才能追趕完畢
+- **建議修復**: 加入 `tickAccumulator = Math.min(tickAccumulator, tickInterval * 10)` 上限
+- **嚴重性**: 低 — 僅影響非焦點分頁恢復時的體驗
+- **狀態**: 待修
+
+### BUG-035: 小視窗工具列按鈕重疊
+- **位置**: `src/ui/GameUI.ts` — toolbar CSS
+- **問題**: 800x600 視窗下，Office/Demolish 按鈕被速度控制按鈕遮擋
+- **嚴重性**: 低 — 僅影響小視窗使用者
+- **狀態**: 待修
+
 ### 未完成功能
 - ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）

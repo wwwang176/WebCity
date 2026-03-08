@@ -358,6 +358,10 @@ export class Game {
     if (!this.paused) {
       const tickInterval = this.state.clock.getTickInterval() / 1000;
       this.tickAccumulator += dt;
+      // Cap accumulator to prevent massive backlog when tab regains focus
+      if (this.tickAccumulator > tickInterval * 10) {
+        this.tickAccumulator = tickInterval * 10;
+      }
       this.tickProgress = tickInterval > 0 ? this.tickAccumulator / tickInterval : 1;
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
