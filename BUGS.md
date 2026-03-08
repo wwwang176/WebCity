@@ -253,6 +253,24 @@
 - ✅ 災害系統整合（隨機地震/龍捲風/森林火災 + 警報音效 + 通知訊息）
 - ✅ 稅率遞進處罰（>=12%: -5, >=15%: -15, >=18%: -25, >=20%: -35）
 
+### 新增已驗證功能（第七輪測試）
+- ✅ 動態 happiness 系統（BUG-032：通勤距離、服務覆蓋率動態計算 + 市民個體差異）
+- ✅ 存檔保存電廠/水廠/居民（BUG-033：Serializer 完整保存 → 讀檔後電力水力正常）
+- ✅ 水域建路正確阻止（roadType=0, funds 未扣除）
+- ✅ 資金不足建路正確阻止（$100 資金建長路 → 0 路段 + 資金不變）
+- ✅ 拆除後重新劃區正常（buildingId=0, zoneType=0 → 重新劃為商業 zoneType=3）
+- ✅ 極端稅率連鎖反應（20% → 人口 82→0 全部遷出 → 3% → 人口 0→85 恢復）
+- ✅ 負資金穩定性（-$5000 → 100 tick 零 NaN，資金逐漸恢復）
+- ✅ 零人口穩定性（清空市民 → 100 tick 零 crash）
+- ✅ 1000-tick 穩定性壓力測試通過（零 NaN / Infinity / 錯誤）
+- ✅ Save/Load 完整循環（存 82 pop → 重整 → Load → 90 pop + 電力水力正常）
+- ✅ Overlay 覆蓋圖切換（Power/Water/Zone/Traffic/None）
+- ✅ 面板收合/展開 toggle（▼ ↔ ▲ + 內容隱藏/顯示）
+- ✅ 建築資訊面板（Small House, Level ★, Residents 4, Tax $10）
+- ✅ 鍵盤快捷鍵 2=road, ESC=select 正確切換
+- ✅ 日夜循環視覺效果（藍天→橙色黃昏→深藍夜晚）
+- ✅ 零 Console 錯誤
+
 ### BUG-030: 居民滿意度從未更新 — 永遠停在初始值 50 ✅ 已修復
 - **位置**: `src/core/simulation/SimulationLoop.ts`
 - **問題**: `calculateHappiness()` 存在但從未在模擬循環中被呼叫，居民 happiness 永遠是初始值 50
@@ -262,6 +280,24 @@
 - **位置**: `src/core/simulation/SimulationLoop.ts` — `runMigration()`
 - **問題**: `avgHappiness` 使用硬編碼公式 `Math.max(40, 70 - pop * 0.01)` 而非真實居民滿意度
 - **修復**: 改為計算所有居民 happiness 的實際平均值
+
+### BUG-032: 居民 happiness 恆定 50 — 輸入參數全部硬編碼 ✅ 已修復
+- **位置**: `src/core/simulation/SimulationLoop.ts` — `updateCitizenHappiness()`
+- **問題**: commuteDistance=10, serviceCoverage=2, hasPark=false 全部硬編碼，恰好都不觸發任何 happiness 加減分
+- **修復**:
+  1. commuteDistance 基於城市建築密度動態計算：`1 + sqrt(buildingCount) * 0.7`
+  2. serviceCoverage 基於實際電力/水力覆蓋率計算
+  3. 每位居民加入 ±3 隨機通勤抖動，產生差異化 happiness
+
+### BUG-033: 存檔不保存電廠/水廠和居民資料 ✅ 已修復
+- **位置**: `src/core/save/Serializer.ts`
+- **問題**: `SerializedState` 只保存 grid/clock/budget/taxRates，不保存 power.plants/water.plants/citizens
+- **影響**: 讀檔後電廠水廠消失 → 0 電力/水力覆蓋 → 建築不生長 → 城市停擺
+- **修復**:
+  1. PowerGrid/WaterNetwork 新增 `getPlants()` getter
+  2. Serializer 新增 powerPlants、waterPlants、citizens 欄位
+  3. Deserializer 還原時呼叫 addPlant() 和 createCitizen()
+  4. 向下相容：舊存檔缺少這些欄位時使用空陣列
 
 ### 未完成功能
 - ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）
