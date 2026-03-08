@@ -76,27 +76,27 @@ export class RoadRenderer {
       const w = ROAD_WIDTHS[r.roadType] ?? 0.7;
       const connections = countBits(r.roadFlags);
 
-      // For cells with connections, extend to fill gaps
-      let sx = w, sz = w;
       const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
       const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
       const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-      // Extend road surface toward connected neighbors to eliminate seams
-      if (connections >= 1) {
-        if (hasN || hasS) sz = 1.0;
-        if (hasE || hasW) sx = 1.0;
-        // Intersections: fill full cell
-        if (connections >= 3) { sx = 1.0; sz = 1.0; }
-        // L-bend: fill full cell
-        if (connections === 2 && ((hasN || hasS) && (hasE || hasW))) {
-          sx = 1.0; sz = 1.0;
-        }
+      // Compute asymmetric road extents — extend only toward connected directions
+      let xMin = -w / 2, xMax = w / 2, zMin = -w / 2, zMax = w / 2;
+      if (hasW) xMin = -0.5;
+      if (hasE) xMax = 0.5;
+      if (hasN) zMin = -0.5;
+      if (hasS) zMax = 0.5;
+      // L-bend and intersection: fill full cell to avoid corner gaps
+      if (connections >= 3 || (connections === 2 && ((hasN || hasS) && (hasE || hasW)))) {
+        xMin = -0.5; xMax = 0.5; zMin = -0.5; zMax = 0.5;
       }
 
+      let sx = xMax - xMin, sz = zMax - zMin;
+      const cx = (xMin + xMax) / 2, cz = (zMin + zMax) / 2;
+
       matrix.makeScale(sx, 1, sz);
-      matrix.setPosition(r.x, ROAD_Y, r.y);
+      matrix.setPosition(r.x + cx, ROAD_Y, r.y + cz);
       this.roadMesh.setMatrixAt(i, matrix);
 
       // Asphalt color varies by road type
@@ -124,14 +124,17 @@ export class RoadRenderer {
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
       const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-      // North edge — full cell width so adjacent cells connect seamlessly
-      if (!hasN) strips.push({ x: r.x, z: r.y - half, sx: 1, sz: SIDEWALK_WIDTH });
-      // South edge
-      if (!hasS) strips.push({ x: r.x, z: r.y + half, sx: 1, sz: SIDEWALK_WIDTH });
-      // West edge
-      if (!hasW) strips.push({ x: r.x - half, z: r.y, sx: SIDEWALK_WIDTH, sz: 1 });
-      // East edge
-      if (!hasE) strips.push({ x: r.x + half, z: r.y, sx: SIDEWALK_WIDTH, sz: 1 });
+      // Connected: extend to 0.5 for seamless join; non-connected: extend to cover corners
+      const cap = half + SIDEWALK_WIDTH / 2;
+      const le = hasW ? 0.5 : cap;
+      const re = hasE ? 0.5 : cap;
+      const te = hasN ? 0.5 : cap;
+      const be = hasS ? 0.5 : cap;
+
+      if (!hasN) strips.push({ x: r.x + (re - le) / 2, z: r.y - half, sx: le + re, sz: SIDEWALK_WIDTH });
+      if (!hasS) strips.push({ x: r.x + (re - le) / 2, z: r.y + half, sx: le + re, sz: SIDEWALK_WIDTH });
+      if (!hasW) strips.push({ x: r.x - half, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be });
+      if (!hasE) strips.push({ x: r.x + half, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be });
     }
 
     if (strips.length === 0) return;
