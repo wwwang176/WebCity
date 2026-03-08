@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { TrafficSimulation } from '../TrafficSimulation';
+import { TrafficSimulation, getLaneCount } from '../TrafficSimulation';
+import { RoadType } from '../../road/types';
 
 describe('TrafficSimulation', () => {
   it('should add a vehicle with path', () => {
@@ -7,6 +8,21 @@ describe('TrafficSimulation', () => {
     const v = sim.addVehicle(['0,0', '1,0', '2,0']);
     expect(v.pathPos).toBe(0);
     expect(v.arrived).toBe(false);
+  });
+
+  it('should assign lane 0 by default (single lane)', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addVehicle(['0,0', '1,0', '2,0']);
+    expect(v.lane).toBe(0);
+  });
+
+  it('should assign lanes to vehicles on multi-lane roads', () => {
+    const sim = new TrafficSimulation();
+    // Spawn two vehicles with 2 directional lanes
+    const v1 = sim.addVehicle(['0,0', '1,0', '2,0'], 2);
+    const v2 = sim.addVehicle(['0,0', '1,0', '2,0'], 2);
+    // They should be on different lanes (load-balanced)
+    expect(v1.lane).not.toBe(v2.lane);
   });
 
   it('should advance vehicle position each tick', () => {
@@ -38,5 +54,65 @@ describe('TrafficSimulation', () => {
     sim.addVehicle(['0,0', '1,0']);
     sim.tick(); // arrived
     expect(sim.getVehicleCount()).toBe(0);
+  });
+
+  it('should allow vehicles in different lanes to pass each other', () => {
+    const sim = new TrafficSimulation();
+    // Two vehicles on same path but different lanes
+    const v1 = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0'], 2);
+    v1.lane = 0;
+    const v2 = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0'], 2);
+    v2.lane = 1;
+    // Advance v1 ahead
+    v1.pathPos = 2;
+    v2.pathPos = 1.5;
+
+    // Tick — v2 should not be blocked by v1 (different lane)
+    const prevPos = v2.pathPos;
+    sim.tick();
+    expect(v2.pathPos).toBeGreaterThan(prevPos);
+  });
+
+  it('should block vehicles in the same lane', () => {
+    const sim = new TrafficSimulation();
+    // Two vehicles on same path AND same lane
+    const v1 = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0'], 1);
+    v1.lane = 0;
+    const v2 = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0'], 1);
+    v2.lane = 0;
+    // Place them close together
+    v1.pathPos = 1.2;
+    v2.pathPos = 1.0;
+
+    sim.tick();
+    // v2 should move less than full speed due to v1 being close ahead in same lane
+    // The gap between them (0.2 path units) minus vehicle lengths should restrict movement
+    expect(v2.pathPos).toBeLessThan(v1.pathPos);
+  });
+});
+
+describe('getLaneCount', () => {
+  it('should return 1 for RURAL', () => {
+    expect(getLaneCount(RoadType.RURAL)).toBe(1);
+  });
+
+  it('should return 1 for TWO_LANE', () => {
+    expect(getLaneCount(RoadType.TWO_LANE)).toBe(1);
+  });
+
+  it('should return 2 for FOUR_LANE', () => {
+    expect(getLaneCount(RoadType.FOUR_LANE)).toBe(2);
+  });
+
+  it('should return 3 for SIX_LANE', () => {
+    expect(getLaneCount(RoadType.SIX_LANE)).toBe(3);
+  });
+
+  it('should return 2 for HIGHWAY', () => {
+    expect(getLaneCount(RoadType.HIGHWAY)).toBe(2);
+  });
+
+  it('should return 2 for ONE_WAY (all lanes in one direction)', () => {
+    expect(getLaneCount(RoadType.ONE_WAY)).toBe(2);
   });
 });

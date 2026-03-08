@@ -7,10 +7,8 @@ export interface VehicleData {
   y: number;
   heading: number; // radians, 0 = facing +x (east)
   type: 'car' | 'bus' | 'truck' | 'firetruck';
+  laneOffset: number; // lateral offset perpendicular to heading (positive = right of heading)
 }
-
-// Right-hand drive: vehicles drive on the LEFT side of the road
-const LANE_OFFSET = 0.12; // ~1.4m
 
 const CAR_COLORS = [
   0xe53935, 0x1e88e5, 0x43a047, 0xfdd835, 0xf4511e,
@@ -273,9 +271,10 @@ export class VehicleRenderer {
       for (let i = 0; i < count; i++) {
         const v = list[i]!;
 
-        // Right-hand drive lane offset (perpendicular right of heading = left side of road)
-        const offsetX = Math.sin(v.heading) * LANE_OFFSET;
-        const offsetZ = Math.cos(v.heading) * LANE_OFFSET;
+        // Lane offset: perpendicular to heading direction
+        // Positive laneOffset shifts to the right of heading (sin/cos pattern)
+        const offsetX = Math.sin(v.heading) * v.laneOffset;
+        const offsetZ = Math.cos(v.heading) * v.laneOffset;
 
         rotation.makeRotationY(v.heading);
         translation.makeTranslation(v.x + offsetX, 0.025, v.y + offsetZ);

@@ -22,6 +22,17 @@ import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
+import { getLaneCount } from './core/traffic/TrafficSimulation';
+
+/** Road widths matching RoadRenderer (world units per cell). */
+const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
+  [RoadType.RURAL]: 0.5,
+  [RoadType.TWO_LANE]: 0.6,
+  [RoadType.FOUR_LANE]: 0.85,
+  [RoadType.SIX_LANE]: 0.95,
+  [RoadType.HIGHWAY]: 0.95,
+  [RoadType.ONE_WAY]: 0.55,
+};
 
 
 export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
@@ -542,12 +553,16 @@ export class Game {
         this.vehicleTypes.set(v.id, vtype);
       }
 
+      // Compute lane offset based on road type at current cell
+      const laneOffset = this.computeLaneOffset(v.path, interpPos, v.lane);
+
       return {
         id: v.id,
         x,
         y,
         heading,
         type: this.vehicleTypes.get(v.id)!,
+        laneOffset,
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
     this.vehicleRenderer.update(vehicleData);
@@ -635,6 +650,55 @@ export class Game {
       y: y1! + (y2! - y1!) * frac,
       heading: Math.atan2(-(y2! - y1!), x2! - x1!),
     };
+  }
+
+  /**
+   * Compute the lateral offset for a vehicle based on its lane and the road type
+   * at its current position.
+   *
+   * Right-hand drive convention: vehicles drive on the LEFT side of the road.
+   * The returned offset is in the perpendicular-right direction relative to heading,
+   * so positive values shift the vehicle to the right of the travel direction.
+   *
+   * For a bidirectional road with N directional lanes per side:
+   *   - The LEFT half of the road is used (positive offset = toward road center left).
+   *   - Lane 0 is the outermost lane, lane N-1 is closest to center.
+   *   - offset = roadHalfWidth - (lane + 0.5) * laneWidth
+   *     This places lane 0 near the road edge and higher lanes toward center.
+   */
+  private computeLaneOffset(path: string[], pathPos: number, lane: number): number {
+    // Look up road type from the grid at the current path cell
+    const idx = Math.floor(pathPos);
+    const cellKey = path[idx];
+    if (!cellKey) return 0.12; // fallback to default offset
+
+    const [cxs, cys] = cellKey.split(',');
+    const cx = Number(cxs), cy = Number(cys);
+    const cell = this.state.grid.getCell(cx, cy);
+    if (!cell || cell.roadType === RoadType.NONE) return 0.12;
+
+    const roadType = cell.roadType;
+    const roadWidth = ROAD_WIDTHS_FOR_LANES[roadType] ?? 0.6;
+    const dirLanes = getLaneCount(roadType);
+
+    if (dirLanes <= 1) {
+      // Single directional lane (e.g. RURAL, TWO_LANE): fixed offset to left side
+      return roadWidth / 4; // drive on left quarter of road
+    }
+
+    // Multi-lane road: distribute lanes across half the road width
+    // Half-width is the space for one direction of traffic
+    const halfWidth = roadWidth / 2;
+    const laneWidth = halfWidth / dirLanes;
+
+    // Lane 0 = outermost (near edge), lane N-1 = innermost (near center line)
+    // Offset from road center: place in the left half (positive = right of heading = left side of road)
+    // Center of lane i from road edge = (i + 0.5) * laneWidth
+    // Offset from road center = halfWidth - (lane + 0.5) * laneWidth
+    const clampedLane = Math.min(lane, dirLanes - 1);
+    const offset = halfWidth - (clampedLane + 0.5) * laneWidth;
+
+    return offset;
   }
 
   /** Scan the grid for intersections (3+ road connections) and sync traffic lights */
