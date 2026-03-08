@@ -57,6 +57,28 @@ describe('ZoneManager', () => {
     expect(result.success).toBe(true);
   });
 
+  it('should clear building when rezoning to a different zone type', () => {
+    const { grid, zone } = setupGridWithRoad();
+    // Zone as residential and place a house
+    zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
+    grid.setCell(5, 4, { buildingId: 1 }); // Small House (RESIDENTIAL_LOW)
+    // Rezone to commercial
+    const result = zone.setZone(5, 4, ZoneType.COMMERCIAL_LOW);
+    expect(result.success).toBe(true);
+    expect(grid.getCell(5, 4)!.zoneType).toBe(ZoneType.COMMERCIAL_LOW);
+    expect(grid.getCell(5, 4)!.buildingId).toBe(0); // building should be demolished
+  });
+
+  it('should keep building when rezoning to the same zone type', () => {
+    const { grid, zone } = setupGridWithRoad();
+    zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
+    grid.setCell(5, 4, { buildingId: 1 }); // Small House
+    // Re-apply the same zone type
+    const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
+    expect(result.success).toBe(true);
+    expect(grid.getCell(5, 4)!.buildingId).toBe(1); // building should remain
+  });
+
   it('should fail to zone a cell with infrastructure', () => {
     const { grid, zone } = setupGridWithRoad();
     grid.setCell(5, 4, { buildingId: 254 }); // power plant

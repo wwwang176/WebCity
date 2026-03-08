@@ -32,7 +32,12 @@ export class ZoneManager {
       return { success: false, reason: 'NOT_ADJACENT_TO_ROAD' };
     }
 
-    this.grid.setCell(x, y, { zoneType });
+    // If rezoning to a different type and a building exists, demolish it first
+    if (cell.buildingId > 0 && cell.buildingId < 253 && cell.zoneType !== zoneType) {
+      this.grid.setCell(x, y, { zoneType, buildingId: 0 });
+    } else {
+      this.grid.setCell(x, y, { zoneType });
+    }
     return { success: true };
   }
 
