@@ -510,7 +510,7 @@ export class Game {
     this.onUIUpdate?.();
   }
 
-  private toggleOverlay(type: OverlayType): void {
+  toggleOverlay(type: OverlayType): void {
     if (this.overlayRenderer.getOverlay() === type) {
       this.setOverlay('none');
     } else {

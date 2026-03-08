@@ -197,17 +197,7 @@ const STYLES = `
   }
   #building-panel .bp-row span { color: #d0d8e8; font-weight: 500; }
 
-  /* ===== Stats Mini-Chart ===== */
-  #stats-panel {
-    position: absolute; top: 56px; right: 12px;
-    min-width: 180px;
-  }
-  #stats-chart {
-    width: 100%; height: 50px; border-radius: 6px;
-    background: rgba(0,0,0,0.25); margin-top: 4px;
-  }
-
-  /* ===== Tax Slider ===== */
+  /* ===== Tax Slider (in Economy modal) ===== */
   .tax-row {
     display: flex; align-items: center; gap: 8px;
     margin-top: 6px; padding-top: 6px;
@@ -361,6 +351,7 @@ const STYLES = `
     font-size: 11px; transition: all 0.12s;
   }
   .ov-btn:hover { background: rgba(40, 55, 90, 0.8); color: #c0d0e8; }
+  .ov-btn.active { background: rgba(66, 165, 245, 0.25); border-color: rgba(66, 165, 245, 0.6); color: #90caf9; }
 
   /* Mute button */
   #mute-btn {
@@ -410,6 +401,11 @@ export function createGameUI(game: Game): HTMLElement {
           <span class="stat-label">Happiness</span>
           <span class="stat-value" id="info-happy">--</span>
         </div>
+        <div class="top-divider"></div>
+        <div class="top-stat">
+          <span class="stat-label">Tool</span>
+          <span class="stat-value" id="info-tool" style="font-size:12px">select</span>
+        </div>
       </div>
       <div class="top-section">
         <div class="speed-group">
@@ -422,19 +418,6 @@ export function createGameUI(game: Game): HTMLElement {
       </div>
     </div>
 
-    <!-- Stats Panel (right side) -->
-    <div id="stats-panel" class="g-panel">
-      <div class="g-panel-header">
-        <span class="g-panel-title">Statistics</span>
-        <span id="stats-tool" style="font-size:11px;color:#8899b0"></span>
-      </div>
-      <canvas id="stats-chart" width="180" height="50"></canvas>
-      <div class="tax-row">
-        <label>Tax</label>
-        <input type="range" id="tax-slider" min="1" max="20" step="1" value="9">
-        <span class="tax-val" id="tax-display">9%</span>
-      </div>
-    </div>
 
     <!-- Toolbar -->
     <div id="toolbar">
@@ -546,24 +529,7 @@ export function createGameUI(game: Game): HTMLElement {
     });
   }
 
-  // Tax slider
-  const taxSlider = ui.querySelector('#tax-slider') as HTMLInputElement;
-  const taxDisplay = ui.querySelector('#tax-display') as HTMLElement;
-  if (taxSlider) {
-    const initialRate = game.getState().taxRates.residential;
-    taxSlider.value = String(initialRate);
-    if (taxDisplay) taxDisplay.textContent = `${initialRate}%`;
-
-    taxSlider.addEventListener('input', () => {
-      const rate = parseInt(taxSlider.value, 10);
-      const taxes = game.getState().taxRates;
-      taxes.residential = rate;
-      taxes.commercial = rate;
-      taxes.industrial = rate;
-      taxes.office = rate;
-      if (taxDisplay) taxDisplay.textContent = `${rate}%`;
-    });
-  }
+  // Tax slider is now inside Economy modal (bound dynamically in updateEconomyPanel)
 
   // Modal close buttons
   ui.querySelectorAll('.modal-close').forEach(btn => {
@@ -710,6 +676,16 @@ export function createGameUI(game: Game): HTMLElement {
         <tr><td class="td-label">Loan Interest (${(state.budget.loanInterestRate * 100).toFixed(0)}%)</td><td class="td-expense" style="text-align:right">-$${breakdown.loanInterest.toFixed(1)}</td></tr>
       </table>
 
+      <div class="section-title">Tax Rate</div>
+      <div class="tax-row">
+        <label>All Zones</label>
+        <input type="range" id="tax-slider" min="1" max="20" step="1" value="${state.taxRates.residential}">
+        <span class="tax-val" id="tax-display">${state.taxRates.residential}%</span>
+      </div>
+
+      <div class="section-title">City Statistics</div>
+      <canvas class="modal-chart" id="pop-chart" width="480" height="80"></canvas>
+
       <div class="section-title">Economic History</div>
       <canvas class="modal-chart" id="econ-chart" width="480" height="100"></canvas>
 
@@ -724,8 +700,24 @@ export function createGameUI(game: Game): HTMLElement {
       </div>
     `;
 
-    // Draw economy chart
+    // Draw charts
     drawEconChart();
+    drawPopChart();
+
+    // Tax slider
+    const taxSlider = body.querySelector('#tax-slider') as HTMLInputElement;
+    const taxDisplay = body.querySelector('#tax-display') as HTMLElement;
+    if (taxSlider) {
+      taxSlider.addEventListener('input', () => {
+        const rate = parseInt(taxSlider.value, 10);
+        const taxes = game.getState().taxRates;
+        taxes.residential = rate;
+        taxes.commercial = rate;
+        taxes.industrial = rate;
+        taxes.office = rate;
+        if (taxDisplay) taxDisplay.textContent = `${rate}%`;
+      });
+    }
 
     // Loan buttons
     body.querySelector('#loan-take-5k')?.addEventListener('click', () => { game.takeLoan(5000); updateEconomyPanel(); });
@@ -851,15 +843,71 @@ export function createGameUI(game: Game): HTMLElement {
       </div>
     `;
 
-    // Overlay shortcut buttons
-    body.querySelectorAll('.ov-btn').forEach(btn => {
+    // Overlay shortcut buttons — use toggleOverlay so clicking again turns it off
+    const ovBtns = body.querySelectorAll('.ov-btn');
+    ovBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         const overlay = (btn as HTMLElement).dataset['overlay'];
         if (overlay) {
-          game.setOverlay(overlay as Parameters<typeof game.setOverlay>[0]);
+          game.toggleOverlay(overlay as Parameters<typeof game.toggleOverlay>[0]);
+          // Update active state on all overlay buttons
+          ovBtns.forEach(b => b.classList.remove('active'));
+          const current = (game as any).overlayRenderer?.getOverlay?.();
+          if (current && current !== 'none') {
+            const activeBtn = body.querySelector(`.ov-btn[data-overlay="${current}"]`);
+            if (activeBtn) activeBtn.classList.add('active');
+          }
         }
       });
     });
+  }
+
+  function drawPopChart(): void {
+    const canvas = ui.querySelector('#pop-chart') as HTMLCanvasElement;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+
+    if (chartHistory.pop.length < 2) {
+      ctx.fillStyle = '#667a90';
+      ctx.font = '11px sans-serif';
+      ctx.fillText('Collecting data...', w / 2 - 40, h / 2);
+      return;
+    }
+
+    // Population line (green)
+    const maxPop = Math.max(10, ...chartHistory.pop);
+    ctx.strokeStyle = '#66bb6a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < chartHistory.pop.length; i++) {
+      const x = (i / (CHART_MAX - 1)) * w;
+      const y = h - (chartHistory.pop[i]! / maxPop) * (h - 8) - 4;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Happiness line (yellow)
+    ctx.strokeStyle = '#ffd54f';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < chartHistory.happiness.length; i++) {
+      const x = (i / (CHART_MAX - 1)) * w;
+      const y = h - (chartHistory.happiness[i]! / 100) * (h - 8) - 4;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+
+    // Labels
+    ctx.font = '9px sans-serif';
+    ctx.fillStyle = '#66bb6a';
+    const pop = chartHistory.pop[chartHistory.pop.length - 1] ?? 0;
+    ctx.fillText(`Pop: ${pop}`, 4, 10);
+    ctx.fillStyle = '#ffd54f';
+    const happy = chartHistory.happiness[chartHistory.happiness.length - 1] ?? 0;
+    ctx.fillText(`Happy: ${happy}%`, 80, 10);
   }
 
   // ===== Main UI Update =====
@@ -899,10 +947,10 @@ export function createGameUI(game: Game): HTMLElement {
       }
     }
 
-    // Tool display
-    const toolEl = ui.querySelector('#stats-tool');
+    // Tool display (top bar)
+    const toolEl = ui.querySelector('#info-tool');
     if (toolEl) {
-      const costStr = game.previewCost != null ? ` Est: $${game.previewCost}` : '';
+      const costStr = game.previewCost != null ? ` $${game.previewCost}` : '';
       toolEl.textContent = `${game.getToolType()}${costStr}`;
     }
 
@@ -937,15 +985,6 @@ export function createGameUI(game: Game): HTMLElement {
       }
     }
 
-    // Tax slider sync
-    const taxSliderEl = ui.querySelector('#tax-slider') as HTMLInputElement;
-    const taxDisplayEl = ui.querySelector('#tax-display') as HTMLElement;
-    if (taxSliderEl && taxDisplayEl) {
-      const currentRate = state.taxRates.residential;
-      taxSliderEl.value = String(currentRate);
-      taxDisplayEl.textContent = `${currentRate}%`;
-    }
-
     // RCI bars
     const rci = state.rciDemand;
     if (rci) {
@@ -957,7 +996,7 @@ export function createGameUI(game: Game): HTMLElement {
       if (rciI) rciI.style.height = `${Math.max(5, (rci.industrial + 100) / 2)}%`;
     }
 
-    // Statistics chart
+    // Collect history data for charts
     const pop = state.citizens.getPopulation();
     const citizens2 = state.citizens.citizens;
     const avgH = citizens2.length > 0 ? Math.round(citizens2.reduce((s: number, c: { happiness: number }) => s + c.happiness, 0) / citizens2.length) : 50;
@@ -971,51 +1010,10 @@ export function createGameUI(game: Game): HTMLElement {
     econHistory.expenses.push(state.budget.expenses);
     if (econHistory.funds.length > ECON_MAX) { econHistory.funds.shift(); econHistory.income.shift(); econHistory.expenses.shift(); }
 
-    const canvas = ui.querySelector('#stats-chart') as HTMLCanvasElement;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        const w = canvas.width, h = canvas.height;
-        ctx.clearRect(0, 0, w, h);
-
-        // Population line (green)
-        const maxPop = Math.max(10, ...chartHistory.pop);
-        ctx.strokeStyle = '#66bb6a';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        for (let i = 0; i < chartHistory.pop.length; i++) {
-          const x = (i / (CHART_MAX - 1)) * w;
-          const y = h - (chartHistory.pop[i]! / maxPop) * (h - 6) - 3;
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        // Happiness line (yellow)
-        ctx.strokeStyle = '#ffd54f';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        for (let i = 0; i < chartHistory.happiness.length; i++) {
-          const x = (i / (CHART_MAX - 1)) * w;
-          const y = h - (chartHistory.happiness[i]! / 100) * (h - 6) - 3;
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.stroke();
-
-        // Labels
-        ctx.font = '8px sans-serif';
-        ctx.fillStyle = '#66bb6a';
-        ctx.fillText(`Pop: ${pop}`, 2, 8);
-        ctx.fillStyle = '#ffd54f';
-        ctx.fillText(`Happy: ${avgH}%`, 80, 8);
-      }
-    }
-
-    // Update open modals
+    // Only update canvas charts if modals are open (no innerHTML rebuild)
     if (ui.querySelector('#economy-modal')?.classList.contains('visible')) {
-      updateEconomyPanel();
-    }
-    if (ui.querySelector('#traffic-modal')?.classList.contains('visible')) {
-      updateTrafficPanel();
+      drawEconChart();
+      drawPopChart();
     }
   }
 
