@@ -124,14 +124,14 @@ export class RoadRenderer {
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
       const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-      // North edge (z - half)
-      if (!hasN) strips.push({ x: r.x, z: r.y - half, sx: w + SIDEWALK_WIDTH * 2, sz: SIDEWALK_WIDTH });
-      // South edge (z + half)
-      if (!hasS) strips.push({ x: r.x, z: r.y + half, sx: w + SIDEWALK_WIDTH * 2, sz: SIDEWALK_WIDTH });
-      // West edge (x - half)
-      if (!hasW) strips.push({ x: r.x - half, z: r.y, sx: SIDEWALK_WIDTH, sz: w + SIDEWALK_WIDTH * 2 });
-      // East edge (x + half)
-      if (!hasE) strips.push({ x: r.x + half, z: r.y, sx: SIDEWALK_WIDTH, sz: w + SIDEWALK_WIDTH * 2 });
+      // North edge — full cell width so adjacent cells connect seamlessly
+      if (!hasN) strips.push({ x: r.x, z: r.y - half, sx: 1, sz: SIDEWALK_WIDTH });
+      // South edge
+      if (!hasS) strips.push({ x: r.x, z: r.y + half, sx: 1, sz: SIDEWALK_WIDTH });
+      // West edge
+      if (!hasW) strips.push({ x: r.x - half, z: r.y, sx: SIDEWALK_WIDTH, sz: 1 });
+      // East edge
+      if (!hasE) strips.push({ x: r.x + half, z: r.y, sx: SIDEWALK_WIDTH, sz: 1 });
     }
 
     if (strips.length === 0) return;
