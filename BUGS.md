@@ -739,3 +739,40 @@
 - 教育系統（educateTick 未被呼叫）
 - 預警/水流/自然資源管理
 - 消防/警察/醫療服務調度
+
+### 新增已驗證功能（第三十二輪測試 — 天氣/季節/升級/自動存檔/圖表）
+- ✅ **日夜循環視覺驗證** — 手動設定 timeOfDay 比較：
+  - 午夜(0.0): 天空 #0a0a2e(深藍), ambient=0.15, directional=0, 場景明顯變暗
+  - 正午(0.5): 天空 #87ceeb(淺藍), ambient=0.6, directional=0.8, 場景明亮
+  - 日落(0.7): 天空 #d1643f(橙紅), ambient=0.19, directional=0.08, 暖色過渡
+  - 夜晚(0.75+): 天空 #0a0a2e, 全暗
+- ✅ **冬季雪花粒子視覺** — 設定 GameClock.tick→冬季月份：
+  - season='winter', isSnowing=true, snowSystem 3000 顆粒子在場景中飄落
+  - 季節 overlay: #eeeeff(白藍) opacity=0.15
+  - 截圖清晰可見白色雪花粒子遍布場景
+- ✅ **滿意度歷史圖表** — stats-chart canvas(140×60) 在右側面板中正確渲染：
+  - 藍色線：人口(Pop: 7)
+  - 黃/綠色線：滿意度(Happy: 59%)
+  - 兩條線有歷史數據，隨時間變化
+- ✅ **自動存檔驗證** — IndexedDB 確認：
+  - Slot 0: "AutoSave", 24KB, 時間戳最近
+  - 另有 4 個獨立存檔(Slot 1-4)，互不干擾
+- ✅ **建築升級 L1→L2→L3 驗證** — 20 棟建築等級分布：
+  - L1: 0 棟（全部已升級）
+  - L2: 19 棟（Medium House×10, Medium Factory×6, Medium Shop×3）
+  - L3: 1 棟（Large House）
+  - 建築資訊面板正確顯示：Large House, Level ★★★, Residents 8, Tax $28/tick, Zone Residential (Low)
+
+### 新增已驗證功能（第三十三輪測試 — 四季完整 + Save/Load UI + 小修復）
+- ✅ **四季視覺完整驗證**：
+  - Spring: overlay #90ee90(淺綠) 5%, rain
+  - Summer: overlay #228b22(深綠) 3%, 無降水
+  - Autumn: overlay #cc7722(橙棕) 8%, rain
+  - Winter: overlay #eeeeff(白藍) 15%, snow
+- ✅ **主選單 Load Game UI** — 5 個存檔列表可滾動，顯示名稱/Slot/日期/大小
+- ✅ **Back 按鈕** — 從存檔列表回到主選單
+- ✅ **AutoSave 載入** — 點擊 Slot 0 → 城市完整還原（Pop 7, $78K, Month 11/Year 3）
+- ✅ **BUG-042 修復** — 存檔名稱為 undefined 時顯示 "Unnamed"（MainMenu.ts `s.name || 'Unnamed'`）
+- ✅ 零 Console 錯誤（頁面載入 + Load Game 全程無 error）
+- ✅ 全部 291 單元測試通過
+- ✅ Production Build 953ms 成功

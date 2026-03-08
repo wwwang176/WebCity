@@ -136,7 +136,7 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
             const dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
             const sizeKB = Math.round(s.data.length / 1024);
             return `<div class="save-slot" data-slot="${s.id}">
-              <div class="save-name">${s.name} (Slot ${s.id})</div>
+              <div class="save-name">${s.name || 'Unnamed'} (Slot ${s.id})</div>
               <div class="save-date">${dateStr} — ${sizeKB}KB</div>
             </div>`;
           }).join('') + '<button class="menu-btn" id="btn-back" style="margin-top:8px">Back</button>';
