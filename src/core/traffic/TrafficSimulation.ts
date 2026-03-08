@@ -1,3 +1,5 @@
+import { RoadType, ROAD_CONFIGS } from '../road/types';
+
 export interface Vehicle {
   id: number;
   path: string[];
@@ -5,6 +7,7 @@ export interface Vehicle {
   speed: number;
   length: number;  // vehicle body length in world units
   arrived: boolean;
+  lane: number;    // assigned lane (0-based), used for lateral offset on multi-lane roads
 }
 
 /** Vehicle lengths matching renderer model sizes */
@@ -14,6 +17,17 @@ const VEHICLE_LENGTHS = [
   { weight: 0.10, length: 0.32 },  // truck
   { weight: 0.05, length: 0.34 },  // firetruck
 ];
+
+/** Get the number of directional lanes for a road type (lanes going one way). */
+export function getLaneCount(roadType: number): number {
+  const config = ROAD_CONFIGS[roadType as RoadType];
+  if (!config || config.lanes === 0) return 1;
+  // ROAD_CONFIGS.lanes is total lanes (both directions).
+  // For bidirectional roads, directional lanes = total / 2.
+  // ONE_WAY roads use all lanes in one direction.
+  if (roadType === RoadType.ONE_WAY) return config.lanes;
+  return Math.max(1, Math.floor(config.lanes / 2));
+}
 
 /**
  * Continuous traffic simulation — grid-free movement.
@@ -30,7 +44,12 @@ export class TrafficSimulation {
   private static readonly MIN_GAP = 0.15;    // min distance between vehicles
   private static readonly STOP_OFFSET = 0.25; // align vehicle front with stop line (0.25 from cell center)
 
-  addVehicle(path: string[]): Vehicle {
+  /**
+   * Add a vehicle to the simulation.
+   * @param path cell keys along the route
+   * @param totalDirectionalLanes number of lanes going in the vehicle's direction (default 1)
+   */
+  addVehicle(path: string[], totalDirectionalLanes = 1): Vehicle {
     // Pick random vehicle length based on weighted distribution
     let len = 0.22;
     const roll = Math.random();
@@ -40,6 +59,30 @@ export class TrafficSimulation {
       if (roll < cumulative) { len = entry.length; break; }
     }
 
+    // Assign lane: pick the lane with fewest vehicles for load-balancing
+    const lanes = Math.max(1, totalDirectionalLanes);
+    let lane = 0;
+    if (lanes > 1) {
+      // Count vehicles per lane on the same starting cell
+      const startCell = path[0];
+      const laneCounts = new Array(lanes).fill(0) as number[];
+      for (const v of this.vehicles) {
+        if (v.arrived) continue;
+        const vCell = v.path[Math.floor(v.pathPos)];
+        if (vCell === startCell && v.lane < lanes) {
+          laneCounts[v.lane]!++;
+        }
+      }
+      // Pick lane with minimum count (random tiebreak)
+      let minCount = laneCounts[0]!;
+      for (let i = 1; i < lanes; i++) {
+        if (laneCounts[i]! < minCount) {
+          minCount = laneCounts[i]!;
+          lane = i;
+        }
+      }
+    }
+
     const vehicle: Vehicle = {
       id: this.nextId++,
       path,
@@ -47,6 +90,7 @@ export class TrafficSimulation {
       speed: TrafficSimulation.SPEED,
       length: len,
       arrived: false,
+      lane,
     };
     this.vehicles.push(vehicle);
     return vehicle;
@@ -55,14 +99,14 @@ export class TrafficSimulation {
   tick(canAdvance?: (current: string, next: string) => boolean): void {
     const { MIN_GAP, STOP_OFFSET } = TrafficSimulation;
 
-    // Pre-compute world positions, heading vectors, and lengths for all vehicles
-    const info = new Map<number, { x: number; y: number; hx: number; hy: number; len: number }>();
+    // Pre-compute world positions, heading vectors, lengths, and lane for all vehicles
+    const info = new Map<number, { x: number; y: number; hx: number; hy: number; len: number; lane: number }>();
     for (const v of this.vehicles) {
       if (v.arrived) continue;
       const pos = this.getVehiclePosition(v);
       if (!pos) continue;
       const h = this.headingVec(v);
-      info.set(v.id, { x: pos.x, y: pos.y, hx: h.hx, hy: h.hy, len: v.length });
+      info.set(v.id, { x: pos.x, y: pos.y, hx: h.hx, hy: h.hy, len: v.length, lane: v.lane });
     }
 
     for (const v of this.vehicles) {
@@ -70,10 +114,14 @@ export class TrafficSimulation {
       const me = info.get(v.id);
       if (!me) continue;
 
-      // ── 1. Clearance to nearest vehicle ahead (world-space, same direction) ──
+      // ── 1. Clearance to nearest vehicle ahead (world-space, same direction, same lane) ──
       let gap = Infinity; // actual gap between vehicle bodies
       for (const [otherId, other] of info) {
         if (otherId === v.id) continue;
+
+        // Only check vehicles in the same lane — different lanes can pass freely
+        if (other.lane !== me.lane) continue;
+
         const dx = other.x - me.x;
         const dy = other.y - me.y;
         const dist = Math.sqrt(dx * dx + dy * dy);

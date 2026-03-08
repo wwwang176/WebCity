@@ -5,6 +5,7 @@ import { migrationTick } from '../citizen/Migration';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue } from '../economy/LandValue';
 import { ZoneType } from '../grid/types';
+import { getLaneCount } from '../traffic/TrafficSimulation';
 
 export class SimulationLoop {
   private state: GameState;
@@ -475,7 +476,10 @@ export class SimulationLoop {
       // BFS along road cells to find path
       const path = this.bfsRoadPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
-        this.state.traffic.addVehicle(path);
+        // Determine lane count from the road type at the start of the path
+        const startCell = grid.getCell(startRoad.x, startRoad.y);
+        const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
+        this.state.traffic.addVehicle(path, directionalLanes);
       }
     }
   }
