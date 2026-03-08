@@ -12,9 +12,8 @@ const ROAD_WIDTHS: Record<number, number> = {
 };
 
 const SIDEWALK_WIDTH = 0.14;
-const SIDEWALK_HEIGHT = 0.04;
 const ROAD_Y = 0.025;
-const SIDEWALK_Y = 0.05;
+const SIDEWALK_Y = 0.028;
 const MARKING_Y = 0.052;
 
 interface RoadCell {
@@ -137,7 +136,8 @@ export class RoadRenderer {
 
     if (strips.length === 0) return;
 
-    const geo = new THREE.BoxGeometry(1, SIDEWALK_HEIGHT, 1);
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.rotateX(-Math.PI / 2); // lay flat
     const mat = new THREE.MeshLambertMaterial({ color: 0x707070 });
     const count = Math.min(strips.length, this.maxRoads * 4);
     this.sidewalkMesh = new THREE.InstancedMesh(geo, mat, count);
