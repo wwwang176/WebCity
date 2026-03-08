@@ -452,8 +452,14 @@ export class SimulationLoop {
       const end = endPool[Math.floor(Math.random() * endPool.length)]!;
       if (start.x === end.x && start.y === end.y) continue;
 
+      // Find adjacent road cells for start/end (buildings aren't roads)
+      const startRoad = this.findAdjacentRoad(start.x, start.y, grid);
+      const endRoad = this.findAdjacentRoad(end.x, end.y, grid);
+      if (!startRoad || !endRoad) continue;
+      if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
+
       // BFS along road cells to find path
-      const path = this.bfsRoadPath(start, end, grid);
+      const path = this.bfsRoadPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
         this.state.traffic.addVehicle(path);
       }
@@ -499,5 +505,24 @@ export class SimulationLoop {
     }
 
     return null; // No path found
+  }
+
+  private findAdjacentRoad(
+    x: number,
+    y: number,
+    grid: { getCell(x: number, y: number): { roadType: number } | null },
+  ): { x: number; y: number } | null {
+    // If the cell itself is a road, use it directly
+    const self = grid.getCell(x, y);
+    if (self && self.roadType > 0) return { x, y };
+    // Otherwise find an adjacent road cell
+    const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    for (const [dx, dy] of dirs) {
+      const nx = x + dx!;
+      const ny = y + dy!;
+      const cell = grid.getCell(nx, ny);
+      if (cell && cell.roadType > 0) return { x: nx, y: ny };
+    }
+    return null;
   }
 }

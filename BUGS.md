@@ -673,6 +673,21 @@
 - ✅ Production Build 968ms 成功
 - ✅ 全部 291 單元測試通過
 
+### 新增已驗證功能（第二十七輪測試 — 視覺驗證 + BUG-041 發現修復）
+**視覺驗證成功：**
+- ✅ **BUG-037** 瀏覽器視覺確認 — 水面建路顯示 "Cannot build road: water in the way"，山丘顯示 "mountain in the way"
+- ✅ 鍵盤快捷鍵 1-7 工具切換全部正常（Select/Road/Residential/Commercial/Industrial/Office/Demolish）
+- ✅ 暫停/3x速度切換正常（暫停→tick停止，3x→tick速度×3）
+- ✅ 存檔/讀檔完整流程正常（IndexedDB 多 slot，Load Game 列表顯示正確，讀取後狀態還原）
+- ✅ 建築生長 + 電力水力 BFS 傳播正常
+
+**新 BUG 發現並修復：**
+- ✅ **BUG-041** — `bfsRoadPath` 終點是建築 cell 而非 road cell，導致 BFS 永遠找不到路徑，車輛生成為 0
+  - 原因：BUG-036 修復後 start/end 改用建築 cell，但 BFS 只沿 road cell 搜索
+  - 修復：新增 `findAdjacentRoad()` 方法，將建築 cell 映射到鄰近道路 cell 再進行 BFS
+  - 驗證：修復後車輛正常從住宅道路→工商業道路行駛，路徑長度合理
+- ✅ 全部 291 單元測試通過
+
 ### 待修 bug 數量：0
 
 ### 未整合的進階子系統（有程式碼+單元測試，但無遊戲循環/UI）
