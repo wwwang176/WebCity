@@ -80,7 +80,7 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
 
   menu.querySelector('#btn-load-game')!.addEventListener('click', () => {
     menu.remove();
-    onLoadGame(1); // Default slot 1
+    onLoadGame(0); // AutoSave slot
   });
 
   return menu;

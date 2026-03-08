@@ -5,6 +5,7 @@ import { migrationTick } from '../citizen/Migration';
 
 export class SimulationLoop {
   private state: GameState;
+  private lastAgeYear = -1;
 
   constructor(state: GameState) {
     this.state = state;
@@ -34,8 +35,12 @@ export class SimulationLoop {
     // 4. Building growth - try to grow on random empty zoned cells
     this.tryBuildingGrowth();
 
-    // 5. Citizens aging
-    this.state.citizens.ageTick();
+    // 5. Citizens aging (once per game year)
+    const currentYear = this.state.clock.getYear();
+    if (currentYear !== this.lastAgeYear) {
+      this.lastAgeYear = currentYear;
+      this.state.citizens.ageTick();
+    }
 
     // 6. Migration - citizens move in/out
     this.runMigration();

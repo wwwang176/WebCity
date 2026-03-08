@@ -19,6 +19,7 @@ import { getBuildingType, type BuildingType } from './core/building/types';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
+import { getMilestone } from './core/milestone/Milestone';
 
 export type ToolType = 'select' | 'road' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
 
@@ -59,9 +60,13 @@ export class Game {
   paused = false;
   speed = 1;
   selectedBuilding: SelectedBuilding | null = null;
+  notification: string | null = null;
   private dragStart: { x: number; y: number } | null = null;
   private keys = new Set<string>();
   private onUIUpdate: (() => void) | null = null;
+  private previewLine: THREE.Line | null = null;
+  private lastMilestoneId: string | null = null;
+  private notificationTimer = 0;
 
   constructor(container: HTMLElement, loadedState?: GameState) {
     const mapSize = loadedState ? loadedState.grid.width : 60;
@@ -177,6 +182,7 @@ export class Game {
       this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
       this.raycaster.setFromCamera(this.mouse, this.sceneManager.camera);
       this.gridCursor.update(this.raycaster, this.groundPlane);
+      this.updatePreviewLine();
     });
 
     canvas.addEventListener('mousedown', (e) => {
@@ -195,6 +201,7 @@ export class Game {
           this.gridCursor.gridX, this.gridCursor.gridY,
         );
         this.dragStart = null;
+        this.clearPreviewLine();
       }
     });
 
@@ -350,6 +357,9 @@ export class Game {
         this.tickAccumulator -= tickInterval;
         this.simLoop.tick();
 
+        // Milestone detection
+        this.checkMilestone();
+
         // Auto-save
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
           const data = serializeGameState(this.state);
@@ -376,6 +386,15 @@ export class Game {
 
     // Animate terrain (water)
     this.terrainRenderer.update(dt);
+
+    // Notification timeout
+    if (this.notificationTimer > 0) {
+      this.notificationTimer -= dt;
+      if (this.notificationTimer <= 0) {
+        this.notification = null;
+        this.onUIUpdate?.();
+      }
+    }
 
     // Update weather visuals (day/night cycle, rain/snow, seasonal colors)
     const gameSpeed = this.paused ? 0 : this.speed;
@@ -429,5 +448,57 @@ export class Game {
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
     const data = serializeGameState(this.state);
     await saveGame(slotId, name, data);
+  }
+
+  private updatePreviewLine(): void {
+    if (!this.dragStart || this.currentTool !== 'road') {
+      this.clearPreviewLine();
+      return;
+    }
+    this.clearPreviewLine();
+    const x1 = this.dragStart.x;
+    const y1 = this.dragStart.y;
+    const x2 = this.gridCursor.gridX;
+    const y2 = this.gridCursor.gridY;
+    const points: THREE.Vector3[] = [];
+    // Build L-shaped path: horizontal then vertical
+    const dx = x2 > x1 ? 1 : -1;
+    const dy = y2 > y1 ? 1 : -1;
+    for (let x = x1; x !== x2 + dx; x += dx) {
+      points.push(new THREE.Vector3(x, 0.2, y1));
+    }
+    for (let y = y1 + dy; y !== y2 + dy; y += dy) {
+      points.push(new THREE.Vector3(x2, 0.2, y));
+    }
+    if (points.length < 2) return;
+    const geometry = new THREE.BufferGeometry().setFromPoints(points);
+    const material = new THREE.LineBasicMaterial({ color: 0x4fc3f7, linewidth: 2, transparent: true, opacity: 0.6 });
+    this.previewLine = new THREE.Line(geometry, material);
+    this.sceneManager.scene.add(this.previewLine);
+  }
+
+  private clearPreviewLine(): void {
+    if (this.previewLine) {
+      this.sceneManager.scene.remove(this.previewLine);
+      this.previewLine.geometry.dispose();
+      (this.previewLine.material as THREE.Material).dispose();
+      this.previewLine = null;
+    }
+  }
+
+  private checkMilestone(): void {
+    const pop = this.state.citizens.getPopulation();
+    const milestone = getMilestone(pop);
+    if (milestone && milestone.id !== this.lastMilestoneId) {
+      this.lastMilestoneId = milestone.id;
+      this.notification = `Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`;
+      this.notificationTimer = 8;
+      this.audioManager.playSfx('milestone');
+      this.onUIUpdate?.();
+    }
+  }
+
+  getNotification(): string | null {
+    return this.notification;
   }
 }

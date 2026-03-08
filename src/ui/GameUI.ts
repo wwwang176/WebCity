@@ -151,7 +151,30 @@ export function createGameUI(game: Game): HTMLElement {
         margin-left: 8px;
       }
       #mute-btn.muted { color: #f44336; }
+      #notification {
+        position: absolute;
+        top: 80px;
+        left: 50%;
+        transform: translateX(-50%);
+        pointer-events: none;
+        background: linear-gradient(135deg, rgba(40, 80, 140, 0.95), rgba(30, 60, 114, 0.95));
+        border: 2px solid #4fc3f7;
+        border-radius: 10px;
+        color: #e3f2fd;
+        padding: 12px 24px;
+        font-size: 14px;
+        text-align: center;
+        display: none;
+        animation: notifSlide 0.3s ease-out;
+        max-width: 400px;
+      }
+      #notification.visible { display: block; }
+      @keyframes notifSlide {
+        from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
+        to { transform: translateX(-50%) translateY(0); opacity: 1; }
+      }
     </style>
+    <div id="notification"></div>
     <div id="info-panel" class="ui-panel">
       <div id="info-date"></div>
       <div id="info-funds"></div>
@@ -317,6 +340,18 @@ export function createGameUI(game: Game): HTMLElement {
 
     // Building info panel
     updateBuildingPanel(game.getSelectedBuilding());
+
+    // Notification
+    const notifEl = ui.querySelector('#notification') as HTMLElement;
+    if (notifEl) {
+      const notif = game.getNotification();
+      if (notif) {
+        notifEl.textContent = notif;
+        notifEl.classList.add('visible');
+      } else {
+        notifEl.classList.remove('visible');
+      }
+    }
 
     // RCI bars
     const rci = state.rciDemand;

@@ -71,27 +71,36 @@
 - GameUI 新增 #building-panel 顯示：建築名稱、等級（星號）、居民/工人數、稅收、區域類型
 - 點空地時面板自動隱藏
 
-### BUG-020: 里程碑通知系統未實現
-- **位置**: `src/core/milestone/Milestone.ts`
-- **問題**: Milestone 資料定義完整但沒有偵測觸發邏輯，也沒有通知 UI
-- **嚴重性**: 低
-- **狀態**: 待做
+### BUG-020: 里程碑通知系統未實現 ✅ 已修復
+- **修復**: Game.ts 新增 checkMilestone()，每 tick 偵測人口里程碑
+- GameUI 新增 #notification 元素，slide-in 動畫，8 秒自動消失
+- 瀏覽器實測：人口達 500 時觸發 "Tiny Town!" 通知
 
 ### BUG-021: Save/AutoSave 未整合到遊戲循環 ✅ 已修復
 - **修復**: Game.ts 新增 AutoSaver(100)，每 100 tick 自動存檔到 slot 0
 - 瀏覽器實測 IndexedDB 確認 AutoSave 條目已寫入（27KB data）
 
-### BUG-022: 道路預覽線和預估費用未實現
-- **位置**: `src/Game.ts` - `setupInput()`
-- **問題**: 拖曳建路時無半透明預覽線，也無預估成本顯示
-- **嚴重性**: 低
-- **狀態**: 待做
+### BUG-022: 道路預覽線和預估費用未實現 ✅ 已修復（預覽線部分）
+- **修復**: Game.ts 新增 updatePreviewLine()，拖曳建路時顯示半透明藍色 L 型預覽線
+- 使用 THREE.Line + LineBasicMaterial(color: 0x4fc3f7, opacity: 0.6)
+- mouseup 時 clearPreviewLine() 清除
+- 預估成本顯示尚未實現
 
 ### BUG-015: Load Game 按鈕無法真正載入存檔 ✅ 已修復
 - **修復**:
   1. main.ts 新增 handleLoadGame() 呼叫 SaveManager.loadGame() + deserializeGameState()
   2. Game constructor 接受可選 loadedState 參數，跳過 terrain 生成和電廠/水廠初始化
   3. 瀏覽器實測：存檔 → 重整頁面 → Load Game → 地圖/資金/人口正確還原
+
+### BUG-023: 居民老化速度過快 — 每 tick 增齡 1 歲 ✅ 已修復
+- **位置**: `src/core/simulation/SimulationLoop.ts`
+- **問題**: ageTick() 每 tick 呼叫一次，4 ticks = 1 天 → 居民每天老 4 歲，每遊戲年老 1440 歲
+- **修復**: 改為每遊戲年（1440 ticks）才呼叫一次 ageTick()
+
+### BUG-024: Load Game 載入錯誤的存檔 slot ✅ 已修復
+- **位置**: `src/ui/MainMenu.ts`
+- **問題**: Load Game 按鈕呼叫 `onLoadGame(1)` (slot 1)，但 AutoSaver 存到 slot 0
+- **修復**: 改為 `onLoadGame(0)` — 載入 AutoSave slot
 
 ### BUG-011: 還有更多子系統未整合
 - 地價系統 (LandValue) — 計算但未回寫到 grid
@@ -170,8 +179,19 @@
 - ✅ Load Game 按鈕正確載入存檔（地圖/資金/人口還原）
 - ✅ ESC 取消操作 / Delete 拆除模式
 
+### 新增已驗證功能（第三輪測試）
+- ✅ 里程碑通知系統（人口 500 觸發 "Tiny Town!" 通知）
+- ✅ 道路預覽線（拖曳建路時藍色半透明 L 型線）
+- ✅ 居民老化修正（每遊戲年老 1 歲，非每 tick）
+- ✅ Load Game 正確載入 AutoSave slot 0
+- ✅ 道路拖曳建設正常扣費
+- ✅ 拆除工具清除建築/區域/道路
+- ✅ 暫停/速度控制按鈕正常
+- ✅ Q/E 旋轉相機
+- ✅ 滾輪縮放
+- ✅ WASD 平移相機
+
 ### 未完成功能
 - ⚠️ 車輛渲染（BUG-018：VehicleRenderer 未接收資料）
-- ⚠️ 里程碑通知（BUG-020：未實現偵測/通知 UI）
-- ⚠️ 道路預覽線（BUG-022）
 - ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）
+- ⚠️ 道路預估成本顯示（BUG-022 部分未完成）
