@@ -830,6 +830,7 @@ export class BuildingRenderer {
         const mesh = new THREE.InstancedMesh(geometry, material, count);
         mesh.castShadow = true;
         mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
 
         for (let i = 0; i < count; i++) {
           const b = bucket[i]!;
@@ -884,6 +885,7 @@ export class BuildingRenderer {
         color: baseColor, transparent: true, opacity: 0.35, depthWrite: false,
       });
       const mesh = new THREE.InstancedMesh(geometry, material, count);
+      mesh.frustumCulled = false;
       for (let i = 0; i < count; i++) {
         const c = cells[i]!;
         matrix.setPosition(c.x, 0.02, c.y);

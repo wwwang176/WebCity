@@ -67,6 +67,7 @@ export class RoadRenderer {
     const count = Math.min(cells.length, this.maxRoads);
     this.roadMesh = new THREE.InstancedMesh(geometry, material, count);
     this.roadMesh.receiveShadow = true;
+    this.roadMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
     const color = new THREE.Color();
@@ -141,6 +142,7 @@ export class RoadRenderer {
     const count = Math.min(strips.length, this.maxRoads * 4);
     this.sidewalkMesh = new THREE.InstancedMesh(geo, mat, count);
     this.sidewalkMesh.receiveShadow = true;
+    this.sidewalkMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
     for (let i = 0; i < count; i++) {
@@ -202,6 +204,7 @@ export class RoadRenderer {
     const mat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa });
     const count = Math.min(markings.length, this.maxRoads);
     this.markingMesh = new THREE.InstancedMesh(geo, mat, count);
+    this.markingMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
     const rot = new THREE.Matrix4();
@@ -286,6 +289,7 @@ export class RoadRenderer {
     const mat = new THREE.MeshBasicMaterial({ color: 0xbbbbbb });
     const count = Math.min(strips.length, this.maxRoads * 4);
     this.crosswalkMesh = new THREE.InstancedMesh(geo, mat, count);
+    this.crosswalkMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
     for (let i = 0; i < count; i++) {
@@ -356,6 +360,7 @@ export class RoadRenderer {
     const mat = new THREE.MeshBasicMaterial({ color: 0xbbbbbb });
     const count = Math.min(lines.length, this.maxRoads * 4);
     this.stopLineMesh = new THREE.InstancedMesh(geo, mat, count);
+    this.stopLineMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
     for (let i = 0; i < count; i++) {

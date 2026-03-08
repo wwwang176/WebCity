@@ -27,6 +27,7 @@ export class VehicleRenderer {
     this.instancedMesh = new THREE.InstancedMesh(geometry, material, this.maxVehicles);
     this.instancedMesh.count = 0;
     this.instancedMesh.castShadow = true;
+    this.instancedMesh.frustumCulled = false;
     scene.add(this.instancedMesh);
   }
 
