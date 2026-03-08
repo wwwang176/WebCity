@@ -421,5 +421,32 @@
 - **嚴重性**: 低（視覺品質改善，非功能性問題）
 - **狀態**: 待做
 
+### 新增已驗證功能（第十三輪測試 — 視覺驗證 + Save/Load + 完整互動）
+- ✅ 道路渲染正常（InstancedMesh，深灰色 BoxGeometry 方塊，renderDirty 自動觸發 build()）
+- ✅ 建築渲染正常（四色 3D 方塊：綠=住宅、藍=商業、橙=工業、紫=辦公，高度隨等級變化）
+- ✅ 車輛渲染正常（小彩色方塊在道路上移動，9+ 台車輛同時運行）
+- ✅ 道路預覽線正常（拖曳建路時淺藍色半透明 L 型線，previewCost $3200 正確顯示）
+- ✅ 分區底色正常（zone 半透明色板：綠/藍/橙/紫 與對應區域一致）
+- ✅ 日夜循環視覺（天空色：淺藍白天→粉紅/紅色黃昏→深藍夜晚，動態變化）
+- ✅ 水面動畫（TerrainRenderer.update() 用 sin() 上下擺動 ±0.02，代碼正確）
+- ✅ 河流/森林/山脈地形渲染正確（水域=藍、森林=深綠、山脈=棕色）
+- ✅ 相機方向鍵移動（ArrowLeft×10 成功平移相機）
+- ✅ 相機 Q/E 旋轉（視角正確轉動 ±45°）
+- ✅ 速度控制按鈕互動（暫停 paused=true → 2x speed=2 正確切換）
+- ✅ Demolish 工具正常（建築 buildingId=1 → 0，zone/road 同時清除）
+- ✅ Save Game 正常（saveCurrentGame slot 0/1 成功寫入 IndexedDB）
+- ✅ Load Game 完整循環（Save pop=67 → 重整頁面 → Load Game → pop=90 城市正確還原）
+- ✅ 主選單正常渲染（WebCity 標題 + New Game/Load Game + v0.1.0）
+- ✅ 全部 291 單元測試通過（28 測試檔，0 失敗）
+- ✅ 零 Console 錯誤（頁面載入 + 遊玩全程無 error/warning）
+- ✅ 城市持續成長（Pop 0→90+, Happiness 66%, Balance $19+/tick）
+
+### BUG-040: 工具列按鈕點擊有時無效
+- **位置**: `src/ui/GameUI.ts` — toolbar 按鈕
+- **問題**: 點擊 Road 按鈕時，右上角 Tool 未切換為 "road"，需使用鍵盤快捷鍵 2 才能切換
+- **可能原因**: 按鈕 click handler 可能被 canvas 的 mousedown 事件搶先處理，或按鈕 z-index 問題
+- **嚴重性**: 低 — 鍵盤快捷鍵可作替代方案
+- **狀態**: 待修
+
 ### 未完成功能
 - ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）
