@@ -14,8 +14,23 @@ import { RoadType } from './core/road/types';
 import { ZoneType, TerrainType } from './core/grid/types';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
+import { AudioManager } from './audio/AudioManager';
+import { getBuildingType, type BuildingType } from './core/building/types';
+import { AutoSaver } from './core/save/AutoSave';
+import { saveGame } from './core/save/SaveManager';
+import { serializeGameState } from './core/save/Serializer';
 
 export type ToolType = 'select' | 'road' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
+
+export interface SelectedBuilding {
+  x: number;
+  y: number;
+  buildingType: BuildingType;
+  zoneType: ZoneType;
+  landValue: number;
+  pollution: number;
+  serviceCoverage: number;
+}
 
 export class Game {
   private sceneManager: SceneManager;
@@ -30,6 +45,8 @@ export class Game {
   private simLoop: SimulationLoop;
   private roadBuilder: RoadBuilder;
   private zoneManager: ZoneManager;
+  private audioManager: AudioManager;
+  private autoSaver: AutoSaver;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -41,20 +58,34 @@ export class Game {
   currentRoadType: RoadType = RoadType.TWO_LANE;
   paused = false;
   speed = 1;
+  selectedBuilding: SelectedBuilding | null = null;
   private dragStart: { x: number; y: number } | null = null;
   private keys = new Set<string>();
   private onUIUpdate: (() => void) | null = null;
 
-  constructor(container: HTMLElement) {
-    const mapSize = 60;
+  constructor(container: HTMLElement, loadedState?: GameState) {
+    const mapSize = loadedState ? loadedState.grid.width : 60;
 
-    this.state = createGameState(mapSize, mapSize);
+    // Audio
+    this.audioManager = new AudioManager();
+    this.audioManager.init();
+
+    // Auto-save every 100 ticks
+    this.autoSaver = new AutoSaver(100);
+
+    if (loadedState) {
+      this.state = loadedState;
+    } else {
+      this.state = createGameState(mapSize, mapSize);
+    }
     this.simLoop = new SimulationLoop(this.state);
     this.roadBuilder = new RoadBuilder(this.state.grid);
     this.zoneManager = new ZoneManager(this.state.grid);
 
-    // Generate some terrain
-    this.generateTerrain(mapSize);
+    // Generate terrain only for new games
+    if (!loadedState) {
+      this.generateTerrain(mapSize);
+    }
 
     // Renderer setup
     this.sceneManager = new SceneManager(container);
@@ -74,9 +105,11 @@ export class Game {
     // Center camera
     this.sceneManager.panCamera(mapSize / 2, mapSize / 2);
 
-    // Add power plant and water plant at start
-    this.state.power.addPlant({ x: 2, y: 2, output: 500, pollution: 10, type: 'coal' });
-    this.state.water.addPlant({ x: 4, y: 2, output: 500 });
+    // Add power plant and water plant at start (only for new games)
+    if (!loadedState) {
+      this.state.power.addPlant({ x: 2, y: 2, output: 500, pollution: 10, type: 'coal' });
+      this.state.water.addPlant({ x: 4, y: 2, output: 500 });
+    }
 
     // Input handlers
     this.setupInput(container);
@@ -193,6 +226,8 @@ export class Game {
       case '5': this.setTool('zone_i'); break;
       case '6': this.setTool('zone_o'); break;
       case '7': this.setTool('demolish'); break;
+      case 'escape': this.setTool('select'); this.dragStart = null; break;
+      case 'delete': this.setTool('demolish'); break;
       case ' ':
         this.paused = !this.paused;
         if (this.paused) this.state.clock.pause();
@@ -215,6 +250,26 @@ export class Game {
 
   private handleToolAction(x1: number, y1: number, x2: number, y2: number): void {
     switch (this.currentTool) {
+      case 'select': {
+        const cell = this.state.grid.getCell(x1, y1);
+        if (cell && cell.buildingId > 0) {
+          const bt = getBuildingType(cell.buildingId);
+          if (bt) {
+            this.selectedBuilding = {
+              x: x1, y: y1,
+              buildingType: bt,
+              zoneType: cell.zoneType,
+              landValue: cell.landValue,
+              pollution: cell.pollution,
+              serviceCoverage: cell.serviceCoverage,
+            };
+          }
+        } else {
+          this.selectedBuilding = null;
+        }
+        this.audioManager.playSfx('click');
+        break;
+      }
       case 'road': {
         const result = this.roadBuilder.buildRoad(
           { x: x1, y: y1 }, { x: x2, y: y2 },
@@ -223,24 +278,30 @@ export class Game {
         );
         if (result.success && result.cost) {
           this.state.budget.funds -= result.cost;
+          this.audioManager.playSfx('build');
         }
         this.renderDirty = true;
         break;
       }
       case 'zone_r':
         this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_LOW);
+        this.audioManager.playSfx('zone');
         break;
       case 'zone_c':
         this.applyZone(x1, y1, x2, y2, ZoneType.COMMERCIAL_LOW);
+        this.audioManager.playSfx('zone');
         break;
       case 'zone_i':
         this.applyZone(x1, y1, x2, y2, ZoneType.INDUSTRIAL);
+        this.audioManager.playSfx('zone');
         break;
       case 'zone_o':
         this.applyZone(x1, y1, x2, y2, ZoneType.OFFICE);
+        this.audioManager.playSfx('zone');
         break;
       case 'demolish':
         this.demolish(x1, y1, x2, y2);
+        this.audioManager.playSfx('demolish');
         break;
     }
     this.onUIUpdate?.();
@@ -288,6 +349,12 @@ export class Game {
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
         this.simLoop.tick();
+
+        // Auto-save
+        if (this.autoSaver.shouldSave(this.state.clock.tick)) {
+          const data = serializeGameState(this.state);
+          saveGame(0, 'AutoSave', data).catch(() => { /* ignore save errors */ });
+        }
 
         // Rebuild visuals periodically (every 10 ticks)
         if (this.state.clock.tick % 10 === 0) {
@@ -349,5 +416,18 @@ export class Game {
 
   getToolType(): ToolType {
     return this.currentTool;
+  }
+
+  getAudioManager(): AudioManager {
+    return this.audioManager;
+  }
+
+  getSelectedBuilding(): SelectedBuilding | null {
+    return this.selectedBuilding;
+  }
+
+  async saveCurrentGame(slotId: number, name: string): Promise<void> {
+    const data = serializeGameState(this.state);
+    await saveGame(slotId, name, data);
   }
 }

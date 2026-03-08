@@ -1,4 +1,5 @@
-import { Game, type ToolType } from '../Game';
+import { Game, type ToolType, type SelectedBuilding } from '../Game';
+import { ZoneType } from '../core/grid/types';
 
 const TOOL_BUTTONS: { tool: ToolType; label: string; key: string; color: string }[] = [
   { tool: 'select', label: 'Select', key: '1', color: '#ffffff' },
@@ -126,6 +127,30 @@ export function createGameUI(game: Game): HTMLElement {
         text-align: center;
         color: #ccc;
       }
+      #building-panel {
+        position: absolute;
+        top: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: none;
+        min-width: 200px;
+      }
+      #building-panel.visible { display: block; }
+      #building-panel .bp-title { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
+      #building-panel .bp-row { font-size: 12px; color: #bbb; margin: 2px 0; }
+      #building-panel .bp-row span { color: #fff; }
+      #mute-btn {
+        pointer-events: auto;
+        background: rgba(30, 30, 60, 0.9);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 4px;
+        color: #ccc;
+        padding: 6px 10px;
+        cursor: pointer;
+        font-size: 14px;
+        margin-left: 8px;
+      }
+      #mute-btn.muted { color: #f44336; }
     </style>
     <div id="info-panel" class="ui-panel">
       <div id="info-date"></div>
@@ -158,11 +183,20 @@ export function createGameUI(game: Game): HTMLElement {
         <div class="rci-label">I</div>
       </div>
     </div>
+    <div id="building-panel" class="ui-panel">
+      <div class="bp-title" id="bp-name"></div>
+      <div class="bp-row">Level: <span id="bp-level"></span></div>
+      <div class="bp-row" id="bp-residents-row">Residents: <span id="bp-residents"></span></div>
+      <div class="bp-row" id="bp-workers-row">Workers: <span id="bp-workers"></span></div>
+      <div class="bp-row">Tax: <span id="bp-tax"></span>/tick</div>
+      <div class="bp-row">Zone: <span id="bp-zone"></span></div>
+    </div>
     <div id="speed-panel">
       <button class="speed-btn" data-speed="pause">&#9646;&#9646;</button>
       <button class="speed-btn active" data-speed="1">1x</button>
       <button class="speed-btn" data-speed="2">2x</button>
       <button class="speed-btn" data-speed="3">3x</button>
+      <button id="mute-btn" title="Toggle Sound">&#128266;</button>
     </div>
   `;
 
@@ -193,6 +227,53 @@ export function createGameUI(game: Game): HTMLElement {
       updateUI();
     });
   });
+
+  // Mute button
+  const muteBtn = ui.querySelector('#mute-btn');
+  if (muteBtn) {
+    muteBtn.addEventListener('click', () => {
+      const muted = game.getAudioManager().toggleMute();
+      muteBtn.classList.toggle('muted', muted);
+      muteBtn.innerHTML = muted ? '&#128264;' : '&#128266;';
+    });
+  }
+
+  const ZONE_NAMES: Record<number, string> = {
+    [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
+    [ZoneType.RESIDENTIAL_HIGH]: 'Residential (High)',
+    [ZoneType.COMMERCIAL_LOW]: 'Commercial (Low)',
+    [ZoneType.COMMERCIAL_HIGH]: 'Commercial (High)',
+    [ZoneType.INDUSTRIAL]: 'Industrial',
+    [ZoneType.OFFICE]: 'Office',
+  };
+
+  function updateBuildingPanel(selected: SelectedBuilding | null): void {
+    const panel = ui.querySelector('#building-panel') as HTMLElement;
+    if (!panel) return;
+    if (!selected) {
+      panel.classList.remove('visible');
+      return;
+    }
+    panel.classList.add('visible');
+    const nameEl = panel.querySelector('#bp-name') as HTMLElement;
+    const levelEl = panel.querySelector('#bp-level') as HTMLElement;
+    const residentsEl = panel.querySelector('#bp-residents') as HTMLElement;
+    const workersEl = panel.querySelector('#bp-workers') as HTMLElement;
+    const taxEl = panel.querySelector('#bp-tax') as HTMLElement;
+    const zoneEl = panel.querySelector('#bp-zone') as HTMLElement;
+    const residentsRow = panel.querySelector('#bp-residents-row') as HTMLElement;
+    const workersRow = panel.querySelector('#bp-workers-row') as HTMLElement;
+
+    const bt = selected.buildingType;
+    if (nameEl) nameEl.textContent = bt.name;
+    if (levelEl) levelEl.textContent = `${'★'.repeat(bt.level)}${'☆'.repeat(3 - bt.level)}`;
+    if (residentsRow) residentsRow.style.display = bt.residents > 0 ? '' : 'none';
+    if (residentsEl) residentsEl.textContent = String(bt.residents);
+    if (workersRow) workersRow.style.display = bt.workers > 0 ? '' : 'none';
+    if (workersEl) workersEl.textContent = String(bt.workers);
+    if (taxEl) taxEl.textContent = `$${bt.taxRevenue}`;
+    if (zoneEl) zoneEl.textContent = ZONE_NAMES[selected.zoneType] ?? 'Unknown';
+  }
 
   function updateUI(): void {
     const state = game.getState();
@@ -233,6 +314,9 @@ export function createGameUI(game: Game): HTMLElement {
         btn.classList.toggle('active', !game.paused && game.speed === parseInt(speed ?? '1'));
       }
     });
+
+    // Building info panel
+    updateBuildingPanel(game.getSelectedBuilding());
 
     // RCI bars
     const rci = state.rciDemand;

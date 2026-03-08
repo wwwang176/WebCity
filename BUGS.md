@@ -52,15 +52,46 @@
 - 經瀏覽器實測，滑鼠拖曳建路和劃區都正常運作
 - 區域劃設要求格子緊鄰道路（ZoneManager 的設計），非 bug
 
-### BUG-015: Load Game 按鈕無法真正載入存檔
-- **位置**: `src/main.ts` 第 41 行、`src/ui/MainMenu.ts`
-- **問題**: Load Game 按鈕回呼 `(_slotId) => startGame()` 忽略 slotId，永遠開新遊戲。`SaveManager.ts` 已完整實作（IndexedDB），但從未被呼叫
-- **需要**:
-  1. 顯示存檔選擇介面
-  2. 呼叫 SaveManager.loadGame() 還原 GameState
-  3. Game constructor 需要接受已載入的 state
-- **嚴重性**: 中（Save/Load 是重要功能但不影響核心遊戲循環）
+### BUG-016: ESC/Delete 快捷鍵未實現 ✅ 已修復
+- **修復**: 在 handleKeyDown 新增 `escape` → select + 取消拖曳, `delete` → demolish
+
+### BUG-017: AudioManager 從未被實例化 — 遊戲無聲音 ✅ 已修復
+- **修復**: Game.ts constructor 中實例化 AudioManager 並呼叫 init()
+- 建路成功 → playSfx('build')，劃區 → playSfx('zone')，拆除 → playSfx('demolish')，Select 點擊 → playSfx('click')
+- GameUI 新增靜音按鈕（toggleMute）
+
+### BUG-018: VehicleRenderer 從未接收車輛資料 — 看不到車輛
+- **位置**: `src/renderer/VehicleRenderer.ts`, `src/core/traffic/TrafficSimulation.ts`
+- **問題**: VehicleRenderer.update() 在遊戲循環中從未被呼叫，TrafficSimulation.vehicles 永遠為空
+- **嚴重性**: 中
 - **狀態**: 待做
+
+### BUG-019: 建築資訊面板未實現 — Select 工具點擊無反應 ✅ 已修復
+- **修復**: handleToolAction 新增 'select' case，讀取 grid cell 的 buildingId 並用 getBuildingType() 取得資料
+- GameUI 新增 #building-panel 顯示：建築名稱、等級（星號）、居民/工人數、稅收、區域類型
+- 點空地時面板自動隱藏
+
+### BUG-020: 里程碑通知系統未實現
+- **位置**: `src/core/milestone/Milestone.ts`
+- **問題**: Milestone 資料定義完整但沒有偵測觸發邏輯，也沒有通知 UI
+- **嚴重性**: 低
+- **狀態**: 待做
+
+### BUG-021: Save/AutoSave 未整合到遊戲循環 ✅ 已修復
+- **修復**: Game.ts 新增 AutoSaver(100)，每 100 tick 自動存檔到 slot 0
+- 瀏覽器實測 IndexedDB 確認 AutoSave 條目已寫入（27KB data）
+
+### BUG-022: 道路預覽線和預估費用未實現
+- **位置**: `src/Game.ts` - `setupInput()`
+- **問題**: 拖曳建路時無半透明預覽線，也無預估成本顯示
+- **嚴重性**: 低
+- **狀態**: 待做
+
+### BUG-015: Load Game 按鈕無法真正載入存檔 ✅ 已修復
+- **修復**:
+  1. main.ts 新增 handleLoadGame() 呼叫 SaveManager.loadGame() + deserializeGameState()
+  2. Game constructor 接受可選 loadedState 參數，跳過 terrain 生成和電廠/水廠初始化
+  3. 瀏覽器實測：存檔 → 重整頁面 → Load Game → 地圖/資金/人口正確還原
 
 ### BUG-011: 還有更多子系統未整合
 - 地價系統 (LandValue) — 計算但未回寫到 grid
@@ -132,6 +163,15 @@
 - ✅ 所有 291 單元測試通過
 - ✅ Vite HMR 正常運作
 
+### 新增已驗證功能
+- ✅ 音效系統（建路/拆除/劃區/點擊音效 + 靜音按鈕）
+- ✅ 建築資訊面板（Select 工具點擊建築顯示名稱/等級/居民/工人/稅收/區域）
+- ✅ 自動存檔（每 100 tick 存檔到 IndexedDB）
+- ✅ Load Game 按鈕正確載入存檔（地圖/資金/人口還原）
+- ✅ ESC 取消操作 / Delete 拆除模式
+
 ### 未完成功能
-- ⚠️ Load Game 按鈕未接入 SaveManager（BUG-015）
+- ⚠️ 車輛渲染（BUG-018：VehicleRenderer 未接收資料）
+- ⚠️ 里程碑通知（BUG-020：未實現偵測/通知 UI）
+- ⚠️ 道路預覽線（BUG-022）
 - ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）
