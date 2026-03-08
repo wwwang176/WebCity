@@ -102,6 +102,15 @@
 - **問題**: Load Game 按鈕呼叫 `onLoadGame(1)` (slot 1)，但 AutoSaver 存到 slot 0
 - **修復**: 改為 `onLoadGame(0)` — 載入 AutoSave slot
 
+### BUG-025: Overlay 覆蓋圖完全透明 — 無實際資料 ✅ 已修復
+- **位置**: `src/Game.ts` — `setOverlay()`
+- **問題**: `setOverlay()` 呼叫 `overlayRenderer.setOverlay()` 時未傳入 `data` 參數，導致所有值為 0，覆蓋圖完全透明不可見
+- **修復**: 新增 `buildOverlayData()` 方法，根據 overlay 類型構建資料：
+  - `power`: 從 PowerGrid.isPowered() 取得電力覆蓋
+  - `water`: 從 WaterNetwork.isSupplied() 取得水力覆蓋
+  - `zone`: 從 grid cell.zoneType 取得區域類型
+  - `traffic`: 從 TrafficSimulation.getSegmentDensity() 取得車流密度
+
 ### BUG-011: 還有更多子系統未整合
 - 地價系統 (LandValue) — 計算但未回寫到 grid
 - 汙染系統 (Pollution) — 已加入 state 但未在 tick 中計算
@@ -190,6 +199,25 @@
 - ✅ Q/E 旋轉相機
 - ✅ 滾輪縮放
 - ✅ WASD 平移相機
+
+### 新增已驗證功能（第四輪測試）
+- ✅ 覆蓋圖系統修復（Power/Water/Zone/Traffic overlay 正確顯示彩色覆蓋）
+- ✅ 天氣系統：秋天下雨（雨滴粒子 + 橙色地面色調）
+- ✅ 天氣系統：冬天下雪（雪花粒子 + 白藍地面色調）
+- ✅ 季節地面色調變化（spring 綠 / summer 深綠 / autumn 橙 / winter 白藍）
+- ✅ 日夜循環視覺效果（藍天→橙色黃昏→深藍夜晚→粉色晨曦）
+- ✅ 四種建築區域正確渲染（綠=住宅、藍=商業、橙=工業、紫=辦公）
+- ✅ 車輛沿道路 BFS 路徑移動（紅色小方塊在道路上）
+- ✅ 建築資訊面板：住宅（Small House / Residents / Tax）
+- ✅ 建築資訊面板：商業（Small Shop / Workers / Tax）
+- ✅ 靜音按鈕切換（mute / unmute）
+- ✅ 暫停按鈕（game.paused = true/false）
+- ✅ 3x 速度（tickInterval = 83ms）
+- ✅ 存檔/讀檔循環（Save → 重整 → Load → 城市還原）
+- ✅ WASD 平移、Q/E 旋轉、滾輪縮放
+- ✅ 鍵盤快捷鍵（2=road, 3=zone_r, ESC=select, Delete=demolish）
+- ✅ 拆除工具清除建築+區域（buildingId=0, zoneType=0）
+- ✅ 全部 291 單元測試通過
 
 ### 未完成功能
 - ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）

@@ -436,7 +436,45 @@ export class Game {
   }
 
   setOverlay(type: OverlayType): void {
-    this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid);
+    const data = this.buildOverlayData(type);
+    this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data);
+  }
+
+  private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
+    if (type === 'none') return undefined;
+    const data = new Map<string, number>();
+    const grid = this.state.grid;
+
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const key = `${x},${y}`;
+        let value = 0;
+
+        switch (type) {
+          case 'power':
+            value = this.state.power.isPowered(x, y) ? 100 : 0;
+            break;
+          case 'water':
+            value = this.state.water.isSupplied(x, y) ? 100 : 0;
+            break;
+          case 'zone': {
+            const cell = grid.getCell(x, y);
+            if (cell && cell.zoneType > 0) value = cell.zoneType * 15;
+            break;
+          }
+          case 'traffic': {
+            const density = this.state.traffic.getSegmentDensity(key);
+            value = density * 20;
+            break;
+          }
+          default:
+            break;
+        }
+
+        if (value > 0) data.set(key, value);
+      }
+    }
+    return data;
   }
 
   setOnUIUpdate(callback: () => void): void {
