@@ -699,6 +699,15 @@
 - ✅ Production Build 1.15s 成功
 - ✅ 全部 291 單元測試通過
 
+### 新增已驗證功能（第二十九輪測試 — 快捷鍵 + 邊界測試）
+- ✅ 空白鍵暫停/恢復 — toggle 正常，tick 停止/繼續
+- ✅ +/= 加速 — 1→2→3，clamp 在 3 不溢出
+- ✅ - 減速 — 3→2→1，clamp 在 1
+- ✅ ESC 取消工具 — demolish→select 正確
+- ✅ 建築資訊面板 — Select 點擊顯示 Medium House / Level ★★☆ / Residents 6 / Tax $18 / Zone Residential (Low)
+- ✅ 負資金/破產 — Funds: $-244 正確顯示，Balance: $-1/tick，遊戲不崩潰繼續運行
+- ✅ 低稅率回饋 — 1% 稅率時 Happiness 升至 63%（合理）
+
 ### 待修 bug 數量：0
 
 ### 未整合的進階子系統（有程式碼+單元測試，但無遊戲循環/UI）
