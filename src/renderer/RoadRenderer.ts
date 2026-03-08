@@ -263,7 +263,7 @@ export class RoadRenderer {
 
     // Dashed center line: ~12cm wide, ~1.2m long per dash
     const geo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xaaaaaa });
+    const mat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
     const count = Math.min(markings.length, this.maxRoads * 3);
     this.markingMesh = new THREE.InstancedMesh(geo, mat, count);
     this.markingMesh.frustumCulled = false;
@@ -351,7 +351,7 @@ export class RoadRenderer {
     if (strips.length === 0) return;
 
     const geo = new THREE.BoxGeometry(1, 0.005, 1);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xbbbbbb });
+    const mat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
     const count = Math.min(strips.length, this.maxRoads * 4);
     this.crosswalkMesh = new THREE.InstancedMesh(geo, mat, count);
     this.crosswalkMesh.frustumCulled = false;
@@ -422,7 +422,7 @@ export class RoadRenderer {
     if (lines.length === 0) return;
 
     const geo = new THREE.BoxGeometry(1, 0.005, 1);
-    const mat = new THREE.MeshBasicMaterial({ color: 0xbbbbbb });
+    const mat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
     const count = Math.min(lines.length, this.maxRoads * 4);
     this.stopLineMesh = new THREE.InstancedMesh(geo, mat, count);
     this.stopLineMesh.frustumCulled = false;

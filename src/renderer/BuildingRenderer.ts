@@ -175,6 +175,7 @@ precision highp float;
 
 #include <common>
 #include <packing>
+#include <lights_pars_begin>
 #include <shadowmap_pars_fragment>
 
 varying vec3 vNormal;
@@ -238,12 +239,19 @@ vec3 getRoofColor(float zoneCat, float h) {
 void main() {
   vec3 n = normalize(vNormal);
 
-  // Two-directional lighting
-  vec3 sunDir = normalize(vec3(0.5, 0.8, 0.3));
+  // Read real lights from Three.js uniforms (set by lights_pars_begin)
+  float ambient = (ambientLightColor.r + ambientLightColor.g + ambientLightColor.b) / 3.0;
+  #if NUM_DIR_LIGHTS > 0
+    vec3 sunDir = normalize(directionalLights[0].direction);
+    float sunIntensity = length(directionalLights[0].color);
+  #else
+    vec3 sunDir = normalize(vec3(0.5, 0.8, 0.3));
+    float sunIntensity = 1.0;
+  #endif
   float sunDiff = max(dot(n, sunDir), 0.0);
   vec3 fillDir = normalize(vec3(-0.6, 0.3, -0.4));
   float fillDiff = max(dot(n, fillDir), 0.0);
-  float lighting = 0.42 + 0.45 * sunDiff + 0.13 * fillDiff;
+  float lighting = max(0.08, ambient * 0.7) + (0.45 * sunDiff + 0.13 * fillDiff) * sunIntensity;
 
   bool isFoliage = vPartType > 0.35 && vPartType < 0.65;
   bool isRoof = vPartType > 0.8 || (n.y > 0.85 && vPartType < 0.1);
