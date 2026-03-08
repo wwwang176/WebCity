@@ -63,13 +63,40 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
         color: rgba(255,255,255,0.3);
         font-size: 12px;
       }
+      .save-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        min-width: 280px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .save-slot {
+        background: rgba(30, 60, 114, 0.4);
+        border: 1px solid rgba(79, 195, 247, 0.2);
+        border-radius: 6px;
+        color: #e3f2fd;
+        padding: 12px 16px;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all 0.2s;
+        text-align: left;
+      }
+      .save-slot:hover {
+        background: rgba(40, 80, 140, 0.7);
+        border-color: rgba(79, 195, 247, 0.6);
+      }
+      .save-slot .save-name { font-weight: bold; }
+      .save-slot .save-date { color: #90caf9; font-size: 12px; margin-top: 4px; }
+      .save-empty { color: rgba(255,255,255,0.4); font-style: italic; padding: 16px; text-align: center; }
     </style>
     <div class="menu-title">WebCity</div>
     <div class="menu-subtitle">CITY BUILDER SIMULATION</div>
-    <div class="menu-buttons">
+    <div class="menu-buttons" id="menu-main">
       <button class="menu-btn" id="btn-new-game">New Game</button>
       <button class="menu-btn" id="btn-load-game">Load Game</button>
     </div>
+    <div class="save-list" id="save-list" style="display:none"></div>
     <div class="menu-version">v0.1.0</div>
   `;
 
@@ -79,8 +106,62 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
   });
 
   menu.querySelector('#btn-load-game')!.addEventListener('click', () => {
-    menu.remove();
-    onLoadGame(0); // AutoSave slot
+    const mainBtns = menu.querySelector('#menu-main') as HTMLElement;
+    const saveList = menu.querySelector('#save-list') as HTMLElement;
+    mainBtns.style.display = 'none';
+    saveList.style.display = 'flex';
+    saveList.innerHTML = '<div class="save-empty">Loading saves...</div>';
+
+    // List saves from IndexedDB
+    const dbReq = indexedDB.open('webcity-saves', 1);
+    dbReq.onupgradeneeded = () => {
+      const db = dbReq.result;
+      if (!db.objectStoreNames.contains('saves')) {
+        db.createObjectStore('saves', { keyPath: 'id' });
+      }
+    };
+    dbReq.onsuccess = () => {
+      const db = dbReq.result;
+      const tx = db.transaction('saves', 'readonly');
+      const store = tx.objectStore('saves');
+      const req = store.getAll();
+      req.onsuccess = () => {
+        const saves = req.result as { id: number; name: string; date: string; data: string }[];
+        if (saves.length === 0) {
+          saveList.innerHTML = '<div class="save-empty">No saves found</div>' +
+            '<button class="menu-btn" id="btn-back">Back</button>';
+        } else {
+          saveList.innerHTML = saves.map(s => {
+            const d = new Date(s.date);
+            const dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
+            const sizeKB = Math.round(s.data.length / 1024);
+            return `<div class="save-slot" data-slot="${s.id}">
+              <div class="save-name">${s.name} (Slot ${s.id})</div>
+              <div class="save-date">${dateStr} — ${sizeKB}KB</div>
+            </div>`;
+          }).join('') + '<button class="menu-btn" id="btn-back" style="margin-top:8px">Back</button>';
+        }
+
+        // Bind click on each save slot
+        saveList.querySelectorAll('.save-slot').forEach(el => {
+          el.addEventListener('click', () => {
+            const slotId = parseInt((el as HTMLElement).dataset.slot!, 10);
+            menu.remove();
+            onLoadGame(slotId);
+          });
+        });
+
+        // Back button
+        const backBtn = saveList.querySelector('#btn-back');
+        if (backBtn) {
+          backBtn.addEventListener('click', () => {
+            saveList.style.display = 'none';
+            mainBtns.style.display = 'flex';
+          });
+        }
+      };
+      tx.oncomplete = () => db.close();
+    };
   });
 
   return menu;
