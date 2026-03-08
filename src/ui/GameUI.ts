@@ -56,6 +56,9 @@ export function createGameUI(game: Game): HTMLElement {
         transform: translateX(-50%);
         display: flex;
         gap: 4px;
+        flex-wrap: wrap;
+        justify-content: center;
+        max-width: calc(100% - 200px);
       }
       .tool-btn {
         pointer-events: auto;
@@ -63,10 +66,11 @@ export function createGameUI(game: Game): HTMLElement {
         border: 2px solid rgba(255,255,255,0.15);
         border-radius: 6px;
         color: #ccc;
-        padding: 8px 14px;
+        padding: 6px 10px;
         cursor: pointer;
         font-size: 12px;
         transition: all 0.15s;
+        white-space: nowrap;
       }
       .tool-btn:hover {
         background: rgba(50, 50, 80, 0.95);
@@ -144,11 +148,10 @@ export function createGameUI(game: Game): HTMLElement {
       }
       #building-panel {
         position: absolute;
-        top: 10px;
-        left: 50%;
-        transform: translateX(-50%);
+        top: 120px;
+        left: 10px;
         display: none;
-        min-width: 200px;
+        min-width: 180px;
       }
       #building-panel.visible { display: block; }
       #building-panel .bp-title { font-size: 14px; font-weight: bold; margin-bottom: 4px; }
@@ -185,19 +188,20 @@ export function createGameUI(game: Game): HTMLElement {
       }
       #notification.visible { display: block; }
       #tax-panel {
-        position: absolute;
-        top: 90px;
-        right: 10px;
+        display: none;
       }
-      #tax-panel .tax-label {
+      .tax-inline .tax-label {
         font-size: 12px;
-        margin-bottom: 4px;
+        margin-bottom: 2px;
+        margin-top: 4px;
+        border-top: 1px solid rgba(255,255,255,0.1);
+        padding-top: 4px;
       }
-      #tax-panel input[type="range"] {
+      .tax-inline input[type="range"] {
         width: 120px;
         cursor: pointer;
       }
-      #tax-panel .tax-value {
+      .tax-inline .tax-value {
         font-size: 13px;
         font-weight: bold;
         color: #4fc3f7;
@@ -223,15 +227,13 @@ export function createGameUI(game: Game): HTMLElement {
         <div id="stats-tool"></div>
         <div id="stats-happiness" style="font-size:12px;color:#aaa;margin-top:2px"></div>
         <canvas id="stats-chart" width="140" height="60" style="margin-top:4px;border-radius:4px;background:rgba(0,0,0,0.3)"></canvas>
+        <div class="tax-inline">
+          <div class="tax-label">Tax Rate: <span class="tax-value" id="tax-display">9%</span></div>
+          <input type="range" id="tax-slider" min="1" max="20" step="1" value="9">
+        </div>
       </div>
     </div>
-    <div id="tax-panel" class="ui-panel">
-      <button class="panel-toggle" data-panel="tax-panel">&#9660;</button>
-      <div class="panel-body">
-        <div class="tax-label">Tax Rate: <span class="tax-value" id="tax-display">9%</span></div>
-        <input type="range" id="tax-slider" min="1" max="20" step="1" value="9">
-      </div>
-    </div>
+    <div id="tax-panel" class="ui-panel" style="display:none"></div>
     <div id="toolbar">
       ${TOOL_BUTTONS.map(b => `
         <button class="tool-btn" data-tool="${b.tool}">
