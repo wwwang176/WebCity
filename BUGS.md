@@ -600,6 +600,20 @@
 - ✅ 零 Console 錯誤
 - ✅ 全部 291 單元測試通過
 
+### 新增已驗證功能（第二十一輪測試 — 存檔完整性 + Load UI 修復）
+**修復：Load Game 存檔列表 UI**
+- ✅ Load Game 按鈕現在顯示存檔列表（名稱、slot、日期、大小）
+- ✅ 點擊存檔即可載入（不再硬編碼 slot 0）
+- ✅ Back 按鈕回到主選單
+- ✅ **存檔/讀檔完整性驗證** — 所有新子系統資料正確序列化/反序列化：
+  - 58 棟建築、44 污染格、68 地價格 — 完全匹配
+  - tick=3087, population=34, funds=$387,230 — 完全匹配
+  - 工業 cell: pollution=180, landValue=50, serviceCoverage=4 — 完全匹配
+  - 住宅 L3 cell: buildingId=3 (Large House), landValue=81 — 完全匹配
+  - 電廠×2、水廠×2 — 完全匹配
+- ✅ 零 Console 錯誤
+- ✅ 全部 291 單元測試通過
+
 ### 未完成功能
 - ⚠️ 部分進階子系統仍需完善：
   - District 畫區 UI + 區域政策（BUG-011 殘留）
