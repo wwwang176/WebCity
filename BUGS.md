@@ -883,3 +883,30 @@
 - ✅ **Stats Chart** — Population 綠線 + Happiness 黃線即時繪製（140x60 canvas）
 - ✅ **Mute Toggle** — toggleMute() 正確切換靜音/取消靜音
 - ✅ **AudioManager API** — startBGM/stopBGM/playSfx/setMasterVolume/setMusicVolume/setSfxVolume 完整
+
+### 新增已驗證功能（第四十四輪測試 — 滑鼠/鍵盤完整互動 + UI 按鈕 + 速度控制）
+- ✅ **Select 工具 + 滑鼠點擊建築** — 點擊紫色建築顯示 "Medium Office, Level ★★☆, Workers 30, Tax $60/tick, Zone: Office"
+- ✅ **7 個工具列按鈕全部滑鼠點擊正常**:
+  - Select→select, Road→road, Residential→zone_r, Commercial→zone_c
+  - Industrial→zone_i, Office→zone_o, Demolish→demolish
+- ✅ **鍵盤工具切換** — 按 1=select, 2=road, 3=zone_r, 7=demolish 全部正確
+- ✅ **Demolish 工具** — 程式碼呼叫 handleToolAction 正確清除道路（roadType:2→0, 109→108 roads）
+- ✅ **速度控制按鈕滑鼠點擊**:
+  - 1x 按鈕 → speed=1
+  - 2x 按鈕 → speed=2
+  - 3x 按鈕 → speed=3
+- ✅ **暫停按鈕滑鼠點擊** — paused=true 正確
+- ✅ **Space 鍵恢復** — 點擊 canvas 取得焦點後 Space toggle paused=false
+- ✅ **Q 鍵旋轉** — 相機 posX:30.62→43.30, posZ:73.05→42.43（繞 Y 軸旋轉）
+- ✅ **E 鍵反向旋轉** — 視覺確認視角轉回
+- ✅ **滾輪縮放** — frustumSize 60→35（scroll up 5 ticks zoom in）
+- ✅ **滾輪縮放反向** — scroll down 恢復正常視野
+- ✅ **Tax Rate 滑桿拖拽** — 從 9%→13%，四種稅率同步更新
+- ✅ **稅率影響收入** — Balance $55/tick→$85/tick（+54% 符合 9%→13% 漲幅）
+- ✅ **稅率影響幸福度** — Happiness 59%→54%（高稅懲罰生效）
+- ✅ **Mute 按鈕切換** — 點擊→muted=true, 再點擊→muted=false
+- ✅ **Weather 系統** — season=winter, timeOfDay=0.506（正午），季節/日夜循環正常
+- ✅ **Notification 系統** — 字串通知正確顯示+自動消失（timer 機制正常）
+- ✅ **新道路+分區建設** — 中地圖(30,28-32)建 5 條路 + 10 格住宅區，全部成功
+- ✅ **人口持續成長** — 95→114（19 人遷入，新分區+舊分區貢獻）
+- ✅ **經濟穩定** — $156K→$165K, Balance $55→$86/tick
