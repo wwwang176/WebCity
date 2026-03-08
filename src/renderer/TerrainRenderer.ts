@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
 import { TerrainType } from '../core/grid/types';
+import { isStoneGround } from '../core/grid/GroundType';
 
 const TERRAIN_COLORS: Record<number, number> = {
   [TerrainType.PLAIN]: 0x4caf50,
@@ -9,50 +10,48 @@ const TERRAIN_COLORS: Record<number, number> = {
   [TerrainType.FOREST]: 0x2e7d32,
 };
 
+const STONE_COLOR = 0x9e9e9e;
+
 export class TerrainRenderer {
   private mesh: THREE.Mesh | null = null;
   private waterMesh: THREE.Mesh | null = null;
   private waterTime = 0;
+  private grid: Grid | null = null;
+  private groundTexture: THREE.DataTexture | null = null;
 
   build(scene: THREE.Scene, grid: Grid): void {
     this.dispose(scene);
+    this.grid = grid;
 
     const w = grid.width;
     const h = grid.height;
 
-    // Ground plane geometry with vertex colors
+    // Ground plane geometry
     const geometry = new THREE.PlaneGeometry(w, h, w, h);
     geometry.rotateX(-Math.PI / 2);
 
-    const colors = new Float32Array((w + 1) * (h + 1) * 3);
+    // Set elevation per vertex
     const positions = geometry.attributes['position'] as THREE.BufferAttribute;
-
     for (let j = 0; j <= h; j++) {
       for (let i = 0; i <= w; i++) {
         const idx = j * (w + 1) + i;
         const gx = Math.min(i, w - 1);
         const gy = Math.min(j, h - 1);
         const cell = grid.getCell(gx, gy);
-        const terrain = cell ? cell.terrainType : TerrainType.PLAIN;
-        const color = new THREE.Color(TERRAIN_COLORS[terrain] ?? 0x4caf50);
-
-        colors[idx * 3] = color.r;
-        colors[idx * 3 + 1] = color.g;
-        colors[idx * 3 + 2] = color.b;
-
-        // Elevation
         if (cell) {
+          const terrain = cell.terrainType;
           const elevation = (cell.elevation || 0) * 0.3;
           positions.setY(idx, terrain === TerrainType.WATER ? -0.2 : elevation);
         }
       }
     }
-
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     geometry.computeVertexNormals();
 
+    // DataTexture for per-cell coloring (sharp boundaries, no bleeding)
+    this.groundTexture = this.createGroundTexture(grid);
+
     const material = new THREE.MeshLambertMaterial({
-      vertexColors: true,
+      map: this.groundTexture,
     });
 
     this.mesh = new THREE.Mesh(geometry, material);
@@ -62,6 +61,59 @@ export class TerrainRenderer {
 
     // Water plane (semi-transparent overlay)
     this.buildWater(scene, grid);
+  }
+
+  /** Refresh ground texture (call when buildings/roads change) */
+  refreshColors(): void {
+    if (!this.groundTexture || !this.grid) return;
+    this.updateGroundTexture(this.groundTexture, this.grid);
+  }
+
+  private createGroundTexture(grid: Grid): THREE.DataTexture {
+    const w = grid.width;
+    const h = grid.height;
+    const data = new Uint8Array(w * h * 4);
+
+    this.fillTextureData(data, grid, w, h);
+
+    const texture = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+    texture.minFilter = THREE.NearestFilter;
+    texture.magFilter = THREE.NearestFilter;
+    texture.needsUpdate = true;
+    return texture;
+  }
+
+  private updateGroundTexture(texture: THREE.DataTexture, grid: Grid): void {
+    const w = grid.width;
+    const h = grid.height;
+    const data = texture.image.data as Uint8Array;
+
+    this.fillTextureData(data, grid, w, h);
+    texture.needsUpdate = true;
+  }
+
+  private fillTextureData(data: Uint8Array, grid: Grid, w: number, h: number): void {
+    const tmpColor = new THREE.Color();
+
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const cell = grid.getCell(x, y);
+        const stone = cell ? isStoneGround(cell) : false;
+        const terrain = cell ? cell.terrainType : TerrainType.PLAIN;
+        const colorHex = stone ? STONE_COLOR : (TERRAIN_COLORS[terrain] ?? 0x4caf50);
+        tmpColor.set(colorHex);
+
+        // DataTexture row 0 = bottom of texture = UV v=0
+        // After PlaneGeometry.rotateX(-PI/2), UV v=0 maps to +Z (high grid Y)
+        // So flip: texture row (h-1-y) corresponds to grid row y
+        const ty = h - 1 - y;
+        const idx = (ty * w + x) * 4;
+        data[idx] = Math.round(tmpColor.r * 255);
+        data[idx + 1] = Math.round(tmpColor.g * 255);
+        data[idx + 2] = Math.round(tmpColor.b * 255);
+        data[idx + 3] = 255;
+      }
+    }
   }
 
   private buildWater(scene: THREE.Scene, grid: Grid): void {
@@ -88,7 +140,11 @@ export class TerrainRenderer {
     if (this.mesh) {
       scene.remove(this.mesh);
       this.mesh.geometry.dispose();
-      (this.mesh.material as THREE.Material).dispose();
+      (this.mesh.material as THREE.MeshLambertMaterial).dispose();
+      if (this.groundTexture) {
+        this.groundTexture.dispose();
+        this.groundTexture = null;
+      }
       this.mesh = null;
     }
     if (this.waterMesh) {

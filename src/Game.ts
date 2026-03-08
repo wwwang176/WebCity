@@ -511,6 +511,7 @@ export class Game {
     if (this.renderDirty) {
       this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
       this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
+      this.terrainRenderer.refreshColors();
       // Sync traffic lights with current intersections
       this.syncTrafficLights();
       this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
