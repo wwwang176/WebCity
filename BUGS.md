@@ -397,6 +397,11 @@
 - ✅ 存檔載入後人口回歸正確值（135，非注入的 500）
 - ✅ 零 Console 錯誤
 
+### BUG-039: 道路可以建在有建築物的格子上 ✅ 已修復
+- **位置**: `src/core/road/RoadBuilder.ts` — `buildRoad()` 第 24-29 行
+- **問題**: buildRoad 只檢查水域/山脈，不檢查建築物。可在有建築的格子上建路（道路與建築共存）。
+- **修復**: 新增 `if (cell.buildingId !== 0) return { success: false, reason: 'BUILDING_EXISTS' }` 檢查
+
 ### BUG-038: 稅率滑桿只影響住宅稅率 ✅ 已修復
 - **位置**: `src/ui/GameUI.ts` 第 340 行
 - **問題**: tax-slider 的 input handler 只更新 `taxRates.residential`，commercial/industrial/office 不受影響

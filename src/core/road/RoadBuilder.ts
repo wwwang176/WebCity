@@ -20,12 +20,13 @@ export class RoadBuilder {
     const cells = this.getCellsBetween(from, to);
     const config = ROAD_CONFIGS[roadType];
 
-    // Check for water/mountain
+    // Check for water/mountain/buildings
     for (const pos of cells) {
       const cell = this.grid.getCell(pos.x, pos.y);
       if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
       if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
+      if (cell.buildingId !== 0) return { success: false, reason: 'BUILDING_EXISTS' };
     }
 
     // Check funds
