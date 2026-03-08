@@ -108,8 +108,8 @@ export class SceneManager {
   }
 
   panCamera(dx: number, dz: number): void {
-    const forward = new THREE.Vector3(-Math.sin(this.cameraAngle), 0, Math.cos(this.cameraAngle));
-    const right = new THREE.Vector3(Math.cos(this.cameraAngle), 0, Math.sin(this.cameraAngle));
+    const forward = new THREE.Vector3(Math.cos(this.cameraAngle), 0, Math.sin(this.cameraAngle));
+    const right = new THREE.Vector3(Math.sin(this.cameraAngle), 0, -Math.cos(this.cameraAngle));
     this.cameraTarget.addScaledVector(right, dx);
     this.cameraTarget.addScaledVector(forward, dz);
     // Clamp camera target to map bounds with small margin

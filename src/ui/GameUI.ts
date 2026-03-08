@@ -1,14 +1,38 @@
 import { Game, type ToolType, type SelectedBuilding } from '../Game';
 import { ZoneType } from '../core/grid/types';
 
-const TOOL_BUTTONS: { tool: ToolType; label: string; key: string; color: string; icon: string }[] = [
+interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
+interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[] }
+
+const ZONE_GROUP: ToolGroup = {
+  id: 'zone', label: 'Zones', icon: '\u{1F3D8}', color: '#66bb6a',
+  items: [
+    { tool: 'zone_r', label: 'Residential', key: '3', color: '#66bb6a', icon: '\u{1F3E0}' },
+    { tool: 'zone_c', label: 'Commercial', key: '4', color: '#42a5f5', icon: '\u{1F3EC}' },
+    { tool: 'zone_i', label: 'Industrial', key: '5', color: '#ffa726', icon: '\u{1F3ED}' },
+    { tool: 'zone_o', label: 'Office', key: '6', color: '#ab47bc', icon: '\u{1F3E2}' },
+  ],
+};
+
+const INFRA_GROUP: ToolGroup = {
+  id: 'infra', label: 'Infra', icon: '\u{1F3D7}', color: '#78909c',
+  items: [
+    { tool: 'road', label: 'Road', key: '7', color: '#78909c', icon: '\u{1F6E3}' },
+    { tool: 'power', label: 'Power Plant', key: '8', color: '#ffeb3b', icon: '\u{26A1}' },
+    { tool: 'water', label: 'Water Plant', key: '9', color: '#03a9f4', icon: '\u{1F4A7}' },
+  ],
+};
+
+const STANDALONE_TOOLS: SubTool[] = [
   { tool: 'select', label: 'Select', key: '1', color: '#b0bec5', icon: '\u{1F5B1}' },
-  { tool: 'road', label: 'Road', key: '2', color: '#78909c', icon: '\u{1F6E3}' },
-  { tool: 'zone_r', label: 'Residential', key: '3', color: '#66bb6a', icon: '\u{1F3E0}' },
-  { tool: 'zone_c', label: 'Commercial', key: '4', color: '#42a5f5', icon: '\u{1F3EC}' },
-  { tool: 'zone_i', label: 'Industrial', key: '5', color: '#ffa726', icon: '\u{1F3ED}' },
-  { tool: 'zone_o', label: 'Office', key: '6', color: '#ab47bc', icon: '\u{1F3E2}' },
-  { tool: 'demolish', label: 'Demolish', key: '7', color: '#ef5350', icon: '\u{1F4A5}' },
+  { tool: 'demolish', label: 'Demolish', key: '0', color: '#ef5350', icon: '\u{1F4A5}' },
+];
+
+// All tools in all groups (for keyboard shortcuts)
+const ALL_TOOLS: SubTool[] = [
+  ...STANDALONE_TOOLS,
+  ...ZONE_GROUP.items,
+  ...INFRA_GROUP.items,
 ];
 
 const STYLES = `
@@ -126,6 +150,45 @@ const STYLES = `
     width: 1px; margin: 4px 2px;
     background: rgba(100,180,255,0.1);
   }
+  /* ===== Tool Group (expandable) ===== */
+  .tb-group { position: relative; }
+  .tb-group-btn {
+    pointer-events: auto;
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: 10px; color: #8899b0;
+    padding: 6px 12px; cursor: pointer;
+    font-size: 11px; font-weight: 500;
+    transition: all 0.15s ease;
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+    min-width: 58px;
+  }
+  .tb-group-btn:hover { background: rgba(40, 55, 90, 0.5); color: #c0d0e8; }
+  .tb-group-btn.active {
+    background: rgba(40, 70, 130, 0.6);
+    border-color: rgba(66, 165, 245, 0.5);
+    color: #fff;
+    box-shadow: 0 0 12px rgba(66, 165, 245, 0.15);
+  }
+  .tb-group-btn .tb-icon { font-size: 16px; line-height: 1; }
+  .tb-group-btn .tb-caret { font-size: 8px; opacity: 0.4; margin-top: 1px; }
+  .tb-sub-panel {
+    display: none; position: absolute; bottom: calc(100% + 8px); left: 50%;
+    transform: translateX(-50%);
+    background: rgba(8, 12, 28, 0.92);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(100,180,255,0.15);
+    border-radius: 12px; padding: 5px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+    flex-direction: row; gap: 3px; white-space: nowrap;
+    z-index: 20;
+    animation: subPanelIn 0.15s ease-out;
+  }
+  .tb-sub-panel.open { display: flex; }
+  @keyframes subPanelIn {
+    from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+    to { opacity: 1; transform: translateX(-50%) translateY(0); }
+  }
   .tb-action {
     pointer-events: auto;
     background: transparent;
@@ -145,23 +208,23 @@ const STYLES = `
   }
   .tb-action .tb-icon { font-size: 16px; line-height: 1; }
 
-  /* ===== RCI Bar ===== */
+  /* ===== RCI Bar (inside toolbar) ===== */
   #rci-bar {
-    position: absolute; bottom: 78px; left: 50%; transform: translateX(-50%);
-    display: flex; gap: 4px; align-items: flex-end;
+    display: flex; gap: 3px; align-items: flex-end;
+    padding: 2px 4px;
   }
-  .rci-col { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .rci-col { display: flex; flex-direction: column; align-items: center; gap: 1px; }
   .rci-meter {
-    width: 22px; height: 52px;
-    background: rgba(8, 12, 28, 0.7);
+    width: 16px; height: 36px;
+    background: rgba(20, 30, 50, 0.6);
     border: 1px solid rgba(100,180,255,0.08);
-    border-radius: 4px; overflow: hidden; position: relative;
+    border-radius: 3px; overflow: hidden; position: relative;
   }
   .rci-fill {
     position: absolute; bottom: 0; width: 100%;
-    transition: height 0.4s ease; border-radius: 3px;
+    transition: height 0.4s ease; border-radius: 2px;
   }
-  .rci-label { font-size: 9px; color: #8899b0; font-weight: 600; letter-spacing: 0.5px; }
+  .rci-label { font-size: 8px; color: #8899b0; font-weight: 600; letter-spacing: 0.5px; }
 
   /* ===== Notification ===== */
   #notification {
@@ -421,13 +484,67 @@ export function createGameUI(game: Game): HTMLElement {
 
     <!-- Toolbar -->
     <div id="toolbar">
-      ${TOOL_BUTTONS.map(b => `
-        <button class="tb-btn" data-tool="${b.tool}">
-          <span class="tb-icon">${b.icon}</span>
-          <span style="color:${b.color}">${b.label}</span>
-          <span class="tb-key">${b.key}</span>
+      <button class="tb-btn" data-tool="select">
+        <span class="tb-icon">\u{1F5B1}</span>
+        <span style="color:#b0bec5">Select</span>
+        <span class="tb-key">1</span>
+      </button>
+
+      <div class="tb-group" data-group="zone">
+        <button class="tb-group-btn" data-group-toggle="zone">
+          <span class="tb-icon">${ZONE_GROUP.icon}</span>
+          <span style="color:${ZONE_GROUP.color}">${ZONE_GROUP.label}</span>
+          <span class="tb-caret">\u25B2</span>
         </button>
-      `).join('')}
+        <div class="tb-sub-panel" data-sub="zone">
+          ${ZONE_GROUP.items.map(b => `
+            <button class="tb-btn" data-tool="${b.tool}">
+              <span class="tb-icon">${b.icon}</span>
+              <span style="color:${b.color}">${b.label}</span>
+              <span class="tb-key">${b.key}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <div class="tb-group" data-group="infra">
+        <button class="tb-group-btn" data-group-toggle="infra">
+          <span class="tb-icon">${INFRA_GROUP.icon}</span>
+          <span style="color:${INFRA_GROUP.color}">${INFRA_GROUP.label}</span>
+          <span class="tb-caret">\u25B2</span>
+        </button>
+        <div class="tb-sub-panel" data-sub="infra">
+          ${INFRA_GROUP.items.map(b => `
+            <button class="tb-btn" data-tool="${b.tool}">
+              <span class="tb-icon">${b.icon}</span>
+              <span style="color:${b.color}">${b.label}</span>
+              <span class="tb-key">${b.key}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+
+      <button class="tb-btn" data-tool="demolish">
+        <span class="tb-icon">\u{1F4A5}</span>
+        <span style="color:#ef5350">Demolish</span>
+        <span class="tb-key">0</span>
+      </button>
+
+      <div class="tb-sep"></div>
+      <div id="rci-bar">
+        <div class="rci-col">
+          <div class="rci-meter"><div class="rci-fill" id="rci-r" style="background:#66bb6a;height:50%"></div></div>
+          <div class="rci-label">R</div>
+        </div>
+        <div class="rci-col">
+          <div class="rci-meter"><div class="rci-fill" id="rci-c" style="background:#42a5f5;height:50%"></div></div>
+          <div class="rci-label">C</div>
+        </div>
+        <div class="rci-col">
+          <div class="rci-meter"><div class="rci-fill" id="rci-i" style="background:#ffa726;height:50%"></div></div>
+          <div class="rci-label">I</div>
+        </div>
+      </div>
       <div class="tb-sep"></div>
       <button class="tb-action" id="btn-economy" title="Economy Panel">
         <span class="tb-icon">$</span>
@@ -437,22 +554,6 @@ export function createGameUI(game: Game): HTMLElement {
         <span class="tb-icon">\u{1F697}</span>
         <span>Traffic</span>
       </button>
-    </div>
-
-    <!-- RCI Bar -->
-    <div id="rci-bar">
-      <div class="rci-col">
-        <div class="rci-meter"><div class="rci-fill" id="rci-r" style="background:#66bb6a;height:50%"></div></div>
-        <div class="rci-label">R</div>
-      </div>
-      <div class="rci-col">
-        <div class="rci-meter"><div class="rci-fill" id="rci-c" style="background:#42a5f5;height:50%"></div></div>
-        <div class="rci-label">C</div>
-      </div>
-      <div class="rci-col">
-        <div class="rci-meter"><div class="rci-fill" id="rci-i" style="background:#ffa726;height:50%"></div></div>
-        <div class="rci-label">I</div>
-      </div>
     </div>
 
     <!-- Building Panel -->
@@ -490,14 +591,48 @@ export function createGameUI(game: Game): HTMLElement {
 
   // ===== Event Handlers =====
 
-  // Tool buttons
+  // Track which group sub-panel is open
+  let openGroup: string | null = null;
+
+  function closeAllSubPanels(): void {
+    ui.querySelectorAll('.tb-sub-panel').forEach(p => p.classList.remove('open'));
+    ui.querySelectorAll('.tb-group-btn').forEach(b => b.classList.remove('active'));
+    openGroup = null;
+  }
+
+  // Group toggle buttons (Zone, Infra)
+  ui.querySelectorAll('.tb-group-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const group = (btn as HTMLElement).dataset['groupToggle'];
+      if (!group) return;
+      if (openGroup === group) {
+        closeAllSubPanels();
+      } else {
+        closeAllSubPanels();
+        const panel = ui.querySelector(`.tb-sub-panel[data-sub="${group}"]`);
+        if (panel) panel.classList.add('open');
+        btn.classList.add('active');
+        openGroup = group;
+      }
+    });
+  });
+
+  // Tool buttons (both standalone and inside sub-panels)
   ui.querySelectorAll('.tb-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.stopPropagation();
       const tool = (btn as HTMLElement).dataset['tool'] as ToolType;
       game.setTool(tool);
+      // Close sub-panel after selection
+      closeAllSubPanels();
       updateUI();
     });
+  });
+
+  // Close sub-panels when clicking elsewhere
+  document.addEventListener('click', () => {
+    closeAllSubPanels();
   });
 
   // Speed buttons
@@ -954,11 +1089,19 @@ export function createGameUI(game: Game): HTMLElement {
       toolEl.textContent = `${game.getToolType()}${costStr}`;
     }
 
-    // Active tool button
+    // Active tool button (standalone + sub-panel items)
+    const currentTool = game.getToolType();
     ui.querySelectorAll('.tb-btn').forEach(btn => {
       const tool = (btn as HTMLElement).dataset['tool'];
-      btn.classList.toggle('active', tool === game.getToolType());
+      btn.classList.toggle('active', tool === currentTool);
     });
+    // Highlight parent group button if a child tool is active
+    const zoneTools = new Set(ZONE_GROUP.items.map(i => i.tool));
+    const infraTools = new Set(INFRA_GROUP.items.map(i => i.tool));
+    const zoneGroupBtn = ui.querySelector('[data-group-toggle="zone"]');
+    const infraGroupBtn = ui.querySelector('[data-group-toggle="infra"]');
+    if (zoneGroupBtn) zoneGroupBtn.classList.toggle('active', zoneTools.has(currentTool));
+    if (infraGroupBtn) infraGroupBtn.classList.toggle('active', infraTools.has(currentTool));
 
     // Speed buttons
     ui.querySelectorAll('.sp-btn').forEach(btn => {

@@ -20,22 +20,40 @@ const ZONE_HEIGHTS: Record<number, { min: number; max: number }> = {
   [ZoneType.OFFICE]: { min: 1.5, max: 4.0 },
 };
 
+// Infrastructure buildingId markers
+const INFRA_POWER_ID = 254;
+const INFRA_WATER_ID = 253;
+
 export class BuildingRenderer {
   private instancedMeshes: Map<number, THREE.InstancedMesh> = new Map();
   private zonePlanes: THREE.InstancedMesh[] = [];
+  private infraMeshes: THREE.Mesh[] = [];
   private readonly maxPerType = 5000;
 
   build(scene: THREE.Scene, grid: Grid): void {
     this.dispose(scene);
 
-    // Collect buildings by zone type AND empty zoned cells for zone overlay
+    // Collect buildings by zone type, empty zoned cells, and infrastructure
     const buildingsByZone = new Map<number, { x: number; y: number; level: number }[]>();
     const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
+    const infraCells: { x: number; y: number; type: 'power' | 'water' }[] = [];
 
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
-        if (cell && cell.zoneType !== ZoneType.NONE) {
+        if (!cell) continue;
+
+        // Infrastructure plants (no zone, special buildingId)
+        if (cell.buildingId === INFRA_POWER_ID) {
+          infraCells.push({ x, y, type: 'power' });
+          continue;
+        }
+        if (cell.buildingId === INFRA_WATER_ID) {
+          infraCells.push({ x, y, type: 'water' });
+          continue;
+        }
+
+        if (cell.zoneType !== ZoneType.NONE) {
           if (cell.buildingId > 0) {
             if (!buildingsByZone.has(cell.zoneType)) {
               buildingsByZone.set(cell.zoneType, []);
@@ -53,6 +71,9 @@ export class BuildingRenderer {
         }
       }
     }
+
+    // Render infrastructure plants
+    this.buildInfrastructure(scene, infraCells);
 
     // Render zone ground overlays for empty zoned cells
     this.buildZoneOverlays(scene, emptyZonesByType);
@@ -115,6 +136,51 @@ export class BuildingRenderer {
     }
   }
 
+  private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: 'power' | 'water' }[]): void {
+    for (const inf of cells) {
+      const isPower = inf.type === 'power';
+      const color = isPower ? 0xffeb3b : 0x03a9f4;
+
+      // Base building
+      const baseGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
+      baseGeo.translate(0, 0.3, 0);
+      const baseMat = new THREE.MeshLambertMaterial({ color: isPower ? 0x555555 : 0x4a6a7a });
+      const base = new THREE.Mesh(baseGeo, baseMat);
+      base.position.set(inf.x, 0.05, inf.y);
+      base.castShadow = true;
+      scene.add(base);
+      this.infraMeshes.push(base);
+
+      if (isPower) {
+        // Chimney / smokestack
+        const chimneyGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.5, 6);
+        chimneyGeo.translate(0, 0.25, 0);
+        const chimneyMat = new THREE.MeshLambertMaterial({ color: 0x777777 });
+        const chimney = new THREE.Mesh(chimneyGeo, chimneyMat);
+        chimney.position.set(inf.x + 0.2, 0.65, inf.y - 0.15);
+        chimney.castShadow = true;
+        scene.add(chimney);
+        this.infraMeshes.push(chimney);
+      } else {
+        // Water tower dome
+        const domeGeo = new THREE.SphereGeometry(0.25, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+        const domeMat = new THREE.MeshLambertMaterial({ color: 0x29b6f6 });
+        const dome = new THREE.Mesh(domeGeo, domeMat);
+        dome.position.set(inf.x, 0.65, inf.y);
+        scene.add(dome);
+        this.infraMeshes.push(dome);
+      }
+
+      // Color indicator on top
+      const indicatorGeo = new THREE.BoxGeometry(0.15, 0.08, 0.15);
+      const indicatorMat = new THREE.MeshBasicMaterial({ color });
+      const indicator = new THREE.Mesh(indicatorGeo, indicatorMat);
+      indicator.position.set(inf.x - 0.2, 0.7, inf.y + 0.2);
+      scene.add(indicator);
+      this.infraMeshes.push(indicator);
+    }
+  }
+
   dispose(scene: THREE.Scene): void {
     for (const mesh of this.instancedMeshes.values()) {
       scene.remove(mesh);
@@ -128,5 +194,11 @@ export class BuildingRenderer {
       (mesh.material as THREE.Material).dispose();
     }
     this.zonePlanes = [];
+    for (const mesh of this.infraMeshes) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    this.infraMeshes = [];
   }
 }

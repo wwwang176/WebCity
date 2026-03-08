@@ -115,12 +115,6 @@ export class Game {
     // Center camera
     this.sceneManager.panCamera(mapSize / 2, mapSize / 2);
 
-    // Add power plant and water plant at start (only for new games)
-    if (!loadedState) {
-      this.state.power.addPlant({ x: 2, y: 2, output: 500, pollution: 10, type: 'coal' });
-      this.state.water.addPlant({ x: 4, y: 2, output: 500 });
-    }
-
     // Input handlers
     this.setupInput(container);
 
@@ -234,12 +228,14 @@ export class Game {
       case 'q': this.sceneManager.rotateCamera(-Math.PI / 4); break;
       case 'e': this.sceneManager.rotateCamera(Math.PI / 4); break;
       case '1': this.setTool('select'); break;
-      case '2': this.setTool('road'); break;
       case '3': this.setTool('zone_r'); break;
       case '4': this.setTool('zone_c'); break;
       case '5': this.setTool('zone_i'); break;
       case '6': this.setTool('zone_o'); break;
-      case '7': this.setTool('demolish'); break;
+      case '7': this.setTool('road'); break;
+      case '8': this.setTool('power'); break;
+      case '9': this.setTool('water'); break;
+      case '0': this.setTool('demolish'); break;
       case 'escape': this.setTool('select'); this.dragStart = null; break;
       case 'delete': this.setTool('demolish'); break;
       case ' ':
@@ -335,6 +331,12 @@ export class Game {
         this.demolish(x1, y1, x2, y2);
         this.audioManager.playSfx('demolish');
         break;
+      case 'power':
+        this.placeInfrastructure(x1, y1, 'power');
+        break;
+      case 'water':
+        this.placeInfrastructure(x1, y1, 'water');
+        break;
     }
     this.onUIUpdate?.();
   }
@@ -355,6 +357,10 @@ export class Game {
     const maxY = Math.max(y1, y2);
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
+        const cell = this.state.grid.getCell(x, y);
+        // Remove infrastructure plants if demolished
+        if (cell && cell.buildingId === 254) this.state.power.removePlant(x, y);
+        if (cell && cell.buildingId === 253) this.state.water.removePlant(x, y);
         this.state.grid.setCell(x, y, {
           roadType: 0,
           roadFlags: 0,
@@ -363,6 +369,50 @@ export class Game {
         });
       }
     }
+    this.renderDirty = true;
+  }
+
+  private placeInfrastructure(x: number, y: number, type: 'power' | 'water'): void {
+    const cell = this.state.grid.getCell(x, y);
+    if (!cell) {
+      this.notification = 'Out of bounds';
+      this.notificationTimer = 3;
+      return;
+    }
+    if (cell.terrainType === TerrainType.WATER) {
+      this.notification = 'Cannot build on water';
+      this.notificationTimer = 3;
+      return;
+    }
+    if (cell.roadType !== 0 || cell.buildingId !== 0) {
+      this.notification = 'Tile is occupied';
+      this.notificationTimer = 3;
+      return;
+    }
+    // Check for existing plant at this location
+    const existing = type === 'power'
+      ? this.state.power.getPlants().some(p => p.x === x && p.y === y)
+      : this.state.water.getPlants().some(p => p.x === x && p.y === y);
+    if (existing) {
+      this.notification = `${type === 'power' ? 'Power' : 'Water'} plant already here`;
+      this.notificationTimer = 3;
+      return;
+    }
+    const cost = type === 'power' ? 500 : 300;
+    if (this.state.budget.funds < cost) {
+      this.notification = `Insufficient funds (need $${cost})`;
+      this.notificationTimer = 3;
+      return;
+    }
+    this.state.budget.funds -= cost;
+    if (type === 'power') {
+      this.state.power.addPlant({ x, y, output: 500, pollution: 10, type: 'coal' });
+    } else {
+      this.state.water.addPlant({ x, y, output: 500 });
+    }
+    // Mark cell with a special buildingId so it renders as infrastructure
+    this.state.grid.setCell(x, y, { buildingId: type === 'power' ? 254 : 253 });
+    this.audioManager.playSfx('build');
     this.renderDirty = true;
   }
 
@@ -501,6 +551,12 @@ export class Game {
 
   setTool(tool: ToolType): void {
     this.currentTool = tool;
+    // Auto-switch overlay when selecting infrastructure tools
+    if (tool === 'power') {
+      this.setOverlay('power');
+    } else if (tool === 'water') {
+      this.setOverlay('water');
+    }
     this.onUIUpdate?.();
   }
 

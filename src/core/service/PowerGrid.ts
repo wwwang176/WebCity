@@ -17,6 +17,12 @@ export class PowerGrid {
     this.plants.push(plant);
   }
 
+  removePlant(x: number, y: number): boolean {
+    const idx = this.plants.findIndex(p => p.x === x && p.y === y);
+    if (idx !== -1) { this.plants.splice(idx, 1); return true; }
+    return false;
+  }
+
   calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
     this.powered.clear();
     for (const plant of this.plants) {
