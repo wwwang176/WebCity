@@ -68,6 +68,7 @@ export class Game {
   private lastMilestoneId: string | null = null;
   private notificationTimer = 0;
   private vehiclePrevPositions = new Map<number, { x: number; y: number }>();
+  private vehicleTypes = new Map<number, VehicleData['type']>();
   private tickProgress = 0; // 0..1 interpolation between ticks
   previewCost: number | null = null; // estimated cost during road drag
 
@@ -416,11 +417,22 @@ export class Game {
         y = prev.y + (targetY - prev.y) * t;
       }
 
+      // Assign a consistent vehicle type per ID
+      if (!this.vehicleTypes.has(v.id)) {
+        const roll = Math.random();
+        let vtype: VehicleData['type'];
+        if (roll < 0.70) vtype = 'car';
+        else if (roll < 0.85) vtype = 'bus';
+        else if (roll < 0.95) vtype = 'truck';
+        else vtype = 'firetruck';
+        this.vehicleTypes.set(v.id, vtype);
+      }
+
       return {
         id: v.id,
         x,
         y,
-        type: 'car' as VehicleData['type'],
+        type: this.vehicleTypes.get(v.id)!,
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
     this.vehicleRenderer.update(vehicleData);

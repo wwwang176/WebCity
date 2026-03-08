@@ -169,6 +169,24 @@ export function createGameUI(game: Game): HTMLElement {
         max-width: 400px;
       }
       #notification.visible { display: block; }
+      #tax-panel {
+        position: absolute;
+        top: 90px;
+        right: 10px;
+      }
+      #tax-panel .tax-label {
+        font-size: 12px;
+        margin-bottom: 4px;
+      }
+      #tax-panel input[type="range"] {
+        width: 120px;
+        cursor: pointer;
+      }
+      #tax-panel .tax-value {
+        font-size: 13px;
+        font-weight: bold;
+        color: #4fc3f7;
+      }
       @keyframes notifSlide {
         from { transform: translateX(-50%) translateY(-20px); opacity: 0; }
         to { transform: translateX(-50%) translateY(0); opacity: 1; }
@@ -183,6 +201,10 @@ export function createGameUI(game: Game): HTMLElement {
     <div id="stats-panel" class="ui-panel">
       <div id="stats-income"></div>
       <div id="stats-tool"></div>
+    </div>
+    <div id="tax-panel" class="ui-panel">
+      <div class="tax-label">Tax Rate: <span class="tax-value" id="tax-display">9%</span></div>
+      <input type="range" id="tax-slider" min="1" max="20" step="1" value="9">
     </div>
     <div id="toolbar">
       ${TOOL_BUTTONS.map(b => `
@@ -261,6 +283,22 @@ export function createGameUI(game: Game): HTMLElement {
     });
   }
 
+  // Tax slider
+  const taxSlider = ui.querySelector('#tax-slider') as HTMLInputElement;
+  const taxDisplay = ui.querySelector('#tax-display') as HTMLElement;
+  if (taxSlider) {
+    // Initialize slider to current tax rate
+    const initialRate = game.getState().taxRates.residential;
+    taxSlider.value = String(initialRate);
+    if (taxDisplay) taxDisplay.textContent = `${initialRate}%`;
+
+    taxSlider.addEventListener('input', () => {
+      const rate = parseInt(taxSlider.value, 10);
+      game.getState().taxRates.residential = rate;
+      if (taxDisplay) taxDisplay.textContent = `${rate}%`;
+    });
+  }
+
   const ZONE_NAMES: Record<number, string> = {
     [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
     [ZoneType.RESIDENTIAL_HIGH]: 'Residential (High)',
@@ -318,9 +356,12 @@ export function createGameUI(game: Game): HTMLElement {
     const incomeEl = ui.querySelector('#stats-income');
     if (incomeEl) incomeEl.textContent = `Balance: $${Math.floor(state.budget.income - state.budget.expenses)}/tick`;
 
-    // Tool
+    // Tool + preview cost
     const toolEl = ui.querySelector('#stats-tool');
-    if (toolEl) toolEl.textContent = `Tool: ${game.getToolType()}`;
+    if (toolEl) {
+      const costStr = game.previewCost != null ? ` (Est: $${game.previewCost})` : '';
+      toolEl.textContent = `Tool: ${game.getToolType()}${costStr}`;
+    }
 
     // Active tool button
     ui.querySelectorAll('.tool-btn').forEach(btn => {
@@ -351,6 +392,15 @@ export function createGameUI(game: Game): HTMLElement {
       } else {
         notifEl.classList.remove('visible');
       }
+    }
+
+    // Tax slider sync
+    const taxSliderEl = ui.querySelector('#tax-slider') as HTMLInputElement;
+    const taxDisplayEl = ui.querySelector('#tax-display') as HTMLElement;
+    if (taxSliderEl && taxDisplayEl) {
+      const currentRate = state.taxRates.residential;
+      taxSliderEl.value = String(currentRate);
+      taxDisplayEl.textContent = `${currentRate}%`;
     }
 
     // RCI bars
