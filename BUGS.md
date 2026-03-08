@@ -827,3 +827,17 @@
 - ✅ **Loading Screen** — 主選單→New Game 時顯示 "Loading WebCity..." 進度條
 - ✅ 零 Console 錯誤
 - ✅ 全部 291 單元測試通過
+
+### 新增已驗證功能（第三十八輪測試 — 里程碑、災害、地形、交通、子系統完整驗證）
+- ✅ **里程碑系統** — Tiny Town (500 pop) + Small City (1000 pop) 正確觸發通知 + 解鎖內容
+- ✅ **災害系統** — Earthquake 正確觸發，顯示位置/強度，破壞建築
+- ✅ **地形建設限制** — 水域 "water in the way"，山脈 "mountain in the way" 正確阻止
+- ✅ **地形分佈** — PLAIN:3150, WATER:180, MOUNTAIN:49, FOREST:221（60x60 地圖）
+- ✅ **面板折疊/展開** — panel-toggle 點擊正確切換 collapsed class
+- ✅ **Pollution 系統** — avgPollution:37.6, 道路旁 0（工業區在遠處）
+- ✅ **Crime 系統** — avgCrime:20.18
+- ✅ **Land Value** — 道路旁 73，遠處 0（位置影響正確）
+- ✅ **Service Coverage** — poweredRatio:1, wateredRatio:1（100% 覆蓋）
+- ✅ **交通車輛** — 22 輛車行駛中，完整 BFS 路徑（20 步），currentIndex 追蹤移動
+- ✅ **稅率系統** — R/C/I/O 各 9%（預設值）
+- ✅ 零 Console 錯誤（僅 Chrome 擴充套件通訊錯誤，非遊戲本身）
