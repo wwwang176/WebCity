@@ -129,15 +129,15 @@
   - `traffic`: 從 TrafficSimulation.getSegmentDensity() 取得車流密度
 
 ### BUG-011: 還有更多子系統未整合
-- 地價系統 (LandValue) — 計算但未回寫到 grid
-- 汙染系統 (Pollution) — 已加入 state 但未在 tick 中計算
-- 建築升級/降級 — 已加入 state 但未在 tick 中呼叫
-- 區域劃分與政策 (District)
-- 災害系統
-- 大眾運輸
-- 服務車輛調度
-- **嚴重性**: 中 — 核心遊戲循環已運作，這些是進階功能
-- **狀態**: 待做
+- ~~地價系統 (LandValue) — 計算但未回寫到 grid~~ ✅ 已修復（第十八輪）
+- ~~汙染系統 (Pollution) — 已加入 state 但未在 tick 中計算~~ ✅ 已修復（第十八輪）
+- ~~建築升級/降級 — 已加入 state 但未在 tick 中呼叫~~ ✅ 已修復（第十八輪）
+- 區域劃分與政策 (District) — 待做
+- 災害系統 — 基本功能已有，進階連鎖待做
+- 大眾運輸 — 核心邏輯已實作，UI 未整合
+- 服務車輛調度 — 待做
+- **嚴重性**: 低 — 核心子系統已整合，剩餘為進階功能
+- **狀態**: 部分修復
 
 ---
 
@@ -553,5 +553,31 @@
 - ✅ 零 Console 錯誤
 - ✅ 全部 291 單元測試通過
 
+### 新增已驗證功能（第十八輪測試 — 模擬子系統整合修復 + 深度驗證）
+**重大修復：BUG-011 核心整合**
+- ✅ **污染系統整合** — 工業區產生 ground:150 + noise:70 污染，正確擴散衰減
+  - 住宅區（距工業 10+ 格）pollution=0，工業區 pollution=255（ground+noise cap）
+  - 每 10 ticks 更新一次（效能優化）
+  - 污染值回寫到 grid.pollution 欄位，overlay 可顯示
+- ✅ **地價系統整合** — 基於服務覆蓋、污染、水岸、公園計算
+  - 住宅區（有公園加成）landValue=81
+  - 商業區 landValue=81
+  - 工業區 landValue=58（0.2x 自身污染因子，避免永遠為 0）
+  - 森林地形視為自然公園，2 格半徑內 +15 地價
+  - 水岸 +20 地價
+- ✅ **建築升級系統整合** — L1→L2→L3 完整路徑驗證
+  - L1→L2：serviceCov≥3 + landValue≥50 ✓（4棟住宅 + 4棟商業成功升級）
+  - L2→L3：serviceCov≥5 + landValue≥80 + crime<20 + pollution<30 ✓
+  - 住宅 bld1→bld2→bld3（Small→Medium→Large House）
+  - 商業 bld7→bld8→bld9（Small→Medium→Large Shop）
+  - 工業 bld13→bld14（Small→Medium Factory，L3 受污染限制，正確行為）
+- ✅ **serviceCoverage / noiseLevel 回寫 grid** — overlay 顯示正確數值
+- ✅ 零 Console 錯誤
+- ✅ 全部 291 單元測試通過
+
 ### 未完成功能
-- ⚠️ 部分進階子系統未整合（BUG-011：污染、地價、建築升級等）
+- ⚠️ 部分進階子系統仍需完善：
+  - District 畫區 UI + 區域政策（BUG-011 殘留）
+  - 車輛路線仍為隨機道路（BUG-036）
+  - 公共交通 UI 未整合
+  - 消防/警察/醫療 dispatch 邏輯未驗證
