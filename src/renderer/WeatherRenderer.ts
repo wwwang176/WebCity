@@ -88,8 +88,8 @@ export class WeatherRenderer {
 
     (this.sceneManager.scene.background as THREE.Color).copy(skyColor);
 
-    // Ambient light: dimmer at night
-    this.sceneManager.ambientLight.intensity = 0.15 + smoothFactor * (this.baseAmbientIntensity - 0.15);
+    // Ambient light: dimmer at night (0.05 at midnight → 0.6 at noon)
+    this.sceneManager.ambientLight.intensity = 0.05 + smoothFactor * (this.baseAmbientIntensity - 0.05);
     // Tint ambient light warm at dawn/dusk
     if (sunFactor > 0.15 && sunFactor < 0.5) {
       this.sceneManager.ambientLight.color.setHex(0xffeedd);
@@ -97,8 +97,9 @@ export class WeatherRenderer {
       this.sceneManager.ambientLight.color.setHex(0xffffff);
     }
 
-    // Directional light (sun): intensity and color
+    // Directional light (sun): intensity and color; disable shadows at night
     this.sceneManager.directionalLight.intensity = smoothFactor * this.baseDirectionalIntensity;
+    this.sceneManager.directionalLight.castShadow = smoothFactor > 0.05;
     if (sunFactor < 0.5) {
       // Warm orange during dawn/dusk
       const warmth = 1 - sunFactor * 2;
@@ -114,8 +115,8 @@ export class WeatherRenderer {
     const sunZ = 50;
     this.sceneManager.directionalLight.position.set(sunX, sunY, sunZ);
 
-    // Hemisphere light
-    this.sceneManager.hemisphereLight.intensity = 0.05 + smoothFactor * (this.baseHemiIntensity - 0.05);
+    // Hemisphere light (0.01 at midnight → 0.3 at noon)
+    this.sceneManager.hemisphereLight.intensity = 0.01 + smoothFactor * (this.baseHemiIntensity - 0.01);
     this.sceneManager.hemisphereLight.color.copy(skyColor);
   }
 
