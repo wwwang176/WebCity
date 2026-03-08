@@ -22,6 +22,25 @@ import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 
+// Catmull-Rom spline helpers for smooth vehicle turning
+function catmullRom(t: number, p0: number, p1: number, p2: number, p3: number): number {
+  const t2 = t * t, t3 = t2 * t;
+  return 0.5 * (
+    (-p0 + 3 * p1 - 3 * p2 + p3) * t3 +
+    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
+    (-p0 + p2) * t +
+    2 * p1
+  );
+}
+function catmullRomDeriv(t: number, p0: number, p1: number, p2: number, p3: number): number {
+  const t2 = t * t;
+  return 0.5 * (
+    3 * (-p0 + 3 * p1 - 3 * p2 + p3) * t2 +
+    2 * (2 * p0 - 5 * p1 + 4 * p2 - p3) * t +
+    (-p0 + p2)
+  );
+}
+
 export type ToolType = 'select' | 'road' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
 
 export interface SelectedBuilding {
@@ -70,6 +89,7 @@ export class Game {
   private notificationTimer = 0;
   private vehiclePrevPositions = new Map<number, { x: number; y: number }>();
   private vehicleTypes = new Map<number, VehicleData['type']>();
+  private vehicleHeadings = new Map<number, number>();
   private tickProgress = 0; // 0..1 interpolation between ticks
   previewCost: number | null = null; // estimated cost during road drag
 
@@ -507,7 +527,7 @@ export class Game {
     // Update cursor color based on tool
     this.updateCursorColor();
 
-    // Update vehicles with smooth interpolation
+    // Update vehicles with Catmull-Rom spline interpolation (smooth turns)
     const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
       const pos = v.path[v.currentIndex];
       if (!pos) return null;
@@ -515,14 +535,47 @@ export class Game {
       const targetX = Number(xStr);
       const targetY = Number(yStr);
 
-      // Interpolate from previous position
       const prev = this.vehiclePrevPositions.get(v.id);
       let x = targetX;
       let y = targetY;
+      let heading = this.vehicleHeadings.get(v.id) ?? 0;
+
       if (prev) {
         const t = Math.min(1, this.tickProgress);
-        x = prev.x + (targetX - prev.x) * t;
-        y = prev.y + (targetY - prev.y) * t;
+
+        // Gather 4 points for Catmull-Rom: P0, P1(=prev), P2(=target), P3
+        const p0raw = v.currentIndex >= 2 ? v.path[v.currentIndex - 2] : null;
+        const p3raw = v.path[v.currentIndex + 1] ?? null;
+
+        let p0x: number, p0y: number, p3x: number, p3y: number;
+        if (p0raw) {
+          const [a, b] = p0raw.split(',');
+          p0x = Number(a); p0y = Number(b);
+        } else {
+          // Extrapolate: mirror prev around itself
+          p0x = prev.x - (targetX - prev.x);
+          p0y = prev.y - (targetY - prev.y);
+        }
+        if (p3raw) {
+          const [a, b] = p3raw.split(',');
+          p3x = Number(a); p3y = Number(b);
+        } else {
+          // Extrapolate: mirror target beyond itself
+          p3x = targetX + (targetX - prev.x);
+          p3y = targetY + (targetY - prev.y);
+        }
+
+        // Catmull-Rom position
+        x = catmullRom(t, p0x, prev.x, targetX, p3x);
+        y = catmullRom(t, p0y, prev.y, targetY, p3y);
+
+        // Catmull-Rom tangent for smooth heading
+        const dx = catmullRomDeriv(t, p0x, prev.x, targetX, p3x);
+        const dz = catmullRomDeriv(t, p0y, prev.y, targetY, p3y);
+        if (Math.abs(dx) > 0.0001 || Math.abs(dz) > 0.0001) {
+          heading = Math.atan2(-dz, dx);
+          this.vehicleHeadings.set(v.id, heading);
+        }
       }
 
       // Assign a consistent vehicle type per ID
@@ -540,6 +593,7 @@ export class Game {
         id: v.id,
         x,
         y,
+        heading,
         type: this.vehicleTypes.get(v.id)!,
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
