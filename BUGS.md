@@ -876,3 +876,10 @@
 - ✅ **載入後遊戲繼續運行** — tick 2207→2257, 資金 $150K→$153K（50 tick 正常增長）
 - ✅ **截圖驗證** — 載入後城市視覺完整：道路/建築/水域/地形全部正確渲染
 - ✅ **序列化保真** — taxRates/citizens/grid/clock/budget 全部精確恢復
+
+### 新增已驗證功能（第四十三輪測試 — Overlay 截圖、Stats Chart、Mute 完整驗證）
+- ✅ **Pollution Overlay 截圖** — 背景粉橙色，工業區紅色熱力圖，汙染視覺化正確
+- ✅ **Zone Overlay 截圖** — 住宅(綠)/商業(藍)/工業(橙)/辦公(紫) 色塊清楚顯示
+- ✅ **Stats Chart** — Population 綠線 + Happiness 黃線即時繪製（140x60 canvas）
+- ✅ **Mute Toggle** — toggleMute() 正確切換靜音/取消靜音
+- ✅ **AudioManager API** — startBGM/stopBGM/playSfx/setMasterVolume/setMusicVolume/setSfxVolume 完整
