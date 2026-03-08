@@ -3,8 +3,17 @@ export interface Vehicle {
   path: string[];
   pathPos: number; // continuous position along path (integer = cell center, +0.5 = cell boundary)
   speed: number;
+  length: number;  // vehicle body length in world units
   arrived: boolean;
 }
+
+/** Vehicle lengths matching renderer model sizes */
+const VEHICLE_LENGTHS = [
+  { weight: 0.70, length: 0.22 },  // car
+  { weight: 0.15, length: 0.45 },  // bus
+  { weight: 0.10, length: 0.32 },  // truck
+  { weight: 0.05, length: 0.34 },  // firetruck
+];
 
 /**
  * Continuous traffic simulation — grid-free movement.
@@ -18,15 +27,25 @@ export class TrafficSimulation {
   private nextId = 1;
 
   private static readonly SPEED = 1.0;       // path-units per tick
-  private static readonly MIN_GAP = 0.3;     // min distance between vehicles
-  private static readonly STOP_OFFSET = 0.02; // stop this far before cell boundary
+  private static readonly MIN_GAP = 0.15;    // min distance between vehicles
+  private static readonly STOP_OFFSET = 0.25; // align vehicle front with stop line (0.25 from cell center)
 
   addVehicle(path: string[]): Vehicle {
+    // Pick random vehicle length based on weighted distribution
+    let len = 0.22;
+    const roll = Math.random();
+    let cumulative = 0;
+    for (const entry of VEHICLE_LENGTHS) {
+      cumulative += entry.weight;
+      if (roll < cumulative) { len = entry.length; break; }
+    }
+
     const vehicle: Vehicle = {
       id: this.nextId++,
       path,
       pathPos: 0,
       speed: TrafficSimulation.SPEED,
+      length: len,
       arrived: false,
     };
     this.vehicles.push(vehicle);
@@ -36,14 +55,14 @@ export class TrafficSimulation {
   tick(canAdvance?: (current: string, next: string) => boolean): void {
     const { MIN_GAP, STOP_OFFSET } = TrafficSimulation;
 
-    // Pre-compute world positions and heading vectors for all vehicles
-    const info = new Map<number, { x: number; y: number; hx: number; hy: number }>();
+    // Pre-compute world positions, heading vectors, and lengths for all vehicles
+    const info = new Map<number, { x: number; y: number; hx: number; hy: number; len: number }>();
     for (const v of this.vehicles) {
       if (v.arrived) continue;
       const pos = this.getVehiclePosition(v);
       if (!pos) continue;
       const h = this.headingVec(v);
-      info.set(v.id, { x: pos.x, y: pos.y, hx: h.hx, hy: h.hy });
+      info.set(v.id, { x: pos.x, y: pos.y, hx: h.hx, hy: h.hy, len: v.length });
     }
 
     for (const v of this.vehicles) {
@@ -52,7 +71,7 @@ export class TrafficSimulation {
       if (!me) continue;
 
       // ── 1. Clearance to nearest vehicle ahead (world-space, same direction) ──
-      let clearance = Infinity;
+      let gap = Infinity; // actual gap between vehicle bodies
       for (const [otherId, other] of info) {
         if (otherId === v.id) continue;
         const dx = other.x - me.x;
@@ -67,7 +86,9 @@ export class TrafficSimulation {
         // Same direction? (heading dot product > 0.5 ≈ within 60°)
         if (me.hx * other.hx + me.hy * other.hy < 0.5) continue;
 
-        if (ahead < clearance) clearance = ahead;
+        // Body gap = center-to-center distance minus half-lengths of both vehicles
+        const bodyGap = ahead - me.len / 2 - other.len / 2;
+        if (bodyGap < gap) gap = bodyGap;
       }
 
       // ── 2. Distance to nearest red light on path ──
@@ -81,14 +102,14 @@ export class TrafficSimulation {
           const distToBoundary = (i - idx) + (0.5 - frac);
           if (distToBoundary < 0) continue; // already past this boundary
           if (!canAdvance(v.path[i]!, v.path[i + 1]!)) {
-            redLightDist = Math.max(0, distToBoundary - STOP_OFFSET);
+            redLightDist = Math.max(0, distToBoundary - STOP_OFFSET - v.length / 2);
             break;
           }
         }
       }
 
       // ── 3. Advance ──
-      const room = Math.max(0, Math.min(clearance - MIN_GAP, redLightDist));
+      const room = Math.max(0, Math.min(gap - MIN_GAP, redLightDist));
       v.pathPos += Math.min(v.speed, room);
 
       if (v.pathPos >= v.path.length - 1) {

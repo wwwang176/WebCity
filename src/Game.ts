@@ -529,14 +529,13 @@ export class Game {
       const { x, y, heading } = sp;
       this.vehicleHeadings.set(v.id, heading);
 
-      // Assign a consistent vehicle type per ID
+      // Derive vehicle type from length (assigned in simulation)
       if (!this.vehicleTypes.has(v.id)) {
-        const roll = Math.random();
         let vtype: VehicleData['type'];
-        if (roll < 0.70) vtype = 'car';
-        else if (roll < 0.85) vtype = 'bus';
-        else if (roll < 0.95) vtype = 'truck';
-        else vtype = 'firetruck';
+        if (v.length >= 0.44) vtype = 'bus';
+        else if (v.length >= 0.33) vtype = 'firetruck';
+        else if (v.length >= 0.28) vtype = 'truck';
+        else vtype = 'car';
         this.vehicleTypes.set(v.id, vtype);
       }
 
