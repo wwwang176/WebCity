@@ -151,19 +151,50 @@ export class SimulationLoop {
     const avgPollution = this.getAvgPollution();
     const avgCrime = this.getAvgCrime();
 
+    // Estimate average commute from city spread (compact city = short commutes)
+    const buildingCount = this.countZoneBuildings('residential') +
+      this.countZoneBuildings('commercial') + this.countZoneBuildings('industrial');
+    const avgCommute = buildingCount > 0 ? Math.min(25, 1 + Math.sqrt(buildingCount) * 0.7) : 3;
+
+    // Count service coverage: power + water + low pollution bonus
+    const { poweredRatio, wateredRatio } = this.getServiceRatios();
+    const serviceCoverage = Math.round(poweredRatio * 2 + wateredRatio * 2 + (avgPollution < 10 ? 1 : 0));
+
     for (const citizen of this.state.citizens.citizens) {
+      // Vary commute per citizen (+/- 3 random jitter)
+      const commute = Math.max(1, avgCommute + (Math.random() * 6 - 3));
       const factors: HappinessFactors = {
-        commuteDistance: 10,  // average commute
+        commuteDistance: commute,
         hasPark: false,
         pollution: avgPollution,
         noiseLevel: 0,
         crimeRate: avgCrime,
         isEmployed: citizen.age <= 18 || citizen.age > 65 || Math.random() < employmentRate,
         taxRate,
-        serviceCoverage: 2,
+        serviceCoverage,
       };
       citizen.happiness = calculateHappiness(citizen, factors);
     }
+  }
+
+  private getServiceRatios(): { poweredRatio: number; wateredRatio: number } {
+    let powered = 0;
+    let watered = 0;
+    let total = 0;
+    for (let y = 0; y < this.state.grid.height; y++) {
+      for (let x = 0; x < this.state.grid.width; x++) {
+        const cell = this.state.grid.getCell(x, y);
+        if (cell && cell.buildingId > 0 && cell.zoneType > 0) {
+          total++;
+          if (this.state.power.isPowered(x, y)) powered++;
+          if (this.state.water.isSupplied(x, y)) watered++;
+        }
+      }
+    }
+    return {
+      poweredRatio: total > 0 ? powered / total : 0,
+      wateredRatio: total > 0 ? watered / total : 0,
+    };
   }
 
   private countTotalJobs(): number {
