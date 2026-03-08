@@ -776,3 +776,11 @@
 - ✅ 零 Console 錯誤（頁面載入 + Load Game 全程無 error）
 - ✅ 全部 291 單元測試通過
 - ✅ Production Build 953ms 成功
+
+### 新增已驗證功能（第三十四輪測試 — 新遊戲完整生命週期 + 穩定性壓力測試）
+- ✅ **New Game 初始狀態** — Day 1/Month 1/Year 1, Pop 0, $50,000, 電廠(2,2)+水廠(4,2) 自動放置
+- ✅ **從零建城完整流程** — JS 建路(3條)→劃區(32R+14C+13I/O=59格)→500 ticks→53棟建築+81居民+9車輛
+- ✅ **經濟循環正常** — Balance +$57/tick, 資金 $45K→$69K 正成長
+- ✅ **1000-tick 壓力測試** — 731ms, 零 NaN/Infinity/crash, Pop 81, $136K, Balance +$61/tick
+- ✅ **城市穩定運行** — 建築 53→54, Happiness 58%→53%（微降屬正常波動）
+- ✅ 零 Console 錯誤
