@@ -389,31 +389,36 @@
 
 ### UI/渲染改進需求
 
-#### ENHANCE-002: UI 整體風格重新設計
+#### ENHANCE-002: UI 整體風格重新設計 ✅ 已完成
 - **問題**: 目前 UI 介面風格較簡陋，不夠專業和好用
-- **設計工具**: 使用 [Google Stitch](https://stitch.withgoogle.com/) 線上 UI 設計系統
-  - 給提示詞請它設計城市經營遊戲的 UI
-  - 在介面上方按 more > 查看程式碼 > 複製程式碼
-  - 將設計稿轉換為實際 HTML/CSS 套用到遊戲中
-- **嚴重性**: 中（影響使用體驗和遊戲質感）
-- **狀態**: 待做
+- **修復**:
+  - 全新 frosted glass 風格面板（backdrop-filter blur）
+  - 頂部欄整合日期/資金/人口/收支/幸福度 + 速度控制
+  - 工具列加入 emoji 圖示、分隔線、Economy/Traffic 快捷按鈕
+  - 統一色系：深藍底 + 青色強調（#42a5f5）
+  - 改善字型、間距、陰影、動畫效果
+  - MainMenu 也同步更新為深色漸層 + 微光效果
+- **狀態**: 已完成（Round 49）
 
-#### ENHANCE-003: 經濟與交通詳細面板（彈出視窗）
-- **問題**: 經濟與交通是遊戲主軸，但目前只有右上角簡略數字，缺乏詳細檢視功能
-- **預期改進**:
-  1. **經濟面板** — 新增按鈕開啟彈出視窗，包含：
-     - 收入/支出明細分項（住宅稅、商業稅、工業稅、辦公稅、道路維護、服務費等）
-     - 經濟歷史曲線（資金、收入、支出隨時間變化的折線圖）
-     - 預算分配控制（各項服務支出調整）
-     - 貸款管理介面
-  2. **交通面板** — 新增按鈕開啟彈出視窗，包含：
-     - 交通流量統計（總車輛數、平均通勤時間）
-     - 擁塞路段排名（最壅塞的道路列表）
-     - 交通熱力圖 overlay 快捷切換
-     - 道路容量使用率
-  3. 面板設計為可拖曳、可關閉的彈出視窗（modal/popup）
-- **嚴重性**: 中（核心遊戲體驗改善）
-- **狀態**: 待做
+#### ENHANCE-003: 經濟與交通詳細面板（彈出視窗）✅ 已完成
+- **修復**:
+  1. **經濟面板** — 工具列 Economy 按鈕開啟 modal：
+     - 摘要卡片（Treasury / Income / Expenses / Net Balance）
+     - 收入明細表（住宅稅、商業稅、工業稅、辦公稅 + 各自稅率和金額）
+     - 支出明細表（道路維護、電廠、水廠、貸款利息）
+     - 經濟歷史 Canvas 折線圖（資金/收入/支出三條線）
+     - 貸款管理（Outstanding 餘額 + Borrow $5K/$10K + Repay $5K 按鈕）
+  2. **交通面板** — 工具列 Traffic 按鈕開啟 modal：
+     - 摘要卡片（Active Vehicles / Avg Path Length / Road Tiles / Peak Density）
+     - Top 8 壅塞路段排名表（位置、車輛數、色彩漸變壅塞條）
+     - Overlay 快捷按鈕（Traffic/Power/Water/Pollution/Land Value/Zones）
+  3. 面板為可關閉的 modal（點擊 X 或背景關閉），動畫淡入效果
+- **新增檔案修改**:
+  - `src/ui/GameUI.ts` — 完全重寫 UI（新設計 + Economy/Traffic 面板）
+  - `src/ui/MainMenu.ts` — 更新主選單風格
+  - `src/Game.ts` — 新增 getEconomyBreakdown()、getTrafficStats()、takeLoan()、repayLoan()
+  - `src/core/traffic/TrafficSimulation.ts` — 新增 getTopCongested()、getAveragePathLength()
+- **狀態**: 已完成（Round 49）
 
 #### ENHANCE-001: 道路渲染改進 — 連續道路外觀
 - **位置**: `src/renderer/RoadRenderer.ts`
@@ -511,8 +516,8 @@
 - District 畫區 UI + 區域政策
 - 大眾運輸系統
 - 服務車輛調度
-- UI 風格重設計（ENHANCE-002）
-- 經濟/交通詳細面板（ENHANCE-003）
+- ~~UI 風格重設計（ENHANCE-002）~~ ✅ 已完成
+- ~~經濟/交通詳細面板（ENHANCE-003）~~ ✅ 已完成
 - 道路連續渲染（ENHANCE-001）
 
 ### 新增已驗證功能（第十七輪測試 — 鍵盤快捷鍵 + 建築面板 + 存檔 + 視窗自適應）

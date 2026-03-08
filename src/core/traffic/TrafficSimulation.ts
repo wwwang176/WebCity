@@ -59,6 +59,19 @@ export class TrafficSimulation {
     return this.vehicles.length;
   }
 
+  getTopCongested(n: number): { segment: string; density: number }[] {
+    const entries = [...this.segmentVehicles.entries()]
+      .map(([segment, density]) => ({ segment, density }))
+      .sort((a, b) => b.density - a.density);
+    return entries.slice(0, n);
+  }
+
+  getAveragePathLength(): number {
+    if (this.vehicles.length === 0) return 0;
+    const total = this.vehicles.reduce((sum, v) => sum + v.path.length, 0);
+    return total / this.vehicles.length;
+  }
+
   private incrementSegment(segment: string): void {
     this.segmentVehicles.set(segment, (this.segmentVehicles.get(segment) ?? 0) + 1);
   }

@@ -694,4 +694,89 @@ export class Game {
   getNotification(): string | null {
     return this.notification;
   }
+
+  getEconomyBreakdown(): {
+    residential: number; commercial: number; industrial: number; office: number;
+    roadMaintenance: number; loanInterest: number; powerCost: number; waterCost: number;
+  } {
+    const grid = this.state.grid;
+    const taxRate = this.state.taxRates;
+    let resIncome = 0, comIncome = 0, indIncome = 0, offIncome = 0;
+    let roadCount = 0;
+
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (!cell) continue;
+        if (cell.roadType > 0) roadCount++;
+        if (cell.buildingId === 0) continue;
+        const base = cell.buildingId * 2;
+        if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) {
+          resIncome += base * (taxRate.residential / 100);
+        } else if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) {
+          comIncome += base * (taxRate.commercial / 100);
+        } else if (cell.zoneType === ZoneType.INDUSTRIAL) {
+          indIncome += base * (taxRate.industrial / 100);
+        } else if (cell.zoneType === ZoneType.OFFICE) {
+          offIncome += base * (taxRate.office / 100);
+        }
+      }
+    }
+
+    const roadMaintenance = roadCount * 0.1;
+    const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
+    const powerCost = this.state.power.getPlants().length * 5;
+    const waterCost = this.state.water.getPlants().length * 3;
+
+    return {
+      residential: Math.round(resIncome * 10) / 10,
+      commercial: Math.round(comIncome * 10) / 10,
+      industrial: Math.round(indIncome * 10) / 10,
+      office: Math.round(offIncome * 10) / 10,
+      roadMaintenance: Math.round(roadMaintenance * 10) / 10,
+      loanInterest: Math.round(loanInterest * 10) / 10,
+      powerCost,
+      waterCost,
+    };
+  }
+
+  getTrafficStats(): {
+    vehicleCount: number; topCongested: { segment: string; density: number }[];
+    avgPathLength: number; totalRoads: number;
+  } {
+    let totalRoads = 0;
+    const grid = this.state.grid;
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (cell && cell.roadType > 0) totalRoads++;
+      }
+    }
+    return {
+      vehicleCount: this.state.traffic.getVehicleCount(),
+      topCongested: this.state.traffic.getTopCongested(8),
+      avgPathLength: Math.round(this.state.traffic.getAveragePathLength() * 10) / 10,
+      totalRoads,
+    };
+  }
+
+  takeLoan(amount: number): void {
+    if (amount <= 0) return;
+    this.state.budget.funds += amount;
+    this.state.budget.loans += amount;
+    this.notification = `Loan taken: $${amount.toLocaleString()}`;
+    this.notificationTimer = 4;
+    this.onUIUpdate?.();
+  }
+
+  repayLoan(amount: number): void {
+    if (amount <= 0) return;
+    const actual = Math.min(amount, this.state.budget.loans, this.state.budget.funds);
+    if (actual <= 0) return;
+    this.state.budget.funds -= actual;
+    this.state.budget.loans -= actual;
+    this.notification = `Loan repaid: $${actual.toLocaleString()}`;
+    this.notificationTimer = 4;
+    this.onUIUpdate?.();
+  }
 }
