@@ -624,15 +624,14 @@ export function createGameUI(game: Game): HTMLElement {
       e.stopPropagation();
       const tool = (btn as HTMLElement).dataset['tool'] as ToolType;
       game.setTool(tool);
-      // Close sub-panel after selection
-      closeAllSubPanels();
+      // Keep sub-panel open if the selected tool belongs to the open group
+      const parentGroup = (btn as HTMLElement).closest('.tb-group');
+      if (!parentGroup) {
+        // Standalone tool (Select/Demolish) — close all panels
+        closeAllSubPanels();
+      }
       updateUI();
     });
-  });
-
-  // Close sub-panels when clicking elsewhere
-  document.addEventListener('click', () => {
-    closeAllSubPanels();
   });
 
   // Speed buttons

@@ -264,7 +264,8 @@ export class SimulationLoop {
     for (let y = 0; y < this.state.grid.height; y++) {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.buildingId > 0) {
+        // Skip infrastructure (buildingId 253=water, 254=power) and empty cells
+        if (cell && cell.buildingId > 0 && cell.buildingId < 253) {
           const level = cell.buildingId; // building level stored in buildingId
           income += level * 2; // base income per building per tick
         }
@@ -272,7 +273,11 @@ export class SimulationLoop {
     }
     const taxRate = this.state.taxRates.residential ?? 9;
     this.state.budget.income = income * (taxRate / 100);
-    this.state.budget.expenses = this.countRoadTiles() * 0.1; // road maintenance
+    // Expenses: road maintenance + infrastructure operating costs
+    const roadMaint = this.countRoadTiles() * 0.1;
+    const powerCost = this.state.power.getPlants().length * 5;
+    const waterCost = this.state.water.getPlants().length * 3;
+    this.state.budget.expenses = roadMaint + powerCost + waterCost;
   }
 
   private countRoadTiles(): number {
