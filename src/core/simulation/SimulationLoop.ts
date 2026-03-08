@@ -3,6 +3,8 @@ import { tickBudget } from '../economy/Budget';
 import { calculateRCIDemand } from '../economy/RCIDemand';
 import { migrationTick } from '../citizen/Migration';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
+import { calculateLandValue } from '../economy/LandValue';
+import { ZoneType } from '../grid/types';
 
 export class SimulationLoop {
   private state: GameState;
@@ -33,8 +35,17 @@ export class SimulationLoop {
     this.state.power.calculateCoverage(this.state.grid);
     this.state.water.calculateCoverage(this.state.grid);
 
+    // 3.5. Pollution & land value: update every 10 ticks (performance)
+    if (this.state.clock.tick % 10 === 0) {
+      this.updatePollution();
+      this.updateLandValue();
+    }
+
     // 4. Building growth - try to grow on random empty zoned cells
     this.tryBuildingGrowth();
+
+    // 4.5. Building upgrades/downgrades based on conditions
+    this.tryBuildingUpgrades();
 
     // 5. Citizens aging (once per game year)
     const currentYear = this.state.clock.getYear();
@@ -269,6 +280,134 @@ export class SimulationLoop {
       }
     }
     return count;
+  }
+
+  private updatePollution(): void {
+    const grid = this.state.grid;
+    const pm = this.state.pollution;
+
+    pm.clearSources();
+
+    // Industrial buildings produce ground pollution; roads produce noise
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (!cell) continue;
+        if (cell.buildingId > 0 && cell.zoneType === ZoneType.INDUSTRIAL) {
+          pm.addSource(x, y, 60, 'ground');
+          pm.addSource(x, y, 40, 'noise');
+        }
+        if (cell.roadType > 0 && cell.trafficDensity > 0) {
+          pm.addSource(x, y, cell.trafficDensity * 10, 'noise');
+        }
+      }
+    }
+
+    pm.calculateSpread();
+
+    // Write pollution back to grid cells
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const p = pm.getPollutionAt(x, y);
+        const total = Math.min(255, p.ground + p.noise);
+        const cell = grid.getCell(x, y);
+        if (cell && cell.pollution !== total) {
+          grid.setCell(x, y, { pollution: total });
+        }
+      }
+    }
+  }
+
+  private updateLandValue(): void {
+    const grid = this.state.grid;
+
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (!cell || cell.buildingId === 0) continue;
+
+        const pollution = this.state.pollution.getPollutionAt(x, y);
+        const isPowered = this.state.power.isPowered(x, y);
+        const isWatered = this.state.water.isSupplied(x, y);
+        const serviceCoverage = (isPowered ? 2 : 0) + (isWatered ? 2 : 0);
+
+        // Check if near water or forest (natural park) within 2 cells
+        let waterfront = false;
+        let parkProximity = false;
+        const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+        for (const [dx, dy] of dirs) {
+          const nc = grid.getCell(x + dx!, y + dy!);
+          if (nc && nc.terrainType === 1) waterfront = true;
+          if (nc && nc.terrainType === 3) parkProximity = true; // FOREST = natural park
+        }
+        // Also check 2-cell radius for parks
+        if (!parkProximity) {
+          for (let dx = -2; dx <= 2; dx++) {
+            for (let dy = -2; dy <= 2; dy++) {
+              if (Math.abs(dx) + Math.abs(dy) > 2) continue;
+              const nc = grid.getCell(x + dx, y + dy);
+              if (nc && nc.terrainType === 3) { parkProximity = true; break; }
+            }
+            if (parkProximity) break;
+          }
+        }
+
+        // Industrial zones are less affected by their own pollution
+        const pollutionFactor = cell.zoneType === ZoneType.INDUSTRIAL ? 0.2 : 1;
+        const value = calculateLandValue({
+          serviceCoverage,
+          parkProximity,
+          waterfront,
+          pollution: pollution.ground * pollutionFactor,
+          noise: pollution.noise * pollutionFactor,
+          crimeRate: this.getAvgCrime(),
+        });
+
+        // Write land value, service coverage, and noise to grid
+        const updates: Record<string, number> = {};
+        if (cell.landValue !== value) updates.landValue = value;
+        if (cell.serviceCoverage !== serviceCoverage) updates.serviceCoverage = serviceCoverage;
+        const noiseVal = Math.min(255, Math.round(pollution.noise));
+        if (cell.noiseLevel !== noiseVal) updates.noiseLevel = noiseVal;
+        if (Object.keys(updates).length > 0) {
+          grid.setCell(x, y, updates);
+        }
+      }
+    }
+  }
+
+  private tryBuildingUpgrades(): void {
+    const grid = this.state.grid;
+    const upgrade = this.state.buildingUpgrade;
+
+    // Sample cells each tick rather than scanning all (performance)
+    const attempts = 30;
+    for (let i = 0; i < attempts; i++) {
+      const x = Math.floor(Math.random() * grid.width);
+      const y = Math.floor(Math.random() * grid.height);
+      const cell = grid.getCell(x, y);
+      if (!cell || cell.buildingId === 0) continue;
+
+      const isPowered = this.state.power.isPowered(x, y);
+      const isWatered = this.state.water.isSupplied(x, y);
+      const pollution = this.state.pollution.getPollutionAt(x, y);
+      // Count service types: power, water, + bonus for low pollution/crime
+      let serviceCoverageCount = (isPowered ? 2 : 0) + (isWatered ? 2 : 0);
+      if (pollution.ground < 10) serviceCoverageCount += 1; // clean air bonus
+      if (this.getAvgCrime() < 15) serviceCoverageCount += 1; // low crime bonus
+
+      const conditions = {
+        serviceCoverageCount,
+        landValue: cell.landValue,
+        crimeRate: this.getAvgCrime(),
+        pollution: pollution.ground,
+      };
+
+      // Try upgrade first, then downgrade
+      if (!upgrade.tryUpgrade(x, y, conditions)) {
+        upgrade.tryDowngrade(x, y, conditions);
+      }
+    }
   }
 
   private spawnVehicles(): void {
