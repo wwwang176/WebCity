@@ -389,6 +389,12 @@ export class Game {
       this.notificationTimer = 3;
       return;
     }
+    // Water plants require groundwater (near rivers)
+    if (type === 'water' && this.getGroundwaterLevel(x, y) === 0) {
+      this.notification = 'No groundwater here — build near rivers';
+      this.notificationTimer = 4;
+      return;
+    }
     // Check for existing plant at this location
     const existing = type === 'power'
       ? this.state.power.getPlants().some(p => p.x === x && p.y === y)
@@ -414,6 +420,25 @@ export class Game {
     this.state.grid.setCell(x, y, { buildingId: type === 'power' ? 254 : 253 });
     this.audioManager.playSfx('build');
     this.renderDirty = true;
+  }
+
+  /** Returns groundwater level 0-100 based on distance to nearest river tile (max range 3) */
+  private getGroundwaterLevel(x: number, y: number): number {
+    const grid = this.state.grid;
+    const range = 3;
+    let minDist = range + 1;
+    for (let dy = -range; dy <= range; dy++) {
+      for (let dx = -range; dx <= range; dx++) {
+        const cell = grid.getCell(x + dx, y + dy);
+        if (cell && cell.terrainType === TerrainType.WATER) {
+          const dist = Math.abs(dx) + Math.abs(dy); // Manhattan distance
+          if (dist < minDist) minDist = dist;
+        }
+      }
+    }
+    if (minDist > range) return 0;
+    // Closer to water = higher groundwater: dist 0→100, 1→75, 2→50, 3→25
+    return Math.round(100 * (1 - (minDist - 1) / range));
   }
 
   private update(dt: number): void {
@@ -471,6 +496,11 @@ export class Game {
     if (this.renderDirty) {
       this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
       this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
+      // Refresh active overlay so it reflects new roads/buildings/coverage
+      const currentOverlay = this.overlayRenderer.getOverlay();
+      if (currentOverlay && currentOverlay !== 'none') {
+        this.setOverlay(currentOverlay);
+      }
       this.renderDirty = false;
     }
 
@@ -588,9 +618,13 @@ export class Game {
           case 'power':
             value = this.state.power.isPowered(x, y) ? 100 : 0;
             break;
-          case 'water':
-            value = this.state.water.isSupplied(x, y) ? 100 : 0;
+          case 'water': {
+            const supplied = this.state.water.isSupplied(x, y) ? 100 : 0;
+            const gw = this.getGroundwaterLevel(x, y);
+            // Show supply (bright) or groundwater (dim) — whichever is higher
+            value = Math.max(supplied, gw * 0.4);
             break;
+          }
           case 'zone': {
             const cell = grid.getCell(x, y);
             if (cell && cell.zoneType > 0) value = cell.zoneType * 15;
