@@ -337,19 +337,11 @@
 - ✅ 零 Console 錯誤
 - ✅ 全部 291 單元測試通過
 
-### BUG-034: requestAnimationFrame 非焦點分頁暫停導致 tick 延遲
-- **位置**: `src/Game.ts` — `update()`
-- **問題**: 分頁失去焦點時 rAF 暫停，tickAccumulator 持續累積（最高 475 秒），
-  恢復焦點後只有每幀處理 1 tick，需數分鐘才能追趕完畢
-- **建議修復**: 加入 `tickAccumulator = Math.min(tickAccumulator, tickInterval * 10)` 上限
-- **嚴重性**: 低 — 僅影響非焦點分頁恢復時的體驗
-- **狀態**: 待修
+### BUG-034: requestAnimationFrame 非焦點分頁暫停導致 tick 延遲 ✅ 已修復
+- **修復**: `tickAccumulator = Math.min(tickAccumulator, tickInterval * 10)` 上限已存在
 
-### BUG-035: 小視窗工具列按鈕重疊
-- **位置**: `src/ui/GameUI.ts` — toolbar CSS
-- **問題**: 800x600 視窗下，Office/Demolish 按鈕被速度控制按鈕遮擋
-- **嚴重性**: 低 — 僅影響小視窗使用者
-- **狀態**: 待修
+### BUG-035: 小視窗工具列按鈕重疊 ✅ 已修復
+- **修復**: toolbar CSS 已加入 `flex-wrap: wrap`，按鈕在小視窗自動換行
 
 ### 新增已驗證功能（第十輪測試 — 滑鼠互動 + UI 元件 + 里程碑）
 - ✅ 工具列按鈕點擊切換（Road 按鈕 → Tool: road 正確反映）
@@ -368,27 +360,15 @@
 - ✅ 日夜循環視覺效果（深藍夜空）
 - ✅ 零 Console 錯誤
 
-### BUG-037: 建路遇到水域/山脈時整段靜默失敗
-- **位置**: `src/core/road/RoadBuilder.ts` — `buildRoad()` 第 24-29 行
-- **問題**: buildRoad 預先檢查路徑上所有格子，只要有一格是水域或山脈，整條路（包含有效部分）全部取消，
-  且沒有任何 UI 回饋告知使用者失敗原因。拖曳長路跨河時會靜默失敗。
-- **預期行為**: 應建設到水域/山脈前停下（partial build），或至少顯示失敗提示。
-- **嚴重性**: 中 — 使用者會困惑為何路沒有建成
-- **狀態**: 待修
+### BUG-037: 建路遇到水域/山脈時整段靜默失敗 ✅ 已修復
+- **位置**: `src/Game.ts` — `handleToolAction()` road case
+- **修復**: 建路失敗時顯示通知訊息 "Cannot build road: water in the way / mountain in the way / insufficient funds" 等
+- 通知持續 4 秒自動消失
 
-### BUG-036: 車輛路線是隨機道路，不連接建築物
-- **位置**: `src/core/simulation/SimulationLoop.ts` — `spawnVehicles()` (第 274-307 行)
-- **問題**: 車輛起點和終點是從所有道路格子中隨機選取的，完全不考慮建築物位置。
-  導致車輛行駛在沒有建築物的道路末端，不符合真實通勤/貨運邏輯。
-- **預期行為**: 車輛應從住宅建築出發，前往商業/工業/辦公建築（通勤）；
-  或從工業建築出發前往商業建築（貨運）。
-- **修復建議**:
-  1. 收集有建築物的格子（按 zone type 分類）
-  2. 通勤車輛：住宅 → 商業/工業/辦公（隨機配對）
-  3. 貨運車輛：工業 → 商業
-  4. 找不到建築配對時才 fallback 到隨機道路
-- **嚴重性**: 中 — 視覺上不真實，但不影響核心遊戲邏輯
-- **狀態**: 待修
+### BUG-036: 車輛路線是隨機道路，不連接建築物 ✅ 已修復
+- **位置**: `src/core/simulation/SimulationLoop.ts` — `spawnVehicles()`
+- **修復**: 收集住宅建築格和工作建築格（商業/工業/辦公），車輛從住宅出發到工作地點
+- 無建築時 fallback 到隨機道路格
 
 ### 新增已驗證功能（第十一輪測試 — 稅率修復 + 建築升級調查）
 - ✅ 稅率滑桿修復驗證（設 14% → residential/commercial/industrial/office 全部 = 14）
@@ -467,12 +447,9 @@
 - ✅ 零 Console 錯誤（頁面載入 + 遊玩全程無 error/warning）
 - ✅ 城市持續成長（Pop 0→90+, Happiness 66%, Balance $19+/tick）
 
-### BUG-040: 工具列按鈕點擊有時無效
+### BUG-040: 工具列按鈕點擊有時無效 ✅ 已修復
 - **位置**: `src/ui/GameUI.ts` — toolbar 按鈕
-- **問題**: 點擊 Road 按鈕時，右上角 Tool 未切換為 "road"，需使用鍵盤快捷鍵 2 才能切換
-- **可能原因**: 按鈕 click handler 可能被 canvas 的 mousedown 事件搶先處理，或按鈕 z-index 問題
-- **嚴重性**: 低 — 鍵盤快捷鍵可作替代方案
-- **狀態**: 待修
+- **修復**: 在 toolbar button click handler 加入 `e.stopPropagation()` 防止事件冒泡到 canvas mousedown
 
 ### 新增已驗證功能（第十四輪測試 — 邊界條件與穩定性壓力測試）
 - ✅ 大規模城市渲染（245 建築 + 323 道路 + 22 車輛，120 FPS 流暢運行）
