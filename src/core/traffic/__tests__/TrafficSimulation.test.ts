@@ -5,7 +5,7 @@ describe('TrafficSimulation', () => {
   it('should add a vehicle with path', () => {
     const sim = new TrafficSimulation();
     const v = sim.addVehicle(['0,0', '1,0', '2,0']);
-    expect(v.currentIndex).toBe(0);
+    expect(v.pathPos).toBe(0);
     expect(v.arrived).toBe(false);
   });
 
@@ -13,7 +13,7 @@ describe('TrafficSimulation', () => {
     const sim = new TrafficSimulation();
     const v = sim.addVehicle(['0,0', '1,0', '2,0']);
     sim.tick();
-    expect(v.currentIndex).toBe(1);
+    expect(v.pathPos).toBeGreaterThan(0);
   });
 
   it('should mark vehicle as arrived at destination', () => {

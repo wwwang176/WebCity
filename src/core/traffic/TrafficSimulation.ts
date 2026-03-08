@@ -1,79 +1,98 @@
 export interface Vehicle {
   id: number;
   path: string[];
-  currentIndex: number;
+  pathPos: number; // continuous position along path (integer = cell center, +0.5 = cell boundary)
   speed: number;
   arrived: boolean;
 }
 
+/**
+ * Continuous traffic simulation — grid-free movement.
+ * Path planning uses the grid, but movement and collision are purely distance-based.
+ * Each vehicle independently checks:
+ *  1. Is there a vehicle ahead within MIN_GAP? → stop behind it
+ *  2. Is there a red light ahead? → stop at the stop line (cell boundary)
+ */
 export class TrafficSimulation {
   vehicles: Vehicle[] = [];
   private nextId = 1;
-  private segmentVehicles = new Map<string, number>();
+
+  private static readonly SPEED = 1.0;       // path-units per tick
+  private static readonly MIN_GAP = 0.3;     // min distance between vehicles
+  private static readonly STOP_OFFSET = 0.02; // stop this far before cell boundary
 
   addVehicle(path: string[]): Vehicle {
     const vehicle: Vehicle = {
       id: this.nextId++,
       path,
-      currentIndex: 0,
-      speed: 1,
+      pathPos: 0,
+      speed: TrafficSimulation.SPEED,
       arrived: false,
     };
     this.vehicles.push(vehicle);
-    if (path[0]) {
-      this.incrementSegment(path[0]);
-    }
     return vehicle;
   }
 
-  /**
-   * @param canAdvance Optional callback to check if a vehicle can move from current to next cell.
-   *                   Used by traffic lights to block vehicles at red lights.
-   */
   tick(canAdvance?: (current: string, next: string) => boolean): void {
-    // Phase 1: Identify cells with vehicles directly blocked by red lights
-    const waitingAt = new Set<string>();
-    for (const v of this.vehicles) {
-      if (v.arrived || v.currentIndex >= v.path.length - 1) continue;
-      const currentNode = v.path[v.currentIndex]!;
-      const nextNode = v.path[v.currentIndex + 1]!;
-      if (canAdvance && !canAdvance(currentNode, nextNode)) {
-        waitingAt.add(currentNode);
-      }
-    }
+    const { MIN_GAP, STOP_OFFSET } = TrafficSimulation;
 
-    // Phase 2: Cascade — vehicles whose next cell is blocked also wait
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const v of this.vehicles) {
-        if (v.arrived || v.currentIndex >= v.path.length - 1) continue;
-        const currentNode = v.path[v.currentIndex]!;
-        if (waitingAt.has(currentNode)) continue; // already waiting
-        const nextNode = v.path[v.currentIndex + 1]!;
-        if (waitingAt.has(nextNode)) {
-          waitingAt.add(currentNode);
-          changed = true;
-        }
-      }
-    }
-
-    // Phase 3: Move non-waiting vehicles
+    // Pre-compute world positions and heading vectors for all vehicles
+    const info = new Map<number, { x: number; y: number; hx: number; hy: number }>();
     for (const v of this.vehicles) {
       if (v.arrived) continue;
+      const pos = this.getVehiclePosition(v);
+      if (!pos) continue;
+      const h = this.headingVec(v);
+      info.set(v.id, { x: pos.x, y: pos.y, hx: h.hx, hy: h.hy });
+    }
 
-      if (v.currentIndex < v.path.length - 1) {
-        const currentNode = v.path[v.currentIndex]!;
-        if (waitingAt.has(currentNode)) continue; // queued behind red light
+    for (const v of this.vehicles) {
+      if (v.arrived) continue;
+      const me = info.get(v.id);
+      if (!me) continue;
 
-        this.decrementSegment(currentNode);
-        v.currentIndex++;
-        this.incrementSegment(v.path[v.currentIndex]!);
+      // ── 1. Clearance to nearest vehicle ahead (world-space, same direction) ──
+      let clearance = Infinity;
+      for (const [otherId, other] of info) {
+        if (otherId === v.id) continue;
+        const dx = other.x - me.x;
+        const dy = other.y - me.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist > 2.5) continue; // skip distant vehicles
+
+        // Is it ahead of me? (positive projection on my heading)
+        const ahead = dx * me.hx + dy * me.hy;
+        if (ahead <= 0) continue;
+
+        // Same direction? (heading dot product > 0.5 ≈ within 60°)
+        if (me.hx * other.hx + me.hy * other.hy < 0.5) continue;
+
+        if (ahead < clearance) clearance = ahead;
       }
 
-      if (v.currentIndex >= v.path.length - 1) {
-        const lastNode = v.path[v.currentIndex];
-        if (lastNode) this.decrementSegment(lastNode);
+      // ── 2. Distance to nearest red light on path ──
+      let redLightDist = Infinity;
+      if (canAdvance) {
+        const idx = Math.floor(v.pathPos);
+        const frac = v.pathPos - idx;
+        // Look ahead up to 3 cells
+        for (let i = idx; i < Math.min(v.path.length - 1, idx + 3); i++) {
+          // Distance from current position to the boundary between cell i and i+1
+          const distToBoundary = (i - idx) + (0.5 - frac);
+          if (distToBoundary < 0) continue; // already past this boundary
+          if (!canAdvance(v.path[i]!, v.path[i + 1]!)) {
+            redLightDist = Math.max(0, distToBoundary - STOP_OFFSET);
+            break;
+          }
+        }
+      }
+
+      // ── 3. Advance ──
+      const room = Math.max(0, Math.min(clearance - MIN_GAP, redLightDist));
+      v.pathPos += Math.min(v.speed, room);
+
+      if (v.pathPos >= v.path.length - 1) {
+        v.pathPos = v.path.length - 1;
         v.arrived = true;
       }
     }
@@ -81,8 +100,44 @@ export class TrafficSimulation {
     this.vehicles = this.vehicles.filter((v) => !v.arrived);
   }
 
+  /** World position from pathPos */
+  getVehiclePosition(v: Vehicle): { x: number; y: number } | null {
+    const idx = Math.floor(v.pathPos);
+    const frac = v.pathPos - idx;
+    const p1 = v.path[idx];
+    if (!p1) return null;
+    const [x1s, y1s] = p1.split(',');
+    const x1 = Number(x1s), y1 = Number(y1s);
+    if (idx < v.path.length - 1) {
+      const [x2s, y2s] = v.path[idx + 1]!.split(',');
+      return { x: x1 + (Number(x2s) - x1) * frac, y: y1 + (Number(y2s) - y1) * frac };
+    }
+    return { x: x1, y: y1 };
+  }
+
+  /** Unit heading vector for a vehicle */
+  private headingVec(v: Vehicle): { hx: number; hy: number } {
+    const idx = Math.floor(v.pathPos);
+    if (idx < v.path.length - 1) {
+      const [x1, y1] = v.path[idx]!.split(',').map(Number);
+      const [x2, y2] = v.path[idx + 1]!.split(',').map(Number);
+      const dx = x2! - x1!, dy = y2! - y1!;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len > 0) return { hx: dx / len, hy: dy / len };
+    }
+    return { hx: 1, hy: 0 };
+  }
+
+  // ── Stats (for overlays / UI) ──
+
   getSegmentDensity(segment: string): number {
-    return this.segmentVehicles.get(segment) ?? 0;
+    let count = 0;
+    for (const v of this.vehicles) {
+      if (v.arrived) continue;
+      const cell = v.path[Math.floor(v.pathPos)];
+      if (cell === segment) count++;
+    }
+    return count;
   }
 
   getVehicleCount(): number {
@@ -90,28 +145,20 @@ export class TrafficSimulation {
   }
 
   getTopCongested(n: number): { segment: string; density: number }[] {
-    const entries = [...this.segmentVehicles.entries()]
+    const counts = new Map<string, number>();
+    for (const v of this.vehicles) {
+      if (v.arrived) continue;
+      const cell = v.path[Math.floor(v.pathPos)];
+      if (cell) counts.set(cell, (counts.get(cell) ?? 0) + 1);
+    }
+    return [...counts.entries()]
       .map(([segment, density]) => ({ segment, density }))
-      .sort((a, b) => b.density - a.density);
-    return entries.slice(0, n);
+      .sort((a, b) => b.density - a.density)
+      .slice(0, n);
   }
 
   getAveragePathLength(): number {
     if (this.vehicles.length === 0) return 0;
-    const total = this.vehicles.reduce((sum, v) => sum + v.path.length, 0);
-    return total / this.vehicles.length;
-  }
-
-  private incrementSegment(segment: string): void {
-    this.segmentVehicles.set(segment, (this.segmentVehicles.get(segment) ?? 0) + 1);
-  }
-
-  private decrementSegment(segment: string): void {
-    const count = (this.segmentVehicles.get(segment) ?? 0) - 1;
-    if (count <= 0) {
-      this.segmentVehicles.delete(segment);
-    } else {
-      this.segmentVehicles.set(segment, count);
-    }
+    return this.vehicles.reduce((sum, v) => sum + v.path.length, 0) / this.vehicles.length;
   }
 }

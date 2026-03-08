@@ -50,11 +50,18 @@ describe('ZoneManager', () => {
     expect(grid.getCell(5, 4)!.zoneType).toBe(ZoneType.NONE);
   });
 
-  it('should fail to zone a cell with an existing building', () => {
+  it('should allow zoning a cell with a regular building', () => {
     const { grid, zone } = setupGridWithRoad();
     grid.setCell(5, 4, { buildingId: 1 });
     const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
+    expect(result.success).toBe(true);
+  });
+
+  it('should fail to zone a cell with infrastructure', () => {
+    const { grid, zone } = setupGridWithRoad();
+    grid.setCell(5, 4, { buildingId: 254 }); // power plant
+    const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
     expect(result.success).toBe(false);
-    expect(result.reason).toBe('BUILDING_EXISTS');
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
   });
 });

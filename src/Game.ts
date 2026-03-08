@@ -23,24 +23,6 @@ import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 
-// Catmull-Rom spline helpers for smooth vehicle turning
-function catmullRom(t: number, p0: number, p1: number, p2: number, p3: number): number {
-  const t2 = t * t, t3 = t2 * t;
-  return 0.5 * (
-    (-p0 + 3 * p1 - 3 * p2 + p3) * t3 +
-    (2 * p0 - 5 * p1 + 4 * p2 - p3) * t2 +
-    (-p0 + p2) * t +
-    2 * p1
-  );
-}
-function catmullRomDeriv(t: number, p0: number, p1: number, p2: number, p3: number): number {
-  const t2 = t * t;
-  return 0.5 * (
-    3 * (-p0 + 3 * p1 - 3 * p2 + p3) * t2 +
-    2 * (2 * p0 - 5 * p1 + 4 * p2 - p3) * t +
-    (-p0 + p2)
-  );
-}
 
 export type ToolType = 'select' | 'road' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
 
@@ -89,7 +71,7 @@ export class Game {
   private previewLine: THREE.Line | null = null;
   private lastMilestoneId: string | null = null;
   private notificationTimer = 0;
-  private vehiclePrevPositions = new Map<number, { x: number; y: number }>();
+  private vehiclePrevPathPos = new Map<number, number>();
   private vehicleTypes = new Map<number, VehicleData['type']>();
   private vehicleHeadings = new Map<number, number>();
   private tickProgress = 0; // 0..1 interpolation between ticks
@@ -483,14 +465,10 @@ export class Game {
       this.tickProgress = tickInterval > 0 ? this.tickAccumulator / tickInterval : 1;
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
-        // Snapshot vehicle positions before tick advances them
-        this.vehiclePrevPositions.clear();
+        // Snapshot pathPos before tick for inter-tick curve interpolation
+        this.vehiclePrevPathPos.clear();
         for (const v of this.state.traffic.vehicles) {
-          const pos = v.path[v.currentIndex];
-          if (pos) {
-            const [px, py] = pos.split(',');
-            this.vehiclePrevPositions.set(v.id, { x: Number(px), y: Number(py) });
-          }
+          this.vehiclePrevPathPos.set(v.id, v.pathPos);
         }
         this.simLoop.tick();
         this.tickProgress = 0;
@@ -536,63 +514,20 @@ export class Game {
     // Update cursor color based on tool
     this.updateCursorColor();
 
-    // Update vehicles with Catmull-Rom spline interpolation (smooth turns)
+    // Update vehicles — interpolate pathPos between ticks, then compute bezier curve
     const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
-      const pos = v.path[v.currentIndex];
-      if (!pos) return null;
-      const [xStr, yStr] = pos.split(',');
-      const targetX = Number(xStr);
-      const targetY = Number(yStr);
+      if (v.arrived) return null;
 
-      const prev = this.vehiclePrevPositions.get(v.id);
-      let x = targetX;
-      let y = targetY;
-      let heading = this.vehicleHeadings.get(v.id) ?? 0;
+      // Interpolate pathPos for smooth inter-tick movement along the curve
+      const prevPP = this.vehiclePrevPathPos.get(v.id) ?? v.pathPos;
+      const t = Math.min(1, this.tickProgress);
+      const interpPos = prevPP + (v.pathPos - prevPP) * t;
 
-      if (prev) {
-        // If vehicle didn't move (e.g. blocked by red light), stay in place
-        if (prev.x === targetX && prev.y === targetY) {
-          x = prev.x;
-          y = prev.y;
-          // Keep existing heading, don't interpolate
-        } else {
-          const t = Math.min(1, this.tickProgress);
+      const sp = this.getSmoothedVehiclePos(v.path, interpPos, this.vehicleHeadings.get(v.id) ?? 0);
+      if (!sp) return null;
 
-          // Gather 4 points for Catmull-Rom: P0, P1(=prev), P2(=target), P3
-          const p0raw = v.currentIndex >= 2 ? v.path[v.currentIndex - 2] : null;
-          const p3raw = v.path[v.currentIndex + 1] ?? null;
-
-          let p0x: number, p0y: number, p3x: number, p3y: number;
-          if (p0raw) {
-            const [a, b] = p0raw.split(',');
-            p0x = Number(a); p0y = Number(b);
-          } else {
-            // Extrapolate: mirror prev around itself
-            p0x = prev.x - (targetX - prev.x);
-            p0y = prev.y - (targetY - prev.y);
-          }
-          if (p3raw) {
-            const [a, b] = p3raw.split(',');
-            p3x = Number(a); p3y = Number(b);
-          } else {
-            // Extrapolate: mirror target beyond itself
-            p3x = targetX + (targetX - prev.x);
-            p3y = targetY + (targetY - prev.y);
-          }
-
-          // Catmull-Rom position
-          x = catmullRom(t, p0x, prev.x, targetX, p3x);
-          y = catmullRom(t, p0y, prev.y, targetY, p3y);
-
-          // Catmull-Rom tangent for smooth heading
-          const dx = catmullRomDeriv(t, p0x, prev.x, targetX, p3x);
-          const dz = catmullRomDeriv(t, p0y, prev.y, targetY, p3y);
-          if (Math.abs(dx) > 0.0001 || Math.abs(dz) > 0.0001) {
-            heading = Math.atan2(-dz, dx);
-            this.vehicleHeadings.set(v.id, heading);
-          }
-        }
-      }
+      const { x, y, heading } = sp;
+      this.vehicleHeadings.set(v.id, heading);
 
       // Assign a consistent vehicle type per ID
       if (!this.vehicleTypes.has(v.id)) {
@@ -630,6 +565,74 @@ export class Game {
     // Update weather visuals (day/night cycle, rain/snow, seasonal colors)
     const gameSpeed = this.paused ? 0 : this.speed;
     this.weatherRenderer.update(dt, gameSpeed, this.state.clock.getSeason());
+  }
+
+  /** Smoothed position & heading using quadratic bezier at turns */
+  private getSmoothedVehiclePos(
+    path: string[], pathPos: number, fallbackHeading: number,
+  ): { x: number; y: number; heading: number } | null {
+    const idx = Math.floor(pathPos);
+    const frac = pathPos - idx;
+    const p1 = path[idx];
+    if (!p1) return null;
+    const [x1, y1] = p1.split(',').map(Number);
+
+    if (idx >= path.length - 1) {
+      return { x: x1!, y: y1!, heading: fallbackHeading };
+    }
+
+    const [x2, y2] = path[idx + 1]!.split(',').map(Number);
+    const BLEND = 0.35;
+
+    // Approaching turn at node idx+1
+    if (frac > 1 - BLEND && idx < path.length - 2) {
+      const [x3, y3] = path[idx + 2]!.split(',').map(Number);
+      // Only curve if direction actually changes
+      if ((x2! - x1!) !== (x3! - x2!) || (y2! - y1!) !== (y3! - y2!)) {
+        const p0x = x1! + (x2! - x1!) * (1 - BLEND);
+        const p0y = y1! + (y2! - y1!) * (1 - BLEND);
+        const p2x = x2! + (x3! - x2!) * BLEND;
+        const p2y = y2! + (y3! - y2!) * BLEND;
+        const t = (frac - (1 - BLEND)) / (2 * BLEND); // 0 → 0.5
+        const mt = 1 - t;
+        return {
+          x: mt * mt * p0x + 2 * mt * t * x2! + t * t * p2x,
+          y: mt * mt * p0y + 2 * mt * t * y2! + t * t * p2y,
+          heading: Math.atan2(
+            -(2 * mt * (y2! - p0y) + 2 * t * (p2y - y2!)),
+            2 * mt * (x2! - p0x) + 2 * t * (p2x - x2!),
+          ),
+        };
+      }
+    }
+
+    // Just passed turn at node idx
+    if (frac < BLEND && idx > 0) {
+      const [x0, y0] = path[idx - 1]!.split(',').map(Number);
+      if ((x1! - x0!) !== (x2! - x1!) || (y1! - y0!) !== (y2! - y1!)) {
+        const p0x = x0! + (x1! - x0!) * (1 - BLEND);
+        const p0y = y0! + (y1! - y0!) * (1 - BLEND);
+        const p2x = x1! + (x2! - x1!) * BLEND;
+        const p2y = y1! + (y2! - y1!) * BLEND;
+        const t = 0.5 + (frac / BLEND) * 0.5; // 0.5 → 1.0
+        const mt = 1 - t;
+        return {
+          x: mt * mt * p0x + 2 * mt * t * x1! + t * t * p2x,
+          y: mt * mt * p0y + 2 * mt * t * y1! + t * t * p2y,
+          heading: Math.atan2(
+            -(2 * mt * (y1! - p0y) + 2 * t * (p2y - y1!)),
+            2 * mt * (x1! - p0x) + 2 * t * (p2x - x1!),
+          ),
+        };
+      }
+    }
+
+    // Straight segment — linear interpolation
+    return {
+      x: x1! + (x2! - x1!) * frac,
+      y: y1! + (y2! - y1!) * frac,
+      heading: Math.atan2(-(y2! - y1!), x2! - x1!),
+    };
   }
 
   /** Scan the grid for intersections (3+ road connections) and sync traffic lights */
