@@ -1057,3 +1057,21 @@
 - ✅ **小地圖** — 左下角 canvas 正確顯示城市俯瞰
 - ✅ 零 Console 錯誤
 - ✅ 全部 649 單元測試通過（45 測試檔）
+
+### 新增已驗證功能（第四十九輪測試 — Civic Buildings + Load Game + 壓力測試）
+- ✅ **Civic Buildings 完整放置** — Police(252)/Fire(251)/Hospital(250)/School(249)/Park(248)/Cemetery(245) + High School(244) + University(243)
+- ✅ **教育系統運作** — High School + University 放置後居民教育分佈：NONE:18, ELEMENTARY:14, HIGH_SCHOOL:14, UNIVERSITY:29
+- ✅ **建築升級系統** — L1:16, L2:13, L3:3（serviceCoverage=4 + landValue 符合條件）
+- ✅ **Economy Overview 面板** — Treasury $55K, Income +$55/tick, Expenses -$14/tick, 4 稅率明細, Tax slider 9%, City Statistics chart
+- ✅ **Traffic Overview 面板** — 39 Active Vehicles, Avg Path 21.2, 58 Road Tiles, Peak Density 11, Top 8 壅塞排行
+- ✅ **建築資訊面板** — Large House ★★★ (Residents 8, $28/tick) + Medium Factory ★★☆ (Workers 20, $40/tick) + 居民/工人列表
+- ✅ **F1-F6 Overlay 快捷鍵** — F1=power, F3=pollution, F4=landValue, F6=zone, toggle on/off 全部正確
+- ✅ **6 種 Overlay 切換** — power/water/pollution/landValue/traffic/zone 全部正常
+- ✅ **2000-tick 壓力測試** — 845ms, Pop 102→112, Funds $72K→$104K, Happiness 71%, 零 NaN
+- ✅ **Save/Load 循環** — Slot 1 "Regression Test R30" 載入成功：Pop 142, Buildings 45, Roads 63, Zones 96, PowerPlants 1, WaterPlants 1
+- ✅ **存檔列表 UI** — 3 個存檔正確顯示（名稱/Slot/日期/大小），Back 按鈕正常
+- ✅ **災害系統** — Earthquake at (55,33) Intensity 72% 自動觸發通知
+- ✅ **日夜循環** — 白天(淺藍)→黃昏(橙紅)→夜晚(深藍)
+- ✅ **Production Build** — 4.29s 成功（Game 616KB, GameUI 74KB, index 56KB）
+- ✅ 零 Console 錯誤
+- ✅ 全部 649 單元測試通過
