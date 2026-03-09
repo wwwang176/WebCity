@@ -938,43 +938,169 @@ export class BuildingRenderer {
 
   private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: 'power' | 'water' }[]): void {
     for (const inf of cells) {
-      const isPower = inf.type === 'power';
-      const clr = isPower ? 0xffeb3b : 0x03a9f4;
-
-      const baseGeo = new THREE.BoxGeometry(0.8, 0.6, 0.8);
-      baseGeo.translate(0, 0.3, 0);
-      const baseMat = new THREE.MeshLambertMaterial({ color: isPower ? 0x555555 : 0x4a6a7a });
-      const base = new THREE.Mesh(baseGeo, baseMat);
-      base.position.set(inf.x, 0.05, inf.y);
-      base.castShadow = true;
-      scene.add(base);
-      this.meshes.push(base);
-
-      if (isPower) {
-        const chGeo = new THREE.CylinderGeometry(0.08, 0.1, 0.5, 6);
-        chGeo.translate(0, 0.25, 0);
-        const chMat = new THREE.MeshLambertMaterial({ color: 0x777777 });
-        const ch = new THREE.Mesh(chGeo, chMat);
-        ch.position.set(inf.x + 0.2, 0.65, inf.y - 0.15);
-        ch.castShadow = true;
-        scene.add(ch);
-        this.meshes.push(ch);
+      if (inf.type === 'power') {
+        this.buildPowerPlant(scene, inf.x, inf.y);
       } else {
-        const domeGeo = new THREE.SphereGeometry(0.25, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-        const domeMat = new THREE.MeshLambertMaterial({ color: 0x29b6f6 });
-        const dome = new THREE.Mesh(domeGeo, domeMat);
-        dome.position.set(inf.x, 0.65, inf.y);
-        scene.add(dome);
-        this.meshes.push(dome);
+        this.buildWaterPump(scene, inf.x, inf.y);
       }
-
-      const indGeo = new THREE.BoxGeometry(0.15, 0.08, 0.15);
-      const indMat = new THREE.MeshBasicMaterial({ color: clr });
-      const ind = new THREE.Mesh(indGeo, indMat);
-      ind.position.set(inf.x - 0.2, 0.7, inf.y + 0.2);
-      scene.add(ind);
-      this.meshes.push(ind);
     }
+  }
+
+  private addInfraMesh(scene: THREE.Scene, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, shadow = true): void {
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(x, y, z);
+    m.castShadow = shadow;
+    scene.add(m);
+    this.meshes.push(m);
+  }
+
+  private buildPowerPlant(scene: THREE.Scene, cx: number, cz: number): void {
+    // --- Main industrial hall ---
+    const hallGeo = new THREE.BoxGeometry(0.55, 0.42, 0.6);
+    hallGeo.translate(0, 0.21, 0);
+    const hallMat = new THREE.MeshLambertMaterial({ color: 0x5a5550 });
+    this.addInfraMesh(scene, hallGeo, hallMat, cx - 0.05, 0.05, cz);
+
+    // Metal roof with slight overhang
+    const roofGeo = new THREE.BoxGeometry(0.6, 0.035, 0.65);
+    roofGeo.translate(0, 0.018, 0);
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0x484440 });
+    this.addInfraMesh(scene, roofGeo, roofMat, cx - 0.05, 0.47, cz);
+
+    // --- Control room annex ---
+    const annexGeo = new THREE.BoxGeometry(0.24, 0.28, 0.32);
+    annexGeo.translate(0, 0.14, 0);
+    const annexMat = new THREE.MeshLambertMaterial({ color: 0x666058 });
+    this.addInfraMesh(scene, annexGeo, annexMat, cx + 0.3, 0.05, cz + 0.1);
+
+    const annexRoofGeo = new THREE.BoxGeometry(0.27, 0.025, 0.35);
+    annexRoofGeo.translate(0, 0.013, 0);
+    this.addInfraMesh(scene, annexRoofGeo, roofMat, cx + 0.3, 0.35, cz + 0.1);
+
+    // --- Tall chimney (back-left) ---
+    const ch1Geo = new THREE.CylinderGeometry(0.05, 0.065, 0.6, 8);
+    ch1Geo.translate(0, 0.3, 0);
+    const chimMat = new THREE.MeshLambertMaterial({ color: 0x8a8580 });
+    this.addInfraMesh(scene, ch1Geo, chimMat, cx - 0.15, 0.05, cz - 0.2);
+
+    // Chimney top lip
+    const ch1LipGeo = new THREE.CylinderGeometry(0.065, 0.055, 0.035, 8);
+    ch1LipGeo.translate(0, 0.018, 0);
+    const lipMat = new THREE.MeshLambertMaterial({ color: 0x9a9590 });
+    this.addInfraMesh(scene, ch1LipGeo, lipMat, cx - 0.15, 0.65, cz - 0.2, false);
+
+    // Red warning band on tall chimney
+    const band1Geo = new THREE.CylinderGeometry(0.056, 0.056, 0.035, 8);
+    band1Geo.translate(0, 0.018, 0);
+    const redMat = new THREE.MeshLambertMaterial({ color: 0xcc3333 });
+    this.addInfraMesh(scene, band1Geo, redMat, cx - 0.15, 0.55, cz - 0.2, false);
+
+    // --- Short chimney (back-right) ---
+    const ch2Geo = new THREE.CylinderGeometry(0.04, 0.055, 0.42, 8);
+    ch2Geo.translate(0, 0.21, 0);
+    const chimMat2 = new THREE.MeshLambertMaterial({ color: 0x7a7570 });
+    this.addInfraMesh(scene, ch2Geo, chimMat2, cx + 0.08, 0.05, cz - 0.22);
+
+    // Red warning band on short chimney
+    const band2Geo = new THREE.CylinderGeometry(0.046, 0.046, 0.03, 8);
+    band2Geo.translate(0, 0.015, 0);
+    this.addInfraMesh(scene, band2Geo, redMat, cx + 0.08, 0.42, cz - 0.22, false);
+
+    // --- Yellow warning sign on front wall ---
+    const signGeo = new THREE.BoxGeometry(0.1, 0.08, 0.01);
+    const signMat = new THREE.MeshLambertMaterial({ color: 0xf0c030 });
+    this.addInfraMesh(scene, signGeo, signMat, cx - 0.05, 0.22, cz + 0.31, false);
+
+    // --- Coal pile ---
+    const coalMat = new THREE.MeshLambertMaterial({ color: 0x2a2520 });
+    const coal1Geo = new THREE.ConeGeometry(0.11, 0.09, 6);
+    coal1Geo.translate(0, 0.045, 0);
+    this.addInfraMesh(scene, coal1Geo, coalMat, cx - 0.28, 0.05, cz + 0.3, false);
+
+    const coal2Geo = new THREE.ConeGeometry(0.07, 0.06, 5);
+    coal2Geo.translate(0, 0.03, 0);
+    this.addInfraMesh(scene, coal2Geo, coalMat, cx - 0.18, 0.05, cz + 0.35, false);
+
+    // --- Status indicator light ---
+    const indGeo = new THREE.BoxGeometry(0.07, 0.05, 0.07);
+    const indMat = new THREE.MeshBasicMaterial({ color: 0xffeb3b });
+    this.addInfraMesh(scene, indGeo, indMat, cx + 0.3, 0.39, cz + 0.1, false);
+  }
+
+  private buildWaterPump(scene: THREE.Scene, cx: number, cz: number): void {
+    // --- Concrete foundation platform ---
+    const foundGeo = new THREE.BoxGeometry(0.82, 0.05, 0.82);
+    foundGeo.translate(0, 0.025, 0);
+    const foundMat = new THREE.MeshLambertMaterial({ color: 0x707a80 });
+    this.addInfraMesh(scene, foundGeo, foundMat, cx, 0.02, cz);
+
+    // --- Main pump house ---
+    const houseGeo = new THREE.BoxGeometry(0.38, 0.32, 0.45);
+    houseGeo.translate(0, 0.16, 0);
+    const houseMat = new THREE.MeshLambertMaterial({ color: 0x4a6a7a });
+    this.addInfraMesh(scene, houseGeo, houseMat, cx + 0.1, 0.07, cz + 0.02);
+
+    // Pump house roof
+    const roofGeo = new THREE.BoxGeometry(0.42, 0.035, 0.49);
+    roofGeo.translate(0, 0.018, 0);
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0x3a5a6a });
+    this.addInfraMesh(scene, roofGeo, roofMat, cx + 0.1, 0.42, cz + 0.02);
+
+    // --- Large water tank (cylinder) ---
+    const tankGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.38, 12);
+    tankGeo.translate(0, 0.19, 0);
+    const tankMat = new THREE.MeshLambertMaterial({ color: 0x29b6f6 });
+    this.addInfraMesh(scene, tankGeo, tankMat, cx - 0.22, 0.07, cz - 0.03);
+
+    // Tank top lid
+    const lidGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.025, 12);
+    lidGeo.translate(0, 0.013, 0);
+    const lidMat = new THREE.MeshLambertMaterial({ color: 0x1a8ac0 });
+    this.addInfraMesh(scene, lidGeo, lidMat, cx - 0.22, 0.46, cz - 0.03);
+
+    // Tank bottom ring
+    const ringGeo = new THREE.CylinderGeometry(0.18, 0.19, 0.035, 12);
+    ringGeo.translate(0, 0.018, 0);
+    const ringMat = new THREE.MeshLambertMaterial({ color: 0x1a7aaa });
+    this.addInfraMesh(scene, ringGeo, ringMat, cx - 0.22, 0.07, cz - 0.03);
+
+    // --- Connecting pipe (tank → pump house) ---
+    const pipeGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.2, 6);
+    pipeGeo.rotateZ(Math.PI / 2);
+    const pipeMat = new THREE.MeshLambertMaterial({ color: 0x607888 });
+    this.addInfraMesh(scene, pipeGeo, pipeMat, cx - 0.02, 0.24, cz - 0.03, false);
+
+    // --- Inlet pipe (vertical, from ground) ---
+    const inletGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.18, 6);
+    inletGeo.translate(0, 0.09, 0);
+    const inletMat = new THREE.MeshLambertMaterial({ color: 0x4a8898 });
+    this.addInfraMesh(scene, inletGeo, inletMat, cx - 0.22, 0.02, cz + 0.22, false);
+
+    // Inlet pipe horizontal elbow
+    const elbowGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.16, 6);
+    elbowGeo.rotateX(Math.PI / 2);
+    this.addInfraMesh(scene, elbowGeo, inletMat, cx - 0.22, 0.2, cz + 0.12, false);
+
+    // --- Control gauge box on pump house wall ---
+    const gaugeGeo = new THREE.BoxGeometry(0.07, 0.09, 0.015);
+    const gaugeMat = new THREE.MeshLambertMaterial({ color: 0xd0d8e0 });
+    this.addInfraMesh(scene, gaugeGeo, gaugeMat, cx + 0.1, 0.28, cz + 0.26, false);
+
+    // --- Small antenna on roof ---
+    const antGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.14, 4);
+    antGeo.translate(0, 0.07, 0);
+    const antMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    this.addInfraMesh(scene, antGeo, antMat, cx + 0.2, 0.46, cz - 0.12, false);
+
+    // Antenna red tip
+    const tipGeo = new THREE.SphereGeometry(0.013, 4, 4);
+    const tipMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
+    this.addInfraMesh(scene, tipGeo, tipMat, cx + 0.2, 0.6, cz - 0.12, false);
+
+    // --- Status indicator light ---
+    const indGeo = new THREE.BoxGeometry(0.06, 0.05, 0.06);
+    const indMat = new THREE.MeshBasicMaterial({ color: 0x03a9f4 });
+    this.addInfraMesh(scene, indGeo, indMat, cx + 0.1, 0.47, cz + 0.02, false);
   }
 
   private buildLightSpots(scene: THREE.Scene, positions: { x: number; y: number }[]): void {
