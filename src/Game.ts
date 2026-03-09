@@ -1014,7 +1014,8 @@ export class Game {
   setTool(tool: ToolType): void {
     this.currentTool = tool;
     // Road subtypes set the roadType
-    if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
+    if (tool === 'road') this.currentRoadType = RoadType.TWO_LANE;
+    else if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
     else if (tool === 'road_2lane') this.currentRoadType = RoadType.TWO_LANE;
     else if (tool === 'road_4lane') this.currentRoadType = RoadType.FOUR_LANE;
     else if (tool === 'road_6lane') this.currentRoadType = RoadType.SIX_LANE;

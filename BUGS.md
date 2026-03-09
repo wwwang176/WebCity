@@ -1162,3 +1162,42 @@
 - ✅ **Highway 建造** — roadType=5 (HIGHWAY) 正確建造
 - ✅ **Roads Panel** — 5 種道路（Rural/2-Lane/4-Lane/6-Lane/Highway）UI 按鈕完整
 - ✅ 全部 649 單元測試通過
+
+---
+
+## BUG-025: 道路升級收取全額而非差額
+
+- **發現**：Round 58 回歸測試
+- **狀態**：✅ 已修復
+- **嚴重度**：Medium
+- **描述**：使用 road_4lane/road_6lane/road_highway 工具在已有道路上升級時，RoadBuilder.buildRoad() 收取完整新道路費用，而非新舊差額。例如 TWO_LANE→FOUR_LANE 收 $400/格（全額）而非 $200/格（差額）。
+- **根因**：RoadBuilder.buildRoad() 第 34 行 `const totalCost = cells.length * config.cost` 沒有考慮已有道路的成本。RoadUpgrade 模組正確計算差額，但 handleToolAction 使用 buildRoad 而非 upgradeRoad。
+- **修復**：修改 buildRoad() 的成本計算，對已有道路的格子只收取差額（`config.cost - existingConfig.cost`），空格收全額。新增 3 個單元測試驗證。
+- **驗證**：TWO_LANE→FOUR_LANE 3 格收 $600（差額正確），同類型重建 $0，全部 652 測試通過。
+
+---
+
+## BUG-026: setTool('road') 未重置 currentRoadType
+
+- **發現**：Round 58 回歸測試
+- **狀態**：✅ 已修復
+- **嚴重度**：High
+- **描述**：setTool('road') 不會將 currentRoadType 重置為 TWO_LANE。如果之前使用過 road_highway 工具，切換回 road 工具後仍會建造 HIGHWAY（$800/格），導致預期外的高成本和錯誤道路類型。
+- **根因**：Game.ts setTool() 方法只為 road_rural/road_2lane/road_4lane/road_6lane/road_highway 設定 currentRoadType，遺漏了 'road' 基本工具。
+- **修復**：在 setTool() 中新增 `if (tool === 'road') this.currentRoadType = RoadType.TWO_LANE;`。
+- **驗證**：road_highway→road 切換後 currentRoadType=2（TWO_LANE），建出的道路 roadType=2 正確。
+
+---
+
+### 新增已驗證功能（第五十八輪測試 — Road 升級成本 / setTool 重置 / Tutorial / Overlays）
+- 🐛 **BUG-025 修復: 道路升級收取全額而非差額** — buildRoad() 改為對已有道路收差額（new-old），空格收全額。3 個新測試。
+- 🐛 **BUG-026 修復: setTool('road') 未重置 currentRoadType** — 加入 `road` case 重置為 TWO_LANE。
+- ✅ **Tutorial 9 步完整** — Welcome→Roads→Zones→Utilities→Growth→Civic→Economy→Overlays→Ready，Next/Prev/Skip 全正確，localStorage 持久化
+- ✅ **Speed 按鈕** — Pause/1x/2x/3x 切換正確，clock.speed 和 paused 狀態同步
+- ✅ **MiniMap** — 120x120 Canvas 在左下角正確顯示
+- ✅ **13/13 Overlays** — power/water/traffic/zone/landValue/pollution/police/fire/health/education/park/garbage/district 全部正確 toggle
+- ✅ **道路升級差額** — TWO_LANE→FOUR_LANE 3 格=$600（差額正確），同類重建=$0
+- ✅ **setTool 重置** — road_highway→road 後 currentRoadType=2 (TWO_LANE)
+- ✅ **5000-tick 壓力測試** — 2897ms (1726 ticks/s), Pop 88→208, Funds $73K→$175K, 零 NaN
+- ✅ 零 Console 錯誤
+- ✅ 全部 652 單元測試通過

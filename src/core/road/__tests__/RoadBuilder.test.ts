@@ -318,6 +318,43 @@ describe('RoadBuilder', () => {
 
   // --- Out of bounds ---
 
+  it('should charge differential cost when upgrading existing road', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 100000);
+
+    // Upgrade 5 cells from TWO_LANE ($200) to FOUR_LANE ($400) → diff = $200/cell
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.FOUR_LANE, 100000);
+    expect(result.success).toBe(true);
+    const expectedCost = 5 * (ROAD_CONFIGS[RoadType.FOUR_LANE].cost - ROAD_CONFIGS[RoadType.TWO_LANE].cost);
+    expect(result.cost).toBe(expectedCost); // 5 * 200 = 1000
+  });
+
+  it('should charge full cost for new cells and differential for existing in mixed path', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    // Build TWO_LANE from (2,5) to (4,5) — 3 cells
+    builder.buildRoad({ x: 2, y: 5 }, { x: 4, y: 5 }, RoadType.TWO_LANE, 100000);
+
+    // Now build FOUR_LANE from (2,5) to (6,5) — 5 cells: 3 existing + 2 new
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.FOUR_LANE, 100000);
+    expect(result.success).toBe(true);
+    // 3 existing cells: diff = (400-200)*3 = 600
+    // 2 new cells: full = 400*2 = 800
+    // total = 1400
+    expect(result.cost).toBe(1400);
+  });
+
+  it('should charge zero for building same road type over existing', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 100000);
+
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 100000);
+    expect(result.success).toBe(true);
+    expect(result.cost).toBe(0);
+  });
+
   it('should fail when road goes out of bounds', () => {
     const grid = new Grid(10, 10);
     const builder = new RoadBuilder(grid);

@@ -30,8 +30,17 @@ export class RoadBuilder {
       if (cell.buildingId === 254 || cell.buildingId === 253) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
     }
 
-    // Check funds
-    const totalCost = cells.length * config.cost;
+    // Check funds — charge differential for cells that already have a road
+    let totalCost = 0;
+    for (const pos of cells) {
+      const cell = this.grid.getCell(pos.x, pos.y)!;
+      if (cell.roadType !== RoadType.NONE) {
+        const existingCost = ROAD_CONFIGS[cell.roadType].cost;
+        totalCost += Math.max(0, config.cost - existingCost);
+      } else {
+        totalCost += config.cost;
+      }
+    }
     if (funds < totalCost) return { success: false, reason: 'INSUFFICIENT_FUNDS' };
 
     // Build road — clear zoned buildings/zones along the path
