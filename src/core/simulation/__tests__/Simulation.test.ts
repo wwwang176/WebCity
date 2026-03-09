@@ -45,6 +45,11 @@ describe('GameState', () => {
 });
 
 describe('SimulationLoop', () => {
+  // Note: getAvgPollution() now only averages pollution over residential zone cells
+  // (zoneType 1=RESIDENTIAL_LOW, 2=RESIDENTIAL_HIGH) so that industrial pollution
+  // far from homes doesn't unfairly reduce citizen happiness. If no residential
+  // cells exist, it returns 0.
+
   it('should run ticks without crashing', () => {
     const state = createGameState(20, 20);
     const loop = new SimulationLoop(state);
