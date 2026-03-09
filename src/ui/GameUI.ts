@@ -1527,7 +1527,7 @@ export function createGameUI(game: Game): HTMLElement {
     if (residentsEl) residentsEl.textContent = String(bt.residents);
     if (workersRow) workersRow.style.display = bt.workers > 0 ? '' : 'none';
     if (workersEl) workersEl.textContent = String(bt.workers);
-    if (taxEl) taxEl.textContent = `$${bt.taxRevenue}/tick`;
+    if (taxEl) taxEl.textContent = `$${((bt.residents + bt.workers) * 0.5).toFixed(0)}/tick`;
     if (zoneEl) zoneEl.textContent = ZONE_NAMES[selected.zoneType] ?? 'Unknown';
 
     // Citizen list

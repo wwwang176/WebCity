@@ -149,18 +149,18 @@ describe('countResidentialCapacity', () => {
     expect(countResidentialCapacity(state.grid)).toBe(4);
   });
 
-  it('should use BuildingType residents for High Rise (id=6, 80 residents)', () => {
+  it('should use BuildingType residents for High Rise (id=6, 320 residents)', () => {
     const state = createGameState(10, 10);
     state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 6 });
-    expect(countResidentialCapacity(state.grid)).toBe(80);
+    expect(countResidentialCapacity(state.grid)).toBe(320);
   });
 
   it('should sum capacity across multiple residential buildings', () => {
     const state = createGameState(10, 10);
-    // Small House (4) + Small Apartment (20) = 24
+    // Small House (4) + Small Apartment (80) = 84
     state.grid.setCell(1, 1, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
-    expect(countResidentialCapacity(state.grid)).toBe(24);
+    expect(countResidentialCapacity(state.grid)).toBe(84);
   });
 
   it('should ignore non-residential buildings', () => {
@@ -183,10 +183,10 @@ describe('countWorkplaceJobs', () => {
     expect(countWorkplaceJobs(state.grid)).toBe(4);
   });
 
-  it('should use BuildingType workers for Office Tower (id=21, 150 workers)', () => {
+  it('should use BuildingType workers for Office Tower (id=21, 600 workers)', () => {
     const state = createGameState(10, 10);
     state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 21 });
-    expect(countWorkplaceJobs(state.grid)).toBe(150);
+    expect(countWorkplaceJobs(state.grid)).toBe(600);
   });
 
   it('should sum jobs across commercial, industrial, office', () => {
@@ -405,9 +405,9 @@ describe('Specialization integration', () => {
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    // 3 buildings × id(7) × 2 × 1.5 (tourism bonus) × taxRate/100
+    // 3 buildings × (0+4)*0.5 × 1.5 (tourism bonus) × taxRate/100
     const taxRate = state.taxRates.residential ?? 9;
-    const expectedBase = 3 * 7 * 2;
+    const expectedBase = 3 * 4 * 0.5;
     const expectedWithBonus = expectedBase * 1.5 * (taxRate / 100);
     expect(state.budget.income).toBeCloseTo(expectedWithBonus, 1);
   });
@@ -427,7 +427,7 @@ describe('Specialization integration', () => {
 
     // Both buildings should generate same revenue (no bonus)
     const taxRate = state.taxRates.residential ?? 9;
-    const expected = 2 * 7 * 2 * (taxRate / 100); // 2 buildings
+    const expected = 2 * 4 * 0.5 * (taxRate / 100); // 2 buildings × (0+4)*0.5
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
 });
@@ -450,7 +450,7 @@ describe('CitySpecialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     const taxRate = state.taxRates.residential ?? 9;
-    const expected = 7 * 2 * 1.4 * (taxRate / 100); // buildingId × 2 × gambling multiplier × tax
+    const expected = 4 * 0.5 * 1.4 * (taxRate / 100); // (0+4)*0.5 × gambling multiplier × tax
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
 
@@ -464,7 +464,7 @@ describe('CitySpecialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     const taxRate = state.taxRates.residential ?? 9;
-    const expected = 16 * 2 * 1.25 * (taxRate / 100);
+    const expected = 15 * 0.5 * 1.25 * (taxRate / 100); // (0+15)*0.5 × tech multiplier × tax
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
 });

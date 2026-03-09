@@ -73,7 +73,7 @@ describe('BuildingUpgrade', () => {
     expect(getBuildingType(grid.getCell(5, 4)!.buildingId)!.level).toBe(1);
   });
 
-  it('should have higher tax revenue at Level 2', () => {
+  it('should have higher capacity at Level 2', () => {
     const { grid, upgrade } = setupWithBuilding();
     const before = getBuildingType(grid.getCell(5, 4)!.buildingId);
     upgrade.tryUpgrade(5, 4, {
@@ -83,7 +83,7 @@ describe('BuildingUpgrade', () => {
       pollution: 10,
     });
     const after = getBuildingType(grid.getCell(5, 4)!.buildingId);
-    expect(after!.taxRevenue).toBeGreaterThan(before!.taxRevenue);
+    expect(after!.residents + after!.workers).toBeGreaterThan(before!.residents + before!.workers);
   });
 
   it('should change appearance after upgrade', () => {

@@ -365,8 +365,8 @@ export class SimulationLoop {
         const cell = this.state.grid.getCell(x, y);
         // Skip infrastructure, empty cells, burned (3), and multi-cell secondary (4)
         if (cell && cell.buildingId > 0 && cell.buildingId < 245 && cell.reserved !== 3 && cell.reserved !== 4) {
-          const level = cell.buildingId; // building level stored in buildingId
-          let buildingIncome = level * 2; // base income per building per tick
+          const btype = getBuildingType(cell.buildingId);
+          let buildingIncome = btype ? (btype.residents + btype.workers) * 0.5 : 0;
           // Apply district specialization revenue multiplier
           const district = this.state.districts.getDistrictAt(x, y);
           if (district) {
