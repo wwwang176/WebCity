@@ -51,11 +51,11 @@ describe('Commute Traffic System', () => {
   });
 
   it('should spawn home→work vehicles during morning rush (hours 6-9)', () => {
-    // Create adult citizens with home and workplace assigned
+    // Create adult citizens with home and workplace assigned (position strings)
     state.citizens.createCitizen({
       age: 30,
-      homeId: 1,     // buildingId 1 at (1,1)
-      workplaceId: 7, // buildingId 7 at (15,1)
+      homeId: '1,1',     // residential building at (1,1)
+      workplaceId: '15,1', // commercial building at (15,1)
     });
 
     // Advance to hour 7 (morning rush)
@@ -71,8 +71,8 @@ describe('Commute Traffic System', () => {
   it('should spawn work→home vehicles during evening rush (hours 17-21)', () => {
     const citizen = state.citizens.createCitizen({
       age: 30,
-      homeId: 1,
-      workplaceId: 7,
+      homeId: '1,1',
+      workplaceId: '15,1',
     });
 
     // Advance to hour 18 (evening rush)
@@ -87,8 +87,8 @@ describe('Commute Traffic System', () => {
   it('should spawn minimal or no vehicles during night (hours 22-5)', () => {
     const citizen = state.citizens.createCitizen({
       age: 30,
-      homeId: 1,
-      workplaceId: 7,
+      homeId: '1,1',
+      workplaceId: '15,1',
     });
 
     // Advance to hour 2 (deep night)
@@ -105,7 +105,7 @@ describe('Commute Traffic System', () => {
     // Citizen has home but no workplace
     state.citizens.createCitizen({
       age: 30,
-      homeId: 1,
+      homeId: '1,1',
       workplaceId: null,
     });
 
@@ -121,7 +121,7 @@ describe('Commute Traffic System', () => {
     state.citizens.createCitizen({
       age: 30,
       homeId: null,
-      workplaceId: 7,
+      workplaceId: '15,1',
     });
 
     advanceToHour(state, 7);
@@ -134,8 +134,8 @@ describe('Commute Traffic System', () => {
   it('should not spawn commute vehicles for children (age < 19)', () => {
     state.citizens.createCitizen({
       age: 10,
-      homeId: 1,
-      workplaceId: 7,
+      homeId: '1,1',
+      workplaceId: '15,1',
     });
 
     advanceToHour(state, 7);
@@ -148,8 +148,8 @@ describe('Commute Traffic System', () => {
   it('should not spawn commute vehicles for seniors (age > 65)', () => {
     state.citizens.createCitizen({
       age: 70,
-      homeId: 1,
-      workplaceId: 7,
+      homeId: '1,1',
+      workplaceId: '15,1',
     });
 
     advanceToHour(state, 7);
@@ -164,8 +164,8 @@ describe('Commute Traffic System', () => {
     for (let i = 0; i < 10; i++) {
       state.citizens.createCitizen({
         age: 30,
-        homeId: 1,
-        workplaceId: 7,
+        homeId: '1,1',
+        workplaceId: '15,1',
       });
     }
 
@@ -182,8 +182,8 @@ describe('Commute Traffic System', () => {
     for (let i = 0; i < 20; i++) {
       state.citizens.createCitizen({
         age: 30,
-        homeId: 1,
-        workplaceId: 7,
+        homeId: '1,1',
+        workplaceId: '15,1',
       });
     }
 
@@ -201,8 +201,8 @@ describe('Commute Traffic System', () => {
   it('should not spawn duplicate commute for same citizen in same rush period', () => {
     state.citizens.createCitizen({
       age: 30,
-      homeId: 1,
-      workplaceId: 7,
+      homeId: '1,1',
+      workplaceId: '15,1',
     });
 
     advanceToHour(state, 7);
@@ -249,9 +249,11 @@ describe('Citizen Home/Workplace Assignment', () => {
     const citizensWithWork = state.citizens.citizens.filter(c => c.workplaceId !== null);
 
     if (state.citizens.getPopulation() > 0) {
-      // Citizens who migrated in should have home and workplace assigned
+      // Citizens who migrated in should have home and workplace assigned as position strings
       expect(citizensWithHome.length).toBeGreaterThan(0);
       expect(citizensWithWork.length).toBeGreaterThan(0);
+      // homeId should be a position string like "1,1"
+      expect(citizensWithHome[0]!.homeId).toMatch(/^\d+,\d+$/);
     }
   });
 });

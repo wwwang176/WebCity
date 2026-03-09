@@ -14,8 +14,8 @@ export class SimulationLoop {
   private state: GameState;
   private lastAgeYear = -1;
 
-  // Building index: buildingId → {x, y} position on the grid
-  private buildingIndex = new Map<number, { x: number; y: number }>();
+  // Building index: "x,y" position → buildingId (type). Rebuilt once per day.
+  private buildingPositions: { pos: string; x: number; y: number; buildingId: number }[] = [];
   private buildingIndexDay = -1; // last day the index was rebuilt
 
   // Track which citizens have already commuted this rush period
@@ -477,20 +477,20 @@ export class SimulationLoop {
   }
 
   /**
-   * Rebuild the building index (buildingId → grid position).
-   * Called once per game day or when not yet built.
+   * Rebuild the building position list. Called once per game day.
+   * Stores every building's grid position so each is uniquely addressable.
    */
   private rebuildBuildingIndex(): void {
     const currentDay = this.state.clock.getDay();
-    if (this.buildingIndexDay === currentDay && this.buildingIndex.size > 0) return;
+    if (this.buildingIndexDay === currentDay && this.buildingPositions.length > 0) return;
 
-    this.buildingIndex.clear();
+    this.buildingPositions = [];
     const grid = this.state.grid;
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
-        if (cell && cell.buildingId > 0) {
-          this.buildingIndex.set(cell.buildingId, { x, y });
+        if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+          this.buildingPositions.push({ pos: `${x},${y}`, x, y, buildingId: cell.buildingId });
         }
       }
     }
@@ -499,32 +499,32 @@ export class SimulationLoop {
 
   /**
    * Assign homeId and workplaceId to citizens who don't have them.
+   * homeId/workplaceId store "x,y" position strings (unique per building).
    * Called after migration so newly created citizens get housing.
    */
   private assignCitizenHousing(): void {
     this.rebuildBuildingIndex();
-    const grid = this.state.grid;
 
     // Collect residential and workplace buildings with capacity info
-    const residentialBuildings: { buildingId: number; capacity: number }[] = [];
-    const workplaceBuildings: { buildingId: number; capacity: number }[] = [];
+    const residentialBuildings: { pos: string; capacity: number }[] = [];
+    const workplaceBuildings: { pos: string; capacity: number }[] = [];
 
-    for (const [buildingId, _pos] of this.buildingIndex) {
-      const bt = getBuildingType(buildingId);
+    for (const b of this.buildingPositions) {
+      const bt = getBuildingType(b.buildingId);
       if (!bt) continue;
       if (bt.residents > 0) {
-        residentialBuildings.push({ buildingId, capacity: bt.residents });
+        residentialBuildings.push({ pos: b.pos, capacity: bt.residents });
       }
       if (bt.workers > 0) {
-        workplaceBuildings.push({ buildingId, capacity: bt.workers });
+        workplaceBuildings.push({ pos: b.pos, capacity: bt.workers });
       }
     }
 
     if (residentialBuildings.length === 0 && workplaceBuildings.length === 0) return;
 
-    // Count current occupancy
-    const homeOccupancy = new Map<number, number>();
-    const workOccupancy = new Map<number, number>();
+    // Count current occupancy by position string
+    const homeOccupancy = new Map<string, number>();
+    const workOccupancy = new Map<string, number>();
     for (const c of this.state.citizens.citizens) {
       if (c.homeId !== null) {
         homeOccupancy.set(c.homeId, (homeOccupancy.get(c.homeId) ?? 0) + 1);
@@ -538,10 +538,10 @@ export class SimulationLoop {
       // Assign home if needed
       if (citizen.homeId === null && residentialBuildings.length > 0) {
         for (const rb of residentialBuildings) {
-          const occ = homeOccupancy.get(rb.buildingId) ?? 0;
+          const occ = homeOccupancy.get(rb.pos) ?? 0;
           if (occ < rb.capacity) {
-            citizen.homeId = rb.buildingId;
-            homeOccupancy.set(rb.buildingId, occ + 1);
+            citizen.homeId = rb.pos;
+            homeOccupancy.set(rb.pos, occ + 1);
             break;
           }
         }
@@ -550,10 +550,10 @@ export class SimulationLoop {
       // Assign workplace if needed (only for working-age adults)
       if (citizen.workplaceId === null && citizen.age > 18 && citizen.age <= 65 && workplaceBuildings.length > 0) {
         for (const wb of workplaceBuildings) {
-          const occ = workOccupancy.get(wb.buildingId) ?? 0;
+          const occ = workOccupancy.get(wb.pos) ?? 0;
           if (occ < wb.capacity) {
-            citizen.workplaceId = wb.buildingId;
-            workOccupancy.set(wb.buildingId, occ + 1);
+            citizen.workplaceId = wb.pos;
+            workOccupancy.set(wb.pos, occ + 1);
             break;
           }
         }
@@ -565,8 +565,8 @@ export class SimulationLoop {
     const pop = this.state.citizens.getPopulation();
     if (pop === 0) return;
 
-    // Vehicle cap scales with population: 50 base + 1 per 10 residents, max 500
-    const vehicleCap = Math.min(500, 50 + Math.floor(pop / 10));
+    // Vehicle cap: ~30% of population can be on the road simultaneously
+    const vehicleCap = Math.min(2000, 20 + Math.floor(pop * 0.3));
     if (this.state.traffic.getVehicleCount() >= vehicleCap) return;
 
     this.rebuildBuildingIndex();
@@ -596,7 +596,17 @@ export class SimulationLoop {
   }
 
   /**
+   * Parse "x,y" position string into coordinates.
+   */
+  private parsePos(pos: string): { x: number; y: number } | null {
+    const parts = pos.split(',');
+    if (parts.length !== 2) return null;
+    return { x: Number(parts[0]), y: Number(parts[1]) };
+  }
+
+  /**
    * Spawn commute vehicles for citizens based on direction.
+   * homeId/workplaceId are "x,y" position strings.
    */
   private spawnCommuteVehicles(
     direction: 'home_to_work' | 'work_to_home',
@@ -614,21 +624,23 @@ export class SimulationLoop {
 
     if (eligible.length === 0) return;
 
-    // Spawn up to N vehicles per tick (batch to avoid lag)
-    const maxPerTick = Math.min(10, Math.max(1, Math.floor(eligible.length / 4)));
+    // Spawn enough vehicles per tick so all eligible commuters depart within the rush period (~4 ticks).
+    // BFS is bounded to 500 steps so each call is cheap.
+    const rushTicks = 4;
+    const maxPerTick = Math.max(5, Math.ceil(eligible.length / rushTicks));
     let spawned = 0;
 
     for (const citizen of eligible) {
       if (spawned >= maxPerTick) break;
       if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
 
-      const fromId = direction === 'home_to_work' ? citizen.homeId! : citizen.workplaceId!;
-      const toId = direction === 'home_to_work' ? citizen.workplaceId! : citizen.homeId!;
+      const fromStr = direction === 'home_to_work' ? citizen.homeId! : citizen.workplaceId!;
+      const toStr = direction === 'home_to_work' ? citizen.workplaceId! : citizen.homeId!;
 
-      const fromPos = this.buildingIndex.get(fromId);
-      const toPos = this.buildingIndex.get(toId);
+      const fromPos = this.parsePos(fromStr);
+      const toPos = this.parsePos(toStr);
       if (!fromPos || !toPos) {
-        commuterSet.add(citizen.id); // mark as done to avoid retrying
+        commuterSet.add(citizen.id);
         continue;
       }
       if (fromPos.x === toPos.x && fromPos.y === toPos.y) {

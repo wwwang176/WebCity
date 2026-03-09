@@ -27,8 +27,8 @@ export interface Citizen {
   incomeLevel: IncomeLevel;
   happiness: number;
   health: number;
-  homeId: number | null;
-  workplaceId: number | null;
+  homeId: string | null;      // "x,y" grid position of home building
+  workplaceId: string | null; // "x,y" grid position of workplace building
 }
 
 export function getLifeStage(age: number): LifeStage {
