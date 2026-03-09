@@ -485,6 +485,85 @@ else:
     開車（產生道路車流）
 ```
 
+#### 3.4.6 車道級連接圖（Lane Connection Graph）
+
+目前的交通模擬使用 cell-level 路徑（cell key 陣列）加上橫向 lane offset，無法正確處理：
+- 不同寬度道路銜接時的車道映射（2LINE → 4LINE）
+- 十字路口內的轉彎車道分配
+- 真實的換道動態（需要行進距離，非瞬間橫移）
+
+**解決方案：Lane Connection Graph — 車道級有向圖**
+
+##### 資料結構
+
+```
+ConnectionPoint {
+  id: string
+  position: {x, y}       // 世界座標
+  tangent: {tx, ty}       // 切線方向（Bezier 用）
+  cellKey: string         // 所屬格子
+  lane: number            // 車道索引
+  type: 'entry' | 'exit'  // 進入點 / 離開點
+}
+
+LaneEdge {
+  from: ConnectionPoint   // 出發點
+  to: ConnectionPoint     // 目標點
+  bezierControl?: Point[] // 曲線控制點（十字路口轉彎用）
+  length: number          // 弧長（constant-speed traversal 用）
+  type: 'straight' | 'turn' | 'lane_change' | 'merge'
+}
+```
+
+##### 連接規則
+
+**直路段（同一 cell 內）：**
+- 每條方向車道產生 1 個 entry + 1 個 exit
+- entry.position = cell 邊緣（來向側），exit.position = cell 邊緣（去向側）
+- 同方向相鄰 lane 之間有斜向 lane_change 邊（需行進距離，非瞬移）
+
+**不同寬度道路銜接（如 2LINE → 4LINE）：**
+- 2LINE 有 1 條方向車道，4LINE 有 2 條方向車道
+- 2LINE.lane0.exit → 4LINE.lane0.entry（靠內側，主通道）
+- 4LINE.lane1 為額外車道，可從 lane0 透過 lane_change 邊合流
+
+**十字路口：**
+- 每個入口車道 → 每個合法出口車道產生一條 turn 類型 LaneEdge
+- 轉彎路徑用 Bezier 曲線（控制點根據進出方向自動計算）
+- 4-way + 4-lane 路口：8 入口 × 3 方向 = 最多 24 條 turn 邊（可控）
+- 6-lane 最壞情況：12 入口 × 3 方向 = 36 條（仍可控）
+
+**換道（Lane Change）：**
+- 同一 cell 內，lane_i.mid → lane_j.mid 的斜向邊
+- 車輛換道需走完一段距離（更真實），非瞬間橫移
+- 斜向邊長度 ≈ √(cell_length² + lane_offset²)
+
+##### 兩階段路徑搜尋
+
+```
+Phase 1: Cell-level A*
+  - 使用現有 RoadNetwork 圖（粗粒度）
+  - 結果：cell key 陣列 ["0,0", "1,0", "2,0", ...]
+
+Phase 2: Lane-level Refinement
+  - 在 Phase 1 路線的 LaneEdge 子圖上搜尋
+  - 決定每個 cell 使用哪條車道、何時換道
+  - 結果：LaneEdge 序列（車輛實際行駛路徑）
+```
+
+##### Bezier 曲線處理
+
+- 十字路口轉彎路徑使用三次 Bezier 曲線
+- 控制點由進出方向自動生成（切線延伸）
+- 需弧長參數化（arc-length parameterization）確保等速行駛
+- 方案：預計算查找表（LUT），每條 turn 邊存 N 個等距采樣點
+
+##### Worker 分工
+
+- **Lane Graph 建構**：路網變動時在 Worker 中重建受影響區域的 LaneEdge
+- **Lane-level Pathfinding**：在 Pathfinding Worker Pool 中執行 Phase 2 細化
+- Cell-level A* 仍在現有 Worker 中執行
+
 ### 3.5 經濟系統
 
 #### 3.5.1 RCI 需求
