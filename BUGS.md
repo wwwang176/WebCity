@@ -1201,3 +1201,17 @@
 - ✅ **5000-tick 壓力測試** — 2897ms (1726 ticks/s), Pop 88→208, Funds $73K→$175K, 零 NaN
 - ✅ 零 Console 錯誤
 - ✅ 全部 652 單元測試通過
+
+### 新增已驗證功能（第五十九輪測試 — Save/Load / Building Info / 快捷鍵 / Notification / Demolish）
+- ✅ **Save Game** — saveCurrentGame(59, 'R59-Test') 成功存檔 38KB
+- ✅ **Load Game UI** — 6 個存檔列表正確顯示（AutoSave/R30/R51/R53/R59/R49）
+- ✅ **Load Game** — 點擊 R59-Test 載入成功，tick/pop/funds 與存檔一致
+- ✅ **Building Info Panel** — Select 點擊建築顯示 "Small House" Level ★☆☆, 4 Residents, $10/tick, 居民清單含年齡/生命階段
+- ✅ **9/9 快捷鍵** — 1=Select, 2=Road, 3=ZoneR, 4=ZoneC, 5=ZoneI, 6=ZoneO, 0=Demolish, ESC=Select, Delete=Demolish
+- ✅ **F1-F6 Overlay 快捷鍵** — F1=Power, F2=Water, F3=Pollution, F4=LandValue, F5=Traffic, F6=Zone
+- ✅ **Economy Panel** — Treasury $69K, Income +$96/tick, Expenses -$20.9/tick, 稅率分項（R/C/I/O 各 9%）+ 支出分項（Road/Power/Water）
+- ✅ **Notification 系統** — 通知文字正確顯示，visible class 動態切換，render loop 同步
+- ✅ **Demolish 建築** — buildingId 2→0, zoneType 1→0，buildings 計數 46→45
+- ✅ **Demolish 道路** — roadType 2→0 正確清零
+- ✅ 零 Console 錯誤
+- ✅ 全部 652 單元測試通過
