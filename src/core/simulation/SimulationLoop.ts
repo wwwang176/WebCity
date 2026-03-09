@@ -183,10 +183,9 @@ export class SimulationLoop {
     const avgPollution = this.getAvgPollution();
     const avgCrime = this.getAvgCrime();
 
-    // Estimate average commute from city spread (compact city = short commutes)
-    const buildingCount = this.countZoneBuildings('residential') +
-      this.countZoneBuildings('commercial') + this.countZoneBuildings('industrial');
-    const avgCommute = buildingCount > 0 ? Math.min(25, 1 + Math.sqrt(buildingCount) * 0.7) : 3;
+    // Estimate average commute from residential spread (compact city = short commutes)
+    const resCount = this.countZoneBuildings('residential');
+    const avgCommute = resCount > 0 ? Math.min(25, 1 + Math.sqrt(resCount) * 0.7) : 3;
 
     // Count service coverage: power + water + low pollution bonus
     const { poweredRatio, wateredRatio } = this.getServiceRatios();
@@ -212,6 +211,8 @@ export class SimulationLoop {
     }
   }
 
+  // Only check service coverage for residential buildings — residents care about
+  // their own power/water, not whether distant factories have coverage.
   private getServiceRatios(): { poweredRatio: number; wateredRatio: number } {
     let powered = 0;
     let watered = 0;
@@ -219,7 +220,8 @@ export class SimulationLoop {
     for (let y = 0; y < this.state.grid.height; y++) {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.buildingId > 0 && cell.zoneType > 0) {
+        if (cell && cell.buildingId > 0 &&
+            (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH)) {
           total++;
           if (this.state.power.isPowered(x, y)) powered++;
           if (this.state.water.isSupplied(x, y)) watered++;
@@ -236,13 +238,15 @@ export class SimulationLoop {
     return countWorkplaceJobs(this.state.grid);
   }
 
+  // Only average pollution over residential cells (zoneType 1=RES_LOW, 2=RES_HIGH)
+  // so industrial pollution far away doesn't drag down citizen happiness unfairly.
   private getAvgPollution(): number {
     let total = 0;
     let count = 0;
     for (let y = 0; y < this.state.grid.height; y++) {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
-        if (cell && (cell.buildingId > 0 || cell.zoneType > 0)) {
+        if (cell && (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH)) {
           total += cell.pollution;
           count++;
         }
