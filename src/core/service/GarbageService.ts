@@ -1,0 +1,139 @@
+export type GarbageFacilityType = 'landfill' | 'incinerator';
+
+export interface GarbageFacility {
+  id: string;
+  x: number;
+  y: number;
+  type: GarbageFacilityType;
+  capacity: number;
+  currentLoad: number;
+}
+
+const DEFAULT_CAPACITIES: Record<GarbageFacilityType, number> = {
+  landfill: 1000,
+  incinerator: 500,
+};
+
+/** Coverage radius in Manhattan distance for garbage collection trucks */
+const COVERAGE_RANGE = 15;
+
+/** Fraction of current load that an incinerator burns each tick */
+const INCINERATOR_BURN_RATE = 0.05;
+
+/** Garbage production: 1 unit per GARBAGE_PER_POP population */
+const GARBAGE_PER_POP = 100;
+
+let nextFacilityId = 1;
+
+export class GarbageService {
+  private facilities: GarbageFacility[] = [];
+  private overflow = 0;
+
+  addFacility(x: number, y: number, type: GarbageFacilityType, capacity?: number): string {
+    const id = `garbage_${nextFacilityId++}`;
+    this.facilities.push({
+      id,
+      x,
+      y,
+      type,
+      capacity: capacity ?? DEFAULT_CAPACITIES[type],
+      currentLoad: 0,
+    });
+    return id;
+  }
+
+  removeFacility(id: string): void {
+    const idx = this.facilities.findIndex(f => f.id === id);
+    if (idx !== -1) {
+      const facility = this.facilities[idx]!;
+      // Spill remaining load into overflow
+      this.overflow += facility.currentLoad;
+      this.facilities.splice(idx, 1);
+    }
+  }
+
+  getCoverage(x: number, y: number): boolean {
+    return this.facilities.some(f => {
+      const dist = Math.abs(f.x - x) + Math.abs(f.y - y);
+      return dist <= COVERAGE_RANGE;
+    });
+  }
+
+  tick(population: number): void {
+    // 1. Produce garbage based on population
+    const produced = Math.floor(population / GARBAGE_PER_POP);
+
+    // 2. Incinerators burn a fraction of their current load
+    for (const f of this.facilities) {
+      if (f.type === 'incinerator' && f.currentLoad > 0) {
+        const burned = Math.max(1, Math.floor(f.currentLoad * INCINERATOR_BURN_RATE));
+        f.currentLoad = Math.max(0, f.currentLoad - burned);
+      }
+    }
+
+    // 3. Distribute new garbage across facilities with remaining capacity
+    let remaining = produced + this.overflow;
+    this.overflow = 0;
+
+    for (const f of this.facilities) {
+      if (remaining <= 0) break;
+      const space = f.capacity - f.currentLoad;
+      if (space > 0) {
+        const added = Math.min(space, remaining);
+        f.currentLoad += added;
+        remaining -= added;
+      }
+    }
+
+    // 4. Anything left over goes to overflow
+    if (remaining > 0) {
+      this.overflow = remaining;
+    }
+  }
+
+  getOverflow(): number {
+    return this.overflow;
+  }
+
+  getPollutionPenalty(): number {
+    if (this.overflow <= 0) return 0;
+    // Pollution scales with overflow amount
+    return Math.min(100, this.overflow * 2);
+  }
+
+  getTotalCapacity(): number {
+    return this.facilities.reduce((sum, f) => sum + f.capacity, 0);
+  }
+
+  getCurrentLoad(): number {
+    return this.facilities.reduce((sum, f) => sum + f.currentLoad, 0);
+  }
+
+  getFacilities(): readonly GarbageFacility[] {
+    return this.facilities;
+  }
+
+  toJSON(): {
+    facilities: GarbageFacility[];
+    overflow: number;
+  } {
+    return {
+      facilities: this.facilities.map(f => ({ ...f })),
+      overflow: this.overflow,
+    };
+  }
+
+  static fromJSON(data: { facilities: GarbageFacility[]; overflow: number }): GarbageService {
+    const gs = new GarbageService();
+    gs.facilities = data.facilities.map(f => ({ ...f }));
+    gs.overflow = data.overflow;
+    // Ensure nextFacilityId stays ahead of restored IDs
+    for (const f of gs.facilities) {
+      const num = parseInt(f.id.replace('garbage_', ''), 10);
+      if (!isNaN(num) && num >= nextFacilityId) {
+        nextFacilityId = num + 1;
+      }
+    }
+    return gs;
+  }
+}

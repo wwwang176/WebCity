@@ -27,6 +27,14 @@ const INFRA_GROUP: ToolGroup = {
     { tool: 'road_4lane', label: 'Road 4-Lane', key: '', color: '#607d8b', icon: '\u{1F6E4}' },
     { tool: 'power', label: 'Power', key: '8', color: '#ffeb3b', icon: '\u{26A1}' },
     { tool: 'water', label: 'Water', key: '9', color: '#03a9f4', icon: '\u{1F4A7}' },
+    { tool: 'police', label: 'Police', key: '', color: '#3f51b5', icon: '\u{1F694}' },
+    { tool: 'fire', label: 'Fire Dept', key: '', color: '#d32f2f', icon: '\u{1F692}' },
+    { tool: 'hospital', label: 'Hospital', key: '', color: '#e91e63', icon: '\u{1F3E5}' },
+    { tool: 'school', label: 'School', key: '', color: '#795548', icon: '\u{1F3EB}' },
+    { tool: 'park', label: 'Park', key: '', color: '#4caf50', icon: '\u{1F333}' },
+    { tool: 'garbage', label: 'Landfill', key: '', color: '#795548', icon: '\u{1F5D1}' },
+    { tool: 'sewage', label: 'Sewage', key: '', color: '#607d8b', icon: '\u{1F6B0}' },
+    { tool: 'cemetery', label: 'Cemetery', key: '', color: '#9e9e9e', icon: '\u{26B0}' },
   ],
 };
 

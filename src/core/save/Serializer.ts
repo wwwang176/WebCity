@@ -4,6 +4,14 @@ import { type GameSpeed } from '../simulation/GameClock';
 import { type PowerPlant } from '../service/PowerGrid';
 import { type WaterPlant } from '../service/WaterNetwork';
 import { type Citizen } from '../citizen/types';
+import { PoliceService } from '../service/PoliceService';
+import { FireService } from '../service/FireService';
+import { HealthService } from '../service/HealthService';
+import { EducationService } from '../service/EducationService';
+import { ParkService } from '../service/ParkService';
+import { GarbageService } from '../service/GarbageService';
+import { SewageService } from '../service/SewageService';
+import { DeathCareService } from '../service/DeathCareService';
 
 interface SerializedCell {
   x: number;
@@ -39,6 +47,14 @@ interface SerializedState {
   powerPlants?: PowerPlant[];
   waterPlants?: WaterPlant[];
   citizens?: Citizen[];
+  police?: ReturnType<PoliceService['toJSON']>;
+  fire?: ReturnType<FireService['toJSON']>;
+  health?: ReturnType<HealthService['toJSON']>;
+  education?: ReturnType<EducationService['toJSON']>;
+  parks?: ReturnType<ParkService['toJSON']>;
+  garbage?: ReturnType<GarbageService['toJSON']>;
+  sewage?: ReturnType<SewageService['toJSON']>;
+  deathCare?: ReturnType<DeathCareService['toJSON']>;
 }
 
 function isCellDefault(cell: CellData): boolean {
@@ -109,6 +125,14 @@ export function serializeGameState(state: GameState): string {
     powerPlants: [...state.power.getPlants()],
     waterPlants: [...state.water.getPlants()],
     citizens: state.citizens.citizens.map(c => ({ ...c })),
+    police: state.police.toJSON(),
+    fire: state.fire.toJSON(),
+    health: state.health.toJSON(),
+    education: state.education.toJSON(),
+    parks: state.parks.toJSON(),
+    garbage: state.garbage.toJSON(),
+    sewage: state.sewage.toJSON(),
+    deathCare: state.deathCare.toJSON(),
   };
 
   return JSON.stringify(serialized);
@@ -154,6 +178,16 @@ export function deserializeGameState(json: string): GameState {
   if (saved.citizens) {
     for (const c of saved.citizens) state.citizens.createCitizen(c);
   }
+
+  // Restore civic services
+  if (saved.police) state.police = PoliceService.fromJSON(saved.police);
+  if (saved.fire) state.fire = FireService.fromJSON(saved.fire);
+  if (saved.health) state.health = HealthService.fromJSON(saved.health);
+  if (saved.education) state.education = EducationService.fromJSON(saved.education);
+  if (saved.parks) state.parks = ParkService.fromJSON(saved.parks);
+  if (saved.garbage) state.garbage = GarbageService.fromJSON(saved.garbage);
+  if (saved.sewage) state.sewage = SewageService.fromJSON(saved.sewage);
+  if (saved.deathCare) state.deathCare = DeathCareService.fromJSON(saved.deathCare);
 
   return state;
 }

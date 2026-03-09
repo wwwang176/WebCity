@@ -1,0 +1,244 @@
+import { describe, it, expect } from 'vitest';
+import { EducationService, type SchoolType } from '../EducationService';
+
+describe('EducationService', () => {
+  it('should create an instance with no schools', () => {
+    const edu = new EducationService();
+    expect(edu.getSchools()).toHaveLength(0);
+  });
+
+  describe('addSchool', () => {
+    it('should add an elementary school with default radius', () => {
+      const edu = new EducationService();
+      const id = edu.addSchool(5, 5, 'elementary');
+      expect(id).toBeTruthy();
+      const schools = edu.getSchools();
+      expect(schools).toHaveLength(1);
+      expect(schools[0]!.type).toBe('elementary');
+      expect(schools[0]!.x).toBe(5);
+      expect(schools[0]!.y).toBe(5);
+      expect(schools[0]!.radius).toBe(10);
+    });
+
+    it('should add a highschool with default radius 12', () => {
+      const edu = new EducationService();
+      const id = edu.addSchool(10, 10, 'highschool');
+      expect(id).toBeTruthy();
+      const schools = edu.getSchools();
+      expect(schools).toHaveLength(1);
+      expect(schools[0]!.type).toBe('highschool');
+      expect(schools[0]!.radius).toBe(12);
+    });
+
+    it('should add a university with default radius 15', () => {
+      const edu = new EducationService();
+      const id = edu.addSchool(20, 20, 'university');
+      expect(id).toBeTruthy();
+      const schools = edu.getSchools();
+      expect(schools).toHaveLength(1);
+      expect(schools[0]!.type).toBe('university');
+      expect(schools[0]!.radius).toBe(15);
+    });
+
+    it('should allow custom radius and capacity', () => {
+      const edu = new EducationService();
+      edu.addSchool(5, 5, 'elementary', 20, 500);
+      const school = edu.getSchools()[0]!;
+      expect(school.radius).toBe(20);
+      expect(school.capacity).toBe(500);
+    });
+
+    it('should assign unique ids to each school', () => {
+      const edu = new EducationService();
+      const id1 = edu.addSchool(0, 0, 'elementary');
+      const id2 = edu.addSchool(5, 5, 'highschool');
+      const id3 = edu.addSchool(10, 10, 'university');
+      expect(id1).not.toBe(id2);
+      expect(id2).not.toBe(id3);
+    });
+  });
+
+  describe('getCoverage', () => {
+    it('should return true for a position within elementary school radius', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary', 10);
+      expect(edu.getCoverage(10, 10, 'elementary')).toBe(true);
+      expect(edu.getCoverage(15, 10, 'elementary')).toBe(true); // distance 5 < 10
+      expect(edu.getCoverage(10, 19, 'elementary')).toBe(true); // distance 9 < 10
+    });
+
+    it('should return false for a position outside elementary school radius', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary', 10);
+      expect(edu.getCoverage(25, 10, 'elementary')).toBe(false); // distance 15 > 10
+    });
+
+    it('should return true for a position within highschool radius', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'highschool', 12);
+      expect(edu.getCoverage(10, 10, 'highschool')).toBe(true);
+      expect(edu.getCoverage(10, 21, 'highschool')).toBe(true); // distance 11 < 12
+    });
+
+    it('should return false for a position outside highschool radius', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'highschool', 12);
+      expect(edu.getCoverage(30, 10, 'highschool')).toBe(false);
+    });
+
+    it('should return true for a position within university radius', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'university', 15);
+      expect(edu.getCoverage(10, 10, 'university')).toBe(true);
+      expect(edu.getCoverage(10, 24, 'university')).toBe(true); // distance 14 < 15
+    });
+
+    it('should return false for a position outside university radius', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'university', 15);
+      expect(edu.getCoverage(30, 30, 'university')).toBe(false);
+    });
+
+    it('should check coverage across all schools when type is not specified', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary', 5);
+      edu.addSchool(30, 30, 'university', 5);
+      expect(edu.getCoverage(10, 10)).toBe(true); // near elementary
+      expect(edu.getCoverage(30, 30)).toBe(true); // near university
+      expect(edu.getCoverage(50, 50)).toBe(false); // nowhere
+    });
+
+    it('should only check coverage for the specified type', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary', 5);
+      // Position is covered by elementary but NOT by highschool
+      expect(edu.getCoverage(10, 10, 'elementary')).toBe(true);
+      expect(edu.getCoverage(10, 10, 'highschool')).toBe(false);
+    });
+  });
+
+  describe('getEducationLevel', () => {
+    it('should return NONE when no schools cover the position', () => {
+      const edu = new EducationService();
+      expect(edu.getEducationLevel(50, 50)).toBe('none');
+    });
+
+    it('should return elementary when only elementary school covers position', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary', 10);
+      expect(edu.getEducationLevel(10, 10)).toBe('elementary');
+    });
+
+    it('should return highschool when highschool covers position', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'highschool', 10);
+      expect(edu.getEducationLevel(10, 10)).toBe('highschool');
+    });
+
+    it('should return university when university covers position', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'university', 10);
+      expect(edu.getEducationLevel(10, 10)).toBe('university');
+    });
+
+    it('should return the highest education level when multiple schools cover position', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary', 10);
+      edu.addSchool(10, 10, 'highschool', 10);
+      expect(edu.getEducationLevel(10, 10)).toBe('highschool');
+    });
+
+    it('should return university as highest when all three types cover position', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary', 10);
+      edu.addSchool(10, 10, 'highschool', 10);
+      edu.addSchool(10, 10, 'university', 10);
+      expect(edu.getEducationLevel(10, 10)).toBe('university');
+    });
+
+    it('should return elementary even with highschool and university if only elementary is in range', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary', 20);
+      edu.addSchool(50, 50, 'highschool', 5);
+      edu.addSchool(80, 80, 'university', 5);
+      expect(edu.getEducationLevel(15, 15)).toBe('elementary');
+    });
+  });
+
+  describe('removeSchool', () => {
+    it('should remove a school by id', () => {
+      const edu = new EducationService();
+      const id = edu.addSchool(10, 10, 'elementary');
+      expect(edu.getSchools()).toHaveLength(1);
+      edu.removeSchool(id);
+      expect(edu.getSchools()).toHaveLength(0);
+    });
+
+    it('should remove coverage after school is removed', () => {
+      const edu = new EducationService();
+      const id = edu.addSchool(10, 10, 'elementary', 10);
+      expect(edu.getCoverage(10, 10, 'elementary')).toBe(true);
+      expect(edu.getEducationLevel(10, 10)).toBe('elementary');
+      edu.removeSchool(id);
+      expect(edu.getCoverage(10, 10, 'elementary')).toBe(false);
+      expect(edu.getEducationLevel(10, 10)).toBe('none');
+    });
+
+    it('should not affect other schools when one is removed', () => {
+      const edu = new EducationService();
+      const id1 = edu.addSchool(10, 10, 'elementary', 5);
+      const id2 = edu.addSchool(30, 30, 'highschool', 5);
+      edu.removeSchool(id1);
+      expect(edu.getSchools()).toHaveLength(1);
+      expect(edu.getCoverage(30, 30, 'highschool')).toBe(true);
+    });
+
+    it('should do nothing when removing a nonexistent id', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary');
+      edu.removeSchool('nonexistent-id');
+      expect(edu.getSchools()).toHaveLength(1);
+    });
+  });
+
+  describe('tick', () => {
+    it('should not throw when called', () => {
+      const edu = new EducationService();
+      edu.addSchool(10, 10, 'elementary');
+      expect(() => edu.tick()).not.toThrow();
+    });
+  });
+
+  describe('serialization', () => {
+    it('should serialize to JSON and deserialize back', () => {
+      const edu = new EducationService();
+      edu.addSchool(5, 5, 'elementary', 10, 200);
+      edu.addSchool(15, 15, 'highschool', 12, 300);
+      edu.addSchool(25, 25, 'university', 15, 500);
+
+      const json = edu.toJSON();
+      const restored = EducationService.fromJSON(json);
+
+      expect(restored.getSchools()).toHaveLength(3);
+      expect(restored.getSchools()[0]!.type).toBe('elementary');
+      expect(restored.getSchools()[0]!.x).toBe(5);
+      expect(restored.getSchools()[0]!.y).toBe(5);
+      expect(restored.getSchools()[0]!.radius).toBe(10);
+      expect(restored.getSchools()[0]!.capacity).toBe(200);
+
+      expect(restored.getSchools()[1]!.type).toBe('highschool');
+      expect(restored.getSchools()[2]!.type).toBe('university');
+
+      // Verify coverage works after deserialization
+      expect(restored.getCoverage(5, 5, 'elementary')).toBe(true);
+      expect(restored.getEducationLevel(25, 25)).toBe('university');
+    });
+
+    it('should serialize empty service', () => {
+      const edu = new EducationService();
+      const json = edu.toJSON();
+      const restored = EducationService.fromJSON(json);
+      expect(restored.getSchools()).toHaveLength(0);
+    });
+  });
+});

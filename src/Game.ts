@@ -35,7 +35,7 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 };
 
 
-export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'park' | 'garbage' | 'sewage' | 'cemetery';
 
 export interface SelectedBuilding {
   x: number;
@@ -365,6 +365,30 @@ export class Game {
       case 'water':
         this.placeInfrastructure(x1, y1, 'water');
         break;
+      case 'police':
+        this.placeInfrastructure(x1, y1, 'police');
+        break;
+      case 'fire':
+        this.placeInfrastructure(x1, y1, 'fire');
+        break;
+      case 'hospital':
+        this.placeInfrastructure(x1, y1, 'hospital');
+        break;
+      case 'school':
+        this.placeInfrastructure(x1, y1, 'school');
+        break;
+      case 'park':
+        this.placeInfrastructure(x1, y1, 'park');
+        break;
+      case 'garbage':
+        this.placeInfrastructure(x1, y1, 'garbage');
+        break;
+      case 'sewage':
+        this.placeInfrastructure(x1, y1, 'sewage');
+        break;
+      case 'cemetery':
+        this.placeInfrastructure(x1, y1, 'cemetery');
+        break;
     }
     this.onUIUpdate?.();
   }
@@ -386,9 +410,41 @@ export class Game {
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
-        // Remove infrastructure plants if demolished
+        // Remove infrastructure plants/services if demolished
         if (cell && cell.buildingId === 254) this.state.power.removePlant(x, y);
         if (cell && cell.buildingId === 253) this.state.water.removePlant(x, y);
+        if (cell && cell.buildingId === 252) {
+          const sid = this.state.police.getStations().find(s => s.x === x && s.y === y);
+          if (sid) this.state.police.removeStation(sid.id);
+        }
+        if (cell && cell.buildingId === 251) {
+          const sid = this.state.fire.getStations().find(s => s.x === x && s.y === y);
+          if (sid) this.state.fire.removeStation(sid.id);
+        }
+        if (cell && cell.buildingId === 250) {
+          const hid = this.state.health.getHospitals().find(h => h.x === x && h.y === y);
+          if (hid) this.state.health.removeHospital(hid.id);
+        }
+        if (cell && cell.buildingId === 249) {
+          const sid = this.state.education.getSchools().find(s => s.x === x && s.y === y);
+          if (sid) this.state.education.removeSchool(sid.id);
+        }
+        if (cell && cell.buildingId === 248) {
+          const pid = this.state.parks.getParks().find(p => p.x === x && p.y === y);
+          if (pid) this.state.parks.removePark(pid.id);
+        }
+        if (cell && cell.buildingId === 247) {
+          const gid = this.state.garbage.getFacilities().find(g => g.x === x && g.y === y);
+          if (gid) this.state.garbage.removeFacility(gid.id);
+        }
+        if (cell && cell.buildingId === 246) {
+          const sid = this.state.sewage.getTreatmentPlants().find(s => s.x === x && s.y === y);
+          if (sid) this.state.sewage.removeTreatmentPlant(sid.id);
+        }
+        if (cell && cell.buildingId === 245) {
+          const cid = this.state.deathCare.getCemeteries().find(c => c.x === x && c.y === y);
+          if (cid) this.state.deathCare.removeCemetery(cid.id);
+        }
         this.state.grid.setCell(x, y, {
           roadType: 0,
           roadFlags: 0,
@@ -400,7 +456,7 @@ export class Game {
     this.renderDirty = true;
   }
 
-  private placeInfrastructure(x: number, y: number, type: 'power' | 'water'): void {
+  private placeInfrastructure(x: number, y: number, type: 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'park' | 'garbage' | 'sewage' | 'cemetery'): void {
     const cell = this.state.grid.getCell(x, y);
     if (!cell) {
       this.notification = 'Out of bounds';
@@ -432,7 +488,15 @@ export class Game {
       this.notificationTimer = 3;
       return;
     }
-    const cost = type === 'power' ? 500 : 300;
+    const costs: Record<string, number> = {
+      power: 500, water: 300, police: 400, fire: 400, hospital: 800,
+      school: 400, park: 200, garbage: 400, sewage: 400, cemetery: 300,
+    };
+    const buildingIds: Record<string, number> = {
+      power: 254, water: 253, police: 252, fire: 251, hospital: 250,
+      school: 249, park: 248, garbage: 247, sewage: 246, cemetery: 245,
+    };
+    const cost = costs[type] ?? 500;
     if (this.state.budget.funds < cost) {
       this.notification = `Insufficient funds (need $${cost})`;
       this.notificationTimer = 3;
@@ -441,11 +505,26 @@ export class Game {
     this.state.budget.funds -= cost;
     if (type === 'power') {
       this.state.power.addPlant({ x, y, output: 500, pollution: 10, type: 'coal' });
-    } else {
+    } else if (type === 'water') {
       this.state.water.addPlant({ x, y, output: 500 });
+    } else if (type === 'police') {
+      this.state.police.addStation(x, y);
+    } else if (type === 'fire') {
+      this.state.fire.addStation(x, y);
+    } else if (type === 'hospital') {
+      this.state.health.addHospital(x, y);
+    } else if (type === 'school') {
+      this.state.education.addSchool(x, y, 'elementary');
+    } else if (type === 'park') {
+      this.state.parks.addPark(x, y);
+    } else if (type === 'garbage') {
+      this.state.garbage.addFacility(x, y, 'landfill');
+    } else if (type === 'sewage') {
+      this.state.sewage.addTreatmentPlant(x, y);
+    } else if (type === 'cemetery') {
+      this.state.deathCare.addCemetery(x, y);
     }
-    // Mark cell with a special buildingId so it renders as infrastructure
-    this.state.grid.setCell(x, y, { buildingId: type === 'power' ? 254 : 253 });
+    this.state.grid.setCell(x, y, { buildingId: buildingIds[type] ?? 254 });
     this.audioManager.playSfx('build');
     this.renderDirty = true;
   }
@@ -778,6 +857,14 @@ export class Game {
       demolish: 0xf44336,
       power: 0xffeb3b,
       water: 0x03a9f4,
+      police: 0x3f51b5,
+      fire: 0xd32f2f,
+      hospital: 0xe91e63,
+      school: 0x795548,
+      park: 0x4caf50,
+      garbage: 0x795548,
+      sewage: 0x607d8b,
+      cemetery: 0x9e9e9e,
     };
     this.gridCursor.setColor(toolColors[this.currentTool] ?? 0xffffff);
     // Demolish tool gets higher opacity for red highlight preview

@@ -42,7 +42,17 @@ export class SimulationLoop {
     this.state.power.calculateCoverage(this.state.grid, infraPositions);
     this.state.water.calculateCoverage(this.state.grid, infraPositions);
 
-    // 3.5. Pollution & land value: update every 10 ticks (performance)
+    // 3.5 Civic services tick
+    this.state.police.tick();
+    this.state.fire.tick();
+    this.state.health.tick();
+    this.state.education.tick();
+    this.state.parks.tick();
+    this.state.garbage.tick(this.state.citizens.getPopulation());
+    this.state.sewage.tick(this.state.citizens.getPopulation());
+    this.state.deathCare.tick();
+
+    // 3.6. Pollution & land value: update every 10 ticks (performance)
     if (this.state.clock.tick % 10 === 0) {
       this.updatePollution();
       this.updateLandValue();
@@ -239,9 +249,14 @@ export class SimulationLoop {
   }
 
   private getAvgCrime(): number {
-    // Crime is not tracked per-cell in the grid; estimate from population density
+    // Crime scales with population, reduced by police coverage
     const pop = this.state.citizens.getPopulation();
-    return Math.min(50, pop * 0.02); // low crime at low pop, scales up
+    const baseCrime = Math.min(50, pop * 0.02);
+    const stations = this.state.police.getStations();
+    if (stations.length === 0) return baseCrime;
+    // Each station covers ~15 radius; rough coverage ratio
+    const coverageRatio = Math.min(1, stations.length * 0.15);
+    return baseCrime * (1 - coverageRatio * 0.6); // up to 60% crime reduction
   }
 
   private countVacantHomes(): number {
@@ -254,8 +269,8 @@ export class SimulationLoop {
     for (let y = 0; y < this.state.grid.height; y++) {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
-        // Skip infrastructure (buildingId 253=water, 254=power) and empty cells
-        if (cell && cell.buildingId > 0 && cell.buildingId < 253) {
+        // Skip infrastructure (buildingId 245-254) and empty cells
+        if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
           const level = cell.buildingId; // building level stored in buildingId
           income += level * 2; // base income per building per tick
         }
@@ -263,11 +278,19 @@ export class SimulationLoop {
     }
     const taxRate = this.state.taxRates.residential ?? 9;
     this.state.budget.income = income * (taxRate / 100);
-    // Expenses: road maintenance + infrastructure operating costs
+    // Expenses: road maintenance + infrastructure + civic service operating costs
     const roadMaint = this.countRoadTiles() * 0.1;
     const powerCost = this.state.power.getPlants().length * 5;
     const waterCost = this.state.water.getPlants().length * 3;
-    this.state.budget.expenses = roadMaint + powerCost + waterCost;
+    const policeCost = this.state.police.getStations().length * 4;
+    const fireCost = this.state.fire.getStations().length * 4;
+    const healthCost = this.state.health.getHospitals().length * 8;
+    const educationCost = this.state.education.getSchools().length * 5;
+    const parkCost = this.state.parks.getParks().length * 2;
+    const garbageCost = this.state.garbage.getFacilities().length * 3;
+    const sewageCost = this.state.sewage.getTreatmentPlants().length * 4;
+    const deathCareCost = (this.state.deathCare.getCemeteries().length + this.state.deathCare.getCrematoria().length) * 2;
+    this.state.budget.expenses = roadMaint + powerCost + waterCost + policeCost + fireCost + healthCost + educationCost + parkCost + garbageCost + sewageCost + deathCareCost;
   }
 
   private countRoadTiles(): number {
