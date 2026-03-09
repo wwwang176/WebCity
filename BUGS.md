@@ -1315,3 +1315,15 @@
 - ✅ 零 Console 錯誤
 - ✅ 全部 653 單元測試通過
 - ℹ️ **已知限制**: Districts/GlobalMarket/Policies 未序列化（Load 後重置為預設）
+
+### 新增已驗證功能（第六十七輪測試 — New Game 端到端 + Save/Load 完整往返）
+- ✅ **New Game 端到端** — 主選單→New Game→建路(140格)+劃區(88格)+電水+9 Civic→2000 ticks→Pop 166, 75 建築
+- ✅ **Save→Reload→Load 完整往返** — Pop=168, BusStops=1, MetroStations=1, Schools=3, PowerPlants=1, WaterPlants=1 全部精確匹配
+- ✅ **Post-load 功能驗證**:
+  - 建路: cost=$5200, roadType=2 ✅
+  - 劃區: zoneType=1 ✅
+  - 拆除: bId=0, zone=0 ✅
+  - 模擬繼續: Pop 170→178 ✅
+- ✅ **3000-tick 壓力測試（Load後）** — 1810ms (1657 tps), Pop 235, Funds $186K, 零 NaN
+- ✅ 零 Console 錯誤
+- ✅ 全部 653 單元測試通過
