@@ -10,8 +10,10 @@ interface ToolGroup { id: string; label: string; icon: string; color: string; it
 const ZONE_GROUP: ToolGroup = {
   id: 'zone', label: 'Zones', icon: '\u{1F3D8}', color: '#66bb6a',
   items: [
-    { tool: 'zone_r', label: 'Residential', key: '3', color: '#66bb6a', icon: '\u{1F3E0}' },
-    { tool: 'zone_c', label: 'Commercial', key: '4', color: '#42a5f5', icon: '\u{1F3EC}' },
+    { tool: 'zone_r', label: 'Res Low', key: '3', color: '#66bb6a', icon: '\u{1F3E0}' },
+    { tool: 'zone_rh', label: 'Res High', key: '', color: '#2e7d32', icon: '\u{1F3E2}' },
+    { tool: 'zone_c', label: 'Com Low', key: '4', color: '#42a5f5', icon: '\u{1F3EC}' },
+    { tool: 'zone_ch', label: 'Com High', key: '', color: '#1565c0', icon: '\u{1F3EC}' },
     { tool: 'zone_i', label: 'Industrial', key: '5', color: '#ffa726', icon: '\u{1F3ED}' },
     { tool: 'zone_o', label: 'Office', key: '6', color: '#ab47bc', icon: '\u{1F3E2}' },
   ],
@@ -922,10 +924,17 @@ export function createGameUI(game: Game): HTMLElement {
     const zoneCounts: Record<number, { count: number; capacity: number }> = {};
     for (const zt of ZONE_ORDER) zoneCounts[zt] = { count: 0, capacity: 0 };
 
+    let totalPollution = 0;
+    let pollutionCount = 0;
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
-        if (!cell || cell.buildingId <= 0 || cell.zoneType === ZoneType.NONE) continue;
+        if (!cell) continue;
+        if (cell.buildingId > 0 || cell.zoneType > 0) {
+          totalPollution += cell.pollution;
+          pollutionCount++;
+        }
+        if (cell.buildingId <= 0 || cell.zoneType === ZoneType.NONE) continue;
         const entry = zoneCounts[cell.zoneType];
         if (!entry) continue;
         entry.count++;
@@ -933,6 +942,7 @@ export function createGameUI(game: Game): HTMLElement {
         if (bt) entry.capacity += bt.residents + bt.workers;
       }
     }
+    const avgPollution = pollutionCount > 0 ? totalPollution / pollutionCount : 0;
 
     const totalHomes = (zoneCounts[ZoneType.RESIDENTIAL_LOW]?.capacity ?? 0) +
       (zoneCounts[ZoneType.RESIDENTIAL_HIGH]?.capacity ?? 0);
@@ -966,7 +976,7 @@ export function createGameUI(game: Game): HTMLElement {
     const taxRate = state.taxRates.residential ?? 9;
     const attractiveness = calculateAttractiveness({
       jobOpenings, vacantHomes, avgHappiness, taxRate,
-      pollution: 0, crimeRate: Math.min(50, population * 0.02),
+      pollution: avgPollution, crimeRate: Math.min(50, population * 0.02),
     });
     const canMigrate = attractiveness > 50 && vacantHomes > 0 && jobOpenings > 0;
 

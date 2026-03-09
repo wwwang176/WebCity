@@ -35,7 +35,7 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 };
 
 
-export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_c' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water';
 
 export interface SelectedBuilding {
   x: number;
@@ -335,8 +335,16 @@ export class Game {
         this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_LOW);
         this.audioManager.playSfx('zone');
         break;
+      case 'zone_rh':
+        this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_HIGH);
+        this.audioManager.playSfx('zone');
+        break;
       case 'zone_c':
         this.applyZone(x1, y1, x2, y2, ZoneType.COMMERCIAL_LOW);
+        this.audioManager.playSfx('zone');
+        break;
+      case 'zone_ch':
+        this.applyZone(x1, y1, x2, y2, ZoneType.COMMERCIAL_HIGH);
         this.audioManager.playSfx('zone');
         break;
       case 'zone_i':
@@ -762,7 +770,9 @@ export class Game {
       road_2lane: 0x424242,
       road_4lane: 0x424242,
       zone_r: 0x4caf50,
+      zone_rh: 0x2e7d32,
       zone_c: 0x2196f3,
+      zone_ch: 0x1565c0,
       zone_i: 0xffa726,
       zone_o: 0xab47bc,
       demolish: 0xf44336,
