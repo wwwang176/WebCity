@@ -1215,3 +1215,16 @@
 - ✅ **Demolish 道路** — roadType 2→0 正確清零
 - ✅ 零 Console 錯誤
 - ✅ 全部 652 單元測試通過
+
+### 新增已驗證功能（第六十輪測試 — District / Transit / Tax / RCI / Overview / Chart）
+- ✅ **District 工具** — 塗刷建立 "District 1"，getDistrictAt() 正確回傳
+- ✅ **Tax Rate 滑桿** — Economy modal 中 slider 9→15% 正確同步 R/C/I/O 四項稅率，UI 即時顯示
+- ✅ **RCI 指標條** — R=100%(綠), C=92.75%(藍), I=63.4%(橘) 正確顯示需求
+- ✅ **Overview Panel** — Pop 207, 1 Vacant Home, 552 Jobs, Buildings by Zone 表格, Attractiveness 52.3
+- ✅ **Stats Chart** — econ-chart 480x100 canvas 有實際內容渲染
+- ✅ **Transit Bus Stop** — 空格放置 buildingId=242，bus.getStops()=1
+- ✅ **Transit Metro Station** — 空格放置 buildingId=241，metro.getStations()=1
+- ✅ **Transit Taxi Stand** — 空格放置 buildingId=236
+- ✅ **6/6 Transit 工具切換** — bus_stop/metro_station/tram_stop/train_station/ferry_dock/taxi_stand 全部正確
+- ✅ 零 Console 錯誤
+- ✅ 全部 652 單元測試通過
