@@ -35,7 +35,7 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 };
 
 
-export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'tram_stop' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'tram_stop' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
 
 export interface SelectedBuilding {
   x: number;
@@ -310,7 +310,9 @@ export class Game {
       case 'road':
       case 'road_rural':
       case 'road_2lane':
-      case 'road_4lane': {
+      case 'road_4lane':
+      case 'road_6lane':
+      case 'road_highway': {
         const result = this.roadBuilder.buildRoad(
           { x: x1, y: y1 }, { x: x2, y: y2 },
           this.currentRoadType,
@@ -1006,7 +1008,7 @@ export class Game {
 
   isRoadTool(tool?: ToolType): boolean {
     const t = tool ?? this.currentTool;
-    return t === 'road' || t === 'road_rural' || t === 'road_2lane' || t === 'road_4lane';
+    return t === 'road' || t === 'road_rural' || t === 'road_2lane' || t === 'road_4lane' || t === 'road_6lane' || t === 'road_highway';
   }
 
   setTool(tool: ToolType): void {
@@ -1015,6 +1017,8 @@ export class Game {
     if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
     else if (tool === 'road_2lane') this.currentRoadType = RoadType.TWO_LANE;
     else if (tool === 'road_4lane') this.currentRoadType = RoadType.FOUR_LANE;
+    else if (tool === 'road_6lane') this.currentRoadType = RoadType.SIX_LANE;
+    else if (tool === 'road_highway') this.currentRoadType = RoadType.HIGHWAY;
     // Auto-switch overlay when selecting infrastructure tools
     const toolOverlayMap: Partial<Record<ToolType, OverlayType>> = {
       power: 'power', water: 'water', police: 'police', fire: 'fire',

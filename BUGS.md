@@ -1152,3 +1152,13 @@
 - ✅ **20 次 zone/demolish 循環** — 零 errors, cell 狀態乾淨
 - ✅ 零遊戲 Console 錯誤
 - ✅ 全部 649 單元測試通過
+
+### 新增已驗證功能（第五十七輪測試 — Civic / Education / Road 6-Lane & Highway Bug Fix）
+- 🐛 **BUG-024 修復: 6-Lane 和 Highway 道路無法建造/升級** — ToolType 缺少 road_6lane/road_highway，handleToolAction case 未包含，setTool 未設定 currentRoadType，isRoadTool 未包含。全部修復並在 UI Roads panel 加入 6-Lane/Highway 按鈕。
+- ✅ **9/9 Civic Buildings** — Police/Fire/Hospital/School/HighSchool/University/Park/Garbage/Cemetery 全部放置成功
+- ✅ **Education 系統** — 4 所學校正確註冊，getCoverage/getEducationLevel 正常回傳
+- ✅ **Education Overlay** — 黃色覆蓋範圍清晰顯示
+- ✅ **Road 6-Lane 升級** — TWO_LANE(2)→SIX_LANE(4) 正確升級
+- ✅ **Highway 建造** — roadType=5 (HIGHWAY) 正確建造
+- ✅ **Roads Panel** — 5 種道路（Rural/2-Lane/4-Lane/6-Lane/Highway）UI 按鈕完整
+- ✅ 全部 649 單元測試通過
