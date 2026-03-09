@@ -851,3 +851,50 @@
 - [x] 公園 land value 影響只看 FOREST 地形，未檢查 ParkService 設施（buildingId=248）→ 放置的公園不影響地價 — BUG-046 已修復
 - [x] Civic 建築（police/fire/hospital/school/park 等 buildingId 243-252）在 zoneType=NONE 的空地上放置時，渲染引擎已支援，拆除後清理正確（demolish 已處理所有 buildingId 243-254）
 - [x] 電力/水力覆蓋從 BFS 矩形改為 Euclidean 圓形 — BUG-051
+- [ ] 基礎設施多格佔地重構（跨系統重構）
+  - [ ] **Step 1 — InfraConfig 配置表** (`src/core/building/InfraConfig.ts`)
+    - 定義每種基礎設施的 id/name/width/height/cost
+    - 公園 1×1($200)、警察/消防/小學/電廠/水廠/垃圾/汙水/墓園 2×2、醫院/高中 2×3、大學 3×3($3000)、機場 4×4
+    - 匯出 `getInfraConfig(type)` 查詢函式
+    - rotation 型別：0°/90°/180°/270°（四方向），90°/270° 時 swap W↔H
+  - [ ] **Step 2 — 多格放置邏輯** (`src/Game.ts` placeInfrastructure)
+    - 查表取得 W×H，根據 currentRotation 決定實際佔地（90°/270° 時 W↔H 互換）
+    - 檢查所有 W×H 格（非水域/非道路/非建築/非地圖外）
+    - 主格(左上角)：`buildingId = infraId`
+    - 從格(其餘格)：`buildingId = infraId, reserved = 4 (MULTI_CELL_OCCUPIED)`
+    - 水廠 2×2：只需任一格靠近水源即可
+    - 按 R 鍵循環切換 rotation：0° → 90° → 180° → 270° → 0°（僅基礎設施工具時生效）
+  - [ ] **Step 3 — 多格拆除邏輯** (`src/Game.ts` demolish)
+    - 點擊任一格 → 判斷是主格或從格(reserved=4)
+    - 從格：查服務層設施列表，找最近匹配座標的主格
+    - 取得 W×H → 清除所有格子的 buildingId/reserved → 呼叫服務 removeXxx
+  - [ ] **Step 4 — 渲染層** (`src/renderer/BuildingRenderer.ts`)
+    - 掃描 grid 時跳過從格(reserved=4)，只在主格繪製建築
+    - buildCivicBuilding/buildPowerPlant/buildWaterPump 的 geometry 大小改為 W×H 格
+    - 模型居中：位置 = 主格座標 + (w/2 - 0.5, h/2 - 0.5) 偏移
+    - 各建築細節（煙囪/十字架/圓頂/水塔等）按比例調整
+    - 主格額外存 rotation 資訊 → 渲染時旋轉模型（Y 軸旋轉 0°/90°/180°/270°）
+  - [ ] **Step 5 — 游標多格高亮 + 旋轉** (`src/renderer/GridCursor.ts`)
+    - GridCursor 新增 `setSize(w, h)` 方法，PlaneGeometry 改為 W×H
+    - Game.ts 切換工具時呼叫 `setSize` 更新游標大小
+    - 按 R 鍵：rotation 切換 → 游標 W↔H 互換（非正方形時可見變化）+ 預覽模型旋轉
+    - 游標位置偏移：讓滑鼠指向左上角主格
+  - [ ] **Step 6 — 服務覆蓋起算點**（各 Service 檔案）
+    - getCoverage 距離計算的起點從 (x, y) 改為建築中心 (x+w/2, y+h/2)
+    - 涉及：PowerGrid/WaterNetwork/Police/Fire/Health/Education/Park/Garbage/Sewage/DeathCare
+    - 或統一在服務 add 時存入中心座標
+  - [ ] **Step 7 — SimulationLoop 去重** (`src/core/simulation/SimulationLoop.ts`)
+    - 掃描 grid 統計建築/住房/工作時，跳過 reserved=4 的從格
+    - 焦黑建築清除邏輯：確保 reserved=3(BURNED) 與 reserved=4(OCCUPIED) 不衝突
+  - [ ] **Step 8 — 存檔/讀檔** (`src/core/save/Serializer.ts`)
+    - 存檔：grid 逐格序列化（主格+從格都會存），主格的 rotation 資訊需保留
+    - 讀檔(新存檔)：transit stop 重建掃描需去重，只對主格(reserved≠4)執行 addStop
+    - 讀檔(舊存檔相容)：掃描到 1×1 基礎設施 → 查表 W×H → 自動補填從格（rotation 預設 0°）
+  - [ ] **Step 9 — 測試更新**
+    - 新增 InfraConfig 單元測試（配置表完整性）
+    - 新增多格放置測試（2×2/3×3 放置、邊界檢查、部分被佔用拒絕）
+    - 新增旋轉放置測試（2×3 建築 90° 旋轉 → 佔地 3×2、180° → 佔地 2×3 但模型翻轉、270° → 佔地 3×2 鏡像）
+    - 新增多格拆除測試（點主格拆除、點從格拆除、W×H 全部清除）
+    - 更新現有 placeInfrastructure/demolish 相關測試
+    - 新增舊存檔相容測試
+- [ ] 放置物件半透明預覽 — 基礎設施放置時顯示半透明 3D 模型預覽（綠色=可放置/紅色=不可放置），道路拖曳預覽改為面，區域拖曳顯示範圍預覽
