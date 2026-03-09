@@ -1,6 +1,8 @@
 import { Game, type ToolType, type SelectedBuilding } from '../Game';
 import { ZoneType } from '../core/grid/types';
 import { RoadType, ROAD_CONFIGS } from '../core/road/types';
+import { getBuildingType, BUILDING_TYPES } from '../core/building/types';
+import { calculateAttractiveness } from '../core/citizen/Migration';
 
 interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
 interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[] }
@@ -573,6 +575,10 @@ export function createGameUI(game: Game): HTMLElement {
         </div>
       </div>
       <div class="tb-sep"></div>
+      <button class="tb-action" id="btn-overview" title="City Overview">
+        <span class="tb-icon">\u{1F3D9}</span>
+        <span>Overview</span>
+      </button>
       <button class="tb-action" id="btn-economy" title="Economy Panel">
         <span class="tb-icon">$</span>
         <span>Economy</span>
@@ -619,6 +625,17 @@ export function createGameUI(game: Game): HTMLElement {
           <button class="modal-close" data-close="traffic-modal">&times;</button>
         </div>
         <div class="modal-body" id="traffic-body"></div>
+      </div>
+    </div>
+
+    <!-- Overview Modal -->
+    <div class="modal-overlay" id="overview-modal">
+      <div class="modal-panel">
+        <div class="modal-header">
+          <div class="modal-title">\u{1F3D9} City Overview</div>
+          <button class="modal-close" data-close="overview-modal">&times;</button>
+        </div>
+        <div class="modal-body" id="overview-body"></div>
       </div>
     </div>
   `;
@@ -717,6 +734,7 @@ export function createGameUI(game: Game): HTMLElement {
         const modal = ui.querySelector(`#${modalId}`) as HTMLElement;
         if (modal) modal.classList.remove('visible');
         // Remove panel-open state from action buttons
+        ui.querySelector('#btn-overview')?.classList.remove('panel-open');
         ui.querySelector('#btn-economy')?.classList.remove('panel-open');
         ui.querySelector('#btn-traffic')?.classList.remove('panel-open');
       }
@@ -728,11 +746,24 @@ export function createGameUI(game: Game): HTMLElement {
     overlay.addEventListener('click', (e) => {
       if (e.target === overlay) {
         overlay.classList.remove('visible');
+        ui.querySelector('#btn-overview')?.classList.remove('panel-open');
         ui.querySelector('#btn-economy')?.classList.remove('panel-open');
         ui.querySelector('#btn-traffic')?.classList.remove('panel-open');
       }
     });
   });
+
+  // Overview panel button
+  const btnOverview = ui.querySelector('#btn-overview');
+  if (btnOverview) {
+    btnOverview.addEventListener('click', () => {
+      const modal = ui.querySelector('#overview-modal') as HTMLElement;
+      const isOpen = modal.classList.contains('visible');
+      modal.classList.toggle('visible');
+      btnOverview.classList.toggle('panel-open', !isOpen);
+      if (!isOpen) updateOverviewPanel();
+    });
+  }
 
   // Economy panel button
   const btnEconomy = ui.querySelector('#btn-economy');
@@ -803,6 +834,163 @@ export function createGameUI(game: Game): HTMLElement {
     if (workersEl) workersEl.textContent = String(bt.workers);
     if (taxEl) taxEl.textContent = `$${bt.taxRevenue}/tick`;
     if (zoneEl) zoneEl.textContent = ZONE_NAMES[selected.zoneType] ?? 'Unknown';
+  }
+
+  // ===== Overview Panel Content =====
+  const ZONE_ORDER = [
+    ZoneType.RESIDENTIAL_LOW, ZoneType.RESIDENTIAL_HIGH,
+    ZoneType.COMMERCIAL_LOW, ZoneType.COMMERCIAL_HIGH,
+    ZoneType.INDUSTRIAL, ZoneType.OFFICE,
+  ] as const;
+  const ZONE_LABELS: Record<number, string> = {
+    [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
+    [ZoneType.RESIDENTIAL_HIGH]: 'Residential (High)',
+    [ZoneType.COMMERCIAL_LOW]: 'Commercial (Low)',
+    [ZoneType.COMMERCIAL_HIGH]: 'Commercial (High)',
+    [ZoneType.INDUSTRIAL]: 'Industrial',
+    [ZoneType.OFFICE]: 'Office',
+  };
+  const CHECK_LABELS = ['Attractiveness > 50', 'Vacant Homes > 0', 'Job Openings > 0'];
+  let overviewBuilt = false;
+
+  function buildOverviewDOM(body: HTMLElement): void {
+    const capLabel = (zt: number) => zt <= ZoneType.RESIDENTIAL_HIGH ? 'Residents' : 'Workers';
+    body.innerHTML = `
+      <div class="summary-grid">
+        <div class="summary-card"><div class="sc-value stat-accent" id="ov-pop">0</div><div class="sc-label">Population</div></div>
+        <div class="summary-card"><div class="sc-value" id="ov-vacant">0</div><div class="sc-label">Vacant Homes</div></div>
+        <div class="summary-card"><div class="sc-value" id="ov-jobs">0</div><div class="sc-label">Total Jobs</div></div>
+        <div class="summary-card"><div class="sc-value" id="ov-openings">0</div><div class="sc-label">Job Openings</div></div>
+      </div>
+      <div class="section-title">Buildings by Zone</div>
+      <table class="data-table">
+        <tr><th>Zone</th><th style="text-align:right">Buildings</th><th style="text-align:right">Capacity</th></tr>
+        ${ZONE_ORDER.map(zt => `<tr>
+          <td class="td-label">${ZONE_LABELS[zt]}</td>
+          <td class="td-value" style="text-align:right" id="ov-zc-${zt}">0</td>
+          <td class="td-value" style="text-align:right" id="ov-zcap-${zt}">0 ${capLabel(zt)}</td>
+        </tr>`).join('')}
+        <tr style="border-top:1px solid rgba(100,120,150,0.3)">
+          <td class="td-label" style="font-weight:600">Total Housing</td><td></td>
+          <td class="td-value" style="text-align:right;font-weight:600" id="ov-total-homes">0</td>
+        </tr>
+        <tr>
+          <td class="td-label" style="font-weight:600">Total Jobs</td><td></td>
+          <td class="td-value" style="text-align:right;font-weight:600" id="ov-total-jobs">0</td>
+        </tr>
+      </table>
+      <div class="section-title">Migration Status</div>
+      <table class="data-table">
+        <tr><th>Condition</th><th style="text-align:right">Value</th><th style="text-align:center">Status</th></tr>
+        ${CHECK_LABELS.map((label, i) => `<tr>
+          <td class="td-label">${label}</td>
+          <td class="td-value" style="text-align:right" id="ov-chk-val-${i}">0</td>
+          <td style="text-align:center" id="ov-chk-icon-${i}">\u2717</td>
+        </tr>`).join('')}
+      </table>
+      <div id="ov-migrate-status" style="margin-top:10px;padding:8px 12px;border-radius:6px;font-size:12px;font-weight:600"></div>
+    `;
+    overviewBuilt = true;
+  }
+
+  // Cache previous values to skip unchanged DOM writes
+  const ovCache: Record<string, string> = {};
+  function ovSet(id: string, text: string): void {
+    if (ovCache[id] === text) return;
+    ovCache[id] = text;
+    const el = ui.querySelector(`#${id}`);
+    if (el) el.textContent = text;
+  }
+  function ovSetStyle(id: string, prop: string, value: string): void {
+    const cacheKey = `${id}__${prop}`;
+    if (ovCache[cacheKey] === value) return;
+    ovCache[cacheKey] = value;
+    const el = ui.querySelector(`#${id}`) as HTMLElement | null;
+    if (el) (el.style as any)[prop] = value;
+  }
+
+  function updateOverviewPanel(): void {
+    const body = ui.querySelector('#overview-body') as HTMLElement;
+    if (!body) return;
+    if (!overviewBuilt) buildOverviewDOM(body);
+
+    const state = game.getState();
+    const grid = state.grid;
+    const population = state.citizens.getPopulation();
+
+    // Count buildings and capacity/jobs by zone type
+    const zoneCounts: Record<number, { count: number; capacity: number }> = {};
+    for (const zt of ZONE_ORDER) zoneCounts[zt] = { count: 0, capacity: 0 };
+
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (!cell || cell.buildingId <= 0 || cell.zoneType === ZoneType.NONE) continue;
+        const entry = zoneCounts[cell.zoneType];
+        if (!entry) continue;
+        entry.count++;
+        const bt = getBuildingType(cell.buildingId);
+        if (bt) entry.capacity += bt.residents + bt.workers;
+      }
+    }
+
+    const totalHomes = (zoneCounts[ZoneType.RESIDENTIAL_LOW]?.capacity ?? 0) +
+      (zoneCounts[ZoneType.RESIDENTIAL_HIGH]?.capacity ?? 0);
+    const totalJobs = (zoneCounts[ZoneType.COMMERCIAL_LOW]?.capacity ?? 0) +
+      (zoneCounts[ZoneType.COMMERCIAL_HIGH]?.capacity ?? 0) +
+      (zoneCounts[ZoneType.INDUSTRIAL]?.capacity ?? 0) +
+      (zoneCounts[ZoneType.OFFICE]?.capacity ?? 0);
+    const vacantHomes = Math.max(0, totalHomes - population);
+    const jobOpenings = Math.max(0, totalJobs - population);
+
+    // Summary cards
+    ovSet('ov-pop', String(population));
+    ovSet('ov-vacant', String(vacantHomes));
+    ovSet('ov-jobs', String(totalJobs));
+    ovSet('ov-openings', String(jobOpenings));
+
+    // Zone table
+    const capLabel = (zt: number) => zt <= ZoneType.RESIDENTIAL_HIGH ? 'Residents' : 'Workers';
+    for (const zt of ZONE_ORDER) {
+      const e = zoneCounts[zt]!;
+      ovSet(`ov-zc-${zt}`, String(e.count));
+      ovSet(`ov-zcap-${zt}`, `${e.capacity} ${capLabel(zt)}`);
+    }
+    ovSet('ov-total-homes', String(totalHomes));
+    ovSet('ov-total-jobs', String(totalJobs));
+
+    // Migration diagnostics
+    const avgHappiness = population > 0
+      ? Math.round(state.citizens.citizens.reduce((s: number, c: { happiness: number }) => s + c.happiness, 0) / population)
+      : 70;
+    const taxRate = state.taxRates.residential ?? 9;
+    const attractiveness = calculateAttractiveness({
+      jobOpenings, vacantHomes, avgHappiness, taxRate,
+      pollution: 0, crimeRate: Math.min(50, population * 0.02),
+    });
+    const canMigrate = attractiveness > 50 && vacantHomes > 0 && jobOpenings > 0;
+
+    const checkValues = [attractiveness.toFixed(1), String(vacantHomes), String(jobOpenings)];
+    const checkOk = [attractiveness > 50, vacantHomes > 0, jobOpenings > 0];
+    for (let i = 0; i < 3; i++) {
+      ovSet(`ov-chk-val-${i}`, checkValues[i]!);
+      ovSet(`ov-chk-icon-${i}`, checkOk[i] ? '\u2713' : '\u2717');
+      ovSetStyle(`ov-chk-icon-${i}`, 'color', checkOk[i] ? '#66bb6a' : '#ef5350');
+    }
+
+    // Migration status banner
+    const statusEl = ui.querySelector('#ov-migrate-status') as HTMLElement | null;
+    if (statusEl) {
+      const newText = canMigrate
+        ? '\u2713 Citizens can migrate in'
+        : '\u2717 Migration blocked \u2014 fix conditions marked \u2717 above';
+      if (ovCache['migrate-text'] !== newText) {
+        ovCache['migrate-text'] = newText;
+        statusEl.textContent = newText;
+        statusEl.style.background = canMigrate ? 'rgba(102,187,106,0.15)' : 'rgba(239,83,80,0.15)';
+        statusEl.style.color = canMigrate ? '#66bb6a' : '#ef5350';
+      }
+    }
   }
 
   // ===== Economy Panel Content =====
@@ -1218,6 +1406,11 @@ export function createGameUI(game: Game): HTMLElement {
     if (ui.querySelector('#economy-modal')?.classList.contains('visible')) {
       drawEconChart();
       drawPopChart();
+    }
+
+    // Auto-refresh overview panel when open
+    if (ui.querySelector('#overview-modal')?.classList.contains('visible')) {
+      updateOverviewPanel();
     }
   }
 

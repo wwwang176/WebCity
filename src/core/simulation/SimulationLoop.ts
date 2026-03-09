@@ -7,6 +7,7 @@ import { calculateLandValue } from '../economy/LandValue';
 import { ZoneType } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
+import { getBuildingType } from '../building/types';
 
 export class SimulationLoop {
   private state: GameState;
@@ -108,17 +109,8 @@ export class SimulationLoop {
   }
 
   private countJobOpenings(): number {
-    // Simple: count commercial + industrial buildings * 5 - employed citizens
-    let jobs = 0;
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.buildingId > 0 && (cell.zoneType >= 3)) {
-          jobs += 5; // each commercial/industrial/office building offers ~5 jobs
-        }
-      }
-    }
-    return Math.max(0, jobs - this.state.citizens.getPopulation());
+    const totalJobs = this.countTotalJobs();
+    return Math.max(0, totalJobs - this.state.citizens.getPopulation());
   }
 
   private tryBuildingGrowth(): void {
@@ -228,16 +220,7 @@ export class SimulationLoop {
   }
 
   private countTotalJobs(): number {
-    let jobs = 0;
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.buildingId > 0 && cell.zoneType >= 3) {
-          jobs += 5;
-        }
-      }
-    }
-    return jobs;
+    return countWorkplaceJobs(this.state.grid);
   }
 
   private getAvgPollution(): number {
@@ -262,16 +245,8 @@ export class SimulationLoop {
   }
 
   private countVacantHomes(): number {
-    let homes = 0;
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2)) {
-          homes += 5; // each residential building has ~5 capacity
-        }
-      }
-    }
-    return Math.max(0, homes - this.state.citizens.getPopulation());
+    const capacity = countResidentialCapacity(this.state.grid);
+    return Math.max(0, capacity - this.state.citizens.getPopulation());
   }
 
   private calculateIncome(): void {
@@ -552,4 +527,32 @@ export class SimulationLoop {
     }
     return null;
   }
+}
+
+export function countResidentialCapacity(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number } | null }): number {
+  let capacity = 0;
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      const cell = grid.getCell(x, y);
+      if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2)) {
+        const bt = getBuildingType(cell.buildingId);
+        capacity += bt ? bt.residents : 0;
+      }
+    }
+  }
+  return capacity;
+}
+
+export function countWorkplaceJobs(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number } | null }): number {
+  let jobs = 0;
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      const cell = grid.getCell(x, y);
+      if (cell && cell.buildingId > 0 && cell.zoneType >= 3) {
+        const bt = getBuildingType(cell.buildingId);
+        jobs += bt ? bt.workers : 0;
+      }
+    }
+  }
+  return jobs;
 }

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { GameClock } from '../GameClock';
 import { createGameState } from '../GameState';
-import { SimulationLoop } from '../SimulationLoop';
+import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs } from '../SimulationLoop';
+import { ZoneType } from '../../grid/types';
+import { RoadType } from '../../road/types';
 
 describe('GameClock', () => {
   it('should advance tick', () => {
@@ -68,5 +70,74 @@ describe('SimulationLoop', () => {
     }
     expect(state.clock.tick).toBe(1000);
     expect(Number.isFinite(state.budget.funds)).toBe(true);
+  });
+});
+
+describe('countResidentialCapacity', () => {
+  it('should return 0 for empty grid', () => {
+    const state = createGameState(10, 10);
+    expect(countResidentialCapacity(state.grid)).toBe(0);
+  });
+
+  it('should use BuildingType residents for Small House (id=1, 4 residents)', () => {
+    const state = createGameState(10, 10);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    expect(countResidentialCapacity(state.grid)).toBe(4);
+  });
+
+  it('should use BuildingType residents for High Rise (id=6, 80 residents)', () => {
+    const state = createGameState(10, 10);
+    state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 6 });
+    expect(countResidentialCapacity(state.grid)).toBe(80);
+  });
+
+  it('should sum capacity across multiple residential buildings', () => {
+    const state = createGameState(10, 10);
+    // Small House (4) + Small Apartment (20) = 24
+    state.grid.setCell(1, 1, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
+    expect(countResidentialCapacity(state.grid)).toBe(24);
+  });
+
+  it('should ignore non-residential buildings', () => {
+    const state = createGameState(10, 10);
+    state.grid.setCell(1, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    state.grid.setCell(2, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    expect(countResidentialCapacity(state.grid)).toBe(0);
+  });
+});
+
+describe('countWorkplaceJobs', () => {
+  it('should return 0 for empty grid', () => {
+    const state = createGameState(10, 10);
+    expect(countWorkplaceJobs(state.grid)).toBe(0);
+  });
+
+  it('should use BuildingType workers for Small Shop (id=7, 4 workers)', () => {
+    const state = createGameState(10, 10);
+    state.grid.setCell(2, 2, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    expect(countWorkplaceJobs(state.grid)).toBe(4);
+  });
+
+  it('should use BuildingType workers for Office Tower (id=21, 150 workers)', () => {
+    const state = createGameState(10, 10);
+    state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 21 });
+    expect(countWorkplaceJobs(state.grid)).toBe(150);
+  });
+
+  it('should sum jobs across commercial, industrial, office', () => {
+    const state = createGameState(10, 10);
+    // Small Shop (4) + Small Factory (10) + Small Office (15) = 29
+    state.grid.setCell(1, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    state.grid.setCell(2, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
+    expect(countWorkplaceJobs(state.grid)).toBe(29);
+  });
+
+  it('should ignore residential buildings', () => {
+    const state = createGameState(10, 10);
+    state.grid.setCell(1, 1, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
+    expect(countWorkplaceJobs(state.grid)).toBe(0);
   });
 });
