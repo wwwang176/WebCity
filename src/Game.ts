@@ -85,6 +85,7 @@ export class Game {
   private vehiclePrevPathPos = new Map<number, number>();
   private vehicleTypes = new Map<number, VehicleData['type']>();
   private vehicleHeadings = new Map<number, number>();
+  private vehicleSmoothedOffset = new Map<number, number>();
   private tickProgress = 0; // 0..1 interpolation between ticks
   previewCost: number | null = null; // estimated cost during road drag
 
@@ -554,8 +555,11 @@ export class Game {
         this.vehicleTypes.set(v.id, vtype);
       }
 
-      // Compute lane offset based on road type at current cell
-      const laneOffset = this.computeLaneOffset(v.path, interpPos, v.lane);
+      // Compute lane offset based on road type at current cell, with smooth transition
+      const targetOffset = this.computeLaneOffset(v.path, interpPos, v.lane);
+      const prevOffset = this.vehicleSmoothedOffset.get(v.id) ?? targetOffset;
+      const laneOffset = prevOffset + (targetOffset - prevOffset) * 0.15;
+      this.vehicleSmoothedOffset.set(v.id, laneOffset);
 
       return {
         id: v.id,
@@ -567,6 +571,16 @@ export class Game {
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
     this.vehicleRenderer.update(vehicleData, this.weatherRenderer.sunIntensity);
+
+    // Clean up stale vehicle rendering state
+    const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
+    for (const id of this.vehicleSmoothedOffset.keys()) {
+      if (!activeIds.has(id)) {
+        this.vehicleSmoothedOffset.delete(id);
+        this.vehicleTypes.delete(id);
+        this.vehicleHeadings.delete(id);
+      }
+    }
 
     // Animate terrain (water)
     this.terrainRenderer.update(dt);
