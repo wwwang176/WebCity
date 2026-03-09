@@ -15,6 +15,7 @@ export class SceneManager {
 
   // Camera state
   private cameraAngle = Math.PI / 4; // 45 degrees isometric
+  private targetCameraAngle = Math.PI / 4;
   private cameraDistance = 50;
   private cameraTarget = new THREE.Vector3(0, 0, 0);
   private cameraElevation = Math.PI / 6; // 30 degrees
@@ -123,8 +124,7 @@ export class SceneManager {
   }
 
   rotateCamera(deltaAngle: number): void {
-    this.cameraAngle += deltaAngle;
-    this.updateCameraPosition();
+    this.targetCameraAngle += deltaAngle;
   }
 
   zoomCamera(delta: number): void {
@@ -148,6 +148,13 @@ export class SceneManager {
       this.animationId = requestAnimationFrame(animate);
       const dt = (time - this.lastTime) / 1000;
       this.lastTime = time;
+      // Smoothly interpolate camera rotation
+      const angleDiff = this.targetCameraAngle - this.cameraAngle;
+      if (Math.abs(angleDiff) > 0.001) {
+        const speed = 8; // higher = faster transition
+        this.cameraAngle += angleDiff * Math.min(1, speed * dt);
+        this.updateCameraPosition();
+      }
       for (const cb of this.callbacks) cb(dt);
       this.renderer.render(this.scene, this.camera);
     };
