@@ -1031,6 +1031,12 @@
 - 玩家無法在關鍵時刻手動存檔，只能靠每 100 tick 的自動存檔
 - 修復：在 Debug 面板加入 Save Game 按鈕，呼叫 game.saveCurrentGame()
 
+### BUG-051: 電力/水力覆蓋形狀為 BFS 矩形，應改為 Euclidean 圓形
+- **位置**: `src/core/service/PowerGrid.ts`, `src/core/service/WaterNetwork.ts`
+- **問題**: PowerGrid 和 WaterNetwork 使用 BFS 四方向傳播（dirs=[[-1,0],[1,0],[0,-1],[0,1]]），覆蓋形狀為菱形/矩形。其他所有服務（Fire/Police/Health/Education/Park）均使用 Euclidean 距離（`Math.sqrt(dx*dx+dy*dy) <= radius`）產生圓形覆蓋。遊戲沒有電線/水管建設機制，BFS 網路傳播模式對玩家不直覺。
+- **修復方向**: 改為與其他服務一致的 Euclidean 圓形覆蓋，PLANT_RANGE 作為圓形半徑。
+- **狀態**: 待修復
+
 ### BUG-050: 鍵盤快捷鍵 7 映射到錯誤的道路類型 ✅ 已修復
 - **位置**: `src/Game.ts` — `handleKeyDown()`
 - **問題**: `case '7'` 映射到 `road_2lane`，但 UI 工具列顯示 key 7 = `road_rural`（Rural 道路）

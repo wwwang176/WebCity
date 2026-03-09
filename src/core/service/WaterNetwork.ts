@@ -27,7 +27,7 @@ export class WaterNetwork {
   calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
     this.supplied.clear();
     for (const plant of this.plants) {
-      this.bfsWater(grid, plant.x, plant.y, infrastructurePositions);
+      this.coverPlant(grid, plant.x, plant.y, infrastructurePositions);
     }
     return this.supplied;
   }
@@ -45,37 +45,60 @@ export class WaterNetwork {
   }
 
   /**
-   * BFS with range-based coverage:
-   * - Plant: covers radius PLANT_RANGE (no road needed)
-   * - Road/building: relays coverage RELAY_RANGE further
-   * - Empty land: consumes range, cannot relay
+   * Euclidean radius coverage + road/building relay.
+   * 1. All cells within Euclidean distance ≤ PLANT_RANGE are supplied (circular).
+   * 2. Roads/buildings on the circle edge relay water RELAY_RANGE further via BFS.
    */
-  private bfsWater(grid: Grid, startX: number, startY: number, infra?: Set<string>): void {
-    const rangeMap = new Map<string, number>();
-    const startKey = `${startX},${startY}`;
-    rangeMap.set(startKey, PLANT_RANGE);
-    this.supplied.add(startKey);
+  private coverPlant(grid: Grid, px: number, py: number, infra?: Set<string>): void {
+    const r = PLANT_RANGE;
+    const r2 = r * r;
+    const relaySeeds: [number, number][] = [];
 
-    const queue: [number, number, number][] = [[startX, startY, PLANT_RANGE]];
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
-
-    while (queue.length > 0) {
-      const [x, y, range] = queue.shift()!;
-      for (const [dx, dy] of dirs) {
-        const nx = x + dx!;
-        const ny = y + dy!;
-        const key = `${nx},${ny}`;
+    // Phase 1: Euclidean circle coverage
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy > r2) continue;
+        const nx = px + dx;
+        const ny = py + dy;
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;
+        this.supplied.add(`${nx},${ny}`);
 
+        // Collect relay-capable cells on the circle edge (distance > r-1)
+        if (dx * dx + dy * dy > (r - 1) * (r - 1)) {
+          const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(`${nx},${ny}`);
+          if (isRelay) relaySeeds.push([nx, ny]);
+        }
+      }
+    }
+
+    // Phase 2: BFS relay from edge relay cells
+    // Roads/buildings maintain range at RELAY_RANGE (infinite relay through road network)
+    if (relaySeeds.length === 0) return;
+    const relayMap = new Map<string, number>();
+    const queue: [number, number, number][] = [];
+    for (const [sx, sy] of relaySeeds) {
+      const key = `${sx},${sy}`;
+      relayMap.set(key, RELAY_RANGE);
+      queue.push([sx, sy, RELAY_RANGE]);
+    }
+    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+    while (queue.length > 0) {
+      const [x, y, range] = queue.shift()!;
+      for (const [ddx, ddy] of dirs) {
+        const nx = x + ddx!;
+        const ny = y + ddy!;
+        const key = `${nx},${ny}`;
+        if (this.supplied.has(key)) continue;
+        const cell = grid.getCell(nx, ny);
+        if (!cell) continue;
         const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
+        // Roads/buildings keep range at RELAY_RANGE (never decreases below it)
         const newRange = Math.max(isRelay ? RELAY_RANGE : 0, range - 1);
-
         if (newRange <= 0) continue;
-        const prev = rangeMap.get(key) ?? 0;
+        const prev = relayMap.get(key) ?? 0;
         if (newRange <= prev) continue;
-
-        rangeMap.set(key, newRange);
+        relayMap.set(key, newRange);
         this.supplied.add(key);
         queue.push([nx, ny, newRange]);
       }

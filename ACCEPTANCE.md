@@ -666,3 +666,16 @@
 - [x] 載入畫面在資源載入完成前顯示
 - [x] 主選單可新建/讀取存檔 ✅ BUG-015 已修復（刪除存檔 UI 未實現）
 - [x] 無 console 錯誤或未捕獲例外
+
+---
+
+## BUG-051：電力/水力覆蓋形狀不一致（BFS 矩形 → 應為圓形）
+
+### 驗收條件
+
+- [x] PowerGrid.calculateCoverage() 改用 Euclidean 距離判斷覆蓋，覆蓋範圍為圓形（半徑=PLANT_RANGE）
+- [x] WaterNetwork.calculateCoverage() 改用 Euclidean 距離判斷覆蓋，覆蓋範圍為圓形（半徑=PLANT_RANGE）
+- [x] 電廠/水廠覆蓋範圍與 Fire/Police/Health 等服務一致（圓形，非菱形），但保留道路/建築中繼延伸
+- [x] Power/Water Overlay 顯示圓形覆蓋區域
+- [x] 所有現有電力/水力相關單元測試通過（或合理更新）— 663 tests passing
+- [x] 建築生長仍正確依賴電力/水力覆蓋（功能不退化）
