@@ -1142,3 +1142,13 @@
 - ✅ **災害系統** — "Forest Fire at (58,18)! Intensity: 78%" 災害通知正常觸發
 - ✅ 零遊戲 Console 錯誤
 - ✅ 全部 649 單元測試通過
+
+### 新增已驗證功能（第五十六輪測試 — Demolish / 負資金 / Build-Demolish 循環穩定性）
+- ✅ **建築拆除** — demolish tool 拆除 6 棟建築（86→80），cell buildingId/zoneType 正確清零
+- ✅ **道路拆除** — roadType 3→0, 道路計數 164→163
+- ✅ **負資金建路拒絕** — funds=-$5000 建路→"Cannot build road: insufficient funds"
+- ✅ **負資金恢復** — -$5000 → 200 ticks → $543 正向恢復，零 NaN
+- ✅ **30 次 build/demolish 循環** — 零 errors, 零 NaN, Grid 狀態乾淨
+- ✅ **20 次 zone/demolish 循環** — 零 errors, cell 狀態乾淨
+- ✅ 零遊戲 Console 錯誤
+- ✅ 全部 649 單元測試通過
