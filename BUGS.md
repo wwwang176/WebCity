@@ -1237,3 +1237,28 @@
 - ✅ **Accessibility ARIA** — 9 dialog, 3 meter, 1 toolbar, 1 banner, 1 alert, 23 aria-label 元素
 - ✅ 零 Console 錯誤
 - ✅ 全部 652 單元測試通過
+
+### 新增已驗證功能（第六十三輪測試 — 完整新城建設 + 全面回歸驗證）
+- ✅ **新城完整建設** — 156 格道路網格 + 112 zones (R42/C28/I28/O14) + 電廠+水廠 + 9 civic 建築 → 111 棟建築, Pop 272
+- ✅ **建築升級系統** — L1:50, L2:47, L3:14（AvgServiceCoverage=4, AvgLandValue=71）
+- ✅ **21/21 鍵盤快捷鍵** — 1-0(tools) + ESC + Delete + Space + +/- + F1-F6(overlays) 全部正確
+- ✅ **13/13 Overlays** — power/water/traffic/zone/landValue/pollution/police/fire/health/education/park/garbage/district 全部 toggle 正確
+- ✅ **BUG-025 回歸** — TWO_LANE→FOUR_LANE 6 格=$1200（差額正確），同類重建=$0
+- ✅ **BUG-026 回歸** — road_highway→road 後 currentRoadType=2 (TWO_LANE) 正確重置
+- ✅ **Save Game** — Slot 63 "R63-Regression" 成功存檔
+- ✅ **Transit 放置** — Bus Stop(242)/Metro(241)/Taxi(236) 全部正確放置
+- ✅ **Building Info Panel** — Select 點擊 Medium House Level ★★☆, 6 Residents, $18/tick
+- ✅ **Economy** — Income $389/tick, Expenses $114/tick, Funds $107K, Loans=0, LoanRate=0.05
+- ✅ **Tax System** — R/C/I/O 各 9%, 稅率分項正確
+- ✅ **Global Market** — OIL=$104, ORE=$83, AGRICULTURE=$63, ELECTRONICS=$167
+- ✅ **Education 分佈** — NONE:69, ELEMENTARY:60, HIGH_SCHOOL:54, UNIVERSITY:89
+- ✅ **Demolish** — 建築 108→107, cell bId=0/zone=0 正確清零
+- ✅ **Season/Climate** — Tick 4279=Autumn(idx=2), WeatherRenderer 存在
+- ✅ **Vehicles** — 99 輛車, 99/99 有效路徑
+- ✅ **負資金穩定性** — -$5000 → 100 ticks → -$323（恢復中），負資金建路正確拒絕
+- ✅ **5000-tick 壓力測試** — 3158ms (1583 ticks/s), Pop 272 穩定, Funds $79K→$310K, 零 NaN
+- ✅ **34/34 子系統** — grid/roadNetwork/citizens/traffic/trafficLights/power/water/clock/budget/taxRates/rciDemand/buildingGrowth/buildingUpgrade/pollution/police/fire/health/education/parks/garbage/sewage/deathCare/districts/policies/citySpec/globalMarket/bus/metro/tram/rail/ferry/airport/taxi/freight 全部存在
+- ✅ **ARIA** — 9 dialog, 3 meter, 1 toolbar, 1 banner, 1 alert, 23 aria-label
+- ✅ **UI 完整** — TopBar/Toolbar/MiniMap/BuildingPanel/Notification/Tutorial/MuteBtn 全部存在
+- ✅ 零 Console 錯誤
+- ✅ 全部 652 單元測試通過
