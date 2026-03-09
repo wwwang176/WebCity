@@ -1099,3 +1099,16 @@
 - ✅ **Water Overlay 視覺** — 水廠→道路→zone BFS 覆蓋清晰（青色），河流地下水（淺藍）
 - ✅ 零 Console 錯誤
 - ✅ 全部 649 單元測試通過
+
+### 新增已驗證功能（第五十二輪測試 — Debug Panel / Specialize / District / Bug Fix）
+- 🐛 **BUG-023 修復: Debug Panel input 被 auto-refresh 覆蓋** — 每 2 秒 updateDebugPanel() 重建整個 innerHTML，導致使用者在 Funds/Tax/Speed 欄位輸入時值被覆蓋。修復：focus 中的 input 或顯示 save status 時跳過 refresh。
+- ✅ **Debug Set Funds** — 輸入 999999 → 點 Set → funds 從 $103K 變成 ~$1M，正確生效
+- ✅ **Debug Set Tax Rate** — 輸入 15 → 點 Set → 所有稅率(R/C/I/O)均變為 15%
+- ✅ **Debug Set Speed** — 輸入 3 → 點 Set → clock.speed=3 正確設定
+- ✅ **Debug Save Game** — 點 Save Game → IndexedDB slot 0 存檔成功（65KB）
+- ✅ **Debug Funds 顯示整數** — 修復浮點數過長問題，改用 Math.round(snap.funds)
+- ✅ **Specialize Panel** — 7 種專業化選項（None/Mining/Oil/Tech/Tourism/Gambling/Trade），各含 Revenue/Happiness/Crime 加成，None 預設選中
+- ✅ **District Tool** — 設定 district 工具→繪製區域→成功創建 "District 1"，getDistrictAt() 正確回傳
+- ✅ **城市完整建城** — Roads(161格)+Zones(R72/C36/I36)+Power+Water+Civic(5棟)→Pop 128, Happiness 71%
+- ✅ 零遊戲 Console 錯誤（僅 Chrome extension 連線訊息）
+- ✅ 全部 649 單元測試通過

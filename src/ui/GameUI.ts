@@ -1176,7 +1176,7 @@ export function createGameUI(game: Game): HTMLElement {
           <div style="font-weight:bold;color:#0af;margin-bottom:6px">MODIFY PARAMETERS</div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
             <label style="color:#aaa;width:70px">Funds:</label>
-            <input id="dbg-funds" type="number" value="${snap.funds}" style="flex:1;background:#222;border:1px solid #555;color:#fff;padding:2px 4px;font-size:11px">
+            <input id="dbg-funds" type="number" value="${Math.round(snap.funds)}" style="flex:1;background:#222;border:1px solid #555;color:#fff;padding:2px 4px;font-size:11px">
             <button id="dbg-set-funds" style="background:#0af;color:#000;border:none;padding:2px 8px;cursor:pointer;font-size:11px">Set</button>
           </div>
           <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
@@ -1227,6 +1227,11 @@ export function createGameUI(game: Game): HTMLElement {
     debugRefreshId = setInterval(() => {
       const modal = ui.querySelector('#debug-modal') as HTMLElement;
       if (modal && modal.classList.contains('visible')) {
+        // Skip refresh if user is editing an input field or save status is showing
+        const activeEl = document.activeElement;
+        if (activeEl && activeEl.tagName === 'INPUT' && modal.contains(activeEl)) return;
+        const saveStatus = modal.querySelector('#dbg-save-status');
+        if (saveStatus && saveStatus.textContent) return;
         updateDebugPanel();
       } else {
         if (debugRefreshId) { clearInterval(debugRefreshId); debugRefreshId = null; }
