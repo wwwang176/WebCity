@@ -40,7 +40,8 @@ export class TrafficSimulation {
   vehicles: Vehicle[] = [];
   private nextId = 1;
 
-  private static readonly SPEED = 1.0;       // path-units per tick
+  private static readonly BASE_SPEED = 1.0;   // path-units per tick at reference speed limit (50)
+  private static readonly REFERENCE_LIMIT = 50; // speed limit that maps to BASE_SPEED
   private static readonly MIN_GAP = 0.15;    // min distance between vehicles
   private static readonly STOP_OFFSET = 0.25; // align vehicle front with stop line (0.25 from cell center)
 
@@ -87,7 +88,7 @@ export class TrafficSimulation {
       id: this.nextId++,
       path,
       pathPos: 0,
-      speed: TrafficSimulation.SPEED,
+      speed: TrafficSimulation.BASE_SPEED,
       length: len,
       arrived: false,
       lane,
@@ -96,8 +97,11 @@ export class TrafficSimulation {
     return vehicle;
   }
 
-  tick(canAdvance?: (current: string, next: string) => boolean): void {
-    const { MIN_GAP, STOP_OFFSET } = TrafficSimulation;
+  tick(
+    canAdvance?: (current: string, next: string) => boolean,
+    getSpeedLimit?: (cellKey: string) => number,
+  ): void {
+    const { MIN_GAP, STOP_OFFSET, BASE_SPEED, REFERENCE_LIMIT } = TrafficSimulation;
 
     // Pre-compute world positions, heading vectors, lengths, and lane for all vehicles
     const info = new Map<number, { x: number; y: number; hx: number; hy: number; len: number; lane: number }>();
@@ -157,8 +161,13 @@ export class TrafficSimulation {
       }
 
       // ── 3. Advance ──
+      // Adjust speed based on current cell's speed limit
+      const currentCell = v.path[Math.floor(v.pathPos)];
+      const limit = getSpeedLimit && currentCell ? getSpeedLimit(currentCell) : REFERENCE_LIMIT;
+      const effectiveSpeed = BASE_SPEED * (limit / REFERENCE_LIMIT);
+
       const room = Math.max(0, Math.min(gap - MIN_GAP, redLightDist));
-      v.pathPos += Math.min(v.speed, room);
+      v.pathPos += Math.min(effectiveSpeed, room);
 
       if (v.pathPos >= v.path.length - 1) {
         v.pathPos = v.path.length - 1;

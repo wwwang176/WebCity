@@ -56,6 +56,44 @@ describe('TrafficSimulation', () => {
     expect(sim.getVehicleCount()).toBe(0);
   });
 
+  it('should move faster on roads with higher speed limit', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0', '5,0']);
+    // getSpeedLimit returns HIGHWAY speed (100)
+    sim.tick(undefined, (cellKey) => 100);
+    const highSpeedPos = v.pathPos;
+
+    const sim2 = new TrafficSimulation();
+    const v2 = sim2.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0', '5,0']);
+    // getSpeedLimit returns RURAL speed (30)
+    sim2.tick(undefined, (cellKey) => 30);
+
+    expect(highSpeedPos).toBeGreaterThan(v2.pathPos);
+  });
+
+  it('should move at base speed when no speedLimit callback provided', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0', '5,0']);
+    sim.tick();
+    // Default speed = 1.0 (base speed, equivalent to speedLimit 50)
+    expect(v.pathPos).toBeCloseTo(1.0, 1);
+  });
+
+  it('should use per-cell speed limit as vehicle moves', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0', '5,0']);
+    // First tick: RURAL speed (30) → slower
+    sim.tick(undefined, () => 30);
+    const posAfterSlow = v.pathPos;
+
+    // Second tick: HIGHWAY speed (100) → faster
+    sim.tick(undefined, () => 100);
+    const moved = v.pathPos - posAfterSlow;
+
+    // Highway move should be larger than rural move
+    expect(moved).toBeGreaterThan(posAfterSlow);
+  });
+
   it('should allow vehicles in different lanes to pass each other', () => {
     const sim = new TrafficSimulation();
     // Two vehicles on same path but different lanes

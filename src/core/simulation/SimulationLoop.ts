@@ -5,6 +5,7 @@ import { migrationTick } from '../citizen/Migration';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue } from '../economy/LandValue';
 import { ZoneType } from '../grid/types';
+import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 
 export class SimulationLoop {
@@ -68,11 +69,19 @@ export class SimulationLoop {
     // 7. Traffic - spawn commute vehicles and advance
     this.spawnVehicles();
     this.state.trafficLights.tick();
-    this.state.traffic.tick((current, next) => {
-      const [cx, cy] = current.split(',').map(Number);
-      const [nx, ny] = next.split(',').map(Number);
-      return this.state.trafficLights.canPass(cx!, cy!, nx!, ny!);
-    });
+    this.state.traffic.tick(
+      (current, next) => {
+        const [cx, cy] = current.split(',').map(Number);
+        const [nx, ny] = next.split(',').map(Number);
+        return this.state.trafficLights.canPass(cx!, cy!, nx!, ny!);
+      },
+      (cellKey) => {
+        const [x, y] = cellKey.split(',').map(Number);
+        const cell = this.state.grid.getCell(x!, y!);
+        if (!cell || cell.roadType === RoadType.NONE) return 50; // default
+        return ROAD_CONFIGS[cell.roadType as RoadType]?.speedLimit ?? 50;
+      },
+    );
 
     // 8. Calculate income from buildings
     this.calculateIncome();
