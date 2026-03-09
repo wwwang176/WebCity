@@ -192,12 +192,15 @@ export class SimulationLoop {
     const { poweredRatio, wateredRatio } = this.getServiceRatios();
     const serviceCoverage = Math.round(poweredRatio * 2 + wateredRatio * 2 + (avgPollution < 10 ? 1 : 0));
 
+    // Check if any parks exist for happiness bonus
+    const hasParkCoverage = this.state.parks.getParks().length > 0;
+
     for (const citizen of this.state.citizens.citizens) {
       // Vary commute per citizen (+/- 3 random jitter)
       const commute = Math.max(1, avgCommute + (Math.random() * 6 - 3));
       const factors: HappinessFactors = {
         commuteDistance: commute,
-        hasPark: false,
+        hasPark: hasParkCoverage,
         pollution: avgPollution,
         noiseLevel: 0,
         crimeRate: avgCrime,
