@@ -127,6 +127,92 @@ describe('TrafficSimulation', () => {
     // The gap between them (0.2 path units) minus vehicle lengths should restrict movement
     expect(v2.pathPos).toBeLessThan(v1.pathPos);
   });
+
+  it('should change lane when blocked and adjacent lane is free', () => {
+    const sim = new TrafficSimulation();
+    const path = ['0,0', '1,0', '2,0', '3,0', '4,0', '5,0', '6,0', '7,0'];
+    // Slow vehicle ahead in lane 0
+    const blocker = sim.addVehicle(path, 2);
+    blocker.lane = 0;
+    blocker.pathPos = 2.0;
+    blocker.speed = 0; // stopped
+
+    // Fast vehicle behind in lane 0
+    const follower = sim.addVehicle(path, 2);
+    follower.lane = 0;
+    follower.pathPos = 1.0;
+
+    // Tick multiple times — follower should eventually switch to lane 1
+    for (let i = 0; i < 5; i++) sim.tick();
+    expect(follower.lane).toBe(1);
+  });
+
+  it('should not change lane when adjacent lane is occupied', () => {
+    const sim = new TrafficSimulation();
+    const path = ['0,0', '1,0', '2,0', '3,0', '4,0', '5,0', '6,0', '7,0'];
+    // Blocker in lane 0
+    const blocker0 = sim.addVehicle(path, 2);
+    blocker0.lane = 0;
+    blocker0.pathPos = 2.0;
+    blocker0.speed = 0;
+
+    // Blocker in lane 1 at same position
+    const blocker1 = sim.addVehicle(path, 2);
+    blocker1.lane = 1;
+    blocker1.pathPos = 1.8;
+    blocker1.speed = 0;
+
+    // Follower in lane 0
+    const follower = sim.addVehicle(path, 2);
+    follower.lane = 0;
+    follower.pathPos = 1.0;
+
+    for (let i = 0; i < 5; i++) sim.tick();
+    // Should stay in lane 0 — no safe lane to switch to
+    expect(follower.lane).toBe(0);
+  });
+
+  it('should not change lane on single-lane road', () => {
+    const sim = new TrafficSimulation();
+    const path = ['0,0', '1,0', '2,0', '3,0', '4,0', '5,0'];
+    const blocker = sim.addVehicle(path, 1);
+    blocker.lane = 0;
+    blocker.pathPos = 2.0;
+    blocker.speed = 0;
+
+    const follower = sim.addVehicle(path, 1);
+    follower.lane = 0;
+    follower.pathPos = 1.0;
+
+    for (let i = 0; i < 5; i++) sim.tick();
+    expect(follower.lane).toBe(0); // no other lane available
+  });
+
+  it('should have lane change cooldown to prevent frequent switching', () => {
+    const sim = new TrafficSimulation();
+    const path = ['0,0', '1,0', '2,0', '3,0', '4,0', '5,0', '6,0', '7,0', '8,0', '9,0'];
+    // Blocker in lane 0
+    const blocker = sim.addVehicle(path, 2);
+    blocker.lane = 0;
+    blocker.pathPos = 2.0;
+    blocker.speed = 0;
+
+    const follower = sim.addVehicle(path, 2);
+    follower.lane = 0;
+    follower.pathPos = 1.0;
+
+    // First tick batch — should switch once
+    sim.tick();
+    sim.tick();
+    sim.tick();
+    const laneAfterSwitch = follower.lane;
+    expect(laneAfterSwitch).toBe(1);
+
+    // Next tick — even if lane 0 is now clear, cooldown should prevent immediate switch back
+    blocker.pathPos = 9.0; // move blocker far away
+    sim.tick();
+    expect(follower.lane).toBe(1); // still on lane 1 due to cooldown
+  });
 });
 
 describe('getLaneCount', () => {

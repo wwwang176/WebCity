@@ -8,6 +8,8 @@ export interface Vehicle {
   length: number;  // vehicle body length in world units
   arrived: boolean;
   lane: number;    // assigned lane (0-based), used for lateral offset on multi-lane roads
+  totalLanes: number; // total directional lanes available
+  laneChangeCooldown: number; // ticks remaining before next lane change allowed
 }
 
 /** Vehicle lengths matching renderer model sizes */
@@ -44,6 +46,9 @@ export class TrafficSimulation {
   private static readonly REFERENCE_LIMIT = 50; // speed limit that maps to BASE_SPEED
   private static readonly MIN_GAP = 0.15;    // min distance between vehicles
   private static readonly STOP_OFFSET = 0.25; // align vehicle front with stop line (0.25 from cell center)
+  private static readonly LANE_CHANGE_GAP = 0.4;  // blocked gap threshold to trigger lane change
+  private static readonly LANE_CHANGE_SAFE = 0.5; // min clearance needed in target lane
+  private static readonly LANE_CHANGE_COOLDOWN = 5; // ticks after lane change before next allowed
 
   /**
    * Add a vehicle to the simulation.
@@ -92,6 +97,8 @@ export class TrafficSimulation {
       length: len,
       arrived: false,
       lane,
+      totalLanes: lanes,
+      laneChangeCooldown: 0,
     };
     this.vehicles.push(vehicle);
     return vehicle;
@@ -101,7 +108,8 @@ export class TrafficSimulation {
     canAdvance?: (current: string, next: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
-    const { MIN_GAP, STOP_OFFSET, BASE_SPEED, REFERENCE_LIMIT } = TrafficSimulation;
+    const { MIN_GAP, STOP_OFFSET, BASE_SPEED, REFERENCE_LIMIT,
+      LANE_CHANGE_GAP, LANE_CHANGE_SAFE, LANE_CHANGE_COOLDOWN } = TrafficSimulation;
 
     // Pre-compute world positions, heading vectors, lengths, and lane for all vehicles
     const info = new Map<number, { x: number; y: number; hx: number; hy: number; len: number; lane: number }>();
@@ -143,6 +151,40 @@ export class TrafficSimulation {
         if (bodyGap < gap) gap = bodyGap;
       }
 
+      // ── 1b. Lane change — when blocked and adjacent lane is free ──
+      if (v.laneChangeCooldown > 0) {
+        v.laneChangeCooldown--;
+      } else if (v.totalLanes > 1 && gap < LANE_CHANGE_GAP) {
+        // Try adjacent lanes (current ± 1)
+        const candidates = [];
+        if (v.lane > 0) candidates.push(v.lane - 1);
+        if (v.lane < v.totalLanes - 1) candidates.push(v.lane + 1);
+
+        for (const targetLane of candidates) {
+          // Check clearance in target lane
+          let targetGap = Infinity;
+          for (const [otherId, other] of info) {
+            if (otherId === v.id) continue;
+            if (other.lane !== targetLane) continue;
+
+            const dx = other.x - me.x;
+            const dy = other.y - me.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist > 2.5) continue;
+
+            const bodyDist = dist - me.len / 2 - other.len / 2;
+            if (bodyDist < targetGap) targetGap = bodyDist;
+          }
+
+          if (targetGap >= LANE_CHANGE_SAFE) {
+            v.lane = targetLane;
+            me.lane = targetLane; // update info map for other vehicles' checks
+            v.laneChangeCooldown = LANE_CHANGE_COOLDOWN;
+            break;
+          }
+        }
+      }
+
       // ── 2. Distance to nearest red light on path ──
       let redLightDist = Infinity;
       if (canAdvance) {
@@ -164,7 +206,7 @@ export class TrafficSimulation {
       // Adjust speed based on current cell's speed limit
       const currentCell = v.path[Math.floor(v.pathPos)];
       const limit = getSpeedLimit && currentCell ? getSpeedLimit(currentCell) : REFERENCE_LIMIT;
-      const effectiveSpeed = BASE_SPEED * (limit / REFERENCE_LIMIT);
+      const effectiveSpeed = v.speed * (limit / REFERENCE_LIMIT);
 
       const room = Math.max(0, Math.min(gap - MIN_GAP, redLightDist));
       v.pathPos += Math.min(effectiveSpeed, room);
