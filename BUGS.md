@@ -1132,3 +1132,13 @@
 - ✅ **5000-tick 壓力測試** — 3016ms (1658 ticks/sec), Pop 186 穩定, Funds $322K, 零 NaN
 - ✅ 零遊戲 Console 錯誤
 - ✅ 全部 649 單元測試通過
+
+### 新增已驗證功能（第五十五輪測試 — Layers / Transit / Overlays / 災害系統）
+- ✅ **Map Layers Panel** — 13 個 overlay 按鈕分 3 類（Infrastructure 2 + City Data 4 + Services 7）正確顯示
+- ✅ **13/13 Overlays 切換** — power/water/traffic/zone/landValue/pollution/police/fire/health/education/park/garbage/district 全部正常 toggle
+- ✅ **Power Overlay 視覺** — 黃色供電覆蓋區域清晰，右上角 "Overlay: Power | Close" 標籤
+- ✅ **Zone Overlay 視覺** — 彩色區塊顯示各 zone 類型
+- ✅ **Transit Panel** — 7 種交通工具（Bus Stop/Metro/Tram/Train/Ferry/Airport/Taxi）+ Routes 按鈕
+- ✅ **災害系統** — "Forest Fire at (58,18)! Intensity: 78%" 災害通知正常觸發
+- ✅ 零遊戲 Console 錯誤
+- ✅ 全部 649 單元測試通過
