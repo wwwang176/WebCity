@@ -1,4 +1,6 @@
 import { RoadType, ROAD_CONFIGS } from '../road/types';
+import type { LaneEdge } from './LaneGraph';
+import { cubicBezierPoint, cubicBezierTangent } from './BezierPath';
 
 export interface Vehicle {
   id: number;
@@ -10,6 +12,10 @@ export interface Vehicle {
   lane: number;    // assigned lane (0-based), used for lateral offset on multi-lane roads
   totalLanes: number; // total directional lanes available
   laneChangeCooldown: number; // ticks remaining before next lane change allowed
+  // Edge-based path (new system)
+  edgePath?: LaneEdge[];
+  edgeIndex: number;     // current edge in edgePath
+  edgeProgress: number;  // distance traveled along current edge
 }
 
 /** Vehicle lengths matching renderer model sizes */
@@ -99,20 +105,208 @@ export class TrafficSimulation {
       lane,
       totalLanes: lanes,
       laneChangeCooldown: 0,
+      edgeIndex: 0,
+      edgeProgress: 0,
     };
     this.vehicles.push(vehicle);
     return vehicle;
   }
 
+  /** Add a vehicle that follows a LaneEdge path (new lane-graph system). */
+  addVehicleOnEdges(edgePath: LaneEdge[]): Vehicle {
+    let len = 0.22;
+    const roll = Math.random();
+    let cumulative = 0;
+    for (const entry of VEHICLE_LENGTHS) {
+      cumulative += entry.weight;
+      if (roll < cumulative) { len = entry.length; break; }
+    }
+
+    const vehicle: Vehicle = {
+      id: this.nextId++,
+      path: [],        // empty — not using cell-based path
+      pathPos: 0,
+      speed: TrafficSimulation.BASE_SPEED,
+      length: len,
+      arrived: false,
+      lane: edgePath[0]?.from.lane ?? 0,
+      totalLanes: 1,
+      laneChangeCooldown: 0,
+      edgePath,
+      edgeIndex: 0,
+      edgeProgress: 0,
+    };
+    this.vehicles.push(vehicle);
+    return vehicle;
+  }
+
+  private tickEdgeVehicles(
+    getSpeedLimit?: (cellKey: string) => number,
+  ): void {
+    const { MIN_GAP, BASE_SPEED, REFERENCE_LIMIT } = TrafficSimulation;
+
+    // Collect edge-based vehicles
+    const edgeVehicles = this.vehicles.filter(v => v.edgePath && v.edgePath.length > 0 && !v.arrived);
+    if (edgeVehicles.length === 0) return;
+
+    // Sort front-to-back: higher total progress = further ahead
+    edgeVehicles.sort((a, b) => {
+      const aTotal = this.edgeTotalProgress(a);
+      const bTotal = this.edgeTotalProgress(b);
+      return bTotal - aTotal;
+    });
+
+    // Pre-compute positions
+    type EInfo = { x: number; y: number; hx: number; hy: number; len: number };
+    const info = new Map<number, EInfo>();
+    for (const v of edgeVehicles) {
+      const pos = this.getVehiclePositionOnEdges(v);
+      if (!pos) continue;
+      const h = this.edgeHeadingVec(v);
+      info.set(v.id, { x: pos.x, y: pos.y, hx: h.hx, hy: h.hy, len: v.length });
+    }
+
+    for (const v of edgeVehicles) {
+      if (v.arrived) continue;
+      const me = info.get(v.id);
+      if (!me) continue;
+      const ep = v.edgePath!;
+
+      // 1. Gap to vehicle ahead
+      let gap = Infinity;
+      for (const [otherId, other] of info) {
+        if (otherId === v.id) continue;
+        const dx = other.x - me.x;
+        const dy = other.y - me.y;
+        const ahead = dx * me.hx + dy * me.hy;
+        if (ahead <= 0) continue;
+        const bodyGap = ahead - me.len / 2 - other.len / 2;
+        if (bodyGap < gap) gap = bodyGap;
+      }
+
+      // 2. Speed limit from current edge's cell
+      const currentEdge = ep[v.edgeIndex];
+      const cellKey = currentEdge?.from.cellKey;
+      const limit = getSpeedLimit && cellKey ? getSpeedLimit(cellKey) : REFERENCE_LIMIT;
+      const effectiveSpeed = v.speed * (limit / REFERENCE_LIMIT);
+
+      // 3. Advance
+      const room = Math.max(0, gap - MIN_GAP);
+      let moveDistance = Math.min(effectiveSpeed, room);
+
+      while (moveDistance > 0 && v.edgeIndex < ep.length) {
+        const edge = ep[v.edgeIndex]!;
+        const remaining = edge.length - v.edgeProgress;
+        if (moveDistance < remaining) {
+          v.edgeProgress += moveDistance;
+          moveDistance = 0;
+        } else {
+          moveDistance -= remaining;
+          v.edgeIndex++;
+          v.edgeProgress = 0;
+        }
+      }
+
+      if (v.edgeIndex >= ep.length) {
+        v.edgeIndex = ep.length - 1;
+        v.edgeProgress = ep[v.edgeIndex]!.length;
+        v.arrived = true;
+      }
+
+      // Update info for trailing vehicles
+      const newPos = this.getVehiclePositionOnEdges(v);
+      if (newPos) {
+        const newH = this.edgeHeadingVec(v);
+        const entry = info.get(v.id)!;
+        entry.x = newPos.x;
+        entry.y = newPos.y;
+        entry.hx = newH.hx;
+        entry.hy = newH.hy;
+      }
+    }
+  }
+
+  /** Total distance traveled along edge path (for sorting). */
+  private edgeTotalProgress(v: Vehicle): number {
+    if (!v.edgePath) return 0;
+    let total = 0;
+    for (let i = 0; i < v.edgeIndex && i < v.edgePath.length; i++) {
+      total += v.edgePath[i]!.length;
+    }
+    return total + v.edgeProgress;
+  }
+
+  /** World position for an edge-based vehicle. */
+  getVehiclePositionOnEdges(v: Vehicle): { x: number; y: number } | null {
+    if (!v.edgePath || v.edgePath.length === 0) return null;
+    const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+    const edge = v.edgePath[idx]!;
+    const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
+
+    if (edge.bezierControl && edge.bezierControl.length >= 2) {
+      return cubicBezierPoint(
+        edge.from.position,
+        edge.bezierControl[0]!,
+        edge.bezierControl[1]!,
+        edge.to.position,
+        t,
+      );
+    }
+
+    // Linear interpolation for straight edges
+    return {
+      x: edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t,
+      y: edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t,
+    };
+  }
+
+  /** Heading angle (radians) for an edge-based vehicle. 0 = east. */
+  getVehicleHeadingOnEdges(v: Vehicle): number {
+    const h = this.edgeHeadingVec(v);
+    return Math.atan2(h.hy, h.hx);
+  }
+
+  /** Unit heading vector for edge-based vehicle. */
+  private edgeHeadingVec(v: Vehicle): { hx: number; hy: number } {
+    if (!v.edgePath || v.edgePath.length === 0) return { hx: 1, hy: 0 };
+    const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+    const edge = v.edgePath[idx]!;
+    const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
+
+    let tx: number, ty: number;
+    if (edge.bezierControl && edge.bezierControl.length >= 2) {
+      const tan = cubicBezierTangent(
+        edge.from.position,
+        edge.bezierControl[0]!,
+        edge.bezierControl[1]!,
+        edge.to.position,
+        t,
+      );
+      tx = tan.x;
+      ty = tan.y;
+    } else {
+      tx = edge.to.position.x - edge.from.position.x;
+      ty = edge.to.position.y - edge.from.position.y;
+    }
+
+    const len = Math.sqrt(tx * tx + ty * ty);
+    if (len > 0) return { hx: tx / len, hy: ty / len };
+    return { hx: 1, hy: 0 };
+  }
+
   tick(
     canAdvance?: (current: string, next: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
+    getCellLaneCount?: (cellKey: string) => number,
   ): void {
+    // Process edge-based vehicles first
+    this.tickEdgeVehicles(getSpeedLimit);
     const { MIN_GAP, STOP_OFFSET, BASE_SPEED, REFERENCE_LIMIT,
       LANE_CHANGE_GAP, LANE_CHANGE_SAFE, LANE_CHANGE_COOLDOWN } = TrafficSimulation;
 
     // Pre-compute world positions, heading vectors, lengths, and lane for all vehicles
-    const info = new Map<number, { x: number; y: number; hx: number; hy: number; len: number; lane: number }>();
+    type VInfo = { x: number; y: number; hx: number; hy: number; len: number; lane: number };
+    const info = new Map<number, VInfo>();
     for (const v of this.vehicles) {
       if (v.arrived) continue;
       const pos = this.getVehiclePosition(v);
@@ -121,65 +315,97 @@ export class TrafficSimulation {
       info.set(v.id, { x: pos.x, y: pos.y, hx: h.hx, hy: h.hy, len: v.length, lane: v.lane });
     }
 
-    for (const v of this.vehicles) {
+    // Sort front-to-back so leading vehicles move first and trailing ones
+    // see their updated positions within the same tick (eliminates 1-tick lag).
+    const active = this.vehicles.filter((v) => !v.arrived && info.has(v.id));
+    active.sort((a, b) => b.pathPos - a.pathPos);
+
+    // Build segment index: (cell→nextCell, lane) → vehicle IDs.
+    // Each directed edge + lane is a unique "curved lane segment".
+    const segIdx = new Map<string, number[]>();
+    for (const v of active) {
+      const idx = Math.floor(v.pathPos);
+      const cell = v.path[idx];
+      const next = v.path[idx + 1];
+      if (!cell || !next) continue;
+      const key = `${cell}>${next},${v.lane}`;
+      let arr = segIdx.get(key);
+      if (!arr) { arr = []; segIdx.set(key, arr); }
+      arr.push(v.id);
+    }
+
+    for (const v of active) {
       if (v.arrived) continue;
       const me = info.get(v.id);
       if (!me) continue;
 
-      // ── 1. Clearance to nearest vehicle ahead (world-space, same direction, same lane) ──
-      let gap = Infinity; // actual gap between vehicle bodies
-      for (const [otherId, other] of info) {
-        if (otherId === v.id) continue;
+      // ── 1. Clearance to nearest vehicle ahead on the same route ──
+      // Only check vehicles on my upcoming path segments (same directed edge + lane).
+      // No heading check needed — segment direction is implicit.
+      let gap = Infinity;
+      const myIdx = Math.floor(v.pathPos);
+      for (let i = myIdx; i < Math.min(myIdx + 4, v.path.length - 1); i++) {
+        const key = `${v.path[i]}>${v.path[i + 1]},${v.lane}`;
+        const candidates = segIdx.get(key);
+        if (!candidates) continue;
+        for (const otherId of candidates) {
+          if (otherId === v.id) continue;
+          const other = info.get(otherId);
+          if (!other || other.lane !== v.lane) continue; // filter stale lane-change entries
 
-        // Only check vehicles in the same lane — different lanes can pass freely
-        if (other.lane !== me.lane) continue;
+          const dx = other.x - me.x;
+          const dy = other.y - me.y;
 
-        const dx = other.x - me.x;
-        const dy = other.y - me.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist > 2.5) continue; // skip distant vehicles
+          // Is it ahead of me? (positive projection on my heading)
+          const ahead = dx * me.hx + dy * me.hy;
+          if (ahead <= 0) continue;
 
-        // Is it ahead of me? (positive projection on my heading)
-        const ahead = dx * me.hx + dy * me.hy;
-        if (ahead <= 0) continue;
-
-        // Same direction? (heading dot product > 0.5 ≈ within 60°)
-        if (me.hx * other.hx + me.hy * other.hy < 0.5) continue;
-
-        // Body gap = center-to-center distance minus half-lengths of both vehicles
-        const bodyGap = ahead - me.len / 2 - other.len / 2;
-        if (bodyGap < gap) gap = bodyGap;
+          // Body gap = center-to-center distance minus half-lengths of both vehicles
+          const bodyGap = ahead - me.len / 2 - other.len / 2;
+          if (bodyGap < gap) gap = bodyGap;
+        }
       }
 
       // ── 1b. Lane change — when blocked and adjacent lane is free ──
       if (v.laneChangeCooldown > 0) {
         v.laneChangeCooldown--;
       } else if (v.totalLanes > 1 && gap < LANE_CHANGE_GAP) {
-        // Try adjacent lanes (current ± 1)
         const candidates = [];
         if (v.lane > 0) candidates.push(v.lane - 1);
         if (v.lane < v.totalLanes - 1) candidates.push(v.lane + 1);
 
         for (const targetLane of candidates) {
-          // Check clearance in target lane
+          // Check clearance in target lane using segment index
           let targetGap = Infinity;
-          for (const [otherId, other] of info) {
-            if (otherId === v.id) continue;
-            if (other.lane !== targetLane) continue;
-
-            const dx = other.x - me.x;
-            const dy = other.y - me.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist > 2.5) continue;
-
-            const bodyDist = dist - me.len / 2 - other.len / 2;
-            if (bodyDist < targetGap) targetGap = bodyDist;
+          for (let i = myIdx; i < Math.min(myIdx + 3, v.path.length - 1); i++) {
+            const key = `${v.path[i]}>${v.path[i + 1]},${targetLane}`;
+            const others = segIdx.get(key);
+            if (!others) continue;
+            for (const otherId of others) {
+              if (otherId === v.id) continue;
+              const other = info.get(otherId);
+              if (!other) continue;
+              const dx = other.x - me.x;
+              const dy = other.y - me.y;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              const bodyDist = dist - me.len / 2 - other.len / 2;
+              if (bodyDist < targetGap) targetGap = bodyDist;
+            }
           }
 
           if (targetGap >= LANE_CHANGE_SAFE) {
             v.lane = targetLane;
-            me.lane = targetLane; // update info map for other vehicles' checks
+            me.lane = targetLane;
             v.laneChangeCooldown = LANE_CHANGE_COOLDOWN;
+            // Add to new lane's segment index (stale old-lane entry is harmless)
+            const cell = v.path[myIdx];
+            const next = v.path[myIdx + 1];
+            if (cell && next) {
+              const newKey = `${cell}>${next},${targetLane}`;
+              let arr = segIdx.get(newKey);
+              if (!arr) { arr = []; segIdx.set(newKey, arr); }
+              arr.push(v.id);
+            }
             break;
           }
         }
@@ -214,6 +440,41 @@ export class TrafficSimulation {
       if (v.pathPos >= v.path.length - 1) {
         v.pathPos = v.path.length - 1;
         v.arrived = true;
+      }
+
+      // Update lane info when entering a new road segment
+      if (getCellLaneCount) {
+        const cell = v.path[Math.floor(v.pathPos)];
+        if (cell) {
+          const newLanes = getCellLaneCount(cell);
+          if (newLanes !== v.totalLanes) {
+            v.totalLanes = newLanes;
+            if (v.lane >= newLanes) v.lane = newLanes - 1;
+          }
+        }
+      }
+
+      // Eagerly update info + segment index so trailing vehicles see new position this tick
+      const newPos = this.getVehiclePosition(v);
+      if (newPos) {
+        const newH = this.headingVec(v);
+        const entry = info.get(v.id)!;
+        entry.x = newPos.x;
+        entry.y = newPos.y;
+        entry.hx = newH.hx;
+        entry.hy = newH.hy;
+        entry.lane = v.lane;
+
+        // Update segment index if vehicle moved to a new cell
+        const newIdx = Math.floor(v.pathPos);
+        const newCell = v.path[newIdx];
+        const newNext = v.path[newIdx + 1];
+        if (newCell && newNext && newIdx !== myIdx) {
+          const newKey = `${newCell}>${newNext},${v.lane}`;
+          let arr = segIdx.get(newKey);
+          if (!arr) { arr = []; segIdx.set(newKey, arr); }
+          arr.push(v.id);
+        }
       }
     }
 
