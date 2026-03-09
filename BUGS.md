@@ -1088,3 +1088,14 @@
 - ✅ **15/15 鍵盤快捷鍵** — 1-0/ESC/Delete/Space/+/- 全部正確
 - ✅ 零 Console 錯誤
 - ✅ 全部 649 單元測試通過
+
+### 新增已驗證功能（第五十一輪測試 — 新遊戲端到端完整建城流程）
+- ✅ **新遊戲完整建城** — New Game → 建路(68格網格) → 劃區(16R+16C+20I+11O=63格) → 電廠+水廠 → 63/63 供電供水
+- ✅ **水廠地下水限制** — 水廠需靠近河流（groundwaterLevel>0），遠離河流的位置正確拒絕並提示 "No groundwater here"
+- ✅ **道路延伸連接水源** — 從主路網延伸道路到河流附近，水廠成功放置
+- ✅ **Civic Buildings 放置** — Police/Fire/Hospital/School/Park 全部成功（道路旁空格）
+- ✅ **城市成長** — 1000 ticks: 43 buildings, Pop 61, Happiness 72%, Balance +$31/tick
+- ✅ **3000-tick 壓力測試** — 1658ms (1809 ticks/sec), Pop 120, Buildings 62, Funds $55K, 零 NaN
+- ✅ **Water Overlay 視覺** — 水廠→道路→zone BFS 覆蓋清晰（青色），河流地下水（淺藍）
+- ✅ 零 Console 錯誤
+- ✅ 全部 649 單元測試通過
