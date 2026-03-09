@@ -597,6 +597,10 @@ export function createGameUI(game: Game): HTMLElement {
         <span class="tb-icon">\u{1F697}</span>
         <span>Traffic</span>
       </button>
+      <button class="tb-action" id="btn-layers" title="Layers / Overlays">
+        <span class="tb-icon">\u{1F5FA}</span>
+        <span>Layers</span>
+      </button>
     </div>
 
     <!-- Overlay Indicator -->
@@ -646,6 +650,39 @@ export function createGameUI(game: Game): HTMLElement {
           <button class="modal-close" data-close="overview-modal">&times;</button>
         </div>
         <div class="modal-body" id="overview-body"></div>
+      </div>
+    </div>
+
+    <!-- Layers Modal -->
+    <div class="modal-overlay" id="layers-modal">
+      <div class="modal-panel" style="min-width:360px;max-width:420px">
+        <div class="modal-header">
+          <div class="modal-title">\u{1F5FA} Map Layers</div>
+          <button class="modal-close" data-close="layers-modal">&times;</button>
+        </div>
+        <div class="modal-body" id="layers-body">
+          <div class="section-title">Infrastructure</div>
+          <div class="overlay-btns">
+            <button class="ov-btn" data-overlay="power">\u{26A1} Power</button>
+            <button class="ov-btn" data-overlay="water">\u{1F4A7} Water</button>
+          </div>
+          <div class="section-title">City Data</div>
+          <div class="overlay-btns">
+            <button class="ov-btn" data-overlay="traffic">\u{1F697} Traffic</button>
+            <button class="ov-btn" data-overlay="zone">\u{1F3D7} Zones</button>
+            <button class="ov-btn" data-overlay="landValue">\u{1F4B0} Land Value</button>
+            <button class="ov-btn" data-overlay="pollution">\u{1F32B} Pollution</button>
+          </div>
+          <div class="section-title">Services</div>
+          <div class="overlay-btns">
+            <button class="ov-btn" data-overlay="police">\u{1F694} Police</button>
+            <button class="ov-btn" data-overlay="fire">\u{1F692} Fire</button>
+            <button class="ov-btn" data-overlay="health">\u{1F3E5} Health</button>
+            <button class="ov-btn" data-overlay="education">\u{1F3EB} Education</button>
+            <button class="ov-btn" data-overlay="park">\u{1F333} Park</button>
+            <button class="ov-btn" data-overlay="garbage">\u{1F5D1} Garbage</button>
+          </div>
+        </div>
       </div>
     </div>
   `;
@@ -747,6 +784,7 @@ export function createGameUI(game: Game): HTMLElement {
         ui.querySelector('#btn-overview')?.classList.remove('panel-open');
         ui.querySelector('#btn-economy')?.classList.remove('panel-open');
         ui.querySelector('#btn-traffic')?.classList.remove('panel-open');
+        ui.querySelector('#btn-layers')?.classList.remove('panel-open');
       }
     });
   });
@@ -759,6 +797,7 @@ export function createGameUI(game: Game): HTMLElement {
         ui.querySelector('#btn-overview')?.classList.remove('panel-open');
         ui.querySelector('#btn-economy')?.classList.remove('panel-open');
         ui.querySelector('#btn-traffic')?.classList.remove('panel-open');
+        ui.querySelector('#btn-layers')?.classList.remove('panel-open');
       }
     });
   });
@@ -796,6 +835,38 @@ export function createGameUI(game: Game): HTMLElement {
       modal.classList.toggle('visible');
       btnTraffic.classList.toggle('panel-open', !isOpen);
       if (!isOpen) updateTrafficPanel();
+    });
+  }
+
+  // Layers panel button
+  const btnLayers = ui.querySelector('#btn-layers');
+  if (btnLayers) {
+    btnLayers.addEventListener('click', () => {
+      const modal = ui.querySelector('#layers-modal') as HTMLElement;
+      const isOpen = modal.classList.contains('visible');
+      modal.classList.toggle('visible');
+      btnLayers.classList.toggle('panel-open', !isOpen);
+      if (!isOpen) updateLayersPanel();
+    });
+  }
+
+  // Overlay buttons inside Layers modal
+  ui.querySelectorAll('#layers-body .ov-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const overlayType = (btn as HTMLElement).dataset['overlay'];
+      if (overlayType) {
+        game.toggleOverlay(overlayType as any);
+        updateLayersPanel();
+        updateUI();
+      }
+    });
+  });
+
+  function updateLayersPanel(): void {
+    const currentOverlay = (game as any).overlayRenderer?.getOverlay?.() as string ?? 'none';
+    ui.querySelectorAll('#layers-body .ov-btn').forEach(btn => {
+      const ov = (btn as HTMLElement).dataset['overlay'];
+      btn.classList.toggle('active', ov === currentOverlay);
     });
   }
 
@@ -1216,34 +1287,7 @@ export function createGameUI(game: Game): HTMLElement {
         </table>`
       }
 
-      <div class="section-title">Overlay Shortcuts</div>
-      <div class="overlay-btns">
-        <button class="ov-btn" data-overlay="traffic">Traffic [F5]</button>
-        <button class="ov-btn" data-overlay="power">Power [F1]</button>
-        <button class="ov-btn" data-overlay="water">Water [F2]</button>
-        <button class="ov-btn" data-overlay="pollution">Pollution [F3]</button>
-        <button class="ov-btn" data-overlay="landValue">Land Value [F4]</button>
-        <button class="ov-btn" data-overlay="zone">Zones [F6]</button>
-      </div>
     `;
-
-    // Overlay shortcut buttons — use toggleOverlay so clicking again turns it off
-    const ovBtns = body.querySelectorAll('.ov-btn');
-    ovBtns.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const overlay = (btn as HTMLElement).dataset['overlay'];
-        if (overlay) {
-          game.toggleOverlay(overlay as Parameters<typeof game.toggleOverlay>[0]);
-          // Update active state on all overlay buttons
-          ovBtns.forEach(b => b.classList.remove('active'));
-          const current = (game as any).overlayRenderer?.getOverlay?.();
-          if (current && current !== 'none') {
-            const activeBtn = body.querySelector(`.ov-btn[data-overlay="${current}"]`);
-            if (activeBtn) activeBtn.classList.add('active');
-          }
-        }
-      });
-    });
   }
 
   function drawPopChart(): void {
@@ -1362,6 +1406,8 @@ export function createGameUI(game: Game): HTMLElement {
         const names: Record<string, string> = {
           power: 'Power', water: 'Water', zone: 'Zones',
           traffic: 'Traffic', pollution: 'Pollution', landValue: 'Land Value',
+          police: 'Police', fire: 'Fire', health: 'Health',
+          education: 'Education', park: 'Park', garbage: 'Garbage',
         };
         overlayName.textContent = names[ov] ?? ov;
         overlayIndicator.classList.add('visible');

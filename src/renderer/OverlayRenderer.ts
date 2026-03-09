@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
 
-export type OverlayType = 'none' | 'traffic' | 'landValue' | 'pollution' | 'crime' | 'power' | 'water' | 'zone';
+export type OverlayType = 'none' | 'traffic' | 'landValue' | 'pollution' | 'crime' | 'power' | 'water' | 'zone' | 'police' | 'fire' | 'health' | 'education' | 'park' | 'garbage';
 
 export class OverlayRenderer {
   private mesh: THREE.Mesh | null = null;
@@ -71,6 +71,18 @@ export class OverlayRenderer {
         return new THREE.Color(0, value * 0.5, value); // Blue
       case 'zone':
         return new THREE.Color(value * 0.5, value, value * 0.3); // Green-ish
+      case 'police':
+        return new THREE.Color(0.2, 0.3, value); // Blue
+      case 'fire':
+        return new THREE.Color(value, 0.15, 0.1); // Red
+      case 'health':
+        return new THREE.Color(value, 0.1, 0.4); // Pink
+      case 'education':
+        return new THREE.Color(0.4, 0.3, value * 0.6); // Brown
+      case 'park':
+        return new THREE.Color(0.1, value, 0.2); // Green
+      case 'garbage':
+        return new THREE.Color(value * 0.5, value * 0.4, 0.1); // Olive
       default:
         return new THREE.Color(0.5, 0.5, 0.5);
     }

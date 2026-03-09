@@ -883,10 +883,13 @@ export class Game {
     else if (tool === 'road_2lane') this.currentRoadType = RoadType.TWO_LANE;
     else if (tool === 'road_4lane') this.currentRoadType = RoadType.FOUR_LANE;
     // Auto-switch overlay when selecting infrastructure tools
-    if (tool === 'power') {
-      this.setOverlay('power');
-    } else if (tool === 'water') {
-      this.setOverlay('water');
+    const toolOverlayMap: Partial<Record<ToolType, OverlayType>> = {
+      power: 'power', water: 'water', police: 'police', fire: 'fire',
+      hospital: 'health', school: 'education', park: 'park', garbage: 'garbage',
+    };
+    const autoOverlay = toolOverlayMap[tool];
+    if (autoOverlay) {
+      this.setOverlay(autoOverlay);
     }
     this.onUIUpdate?.();
   }
@@ -947,11 +950,31 @@ export class Game {
             break;
           }
           case 'crime': {
-            // Crime is estimated from population density, not per-cell yet
             const cell = grid.getCell(x, y);
-            if (cell && cell.buildingId > 0) value = 20; // placeholder
+            if (cell && cell.buildingId > 0) {
+              const reduction = this.state.police.getCrimeReduction(x, y);
+              value = Math.max(0, 40 + reduction); // base 40, reduced by police
+            }
             break;
           }
+          case 'police':
+            value = this.state.police.getCoverage(x, y) ? 80 : 0;
+            break;
+          case 'fire':
+            value = this.state.fire.getCoverage(x, y) ? 80 : 0;
+            break;
+          case 'health':
+            value = this.state.health.getCoverage(x, y) ? 80 : 0;
+            break;
+          case 'education':
+            value = this.state.education.getCoverage(x, y) ? 80 : 0;
+            break;
+          case 'park':
+            value = this.state.parks.getCoverage(x, y) ? 80 : 0;
+            break;
+          case 'garbage':
+            value = this.state.garbage.getCoverage(x, y) ? 80 : 0;
+            break;
           default:
             break;
         }
