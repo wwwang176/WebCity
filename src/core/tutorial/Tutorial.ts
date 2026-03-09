@@ -49,10 +49,23 @@ const STEPS: TutorialStep[] = [
   },
 ];
 
+const STORAGE_KEY = 'webcity_tutorial_dismissed';
+
+function getStorage(): Storage | null {
+  try { return typeof localStorage !== 'undefined' ? localStorage : null; } catch { return null; }
+}
+
 export class Tutorial {
   private stepIndex = 0;
   private active = true;
   private complete = false;
+
+  constructor() {
+    const storage = getStorage();
+    if (storage?.getItem(STORAGE_KEY) === 'true') {
+      this.active = false;
+    }
+  }
 
   getCurrentStep(): TutorialStep | null {
     if (!this.active || this.stepIndex >= STEPS.length) return null;
@@ -91,11 +104,13 @@ export class Tutorial {
   dismiss(): void {
     this.active = false;
     this.complete = false;
+    getStorage()?.setItem(STORAGE_KEY, 'true');
   }
 
   restart(): void {
     this.stepIndex = 0;
     this.active = true;
     this.complete = false;
+    getStorage()?.removeItem(STORAGE_KEY);
   }
 }

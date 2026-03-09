@@ -1189,6 +1189,10 @@ export function createGameUI(game: Game): HTMLElement {
             <input id="dbg-speed" type="number" value="${snap.speed}" min="1" max="3" style="flex:1;background:#222;border:1px solid #555;color:#fff;padding:2px 4px;font-size:11px">
             <button id="dbg-set-speed" style="background:#0af;color:#000;border:none;padding:2px 8px;cursor:pointer;font-size:11px">Set</button>
           </div>
+          <div style="border-top:1px solid #333;margin-top:8px;padding-top:8px">
+            <button id="dbg-save-game" style="background:#4caf50;color:#fff;border:none;padding:6px 16px;cursor:pointer;font-size:12px;border-radius:3px;width:100%">Save Game</button>
+            <div id="dbg-save-status" style="color:#888;font-size:11px;margin-top:4px;text-align:center"></div>
+          </div>
         </div>
       </div>
     `;
@@ -1205,6 +1209,17 @@ export function createGameUI(game: Game): HTMLElement {
     body.querySelector('#dbg-set-speed')?.addEventListener('click', () => {
       const val = parseInt((body.querySelector('#dbg-speed') as HTMLInputElement).value, 10);
       if (!isNaN(val)) { tools.setParam('speed', val); updateDebugPanel(); }
+    });
+    body.querySelector('#dbg-save-game')?.addEventListener('click', async () => {
+      const statusEl = body.querySelector('#dbg-save-status') as HTMLElement;
+      if (statusEl) statusEl.textContent = 'Saving...';
+      try {
+        await game.saveCurrentGame(0, `Manual Save - Tick ${snap.tick}`);
+        if (statusEl) statusEl.textContent = 'Saved successfully!';
+        setTimeout(() => { if (statusEl) statusEl.textContent = ''; }, 3000);
+      } catch (e) {
+        if (statusEl) statusEl.textContent = `Save failed: ${e}`;
+      }
     });
 
     // Auto-refresh every 2 seconds while panel is open

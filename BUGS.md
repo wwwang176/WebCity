@@ -1022,3 +1022,11 @@
 
 ### BUG-047: 垃圾溢出不影響汙染 ✅ 已修復
 - 已在 updatePollution() 中加入：垃圾設施半滿以上產生地面汙染 + 溢出產生全城汙染
+
+### BUG-048: Tutorial Skip 後刷新頁面又會出現 ✅ 已修復
+- Tutorial dismiss 狀態只存在記憶體，未持久化到 localStorage
+- 修復：在 Tutorial.dismiss() 寫入 localStorage，constructor 讀取恢復狀態
+
+### BUG-049: 缺少手動存檔按鈕 — 只有 AutoSave ✅ 已修復
+- 玩家無法在關鍵時刻手動存檔，只能靠每 100 tick 的自動存檔
+- 修復：在 Debug 面板加入 Save Game 按鈕，呼叫 game.saveCurrentGame()

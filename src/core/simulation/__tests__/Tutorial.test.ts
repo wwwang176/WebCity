@@ -1,5 +1,21 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { Tutorial, type TutorialStep } from '../../tutorial/Tutorial';
+
+// Mock localStorage for Node.js test environment
+const store: Record<string, string> = {};
+const mockStorage = {
+  getItem: (key: string) => store[key] ?? null,
+  setItem: (key: string, value: string) => { store[key] = value; },
+  removeItem: (key: string) => { delete store[key]; },
+  clear: () => { for (const k in store) delete store[k]; },
+  get length() { return Object.keys(store).length; },
+  key: (i: number) => Object.keys(store)[i] ?? null,
+};
+(globalThis as any).localStorage = mockStorage;
+
+beforeEach(() => {
+  mockStorage.clear();
+});
 
 describe('Tutorial', () => {
   it('should initialize with steps and start at step 0', () => {
@@ -77,5 +93,28 @@ describe('Tutorial', () => {
     tut.restart();
     expect(tut.isActive()).toBe(true);
     expect(tut.getStepIndex()).toBe(0);
+  });
+
+  it('should persist dismiss state to localStorage', () => {
+    localStorage.removeItem('webcity_tutorial_dismissed');
+    const tut = new Tutorial();
+    expect(tut.isActive()).toBe(true);
+    tut.dismiss();
+    expect(localStorage.getItem('webcity_tutorial_dismissed')).toBe('true');
+  });
+
+  it('should load dismissed state from localStorage on construction', () => {
+    localStorage.setItem('webcity_tutorial_dismissed', 'true');
+    const tut = new Tutorial();
+    expect(tut.isActive()).toBe(false);
+    localStorage.removeItem('webcity_tutorial_dismissed');
+  });
+
+  it('should clear localStorage on restart', () => {
+    localStorage.setItem('webcity_tutorial_dismissed', 'true');
+    const tut = new Tutorial();
+    tut.restart();
+    expect(tut.isActive()).toBe(true);
+    expect(localStorage.getItem('webcity_tutorial_dismissed')).toBeNull();
   });
 });
