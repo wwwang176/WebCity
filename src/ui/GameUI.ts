@@ -1165,7 +1165,7 @@ export function createGameUI(game: Game): HTMLElement {
           <tr><td style="color:#aaa">Income</td><td style="text-align:right;color:#4f4">$${snap.income.toLocaleString()}</td></tr>
           <tr><td style="color:#aaa">Expenses</td><td style="text-align:right;color:#f44">$${snap.expenses.toLocaleString()}</td></tr>
           <tr><td colspan="2" style="border-top:1px solid #333;padding-top:4px"></td></tr>
-          <tr><td style="color:#aaa">RCI Demand</td><td style="text-align:right">R:${snap.rciDemand.r} C:${snap.rciDemand.c} I:${snap.rciDemand.i}</td></tr>
+          <tr><td style="color:#aaa">RCI Demand</td><td style="text-align:right">R:${Math.round(snap.rciDemand.r)} C:${Math.round(snap.rciDemand.c)} I:${Math.round(snap.rciDemand.i)}</td></tr>
           <tr><td style="color:#aaa">Power Supply</td><td style="text-align:right">${snap.powerSupply} MW</td></tr>
           <tr><td style="color:#aaa">Water Supply</td><td style="text-align:right">${snap.waterSupply}</td></tr>
           <tr><td style="color:#aaa">Avg Happiness</td><td style="text-align:right">${snap.avgHappiness}</td></tr>
