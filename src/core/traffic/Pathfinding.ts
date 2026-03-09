@@ -1,4 +1,5 @@
 import { RoadNetwork } from '../road/RoadNetwork';
+import type { LaneGraph, LaneEdge } from './LaneGraph';
 
 interface PathNode {
   id: string;
@@ -142,5 +143,110 @@ function rebuildPath(
     }
   }
 
+  return null;
+}
+
+/**
+ * Phase 2: Refine a cell-level path into a LaneEdge sequence.
+ * Greedy forward search — at each step pick the edge leading toward the next cell,
+ * preferring same-lane traversal over lane changes.
+ */
+export function refineLanePath(
+  graph: LaneGraph,
+  cellPath: string[],
+  preferredLane = 0,
+): LaneEdge[] | null {
+  if (cellPath.length <= 1) return [];
+
+  const result: LaneEdge[] = [];
+  let currentPointId: string | null = null;
+  let currentLane = preferredLane;
+
+  for (let i = 0; i < cellPath.length - 1; i++) {
+    const fromCell = cellPath[i]!;
+    const toCell = cellPath[i + 1]!;
+
+    const dir = cellDirection(fromCell, toCell);
+    if (!dir) return null;
+
+    // Internal traversal: entry → exit within fromCell
+    if (currentPointId) {
+      const internalEdges = graph.getEdgesFrom(currentPointId).filter(
+        e => e.to.cellKey === fromCell && e.to.direction === dir && e.to.type === 'exit'
+      );
+      const bestEdge = internalEdges.find(e => e.to.lane === currentLane) ?? internalEdges[0];
+      if (bestEdge) {
+        result.push(bestEdge);
+        currentPointId = bestEdge.to.id;
+        currentLane = bestEdge.to.lane;
+      }
+    }
+
+    // Cross-cell: fromCell exit → toCell entry
+    const crossEdges = graph.getEdgesBetween(fromCell, toCell).filter(
+      e => e.from.type === 'exit' && e.to.type === 'entry'
+    );
+
+    let crossEdge: LaneEdge | undefined;
+    if (currentPointId) {
+      crossEdge = crossEdges.find(e => e.from.id === currentPointId);
+    }
+    if (!crossEdge) {
+      crossEdge = crossEdges.find(e => e.from.lane === currentLane);
+    }
+    if (!crossEdge) {
+      crossEdge = crossEdges[0];
+    }
+    if (!crossEdge) return null;
+
+    // Bridge from current point to cross edge start if needed
+    if (currentPointId && currentPointId !== crossEdge.from.id) {
+      const bridge = graph.getEdgesFrom(currentPointId).find(
+        e => e.to.id === crossEdge!.from.id
+      );
+      if (bridge) {
+        result.push(bridge);
+      } else {
+        const reachable = graph.getEdgesFrom(currentPointId);
+        for (const r of reachable) {
+          const altCross = crossEdges.find(e => e.from.id === r.to.id);
+          if (altCross) {
+            result.push(r);
+            crossEdge = altCross;
+            break;
+          }
+        }
+      }
+    }
+
+    result.push(crossEdge);
+    currentPointId = crossEdge.to.id;
+    currentLane = crossEdge.to.lane;
+  }
+
+  // Fix connectivity gaps
+  for (let i = 1; i < result.length; i++) {
+    if (result[i - 1]!.to.id !== result[i]!.from.id) {
+      const bridge = graph.getEdgesFrom(result[i - 1]!.to.id).find(
+        e => e.to.id === result[i]!.from.id
+      );
+      if (bridge) {
+        result.splice(i, 0, bridge);
+        i++;
+      }
+    }
+  }
+
+  return result;
+}
+
+function cellDirection(from: string, to: string): string | null {
+  const [fx, fy] = from.split(',').map(Number);
+  const [tx, ty] = to.split(',').map(Number);
+  const dx = tx! - fx!, dy = ty! - fy!;
+  if (dx === 1 && dy === 0) return 'east';
+  if (dx === -1 && dy === 0) return 'west';
+  if (dx === 0 && dy === 1) return 'south';
+  if (dx === 0 && dy === -1) return 'north';
   return null;
 }
