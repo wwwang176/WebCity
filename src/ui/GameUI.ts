@@ -1837,6 +1837,30 @@ export function createGameUI(game: Game): HTMLElement {
     drawEconChart();
     drawPopChart();
 
+    // Helper: refresh overview numbers and breakdown table without rebuilding sliders/charts
+    function refreshEconomyNumbers(): void {
+      const state = game.getState();
+      const breakdown = game.getEconomyBreakdown();
+      const totalIncome = breakdown.residential + breakdown.commercial + breakdown.industrial + breakdown.office;
+      const totalExpenses = breakdown.roadMaintenance + breakdown.loanInterest + breakdown.powerCost + breakdown.waterCost;
+      const balance = totalIncome - totalExpenses;
+      // Update summary cards
+      const cards = body.querySelectorAll('.summary-card');
+      if (cards[1]) { const v = cards[1].querySelector('.sc-value'); if (v) v.textContent = `+$${totalIncome.toFixed(1)}`; }
+      if (cards[3]) {
+        const v = cards[3].querySelector('.sc-value');
+        if (v) { v.textContent = `$${balance.toFixed(1)}`; v.className = `sc-value ${balance >= 0 ? 'stat-positive' : 'stat-negative'}`; }
+      }
+      // Update breakdown table rows
+      const incomeRows = body.querySelectorAll('.data-table')[0]?.querySelectorAll('tr');
+      if (incomeRows) {
+        if (incomeRows[1]) { incomeRows[1].querySelectorAll('td')[1]!.textContent = `${state.taxRates.residential}%`; incomeRows[1].querySelectorAll('td')[2]!.textContent = `+$${breakdown.residential.toFixed(1)}`; }
+        if (incomeRows[2]) { incomeRows[2].querySelectorAll('td')[1]!.textContent = `${state.taxRates.business}%`; incomeRows[2].querySelectorAll('td')[2]!.textContent = `+$${breakdown.commercial.toFixed(1)}`; }
+        if (incomeRows[3]) { incomeRows[3].querySelectorAll('td')[1]!.textContent = `${state.taxRates.business}%`; incomeRows[3].querySelectorAll('td')[2]!.textContent = `+$${breakdown.industrial.toFixed(1)}`; }
+        if (incomeRows[4]) { incomeRows[4].querySelectorAll('td')[1]!.textContent = `${state.taxRates.business}%`; incomeRows[4].querySelectorAll('td')[2]!.textContent = `+$${breakdown.office.toFixed(1)}`; }
+      }
+    }
+
     // Income tax slider
     const incomeTaxSlider = body.querySelector('#tax-slider-income') as HTMLInputElement;
     const incomeTaxDisplay = body.querySelector('#tax-display-income') as HTMLElement;
@@ -1846,6 +1870,7 @@ export function createGameUI(game: Game): HTMLElement {
         const taxes = game.getState().taxRates;
         taxes.residential = rate;
         if (incomeTaxDisplay) incomeTaxDisplay.textContent = `${rate}%`;
+        refreshEconomyNumbers();
       });
     }
 
@@ -1861,6 +1886,7 @@ export function createGameUI(game: Game): HTMLElement {
         taxes.industrial = rate;
         taxes.office = rate;
         if (businessTaxDisplay) businessTaxDisplay.textContent = `${rate}%`;
+        refreshEconomyNumbers();
       });
     }
 
