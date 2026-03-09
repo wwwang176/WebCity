@@ -247,11 +247,12 @@ export class Game {
       case 'q': this.sceneManager.rotateCamera(-Math.PI / 4); break;
       case 'e': this.sceneManager.rotateCamera(Math.PI / 4); break;
       case '1': this.setTool('select'); break;
+      case '2': this.setTool('road_2lane'); break;
       case '3': this.setTool('zone_r'); break;
       case '4': this.setTool('zone_c'); break;
       case '5': this.setTool('zone_i'); break;
       case '6': this.setTool('zone_o'); break;
-      case '7': this.setTool('road_2lane'); break;
+      case '7': this.setTool('road_rural'); break;
       case '8': this.setTool('power'); break;
       case '9': this.setTool('water'); break;
       case '0': this.setTool('demolish'); break;

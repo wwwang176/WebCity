@@ -1030,3 +1030,30 @@
 ### BUG-049: 缺少手動存檔按鈕 — 只有 AutoSave ✅ 已修復
 - 玩家無法在關鍵時刻手動存檔，只能靠每 100 tick 的自動存檔
 - 修復：在 Debug 面板加入 Save Game 按鈕，呼叫 game.saveCurrentGame()
+
+### BUG-050: 鍵盤快捷鍵 7 映射到錯誤的道路類型 ✅ 已修復
+- **位置**: `src/Game.ts` — `handleKeyDown()`
+- **問題**: `case '7'` 映射到 `road_2lane`，但 UI 工具列顯示 key 7 = `road_rural`（Rural 道路）
+- **額外問題**: 缺少 `case '2'` 快捷鍵映射（常用的 2-Lane 道路無快捷鍵）
+- **修復**:
+  1. `case '7'`: `road_2lane` → `road_rural`（與 UI 一致）
+  2. 新增 `case '2'`: `road_2lane`（補充常用道路快捷鍵）
+
+### 新增已驗證功能（第四十八輪測試 — BUG-050 修復 + 完整回歸測試）
+- ✅ **BUG-050 修復驗證** — key 2=road_2lane, key 7=road_rural（與 UI 一致）
+- ✅ **鍵盤快捷鍵全部正確**:
+  - 1=select, 2=road_2lane, 3=zone_r, 4=zone_c, 5=zone_i, 6=zone_o, 7=road_rural
+  - 8=power, 9=water, 0=demolish, ESC=select, Delete=demolish
+  - Space=pause toggle, =/+=speed up, -=speed down
+- ✅ **Save/Load 完整循環** — Save slot 1 → 重整頁面 → Load Game 列表(2 slots) → 載入 Regression Test R30 → Pop 142, Buildings 47 完全匹配
+- ✅ **Demolish 工具** — 建築 (5,9) buildingId=2→0, zoneType→0, buildings 47→46（完全清除）
+- ✅ **從零建城完整流程** — New Game → 建路(31格) → 劃區(8R+4C+5I+4O=21格) → 電廠水廠 → 21/21 供電供水 → 2000 ticks → 64 pop, 20 buildings
+- ✅ **3000-tick 壓力測試** — 966ms, 零 NaN/Infinity, Pop 64, $58K, Balance +$22/tick
+- ✅ **Overlay 6 種切換** — power/water/pollution/landValue/traffic/zone 全部 toggle on/off 正確
+- ✅ **Economy Overview 面板** — Treasury $60K, Income +$33/tick, Expenses -$11/tick, 四種稅率各 9%, Tax slider, City Statistics chart
+- ✅ **Traffic Overview 面板** — 15 Active Vehicles, Avg Path 10.1, 31 Road Tiles, Peak Density 5, Top 7 壅塞路段排行（紅→橙→綠色條）
+- ✅ **Tutorial Skip** — Skip 按鈕正常關閉 tutorial overlay
+- ✅ **日夜循環** — 白天(淺藍)→黃昏(橙紅)→夜晚(深藍) 連續循環
+- ✅ **小地圖** — 左下角 canvas 正確顯示城市俯瞰
+- ✅ 零 Console 錯誤
+- ✅ 全部 649 單元測試通過（45 測試檔）
