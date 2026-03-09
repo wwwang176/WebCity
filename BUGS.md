@@ -1112,3 +1112,13 @@
 - ✅ **城市完整建城** — Roads(161格)+Zones(R72/C36/I36)+Power+Water+Civic(5棟)→Pop 128, Happiness 71%
 - ✅ 零遊戲 Console 錯誤（僅 Chrome extension 連線訊息）
 - ✅ 全部 649 單元測試通過
+
+### 新增已驗證功能（第五十三輪測試 — UI Panels / Overlays / 快捷鍵全面回歸）
+- ✅ **Economy Panel** — Treasury $142K, Income +$148/tick, Expenses -$24.4, Net $123.6; Tax Rate slider 拖動到 13% 正常
+- ✅ **Traffic Panel** — 60 Vehicles, 23.6 Avg Path, 164 Roads, 8 Peak Density; 8 段壅塞路段表格（紅/橘/綠色條）
+- ✅ **Overview Panel** — Pop 181, 1 Vacant Home, 1482 Jobs, 1301 Openings; Buildings by Zone 表格; Migration Status 顯示 Attractiveness 46.4 < 50 blocked
+- ✅ **Building Info Panel** — Select tool 點擊建築顯示 "Medium House" Level ★★☆, 6 Residents, $18/tick, Residential (Low), 含居民清單
+- ✅ **F1-F6 Overlays** — F1=Power, F2=Water, F3=Pollution, F4=LandValue, F5=Traffic, F6=Zone 全部正確
+- ✅ **12/12 快捷鍵** — 1=Select, 2=Road, 3=ZoneR, 4=ZoneC, 5=ZoneI, 6=ZoneO, 7=Rural, 8=Power, 9=Water, 0=Demolish, ESC=Select, Delete=Demolish
+- ✅ 零遊戲 Console 錯誤
+- ✅ 全部 649 單元測試通過
