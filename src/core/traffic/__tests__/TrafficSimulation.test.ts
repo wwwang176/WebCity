@@ -42,11 +42,13 @@ describe('TrafficSimulation', () => {
 
   it('should track segment density', () => {
     const sim = new TrafficSimulation();
-    sim.addVehicle(['0,0', '1,0', '2,0']);
+    // Use a long enough path so vehicle doesn't arrive in 1 tick (speed=3.5)
+    sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0', '5,0', '6,0', '7,0', '8,0', '9,0']);
     expect(sim.getSegmentDensity('0,0')).toBe(1);
     sim.tick();
     expect(sim.getSegmentDensity('0,0')).toBe(0);
-    expect(sim.getSegmentDensity('1,0')).toBe(1);
+    // After 1 tick at speed 3.5, vehicle should be at cell index 3
+    expect(sim.getSegmentDensity('3,0')).toBe(1);
   });
 
   it('should remove arrived vehicles', () => {
@@ -73,10 +75,10 @@ describe('TrafficSimulation', () => {
 
   it('should move at base speed when no speedLimit callback provided', () => {
     const sim = new TrafficSimulation();
-    const v = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0', '5,0']);
+    const v = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0', '5,0', '6,0', '7,0', '8,0', '9,0']);
     sim.tick();
-    // Default speed = 1.0 (base speed, equivalent to speedLimit 50)
-    expect(v.pathPos).toBeCloseTo(1.0, 1);
+    // Default speed = 3.5 (base speed, equivalent to speedLimit 50)
+    expect(v.pathPos).toBeCloseTo(3.5, 1);
   });
 
   it('should use per-cell speed limit as vehicle moves', () => {

@@ -42,7 +42,7 @@ export class TrafficSimulation {
   vehicles: Vehicle[] = [];
   private nextId = 1;
 
-  private static readonly BASE_SPEED = 1.0;   // path-units per tick at reference speed limit (50)
+  private static readonly BASE_SPEED = 3.5;   // path-units per tick at reference speed limit (50)
   private static readonly REFERENCE_LIMIT = 50; // speed limit that maps to BASE_SPEED
   private static readonly MIN_GAP = 0.15;    // min distance between vehicles
   private static readonly STOP_OFFSET = 0.25; // align vehicle front with stop line (0.25 from cell center)

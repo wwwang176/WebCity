@@ -29,9 +29,65 @@ describe('GameClock', () => {
 
   it('should calculate game time', () => {
     const clock = new GameClock();
-    for (let i = 0; i < 120; i++) clock.advance(); // 30 days
+    // ticksPerDay = 24 (1 tick = 1 hour), so 720 ticks = 30 days
+    for (let i = 0; i < 720; i++) clock.advance();
     expect(clock.getDay()).toBe(30);
     expect(clock.getMonth()).toBe(1);
+  });
+
+  it('should have ticksPerDay of 24', () => {
+    const clock = new GameClock();
+    // 24 ticks = 1 day
+    for (let i = 0; i < 24; i++) clock.advance();
+    expect(clock.getDay()).toBe(1);
+  });
+
+  it('getHourOfDay should return 0-23 based on tick within the day', () => {
+    const clock = new GameClock();
+    expect(clock.getHourOfDay()).toBe(0); // tick 0 → hour 0
+    clock.advance(); // tick 1
+    expect(clock.getHourOfDay()).toBe(1);
+    for (let i = 0; i < 5; i++) clock.advance(); // tick 6
+    expect(clock.getHourOfDay()).toBe(6);
+    for (let i = 0; i < 17; i++) clock.advance(); // tick 23
+    expect(clock.getHourOfDay()).toBe(23);
+    clock.advance(); // tick 24 → next day, hour 0
+    expect(clock.getHourOfDay()).toBe(0);
+  });
+
+  it('getTimeOfDay should return correct period for each hour range', () => {
+    const clock = new GameClock();
+    // night: 22-5
+    expect(clock.getTimeOfDay()).toBe('night'); // hour 0
+    for (let i = 0; i < 5; i++) clock.advance();
+    expect(clock.getTimeOfDay()).toBe('night'); // hour 5
+
+    clock.advance(); // hour 6
+    expect(clock.getTimeOfDay()).toBe('morning_rush');
+    for (let i = 0; i < 3; i++) clock.advance(); // hour 9
+    expect(clock.getTimeOfDay()).toBe('morning_rush');
+
+    clock.advance(); // hour 10
+    expect(clock.getTimeOfDay()).toBe('midday');
+    for (let i = 0; i < 6; i++) clock.advance(); // hour 16
+    expect(clock.getTimeOfDay()).toBe('midday');
+
+    clock.advance(); // hour 17
+    expect(clock.getTimeOfDay()).toBe('evening_rush');
+    for (let i = 0; i < 4; i++) clock.advance(); // hour 21
+    expect(clock.getTimeOfDay()).toBe('evening_rush');
+
+    clock.advance(); // hour 22
+    expect(clock.getTimeOfDay()).toBe('night');
+  });
+
+  it('getDay/getMonth/getYear should still work correctly with 24 ticksPerDay', () => {
+    const clock = new GameClock();
+    // 1 day = 24 ticks, 1 month = 30 days = 720 ticks, 1 year = 12 months = 8640 ticks
+    for (let i = 0; i < 8640; i++) clock.advance();
+    expect(clock.getDay()).toBe(360);
+    expect(clock.getMonth()).toBe(12);
+    expect(clock.getYear()).toBe(1);
   });
 });
 
