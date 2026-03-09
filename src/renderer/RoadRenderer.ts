@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 
@@ -35,6 +36,9 @@ export class RoadRenderer {
   private markingMesh: THREE.InstancedMesh | null = null;
   private crosswalkMesh: THREE.InstancedMesh | null = null;
   private stopLineMesh: THREE.InstancedMesh | null = null;
+  private lampMesh: THREE.InstancedMesh | null = null;
+  private lampGlowMesh: THREE.InstancedMesh | null = null;
+  private lampGlowMaterial: THREE.MeshBasicMaterial | null = null;
   private readonly maxRoads = 10000;
 
   build(scene: THREE.Scene, grid: Grid): void {
@@ -57,6 +61,7 @@ export class RoadRenderer {
     this.buildLaneMarkings(scene, roadCells);
     this.buildCrosswalkMarkings(scene, roadCells);
     this.buildStopLines(scene, roadCells);
+    this.buildStreetLamps(scene, roadCells);
   }
 
   private buildRoadSurface(scene: THREE.Scene, cells: RoadCell[]): void {
@@ -439,8 +444,101 @@ export class RoadRenderer {
     scene.add(this.stopLineMesh);
   }
 
+  private buildStreetLamps(scene: THREE.Scene, cells: RoadCell[]): void {
+    type LampPos = { x: number; z: number };
+    const lamps: LampPos[] = [];
+
+    for (const r of cells) {
+      const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+      const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
+      const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+      const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
+
+      const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
+      const half = ownW / 2 + SIDEWALK_WIDTH / 2;
+
+      // Place lamp on BOTH sides of each open sidewalk edge
+      if (!hasN) lamps.push({ x: r.x, z: r.y - half });
+      if (!hasS) lamps.push({ x: r.x, z: r.y + half });
+      if (!hasW) lamps.push({ x: r.x - half, z: r.y });
+      if (!hasE) lamps.push({ x: r.x + half, z: r.y });
+    }
+
+    if (lamps.length === 0) return;
+
+    // Lamp pole + head geometry — real street lamp ~8m, 1 cell = 12m → 0.67 units
+    const poleH = 0.28;  // ~3.4m pole height
+    const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4);
+    pole.translate(0, poleH / 2, 0);
+    const head = new THREE.SphereGeometry(0.018, 4, 3);
+    head.translate(0, poleH + 0.01, 0);
+    const merged = mergeGeometries([pole, head]);
+    if (!merged) return;
+
+    const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    const count = Math.min(lamps.length, this.maxRoads * 4);
+    this.lampMesh = new THREE.InstancedMesh(merged, lampMat, count);
+    this.lampMesh.castShadow = true;
+    this.lampMesh.frustumCulled = false;
+
+    // Ground glow disc with radial gradient (center bright, edges fade out)
+    const glowSegs = 12;
+    const glowRadius = 0.4;
+    const glowGeo = new THREE.CircleGeometry(glowRadius, glowSegs);
+    glowGeo.rotateX(-Math.PI / 2);
+    // Apply vertex colors: center vertex = white, edge vertices = black
+    const posAttr = glowGeo.attributes.position!;
+    const vColors = new Float32Array(posAttr.count * 3);
+    for (let i = 0; i < posAttr.count; i++) {
+      const px = posAttr.getX(i);
+      const pz = posAttr.getZ(i);
+      const dist = Math.sqrt(px * px + pz * pz) / glowRadius;
+      const brightness = Math.max(0, 1 - dist);
+      vColors[i * 3] = brightness;
+      vColors[i * 3 + 1] = brightness;
+      vColors[i * 3 + 2] = brightness;
+    }
+    glowGeo.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
+
+    this.lampGlowMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffdd88,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.lampGlowMesh = new THREE.InstancedMesh(glowGeo, this.lampGlowMaterial, count);
+    this.lampGlowMesh.frustumCulled = false;
+    this.lampGlowMesh.renderOrder = 2;
+
+    const matrix = new THREE.Matrix4();
+    for (let i = 0; i < count; i++) {
+      const p = lamps[i]!;
+      matrix.identity();
+      matrix.setPosition(p.x, SIDEWALK_Y, p.z);
+      this.lampMesh.setMatrixAt(i, matrix);
+      matrix.setPosition(p.x, 0.055, p.z);
+      this.lampGlowMesh.setMatrixAt(i, matrix);
+    }
+
+    this.lampMesh.instanceMatrix.needsUpdate = true;
+    this.lampGlowMesh.instanceMatrix.needsUpdate = true;
+    scene.add(this.lampMesh);
+    scene.add(this.lampGlowMesh);
+  }
+
+  /** Update street lamp glow based on sun intensity (call each frame). */
+  update(sunIntensity: number): void {
+    if (!this.lampGlowMaterial) return;
+    this.lampGlowMaterial.opacity = Math.max(0, 0.5 * (1 - sunIntensity / 0.3));
+  }
+
   dispose(scene: THREE.Scene): void {
-    const meshes = [this.roadMesh, this.sidewalkMesh, this.markingMesh, this.crosswalkMesh, this.stopLineMesh];
+    const meshes = [
+      this.roadMesh, this.sidewalkMesh, this.markingMesh,
+      this.crosswalkMesh, this.stopLineMesh, this.lampMesh, this.lampGlowMesh,
+    ];
     for (const mesh of meshes) {
       if (mesh) {
         scene.remove(mesh);
@@ -453,5 +551,8 @@ export class RoadRenderer {
     this.markingMesh = null;
     this.crosswalkMesh = null;
     this.stopLineMesh = null;
+    this.lampMesh = null;
+    this.lampGlowMesh = null;
+    this.lampGlowMaterial = null;
   }
 }

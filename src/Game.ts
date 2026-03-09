@@ -598,8 +598,10 @@ export class Game {
     const gameSpeed = this.paused ? 0 : this.speed;
     this.weatherRenderer.update(dt, gameSpeed, this.state.clock.getSeason());
 
-    // Update building light spots based on sun intensity (night glow)
-    this.buildingRenderer.update(this.weatherRenderer.sunIntensity);
+    // Update night glow (building light spots + street lamps)
+    const sunI = this.weatherRenderer.sunIntensity;
+    this.buildingRenderer.update(sunI);
+    this.roadRenderer.update(sunI);
   }
 
   /** Smoothed position & heading using quadratic bezier at turns */

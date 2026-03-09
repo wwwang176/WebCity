@@ -302,7 +302,6 @@ export class VehicleRenderer {
       opacity: 0,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      side: THREE.DoubleSide,
     });
     this.taillightMesh = new THREE.InstancedMesh(tlGeo, this.taillightMaterial, this.maxLights);
     this.taillightMesh.count = 0;

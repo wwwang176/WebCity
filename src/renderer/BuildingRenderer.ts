@@ -980,11 +980,27 @@ export class BuildingRenderer {
   private buildLightSpots(scene: THREE.Scene, positions: { x: number; y: number }[]): void {
     if (positions.length === 0) return;
 
-    const geometry = new THREE.CircleGeometry(0.3, 8);
+    const glowRadius = 0.3;
+    const glowSegs = 10;
+    const geometry = new THREE.CircleGeometry(glowRadius, glowSegs);
     geometry.rotateX(-Math.PI / 2);
+    // Radial gradient: center bright, edges fade to black
+    const posAttr = geometry.attributes.position!;
+    const vColors = new Float32Array(posAttr.count * 3);
+    for (let i = 0; i < posAttr.count; i++) {
+      const px = posAttr.getX(i);
+      const pz = posAttr.getZ(i);
+      const dist = Math.sqrt(px * px + pz * pz) / glowRadius;
+      const b = Math.max(0, 1 - dist);
+      vColors[i * 3] = b;
+      vColors[i * 3 + 1] = b;
+      vColors[i * 3 + 2] = b;
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
 
     this.lightSpotMaterial = new THREE.MeshBasicMaterial({
       color: 0xffcc66,
+      vertexColors: true,
       transparent: true,
       opacity: 0,
       blending: THREE.AdditiveBlending,
