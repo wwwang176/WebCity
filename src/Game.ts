@@ -984,6 +984,8 @@ export class Game {
       fire: 0xd32f2f,
       hospital: 0xe91e63,
       school: 0x795548,
+      school_high: 0x6d4c41,
+      school_univ: 0x4e342e,
       park: 0x4caf50,
       garbage: 0x795548,
       sewage: 0x607d8b,

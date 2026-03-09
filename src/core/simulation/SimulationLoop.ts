@@ -772,8 +772,8 @@ export class SimulationLoop {
 
       // --- Transport mode choice ---
       const availableTransport = this.getAvailableTransit(fromPos, toPos);
-      const congestion = this.state.traffic.getCongestionLevel
-        ? this.state.traffic.getCongestionLevel()
+      const congestion = (this.state.traffic as unknown as { getCongestionLevel?: () => number }).getCongestionLevel
+        ? (this.state.traffic as unknown as { getCongestionLevel: () => number }).getCongestionLevel()
         : 0;
       const mode = chooseMode(fromPos, toPos, availableTransport, congestion);
 

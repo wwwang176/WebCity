@@ -1,5 +1,5 @@
 /**
- * Pathfinding Worker — handles A*/BFS path requests off the main thread.
+ * Pathfinding Worker — handles A-star/BFS path requests off the main thread.
  *
  * Communication protocol:
  * Main → Worker:

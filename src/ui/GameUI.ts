@@ -1349,7 +1349,7 @@ export function createGameUI(game: Game): HTMLElement {
           <div style="font-size:12px;color:#aaa;margin-bottom:4px">Policies:</div>
           <div style="display:flex;flex-wrap:wrap;gap:4px">
             ${policyTypes.map(pt => {
-              const isActive = activePolicies.has(pt);
+              const isActive = activePolicies.has(pt as unknown as import('../core/district/types').PolicyType);
               return `<button class="district-policy-btn" data-district="${d.id}" data-policy="${pt}"
                 style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid ${isActive ? '#ab47bc' : '#444'};
                 background:${isActive ? '#ab47bc33' : '#222'};color:${isActive ? '#ce93d8' : '#777'};cursor:pointer">

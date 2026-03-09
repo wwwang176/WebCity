@@ -331,8 +331,8 @@ describe('District integration', () => {
     // Set up conditions for building growth at (5,5): road + zone + power + water
     state.grid.setCell(5, 4, { roadType: 2, roadFlags: 0x0F });
     state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL });
-    state.power.addPlant(5, 3, 'coal', 100);
-    state.water.addPlant(5, 3, 100);
+    state.power.addPlant({ x: 5, y: 3, output: 100, pollution: 10, type: 'coal' });
+    state.water.addPlant({ x: 5, y: 3, output: 100 });
 
     // canBuildInDistrict should block industrial
     expect(state.policies.canBuildInDistrict(d.id, ZoneType.INDUSTRIAL)).toBe(false);
