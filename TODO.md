@@ -379,6 +379,23 @@
 - [x] **TEST**: 稅率過高 → 居民/商家遷出
 - [x] **TEST**: 稅率過低 → 吸引遷入但收入不足
 - [x] 實作 Tax 模組
+- [x] 移除 `taxRevenue` 死欄位，改為按人口/工人數計算收入
+- [x] 高密度建築容量 ×4（Res 80/160/320, Com 80/160/320, Office 160/320/600）
+
+### 9.6 稅收重構：所得稅 + 營業稅分離
+
+- [ ] **TEST**: 住宅建築所得稅 = Σ 每位居民(基礎係數 × incomeLevel 加成) × 所得稅率
+- [ ] **TEST**: incomeLevel 加成：LOW ×1.0, MEDIUM ×1.5, HIGH ×2.0
+- [ ] **TEST**: 同一棟住宅內不同 incomeLevel 居民各自計算稅額
+- [ ] **TEST**: 商/工/辦營業稅 = companyIncome × 等級加成(Lv1×1.0/Lv2×1.5/Lv3×2.0) × 營業稅率
+- [ ] **TEST**: BuildingType 新增 `companyIncome` 欄位（基礎營收）
+- [ ] **TEST**: 所得稅率和營業稅率獨立設定，互不影響
+- [ ] **TEST**: 調高所得稅率 → 居民 happiness 下降 → 遷出增加
+- [ ] **TEST**: 調高營業稅率 → 商業/工業/辦公 demand 下降
+- [ ] 修改 `calculateIncome()`：住宅掃市民 incomeLevel，商/工/辦用 companyIncome
+- [ ] 修改 `GameState.taxRates`：新增 `business` 稅率欄位（原 `residential` 改為所得稅率）
+- [ ] UI：稅率滑桿從 1 個改為 2 個（所得稅率 + 營業稅率）
+- [ ] UI：建築面板顯示稅收計算明細（居民人頭稅 / 營業稅額）
 
 ### 9.3 市政預算
 
