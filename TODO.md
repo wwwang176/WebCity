@@ -281,57 +281,57 @@
 
 ### 7.7 車道級連接圖（Lane Connection Graph）
 
-#### Phase A — LaneGraph 資料結構 + 從 Grid 建構
+#### Phase A — LaneGraph 資料結構 + 從 Grid 建構 ✅
 
-- [ ] **TEST**: ConnectionPoint 包含 id/position/tangent/cellKey/lane/type 屬性
-- [ ] **TEST**: LaneEdge 包含 from/to/bezierControl/length/type 屬性
-- [ ] **TEST**: 直路段（2LINE）每條方向車道產生 1 entry + 1 exit ConnectionPoint
-- [ ] **TEST**: 4LINE 產生 2 entry + 2 exit（每方向 2 車道）
-- [ ] **TEST**: 6LINE 產生 3 entry + 3 exit（每方向 3 車道）
-- [ ] **TEST**: 同方向相鄰 lane 之間有 lane_change 類型斜向邊
-- [ ] **TEST**: 不同寬度道路銜接（2LINE→4LINE）：lane0.exit→lane0.entry 正確映射，lane1 為額外車道
-- [ ] **TEST**: 十字路口產生 turn 類型邊：每個入口車道→每個合法出口車道
-- [ ] **TEST**: T 字路口只產生 2 個出口方向的 turn 邊（非 3 個）
-- [ ] **TEST**: 建路後 LaneGraph 自動更新受影響區域
-- [ ] **TEST**: 拆路後 LaneGraph 正確移除相關 ConnectionPoint 和 LaneEdge
-- [ ] 實作 `src/core/traffic/LaneGraph.ts`
+- [x] **TEST**: ConnectionPoint 包含 id/position/tangent/cellKey/lane/type 屬性
+- [x] **TEST**: LaneEdge 包含 from/to/bezierControl/length/type 屬性
+- [x] **TEST**: 直路段（2LINE）每條方向車道產生 1 entry + 1 exit ConnectionPoint
+- [x] **TEST**: 4LINE 產生 2 entry + 2 exit（每方向 2 車道）
+- [x] **TEST**: 6LINE 產生 3 entry + 3 exit（每方向 3 車道）
+- [x] **TEST**: 同方向相鄰 lane 之間有 lane_change 類型斜向邊
+- [x] **TEST**: 不同寬度道路銜接（2LINE→4LINE）：lane0.exit→lane0.entry 正確映射，lane1 為額外車道
+- [x] **TEST**: 十字路口產生 turn 類型邊：每個入口車道→每個合法出口車道
+- [x] **TEST**: T 字路口只產生 2 個出口方向的 turn 邊（非 3 個）
+- [x] **TEST**: 建路後 LaneGraph 自動更新受影響區域
+- [x] **TEST**: 拆路後 LaneGraph 正確移除相關 ConnectionPoint 和 LaneEdge
+- [x] 實作 `src/core/traffic/LaneGraph.ts`
 
-#### Phase B — Bezier 曲線工具
+#### Phase B — Bezier 曲線工具 ✅
 
-- [ ] **TEST**: 給定進出方向，自動生成三次 Bezier 控制點
-- [ ] **TEST**: 直行（同方向進出）控制點在 cell 中心兩側
-- [ ] **TEST**: 90° 轉彎控制點形成平滑弧線
-- [ ] **TEST**: 弧長參數化：等距采樣 N 點，誤差 < 1%
-- [ ] **TEST**: 在 Bezier 曲線任意 t 值取得 position 和 tangent
-- [ ] 實作 `src/core/traffic/BezierPath.ts`
+- [x] **TEST**: 給定進出方向，自動生成三次 Bezier 控制點
+- [x] **TEST**: 直行（同方向進出）控制點在 cell 中心兩側
+- [x] **TEST**: 90° 轉彎控制點形成平滑弧線
+- [x] **TEST**: 弧長參數化：等距采樣 N 點，誤差 < 1%
+- [x] **TEST**: 在 Bezier 曲線任意 t 值取得 position 和 tangent
+- [x] 實作 `src/core/traffic/BezierPath.ts`
 
-#### Phase C — 車輛沿 LaneEdge 移動
+#### Phase C — 車輛沿 LaneEdge 移動 ✅
 
-- [ ] **TEST**: 車輛路徑改為 LaneEdge 序列（取代 cell key 陣列）
-- [ ] **TEST**: 車輛 pathPos 沿 LaneEdge.length 累加，跨邊時切換到下一條 LaneEdge
-- [ ] **TEST**: 直路段車輛位置 = 線性插值（entry→exit）
-- [ ] **TEST**: 轉彎車輛位置 = Bezier 曲線插值（弧長參數化）
-- [ ] **TEST**: 換道車輛位置 = lane_change 邊的斜向插值
+- [x] **TEST**: 車輛路徑改為 LaneEdge 序列（取代 cell key 陣列）
+- [x] **TEST**: 車輛 pathPos 沿 LaneEdge.length 累加，跨邊時切換到下一條 LaneEdge
+- [x] **TEST**: 直路段車輛位置 = 線性插值（entry→exit）
+- [x] **TEST**: 轉彎車輛位置 = Bezier 曲線插值（弧長參數化）
+- [x] **TEST**: 換道車輛位置 = lane_change 邊的斜向插值
 - [ ] **TEST**: 前車先動排序保留（按 LaneEdge 序列進度排序）
 - [ ] **TEST**: 同 LaneEdge 上的碰撞偵測（gap 計算基於弧長距離）
-- [ ] **TEST**: 速度限制依當前 LaneEdge 所屬 cell 的 speedLimit
+- [x] **TEST**: 速度限制依當前 LaneEdge 所屬 cell 的 speedLimit
 - [ ] **TEST**: 紅綠燈在十字路口 entry ConnectionPoint 處攔停
-- [ ] 修改 `TrafficSimulation.ts`：Vehicle 改用 LaneEdge[] path
+- [x] 修改 `TrafficSimulation.ts`：Vehicle 改用 LaneEdge[] path
 
-#### Phase D — Lane-level Pathfinding
+#### Phase D — Lane-level Pathfinding ✅
 
-- [ ] **TEST**: Phase 1 cell-level A* 回傳 cell 路線後，Phase 2 在 LaneEdge 子圖上細化
-- [ ] **TEST**: 細化結果為 LaneEdge 序列，涵蓋每個 cell 的具體車道選擇
+- [x] **TEST**: Phase 1 cell-level A* 回傳 cell 路線後，Phase 2 在 LaneEdge 子圖上細化
+- [x] **TEST**: 細化結果為 LaneEdge 序列，涵蓋每個 cell 的具體車道選擇
 - [ ] **TEST**: 目標車道偏好：右轉提前靠右、左轉提前靠左
 - [ ] **TEST**: 換道代價 > 直行代價（避免不必要換道）
 - [ ] **TEST**: 無法在指定距離內完成換道 → 選擇替代路線
-- [ ] 修改 `Pathfinding.ts`：新增 refineLanePath() 階段
+- [x] 修改 `Pathfinding.ts`：新增 refineLanePath() 階段
 
-#### Phase E — 渲染整合
+#### Phase E — 渲染整合 ✅
 
-- [ ] 車輛位置/朝向改用 LaneEdge Bezier 插值（平滑轉彎，消除 90° 瞬轉）
-- [ ] 換道動畫：車輛沿 lane_change 邊斜向滑動（非瞬間橫移）
-- [ ] VehicleRenderer 的 heading 改用 Bezier tangent（轉彎時車頭朝向曲線切線方向）
+- [x] 車輛位置/朝向改用 LaneEdge Bezier 插值（平滑轉彎，消除 90° 瞬轉）
+- [x] 換道動畫：車輛沿 lane_change 邊斜向滑動（非瞬間橫移）
+- [x] VehicleRenderer 的 heading 改用 Bezier tangent（轉彎時車頭朝向曲線切線方向）
 - [ ] 視覺驗收：車輛在十字路口轉彎平滑、換道自然
 
 #### Phase F — Worker 整合

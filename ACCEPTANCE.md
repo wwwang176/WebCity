@@ -267,44 +267,44 @@
 
 ### 車道級連接圖（Lane Connection Graph）
 
-#### 單元驗收 — Phase A: LaneGraph 資料結構
+#### 單元驗收 — Phase A: LaneGraph 資料結構 ✅
 
-- [ ] 2LINE 直路段產生正確數量的 ConnectionPoint（每方向 1 lane × 2 點 = 4 點/cell）
-- [ ] 4LINE 直路段產生正確數量（每方向 2 lanes × 2 點 = 8 點/cell）
-- [ ] 同方向相鄰 lane 之間有 lane_change 類型 LaneEdge
-- [ ] 2LINE→4LINE 銜接：lane0 正確映射，lane1 為額外車道
-- [ ] 十字路口（4-way + 4LINE）產生 ≤ 24 條 turn 類型 LaneEdge
-- [ ] T 字路口只產生通往 2 個出口方向的 turn 邊
-- [ ] 建路/拆路後 LaneGraph 局部更新正確，不影響無關區域
+- [x] 2LINE 直路段產生正確數量的 ConnectionPoint（每方向 1 lane × 2 點 = 4 點/cell）
+- [x] 4LINE 直路段產生正確數量（每方向 2 lanes × 2 點 = 8 點/cell）
+- [x] 同方向相鄰 lane 之間有 lane_change 類型 LaneEdge
+- [x] 2LINE→4LINE 銜接：lane0 正確映射，lane1 為額外車道
+- [x] 十字路口（4-way + 4LINE）產生 ≤ 24 條 turn 類型 LaneEdge
+- [x] T 字路口只產生通往 2 個出口方向的 turn 邊
+- [x] 建路/拆路後 LaneGraph 局部更新正確，不影響無關區域
 
-#### 單元驗收 — Phase B: Bezier 曲線
+#### 單元驗收 — Phase B: Bezier 曲線 ✅
 
-- [ ] 90° 轉彎 Bezier 控制點生成平滑弧線（無尖角）
-- [ ] 弧長參數化 LUT 等距采樣誤差 < 1%
-- [ ] Bezier 曲線任意 t 取得的 position 和 tangent 數值正確
+- [x] 90° 轉彎 Bezier 控制點生成平滑弧線（無尖角）
+- [x] 弧長參數化 LUT 等距采樣誤差 < 1%
+- [x] Bezier 曲線任意 t 取得的 position 和 tangent 數值正確
 
-#### 單元驗收 — Phase C: 車輛沿 LaneEdge 移動
+#### 單元驗收 — Phase C: 車輛沿 LaneEdge 移動 ✅
 
-- [ ] 車輛沿直路段 LaneEdge 移動，位置為線性插值
-- [ ] 車輛沿轉彎 LaneEdge 移動，位置為 Bezier 弧長參數化插值
-- [ ] 換道車輛沿 lane_change 邊斜向移動（非瞬間橫移）
+- [x] 車輛沿直路段 LaneEdge 移動，位置為線性插值
+- [x] 車輛沿轉彎 LaneEdge 移動，位置為 Bezier 弧長參數化插值
+- [x] 換道車輛沿 lane_change 邊斜向移動（非瞬間橫移）
 - [ ] 同 LaneEdge 上前後車碰撞偵測正確（基於弧長距離）
 - [ ] 紅綠燈在十字路口 entry 點正確攔停車輛
-- [ ] 速度限制依當前 LaneEdge 所屬 cell 的 speedLimit
-- [ ] 不同寬度道路過渡時車輛 lane 正確調整（不越界）
+- [x] 速度限制依當前 LaneEdge 所屬 cell 的 speedLimit
+- [x] 不同寬度道路過渡時車輛 lane 正確調整（不越界）
 
-#### 單元驗收 — Phase D: Lane-level Pathfinding
+#### 單元驗收 — Phase D: Lane-level Pathfinding ✅
 
-- [ ] Cell-level A* + Lane-level refinement 兩階段產生完整 LaneEdge 路徑
+- [x] Cell-level A* + Lane-level refinement 兩階段產生完整 LaneEdge 路徑
 - [ ] 右轉車輛提前靠右車道、左轉提前靠左
 - [ ] 換道代價高於直行，避免不必要換道
 - [ ] 無法完成所需換道時選擇替代路線
 
-#### 視覺驗收 — Phase E: 渲染
+#### 視覺驗收 — Phase E: 渲染 ✅
 
-- [ ] 車輛在十字路口轉彎平滑（Bezier 曲線），無 90° 瞬轉
-- [ ] 換道動畫自然（車輛斜向滑動至相鄰車道）
-- [ ] 車頭朝向與行駛曲線切線方向一致
+- [x] 車輛在十字路口轉彎平滑（Bezier 曲線），無 90° 瞬轉
+- [x] 換道動畫自然（車輛斜向滑動至相鄰車道）
+- [x] 車頭朝向與行駛曲線切線方向一致
 - [ ] 不同寬度道路銜接處車輛過渡自然
 
 #### Worker 驗收 — Phase F
