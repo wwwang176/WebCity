@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { DistrictManager } from '../DistrictManager';
 import { PolicyManager } from '../PolicyManager';
 import { setSpecialization, getSpecialization, getSpecializationBonus } from '../Specialization';
+import { CitySpecialization, CitySpecType } from '../CitySpecialization';
 import { PolicyType, Specialization } from '../types';
 import { ZoneType } from '../../grid/types';
 
@@ -190,5 +191,67 @@ describe('Specialization', () => {
     // Both should have bonuses but they may differ
     expect(highTech.efficiencyMultiplier).toBeGreaterThan(1);
     expect(mining.efficiencyMultiplier).toBeGreaterThan(1);
+  });
+});
+
+describe('CitySpecialization', () => {
+  let cs: CitySpecialization;
+
+  beforeEach(() => {
+    cs = new CitySpecialization();
+  });
+
+  it('should default to NONE', () => {
+    expect(cs.getCurrent()).toBe(CitySpecType.NONE);
+    expect(cs.getBonus().revenueMultiplier).toBe(1);
+  });
+
+  it('should require population to choose a specialization', () => {
+    expect(cs.canChoose(CitySpecType.MINING_CITY, 1000)).toBe(false);
+    expect(cs.canChoose(CitySpecType.MINING_CITY, 5000)).toBe(true);
+  });
+
+  it('should fail to choose if population too low', () => {
+    const result = cs.choose(CitySpecType.TECH_CITY, 2000);
+    expect(result).toBe(false);
+    expect(cs.getCurrent()).toBe(CitySpecType.NONE);
+  });
+
+  it('MINING_CITY: revenue boost + negative happiness + crime', () => {
+    cs.choose(CitySpecType.MINING_CITY, 5000);
+    const bonus = cs.getBonus();
+    expect(bonus.revenueMultiplier).toBeGreaterThan(1);
+    expect(bonus.happinessModifier).toBeLessThan(0);
+    expect(bonus.crimeModifier).toBeGreaterThan(0);
+  });
+
+  it('TECH_CITY: revenue boost + positive happiness + low crime', () => {
+    cs.choose(CitySpecType.TECH_CITY, 5000);
+    const bonus = cs.getBonus();
+    expect(bonus.revenueMultiplier).toBeGreaterThan(1);
+    expect(bonus.happinessModifier).toBeGreaterThan(0);
+    expect(bonus.crimeModifier).toBeLessThan(0);
+  });
+
+  it('TOURISM_CITY: revenue boost + positive happiness', () => {
+    cs.choose(CitySpecType.TOURISM_CITY, 5000);
+    const bonus = cs.getBonus();
+    expect(bonus.revenueMultiplier).toBe(1.2);
+    expect(bonus.happinessModifier).toBeGreaterThan(0);
+  });
+
+  it('GAMBLING_CITY: high revenue but high crime and low happiness', () => {
+    cs.choose(CitySpecType.GAMBLING_CITY, 5000);
+    const bonus = cs.getBonus();
+    expect(bonus.revenueMultiplier).toBe(1.4);
+    expect(bonus.happinessModifier).toBeLessThan(0);
+    expect(bonus.crimeModifier).toBeGreaterThanOrEqual(15);
+  });
+
+  it('should allow choosing NONE without population requirement', () => {
+    cs.choose(CitySpecType.MINING_CITY, 5000);
+    expect(cs.getCurrent()).toBe(CitySpecType.MINING_CITY);
+    cs.choose(CitySpecType.NONE, 0);
+    expect(cs.getCurrent()).toBe(CitySpecType.NONE);
   });
 });

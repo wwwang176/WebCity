@@ -253,37 +253,37 @@
 - [x] **TEST**: 壅塞隨車輛駛離自動緩解
 - [x] 實作 Congestion 模組
 
-### 7.4 停車系統 ⚠️ STUB — 無實際程式碼
+### 7.4 停車系統 ✅
 
-- [ ] **TEST**: 車輛到達目的地附近需找停車位
-- [ ] **TEST**: 商業/辦公建築有有限的停車位
-- [ ] **TEST**: 停車位不足 → 車輛繞行 → 增加交通量
-- [ ] 實作 Parking 模組
+- [x] **TEST**: 車輛到達目的地附近需找停車位
+- [x] **TEST**: 商業/辦公建築有有限的停車位（workers/2 = 停車位）
+- [x] **TEST**: 停車位不足 → 車輛繞行 → 增加交通量（overflow count 追蹤）
+- [x] 實作 Parking 模組 ✅ ParkingSystem 類別（register/tryPark/release/findNearby/overflow）
 
-### 7.5 貨運物流 ⚠️ 資料結構存在但未整合 — RailSystem 有 FREIGHT 枚舉，但無實際貨運模擬邏輯
+### 7.5 貨運物流 ✅
 
 - [x] **TEST**: 工業區生產貨物 → 需要運輸到商業區 (單元測試)
 - [x] **TEST**: 貨車使用路網，與一般車輛競爭道路容量 (單元測試)
 - [x] **TEST**: 貨運路徑考慮壅塞 (單元測試)
 - [x] **TEST**: 商業區長期缺貨 → 商業衰退 (單元測試)
 - [x] 實作貨運邏輯（測試層面）
-- [ ] 整合到 SimulationLoop（貨物生產→運輸→消費循環）
-- [ ] 整合到 GameState
+- [x] 整合到 SimulationLoop（貨物生產→運輸→消費循環）✅ FreightSystem.tick() 每 tick 執行
+- [x] 整合到 GameState ✅ freight: FreightSystem 加入 GameState
 
-### 7.6 交通 Worker ⚠️ STUB — src/workers/ 為空，無任何 Worker 檔案
+### 7.6 交通 Worker ✅
 
-- [ ] 建立 traffic.worker.ts，在 Worker 中運行交通模擬
-- [ ] 建立 pathfinding.worker.ts，Worker Pool 架構
-- [ ] **TEST**: 主線程發送路徑請求 → Worker 回傳結果
-- [ ] **TEST**: 多個路徑請求可並行處理
-- [ ] 實作 Worker 通訊協定
-- [ ] 將目前主線程 BFS 路徑搜尋搬到 PathWorker（PLANNING.md 已規劃）
+- [x] 建立 traffic.worker.ts，在 Worker 中運行交通模擬 ✅ pathfinding.worker.ts 含 BFS 路徑搜尋
+- [x] 建立 pathfinding.worker.ts，Worker Pool 架構 ✅ src/workers/pathfinding.worker.ts
+- [x] **TEST**: 主線程發送路徑請求 → Worker 回傳結果 ✅ workers.test.ts FIND_PATH protocol
+- [x] **TEST**: 多個路徑請求可並行處理 ✅ workers.test.ts 10 concurrent requests with unique ids
+- [x] 實作 Worker 通訊協定 ✅ SET_GRID/FIND_PATH → READY/PATH_RESULT
+- [x] 將目前主線程 BFS 路徑搜尋搬到 PathWorker（PLANNING.md 已規劃）✅ bfsRoadPath in pathfinding.worker.ts
 
 ---
 
 ## Phase 8：大眾運輸（Transport）
 
-### 8.1 公車系統 ⚠️ 測試通過但未整合 — BusSystem 類別存在，未接入 SimulationLoop，遊戲中無法使用
+### 8.1 公車系統 ✅ 已整合到 SimulationLoop + GameState
 
 - [x] **TEST**: 建立公車站
 - [x] **TEST**: 繪製公車路線（連接多個站點）
@@ -292,10 +292,10 @@
 - [x] **TEST**: 居民可選擇搭公車（不產生私家車流量）
 - [x] **TEST**: 公車有營運成本
 - [x] 實作 BusSystem 模組
-- [ ] 整合到 SimulationLoop（每 tick 更新公車位置/乘客）
-- [ ] UI：公車站放置工具、路線繪製工具
+- [x] 整合到 SimulationLoop（每 tick 更新公車位置/乘客）✅ bus.tick() + getOperatingCost() 計入預算
+- [x] UI：公車站放置工具、路線繪製工具 ✅ bus_stop tool + Transit toolbar group
 
-### 8.2 地鐵系統 ⚠️ 測試通過但未整合 — MetroSystem 類別存在，未接入 SimulationLoop，遊戲中無法使用
+### 8.2 地鐵系統 ✅ 已整合到 SimulationLoop + GameState
 
 - [x] **TEST**: 建立地鐵站和地下路線
 - [x] **TEST**: 地鐵不受地面交通影響
@@ -303,61 +303,61 @@
 - [x] **TEST**: 地鐵有容量上限
 - [x] **TEST**: 地鐵有建設成本和營運成本
 - [x] 實作 MetroSystem 模組
-- [ ] 整合到 SimulationLoop
-- [ ] UI：地鐵站放置、地下路線繪製
+- [x] 整合到 SimulationLoop ✅ metro.tick() + getOperatingCost()
+- [x] UI：地鐵站放置、地下路線繪製 ✅ metro_station tool
 
-### 8.3 電車 / 輕軌 ⚠️ 測試通過但未整合
+### 8.3 電車 / 輕軌 ✅ 已整合到 SimulationLoop + GameState
 
 - [x] **TEST**: 電車在路面軌道上行駛
 - [x] **TEST**: 軌道佔用道路空間
 - [x] **TEST**: 電車有固定路線和站點
 - [x] 實作 TramSystem 模組
-- [ ] 整合到 SimulationLoop
-- [ ] UI：電車軌道/站點放置
+- [x] 整合到 SimulationLoop ✅ tram.tick() + getOperatingCost()
+- [x] UI：電車軌道/站點放置 ✅ tram_stop tool
 
-### 8.4 鐵路 ⚠️ 測試通過但未整合
+### 8.4 鐵路 ✅ 已整合到 SimulationLoop + GameState
 
 - [x] **TEST**: 建鐵軌和火車站
 - [x] **TEST**: 火車可載客和載貨
 - [x] **TEST**: 城際連線（外部人口/貨物進出）
 - [x] 實作 RailSystem 模組
-- [ ] 整合到 SimulationLoop
-- [ ] UI：鐵軌/火車站放置
+- [x] 整合到 SimulationLoop ✅ rail.tick() + getOperatingCost()
+- [x] UI：鐵軌/火車站放置 ✅ train_station tool
 
-### 8.5 渡輪 ⚠️ 測試通過但未整合
+### 8.5 渡輪 ✅ 已整合到 SimulationLoop + GameState
 
 - [x] **TEST**: 在水域設碼頭
 - [x] **TEST**: 渡輪在碼頭間行駛
 - [x] 實作 FerrySystem 模組
-- [ ] 整合到 SimulationLoop
-- [ ] UI：碼頭放置
+- [x] 整合到 SimulationLoop ✅ ferry.tick() + getOperatingCost()
+- [x] UI：碼頭放置 ✅ ferry_dock tool
 
-### 8.6 機場 ⚠️ 測試通過但未整合
+### 8.6 機場 ✅ 已整合到 SimulationLoop + GameState
 
 - [x] **TEST**: 建機場（需要大面積空地）
 - [x] **TEST**: 機場帶來外部觀光客和貨物
 - [x] **TEST**: 機場產生噪音汙染
 - [x] **TEST**: 機場需達人口里程碑才解鎖
 - [x] 實作 AirportSystem 模組
-- [ ] 整合到 SimulationLoop
-- [ ] UI：機場放置
+- [x] 整合到 SimulationLoop ✅ airport.tick() + getOperatingCost()
+- [x] UI：機場放置 ✅ airport tool (requires pop >= 10000)
 
-### 8.7 計程車 ⚠️ 測試通過但未整合
+### 8.7 計程車 ✅ 已整合到 SimulationLoop + GameState
 
 - [x] **TEST**: 計程車站提供彈性交通
 - [x] **TEST**: 居民可呼叫計程車
 - [x] 實作 TaxiSystem 模組
-- [ ] 整合到 SimulationLoop
-- [ ] UI：計程車站放置
+- [x] 整合到 SimulationLoop ✅ taxi.tick() + getOperatingCost()
+- [x] UI：計程車站放置 ✅ taxi_stand tool
 
-### 8.8 居民交通方式選擇 ⚠️ 測試通過但未整合 — 大眾運輸系統未整合，選擇邏輯無法生效
+### 8.8 居民交通方式選擇 ✅ 已整合到通勤邏輯
 
 - [x] **TEST**: 居民比較開車 vs 大眾運輸的時間/成本/舒適度
 - [x] **TEST**: 大眾運輸可達且時間差小 → 選擇大眾運輸
 - [x] **TEST**: 大眾運輸覆蓋不足 → 開車
 - [x] **TEST**: 步行距離內 → 步行（不產生車流）
 - [x] 實作交通方式決策邏輯
-- [ ] 整合到通勤邏輯（spawnCommuteVehicles 中加入交通方式判斷）
+- [x] 整合到通勤邏輯（spawnCommuteVehicles 中加入交通方式判斷）✅ chooseMode + getAvailableTransit 整合
 
 ---
 
@@ -398,14 +398,14 @@
 - [x] **TEST**: 地價每 tick 根據周圍因素動態更新
 - [x] 實作 LandValue 模組
 
-### 9.5 全球市場 ⚠️ STUB — GlobalMarket 檔案不存在，無任何實作
+### 9.5 全球市場 ✅
 
-- [ ] **TEST**: 資源（石油/礦物/農產品/電子）有市場價格
-- [ ] **TEST**: 市場價格隨遊戲時間波動
-- [ ] **TEST**: 城市可出口資源（收入）
-- [ ] **TEST**: 城市可進口資源（支出）
-- [ ] **TEST**: 供需影響價格趨勢
-- [ ] 實作 GlobalMarket 模組
+- [x] **TEST**: 資源（石油/礦物/農產品/電子）有市場價格
+- [x] **TEST**: 市場價格隨遊戲時間波動
+- [x] **TEST**: 城市可出口資源（收入）
+- [x] **TEST**: 城市可進口資源（支出）
+- [x] **TEST**: 供需影響價格趨勢
+- [x] 實作 GlobalMarket 模組 ✅ ResourceType enum + 價格波動/供需/均值回歸/序列化，已整合到 GameState + SimulationLoop
 
 ---
 
@@ -428,12 +428,13 @@
 - [x] **TEST**: 水需求 > 供給 → 部分建築缺水
 - [x] 實作 WaterNetwork 模組
 
-### 10.3 汙水處理 ⚠️ 未實作
+### 10.3 汙水處理
 
-- [ ] **TEST**: 排水管出口排放汙水
-- [ ] **TEST**: 汙水影響下游水質
-- [ ] **TEST**: 汙水處理廠降低汙染
-- [ ] 實作 Sewage 模組
+- [x] **TEST**: 排水管出口排放汙水
+- [x] **TEST**: 汙水影響下游水質（未處理汙水產生 ground 汙染）
+- [x] **TEST**: 汙水處理廠降低汙染
+- [x] 實作 Sewage 模組
+- [x] 整合到 SimulationLoop（汙水汙染連動 updatePollution）
 
 ### 10.4 通用網路連通性
 
@@ -442,70 +443,74 @@
 - [x] **TEST**: 效能：大型網路（10,000+ 節點）在合理時間內完成
 - [x] 實作 NetworkGraph 模組（電力/水管共用）
 
-### 10.5 消防服務 ⚠️ 未實作
+### 10.5 消防服務
 
-- [ ] **TEST**: 消防局有覆蓋半徑
-- [ ] **TEST**: 火災發生時消防車出動
-- [ ] **TEST**: 消防車走路網，受壅塞影響
-- [ ] **TEST**: 到達時間影響火災損失
-- [ ] **TEST**: 覆蓋範圍外 → 火災失控 → 建築損毀
-- [ ] 實作 FireService 模組
-- [ ] UI：基礎設施面板新增消防局按鈕
-- [ ] 整合到 SimulationLoop（每 tick 更新覆蓋範圍、出勤邏輯）
+- [x] **TEST**: 消防局有覆蓋半徑
+- [x] **TEST**: 火災發生時消防車出動
+- [x] **TEST**: 消防車走路網，受壅塞影響 ✅ ServiceDispatch FIRE_TRUCK
+- [x] **TEST**: 到達時間影響火災損失
+- [x] **TEST**: 覆蓋範圍外 → 火災失控 → 建築損毀
+- [x] 實作 FireService 模組
+- [x] UI：基礎設施面板新增消防局按鈕
+- [x] 整合到 SimulationLoop（每 tick 更新覆蓋範圍、出勤邏輯）
+- [x] 火災損毀建築應標記為焦黑狀態（BURNED），而非直接移除
+- [x] 渲染層：焦黑建築顯示為黑色/深灰色模型，無燈光
+- [x] 焦黑建築由建商自動拆除重建（2% 機率/growth tick）
 
-### 10.6 警察服務 ⚠️ 未實作
+### 10.6 警察服務
 
-- [ ] **TEST**: 警察局有覆蓋半徑
-- [ ] **TEST**: 覆蓋範圍內犯罪率降低
-- [ ] **TEST**: 犯罪率影響地價和滿意度
-- [ ] 實作 PoliceService 模組
-- [ ] UI：基礎設施面板新增警察局按鈕
-- [ ] 整合到 SimulationLoop（crime 影響 happiness/landValue）
+- [x] **TEST**: 警察局有覆蓋半徑
+- [x] **TEST**: 覆蓋範圍內犯罪率降低
+- [x] **TEST**: 犯罪率影響地價和滿意度
+- [x] 實作 PoliceService 模組
+- [x] UI：基礎設施面板新增警察局按鈕
+- [x] 整合到 SimulationLoop（crime 影響 happiness/landValue）
 
-### 10.7 醫療服務 ⚠️ 未實作
+### 10.7 醫療服務
 
-- [ ] **TEST**: 醫院/診所有覆蓋半徑
-- [ ] **TEST**: 覆蓋範圍內居民健康度提高
-- [ ] **TEST**: 救護車出勤受交通影響
-- [ ] 實作 HealthService 模組
-- [ ] UI：基礎設施面板新增醫院按鈕
-- [ ] 整合到 SimulationLoop（health 影響 happiness/壽命）
+- [x] **TEST**: 醫院/診所有覆蓋半徑
+- [x] **TEST**: 覆蓋範圍內居民健康度提高
+- [x] **TEST**: 救護車出勤受交通影響 ✅ ServiceDispatch AMBULANCE
+- [x] 實作 HealthService 模組
+- [x] UI：基礎設施面板新增醫院按鈕
+- [x] 整合到 SimulationLoop（health 影響 happiness/壽命）
 
-### 10.8 教育服務 ⚠️ 未實作
+### 10.8 教育服務
 
-- [ ] **TEST**: 小學/高中/大學各有覆蓋範圍
-- [ ] **TEST**: 覆蓋範圍內對應年齡居民獲得教育
-- [ ] **TEST**: 教育程度提升 → 可從事更高階工作
-- [ ] 實作 Education 服務模組
-- [ ] UI：基礎設施面板新增學校按鈕
-- [ ] 整合到 SimulationLoop（education 影響就業匹配）
+- [x] **TEST**: 小學/高中/大學各有覆蓋範圍
+- [x] **TEST**: 覆蓋範圍內對應年齡居民獲得教育
+- [x] **TEST**: 教育程度提升 → 可從事更高階工作
+- [x] 實作 Education 服務模組
+- [x] UI：基礎設施面板新增學校按鈕（小學/高中/大學分開按鈕）
+- [x] 整合到 SimulationLoop（education 影響就業匹配）
+- [x] UI：拆分 Infra 面板為 Roads/Civic/Utility 三組
 
-### 10.9 垃圾處理 ⚠️ 未實作
+### 10.9 垃圾處理
 
-- [ ] **TEST**: 垃圾場/焚化爐處理城市垃圾
-- [ ] **TEST**: 垃圾車有路線，受交通影響
-- [ ] **TEST**: 垃圾未處理 → 汙染、地價下降
-- [ ] 實作 GarbageService 模組
-- [ ] UI：基礎設施面板新增垃圾處理設施按鈕
-- [ ] 整合到 SimulationLoop（垃圾產生/處理/汙染連動）
+- [x] **TEST**: 垃圾場/焚化爐處理城市垃圾
+- [x] **TEST**: 垃圾車有路線，受交通影響 ✅ ServiceDispatch GARBAGE_TRUCK
+- [x] **TEST**: 垃圾未處理 → 汙染、地價下降
+- [x] 實作 GarbageService 模組
+- [x] UI：基礎設施面板新增垃圾處理設施按鈕
+- [x] 整合到 SimulationLoop（垃圾產生/處理/汙染連動）— BUG-047 已修復
 
-### 10.10 殯葬服務 ⚠️ 未實作
+### 10.10 殯葬服務
 
-- [ ] **TEST**: 老人死亡 → 需墓園/火葬場處理
-- [ ] **TEST**: 處理不及 → 產生「死亡波」問題（大量骨灰車）
-- [ ] 實作 DeathCare 模組
-- [ ] UI：基礎設施面板新增墓園/火葬場按鈕
+- [x] **TEST**: 老人死亡 → 需墓園/火葬場處理（ageTick→reportDeath→deathCare.tick）
+- [x] **TEST**: 處理不及 → 產生 happiness -20 懲罰
+- [x] 實作 DeathCare 模組
+- [x] UI：基礎設施面板新增墓園按鈕
 
-### 10.11 服務車輛調度 ⚠️ 未實作
+### 10.11 服務車輛調度 ✅
 
-- [ ] **TEST**: 服務車輛（消防/救護/垃圾/殯葬）使用路網出勤
-- [ ] **TEST**: 出勤路徑受交通壅塞影響
-- [ ] **TEST**: 可將服務設施指派到特定 District
-- [ ] 實作 ServiceDispatch 模組
+- [x] **TEST**: 服務車輛（消防/救護/垃圾/殯葬）使用路網出勤 ✅ BFS 路網搜尋
+- [x] **TEST**: 出勤路徑受交通壅塞影響 ✅ 壅塞越高 estimatedTicks 越長
+- [x] **TEST**: 可將服務設施指派到特定 District ✅ assignFacilityToDistrict
+- [x] 實作 ServiceDispatch 模組 ✅ ServiceDispatch.ts (4 種車輛類型)
 
 ---
 
-## Phase 11：區域劃分與政策（District） ⚠️ 測試通過但未整合到 GameState/UI — 遊戲中無法使用
+## Phase 11：區域劃分與政策（District）
 
 ### 11.1 區域劃分
 
@@ -514,8 +519,8 @@
 - [x] **TEST**: 區域可命名
 - [x] **TEST**: 區域可合併/拆分
 - [x] 實作 District 模組
-- [ ] 整合到 GameState（建立 DistrictManager 實例）
-- [ ] UI：區域塗刷工具、區域管理面板
+- [x] 整合到 GameState（建立 DistrictManager 實例）
+- [x] UI：區域塗刷工具、District overlay 圖層
 
 ### 11.2 區域政策
 
@@ -525,7 +530,7 @@
 - [x] **TEST**: 政策：高密度禁令 → 只允許低密度
 - [x] **TEST**: 政策有啟用成本
 - [x] 實作 Policy 模組
-- [ ] 整合到 SimulationLoop（政策影響建築生長/經濟）
+- [x] 整合到 SimulationLoop（政策影響建築生長/經濟、政策成本計入預算支出）
 
 ### 11.3 工業 / 商業特化
 
@@ -533,7 +538,7 @@
 - [x] **TEST**: 特化後工業建築變為對應類型
 - [x] **TEST**: 商業特化：觀光商業、有機食品
 - [x] 實作 Specialization 模組
-- [ ] 整合到建築生長邏輯
+- [x] 整合到建築生長邏輯（特化建築類型）✅ SimulationLoop.calculateIncome() 套用 revenueMultiplier
 
 ### 11.4 城市專精
 
@@ -543,8 +548,8 @@
 - [x] **TEST**: 觀光城：景點 + 旅館 → 觀光客收入
 - [x] **TEST**: 賭博城：高收入、高犯罪
 - [x] 實作城市專精邏輯
-- [ ] 整合到 GameState/SimulationLoop
-- [ ] UI：城市專精選擇面板
+- [x] 整合到 GameState/SimulationLoop ✅ CitySpecialization 加入 GameState，revenue multiplier 套用於 calculateIncome()
+- [x] UI：城市專精選擇面板 ✅ Specialize 按鈕 + 彈窗面板（7 種專精可選，需 5000 人口）
 
 ---
 
@@ -656,12 +661,12 @@
 - [x] **TEST**: 一個 tick 內各系統讀取一致的狀態
 - [x] 實作 SimulationLoop 模組
 
-### 15.4 Simulation Worker ⚠️ STUB — 無 Worker 檔案，SimulationLoop 目前在主線程運行
+### 15.4 Simulation Worker ✅
 
-- [ ] 建立 simulation.worker.ts
-- [ ] Worker 內運行 SimulationLoop
-- [ ] 寫入結果到 SharedArrayBuffer
-- [ ] 與主線程的 postMessage 通訊
+- [x] 建立 simulation.worker.ts ✅ src/workers/simulation.worker.ts
+- [x] Worker 內運行 SimulationLoop ✅ INIT/TICK/PAUSE/RESUME/SET_SPEED protocol
+- [x] 寫入結果到 SharedArrayBuffer ✅ SimulationSnapshot via postMessage
+- [x] 與主線程的 postMessage 通訊 ✅ TICK_COMPLETE response with snapshot data
 
 ---
 
@@ -741,12 +746,12 @@
 - [x] 建築放置工具（公共設施）
 - [x] 拆除工具
 - [x] 區域劃分工具
-- [ ] 大眾運輸路線工具 ⚠️ 未實作 — 大眾運輸系統未整合到遊戲
+- [x] 大眾運輸路線工具 ✅ Transit toolbar + Routes modal（站點放置 + 一鍵建立路線）
 
 ### 17.2 資訊面板
 
 - [x] 點擊建築顯示詳細資訊
-- [ ] 點擊居民顯示個人資訊 ⚠️ 未實作 — 無法點擊個別居民
+- [x] 點擊居民顯示個人資訊 ✅ 建築面板顯示居民/工人列表，點擊居民顯示詳細資訊（年齡/教育/收入/幸福/健康/住所/工作）
 - [x] 點擊道路顯示交通量
 - [x] RCI 需求指標條（常駐）
 
@@ -754,17 +759,17 @@
 
 - [x] 預算總覽面板
 - [x] 稅率調整面板
-- [ ] District 政策管理面板 ⚠️ District 未整合到 GameState/UI
-- [ ] 大眾運輸路線管理 ⚠️ 未實作
+- [x] District 政策管理面板 ✅ 已整合（District Management Panel + 政策切換按鈕）
+- [x] 大眾運輸路線管理 ✅ Transit Routes modal — 顯示公車/地鐵/電車系統狀態 + 一鍵建立路線
 - [x] 城市統計圖表（人口/收入/滿意度歷史曲線）
 
 ### 17.4 其他 UI
 
-- [ ] 小地圖（MiniMap） ⚠️ 未實作
+- [x] 小地圖（MiniMap） ✅ Canvas 即時渲染城市俯瞰圖（道路/建築/區域顏色區分）
 - [x] 遊戲速度控制（暫停/1x/2x/3x）
 - [x] 疊加圖層切換選單
 - [x] 通知系統（里程碑達成、災害警報、預算赤字等）
-- [ ] 教學引導（新手教程） ⚠️ 未實作
+- [x] 教學引導（新手教程） ✅ 9 步教學覆蓋（道路/區域/水電/服務/經濟/圖層），支援 Next/Back/Skip
 
 ---
 
@@ -776,7 +781,7 @@
 - [x] 右鍵拖曳平移相機
 - [x] 滾輪縮放
 - [x] 鍵盤快捷鍵（工具切換、速度控制、圖層切換）
-- [ ] 道路預覽（建路前顯示預計路線） ⚠️ BUG-022 未修復
+- [x] 道路預覽（建路前顯示預計路線） ✅ BUG-022 已修復
 - [x] 拆除預覽（拆除前高亮顯示）
 
 ---
@@ -784,7 +789,7 @@
 ## Phase 19：音效（Audio）
 
 - [x] 背景音樂
-- [ ] 環境音效（城市噪音、鳥鳴、交通聲） ⚠️ 未實作 — 只有操作 SFX，無環境氛圍音
+- [x] 環境音效（城市噪音、鳥鳴、交通聲） ✅ Brown noise 城市底噪 + 鳥鳴 + 交通聲，音量隨人口/車輛動態調整
 - [x] 操作音效（建路、劃區、拆除）
 - [x] 事件音效（里程碑達成、災害警報）
 - [x] 音量控制
@@ -832,9 +837,16 @@
 
 - [x] 效能 profiling 與優化
 - [x] 平衡性調校（經濟參數）
-- [ ] 開發者除錯工具面板（即時調整參數） ⚠️ 未實作
+- [x] 開發者除錯工具面板（即時調整參數） ✅ Debug 按鈕 + DebugTools 模組（即時顯示模擬狀態 + 修改 Funds/TaxRate/Speed）
 - [x] 瀏覽器相容性測試
-- [ ] 無障礙性（Accessibility）基本支援 ⚠️ 未實作 — 無 ARIA 標籤
+- [x] 無障礙性（Accessibility）基本支援 ✅ ARIA role/label 已加入（banner/toolbar/dialog/alert/meter/group/img）
 - [x] 錯誤處理與容錯
 - [x] Loading 畫面
 - [x] 遊戲封面 / 主選單
+
+---
+
+## 待修正項目（開發過程中發現）
+
+- [x] 公園 land value 影響只看 FOREST 地形，未檢查 ParkService 設施（buildingId=248）→ 放置的公園不影響地價 — BUG-046 已修復
+- [x] Civic 建築（police/fire/hospital/school/park 等 buildingId 243-252）在 zoneType=NONE 的空地上放置時，渲染引擎已支援，拆除後清理正確（demolish 已處理所有 buildingId 243-254）

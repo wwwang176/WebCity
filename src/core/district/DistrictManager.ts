@@ -25,6 +25,10 @@ export class DistrictManager {
     return this.districts.get(id);
   }
 
+  getAllDistricts(): District[] {
+    return Array.from(this.districts.values());
+  }
+
   addCellToDistrict(districtId: string, x: number, y: number): void {
     const district = this.districts.get(districtId);
     if (!district) return;

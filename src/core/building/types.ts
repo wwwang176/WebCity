@@ -4,6 +4,7 @@ export enum BuildingStatus {
   NORMAL = 0,
   ABANDONED = 1,
   UNDER_CONSTRUCTION = 2,
+  BURNED = 3,
 }
 
 export interface BuildingType {

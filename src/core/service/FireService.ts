@@ -123,15 +123,58 @@ export class FireService {
   }
 
   /**
-   * Advance active fires by one tick. Fires with no remaining ticks are removed.
+   * Advance active fires by one tick. Fires with ticksRemaining <= 0 are
+   * kept in place so they can be collected via resolveCompletedFires().
    */
   tick(): void {
+    for (const fire of this.activeFires) {
+      if (fire.ticksRemaining > 0) {
+        fire.ticksRemaining--;
+      }
+    }
+  }
+
+  /**
+   * Remove and return all fires whose ticksRemaining has reached 0.
+   * The caller can use the returned list to apply damage to buildings.
+   */
+  resolveCompletedFires(): ActiveFire[] {
+    const resolved: ActiveFire[] = [];
     for (let i = this.activeFires.length - 1; i >= 0; i--) {
-      this.activeFires[i]!.ticksRemaining--;
       if (this.activeFires[i]!.ticksRemaining <= 0) {
+        resolved.push(this.activeFires[i]!);
         this.activeFires.splice(i, 1);
       }
     }
+    return resolved;
+  }
+
+  /**
+   * Attempt to start a random fire in the city.
+   * Probability scales with population and inversely with fire station coverage.
+   * Returns true if a fire was started.
+   */
+  tryRandomFire(
+    grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number } | null },
+    population: number,
+    probabilityOverride?: number,
+  ): boolean {
+    // Base probability per tick: very low, scales slightly with population
+    const baseProbability = probabilityOverride ?? Math.min(0.02, 0.001 + population * 0.000005);
+    if (Math.random() >= baseProbability) return false;
+
+    // Find a random building cell to start a fire
+    const attempts = 10;
+    for (let i = 0; i < attempts; i++) {
+      const x = Math.floor(Math.random() * grid.width);
+      const y = Math.floor(Math.random() * grid.height);
+      const cell = grid.getCell(x, y);
+      if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+        this.reportFire(x, y);
+        return true;
+      }
+    }
+    return false;
   }
 
   toJSON(): FireServiceJSON {

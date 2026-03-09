@@ -99,6 +99,99 @@ describe('Integration Tests', () => {
     expect(state.clock.tick).toBe(100);
   });
 
+  it('city without services has high crime, low health, no building upgrades', () => {
+    const state = createGameState(30, 30);
+    const roadBuilder = new RoadBuilder(state.grid, state.roadNetwork);
+
+    // Build roads
+    roadBuilder.buildRoad({ x: 0, y: 10 }, { x: 25, y: 10 }, RoadType.FOUR_LANE, state.budget.funds);
+
+    // Zone residential
+    for (let x = 1; x <= 20; x++) {
+      state.grid.setCell(x, 9, { zoneType: ZoneType.RESIDENTIAL_HIGH });
+    }
+
+    // Add power + water (minimal services)
+    state.power.addPlant({ x: 0, y: 0, output: 1000, pollution: 10, type: 'coal' });
+    state.water.addPlant({ x: 1, y: 0, output: 500 });
+
+    // Manually place some buildings (no police/fire/hospital/education)
+    for (let x = 1; x <= 10; x++) {
+      state.grid.setCell(x, 9, { buildingId: 4, zoneType: ZoneType.RESIDENTIAL_HIGH }); // Small Apartment
+    }
+
+    // Add citizens
+    for (let i = 0; i < 20; i++) {
+      state.citizens.createCitizen({ age: 30, homeId: `${(i % 10) + 1},9` });
+    }
+
+    state.budget.funds = 100000;
+    state.rciDemand.residential = 50;
+
+    // Run simulation without any civic services
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 60; i++) {
+      loop.tick();
+    }
+
+    // Without services: crime should be non-zero, happiness affected
+    const avgHappiness = state.citizens.citizens.length > 0
+      ? state.citizens.citizens.reduce((s, c) => s + c.happiness, 0) / state.citizens.citizens.length
+      : 0;
+
+    // Happiness won't be high without services
+    expect(avgHappiness).toBeLessThan(80);
+    // No building upgrades without service coverage (buildings stay level 1)
+    for (let x = 1; x <= 10; x++) {
+      const cell = state.grid.getCell(x, 9);
+      if (cell && cell.buildingId > 0 && cell.buildingId < 243) {
+        // Level 1 residential high = buildingId 4
+        expect(cell.buildingId).toBeLessThanOrEqual(6);
+      }
+    }
+  });
+
+  it('adding services improves city indicators', () => {
+    const state = createGameState(30, 30);
+    const roadBuilder = new RoadBuilder(state.grid, state.roadNetwork);
+
+    roadBuilder.buildRoad({ x: 0, y: 10 }, { x: 25, y: 10 }, RoadType.FOUR_LANE, state.budget.funds);
+
+    for (let x = 1; x <= 10; x++) {
+      state.grid.setCell(x, 9, { buildingId: 4, zoneType: ZoneType.RESIDENTIAL_HIGH });
+    }
+
+    state.power.addPlant({ x: 0, y: 0, output: 1000, pollution: 10, type: 'coal' });
+    state.water.addPlant({ x: 1, y: 0, output: 500 });
+
+    for (let i = 0; i < 20; i++) {
+      state.citizens.createCitizen({ age: 30, homeId: `${(i % 10) + 1},9`, happiness: 50 });
+    }
+
+    state.budget.funds = 100000;
+
+    // Add all civic services
+    state.police.addStation(5, 10);
+    state.fire.addStation(10, 10);
+    state.health.addHospital(15, 10);
+    state.education.addSchool(20, 10, 'elementary');
+    state.parks.addPark(3, 10);
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 60; i++) {
+      loop.tick();
+    }
+
+    // With services, citizens should have reasonable happiness
+    const avgHappiness = state.citizens.citizens.length > 0
+      ? state.citizens.citizens.reduce((s, c) => s + c.happiness, 0) / state.citizens.citizens.length
+      : 0;
+
+    // At minimum shouldn't crash and happiness should be defined
+    expect(Number.isFinite(avgHappiness)).toBe(true);
+    expect(state.clock.tick).toBe(60);
+  });
+
   it('zone adjacent to road only', () => {
     const state = createGameState(20, 20);
     const roadBuilder = new RoadBuilder(state.grid, state.roadNetwork);

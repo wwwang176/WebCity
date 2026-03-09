@@ -67,4 +67,31 @@ describe('CitizenManager', () => {
     mgr.ageTick();
     expect(mgr.getPopulation()).toBe(0);
   });
+
+  it('should get citizens by home building position', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 30, homeId: '5,10' });
+    mgr.createCitizen({ age: 25, homeId: '5,10' });
+    mgr.createCitizen({ age: 40, homeId: '8,8' });
+    const residents = mgr.getCitizensByHome('5,10');
+    expect(residents.length).toBe(2);
+    expect(residents.every(c => c.homeId === '5,10')).toBe(true);
+  });
+
+  it('should get citizens by workplace building position', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 30, workplaceId: '3,7' });
+    mgr.createCitizen({ age: 25, workplaceId: '3,7' });
+    mgr.createCitizen({ age: 40, workplaceId: '9,2' });
+    const workers = mgr.getCitizensByWorkplace('3,7');
+    expect(workers.length).toBe(2);
+    expect(workers.every(c => c.workplaceId === '3,7')).toBe(true);
+  });
+
+  it('should return empty array when no citizens at position', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 30, homeId: '5,10' });
+    expect(mgr.getCitizensByHome('99,99')).toEqual([]);
+    expect(mgr.getCitizensByWorkplace('99,99')).toEqual([]);
+  });
 });

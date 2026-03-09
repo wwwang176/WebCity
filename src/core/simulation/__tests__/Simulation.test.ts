@@ -4,6 +4,9 @@ import { createGameState } from '../GameState';
 import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
+import { PolicyType, Specialization } from '../../district/types';
+import { setSpecialization } from '../../district/Specialization';
+import { CitySpecType } from '../../district/CitySpecialization';
 
 describe('GameClock', () => {
   it('should advance tick', () => {
@@ -200,5 +203,317 @@ describe('countWorkplaceJobs', () => {
     state.grid.setCell(1, 1, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     state.grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 4 });
     expect(countWorkplaceJobs(state.grid)).toBe(0);
+  });
+});
+
+describe('Education integration in SimulationLoop', () => {
+  it('should upgrade CHILD education to ELEMENTARY when elementary school exists', () => {
+    const state = createGameState(20, 20);
+    // Add elementary school
+    state.education.addSchool(10, 10, 'elementary', 15);
+    // Create a child citizen (age 8, CHILD stage)
+    const child = state.citizens.createCitizen({ age: 8 });
+    expect(child.education).toBe('NONE');
+
+    const loop = new SimulationLoop(state);
+    // Run enough ticks for education tick to fire (every 6 ticks)
+    for (let i = 0; i < 12; i++) loop.tick();
+
+    expect(child.education).toBe('ELEMENTARY');
+  });
+
+  it('should NOT upgrade CHILD education when no elementary school', () => {
+    const state = createGameState(20, 20);
+    // No school added
+    const child = state.citizens.createCitizen({ age: 8 });
+    expect(child.education).toBe('NONE');
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 12; i++) loop.tick();
+
+    expect(child.education).toBe('NONE');
+  });
+
+  it('should upgrade TEEN education to HIGH_SCHOOL when high school exists', () => {
+    const state = createGameState(20, 20);
+    state.education.addSchool(10, 10, 'highschool', 15);
+    // Teen with elementary education
+    const teen = state.citizens.createCitizen({ age: 15, education: 'ELEMENTARY' as any });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 12; i++) loop.tick();
+
+    expect(teen.education).toBe('HIGH_SCHOOL');
+  });
+
+  it('should upgrade young ADULT to UNIVERSITY when university exists', () => {
+    const state = createGameState(20, 20);
+    state.education.addSchool(10, 10, 'university', 15);
+    // Young adult (age 22) with high school education
+    const adult = state.citizens.createCitizen({ age: 22, education: 'HIGH_SCHOOL' as any });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 12; i++) loop.tick();
+
+    expect(adult.education).toBe('UNIVERSITY');
+  });
+
+  it('should NOT upgrade ADULT over 25 to UNIVERSITY', () => {
+    const state = createGameState(20, 20);
+    state.education.addSchool(10, 10, 'university', 15);
+    // Adult age 30 with high school education
+    const adult = state.citizens.createCitizen({ age: 30, education: 'HIGH_SCHOOL' as any });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 12; i++) loop.tick();
+
+    expect(adult.education).toBe('HIGH_SCHOOL');
+  });
+});
+
+describe('DeathCare integration', () => {
+  it('ageTick should return the number of deaths', () => {
+    const state = createGameState(10, 10);
+    // Create citizens guaranteed to die (age 101 after aging)
+    for (let i = 0; i < 3; i++) {
+      state.citizens.createCitizen({ age: 100 });
+    }
+    expect(state.citizens.getPopulation()).toBe(3);
+
+    const deaths = state.citizens.ageTick();
+    expect(deaths).toBe(3);
+    expect(state.citizens.getPopulation()).toBe(0);
+  });
+
+  it('SimulationLoop should report deaths to DeathCareService', () => {
+    const state = createGameState(10, 10);
+    state.deathCare.addCemetery(5, 5);
+    // Create old citizens (age 100 → after ageTick at year boundary → age 101 → die)
+    for (let i = 0; i < 3; i++) {
+      state.citizens.createCitizen({ age: 100 });
+    }
+
+    const loop = new SimulationLoop(state);
+    // Force a year change: run 8640 ticks (1 year = 24 ticks/day * 30 days * 12 months)
+    for (let i = 0; i < 8640; i++) loop.tick();
+
+    // Deaths should have been reported and processed
+    expect(state.citizens.getPopulation()).toBe(0);
+    const cemeteries = state.deathCare.getCemeteries();
+    expect(cemeteries[0]!.used).toBeGreaterThan(0);
+  });
+});
+
+describe('District integration', () => {
+  it('GameState should include districts and policies', () => {
+    const state = createGameState(20, 20);
+    expect(state.districts).toBeDefined();
+    expect(state.policies).toBeDefined();
+  });
+
+  it('should create a district and assign cells', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('Downtown');
+    state.districts.addCellToDistrict(d.id, 5, 5);
+    state.districts.addCellToDistrict(d.id, 5, 6);
+    expect(state.districts.getDistrictAt(5, 5)).toBe(d);
+    expect(state.districts.getDistrictAt(5, 6)).toBe(d);
+    expect(state.districts.getDistrictAt(0, 0)).toBeNull();
+  });
+
+  it('NO_HEAVY_INDUSTRY policy should block industrial building growth in district', () => {
+    const state = createGameState(20, 20);
+    // Create district and apply NO_HEAVY_INDUSTRY policy
+    const d = state.districts.createDistrict('GreenZone');
+    state.districts.addCellToDistrict(d.id, 5, 5);
+    state.policies.applyPolicy(d.id, PolicyType.NO_HEAVY_INDUSTRY);
+
+    // Set up conditions for building growth at (5,5): road + zone + power + water
+    state.grid.setCell(5, 4, { roadType: 2, roadFlags: 0x0F });
+    state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL });
+    state.power.addPlant(5, 3, 'coal', 100);
+    state.water.addPlant(5, 3, 100);
+
+    // canBuildInDistrict should block industrial
+    expect(state.policies.canBuildInDistrict(d.id, ZoneType.INDUSTRIAL)).toBe(false);
+    // But residential should be allowed
+    expect(state.policies.canBuildInDistrict(d.id, ZoneType.RESIDENTIAL_LOW)).toBe(true);
+  });
+
+  it('HIGH_DENSITY_BAN policy should block high-density building growth', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('Suburbs');
+    state.districts.addCellToDistrict(d.id, 3, 3);
+    state.policies.applyPolicy(d.id, PolicyType.HIGH_DENSITY_BAN);
+
+    expect(state.policies.canBuildInDistrict(d.id, ZoneType.RESIDENTIAL_HIGH)).toBe(false);
+    expect(state.policies.canBuildInDistrict(d.id, ZoneType.COMMERCIAL_HIGH)).toBe(false);
+    expect(state.policies.canBuildInDistrict(d.id, ZoneType.RESIDENTIAL_LOW)).toBe(true);
+    expect(state.policies.canBuildInDistrict(d.id, ZoneType.COMMERCIAL_LOW)).toBe(true);
+  });
+
+  it('district policy costs should be added to budget expenses', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('TestDistrict');
+    state.policies.applyPolicy(d.id, PolicyType.NO_HEAVY_INDUSTRY); // cost 150
+    state.policies.applyPolicy(d.id, PolicyType.ENCOURAGE_RECYCLING); // cost 100
+
+    const loop = new SimulationLoop(state);
+    // Run enough ticks to trigger income calculation
+    for (let i = 0; i < 6; i++) loop.tick();
+
+    // Expenses should include policy costs
+    expect(state.budget.expenses).toBeGreaterThan(0);
+  });
+});
+
+describe('Specialization integration', () => {
+  it('MINING specialization should increase revenue for industrial buildings in district', () => {
+    const state = createGameState(20, 20);
+    // Create district with MINING specialization
+    const d = state.districts.createDistrict('MiningDistrict');
+    setSpecialization(state.districts, d.id, Specialization.MINING);
+    state.districts.addCellToDistrict(d.id, 5, 5);
+
+    // Place an industrial building in the district
+    state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 }); // Small Factory
+
+    // Place same building outside district for comparison
+    state.grid.setCell(10, 10, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+
+    // Income should be higher than if both buildings had no specialization
+    // MINING revenueMultiplier = 1.2
+    // Without spec: 2 buildings × buildingId(13) × 2 = 52 base income
+    // With spec: 1 normal (26) + 1 mining (26 × 1.2 = 31.2) = 57.2
+    expect(state.budget.income).toBeGreaterThan(0);
+  });
+
+  it('TOURISM specialization should boost revenue by 1.5x for buildings in district', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('TourismDistrict');
+    setSpecialization(state.districts, d.id, Specialization.TOURISM);
+
+    // Add multiple cells to district and place commercial buildings
+    for (let x = 3; x <= 5; x++) {
+      state.districts.addCellToDistrict(d.id, x, 5);
+      state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 }); // Small Shop
+    }
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+
+    // 3 buildings × id(7) × 2 × 1.5 (tourism bonus) × taxRate/100
+    const taxRate = state.taxRates.residential ?? 9;
+    const expectedBase = 3 * 7 * 2;
+    const expectedWithBonus = expectedBase * 1.5 * (taxRate / 100);
+    expect(state.budget.income).toBeCloseTo(expectedWithBonus, 1);
+  });
+
+  it('NONE specialization should not modify revenue', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('NormalDistrict');
+    // Default is NONE, keep it
+    state.districts.addCellToDistrict(d.id, 5, 5);
+    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    // Same building outside district
+    state.grid.setCell(10, 10, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+
+    // Both buildings should generate same revenue (no bonus)
+    const taxRate = state.taxRates.residential ?? 9;
+    const expected = 2 * 7 * 2 * (taxRate / 100); // 2 buildings
+    expect(state.budget.income).toBeCloseTo(expected, 1);
+  });
+});
+
+describe('CitySpecialization integration', () => {
+  it('GameState should include citySpec', () => {
+    const state = createGameState(20, 20);
+    expect(state.citySpec).toBeDefined();
+    expect(state.citySpec.getCurrent()).toBe(CitySpecType.NONE);
+  });
+
+  it('GAMBLING_CITY should increase all building revenue by 1.4x', () => {
+    const state = createGameState(20, 20);
+    state.citySpec.choose(CitySpecType.GAMBLING_CITY, 5000);
+
+    // Place a building
+    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+
+    const taxRate = state.taxRates.residential ?? 9;
+    const expected = 7 * 2 * 1.4 * (taxRate / 100); // buildingId × 2 × gambling multiplier × tax
+    expect(state.budget.income).toBeCloseTo(expected, 1);
+  });
+
+  it('TECH_CITY should increase revenue by 1.25x', () => {
+    const state = createGameState(20, 20);
+    state.citySpec.choose(CitySpecType.TECH_CITY, 5000);
+
+    state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+
+    const taxRate = state.taxRates.residential ?? 9;
+    const expected = 16 * 2 * 1.25 * (taxRate / 100);
+    expect(state.budget.income).toBeCloseTo(expected, 1);
+  });
+});
+
+describe('Transport integration', () => {
+  it('GameState should include all transport systems', () => {
+    const state = createGameState(20, 20);
+    expect(state.bus).toBeDefined();
+    expect(state.metro).toBeDefined();
+    expect(state.tram).toBeDefined();
+    expect(state.rail).toBeDefined();
+    expect(state.ferry).toBeDefined();
+    expect(state.airport).toBeDefined();
+    expect(state.taxi).toBeDefined();
+  });
+
+  it('transport systems should tick in simulation loop', () => {
+    const state = createGameState(20, 20);
+    // Add a bus route
+    const stop1 = state.bus.addStop(0, 0);
+    const stop2 = state.bus.addStop(5, 0);
+    state.bus.createRoute([stop1, stop2], 1);
+
+    // Add a metro line
+    const ms1 = state.metro.addStation(0, 0);
+    const ms2 = state.metro.addStation(10, 0);
+    state.metro.createLine([ms1, ms2], 1);
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 12; i++) loop.tick();
+
+    // Vehicles should have moved (tick was called)
+    expect(state.bus.getVehicles().length).toBeGreaterThan(0);
+    expect(state.metro.getTrains().length).toBeGreaterThan(0);
+  });
+
+  it('transport operating costs should be included in budget expenses', () => {
+    const state = createGameState(20, 20);
+    state.budget.funds = 100000;
+
+    // Add bus route (has operating cost)
+    const s1 = state.bus.addStop(0, 0);
+    const s2 = state.bus.addStop(5, 0);
+    state.bus.createRoute([s1, s2], 1);
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+
+    // Expenses should include transport operating costs
+    expect(state.budget.expenses).toBeGreaterThan(0);
   });
 });

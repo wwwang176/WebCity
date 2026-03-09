@@ -772,8 +772,25 @@ const VARIANTS: Record<number, GeoBuilder[]> = {
 // ===== Infrastructure buildingId markers =====
 const INFRA_POWER_ID = 254;
 const INFRA_WATER_ID = 253;
+const INFRA_POLICE_ID = 252;
+const INFRA_FIRE_ID = 251;
+const INFRA_HOSPITAL_ID = 250;
+const INFRA_SCHOOL_ID = 249;
+const INFRA_PARK_ID = 248;
+const INFRA_GARBAGE_ID = 247;
+const INFRA_SEWAGE_ID = 246;
+const INFRA_CEMETERY_ID = 245;
+const INFRA_SCHOOL_HIGH_ID = 244;
+const INFRA_SCHOOL_UNIV_ID = 243;
+type InfraType = 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery';
+const INFRA_ID_MAP: Record<number, InfraType> = {
+  [INFRA_POWER_ID]: 'power', [INFRA_WATER_ID]: 'water',
+  [INFRA_POLICE_ID]: 'police', [INFRA_FIRE_ID]: 'fire', [INFRA_HOSPITAL_ID]: 'hospital',
+  [INFRA_SCHOOL_ID]: 'school', [INFRA_SCHOOL_HIGH_ID]: 'school_high', [INFRA_SCHOOL_UNIV_ID]: 'school_univ',
+  [INFRA_PARK_ID]: 'park', [INFRA_GARBAGE_ID]: 'garbage', [INFRA_SEWAGE_ID]: 'sewage', [INFRA_CEMETERY_ID]: 'cemetery',
+};
 
-interface BuildingData { x: number; y: number; level: number }
+interface BuildingData { x: number; y: number; level: number; burned?: boolean }
 
 export class BuildingRenderer {
   private meshes: (THREE.InstancedMesh | THREE.Mesh)[] = [];
@@ -788,19 +805,16 @@ export class BuildingRenderer {
 
     const buildingsByZone = new Map<number, BuildingData[]>();
     const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
-    const infraCells: { x: number; y: number; type: 'power' | 'water' }[] = [];
+    const infraCells: { x: number; y: number; type: InfraType }[] = [];
 
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
 
-        if (cell.buildingId === INFRA_POWER_ID) {
-          infraCells.push({ x, y, type: 'power' });
-          continue;
-        }
-        if (cell.buildingId === INFRA_WATER_ID) {
-          infraCells.push({ x, y, type: 'water' });
+        const infraType = INFRA_ID_MAP[cell.buildingId];
+        if (infraType) {
+          infraCells.push({ x, y, type: infraType });
           continue;
         }
 
@@ -810,6 +824,7 @@ export class BuildingRenderer {
             buildingsByZone.get(cell.zoneType)!.push({
               x, y,
               level: Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1)),
+              burned: cell.reserved === 3, // BuildingStatus.BURNED
             });
           } else if (cell.buildingId === 0) {
             if (!emptyZonesByType.has(cell.zoneType)) emptyZonesByType.set(cell.zoneType, []);
@@ -823,11 +838,11 @@ export class BuildingRenderer {
     this.buildZoneOverlays(scene, emptyZonesByType);
     this.buildVariantBuildings(scene, buildingsByZone);
 
-    // Build light spots for all buildings (including infrastructure)
+    // Build light spots for all buildings EXCEPT burned ones (no lights in charred ruins)
     const allBuildingPositions: { x: number; y: number }[] = [];
     for (const buildings of buildingsByZone.values()) {
       for (const b of buildings) {
-        allBuildingPositions.push({ x: b.x, y: b.y });
+        if (!b.burned) allBuildingPositions.push({ x: b.x, y: b.y });
       }
     }
     for (const inf of infraCells) {
@@ -893,14 +908,20 @@ export class BuildingRenderer {
           matrix.setPosition(b.x, 0.05, b.y);
           mesh.setMatrixAt(i, matrix);
 
-          const baseColor = palette[Math.floor(h * palette.length) % palette.length]!;
-          color.set(baseColor);
-          const hsl = { h: 0, s: 0, l: 0 };
-          color.getHSL(hsl);
-          hsl.h += (h2 - 0.5) * 0.03;
-          hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + (h3 - 0.5) * 0.1));
-          hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + (h - 0.5) * 0.1));
-          color.setHSL(hsl.h, hsl.s, hsl.l);
+          if (b.burned) {
+            // Charred/burned building: dark gray-black with slight variation
+            const burnLightness = 0.08 + h * 0.07; // 0.08 ~ 0.15 (very dark)
+            color.setHSL(0.05, 0.1, burnLightness);
+          } else {
+            const baseColor = palette[Math.floor(h * palette.length) % palette.length]!;
+            color.set(baseColor);
+            const hsl = { h: 0, s: 0, l: 0 };
+            color.getHSL(hsl);
+            hsl.h += (h2 - 0.5) * 0.03;
+            hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + (h3 - 0.5) * 0.1));
+            hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + (h - 0.5) * 0.1));
+            color.setHSL(hsl.h, hsl.s, hsl.l);
+          }
           mesh.setColorAt(i, color);
         }
 
@@ -936,13 +957,63 @@ export class BuildingRenderer {
     }
   }
 
-  private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: 'power' | 'water' }[]): void {
+  private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: InfraType }[]): void {
     for (const inf of cells) {
       if (inf.type === 'power') {
         this.buildPowerPlant(scene, inf.x, inf.y);
-      } else {
+      } else if (inf.type === 'water') {
         this.buildWaterPump(scene, inf.x, inf.y);
+      } else {
+        this.buildCivicBuilding(scene, inf.x, inf.y, inf.type);
       }
+    }
+  }
+
+  private buildCivicBuilding(scene: THREE.Scene, cx: number, cz: number, type: InfraType): void {
+    const configs: Record<string, { color: number; height: number; roofColor: number; accent?: number }> = {
+      police:      { color: 0x3f51b5, height: 0.40, roofColor: 0x303f9f },
+      fire:        { color: 0xd32f2f, height: 0.38, roofColor: 0xb71c1c },
+      hospital:    { color: 0xe8e8e8, height: 0.50, roofColor: 0xbbbbbb, accent: 0xe91e63 },
+      school:      { color: 0x795548, height: 0.30, roofColor: 0x5d4037 },
+      school_high: { color: 0x6d4c41, height: 0.40, roofColor: 0x4e342e },
+      school_univ: { color: 0x4e342e, height: 0.55, roofColor: 0x3e2723, accent: 0xffd600 },
+      park:        { color: 0x4caf50, height: 0.10, roofColor: 0x388e3c },
+      garbage:     { color: 0x795548, height: 0.25, roofColor: 0x5d4037 },
+      sewage:      { color: 0x607d8b, height: 0.20, roofColor: 0x455a64 },
+      cemetery:    { color: 0x9e9e9e, height: 0.15, roofColor: 0x757575 },
+    };
+    const cfg = configs[type] ?? { color: 0x888888, height: 0.35, roofColor: 0x666666 };
+
+    // Main building body
+    const bodyGeo = new THREE.BoxGeometry(0.50, cfg.height, 0.50);
+    bodyGeo.translate(0, cfg.height / 2, 0);
+    const bodyMat = new THREE.MeshLambertMaterial({ color: cfg.color });
+    this.addInfraMesh(scene, bodyGeo, bodyMat, cx, 0.05, cz);
+
+    // Roof
+    if (type !== 'park') {
+      const roofGeo = new THREE.BoxGeometry(0.55, 0.04, 0.55);
+      roofGeo.translate(0, 0.02, 0);
+      const roofMat = new THREE.MeshLambertMaterial({ color: cfg.roofColor });
+      this.addInfraMesh(scene, roofGeo, roofMat, cx, cfg.height + 0.05, cz);
+    }
+
+    // Accent detail (cross for hospital, dome for university, etc.)
+    if (cfg.accent && type === 'hospital') {
+      // Red cross on top
+      const crossH = new THREE.BoxGeometry(0.20, 0.03, 0.06);
+      crossH.translate(0, 0.015, 0);
+      const crossV = new THREE.BoxGeometry(0.06, 0.03, 0.20);
+      crossV.translate(0, 0.015, 0);
+      const crossMat = new THREE.MeshLambertMaterial({ color: cfg.accent });
+      this.addInfraMesh(scene, crossH, crossMat, cx, cfg.height + 0.09, cz);
+      this.addInfraMesh(scene, crossV, crossMat, cx, cfg.height + 0.09, cz);
+    }
+    if (cfg.accent && type === 'school_univ') {
+      // Dome on top
+      const domeGeo = new THREE.SphereGeometry(0.12, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+      const domeMat = new THREE.MeshLambertMaterial({ color: cfg.accent });
+      this.addInfraMesh(scene, domeGeo, domeMat, cx, cfg.height + 0.09, cz);
     }
   }
 

@@ -35,21 +35,29 @@ export class CitizenManager {
     return this.citizens.length;
   }
 
-  ageTick(): void {
+  getCitizensByHome(buildingKey: string): Citizen[] {
+    return this.citizens.filter((c) => c.homeId === buildingKey);
+  }
+
+  getCitizensByWorkplace(buildingKey: string): Citizen[] {
+    return this.citizens.filter((c) => c.workplaceId === buildingKey);
+  }
+
+  ageTick(): number {
     const dead: number[] = [];
     for (const c of this.citizens) {
       c.age++;
       c.lifeStage = getLifeStage(c.age);
-      if (c.age > 90 && Math.random() < 0.1) {
-        dead.push(c.id);
-      }
       if (c.age > 100) {
+        dead.push(c.id);
+      } else if (c.age > 90 && Math.random() < 0.1) {
         dead.push(c.id);
       }
     }
     for (const id of dead) {
       this.removeCitizen(id);
     }
+    return dead.length;
   }
 
   educateTick(hasElementary: boolean, hasHighSchool: boolean, hasUniversity: boolean): void {

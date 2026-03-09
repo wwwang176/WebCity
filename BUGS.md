@@ -1011,3 +1011,14 @@
 - ✅ **建築等級正確映射** — L1:21, L2:6, L3:0（使用 BUILDING_TYPES 正確判定，非 ID 範圍）
 - ✅ **Production Build** — 984ms 成功（Game 546KB, GameUI 14KB, index 28KB）
 - ✅ **全部 291 單元測試通過**（28 測試檔）
+
+---
+
+## 待修復 Bug
+
+### BUG-046: 放置的公園不影響地價 ✅ 已修復
+- updateLandValue() 中 parkProximity 只檢查 terrainType === 3 (FOREST)
+- 已加入 ParkService.getCoverage() + buildingId === 248 檢查
+
+### BUG-047: 垃圾溢出不影響汙染 ✅ 已修復
+- 已在 updatePollution() 中加入：垃圾設施半滿以上產生地面汙染 + 溢出產生全城汙染

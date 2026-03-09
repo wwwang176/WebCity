@@ -35,7 +35,7 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 };
 
 
-export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'park' | 'garbage' | 'sewage' | 'cemetery';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'tram_stop' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
 
 export interface SelectedBuilding {
   x: number;
@@ -88,6 +88,7 @@ export class Game {
   private vehicleSmoothedOffset = new Map<number, number>();
   private tickProgress = 0; // 0..1 interpolation between ticks
   previewCost: number | null = null; // estimated cost during road drag
+  activeDistrictId: string | null = null; // currently selected district for painting
 
   constructor(container: HTMLElement, loadedState?: GameState) {
     const mapSize = loadedState ? loadedState.grid.width : 60;
@@ -95,6 +96,7 @@ export class Game {
     // Audio
     this.audioManager = new AudioManager();
     this.audioManager.init();
+    this.audioManager.startAmbient();
 
     // Auto-save every 100 ticks
     this.autoSaver = new AutoSaver(100);
@@ -377,6 +379,12 @@ export class Game {
       case 'school':
         this.placeInfrastructure(x1, y1, 'school');
         break;
+      case 'school_high':
+        this.placeInfrastructure(x1, y1, 'school_high');
+        break;
+      case 'school_univ':
+        this.placeInfrastructure(x1, y1, 'school_univ');
+        break;
       case 'park':
         this.placeInfrastructure(x1, y1, 'park');
         break;
@@ -388,6 +396,31 @@ export class Game {
         break;
       case 'cemetery':
         this.placeInfrastructure(x1, y1, 'cemetery');
+        break;
+      case 'district':
+        this.paintDistrict(x1, y1, x2, y2);
+        this.audioManager.playSfx('zone');
+        break;
+      case 'bus_stop':
+        this.placeTransportStop(x1, y1, 'bus');
+        break;
+      case 'metro_station':
+        this.placeTransportStop(x1, y1, 'metro');
+        break;
+      case 'tram_stop':
+        this.placeTransportStop(x1, y1, 'tram');
+        break;
+      case 'train_station':
+        this.placeTransportStop(x1, y1, 'rail');
+        break;
+      case 'ferry_dock':
+        this.placeTransportStop(x1, y1, 'ferry');
+        break;
+      case 'airport':
+        this.placeTransportStop(x1, y1, 'airport');
+        break;
+      case 'taxi_stand':
+        this.placeTransportStop(x1, y1, 'taxi');
         break;
     }
     this.onUIUpdate?.();
@@ -425,7 +458,7 @@ export class Game {
           const hid = this.state.health.getHospitals().find(h => h.x === x && h.y === y);
           if (hid) this.state.health.removeHospital(hid.id);
         }
-        if (cell && cell.buildingId === 249) {
+        if (cell && (cell.buildingId === 249 || cell.buildingId === 244 || cell.buildingId === 243)) {
           const sid = this.state.education.getSchools().find(s => s.x === x && s.y === y);
           if (sid) this.state.education.removeSchool(sid.id);
         }
@@ -456,7 +489,33 @@ export class Game {
     this.renderDirty = true;
   }
 
-  private placeInfrastructure(x: number, y: number, type: 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'park' | 'garbage' | 'sewage' | 'cemetery'): void {
+  private paintDistrict(x1: number, y1: number, x2: number, y2: number): void {
+    // Create a new district if none is active
+    if (!this.activeDistrictId) {
+      const count = this.state.districts.getAllDistricts().length;
+      const d = this.state.districts.createDistrict(`District ${count + 1}`);
+      this.activeDistrictId = d.id;
+    }
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        this.state.districts.addCellToDistrict(this.activeDistrictId, x, y);
+      }
+    }
+    this.renderDirty = true;
+  }
+
+  createNewDistrict(name?: string): string {
+    const count = this.state.districts.getAllDistricts().length;
+    const d = this.state.districts.createDistrict(name ?? `District ${count + 1}`);
+    this.activeDistrictId = d.id;
+    return d.id;
+  }
+
+  private placeInfrastructure(x: number, y: number, type: 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery'): void {
     const cell = this.state.grid.getCell(x, y);
     if (!cell) {
       this.notification = 'Out of bounds';
@@ -490,11 +549,11 @@ export class Game {
     }
     const costs: Record<string, number> = {
       power: 500, water: 300, police: 400, fire: 400, hospital: 800,
-      school: 400, park: 200, garbage: 400, sewage: 400, cemetery: 300,
+      school: 400, school_high: 600, school_univ: 1200, park: 200, garbage: 400, sewage: 400, cemetery: 300,
     };
     const buildingIds: Record<string, number> = {
       power: 254, water: 253, police: 252, fire: 251, hospital: 250,
-      school: 249, park: 248, garbage: 247, sewage: 246, cemetery: 245,
+      school: 249, school_high: 244, school_univ: 243, park: 248, garbage: 247, sewage: 246, cemetery: 245,
     };
     const cost = costs[type] ?? 500;
     if (this.state.budget.funds < cost) {
@@ -515,6 +574,10 @@ export class Game {
       this.state.health.addHospital(x, y);
     } else if (type === 'school') {
       this.state.education.addSchool(x, y, 'elementary');
+    } else if (type === 'school_high') {
+      this.state.education.addSchool(x, y, 'highschool');
+    } else if (type === 'school_univ') {
+      this.state.education.addSchool(x, y, 'university');
     } else if (type === 'park') {
       this.state.parks.addPark(x, y);
     } else if (type === 'garbage') {
@@ -525,6 +588,59 @@ export class Game {
       this.state.deathCare.addCemetery(x, y);
     }
     this.state.grid.setCell(x, y, { buildingId: buildingIds[type] ?? 254 });
+    this.audioManager.playSfx('build');
+    this.renderDirty = true;
+  }
+
+  private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'tram' | 'rail' | 'ferry' | 'airport' | 'taxi'): void {
+    const cell = this.state.grid.getCell(x, y);
+    if (!cell) {
+      this.notification = 'Out of bounds';
+      this.notificationTimer = 3;
+      return;
+    }
+    if (cell.roadType !== 0 || cell.buildingId !== 0) {
+      this.notification = 'Tile is occupied';
+      this.notificationTimer = 3;
+      return;
+    }
+    const costs: Record<string, number> = {
+      bus: 100, metro: 3000, tram: 500, rail: 2000, ferry: 1500, airport: 5000, taxi: 200,
+    };
+    const buildingIds: Record<string, number> = {
+      bus: 242, metro: 241, tram: 240, rail: 239, ferry: 238, airport: 237, taxi: 236,
+    };
+    const cost = costs[type] ?? 500;
+    if (this.state.budget.funds < cost) {
+      this.notification = `Insufficient funds (need $${cost})`;
+      this.notificationTimer = 3;
+      return;
+    }
+    this.state.budget.funds -= cost;
+
+    if (type === 'bus') {
+      this.state.bus.addStop(x, y);
+    } else if (type === 'metro') {
+      this.state.metro.addStation(x, y);
+    } else if (type === 'tram') {
+      this.state.tram.addStop(x, y);
+    } else if (type === 'rail') {
+      this.state.rail.buildStation(x, y);
+    } else if (type === 'ferry') {
+      this.state.ferry.addDock(x, y);
+    } else if (type === 'airport') {
+      const pop = this.state.citizens.getPopulation();
+      const result = this.state.airport.build(x, y, 'SMALL', pop);
+      if (!result) {
+        this.state.budget.funds += cost;
+        this.notification = 'Airport requires population >= 10,000';
+        this.notificationTimer = 4;
+        return;
+      }
+    } else if (type === 'taxi') {
+      this.state.taxi.addStand(x, y);
+    }
+    this.state.grid.setCell(x, y, { buildingId: buildingIds[type] ?? 242 });
     this.audioManager.playSfx('build');
     this.renderDirty = true;
   }
@@ -591,6 +707,12 @@ export class Game {
         if (this.state.clock.tick % 10 === 0) {
           this.renderDirty = true;
         }
+        // Update ambient audio with current city state
+        this.audioManager.updateAmbientState(
+          this.state.citizens.getPopulation(),
+          this.state.traffic.vehicles.length
+        );
+
         this.onUIUpdate?.();
       }
     }
@@ -865,6 +987,14 @@ export class Game {
       garbage: 0x795548,
       sewage: 0x607d8b,
       cemetery: 0x9e9e9e,
+      district: 0xab47bc,
+      bus_stop: 0xff9800,
+      metro_station: 0x00bcd4,
+      tram_stop: 0x8bc34a,
+      train_station: 0x795548,
+      ferry_dock: 0x0288d1,
+      airport: 0x9c27b0,
+      taxi_stand: 0xffc107,
     };
     this.gridCursor.setColor(toolColors[this.currentTool] ?? 0xffffff);
     // Demolish tool gets higher opacity for red highlight preview
@@ -885,7 +1015,8 @@ export class Game {
     // Auto-switch overlay when selecting infrastructure tools
     const toolOverlayMap: Partial<Record<ToolType, OverlayType>> = {
       power: 'power', water: 'water', police: 'police', fire: 'fire',
-      hospital: 'health', school: 'education', park: 'park', garbage: 'garbage',
+      hospital: 'health', school: 'education', school_high: 'education', school_univ: 'education', park: 'park', garbage: 'garbage',
+      district: 'district',
     };
     const autoOverlay = toolOverlayMap[tool];
     if (autoOverlay) {
@@ -975,6 +1106,16 @@ export class Game {
           case 'garbage':
             value = this.state.garbage.getCoverage(x, y) ? 80 : 0;
             break;
+          case 'district': {
+            const d = this.state.districts.getDistrictAt(x, y);
+            if (d) {
+              // Hash district id to get a unique-ish value for coloring
+              let hash = 0;
+              for (let i = 0; i < d.id.length; i++) hash = (hash * 31 + d.id.charCodeAt(i)) & 0xff;
+              value = Math.max(20, hash % 100);
+            }
+            break;
+          }
           default:
             break;
         }

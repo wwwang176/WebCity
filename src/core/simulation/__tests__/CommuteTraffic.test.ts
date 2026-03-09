@@ -223,6 +223,92 @@ describe('Commute Traffic System', () => {
   });
 });
 
+describe('Transport Mode Choice Integration', () => {
+  let state: GameState;
+
+  beforeEach(() => {
+    state = createGameState(20, 20);
+    setupMinimalCity(state);
+  });
+
+  it('should skip car spawn when bus route covers commute', () => {
+    // Add bus stops near home (1,1) and workplace (15,1)
+    const stopA = state.bus.addStop(2, 1); // near residential
+    const stopB = state.bus.addStop(14, 1); // near commercial
+    state.bus.createRoute([stopA, stopB], 1);
+
+    // Create one commuting citizen
+    state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    advanceToHour(state, 7);
+    const loop = new SimulationLoop(state);
+    loop.tick();
+
+    // With bus route covering commute, citizen should take bus → no car spawned
+    expect(state.traffic.getVehicleCount()).toBe(0);
+  });
+
+  it('should spawn car when no transit is available', () => {
+    // No bus stops or routes set up — citizen must drive
+    state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    advanceToHour(state, 7);
+    const loop = new SimulationLoop(state);
+    loop.tick();
+
+    // No transit → citizen drives → car spawned
+    expect(state.traffic.getVehicleCount()).toBeGreaterThan(0);
+  });
+
+  it('should not spawn car when citizen walks (distance <= 3)', () => {
+    // Place workplace close to home (within walk distance)
+    state.grid.setCell(3, 1, {
+      zoneType: ZoneType.COMMERCIAL_LOW,
+      buildingId: 7,
+    });
+    state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '3,1', // Manhattan distance = 2
+    });
+
+    advanceToHour(state, 7);
+    const loop = new SimulationLoop(state);
+    loop.tick();
+
+    // Walking distance → no car
+    expect(state.traffic.getVehicleCount()).toBe(0);
+  });
+
+  it('should skip car spawn when metro station covers commute', () => {
+    // Add metro stations near home and workplace
+    const stationA = state.metro.addStation(1, 2); // near residential
+    const stationB = state.metro.addStation(15, 2); // near commercial
+    state.metro.createLine([stationA, stationB], 1);
+
+    state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    advanceToHour(state, 7);
+    const loop = new SimulationLoop(state);
+    loop.tick();
+
+    // Metro covers commute → no car spawned
+    expect(state.traffic.getVehicleCount()).toBe(0);
+  });
+});
+
 describe('Citizen Home/Workplace Assignment', () => {
   it('should assign homeId to new citizens from migration', () => {
     const state = createGameState(20, 20);

@@ -11,6 +11,15 @@ export class AudioManager {
   private bgmPlaying = false;
   private bgmIntervalId: ReturnType<typeof setInterval> | null = null;
 
+  // Ambient environment
+  private ambientGainNode: GainNode | null = null;
+  private ambientNoiseNode: AudioBufferSourceNode | null = null;
+  private ambientPlaying = false;
+  private birdIntervalId: ReturnType<typeof setInterval> | null = null;
+  private trafficIntervalId: ReturnType<typeof setInterval> | null = null;
+  private ambientPopulation = 0;
+  private ambientVehicles = 0;
+
   init(): void {
     try {
       this.audioContext = new AudioContext();
@@ -166,6 +175,147 @@ export class AudioManager {
     }
   }
 
+  // ===== Ambient Environment Audio =====
+
+  startAmbient(): void {
+    if (this.ambientPlaying) return;
+    const ctx = this.getContext();
+    if (!ctx) return;
+    this.ambientPlaying = true;
+
+    // Master ambient gain
+    this.ambientGainNode = ctx.createGain();
+    this.ambientGainNode.gain.value = this.muted ? 0 : this.masterVolume * 0.04;
+    this.ambientGainNode.connect(ctx.destination);
+
+    // City ambient noise (brown noise via filtered white noise)
+    this.startCityNoise(ctx);
+
+    // Bird chirps (random interval)
+    this.birdIntervalId = setInterval(() => {
+      if (this.muted || !this.ambientPlaying) return;
+      // Only chirp during daytime (we don't track time here, so always play but randomly)
+      if (Math.random() < 0.3) this.playBirdChirp(ctx);
+    }, 3000 + Math.random() * 4000);
+
+    // Traffic hum (periodic based on vehicle count)
+    this.trafficIntervalId = setInterval(() => {
+      if (this.muted || !this.ambientPlaying) return;
+      if (this.ambientVehicles > 5) this.playTrafficHum(ctx);
+    }, 5000);
+  }
+
+  stopAmbient(): void {
+    if (this.ambientNoiseNode) {
+      try { this.ambientNoiseNode.stop(); } catch { /* */ }
+      this.ambientNoiseNode = null;
+    }
+    if (this.birdIntervalId !== null) {
+      clearInterval(this.birdIntervalId);
+      this.birdIntervalId = null;
+    }
+    if (this.trafficIntervalId !== null) {
+      clearInterval(this.trafficIntervalId);
+      this.trafficIntervalId = null;
+    }
+    if (this.ambientGainNode) {
+      this.ambientGainNode.disconnect();
+      this.ambientGainNode = null;
+    }
+    this.ambientPlaying = false;
+  }
+
+  updateAmbientState(population: number, vehicleCount: number): void {
+    this.ambientPopulation = population;
+    this.ambientVehicles = vehicleCount;
+
+    // Adjust ambient noise volume based on city size
+    if (this.ambientGainNode && !this.muted) {
+      const popFactor = Math.min(1, population / 1000); // 0-1 based on pop up to 1000
+      this.ambientGainNode.gain.value = this.masterVolume * 0.04 * (0.3 + popFactor * 0.7);
+    }
+  }
+
+  private startCityNoise(ctx: AudioContext): void {
+    // Create brown noise (filtered white noise) for ambient city rumble
+    const bufferSize = ctx.sampleRate * 2; // 2 seconds
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+
+    // Generate brown noise (random walk)
+    let last = 0;
+    for (let i = 0; i < bufferSize; i++) {
+      const white = Math.random() * 2 - 1;
+      last = (last + (0.02 * white)) / 1.02;
+      data[i] = last * 3.5; // scale up
+    }
+
+    const source = ctx.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.connect(this.ambientGainNode!);
+    source.start();
+    this.ambientNoiseNode = source;
+  }
+
+  private playBirdChirp(ctx: AudioContext): void {
+    if (!this.ambientGainNode) return;
+    const gain = ctx.createGain();
+    gain.connect(this.ambientGainNode);
+
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    // Random bird frequencies (high pitched chirp)
+    const baseFreq = 2000 + Math.random() * 2000;
+    osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, ctx.currentTime + 0.05);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, ctx.currentTime + 0.1);
+
+    gain.gain.setValueAtTime(0.3, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+
+    osc.connect(gain);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.15);
+
+    // Optional second chirp after a short delay
+    if (Math.random() < 0.5) {
+      const osc2 = ctx.createOscillator();
+      osc2.type = 'sine';
+      const freq2 = baseFreq * (0.9 + Math.random() * 0.2);
+      osc2.frequency.setValueAtTime(freq2, ctx.currentTime + 0.2);
+      osc2.frequency.exponentialRampToValueAtTime(freq2 * 1.2, ctx.currentTime + 0.25);
+
+      const gain2 = ctx.createGain();
+      gain2.gain.setValueAtTime(0.2, ctx.currentTime + 0.2);
+      gain2.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+
+      osc2.connect(gain2);
+      gain2.connect(this.ambientGainNode);
+      osc2.start(ctx.currentTime + 0.2);
+      osc2.stop(ctx.currentTime + 0.35);
+    }
+  }
+
+  private playTrafficHum(ctx: AudioContext): void {
+    if (!this.ambientGainNode) return;
+    const gain = ctx.createGain();
+    gain.connect(this.ambientGainNode);
+
+    // Low rumble for traffic
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 80 + Math.random() * 40;
+
+    const intensity = Math.min(1, this.ambientVehicles / 50);
+    gain.gain.setValueAtTime(0.15 * intensity, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
+
+    osc.connect(gain);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 1.5);
+  }
+
   setMasterVolume(vol: number): void {
     this.masterVolume = Math.max(0, Math.min(1, vol));
   }
@@ -183,6 +333,10 @@ export class AudioManager {
     // Update BGM volume based on mute state
     if (this.bgmGainNode) {
       this.bgmGainNode.gain.value = this.muted ? 0 : this.masterVolume * this.musicVolume * 0.08;
+    }
+    // Update ambient volume based on mute state
+    if (this.ambientGainNode) {
+      this.ambientGainNode.gain.value = this.muted ? 0 : this.masterVolume * 0.04;
     }
     return this.muted;
   }

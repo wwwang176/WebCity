@@ -8,7 +8,10 @@ import { ZoneType } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { getBuildingType } from '../building/types';
+import { getSpecializationBonus } from '../district/Specialization';
 import type { TimeOfDay } from './GameClock';
+import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
+import { TransportMode, TransportType } from '../transport/types';
 
 export class SimulationLoop {
   private state: GameState;
@@ -72,6 +75,9 @@ export class SimulationLoop {
       this.state.garbage.tick(this.state.citizens.getPopulation());
       this.state.sewage.tick(this.state.citizens.getPopulation());
       this.state.deathCare.tick();
+
+      // Fire events: try random fire and resolve completed fires
+      this.processFireEvents();
     }
 
     // 3.6. Pollution & land value: update every 60 ticks (was 10 with ticksPerDay=4)
@@ -90,11 +96,24 @@ export class SimulationLoop {
       this.tryBuildingUpgrades();
     }
 
+    // 4.7 Education: upgrade citizen education based on school availability
+    if (isSlowTick) {
+      const schools = this.state.education.getSchools();
+      const hasElementary = schools.some(s => s.type === 'elementary');
+      const hasHighSchool = schools.some(s => s.type === 'highschool');
+      const hasUniversity = schools.some(s => s.type === 'university');
+      this.state.citizens.educateTick(hasElementary, hasHighSchool, hasUniversity);
+    }
+
     // 5. Citizens aging (once per game year)
     const currentYear = this.state.clock.getYear();
     if (currentYear !== this.lastAgeYear) {
       this.lastAgeYear = currentYear;
-      this.state.citizens.ageTick();
+      const deaths = this.state.citizens.ageTick();
+      // Report deaths to DeathCare for cemetery/crematorium processing
+      for (let i = 0; i < deaths; i++) {
+        this.state.deathCare.reportDeath();
+      }
     }
 
     // 5.5. Update citizen happiness (every 6 ticks)
@@ -129,9 +148,22 @@ export class SimulationLoop {
       },
     );
 
-    // 8. Calculate income from buildings (every 6 ticks)
+    // 8. Transport systems (every tick)
+    this.state.bus.tick();
+    this.state.metro.tick();
+    this.state.tram.tick();
+    this.state.rail.tick();
+    this.state.ferry.tick();
+    this.state.airport.tick();
+    this.state.taxi.tick();
+
+    // 8b. Freight: industrial→commercial cargo flow (every tick)
+    this.state.freight.tick(this.state.grid);
+
+    // 9. Calculate income from buildings (every 6 ticks)
     if (isSlowTick) {
       this.calculateIncome();
+      this.state.globalMarket.tick();
     }
   }
 
@@ -175,7 +207,23 @@ export class SimulationLoop {
       const x = Math.floor(Math.random() * grid.width);
       const y = Math.floor(Math.random() * grid.height);
       const cell = grid.getCell(x, y);
-      if (cell && cell.zoneType > 0 && cell.buildingId === 0) {
+      if (!cell || cell.zoneType === 0) continue;
+
+      // Burned buildings: developer must demolish ruins first (extra cost/time)
+      if (cell.reserved === 3 && cell.buildingId > 0 && cell.buildingId < 245) {
+        // ~2% chance per attempt to clear the ruins (developer demolition takes time)
+        if (Math.random() < 0.02) {
+          grid.setCell(x, y, { buildingId: 0, reserved: 0 });
+        }
+        continue;
+      }
+
+      if (cell.buildingId === 0) {
+        // Check district policy restrictions
+        const district = this.state.districts.getDistrictAt(x, y);
+        if (district && !this.state.policies.canBuildInDistrict(district.id, cell.zoneType)) {
+          continue; // Policy blocks this zone type in this district
+        }
         // Check power/water for this specific cell
         conditions.hasPower = this.state.power.isPowered(x, y);
         conditions.hasWater = this.state.water.isSupplied(x, y);
@@ -313,13 +361,24 @@ export class SimulationLoop {
     for (let y = 0; y < this.state.grid.height; y++) {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
-        // Skip infrastructure (buildingId 245-254) and empty cells
-        if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+        // Skip infrastructure (buildingId 245-254), empty cells, and burned buildings
+        if (cell && cell.buildingId > 0 && cell.buildingId < 245 && cell.reserved !== 3) {
           const level = cell.buildingId; // building level stored in buildingId
-          income += level * 2; // base income per building per tick
+          let buildingIncome = level * 2; // base income per building per tick
+          // Apply district specialization revenue multiplier
+          const district = this.state.districts.getDistrictAt(x, y);
+          if (district) {
+            const bonus = getSpecializationBonus(district.specialization);
+            buildingIncome *= bonus.revenueMultiplier;
+          }
+          income += buildingIncome;
         }
       }
     }
+    // Apply city-wide specialization revenue multiplier
+    const citySpecBonus = this.state.citySpec.getBonus();
+    income *= citySpecBonus.revenueMultiplier;
+
     const taxRate = this.state.taxRates.residential ?? 9;
     this.state.budget.income = income * (taxRate / 100);
     // Expenses: road maintenance + infrastructure + civic service operating costs
@@ -334,7 +393,22 @@ export class SimulationLoop {
     const garbageCost = this.state.garbage.getFacilities().length * 3;
     const sewageCost = this.state.sewage.getTreatmentPlants().length * 4;
     const deathCareCost = (this.state.deathCare.getCemeteries().length + this.state.deathCare.getCrematoria().length) * 2;
-    this.state.budget.expenses = roadMaint + powerCost + waterCost + policeCost + fireCost + healthCost + educationCost + parkCost + garbageCost + sewageCost + deathCareCost;
+    // District policy costs: sum all active policy costs across all districts
+    let policyCost = 0;
+    for (const district of this.state.districts.getAllDistricts()) {
+      for (const policy of district.policies) {
+        if (policy.active) policyCost += policy.cost;
+      }
+    }
+    // Transport operating costs
+    const transportCost = this.state.bus.getOperatingCost()
+      + this.state.metro.getOperatingCost()
+      + this.state.tram.getOperatingCost()
+      + this.state.rail.getOperatingCost()
+      + this.state.ferry.getOperatingCost()
+      + this.state.airport.getOperatingCost()
+      + this.state.taxi.getOperatingCost();
+    this.state.budget.expenses = roadMaint + powerCost + waterCost + policeCost + fireCost + healthCost + educationCost + parkCost + garbageCost + sewageCost + deathCareCost + policyCost + transportCost;
   }
 
   private countRoadTiles(): number {
@@ -346,6 +420,31 @@ export class SimulationLoop {
       }
     }
     return count;
+  }
+
+  /**
+   * Process fire events: try triggering random fires and resolve completed ones.
+   * Resolved fires with high damage mark buildings as BURNED (reserved=3).
+   * BURNED buildings remain on map as charred ruins until demolished/rebuilt.
+   */
+  private processFireEvents(): void {
+    const pop = this.state.citizens.getPopulation();
+    const fire = this.state.fire;
+
+    // Try to start a random fire (very low probability)
+    fire.tryRandomFire(this.state.grid, pop);
+
+    // Resolve completed fires and apply damage
+    const resolved = fire.resolveCompletedFires();
+    for (const f of resolved) {
+      if (f.damage >= 0.5) {
+        // High damage: mark building as BURNED (charred ruins)
+        const cell = this.state.grid.getCell(f.x, f.y);
+        if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+          this.state.grid.setCell(f.x, f.y, { reserved: 3 }); // BuildingStatus.BURNED
+        }
+      }
+    }
   }
 
   private updatePollution(): void {
@@ -366,6 +465,29 @@ export class SimulationLoop {
         if (cell.roadType > 0 && cell.trafficDensity > 0) {
           pm.addSource(x, y, cell.trafficDensity * 10, 'noise');
         }
+      }
+    }
+
+    // Garbage facilities produce ground pollution based on load
+    for (const facility of this.state.garbage.getFacilities()) {
+      const loadRatio = facility.currentLoad / facility.capacity;
+      if (loadRatio > 0.5) {
+        pm.addSource(facility.x, facility.y, Math.round(loadRatio * 40), 'ground');
+      }
+    }
+    // Garbage overflow produces distributed pollution
+    const garbagePenalty = this.state.garbage.getPollutionPenalty();
+    if (garbagePenalty > 0) {
+      const cx = Math.floor(grid.width / 2);
+      const cy = Math.floor(grid.height / 2);
+      pm.addSource(cx, cy, garbagePenalty, 'ground');
+    }
+
+    // Untreated sewage produces water pollution at sewage outlet locations
+    const sewagePollution = this.state.sewage.getWaterPollution();
+    if (sewagePollution > 0) {
+      for (const outlet of this.state.sewage.getOutlets()) {
+        pm.addSource(outlet.x, outlet.y, Math.min(80, sewagePollution), 'ground');
       }
     }
 
@@ -397,22 +519,22 @@ export class SimulationLoop {
         const isWatered = this.state.water.isSupplied(x, y);
         const serviceCoverage = (isPowered ? 2 : 0) + (isWatered ? 2 : 0);
 
-        // Check if near water or forest (natural park) within 2 cells
+        // Check if near water, forest (natural park), or placed park within 2 cells
         let waterfront = false;
-        let parkProximity = false;
+        let parkProximity = this.state.parks.getCoverage(x, y);
         const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
         for (const [dx, dy] of dirs) {
           const nc = grid.getCell(x + dx!, y + dy!);
           if (nc && nc.terrainType === 1) waterfront = true;
-          if (nc && nc.terrainType === 3) parkProximity = true; // FOREST = natural park
+          if (nc && (nc.terrainType === 3 || nc.buildingId === 248)) parkProximity = true;
         }
-        // Also check 2-cell radius for parks
+        // Also check 2-cell radius for natural parks
         if (!parkProximity) {
           for (let dx = -2; dx <= 2; dx++) {
             for (let dy = -2; dy <= 2; dy++) {
               if (Math.abs(dx) + Math.abs(dy) > 2) continue;
               const nc = grid.getCell(x + dx, y + dy);
-              if (nc && nc.terrainType === 3) { parkProximity = true; break; }
+              if (nc && (nc.terrainType === 3 || nc.buildingId === 248)) { parkProximity = true; break; }
             }
             if (parkProximity) break;
           }
@@ -648,6 +770,19 @@ export class SimulationLoop {
         continue;
       }
 
+      // --- Transport mode choice ---
+      const availableTransport = this.getAvailableTransit(fromPos, toPos);
+      const congestion = this.state.traffic.getCongestionLevel
+        ? this.state.traffic.getCongestionLevel()
+        : 0;
+      const mode = chooseMode(fromPos, toPos, availableTransport, congestion);
+
+      if (mode !== TransportMode.DRIVE) {
+        // Walk or transit — no car vehicle needed
+        commuterSet.add(citizen.id);
+        continue;
+      }
+
       const startRoad = this.findAdjacentRoad(fromPos.x, fromPos.y, grid);
       const endRoad = this.findAdjacentRoad(toPos.x, toPos.y, grid);
       if (!startRoad || !endRoad) {
@@ -670,6 +805,48 @@ export class SimulationLoop {
         commuterSet.add(citizen.id); // no path, don't retry
       }
     }
+  }
+
+  /**
+   * Find available transit options that cover travel between origin and destination.
+   * A transit route "covers" a trip if it has stops within walking distance (≤ 5 cells)
+   * of both the origin and the destination.
+   */
+  private getAvailableTransit(
+    origin: { x: number; y: number },
+    destination: { x: number; y: number },
+  ): AvailableTransport[] {
+    const WALK_TO_STOP_RANGE = 5;
+    const result: AvailableTransport[] = [];
+
+    const systems: { type: TransportType; routes: readonly { stops: readonly { x: number; y: number }[] }[] }[] = [
+      { type: TransportType.BUS, routes: this.state.bus.getRoutes() },
+      { type: TransportType.METRO, routes: this.state.metro.getLines() },
+      { type: TransportType.TRAM, routes: this.state.tram.getRoutes() },
+      { type: TransportType.RAIL, routes: this.state.rail.getLines() },
+      { type: TransportType.FERRY, routes: this.state.ferry.getRoutes() },
+    ];
+
+    for (const sys of systems) {
+      for (const route of sys.routes) {
+        let nearOrigin = false;
+        let nearDest = false;
+        for (const stop of route.stops) {
+          const dOrig = Math.abs(stop.x - origin.x) + Math.abs(stop.y - origin.y);
+          const dDest = Math.abs(stop.x - destination.x) + Math.abs(stop.y - destination.y);
+          if (dOrig <= WALK_TO_STOP_RANGE) nearOrigin = true;
+          if (dDest <= WALK_TO_STOP_RANGE) nearDest = true;
+        }
+        if (nearOrigin && nearDest) {
+          // Estimate transit time: Manhattan distance * factor (faster than driving for metro/rail)
+          const dist = Math.abs(destination.x - origin.x) + Math.abs(destination.y - origin.y);
+          const timeFactor = sys.type === TransportType.METRO || sys.type === TransportType.RAIL ? 0.8 : 1.0;
+          result.push({ type: sys.type, estimatedTime: dist * timeFactor });
+        }
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -783,12 +960,13 @@ export class SimulationLoop {
   }
 }
 
-export function countResidentialCapacity(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number } | null }): number {
+export function countResidentialCapacity(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number; reserved?: number } | null }): number {
   let capacity = 0;
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
-      if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2)) {
+      // Exclude burned buildings (reserved === 3) — charred ruins have no residents
+      if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2) && cell.reserved !== 3) {
         const bt = getBuildingType(cell.buildingId);
         capacity += bt ? bt.residents : 0;
       }
@@ -797,12 +975,13 @@ export function countResidentialCapacity(grid: { width: number; height: number; 
   return capacity;
 }
 
-export function countWorkplaceJobs(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number } | null }): number {
+export function countWorkplaceJobs(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number; reserved?: number } | null }): number {
   let jobs = 0;
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
-      if (cell && cell.buildingId > 0 && cell.zoneType >= 3) {
+      // Exclude burned buildings (reserved === 3) — charred ruins have no workers
+      if (cell && cell.buildingId > 0 && cell.zoneType >= 3 && cell.reserved !== 3) {
         const bt = getBuildingType(cell.buildingId);
         jobs += bt ? bt.workers : 0;
       }

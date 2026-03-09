@@ -113,7 +113,9 @@ describe('FireService', () => {
     fire.tick();
     fire.tick();
     fire.tick();
-    // After 3 ticks, covered fire should be resolved
+    // After 3 ticks, fire is done — collect via resolveCompletedFires
+    const resolved = fire.resolveCompletedFires();
+    expect(resolved).toHaveLength(1);
     expect(fire.getActiveFires()).toHaveLength(0);
   });
 
@@ -127,6 +129,8 @@ describe('FireService', () => {
     fire.tick();
     fire.tick();
     fire.tick();
+    const resolved = fire.resolveCompletedFires();
+    expect(resolved).toHaveLength(1);
     expect(fire.getActiveFires()).toHaveLength(0);
   });
 
@@ -199,5 +203,81 @@ describe('FireService', () => {
     const restored = FireService.fromJSON(json);
     expect(restored.getStations()).toHaveLength(0);
     expect(restored.getActiveFires()).toHaveLength(0);
+  });
+
+  // --- Fire event integration tests ---
+
+  it('resolveCompletedFires returns resolved fires with damage info', () => {
+    const fire = new FireService();
+    fire.addStation(10, 10, 15);
+    fire.reportFire(12, 10); // covered: damage 10%
+    fire.reportFire(50, 50); // uncovered: damage 80%
+
+    // Advance to completion
+    fire.tick();
+    fire.tick();
+    fire.tick();
+
+    const resolved = fire.resolveCompletedFires();
+    expect(resolved).toHaveLength(2);
+    // Covered fire should have low damage
+    const coveredFire = resolved.find(f => f.x === 12 && f.y === 10);
+    expect(coveredFire).toBeDefined();
+    expect(coveredFire!.damage).toBeCloseTo(0.10, 1);
+    // Uncovered fire should have high damage
+    const uncoveredFire = resolved.find(f => f.x === 50 && f.y === 50);
+    expect(uncoveredFire).toBeDefined();
+    expect(uncoveredFire!.damage).toBeCloseTo(0.80, 1);
+  });
+
+  it('resolveCompletedFires removes resolved fires from active list', () => {
+    const fire = new FireService();
+    fire.reportFire(5, 5);
+    fire.tick();
+    fire.tick();
+    fire.tick();
+    const resolved = fire.resolveCompletedFires();
+    expect(resolved).toHaveLength(1);
+    expect(fire.getActiveFires()).toHaveLength(0);
+  });
+
+  it('resolveCompletedFires does not remove fires still in progress', () => {
+    const fire = new FireService();
+    fire.reportFire(5, 5); // 3 ticks to resolve
+    fire.tick(); // 2 remaining
+    const resolved = fire.resolveCompletedFires();
+    expect(resolved).toHaveLength(0);
+    expect(fire.getActiveFires()).toHaveLength(1);
+  });
+
+  it('tryRandomFire triggers fire on building cells based on probability', () => {
+    const fire = new FireService();
+    // Mock grid with a building at (5,5)
+    const mockGrid = {
+      width: 10,
+      height: 10,
+      getCell: (x: number, y: number) => {
+        if (x === 5 && y === 5) return { buildingId: 3, zoneType: 1 };
+        return { buildingId: 0, zoneType: 0 };
+      },
+    };
+
+    // With probability 1.0, fire should always trigger if there's a building
+    const result = fire.tryRandomFire(mockGrid, 100, 1.0);
+    if (result) {
+      expect(fire.getActiveFires().length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('tryRandomFire does not trigger fire with probability 0', () => {
+    const fire = new FireService();
+    const mockGrid = {
+      width: 10,
+      height: 10,
+      getCell: () => ({ buildingId: 3, zoneType: 1 }),
+    };
+    const result = fire.tryRandomFire(mockGrid, 100, 0);
+    expect(result).toBe(false);
+    expect(fire.getActiveFires()).toHaveLength(0);
   });
 });

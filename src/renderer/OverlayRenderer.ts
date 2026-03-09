@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
 
-export type OverlayType = 'none' | 'traffic' | 'landValue' | 'pollution' | 'crime' | 'power' | 'water' | 'zone' | 'police' | 'fire' | 'health' | 'education' | 'park' | 'garbage';
+export type OverlayType = 'none' | 'traffic' | 'landValue' | 'pollution' | 'crime' | 'power' | 'water' | 'zone' | 'police' | 'fire' | 'health' | 'education' | 'park' | 'garbage' | 'district';
 
 export class OverlayRenderer {
   private mesh: THREE.Mesh | null = null;

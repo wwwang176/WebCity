@@ -3,6 +3,9 @@ import { ZoneType } from '../core/grid/types';
 import { RoadType, ROAD_CONFIGS } from '../core/road/types';
 import { getBuildingType, BUILDING_TYPES } from '../core/building/types';
 import { calculateAttractiveness } from '../core/citizen/Migration';
+import { CitySpecType } from '../core/district/CitySpecialization';
+import { DebugTools } from '../core/simulation/DebugTools';
+import { Tutorial } from '../core/tutorial/Tutorial';
 
 interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
 interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[] }
@@ -19,23 +22,63 @@ const ZONE_GROUP: ToolGroup = {
   ],
 };
 
-const INFRA_GROUP: ToolGroup = {
-  id: 'infra', label: 'Infra', icon: '\u{1F3D7}', color: '#78909c',
+const ROAD_GROUP: ToolGroup = {
+  id: 'road', label: 'Roads', icon: '\u{1F6E3}', color: '#78909c',
   items: [
-    { tool: 'road_rural', label: 'Road Rural', key: '7', color: '#8d6e63', icon: '\u{1F6A7}' },
-    { tool: 'road_2lane', label: 'Road 2-Lane', key: '', color: '#78909c', icon: '\u{1F6E3}' },
-    { tool: 'road_4lane', label: 'Road 4-Lane', key: '', color: '#607d8b', icon: '\u{1F6E4}' },
-    { tool: 'power', label: 'Power', key: '8', color: '#ffeb3b', icon: '\u{26A1}' },
-    { tool: 'water', label: 'Water', key: '9', color: '#03a9f4', icon: '\u{1F4A7}' },
+    { tool: 'road_rural', label: 'Rural', key: '7', color: '#8d6e63', icon: '\u{1F6A7}' },
+    { tool: 'road_2lane', label: '2-Lane', key: '', color: '#78909c', icon: '\u{1F6E3}' },
+    { tool: 'road_4lane', label: '4-Lane', key: '', color: '#607d8b', icon: '\u{1F6E4}' },
+  ],
+};
+
+const CIVIC_GROUP: ToolGroup = {
+  id: 'civic', label: 'Civic', icon: '\u{1F3DB}', color: '#5c6bc0',
+  items: [
     { tool: 'police', label: 'Police', key: '', color: '#3f51b5', icon: '\u{1F694}' },
     { tool: 'fire', label: 'Fire Dept', key: '', color: '#d32f2f', icon: '\u{1F692}' },
     { tool: 'hospital', label: 'Hospital', key: '', color: '#e91e63', icon: '\u{1F3E5}' },
-    { tool: 'school', label: 'School', key: '', color: '#795548', icon: '\u{1F3EB}' },
-    { tool: 'park', label: 'Park', key: '', color: '#4caf50', icon: '\u{1F333}' },
-    { tool: 'garbage', label: 'Landfill', key: '', color: '#795548', icon: '\u{1F5D1}' },
-    { tool: 'sewage', label: 'Sewage', key: '', color: '#607d8b', icon: '\u{1F6B0}' },
+    { tool: 'school', label: 'Elementary', key: '', color: '#795548', icon: '\u{1F3EB}' },
+    { tool: 'school_high', label: 'High School', key: '', color: '#6d4c41', icon: '\u{1F3E2}' },
+    { tool: 'school_univ', label: 'University', key: '', color: '#4e342e', icon: '\u{1F393}' },
     { tool: 'cemetery', label: 'Cemetery', key: '', color: '#9e9e9e', icon: '\u{26B0}' },
   ],
+};
+
+const UTILITY_GROUP: ToolGroup = {
+  id: 'utility', label: 'Utility', icon: '\u{26A1}', color: '#ffb300',
+  items: [
+    { tool: 'power', label: 'Power', key: '8', color: '#ffeb3b', icon: '\u{26A1}' },
+    { tool: 'water', label: 'Water', key: '9', color: '#03a9f4', icon: '\u{1F4A7}' },
+    { tool: 'sewage', label: 'Sewage', key: '', color: '#607d8b', icon: '\u{1F6B0}' },
+    { tool: 'garbage', label: 'Landfill', key: '', color: '#795548', icon: '\u{1F5D1}' },
+    { tool: 'park', label: 'Park', key: '', color: '#4caf50', icon: '\u{1F333}' },
+  ],
+};
+
+const TRANSPORT_GROUP: ToolGroup = {
+  id: 'transport', label: 'Transit', icon: '\u{1F68C}', color: '#ff9800',
+  items: [
+    { tool: 'bus_stop', label: 'Bus Stop', key: '', color: '#ff9800', icon: '\u{1F68F}' },
+    { tool: 'metro_station', label: 'Metro', key: '', color: '#00bcd4', icon: '\u{1F687}' },
+    { tool: 'tram_stop', label: 'Tram', key: '', color: '#8bc34a', icon: '\u{1F68A}' },
+    { tool: 'train_station', label: 'Train', key: '', color: '#795548', icon: '\u{1F689}' },
+    { tool: 'ferry_dock', label: 'Ferry', key: '', color: '#0288d1', icon: '\u{26F4}' },
+    { tool: 'airport', label: 'Airport', key: '', color: '#9c27b0', icon: '\u{2708}' },
+    { tool: 'taxi_stand', label: 'Taxi', key: '', color: '#ffc107', icon: '\u{1F695}' },
+  ],
+};
+
+const DISTRICT_GROUP: ToolGroup = {
+  id: 'district', label: 'District', icon: '\u{1F3F3}', color: '#ab47bc',
+  items: [
+    { tool: 'district', label: 'Paint', key: '', color: '#ab47bc', icon: '\u{1F58C}' },
+  ],
+};
+
+// Legacy alias for code that references INFRA_GROUP
+const INFRA_GROUP: ToolGroup = {
+  id: 'infra', label: 'Infra', icon: '\u{1F3D7}', color: '#78909c',
+  items: [...ROAD_GROUP.items, ...CIVIC_GROUP.items, ...UTILITY_GROUP.items],
 };
 
 const STANDALONE_TOOLS: SubTool[] = [
@@ -283,6 +326,22 @@ const STYLES = `
   }
   #overlay-close:hover { background: rgba(239,83,80,0.3); color: #ef5350; border-color: rgba(239,83,80,0.4); }
 
+  /* ===== MiniMap ===== */
+  #minimap-container {
+    position: absolute; bottom: 72px; left: 12px;
+    pointer-events: auto;
+    background: rgba(8, 12, 28, 0.88);
+    border: 1px solid rgba(100,180,255,0.12);
+    border-radius: 8px;
+    padding: 4px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  #minimap-canvas {
+    display: block;
+    border-radius: 4px;
+    image-rendering: pixelated;
+  }
+
   /* ===== Building Panel ===== */
   #building-panel {
     position: absolute; top: 56px; left: 12px;
@@ -297,6 +356,19 @@ const STYLES = `
     display: flex; justify-content: space-between;
   }
   #building-panel .bp-row span { color: #d0d8e8; font-weight: 500; }
+  #bp-citizen-list { margin-top: 6px; max-height: 160px; overflow-y: auto; }
+  .bp-citizen {
+    font-size: 11px; color: #8899b0; padding: 3px 4px; cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .bp-citizen:hover { background: rgba(255,255,255,0.08); color: #d0d8e8; }
+  .bp-citizen-detail {
+    margin-top: 6px; padding: 6px; background: rgba(0,0,0,0.3);
+    border-radius: 4px; font-size: 11px; color: #b0bec5;
+  }
+  .bp-citizen-detail .cd-name { font-weight: 600; color: #e4eaf4; margin-bottom: 4px; }
+  .bp-citizen-detail .cd-row { display: flex; justify-content: space-between; margin: 2px 0; }
+  .bp-citizen-detail .cd-row span { color: #d0d8e8; }
 
   /* ===== Tax Slider (in Economy modal) ===== */
   .tax-row {
@@ -466,6 +538,65 @@ const STYLES = `
   #mute-btn:hover { color: #c0d0e8; }
   #mute-btn.muted { color: #ef5350; }
 
+  /* Tutorial overlay */
+  #tutorial-overlay {
+    display: none;
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(10, 15, 30, 0.95);
+    border: 1px solid #0af;
+    border-radius: 10px;
+    padding: 16px 24px;
+    max-width: 420px;
+    min-width: 320px;
+    z-index: 9999;
+    box-shadow: 0 4px 20px rgba(0, 170, 255, 0.2);
+    color: #e0e0e0;
+    font-family: sans-serif;
+  }
+  #tutorial-overlay.visible { display: block; }
+  #tutorial-overlay .tut-title {
+    font-size: 15px;
+    font-weight: bold;
+    color: #0af;
+    margin-bottom: 8px;
+  }
+  #tutorial-overlay .tut-desc {
+    font-size: 13px;
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+  #tutorial-overlay .tut-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #tutorial-overlay .tut-step {
+    font-size: 11px;
+    color: #888;
+  }
+  #tutorial-overlay .tut-btns {
+    display: flex;
+    gap: 6px;
+  }
+  #tutorial-overlay .tut-btns button {
+    background: #1a2a40;
+    border: 1px solid #0af;
+    color: #0af;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  #tutorial-overlay .tut-btns button:hover { background: #0af; color: #000; }
+  #tutorial-overlay .tut-btns .tut-dismiss {
+    border-color: #666;
+    color: #888;
+  }
+  #tutorial-overlay .tut-btns .tut-dismiss:hover { background: #444; color: #fff; }
+
 `;
 
 export function createGameUI(game: Game): HTMLElement {
@@ -474,14 +605,14 @@ export function createGameUI(game: Game): HTMLElement {
   ui.innerHTML = `
     <style>${STYLES}</style>
 
-    <div id="notification"></div>
+    <div id="notification" role="alert" aria-live="assertive"></div>
 
     <!-- Top Bar -->
-    <div id="top-bar">
-      <div class="top-section">
+    <div id="top-bar" role="banner" aria-label="City status bar">
+      <div class="top-section" role="status" aria-label="City statistics">
         <div class="top-stat">
           <span class="stat-label">Date</span>
-          <span class="stat-value" id="info-date">Day 1</span>
+          <span class="stat-value" id="info-date" aria-live="polite">Day 1</span>
         </div>
         <div class="top-divider"></div>
         <div class="top-stat">
@@ -510,19 +641,19 @@ export function createGameUI(game: Game): HTMLElement {
         </div>
       </div>
       <div class="top-section">
-        <div class="speed-group">
-          <button class="sp-btn" data-speed="pause">II</button>
-          <button class="sp-btn active" data-speed="1">1x</button>
-          <button class="sp-btn" data-speed="2">2x</button>
-          <button class="sp-btn" data-speed="3">3x</button>
+        <div class="speed-group" role="group" aria-label="Game speed controls">
+          <button class="sp-btn" data-speed="pause" aria-label="Pause game">II</button>
+          <button class="sp-btn active" data-speed="1" aria-label="Normal speed">1x</button>
+          <button class="sp-btn" data-speed="2" aria-label="Double speed">2x</button>
+          <button class="sp-btn" data-speed="3" aria-label="Triple speed">3x</button>
         </div>
-        <button id="mute-btn" title="Toggle Sound">&#128266;</button>
+        <button id="mute-btn" title="Toggle Sound" aria-label="Toggle sound mute">&#128266;</button>
       </div>
     </div>
 
 
     <!-- Toolbar -->
-    <div id="toolbar">
+    <div id="toolbar" role="toolbar" aria-label="City building tools">
       <button class="tb-btn" data-tool="select">
         <span class="tb-icon">\u{1F5B1}</span>
         <span style="color:#b0bec5">Select</span>
@@ -546,22 +677,26 @@ export function createGameUI(game: Game): HTMLElement {
         </div>
       </div>
 
-      <div class="tb-group" data-group="infra">
-        <button class="tb-group-btn" data-group-toggle="infra">
-          <span class="tb-icon">${INFRA_GROUP.icon}</span>
-          <span style="color:${INFRA_GROUP.color}">${INFRA_GROUP.label}</span>
+      ${[ROAD_GROUP, CIVIC_GROUP, UTILITY_GROUP, TRANSPORT_GROUP, DISTRICT_GROUP].map(g => `
+      <div class="tb-group" data-group="${g.id}">
+        <button class="tb-group-btn" data-group-toggle="${g.id}">
+          <span class="tb-icon">${g.icon}</span>
+          <span style="color:${g.color}">${g.label}</span>
           <span class="tb-caret">\u25B2</span>
         </button>
-        <div class="tb-sub-panel" data-sub="infra">
-          ${INFRA_GROUP.items.map(b => `
+        <div class="tb-sub-panel" data-sub="${g.id}">
+          ${g.items.map(b => `
             <button class="tb-btn" data-tool="${b.tool}">
               <span class="tb-icon">${b.icon}</span>
               <span style="color:${b.color}">${b.label}</span>
               <span class="tb-key">${b.key}</span>
             </button>
           `).join('')}
+          ${g.id === 'district' ? '<button class="tb-btn" id="btn-district-manage"><span class="tb-icon">\u{2699}</span><span style="color:#ab47bc">Manage</span></button>' : ''}
+          ${g.id === 'transport' ? '<button class="tb-btn" id="btn-transit-manage"><span class="tb-icon">\u{1F5FA}</span><span style="color:#ff9800">Routes</span></button>' : ''}
         </div>
       </div>
+      `).join('')}
 
       <button class="tb-btn" data-tool="demolish">
         <span class="tb-icon">\u{1F4A5}</span>
@@ -570,17 +705,17 @@ export function createGameUI(game: Game): HTMLElement {
       </button>
 
       <div class="tb-sep"></div>
-      <div id="rci-bar">
+      <div id="rci-bar" role="group" aria-label="RCI demand indicators">
         <div class="rci-col">
-          <div class="rci-meter"><div class="rci-fill" id="rci-r" style="background:#66bb6a;height:50%"></div></div>
+          <div class="rci-meter" role="meter" aria-label="Residential demand" aria-valuemin="0" aria-valuemax="100"><div class="rci-fill" id="rci-r" style="background:#66bb6a;height:50%"></div></div>
           <div class="rci-label">R</div>
         </div>
         <div class="rci-col">
-          <div class="rci-meter"><div class="rci-fill" id="rci-c" style="background:#42a5f5;height:50%"></div></div>
+          <div class="rci-meter" role="meter" aria-label="Commercial demand" aria-valuemin="0" aria-valuemax="100"><div class="rci-fill" id="rci-c" style="background:#42a5f5;height:50%"></div></div>
           <div class="rci-label">C</div>
         </div>
         <div class="rci-col">
-          <div class="rci-meter"><div class="rci-fill" id="rci-i" style="background:#ffa726;height:50%"></div></div>
+          <div class="rci-meter" role="meter" aria-label="Industrial demand" aria-valuemin="0" aria-valuemax="100"><div class="rci-fill" id="rci-i" style="background:#ffa726;height:50%"></div></div>
           <div class="rci-label">I</div>
         </div>
       </div>
@@ -601,6 +736,14 @@ export function createGameUI(game: Game): HTMLElement {
         <span class="tb-icon">\u{1F5FA}</span>
         <span>Layers</span>
       </button>
+      <button class="tb-action" id="btn-cityspec" title="City Specialization">
+        <span class="tb-icon">\u{2B50}</span>
+        <span>Specialize</span>
+      </button>
+      <button class="tb-action" id="btn-debug" title="Developer Debug Tools">
+        <span class="tb-icon">\u{1F527}</span>
+        <span>Debug</span>
+      </button>
     </div>
 
     <!-- Overlay Indicator -->
@@ -608,6 +751,11 @@ export function createGameUI(game: Game): HTMLElement {
       <span class="oi-label">Overlay:</span>
       <span class="oi-name" id="oi-name"></span>
       <button id="overlay-close">Close</button>
+    </div>
+
+    <!-- MiniMap -->
+    <div id="minimap-container" role="img" aria-label="City minimap">
+      <canvas id="minimap-canvas" width="120" height="120"></canvas>
     </div>
 
     <!-- Building Panel -->
@@ -618,10 +766,12 @@ export function createGameUI(game: Game): HTMLElement {
       <div class="bp-row" id="bp-workers-row">Workers <span id="bp-workers"></span></div>
       <div class="bp-row">Tax <span id="bp-tax"></span></div>
       <div class="bp-row">Zone <span id="bp-zone"></span></div>
+      <div id="bp-citizen-list"></div>
+      <div id="bp-citizen-detail" class="bp-citizen-detail" style="display:none"></div>
     </div>
 
     <!-- Economy Modal -->
-    <div class="modal-overlay" id="economy-modal">
+    <div class="modal-overlay" id="economy-modal" role="dialog" aria-label="Economy Panel">
       <div class="modal-panel">
         <div class="modal-header">
           <div class="modal-title">$ Economy Overview</div>
@@ -632,7 +782,7 @@ export function createGameUI(game: Game): HTMLElement {
     </div>
 
     <!-- Traffic Modal -->
-    <div class="modal-overlay" id="traffic-modal">
+    <div class="modal-overlay" id="traffic-modal" role="dialog" aria-label="Traffic Panel">
       <div class="modal-panel">
         <div class="modal-header">
           <div class="modal-title">\u{1F697} Traffic Overview</div>
@@ -643,7 +793,7 @@ export function createGameUI(game: Game): HTMLElement {
     </div>
 
     <!-- Overview Modal -->
-    <div class="modal-overlay" id="overview-modal">
+    <div class="modal-overlay" id="overview-modal" role="dialog" aria-label="City Overview">
       <div class="modal-panel">
         <div class="modal-header">
           <div class="modal-title">\u{1F3D9} City Overview</div>
@@ -654,7 +804,7 @@ export function createGameUI(game: Game): HTMLElement {
     </div>
 
     <!-- Layers Modal -->
-    <div class="modal-overlay" id="layers-modal">
+    <div class="modal-overlay" id="layers-modal" role="dialog" aria-label="Map Overlay Layers">
       <div class="modal-panel" style="min-width:360px;max-width:420px">
         <div class="modal-header">
           <div class="modal-title">\u{1F5FA} Map Layers</div>
@@ -681,7 +831,74 @@ export function createGameUI(game: Game): HTMLElement {
             <button class="ov-btn" data-overlay="education">\u{1F3EB} Education</button>
             <button class="ov-btn" data-overlay="park">\u{1F333} Park</button>
             <button class="ov-btn" data-overlay="garbage">\u{1F5D1} Garbage</button>
+            <button class="ov-btn" data-overlay="district">\u{1F3F3} District</button>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- City Specialization Modal -->
+    <div class="modal-overlay" id="cityspec-modal" role="dialog" aria-label="City Specialization">
+      <div class="modal-panel" style="min-width:380px;max-width:440px">
+        <div class="modal-header">
+          <div class="modal-title">\u{2B50} City Specialization</div>
+          <button class="modal-close" data-close="cityspec-modal">&times;</button>
+        </div>
+        <div class="modal-body" id="cityspec-body">
+          <div style="color:#888;text-align:center;padding:12px">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- District Management Modal -->
+    <div class="modal-overlay" id="district-modal" role="dialog" aria-label="District Management">
+      <div class="modal-panel" style="min-width:400px;max-width:480px">
+        <div class="modal-header">
+          <div class="modal-title">\u{1F3F3} District Management</div>
+          <button class="modal-close" data-close="district-modal">&times;</button>
+        </div>
+        <div class="modal-body" id="district-body">
+          <div style="color:#888;text-align:center;padding:12px">No districts created yet.<br>Use the District Paint tool to create one.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Transit Route Management Modal -->
+    <div class="modal-overlay" id="transit-modal" role="dialog" aria-label="Transit Route Management">
+      <div class="modal-panel" style="min-width:400px;max-width:480px">
+        <div class="modal-header">
+          <div class="modal-title">\u{1F68C} Transit Routes</div>
+          <button class="modal-close" data-close="transit-modal">&times;</button>
+        </div>
+        <div class="modal-body" id="transit-body">
+          <div style="color:#888;text-align:center;padding:12px">No transit stops placed yet.<br>Place stops using the Transit tools, then create routes here.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Developer Debug Modal -->
+    <div class="modal-overlay" id="debug-modal" role="dialog" aria-label="Developer Debug Tools">
+      <div class="modal-panel" style="min-width:420px;max-width:520px">
+        <div class="modal-header">
+          <div class="modal-title">\u{1F527} Developer Debug Tools</div>
+          <button class="modal-close" data-close="debug-modal">&times;</button>
+        </div>
+        <div class="modal-body" id="debug-body">
+          <div style="color:#888;text-align:center;padding:12px">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tutorial Overlay -->
+    <div id="tutorial-overlay" role="dialog" aria-label="Tutorial">
+      <div class="tut-title" id="tut-title"></div>
+      <div class="tut-desc" id="tut-desc"></div>
+      <div class="tut-footer">
+        <span class="tut-step" id="tut-step"></span>
+        <div class="tut-btns">
+          <button class="tut-dismiss" id="tut-dismiss">Skip</button>
+          <button id="tut-prev">Back</button>
+          <button id="tut-next">Next</button>
         </div>
       </div>
     </div>
@@ -785,6 +1002,8 @@ export function createGameUI(game: Game): HTMLElement {
         ui.querySelector('#btn-economy')?.classList.remove('panel-open');
         ui.querySelector('#btn-traffic')?.classList.remove('panel-open');
         ui.querySelector('#btn-layers')?.classList.remove('panel-open');
+        ui.querySelector('#btn-cityspec')?.classList.remove('panel-open');
+        ui.querySelector('#btn-debug')?.classList.remove('panel-open');
       }
     });
   });
@@ -798,6 +1017,8 @@ export function createGameUI(game: Game): HTMLElement {
         ui.querySelector('#btn-economy')?.classList.remove('panel-open');
         ui.querySelector('#btn-traffic')?.classList.remove('panel-open');
         ui.querySelector('#btn-layers')?.classList.remove('panel-open');
+        ui.querySelector('#btn-cityspec')?.classList.remove('panel-open');
+        ui.querySelector('#btn-debug')?.classList.remove('panel-open');
       }
     });
   });
@@ -870,6 +1091,364 @@ export function createGameUI(game: Game): HTMLElement {
     });
   }
 
+  // City specialization button
+  const btnCitySpec = ui.querySelector('#btn-cityspec');
+  if (btnCitySpec) {
+    btnCitySpec.addEventListener('click', () => {
+      const modal = ui.querySelector('#cityspec-modal') as HTMLElement;
+      const isOpen = modal.classList.contains('visible');
+      modal.classList.toggle('visible');
+      btnCitySpec.classList.toggle('panel-open', !isOpen);
+      if (!isOpen) updateCitySpecPanel();
+    });
+  }
+
+  // District management button
+  const btnDistrictManage = ui.querySelector('#btn-district-manage');
+  if (btnDistrictManage) {
+    btnDistrictManage.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const modal = ui.querySelector('#district-modal') as HTMLElement;
+      const isOpen = modal.classList.contains('visible');
+      modal.classList.toggle('visible');
+      if (!isOpen) updateDistrictPanel();
+    });
+  }
+
+  // Transit route management button
+  const btnTransitManage = ui.querySelector('#btn-transit-manage');
+  if (btnTransitManage) {
+    btnTransitManage.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const modal = ui.querySelector('#transit-modal') as HTMLElement;
+      const isOpen = modal.classList.contains('visible');
+      modal.classList.toggle('visible');
+      if (!isOpen) updateTransitPanel();
+    });
+  }
+
+  // Developer Debug button
+  const btnDebug = ui.querySelector('#btn-debug');
+  if (btnDebug) {
+    btnDebug.addEventListener('click', () => {
+      const modal = ui.querySelector('#debug-modal') as HTMLElement;
+      const isOpen = modal.classList.contains('visible');
+      modal.classList.toggle('visible');
+      btnDebug.classList.toggle('panel-open', !isOpen);
+      if (!isOpen) updateDebugPanel();
+    });
+  }
+
+  let debugRefreshId: ReturnType<typeof setInterval> | null = null;
+
+  function updateDebugPanel(): void {
+    const body = ui.querySelector('#debug-body') as HTMLElement;
+    if (!body) return;
+    const state = game.getState();
+    const tools = new DebugTools(state);
+    const snap = tools.getSnapshot();
+
+    body.innerHTML = `
+      <div style="font-size:11px;line-height:1.6">
+        <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+          <span style="font-weight:bold;color:#0af">SIMULATION STATE</span>
+          <span style="color:#888">Tick: ${snap.tick}</span>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <tr><td style="color:#aaa">Population</td><td style="text-align:right;font-weight:bold">${snap.population}</td></tr>
+          <tr><td style="color:#aaa">Vehicles</td><td style="text-align:right">${snap.vehicleCount}</td></tr>
+          <tr><td style="color:#aaa">Buildings</td><td style="text-align:right">${snap.buildingCount}</td></tr>
+          <tr><td style="color:#aaa">Infrastructure</td><td style="text-align:right">${snap.infraCount}</td></tr>
+          <tr><td style="color:#aaa">Roads</td><td style="text-align:right">${snap.roadCount}</td></tr>
+          <tr><td colspan="2" style="border-top:1px solid #333;padding-top:4px"></td></tr>
+          <tr><td style="color:#aaa">Funds</td><td style="text-align:right;color:#4f4">$${snap.funds.toLocaleString()}</td></tr>
+          <tr><td style="color:#aaa">Income</td><td style="text-align:right;color:#4f4">$${snap.income.toLocaleString()}</td></tr>
+          <tr><td style="color:#aaa">Expenses</td><td style="text-align:right;color:#f44">$${snap.expenses.toLocaleString()}</td></tr>
+          <tr><td colspan="2" style="border-top:1px solid #333;padding-top:4px"></td></tr>
+          <tr><td style="color:#aaa">RCI Demand</td><td style="text-align:right">R:${snap.rciDemand.r} C:${snap.rciDemand.c} I:${snap.rciDemand.i}</td></tr>
+          <tr><td style="color:#aaa">Power Supply</td><td style="text-align:right">${snap.powerSupply} MW</td></tr>
+          <tr><td style="color:#aaa">Water Supply</td><td style="text-align:right">${snap.waterSupply}</td></tr>
+          <tr><td style="color:#aaa">Avg Happiness</td><td style="text-align:right">${snap.avgHappiness}</td></tr>
+          <tr><td style="color:#aaa">Avg Land Value</td><td style="text-align:right">${snap.avgLandValue}</td></tr>
+          <tr><td style="color:#aaa">Avg Pollution</td><td style="text-align:right">${snap.avgPollution}</td></tr>
+        </table>
+        <div style="border-top:1px solid #333;margin-top:8px;padding-top:8px">
+          <div style="font-weight:bold;color:#0af;margin-bottom:6px">MODIFY PARAMETERS</div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <label style="color:#aaa;width:70px">Funds:</label>
+            <input id="dbg-funds" type="number" value="${snap.funds}" style="flex:1;background:#222;border:1px solid #555;color:#fff;padding:2px 4px;font-size:11px">
+            <button id="dbg-set-funds" style="background:#0af;color:#000;border:none;padding:2px 8px;cursor:pointer;font-size:11px">Set</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <label style="color:#aaa;width:70px">Tax Rate:</label>
+            <input id="dbg-tax" type="number" value="${snap.taxRate}" min="0" max="30" style="flex:1;background:#222;border:1px solid #555;color:#fff;padding:2px 4px;font-size:11px">
+            <button id="dbg-set-tax" style="background:#0af;color:#000;border:none;padding:2px 8px;cursor:pointer;font-size:11px">Set</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <label style="color:#aaa;width:70px">Speed:</label>
+            <input id="dbg-speed" type="number" value="${snap.speed}" min="1" max="3" style="flex:1;background:#222;border:1px solid #555;color:#fff;padding:2px 4px;font-size:11px">
+            <button id="dbg-set-speed" style="background:#0af;color:#000;border:none;padding:2px 8px;cursor:pointer;font-size:11px">Set</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Attach handlers
+    body.querySelector('#dbg-set-funds')?.addEventListener('click', () => {
+      const val = parseInt((body.querySelector('#dbg-funds') as HTMLInputElement).value, 10);
+      if (!isNaN(val)) { tools.setParam('funds', val); updateDebugPanel(); }
+    });
+    body.querySelector('#dbg-set-tax')?.addEventListener('click', () => {
+      const val = parseInt((body.querySelector('#dbg-tax') as HTMLInputElement).value, 10);
+      if (!isNaN(val)) { tools.setParam('taxRate', val); updateDebugPanel(); }
+    });
+    body.querySelector('#dbg-set-speed')?.addEventListener('click', () => {
+      const val = parseInt((body.querySelector('#dbg-speed') as HTMLInputElement).value, 10);
+      if (!isNaN(val)) { tools.setParam('speed', val); updateDebugPanel(); }
+    });
+
+    // Auto-refresh every 2 seconds while panel is open
+    if (debugRefreshId) clearInterval(debugRefreshId);
+    debugRefreshId = setInterval(() => {
+      const modal = ui.querySelector('#debug-modal') as HTMLElement;
+      if (modal && modal.classList.contains('visible')) {
+        updateDebugPanel();
+      } else {
+        if (debugRefreshId) { clearInterval(debugRefreshId); debugRefreshId = null; }
+      }
+    }, 2000);
+  }
+
+  // Tutorial system
+  const tutorial = new Tutorial();
+  const tutOverlay = ui.querySelector('#tutorial-overlay') as HTMLElement;
+  const tutTitle = ui.querySelector('#tut-title') as HTMLElement;
+  const tutDesc = ui.querySelector('#tut-desc') as HTMLElement;
+  const tutStep = ui.querySelector('#tut-step') as HTMLElement;
+
+  function renderTutorial(): void {
+    const step = tutorial.getCurrentStep();
+    if (!step || !tutorial.isActive()) {
+      tutOverlay.classList.remove('visible');
+      return;
+    }
+    tutOverlay.classList.add('visible');
+    tutTitle.textContent = step.title;
+    tutDesc.textContent = step.description;
+    tutStep.textContent = `Step ${tutorial.getStepIndex() + 1} of ${tutorial.getTotalSteps()}`;
+    const nextBtn = ui.querySelector('#tut-next') as HTMLElement;
+    if (nextBtn) {
+      nextBtn.textContent = tutorial.getStepIndex() === tutorial.getTotalSteps() - 1 ? 'Finish' : 'Next';
+    }
+  }
+
+  ui.querySelector('#tut-next')?.addEventListener('click', () => {
+    tutorial.next();
+    renderTutorial();
+  });
+  ui.querySelector('#tut-prev')?.addEventListener('click', () => {
+    tutorial.prev();
+    renderTutorial();
+  });
+  ui.querySelector('#tut-dismiss')?.addEventListener('click', () => {
+    tutorial.dismiss();
+    renderTutorial();
+  });
+
+  // Show tutorial on first load
+  renderTutorial();
+
+  function updateCitySpecPanel(): void {
+    const body = ui.querySelector('#cityspec-body') as HTMLElement;
+    if (!body) return;
+    const state = game.getState();
+    const pop = state.citizens.getPopulation();
+    const currentSpec = state.citySpec.getCurrent();
+
+    const specs = [
+      { type: 'NONE', label: 'None', desc: 'No specialization', icon: '\u{2796}' },
+      { type: 'MINING_CITY', label: 'Mining City', desc: 'Revenue +15%, Happiness -5, Crime +5', icon: '\u{26CF}' },
+      { type: 'OIL_CITY', label: 'Oil City', desc: 'Revenue +20%, Happiness -5, Crime +3', icon: '\u{1F6E2}' },
+      { type: 'TECH_CITY', label: 'Tech City', desc: 'Revenue +25%, Happiness +5, Crime -5', icon: '\u{1F4BB}' },
+      { type: 'TOURISM_CITY', label: 'Tourism City', desc: 'Revenue +20%, Happiness +3, Crime +5', icon: '\u{1F3D6}' },
+      { type: 'GAMBLING_CITY', label: 'Gambling City', desc: 'Revenue +40%, Happiness -10, Crime +15', icon: '\u{1F3B0}' },
+      { type: 'TRADE_CITY', label: 'Trade City', desc: 'Revenue +15%, Happiness +2', icon: '\u{1F4E6}' },
+    ];
+
+    body.innerHTML = `
+      <div style="margin-bottom:8px;font-size:12px;color:#aaa">Population: <strong style="color:#e0e0e0">${pop}</strong> (5,000 needed to specialize)</div>
+      ${specs.map(s => {
+        const isCurrent = s.type === currentSpec;
+        const canChoose = s.type === 'NONE' || pop >= 5000;
+        return `<button class="cityspec-btn" data-spec="${s.type}"
+          style="display:flex;align-items:center;gap:8px;width:100%;padding:8px 10px;margin-bottom:4px;
+          border-radius:6px;border:1px solid ${isCurrent ? '#ffc107' : '#333'};
+          background:${isCurrent ? '#ffc10722' : '#1a2233'};color:${canChoose ? '#e0e0e0' : '#555'};
+          cursor:${canChoose ? 'pointer' : 'not-allowed'};font-size:12px;text-align:left">
+          <span style="font-size:18px">${s.icon}</span>
+          <div>
+            <div style="font-weight:600">${isCurrent ? '\u2605 ' : ''}${s.label}</div>
+            <div style="font-size:11px;color:${canChoose ? '#888' : '#444'}">${s.desc}</div>
+          </div>
+        </button>`;
+      }).join('')}
+    `;
+
+    body.querySelectorAll('.cityspec-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const specType = (btn as HTMLElement).dataset['spec']!;
+        const success = state.citySpec.choose(specType as any, pop);
+        if (success) updateCitySpecPanel();
+      });
+    });
+  }
+
+  function updateDistrictPanel(): void {
+    const body = ui.querySelector('#district-body') as HTMLElement;
+    if (!body) return;
+    const state = game.getState();
+    const districts = state.districts.getAllDistricts();
+
+    if (districts.length === 0) {
+      body.innerHTML = '<div style="color:#888;text-align:center;padding:12px">No districts created yet.<br>Use the District Paint tool to create one.</div>';
+      return;
+    }
+
+    const policyTypes = ['NO_HEAVY_INDUSTRY', 'ENCOURAGE_RECYCLING', 'HIGH_DENSITY_BAN', 'ORGANIC_FOOD', 'TOURISM'];
+    const policyLabels: Record<string, string> = {
+      NO_HEAVY_INDUSTRY: 'No Heavy Industry ($150)',
+      ENCOURAGE_RECYCLING: 'Encourage Recycling ($100)',
+      HIGH_DENSITY_BAN: 'High Density Ban ($120)',
+      ORGANIC_FOOD: 'Organic Food ($80)',
+      TOURISM: 'Tourism Promotion ($200)',
+    };
+
+    body.innerHTML = districts.map(d => {
+      const activePolicies = new Set(d.policies.filter(p => p.active).map(p => p.type));
+      return `
+        <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+            <strong style="color:#e0e0e0">${d.name}</strong>
+            <span style="color:#888;font-size:11px">${d.cells.size} cells</span>
+          </div>
+          <div style="font-size:12px;color:#aaa;margin-bottom:4px">Policies:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:4px">
+            ${policyTypes.map(pt => {
+              const isActive = activePolicies.has(pt);
+              return `<button class="district-policy-btn" data-district="${d.id}" data-policy="${pt}"
+                style="font-size:11px;padding:3px 8px;border-radius:4px;border:1px solid ${isActive ? '#ab47bc' : '#444'};
+                background:${isActive ? '#ab47bc33' : '#222'};color:${isActive ? '#ce93d8' : '#777'};cursor:pointer">
+                ${isActive ? '\u2713 ' : ''}${policyLabels[pt]}
+              </button>`;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Attach policy toggle handlers
+    body.querySelectorAll('.district-policy-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const districtId = (btn as HTMLElement).dataset['district']!;
+        const policyType = (btn as HTMLElement).dataset['policy']!;
+        if (state.policies.isPolicyActive(districtId, policyType as any)) {
+          state.policies.removePolicy(districtId, policyType as any);
+        } else {
+          state.policies.applyPolicy(districtId, policyType as any);
+        }
+        updateDistrictPanel();
+      });
+    });
+  }
+
+  function updateTransitPanel(): void {
+    const body = ui.querySelector('#transit-body') as HTMLElement;
+    if (!body) return;
+    const state = game.getState();
+
+    const busStops = state.bus.getStops();
+    const busRoutes = state.bus.getRoutes();
+    const metroStations = state.metro.getStations();
+    const metroLines = state.metro.getLines();
+    const tramStops = state.tram.getStops();
+    const tramRoutes = state.tram.getRoutes();
+
+    const sections: string[] = [];
+
+    // Bus section
+    if (busStops.length > 0) {
+      sections.push(`
+        <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+          <div style="color:#ff9800;font-weight:600;margin-bottom:4px">\u{1F68F} Bus System</div>
+          <div style="font-size:12px;color:#aaa">Stops: ${busStops.length} | Routes: ${busRoutes.length} | Cost: $${state.bus.getOperatingCost()}/tick</div>
+          ${busStops.length >= 2 && busRoutes.length === 0
+            ? `<button class="transit-create-route" data-type="bus" style="margin-top:6px;font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #ff9800;background:#ff980022;color:#ff9800;cursor:pointer">+ Create Route (all stops)</button>`
+            : ''}
+          ${busRoutes.map((r, i) => `<div style="font-size:11px;color:#ccc;margin-top:4px">Route ${i + 1}: ${r.stops.length} stops, ${r.vehicles} vehicle(s)</div>`).join('')}
+        </div>
+      `);
+    }
+
+    // Metro section
+    if (metroStations.length > 0) {
+      sections.push(`
+        <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+          <div style="color:#00bcd4;font-weight:600;margin-bottom:4px">\u{1F687} Metro System</div>
+          <div style="font-size:12px;color:#aaa">Stations: ${metroStations.length} | Lines: ${metroLines.length} | Cost: $${state.metro.getOperatingCost()}/tick</div>
+          ${metroStations.length >= 2 && metroLines.length === 0
+            ? `<button class="transit-create-route" data-type="metro" style="margin-top:6px;font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #00bcd4;background:#00bcd422;color:#00bcd4;cursor:pointer">+ Create Line (all stations)</button>`
+            : ''}
+          ${metroLines.map((l, i) => `<div style="font-size:11px;color:#ccc;margin-top:4px">Line ${i + 1}: ${l.stops.length} stations, ${l.vehicles} train(s)</div>`).join('')}
+        </div>
+      `);
+    }
+
+    // Tram section
+    if (tramStops.length > 0) {
+      sections.push(`
+        <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+          <div style="color:#8bc34a;font-weight:600;margin-bottom:4px">\u{1F68A} Tram System</div>
+          <div style="font-size:12px;color:#aaa">Stops: ${tramStops.length} | Routes: ${tramRoutes.length} | Cost: $${state.tram.getOperatingCost()}/tick</div>
+          ${tramStops.length >= 2 && tramRoutes.length === 0
+            ? `<button class="transit-create-route" data-type="tram" style="margin-top:6px;font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #8bc34a;background:#8bc34a22;color:#8bc34a;cursor:pointer">+ Create Route (all stops)</button>`
+            : ''}
+          ${tramRoutes.map((r, i) => `<div style="font-size:11px;color:#ccc;margin-top:4px">Route ${i + 1}: ${r.stops.length} stops, ${r.vehicles} vehicle(s)</div>`).join('')}
+        </div>
+      `);
+    }
+
+    if (sections.length === 0) {
+      body.innerHTML = '<div style="color:#888;text-align:center;padding:12px">No transit stops placed yet.<br>Place stops using the Transit tools, then create routes here.</div>';
+      return;
+    }
+
+    body.innerHTML = sections.join('');
+
+    // Attach route creation handlers
+    body.querySelectorAll('.transit-create-route').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const type = (btn as HTMLElement).dataset['type'];
+        if (type === 'bus') {
+          const stops = [...state.bus.getStops()];
+          if (stops.length >= 2) {
+            state.bus.createRoute(stops, 1);
+          }
+        } else if (type === 'metro') {
+          const stations = [...state.metro.getStations()];
+          if (stations.length >= 2) {
+            state.metro.createLine(stations, 1);
+          }
+        } else if (type === 'tram') {
+          const stops = [...state.tram.getStops()];
+          if (stops.length >= 2) {
+            state.tram.createRoute(stops, 1);
+          }
+        }
+        updateTransitPanel();
+      });
+    });
+  }
+
   // ===== Chart History =====
   const chartHistory = { pop: [] as number[], happiness: [] as number[] };
   const CHART_MAX = 60;
@@ -915,6 +1494,65 @@ export function createGameUI(game: Game): HTMLElement {
     if (workersEl) workersEl.textContent = String(bt.workers);
     if (taxEl) taxEl.textContent = `$${bt.taxRevenue}/tick`;
     if (zoneEl) zoneEl.textContent = ZONE_NAMES[selected.zoneType] ?? 'Unknown';
+
+    // Citizen list
+    const citizenListEl = panel.querySelector('#bp-citizen-list') as HTMLElement;
+    const citizenDetailEl = panel.querySelector('#bp-citizen-detail') as HTMLElement;
+    if (citizenListEl) {
+      const buildingKey = `${selected.x},${selected.y}`;
+      const cm = game.getState().citizens;
+      const residents = cm.getCitizensByHome(buildingKey);
+      const workers = cm.getCitizensByWorkplace(buildingKey);
+      const hasPeople = residents.length > 0 || workers.length > 0;
+
+      if (!hasPeople) {
+        citizenListEl.innerHTML = '';
+        if (citizenDetailEl) citizenDetailEl.style.display = 'none';
+      } else {
+        let html = '';
+        if (residents.length > 0) {
+          html += `<div style="font-size:11px;color:#66bb6a;margin-top:4px">Residents (${residents.length})</div>`;
+          for (const c of residents) {
+            html += `<div class="bp-citizen" data-cid="${c.id}">Citizen #${c.id} - Age ${c.age} (${c.lifeStage})</div>`;
+          }
+        }
+        if (workers.length > 0) {
+          html += `<div style="font-size:11px;color:#42a5f5;margin-top:4px">Workers (${workers.length})</div>`;
+          for (const c of workers) {
+            html += `<div class="bp-citizen" data-cid="${c.id}">Citizen #${c.id} - Age ${c.age} (${c.lifeStage})</div>`;
+          }
+        }
+        citizenListEl.innerHTML = html;
+        citizenListEl.querySelectorAll('.bp-citizen').forEach((el) => {
+          el.addEventListener('click', () => {
+            const cid = Number((el as HTMLElement).dataset.cid);
+            showCitizenDetail(cid, citizenDetailEl);
+          });
+        });
+      }
+    }
+  }
+
+  function showCitizenDetail(citizenId: number, detailEl: HTMLElement | null): void {
+    if (!detailEl) return;
+    const c = game.getState().citizens.getCitizen(citizenId);
+    if (!c) {
+      detailEl.style.display = 'none';
+      return;
+    }
+    const homeLabel = c.homeId ?? 'Homeless';
+    const workLabel = c.workplaceId ?? 'Unemployed';
+    detailEl.innerHTML = `
+      <div class="cd-name">Citizen #${c.id}</div>
+      <div class="cd-row">Age <span>${c.age} (${c.lifeStage})</span></div>
+      <div class="cd-row">Education <span>${c.education}</span></div>
+      <div class="cd-row">Income <span>${c.incomeLevel}</span></div>
+      <div class="cd-row">Happiness <span>${c.happiness}</span></div>
+      <div class="cd-row">Health <span>${c.health}</span></div>
+      <div class="cd-row">Home <span>${homeLabel}</span></div>
+      <div class="cd-row">Work <span>${workLabel}</span></div>
+    `;
+    detailEl.style.display = 'block';
   }
 
   // ===== Overview Panel Content =====
@@ -1339,6 +1977,72 @@ export function createGameUI(game: Game): HTMLElement {
   }
 
   // ===== Main UI Update =====
+  // ===== MiniMap =====
+  const minimapCanvas = ui.querySelector('#minimap-canvas') as HTMLCanvasElement;
+  const minimapCtx = minimapCanvas?.getContext('2d');
+  let minimapTick = 0;
+
+  function updateMiniMap(): void {
+    if (!minimapCtx) return;
+    // Only update every 10 frames for performance
+    minimapTick++;
+    if (minimapTick % 10 !== 0) return;
+
+    const state = game.getState();
+    const grid = state.grid;
+    const w = grid.width;
+    const h = grid.height;
+    const cw = minimapCanvas.width;
+    const ch = minimapCanvas.height;
+    const sx = cw / w;
+    const sy = ch / h;
+
+    // Clear
+    minimapCtx.fillStyle = '#1a2a1a';
+    minimapCtx.fillRect(0, 0, cw, ch);
+
+    // Draw each cell
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const cell = grid.getCell(x, y);
+        if (!cell) continue;
+
+        let color: string | null = null;
+
+        // Terrain
+        if (cell.terrainType === 1) color = '#1a3a5c'; // water
+        else if (cell.terrainType === 2) color = '#5c5c4c'; // mountain
+        else if (cell.terrainType === 3) color = '#1c3a1c'; // forest
+
+        // Roads override
+        if (cell.roadType > 0) color = '#555';
+
+        // Buildings override
+        if (cell.buildingId > 0 && cell.buildingId < 243) {
+          if (cell.zoneType === 1 || cell.zoneType === 2) color = '#4caf50'; // residential green
+          else if (cell.zoneType === 3 || cell.zoneType === 4) color = '#42a5f5'; // commercial blue
+          else if (cell.zoneType === 5) color = '#ffa726'; // industrial orange
+          else if (cell.zoneType === 6) color = '#ab47bc'; // office purple
+        }
+        // Infrastructure
+        if (cell.buildingId >= 243) color = '#ffeb3b'; // civic yellow
+
+        // Zones without buildings (empty zones)
+        if (cell.buildingId === 0 && cell.zoneType > 0 && !color) {
+          if (cell.zoneType === 1 || cell.zoneType === 2) color = '#2e5e2e';
+          else if (cell.zoneType === 3 || cell.zoneType === 4) color = '#1e4a6e';
+          else if (cell.zoneType === 5) color = '#5e3e1e';
+          else if (cell.zoneType === 6) color = '#4e2e5e';
+        }
+
+        if (color) {
+          minimapCtx.fillStyle = color;
+          minimapCtx.fillRect(Math.floor(x * sx), Math.floor(y * sy), Math.max(1, Math.ceil(sx)), Math.max(1, Math.ceil(sy)));
+        }
+      }
+    }
+  }
+
   function updateUI(): void {
     const state = game.getState();
     const clock = state.clock;
@@ -1391,11 +2095,23 @@ export function createGameUI(game: Game): HTMLElement {
     });
     // Highlight parent group button if a child tool is active
     const zoneTools = new Set(ZONE_GROUP.items.map(i => i.tool));
-    const infraTools = new Set(INFRA_GROUP.items.map(i => i.tool));
+    const roadTools = new Set(ROAD_GROUP.items.map(i => i.tool));
+    const civicTools = new Set(CIVIC_GROUP.items.map(i => i.tool));
+    const utilityTools = new Set(UTILITY_GROUP.items.map(i => i.tool));
+    const transportTools = new Set(TRANSPORT_GROUP.items.map(i => i.tool));
+    const districtTools = new Set(DISTRICT_GROUP.items.map(i => i.tool));
     const zoneGroupBtn = ui.querySelector('[data-group-toggle="zone"]');
-    const infraGroupBtn = ui.querySelector('[data-group-toggle="infra"]');
+    const roadGroupBtn = ui.querySelector('[data-group-toggle="road"]');
+    const civicGroupBtn = ui.querySelector('[data-group-toggle="civic"]');
+    const utilityGroupBtn = ui.querySelector('[data-group-toggle="utility"]');
+    const transportGroupBtn = ui.querySelector('[data-group-toggle="transport"]');
+    const districtGroupBtn = ui.querySelector('[data-group-toggle="district"]');
     if (zoneGroupBtn) zoneGroupBtn.classList.toggle('active', zoneTools.has(currentTool));
-    if (infraGroupBtn) infraGroupBtn.classList.toggle('active', infraTools.has(currentTool));
+    if (roadGroupBtn) roadGroupBtn.classList.toggle('active', roadTools.has(currentTool));
+    if (civicGroupBtn) civicGroupBtn.classList.toggle('active', civicTools.has(currentTool));
+    if (utilityGroupBtn) utilityGroupBtn.classList.toggle('active', utilityTools.has(currentTool));
+    if (transportGroupBtn) transportGroupBtn.classList.toggle('active', transportTools.has(currentTool));
+    if (districtGroupBtn) districtGroupBtn.classList.toggle('active', districtTools.has(currentTool));
 
     // Overlay indicator
     const overlayIndicator = ui.querySelector('#overlay-indicator') as HTMLElement;
@@ -1407,7 +2123,7 @@ export function createGameUI(game: Game): HTMLElement {
           power: 'Power', water: 'Water', zone: 'Zones',
           traffic: 'Traffic', pollution: 'Pollution', landValue: 'Land Value',
           police: 'Police', fire: 'Fire', health: 'Health',
-          education: 'Education', park: 'Park', garbage: 'Garbage',
+          education: 'Education', park: 'Park', garbage: 'Garbage', district: 'Districts',
         };
         overlayName.textContent = names[ov] ?? ov;
         overlayIndicator.classList.add('visible');
@@ -1476,6 +2192,9 @@ export function createGameUI(game: Game): HTMLElement {
     if (ui.querySelector('#overview-modal')?.classList.contains('visible')) {
       updateOverviewPanel();
     }
+
+    // MiniMap
+    updateMiniMap();
   }
 
   game.setOnUIUpdate(updateUI);

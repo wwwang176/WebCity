@@ -20,6 +20,18 @@ import { ParkService } from '../service/ParkService';
 import { GarbageService } from '../service/GarbageService';
 import { SewageService } from '../service/SewageService';
 import { DeathCareService } from '../service/DeathCareService';
+import { DistrictManager } from '../district/DistrictManager';
+import { PolicyManager } from '../district/PolicyManager';
+import { CitySpecialization } from '../district/CitySpecialization';
+import { GlobalMarket } from '../economy/GlobalMarket';
+import { BusSystem } from '../transport/BusSystem';
+import { MetroSystem } from '../transport/MetroSystem';
+import { TramSystem } from '../transport/TramSystem';
+import { RailSystem } from '../transport/RailSystem';
+import { FerrySystem } from '../transport/FerrySystem';
+import { AirportSystem } from '../transport/AirportSystem';
+import { TaxiSystem } from '../transport/TaxiSystem';
+import { FreightSystem } from '../traffic/FreightSystem';
 
 export interface GameState {
   grid: Grid;
@@ -44,10 +56,23 @@ export interface GameState {
   garbage: GarbageService;
   sewage: SewageService;
   deathCare: DeathCareService;
+  districts: DistrictManager;
+  policies: PolicyManager;
+  citySpec: CitySpecialization;
+  globalMarket: GlobalMarket;
+  bus: BusSystem;
+  metro: MetroSystem;
+  tram: TramSystem;
+  rail: RailSystem;
+  ferry: FerrySystem;
+  airport: AirportSystem;
+  taxi: TaxiSystem;
+  freight: FreightSystem;
 }
 
 export function createGameState(width = 200, height = 200): GameState {
   const grid = new Grid(width, height);
+  const dm = new DistrictManager();
   return {
     grid,
     roadNetwork: new RoadNetwork(),
@@ -77,5 +102,17 @@ export function createGameState(width = 200, height = 200): GameState {
     garbage: new GarbageService(),
     sewage: new SewageService(),
     deathCare: new DeathCareService(),
+    districts: dm,
+    policies: new PolicyManager(dm),
+    citySpec: new CitySpecialization(),
+    globalMarket: new GlobalMarket(),
+    bus: new BusSystem(),
+    metro: new MetroSystem(),
+    tram: new TramSystem(),
+    rail: new RailSystem(),
+    ferry: new FerrySystem(),
+    airport: new AirportSystem(),
+    taxi: new TaxiSystem(),
+    freight: new FreightSystem(),
   };
 }
