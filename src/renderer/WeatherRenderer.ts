@@ -27,6 +27,9 @@ export class WeatherRenderer {
   private seasonOverlay: THREE.Mesh | null = null;
   private mapSize = 60;
 
+  // Exposed sun intensity for other renderers
+  private _sunIntensity = 0.8;
+
   // Base light values (daytime defaults)
   private readonly baseSkyColor = new THREE.Color(0x87ceeb);
   private readonly baseAmbientIntensity = 0.6;
@@ -54,6 +57,11 @@ export class WeatherRenderer {
     this.updateDayNightCycle();
     this.updateSeasonVisuals(season);
     this.updateWeatherParticles(dt, season);
+  }
+
+  /** Current directional light (sun) intensity. 0 at night, ~0.64 at noon. */
+  get sunIntensity(): number {
+    return this._sunIntensity;
   }
 
   // ── Day/Night Cycle ──────────────────────────────────────────
@@ -98,7 +106,8 @@ export class WeatherRenderer {
     }
 
     // Directional light (sun): intensity and color; disable shadows at night
-    this.sceneManager.directionalLight.intensity = smoothFactor * this.baseDirectionalIntensity;
+    this._sunIntensity = smoothFactor * this.baseDirectionalIntensity;
+    this.sceneManager.directionalLight.intensity = this._sunIntensity;
     this.sceneManager.directionalLight.castShadow = smoothFactor > 0.05;
     if (sunFactor < 0.5) {
       // Warm orange during dawn/dusk

@@ -566,7 +566,7 @@ export class Game {
         laneOffset,
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
-    this.vehicleRenderer.update(vehicleData);
+    this.vehicleRenderer.update(vehicleData, this.weatherRenderer.sunIntensity);
 
     // Animate terrain (water)
     this.terrainRenderer.update(dt);
@@ -583,6 +583,9 @@ export class Game {
     // Update weather visuals (day/night cycle, rain/snow, seasonal colors)
     const gameSpeed = this.paused ? 0 : this.speed;
     this.weatherRenderer.update(dt, gameSpeed, this.state.clock.getSeason());
+
+    // Update building light spots based on sun intensity (night glow)
+    this.buildingRenderer.update(this.weatherRenderer.sunIntensity);
   }
 
   /** Smoothed position & heading using quadratic bezier at turns */

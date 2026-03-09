@@ -238,6 +238,7 @@ vec3 getRoofColor(float zoneCat, float h) {
 
 void main() {
   vec3 n = normalize(vNormal);
+  bool isLitWindow = false;
 
   // Read real lights from Three.js uniforms (set by lights_pars_begin)
   float ambient = (ambientLightColor.r + ambientLightColor.g + ambientLightColor.b) / 3.0;
@@ -315,6 +316,7 @@ void main() {
         if (lit > 0.4) {
           float w = hash21(wid + 77.7);
           color = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+          isLitWindow = true;
         } else {
           color = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
         }
@@ -352,8 +354,12 @@ void main() {
         if (inWin) {
           vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 5.3;
           float lit = hash21(wid);
-          color = lit > 0.5 ? mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8
-                            : vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
+          if (lit > 0.5) {
+            color = mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8;
+            isLitWindow = true;
+          } else {
+            color = vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
+          }
         } else {
           color = vBldgColor * 0.85;
         }
@@ -382,6 +388,7 @@ void main() {
         if (lit > 0.3) {
           float w = hash21(wid + 77.7);
           color = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
+          isLitWindow = true;
         } else {
           color = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
         }
@@ -434,6 +441,7 @@ void main() {
         if (lit > 0.35) {
           float w = hash21(wid + 77.7);
           color = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+          isLitWindow = true;
         } else {
           color = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
         }
@@ -460,6 +468,13 @@ void main() {
     );
     color *= 0.45 + 0.55 * shadow;
   #endif
+
+  // Night window glow
+  if (isLitWindow) {
+    float nightFactor = 1.0 - smoothstep(0.0, 0.3, sunIntensity);
+    vec3 warmGlow = vec3(0.95, 0.85, 0.5);
+    color = mix(color, warmGlow * 0.9, nightFactor * 0.7);
+  }
 
   gl_FragColor = vec4(color, 1.0);
 }
@@ -764,6 +779,10 @@ export class BuildingRenderer {
   private meshes: (THREE.InstancedMesh | THREE.Mesh)[] = [];
   private readonly maxPerVariant = 3000;
 
+  // Light spot system (fake ground glow near buildings at night)
+  private lightSpotMesh: THREE.InstancedMesh | null = null;
+  private lightSpotMaterial: THREE.MeshBasicMaterial | null = null;
+
   build(scene: THREE.Scene, grid: Grid): void {
     this.dispose(scene);
 
@@ -803,6 +822,18 @@ export class BuildingRenderer {
     this.buildInfrastructure(scene, infraCells);
     this.buildZoneOverlays(scene, emptyZonesByType);
     this.buildVariantBuildings(scene, buildingsByZone);
+
+    // Build light spots for all buildings (including infrastructure)
+    const allBuildingPositions: { x: number; y: number }[] = [];
+    for (const buildings of buildingsByZone.values()) {
+      for (const b of buildings) {
+        allBuildingPositions.push({ x: b.x, y: b.y });
+      }
+    }
+    for (const inf of infraCells) {
+      allBuildingPositions.push({ x: inf.x, y: inf.y });
+    }
+    this.buildLightSpots(scene, allBuildingPositions);
   }
 
   private buildVariantBuildings(scene: THREE.Scene, buildingsByZone: Map<number, BuildingData[]>): void {
@@ -946,6 +977,42 @@ export class BuildingRenderer {
     }
   }
 
+  private buildLightSpots(scene: THREE.Scene, positions: { x: number; y: number }[]): void {
+    if (positions.length === 0) return;
+
+    const geometry = new THREE.CircleGeometry(0.3, 8);
+    geometry.rotateX(-Math.PI / 2);
+
+    this.lightSpotMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffcc66,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+
+    const count = Math.min(positions.length, this.maxPerVariant);
+    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, count);
+    this.lightSpotMesh.frustumCulled = false;
+    this.lightSpotMesh.renderOrder = 2;
+
+    const matrix = new THREE.Matrix4();
+    for (let i = 0; i < count; i++) {
+      const p = positions[i]!;
+      matrix.setPosition(p.x, 0.03, p.y);
+      this.lightSpotMesh.setMatrixAt(i, matrix);
+    }
+    this.lightSpotMesh.instanceMatrix.needsUpdate = true;
+
+    scene.add(this.lightSpotMesh);
+  }
+
+  /** Update light spot visibility based on sun intensity (call each frame). */
+  update(sunIntensity: number): void {
+    if (!this.lightSpotMaterial) return;
+    this.lightSpotMaterial.opacity = Math.max(0, 0.4 * (1 - sunIntensity / 0.3));
+  }
+
   dispose(scene: THREE.Scene): void {
     for (const mesh of this.meshes) {
       scene.remove(mesh);
@@ -955,5 +1022,13 @@ export class BuildingRenderer {
       else if (mat !== getBuildingMaterial()) (mat as THREE.Material).dispose();
     }
     this.meshes = [];
+
+    if (this.lightSpotMesh) {
+      scene.remove(this.lightSpotMesh);
+      this.lightSpotMesh.geometry.dispose();
+      if (this.lightSpotMaterial) this.lightSpotMaterial.dispose();
+      this.lightSpotMesh = null;
+      this.lightSpotMaterial = null;
+    }
   }
 }

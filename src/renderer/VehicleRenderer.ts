@@ -228,6 +228,13 @@ function buildFiretruckGeometry(): THREE.BufferGeometry {
 export class VehicleRenderer {
   private meshes = new Map<string, THREE.InstancedMesh>();
   private readonly maxPerType = 500;
+  private readonly maxLights = 2000; // total vehicles across all types
+
+  // Headlight / taillight instanced meshes
+  private headlightMesh: THREE.InstancedMesh | null = null;
+  private taillightMesh: THREE.InstancedMesh | null = null;
+  private headlightMaterial: THREE.MeshBasicMaterial | null = null;
+  private taillightMaterial: THREE.MeshBasicMaterial | null = null;
 
   build(scene: THREE.Scene): void {
     this.dispose(scene);
@@ -248,9 +255,63 @@ export class VehicleRenderer {
       scene.add(mesh);
       this.meshes.set(type, mesh);
     }
+
+    // Headlight beam: trapezoid projected forward (narrow at car, wide at far end)
+    // Vertices in local XZ plane (Y=0, facing up), beam extends along local +X
+    const hlGeo = new THREE.BufferGeometry();
+    const hlVerts = new Float32Array([
+      // near edge (at car front): narrow, width ±0.06
+      0,    0, -0.06,
+      0,    0,  0.06,
+      // far edge (projected forward 0.5): wide, width ±0.2
+      0.5,  0, -0.2,
+      0.5,  0,  0.2,
+    ]);
+    const hlIdx = [0, 2, 1, 1, 2, 3]; // two triangles forming trapezoid
+    // Vertex colors: bright at car (near), fade to black at far end
+    const hlColors = new Float32Array([
+      1, 1, 1,   // near-left: full brightness
+      1, 1, 1,   // near-right: full brightness
+      0, 0, 0,   // far-left: black (transparent via additive)
+      0, 0, 0,   // far-right: black
+    ]);
+    hlGeo.setAttribute('position', new THREE.BufferAttribute(hlVerts, 3));
+    hlGeo.setAttribute('color', new THREE.BufferAttribute(hlColors, 3));
+    hlGeo.setIndex(hlIdx);
+    this.headlightMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffffcc,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.headlightMesh = new THREE.InstancedMesh(hlGeo, this.headlightMaterial, this.maxLights);
+    this.headlightMesh.count = 0;
+    this.headlightMesh.frustumCulled = false;
+    this.headlightMesh.renderOrder = 10;
+    scene.add(this.headlightMesh);
+
+    // Taillight ground-disc mesh (red)
+    const tlGeo = new THREE.CircleGeometry(0.08, 6);
+    tlGeo.rotateX(-Math.PI / 2);
+    this.taillightMaterial = new THREE.MeshBasicMaterial({
+      color: 0xff3333,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    this.taillightMesh = new THREE.InstancedMesh(tlGeo, this.taillightMaterial, this.maxLights);
+    this.taillightMesh.count = 0;
+    this.taillightMesh.frustumCulled = false;
+    this.taillightMesh.renderOrder = 10;
+    scene.add(this.taillightMesh);
   }
 
-  update(vehicles: VehicleData[]): void {
+  update(vehicles: VehicleData[], sunIntensity?: number): void {
     // Group vehicles by type
     const groups = new Map<string, VehicleData[]>();
     for (const v of vehicles) {
@@ -263,10 +324,35 @@ export class VehicleRenderer {
     const matrix = new THREE.Matrix4();
     const color = new THREE.Color();
 
+    // Collect all vehicles in order for headlight/taillight indexing
+    let lightIndex = 0;
+    const hlMatrix = new THREE.Matrix4();
+    const hlTranslation = new THREE.Matrix4();
+    const tlMatrix = new THREE.Matrix4();
+    const tlTranslation = new THREE.Matrix4();
+
+    // Front offset distances by type (distance from center to front)
+    const frontOffset: Record<string, number> = {
+      car: 0.12,
+      bus: 0.23,
+      truck: 0.16,
+      firetruck: 0.18,
+    };
+    // Rear offset distances by type
+    const rearOffset: Record<string, number> = {
+      car: 0.12,
+      bus: 0.23,
+      truck: 0.16,
+      firetruck: 0.14,
+    };
+
     for (const [type, mesh] of this.meshes) {
       const list = groups.get(type) ?? [];
       const count = Math.min(list.length, this.maxPerType);
       mesh.count = count;
+
+      const fOff = frontOffset[type] ?? 0.12;
+      const rOff = rearOffset[type] ?? 0.12;
 
       for (let i = 0; i < count; i++) {
         const v = list[i]!;
@@ -276,8 +362,11 @@ export class VehicleRenderer {
         const offsetX = Math.sin(v.heading) * v.laneOffset;
         const offsetZ = Math.cos(v.heading) * v.laneOffset;
 
+        const vx = v.x + offsetX;
+        const vz = v.y + offsetZ;
+
         rotation.makeRotationY(v.heading);
-        translation.makeTranslation(v.x + offsetX, 0.025, v.y + offsetZ);
+        translation.makeTranslation(vx, 0.025, vz);
         matrix.copy(translation).multiply(rotation);
         mesh.setMatrixAt(i, matrix);
 
@@ -292,10 +381,49 @@ export class VehicleRenderer {
           color.set(0xd32f2f);
         }
         mesh.setColorAt(i, color);
+
+        // Headlight/taillight matrices (heading: 0 = +x; rotation Y convention)
+        if (lightIndex < this.maxLights && this.headlightMesh && this.taillightMesh) {
+          const cosH = Math.cos(v.heading);
+          const sinH = Math.sin(v.heading);
+
+          // Headlight beam: position at car front, rotate to match heading
+          // Beam geometry extends along local +X, so Y-rotate by heading
+          const hlX = vx + cosH * fOff;
+          const hlZ = vz - sinH * fOff;
+          hlMatrix.makeRotationY(v.heading);
+          hlTranslation.makeTranslation(hlX, 0.055, hlZ);
+          hlMatrix.premultiply(hlTranslation);
+          this.headlightMesh.setMatrixAt(lightIndex, hlMatrix);
+
+          // Taillights: offset backward
+          const tlX = vx - cosH * rOff;
+          const tlZ = vz + sinH * rOff;
+          tlTranslation.makeTranslation(tlX, 0.055, tlZ);
+          tlMatrix.copy(tlTranslation);
+          this.taillightMesh.setMatrixAt(lightIndex, tlMatrix);
+
+          lightIndex++;
+        }
       }
 
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+
+    // Update headlight/taillight counts and opacity
+    if (this.headlightMesh && this.taillightMesh) {
+      this.headlightMesh.count = lightIndex;
+      this.taillightMesh.count = lightIndex;
+      this.headlightMesh.instanceMatrix.needsUpdate = true;
+      this.taillightMesh.instanceMatrix.needsUpdate = true;
+
+      // Control opacity based on sun intensity
+      const sun = sunIntensity ?? 1;
+      const hlOpacity = Math.max(0, 0.8 * (1 - sun / 0.3));
+      const tlOpacity = Math.max(0, 0.5 * (1 - sun / 0.3));
+      if (this.headlightMaterial) this.headlightMaterial.opacity = hlOpacity;
+      if (this.taillightMaterial) this.taillightMaterial.opacity = tlOpacity;
     }
   }
 
@@ -306,5 +434,20 @@ export class VehicleRenderer {
       (mesh.material as THREE.Material).dispose();
     }
     this.meshes.clear();
+
+    if (this.headlightMesh) {
+      scene.remove(this.headlightMesh);
+      this.headlightMesh.geometry.dispose();
+      this.headlightMaterial?.dispose();
+      this.headlightMesh = null;
+      this.headlightMaterial = null;
+    }
+    if (this.taillightMesh) {
+      scene.remove(this.taillightMesh);
+      this.taillightMesh.geometry.dispose();
+      this.taillightMaterial?.dispose();
+      this.taillightMesh = null;
+      this.taillightMaterial = null;
+    }
   }
 }
