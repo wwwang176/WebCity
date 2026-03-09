@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../../grid/Grid';
-import { ZoneType } from '../../grid/types';
+import { TerrainType, ZoneType } from '../../grid/types';
 import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { ZoneManager } from '../ZoneManager';
@@ -85,5 +85,38 @@ describe('ZoneManager', () => {
     const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
     expect(result.success).toBe(false);
     expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should fail to zone a water tile', () => {
+    const { grid, zone } = setupGridWithRoad();
+    grid.setCell(5, 4, { terrainType: TerrainType.WATER });
+    const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('WATER_TILE');
+  });
+
+  it('should fail to zone a mountain tile', () => {
+    const { grid, zone } = setupGridWithRoad();
+    grid.setCell(5, 4, { terrainType: TerrainType.MOUNTAIN });
+    const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('MOUNTAIN_TILE');
+  });
+
+  it('should allow zoning a forest tile adjacent to road', () => {
+    const { grid, zone } = setupGridWithRoad();
+    grid.setCell(5, 4, { terrainType: TerrainType.FOREST });
+    const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
+    expect(result.success).toBe(true);
+  });
+
+  it('should skip water tiles in batch zoning', () => {
+    const { grid, zone } = setupGridWithRoad();
+    grid.setCell(6, 4, { terrainType: TerrainType.WATER });
+    const results = zone.setZoneRect({ x: 5, y: 4 }, { x: 7, y: 4 }, ZoneType.RESIDENTIAL_LOW);
+    const successes = results.filter(r => r.success).length;
+    const waterFails = results.filter(r => r.reason === 'WATER_TILE').length;
+    expect(successes).toBe(2); // 5,4 and 7,4
+    expect(waterFails).toBe(1); // 6,4
   });
 });

@@ -1,5 +1,5 @@
 import { Grid } from '../grid/Grid';
-import { ZoneType } from '../grid/types';
+import { TerrainType, ZoneType } from '../grid/types';
 import { RoadType } from '../road/types';
 
 interface ZoneResult {
@@ -23,6 +23,9 @@ export class ZoneManager {
     const cell = this.grid.getCell(x, y);
     if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
 
+    // Skip unbuildable terrain
+    if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
+    if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
     // Skip roads
     if (cell.roadType !== RoadType.NONE) return { success: false, reason: 'ROAD_EXISTS' };
     // Skip infrastructure (buildingId 245-254: power/water/police/fire/hospital/school/park/garbage/sewage/cemetery)
