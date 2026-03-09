@@ -1,11 +1,13 @@
 export type GameSpeed = 0 | 1 | 2 | 3;
 
+export type TimeOfDay = 'night' | 'morning_rush' | 'midday' | 'evening_rush';
+
 export class GameClock {
   tick = 0;
   speed: GameSpeed = 1;
   paused = false;
 
-  private ticksPerDay = 4;
+  readonly ticksPerDay = 24;
 
   advance(): boolean {
     if (this.paused || this.speed === 0) return false;
@@ -23,6 +25,18 @@ export class GameClock {
 
   getYear(): number {
     return Math.floor(this.getMonth() / 12);
+  }
+
+  getHourOfDay(): number {
+    return this.tick % this.ticksPerDay;
+  }
+
+  getTimeOfDay(): TimeOfDay {
+    const hour = this.getHourOfDay();
+    if (hour >= 22 || hour <= 5) return 'night';
+    if (hour >= 6 && hour <= 9) return 'morning_rush';
+    if (hour >= 10 && hour <= 16) return 'midday';
+    return 'evening_rush'; // 17-21
   }
 
   getSeason(): 'spring' | 'summer' | 'autumn' | 'winter' {

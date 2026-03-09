@@ -8,10 +8,20 @@ import { ZoneType } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { getBuildingType } from '../building/types';
+import type { TimeOfDay } from './GameClock';
 
 export class SimulationLoop {
   private state: GameState;
   private lastAgeYear = -1;
+
+  // Building index: buildingId → {x, y} position on the grid
+  private buildingIndex = new Map<number, { x: number; y: number }>();
+  private buildingIndexDay = -1; // last day the index was rebuilt
+
+  // Track which citizens have already commuted this rush period
+  private morningCommuters = new Set<number>(); // citizen ids that have spawned morning commute
+  private eveningCommuters = new Set<number>(); // citizen ids that have spawned evening commute
+  private lastTimeOfDay: TimeOfDay = 'night'; // to detect period transitions
 
   constructor(state: GameState) {
     this.state = state;
@@ -20,49 +30,65 @@ export class SimulationLoop {
   tick(): void {
     if (!this.state.clock.advance()) return;
 
-    // 1. Economy: RCI demand
-    const rci = calculateRCIDemand({
-      residentialSupply: this.countZoneBuildings('residential'),
-      commercialSupply: this.countZoneBuildings('commercial'),
-      industrialSupply: this.countZoneBuildings('industrial'),
-      population: this.state.citizens.getPopulation(),
-      jobOpenings: this.countJobOpenings(),
-      exportDemand: 10,
-    });
-    this.state.rciDemand = rci;
+    const tick = this.state.clock.tick;
+    // Many operations were tuned for ticksPerDay=4. With ticksPerDay=24 (6x more),
+    // we gate slow-update operations to run every 6 ticks to preserve balance.
+    const isSlowTick = tick % 6 === 0;
 
-    // 2. Budget tick
-    this.state.budget = tickBudget(this.state.budget);
+    // 1. Economy: RCI demand (every 6 ticks)
+    if (isSlowTick) {
+      const rci = calculateRCIDemand({
+        residentialSupply: this.countZoneBuildings('residential'),
+        commercialSupply: this.countZoneBuildings('commercial'),
+        industrialSupply: this.countZoneBuildings('industrial'),
+        population: this.state.citizens.getPopulation(),
+        jobOpenings: this.countJobOpenings(),
+        exportDemand: 10,
+      });
+      this.state.rciDemand = rci;
+    }
 
-    // 3. Services (power/water coverage)
-    // Collect all infrastructure positions so BFS can traverse through plants
-    const infraPositions = new Set<string>();
-    for (const p of this.state.power.getPlants()) infraPositions.add(`${p.x},${p.y}`);
-    for (const p of this.state.water.getPlants()) infraPositions.add(`${p.x},${p.y}`);
-    this.state.power.calculateCoverage(this.state.grid, infraPositions);
-    this.state.water.calculateCoverage(this.state.grid, infraPositions);
+    // 2. Budget tick (every 6 ticks to maintain same daily income/expense rate)
+    if (isSlowTick) {
+      this.state.budget = tickBudget(this.state.budget);
+    }
 
-    // 3.5 Civic services tick
-    this.state.police.tick();
-    this.state.fire.tick();
-    this.state.health.tick();
-    this.state.education.tick();
-    this.state.parks.tick();
-    this.state.garbage.tick(this.state.citizens.getPopulation());
-    this.state.sewage.tick(this.state.citizens.getPopulation());
-    this.state.deathCare.tick();
+    // 3. Services (power/water coverage) — every 6 ticks
+    if (isSlowTick) {
+      const infraPositions = new Set<string>();
+      for (const p of this.state.power.getPlants()) infraPositions.add(`${p.x},${p.y}`);
+      for (const p of this.state.water.getPlants()) infraPositions.add(`${p.x},${p.y}`);
+      this.state.power.calculateCoverage(this.state.grid, infraPositions);
+      this.state.water.calculateCoverage(this.state.grid, infraPositions);
+    }
 
-    // 3.6. Pollution & land value: update every 10 ticks (performance)
-    if (this.state.clock.tick % 10 === 0) {
+    // 3.5 Civic services tick (every 6 ticks)
+    if (isSlowTick) {
+      this.state.police.tick();
+      this.state.fire.tick();
+      this.state.health.tick();
+      this.state.education.tick();
+      this.state.parks.tick();
+      this.state.garbage.tick(this.state.citizens.getPopulation());
+      this.state.sewage.tick(this.state.citizens.getPopulation());
+      this.state.deathCare.tick();
+    }
+
+    // 3.6. Pollution & land value: update every 60 ticks (was 10 with ticksPerDay=4)
+    if (tick % 60 === 0) {
       this.updatePollution();
       this.updateLandValue();
     }
 
-    // 4. Building growth - try to grow on random empty zoned cells
-    this.tryBuildingGrowth();
+    // 4. Building growth (every 6 ticks)
+    if (isSlowTick) {
+      this.tryBuildingGrowth();
+    }
 
-    // 4.5. Building upgrades/downgrades based on conditions
-    this.tryBuildingUpgrades();
+    // 4.5. Building upgrades/downgrades (every 6 ticks)
+    if (isSlowTick) {
+      this.tryBuildingUpgrades();
+    }
 
     // 5. Citizens aging (once per game year)
     const currentYear = this.state.clock.getYear();
@@ -71,13 +97,22 @@ export class SimulationLoop {
       this.state.citizens.ageTick();
     }
 
-    // 5.5. Update citizen happiness based on actual city conditions
-    this.updateCitizenHappiness();
+    // 5.5. Update citizen happiness (every 6 ticks)
+    if (isSlowTick) {
+      this.updateCitizenHappiness();
+    }
 
-    // 6. Migration - citizens move in/out
-    this.runMigration();
+    // 6. Migration (every 6 ticks)
+    if (isSlowTick) {
+      this.runMigration();
+    }
 
-    // 7. Traffic - spawn commute vehicles and advance
+    // 6.5 Assign home/workplace to citizens who don't have them yet
+    if (isSlowTick) {
+      this.assignCitizenHousing();
+    }
+
+    // 7. Traffic - spawn commute vehicles and advance (every tick for smooth traffic)
     this.spawnVehicles();
     this.state.trafficLights.tick();
     this.state.traffic.tick(
@@ -94,8 +129,10 @@ export class SimulationLoop {
       },
     );
 
-    // 8. Calculate income from buildings
-    this.calculateIncome();
+    // 8. Calculate income from buildings (every 6 ticks)
+    if (isSlowTick) {
+      this.calculateIncome();
+    }
   }
 
   getState(): GameState {
@@ -439,60 +476,234 @@ export class SimulationLoop {
     }
   }
 
+  /**
+   * Rebuild the building index (buildingId → grid position).
+   * Called once per game day or when not yet built.
+   */
+  private rebuildBuildingIndex(): void {
+    const currentDay = this.state.clock.getDay();
+    if (this.buildingIndexDay === currentDay && this.buildingIndex.size > 0) return;
+
+    this.buildingIndex.clear();
+    const grid = this.state.grid;
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (cell && cell.buildingId > 0) {
+          this.buildingIndex.set(cell.buildingId, { x, y });
+        }
+      }
+    }
+    this.buildingIndexDay = currentDay;
+  }
+
+  /**
+   * Assign homeId and workplaceId to citizens who don't have them.
+   * Called after migration so newly created citizens get housing.
+   */
+  private assignCitizenHousing(): void {
+    this.rebuildBuildingIndex();
+    const grid = this.state.grid;
+
+    // Collect residential and workplace buildings with capacity info
+    const residentialBuildings: { buildingId: number; capacity: number }[] = [];
+    const workplaceBuildings: { buildingId: number; capacity: number }[] = [];
+
+    for (const [buildingId, _pos] of this.buildingIndex) {
+      const bt = getBuildingType(buildingId);
+      if (!bt) continue;
+      if (bt.residents > 0) {
+        residentialBuildings.push({ buildingId, capacity: bt.residents });
+      }
+      if (bt.workers > 0) {
+        workplaceBuildings.push({ buildingId, capacity: bt.workers });
+      }
+    }
+
+    if (residentialBuildings.length === 0 && workplaceBuildings.length === 0) return;
+
+    // Count current occupancy
+    const homeOccupancy = new Map<number, number>();
+    const workOccupancy = new Map<number, number>();
+    for (const c of this.state.citizens.citizens) {
+      if (c.homeId !== null) {
+        homeOccupancy.set(c.homeId, (homeOccupancy.get(c.homeId) ?? 0) + 1);
+      }
+      if (c.workplaceId !== null) {
+        workOccupancy.set(c.workplaceId, (workOccupancy.get(c.workplaceId) ?? 0) + 1);
+      }
+    }
+
+    for (const citizen of this.state.citizens.citizens) {
+      // Assign home if needed
+      if (citizen.homeId === null && residentialBuildings.length > 0) {
+        for (const rb of residentialBuildings) {
+          const occ = homeOccupancy.get(rb.buildingId) ?? 0;
+          if (occ < rb.capacity) {
+            citizen.homeId = rb.buildingId;
+            homeOccupancy.set(rb.buildingId, occ + 1);
+            break;
+          }
+        }
+      }
+
+      // Assign workplace if needed (only for working-age adults)
+      if (citizen.workplaceId === null && citizen.age > 18 && citizen.age <= 65 && workplaceBuildings.length > 0) {
+        for (const wb of workplaceBuildings) {
+          const occ = workOccupancy.get(wb.buildingId) ?? 0;
+          if (occ < wb.capacity) {
+            citizen.workplaceId = wb.buildingId;
+            workOccupancy.set(wb.buildingId, occ + 1);
+            break;
+          }
+        }
+      }
+    }
+  }
+
   private spawnVehicles(): void {
-    // Vehicle cap scales with population: 50 base + 1 per 10 residents, max 500
     const pop = this.state.citizens.getPopulation();
+    if (pop === 0) return;
+
+    // Vehicle cap scales with population: 50 base + 1 per 10 residents, max 500
     const vehicleCap = Math.min(500, 50 + Math.floor(pop / 10));
     if (this.state.traffic.getVehicleCount() >= vehicleCap) return;
 
-    if (pop === 0) return;
+    this.rebuildBuildingIndex();
 
-    // Spawn 1-5 vehicles per tick based on population
-    const spawnCount = Math.min(5, Math.max(1, Math.floor(pop / 50)));
+    const timeOfDay = this.state.clock.getTimeOfDay();
+
+    // Clear commuter tracking on period transitions
+    if (timeOfDay !== this.lastTimeOfDay) {
+      if (timeOfDay === 'morning_rush') this.morningCommuters.clear();
+      if (timeOfDay === 'evening_rush') this.eveningCommuters.clear();
+      this.lastTimeOfDay = timeOfDay;
+    }
+
     const grid = this.state.grid;
-    const roads: { x: number; y: number }[] = [];
-    const residentialCells: { x: number; y: number }[] = [];
-    const workCells: { x: number; y: number }[] = [];
 
-    // Collect road locations and building locations by type
+    if (timeOfDay === 'morning_rush') {
+      // Morning rush: citizens commute home → work
+      this.spawnCommuteVehicles('home_to_work', grid, vehicleCap);
+    } else if (timeOfDay === 'evening_rush') {
+      // Evening rush: citizens commute work → home
+      this.spawnCommuteVehicles('work_to_home', grid, vehicleCap);
+    } else if (timeOfDay === 'midday') {
+      // Midday: spawn small amount of random commercial traffic
+      this.spawnRandomTraffic(grid, vehicleCap);
+    }
+    // Night: no spawning
+  }
+
+  /**
+   * Spawn commute vehicles for citizens based on direction.
+   */
+  private spawnCommuteVehicles(
+    direction: 'home_to_work' | 'work_to_home',
+    grid: { getCell(x: number, y: number): { roadType: number } | null; width: number; height: number },
+    vehicleCap: number,
+  ): void {
+    const commuterSet = direction === 'home_to_work' ? this.morningCommuters : this.eveningCommuters;
+
+    // Get eligible citizens: adults (19-65) with both homeId and workplaceId
+    const eligible = this.state.citizens.citizens.filter(
+      c => c.age > 18 && c.age <= 65 &&
+           c.homeId !== null && c.workplaceId !== null &&
+           !commuterSet.has(c.id)
+    );
+
+    if (eligible.length === 0) return;
+
+    // Spawn up to N vehicles per tick (batch to avoid lag)
+    const maxPerTick = Math.min(10, Math.max(1, Math.floor(eligible.length / 4)));
+    let spawned = 0;
+
+    for (const citizen of eligible) {
+      if (spawned >= maxPerTick) break;
+      if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
+
+      const fromId = direction === 'home_to_work' ? citizen.homeId! : citizen.workplaceId!;
+      const toId = direction === 'home_to_work' ? citizen.workplaceId! : citizen.homeId!;
+
+      const fromPos = this.buildingIndex.get(fromId);
+      const toPos = this.buildingIndex.get(toId);
+      if (!fromPos || !toPos) {
+        commuterSet.add(citizen.id); // mark as done to avoid retrying
+        continue;
+      }
+      if (fromPos.x === toPos.x && fromPos.y === toPos.y) {
+        commuterSet.add(citizen.id);
+        continue;
+      }
+
+      const startRoad = this.findAdjacentRoad(fromPos.x, fromPos.y, grid);
+      const endRoad = this.findAdjacentRoad(toPos.x, toPos.y, grid);
+      if (!startRoad || !endRoad) {
+        commuterSet.add(citizen.id);
+        continue;
+      }
+      if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) {
+        commuterSet.add(citizen.id);
+        continue;
+      }
+
+      const path = this.bfsRoadPath(startRoad, endRoad, grid);
+      if (path && path.length >= 2) {
+        const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
+        const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
+        this.state.traffic.addVehicle(path, directionalLanes);
+        commuterSet.add(citizen.id);
+        spawned++;
+      } else {
+        commuterSet.add(citizen.id); // no path, don't retry
+      }
+    }
+  }
+
+  /**
+   * Spawn a small amount of random traffic during midday hours.
+   */
+  private spawnRandomTraffic(
+    grid: { getCell(x: number, y: number): { roadType: number; buildingId: number; zoneType: number } | null; width: number; height: number },
+    vehicleCap: number,
+  ): void {
+    const pop = this.state.citizens.getPopulation();
+    // Very small amount: 1 per tick if pop > 50
+    const spawnCount = pop >= 50 ? 1 : 0;
+    if (spawnCount === 0) return;
+
+    const roads: { x: number; y: number }[] = [];
+    const commercialCells: { x: number; y: number }[] = [];
+
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
         if (cell.roadType > 0) roads.push({ x, y });
-        if (cell.buildingId > 0) {
-          if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) {
-            residentialCells.push({ x, y });
-          } else if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH ||
-                     cell.zoneType === ZoneType.INDUSTRIAL || cell.zoneType === ZoneType.OFFICE) {
-            workCells.push({ x, y });
-          }
+        if (cell.buildingId > 0 &&
+            (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH)) {
+          commercialCells.push({ x, y });
         }
       }
     }
 
     if (roads.length < 2) return;
-
-    // Use building cells for start/end if available, fallback to random roads
-    const startPool = residentialCells.length > 0 ? residentialCells : roads;
-    const endPool = workCells.length > 0 ? workCells : roads;
+    const startPool = commercialCells.length > 0 ? commercialCells : roads;
 
     for (let i = 0; i < spawnCount; i++) {
+      if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
       const start = startPool[Math.floor(Math.random() * startPool.length)]!;
-      const end = endPool[Math.floor(Math.random() * endPool.length)]!;
+      const end = roads[Math.floor(Math.random() * roads.length)]!;
       if (start.x === end.x && start.y === end.y) continue;
 
-      // Find adjacent road cells for start/end (buildings aren't roads)
       const startRoad = this.findAdjacentRoad(start.x, start.y, grid);
       const endRoad = this.findAdjacentRoad(end.x, end.y, grid);
       if (!startRoad || !endRoad) continue;
       if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
 
-      // BFS along road cells to find path
       const path = this.bfsRoadPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
-        // Determine lane count from the road type at the start of the path
-        const startCell = grid.getCell(startRoad.x, startRoad.y);
+        const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
         const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
         this.state.traffic.addVehicle(path, directionalLanes);
       }
