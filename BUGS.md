@@ -1122,3 +1122,13 @@
 - ✅ **12/12 快捷鍵** — 1=Select, 2=Road, 3=ZoneR, 4=ZoneC, 5=ZoneI, 6=ZoneO, 7=Rural, 8=Power, 9=Water, 0=Demolish, ESC=Select, Delete=Demolish
 - ✅ 零遊戲 Console 錯誤
 - ✅ 全部 649 單元測試通過
+
+### 新增已驗證功能（第五十四輪測試 — Save/Load 完整流程 + 壓力測試）
+- ✅ **Save Game** — saveCurrentGame(52, 'R53-Regression') 成功存檔 65KB
+- ✅ **Load Game UI** — Load Game 按鈕顯示 4 個存檔列表：AutoSave/R30/R51/R53，含名稱/Slot/日期/大小
+- ✅ **Load Game 功能** — 點擊 R53-Regression (Slot 52) 成功載入，Pop 186, Funds $177K, Tax 13% 全部保留
+- ✅ **載入後基礎設施** — Power 1 plant, Water 1 plant 正確恢復
+- ✅ **載入後繼續遊戲** — 城市繼續運行，人口穩定，收支正常
+- ✅ **5000-tick 壓力測試** — 3016ms (1658 ticks/sec), Pop 186 穩定, Funds $322K, 零 NaN
+- ✅ 零遊戲 Console 錯誤
+- ✅ 全部 649 單元測試通過
