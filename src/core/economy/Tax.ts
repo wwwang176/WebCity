@@ -1,8 +1,9 @@
 export interface TaxRates {
-  residential: number;
-  commercial: number;
-  industrial: number;
-  office: number;
+  residential: number;  // Income tax rate (applied to citizens in residential buildings)
+  commercial: number;   // Legacy per-zone rate (kept for backward compat)
+  industrial: number;   // Legacy per-zone rate (kept for backward compat)
+  office: number;       // Legacy per-zone rate (kept for backward compat)
+  business: number;     // Business tax rate (applied to commercial/industrial/office companyIncome)
 }
 
 export const DEFAULT_TAX_RATES: TaxRates = {
@@ -10,6 +11,7 @@ export const DEFAULT_TAX_RATES: TaxRates = {
   commercial: 9,
   industrial: 9,
   office: 9,
+  business: 9,
 };
 
 export function calculateTaxRevenue(

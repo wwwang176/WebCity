@@ -46,6 +46,7 @@ interface SerializedState {
     commercial: number;
     industrial: number;
     office: number;
+    business?: number; // Added in tax refactor; optional for backward compat with old saves
   };
   powerPlants?: PowerPlant[];
   waterPlants?: WaterPlant[];
@@ -126,6 +127,7 @@ export function serializeGameState(state: GameState): string {
       commercial: state.taxRates.commercial,
       industrial: state.taxRates.industrial,
       office: state.taxRates.office,
+      business: state.taxRates.business,
     },
     powerPlants: [...state.power.getPlants()],
     waterPlants: [...state.water.getPlants()],
@@ -170,6 +172,8 @@ export function deserializeGameState(json: string): GameState {
   state.taxRates.commercial = saved.taxRates.commercial;
   state.taxRates.industrial = saved.taxRates.industrial;
   state.taxRates.office = saved.taxRates.office;
+  // Backward compat: old saves may not have business field; default to residential rate
+  state.taxRates.business = saved.taxRates.business ?? saved.taxRates.residential;
 
   // Restore power/water plants
   if (saved.powerPlants) {

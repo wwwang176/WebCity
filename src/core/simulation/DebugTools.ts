@@ -98,6 +98,7 @@ export class DebugTools {
       { name: 'funds', type: 'number', value: budget.funds, min: 0, max: 99999999 },
       { name: 'speed', type: 'number', value: clock.speed, min: 1, max: 3 },
       { name: 'taxRate', type: 'number', value: taxRates.residential, min: 0, max: 30 },
+      { name: 'businessTaxRate', type: 'number', value: taxRates.business, min: 0, max: 30 },
     ];
   }
 
@@ -111,6 +112,9 @@ export class DebugTools {
         break;
       case 'taxRate':
         this.state.taxRates.residential = value;
+        break;
+      case 'businessTaxRate':
+        this.state.taxRates.business = value;
         this.state.taxRates.commercial = value;
         this.state.taxRates.industrial = value;
         this.state.taxRates.office = value;

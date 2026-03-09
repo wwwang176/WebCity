@@ -1789,10 +1789,10 @@ export function createGameUI(game: Game): HTMLElement {
       <div class="section-title">Income Breakdown</div>
       <table class="data-table">
         <tr><th>Source</th><th>Rate</th><th style="text-align:right">Amount</th></tr>
-        <tr><td class="td-label">Residential Tax</td><td class="td-value">${state.taxRates.residential}%</td><td class="td-income" style="text-align:right">+$${breakdown.residential.toFixed(1)}</td></tr>
-        <tr><td class="td-label">Commercial Tax</td><td class="td-value">${state.taxRates.commercial}%</td><td class="td-income" style="text-align:right">+$${breakdown.commercial.toFixed(1)}</td></tr>
-        <tr><td class="td-label">Industrial Tax</td><td class="td-value">${state.taxRates.industrial}%</td><td class="td-income" style="text-align:right">+$${breakdown.industrial.toFixed(1)}</td></tr>
-        <tr><td class="td-label">Office Tax</td><td class="td-value">${state.taxRates.office}%</td><td class="td-income" style="text-align:right">+$${breakdown.office.toFixed(1)}</td></tr>
+        <tr><td class="td-label">Income Tax (Residential)</td><td class="td-value">${state.taxRates.residential}%</td><td class="td-income" style="text-align:right">+$${breakdown.residential.toFixed(1)}</td></tr>
+        <tr><td class="td-label">Business Tax (Commercial)</td><td class="td-value">${state.taxRates.business}%</td><td class="td-income" style="text-align:right">+$${breakdown.commercial.toFixed(1)}</td></tr>
+        <tr><td class="td-label">Business Tax (Industrial)</td><td class="td-value">${state.taxRates.business}%</td><td class="td-income" style="text-align:right">+$${breakdown.industrial.toFixed(1)}</td></tr>
+        <tr><td class="td-label">Business Tax (Office)</td><td class="td-value">${state.taxRates.business}%</td><td class="td-income" style="text-align:right">+$${breakdown.office.toFixed(1)}</td></tr>
       </table>
 
       <div class="section-title">Expenses Breakdown</div>
@@ -1806,9 +1806,14 @@ export function createGameUI(game: Game): HTMLElement {
 
       <div class="section-title">Tax Rate</div>
       <div class="tax-row">
-        <label>All Zones</label>
-        <input type="range" id="tax-slider" min="1" max="20" step="1" value="${state.taxRates.residential}">
-        <span class="tax-val" id="tax-display">${state.taxRates.residential}%</span>
+        <label>\u6240\u5f97\u7a05\u7387</label>
+        <input type="range" id="tax-slider-income" min="1" max="20" step="1" value="${state.taxRates.residential}">
+        <span class="tax-val" id="tax-display-income">${state.taxRates.residential}%</span>
+      </div>
+      <div class="tax-row">
+        <label>\u71df\u696d\u7a05\u7387</label>
+        <input type="range" id="tax-slider-business" min="1" max="20" step="1" value="${state.taxRates.business}">
+        <span class="tax-val" id="tax-display-business">${state.taxRates.business}%</span>
       </div>
 
       <div class="section-title">City Statistics</div>
@@ -1832,18 +1837,30 @@ export function createGameUI(game: Game): HTMLElement {
     drawEconChart();
     drawPopChart();
 
-    // Tax slider
-    const taxSlider = body.querySelector('#tax-slider') as HTMLInputElement;
-    const taxDisplay = body.querySelector('#tax-display') as HTMLElement;
-    if (taxSlider) {
-      taxSlider.addEventListener('input', () => {
-        const rate = parseInt(taxSlider.value, 10);
+    // Income tax slider
+    const incomeTaxSlider = body.querySelector('#tax-slider-income') as HTMLInputElement;
+    const incomeTaxDisplay = body.querySelector('#tax-display-income') as HTMLElement;
+    if (incomeTaxSlider) {
+      incomeTaxSlider.addEventListener('input', () => {
+        const rate = parseInt(incomeTaxSlider.value, 10);
         const taxes = game.getState().taxRates;
         taxes.residential = rate;
+        if (incomeTaxDisplay) incomeTaxDisplay.textContent = `${rate}%`;
+      });
+    }
+
+    // Business tax slider
+    const businessTaxSlider = body.querySelector('#tax-slider-business') as HTMLInputElement;
+    const businessTaxDisplay = body.querySelector('#tax-display-business') as HTMLElement;
+    if (businessTaxSlider) {
+      businessTaxSlider.addEventListener('input', () => {
+        const rate = parseInt(businessTaxSlider.value, 10);
+        const taxes = game.getState().taxRates;
+        taxes.business = rate;
         taxes.commercial = rate;
         taxes.industrial = rate;
         taxes.office = rate;
-        if (taxDisplay) taxDisplay.textContent = `${rate}%`;
+        if (businessTaxDisplay) businessTaxDisplay.textContent = `${rate}%`;
       });
     }
 

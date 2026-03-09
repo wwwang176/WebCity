@@ -17,6 +17,7 @@ import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
 import { getBuildingType, type BuildingType } from './core/building/types';
+import { IncomeLevel } from './core/citizen/types';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
@@ -1390,25 +1391,59 @@ export class Game {
     roadMaintenance: number; loanInterest: number; powerCost: number; waterCost: number;
   } {
     const grid = this.state.grid;
-    const taxRate = this.state.taxRates;
+    const incomeTaxRate = this.state.taxRates.residential ?? 9;
+    const businessTaxRate = this.state.taxRates.business ?? 9;
     let resIncome = 0, comIncome = 0, indIncome = 0, offIncome = 0;
     let roadCount = 0;
+
+    const incomeMultiplier = (level: IncomeLevel): number => {
+      switch (level) {
+        case IncomeLevel.LOW: return 1.0;
+        case IncomeLevel.MEDIUM: return 1.5;
+        case IncomeLevel.HIGH: return 2.0;
+        default: return 1.0;
+      }
+    };
+
+    const levelMultiplier = (level: 1 | 2 | 3): number => {
+      switch (level) {
+        case 1: return 1.0;
+        case 2: return 1.5;
+        case 3: return 2.0;
+        default: return 1.0;
+      }
+    };
 
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
         if (cell.roadType > 0) roadCount++;
-        if (cell.buildingId === 0) continue;
-        const base = cell.buildingId * 2;
-        if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) {
-          resIncome += base * (taxRate.residential / 100);
-        } else if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) {
-          comIncome += base * (taxRate.commercial / 100);
-        } else if (cell.zoneType === ZoneType.INDUSTRIAL) {
-          indIncome += base * (taxRate.industrial / 100);
-        } else if (cell.zoneType === ZoneType.OFFICE) {
-          offIncome += base * (taxRate.office / 100);
+        if (cell.buildingId === 0 || cell.buildingId >= 245) continue;
+        if (cell.reserved === 3 || cell.reserved === 4) continue; // burned or multi-cell secondary
+
+        const btype = getBuildingType(cell.buildingId);
+        if (!btype) continue;
+
+        const isResidential = cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH;
+        if (isResidential) {
+          // Income tax: scan citizens living here
+          const posKey = `${x},${y}`;
+          const residents = this.state.citizens.getCitizensByHome(posKey);
+          for (const citizen of residents) {
+            resIncome += 0.5 * incomeMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+          }
+        } else {
+          // Business tax: companyIncome x levelMultiplier x businessTaxRate
+          const ci = btype.companyIncome ?? 0;
+          const bi = ci * levelMultiplier(btype.level) * (businessTaxRate / 100);
+          if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) {
+            comIncome += bi;
+          } else if (cell.zoneType === ZoneType.INDUSTRIAL) {
+            indIncome += bi;
+          } else if (cell.zoneType === ZoneType.OFFICE) {
+            offIncome += bi;
+          }
         }
       }
     }

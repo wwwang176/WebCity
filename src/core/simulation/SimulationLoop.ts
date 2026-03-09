@@ -11,6 +11,7 @@ import { getBuildingType } from '../building/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
+import { IncomeLevel } from '../citizen/types';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
@@ -50,6 +51,13 @@ export class SimulationLoop {
         jobOpenings: this.countJobOpenings(),
         exportDemand: 10,
       });
+      // Higher business tax reduces commercial/industrial demand
+      const businessTax = this.state.taxRates.business ?? 9;
+      if (businessTax > 9) {
+        const penalty = (businessTax - 9) * 2; // 2 demand points per % over 9
+        rci.commercial = Math.max(-100, rci.commercial - penalty);
+        rci.industrial = Math.max(-100, rci.industrial - penalty);
+      }
       this.state.rciDemand = rci;
     }
 
@@ -359,30 +367,71 @@ export class SimulationLoop {
   }
 
   private calculateIncome(): void {
-    let income = 0;
+    const incomeTaxRate = this.state.taxRates.residential ?? 9;
+    const businessTaxRate = this.state.taxRates.business ?? 9;
+
+    // Income level multipliers for income tax
+    const incomeMultiplier = (level: IncomeLevel): number => {
+      switch (level) {
+        case IncomeLevel.LOW: return 1.0;
+        case IncomeLevel.MEDIUM: return 1.5;
+        case IncomeLevel.HIGH: return 2.0;
+        default: return 1.0;
+      }
+    };
+
+    // Level multipliers for business tax
+    const levelMultiplier = (level: 1 | 2 | 3): number => {
+      switch (level) {
+        case 1: return 1.0;
+        case 2: return 1.5;
+        case 3: return 2.0;
+        default: return 1.0;
+      }
+    };
+
+    let totalIncome = 0;
+
     for (let y = 0; y < this.state.grid.height; y++) {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
         // Skip infrastructure, empty cells, burned (3), and multi-cell secondary (4)
         if (cell && cell.buildingId > 0 && cell.buildingId < 245 && cell.reserved !== 3 && cell.reserved !== 4) {
           const btype = getBuildingType(cell.buildingId);
-          let buildingIncome = btype ? (btype.residents + btype.workers) * 0.5 : 0;
+          if (!btype) continue;
+
+          let buildingIncome = 0;
+          const isResidential = btype.zoneType === ZoneType.RESIDENTIAL_LOW || btype.zoneType === ZoneType.RESIDENTIAL_HIGH;
+
+          if (isResidential) {
+            // Income tax: scan citizens living in this building
+            const posKey = `${x},${y}`;
+            const residents = this.state.citizens.getCitizensByHome(posKey);
+            for (const citizen of residents) {
+              // Per-citizen tax = baseFactor(0.5) x incomeLevel multiplier x incomeTaxRate
+              buildingIncome += 0.5 * incomeMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+            }
+          } else {
+            // Business tax: companyIncome x levelMultiplier x businessTaxRate
+            const ci = btype.companyIncome ?? 0;
+            buildingIncome = ci * levelMultiplier(btype.level) * (businessTaxRate / 100);
+          }
+
           // Apply district specialization revenue multiplier
           const district = this.state.districts.getDistrictAt(x, y);
           if (district) {
             const bonus = getSpecializationBonus(district.specialization);
             buildingIncome *= bonus.revenueMultiplier;
           }
-          income += buildingIncome;
+          totalIncome += buildingIncome;
         }
       }
     }
     // Apply city-wide specialization revenue multiplier
     const citySpecBonus = this.state.citySpec.getBonus();
-    income *= citySpecBonus.revenueMultiplier;
+    totalIncome *= citySpecBonus.revenueMultiplier;
 
-    const taxRate = this.state.taxRates.residential ?? 9;
-    this.state.budget.income = income * (taxRate / 100);
+    this.state.budget.income = totalIncome;
     // Expenses: road maintenance + infrastructure + civic service operating costs
     const roadMaint = this.countRoadTiles() * 0.1;
     const powerCost = this.state.power.getPlants().length * 5;

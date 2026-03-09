@@ -399,16 +399,15 @@ describe('Specialization integration', () => {
     // Add multiple cells to district and place commercial buildings
     for (let x = 3; x <= 5; x++) {
       state.districts.addCellToDistrict(d.id, x, 5);
-      state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 }); // Small Shop
+      state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 }); // Small Shop: companyIncome=10, Lv1
     }
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    // 3 buildings × (0+4)*0.5 × 1.5 (tourism bonus) × taxRate/100
-    const taxRate = state.taxRates.residential ?? 9;
-    const expectedBase = 3 * 4 * 0.5;
-    const expectedWithBonus = expectedBase * 1.5 * (taxRate / 100);
+    // 3 buildings × companyIncome(10) × levelMult(1.0) × 1.5 (tourism bonus) × businessTaxRate/100
+    const businessTax = state.taxRates.business ?? 9;
+    const expectedWithBonus = 3 * 10 * 1.0 * 1.5 * (businessTax / 100);
     expect(state.budget.income).toBeCloseTo(expectedWithBonus, 1);
   });
 
@@ -426,8 +425,9 @@ describe('Specialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     // Both buildings should generate same revenue (no bonus)
-    const taxRate = state.taxRates.residential ?? 9;
-    const expected = 2 * 4 * 0.5 * (taxRate / 100); // 2 buildings × (0+4)*0.5
+    // Small Shop: companyIncome=10, Lv1, levelMult=1.0
+    const businessTax = state.taxRates.business ?? 9;
+    const expected = 2 * 10 * 1.0 * (businessTax / 100); // 2 buildings × companyIncome × businessTax
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
 });
@@ -443,14 +443,15 @@ describe('CitySpecialization integration', () => {
     const state = createGameState(20, 20);
     state.citySpec.choose(CitySpecType.GAMBLING_CITY, 5000);
 
-    // Place a building
+    // Place a commercial building: Small Shop companyIncome=10, Lv1
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    const taxRate = state.taxRates.residential ?? 9;
-    const expected = 4 * 0.5 * 1.4 * (taxRate / 100); // (0+4)*0.5 × gambling multiplier × tax
+    // companyIncome(10) × levelMult(1.0) × businessTax/100 × gambling(1.4)
+    const businessTax = state.taxRates.business ?? 9;
+    const expected = 10 * 1.0 * (businessTax / 100) * 1.4;
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
 
@@ -458,13 +459,15 @@ describe('CitySpecialization integration', () => {
     const state = createGameState(20, 20);
     state.citySpec.choose(CitySpecType.TECH_CITY, 5000);
 
+    // Small Office (id=16): companyIncome=20, Lv1
     state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    const taxRate = state.taxRates.residential ?? 9;
-    const expected = 15 * 0.5 * 1.25 * (taxRate / 100); // (0+15)*0.5 × tech multiplier × tax
+    // companyIncome(20) × levelMult(1.0) × businessTax/100 × tech(1.25)
+    const businessTax = state.taxRates.business ?? 9;
+    const expected = 20 * 1.0 * (businessTax / 100) * 1.25;
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
 });

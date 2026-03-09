@@ -91,14 +91,21 @@ describe('DebugTools', () => {
     expect(params).toContainEqual(expect.objectContaining({ name: 'taxRate', type: 'number' }));
   });
 
-  it('should modify tax rate via setParam', () => {
+  it('should modify income tax rate via setParam taxRate', () => {
     const state = createGameState(20, 20);
     const tools = new DebugTools(state);
     tools.setParam('taxRate', 15);
     expect(state.taxRates.residential).toBe(15);
-    expect(state.taxRates.commercial).toBe(15);
-    expect(state.taxRates.industrial).toBe(15);
-    expect(state.taxRates.office).toBe(15);
+  });
+
+  it('should modify business tax rate via setParam businessTaxRate', () => {
+    const state = createGameState(20, 20);
+    const tools = new DebugTools(state);
+    tools.setParam('businessTaxRate', 12);
+    expect(state.taxRates.business).toBe(12);
+    expect(state.taxRates.commercial).toBe(12);
+    expect(state.taxRates.industrial).toBe(12);
+    expect(state.taxRates.office).toBe(12);
   });
 
   it('should modify funds via setParam', () => {
