@@ -973,6 +973,8 @@ export class Game {
       road_rural: 0x424242,
       road_2lane: 0x424242,
       road_4lane: 0x424242,
+      road_6lane: 0x424242,
+      road_highway: 0x424242,
       zone_r: 0x4caf50,
       zone_rh: 0x2e7d32,
       zone_c: 0x2196f3,

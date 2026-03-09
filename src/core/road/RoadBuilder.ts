@@ -35,7 +35,7 @@ export class RoadBuilder {
     for (const pos of cells) {
       const cell = this.grid.getCell(pos.x, pos.y)!;
       if (cell.roadType !== RoadType.NONE) {
-        const existingCost = ROAD_CONFIGS[cell.roadType].cost;
+        const existingCost = ROAD_CONFIGS[cell.roadType as RoadType].cost;
         totalCost += Math.max(0, config.cost - existingCost);
       } else {
         totalCost += config.cost;

@@ -1303,3 +1303,15 @@
 - ✅ **Bus Route 建立** — 2 站→1 路線，營運成本 $100
 - ✅ 零 Console 錯誤
 - ✅ 全部 653 單元測試通過
+
+### 新增已驗證功能（第六十六輪測試 — Civic 恢復 / 經濟平衡 / Production Build / TS 修復）
+- ✅ **Load Game Civic 恢復** — Police:1, Fire:1, Hospital:1, Schools:3, Parks:1, Garbage:1 全部正確
+- ✅ **Transit 修復驗證** — BusStops=2, MetroStations=1, TaxiStands=1（BUG-027 修復持續有效）
+- ✅ **經濟 50-tick 平衡** — $361K→$364K（+0.7%），100-tick 後 $366K 穩定成長
+- ✅ **Income/Expense 比率** — 3.79（健康範圍 1.5-5）
+- ✅ **Production Build** — 2.32s 成功（Game 617KB, GameUI 74KB, index 56KB）
+- ✅ **TypeScript 修復** — RoadBuilder cast、Save test non-null、Game.ts 缺少 road_6lane/road_highway
+- ✅ **GlobalMarket 存在** — OIL=$111, ORE=$85, AGRICULTURE=$67, ELECTRONICS=$151
+- ✅ 零 Console 錯誤
+- ✅ 全部 653 單元測試通過
+- ℹ️ **已知限制**: Districts/GlobalMarket/Policies 未序列化（Load 後重置為預設）

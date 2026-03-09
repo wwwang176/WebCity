@@ -129,11 +129,11 @@ describe('Serializer', () => {
 
     // Transit stops should be rebuilt from grid scan
     expect(restored.bus.getStops()).toHaveLength(1);
-    expect(restored.bus.getStops()[0].x).toBe(5);
-    expect(restored.bus.getStops()[0].y).toBe(5);
+    expect(restored.bus.getStops()[0]!.x).toBe(5);
+    expect(restored.bus.getStops()[0]!.y).toBe(5);
     expect(restored.metro.getStations()).toHaveLength(1);
-    expect(restored.metro.getStations()[0].x).toBe(8);
-    expect(restored.metro.getStations()[0].y).toBe(8);
+    expect(restored.metro.getStations()[0]!.x).toBe(8);
+    expect(restored.metro.getStations()[0]!.y).toBe(8);
   });
 });
 
