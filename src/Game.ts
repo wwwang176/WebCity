@@ -329,6 +329,7 @@ export class Game {
         );
         if (result.success && result.cost) {
           this.state.budget.funds -= result.cost;
+          this.simLoop.markLaneGraphDirty();
           this.audioManager.playSfx('build');
         } else if (!result.success && result.reason) {
           const reasonMessages: Record<string, string> = {
@@ -371,6 +372,7 @@ export class Game {
         break;
       case 'demolish':
         this.demolish(x1, y1, x2, y2);
+        this.simLoop.markLaneGraphDirty();
         this.audioManager.playSfx('demolish');
         break;
       case 'power':
@@ -770,6 +772,33 @@ export class Game {
     const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
       if (v.arrived) return null;
 
+      // Derive vehicle type from length (assigned in simulation)
+      if (!this.vehicleTypes.has(v.id)) {
+        let vtype: VehicleData['type'];
+        if (v.length >= 0.44) vtype = 'bus';
+        else if (v.length >= 0.33) vtype = 'firetruck';
+        else if (v.length >= 0.28) vtype = 'truck';
+        else vtype = 'car';
+        this.vehicleTypes.set(v.id, vtype);
+      }
+
+      // Edge-based vehicle: position and heading come directly from LaneEdge path
+      if (v.edgePath && v.edgePath.length > 0) {
+        const pos = this.state.traffic.getVehiclePositionOnEdges(v);
+        if (!pos) return null;
+        const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
+        this.vehicleHeadings.set(v.id, heading);
+        return {
+          id: v.id,
+          x: pos.x,
+          y: pos.y,
+          heading,
+          type: this.vehicleTypes.get(v.id)!,
+          laneOffset: 0, // lane offset is baked into the edge position
+        };
+      }
+
+      // Legacy cell-based vehicle
       // Interpolate pathPos for smooth inter-tick movement along the curve
       const prevPP = this.vehiclePrevPathPos.get(v.id) ?? v.pathPos;
       const t = Math.min(1, this.tickProgress);
@@ -780,16 +809,6 @@ export class Game {
 
       const { x, y, heading } = sp;
       this.vehicleHeadings.set(v.id, heading);
-
-      // Derive vehicle type from length (assigned in simulation)
-      if (!this.vehicleTypes.has(v.id)) {
-        let vtype: VehicleData['type'];
-        if (v.length >= 0.44) vtype = 'bus';
-        else if (v.length >= 0.33) vtype = 'firetruck';
-        else if (v.length >= 0.28) vtype = 'truck';
-        else vtype = 'car';
-        this.vehicleTypes.set(v.id, vtype);
-      }
 
       // Compute lane offset based on road type at current cell, with smooth transition
       const targetOffset = this.computeLaneOffset(v.path, interpPos, v.lane);

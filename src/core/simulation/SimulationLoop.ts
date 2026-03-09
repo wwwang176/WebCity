@@ -7,6 +7,8 @@ import { calculateLandValue } from '../economy/LandValue';
 import { ZoneType } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
+import { LaneGraph } from '../traffic/LaneGraph';
+import { refineLanePath } from '../traffic/Pathfinding';
 import { getBuildingType } from '../building/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
@@ -19,6 +21,10 @@ import { TransportMode, TransportType } from '../transport/types';
 export class SimulationLoop {
   private state: GameState;
   private lastAgeYear = -1;
+
+  // Lane-level connection graph for edge-based vehicle movement
+  laneGraph: LaneGraph = new LaneGraph();
+  private laneGraphDirty = true;
 
   // Building index: "x,y" position → buildingId (type). Rebuilt once per day.
   private buildingPositions: { pos: string; x: number; y: number; buildingId: number }[] = [];
@@ -141,7 +147,13 @@ export class SimulationLoop {
       this.assignCitizenHousing();
     }
 
-    // 7. Traffic - spawn commute vehicles and advance (every tick for smooth traffic)
+    // 7. Rebuild lane graph if roads changed
+    if (this.laneGraphDirty) {
+      this.rebuildLaneGraph();
+      this.laneGraphDirty = false;
+    }
+
+    // 7b. Traffic - spawn commute vehicles and advance (every tick for smooth traffic)
     this.spawnVehicles();
     this.state.trafficLights.tick();
     this.state.traffic.tick(
@@ -155,6 +167,12 @@ export class SimulationLoop {
         const cell = this.state.grid.getCell(x!, y!);
         if (!cell || cell.roadType === RoadType.NONE) return 50; // default
         return ROAD_CONFIGS[cell.roadType as RoadType]?.speedLimit ?? 50;
+      },
+      (cellKey) => {
+        const [x, y] = cellKey.split(',').map(Number);
+        const cell = this.state.grid.getCell(x!, y!);
+        if (!cell || cell.roadType === RoadType.NONE) return 1;
+        return getLaneCount(cell.roadType);
       },
     );
 
@@ -752,6 +770,34 @@ export class SimulationLoop {
     }
   }
 
+  /** Mark the lane graph as needing rebuild (call after road build/demolish). */
+  markLaneGraphDirty(): void {
+    this.laneGraphDirty = true;
+  }
+
+  private rebuildLaneGraph(): void {
+    const grid = this.state.grid;
+    const cellKeys: string[] = [];
+    const gridLookup = {
+      getCell: (x: number, y: number) => {
+        const cell = grid.getCell(x, y);
+        if (!cell) return null;
+        return { roadType: cell.roadType as RoadType, roadFlags: cell.roadFlags };
+      },
+    };
+
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (cell && cell.roadType !== RoadType.NONE) {
+          cellKeys.push(`${x},${y}`);
+        }
+      }
+    }
+
+    this.laneGraph.buildFromGrid(gridLookup, cellKeys);
+  }
+
   private spawnVehicles(): void {
     const pop = this.state.citizens.getPopulation();
     if (pop === 0) return;
@@ -865,9 +911,16 @@ export class SimulationLoop {
 
       const path = this.bfsRoadPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
-        const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
-        const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
-        this.state.traffic.addVehicle(path, directionalLanes);
+        // Try edge-based path first (new lane graph system)
+        const edgePath = refineLanePath(this.laneGraph, path);
+        if (edgePath && edgePath.length > 0) {
+          this.state.traffic.addVehicleOnEdges(edgePath);
+        } else {
+          // Fallback to cell-based path
+          const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
+          const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
+          this.state.traffic.addVehicle(path, directionalLanes);
+        }
         commuterSet.add(citizen.id);
         spawned++;
       } else {
@@ -961,9 +1014,14 @@ export class SimulationLoop {
 
       const path = this.bfsRoadPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
-        const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
-        const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
-        this.state.traffic.addVehicle(path, directionalLanes);
+        const edgePath = refineLanePath(this.laneGraph, path);
+        if (edgePath && edgePath.length > 0) {
+          this.state.traffic.addVehicleOnEdges(edgePath);
+        } else {
+          const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
+          const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
+          this.state.traffic.addVehicle(path, directionalLanes);
+        }
       }
     }
   }

@@ -115,18 +115,17 @@ describe('TrafficSimulation', () => {
 
   it('should block vehicles in the same lane', () => {
     const sim = new TrafficSimulation();
-    // Two vehicles on same path AND same lane
-    const v1 = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0'], 1);
+    const path = ['0,0', '1,0', '2,0', '3,0', '4,0'];
+    // v1 near end of path — can only move 0.2 before arriving
+    const v1 = sim.addVehicle(path, 1);
     v1.lane = 0;
-    const v2 = sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0'], 1);
+    v1.pathPos = 3.8;
+    const v2 = sim.addVehicle(path, 1);
     v2.lane = 0;
-    // Place them close together
-    v1.pathPos = 1.2;
-    v2.pathPos = 1.0;
+    v2.pathPos = 3.6;
 
     sim.tick();
-    // v2 should move less than full speed due to v1 being close ahead in same lane
-    // The gap between them (0.2 path units) minus vehicle lengths should restrict movement
+    // v1 arrives at 4.0, v2 should be blocked by MIN_GAP constraint
     expect(v2.pathPos).toBeLessThan(v1.pathPos);
   });
 
@@ -214,6 +213,63 @@ describe('TrafficSimulation', () => {
     blocker.pathPos = 9.0; // move blocker far away
     sim.tick();
     expect(follower.lane).toBe(1); // still on lane 1 due to cooldown
+  });
+
+  it('should update totalLanes and clamp lane when entering a wider road', () => {
+    const sim = new TrafficSimulation();
+    // Path goes from a 1-lane segment to a 2-lane segment
+    const path = ['0,0', '1,0', '2,0', '3,0', '4,0'];
+    const v = sim.addVehicle(path, 1);
+    v.lane = 0;
+    v.totalLanes = 1;
+
+    // getCellLaneCount: cells 0-1 are 1-lane, cells 2+ are 2-lane
+    const getCellLaneCount = (cellKey: string) => {
+      const x = Number(cellKey.split(',')[0]);
+      return x >= 2 ? 2 : 1;
+    };
+
+    // Move vehicle into the 2-lane zone
+    sim.tick(undefined, undefined, getCellLaneCount);
+    expect(v.totalLanes).toBe(2);
+  });
+
+  it('should clamp lane when entering a narrower road', () => {
+    const sim = new TrafficSimulation();
+    const path = ['0,0', '1,0', '2,0', '3,0', '4,0'];
+    const v = sim.addVehicle(path, 2);
+    v.lane = 1;
+    v.totalLanes = 2;
+
+    // getCellLaneCount: cells 2+ are 1-lane
+    const getCellLaneCount = (cellKey: string) => {
+      const x = Number(cellKey.split(',')[0]);
+      return x >= 2 ? 1 : 2;
+    };
+
+    sim.tick(undefined, undefined, getCellLaneCount);
+    expect(v.totalLanes).toBe(1);
+    expect(v.lane).toBe(0); // clamped from 1 to 0
+  });
+
+  it('should detect vehicle ahead mid-turn (90° heading difference)', () => {
+    const sim = new TrafficSimulation();
+    // v1 is turning: path goes east then north, stopped near end
+    const v1 = sim.addVehicle(['0,0', '1,0', '1,1', '1,2'], 1);
+    v1.lane = 0;
+    v1.pathPos = 1.5; // mid-turn, heading north at cell (1,0)->(1,1)
+
+    // v2 is behind on the straight segment, heading east
+    const v2 = sim.addVehicle(['0,0', '1,0', '1,1', '1,2'], 1);
+    v2.lane = 0;
+    v2.pathPos = 0.5; // heading east at cell (0,0)->(1,0)
+
+    // Block v1 from moving (near end of path)
+    v1.pathPos = 2.8;
+
+    sim.tick();
+    // v2 should NOT overlap with v1 — it should stop behind
+    expect(v2.pathPos).toBeLessThan(v1.pathPos);
   });
 });
 
