@@ -1228,3 +1228,12 @@
 - ✅ **6/6 Transit 工具切換** — bus_stop/metro_station/tram_stop/train_station/ferry_dock/taxi_stand 全部正確
 - ✅ 零 Console 錯誤
 - ✅ 全部 652 單元測試通過
+
+### 新增已驗證功能（第六十一輪測試 — Specialization / Debug / ARIA / Transit Routes）
+- ✅ **City Specialization Panel** — 7 種專業化（None/Mining/Oil/Tech/Tourism/Gambling/Trade），含 Revenue/Happiness/Crime 加成顯示，提示需 5000 人口
+- ✅ **Transit Routes Modal** — 無站點時正確提示 "No transit stops placed yet"
+- ✅ **Debug Panel** — 完整模擬狀態（Tick/Pop/Vehicles/Buildings/Roads/Funds/RCI/Power/Water/Happiness）
+- ✅ **BUG-023 修復驗證** — Debug input focus 3 秒後 auto-refresh 不覆蓋，值 999999 保持
+- ✅ **Accessibility ARIA** — 9 dialog, 3 meter, 1 toolbar, 1 banner, 1 alert, 23 aria-label 元素
+- ✅ 零 Console 錯誤
+- ✅ 全部 652 單元測試通過
