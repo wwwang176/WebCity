@@ -440,14 +440,15 @@ export class SimulationLoop {
   }
 
   private spawnVehicles(): void {
-    // Limit active vehicles
-    if (this.state.traffic.getVehicleCount() >= 50) return;
-
+    // Vehicle cap scales with population: 50 base + 1 per 10 residents, max 500
     const pop = this.state.citizens.getPopulation();
+    const vehicleCap = Math.min(500, 50 + Math.floor(pop / 10));
+    if (this.state.traffic.getVehicleCount() >= vehicleCap) return;
+
     if (pop === 0) return;
 
-    // Spawn 1-3 vehicles per tick based on population
-    const spawnCount = Math.min(3, Math.max(1, Math.floor(pop / 100)));
+    // Spawn 1-5 vehicles per tick based on population
+    const spawnCount = Math.min(5, Math.max(1, Math.floor(pop / 50)));
     const grid = this.state.grid;
     const roads: { x: number; y: number }[] = [];
     const residentialCells: { x: number; y: number }[] = [];
