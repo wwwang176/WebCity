@@ -1806,12 +1806,12 @@ export function createGameUI(game: Game): HTMLElement {
 
       <div class="section-title">Tax Rate</div>
       <div class="tax-row">
-        <label>\u6240\u5f97\u7a05\u7387</label>
+        <label>Income Tax</label>
         <input type="range" id="tax-slider-income" min="1" max="20" step="1" value="${state.taxRates.residential}">
         <span class="tax-val" id="tax-display-income">${state.taxRates.residential}%</span>
       </div>
       <div class="tax-row">
-        <label>\u71df\u696d\u7a05\u7387</label>
+        <label>Business Tax</label>
         <input type="range" id="tax-slider-business" min="1" max="20" step="1" value="${state.taxRates.business}">
         <span class="tax-val" id="tax-display-business">${state.taxRates.business}%</span>
       </div>
