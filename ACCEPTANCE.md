@@ -319,14 +319,14 @@
 
 ### 單元驗收 — 稅收重構：所得稅 + 營業稅
 
-- [ ] 住宅所得稅：遍歷建築內居民，按 incomeLevel 加成（LOW ×1.0 / MEDIUM ×1.5 / HIGH ×2.0）× 所得稅率
-- [ ] 營業稅：商/工/辦建築 companyIncome × 等級加成（Lv1 ×1.0 / Lv2 ×1.5 / Lv3 ×2.0）× 營業稅率
-- [ ] BuildingType 新增 `companyIncome` 欄位（基礎營收能力）
-- [ ] `GameState.taxRates` 新增 `business` 欄位，所得稅和營業稅獨立設定
-- [ ] 調高所得稅 → 居民 happiness 下降 → 遷出
-- [ ] 調高營業稅 → 商業/工業/辦公 RCI demand 下降
-- [ ] UI：2 個稅率滑桿（所得稅 + 營業稅）
-- [ ] UI：建築面板顯示稅收明細（人頭稅額 / 營業稅額）
+- [x] 住宅所得稅：遍歷建築內居民，按 incomeLevel 加成（LOW ×1.0 / MEDIUM ×1.5 / HIGH ×2.0）× 所得稅率
+- [x] 營業稅：商/工/辦建築 companyIncome × 等級加成（Lv1 ×1.0 / Lv2 ×1.5 / Lv3 ×2.0）× 營業稅率
+- [x] BuildingType 新增 `companyIncome` 欄位（基礎營收能力）
+- [x] `GameState.taxRates` 新增 `business` 欄位，所得稅和營業稅獨立設定
+- [x] 調高所得稅 → 居民 happiness 下降 → 遷出
+- [x] 調高營業稅 → 商業/工業/辦公 RCI demand 下降
+- [x] UI：2 個稅率滑桿（所得稅 + 營業稅）
+- [x] UI：建築面板顯示稅收明細（人頭稅額 / 營業稅額）
 
 ### 單元驗收 — 預算
 

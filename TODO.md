@@ -384,18 +384,18 @@
 
 ### 9.6 稅收重構：所得稅 + 營業稅分離
 
-- [ ] **TEST**: 住宅建築所得稅 = Σ 每位居民(基礎係數 × incomeLevel 加成) × 所得稅率
-- [ ] **TEST**: incomeLevel 加成：LOW ×1.0, MEDIUM ×1.5, HIGH ×2.0
-- [ ] **TEST**: 同一棟住宅內不同 incomeLevel 居民各自計算稅額
-- [ ] **TEST**: 商/工/辦營業稅 = companyIncome × 等級加成(Lv1×1.0/Lv2×1.5/Lv3×2.0) × 營業稅率
-- [ ] **TEST**: BuildingType 新增 `companyIncome` 欄位（基礎營收）
-- [ ] **TEST**: 所得稅率和營業稅率獨立設定，互不影響
-- [ ] **TEST**: 調高所得稅率 → 居民 happiness 下降 → 遷出增加
-- [ ] **TEST**: 調高營業稅率 → 商業/工業/辦公 demand 下降
-- [ ] 修改 `calculateIncome()`：住宅掃市民 incomeLevel，商/工/辦用 companyIncome
-- [ ] 修改 `GameState.taxRates`：新增 `business` 稅率欄位（原 `residential` 改為所得稅率）
-- [ ] UI：稅率滑桿從 1 個改為 2 個（所得稅率 + 營業稅率）
-- [ ] UI：建築面板顯示稅收計算明細（居民人頭稅 / 營業稅額）
+- [x] **TEST**: 住宅建築所得稅 = Σ 每位居民(基礎係數 × incomeLevel 加成) × 所得稅率
+- [x] **TEST**: incomeLevel 加成：LOW ×1.0, MEDIUM ×1.5, HIGH ×2.0
+- [x] **TEST**: 同一棟住宅內不同 incomeLevel 居民各自計算稅額
+- [x] **TEST**: 商/工/辦營業稅 = companyIncome × 等級加成(Lv1×1.0/Lv2×1.5/Lv3×2.0) × 營業稅率
+- [x] **TEST**: BuildingType 新增 `companyIncome` 欄位（基礎營收）
+- [x] **TEST**: 所得稅率和營業稅率獨立設定，互不影響
+- [x] **TEST**: 調高所得稅率 → 居民 happiness 下降 → 遷出增加
+- [x] **TEST**: 調高營業稅率 → 商業/工業/辦公 demand 下降
+- [x] 修改 `calculateIncome()`：住宅掃市民 incomeLevel，商/工/辦用 companyIncome
+- [x] 修改 `GameState.taxRates`：新增 `business` 稅率欄位（原 `residential` 改為所得稅率）
+- [x] UI：稅率滑桿從 1 個改為 2 個（所得稅率 + 營業稅率）
+- [x] UI：建築面板顯示稅收計算明細（居民人頭稅 / 營業稅額）
 
 ### 9.3 市政預算
 
