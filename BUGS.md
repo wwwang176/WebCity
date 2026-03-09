@@ -1262,3 +1262,20 @@
 - ✅ **UI 完整** — TopBar/Toolbar/MiniMap/BuildingPanel/Notification/Tutorial/MuteBtn 全部存在
 - ✅ 零 Console 錯誤
 - ✅ 全部 652 單元測試通過
+
+### 新增已驗證功能（第六十四輪測試 — 災害/貨運/Transit路線/District/道路預覽）
+- ✅ **災害系統** — Earthquake at (12,13) 75%: 19 棟建築摧毀 (111→92)，通知正確觸發
+- ✅ **災後重建** — 5000 ticks 後建築自動重建回 111 棟（完全恢復）
+- ✅ **電力中斷/恢復** — 拆除電廠→20 ticks→重建電廠→建築繼續正常運作
+- ✅ **FreightSystem** — 貨運系統存在，cargoStorage/lastDemand 追蹤正常
+- ✅ **Bus Route 建立** — 2 站點→createRoute→1 條路線，營運成本 $100
+- ✅ **7 Transit 系統成本** — bus $0→$100(有路線後), metro/tram/rail/ferry/airport $0, taxi $50
+- ✅ **District 建立** — 塗刷工具建立 "District 1"，getDistrictAt(5,12) 正確回傳
+- ✅ **PolicyManager** — 存在且可查詢
+- ✅ **CitySpec** — current=NONE（需 5000 人口解鎖）
+- ✅ **Sewage 系統** — outlets/treatmentPlants/untreatedSewage 追蹤正常
+- ✅ **道路預覽線** — dragStart 設定後 scene children 81→82（✅ 正確添加）
+- ✅ **Save Game** — Slot 64 "R64-LoadTest" 成功存檔
+- ✅ **5000-tick 壓力測試** — 5276ms (948 ticks/s), Pop 272 穩定, Funds $151K→$330K, 零 NaN
+- ✅ 零 Console 錯誤
+- ✅ 全部 652 單元測試通過
