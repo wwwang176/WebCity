@@ -3,6 +3,8 @@ import { serializeGameState, deserializeGameState } from '../Serializer';
 import { createGameState } from '../../simulation/GameState';
 import { AutoSaver } from '../AutoSave';
 import { TerrainType, ZoneType } from '../../grid/types';
+import { MULTI_CELL_OCCUPIED } from '../../building/InfraPlacement';
+import { getInfraConfig } from '../../building/InfraConfig';
 
 describe('Serializer', () => {
   it('should produce valid JSON string', () => {
@@ -134,6 +136,132 @@ describe('Serializer', () => {
     expect(restored.metro.getStations()).toHaveLength(1);
     expect(restored.metro.getStations()[0]!.x).toBe(8);
     expect(restored.metro.getStations()[0]!.y).toBe(8);
+  });
+});
+
+describe('Old save migration (1×1 → multi-cell)', () => {
+  function makeOldSave(infraCells: { x: number; y: number; buildingId: number }[]): string {
+    // Simulate an old save where infrastructure was stored as 1×1 (no reserved=4 secondary cells)
+    const cells = infraCells.map(c => ({
+      x: c.x,
+      y: c.y,
+      data: { buildingId: c.buildingId },
+    }));
+    return JSON.stringify({
+      version: 1,
+      grid: { width: 30, height: 30, cells },
+      clock: { tick: 100, speed: 1, paused: false },
+      budget: { funds: 50000, income: 0, expenses: 0, loans: 0, loanInterestRate: 0.05 },
+      taxRates: { residential: 9, commercial: 9, industrial: 9, office: 9 },
+    });
+  }
+
+  it('should expand 1×1 police (bid=252) to 2×2 on load', () => {
+    const json = makeOldSave([{ x: 5, y: 5, buildingId: 252 }]);
+    const state = deserializeGameState(json);
+
+    // Primary cell should keep buildingId
+    const primary = state.grid.getCell(5, 5)!;
+    expect(primary.buildingId).toBe(252);
+    expect(primary.reserved).not.toBe(MULTI_CELL_OCCUPIED);
+
+    // Secondary cells should be filled
+    for (const [dx, dy] of [[1, 0], [0, 1], [1, 1]] as [number, number][]) {
+      const cell = state.grid.getCell(5 + dx, 5 + dy)!;
+      expect(cell.buildingId).toBe(252);
+      expect(cell.reserved).toBe(MULTI_CELL_OCCUPIED);
+    }
+  });
+
+  it('should expand 1×1 hospital (bid=250) to 2×3 on load', () => {
+    const json = makeOldSave([{ x: 10, y: 10, buildingId: 250 }]);
+    const state = deserializeGameState(json);
+
+    const cfg = getInfraConfig('hospital')!;
+    let primaryCount = 0;
+    let secondaryCount = 0;
+
+    for (let dy = 0; dy < cfg.height; dy++) {
+      for (let dx = 0; dx < cfg.width; dx++) {
+        const cell = state.grid.getCell(10 + dx, 10 + dy)!;
+        expect(cell.buildingId).toBe(250);
+        if (dx === 0 && dy === 0) {
+          expect(cell.reserved).not.toBe(MULTI_CELL_OCCUPIED);
+          primaryCount++;
+        } else {
+          expect(cell.reserved).toBe(MULTI_CELL_OCCUPIED);
+          secondaryCount++;
+        }
+      }
+    }
+    expect(primaryCount).toBe(1);
+    expect(secondaryCount).toBe(5);
+  });
+
+  it('should expand 1×1 university (bid=243) to 3×3 on load', () => {
+    const json = makeOldSave([{ x: 15, y: 15, buildingId: 243 }]);
+    const state = deserializeGameState(json);
+
+    for (let dy = 0; dy < 3; dy++) {
+      for (let dx = 0; dx < 3; dx++) {
+        const cell = state.grid.getCell(15 + dx, 15 + dy)!;
+        expect(cell.buildingId).toBe(243);
+        if (dx === 0 && dy === 0) {
+          expect(cell.reserved).not.toBe(MULTI_CELL_OCCUPIED);
+        } else {
+          expect(cell.reserved).toBe(MULTI_CELL_OCCUPIED);
+        }
+      }
+    }
+  });
+
+  it('should not re-expand already multi-cell infrastructure', () => {
+    // New save already has secondary cells
+    const state = createGameState(20, 20);
+    state.grid.setCell(5, 5, { buildingId: 252, reserved: 0 });
+    state.grid.setCell(6, 5, { buildingId: 252, reserved: MULTI_CELL_OCCUPIED });
+    state.grid.setCell(5, 6, { buildingId: 252, reserved: MULTI_CELL_OCCUPIED });
+    state.grid.setCell(6, 6, { buildingId: 252, reserved: MULTI_CELL_OCCUPIED });
+
+    const json = serializeGameState(state);
+    const restored = deserializeGameState(json);
+
+    // Should remain unchanged
+    expect(restored.grid.getCell(5, 5)!.buildingId).toBe(252);
+    expect(restored.grid.getCell(5, 5)!.reserved).toBe(0);
+    expect(restored.grid.getCell(6, 5)!.reserved).toBe(MULTI_CELL_OCCUPIED);
+    expect(restored.grid.getCell(5, 6)!.reserved).toBe(MULTI_CELL_OCCUPIED);
+    expect(restored.grid.getCell(6, 6)!.reserved).toBe(MULTI_CELL_OCCUPIED);
+  });
+
+  it('should skip expansion if secondary cells are blocked', () => {
+    // Old save: police at (5,5), but (6,5) has a road
+    const cells = [
+      { x: 5, y: 5, data: { buildingId: 252 } },
+      { x: 6, y: 5, data: { roadType: 1 } },
+    ];
+    const json = JSON.stringify({
+      version: 1,
+      grid: { width: 20, height: 20, cells },
+      clock: { tick: 0, speed: 1, paused: false },
+      budget: { funds: 50000, income: 0, expenses: 0, loans: 0, loanInterestRate: 0.05 },
+      taxRates: { residential: 9, commercial: 9, industrial: 9, office: 9 },
+    });
+
+    const state = deserializeGameState(json);
+    // Primary cell should still have buildingId (not cleared)
+    expect(state.grid.getCell(5, 5)!.buildingId).toBe(252);
+    // Blocked cell should remain as road
+    expect(state.grid.getCell(6, 5)!.roadType).toBe(1);
+  });
+
+  it('should expand 1×1 park (bid=248) without changes (already 1×1)', () => {
+    const json = makeOldSave([{ x: 5, y: 5, buildingId: 248 }]);
+    const state = deserializeGameState(json);
+
+    expect(state.grid.getCell(5, 5)!.buildingId).toBe(248);
+    // Park is 1×1, so no secondary cells needed
+    expect(state.grid.getCell(6, 5)!.buildingId).toBe(0);
   });
 });
 

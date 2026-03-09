@@ -306,6 +306,18 @@ const STYLES = `
     to { transform: translateX(-50%) translateY(0); opacity: 1; }
   }
 
+  /* ===== Rotation Indicator ===== */
+  #rotation-indicator {
+    position: absolute; top: 54px; right: 16px;
+    background: rgba(25, 55, 120, 0.85);
+    border: 1px solid rgba(66, 165, 245, 0.4);
+    border-radius: 6px; color: #e3f2fd;
+    padding: 4px 10px; font-size: 12px; font-weight: 500;
+    display: none; pointer-events: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  #rotation-indicator.visible { display: block; }
+
   /* ===== Overlay Indicator ===== */
   #overlay-indicator {
     position: absolute; top: 46px; right: 12px;
@@ -608,6 +620,7 @@ export function createGameUI(game: Game): HTMLElement {
     <style>${STYLES}</style>
 
     <div id="notification" role="alert" aria-live="assertive"></div>
+    <div id="rotation-indicator" aria-live="polite"></div>
 
     <!-- Top Bar -->
     <div id="top-bar" role="banner" aria-label="City status bar">
@@ -2176,6 +2189,18 @@ export function createGameUI(game: Game): HTMLElement {
         notifEl.classList.add('visible');
       } else {
         notifEl.classList.remove('visible');
+      }
+    }
+
+    // Rotation indicator
+    const rotEl = ui.querySelector('#rotation-indicator') as HTMLElement;
+    if (rotEl) {
+      const isInfra = ['power', 'water', 'police', 'fire', 'hospital', 'school', 'school_high', 'school_univ', 'park', 'garbage', 'sewage', 'cemetery'].includes(game.currentTool);
+      if (isInfra && game.currentRotation !== 0) {
+        rotEl.textContent = `R: ${game.currentRotation}°`;
+        rotEl.classList.add('visible');
+      } else {
+        rotEl.classList.remove('visible');
       }
     }
 

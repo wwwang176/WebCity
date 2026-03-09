@@ -704,83 +704,83 @@
 
 ### 驗收條件 — Step 1：InfraConfig 配置表
 
-- [ ] 新增 `src/core/building/InfraConfig.ts`，匯出 `INFRA_CONFIGS` 和 `getInfraConfig(type)` 查詢函式
-- [ ] 配置表包含上述所有建築的 id/name/width/height/cost
-- [ ] 定義 rotation 型別：`0 | 90 | 180 | 270`，90°/270° 時實際佔地 W↔H 互換
-- [ ] 單元測試：配置表完整性（每種基礎設施都有對應配置）
+- [x] 新增 `src/core/building/InfraConfig.ts`，匯出 `INFRA_CONFIGS` 和 `getInfraConfig(type)` 查詢函式
+- [x] 配置表包含上述所有建築的 id/name/width/height/cost
+- [x] 定義 rotation 型別：`0 | 90 | 180 | 270`，90°/270° 時實際佔地 W↔H 互換
+- [x] 單元測試：配置表完整性（每種基礎設施都有對應配置）— 14 tests passing
 
 ### 驗收條件 — Step 2：多格放置 + 旋轉
 
-- [ ] placeInfrastructure() 查表取得 W×H，根據 currentRotation 決定實際佔地（90°/270° 時 W↔H 互換）
-- [ ] 檢查所有格子（非水域/非道路/非建築/非地圖外），任一格不符合 → 整棟拒絕
-- [ ] 主格（左上角）：`buildingId = infraId`，存放 rotation 資訊
-- [ ] 從格（其餘格）：`buildingId = infraId, reserved = 4`（MULTI_CELL_OCCUPIED）
-- [ ] 按 R 鍵循環切換 rotation：0° → 90° → 180° → 270° → 0°（僅基礎設施工具時生效）
-- [ ] 切換工具或按 ESC 時 rotation 重置為 0°
-- [ ] 水廠 2×2：只需任一格靠近水源（getGroundwaterLevel > 0）即可放置
-- [ ] 單元測試：2×2 放置成功 → 4 格 buildingId 正確、從格 reserved=4
-- [ ] 單元測試：2×3 建築 rotation=90° → 實際佔地 3×2，6 格正確設定
-- [ ] 單元測試：3×3 放置部分被佔用 → 拒絕，grid 不變
-- [ ] 單元測試：放置在地圖邊緣超出範圍 → 拒絕
+- [x] placeInfrastructure() 查表取得 W×H，根據 currentRotation 決定實際佔地（90°/270° 時 W↔H 互換）
+- [x] 檢查所有格子（非水域/非道路/非建築/非地圖外），任一格不符合 → 整棟拒絕
+- [x] 主格（左上角）：`buildingId = infraId`，存放 rotation 資訊
+- [x] 從格（其餘格）：`buildingId = infraId, reserved = 4`（MULTI_CELL_OCCUPIED）
+- [x] 按 R 鍵循環切換 rotation：0° → 90° → 180° → 270° → 0°（僅基礎設施工具時生效）
+- [x] 切換工具或按 ESC 時 rotation 重置為 0°
+- [x] 水廠 2×2：只需任一格靠近水源（getGroundwaterLevel > 0）即可放置
+- [x] 單元測試：2×2 放置成功 → 4 格 buildingId 正確、從格 reserved=4
+- [x] 單元測試：2×3 建築 rotation=90° → 實際佔地 3×2，6 格正確設定
+- [x] 單元測試：3×3 放置部分被佔用 → 拒絕，grid 不變
+- [x] 單元測試：放置在地圖邊緣超出範圍 → 拒絕
 
 ### 驗收條件 — Step 3：多格拆除
 
-- [ ] 點擊主格 → 查表取得 W×H → 清除所有格子 buildingId/reserved → 服務 removeXxx
-- [ ] 點擊從格（reserved=4）→ 找到對應主格 → 同上整棟拆除
-- [ ] 找主格方法：查服務層設施列表，找 buildingId 匹配且座標最近的設施
-- [ ] 單元測試：拆除 2×2 建築主格 → 4 格全部清零
-- [ ] 單元測試：拆除 3×3 建築從格 → 9 格全部清零 + 服務層移除
+- [x] 點擊主格 → 查表取得 W×H → 清除所有格子 buildingId/reserved → 服務 removeXxx
+- [x] 點擊從格（reserved=4）→ 找到對應主格 → 同上整棟拆除
+- [x] 找主格方法：查服務層設施列表，找 buildingId 匹配且座標最近的設施
+- [x] 單元測試：拆除 2×2 建築主格 → 4 格全部清零
+- [x] 單元測試：拆除 3×3 建築從格 → 9 格全部清零 + 服務層移除
 
 ### 驗收條件 — Step 4：渲染 + 旋轉模型
 
-- [ ] BuildingRenderer 掃描 grid 時跳過從格（reserved=4），只在主格繪製
-- [ ] buildCivicBuilding geometry 大小改為 W×H 格（如 2×2 建築佔 2 unit × 2 unit）
-- [ ] 模型居中：位置 = 主格座標 + (w/2 - 0.5, h/2 - 0.5) 偏移
-- [ ] 主格存有 rotation → 模型繞 Y 軸旋轉對應角度（0°/90°/180°/270°）
-- [ ] 非正方形建築（醫院 2×3、高中 2×3）旋轉後模型方向正確（門面朝向改變）
-- [ ] 正方形建築（2×2、3×3）四個方向模型外觀有差異（如煙囪/入口位置不同）
-- [ ] buildPowerPlant / buildWaterPump 按 2×2 重新調整比例和細節
-- [ ] 大學（3×3）有明顯更大的建築外觀，機場（4×4）同理
-- [ ] 視覺驗收：各尺寸建築在遊戲中外觀合理、不重疊、不溢出格子
+- [x] BuildingRenderer 掃描 grid 時跳過從格（reserved=4），只在主格繪製
+- [x] buildCivicBuilding geometry 大小改為 W×H 格（如 2×2 建築佔 2 unit × 2 unit）
+- [x] 模型居中：位置 = 主格座標 + (w/2 - 0.5, h/2 - 0.5) 偏移
+- [x] 主格存有 rotation → 模型繞 Y 軸旋轉對應角度（0°/90°/180°/270°）
+- [x] 非正方形建築（醫院 2×3、高中 2×3）旋轉後模型方向正確（門面朝向改變）
+- [x] 正方形建築（2×2、3×3）四個方向模型外觀有差異（如煙囪/入口位置不同）
+- [x] buildPowerPlant / buildWaterPump 按 2×2 重新調整比例和細節
+- [x] 大學（3×3）有明顯更大的建築外觀，機場（4×4）同理
+- [x] 視覺驗收：各尺寸建築在遊戲中外觀合理、不重疊、不溢出格子
 
 ### 驗收條件 — Step 5：游標多格高亮 + 旋轉預覽
 
-- [ ] GridCursor 支援 `setSize(w, h)` 方法，PlaneGeometry 改為 W×H
-- [ ] 切換到基礎設施工具時，游標自動變為對應 W×H 大小
-- [ ] 切換到非基礎設施工具時，游標恢復 1×1
-- [ ] 按 R 鍵：游標 W↔H 互換（非正方形時可見變化），半透明預覽模型同步旋轉
-- [ ] UI 提示當前旋轉方向（如右上角小文字 "R: 90°" 或游標旁箭頭指示）
-- [ ] 視覺驗收：游標正確覆蓋未來建築佔地範圍，旋轉後高亮範圍即時更新
+- [x] GridCursor 支援 `setSize(w, h)` 方法，PlaneGeometry 改為 W×H
+- [x] 切換到基礎設施工具時，游標自動變為對應 W×H 大小
+- [x] 切換到非基礎設施工具時，游標恢復 1×1
+- [x] 按 R 鍵：游標 W↔H 互換（非正方形時可見變化），半透明預覽模型同步旋轉
+- [x] UI 提示當前旋轉方向（如右上角小文字 "R: 90°" 或游標旁箭頭指示）
+- [x] 視覺驗收：游標正確覆蓋未來建築佔地範圍，旋轉後高亮範圍即時更新
 
 ### 驗收條件 — Step 6：服務覆蓋起算點
 
-- [ ] 各服務 getCoverage 距離計算改為從建築中心 (x+w/2, y+h/2) 起算
-- [ ] 或在服務 add 方法中直接存入中心座標
-- [ ] 涉及：PowerGrid/WaterNetwork/Police/Fire/Health/Education/Park/Garbage/Sewage/DeathCare
-- [ ] Overlay 覆蓋圖顯示正確（從建築中心向外擴散）
+- [x] 各服務 getCoverage 距離計算改為從建築中心 (x+w/2, y+h/2) 起算
+- [x] 或在服務 add 方法中直接存入中心座標
+- [x] 涉及：PowerGrid/WaterNetwork/Police/Fire/Health/Education/Park/Garbage/Sewage/DeathCare
+- [x] Overlay 覆蓋圖顯示正確（從建築中心向外擴散）
 
 ### 驗收條件 — Step 7：SimulationLoop 去重
 
-- [ ] 掃描 grid 統計住房容量/工作崗位/建築數量時，跳過 reserved=4 的從格
-- [ ] reserved=3（BURNED）與 reserved=4（OCCUPIED）不衝突
-- [ ] 焦黑多格建築：所有格子 reserved 從 4 改為 3，拆除時清除所有格子
+- [x] 掃描 grid 統計住房容量/工作崗位/建築數量時，跳過 reserved=4 的從格
+- [x] reserved=3（BURNED）與 reserved=4（OCCUPIED）不衝突
+- [x] 焦黑多格建築：所有格子 reserved 從 4 改為 3，拆除時清除所有格子
 
 ### 驗收條件 — Step 8：存檔/讀檔
 
-- [ ] 存檔：grid 逐格序列化，主格+從格的 buildingId/reserved 都正確存入，主格 rotation 資訊保留
-- [ ] 讀檔（新存檔）：transit stop 重建掃描只對主格（reserved≠4）執行 addStop，不重複
-- [ ] 讀檔（新存檔）：建築 rotation 正確還原，渲染模型方向與存檔時一致
-- [ ] 讀檔（舊存檔 1×1 相容）：偵測到基礎設施 buildingId 但無從格 → 查表 W×H → 自動補填從格（rotation 預設 0°）
-- [ ] 單元測試：舊存檔載入後基礎設施正確擴展為多格
+- [x] 存檔：grid 逐格序列化，主格+從格的 buildingId/reserved 都正確存入，主格 rotation 資訊保留
+- [x] 讀檔（新存檔）：transit stop 重建掃描只對主格（reserved≠4）執行 addStop，不重複
+- [x] 讀檔（新存檔）：建築 rotation 正確還原，渲染模型方向與存檔時一致
+- [x] 讀檔（舊存檔 1×1 相容）：偵測到基礎設施 buildingId 但無從格 → 查表 W×H → 自動補填從格（rotation 預設 0°）
+- [x] 單元測試：舊存檔載入後基礎設施正確擴展為多格
 
 ### 驗收條件 — Step 9：測試
 
-- [ ] InfraConfig 單元測試通過
-- [ ] 多格放置/拆除單元測試通過
-- [ ] 旋轉放置測試通過（2×3 建築四個方向各放置一次，佔地和模型方向都正確）
-- [ ] 舊存檔相容測試通過
-- [ ] 所有現有單元測試通過（或合理更新）
-- [ ] 瀏覽器端到端測試：New Game → 放置各尺寸基礎設施 → 按 R 旋轉 → 正確顯示 → 拆除 → 正確清除
+- [x] InfraConfig 單元測試通過
+- [x] 多格放置/拆除單元測試通過
+- [x] 旋轉放置測試通過（2×3 建築四個方向各放置一次，佔地和模型方向都正確）
+- [x] 舊存檔相容測試通過
+- [x] 所有現有單元測試通過（或合理更新）
+- [x] 瀏覽器端到端測試：New Game → 放置各尺寸基礎設施 → 按 R 旋轉 → 正確顯示 → 拆除 → 正確清除
 
 ---
 
@@ -788,11 +788,11 @@
 
 ### 驗收條件
 
-- [ ] 基礎設施工具：滑鼠移動時在游標位置顯示該建築的半透明 3D 模型（opacity ~0.4）
-- [ ] 預覽顏色：綠色半透明=可放置，紅色半透明=不可放置（被佔用/水域/資金不足）
-- [ ] 多格建築預覽顯示完整 W×H 範圍的模型
-- [ ] 切換工具時 ghost mesh 正確更新為對應建築模型
-- [ ] 道路拖曳預覽：從線條改為半透明道路面，顯示道路寬度
-- [ ] 區域拖曳預覽：拖曳時顯示即將劃設的矩形範圍（半透明色塊）
-- [ ] 預覽不影響遊戲效能（ghost mesh 輕量，每幀更新位置不卡頓）
-- [ ] 拆除工具：保持現有紅色高亮，多格建築拆除時高亮整棟範圍
+- [x] 基礎設施工具：滑鼠移動時在游標位置顯示該建築的半透明 3D 模型（opacity ~0.4）
+- [x] 預覽顏色：綠色半透明=可放置，紅色半透明=不可放置（被佔用/水域/資金不足）
+- [x] 多格建築預覽顯示完整 W×H 範圍的模型
+- [x] 切換工具時 ghost mesh 正確更新為對應建築模型
+- [x] 道路拖曳預覽：從線條改為半透明道路面，顯示道路寬度
+- [x] 區域拖曳預覽：拖曳時顯示即將劃設的矩形範圍（半透明色塊）
+- [x] 預覽不影響遊戲效能（ghost mesh 輕量，每幀更新位置不卡頓）
+- [x] 拆除工具：保持現有紅色高亮，多格建築拆除時高亮整棟範圍

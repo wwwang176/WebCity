@@ -12,6 +12,9 @@ import { ParkService } from '../service/ParkService';
 import { GarbageService } from '../service/GarbageService';
 import { SewageService } from '../service/SewageService';
 import { DeathCareService } from '../service/DeathCareService';
+import { getInfraConfigById } from '../building/InfraConfig';
+import { MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
+import { Grid } from '../grid/Grid';
 
 interface SerializedCell {
   x: number;
@@ -69,7 +72,8 @@ function isCellDefault(cell: CellData): boolean {
     cell.pollution === DEFAULT_CELL.pollution &&
     cell.noiseLevel === DEFAULT_CELL.noiseLevel &&
     cell.serviceCoverage === DEFAULT_CELL.serviceCoverage &&
-    cell.elevation === DEFAULT_CELL.elevation
+    cell.elevation === DEFAULT_CELL.elevation &&
+    cell.reserved === DEFAULT_CELL.reserved
   );
 }
 
@@ -92,6 +96,7 @@ export function serializeGameState(state: GameState): string {
         if (cell.noiseLevel !== DEFAULT_CELL.noiseLevel) data.noiseLevel = cell.noiseLevel;
         if (cell.serviceCoverage !== DEFAULT_CELL.serviceCoverage) data.serviceCoverage = cell.serviceCoverage;
         if (cell.elevation !== DEFAULT_CELL.elevation) data.elevation = cell.elevation;
+        if (cell.reserved !== DEFAULT_CELL.reserved) data.reserved = cell.reserved;
         cells.push({ x, y, data });
       }
     }
@@ -189,6 +194,9 @@ export function deserializeGameState(json: string): GameState {
   if (saved.sewage) state.sewage = SewageService.fromJSON(saved.sewage);
   if (saved.deathCare) state.deathCare = DeathCareService.fromJSON(saved.deathCare);
 
+  // Migrate old 1×1 infrastructure to multi-cell
+  migrateOldInfra(state.grid);
+
   // Rebuild transit stops from grid (transit internal state is not serialized)
   for (let y = 0; y < saved.grid.height; y++) {
     for (let x = 0; x < saved.grid.width; x++) {
@@ -206,4 +214,65 @@ export function deserializeGameState(json: string): GameState {
   }
 
   return state;
+}
+
+/**
+ * Migrate old saves where infrastructure was stored as 1×1 cells.
+ * Detects infrastructure buildingIds without secondary cells (reserved=4)
+ * and expands them to their proper multi-cell footprint.
+ */
+function migrateOldInfra(grid: Grid): void {
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      const cell = grid.getCell(x, y);
+      if (!cell || cell.buildingId === 0) continue;
+
+      const cfg = getInfraConfigById(cell.buildingId);
+      if (!cfg || cfg.width === 1 && cfg.height === 1) continue; // skip 1×1 buildings (park) and non-infra
+
+      // Skip if this is already a secondary cell
+      if (cell.reserved === MULTI_CELL_OCCUPIED) continue;
+
+      // Check if secondary cells already exist (new save format)
+      const hasSecondary = (() => {
+        for (let dy = 0; dy < cfg.height; dy++) {
+          for (let dx = 0; dx < cfg.width; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const sc = grid.getCell(x + dx, y + dy);
+            if (sc && sc.buildingId === cfg.buildingId && sc.reserved === MULTI_CELL_OCCUPIED) {
+              return true;
+            }
+          }
+        }
+        return false;
+      })();
+
+      if (hasSecondary) continue; // already multi-cell, no migration needed
+
+      // Old save: expand to multi-cell. Check if all secondary cells are free.
+      let canExpand = true;
+      for (let dy = 0; dy < cfg.height && canExpand; dy++) {
+        for (let dx = 0; dx < cfg.width && canExpand; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const sc = grid.getCell(x + dx, y + dy);
+          if (!sc || sc.buildingId !== 0 || sc.roadType !== 0) {
+            canExpand = false;
+          }
+        }
+      }
+
+      if (!canExpand) continue; // blocked, skip (leave as-is)
+
+      // Fill secondary cells
+      for (let dy = 0; dy < cfg.height; dy++) {
+        for (let dx = 0; dx < cfg.width; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          grid.setCell(x + dx, y + dy, {
+            buildingId: cfg.buildingId,
+            reserved: MULTI_CELL_OCCUPIED,
+          });
+        }
+      }
+    }
+  }
 }

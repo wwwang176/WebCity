@@ -8,6 +8,8 @@ import { ZoneType } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { getBuildingType } from '../building/types';
+import { getInfraConfigById } from '../building/InfraConfig';
+import { findPrimaryCell, MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
@@ -361,8 +363,8 @@ export class SimulationLoop {
     for (let y = 0; y < this.state.grid.height; y++) {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
-        // Skip infrastructure (buildingId 245-254), empty cells, and burned buildings
-        if (cell && cell.buildingId > 0 && cell.buildingId < 245 && cell.reserved !== 3) {
+        // Skip infrastructure, empty cells, burned (3), and multi-cell secondary (4)
+        if (cell && cell.buildingId > 0 && cell.buildingId < 245 && cell.reserved !== 3 && cell.reserved !== 4) {
           const level = cell.buildingId; // building level stored in buildingId
           let buildingIncome = level * 2; // base income per building per tick
           // Apply district specialization revenue multiplier
@@ -441,7 +443,25 @@ export class SimulationLoop {
         // High damage: mark building as BURNED (charred ruins)
         const cell = this.state.grid.getCell(f.x, f.y);
         if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
-          this.state.grid.setCell(f.x, f.y, { reserved: 3 }); // BuildingStatus.BURNED
+          // Check if this is a multi-cell building
+          const cfg = getInfraConfigById(cell.buildingId);
+          if (cfg && (cfg.width > 1 || cfg.height > 1)) {
+            // Multi-cell: mark ALL cells as BURNED
+            const primary = findPrimaryCell(this.state.grid, f.x, f.y);
+            if (primary) {
+              const maxDim = Math.max(cfg.width, cfg.height);
+              for (let dy = 0; dy < maxDim; dy++) {
+                for (let dx = 0; dx < maxDim; dx++) {
+                  const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
+                  if (c && c.buildingId === cell.buildingId) {
+                    this.state.grid.setCell(primary.x + dx, primary.y + dy, { reserved: 3 });
+                  }
+                }
+              }
+            }
+          } else {
+            this.state.grid.setCell(f.x, f.y, { reserved: 3 }); // BuildingStatus.BURNED
+          }
         }
       }
     }
@@ -965,8 +985,8 @@ export function countResidentialCapacity(grid: { width: number; height: number; 
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
-      // Exclude burned buildings (reserved === 3) — charred ruins have no residents
-      if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2) && cell.reserved !== 3) {
+      // Exclude burned (reserved=3) and multi-cell secondary (reserved=4) cells
+      if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2) && cell.reserved !== 3 && cell.reserved !== 4) {
         const bt = getBuildingType(cell.buildingId);
         capacity += bt ? bt.residents : 0;
       }
@@ -980,8 +1000,8 @@ export function countWorkplaceJobs(grid: { width: number; height: number; getCel
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
-      // Exclude burned buildings (reserved === 3) — charred ruins have no workers
-      if (cell && cell.buildingId > 0 && cell.zoneType >= 3 && cell.reserved !== 3) {
+      // Exclude burned (reserved=3) and multi-cell secondary (reserved=4) cells
+      if (cell && cell.buildingId > 0 && cell.zoneType >= 3 && cell.reserved !== 3 && cell.reserved !== 4) {
         const bt = getBuildingType(cell.buildingId);
         jobs += bt ? bt.workers : 0;
       }

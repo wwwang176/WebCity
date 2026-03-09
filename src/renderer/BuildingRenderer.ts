@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
 import { ZoneType } from '../core/grid/types';
+import { getInfraConfig, type InfraType as InfraConfigType } from '../core/building/InfraConfig';
+import { RESERVED_TO_ROTATION } from '../core/building/InfraPlacement';
 
 // ===== Deterministic pseudo-random based on position =====
 function hash(x: number, y: number): number {
@@ -794,6 +796,7 @@ interface BuildingData { x: number; y: number; level: number; burned?: boolean }
 
 export class BuildingRenderer {
   private meshes: (THREE.InstancedMesh | THREE.Mesh)[] = [];
+  private infraGroups: THREE.Group[] = [];
   private readonly maxPerVariant = 3000;
 
   // Light spot system (fake ground glow near buildings at night)
@@ -805,16 +808,19 @@ export class BuildingRenderer {
 
     const buildingsByZone = new Map<number, BuildingData[]>();
     const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
-    const infraCells: { x: number; y: number; type: InfraType }[] = [];
+    const infraCells: { x: number; y: number; type: InfraType; reserved: number }[] = [];
 
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
 
+        // Skip secondary cells of multi-cell buildings (reserved=4)
+        if (cell.reserved === 4) continue;
+
         const infraType = INFRA_ID_MAP[cell.buildingId];
         if (infraType) {
-          infraCells.push({ x, y, type: infraType });
+          infraCells.push({ x, y, type: infraType, reserved: cell.reserved });
           continue;
         }
 
@@ -957,19 +963,40 @@ export class BuildingRenderer {
     }
   }
 
-  private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: InfraType }[]): void {
+  private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: InfraType; reserved: number }[]): void {
     for (const inf of cells) {
-      if (inf.type === 'power') {
-        this.buildPowerPlant(scene, inf.x, inf.y);
-      } else if (inf.type === 'water') {
-        this.buildWaterPump(scene, inf.x, inf.y);
-      } else {
-        this.buildCivicBuilding(scene, inf.x, inf.y, inf.type);
+      // Calculate center position for multi-cell buildings
+      const cfg = getInfraConfig(inf.type as InfraConfigType);
+      const w = cfg ? cfg.width : 1;
+      const h = cfg ? cfg.height : 1;
+      const centerX = inf.x + (w - 1) / 2;
+      const centerZ = inf.y + (h - 1) / 2;
+      const scale = Math.max(w, h); // scale factor for larger buildings
+
+      // Read rotation from primary cell's reserved value
+      const rotationDeg = RESERVED_TO_ROTATION[inf.reserved] ?? 0;
+
+      // Create a group at building center, rotate the group, build meshes at local offsets
+      const group = new THREE.Group();
+      group.position.set(centerX, 0, centerZ);
+      if (rotationDeg !== 0) {
+        group.rotation.y = (rotationDeg * Math.PI) / 180;
       }
+
+      if (inf.type === 'power') {
+        this.buildPowerPlant(group, 0, 0, scale);
+      } else if (inf.type === 'water') {
+        this.buildWaterPump(group, 0, 0, scale);
+      } else {
+        this.buildCivicBuilding(group, 0, 0, inf.type, scale);
+      }
+
+      scene.add(group);
+      this.infraGroups.push(group);
     }
   }
 
-  private buildCivicBuilding(scene: THREE.Scene, cx: number, cz: number, type: InfraType): void {
+  private buildCivicBuilding(scene: THREE.Scene | THREE.Group, cx: number, cz: number, type: InfraType, scale = 1): void {
     const configs: Record<string, { color: number; height: number; roofColor: number; accent?: number }> = {
       police:      { color: 0x3f51b5, height: 0.40, roofColor: 0x303f9f },
       fire:        { color: 0xd32f2f, height: 0.38, roofColor: 0xb71c1c },
@@ -983,41 +1010,43 @@ export class BuildingRenderer {
       cemetery:    { color: 0x9e9e9e, height: 0.15, roofColor: 0x757575 },
     };
     const cfg = configs[type] ?? { color: 0x888888, height: 0.35, roofColor: 0x666666 };
+    const s = scale; // scale factor for multi-cell buildings
+    const bodyW = 0.50 * s;
+    const bodyD = 0.50 * s;
+    const h = cfg.height * Math.min(s, 2); // height scales but caps at 2x
 
     // Main building body
-    const bodyGeo = new THREE.BoxGeometry(0.50, cfg.height, 0.50);
-    bodyGeo.translate(0, cfg.height / 2, 0);
+    const bodyGeo = new THREE.BoxGeometry(bodyW, h, bodyD);
+    bodyGeo.translate(0, h / 2, 0);
     const bodyMat = new THREE.MeshLambertMaterial({ color: cfg.color });
     this.addInfraMesh(scene, bodyGeo, bodyMat, cx, 0.05, cz);
 
     // Roof
     if (type !== 'park') {
-      const roofGeo = new THREE.BoxGeometry(0.55, 0.04, 0.55);
+      const roofGeo = new THREE.BoxGeometry(bodyW + 0.05 * s, 0.04, bodyD + 0.05 * s);
       roofGeo.translate(0, 0.02, 0);
       const roofMat = new THREE.MeshLambertMaterial({ color: cfg.roofColor });
-      this.addInfraMesh(scene, roofGeo, roofMat, cx, cfg.height + 0.05, cz);
+      this.addInfraMesh(scene, roofGeo, roofMat, cx, h + 0.05, cz);
     }
 
     // Accent detail (cross for hospital, dome for university, etc.)
     if (cfg.accent && type === 'hospital') {
-      // Red cross on top
-      const crossH = new THREE.BoxGeometry(0.20, 0.03, 0.06);
+      const crossH = new THREE.BoxGeometry(0.20 * s, 0.03, 0.06 * s);
       crossH.translate(0, 0.015, 0);
-      const crossV = new THREE.BoxGeometry(0.06, 0.03, 0.20);
+      const crossV = new THREE.BoxGeometry(0.06 * s, 0.03, 0.20 * s);
       crossV.translate(0, 0.015, 0);
       const crossMat = new THREE.MeshLambertMaterial({ color: cfg.accent });
-      this.addInfraMesh(scene, crossH, crossMat, cx, cfg.height + 0.09, cz);
-      this.addInfraMesh(scene, crossV, crossMat, cx, cfg.height + 0.09, cz);
+      this.addInfraMesh(scene, crossH, crossMat, cx, h + 0.09, cz);
+      this.addInfraMesh(scene, crossV, crossMat, cx, h + 0.09, cz);
     }
     if (cfg.accent && type === 'school_univ') {
-      // Dome on top
-      const domeGeo = new THREE.SphereGeometry(0.12, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+      const domeGeo = new THREE.SphereGeometry(0.12 * s, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
       const domeMat = new THREE.MeshLambertMaterial({ color: cfg.accent });
-      this.addInfraMesh(scene, domeGeo, domeMat, cx, cfg.height + 0.09, cz);
+      this.addInfraMesh(scene, domeGeo, domeMat, cx, h + 0.09, cz);
     }
   }
 
-  private addInfraMesh(scene: THREE.Scene, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, shadow = true): void {
+  private addInfraMesh(scene: THREE.Scene | THREE.Group, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, shadow = true): void {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
     m.castShadow = shadow;
@@ -1025,7 +1054,8 @@ export class BuildingRenderer {
     this.meshes.push(m);
   }
 
-  private buildPowerPlant(scene: THREE.Scene, cx: number, cz: number): void {
+  private buildPowerPlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    const s = scale;
     // --- Main industrial hall ---
     const hallGeo = new THREE.BoxGeometry(0.55, 0.42, 0.6);
     hallGeo.translate(0, 0.21, 0);
@@ -1098,7 +1128,8 @@ export class BuildingRenderer {
     this.addInfraMesh(scene, indGeo, indMat, cx + 0.3, 0.39, cz + 0.1, false);
   }
 
-  private buildWaterPump(scene: THREE.Scene, cx: number, cz: number): void {
+  private buildWaterPump(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    const s = scale;
     // --- Concrete foundation platform ---
     const foundGeo = new THREE.BoxGeometry(0.82, 0.05, 0.82);
     foundGeo.translate(0, 0.025, 0);
@@ -1235,6 +1266,11 @@ export class BuildingRenderer {
       else if (mat !== getBuildingMaterial()) (mat as THREE.Material).dispose();
     }
     this.meshes = [];
+
+    for (const group of this.infraGroups) {
+      scene.remove(group);
+    }
+    this.infraGroups = [];
 
     if (this.lightSpotMesh) {
       scene.remove(this.lightSpotMesh);

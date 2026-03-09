@@ -23,6 +23,9 @@ import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
+import { getInfraConfig, getInfraConfigById, getRotatedSize, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED } from './core/building/InfraPlacement';
+import { PlacementPreview } from './renderer/PlacementPreview';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -57,6 +60,7 @@ export class Game {
   private overlayRenderer: OverlayRenderer;
   private weatherRenderer: WeatherRenderer;
   private gridCursor: GridCursor;
+  private placementPreview: PlacementPreview;
   private state: GameState;
   private simLoop: SimulationLoop;
   private roadBuilder: RoadBuilder;
@@ -89,6 +93,7 @@ export class Game {
   private tickProgress = 0; // 0..1 interpolation between ticks
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
+  currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
 
   constructor(container: HTMLElement, loadedState?: GameState) {
     const mapSize = loadedState ? loadedState.grid.width : 60;
@@ -130,6 +135,7 @@ export class Game {
     this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
     this.vehicleRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
+    this.placementPreview = new PlacementPreview(this.sceneManager.scene);
 
     // Center camera
     this.sceneManager.panCamera(mapSize / 2, mapSize / 2);
@@ -201,6 +207,7 @@ export class Game {
       this.raycaster.setFromCamera(this.mouse, this.sceneManager.camera);
       this.gridCursor.update(this.raycaster, this.groundPlane);
       this.updatePreviewLine();
+      this.updatePlacementPreview();
     });
 
     canvas.addEventListener('mousedown', (e) => {
@@ -258,6 +265,7 @@ export class Game {
       case '0': this.setTool('demolish'); break;
       case 'escape': this.setTool('select'); this.dragStart = null; break;
       case 'delete': this.setTool('demolish'); break;
+      case 'r': this.cycleRotation(); break;
       case ' ':
         this.paused = !this.paused;
         if (this.paused) this.state.clock.pause();
@@ -443,53 +451,80 @@ export class Game {
     const maxX = Math.max(x1, x2);
     const minY = Math.min(y1, y2);
     const maxY = Math.max(y1, y2);
+    const demolished = new Set<string>(); // track already-demolished multi-cell buildings
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
-        // Remove infrastructure plants/services if demolished
-        if (cell && cell.buildingId === 254) this.state.power.removePlant(x, y);
-        if (cell && cell.buildingId === 253) this.state.water.removePlant(x, y);
-        if (cell && cell.buildingId === 252) {
-          const sid = this.state.police.getStations().find(s => s.x === x && s.y === y);
-          if (sid) this.state.police.removeStation(sid.id);
+        if (!cell) continue;
+
+        // Handle multi-cell infrastructure: find primary and demolish entire building
+        if (cell.buildingId >= 237 && cell.buildingId <= 254) {
+          const primary = findPrimaryCell(this.state.grid, x, y);
+          if (primary) {
+            const key = `${primary.x},${primary.y}`;
+            if (demolished.has(key)) continue; // already handled
+            demolished.add(key);
+
+            // Remove from service layer using primary cell coords
+            this.removeInfraService(cell.buildingId, primary.x, primary.y);
+
+            // Clear all cells of the multi-cell building
+            removeInfraFromGrid(this.state.grid, x, y);
+            continue;
+          }
         }
-        if (cell && cell.buildingId === 251) {
-          const sid = this.state.fire.getStations().find(s => s.x === x && s.y === y);
-          if (sid) this.state.fire.removeStation(sid.id);
-        }
-        if (cell && cell.buildingId === 250) {
-          const hid = this.state.health.getHospitals().find(h => h.x === x && h.y === y);
-          if (hid) this.state.health.removeHospital(hid.id);
-        }
-        if (cell && (cell.buildingId === 249 || cell.buildingId === 244 || cell.buildingId === 243)) {
-          const sid = this.state.education.getSchools().find(s => s.x === x && s.y === y);
-          if (sid) this.state.education.removeSchool(sid.id);
-        }
-        if (cell && cell.buildingId === 248) {
-          const pid = this.state.parks.getParks().find(p => p.x === x && p.y === y);
-          if (pid) this.state.parks.removePark(pid.id);
-        }
-        if (cell && cell.buildingId === 247) {
-          const gid = this.state.garbage.getFacilities().find(g => g.x === x && g.y === y);
-          if (gid) this.state.garbage.removeFacility(gid.id);
-        }
-        if (cell && cell.buildingId === 246) {
-          const sid = this.state.sewage.getTreatmentPlants().find(s => s.x === x && s.y === y);
-          if (sid) this.state.sewage.removeTreatmentPlant(sid.id);
-        }
-        if (cell && cell.buildingId === 245) {
-          const cid = this.state.deathCare.getCemeteries().find(c => c.x === x && c.y === y);
-          if (cid) this.state.deathCare.removeCemetery(cid.id);
-        }
+
+        // Regular cell demolition (roads, zones, regular buildings)
         this.state.grid.setCell(x, y, {
           roadType: 0,
           roadFlags: 0,
           zoneType: ZoneType.NONE,
           buildingId: 0,
+          reserved: 0,
         });
       }
     }
     this.renderDirty = true;
+  }
+
+  private removeInfraService(buildingId: number, px: number, py: number): void {
+    // Services store center coordinates, so compute center from primary cell
+    const { cx, cy } = getInfraCenterById(px, py, buildingId);
+
+    if (buildingId === 254) this.state.power.removePlant(cx, cy);
+    if (buildingId === 253) this.state.water.removePlant(cx, cy);
+    if (buildingId === 252) {
+      const sid = this.state.police.getStations().find(s => s.x === cx && s.y === cy);
+      if (sid) this.state.police.removeStation(sid.id);
+    }
+    if (buildingId === 251) {
+      const sid = this.state.fire.getStations().find(s => s.x === cx && s.y === cy);
+      if (sid) this.state.fire.removeStation(sid.id);
+    }
+    if (buildingId === 250) {
+      const hid = this.state.health.getHospitals().find(h => h.x === cx && h.y === cy);
+      if (hid) this.state.health.removeHospital(hid.id);
+    }
+    if (buildingId === 249 || buildingId === 244 || buildingId === 243) {
+      const sid = this.state.education.getSchools().find(s => s.x === cx && s.y === cy);
+      if (sid) this.state.education.removeSchool(sid.id);
+    }
+    if (buildingId === 248) {
+      const pid = this.state.parks.getParks().find(p => p.x === cx && p.y === cy);
+      if (pid) this.state.parks.removePark(pid.id);
+    }
+    if (buildingId === 247) {
+      const gid = this.state.garbage.getFacilities().find(g => g.x === cx && g.y === cy);
+      if (gid) this.state.garbage.removeFacility(gid.id);
+    }
+    if (buildingId === 246) {
+      const sid = this.state.sewage.getTreatmentPlants().find(s => s.x === cx && s.y === cy);
+      if (sid) this.state.sewage.removeTreatmentPlant(sid.id);
+    }
+    if (buildingId === 245) {
+      const cid = this.state.deathCare.getCemeteries().find(c => c.x === cx && c.y === cy);
+      if (cid) this.state.deathCare.removeCemetery(cid.id);
+    }
   }
 
   private paintDistrict(x1: number, y1: number, x2: number, y2: number): void {
@@ -519,78 +554,66 @@ export class Game {
   }
 
   private placeInfrastructure(x: number, y: number, type: 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery'): void {
-    const cell = this.state.grid.getCell(x, y);
-    if (!cell) {
-      this.notification = 'Out of bounds';
+    const infraType = type as InfraType;
+    const cfg = getInfraConfig(infraType);
+    if (!cfg) return;
+
+    // Validate multi-cell placement
+    const groundwaterFn = (cx: number, cy: number) => this.getGroundwaterLevel(cx, cy);
+    const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation, groundwaterFn);
+    if (!check.ok) {
+      const messages: Record<string, string> = {
+        OUT_OF_BOUNDS: 'Out of bounds',
+        WATER_TILE: 'Cannot build on water',
+        TILE_OCCUPIED: 'Tile is occupied',
+        NO_GROUNDWATER: 'No groundwater here — build near rivers',
+        UNKNOWN_TYPE: 'Unknown building type',
+      };
+      this.notification = messages[check.reason] ?? 'Cannot build here';
       this.notificationTimer = 3;
       return;
     }
-    if (cell.terrainType === TerrainType.WATER) {
-      this.notification = 'Cannot build on water';
-      this.notificationTimer = 3;
-      return;
-    }
-    if (cell.roadType !== 0 || cell.buildingId !== 0) {
-      this.notification = 'Tile is occupied';
-      this.notificationTimer = 3;
-      return;
-    }
-    // Water plants require groundwater (near rivers)
-    if (type === 'water' && this.getGroundwaterLevel(x, y) === 0) {
-      this.notification = 'No groundwater here — build near rivers';
-      this.notificationTimer = 4;
-      return;
-    }
-    // Check for existing plant at this location
-    const existing = type === 'power'
-      ? this.state.power.getPlants().some(p => p.x === x && p.y === y)
-      : this.state.water.getPlants().some(p => p.x === x && p.y === y);
-    if (existing) {
-      this.notification = `${type === 'power' ? 'Power' : 'Water'} plant already here`;
-      this.notificationTimer = 3;
-      return;
-    }
-    const costs: Record<string, number> = {
-      power: 500, water: 300, police: 400, fire: 400, hospital: 800,
-      school: 400, school_high: 600, school_univ: 1200, park: 200, garbage: 400, sewage: 400, cemetery: 300,
-    };
-    const buildingIds: Record<string, number> = {
-      power: 254, water: 253, police: 252, fire: 251, hospital: 250,
-      school: 249, school_high: 244, school_univ: 243, park: 248, garbage: 247, sewage: 246, cemetery: 245,
-    };
-    const cost = costs[type] ?? 500;
+
+    const cost = cfg.cost;
     if (this.state.budget.funds < cost) {
       this.notification = `Insufficient funds (need $${cost})`;
       this.notificationTimer = 3;
       return;
     }
     this.state.budget.funds -= cost;
+
+    // Place on grid (multi-cell)
+    placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
+
+    // Compute center for service coverage (coverage radiates from building center)
+    const { cx, cy } = getInfraCenter(x, y, infraType, this.currentRotation);
+
+    // Register with service layer at center coordinates
     if (type === 'power') {
-      this.state.power.addPlant({ x, y, output: 500, pollution: 10, type: 'coal' });
+      this.state.power.addPlant({ x: cx, y: cy, output: 500, pollution: 10, type: 'coal' });
     } else if (type === 'water') {
-      this.state.water.addPlant({ x, y, output: 500 });
+      this.state.water.addPlant({ x: cx, y: cy, output: 500 });
     } else if (type === 'police') {
-      this.state.police.addStation(x, y);
+      this.state.police.addStation(cx, cy);
     } else if (type === 'fire') {
-      this.state.fire.addStation(x, y);
+      this.state.fire.addStation(cx, cy);
     } else if (type === 'hospital') {
-      this.state.health.addHospital(x, y);
+      this.state.health.addHospital(cx, cy);
     } else if (type === 'school') {
-      this.state.education.addSchool(x, y, 'elementary');
+      this.state.education.addSchool(cx, cy, 'elementary');
     } else if (type === 'school_high') {
-      this.state.education.addSchool(x, y, 'highschool');
+      this.state.education.addSchool(cx, cy, 'highschool');
     } else if (type === 'school_univ') {
-      this.state.education.addSchool(x, y, 'university');
+      this.state.education.addSchool(cx, cy, 'university');
     } else if (type === 'park') {
-      this.state.parks.addPark(x, y);
+      this.state.parks.addPark(cx, cy);
     } else if (type === 'garbage') {
-      this.state.garbage.addFacility(x, y, 'landfill');
+      this.state.garbage.addFacility(cx, cy, 'landfill');
     } else if (type === 'sewage') {
-      this.state.sewage.addTreatmentPlant(x, y);
+      this.state.sewage.addTreatmentPlant(cx, cy);
     } else if (type === 'cemetery') {
-      this.state.deathCare.addCemetery(x, y);
+      this.state.deathCare.addCemetery(cx, cy);
     }
-    this.state.grid.setCell(x, y, { buildingId: buildingIds[type] ?? 254 });
     this.audioManager.playSfx('build');
     this.renderDirty = true;
   }
@@ -1015,6 +1038,7 @@ export class Game {
 
   setTool(tool: ToolType): void {
     this.currentTool = tool;
+    this.currentRotation = 0; // reset rotation when switching tools
     // Road subtypes set the roadType
     if (tool === 'road') this.currentRoadType = RoadType.TWO_LANE;
     else if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
@@ -1022,6 +1046,8 @@ export class Game {
     else if (tool === 'road_4lane') this.currentRoadType = RoadType.FOUR_LANE;
     else if (tool === 'road_6lane') this.currentRoadType = RoadType.SIX_LANE;
     else if (tool === 'road_highway') this.currentRoadType = RoadType.HIGHWAY;
+    // Update cursor size for infrastructure tools
+    this.updateCursorSize();
     // Auto-switch overlay when selecting infrastructure tools
     const toolOverlayMap: Partial<Record<ToolType, OverlayType>> = {
       power: 'power', water: 'water', police: 'police', fire: 'fire',
@@ -1033,6 +1059,96 @@ export class Game {
       this.setOverlay(autoOverlay);
     }
     this.onUIUpdate?.();
+  }
+
+  private cycleRotation(): void {
+    if (!this.isInfraTool(this.currentTool)) return;
+    const rotations: Rotation[] = [0, 90, 180, 270];
+    const idx = rotations.indexOf(this.currentRotation);
+    this.currentRotation = rotations[(idx + 1) % 4] ?? 0;
+    this.updateCursorSize();
+    this.onUIUpdate?.();
+  }
+
+  private isInfraTool(tool: ToolType): boolean {
+    return [
+      'power', 'water', 'police', 'fire', 'hospital',
+      'school', 'school_high', 'school_univ', 'park',
+      'garbage', 'sewage', 'cemetery',
+    ].includes(tool);
+  }
+
+  private updateCursorSize(): void {
+    const cfg = this.isInfraTool(this.currentTool)
+      ? getInfraConfig(this.currentTool as InfraType)
+      : null;
+    if (cfg) {
+      const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
+      this.gridCursor.setSize(w, h);
+    } else {
+      this.gridCursor.setSize(1, 1);
+    }
+  }
+
+  private updatePlacementPreview(): void {
+    if (this.isInfraTool(this.currentTool)) {
+      const infraType = this.currentTool as InfraType;
+      const groundwaterFn = (cx: number, cy: number) => this.getGroundwaterLevel(cx, cy);
+      this.placementPreview.updateInfra(
+        infraType,
+        this.currentRotation,
+        this.gridCursor.gridX,
+        this.gridCursor.gridY,
+        this.state.grid,
+        this.state.budget.funds,
+        groundwaterFn,
+      );
+    } else if (this.currentTool === 'demolish') {
+      // Demolish: highlight multi-cell building footprint
+      const gx = this.gridCursor.gridX;
+      const gy = this.gridCursor.gridY;
+      const cell = this.state.grid.getCell(gx, gy);
+      if (cell && cell.buildingId >= 237 && cell.buildingId <= 254) {
+        const primary = findPrimaryCell(this.state.grid, gx, gy);
+        if (primary) {
+          const cfg = getInfraConfigById(cell.buildingId);
+          const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
+          const cells: { x: number; y: number }[] = [];
+          for (let dy = 0; dy < maxDim; dy++) {
+            for (let dx = 0; dx < maxDim; dx++) {
+              const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
+              if (c && c.buildingId === cell.buildingId) {
+                cells.push({ x: primary.x + dx, y: primary.y + dy });
+              }
+            }
+          }
+          this.placementPreview.updateDemolishHighlight(cells);
+        } else {
+          this.placementPreview.hide();
+        }
+      } else {
+        this.placementPreview.hide();
+      }
+    } else if (this.dragStart && this.isZoneTool()) {
+      // Zone drag preview
+      const zoneColors: Record<string, number> = {
+        zone_r: 0x4caf50, zone_rh: 0x2e7d32,
+        zone_c: 0x2196f3, zone_ch: 0x1565c0,
+        zone_i: 0xffc107, zone_o: 0x9c27b0,
+      };
+      const color = zoneColors[this.currentTool] ?? 0xffffff;
+      this.placementPreview.updateZoneDrag(
+        this.dragStart.x, this.dragStart.y,
+        this.gridCursor.gridX, this.gridCursor.gridY,
+        color,
+      );
+    } else {
+      this.placementPreview.hide();
+    }
+  }
+
+  private isZoneTool(): boolean {
+    return ['zone_r', 'zone_rh', 'zone_c', 'zone_ch', 'zone_i', 'zone_o'].includes(this.currentTool);
   }
 
   setOverlay(type: OverlayType): void {
@@ -1164,6 +1280,7 @@ export class Game {
   private updatePreviewLine(): void {
     if (!this.dragStart || !this.isRoadTool()) {
       this.clearPreviewLine();
+      this.placementPreview.hide();
       this.previewCost = null;
       return;
     }
@@ -1188,6 +1305,14 @@ export class Game {
     const roadConfig = ROAD_CONFIGS[this.currentRoadType];
     this.previewCost = points.length * roadConfig.cost;
     this.onUIUpdate?.();
+
+    // Show semi-transparent road surface preview
+    const laneCount = getLaneCount(this.currentRoadType);
+    const roadWidth = ROAD_WIDTHS_FOR_LANES[this.currentRoadType] ?? (0.2 + laneCount * 0.15);
+    this.placementPreview.updateRoadDrag(
+      points.map(p => ({ x: p.x, y: p.z })),
+      roadWidth,
+    );
 
     const geometry = new THREE.BufferGeometry().setFromPoints(points);
     const material = new THREE.LineBasicMaterial({ color: 0x4fc3f7, linewidth: 2, transparent: true, opacity: 0.6 });

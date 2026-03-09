@@ -7,6 +7,7 @@ export class Grid {
   private buffer: ArrayBuffer;
   private view: DataView;
   readonly naturalResources: Uint8Array;
+  readonly reservedData: Uint8Array;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -15,6 +16,7 @@ export class Grid {
     this.buffer = new ArrayBuffer(this.totalCells * BYTES_PER_CELL);
     this.view = new DataView(this.buffer);
     this.naturalResources = new Uint8Array(this.totalCells);
+    this.reservedData = new Uint8Array(this.totalCells);
   }
 
   private isInBounds(x: number, y: number): boolean {
@@ -40,7 +42,7 @@ export class Grid {
       noiseLevel: this.view.getUint8(offset + 9),
       serviceCoverage: this.view.getUint8(offset + 10),
       elevation: this.view.getInt8(offset + 11),
-      reserved: 0,
+      reserved: this.reservedData[y * this.width + x] ?? 0,
     };
   }
 
@@ -59,6 +61,7 @@ export class Grid {
     if (data.noiseLevel !== undefined) this.view.setUint8(offset + 9, data.noiseLevel);
     if (data.serviceCoverage !== undefined) this.view.setUint8(offset + 10, data.serviceCoverage);
     if (data.elevation !== undefined) this.view.setInt8(offset + 11, data.elevation);
+    if (data.reserved !== undefined) this.reservedData[y * this.width + x] = data.reserved;
   }
 
   getCellsInRect(from: Position, to: Position): CellData[] {
