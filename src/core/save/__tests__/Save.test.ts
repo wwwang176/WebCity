@@ -110,6 +110,31 @@ describe('Serializer', () => {
     expect(restored.budget.loans).toBe(20000);
     expect(restored.budget.loanInterestRate).toBe(0.08);
   });
+
+  it('should rebuild transit stops from grid after deserialization', () => {
+    const state = createGameState(20, 20);
+    // Place bus stop (buildingId=242) and metro station (buildingId=241)
+    state.bus.addStop(5, 5);
+    state.grid.setCell(5, 5, { buildingId: 242 });
+    state.metro.addStation(8, 8);
+    state.grid.setCell(8, 8, { buildingId: 241 });
+    state.taxi.addStand(3, 3);
+    state.grid.setCell(3, 3, { buildingId: 236 });
+
+    expect(state.bus.getStops()).toHaveLength(1);
+    expect(state.metro.getStations()).toHaveLength(1);
+
+    const json = serializeGameState(state);
+    const restored = deserializeGameState(json);
+
+    // Transit stops should be rebuilt from grid scan
+    expect(restored.bus.getStops()).toHaveLength(1);
+    expect(restored.bus.getStops()[0].x).toBe(5);
+    expect(restored.bus.getStops()[0].y).toBe(5);
+    expect(restored.metro.getStations()).toHaveLength(1);
+    expect(restored.metro.getStations()[0].x).toBe(8);
+    expect(restored.metro.getStations()[0].y).toBe(8);
+  });
 });
 
 describe('AutoSaver', () => {

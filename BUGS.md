@@ -1279,3 +1279,27 @@
 - ✅ **5000-tick 壓力測試** — 5276ms (948 ticks/s), Pop 272 穩定, Funds $151K→$330K, 零 NaN
 - ✅ 零 Console 錯誤
 - ✅ 全部 652 單元測試通過
+
+---
+
+## BUG-027: Load Game 後 Transit stops/routes 遺失
+
+- **發現**：Round 65 回歸測試
+- **狀態**：✅ 已修復
+- **嚴重度**：Medium
+- **描述**：Save/Load 後，Transit 系統（Bus/Metro/Tram/Rail/Ferry/Taxi）的 stops 和 routes 全部遺失。Grid 中的 buildingId（如 242=BusStop）正確保留，但各 Transit 系統的內部 stops 陣列是空的。
+- **根因**：`Serializer.ts` 的 `deserializeGameState()` 不序列化 Transit 系統內部狀態，也沒有從 grid 重建。
+- **修復**：在 `deserializeGameState()` 末尾加入 grid 掃描，根據 buildingId 重建 transit stops（242→bus, 241→metro, 240→tram, 239→rail, 238→ferry, 236→taxi）。
+- **驗證**：Load Game 後 busStops=2, metroStations=1（之前都是 0）。新增 1 個單元測試，653 測試全部通過。
+
+---
+
+### 新增已驗證功能（第六十五輪測試 — Load Game 往返 / Transit 序列化修復 / 經濟平衡）
+- 🐛 **BUG-027 修復: Transit stops 在 Load Game 後遺失** — deserializeGameState 加入 grid 掃描重建 transit stops
+- ✅ **Load Game 完整往返** — 刷新頁面→Load Game→R65-LoadTest：Pop=272, Buildings=111, Roads=177 全部匹配
+- ✅ **Transit stops 恢復** — busStops=2, metroStations=1（修復前 0/0）
+- ✅ **Save 列表 UI** — 12 個存檔正確顯示，點擊載入正常
+- ✅ **災害系統** — Earthquake 75% at (12,13) 摧毀 19 棟建築，災後自動重建
+- ✅ **Bus Route 建立** — 2 站→1 路線，營運成本 $100
+- ✅ 零 Console 錯誤
+- ✅ 全部 653 單元測試通過

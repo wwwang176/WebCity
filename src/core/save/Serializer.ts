@@ -189,5 +189,21 @@ export function deserializeGameState(json: string): GameState {
   if (saved.sewage) state.sewage = SewageService.fromJSON(saved.sewage);
   if (saved.deathCare) state.deathCare = DeathCareService.fromJSON(saved.deathCare);
 
+  // Rebuild transit stops from grid (transit internal state is not serialized)
+  for (let y = 0; y < saved.grid.height; y++) {
+    for (let x = 0; x < saved.grid.width; x++) {
+      const cell = state.grid.getCell(x, y);
+      if (!cell) continue;
+      switch (cell.buildingId) {
+        case 242: state.bus.addStop(x, y); break;
+        case 241: state.metro.addStation(x, y); break;
+        case 240: state.tram.addStop(x, y); break;
+        case 239: state.rail.buildStation(x, y); break;
+        case 238: state.ferry.addDock(x, y); break;
+        case 236: state.taxi.addStand(x, y); break;
+      }
+    }
+  }
+
   return state;
 }
