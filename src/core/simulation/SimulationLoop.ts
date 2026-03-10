@@ -10,6 +10,7 @@ import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
 import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
+import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
@@ -35,6 +36,9 @@ export class SimulationLoop {
   private morningCommuters = new Set<number>(); // citizen ids that have spawned morning commute
   private eveningCommuters = new Set<number>(); // citizen ids that have spawned evening commute
   private lastTimeOfDay: TimeOfDay = 'night'; // to detect period transitions
+
+  // Commute path cache: stores computed LaneEdge paths for citizen commutes
+  commuteCache: CommuteCache = new CommuteCache();
 
   constructor(state: GameState) {
     this.state = state;
@@ -793,6 +797,16 @@ export class SimulationLoop {
   /** Mark the lane graph as needing rebuild (call after road build/demolish). */
   markLaneGraphDirty(): void {
     this.laneGraphDirty = true;
+    // Invalidate all cached routes — road topology changed
+    // Mark all cached citizens as dirty so paths are recomputed
+    for (let y = 0; y < this.state.grid.height; y++) {
+      for (let x = 0; x < this.state.grid.width; x++) {
+        const cell = this.state.grid.getCell(x, y);
+        if (cell && cell.roadType > 0) {
+          this.commuteCache.invalidateCell(`${x},${y}`);
+        }
+      }
+    }
   }
 
   private rebuildLaneGraph(): void {
@@ -939,6 +953,21 @@ export class SimulationLoop {
         continue;
       }
 
+      // --- Check commute cache first ---
+      const isMorning = direction === 'home_to_work';
+      const cached = this.commuteCache.get(citizen.id);
+
+      if (cached && cached.status === 'ready') {
+        const cachedPath = isMorning ? cached.morningPath : cached.eveningPath;
+        if (cachedPath && cachedPath.length > 0) {
+          this.state.traffic.addVehicleOnEdges(cachedPath);
+          commuterSet.add(citizen.id);
+          spawned++;
+          continue;
+        }
+      }
+
+      // --- Compute path and populate cache ---
       const startRoad = this.findAdjacentRoad(fromPos.x, fromPos.y, grid);
       const endRoad = this.findAdjacentRoad(toPos.x, toPos.y, grid);
       if (!startRoad || !endRoad) {
@@ -950,20 +979,52 @@ export class SimulationLoop {
         continue;
       }
 
-      const path = gridAStarPath(startRoad, endRoad, grid);
-      if (path && path.length >= 2) {
-        // Try edge-based path first (new lane graph system)
-        const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
-        const dirLanes = startCell ? getLaneCount(startCell.roadType) : 1;
-        const preferredLane = dirLanes > 1 ? Math.floor(Math.random() * dirLanes) : 0;
-        const edgePath = refineLanePath(this.laneGraph, path, preferredLane);
-        if (edgePath && edgePath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(edgePath);
+      // Check routeIndex for shared path reuse
+      const routeKey = `${fromStr}->${toStr}`;
+      let edgePath = this.commuteCache.getByRoute(routeKey) ?? null;
+
+      if (!edgePath) {
+        const path = gridAStarPath(startRoad, endRoad, grid);
+        if (path && path.length >= 2) {
+          const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
+          const dirLanes = startCell ? getLaneCount(startCell.roadType) : 1;
+          const preferredLane = dirLanes > 1 ? Math.floor(Math.random() * dirLanes) : 0;
+          edgePath = refineLanePath(this.laneGraph, path, preferredLane);
+          if (edgePath && edgePath.length > 0) {
+            // Store in shared routeIndex
+            this.commuteCache.setRoute(routeKey, edgePath);
+          }
         }
+      }
+
+      if (edgePath && edgePath.length > 0) {
+        this.state.traffic.addVehicleOnEdges(edgePath);
+
+        // Build or update the citizen's cached route
+        const existingRoute = this.commuteCache.get(citizen.id);
+        const cachedRoute: CachedRoute = {
+          citizenId: citizen.id,
+          homeId: citizen.homeId!,
+          workplaceId: citizen.workplaceId!,
+          morningPath: isMorning ? edgePath : (existingRoute?.morningPath ?? null),
+          eveningPath: isMorning ? (existingRoute?.eveningPath ?? null) : edgePath,
+          status: 'ready',
+        };
+        this.commuteCache.set(citizen.id, cachedRoute);
+
         commuterSet.add(citizen.id);
         spawned++;
       } else {
-        commuterSet.add(citizen.id); // no path, don't retry
+        // No path found — cache as failed to avoid re-searching
+        this.commuteCache.set(citizen.id, {
+          citizenId: citizen.id,
+          homeId: citizen.homeId!,
+          workplaceId: citizen.workplaceId!,
+          morningPath: null,
+          eveningPath: null,
+          status: 'failed',
+        });
+        commuterSet.add(citizen.id);
       }
     }
   }
