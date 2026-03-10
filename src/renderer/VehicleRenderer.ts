@@ -1,17 +1,5 @@
 import * as THREE from 'three';
-import { UNDERGROUND_TUNNEL_Y } from '../core/ViewMode';
-import {
-  buildCarGeometry,
-  buildBusGeometry,
-  buildTruckGeometry,
-  buildFiretruckGeometry,
-  buildTransportBusGeometry,
-  buildMetroTrainGeometry,
-  buildTramGeometry,
-  buildRailTrainGeometry,
-  buildFerryGeometry,
-  buildTaxiGeometry,
-} from './vehicleGeometry';
+import { VEHICLE_CONFIG } from './vehicleConfig';
 
 export interface VehicleData {
   id: number;
@@ -46,20 +34,8 @@ export class VehicleRenderer {
   build(scene: THREE.Scene): void {
     this.dispose(scene);
 
-    const types: [string, THREE.BufferGeometry][] = [
-      ['car', buildCarGeometry()],
-      ['bus', buildBusGeometry()],
-      ['truck', buildTruckGeometry()],
-      ['firetruck', buildFiretruckGeometry()],
-      ['transport_bus', buildTransportBusGeometry()],
-      ['metro_train', buildMetroTrainGeometry()],
-      ['tram', buildTramGeometry()],
-      ['rail_train', buildRailTrainGeometry()],
-      ['ferry', buildFerryGeometry()],
-      ['taxi', buildTaxiGeometry()],
-    ];
-
-    for (const [type, geometry] of types) {
+    for (const [type, cfg] of Object.entries(VEHICLE_CONFIG)) {
+      const geometry = cfg.buildGeometry();
       const material = new THREE.MeshLambertMaterial({ vertexColors: true });
       const mesh = new THREE.InstancedMesh(geometry, material, this.maxPerType);
       mesh.count = 0;
@@ -143,40 +119,14 @@ export class VehicleRenderer {
     const tlMatrix = new THREE.Matrix4();
     const tlTranslation = new THREE.Matrix4();
 
-    // Front offset distances by type (distance from center to front)
-    const frontOffset: Record<string, number> = {
-      car: 0.12,
-      bus: 0.23,
-      truck: 0.16,
-      firetruck: 0.18,
-      transport_bus: 0.23,
-      metro_train: 0.3,
-      tram: 0.2,
-      rail_train: 0.33,
-      ferry: 0.26,
-      taxi: 0.12,
-    };
-    // Rear offset distances by type
-    const rearOffset: Record<string, number> = {
-      car: 0.12,
-      bus: 0.23,
-      truck: 0.16,
-      firetruck: 0.14,
-      transport_bus: 0.23,
-      metro_train: 0.28,
-      tram: 0.2,
-      rail_train: 0.24,
-      ferry: 0.2,
-      taxi: 0.12,
-    };
-
     for (const [type, mesh] of this.meshes) {
       const list = groups.get(type) ?? [];
       const count = Math.min(list.length, this.maxPerType);
       mesh.count = count;
 
-      const fOff = frontOffset[type] ?? 0.12;
-      const rOff = rearOffset[type] ?? 0.12;
+      const cfg = VEHICLE_CONFIG[type];
+      const fOff = cfg?.frontOffset ?? 0.12;
+      const rOff = cfg?.rearOffset ?? 0.12;
 
       for (let i = 0; i < count; i++) {
         const v = list[i]!;
@@ -189,34 +139,16 @@ export class VehicleRenderer {
         const vx = v.x + offsetX;
         const vz = v.y + offsetZ;
 
-        const vehicleY = type === 'metro_train' ? UNDERGROUND_TUNNEL_Y : 0.025;
-
         rotation.makeRotationY(v.heading);
-        translation.makeTranslation(vx, vehicleY, vz);
+        translation.makeTranslation(vx, cfg?.yPosition ?? 0.025, vz);
         matrix.copy(translation).multiply(rotation);
         mesh.setMatrixAt(i, matrix);
 
-        // Color: cars get random per-ID color, others are fixed
-        if (type === 'car') {
+        // Color: cars get random per-ID color, others use config
+        if (cfg && cfg.color === -1) {
           color.set(CAR_COLORS[v.id % CAR_COLORS.length]!);
-        } else if (type === 'bus' || type === 'transport_bus') {
-          color.set(0xff9800); // 橘色
-        } else if (type === 'truck') {
-          color.set(0x78909c);
-        } else if (type === 'firetruck') {
-          color.set(0xd32f2f);
-        } else if (type === 'metro_train') {
-          color.set(0x00bcd4); // 青色
-        } else if (type === 'tram') {
-          color.set(0x8bc34a); // 淺綠色
-        } else if (type === 'rail_train') {
-          color.set(0xff5722); // 橘紅色
-        } else if (type === 'ferry') {
-          color.set(0x0097a7); // 深青色
-        } else if (type === 'taxi') {
-          color.set(0xfdd835); // 黃色
         } else {
-          color.set(0xd32f2f);
+          color.set(cfg?.color ?? 0xd32f2f);
         }
         mesh.setColorAt(i, color);
 
