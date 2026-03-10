@@ -1134,6 +1134,14 @@ export class SimulationLoop {
       }
     }
 
+    // Normalize by road capacity (lane count) so wide roads show lower congestion
+    for (const [cellKey, rawFlow] of flowMap) {
+      const [x, y] = cellKey.split(',').map(Number);
+      const cell = grid.getCell(x!, y!);
+      const lanes = cell ? getLaneCount(cell.roadType) : 1;
+      flowMap.set(cellKey, rawFlow / lanes);
+    }
+
     this.state.traffic.updatePredictedFlow(flowMap);
   }
 
