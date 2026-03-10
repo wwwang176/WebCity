@@ -55,6 +55,14 @@ export class GridBuffer {
     this.view.setUint8(this.getOffset(x, y) + 4, value);
   }
 
+  getRoadType(x: number, y: number): number {
+    return this.view.getUint8(this.getOffset(x, y) + 5);
+  }
+
+  setRoadType(x: number, y: number, value: number): void {
+    this.view.setUint8(this.getOffset(x, y) + 5, value);
+  }
+
   getTrafficDensity(x: number, y: number): number {
     return this.view.getUint8(this.getOffset(x, y) + 6);
   }

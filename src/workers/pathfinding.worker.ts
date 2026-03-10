@@ -5,39 +5,101 @@
  * Main → Worker:
  *   { type: 'FIND_PATH', id: number, from: {x,y}, to: {x,y}, gridData: SharedArrayBuffer }
  *   { type: 'SET_GRID', width: number, height: number, gridData: SharedArrayBuffer }
+ *   { type: 'BUILD_LANE_GRAPH' }
+ *   { type: 'REFINE_LANE_PATH', id: number, cellPath: string[], preferredLane: number }
  *
  * Worker → Main:
  *   { type: 'PATH_RESULT', id: number, path: {x,y}[] | null }
+ *   { type: 'LANE_GRAPH_READY' }
+ *   { type: 'LANE_PATH_RESULT', id: number, edgePath: SerializedLaneEdge[] | null }
  *   { type: 'READY' }
  */
 
+import { LaneGraph, type LaneEdge, type ConnectionPoint } from '../core/traffic/LaneGraph';
+import { refineLanePath } from '../core/traffic/Pathfinding';
+
+export interface SerializedLaneEdge {
+  id: string;
+  from: ConnectionPoint;
+  to: ConnectionPoint;
+  bezierControl?: { x: number; y: number }[];
+  length: number;
+  type: 'straight' | 'turn' | 'lane_change' | 'merge';
+}
+
 export interface PathWorkerMessage {
-  type: 'FIND_PATH' | 'SET_GRID';
+  type: 'FIND_PATH' | 'SET_GRID' | 'BUILD_LANE_GRAPH' | 'REFINE_LANE_PATH';
   id?: number;
   from?: { x: number; y: number };
   to?: { x: number; y: number };
   width?: number;
   height?: number;
   gridData?: SharedArrayBuffer;
+  cellPath?: string[];
+  preferredLane?: number;
 }
 
 export interface PathWorkerResponse {
-  type: 'READY' | 'PATH_RESULT';
+  type: 'READY' | 'PATH_RESULT' | 'LANE_GRAPH_READY' | 'LANE_PATH_RESULT';
   id?: number;
   path?: { x: number; y: number }[] | null;
+  edgePath?: SerializedLaneEdge[] | null;
 }
 
 let gridWidth = 0;
 let gridHeight = 0;
 let gridView: DataView | null = null;
+let laneGraph: LaneGraph | null = null;
 
 const BYTES_PER_CELL = 12;
 
 function getRoadType(x: number, y: number): number {
   if (!gridView || x < 0 || y < 0 || x >= gridWidth || y >= gridHeight) return 0;
   const offset = (y * gridWidth + x) * BYTES_PER_CELL;
-  // roadType is at offset +2 within each cell (matching Grid.ts layout)
-  return gridView.getUint8(offset + 2);
+  // roadType is at offset +5 within each cell (matching GridBuffer layout)
+  return gridView.getUint8(offset + 5);
+}
+
+function getRoadFlags(x: number, y: number): number {
+  if (!gridView || x < 0 || y < 0 || x >= gridWidth || y >= gridHeight) return 0;
+  const offset = (y * gridWidth + x) * BYTES_PER_CELL;
+  return gridView.getUint8(offset + 4);
+}
+
+/** Build LaneGraph from the SharedArrayBuffer grid data. */
+export function buildLaneGraphFromGrid(): LaneGraph {
+  const graph = new LaneGraph();
+  const cellKeys: string[] = [];
+  const cellMap = new Map<string, { roadType: number; roadFlags: number }>();
+
+  for (let y = 0; y < gridHeight; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      const rt = getRoadType(x, y);
+      if (rt > 0) {
+        const key = `${x},${y}`;
+        cellKeys.push(key);
+        cellMap.set(key, { roadType: rt, roadFlags: getRoadFlags(x, y) });
+      }
+    }
+  }
+
+  const gridLookup = {
+    getCell: (gx: number, gy: number) => cellMap.get(`${gx},${gy}`) ?? null,
+  };
+  graph.buildFromGrid(gridLookup, cellKeys);
+  return graph;
+}
+
+/** Serialize a LaneEdge for postMessage transfer. */
+function serializeLaneEdge(e: LaneEdge): SerializedLaneEdge {
+  return {
+    id: e.id,
+    from: { ...e.from, position: { ...e.from.position }, tangent: { ...e.from.tangent } },
+    to: { ...e.to, position: { ...e.to.position }, tangent: { ...e.to.tangent } },
+    bezierControl: e.bezierControl?.map(p => ({ ...p })),
+    length: e.length,
+    type: e.type,
+  };
 }
 
 function bfsRoadPath(
@@ -137,6 +199,33 @@ self.onmessage = (e: MessageEvent<PathWorkerMessage>) => {
         type: 'PATH_RESULT',
         id: msg.id,
         path,
+      } satisfies PathWorkerResponse);
+      break;
+    }
+
+    case 'BUILD_LANE_GRAPH': {
+      laneGraph = buildLaneGraphFromGrid();
+      (self as unknown as Worker).postMessage({
+        type: 'LANE_GRAPH_READY',
+      } satisfies PathWorkerResponse);
+      break;
+    }
+
+    case 'REFINE_LANE_PATH': {
+      if (!laneGraph || !msg.cellPath) {
+        (self as unknown as Worker).postMessage({
+          type: 'LANE_PATH_RESULT',
+          id: msg.id,
+          edgePath: null,
+        } satisfies PathWorkerResponse);
+        break;
+      }
+
+      const edgePath = refineLanePath(laneGraph, msg.cellPath, msg.preferredLane ?? 0);
+      (self as unknown as Worker).postMessage({
+        type: 'LANE_PATH_RESULT',
+        id: msg.id,
+        edgePath: edgePath ? edgePath.map(serializeLaneEdge) : null,
       } satisfies PathWorkerResponse);
       break;
     }
