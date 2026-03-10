@@ -17,6 +17,7 @@ export interface Vehicle {
   edgeIndex: number;     // current edge in edgePath
   edgeProgress: number;  // distance traveled along current edge
   edgeMoveRate: number;  // distance moved last tick (for render extrapolation)
+  speedMultiplier: number; // random 0.8–1.0, prevents vehicles from bunching at same speed
 }
 
 /** Vehicle lengths matching renderer model sizes */
@@ -110,6 +111,7 @@ export class TrafficSimulation {
       edgeIndex: 0,
       edgeProgress: 0,
       edgeMoveRate: 0,
+      speedMultiplier: 0.8 + Math.random() * 0.2,
     };
     this.vehicles.push(vehicle);
     return vehicle;
@@ -139,6 +141,7 @@ export class TrafficSimulation {
       edgeIndex: 0,
       edgeProgress: 0,
       edgeMoveRate: 0,
+      speedMultiplier: 0.8 + Math.random() * 0.2,
     };
     this.vehicles.push(vehicle);
     return vehicle;
@@ -160,11 +163,13 @@ export class TrafficSimulation {
     const edgeVehicles = this.vehicles.filter(v => v.edgePath && v.edgePath.length > 0 && !v.arrived);
     if (edgeVehicles.length === 0) return;
 
-    // Sort front-to-back: higher total progress = further ahead
+    // Sort front-to-back: higher total progress = further ahead.
+    // Tiebreaker: lower ID first (older vehicle has priority when overlapping).
     edgeVehicles.sort((a, b) => {
       const aTotal = this.edgeTotalProgress(a);
       const bTotal = this.edgeTotalProgress(b);
-      return bTotal - aTotal;
+      if (bTotal !== aTotal) return bTotal - aTotal;
+      return a.id - b.id; // lower ID = ahead = processed first
     });
 
     // Build edge index: edgeId → list of { vehicleId, progress, halfLen }
@@ -201,8 +206,10 @@ export class TrafficSimulation {
             for (const e of entries) {
               if (e.vid === v.id) continue;
               if (ei === v.edgeIndex) {
-                // Same edge: only look at vehicles ahead (greater progress)
-                if (e.progress <= v.edgeProgress) continue;
+                // Same edge: only look at vehicles ahead (greater progress).
+                // When at exact same progress, lower ID is "ahead" — higher ID yields.
+                if (e.progress < v.edgeProgress) continue;
+                if (e.progress === v.edgeProgress && e.vid > v.id) continue;
                 const dist = (e.progress - v.edgeProgress) - myHalfLen - e.halfLen;
                 if (dist < gap) gap = dist;
               } else {
@@ -244,10 +251,10 @@ export class TrafficSimulation {
       const currentEdge = ep[v.edgeIndex];
       const cellKey = currentEdge?.from.cellKey;
       const limit = getSpeedLimit && cellKey ? getSpeedLimit(cellKey) : REFERENCE_LIMIT;
-      const effectiveSpeed = EDGE_SPEED * (limit / REFERENCE_LIMIT) * dtSeconds;
+      const effectiveSpeed = EDGE_SPEED * (limit / REFERENCE_LIMIT) * v.speedMultiplier * dtSeconds;
 
       // 4. Advance
-      const gapRoom = gap < MIN_GAP ? effectiveSpeed * 0.15 : gap - MIN_GAP;
+      const gapRoom = Math.max(0, gap - MIN_GAP);
       const room = Math.max(0, Math.min(gapRoom, redLightDist));
       let moveDistance = Math.min(effectiveSpeed, room);
 

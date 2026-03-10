@@ -220,6 +220,41 @@ describe('LaneEdge Vehicle Movement', () => {
     });
   });
 
+  describe('speed multiplier', () => {
+    it('should assign speedMultiplier between 0.8 and 1.0 to edge vehicles', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(5);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      // Create many vehicles and check their speed multipliers are in range
+      for (let i = 0; i < 20; i++) {
+        const v = sim.addVehicleOnEdges(edgePath);
+        expect(v.speedMultiplier).toBeGreaterThanOrEqual(0.8);
+        expect(v.speedMultiplier).toBeLessThanOrEqual(1.0);
+      }
+    });
+
+    it('should cause vehicles with different multipliers to separate over time', () => {
+      const sim1 = new TrafficSimulation();
+      const sim2 = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(20);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      const vSlow = sim1.addVehicleOnEdges(edgePath);
+      vSlow.speedMultiplier = 0.8; // slowest
+      const vFast = sim2.addVehicleOnEdges(edgePath);
+      vFast.speedMultiplier = 1.0; // fastest
+
+      // Advance both for 0.5 seconds
+      advanceFor(sim1, 0.5);
+      advanceFor(sim2, 0.5);
+
+      const slowTotal = vSlow.edgeIndex + vSlow.edgeProgress;
+      const fastTotal = vFast.edgeIndex + vFast.edgeProgress;
+      expect(fastTotal).toBeGreaterThan(slowTotal);
+    });
+  });
+
   describe('front-to-back ordering', () => {
     it('should move leading vehicle first so trailing vehicle sees updated position', () => {
       const sim = new TrafficSimulation();
@@ -245,6 +280,87 @@ describe('LaneEdge Vehicle Movement', () => {
       // Follower should not overtake leader
       const followerAfter = follower.edgeIndex * 1000 + follower.edgeProgress;
       expect(followerAfter).toBeLessThan(leaderAfter);
+    });
+  });
+
+  describe('overlap resolution by ID priority', () => {
+    it('should let lower-ID vehicle move first when spawned at same position', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(10);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      // Spawn 3 vehicles at exact same position (progress=0, edge 0)
+      const v1 = sim.addVehicleOnEdges(edgePath);
+      const v2 = sim.addVehicleOnEdges(edgePath);
+      const v3 = sim.addVehicleOnEdges(edgePath);
+
+      // Force identical speed so only ID priority matters
+      v1.speedMultiplier = 1.0;
+      v2.speedMultiplier = 1.0;
+      v3.speedMultiplier = 1.0;
+
+      // Advance a few frames
+      for (let i = 0; i < 10; i++) {
+        advanceFor(sim, 1 / 60);
+      }
+
+      // v1 (lowest ID) should be furthest ahead
+      const p1 = v1.edgeIndex * 1000 + v1.edgeProgress;
+      const p2 = v2.edgeIndex * 1000 + v2.edgeProgress;
+      const p3 = v3.edgeIndex * 1000 + v3.edgeProgress;
+
+      expect(p1).toBeGreaterThan(0); // v1 must have moved
+      expect(p1).toBeGreaterThanOrEqual(p2);
+      expect(p2).toBeGreaterThanOrEqual(p3);
+    });
+
+    it('should not allow trailing vehicle to squeeze past when gap < MIN_GAP', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(10);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      const leader = sim.addVehicleOnEdges(edgePath);
+      leader.edgeProgress = 0.1; // slightly ahead
+      const follower = sim.addVehicleOnEdges(edgePath);
+      follower.edgeProgress = 0.05; // gap ≈ 0.05 - halfLens < MIN_GAP
+
+      const followerBefore = follower.edgeProgress;
+      advanceFor(sim, 1 / 60);
+
+      // Leader moves, follower should NOT have moved into leader
+      const leaderPos = leader.edgeIndex * 1000 + leader.edgeProgress;
+      const followerPos = follower.edgeIndex * 1000 + follower.edgeProgress;
+      expect(followerPos).toBeLessThan(leaderPos);
+    });
+
+    it('should not deadlock — overlapping vehicles eventually separate', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(20);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      // Spawn 5 vehicles at same position
+      const vehicles = [];
+      for (let i = 0; i < 5; i++) {
+        const v = sim.addVehicleOnEdges(edgePath);
+        v.speedMultiplier = 1.0;
+        vehicles.push(v);
+      }
+
+      // Advance for 0.5 seconds (30 frames) — short enough that no vehicle arrives
+      for (let i = 0; i < 30; i++) {
+        advanceFor(sim, 1 / 60);
+      }
+
+      // All vehicles should have moved (no deadlock)
+      for (const v of vehicles) {
+        const p = v.edgeIndex * 1000 + v.edgeProgress;
+        expect(p).toBeGreaterThan(0);
+      }
+
+      // They should be spread out (not all at same position)
+      const positions = vehicles.map(v => v.edgeIndex * 1000 + v.edgeProgress);
+      const spread = Math.max(...positions) - Math.min(...positions);
+      expect(spread).toBeGreaterThan(0);
     });
   });
 
