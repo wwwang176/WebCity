@@ -131,8 +131,9 @@ describe('stuck vehicle despawn', () => {
     // Red light blocks everything
     const canAdvance = () => false;
 
-    // Advance many frames — each call with dt=0.25 → 120 calls = 30s
-    for (let i = 0; i < 130; i++) {
+    // Advance many frames — each call with dt=0.25
+    // stallTime starts in [-5, 0] due to jitter, so need 35s worst case → 140+ calls
+    for (let i = 0; i < 150; i++) {
       sim.advanceEdgeVehicles(0.25, canAdvance);
     }
 
@@ -248,5 +249,24 @@ describe('getLaneCount', () => {
 
   it('should return 2 for ONE_WAY (all lanes in one direction)', () => {
     expect(getLaneCount(RoadType.ONE_WAY)).toBe(2);
+  });
+});
+
+describe('stall jitter', () => {
+  it('should initialize stallTime in [-5, 0] range', () => {
+    const sim = new TrafficSimulation();
+    const results: number[] = [];
+    for (let i = 0; i < 100; i++) {
+      const v = sim.addVehicleOnEdges(makeLongPath(5));
+      results.push(v.stallTime);
+    }
+    // All values should be in [-5, 0]
+    for (const st of results) {
+      expect(st).toBeGreaterThanOrEqual(-5);
+      expect(st).toBeLessThanOrEqual(0);
+    }
+    // At least some should be negative (probabilistic but 100 samples makes it near-certain)
+    const hasNegative = results.some(st => st < 0);
+    expect(hasNegative).toBe(true);
   });
 });
