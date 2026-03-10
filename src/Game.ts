@@ -41,7 +41,8 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 
 export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'tram_stop' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
 
-export interface SelectedBuilding {
+export interface SelectedZoneBuilding {
+  kind: 'zone';
   x: number;
   y: number;
   buildingType: BuildingType;
@@ -50,6 +51,19 @@ export interface SelectedBuilding {
   pollution: number;
   serviceCoverage: number;
 }
+
+export interface SelectedInfraBuilding {
+  kind: 'infra';
+  x: number;
+  y: number;
+  infraType: InfraType;
+  name: string;
+  cost: number;
+  /** Service-specific details to display */
+  details: Record<string, string | number>;
+}
+
+export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding;
 
 export class Game {
   private sceneManager: SceneManager;
@@ -302,6 +316,7 @@ export class Game {
           const bt = getBuildingType(cell.buildingId);
           if (bt) {
             this.selectedBuilding = {
+              kind: 'zone',
               x: x1, y: y1,
               buildingType: bt,
               zoneType: cell.zoneType,
@@ -309,6 +324,23 @@ export class Game {
               pollution: cell.pollution,
               serviceCoverage: cell.serviceCoverage,
             };
+          } else {
+            const infraCfg = getInfraConfigById(cell.buildingId);
+            if (infraCfg) {
+              const primary = findPrimaryCell(this.state.grid, x1, y1);
+              const px = primary?.x ?? x1;
+              const py = primary?.y ?? y1;
+              const center = getInfraCenterById(px, py, cell.buildingId);
+              const details = this.getInfraDetails(infraCfg.type, center.cx, center.cy);
+              this.selectedBuilding = {
+                kind: 'infra',
+                x: x1, y: y1,
+                infraType: infraCfg.type,
+                name: infraCfg.name,
+                cost: infraCfg.cost,
+                details,
+              };
+            }
           }
         } else {
           this.selectedBuilding = null;
@@ -1305,6 +1337,64 @@ export class Game {
 
   getAudioManager(): AudioManager {
     return this.audioManager;
+  }
+
+  private getInfraDetails(type: InfraType, cx: number, cy: number): Record<string, string | number> {
+    const s = this.state;
+    switch (type) {
+      case 'police': {
+        const st = s.police.getStations().find(p => p.x === cx && p.y === cy);
+        return { 'Radius': st?.radius ?? 15, 'Coverage': s.police.getCoverage(cx, cy) ? 'Yes' : 'No' };
+      }
+      case 'fire': {
+        const st = s.fire.getStations().find(f => f.x === cx && f.y === cy);
+        return { 'Radius': st?.radius ?? 15, 'Active Fires': s.fire.getActiveFires().length };
+      }
+      case 'hospital': {
+        const h = s.health.getHospitals().find(h => h.x === cx && h.y === cy);
+        return { 'Capacity': h?.capacity ?? 100, 'Radius': h?.radius ?? 12 };
+      }
+      case 'school': {
+        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'elementary');
+        return { 'Type': 'Elementary', 'Capacity': sc?.capacity ?? 200, 'Radius': sc?.radius ?? 10 };
+      }
+      case 'school_high': {
+        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'highschool');
+        return { 'Type': 'High School', 'Capacity': sc?.capacity ?? 300, 'Radius': sc?.radius ?? 12 };
+      }
+      case 'school_univ': {
+        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'university');
+        return { 'Type': 'University', 'Capacity': sc?.capacity ?? 500, 'Radius': sc?.radius ?? 15 };
+      }
+      case 'park': {
+        const p = s.parks.getParks().find(p => p.x === cx && p.y === cy);
+        return { 'Radius': p?.radius ?? 5 };
+      }
+      case 'garbage': {
+        const f = s.garbage.getFacilities().find(f => f.x === cx && f.y === cy);
+        return { 'Capacity': f?.capacity ?? 1000, 'Load': f?.currentLoad ?? 0 };
+      }
+      case 'sewage': {
+        return { 'Status': 'Active' };
+      }
+      case 'cemetery': {
+        const c = s.deathCare.getCemeteries().find(c => c.x === cx && c.y === cy);
+        return { 'Capacity': c?.capacity ?? 500, 'Used': c?.used ?? 0 };
+      }
+      case 'power': {
+        const p = s.power.getPlants().find(p => p.x === cx && p.y === cy);
+        return { 'Output': p?.output ?? 500, 'Type': p?.type ?? 'coal' };
+      }
+      case 'water': {
+        const w = s.water.getPlants().find(p => p.x === cx && p.y === cy);
+        return { 'Output': w?.output ?? 500 };
+      }
+      case 'airport': {
+        return { 'Status': 'Operational' };
+      }
+      default:
+        return {};
+    }
   }
 
   getSelectedBuilding(): SelectedBuilding | null {
