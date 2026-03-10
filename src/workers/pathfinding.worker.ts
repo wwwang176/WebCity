@@ -27,9 +27,17 @@ export interface SerializedLaneEdge {
   type: 'straight' | 'turn' | 'lane_change' | 'merge';
 }
 
+export interface BatchRequestItem {
+  id: number;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+  preferredLane: number;
+}
+
 export interface PathWorkerMessage {
-  type: 'FIND_PATH' | 'SET_GRID' | 'BUILD_LANE_GRAPH' | 'REFINE_LANE_PATH';
+  type: 'FIND_PATH' | 'SET_GRID' | 'BUILD_LANE_GRAPH' | 'REFINE_LANE_PATH' | 'BATCH_REQUEST';
   id?: number;
+  batchId?: number;
   from?: { x: number; y: number };
   to?: { x: number; y: number };
   width?: number;
@@ -37,13 +45,21 @@ export interface PathWorkerMessage {
   gridData?: SharedArrayBuffer;
   cellPath?: string[];
   preferredLane?: number;
+  requests?: BatchRequestItem[];
+}
+
+export interface BatchResultItem {
+  id: number;
+  edgePath: SerializedLaneEdge[] | null;
 }
 
 export interface PathWorkerResponse {
-  type: 'READY' | 'PATH_RESULT' | 'LANE_GRAPH_READY' | 'LANE_PATH_RESULT';
+  type: 'READY' | 'PATH_RESULT' | 'LANE_GRAPH_READY' | 'LANE_PATH_RESULT' | 'BATCH_RESULT';
   id?: number;
+  batchId?: number;
   path?: { x: number; y: number }[] | null;
   edgePath?: SerializedLaneEdge[] | null;
+  results?: BatchResultItem[];
 }
 
 let gridWidth = 0;
@@ -226,6 +242,35 @@ self.onmessage = (e: MessageEvent<PathWorkerMessage>) => {
         type: 'LANE_PATH_RESULT',
         id: msg.id,
         edgePath: edgePath ? edgePath.map(serializeLaneEdge) : null,
+      } satisfies PathWorkerResponse);
+      break;
+    }
+
+    case 'BATCH_REQUEST': {
+      const requests = msg.requests ?? [];
+      const results: BatchResultItem[] = requests.map(req => {
+        const startRoad = findAdjacentRoad(req.from.x, req.from.y);
+        const endRoad = findAdjacentRoad(req.to.x, req.to.y);
+        if (!startRoad || !endRoad) return { id: req.id, edgePath: null };
+        if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) return { id: req.id, edgePath: null };
+
+        const cellPath = bfsRoadPath(startRoad, endRoad);
+        if (!cellPath || cellPath.length < 2) return { id: req.id, edgePath: null };
+
+        // Convert cell path ({x,y}[]) to cell key strings for refineLanePath
+        const cellKeys = cellPath.map(p => `${p.x},${p.y}`);
+
+        if (!laneGraph) return { id: req.id, edgePath: null };
+        const edgePath = refineLanePath(laneGraph, cellKeys, req.preferredLane);
+        if (!edgePath || edgePath.length === 0) return { id: req.id, edgePath: null };
+
+        return { id: req.id, edgePath: edgePath.map(serializeLaneEdge) };
+      });
+
+      (self as unknown as Worker).postMessage({
+        type: 'BATCH_RESULT',
+        batchId: msg.batchId,
+        results,
       } satisfies PathWorkerResponse);
       break;
     }
