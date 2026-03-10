@@ -1333,3 +1333,12 @@
 - ✅ **3000-tick 壓力測試（Load後）** — 1810ms (1657 tps), Pop 235, Funds $186K, 零 NaN
 - ✅ 零 Console 錯誤
 - ✅ 全部 653 單元測試通過
+
+### BUG-048: Edge Vehicle 碰撞偵測導致車輛卡住不動 ✅ 已修復
+- **問題**: edge-based 車輛全部卡住不動，moveDistance 始終為 0
+- **根因 1**: 碰撞偵測遍歷所有 edge 車輛（全局），平行道路上的車輛被 heading 投影判定為「前方車輛」，導致 gap 極小
+- **修復 1**: 加入橫向距離過濾 `lateral = dx * (-me.hy) + dy * me.hx; if (Math.abs(lateral) > 0.4) continue;`
+- **根因 2**: 同一出生點的車輛堆疊，gap < MIN_GAP (如 gap=0.084 < MIN_GAP=0.15)，gapRoom=gap-MIN_GAP 為負值 → room=0
+- **修復 2**: 堆疊時允許慢速蠕動 `gapRoom = gap < MIN_GAP ? effectiveSpeed * 0.15 : gap - MIN_GAP`
+- **影響**: 全部 edge 車輛恢復移動 (moved=8/8)
+- **測試**: 811 tests passed

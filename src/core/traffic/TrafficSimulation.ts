@@ -219,7 +219,9 @@ export class TrafficSimulation {
       const effectiveSpeed = v.speed * (limit / REFERENCE_LIMIT);
 
       // 4. Advance
-      const room = Math.max(0, Math.min(gap - MIN_GAP, redLightDist));
+      // If vehicles are stacked (gap < MIN_GAP), allow slow creep to spread out
+      const gapRoom = gap < MIN_GAP ? effectiveSpeed * 0.15 : gap - MIN_GAP;
+      const room = Math.max(0, Math.min(gapRoom, redLightDist));
       let moveDistance = Math.min(effectiveSpeed, room);
 
       while (moveDistance > 0 && v.edgeIndex < ep.length) {
