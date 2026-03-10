@@ -167,35 +167,55 @@ export class TrafficSimulation {
       return bTotal - aTotal;
     });
 
-    // Pre-compute positions
-    type EInfo = { x: number; y: number; hx: number; hy: number; len: number };
-    const info = new Map<number, EInfo>();
+    // Build edge index: edgeId → list of { vehicleId, progress, halfLen }
+    // This allows O(1) lookup of vehicles on any given edge.
+    type EdgeEntry = { vid: number; progress: number; halfLen: number };
+    const edgeIndex = new Map<string, EdgeEntry[]>();
     for (const v of edgeVehicles) {
-      const pos = this.getVehiclePositionOnEdges(v);
-      if (!pos) continue;
-      const h = this.edgeHeadingVec(v);
-      info.set(v.id, { x: pos.x, y: pos.y, hx: h.hx, hy: h.hy, len: v.length });
+      if (v.arrived) continue;
+      const ep = v.edgePath!;
+      const edge = ep[v.edgeIndex];
+      if (!edge) continue;
+      let arr = edgeIndex.get(edge.id);
+      if (!arr) { arr = []; edgeIndex.set(edge.id, arr); }
+      arr.push({ vid: v.id, progress: v.edgeProgress, halfLen: v.length / 2 });
     }
 
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
-      const me = info.get(v.id);
-      if (!me) continue;
       const ep = v.edgePath!;
 
-      // 1. Gap to vehicle ahead (same lane/road only)
+      // 1. Gap to nearest vehicle ahead on the SAME edge path
       let gap = Infinity;
-      for (const [otherId, other] of info) {
-        if (otherId === v.id) continue;
-        const dx = other.x - me.x;
-        const dy = other.y - me.y;
-        // Lateral distance check: skip vehicles on parallel roads
-        const lateral = dx * (-me.hy) + dy * me.hx;
-        if (Math.abs(lateral) > 0.4) continue;
-        const ahead = dx * me.hx + dy * me.hy;
-        if (ahead <= 0) continue;
-        const bodyGap = ahead - me.len / 2 - other.len / 2;
-        if (bodyGap < gap) gap = bodyGap;
+      const myHalfLen = v.length / 2;
+      {
+        let distAhead = 0;
+        for (let ei = v.edgeIndex; ei < ep.length; ei++) {
+          const edge = ep[ei]!;
+          const myProgress = ei === v.edgeIndex ? v.edgeProgress : 0;
+          const edgeRemain = edge.length - myProgress;
+
+          // Check vehicles on this edge
+          const entries = edgeIndex.get(edge.id);
+          if (entries) {
+            for (const e of entries) {
+              if (e.vid === v.id) continue;
+              if (ei === v.edgeIndex) {
+                // Same edge: only look at vehicles ahead (greater progress)
+                if (e.progress <= v.edgeProgress) continue;
+                const dist = (e.progress - v.edgeProgress) - myHalfLen - e.halfLen;
+                if (dist < gap) gap = dist;
+              } else {
+                // Future edge: distance = remaining on current edges + progress on that edge
+                const dist = distAhead + e.progress - myHalfLen - e.halfLen;
+                if (dist < gap) gap = dist;
+              }
+            }
+          }
+
+          distAhead += edgeRemain;
+          if (distAhead > 5) break; // don't look too far ahead
+        }
       }
 
       // 2. Distance to nearest red light on path
@@ -250,15 +270,27 @@ export class TrafficSimulation {
         v.arrived = true;
       }
 
-      // Update info for trailing vehicles
-      const newPos = this.getVehiclePositionOnEdges(v);
-      if (newPos) {
-        const newH = this.edgeHeadingVec(v);
-        const entry = info.get(v.id)!;
-        entry.x = newPos.x;
-        entry.y = newPos.y;
-        entry.hx = newH.hx;
-        entry.hy = newH.hy;
+      // Update edge index for trailing vehicles to see our new position
+      const oldEdge = currentEdge;
+      const newEdge = ep[v.edgeIndex];
+      if (oldEdge && newEdge && oldEdge.id !== newEdge.id) {
+        // Remove from old edge
+        const oldArr = edgeIndex.get(oldEdge.id);
+        if (oldArr) {
+          const idx = oldArr.findIndex(e => e.vid === v.id);
+          if (idx >= 0) oldArr.splice(idx, 1);
+        }
+        // Add to new edge
+        let newArr = edgeIndex.get(newEdge.id);
+        if (!newArr) { newArr = []; edgeIndex.set(newEdge.id, newArr); }
+        newArr.push({ vid: v.id, progress: v.edgeProgress, halfLen: myHalfLen });
+      } else if (oldEdge) {
+        // Same edge, just update progress
+        const arr = edgeIndex.get(oldEdge.id);
+        if (arr) {
+          const entry = arr.find(e => e.vid === v.id);
+          if (entry) entry.progress = v.edgeProgress;
+        }
       }
     }
   }
