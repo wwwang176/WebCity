@@ -27,7 +27,10 @@ import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
+import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
+import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
+import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -77,6 +80,7 @@ export class Game {
   private weatherRenderer: WeatherRenderer;
   private gridCursor: GridCursor;
   private placementPreview: PlacementPreview;
+  private transportRouteRenderer: TransportRouteRenderer;
   private state: GameState;
   private simLoop: SimulationLoop;
   private roadBuilder: RoadBuilder;
@@ -142,12 +146,14 @@ export class Game {
     this.vehicleRenderer = new VehicleRenderer();
     this.trafficLightRenderer = new TrafficLightRenderer();
     this.overlayRenderer = new OverlayRenderer();
+    this.transportRouteRenderer = new TransportRouteRenderer();
 
     this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
 
     // Build initial scene
     this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
     this.vehicleRenderer.build(this.sceneManager.scene);
+    this.transportRouteRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
     this.placementPreview = new PlacementPreview(this.sceneManager.scene);
 
@@ -962,7 +968,29 @@ export class Game {
         laneOffset: 0,
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
-    this.vehicleRenderer.update(vehicleData, this.weatherRenderer.sunIntensity);
+
+    // 收集交通系統車輛（bus/metro/tram/rail/ferry/taxi）
+    const transportVehicles = collectTransportVehicles({
+      bus: this.state.bus,
+      metro: this.state.metro,
+      tram: this.state.tram,
+      rail: this.state.rail,
+      ferry: this.state.ferry,
+      taxi: this.state.taxi,
+    });
+    // 合併道路車輛與交通系統車輛
+    const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
+    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity);
+
+    // 更新交通路線渲染
+    const routeData = collectTransportRoutes({
+      bus: this.state.bus,
+      metro: this.state.metro,
+      tram: this.state.tram,
+      rail: this.state.rail,
+      ferry: this.state.ferry,
+    });
+    this.transportRouteRenderer.update(routeData);
 
     // Clean up stale vehicle rendering state
     const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
