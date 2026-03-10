@@ -54,6 +54,45 @@ export class MetroSystem extends BaseTransportSystem {
     return stationCount * METRO_BUILD_COST_PER_STATION;
   }
 
+  // ── Train segment info for renderer ─────────────────────────────
+
+  getTrainSegmentInfo(train: TransportVehicle): {
+    fromStopIndex: number;
+    toStopIndex: number;
+    progress: number;  // 0..1 parametric along segment
+    atStop: boolean;
+  } {
+    const route = this.routes.find(r => r.id === train.routeId);
+    if (!route || route.stops.length === 0) {
+      return { fromStopIndex: 0, toStopIndex: 0, progress: 0, atStop: true };
+    }
+
+    if (train.atStop || (!train.traveling && !train.atStop)) {
+      // At stop or initial state
+      return {
+        fromStopIndex: train.currentStopIndex,
+        toStopIndex: train.currentStopIndex,
+        progress: 0,
+        atStop: true,
+      };
+    }
+
+    // Traveling between stations
+    const prevIdx = (train.currentStopIndex - 1 + route.stops.length) % route.stops.length;
+    const prev = route.stops[prevIdx]!;
+    const next = route.stops[train.currentStopIndex]!;
+    const dist = Math.abs(next.x - prev.x) + Math.abs(next.y - prev.y);
+    const totalTicks = Math.max(1, Math.ceil(dist / this.config.speed));
+    const progress = 1 - train.travelTicks / totalTicks;
+
+    return {
+      fromStopIndex: prevIdx,
+      toStopIndex: train.currentStopIndex,
+      progress: Math.max(0, Math.min(1, progress)),
+      atStop: false,
+    };
+  }
+
   // ── Override traveling to interpolate position ───────────────────
 
   protected override tickTraveling(vehicle: TransportVehicle, route: TransportRoute): void {
