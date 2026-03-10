@@ -74,7 +74,7 @@ export class TrafficSimulation {
       edgeProgress: 0,
       edgeMoveRate: 0,
       speedMultiplier: 0.8 + Math.random() * 0.2,
-      stallTime: 0,
+      stallTime: -(Math.random() * 5),
     };
     this.vehicles.push(vehicle);
     // Update density map for immediate queries
