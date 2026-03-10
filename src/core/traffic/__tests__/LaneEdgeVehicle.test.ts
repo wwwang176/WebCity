@@ -210,4 +210,93 @@ describe('LaneEdge Vehicle Movement', () => {
       expect(fastProgress).toBeGreaterThan(slowProgress);
     });
   });
+
+  describe('front-to-back ordering', () => {
+    it('should move leading vehicle first so trailing vehicle sees updated position', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(10);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      // Place leader ahead of follower with small gap
+      const leader = sim.addVehicleOnEdges(edgePath);
+      leader.edgeIndex = 2;
+      leader.edgeProgress = 0;
+
+      const follower = sim.addVehicleOnEdges(edgePath);
+      follower.edgeIndex = 1;
+      follower.edgeProgress = edgePath[1]!.length * 0.8;
+
+      const leaderBefore = leader.edgeIndex * 1000 + leader.edgeProgress;
+      sim.tick();
+
+      // Leader should have advanced
+      const leaderAfter = leader.edgeIndex * 1000 + leader.edgeProgress;
+      expect(leaderAfter).toBeGreaterThan(leaderBefore);
+
+      // Follower should not overtake leader
+      const followerAfter = follower.edgeIndex * 1000 + follower.edgeProgress;
+      expect(followerAfter).toBeLessThan(leaderAfter);
+    });
+  });
+
+  describe('traffic light at intersection entry', () => {
+    it('should stop edge-based vehicle at red light', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(5);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      const v = sim.addVehicleOnEdges(edgePath);
+      v.edgeIndex = 0;
+      v.edgeProgress = 0;
+
+      // Red light between cell 1,0 and 2,0 — canAdvance returns false
+      const canAdvance = (from: string, to: string) => {
+        if (from === '1,0' && to === '2,0') return false;
+        return true;
+      };
+
+      // Tick several times
+      for (let i = 0; i < 20; i++) {
+        sim.tick(canAdvance);
+      }
+
+      // Vehicle should have stopped before crossing from 1,0 to 2,0
+      // Find the cross-cell edge from 1,0 to 2,0 in the path
+      const crossEdgeIdx = edgePath.findIndex(
+        e => e.from.cellKey === '1,0' && e.to.cellKey === '2,0'
+      );
+      expect(crossEdgeIdx).toBeGreaterThan(-1);
+
+      // Vehicle should not have passed this cross edge
+      if (v.edgeIndex < crossEdgeIdx) {
+        // Still before the blocked edge — correct
+        expect(true).toBe(true);
+      } else if (v.edgeIndex === crossEdgeIdx) {
+        // At the blocked edge but should have minimal progress
+        expect(v.edgeProgress).toBeLessThan(0.01);
+      } else {
+        // Past the blocked edge — WRONG
+        expect(v.edgeIndex).toBeLessThanOrEqual(crossEdgeIdx);
+      }
+    });
+
+    it('should allow vehicle through when light is green', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(5);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      const v = sim.addVehicleOnEdges(edgePath);
+
+      // All green
+      const canAdvance = () => true;
+
+      for (let i = 0; i < 20; i++) {
+        sim.tick(canAdvance);
+      }
+
+      // Vehicle should have passed well beyond cell 2,0
+      const totalProgress = v.edgeIndex + v.edgeProgress;
+      expect(totalProgress).toBeGreaterThan(2);
+    });
+  });
 });

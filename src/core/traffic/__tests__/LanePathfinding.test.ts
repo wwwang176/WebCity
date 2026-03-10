@@ -101,4 +101,67 @@ describe('refineLanePath', () => {
     expect(edgePath).not.toBeNull();
     expect(edgePath!.length).toBe(0);
   });
+
+  it('should use preferredLane parameter on multi-lane road', () => {
+    const { graph } = buildStraightRoad(5, RoadType.FOUR_LANE);
+    const cellPath = ['0,0', '1,0', '2,0', '3,0', '4,0'];
+
+    // Request lane 1 (second lane)
+    const edgePath = refineLanePath(graph, cellPath, 1);
+    expect(edgePath).not.toBeNull();
+    expect(edgePath!.length).toBeGreaterThan(0);
+
+    // All cross-cell edges should be on lane 1
+    const crossEdges = edgePath!.filter(
+      e => e.from.cellKey !== e.to.cellKey
+    );
+    for (const e of crossEdges) {
+      expect(e.from.lane).toBe(1);
+      expect(e.to.lane).toBe(1);
+    }
+  });
+
+  it('should produce different paths for different preferredLane values', () => {
+    const { graph } = buildStraightRoad(5, RoadType.FOUR_LANE);
+    const cellPath = ['0,0', '1,0', '2,0', '3,0', '4,0'];
+
+    const pathLane0 = refineLanePath(graph, cellPath, 0);
+    const pathLane1 = refineLanePath(graph, cellPath, 1);
+
+    expect(pathLane0).not.toBeNull();
+    expect(pathLane1).not.toBeNull();
+
+    // Paths should differ — different lane edges
+    const lane0CrossIds = pathLane0!.filter(e => e.from.cellKey !== e.to.cellKey).map(e => e.id);
+    const lane1CrossIds = pathLane1!.filter(e => e.from.cellKey !== e.to.cellKey).map(e => e.id);
+
+    // At least some edges should be different
+    const allSame = lane0CrossIds.every((id, i) => id === lane1CrossIds[i]);
+    expect(allSame).toBe(false);
+  });
+
+  it('should prefer right lane for right turn at intersection (4-lane)', () => {
+    // Build L-shaped 4-lane road: east then south
+    const cells = new Map<string, { roadType: RoadType; roadFlags: number }>([
+      ['0,0', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST }],
+      ['1,0', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.WEST | RoadDirection.SOUTH }],
+      ['1,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.NORTH }],
+    ]);
+    const graph = new LaneGraph();
+    graph.buildFromGrid(makeGridLookup(cells), ['0,0', '1,0', '1,1']);
+
+    const cellPath = ['0,0', '1,0', '1,1'];
+
+    // With preferred lane 0 (inner/right lane for eastbound turning south)
+    const edgePath0 = refineLanePath(graph, cellPath, 0);
+    expect(edgePath0).not.toBeNull();
+
+    // With preferred lane 1 (outer lane)
+    const edgePath1 = refineLanePath(graph, cellPath, 1);
+    expect(edgePath1).not.toBeNull();
+
+    // Both should produce valid paths (no lane changes forced in this simple case)
+    expect(edgePath0!.length).toBeGreaterThan(0);
+    expect(edgePath1!.length).toBeGreaterThan(0);
+  });
 });

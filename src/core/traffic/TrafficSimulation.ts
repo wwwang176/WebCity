@@ -141,6 +141,7 @@ export class TrafficSimulation {
   }
 
   private tickEdgeVehicles(
+    canAdvance?: (current: string, next: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
     const { MIN_GAP, BASE_SPEED, REFERENCE_LIMIT } = TrafficSimulation;
@@ -184,14 +185,38 @@ export class TrafficSimulation {
         if (bodyGap < gap) gap = bodyGap;
       }
 
-      // 2. Speed limit from current edge's cell
+      // 2. Distance to nearest red light on path
+      let redLightDist = Infinity;
+      if (canAdvance) {
+        let distAhead = 0;
+        for (let ei = v.edgeIndex; ei < ep.length; ei++) {
+          const edge = ep[ei]!;
+          const startDist = ei === v.edgeIndex ? v.edgeProgress : 0;
+          const edgeRemain = edge.length - startDist;
+
+          // Check cross-cell edges (exit → entry of different cell)
+          if (edge.from.cellKey !== edge.to.cellKey) {
+            if (!canAdvance(edge.from.cellKey, edge.to.cellKey)) {
+              // Stop before this edge's start
+              const stopDist = distAhead - (ei === v.edgeIndex ? 0 : startDist);
+              redLightDist = Math.max(0, stopDist - v.length / 2);
+              break;
+            }
+          }
+
+          distAhead += edgeRemain;
+          if (distAhead > 5) break; // don't look too far ahead
+        }
+      }
+
+      // 3. Speed limit from current edge's cell
       const currentEdge = ep[v.edgeIndex];
       const cellKey = currentEdge?.from.cellKey;
       const limit = getSpeedLimit && cellKey ? getSpeedLimit(cellKey) : REFERENCE_LIMIT;
       const effectiveSpeed = v.speed * (limit / REFERENCE_LIMIT);
 
-      // 3. Advance
-      const room = Math.max(0, gap - MIN_GAP);
+      // 4. Advance
+      const room = Math.max(0, Math.min(gap - MIN_GAP, redLightDist));
       let moveDistance = Math.min(effectiveSpeed, room);
 
       while (moveDistance > 0 && v.edgeIndex < ep.length) {
@@ -300,7 +325,7 @@ export class TrafficSimulation {
     getCellLaneCount?: (cellKey: string) => number,
   ): void {
     // Process edge-based vehicles first
-    this.tickEdgeVehicles(getSpeedLimit);
+    this.tickEdgeVehicles(canAdvance, getSpeedLimit);
     const { MIN_GAP, STOP_OFFSET, BASE_SPEED, REFERENCE_LIMIT,
       LANE_CHANGE_GAP, LANE_CHANGE_SAFE, LANE_CHANGE_COOLDOWN } = TrafficSimulation;
 
