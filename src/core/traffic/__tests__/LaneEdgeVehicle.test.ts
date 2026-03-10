@@ -364,6 +364,56 @@ describe('LaneEdge Vehicle Movement', () => {
     });
   });
 
+  describe('cell density for edge vehicles', () => {
+    it('should count edge vehicle in its current cell via getSegmentDensity', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(5);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      const v = sim.addVehicleOnEdges(edgePath);
+      advanceFor(sim, 1 / 60);
+
+      // Vehicle should be counted in whatever cell it's currently on
+      const idx = Math.min(v.edgeIndex, edgePath.length - 1);
+      const currentCell = edgePath[idx]!.from.cellKey;
+      expect(sim.getSegmentDensity(currentCell)).toBeGreaterThanOrEqual(1);
+    });
+
+    it('should include edge vehicles in getTopCongested', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(5);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      // Add 3 vehicles
+      for (let i = 0; i < 3; i++) {
+        sim.addVehicleOnEdges(edgePath);
+      }
+      advanceFor(sim, 1 / 60);
+
+      const top = sim.getTopCongested(5);
+      const totalDensity = top.reduce((sum, t) => sum + t.density, 0);
+      expect(totalDensity).toBe(3);
+    });
+
+    it('should update density as edge vehicle moves to new cell', () => {
+      const sim = new TrafficSimulation();
+      const { graph, cellKeys } = buildHorizontalRoad(10);
+      const edgePath = resolveEastPath(graph, cellKeys);
+
+      const v = sim.addVehicleOnEdges(edgePath);
+      v.speedMultiplier = 1.0;
+
+      // Advance enough to move past first cell
+      for (let i = 0; i < 30; i++) {
+        advanceFor(sim, 1 / 60);
+      }
+
+      // Vehicle should no longer be in first cell
+      const firstCell = edgePath[0]!.from.cellKey;
+      expect(sim.getSegmentDensity(firstCell)).toBe(0);
+    });
+  });
+
   describe('traffic light at intersection entry', () => {
     it('should stop edge-based vehicle at red light', () => {
       const sim = new TrafficSimulation();

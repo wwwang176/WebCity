@@ -49,6 +49,8 @@ export function getLaneCount(roadType: number): number {
 export class TrafficSimulation {
   vehicles: Vehicle[] = [];
   private nextId = 1;
+  /** Per-cell vehicle count, rebuilt every advanceEdgeVehicles call. */
+  private cellDensity = new Map<string, number>();
 
   private static readonly BASE_SPEED = 3.5;   // path-units per tick at reference speed limit (50)
   private static readonly EDGE_SPEED = 14;    // edge vehicle speed in world-units per second (3.5 / 0.25)
@@ -114,6 +116,10 @@ export class TrafficSimulation {
       speedMultiplier: 0.8 + Math.random() * 0.2,
     };
     this.vehicles.push(vehicle);
+    // Update density map for immediate queries
+    if (path[0]) {
+      this.cellDensity.set(path[0], (this.cellDensity.get(path[0]) ?? 0) + 1);
+    }
     return vehicle;
   }
 
@@ -144,6 +150,11 @@ export class TrafficSimulation {
       speedMultiplier: 0.8 + Math.random() * 0.2,
     };
     this.vehicles.push(vehicle);
+    // Update density map for immediate queries
+    const startCell = edgePath[0]?.from.cellKey;
+    if (startCell) {
+      this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
+    }
     return vehicle;
   }
 
@@ -298,6 +309,22 @@ export class TrafficSimulation {
           const entry = arr.find(e => e.vid === v.id);
           if (entry) entry.progress = v.edgeProgress;
         }
+      }
+    }
+
+    // Rebuild cell density map from all active vehicles (edge + legacy)
+    this.cellDensity.clear();
+    for (const v of this.vehicles) {
+      if (v.arrived) continue;
+      let cell: string | undefined;
+      if (v.edgePath && v.edgePath.length > 0) {
+        const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+        cell = v.edgePath[idx]!.from.cellKey;
+      } else if (v.path.length > 0) {
+        cell = v.path[Math.floor(v.pathPos)];
+      }
+      if (cell) {
+        this.cellDensity.set(cell, (this.cellDensity.get(cell) ?? 0) + 1);
       }
     }
   }
@@ -607,6 +634,22 @@ export class TrafficSimulation {
     }
 
     this.vehicles = this.vehicles.filter((v) => !v.arrived);
+
+    // Rebuild cell density map (covers both legacy and edge vehicles)
+    this.cellDensity.clear();
+    for (const v of this.vehicles) {
+      if (v.arrived) continue;
+      let cell: string | undefined;
+      if (v.edgePath && v.edgePath.length > 0) {
+        const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+        cell = v.edgePath[idx]!.from.cellKey;
+      } else if (v.path.length > 0) {
+        cell = v.path[Math.floor(v.pathPos)];
+      }
+      if (cell) {
+        this.cellDensity.set(cell, (this.cellDensity.get(cell) ?? 0) + 1);
+      }
+    }
   }
 
   /** World position from pathPos */
@@ -640,13 +683,7 @@ export class TrafficSimulation {
   // ── Stats (for overlays / UI) ──
 
   getSegmentDensity(segment: string): number {
-    let count = 0;
-    for (const v of this.vehicles) {
-      if (v.arrived) continue;
-      const cell = v.path[Math.floor(v.pathPos)];
-      if (cell === segment) count++;
-    }
-    return count;
+    return this.cellDensity.get(segment) ?? 0;
   }
 
   getVehicleCount(): number {
@@ -654,13 +691,7 @@ export class TrafficSimulation {
   }
 
   getTopCongested(n: number): { segment: string; density: number }[] {
-    const counts = new Map<string, number>();
-    for (const v of this.vehicles) {
-      if (v.arrived) continue;
-      const cell = v.path[Math.floor(v.pathPos)];
-      if (cell) counts.set(cell, (counts.get(cell) ?? 0) + 1);
-    }
-    return [...counts.entries()]
+    return [...this.cellDensity.entries()]
       .map(([segment, density]) => ({ segment, density }))
       .sort((a, b) => b.density - a.density)
       .slice(0, n);
