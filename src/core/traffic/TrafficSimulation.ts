@@ -173,12 +173,15 @@ export class TrafficSimulation {
       if (!me) continue;
       const ep = v.edgePath!;
 
-      // 1. Gap to vehicle ahead
+      // 1. Gap to vehicle ahead (same lane/road only)
       let gap = Infinity;
       for (const [otherId, other] of info) {
         if (otherId === v.id) continue;
         const dx = other.x - me.x;
         const dy = other.y - me.y;
+        // Lateral distance check: skip vehicles on parallel roads
+        const lateral = dx * (-me.hy) + dy * me.hx;
+        if (Math.abs(lateral) > 0.4) continue;
         const ahead = dx * me.hx + dy * me.hy;
         if (ahead <= 0) continue;
         const bodyGap = ahead - me.len / 2 - other.len / 2;
