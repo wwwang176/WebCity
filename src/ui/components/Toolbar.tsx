@@ -1,7 +1,8 @@
-import { createSignal, For } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
 import type { ToolType } from '../../Game';
+import type { AirportSize } from '../../core/transport/AirportSystem';
 
 interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
 interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[] }
@@ -121,10 +122,25 @@ function ToolGroupComponent(props: {
           </button>
         )}
         {props.group.id === 'transport' && (
-          <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
-            <span class="tb-icon">{'\u{1F5FA}'}</span>
-            <span style={{ color: '#ff9800' }}>Routes</span>
-          </button>
+          <>
+            <Show when={gameSignals.currentTool() === 'airport'}>
+              <div style="display:flex;gap:2px;padding:2px 4px;background:#1a1a2e;border-radius:4px;margin:2px 4px">
+                {(['SMALL', 'MEDIUM', 'LARGE'] as AirportSize[]).map(size => (
+                  <button
+                    class="tb-btn"
+                    style={`font-size:10px;padding:2px 6px;border-radius:3px;border:1px solid ${(getGame().selectedAirportSize ?? 'SMALL') === size ? '#9c27b0' : '#555'};background:${(getGame().selectedAirportSize ?? 'SMALL') === size ? '#9c27b022' : 'transparent'};color:${(getGame().selectedAirportSize ?? 'SMALL') === size ? '#ce93d8' : '#888'};cursor:pointer`}
+                    onClick={(e) => { e.stopPropagation(); getGame().selectedAirportSize = size as AirportSize; }}
+                  >
+                    {size === 'SMALL' ? 'S $5K' : size === 'MEDIUM' ? 'M $15K' : 'L $40K'}
+                  </button>
+                ))}
+              </div>
+            </Show>
+            <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
+              <span class="tb-icon">{'\u{1F5FA}'}</span>
+              <span style={{ color: '#ff9800' }}>Routes</span>
+            </button>
+          </>
         )}
       </div>
     </div>

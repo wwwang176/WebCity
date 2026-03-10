@@ -15,6 +15,13 @@ import { DeathCareService } from '../service/DeathCareService';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
 import { Grid } from '../grid/Grid';
+import { BusSystem } from '../transport/BusSystem';
+import { MetroSystem } from '../transport/MetroSystem';
+import { TramSystem } from '../transport/TramSystem';
+import { RailSystem } from '../transport/RailSystem';
+import { FerrySystem } from '../transport/FerrySystem';
+import { TaxiSystem } from '../transport/TaxiSystem';
+import { AirportSystem } from '../transport/AirportSystem';
 
 interface SerializedCell {
   x: number;
@@ -59,6 +66,13 @@ interface SerializedState {
   garbage?: ReturnType<GarbageService['toJSON']>;
   sewage?: ReturnType<SewageService['toJSON']>;
   deathCare?: ReturnType<DeathCareService['toJSON']>;
+  bus?: ReturnType<BusSystem['toJSON']>;
+  metro?: ReturnType<MetroSystem['toJSON']>;
+  tram?: ReturnType<TramSystem['toJSON']>;
+  rail?: ReturnType<RailSystem['toJSON']>;
+  ferry?: ReturnType<FerrySystem['toJSON']>;
+  taxi?: ReturnType<TaxiSystem['toJSON']>;
+  airport?: ReturnType<AirportSystem['toJSON']>;
 }
 
 function isCellDefault(cell: CellData): boolean {
@@ -140,6 +154,13 @@ export function serializeGameState(state: GameState): string {
     garbage: state.garbage.toJSON(),
     sewage: state.sewage.toJSON(),
     deathCare: state.deathCare.toJSON(),
+    bus: state.bus.toJSON(),
+    metro: state.metro.toJSON(),
+    tram: state.tram.toJSON(),
+    rail: state.rail.toJSON(),
+    ferry: state.ferry.toJSON(),
+    taxi: state.taxi.toJSON(),
+    airport: state.airport.toJSON(),
   };
 
   return JSON.stringify(serialized);
@@ -201,18 +222,43 @@ export function deserializeGameState(json: string): GameState {
   // Migrate old 1×1 infrastructure to multi-cell
   migrateOldInfra(state.grid);
 
-  // Rebuild transit stops from grid (transit internal state is not serialized)
-  for (let y = 0; y < saved.grid.height; y++) {
-    for (let x = 0; x < saved.grid.width; x++) {
-      const cell = state.grid.getCell(x, y);
-      if (!cell) continue;
-      switch (cell.buildingId) {
-        case 242: state.bus.addStop(x, y); break;
-        case 241: state.metro.addStation(x, y); break;
-        case 240: state.tram.addStop(x, y); break;
-        case 239: state.rail.buildStation(x, y); break;
-        case 238: state.ferry.addDock(x, y); break;
-        case 236: state.taxi.addStand(x, y); break;
+  // Restore transport systems (new format with full state, or fallback to grid-scan)
+  if (saved.bus) {
+    state.bus = BusSystem.fromJSON(saved.bus);
+  }
+  if (saved.metro) {
+    state.metro = MetroSystem.fromJSON(saved.metro);
+  }
+  if (saved.tram) {
+    state.tram = TramSystem.fromJSON(saved.tram);
+  }
+  if (saved.rail) {
+    state.rail = RailSystem.fromJSON(saved.rail);
+  }
+  if (saved.ferry) {
+    state.ferry = FerrySystem.fromJSON(saved.ferry);
+  }
+  if (saved.taxi) {
+    state.taxi = TaxiSystem.fromJSON(saved.taxi);
+  }
+  if (saved.airport) {
+    state.airport = AirportSystem.fromJSON(saved.airport);
+  }
+
+  // Fallback: rebuild transit stops from grid for old saves without transport data
+  if (!saved.bus && !saved.metro && !saved.tram && !saved.rail && !saved.ferry && !saved.taxi) {
+    for (let y = 0; y < saved.grid.height; y++) {
+      for (let x = 0; x < saved.grid.width; x++) {
+        const cell = state.grid.getCell(x, y);
+        if (!cell) continue;
+        switch (cell.buildingId) {
+          case 242: state.bus.addStop(x, y); break;
+          case 241: state.metro.addStation(x, y); break;
+          case 240: state.tram.addStop(x, y); break;
+          case 239: state.rail.buildStation(x, y); break;
+          case 238: state.ferry.addDock(x, y); break;
+          case 236: state.taxi.addStand(x, y); break;
+        }
       }
     }
   }

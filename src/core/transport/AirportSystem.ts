@@ -1,6 +1,17 @@
 
 export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 
+const SIZE_FOOTPRINT: Record<AirportSize, number> = {
+  SMALL: 3,
+  MEDIUM: 5,
+  LARGE: 7,
+};
+
+/** Returns the side length (NxN) of the airport footprint for the given size. */
+export function getAirportFootprint(size: AirportSize): number {
+  return SIZE_FOOTPRINT[size];
+}
+
 const SIZE_AREA: Record<AirportSize, number> = {
   SMALL: 9,   // 3x3
   MEDIUM: 25, // 5x5
@@ -31,7 +42,11 @@ const SIZE_OPERATING_COST: Record<AirportSize, number> = {
   LARGE: 4000,
 };
 
-const POP_REQUIRED = 10000;
+const POP_REQUIRED: Record<AirportSize, number> = {
+  SMALL: 10000,
+  MEDIUM: 50000,
+  LARGE: 100000,
+};
 
 export interface Airport {
   id: number;
@@ -49,6 +64,11 @@ export class AirportSystem {
   private airports: Airport[] = [];
   private nextId = 1;
 
+  /** Accumulated tourists to be consumed by population system. */
+  pendingTourists = 0;
+  /** Accumulated cargo to be consumed by freight system. */
+  pendingCargo = 0;
+
   /**
    * Build an airport at the given location.
    * Requires a minimum population to unlock.
@@ -60,7 +80,7 @@ export class AirportSystem {
     size: AirportSize,
     currentPopulation: number,
   ): Airport | null {
-    if (currentPopulation < POP_REQUIRED) {
+    if (currentPopulation < POP_REQUIRED[size]) {
       return null;
     }
 
@@ -80,13 +100,29 @@ export class AirportSystem {
   }
 
   /** Population required to unlock airport construction. */
-  getPopulationRequired(): number {
-    return POP_REQUIRED;
+  getPopulationRequired(size: AirportSize = 'SMALL'): number {
+    return POP_REQUIRED[size];
   }
 
   tick(): void {
-    // Airport tick -- tourists and cargo arrive each tick
-    // (consumed by external systems reading touristsPerTick / cargoPerTick)
+    for (const airport of this.airports) {
+      this.pendingTourists += airport.touristsPerTick;
+      this.pendingCargo += airport.cargoPerTick;
+    }
+  }
+
+  /** Consume accumulated tourists (called by population system). */
+  consumeTourists(): number {
+    const t = this.pendingTourists;
+    this.pendingTourists = 0;
+    return t;
+  }
+
+  /** Consume accumulated cargo (called by freight system). */
+  consumeCargo(): number {
+    const c = this.pendingCargo;
+    this.pendingCargo = 0;
+    return c;
   }
 
   getNoisePollution(airportId: number): number {
@@ -100,5 +136,23 @@ export class AirportSystem {
 
   getAirports(): readonly Airport[] {
     return this.airports;
+  }
+
+  remove(airportId: number): void {
+    this.airports = this.airports.filter(a => a.id !== airportId);
+  }
+
+  toJSON() {
+    return {
+      airports: this.airports.map(a => ({ ...a })),
+      nextId: this.nextId,
+    };
+  }
+
+  static fromJSON(data: ReturnType<AirportSystem['toJSON']>): AirportSystem {
+    const sys = new AirportSystem();
+    sys.airports = data.airports.map(a => ({ ...a }));
+    sys.nextId = data.nextId;
+    return sys;
   }
 }

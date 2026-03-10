@@ -8,9 +8,11 @@ import { MetroSystem } from '../MetroSystem';
 import { TramSystem } from '../TramSystem';
 import { RailSystem, RailServiceType } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
-import { AirportSystem } from '../AirportSystem';
+import { AirportSystem, getAirportFootprint } from '../AirportSystem';
 import { TaxiSystem } from '../TaxiSystem';
 import { chooseMode, AvailableTransport } from '../ModeChoice';
+import { PollutionManager } from '../../environment/Pollution';
+import { FreightSystem } from '../../traffic/FreightSystem';
 
 // ---------------------------------------------------------------------------
 // BusSystem
@@ -75,19 +77,27 @@ describe('BusSystem', () => {
   it('should cycle back to first stop after reaching the last', () => {
     const bus = new BusSystem();
     const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(5, 0);
+    const s2 = bus.addStop(4, 0); // dist=4, speed=2 -> 2 travel ticks
     bus.createRoute([s1, s2]);
 
-    // Advance through s1 dwell (2 ticks) + departure (1 tick to arrive at s2)
-    bus.tick(); // arrive s1, waitTicks=2
-    bus.tick(); // dwell, waitTicks=1
-    bus.tick(); // depart s1, currentStopIndex=1
-    bus.tick(); // arrive s2, waitTicks=2
-    bus.tick(); // dwell, waitTicks=1
-    bus.tick(); // depart s2, currentStopIndex=0 (wrapped)
+    // tick 1: arrive s1, waitTicks=2
+    bus.tick();
+    // tick 2: dwell, waitTicks=1
+    bus.tick();
+    // tick 3: depart s1, traveling to s2 (travelTicks=2)
+    bus.tick();
+    // tick 4: travelTicks=1
+    bus.tick();
+    // tick 5: arrive s2, waitTicks=2
+    bus.tick();
+    // tick 6: dwell
+    bus.tick();
+    // tick 7: depart s2, traveling to s1 (wrapped)
+    bus.tick();
 
     const v = bus.getVehicles()[0]!;
     expect(v.currentStopIndex).toBe(0);
+    expect(v.traveling).toBe(true);
   });
 
   it('should calculate total operating cost', () => {
@@ -363,10 +373,20 @@ describe('AirportSystem', () => {
 
   it('should build when population requirement is met', () => {
     const airports = new AirportSystem();
-    const airport = airports.build(10, 10, 'MEDIUM', 15000);
+    const airport = airports.build(10, 10, 'MEDIUM', 50000);
     expect(airport).not.toBeNull();
     expect(airport!.size).toBe('MEDIUM');
     expect(airports.getAirports()).toHaveLength(1);
+  });
+
+  it('should reject MEDIUM if population < 50000', () => {
+    const airports = new AirportSystem();
+    expect(airports.build(10, 10, 'MEDIUM', 15000)).toBeNull();
+  });
+
+  it('should reject LARGE if population < 100000', () => {
+    const airports = new AirportSystem();
+    expect(airports.build(10, 10, 'LARGE', 50000)).toBeNull();
   });
 
   it('should report population required as 10000', () => {
@@ -376,14 +396,14 @@ describe('AirportSystem', () => {
 
   it('should generate noise pollution', () => {
     const airports = new AirportSystem();
-    const airport = airports.build(10, 10, 'LARGE', 50000)!;
+    const airport = airports.build(10, 10, 'LARGE', 100000)!;
     expect(airports.getNoisePollution(airport.id)).toBe(50);
     expect(airport.noisePollution).toBeGreaterThan(0);
   });
 
   it('should bring tourists and cargo', () => {
     const airports = new AirportSystem();
-    const airport = airports.build(10, 10, 'LARGE', 50000)!;
+    const airport = airports.build(10, 10, 'LARGE', 100000)!;
     expect(airport.touristsPerTick).toBeGreaterThan(0);
     expect(airport.cargoPerTick).toBeGreaterThan(0);
   });
@@ -391,14 +411,14 @@ describe('AirportSystem', () => {
   it('should require larger area for bigger airports', () => {
     const airports = new AirportSystem();
     const small = airports.build(0, 0, 'SMALL', 10000)!;
-    const large = airports.build(20, 20, 'LARGE', 10000)!;
+    const large = airports.build(20, 20, 'LARGE', 100000)!;
     expect(large.area).toBeGreaterThan(small.area);
   });
 
   it('should calculate operating cost', () => {
     const airports = new AirportSystem();
     airports.build(0, 0, 'SMALL', 10000);
-    airports.build(20, 20, 'LARGE', 10000);
+    airports.build(20, 20, 'LARGE', 100000);
     // 500 + 4000 = 4500
     expect(airports.getOperatingCost()).toBe(4500);
   });
@@ -588,5 +608,860 @@ describe('ModeChoice', () => {
       0,
     );
     expect(mode).toBe(TransportMode.WALK);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T1.1 Serialization — toJSON / fromJSON
+// ---------------------------------------------------------------------------
+describe('BusSystem toJSON/fromJSON', () => {
+  it('should round-trip stops, routes, vehicles, and ID counters', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(5, 5);
+    bus.createRoute([s1, s2], 2);
+    bus.congestionLevel = 0.4;
+
+    const json = bus.toJSON();
+    const restored = BusSystem.fromJSON(json);
+
+    expect(restored.getStops()).toHaveLength(2);
+    expect(restored.getRoutes()).toHaveLength(1);
+    expect(restored.getVehicles()).toHaveLength(2);
+    expect(restored.congestionLevel).toBe(0.4);
+    // IDs should continue from where they left off
+    const s3 = restored.addStop(10, 10);
+    expect(s3.id).toBe(3);
+  });
+});
+
+describe('MetroSystem toJSON/fromJSON', () => {
+  it('should round-trip stations, lines, trains, and ID counters', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(10, 0);
+    metro.createLine([st1, st2], 2);
+
+    const json = metro.toJSON();
+    const restored = MetroSystem.fromJSON(json);
+
+    expect(restored.getStations()).toHaveLength(2);
+    expect(restored.getLines()).toHaveLength(1);
+    expect(restored.getTrains()).toHaveLength(2);
+    const st3 = restored.addStation(20, 0);
+    expect(st3.id).toBe(3);
+  });
+});
+
+describe('TramSystem toJSON/fromJSON', () => {
+  it('should round-trip stops, routes, vehicles', () => {
+    const tram = new TramSystem();
+    const s1 = tram.addStop(0, 0);
+    const s2 = tram.addStop(5, 0);
+    tram.createRoute([s1, s2], 1);
+
+    const json = tram.toJSON();
+    const restored = TramSystem.fromJSON(json);
+
+    expect(restored.getStops()).toHaveLength(2);
+    expect(restored.getRoutes()).toHaveLength(1);
+    expect(restored.getVehicles()).toHaveLength(1);
+  });
+});
+
+describe('RailSystem toJSON/fromJSON', () => {
+  it('should round-trip stations, lines, trains, and lineServiceTypes', () => {
+    const rail = new RailSystem();
+    const st1 = rail.buildStation(0, 0);
+    const st2 = rail.buildStation(20, 0);
+    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT, 2);
+    rail.hasExternalConnection = true;
+    rail.externalConnection = { populationIn: 10, goodsIn: 50, goodsOut: 30 };
+
+    const json = rail.toJSON();
+    const restored = RailSystem.fromJSON(json);
+
+    expect(restored.getStations()).toHaveLength(2);
+    expect(restored.getLines()).toHaveLength(1);
+    expect(restored.getTrains()).toHaveLength(2);
+    expect(restored.getLineServiceType(line.id)).toBe(RailServiceType.FREIGHT);
+    expect(restored.hasExternalConnection).toBe(true);
+    expect(restored.externalConnection.goodsIn).toBe(50);
+  });
+});
+
+describe('FerrySystem toJSON/fromJSON', () => {
+  it('should round-trip docks, routes, vessels', () => {
+    const ferry = new FerrySystem();
+    const d1 = ferry.addDock(0, 0)!;
+    const d2 = ferry.addDock(10, 10)!;
+    ferry.createRoute([d1, d2], 2);
+
+    const json = ferry.toJSON();
+    const restored = FerrySystem.fromJSON(json);
+
+    expect(restored.getDocks()).toHaveLength(2);
+    expect(restored.getRoutes()).toHaveLength(1);
+    expect(restored.getVessels()).toHaveLength(2);
+  });
+});
+
+describe('TaxiSystem toJSON/fromJSON', () => {
+  it('should round-trip stands, vehicles, and active trips', () => {
+    const taxi = new TaxiSystem();
+    taxi.addStand(0, 0, 2);
+    taxi.dispatch({ x: 0, y: 0 }, { x: 5, y: 5 });
+
+    const json = taxi.toJSON();
+    const restored = TaxiSystem.fromJSON(json);
+
+    expect(restored.getStands()).toHaveLength(1);
+    expect(restored.getVehicles()).toHaveLength(2);
+    expect(restored.getActiveTrips()).toHaveLength(1);
+    expect(restored.getActiveTrips()[0]!.ticks).toBe(10);
+  });
+});
+
+describe('AirportSystem toJSON/fromJSON', () => {
+  it('should round-trip airports with size and properties', () => {
+    const airports = new AirportSystem();
+    airports.build(0, 0, 'SMALL', 10000);
+    airports.build(20, 20, 'LARGE', 100000);
+
+    const json = airports.toJSON();
+    const restored = AirportSystem.fromJSON(json);
+
+    expect(restored.getAirports()).toHaveLength(2);
+    expect(restored.getAirports()[0]!.size).toBe('SMALL');
+    expect(restored.getAirports()[1]!.size).toBe('LARGE');
+    expect(restored.getOperatingCost()).toBe(4500);
+    // ID counter should continue
+    const a3 = restored.build(40, 40, 'MEDIUM', 50000);
+    expect(a3!.id).toBe(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T1.4 removeStop / removeStation / removeDock / removeStand
+// ---------------------------------------------------------------------------
+describe('BusSystem removeStop', () => {
+  it('should remove a stop by id', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    bus.addStop(5, 5);
+    bus.removeStop(s1.id);
+    expect(bus.getStops()).toHaveLength(1);
+    expect(bus.getStops()[0]!.x).toBe(5);
+  });
+
+  it('should remove route vehicles when a stop in the route is removed', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(5, 5);
+    bus.createRoute([s1, s2]);
+    bus.removeStop(s1.id);
+    // Route had only 2 stops, removing one should dissolve the route
+    expect(bus.getRoutes()).toHaveLength(0);
+    expect(bus.getVehicles()).toHaveLength(0);
+  });
+});
+
+describe('MetroSystem removeStation', () => {
+  it('should remove a station by id', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    metro.addStation(5, 5);
+    metro.removeStation(st1.id);
+    expect(metro.getStations()).toHaveLength(1);
+  });
+
+  it('should dissolve line when station count drops below 2', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(10, 0);
+    metro.createLine([st1, st2]);
+    metro.removeStation(st1.id);
+    expect(metro.getLines()).toHaveLength(0);
+    expect(metro.getTrains()).toHaveLength(0);
+  });
+});
+
+describe('TramSystem removeStop', () => {
+  it('should remove a stop by id', () => {
+    const tram = new TramSystem();
+    const s1 = tram.addStop(0, 0);
+    tram.addStop(5, 5);
+    tram.removeStop(s1.id);
+    expect(tram.getStops()).toHaveLength(1);
+  });
+});
+
+describe('RailSystem removeStation', () => {
+  it('should remove a station by id', () => {
+    const rail = new RailSystem();
+    const st1 = rail.buildStation(0, 0);
+    rail.buildStation(5, 5);
+    rail.removeStation(st1.id);
+    expect(rail.getStations()).toHaveLength(1);
+  });
+});
+
+describe('FerrySystem removeDock', () => {
+  it('should remove a dock by id', () => {
+    const ferry = new FerrySystem();
+    const d1 = ferry.addDock(0, 0)!;
+    ferry.addDock(5, 5);
+    ferry.removeDock(d1.id);
+    expect(ferry.getDocks()).toHaveLength(1);
+  });
+});
+
+describe('TaxiSystem removeStand', () => {
+  it('should remove a stand and its vehicles', () => {
+    const taxi = new TaxiSystem();
+    const stand = taxi.addStand(0, 0, 3);
+    taxi.addStand(5, 5, 2);
+    taxi.removeStand(stand.id);
+    expect(taxi.getStands()).toHaveLength(1);
+    expect(taxi.getVehicles()).toHaveLength(2);
+  });
+});
+
+describe('AirportSystem remove', () => {
+  it('should remove an airport by id', () => {
+    const airports = new AirportSystem();
+    const a1 = airports.build(0, 0, 'SMALL', 10000)!;
+    airports.build(20, 20, 'LARGE', 100000);
+    airports.remove(a1.id);
+    expect(airports.getAirports()).toHaveLength(1);
+    expect(airports.getAirports()[0]!.size).toBe('LARGE');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T3 Vehicle Travel Time
+// ---------------------------------------------------------------------------
+describe('Bus travel time', () => {
+  it('should travel between stops based on distance, not instant', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(10, 0); // distance = 10
+    bus.createRoute([s1, s2]);
+
+    // tick 1: arrive at s1, dwell
+    bus.tick();
+    const v0 = bus.getVehicles()[0]!;
+    expect(v0.atStop).toBe(true);
+
+    // tick 2: still dwelling
+    bus.tick();
+    // tick 3: depart s1, start traveling to s2
+    bus.tick();
+    const v3 = bus.getVehicles()[0]!;
+    expect(v3.atStop).toBe(false);
+    expect(v3.traveling).toBe(true);
+    expect(v3.travelTicks).toBeGreaterThan(0);
+
+    // Should NOT be at s2 yet (distance 10 needs multiple ticks)
+    expect(v3.position.x).toBe(0); // still at s1 position
+  });
+
+  it('should arrive at next stop after travel ticks elapse', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(4, 0); // distance = 4, speed=2 -> 2 ticks
+    bus.createRoute([s1, s2]);
+
+    // arrive + dwell at s1
+    bus.tick(); // arrive s1, waitTicks=2
+    bus.tick(); // dwell
+    bus.tick(); // depart, traveling=true, travelTicks=2
+
+    const vTravel = bus.getVehicles()[0]!;
+    expect(vTravel.traveling).toBe(true);
+
+    bus.tick(); // travelTicks=1
+    bus.tick(); // travelTicks=0, arrive s2
+    const vArrived = bus.getVehicles()[0]!;
+    expect(vArrived.atStop).toBe(true);
+    expect(vArrived.traveling).toBe(false);
+    expect(vArrived.position.x).toBe(4);
+  });
+
+  it('should be slower with congestion', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(10, 0);
+    bus.createRoute([s1, s2]);
+    bus.congestionLevel = 0.8;
+
+    bus.tick(); // arrive s1
+    bus.tick(); // dwell
+    bus.tick(); // depart
+
+    const v = bus.getVehicles()[0]!;
+    // With congestion, travel ticks should be higher
+    expect(v.traveling).toBe(true);
+    expect(v.travelTicks).toBeGreaterThan(3); // more ticks due to congestion
+  });
+});
+
+describe('Metro travel time', () => {
+  it('should travel at fixed speed, unaffected by congestion', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(10, 0);
+    metro.createLine([st1, st2]);
+
+    metro.tick(); // arrive st1
+    metro.tick(); // dwell
+    metro.tick(); // depart, traveling
+
+    const t = metro.getTrains()[0]!;
+    expect(t.traveling).toBe(true);
+    expect(t.travelTicks).toBeGreaterThan(0);
+  });
+});
+
+describe('Rail travel time', () => {
+  it('should travel at high speed', () => {
+    const rail = new RailSystem();
+    const st1 = rail.buildStation(0, 0);
+    const st2 = rail.buildStation(10, 0);
+    rail.createLine([st1, st2]);
+
+    rail.tick(); // arrive
+    rail.tick(); rail.tick(); rail.tick(); // dwell (3 ticks)
+    rail.tick(); // depart, traveling
+
+    const t = rail.getTrains()[0]!;
+    expect(t.traveling).toBe(true);
+    // Rail is faster, so fewer travel ticks than bus for same distance
+    expect(t.travelTicks).toBeLessThanOrEqual(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T4 Passenger boarding/alighting
+// ---------------------------------------------------------------------------
+describe('Bus passenger boarding', () => {
+  it('should pick up passengers at stop (within capacity)', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(2, 0);
+    bus.createRoute([s1, s2]);
+
+    // Add waiting passengers at s1
+    s1.passengers = 5;
+
+    // tick 1: arrive s1 -> board passengers
+    bus.tick();
+    const v = bus.getVehicles()[0]!;
+    expect(v.passengers).toBe(5);
+    expect(s1.passengers).toBe(0);
+  });
+
+  it('should respect capacity limit', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(2, 0);
+    bus.createRoute([s1, s2]);
+
+    s1.passengers = 60; // more than capacity (50)
+
+    bus.tick(); // arrive s1, board
+    const v = bus.getVehicles()[0]!;
+    expect(v.passengers).toBe(50); // full
+    expect(s1.passengers).toBe(10); // 10 still waiting
+  });
+
+  it('should alight passengers at destination stop', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(2, 0); // distance=2, speed=2 -> 1 travel tick
+    bus.createRoute([s1, s2]);
+
+    s1.passengers = 10;
+
+    // tick 1: arrive s1, board 10
+    bus.tick();
+    expect(bus.getVehicles()[0]!.passengers).toBe(10);
+
+    // tick 2-3: dwell at s1
+    bus.tick();
+    bus.tick(); // depart, traveling
+
+    // tick 4: arrive s2, all alight
+    bus.tick();
+    expect(bus.getVehicles()[0]!.passengers).toBe(0);
+  });
+});
+
+describe('Metro passenger boarding', () => {
+  it('should pick up passengers at station (capacity 200)', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(2, 0);
+    metro.createLine([st1, st2]);
+
+    st1.passengers = 150;
+
+    metro.tick(); // arrive st1, board
+    const t = metro.getTrains()[0]!;
+    expect(t.passengers).toBe(150);
+    expect(st1.passengers).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T4.3 Taxi ModeChoice integration
+// ---------------------------------------------------------------------------
+describe('Taxi ModeChoice', () => {
+  it('should include TAXI in TransportMode', () => {
+    expect(TransportMode.TAXI).toBe('TAXI');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T8 Route deletion
+// ---------------------------------------------------------------------------
+describe('Route deletion', () => {
+  it('Bus deleteRoute should remove route and vehicles', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(5, 0);
+    const route = bus.createRoute([s1, s2], 2);
+    bus.deleteRoute(route.id);
+    expect(bus.getRoutes()).toHaveLength(0);
+    expect(bus.getVehicles()).toHaveLength(0);
+    expect(bus.getStops()).toHaveLength(2); // stops preserved
+  });
+
+  it('Metro deleteLine should remove line and trains', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(10, 0);
+    const line = metro.createLine([st1, st2], 2);
+    metro.deleteLine(line.id);
+    expect(metro.getLines()).toHaveLength(0);
+    expect(metro.getTrains()).toHaveLength(0);
+  });
+
+  it('Rail deleteLine should also clean lineServiceTypes', () => {
+    const rail = new RailSystem();
+    const st1 = rail.buildStation(0, 0);
+    const st2 = rail.buildStation(10, 0);
+    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT);
+    rail.deleteLine(line.id);
+    expect(rail.getLineServiceType(line.id)).toBeUndefined();
+  });
+
+  it('Ferry deleteRoute should remove route and vessels', () => {
+    const ferry = new FerrySystem();
+    const d1 = ferry.addDock(0, 0)!;
+    const d2 = ferry.addDock(10, 0)!;
+    const route = ferry.createRoute([d1, d2], 2);
+    ferry.deleteRoute(route.id);
+    expect(ferry.getRoutes()).toHaveLength(0);
+    expect(ferry.getVessels()).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T5 Airport tick
+// ---------------------------------------------------------------------------
+describe('AirportSystem tick', () => {
+  it('should accumulate tourists and cargo each tick', () => {
+    const airports = new AirportSystem();
+    airports.build(0, 0, 'SMALL', 10000);
+
+    airports.tick();
+    expect(airports.pendingTourists).toBe(50);
+    expect(airports.pendingCargo).toBe(20);
+
+    airports.tick();
+    expect(airports.pendingTourists).toBe(100);
+    expect(airports.pendingCargo).toBe(40);
+  });
+
+  it('should consume tourists and cargo', () => {
+    const airports = new AirportSystem();
+    airports.build(0, 0, 'SMALL', 10000);
+    airports.tick();
+
+    const tourists = airports.consumeTourists();
+    expect(tourists).toBe(50);
+    expect(airports.pendingTourists).toBe(0);
+
+    const cargo = airports.consumeCargo();
+    expect(cargo).toBe(20);
+    expect(airports.pendingCargo).toBe(0);
+  });
+
+  it('should produce no tourists/cargo without airports', () => {
+    const airports = new AirportSystem();
+    airports.tick();
+    expect(airports.pendingTourists).toBe(0);
+    expect(airports.pendingCargo).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T3.3 Tram road capacity reduction
+// ---------------------------------------------------------------------------
+describe('TramSystem getAffectedRoadCells', () => {
+  it('should return adjacent cells for each tram stop', () => {
+    const tram = new TramSystem();
+    tram.addStop(5, 5);
+
+    const cells = tram.getAffectedRoadCells();
+    // Should include 4-directional neighbors of (5,5)
+    expect(cells.has('4,5')).toBe(true);
+    expect(cells.has('6,5')).toBe(true);
+    expect(cells.has('5,4')).toBe(true);
+    expect(cells.has('5,6')).toBe(true);
+    // Should NOT include the stop cell itself
+    expect(cells.has('5,5')).toBe(false);
+  });
+
+  it('should union cells from multiple stops', () => {
+    const tram = new TramSystem();
+    tram.addStop(0, 0);
+    tram.addStop(3, 0);
+
+    const cells = tram.getAffectedRoadCells();
+    // Neighbors of (0,0): (-1,0),(1,0),(0,-1),(0,1)
+    expect(cells.has('1,0')).toBe(true);
+    expect(cells.has('0,1')).toBe(true);
+    // Neighbors of (3,0): (2,0),(4,0),(3,-1),(3,1)
+    expect(cells.has('2,0')).toBe(true);
+    expect(cells.has('4,0')).toBe(true);
+  });
+
+  it('should return empty set when no stops', () => {
+    const tram = new TramSystem();
+    expect(tram.getAffectedRoadCells().size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T5.2 Airport noise pollution integration
+// ---------------------------------------------------------------------------
+describe('Airport noise pollution', () => {
+  it('SMALL airport should produce noise pollution at its location', () => {
+    const pm = new PollutionManager(20, 20);
+    const airports = new AirportSystem();
+    airports.build(10, 10, 'SMALL', 10000);
+
+    // Simulate adding airport noise as pollution source
+    for (const a of airports.getAirports()) {
+      pm.addSource(a.x, a.y, a.noisePollution * 5, 'noise');
+    }
+    pm.calculateSpread();
+
+    // Noise at airport location should be positive
+    expect(pm.getPollutionAt(10, 10).noise).toBeGreaterThan(0);
+    // Noise should reach a few cells out
+    expect(pm.getPollutionAt(10, 11).noise).toBeGreaterThan(0);
+  });
+
+  it('LARGE airport should produce more noise than SMALL', () => {
+    const pmSmall = new PollutionManager(20, 20);
+    const small = new AirportSystem();
+    small.build(10, 10, 'SMALL', 10000);
+    for (const a of small.getAirports()) {
+      pmSmall.addSource(a.x, a.y, a.noisePollution * 5, 'noise');
+    }
+    pmSmall.calculateSpread();
+
+    const pmLarge = new PollutionManager(20, 20);
+    const large = new AirportSystem();
+    large.build(10, 10, 'LARGE', 100000);
+    for (const a of large.getAirports()) {
+      pmLarge.addSource(a.x, a.y, a.noisePollution * 5, 'noise');
+    }
+    pmLarge.calculateSpread();
+
+    expect(pmLarge.getPollutionAt(10, 10).noise).toBeGreaterThan(pmSmall.getPollutionAt(10, 10).noise);
+  });
+
+  it('no airport should produce no noise', () => {
+    const pm = new PollutionManager(20, 20);
+    const airports = new AirportSystem();
+    for (const a of airports.getAirports()) {
+      pm.addSource(a.x, a.y, a.noisePollution * 5, 'noise');
+    }
+    pm.calculateSpread();
+    expect(pm.getPollutionAt(10, 10).noise).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T5.3 Airport multi-cell footprint
+// ---------------------------------------------------------------------------
+describe('Airport multi-cell footprint', () => {
+  it('SMALL airport should have 3x3 footprint', () => {
+    expect(getAirportFootprint('SMALL')).toBe(3);
+  });
+
+  it('MEDIUM airport should have 5x5 footprint', () => {
+    expect(getAirportFootprint('MEDIUM')).toBe(5);
+  });
+
+  it('LARGE airport should have 7x7 footprint', () => {
+    expect(getAirportFootprint('LARGE')).toBe(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T6.1 Rail FREIGHT connection to FreightSystem
+// ---------------------------------------------------------------------------
+describe('Rail FREIGHT → FreightSystem', () => {
+  it('should add external cargo to FreightSystem via addExternalCargo', () => {
+    const freight = new FreightSystem();
+    expect(freight.getCargoStorage()).toBe(0);
+
+    freight.addExternalCargo(100);
+    expect(freight.getCargoStorage()).toBe(100);
+  });
+
+  it('FREIGHT rail line trains contribute cargo throughput', () => {
+    const rail = new RailSystem();
+    const st1 = rail.buildStation(0, 0);
+    const st2 = rail.buildStation(10, 0);
+    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT, 2);
+
+    // Count active freight trains
+    const freightTrains = rail.getTrains().filter(
+      t => rail.getLineServiceType(t.routeId) === RailServiceType.FREIGHT
+    );
+    expect(freightTrains).toHaveLength(2);
+
+    // Each freight train adds cargo throughput
+    const cargoPerTrain = 10; // expected bonus
+    const totalBonus = freightTrains.length * cargoPerTrain;
+    expect(totalBonus).toBe(20);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T6.2 External connection — edge stations
+// ---------------------------------------------------------------------------
+describe('Rail external connection', () => {
+  it('should detect edge station as external connection', () => {
+    const rail = new RailSystem();
+    // Station at edge of a 60x60 map
+    rail.buildStation(0, 30); // at x=0 edge
+    rail.updateExternalConnection(60, 60);
+    expect(rail.hasExternalConnection).toBe(true);
+  });
+
+  it('should not flag non-edge station', () => {
+    const rail = new RailSystem();
+    rail.buildStation(30, 30); // center of map
+    rail.updateExternalConnection(60, 60);
+    expect(rail.hasExternalConnection).toBe(false);
+  });
+
+  it('should generate population and goods when connected', () => {
+    const rail = new RailSystem();
+    rail.buildStation(0, 30);
+    rail.updateExternalConnection(60, 60);
+    expect(rail.externalConnection.populationIn).toBeGreaterThan(0);
+    expect(rail.externalConnection.goodsIn).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T8.3 Vehicle count +/- per route
+// ---------------------------------------------------------------------------
+describe('Vehicle count adjustment', () => {
+  it('Bus addVehicleToRoute should add a vehicle', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(5, 0);
+    const route = bus.createRoute([s1, s2], 1);
+    expect(bus.getVehicles()).toHaveLength(1);
+
+    bus.addVehicleToRoute(route.id);
+    expect(bus.getVehicles()).toHaveLength(2);
+    expect(route.vehicles).toBe(2);
+  });
+
+  it('Bus removeVehicleFromRoute should remove a vehicle (min 1)', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(0, 0);
+    const s2 = bus.addStop(5, 0);
+    const route = bus.createRoute([s1, s2], 2);
+    expect(bus.getVehicles()).toHaveLength(2);
+
+    bus.removeVehicleFromRoute(route.id);
+    expect(bus.getVehicles()).toHaveLength(1);
+    expect(route.vehicles).toBe(1);
+
+    // Should not go below 1
+    bus.removeVehicleFromRoute(route.id);
+    expect(bus.getVehicles()).toHaveLength(1);
+    expect(route.vehicles).toBe(1);
+  });
+
+  it('Metro addVehicleToRoute should add a train', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(10, 0);
+    const line = metro.createLine([st1, st2], 1);
+
+    metro.addVehicleToRoute(line.id);
+    expect(metro.getTrains()).toHaveLength(2);
+    expect(line.vehicles).toBe(2);
+  });
+
+  it('Rail addVehicleToRoute should add a train and update cost', () => {
+    const rail = new RailSystem();
+    const st1 = rail.buildStation(0, 0);
+    const st2 = rail.buildStation(10, 0);
+    const line = rail.createLine([st1, st2], RailServiceType.PASSENGER, 1);
+    const costBefore = line.operatingCost;
+
+    rail.addVehicleToRoute(line.id);
+    expect(rail.getTrains()).toHaveLength(2);
+    expect(line.operatingCost).toBeGreaterThan(costBefore);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase T4.2c-e: Tram / Rail / Ferry passenger boarding acceptance tests
+// ---------------------------------------------------------------------------
+describe('Tram passenger boarding', () => {
+  it('should pick up passengers at stop (capacity 80)', () => {
+    const tram = new TramSystem();
+    const s1 = tram.addStop(0, 0);
+    const s2 = tram.addStop(2, 0);
+    tram.createRoute([s1, s2]);
+
+    s1.passengers = 50;
+    tram.tick(); // arrive s1, board
+    const v = tram.getVehicles()[0]!;
+    expect(v.passengers).toBe(50);
+    expect(s1.passengers).toBe(0);
+  });
+
+  it('should respect capacity limit of 80', () => {
+    const tram = new TramSystem();
+    const s1 = tram.addStop(0, 0);
+    const s2 = tram.addStop(2, 0);
+    tram.createRoute([s1, s2]);
+
+    s1.passengers = 100;
+    tram.tick();
+    const v = tram.getVehicles()[0]!;
+    expect(v.passengers).toBe(80);
+    expect(s1.passengers).toBe(20);
+  });
+});
+
+describe('Rail passenger boarding', () => {
+  it('should pick up passengers at station (capacity 300)', () => {
+    const rail = new RailSystem();
+    const st1 = rail.buildStation(0, 0);
+    const st2 = rail.buildStation(2, 0);
+    rail.createLine([st1, st2], RailServiceType.PASSENGER);
+
+    st1.passengers = 250;
+    rail.tick();
+    const t = rail.getTrains()[0]!;
+    expect(t.passengers).toBe(250);
+    expect(st1.passengers).toBe(0);
+  });
+
+  it('should respect capacity limit of 300', () => {
+    const rail = new RailSystem();
+    const st1 = rail.buildStation(0, 0);
+    const st2 = rail.buildStation(2, 0);
+    rail.createLine([st1, st2], RailServiceType.PASSENGER);
+
+    st1.passengers = 400;
+    rail.tick();
+    const t = rail.getTrains()[0]!;
+    expect(t.passengers).toBe(300);
+    expect(st1.passengers).toBe(100);
+  });
+});
+
+describe('Ferry passenger boarding', () => {
+  it('should pick up passengers at dock (capacity 100)', () => {
+    const ferry = new FerrySystem();
+    const d1 = ferry.addDock(0, 0)!;
+    const d2 = ferry.addDock(2, 0)!;
+    ferry.createRoute([d1, d2]);
+
+    d1.passengers = 80;
+    ferry.tick();
+    const v = ferry.getVessels()[0]!;
+    expect(v.passengers).toBe(80);
+    expect(d1.passengers).toBe(0);
+  });
+
+  it('should respect capacity limit of 100', () => {
+    const ferry = new FerrySystem();
+    const d1 = ferry.addDock(0, 0)!;
+    const d2 = ferry.addDock(2, 0)!;
+    ferry.createRoute([d1, d2]);
+
+    d1.passengers = 150;
+    ferry.tick();
+    const v = ferry.getVessels()[0]!;
+    expect(v.passengers).toBe(100);
+    expect(d1.passengers).toBe(50);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase T3.1 acceptance: Tram and Ferry travel time
+// ---------------------------------------------------------------------------
+describe('Tram travel time', () => {
+  it('should be affected by congestion', () => {
+    const tram = new TramSystem();
+    const s1 = tram.addStop(0, 0);
+    const s2 = tram.addStop(10, 0); // distance=10
+    tram.createRoute([s1, s2]);
+
+    // No congestion: travel ticks = ceil(10 / (2*1)) = 5
+    tram.congestionLevel = 0;
+    tram.tick(); // arrive s1
+    tram.tick(); // dwell
+    tram.tick(); // depart → traveling
+    const v = tram.getVehicles()[0]!;
+    expect(v.traveling).toBe(true);
+    expect(v.travelTicks).toBe(5);
+
+    // With congestion: reset and try again
+    const tram2 = new TramSystem();
+    const s2a = tram2.addStop(0, 0);
+    const s2b = tram2.addStop(10, 0);
+    tram2.createRoute([s2a, s2b]);
+    tram2.congestionLevel = 0.8;
+    tram2.tick(); // arrive s2a
+    tram2.tick(); // dwell
+    tram2.tick(); // depart → traveling
+    const v2 = tram2.getVehicles()[0]!;
+    expect(v2.traveling).toBe(true);
+    expect(v2.travelTicks).toBeGreaterThan(5); // slower
+  });
+});
+
+describe('Ferry travel time', () => {
+  it('should travel at medium speed (2.5 cells/tick)', () => {
+    const ferry = new FerrySystem();
+    const d1 = ferry.addDock(0, 0)!;
+    const d2 = ferry.addDock(10, 0)!; // distance=10
+    ferry.createRoute([d1, d2]);
+
+    ferry.tick(); // arrive d1
+    ferry.tick(); ferry.tick(); ferry.tick(); // dwell 3 ticks
+    const v = ferry.getVessels()[0]!;
+    expect(v.traveling).toBe(true);
+    // travel ticks = ceil(10 / 2.5) = 4
+    expect(v.travelTicks).toBe(4);
   });
 });

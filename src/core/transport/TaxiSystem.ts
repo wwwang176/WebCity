@@ -44,6 +44,8 @@ export class TaxiSystem {
         position: { x, y },
         waitTicks: 0,
         atStop: true,
+        travelTicks: 0,
+        traveling: false,
       });
     }
 
@@ -113,5 +115,37 @@ export class TaxiSystem {
 
   getVehicles(): readonly TransportVehicle[] {
     return this.vehicles;
+  }
+
+  removeStand(standId: number): void {
+    const stand = this.stands.find(s => s.id === standId);
+    if (!stand) return;
+    // Remove vehicles at this stand's position that are idle
+    this.vehicles = this.vehicles.filter(v =>
+      !(v.position.x === stand.x && v.position.y === stand.y && v.atStop && v.passengers === 0)
+    );
+    this.stands = this.stands.filter(s => s.id !== standId);
+  }
+
+  toJSON() {
+    return {
+      stands: this.stands.map(s => ({ ...s })),
+      vehicles: this.vehicles.map(v => ({ ...v, position: { ...v.position } })),
+      trips: this.trips.map(t => ({ ...t, from: { ...t.from }, to: { ...t.to } })),
+      nextStandId: this.nextStandId,
+      nextVehicleId: this.nextVehicleId,
+      nextTripId: this.nextTripId,
+    };
+  }
+
+  static fromJSON(data: ReturnType<TaxiSystem['toJSON']>): TaxiSystem {
+    const sys = new TaxiSystem();
+    sys.stands = data.stands.map(s => ({ ...s }));
+    sys.vehicles = data.vehicles.map(v => ({ ...v, position: { ...v.position } }));
+    sys.trips = data.trips.map(t => ({ ...t, from: { ...t.from }, to: { ...t.to } }));
+    sys.nextStandId = data.nextStandId;
+    sys.nextVehicleId = data.nextVehicleId;
+    sys.nextTripId = data.nextTripId;
+    return sys;
   }
 }

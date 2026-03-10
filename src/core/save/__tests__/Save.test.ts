@@ -113,29 +113,43 @@ describe('Serializer', () => {
     expect(restored.budget.loanInterestRate).toBe(0.08);
   });
 
-  it('should rebuild transit stops from grid after deserialization', () => {
+  it('should serialize and restore transport systems with routes and vehicles', () => {
     const state = createGameState(20, 20);
-    // Place bus stop (buildingId=242) and metro station (buildingId=241)
-    state.bus.addStop(5, 5);
+    // Set up bus with stop + route
+    const s1 = state.bus.addStop(5, 5);
     state.grid.setCell(5, 5, { buildingId: 242 });
-    state.metro.addStation(8, 8);
+    const s2 = state.bus.addStop(10, 10);
+    state.grid.setCell(10, 10, { buildingId: 242 });
+    state.bus.createRoute([s1, s2], 2);
+
+    // Set up metro with station + line
+    const st1 = state.metro.addStation(8, 8);
     state.grid.setCell(8, 8, { buildingId: 241 });
+    const st2 = state.metro.addStation(15, 15);
+    state.grid.setCell(15, 15, { buildingId: 241 });
+    state.metro.createLine([st1, st2]);
+
+    // Set up taxi
     state.taxi.addStand(3, 3);
     state.grid.setCell(3, 3, { buildingId: 236 });
-
-    expect(state.bus.getStops()).toHaveLength(1);
-    expect(state.metro.getStations()).toHaveLength(1);
 
     const json = serializeGameState(state);
     const restored = deserializeGameState(json);
 
-    // Transit stops should be rebuilt from grid scan
-    expect(restored.bus.getStops()).toHaveLength(1);
+    // Bus: stops + routes + vehicles preserved
+    expect(restored.bus.getStops()).toHaveLength(2);
+    expect(restored.bus.getRoutes()).toHaveLength(1);
+    expect(restored.bus.getVehicles()).toHaveLength(2);
     expect(restored.bus.getStops()[0]!.x).toBe(5);
-    expect(restored.bus.getStops()[0]!.y).toBe(5);
-    expect(restored.metro.getStations()).toHaveLength(1);
-    expect(restored.metro.getStations()[0]!.x).toBe(8);
-    expect(restored.metro.getStations()[0]!.y).toBe(8);
+
+    // Metro: stations + lines + trains preserved
+    expect(restored.metro.getStations()).toHaveLength(2);
+    expect(restored.metro.getLines()).toHaveLength(1);
+    expect(restored.metro.getTrains()).toHaveLength(1);
+
+    // Taxi: stands preserved
+    expect(restored.taxi.getStands()).toHaveLength(1);
+    expect(restored.taxi.getVehicles()).toHaveLength(3);
   });
 });
 

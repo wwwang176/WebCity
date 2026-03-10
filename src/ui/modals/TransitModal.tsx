@@ -1,9 +1,12 @@
-import { createSignal, createEffect, Show } from 'solid-js';
+import { createSignal, createEffect, Show, For } from 'solid-js';
 import { getGame } from '../store/gameStore';
 import { Modal } from './Modal';
+import { RailServiceType } from '../../core/transport/RailSystem';
+import type { TransportStop } from '../../core/transport/types';
 
 export function TransitModal(props: { open: boolean; onClose: () => void }) {
   const [version, setVersion] = createSignal(0);
+  const [routeBuilder, setRouteBuilder] = createSignal<{ type: string; selectedIds: number[] } | null>(null);
 
   createEffect(() => {
     if (props.open) setVersion(v => v + 1);
@@ -22,15 +25,30 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
       tramStops: state.tram.getStops(),
       tramRoutes: state.tram.getRoutes(),
       tramCost: state.tram.getOperatingCost(),
+      railStations: state.rail.getStations(),
+      railLines: state.rail.getLines(),
+      railCost: state.rail.getOperatingCost(),
+      railSystem: state.rail,
+      ferryDocks: state.ferry.getDocks(),
+      ferryRoutes: state.ferry.getRoutes(),
+      ferryCost: state.ferry.getOperatingCost(),
+      taxiStands: state.taxi.getStands(),
+      taxiVehicles: state.taxi.getVehicles(),
+      taxiActiveTrips: state.taxi.getActiveTrips(),
+      taxiCost: state.taxi.getOperatingCost(),
+      airports: state.airport.getAirports(),
+      airportCost: state.airport.getOperatingCost(),
     };
   };
 
   const hasAny = () => {
     const d = transitData();
-    return d.busStops.length > 0 || d.metroStations.length > 0 || d.tramStops.length > 0;
+    return d.busStops.length > 0 || d.metroStations.length > 0 || d.tramStops.length > 0
+      || d.railStations.length > 0 || d.ferryDocks.length > 0
+      || d.taxiStands.length > 0 || d.airports.length > 0;
   };
 
-  const createRoute = (type: string) => {
+  const createRouteAll = (type: string) => {
     const state = getGame().getState();
     if (type === 'bus') {
       const stops = [...state.bus.getStops()];
@@ -41,8 +59,127 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     } else if (type === 'tram') {
       const stops = [...state.tram.getStops()];
       if (stops.length >= 2) state.tram.createRoute(stops, 1);
+    } else if (type === 'rail') {
+      const stations = [...state.rail.getStations()];
+      if (stations.length >= 2) state.rail.createLine(stations, RailServiceType.PASSENGER, 1);
+    } else if (type === 'ferry') {
+      const docks = [...state.ferry.getDocks()];
+      if (docks.length >= 2) state.ferry.createRoute(docks, 1);
     }
     setVersion(v => v + 1);
+  };
+
+  const getStopsForType = (type: string): readonly TransportStop[] => {
+    const state = getGame().getState();
+    if (type === 'bus') return state.bus.getStops();
+    if (type === 'metro') return state.metro.getStations();
+    if (type === 'tram') return state.tram.getStops();
+    if (type === 'rail') return state.rail.getStations();
+    if (type === 'ferry') return state.ferry.getDocks();
+    return [];
+  };
+
+  const startRouteBuilder = (type: string) => {
+    setRouteBuilder({ type, selectedIds: [] });
+  };
+
+  const toggleStopInBuilder = (stopId: number) => {
+    const rb = routeBuilder();
+    if (!rb) return;
+    const ids = rb.selectedIds.includes(stopId)
+      ? rb.selectedIds.filter(id => id !== stopId)
+      : [...rb.selectedIds, stopId];
+    setRouteBuilder({ ...rb, selectedIds: ids });
+  };
+
+  const confirmRouteBuilder = () => {
+    const rb = routeBuilder();
+    if (!rb || rb.selectedIds.length < 2) return;
+    const state = getGame().getState();
+    const allStops = getStopsForType(rb.type);
+    const selected = rb.selectedIds.map(id => allStops.find(s => s.id === id)!).filter(Boolean);
+    if (selected.length < 2) return;
+
+    if (rb.type === 'bus') state.bus.createRoute([...selected], 1);
+    else if (rb.type === 'metro') state.metro.createLine([...selected], 1);
+    else if (rb.type === 'tram') state.tram.createRoute([...selected], 1);
+    else if (rb.type === 'rail') state.rail.createLine([...selected], RailServiceType.PASSENGER, 1);
+    else if (rb.type === 'ferry') state.ferry.createRoute([...selected], 1);
+
+    setRouteBuilder(null);
+    setVersion(v => v + 1);
+  };
+
+  const addVehicle = (type: string, routeId: number) => {
+    const state = getGame().getState();
+    if (type === 'bus') state.bus.addVehicleToRoute(routeId);
+    else if (type === 'metro') state.metro.addVehicleToRoute(routeId);
+    else if (type === 'tram') state.tram.addVehicleToRoute(routeId);
+    else if (type === 'rail') state.rail.addVehicleToRoute(routeId);
+    else if (type === 'ferry') state.ferry.addVehicleToRoute(routeId);
+    setVersion(v => v + 1);
+  };
+
+  const removeVehicle = (type: string, routeId: number) => {
+    const state = getGame().getState();
+    if (type === 'bus') state.bus.removeVehicleFromRoute(routeId);
+    else if (type === 'metro') state.metro.removeVehicleFromRoute(routeId);
+    else if (type === 'tram') state.tram.removeVehicleFromRoute(routeId);
+    else if (type === 'rail') state.rail.removeVehicleFromRoute(routeId);
+    else if (type === 'ferry') state.ferry.removeVehicleFromRoute(routeId);
+    setVersion(v => v + 1);
+  };
+
+  const deleteRoute = (type: string, routeId: number) => {
+    const state = getGame().getState();
+    if (type === 'bus') state.bus.deleteRoute(routeId);
+    else if (type === 'metro') state.metro.deleteLine(routeId);
+    else if (type === 'tram') state.tram.deleteRoute(routeId);
+    else if (type === 'rail') state.rail.deleteLine(routeId);
+    else if (type === 'ferry') state.ferry.deleteRoute(routeId);
+    setVersion(v => v + 1);
+  };
+
+  const sectionStyle = "background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px";
+  const btnStyle = (color: string) => `margin-top:6px;font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid ${color};background:${color}22;color:${color};cursor:pointer`;
+  const stopToggleStyle = (selected: boolean) => `font-size:10px;padding:2px 6px;margin:1px;border-radius:3px;border:1px solid ${selected ? '#4caf50' : '#555'};background:${selected ? '#4caf5033' : 'transparent'};color:${selected ? '#81c784' : '#888'};cursor:pointer`;
+
+  const RouteBuilderPanel = (p: { type: string; color: string }) => {
+    return (
+      <Show when={routeBuilder()?.type === p.type}>
+        {() => {
+          const rb = () => routeBuilder()!;
+          const stops = () => getStopsForType(p.type);
+          return (
+            <div style="margin-top:6px;padding:6px;background:#0d1520;border-radius:4px;border:1px solid #333">
+              <div style="font-size:11px;color:#ccc;margin-bottom:4px">Select stops (in order):</div>
+              <div style="display:flex;flex-wrap:wrap;gap:2px">
+                <For each={[...stops()]}>
+                  {(stop) => (
+                    <button
+                      style={stopToggleStyle(rb().selectedIds.includes(stop.id))}
+                      onClick={() => toggleStopInBuilder(stop.id)}
+                    >
+                      #{stop.id} ({stop.x},{stop.y})
+                    </button>
+                  )}
+                </For>
+              </div>
+              <div style="margin-top:4px;display:flex;gap:4px">
+                <button
+                  onClick={confirmRouteBuilder}
+                  style={btnStyle(rb().selectedIds.length >= 2 ? p.color : '#555')}
+                  disabled={rb().selectedIds.length < 2}
+                >
+                  Create ({rb().selectedIds.length} stops)
+                </button>
+                <button onClick={() => setRouteBuilder(null)} style={btnStyle('#666')}>Cancel</button>
+              </div>
+            </div>
+          );
+        }}
+      </Show>
+    );
   };
 
   return (
@@ -50,42 +187,157 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
       <Show when={hasAny()} fallback={
         <div style="color:#888;text-align:center;padding:12px">No transit stops placed yet.<br />Place stops using the Transit tools, then create routes here.</div>
       }>
+        {/* Bus */}
         <Show when={transitData().busStops.length > 0}>
-          <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+          <div style={sectionStyle}>
             <div style="color:#ff9800;font-weight:600;margin-bottom:4px">{'\u{1F68F}'} Bus System</div>
             <div style="font-size:12px;color:#aaa">Stops: {transitData().busStops.length} | Routes: {transitData().busRoutes.length} | Cost: ${transitData().busCost}/tick</div>
-            <Show when={transitData().busStops.length >= 2 && transitData().busRoutes.length === 0}>
-              <button onClick={() => createRoute('bus')} style="margin-top:6px;font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #ff9800;background:#ff980022;color:#ff9800;cursor:pointer">+ Create Route (all stops)</button>
+            <Show when={transitData().busStops.length >= 2}>
+              <div style="display:flex;gap:4px">
+                <button onClick={() => createRouteAll('bus')} style={btnStyle('#ff9800')}>+ All stops</button>
+                <button onClick={() => startRouteBuilder('bus')} style={btnStyle('#ff9800')}>+ Custom</button>
+              </div>
             </Show>
+            <RouteBuilderPanel type="bus" color="#ff9800" />
             {transitData().busRoutes.map((r: any, i: number) => (
-              <div style="font-size:11px;color:#ccc;margin-top:4px">Route {i + 1}: {r.stops.length} stops, {r.vehicles} vehicle(s)</div>
+              <div style="font-size:11px;color:#ccc;margin-top:4px;display:flex;justify-content:space-between;align-items:center">
+                <span>Route {i + 1}: {r.stops.length} stops, {r.vehicles} vehicle(s)</span>
+                <span style="display:flex;gap:2px">
+                  <button onClick={() => removeVehicle('bus', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #888;background:transparent;color:#aaa;cursor:pointer">-</button>
+                  <button onClick={() => addVehicle('bus', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #4caf50;background:transparent;color:#4caf50;cursor:pointer">+</button>
+                  <button onClick={() => deleteRoute('bus', r.id)} style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid #f44336;background:transparent;color:#f44336;cursor:pointer">X</button>
+                </span>
+              </div>
             ))}
           </div>
         </Show>
 
+        {/* Metro */}
         <Show when={transitData().metroStations.length > 0}>
-          <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+          <div style={sectionStyle}>
             <div style="color:#00bcd4;font-weight:600;margin-bottom:4px">{'\u{1F687}'} Metro System</div>
             <div style="font-size:12px;color:#aaa">Stations: {transitData().metroStations.length} | Lines: {transitData().metroLines.length} | Cost: ${transitData().metroCost}/tick</div>
-            <Show when={transitData().metroStations.length >= 2 && transitData().metroLines.length === 0}>
-              <button onClick={() => createRoute('metro')} style="margin-top:6px;font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #00bcd4;background:#00bcd422;color:#00bcd4;cursor:pointer">+ Create Line (all stations)</button>
+            <Show when={transitData().metroStations.length >= 2}>
+              <div style="display:flex;gap:4px">
+                <button onClick={() => createRouteAll('metro')} style={btnStyle('#00bcd4')}>+ All stations</button>
+                <button onClick={() => startRouteBuilder('metro')} style={btnStyle('#00bcd4')}>+ Custom</button>
+              </div>
             </Show>
+            <RouteBuilderPanel type="metro" color="#00bcd4" />
             {transitData().metroLines.map((l: any, i: number) => (
-              <div style="font-size:11px;color:#ccc;margin-top:4px">Line {i + 1}: {l.stops.length} stations, {l.vehicles} train(s)</div>
+              <div style="font-size:11px;color:#ccc;margin-top:4px;display:flex;justify-content:space-between;align-items:center">
+                <span>Line {i + 1}: {l.stops.length} stations, {l.vehicles} train(s)</span>
+                <span style="display:flex;gap:2px">
+                  <button onClick={() => removeVehicle('metro', l.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #888;background:transparent;color:#aaa;cursor:pointer">-</button>
+                  <button onClick={() => addVehicle('metro', l.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #4caf50;background:transparent;color:#4caf50;cursor:pointer">+</button>
+                  <button onClick={() => deleteRoute('metro', l.id)} style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid #f44336;background:transparent;color:#f44336;cursor:pointer">X</button>
+                </span>
+              </div>
             ))}
           </div>
         </Show>
 
+        {/* Tram */}
         <Show when={transitData().tramStops.length > 0}>
-          <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
+          <div style={sectionStyle}>
             <div style="color:#8bc34a;font-weight:600;margin-bottom:4px">{'\u{1F68A}'} Tram System</div>
             <div style="font-size:12px;color:#aaa">Stops: {transitData().tramStops.length} | Routes: {transitData().tramRoutes.length} | Cost: ${transitData().tramCost}/tick</div>
-            <Show when={transitData().tramStops.length >= 2 && transitData().tramRoutes.length === 0}>
-              <button onClick={() => createRoute('tram')} style="margin-top:6px;font-size:11px;padding:4px 10px;border-radius:4px;border:1px solid #8bc34a;background:#8bc34a22;color:#8bc34a;cursor:pointer">+ Create Route (all stops)</button>
+            <Show when={transitData().tramStops.length >= 2}>
+              <div style="display:flex;gap:4px">
+                <button onClick={() => createRouteAll('tram')} style={btnStyle('#8bc34a')}>+ All stops</button>
+                <button onClick={() => startRouteBuilder('tram')} style={btnStyle('#8bc34a')}>+ Custom</button>
+              </div>
             </Show>
+            <RouteBuilderPanel type="tram" color="#8bc34a" />
             {transitData().tramRoutes.map((r: any, i: number) => (
-              <div style="font-size:11px;color:#ccc;margin-top:4px">Route {i + 1}: {r.stops.length} stops, {r.vehicles} vehicle(s)</div>
+              <div style="font-size:11px;color:#ccc;margin-top:4px;display:flex;justify-content:space-between;align-items:center">
+                <span>Route {i + 1}: {r.stops.length} stops, {r.vehicles} vehicle(s)</span>
+                <span style="display:flex;gap:2px">
+                  <button onClick={() => removeVehicle('tram', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #888;background:transparent;color:#aaa;cursor:pointer">-</button>
+                  <button onClick={() => addVehicle('tram', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #4caf50;background:transparent;color:#4caf50;cursor:pointer">+</button>
+                  <button onClick={() => deleteRoute('tram', r.id)} style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid #f44336;background:transparent;color:#f44336;cursor:pointer">X</button>
+                </span>
+              </div>
             ))}
+          </div>
+        </Show>
+
+        {/* Rail */}
+        <Show when={transitData().railStations.length > 0}>
+          <div style={sectionStyle}>
+            <div style="color:#ff5722;font-weight:600;margin-bottom:4px">{'\u{1F689}'} Rail System</div>
+            <div style="font-size:12px;color:#aaa">Stations: {transitData().railStations.length} | Lines: {transitData().railLines.length} | Cost: ${transitData().railCost}/tick</div>
+            <Show when={transitData().railStations.length >= 2}>
+              <div style="display:flex;gap:4px">
+                <button onClick={() => createRouteAll('rail')} style={btnStyle('#ff5722')}>+ All stations</button>
+                <button onClick={() => startRouteBuilder('rail')} style={btnStyle('#ff5722')}>+ Custom</button>
+              </div>
+            </Show>
+            <RouteBuilderPanel type="rail" color="#ff5722" />
+            {transitData().railLines.map((l: any, i: number) => {
+              const svcType = transitData().railSystem.getLineServiceType(l.id);
+              return (
+                <div style="font-size:11px;color:#ccc;margin-top:4px;display:flex;justify-content:space-between;align-items:center">
+                  <span>Line {i + 1}: {l.stops.length} stations, {l.vehicles} train(s) <span style="color:#888">[{svcType ?? 'PASSENGER'}]</span></span>
+                  <span style="display:flex;gap:2px">
+                    <button onClick={() => removeVehicle('rail', l.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #888;background:transparent;color:#aaa;cursor:pointer">-</button>
+                    <button onClick={() => addVehicle('rail', l.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #4caf50;background:transparent;color:#4caf50;cursor:pointer">+</button>
+                    <button onClick={() => deleteRoute('rail', l.id)} style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid #f44336;background:transparent;color:#f44336;cursor:pointer">X</button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Show>
+
+        {/* Ferry */}
+        <Show when={transitData().ferryDocks.length > 0}>
+          <div style={sectionStyle}>
+            <div style="color:#00bcd4;font-weight:600;margin-bottom:4px">{'\u{26F4}'} Ferry System</div>
+            <div style="font-size:12px;color:#aaa">Docks: {transitData().ferryDocks.length} | Routes: {transitData().ferryRoutes.length} | Cost: ${transitData().ferryCost}/tick</div>
+            <Show when={transitData().ferryDocks.length >= 2}>
+              <div style="display:flex;gap:4px">
+                <button onClick={() => createRouteAll('ferry')} style={btnStyle('#00bcd4')}>+ All docks</button>
+                <button onClick={() => startRouteBuilder('ferry')} style={btnStyle('#00bcd4')}>+ Custom</button>
+              </div>
+            </Show>
+            <RouteBuilderPanel type="ferry" color="#00bcd4" />
+            {transitData().ferryRoutes.map((r: any, i: number) => (
+              <div style="font-size:11px;color:#ccc;margin-top:4px;display:flex;justify-content:space-between;align-items:center">
+                <span>Route {i + 1}: {r.stops.length} docks, {r.vehicles} vessel(s)</span>
+                <span style="display:flex;gap:2px">
+                  <button onClick={() => removeVehicle('ferry', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #888;background:transparent;color:#aaa;cursor:pointer">-</button>
+                  <button onClick={() => addVehicle('ferry', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #4caf50;background:transparent;color:#4caf50;cursor:pointer">+</button>
+                  <button onClick={() => deleteRoute('ferry', r.id)} style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid #f44336;background:transparent;color:#f44336;cursor:pointer">X</button>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Show>
+
+        {/* Taxi */}
+        <Show when={transitData().taxiStands.length > 0}>
+          <div style={sectionStyle}>
+            <div style="color:#ffeb3b;font-weight:600;margin-bottom:4px">{'\u{1F695}'} Taxi System</div>
+            <div style="font-size:12px;color:#aaa">
+              Stands: {transitData().taxiStands.length} |
+              Vehicles: {transitData().taxiVehicles.filter((v: any) => v.atStop && v.passengers === 0).length}/{transitData().taxiVehicles.length} available |
+              Active trips: {transitData().taxiActiveTrips.length}
+            </div>
+            <div style="font-size:12px;color:#aaa">Cost: ${transitData().taxiCost}/tick</div>
+          </div>
+        </Show>
+
+        {/* Airport */}
+        <Show when={transitData().airports.length > 0}>
+          <div style={sectionStyle}>
+            <div style="color:#90a4ae;font-weight:600;margin-bottom:4px">{'\u{2708}'} Airport System</div>
+            {transitData().airports.map((a: any, i: number) => (
+              <div style="font-size:12px;color:#aaa;margin-bottom:4px">
+                Airport {i + 1} ({a.size}) — Tourists: {a.touristsPerTick}/tick | Cargo: {a.cargoPerTick}/tick | Noise: {a.noisePollution}
+              </div>
+            ))}
+            <div style="font-size:12px;color:#aaa">Cost: ${transitData().airportCost}/tick</div>
           </div>
         </Show>
       </Show>

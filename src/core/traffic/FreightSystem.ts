@@ -58,6 +58,11 @@ export class FreightSystem {
     return this.lastDemand;
   }
 
+  /** Add cargo from external sources (rail freight, airport, etc.). */
+  addExternalCargo(amount: number): void {
+    this.cargoStorage += amount;
+  }
+
   getCargoStorage(): number {
     return this.cargoStorage;
   }

@@ -16,6 +16,7 @@ export enum TransportMode {
   TRAM = 'TRAM',
   RAIL = 'RAIL',
   FERRY = 'FERRY',
+  TAXI = 'TAXI',
 }
 
 export interface TransportStop {
@@ -46,4 +47,8 @@ export interface TransportVehicle {
   waitTicks: number;
   /** True while the vehicle is dwelling at a stop. */
   atStop: boolean;
+  /** Ticks remaining to travel between stops. */
+  travelTicks: number;
+  /** True while the vehicle is traveling between stops. */
+  traveling: boolean;
 }

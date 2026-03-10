@@ -70,6 +70,8 @@ function transportTypeToMode(type: TransportType): TransportMode | null {
       return TransportMode.RAIL;
     case TransportType.FERRY:
       return TransportMode.FERRY;
+    case TransportType.TAXI:
+      return TransportMode.TAXI;
     default:
       return null;
   }

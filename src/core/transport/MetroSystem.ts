@@ -9,6 +9,7 @@ const METRO_CAPACITY = 200;
 const METRO_OPERATING_COST_PER_TRAIN = 300;
 const STATION_DWELL_TICKS = 2;
 const METRO_BUILD_COST_PER_STATION = 5000;
+const METRO_SPEED = 3; // cells per tick (fixed, no congestion)
 
 export class MetroSystem {
   private stations: TransportStop[] = [];
@@ -52,6 +53,8 @@ export class MetroSystem {
         position: { x: firstStation.x, y: firstStation.y },
         waitTicks: 0,
         atStop: false,
+        travelTicks: 0,
+        traveling: false,
       });
     }
 
@@ -73,6 +76,27 @@ export class MetroSystem {
           train.atStop = false;
           train.currentStopIndex =
             (train.currentStopIndex + 1) % line.stops.length;
+          const nextStation = line.stops[train.currentStopIndex]!;
+          const dist = Math.abs(nextStation.x - train.position.x) + Math.abs(nextStation.y - train.position.y);
+          train.travelTicks = Math.max(1, Math.ceil(dist / METRO_SPEED));
+          train.traveling = true;
+        }
+        continue;
+      }
+
+      if (train.traveling) {
+        train.travelTicks--;
+        if (train.travelTicks <= 0) {
+          const station = line.stops[train.currentStopIndex]!;
+          train.position = { x: station.x, y: station.y };
+          train.traveling = false;
+          train.atStop = true;
+          train.waitTicks = STATION_DWELL_TICKS;
+          // Passenger boarding
+          train.passengers = 0;
+          const board = Math.min(station.passengers, train.capacity);
+          train.passengers = board;
+          station.passengers -= board;
         }
         continue;
       }
@@ -81,6 +105,11 @@ export class MetroSystem {
       train.position = { x: nextStation.x, y: nextStation.y };
       train.atStop = true;
       train.waitTicks = STATION_DWELL_TICKS;
+      // Initial boarding
+      train.passengers = 0;
+      const board = Math.min(nextStation.passengers, train.capacity);
+      train.passengers = board;
+      nextStation.passengers -= board;
     }
   }
 
@@ -102,5 +131,81 @@ export class MetroSystem {
 
   getStations(): readonly TransportStop[] {
     return this.stations;
+  }
+
+  addVehicleToRoute(lineId: number): void {
+    const line = this.lines.find(l => l.id === lineId);
+    if (!line || line.stops.length === 0) return;
+    const first = line.stops[0]!;
+    this.trains.push({
+      id: this.nextTrainId++,
+      routeId: lineId,
+      currentStopIndex: 0,
+      passengers: 0,
+      capacity: METRO_CAPACITY,
+      position: { x: first.x, y: first.y },
+      waitTicks: 0,
+      atStop: false,
+      travelTicks: 0,
+      traveling: false,
+    });
+    line.vehicles++;
+    line.operatingCost = line.vehicles * METRO_OPERATING_COST_PER_TRAIN;
+  }
+
+  removeVehicleFromRoute(lineId: number): void {
+    const line = this.lines.find(l => l.id === lineId);
+    if (!line || line.vehicles <= 1) return;
+    const idx = this.trains.findLastIndex(t => t.routeId === lineId);
+    if (idx >= 0) this.trains.splice(idx, 1);
+    line.vehicles--;
+    line.operatingCost = line.vehicles * METRO_OPERATING_COST_PER_TRAIN;
+  }
+
+  deleteLine(lineId: number): void {
+    this.lines = this.lines.filter(l => l.id !== lineId);
+    this.trains = this.trains.filter(t => t.routeId !== lineId);
+  }
+
+  removeStation(stationId: number): void {
+    this.stations = this.stations.filter(s => s.id !== stationId);
+    const dissolvedLineIds: number[] = [];
+    this.lines = this.lines.filter(l => {
+      l.stops = l.stops.filter(s => s.id !== stationId);
+      if (l.stops.length < 2) {
+        dissolvedLineIds.push(l.id);
+        return false;
+      }
+      return true;
+    });
+    this.trains = this.trains.filter(t => !dissolvedLineIds.includes(t.routeId));
+  }
+
+  toJSON() {
+    return {
+      stations: this.stations.map(s => ({ ...s })),
+      lines: this.lines.map(l => ({
+        ...l,
+        stops: l.stops.map(s => s.id),
+      })),
+      trains: this.trains.map(t => ({ ...t, position: { ...t.position } })),
+      nextStationId: this.nextStationId,
+      nextLineId: this.nextLineId,
+      nextTrainId: this.nextTrainId,
+    };
+  }
+
+  static fromJSON(data: ReturnType<MetroSystem['toJSON']>): MetroSystem {
+    const sys = new MetroSystem();
+    sys.stations = data.stations.map(s => ({ ...s }));
+    sys.lines = data.lines.map(l => ({
+      ...l,
+      stops: (l.stops as unknown as number[]).map(id => sys.stations.find(s => s.id === id)!),
+    }));
+    sys.trains = data.trains.map(t => ({ ...t, position: { ...t.position } }));
+    sys.nextStationId = data.nextStationId;
+    sys.nextLineId = data.nextLineId;
+    sys.nextTrainId = data.nextTrainId;
+    return sys;
   }
 }

@@ -36,7 +36,7 @@ export function EconomyModal(props: { open: boolean; onClose: () => void }) {
   };
   const totalExpenses = () => {
     const b = breakdown();
-    return b.roadMaintenance + b.loanInterest + b.powerCost + b.waterCost;
+    return b.roadMaintenance + b.loanInterest + b.powerCost + b.waterCost + b.transportCost;
   };
   const balance = () => totalIncome() - totalExpenses();
 
@@ -107,6 +107,7 @@ export function EconomyModal(props: { open: boolean; onClose: () => void }) {
           <tr><td class="td-label">Road Maintenance</td><td class="td-expense" style="text-align:right">-${breakdown().roadMaintenance.toFixed(1)}</td></tr>
           <tr><td class="td-label">Power Plants</td><td class="td-expense" style="text-align:right">-${breakdown().powerCost}</td></tr>
           <tr><td class="td-label">Water Plants</td><td class="td-expense" style="text-align:right">-${breakdown().waterCost}</td></tr>
+          <tr><td class="td-label">Transport Operations</td><td class="td-expense" style="text-align:right">-${breakdown().transportCost}</td></tr>
           <tr><td class="td-label">Loan Interest ({(state().budget.loanInterestRate * 100).toFixed(0)}%)</td><td class="td-expense" style="text-align:right">-${breakdown().loanInterest.toFixed(1)}</td></tr>
         </tbody>
       </table>

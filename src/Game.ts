@@ -27,6 +27,7 @@ import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
+import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -109,6 +110,7 @@ export class Game {
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
+  selectedAirportSize: AirportSize | null = null; // selected airport size for placement
 
   constructor(container: HTMLElement, loadedState?: GameState) {
     const mapSize = loadedState ? loadedState.grid.width : 60;
@@ -493,7 +495,24 @@ export class Game {
         if (!cell) continue;
 
         // Handle multi-cell infrastructure: find primary and demolish entire building
-        if (cell.buildingId >= 237 && cell.buildingId <= 254) {
+        if (cell.buildingId >= 236 && cell.buildingId <= 254) {
+          // Airport (237) uses custom footprint — handle separately
+          if (cell.buildingId === 237) {
+            const key = `airport:${x},${y}`;
+            if (demolished.has(key)) continue;
+            // removeInfraService handles clearing all airport cells
+            this.removeInfraService(237, x, y);
+            // Mark all airport cells as demolished
+            const airport = this.state.airport.getAirports().find(a => {
+              const fp = getAirportFootprint(a.size);
+              const half = Math.floor(fp / 2);
+              return x >= a.x - half && x <= a.x + half && y >= a.y - half && y <= a.y + half;
+            });
+            // Airport already removed, mark center so we skip duplicate hits
+            if (!airport) demolished.add(key);
+            continue;
+          }
+
           const primary = findPrimaryCell(this.state.grid, x, y);
           if (primary) {
             const key = `${primary.x},${primary.y}`;
@@ -505,6 +524,13 @@ export class Game {
 
             // Clear all cells of the multi-cell building
             removeInfraFromGrid(this.state.grid, x, y);
+            continue;
+          }
+
+          // Transport stops (236-242 except 237) are 1x1 — handle directly
+          if (cell.buildingId >= 236 && cell.buildingId <= 242) {
+            this.removeInfraService(cell.buildingId, x, y);
+            this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
             continue;
           }
         }
@@ -559,6 +585,53 @@ export class Game {
     if (buildingId === 245) {
       const cid = this.state.deathCare.getCemeteries().find(c => c.x === cx && c.y === cy);
       if (cid) this.state.deathCare.removeCemetery(cid.id);
+    }
+    // Transport stops (buildingId 236-242)
+    if (buildingId === 242) {
+      const sid = this.state.bus.getStops().find(s => s.x === px && s.y === py);
+      if (sid) this.state.bus.removeStop(sid.id);
+    }
+    if (buildingId === 241) {
+      const sid = this.state.metro.getStations().find(s => s.x === px && s.y === py);
+      if (sid) this.state.metro.removeStation(sid.id);
+    }
+    if (buildingId === 240) {
+      const sid = this.state.tram.getStops().find(s => s.x === px && s.y === py);
+      if (sid) this.state.tram.removeStop(sid.id);
+    }
+    if (buildingId === 239) {
+      const sid = this.state.rail.getStations().find(s => s.x === px && s.y === py);
+      if (sid) this.state.rail.removeStation(sid.id);
+    }
+    if (buildingId === 238) {
+      const sid = this.state.ferry.getDocks().find(s => s.x === px && s.y === py);
+      if (sid) this.state.ferry.removeDock(sid.id);
+    }
+    if (buildingId === 237) {
+      // Find airport whose footprint covers this cell
+      const airport = this.state.airport.getAirports().find(a => {
+        const fp = getAirportFootprint(a.size);
+        const half = Math.floor(fp / 2);
+        return px >= a.x - half && px <= a.x + half && py >= a.y - half && py <= a.y + half;
+      });
+      if (airport) {
+        const fp = getAirportFootprint(airport.size);
+        const half = Math.floor(fp / 2);
+        // Clear all cells in the airport footprint
+        for (let dy = -half; dy <= half; dy++) {
+          for (let dx = -half; dx <= half; dx++) {
+            const c = this.state.grid.getCell(airport.x + dx, airport.y + dy);
+            if (c && c.buildingId === 237) {
+              this.state.grid.setCell(airport.x + dx, airport.y + dy, { buildingId: 0, reserved: 0 });
+            }
+          }
+        }
+        this.state.airport.remove(airport.id);
+      }
+    }
+    if (buildingId === 236) {
+      const sid = this.state.taxi.getStands().find(s => s.x === px && s.y === py);
+      if (sid) this.state.taxi.removeStand(sid.id);
     }
   }
 
@@ -668,10 +741,11 @@ export class Game {
     const costs: Record<string, number> = {
       bus: 100, metro: 3000, tram: 500, rail: 2000, ferry: 1500, airport: 5000, taxi: 200,
     };
+    const airportCosts: Record<AirportSize, number> = { SMALL: 5000, MEDIUM: 15000, LARGE: 40000 };
     const buildingIds: Record<string, number> = {
       bus: 242, metro: 241, tram: 240, rail: 239, ferry: 238, airport: 237, taxi: 236,
     };
-    const cost = costs[type] ?? 500;
+    const cost = type === 'airport' ? airportCosts[this.selectedAirportSize ?? 'SMALL'] : (costs[type] ?? 500);
     if (this.state.budget.funds < cost) {
       this.notification = `Insufficient funds (need $${cost})`;
       this.notificationTimer = 3;
@@ -688,16 +762,69 @@ export class Game {
     } else if (type === 'rail') {
       this.state.rail.buildStation(x, y);
     } else if (type === 'ferry') {
-      this.state.ferry.addDock(x, y);
-    } else if (type === 'airport') {
-      const pop = this.state.citizens.getPopulation();
-      const result = this.state.airport.build(x, y, 'SMALL', pop);
-      if (!result) {
+      // Validate water adjacency for ferry dock
+      const waterChecker = {
+        isWater: (fx: number, fy: number) => {
+          const fc = this.state.grid.getCell(fx, fy);
+          if (fc && fc.terrainType === TerrainType.WATER) return true;
+          // Also check adjacent cells for water
+          for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+            const nc = this.state.grid.getCell(fx + dx!, fy + dy!);
+            if (nc && nc.terrainType === TerrainType.WATER) return true;
+          }
+          return false;
+        },
+      };
+      const dock = this.state.ferry.addDock(x, y, waterChecker);
+      if (!dock) {
         this.state.budget.funds += cost;
-        this.notification = 'Airport requires population >= 10,000';
+        this.notification = 'Ferry dock must be placed near water';
         this.notificationTimer = 4;
         return;
       }
+    } else if (type === 'airport') {
+      const airportSize: AirportSize = this.selectedAirportSize ?? 'SMALL';
+      const footprint = getAirportFootprint(airportSize);
+      const half = Math.floor(footprint / 2);
+
+      // Check all NxN cells are free
+      for (let dy = -half; dy <= half; dy++) {
+        for (let dx = -half; dx <= half; dx++) {
+          const c = this.state.grid.getCell(x + dx, y + dy);
+          if (!c) {
+            this.state.budget.funds += cost;
+            this.notification = 'Airport area is out of bounds';
+            this.notificationTimer = 4;
+            return;
+          }
+          if (c.roadType !== 0 || c.buildingId !== 0) {
+            this.state.budget.funds += cost;
+            this.notification = 'Airport area is not fully clear';
+            this.notificationTimer = 4;
+            return;
+          }
+        }
+      }
+
+      const pop = this.state.citizens.getPopulation();
+      const result = this.state.airport.build(x, y, airportSize, pop);
+      if (!result) {
+        this.state.budget.funds += cost;
+        const req = this.state.airport.getPopulationRequired(airportSize);
+        this.notification = `Airport requires population >= ${req.toLocaleString()}`;
+        this.notificationTimer = 4;
+        return;
+      }
+
+      // Set all NxN cells to airport buildingId
+      for (let dy = -half; dy <= half; dy++) {
+        for (let dx = -half; dx <= half; dx++) {
+          this.state.grid.setCell(x + dx, y + dy, { buildingId: 237 });
+        }
+      }
+      this.audioManager.playSfx('build');
+      this.renderDirty = true;
+      return; // skip the default single-cell setCell below
     } else if (type === 'taxi') {
       this.state.taxi.addStand(x, y);
     }
@@ -1517,6 +1644,7 @@ export class Game {
   getEconomyBreakdown(): {
     residential: number; commercial: number; industrial: number; office: number;
     roadMaintenance: number; loanInterest: number; powerCost: number; waterCost: number;
+    transportCost: number;
   } {
     const grid = this.state.grid;
     const incomeTaxRate = this.state.taxRates.residential ?? 9;
@@ -1580,6 +1708,13 @@ export class Game {
     const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
     const powerCost = this.state.power.getPlants().length * 5;
     const waterCost = this.state.water.getPlants().length * 3;
+    const transportCost = this.state.bus.getOperatingCost()
+      + this.state.metro.getOperatingCost()
+      + this.state.tram.getOperatingCost()
+      + this.state.rail.getOperatingCost()
+      + this.state.ferry.getOperatingCost()
+      + this.state.airport.getOperatingCost()
+      + this.state.taxi.getOperatingCost();
 
     return {
       residential: Math.round(resIncome * 10) / 10,
@@ -1590,6 +1725,7 @@ export class Game {
       loanInterest: Math.round(loanInterest * 10) / 10,
       powerCost,
       waterCost,
+      transportCost,
     };
   }
 

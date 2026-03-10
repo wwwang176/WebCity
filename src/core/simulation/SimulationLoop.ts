@@ -177,6 +177,12 @@ export class SimulationLoop {
     );
 
     // 8. Transport systems (every tick)
+    // Set congestion level for surface transit
+    const trafficSys = this.state.traffic as unknown as { getCongestionLevel?: () => number };
+    const currentCongestion = trafficSys.getCongestionLevel ? trafficSys.getCongestionLevel() : 0;
+    this.state.bus.congestionLevel = currentCongestion;
+    this.state.tram.congestionLevel = currentCongestion;
+
     this.state.bus.tick();
     this.state.metro.tick();
     this.state.tram.tick();
@@ -187,6 +193,26 @@ export class SimulationLoop {
 
     // 8b. Freight: industrial→commercial cargo flow (every tick)
     this.state.freight.tick(this.state.grid);
+
+    // 8c. Rail freight bonus: each active freight train adds cargo throughput
+    const freightTrainCount = this.state.rail.getFreightTrainCount();
+    if (freightTrainCount > 0) {
+      this.state.freight.addExternalCargo(freightTrainCount * 10);
+    }
+
+    // 8d. Airport cargo contribution
+    const airportCargo = this.state.airport.consumeCargo();
+    if (airportCargo > 0) {
+      this.state.freight.addExternalCargo(airportCargo);
+    }
+
+    // 8e. Rail external connection (every 60 ticks)
+    if (tick % 60 === 0) {
+      this.state.rail.updateExternalConnection(this.state.grid.width, this.state.grid.height);
+      if (this.state.rail.hasExternalConnection) {
+        this.state.freight.addExternalCargo(this.state.rail.externalConnection.goodsIn);
+      }
+    }
 
     // 9. Calculate income from buildings (every 6 ticks)
     if (isSlowTick) {
@@ -583,6 +609,11 @@ export class SimulationLoop {
       }
     }
 
+    // Airport noise pollution
+    for (const airport of this.state.airport.getAirports()) {
+      pm.addSource(airport.x, airport.y, airport.noisePollution * 5, 'noise');
+    }
+
     pm.calculateSpread();
 
     // Write pollution back to grid cells
@@ -900,6 +931,27 @@ export class SimulationLoop {
       if (mode !== TransportMode.DRIVE) {
         // Walk or transit — no car vehicle needed
         commuterSet.add(citizen.id);
+
+        // Add waiting passenger at the nearest transit stop
+        if (mode === TransportMode.BUS) {
+          const nearest = this.findNearestStop(this.state.bus.getStops(), fromPos);
+          if (nearest) nearest.passengers++;
+        } else if (mode === TransportMode.METRO) {
+          const nearest = this.findNearestStop(this.state.metro.getStations(), fromPos);
+          if (nearest) nearest.passengers++;
+        } else if (mode === TransportMode.TRAM) {
+          const nearest = this.findNearestStop(this.state.tram.getStops(), fromPos);
+          if (nearest) nearest.passengers++;
+        } else if (mode === TransportMode.RAIL) {
+          const nearest = this.findNearestStop(this.state.rail.getStations(), fromPos);
+          if (nearest) nearest.passengers++;
+        } else if (mode === TransportMode.FERRY) {
+          const nearest = this.findNearestStop(this.state.ferry.getDocks(), fromPos);
+          if (nearest) nearest.passengers++;
+        } else if (mode === TransportMode.TAXI) {
+          this.state.taxi.dispatch(fromPos, toPos);
+        }
+
         continue;
       }
 
@@ -1125,14 +1177,35 @@ export class SimulationLoop {
 
     // Scale up sampled flow to match actual commuter volume, then normalize by lane count
     const scaleFactor = totalResWeight / sampleCount;
+    const tramAffected = this.state.tram.getAffectedRoadCells();
     for (const [cellKey, rawFlow] of flowMap) {
       const [x, y] = cellKey.split(',').map(Number);
       const cell = grid.getCell(x!, y!);
-      const lanes = cell ? getLaneCount(cell.roadType) : 1;
+      let lanes = cell ? getLaneCount(cell.roadType) : 1;
+      // Tram tracks share road space — reduce effective lanes by 1
+      if (tramAffected.has(cellKey) && lanes > 1) {
+        lanes -= 1;
+      }
       flowMap.set(cellKey, (rawFlow * scaleFactor) / lanes);
     }
 
     this.state.traffic.updatePredictedFlow(flowMap);
+  }
+
+  private findNearestStop(
+    stops: readonly { x: number; y: number; passengers: number }[],
+    pos: { x: number; y: number },
+  ): { x: number; y: number; passengers: number } | null {
+    let best: { x: number; y: number; passengers: number } | null = null;
+    let bestDist = Infinity;
+    for (const s of stops) {
+      const dist = Math.abs(s.x - pos.x) + Math.abs(s.y - pos.y);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = s;
+      }
+    }
+    return best;
   }
 
   private findAdjacentRoad(

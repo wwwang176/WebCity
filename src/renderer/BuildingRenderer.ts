@@ -784,12 +784,24 @@ const INFRA_SEWAGE_ID = 246;
 const INFRA_CEMETERY_ID = 245;
 const INFRA_SCHOOL_HIGH_ID = 244;
 const INFRA_SCHOOL_UNIV_ID = 243;
-type InfraType = 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery';
+// Transport stop buildingIds
+const TRANS_BUS_STOP_ID = 242;
+const TRANS_METRO_STATION_ID = 241;
+const TRANS_TRAM_STOP_ID = 240;
+const TRANS_TRAIN_STATION_ID = 239;
+const TRANS_FERRY_DOCK_ID = 238;
+const TRANS_AIRPORT_ID = 237;
+const TRANS_TAXI_STAND_ID = 236;
+type InfraType = 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery'
+  | 'bus_stop' | 'metro_station' | 'tram_stop' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
 const INFRA_ID_MAP: Record<number, InfraType> = {
   [INFRA_POWER_ID]: 'power', [INFRA_WATER_ID]: 'water',
   [INFRA_POLICE_ID]: 'police', [INFRA_FIRE_ID]: 'fire', [INFRA_HOSPITAL_ID]: 'hospital',
   [INFRA_SCHOOL_ID]: 'school', [INFRA_SCHOOL_HIGH_ID]: 'school_high', [INFRA_SCHOOL_UNIV_ID]: 'school_univ',
   [INFRA_PARK_ID]: 'park', [INFRA_GARBAGE_ID]: 'garbage', [INFRA_SEWAGE_ID]: 'sewage', [INFRA_CEMETERY_ID]: 'cemetery',
+  [TRANS_BUS_STOP_ID]: 'bus_stop', [TRANS_METRO_STATION_ID]: 'metro_station',
+  [TRANS_TRAM_STOP_ID]: 'tram_stop', [TRANS_TRAIN_STATION_ID]: 'train_station',
+  [TRANS_FERRY_DOCK_ID]: 'ferry_dock', [TRANS_AIRPORT_ID]: 'airport', [TRANS_TAXI_STAND_ID]: 'taxi_stand',
 };
 
 interface BuildingData { x: number; y: number; level: number; burned?: boolean }
@@ -1008,6 +1020,14 @@ export class BuildingRenderer {
       garbage:     { color: 0x795548, height: 0.25, roofColor: 0x5d4037 },
       sewage:      { color: 0x607d8b, height: 0.20, roofColor: 0x455a64 },
       cemetery:    { color: 0x9e9e9e, height: 0.15, roofColor: 0x757575 },
+      // Transport stops
+      bus_stop:       { color: 0xff9800, height: 0.25, roofColor: 0xf57c00 },
+      metro_station:  { color: 0x2196f3, height: 0.30, roofColor: 0x1565c0 },
+      tram_stop:      { color: 0x8bc34a, height: 0.22, roofColor: 0x689f38 },
+      train_station:  { color: 0x795548, height: 0.45, roofColor: 0x5d4037, accent: 0xff5722 },
+      ferry_dock:     { color: 0x00bcd4, height: 0.18, roofColor: 0x00838f },
+      airport:        { color: 0xeceff1, height: 0.55, roofColor: 0x90a4ae, accent: 0x2196f3 },
+      taxi_stand:     { color: 0xffeb3b, height: 0.20, roofColor: 0xfbc02d },
     };
     const cfg = configs[type] ?? { color: 0x888888, height: 0.35, roofColor: 0x666666 };
     const s = scale; // scale factor for multi-cell buildings

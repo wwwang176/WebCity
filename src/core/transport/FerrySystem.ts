@@ -8,6 +8,7 @@ import {
 const FERRY_CAPACITY = 100;
 const FERRY_OPERATING_COST_PER_VESSEL = 200;
 const DOCK_DWELL_TICKS = 3;
+const FERRY_SPEED = 2.5; // cells per tick (medium speed, fixed)
 
 export interface WaterChecker {
   isWater(x: number, y: number): boolean;
@@ -68,6 +69,8 @@ export class FerrySystem {
         position: { x: firstDock.x, y: firstDock.y },
         waitTicks: 0,
         atStop: false,
+        travelTicks: 0,
+        traveling: false,
       });
     }
 
@@ -84,6 +87,26 @@ export class FerrySystem {
         if (v.waitTicks <= 0) {
           v.atStop = false;
           v.currentStopIndex = (v.currentStopIndex + 1) % route.stops.length;
+          const nextDock = route.stops[v.currentStopIndex]!;
+          const dist = Math.abs(nextDock.x - v.position.x) + Math.abs(nextDock.y - v.position.y);
+          v.travelTicks = Math.max(1, Math.ceil(dist / FERRY_SPEED));
+          v.traveling = true;
+        }
+        continue;
+      }
+
+      if (v.traveling) {
+        v.travelTicks--;
+        if (v.travelTicks <= 0) {
+          const dock = route.stops[v.currentStopIndex]!;
+          v.position = { x: dock.x, y: dock.y };
+          v.traveling = false;
+          v.atStop = true;
+          v.waitTicks = DOCK_DWELL_TICKS;
+          v.passengers = 0;
+          const board = Math.min(dock.passengers, v.capacity);
+          v.passengers = board;
+          dock.passengers -= board;
         }
         continue;
       }
@@ -92,6 +115,10 @@ export class FerrySystem {
       v.position = { x: nextDock.x, y: nextDock.y };
       v.atStop = true;
       v.waitTicks = DOCK_DWELL_TICKS;
+      v.passengers = 0;
+      const board = Math.min(nextDock.passengers, v.capacity);
+      v.passengers = board;
+      nextDock.passengers -= board;
     }
   }
 
@@ -109,5 +136,75 @@ export class FerrySystem {
 
   getDocks(): readonly TransportStop[] {
     return this.docks;
+  }
+
+  addVehicleToRoute(routeId: number): void {
+    const route = this.routes.find(r => r.id === routeId);
+    if (!route || route.stops.length === 0) return;
+    const first = route.stops[0]!;
+    this.vessels.push({
+      id: this.nextVesselId++,
+      routeId,
+      currentStopIndex: 0,
+      passengers: 0,
+      capacity: FERRY_CAPACITY,
+      position: { x: first.x, y: first.y },
+      waitTicks: 0,
+      atStop: false,
+      travelTicks: 0,
+      traveling: false,
+    });
+    route.vehicles++;
+    route.operatingCost = route.vehicles * FERRY_OPERATING_COST_PER_VESSEL;
+  }
+
+  removeVehicleFromRoute(routeId: number): void {
+    const route = this.routes.find(r => r.id === routeId);
+    if (!route || route.vehicles <= 1) return;
+    const idx = this.vessels.findLastIndex(v => v.routeId === routeId);
+    if (idx >= 0) this.vessels.splice(idx, 1);
+    route.vehicles--;
+    route.operatingCost = route.vehicles * FERRY_OPERATING_COST_PER_VESSEL;
+  }
+
+  deleteRoute(routeId: number): void {
+    this.routes = this.routes.filter(r => r.id !== routeId);
+    this.vessels = this.vessels.filter(v => v.routeId !== routeId);
+  }
+
+  removeDock(dockId: number): void {
+    this.docks = this.docks.filter(d => d.id !== dockId);
+    const dissolvedIds: number[] = [];
+    this.routes = this.routes.filter(r => {
+      r.stops = r.stops.filter(s => s.id !== dockId);
+      if (r.stops.length < 2) { dissolvedIds.push(r.id); return false; }
+      return true;
+    });
+    this.vessels = this.vessels.filter(v => !dissolvedIds.includes(v.routeId));
+  }
+
+  toJSON() {
+    return {
+      docks: this.docks.map(d => ({ ...d })),
+      routes: this.routes.map(r => ({ ...r, stops: r.stops.map(s => s.id) })),
+      vessels: this.vessels.map(v => ({ ...v, position: { ...v.position } })),
+      nextDockId: this.nextDockId,
+      nextRouteId: this.nextRouteId,
+      nextVesselId: this.nextVesselId,
+    };
+  }
+
+  static fromJSON(data: ReturnType<FerrySystem['toJSON']>): FerrySystem {
+    const sys = new FerrySystem();
+    sys.docks = data.docks.map(d => ({ ...d }));
+    sys.routes = data.routes.map(r => ({
+      ...r,
+      stops: (r.stops as unknown as number[]).map(id => sys.docks.find(d => d.id === id)!),
+    }));
+    sys.vessels = data.vessels.map(v => ({ ...v, position: { ...v.position } }));
+    sys.nextDockId = data.nextDockId;
+    sys.nextRouteId = data.nextRouteId;
+    sys.nextVesselId = data.nextVesselId;
+    return sys;
   }
 }
