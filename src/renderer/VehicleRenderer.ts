@@ -6,7 +6,7 @@ export interface VehicleData {
   x: number;
   y: number;
   heading: number; // radians, 0 = facing +x (east)
-  type: 'car' | 'bus' | 'truck' | 'firetruck';
+  type: 'car' | 'bus' | 'truck' | 'firetruck' | 'transport_bus' | 'metro_train' | 'tram' | 'rail_train' | 'ferry' | 'taxi';
   laneOffset: number; // lateral offset perpendicular to heading (positive = right of heading)
 }
 
@@ -223,6 +223,173 @@ function buildFiretruckGeometry(): THREE.BufferGeometry {
   return mergeGeometries(parts)!;
 }
 
+// ── Transport system vehicle geometry builders ───────────────────────
+
+/** 交通系統公車 — 與道路 bus 相同模型但顏色不同（由 update() 上色） */
+function buildTransportBusGeometry(): THREE.BufferGeometry {
+  return buildBusGeometry();
+}
+
+/** 地鐵列車 — 長方形車廂，比公車更大更高 */
+function buildMetroTrainGeometry(): THREE.BufferGeometry {
+  // 主車體
+  const body = new THREE.BoxGeometry(0.55, 0.1, 0.12);
+  body.translate(0, 0.05, 0);
+  setVertexColors(body, 1, 1, 1);
+
+  // 窗帶
+  const windowStrip = new THREE.BoxGeometry(0.45, 0.03, 0.122);
+  windowStrip.translate(0, 0.08, 0);
+  setVertexColors(windowStrip, 0.08, 0.1, 0.15);
+
+  // 車頂
+  const roof = new THREE.BoxGeometry(0.54, 0.01, 0.11);
+  roof.translate(0, 0.105, 0);
+  setVertexColors(roof, 0.65, 0.65, 0.65);
+
+  // 前端（流線型）
+  const nose = new THREE.BoxGeometry(0.06, 0.08, 0.11);
+  nose.translate(0.28, 0.04, 0);
+  setVertexColors(nose, 0.9, 0.9, 0.9);
+
+  const parts: THREE.BufferGeometry[] = [body, windowStrip, roof, nose];
+
+  // 車輪 — 地鐵沒有明顯車輪但加上轉向架
+  const bogieGeo = new THREE.BoxGeometry(0.08, 0.015, 0.13);
+  for (const bx of [0.18, -0.18]) {
+    const b = bogieGeo.clone();
+    b.translate(bx, 0.007, 0);
+    setVertexColors(b, 0.15, 0.15, 0.15);
+    parts.push(b);
+  }
+
+  return mergeGeometries(parts)!;
+}
+
+/** 電車 — 中型車輛，有集電弓（pantograph） */
+function buildTramGeometry(): THREE.BufferGeometry {
+  // 車體
+  const body = new THREE.BoxGeometry(0.4, 0.065, 0.1);
+  body.translate(0, 0.032, 0);
+  setVertexColors(body, 1, 1, 1);
+
+  // 窗帶
+  const windowStrip = new THREE.BoxGeometry(0.32, 0.022, 0.102);
+  windowStrip.translate(0, 0.055, 0);
+  setVertexColors(windowStrip, 0.08, 0.1, 0.15);
+
+  // 車頂
+  const roof = new THREE.BoxGeometry(0.39, 0.008, 0.094);
+  roof.translate(0, 0.072, 0);
+  setVertexColors(roof, 0.7, 0.7, 0.7);
+
+  // 集電弓（pantograph）
+  const pantoBase = new THREE.BoxGeometry(0.02, 0.03, 0.04);
+  pantoBase.translate(0, 0.09, 0);
+  setVertexColors(pantoBase, 0.3, 0.3, 0.3);
+
+  const pantoArm = new THREE.BoxGeometry(0.005, 0.025, 0.06);
+  pantoArm.translate(0, 0.115, 0);
+  setVertexColors(pantoArm, 0.4, 0.4, 0.4);
+
+  const parts: THREE.BufferGeometry[] = [body, windowStrip, roof, pantoBase, pantoArm];
+
+  // 車輪
+  const wheelGeo = new THREE.BoxGeometry(0.035, 0.018, 0.014);
+  for (const [wx, wz] of [
+    [0.13, 0.052], [0.13, -0.052],
+    [-0.13, 0.052], [-0.13, -0.052],
+  ]) {
+    const w = wheelGeo.clone();
+    w.translate(wx!, 0.009, wz!);
+    setVertexColors(w, 0.05, 0.05, 0.05);
+    parts.push(w);
+  }
+
+  return mergeGeometries(parts)!;
+}
+
+/** 火車 — 大型車輛，有機車頭和車廂 */
+function buildRailTrainGeometry(): THREE.BufferGeometry {
+  // 機車頭
+  const loco = new THREE.BoxGeometry(0.2, 0.1, 0.12);
+  loco.translate(0.22, 0.05, 0);
+  setVertexColors(loco, 1, 1, 1);
+
+  // 擋風玻璃
+  const windshield = new THREE.BoxGeometry(0.006, 0.05, 0.11);
+  windshield.translate(0.32, 0.06, 0);
+  setVertexColors(windshield, 0.08, 0.1, 0.15);
+
+  // 車廂
+  const car = new THREE.BoxGeometry(0.35, 0.09, 0.12);
+  car.translate(-0.06, 0.045, 0);
+  setVertexColors(car, 0.85, 0.85, 0.85);
+
+  // 車廂窗帶
+  const carWindows = new THREE.BoxGeometry(0.3, 0.025, 0.122);
+  carWindows.translate(-0.06, 0.07, 0);
+  setVertexColors(carWindows, 0.08, 0.1, 0.15);
+
+  // 車頂
+  const roof = new THREE.BoxGeometry(0.6, 0.01, 0.11);
+  roof.translate(0.06, 0.1, 0);
+  setVertexColors(roof, 0.6, 0.6, 0.6);
+
+  const parts: THREE.BufferGeometry[] = [loco, windshield, car, carWindows, roof];
+
+  // 轉向架
+  const bogieGeo = new THREE.BoxGeometry(0.08, 0.015, 0.13);
+  for (const bx of [0.22, -0.1]) {
+    const b = bogieGeo.clone();
+    b.translate(bx, 0.007, 0);
+    setVertexColors(b, 0.15, 0.15, 0.15);
+    parts.push(b);
+  }
+
+  return mergeGeometries(parts)!;
+}
+
+/** 渡輪 — 船型，稍大 */
+function buildFerryGeometry(): THREE.BufferGeometry {
+  // 船體（底部）
+  const hull = new THREE.BoxGeometry(0.4, 0.04, 0.14);
+  hull.translate(0, 0.02, 0);
+  setVertexColors(hull, 1, 1, 1);
+
+  // 船首（尖端）
+  const bow = new THREE.BoxGeometry(0.08, 0.035, 0.08);
+  bow.translate(0.22, 0.017, 0);
+  setVertexColors(bow, 0.9, 0.9, 0.9);
+
+  // 甲板
+  const deck = new THREE.BoxGeometry(0.32, 0.01, 0.12);
+  deck.translate(-0.02, 0.045, 0);
+  setVertexColors(deck, 0.8, 0.75, 0.65);
+
+  // 駕駛艙
+  const cabin = new THREE.BoxGeometry(0.08, 0.05, 0.08);
+  cabin.translate(-0.1, 0.075, 0);
+  setVertexColors(cabin, 0.95, 0.95, 0.95);
+
+  // 窗戶
+  const cabinWindow = new THREE.BoxGeometry(0.004, 0.025, 0.082);
+  cabinWindow.translate(-0.06, 0.07, 0);
+  setVertexColors(cabinWindow, 0.08, 0.1, 0.15);
+
+  // 煙囪
+  const funnel = new THREE.BoxGeometry(0.02, 0.04, 0.025);
+  funnel.translate(-0.14, 0.07, 0);
+  setVertexColors(funnel, 0.3, 0.3, 0.3);
+
+  return mergeGeometries([hull, bow, deck, cabin, cabinWindow, funnel])!;
+}
+
+/** 計程車 — 與轎車相同模型但顏色為黃色（由 update() 上色） */
+function buildTaxiGeometry(): THREE.BufferGeometry {
+  return buildCarGeometry();
+}
+
 // ── Renderer ─────────────────────────────────────────────────────────
 
 export class VehicleRenderer {
@@ -244,6 +411,12 @@ export class VehicleRenderer {
       ['bus', buildBusGeometry()],
       ['truck', buildTruckGeometry()],
       ['firetruck', buildFiretruckGeometry()],
+      ['transport_bus', buildTransportBusGeometry()],
+      ['metro_train', buildMetroTrainGeometry()],
+      ['tram', buildTramGeometry()],
+      ['rail_train', buildRailTrainGeometry()],
+      ['ferry', buildFerryGeometry()],
+      ['taxi', buildTaxiGeometry()],
     ];
 
     for (const [type, geometry] of types) {
@@ -336,6 +509,12 @@ export class VehicleRenderer {
       bus: 0.23,
       truck: 0.16,
       firetruck: 0.18,
+      transport_bus: 0.23,
+      metro_train: 0.3,
+      tram: 0.2,
+      rail_train: 0.33,
+      ferry: 0.26,
+      taxi: 0.12,
     };
     // Rear offset distances by type
     const rearOffset: Record<string, number> = {
@@ -343,6 +522,12 @@ export class VehicleRenderer {
       bus: 0.23,
       truck: 0.16,
       firetruck: 0.14,
+      transport_bus: 0.23,
+      metro_train: 0.28,
+      tram: 0.2,
+      rail_train: 0.24,
+      ferry: 0.2,
+      taxi: 0.12,
     };
 
     for (const [type, mesh] of this.meshes) {
@@ -372,10 +557,22 @@ export class VehicleRenderer {
         // Color: cars get random per-ID color, others are fixed
         if (type === 'car') {
           color.set(CAR_COLORS[v.id % CAR_COLORS.length]!);
-        } else if (type === 'bus') {
-          color.set(0xff9800);
+        } else if (type === 'bus' || type === 'transport_bus') {
+          color.set(0xff9800); // 橘色
         } else if (type === 'truck') {
           color.set(0x78909c);
+        } else if (type === 'firetruck') {
+          color.set(0xd32f2f);
+        } else if (type === 'metro_train') {
+          color.set(0x00bcd4); // 青色
+        } else if (type === 'tram') {
+          color.set(0x8bc34a); // 淺綠色
+        } else if (type === 'rail_train') {
+          color.set(0xff5722); // 橘紅色
+        } else if (type === 'ferry') {
+          color.set(0x0097a7); // 深青色
+        } else if (type === 'taxi') {
+          color.set(0xfdd835); // 黃色
         } else {
           color.set(0xd32f2f);
         }
