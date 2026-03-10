@@ -8,7 +8,7 @@ import { ZoneType } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
-import { refineLanePath } from '../traffic/Pathfinding';
+import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { getBuildingType } from '../building/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
@@ -914,7 +914,7 @@ export class SimulationLoop {
         continue;
       }
 
-      const path = this.bfsRoadPath(startRoad, endRoad, grid);
+      const path = gridAStarPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
         // Try edge-based path first (new lane graph system)
         const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
@@ -1018,7 +1018,7 @@ export class SimulationLoop {
       if (!startRoad || !endRoad) continue;
       if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
 
-      const path = this.bfsRoadPath(startRoad, endRoad, grid);
+      const path = gridAStarPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
         const sCell = this.state.grid.getCell(startRoad.x, startRoad.y);
         const dLanes = sCell ? getLaneCount(sCell.roadType) : 1;
@@ -1033,46 +1033,7 @@ export class SimulationLoop {
     }
   }
 
-  private bfsRoadPath(
-    start: { x: number; y: number },
-    end: { x: number; y: number },
-    grid: { getCell(x: number, y: number): { roadType: number } | null; width: number; height: number },
-  ): string[] | null {
-    const key = (x: number, y: number) => `${x},${y}`;
-    const target = key(end.x, end.y);
-    const visited = new Set<string>();
-    const queue: { x: number; y: number; path: string[] }[] = [
-      { x: start.x, y: start.y, path: [key(start.x, start.y)] },
-    ];
-    visited.add(key(start.x, start.y));
 
-    // Limit BFS depth to avoid long searches
-    let steps = 0;
-    const maxSteps = 500;
-
-    while (queue.length > 0 && steps < maxSteps) {
-      steps++;
-      const current = queue.shift()!;
-      if (key(current.x, current.y) === target) {
-        return current.path;
-      }
-
-      const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-      for (const [dx, dy] of dirs) {
-        const nx = current.x + dx!;
-        const ny = current.y + dy!;
-        const nk = key(nx, ny);
-        if (visited.has(nk)) continue;
-        if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
-        const cell = grid.getCell(nx, ny);
-        if (!cell || cell.roadType === 0) continue;
-        visited.add(nk);
-        queue.push({ x: nx, y: ny, path: [...current.path, nk] });
-      }
-    }
-
-    return null; // No path found
-  }
 
   /**
    * Compute predicted congestion flow by sampling OD pairs (residential → commercial/industrial)
@@ -1126,7 +1087,7 @@ export class SimulationLoop {
       if (!startRoad || !endRoad) continue;
       if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
 
-      const path = this.bfsRoadPath(startRoad, endRoad, grid);
+      const path = gridAStarPath(startRoad, endRoad, grid);
       if (!path) continue;
 
       for (const cellKey of path) {

@@ -1,4 +1,5 @@
 import { RoadNetwork } from '../road/RoadNetwork';
+import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
 
 interface PathNode {
@@ -140,6 +141,96 @@ function rebuildPath(
       if (!existing || g < existing.g) {
         open.set(neighborId, { g, parent: bestId });
       }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Grid-based A* pathfinding with speed-limit weighting.
+ * Cost per cell = 1 / speedLimit (slower roads cost more).
+ * Heuristic = Manhattan distance / MAX_SPEED_LIMIT (admissible).
+ */
+const MAX_SPEED_LIMIT = 100; // highway — used for admissible heuristic
+
+export function gridAStarPath(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  grid: { getCell(x: number, y: number): { roadType: number } | null; width: number; height: number },
+  maxSteps = 5000,
+): string[] | null {
+  const key = (x: number, y: number) => `${x},${y}`;
+  const target = key(end.x, end.y);
+  const startKey = key(start.x, start.y);
+
+  // g: cost from start, parent: for path reconstruction
+  const gScore = new Map<string, number>();
+  const parent = new Map<string, string | null>();
+  const closed = new Set<string>();
+
+  // Simple open list (sorted insert would be faster, but sufficient for grid scale)
+  const open: { x: number; y: number; k: string; f: number }[] = [];
+
+  gScore.set(startKey, 0);
+  parent.set(startKey, null);
+  const h0 = (Math.abs(end.x - start.x) + Math.abs(end.y - start.y)) / MAX_SPEED_LIMIT;
+  open.push({ x: start.x, y: start.y, k: startKey, f: h0 });
+
+  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  let steps = 0;
+
+  while (open.length > 0 && steps < maxSteps) {
+    steps++;
+
+    // Find node with lowest f
+    let bestIdx = 0;
+    for (let i = 1; i < open.length; i++) {
+      if (open[i]!.f < open[bestIdx]!.f) bestIdx = i;
+    }
+    const current = open[bestIdx]!;
+    open[bestIdx] = open[open.length - 1]!;
+    open.pop();
+
+    if (current.k === target) {
+      // Reconstruct path
+      const path: string[] = [];
+      let cur: string | null = target;
+      while (cur !== null) {
+        path.push(cur);
+        cur = parent.get(cur) ?? null;
+      }
+      path.reverse();
+      return path;
+    }
+
+    if (closed.has(current.k)) continue;
+    closed.add(current.k);
+
+    const currentG = gScore.get(current.k)!;
+
+    for (const [dx, dy] of dirs) {
+      const nx = current.x + dx!;
+      const ny = current.y + dy!;
+      if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
+      const nk = key(nx, ny);
+      if (closed.has(nk)) continue;
+
+      const cell = grid.getCell(nx, ny);
+      if (!cell || cell.roadType === 0) continue;
+
+      const config = ROAD_CONFIGS[cell.roadType as RoadType];
+      const speedLimit = config?.speedLimit || 50;
+      const moveCost = 1 / speedLimit; // faster road = lower cost
+
+      const tentativeG = currentG + moveCost;
+      const prevG = gScore.get(nk);
+      if (prevG !== undefined && tentativeG >= prevG) continue;
+
+      gScore.set(nk, tentativeG);
+      parent.set(nk, current.k);
+      const h = (Math.abs(end.x - nx) + Math.abs(end.y - ny)) / MAX_SPEED_LIMIT;
+      open.push({ x: nx, y: ny, k: nk, f: tentativeG + h });
     }
   }
 

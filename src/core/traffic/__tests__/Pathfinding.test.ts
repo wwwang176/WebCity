@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { RoadNetwork } from '../../road/RoadNetwork';
-import { findPath } from '../Pathfinding';
+import { findPath, gridAStarPath } from '../Pathfinding';
+import { RoadType } from '../../road/types';
 
 function createSimpleNetwork(): RoadNetwork {
   const network = new RoadNetwork();
@@ -71,5 +72,73 @@ describe('Pathfinding', () => {
       trafficLights,
     });
     expect(path).not.toBeNull();
+  });
+});
+
+describe('gridAStarPath', () => {
+  function makeGrid(cells: Map<string, number>, width: number, height: number) {
+    return {
+      width,
+      height,
+      getCell: (x: number, y: number) => {
+        const rt = cells.get(`${x},${y}`);
+        if (rt === undefined) return null;
+        return { roadType: rt };
+      },
+    };
+  }
+
+  it('should find path on a simple straight road', () => {
+    const cells = new Map<string, number>();
+    for (let x = 0; x < 10; x++) cells.set(`${x},0`, RoadType.TWO_LANE);
+    const grid = makeGrid(cells, 10, 1);
+
+    const path = gridAStarPath({ x: 0, y: 0 }, { x: 9, y: 0 }, grid);
+    expect(path).not.toBeNull();
+    expect(path![0]).toBe('0,0');
+    expect(path![path!.length - 1]).toBe('9,0');
+    expect(path!.length).toBe(10);
+  });
+
+  it('should return null when no path exists', () => {
+    const cells = new Map<string, number>();
+    cells.set('0,0', RoadType.TWO_LANE);
+    cells.set('5,5', RoadType.TWO_LANE);
+    // No connecting road
+    const grid = makeGrid(cells, 10, 10);
+    const path = gridAStarPath({ x: 0, y: 0 }, { x: 5, y: 5 }, grid);
+    expect(path).toBeNull();
+  });
+
+  it('should prefer highway over rural road when detour is faster', () => {
+    // Two paths from (0,0) to (6,0):
+    // Path A: straight rural road (0,0)→(1,0)→...→(6,0) — 7 cells, speedLimit=30
+    // Path B: highway detour via row 1 — 9 cells, speedLimit=100
+    const cells = new Map<string, number>();
+    // Rural direct path
+    for (let x = 0; x <= 6; x++) cells.set(`${x},0`, RoadType.RURAL);
+    // Highway detour: (0,0)→(0,1)→(1,1)→...→(6,1)→(6,0)
+    for (let x = 0; x <= 6; x++) cells.set(`${x},1`, RoadType.HIGHWAY);
+    // (0,0) and (0,1) are adjacent, (6,0) and (6,1) are adjacent
+    const grid = makeGrid(cells, 7, 2);
+
+    const path = gridAStarPath({ x: 0, y: 0 }, { x: 6, y: 0 }, grid);
+    expect(path).not.toBeNull();
+
+    // A* should take the highway detour (goes through y=1)
+    const usesHighway = path!.some(p => p.endsWith(',1'));
+    expect(usesHighway).toBe(true);
+  });
+
+  it('should handle long distance on large map', () => {
+    // 100-cell straight road — BFS with 500 steps would handle this,
+    // but let's verify A* works on longer paths
+    const cells = new Map<string, number>();
+    for (let x = 0; x < 100; x++) cells.set(`${x},0`, RoadType.TWO_LANE);
+    const grid = makeGrid(cells, 100, 1);
+
+    const path = gridAStarPath({ x: 0, y: 0 }, { x: 99, y: 0 }, grid);
+    expect(path).not.toBeNull();
+    expect(path!.length).toBe(100);
   });
 });
