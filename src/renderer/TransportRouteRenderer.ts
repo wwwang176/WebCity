@@ -41,9 +41,9 @@ export class TransportRouteRenderer {
       const points: THREE.Vector3[] = [];
       for (const stop of route.stops) {
         points.push(new THREE.Vector3(
-          stop.x + 0.5, // 格子中心
+          stop.x,
           TransportRouteRenderer.LINE_Y,
-          stop.y + 0.5,
+          stop.y,
         ));
       }
       // 環形路線：連回第一站

@@ -50,7 +50,7 @@ export class MetroTunnelRenderer {
     // 為每條隧道段建立 TubeGeometry（外殼 + 內芯雙層管）
     for (const seg of segments) {
       const points = seg.controlPoints.map(
-        p => new THREE.Vector3(p.x + 0.5, TUNNEL_Y, p.y + 0.5)
+        p => new THREE.Vector3(p.x, TUNNEL_Y, p.y)
       );
       if (points.length < 2) continue;
 
@@ -62,7 +62,7 @@ export class MetroTunnelRenderer {
         color: TUNNEL_COLOR,
         transparent: true,
         opacity: opacity * 0.6,
-        side: THREE.DoubleSide,
+        side: THREE.BackSide,
         depthWrite: false,
       });
       const outerMesh = new THREE.Mesh(outerGeo, outerMat);
@@ -91,7 +91,7 @@ export class MetroTunnelRenderer {
         opacity: opacity * 0.85,
       });
       const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(station.x + 0.5, TUNNEL_Y, station.y + 0.5);
+      mesh.position.set(station.x, TUNNEL_Y, station.y);
       mesh.renderOrder = 12;
       this.tunnelGroup.add(mesh);
 
@@ -104,7 +104,7 @@ export class MetroTunnelRenderer {
         depthWrite: false,
       });
       const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-      glowMesh.position.set(station.x + 0.5, TUNNEL_Y, station.y + 0.5);
+      glowMesh.position.set(station.x, TUNNEL_Y, station.y);
       glowMesh.renderOrder = 9;
       this.tunnelGroup.add(glowMesh);
     }
