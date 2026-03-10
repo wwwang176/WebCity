@@ -2,6 +2,7 @@ import { type GameState } from './GameState';
 import { tickBudget } from '../economy/Budget';
 import { calculateRCIDemand } from '../economy/RCIDemand';
 import { migrationTick } from '../citizen/Migration';
+import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue } from '../economy/LandValue';
 import { ZoneType } from '../grid/types';
@@ -130,6 +131,8 @@ export class SimulationLoop {
       for (let i = 0; i < deaths; i++) {
         this.state.deathCare.reportDeath();
       }
+      // 自然出生：每年結算一次
+      birthTick(this.state.citizens);
     }
 
     // 5.5. Update citizen happiness (every 6 ticks)
@@ -310,7 +313,7 @@ export class SimulationLoop {
       pollution: this.getAvgPollution(),
       crimeRate: this.getAvgCrime(),
     };
-    migrationTick(this.state.citizens, city);
+    migrationTick(this.state.citizens, city, pop);
   }
 
   private updateCitizenHappiness(): void {
