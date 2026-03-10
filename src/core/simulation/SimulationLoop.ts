@@ -1125,12 +1125,13 @@ export class SimulationLoop {
       }
     }
 
-    // Normalize by road capacity (lane count) so wide roads show lower congestion
+    // Scale up sampled flow to match actual commuter volume, then normalize by lane count
+    const scaleFactor = totalResWeight / sampleCount;
     for (const [cellKey, rawFlow] of flowMap) {
       const [x, y] = cellKey.split(',').map(Number);
       const cell = grid.getCell(x!, y!);
       const lanes = cell ? getLaneCount(cell.roadType) : 1;
-      flowMap.set(cellKey, rawFlow / lanes);
+      flowMap.set(cellKey, (rawFlow * scaleFactor) / lanes);
     }
 
     this.state.traffic.updatePredictedFlow(flowMap);
