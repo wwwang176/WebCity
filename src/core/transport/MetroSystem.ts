@@ -97,6 +97,18 @@ export class MetroSystem {
           const board = Math.min(station.passengers, train.capacity);
           train.passengers = board;
           station.passengers -= board;
+        } else {
+          // Interpolate position between previous and next station
+          const prevIdx = (train.currentStopIndex - 1 + line.stops.length) % line.stops.length;
+          const prev = line.stops[prevIdx]!;
+          const next = line.stops[train.currentStopIndex]!;
+          const dist = Math.abs(next.x - prev.x) + Math.abs(next.y - prev.y);
+          const totalTicks = Math.max(1, Math.ceil(dist / METRO_SPEED));
+          const t = 1 - train.travelTicks / totalTicks; // 0→1 progress
+          train.position = {
+            x: prev.x + (next.x - prev.x) * t,
+            y: prev.y + (next.y - prev.y) * t,
+          };
         }
         continue;
       }

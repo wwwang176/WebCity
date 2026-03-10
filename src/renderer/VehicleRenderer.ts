@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { UNDERGROUND_TUNNEL_Y } from '../core/ViewMode';
 
 export interface VehicleData {
   id: number;
@@ -550,7 +551,7 @@ export class VehicleRenderer {
         const vx = v.x + offsetX;
         const vz = v.y + offsetZ;
 
-        const vehicleY = 0.025;
+        const vehicleY = type === 'metro_train' ? UNDERGROUND_TUNNEL_Y : 0.025;
 
         rotation.makeRotationY(v.heading);
         translation.makeTranslation(vx, vehicleY, vz);
