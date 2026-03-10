@@ -38,6 +38,7 @@ export class CommuteCache {
     }
 
     this.cache.set(citizenId, route);
+    this.dirtySet.delete(citizenId);
 
     // Register cells in cellIndex when path is ready
     if (route.status === 'ready') {
@@ -47,6 +48,10 @@ export class CommuteCache {
 
   markDirty(citizenId: number): void {
     this.dirtySet.add(citizenId);
+  }
+
+  isDirty(citizenId: number): boolean {
+    return this.dirtySet.has(citizenId);
   }
 
   invalidateCell(cellKey: string): void {

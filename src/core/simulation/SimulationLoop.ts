@@ -794,17 +794,15 @@ export class SimulationLoop {
     }
   }
 
-  /** Mark the lane graph as needing rebuild (call after road build/demolish). */
-  markLaneGraphDirty(): void {
+  /** Mark the lane graph as needing rebuild (call after road build/demolish).
+   *  If affectedCells is provided, only invalidate cached routes through those cells.
+   *  If omitted, no cache invalidation (e.g. road building adds new cells but doesn't break existing routes).
+   */
+  markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;
-    // Invalidate all cached routes — road topology changed
-    // Mark all cached citizens as dirty so paths are recomputed
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.roadType > 0) {
-          this.commuteCache.invalidateCell(`${x},${y}`);
-        }
+    if (affectedCells) {
+      for (const cellKey of affectedCells) {
+        this.commuteCache.invalidateCell(cellKey);
       }
     }
   }
@@ -957,7 +955,7 @@ export class SimulationLoop {
       const isMorning = direction === 'home_to_work';
       const cached = this.commuteCache.get(citizen.id);
 
-      if (cached && cached.status === 'ready') {
+      if (cached && cached.status === 'ready' && !this.commuteCache.isDirty(citizen.id)) {
         const cachedPath = isMorning ? cached.morningPath : cached.eveningPath;
         if (cachedPath && cachedPath.length > 0) {
           this.state.traffic.addVehicleOnEdges(cachedPath);

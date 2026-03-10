@@ -96,10 +96,11 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     const cacheSize = loop.commuteCache.size;
     expect(cacheSize).toBeGreaterThan(0);
 
-    // Mark lane graph as dirty (simulates road change)
-    loop.markLaneGraphDirty();
+    // Mark lane graph as dirty with affected road cells (simulates road demolition)
+    // The road runs from x=2..14 at y=1; invalidate a cell on the route
+    loop.markLaneGraphDirty(['8,1']);
 
-    // All cached routes should be marked dirty
+    // Cached routes through that cell should be marked dirty
     expect(loop.commuteCache.dirtyCount).toBeGreaterThan(0);
   });
 
@@ -149,5 +150,63 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     // Remove the citizen
     loop.commuteCache.remove(citizen.id);
     expect(loop.commuteCache.get(citizen.id)).toBeUndefined();
+  });
+
+  it('should recompute path for dirty citizen instead of using stale cache', () => {
+    const citizen = state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    advanceToHour(state, 7);
+    const loop = new SimulationLoop(state);
+    loop.tick();
+
+    const citizenId = citizen.id;
+    const cachedBefore = loop.commuteCache.get(citizenId);
+    expect(cachedBefore).toBeDefined();
+    expect(cachedBefore!.status).toBe('ready');
+
+    // Mark dirty (simulates road change invalidation)
+    loop.commuteCache.markDirty(citizenId);
+    expect(loop.commuteCache.isDirty(citizenId)).toBe(true);
+
+    // Advance to next morning rush so commuters are cleared and respawned
+    advanceToHour(state, 7);
+    // Clear morning commuters to allow respawn
+    (loop as unknown as { morningCommuters: Set<number> }).morningCommuters.clear();
+    loop.tick();
+
+    // After recomputation, dirty flag should be cleared
+    expect(loop.commuteCache.isDirty(citizenId)).toBe(false);
+    // Route should still be ready (path exists)
+    const cachedAfter = loop.commuteCache.get(citizenId);
+    expect(cachedAfter).toBeDefined();
+    expect(cachedAfter!.status).toBe('ready');
+  });
+
+  it('should only invalidate affected cells on markLaneGraphDirty with cell list', () => {
+    state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    advanceToHour(state, 7);
+    const loop = new SimulationLoop(state);
+    loop.tick();
+
+    const citizenId = state.citizens.citizens[0]!.id;
+    expect(loop.commuteCache.dirtyCount).toBe(0);
+
+    // Invalidate a cell NOT on the citizen's route → should stay clean
+    loop.markLaneGraphDirty(['19,19']);
+    expect(loop.commuteCache.isDirty(citizenId)).toBe(false);
+
+    // Invalidate a cell ON the citizen's route → should become dirty
+    // The route goes through cells 2,1 → 14,1
+    loop.markLaneGraphDirty(['8,1']);
+    expect(loop.commuteCache.isDirty(citizenId)).toBe(true);
   });
 });

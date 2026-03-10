@@ -197,4 +197,34 @@ describe('CommuteCache', () => {
     cache.invalidateCell('0,0');
     expect(cache.dirtyCount).toBe(0);
   });
+
+  it('isDirty should return true for dirty citizens and false otherwise', () => {
+    const cache = new CommuteCache();
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'pending',
+    });
+    expect(cache.isDirty(1)).toBe(false);
+    cache.markDirty(1);
+    expect(cache.isDirty(1)).toBe(true);
+  });
+
+  it('set() should auto-clear dirty flag for the citizen', () => {
+    const cache = new CommuteCache();
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '2,0',
+      morningPath: [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')],
+      eveningPath: null, status: 'ready',
+    });
+    cache.markDirty(1);
+    expect(cache.isDirty(1)).toBe(true);
+
+    // Re-set with new route → dirty should be cleared
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '3,0',
+      morningPath: [makeEdge('0,0', '3,0')],
+      eveningPath: null, status: 'ready',
+    });
+    expect(cache.isDirty(1)).toBe(false);
+  });
 });

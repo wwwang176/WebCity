@@ -426,11 +426,13 @@ export class Game {
         this.applyZone(x1, y1, x2, y2, ZoneType.OFFICE);
         this.audioManager.playSfx('zone');
         break;
-      case 'demolish':
+      case 'demolish': {
+        const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         this.demolish(x1, y1, x2, y2);
-        this.simLoop.markLaneGraphDirty();
+        this.simLoop.markLaneGraphDirty(demolishedRoadCells);
         this.audioManager.playSfx('demolish');
         break;
+      }
       case 'power':
         this.placeInfrastructure(x1, y1, 'power');
         break;
@@ -503,6 +505,23 @@ export class Game {
     const maxY = Math.max(y1, y2);
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
     this.renderDirty = true;
+  }
+
+  private collectRoadCells(x1: number, y1: number, x2: number, y2: number): string[] {
+    const cells: string[] = [];
+    const minX = Math.min(x1, x2);
+    const maxX = Math.max(x1, x2);
+    const minY = Math.min(y1, y2);
+    const maxY = Math.max(y1, y2);
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const cell = this.state.grid.getCell(x, y);
+        if (cell && cell.roadType > 0) {
+          cells.push(`${x},${y}`);
+        }
+      }
+    }
+    return cells;
   }
 
   private demolish(x1: number, y1: number, x2: number, y2: number): void {
