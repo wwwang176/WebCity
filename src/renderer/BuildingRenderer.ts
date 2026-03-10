@@ -481,13 +481,12 @@ void main() {
     color = mix(color, warmGlow * 0.9, nightFactor * 0.7);
   }
 
-  // Underground mode: desaturate to grayscale
+  // Underground mode: white model effect (fade to near-white)
   if (uDesaturate > 0.0) {
-    float gray = dot(color, vec3(0.299, 0.587, 0.114));
-    color = mix(color, vec3(gray), uDesaturate);
+    color = mix(color, vec3(0.88), uDesaturate);
   }
 
-  gl_FragColor = vec4(color, uGlobalOpacity);
+  gl_FragColor = vec4(color, 1.0);
 }
 `;
 
@@ -1288,10 +1287,127 @@ export class BuildingRenderer {
   /** Update light spot visibility based on sun intensity (call each frame). */
   update(sunIntensity: number): void {
     if (!this.lightSpotMaterial) return;
+    if (this._underground) {
+      this.lightSpotMaterial.opacity = 0;
+      return;
+    }
     this.lightSpotMaterial.opacity = Math.max(0, 0.4 * (1 - sunIntensity / 0.3));
   }
 
+  private _underground = false;
+  private _undergroundMesh: THREE.Mesh | null = null;
+  private static _undergroundMat: THREE.MeshBasicMaterial | null = null;
+
+  private static getUndergroundMat(): THREE.MeshBasicMaterial {
+    if (!BuildingRenderer._undergroundMat) {
+      BuildingRenderer._undergroundMat = new THREE.MeshBasicMaterial({
+        color: 0xe0e0e0,
+        opacity: 0.08,
+        alphaHash: true,
+      });
+    }
+    return BuildingRenderer._undergroundMat;
+  }
+
+  /** Switch to underground visual mode (white model + semi-transparent). */
+  setUndergroundMode(enabled: boolean, scene?: THREE.Scene): void {
+    this._underground = enabled;
+
+    if (enabled && scene) {
+      // Hide originals
+      for (const mesh of this.meshes) mesh.visible = false;
+      for (const group of this.infraGroups) group.visible = false;
+      if (this.lightSpotMesh) this.lightSpotMesh.visible = false;
+
+      // Build merged underground mesh
+      this.buildUndergroundMesh(scene);
+    } else {
+      // Remove underground mesh
+      if (this._undergroundMesh && scene) {
+        scene.remove(this._undergroundMesh);
+        this._undergroundMesh.geometry.dispose();
+        this._undergroundMesh = null;
+      }
+
+      // Restore originals
+      for (const mesh of this.meshes) {
+        mesh.visible = true;
+        mesh.material = getBuildingMaterial();
+        mesh.renderOrder = 0;
+      }
+      for (const group of this.infraGroups) group.visible = true;
+      if (this.lightSpotMesh) this.lightSpotMesh.visible = true;
+    }
+  }
+
+  /** Bake all building InstancedMeshes + infra into one merged mesh. */
+  private buildUndergroundMesh(scene: THREE.Scene): void {
+    // Remove old one if exists
+    if (this._undergroundMesh) {
+      scene.remove(this._undergroundMesh);
+      this._undergroundMesh.geometry.dispose();
+      this._undergroundMesh = null;
+    }
+
+    const geos: THREE.BufferGeometry[] = [];
+    const mat4 = new THREE.Matrix4();
+
+    // Bake InstancedMesh instances + plain Mesh (zone overlays)
+    for (const mesh of this.meshes) {
+      if (mesh instanceof THREE.InstancedMesh) {
+        const srcGeo = mesh.geometry;
+        const count = mesh.count;
+        for (let i = 0; i < count; i++) {
+          mesh.getMatrixAt(i, mat4);
+          const clone = srcGeo.clone();
+          clone.applyMatrix4(mat4);
+          clone.deleteAttribute('color');
+          geos.push(clone);
+        }
+      } else {
+        const clone = mesh.geometry.clone();
+        mesh.updateWorldMatrix(true, false);
+        clone.applyMatrix4(mesh.matrixWorld);
+        clone.deleteAttribute('color');
+        geos.push(clone);
+      }
+    }
+
+    // Bake infra group meshes
+    for (const group of this.infraGroups) {
+      group.traverse(child => {
+        if (child instanceof THREE.Mesh) {
+          const clone = child.geometry.clone();
+          child.updateWorldMatrix(true, false);
+          clone.applyMatrix4(child.matrixWorld);
+          clone.deleteAttribute('color');
+          geos.push(clone);
+        }
+      });
+    }
+
+    if (geos.length === 0) return;
+
+    const merged = mergeGeometries(geos, false);
+    if (!merged) return;
+
+    // Dispose cloned geos
+    for (const g of geos) g.dispose();
+
+    this._undergroundMesh = new THREE.Mesh(merged, BuildingRenderer.getUndergroundMat());
+    this._undergroundMesh.renderOrder = 20;
+    this._undergroundMesh.frustumCulled = false;
+    scene.add(this._undergroundMesh);
+  }
+
   dispose(scene: THREE.Scene): void {
+    // Underground mesh
+    if (this._undergroundMesh) {
+      scene.remove(this._undergroundMesh);
+      this._undergroundMesh.geometry.dispose();
+      this._undergroundMesh = null;
+    }
+
     for (const mesh of this.meshes) {
       scene.remove(mesh);
       mesh.geometry.dispose();

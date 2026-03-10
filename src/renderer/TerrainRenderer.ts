@@ -136,6 +136,42 @@ export class TerrainRenderer {
     }
   }
 
+  /** Switch to underground visual mode (white semi-transparent terrain). */
+  setUndergroundMode(enabled: boolean): void {
+    if (this.mesh) {
+      const mat = this.mesh.material as THREE.MeshLambertMaterial;
+      if (enabled) {
+        mat.transparent = true;
+        mat.opacity = 0.15;
+        mat.depthWrite = false;
+        mat.color.set(0xdddddd);
+        mat.map = null;
+        mat.needsUpdate = true;
+      } else {
+        mat.transparent = false;
+        mat.opacity = 1.0;
+        mat.depthWrite = true;
+        mat.color.set(0xffffff);
+        mat.map = this.groundTexture;
+        mat.needsUpdate = true;
+      }
+      this.mesh.renderOrder = enabled ? 20 : 0;
+    }
+    if (this.waterMesh) {
+      const wMat = this.waterMesh.material as THREE.MeshLambertMaterial;
+      if (enabled) {
+        wMat.opacity = 0.08;
+        wMat.color.set(0xcccccc);
+        wMat.depthWrite = false;
+      } else {
+        wMat.opacity = 0.4;
+        wMat.color.set(0x1565c0);
+        wMat.depthWrite = false; // was already false
+      }
+      this.waterMesh.renderOrder = enabled ? 20 : 0;
+    }
+  }
+
   dispose(scene: THREE.Scene): void {
     if (this.mesh) {
       scene.remove(this.mesh);

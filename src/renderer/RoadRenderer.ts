@@ -528,10 +528,45 @@ export class RoadRenderer {
     scene.add(this.lampGlowMesh);
   }
 
+  private _underground = false;
+
   /** Update street lamp glow based on sun intensity (call each frame). */
   update(sunIntensity: number): void {
     if (!this.lampGlowMaterial) return;
+    if (this._underground) {
+      this.lampGlowMaterial.opacity = 0;
+      return;
+    }
     this.lampGlowMaterial.opacity = Math.max(0, 0.5 * (1 - sunIntensity / 0.3));
+  }
+
+  /** Switch to underground visual mode (white semi-transparent roads). */
+  setUndergroundMode(enabled: boolean): void {
+    this._underground = enabled;
+    const meshes = [
+      this.roadMesh, this.sidewalkMesh, this.markingMesh,
+      this.crosswalkMesh, this.stopLineMesh, this.lampMesh,
+    ];
+    for (const mesh of meshes) {
+      if (!mesh) continue;
+      const mat = mesh.material as THREE.MeshLambertMaterial;
+      if (enabled) {
+        mat.transparent = true;
+        mat.opacity = 0.15;
+        mat.depthWrite = false;
+        mat.color.set(0xcccccc);
+      } else {
+        mat.transparent = false;
+        mat.opacity = 1.0;
+        mat.depthWrite = true;
+        // Original colors restored on next build()
+      }
+      mesh.renderOrder = enabled ? 20 : 0;
+    }
+    // Hide lamp glow in underground mode
+    if (this.lampGlowMesh) {
+      this.lampGlowMesh.visible = !enabled;
+    }
   }
 
   dispose(scene: THREE.Scene): void {

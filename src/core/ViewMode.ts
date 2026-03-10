@@ -28,7 +28,7 @@ export const VIEW_MODE_OPACITY: Record<ViewMode, {
     metroTrain: 0.0,
   },
   [ViewMode.UNDERGROUND]: {
-    building: 0.12,
+    building: 0.125,
     road: 0.15,
     terrain: 0.2,
     surfaceVehicle: 0.08,
