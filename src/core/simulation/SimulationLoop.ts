@@ -193,6 +193,11 @@ export class SimulationLoop {
       this.calculateIncome();
       this.state.globalMarket.tick();
     }
+
+    // 10. Congestion flow prediction (first tick + every 60 ticks = ~15 sec)
+    if (tick === 1 || tick % 60 === 0) {
+      this.computeCongestionFlow();
+    }
   }
 
   getState(): GameState {
@@ -1067,6 +1072,69 @@ export class SimulationLoop {
     }
 
     return null; // No path found
+  }
+
+  /**
+   * Compute predicted congestion flow by sampling OD pairs (residential → commercial/industrial)
+   * and running the same BFS pathfinding. Updates the traffic overlay without needing actual vehicles.
+   */
+  private computeCongestionFlow(): void {
+    const grid = this.state.grid;
+    const residential: { x: number; y: number }[] = [];
+    const destinations: { x: number; y: number }[] = [];
+
+    for (let y = 0; y < grid.height; y++) {
+      for (let x = 0; x < grid.width; x++) {
+        const cell = grid.getCell(x, y);
+        if (!cell || cell.buildingId === 0) continue;
+        if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) {
+          residential.push({ x, y });
+        } else if (
+          cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH ||
+          cell.zoneType === ZoneType.INDUSTRIAL || cell.zoneType === ZoneType.OFFICE
+        ) {
+          destinations.push({ x, y });
+        }
+      }
+    }
+
+    if (residential.length === 0 || destinations.length === 0) {
+      this.state.traffic.updatePredictedFlow(new Map());
+      return;
+    }
+
+    // Sample up to 200 OD pairs, applying the same filters as actual vehicle spawning
+    const sampleCount = Math.min(200, residential.length * destinations.length);
+    const flowMap = new Map<string, number>();
+
+    for (let i = 0; i < sampleCount; i++) {
+      const from = residential[Math.floor(Math.random() * residential.length)]!;
+      const to = destinations[Math.floor(Math.random() * destinations.length)]!;
+      if (from.x === to.x && from.y === to.y) continue;
+
+      // Walk filter: Manhattan distance ≤ 3 → citizen walks, no car
+      const manhattan = Math.abs(from.x - to.x) + Math.abs(from.y - to.y);
+      if (manhattan <= 3) continue;
+
+      // Transport mode choice: skip if transit is better than driving
+      const availableTransport = this.getAvailableTransit(from, to);
+      const mode = chooseMode(from, to, availableTransport, 0);
+      if (mode !== TransportMode.DRIVE) continue;
+
+      const startRoad = this.findAdjacentRoad(from.x, from.y, grid);
+      const endRoad = this.findAdjacentRoad(to.x, to.y, grid);
+      if (!startRoad || !endRoad) continue;
+      if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
+
+      const path = this.bfsRoadPath(startRoad, endRoad, grid);
+      if (!path) continue;
+
+      for (const cellKey of path) {
+        flowMap.set(cellKey, (flowMap.get(cellKey) ?? 0) + 1);
+      }
+    }
+
+    this.state.traffic.updatePredictedFlow(flowMap);
   }
 
   private findAdjacentRoad(

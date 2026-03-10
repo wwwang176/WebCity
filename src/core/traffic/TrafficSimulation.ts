@@ -51,6 +51,8 @@ export class TrafficSimulation {
   private nextId = 1;
   /** Per-cell vehicle count, rebuilt every advanceEdgeVehicles call. */
   private cellDensity = new Map<string, number>();
+  /** Predicted congestion flow (path count per cell), set by SimulationLoop periodically. */
+  private predictedFlow: Map<string, number> | null = null;
 
   private static readonly BASE_SPEED = 3.5;   // path-units per tick at reference speed limit (50)
   private static readonly EDGE_SPEED = 14;    // edge vehicle speed in world-units per second (3.5 / 0.25)
@@ -682,7 +684,13 @@ export class TrafficSimulation {
 
   // ── Stats (for overlays / UI) ──
 
+  /** Set predicted congestion flow map (computed by SimulationLoop periodically). */
+  updatePredictedFlow(flowMap: Map<string, number>): void {
+    this.predictedFlow = flowMap;
+  }
+
   getSegmentDensity(segment: string): number {
+    if (this.predictedFlow) return this.predictedFlow.get(segment) ?? 0;
     return this.cellDensity.get(segment) ?? 0;
   }
 
@@ -691,7 +699,8 @@ export class TrafficSimulation {
   }
 
   getTopCongested(n: number): { segment: string; density: number }[] {
-    return [...this.cellDensity.entries()]
+    const source = this.predictedFlow ?? this.cellDensity;
+    return [...source.entries()]
       .map(([segment, density]) => ({ segment, density }))
       .sort((a, b) => b.density - a.density)
       .slice(0, n);

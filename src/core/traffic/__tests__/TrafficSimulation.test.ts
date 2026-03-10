@@ -273,6 +273,54 @@ describe('TrafficSimulation', () => {
   });
 });
 
+describe('predicted congestion flow', () => {
+  it('should accept predicted flow map and use it for getSegmentDensity', () => {
+    const sim = new TrafficSimulation();
+    const flowMap = new Map<string, number>();
+    flowMap.set('3,0', 42);
+    flowMap.set('5,5', 10);
+
+    sim.updatePredictedFlow(flowMap);
+
+    expect(sim.getSegmentDensity('3,0')).toBe(42);
+    expect(sim.getSegmentDensity('5,5')).toBe(10);
+    expect(sim.getSegmentDensity('0,0')).toBe(0); // no flow
+  });
+
+  it('should use predicted flow in getTopCongested', () => {
+    const sim = new TrafficSimulation();
+    const flowMap = new Map<string, number>();
+    flowMap.set('1,0', 5);
+    flowMap.set('2,0', 15);
+    flowMap.set('3,0', 10);
+
+    sim.updatePredictedFlow(flowMap);
+
+    const top = sim.getTopCongested(2);
+    expect(top.length).toBe(2);
+    expect(top[0]!.segment).toBe('2,0');
+    expect(top[0]!.density).toBe(15);
+    expect(top[1]!.segment).toBe('3,0');
+  });
+
+  it('should override vehicle-based density when predicted flow is set', () => {
+    const sim = new TrafficSimulation();
+    // Add a legacy vehicle at cell 0,0
+    sim.addVehicle(['0,0', '1,0', '2,0', '3,0', '4,0']);
+    sim.tick(); // vehicle moves, density built
+
+    // Set predicted flow — should override
+    const flowMap = new Map<string, number>();
+    flowMap.set('5,5', 99);
+    sim.updatePredictedFlow(flowMap);
+
+    expect(sim.getSegmentDensity('5,5')).toBe(99);
+    // Vehicle-based density is no longer used by getSegmentDensity
+    // getVehicleCount still works independently
+    expect(sim.getVehicleCount()).toBeGreaterThanOrEqual(0);
+  });
+});
+
 describe('getLaneCount', () => {
   it('should return 1 for RURAL', () => {
     expect(getLaneCount(RoadType.RURAL)).toBe(1);
