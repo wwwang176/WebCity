@@ -41,8 +41,9 @@ export const VIEW_MODE_OPACITY: Record<ViewMode, {
 export const UNDERGROUND_TUNNEL_Y = -0.15;
 
 /**
- * 判斷車輛是否為地面車輛（地下模式時需要半透明化的類型）。
+ * 判斷車輛是否為地面車輛。
+ * Metro trains are now rendered by MetroTunnelRenderer, so all VehicleRenderer types are surface.
  */
-export function isSurfaceVehicle(type: string): boolean {
-  return type !== 'metro_train';
+export function isSurfaceVehicle(_type: string): boolean {
+  return true;
 }

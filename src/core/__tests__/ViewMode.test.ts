@@ -76,8 +76,8 @@ describe('ViewMode', () => {
       expect(isSurfaceVehicle('tram')).toBe(true);
     });
 
-    it('metro_train 不是地面車輛', () => {
-      expect(isSurfaceVehicle('metro_train')).toBe(false);
+    it('metro_train now rendered separately (all VehicleRenderer types are surface)', () => {
+      expect(isSurfaceVehicle('metro_train')).toBe(true);
     });
 
     it('ferry 是地面車輛', () => {

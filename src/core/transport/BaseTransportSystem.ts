@@ -124,7 +124,10 @@ export abstract class BaseTransportSystem {
   removeVehicleFromRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
     if (!route || route.vehicles <= 1) return;
-    const idx = this.vehicles.findLastIndex(v => v.routeId === routeId);
+    let idx = -1;
+    for (let i = this.vehicles.length - 1; i >= 0; i--) {
+      if (this.vehicles[i]!.routeId === routeId) { idx = i; break; }
+    }
     if (idx >= 0) this.vehicles.splice(idx, 1);
     route.vehicles--;
     route.operatingCost = route.vehicles * this.config.operatingCostPerVehicle;
@@ -216,7 +219,8 @@ export abstract class BaseTransportSystem {
 
   // ── Serialization ────────────────────────────────────────────────
 
-  toJSON(): BaseTransportJSON {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  toJSON(): any {
     return {
       stops: this.stops.map(s => ({ ...s })),
       routes: this.routes.map(r => ({
@@ -232,16 +236,16 @@ export abstract class BaseTransportSystem {
 
   static baseFromJSON<T extends BaseTransportSystem>(
     data: BaseTransportJSON,
-    config: TransportSystemConfig,
-    Ctor: new (config: TransportSystemConfig) => T,
+    _config: TransportSystemConfig,
+    Ctor: { new (...args: any[]): T },
   ): T {
-    const sys = new Ctor(config);
-    sys.stops = data.stops.map(s => ({ ...s }));
-    sys.routes = data.routes.map(r => ({
+    const sys = new Ctor();
+    sys.stops = data.stops.map((s: TransportStop) => ({ ...s }));
+    sys.routes = data.routes.map((r: any) => ({
       ...r,
-      stops: (r.stops as unknown as number[]).map(id => sys.stops.find(s => s.id === id)!),
+      stops: (r.stops as number[]).map((id: number) => sys.stops.find(s => s.id === id)!),
     }));
-    sys.vehicles = data.vehicles.map(v => ({ ...v, position: { ...v.position } }));
+    sys.vehicles = data.vehicles.map((v: TransportVehicle) => ({ ...v, position: { ...v.position } }));
     sys.nextStopId = data.nextStopId;
     sys.nextRouteId = data.nextRouteId;
     sys.nextVehicleId = data.nextVehicleId;

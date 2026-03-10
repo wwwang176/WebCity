@@ -44,11 +44,11 @@ export class TramSystem extends BaseTransportSystem {
     return cells;
   }
 
-  toJSON(): BaseTransportJSON {
-    return super.toJSON();
+  override toJSON(): BaseTransportJSON {
+    return super.toJSON() as BaseTransportJSON;
   }
 
-  static fromJSON(data: ReturnType<TramSystem['toJSON']>): TramSystem {
+  static fromJSON(data: BaseTransportJSON): TramSystem {
     return BaseTransportSystem.baseFromJSON(data, TRAM_CONFIG, TramSystem);
   }
 }

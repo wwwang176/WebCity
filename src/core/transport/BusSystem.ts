@@ -1,5 +1,5 @@
 import { TransportType, TransportVehicle, TransportStop } from './types';
-import { BaseTransportSystem, TransportSystemConfig, BaseTransportJSON } from './BaseTransportSystem';
+import { BaseTransportSystem, TransportSystemConfig } from './BaseTransportSystem';
 
 const BUS_CONFIG: TransportSystemConfig = {
   type: TransportType.BUS,
@@ -29,7 +29,7 @@ export class BusSystem extends BaseTransportSystem {
     boardPassengers(vehicle, stop);
   }
 
-  toJSON(): BaseTransportJSON & { congestionLevel: number } {
+  override toJSON() {
     return {
       ...super.toJSON(),
       congestionLevel: this.congestionLevel,

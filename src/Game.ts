@@ -32,6 +32,7 @@ import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
+import { collectMetroTrainData } from './core/transport/collectMetroTrains';
 import { ViewMode, VIEW_MODE_OPACITY } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 
@@ -1015,7 +1016,6 @@ export class Game {
     // 收集交通系統車輛（bus/metro/tram/rail/ferry/taxi）
     const transportVehicles = collectTransportVehicles({
       bus: this.state.bus,
-      metro: this.state.metro,
       tram: this.state.tram,
       rail: this.state.rail,
       ferry: this.state.ferry,
@@ -1041,15 +1041,19 @@ export class Game {
       this.transportRouteRenderer.update(routeData);
     }
 
-    // 更新地鐵隧道渲染
+    // 更新地鐵隧道 + 列車渲染
     const metroLines = this.state.metro.getLines();
-    const allTunnelSegments = metroLines.flatMap(line =>
-      computeTunnelSegments(line.stops.map(s => ({ x: s.x, y: s.y })))
-    );
+    const metroLineData = metroLines.map(line => ({
+      lineId: line.id,
+      stops: line.stops.map(s => ({ x: s.x, y: s.y })),
+      segments: computeTunnelSegments(line.stops.map(s => ({ x: s.x, y: s.y }))),
+    }));
+    const metroTrainData = collectMetroTrainData(this.state.metro);
     this.metroTunnelRenderer.update(
-      allTunnelSegments,
+      metroLineData,
       this.state.metro.getStations(),
       vmOp.metroTunnel,
+      metroTrainData,
     );
 
     // Clean up stale vehicle rendering state

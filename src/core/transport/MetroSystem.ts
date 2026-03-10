@@ -121,8 +121,8 @@ export class MetroSystem extends BaseTransportSystem {
 
   // ── Serialization ───────────────────────────────────────────────
 
-  toJSON() {
-    const base = super.toJSON();
+  override toJSON() {
+    const base = super.toJSON() as BaseTransportJSON;
     return {
       stations: base.stops,
       lines: base.routes,

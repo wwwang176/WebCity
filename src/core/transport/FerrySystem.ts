@@ -105,7 +105,10 @@ export class FerrySystem extends BaseTransportSystem {
   override removeVehicleFromRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
     if (!route || route.vehicles <= 1) return;
-    const idx = this.vehicles.findLastIndex(v => v.routeId === routeId);
+    let idx = -1;
+    for (let i = this.vehicles.length - 1; i >= 0; i--) {
+      if (this.vehicles[i]!.routeId === routeId) { idx = i; break; }
+    }
     if (idx >= 0) {
       this.vesselPaths.delete(this.vehicles[idx]!.id);
       this.vehicles.splice(idx, 1);
@@ -169,8 +172,8 @@ export class FerrySystem extends BaseTransportSystem {
 
   // ── Serialization ───────────────────────────────────────────────
 
-  toJSON() {
-    const base = super.toJSON();
+  override toJSON() {
+    const base = super.toJSON() as BaseTransportJSON;
     return {
       docks: base.stops,
       routes: base.routes,

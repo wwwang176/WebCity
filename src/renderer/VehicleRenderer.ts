@@ -6,7 +6,7 @@ export interface VehicleData {
   x: number;
   y: number;
   heading: number; // radians, 0 = facing +x (east)
-  type: 'car' | 'bus' | 'truck' | 'firetruck' | 'transport_bus' | 'metro_train' | 'tram' | 'rail_train' | 'ferry' | 'taxi';
+  type: 'car' | 'bus' | 'truck' | 'firetruck' | 'transport_bus' | 'tram' | 'rail_train' | 'ferry' | 'taxi';
   laneOffset: number; // lateral offset perpendicular to heading (positive = right of heading)
 }
 
@@ -180,12 +180,8 @@ export class VehicleRenderer {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
-      // Visibility: underground mode shows only metro_train, normal hides it
-      if (this._underground) {
-        mesh.visible = type === 'metro_train';
-      } else {
-        mesh.visible = type !== 'metro_train';
-      }
+      // Underground mode hides all surface vehicles (metro trains rendered by MetroTunnelRenderer)
+      mesh.visible = !this._underground;
     }
 
     // Update headlight/taillight counts and opacity
@@ -209,17 +205,11 @@ export class VehicleRenderer {
     }
   }
 
-  /** Switch to underground visual mode (hide surface vehicles). */
+  /** Switch to underground visual mode (hide all surface vehicles). */
   setUndergroundMode(enabled: boolean): void {
     this._underground = enabled;
-    for (const [type, mesh] of this.meshes) {
-      if (type === 'metro_train') {
-        // Metro trains become visible in underground mode
-        mesh.visible = enabled;
-      } else {
-        // Surface vehicles hidden in underground mode
-        mesh.visible = !enabled;
-      }
+    for (const mesh of this.meshes.values()) {
+      mesh.visible = !enabled;
     }
     if (this.headlightMesh) this.headlightMesh.visible = !enabled;
     if (this.taillightMesh) this.taillightMesh.visible = !enabled;
