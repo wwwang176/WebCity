@@ -1,7 +1,9 @@
 import { defineConfig } from 'vite';
 import path from 'path';
+import solidPlugin from 'vite-plugin-solid';
 
 export default defineConfig({
+  plugins: [solidPlugin()],
   resolve: {
     alias: {
       '@core': path.resolve(__dirname, 'src/core'),
