@@ -159,25 +159,6 @@ export class SimulationLoop {
     // 7b. Traffic - spawn commute vehicles and advance (every tick for smooth traffic)
     this.spawnVehicles();
     this.state.trafficLights.tick();
-    this.state.traffic.tick(
-      (current, next) => {
-        const [cx, cy] = current.split(',').map(Number);
-        const [nx, ny] = next.split(',').map(Number);
-        return this.state.trafficLights.canPass(cx!, cy!, nx!, ny!);
-      },
-      (cellKey) => {
-        const [x, y] = cellKey.split(',').map(Number);
-        const cell = this.state.grid.getCell(x!, y!);
-        if (!cell || cell.roadType === RoadType.NONE) return 50; // default
-        return ROAD_CONFIGS[cell.roadType as RoadType]?.speedLimit ?? 50;
-      },
-      (cellKey) => {
-        const [x, y] = cellKey.split(',').map(Number);
-        const cell = this.state.grid.getCell(x!, y!);
-        if (!cell || cell.roadType === RoadType.NONE) return 1;
-        return getLaneCount(cell.roadType);
-      },
-    );
 
     // 8. Transport systems (every tick)
     // Set congestion level for surface transit
@@ -978,9 +959,6 @@ export class SimulationLoop {
         const edgePath = refineLanePath(this.laneGraph, path, preferredLane);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
-        } else {
-          // Fallback to cell-based path
-          this.state.traffic.addVehicle(path, dirLanes);
         }
         commuterSet.add(citizen.id);
         spawned++;
@@ -1081,8 +1059,6 @@ export class SimulationLoop {
         const edgePath = refineLanePath(this.laneGraph, path, prefLane);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
-        } else {
-          this.state.traffic.addVehicle(path, dLanes);
         }
       }
     }

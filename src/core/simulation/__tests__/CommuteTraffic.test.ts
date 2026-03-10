@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
-import { RoadType } from '../../road/types';
+import { RoadType, RoadDirection } from '../../road/types';
 
 /**
  * Helper: set up a minimal city with residential + commercial buildings
@@ -19,9 +19,12 @@ function setupMinimalCity(state: GameState): void {
     zoneType: ZoneType.RESIDENTIAL_LOW,
     buildingId: 1, // Small House, 4 residents
   });
-  // Road from (2,1) to (14,1) — 13 road cells
+  // Road from (2,1) to (14,1) — 13 road cells, with roadFlags for lane graph
   for (let x = 2; x <= 14; x++) {
-    state.grid.setCell(x, 1, { roadType: RoadType.TWO_LANE });
+    let flags = RoadDirection.EAST | RoadDirection.WEST;
+    if (x === 2) flags = RoadDirection.EAST;   // start: only connects east
+    if (x === 14) flags = RoadDirection.WEST;  // end: only connects west
+    state.grid.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: flags });
   }
   // Commercial building at (15,1)
   state.grid.setCell(15, 1, {

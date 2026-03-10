@@ -102,11 +102,8 @@ export class Game {
   private previewLine: THREE.Line | null = null;
   private lastMilestoneId: string | null = null;
   private notificationTimer = 0;
-  private vehiclePrevPathPos = new Map<number, number>();
   private vehicleTypes = new Map<number, VehicleData['type']>();
   private vehicleHeadings = new Map<number, number>();
-  private vehicleSmoothedOffset = new Map<number, number>();
-  private tickProgress = 0; // 0..1 interpolation between ticks
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
@@ -868,17 +865,9 @@ export class Game {
       if (this.tickAccumulator > tickInterval * 10) {
         this.tickAccumulator = tickInterval * 10;
       }
-      this.tickProgress = tickInterval > 0 ? this.tickAccumulator / tickInterval : 1;
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
-        // Snapshot pathPos before tick for inter-tick curve interpolation (legacy vehicles)
-        this.vehiclePrevPathPos.clear();
-        for (const v of this.state.traffic.vehicles) {
-          this.vehiclePrevPathPos.set(v.id, v.pathPos);
-        }
         this.simLoop.tick();
-        this.tickProgress = 0;
-
         // Milestone detection
         this.checkMilestone();
 
@@ -959,57 +948,26 @@ export class Game {
         this.vehicleTypes.set(v.id, vtype);
       }
 
-      // Edge-based vehicle: position is updated every render frame by advanceEdgeVehicles
-      if (v.edgePath && v.edgePath.length > 0) {
-        const pos = this.state.traffic.getVehiclePositionOnEdges(v);
-        if (!pos) return null;
-        const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
-        this.vehicleHeadings.set(v.id, heading);
-
-        return {
-          id: v.id,
-          x: pos.x,
-          y: pos.y,
-          heading,
-          type: this.vehicleTypes.get(v.id)!,
-          laneOffset: 0,
-        };
-      }
-
-      // Legacy cell-based vehicle
-      // Interpolate pathPos for smooth inter-tick movement along the curve
-      const prevPP = this.vehiclePrevPathPos.get(v.id) ?? v.pathPos;
-      const t = Math.min(1, this.tickProgress);
-      const interpPos = prevPP + (v.pathPos - prevPP) * t;
-
-      const sp = this.getSmoothedVehiclePos(v.path, interpPos, this.vehicleHeadings.get(v.id) ?? 0);
-      if (!sp) return null;
-
-      const { x, y, heading } = sp;
+      const pos = this.state.traffic.getVehiclePositionOnEdges(v);
+      if (!pos) return null;
+      const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
       this.vehicleHeadings.set(v.id, heading);
-
-      // Compute lane offset based on road type at current cell, with smooth transition
-      const targetOffset = this.computeLaneOffset(v.path, interpPos, v.lane);
-      const prevOffset = this.vehicleSmoothedOffset.get(v.id) ?? targetOffset;
-      const laneOffset = prevOffset + (targetOffset - prevOffset) * 0.15;
-      this.vehicleSmoothedOffset.set(v.id, laneOffset);
 
       return {
         id: v.id,
-        x,
-        y,
+        x: pos.x,
+        y: pos.y,
         heading,
         type: this.vehicleTypes.get(v.id)!,
-        laneOffset,
+        laneOffset: 0,
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
     this.vehicleRenderer.update(vehicleData, this.weatherRenderer.sunIntensity);
 
     // Clean up stale vehicle rendering state
     const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
-    for (const id of this.vehicleSmoothedOffset.keys()) {
+    for (const id of this.vehicleTypes.keys()) {
       if (!activeIds.has(id)) {
-        this.vehicleSmoothedOffset.delete(id);
         this.vehicleTypes.delete(id);
         this.vehicleHeadings.delete(id);
       }
@@ -1038,121 +996,6 @@ export class Game {
   }
 
   /** Smoothed position & heading using quadratic bezier at turns */
-  private getSmoothedVehiclePos(
-    path: string[], pathPos: number, fallbackHeading: number,
-  ): { x: number; y: number; heading: number } | null {
-    const idx = Math.floor(pathPos);
-    const frac = pathPos - idx;
-    const p1 = path[idx];
-    if (!p1) return null;
-    const [x1, y1] = p1.split(',').map(Number);
-
-    if (idx >= path.length - 1) {
-      return { x: x1!, y: y1!, heading: fallbackHeading };
-    }
-
-    const [x2, y2] = path[idx + 1]!.split(',').map(Number);
-    const BLEND = 0.35;
-
-    // Approaching turn at node idx+1
-    if (frac > 1 - BLEND && idx < path.length - 2) {
-      const [x3, y3] = path[idx + 2]!.split(',').map(Number);
-      // Only curve if direction actually changes
-      if ((x2! - x1!) !== (x3! - x2!) || (y2! - y1!) !== (y3! - y2!)) {
-        const p0x = x1! + (x2! - x1!) * (1 - BLEND);
-        const p0y = y1! + (y2! - y1!) * (1 - BLEND);
-        const p2x = x2! + (x3! - x2!) * BLEND;
-        const p2y = y2! + (y3! - y2!) * BLEND;
-        const t = (frac - (1 - BLEND)) / (2 * BLEND); // 0 → 0.5
-        const mt = 1 - t;
-        return {
-          x: mt * mt * p0x + 2 * mt * t * x2! + t * t * p2x,
-          y: mt * mt * p0y + 2 * mt * t * y2! + t * t * p2y,
-          heading: Math.atan2(
-            -(2 * mt * (y2! - p0y) + 2 * t * (p2y - y2!)),
-            2 * mt * (x2! - p0x) + 2 * t * (p2x - x2!),
-          ),
-        };
-      }
-    }
-
-    // Just passed turn at node idx
-    if (frac < BLEND && idx > 0) {
-      const [x0, y0] = path[idx - 1]!.split(',').map(Number);
-      if ((x1! - x0!) !== (x2! - x1!) || (y1! - y0!) !== (y2! - y1!)) {
-        const p0x = x0! + (x1! - x0!) * (1 - BLEND);
-        const p0y = y0! + (y1! - y0!) * (1 - BLEND);
-        const p2x = x1! + (x2! - x1!) * BLEND;
-        const p2y = y1! + (y2! - y1!) * BLEND;
-        const t = 0.5 + (frac / BLEND) * 0.5; // 0.5 → 1.0
-        const mt = 1 - t;
-        return {
-          x: mt * mt * p0x + 2 * mt * t * x1! + t * t * p2x,
-          y: mt * mt * p0y + 2 * mt * t * y1! + t * t * p2y,
-          heading: Math.atan2(
-            -(2 * mt * (y1! - p0y) + 2 * t * (p2y - y1!)),
-            2 * mt * (x1! - p0x) + 2 * t * (p2x - x1!),
-          ),
-        };
-      }
-    }
-
-    // Straight segment — linear interpolation
-    return {
-      x: x1! + (x2! - x1!) * frac,
-      y: y1! + (y2! - y1!) * frac,
-      heading: Math.atan2(-(y2! - y1!), x2! - x1!),
-    };
-  }
-
-  /**
-   * Compute the lateral offset for a vehicle based on its lane and the road type
-   * at its current position.
-   *
-   * Right-hand drive convention: vehicles drive on the LEFT side of the road.
-   * The returned offset is in the perpendicular-right direction relative to heading,
-   * so positive values shift the vehicle to the right of the travel direction.
-   *
-   * For a bidirectional road with N directional lanes per side:
-   *   - The LEFT half of the road is used (positive offset = toward road center left).
-   *   - Lane 0 is the outermost lane, lane N-1 is closest to center.
-   *   - offset = roadHalfWidth - (lane + 0.5) * laneWidth
-   *     This places lane 0 near the road edge and higher lanes toward center.
-   */
-  private computeLaneOffset(path: string[], pathPos: number, lane: number): number {
-    // Look up road type from the grid at the current path cell
-    const idx = Math.floor(pathPos);
-    const cellKey = path[idx];
-    if (!cellKey) return 0.12; // fallback to default offset
-
-    const [cxs, cys] = cellKey.split(',');
-    const cx = Number(cxs), cy = Number(cys);
-    const cell = this.state.grid.getCell(cx, cy);
-    if (!cell || cell.roadType === RoadType.NONE) return 0.12;
-
-    const roadType = cell.roadType;
-    const roadWidth = ROAD_WIDTHS_FOR_LANES[roadType] ?? 0.6;
-    const dirLanes = getLaneCount(roadType);
-
-    if (dirLanes <= 1) {
-      // Single directional lane (e.g. RURAL, TWO_LANE): fixed offset to left side
-      return roadWidth / 4; // drive on left quarter of road
-    }
-
-    // Multi-lane road: distribute lanes across half the road width
-    // Half-width is the space for one direction of traffic
-    const halfWidth = roadWidth / 2;
-    const laneWidth = halfWidth / dirLanes;
-
-    // Lane 0 = outermost (near edge), lane N-1 = innermost (near center line)
-    // Offset from road center: place in the left half (positive = right of heading = left side of road)
-    // Center of lane i from road edge = (i + 0.5) * laneWidth
-    // Offset from road center = halfWidth - (lane + 0.5) * laneWidth
-    const clampedLane = Math.min(lane, dirLanes - 1);
-    const offset = halfWidth - (clampedLane + 0.5) * laneWidth;
-
-    return offset;
-  }
 
   /** Scan the grid for intersections (3+ road connections) and sync traffic lights */
   private syncTrafficLights(): void {

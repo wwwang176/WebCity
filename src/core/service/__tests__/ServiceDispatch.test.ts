@@ -90,12 +90,10 @@ describe('ServiceDispatch', () => {
       { x: 16, y: 5 },
     );
 
-    // Fill road with traffic to increase congestion
-    const path: string[] = [];
-    for (let x = 2; x <= 15; x++) path.push(`${x},5`);
-    for (let i = 0; i < 20; i++) {
-      traffic.addVehicle([...path], 1);
-    }
+    // Simulate congestion via predicted flow map
+    const flowMap = new Map<string, number>();
+    for (let x = 2; x <= 15; x++) flowMap.set(`${x},5`, 20);
+    traffic.updatePredictedFlow(flowMap);
 
     const result2 = dispatch.dispatch(
       ServiceVehicleType.FIRE_TRUCK,
