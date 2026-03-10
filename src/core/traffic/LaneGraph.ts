@@ -183,9 +183,12 @@ export class LaneGraph {
     const dirLanes = getLaneCount(cell.roadType);
     const pointIds: string[] = [];
 
-    // For each active direction in roadFlags:
-    // "entry from direction D" = traffic arriving from neighbor in direction D
-    // "exit to direction D" = traffic leaving towards neighbor in direction D
+    // Lane offset: perpendicular displacement from road center.
+    // For direction D with lane index L:
+    //   perpendicular "right" of travel direction = lateral offset
+    //   This separates opposing traffic and multi-lane same-direction traffic.
+    const LANE_WIDTH = 0.18; // lateral offset per lane
+
     for (const { dir, flag } of DIR_FLAGS) {
       if (!(cell.roadFlags & flag)) continue;
 
@@ -194,10 +197,27 @@ export class LaneGraph {
         const exitId = `${cellKey}:${dir}:${lane}:exit`;
 
         const v = dirVec(dir);
-        // Entry: from the direction's neighbor side (edge of cell facing the neighbor)
-        // Exit: towards the direction's neighbor
-        const entryPos = { x: x + v.dx * 0.4, y: y + v.dy * 0.4 };
-        const exitPos = { x: x + v.dx * 0.5, y: y + v.dy * 0.5 };
+        // Entry(dir) = vehicle arrives FROM direction `dir`, traveling in opposite(dir)
+        // Exit(dir)  = vehicle leaves TOWARDS direction `dir`, traveling in `dir`
+        //
+        // Lane offset: perpendicular right-hand side of TRAVEL direction.
+        // Exit travels in `dir`: right-of-dir
+        const exitPerpX = -v.dy;
+        const exitPerpY = v.dx;
+        // Entry's travel direction = opposite(dir): right-of-opposite(dir) = LEFT-of-dir
+        const entryPerpX = v.dy;
+        const entryPerpY = -v.dx;
+
+        const lateralOffset = (lane + 0.5) * LANE_WIDTH;
+
+        const entryPos = {
+          x: x + v.dx * 0.4 + entryPerpX * lateralOffset,
+          y: y + v.dy * 0.4 + entryPerpY * lateralOffset,
+        };
+        const exitPos = {
+          x: x + v.dx * 0.5 + exitPerpX * lateralOffset,
+          y: y + v.dy * 0.5 + exitPerpY * lateralOffset,
+        };
 
         const entryPoint: ConnectionPoint = {
           id: entryId,

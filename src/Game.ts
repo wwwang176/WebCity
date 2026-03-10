@@ -712,7 +712,7 @@ export class Game {
       this.tickProgress = tickInterval > 0 ? this.tickAccumulator / tickInterval : 1;
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
-        // Snapshot pathPos before tick for inter-tick curve interpolation
+        // Snapshot pathPos before tick for inter-tick curve interpolation (legacy vehicles)
         this.vehiclePrevPathPos.clear();
         for (const v of this.state.traffic.vehicles) {
           this.vehiclePrevPathPos.set(v.id, v.pathPos);
@@ -768,7 +768,25 @@ export class Game {
     // Update cursor color based on tool
     this.updateCursorColor();
 
-    // Update vehicles — interpolate pathPos between ticks, then compute bezier curve
+    // Advance edge-based vehicles every render frame (independent of tick)
+    if (!this.paused) {
+      const scaledDt = dt * this.speed;
+      const canAdvance = (cur: string, next: string) => {
+        const [cx, cy] = cur.split(',').map(Number);
+        const [nx, ny] = next.split(',').map(Number);
+        return this.state.trafficLights.canPass(cx!, cy!, nx!, ny!);
+      };
+      const getSpeedLimit = (cellKey: string) => {
+        const [gx, gy] = cellKey.split(',').map(Number);
+        const cell = this.state.grid.getCell(gx!, gy!);
+        if (!cell || cell.roadType <= 0) return 50;
+        const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
+        return cfg?.speedLimit ?? 50;
+      };
+      this.state.traffic.advanceEdgeVehicles(scaledDt, canAdvance, getSpeedLimit);
+    }
+
+    // Update vehicles — read positions for rendering
     const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
       if (v.arrived) return null;
 
@@ -782,19 +800,20 @@ export class Game {
         this.vehicleTypes.set(v.id, vtype);
       }
 
-      // Edge-based vehicle: position and heading come directly from LaneEdge path
+      // Edge-based vehicle: position is updated every render frame by advanceEdgeVehicles
       if (v.edgePath && v.edgePath.length > 0) {
         const pos = this.state.traffic.getVehiclePositionOnEdges(v);
         if (!pos) return null;
         const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
         this.vehicleHeadings.set(v.id, heading);
+
         return {
           id: v.id,
           x: pos.x,
           y: pos.y,
           heading,
           type: this.vehicleTypes.get(v.id)!,
-          laneOffset: 0, // lane offset is baked into the edge position
+          laneOffset: 0,
         };
       }
 

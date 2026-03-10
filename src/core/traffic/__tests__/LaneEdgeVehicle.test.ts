@@ -53,6 +53,15 @@ function resolveEastPath(graph: LaneGraph, cellKeys: string[], lane = 0): LaneEd
   return edges;
 }
 
+/** Simulate dt seconds of edge vehicle advancement (at ~60fps frame intervals) */
+function advanceFor(sim: TrafficSimulation, dtSeconds: number,
+  canAdvance?: (cur: string, next: string) => boolean,
+  getSpeedLimit?: (cellKey: string) => number,
+) {
+  // Use a single call with the full dt
+  sim.advanceEdgeVehicles(dtSeconds, canAdvance, getSpeedLimit);
+}
+
 describe('LaneEdge Vehicle Movement', () => {
   describe('addVehicleOnEdges', () => {
     it('should create a vehicle with LaneEdge path', () => {
@@ -71,7 +80,7 @@ describe('LaneEdge Vehicle Movement', () => {
     });
   });
 
-  describe('tick with edge-based movement', () => {
+  describe('advanceEdgeVehicles movement', () => {
     it('should advance vehicle along edge path', () => {
       const sim = new TrafficSimulation();
       const { graph, cellKeys } = buildHorizontalRoad(5);
@@ -80,7 +89,7 @@ describe('LaneEdge Vehicle Movement', () => {
       const v = sim.addVehicleOnEdges(edgePath);
       const initialProgress = v.edgeProgress;
 
-      sim.tick();
+      advanceFor(sim, 0.1); // 100ms
 
       // Vehicle should have moved forward
       const totalProgress = v.edgeIndex + v.edgeProgress;
@@ -96,7 +105,7 @@ describe('LaneEdge Vehicle Movement', () => {
       // Move vehicle close to end of first edge
       v.edgeProgress = edgePath[0]!.length - 0.01;
 
-      sim.tick();
+      advanceFor(sim, 0.1);
 
       // Should have moved to next edge
       expect(v.edgeIndex).toBeGreaterThanOrEqual(1);
@@ -112,7 +121,7 @@ describe('LaneEdge Vehicle Movement', () => {
       v.edgeIndex = edgePath.length - 1;
       v.edgeProgress = edgePath[edgePath.length - 1]!.length - 0.001;
 
-      sim.tick();
+      advanceFor(sim, 0.1);
 
       expect(v.arrived).toBe(true);
     });
@@ -181,7 +190,7 @@ describe('LaneEdge Vehicle Movement', () => {
       const follower = sim.addVehicleOnEdges(edgePath);
       follower.edgeProgress = edgePath[0]!.length * 0.6;
 
-      sim.tick();
+      advanceFor(sim, 0.1);
 
       // Follower should not pass leader
       const leaderTotal = leader.edgeIndex * 1000 + leader.edgeProgress;
@@ -202,8 +211,8 @@ describe('LaneEdge Vehicle Movement', () => {
       const sim2 = new TrafficSimulation();
       const vFast = sim2.addVehicleOnEdges(edgePath);
 
-      sim.tick(undefined, () => 30);   // slow
-      sim2.tick(undefined, () => 100);  // fast
+      advanceFor(sim, 0.25, undefined, () => 30);   // slow
+      advanceFor(sim2, 0.25, undefined, () => 100);  // fast
 
       const slowProgress = vSlow.edgeIndex + vSlow.edgeProgress;
       const fastProgress = vFast.edgeIndex + vFast.edgeProgress;
@@ -227,7 +236,7 @@ describe('LaneEdge Vehicle Movement', () => {
       follower.edgeProgress = edgePath[1]!.length * 0.8;
 
       const leaderBefore = leader.edgeIndex * 1000 + leader.edgeProgress;
-      sim.tick();
+      advanceFor(sim, 0.1);
 
       // Leader should have advanced
       const leaderAfter = leader.edgeIndex * 1000 + leader.edgeProgress;
@@ -255,13 +264,12 @@ describe('LaneEdge Vehicle Movement', () => {
         return true;
       };
 
-      // Tick several times
-      for (let i = 0; i < 20; i++) {
-        sim.tick(canAdvance);
+      // Advance for 2 seconds (plenty of time)
+      for (let i = 0; i < 120; i++) {
+        advanceFor(sim, 1 / 60, canAdvance);
       }
 
       // Vehicle should have stopped before crossing from 1,0 to 2,0
-      // Find the cross-cell edge from 1,0 to 2,0 in the path
       const crossEdgeIdx = edgePath.findIndex(
         e => e.from.cellKey === '1,0' && e.to.cellKey === '2,0'
       );
@@ -269,13 +277,10 @@ describe('LaneEdge Vehicle Movement', () => {
 
       // Vehicle should not have passed this cross edge
       if (v.edgeIndex < crossEdgeIdx) {
-        // Still before the blocked edge — correct
         expect(true).toBe(true);
       } else if (v.edgeIndex === crossEdgeIdx) {
-        // At the blocked edge but should have minimal progress
         expect(v.edgeProgress).toBeLessThan(0.01);
       } else {
-        // Past the blocked edge — WRONG
         expect(v.edgeIndex).toBeLessThanOrEqual(crossEdgeIdx);
       }
     });
@@ -287,11 +292,10 @@ describe('LaneEdge Vehicle Movement', () => {
 
       const v = sim.addVehicleOnEdges(edgePath);
 
-      // All green
+      // All green — advance for 2 seconds
       const canAdvance = () => true;
-
-      for (let i = 0; i < 20; i++) {
-        sim.tick(canAdvance);
+      for (let i = 0; i < 120; i++) {
+        advanceFor(sim, 1 / 60, canAdvance);
       }
 
       // Vehicle should have passed well beyond cell 2,0

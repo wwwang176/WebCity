@@ -16,6 +16,7 @@ export interface Vehicle {
   edgePath?: LaneEdge[];
   edgeIndex: number;     // current edge in edgePath
   edgeProgress: number;  // distance traveled along current edge
+  edgeMoveRate: number;  // distance moved last tick (for render extrapolation)
 }
 
 /** Vehicle lengths matching renderer model sizes */
@@ -49,6 +50,7 @@ export class TrafficSimulation {
   private nextId = 1;
 
   private static readonly BASE_SPEED = 3.5;   // path-units per tick at reference speed limit (50)
+  private static readonly EDGE_SPEED = 14;    // edge vehicle speed in world-units per second (3.5 / 0.25)
   private static readonly REFERENCE_LIMIT = 50; // speed limit that maps to BASE_SPEED
   private static readonly MIN_GAP = 0.15;    // min distance between vehicles
   private static readonly STOP_OFFSET = 0.25; // align vehicle front with stop line (0.25 from cell center)
@@ -107,6 +109,7 @@ export class TrafficSimulation {
       laneChangeCooldown: 0,
       edgeIndex: 0,
       edgeProgress: 0,
+      edgeMoveRate: 0,
     };
     this.vehicles.push(vehicle);
     return vehicle;
@@ -135,16 +138,23 @@ export class TrafficSimulation {
       edgePath,
       edgeIndex: 0,
       edgeProgress: 0,
+      edgeMoveRate: 0,
     };
     this.vehicles.push(vehicle);
     return vehicle;
   }
 
-  private tickEdgeVehicles(
+  /**
+   * Advance edge-based vehicles every render frame.
+   * Handles movement, collision detection, red lights, and arrival — fully independent of sim tick.
+   * @param dtSeconds — frame delta time in seconds (already scaled by game speed)
+   */
+  advanceEdgeVehicles(
+    dtSeconds: number,
     canAdvance?: (current: string, next: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
-    const { MIN_GAP, BASE_SPEED, REFERENCE_LIMIT } = TrafficSimulation;
+    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT } = TrafficSimulation;
 
     // Collect edge-based vehicles
     const edgeVehicles = this.vehicles.filter(v => v.edgePath && v.edgePath.length > 0 && !v.arrived);
@@ -197,10 +207,8 @@ export class TrafficSimulation {
           const startDist = ei === v.edgeIndex ? v.edgeProgress : 0;
           const edgeRemain = edge.length - startDist;
 
-          // Check cross-cell edges (exit → entry of different cell)
           if (edge.from.cellKey !== edge.to.cellKey) {
             if (!canAdvance(edge.from.cellKey, edge.to.cellKey)) {
-              // Stop before this edge's start
               const stopDist = distAhead - (ei === v.edgeIndex ? 0 : startDist);
               redLightDist = Math.max(0, stopDist - v.length / 2);
               break;
@@ -208,7 +216,7 @@ export class TrafficSimulation {
           }
 
           distAhead += edgeRemain;
-          if (distAhead > 5) break; // don't look too far ahead
+          if (distAhead > 5) break;
         }
       }
 
@@ -216,10 +224,9 @@ export class TrafficSimulation {
       const currentEdge = ep[v.edgeIndex];
       const cellKey = currentEdge?.from.cellKey;
       const limit = getSpeedLimit && cellKey ? getSpeedLimit(cellKey) : REFERENCE_LIMIT;
-      const effectiveSpeed = v.speed * (limit / REFERENCE_LIMIT);
+      const effectiveSpeed = EDGE_SPEED * (limit / REFERENCE_LIMIT) * dtSeconds;
 
       // 4. Advance
-      // If vehicles are stacked (gap < MIN_GAP), allow slow creep to spread out
       const gapRoom = gap < MIN_GAP ? effectiveSpeed * 0.15 : gap - MIN_GAP;
       const room = Math.max(0, Math.min(gapRoom, redLightDist));
       let moveDistance = Math.min(effectiveSpeed, room);
@@ -296,6 +303,56 @@ export class TrafficSimulation {
     return Math.atan2(h.hy, h.hx);
   }
 
+  /**
+   * Peek ahead by `extraDist` along the edge path from current position
+   * without mutating vehicle state. Returns extrapolated position and heading.
+   */
+  peekEdgePosition(v: Vehicle, extraDist: number): { x: number; y: number; heading: number } | null {
+    if (!v.edgePath || v.edgePath.length === 0) return null;
+    // Walk forward from current state
+    let ei = v.edgeIndex;
+    let ep = v.edgeProgress;
+    let d = extraDist;
+    while (d > 0 && ei < v.edgePath.length) {
+      const edge = v.edgePath[ei]!;
+      const remaining = edge.length - ep;
+      if (d < remaining) {
+        ep += d;
+        d = 0;
+      } else {
+        d -= remaining;
+        ei++;
+        ep = 0;
+      }
+    }
+    if (ei >= v.edgePath.length) {
+      ei = v.edgePath.length - 1;
+      ep = v.edgePath[ei]!.length;
+    }
+    // Compute position and heading at peeked state
+    const edge = v.edgePath[ei]!;
+    const t = edge.length > 0 ? Math.min(ep / edge.length, 1) : 0;
+    let x: number, y: number;
+    if (edge.bezierControl && edge.bezierControl.length >= 2) {
+      const p = cubicBezierPoint(edge.from.position, edge.bezierControl[0]!, edge.bezierControl[1]!, edge.to.position, t);
+      x = p.x; y = p.y;
+    } else {
+      x = edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t;
+      y = edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t;
+    }
+    let tx: number, ty: number;
+    if (edge.bezierControl && edge.bezierControl.length >= 2) {
+      const tan = cubicBezierTangent(edge.from.position, edge.bezierControl[0]!, edge.bezierControl[1]!, edge.to.position, t);
+      tx = tan.x; ty = tan.y;
+    } else {
+      tx = edge.to.position.x - edge.from.position.x;
+      ty = edge.to.position.y - edge.from.position.y;
+    }
+    const len = Math.sqrt(tx * tx + ty * ty) || 1;
+    const heading = Math.atan2(ty / len, tx / len);
+    return { x, y, heading };
+  }
+
   /** Unit heading vector for edge-based vehicle. */
   private edgeHeadingVec(v: Vehicle): { hx: number; hy: number } {
     if (!v.edgePath || v.edgePath.length === 0) return { hx: 1, hy: 0 };
@@ -329,8 +386,8 @@ export class TrafficSimulation {
     getSpeedLimit?: (cellKey: string) => number,
     getCellLaneCount?: (cellKey: string) => number,
   ): void {
-    // Process edge-based vehicles first
-    this.tickEdgeVehicles(canAdvance, getSpeedLimit);
+    // Edge vehicles are now advanced per render frame via advanceEdgeVehicles()
+    // Tick only handles legacy cell-based vehicles below
     const { MIN_GAP, STOP_OFFSET, BASE_SPEED, REFERENCE_LIMIT,
       LANE_CHANGE_GAP, LANE_CHANGE_SAFE, LANE_CHANGE_COOLDOWN } = TrafficSimulation;
 
