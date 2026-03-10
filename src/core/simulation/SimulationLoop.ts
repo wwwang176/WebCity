@@ -1043,40 +1043,38 @@ export class SimulationLoop {
     const grid = this.state.grid;
     const citizens = this.state.citizens;
 
-    // Build weighted pools using ACTUAL population, not building capacity.
-    // Residential: count actual residents (working age 19-65 with workplace).
-    // Destinations: count actual workers assigned to that building.
+    // Build weighted OD pools directly from citizen data (not zoneType).
+    // This avoids mismatch between cell.zoneType and actual buildingId usage.
     type WeightedEntry = { x: number; y: number; weight: number };
+    const resMap = new Map<string, number>();
+    const destMap = new Map<string, number>();
+
+    for (const c of citizens.citizens) {
+      if (c.age <= 18 || c.age > 65) continue;
+      if (!c.homeId || !c.workplaceId) continue;
+      resMap.set(c.homeId, (resMap.get(c.homeId) ?? 0) + 1);
+      destMap.set(c.workplaceId, (destMap.get(c.workplaceId) ?? 0) + 1);
+    }
+
     const residential: WeightedEntry[] = [];
     const destinations: WeightedEntry[] = [];
     let totalResWeight = 0;
     let totalDestWeight = 0;
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell || cell.buildingId === 0) continue;
-        const posKey = `${x},${y}`;
-        if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) {
-          // Count actual working-age residents with jobs
-          const homeResidents = citizens.getCitizensByHome(posKey);
-          const commuters = homeResidents.filter(
-            c => c.age > 18 && c.age <= 65 && c.workplaceId !== null
-          );
-          if (commuters.length === 0) continue;
-          residential.push({ x, y, weight: commuters.length });
-          totalResWeight += commuters.length;
-        } else if (
-          cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH ||
-          cell.zoneType === ZoneType.INDUSTRIAL || cell.zoneType === ZoneType.OFFICE
-        ) {
-          // Count actual workers assigned here
-          const workers = citizens.getCitizensByWorkplace(posKey);
-          if (workers.length === 0) continue;
-          destinations.push({ x, y, weight: workers.length });
-          totalDestWeight += workers.length;
-        }
-      }
+    const parsePos = (key: string) => {
+      const [x, y] = key.split(',').map(Number);
+      return { x: x!, y: y! };
+    };
+
+    for (const [posKey, weight] of resMap) {
+      const { x, y } = parsePos(posKey);
+      residential.push({ x, y, weight });
+      totalResWeight += weight;
+    }
+    for (const [posKey, weight] of destMap) {
+      const { x, y } = parsePos(posKey);
+      destinations.push({ x, y, weight });
+      totalDestWeight += weight;
     }
 
     if (residential.length === 0 || destinations.length === 0) {
