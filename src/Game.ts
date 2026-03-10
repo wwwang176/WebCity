@@ -953,7 +953,7 @@ export class Game {
       }
       // Re-apply underground mode after rebuild (new meshes lose settings)
       if (this.viewMode === ViewMode.UNDERGROUND) {
-        this.buildingRenderer.setUndergroundMode(true);
+        this.buildingRenderer.setUndergroundMode(true, this.sceneManager.scene);
         this.roadRenderer.setUndergroundMode(true);
       }
       this.renderDirty = false;
@@ -1193,7 +1193,7 @@ export class Game {
   toggleViewMode(): void {
     this.viewMode = this.viewMode === ViewMode.NORMAL ? ViewMode.UNDERGROUND : ViewMode.NORMAL;
     const underground = this.viewMode === ViewMode.UNDERGROUND;
-    this.buildingRenderer.setUndergroundMode(underground);
+    this.buildingRenderer.setUndergroundMode(underground, this.sceneManager.scene);
     this.terrainRenderer.setUndergroundMode(underground);
     this.roadRenderer.setUndergroundMode(underground);
     this.vehicleRenderer.setUndergroundMode(underground);
