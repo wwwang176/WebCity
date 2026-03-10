@@ -1982,7 +1982,7 @@ export function createGameUI(game: Game): HTMLElement {
           <div class="sc-label">Road Tiles</div>
         </div>
         <div class="summary-card">
-          <div class="sc-value">${stats.topCongested.length > 0 ? stats.topCongested[0]!.density : 0}</div>
+          <div class="sc-value">${stats.topCongested.length > 0 ? Math.round(stats.topCongested[0]!.density) : 0}</div>
           <div class="sc-label">Peak Density</div>
         </div>
       </div>
@@ -1990,13 +1990,13 @@ export function createGameUI(game: Game): HTMLElement {
       <div class="section-title">Top Congested Segments</div>
       ${stats.topCongested.length === 0 ? '<div style="font-size:12px;color:#667a90;padding:8px 0">No traffic data yet</div>' :
         `<table class="data-table">
-          <tr><th>Location</th><th>Vehicles</th><th>Congestion</th></tr>
+          <tr><th>Location</th><th>Flow</th><th>Congestion</th></tr>
           ${stats.topCongested.map(seg => {
             const pct = Math.round((seg.density / maxDensity) * 100);
             const color = pct > 75 ? '#ef5350' : pct > 40 ? '#ffa726' : '#66bb6a';
             return `<tr>
               <td class="td-label">(${seg.segment})</td>
-              <td class="td-value">${seg.density}</td>
+              <td class="td-value">${Math.round(seg.density)}</td>
               <td><div class="cong-bar-bg"><div class="cong-bar-fill" style="width:${pct}%;background:${color}"></div></div></td>
             </tr>`;
           }).join('')}
