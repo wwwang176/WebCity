@@ -1,5 +1,6 @@
 import { createSignal, batch } from 'solid-js';
 import type { Game, ToolType, SelectedBuilding } from '../../Game';
+import { ViewMode } from '../../core/ViewMode';
 
 // --- High-frequency signals (updated every updateUI call) ---
 const [date, setDate] = createSignal('Day 1');
@@ -16,6 +17,7 @@ const [notification, setNotification] = createSignal<string | null>(null);
 const [currentOverlay, setCurrentOverlay] = createSignal('none');
 const [currentRotation, setCurrentRotation] = createSignal(0);
 const [rciDemand, setRciDemand] = createSignal({ residential: 0, commercial: 0, industrial: 0 });
+const [viewMode, setViewMode] = createSignal<ViewMode>(ViewMode.NORMAL);
 
 // --- Chart history (accumulated over time) ---
 const CHART_MAX = 60;
@@ -29,6 +31,7 @@ export const gameSignals = {
   currentTool, previewCost, paused, speed,
   selectedBuilding, notification, currentOverlay,
   currentRotation, rciDemand, chartHistory, econHistory,
+  viewMode,
 };
 
 // --- Game instance reference ---
@@ -68,6 +71,7 @@ export function initGameStore(game: Game): void {
       setNotification(game.getNotification());
       setCurrentOverlay(overlay);
       setCurrentRotation(game.currentRotation);
+      setViewMode(game.viewMode);
       if (state.rciDemand) {
         setRciDemand({
           residential: state.rciDemand.residential,

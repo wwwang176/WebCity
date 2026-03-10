@@ -28,9 +28,12 @@ import { getInfraConfig, getInfraConfigById, getRotatedSize, type InfraType, typ
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
+import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
+import { ViewMode, VIEW_MODE_OPACITY } from './core/ViewMode';
+import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -81,6 +84,7 @@ export class Game {
   private gridCursor: GridCursor;
   private placementPreview: PlacementPreview;
   private transportRouteRenderer: TransportRouteRenderer;
+  private metroTunnelRenderer: MetroTunnelRenderer;
   private state: GameState;
   private simLoop: SimulationLoop;
   private roadBuilder: RoadBuilder;
@@ -112,6 +116,7 @@ export class Game {
   activeDistrictId: string | null = null; // currently selected district for painting
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
   selectedAirportSize: AirportSize | null = null; // selected airport size for placement
+  viewMode: ViewMode = ViewMode.NORMAL;
 
   constructor(container: HTMLElement, loadedState?: GameState) {
     const mapSize = loadedState ? loadedState.grid.width : 60;
@@ -133,6 +138,17 @@ export class Game {
     this.roadBuilder = new RoadBuilder(this.state.grid);
     this.zoneManager = new ZoneManager(this.state.grid);
 
+    // 設定渡輪系統的水域網格（A* 水面導航）
+    const grid = this.state.grid;
+    this.state.ferry.setWaterGrid({
+      width: grid.width,
+      height: grid.height,
+      isWater: (x: number, y: number) => {
+        const cell = grid.getCell(x, y);
+        return cell ? cell.terrainType === TerrainType.WATER : false;
+      },
+    });
+
     // Generate terrain only for new games
     if (!loadedState) {
       this.generateTerrain(mapSize);
@@ -147,6 +163,7 @@ export class Game {
     this.trafficLightRenderer = new TrafficLightRenderer();
     this.overlayRenderer = new OverlayRenderer();
     this.transportRouteRenderer = new TransportRouteRenderer();
+    this.metroTunnelRenderer = new MetroTunnelRenderer();
 
     this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
 
@@ -154,6 +171,7 @@ export class Game {
     this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
     this.vehicleRenderer.build(this.sceneManager.scene);
     this.transportRouteRenderer.build(this.sceneManager.scene);
+    this.metroTunnelRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
     this.placementPreview = new PlacementPreview(this.sceneManager.scene);
 
@@ -286,6 +304,7 @@ export class Game {
       case 'escape': this.setTool('select'); this.dragStart = null; break;
       case 'delete': this.setTool('demolish'); break;
       case 'r': this.cycleRotation(); break;
+      case 'u': this.toggleViewMode(); break;
       case ' ':
         this.paused = !this.paused;
         if (this.paused) this.state.clock.pause();
@@ -980,6 +999,7 @@ export class Game {
     });
     // 合併道路車輛與交通系統車輛
     const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
+    const vmOp = VIEW_MODE_OPACITY[this.viewMode];
     this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity);
 
     // 更新交通路線渲染
@@ -990,7 +1010,23 @@ export class Game {
       rail: this.state.rail,
       ferry: this.state.ferry,
     });
-    this.transportRouteRenderer.update(routeData);
+    // Underground 模式隱藏路線預覽線（隧道已替代視覺）
+    if (this.viewMode === ViewMode.UNDERGROUND) {
+      this.transportRouteRenderer.update([]);
+    } else {
+      this.transportRouteRenderer.update(routeData);
+    }
+
+    // 更新地鐵隧道渲染
+    const metroLines = this.state.metro.getLines();
+    const allTunnelSegments = metroLines.flatMap(line =>
+      computeTunnelSegments(line.stops.map(s => ({ x: s.x, y: s.y })))
+    );
+    this.metroTunnelRenderer.update(
+      allTunnelSegments,
+      this.state.metro.getStations(),
+      vmOp.metroTunnel,
+    );
 
     // Clean up stale vehicle rendering state
     const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
@@ -1127,6 +1163,11 @@ export class Game {
     if (autoOverlay) {
       this.setOverlay(autoOverlay);
     }
+    this.onUIUpdate?.();
+  }
+
+  toggleViewMode(): void {
+    this.viewMode = this.viewMode === ViewMode.NORMAL ? ViewMode.UNDERGROUND : ViewMode.NORMAL;
     this.onUIUpdate?.();
   }
 

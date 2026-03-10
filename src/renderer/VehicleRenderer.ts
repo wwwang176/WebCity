@@ -549,8 +549,10 @@ export class VehicleRenderer {
         const vx = v.x + offsetX;
         const vz = v.y + offsetZ;
 
+        const vehicleY = 0.025;
+
         rotation.makeRotationY(v.heading);
-        translation.makeTranslation(vx, 0.025, vz);
+        translation.makeTranslation(vx, vehicleY, vz);
         matrix.copy(translation).multiply(rotation);
         mesh.setMatrixAt(i, matrix);
 
@@ -605,6 +607,9 @@ export class VehicleRenderer {
 
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+      // metro_train is not rendered on surface
+      mesh.visible = type !== 'metro_train';
     }
 
     // Update headlight/taillight counts and opacity

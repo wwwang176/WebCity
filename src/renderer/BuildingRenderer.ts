@@ -180,6 +180,9 @@ precision highp float;
 #include <lights_pars_begin>
 #include <shadowmap_pars_fragment>
 
+uniform float uGlobalOpacity;
+uniform float uDesaturate;
+
 varying vec3 vNormal;
 varying vec3 vLocalPos;
 varying vec3 vWorldPos;
@@ -478,19 +481,30 @@ void main() {
     color = mix(color, warmGlow * 0.9, nightFactor * 0.7);
   }
 
-  gl_FragColor = vec4(color, 1.0);
+  // Underground mode: desaturate to grayscale
+  if (uDesaturate > 0.0) {
+    float gray = dot(color, vec3(0.299, 0.587, 0.114));
+    color = mix(color, vec3(gray), uDesaturate);
+  }
+
+  gl_FragColor = vec4(color, uGlobalOpacity);
 }
 `;
 
 function createBuildingMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: THREE.UniformsUtils.merge([
-      THREE.UniformsLib.lights,
-    ]),
+    uniforms: {
+      ...THREE.UniformsUtils.merge([
+        THREE.UniformsLib.lights,
+      ]),
+      uGlobalOpacity: { value: 1.0 },
+      uDesaturate: { value: 0.0 },
+    },
     vertexShader: BUILDING_VERT,
     fragmentShader: BUILDING_FRAG,
     vertexColors: true,
     lights: true,
+    transparent: true,
   });
 }
 

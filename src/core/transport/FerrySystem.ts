@@ -4,6 +4,7 @@ import {
   TransportRoute,
   TransportVehicle,
 } from './types';
+import { findWaterPath, type WaterGrid } from '../pathfinding/WaterPathfinder';
 
 const FERRY_CAPACITY = 100;
 const FERRY_OPERATING_COST_PER_VESSEL = 200;
@@ -14,6 +15,12 @@ export interface WaterChecker {
   isWater(x: number, y: number): boolean;
 }
 
+/** 渡輪的 A* 水路路徑 */
+interface VesselPathInfo {
+  waterPath: Array<{ x: number; y: number }>;
+  pathIndex: number;
+}
+
 export class FerrySystem {
   private docks: TransportStop[] = [];
   private routes: TransportRoute[] = [];
@@ -21,6 +28,16 @@ export class FerrySystem {
   private nextDockId = 1;
   private nextRouteId = 1;
   private nextVesselId = 1;
+  private waterGrid: WaterGrid | null = null;
+  /** 每艘渡輪的 A* 路徑資訊 */
+  private vesselPaths = new Map<number, VesselPathInfo>();
+
+  /**
+   * 設定水域網格，用於 A* 水路尋路。
+   */
+  setWaterGrid(grid: WaterGrid): void {
+    this.waterGrid = grid;
+  }
 
   /**
    * Add a dock. The dock must be adjacent to or on water.
@@ -47,6 +64,20 @@ export class FerrySystem {
     return dock;
   }
 
+  /**
+   * 驗證碼頭之間是否存在水路連通。
+   */
+  validateRouteConnectivity(docks: TransportStop[]): boolean {
+    if (!this.waterGrid || docks.length < 2) return false;
+    for (let i = 0; i < docks.length - 1; i++) {
+      const from = docks[i]!;
+      const to = docks[i + 1]!;
+      const result = findWaterPath(this.waterGrid, from, to);
+      if (!result) return false;
+    }
+    return true;
+  }
+
   createRoute(docks: TransportStop[], vesselCount = 1): TransportRoute {
     const route: TransportRoute = {
       id: this.nextRouteId++,
@@ -60,8 +91,9 @@ export class FerrySystem {
 
     for (let i = 0; i < vesselCount; i++) {
       const firstDock = docks[0]!;
+      const vesselId = this.nextVesselId++;
       this.vessels.push({
-        id: this.nextVesselId++,
+        id: vesselId,
         routeId: route.id,
         currentStopIndex: 0,
         passengers: 0,
@@ -77,6 +109,9 @@ export class FerrySystem {
     return route;
   }
 
+  /**
+   * Advance vessels along their routes using A* water paths.
+   */
   tick(): void {
     for (const v of this.vessels) {
       const route = this.routes.find((r) => r.id === v.routeId);
@@ -88,14 +123,46 @@ export class FerrySystem {
           v.atStop = false;
           v.currentStopIndex = (v.currentStopIndex + 1) % route.stops.length;
           const nextDock = route.stops[v.currentStopIndex]!;
-          const dist = Math.abs(nextDock.x - v.position.x) + Math.abs(nextDock.y - v.position.y);
-          v.travelTicks = Math.max(1, Math.ceil(dist / FERRY_SPEED));
+
+          // 計算 A* 水路路徑
+          if (this.waterGrid) {
+            const result = findWaterPath(this.waterGrid, v.position, nextDock);
+            if (result && result.path.length > 1) {
+              this.vesselPaths.set(v.id, {
+                waterPath: result.path,
+                pathIndex: 0,
+              });
+              v.travelTicks = Math.max(1, Math.ceil(result.distance / FERRY_SPEED));
+            } else {
+              // 無水路，直線移動（fallback）
+              const dist = Math.abs(nextDock.x - v.position.x) + Math.abs(nextDock.y - v.position.y);
+              v.travelTicks = Math.max(1, Math.ceil(dist / FERRY_SPEED));
+            }
+          } else {
+            // 無水域格，直線移動（向後相容）
+            const dist = Math.abs(nextDock.x - v.position.x) + Math.abs(nextDock.y - v.position.y);
+            v.travelTicks = Math.max(1, Math.ceil(dist / FERRY_SPEED));
+          }
           v.traveling = true;
         }
         continue;
       }
 
       if (v.traveling) {
+        // 沿 A* 路徑逐步前進
+        const pathInfo = this.vesselPaths.get(v.id);
+        if (pathInfo && pathInfo.waterPath.length > 0) {
+          // 每 tick 沿路徑前進若干格
+          const stepsPerTick = Math.max(1, Math.floor(FERRY_SPEED));
+          for (let step = 0; step < stepsPerTick; step++) {
+            if (pathInfo.pathIndex < pathInfo.waterPath.length - 1) {
+              pathInfo.pathIndex++;
+              const p = pathInfo.waterPath[pathInfo.pathIndex]!;
+              v.position = { x: p.x, y: p.y };
+            }
+          }
+        }
+
         v.travelTicks--;
         if (v.travelTicks <= 0) {
           const dock = route.stops[v.currentStopIndex]!;
@@ -107,6 +174,7 @@ export class FerrySystem {
           const board = Math.min(dock.passengers, v.capacity);
           v.passengers = board;
           dock.passengers -= board;
+          this.vesselPaths.delete(v.id);
         }
         continue;
       }
@@ -138,6 +206,18 @@ export class FerrySystem {
     return this.docks;
   }
 
+  /** 取得渡輪的 A* 路徑（用於 heading 計算和渲染） */
+  getVesselPath(vesselId: number): Array<{ x: number; y: number }> | null {
+    const info = this.vesselPaths.get(vesselId);
+    return info ? info.waterPath : null;
+  }
+
+  /** 取得渡輪在路徑上的當前索引 */
+  getVesselPathIndex(vesselId: number): number {
+    const info = this.vesselPaths.get(vesselId);
+    return info ? info.pathIndex : 0;
+  }
+
   addVehicleToRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
     if (!route || route.stops.length === 0) return;
@@ -162,12 +242,18 @@ export class FerrySystem {
     const route = this.routes.find(r => r.id === routeId);
     if (!route || route.vehicles <= 1) return;
     const idx = this.vessels.findLastIndex(v => v.routeId === routeId);
-    if (idx >= 0) this.vessels.splice(idx, 1);
+    if (idx >= 0) {
+      this.vesselPaths.delete(this.vessels[idx]!.id);
+      this.vessels.splice(idx, 1);
+    }
     route.vehicles--;
     route.operatingCost = route.vehicles * FERRY_OPERATING_COST_PER_VESSEL;
   }
 
   deleteRoute(routeId: number): void {
+    for (const v of this.vessels) {
+      if (v.routeId === routeId) this.vesselPaths.delete(v.id);
+    }
     this.routes = this.routes.filter(r => r.id !== routeId);
     this.vessels = this.vessels.filter(v => v.routeId !== routeId);
   }
@@ -180,6 +266,9 @@ export class FerrySystem {
       if (r.stops.length < 2) { dissolvedIds.push(r.id); return false; }
       return true;
     });
+    for (const v of this.vessels) {
+      if (dissolvedIds.includes(v.routeId)) this.vesselPaths.delete(v.id);
+    }
     this.vessels = this.vessels.filter(v => !dissolvedIds.includes(v.routeId));
   }
 
