@@ -288,8 +288,8 @@
 - [x] 車輛沿直路段 LaneEdge 移動，位置為線性插值
 - [x] 車輛沿轉彎 LaneEdge 移動，位置為 Bezier 弧長參數化插值
 - [x] 換道車輛沿 lane_change 邊斜向移動（非瞬間橫移）
-- [ ] 同 LaneEdge 上前後車碰撞偵測正確（基於弧長距離）
-- [ ] 紅綠燈在十字路口 entry 點正確攔停車輛
+- [x] 同 LaneEdge 上前後車碰撞偵測正確（基於弧長距離）
+- [x] 紅綠燈在十字路口 entry 點正確攔停車輛
 - [x] 速度限制依當前 LaneEdge 所屬 cell 的 speedLimit
 - [x] 不同寬度道路過渡時車輛 lane 正確調整（不越界）
 
@@ -307,11 +307,11 @@
 - [x] 車頭朝向與行駛曲線切線方向一致
 - [ ] 不同寬度道路銜接處車輛過渡自然
 
-#### Worker 驗收 — Phase F
+#### Worker 驗收 — Phase F ✅
 
-- [ ] 路網變動 → Worker 局部重建 LaneGraph → 新車輛使用更新後的圖
-- [ ] Lane-level pathfinding 在 Worker Pool 中執行，主線程不阻塞
-- [ ] LaneEdge 序列序列化/反序列化正確（Worker ↔ 主線程）
+- [x] 路網變動 → Worker 局部重建 LaneGraph → 新車輛使用更新後的圖
+- [x] Lane-level pathfinding 在 Worker Pool 中執行，主線程不阻塞
+- [x] LaneEdge 序列序列化/反序列化正確（Worker ↔ 主線程）
 
 #### 系統驗收
 

@@ -312,10 +312,10 @@
 - [x] **TEST**: 直路段車輛位置 = 線性插值（entry→exit）
 - [x] **TEST**: 轉彎車輛位置 = Bezier 曲線插值（弧長參數化）
 - [x] **TEST**: 換道車輛位置 = lane_change 邊的斜向插值
-- [ ] **TEST**: 前車先動排序保留（按 LaneEdge 序列進度排序）
-- [ ] **TEST**: 同 LaneEdge 上的碰撞偵測（gap 計算基於弧長距離）
+- [x] **TEST**: 前車先動排序保留（按 LaneEdge 序列進度排序）
+- [x] **TEST**: 同 LaneEdge 上的碰撞偵測（gap 計算基於弧長距離）
 - [x] **TEST**: 速度限制依當前 LaneEdge 所屬 cell 的 speedLimit
-- [ ] **TEST**: 紅綠燈在十字路口 entry ConnectionPoint 處攔停
+- [x] **TEST**: 紅綠燈在十字路口 entry ConnectionPoint 處攔停
 - [x] 修改 `TrafficSimulation.ts`：Vehicle 改用 LaneEdge[] path
 
 #### Phase D — Lane-level Pathfinding ✅
@@ -334,12 +334,12 @@
 - [x] VehicleRenderer 的 heading 改用 Bezier tangent（轉彎時車頭朝向曲線切線方向）
 - [ ] 視覺驗收：車輛在十字路口轉彎平滑、換道自然
 
-#### Phase F — Worker 整合
+#### Phase F — Worker 整合 ✅
 
-- [ ] Lane Graph 建構搬到 Worker（路網變動時局部重建）
-- [ ] Lane-level pathfinding 搬到 Pathfinding Worker Pool
-- [ ] **TEST**: Worker 回傳 LaneEdge 序列（序列化/反序列化正確）
-- [ ] **TEST**: 路網變動 → Worker 重建 LaneGraph → 新車輛使用更新後的圖
+- [x] Lane Graph 建構搬到 Worker（路網變動時局部重建）
+- [x] Lane-level pathfinding 搬到 Pathfinding Worker Pool
+- [x] **TEST**: Worker 回傳 LaneEdge 序列（序列化/反序列化正確）
+- [x] **TEST**: 路網變動 → Worker 重建 LaneGraph → 新車輛使用更新後的圖
 
 ---
 
