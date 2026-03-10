@@ -912,14 +912,15 @@ export class SimulationLoop {
       const path = this.bfsRoadPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
         // Try edge-based path first (new lane graph system)
-        const edgePath = refineLanePath(this.laneGraph, path);
+        const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
+        const dirLanes = startCell ? getLaneCount(startCell.roadType) : 1;
+        const preferredLane = dirLanes > 1 ? Math.floor(Math.random() * dirLanes) : 0;
+        const edgePath = refineLanePath(this.laneGraph, path, preferredLane);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         } else {
           // Fallback to cell-based path
-          const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
-          const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
-          this.state.traffic.addVehicle(path, directionalLanes);
+          this.state.traffic.addVehicle(path, dirLanes);
         }
         commuterSet.add(citizen.id);
         spawned++;
@@ -1014,13 +1015,14 @@ export class SimulationLoop {
 
       const path = this.bfsRoadPath(startRoad, endRoad, grid);
       if (path && path.length >= 2) {
-        const edgePath = refineLanePath(this.laneGraph, path);
+        const sCell = this.state.grid.getCell(startRoad.x, startRoad.y);
+        const dLanes = sCell ? getLaneCount(sCell.roadType) : 1;
+        const prefLane = dLanes > 1 ? Math.floor(Math.random() * dLanes) : 0;
+        const edgePath = refineLanePath(this.laneGraph, path, prefLane);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         } else {
-          const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
-          const directionalLanes = startCell ? getLaneCount(startCell.roadType) : 1;
-          this.state.traffic.addVehicle(path, directionalLanes);
+          this.state.traffic.addVehicle(path, dLanes);
         }
       }
     }
