@@ -1041,20 +1041,31 @@ export class SimulationLoop {
    */
   private computeCongestionFlow(): void {
     const grid = this.state.grid;
-    const residential: { x: number; y: number }[] = [];
-    const destinations: { x: number; y: number }[] = [];
+
+    // Build weighted pools: residential by residents, destinations by workers
+    type WeightedEntry = { x: number; y: number; weight: number };
+    const residential: WeightedEntry[] = [];
+    const destinations: WeightedEntry[] = [];
+    let totalResWeight = 0;
+    let totalDestWeight = 0;
 
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell || cell.buildingId === 0) continue;
+        const bt = getBuildingType(cell.buildingId);
+        if (!bt) continue;
         if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) {
-          residential.push({ x, y });
+          const w = bt.residents || 1;
+          residential.push({ x, y, weight: w });
+          totalResWeight += w;
         } else if (
           cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH ||
           cell.zoneType === ZoneType.INDUSTRIAL || cell.zoneType === ZoneType.OFFICE
         ) {
-          destinations.push({ x, y });
+          const w = bt.workers || 1;
+          destinations.push({ x, y, weight: w });
+          totalDestWeight += w;
         }
       }
     }
@@ -1064,13 +1075,23 @@ export class SimulationLoop {
       return;
     }
 
+    // Weighted random pick helper
+    const pickWeighted = (pool: WeightedEntry[], totalWeight: number) => {
+      let r = Math.random() * totalWeight;
+      for (const entry of pool) {
+        r -= entry.weight;
+        if (r <= 0) return entry;
+      }
+      return pool[pool.length - 1]!;
+    };
+
     // Sample up to 200 OD pairs, applying the same filters as actual vehicle spawning
     const sampleCount = Math.min(200, residential.length * destinations.length);
     const flowMap = new Map<string, number>();
 
     for (let i = 0; i < sampleCount; i++) {
-      const from = residential[Math.floor(Math.random() * residential.length)]!;
-      const to = destinations[Math.floor(Math.random() * destinations.length)]!;
+      const from = pickWeighted(residential, totalResWeight);
+      const to = pickWeighted(destinations, totalDestWeight);
       if (from.x === to.x && from.y === to.y) continue;
 
       // Walk filter: Manhattan distance ≤ 3 → citizen walks, no car
