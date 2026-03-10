@@ -1041,8 +1041,11 @@ export class SimulationLoop {
    */
   private computeCongestionFlow(): void {
     const grid = this.state.grid;
+    const citizens = this.state.citizens;
 
-    // Build weighted pools: residential by residents, destinations by workers
+    // Build weighted pools using ACTUAL population, not building capacity.
+    // Residential: count actual residents (working age 19-65 with workplace).
+    // Destinations: count actual workers assigned to that building.
     type WeightedEntry = { x: number; y: number; weight: number };
     const residential: WeightedEntry[] = [];
     const destinations: WeightedEntry[] = [];
@@ -1053,19 +1056,25 @@ export class SimulationLoop {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell || cell.buildingId === 0) continue;
-        const bt = getBuildingType(cell.buildingId);
-        if (!bt) continue;
+        const posKey = `${x},${y}`;
         if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) {
-          const w = bt.residents || 1;
-          residential.push({ x, y, weight: w });
-          totalResWeight += w;
+          // Count actual working-age residents with jobs
+          const homeResidents = citizens.getCitizensByHome(posKey);
+          const commuters = homeResidents.filter(
+            c => c.age > 18 && c.age <= 65 && c.workplaceId !== null
+          );
+          if (commuters.length === 0) continue;
+          residential.push({ x, y, weight: commuters.length });
+          totalResWeight += commuters.length;
         } else if (
           cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH ||
           cell.zoneType === ZoneType.INDUSTRIAL || cell.zoneType === ZoneType.OFFICE
         ) {
-          const w = bt.workers || 1;
-          destinations.push({ x, y, weight: w });
-          totalDestWeight += w;
+          // Count actual workers assigned here
+          const workers = citizens.getCitizensByWorkplace(posKey);
+          if (workers.length === 0) continue;
+          destinations.push({ x, y, weight: workers.length });
+          totalDestWeight += workers.length;
         }
       }
     }
@@ -1085,8 +1094,8 @@ export class SimulationLoop {
       return pool[pool.length - 1]!;
     };
 
-    // Sample up to 200 OD pairs, applying the same filters as actual vehicle spawning
-    const sampleCount = Math.min(200, residential.length * destinations.length);
+    // Scale sample count with population (1 sample per 5 eligible commuters, clamped 50-300)
+    const sampleCount = Math.max(50, Math.min(300, Math.ceil(totalResWeight / 5)));
     const flowMap = new Map<string, number>();
 
     for (let i = 0; i < sampleCount; i++) {
