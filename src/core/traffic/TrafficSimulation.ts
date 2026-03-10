@@ -300,7 +300,9 @@ export class TrafficSimulation {
   /** Heading angle (radians) for an edge-based vehicle. 0 = east. */
   getVehicleHeadingOnEdges(v: Vehicle): number {
     const h = this.edgeHeadingVec(v);
-    return Math.atan2(h.hy, h.hx);
+    // Negate Y to match Three.js convention: game +Y = south, Three.js +Z = south
+    // Legacy vehicles use atan2(-(y2-y1), x2-x1), so edge vehicles must do the same.
+    return Math.atan2(-h.hy, h.hx);
   }
 
   /**
@@ -349,7 +351,7 @@ export class TrafficSimulation {
       ty = edge.to.position.y - edge.from.position.y;
     }
     const len = Math.sqrt(tx * tx + ty * ty) || 1;
-    const heading = Math.atan2(ty / len, tx / len);
+    const heading = Math.atan2(-ty / len, tx / len);
     return { x, y, heading };
   }
 
