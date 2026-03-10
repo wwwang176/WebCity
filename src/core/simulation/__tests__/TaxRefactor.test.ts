@@ -178,7 +178,12 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
   it('should use level multiplier for upgraded commercial building', () => {
     const state = createGameState(20, 20);
     // Large Shop (id=9): companyIncome=20, level=3
-    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 9 });
+    // Provide power+water+landValue to prevent Lv3 downgrade
+    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 9, landValue: 80 });
+    state.power.addPlant({ x: 5, y: 5, output: 500, pollution: 0, type: 'solar' });
+    state.water.addPlant({ x: 5, y: 5, output: 500 });
+    state.power.calculateCoverage(state.grid);
+    state.water.calculateCoverage(state.grid);
     state.taxRates.residential = 0;
     state.taxRates.business = 10;
 
@@ -192,7 +197,12 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
   it('should calculate business tax for industrial building', () => {
     const state = createGameState(20, 20);
     // Medium Factory (id=14): companyIncome=22, level=2
-    state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 14 });
+    // Provide power+water+landValue to prevent Lv2 downgrade
+    state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 14, landValue: 50 });
+    state.power.addPlant({ x: 5, y: 5, output: 500, pollution: 0, type: 'solar' });
+    state.water.addPlant({ x: 5, y: 5, output: 500 });
+    state.power.calculateCoverage(state.grid);
+    state.water.calculateCoverage(state.grid);
     state.taxRates.residential = 0;
     state.taxRates.business = 10;
 
