@@ -31,8 +31,8 @@ describe('ViewMode', () => {
       expect(op.metroTrain).toBe(1.0);
     });
 
-    it('UNDERGROUND 模式建築最半透明 (0.12)', () => {
-      expect(VIEW_MODE_OPACITY[ViewMode.UNDERGROUND].building).toBe(0.12);
+    it('UNDERGROUND 模式建築最半透明 (0.125)', () => {
+      expect(VIEW_MODE_OPACITY[ViewMode.UNDERGROUND].building).toBe(0.125);
     });
 
     it('UNDERGROUND 模式道路半透明 (0.15)', () => {
