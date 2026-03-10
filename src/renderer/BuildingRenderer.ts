@@ -481,10 +481,9 @@ void main() {
     color = mix(color, warmGlow * 0.9, nightFactor * 0.7);
   }
 
-  // Underground mode: desaturate to grayscale
+  // Underground mode: white model effect (fade to near-white)
   if (uDesaturate > 0.0) {
-    float gray = dot(color, vec3(0.299, 0.587, 0.114));
-    color = mix(color, vec3(gray), uDesaturate);
+    color = mix(color, vec3(0.88), uDesaturate);
   }
 
   gl_FragColor = vec4(color, uGlobalOpacity);
@@ -1288,7 +1287,58 @@ export class BuildingRenderer {
   /** Update light spot visibility based on sun intensity (call each frame). */
   update(sunIntensity: number): void {
     if (!this.lightSpotMaterial) return;
+    if (this._underground) {
+      this.lightSpotMaterial.opacity = 0;
+      return;
+    }
     this.lightSpotMaterial.opacity = Math.max(0, 0.4 * (1 - sunIntensity / 0.3));
+  }
+
+  private _underground = false;
+
+  /** Switch to underground visual mode (white model + semi-transparent). */
+  setUndergroundMode(enabled: boolean): void {
+    this._underground = enabled;
+    const mat = getBuildingMaterial();
+    if (enabled) {
+      mat.uniforms['uDesaturate']!.value = 1.0;
+      mat.uniforms['uGlobalOpacity']!.value = 0.12;
+      mat.depthWrite = false;
+    } else {
+      mat.uniforms['uDesaturate']!.value = 0.0;
+      mat.uniforms['uGlobalOpacity']!.value = 1.0;
+      mat.depthWrite = true;
+    }
+
+    // Building InstancedMeshes
+    for (const mesh of this.meshes) {
+      mesh.renderOrder = enabled ? 20 : 0;
+    }
+
+    // Infrastructure groups (MeshLambertMaterial children)
+    for (const group of this.infraGroups) {
+      group.traverse(child => {
+        if (child instanceof THREE.Mesh) {
+          const m = child.material as THREE.MeshLambertMaterial | THREE.MeshBasicMaterial;
+          m.transparent = true;
+          if (enabled) {
+            m.opacity = 0.12;
+            m.depthWrite = false;
+            m.color.set(0xe0e0e0);
+          } else {
+            m.opacity = 1.0;
+            m.depthWrite = true;
+            // Colors restored on next build(); infra is rebuilt when renderDirty
+          }
+          child.renderOrder = enabled ? 20 : 0;
+        }
+      });
+    }
+
+    // Light spot mesh
+    if (this.lightSpotMesh) {
+      this.lightSpotMesh.visible = !enabled;
+    }
   }
 
   dispose(scene: THREE.Scene): void {

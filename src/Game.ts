@@ -951,6 +951,11 @@ export class Game {
       if (currentOverlay && currentOverlay !== 'none') {
         this.setOverlay(currentOverlay);
       }
+      // Re-apply underground mode after rebuild (new meshes lose settings)
+      if (this.viewMode === ViewMode.UNDERGROUND) {
+        this.buildingRenderer.setUndergroundMode(true);
+        this.roadRenderer.setUndergroundMode(true);
+      }
       this.renderDirty = false;
     }
 
@@ -1187,6 +1192,14 @@ export class Game {
 
   toggleViewMode(): void {
     this.viewMode = this.viewMode === ViewMode.NORMAL ? ViewMode.UNDERGROUND : ViewMode.NORMAL;
+    const underground = this.viewMode === ViewMode.UNDERGROUND;
+    this.buildingRenderer.setUndergroundMode(underground);
+    this.terrainRenderer.setUndergroundMode(underground);
+    this.roadRenderer.setUndergroundMode(underground);
+    this.vehicleRenderer.setUndergroundMode(underground);
+    this.weatherRenderer.setUndergroundMode(underground);
+    // Rebuild to apply/restore material settings on fresh meshes
+    this.renderDirty = true;
     this.onUIUpdate?.();
   }
 

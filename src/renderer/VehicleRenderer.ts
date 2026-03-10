@@ -396,6 +396,7 @@ export class VehicleRenderer {
   private meshes = new Map<string, THREE.InstancedMesh>();
   private readonly maxPerType = 500;
   private readonly maxLights = 2000; // total vehicles across all types
+  private _underground = false;
 
   // Headlight / taillight instanced meshes
   private headlightMesh: THREE.InstancedMesh | null = null;
@@ -608,8 +609,12 @@ export class VehicleRenderer {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
-      // metro_train is not rendered on surface
-      mesh.visible = type !== 'metro_train';
+      // Visibility: underground mode shows only metro_train, normal hides it
+      if (this._underground) {
+        mesh.visible = type === 'metro_train';
+      } else {
+        mesh.visible = type !== 'metro_train';
+      }
     }
 
     // Update headlight/taillight counts and opacity
@@ -619,13 +624,34 @@ export class VehicleRenderer {
       this.headlightMesh.instanceMatrix.needsUpdate = true;
       this.taillightMesh.instanceMatrix.needsUpdate = true;
 
-      // Control opacity based on sun intensity
-      const sun = sunIntensity ?? 1;
-      const hlOpacity = Math.max(0, 0.4 * (1 - sun / 0.3));
-      const tlOpacity = Math.max(0, 0.25 * (1 - sun / 0.3));
-      if (this.headlightMaterial) this.headlightMaterial.opacity = hlOpacity;
-      if (this.taillightMaterial) this.taillightMaterial.opacity = tlOpacity;
+      if (this._underground) {
+        if (this.headlightMaterial) this.headlightMaterial.opacity = 0;
+        if (this.taillightMaterial) this.taillightMaterial.opacity = 0;
+      } else {
+        // Control opacity based on sun intensity
+        const sun = sunIntensity ?? 1;
+        const hlOpacity = Math.max(0, 0.4 * (1 - sun / 0.3));
+        const tlOpacity = Math.max(0, 0.25 * (1 - sun / 0.3));
+        if (this.headlightMaterial) this.headlightMaterial.opacity = hlOpacity;
+        if (this.taillightMaterial) this.taillightMaterial.opacity = tlOpacity;
+      }
     }
+  }
+
+  /** Switch to underground visual mode (hide surface vehicles). */
+  setUndergroundMode(enabled: boolean): void {
+    this._underground = enabled;
+    for (const [type, mesh] of this.meshes) {
+      if (type === 'metro_train') {
+        // Metro trains become visible in underground mode
+        mesh.visible = enabled;
+      } else {
+        // Surface vehicles hidden in underground mode
+        mesh.visible = !enabled;
+      }
+    }
+    if (this.headlightMesh) this.headlightMesh.visible = !enabled;
+    if (this.taillightMesh) this.taillightMesh.visible = !enabled;
   }
 
   dispose(scene: THREE.Scene): void {

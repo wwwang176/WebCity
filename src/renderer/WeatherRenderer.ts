@@ -30,6 +30,9 @@ export class WeatherRenderer {
   // Exposed sun intensity for other renderers
   private _sunIntensity = 0.8;
 
+  // Underground mode flag
+  private _underground = false;
+
   // Base light values (daytime defaults)
   private readonly baseSkyColor = new THREE.Color(0x87ceeb);
   private readonly baseAmbientIntensity = 0.6;
@@ -64,9 +67,34 @@ export class WeatherRenderer {
     return this._sunIntensity;
   }
 
+  /** Switch to underground visual mode (fixed white lighting, no weather). */
+  setUndergroundMode(enabled: boolean): void {
+    this._underground = enabled;
+    // Hide weather particles
+    if (this.rainSystem) this.rainSystem.visible = !enabled;
+    if (this.snowSystem) this.snowSystem.visible = !enabled;
+    // Hide season overlay
+    if (this.seasonOverlay) this.seasonOverlay.visible = !enabled;
+  }
+
   // ── Day/Night Cycle ──────────────────────────────────────────
 
   private updateDayNightCycle(): void {
+    // Underground mode: fixed neutral white lighting, time keeps ticking
+    if (this._underground) {
+      (this.sceneManager.scene.background as THREE.Color).set(0xd8dce0);
+      this.sceneManager.ambientLight.intensity = 0.55;
+      this.sceneManager.ambientLight.color.setHex(0xffffff);
+      this.sceneManager.directionalLight.intensity = 0.5;
+      this.sceneManager.directionalLight.color.setHex(0xffffff);
+      this.sceneManager.directionalLight.position.set(0, 80, 50);
+      this.sceneManager.directionalLight.castShadow = false;
+      this.sceneManager.hemisphereLight.intensity = 0.25;
+      this.sceneManager.hemisphereLight.color.setHex(0xffffff);
+      this._sunIntensity = 0.5;
+      return;
+    }
+
     // Compute sun factor: 1.0 at noon, 0.0 at midnight
     // Using a sine curve that peaks at timeOfDay=0.5 (noon)
     const sunAngle = this.timeOfDay * Math.PI * 2 - Math.PI / 2;
