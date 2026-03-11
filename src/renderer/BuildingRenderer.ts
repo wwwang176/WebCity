@@ -1519,8 +1519,56 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildPark(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly park — trees + fountain + bench + path
-    this.buildCivicBuilding(scene, cx, cz, 'park', scale);
+    // Grass base
+    const baseGeo = new THREE.BoxGeometry(0.50, 0.02, 0.50);
+    baseGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, baseGeo, new THREE.MeshLambertMaterial({ color: 0x4caf50 }), cx, 0.05, cz, false);
+
+    // Big tree trunk (offset to back-left)
+    const bigTrunkGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 5);
+    bigTrunkGeo.translate(-0.12, 0.075, -0.10);
+    this.addInfraMesh(scene, bigTrunkGeo, new THREE.MeshLambertMaterial({ color: 0x6d4c41 }), cx, 0.06, cz);
+
+    // Big tree canopy
+    const bigCanopyGeo = new THREE.SphereGeometry(0.10, 6, 5);
+    bigCanopyGeo.translate(-0.12, 0.18, -0.10);
+    this.addInfraMesh(scene, bigCanopyGeo, new THREE.MeshLambertMaterial({ color: 0x388e3c }), cx, 0.06, cz);
+
+    // Small tree trunk (offset to front-right)
+    const smallTrunkGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.10, 5);
+    smallTrunkGeo.translate(0.15, 0.05, 0.12);
+    this.addInfraMesh(scene, smallTrunkGeo, new THREE.MeshLambertMaterial({ color: 0x795548 }), cx, 0.06, cz);
+
+    // Small tree canopy
+    const smallCanopyGeo = new THREE.SphereGeometry(0.06, 6, 4);
+    smallCanopyGeo.translate(0.15, 0.13, 0.12);
+    this.addInfraMesh(scene, smallCanopyGeo, new THREE.MeshLambertMaterial({ color: 0x66bb6a }), cx, 0.06, cz);
+
+    // Fountain pool (center)
+    const poolGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.025, 10);
+    poolGeo.translate(0.02, 0.0125, 0.0);
+    this.addInfraMesh(scene, poolGeo, new THREE.MeshLambertMaterial({ color: 0x78909c }), cx, 0.06, cz);
+
+    // Fountain water surface
+    const waterGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.01, 10);
+    waterGeo.translate(0.02, 0.025, 0.0);
+    this.addInfraMesh(scene, waterGeo, new THREE.MeshLambertMaterial({ color: 0x4fc3f7 }), cx, 0.06, cz, false);
+
+    // Water jet (glowing)
+    const jetGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.06, 4);
+    jetGeo.translate(0.02, 0.055, 0.0);
+    this.addInfraMesh(scene, jetGeo, new THREE.MeshBasicMaterial({ color: 0xb3e5fc }), cx, 0.06, cz, false);
+
+    // Bench (front-right area)
+    const benchGeo = new THREE.BoxGeometry(0.08, 0.025, 0.03);
+    benchGeo.translate(-0.05, 0.0125, 0.16);
+    this.addInfraMesh(scene, benchGeo, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, 0.06, cz);
+
+    // Walking path (diagonal across park)
+    const pathGeo = new THREE.BoxGeometry(0.06, 0.012, 0.30);
+    pathGeo.rotateY(Math.PI / 4);
+    pathGeo.translate(0.0, 0.006, 0.0);
+    this.addInfraMesh(scene, pathGeo, new THREE.MeshLambertMaterial({ color: 0xd7ccc8 }), cx, 0.06, cz, false);
   }
 
   private buildCemetery(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
