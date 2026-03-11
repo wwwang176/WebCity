@@ -1234,7 +1234,7 @@ export class Game {
 
     // Update night glow (building light spots + street lamps)
     const sunI = this.weatherRenderer.sunIntensity;
-    this.buildingRenderer.update(sunI);
+    this.buildingRenderer.update(sunI, dt);
     this.roadRenderer.update(sunI);
   }
 

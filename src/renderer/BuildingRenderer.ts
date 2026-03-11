@@ -188,6 +188,7 @@ precision highp float;
 uniform float uGlobalOpacity;
 uniform float uDesaturate;
 uniform vec3 uHighlightColor;
+uniform float uTime;
 
 varying vec3 vNormal;
 varying vec3 vLocalPos;
@@ -252,6 +253,7 @@ void main() {
   vec3 n = normalize(vNormal);
   bool isLitWindow = false;
   float windowMask = 0.0;
+  float winBrightness = 1.0;
 
   // Read real lights from Three.js uniforms (set by lights_pars_begin)
   float ambient = (ambientLightColor.r + ambientLightColor.g + ambientLightColor.b) / 3.0;
@@ -332,10 +334,18 @@ void main() {
       }
       vec3 winColor;
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float lit = hash21(wid);
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phase = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phase) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
+      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
+      float bEpoch = floor((uTime + bPhase) / bPeriod);
+      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
       if (lit > 0.4) {
         float w = hash21(wid + 77.7);
         winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+        winBrightness = brightness;
         isLitWindow = winMask > 0.5;
       } else {
         winColor = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
@@ -374,9 +384,17 @@ void main() {
         vec3 wallColor = vBldgColor * 0.85;
         vec3 winColor;
         vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.3;
-        float lit = hash21(wid);
+        float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phase = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phase) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
+      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
+      float bEpoch = floor((uTime + bPhase) / bPeriod);
+      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
         if (lit > 0.5) {
           winColor = mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8;
+          winBrightness = brightness;
           isLitWindow = winMask > 0.5;
         } else {
           winColor = vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
@@ -408,10 +426,18 @@ void main() {
       vec3 wallColor = vBldgColor * 0.5; // narrow mullions
       vec3 winColor;
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float lit = hash21(wid);
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phase = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phase) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
+      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
+      float bEpoch = floor((uTime + bPhase) / bPeriod);
+      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
       if (lit > 0.3) {
         float w = hash21(wid + 77.7);
         winColor = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
+        winBrightness = brightness;
         isLitWindow = winMask > 0.5;
       } else {
         winColor = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
@@ -467,10 +493,18 @@ void main() {
       }
       vec3 winColor;
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float lit = hash21(wid);
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phase = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phase) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
+      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
+      float bEpoch = floor((uTime + bPhase) / bPeriod);
+      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
       if (lit > 0.35) {
         float w = hash21(wid + 77.7);
         winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+        winBrightness = brightness;
         isLitWindow = winMask > 0.5;
       } else {
         winColor = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
@@ -506,7 +540,7 @@ void main() {
     // Nighttime: only lit windows show warm yellow glow
     if (isLitWindow) {
       vec3 warmGlow = vec3(0.95, 0.85, 0.5);
-      color = mix(color, warmGlow * 0.9, nightFactor * 0.7);
+      color = mix(color, warmGlow * 0.9 * winBrightness, nightFactor * 0.7);
     }
   }
 
@@ -535,6 +569,7 @@ function createBuildingMaterial(): THREE.ShaderMaterial {
       uGlobalOpacity: { value: 1.0 },
       uDesaturate: { value: 0.0 },
       uHighlightColor: { value: new THREE.Color(1, 0, 0) },
+      uTime: { value: 0.0 },
     },
     vertexShader: BUILDING_VERT,
     fragmentShader: BUILDING_FRAG,
@@ -2458,8 +2493,14 @@ export class BuildingRenderer {
     scene.add(this.lightSpotMesh);
   }
 
+  private _elapsedTime = 0;
+
   /** Update light spot visibility based on sun intensity (call each frame). */
-  update(sunIntensity: number): void {
+  update(sunIntensity: number, dt?: number): void {
+    if (dt) {
+      this._elapsedTime += dt;
+      getBuildingMaterial().uniforms['uTime']!.value = this._elapsedTime;
+    }
     if (!this.lightSpotMaterial) return;
     if (this._focusMode) {
       this.lightSpotMaterial.opacity = 0;
