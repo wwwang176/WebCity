@@ -251,6 +251,7 @@ vec3 getRoofColor(float zoneCat, float h) {
 void main() {
   vec3 n = normalize(vNormal);
   bool isLitWindow = false;
+  float windowMask = 0.0;
 
   // Read real lights from Three.js uniforms (set by lights_pars_begin)
   float ambient = (ambientLightColor.r + ambientLightColor.g + ambientLightColor.b) / 3.0;
@@ -340,6 +341,7 @@ void main() {
         winColor = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
       }
       color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
       color *= lighting;
       float ao = smoothstep(0.0, 0.1, y);
       color *= 0.6 + 0.4 * ao;
@@ -380,6 +382,7 @@ void main() {
           winColor = vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
         }
         color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
       } else {
         color = vBldgColor * 0.85;
       }
@@ -414,6 +417,7 @@ void main() {
         winColor = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
       }
       color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
       color *= lighting;
       float ao = smoothstep(0.0, 0.1, y);
       color *= 0.6 + 0.4 * ao;
@@ -472,6 +476,7 @@ void main() {
         winColor = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
       }
       color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
       color *= lighting;
       float ao = smoothstep(0.0, 0.1, y);
       color *= 0.6 + 0.4 * ao;
@@ -491,11 +496,18 @@ void main() {
     color *= 0.45 + 0.55 * shadow;
   #endif
 
-  // Night window glow
-  if (isLitWindow) {
+  // Window day/night appearance
+  if (windowMask > 0.01) {
+    float dayFactor = smoothstep(0.1, 0.4, sunIntensity);
     float nightFactor = 1.0 - smoothstep(0.0, 0.3, sunIntensity);
-    vec3 warmGlow = vec3(0.95, 0.85, 0.5);
-    color = mix(color, warmGlow * 0.9, nightFactor * 0.7);
+    // Daytime: all windows show blue-white glass reflection
+    vec3 dayGlass = vec3(0.6, 0.72, 0.82);
+    color = mix(color, dayGlass * lighting, dayFactor * windowMask);
+    // Nighttime: only lit windows show warm yellow glow
+    if (isLitWindow) {
+      vec3 warmGlow = vec3(0.95, 0.85, 0.5);
+      color = mix(color, warmGlow * 0.9, nightFactor * 0.7);
+    }
   }
 
   // Underground mode: white model effect (fade to near-white)
