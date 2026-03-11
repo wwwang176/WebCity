@@ -5,6 +5,7 @@ import { RoadBuilder } from '../road/RoadBuilder';
 import { RoadType } from '../road/types';
 import { ZoneType } from '../grid/types';
 import { ZoneManager } from '../zone/ZoneManager';
+import { isZoneBuilding } from '../building/InfraConfig';
 
 describe('Integration Tests', () => {
   it('full game loop: roads + zones + services + 100 ticks', () => {
@@ -144,7 +145,7 @@ describe('Integration Tests', () => {
     // No building upgrades without service coverage (buildings stay level 1)
     for (let x = 1; x <= 10; x++) {
       const cell = state.grid.getCell(x, 9);
-      if (cell && cell.buildingId > 0 && cell.buildingId < 243) {
+      if (cell && isZoneBuilding(cell.buildingId)) {
         // Level 1 residential high = buildingId 4
         expect(cell.buildingId).toBeLessThanOrEqual(6);
       }
