@@ -97,12 +97,14 @@ export function isSurfaceVehicle(_type: string): boolean {
 
 export type TransportStopKind = 'bus' | 'metro' | 'rail' | 'ferry';
 
+import { getInfraBuildingId } from './building/InfraConfig';
+
 /** buildingId → transport stop type mapping */
 export const TRANSPORT_STOP_IDS: Record<number, TransportStopKind> = {
-  242: 'bus',
-  241: 'metro',
-  239: 'rail',
-  238: 'ferry',
+  [getInfraBuildingId('bus_stop')]: 'bus',
+  [getInfraBuildingId('metro_station')]: 'metro',
+  [getInfraBuildingId('train_station')]: 'rail',
+  [getInfraBuildingId('ferry_dock')]: 'ferry',
 };
 
 /** Get transport stop type from buildingId, or undefined if not a transport stop. */

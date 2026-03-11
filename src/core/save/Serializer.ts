@@ -12,7 +12,7 @@ import { ParkService } from '../service/ParkService';
 import { GarbageService } from '../service/GarbageService';
 import { SewageService } from '../service/SewageService';
 import { DeathCareService } from '../service/DeathCareService';
-import { getInfraConfigById } from '../building/InfraConfig';
+import { getInfraConfigById, getInfraBuildingId } from '../building/InfraConfig';
 import { MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
 import { Grid } from '../grid/Grid';
 import { BusSystem } from '../transport/BusSystem';
@@ -243,13 +243,10 @@ export function deserializeGameState(json: string): GameState {
       for (let x = 0; x < saved.grid.width; x++) {
         const cell = state.grid.getCell(x, y);
         if (!cell) continue;
-        switch (cell.buildingId) {
-          case 242: state.bus.addStop(x, y); break;
-          case 241: state.metro.addStation(x, y); break;
-          case 239: state.rail.buildStation(x, y); break;
-          case 238: state.ferry.addDock(x, y); break;
-          case 236: state.grid.setCell(x, y, { buildingId: 0, reserved: 0 }); break;
-        }
+        if (cell.buildingId === getInfraBuildingId('bus_stop')) state.bus.addStop(x, y);
+        else if (cell.buildingId === getInfraBuildingId('metro_station')) state.metro.addStation(x, y);
+        else if (cell.buildingId === getInfraBuildingId('train_station')) state.rail.buildStation(x, y);
+        else if (cell.buildingId === getInfraBuildingId('ferry_dock')) state.ferry.addDock(x, y);
       }
     }
   }
