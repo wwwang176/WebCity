@@ -336,6 +336,7 @@ export class Game {
         this.dragStart = null;
         this.clearPreviewLine();
         this.highlightManager.clear();
+        this.applySelectHighlight();
       }
     });
 
@@ -1446,6 +1447,42 @@ export class Game {
     }
   }
 
+  /** Apply white highlight on the currently selected building (select tool). */
+  private applySelectHighlight(): void {
+    const sel = this.selectedBuilding;
+    if (!sel) return;
+
+    const cell = this.state.grid.getCell(sel.x, sel.y);
+    if (!cell) return;
+
+    if (sel.kind === 'infra') {
+      const primary = findPrimaryCell(this.state.grid, sel.x, sel.y);
+      if (!primary) return;
+      const cfg = getInfraConfigById(cell.buildingId);
+      const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
+      const cells: { x: number; y: number }[] = [];
+      for (let dy = 0; dy < maxDim; dy++) {
+        for (let dx = 0; dx < maxDim; dx++) {
+          const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
+          if (c && c.buildingId === cell.buildingId) {
+            cells.push({ x: primary.x + dx, y: primary.y + dy });
+          }
+        }
+      }
+      this.highlightManager.highlightCells(
+        cells, 0xffffff,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+      );
+    } else {
+      this.highlightManager.highlightCells(
+        [{ x: sel.x, y: sel.y }], 0xffffff,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+      );
+    }
+  }
+
   /** Collect all InstancedMeshes that support highlight (buildings + roads + tracks). */
   private getAllHighlightMeshes(): readonly (THREE.InstancedMesh | THREE.Mesh)[] {
     return [
@@ -1530,7 +1567,11 @@ export class Game {
       );
     } else {
       this.placementPreview.hide();
-      this.highlightManager.clear();
+      if (this.currentTool === 'select' && this.selectedBuilding) {
+        this.applySelectHighlight();
+      } else {
+        this.highlightManager.clear();
+      }
     }
   }
 
