@@ -320,6 +320,7 @@ export class Game {
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0) {
         this.dragStart = { x: this.gridCursor.gridX, y: this.gridCursor.gridY };
+        this.updatePlacementPreview();
       }
       if (e.button === 2) {
         // Right-click camera pan handled in mousemove
