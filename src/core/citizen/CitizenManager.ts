@@ -1,5 +1,20 @@
 import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage } from './types';
 
+/** Data-driven education progression rules (OCP: add new levels without modifying loop logic) */
+export interface EducationRule {
+  lifeStage: LifeStage;
+  requiredEducation: EducationLevel;
+  nextEducation: EducationLevel;
+  schoolKey: 'elementary' | 'highSchool' | 'university';
+  maxAge?: number;
+}
+
+export const EDUCATION_PROGRESSION: readonly EducationRule[] = [
+  { lifeStage: LifeStage.CHILD, requiredEducation: EducationLevel.NONE, nextEducation: EducationLevel.ELEMENTARY, schoolKey: 'elementary' },
+  { lifeStage: LifeStage.TEEN, requiredEducation: EducationLevel.ELEMENTARY, nextEducation: EducationLevel.HIGH_SCHOOL, schoolKey: 'highSchool' },
+  { lifeStage: LifeStage.ADULT, requiredEducation: EducationLevel.HIGH_SCHOOL, nextEducation: EducationLevel.UNIVERSITY, schoolKey: 'university', maxAge: 25 },
+];
+
 let nextId = 1;
 
 export class CitizenManager {
@@ -61,16 +76,14 @@ export class CitizenManager {
   }
 
   educateTick(hasElementary: boolean, hasHighSchool: boolean, hasUniversity: boolean): void {
+    const schools: Record<string, boolean> = { elementary: hasElementary, highSchool: hasHighSchool, university: hasUniversity };
     for (const c of this.citizens) {
-      if (c.lifeStage === LifeStage.CHILD && hasElementary && c.education === EducationLevel.NONE) {
-        c.education = EducationLevel.ELEMENTARY;
-      }
-      if (c.lifeStage === LifeStage.TEEN && hasHighSchool && c.education === EducationLevel.ELEMENTARY) {
-        c.education = EducationLevel.HIGH_SCHOOL;
-      }
-      if (c.lifeStage === LifeStage.ADULT && hasUniversity && c.education === EducationLevel.HIGH_SCHOOL) {
-        if (c.age <= 25) {
-          c.education = EducationLevel.UNIVERSITY;
+      for (const rule of EDUCATION_PROGRESSION) {
+        if (c.lifeStage === rule.lifeStage && schools[rule.schoolKey] && c.education === rule.requiredEducation) {
+          if (rule.maxAge === undefined || c.age <= rule.maxAge) {
+            c.education = rule.nextEducation;
+          }
+          break;
         }
       }
     }
