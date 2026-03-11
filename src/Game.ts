@@ -1290,24 +1290,21 @@ export class Game {
     const tls = this.state.trafficLights;
     const seen = new Set<string>();
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell || cell.roadType === 0) continue;
-        let dirs = 0;
-        if (cell.roadFlags & RoadDirection.NORTH) dirs++;
-        if (cell.roadFlags & RoadDirection.SOUTH) dirs++;
-        if (cell.roadFlags & RoadDirection.EAST) dirs++;
-        if (cell.roadFlags & RoadDirection.WEST) dirs++;
-        if (dirs >= 3) {
-          const key = `${x},${y}`;
-          seen.add(key);
-          if (!tls.getLight(x, y)) {
-            tls.addLight(x, y);
-          }
+    grid.forEachCell((cell, x, y) => {
+      if (cell.roadType === 0) return;
+      let dirs = 0;
+      if (cell.roadFlags & RoadDirection.NORTH) dirs++;
+      if (cell.roadFlags & RoadDirection.SOUTH) dirs++;
+      if (cell.roadFlags & RoadDirection.EAST) dirs++;
+      if (cell.roadFlags & RoadDirection.WEST) dirs++;
+      if (dirs >= 3) {
+        const key = `${x},${y}`;
+        seen.add(key);
+        if (!tls.getLight(x, y)) {
+          tls.addLight(x, y);
         }
       }
-    }
+    });
 
     // Remove lights for intersections that no longer exist
     for (const light of tls.getLights()) {
@@ -1643,85 +1640,73 @@ export class Game {
     const data = new Map<string, number>();
     const grid = this.state.grid;
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const key = `${x},${y}`;
-        let value = 0;
+    grid.forEachCell((cell, x, y) => {
+      const key = `${x},${y}`;
+      let value = 0;
 
-        switch (type) {
-          case 'power':
-            value = this.state.power.isPowered(x, y) ? 100 : 0;
-            break;
-          case 'water': {
-            const supplied = this.state.water.isSupplied(x, y) ? 100 : 0;
-            const gw = this.getGroundwaterLevel(x, y);
-            // Show supply (bright) or groundwater (dim) — whichever is higher
-            value = Math.max(supplied, gw * 0.4);
-            break;
-          }
-          case 'zone': {
-            const cell = grid.getCell(x, y);
-            if (cell && cell.zoneType > 0) value = cell.zoneType * 15;
-            break;
-          }
-          case 'traffic': {
-            const density = this.state.traffic.getSegmentDensity(key);
-            value = density * 20;
-            break;
-          }
-          case 'pollution': {
-            const cell = grid.getCell(x, y);
-            if (cell) value = Math.min(100, cell.pollution * 100 / 255);
-            break;
-          }
-          case 'landValue': {
-            const cell = grid.getCell(x, y);
-            if (cell && cell.buildingId > 0) value = Math.min(100, cell.landValue * 100 / 255);
-            break;
-          }
-          case 'crime': {
-            const cell = grid.getCell(x, y);
-            if (cell && cell.buildingId > 0) {
-              const reduction = this.state.police.getCrimeReduction(x, y);
-              value = Math.max(0, 40 + reduction); // base 40, reduced by police
-            }
-            break;
-          }
-          case 'police':
-            value = this.state.police.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'fire':
-            value = this.state.fire.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'health':
-            value = this.state.health.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'education':
-            value = this.state.education.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'park':
-            value = this.state.parks.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'garbage':
-            value = this.state.garbage.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'district': {
-            const d = this.state.districts.getDistrictAt(x, y);
-            if (d) {
-              // Hash district id to get a unique-ish value for coloring
-              let hash = 0;
-              for (let i = 0; i < d.id.length; i++) hash = (hash * 31 + d.id.charCodeAt(i)) & 0xff;
-              value = Math.max(20, hash % 100);
-            }
-            break;
-          }
-          default:
-            break;
+      switch (type) {
+        case 'power':
+          value = this.state.power.isPowered(x, y) ? 100 : 0;
+          break;
+        case 'water': {
+          const supplied = this.state.water.isSupplied(x, y) ? 100 : 0;
+          const gw = this.getGroundwaterLevel(x, y);
+          value = Math.max(supplied, gw * 0.4);
+          break;
         }
-
-        if (value > 0) data.set(key, value);
+        case 'zone':
+          if (cell.zoneType > 0) value = cell.zoneType * 15;
+          break;
+        case 'traffic': {
+          const density = this.state.traffic.getSegmentDensity(key);
+          value = density * 20;
+          break;
+        }
+        case 'pollution':
+          value = Math.min(100, cell.pollution * 100 / 255);
+          break;
+        case 'landValue':
+          if (cell.buildingId > 0) value = Math.min(100, cell.landValue * 100 / 255);
+          break;
+        case 'crime':
+          if (cell.buildingId > 0) {
+            const reduction = this.state.police.getCrimeReduction(x, y);
+            value = Math.max(0, 40 + reduction);
+          }
+          break;
+        case 'police':
+          value = this.state.police.getCoverage(x, y) ? 80 : 0;
+          break;
+        case 'fire':
+          value = this.state.fire.getCoverage(x, y) ? 80 : 0;
+          break;
+        case 'health':
+          value = this.state.health.getCoverage(x, y) ? 80 : 0;
+          break;
+        case 'education':
+          value = this.state.education.getCoverage(x, y) ? 80 : 0;
+          break;
+        case 'park':
+          value = this.state.parks.getCoverage(x, y) ? 80 : 0;
+          break;
+        case 'garbage':
+          value = this.state.garbage.getCoverage(x, y) ? 80 : 0;
+          break;
+        case 'district': {
+          const d = this.state.districts.getDistrictAt(x, y);
+          if (d) {
+            let hash = 0;
+            for (let i = 0; i < d.id.length; i++) hash = (hash * 31 + d.id.charCodeAt(i)) & 0xff;
+            value = Math.max(20, hash % 100);
+          }
+          break;
+        }
+        default:
+          break;
       }
-    }
+
+      if (value > 0) data.set(key, value);
+    });
     return data;
   }
 
@@ -1937,38 +1922,32 @@ export class Game {
     let resIncome = 0, comIncome = 0, indIncome = 0, offIncome = 0;
     let roadCount = 0;
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell) continue;
-        if (cell.roadType > 0) roadCount++;
-        if (!isZoneBuilding(cell.buildingId)) continue;
-        if (cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) continue;
+    grid.forEachCell((cell, x, y) => {
+      if (cell.roadType > 0) roadCount++;
+      if (!isZoneBuilding(cell.buildingId)) return;
+      if (cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) return;
 
-        const btype = getBuildingType(cell.buildingId);
-        if (!btype) continue;
+      const btype = getBuildingType(cell.buildingId);
+      if (!btype) return;
 
-        if (isResidentialZone(cell.zoneType)) {
-          // Income tax: scan citizens living here
-          const posKey = `${x},${y}`;
-          const residents = this.state.citizens.getCitizensByHome(posKey);
-          for (const citizen of residents) {
-            resIncome += 0.5 * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
-          }
-        } else {
-          // Business tax: companyIncome x levelMultiplier x businessTaxRate
-          const ci = btype.companyIncome ?? 0;
-          const bi = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
-          if (isCommercialZone(cell.zoneType)) {
-            comIncome += bi;
-          } else if (cell.zoneType === ZoneType.INDUSTRIAL) {
-            indIncome += bi;
-          } else if (cell.zoneType === ZoneType.OFFICE) {
-            offIncome += bi;
-          }
+      if (isResidentialZone(cell.zoneType)) {
+        const posKey = `${x},${y}`;
+        const residents = this.state.citizens.getCitizensByHome(posKey);
+        for (const citizen of residents) {
+          resIncome += 0.5 * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+        }
+      } else {
+        const ci = btype.companyIncome ?? 0;
+        const bi = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
+        if (isCommercialZone(cell.zoneType)) {
+          comIncome += bi;
+        } else if (cell.zoneType === ZoneType.INDUSTRIAL) {
+          indIncome += bi;
+        } else if (cell.zoneType === ZoneType.OFFICE) {
+          offIncome += bi;
         }
       }
-    }
+    });
 
     const roadMaintenance = roadCount * 0.1;
     const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
@@ -1995,12 +1974,9 @@ export class Game {
   } {
     let totalRoads = 0;
     const grid = this.state.grid;
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (cell && cell.roadType > 0) totalRoads++;
-      }
-    }
+    grid.forEachCell((cell) => {
+      if (cell.roadType > 0) totalRoads++;
+    });
     return {
       vehicleCount: this.state.traffic.getVehicleCount(),
       topCongested: this.state.traffic.getTopCongested(8),
