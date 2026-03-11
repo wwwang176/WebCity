@@ -111,7 +111,7 @@ export function gridAStarPath(
 
   gScore.set(startKey, 0);
   parent.set(startKey, null);
-  const h0 = (Math.abs(end.x - start.x) + Math.abs(end.y - start.y)) / MAX_SPEED_LIMIT;
+  const h0 = manhattanDistance(start.x, start.y, end.x, end.y) / MAX_SPEED_LIMIT;
   open.push({ x: start.x, y: start.y, k: startKey, f: h0 });
 
   let steps = 0;
@@ -165,7 +165,7 @@ export function gridAStarPath(
 
       gScore.set(nk, tentativeG);
       parent.set(nk, current.k);
-      const h = (Math.abs(end.x - nx) + Math.abs(end.y - ny)) / MAX_SPEED_LIMIT;
+      const h = manhattanDistance(nx, ny, end.x, end.y) / MAX_SPEED_LIMIT;
       open.push({ x: nx, y: ny, k: nk, f: tentativeG + h });
     }
   }
