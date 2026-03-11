@@ -195,6 +195,20 @@ describe('TRAFFIC constants', () => {
   it('density capacity per cell should be positive', () => {
     expect(TRAFFIC.DENSITY_CAPACITY_PER_CELL).toBeGreaterThan(0);
   });
+
+  it('edge speed and reference limit should be positive', () => {
+    expect(TRAFFIC.EDGE_SPEED).toBeGreaterThan(0);
+    expect(TRAFFIC.REFERENCE_LIMIT).toBeGreaterThan(0);
+  });
+
+  it('min gap should be positive and less than 1', () => {
+    expect(TRAFFIC.MIN_GAP).toBeGreaterThan(0);
+    expect(TRAFFIC.MIN_GAP).toBeLessThan(1);
+  });
+
+  it('despawn stall time should be positive', () => {
+    expect(TRAFFIC.DESPAWN_STALL_TIME).toBeGreaterThan(0);
+  });
 });
 
 describe('predicted congestion flow', () => {

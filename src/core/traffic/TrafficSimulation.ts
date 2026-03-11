@@ -35,6 +35,14 @@ export const TRAFFIC = {
   LOOKAHEAD_DISTANCE: 5,
   /** Density divisor per occupied cell for congestion calculation */
   DENSITY_CAPACITY_PER_CELL: 3,
+  /** Edge vehicle speed in world-units per second */
+  EDGE_SPEED: 14,
+  /** Speed limit that maps to base speed */
+  REFERENCE_LIMIT: 50,
+  /** Minimum distance between vehicles */
+  MIN_GAP: 0.15,
+  /** Seconds of zero movement before vehicle is despawned */
+  DESPAWN_STALL_TIME: 30,
 } as const;
 
 /** Get the number of directional lanes for a road type (lanes going one way). */
@@ -63,10 +71,6 @@ export class TrafficSimulation {
   /** Predicted congestion flow (path count per cell), set by SimulationLoop periodically. */
   private predictedFlow: Map<string, number> | null = null;
 
-  private static readonly EDGE_SPEED = 14;    // edge vehicle speed in world-units per second
-  private static readonly REFERENCE_LIMIT = 50; // speed limit that maps to base speed
-  private static readonly MIN_GAP = 0.15;    // min distance between vehicles
-  private static readonly DESPAWN_STALL_TIME = 30; // seconds of zero movement before vehicle is despawned
 
   /** Add a vehicle that follows a LaneEdge path. */
   addVehicleOnEdges(edgePath: LaneEdge[]): Vehicle {
@@ -109,7 +113,7 @@ export class TrafficSimulation {
     canAdvance?: (current: string, next: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
-    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT } = TrafficSimulation;
+    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT } = TRAFFIC;
 
     // Collect active vehicles
     const edgeVehicles = this.vehicles.filter(v => v.edgePath.length > 0 && !v.arrived);
@@ -230,7 +234,7 @@ export class TrafficSimulation {
       // Track stall time for stuck vehicle despawn
       if (moveDistance < 0.001 && room < 0.001) {
         v.stallTime += dtSeconds;
-        if (v.stallTime >= TrafficSimulation.DESPAWN_STALL_TIME) {
+        if (v.stallTime >= TRAFFIC.DESPAWN_STALL_TIME) {
           v.arrived = true;
         }
       } else {
