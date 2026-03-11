@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getSeasonFromTick, getSeasonEffects, ClimateType } from '../Climate';
+import { getSeasonFromTick, getSeasonEffects, ClimateType, SEASON_EFFECTS } from '../Climate';
 import {
   DisasterType,
   createDisaster,
@@ -65,6 +65,13 @@ describe('Climate - Season System', () => {
     expect(effects.powerDemandMultiplier).toBe(1.0);
     expect(effects.waterDemandMultiplier).toBe(1.0);
     expect(effects.happinessModifier).toBe(0);
+  });
+
+  it('SEASON_EFFECTS should have valid multipliers and modifiers', () => {
+    expect(SEASON_EFFECTS.SPRING_HAPPINESS).toBeGreaterThan(0);
+    expect(SEASON_EFFECTS.WINTER_HAPPINESS).toBeLessThan(0);
+    expect(SEASON_EFFECTS.WINTER_POWER).toBeGreaterThan(1);
+    expect(SEASON_EFFECTS.WINTER_CONTINENTAL_POWER).toBeGreaterThan(SEASON_EFFECTS.WINTER_POWER);
   });
 });
 

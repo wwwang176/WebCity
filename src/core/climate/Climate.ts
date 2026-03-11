@@ -15,6 +15,18 @@ export interface SeasonEffects {
 
 const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 
+/** Seasonal effect parameters */
+export const SEASON_EFFECTS = {
+  SPRING_HAPPINESS: 5,
+  SUMMER_TROPICAL_WATER: 1.2,
+  SUMMER_ARID_WATER: 1.3,
+  SUMMER_ARID_POWER: 1.1,
+  WINTER_POWER: 1.3,
+  WINTER_HAPPINESS: -5,
+  WINTER_CONTINENTAL_POWER: 1.5,
+  WINTER_CONTINENTAL_HAPPINESS: -8,
+} as const;
+
 export function getSeasonFromTick(tick: number, ticksPerYear: number): Season {
   const tickInYear = tick % ticksPerYear;
   const quarterLength = ticksPerYear / 4;
@@ -31,26 +43,25 @@ export function getSeasonEffects(season: Season, climateType: ClimateType): Seas
 
   switch (season) {
     case 'spring':
-      effects.happinessModifier = 5;
+      effects.happinessModifier = SEASON_EFFECTS.SPRING_HAPPINESS;
       break;
     case 'summer':
       if (climateType === ClimateType.TROPICAL) {
-        effects.waterDemandMultiplier = 1.2;
+        effects.waterDemandMultiplier = SEASON_EFFECTS.SUMMER_TROPICAL_WATER;
       }
       if (climateType === ClimateType.ARID) {
-        effects.waterDemandMultiplier = 1.3;
-        effects.powerDemandMultiplier = 1.1;
+        effects.waterDemandMultiplier = SEASON_EFFECTS.SUMMER_ARID_WATER;
+        effects.powerDemandMultiplier = SEASON_EFFECTS.SUMMER_ARID_POWER;
       }
       break;
     case 'autumn':
-      // Neutral effects
       break;
     case 'winter':
-      effects.powerDemandMultiplier = 1.3;
-      effects.happinessModifier = -5;
+      effects.powerDemandMultiplier = SEASON_EFFECTS.WINTER_POWER;
+      effects.happinessModifier = SEASON_EFFECTS.WINTER_HAPPINESS;
       if (climateType === ClimateType.CONTINENTAL) {
-        effects.powerDemandMultiplier = 1.5;
-        effects.happinessModifier = -8;
+        effects.powerDemandMultiplier = SEASON_EFFECTS.WINTER_CONTINENTAL_POWER;
+        effects.happinessModifier = SEASON_EFFECTS.WINTER_CONTINENTAL_HAPPINESS;
       }
       break;
   }
