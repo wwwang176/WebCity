@@ -64,6 +64,16 @@ function countFlags(flags: number): number {
   return n;
 }
 
+/** Lane geometry rendering constants */
+export const LANE_GEOMETRY = {
+  /** Lateral offset per lane (cells) */
+  LANE_WIDTH: 0.18,
+  /** Bezier handle length for turn curves */
+  BEZIER_STRENGTH: 0.35,
+  /** Number of samples for Bezier length approximation */
+  BEZIER_SAMPLES: 10,
+} as const;
+
 // ── Grid Lookup Interface ──
 
 export interface GridLookup {
@@ -189,7 +199,7 @@ export class LaneGraph {
     // For direction D with lane index L:
     //   perpendicular "right" of travel direction = lateral offset
     //   This separates opposing traffic and multi-lane same-direction traffic.
-    const LANE_WIDTH = 0.18; // lateral offset per lane
+    const LANE_WIDTH = LANE_GEOMETRY.LANE_WIDTH;
 
     for (const { dir, flag } of DIR_FLAGS) {
       if (!(cell.roadFlags & flag)) continue;
@@ -476,7 +486,7 @@ export class LaneGraph {
     cx: number, cy: number,
   ): { x: number; y: number }[] {
     // Control points: extend tangent from entry, then curve towards exit
-    const strength = 0.35; // bezier handle length
+    const strength = LANE_GEOMETRY.BEZIER_STRENGTH;
     const cp1 = {
       x: from.position.x + from.tangent.tx * strength,
       y: from.position.y + from.tangent.ty * strength,
@@ -495,7 +505,7 @@ export class LaneGraph {
     p3: { x: number; y: number },
   ): number {
     // Approximate by sampling N points
-    const N = 10;
+    const N = LANE_GEOMETRY.BEZIER_SAMPLES;
     let length = 0;
     let prevX = p0.x, prevY = p0.y;
     for (let i = 1; i <= N; i++) {

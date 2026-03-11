@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { LevelCrossingSystem, CrossingState } from '../LevelCrossingSystem';
+import { LevelCrossingSystem, CrossingState, LEVEL_CROSSING } from '../LevelCrossingSystem';
 import { Grid } from '../../grid/Grid';
 import { RailType, TrackDirection } from '../types';
 import { RoadType } from '../../road/types';
@@ -206,5 +206,15 @@ describe('LevelCrossingSystem', () => {
       sys.rebuildFromGrid(grid);
       expect(sys.getCrossings()[0]!.railOrientation).toBe('NS');
     });
+  });
+});
+
+describe('LEVEL_CROSSING constants', () => {
+  it('activation radius should be positive', () => {
+    expect(LEVEL_CROSSING.ACTIVATION_RADIUS).toBeGreaterThan(0);
+  });
+
+  it('cooldown duration should be positive', () => {
+    expect(LEVEL_CROSSING.COOLDOWN_DURATION).toBeGreaterThan(0);
   });
 });
