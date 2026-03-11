@@ -14,7 +14,7 @@ import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
-import { countZoneBuildings } from '../building/BuildingQueries';
+import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { findPrimaryCell, forEachMultiCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel, isWorkingAge } from '../citizen/types';
@@ -1224,32 +1224,6 @@ export class SimulationLoop {
 
 }
 
-export function countResidentialCapacity(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number; reserved?: number } | null }): number {
-  let capacity = 0;
-  for (let y = 0; y < grid.height; y++) {
-    for (let x = 0; x < grid.width; x++) {
-      const cell = grid.getCell(x, y);
-      // Exclude burned (reserved=3) and multi-cell secondary (reserved=4) cells
-      if (cell && cell.buildingId > 0 && isResidentialZone(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== MULTI_CELL_OCCUPIED) {
-        const bt = getBuildingType(cell.buildingId);
-        capacity += bt ? bt.residents : 0;
-      }
-    }
-  }
-  return capacity;
-}
-
-export function countWorkplaceJobs(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number; reserved?: number } | null }): number {
-  let jobs = 0;
-  for (let y = 0; y < grid.height; y++) {
-    for (let x = 0; x < grid.width; x++) {
-      const cell = grid.getCell(x, y);
-      // Exclude burned (reserved=3) and multi-cell secondary (reserved=4) cells
-      if (cell && cell.buildingId > 0 && isWorkplaceZone(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== MULTI_CELL_OCCUPIED) {
-        const bt = getBuildingType(cell.buildingId);
-        jobs += bt ? bt.workers : 0;
-      }
-    }
-  }
-  return jobs;
-}
+// countResidentialCapacity and countWorkplaceJobs moved to BuildingQueries.ts
+// Re-export for backward compatibility with existing consumers
+export { countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
