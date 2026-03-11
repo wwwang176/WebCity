@@ -1,5 +1,6 @@
 import { CitizenManager } from './CitizenManager';
 import { EducationLevel, IncomeLevel } from './types';
+import { randomElement, randomInt } from '../utils/random';
 
 export interface CityAttractiveness {
   jobOpenings: number;
@@ -72,11 +73,11 @@ export function migrationTick(
   if (attractiveness > IMMIGRATION.ATTRACTIVENESS_THRESHOLD && city.vacantHomes > 0 && city.jobOpenings > 0) {
     const count = getImmigrationCap(pop, city.vacantHomes, attractiveness);
     for (let i = 0; i < count; i++) {
-      const age = IMMIGRATION.IMMIGRANT_MIN_AGE + Math.floor(Math.random() * IMMIGRATION.IMMIGRANT_AGE_RANGE);
+      const age = IMMIGRATION.IMMIGRANT_MIN_AGE + randomInt(IMMIGRATION.IMMIGRANT_AGE_RANGE);
       const educations = [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY];
-      const education = educations[Math.floor(Math.random() * educations.length)]!;
+      const education = randomElement(educations);
       const incomes = [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH];
-      const income = incomes[Math.floor(Math.random() * incomes.length)]!;
+      const income = randomElement(incomes);
       manager.createCitizen({ age, education, incomeLevel: income });
       immigrated++;
     }

@@ -1,3 +1,5 @@
+import { randomInt } from '../utils/random';
+
 export interface FireStation {
   id: string;
   x: number;
@@ -180,8 +182,8 @@ export class FireService {
 
     // Find a random building cell to start a fire
     for (let i = 0; i < FIRE.IGNITION_ATTEMPTS; i++) {
-      const x = Math.floor(Math.random() * grid.width);
-      const y = Math.floor(Math.random() * grid.height);
+      const x = randomInt(grid.width);
+      const y = randomInt(grid.height);
       const cell = grid.getCell(x, y);
       if (cell && isZoneBuilding(cell.buildingId)) {
         this.reportFire(x, y);

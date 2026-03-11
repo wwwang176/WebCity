@@ -23,6 +23,7 @@ import { TransportMode, TransportType } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey } from '../grid/GridHelpers';
+import { randomInt, randomElement } from '../utils/random';
 
 /** Ticks between service/RCI/growth updates (tuned for ticksPerDay=24, preserving ticksPerDay=4 balance) */
 export const SLOW_TICK_INTERVAL = 6;
@@ -336,8 +337,8 @@ export class SimulationLoop {
     // Try growing on a sample of cells each tick (not all 60x60)
     const attempts = SIMULATION.GROWTH_ATTEMPTS;
     for (let i = 0; i < attempts; i++) {
-      const x = Math.floor(Math.random() * grid.width);
-      const y = Math.floor(Math.random() * grid.height);
+      const x = randomInt(grid.width);
+      const y = randomInt(grid.height);
       const cell = grid.getCell(x, y);
       if (!cell || cell.zoneType === ZoneType.NONE) continue;
 
@@ -722,8 +723,8 @@ export class SimulationLoop {
     // Sample cells each tick rather than scanning all (performance)
     const attempts = 30;
     for (let i = 0; i < attempts; i++) {
-      const x = Math.floor(Math.random() * grid.width);
-      const y = Math.floor(Math.random() * grid.height);
+      const x = randomInt(grid.width);
+      const y = randomInt(grid.height);
       const cell = grid.getCell(x, y);
       if (!cell || cell.buildingId === 0) continue;
 
@@ -1002,7 +1003,7 @@ export class SimulationLoop {
         if (path && path.length >= 2) {
           const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
           const dirLanes = startCell ? getLaneCount(startCell.roadType) : 1;
-          const preferredLane = dirLanes > 1 ? Math.floor(Math.random() * dirLanes) : 0;
+          const preferredLane = dirLanes > 1 ? randomInt(dirLanes) : 0;
           edgePath = refineLanePath(this.laneGraph, path, preferredLane);
           if (edgePath && edgePath.length > 0) {
             // Store in shared routeIndex
@@ -1108,8 +1109,8 @@ export class SimulationLoop {
 
     for (let i = 0; i < spawnCount; i++) {
       if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
-      const start = startPool[Math.floor(Math.random() * startPool.length)]!;
-      const end = roads[Math.floor(Math.random() * roads.length)]!;
+      const start = randomElement(startPool);
+      const end = randomElement(roads);
       if (start.x === end.x && start.y === end.y) continue;
 
       const startRoad = findAdjacentRoad(grid, start.x, start.y);
@@ -1121,7 +1122,7 @@ export class SimulationLoop {
       if (path && path.length >= 2) {
         const sCell = this.state.grid.getCell(startRoad.x, startRoad.y);
         const dLanes = sCell ? getLaneCount(sCell.roadType) : 1;
-        const prefLane = dLanes > 1 ? Math.floor(Math.random() * dLanes) : 0;
+        const prefLane = dLanes > 1 ? randomInt(dLanes) : 0;
         const edgePath = refineLanePath(this.laneGraph, path, prefLane);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);

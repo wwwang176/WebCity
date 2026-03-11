@@ -3,6 +3,7 @@ import { ZoneType, zoneToRCI } from '../grid/types';
 import { isAdjacentToRoad } from '../grid/GridHelpers';
 import { getMaxDensity } from '../zone/DensityRules';
 import { getBuildingsForZone } from './types';
+import { randomElement } from '../utils/random';
 
 export interface RCIDemand {
   residential: number;
@@ -56,7 +57,7 @@ export class BuildingGrowth {
     const buildings = getBuildingsForZone(cell.zoneType, density, 1);
     if (buildings.length === 0) return false;
 
-    const building = buildings[Math.floor(Math.random() * buildings.length)]!;
+    const building = randomElement(buildings);
     this.grid.setCell(x, y, { buildingId: building.id });
     return true;
   }
