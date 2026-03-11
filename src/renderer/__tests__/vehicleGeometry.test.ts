@@ -8,7 +8,6 @@ import {
   buildTransportBusGeometry,
   buildMetroTrainGeometry,
   buildMetroCarriageGeometry,
-  buildTramGeometry,
   buildRailTrainGeometry,
   buildFerryGeometry,
   buildTaxiGeometry,
@@ -31,7 +30,7 @@ describe('geometry barrel export', () => {
     ['buildTransportBusGeometry', buildTransportBusGeometry],
     ['buildMetroTrainGeometry', buildMetroTrainGeometry],
     ['buildMetroCarriageGeometry', buildMetroCarriageGeometry],
-    ['buildTramGeometry', buildTramGeometry],
+
     ['buildRailTrainGeometry', buildRailTrainGeometry],
     ['buildFerryGeometry', buildFerryGeometry],
     ['buildTaxiGeometry', buildTaxiGeometry],
@@ -44,7 +43,7 @@ describe('geometry barrel export', () => {
     ['buildBusGeometry', buildBusGeometry],
     ['buildTruckGeometry', buildTruckGeometry],
     ['buildFiretruckGeometry', buildFiretruckGeometry],
-    ['buildTramGeometry', buildTramGeometry],
+
     ['buildRailTrainGeometry', buildRailTrainGeometry],
     ['buildFerryGeometry', buildFerryGeometry],
     ['buildMetroTrainGeometry', buildMetroTrainGeometry],

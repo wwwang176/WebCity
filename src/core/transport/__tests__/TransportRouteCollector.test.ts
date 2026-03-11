@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { collectTransportRoutes, type TransportRouteRenderData } from '../collectTransportRoutes';
 import { BusSystem } from '../BusSystem';
 import { MetroSystem } from '../MetroSystem';
-import { TramSystem } from '../TramSystem';
 import { RailSystem } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
 
@@ -14,7 +13,7 @@ describe('collectTransportRoutes', () => {
     const result = collectTransportRoutes({
       bus: new BusSystem(),
       metro: new MetroSystem(),
-      tram: new TramSystem(),
+
       rail: new RailSystem(),
       ferry: new FerrySystem(),
     });
@@ -31,7 +30,7 @@ describe('collectTransportRoutes', () => {
     const result = collectTransportRoutes({
       bus,
       metro: new MetroSystem(),
-      tram: new TramSystem(),
+
       rail: new RailSystem(),
       ferry: new FerrySystem(),
     });
@@ -54,7 +53,7 @@ describe('collectTransportRoutes', () => {
     const result = collectTransportRoutes({
       bus: new BusSystem(),
       metro,
-      tram: new TramSystem(),
+
       rail: new RailSystem(),
       ferry: new FerrySystem(),
     });
@@ -63,25 +62,6 @@ describe('collectTransportRoutes', () => {
     expect(result[0]!.system).toBe('METRO');
     expect(result[0]!.color).toBe(0x00bcd4); // 青色
     expect(result[0]!.stops).toHaveLength(2);
-  });
-
-  it('應該收集 TramSystem 路線並附上正確顏色', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(3, 0);
-    tram.createRoute([s1, s2]);
-
-    const result = collectTransportRoutes({
-      bus: new BusSystem(),
-      metro: new MetroSystem(),
-      tram,
-      rail: new RailSystem(),
-      ferry: new FerrySystem(),
-    });
-
-    expect(result).toHaveLength(1);
-    expect(result[0]!.system).toBe('TRAM');
-    expect(result[0]!.color).toBe(0x8bc34a); // 綠色
   });
 
   it('應該收集 RailSystem 路線並附上正確顏色', () => {
@@ -93,7 +73,7 @@ describe('collectTransportRoutes', () => {
     const result = collectTransportRoutes({
       bus: new BusSystem(),
       metro: new MetroSystem(),
-      tram: new TramSystem(),
+
       rail,
       ferry: new FerrySystem(),
     });
@@ -112,7 +92,7 @@ describe('collectTransportRoutes', () => {
     const result = collectTransportRoutes({
       bus: new BusSystem(),
       metro: new MetroSystem(),
-      tram: new TramSystem(),
+
       rail: new RailSystem(),
       ferry,
     });
@@ -138,7 +118,7 @@ describe('collectTransportRoutes', () => {
     const result = collectTransportRoutes({
       bus,
       metro,
-      tram: new TramSystem(),
+
       rail: new RailSystem(),
       ferry: new FerrySystem(),
     });
@@ -162,7 +142,7 @@ describe('collectTransportRoutes', () => {
     const result = collectTransportRoutes({
       bus,
       metro,
-      tram: new TramSystem(),
+
       rail: new RailSystem(),
       ferry: new FerrySystem(),
     });

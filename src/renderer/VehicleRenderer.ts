@@ -7,7 +7,7 @@ export interface VehicleData {
   x: number;
   y: number;
   heading: number; // radians, 0 = facing +x (east)
-  type: 'car' | 'bus' | 'truck' | 'firetruck' | 'transport_bus' | 'tram' | 'rail_train' | 'rail_carriage' | 'ferry' | 'taxi';
+  type: 'car' | 'bus' | 'truck' | 'firetruck' | 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry' | 'taxi';
   laneOffset: number; // lateral offset perpendicular to heading (positive = right of heading)
 }
 

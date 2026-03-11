@@ -169,11 +169,9 @@ export class SimulationLoop {
     const trafficSys = this.state.traffic as unknown as { getCongestionLevel?: () => number };
     const currentCongestion = trafficSys.getCongestionLevel ? trafficSys.getCongestionLevel() : 0;
     this.state.bus.congestionLevel = currentCongestion;
-    this.state.tram.congestionLevel = currentCongestion;
 
     this.state.bus.tick();
     this.state.metro.tick();
-    this.state.tram.tick();
     this.state.rail.tick();
     this.state.ferry.tick();
     this.state.airport.tick();
@@ -491,7 +489,6 @@ export class SimulationLoop {
     // Transport operating costs
     const transportCost = this.state.bus.getOperatingCost()
       + this.state.metro.getOperatingCost()
-      + this.state.tram.getOperatingCost()
       + this.state.rail.getOperatingCost()
       + this.state.ferry.getOperatingCost()
       + this.state.airport.getOperatingCost()
@@ -935,9 +932,6 @@ export class SimulationLoop {
         } else if (mode === TransportMode.METRO) {
           const nearest = this.findNearestStop(this.state.metro.getStations(), fromPos);
           if (nearest) nearest.passengers++;
-        } else if (mode === TransportMode.TRAM) {
-          const nearest = this.findNearestStop(this.state.tram.getStops(), fromPos);
-          if (nearest) nearest.passengers++;
         } else if (mode === TransportMode.RAIL) {
           const nearest = this.findNearestStop(this.state.rail.getStations(), fromPos);
           if (nearest) nearest.passengers++;
@@ -1042,7 +1036,6 @@ export class SimulationLoop {
     const systems: { type: TransportType; routes: readonly { stops: readonly { x: number; y: number }[] }[] }[] = [
       { type: TransportType.BUS, routes: this.state.bus.getRoutes() },
       { type: TransportType.METRO, routes: this.state.metro.getLines() },
-      { type: TransportType.TRAM, routes: this.state.tram.getRoutes() },
       { type: TransportType.RAIL, routes: this.state.rail.getLines() },
       { type: TransportType.FERRY, routes: this.state.ferry.getRoutes() },
     ];
@@ -1215,15 +1208,10 @@ export class SimulationLoop {
 
     // Scale up sampled flow to match actual commuter volume, then normalize by lane count
     const scaleFactor = totalResWeight / sampleCount;
-    const tramAffected = this.state.tram.getAffectedRoadCells();
     for (const [cellKey, rawFlow] of flowMap) {
       const [x, y] = cellKey.split(',').map(Number);
       const cell = grid.getCell(x!, y!);
-      let lanes = cell ? getLaneCount(cell.roadType) : 1;
-      // Tram tracks share road space — reduce effective lanes by 1
-      if (tramAffected.has(cellKey) && lanes > 1) {
-        lanes -= 1;
-      }
+      const lanes = cell ? getLaneCount(cell.roadType) : 1;
       flowMap.set(cellKey, (rawFlow * scaleFactor) / lanes);
     }
 

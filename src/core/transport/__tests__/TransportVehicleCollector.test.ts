@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { collectTransportVehicles, type TransportVehicleRenderData } from '../collectTransportVehicles';
 import { BusSystem } from '../BusSystem';
-import { TramSystem } from '../TramSystem';
 import { RailSystem } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
 import { TaxiSystem } from '../TaxiSystem';
@@ -10,7 +9,6 @@ import { TaxiSystem } from '../TaxiSystem';
 function emptySystems() {
   return {
     bus: new BusSystem(),
-    tram: new TramSystem(),
     rail: new RailSystem(),
     ferry: new FerrySystem(),
     taxi: new TaxiSystem(),
@@ -43,18 +41,6 @@ describe('collectTransportVehicles', () => {
       expect(v).toHaveProperty('heading');
       expect(v).toHaveProperty('id');
     }
-  });
-
-  it('應該收集 TramSystem 的車輛並標記為 tram 類型', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(3, 0);
-    tram.createRoute([s1, s2], 1);
-
-    const result = collectTransportVehicles({ ...emptySystems(), tram });
-
-    expect(result).toHaveLength(1);
-    expect(result[0]!.type).toBe('tram');
   });
 
   it('應該收集 RailSystem 的列車並標記為 rail_train 類型', () => {
@@ -130,12 +116,10 @@ describe('collectTransportVehicles', () => {
     const s2 = bus.addStop(5, 0);
     bus.createRoute([s1, s2], 1);
 
-    const tram = new TramSystem();
-    const t1 = tram.addStop(0, 0);
-    const t2 = tram.addStop(3, 0);
-    tram.createRoute([t1, t2], 1);
+    const taxi = new TaxiSystem();
+    taxi.addStand(10, 10, 1);
 
-    const result = collectTransportVehicles({ ...emptySystems(), bus, tram });
+    const result = collectTransportVehicles({ ...emptySystems(), bus, taxi });
 
     const ids = result.map(v => v.id);
     const uniqueIds = new Set(ids);

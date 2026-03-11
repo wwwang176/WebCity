@@ -122,10 +122,6 @@ describe('ViewMode', () => {
       expect(isSurfaceVehicle('truck')).toBe(true);
     });
 
-    it('tram 是地面車輛', () => {
-      expect(isSurfaceVehicle('tram')).toBe(true);
-    });
-
     it('metro_train now rendered separately (all VehicleRenderer types are surface)', () => {
       expect(isSurfaceVehicle('metro_train')).toBe(true);
     });
@@ -146,7 +142,6 @@ describe('TRANSPORT_STOP_IDS', () => {
   it('should map buildingIds to transport types', () => {
     expect(TRANSPORT_STOP_IDS[242]).toBe('bus');
     expect(TRANSPORT_STOP_IDS[241]).toBe('metro');
-    expect(TRANSPORT_STOP_IDS[240]).toBe('tram');
     expect(TRANSPORT_STOP_IDS[239]).toBe('rail');
     expect(TRANSPORT_STOP_IDS[238]).toBe('ferry');
     expect(TRANSPORT_STOP_IDS[236]).toBe('taxi');
@@ -182,10 +177,6 @@ describe('getTransportFocusMode', () => {
 
   it('should return BUS_FOCUS for bus', () => {
     expect(getTransportFocusMode('bus')).toBe(ViewMode.BUS_FOCUS);
-  });
-
-  it('should return TRAM_FOCUS for tram', () => {
-    expect(getTransportFocusMode('tram')).toBe(ViewMode.TRAM_FOCUS);
   });
 
   it('should return TAXI_FOCUS for taxi', () => {
@@ -226,13 +217,7 @@ describe('getVehicleVisibility', () => {
     expect(getVehicleVisibility(ViewMode.BUS_FOCUS, 'bus')).toBe(true);
     expect(getVehicleVisibility(ViewMode.BUS_FOCUS, 'transport_bus')).toBe(true);
     expect(getVehicleVisibility(ViewMode.BUS_FOCUS, 'car')).toBe(false);
-    expect(getVehicleVisibility(ViewMode.BUS_FOCUS, 'tram')).toBe(false);
-  });
-
-  it('TRAM_FOCUS mode: only tram vehicles visible', () => {
-    expect(getVehicleVisibility(ViewMode.TRAM_FOCUS, 'tram')).toBe(true);
-    expect(getVehicleVisibility(ViewMode.TRAM_FOCUS, 'car')).toBe(false);
-    expect(getVehicleVisibility(ViewMode.TRAM_FOCUS, 'bus')).toBe(false);
+    expect(getVehicleVisibility(ViewMode.BUS_FOCUS, 'ferry')).toBe(false);
   });
 
   it('TAXI_FOCUS mode: only taxi vehicles visible', () => {
@@ -242,8 +227,8 @@ describe('getVehicleVisibility', () => {
   });
 
   // Road-based focus modes keep roads visible
-  it('BUS/TRAM/TAXI_FOCUS modes should keep roads at full opacity', () => {
-    for (const mode of [ViewMode.BUS_FOCUS, ViewMode.TRAM_FOCUS, ViewMode.TAXI_FOCUS]) {
+  it('BUS/TAXI_FOCUS modes should keep roads at full opacity', () => {
+    for (const mode of [ViewMode.BUS_FOCUS, ViewMode.TAXI_FOCUS]) {
       expect(VIEW_MODE_OPACITY[mode].road).toBe(1.0);
       expect(VIEW_MODE_OPACITY[mode].building).toBeLessThan(0.2);
     }

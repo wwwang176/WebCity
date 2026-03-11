@@ -22,9 +22,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
       metroStations: state.metro.getStations(),
       metroLines: state.metro.getLines(),
       metroCost: state.metro.getOperatingCost(),
-      tramStops: state.tram.getStops(),
-      tramRoutes: state.tram.getRoutes(),
-      tramCost: state.tram.getOperatingCost(),
       railStations: state.rail.getStations(),
       railLines: state.rail.getLines(),
       railCost: state.rail.getOperatingCost(),
@@ -43,7 +40,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
 
   const hasAny = () => {
     const d = transitData();
-    return d.busStops.length > 0 || d.metroStations.length > 0 || d.tramStops.length > 0
+    return d.busStops.length > 0 || d.metroStations.length > 0
       || d.railStations.length > 0 || d.ferryDocks.length > 0
       || d.taxiStands.length > 0 || d.airports.length > 0;
   };
@@ -56,9 +53,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     } else if (type === 'metro') {
       const stations = [...state.metro.getStations()];
       if (stations.length >= 2) state.metro.createLine(stations, 1);
-    } else if (type === 'tram') {
-      const stops = [...state.tram.getStops()];
-      if (stops.length >= 2) state.tram.createRoute(stops, 1);
     } else if (type === 'rail') {
       const stations = [...state.rail.getStations()];
       if (stations.length >= 2) state.rail.createLine(stations, RailServiceType.PASSENGER, 1);
@@ -79,7 +73,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     const state = getGame().getState();
     if (type === 'bus') return state.bus.getStops();
     if (type === 'metro') return state.metro.getStations();
-    if (type === 'tram') return state.tram.getStops();
     if (type === 'rail') return state.rail.getStations();
     if (type === 'ferry') return state.ferry.getDocks();
     return [];
@@ -108,7 +101,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
 
     if (rb.type === 'bus') state.bus.createRoute([...selected], 1);
     else if (rb.type === 'metro') state.metro.createLine([...selected], 1);
-    else if (rb.type === 'tram') state.tram.createRoute([...selected], 1);
     else if (rb.type === 'rail') state.rail.createLine([...selected], RailServiceType.PASSENGER, 1);
     else if (rb.type === 'ferry') {
       if (!state.ferry.validateRouteConnectivity([...selected])) {
@@ -126,7 +118,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     const state = getGame().getState();
     if (type === 'bus') state.bus.addVehicleToRoute(routeId);
     else if (type === 'metro') state.metro.addVehicleToRoute(routeId);
-    else if (type === 'tram') state.tram.addVehicleToRoute(routeId);
     else if (type === 'rail') state.rail.addVehicleToRoute(routeId);
     else if (type === 'ferry') state.ferry.addVehicleToRoute(routeId);
     setVersion(v => v + 1);
@@ -136,7 +127,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     const state = getGame().getState();
     if (type === 'bus') state.bus.removeVehicleFromRoute(routeId);
     else if (type === 'metro') state.metro.removeVehicleFromRoute(routeId);
-    else if (type === 'tram') state.tram.removeVehicleFromRoute(routeId);
     else if (type === 'rail') state.rail.removeVehicleFromRoute(routeId);
     else if (type === 'ferry') state.ferry.removeVehicleFromRoute(routeId);
     setVersion(v => v + 1);
@@ -146,7 +136,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     const state = getGame().getState();
     if (type === 'bus') state.bus.deleteRoute(routeId);
     else if (type === 'metro') state.metro.deleteLine(routeId);
-    else if (type === 'tram') state.tram.deleteRoute(routeId);
     else if (type === 'rail') state.rail.deleteLine(routeId);
     else if (type === 'ferry') state.ferry.deleteRoute(routeId);
     setVersion(v => v + 1);
@@ -243,31 +232,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
                   <button onClick={() => removeVehicle('metro', l.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #888;background:transparent;color:#aaa;cursor:pointer">-</button>
                   <button onClick={() => addVehicle('metro', l.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #4caf50;background:transparent;color:#4caf50;cursor:pointer">+</button>
                   <button onClick={() => deleteRoute('metro', l.id)} style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid #f44336;background:transparent;color:#f44336;cursor:pointer">X</button>
-                </span>
-              </div>
-            ))}
-          </div>
-        </Show>
-
-        {/* Tram */}
-        <Show when={transitData().tramStops.length > 0}>
-          <div style={sectionStyle}>
-            <div style="color:#8bc34a;font-weight:600;margin-bottom:4px">{'\u{1F68A}'} Tram System</div>
-            <div style="font-size:12px;color:#aaa">Stops: {transitData().tramStops.length} | Routes: {transitData().tramRoutes.length} | Cost: ${transitData().tramCost}/tick</div>
-            <Show when={transitData().tramStops.length >= 2}>
-              <div style="display:flex;gap:4px">
-                <button onClick={() => createRouteAll('tram')} style={btnStyle('#8bc34a')}>+ All stops</button>
-                <button onClick={() => startRouteBuilder('tram')} style={btnStyle('#8bc34a')}>+ Custom</button>
-              </div>
-            </Show>
-            <RouteBuilderPanel type="tram" color="#8bc34a" />
-            {transitData().tramRoutes.map((r: any, i: number) => (
-              <div style="font-size:11px;color:#ccc;margin-top:4px;display:flex;justify-content:space-between;align-items:center">
-                <span>Route {i + 1}: {r.stops.length} stops, {r.vehicles} vehicle(s)</span>
-                <span style="display:flex;gap:2px">
-                  <button onClick={() => removeVehicle('tram', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #888;background:transparent;color:#aaa;cursor:pointer">-</button>
-                  <button onClick={() => addVehicle('tram', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #4caf50;background:transparent;color:#4caf50;cursor:pointer">+</button>
-                  <button onClick={() => deleteRoute('tram', r.id)} style="font-size:10px;padding:1px 6px;border-radius:3px;border:1px solid #f44336;background:transparent;color:#f44336;cursor:pointer">X</button>
                 </span>
               </div>
             ))}

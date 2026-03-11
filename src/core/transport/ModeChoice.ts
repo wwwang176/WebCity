@@ -64,8 +64,6 @@ function transportTypeToMode(type: TransportType): TransportMode | null {
       return TransportMode.BUS;
     case TransportType.METRO:
       return TransportMode.METRO;
-    case TransportType.TRAM:
-      return TransportMode.TRAM;
     case TransportType.RAIL:
       return TransportMode.RAIL;
     case TransportType.FERRY:
