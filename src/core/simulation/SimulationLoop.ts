@@ -19,6 +19,7 @@ import { getGridPollutionSources } from '../environment/GridPollutionSources';
 import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel, isWorkingAge } from '../citizen/types';
+import { countOccupancy, assignToBuildings, type BuildingSlot } from '../citizen/OccupancyAssignment';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
@@ -728,8 +729,8 @@ export class SimulationLoop {
     this.rebuildBuildingIndex();
 
     // Collect residential and workplace buildings with capacity info
-    const residentialBuildings: { pos: string; capacity: number }[] = [];
-    const workplaceBuildings: { pos: string; capacity: number }[] = [];
+    const residentialBuildings: BuildingSlot[] = [];
+    const workplaceBuildings: BuildingSlot[] = [];
 
     for (const b of this.buildingPositions) {
       const bt = getBuildingType(b.buildingId);
@@ -744,43 +745,17 @@ export class SimulationLoop {
 
     if (residentialBuildings.length === 0 && workplaceBuildings.length === 0) return;
 
-    // Count current occupancy by position string
-    const homeOccupancy = new Map<string, number>();
-    const workOccupancy = new Map<string, number>();
-    for (const c of this.state.citizens.getCitizens()) {
-      if (c.homeId !== null) {
-        homeOccupancy.set(c.homeId, (homeOccupancy.get(c.homeId) ?? 0) + 1);
-      }
-      if (c.workplaceId !== null) {
-        workOccupancy.set(c.workplaceId, (workOccupancy.get(c.workplaceId) ?? 0) + 1);
-      }
-    }
+    const citizens = this.state.citizens.getCitizens();
 
-    for (const citizen of this.state.citizens.getCitizens()) {
-      // Assign home if needed
-      if (citizen.homeId === null && residentialBuildings.length > 0) {
-        for (const rb of residentialBuildings) {
-          const occ = homeOccupancy.get(rb.pos) ?? 0;
-          if (occ < rb.capacity) {
-            citizen.homeId = rb.pos;
-            homeOccupancy.set(rb.pos, occ + 1);
-            break;
-          }
-        }
-      }
+    // Count current occupancy and assign — delegated to generic functions (SRP+DRY)
+    const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
+    assignToBuildings(citizens, residentialBuildings, homeOccupancy,
+      (c) => c.homeId, (c, pos) => { c.homeId = pos; });
 
-      // Assign workplace if needed (only for working-age adults)
-      if (citizen.workplaceId === null && isWorkingAge(citizen.age) && workplaceBuildings.length > 0) {
-        for (const wb of workplaceBuildings) {
-          const occ = workOccupancy.get(wb.pos) ?? 0;
-          if (occ < wb.capacity) {
-            citizen.workplaceId = wb.pos;
-            workOccupancy.set(wb.pos, occ + 1);
-            break;
-          }
-        }
-      }
-    }
+    const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
+    const workingAgeCitizens = citizens.filter((c) => isWorkingAge(c.age));
+    assignToBuildings(workingAgeCitizens, workplaceBuildings, workOccupancy,
+      (c) => c.workplaceId, (c, pos) => { c.workplaceId = pos; });
   }
 
   /** Mark the lane graph as needing rebuild (call after road build/demolish).
