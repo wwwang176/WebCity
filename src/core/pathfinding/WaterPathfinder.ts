@@ -5,7 +5,7 @@
  * 純邏輯模組，禁止 import Three.js。
  */
 
-import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, toPosKey, euclideanDistance } from '../grid/GridHelpers';
 
 export interface WaterGrid {
   width: number;
@@ -30,12 +30,7 @@ const DIRS: ReadonlyArray<{ dx: number; dy: number; cost: number }> = [
   { dx: 1, dy: 1, cost: Math.SQRT2 },   // SE
 ];
 
-function heuristic(ax: number, ay: number, bx: number, by: number): number {
-  // 歐幾里得距離
-  const dx = ax - bx;
-  const dy = ay - by;
-  return Math.sqrt(dx * dx + dy * dy);
-}
+const heuristic = euclideanDistance;
 
 const key = toPosKey;
 
