@@ -58,11 +58,6 @@ function dirVec(d: Direction): { dx: number; dy: number } {
 
 const parseCellKey = parsePosKeyUnsafe;
 
-function countFlags(flags: number): number {
-  let n = 0;
-  for (const d of DIR_FLAGS) if (flags & d.flag) n++;
-  return n;
-}
 
 /** Lane geometry rendering constants */
 export const LANE_GEOMETRY = {
