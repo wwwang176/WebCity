@@ -11,90 +11,94 @@ export interface HappinessFactors {
   serviceCoverage: number;
 }
 
+/** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
+export interface ThresholdModifier {
+  threshold: number;
+  modifier: number;
+}
+
+/**
+ * Apply the first matching threshold modifier (descending order, first match wins).
+ * Returns 0 if no threshold is exceeded.
+ */
+export function applyThresholdModifier(
+  value: number,
+  thresholds: readonly ThresholdModifier[],
+  comparison: 'above' | 'atOrAbove' = 'above',
+): number {
+  for (const t of thresholds) {
+    if (comparison === 'above' ? value > t.threshold : value >= t.threshold) {
+      return t.modifier;
+    }
+  }
+  return 0;
+}
+
 export const HAPPINESS = {
   BASE: 50,
   MIN: 0,
   MAX: 100,
-  // Commute thresholds
+  // Commute
   SHORT_COMMUTE: 5,
   SHORT_COMMUTE_BONUS: 10,
-  MEDIUM_COMMUTE: 10,
-  MEDIUM_COMMUTE_PENALTY: -5,
-  LONG_COMMUTE: 20,
-  LONG_COMMUTE_PENALTY: -15,
+  COMMUTE_MODIFIERS: [
+    { threshold: 20, modifier: -15 },
+    { threshold: 10, modifier: -5 },
+  ] as readonly ThresholdModifier[],
   // Environment
   PARK_BONUS: 5,
-  HIGH_POLLUTION: 50,
-  HIGH_POLLUTION_PENALTY: -10,
-  MODERATE_POLLUTION: 25,
-  MODERATE_POLLUTION_PENALTY: -5,
-  HIGH_NOISE: 50,
-  HIGH_NOISE_PENALTY: -8,
-  HIGH_CRIME: 50,
-  HIGH_CRIME_PENALTY: -10,
-  MODERATE_CRIME: 25,
-  MODERATE_CRIME_PENALTY: -5,
+  POLLUTION_MODIFIERS: [
+    { threshold: 50, modifier: -10 },
+    { threshold: 25, modifier: -5 },
+  ] as readonly ThresholdModifier[],
+  NOISE_MODIFIERS: [
+    { threshold: 50, modifier: -8 },
+  ] as readonly ThresholdModifier[],
+  CRIME_MODIFIERS: [
+    { threshold: 50, modifier: -10 },
+    { threshold: 25, modifier: -5 },
+  ] as readonly ThresholdModifier[],
   // Employment
   UNEMPLOYMENT_PENALTY: -15,
-  // Tax brackets (descending order for if-else chain)
+  // Tax brackets (descending order)
   TAX_BRACKETS: [
     { threshold: 20, modifier: -35 },
     { threshold: 18, modifier: -25 },
     { threshold: 15, modifier: -15 },
     { threshold: 12, modifier: -5 },
-  ] as readonly { threshold: number; modifier: number }[],
+  ] as readonly ThresholdModifier[],
   LOW_TAX_THRESHOLD: 8,
   LOW_TAX_BONUS: 5,
   // Services
-  HIGH_SERVICE: 5,
-  HIGH_SERVICE_BONUS: 10,
-  MODERATE_SERVICE: 3,
-  MODERATE_SERVICE_BONUS: 5,
+  SERVICE_MODIFIERS: [
+    { threshold: 5, modifier: 10 },
+    { threshold: 3, modifier: 5 },
+  ] as readonly ThresholdModifier[],
 } as const;
 
 export function calculateHappiness(citizen: Citizen, factors: HappinessFactors): number {
   let happiness = HAPPINESS.BASE;
 
-  // Commute
+  // Commute: short-distance bonus, otherwise threshold penalties
   if (factors.commuteDistance < HAPPINESS.SHORT_COMMUTE) happiness += HAPPINESS.SHORT_COMMUTE_BONUS;
-  else if (factors.commuteDistance > HAPPINESS.LONG_COMMUTE) happiness += HAPPINESS.LONG_COMMUTE_PENALTY;
-  else if (factors.commuteDistance > HAPPINESS.MEDIUM_COMMUTE) happiness += HAPPINESS.MEDIUM_COMMUTE_PENALTY;
+  else happiness += applyThresholdModifier(factors.commuteDistance, HAPPINESS.COMMUTE_MODIFIERS);
 
-  // Park
+  // Boolean factors
   if (factors.hasPark) happiness += HAPPINESS.PARK_BONUS;
+  if (!factors.isEmployed && isWorkingAge(citizen.age)) happiness += HAPPINESS.UNEMPLOYMENT_PENALTY;
 
-  // Pollution
-  if (factors.pollution > HAPPINESS.HIGH_POLLUTION) happiness += HAPPINESS.HIGH_POLLUTION_PENALTY;
-  else if (factors.pollution > HAPPINESS.MODERATE_POLLUTION) happiness += HAPPINESS.MODERATE_POLLUTION_PENALTY;
+  // Threshold-based environmental factors (descending, first match wins)
+  happiness += applyThresholdModifier(factors.pollution, HAPPINESS.POLLUTION_MODIFIERS);
+  happiness += applyThresholdModifier(factors.noiseLevel, HAPPINESS.NOISE_MODIFIERS);
+  happiness += applyThresholdModifier(factors.crimeRate, HAPPINESS.CRIME_MODIFIERS);
 
-  // Noise
-  if (factors.noiseLevel > HAPPINESS.HIGH_NOISE) happiness += HAPPINESS.HIGH_NOISE_PENALTY;
+  // Tax brackets
+  const taxMod = applyThresholdModifier(factors.taxRate, HAPPINESS.TAX_BRACKETS, 'atOrAbove');
+  if (taxMod !== 0) happiness += taxMod;
+  else if (factors.taxRate < HAPPINESS.LOW_TAX_THRESHOLD) happiness += HAPPINESS.LOW_TAX_BONUS;
 
-  // Crime
-  if (factors.crimeRate > HAPPINESS.HIGH_CRIME) happiness += HAPPINESS.HIGH_CRIME_PENALTY;
-  else if (factors.crimeRate > HAPPINESS.MODERATE_CRIME) happiness += HAPPINESS.MODERATE_CRIME_PENALTY;
-
-  // Employment
-  if (!factors.isEmployed && isWorkingAge(citizen.age)) {
-    happiness += HAPPINESS.UNEMPLOYMENT_PENALTY;
-  }
-
-  // Tax (graduated penalty for high rates)
-  let taxApplied = false;
-  for (const bracket of HAPPINESS.TAX_BRACKETS) {
-    if (factors.taxRate >= bracket.threshold) {
-      happiness += bracket.modifier;
-      taxApplied = true;
-      break;
-    }
-  }
-  if (!taxApplied && factors.taxRate < HAPPINESS.LOW_TAX_THRESHOLD) {
-    happiness += HAPPINESS.LOW_TAX_BONUS;
-  }
-
-  // Services
-  if (factors.serviceCoverage >= HAPPINESS.HIGH_SERVICE) happiness += HAPPINESS.HIGH_SERVICE_BONUS;
-  else if (factors.serviceCoverage >= HAPPINESS.MODERATE_SERVICE) happiness += HAPPINESS.MODERATE_SERVICE_BONUS;
+  // Service coverage
+  happiness += applyThresholdModifier(factors.serviceCoverage, HAPPINESS.SERVICE_MODIFIERS, 'atOrAbove');
 
   return Math.max(HAPPINESS.MIN, Math.min(HAPPINESS.MAX, happiness));
 }

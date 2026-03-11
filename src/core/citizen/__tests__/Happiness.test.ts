@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateHappiness, HAPPINESS, type HappinessFactors } from '../Happiness';
+import { calculateHappiness, HAPPINESS, applyThresholdModifier, type HappinessFactors } from '../Happiness';
 import { type Citizen, LifeStage, EducationLevel, IncomeLevel } from '../types';
 
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
@@ -82,6 +82,46 @@ describe('Happiness', () => {
   it('HAPPINESS.TAX_BRACKETS should be sorted descending by threshold', () => {
     for (let i = 1; i < HAPPINESS.TAX_BRACKETS.length; i++) {
       expect(HAPPINESS.TAX_BRACKETS[i]!.threshold).toBeLessThan(HAPPINESS.TAX_BRACKETS[i - 1]!.threshold);
+    }
+  });
+});
+
+describe('applyThresholdModifier', () => {
+  const thresholds = [
+    { threshold: 50, modifier: -10 },
+    { threshold: 25, modifier: -5 },
+  ];
+
+  it('returns first matching modifier (descending)', () => {
+    expect(applyThresholdModifier(60, thresholds)).toBe(-10);
+    expect(applyThresholdModifier(51, thresholds)).toBe(-10);
+  });
+
+  it('returns second modifier when value exceeds only second threshold', () => {
+    expect(applyThresholdModifier(30, thresholds)).toBe(-5);
+    expect(applyThresholdModifier(26, thresholds)).toBe(-5);
+  });
+
+  it('returns 0 when no threshold is exceeded', () => {
+    expect(applyThresholdModifier(10, thresholds)).toBe(0);
+    expect(applyThresholdModifier(25, thresholds)).toBe(0);
+  });
+
+  it('supports atOrAbove comparison', () => {
+    expect(applyThresholdModifier(50, thresholds, 'atOrAbove')).toBe(-10);
+    expect(applyThresholdModifier(25, thresholds, 'atOrAbove')).toBe(-5);
+    expect(applyThresholdModifier(24, thresholds, 'atOrAbove')).toBe(0);
+  });
+
+  it('returns 0 for empty threshold list', () => {
+    expect(applyThresholdModifier(100, [])).toBe(0);
+  });
+
+  it('HAPPINESS threshold arrays are sorted descending', () => {
+    for (const arr of [HAPPINESS.POLLUTION_MODIFIERS, HAPPINESS.CRIME_MODIFIERS, HAPPINESS.SERVICE_MODIFIERS]) {
+      for (let i = 1; i < arr.length; i++) {
+        expect(arr[i]!.threshold).toBeLessThan(arr[i - 1]!.threshold);
+      }
     }
   });
 });
