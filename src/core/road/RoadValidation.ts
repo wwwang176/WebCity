@@ -1,5 +1,4 @@
-import { TerrainType } from '../grid/types';
-import { getInfraConfigById } from '../building/InfraConfig';
+import { validatePathTerrain } from '../grid/PathValidation';
 import { hasVerticalFlag, hasHorizontalFlag, getDirectionFlag } from '../grid/GridHelpers';
 import { RoadType, ROAD_CONFIGS } from './types';
 import { RailType } from '../rail/types';
@@ -25,19 +24,14 @@ interface GridLike {
 /**
  * Validate a road path for terrain, infrastructure, and rail conflicts.
  * Returns null if valid, or a reason string if invalid.
- * Extracted from RoadBuilder for SRP — validation is independent of construction.
+ * Uses shared validatePathTerrain (DRY) + road-specific parallel rail check.
  */
 export function validateRoadPath(grid: GridLike, cells: Position[]): string | null {
-  // Terrain + infrastructure check
-  for (const pos of cells) {
-    const cell = grid.getCell(pos.x, pos.y);
-    if (!cell) return 'OUT_OF_BOUNDS';
-    if (cell.terrainType === TerrainType.WATER) return 'WATER_TILE';
-    if (cell.terrainType === TerrainType.MOUNTAIN) return 'MOUNTAIN_TILE';
-    if (getInfraConfigById(cell.buildingId)) return 'INFRASTRUCTURE_EXISTS';
-  }
+  // Shared terrain + infrastructure check (DRY)
+  const terrainError = validatePathTerrain(grid, cells);
+  if (terrainError) return terrainError;
 
-  // Parallel rail conflict check
+  // Road-specific: parallel rail conflict check
   for (let i = 0; i < cells.length; i++) {
     const pos = cells[i]!;
     const cell = grid.getCell(pos.x, pos.y)!;
@@ -61,7 +55,6 @@ export function validateRoadPath(grid: GridLike, cells: Position[]): string | nu
 /**
  * Calculate the total cost for building a road along a path.
  * Charges differential pricing when upgrading existing roads.
- * Extracted from RoadBuilder for SRP — cost calculation is independent of construction.
  */
 export function calculateRoadCost(grid: GridLike, cells: Position[], roadType: RoadType): number {
   const config = ROAD_CONFIGS[roadType];

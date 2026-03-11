@@ -1,6 +1,7 @@
 import { Grid } from '../grid/Grid';
-import { TerrainType, ZoneType } from '../grid/types';
+import { ZoneType } from '../grid/types';
 import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath, getDirectionFlag } from '../grid/GridHelpers';
+import { validatePathTerrain } from '../grid/PathValidation';
 import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
@@ -25,17 +26,9 @@ export class RailBuilder {
   buildTrack(from: Position, to: Position, funds: number): BuildTrackResult {
     const cells = getLShapedPath(from, to);
 
-    // Validate terrain
-    for (const pos of cells) {
-      const cell = this.grid.getCell(pos.x, pos.y);
-      if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
-      if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
-      if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
-      // Block all infrastructure buildings (buildingId 236-254)
-      if (getInfraConfigById(cell.buildingId)) {
-        return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
-      }
-    }
+    // Validate terrain + infrastructure (shared DRY validation)
+    const terrainError = validatePathTerrain(this.grid, cells);
+    if (terrainError) return { success: false, reason: terrainError };
 
     // Check for parallel road conflicts
     for (let i = 0; i < cells.length; i++) {
@@ -43,8 +36,8 @@ export class RailBuilder {
       const cell = this.grid.getCell(pos.x, pos.y)!;
       if (cell.roadType !== RoadType.NONE) {
         let railFlags = 0;
-        if (i > 0) railFlags |= this.getDirection(pos, cells[i - 1]!);
-        if (i < cells.length - 1) railFlags |= this.getDirection(pos, cells[i + 1]!);
+        if (i > 0) railFlags |= getDirectionFlag(pos, cells[i - 1]!);
+        if (i < cells.length - 1) railFlags |= getDirectionFlag(pos, cells[i + 1]!);
         const railVert = hasVerticalFlag(railFlags);
         const railHorz = hasHorizontalFlag(railFlags);
         const roadVert = hasVerticalFlag(cell.roadFlags);
@@ -84,12 +77,12 @@ export class RailBuilder {
       // Connect to previous cell
       if (i > 0) {
         const prev = cells[i - 1]!;
-        flags |= this.getDirection(pos, prev);
+        flags |= getDirectionFlag(pos, prev);
       }
       // Connect to next cell
       if (i < cells.length - 1) {
         const next = cells[i + 1]!;
-        flags |= this.getDirection(pos, next);
+        flags |= getDirectionFlag(pos, next);
       }
 
       // Merge with existing rail flags
@@ -138,9 +131,5 @@ export class RailBuilder {
         });
       }
     }
-  }
-
-  private getDirection(from: Position, to: Position): number {
-    return getDirectionFlag(from, to);
   }
 }
