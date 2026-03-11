@@ -1646,8 +1646,60 @@ export class BuildingRenderer {
   }
 
   private buildLandfill(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly landfill — garbage mounds + bulldozer + fence
-    this.buildCivicBuilding(scene, cx, cz, 'garbage', scale);
+    // Dirt ground
+    const groundGeo = new THREE.BoxGeometry(0.85, 0.02, 0.85);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, 0.05, cz, false);
+
+    // Large garbage mound (center-back)
+    const largeMound = new THREE.ConeGeometry(0.18, 0.22, 6);
+    largeMound.translate(-0.05, 0.11, -0.10);
+    this.addInfraMesh(scene, largeMound, new THREE.MeshLambertMaterial({ color: 0x6d4c41 }), cx, 0.06, cz);
+
+    // Medium mound (right)
+    const medMound = new THREE.ConeGeometry(0.12, 0.15, 5);
+    medMound.translate(0.20, 0.075, 0.05);
+    this.addInfraMesh(scene, medMound, new THREE.MeshLambertMaterial({ color: 0x795548 }), cx, 0.06, cz);
+
+    // Small mound (left-front)
+    const smallMound = new THREE.ConeGeometry(0.08, 0.10, 5);
+    smallMound.translate(-0.22, 0.05, 0.15);
+    this.addInfraMesh(scene, smallMound, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, 0.06, cz);
+
+    // Office shack (back-right corner)
+    const shackGeo = new THREE.BoxGeometry(0.15, 0.15, 0.12);
+    shackGeo.translate(0.30, 0.075, -0.30);
+    this.addInfraMesh(scene, shackGeo, new THREE.MeshLambertMaterial({ color: 0xa1887f }), cx, 0.06, cz);
+
+    // Shack roof
+    const shackRoof = new THREE.BoxGeometry(0.18, 0.02, 0.15);
+    shackRoof.translate(0.30, 0.16, -0.30);
+    this.addInfraMesh(scene, shackRoof, new THREE.MeshLambertMaterial({ color: 0x795548 }), cx, 0.06, cz);
+
+    // Bulldozer body (front-left area)
+    const dozerBody = new THREE.BoxGeometry(0.10, 0.07, 0.06);
+    dozerBody.translate(-0.25, 0.035, 0.28);
+    this.addInfraMesh(scene, dozerBody, new THREE.MeshLambertMaterial({ color: 0xffc107 }), cx, 0.06, cz);
+
+    // Bulldozer blade
+    const dozerBlade = new THREE.BoxGeometry(0.08, 0.06, 0.02);
+    dozerBlade.translate(-0.25, 0.03, 0.24);
+    this.addInfraMesh(scene, dozerBlade, new THREE.MeshLambertMaterial({ color: 0xff8f00 }), cx, 0.06, cz);
+
+    // Fence front
+    const fenceFront = new THREE.BoxGeometry(0.85, 0.08, 0.01);
+    fenceFront.translate(0, 0.04, 0.42);
+    this.addInfraMesh(scene, fenceFront, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz);
+
+    // Fence side (right)
+    const fenceSide = new THREE.BoxGeometry(0.01, 0.08, 0.85);
+    fenceSide.translate(0.42, 0.04, 0);
+    this.addInfraMesh(scene, fenceSide, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz);
+
+    // Warning sign
+    const signGeo = new THREE.BoxGeometry(0.06, 0.06, 0.01);
+    signGeo.translate(0.0, 0.10, 0.42);
+    this.addInfraMesh(scene, signGeo, new THREE.MeshLambertMaterial({ color: 0xf0c030 }), cx, 0.06, cz);
   }
 
   // ═══════════════════════════════════════════════════════════════════
