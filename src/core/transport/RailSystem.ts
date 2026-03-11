@@ -3,6 +3,7 @@ import { BaseTransportSystem, TransportSystemConfig, BaseTransportJSON } from '.
 import type { Grid } from '../grid/Grid';
 import type { RailNetwork } from '../rail/RailNetwork';
 import { RailType } from '../rail/types';
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 export enum RailServiceType {
   PASSENGER = 'PASSENGER',
@@ -193,8 +194,7 @@ export class RailSystem extends BaseTransportSystem {
     // Parse path nodes and compute cumulative distances
     const points: Array<{ x: number; y: number }> = [];
     for (const nid of path) {
-      const [xs, ys] = nid.split(',');
-      points.push({ x: Number(xs), y: Number(ys) });
+      points.push(parsePosKeyUnsafe(nid));
     }
     const cumDists: number[] = [0];
     let totalDist = 0;
@@ -244,10 +244,7 @@ export class RailSystem extends BaseTransportSystem {
   getRoutePathPoints(routeId: number): ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> | null {
     const paths = this.routePaths.get(routeId);
     if (!paths) return null;
-    return paths.map(seg => seg.map(nid => {
-      const [xs, ys] = nid.split(',');
-      return { x: Number(xs), y: Number(ys) };
-    }));
+    return paths.map(seg => seg.map(nid => parsePosKeyUnsafe(nid)));
   }
 
   getTrains(): readonly TransportVehicle[] {

@@ -1,7 +1,6 @@
-function parseCoords(id: string): { x: number; y: number } {
-  const [xs, ys] = id.split(',');
-  return { x: Number(xs), y: Number(ys) };
-}
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+
+const parseCoords = parsePosKeyUnsafe;
 
 export class RailNetwork {
   private adjacency = new Map<string, Set<string>>();

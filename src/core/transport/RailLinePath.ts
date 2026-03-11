@@ -33,13 +33,9 @@ function dist(a: RailPathPoint, b: RailPathPoint): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/**
- * Parse "x,y" node IDs from RailNetwork.findPath into coordinates.
- */
-function parseNodeId(id: string): RailPathPoint {
-  const [xs, ys] = id.split(',');
-  return { x: Number(xs), y: Number(ys) };
-}
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+
+const parseNodeId = parsePosKeyUnsafe as (id: string) => RailPathPoint;
 
 /**
  * Compute the total length of a sequence of grid points.
