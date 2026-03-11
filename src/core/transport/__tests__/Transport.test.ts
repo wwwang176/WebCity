@@ -8,7 +8,7 @@ import { MetroSystem } from '../MetroSystem';
 import { RailSystem, RailServiceType } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
 import { AirportSystem, getAirportFootprint } from '../AirportSystem';
-import { chooseMode, AvailableTransport } from '../ModeChoice';
+import { chooseMode, AvailableTransport, MODE_CHOICE } from '../ModeChoice';
 import { PollutionManager } from '../../environment/Pollution';
 import { FreightSystem } from '../../traffic/FreightSystem';
 
@@ -470,6 +470,17 @@ describe('ModeChoice', () => {
       0,
     );
     expect(mode).toBe(TransportMode.WALK);
+  });
+});
+
+describe('MODE_CHOICE constants', () => {
+  it('walk max distance should be a small positive integer', () => {
+    expect(MODE_CHOICE.WALK_MAX_DISTANCE).toBeGreaterThan(0);
+    expect(Number.isInteger(MODE_CHOICE.WALK_MAX_DISTANCE)).toBe(true);
+  });
+
+  it('transit time threshold should be > 1 (transit gets a bonus)', () => {
+    expect(MODE_CHOICE.TRANSIT_TIME_MULTIPLIER_THRESHOLD).toBeGreaterThan(1);
   });
 });
 

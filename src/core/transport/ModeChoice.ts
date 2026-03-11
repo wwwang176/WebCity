@@ -1,7 +1,12 @@
 import { TransportMode, TransportType } from './types';
 
-const WALK_MAX_DISTANCE = 3;
-const TRANSIT_TIME_MULTIPLIER_THRESHOLD = 1.5;
+/** Mode choice configuration constants */
+export const MODE_CHOICE = {
+  /** Maximum Manhattan distance for walking */
+  WALK_MAX_DISTANCE: 3,
+  /** Transit time must beat driveTime * threshold to be chosen */
+  TRANSIT_TIME_MULTIPLIER_THRESHOLD: 1.5,
+} as const;
 
 export interface AvailableTransport {
   type: TransportType;
@@ -29,7 +34,7 @@ export function chooseMode(
   const distance = dx + dy; // Manhattan distance
 
   // Walk for very short distances
-  if (distance <= WALK_MAX_DISTANCE) {
+  if (distance <= MODE_CHOICE.WALK_MAX_DISTANCE) {
     return TransportMode.WALK;
   }
 
@@ -50,7 +55,7 @@ export function chooseMode(
   // Choose transit if it beats driving within the threshold
   if (
     bestTransit !== null &&
-    bestTransit.time < driveTime * TRANSIT_TIME_MULTIPLIER_THRESHOLD
+    bestTransit.time < driveTime * MODE_CHOICE.TRANSIT_TIME_MULTIPLIER_THRESHOLD
   ) {
     return bestTransit.mode;
   }
