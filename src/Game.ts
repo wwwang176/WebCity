@@ -925,14 +925,13 @@ export class Game {
       this.notificationTimer = 3;
       return;
     }
-    const costs: Record<string, number> = {
-      bus: 100, metro: 3000, rail: 2000, ferry: 1500, airport: 5000,
+    const infraTypeMap: Record<string, InfraType> = {
+      bus: 'bus_stop', metro: 'metro_station', rail: 'train_station', ferry: 'ferry_dock', airport: 'airport',
     };
     const airportCosts: Record<AirportSize, number> = { SMALL: 5000, MEDIUM: 15000, LARGE: 40000 };
-    const buildingIds: Record<string, number> = {
-      bus: 242, metro: 241, rail: 239, ferry: 238, airport: 237,
-    };
-    const cost = type === 'airport' ? airportCosts[this.selectedAirportSize ?? 'SMALL'] : (costs[type] ?? 500);
+    const infraCfg = getInfraConfig(infraTypeMap[type]!);
+    const baseCost = infraCfg?.cost ?? 500;
+    const cost = type === 'airport' ? airportCosts[this.selectedAirportSize ?? 'SMALL'] : baseCost;
     if (this.state.budget.funds < cost) {
       this.notification = `Insufficient funds (need $${cost})`;
       this.notificationTimer = 3;
@@ -1019,7 +1018,7 @@ export class Game {
       return; // skip the default single-cell setCell below
     }
     this.state.grid.setCell(x, y, {
-      buildingId: buildingIds[type] ?? 242,
+      buildingId: infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
       reserved: ROTATION_RESERVED[this.currentRotation],
     });
     this.audioManager.playSfx('build');
