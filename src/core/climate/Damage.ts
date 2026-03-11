@@ -23,19 +23,14 @@ export const DAMAGE = {
   ROAD_DAMAGE_THRESHOLD: 0.3,
 } as const;
 
-// Backward-compatible named exports
-export const BASE_REPAIR_COST_PER_DAMAGE = DAMAGE.BASE_REPAIR_COST;
-export const DESTRUCTION_THRESHOLD = DAMAGE.DESTRUCTION_THRESHOLD;
-export const ROAD_DAMAGE_THRESHOLD = DAMAGE.ROAD_DAMAGE_THRESHOLD;
-
 export function applyDamage(
   buildings: BuildingPosition[],
   disaster: Disaster,
 ): DamageState[] {
   return buildings.map((building) => {
     const damageLevel = calculateDamage(disaster, building.x, building.y);
-    const repairCost = Math.round(damageLevel * BASE_REPAIR_COST_PER_DAMAGE);
-    const destroyed = damageLevel >= DESTRUCTION_THRESHOLD;
+    const repairCost = Math.round(damageLevel * DAMAGE.BASE_REPAIR_COST);
+    const destroyed = damageLevel >= DAMAGE.DESTRUCTION_THRESHOLD;
 
     return {
       buildingId: building.id,
@@ -62,5 +57,5 @@ export function isRoadDamaged(
   disaster: Disaster,
 ): boolean {
   const damage = calculateDamage(disaster, x, y);
-  return damage > ROAD_DAMAGE_THRESHOLD;
+  return damage > DAMAGE.ROAD_DAMAGE_THRESHOLD;
 }

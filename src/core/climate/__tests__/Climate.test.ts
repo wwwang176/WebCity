@@ -18,8 +18,6 @@ import {
   applyDamage,
   repairBuilding,
   isRoadDamaged,
-  DESTRUCTION_THRESHOLD,
-  ROAD_DAMAGE_THRESHOLD,
   DAMAGE,
 } from '../Damage';
 
@@ -197,11 +195,11 @@ describe('Damage', () => {
     expect(b3Damage!.damageLevel).toBe(0);
   });
 
-  it('DESTRUCTION_THRESHOLD and ROAD_DAMAGE_THRESHOLD should be in valid range', () => {
-    expect(DESTRUCTION_THRESHOLD).toBeGreaterThan(0);
-    expect(DESTRUCTION_THRESHOLD).toBeLessThanOrEqual(1);
-    expect(ROAD_DAMAGE_THRESHOLD).toBeGreaterThan(0);
-    expect(ROAD_DAMAGE_THRESHOLD).toBeLessThan(DESTRUCTION_THRESHOLD);
+  it('DAMAGE thresholds should be in valid range', () => {
+    expect(DAMAGE.DESTRUCTION_THRESHOLD).toBeGreaterThan(0);
+    expect(DAMAGE.DESTRUCTION_THRESHOLD).toBeLessThanOrEqual(1);
+    expect(DAMAGE.ROAD_DAMAGE_THRESHOLD).toBeGreaterThan(0);
+    expect(DAMAGE.ROAD_DAMAGE_THRESHOLD).toBeLessThan(DAMAGE.DESTRUCTION_THRESHOLD);
   });
 
   it('should mark building as destroyed when damage >= 0.9', () => {
@@ -246,10 +244,6 @@ describe('Damage', () => {
 });
 
 describe('DAMAGE config', () => {
-  it('should match backward-compatible exports', () => {
-    expect(DAMAGE.DESTRUCTION_THRESHOLD).toBe(DESTRUCTION_THRESHOLD);
-    expect(DAMAGE.ROAD_DAMAGE_THRESHOLD).toBe(ROAD_DAMAGE_THRESHOLD);
-  });
 
   it('base repair cost should be positive', () => {
     expect(DAMAGE.BASE_REPAIR_COST).toBeGreaterThan(0);
