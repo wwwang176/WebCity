@@ -1370,8 +1370,68 @@ export class BuildingRenderer {
   }
 
   private buildHighSchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly high school — 2-story + clock tower + colonnade + track
-    this.buildCivicBuilding(scene, cx, cz, 'school_high', scale);
+    // Main teaching block (2 stories)
+    const mainGeo = new THREE.BoxGeometry(0.80, 0.40, 0.40);
+    mainGeo.translate(0, 0.40 / 2, 0);
+    const mainMat = new THREE.MeshLambertMaterial({ color: 0x6d4c41 });
+    this.addInfraMesh(scene, mainGeo, mainMat, cx, 0.05, cz);
+
+    // Main roof
+    const roofGeo = new THREE.BoxGeometry(0.85, 0.03, 0.45);
+    roofGeo.translate(0, 0.015, 0);
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0x4e342e });
+    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.40, cz);
+
+    // Clock tower (center, sitting on roof)
+    const towerGeo = new THREE.BoxGeometry(0.10, 0.22, 0.10);
+    towerGeo.translate(0, 0.22 / 2, 0);
+    const towerMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    this.addInfraMesh(scene, towerGeo, towerMat, cx, 0.05 + 0.40 + 0.03, cz);
+
+    // Tower spire
+    const spireGeo = new THREE.ConeGeometry(0.08, 0.08, 4);
+    spireGeo.translate(0, 0.08 / 2, 0);
+    const spireMat = new THREE.MeshLambertMaterial({ color: 0x4e342e });
+    this.addInfraMesh(scene, spireGeo, spireMat, cx, 0.05 + 0.40 + 0.03 + 0.22, cz);
+
+    // Clock face (on tower front)
+    const clockGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.01, 8);
+    clockGeo.rotateX(Math.PI / 2);
+    clockGeo.translate(0, 0.14, -0.051);
+    const clockMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    this.addInfraMesh(scene, clockGeo, clockMat, cx, 0.05 + 0.40 + 0.03, cz, false);
+
+    // 3 entrance columns (spaced on front)
+    const colMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
+    for (let i = -1; i <= 1; i++) {
+      const colGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.22, 6);
+      colGeo.translate(i * 0.09, 0.22 / 2, -0.40 / 2 - 0.02);
+      this.addInfraMesh(scene, colGeo, colMat, cx, 0.05, cz);
+    }
+
+    // Entrance canopy
+    const canopyGeo = new THREE.BoxGeometry(0.25, 0.02, 0.10);
+    canopyGeo.translate(0, 0.01, -0.40 / 2 - 0.02);
+    const canopyMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    this.addInfraMesh(scene, canopyGeo, canopyMat, cx, 0.05 + 0.22, cz);
+
+    // Track ground (to the side)
+    const trackGeo = new THREE.BoxGeometry(0.35, 0.01, 0.50);
+    trackGeo.translate(0.60, 0.005, 0);
+    const trackMat = new THREE.MeshLambertMaterial({ color: 0xc8b896 });
+    this.addInfraMesh(scene, trackGeo, trackMat, cx, 0.05, cz);
+
+    // Track white line
+    const lineGeo = new THREE.BoxGeometry(0.30, 0.012, 0.01);
+    lineGeo.translate(0.60, 0.012, -0.20);
+    const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    this.addInfraMesh(scene, lineGeo, lineMat, cx, 0.05, cz, false);
+
+    // Flagpole
+    const flagGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.30, 4);
+    flagGeo.translate(-0.38, 0.30 / 2, -0.25);
+    const flagMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
+    this.addInfraMesh(scene, flagGeo, flagMat, cx, 0.05, cz);
   }
 
   private buildUniversity(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
