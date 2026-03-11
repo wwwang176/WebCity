@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
-import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath } from '../grid/GridHelpers';
+import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath, getDirectionFlag } from '../grid/GridHelpers';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, RoadDirection, ROAD_CONFIGS, type BuildRoadResult, type Position } from './types';
@@ -137,10 +137,6 @@ export class RoadBuilder {
   }
 
   private getDirection(from: Position, to: Position): number {
-    if (to.y < from.y) return RoadDirection.NORTH;
-    if (to.y > from.y) return RoadDirection.SOUTH;
-    if (to.x < from.x) return RoadDirection.WEST;
-    if (to.x > from.x) return RoadDirection.EAST;
-    return 0;
+    return getDirectionFlag(from, to);
   }
 }

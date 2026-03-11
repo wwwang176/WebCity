@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
-import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath } from '../grid/GridHelpers';
+import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath, getDirectionFlag } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
@@ -141,10 +141,6 @@ export class RailBuilder {
   }
 
   private getDirection(from: Position, to: Position): number {
-    if (to.y < from.y) return TrackDirection.NORTH;
-    if (to.y > from.y) return TrackDirection.SOUTH;
-    if (to.x < from.x) return TrackDirection.WEST;
-    if (to.x > from.x) return TrackDirection.EAST;
-    return 0;
+    return getDirectionFlag(from, to);
   }
 }

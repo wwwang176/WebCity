@@ -4,6 +4,7 @@ import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
   hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS, getLShapedPath,
+  getDirectionFlag,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -353,6 +354,34 @@ describe('getLShapedPath', () => {
     const path = getLShapedPath({ x: 0, y: 0 }, { x: 1, y: 1 });
     const keys = path.map(p => `${p.x},${p.y}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('getDirectionFlag', () => {
+  it('returns NORTH (0b0001) when to is above from', () => {
+    expect(getDirectionFlag({ x: 5, y: 5 }, { x: 5, y: 3 })).toBe(0b0001);
+  });
+
+  it('returns SOUTH (0b0010) when to is below from', () => {
+    expect(getDirectionFlag({ x: 5, y: 5 }, { x: 5, y: 8 })).toBe(0b0010);
+  });
+
+  it('returns WEST (0b0100) when to is left of from', () => {
+    expect(getDirectionFlag({ x: 5, y: 5 }, { x: 2, y: 5 })).toBe(0b0100);
+  });
+
+  it('returns EAST (0b1000) when to is right of from', () => {
+    expect(getDirectionFlag({ x: 5, y: 5 }, { x: 8, y: 5 })).toBe(0b1000);
+  });
+
+  it('returns 0 when from === to', () => {
+    expect(getDirectionFlag({ x: 5, y: 5 }, { x: 5, y: 5 })).toBe(0);
+  });
+
+  it('prefers vertical when both dx and dy are nonzero', () => {
+    // Matches existing behavior: checks y difference first
+    const flag = getDirectionFlag({ x: 0, y: 0 }, { x: 1, y: 1 });
+    expect(flag).toBe(0b0010); // SOUTH
   });
 });
 

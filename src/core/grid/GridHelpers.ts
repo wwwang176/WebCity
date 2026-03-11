@@ -85,6 +85,19 @@ export function hasHorizontalFlag(flags: number): boolean {
   return (flags & (0b0100 | 0b1000)) !== 0; // WEST | EAST
 }
 
+/**
+ * Returns the cardinal direction bitflag from `from` toward `to`.
+ * Compatible with both RoadDirection and TrackDirection.
+ * Returns 0 if from === to. Prefers vertical when both dx/dy are nonzero.
+ */
+export function getDirectionFlag(from: { x: number; y: number }, to: { x: number; y: number }): number {
+  if (to.y < from.y) return 0b0001; // NORTH
+  if (to.y > from.y) return 0b0010; // SOUTH
+  if (to.x < from.x) return 0b0100; // WEST
+  if (to.x > from.x) return 0b1000; // EAST
+  return 0;
+}
+
 /** Simple 4-neighbor offsets as [dx, dy] tuples. */
 export const FOUR_NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
   [0, -1], [0, 1], [-1, 0], [1, 0],
