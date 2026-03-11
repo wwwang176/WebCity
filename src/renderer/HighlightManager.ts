@@ -1,10 +1,61 @@
 import * as THREE from 'three';
 
 /**
+ * Inject per-instance highlight support into a MeshLambertMaterial.
+ * Adds aHighlight attribute reading + color tinting via onBeforeCompile.
+ * Also adds a uHighlightColor uniform to the material's userData for later access.
+ */
+export function injectHighlightShader(material: THREE.MeshLambertMaterial): void {
+  const highlightColor = new THREE.Color(1, 0, 0);
+  material.userData.uHighlightColor = { value: highlightColor };
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uHighlightColor = material.userData.uHighlightColor;
+
+    // Vertex: pass aHighlight to fragment
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      `#include <common>
+      attribute float aHighlight;
+      varying float vHighlight;`,
+    );
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `#include <begin_vertex>
+      vHighlight = aHighlight;`,
+    );
+
+    // Fragment: mix highlight color when flagged
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      `#include <common>
+      uniform vec3 uHighlightColor;
+      varying float vHighlight;`,
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <opaque_fragment>',
+      `#include <opaque_fragment>
+      if (vHighlight > 0.5) {
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, uHighlightColor, 0.22);
+        gl_FragColor.rgb += uHighlightColor * 0.12;
+      }`,
+    );
+  };
+}
+
+/** Add aHighlight InstancedBufferAttribute to an InstancedMesh. */
+export function addHighlightAttribute(mesh: THREE.InstancedMesh): void {
+  const data = new Float32Array(mesh.count);
+  mesh.geometry.setAttribute('aHighlight',
+    new THREE.InstancedBufferAttribute(data, 1));
+}
+
+/**
  * Manages highlight tinting for grid cells and the 3D objects on them.
  * - Ground: semi-transparent flat overlay plane
  * - Infrastructure (THREE.Group): emissive material tinting
  * - Zone buildings (InstancedMesh): per-instance shader attribute (aHighlight)
+ * - Roads / Rails (InstancedMesh): per-instance via injected Lambert shader
  */
 export class HighlightManager {
   private scene: THREE.Scene;
@@ -218,9 +269,13 @@ export class HighlightManager {
       if (!attr) continue; // skip meshes without highlight attribute (zone overlays, light spots)
 
       // Set highlight color uniform on the material
+      // ShaderMaterial (custom building shader): uniforms on material directly
+      // MeshLambertMaterial (road/track via onBeforeCompile): uniforms in userData
       const mat = mesh.material as THREE.ShaderMaterial;
       if (mat.uniforms?.uHighlightColor) {
         (mat.uniforms.uHighlightColor.value as THREE.Color).set(color);
+      } else if ((mesh.material as THREE.Material).userData?.uHighlightColor) {
+        ((mesh.material as THREE.Material).userData.uHighlightColor.value as THREE.Color).set(color);
       }
 
       const data = attr.array as Float32Array;

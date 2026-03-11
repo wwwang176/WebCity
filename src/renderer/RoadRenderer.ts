@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { Grid } from '../core/grid/Grid';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
+import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
 
 const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -116,8 +117,10 @@ export class RoadRenderer {
 
     const geometry = new THREE.BoxGeometry(1, 0.05, 1);
     const material = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+    injectHighlightShader(material);
     const count = Math.min(strips.length, this.maxRoads * 2);
     this.roadMesh = new THREE.InstancedMesh(geometry, material, count);
+    addHighlightAttribute(this.roadMesh);
     this.roadMesh.receiveShadow = true;
     this.roadMesh.frustumCulled = false;
 
@@ -188,8 +191,10 @@ export class RoadRenderer {
     const geo = new THREE.PlaneGeometry(1, 1);
     geo.rotateX(-Math.PI / 2); // lay flat
     const mat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    injectHighlightShader(mat);
     const count = Math.min(strips.length, this.maxRoads * 4);
     this.sidewalkMesh = new THREE.InstancedMesh(geo, mat, count);
+    addHighlightAttribute(this.sidewalkMesh);
     this.sidewalkMesh.receiveShadow = true;
     this.sidewalkMesh.frustumCulled = false;
 
@@ -270,8 +275,10 @@ export class RoadRenderer {
     // Dashed center line: ~12cm wide, ~1.2m long per dash
     const geo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
     const mat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+    injectHighlightShader(mat);
     const count = Math.min(markings.length, this.maxRoads * 3);
     this.markingMesh = new THREE.InstancedMesh(geo, mat, count);
+    addHighlightAttribute(this.markingMesh);
     this.markingMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
@@ -358,8 +365,10 @@ export class RoadRenderer {
 
     const geo = new THREE.BoxGeometry(1, 0.005, 1);
     const mat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
+    injectHighlightShader(mat);
     const count = Math.min(strips.length, this.maxRoads * 4);
     this.crosswalkMesh = new THREE.InstancedMesh(geo, mat, count);
+    addHighlightAttribute(this.crosswalkMesh);
     this.crosswalkMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
@@ -429,8 +438,10 @@ export class RoadRenderer {
 
     const geo = new THREE.BoxGeometry(1, 0.005, 1);
     const mat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
+    injectHighlightShader(mat);
     const count = Math.min(lines.length, this.maxRoads * 4);
     this.stopLineMesh = new THREE.InstancedMesh(geo, mat, count);
+    addHighlightAttribute(this.stopLineMesh);
     this.stopLineMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
@@ -477,8 +488,10 @@ export class RoadRenderer {
     if (!merged) return;
 
     const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    injectHighlightShader(lampMat);
     const count = Math.min(lamps.length, this.maxRoads * 4);
     this.lampMesh = new THREE.InstancedMesh(merged, lampMat, count);
+    addHighlightAttribute(this.lampMesh);
     this.lampMesh.castShadow = true;
     this.lampMesh.frustumCulled = false;
 
@@ -572,6 +585,13 @@ export class RoadRenderer {
   /** @deprecated Use setViewMode instead. */
   setUndergroundMode(enabled: boolean): void {
     this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
+  }
+
+  /** All InstancedMeshes with highlight support (for HighlightManager). */
+  get highlightMeshes(): readonly THREE.InstancedMesh[] {
+    return [this.roadMesh, this.sidewalkMesh, this.markingMesh,
+      this.crosswalkMesh, this.stopLineMesh, this.lampMesh]
+      .filter((m): m is THREE.InstancedMesh => m !== null);
   }
 
   dispose(scene: THREE.Scene): void {

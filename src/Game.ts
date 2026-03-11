@@ -1446,6 +1446,15 @@ export class Game {
     }
   }
 
+  /** Collect all InstancedMeshes that support highlight (buildings + roads + tracks). */
+  private getAllHighlightMeshes(): readonly (THREE.InstancedMesh | THREE.Mesh)[] {
+    return [
+      ...this.buildingRenderer.buildingMeshes,
+      ...this.roadRenderer.highlightMeshes,
+      ...this.trackRenderer.highlightMeshes,
+    ];
+  }
+
   private updatePlacementPreview(): void {
     if (this.isInfraTool(this.currentTool)) {
       const infraType = this.currentTool as InfraType;
@@ -1468,7 +1477,7 @@ export class Game {
         const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
         this.highlightManager.highlight(
           minX, minY, maxX, maxY, 0xff0000,
-          this.buildingRenderer.buildingMeshes,
+          this.getAllHighlightMeshes(),
           this.buildingRenderer.buildingInfraGroups,
         );
       } else {
@@ -1492,7 +1501,7 @@ export class Game {
             }
             this.highlightManager.highlightCells(
               cells, 0xff0000,
-              this.buildingRenderer.buildingMeshes,
+              this.getAllHighlightMeshes(),
               this.buildingRenderer.buildingInfraGroups,
             );
           } else {
@@ -1516,7 +1525,7 @@ export class Game {
       const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
       this.highlightManager.highlight(
         minX, minY, maxX, maxY, color,
-        this.buildingRenderer.buildingMeshes,
+        this.getAllHighlightMeshes(),
         this.buildingRenderer.buildingInfraGroups,
       );
     } else {
