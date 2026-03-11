@@ -2016,8 +2016,60 @@ export class BuildingRenderer {
   }
 
   private buildMetroStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly metro station — arch entrance + stairs + vent shaft + M sign
-    this.buildCivicBuilding(scene, cx, cz, 'metro_station', scale);
+    const s = scale;
+    const y0 = 0.05;
+
+    // Entrance base structure
+    const baseGeo = new THREE.BoxGeometry(0.35 * s, 0.08 * s, 0.30 * s);
+    baseGeo.translate(0, 0.04 * s, 0);
+    this.addInfraMesh(scene, baseGeo, new THREE.MeshLambertMaterial({ color: 0x455a64 }), cx, y0, cz);
+
+    // Arch entrance (half-cylinder laid on its side to form tunnel arch)
+    const archGeo = new THREE.CylinderGeometry(0.12 * s, 0.12 * s, 0.30 * s, 8, 1, false, 0, Math.PI);
+    archGeo.rotateX(-Math.PI / 2);
+    archGeo.translate(0, 0.08 * s, 0.02 * s);
+    this.addInfraMesh(scene, archGeo, new THREE.MeshLambertMaterial({ color: 0x1565c0 }), cx, y0, cz);
+
+    // Steps going down into the station (3 steps, descending toward +z)
+    const stepMat = new THREE.MeshLambertMaterial({ color: 0x607d8b });
+
+    const step1Geo = new THREE.BoxGeometry(0.25 * s, 0.03 * s, 0.08 * s);
+    step1Geo.translate(0, 0.065 * s, 0.06 * s);
+    this.addInfraMesh(scene, step1Geo, stepMat, cx, y0, cz);
+
+    const step2Geo = new THREE.BoxGeometry(0.25 * s, 0.03 * s, 0.08 * s);
+    step2Geo.translate(0, 0.04 * s, 0.13 * s);
+    this.addInfraMesh(scene, step2Geo, stepMat.clone(), cx, y0, cz);
+
+    const step3Geo = new THREE.BoxGeometry(0.25 * s, 0.03 * s, 0.08 * s);
+    step3Geo.translate(0, 0.015 * s, 0.20 * s);
+    this.addInfraMesh(scene, step3Geo, stepMat.clone(), cx, y0, cz);
+
+    // Railings on each side of stairs
+    const railMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
+    const railLGeo = new THREE.BoxGeometry(0.01 * s, 0.06 * s, 0.15 * s);
+    railLGeo.translate(-0.13 * s, 0.06 * s, 0.13 * s);
+    this.addInfraMesh(scene, railLGeo, railMat, cx, y0, cz);
+
+    const railRGeo = new THREE.BoxGeometry(0.01 * s, 0.06 * s, 0.15 * s);
+    railRGeo.translate(0.13 * s, 0.06 * s, 0.13 * s);
+    this.addInfraMesh(scene, railRGeo, railMat.clone(), cx, y0, cz);
+
+    // Ventilation shaft (to the side)
+    const ventGeo = new THREE.BoxGeometry(0.10 * s, 0.12 * s, 0.10 * s);
+    ventGeo.translate(-0.18 * s, 0.06 * s, -0.10 * s);
+    this.addInfraMesh(scene, ventGeo, new THREE.MeshLambertMaterial({ color: 0x78909c }), cx, y0, cz);
+
+    // Vent grille on top
+    const grilleGeo = new THREE.BoxGeometry(0.08 * s, 0.01 * s, 0.08 * s);
+    grilleGeo.translate(-0.18 * s, 0.125 * s, -0.10 * s);
+    this.addInfraMesh(scene, grilleGeo, new THREE.MeshLambertMaterial({ color: 0x546e7a }), cx, y0, cz);
+
+    // M logo circle (glowing, on arch front)
+    const mLogoGeo = new THREE.CylinderGeometry(0.04 * s, 0.04 * s, 0.01 * s, 10);
+    mLogoGeo.rotateX(Math.PI / 2);
+    mLogoGeo.translate(0, 0.16 * s, 0.14 * s);
+    this.addInfraMesh(scene, mLogoGeo, new THREE.MeshBasicMaterial({ color: 0x2196f3 }), cx, y0, cz, false);
   }
 
   private buildTrainStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
