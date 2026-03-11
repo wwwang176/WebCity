@@ -128,7 +128,15 @@ export class Game {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private tickAccumulator = 0;
   private elapsedTime = 0;
-  private renderDirty = true;
+  private dirty = {
+    roads: true,
+    tracks: true,
+    crossings: true,
+    buildings: true,
+    terrain: true,
+    trafficLights: true,
+    overlay: true,
+  };
 
   // UI state
   currentTool: ToolType = 'select';
@@ -172,6 +180,12 @@ export class Game {
       this.state = createGameState(mapSize, mapSize);
     }
     this.simLoop = new SimulationLoop(this.state);
+    this.simLoop.onBuildingsChanged = () => {
+      this.dirty.buildings = true;
+    };
+    this.simLoop.onTerrainChanged = () => {
+      this.dirty.terrain = true;
+    };
     this.roadBuilder = new RoadBuilder(this.state.grid);
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
@@ -482,7 +496,9 @@ export class Game {
           this.notification = `Cannot build road: ${msg}`;
           this.notificationTimer = 4;
         }
-        this.renderDirty = true;
+        this.dirty.roads = true;
+        this.dirty.crossings = true;
+        this.dirty.trafficLights = true;
         break;
       }
       case 'rail_track': {
@@ -505,7 +521,8 @@ export class Game {
           this.notification = `Cannot build track: ${msg}`;
           this.notificationTimer = 4;
         }
-        this.renderDirty = true;
+        this.dirty.tracks = true;
+        this.dirty.crossings = true;
         break;
       }
       case 'zone_r':
@@ -598,13 +615,24 @@ export class Game {
     this.onUIUpdate?.();
   }
 
+  private markAllDirty(): void {
+    this.dirty.roads = true;
+    this.dirty.tracks = true;
+    this.dirty.crossings = true;
+    this.dirty.buildings = true;
+    this.dirty.terrain = true;
+    this.dirty.trafficLights = true;
+    this.dirty.overlay = true;
+  }
+
   private applyZone(x1: number, y1: number, x2: number, y2: number, zoneType: ZoneType): void {
     const minX = Math.min(x1, x2);
     const maxX = Math.max(x1, x2);
     const minY = Math.min(y1, y2);
     const maxY = Math.max(y1, y2);
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
-    this.renderDirty = true;
+    this.dirty.buildings = true;
+    this.dirty.terrain = true;
   }
 
   private collectRoadCells(x1: number, y1: number, x2: number, y2: number): string[] {
@@ -689,7 +717,7 @@ export class Game {
         });
       }
     }
-    this.renderDirty = true;
+    this.markAllDirty();
   }
 
   private removeInfraService(buildingId: number, px: number, py: number): void {
@@ -787,7 +815,7 @@ export class Game {
         this.state.districts.addCellToDistrict(this.activeDistrictId, x, y);
       }
     }
-    this.renderDirty = true;
+    this.dirty.terrain = true;
   }
 
   createNewDistrict(name?: string): string {
@@ -859,7 +887,7 @@ export class Game {
       this.state.deathCare.addCemetery(cx, cy);
     }
     this.audioManager.playSfx('build');
-    this.renderDirty = true;
+    this.dirty.buildings = true;
   }
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
@@ -976,7 +1004,7 @@ export class Game {
         }
       }
       this.audioManager.playSfx('build');
-      this.renderDirty = true;
+      this.dirty.buildings = true;
       return; // skip the default single-cell setCell below
     }
     this.state.grid.setCell(x, y, {
@@ -984,7 +1012,7 @@ export class Game {
       reserved: ROTATION_RESERVED[this.currentRotation],
     });
     this.audioManager.playSfx('build');
-    this.renderDirty = true;
+    this.dirty.buildings = true;
   }
 
   /** Returns groundwater level 0-100 based on distance to nearest river tile (max range 3) */
@@ -1039,9 +1067,10 @@ export class Game {
           saveGame(0, 'AutoSave', data).catch(() => { /* ignore save errors */ });
         }
 
-        // Rebuild visuals periodically (every 10 ticks)
-        if (this.state.clock.tick % 10 === 0) {
-          this.renderDirty = true;
+        // Safety-net rebuild: low-frequency fallback in case events are missed
+        if (this.state.clock.tick % 200 === 0) {
+          this.dirty.buildings = true;
+          this.dirty.terrain = true;
         }
         // Update ambient audio with current city state
         this.audioManager.updateAmbientState(
@@ -1053,33 +1082,48 @@ export class Game {
       }
     }
 
-    // Rebuild meshes when dirty
-    if (this.renderDirty) {
-      this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
-      this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
-      this.levelCrossingSystem.rebuildFromGrid(this.state.grid);
-      this.levelCrossingRenderer.build(this.sceneManager.scene, this.levelCrossingSystem.getCrossings());
-      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
-      this.terrainRenderer.refreshColors();
-      // Sync traffic lights with current intersections
-      this.syncTrafficLights();
-      this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
-      // Refresh active overlay so it reflects new roads/buildings/coverage
+    // Rebuild meshes per-subsystem when dirty
+    const d = this.dirty;
+    const anyDirty = d.roads || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
+    if (anyDirty) {
+      if (d.roads) {
+        this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
+        if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
+        d.roads = false;
+      }
+      if (d.tracks) {
+        this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
+        if (this.viewMode !== ViewMode.NORMAL) this.trackRenderer.setViewMode(this.viewMode);
+        d.tracks = false;
+      }
+      if (d.crossings) {
+        this.levelCrossingSystem.rebuildFromGrid(this.state.grid);
+        this.levelCrossingRenderer.build(this.sceneManager.scene, this.levelCrossingSystem.getCrossings());
+        if (this.viewMode !== ViewMode.NORMAL) this.levelCrossingRenderer.setViewMode(this.viewMode);
+        d.crossings = false;
+      }
+      if (d.buildings) {
+        this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
+        if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
+        d.buildings = false;
+      }
+      if (d.terrain) {
+        this.terrainRenderer.refreshColors();
+        d.terrain = false;
+      }
+      if (d.trafficLights) {
+        this.syncTrafficLights();
+        this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
+        d.trafficLights = false;
+      }
+
+      // Refresh active overlay when relevant subsystems rebuilt
       const currentOverlay = this.overlayRenderer.getOverlay();
       if (currentOverlay && currentOverlay !== 'none') {
         this.setOverlay(currentOverlay);
       }
-      // Re-apply view mode after rebuild (new meshes lose settings)
-      if (this.viewMode !== ViewMode.NORMAL) {
-        this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
-        this.roadRenderer.setViewMode(this.viewMode);
-        this.trackRenderer.setViewMode(this.viewMode);
-        this.levelCrossingRenderer.setViewMode(this.viewMode);
-      }
       // Re-apply highlight after rebuild (new meshes lose aHighlight)
       this.updatePlacementPreview();
-
-      this.renderDirty = false;
     }
 
     // Update traffic light colors every frame
@@ -1361,7 +1405,10 @@ export class Game {
     this.levelCrossingRenderer.setViewMode(mode);
     this.vehicleRenderer.setViewMode(mode);
     this.weatherRenderer.setViewMode(mode);
-    this.renderDirty = true;
+    this.dirty.roads = true;
+    this.dirty.tracks = true;
+    this.dirty.crossings = true;
+    this.dirty.buildings = true;
     this.onUIUpdate?.();
   }
 
@@ -1859,7 +1906,8 @@ export class Game {
     };
     this.notification = `Disaster: ${names[type] ?? type} at (${x},${y})! Intensity: ${Math.round(intensity * 100)}%`;
     this.notificationTimer = 10;
-    this.renderDirty = true;
+    this.dirty.buildings = true;
+    this.dirty.terrain = true;
     this.onUIUpdate?.();
   }
 

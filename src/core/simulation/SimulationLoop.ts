@@ -40,6 +40,11 @@ export class SimulationLoop {
   // Commute path cache: stores computed LaneEdge paths for citizen commutes
   commuteCache: CommuteCache = new CommuteCache();
 
+  /** Called when building state changes (growth/demolish/burn/upgrade) */
+  onBuildingsChanged?: () => void;
+  /** Called when terrain-related state changes (pollution/land value) */
+  onTerrainChanged?: () => void;
+
   constructor(state: GameState) {
     this.state = state;
   }
@@ -105,6 +110,7 @@ export class SimulationLoop {
     if (tick % 60 === 0) {
       this.updatePollution();
       this.updateLandValue();
+      this.onTerrainChanged?.();
     }
 
     // 4. Building growth (every 6 ticks)
@@ -245,6 +251,8 @@ export class SimulationLoop {
       rciDemand: this.state.rciDemand,
     };
 
+    let changed = false;
+
     // Try growing on a sample of cells each tick (not all 60x60)
     const attempts = 20;
     for (let i = 0; i < attempts; i++) {
@@ -258,6 +266,7 @@ export class SimulationLoop {
         // ~2% chance per attempt to clear the ruins (developer demolition takes time)
         if (Math.random() < 0.02) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
+          changed = true;
         }
         continue;
       }
@@ -271,9 +280,12 @@ export class SimulationLoop {
         // Check power/water for this specific cell
         conditions.hasPower = this.state.power.isPowered(x, y);
         conditions.hasWater = this.state.water.isSupplied(x, y);
-        growth.tryGrow(x, y, conditions);
+        if (growth.tryGrow(x, y, conditions)) {
+          changed = true;
+        }
       }
     }
+    if (changed) this.onBuildingsChanged?.();
   }
 
   private runMigration(): void {
@@ -518,12 +530,14 @@ export class SimulationLoop {
     fire.tryRandomFire(this.state.grid, pop);
 
     // Resolve completed fires and apply damage
+    let changed = false;
     const resolved = fire.resolveCompletedFires();
     for (const f of resolved) {
       if (f.damage >= 0.5) {
         // High damage: mark building as BURNED (charred ruins)
         const cell = this.state.grid.getCell(f.x, f.y);
         if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+          changed = true;
           // Check if this is a multi-cell building
           const cfg = getInfraConfigById(cell.buildingId);
           if (cfg && (cfg.width > 1 || cfg.height > 1)) {
@@ -546,6 +560,7 @@ export class SimulationLoop {
         }
       }
     }
+    if (changed) this.onBuildingsChanged?.();
   }
 
   private updatePollution(): void {
@@ -673,6 +688,7 @@ export class SimulationLoop {
   private tryBuildingUpgrades(): void {
     const grid = this.state.grid;
     const upgrade = this.state.buildingUpgrade;
+    let changed = false;
 
     // Sample cells each tick rather than scanning all (performance)
     const attempts = 30;
@@ -698,10 +714,11 @@ export class SimulationLoop {
       };
 
       // Try upgrade first, then downgrade
-      if (!upgrade.tryUpgrade(x, y, conditions)) {
-        upgrade.tryDowngrade(x, y, conditions);
+      if (upgrade.tryUpgrade(x, y, conditions) || upgrade.tryDowngrade(x, y, conditions)) {
+        changed = true;
       }
     }
+    if (changed) this.onBuildingsChanged?.();
   }
 
   /**
