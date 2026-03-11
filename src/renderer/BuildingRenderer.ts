@@ -2073,8 +2073,79 @@ export class BuildingRenderer {
   }
 
   private buildTrainStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly train station — station house + clock tower + platform canopy + rails
-    this.buildCivicBuilding(scene, cx, cz, 'train_station', scale);
+    const s = scale;
+    const y0 = 0.05;
+
+    // Station house (main building)
+    const houseGeo = new THREE.BoxGeometry(0.40 * s, 0.35 * s, 0.45 * s);
+    houseGeo.translate(0, 0.175 * s, -0.10 * s);
+    this.addInfraMesh(scene, houseGeo, new THREE.MeshLambertMaterial({ color: 0x795548 }), cx, y0, cz);
+
+    // Station pitched roof (rotated cone = diamond shape)
+    const roofGeo = new THREE.ConeGeometry(0.28 * s, 0.12 * s, 4);
+    roofGeo.rotateY(Math.PI / 4);
+    roofGeo.translate(0, 0.41 * s, -0.10 * s);
+    this.addInfraMesh(scene, roofGeo, new THREE.MeshLambertMaterial({ color: 0x5d4037 }), cx, y0, cz);
+
+    // Clock tower (center of roof)
+    const towerGeo = new THREE.BoxGeometry(0.10 * s, 0.25 * s, 0.10 * s);
+    towerGeo.translate(0, 0.475 * s, -0.10 * s);
+    this.addInfraMesh(scene, towerGeo, new THREE.MeshLambertMaterial({ color: 0x6d4c41 }), cx, y0, cz);
+
+    // Tower spire
+    const spireGeo = new THREE.ConeGeometry(0.07 * s, 0.08 * s, 4);
+    spireGeo.translate(0, 0.64 * s, -0.10 * s);
+    this.addInfraMesh(scene, spireGeo, new THREE.MeshLambertMaterial({ color: 0x4e342e }), cx, y0, cz);
+
+    // Clock face (on tower front, facing +z)
+    const clockGeo = new THREE.CylinderGeometry(0.03 * s, 0.03 * s, 0.01 * s, 8);
+    clockGeo.rotateX(Math.PI / 2);
+    clockGeo.translate(0, 0.50 * s, -0.04 * s);
+    this.addInfraMesh(scene, clockGeo, new THREE.MeshLambertMaterial({ color: 0xffffff }), cx, y0, cz);
+
+    // Entrance arch (front of station house)
+    const archGeo = new THREE.BoxGeometry(0.20 * s, 0.25 * s, 0.04 * s);
+    archGeo.translate(0, 0.125 * s, 0.14 * s);
+    this.addInfraMesh(scene, archGeo, new THREE.MeshLambertMaterial({ color: 0x6d4c41 }), cx, y0, cz);
+
+    // Platform surface (extends to the side of the station)
+    const platGeo = new THREE.BoxGeometry(0.75 * s, 0.03 * s, 0.25 * s);
+    platGeo.translate(0, 0.015 * s, 0.30 * s);
+    this.addInfraMesh(scene, platGeo, new THREE.MeshLambertMaterial({ color: 0xbdbdbd }), cx, y0, cz);
+
+    // Platform canopy (long roof over platform)
+    const canopyGeo = new THREE.BoxGeometry(0.70 * s, 0.015 * s, 0.20 * s);
+    canopyGeo.translate(0, 0.28 * s, 0.30 * s);
+    this.addInfraMesh(scene, canopyGeo, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, y0, cz);
+
+    // 4 canopy pillars
+    const pillarMat = new THREE.MeshLambertMaterial({ color: 0xa1887f });
+
+    const p1Geo = new THREE.CylinderGeometry(0.010 * s, 0.010 * s, 0.25 * s, 6);
+    p1Geo.translate(-0.30 * s, 0.125 * s, 0.22 * s);
+    this.addInfraMesh(scene, p1Geo, pillarMat, cx, y0 + 0.03 * s, cz);
+
+    const p2Geo = new THREE.CylinderGeometry(0.010 * s, 0.010 * s, 0.25 * s, 6);
+    p2Geo.translate(0.30 * s, 0.125 * s, 0.22 * s);
+    this.addInfraMesh(scene, p2Geo, pillarMat.clone(), cx, y0 + 0.03 * s, cz);
+
+    const p3Geo = new THREE.CylinderGeometry(0.010 * s, 0.010 * s, 0.25 * s, 6);
+    p3Geo.translate(-0.30 * s, 0.125 * s, 0.38 * s);
+    this.addInfraMesh(scene, p3Geo, pillarMat.clone(), cx, y0 + 0.03 * s, cz);
+
+    const p4Geo = new THREE.CylinderGeometry(0.010 * s, 0.010 * s, 0.25 * s, 6);
+    p4Geo.translate(0.30 * s, 0.125 * s, 0.38 * s);
+    this.addInfraMesh(scene, p4Geo, pillarMat.clone(), cx, y0 + 0.03 * s, cz);
+
+    // 2 rail tracks (parallel beside platform, on the +z side)
+    const railMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
+    const rail1Geo = new THREE.BoxGeometry(0.75 * s, 0.01 * s, 0.015 * s);
+    rail1Geo.translate(0, 0.005 * s, 0.46 * s);
+    this.addInfraMesh(scene, rail1Geo, railMat, cx, y0, cz);
+
+    const rail2Geo = new THREE.BoxGeometry(0.75 * s, 0.01 * s, 0.015 * s);
+    rail2Geo.translate(0, 0.005 * s, 0.50 * s);
+    this.addInfraMesh(scene, rail2Geo, railMat.clone(), cx, y0, cz);
   }
 
   // ═══════════════════════════════════════════════════════════════════
