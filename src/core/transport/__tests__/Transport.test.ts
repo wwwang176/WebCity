@@ -4,8 +4,8 @@ import {
   TransportMode,
 } from '../types';
 import { BusSystem } from '../BusSystem';
-import { MetroSystem } from '../MetroSystem';
-import { RailSystem, RailServiceType } from '../RailSystem';
+import { MetroSystem, METRO } from '../MetroSystem';
+import { RailSystem, RailServiceType, RAIL } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
 import { AirportSystem, getAirportFootprint } from '../AirportSystem';
 import { chooseMode, AvailableTransport, MODE_CHOICE } from '../ModeChoice';
@@ -1225,5 +1225,21 @@ describe('Ferry travel time', () => {
     expect(v.traveling).toBe(true);
     // travel ticks = ceil(10 / 0.375) = 27
     expect(v.travelTicks).toBe(27);
+  });
+});
+
+describe('METRO constants', () => {
+  it('build cost per station should be positive', () => {
+    expect(METRO.BUILD_COST_PER_STATION).toBeGreaterThan(0);
+  });
+});
+
+describe('RAIL constants', () => {
+  it('passenger capacity should be positive', () => {
+    expect(RAIL.PASSENGER_CAPACITY).toBeGreaterThan(0);
+  });
+
+  it('freight capacity should be greater than passenger capacity', () => {
+    expect(RAIL.FREIGHT_CAPACITY).toBeGreaterThan(RAIL.PASSENGER_CAPACITY);
   });
 });

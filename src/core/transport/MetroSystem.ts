@@ -1,7 +1,9 @@
 import { TransportType, TransportVehicle, TransportStop, TransportRoute } from './types';
 import { BaseTransportSystem, TransportSystemConfig, BaseTransportJSON } from './BaseTransportSystem';
 
-const METRO_BUILD_COST_PER_STATION = 5000;
+export const METRO = {
+  BUILD_COST_PER_STATION: 5000,
+} as const;
 
 const METRO_CONFIG: TransportSystemConfig = {
   type: TransportType.METRO,
@@ -51,7 +53,7 @@ export class MetroSystem extends BaseTransportSystem {
   }
 
   getBuildCost(stationCount: number): number {
-    return stationCount * METRO_BUILD_COST_PER_STATION;
+    return stationCount * METRO.BUILD_COST_PER_STATION;
   }
 
   // ── Train segment info for renderer ─────────────────────────────

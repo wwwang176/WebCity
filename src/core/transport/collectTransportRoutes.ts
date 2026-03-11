@@ -33,11 +33,13 @@ const ROUTE_COLORS: Record<TransportRouteRenderData['system'], number> = {
   FERRY: 0x0097a7,
 };
 
-// ID 前綴偏移量，避免不同系統的路線 ID 碰撞
-const ROUTE_ID_OFFSET_BUS = 10_000;
-const ROUTE_ID_OFFSET_METRO = 20_000;
-const ROUTE_ID_OFFSET_RAIL = 40_000;
-const ROUTE_ID_OFFSET_FERRY = 50_000;
+/** ID prefix offsets to avoid cross-system route ID collision. */
+export const ROUTE_ID_OFFSETS: Record<TransportRouteRenderData['system'], number> = {
+  BUS: 10_000,
+  METRO: 20_000,
+  RAIL: 40_000,
+  FERRY: 50_000,
+} as const;
 
 function mapRoute(
   route: TransportRoute,
@@ -59,19 +61,19 @@ export function collectTransportRoutes(systems: RouteSystems): TransportRouteRen
   const result: TransportRouteRenderData[] = [];
 
   for (const route of systems.bus.getRoutes()) {
-    result.push(mapRoute(route, 'BUS', ROUTE_ID_OFFSET_BUS));
+    result.push(mapRoute(route, 'BUS', ROUTE_ID_OFFSETS.BUS));
   }
 
   for (const line of systems.metro.getLines()) {
-    result.push(mapRoute(line, 'METRO', ROUTE_ID_OFFSET_METRO));
+    result.push(mapRoute(line, 'METRO', ROUTE_ID_OFFSETS.METRO));
   }
 
   for (const line of systems.rail.getLines()) {
-    result.push(mapRoute(line, 'RAIL', ROUTE_ID_OFFSET_RAIL));
+    result.push(mapRoute(line, 'RAIL', ROUTE_ID_OFFSETS.RAIL));
   }
 
   for (const route of systems.ferry.getRoutes()) {
-    result.push(mapRoute(route, 'FERRY', ROUTE_ID_OFFSET_FERRY));
+    result.push(mapRoute(route, 'FERRY', ROUTE_ID_OFFSETS.FERRY));
   }
 
   return result;

@@ -10,13 +10,15 @@ export enum RailServiceType {
   FREIGHT = 'FREIGHT',
 }
 
-const RAIL_PASSENGER_CAPACITY = 300;
-const RAIL_FREIGHT_CAPACITY = 500; // cargo units
+export const RAIL = {
+  PASSENGER_CAPACITY: 300,
+  FREIGHT_CAPACITY: 500,
+} as const;
 
 const RAIL_CONFIG: TransportSystemConfig = {
   type: TransportType.RAIL,
   speed: 4,
-  capacity: RAIL_PASSENGER_CAPACITY,
+  capacity: RAIL.PASSENGER_CAPACITY,
   dwellTicks: 3,
   operatingCostPerVehicle: 400,
   affectedByCongestion: false,
@@ -142,8 +144,8 @@ export class RailSystem extends BaseTransportSystem {
     }
 
     const capacity = serviceType === RailServiceType.PASSENGER
-      ? RAIL_PASSENGER_CAPACITY
-      : RAIL_FREIGHT_CAPACITY;
+      ? RAIL.PASSENGER_CAPACITY
+      : RAIL.FREIGHT_CAPACITY;
 
     const route = this.createRoute(stations, trainCount);
     route.frequency = stations.length * 4;
@@ -172,7 +174,7 @@ export class RailSystem extends BaseTransportSystem {
     const svcType = this.lineServiceTypes.get(lineId) ?? RailServiceType.PASSENGER;
     super.addVehicleToRoute(lineId);
     // Fix capacity for the newly added vehicle
-    const capacity = svcType === RailServiceType.PASSENGER ? RAIL_PASSENGER_CAPACITY : RAIL_FREIGHT_CAPACITY;
+    const capacity = svcType === RailServiceType.PASSENGER ? RAIL.PASSENGER_CAPACITY : RAIL.FREIGHT_CAPACITY;
     const lastVehicle = this.vehicles[this.vehicles.length - 1];
     if (lastVehicle && lastVehicle.routeId === lineId) {
       lastVehicle.capacity = capacity;
