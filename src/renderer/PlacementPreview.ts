@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { getInfraConfig, getRotatedSize, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { canPlaceInfra } from '../core/building/InfraPlacement';
 import { Grid } from '../core/grid/Grid';
+import type { BuildingRenderer } from './BuildingRenderer';
 
 const GREEN = 0x00ff00;
 const RED = 0xff0000;
@@ -10,12 +11,14 @@ const GHOST_OPACITY = 0.35;
 export class PlacementPreview {
   private group: THREE.Group | null = null;
   private scene: THREE.Scene;
+  private buildingRenderer: BuildingRenderer;
   private currentType: string | null = null;
   private currentRotation: Rotation = 0;
   private material: THREE.MeshBasicMaterial;
 
-  constructor(scene: THREE.Scene) {
+  constructor(scene: THREE.Scene, buildingRenderer: BuildingRenderer) {
     this.scene = scene;
+    this.buildingRenderer = buildingRenderer;
     this.material = new THREE.MeshBasicMaterial({
       color: GREEN,
       transparent: true,
@@ -41,9 +44,9 @@ export class PlacementPreview {
     const cfg = getInfraConfig(type);
     if (!cfg) { this.hide(); return; }
 
-    // Rebuild ghost mesh if type or rotation changed
-    if (this.currentType !== type || this.currentRotation !== rotation) {
-      this.rebuildGhost(type, rotation);
+    // Rebuild ghost mesh if type changed (rotation is applied to group, no rebuild needed)
+    if (this.currentType !== type) {
+      this.rebuildGhost(type);
     }
 
     if (!this.group) return;
@@ -56,6 +59,7 @@ export class PlacementPreview {
 
     // Apply rotation to the ghost model
     this.group.rotation.y = (rotation * Math.PI) / 180;
+    this.currentRotation = rotation;
 
     // Check placement validity
     const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn);
@@ -160,46 +164,30 @@ export class PlacementPreview {
     this.material.dispose();
   }
 
-  private rebuildGhost(type: InfraType, rotation: Rotation): void {
+  private rebuildGhost(type: InfraType): void {
     this.disposeGhost();
     this.currentType = type;
-    this.currentRotation = rotation;
 
     const cfg = getInfraConfig(type);
     if (!cfg) return;
 
-    const { w, h } = getRotatedSize(cfg.width, cfg.height, rotation);
+    const scale = Math.max(cfg.width, cfg.height);
 
     this.group = new THREE.Group();
 
-    // Building body (simplified ghost)
-    const bodyW = w * 0.55;
-    const bodyD = h * 0.55;
-    const bodyH = this.getGhostHeight(type, Math.max(w, h));
-    const bodyGeo = new THREE.BoxGeometry(bodyW, bodyH, bodyD);
-    bodyGeo.translate(0, bodyH / 2, 0);
-    const bodyMesh = new THREE.Mesh(bodyGeo, this.material);
-    this.group.add(bodyMesh);
+    // Build the actual building model into the group
+    this.buildingRenderer.buildPreviewModel(type, this.group, scale);
 
-    // Roof plane
-    if (type !== 'park') {
-      const roofGeo = new THREE.BoxGeometry(bodyW + 0.08, 0.03, bodyD + 0.08);
-      roofGeo.translate(0, bodyH + 0.015, 0);
-      const roofMesh = new THREE.Mesh(roofGeo, this.material);
-      this.group.add(roofMesh);
-    }
+    // Replace all materials with ghost material and disable shadows
+    this.group.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.material = this.material;
+        child.castShadow = false;
+        child.receiveShadow = false;
+      }
+    });
 
     this.scene.add(this.group);
-  }
-
-  private getGhostHeight(type: string, scale: number): number {
-    const heights: Record<string, number> = {
-      park: 0.1, police: 0.4, fire: 0.38, hospital: 0.5,
-      school: 0.3, school_high: 0.4, school_univ: 0.55,
-      power: 0.45, water: 0.35, garbage: 0.25,
-      sewage: 0.2, cemetery: 0.15, airport: 0.4,
-    };
-    return (heights[type] ?? 0.35) * Math.min(scale, 2);
   }
 
   private disposeGhost(): void {
