@@ -2153,8 +2153,63 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildFerryDock(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly ferry dock — wooden pier + lighthouse + waiting shelter + bollards
-    this.buildCivicBuilding(scene, cx, cz, 'ferry_dock', scale);
+    const s = scale;
+
+    // Wooden pier deck
+    const deckGeo = new THREE.BoxGeometry(0.40 * s, 0.025 * s, 0.25 * s);
+    deckGeo.translate(0, 0.025 * s / 2, 0);
+    const deckMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
+    this.addInfraMesh(scene, deckGeo, deckMat, cx, 0.05, cz);
+
+    // 4 pier support stilts under deck corners
+    const stiltMat = new THREE.MeshLambertMaterial({ color: 0x795548 });
+    const stiltOffsets: [number, number][] = [
+      [-0.16, -0.09], [-0.16, 0.09], [0.16, -0.09], [0.16, 0.09],
+    ];
+    for (const [dx, dz] of stiltOffsets) {
+      const stiltGeo = new THREE.CylinderGeometry(0.012 * s, 0.012 * s, 0.08 * s, 5);
+      stiltGeo.translate(0, -0.08 * s / 2 + 0.025 * s / 2, 0);
+      this.addInfraMesh(scene, stiltGeo, stiltMat, cx + dx * s, 0.05, cz + dz * s);
+    }
+
+    // Waiting shelter
+    const shelterGeo = new THREE.BoxGeometry(0.15 * s, 0.12 * s, 0.12 * s);
+    shelterGeo.translate(0, 0.025 * s + 0.12 * s / 2, 0);
+    const shelterMat = new THREE.MeshLambertMaterial({ color: 0x00838f });
+    this.addInfraMesh(scene, shelterGeo, shelterMat, cx - 0.08 * s, 0.05, cz);
+
+    // Shelter roof
+    const shelterRoofGeo = new THREE.BoxGeometry(0.18 * s, 0.02 * s, 0.15 * s);
+    shelterRoofGeo.translate(0, 0.025 * s + 0.12 * s + 0.02 * s / 2, 0);
+    const shelterRoofMat = new THREE.MeshLambertMaterial({ color: 0x006064 });
+    this.addInfraMesh(scene, shelterRoofGeo, shelterRoofMat, cx - 0.08 * s, 0.05, cz);
+
+    // Small lighthouse
+    const lighthouseGeo = new THREE.CylinderGeometry(0.02 * s, 0.02 * s, 0.18 * s, 8);
+    lighthouseGeo.translate(0, 0.025 * s + 0.18 * s / 2, 0);
+    const lighthouseMat = new THREE.MeshLambertMaterial({ color: 0xe0e0e0 });
+    this.addInfraMesh(scene, lighthouseGeo, lighthouseMat, cx + 0.15 * s, 0.05, cz - 0.08 * s);
+
+    // Lighthouse lamp
+    const lampGeo = new THREE.SphereGeometry(0.025 * s, 6, 5);
+    lampGeo.translate(0, 0.025 * s + 0.18 * s + 0.025 * s, 0);
+    const lampMat = new THREE.MeshBasicMaterial({ color: 0xffeb3b });
+    this.addInfraMesh(scene, lampGeo, lampMat, cx + 0.15 * s, 0.05, cz - 0.08 * s, false);
+
+    // 2 mooring bollards
+    const bollardMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    const bollardPositions: [number, number][] = [[0.10, 0.10], [-0.10, 0.10]];
+    for (const [dx, dz] of bollardPositions) {
+      const bollardGeo = new THREE.CylinderGeometry(0.015 * s, 0.015 * s, 0.04 * s, 6);
+      bollardGeo.translate(0, 0.025 * s + 0.04 * s / 2, 0);
+      this.addInfraMesh(scene, bollardGeo, bollardMat, cx + dx * s, 0.05, cz + dz * s);
+    }
+
+    // Buoy in water
+    const buoyGeo = new THREE.SphereGeometry(0.02 * s, 6, 4);
+    buoyGeo.translate(0, 0.01 * s, 0);
+    const buoyMat = new THREE.MeshLambertMaterial({ color: 0xff5722 });
+    this.addInfraMesh(scene, buoyGeo, buoyMat, cx + 0.05 * s, 0.05, cz + 0.18 * s);
   }
 
   private buildAirport(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
