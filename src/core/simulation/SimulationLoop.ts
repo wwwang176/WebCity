@@ -20,6 +20,7 @@ import { IncomeLevel } from '../citizen/types';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
+import { getSystemForMode, getTransitSystems } from '../transport/TransportRegistry';
 
 export class SimulationLoop {
   private state: GameState;
@@ -936,17 +937,9 @@ export class SimulationLoop {
         commuterSet.add(citizen.id);
 
         // Add waiting passenger at the nearest transit stop
-        if (mode === TransportMode.BUS) {
-          const nearest = this.findNearestStop(this.state.bus.getStops(), fromPos);
-          if (nearest) nearest.passengers++;
-        } else if (mode === TransportMode.METRO) {
-          const nearest = this.findNearestStop(this.state.metro.getStations(), fromPos);
-          if (nearest) nearest.passengers++;
-        } else if (mode === TransportMode.RAIL) {
-          const nearest = this.findNearestStop(this.state.rail.getStations(), fromPos);
-          if (nearest) nearest.passengers++;
-        } else if (mode === TransportMode.FERRY) {
-          const nearest = this.findNearestStop(this.state.ferry.getDocks(), fromPos);
+        const transitSystem = getSystemForMode(this.state, mode);
+        if (transitSystem) {
+          const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
           if (nearest) nearest.passengers++;
         }
 
@@ -1041,12 +1034,10 @@ export class SimulationLoop {
     const WALK_TO_STOP_RANGE = 5;
     const result: AvailableTransport[] = [];
 
-    const systems: { type: TransportType; routes: readonly { stops: readonly { x: number; y: number }[] }[] }[] = [
-      { type: TransportType.BUS, routes: this.state.bus.getRoutes() },
-      { type: TransportType.METRO, routes: this.state.metro.getLines() },
-      { type: TransportType.RAIL, routes: this.state.rail.getLines() },
-      { type: TransportType.FERRY, routes: this.state.ferry.getRoutes() },
-    ];
+    const systems = getTransitSystems(this.state).map(({ type, system }) => ({
+      type,
+      routes: system.getRoutes(),
+    }));
 
     for (const sys of systems) {
       for (const route of sys.routes) {
