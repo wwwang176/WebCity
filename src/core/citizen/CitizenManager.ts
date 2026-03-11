@@ -28,7 +28,7 @@ export const EDUCATION_PROGRESSION: readonly EducationRule[] = [
 let nextId = 1;
 
 export class CitizenManager {
-  citizens: Citizen[] = [];
+  private citizens: Citizen[] = [];
 
   createCitizen(overrides: Partial<Citizen> = {}): Citizen {
     const age = overrides.age ?? 25;
