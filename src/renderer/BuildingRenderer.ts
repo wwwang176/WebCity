@@ -1220,8 +1220,85 @@ export class BuildingRenderer {
   }
 
   private buildHospital(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly hospital — main wing + side wing + helipad H + ER canopy
-    this.buildCivicBuilding(scene, cx, cz, 'hospital', scale);
+    // Main wing
+    const mainGeo = new THREE.BoxGeometry(0.85, 0.55, 0.55);
+    mainGeo.translate(0, 0.55 / 2, 0.05);
+    const mainMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
+    this.addInfraMesh(scene, mainGeo, mainMat, cx, 0.05, cz);
+
+    // Side wing
+    const sideGeo = new THREE.BoxGeometry(0.35, 0.40, 0.40);
+    sideGeo.translate(-0.35, 0.40 / 2, -0.30);
+    const sideMat = new THREE.MeshLambertMaterial({ color: 0xe0e0e0 });
+    this.addInfraMesh(scene, sideGeo, sideMat, cx, 0.05, cz);
+
+    // Main roof
+    const mainRoofGeo = new THREE.BoxGeometry(0.90, 0.03, 0.60);
+    mainRoofGeo.translate(0, 0.015, 0.05);
+    const mainRoofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
+    this.addInfraMesh(scene, mainRoofGeo, mainRoofMat, cx, 0.05 + 0.55, cz);
+
+    // Side roof
+    const sideRoofGeo = new THREE.BoxGeometry(0.40, 0.03, 0.45);
+    sideRoofGeo.translate(-0.35, 0.015, -0.30);
+    const sideRoofMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
+    this.addInfraMesh(scene, sideRoofGeo, sideRoofMat, cx, 0.05 + 0.40, cz);
+
+    // Helipad circle on main roof
+    const helipadGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.01, 16);
+    helipadGeo.translate(0.15, 0.55 + 0.03 + 0.005, 0.05);
+    const helipadMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    this.addInfraMesh(scene, helipadGeo, helipadMat, cx, 0.05, cz);
+
+    // H marking — horizontal bar
+    const hMarkHGeo = new THREE.BoxGeometry(0.08, 0.015, 0.02);
+    hMarkHGeo.translate(0.15, 0.55 + 0.03 + 0.015, 0.05);
+    const hMarkMat = new THREE.MeshLambertMaterial({ color: 0xe91e63 });
+    this.addInfraMesh(scene, hMarkHGeo, hMarkMat, cx, 0.05, cz);
+
+    // H marking — vertical bar left
+    const hMarkV1Geo = new THREE.BoxGeometry(0.02, 0.015, 0.08);
+    hMarkV1Geo.translate(0.15 - 0.03, 0.55 + 0.03 + 0.015, 0.05);
+    this.addInfraMesh(scene, hMarkV1Geo, hMarkMat, cx, 0.05, cz);
+
+    // H marking — vertical bar right
+    const hMarkV2Geo = new THREE.BoxGeometry(0.02, 0.015, 0.08);
+    hMarkV2Geo.translate(0.15 + 0.03, 0.55 + 0.03 + 0.015, 0.05);
+    this.addInfraMesh(scene, hMarkV2Geo, hMarkMat, cx, 0.05, cz);
+
+    // Red cross on front wall — horizontal
+    const crossHGeo = new THREE.BoxGeometry(0.15, 0.02, 0.04);
+    crossHGeo.translate(0, 0.40, 0.05 + 0.55 / 2 + 0.005);
+    const crossMat = new THREE.MeshLambertMaterial({ color: 0xe91e63 });
+    this.addInfraMesh(scene, crossHGeo, crossMat, cx, 0.05, cz);
+
+    // Red cross on front wall — vertical
+    const crossVGeo = new THREE.BoxGeometry(0.04, 0.02, 0.15);
+    crossVGeo.translate(0, 0.40, 0.05 + 0.55 / 2 + 0.005);
+    this.addInfraMesh(scene, crossVGeo, crossMat, cx, 0.05, cz);
+
+    // ER canopy protruding from front
+    const canopyGeo = new THREE.BoxGeometry(0.30, 0.02, 0.15);
+    canopyGeo.translate(0, 0.20 + 0.01, 0.05 + 0.55 / 2 + 0.15 / 2);
+    const canopyMat = new THREE.MeshLambertMaterial({ color: 0xcfd8dc });
+    this.addInfraMesh(scene, canopyGeo, canopyMat, cx, 0.05, cz);
+
+    // Canopy pillar left
+    const pillarMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
+    const pillar1Geo = new THREE.CylinderGeometry(0.012, 0.012, 0.20, 6);
+    pillar1Geo.translate(-0.12, 0.20 / 2, 0.05 + 0.55 / 2 + 0.15);
+    this.addInfraMesh(scene, pillar1Geo, pillarMat, cx, 0.05, cz);
+
+    // Canopy pillar right
+    const pillar2Geo = new THREE.CylinderGeometry(0.012, 0.012, 0.20, 6);
+    pillar2Geo.translate(0.12, 0.20 / 2, 0.05 + 0.55 / 2 + 0.15);
+    this.addInfraMesh(scene, pillar2Geo, pillarMat, cx, 0.05, cz);
+
+    // Ambulance under canopy
+    const ambulanceGeo = new THREE.BoxGeometry(0.10, 0.08, 0.06);
+    ambulanceGeo.translate(0, 0.08 / 2, 0.05 + 0.55 / 2 + 0.08);
+    const ambulanceMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    this.addInfraMesh(scene, ambulanceGeo, ambulanceMat, cx, 0.05, cz);
   }
 
   // ═══════════════════════════════════════════════════════════════════
