@@ -1408,6 +1408,7 @@ export class Game {
     const idx = rotations.indexOf(this.currentRotation);
     this.currentRotation = rotations[(idx + 1) % 4] ?? 0;
     this.updateCursorSize();
+    this.updatePlacementPreview();
     this.onUIUpdate?.();
   }
 
