@@ -40,6 +40,16 @@ export class SimulationLoop {
   // Commute path cache: stores computed LaneEdge paths for citizen commutes
   commuteCache: CommuteCache = new CommuteCache();
 
+  /** Called when building state changes (growth/demolish/burn/upgrade) */
+  onBuildingsChanged?: () => void;
+  /** Called when terrain-related state changes (pollution/land value) */
+  onTerrainChanged?: () => void;
+
+  /** Fine-grained building callbacks for incremental rendering */
+  onBuildingAdded?: (x: number, y: number, zoneType: number, level: number) => void;
+  onBuildingRemoved?: (x: number, y: number) => void;
+  onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean) => void;
+
   constructor(state: GameState) {
     this.state = state;
   }
@@ -105,6 +115,7 @@ export class SimulationLoop {
     if (tick % 60 === 0) {
       this.updatePollution();
       this.updateLandValue();
+      this.onTerrainChanged?.();
     }
 
     // 4. Building growth (every 6 ticks)
@@ -245,6 +256,8 @@ export class SimulationLoop {
       rciDemand: this.state.rciDemand,
     };
 
+    let changed = false;
+
     // Try growing on a sample of cells each tick (not all 60x60)
     const attempts = 20;
     for (let i = 0; i < attempts; i++) {
@@ -258,6 +271,8 @@ export class SimulationLoop {
         // ~2% chance per attempt to clear the ruins (developer demolition takes time)
         if (Math.random() < 0.02) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
+          changed = true;
+          this.onBuildingRemoved?.(x, y);
         }
         continue;
       }
@@ -271,9 +286,18 @@ export class SimulationLoop {
         // Check power/water for this specific cell
         conditions.hasPower = this.state.power.isPowered(x, y);
         conditions.hasWater = this.state.water.isSupplied(x, y);
-        growth.tryGrow(x, y, conditions);
+        if (growth.tryGrow(x, y, conditions)) {
+          changed = true;
+          // Read back the grown cell to get level info
+          const grown = grid.getCell(x, y);
+          if (grown) {
+            const level = Math.max(1, Math.min(3, Math.ceil(grown.serviceCoverage / 3) || 1));
+            this.onBuildingAdded?.(x, y, cell.zoneType, level);
+          }
+        }
       }
     }
+    if (changed) this.onBuildingsChanged?.();
   }
 
   private runMigration(): void {
@@ -518,12 +542,14 @@ export class SimulationLoop {
     fire.tryRandomFire(this.state.grid, pop);
 
     // Resolve completed fires and apply damage
+    let changed = false;
     const resolved = fire.resolveCompletedFires();
     for (const f of resolved) {
       if (f.damage >= 0.5) {
         // High damage: mark building as BURNED (charred ruins)
         const cell = this.state.grid.getCell(f.x, f.y);
         if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+          changed = true;
           // Check if this is a multi-cell building
           const cfg = getInfraConfigById(cell.buildingId);
           if (cfg && (cfg.width > 1 || cfg.height > 1)) {
@@ -536,16 +562,20 @@ export class SimulationLoop {
                   const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
                   if (c && c.buildingId === cell.buildingId) {
                     this.state.grid.setCell(primary.x + dx, primary.y + dy, { reserved: 3 });
+                    this.onBuildingUpdated?.(primary.x + dx, primary.y + dy, c.zoneType, 1, true);
                   }
                 }
               }
             }
           } else {
             this.state.grid.setCell(f.x, f.y, { reserved: 3 }); // BuildingStatus.BURNED
+            const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1));
+            this.onBuildingUpdated?.(f.x, f.y, cell.zoneType, level, true);
           }
         }
       }
     }
+    if (changed) this.onBuildingsChanged?.();
   }
 
   private updatePollution(): void {
@@ -673,6 +703,7 @@ export class SimulationLoop {
   private tryBuildingUpgrades(): void {
     const grid = this.state.grid;
     const upgrade = this.state.buildingUpgrade;
+    let changed = false;
 
     // Sample cells each tick rather than scanning all (performance)
     const attempts = 30;
@@ -698,10 +729,17 @@ export class SimulationLoop {
       };
 
       // Try upgrade first, then downgrade
-      if (!upgrade.tryUpgrade(x, y, conditions)) {
-        upgrade.tryDowngrade(x, y, conditions);
+      if (upgrade.tryUpgrade(x, y, conditions) || upgrade.tryDowngrade(x, y, conditions)) {
+        changed = true;
+        // Notify with updated state
+        const updated = grid.getCell(x, y);
+        if (updated) {
+          const newLevel = Math.max(1, Math.min(3, Math.ceil(updated.serviceCoverage / 3) || 1));
+          this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === 3);
+        }
       }
     }
+    if (changed) this.onBuildingsChanged?.();
   }
 
   /**
