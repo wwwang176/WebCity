@@ -23,6 +23,19 @@ export enum NaturalResource {
   FOREST = 4,
 }
 
+export function isResidentialZone(z: ZoneType): boolean {
+  return z === ZoneType.RESIDENTIAL_LOW || z === ZoneType.RESIDENTIAL_HIGH;
+}
+
+export function isCommercialZone(z: ZoneType): boolean {
+  return z === ZoneType.COMMERCIAL_LOW || z === ZoneType.COMMERCIAL_HIGH;
+}
+
+export function isWorkplaceZone(z: ZoneType): boolean {
+  return z === ZoneType.COMMERCIAL_LOW || z === ZoneType.COMMERCIAL_HIGH
+    || z === ZoneType.INDUSTRIAL || z === ZoneType.OFFICE;
+}
+
 export interface CellData {
   terrainType: TerrainType;
   zoneType: ZoneType;

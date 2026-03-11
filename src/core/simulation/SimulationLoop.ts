@@ -5,7 +5,7 @@ import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue } from '../economy/LandValue';
-import { ZoneType } from '../grid/types';
+import { ZoneType, isResidentialZone, isCommercialZone, isWorkplaceZone } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
@@ -233,9 +233,9 @@ export class SimulationLoop {
         const cell = this.state.grid.getCell(x, y);
         if (cell && cell.buildingId > 0) {
           // Check zone type matches
-          if (type === 'residential' && (cell.zoneType === 1 || cell.zoneType === 2)) count++;
-          if (type === 'commercial' && (cell.zoneType === 3 || cell.zoneType === 4)) count++;
-          if (type === 'industrial' && cell.zoneType === 5) count++;
+          if (type === 'residential' && isResidentialZone(cell.zoneType)) count++;
+          if (type === 'commercial' && isCommercialZone(cell.zoneType)) count++;
+          if (type === 'industrial' && cell.zoneType === ZoneType.INDUSTRIAL) count++;
         }
       }
     }
@@ -264,7 +264,7 @@ export class SimulationLoop {
       const x = Math.floor(Math.random() * grid.width);
       const y = Math.floor(Math.random() * grid.height);
       const cell = grid.getCell(x, y);
-      if (!cell || cell.zoneType === 0) continue;
+      if (!cell || cell.zoneType === ZoneType.NONE) continue;
 
       // Burned buildings: developer must demolish ruins first (extra cost/time)
       if (cell.reserved === BURNED && isZoneBuilding(cell.buildingId)) {
@@ -1294,7 +1294,7 @@ export function countResidentialCapacity(grid: { width: number; height: number; 
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
       // Exclude burned (reserved=3) and multi-cell secondary (reserved=4) cells
-      if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2) && cell.reserved !== BURNED && cell.reserved !== 4) {
+      if (cell && cell.buildingId > 0 && isResidentialZone(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== MULTI_CELL_OCCUPIED) {
         const bt = getBuildingType(cell.buildingId);
         capacity += bt ? bt.residents : 0;
       }
@@ -1309,7 +1309,7 @@ export function countWorkplaceJobs(grid: { width: number; height: number; getCel
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
       // Exclude burned (reserved=3) and multi-cell secondary (reserved=4) cells
-      if (cell && cell.buildingId > 0 && cell.zoneType >= 3 && cell.reserved !== BURNED && cell.reserved !== 4) {
+      if (cell && cell.buildingId > 0 && isWorkplaceZone(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== MULTI_CELL_OCCUPIED) {
         const bt = getBuildingType(cell.buildingId);
         jobs += bt ? bt.workers : 0;
       }
