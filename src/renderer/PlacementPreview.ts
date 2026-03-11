@@ -171,12 +171,10 @@ export class PlacementPreview {
     const cfg = getInfraConfig(type);
     if (!cfg) return;
 
-    const scale = Math.max(cfg.width, cfg.height);
-
     this.group = new THREE.Group();
 
     // Build the actual building model into the group
-    this.buildingRenderer.buildPreviewModel(type, this.group, scale);
+    this.buildingRenderer.buildPreviewModel(type, this.group);
 
     // Replace all materials with ghost material and disable shadows
     this.group.traverse((child) => {
