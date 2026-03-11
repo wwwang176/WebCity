@@ -1049,11 +1049,12 @@ export class Game {
       segments: computeTunnelSegments(line.stops.map(s => ({ x: s.x, y: s.y }))),
       trainCount: line.vehicles,
     }));
+    const metroSpeedMult = this.paused ? 0 : this.state.clock.speed;
     this.metroTunnelRenderer.update(
       metroLineData,
       this.state.metro.getStations(),
       vmOp.metroTunnel,
-      dt,
+      dt * metroSpeedMult,
     );
 
     // Clean up stale vehicle rendering state
