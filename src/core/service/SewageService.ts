@@ -19,6 +19,7 @@ interface SewageJSON {
 }
 
 import type { PollutionSource } from '../environment/Pollution';
+import { removeById } from '../utils/removeById';
 
 export class SewageService {
   private outlets: SewageOutlet[] = [];
@@ -39,15 +40,11 @@ export class SewageService {
   }
 
   removeOutlet(id: string): boolean {
-    const idx = this.outlets.findIndex(o => o.id === id);
-    if (idx !== -1) { this.outlets.splice(idx, 1); return true; }
-    return false;
+    return removeById(this.outlets, id);
   }
 
   removeTreatmentPlant(id: string): boolean {
-    const idx = this.treatmentPlants.findIndex(p => p.id === id);
-    if (idx !== -1) { this.treatmentPlants.splice(idx, 1); return true; }
-    return false;
+    return removeById(this.treatmentPlants, id);
   }
 
   /** Produce sewage from population without treatment (manual step). */

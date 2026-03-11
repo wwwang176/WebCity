@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../Grid';
-import { isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad } from '../GridHelpers';
+import {
+  isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
+  euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius,
+} from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
 describe('isAdjacentToRoad', () => {
@@ -124,5 +127,102 @@ describe('findAdjacentRoad', () => {
     grid.setCell(2, 2, { roadType: RoadType.TWO_LANE });
     grid.setCell(2, 1, { roadType: RoadType.FOUR_LANE });
     expect(findAdjacentRoad(grid, 2, 2)).toEqual({ x: 2, y: 2 });
+  });
+});
+
+describe('euclideanDistance', () => {
+  it('returns 0 for same point', () => {
+    expect(euclideanDistance(5, 5, 5, 5)).toBe(0);
+  });
+
+  it('returns correct horizontal distance', () => {
+    expect(euclideanDistance(0, 0, 3, 0)).toBe(3);
+  });
+
+  it('returns correct vertical distance', () => {
+    expect(euclideanDistance(0, 0, 0, 4)).toBe(4);
+  });
+
+  it('returns correct diagonal distance', () => {
+    expect(euclideanDistance(0, 0, 3, 4)).toBe(5); // 3-4-5 triangle
+  });
+
+  it('is symmetric', () => {
+    expect(euclideanDistance(1, 2, 4, 6)).toBe(euclideanDistance(4, 6, 1, 2));
+  });
+});
+
+describe('isWithinEuclideanRadius', () => {
+  it('returns true for center point', () => {
+    expect(isWithinEuclideanRadius(5, 5, 5, 5, 3)).toBe(true);
+  });
+
+  it('returns true for point within radius', () => {
+    // dist = sqrt(4+4) = 2.83
+    expect(isWithinEuclideanRadius(0, 0, 2, 2, 3)).toBe(true);
+  });
+
+  it('returns false for point outside radius', () => {
+    // dist = sqrt(9+9) = 4.24
+    expect(isWithinEuclideanRadius(0, 0, 3, 3, 3)).toBe(false);
+  });
+
+  it('returns true for point exactly on boundary', () => {
+    expect(isWithinEuclideanRadius(0, 0, 3, 0, 3)).toBe(true);
+  });
+
+  it('returns false for point just outside boundary', () => {
+    // dist = sqrt(9+1) = 3.16
+    expect(isWithinEuclideanRadius(0, 0, 3, 1, 3)).toBe(false);
+  });
+});
+
+describe('forEachCellInRadius', () => {
+  it('calls callback for center cell with radius 0', () => {
+    const cells: [number, number][] = [];
+    forEachCellInRadius(5, 5, 0, (x, y) => cells.push([x, y]));
+    expect(cells).toEqual([[5, 5]]);
+  });
+
+  it('calls callback for all cells within radius 1 (cross shape)', () => {
+    const cells: [number, number][] = [];
+    forEachCellInRadius(0, 0, 1, (x, y) => cells.push([x, y]));
+    // radius 1: center + 4 cardinal = 5 cells (corners are sqrt(2) > 1)
+    expect(cells.length).toBe(5);
+    expect(cells).toContainEqual([0, 0]);
+    expect(cells).toContainEqual([1, 0]);
+    expect(cells).toContainEqual([-1, 0]);
+    expect(cells).toContainEqual([0, 1]);
+    expect(cells).toContainEqual([0, -1]);
+  });
+
+  it('excludes corners outside radius 1', () => {
+    const cells: [number, number][] = [];
+    forEachCellInRadius(0, 0, 1, (x, y) => cells.push([x, y]));
+    expect(cells).not.toContainEqual([1, 1]);
+    expect(cells).not.toContainEqual([-1, -1]);
+  });
+
+  it('provides correct distance to callback', () => {
+    const results: { x: number; y: number; dist: number }[] = [];
+    forEachCellInRadius(0, 0, 2, (x, y, dist) => results.push({ x, y, dist }));
+    const atTwoZero = results.find(r => r.x === 2 && r.y === 0);
+    const atOneOne = results.find(r => r.x === 1 && r.y === 1);
+    expect(atTwoZero!.dist).toBeCloseTo(2, 5);
+    expect(atOneOne!.dist).toBeCloseTo(Math.SQRT2, 5);
+  });
+
+  it('applies offset correctly', () => {
+    const cells: [number, number][] = [];
+    forEachCellInRadius(10, 20, 0, (x, y) => cells.push([x, y]));
+    expect(cells).toEqual([[10, 20]]);
+  });
+
+  it('radius 2 produces a circle of 13 cells', () => {
+    const cells: [number, number][] = [];
+    forEachCellInRadius(0, 0, 2, (x, y) => cells.push([x, y]));
+    // Within Euclidean distance 2: all cells where dx^2+dy^2 <= 4
+    // (0,0),(1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1),(2,0),(-2,0),(0,2),(0,-2) = 13
+    expect(cells.length).toBe(13);
   });
 });

@@ -1,4 +1,5 @@
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, forEachCellInRadius } from '../grid/GridHelpers';
+import { removeById } from '../utils/removeById';
 
 export interface Hospital {
   id: string;
@@ -29,10 +30,7 @@ export class HealthService {
   }
 
   removeHospital(id: string): void {
-    const idx = this.hospitals.findIndex(h => h.id === id);
-    if (idx !== -1) {
-      this.hospitals.splice(idx, 1);
-    }
+    removeById(this.hospitals, id);
   }
 
   getCoverage(x: number, y: number): boolean {
@@ -57,23 +55,10 @@ export class HealthService {
   }
 
   private applyCoverage(hospital: Hospital): void {
-    // Use Euclidean distance to determine coverage
-    const r = hospital.radius;
-    const minX = Math.floor(hospital.x - r);
-    const maxX = Math.ceil(hospital.x + r);
-    const minY = Math.floor(hospital.y - r);
-    const maxY = Math.ceil(hospital.y + r);
-
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const dx = x - hospital.x;
-        const dy = y - hospital.y;
-        if (dx * dx + dy * dy <= r * r) {
-          const key = toPosKey(x, y);
-          this.coverageCount.set(key, (this.coverageCount.get(key) ?? 0) + 1);
-        }
-      }
-    }
+    forEachCellInRadius(hospital.x, hospital.y, hospital.radius, (x, y) => {
+      const key = toPosKey(x, y);
+      this.coverageCount.set(key, (this.coverageCount.get(key) ?? 0) + 1);
+    });
   }
 
   getMaintenanceCost(): number {

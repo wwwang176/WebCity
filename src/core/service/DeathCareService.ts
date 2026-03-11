@@ -1,3 +1,5 @@
+import { removeById } from '../utils/removeById';
+
 export interface Cemetery {
   id: string;
   x: number;
@@ -40,15 +42,11 @@ export class DeathCareService {
   }
 
   removeCemetery(id: string): boolean {
-    const idx = this.cemeteries.findIndex(c => c.id === id);
-    if (idx !== -1) { this.cemeteries.splice(idx, 1); return true; }
-    return false;
+    return removeById(this.cemeteries, id);
   }
 
   removeCrematorium(id: string): boolean {
-    const idx = this.crematoriums.findIndex(c => c.id === id);
-    if (idx !== -1) { this.crematoriums.splice(idx, 1); return true; }
-    return false;
+    return removeById(this.crematoriums, id);
   }
 
   reportDeath(): void {

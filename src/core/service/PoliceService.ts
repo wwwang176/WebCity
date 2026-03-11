@@ -1,4 +1,5 @@
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, forEachCellInRadius } from '../grid/GridHelpers';
+import { removeById } from '../utils/removeById';
 
 export interface PoliceStation {
   id: string;
@@ -24,10 +25,7 @@ export class PoliceService {
   }
 
   removeStation(id: string): void {
-    const idx = this.stations.findIndex(s => s.id === id);
-    if (idx !== -1) {
-      this.stations.splice(idx, 1);
-    }
+    removeById(this.stations, id);
   }
 
   getCoverage(x: number, y: number): boolean {
@@ -52,17 +50,10 @@ export class PoliceService {
   }
 
   private addCoverage(station: PoliceStation): void {
-    const { x: sx, y: sy, radius } = station;
-    const r = Math.ceil(radius);
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist <= radius) {
-          const key = toPosKey(sx + dx, sy + dy);
-          this.coverageMap.set(key, (this.coverageMap.get(key) ?? 0) + 1);
-        }
-      }
-    }
+    forEachCellInRadius(station.x, station.y, station.radius, (x, y) => {
+      const key = toPosKey(x, y);
+      this.coverageMap.set(key, (this.coverageMap.get(key) ?? 0) + 1);
+    });
   }
 
   getMaintenanceCost(): number {

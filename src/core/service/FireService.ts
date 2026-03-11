@@ -19,6 +19,8 @@ export interface FireServiceJSON {
 }
 
 import { isZoneBuilding } from '../building/InfraConfig';
+import { euclideanDistance, isWithinEuclideanRadius } from '../grid/GridHelpers';
+import { removeById } from '../utils/removeById';
 
 /** Speed at which fire trucks travel (cells per tick for response time calculation). */
 const RESPONSE_SPEED = 2;
@@ -44,10 +46,7 @@ export class FireService {
   }
 
   removeStation(id: string): void {
-    const idx = this.stations.findIndex(s => s.id === id);
-    if (idx !== -1) {
-      this.stations.splice(idx, 1);
-    }
+    removeById(this.stations, id);
   }
 
   getStations(): readonly FireStation[] {
@@ -63,7 +62,7 @@ export class FireService {
    * of at least one fire station (Euclidean distance).
    */
   getCoverage(x: number, y: number): boolean {
-    return this.stations.some(s => this.distance(s.x, s.y, x, y) <= s.radius);
+    return this.stations.some(s => isWithinEuclideanRadius(s.x, s.y, x, y, s.radius));
   }
 
   /**
@@ -74,7 +73,7 @@ export class FireService {
   getResponseTime(x: number, y: number): number {
     let minDist = Infinity;
     for (const s of this.stations) {
-      const d = this.distance(s.x, s.y, x, y);
+      const d = euclideanDistance(s.x, s.y, x, y);
       if (d <= s.radius && d < minDist) {
         minDist = d;
       }
@@ -110,7 +109,7 @@ export class FireService {
 
     let minRatio = Infinity;
     for (const s of this.stations) {
-      const d = this.distance(s.x, s.y, x, y);
+      const d = euclideanDistance(s.x, s.y, x, y);
       const ratio = d / s.radius;
       if (ratio < minRatio) minRatio = ratio;
     }
@@ -199,9 +198,4 @@ export class FireService {
     return service;
   }
 
-  private distance(x1: number, y1: number, x2: number, y2: number): number {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
 }

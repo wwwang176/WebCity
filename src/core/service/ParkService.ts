@@ -1,3 +1,6 @@
+import { isWithinEuclideanRadius } from '../grid/GridHelpers';
+import { removeById } from '../utils/removeById';
+
 export interface Park {
   id: string;
   x: number;
@@ -24,10 +27,7 @@ export class ParkService {
   }
 
   removePark(id: string): void {
-    const idx = this.parks.findIndex(p => p.id === id);
-    if (idx !== -1) {
-      this.parks.splice(idx, 1);
-    }
+    removeById(this.parks, id);
   }
 
   getParks(): readonly Park[] {
@@ -77,9 +77,7 @@ export class ParkService {
   }
 
   private isInRange(park: Park, x: number, y: number): boolean {
-    const dx = x - park.x;
-    const dy = y - park.y;
-    return Math.sqrt(dx * dx + dy * dy) <= park.radius;
+    return isWithinEuclideanRadius(park.x, park.y, x, y, park.radius);
   }
 
   private countCoveringParks(x: number, y: number): number {

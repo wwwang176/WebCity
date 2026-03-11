@@ -29,6 +29,39 @@ interface ReadableGrid {
   getCell(x: number, y: number): { roadType: number } | null;
 }
 
+/** Euclidean distance between two points */
+export function euclideanDistance(x1: number, y1: number, x2: number, y2: number): number {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/** Check if point (x,y) is within Euclidean distance of center (cx,cy) */
+export function isWithinEuclideanRadius(
+  cx: number, cy: number, x: number, y: number, radius: number,
+): boolean {
+  const dx = x - cx;
+  const dy = y - cy;
+  return dx * dx + dy * dy <= radius * radius;
+}
+
+/** Iterate over all integer cells within Euclidean radius, calling callback for each */
+export function forEachCellInRadius(
+  cx: number, cy: number, radius: number,
+  callback: (x: number, y: number, distance: number) => void,
+): void {
+  const r = Math.ceil(radius);
+  const r2 = radius * radius;
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const distSq = dx * dx + dy * dy;
+      if (distSq <= r2) {
+        callback(cx + dx, cy + dy, Math.sqrt(distSq));
+      }
+    }
+  }
+}
+
 /** Find the cell itself or an adjacent road cell. Returns null if none found. */
 export function findAdjacentRoad(
   grid: ReadableGrid,
