@@ -1,12 +1,8 @@
+import { type Position } from '../grid/types';
 import { validatePathTerrain } from '../grid/PathValidation';
 import { hasVerticalFlag, hasHorizontalFlag, getDirectionFlag } from '../grid/GridHelpers';
 import { RoadType, ROAD_CONFIGS } from './types';
 import { RailType } from '../rail/types';
-
-interface Position {
-  x: number;
-  y: number;
-}
 
 interface CellLike {
   terrainType: number;

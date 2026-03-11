@@ -65,7 +65,5 @@ export interface BuildRoadResult {
   cost?: number;
 }
 
-export interface Position {
-  x: number;
-  y: number;
-}
+// Re-export Position from canonical location (DRY)
+export type { Position } from '../grid/types';

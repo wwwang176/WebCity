@@ -1,16 +1,11 @@
 import { Grid } from '../grid/Grid';
-import { ZoneType } from '../grid/types';
+import { ZoneType, type Position } from '../grid/types';
 import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath, getDirectionFlag } from '../grid/GridHelpers';
 import { validatePathTerrain } from '../grid/PathValidation';
 import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
 import { RailType, TrackDirection, RAIL, type BuildTrackResult } from './types';
-
-interface Position {
-  x: number;
-  y: number;
-}
 
 const nodeId = toPosKey;
 

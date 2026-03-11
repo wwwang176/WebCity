@@ -1,10 +1,5 @@
-import { TerrainType } from './types';
+import { TerrainType, type Position } from './types';
 import { getInfraConfigById } from '../building/InfraConfig';
-
-interface Position {
-  x: number;
-  y: number;
-}
 
 interface CellLike {
   terrainType: number;

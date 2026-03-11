@@ -1,5 +1,5 @@
 import { Grid } from '../grid/Grid';
-import { TerrainType, ZoneType } from '../grid/types';
+import { TerrainType, ZoneType, type Position } from '../grid/types';
 import { RoadType } from '../road/types';
 import { isAdjacentToRoad } from '../grid/GridHelpers';
 import { isInfrastructureBuilding, isZoneBuilding } from '../building/InfraConfig';
@@ -7,11 +7,6 @@ import { isInfrastructureBuilding, isZoneBuilding } from '../building/InfraConfi
 interface ZoneResult {
   success: boolean;
   reason?: string;
-}
-
-interface Position {
-  x: number;
-  y: number;
 }
 
 export class ZoneManager {
