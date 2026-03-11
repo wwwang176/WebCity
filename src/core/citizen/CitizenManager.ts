@@ -60,6 +60,17 @@ export class CitizenManager {
     return this.citizens.length;
   }
 
+  getCitizens(): readonly Citizen[] {
+    return this.citizens;
+  }
+
+  getAverageHappiness(): number {
+    if (this.citizens.length === 0) return 0;
+    let sum = 0;
+    for (const c of this.citizens) sum += c.happiness;
+    return sum / this.citizens.length;
+  }
+
   getCitizensByHome(buildingKey: string): Citizen[] {
     return this.citizens.filter((c) => c.homeId === buildingKey);
   }

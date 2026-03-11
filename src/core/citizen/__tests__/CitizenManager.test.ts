@@ -51,14 +51,14 @@ describe('CitizenManager', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ age: 8 });
     mgr.educateTick(true, false, false);
-    expect(mgr.citizens[0]!.education).toBe(EducationLevel.ELEMENTARY);
+    expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.ELEMENTARY);
   });
 
   it('should NOT educate TEEN without high school', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ age: 15, education: EducationLevel.ELEMENTARY });
     mgr.educateTick(true, false, false);
-    expect(mgr.citizens[0]!.education).toBe(EducationLevel.ELEMENTARY);
+    expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.ELEMENTARY);
   });
 
   it('should remove citizen on death', () => {
@@ -129,6 +129,35 @@ describe('CitizenManager', () => {
     mgr.createCitizen({ age: 30, homeId: '5,10' });
     expect(mgr.getCitizensByHome('99,99')).toEqual([]);
     expect(mgr.getCitizensByWorkplace('99,99')).toEqual([]);
+  });
+
+  describe('getCitizens', () => {
+    it('should return readonly array of all citizens', () => {
+      const mgr = new CitizenManager();
+      mgr.createCitizen({ age: 20 });
+      mgr.createCitizen({ age: 30 });
+      const citizens = mgr.getCitizens();
+      expect(citizens).toHaveLength(2);
+    });
+
+    it('should return empty array when no citizens', () => {
+      const mgr = new CitizenManager();
+      expect(mgr.getCitizens()).toHaveLength(0);
+    });
+  });
+
+  describe('getAverageHappiness', () => {
+    it('should return average happiness of all citizens', () => {
+      const mgr = new CitizenManager();
+      mgr.createCitizen({ age: 25, happiness: 60 });
+      mgr.createCitizen({ age: 30, happiness: 80 });
+      expect(mgr.getAverageHappiness()).toBe(70);
+    });
+
+    it('should return 0 when no citizens', () => {
+      const mgr = new CitizenManager();
+      expect(mgr.getAverageHappiness()).toBe(0);
+    });
   });
 });
 

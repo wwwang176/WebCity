@@ -65,7 +65,7 @@ export function OverviewModal(props: { open: boolean; onClose: () => void }) {
     const jobOpenings = Math.max(0, totalJobs - population);
 
     const avgHappiness = population > 0
-      ? Math.round(state.citizens.citizens.reduce((s: number, c: { happiness: number }) => s + c.happiness, 0) / population)
+      ? Math.round(state.citizens.getAverageHappiness())
       : 70;
     const taxRate = state.taxRates.residential ?? 9;
     const attractiveness = calculateAttractiveness({

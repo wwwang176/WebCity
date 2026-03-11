@@ -379,14 +379,9 @@ export class SimulationLoop {
   private runMigration(): void {
     const pop = this.state.citizens.getPopulation();
     // Use actual average citizen happiness; empty city gets default 70
-    let avgHappiness = SIMULATION.DEFAULT_HAPPINESS;
-    if (pop > 0) {
-      let totalHappiness = 0;
-      for (const c of this.state.citizens.citizens) {
-        totalHappiness += c.happiness;
-      }
-      avgHappiness = totalHappiness / pop;
-    }
+    const avgHappiness = pop > 0
+      ? this.state.citizens.getAverageHappiness()
+      : SIMULATION.DEFAULT_HAPPINESS;
     const city = {
       jobOpenings: this.countJobOpenings(),
       vacantHomes: this.countVacantHomes(),
@@ -405,7 +400,7 @@ export class SimulationLoop {
 
     // Calculate employment ratio for the city
     const totalJobs = this.countTotalJobs();
-    const adultCount = this.state.citizens.citizens.filter(
+    const adultCount = this.state.citizens.getCitizens().filter(
       c => isWorkingAge(c.age)
     ).length;
     const employmentRate = adultCount > 0 ? Math.min(1, totalJobs / adultCount) : 1;
@@ -429,7 +424,7 @@ export class SimulationLoop {
     // Check if any parks exist for happiness bonus
     const hasParkCoverage = this.state.parks.getParks().length > 0;
 
-    for (const citizen of this.state.citizens.citizens) {
+    for (const citizen of this.state.citizens.getCitizens()) {
       // Vary commute per citizen (+/- 3 random jitter)
       const commute = Math.max(1, avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
       const factors: HappinessFactors = {
@@ -795,7 +790,7 @@ export class SimulationLoop {
     // Count current occupancy by position string
     const homeOccupancy = new Map<string, number>();
     const workOccupancy = new Map<string, number>();
-    for (const c of this.state.citizens.citizens) {
+    for (const c of this.state.citizens.getCitizens()) {
       if (c.homeId !== null) {
         homeOccupancy.set(c.homeId, (homeOccupancy.get(c.homeId) ?? 0) + 1);
       }
@@ -804,7 +799,7 @@ export class SimulationLoop {
       }
     }
 
-    for (const citizen of this.state.citizens.citizens) {
+    for (const citizen of this.state.citizens.getCitizens()) {
       // Assign home if needed
       if (citizen.homeId === null && residentialBuildings.length > 0) {
         for (const rb of residentialBuildings) {
@@ -911,7 +906,7 @@ export class SimulationLoop {
     const commuterSet = direction === 'home_to_work' ? this.morningCommuters : this.eveningCommuters;
 
     // Get eligible citizens: adults (19-65) with both homeId and workplaceId
-    const eligible = this.state.citizens.citizens.filter(
+    const eligible = this.state.citizens.getCitizens().filter(
       c => isWorkingAge(c.age) &&
            c.homeId !== null && c.workplaceId !== null &&
            !commuterSet.has(c.id)

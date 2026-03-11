@@ -40,7 +40,7 @@ export function birthTick(
 
   // 先統計每個 homeId 已有的 BABY+CHILD 數量
   const childrenCount = new Map<string, number>();
-  for (const c of manager.citizens) {
+  for (const c of manager.getCitizens()) {
     if (c.homeId !== null && (c.lifeStage === LifeStage.BABY || c.lifeStage === LifeStage.CHILD)) {
       childrenCount.set(c.homeId, (childrenCount.get(c.homeId) ?? 0) + 1);
     }
@@ -50,7 +50,7 @@ export function birthTick(
   const newborns: { homeId: string; incomeLevel: IncomeLevel }[] = [];
 
   // 遍歷現有市民，篩選合格者
-  for (const c of manager.citizens) {
+  for (const c of manager.getCitizens()) {
     // 只有 ADULT、age ≤ 45、有家的市民才能生育
     if (c.lifeStage !== LifeStage.ADULT) continue;
     if (c.age > BIRTH.MAX_FERTILITY_AGE) continue;

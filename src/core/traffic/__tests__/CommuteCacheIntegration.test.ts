@@ -75,7 +75,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     const loop = new SimulationLoop(state);
     loop.tick();
 
-    const cachedRoute = loop.commuteCache.get(state.citizens.citizens[0]!.id);
+    const cachedRoute = loop.commuteCache.get(state.citizens.getCitizens()[0]!.id);
     expect(cachedRoute).toBeDefined();
     expect(cachedRoute!.status).toBe('ready');
     // The morning path should be non-null since a vehicle was spawned
@@ -122,8 +122,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     loop.tick();
 
     // Both citizens should have the same route key cached
-    const c1 = state.citizens.citizens[0]!;
-    const c2 = state.citizens.citizens[1]!;
+    const c1 = state.citizens.getCitizens()[0]!;
+    const c2 = state.citizens.getCitizens()[1]!;
     const route1 = loop.commuteCache.get(c1.id);
     const route2 = loop.commuteCache.get(c2.id);
 
@@ -197,7 +197,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     const loop = new SimulationLoop(state);
     loop.tick();
 
-    const citizenId = state.citizens.citizens[0]!.id;
+    const citizenId = state.citizens.getCitizens()[0]!.id;
     expect(loop.commuteCache.dirtyCount).toBe(0);
 
     // Invalidate a cell NOT on the citizen's route → should stay clean

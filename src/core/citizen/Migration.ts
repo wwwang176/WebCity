@@ -84,7 +84,7 @@ export function migrationTick(
   }
 
   // Emigration
-  for (const citizen of [...manager.citizens]) {
+  for (const citizen of [...manager.getCitizens()]) {
     if (citizen.happiness < IMMIGRATION.EMIGRATION_HAPPINESS_THRESHOLD) {
       manager.removeCitizen(citizen.id);
       emigrated++;

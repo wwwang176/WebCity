@@ -53,9 +53,9 @@ export class DebugTools {
       totalPollution += cell.pollution;
     });
 
-    const pop = citizens.citizens.length;
+    const pop = citizens.getPopulation();
     const avgHappiness = pop > 0
-      ? Math.round(citizens.citizens.reduce((sum, c) => sum + (c.happiness ?? 0), 0) / pop)
+      ? Math.round(citizens.getAverageHappiness())
       : 0;
 
     const powerSupply = power.getPlants().reduce((sum, p) => sum + p.output, 0);

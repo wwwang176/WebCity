@@ -109,7 +109,7 @@ export function serializeGameState(state: GameState): string {
     },
     powerPlants: [...state.power.getPlants()],
     waterPlants: [...state.water.getPlants()],
-    citizens: state.citizens.citizens.map(c => ({ ...c })),
+    citizens: state.citizens.getCitizens().map(c => ({ ...c })),
     police: state.police.toJSON(),
     fire: state.fire.toJSON(),
     health: state.health.toJSON(),

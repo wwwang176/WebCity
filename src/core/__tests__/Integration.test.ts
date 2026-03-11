@@ -136,9 +136,7 @@ describe('Integration Tests', () => {
     }
 
     // Without services: crime should be non-zero, happiness affected
-    const avgHappiness = state.citizens.citizens.length > 0
-      ? state.citizens.citizens.reduce((s, c) => s + c.happiness, 0) / state.citizens.citizens.length
-      : 0;
+    const avgHappiness = state.citizens.getAverageHappiness();
 
     // Happiness won't be high without services
     expect(avgHappiness).toBeLessThan(80);
@@ -184,9 +182,7 @@ describe('Integration Tests', () => {
     }
 
     // With services, citizens should have reasonable happiness
-    const avgHappiness = state.citizens.citizens.length > 0
-      ? state.citizens.citizens.reduce((s, c) => s + c.happiness, 0) / state.citizens.citizens.length
-      : 0;
+    const avgHappiness = state.citizens.getAverageHappiness();
 
     // At minimum shouldn't crash and happiness should be defined
     expect(Number.isFinite(avgHappiness)).toBe(true);

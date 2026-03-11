@@ -62,11 +62,9 @@ describe('DebugTools', () => {
 
   it('should calculate average happiness from citizens', () => {
     const state = createGameState(20, 20);
-    (state.citizens as unknown as { citizens: { id: number; happiness: number }[] }).citizens = [
-      { id: 1, happiness: 80 },
-      { id: 2, happiness: 60 },
-      { id: 3, happiness: 40 },
-    ];
+    state.citizens.createCitizen({ happiness: 80 });
+    state.citizens.createCitizen({ happiness: 60 });
+    state.citizens.createCitizen({ happiness: 40 });
     const tools = new DebugTools(state);
     const snap = tools.getSnapshot();
     expect(snap.avgHappiness).toBe(60);

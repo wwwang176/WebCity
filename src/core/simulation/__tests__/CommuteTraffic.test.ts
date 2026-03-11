@@ -334,8 +334,8 @@ describe('Citizen Home/Workplace Assignment', () => {
     // Run enough ticks for migration to add citizens
     for (let i = 0; i < 100; i++) loop.tick();
 
-    const citizensWithHome = state.citizens.citizens.filter(c => c.homeId !== null);
-    const citizensWithWork = state.citizens.citizens.filter(c => c.workplaceId !== null);
+    const citizensWithHome = state.citizens.getCitizens().filter(c => c.homeId !== null);
+    const citizensWithWork = state.citizens.getCitizens().filter(c => c.workplaceId !== null);
 
     if (state.citizens.getPopulation() > 0) {
       // Citizens who migrated in should have home and workplace assigned as position strings
