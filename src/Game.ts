@@ -370,7 +370,7 @@ export class Game {
       case 'escape': this.setTool('select'); this.dragStart = null; break;
       case 'delete': this.setTool('demolish'); break;
       case 'r': this.cycleRotation(); break;
-      case 'u': this.toggleViewMode(); break;
+
       case ' ':
         this.paused = !this.paused;
         if (this.paused) this.state.clock.pause();
