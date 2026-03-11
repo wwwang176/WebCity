@@ -65,6 +65,24 @@ export const SIMULATION = {
   SERVICE_WATER_WEIGHT: 2,
   /** Pollution threshold for service coverage bonus */
   LOW_POLLUTION_THRESHOLD: 10,
+  /** Cell value maximum (uint8 range) */
+  CELL_VALUE_MAX: 255,
+  /** Vehicle cap: maximum vehicles on road */
+  VEHICLE_CAP_MAX: 2000,
+  /** Vehicle cap: base count */
+  VEHICLE_CAP_BASE: 20,
+  /** Vehicle cap: fraction of population */
+  VEHICLE_CAP_POP_RATIO: 0.3,
+  /** Rush period ticks for commute spawning */
+  RUSH_TICKS: 4,
+  /** Minimum commute spawns per tick */
+  MIN_SPAWN_PER_TICK: 5,
+  /** Commute sampling: minimum sample count */
+  SAMPLE_COUNT_MIN: 50,
+  /** Commute sampling: maximum sample count */
+  SAMPLE_COUNT_MAX: 300,
+  /** Commute sampling: eligible commuters per sample */
+  SAMPLE_DIVISOR: 5,
 } as const;
 
 export class SimulationLoop {
@@ -567,7 +585,7 @@ export class SimulationLoop {
             }
           } else {
             this.state.grid.setCell(f.x, f.y, { reserved: BURNED }); // BuildingStatus.BURNED
-            const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1));
+            const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / SIMULATION.BUILDING_LEVEL_DIVISOR) || 1));
             this.onBuildingUpdated?.(f.x, f.y, cell.zoneType, level, true);
           }
         }
@@ -619,7 +637,7 @@ export class SimulationLoop {
     // Write pollution back to grid cells
     grid.forEachCell((cell, x, y) => {
       const p = pm.getPollutionAt(x, y);
-      const total = Math.min(255, p.ground + p.noise);
+      const total = Math.min(SIMULATION.CELL_VALUE_MAX, p.ground + p.noise);
       if (cell.pollution !== total) {
         grid.setCell(x, y, { pollution: total });
       }
@@ -673,7 +691,7 @@ export class SimulationLoop {
       const updates: Record<string, number> = {};
       if (cell.landValue !== value) updates.landValue = value;
       if (cell.serviceCoverage !== serviceCoverage) updates.serviceCoverage = serviceCoverage;
-      const noiseVal = Math.min(255, Math.round(pollution.noise));
+      const noiseVal = Math.min(SIMULATION.CELL_VALUE_MAX, Math.round(pollution.noise));
       if (cell.noiseLevel !== noiseVal) updates.noiseLevel = noiseVal;
       if (Object.keys(updates).length > 0) {
         grid.setCell(x, y, updates);
@@ -715,7 +733,7 @@ export class SimulationLoop {
         // Notify with updated state
         const updated = grid.getCell(x, y);
         if (updated) {
-          const newLevel = Math.max(1, Math.min(3, Math.ceil(updated.serviceCoverage / 3) || 1));
+          const newLevel = Math.max(1, Math.min(3, Math.ceil(updated.serviceCoverage / SIMULATION.BUILDING_LEVEL_DIVISOR) || 1));
           this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === BURNED);
         }
       }
@@ -842,7 +860,7 @@ export class SimulationLoop {
     if (pop === 0) return;
 
     // Vehicle cap: ~30% of population can be on the road simultaneously
-    const vehicleCap = Math.min(2000, 20 + Math.floor(pop * 0.3));
+    const vehicleCap = Math.min(SIMULATION.VEHICLE_CAP_MAX, SIMULATION.VEHICLE_CAP_BASE + Math.floor(pop * SIMULATION.VEHICLE_CAP_POP_RATIO));
     if (this.state.traffic.getVehicleCount() >= vehicleCap) return;
 
     this.rebuildBuildingIndex();
@@ -894,8 +912,7 @@ export class SimulationLoop {
 
     // Spawn enough vehicles per tick so all eligible commuters depart within the rush period (~4 ticks).
     // BFS is bounded to 500 steps so each call is cheap.
-    const rushTicks = 4;
-    const maxPerTick = Math.max(5, Math.ceil(eligible.length / rushTicks));
+    const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.RUSH_TICKS));
     let spawned = 0;
 
     for (const citizen of eligible) {
@@ -1154,7 +1171,7 @@ export class SimulationLoop {
     };
 
     // Scale sample count with population (1 sample per 5 eligible commuters, clamped 50-300)
-    const sampleCount = Math.max(50, Math.min(300, Math.ceil(totalResWeight / 5)));
+    const sampleCount = Math.max(SIMULATION.SAMPLE_COUNT_MIN, Math.min(SIMULATION.SAMPLE_COUNT_MAX, Math.ceil(totalResWeight / SIMULATION.SAMPLE_DIVISOR)));
     const flowMap = new Map<string, number>();
 
     for (let i = 0; i < sampleCount; i++) {

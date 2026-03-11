@@ -52,6 +52,23 @@ describe('SIMULATION config constants', () => {
     expect(SIMULATION.BUSINESS_TAX_BASELINE).toBeGreaterThan(0);
     expect(SIMULATION.BUSINESS_TAX_PENALTY_PER_POINT).toBeGreaterThan(0);
   });
+
+  it('vehicle cap should be reasonable', () => {
+    expect(SIMULATION.VEHICLE_CAP_MAX).toBeGreaterThan(0);
+    expect(SIMULATION.VEHICLE_CAP_BASE).toBeGreaterThan(0);
+    expect(SIMULATION.VEHICLE_CAP_POP_RATIO).toBeGreaterThan(0);
+    expect(SIMULATION.VEHICLE_CAP_POP_RATIO).toBeLessThanOrEqual(1);
+  });
+
+  it('commute sampling limits should be ordered', () => {
+    expect(SIMULATION.SAMPLE_COUNT_MIN).toBeGreaterThan(0);
+    expect(SIMULATION.SAMPLE_COUNT_MAX).toBeGreaterThan(SIMULATION.SAMPLE_COUNT_MIN);
+    expect(SIMULATION.SAMPLE_DIVISOR).toBeGreaterThan(0);
+  });
+
+  it('cell value max should be 255 (uint8)', () => {
+    expect(SIMULATION.CELL_VALUE_MAX).toBe(255);
+  });
 });
 
 describe('GameClock', () => {
