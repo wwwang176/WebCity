@@ -157,4 +157,17 @@ describe('GARBAGE constants', () => {
   it('overflow pollution multiplier should be positive', () => {
     expect(GARBAGE.OVERFLOW_POLLUTION_MULTIPLIER).toBeGreaterThan(0);
   });
+
+  it('coverage range should be positive', () => {
+    expect(GARBAGE.COVERAGE_RANGE).toBeGreaterThan(0);
+  });
+
+  it('incinerator burn rate should be between 0 and 1', () => {
+    expect(GARBAGE.INCINERATOR_BURN_RATE).toBeGreaterThan(0);
+    expect(GARBAGE.INCINERATOR_BURN_RATE).toBeLessThan(1);
+  });
+
+  it('garbage per pop should be positive', () => {
+    expect(GARBAGE.GARBAGE_PER_POP).toBeGreaterThan(0);
+  });
 });

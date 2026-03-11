@@ -299,4 +299,18 @@ describe('FIRE constants', () => {
   it('ignition attempts should be positive', () => {
     expect(FIRE.IGNITION_ATTEMPTS).toBeGreaterThan(0);
   });
+
+  it('response speed should be positive', () => {
+    expect(FIRE.RESPONSE_SPEED).toBeGreaterThan(0);
+  });
+
+  it('fire duration should be positive', () => {
+    expect(FIRE.FIRE_DURATION).toBeGreaterThan(0);
+  });
+
+  it('covered damage should be less than uncovered damage', () => {
+    expect(FIRE.COVERED_DAMAGE).toBeLessThan(FIRE.UNCOVERED_DAMAGE);
+    expect(FIRE.COVERED_DAMAGE).toBeGreaterThanOrEqual(0);
+    expect(FIRE.UNCOVERED_DAMAGE).toBeLessThanOrEqual(1);
+  });
 });

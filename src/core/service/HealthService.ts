@@ -13,8 +13,13 @@ export interface HealthServiceJSON {
   hospitals: Hospital[];
 }
 
-const HEALTH_BONUS_PER_HOSPITAL = 20;
-const HEALTH_BONUS_CAP = 35;
+/** Health service configuration constants */
+export const HEALTH = {
+  /** Health bonus per hospital covering a cell */
+  BONUS_PER_HOSPITAL: 20,
+  /** Maximum health bonus from hospital coverage */
+  BONUS_CAP: 35,
+} as const;
 
 let nextId = 1;
 
@@ -40,7 +45,7 @@ export class HealthService {
   getHealthBonus(x: number, y: number): number {
     const count = this.coverageCount.get(toPosKey(x, y)) ?? 0;
     if (count === 0) return 0;
-    return Math.min(count * HEALTH_BONUS_PER_HOSPITAL, HEALTH_BONUS_CAP);
+    return Math.min(count * HEALTH.BONUS_PER_HOSPITAL, HEALTH.BONUS_CAP);
   }
 
   getHospitals(): readonly Hospital[] {

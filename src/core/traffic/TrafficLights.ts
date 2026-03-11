@@ -13,7 +13,11 @@ export interface TrafficLight {
   timer: number; // ticks remaining in current phase
 }
 
-const PHASE_DURATION = 8; // ticks per phase (~2 seconds at 250ms/tick)
+/** Traffic light configuration */
+export const TRAFFIC_LIGHT = {
+  /** Ticks per phase (~2 seconds at 250ms/tick) */
+  PHASE_DURATION: 8,
+} as const;
 
 export class TrafficLightSystem {
   private lights = new Map<string, TrafficLight>();
@@ -22,7 +26,7 @@ export class TrafficLightSystem {
     const key = toPosKey(x, y);
     if (this.lights.has(key)) return;
     // Stagger phase start by position hash to avoid all lights syncing
-    const stagger = (x * 7 + y * 13) % PHASE_DURATION;
+    const stagger = (x * 7 + y * 13) % TRAFFIC_LIGHT.PHASE_DURATION;
     this.lights.set(key, { x, y, phase: 0, timer: stagger + 1 });
   }
 
@@ -35,7 +39,7 @@ export class TrafficLightSystem {
       light.timer--;
       if (light.timer <= 0) {
         light.phase = (light.phase + 1) % 2;
-        light.timer = PHASE_DURATION;
+        light.timer = TRAFFIC_LIGHT.PHASE_DURATION;
       }
     }
   }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HealthService } from '../HealthService';
+import { HealthService, HEALTH } from '../HealthService';
 
 describe('HealthService', () => {
   it('should create an instance', () => {
@@ -135,5 +135,15 @@ describe('HealthService', () => {
     expect(restored.getCoverage(10, 10)).toBe(true);
     expect(restored.getCoverage(50, 50)).toBe(true);
     expect(restored.getHealthBonus(10, 10)).toBe(20);
+  });
+});
+
+describe('HEALTH constants', () => {
+  it('bonus per hospital should be positive', () => {
+    expect(HEALTH.BONUS_PER_HOSPITAL).toBeGreaterThan(0);
+  });
+
+  it('bonus cap should be >= bonus per hospital', () => {
+    expect(HEALTH.BONUS_CAP).toBeGreaterThanOrEqual(HEALTH.BONUS_PER_HOSPITAL);
   });
 });

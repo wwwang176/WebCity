@@ -22,20 +22,16 @@ import { isZoneBuilding } from '../building/InfraConfig';
 import { euclideanDistance, isWithinEuclideanRadius } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 
-/** Speed at which fire trucks travel (cells per tick for response time calculation). */
-const RESPONSE_SPEED = 2;
-
-/** Ticks to resolve a fire once reported. */
-const FIRE_DURATION = 3;
-
-/** Damage when fire is within coverage (10%). */
-const COVERED_DAMAGE = 0.10;
-
-/** Damage when fire is outside coverage (80%). */
-const UNCOVERED_DAMAGE = 0.80;
-
 /** Fire risk and ignition probability constants */
 export const FIRE = {
+  /** Speed at which fire trucks travel (cells per tick for response time calculation) */
+  RESPONSE_SPEED: 2,
+  /** Ticks to resolve a fire once reported */
+  FIRE_DURATION: 3,
+  /** Damage when fire is within coverage (10%) */
+  COVERED_DAMAGE: 0.10,
+  /** Damage when fire is outside coverage (80%) */
+  UNCOVERED_DAMAGE: 0.80,
   /** Base risk outside all station coverage */
   RISK_OUTSIDE_BASE: 0.8,
   /** Risk increase per distance ratio beyond coverage */
@@ -97,7 +93,7 @@ export class FireService {
       }
     }
     if (minDist === Infinity) return Infinity;
-    return minDist / RESPONSE_SPEED;
+    return minDist / FIRE.RESPONSE_SPEED;
   }
 
   /**
@@ -106,12 +102,12 @@ export class FireService {
    */
   reportFire(x: number, y: number): { covered: boolean; estimatedDamage: number } {
     const covered = this.getCoverage(x, y);
-    const damage = covered ? COVERED_DAMAGE : UNCOVERED_DAMAGE;
+    const damage = covered ? FIRE.COVERED_DAMAGE : FIRE.UNCOVERED_DAMAGE;
 
     this.activeFires.push({
       x,
       y,
-      ticksRemaining: FIRE_DURATION,
+      ticksRemaining: FIRE.FIRE_DURATION,
       damage,
     });
 

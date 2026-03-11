@@ -14,17 +14,14 @@ const DEFAULT_CAPACITIES: Record<GarbageFacilityType, number> = {
   incinerator: 500,
 };
 
-/** Coverage radius in Manhattan distance for garbage collection trucks */
-const COVERAGE_RANGE = 15;
-
-/** Fraction of current load that an incinerator burns each tick */
-const INCINERATOR_BURN_RATE = 0.05;
-
-/** Garbage production: 1 unit per GARBAGE_PER_POP population */
-const GARBAGE_PER_POP = 100;
-
 /** Garbage service configuration constants */
 export const GARBAGE = {
+  /** Coverage radius in Manhattan distance for garbage collection trucks */
+  COVERAGE_RANGE: 15,
+  /** Fraction of current load that an incinerator burns each tick */
+  INCINERATOR_BURN_RATE: 0.05,
+  /** Garbage production: 1 unit per GARBAGE_PER_POP population */
+  GARBAGE_PER_POP: 100,
   /** Maintenance cost per garbage facility per tick */
   MAINTENANCE_PER_FACILITY: 3,
   /** Max pollution penalty from garbage overflow */
@@ -71,18 +68,18 @@ export class GarbageService {
   getCoverage(x: number, y: number): boolean {
     return this.facilities.some(f => {
       const dist = Math.abs(f.x - x) + Math.abs(f.y - y);
-      return dist <= COVERAGE_RANGE;
+      return dist <= GARBAGE.COVERAGE_RANGE;
     });
   }
 
   tick(population: number): void {
     // 1. Produce garbage based on population
-    const produced = Math.floor(population / GARBAGE_PER_POP);
+    const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);
 
     // 2. Incinerators burn a fraction of their current load
     for (const f of this.facilities) {
       if (f.type === 'incinerator' && f.currentLoad > 0) {
-        const burned = Math.max(1, Math.floor(f.currentLoad * INCINERATOR_BURN_RATE));
+        const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.INCINERATOR_BURN_RATE));
         f.currentLoad = Math.max(0, f.currentLoad - burned);
       }
     }
