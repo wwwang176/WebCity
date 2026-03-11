@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TrafficSimulation, getLaneCount } from '../TrafficSimulation';
+import { TrafficSimulation, getLaneCount, TRAFFIC } from '../TrafficSimulation';
 import { RoadType } from '../../road/types';
 
 /** Helper: create a straight edge between two cells. */
@@ -179,6 +179,21 @@ describe('stuck vehicle despawn', () => {
 
     // Vehicle should not be force-despawned (it's still moving)
     expect(v.stallTime).toBe(0);
+  });
+});
+
+describe('TRAFFIC constants', () => {
+  it('speed multiplier range should produce values between 0 and 1', () => {
+    expect(TRAFFIC.SPEED_MULTIPLIER_MIN).toBeGreaterThan(0);
+    expect(TRAFFIC.SPEED_MULTIPLIER_MIN + TRAFFIC.SPEED_MULTIPLIER_RANGE).toBeLessThanOrEqual(1);
+  });
+
+  it('lookahead distance should be positive', () => {
+    expect(TRAFFIC.LOOKAHEAD_DISTANCE).toBeGreaterThan(0);
+  });
+
+  it('density capacity per cell should be positive', () => {
+    expect(TRAFFIC.DENSITY_CAPACITY_PER_CELL).toBeGreaterThan(0);
   });
 });
 

@@ -23,6 +23,20 @@ const VEHICLE_LENGTHS = [
   { weight: 0.05, length: 0.34 },  // firetruck
 ];
 
+/** Traffic simulation tuning constants */
+export const TRAFFIC = {
+  /** Base speed multiplier range: min value (vehicles randomly vary speed) */
+  SPEED_MULTIPLIER_MIN: 0.8,
+  /** Base speed multiplier range: variation range added to min */
+  SPEED_MULTIPLIER_RANGE: 0.2,
+  /** Random initial stall jitter range (negative = headstart) */
+  STALL_JITTER: 5,
+  /** Maximum lookahead distance for gap/red-light checks */
+  LOOKAHEAD_DISTANCE: 5,
+  /** Density divisor per occupied cell for congestion calculation */
+  DENSITY_CAPACITY_PER_CELL: 3,
+} as const;
+
 /** Get the number of directional lanes for a road type (lanes going one way). */
 export function getLaneCount(roadType: number): number {
   const config = ROAD_CONFIGS[roadType as RoadType];
@@ -73,8 +87,8 @@ export class TrafficSimulation {
       edgeIndex: 0,
       edgeProgress: 0,
       edgeMoveRate: 0,
-      speedMultiplier: 0.8 + Math.random() * 0.2,
-      stallTime: -(Math.random() * 5),
+      speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
     };
     this.vehicles.push(vehicle);
     // Update density map for immediate queries
@@ -163,7 +177,7 @@ export class TrafficSimulation {
           }
 
           distAhead += edgeRemain;
-          if (distAhead > 5) break; // don't look too far ahead
+          if (distAhead > TRAFFIC.LOOKAHEAD_DISTANCE) break; // don't look too far ahead
         }
       }
 
@@ -185,7 +199,7 @@ export class TrafficSimulation {
           }
 
           distAhead += edgeRemain;
-          if (distAhead > 5) break;
+          if (distAhead > TRAFFIC.LOOKAHEAD_DISTANCE) break;
         }
       }
 
@@ -409,7 +423,7 @@ export class TrafficSimulation {
     const occupiedCells = this.cellDensity.size;
     if (occupiedCells === 0) return 0;
     // Average vehicles per occupied cell, capped at 1.0
-    const avgDensity = vehicleCount / Math.max(1, occupiedCells * 3);
+    const avgDensity = vehicleCount / Math.max(1, occupiedCells * TRAFFIC.DENSITY_CAPACITY_PER_CELL);
     return Math.min(1, avgDensity);
   }
 
