@@ -59,6 +59,7 @@ export function addHighlightAttribute(mesh: THREE.InstancedMesh): void {
  */
 export class HighlightManager {
   private scene: THREE.Scene;
+  private getElevation: (x: number, y: number) => number;
 
   // Ground overlay
   private groundOverlay: THREE.Mesh | null = null;
@@ -74,8 +75,10 @@ export class HighlightManager {
   private readonly _mat4 = new THREE.Matrix4();
   private readonly _pos = new THREE.Vector3();
 
-  constructor(scene: THREE.Scene) {
+  /** @param getElevation returns raw elevation for grid cell (x,y); world Y = elevation * 0.3 */
+  constructor(scene: THREE.Scene, getElevation: (x: number, y: number) => number) {
     this.scene = scene;
+    this.getElevation = getElevation;
   }
 
   /**
@@ -149,26 +152,16 @@ export class HighlightManager {
 
   // ─── Ground overlay ──────────────────────────────────────────────
 
+  private static readonly OVERLAY_Y_OFFSET = 0.02;
+
   private createGroundOverlay(minX: number, minY: number, maxX: number, maxY: number, color: number): void {
-    const w = maxX - minX + 1;
-    const h = maxY - minY + 1;
-    const geo = new THREE.PlaneGeometry(w, h);
-    geo.rotateX(-Math.PI / 2);
-
-    if (!this.groundMaterial) {
-      this.groundMaterial = new THREE.MeshBasicMaterial({
-        transparent: true,
-        opacity: 0.25,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-      });
+    const cells: { x: number; y: number }[] = [];
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        cells.push({ x, y });
+      }
     }
-    this.groundMaterial.color.set(color);
-
-    this.groundOverlay = new THREE.Mesh(geo, this.groundMaterial);
-    this.groundOverlay.position.set(minX + (w - 1) / 2, 0.12, minY + (h - 1) / 2);
-    this.groundOverlay.renderOrder = 1;
-    this.scene.add(this.groundOverlay);
+    this.createCellOverlays(cells, color);
   }
 
   private createCellOverlays(cells: { x: number; y: number }[], color: number): void {
@@ -191,7 +184,9 @@ export class HighlightManager {
     instanceMesh.renderOrder = 1;
     const mat4 = new THREE.Matrix4();
     for (let i = 0; i < cells.length; i++) {
-      mat4.setPosition(cells[i]!.x, 0.16, cells[i]!.y);
+      const c = cells[i]!;
+      const y = this.getElevation(c.x, c.y) * 0.3 + HighlightManager.OVERLAY_Y_OFFSET;
+      mat4.setPosition(c.x, y, c.y);
       instanceMesh.setMatrixAt(i, mat4);
     }
     instanceMesh.instanceMatrix.needsUpdate = true;

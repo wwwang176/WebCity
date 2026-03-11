@@ -222,7 +222,10 @@ export class Game {
     this.metroTunnelRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
     this.placementPreview = new PlacementPreview(this.sceneManager.scene, this.buildingRenderer);
-    this.highlightManager = new HighlightManager(this.sceneManager.scene);
+    this.highlightManager = new HighlightManager(
+      this.sceneManager.scene,
+      (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
+    );
 
     // Center camera
     this.sceneManager.panCamera(mapSize / 2, mapSize / 2);
