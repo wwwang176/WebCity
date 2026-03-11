@@ -231,17 +231,13 @@ export class SimulationLoop {
 
   private countZoneBuildings(type: string): number {
     let count = 0;
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.buildingId > 0) {
-          // Check zone type matches
-          if (type === 'residential' && isResidentialZone(cell.zoneType)) count++;
-          if (type === 'commercial' && isCommercialZone(cell.zoneType)) count++;
-          if (type === 'industrial' && cell.zoneType === ZoneType.INDUSTRIAL) count++;
-        }
+    this.state.grid.forEachCell((cell) => {
+      if (cell.buildingId > 0) {
+        if (type === 'residential' && isResidentialZone(cell.zoneType)) count++;
+        if (type === 'commercial' && isCommercialZone(cell.zoneType)) count++;
+        if (type === 'industrial' && cell.zoneType === ZoneType.INDUSTRIAL) count++;
       }
-    }
+    });
     return count;
   }
 
@@ -373,17 +369,13 @@ export class SimulationLoop {
     let powered = 0;
     let watered = 0;
     let total = 0;
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.buildingId > 0 &&
-            (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH)) {
-          total++;
-          if (this.state.power.isPowered(x, y)) powered++;
-          if (this.state.water.isSupplied(x, y)) watered++;
-        }
+    this.state.grid.forEachCell((cell, x, y) => {
+      if (cell.buildingId > 0 && isResidentialZone(cell.zoneType)) {
+        total++;
+        if (this.state.power.isPowered(x, y)) powered++;
+        if (this.state.water.isSupplied(x, y)) watered++;
       }
-    }
+    });
     return {
       poweredRatio: total > 0 ? powered / total : 0,
       wateredRatio: total > 0 ? watered / total : 0,
@@ -399,15 +391,12 @@ export class SimulationLoop {
   private getAvgPollution(): number {
     let total = 0;
     let count = 0;
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH)) {
-          total += cell.pollution;
-          count++;
-        }
+    this.state.grid.forEachCell((cell) => {
+      if (isResidentialZone(cell.zoneType)) {
+        total += cell.pollution;
+        count++;
       }
-    }
+    });
     return count > 0 ? total / count : 0;
   }
 
@@ -433,41 +422,35 @@ export class SimulationLoop {
 
     let totalIncome = 0;
 
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        // Skip infrastructure, empty cells, burned (3), and multi-cell secondary (4)
-        if (cell && isZoneBuilding(cell.buildingId) && cell.reserved !== BURNED && cell.reserved !== 4) {
-          const btype = getBuildingType(cell.buildingId);
-          if (!btype) continue;
+    this.state.grid.forEachCell((cell, x, y) => {
+      // Skip infrastructure, empty cells, burned, and multi-cell secondary
+      if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === 4) return;
+      const btype = getBuildingType(cell.buildingId);
+      if (!btype) return;
 
-          let buildingIncome = 0;
-          const isResidential = btype.zoneType === ZoneType.RESIDENTIAL_LOW || btype.zoneType === ZoneType.RESIDENTIAL_HIGH;
+      let buildingIncome = 0;
 
-          if (isResidential) {
-            // Income tax: scan citizens living in this building
-            const posKey = `${x},${y}`;
-            const residents = this.state.citizens.getCitizensByHome(posKey);
-            for (const citizen of residents) {
-              // Per-citizen tax = baseFactor(0.5) x incomeLevel multiplier x incomeTaxRate
-              buildingIncome += 0.5 * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
-            }
-          } else {
-            // Business tax: companyIncome x levelMultiplier x businessTaxRate
-            const ci = btype.companyIncome ?? 0;
-            buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
-          }
-
-          // Apply district specialization revenue multiplier
-          const district = this.state.districts.getDistrictAt(x, y);
-          if (district) {
-            const bonus = getSpecializationBonus(district.specialization);
-            buildingIncome *= bonus.revenueMultiplier;
-          }
-          totalIncome += buildingIncome;
+      if (isResidentialZone(btype.zoneType)) {
+        // Income tax: scan citizens living in this building
+        const posKey = `${x},${y}`;
+        const residents = this.state.citizens.getCitizensByHome(posKey);
+        for (const citizen of residents) {
+          buildingIncome += 0.5 * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
         }
+      } else {
+        // Business tax: companyIncome x levelMultiplier x businessTaxRate
+        const ci = btype.companyIncome ?? 0;
+        buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
       }
-    }
+
+      // Apply district specialization revenue multiplier
+      const district = this.state.districts.getDistrictAt(x, y);
+      if (district) {
+        const bonus = getSpecializationBonus(district.specialization);
+        buildingIncome *= bonus.revenueMultiplier;
+      }
+      totalIncome += buildingIncome;
+    });
     // Apply city-wide specialization revenue multiplier
     const citySpecBonus = this.state.citySpec.getBonus();
     totalIncome *= citySpecBonus.revenueMultiplier;
@@ -490,12 +473,9 @@ export class SimulationLoop {
 
   private countRoadTiles(): number {
     let count = 0;
-    for (let y = 0; y < this.state.grid.height; y++) {
-      for (let x = 0; x < this.state.grid.width; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.roadType > 0) count++;
-      }
-    }
+    this.state.grid.forEachCell((cell) => {
+      if (cell.roadType > 0) count++;
+    });
     return count;
   }
 

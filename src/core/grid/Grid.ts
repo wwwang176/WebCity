@@ -88,6 +88,15 @@ export class Grid {
     return cells;
   }
 
+  /** Iterate over every cell in row-major order (y then x). */
+  forEachCell(fn: (cell: CellData, x: number, y: number) => void): void {
+    for (let y = 0; y < this.height; y++) {
+      for (let x = 0; x < this.width; x++) {
+        fn(this.getCell(x, y)!, x, y);
+      }
+    }
+  }
+
   getNeighbors(x: number, y: number): CellData[] {
     const dirs: Position[] = [
       { x: 0, y: -1 },
