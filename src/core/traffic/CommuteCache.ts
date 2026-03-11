@@ -1,4 +1,5 @@
 import type { LaneEdge } from './LaneGraph';
+import { collectEdgeCells } from './CommuteCacheHelpers';
 
 export interface CachedRoute {
   citizenId: number;
@@ -138,16 +139,10 @@ export class CommuteCache {
   private collectRouteCells(route: CachedRoute): Set<string> {
     const cells = new Set<string>();
     if (route.morningPath) {
-      for (const edge of route.morningPath) {
-        cells.add(edge.from.cellKey);
-        cells.add(edge.to.cellKey);
-      }
+      for (const c of collectEdgeCells(route.morningPath)) cells.add(c);
     }
     if (route.eveningPath) {
-      for (const edge of route.eveningPath) {
-        cells.add(edge.from.cellKey);
-        cells.add(edge.to.cellKey);
-      }
+      for (const c of collectEdgeCells(route.eveningPath)) cells.add(c);
     }
     return cells;
   }
@@ -178,11 +173,6 @@ export class CommuteCache {
   }
 
   private collectCellsFromPath(path: LaneEdge[]): Set<string> {
-    const cells = new Set<string>();
-    for (const edge of path) {
-      cells.add(edge.from.cellKey);
-      cells.add(edge.to.cellKey);
-    }
-    return cells;
+    return collectEdgeCells(path);
   }
 }
