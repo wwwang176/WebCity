@@ -1,6 +1,7 @@
 import type { GameState } from './GameState';
 import type { GameSpeed } from './GameClock';
 import { isZoneBuilding, isInfrastructureBuilding } from '../building/InfraConfig';
+import { RoadType } from '../road/types';
 
 export interface DebugSnapshot {
   tick: number;
@@ -47,7 +48,7 @@ export class DebugTools {
       cellCount++;
       if (isZoneBuilding(cell.buildingId)) buildingCount++;
       if (isInfrastructureBuilding(cell.buildingId)) infraCount++;
-      if (cell.roadType > 0) roadCount++;
+      if (cell.roadType !== RoadType.NONE) roadCount++;
       totalLandValue += cell.landValue;
       totalPollution += cell.pollution;
     });

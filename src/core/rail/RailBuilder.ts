@@ -42,7 +42,7 @@ export class RailBuilder {
     for (let i = 0; i < cells.length; i++) {
       const pos = cells[i]!;
       const cell = this.grid.getCell(pos.x, pos.y)!;
-      if (cell.roadType > 0) {
+      if (cell.roadType !== RoadType.NONE) {
         let railFlags = 0;
         if (i > 0) railFlags |= this.getDirection(pos, cells[i - 1]!);
         if (i < cells.length - 1) railFlags |= this.getDirection(pos, cells[i + 1]!);

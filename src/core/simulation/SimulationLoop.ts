@@ -474,7 +474,7 @@ export class SimulationLoop {
   private countRoadTiles(): number {
     let count = 0;
     this.state.grid.forEachCell((cell) => {
-      if (cell.roadType > 0) count++;
+      if (cell.roadType !== RoadType.NONE) count++;
     });
     return count;
   }
@@ -540,7 +540,7 @@ export class SimulationLoop {
         pm.addSource(x, y, 60, 'ground');
         pm.addSource(x, y, 40, 'noise');
       }
-      if (cell.roadType > 0 && cell.trafficDensity > 0) {
+      if (cell.roadType !== RoadType.NONE && cell.trafficDensity > 0) {
         pm.addSource(x, y, cell.trafficDensity * 10, 'noise');
       }
     });
@@ -1018,7 +1018,7 @@ export class SimulationLoop {
     const commercialCells: { x: number; y: number }[] = [];
 
     grid.forEachCell((cell, x, y) => {
-      if (cell.roadType > 0) roads.push({ x, y });
+      if (cell.roadType !== RoadType.NONE) roads.push({ x, y });
       if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)) {
         commercialCells.push({ x, y });
       }
@@ -1171,14 +1171,14 @@ export class SimulationLoop {
   ): { x: number; y: number } | null {
     // If the cell itself is a road, use it directly
     const self = grid.getCell(x, y);
-    if (self && self.roadType > 0) return { x, y };
+    if (self && self.roadType !== RoadType.NONE) return { x, y };
     // Otherwise find an adjacent road cell
     const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
     for (const [dx, dy] of dirs) {
       const nx = x + dx!;
       const ny = y + dy!;
       const cell = grid.getCell(nx, ny);
-      if (cell && cell.roadType > 0) return { x: nx, y: ny };
+      if (cell && cell.roadType !== RoadType.NONE) return { x: nx, y: ny };
     }
     return null;
   }

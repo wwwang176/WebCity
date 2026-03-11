@@ -1,4 +1,5 @@
 import type { Grid } from '../grid/Grid';
+import { RoadType } from '../road/types';
 import { RailType, TrackDirection } from './types';
 
 export enum CrossingState {
@@ -33,7 +34,7 @@ function cellKey(x: number, y: number): string {
 export class LevelCrossingSystem {
   private crossings = new Map<string, LevelCrossing>();
 
-  /** Scan grid for cells with both railType > 0 and roadType > 0. */
+  /** Scan grid for cells with both railType !== RailType.NONE and roadType !== RoadType.NONE. */
   rebuildFromGrid(grid: Grid): void {
     this.crossings.clear();
 
@@ -41,7 +42,7 @@ export class LevelCrossingSystem {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
-        if (cell.railType !== RailType.NONE && cell.roadType > 0) {
+        if (cell.railType !== RailType.NONE && cell.roadType !== RoadType.NONE) {
           const hasVert = (cell.railFlags & (TrackDirection.NORTH | TrackDirection.SOUTH)) !== 0;
           const railOrientation: 'NS' | 'EW' = hasVert ? 'NS' : 'EW';
 

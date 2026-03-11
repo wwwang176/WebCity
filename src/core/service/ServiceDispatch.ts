@@ -1,6 +1,7 @@
 import type { Grid } from '../grid/Grid';
 import type { TrafficSimulation } from '../traffic/TrafficSimulation';
 import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { RoadType } from '../road/types';
 
 export enum ServiceVehicleType {
   FIRE_TRUCK = 'FIRE_TRUCK',
@@ -88,7 +89,7 @@ export class ServiceDispatch {
   private findAdjacentRoad(x: number, y: number): { x: number; y: number } | null {
     // Check the cell itself first
     const self = this.grid.getCell(x, y);
-    if (self && self.roadType > 0) return { x, y };
+    if (self && self.roadType !== RoadType.NONE) return { x, y };
 
     const dirs = [
       { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
@@ -98,7 +99,7 @@ export class ServiceDispatch {
       const nx = x + dx;
       const ny = y + dy;
       const cell = this.grid.getCell(nx, ny);
-      if (cell && cell.roadType > 0) return { x: nx, y: ny };
+      if (cell && cell.roadType !== RoadType.NONE) return { x: nx, y: ny };
     }
     return null;
   }
@@ -144,7 +145,7 @@ export class ServiceDispatch {
         const nk = key(nx, ny);
         if (visited.has(nk)) continue;
         const cell = this.grid.getCell(nx, ny);
-        if (!cell || cell.roadType <= 0) continue;
+        if (!cell || cell.roadType === RoadType.NONE) continue;
         visited.add(nk);
         parent.set(nk, curKey);
         queue.push({ x: nx, y: ny });
