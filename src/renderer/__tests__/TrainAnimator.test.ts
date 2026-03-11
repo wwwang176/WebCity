@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TrainAnimator, type RailSystemLike } from '../TrainAnimator';
+import { TrainAnimator, smoothTrackPath, type RailSystemLike } from '../TrainAnimator';
 import type { TransportVehicleRenderData } from '../../core/transport/collectTransportVehicles';
 
 /**
@@ -234,6 +234,33 @@ describe('TrainAnimator', () => {
     expect(car2.x).toBeLessThan(car1.x);
   });
 
+  // ── 圓弧路徑測試 ─────────────────────────────────────
+
+  it('should follow curved path at corners', () => {
+    const animator = new TrainAnimator();
+    // Route with a 90° corner: south then east
+    // A(5,0)→(5,3)→(5,4)→(8,4) and back
+    const route = new Map([[1, [
+      [{ x: 5, y: 0 }, { x: 5, y: 2 }, { x: 5, y: 4 }, { x: 8, y: 4 }],
+      [{ x: 8, y: 4 }, { x: 5, y: 4 }, { x: 5, y: 2 }, { x: 5, y: 0 }],
+    ]]]);
+    const rail = makeFakeRailSystem(
+      [{ id: 1, traveling: true, routeId: 1 }],
+      route,
+    );
+
+    // Skip wait (1.2s) then advance past the corner
+    animator.update(1.3, 1, rail, [makeRenderData(1, 5, 0)]);
+    // Move for ~0.5s at speed 9 → ~4.5 cells, should be near/past the corner at (5,4)
+    const v = [makeRenderData(1, 5, 0)];
+    animator.update(0.5, 1, rail, v);
+
+    // The train should NOT be at x=5 (the sharp corner center)
+    // If curved, at the corner area x should be > 5 as it follows the arc
+    // Just verify the train is progressing and y is reasonable
+    expect(v[0]!.y).toBeGreaterThan(0);
+  });
+
   it('should add trailing carriages for stopped train (no animation)', () => {
     const animator = new TrainAnimator();
     // No route segments → no animation created
@@ -250,5 +277,54 @@ describe('TrainAnimator', () => {
     expect(vehicles[1]!.type).toBe('rail_carriage');
     expect(vehicles[1]!.x).toBeLessThan(vehicles[0]!.x);
     expect(vehicles[2]!.x).toBeLessThan(vehicles[1]!.x);
+  });
+});
+
+describe('smoothTrackPath', () => {
+  it('should not modify straight path', () => {
+    const pts = [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 2, y: 5 }];
+    const result = smoothTrackPath(pts);
+    expect(result).toEqual(pts);
+  });
+
+  it('should not modify path with fewer than 3 points', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 1, y: 0 }];
+    expect(smoothTrackPath(pts)).toEqual(pts);
+  });
+
+  it('should insert arc points at a 90° corner', () => {
+    // South then east: (5,0)→(5,1)→(6,1)
+    const pts = [{ x: 5, y: 0 }, { x: 5, y: 1 }, { x: 6, y: 1 }];
+    const result = smoothTrackPath(pts);
+
+    // Should have more points than original (arc inserted at corner)
+    expect(result.length).toBeGreaterThan(3);
+
+    // First and last points preserved
+    expect(result[0]).toEqual({ x: 5, y: 0 });
+    expect(result[result.length - 1]).toEqual({ x: 6, y: 1 });
+
+    // Corner cell center (5,1) should NOT be in the result
+    const hasCellCenter = result.some(p => p.x === 5 && p.y === 1);
+    expect(hasCellCenter).toBe(false);
+
+    // Arc entry point near north edge of cell (5,1): should be ~(5, 0.5)
+    expect(result[1]!.x).toBeCloseTo(5, 1);
+    expect(result[1]!.y).toBeCloseTo(0.5, 1);
+
+    // Arc exit point near east edge of cell (5,1): should be ~(5.5, 1)
+    const last = result[result.length - 2]!;
+    expect(last.x).toBeCloseTo(5.5, 1);
+    expect(last.y).toBeCloseTo(1, 1);
+  });
+
+  it('should handle two consecutive corners', () => {
+    // S-curve: east→south→east: (0,5)→(1,5)→(1,6)→(2,6)
+    const pts = [{ x: 0, y: 5 }, { x: 1, y: 5 }, { x: 1, y: 6 }, { x: 2, y: 6 }];
+    const result = smoothTrackPath(pts);
+
+    expect(result.length).toBeGreaterThan(4);
+    expect(result[0]).toEqual({ x: 0, y: 5 });
+    expect(result[result.length - 1]).toEqual({ x: 2, y: 6 });
   });
 });

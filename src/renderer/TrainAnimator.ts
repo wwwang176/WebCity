@@ -25,6 +25,8 @@ const CARRIAGE_SPACING = 0.33;
 const CARRIAGES_PER_TRAIN = 3;
 /** 到站視覺停留秒數（與地鐵相同模式） */
 const STATION_WAIT_TIME = 1.2;
+/** 轉角圓弧插值點數 */
+const ARC_POINTS = 6;
 
 interface TrainAnimState {
   /** 完整來回路徑（A→B→A 串接） */
@@ -51,6 +53,53 @@ export interface RailSystemLike {
 }
 
 /**
+ * 將直角轉彎替換為圓弧插值點，使火車沿弧線行駛。
+ * 直線段保持不變，僅在相鄰方向變化時插入四分之一圓弧。
+ */
+export function smoothTrackPath(
+  points: ReadonlyArray<{ x: number; y: number }>,
+): Array<{ x: number; y: number }> {
+  if (points.length < 3) return [...points];
+
+  const result: Array<{ x: number; y: number }> = [];
+  result.push(points[0]!);
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1]!, curr = points[i]!, next = points[i + 1]!;
+    const eDx = Math.sign(curr.x - prev.x);
+    const eDy = Math.sign(curr.y - prev.y);
+    const xDx = Math.sign(next.x - curr.x);
+    const xDy = Math.sign(next.y - curr.y);
+
+    // Straight — keep the point
+    if (eDx === xDx && eDy === xDy) { result.push(curr); continue; }
+
+    // Corner — generate quarter-circle arc
+    const arcCx = curr.x + xDx * 0.5 - eDx * 0.5;
+    const arcCy = curr.y + xDy * 0.5 - eDy * 0.5;
+    const entryX = curr.x - eDx * 0.5;
+    const entryY = curr.y - eDy * 0.5;
+    const exitX = curr.x + xDx * 0.5;
+    const exitY = curr.y + xDy * 0.5;
+
+    const startA = Math.atan2(entryY - arcCy, entryX - arcCx);
+    const endA = Math.atan2(exitY - arcCy, exitX - arcCx);
+    let sweep = endA - startA;
+    if (sweep > Math.PI) sweep -= 2 * Math.PI;
+    if (sweep < -Math.PI) sweep += 2 * Math.PI;
+
+    const R = 0.5;
+    for (let j = 0; j <= ARC_POINTS; j++) {
+      const a = startA + (j / ARC_POINTS) * sweep;
+      result.push({ x: arcCx + R * Math.cos(a), y: arcCy + R * Math.sin(a) });
+    }
+  }
+
+  result.push(points[points.length - 1]!);
+  return result;
+}
+
+/**
  * 從路線的各段路徑建構完整來回路徑。
  * 例如 2 站: segments = [A→B, B→A] → 串接為 A→...→B→...→A
  */
@@ -68,17 +117,20 @@ function buildFullPath(segments: ReadonlyArray<ReadonlyArray<{ x: number; y: num
     const seg = segments[s]!;
     if (seg.length < 2) return null;
 
+    // 平滑此段路徑（轉角→圓弧）
+    const smoothed = smoothTrackPath(seg);
+
     // 第一段全部加入，後續段跳過第一點（與前段終點重複）
     const startIdx = s === 0 ? 0 : 1;
-    for (let i = startIdx; i < seg.length; i++) {
-      fullPoints.push(seg[i]!);
+    for (let i = startIdx; i < smoothed.length; i++) {
+      fullPoints.push(smoothed[i]!);
     }
 
-    // 計算此段長度
+    // 計算平滑後的段長度
     let segLen = 0;
-    for (let i = 1; i < seg.length; i++) {
-      const dx = seg[i]!.x - seg[i - 1]!.x;
-      const dy = seg[i]!.y - seg[i - 1]!.y;
+    for (let i = 1; i < smoothed.length; i++) {
+      const dx = smoothed[i]!.x - smoothed[i - 1]!.x;
+      const dy = smoothed[i]!.y - smoothed[i - 1]!.y;
       segLen += Math.sqrt(dx * dx + dy * dy);
     }
     cumDist += segLen;
