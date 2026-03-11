@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, CARDINAL_DIRECTIONS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
@@ -128,14 +128,7 @@ export class RailBuilder {
     this.grid.setCell(x, y, { railType: RailType.NONE, railFlags: 0 });
 
     // Update neighboring cells' flags
-    const dirs: { dx: number; dy: number; flag: number; opposite: number }[] = [
-      { dx: 0, dy: -1, flag: TrackDirection.NORTH, opposite: TrackDirection.SOUTH },
-      { dx: 0, dy: 1, flag: TrackDirection.SOUTH, opposite: TrackDirection.NORTH },
-      { dx: -1, dy: 0, flag: TrackDirection.WEST, opposite: TrackDirection.EAST },
-      { dx: 1, dy: 0, flag: TrackDirection.EAST, opposite: TrackDirection.WEST },
-    ];
-
-    for (const dir of dirs) {
+    for (const dir of CARDINAL_DIRECTIONS) {
       const nx = x + dir.dx;
       const ny = y + dir.dy;
       const neighbor = this.grid.getCell(nx, ny);

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Grid } from '../Grid';
 import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
-  euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius,
+  euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -224,5 +224,33 @@ describe('forEachCellInRadius', () => {
     // Within Euclidean distance 2: all cells where dx^2+dy^2 <= 4
     // (0,0),(1,0),(-1,0),(0,1),(0,-1),(1,1),(1,-1),(-1,1),(-1,-1),(2,0),(-2,0),(0,2),(0,-2) = 13
     expect(cells.length).toBe(13);
+  });
+});
+
+describe('CARDINAL_DIRECTIONS', () => {
+  it('should have exactly 4 entries', () => {
+    expect(CARDINAL_DIRECTIONS.length).toBe(4);
+  });
+
+  it('each direction should have a valid opposite', () => {
+    for (const dir of CARDINAL_DIRECTIONS) {
+      const opposite = CARDINAL_DIRECTIONS.find(d => d.flag === dir.opposite);
+      expect(opposite).toBeDefined();
+      expect(opposite!.opposite).toBe(dir.flag);
+    }
+  });
+
+  it('dx/dy should be unit vectors (Manhattan)', () => {
+    for (const dir of CARDINAL_DIRECTIONS) {
+      expect(Math.abs(dir.dx) + Math.abs(dir.dy)).toBe(1);
+    }
+  });
+
+  it('flags should be compatible with RoadDirection/TrackDirection bitflags', () => {
+    const flags = CARDINAL_DIRECTIONS.map(d => d.flag);
+    expect(flags).toContain(0b0001); // NORTH
+    expect(flags).toContain(0b0010); // SOUTH
+    expect(flags).toContain(0b0100); // WEST
+    expect(flags).toContain(0b1000); // EAST
   });
 });

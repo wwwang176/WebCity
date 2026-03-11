@@ -62,6 +62,19 @@ export function forEachCellInRadius(
   }
 }
 
+/**
+ * Cardinal direction offsets with bitflag values.
+ * Compatible with both RoadDirection and TrackDirection (both use N=1,S=2,W=4,E=8).
+ */
+export const CARDINAL_DIRECTIONS: ReadonlyArray<{
+  dx: number; dy: number; flag: number; opposite: number;
+}> = [
+  { dx: 0, dy: -1, flag: 0b0001, opposite: 0b0010 }, // NORTH → SOUTH
+  { dx: 0, dy: 1, flag: 0b0010, opposite: 0b0001 },  // SOUTH → NORTH
+  { dx: -1, dy: 0, flag: 0b0100, opposite: 0b1000 }, // WEST → EAST
+  { dx: 1, dy: 0, flag: 0b1000, opposite: 0b0100 },  // EAST → WEST
+];
+
 /** Find the cell itself or an adjacent road cell. Returns null if none found. */
 export function findAdjacentRoad(
   grid: ReadableGrid,

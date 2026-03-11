@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, CARDINAL_DIRECTIONS } from '../grid/GridHelpers';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, RoadDirection, ROAD_CONFIGS, type BuildRoadResult, type Position } from './types';
@@ -124,14 +124,7 @@ export class RoadBuilder {
     this.grid.setCell(x, y, { roadType: RoadType.NONE, roadFlags: 0 });
 
     // Update neighboring cells' flags
-    const dirs: { dx: number; dy: number; flag: number; opposite: number }[] = [
-      { dx: 0, dy: -1, flag: RoadDirection.NORTH, opposite: RoadDirection.SOUTH },
-      { dx: 0, dy: 1, flag: RoadDirection.SOUTH, opposite: RoadDirection.NORTH },
-      { dx: -1, dy: 0, flag: RoadDirection.WEST, opposite: RoadDirection.EAST },
-      { dx: 1, dy: 0, flag: RoadDirection.EAST, opposite: RoadDirection.WEST },
-    ];
-
-    for (const dir of dirs) {
+    for (const dir of CARDINAL_DIRECTIONS) {
       const nx = x + dir.dx;
       const ny = y + dir.dy;
       const neighbor = this.grid.getCell(nx, ny);
