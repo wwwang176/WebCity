@@ -206,47 +206,46 @@ float hash21(vec2 p) {
 
 // === Independent roof color palettes per zone ===
 vec3 getRoofColor(float zoneCat, float h) {
+  vec3 c = vec3(0.35, 0.35, 0.38); // default (Office: medium gray)
   // Residential Low: clay tiles, slate
   if (zoneCat < 0.1) {
-    if (h < 0.17) return vec3(0.35, 0.22, 0.14); // dark brown tiles
-    if (h < 0.33) return vec3(0.58, 0.30, 0.18); // terracotta red
-    if (h < 0.50) return vec3(0.40, 0.38, 0.36); // slate gray
-    if (h < 0.67) return vec3(0.45, 0.28, 0.16); // warm brown
-    if (h < 0.83) return vec3(0.52, 0.34, 0.22); // cedar brown
-    return vec3(0.32, 0.30, 0.28);                // dark slate
+    c = h < 0.17 ? vec3(0.35, 0.22, 0.14) // dark brown tiles
+      : h < 0.33 ? vec3(0.58, 0.30, 0.18) // terracotta red
+      : h < 0.50 ? vec3(0.40, 0.38, 0.36) // slate gray
+      : h < 0.67 ? vec3(0.45, 0.28, 0.16) // warm brown
+      : h < 0.83 ? vec3(0.52, 0.34, 0.22) // cedar brown
+      :             vec3(0.32, 0.30, 0.28);// dark slate
+  } else if (zoneCat < 0.3) {
+    // Residential High: Paris zinc, dark slate
+    c = h < 0.25 ? vec3(0.45, 0.45, 0.48) // zinc gray
+      : h < 0.50 ? vec3(0.30, 0.30, 0.32) // dark slate
+      : h < 0.75 ? vec3(0.38, 0.36, 0.34) // warm dark gray
+      :             vec3(0.35, 0.38, 0.42);// blue-gray slate
+  } else if (zoneCat < 0.5) {
+    // Commercial Low: European shop roofs
+    c = h < 0.20 ? vec3(0.55, 0.28, 0.16) // terracotta
+      : h < 0.40 ? vec3(0.35, 0.22, 0.14) // dark brown
+      : h < 0.60 ? vec3(0.38, 0.36, 0.34) // dark gray
+      : h < 0.80 ? vec3(0.42, 0.25, 0.15) // warm brown tile
+      :             vec3(0.30, 0.30, 0.28);// charcoal
+  } else if (zoneCat < 0.7) {
+    // Commercial High: flat modern roofs
+    c = h < 0.33 ? vec3(0.32, 0.34, 0.36) // dark flat gray
+      : h < 0.66 ? vec3(0.38, 0.42, 0.40) // green-gray (copper patina)
+      :             vec3(0.28, 0.30, 0.32);// charcoal
+  } else if (zoneCat < 0.9) {
+    // Industrial: metal roofing
+    c = h < 0.25 ? vec3(0.55, 0.56, 0.58) // light silver metal
+      : h < 0.50 ? vec3(0.40, 0.40, 0.42) // medium gray metal
+      : h < 0.75 ? vec3(0.50, 0.35, 0.25) // rusted metal
+      :             vec3(0.35, 0.36, 0.38);// dark metal
+  } else {
+    // Office: modern flat roofs
+    c = h < 0.33 ? vec3(0.30, 0.32, 0.35) // dark gray flat
+      : h < 0.66 ? vec3(0.25, 0.28, 0.30) // very dark
+      :             vec3(0.35, 0.35, 0.38);// medium gray
   }
-  // Residential High: Paris zinc, dark slate
-  if (zoneCat < 0.3) {
-    if (h < 0.25) return vec3(0.45, 0.45, 0.48); // zinc gray
-    if (h < 0.50) return vec3(0.30, 0.30, 0.32); // dark slate
-    if (h < 0.75) return vec3(0.38, 0.36, 0.34); // warm dark gray
-    return vec3(0.35, 0.38, 0.42);                // blue-gray slate
-  }
-  // Commercial Low: European shop roofs
-  if (zoneCat < 0.5) {
-    if (h < 0.20) return vec3(0.55, 0.28, 0.16); // terracotta
-    if (h < 0.40) return vec3(0.35, 0.22, 0.14); // dark brown
-    if (h < 0.60) return vec3(0.38, 0.36, 0.34); // dark gray
-    if (h < 0.80) return vec3(0.42, 0.25, 0.15); // warm brown tile
-    return vec3(0.30, 0.30, 0.28);                // charcoal
-  }
-  // Commercial High: flat modern roofs
-  if (zoneCat < 0.7) {
-    if (h < 0.33) return vec3(0.32, 0.34, 0.36); // dark flat gray
-    if (h < 0.66) return vec3(0.38, 0.42, 0.40); // green-gray (copper patina)
-    return vec3(0.28, 0.30, 0.32);                // charcoal
-  }
-  // Industrial: metal roofing
-  if (zoneCat < 0.9) {
-    if (h < 0.25) return vec3(0.55, 0.56, 0.58); // light silver metal
-    if (h < 0.50) return vec3(0.40, 0.40, 0.42); // medium gray metal
-    if (h < 0.75) return vec3(0.50, 0.35, 0.25); // rusted metal
-    return vec3(0.35, 0.36, 0.38);                // dark metal
-  }
-  // Office: modern flat roofs
-  if (h < 0.33) return vec3(0.30, 0.32, 0.35); // dark gray flat
-  if (h < 0.66) return vec3(0.25, 0.28, 0.30); // very dark
-  return vec3(0.35, 0.35, 0.38);                // medium gray
+  return c;
 }
 
 void main() {
