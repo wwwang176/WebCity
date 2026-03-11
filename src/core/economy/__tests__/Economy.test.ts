@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { calculateRCIDemand } from '../RCIDemand';
 import { calculateBalance, takeLoan, tickBudget } from '../Budget';
 import { calculateTaxRevenue, DEFAULT_TAX_RATES } from '../Tax';
-import { calculateLandValue } from '../LandValue';
+import { calculateLandValue, LAND_VALUE } from '../LandValue';
 
 describe('RCIDemand', () => {
   it('should have positive R demand for empty city', () => {
@@ -108,5 +108,21 @@ describe('LandValue', () => {
       pollution: 80, noise: 0, crimeRate: 0,
     });
     expect(polluted).toBeLessThan(clean);
+  });
+
+  it('LAND_VALUE.BASE should equal land value with no modifiers', () => {
+    const base = calculateLandValue({
+      serviceCoverage: 0, parkProximity: false, waterfront: false,
+      pollution: 0, noise: 0, crimeRate: 0,
+    });
+    expect(base).toBe(LAND_VALUE.BASE);
+  });
+
+  it('should clamp between LAND_VALUE.MIN and LAND_VALUE.MAX', () => {
+    const extreme = calculateLandValue({
+      serviceCoverage: 0, parkProximity: false, waterfront: false,
+      pollution: 999, noise: 999, crimeRate: 999,
+    });
+    expect(extreme).toBe(LAND_VALUE.MIN);
   });
 });
