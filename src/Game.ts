@@ -64,7 +64,58 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 };
 
 
+/** Terrain generation parameters for initial map setup. */
+export const TERRAIN_GEN = {
+  /** River center position as fraction of map size */
+  RIVER_POSITION_RATIO: 0.7,
+  /** Sine wave frequency for river meandering */
+  RIVER_WAVE_FREQUENCY: 0.1,
+  /** Sine wave amplitude (cells) for river meandering */
+  RIVER_WAVE_AMPLITUDE: 3,
+  /** Half-width of the river (river extends ±RIVER_HALF_WIDTH from center) */
+  RIVER_HALF_WIDTH: 1,
+
+  /** Number of random forest patches */
+  FOREST_PATCH_COUNT: 8,
+  /** Radius (cells) of each forest patch */
+  FOREST_PATCH_RADIUS: 3,
+  /** Probability a cell within a patch becomes forest */
+  FOREST_FILL_CHANCE: 0.7,
+
+  /** Mountain center X as fraction of map size */
+  MOUNTAIN_X_RATIO: 0.15,
+  /** Mountain center Y as fraction of map size */
+  MOUNTAIN_Y_RATIO: 0.85,
+  /** Radius (cells) of the mountain area */
+  MOUNTAIN_RADIUS: 4,
+  /** Base elevation at mountain center */
+  MOUNTAIN_PEAK_ELEVATION: 3,
+  /** Elevation decay rate per unit distance from center */
+  MOUNTAIN_ELEVATION_DECAY: 0.5,
+} as const;
+
 export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport';
+
+/** Map of tool types that directly delegate to placeInfrastructure (DRY). */
+const TOOL_TO_INFRA: Partial<Record<ToolType, InfraType>> = {
+  power: 'power', water: 'water', police: 'police', fire: 'fire',
+  hospital: 'hospital', school: 'school', school_high: 'school_high',
+  school_univ: 'school_univ', park: 'park', garbage: 'garbage',
+  sewage: 'sewage', cemetery: 'cemetery',
+};
+
+/** Map of tool types that directly delegate to placeTransportStop (DRY). */
+const TOOL_TO_TRANSPORT: Partial<Record<ToolType, 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'>> = {
+  bus_stop: 'bus', metro_station: 'metro', train_station: 'rail',
+  ferry_dock: 'ferry', airport: 'airport',
+};
+
+/** Map of zone tool types to ZoneType (DRY). */
+const TOOL_TO_ZONE: Partial<Record<ToolType, ZoneType>> = {
+  zone_r: ZoneType.RESIDENTIAL_LOW, zone_rh: ZoneType.RESIDENTIAL_HIGH,
+  zone_c: ZoneType.COMMERCIAL_LOW, zone_ch: ZoneType.COMMERCIAL_HIGH,
+  zone_i: ZoneType.INDUSTRIAL, zone_o: ZoneType.OFFICE,
+};
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -283,10 +334,12 @@ export class Game {
   }
 
   private generateTerrain(size: number): void {
+    const T = TERRAIN_GEN;
+
     // Create a river
     for (let y = 0; y < size; y++) {
-      const riverX = Math.floor(size * 0.7 + Math.sin(y * 0.1) * 3);
-      for (let dx = -1; dx <= 1; dx++) {
+      const riverX = Math.floor(size * T.RIVER_POSITION_RATIO + Math.sin(y * T.RIVER_WAVE_FREQUENCY) * T.RIVER_WAVE_AMPLITUDE);
+      for (let dx = -T.RIVER_HALF_WIDTH; dx <= T.RIVER_HALF_WIDTH; dx++) {
         const x = riverX + dx;
         if (x >= 0 && x < size) {
           this.state.grid.setCell(x, y, { terrainType: TerrainType.WATER });
@@ -295,16 +348,17 @@ export class Game {
     }
 
     // Create some forest patches
-    for (let i = 0; i < 8; i++) {
+    const fr = T.FOREST_PATCH_RADIUS;
+    for (let i = 0; i < T.FOREST_PATCH_COUNT; i++) {
       const cx = Math.floor(Math.random() * size);
       const cy = Math.floor(Math.random() * size);
-      for (let dy = -3; dy <= 3; dy++) {
-        for (let dx = -3; dx <= 3; dx++) {
+      for (let dy = -fr; dy <= fr; dy++) {
+        for (let dx = -fr; dx <= fr; dx++) {
           const x = cx + dx;
           const y = cy + dy;
           if (x >= 0 && x < size && y >= 0 && y < size) {
             const cell = this.state.grid.getCell(x, y);
-            if (cell && cell.terrainType === TerrainType.PLAIN && Math.random() > 0.3) {
+            if (cell && cell.terrainType === TerrainType.PLAIN && Math.random() < T.FOREST_FILL_CHANCE) {
               this.state.grid.setCell(x, y, { terrainType: TerrainType.FOREST });
             }
           }
@@ -313,17 +367,19 @@ export class Game {
     }
 
     // Small mountain area
-    const mx = Math.floor(size * 0.15);
-    const my = Math.floor(size * 0.85);
-    for (let dy = -4; dy <= 4; dy++) {
-      for (let dx = -4; dx <= 4; dx++) {
-        if (dx * dx + dy * dy <= 16) {
+    const mr = T.MOUNTAIN_RADIUS;
+    const mx = Math.floor(size * T.MOUNTAIN_X_RATIO);
+    const my = Math.floor(size * T.MOUNTAIN_Y_RATIO);
+    const mr2 = mr * mr;
+    for (let dy = -mr; dy <= mr; dy++) {
+      for (let dx = -mr; dx <= mr; dx++) {
+        if (dx * dx + dy * dy <= mr2) {
           const x = mx + dx;
           const y = my + dy;
           if (x >= 0 && x < size && y >= 0 && y < size) {
             this.state.grid.setCell(x, y, {
               terrainType: TerrainType.MOUNTAIN,
-              elevation: 3 - Math.sqrt(dx * dx + dy * dy) * 0.5,
+              elevation: T.MOUNTAIN_PEAK_ELEVATION - Math.sqrt(dx * dx + dy * dy) * T.MOUNTAIN_ELEVATION_DECAY,
             });
           }
         }
@@ -535,30 +591,6 @@ export class Game {
         this.dirty.crossings = true;
         break;
       }
-      case 'zone_r':
-        this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_LOW);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_rh':
-        this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_HIGH);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_c':
-        this.applyZone(x1, y1, x2, y2, ZoneType.COMMERCIAL_LOW);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_ch':
-        this.applyZone(x1, y1, x2, y2, ZoneType.COMMERCIAL_HIGH);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_i':
-        this.applyZone(x1, y1, x2, y2, ZoneType.INDUSTRIAL);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_o':
-        this.applyZone(x1, y1, x2, y2, ZoneType.OFFICE);
-        this.audioManager.playSfx('zone');
-        break;
       case 'demolish': {
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         this.demolish(x1, y1, x2, y2);
@@ -566,61 +598,29 @@ export class Game {
         this.audioManager.playSfx('demolish');
         break;
       }
-      case 'power':
-        this.placeInfrastructure(x1, y1, 'power');
-        break;
-      case 'water':
-        this.placeInfrastructure(x1, y1, 'water');
-        break;
-      case 'police':
-        this.placeInfrastructure(x1, y1, 'police');
-        break;
-      case 'fire':
-        this.placeInfrastructure(x1, y1, 'fire');
-        break;
-      case 'hospital':
-        this.placeInfrastructure(x1, y1, 'hospital');
-        break;
-      case 'school':
-        this.placeInfrastructure(x1, y1, 'school');
-        break;
-      case 'school_high':
-        this.placeInfrastructure(x1, y1, 'school_high');
-        break;
-      case 'school_univ':
-        this.placeInfrastructure(x1, y1, 'school_univ');
-        break;
-      case 'park':
-        this.placeInfrastructure(x1, y1, 'park');
-        break;
-      case 'garbage':
-        this.placeInfrastructure(x1, y1, 'garbage');
-        break;
-      case 'sewage':
-        this.placeInfrastructure(x1, y1, 'sewage');
-        break;
-      case 'cemetery':
-        this.placeInfrastructure(x1, y1, 'cemetery');
-        break;
       case 'district':
         this.paintDistrict(x1, y1, x2, y2);
         this.audioManager.playSfx('zone');
         break;
-      case 'bus_stop':
-        this.placeTransportStop(x1, y1, 'bus');
+      default: {
+        const zoneType = TOOL_TO_ZONE[this.currentTool];
+        if (zoneType !== undefined) {
+          this.applyZone(x1, y1, x2, y2, zoneType);
+          this.audioManager.playSfx('zone');
+          break;
+        }
+        const infraType = TOOL_TO_INFRA[this.currentTool];
+        if (infraType) {
+          this.placeInfrastructure(x1, y1, infraType);
+          break;
+        }
+        const transportType = TOOL_TO_TRANSPORT[this.currentTool];
+        if (transportType) {
+          this.placeTransportStop(x1, y1, transportType);
+          break;
+        }
         break;
-      case 'metro_station':
-        this.placeTransportStop(x1, y1, 'metro');
-        break;
-      case 'train_station':
-        this.placeTransportStop(x1, y1, 'rail');
-        break;
-      case 'ferry_dock':
-        this.placeTransportStop(x1, y1, 'ferry');
-        break;
-      case 'airport':
-        this.placeTransportStop(x1, y1, 'airport');
-        break;
+      }
     }
     this.onUIUpdate?.();
   }
