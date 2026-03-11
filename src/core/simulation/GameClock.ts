@@ -2,6 +2,25 @@ export type GameSpeed = 0 | 1 | 2 | 3;
 
 export type TimeOfDay = 'night' | 'morning_rush' | 'midday' | 'evening_rush';
 
+/** Hour boundaries for time-of-day periods (24-hour cycle based on ticksPerDay) */
+export const TIME_PERIOD = {
+  NIGHT_START: 22,
+  NIGHT_END: 5,
+  MORNING_RUSH_START: 6,
+  MORNING_RUSH_END: 9,
+  MIDDAY_START: 10,
+  MIDDAY_END: 16,
+  // EVENING_RUSH: 17-21 (implicit default)
+} as const;
+
+/** Milliseconds between ticks for each game speed */
+export const SPEED_INTERVALS: Record<GameSpeed, number> = {
+  0: Infinity,
+  1: 250,
+  2: 125,
+  3: 83,
+};
+
 export class GameClock {
   tick = 0;
   speed: GameSpeed = 1;
@@ -33,10 +52,10 @@ export class GameClock {
 
   getTimeOfDay(): TimeOfDay {
     const hour = this.getHourOfDay();
-    if (hour >= 22 || hour <= 5) return 'night';
-    if (hour >= 6 && hour <= 9) return 'morning_rush';
-    if (hour >= 10 && hour <= 16) return 'midday';
-    return 'evening_rush'; // 17-21
+    if (hour >= TIME_PERIOD.NIGHT_START || hour <= TIME_PERIOD.NIGHT_END) return 'night';
+    if (hour >= TIME_PERIOD.MORNING_RUSH_START && hour <= TIME_PERIOD.MORNING_RUSH_END) return 'morning_rush';
+    if (hour >= TIME_PERIOD.MIDDAY_START && hour <= TIME_PERIOD.MIDDAY_END) return 'midday';
+    return 'evening_rush';
   }
 
   getSeason(): 'spring' | 'summer' | 'autumn' | 'winter' {
@@ -48,12 +67,7 @@ export class GameClock {
   }
 
   getTickInterval(): number {
-    switch (this.speed) {
-      case 0: return Infinity;
-      case 1: return 250;
-      case 2: return 125;
-      case 3: return 83;
-    }
+    return SPEED_INTERVALS[this.speed];
   }
 
   setSpeed(speed: GameSpeed): void {

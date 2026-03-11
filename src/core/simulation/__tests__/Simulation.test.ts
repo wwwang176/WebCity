@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GameClock } from '../GameClock';
+import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
 import { createGameState } from '../GameState';
 import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SLOW_TICK_INTERVAL, MEDIUM_TICK_INTERVAL } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
@@ -94,6 +94,18 @@ describe('GameClock', () => {
 
     clock.advance(); // hour 22
     expect(clock.getTimeOfDay()).toBe('night');
+  });
+
+  it('TIME_PERIOD constants should form valid non-overlapping ranges', () => {
+    expect(TIME_PERIOD.NIGHT_END).toBeLessThan(TIME_PERIOD.MORNING_RUSH_START);
+    expect(TIME_PERIOD.MORNING_RUSH_END).toBeLessThan(TIME_PERIOD.MIDDAY_START);
+    expect(TIME_PERIOD.MIDDAY_END).toBeLessThan(TIME_PERIOD.NIGHT_START);
+  });
+
+  it('SPEED_INTERVALS should have Infinity for paused and decreasing values for higher speeds', () => {
+    expect(SPEED_INTERVALS[0]).toBe(Infinity);
+    expect(SPEED_INTERVALS[1]).toBeGreaterThan(SPEED_INTERVALS[2]);
+    expect(SPEED_INTERVALS[2]).toBeGreaterThan(SPEED_INTERVALS[3]);
   });
 
   it('getDay/getMonth/getYear should still work correctly with 24 ticksPerDay', () => {
