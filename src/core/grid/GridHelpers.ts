@@ -23,3 +23,26 @@ export function parsePosKeyUnsafe(key: string): { x: number; y: number } {
   const i = key.indexOf(',');
   return { x: Number(key.slice(0, i)), y: Number(key.slice(i + 1)) };
 }
+
+/** Minimal grid interface for findAdjacentRoad */
+interface ReadableGrid {
+  getCell(x: number, y: number): { roadType: number } | null;
+}
+
+/** Find the cell itself or an adjacent road cell. Returns null if none found. */
+export function findAdjacentRoad(
+  grid: ReadableGrid,
+  x: number,
+  y: number,
+): { x: number; y: number } | null {
+  const self = grid.getCell(x, y);
+  if (self && self.roadType !== RoadType.NONE) return { x, y };
+  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  for (const [dx, dy] of dirs) {
+    const nx = x + dx!;
+    const ny = y + dy!;
+    const cell = grid.getCell(nx, ny);
+    if (cell && cell.roadType !== RoadType.NONE) return { x: nx, y: ny };
+  }
+  return null;
+}

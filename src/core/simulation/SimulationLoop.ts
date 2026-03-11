@@ -22,7 +22,7 @@ import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad } from '../grid/GridHelpers';
 
 export class SimulationLoop {
   private state: GameState;
@@ -902,8 +902,8 @@ export class SimulationLoop {
       }
 
       // --- Compute path and populate cache ---
-      const startRoad = this.findAdjacentRoad(fromPos.x, fromPos.y, grid);
-      const endRoad = this.findAdjacentRoad(toPos.x, toPos.y, grid);
+      const startRoad = findAdjacentRoad(grid, fromPos.x, fromPos.y);
+      const endRoad = findAdjacentRoad(grid, toPos.x, toPos.y);
       if (!startRoad || !endRoad) {
         commuterSet.add(citizen.id);
         continue;
@@ -1033,8 +1033,8 @@ export class SimulationLoop {
       const end = roads[Math.floor(Math.random() * roads.length)]!;
       if (start.x === end.x && start.y === end.y) continue;
 
-      const startRoad = this.findAdjacentRoad(start.x, start.y, grid);
-      const endRoad = this.findAdjacentRoad(end.x, end.y, grid);
+      const startRoad = findAdjacentRoad(grid, start.x, start.y);
+      const endRoad = findAdjacentRoad(grid, end.x, end.y);
       if (!startRoad || !endRoad) continue;
       if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
 
@@ -1123,8 +1123,8 @@ export class SimulationLoop {
       const mode = chooseMode(from, to, availableTransport, 0);
       if (mode !== TransportMode.DRIVE) continue;
 
-      const startRoad = this.findAdjacentRoad(from.x, from.y, grid);
-      const endRoad = this.findAdjacentRoad(to.x, to.y, grid);
+      const startRoad = findAdjacentRoad(grid, from.x, from.y);
+      const endRoad = findAdjacentRoad(grid, to.x, to.y);
       if (!startRoad || !endRoad) continue;
       if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
 
@@ -1164,24 +1164,6 @@ export class SimulationLoop {
     return best;
   }
 
-  private findAdjacentRoad(
-    x: number,
-    y: number,
-    grid: { getCell(x: number, y: number): { roadType: number } | null },
-  ): { x: number; y: number } | null {
-    // If the cell itself is a road, use it directly
-    const self = grid.getCell(x, y);
-    if (self && self.roadType !== RoadType.NONE) return { x, y };
-    // Otherwise find an adjacent road cell
-    const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-    for (const [dx, dy] of dirs) {
-      const nx = x + dx!;
-      const ny = y + dy!;
-      const cell = grid.getCell(nx, ny);
-      if (cell && cell.roadType !== RoadType.NONE) return { x: nx, y: ny };
-    }
-    return null;
-  }
 }
 
 export function countResidentialCapacity(grid: { width: number; height: number; getCell(x: number, y: number): { buildingId: number; zoneType: number; reserved?: number } | null }): number {

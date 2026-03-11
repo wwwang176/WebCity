@@ -1,6 +1,6 @@
 import type { Grid } from '../grid/Grid';
 import type { TrafficSimulation } from '../traffic/TrafficSimulation';
-import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, findAdjacentRoad } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 
 export enum ServiceVehicleType {
@@ -49,8 +49,8 @@ export class ServiceDispatch {
     origin: { x: number; y: number },
     destination: { x: number; y: number },
   ): DispatchResult | null {
-    const startRoad = this.findAdjacentRoad(origin.x, origin.y);
-    const endRoad = this.findAdjacentRoad(destination.x, destination.y);
+    const startRoad = findAdjacentRoad(this.grid, origin.x, origin.y);
+    const endRoad = findAdjacentRoad(this.grid, destination.x, destination.y);
     if (!startRoad || !endRoad) return null;
     if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) {
       return { vehicleType, path: [startRoad], estimatedTicks: 1 };
@@ -85,24 +85,6 @@ export class ServiceDispatch {
     return assignedDistrict === incidentDistrict;
   }
 
-  /** Find the nearest adjacent road cell to (x, y). */
-  private findAdjacentRoad(x: number, y: number): { x: number; y: number } | null {
-    // Check the cell itself first
-    const self = this.grid.getCell(x, y);
-    if (self && self.roadType !== RoadType.NONE) return { x, y };
-
-    const dirs = [
-      { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-      { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-    ];
-    for (const { dx, dy } of dirs) {
-      const nx = x + dx;
-      const ny = y + dy;
-      const cell = this.grid.getCell(nx, ny);
-      if (cell && cell.roadType !== RoadType.NONE) return { x: nx, y: ny };
-    }
-    return null;
-  }
 
   /** BFS to find shortest road path. */
   private bfsRoadPath(

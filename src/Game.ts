@@ -654,7 +654,7 @@ export class Game {
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.roadType > 0) {
+        if (cell && cell.roadType !== RoadType.NONE) {
           cells.push(`${x},${y}`);
         }
       }
@@ -920,7 +920,7 @@ export class Game {
         this.notificationTimer = 3;
         return;
       }
-    } else if (cell.roadType !== 0 || cell.buildingId !== 0) {
+    } else if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) {
       this.notification = 'Tile is occupied';
       this.notificationTimer = 3;
       return;
@@ -1291,7 +1291,7 @@ export class Game {
     const seen = new Set<string>();
 
     grid.forEachCell((cell, x, y) => {
-      if (cell.roadType === 0) return;
+      if (cell.roadType === RoadType.NONE) return;
       let dirs = 0;
       if (cell.roadFlags & RoadDirection.NORTH) dirs++;
       if (cell.roadFlags & RoadDirection.SOUTH) dirs++;
@@ -1923,7 +1923,7 @@ export class Game {
     let roadCount = 0;
 
     grid.forEachCell((cell, x, y) => {
-      if (cell.roadType > 0) roadCount++;
+      if (cell.roadType !== RoadType.NONE) roadCount++;
       if (!isZoneBuilding(cell.buildingId)) return;
       if (cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) return;
 
@@ -1975,7 +1975,7 @@ export class Game {
     let totalRoads = 0;
     const grid = this.state.grid;
     grid.forEachCell((cell) => {
-      if (cell.roadType > 0) totalRoads++;
+      if (cell.roadType !== RoadType.NONE) totalRoads++;
     });
     return {
       vehicleCount: this.state.traffic.getVehicleCount(),
