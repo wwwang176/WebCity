@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateHappiness, type HappinessFactors } from '../Happiness';
+import { calculateHappiness, HAPPINESS, type HappinessFactors } from '../Happiness';
 import { type Citizen, LifeStage, EducationLevel, IncomeLevel } from '../types';
 
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
@@ -68,5 +68,20 @@ describe('Happiness', () => {
       serviceCoverage: 0,
     });
     expect(h).toBeLessThan(20);
+  });
+
+  it('HAPPINESS.BASE should be the starting value before modifiers', () => {
+    const neutralFactors: HappinessFactors = {
+      commuteDistance: 10, hasPark: false, pollution: 0, noiseLevel: 0,
+      crimeRate: 0, isEmployed: true, taxRate: 9, serviceCoverage: 0,
+    };
+    const h = calculateHappiness(makeCitizen(), neutralFactors);
+    expect(h).toBe(HAPPINESS.BASE);
+  });
+
+  it('HAPPINESS.TAX_BRACKETS should be sorted descending by threshold', () => {
+    for (let i = 1; i < HAPPINESS.TAX_BRACKETS.length; i++) {
+      expect(HAPPINESS.TAX_BRACKETS[i]!.threshold).toBeLessThan(HAPPINESS.TAX_BRACKETS[i - 1]!.threshold);
+    }
   });
 });
