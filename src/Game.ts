@@ -27,6 +27,7 @@ import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
+import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
@@ -108,6 +109,7 @@ export class Game {
   private weatherRenderer: WeatherRenderer;
   private gridCursor: GridCursor;
   private placementPreview: PlacementPreview;
+  private highlightManager: HighlightManager;
   private transportRouteRenderer: TransportRouteRenderer;
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
@@ -220,6 +222,7 @@ export class Game {
     this.metroTunnelRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
     this.placementPreview = new PlacementPreview(this.sceneManager.scene, this.buildingRenderer);
+    this.highlightManager = new HighlightManager(this.sceneManager.scene);
 
     // Center camera
     this.sceneManager.panCamera(mapSize / 2, mapSize / 2);
@@ -331,6 +334,7 @@ export class Game {
         );
         this.dragStart = null;
         this.clearPreviewLine();
+        this.highlightManager.clear();
       }
     });
 
@@ -1076,6 +1080,9 @@ export class Game {
         this.trackRenderer.setViewMode(this.viewMode);
         this.levelCrossingRenderer.setViewMode(this.viewMode);
       }
+      // Re-apply highlight after rebuild (new meshes lose aHighlight)
+      this.updatePlacementPreview();
+
       this.renderDirty = false;
     }
 
@@ -1321,6 +1328,7 @@ export class Game {
   setTool(tool: ToolType): void {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
+    this.highlightManager.clear();
     // Road subtypes set the roadType
     if (tool === 'road') this.currentRoadType = RoadType.TWO_LANE;
     else if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
@@ -1452,11 +1460,15 @@ export class Game {
       );
     } else if (this.currentTool === 'demolish') {
       if (this.dragStart) {
-        // Demolish drag preview — red overlay showing affected range
-        this.placementPreview.updateZoneDrag(
-          this.dragStart.x, this.dragStart.y,
-          this.gridCursor.gridX, this.gridCursor.gridY,
-          0xff0000,
+        // Demolish drag preview — red tint on ground + buildings in range
+        const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
+        const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
+        const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
+        const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
+        this.highlightManager.highlight(
+          minX, minY, maxX, maxY, 0xff0000,
+          this.buildingRenderer.buildingMeshes,
+          this.buildingRenderer.buildingInfraGroups,
         );
       } else {
         // Demolish hover: highlight multi-cell building footprint
@@ -1477,29 +1489,38 @@ export class Game {
                 }
               }
             }
-            this.placementPreview.updateDemolishHighlight(cells);
+            this.highlightManager.highlightCells(
+              cells, 0xff0000,
+              this.buildingRenderer.buildingMeshes,
+              this.buildingRenderer.buildingInfraGroups,
+            );
           } else {
-            this.placementPreview.hide();
+            this.highlightManager.clear();
           }
         } else {
-          this.placementPreview.hide();
+          this.highlightManager.clear();
         }
       }
     } else if (this.dragStart && this.isZoneTool()) {
-      // Zone drag preview
+      // Zone drag preview — tint ground + buildings in range
       const zoneColors: Record<string, number> = {
         zone_r: 0x4caf50, zone_rh: 0x2e7d32,
         zone_c: 0x2196f3, zone_ch: 0x1565c0,
         zone_i: 0xffc107, zone_o: 0x9c27b0,
       };
       const color = zoneColors[this.currentTool] ?? 0xffffff;
-      this.placementPreview.updateZoneDrag(
-        this.dragStart.x, this.dragStart.y,
-        this.gridCursor.gridX, this.gridCursor.gridY,
-        color,
+      const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
+      const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
+      const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
+      const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
+      this.highlightManager.highlight(
+        minX, minY, maxX, maxY, color,
+        this.buildingRenderer.buildingMeshes,
+        this.buildingRenderer.buildingInfraGroups,
       );
     } else {
       this.placementPreview.hide();
+      this.highlightManager.clear();
     }
   }
 

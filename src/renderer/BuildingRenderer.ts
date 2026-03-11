@@ -131,15 +131,19 @@ const BUILDING_VERT = /* glsl */ `
 #include <common>
 #include <shadowmap_pars_vertex>
 
+attribute float aHighlight;
+
 varying vec3 vNormal;
 varying vec3 vLocalPos;
 varying vec3 vWorldPos;
 varying vec3 vBldgColor;
 varying float vPartType;
 varying float vZoneCat;
+varying float vHighlight;
 
 void main() {
   vLocalPos = position;
+  vHighlight = aHighlight;
 
   #ifdef USE_COLOR
     vPartType = color.r;
@@ -183,6 +187,7 @@ precision highp float;
 
 uniform float uGlobalOpacity;
 uniform float uDesaturate;
+uniform vec3 uHighlightColor;
 
 varying vec3 vNormal;
 varying vec3 vLocalPos;
@@ -190,6 +195,7 @@ varying vec3 vWorldPos;
 varying vec3 vBldgColor;
 varying float vPartType;
 varying float vZoneCat;
+varying float vHighlight;
 
 float hash21(vec2 p) {
   p = fract(p * vec2(233.34, 851.73));
@@ -487,6 +493,13 @@ void main() {
     color = mix(color, vec3(0.88), uDesaturate);
   }
 
+  // Highlight tint (demolish / zone selection)
+  if (vHighlight > 0.5) {
+    color = mix(color, uHighlightColor, 0.55);
+    // Add emissive glow so it's visible at night too
+    color += uHighlightColor * 0.3;
+  }
+
   gl_FragColor = vec4(color, 1.0);
 }
 `;
@@ -499,6 +512,7 @@ function createBuildingMaterial(): THREE.ShaderMaterial {
       ]),
       uGlobalOpacity: { value: 1.0 },
       uDesaturate: { value: 0.0 },
+      uHighlightColor: { value: new THREE.Color(1, 0, 0) },
     },
     vertexShader: BUILDING_VERT,
     fragmentShader: BUILDING_FRAG,
@@ -828,6 +842,12 @@ export class BuildingRenderer {
   private lightSpotMesh: THREE.InstancedMesh | null = null;
   private lightSpotMaterial: THREE.MeshBasicMaterial | null = null;
 
+  /** Expose building meshes for highlight tinting (read-only). */
+  get buildingMeshes(): readonly (THREE.InstancedMesh | THREE.Mesh)[] { return this.meshes; }
+
+  /** Expose infrastructure groups for highlight tinting (read-only). */
+  get buildingInfraGroups(): readonly THREE.Group[] { return this.infraGroups; }
+
   build(scene: THREE.Scene, grid: Grid): void {
     this.dispose(scene);
 
@@ -955,6 +975,11 @@ export class BuildingRenderer {
           }
           mesh.setColorAt(i, color);
         }
+
+        // Add per-instance highlight attribute (0 = normal, 1 = highlighted)
+        const highlightData = new Float32Array(count);
+        mesh.geometry.setAttribute('aHighlight',
+          new THREE.InstancedBufferAttribute(highlightData, 1));
 
         mesh.instanceMatrix.needsUpdate = true;
         if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
