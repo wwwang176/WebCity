@@ -1,13 +1,12 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
+import { toPosKey } from '../grid/GridHelpers';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, RoadDirection, ROAD_CONFIGS, type BuildRoadResult, type Position } from './types';
 import { RailType } from '../rail/types';
 
-function nodeId(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const nodeId = toPosKey;
 
 export class RoadBuilder {
   private grid: Grid;

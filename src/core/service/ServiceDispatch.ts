@@ -1,6 +1,6 @@
 import type { Grid } from '../grid/Grid';
 import type { TrafficSimulation } from '../traffic/TrafficSimulation';
-import { parsePosKeyUnsafe, findAdjacentRoad } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, findAdjacentRoad, toPosKey } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 
 export enum ServiceVehicleType {
@@ -91,7 +91,7 @@ export class ServiceDispatch {
     start: { x: number; y: number },
     end: { x: number; y: number },
   ): { x: number; y: number }[] | null {
-    const key = (x: number, y: number) => `${x},${y}`;
+    const key = toPosKey;
     const visited = new Set<string>();
     const parent = new Map<string, string>();
     const queue: { x: number; y: number }[] = [start];
@@ -147,7 +147,7 @@ export class ServiceDispatch {
     if (vehicleCount === 0) return 0;
 
     // Check if path overlaps with top congested segments
-    const pathSet = new Set(path.map(p => `${p.x},${p.y}`));
+    const pathSet = new Set(path.map(p => toPosKey(p.x, p.y)));
     const topCongested = this.traffic.getTopCongested(20);
     let congestedOnPath = 0;
     let totalDensity = 0;

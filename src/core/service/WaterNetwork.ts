@@ -1,4 +1,5 @@
 import { Grid } from '../grid/Grid';
+import { toPosKey } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 
 export interface WaterPlant {
@@ -33,7 +34,7 @@ export class WaterNetwork {
   }
 
   isSupplied(x: number, y: number): boolean {
-    return this.supplied.has(`${x},${y}`);
+    return this.supplied.has(toPosKey(x, y));
   }
 
   getTotalOutput(): number {
@@ -66,11 +67,11 @@ export class WaterNetwork {
         const ny = py + dy;
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;
-        this.supplied.add(`${nx},${ny}`);
+        this.supplied.add(toPosKey(nx, ny));
 
         // Collect relay-capable cells on the circle edge (distance > r-1)
         if (dx * dx + dy * dy > (r - 1) * (r - 1)) {
-          const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(`${nx},${ny}`);
+          const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(toPosKey(nx, ny));
           if (isRelay) relaySeeds.push([nx, ny]);
         }
       }
@@ -82,7 +83,7 @@ export class WaterNetwork {
     const relayMap = new Map<string, number>();
     const queue: [number, number, number][] = [];
     for (const [sx, sy] of relaySeeds) {
-      const key = `${sx},${sy}`;
+      const key = toPosKey(sx, sy);
       relayMap.set(key, RELAY_RANGE);
       queue.push([sx, sy, RELAY_RANGE]);
     }
@@ -92,7 +93,7 @@ export class WaterNetwork {
       for (const [ddx, ddy] of dirs) {
         const nx = x + ddx!;
         const ny = y + ddy!;
-        const key = `${nx},${ny}`;
+        const key = toPosKey(nx, ny);
         if (this.supplied.has(key)) continue;
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;

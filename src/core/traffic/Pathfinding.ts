@@ -1,7 +1,7 @@
 import { RoadNetwork } from '../road/RoadNetwork';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
-import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
 
 interface PathNode {
   id: string;
@@ -161,7 +161,7 @@ export function gridAStarPath(
   grid: { getCell(x: number, y: number): { roadType: number } | null; width: number; height: number },
   maxSteps = 5000,
 ): string[] | null {
-  const key = (x: number, y: number) => `${x},${y}`;
+  const key = toPosKey;
   const target = key(end.x, end.y);
   const startKey = key(start.x, start.y);
 

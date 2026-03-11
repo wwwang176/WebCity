@@ -1,6 +1,6 @@
 import { RoadType, RoadDirection } from '../road/types';
 import { getLaneCount } from './TrafficSimulation';
-import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
 
 // ── Types ──
 
@@ -97,7 +97,7 @@ export class LaneGraph {
       affected.add(key);
       const { x, y } = parseCellKey(key);
       for (const d of DIR_FLAGS) {
-        affected.add(`${x + d.dx},${y + d.dy}`);
+        affected.add(toPosKey(x + d.dx, y + d.dy));
       }
     }
 
@@ -277,7 +277,7 @@ export class LaneGraph {
   ): void {
     // For a straight/curve segment: connect exit → neighbor entry
     for (const { dir, dx, dy } of activeDirections) {
-      const neighborKey = `${x + dx},${y + dy}`;
+      const neighborKey = toPosKey(x + dx, y + dy);
       const neighbor = grid.getCell(x + dx, y + dy);
       if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
 
@@ -384,7 +384,7 @@ export class LaneGraph {
 
     // Also connect exit points to neighbor entries (same as straight)
     for (const { dir, dx, dy } of activeDirections) {
-      const neighborKey = `${x + dx},${y + dy}`;
+      const neighborKey = toPosKey(x + dx, y + dy);
       const neighbor = grid.getCell(x + dx, y + dy);
       if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
 

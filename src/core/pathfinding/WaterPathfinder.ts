@@ -5,7 +5,7 @@
  * 純邏輯模組，禁止 import Three.js。
  */
 
-import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
 
 export interface WaterGrid {
   width: number;
@@ -37,9 +37,7 @@ function heuristic(ax: number, ay: number, bx: number, by: number): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function key(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const key = toPosKey;
 
 /**
  * A* 水域尋路。

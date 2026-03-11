@@ -1,3 +1,5 @@
+import { toPosKey } from '../grid/GridHelpers';
+
 /**
  * Traffic light system for intersections.
  * Phase 0: N-S green, E-W red
@@ -17,7 +19,7 @@ export class TrafficLightSystem {
   private lights = new Map<string, TrafficLight>();
 
   addLight(x: number, y: number): void {
-    const key = `${x},${y}`;
+    const key = toPosKey(x, y);
     if (this.lights.has(key)) return;
     // Stagger phase start by position hash to avoid all lights syncing
     const stagger = (x * 7 + y * 13) % PHASE_DURATION;
@@ -25,7 +27,7 @@ export class TrafficLightSystem {
   }
 
   removeLight(x: number, y: number): void {
-    this.lights.delete(`${x},${y}`);
+    this.lights.delete(toPosKey(x, y));
   }
 
   tick(): void {
@@ -44,7 +46,7 @@ export class TrafficLightSystem {
    * for the vehicle's direction.
    */
   canPass(fromX: number, fromY: number, toX: number, toY: number): boolean {
-    const light = this.lights.get(`${toX},${toY}`);
+    const light = this.lights.get(toPosKey(toX, toY));
     if (!light) return true;
 
     const dx = toX - fromX;
@@ -56,7 +58,7 @@ export class TrafficLightSystem {
   }
 
   getLight(x: number, y: number): TrafficLight | undefined {
-    return this.lights.get(`${x},${y}`);
+    return this.lights.get(toPosKey(x, y));
   }
 
   getLights(): TrafficLight[] {

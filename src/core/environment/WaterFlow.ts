@@ -1,3 +1,5 @@
+import { toPosKey } from '../grid/GridHelpers';
+
 export type FlowDirection = 'N' | 'S' | 'E' | 'W' | '';
 
 const DECAY_PER_CELL = 30;
@@ -28,9 +30,7 @@ export class WaterFlow {
     this.height = height;
   }
 
-  private cellKey(x: number, y: number): string {
-    return `${x},${y}`;
-  }
+  private cellKey = toPosKey;
 
   setFlowDirection(x: number, y: number, direction: FlowDirection): void {
     this.flow.set(this.cellKey(x, y), direction);

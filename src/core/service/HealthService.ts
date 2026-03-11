@@ -1,3 +1,5 @@
+import { toPosKey } from '../grid/GridHelpers';
+
 export interface Hospital {
   id: string;
   x: number;
@@ -34,11 +36,11 @@ export class HealthService {
   }
 
   getCoverage(x: number, y: number): boolean {
-    return (this.coverageCount.get(`${x},${y}`) ?? 0) > 0;
+    return (this.coverageCount.get(toPosKey(x, y)) ?? 0) > 0;
   }
 
   getHealthBonus(x: number, y: number): number {
-    const count = this.coverageCount.get(`${x},${y}`) ?? 0;
+    const count = this.coverageCount.get(toPosKey(x, y)) ?? 0;
     if (count === 0) return 0;
     return Math.min(count * HEALTH_BONUS_PER_HOSPITAL, HEALTH_BONUS_CAP);
   }
@@ -67,7 +69,7 @@ export class HealthService {
         const dx = x - hospital.x;
         const dy = y - hospital.y;
         if (dx * dx + dy * dy <= r * r) {
-          const key = `${x},${y}`;
+          const key = toPosKey(x, y);
           this.coverageCount.set(key, (this.coverageCount.get(key) ?? 0) + 1);
         }
       }

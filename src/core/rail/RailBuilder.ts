@@ -1,5 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
+import { toPosKey } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
@@ -10,9 +11,7 @@ interface Position {
   y: number;
 }
 
-function nodeId(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const nodeId = toPosKey;
 
 export class RailBuilder {
   private grid: Grid;

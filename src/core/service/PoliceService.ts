@@ -1,3 +1,5 @@
+import { toPosKey } from '../grid/GridHelpers';
+
 export interface PoliceStation {
   id: string;
   x: number;
@@ -29,11 +31,11 @@ export class PoliceService {
   }
 
   getCoverage(x: number, y: number): boolean {
-    return this.coverageMap.has(`${x},${y}`);
+    return this.coverageMap.has(toPosKey(x, y));
   }
 
   getCrimeReduction(x: number, y: number): number {
-    const count = this.coverageMap.get(`${x},${y}`) ?? 0;
+    const count = this.coverageMap.get(toPosKey(x, y)) ?? 0;
     if (count === 0) return 0;
     return Math.max(CRIME_REDUCTION_CAP, count * CRIME_REDUCTION_PER_STATION);
   }
@@ -56,7 +58,7 @@ export class PoliceService {
       for (let dx = -r; dx <= r; dx++) {
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist <= radius) {
-          const key = `${sx + dx},${sy + dy}`;
+          const key = toPosKey(sx + dx, sy + dy);
           this.coverageMap.set(key, (this.coverageMap.get(key) ?? 0) + 1);
         }
       }

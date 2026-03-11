@@ -1,3 +1,4 @@
+import { toPosKey } from '../grid/GridHelpers';
 import { District, Specialization } from './types';
 
 let nextId = 1;
@@ -32,7 +33,7 @@ export class DistrictManager {
   addCellToDistrict(districtId: string, x: number, y: number): void {
     const district = this.districts.get(districtId);
     if (!district) return;
-    const key = `${x},${y}`;
+    const key = toPosKey(x, y);
     // Remove from any other district first
     for (const [, d] of this.districts) {
       if (d.id !== districtId) {
@@ -45,11 +46,11 @@ export class DistrictManager {
   removeCellFromDistrict(districtId: string, x: number, y: number): void {
     const district = this.districts.get(districtId);
     if (!district) return;
-    district.cells.delete(`${x},${y}`);
+    district.cells.delete(toPosKey(x, y));
   }
 
   getDistrictAt(x: number, y: number): District | null {
-    const key = `${x},${y}`;
+    const key = toPosKey(x, y);
     for (const [, district] of this.districts) {
       if (district.cells.has(key)) {
         return district;

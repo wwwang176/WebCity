@@ -22,7 +22,7 @@ import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey } from '../grid/GridHelpers';
 
 export class SimulationLoop {
   private state: GameState;
@@ -94,8 +94,8 @@ export class SimulationLoop {
     // 3. Services (power/water coverage) — every 6 ticks
     if (isSlowTick) {
       const infraPositions = new Set<string>();
-      for (const p of this.state.power.getPlants()) infraPositions.add(`${p.x},${p.y}`);
-      for (const p of this.state.water.getPlants()) infraPositions.add(`${p.x},${p.y}`);
+      for (const p of this.state.power.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
+      for (const p of this.state.water.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
       this.state.power.calculateCoverage(this.state.grid, infraPositions);
       this.state.water.calculateCoverage(this.state.grid, infraPositions);
     }
@@ -432,7 +432,7 @@ export class SimulationLoop {
 
       if (isResidentialZone(btype.zoneType)) {
         // Income tax: scan citizens living in this building
-        const posKey = `${x},${y}`;
+        const posKey = toPosKey(x, y);
         const residents = this.state.citizens.getCitizensByHome(posKey);
         for (const citizen of residents) {
           buildingIncome += CITIZEN_BASE_INCOME * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
@@ -686,7 +686,7 @@ export class SimulationLoop {
     this.buildingPositions = [];
     this.state.grid.forEachCell((cell, x, y) => {
       if (isZoneBuilding(cell.buildingId)) {
-        this.buildingPositions.push({ pos: `${x},${y}`, x, y, buildingId: cell.buildingId });
+        this.buildingPositions.push({ pos: toPosKey(x, y), x, y, buildingId: cell.buildingId });
       }
     });
     this.buildingIndexDay = currentDay;
@@ -782,7 +782,7 @@ export class SimulationLoop {
 
     grid.forEachCell((cell, x, y) => {
       if (cell.roadType !== RoadType.NONE) {
-        cellKeys.push(`${x},${y}`);
+        cellKeys.push(toPosKey(x, y));
       }
     });
 

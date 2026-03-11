@@ -1,3 +1,5 @@
+import { toPosKey } from '../grid/GridHelpers';
+
 export enum ResourceType {
   NONE = 0,
   ORE = 1,
@@ -25,9 +27,7 @@ export class NaturalResourceManager {
   private width = 0;
   private height = 0;
 
-  private cellKey(x: number, y: number): string {
-    return `${x},${y}`;
-  }
+  private cellKey = toPosKey;
 
   initResources(width: number, height: number, seed: number = 42): void {
     this.width = width;

@@ -1,4 +1,5 @@
 import type { Grid } from '../grid/Grid';
+import { toPosKey } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { RailType, TrackDirection } from './types';
 
@@ -22,9 +23,7 @@ const ACTIVATION_RADIUS = 2.5;
 /** Seconds the crossing stays active after the train moves away. */
 const COOLDOWN_DURATION = 1.5;
 
-function cellKey(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const cellKey = toPosKey;
 
 /**
  * Manages level crossing (railroad crossing) state.

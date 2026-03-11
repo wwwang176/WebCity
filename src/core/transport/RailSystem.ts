@@ -3,7 +3,7 @@ import { BaseTransportSystem, TransportSystemConfig, BaseTransportJSON } from '.
 import type { Grid } from '../grid/Grid';
 import type { RailNetwork } from '../rail/RailNetwork';
 import { RailType } from '../rail/types';
-import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
 
 export enum RailServiceType {
   PASSENGER = 'PASSENGER',
@@ -28,9 +28,7 @@ export interface ExternalConnection {
   goodsOut: number;
 }
 
-function nodeId(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const nodeId = toPosKey;
 
 /** Per-vehicle travel metadata for path-based interpolation. */
 interface TrainTravelMeta {
