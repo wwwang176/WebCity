@@ -58,17 +58,13 @@ export function chooseMode(
   return TransportMode.DRIVE;
 }
 
+const TRANSPORT_TYPE_TO_MODE: Partial<Record<TransportType, TransportMode>> = {
+  [TransportType.BUS]: TransportMode.BUS,
+  [TransportType.METRO]: TransportMode.METRO,
+  [TransportType.RAIL]: TransportMode.RAIL,
+  [TransportType.FERRY]: TransportMode.FERRY,
+};
+
 function transportTypeToMode(type: TransportType): TransportMode | null {
-  switch (type) {
-    case TransportType.BUS:
-      return TransportMode.BUS;
-    case TransportType.METRO:
-      return TransportMode.METRO;
-    case TransportType.RAIL:
-      return TransportMode.RAIL;
-    case TransportType.FERRY:
-      return TransportMode.FERRY;
-    default:
-      return null;
-  }
+  return TRANSPORT_TYPE_TO_MODE[type] ?? null;
 }

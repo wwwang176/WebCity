@@ -135,7 +135,7 @@ export class CommuteCache {
 
   // ── Internal ──
 
-  private registerCellIndex(citizenId: number, route: CachedRoute): void {
+  private collectRouteCells(route: CachedRoute): Set<string> {
     const cells = new Set<string>();
     if (route.morningPath) {
       for (const edge of route.morningPath) {
@@ -149,6 +149,11 @@ export class CommuteCache {
         cells.add(edge.to.cellKey);
       }
     }
+    return cells;
+  }
+
+  private registerCellIndex(citizenId: number, route: CachedRoute): void {
+    const cells = this.collectRouteCells(route);
     for (const cellKey of cells) {
       let set = this.cellIndex.get(cellKey);
       if (!set) {
@@ -160,19 +165,7 @@ export class CommuteCache {
   }
 
   private removeCellIndexEntries(citizenId: number, route: CachedRoute): void {
-    const cells = new Set<string>();
-    if (route.morningPath) {
-      for (const edge of route.morningPath) {
-        cells.add(edge.from.cellKey);
-        cells.add(edge.to.cellKey);
-      }
-    }
-    if (route.eveningPath) {
-      for (const edge of route.eveningPath) {
-        cells.add(edge.from.cellKey);
-        cells.add(edge.to.cellKey);
-      }
-    }
+    const cells = this.collectRouteCells(route);
     for (const cellKey of cells) {
       const set = this.cellIndex.get(cellKey);
       if (set) {
