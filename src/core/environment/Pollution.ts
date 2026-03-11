@@ -13,8 +13,10 @@ interface PollutionLevel {
   noise: number;
 }
 
-const DECAY_PER_CELL = 30;
-const PARK_REDUCTION = 20;
+/** Pollution amount decay per Manhattan distance cell */
+export const POLLUTION_DECAY_PER_CELL = 30;
+/** Pollution/noise reduction per park cell */
+export const POLLUTION_PARK_REDUCTION = 20;
 
 export class PollutionManager {
   private width: number;
@@ -64,7 +66,7 @@ export class PollutionManager {
 
   private spreadFromSource(source: PollutionSource): void {
     const grid = this.getGrid(source.type);
-    const maxRange = Math.ceil(source.amount / DECAY_PER_CELL);
+    const maxRange = Math.ceil(source.amount / POLLUTION_DECAY_PER_CELL);
 
     for (let dx = -maxRange; dx <= maxRange; dx++) {
       for (let dy = -maxRange; dy <= maxRange; dy++) {
@@ -74,7 +76,7 @@ export class PollutionManager {
         if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) continue;
 
         const distance = Math.abs(dx) + Math.abs(dy); // Manhattan distance
-        const value = Math.max(0, source.amount - distance * DECAY_PER_CELL);
+        const value = Math.max(0, source.amount - distance * POLLUTION_DECAY_PER_CELL);
 
         if (value > 0) {
           grid[ny]![nx]! += value;
@@ -104,8 +106,8 @@ export class PollutionManager {
 
         const distance = Math.abs(dx) + Math.abs(dy);
         if (distance <= radius) {
-          this.ground[ny]![nx] = Math.max(0, this.ground[ny]![nx]! - PARK_REDUCTION);
-          this.noise[ny]![nx] = Math.max(0, this.noise[ny]![nx]! - PARK_REDUCTION);
+          this.ground[ny]![nx] = Math.max(0, this.ground[ny]![nx]! - POLLUTION_PARK_REDUCTION);
+          this.noise[ny]![nx] = Math.max(0, this.noise[ny]![nx]! - POLLUTION_PARK_REDUCTION);
         }
       }
     }

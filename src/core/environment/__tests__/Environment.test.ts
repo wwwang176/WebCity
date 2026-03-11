@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PollutionManager } from '../Pollution';
+import { PollutionManager, POLLUTION_DECAY_PER_CELL, POLLUTION_PARK_REDUCTION } from '../Pollution';
 import { NaturalResourceManager, ResourceType } from '../NaturalResourceManager';
 import { WaterFlow } from '../WaterFlow';
 
@@ -70,6 +70,24 @@ describe('PollutionManager', () => {
     pm.calculateSpread();
     expect(pm.getPollutionAt(1, 1).ground).toBe(0);
     expect(pm.getPollutionAt(2, 2).water).toBe(0);
+  });
+});
+
+describe('Pollution constants', () => {
+  it('POLLUTION_DECAY_PER_CELL should be positive', () => {
+    expect(POLLUTION_DECAY_PER_CELL).toBeGreaterThan(0);
+  });
+
+  it('POLLUTION_PARK_REDUCTION should be positive', () => {
+    expect(POLLUTION_PARK_REDUCTION).toBeGreaterThan(0);
+  });
+
+  it('decay per cell should match spread behavior', () => {
+    const pm = new PollutionManager(10, 10);
+    pm.addSource(5, 5, 100, 'ground');
+    pm.calculateSpread();
+    // At distance 1, pollution = 100 - DECAY_PER_CELL
+    expect(pm.getPollutionAt(5, 6).ground).toBe(100 - POLLUTION_DECAY_PER_CELL);
   });
 });
 

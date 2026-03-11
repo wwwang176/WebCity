@@ -8,6 +8,32 @@ export interface UpgradeConditions {
   pollution: number;
 }
 
+/** Thresholds for building level upgrades and downgrades */
+export const UPGRADE_THRESHOLDS = {
+  /** Level 1 → 2 requirements */
+  LEVEL_2: {
+    minServiceCoverage: 3,
+    minLandValue: 50,
+  },
+  /** Level 2 → 3 requirements */
+  LEVEL_3: {
+    minServiceCoverage: 5,
+    minLandValue: 80,
+    maxCrimeRate: 20,
+    maxPollution: 30,
+  },
+  /** Downgrade from level 2 if below these */
+  DOWNGRADE_2: {
+    minServiceCoverage: 3,
+    minLandValue: 40,
+  },
+  /** Downgrade from level 3 if below these */
+  DOWNGRADE_3: {
+    minServiceCoverage: 5,
+    minLandValue: 70,
+  },
+} as const;
+
 export class BuildingUpgrade {
   private grid: Grid;
 
@@ -24,14 +50,15 @@ export class BuildingUpgrade {
     if (building.level >= 3) return false;
 
     if (building.level === 1) {
-      return conditions.serviceCoverageCount >= 3 && conditions.landValue >= 50;
+      return conditions.serviceCoverageCount >= UPGRADE_THRESHOLDS.LEVEL_2.minServiceCoverage
+        && conditions.landValue >= UPGRADE_THRESHOLDS.LEVEL_2.minLandValue;
     }
     if (building.level === 2) {
       return (
-        conditions.serviceCoverageCount >= 5 &&
-        conditions.landValue >= 80 &&
-        conditions.crimeRate < 20 &&
-        conditions.pollution < 30
+        conditions.serviceCoverageCount >= UPGRADE_THRESHOLDS.LEVEL_3.minServiceCoverage &&
+        conditions.landValue >= UPGRADE_THRESHOLDS.LEVEL_3.minLandValue &&
+        conditions.crimeRate < UPGRADE_THRESHOLDS.LEVEL_3.maxCrimeRate &&
+        conditions.pollution < UPGRADE_THRESHOLDS.LEVEL_3.maxPollution
       );
     }
     return false;
@@ -63,10 +90,12 @@ export class BuildingUpgrade {
     if (!building || building.level <= 1) return false;
 
     if (building.level === 2) {
-      return conditions.serviceCoverageCount < 3 || conditions.landValue < 40;
+      return conditions.serviceCoverageCount < UPGRADE_THRESHOLDS.DOWNGRADE_2.minServiceCoverage
+        || conditions.landValue < UPGRADE_THRESHOLDS.DOWNGRADE_2.minLandValue;
     }
     if (building.level === 3) {
-      return conditions.serviceCoverageCount < 5 || conditions.landValue < 70;
+      return conditions.serviceCoverageCount < UPGRADE_THRESHOLDS.DOWNGRADE_3.minServiceCoverage
+        || conditions.landValue < UPGRADE_THRESHOLDS.DOWNGRADE_3.minLandValue;
     }
     return false;
   }
