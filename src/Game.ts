@@ -18,6 +18,7 @@ import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
 import { getBuildingType, type BuildingType } from './core/building/types';
 import { IncomeLevel } from './core/citizen/types';
+import { getIncomeLevelMultiplier, getBuildingLevelMultiplier } from './core/economy/TaxMultipliers';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
@@ -1935,24 +1936,6 @@ export class Game {
     let resIncome = 0, comIncome = 0, indIncome = 0, offIncome = 0;
     let roadCount = 0;
 
-    const incomeMultiplier = (level: IncomeLevel): number => {
-      switch (level) {
-        case IncomeLevel.LOW: return 1.0;
-        case IncomeLevel.MEDIUM: return 1.5;
-        case IncomeLevel.HIGH: return 2.0;
-        default: return 1.0;
-      }
-    };
-
-    const levelMultiplier = (level: 1 | 2 | 3): number => {
-      switch (level) {
-        case 1: return 1.0;
-        case 2: return 1.5;
-        case 3: return 2.0;
-        default: return 1.0;
-      }
-    };
-
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
@@ -1970,12 +1953,12 @@ export class Game {
           const posKey = `${x},${y}`;
           const residents = this.state.citizens.getCitizensByHome(posKey);
           for (const citizen of residents) {
-            resIncome += 0.5 * incomeMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+            resIncome += 0.5 * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
           }
         } else {
           // Business tax: companyIncome x levelMultiplier x businessTaxRate
           const ci = btype.companyIncome ?? 0;
-          const bi = ci * levelMultiplier(btype.level) * (businessTaxRate / 100);
+          const bi = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
           if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) {
             comIncome += bi;
           } else if (cell.zoneType === ZoneType.INDUSTRIAL) {

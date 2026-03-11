@@ -12,6 +12,7 @@ import { LaneGraph } from '../traffic/LaneGraph';
 import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
+import { getIncomeLevelMultiplier, getBuildingLevelMultiplier } from '../economy/TaxMultipliers';
 import { getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
@@ -428,26 +429,6 @@ export class SimulationLoop {
     const incomeTaxRate = this.state.taxRates.residential ?? 9;
     const businessTaxRate = this.state.taxRates.business ?? 9;
 
-    // Income level multipliers for income tax
-    const incomeMultiplier = (level: IncomeLevel): number => {
-      switch (level) {
-        case IncomeLevel.LOW: return 1.0;
-        case IncomeLevel.MEDIUM: return 1.5;
-        case IncomeLevel.HIGH: return 2.0;
-        default: return 1.0;
-      }
-    };
-
-    // Level multipliers for business tax
-    const levelMultiplier = (level: 1 | 2 | 3): number => {
-      switch (level) {
-        case 1: return 1.0;
-        case 2: return 1.5;
-        case 3: return 2.0;
-        default: return 1.0;
-      }
-    };
-
     let totalIncome = 0;
 
     for (let y = 0; y < this.state.grid.height; y++) {
@@ -467,12 +448,12 @@ export class SimulationLoop {
             const residents = this.state.citizens.getCitizensByHome(posKey);
             for (const citizen of residents) {
               // Per-citizen tax = baseFactor(0.5) x incomeLevel multiplier x incomeTaxRate
-              buildingIncome += 0.5 * incomeMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+              buildingIncome += 0.5 * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
             }
           } else {
             // Business tax: companyIncome x levelMultiplier x businessTaxRate
             const ci = btype.companyIncome ?? 0;
-            buildingIncome = ci * levelMultiplier(btype.level) * (businessTaxRate / 100);
+            buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
           }
 
           // Apply district specialization revenue multiplier
