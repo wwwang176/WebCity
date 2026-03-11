@@ -180,13 +180,11 @@ export class Game {
       this.state = createGameState(mapSize, mapSize);
     }
     this.simLoop = new SimulationLoop(this.state);
-    this.simLoop.onBuildingsChanged = () => {
-      this.dirty.buildings = true;
-    };
     this.simLoop.onTerrainChanged = () => {
       this.dirty.terrain = true;
     };
-    // Fine-grained building callbacks for incremental rendering
+    // Fine-grained building callbacks — incremental O(1) updates,
+    // no need to set dirty.buildings (avoids redundant full rebuild)
     this.simLoop.onBuildingAdded = (x, y, zoneType, level) => {
       this.buildingRenderer.addBuilding(x, y, zoneType, level, false);
     };
@@ -1136,7 +1134,7 @@ export class Game {
       }
 
       const dt = performance.now() - t0;
-      console.debug(`[rebuild] ${rebuilt.join('+')} in ${dt.toFixed(1)}ms`);
+      console.log(`[rebuild] ${rebuilt.join('+')} in ${dt.toFixed(1)}ms`);
 
       // Refresh active overlay when relevant subsystems rebuilt
       const currentOverlay = this.overlayRenderer.getOverlay();
