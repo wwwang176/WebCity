@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
-import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag } from '../grid/GridHelpers';
+import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
@@ -23,7 +23,7 @@ export class RailBuilder {
   }
 
   buildTrack(from: Position, to: Position, funds: number): BuildTrackResult {
-    const cells = this.getCellsBetween(from, to);
+    const cells = getLShapedPath(from, to);
 
     // Validate terrain
     for (const pos of cells) {
@@ -138,28 +138,6 @@ export class RailBuilder {
         });
       }
     }
-  }
-
-  private getCellsBetween(from: Position, to: Position): Position[] {
-    const cells: Position[] = [];
-    const dx = Math.sign(to.x - from.x);
-    const dy = Math.sign(to.y - from.y);
-
-    let x = from.x;
-    let y = from.y;
-
-    // L-shaped path: horizontal first, then vertical
-    while (x !== to.x) {
-      cells.push({ x, y });
-      x += dx;
-    }
-    while (y !== to.y) {
-      cells.push({ x, y });
-      y += dy;
-    }
-    cells.push({ x: to.x, y: to.y });
-
-    return cells;
   }
 
   private getDirection(from: Position, to: Position): number {

@@ -100,23 +100,19 @@ export class DebugTools {
     ];
   }
 
+  private readonly paramSetters: Record<string, (value: number) => void> = {
+    funds: (v) => { this.state.budget.funds = v; },
+    speed: (v) => { this.setSpeed(v); },
+    taxRate: (v) => { this.state.taxRates.residential = v; },
+    businessTaxRate: (v) => {
+      this.state.taxRates.business = v;
+      this.state.taxRates.commercial = v;
+      this.state.taxRates.industrial = v;
+      this.state.taxRates.office = v;
+    },
+  };
+
   setParam(name: string, value: number): void {
-    switch (name) {
-      case 'funds':
-        this.state.budget.funds = value;
-        break;
-      case 'speed':
-        this.setSpeed(value);
-        break;
-      case 'taxRate':
-        this.state.taxRates.residential = value;
-        break;
-      case 'businessTaxRate':
-        this.state.taxRates.business = value;
-        this.state.taxRates.commercial = value;
-        this.state.taxRates.industrial = value;
-        this.state.taxRates.office = value;
-        break;
-    }
+    this.paramSetters[name]?.(value);
   }
 }

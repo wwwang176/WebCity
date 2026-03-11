@@ -3,7 +3,7 @@ import { Grid } from '../Grid';
 import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
-  hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS,
+  hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS, getLShapedPath,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -310,6 +310,49 @@ describe('normalizeRect', () => {
     expect(r.maxX).toBe(3);
     expect(r.minY).toBe(3);
     expect(r.maxY).toBe(3);
+  });
+});
+
+describe('getLShapedPath', () => {
+  it('returns single cell when from === to', () => {
+    const path = getLShapedPath({ x: 3, y: 5 }, { x: 3, y: 5 });
+    expect(path).toEqual([{ x: 3, y: 5 }]);
+  });
+
+  it('returns horizontal path when y is same', () => {
+    const path = getLShapedPath({ x: 0, y: 0 }, { x: 3, y: 0 });
+    expect(path).toEqual([
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
+    ]);
+  });
+
+  it('returns vertical path when x is same', () => {
+    const path = getLShapedPath({ x: 0, y: 0 }, { x: 0, y: 2 });
+    expect(path).toEqual([
+      { x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 },
+    ]);
+  });
+
+  it('returns L-shaped path (horizontal first, then vertical)', () => {
+    const path = getLShapedPath({ x: 0, y: 0 }, { x: 2, y: 2 });
+    expect(path).toEqual([
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
+      { x: 2, y: 1 }, { x: 2, y: 2 },
+    ]);
+  });
+
+  it('handles negative direction', () => {
+    const path = getLShapedPath({ x: 3, y: 3 }, { x: 1, y: 1 });
+    expect(path).toEqual([
+      { x: 3, y: 3 }, { x: 2, y: 3 }, { x: 1, y: 3 },
+      { x: 1, y: 2 }, { x: 1, y: 1 },
+    ]);
+  });
+
+  it('includes no duplicates at the corner', () => {
+    const path = getLShapedPath({ x: 0, y: 0 }, { x: 1, y: 1 });
+    const keys = path.map(p => `${p.x},${p.y}`);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 });
 

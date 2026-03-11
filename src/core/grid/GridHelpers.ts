@@ -90,6 +90,33 @@ export const FOUR_NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
   [0, -1], [0, 1], [-1, 0], [1, 0],
 ] as const;
 
+/**
+ * Returns an L-shaped path of grid cells from `from` to `to`.
+ * Moves horizontally first, then vertically.
+ */
+export function getLShapedPath(from: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number }[] {
+  const cells: { x: number; y: number }[] = [];
+  const dx = Math.sign(to.x - from.x);
+  const dy = Math.sign(to.y - from.y);
+
+  let x = from.x;
+  let y = from.y;
+
+  // Horizontal leg
+  while (x !== to.x) {
+    cells.push({ x, y });
+    x += dx;
+  }
+  // Vertical leg
+  while (y !== to.y) {
+    cells.push({ x, y });
+    y += dy;
+  }
+  cells.push({ x: to.x, y: to.y });
+
+  return cells;
+}
+
 /** Find the cell itself or an adjacent road cell. Returns null if none found. */
 export function findAdjacentRoad(
   grid: ReadableGrid,

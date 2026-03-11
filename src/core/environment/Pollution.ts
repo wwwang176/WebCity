@@ -44,14 +44,12 @@ export class PollutionManager {
   }
 
   private getGrid(type: PollutionType): number[][] {
-    switch (type) {
-      case 'ground':
-        return this.ground;
-      case 'water':
-        return this.water;
-      case 'noise':
-        return this.noise;
-    }
+    const grids: Record<PollutionType, number[][]> = {
+      ground: this.ground,
+      water: this.water,
+      noise: this.noise,
+    };
+    return grids[type];
   }
 
   addSource(x: number, y: number, amount: number, type: PollutionType): void {

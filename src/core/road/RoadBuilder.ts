@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
-import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag } from '../grid/GridHelpers';
+import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath } from '../grid/GridHelpers';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, RoadDirection, ROAD_CONFIGS, type BuildRoadResult, type Position } from './types';
@@ -18,7 +18,7 @@ export class RoadBuilder {
   }
 
   buildRoad(from: Position, to: Position, roadType: RoadType, funds: number): BuildRoadResult {
-    const cells = this.getCellsBetween(from, to);
+    const cells = getLShapedPath(from, to);
     const config = ROAD_CONFIGS[roadType];
 
     // Check for water/mountain/infrastructure
@@ -134,28 +134,6 @@ export class RoadBuilder {
         });
       }
     }
-  }
-
-  private getCellsBetween(from: Position, to: Position): Position[] {
-    const cells: Position[] = [];
-    const dx = Math.sign(to.x - from.x);
-    const dy = Math.sign(to.y - from.y);
-
-    let x = from.x;
-    let y = from.y;
-
-    // First move horizontally, then vertically (L-shaped path)
-    while (x !== to.x) {
-      cells.push({ x, y });
-      x += dx;
-    }
-    while (y !== to.y) {
-      cells.push({ x, y });
-      y += dy;
-    }
-    cells.push({ x: to.x, y: to.y });
-
-    return cells;
   }
 
   private getDirection(from: Position, to: Position): number {
