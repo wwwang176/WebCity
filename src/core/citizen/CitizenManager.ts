@@ -25,15 +25,14 @@ export const EDUCATION_PROGRESSION: readonly EducationRule[] = [
   { lifeStage: LifeStage.ADULT, requiredEducation: EducationLevel.HIGH_SCHOOL, nextEducation: EducationLevel.UNIVERSITY, schoolKey: 'university', maxAge: 25 },
 ];
 
-let nextId = 1;
-
 export class CitizenManager {
   private citizens: Citizen[] = [];
+  private nextId = 1;
 
   createCitizen(overrides: Partial<Citizen> = {}): Citizen {
     const age = overrides.age ?? 25;
     const citizen: Citizen = {
-      id: nextId++,
+      id: this.nextId++,
       age,
       lifeStage: getLifeStage(age),
       education: EducationLevel.NONE,

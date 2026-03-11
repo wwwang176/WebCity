@@ -1,20 +1,15 @@
 import { toPosKey } from '../grid/GridHelpers';
 import { District, Specialization } from './types';
 
-let nextId = 1;
-
-function generateId(): string {
-  return `district_${nextId++}`;
-}
-
 export class DistrictManager {
   private districts: Map<string, District> = new Map();
   /** Reverse index: cellKey → districtId for O(1) lookup. */
   private cellToDistrict: Map<string, string> = new Map();
+  private nextId = 1;
 
   createDistrict(name: string): District {
     const district: District = {
-      id: generateId(),
+      id: `district_${this.nextId++}`,
       name,
       cells: new Set<string>(),
       policies: [],
@@ -88,7 +83,7 @@ export class DistrictManager {
       throw new Error('District not found');
     }
     const newDistrict: District = {
-      id: generateId(),
+      id: `district_${this.nextId++}`,
       name: `${original.name} (Split)`,
       cells: new Set<string>(),
       policies: [],

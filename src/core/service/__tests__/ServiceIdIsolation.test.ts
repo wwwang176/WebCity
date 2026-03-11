@@ -5,6 +5,8 @@ import { EducationService } from '../EducationService';
 import { ParkService } from '../ParkService';
 import { DeathCareService } from '../DeathCareService';
 import { GarbageService } from '../GarbageService';
+import { DistrictManager } from '../../district/DistrictManager';
+import { CitizenManager } from '../../citizen/CitizenManager';
 
 /**
  * Verify that each service instance generates IDs independently.
@@ -65,5 +67,23 @@ describe('Service ID isolation (instance-level counters)', () => {
     const idB = b.addFacility(0, 0, 'landfill');
     expect(idA).toBe('garbage_1');
     expect(idB).toBe('garbage_1');
+  });
+
+  it('DistrictManager: new instances start with _1 IDs', () => {
+    const a = new DistrictManager();
+    const b = new DistrictManager();
+    const dA = a.createDistrict('A');
+    const dB = b.createDistrict('B');
+    expect(dA.id).toBe('district_1');
+    expect(dB.id).toBe('district_1');
+  });
+
+  it('CitizenManager: new instances start with ID 1', () => {
+    const a = new CitizenManager();
+    const b = new CitizenManager();
+    const cA = a.createCitizen();
+    const cB = b.createCitizen();
+    expect(cA.id).toBe(1);
+    expect(cB.id).toBe(1);
   });
 });
