@@ -3,14 +3,6 @@ import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
 import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
 
-interface PathNode {
-  id: string;
-  g: number;
-  h: number;
-  f: number;
-  parent: string | null;
-}
-
 function heuristic(a: string, b: string): number {
   const ap = parsePosKeyUnsafe(a);
   const bp = parsePosKeyUnsafe(b);
@@ -22,6 +14,11 @@ export interface PathCostFactors {
   trafficLights: Set<string>;
 }
 
+/** Congestion weight when calculating path move cost */
+const PATH_CONGESTION_WEIGHT = 2;
+/** Extra cost added for traffic light intersections */
+const PATH_TRAFFIC_LIGHT_COST = 0.5;
+
 export function findPath(
   network: RoadNetwork,
   from: string,
@@ -30,70 +27,6 @@ export function findPath(
 ): string[] | null {
   if (!network.isConnected(from, to)) return null;
 
-  const open = new Map<string, PathNode>();
-  const closed = new Set<string>();
-
-  const startNode: PathNode = { id: from, g: 0, h: heuristic(from, to), f: 0, parent: null };
-  startNode.f = startNode.g + startNode.h;
-  open.set(from, startNode);
-
-  while (open.size > 0) {
-    let current: PathNode | null = null;
-    for (const node of open.values()) {
-      if (!current || node.f < current.f) current = node;
-    }
-    if (!current) return null;
-
-    if (current.id === to) {
-      const path: string[] = [];
-      let node: PathNode | null = current;
-      while (node) {
-        path.unshift(node.id);
-        node = node.parent ? open.get(node.parent) ?? closed.has(node.parent) ? null : null : null;
-      }
-      // Rebuild path from parents
-      // We need to track parents differently
-      return rebuildPath(from, to, network, costs);
-    }
-
-    open.delete(current.id);
-    closed.add(current.id);
-
-    for (const neighborId of network.getNeighbors(current.id)) {
-      if (closed.has(neighborId)) continue;
-
-      let moveCost = 1;
-      if (costs) {
-        const congestion = costs.congestion.get(neighborId) ?? 0;
-        moveCost += congestion * 2;
-        if (costs.trafficLights.has(neighborId)) moveCost += 0.5;
-      }
-
-      const g = current.g + moveCost;
-      const existing = open.get(neighborId);
-
-      if (!existing || g < existing.g) {
-        const node: PathNode = {
-          id: neighborId,
-          g,
-          h: heuristic(neighborId, to),
-          f: g + heuristic(neighborId, to),
-          parent: current.id,
-        };
-        open.set(neighborId, node);
-      }
-    }
-  }
-
-  return null;
-}
-
-function rebuildPath(
-  from: string,
-  to: string,
-  network: RoadNetwork,
-  costs?: PathCostFactors,
-): string[] | null {
   const open = new Map<string, { g: number; parent: string | null }>();
   const closed = new Map<string, { g: number; parent: string | null }>();
 
@@ -132,8 +65,8 @@ function rebuildPath(
       let moveCost = 1;
       if (costs) {
         const congestion = costs.congestion.get(neighborId) ?? 0;
-        moveCost += congestion * 2;
-        if (costs.trafficLights.has(neighborId)) moveCost += 0.5;
+        moveCost += congestion * PATH_CONGESTION_WEIGHT;
+        if (costs.trafficLights.has(neighborId)) moveCost += PATH_TRAFFIC_LIGHT_COST;
       }
 
       const g = data.g + moveCost;
