@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ParkingSystem, PARKING_WORKER_RATIO } from '../Parking';
+import { ParkingSystem, PARKING } from '../Parking';
 
 describe('ParkingSystem', () => {
   it('should register building parking capacity based on workers', () => {
@@ -86,9 +86,9 @@ describe('ParkingSystem', () => {
   });
 });
 
-describe('PARKING_WORKER_RATIO', () => {
-  it('should be a positive integer', () => {
-    expect(PARKING_WORKER_RATIO).toBeGreaterThan(0);
-    expect(Number.isInteger(PARKING_WORKER_RATIO)).toBe(true);
+describe('PARKING config', () => {
+  it('WORKER_RATIO should be a positive integer', () => {
+    expect(PARKING.WORKER_RATIO).toBeGreaterThan(0);
+    expect(Number.isInteger(PARKING.WORKER_RATIO)).toBe(true);
   });
 });

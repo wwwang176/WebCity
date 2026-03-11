@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
-import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
-import { RoadType } from '../road/types';
+import { toPosKey } from '../grid/GridHelpers';
+import { calculateNetworkCoverage } from './NetworkCoverage';
 
 export interface PowerPlant {
   x: number;
@@ -54,63 +54,7 @@ export class PowerGrid {
     return this.plants;
   }
 
-  /**
-   * Euclidean radius coverage + road/building relay.
-   * 1. All cells within Euclidean distance ≤ POWER.PLANT_RANGE are powered (circular).
-   * 2. Roads/buildings on the circle edge relay power POWER.RELAY_RANGE further via BFS.
-   */
   private coverPlant(grid: Grid, px: number, py: number, infra?: Set<string>): void {
-    const r = POWER.PLANT_RANGE;
-    const r2 = r * r;
-    const relaySeeds: [number, number][] = [];
-
-    // Phase 1: Euclidean circle coverage
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        if (dx * dx + dy * dy > r2) continue;
-        const nx = px + dx;
-        const ny = py + dy;
-        const cell = grid.getCell(nx, ny);
-        if (!cell) continue;
-        this.powered.add(toPosKey(nx, ny));
-
-        // Collect relay-capable cells on the circle edge (distance > r-1)
-        if (dx * dx + dy * dy > (r - 1) * (r - 1)) {
-          const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(toPosKey(nx, ny));
-          if (isRelay) relaySeeds.push([nx, ny]);
-        }
-      }
-    }
-
-    // Phase 2: BFS relay from edge relay cells
-    // Roads/buildings maintain range at POWER.RELAY_RANGE (infinite relay through road network)
-    if (relaySeeds.length === 0) return;
-    const relayMap = new Map<string, number>();
-    const queue: [number, number, number][] = [];
-    for (const [sx, sy] of relaySeeds) {
-      const key = toPosKey(sx, sy);
-      relayMap.set(key, POWER.RELAY_RANGE);
-      queue.push([sx, sy, POWER.RELAY_RANGE]);
-    }
-    while (queue.length > 0) {
-      const [x, y, range] = queue.shift()!;
-      for (const [ddx, ddy] of FOUR_NEIGHBORS) {
-        const nx = x + ddx!;
-        const ny = y + ddy!;
-        const key = toPosKey(nx, ny);
-        if (this.powered.has(key)) continue;
-        const cell = grid.getCell(nx, ny);
-        if (!cell) continue;
-        const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
-        // Roads/buildings keep range at POWER.RELAY_RANGE (never decreases below it)
-        const newRange = Math.max(isRelay ? POWER.RELAY_RANGE : 0, range - 1);
-        if (newRange <= 0) continue;
-        const prev = relayMap.get(key) ?? 0;
-        if (newRange <= prev) continue;
-        relayMap.set(key, newRange);
-        this.powered.add(key);
-        queue.push([nx, ny, newRange]);
-      }
-    }
+    calculateNetworkCoverage(grid, px, py, POWER.PLANT_RANGE, POWER.RELAY_RANGE, this.powered, infra);
   }
 }
