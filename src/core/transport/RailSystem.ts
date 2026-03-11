@@ -240,6 +240,16 @@ export class RailSystem extends BaseTransportSystem {
     return meta ? meta.points : null;
   }
 
+  /** Get all route path segments as parsed {x,y} point arrays (for TrainAnimator full-path cycling). */
+  getRoutePathPoints(routeId: number): ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> | null {
+    const paths = this.routePaths.get(routeId);
+    if (!paths) return null;
+    return paths.map(seg => seg.map(nid => {
+      const [xs, ys] = nid.split(',');
+      return { x: Number(xs), y: Number(ys) };
+    }));
+  }
+
   getTrains(): readonly TransportVehicle[] {
     return this.getVehicles();
   }

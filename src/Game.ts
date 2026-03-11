@@ -1009,8 +1009,6 @@ export class Game {
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
         this.simLoop.tick();
-        // Update level crossing state (gates/lights) based on train positions
-        this.levelCrossingSystem.tick(this.state.rail);
         // Milestone detection
         this.checkMilestone();
 
@@ -1135,9 +1133,15 @@ export class Game {
     const ferrySpeed = this.paused ? 0 : this.state.clock.speed;
     this.ferryAnimator.update(dt, ferrySpeed, this.state.ferry, transportVehicles);
 
-    // 火車渲染端動畫（純 LERP，沿軌道路徑插值）
+    // 火車渲染端動畫（沿完整來回路徑循環，到站停靠）
     const trainSpeed = this.paused ? 0 : this.state.clock.speed;
     this.trainAnimator.update(dt, trainSpeed, this.state.rail, transportVehicles);
+
+    // 平交道：根據火車視覺位置的近接觸發（proximity-based）
+    const trainPositions = transportVehicles
+      .filter(v => v.type === 'rail_train')
+      .map(v => ({ x: v.x, y: v.y }));
+    this.levelCrossingSystem.update(dt, trainSpeed, trainPositions);
 
     // 合併道路車輛與交通系統車輛
     const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);

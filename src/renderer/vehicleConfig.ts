@@ -7,6 +7,7 @@ import {
   buildTransportBusGeometry,
   buildTramGeometry,
   buildRailTrainGeometry,
+  buildRailCarriageGeometry,
   buildFerryGeometry,
   buildTaxiGeometry,
 } from './geometry';
@@ -26,7 +27,8 @@ export const VEHICLE_CONFIG: Record<string, VehicleTypeConfig> = {
   firetruck:      { color: 0xd32f2f, frontOffset: 0.18, rearOffset: 0.14, yPosition: 0.025, buildGeometry: buildFiretruckGeometry },
   transport_bus:  { color: 0xff9800, frontOffset: 0.23, rearOffset: 0.23, yPosition: 0.025, buildGeometry: buildTransportBusGeometry },
   tram:           { color: 0x8bc34a, frontOffset: 0.2,  rearOffset: 0.2,  yPosition: 0.025, buildGeometry: buildTramGeometry },
-  rail_train:     { color: 0xff5722, frontOffset: 0.33, rearOffset: 0.24, yPosition: 0.025, buildGeometry: buildRailTrainGeometry },
+  rail_train:     { color: 0xff5722, frontOffset: 0.11, rearOffset: 0.11, yPosition: 0.025, buildGeometry: buildRailTrainGeometry },
+  rail_carriage:  { color: 0xff5722, frontOffset: 0.125, rearOffset: 0.125, yPosition: 0.025, buildGeometry: buildRailCarriageGeometry },
   ferry:          { color: 0x0097a7, frontOffset: 0.42, rearOffset: 0.32, yPosition: -0.06,  buildGeometry: buildFerryGeometry },
   taxi:           { color: 0xfdd835, frontOffset: 0.12, rearOffset: 0.12, yPosition: 0.025, buildGeometry: buildTaxiGeometry },
 };

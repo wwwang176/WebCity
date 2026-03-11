@@ -6,7 +6,7 @@ export { buildTruckGeometry } from './truck';
 export { buildFiretruckGeometry } from './firetruck';
 export { buildMetroTrainGeometry, buildMetroCarriageGeometry } from './metro';
 export { buildTramGeometry } from './tram';
-export { buildRailTrainGeometry } from './railTrain';
+export { buildRailTrainGeometry, buildRailCarriageGeometry } from './railTrain';
 export { buildFerryGeometry } from './ferry';
 
 /** 計程車 — 與轎車相同模型（由 update() 上色） */

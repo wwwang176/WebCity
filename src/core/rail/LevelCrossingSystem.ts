@@ -1,6 +1,5 @@
 import type { Grid } from '../grid/Grid';
 import { RailType, TrackDirection } from './types';
-import type { RailSystem } from '../transport/RailSystem';
 
 export enum CrossingState {
   CLEAR = 0,
@@ -13,12 +12,14 @@ export interface LevelCrossing {
   state: CrossingState;
   /** Rail direction through this crossing: NS (vertical) or EW (horizontal). */
   railOrientation: 'NS' | 'EW';
-  /** Remaining ticks to keep crossing active after last train detection. */
-  cooldownTicks: number;
+  /** Remaining seconds to keep crossing active after last train detection. */
+  cooldownTime: number;
 }
 
-/** How many ticks the crossing stays active after the train is no longer detected. */
-const COOLDOWN_DURATION = 3;
+/** Activation radius (Manhattan distance in cells). Crossing activates when a train is within this distance. */
+const ACTIVATION_RADIUS = 2.5;
+/** Seconds the crossing stays active after the train moves away. */
+const COOLDOWN_DURATION = 1.5;
 
 function cellKey(x: number, y: number): string {
   return `${x},${y}`;
@@ -27,7 +28,7 @@ function cellKey(x: number, y: number): string {
 /**
  * Manages level crossing (railroad crossing) state.
  * Detects cells where rail and road coexist, and activates crossings
- * when trains are traveling through them.
+ * when trains are near them (proximity-based, not whole-path).
  */
 export class LevelCrossingSystem {
   private crossings = new Map<string, LevelCrossing>();
@@ -49,41 +50,33 @@ export class LevelCrossingSystem {
             y,
             state: CrossingState.CLEAR,
             railOrientation,
-            cooldownTicks: 0,
+            cooldownTime: 0,
           });
         }
       }
     }
   }
 
-  /** Update crossing states based on current rail vehicle positions and paths. */
-  tick(railSystem: RailSystem): void {
+  /**
+   * Update crossing states based on actual train visual positions (proximity-based).
+   * Call this per-frame after TrainAnimator has updated train positions.
+   */
+  update(
+    dt: number,
+    speed: number,
+    trainPositions: ReadonlyArray<{ x: number; y: number }>,
+  ): void {
     if (this.crossings.size === 0) return;
 
-    // Collect all crossing cell keys that have a train currently on their path segment
+    // Find which crossings have a train nearby
     const activeCrossings = new Set<string>();
 
-    const trains = railSystem.getTrains();
-    const lines = railSystem.getLines();
-
-    for (const train of trains) {
-      if (!train.traveling) continue;
-
-      const route = lines.find(l => l.id === train.routeId);
-      if (!route) continue;
-
-      const paths = railSystem.getRoutePaths(route.id);
-      if (!paths || paths.length === 0) continue;
-
-      // Determine which segment the train is on
-      const segIdx = (train.currentStopIndex - 1 + paths.length) % paths.length;
-      const path = paths[segIdx];
-      if (!path) continue;
-
-      // Check if any crossing cell is on this path segment
-      for (const nodeId of path) {
-        if (this.crossings.has(nodeId)) {
-          activeCrossings.add(nodeId);
+    for (const pos of trainPositions) {
+      for (const [key, crossing] of this.crossings) {
+        const dx = Math.abs(pos.x - crossing.x);
+        const dy = Math.abs(pos.y - crossing.y);
+        if (dx + dy <= ACTIVATION_RADIUS) {
+          activeCrossings.add(key);
         }
       }
     }
@@ -92,11 +85,12 @@ export class LevelCrossingSystem {
     for (const [key, crossing] of this.crossings) {
       if (activeCrossings.has(key)) {
         crossing.state = CrossingState.ACTIVE;
-        crossing.cooldownTicks = COOLDOWN_DURATION;
-      } else if (crossing.cooldownTicks > 0) {
-        crossing.cooldownTicks--;
-        if (crossing.cooldownTicks <= 0) {
+        crossing.cooldownTime = COOLDOWN_DURATION;
+      } else if (crossing.cooldownTime > 0) {
+        crossing.cooldownTime -= dt * Math.max(speed, 0.001);
+        if (crossing.cooldownTime <= 0) {
           crossing.state = CrossingState.CLEAR;
+          crossing.cooldownTime = 0;
         }
       }
     }

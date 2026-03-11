@@ -6,7 +6,7 @@ export interface VehicleData {
   x: number;
   y: number;
   heading: number; // radians, 0 = facing +x (east)
-  type: 'car' | 'bus' | 'truck' | 'firetruck' | 'transport_bus' | 'tram' | 'rail_train' | 'ferry' | 'taxi';
+  type: 'car' | 'bus' | 'truck' | 'firetruck' | 'transport_bus' | 'tram' | 'rail_train' | 'rail_carriage' | 'ferry' | 'taxi';
   laneOffset: number; // lateral offset perpendicular to heading (positive = right of heading)
 }
 
@@ -158,7 +158,8 @@ export class VehicleRenderer {
         }
         mesh.setColorAt(i, color);
 
-        // Headlight/taillight matrices (heading: 0 = +x; rotation Y convention)
+        // Headlight/taillight matrices — skip for rail carriages (only locomotive has lights)
+        if (type === 'rail_carriage') continue;
         if (lightIndex < this.maxLights && this.headlightMesh && this.taillightMesh) {
           const cosH = Math.cos(v.heading);
           const sinH = Math.sin(v.heading);
