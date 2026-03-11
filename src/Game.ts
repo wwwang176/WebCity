@@ -1405,10 +1405,6 @@ export class Game {
     this.levelCrossingRenderer.setViewMode(mode);
     this.vehicleRenderer.setViewMode(mode);
     this.weatherRenderer.setViewMode(mode);
-    this.dirty.roads = true;
-    this.dirty.tracks = true;
-    this.dirty.crossings = true;
-    this.dirty.buildings = true;
     this.onUIUpdate?.();
   }
 
