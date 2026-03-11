@@ -35,7 +35,7 @@ const LAYER_SECTIONS = [
 ];
 
 const FOCUS_MODES: { mode: ViewMode; label: string; key?: string }[] = [
-  { mode: ViewMode.UNDERGROUND, label: '\u{1F687} Metro Underground', key: 'U' },
+  { mode: ViewMode.UNDERGROUND, label: '\u{1F687} Metro Underground' },
   { mode: ViewMode.RAIL_FOCUS, label: '\u{1F686} Rail' },
   { mode: ViewMode.FERRY_FOCUS, label: '\u{26F4} Ferry' },
   { mode: ViewMode.BUS_FOCUS, label: '\u{1F68C} Bus' },
