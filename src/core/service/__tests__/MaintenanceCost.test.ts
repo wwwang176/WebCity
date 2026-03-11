@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { PoliceService } from '../PoliceService';
-import { FireService } from '../FireService';
-import { HealthService } from '../HealthService';
-import { EducationService } from '../EducationService';
-import { ParkService } from '../ParkService';
-import { GarbageService } from '../GarbageService';
-import { SewageService } from '../SewageService';
-import { DeathCareService } from '../DeathCareService';
-import { PowerGrid } from '../PowerGrid';
-import { WaterNetwork } from '../WaterNetwork';
+import { PoliceService, POLICE } from '../PoliceService';
+import { FireService, FIRE } from '../FireService';
+import { HealthService, HEALTH } from '../HealthService';
+import { EducationService, EDUCATION } from '../EducationService';
+import { ParkService, PARK } from '../ParkService';
+import { GarbageService, GARBAGE } from '../GarbageService';
+import { SewageService, SEWAGE } from '../SewageService';
+import { DeathCareService, DEATH_CARE } from '../DeathCareService';
+import { PowerGrid, POWER } from '../PowerGrid';
+import { WaterNetwork, WATER_NETWORK } from '../WaterNetwork';
 import type { CivicService } from '../CivicService';
 
 describe('CivicService.getMaintenanceCost()', () => {
@@ -159,6 +159,78 @@ describe('CivicService.getMaintenanceCost()', () => {
       expect(water.getMaintenanceCost()).toBe(3);
       water.addPlant({ x: 10, y: 10, output: 200 });
       expect(water.getMaintenanceCost()).toBe(6);
+    });
+  });
+
+  describe('config constants export maintenance cost values', () => {
+    it('POLICE.MAINTENANCE_PER_STATION should match actual cost', () => {
+      expect(POLICE.MAINTENANCE_PER_STATION).toBe(4);
+      const svc = new PoliceService();
+      svc.addStation(0, 0);
+      expect(svc.getMaintenanceCost()).toBe(POLICE.MAINTENANCE_PER_STATION);
+    });
+
+    it('FIRE.MAINTENANCE_PER_STATION should match actual cost', () => {
+      expect(FIRE.MAINTENANCE_PER_STATION).toBe(4);
+      const svc = new FireService();
+      svc.addStation(0, 0);
+      expect(svc.getMaintenanceCost()).toBe(FIRE.MAINTENANCE_PER_STATION);
+    });
+
+    it('HEALTH.MAINTENANCE_PER_HOSPITAL should match actual cost', () => {
+      expect(HEALTH.MAINTENANCE_PER_HOSPITAL).toBe(8);
+      const svc = new HealthService();
+      svc.addHospital(0, 0);
+      expect(svc.getMaintenanceCost()).toBe(HEALTH.MAINTENANCE_PER_HOSPITAL);
+    });
+
+    it('EDUCATION.MAINTENANCE_PER_SCHOOL should match actual cost', () => {
+      expect(EDUCATION.MAINTENANCE_PER_SCHOOL).toBe(5);
+      const svc = new EducationService();
+      svc.addSchool(0, 0, 'elementary');
+      expect(svc.getMaintenanceCost()).toBe(EDUCATION.MAINTENANCE_PER_SCHOOL);
+    });
+
+    it('PARK.MAINTENANCE_PER_PARK should match actual cost', () => {
+      expect(PARK.MAINTENANCE_PER_PARK).toBe(2);
+      const svc = new ParkService();
+      svc.addPark(0, 0);
+      expect(svc.getMaintenanceCost()).toBe(PARK.MAINTENANCE_PER_PARK);
+    });
+
+    it('GARBAGE.MAINTENANCE_PER_FACILITY should match actual cost', () => {
+      expect(GARBAGE.MAINTENANCE_PER_FACILITY).toBeGreaterThan(0);
+      const svc = new GarbageService();
+      svc.addFacility(0, 0, 'landfill');
+      expect(svc.getMaintenanceCost()).toBe(GARBAGE.MAINTENANCE_PER_FACILITY);
+    });
+
+    it('SEWAGE.MAINTENANCE_PER_PLANT should match actual cost', () => {
+      expect(SEWAGE.MAINTENANCE_PER_PLANT).toBeGreaterThan(0);
+      const svc = new SewageService();
+      svc.addTreatmentPlant(0, 0);
+      expect(svc.getMaintenanceCost()).toBe(SEWAGE.MAINTENANCE_PER_PLANT);
+    });
+
+    it('DEATH_CARE.MAINTENANCE_PER_FACILITY should match actual cost', () => {
+      expect(DEATH_CARE.MAINTENANCE_PER_FACILITY).toBe(2);
+      const svc = new DeathCareService();
+      svc.addCemetery(0, 0);
+      expect(svc.getMaintenanceCost()).toBe(DEATH_CARE.MAINTENANCE_PER_FACILITY);
+    });
+
+    it('POWER.MAINTENANCE_PER_PLANT should match actual cost', () => {
+      expect(POWER.MAINTENANCE_PER_PLANT).toBe(5);
+      const power = new PowerGrid();
+      power.addPlant({ x: 0, y: 0, output: 100, pollution: 0, type: 'solar' });
+      expect(power.getMaintenanceCost()).toBe(POWER.MAINTENANCE_PER_PLANT);
+    });
+
+    it('WATER_NETWORK.MAINTENANCE_PER_PLANT should match actual cost', () => {
+      expect(WATER_NETWORK.MAINTENANCE_PER_PLANT).toBe(3);
+      const water = new WaterNetwork();
+      water.addPlant({ x: 0, y: 0, output: 100 });
+      expect(water.getMaintenanceCost()).toBe(WATER_NETWORK.MAINTENANCE_PER_PLANT);
     });
   });
 

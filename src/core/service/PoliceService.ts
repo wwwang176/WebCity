@@ -11,6 +11,7 @@ export interface PoliceStation {
 export const POLICE = {
   CRIME_REDUCTION_PER_STATION: -30,
   CRIME_REDUCTION_CAP: -60,
+  MAINTENANCE_PER_STATION: 4,
 } as const;
 
 let nextStationId = 1;
@@ -59,7 +60,7 @@ export class PoliceService {
   }
 
   getMaintenanceCost(): number {
-    return this.stations.length * 4;
+    return this.stations.length * POLICE.MAINTENANCE_PER_STATION;
   }
 
   toJSON(): { stations: PoliceStation[] } {

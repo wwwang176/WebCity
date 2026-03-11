@@ -22,6 +22,10 @@ export interface DeathCareJSON {
   pendingDeaths: number;
 }
 
+export const DEATH_CARE = {
+  MAINTENANCE_PER_FACILITY: 2,
+} as const;
+
 let nextId = 1;
 
 export class DeathCareService {
@@ -91,7 +95,7 @@ export class DeathCareService {
   }
 
   getMaintenanceCost(): number {
-    return (this.cemeteries.length + this.crematoriums.length) * 2;
+    return (this.cemeteries.length + this.crematoriums.length) * DEATH_CARE.MAINTENANCE_PER_FACILITY;
   }
 
   toJSON(): DeathCareJSON {

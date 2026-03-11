@@ -48,6 +48,7 @@ export const FIRE = {
   IGNITION_POP_FACTOR: 0.000005,
   /** Number of random cell attempts to find a building for fire */
   IGNITION_ATTEMPTS: 10,
+  MAINTENANCE_PER_STATION: 4,
 } as const;
 
 export class FireService {
@@ -194,7 +195,7 @@ export class FireService {
   }
 
   getMaintenanceCost(): number {
-    return this.stations.length * 4;
+    return this.stations.length * FIRE.MAINTENANCE_PER_STATION;
   }
 
   toJSON(): FireServiceJSON {

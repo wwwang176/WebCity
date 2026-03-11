@@ -13,6 +13,7 @@ export interface PowerPlant {
 export const POWER = {
   PLANT_RANGE: 10,
   RELAY_RANGE: 2,
+  MAINTENANCE_PER_PLANT: 5,
 } as const;
 
 export class PowerGrid {
@@ -46,7 +47,7 @@ export class PowerGrid {
   }
 
   getMaintenanceCost(): number {
-    return this.plants.length * 5;
+    return this.plants.length * POWER.MAINTENANCE_PER_PLANT;
   }
 
   getPlants(): readonly PowerPlant[] {

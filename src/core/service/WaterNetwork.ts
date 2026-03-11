@@ -11,6 +11,7 @@ export interface WaterPlant {
 export const WATER_NETWORK = {
   PLANT_RANGE: 10,
   RELAY_RANGE: 2,
+  MAINTENANCE_PER_PLANT: 3,
 } as const;
 
 export class WaterNetwork {
@@ -44,7 +45,7 @@ export class WaterNetwork {
   }
 
   getMaintenanceCost(): number {
-    return this.plants.length * 3;
+    return this.plants.length * WATER_NETWORK.MAINTENANCE_PER_PLANT;
   }
 
   getPlants(): readonly WaterPlant[] {

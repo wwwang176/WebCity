@@ -19,6 +19,7 @@ export const HEALTH = {
   BONUS_PER_HOSPITAL: 20,
   /** Maximum health bonus from hospital coverage */
   BONUS_CAP: 35,
+  MAINTENANCE_PER_HOSPITAL: 8,
 } as const;
 
 let nextId = 1;
@@ -67,7 +68,7 @@ export class HealthService {
   }
 
   getMaintenanceCost(): number {
-    return this.hospitals.length * 8;
+    return this.hospitals.length * HEALTH.MAINTENANCE_PER_HOSPITAL;
   }
 
   toJSON(): HealthServiceJSON {

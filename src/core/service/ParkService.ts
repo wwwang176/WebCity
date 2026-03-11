@@ -15,6 +15,7 @@ export const PARK = {
   POLLUTION_CAP: -40,
   HAPPINESS_PER_PARK: 5,
   HAPPINESS_CAP: 10,
+  MAINTENANCE_PER_PARK: 2,
 } as const;
 
 let nextParkId = 1;
@@ -63,7 +64,7 @@ export class ParkService {
   }
 
   getMaintenanceCost(): number {
-    return this.parks.length * 2;
+    return this.parks.length * PARK.MAINTENANCE_PER_PARK;
   }
 
   toJSON(): Park[] {

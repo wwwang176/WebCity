@@ -12,6 +12,10 @@ export interface School {
   capacity: number;
 }
 
+export const EDUCATION = {
+  MAINTENANCE_PER_SCHOOL: 5,
+} as const;
+
 const DEFAULT_RADIUS: Record<SchoolType, number> = {
   elementary: 10,
   highschool: 12,
@@ -98,7 +102,7 @@ export class EducationService {
   }
 
   getMaintenanceCost(): number {
-    return this.schools.length * 5;
+    return this.schools.length * EDUCATION.MAINTENANCE_PER_SCHOOL;
   }
 
   toJSON(): { schools: School[] } {
