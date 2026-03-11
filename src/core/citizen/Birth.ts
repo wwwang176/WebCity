@@ -10,11 +10,16 @@ export interface BirthContext {
   happinessBonus: number;
 }
 
-const DEFAULT_CONTEXT: BirthContext = {
+export const DEFAULT_CONTEXT: BirthContext = {
   maxChildrenPerHome: 2,
   baseFertilityRate: 0.03,
   happinessBonus: 0.02,
 };
+
+/** Maximum age at which a citizen can produce offspring */
+export const MAX_FERTILITY_AGE = 45;
+/** Happiness threshold above which the fertility bonus applies */
+export const HAPPINESS_FERTILITY_THRESHOLD = 70;
 
 /**
  * 自然出生 tick — 根據合格成人的生育機率產生新生兒。
@@ -48,7 +53,7 @@ export function birthTick(
   for (const c of manager.citizens) {
     // 只有 ADULT、age ≤ 45、有家的市民才能生育
     if (c.lifeStage !== LifeStage.ADULT) continue;
-    if (c.age > 45) continue;
+    if (c.age > MAX_FERTILITY_AGE) continue;
     if (c.homeId === null) continue;
 
     // 檢查戶內上限（包含本 tick 新增的）
@@ -57,7 +62,7 @@ export function birthTick(
 
     // 計算生育機率
     let rate = ctx.baseFertilityRate;
-    if (c.happiness > 70) {
+    if (c.happiness > HAPPINESS_FERTILITY_THRESHOLD) {
       rate += ctx.happinessBonus;
     }
 

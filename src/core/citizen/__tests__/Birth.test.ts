@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
-import { birthTick, type BirthContext } from '../Birth';
+import { birthTick, MAX_FERTILITY_AGE, HAPPINESS_FERTILITY_THRESHOLD, DEFAULT_CONTEXT, type BirthContext } from '../Birth';
 import { LifeStage, EducationLevel, IncomeLevel } from '../types';
 
 /**
@@ -130,5 +130,21 @@ describe('birthTick — 自然出生機制', () => {
     mgr.createCitizen({ age: 10, homeId: '1,1', happiness: 60 });
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(0);
+  });
+
+  it('MAX_FERTILITY_AGE should be within adult age range', () => {
+    expect(MAX_FERTILITY_AGE).toBeGreaterThan(18);
+    expect(MAX_FERTILITY_AGE).toBeLessThanOrEqual(65);
+  });
+
+  it('HAPPINESS_FERTILITY_THRESHOLD should be between 0 and 100', () => {
+    expect(HAPPINESS_FERTILITY_THRESHOLD).toBeGreaterThan(0);
+    expect(HAPPINESS_FERTILITY_THRESHOLD).toBeLessThanOrEqual(100);
+  });
+
+  it('DEFAULT_CONTEXT should have valid fertility rates', () => {
+    expect(DEFAULT_CONTEXT.baseFertilityRate).toBeGreaterThan(0);
+    expect(DEFAULT_CONTEXT.baseFertilityRate).toBeLessThan(1);
+    expect(DEFAULT_CONTEXT.happinessBonus).toBeGreaterThan(0);
   });
 });
