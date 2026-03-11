@@ -80,6 +80,44 @@ describe('DistrictManager', () => {
     expect(merged.name).toBe('Zone A');
   });
 
+  it('adding a cell to one district should remove it from others', () => {
+    const d1 = dm.createDistrict('Zone A');
+    const d2 = dm.createDistrict('Zone B');
+    dm.addCellToDistrict(d1.id, 5, 5);
+    expect(dm.getDistrictAt(5, 5)?.id).toBe(d1.id);
+
+    // Move cell from d1 to d2
+    dm.addCellToDistrict(d2.id, 5, 5);
+    expect(dm.getDistrictAt(5, 5)?.id).toBe(d2.id);
+    expect(dm.getDistrict(d1.id)!.cells.has('5,5')).toBe(false);
+  });
+
+  it('getDistrictAt returns null after cell removed', () => {
+    const d = dm.createDistrict('Zone');
+    dm.addCellToDistrict(d.id, 3, 3);
+    expect(dm.getDistrictAt(3, 3)).not.toBeNull();
+    dm.removeCellFromDistrict(d.id, 3, 3);
+    expect(dm.getDistrictAt(3, 3)).toBeNull();
+  });
+
+  it('getDistrictAt returns correct district after merge', () => {
+    const d1 = dm.createDistrict('Zone A');
+    const d2 = dm.createDistrict('Zone B');
+    dm.addCellToDistrict(d1.id, 1, 1);
+    dm.addCellToDistrict(d2.id, 2, 2);
+    dm.mergeDistricts(d1.id, d2.id);
+    expect(dm.getDistrictAt(2, 2)?.id).toBe(d1.id);
+  });
+
+  it('getDistrictAt returns correct district after split', () => {
+    const d = dm.createDistrict('Big');
+    dm.addCellToDistrict(d.id, 1, 1);
+    dm.addCellToDistrict(d.id, 2, 2);
+    const split = dm.splitDistrict(d.id, new Set(['2,2']));
+    expect(dm.getDistrictAt(1, 1)?.id).toBe(d.id);
+    expect(dm.getDistrictAt(2, 2)?.id).toBe(split.id);
+  });
+
   it('should split a district into two', () => {
     const d = dm.createDistrict('Big Zone');
     dm.addCellToDistrict(d.id, 0, 0);
