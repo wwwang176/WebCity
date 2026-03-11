@@ -41,18 +41,53 @@ describe('WaterPathfinder', () => {
       expect(result).toBeNull();
     });
 
-    it('起點不是水域時應返回 null', () => {
+    it('起點是岸邊（陸地鄰水）應找到路徑', () => {
       const grid = createGrid([
         'LWWWW',
       ]);
       const result = findWaterPath(grid, { x: 0, y: 0 }, { x: 4, y: 0 });
-      expect(result).toBeNull();
+      expect(result).not.toBeNull();
+      expect(result!.path[0]).toEqual({ x: 0, y: 0 });
+      expect(result!.path[result!.path.length - 1]).toEqual({ x: 4, y: 0 });
     });
 
-    it('終點不是水域時應返回 null', () => {
+    it('終點是岸邊（陸地鄰水）應找到路徑', () => {
       const grid = createGrid([
         'WWWWL',
       ]);
+      const result = findWaterPath(grid, { x: 0, y: 0 }, { x: 4, y: 0 });
+      expect(result).not.toBeNull();
+      expect(result!.path[0]).toEqual({ x: 0, y: 0 });
+      expect(result!.path[result!.path.length - 1]).toEqual({ x: 4, y: 0 });
+    });
+
+    it('岸邊到岸邊經水域應找到路徑', () => {
+      const grid = createGrid([
+        'LWWWL',
+      ]);
+      const result = findWaterPath(grid, { x: 0, y: 0 }, { x: 4, y: 0 });
+      expect(result).not.toBeNull();
+      expect(result!.path[0]).toEqual({ x: 0, y: 0 });
+      expect(result!.path[result!.path.length - 1]).toEqual({ x: 4, y: 0 });
+      expect(result!.path.length).toBe(5);
+    });
+
+    it('起點不鄰水應返回 null', () => {
+      const grid = createGrid([
+        'LLWWW',
+        'LLWWW',
+      ]);
+      // (0,0) is L, neighbors: (1,0)=L, (0,1)=L — no water neighbor
+      const result = findWaterPath(grid, { x: 0, y: 0 }, { x: 4, y: 0 });
+      expect(result).toBeNull();
+    });
+
+    it('終點不鄰水應返回 null', () => {
+      const grid = createGrid([
+        'WWWLL',
+        'WWWLL',
+      ]);
+      // (4,0) is L, neighbors: (3,0)=L, (4,1)=L — no water neighbor
       const result = findWaterPath(grid, { x: 0, y: 0 }, { x: 4, y: 0 });
       expect(result).toBeNull();
     });

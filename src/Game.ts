@@ -805,12 +805,13 @@ export class Game {
     } else if (type === 'rail') {
       this.state.rail.buildStation(x, y);
     } else if (type === 'ferry') {
-      // Validate water adjacency for ferry dock
+      // Validate shore placement: must be land AND adjacent to water
       const waterChecker = {
         isWater: (fx: number, fy: number) => {
           const fc = this.state.grid.getCell(fx, fy);
-          if (fc && fc.terrainType === TerrainType.WATER) return true;
-          // Also check adjacent cells for water
+          // Must NOT be water (must be land/shore)
+          if (fc && fc.terrainType === TerrainType.WATER) return false;
+          // Must have at least one adjacent water cell
           for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
             const nc = this.state.grid.getCell(fx + dx!, fy + dy!);
             if (nc && nc.terrainType === TerrainType.WATER) return true;
@@ -821,7 +822,7 @@ export class Game {
       const dock = this.state.ferry.addDock(x, y, waterChecker);
       if (!dock) {
         this.state.budget.funds += cost;
-        this.notification = 'Ferry dock must be placed near water';
+        this.notification = 'Ferry dock must be placed on shore (land next to water)';
         this.notificationTimer = 4;
         return;
       }

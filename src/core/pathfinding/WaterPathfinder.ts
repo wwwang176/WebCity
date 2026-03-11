@@ -48,11 +48,6 @@ export function findWaterPath(
   from: { x: number; y: number },
   to: { x: number; y: number },
 ): WaterPathResult | null {
-  // 驗證起終點
-  if (!grid.isWater(from.x, from.y) || !grid.isWater(to.x, to.y)) {
-    return null;
-  }
-
   // 起終相同
   if (from.x === to.x && from.y === to.y) {
     return { path: [{ x: from.x, y: from.y }], distance: 0 };
@@ -104,7 +99,8 @@ export function findWaterPath(
       const ny = cy! + dir.dy;
 
       if (nx < 0 || nx >= grid.width || ny < 0 || ny >= grid.height) continue;
-      if (!grid.isWater(nx, ny)) continue;
+      // Allow water tiles + destination tile (shore dock)
+      if (!grid.isWater(nx, ny) && !(nx === to.x && ny === to.y)) continue;
 
       const nk = key(nx, ny);
       const tentativeG = (gScore.get(currentKey) ?? Infinity) + dir.cost;
