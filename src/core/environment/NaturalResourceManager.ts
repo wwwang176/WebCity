@@ -13,6 +13,12 @@ interface ResourceCell {
   remaining: number;
 }
 
+export const NATURAL_RESOURCE = {
+  SPAWN_CHANCE: 0.3,
+  MIN_AMOUNT: 100,
+  MAX_AMOUNT: 600,
+} as const;
+
 // Simple seeded pseudo-random number generator for deterministic resource placement
 function seededRandom(seed: number): () => number {
   let s = seed;
@@ -27,8 +33,6 @@ export class NaturalResourceManager {
   private width = 0;
   private height = 0;
 
-  private cellKey = toPosKey;
-
   initResources(width: number, height: number, seed: number = 42): void {
     this.width = width;
     this.height = height;
@@ -40,25 +44,25 @@ export class NaturalResourceManager {
     for (let x = 0; x < width; x++) {
       for (let y = 0; y < height; y++) {
         const roll = rng();
-        if (roll < 0.3) {
-          // 30% chance of having a resource
+        if (roll < NATURAL_RESOURCE.SPAWN_CHANCE) {
           const typeIndex = Math.floor(rng() * resourceTypes.length);
           const type = resourceTypes[typeIndex]!;
-          const amount = Math.floor(rng() * 500) + 100;
-          this.resources.set(this.cellKey(x, y), { type, remaining: amount });
+          const range = NATURAL_RESOURCE.MAX_AMOUNT - NATURAL_RESOURCE.MIN_AMOUNT;
+          const amount = Math.floor(rng() * range) + NATURAL_RESOURCE.MIN_AMOUNT;
+          this.resources.set(toPosKey(x, y), { type, remaining: amount });
         } else {
-          this.resources.set(this.cellKey(x, y), { type: ResourceType.NONE, remaining: 0 });
+          this.resources.set(toPosKey(x, y), { type: ResourceType.NONE, remaining: 0 });
         }
       }
     }
   }
 
   setResource(x: number, y: number, type: ResourceType, amount: number): void {
-    this.resources.set(this.cellKey(x, y), { type, remaining: amount });
+    this.resources.set(toPosKey(x, y), { type, remaining: amount });
   }
 
   getResourceAt(x: number, y: number): { type: ResourceType; remaining: number } {
-    const key = this.cellKey(x, y);
+    const key = toPosKey(x, y);
     const cell = this.resources.get(key);
     if (!cell) {
       return { type: ResourceType.NONE, remaining: 0 };
@@ -67,7 +71,7 @@ export class NaturalResourceManager {
   }
 
   extract(x: number, y: number, amount: number): number {
-    const key = this.cellKey(x, y);
+    const key = toPosKey(x, y);
     const cell = this.resources.get(key);
     if (!cell || cell.type === ResourceType.NONE || cell.remaining <= 0) {
       return 0;
@@ -79,7 +83,7 @@ export class NaturalResourceManager {
   }
 
   isExhausted(x: number, y: number): boolean {
-    const key = this.cellKey(x, y);
+    const key = toPosKey(x, y);
     const cell = this.resources.get(key);
     if (!cell) return true;
     return cell.remaining <= 0;

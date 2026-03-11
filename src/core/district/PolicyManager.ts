@@ -1,6 +1,10 @@
-import { DistrictManager } from './DistrictManager';
-import { Policy, PolicyType } from './types';
+import { Policy, PolicyType, type District } from './types';
 import { ZoneType } from '../grid/types';
+
+/** Minimal interface for district lookup (DIP). */
+export interface DistrictLookup {
+  getDistrict(id: string): District | undefined;
+}
 
 const POLICY_COSTS: Record<PolicyType, number> = {
   [PolicyType.NO_HEAVY_INDUSTRY]: 150,
@@ -21,14 +25,14 @@ const POLICY_NAMES: Record<PolicyType, string> = {
 let policyIdCounter = 1;
 
 export class PolicyManager {
-  private districtManager: DistrictManager;
+  private districtLookup: DistrictLookup;
 
-  constructor(districtManager: DistrictManager) {
-    this.districtManager = districtManager;
+  constructor(districtLookup: DistrictLookup) {
+    this.districtLookup = districtLookup;
   }
 
   applyPolicy(districtId: string, policyType: PolicyType): void {
-    const district = this.districtManager.getDistrict(districtId);
+    const district = this.districtLookup.getDistrict(districtId);
     if (!district) return;
 
     // Don't add duplicate policies
@@ -45,14 +49,14 @@ export class PolicyManager {
   }
 
   removePolicy(districtId: string, policyType: PolicyType): void {
-    const district = this.districtManager.getDistrict(districtId);
+    const district = this.districtLookup.getDistrict(districtId);
     if (!district) return;
 
     district.policies = district.policies.filter((p) => p.type !== policyType);
   }
 
   isPolicyActive(districtId: string, policyType: PolicyType): boolean {
-    const district = this.districtManager.getDistrict(districtId);
+    const district = this.districtLookup.getDistrict(districtId);
     if (!district) return false;
 
     return district.policies.some((p) => p.type === policyType && p.active);
@@ -63,7 +67,7 @@ export class PolicyManager {
   }
 
   canBuildInDistrict(districtId: string, buildingZoneType: ZoneType): boolean {
-    const district = this.districtManager.getDistrict(districtId);
+    const district = this.districtLookup.getDistrict(districtId);
     if (!district) return true;
 
     // NO_HEAVY_INDUSTRY blocks industrial zones

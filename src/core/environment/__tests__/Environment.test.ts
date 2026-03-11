@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PollutionManager, POLLUTION_DECAY_PER_CELL, POLLUTION_PARK_REDUCTION, POLLUTION } from '../Pollution';
-import { NaturalResourceManager, ResourceType } from '../NaturalResourceManager';
+import { NaturalResourceManager, ResourceType, NATURAL_RESOURCE } from '../NaturalResourceManager';
 import { WaterFlow, FLOW_DIRECTION_OFFSETS } from '../WaterFlow';
 
 describe('PollutionManager', () => {
@@ -154,6 +154,13 @@ describe('NaturalResourceManager', () => {
     rm.extract(6, 6, 10);
     const extracted = rm.extract(6, 6, 5);
     expect(extracted).toBe(0);
+  });
+
+  it('NATURAL_RESOURCE config should have valid values', () => {
+    expect(NATURAL_RESOURCE.SPAWN_CHANCE).toBeGreaterThan(0);
+    expect(NATURAL_RESOURCE.SPAWN_CHANCE).toBeLessThan(1);
+    expect(NATURAL_RESOURCE.MIN_AMOUNT).toBeGreaterThan(0);
+    expect(NATURAL_RESOURCE.MAX_AMOUNT).toBeGreaterThan(NATURAL_RESOURCE.MIN_AMOUNT);
   });
 });
 

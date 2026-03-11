@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DistrictManager } from '../DistrictManager';
 import { PolicyManager } from '../PolicyManager';
+import type { DistrictLookup } from '../PolicyManager';
 import { setSpecialization, getSpecialization, getSpecializationBonus, SPECIALIZATION_BONUSES } from '../Specialization';
 import { CitySpecialization, CitySpecType } from '../CitySpecialization';
-import { PolicyType, Specialization } from '../types';
+import { PolicyType, Specialization, type District } from '../types';
 import { ZoneType } from '../../grid/types';
 
 describe('DistrictManager', () => {
@@ -154,6 +155,23 @@ describe('PolicyManager', () => {
       expect(cost).toBeTypeOf('number');
       expect(cost).toBeGreaterThan(0);
     }
+  });
+
+  it('should work with a mock DistrictLookup (DIP)', () => {
+    const mockDistrict: District = {
+      id: 'mock_1',
+      name: 'Mock District',
+      cells: new Set<string>(),
+      policies: [],
+      specialization: Specialization.NONE,
+    };
+    const mockLookup: DistrictLookup = {
+      getDistrict: (id: string) => (id === 'mock_1' ? mockDistrict : undefined),
+    };
+    const mockPm = new PolicyManager(mockLookup);
+    mockPm.applyPolicy('mock_1', PolicyType.TOURISM);
+    expect(mockPm.isPolicyActive('mock_1', PolicyType.TOURISM)).toBe(true);
+    expect(mockPm.isPolicyActive('nonexistent', PolicyType.TOURISM)).toBe(false);
   });
 });
 
