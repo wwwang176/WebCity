@@ -1,4 +1,6 @@
 
+import type { PollutionSource } from '../environment/Pollution';
+
 export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 
 const SIZE_FOOTPRINT: Record<AirportSize, number> = {
@@ -136,6 +138,18 @@ export class AirportSystem {
 
   getAirports(): readonly Airport[] {
     return this.airports;
+  }
+
+  /** Noise pollution multiplier for spread calculation. */
+  static readonly NOISE_SPREAD_MULTIPLIER = 5;
+
+  getPollutionSources(): PollutionSource[] {
+    return this.airports.map(a => ({
+      x: a.x,
+      y: a.y,
+      amount: a.noisePollution * AirportSystem.NOISE_SPREAD_MULTIPLIER,
+      type: 'noise' as const,
+    }));
   }
 
   remove(airportId: number): void {

@@ -15,6 +15,7 @@ import { getBuildingType } from '../building/types';
 import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
+import { getGridPollutionSources } from '../environment/GridPollutionSources';
 import { findPrimaryCell, forEachMultiCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel, isWorkingAge } from '../citizen/types';
@@ -595,36 +596,23 @@ export class SimulationLoop {
 
     pm.clearSources();
 
-    // Industrial buildings produce ground pollution; roads produce noise
-    grid.forEachCell((cell, x, y) => {
-      if (cell.buildingId > 0 && cell.zoneType === ZoneType.INDUSTRIAL) {
-        pm.addSource(x, y, 60, 'ground');
-        pm.addSource(x, y, 40, 'noise');
-      }
-      if (cell.roadType !== RoadType.NONE && cell.trafficDensity > 0) {
-        pm.addSource(x, y, cell.trafficDensity * 10, 'noise');
-      }
-    });
-
-    // Garbage and sewage facility pollution (delegated to services)
-    for (const src of this.state.garbage.getPollutionSources()) {
+    // Collect pollution sources from all providers (DIP: each source manages its own emissions)
+    const allSources = [
+      ...getGridPollutionSources(grid),
+      ...this.state.garbage.getPollutionSources(),
+      ...this.state.sewage.getPollutionSources(),
+      ...this.state.airport.getPollutionSources(),
+    ];
+    for (const src of allSources) {
       pm.addSource(src.x, src.y, src.amount, src.type);
     }
+
     // Garbage overflow produces distributed pollution at city center
     const garbagePenalty = this.state.garbage.getPollutionPenalty();
     if (garbagePenalty > 0) {
       const cx = Math.floor(grid.width / 2);
       const cy = Math.floor(grid.height / 2);
       pm.addSource(cx, cy, garbagePenalty, 'ground');
-    }
-
-    for (const src of this.state.sewage.getPollutionSources()) {
-      pm.addSource(src.x, src.y, src.amount, src.type);
-    }
-
-    // Airport noise pollution
-    for (const airport of this.state.airport.getAirports()) {
-      pm.addSource(airport.x, airport.y, airport.noisePollution * 5, 'noise');
     }
 
     pm.calculateSpread();
