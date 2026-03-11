@@ -1,6 +1,6 @@
 import { TransportType, TransportVehicle, TransportStop, TransportRoute } from './types';
 import { BaseTransportSystem, TransportSystemConfig, BaseTransportJSON } from './BaseTransportSystem';
-import { findWaterPath, type WaterGrid } from '../pathfinding/WaterPathfinder';
+import { findWaterPath, type WaterGrid, type WaterPathResult } from '../pathfinding/WaterPathfinder';
 
 const FERRY_CONFIG: TransportSystemConfig = {
   type: TransportType.FERRY,
@@ -8,7 +8,7 @@ const FERRY_CONFIG: TransportSystemConfig = {
   // FERRY_VISUAL_SPEED(1.5) × base_tick_interval(0.25s) = 0.375
   speed: 0.375,
   capacity: 100,
-  dwellTicks: 3,
+  dwellTicks: 6,
   operatingCostPerVehicle: 200,
   affectedByCongestion: false,
 };
@@ -26,6 +26,8 @@ export class FerrySystem extends BaseTransportSystem {
   private waterGrid: WaterGrid | null = null;
   /** 每艘渡輪的 A* 路徑資訊 */
   private vesselPaths = new Map<number, VesselPathInfo>();
+  /** A* 路徑快取：key = "fromX,fromY>toX,toY"，路線建立時預計算 */
+  private waterPathCache = new Map<string, WaterPathResult | null>();
 
   constructor() {
     super(FERRY_CONFIG);
@@ -33,9 +35,46 @@ export class FerrySystem extends BaseTransportSystem {
 
   /**
    * 設定水域網格，用於 A* 水路尋路。
+   * 清除快取並為現有路線重新預計算。
    */
   setWaterGrid(grid: WaterGrid): void {
     this.waterGrid = grid;
+    this.waterPathCache.clear();
+    for (const route of this.routes) {
+      this.precomputeRoutePaths(route);
+    }
+  }
+
+  private pathCacheKey(from: { x: number; y: number }, to: { x: number; y: number }): string {
+    return `${from.x},${from.y}>${to.x},${to.y}`;
+  }
+
+  /** 預計算路線所有航段的 A* 路徑並快取 */
+  private precomputeRoutePaths(route: TransportRoute): void {
+    if (!this.waterGrid) return;
+    for (let i = 0; i < route.stops.length; i++) {
+      const from = route.stops[i]!;
+      const to = route.stops[(i + 1) % route.stops.length]!;
+      const key = this.pathCacheKey(from, to);
+      if (!this.waterPathCache.has(key)) {
+        this.waterPathCache.set(key, findWaterPath(this.waterGrid, from, to));
+      }
+    }
+  }
+
+  /** 查詢快取的 A* 路徑，未命中則即時計算並快取 */
+  private getCachedPath(
+    from: { x: number; y: number },
+    to: { x: number; y: number },
+  ): WaterPathResult | null {
+    const key = this.pathCacheKey(from, to);
+    if (this.waterPathCache.has(key)) {
+      return this.waterPathCache.get(key)!;
+    }
+    // 快取未命中 — 即時計算並存入
+    const result = this.waterGrid ? findWaterPath(this.waterGrid, from, to) : null;
+    this.waterPathCache.set(key, result);
+    return result;
   }
 
   // ── Alias methods for Ferry-specific naming ─────────────────────
@@ -69,15 +108,19 @@ export class FerrySystem extends BaseTransportSystem {
     this.removeStop(dockId);
   }
 
+  override createRoute(stops: TransportStop[], vehicleCount = 1): TransportRoute {
+    const route = super.createRoute(stops, vehicleCount);
+    this.precomputeRoutePaths(route);
+    return route;
+  }
+
   /**
-   * 驗證碼頭之間是否存在水路連通。
+   * 驗證碼頭之間是否存在水路連通（使用快取）。
    */
   validateRouteConnectivity(docks: TransportStop[]): boolean {
     if (!this.waterGrid || docks.length < 2) return false;
     for (let i = 0; i < docks.length - 1; i++) {
-      const from = docks[i]!;
-      const to = docks[i + 1]!;
-      const result = findWaterPath(this.waterGrid, from, to);
+      const result = this.getCachedPath(docks[i]!, docks[i + 1]!);
       if (!result) return false;
     }
     return true;
@@ -114,6 +157,15 @@ export class FerrySystem extends BaseTransportSystem {
   }
 
   override deleteRoute(routeId: number): void {
+    const route = this.routes.find(r => r.id === routeId);
+    // 清除快取中此路線的航段路徑
+    if (route) {
+      for (let i = 0; i < route.stops.length; i++) {
+        const from = route.stops[i]!;
+        const to = route.stops[(i + 1) % route.stops.length]!;
+        this.waterPathCache.delete(this.pathCacheKey(from, to));
+      }
+    }
     for (const v of this.vehicles) {
       if (v.routeId === routeId) this.vesselPaths.delete(v.id);
     }
@@ -125,16 +177,14 @@ export class FerrySystem extends BaseTransportSystem {
   protected override onDepart(vehicle: TransportVehicle, route: TransportRoute): void {
     const nextDock = route.stops[vehicle.currentStopIndex]!;
 
-    // 計算 A* 水路路徑
-    if (this.waterGrid) {
-      const result = findWaterPath(this.waterGrid, vehicle.position, nextDock);
-      if (result && result.path.length > 1) {
-        this.vesselPaths.set(vehicle.id, {
-          waterPath: result.path,
-        });
-        vehicle.travelTicks = Math.max(1, Math.ceil(result.distance / this.config.speed));
-        return;
-      }
+    // 從快取取得 A* 路徑（路線建立時已預計算）
+    const result = this.getCachedPath(vehicle.position, nextDock);
+    if (result && result.path.length > 1) {
+      this.vesselPaths.set(vehicle.id, {
+        waterPath: result.path,
+      });
+      vehicle.travelTicks = Math.max(1, Math.ceil(result.distance / this.config.speed));
+      return;
     }
     // No water path or no grid — fallback travelTicks already set by base
   }

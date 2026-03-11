@@ -1506,7 +1506,7 @@ describe('Ferry travel time', () => {
     ferry.createRoute([d1, d2]);
 
     ferry.tick(); // arrive d1
-    ferry.tick(); ferry.tick(); ferry.tick(); // dwell 3 ticks
+    for (let i = 0; i < 6; i++) ferry.tick(); // dwell 6 ticks
     const v = ferry.getVessels()[0]!;
     expect(v.traveling).toBe(true);
     // travel ticks = ceil(10 / 0.375) = 27
