@@ -22,7 +22,7 @@ import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 import { randomInt, randomElement } from '../utils/random';
 
 /** Ticks between service/RCI/growth updates (tuned for ticksPerDay=24, preserving ticksPerDay=4 balance) */
@@ -1064,14 +1064,14 @@ export class SimulationLoop {
         let nearOrigin = false;
         let nearDest = false;
         for (const stop of route.stops) {
-          const dOrig = Math.abs(stop.x - origin.x) + Math.abs(stop.y - origin.y);
-          const dDest = Math.abs(stop.x - destination.x) + Math.abs(stop.y - destination.y);
+          const dOrig = manhattanDistance(stop.x, stop.y, origin.x, origin.y);
+          const dDest = manhattanDistance(stop.x, stop.y, destination.x, destination.y);
           if (dOrig <= SIMULATION.WALK_TO_STOP_RANGE) nearOrigin = true;
           if (dDest <= SIMULATION.WALK_TO_STOP_RANGE) nearDest = true;
         }
         if (nearOrigin && nearDest) {
           // Estimate transit time: Manhattan distance * factor (faster than driving for metro/rail)
-          const dist = Math.abs(destination.x - origin.x) + Math.abs(destination.y - origin.y);
+          const dist = manhattanDistance(origin.x, origin.y, destination.x, destination.y);
           const timeFactor = sys.type === TransportType.METRO || sys.type === TransportType.RAIL ? SIMULATION.RAIL_TRANSIT_TIME_FACTOR : 1.0;
           result.push({ type: sys.type, estimatedTime: dist * timeFactor });
         }
@@ -1194,7 +1194,7 @@ export class SimulationLoop {
       if (from.x === to.x && from.y === to.y) continue;
 
       // Walk filter: Manhattan distance ≤ 3 → citizen walks, no car
-      const manhattan = Math.abs(from.x - to.x) + Math.abs(from.y - to.y);
+      const manhattan = manhattanDistance(from.x, from.y, to.x, to.y);
       if (manhattan <= 3) continue;
 
       // Transport mode choice: skip if transit is better than driving
@@ -1234,7 +1234,7 @@ export class SimulationLoop {
     let best: { x: number; y: number; passengers: number } | null = null;
     let bestDist = Infinity;
     for (const s of stops) {
-      const dist = Math.abs(s.x - pos.x) + Math.abs(s.y - pos.y);
+      const dist = manhattanDistance(s.x, s.y, pos.x, pos.y);
       if (dist < bestDist) {
         bestDist = dist;
         best = s;
