@@ -1417,6 +1417,8 @@ export class Game {
       'power', 'water', 'police', 'fire', 'hospital',
       'school', 'school_high', 'school_univ', 'park',
       'garbage', 'sewage', 'cemetery',
+      'bus_stop', 'metro_station', 'train_station',
+      'ferry_dock', 'airport', 'taxi_stand',
     ].includes(tool);
   }
 
