@@ -423,7 +423,7 @@ export class SimulationLoop {
 
     this.state.grid.forEachCell((cell, x, y) => {
       // Skip infrastructure, empty cells, burned, and multi-cell secondary
-      if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === 4) return;
+      if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) return;
       const btype = getBuildingType(cell.buildingId);
       if (!btype) return;
 
@@ -667,7 +667,7 @@ export class SimulationLoop {
         const updated = grid.getCell(x, y);
         if (updated) {
           const newLevel = Math.max(1, Math.min(3, Math.ceil(updated.serviceCoverage / 3) || 1));
-          this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === 3);
+          this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === BURNED);
         }
       }
     }
