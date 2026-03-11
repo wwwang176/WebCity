@@ -1,12 +1,12 @@
 import { RoadNetwork } from '../road/RoadNetwork';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
-import { parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 
 function heuristic(a: string, b: string): number {
   const ap = parsePosKeyUnsafe(a);
   const bp = parsePosKeyUnsafe(b);
-  return Math.abs(ap.x - bp.x) + Math.abs(ap.y - bp.y);
+  return manhattanDistance(ap.x, ap.y, bp.x, bp.y);
 }
 
 export interface PathCostFactors {

@@ -4,6 +4,7 @@ import {
   TransportRoute,
   TransportVehicle,
 } from './types';
+import { manhattanDistance } from '../grid/GridHelpers';
 
 export interface TransportSystemConfig {
   type: TransportType;
@@ -164,7 +165,7 @@ export abstract class BaseTransportSystem {
       vehicle.atStop = false;
       vehicle.currentStopIndex = (vehicle.currentStopIndex + 1) % route.stops.length;
       const nextStop = route.stops[vehicle.currentStopIndex]!;
-      const dist = Math.abs(nextStop.x - vehicle.position.x) + Math.abs(nextStop.y - vehicle.position.y);
+      const dist = manhattanDistance(nextStop.x, nextStop.y, vehicle.position.x, vehicle.position.y);
       const speed = this.config.speed * this.getSpeedMultiplier();
       vehicle.travelTicks = Math.max(1, Math.ceil(dist / speed));
       vehicle.traveling = true;

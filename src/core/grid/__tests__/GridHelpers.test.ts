@@ -4,7 +4,7 @@ import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
   hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS, getLShapedPath,
-  getDirectionFlag,
+  getDirectionFlag, manhattanDistance,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -354,6 +354,28 @@ describe('getLShapedPath', () => {
     const path = getLShapedPath({ x: 0, y: 0 }, { x: 1, y: 1 });
     const keys = path.map(p => `${p.x},${p.y}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('manhattanDistance', () => {
+  it('returns 0 for same point', () => {
+    expect(manhattanDistance(5, 5, 5, 5)).toBe(0);
+  });
+
+  it('returns horizontal distance', () => {
+    expect(manhattanDistance(0, 0, 3, 0)).toBe(3);
+  });
+
+  it('returns vertical distance', () => {
+    expect(manhattanDistance(0, 0, 0, 4)).toBe(4);
+  });
+
+  it('returns sum of horizontal and vertical distance', () => {
+    expect(manhattanDistance(1, 2, 4, 6)).toBe(7);
+  });
+
+  it('handles negative coordinates', () => {
+    expect(manhattanDistance(-3, -2, 3, 2)).toBe(10);
   });
 });
 

@@ -1,3 +1,5 @@
+import { manhattanDistance } from '../grid/GridHelpers';
+
 export type GarbageFacilityType = 'landfill' | 'incinerator';
 
 export interface GarbageFacility {
@@ -67,7 +69,7 @@ export class GarbageService {
 
   getCoverage(x: number, y: number): boolean {
     return this.facilities.some(f => {
-      const dist = Math.abs(f.x - x) + Math.abs(f.y - y);
+      const dist = manhattanDistance(f.x, f.y, x, y);
       return dist <= GARBAGE.COVERAGE_RANGE;
     });
   }

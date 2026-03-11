@@ -1,6 +1,6 @@
 import type { Grid } from '../grid/Grid';
 import type { TrafficSimulation } from '../traffic/TrafficSimulation';
-import { parsePosKeyUnsafe, findAdjacentRoad, toPosKey } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 
 export enum ServiceVehicleType {
@@ -98,11 +98,6 @@ export class ServiceDispatch {
     visited.add(key(start.x, start.y));
     const endKey = key(end.x, end.y);
 
-    const dirs = [
-      { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-      { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-    ];
-
     let steps = 0;
     while (queue.length > 0 && steps < 500) {
       const cur = queue.shift()!;
@@ -121,7 +116,7 @@ export class ServiceDispatch {
         return path;
       }
 
-      for (const { dx, dy } of dirs) {
+      for (const [dx, dy] of FOUR_NEIGHBORS) {
         const nx = cur.x + dx;
         const ny = cur.y + dy;
         const nk = key(nx, ny);

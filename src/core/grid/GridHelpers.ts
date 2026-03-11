@@ -36,6 +36,11 @@ export function euclideanDistance(x1: number, y1: number, x2: number, y2: number
   return Math.sqrt(dx * dx + dy * dy);
 }
 
+/** Manhattan (taxicab) distance between two points */
+export function manhattanDistance(x1: number, y1: number, x2: number, y2: number): number {
+  return Math.abs(x2 - x1) + Math.abs(y2 - y1);
+}
+
 /** Check if point (x,y) is within Euclidean distance of center (cx,cy) */
 export function isWithinEuclideanRadius(
   cx: number, cy: number, x: number, y: number, radius: number,
