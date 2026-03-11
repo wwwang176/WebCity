@@ -31,6 +31,17 @@ function nodeId(x: number, y: number): string {
   return `${x},${y}`;
 }
 
+/** Per-vehicle travel metadata for path-based interpolation. */
+interface TrainTravelMeta {
+  totalTicks: number;
+  segIdx: number;
+  /** Parsed path points for fast interpolation. */
+  points: Array<{ x: number; y: number }>;
+  /** Cumulative distances along path. */
+  cumDists: number[];
+  totalDist: number;
+}
+
 export class RailSystem extends BaseTransportSystem {
   /** Track service type per line. */
   private lineServiceTypes = new Map<number, RailServiceType>();
@@ -40,6 +51,9 @@ export class RailSystem extends BaseTransportSystem {
 
   /** Reference to the rail network graph (optional, for track-based validation). */
   private railNetwork: RailNetwork | null = null;
+
+  /** Per-vehicle travel data for path-based position interpolation. */
+  private trainTravelData = new Map<number, TrainTravelMeta>();
 
   /** External connections -- goods/population flowing in and out of the city. */
   externalConnection: ExternalConnection = {
@@ -163,6 +177,85 @@ export class RailSystem extends BaseTransportSystem {
     const lastVehicle = this.vehicles[this.vehicles.length - 1];
     if (lastVehicle && lastVehicle.routeId === lineId) {
       lastVehicle.capacity = capacity;
+    }
+  }
+
+  // ── Path-based movement overrides ────────────────────────────────
+
+  protected override onDepart(vehicle: TransportVehicle, _route: TransportRoute): void {
+    const paths = this.routePaths.get(vehicle.routeId);
+    if (!paths || paths.length === 0) return;
+
+    const segIdx = (vehicle.currentStopIndex - 1 + paths.length) % paths.length;
+    const path = paths[segIdx];
+    if (!path || path.length < 2) return;
+
+    // Parse path nodes and compute cumulative distances
+    const points: Array<{ x: number; y: number }> = [];
+    for (const nid of path) {
+      const [xs, ys] = nid.split(',');
+      points.push({ x: Number(xs), y: Number(ys) });
+    }
+    const cumDists: number[] = [0];
+    let totalDist = 0;
+    for (let i = 1; i < points.length; i++) {
+      const dx = points[i]!.x - points[i - 1]!.x;
+      const dy = points[i]!.y - points[i - 1]!.y;
+      totalDist += Math.sqrt(dx * dx + dy * dy);
+      cumDists.push(totalDist);
+    }
+
+    // Recalculate travelTicks based on actual rail path distance (not Manhattan)
+    const speed = this.config.speed;
+    vehicle.travelTicks = Math.max(1, Math.ceil(totalDist / speed));
+
+    this.trainTravelData.set(vehicle.id, {
+      totalTicks: vehicle.travelTicks,
+      segIdx,
+      points,
+      cumDists,
+      totalDist,
+    });
+  }
+
+  protected override tickTraveling(vehicle: TransportVehicle, route: TransportRoute): void {
+    const meta = this.trainTravelData.get(vehicle.id);
+    if (!meta) {
+      // No path data — fallback to base teleport behavior
+      super.tickTraveling(vehicle, route);
+      return;
+    }
+
+    vehicle.travelTicks--;
+
+    if (vehicle.travelTicks <= 0) {
+      // Arrived at destination — snap to station
+      const stop = route.stops[vehicle.currentStopIndex]!;
+      vehicle.position = { x: stop.x, y: stop.y };
+      vehicle.traveling = false;
+      vehicle.atStop = true;
+      vehicle.waitTicks = this.config.dwellTicks;
+      this.onArrive(vehicle, stop);
+      this.trainTravelData.delete(vehicle.id);
+      return;
+    }
+
+    // Interpolate position along rail path
+    const progress = 1 - (vehicle.travelTicks / meta.totalTicks);
+    const targetDist = progress * meta.totalDist;
+
+    // Binary-like walk to find the right segment
+    for (let i = 1; i < meta.points.length; i++) {
+      if (targetDist <= meta.cumDists[i]! || i === meta.points.length - 1) {
+        const segStart = meta.cumDists[i - 1]!;
+        const segLen = meta.cumDists[i]! - segStart;
+        const t = segLen > 0 ? (targetDist - segStart) / segLen : 0;
+        vehicle.position = {
+          x: meta.points[i - 1]!.x + (meta.points[i]!.x - meta.points[i - 1]!.x) * t,
+          y: meta.points[i - 1]!.y + (meta.points[i]!.y - meta.points[i - 1]!.y) * t,
+        };
+        break;
+      }
     }
   }
 

@@ -118,6 +118,82 @@ describe('RailSystem — track-based movement', () => {
     // Doesn't matter exactly where — just verify tick doesn't crash
   });
 
+  it('should update train position progressively during travel (not teleport)', () => {
+    const { grid, builder, rail } = setupTrackSystem();
+    // Build straight track from x=0 to x=18 (within 20x20 grid)
+    builder.buildTrack({ x: 0, y: 5 }, { x: 18, y: 5 }, 100000);
+
+    const stA = rail.buildStation(0, 5, grid)!;
+    const stB = rail.buildStation(18, 5, grid)!;
+    rail.createLine([stA, stB]);
+
+    // Tick: initial → atStop
+    rail.tick();
+    const train = rail.getTrains()[0]!;
+    expect(train.atStop).toBe(true);
+
+    // Tick through dwell time (dwellTicks=3)
+    rail.tick(); // waitTicks 3→2
+    rail.tick(); // 2→1
+    rail.tick(); // 1→0 → depart, traveling=true
+
+    expect(train.traveling).toBe(true);
+
+    // Now tick once while traveling — position should NOT still be at station A
+    const startX = train.position.x;
+    rail.tick();
+
+    // Position should have moved away from start toward destination
+    expect(train.position.x).toBeGreaterThan(startX);
+    // But should NOT have teleported to the end
+    expect(train.position.x).toBeLessThan(18);
+  });
+
+  it('should move train along L-shaped track path', () => {
+    const { grid, builder, rail } = setupTrackSystem();
+    // Build L-shaped track: (0,5) → (5,5) → (5,10)
+    builder.buildTrack({ x: 0, y: 5 }, { x: 5, y: 10 }, 100000);
+
+    const stA = rail.buildStation(0, 5, grid)!;
+    const stB = rail.buildStation(5, 10, grid)!;
+    rail.createLine([stA, stB]);
+
+    // Move to traveling state
+    for (let i = 0; i < 4; i++) rail.tick();
+    const train = rail.getTrains()[0]!;
+    expect(train.traveling).toBe(true);
+
+    // Tick a few times and track position changes
+    const positions: { x: number; y: number }[] = [];
+    for (let i = 0; i < 5; i++) {
+      rail.tick();
+      positions.push({ x: train.position.x, y: train.position.y });
+    }
+
+    // Position should be changing each tick
+    const allSame = positions.every(p => p.x === positions[0]!.x && p.y === positions[0]!.y);
+    expect(allSame).toBe(false);
+  });
+
+  it('should snap train to destination station on arrival', () => {
+    const { grid, builder, rail } = setupTrackSystem();
+    builder.buildTrack({ x: 0, y: 5 }, { x: 4, y: 5 }, 100000);
+
+    const stA = rail.buildStation(0, 5, grid)!;
+    const stB = rail.buildStation(4, 5, grid)!;
+    rail.createLine([stA, stB]);
+
+    // Tick enough times for train to arrive at stB
+    for (let i = 0; i < 30; i++) rail.tick();
+
+    const train = rail.getTrains()[0]!;
+    // Train should be at one of the stops (either arrived at B or traveling back)
+    if (train.atStop) {
+      const stop = [stA, stB].find(s => s.x === train.position.x && s.y === train.position.y);
+      expect(stop).toBeDefined();
+    }
+  });
+
   // --- Serialization round-trip ---
 
   it('should serialize and deserialize with route paths', () => {
