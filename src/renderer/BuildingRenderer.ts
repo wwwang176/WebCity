@@ -2543,6 +2543,7 @@ export class BuildingRenderer {
           const clone = srcGeo.clone();
           clone.applyMatrix4(mat4);
           clone.deleteAttribute('color');
+          if (clone.hasAttribute('aHighlight')) clone.deleteAttribute('aHighlight');
           geos.push(clone);
         }
       } else {
@@ -2550,6 +2551,7 @@ export class BuildingRenderer {
         mesh.updateWorldMatrix(true, false);
         clone.applyMatrix4(mesh.matrixWorld);
         clone.deleteAttribute('color');
+        if (clone.hasAttribute('aHighlight')) clone.deleteAttribute('aHighlight');
         geos.push(clone);
       }
     }
