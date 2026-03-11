@@ -4,7 +4,9 @@ import { findWaterPath, type WaterGrid } from '../pathfinding/WaterPathfinder';
 
 const FERRY_CONFIG: TransportSystemConfig = {
   type: TransportType.FERRY,
-  speed: 2.5,
+  // 邏輯速度（世界單位/tick），匹配渲染端視覺速度：
+  // FERRY_VISUAL_SPEED(1.5) × base_tick_interval(0.25s) = 0.375
+  speed: 0.375,
   capacity: 100,
   dwellTicks: 3,
   operatingCostPerVehicle: 200,
@@ -15,10 +17,9 @@ export interface WaterChecker {
   isWater(x: number, y: number): boolean;
 }
 
-/** 渡輪的 A* 水路路徑 */
+/** 渡輪的 A* 水路路徑（渲染端動畫用） */
 interface VesselPathInfo {
   waterPath: Array<{ x: number; y: number }>;
-  pathIndex: number;
 }
 
 export class FerrySystem extends BaseTransportSystem {
@@ -96,11 +97,6 @@ export class FerrySystem extends BaseTransportSystem {
     return info ? info.waterPath : null;
   }
 
-  /** 取得渡輪在路徑上的當前索引 */
-  getVesselPathIndex(vesselId: number): number {
-    const info = this.vesselPaths.get(vesselId);
-    return info ? info.pathIndex : 0;
-  }
 
   override removeVehicleFromRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
@@ -135,7 +131,6 @@ export class FerrySystem extends BaseTransportSystem {
       if (result && result.path.length > 1) {
         this.vesselPaths.set(vehicle.id, {
           waterPath: result.path,
-          pathIndex: 0,
         });
         vehicle.travelTicks = Math.max(1, Math.ceil(result.distance / this.config.speed));
         return;
@@ -145,19 +140,7 @@ export class FerrySystem extends BaseTransportSystem {
   }
 
   protected override tickTraveling(vehicle: TransportVehicle, route: TransportRoute): void {
-    // 沿 A* 路徑逐步前進
-    const pathInfo = this.vesselPaths.get(vehicle.id);
-    if (pathInfo && pathInfo.waterPath.length > 0) {
-      const stepsPerTick = Math.max(1, Math.floor(this.config.speed));
-      for (let step = 0; step < stepsPerTick; step++) {
-        if (pathInfo.pathIndex < pathInfo.waterPath.length - 1) {
-          pathInfo.pathIndex++;
-          const p = pathInfo.waterPath[pathInfo.pathIndex]!;
-          vehicle.position = { x: p.x, y: p.y };
-        }
-      }
-    }
-
+    // 位置移動由渲染端動畫處理，此處只倒數 travelTicks
     vehicle.travelTicks--;
     if (vehicle.travelTicks <= 0) {
       const dock = route.stops[vehicle.currentStopIndex]!;
