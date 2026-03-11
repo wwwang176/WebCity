@@ -1451,30 +1451,39 @@ export class Game {
         groundwaterFn,
       );
     } else if (this.currentTool === 'demolish') {
-      // Demolish: highlight multi-cell building footprint
-      const gx = this.gridCursor.gridX;
-      const gy = this.gridCursor.gridY;
-      const cell = this.state.grid.getCell(gx, gy);
-      if (cell && cell.buildingId >= 237 && cell.buildingId <= 254) {
-        const primary = findPrimaryCell(this.state.grid, gx, gy);
-        if (primary) {
-          const cfg = getInfraConfigById(cell.buildingId);
-          const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
-          const cells: { x: number; y: number }[] = [];
-          for (let dy = 0; dy < maxDim; dy++) {
-            for (let dx = 0; dx < maxDim; dx++) {
-              const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
-              if (c && c.buildingId === cell.buildingId) {
-                cells.push({ x: primary.x + dx, y: primary.y + dy });
+      if (this.dragStart) {
+        // Demolish drag preview — red overlay showing affected range
+        this.placementPreview.updateZoneDrag(
+          this.dragStart.x, this.dragStart.y,
+          this.gridCursor.gridX, this.gridCursor.gridY,
+          0xff0000,
+        );
+      } else {
+        // Demolish hover: highlight multi-cell building footprint
+        const gx = this.gridCursor.gridX;
+        const gy = this.gridCursor.gridY;
+        const cell = this.state.grid.getCell(gx, gy);
+        if (cell && cell.buildingId >= 237 && cell.buildingId <= 254) {
+          const primary = findPrimaryCell(this.state.grid, gx, gy);
+          if (primary) {
+            const cfg = getInfraConfigById(cell.buildingId);
+            const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
+            const cells: { x: number; y: number }[] = [];
+            for (let dy = 0; dy < maxDim; dy++) {
+              for (let dx = 0; dx < maxDim; dx++) {
+                const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
+                if (c && c.buildingId === cell.buildingId) {
+                  cells.push({ x: primary.x + dx, y: primary.y + dy });
+                }
               }
             }
+            this.placementPreview.updateDemolishHighlight(cells);
+          } else {
+            this.placementPreview.hide();
           }
-          this.placementPreview.updateDemolishHighlight(cells);
         } else {
           this.placementPreview.hide();
         }
-      } else {
-        this.placementPreview.hide();
       }
     } else if (this.dragStart && this.isZoneTool()) {
       // Zone drag preview
