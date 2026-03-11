@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateRCIDemand } from '../RCIDemand';
+import { calculateRCIDemand, RCI } from '../RCIDemand';
 import { calculateBalance, takeLoan, tickBudget } from '../Budget';
 import { calculateTaxRevenue, DEFAULT_TAX_RATES } from '../Tax';
 import { calculateLandValue, LAND_VALUE } from '../LandValue';
@@ -30,8 +30,15 @@ describe('RCIDemand', () => {
       residentialSupply: 10000, commercialSupply: 0, industrialSupply: 0,
       population: 0, jobOpenings: 0, exportDemand: 0,
     });
-    expect(demand.residential).toBeGreaterThanOrEqual(-100);
-    expect(demand.residential).toBeLessThanOrEqual(100);
+    expect(demand.residential).toBeGreaterThanOrEqual(RCI.DEMAND_MIN);
+    expect(demand.residential).toBeLessThanOrEqual(RCI.DEMAND_MAX);
+  });
+
+  it('RCI constants should have valid ranges', () => {
+    expect(RCI.JOB_MULTIPLIER).toBeGreaterThan(0);
+    expect(RCI.RESIDENTIAL_BASE).toBeGreaterThan(0);
+    expect(RCI.DEMAND_MIN).toBeLessThan(0);
+    expect(RCI.DEMAND_MAX).toBeGreaterThan(0);
   });
 });
 
