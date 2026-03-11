@@ -1707,8 +1707,75 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildSewagePlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly sewage plant — circular settling tanks + walkway bridge + pipes
-    this.buildCivicBuilding(scene, cx, cz, 'sewage', scale);
+    const s = scale;
+
+    // Concrete foundation
+    const foundGeo = new THREE.BoxGeometry(0.85 * s, 0.04 * s, 0.85 * s);
+    foundGeo.translate(0, 0.02, 0);
+    const foundMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
+    this.addInfraMesh(scene, foundGeo, foundMat, cx, 0.05, cz);
+
+    // Large settling tank
+    const lgTankGeo = new THREE.CylinderGeometry(0.20 * s, 0.20 * s, 0.10 * s, 16);
+    lgTankGeo.translate(0, 0.05, 0);
+    const lgTankMat = new THREE.MeshLambertMaterial({ color: 0x546e7a });
+    this.addInfraMesh(scene, lgTankGeo, lgTankMat, cx - 0.15 * s, 0.05, cz - 0.10 * s);
+
+    // Large tank water surface
+    const lgWaterGeo = new THREE.CylinderGeometry(0.19 * s, 0.19 * s, 0.01 * s, 16);
+    lgWaterGeo.translate(0, 0.10, 0);
+    const lgWaterMat = new THREE.MeshLambertMaterial({ color: 0x80cbc4 });
+    this.addInfraMesh(scene, lgWaterGeo, lgWaterMat, cx - 0.15 * s, 0.05, cz - 0.10 * s);
+
+    // Walkway bridge across large tank
+    const walkGeo = new THREE.BoxGeometry(0.40 * s, 0.02 * s, 0.03 * s);
+    walkGeo.translate(0, 0.11, 0);
+    const walkMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
+    this.addInfraMesh(scene, walkGeo, walkMat, cx - 0.15 * s, 0.05, cz - 0.10 * s);
+
+    // Small settling tank
+    const smTankGeo = new THREE.CylinderGeometry(0.12 * s, 0.12 * s, 0.08 * s, 12);
+    smTankGeo.translate(0, 0.04, 0);
+    const smTankMat = new THREE.MeshLambertMaterial({ color: 0x546e7a });
+    this.addInfraMesh(scene, smTankGeo, smTankMat, cx + 0.18 * s, 0.05, cz - 0.10 * s);
+
+    // Small tank water surface
+    const smWaterGeo = new THREE.CylinderGeometry(0.11 * s, 0.11 * s, 0.01 * s, 12);
+    smWaterGeo.translate(0, 0.08, 0);
+    const smWaterMat = new THREE.MeshLambertMaterial({ color: 0x80cbc4 });
+    this.addInfraMesh(scene, smWaterGeo, smWaterMat, cx + 0.18 * s, 0.05, cz - 0.10 * s);
+
+    // Control building
+    const ctrlGeo = new THREE.BoxGeometry(0.20 * s, 0.20 * s, 0.18 * s);
+    ctrlGeo.translate(0, 0.10, 0);
+    const ctrlMat = new THREE.MeshLambertMaterial({ color: 0x607d8b });
+    this.addInfraMesh(scene, ctrlGeo, ctrlMat, cx + 0.18 * s, 0.05, cz + 0.22 * s);
+
+    // Control building roof
+    const ctrlRoofGeo = new THREE.BoxGeometry(0.23 * s, 0.02 * s, 0.21 * s);
+    ctrlRoofGeo.translate(0, 0.21, 0);
+    const ctrlRoofMat = new THREE.MeshLambertMaterial({ color: 0x455a64 });
+    this.addInfraMesh(scene, ctrlRoofGeo, ctrlRoofMat, cx + 0.18 * s, 0.05, cz + 0.22 * s);
+
+    // Connecting pipe between tanks
+    const pipeGeo = new THREE.CylinderGeometry(0.02 * s, 0.02 * s, 0.18 * s, 6);
+    pipeGeo.rotateZ(Math.PI / 2);
+    pipeGeo.translate(0, 0.06, 0);
+    const pipeMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
+    this.addInfraMesh(scene, pipeGeo, pipeMat, cx + 0.02 * s, 0.05, cz - 0.10 * s);
+
+    // Outlet pipe
+    const outletGeo = new THREE.CylinderGeometry(0.025 * s, 0.025 * s, 0.20 * s, 6);
+    outletGeo.rotateX(Math.PI / 2);
+    outletGeo.translate(0, 0.06, 0);
+    const outletMat = new THREE.MeshLambertMaterial({ color: 0x607d8b });
+    this.addInfraMesh(scene, outletGeo, outletMat, cx - 0.15 * s, 0.05, cz + 0.25 * s);
+
+    // Status indicator light
+    const lightGeo = new THREE.BoxGeometry(0.04 * s, 0.04 * s, 0.04 * s);
+    lightGeo.translate(0, 0.23, 0);
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0x26a69a });
+    this.addInfraMesh(scene, lightGeo, lightMat, cx + 0.18 * s, 0.05, cz + 0.22 * s, false);
   }
 
   private buildPowerPlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
