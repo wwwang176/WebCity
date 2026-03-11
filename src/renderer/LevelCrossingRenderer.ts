@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { CrossingState, type LevelCrossing } from '../core/rail/LevelCrossingSystem';
+import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 
 /**
  * Renders level crossing (railroad crossing) visual elements:
@@ -209,9 +210,14 @@ export class LevelCrossingRenderer {
     }
   }
 
-  setUndergroundMode(enabled: boolean): void {
+  setViewMode(mode: ViewMode): void {
     if (!this.group) return;
-    this.group.visible = !enabled;
+    this.group.visible = VIEW_MODE_OPACITY[mode].levelCrossing > 0;
+  }
+
+  /** @deprecated Use setViewMode instead. */
+  setUndergroundMode(enabled: boolean): void {
+    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
   }
 
   dispose(scene: THREE.Scene): void {

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
+import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 
 const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -528,21 +529,22 @@ export class RoadRenderer {
     scene.add(this.lampGlowMesh);
   }
 
-  private _underground = false;
+  private _focusMode = false;
 
   /** Update street lamp glow based on sun intensity (call each frame). */
   update(sunIntensity: number): void {
     if (!this.lampGlowMaterial) return;
-    if (this._underground) {
+    if (this._focusMode) {
       this.lampGlowMaterial.opacity = 0;
       return;
     }
     this.lampGlowMaterial.opacity = Math.max(0, 0.5 * (1 - sunIntensity / 0.3));
   }
 
-  /** Switch to underground visual mode (white semi-transparent roads). */
-  setUndergroundMode(enabled: boolean): void {
-    this._underground = enabled;
+  setViewMode(mode: ViewMode): void {
+    const opacity = VIEW_MODE_OPACITY[mode].road;
+    const dimmed = opacity < 1.0;
+    this._focusMode = dimmed;
     const meshes = [
       this.roadMesh, this.sidewalkMesh, this.markingMesh,
       this.crosswalkMesh, this.stopLineMesh, this.lampMesh,
@@ -550,23 +552,26 @@ export class RoadRenderer {
     for (const mesh of meshes) {
       if (!mesh) continue;
       const mat = mesh.material as THREE.MeshLambertMaterial;
-      if (enabled) {
+      if (dimmed) {
         mat.transparent = true;
-        mat.opacity = 0.15;
+        mat.opacity = opacity;
         mat.depthWrite = false;
         mat.color.set(0xcccccc);
       } else {
         mat.transparent = false;
         mat.opacity = 1.0;
         mat.depthWrite = true;
-        // Original colors restored on next build()
       }
-      mesh.renderOrder = enabled ? 20 : 0;
+      mesh.renderOrder = dimmed ? 20 : 0;
     }
-    // Hide lamp glow in underground mode
     if (this.lampGlowMesh) {
-      this.lampGlowMesh.visible = !enabled;
+      this.lampGlowMesh.visible = !dimmed;
     }
+  }
+
+  /** @deprecated Use setViewMode instead. */
+  setUndergroundMode(enabled: boolean): void {
+    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
   }
 
   dispose(scene: THREE.Scene): void {

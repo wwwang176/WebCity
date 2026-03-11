@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
 import { TerrainType } from '../core/grid/types';
 import { isStoneGround } from '../core/grid/GroundType';
+import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 
 const TERRAIN_COLORS: Record<number, number> = {
   [TerrainType.PLAIN]: 0x4caf50,
@@ -137,12 +138,14 @@ export class TerrainRenderer {
   }
 
   /** Switch to underground visual mode (white semi-transparent terrain). */
-  setUndergroundMode(enabled: boolean): void {
+  setViewMode(mode: ViewMode): void {
+    const op = VIEW_MODE_OPACITY[mode];
+    const dimmed = op.terrain < 1.0;
     if (this.mesh) {
       const mat = this.mesh.material as THREE.MeshLambertMaterial;
-      if (enabled) {
+      if (dimmed) {
         mat.transparent = true;
-        mat.opacity = 0.15;
+        mat.opacity = op.terrain;
         mat.depthWrite = false;
         mat.color.set(0xdddddd);
         mat.map = null;
@@ -155,21 +158,26 @@ export class TerrainRenderer {
         mat.map = this.groundTexture;
         mat.needsUpdate = true;
       }
-      this.mesh.renderOrder = enabled ? 20 : 0;
+      this.mesh.renderOrder = dimmed ? 20 : 0;
     }
     if (this.waterMesh) {
       const wMat = this.waterMesh.material as THREE.MeshLambertMaterial;
-      if (enabled) {
+      if (dimmed) {
         wMat.opacity = 0.08;
         wMat.color.set(0xcccccc);
         wMat.depthWrite = false;
       } else {
         wMat.opacity = 0.4;
         wMat.color.set(0x1565c0);
-        wMat.depthWrite = false; // was already false
+        wMat.depthWrite = false;
       }
-      this.waterMesh.renderOrder = enabled ? 20 : 0;
+      this.waterMesh.renderOrder = dimmed ? 20 : 0;
     }
+  }
+
+  /** @deprecated Use setViewMode instead. */
+  setUndergroundMode(enabled: boolean): void {
+    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
   }
 
   dispose(scene: THREE.Scene): void {

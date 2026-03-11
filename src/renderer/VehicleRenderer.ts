@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VEHICLE_CONFIG } from './vehicleConfig';
+import { ViewMode, getVehicleVisibility } from '../core/ViewMode';
 
 export interface VehicleData {
   id: number;
@@ -23,7 +24,7 @@ export class VehicleRenderer {
   private meshes = new Map<string, THREE.InstancedMesh>();
   private readonly maxPerType = 500;
   private readonly maxLights = 2000; // total vehicles across all types
-  private _underground = false;
+  private _viewMode = ViewMode.NORMAL;
 
   // Headlight / taillight instanced meshes
   private headlightMesh: THREE.InstancedMesh | null = null;
@@ -187,8 +188,8 @@ export class VehicleRenderer {
       mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
-      // Underground mode hides all surface vehicles (metro trains rendered by MetroTunnelRenderer)
-      mesh.visible = !this._underground;
+      // Focus modes: show only relevant vehicle types
+      mesh.visible = getVehicleVisibility(this._viewMode, type);
     }
 
     // Update headlight/taillight counts and opacity
@@ -198,7 +199,7 @@ export class VehicleRenderer {
       this.headlightMesh.instanceMatrix.needsUpdate = true;
       this.taillightMesh.instanceMatrix.needsUpdate = true;
 
-      if (this._underground) {
+      if (this._viewMode !== ViewMode.NORMAL) {
         if (this.headlightMaterial) this.headlightMaterial.opacity = 0;
         if (this.taillightMaterial) this.taillightMaterial.opacity = 0;
       } else {
@@ -212,14 +213,20 @@ export class VehicleRenderer {
     }
   }
 
-  /** Switch to underground visual mode (hide all surface vehicles). */
-  setUndergroundMode(enabled: boolean): void {
-    this._underground = enabled;
-    for (const mesh of this.meshes.values()) {
-      mesh.visible = !enabled;
+  /** Switch view mode — controls per-type vehicle visibility. */
+  setViewMode(mode: ViewMode): void {
+    this._viewMode = mode;
+    for (const [type, mesh] of this.meshes) {
+      mesh.visible = getVehicleVisibility(mode, type);
     }
-    if (this.headlightMesh) this.headlightMesh.visible = !enabled;
-    if (this.taillightMesh) this.taillightMesh.visible = !enabled;
+    const showLights = mode === ViewMode.NORMAL;
+    if (this.headlightMesh) this.headlightMesh.visible = showLights;
+    if (this.taillightMesh) this.taillightMesh.visible = showLights;
+  }
+
+  /** @deprecated Use setViewMode instead. */
+  setUndergroundMode(enabled: boolean): void {
+    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
   }
 
   dispose(scene: THREE.Scene): void {

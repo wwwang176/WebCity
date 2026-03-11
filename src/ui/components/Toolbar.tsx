@@ -3,7 +3,7 @@ import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
 import type { ToolType } from '../../Game';
 import type { AirportSize } from '../../core/transport/AirportSystem';
-import { ViewMode } from '../../core/ViewMode';
+
 
 interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
 interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[] }
@@ -141,19 +141,6 @@ function ToolGroupComponent(props: {
             <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
               <span class="tb-icon">{'\u{1F5FA}'}</span>
               <span style={{ color: '#ff9800' }}>Routes</span>
-            </button>
-            <button
-              class="tb-btn"
-              classList={{ active: gameSignals.viewMode() === ViewMode.UNDERGROUND }}
-              onClick={(e) => { e.stopPropagation(); getGame().toggleViewMode(); }}
-              title="Toggle underground view (U)"
-              aria-label="Toggle underground view"
-            >
-              <span class="tb-icon">{'\u{1F687}'}</span>
-              <span style={{ color: gameSignals.viewMode() === ViewMode.UNDERGROUND ? '#00e5ff' : '#00bcd4' }}>
-                {gameSignals.viewMode() === ViewMode.UNDERGROUND ? 'Surface' : 'Underground'}
-              </span>
-              <span class="tb-key">U</span>
             </button>
           </>
         )}

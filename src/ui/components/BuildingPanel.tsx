@@ -2,7 +2,7 @@ import { Show, For, createSignal } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { CitizenDetail } from './CitizenDetail';
 import { ZoneType } from '../../core/grid/types';
-import type { SelectedZoneBuilding, SelectedInfraBuilding } from '../../Game';
+import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop } from '../../Game';
 
 const ZONE_NAMES: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
@@ -27,6 +27,15 @@ const INFRA_ICONS: Record<string, string> = {
   power: '\u26A1',
   water: '\u{1F4A7}',
   airport: '\u2708',
+};
+
+const TRANSPORT_ICONS: Record<string, string> = {
+  bus: '\u{1F68C}',
+  metro: '\u{1F687}',
+  tram: '\u{1F68A}',
+  rail: '\u{1F686}',
+  ferry: '\u26F4',
+  taxi: '\u{1F695}',
 };
 
 function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
@@ -112,6 +121,19 @@ function InfraBuildingInfo(props: { sel: SelectedInfraBuilding }) {
   );
 }
 
+function TransportStopInfo(props: { sel: SelectedTransportStop }) {
+  const icon = () => TRANSPORT_ICONS[props.sel.transportType] ?? '';
+
+  return (
+    <>
+      <div class="bp-title">{icon()} {props.sel.name}</div>
+      <div class="bp-row">Position <span>({props.sel.x}, {props.sel.y})</span></div>
+      <div class="bp-row">Routes <span>{props.sel.routes}</span></div>
+      <div class="bp-row">Vehicles <span>{props.sel.vehicles}</span></div>
+    </>
+  );
+}
+
 export function BuildingPanel() {
   const selected = () => gameSignals.selectedBuilding();
 
@@ -125,6 +147,9 @@ export function BuildingPanel() {
             </Show>
             <Show when={sel().kind === 'infra'}>
               <InfraBuildingInfo sel={sel() as SelectedInfraBuilding} />
+            </Show>
+            <Show when={sel().kind === 'transport'}>
+              <TransportStopInfo sel={sel() as SelectedTransportStop} />
             </Show>
           </>
         )}
