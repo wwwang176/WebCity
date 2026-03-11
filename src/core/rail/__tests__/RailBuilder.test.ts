@@ -189,6 +189,32 @@ describe('RailBuilder', () => {
     expect(cell.railType).toBe(RailType.STANDARD);
   });
 
+  it('should block track parallel to existing road (both EW)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { roadType: 2, roadFlags: 0b1100 }); // W+E
+    const builder = new RailBuilder(grid);
+    const result = builder.buildTrack({ x: 3, y: 5 }, { x: 5, y: 5 }, 10000); // rail also EW
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('PARALLEL_ROAD');
+  });
+
+  it('should block track parallel to existing road (both NS)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(5, 4, { roadType: 2, roadFlags: 0b0011 }); // N+S
+    const builder = new RailBuilder(grid);
+    const result = builder.buildTrack({ x: 5, y: 3 }, { x: 5, y: 5 }, 10000); // rail also NS
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('PARALLEL_ROAD');
+  });
+
+  it('should allow track perpendicular to existing road (rail NS, road EW)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(5, 4, { roadType: 2, roadFlags: 0b1100 }); // W+E
+    const builder = new RailBuilder(grid);
+    const result = builder.buildTrack({ x: 5, y: 3 }, { x: 5, y: 5 }, 10000); // rail NS
+    expect(result.success).toBe(true);
+  });
+
   it('should NOT clear road or buildings when building track over road cell', () => {
     const grid = new Grid(20, 20);
     grid.setCell(4, 5, { roadType: 2, roadFlags: 0b0011 });

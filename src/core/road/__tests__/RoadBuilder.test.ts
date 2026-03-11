@@ -228,6 +228,42 @@ describe('RoadBuilder', () => {
     expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
   });
 
+  // --- Parallel rail blocking ---
+
+  it('should block road parallel to existing rail (both EW)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { railType: 1, railFlags: 0b1100 }); // W+E
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 3, y: 5 }, { x: 5, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('PARALLEL_RAIL');
+  });
+
+  it('should block road parallel to existing rail (both NS)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(5, 4, { railType: 1, railFlags: 0b0011 }); // N+S
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 5, y: 3 }, { x: 5, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('PARALLEL_RAIL');
+  });
+
+  it('should allow road perpendicular to existing rail (road EW, rail NS)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { railType: 1, railFlags: 0b0011 }); // N+S
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 3, y: 5 }, { x: 5, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(true);
+  });
+
+  it('should allow road perpendicular to existing rail (road NS, rail EW)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(5, 4, { railType: 1, railFlags: 0b1100 }); // W+E
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 5, y: 3 }, { x: 5, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(true);
+  });
+
   // --- Zone/building clearing ---
 
   it('should clear zoned buildings when building road over them', () => {

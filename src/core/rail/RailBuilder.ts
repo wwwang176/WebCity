@@ -36,6 +36,24 @@ export class RailBuilder {
       }
     }
 
+    // Check for parallel road conflicts
+    for (let i = 0; i < cells.length; i++) {
+      const pos = cells[i]!;
+      const cell = this.grid.getCell(pos.x, pos.y)!;
+      if (cell.roadType > 0) {
+        let railFlags = 0;
+        if (i > 0) railFlags |= this.getDirection(pos, cells[i - 1]!);
+        if (i < cells.length - 1) railFlags |= this.getDirection(pos, cells[i + 1]!);
+        const railVert = (railFlags & (TrackDirection.NORTH | TrackDirection.SOUTH)) !== 0;
+        const railHorz = (railFlags & (TrackDirection.WEST | TrackDirection.EAST)) !== 0;
+        const roadVert = (cell.roadFlags & (TrackDirection.NORTH | TrackDirection.SOUTH)) !== 0;
+        const roadHorz = (cell.roadFlags & (TrackDirection.WEST | TrackDirection.EAST)) !== 0;
+        if ((railVert && roadVert) || (railHorz && roadHorz)) {
+          return { success: false, reason: 'PARALLEL_ROAD' };
+        }
+      }
+    }
+
     // Calculate cost — skip cells that already have track
     let totalCost = 0;
     for (const pos of cells) {

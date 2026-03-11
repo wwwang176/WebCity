@@ -2,6 +2,7 @@ import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, RoadDirection, ROAD_CONFIGS, type BuildRoadResult, type Position } from './types';
+import { RailType } from '../rail/types';
 
 function nodeId(x: number, y: number): string {
   return `${x},${y}`;
@@ -28,6 +29,24 @@ export class RoadBuilder {
       if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
       // Block infrastructure (power=254, water=253) but allow zoned buildings
       if (cell.buildingId === 254 || cell.buildingId === 253) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
+    }
+
+    // Check for parallel rail conflicts
+    for (let i = 0; i < cells.length; i++) {
+      const pos = cells[i]!;
+      const cell = this.grid.getCell(pos.x, pos.y)!;
+      if (cell.railType !== undefined && cell.railType !== RailType.NONE) {
+        let roadFlags = 0;
+        if (i > 0) roadFlags |= this.getDirection(pos, cells[i - 1]!);
+        if (i < cells.length - 1) roadFlags |= this.getDirection(pos, cells[i + 1]!);
+        const roadVert = (roadFlags & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
+        const roadHorz = (roadFlags & (RoadDirection.WEST | RoadDirection.EAST)) !== 0;
+        const railVert = (cell.railFlags & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
+        const railHorz = (cell.railFlags & (RoadDirection.WEST | RoadDirection.EAST)) !== 0;
+        if ((roadVert && railVert) || (roadHorz && railHorz)) {
+          return { success: false, reason: 'PARALLEL_RAIL' };
+        }
+      }
     }
 
     // Check funds — charge differential for cells that already have a road
