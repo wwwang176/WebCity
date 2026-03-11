@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { PollutionManager, POLLUTION_DECAY_PER_CELL, POLLUTION_PARK_REDUCTION } from '../Pollution';
 import { NaturalResourceManager, ResourceType } from '../NaturalResourceManager';
-import { WaterFlow } from '../WaterFlow';
+import { WaterFlow, FLOW_DIRECTION_OFFSETS } from '../WaterFlow';
 
 describe('PollutionManager', () => {
   let pm: PollutionManager;
@@ -208,5 +208,18 @@ describe('WaterFlow', () => {
     wf.spreadWaterPollution(5, 5, 100);
     // West of source should have no pollution
     expect(wf.getPollutionAt(4, 5)).toBe(0);
+  });
+});
+
+describe('FLOW_DIRECTION_OFFSETS', () => {
+  it('should have correct offsets for all cardinal directions', () => {
+    expect(FLOW_DIRECTION_OFFSETS.N).toEqual({ dx: 0, dy: -1 });
+    expect(FLOW_DIRECTION_OFFSETS.S).toEqual({ dx: 0, dy: 1 });
+    expect(FLOW_DIRECTION_OFFSETS.E).toEqual({ dx: 1, dy: 0 });
+    expect(FLOW_DIRECTION_OFFSETS.W).toEqual({ dx: -1, dy: 0 });
+  });
+
+  it('should have no-op offset for empty direction', () => {
+    expect(FLOW_DIRECTION_OFFSETS['']).toEqual({ dx: 0, dy: 0 });
   });
 });

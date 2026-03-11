@@ -4,19 +4,17 @@ export type FlowDirection = 'N' | 'S' | 'E' | 'W' | '';
 
 const DECAY_PER_CELL = 30;
 
+/** Data-driven direction offsets for water flow. */
+export const FLOW_DIRECTION_OFFSETS: Record<FlowDirection, { dx: number; dy: number }> = {
+  N: { dx: 0, dy: -1 },
+  S: { dx: 0, dy: 1 },
+  E: { dx: 1, dy: 0 },
+  W: { dx: -1, dy: 0 },
+  '': { dx: 0, dy: 0 },
+} as const;
+
 function getDirectionOffset(direction: FlowDirection): { dx: number; dy: number } {
-  switch (direction) {
-    case 'N':
-      return { dx: 0, dy: -1 };
-    case 'S':
-      return { dx: 0, dy: 1 };
-    case 'E':
-      return { dx: 1, dy: 0 };
-    case 'W':
-      return { dx: -1, dy: 0 };
-    default:
-      return { dx: 0, dy: 0 };
-  }
+  return FLOW_DIRECTION_OFFSETS[direction] ?? FLOW_DIRECTION_OFFSETS[''];
 }
 
 export class WaterFlow {

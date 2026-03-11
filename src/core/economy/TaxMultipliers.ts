@@ -6,22 +6,26 @@ export const CITIZEN_BASE_INCOME = 0.5;
 /** Road maintenance cost per tile per budget tick. */
 export const ROAD_MAINTENANCE_PER_TILE = 0.1;
 
+/** Data-driven income level multipliers for residential income tax. */
+export const INCOME_LEVEL_MULTIPLIERS: Record<IncomeLevel, number> = {
+  [IncomeLevel.LOW]: 1.0,
+  [IncomeLevel.MEDIUM]: 1.5,
+  [IncomeLevel.HIGH]: 2.0,
+} as const;
+
+/** Data-driven building density level multipliers for business tax. */
+export const BUILDING_LEVEL_MULTIPLIERS: Record<1 | 2 | 3, number> = {
+  1: 1.0,
+  2: 1.5,
+  3: 2.0,
+} as const;
+
 /** Income level multiplier for residential income tax. */
 export function getIncomeLevelMultiplier(level: IncomeLevel): number {
-  switch (level) {
-    case IncomeLevel.LOW: return 1.0;
-    case IncomeLevel.MEDIUM: return 1.5;
-    case IncomeLevel.HIGH: return 2.0;
-    default: return 1.0;
-  }
+  return INCOME_LEVEL_MULTIPLIERS[level] ?? 1.0;
 }
 
 /** Building density level multiplier for business tax. */
 export function getBuildingLevelMultiplier(level: 1 | 2 | 3): number {
-  switch (level) {
-    case 1: return 1.0;
-    case 2: return 1.5;
-    case 3: return 2.0;
-    default: return 1.0;
-  }
+  return BUILDING_LEVEL_MULTIPLIERS[level] ?? 1.0;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, CITIZEN_BASE_INCOME, ROAD_MAINTENANCE_PER_TILE } from '../TaxMultipliers';
+import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, CITIZEN_BASE_INCOME, ROAD_MAINTENANCE_PER_TILE, INCOME_LEVEL_MULTIPLIERS, BUILDING_LEVEL_MULTIPLIERS } from '../TaxMultipliers';
 import { IncomeLevel } from '../../citizen/types';
 
 describe('TaxMultipliers', () => {
@@ -38,6 +38,22 @@ describe('TaxMultipliers', () => {
 
     it('ROAD_MAINTENANCE_PER_TILE should be 0.1', () => {
       expect(ROAD_MAINTENANCE_PER_TILE).toBe(0.1);
+    });
+  });
+
+  describe('INCOME_LEVEL_MULTIPLIERS lookup', () => {
+    it('should have entries for all IncomeLevel values', () => {
+      expect(INCOME_LEVEL_MULTIPLIERS[IncomeLevel.LOW]).toBe(1.0);
+      expect(INCOME_LEVEL_MULTIPLIERS[IncomeLevel.MEDIUM]).toBe(1.5);
+      expect(INCOME_LEVEL_MULTIPLIERS[IncomeLevel.HIGH]).toBe(2.0);
+    });
+  });
+
+  describe('BUILDING_LEVEL_MULTIPLIERS lookup', () => {
+    it('should have entries for all building levels', () => {
+      expect(BUILDING_LEVEL_MULTIPLIERS[1]).toBe(1.0);
+      expect(BUILDING_LEVEL_MULTIPLIERS[2]).toBe(1.5);
+      expect(BUILDING_LEVEL_MULTIPLIERS[3]).toBe(2.0);
     });
   });
 });
