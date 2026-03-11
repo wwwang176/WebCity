@@ -1435,8 +1435,83 @@ export class BuildingRenderer {
   }
 
   private buildUniversity(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly university — 3 wings + gold dome + colonnade + fountain
-    this.buildCivicBuilding(scene, cx, cz, 'school_univ', scale);
+    // Central main hall
+    const hallGeo = new THREE.BoxGeometry(0.50, 0.55, 0.50);
+    hallGeo.translate(0, 0.55 / 2, 0);
+    const hallMat = new THREE.MeshLambertMaterial({ color: 0x4e342e });
+    this.addInfraMesh(scene, hallGeo, hallMat, cx, 0.05, cz);
+
+    // Left wing
+    const lwGeo = new THREE.BoxGeometry(0.40, 0.40, 0.35);
+    lwGeo.translate(-0.45, 0.40 / 2, 0);
+    const wingMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    this.addInfraMesh(scene, lwGeo, wingMat, cx, 0.05, cz);
+
+    // Right wing
+    const rwGeo = new THREE.BoxGeometry(0.40, 0.40, 0.35);
+    rwGeo.translate(0.45, 0.40 / 2, 0);
+    this.addInfraMesh(scene, rwGeo, wingMat, cx, 0.05, cz);
+
+    // Main roof
+    const mainRoofGeo = new THREE.BoxGeometry(0.55, 0.03, 0.55);
+    mainRoofGeo.translate(0, 0.015, 0);
+    const darkRoofMat = new THREE.MeshLambertMaterial({ color: 0x3e2723 });
+    this.addInfraMesh(scene, mainRoofGeo, darkRoofMat, cx, 0.05 + 0.55, cz);
+
+    // Gold dome (half sphere)
+    const domeGeo = new THREE.SphereGeometry(0.15, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    const domeMat = new THREE.MeshLambertMaterial({ color: 0xffd600 });
+    this.addInfraMesh(scene, domeGeo, domeMat, cx, 0.05 + 0.55 + 0.03, cz);
+
+    // Dome base ring
+    const ringGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.04, 10);
+    ringGeo.translate(0, 0.02, 0);
+    const ringMat = new THREE.MeshLambertMaterial({ color: 0xf9a825 });
+    this.addInfraMesh(scene, ringGeo, ringMat, cx, 0.05 + 0.55, cz);
+
+    // 4 front columns
+    const colMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
+    for (let i = 0; i < 4; i++) {
+      const colGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.30, 6);
+      colGeo.translate(-0.18 + i * 0.12, 0.30 / 2, -0.50 / 2 - 0.04);
+      this.addInfraMesh(scene, colGeo, colMat, cx, 0.05, cz);
+    }
+
+    // Colonnade top
+    const colTopGeo = new THREE.BoxGeometry(0.45, 0.03, 0.12);
+    colTopGeo.translate(0, 0.015, -0.50 / 2 - 0.04);
+    const colTopMat = new THREE.MeshLambertMaterial({ color: 0x4e342e });
+    this.addInfraMesh(scene, colTopGeo, colTopMat, cx, 0.05 + 0.30, cz);
+
+    // Pediment (flat triangle facing front)
+    const pedGeo = new THREE.ConeGeometry(0.25, 0.08, 3);
+    pedGeo.rotateX(Math.PI / 2);
+    pedGeo.rotateY(Math.PI / 2);
+    pedGeo.translate(0, 0.04, -0.50 / 2 - 0.04);
+    const pedMat = new THREE.MeshLambertMaterial({ color: 0x3e2723 });
+    this.addInfraMesh(scene, pedGeo, pedMat, cx, 0.05 + 0.30 + 0.03, cz);
+
+    // Courtyard ground (in front)
+    const courtGeo = new THREE.BoxGeometry(0.30, 0.01, 0.30);
+    courtGeo.translate(0, 0.005, -0.50 / 2 - 0.20);
+    const courtMat = new THREE.MeshLambertMaterial({ color: 0xa5d6a7 });
+    this.addInfraMesh(scene, courtGeo, courtMat, cx, 0.05, cz);
+
+    // Fountain pool
+    const fountGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.03, 10);
+    fountGeo.translate(0, 0.03 / 2, -0.50 / 2 - 0.20);
+    const fountMat = new THREE.MeshLambertMaterial({ color: 0x90caf9 });
+    this.addInfraMesh(scene, fountGeo, fountMat, cx, 0.05, cz);
+
+    // Left wing roof
+    const lwRoofGeo = new THREE.BoxGeometry(0.45, 0.03, 0.40);
+    lwRoofGeo.translate(-0.45, 0.015, 0);
+    this.addInfraMesh(scene, lwRoofGeo, darkRoofMat, cx, 0.05 + 0.40, cz);
+
+    // Right wing roof
+    const rwRoofGeo = new THREE.BoxGeometry(0.45, 0.03, 0.40);
+    rwRoofGeo.translate(0.45, 0.015, 0);
+    this.addInfraMesh(scene, rwRoofGeo, darkRoofMat, cx, 0.05 + 0.40, cz);
   }
 
   // ═══════════════════════════════════════════════════════════════════
