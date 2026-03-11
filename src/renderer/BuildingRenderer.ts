@@ -1306,8 +1306,67 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildElementarySchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly elementary — colorful roof + playground + swing/slide + tree
-    this.buildCivicBuilding(scene, cx, cz, 'school', scale);
+    // Classroom building (1 story, brown)
+    const bodyGeo = new THREE.BoxGeometry(0.65, 0.25, 0.35);
+    bodyGeo.translate(0, 0.25 / 2, 0);
+    const bodyMat = new THREE.MeshLambertMaterial({ color: 0x795548 });
+    this.addInfraMesh(scene, bodyGeo, bodyMat, cx, 0.05, cz);
+
+    // Colorful tilted roof (orange-red)
+    const roofGeo = new THREE.BoxGeometry(0.70, 0.03, 0.42);
+    roofGeo.rotateX(0.05);
+    roofGeo.translate(0, 0.015, 0);
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0xff7043 });
+    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.25, cz);
+
+    // Entrance porch (protruding from front)
+    const porchGeo = new THREE.BoxGeometry(0.12, 0.20, 0.08);
+    porchGeo.translate(0, 0.20 / 2, -0.35 / 2 - 0.08 / 2);
+    const porchMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
+    this.addInfraMesh(scene, porchGeo, porchMat, cx, 0.05, cz);
+
+    // Porch roof
+    const porchRoofGeo = new THREE.BoxGeometry(0.16, 0.02, 0.12);
+    porchRoofGeo.translate(0, 0.01, -0.35 / 2 - 0.08 / 2);
+    const porchRoofMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    this.addInfraMesh(scene, porchRoofGeo, porchRoofMat, cx, 0.05 + 0.20, cz);
+
+    // Playground ground (offset to the right side)
+    const playGeo = new THREE.BoxGeometry(0.35, 0.01, 0.40);
+    playGeo.translate(0.50, 0.005, 0);
+    const playMat = new THREE.MeshLambertMaterial({ color: 0xa5d6a7 });
+    this.addInfraMesh(scene, playGeo, playMat, cx, 0.05, cz);
+
+    // Swing frame
+    const swingGeo = new THREE.BoxGeometry(0.08, 0.12, 0.02);
+    swingGeo.translate(0.45, 0.12 / 2, -0.08);
+    const swingMat = new THREE.MeshLambertMaterial({ color: 0xff8a65 });
+    this.addInfraMesh(scene, swingGeo, swingMat, cx, 0.05, cz);
+
+    // Slide (yellow, tilted)
+    const slideGeo = new THREE.BoxGeometry(0.04, 0.10, 0.02);
+    slideGeo.rotateX(-0.4);
+    slideGeo.translate(0.55, 0.10 / 2, 0.05);
+    const slideMat = new THREE.MeshLambertMaterial({ color: 0xffd54f });
+    this.addInfraMesh(scene, slideGeo, slideMat, cx, 0.05, cz);
+
+    // Tree trunk
+    const trunkGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.10, 5);
+    trunkGeo.translate(-0.40, 0.10 / 2, -0.12);
+    const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6d4c41 });
+    this.addInfraMesh(scene, trunkGeo, trunkMat, cx, 0.05, cz);
+
+    // Tree canopy
+    const canopyGeo = new THREE.SphereGeometry(0.06, 6, 5);
+    canopyGeo.translate(-0.40, 0.10 + 0.04, -0.12);
+    const canopyMat = new THREE.MeshLambertMaterial({ color: 0x66bb6a });
+    this.addInfraMesh(scene, canopyGeo, canopyMat, cx, 0.05, cz);
+
+    // Flagpole
+    const flagGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.25, 4);
+    flagGeo.translate(-0.30, 0.25 / 2, -0.22);
+    const flagMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
+    this.addInfraMesh(scene, flagGeo, flagMat, cx, 0.05, cz);
   }
 
   private buildHighSchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
