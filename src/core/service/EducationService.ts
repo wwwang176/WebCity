@@ -38,10 +38,9 @@ const LEVEL_RANK: Record<SchoolType | 'none', number> = {
 
 export type EducationLevelResult = 'none' | SchoolType;
 
-let nextId = 1;
-
 export class EducationService {
   private schools: School[] = [];
+  private nextId = 1;
 
   addSchool(
     x: number,
@@ -50,7 +49,7 @@ export class EducationService {
     radius?: number,
     capacity?: number,
   ): string {
-    const id = `school-${nextId++}`;
+    const id = `school-${this.nextId++}`;
     this.schools.push({
       id,
       x,
@@ -113,6 +112,10 @@ export class EducationService {
     const service = new EducationService();
     for (const s of data.schools) {
       service.schools.push({ ...s });
+    }
+    for (const s of service.schools) {
+      const num = parseInt(s.id.replace('school-', ''), 10);
+      if (num >= service.nextId) service.nextId = num + 1;
     }
     return service;
   }

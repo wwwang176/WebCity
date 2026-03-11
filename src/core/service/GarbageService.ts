@@ -36,16 +36,15 @@ export const GARBAGE = {
   POLLUTION_AMOUNT_SCALE: 40,
 } as const;
 
-let nextFacilityId = 1;
-
 import type { PollutionSource } from '../environment/Pollution';
 
 export class GarbageService {
   private facilities: GarbageFacility[] = [];
   private overflow = 0;
+  private nextId = 1;
 
   addFacility(x: number, y: number, type: GarbageFacilityType, capacity?: number): string {
-    const id = `garbage_${nextFacilityId++}`;
+    const id = `garbage_${this.nextId++}`;
     this.facilities.push({
       id,
       x,
@@ -157,12 +156,9 @@ export class GarbageService {
     const gs = new GarbageService();
     gs.facilities = data.facilities.map(f => ({ ...f }));
     gs.overflow = data.overflow;
-    // Ensure nextFacilityId stays ahead of restored IDs
     for (const f of gs.facilities) {
       const num = parseInt(f.id.replace('garbage_', ''), 10);
-      if (!isNaN(num) && num >= nextFacilityId) {
-        nextFacilityId = num + 1;
-      }
+      if (num >= gs.nextId) gs.nextId = num + 1;
     }
     return gs;
   }

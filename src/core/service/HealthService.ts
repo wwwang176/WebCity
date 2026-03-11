@@ -22,14 +22,13 @@ export const HEALTH = {
   MAINTENANCE_PER_HOSPITAL: 8,
 } as const;
 
-let nextId = 1;
-
 export class HealthService {
   private hospitals: Hospital[] = [];
   private coverage = new RadiusCoverageMap();
+  private nextId = 1;
 
   addHospital(x: number, y: number, radius = 12, capacity = 100): string {
-    const id = `hospital_${nextId++}`;
+    const id = `hospital_${this.nextId++}`;
     this.hospitals.push({ id, x, y, radius, capacity });
     return id;
   }
@@ -70,6 +69,10 @@ export class HealthService {
     const service = new HealthService();
     for (const h of json.hospitals) {
       service.hospitals.push({ ...h });
+    }
+    for (const h of service.hospitals) {
+      const num = parseInt(h.id.replace('hospital_', ''), 10);
+      if (num >= service.nextId) service.nextId = num + 1;
     }
     return service;
   }

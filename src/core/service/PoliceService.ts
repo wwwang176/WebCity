@@ -14,14 +14,13 @@ export const POLICE = {
   MAINTENANCE_PER_STATION: 4,
 } as const;
 
-let nextStationId = 1;
-
 export class PoliceService {
   private stations: PoliceStation[] = [];
   private coverage = new RadiusCoverageMap();
+  private nextId = 1;
 
   addStation(x: number, y: number, radius = 15): string {
-    const id = `police_${nextStationId++}`;
+    const id = `police_${this.nextId++}`;
     this.stations.push({ id, x, y, radius });
     return id;
   }
@@ -62,6 +61,11 @@ export class PoliceService {
     const service = new PoliceService();
     for (const s of data.stations) {
       service.stations.push({ ...s });
+    }
+    // Recover counter from max existing ID to avoid duplicates
+    for (const s of service.stations) {
+      const num = parseInt(s.id.replace('police_', ''), 10);
+      if (num >= service.nextId) service.nextId = num + 1;
     }
     return service;
   }

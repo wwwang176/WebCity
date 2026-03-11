@@ -18,13 +18,12 @@ export const PARK = {
   MAINTENANCE_PER_PARK: 2,
 } as const;
 
-let nextParkId = 1;
-
 export class ParkService {
   private parks: Park[] = [];
+  private nextId = 1;
 
   addPark(x: number, y: number, radius = 5): string {
-    const id = `park-${nextParkId++}`;
+    const id = `park-${this.nextId++}`;
     this.parks.push({ id, x, y, radius });
     return id;
   }
@@ -75,6 +74,10 @@ export class ParkService {
     const ps = new ParkService();
     for (const p of data) {
       ps.parks.push({ ...p });
+    }
+    for (const p of ps.parks) {
+      const num = parseInt(p.id.replace('park-', ''), 10);
+      if (num >= ps.nextId) ps.nextId = num + 1;
     }
     return ps;
   }

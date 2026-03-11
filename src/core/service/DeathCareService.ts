@@ -26,21 +26,20 @@ export const DEATH_CARE = {
   MAINTENANCE_PER_FACILITY: 2,
 } as const;
 
-let nextId = 1;
-
 export class DeathCareService {
   private cemeteries: Cemetery[] = [];
   private crematoriums: Crematorium[] = [];
   private pendingDeaths = 0;
+  private nextId = 1;
 
   addCemetery(x: number, y: number, capacity = 500): string {
-    const id = `cem-${nextId++}`;
+    const id = `cem-${this.nextId++}`;
     this.cemeteries.push({ id, x, y, capacity, used: 0 });
     return id;
   }
 
   addCrematorium(x: number, y: number, capacity = 100, processRate = 5): string {
-    const id = `cre-${nextId++}`;
+    const id = `cre-${this.nextId++}`;
     this.crematoriums.push({ id, x, y, capacity, processRate });
     return id;
   }
@@ -111,6 +110,15 @@ export class DeathCareService {
     service.cemeteries = json.cemeteries.map(c => ({ ...c }));
     service.crematoriums = json.crematoriums.map(c => ({ ...c }));
     service.pendingDeaths = json.pendingDeaths;
+    // Recover counter from max existing ID (cem-N / cre-N)
+    for (const c of service.cemeteries) {
+      const num = parseInt(c.id.replace('cem-', ''), 10);
+      if (num >= service.nextId) service.nextId = num + 1;
+    }
+    for (const c of service.crematoriums) {
+      const num = parseInt(c.id.replace('cre-', ''), 10);
+      if (num >= service.nextId) service.nextId = num + 1;
+    }
     return service;
   }
 }
