@@ -23,10 +23,10 @@ export interface BaseTransportJSON {
   nextVehicleId: number;
 }
 
-/** Minimum speed multiplier when congestion is at maximum */
-const MIN_CONGESTION_SPEED = 0.1;
-/** How much congestion level reduces speed (0-1 scale) */
-const CONGESTION_SPEED_IMPACT = 0.5;
+export const TRANSPORT_SPEED = {
+  MIN_CONGESTION_SPEED: 0.1,
+  CONGESTION_SPEED_IMPACT: 0.5,
+} as const;
 
 export abstract class BaseTransportSystem {
   protected stops: TransportStop[] = [];
@@ -196,7 +196,7 @@ export abstract class BaseTransportSystem {
 
   protected getSpeedMultiplier(): number {
     if (!this.config.affectedByCongestion) return 1;
-    return Math.max(MIN_CONGESTION_SPEED, 1 - this.congestionLevel * CONGESTION_SPEED_IMPACT);
+    return Math.max(TRANSPORT_SPEED.MIN_CONGESTION_SPEED, 1 - this.congestionLevel * TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT);
   }
 
   protected getCapacity(): number {

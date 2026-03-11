@@ -8,8 +8,10 @@ export interface PoliceStation {
   radius: number;
 }
 
-const CRIME_REDUCTION_PER_STATION = -30;
-const CRIME_REDUCTION_CAP = -60;
+export const POLICE = {
+  CRIME_REDUCTION_PER_STATION: -30,
+  CRIME_REDUCTION_CAP: -60,
+} as const;
 
 let nextStationId = 1;
 
@@ -35,7 +37,7 @@ export class PoliceService {
   getCrimeReduction(x: number, y: number): number {
     const count = this.coverageMap.get(toPosKey(x, y)) ?? 0;
     if (count === 0) return 0;
-    return Math.max(CRIME_REDUCTION_CAP, count * CRIME_REDUCTION_PER_STATION);
+    return Math.max(POLICE.CRIME_REDUCTION_CAP, count * POLICE.CRIME_REDUCTION_PER_STATION);
   }
 
   getStations(): readonly PoliceStation[] {

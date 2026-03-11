@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PollutionManager, POLLUTION_DECAY_PER_CELL, POLLUTION_PARK_REDUCTION } from '../Pollution';
+import { PollutionManager, POLLUTION_DECAY_PER_CELL, POLLUTION_PARK_REDUCTION, POLLUTION } from '../Pollution';
 import { NaturalResourceManager, ResourceType } from '../NaturalResourceManager';
 import { WaterFlow, FLOW_DIRECTION_OFFSETS } from '../WaterFlow';
 
@@ -208,6 +208,21 @@ describe('WaterFlow', () => {
     wf.spreadWaterPollution(5, 5, 100);
     // West of source should have no pollution
     expect(wf.getPollutionAt(4, 5)).toBe(0);
+  });
+});
+
+describe('POLLUTION constants', () => {
+  it('decay per cell should be positive', () => {
+    expect(POLLUTION.DECAY_PER_CELL).toBeGreaterThan(0);
+  });
+
+  it('park reduction should be positive', () => {
+    expect(POLLUTION.PARK_REDUCTION).toBeGreaterThan(0);
+  });
+
+  it('backward-compatible exports should match POLLUTION config', () => {
+    expect(POLLUTION_DECAY_PER_CELL).toBe(POLLUTION.DECAY_PER_CELL);
+    expect(POLLUTION_PARK_REDUCTION).toBe(POLLUTION.PARK_REDUCTION);
   });
 });
 

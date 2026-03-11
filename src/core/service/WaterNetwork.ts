@@ -8,8 +8,10 @@ export interface WaterPlant {
   output: number;
 }
 
-const PLANT_RANGE = 10;
-const RELAY_RANGE = 2;
+export const WATER_NETWORK = {
+  PLANT_RANGE: 10,
+  RELAY_RANGE: 2,
+} as const;
 
 export class WaterNetwork {
   private plants: WaterPlant[] = [];
@@ -51,11 +53,11 @@ export class WaterNetwork {
 
   /**
    * Euclidean radius coverage + road/building relay.
-   * 1. All cells within Euclidean distance ≤ PLANT_RANGE are supplied (circular).
-   * 2. Roads/buildings on the circle edge relay water RELAY_RANGE further via BFS.
+   * 1. All cells within Euclidean distance ≤ WATER_NETWORK.PLANT_RANGE are supplied (circular).
+   * 2. Roads/buildings on the circle edge relay water WATER_NETWORK.RELAY_RANGE further via BFS.
    */
   private coverPlant(grid: Grid, px: number, py: number, infra?: Set<string>): void {
-    const r = PLANT_RANGE;
+    const r = WATER_NETWORK.PLANT_RANGE;
     const r2 = r * r;
     const relaySeeds: [number, number][] = [];
 
@@ -78,14 +80,14 @@ export class WaterNetwork {
     }
 
     // Phase 2: BFS relay from edge relay cells
-    // Roads/buildings maintain range at RELAY_RANGE (infinite relay through road network)
+    // Roads/buildings maintain range at WATER_NETWORK.RELAY_RANGE (infinite relay through road network)
     if (relaySeeds.length === 0) return;
     const relayMap = new Map<string, number>();
     const queue: [number, number, number][] = [];
     for (const [sx, sy] of relaySeeds) {
       const key = toPosKey(sx, sy);
-      relayMap.set(key, RELAY_RANGE);
-      queue.push([sx, sy, RELAY_RANGE]);
+      relayMap.set(key, WATER_NETWORK.RELAY_RANGE);
+      queue.push([sx, sy, WATER_NETWORK.RELAY_RANGE]);
     }
     const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     while (queue.length > 0) {
@@ -98,8 +100,8 @@ export class WaterNetwork {
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;
         const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
-        // Roads/buildings keep range at RELAY_RANGE (never decreases below it)
-        const newRange = Math.max(isRelay ? RELAY_RANGE : 0, range - 1);
+        // Roads/buildings keep range at WATER_NETWORK.RELAY_RANGE (never decreases below it)
+        const newRange = Math.max(isRelay ? WATER_NETWORK.RELAY_RANGE : 0, range - 1);
         if (newRange <= 0) continue;
         const prev = relayMap.get(key) ?? 0;
         if (newRange <= prev) continue;

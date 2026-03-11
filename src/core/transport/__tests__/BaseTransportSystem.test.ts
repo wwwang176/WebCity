@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { BaseTransportSystem, TransportSystemConfig } from '../BaseTransportSystem';
+import { BaseTransportSystem, TransportSystemConfig, TRANSPORT_SPEED } from '../BaseTransportSystem';
 import { TransportType } from '../types';
 
 // Concrete test implementation (minimal, no overrides)
@@ -201,5 +201,17 @@ describe('BaseTransportSystem', () => {
       expect(restored.getVehicles().length).toBe(2);
       expect(restored.getStops()[1]!.passengers).toBe(15);
     });
+  });
+});
+
+describe('TRANSPORT_SPEED constants', () => {
+  it('min congestion speed should be between 0 and 1', () => {
+    expect(TRANSPORT_SPEED.MIN_CONGESTION_SPEED).toBeGreaterThan(0);
+    expect(TRANSPORT_SPEED.MIN_CONGESTION_SPEED).toBeLessThan(1);
+  });
+
+  it('congestion speed impact should be between 0 and 1', () => {
+    expect(TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT).toBeGreaterThan(0);
+    expect(TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT).toBeLessThanOrEqual(1);
   });
 });

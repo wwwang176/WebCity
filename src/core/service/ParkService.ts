@@ -8,12 +8,14 @@ export interface Park {
   radius: number;
 }
 
-const LAND_VALUE_PER_PARK = 15;
-const LAND_VALUE_CAP = 30;
-const POLLUTION_PER_PARK = -20;
-const POLLUTION_CAP = -40;
-const HAPPINESS_PER_PARK = 5;
-const HAPPINESS_CAP = 10;
+export const PARK = {
+  LAND_VALUE_PER_PARK: 15,
+  LAND_VALUE_CAP: 30,
+  POLLUTION_PER_PARK: -20,
+  POLLUTION_CAP: -40,
+  HAPPINESS_PER_PARK: 5,
+  HAPPINESS_CAP: 10,
+} as const;
 
 let nextParkId = 1;
 
@@ -41,19 +43,19 @@ export class ParkService {
   getLandValueBonus(x: number, y: number): number {
     const count = this.countCoveringParks(x, y);
     if (count === 0) return 0;
-    return Math.min(count * LAND_VALUE_PER_PARK, LAND_VALUE_CAP);
+    return Math.min(count * PARK.LAND_VALUE_PER_PARK, PARK.LAND_VALUE_CAP);
   }
 
   getPollutionReduction(x: number, y: number): number {
     const count = this.countCoveringParks(x, y);
     if (count === 0) return 0;
-    return Math.max(count * POLLUTION_PER_PARK, POLLUTION_CAP);
+    return Math.max(count * PARK.POLLUTION_PER_PARK, PARK.POLLUTION_CAP);
   }
 
   getHappinessBonus(x: number, y: number): number {
     const count = this.countCoveringParks(x, y);
     if (count === 0) return 0;
-    return Math.min(count * HAPPINESS_PER_PARK, HAPPINESS_CAP);
+    return Math.min(count * PARK.HAPPINESS_PER_PARK, PARK.HAPPINESS_CAP);
   }
 
   tick(): void {

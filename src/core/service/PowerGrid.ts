@@ -10,8 +10,10 @@ export interface PowerPlant {
   type: 'wind' | 'solar' | 'coal' | 'gas' | 'nuclear';
 }
 
-const PLANT_RANGE = 10;
-const RELAY_RANGE = 2;
+export const POWER = {
+  PLANT_RANGE: 10,
+  RELAY_RANGE: 2,
+} as const;
 
 export class PowerGrid {
   private plants: PowerPlant[] = [];
@@ -53,11 +55,11 @@ export class PowerGrid {
 
   /**
    * Euclidean radius coverage + road/building relay.
-   * 1. All cells within Euclidean distance ≤ PLANT_RANGE are powered (circular).
-   * 2. Roads/buildings on the circle edge relay power RELAY_RANGE further via BFS.
+   * 1. All cells within Euclidean distance ≤ POWER.PLANT_RANGE are powered (circular).
+   * 2. Roads/buildings on the circle edge relay power POWER.RELAY_RANGE further via BFS.
    */
   private coverPlant(grid: Grid, px: number, py: number, infra?: Set<string>): void {
-    const r = PLANT_RANGE;
+    const r = POWER.PLANT_RANGE;
     const r2 = r * r;
     const relaySeeds: [number, number][] = [];
 
@@ -80,14 +82,14 @@ export class PowerGrid {
     }
 
     // Phase 2: BFS relay from edge relay cells
-    // Roads/buildings maintain range at RELAY_RANGE (infinite relay through road network)
+    // Roads/buildings maintain range at POWER.RELAY_RANGE (infinite relay through road network)
     if (relaySeeds.length === 0) return;
     const relayMap = new Map<string, number>();
     const queue: [number, number, number][] = [];
     for (const [sx, sy] of relaySeeds) {
       const key = toPosKey(sx, sy);
-      relayMap.set(key, RELAY_RANGE);
-      queue.push([sx, sy, RELAY_RANGE]);
+      relayMap.set(key, POWER.RELAY_RANGE);
+      queue.push([sx, sy, POWER.RELAY_RANGE]);
     }
     const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     while (queue.length > 0) {
@@ -100,8 +102,8 @@ export class PowerGrid {
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;
         const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
-        // Roads/buildings keep range at RELAY_RANGE (never decreases below it)
-        const newRange = Math.max(isRelay ? RELAY_RANGE : 0, range - 1);
+        // Roads/buildings keep range at POWER.RELAY_RANGE (never decreases below it)
+        const newRange = Math.max(isRelay ? POWER.RELAY_RANGE : 0, range - 1);
         if (newRange <= 0) continue;
         const prev = relayMap.get(key) ?? 0;
         if (newRange <= prev) continue;
