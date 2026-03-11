@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
 import { ZoneType } from '../core/grid/types';
-import { getInfraConfig, type InfraType as InfraConfigType } from '../core/building/InfraConfig';
+import { getInfraConfig, getRotatedSize, type InfraType as InfraConfigType, type Rotation } from '../core/building/InfraConfig';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION } from '../core/building/InfraPlacement';
 
@@ -991,12 +991,14 @@ export class BuildingRenderer {
   private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: InfraType; reserved: number }[]): void {
     for (const inf of cells) {
       const cfg = getInfraConfig(inf.type as InfraConfigType);
-      const w = cfg ? cfg.width : 1;
-      const h = cfg ? cfg.height : 1;
+      const rotationDeg = RESERVED_TO_ROTATION[inf.reserved] ?? 0;
+
+      // Use ROTATED dimensions for center calculation (footprint on grid is rotated)
+      const { w, h } = cfg
+        ? getRotatedSize(cfg.width, cfg.height, rotationDeg as Rotation)
+        : { w: 1, h: 1 };
       const centerX = inf.x + (w - 1) / 2;
       const centerZ = inf.y + (h - 1) / 2;
-
-      const rotationDeg = RESERVED_TO_ROTATION[inf.reserved] ?? 0;
 
       const group = new THREE.Group();
       group.position.set(centerX, 0, centerZ);

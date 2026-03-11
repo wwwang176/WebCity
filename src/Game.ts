@@ -25,7 +25,7 @@ import { getMilestone } from './core/milestone/Milestone';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED } from './core/building/InfraPlacement';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
@@ -979,7 +979,10 @@ export class Game {
     } else if (type === 'taxi') {
       this.state.taxi.addStand(x, y);
     }
-    this.state.grid.setCell(x, y, { buildingId: buildingIds[type] ?? 242 });
+    this.state.grid.setCell(x, y, {
+      buildingId: buildingIds[type] ?? 242,
+      reserved: ROTATION_RESERVED[this.currentRotation],
+    });
     this.audioManager.playSfx('build');
     this.renderDirty = true;
   }

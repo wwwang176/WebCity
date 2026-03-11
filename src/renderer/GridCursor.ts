@@ -37,6 +37,10 @@ export class GridCursor {
     const newGeo = new THREE.PlaneGeometry(w, h);
     newGeo.rotateX(-Math.PI / 2);
     this.mesh.geometry = newGeo;
+    // Update position to reflect new offset (don't wait for next mousemove)
+    const offsetX = (w - 1) / 2;
+    const offsetZ = (h - 1) / 2;
+    this.mesh.position.set(this.gridX + offsetX, 0.15, this.gridY + offsetZ);
   }
 
   update(raycaster: THREE.Raycaster, groundPlane: THREE.Plane): void {
