@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { CitizenManager, EDUCATION_PROGRESSION } from '../CitizenManager';
+import { CitizenManager, EDUCATION_PROGRESSION, MORTALITY } from '../CitizenManager';
 import { LifeStage, EducationLevel } from '../types';
 
 describe('CitizenManager', () => {
@@ -63,9 +63,15 @@ describe('CitizenManager', () => {
 
   it('should remove citizen on death', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100 });
+    mgr.createCitizen({ age: MORTALITY.MAX_AGE });
     mgr.ageTick();
     expect(mgr.getPopulation()).toBe(0);
+  });
+
+  it('MORTALITY constants should have valid age thresholds', () => {
+    expect(MORTALITY.ELDERLY_AGE).toBeLessThan(MORTALITY.MAX_AGE);
+    expect(MORTALITY.ELDERLY_DEATH_CHANCE).toBeGreaterThan(0);
+    expect(MORTALITY.ELDERLY_DEATH_CHANCE).toBeLessThanOrEqual(1);
   });
 
   it('should get citizens by home building position', () => {

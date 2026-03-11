@@ -17,6 +17,8 @@ const PRICE_MIN_RATIO = 0.2; // Price won't go below 20% of base
 const PRICE_MAX_RATIO = 3.0; // Price won't go above 300% of base
 const VOLATILITY = 0.02; // Random price fluctuation per tick
 const SUPPLY_DEMAND_FACTOR = 0.005; // How much trade affects price
+const MEAN_REVERSION_FACTOR = 0.01; // Pull price back toward base
+const SUPPLY_PRESSURE_DECAY = 0.9; // Decay factor per tick
 
 interface ResourceState {
   price: number;
@@ -71,7 +73,7 @@ export class GlobalMarket {
       const pressureEffect = -state.supplyPressure * SUPPLY_DEMAND_FACTOR;
 
       // Mean reversion: gently pull price back toward base
-      const reversion = (base - state.price) * 0.01;
+      const reversion = (base - state.price) * MEAN_REVERSION_FACTOR;
 
       state.price += randomChange + pressureEffect + reversion;
 
@@ -81,7 +83,7 @@ export class GlobalMarket {
       state.price = Math.max(minPrice, Math.min(maxPrice, state.price));
 
       // Decay supply pressure over time
-      state.supplyPressure *= 0.9;
+      state.supplyPressure *= SUPPLY_PRESSURE_DECAY;
     }
   }
 

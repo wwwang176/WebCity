@@ -1,5 +1,15 @@
 import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage } from './types';
 
+/** Mortality configuration constants */
+export const MORTALITY = {
+  /** Age at which death is certain */
+  MAX_AGE: 100,
+  /** Age at which random death chance begins */
+  ELDERLY_AGE: 90,
+  /** Probability of death per tick when age > ELDERLY_AGE */
+  ELDERLY_DEATH_CHANCE: 0.1,
+} as const;
+
 /** Data-driven education progression rules (OCP: add new levels without modifying loop logic) */
 export interface EducationRule {
   lifeStage: LifeStage;
@@ -63,9 +73,9 @@ export class CitizenManager {
     for (const c of this.citizens) {
       c.age++;
       c.lifeStage = getLifeStage(c.age);
-      if (c.age > 100) {
+      if (c.age > MORTALITY.MAX_AGE) {
         dead.push(c.id);
-      } else if (c.age > 90 && Math.random() < 0.1) {
+      } else if (c.age > MORTALITY.ELDERLY_AGE && Math.random() < MORTALITY.ELDERLY_DEATH_CHANCE) {
         dead.push(c.id);
       }
     }

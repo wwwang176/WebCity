@@ -13,8 +13,9 @@ export interface BuildingPosition {
   y: number;
 }
 
-const BASE_REPAIR_COST_PER_DAMAGE = 2000;
-const DESTRUCTION_THRESHOLD = 0.9;
+export const BASE_REPAIR_COST_PER_DAMAGE = 2000;
+export const DESTRUCTION_THRESHOLD = 0.9;
+export const ROAD_DAMAGE_THRESHOLD = 0.3;
 
 export function applyDamage(
   buildings: BuildingPosition[],
@@ -50,5 +51,5 @@ export function isRoadDamaged(
   disaster: Disaster,
 ): boolean {
   const damage = calculateDamage(disaster, x, y);
-  return damage > 0.3;
+  return damage > ROAD_DAMAGE_THRESHOLD;
 }

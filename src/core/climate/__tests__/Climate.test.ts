@@ -15,6 +15,8 @@ import {
   applyDamage,
   repairBuilding,
   isRoadDamaged,
+  DESTRUCTION_THRESHOLD,
+  ROAD_DAMAGE_THRESHOLD,
 } from '../Damage';
 
 describe('Climate - Season System', () => {
@@ -171,6 +173,13 @@ describe('Damage', () => {
 
     const b3Damage = damages.find((d) => d.buildingId === 3);
     expect(b3Damage!.damageLevel).toBe(0);
+  });
+
+  it('DESTRUCTION_THRESHOLD and ROAD_DAMAGE_THRESHOLD should be in valid range', () => {
+    expect(DESTRUCTION_THRESHOLD).toBeGreaterThan(0);
+    expect(DESTRUCTION_THRESHOLD).toBeLessThanOrEqual(1);
+    expect(ROAD_DAMAGE_THRESHOLD).toBeGreaterThan(0);
+    expect(ROAD_DAMAGE_THRESHOLD).toBeLessThan(DESTRUCTION_THRESHOLD);
   });
 
   it('should mark building as destroyed when damage >= 0.9', () => {
