@@ -222,10 +222,14 @@
 #rotation-indicator.visible { display: block; }
 
 /* ===== Overlay Indicator ===== */
-#overlay-indicator {
+#indicator-stack {
   position: absolute; top: 46px; right: 12px;
   pointer-events: auto;
-  display: none; align-items: center; gap: 8px;
+  display: none; flex-direction: column; align-items: flex-end; gap: 4px;
+}
+#indicator-stack.visible { display: flex; }
+.indicator-pill {
+  display: flex; align-items: center; gap: 8px;
   background: rgba(8, 12, 28, 0.88);
   backdrop-filter: blur(12px);
   border: 1px solid rgba(100,180,255,0.15);
@@ -233,15 +237,14 @@
   color: #b0c4de; font-size: 12px; font-weight: 500;
   box-shadow: 0 2px 12px rgba(0,0,0,0.3);
 }
-#overlay-indicator.visible { display: flex; }
-#overlay-indicator .oi-label { opacity: 0.6; }
-#overlay-indicator .oi-name { color: #e3f2fd; font-weight: 600; }
-#overlay-close {
+.indicator-pill .oi-label { opacity: 0.6; }
+.indicator-pill .oi-name { color: #e3f2fd; font-weight: 600; }
+.indicator-close {
   background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
   border-radius: 5px; color: #8899b0; cursor: pointer;
   font-size: 11px; padding: 2px 8px; transition: all 0.15s;
 }
-#overlay-close:hover { background: rgba(239,83,80,0.3); color: #ef5350; border-color: rgba(239,83,80,0.4); }
+.indicator-close:hover { background: rgba(239,83,80,0.3); color: #ef5350; border-color: rgba(239,83,80,0.4); }
 
 /* ===== MiniMap ===== */
 #minimap-container {
