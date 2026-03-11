@@ -14,7 +14,7 @@ import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
-import { findPrimaryCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
+import { findPrimaryCell, forEachMultiCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel, isWorkingAge } from '../citizen/types';
 import type { TimeOfDay } from './GameClock';
@@ -586,19 +586,13 @@ export class SimulationLoop {
           const cfg = getInfraConfigById(cell.buildingId);
           if (cfg && (cfg.width > 1 || cfg.height > 1)) {
             // Multi-cell: mark ALL cells as BURNED
-            const primary = findPrimaryCell(this.state.grid, f.x, f.y);
-            if (primary) {
-              const maxDim = Math.max(cfg.width, cfg.height);
-              for (let dy = 0; dy < maxDim; dy++) {
-                for (let dx = 0; dx < maxDim; dx++) {
-                  const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
-                  if (c && c.buildingId === cell.buildingId) {
-                    this.state.grid.setCell(primary.x + dx, primary.y + dy, { reserved: BURNED });
-                    this.onBuildingUpdated?.(primary.x + dx, primary.y + dy, c.zoneType, 1, true);
-                  }
-                }
+            forEachMultiCell(this.state.grid, f.x, f.y, (cx, cy) => {
+              const c = this.state.grid.getCell(cx, cy);
+              if (c) {
+                this.state.grid.setCell(cx, cy, { reserved: BURNED });
+                this.onBuildingUpdated?.(cx, cy, c.zoneType, 1, true);
               }
-            }
+            });
           } else {
             this.state.grid.setCell(f.x, f.y, { reserved: BURNED }); // BuildingStatus.BURNED
             const level = clampBuildingLevel(cell.serviceCoverage);

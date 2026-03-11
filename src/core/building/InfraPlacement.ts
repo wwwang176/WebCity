@@ -148,6 +148,38 @@ export function findPrimaryCell(
 }
 
 /**
+ * Iterate all cells of a multi-cell building, given any cell coordinate that
+ * belongs to it. Finds the primary cell automatically, then scans the footprint.
+ */
+export function forEachMultiCell(
+  grid: Grid,
+  x: number,
+  y: number,
+  callback: (cx: number, cy: number) => void,
+): void {
+  const cell = grid.getCell(x, y);
+  if (!cell || cell.buildingId === 0) return;
+
+  const cfg = getInfraConfigById(cell.buildingId);
+  if (!cfg) return;
+
+  const primary = findPrimaryCell(grid, x, y);
+  if (!primary) return;
+
+  const maxDim = Math.max(cfg.width, cfg.height);
+  for (let dy = 0; dy < maxDim; dy++) {
+    for (let dx = 0; dx < maxDim; dx++) {
+      const cx = primary.x + dx;
+      const cy = primary.y + dy;
+      const c = grid.getCell(cx, cy);
+      if (c && c.buildingId === cell.buildingId) {
+        callback(cx, cy);
+      }
+    }
+  }
+}
+
+/**
  * Compute the center cell of a multi-cell building given its primary (top-left) cell.
  * Used for service coverage distance calculations so coverage radiates from building center.
  */
@@ -196,33 +228,18 @@ export function removeInfraFromGrid(
   const cell = grid.getCell(x, y);
   if (!cell || cell.buildingId === 0) return null;
 
-  const cfg = getInfraConfigById(cell.buildingId);
-  if (!cfg) return null;
-
   const primary = findPrimaryCell(grid, x, y);
   if (!primary) return null;
 
-  // Determine the actual footprint size
-  // Since we don't store rotation, we figure it out from the grid pattern
-  const maxDim = Math.max(cfg.width, cfg.height);
-
-  // Scan the area to find all cells belonging to this building
-  for (let dy = 0; dy < maxDim; dy++) {
-    for (let dx = 0; dx < maxDim; dx++) {
-      const cx = primary.x + dx;
-      const cy = primary.y + dy;
-      const c = grid.getCell(cx, cy);
-      if (c && c.buildingId === cfg.buildingId) {
-        grid.setCell(cx, cy, {
-          buildingId: 0,
-          reserved: 0,
-          roadType: 0,
-          roadFlags: 0,
-          zoneType: 0,
-        });
-      }
-    }
-  }
+  forEachMultiCell(grid, x, y, (cx, cy) => {
+    grid.setCell(cx, cy, {
+      buildingId: 0,
+      reserved: 0,
+      roadType: 0,
+      roadFlags: 0,
+      zoneType: 0,
+    });
+  });
 
   return { primaryX: primary.x, primaryY: primary.y };
 }

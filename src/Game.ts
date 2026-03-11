@@ -28,7 +28,7 @@ import { getTotalTransportOperatingCost } from './core/transport/TransportRegist
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, BURNED, ROTATION_RESERVED } from './core/building/InfraPlacement';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, BURNED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
@@ -1505,19 +1505,9 @@ export class Game {
     if (!cell) return;
 
     if (sel.kind === 'infra') {
-      const primary = findPrimaryCell(this.state.grid, sel.x, sel.y);
-      if (!primary) return;
-      const cfg = getInfraConfigById(cell.buildingId);
-      const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
       const cells: { x: number; y: number }[] = [];
-      for (let dy = 0; dy < maxDim; dy++) {
-        for (let dx = 0; dx < maxDim; dx++) {
-          const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
-          if (c && c.buildingId === cell.buildingId) {
-            cells.push({ x: primary.x + dx, y: primary.y + dy });
-          }
-        }
-      }
+      forEachMultiCell(this.state.grid, sel.x, sel.y, (cx, cy) => cells.push({ x: cx, y: cy }));
+      if (cells.length === 0) return;
       this.highlightManager.highlightCells(
         cells, 0xffffff,
         this.getAllHighlightMeshes(),
@@ -1572,19 +1562,9 @@ export class Game {
         const gy = this.gridCursor.gridY;
         const cell = this.state.grid.getCell(gx, gy);
         if (cell && isInfrastructureBuilding(cell.buildingId)) {
-          const primary = findPrimaryCell(this.state.grid, gx, gy);
-          if (primary) {
-            const cfg = getInfraConfigById(cell.buildingId);
-            const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
-            const cells: { x: number; y: number }[] = [];
-            for (let dy = 0; dy < maxDim; dy++) {
-              for (let dx = 0; dx < maxDim; dx++) {
-                const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
-                if (c && c.buildingId === cell.buildingId) {
-                  cells.push({ x: primary.x + dx, y: primary.y + dy });
-                }
-              }
-            }
+          const cells: { x: number; y: number }[] = [];
+          forEachMultiCell(this.state.grid, gx, gy, (cx, cy) => cells.push({ x: cx, y: cy }));
+          if (cells.length > 0) {
             this.highlightManager.highlightCells(
               cells, 0xff0000,
               this.getAllHighlightMeshes(),

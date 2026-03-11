@@ -6,6 +6,7 @@ import {
   placeInfraOnGrid,
   removeInfraFromGrid,
   findPrimaryCell,
+  forEachMultiCell,
   getInfraCenter,
   getInfraCenterById,
   isPrimaryCellReserved,
@@ -354,6 +355,44 @@ describe('InfraPlacement', () => {
 
     it('should return same coords for unknown buildingId', () => {
       expect(getInfraCenterById(5, 5, 999)).toEqual({ cx: 5, cy: 5 });
+    });
+  });
+
+  describe('forEachMultiCell', () => {
+    it('should iterate all cells of a 2x2 building', () => {
+      const grid = makeGrid();
+      placeInfraOnGrid(grid, 5, 5, 'police', 0);
+      const cells: { x: number; y: number }[] = [];
+      forEachMultiCell(grid, 5, 5, (x, y) => cells.push({ x, y }));
+      expect(cells).toHaveLength(4);
+      expect(cells).toContainEqual({ x: 5, y: 5 });
+      expect(cells).toContainEqual({ x: 6, y: 5 });
+      expect(cells).toContainEqual({ x: 5, y: 6 });
+      expect(cells).toContainEqual({ x: 6, y: 6 });
+    });
+
+    it('should iterate all cells of a 3x3 building', () => {
+      const grid = makeGrid();
+      placeInfraOnGrid(grid, 3, 3, 'school_univ', 0);
+      const cells: { x: number; y: number }[] = [];
+      forEachMultiCell(grid, 4, 4, (x, y) => cells.push({ x, y }));
+      expect(cells).toHaveLength(9);
+    });
+
+    it('should not call callback for non-infra cell', () => {
+      const grid = makeGrid();
+      const cells: { x: number; y: number }[] = [];
+      forEachMultiCell(grid, 5, 5, (x, y) => cells.push({ x, y }));
+      expect(cells).toHaveLength(0);
+    });
+
+    it('should work when called from any cell of the building', () => {
+      const grid = makeGrid();
+      placeInfraOnGrid(grid, 5, 5, 'police', 0);
+      const cells: { x: number; y: number }[] = [];
+      // Call from secondary cell (6,6)
+      forEachMultiCell(grid, 6, 6, (x, y) => cells.push({ x, y }));
+      expect(cells).toHaveLength(4);
     });
   });
 
