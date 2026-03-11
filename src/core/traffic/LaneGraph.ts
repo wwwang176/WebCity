@@ -1,5 +1,6 @@
 import { RoadType, RoadDirection } from '../road/types';
 import { getLaneCount } from './TrafficSimulation';
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 // ── Types ──
 
@@ -51,10 +52,7 @@ function dirVec(d: Direction): { dx: number; dy: number } {
   }
 }
 
-function parseCellKey(key: string): { x: number; y: number } {
-  const [xs, ys] = key.split(',');
-  return { x: Number(xs), y: Number(ys) };
-}
+const parseCellKey = parsePosKeyUnsafe;
 
 function countFlags(flags: number): number {
   let n = 0;

@@ -5,6 +5,8 @@
  * 純邏輯模組，禁止 import Three.js。
  */
 
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+
 export interface WaterGrid {
   width: number;
   height: number;
@@ -84,19 +86,19 @@ export function findWaterPath(
       const path: Array<{ x: number; y: number }> = [];
       let ck: string | undefined = currentKey;
       while (ck) {
-        const [cx, cy] = ck.split(',').map(Number);
-        path.unshift({ x: cx!, y: cy! });
+        const pos = parsePosKeyUnsafe(ck);
+        path.unshift(pos);
         ck = cameFrom.get(ck);
       }
       return { path, distance: gScore.get(currentKey)! };
     }
 
     openSet.delete(currentKey);
-    const [cx, cy] = currentKey.split(',').map(Number);
+    const cur = parsePosKeyUnsafe(currentKey);
 
     for (const dir of DIRS) {
-      const nx = cx! + dir.dx;
-      const ny = cy! + dir.dy;
+      const nx = cur.x + dir.dx;
+      const ny = cur.y + dir.dy;
 
       if (nx < 0 || nx >= grid.width || ny < 0 || ny >= grid.height) continue;
       // Allow water tiles + destination tile (shore dock)

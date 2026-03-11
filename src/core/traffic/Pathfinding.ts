@@ -1,6 +1,7 @@
 import { RoadNetwork } from '../road/RoadNetwork';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 interface PathNode {
   id: string;
@@ -11,9 +12,9 @@ interface PathNode {
 }
 
 function heuristic(a: string, b: string): number {
-  const [ax, ay] = a.split(',').map(Number);
-  const [bx, by] = b.split(',').map(Number);
-  return Math.abs(ax! - bx!) + Math.abs(ay! - by!);
+  const ap = parsePosKeyUnsafe(a);
+  const bp = parsePosKeyUnsafe(b);
+  return Math.abs(ap.x - bp.x) + Math.abs(ap.y - bp.y);
 }
 
 export interface PathCostFactors {
@@ -332,9 +333,9 @@ export function refineLanePath(
 }
 
 function cellDirection(from: string, to: string): string | null {
-  const [fx, fy] = from.split(',').map(Number);
-  const [tx, ty] = to.split(',').map(Number);
-  const dx = tx! - fx!, dy = ty! - fy!;
+  const f = parsePosKeyUnsafe(from);
+  const t = parsePosKeyUnsafe(to);
+  const dx = t.x - f.x, dy = t.y - f.y;
   if (dx === 1 && dy === 0) return 'east';
   if (dx === -1 && dy === 0) return 'west';
   if (dx === 0 && dy === 1) return 'south';

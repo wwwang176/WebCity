@@ -1,5 +1,6 @@
 import type { Grid } from '../grid/Grid';
 import type { TrafficSimulation } from '../traffic/TrafficSimulation';
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 export enum ServiceVehicleType {
   FIRE_TRUCK = 'FIRE_TRUCK',
@@ -130,8 +131,8 @@ export class ServiceDispatch {
         const path: { x: number; y: number }[] = [];
         let k: string | undefined = endKey;
         while (k) {
-          const [px, py] = k.split(',').map(Number);
-          path.unshift({ x: px!, y: py! });
+          const pos = parsePosKeyUnsafe(k);
+          path.unshift(pos);
           k = parent.get(k);
         }
         return path;
