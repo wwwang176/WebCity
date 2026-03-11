@@ -20,6 +20,15 @@ interface DisasterDefaults {
   ticks: number;
 }
 
+/** Per-disaster-type damage modifiers */
+export const DISASTER_MODIFIERS = {
+  TORNADO_PATH_HALF_WIDTH: 1.5,
+  TSUNAMI_DAMAGE_FACTOR: 0.8,
+  FOREST_FIRE_DAMAGE_FACTOR: 0.7,
+  METEOR_FALLOFF_FACTOR: 0.6,
+  METEOR_DIRECT_HIT_RADIUS: 1,
+} as const;
+
 const DISASTER_DEFAULTS: Record<DisasterType, DisasterDefaults> = {
   [DisasterType.EARTHQUAKE]: { radius: 10, ticks: 5 },
   [DisasterType.TORNADO]: { radius: 15, ticks: 10 },
@@ -62,11 +71,8 @@ export function calculateDamage(
     }
 
     case DisasterType.TORNADO: {
-      // Tornado affects a path 3 cells wide from epicenter outward
-      // Using distance from epicenter line; path width = 3
-      const pathHalfWidth = 1.5;
+      const pathHalfWidth = DISASTER_MODIFIERS.TORNADO_PATH_HALF_WIDTH;
       if (distance >= disaster.radius) return 0;
-      // Simple model: damage based on proximity to center line and distance along path
       const perpendicularDist = Math.abs(dy) < pathHalfWidth ? Math.abs(dy) : pathHalfWidth + 1;
       if (perpendicularDist > pathHalfWidth) return 0;
       const widthFactor = 1 - perpendicularDist / pathHalfWidth;
@@ -77,24 +83,22 @@ export function calculateDamage(
     case DisasterType.TSUNAMI: {
       // Affects coastal/low elevation areas; damage decreases with distance
       if (distance >= disaster.radius) return 0;
-      return Math.max(0, disaster.intensity * (1 - distance / disaster.radius) * 0.8);
+      return Math.max(0, disaster.intensity * (1 - distance / disaster.radius) * DISASTER_MODIFIERS.TSUNAMI_DAMAGE_FACTOR);
     }
 
     case DisasterType.FOREST_FIRE: {
       // Spreads to adjacent forest cells; damage decreases with distance
       if (distance >= disaster.radius) return 0;
-      return Math.max(0, disaster.intensity * (1 - distance / disaster.radius) * 0.7);
+      return Math.max(0, disaster.intensity * (1 - distance / disaster.radius) * DISASTER_MODIFIERS.FOREST_FIRE_DAMAGE_FACTOR);
     }
 
     case DisasterType.METEOR: {
       // High damage at impact, moderate within radius
       if (distance >= disaster.radius) return 0;
-      if (distance <= 1) {
-        // Direct impact zone
+      if (distance <= DISASTER_MODIFIERS.METEOR_DIRECT_HIT_RADIUS) {
         return disaster.intensity;
       }
-      // Moderate falloff within radius
-      return Math.max(0, disaster.intensity * 0.6 * (1 - distance / disaster.radius));
+      return Math.max(0, disaster.intensity * DISASTER_MODIFIERS.METEOR_FALLOFF_FACTOR * (1 - distance / disaster.radius));
     }
 
     default:

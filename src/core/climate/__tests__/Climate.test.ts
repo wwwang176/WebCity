@@ -4,6 +4,7 @@ import {
   DisasterType,
   createDisaster,
   calculateDamage,
+  DISASTER_MODIFIERS,
 } from '../Disaster';
 import {
   addWarningTower,
@@ -68,6 +69,16 @@ describe('Climate - Season System', () => {
 });
 
 describe('Disaster', () => {
+  it('DISASTER_MODIFIERS should have valid damage factors between 0 and 1', () => {
+    expect(DISASTER_MODIFIERS.TSUNAMI_DAMAGE_FACTOR).toBeGreaterThan(0);
+    expect(DISASTER_MODIFIERS.TSUNAMI_DAMAGE_FACTOR).toBeLessThanOrEqual(1);
+    expect(DISASTER_MODIFIERS.FOREST_FIRE_DAMAGE_FACTOR).toBeGreaterThan(0);
+    expect(DISASTER_MODIFIERS.FOREST_FIRE_DAMAGE_FACTOR).toBeLessThanOrEqual(1);
+    expect(DISASTER_MODIFIERS.METEOR_FALLOFF_FACTOR).toBeGreaterThan(0);
+    expect(DISASTER_MODIFIERS.METEOR_FALLOFF_FACTOR).toBeLessThanOrEqual(1);
+    expect(DISASTER_MODIFIERS.TORNADO_PATH_HALF_WIDTH).toBeGreaterThan(0);
+  });
+
   it('should create a disaster with correct properties', () => {
     const d = createDisaster(DisasterType.EARTHQUAKE, 10, 10, 0.8);
     expect(d.type).toBe(DisasterType.EARTHQUAKE);
