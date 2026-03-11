@@ -112,28 +112,34 @@ export function getTransportStopType(buildingId: number): TransportStopKind | un
   return TRANSPORT_STOP_IDS[buildingId];
 }
 
+/** Data-driven mapping from transport stop kind to focus ViewMode. */
+export const TRANSPORT_FOCUS_MODES: Record<TransportStopKind, ViewMode> = {
+  metro: ViewMode.UNDERGROUND,
+  rail: ViewMode.RAIL_FOCUS,
+  ferry: ViewMode.FERRY_FOCUS,
+  bus: ViewMode.BUS_FOCUS,
+} as const;
+
 /** Get the focus ViewMode for a given transport stop type. */
 export function getTransportFocusMode(type: TransportStopKind): ViewMode {
-  switch (type) {
-    case 'metro': return ViewMode.UNDERGROUND;
-    case 'rail': return ViewMode.RAIL_FOCUS;
-    case 'ferry': return ViewMode.FERRY_FOCUS;
-    case 'bus': return ViewMode.BUS_FOCUS;
-  }
+  return TRANSPORT_FOCUS_MODES[type];
 }
+
+/**
+ * Data-driven vehicle visibility per ViewMode.
+ * null = all vehicles visible; Set = only listed types visible (empty = none).
+ */
+export const VISIBLE_VEHICLE_TYPES: Record<ViewMode, ReadonlySet<string> | null> = {
+  [ViewMode.NORMAL]: null,
+  [ViewMode.UNDERGROUND]: new Set<string>(),
+  [ViewMode.RAIL_FOCUS]: new Set(['rail_train', 'rail_carriage']),
+  [ViewMode.FERRY_FOCUS]: new Set(['ferry']),
+  [ViewMode.BUS_FOCUS]: new Set(['bus', 'transport_bus']),
+};
 
 /** Determine whether a vehicle type is visible in a given ViewMode. */
 export function getVehicleVisibility(mode: ViewMode, vehicleType: string): boolean {
-  switch (mode) {
-    case ViewMode.NORMAL:
-      return true;
-    case ViewMode.UNDERGROUND:
-      return false;
-    case ViewMode.RAIL_FOCUS:
-      return vehicleType === 'rail_train' || vehicleType === 'rail_carriage';
-    case ViewMode.FERRY_FOCUS:
-      return vehicleType === 'ferry';
-    case ViewMode.BUS_FOCUS:
-      return vehicleType === 'bus' || vehicleType === 'transport_bus';
-  }
+  const allowed = VISIBLE_VEHICLE_TYPES[mode];
+  if (allowed === null) return true;
+  return allowed.has(vehicleType);
 }

@@ -8,6 +8,8 @@ import {
   getTransportStopType,
   getTransportFocusMode,
   getVehicleVisibility,
+  TRANSPORT_FOCUS_MODES,
+  VISIBLE_VEHICLE_TYPES,
 } from '../ViewMode';
 import { OVERLAY_SCALE } from '../../Game';
 
@@ -218,6 +220,46 @@ describe('getVehicleVisibility', () => {
   it('BUS_FOCUS mode should keep roads at full opacity', () => {
     expect(VIEW_MODE_OPACITY[ViewMode.BUS_FOCUS].road).toBe(1.0);
     expect(VIEW_MODE_OPACITY[ViewMode.BUS_FOCUS].building).toBeLessThan(0.2);
+  });
+});
+
+describe('TRANSPORT_FOCUS_MODES lookup', () => {
+  it('should map all TransportStopKind to ViewMode', () => {
+    expect(TRANSPORT_FOCUS_MODES.metro).toBe(ViewMode.UNDERGROUND);
+    expect(TRANSPORT_FOCUS_MODES.rail).toBe(ViewMode.RAIL_FOCUS);
+    expect(TRANSPORT_FOCUS_MODES.ferry).toBe(ViewMode.FERRY_FOCUS);
+    expect(TRANSPORT_FOCUS_MODES.bus).toBe(ViewMode.BUS_FOCUS);
+  });
+});
+
+describe('VISIBLE_VEHICLE_TYPES lookup', () => {
+  it('NORMAL mode allows all vehicles (null)', () => {
+    expect(VISIBLE_VEHICLE_TYPES[ViewMode.NORMAL]).toBeNull();
+  });
+
+  it('UNDERGROUND mode allows no vehicles (empty set)', () => {
+    const set = VISIBLE_VEHICLE_TYPES[ViewMode.UNDERGROUND];
+    expect(set).toBeInstanceOf(Set);
+    expect(set!.size).toBe(0);
+  });
+
+  it('RAIL_FOCUS mode allows only rail vehicles', () => {
+    const set = VISIBLE_VEHICLE_TYPES[ViewMode.RAIL_FOCUS]!;
+    expect(set.has('rail_train')).toBe(true);
+    expect(set.has('rail_carriage')).toBe(true);
+    expect(set.has('car')).toBe(false);
+  });
+
+  it('BUS_FOCUS mode allows bus and transport_bus', () => {
+    const set = VISIBLE_VEHICLE_TYPES[ViewMode.BUS_FOCUS]!;
+    expect(set.has('bus')).toBe(true);
+    expect(set.has('transport_bus')).toBe(true);
+  });
+
+  it('should have an entry for every ViewMode', () => {
+    for (const mode of Object.values(ViewMode)) {
+      expect(mode in VISIBLE_VEHICLE_TYPES).toBe(true);
+    }
   });
 });
 
