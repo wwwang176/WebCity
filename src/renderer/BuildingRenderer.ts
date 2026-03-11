@@ -2301,8 +2301,52 @@ export class BuildingRenderer {
   }
 
   private buildTaxiStand(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly taxi stand — shelter + TAXI sign + yellow cab
-    this.buildCivicBuilding(scene, cx, cz, 'taxi_stand', scale);
+    const s = scale;
+
+    // Ground pad
+    const padGeo = new THREE.BoxGeometry(0.35 * s, 0.015 * s, 0.25 * s);
+    padGeo.translate(0, 0.015 * s / 2, 0);
+    const padMat = new THREE.MeshLambertMaterial({ color: 0xe0e0e0 });
+    this.addInfraMesh(scene, padGeo, padMat, cx, 0.05, cz, false);
+
+    // 2 shelter poles
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0xe0e0e0 });
+    const poleOffsets: [number, number][] = [[-0.08, -0.04], [0.08, -0.04]];
+    for (const [dx, dz] of poleOffsets) {
+      const poleGeo = new THREE.CylinderGeometry(0.008 * s, 0.008 * s, 0.16 * s, 6);
+      poleGeo.translate(0, 0.015 * s + 0.16 * s / 2, 0);
+      this.addInfraMesh(scene, poleGeo, poleMat, cx + dx * s, 0.05, cz + dz * s);
+    }
+
+    // Shelter roof (deep yellow)
+    const shelterRoofGeo = new THREE.BoxGeometry(0.22 * s, 0.015 * s, 0.12 * s);
+    shelterRoofGeo.translate(0, 0.015 * s + 0.16 * s + 0.015 * s / 2, 0);
+    const shelterRoofMat = new THREE.MeshLambertMaterial({ color: 0xfbc02d });
+    this.addInfraMesh(scene, shelterRoofGeo, shelterRoofMat, cx, 0.05, cz - 0.04 * s);
+
+    // TAXI sign pole
+    const signPoleGeo = new THREE.CylinderGeometry(0.008 * s, 0.008 * s, 0.22 * s, 4);
+    signPoleGeo.translate(0, 0.015 * s + 0.22 * s / 2, 0);
+    const signPoleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    this.addInfraMesh(scene, signPoleGeo, signPoleMat, cx - 0.14 * s, 0.05, cz - 0.08 * s);
+
+    // TAXI sign (glowing yellow)
+    const signGeo = new THREE.BoxGeometry(0.07 * s, 0.05 * s, 0.02 * s);
+    signGeo.translate(0, 0.015 * s + 0.22 * s + 0.05 * s / 2, 0);
+    const signMat = new THREE.MeshBasicMaterial({ color: 0xffeb3b });
+    this.addInfraMesh(scene, signGeo, signMat, cx - 0.14 * s, 0.05, cz - 0.08 * s, false);
+
+    // Taxi cab body
+    const cabGeo = new THREE.BoxGeometry(0.10 * s, 0.05 * s, 0.05 * s);
+    cabGeo.translate(0, 0.015 * s + 0.05 * s / 2, 0);
+    const cabMat = new THREE.MeshLambertMaterial({ color: 0xfdd835 });
+    this.addInfraMesh(scene, cabGeo, cabMat, cx + 0.08 * s, 0.05, cz + 0.06 * s);
+
+    // Taxi cab roof
+    const cabRoofGeo = new THREE.BoxGeometry(0.06 * s, 0.025 * s, 0.045 * s);
+    cabRoofGeo.translate(0, 0.015 * s + 0.05 * s + 0.025 * s / 2, 0);
+    const cabRoofMat = new THREE.MeshLambertMaterial({ color: 0xfbc02d });
+    this.addInfraMesh(scene, cabRoofGeo, cabRoofMat, cx + 0.08 * s, 0.05, cz + 0.06 * s);
   }
 
   // ═══════════════════════════════════════════════════════════════════
