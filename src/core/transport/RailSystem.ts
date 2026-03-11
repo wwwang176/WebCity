@@ -259,6 +259,12 @@ export class RailSystem extends BaseTransportSystem {
     }
   }
 
+  /** Get the parsed path points for a traveling train (for per-frame animation). */
+  getTrainTravelPath(trainId: number): ReadonlyArray<{ x: number; y: number }> | null {
+    const meta = this.trainTravelData.get(trainId);
+    return meta ? meta.points : null;
+  }
+
   getTrains(): readonly TransportVehicle[] {
     return this.getVehicles();
   }

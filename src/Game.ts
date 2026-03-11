@@ -42,6 +42,7 @@ import { RailNetwork } from './core/rail/RailNetwork';
 import { RailType, TrackDirection, RAIL_COST } from './core/rail/types';
 import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
+import { TrainAnimator } from './renderer/TrainAnimator';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -128,6 +129,8 @@ export class Game {
   private vehicleHeadings = new Map<number, number>();
   /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
   private ferryAnimator = new FerryAnimator();
+  /** 火車渲染端動畫（純 LERP，不靠 tick） */
+  private trainAnimator = new TrainAnimator();
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
@@ -1131,6 +1134,10 @@ export class Game {
     // 渡輪渲染端動畫（純 LERP，跟地鐵一樣不靠 tick）
     const ferrySpeed = this.paused ? 0 : this.state.clock.speed;
     this.ferryAnimator.update(dt, ferrySpeed, this.state.ferry, transportVehicles);
+
+    // 火車渲染端動畫（純 LERP，沿軌道路徑插值）
+    const trainSpeed = this.paused ? 0 : this.state.clock.speed;
+    this.trainAnimator.update(dt, trainSpeed, this.state.rail, transportVehicles);
 
     // 合併道路車輛與交通系統車輛
     const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
