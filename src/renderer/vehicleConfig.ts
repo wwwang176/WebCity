@@ -9,7 +9,7 @@ import {
   buildRailTrainGeometry,
   buildFerryGeometry,
   buildTaxiGeometry,
-} from './vehicleGeometry';
+} from './geometry';
 
 export interface VehicleTypeConfig {
   color: number;         // -1 means per-instance (e.g. car)
