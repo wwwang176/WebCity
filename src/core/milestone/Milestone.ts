@@ -22,7 +22,7 @@ export const MILESTONES: Milestone[] = [
     id: 'growing_city',
     name: 'Growing City',
     populationRequired: 2500,
-    unlocks: ['industrial_specialization', 'tram'],
+    unlocks: ['industrial_specialization'],
   },
   {
     id: 'big_city',

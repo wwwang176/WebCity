@@ -11,7 +11,6 @@ export {
   buildTransportBusGeometry,
   buildMetroTrainGeometry,
   buildMetroCarriageGeometry,
-  buildTramGeometry,
   buildRailTrainGeometry,
   buildFerryGeometry,
   buildTaxiGeometry,

@@ -5,7 +5,6 @@ import {
 } from '../types';
 import { BusSystem } from '../BusSystem';
 import { MetroSystem } from '../MetroSystem';
-import { TramSystem } from '../TramSystem';
 import { RailSystem, RailServiceType } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
 import { AirportSystem, getAirportFootprint } from '../AirportSystem';
@@ -183,63 +182,6 @@ describe('MetroSystem', () => {
     metro.createLine([st1, st2], 2);
     // 2 trains * 300 = 600
     expect(metro.getOperatingCost()).toBe(600);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// TramSystem
-// ---------------------------------------------------------------------------
-describe('TramSystem', () => {
-  it('should create stops on fixed tracks', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    tram.addStop(5, 0);
-    expect(s1.type).toBe(TransportType.TRAM);
-    expect(tram.getStops()).toHaveLength(2);
-  });
-
-  it('should create a route', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(5, 0);
-    const route = tram.createRoute([s1, s2]);
-    expect(route.type).toBe(TransportType.TRAM);
-    expect(route.stops).toHaveLength(2);
-  });
-
-  it('should occupy road space', () => {
-    const tram = new TramSystem();
-    expect(tram.occupiesRoadSpace).toBe(true);
-  });
-
-  it('should advance trams along routes via tick', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(5, 0);
-    tram.createRoute([s1, s2]);
-
-    tram.tick();
-    const v = tram.getVehicles()[0]!;
-    expect(v.atStop).toBe(true);
-    expect(v.position.x).toBe(0);
-    expect(v.position.y).toBe(0);
-  });
-
-  it('should have capacity of 80', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(5, 0);
-    tram.createRoute([s1, s2]);
-    expect(tram.getVehicles()[0]!.capacity).toBe(80);
-  });
-
-  it('should calculate operating cost', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(5, 0);
-    tram.createRoute([s1, s2], 2);
-    // 2 * 150 = 300
-    expect(tram.getOperatingCost()).toBe(300);
   });
 });
 
@@ -586,7 +528,6 @@ describe('ModeChoice', () => {
     const available: AvailableTransport[] = [
       { type: TransportType.BUS, estimatedTime: 12 },
       { type: TransportType.METRO, estimatedTime: 6 },
-      { type: TransportType.TRAM, estimatedTime: 10 },
     ];
     const mode = chooseMode(
       { x: 0, y: 0 },
@@ -650,22 +591,6 @@ describe('MetroSystem toJSON/fromJSON', () => {
     expect(restored.getTrains()).toHaveLength(2);
     const st3 = restored.addStation(20, 0);
     expect(st3.id).toBe(3);
-  });
-});
-
-describe('TramSystem toJSON/fromJSON', () => {
-  it('should round-trip stops, routes, vehicles', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(5, 0);
-    tram.createRoute([s1, s2], 1);
-
-    const json = tram.toJSON();
-    const restored = TramSystem.fromJSON(json);
-
-    expect(restored.getStops()).toHaveLength(2);
-    expect(restored.getRoutes()).toHaveLength(1);
-    expect(restored.getVehicles()).toHaveLength(1);
   });
 });
 
@@ -783,16 +708,6 @@ describe('MetroSystem removeStation', () => {
     metro.removeStation(st1.id);
     expect(metro.getLines()).toHaveLength(0);
     expect(metro.getTrains()).toHaveLength(0);
-  });
-});
-
-describe('TramSystem removeStop', () => {
-  it('should remove a stop by id', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    tram.addStop(5, 5);
-    tram.removeStop(s1.id);
-    expect(tram.getStops()).toHaveLength(1);
   });
 });
 
@@ -1155,44 +1070,6 @@ describe('AirportSystem tick', () => {
 });
 
 // ---------------------------------------------------------------------------
-// T3.3 Tram road capacity reduction
-// ---------------------------------------------------------------------------
-describe('TramSystem getAffectedRoadCells', () => {
-  it('should return adjacent cells for each tram stop', () => {
-    const tram = new TramSystem();
-    tram.addStop(5, 5);
-
-    const cells = tram.getAffectedRoadCells();
-    // Should include 4-directional neighbors of (5,5)
-    expect(cells.has('4,5')).toBe(true);
-    expect(cells.has('6,5')).toBe(true);
-    expect(cells.has('5,4')).toBe(true);
-    expect(cells.has('5,6')).toBe(true);
-    // Should NOT include the stop cell itself
-    expect(cells.has('5,5')).toBe(false);
-  });
-
-  it('should union cells from multiple stops', () => {
-    const tram = new TramSystem();
-    tram.addStop(0, 0);
-    tram.addStop(3, 0);
-
-    const cells = tram.getAffectedRoadCells();
-    // Neighbors of (0,0): (-1,0),(1,0),(0,-1),(0,1)
-    expect(cells.has('1,0')).toBe(true);
-    expect(cells.has('0,1')).toBe(true);
-    // Neighbors of (3,0): (2,0),(4,0),(3,-1),(3,1)
-    expect(cells.has('2,0')).toBe(true);
-    expect(cells.has('4,0')).toBe(true);
-  });
-
-  it('should return empty set when no stops', () => {
-    const tram = new TramSystem();
-    expect(tram.getAffectedRoadCells().size).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // T5.2 Airport noise pollution integration
 // ---------------------------------------------------------------------------
 describe('Airport noise pollution', () => {
@@ -1378,36 +1255,8 @@ describe('Vehicle count adjustment', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase T4.2c-e: Tram / Rail / Ferry passenger boarding acceptance tests
+// Phase T4.2c-e: Rail / Ferry passenger boarding acceptance tests
 // ---------------------------------------------------------------------------
-describe('Tram passenger boarding', () => {
-  it('should pick up passengers at stop (capacity 80)', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(2, 0);
-    tram.createRoute([s1, s2]);
-
-    s1.passengers = 50;
-    tram.tick(); // arrive s1, board
-    const v = tram.getVehicles()[0]!;
-    expect(v.passengers).toBe(50);
-    expect(s1.passengers).toBe(0);
-  });
-
-  it('should respect capacity limit of 80', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(2, 0);
-    tram.createRoute([s1, s2]);
-
-    s1.passengers = 100;
-    tram.tick();
-    const v = tram.getVehicles()[0]!;
-    expect(v.passengers).toBe(80);
-    expect(s1.passengers).toBe(20);
-  });
-});
-
 describe('Rail passenger boarding', () => {
   it('should pick up passengers at station (capacity 300)', () => {
     const rail = new RailSystem();
@@ -1465,39 +1314,8 @@ describe('Ferry passenger boarding', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Phase T3.1 acceptance: Tram and Ferry travel time
+// Phase T3.1 acceptance: Ferry travel time
 // ---------------------------------------------------------------------------
-describe('Tram travel time', () => {
-  it('should be affected by congestion', () => {
-    const tram = new TramSystem();
-    const s1 = tram.addStop(0, 0);
-    const s2 = tram.addStop(10, 0); // distance=10
-    tram.createRoute([s1, s2]);
-
-    // No congestion: travel ticks = ceil(10 / (2*1)) = 5
-    tram.congestionLevel = 0;
-    tram.tick(); // arrive s1
-    tram.tick(); // dwell
-    tram.tick(); // depart → traveling
-    const v = tram.getVehicles()[0]!;
-    expect(v.traveling).toBe(true);
-    expect(v.travelTicks).toBe(5);
-
-    // With congestion: reset and try again
-    const tram2 = new TramSystem();
-    const s2a = tram2.addStop(0, 0);
-    const s2b = tram2.addStop(10, 0);
-    tram2.createRoute([s2a, s2b]);
-    tram2.congestionLevel = 0.8;
-    tram2.tick(); // arrive s2a
-    tram2.tick(); // dwell
-    tram2.tick(); // depart → traveling
-    const v2 = tram2.getVehicles()[0]!;
-    expect(v2.traveling).toBe(true);
-    expect(v2.travelTicks).toBeGreaterThan(5); // slower
-  });
-});
-
 describe('Ferry travel time', () => {
   it('should travel at visual-synced speed (0.375 units/tick)', () => {
     const ferry = new FerrySystem();

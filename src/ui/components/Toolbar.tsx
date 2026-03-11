@@ -60,7 +60,6 @@ const TRANSPORT_GROUP: ToolGroup = {
   items: [
     { tool: 'bus_stop', label: 'Bus Stop', key: '', color: '#ff9800', icon: '\u{1F68F}' },
     { tool: 'metro_station', label: 'Metro', key: '', color: '#00bcd4', icon: '\u{1F687}' },
-    { tool: 'tram_stop', label: 'Tram', key: '', color: '#8bc34a', icon: '\u{1F68A}' },
     { tool: 'rail_track', label: 'Rail Track', key: '', color: '#6d4c2a', icon: '\u{1F6E4}' },
     { tool: 'train_station', label: 'Train Stn', key: '', color: '#795548', icon: '\u{1F689}' },
     { tool: 'ferry_dock', label: 'Ferry', key: '', color: '#0288d1', icon: '\u{26F4}' },

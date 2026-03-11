@@ -513,7 +513,6 @@ describe('Transport integration', () => {
     const state = createGameState(20, 20);
     expect(state.bus).toBeDefined();
     expect(state.metro).toBeDefined();
-    expect(state.tram).toBeDefined();
     expect(state.rail).toBeDefined();
     expect(state.ferry).toBeDefined();
     expect(state.airport).toBeDefined();

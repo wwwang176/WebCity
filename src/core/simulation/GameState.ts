@@ -26,7 +26,6 @@ import { CitySpecialization } from '../district/CitySpecialization';
 import { GlobalMarket } from '../economy/GlobalMarket';
 import { BusSystem } from '../transport/BusSystem';
 import { MetroSystem } from '../transport/MetroSystem';
-import { TramSystem } from '../transport/TramSystem';
 import { RailSystem } from '../transport/RailSystem';
 import { FerrySystem } from '../transport/FerrySystem';
 import { AirportSystem } from '../transport/AirportSystem';
@@ -62,7 +61,6 @@ export interface GameState {
   globalMarket: GlobalMarket;
   bus: BusSystem;
   metro: MetroSystem;
-  tram: TramSystem;
   rail: RailSystem;
   ferry: FerrySystem;
   airport: AirportSystem;
@@ -108,7 +106,6 @@ export function createGameState(width = 200, height = 200): GameState {
     globalMarket: new GlobalMarket(),
     bus: new BusSystem(),
     metro: new MetroSystem(),
-    tram: new TramSystem(),
     rail: new RailSystem(),
     ferry: new FerrySystem(),
     airport: new AirportSystem(),

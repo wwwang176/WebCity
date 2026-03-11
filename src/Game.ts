@@ -61,7 +61,7 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 };
 
 
-export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'tram_stop' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -576,9 +576,6 @@ export class Game {
       case 'metro_station':
         this.placeTransportStop(x1, y1, 'metro');
         break;
-      case 'tram_stop':
-        this.placeTransportStop(x1, y1, 'tram');
-        break;
       case 'train_station':
         this.placeTransportStop(x1, y1, 'rail');
         break;
@@ -736,10 +733,6 @@ export class Game {
       const sid = this.state.metro.getStations().find(s => s.x === px && s.y === py);
       if (sid) this.state.metro.removeStation(sid.id);
     }
-    if (buildingId === 240) {
-      const sid = this.state.tram.getStops().find(s => s.x === px && s.y === py);
-      if (sid) this.state.tram.removeStop(sid.id);
-    }
     if (buildingId === 239) {
       const sid = this.state.rail.getStations().find(s => s.x === px && s.y === py);
       if (sid) this.state.rail.removeStation(sid.id);
@@ -867,7 +860,7 @@ export class Game {
     this.renderDirty = true;
   }
 
-  private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'tram' | 'rail' | 'ferry' | 'airport' | 'taxi'): void {
+  private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport' | 'taxi'): void {
     const cell = this.state.grid.getCell(x, y);
     if (!cell) {
       this.notification = 'Out of bounds';
@@ -892,11 +885,11 @@ export class Game {
       return;
     }
     const costs: Record<string, number> = {
-      bus: 100, metro: 3000, tram: 500, rail: 2000, ferry: 1500, airport: 5000, taxi: 200,
+      bus: 100, metro: 3000, rail: 2000, ferry: 1500, airport: 5000, taxi: 200,
     };
     const airportCosts: Record<AirportSize, number> = { SMALL: 5000, MEDIUM: 15000, LARGE: 40000 };
     const buildingIds: Record<string, number> = {
-      bus: 242, metro: 241, tram: 240, rail: 239, ferry: 238, airport: 237, taxi: 236,
+      bus: 242, metro: 241, rail: 239, ferry: 238, airport: 237, taxi: 236,
     };
     const cost = type === 'airport' ? airportCosts[this.selectedAirportSize ?? 'SMALL'] : (costs[type] ?? 500);
     if (this.state.budget.funds < cost) {
@@ -910,8 +903,6 @@ export class Game {
       this.state.bus.addStop(x, y);
     } else if (type === 'metro') {
       this.state.metro.addStation(x, y);
-    } else if (type === 'tram') {
-      this.state.tram.addStop(x, y);
     } else if (type === 'rail') {
       const station = this.state.rail.buildStation(x, y, this.state.grid);
       if (!station) {
@@ -1144,10 +1135,9 @@ export class Game {
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
 
-    // 收集交通系統車輛（bus/tram/rail/ferry/taxi）
+    // 收集交通系統車輛（bus/rail/ferry/taxi）
     const transportVehicles = collectTransportVehicles({
       bus: this.state.bus,
-      tram: this.state.tram,
       rail: this.state.rail,
       ferry: this.state.ferry,
       taxi: this.state.taxi,
@@ -1176,7 +1166,6 @@ export class Game {
     const routeData = collectTransportRoutes({
       bus: this.state.bus,
       metro: this.state.metro,
-      tram: this.state.tram,
       rail: this.state.rail,
       ferry: this.state.ferry,
     });
@@ -1301,7 +1290,6 @@ export class Game {
       district: 0xab47bc,
       bus_stop: 0xff9800,
       metro_station: 0x00bcd4,
-      tram_stop: 0x8bc34a,
       train_station: 0x795548,
       ferry_dock: 0x0288d1,
       airport: 0x9c27b0,
@@ -1387,7 +1375,7 @@ export class Game {
       : 0;
 
     const STOP_NAMES: Record<TransportStopKind, string> = {
-      bus: 'Bus Stop', metro: 'Metro Station', tram: 'Tram Stop',
+      bus: 'Bus Stop', metro: 'Metro Station',
       rail: 'Train Station', ferry: 'Ferry Dock', taxi: 'Taxi Stand',
     };
 
@@ -1408,7 +1396,6 @@ export class Game {
     switch (type) {
       case 'bus': return this.state.bus;
       case 'metro': return this.state.metro;
-      case 'tram': return this.state.tram;
       case 'rail': return this.state.rail;
       case 'ferry': return this.state.ferry;
       default: return null;
@@ -1875,7 +1862,6 @@ export class Game {
     const waterCost = this.state.water.getPlants().length * 3;
     const transportCost = this.state.bus.getOperatingCost()
       + this.state.metro.getOperatingCost()
-      + this.state.tram.getOperatingCost()
       + this.state.rail.getOperatingCost()
       + this.state.ferry.getOperatingCost()
       + this.state.airport.getOperatingCost()

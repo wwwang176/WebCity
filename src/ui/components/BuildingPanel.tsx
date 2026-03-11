@@ -32,7 +32,6 @@ const INFRA_ICONS: Record<string, string> = {
 const TRANSPORT_ICONS: Record<string, string> = {
   bus: '\u{1F68C}',
   metro: '\u{1F687}',
-  tram: '\u{1F68A}',
   rail: '\u{1F686}',
   ferry: '\u26F4',
   taxi: '\u{1F695}',

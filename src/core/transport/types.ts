@@ -1,7 +1,6 @@
 export enum TransportType {
   BUS = 'BUS',
   METRO = 'METRO',
-  TRAM = 'TRAM',
   RAIL = 'RAIL',
   FERRY = 'FERRY',
   AIRPORT = 'AIRPORT',
@@ -13,7 +12,6 @@ export enum TransportMode {
   DRIVE = 'DRIVE',
   BUS = 'BUS',
   METRO = 'METRO',
-  TRAM = 'TRAM',
   RAIL = 'RAIL',
   FERRY = 'FERRY',
   TAXI = 'TAXI',

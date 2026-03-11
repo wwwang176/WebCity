@@ -5,7 +5,6 @@ export { buildBusGeometry } from './bus';
 export { buildTruckGeometry } from './truck';
 export { buildFiretruckGeometry } from './firetruck';
 export { buildMetroTrainGeometry, buildMetroCarriageGeometry } from './metro';
-export { buildTramGeometry } from './tram';
 export { buildRailTrainGeometry, buildRailCarriageGeometry } from './railTrain';
 export { buildFerryGeometry } from './ferry';
 
