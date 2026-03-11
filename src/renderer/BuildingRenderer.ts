@@ -1779,8 +1779,99 @@ export class BuildingRenderer {
   }
 
   private buildPowerPlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Redesign — cooling towers + turbine hall + chimney + coal yard + transformer
-    this.buildCivicBuilding(scene, cx, cz, 'power' as any, scale);
+    const s = scale;
+
+    // Main turbine hall
+    const hallGeo = new THREE.BoxGeometry(0.50 * s, 0.40 * s, 0.55 * s);
+    hallGeo.translate(0, 0.20, 0);
+    const hallMat = new THREE.MeshLambertMaterial({ color: 0x5a5550 });
+    this.addInfraMesh(scene, hallGeo, hallMat, cx + 0.08 * s, 0.05, cz + 0.05 * s);
+
+    // Hall roof
+    const hallRoofGeo = new THREE.BoxGeometry(0.55 * s, 0.03 * s, 0.60 * s);
+    hallRoofGeo.translate(0, 0.415, 0);
+    const hallRoofMat = new THREE.MeshLambertMaterial({ color: 0x484440 });
+    this.addInfraMesh(scene, hallRoofGeo, hallRoofMat, cx + 0.08 * s, 0.05, cz + 0.05 * s);
+
+    // Large cooling tower
+    const lgCoolGeo = new THREE.CylinderGeometry(0.10 * s, 0.14 * s, 0.55 * s, 10);
+    lgCoolGeo.translate(0, 0.275, 0);
+    const lgCoolMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
+    this.addInfraMesh(scene, lgCoolGeo, lgCoolMat, cx - 0.25 * s, 0.05, cz - 0.15 * s);
+
+    // Cooling tower top ring
+    const lgRingGeo = new THREE.CylinderGeometry(0.11 * s, 0.11 * s, 0.03 * s, 10);
+    lgRingGeo.translate(0, 0.555, 0);
+    const lgRingMat = new THREE.MeshLambertMaterial({ color: 0xbdbdbd });
+    this.addInfraMesh(scene, lgRingGeo, lgRingMat, cx - 0.25 * s, 0.05, cz - 0.15 * s);
+
+    // Small cooling tower
+    const smCoolGeo = new THREE.CylinderGeometry(0.07 * s, 0.10 * s, 0.42 * s, 10);
+    smCoolGeo.translate(0, 0.21, 0);
+    const smCoolMat = new THREE.MeshLambertMaterial({ color: 0x8a8a8a });
+    this.addInfraMesh(scene, smCoolGeo, smCoolMat, cx - 0.10 * s, 0.05, cz - 0.28 * s);
+
+    // Smokestack
+    const stackGeo = new THREE.CylinderGeometry(0.035 * s, 0.04 * s, 0.65 * s, 8);
+    stackGeo.translate(0, 0.325, 0);
+    const stackMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
+    this.addInfraMesh(scene, stackGeo, stackMat, cx + 0.28 * s, 0.05, cz - 0.20 * s);
+
+    // Chimney red band 1 (near top)
+    const band1Geo = new THREE.CylinderGeometry(0.042 * s, 0.042 * s, 0.03 * s, 8);
+    band1Geo.translate(0, 0.62, 0);
+    const bandMat = new THREE.MeshLambertMaterial({ color: 0xcc3333 });
+    this.addInfraMesh(scene, band1Geo, bandMat, cx + 0.28 * s, 0.05, cz - 0.20 * s);
+
+    // Chimney red band 2 (mid area)
+    const band2Geo = new THREE.CylinderGeometry(0.042 * s, 0.042 * s, 0.03 * s, 8);
+    band2Geo.translate(0, 0.42, 0);
+    this.addInfraMesh(scene, band2Geo, bandMat, cx + 0.28 * s, 0.05, cz - 0.20 * s);
+
+    // Coal pile 1
+    const coal1Geo = new THREE.ConeGeometry(0.10 * s, 0.08 * s, 6);
+    coal1Geo.translate(0, 0.04, 0);
+    const coalMat = new THREE.MeshLambertMaterial({ color: 0x2a2520 });
+    this.addInfraMesh(scene, coal1Geo, coalMat, cx - 0.22 * s, 0.05, cz + 0.25 * s);
+
+    // Coal pile 2
+    const coal2Geo = new THREE.ConeGeometry(0.07 * s, 0.05 * s, 5);
+    coal2Geo.translate(0, 0.025, 0);
+    this.addInfraMesh(scene, coal2Geo, coalMat, cx - 0.08 * s, 0.05, cz + 0.28 * s);
+
+    // Transformer box 1
+    const tx1Geo = new THREE.BoxGeometry(0.06 * s, 0.10 * s, 0.06 * s);
+    tx1Geo.translate(0, 0.05, 0);
+    const txMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
+    this.addInfraMesh(scene, tx1Geo, txMat, cx + 0.35 * s, 0.05, cz + 0.15 * s);
+
+    // Transformer box 2
+    const tx2Geo = new THREE.BoxGeometry(0.06 * s, 0.10 * s, 0.06 * s);
+    tx2Geo.translate(0, 0.05, 0);
+    this.addInfraMesh(scene, tx2Geo, txMat, cx + 0.35 * s, 0.05, cz + 0.25 * s);
+
+    // Power pylon
+    const pylonGeo = new THREE.CylinderGeometry(0.008 * s, 0.008 * s, 0.30 * s, 4);
+    pylonGeo.translate(0, 0.15, 0);
+    const pylonMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    this.addInfraMesh(scene, pylonGeo, pylonMat, cx + 0.38 * s, 0.05, cz - 0.10 * s);
+
+    // Pylon crossarm
+    const crossGeo = new THREE.BoxGeometry(0.12 * s, 0.01 * s, 0.01 * s);
+    crossGeo.translate(0, 0.28, 0);
+    this.addInfraMesh(scene, crossGeo, pylonMat, cx + 0.38 * s, 0.05, cz - 0.10 * s);
+
+    // Warning sign
+    const signGeo = new THREE.BoxGeometry(0.08 * s, 0.06 * s, 0.01 * s);
+    signGeo.translate(0, 0.10, 0);
+    const signMat = new THREE.MeshLambertMaterial({ color: 0xf0c030 });
+    this.addInfraMesh(scene, signGeo, signMat, cx + 0.35 * s, 0.05, cz - 0.28 * s);
+
+    // Status light
+    const lightGeo = new THREE.BoxGeometry(0.06 * s, 0.04 * s, 0.06 * s);
+    lightGeo.translate(0, 0.44, 0);
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xffeb3b });
+    this.addInfraMesh(scene, lightGeo, lightMat, cx + 0.08 * s, 0.05, cz + 0.05 * s, false);
   }
 
   private buildWaterPump(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
