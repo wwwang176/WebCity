@@ -22,6 +22,7 @@ import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
+import { parsePosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 export class SimulationLoop {
   private state: GameState;
@@ -822,14 +823,6 @@ export class SimulationLoop {
     // Night: no spawning
   }
 
-  /**
-   * Parse "x,y" position string into coordinates.
-   */
-  private parsePos(pos: string): { x: number; y: number } | null {
-    const parts = pos.split(',');
-    if (parts.length !== 2) return null;
-    return { x: Number(parts[0]), y: Number(parts[1]) };
-  }
 
   /**
    * Spawn commute vehicles for citizens based on direction.
@@ -864,8 +857,8 @@ export class SimulationLoop {
       const fromStr = direction === 'home_to_work' ? citizen.homeId! : citizen.workplaceId!;
       const toStr = direction === 'home_to_work' ? citizen.workplaceId! : citizen.homeId!;
 
-      const fromPos = this.parsePos(fromStr);
-      const toPos = this.parsePos(toStr);
+      const fromPos = parsePosKey(fromStr);
+      const toPos = parsePosKey(toStr);
       if (!fromPos || !toPos) {
         commuterSet.add(citizen.id);
         continue;
@@ -1086,18 +1079,13 @@ export class SimulationLoop {
     let totalResWeight = 0;
     let totalDestWeight = 0;
 
-    const parsePos = (key: string) => {
-      const [x, y] = key.split(',').map(Number);
-      return { x: x!, y: y! };
-    };
-
     for (const [posKey, weight] of resMap) {
-      const { x, y } = parsePos(posKey);
+      const { x, y } = parsePosKeyUnsafe(posKey);
       residential.push({ x, y, weight });
       totalResWeight += weight;
     }
     for (const [posKey, weight] of destMap) {
-      const { x, y } = parsePos(posKey);
+      const { x, y } = parsePosKeyUnsafe(posKey);
       destinations.push({ x, y, weight });
       totalDestWeight += weight;
     }
@@ -1151,8 +1139,8 @@ export class SimulationLoop {
     // Scale up sampled flow to match actual commuter volume, then normalize by lane count
     const scaleFactor = totalResWeight / sampleCount;
     for (const [cellKey, rawFlow] of flowMap) {
-      const [x, y] = cellKey.split(',').map(Number);
-      const cell = grid.getCell(x!, y!);
+      const { x, y } = parsePosKeyUnsafe(cellKey);
+      const cell = grid.getCell(x, y);
       const lanes = cell ? getLaneCount(cell.roadType) : 1;
       flowMap.set(cellKey, (rawFlow * scaleFactor) / lanes);
     }
