@@ -27,13 +27,11 @@ export interface RailLinePath {
   totalLength: number;
 }
 
-function dist(a: RailPathPoint, b: RailPathPoint): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
+import { parsePosKeyUnsafe, euclideanDistance } from '../grid/GridHelpers';
 
-import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+function dist(a: RailPathPoint, b: RailPathPoint): number {
+  return euclideanDistance(a.x, a.y, b.x, b.y);
+}
 
 const parseNodeId = parsePosKeyUnsafe as (id: string) => RailPathPoint;
 

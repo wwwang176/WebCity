@@ -1,4 +1,4 @@
-import { parsePosKeyUnsafe } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, euclideanDistance } from '../grid/GridHelpers';
 
 const parseCoords = parsePosKeyUnsafe;
 
@@ -141,9 +141,7 @@ export class RailNetwork {
 }
 
 function heuristic(a: { x: number; y: number }, b: { x: number; y: number }): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
+  return euclideanDistance(a.x, a.y, b.x, b.y);
 }
 
 function reconstructPath(cameFrom: Map<string, string>, current: string): string[] {

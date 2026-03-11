@@ -1,3 +1,5 @@
+import { euclideanDistance } from '../grid/GridHelpers';
+
 export enum DisasterType {
   EARTHQUAKE = 'EARTHQUAKE',
   TORNADO = 'TORNADO',
@@ -100,9 +102,7 @@ export const DISASTER_CALCULATORS: Record<DisasterType, DamageCalculator> = {
 };
 
 function getDistance(disaster: Disaster, buildingX: number, buildingY: number): number {
-  const dx = buildingX - disaster.epicenterX;
-  const dy = buildingY - disaster.epicenterY;
-  return Math.sqrt(dx * dx + dy * dy);
+  return euclideanDistance(disaster.epicenterX, disaster.epicenterY, buildingX, buildingY);
 }
 
 export function calculateDamage(

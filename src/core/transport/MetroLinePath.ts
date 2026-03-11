@@ -5,6 +5,7 @@
  */
 
 import type { Point2D } from './MetroTunnelPath';
+import { euclideanDistance } from '../grid/GridHelpers';
 
 export interface LinePathSegment {
   controlPoints: Point2D[];
@@ -19,9 +20,7 @@ export interface LinePath {
 }
 
 function euclidean(a: Point2D, b: Point2D): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  return Math.sqrt(dx * dx + dy * dy);
+  return euclideanDistance(a.x, a.y, b.x, b.y);
 }
 
 /**
