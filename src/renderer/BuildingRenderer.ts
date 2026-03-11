@@ -1875,8 +1875,95 @@ export class BuildingRenderer {
   }
 
   private buildWaterPump(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Redesign — elevated water tower + pump house + filtration pool + pipes
-    this.buildCivicBuilding(scene, cx, cz, 'water' as any, scale);
+    const s = scale;
+
+    // Concrete foundation
+    const foundGeo = new THREE.BoxGeometry(0.82 * s, 0.04 * s, 0.82 * s);
+    foundGeo.translate(0, 0.02, 0);
+    const foundMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
+    this.addInfraMesh(scene, foundGeo, foundMat, cx, 0.05, cz);
+
+    // Water tower tank (elevated)
+    const tankGeo = new THREE.CylinderGeometry(0.15 * s, 0.15 * s, 0.18 * s, 12);
+    tankGeo.translate(0, 0.09, 0);
+    const tankMat = new THREE.MeshLambertMaterial({ color: 0x29b6f6 });
+    this.addInfraMesh(scene, tankGeo, tankMat, cx - 0.20 * s, 0.37, cz - 0.05 * s);
+
+    // Tower cone roof
+    const roofGeo = new THREE.ConeGeometry(0.16 * s, 0.06 * s, 12);
+    roofGeo.translate(0, 0.21, 0);
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0x0288d1 });
+    this.addInfraMesh(scene, roofGeo, roofMat, cx - 0.20 * s, 0.37, cz - 0.05 * s);
+
+    // 4 tower legs
+    const legMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
+    const legOffsets = [
+      [-0.08, -0.08], [0.08, -0.08], [-0.08, 0.08], [0.08, 0.08],
+    ];
+    for (const [dx, dz] of legOffsets as [number, number][]) {
+      const legGeo = new THREE.CylinderGeometry(0.012 * s, 0.012 * s, 0.30 * s, 6);
+      legGeo.translate(0, 0.15, 0);
+      this.addInfraMesh(scene, legGeo, legMat, cx + (-0.20 + dx) * s, 0.07, cz + (-0.05 + dz) * s);
+    }
+
+    // 2 horizontal braces connecting legs at mid-height
+    const braceGeo1 = new THREE.BoxGeometry(0.20 * s, 0.01 * s, 0.01 * s);
+    braceGeo1.translate(0, 0.12, 0);
+    this.addInfraMesh(scene, braceGeo1, legMat, cx - 0.20 * s, 0.07, cz - 0.05 * s);
+
+    const braceGeo2 = new THREE.BoxGeometry(0.01 * s, 0.01 * s, 0.20 * s);
+    braceGeo2.translate(0, 0.12, 0);
+    this.addInfraMesh(scene, braceGeo2, legMat, cx - 0.20 * s, 0.07, cz - 0.05 * s);
+
+    // Pump house
+    const pumpGeo = new THREE.BoxGeometry(0.35 * s, 0.28 * s, 0.35 * s);
+    pumpGeo.translate(0, 0.14, 0);
+    const pumpMat = new THREE.MeshLambertMaterial({ color: 0x4a6a7a });
+    this.addInfraMesh(scene, pumpGeo, pumpMat, cx + 0.12 * s, 0.07, cz + 0.05 * s);
+
+    // Pump house roof
+    const pumpRoofGeo = new THREE.BoxGeometry(0.38 * s, 0.03 * s, 0.38 * s);
+    pumpRoofGeo.translate(0, 0.29, 0);
+    const pumpRoofMat = new THREE.MeshLambertMaterial({ color: 0x3a5a6a });
+    this.addInfraMesh(scene, pumpRoofGeo, pumpRoofMat, cx + 0.12 * s, 0.07, cz + 0.05 * s);
+
+    // Filtration pool
+    const poolGeo = new THREE.BoxGeometry(0.30 * s, 0.06 * s, 0.25 * s);
+    poolGeo.translate(0, 0.03, 0);
+    const poolMat = new THREE.MeshLambertMaterial({ color: 0x546e7a });
+    this.addInfraMesh(scene, poolGeo, poolMat, cx + 0.12 * s, 0.04, cz - 0.25 * s);
+
+    // Pool water surface
+    const poolWaterGeo = new THREE.BoxGeometry(0.28 * s, 0.01 * s, 0.23 * s);
+    poolWaterGeo.translate(0, 0.065, 0);
+    const poolWaterMat = new THREE.MeshLambertMaterial({ color: 0x4fc3f7 });
+    this.addInfraMesh(scene, poolWaterGeo, poolWaterMat, cx + 0.12 * s, 0.04, cz - 0.25 * s);
+
+    // Main pipe (tower to pump house) — horizontal along X
+    const mainPipeGeo = new THREE.CylinderGeometry(0.025 * s, 0.025 * s, 0.22 * s, 6);
+    mainPipeGeo.rotateZ(Math.PI / 2);
+    mainPipeGeo.translate(0, 0.20, 0);
+    const mainPipeMat = new THREE.MeshLambertMaterial({ color: 0x607888 });
+    this.addInfraMesh(scene, mainPipeGeo, mainPipeMat, cx - 0.04 * s, 0.07, cz + 0.00 * s);
+
+    // Inlet pipe — horizontal along Z
+    const inletGeo = new THREE.CylinderGeometry(0.02 * s, 0.02 * s, 0.15 * s, 6);
+    inletGeo.rotateX(Math.PI / 2);
+    inletGeo.translate(0, 0.08, 0);
+    const inletMat = new THREE.MeshLambertMaterial({ color: 0x4a8898 });
+    this.addInfraMesh(scene, inletGeo, inletMat, cx + 0.12 * s, 0.04, cz - 0.10 * s);
+
+    // Control gauge box
+    const gaugeGeo = new THREE.BoxGeometry(0.06 * s, 0.08 * s, 0.015 * s);
+    gaugeGeo.translate(0, 0.18, 0);
+    const gaugeMat = new THREE.MeshLambertMaterial({ color: 0xd0d8e0 });
+    this.addInfraMesh(scene, gaugeGeo, gaugeMat, cx + 0.30 * s, 0.07, cz + 0.05 * s);
+
+    // Status light
+    const lightGeo = new THREE.BoxGeometry(0.05 * s, 0.04 * s, 0.05 * s);
+    lightGeo.translate(0, 0.31, 0);
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0x03a9f4 });
+    this.addInfraMesh(scene, lightGeo, lightMat, cx + 0.12 * s, 0.07, cz + 0.05 * s, false);
   }
 
   // ═══════════════════════════════════════════════════════════════════
