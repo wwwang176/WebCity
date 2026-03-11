@@ -1,6 +1,7 @@
 import { For } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
+import { ViewMode } from '../../core/ViewMode';
 
 const LAYER_SECTIONS = [
   {
@@ -33,9 +34,22 @@ const LAYER_SECTIONS = [
   },
 ];
 
+const FOCUS_MODES: { mode: ViewMode; label: string; key?: string }[] = [
+  { mode: ViewMode.UNDERGROUND, label: '\u{1F687} Metro Underground', key: 'U' },
+  { mode: ViewMode.RAIL_FOCUS, label: '\u{1F686} Rail' },
+  { mode: ViewMode.FERRY_FOCUS, label: '\u{26F4} Ferry' },
+  { mode: ViewMode.BUS_FOCUS, label: '\u{1F68C} Bus' },
+  { mode: ViewMode.TRAM_FOCUS, label: '\u{1F68A} Tram' },
+  { mode: ViewMode.TAXI_FOCUS, label: '\u{1F695} Taxi' },
+];
+
 export function LayersModal(props: { open: boolean; onClose: () => void }) {
   const toggleLayer = (key: string) => {
     getGame().toggleOverlay(key as any);
+  };
+
+  const toggleFocus = (mode: ViewMode) => {
+    getGame().toggleViewMode(mode);
   };
 
   return (
@@ -60,6 +74,22 @@ export function LayersModal(props: { open: boolean; onClose: () => void }) {
           </>
         )}
       </For>
+
+      <div class="section-title">Transport Focus</div>
+      <div class="overlay-btns">
+        <For each={FOCUS_MODES}>
+          {(fm) => (
+            <button
+              class="ov-btn"
+              classList={{ active: gameSignals.viewMode() === fm.mode }}
+              onClick={() => toggleFocus(fm.mode)}
+            >
+              {fm.label}
+              {fm.key && <span style="margin-left:4px;font-size:10px;color:#888">({fm.key})</span>}
+            </button>
+          )}
+        </For>
+      </div>
     </Modal>
   );
 }

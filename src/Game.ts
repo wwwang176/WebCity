@@ -1352,8 +1352,8 @@ export class Game {
     this.onUIUpdate?.();
   }
 
-  toggleViewMode(): void {
-    const next = this.viewMode === ViewMode.NORMAL ? ViewMode.UNDERGROUND : ViewMode.NORMAL;
+  toggleViewMode(mode: ViewMode = ViewMode.UNDERGROUND): void {
+    const next = this.viewMode === mode ? ViewMode.NORMAL : mode;
     this.applyViewMode(next);
   }
 
