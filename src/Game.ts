@@ -35,6 +35,14 @@ import { collectTransportRoutes } from './core/transport/collectTransportRoutes'
 
 import { ViewMode, VIEW_MODE_OPACITY } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
+import { buildFerryPathInfo, interpolateFerryPath, type FerryPathInfo } from './core/transport/FerryLinePath';
+
+/** 渡輪視覺移動速度（世界單位/秒），與 tick 無關 */
+const FERRY_VISUAL_SPEED = 1.5;
+/** 渡輪轉向速率（弧度/秒），越大轉越快 */
+const FERRY_TURN_RATE = 3.0;
+/** 渡輪 ID 偏移量（對應 collectTransportVehicles） */
+const FERRY_ID_OFFSET = 500_000;
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -96,6 +104,7 @@ export class Game {
   private mouse = new THREE.Vector2();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private tickAccumulator = 0;
+  private elapsedTime = 0;
   private renderDirty = true;
 
   // UI state
@@ -113,6 +122,8 @@ export class Game {
   private notificationTimer = 0;
   private vehicleTypes = new Map<number, VehicleData['type']>();
   private vehicleHeadings = new Map<number, number>();
+  /** 渡輪渲染端動畫狀態（純 LERP，不靠 tick） */
+  private ferryAnims = new Map<number, { pathInfo: FerryPathInfo; distance: number; heading: number }>();
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
@@ -804,12 +815,13 @@ export class Game {
     } else if (type === 'rail') {
       this.state.rail.buildStation(x, y);
     } else if (type === 'ferry') {
-      // Validate water adjacency for ferry dock
+      // Validate shore placement: must be land AND adjacent to water
       const waterChecker = {
         isWater: (fx: number, fy: number) => {
           const fc = this.state.grid.getCell(fx, fy);
-          if (fc && fc.terrainType === TerrainType.WATER) return true;
-          // Also check adjacent cells for water
+          // Must NOT be water (must be land/shore)
+          if (fc && fc.terrainType === TerrainType.WATER) return false;
+          // Must have at least one adjacent water cell
           for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
             const nc = this.state.grid.getCell(fx + dx!, fy + dy!);
             if (nc && nc.terrainType === TerrainType.WATER) return true;
@@ -820,7 +832,7 @@ export class Game {
       const dock = this.state.ferry.addDock(x, y, waterChecker);
       if (!dock) {
         this.state.budget.funds += cost;
-        this.notification = 'Ferry dock must be placed near water';
+        this.notification = 'Ferry dock must be placed on shore (land next to water)';
         this.notificationTimer = 4;
         return;
       }
@@ -895,6 +907,8 @@ export class Game {
   }
 
   private update(dt: number): void {
+    this.elapsedTime += dt;
+
     // Camera movement
     const panSpeed = 15 * dt;
     if (this.keys.has('w') || this.keys.has('arrowup')) this.sceneManager.panCamera(0, -panSpeed);
@@ -1013,7 +1027,7 @@ export class Game {
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
 
-    // 收集交通系統車輛（bus/metro/tram/rail/ferry/taxi）
+    // 收集交通系統車輛（bus/tram/rail/ferry/taxi）
     const transportVehicles = collectTransportVehicles({
       bus: this.state.bus,
       tram: this.state.tram,
@@ -1021,10 +1035,67 @@ export class Game {
       ferry: this.state.ferry,
       taxi: this.state.taxi,
     });
+
+    // 渡輪渲染端動畫（純 LERP，跟地鐵一樣不靠 tick）
+    const ferrySpeed = this.paused ? 0 : this.state.clock.speed;
+    // 同步動畫狀態：新出發時建立動畫，動畫播完才清除
+    for (const v of this.state.ferry.getVessels()) {
+      if (v.traveling) {
+        const waterPath = this.state.ferry.getVesselPath(v.id);
+        const existing = this.ferryAnims.get(v.id);
+        // 新出發或新航段（path 參照不同）→ 建立新動畫
+        if (waterPath && waterPath.length > 1 &&
+            (!existing || existing.pathInfo.path !== waterPath)) {
+          const info = buildFerryPathInfo(waterPath);
+          const initPos = interpolateFerryPath(info, 0);
+          this.ferryAnims.set(v.id, {
+            pathInfo: info,
+            distance: 0,
+            heading: existing?.heading ?? initPos?.heading ?? 0,
+          });
+        }
+      }
+      // 不在 !traveling 時刪除 — 讓動畫播放到終點
+    }
+    // 推進渡輪動畫距離 + heading LERP & 清除已播完的動畫
+    for (const [vesselId, anim] of this.ferryAnims) {
+      anim.distance += FERRY_VISUAL_SPEED * dt * ferrySpeed;
+      // Heading LERP：取路徑目標朝向，平滑轉向
+      const target = interpolateFerryPath(anim.pathInfo, anim.distance);
+      if (target) {
+        let diff = target.heading - anim.heading;
+        while (diff > Math.PI) diff -= 2 * Math.PI;
+        while (diff < -Math.PI) diff += 2 * Math.PI;
+        const t = Math.min(1, FERRY_TURN_RATE * dt * Math.max(ferrySpeed, 0.001));
+        anim.heading += diff * t;
+      }
+      if (anim.distance >= anim.pathInfo.totalLength) {
+        const vessel = [...this.state.ferry.getVessels()].find(v => v.id === vesselId);
+        if (!vessel || !vessel.traveling) {
+          this.ferryAnims.delete(vesselId);
+        }
+      }
+    }
+    // 覆蓋渡輪的視覺位置和朝向（使用 LERP heading）
+    for (const vd of transportVehicles) {
+      if (vd.type === 'ferry') {
+        const vesselId = vd.id - FERRY_ID_OFFSET;
+        const anim = this.ferryAnims.get(vesselId);
+        if (anim) {
+          const pos = interpolateFerryPath(anim.pathInfo, anim.distance);
+          if (pos) {
+            vd.x = pos.x;
+            vd.y = pos.y;
+            vd.heading = anim.heading;
+          }
+        }
+      }
+    }
+
     // 合併道路車輛與交通系統車輛
     const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
     const vmOp = VIEW_MODE_OPACITY[this.viewMode];
-    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity);
+    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
 
     // 更新交通路線渲染
     const routeData = collectTransportRoutes({
@@ -1588,6 +1659,11 @@ export class Game {
 
   getNotification(): string | null {
     return this.notification;
+  }
+
+  showNotification(message: string, duration = 4): void {
+    this.notification = message;
+    this.notificationTimer = duration;
   }
 
   getEconomyBreakdown(): {

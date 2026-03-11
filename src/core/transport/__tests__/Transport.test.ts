@@ -1499,17 +1499,17 @@ describe('Tram travel time', () => {
 });
 
 describe('Ferry travel time', () => {
-  it('should travel at medium speed (2.5 cells/tick)', () => {
+  it('should travel at visual-synced speed (0.375 units/tick)', () => {
     const ferry = new FerrySystem();
     const d1 = ferry.addDock(0, 0)!;
     const d2 = ferry.addDock(10, 0)!; // distance=10
     ferry.createRoute([d1, d2]);
 
     ferry.tick(); // arrive d1
-    ferry.tick(); ferry.tick(); ferry.tick(); // dwell 3 ticks
+    for (let i = 0; i < 6; i++) ferry.tick(); // dwell 6 ticks
     const v = ferry.getVessels()[0]!;
     expect(v.traveling).toBe(true);
-    // travel ticks = ceil(10 / 2.5) = 4
-    expect(v.travelTicks).toBe(4);
+    // travel ticks = ceil(10 / 0.375) = 27
+    expect(v.travelTicks).toBe(27);
   });
 });

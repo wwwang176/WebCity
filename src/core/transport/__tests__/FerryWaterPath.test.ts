@@ -3,7 +3,8 @@ import { FerrySystem, type WaterChecker } from '../FerrySystem';
 import { findWaterPath, type WaterGrid } from '../../pathfinding/WaterPathfinder';
 
 /**
- * 建立測試用的水域格和水域檢查器。
+ * 建立測試用的水域格和岸邊檢查器。
+ * checker.isWater 現在檢查「岸邊」：非水域且至少一個相鄰格是水。
  */
 function createWaterEnv(rows: string[]) {
   const height = rows.length;
@@ -17,21 +18,30 @@ function createWaterEnv(rows: string[]) {
     },
   };
   const checker: WaterChecker = {
-    isWater: (x: number, y: number) => grid.isWater(x, y),
+    isWater: (x: number, y: number) => {
+      // Shore check: NOT water AND at least one adjacent cell is water
+      if (grid.isWater(x, y)) return false;
+      for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+        if (grid.isWater(x + dx!, y + dy!)) return true;
+      }
+      return false;
+    },
   };
   return { grid, checker };
 }
 
 describe('FerrySystem with A* water navigation', () => {
-  it('渡輪在直線水域上沿路徑移動', () => {
+  it('渡輪在岸邊碼頭間沿水路移動', () => {
     const { grid, checker } = createWaterEnv([
-      'WWWWWWWWWW',
+      'LWWWWWWWWL',
     ]);
 
     const ferry = new FerrySystem();
     ferry.setWaterGrid(grid);
     const d1 = ferry.addDock(0, 0, checker)!;
     const d2 = ferry.addDock(9, 0, checker)!;
+    expect(d1).not.toBeNull();
+    expect(d2).not.toBeNull();
     ferry.createRoute([d1, d2], 1);
 
     // 初始化：渡輪應在第一個碼頭
@@ -44,7 +54,7 @@ describe('FerrySystem with A* water navigation', () => {
 
   it('渡輪最終到達目的碼頭', () => {
     const { grid, checker } = createWaterEnv([
-      'WWWWW',
+      'LWWWL',
     ]);
 
     const ferry = new FerrySystem();
@@ -86,23 +96,23 @@ describe('FerrySystem with A* water navigation', () => {
 
   it('兩碼頭間無水路時 validateRoute 應返回 false', () => {
     const { grid, checker } = createWaterEnv([
-      'WLLLW',
-      'LLLLL',
+      'LWLWL',
     ]);
 
     const ferry = new FerrySystem();
     ferry.setWaterGrid(grid);
+    // (0,0)=L adj (1,0)=W → shore; (4,0)=L adj (3,0)=W → shore
+    // But water at (1,0) and (3,0) are separated by (2,0)=L
     const d1 = ferry.addDock(0, 0, checker)!;
     const d2 = ferry.addDock(4, 0, checker)!;
 
-    // 建路線時應驗證水路連通
     const valid = ferry.validateRouteConnectivity([d1, d2]);
     expect(valid).toBe(false);
   });
 
   it('兩碼頭間有水路時 validateRoute 應返回 true', () => {
     const { grid, checker } = createWaterEnv([
-      'WWWWW',
+      'LWWWL',
     ]);
 
     const ferry = new FerrySystem();
@@ -114,9 +124,34 @@ describe('FerrySystem with A* water navigation', () => {
     expect(valid).toBe(true);
   });
 
+  it('碼頭放在水裡應被拒絕', () => {
+    const { grid, checker } = createWaterEnv([
+      'LWWWL',
+    ]);
+
+    const ferry = new FerrySystem();
+    ferry.setWaterGrid(grid);
+    // (2,0) is water — checker should reject
+    const dock = ferry.addDock(2, 0, checker);
+    expect(dock).toBeNull();
+  });
+
+  it('碼頭放在內陸（不鄰水）應被拒絕', () => {
+    const { grid, checker } = createWaterEnv([
+      'LLLWW',
+      'LLLWW',
+    ]);
+
+    const ferry = new FerrySystem();
+    ferry.setWaterGrid(grid);
+    // (0,0) is L, neighbors: (1,0)=L, (0,1)=L — no water
+    const dock = ferry.addDock(0, 0, checker);
+    expect(dock).toBeNull();
+  });
+
   it('渡輪 heading 應根據 A* 路徑方向計算', () => {
     const { grid, checker } = createWaterEnv([
-      'WWWWW',
+      'LWWWL',
     ]);
 
     const ferry = new FerrySystem();

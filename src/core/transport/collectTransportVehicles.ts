@@ -96,30 +96,11 @@ export function collectTransportVehicles(systems: TransportSystems): TransportVe
     result.push(mapVehicle(t, 'rail_train', ID_OFFSET_RAIL, line));
   }
 
-  // Ferry — 使用 A* 路徑計算 heading
+  // Ferry — 位置和 heading 由渲染端動畫覆蓋，此處僅提供基礎資料
   const ferryRoutes = systems.ferry.getRoutes();
   for (const v of systems.ferry.getVessels()) {
     const route = ferryRoutes.find(r => r.id === v.routeId);
-    const base = mapVehicle(v, 'ferry', ID_OFFSET_FERRY, route);
-
-    // 若有 A* 路徑，用路徑方向計算更精確的 heading
-    const waterPath = systems.ferry.getVesselPath(v.id);
-    if (waterPath && waterPath.length > 1) {
-      const pathIdx = systems.ferry.getVesselPathIndex(v.id);
-      const curIdx = Math.min(pathIdx, waterPath.length - 1);
-      const nextIdx = Math.min(curIdx + 1, waterPath.length - 1);
-      if (curIdx !== nextIdx) {
-        const cur = waterPath[curIdx]!;
-        const next = waterPath[nextIdx]!;
-        const dx = next.x - cur.x;
-        const dy = next.y - cur.y;
-        if (dx !== 0 || dy !== 0) {
-          base.heading = Math.atan2(-dy, dx);
-        }
-      }
-    }
-
-    result.push(base);
+    result.push(mapVehicle(v, 'ferry', ID_OFFSET_FERRY, route));
   }
 
   // Taxi

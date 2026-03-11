@@ -99,7 +99,7 @@ export class VehicleRenderer {
     scene.add(this.taillightMesh);
   }
 
-  update(vehicles: VehicleData[], sunIntensity?: number): void {
+  update(vehicles: VehicleData[], sunIntensity?: number, time?: number): void {
     // Group vehicles by type
     const groups = new Map<string, VehicleData[]>();
     for (const v of vehicles) {
@@ -139,8 +139,14 @@ export class VehicleRenderer {
         const vx = v.x + offsetX;
         const vz = v.y + offsetZ;
 
+        // Ferry bobbing animation: gentle vertical oscillation on water
+        let yPos = cfg?.yPosition ?? 0.025;
+        if (type === 'ferry' && time !== undefined) {
+          yPos += Math.sin(time * 2 + v.id * 1.7) * 0.012;
+        }
+
         rotation.makeRotationY(v.heading);
-        translation.makeTranslation(vx, cfg?.yPosition ?? 0.025, vz);
+        translation.makeTranslation(vx, yPos, vz);
         matrix.copy(translation).multiply(rotation);
         mesh.setMatrixAt(i, matrix);
 
