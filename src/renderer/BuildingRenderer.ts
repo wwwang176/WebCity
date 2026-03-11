@@ -1035,6 +1035,38 @@ export class BuildingRenderer {
     }
   }
 
+  /**
+   * Build a preview model of the given infrastructure type into the provided group.
+   * Used by PlacementPreview to show the actual building shape as a ghost.
+   * Meshes are NOT tracked in this.meshes so they won't interfere with normal rendering.
+   */
+  buildPreviewModel(type: InfraType, group: THREE.Group, scale = 1): void {
+    const savedMeshes = this.meshes;
+    this.meshes = [];
+    switch (type) {
+      case 'power':     this.buildPowerPlant(group, 0, 0, scale); break;
+      case 'water':     this.buildWaterPump(group, 0, 0, scale); break;
+      case 'police':    this.buildPoliceStation(group, 0, 0, scale); break;
+      case 'fire':      this.buildFireStation(group, 0, 0, scale); break;
+      case 'hospital':  this.buildHospital(group, 0, 0, scale); break;
+      case 'school':    this.buildElementarySchool(group, 0, 0, scale); break;
+      case 'school_high': this.buildHighSchool(group, 0, 0, scale); break;
+      case 'school_univ': this.buildUniversity(group, 0, 0, scale); break;
+      case 'park':      this.buildPark(group, 0, 0, scale); break;
+      case 'cemetery':  this.buildCemetery(group, 0, 0, scale); break;
+      case 'garbage':   this.buildLandfill(group, 0, 0, scale); break;
+      case 'sewage':    this.buildSewagePlant(group, 0, 0, scale); break;
+      case 'bus_stop':  this.buildBusStop(group, 0, 0, scale); break;
+      case 'metro_station': this.buildMetroStation(group, 0, 0, scale); break;
+      case 'train_station': this.buildTrainStation(group, 0, 0, scale); break;
+      case 'ferry_dock':   this.buildFerryDock(group, 0, 0, scale); break;
+      case 'airport':      this.buildAirport(group, 0, 0, scale); break;
+      case 'taxi_stand':   this.buildTaxiStand(group, 0, 0, scale); break;
+      default:          this.buildCivicBuilding(group, 0, 0, type, scale); break;
+    }
+    this.meshes = savedMeshes;
+  }
+
   private buildCivicBuilding(scene: THREE.Scene | THREE.Group, cx: number, cz: number, type: InfraType, scale = 1): void {
     const configs: Record<string, { color: number; height: number; roofColor: number; accent?: number }> = {
       police:      { color: 0x3f51b5, height: 0.40, roofColor: 0x303f9f },

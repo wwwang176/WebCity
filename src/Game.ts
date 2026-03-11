@@ -219,7 +219,7 @@ export class Game {
     this.transportRouteRenderer.build(this.sceneManager.scene);
     this.metroTunnelRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
-    this.placementPreview = new PlacementPreview(this.sceneManager.scene);
+    this.placementPreview = new PlacementPreview(this.sceneManager.scene, this.buildingRenderer);
 
     // Center camera
     this.sceneManager.panCamera(mapSize / 2, mapSize / 2);
