@@ -21,11 +21,6 @@ export const BIRTH = {
   HAPPINESS_FERTILITY_THRESHOLD: 70,
 } as const;
 
-/** @deprecated Use BIRTH.MAX_FERTILITY_AGE */
-export const MAX_FERTILITY_AGE = BIRTH.MAX_FERTILITY_AGE;
-/** @deprecated Use BIRTH.HAPPINESS_FERTILITY_THRESHOLD */
-export const HAPPINESS_FERTILITY_THRESHOLD = BIRTH.HAPPINESS_FERTILITY_THRESHOLD;
-
 /**
  * 自然出生 tick — 根據合格成人的生育機率產生新生兒。
  *

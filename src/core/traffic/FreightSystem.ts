@@ -20,11 +20,6 @@ export const FREIGHT = {
   COMMERCIAL_CONSUMPTION_RATE: 1,
 } as const;
 
-/** @deprecated Use FREIGHT.INDUSTRIAL_PRODUCTION_RATE */
-export const INDUSTRIAL_PRODUCTION_RATE = FREIGHT.INDUSTRIAL_PRODUCTION_RATE;
-/** @deprecated Use FREIGHT.COMMERCIAL_CONSUMPTION_RATE */
-export const COMMERCIAL_CONSUMPTION_RATE = FREIGHT.COMMERCIAL_CONSUMPTION_RATE;
-
 export class FreightSystem {
   private cargoStorage = 0;
   private lastDemand: FreightDemand = { production: 0, consumption: 0, shortage: 0 };

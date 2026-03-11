@@ -18,11 +18,6 @@ export const POLLUTION = {
   PARK_REDUCTION: 20,
 } as const;
 
-/** @deprecated Use POLLUTION.DECAY_PER_CELL */
-export const POLLUTION_DECAY_PER_CELL = POLLUTION.DECAY_PER_CELL;
-/** @deprecated Use POLLUTION.PARK_REDUCTION */
-export const POLLUTION_PARK_REDUCTION = POLLUTION.PARK_REDUCTION;
-
 export class PollutionManager {
   private width: number;
   private height: number;

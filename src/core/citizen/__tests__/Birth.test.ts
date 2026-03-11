@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
-import { birthTick, MAX_FERTILITY_AGE, HAPPINESS_FERTILITY_THRESHOLD, DEFAULT_CONTEXT, BIRTH, type BirthContext } from '../Birth';
+import { birthTick, DEFAULT_CONTEXT, BIRTH, type BirthContext } from '../Birth';
 import { LifeStage, EducationLevel, IncomeLevel } from '../types';
 
 /**
@@ -132,24 +132,19 @@ describe('birthTick — 自然出生機制', () => {
     expect(births).toBe(0);
   });
 
-  it('MAX_FERTILITY_AGE should be within adult age range', () => {
-    expect(MAX_FERTILITY_AGE).toBeGreaterThan(18);
-    expect(MAX_FERTILITY_AGE).toBeLessThanOrEqual(65);
+  it('BIRTH.MAX_FERTILITY_AGE should be within adult age range', () => {
+    expect(BIRTH.MAX_FERTILITY_AGE).toBeGreaterThan(18);
+    expect(BIRTH.MAX_FERTILITY_AGE).toBeLessThanOrEqual(65);
   });
 
-  it('HAPPINESS_FERTILITY_THRESHOLD should be between 0 and 100', () => {
-    expect(HAPPINESS_FERTILITY_THRESHOLD).toBeGreaterThan(0);
-    expect(HAPPINESS_FERTILITY_THRESHOLD).toBeLessThanOrEqual(100);
+  it('BIRTH.HAPPINESS_FERTILITY_THRESHOLD should be between 0 and 100', () => {
+    expect(BIRTH.HAPPINESS_FERTILITY_THRESHOLD).toBeGreaterThan(0);
+    expect(BIRTH.HAPPINESS_FERTILITY_THRESHOLD).toBeLessThanOrEqual(100);
   });
 
   it('DEFAULT_CONTEXT should have valid fertility rates', () => {
     expect(DEFAULT_CONTEXT.baseFertilityRate).toBeGreaterThan(0);
     expect(DEFAULT_CONTEXT.baseFertilityRate).toBeLessThan(1);
     expect(DEFAULT_CONTEXT.happinessBonus).toBeGreaterThan(0);
-  });
-
-  it('backward-compatible exports should match BIRTH config', () => {
-    expect(MAX_FERTILITY_AGE).toBe(BIRTH.MAX_FERTILITY_AGE);
-    expect(HAPPINESS_FERTILITY_THRESHOLD).toBe(BIRTH.HAPPINESS_FERTILITY_THRESHOLD);
   });
 });

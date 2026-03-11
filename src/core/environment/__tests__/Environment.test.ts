@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PollutionManager, POLLUTION_DECAY_PER_CELL, POLLUTION_PARK_REDUCTION, POLLUTION } from '../Pollution';
+import { PollutionManager, POLLUTION } from '../Pollution';
 import { NaturalResourceManager, ResourceType, NATURAL_RESOURCE } from '../NaturalResourceManager';
 import { WaterFlow, FLOW_DIRECTION_OFFSETS } from '../WaterFlow';
 
@@ -74,12 +74,12 @@ describe('PollutionManager', () => {
 });
 
 describe('Pollution constants', () => {
-  it('POLLUTION_DECAY_PER_CELL should be positive', () => {
-    expect(POLLUTION_DECAY_PER_CELL).toBeGreaterThan(0);
+  it('POLLUTION.DECAY_PER_CELL should be positive', () => {
+    expect(POLLUTION.DECAY_PER_CELL).toBeGreaterThan(0);
   });
 
-  it('POLLUTION_PARK_REDUCTION should be positive', () => {
-    expect(POLLUTION_PARK_REDUCTION).toBeGreaterThan(0);
+  it('POLLUTION.PARK_REDUCTION should be positive', () => {
+    expect(POLLUTION.PARK_REDUCTION).toBeGreaterThan(0);
   });
 
   it('decay per cell should match spread behavior', () => {
@@ -87,7 +87,7 @@ describe('Pollution constants', () => {
     pm.addSource(5, 5, 100, 'ground');
     pm.calculateSpread();
     // At distance 1, pollution = 100 - DECAY_PER_CELL
-    expect(pm.getPollutionAt(5, 6).ground).toBe(100 - POLLUTION_DECAY_PER_CELL);
+    expect(pm.getPollutionAt(5, 6).ground).toBe(100 - POLLUTION.DECAY_PER_CELL);
   });
 });
 
@@ -227,10 +227,6 @@ describe('POLLUTION constants', () => {
     expect(POLLUTION.PARK_REDUCTION).toBeGreaterThan(0);
   });
 
-  it('backward-compatible exports should match POLLUTION config', () => {
-    expect(POLLUTION_DECAY_PER_CELL).toBe(POLLUTION.DECAY_PER_CELL);
-    expect(POLLUTION_PARK_REDUCTION).toBe(POLLUTION.PARK_REDUCTION);
-  });
 });
 
 describe('FLOW_DIRECTION_OFFSETS', () => {
