@@ -1096,36 +1096,47 @@ export class Game {
     const d = this.dirty;
     const anyDirty = d.roads || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
     if (anyDirty) {
+      const t0 = performance.now();
+      const rebuilt: string[] = [];
       if (d.roads) {
         this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
         if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
         d.roads = false;
+        rebuilt.push('roads');
       }
       if (d.tracks) {
         this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
         if (this.viewMode !== ViewMode.NORMAL) this.trackRenderer.setViewMode(this.viewMode);
         d.tracks = false;
+        rebuilt.push('tracks');
       }
       if (d.crossings) {
         this.levelCrossingSystem.rebuildFromGrid(this.state.grid);
         this.levelCrossingRenderer.build(this.sceneManager.scene, this.levelCrossingSystem.getCrossings());
         if (this.viewMode !== ViewMode.NORMAL) this.levelCrossingRenderer.setViewMode(this.viewMode);
         d.crossings = false;
+        rebuilt.push('crossings');
       }
       if (d.buildings) {
         this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
         if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
         d.buildings = false;
+        rebuilt.push('buildings');
       }
       if (d.terrain) {
         this.terrainRenderer.refreshColors();
         d.terrain = false;
+        rebuilt.push('terrain');
       }
       if (d.trafficLights) {
         this.syncTrafficLights();
         this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
         d.trafficLights = false;
+        rebuilt.push('trafficLights');
       }
+
+      const dt = performance.now() - t0;
+      console.debug(`[rebuild] ${rebuilt.join('+')} in ${dt.toFixed(1)}ms`);
 
       // Refresh active overlay when relevant subsystems rebuilt
       const currentOverlay = this.overlayRenderer.getOverlay();
