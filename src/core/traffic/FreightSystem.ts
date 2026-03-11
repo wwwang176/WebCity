@@ -15,6 +15,11 @@ export interface FreightDemand {
  * to commercial zones (consumers). When commercial buildings can't get
  * enough goods, they suffer a growth penalty.
  */
+/** Cargo units produced per industrial building per tick */
+export const INDUSTRIAL_PRODUCTION_RATE = 2;
+/** Cargo units consumed per commercial building per tick */
+export const COMMERCIAL_CONSUMPTION_RATE = 1;
+
 export class FreightSystem {
   private cargoStorage = 0;
   private lastDemand: FreightDemand = { production: 0, consumption: 0, shortage: 0 };
@@ -30,9 +35,9 @@ export class FreightSystem {
     grid.forEachCell((cell) => {
       if (cell.buildingId === 0) return;
       if (cell.zoneType === ZoneType.INDUSTRIAL) {
-        production += 2;
+        production += INDUSTRIAL_PRODUCTION_RATE;
       } else if (isCommercialZone(cell.zoneType as ZoneType)) {
-        consumption += 1;
+        consumption += COMMERCIAL_CONSUMPTION_RATE;
       }
     });
 
