@@ -39,6 +39,11 @@ export const LIFE_STAGE_AGE = {
   ADULT_MAX: 65,
 } as const;
 
+/** Check if age falls within working age range (adults only, excludes teens and seniors) */
+export function isWorkingAge(age: number): boolean {
+  return age > LIFE_STAGE_AGE.TEEN_MAX && age <= LIFE_STAGE_AGE.ADULT_MAX;
+}
+
 export function getLifeStage(age: number): LifeStage {
   if (age <= LIFE_STAGE_AGE.BABY_MAX) return LifeStage.BABY;
   if (age <= LIFE_STAGE_AGE.CHILD_MAX) return LifeStage.CHILD;

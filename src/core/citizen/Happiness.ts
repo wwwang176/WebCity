@@ -1,4 +1,4 @@
-import { type Citizen } from './types';
+import { type Citizen, isWorkingAge } from './types';
 
 export interface HappinessFactors {
   commuteDistance: number;
@@ -36,8 +36,6 @@ export const HAPPINESS = {
   MODERATE_CRIME_PENALTY: -5,
   // Employment
   UNEMPLOYMENT_PENALTY: -15,
-  WORKING_AGE_MIN: 18,
-  WORKING_AGE_MAX: 65,
   // Tax brackets (descending order for if-else chain)
   TAX_BRACKETS: [
     { threshold: 20, modifier: -35 },
@@ -77,7 +75,7 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
   else if (factors.crimeRate > HAPPINESS.MODERATE_CRIME) happiness += HAPPINESS.MODERATE_CRIME_PENALTY;
 
   // Employment
-  if (!factors.isEmployed && citizen.age > HAPPINESS.WORKING_AGE_MIN && citizen.age <= HAPPINESS.WORKING_AGE_MAX) {
+  if (!factors.isEmployed && isWorkingAge(citizen.age)) {
     happiness += HAPPINESS.UNEMPLOYMENT_PENALTY;
   }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CitizenManager, EDUCATION_PROGRESSION, MORTALITY } from '../CitizenManager';
-import { LifeStage, EducationLevel, LIFE_STAGE_AGE } from '../types';
+import { LifeStage, EducationLevel, LIFE_STAGE_AGE, isWorkingAge } from '../types';
 
 describe('CitizenManager', () => {
   it('should create a citizen with unique id', () => {
@@ -72,6 +72,30 @@ describe('CitizenManager', () => {
     expect(LIFE_STAGE_AGE.BABY_MAX).toBeLessThan(LIFE_STAGE_AGE.CHILD_MAX);
     expect(LIFE_STAGE_AGE.CHILD_MAX).toBeLessThan(LIFE_STAGE_AGE.TEEN_MAX);
     expect(LIFE_STAGE_AGE.TEEN_MAX).toBeLessThan(LIFE_STAGE_AGE.ADULT_MAX);
+  });
+
+  it('isWorkingAge returns true for adults within working age', () => {
+    expect(isWorkingAge(19)).toBe(true);
+    expect(isWorkingAge(30)).toBe(true);
+    expect(isWorkingAge(65)).toBe(true);
+  });
+
+  it('isWorkingAge returns false for teens and younger', () => {
+    expect(isWorkingAge(0)).toBe(false);
+    expect(isWorkingAge(10)).toBe(false);
+    expect(isWorkingAge(18)).toBe(false);
+  });
+
+  it('isWorkingAge returns false for seniors', () => {
+    expect(isWorkingAge(66)).toBe(false);
+    expect(isWorkingAge(80)).toBe(false);
+  });
+
+  it('isWorkingAge boundary matches LIFE_STAGE_AGE', () => {
+    expect(isWorkingAge(LIFE_STAGE_AGE.TEEN_MAX)).toBe(false);
+    expect(isWorkingAge(LIFE_STAGE_AGE.TEEN_MAX + 1)).toBe(true);
+    expect(isWorkingAge(LIFE_STAGE_AGE.ADULT_MAX)).toBe(true);
+    expect(isWorkingAge(LIFE_STAGE_AGE.ADULT_MAX + 1)).toBe(false);
   });
 
   it('MORTALITY constants should have valid age thresholds', () => {

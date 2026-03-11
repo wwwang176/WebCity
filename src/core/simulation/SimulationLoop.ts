@@ -16,7 +16,7 @@ import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, CITIZEN_BASE_INCO
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
-import { IncomeLevel } from '../citizen/types';
+import { IncomeLevel, isWorkingAge } from '../citizen/types';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
@@ -334,7 +334,7 @@ export class SimulationLoop {
     // Calculate employment ratio for the city
     const totalJobs = this.countTotalJobs();
     const adultCount = this.state.citizens.citizens.filter(
-      c => c.age > 18 && c.age <= 65
+      c => isWorkingAge(c.age)
     ).length;
     const employmentRate = adultCount > 0 ? Math.min(1, totalJobs / adultCount) : 1;
     const avgPollution = this.getAvgPollution();
@@ -748,7 +748,7 @@ export class SimulationLoop {
       }
 
       // Assign workplace if needed (only for working-age adults)
-      if (citizen.workplaceId === null && citizen.age > 18 && citizen.age <= 65 && workplaceBuildings.length > 0) {
+      if (citizen.workplaceId === null && isWorkingAge(citizen.age) && workplaceBuildings.length > 0) {
         for (const wb of workplaceBuildings) {
           const occ = workOccupancy.get(wb.pos) ?? 0;
           if (occ < wb.capacity) {
@@ -842,7 +842,7 @@ export class SimulationLoop {
 
     // Get eligible citizens: adults (19-65) with both homeId and workplaceId
     const eligible = this.state.citizens.citizens.filter(
-      c => c.age > 18 && c.age <= 65 &&
+      c => isWorkingAge(c.age) &&
            c.homeId !== null && c.workplaceId !== null &&
            !commuterSet.has(c.id)
     );
