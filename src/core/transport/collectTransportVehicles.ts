@@ -18,7 +18,7 @@ export interface TransportVehicleRenderData {
   x: number;
   y: number;
   heading: number;
-  type: 'transport_bus' | 'tram' | 'rail_train' | 'ferry' | 'taxi';
+  type: 'transport_bus' | 'tram' | 'rail_train' | 'rail_carriage' | 'ferry' | 'taxi';
   laneOffset: number;
 }
 

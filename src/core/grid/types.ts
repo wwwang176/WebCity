@@ -36,6 +36,8 @@ export interface CellData {
   serviceCoverage: number;
   elevation: number;
   reserved: number;
+  railType: number;
+  railFlags: number;
 }
 
 export const BYTES_PER_CELL = 12;
@@ -53,6 +55,8 @@ export const DEFAULT_CELL: CellData = {
   serviceCoverage: 0,
   elevation: 0,
   reserved: 0,
+  railType: 0,
+  railFlags: 0,
 };
 
 export interface Position {
