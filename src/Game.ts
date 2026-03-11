@@ -96,6 +96,7 @@ export class Game {
   private mouse = new THREE.Vector2();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private tickAccumulator = 0;
+  private elapsedTime = 0;
   private renderDirty = true;
 
   // UI state
@@ -895,6 +896,8 @@ export class Game {
   }
 
   private update(dt: number): void {
+    this.elapsedTime += dt;
+
     // Camera movement
     const panSpeed = 15 * dt;
     if (this.keys.has('w') || this.keys.has('arrowup')) this.sceneManager.panCamera(0, -panSpeed);
@@ -1024,7 +1027,7 @@ export class Game {
     // 合併道路車輛與交通系統車輛
     const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
     const vmOp = VIEW_MODE_OPACITY[this.viewMode];
-    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity);
+    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
 
     // 更新交通路線渲染
     const routeData = collectTransportRoutes({
