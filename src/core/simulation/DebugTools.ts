@@ -1,5 +1,6 @@
 import type { GameState } from './GameState';
 import type { GameSpeed } from './GameClock';
+import { isZoneBuilding, isInfrastructureBuilding } from '../building/InfraConfig';
 
 export interface DebugSnapshot {
   tick: number;
@@ -42,18 +43,14 @@ export class DebugTools {
     let totalPollution = 0;
     let cellCount = 0;
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell) continue;
-        cellCount++;
-        if (cell.buildingId > 0 && cell.buildingId < 243) buildingCount++;
-        if (cell.buildingId >= 243) infraCount++;
-        if (cell.roadType > 0) roadCount++;
-        totalLandValue += cell.landValue;
-        totalPollution += cell.pollution;
-      }
-    }
+    grid.forEachCell((cell) => {
+      cellCount++;
+      if (isZoneBuilding(cell.buildingId)) buildingCount++;
+      if (isInfrastructureBuilding(cell.buildingId)) infraCount++;
+      if (cell.roadType > 0) roadCount++;
+      totalLandValue += cell.landValue;
+      totalPollution += cell.pollution;
+    });
 
     const pop = citizens.citizens.length;
     const avgHappiness = pop > 0

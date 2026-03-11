@@ -1,5 +1,5 @@
 import type { Grid } from '../grid/Grid';
-import { ZoneType } from '../grid/types';
+import { ZoneType, isCommercialZone } from '../grid/types';
 
 export interface FreightDemand {
   /** Total cargo produced by industrial buildings per tick. */
@@ -27,23 +27,14 @@ export class FreightSystem {
     let production = 0;
     let consumption = 0;
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell || cell.buildingId === 0) continue;
-
-        if (cell.zoneType === ZoneType.INDUSTRIAL) {
-          // Each industrial building produces 2 cargo units per tick
-          production += 2;
-        } else if (
-          cell.zoneType === ZoneType.COMMERCIAL_LOW ||
-          cell.zoneType === ZoneType.COMMERCIAL_HIGH
-        ) {
-          // Each commercial building consumes 1 cargo unit per tick
-          consumption += 1;
-        }
+    grid.forEachCell((cell) => {
+      if (cell.buildingId === 0) return;
+      if (cell.zoneType === ZoneType.INDUSTRIAL) {
+        production += 2;
+      } else if (isCommercialZone(cell.zoneType as ZoneType)) {
+        consumption += 1;
       }
-    }
+    });
 
     // Add production to storage
     this.cargoStorage += production;

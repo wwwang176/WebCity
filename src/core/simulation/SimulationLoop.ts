@@ -180,8 +180,7 @@ export class SimulationLoop {
 
     // 8. Transport systems (every tick)
     // Set congestion level for surface transit
-    const trafficSys = this.state.traffic as unknown as { getCongestionLevel?: () => number };
-    const currentCongestion = trafficSys.getCongestionLevel ? trafficSys.getCongestionLevel() : 0;
+    const currentCongestion = this.state.traffic.getCongestionLevel();
     this.state.bus.congestionLevel = currentCongestion;
 
     this.state.bus.tick();
@@ -878,9 +877,7 @@ export class SimulationLoop {
 
       // --- Transport mode choice ---
       const availableTransport = this.getAvailableTransit(fromPos, toPos);
-      const congestion = (this.state.traffic as unknown as { getCongestionLevel?: () => number }).getCongestionLevel
-        ? (this.state.traffic as unknown as { getCongestionLevel: () => number }).getCongestionLevel()
-        : 0;
+      const congestion = this.state.traffic.getCongestionLevel();
       const mode = chooseMode(fromPos, toPos, availableTransport, congestion);
 
       if (mode !== TransportMode.DRIVE) {

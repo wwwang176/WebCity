@@ -401,6 +401,18 @@ export class TrafficSimulation {
     return this.vehicles.length;
   }
 
+  /** City-wide congestion level (0 = free-flow, 1 = gridlock). */
+  getCongestionLevel(): number {
+    const vehicleCount = this.vehicles.length;
+    if (vehicleCount === 0) return 0;
+    // Use unique occupied cells vs total cells as density metric
+    const occupiedCells = this.cellDensity.size;
+    if (occupiedCells === 0) return 0;
+    // Average vehicles per occupied cell, capped at 1.0
+    const avgDensity = vehicleCount / Math.max(1, occupiedCells * 3);
+    return Math.min(1, avgDensity);
+  }
+
   getAveragePathLength(): number {
     if (this.vehicles.length === 0) return 0;
     let totalLen = 0;

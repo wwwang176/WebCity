@@ -12,7 +12,7 @@ import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from './core/road/types';
-import { ZoneType, TerrainType } from './core/grid/types';
+import { ZoneType, TerrainType, isResidentialZone, isCommercialZone } from './core/grid/types';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
@@ -1949,8 +1949,7 @@ export class Game {
         const btype = getBuildingType(cell.buildingId);
         if (!btype) continue;
 
-        const isResidential = cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH;
-        if (isResidential) {
+        if (isResidentialZone(cell.zoneType)) {
           // Income tax: scan citizens living here
           const posKey = `${x},${y}`;
           const residents = this.state.citizens.getCitizensByHome(posKey);
@@ -1961,7 +1960,7 @@ export class Game {
           // Business tax: companyIncome x levelMultiplier x businessTaxRate
           const ci = btype.companyIncome ?? 0;
           const bi = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
-          if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) {
+          if (isCommercialZone(cell.zoneType)) {
             comIncome += bi;
           } else if (cell.zoneType === ZoneType.INDUSTRIAL) {
             indIncome += bi;
