@@ -189,18 +189,8 @@ export class FerrySystem extends BaseTransportSystem {
     // No water path or no grid — fallback travelTicks already set by base
   }
 
-  protected override tickTraveling(vehicle: TransportVehicle, route: TransportRoute): void {
-    // 位置移動由渲染端動畫處理，此處只倒數 travelTicks
-    vehicle.travelTicks--;
-    if (vehicle.travelTicks <= 0) {
-      const dock = route.stops[vehicle.currentStopIndex]!;
-      vehicle.position = { x: dock.x, y: dock.y };
-      vehicle.traveling = false;
-      vehicle.atStop = true;
-      vehicle.waitTicks = this.config.dwellTicks;
-      this.onArrive(vehicle, dock);
-      this.vesselPaths.delete(vehicle.id);
-    }
+  protected override onTravelComplete(vehicle: TransportVehicle): void {
+    this.vesselPaths.delete(vehicle.id);
   }
 
   // ── Serialization ───────────────────────────────────────────────

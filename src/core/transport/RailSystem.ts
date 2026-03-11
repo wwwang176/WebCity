@@ -218,20 +218,8 @@ export class RailSystem extends BaseTransportSystem {
     });
   }
 
-  protected override tickTraveling(vehicle: TransportVehicle, route: TransportRoute): void {
-    // Position interpolation is handled by TrainAnimator (per-frame, not per-tick).
-    // Here we only manage the countdown and arrival snap — same as base class,
-    // except we clean up trainTravelData on arrival.
-    vehicle.travelTicks--;
-    if (vehicle.travelTicks <= 0) {
-      const stop = route.stops[vehicle.currentStopIndex]!;
-      vehicle.position = { x: stop.x, y: stop.y };
-      vehicle.traveling = false;
-      vehicle.atStop = true;
-      vehicle.waitTicks = this.config.dwellTicks;
-      this.onArrive(vehicle, stop);
-      this.trainTravelData.delete(vehicle.id);
-    }
+  protected override onTravelComplete(vehicle: TransportVehicle): void {
+    this.trainTravelData.delete(vehicle.id);
   }
 
   /** Get the parsed path points for a traveling train (for per-frame animation). */

@@ -182,6 +182,7 @@ export abstract class BaseTransportSystem {
       vehicle.atStop = true;
       vehicle.waitTicks = this.config.dwellTicks;
       this.onArrive(vehicle, stop);
+      this.onTravelComplete(vehicle);
     }
   }
 
@@ -213,6 +214,11 @@ export abstract class BaseTransportSystem {
 
   /** Called when vehicle departs from a stop. Override for special behavior. */
   protected onDepart(_vehicle: TransportVehicle, _route: TransportRoute): void {
+    // default: no-op
+  }
+
+  /** Called after a vehicle finishes traveling and arrives at a stop. Override for cleanup. */
+  protected onTravelComplete(_vehicle: TransportVehicle): void {
     // default: no-op
   }
 
