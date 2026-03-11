@@ -890,49 +890,233 @@ const INFRA_ID_MAP: Record<number, InfraType> = {
 interface BuildingData { x: number; y: number; level: number; burned?: boolean }
 
 export class BuildingRenderer {
-  private meshes: (THREE.InstancedMesh | THREE.Mesh)[] = [];
+  // --- Persistent variant meshes (pre-allocated, never disposed until game exit) ---
+  private variantMeshes = new Map<string, THREE.InstancedMesh>();
+  private variantCounts = new Map<string, number>();
+  private positionToInstance = new Map<string, { key: string; idx: number }>();
+  private instanceToPosition = new Map<string, Map<number, string>>();
+  private variantInitialized = false;
+
+  // --- Non-persistent meshes (zone overlays, rebuilt each build) ---
+  private overlayMeshes: THREE.InstancedMesh[] = [];
+
+  // --- Infrastructure groups (now with index for lookup) ---
   private infraGroups: THREE.Group[] = [];
+  private infraIndex = new Map<string, THREE.Group>();
+
   private readonly maxPerVariant = 3000;
 
   // Light spot system (fake ground glow near buildings at night)
   private lightSpotMesh: THREE.InstancedMesh | null = null;
   private lightSpotMaterial: THREE.MeshBasicMaterial | null = null;
 
+  // Pre-allocated temp objects (avoid per-call allocation)
+  private _matrix = new THREE.Matrix4();
+  private _scale = new THREE.Matrix4();
+  private _rotation = new THREE.Matrix4();
+  private _color = new THREE.Color();
+
   /** Expose building meshes for highlight tinting (read-only). */
-  get buildingMeshes(): readonly (THREE.InstancedMesh | THREE.Mesh)[] { return this.meshes; }
+  get buildingMeshes(): readonly (THREE.InstancedMesh | THREE.Mesh)[] {
+    return [...this.variantMeshes.values(), ...this.overlayMeshes];
+  }
 
   /** Expose infrastructure groups for highlight tinting (read-only). */
   get buildingInfraGroups(): readonly THREE.Group[] { return this.infraGroups; }
 
-  build(scene: THREE.Scene, grid: Grid): void {
-    this.dispose(scene);
+  // ─── Persistent variant mesh initialization ─────────────────────
 
-    const buildingsByZone = new Map<number, BuildingData[]>();
+  /** Pre-allocate all variant InstancedMeshes (called once). */
+  private initVariantMeshes(scene: THREE.Scene): void {
+    if (this.variantInitialized) return;
+    this.variantInitialized = true;
+
+    const material = getBuildingMaterial();
+
+    for (const zoneTypeStr of Object.keys(VARIANTS)) {
+      const zoneType = Number(zoneTypeStr);
+      const variants = VARIANTS[zoneType]!;
+      const zoneCat = ZONE_CAT[zoneType] ?? 0;
+
+      for (let vi = 0; vi < variants.length; vi++) {
+        const key = `${zoneType}_${vi}`;
+        const geo = variants[vi]!();
+        stampZoneCategory(geo, zoneCat);
+
+        const mesh = new THREE.InstancedMesh(geo, material, this.maxPerVariant);
+        mesh.count = 0;
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        mesh.frustumCulled = false;
+
+        // Pre-allocate aHighlight attribute
+        const highlightData = new Float32Array(this.maxPerVariant);
+        mesh.geometry.setAttribute('aHighlight',
+          new THREE.InstancedBufferAttribute(highlightData, 1));
+
+        scene.add(mesh);
+        this.variantMeshes.set(key, mesh);
+        this.variantCounts.set(key, 0);
+        this.instanceToPosition.set(key, new Map());
+      }
+    }
+  }
+
+  // ─── Incremental building operations ───────────────────────────
+
+  /** Add a single zone building instance. */
+  addBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean): void {
+    const variants = VARIANTS[zoneType];
+    if (!variants || variants.length === 0) return;
+
+    const vi = Math.floor(hash(x, y) * variants.length) % variants.length;
+    const key = `${zoneType}_${vi}`;
+    const mesh = this.variantMeshes.get(key);
+    if (!mesh) return;
+
+    const idx = this.variantCounts.get(key)!;
+    if (idx >= this.maxPerVariant) return;
+
+    this.setInstanceData(mesh, idx, x, y, zoneType, level, burned);
+
+    this.variantCounts.set(key, idx + 1);
+    mesh.count = idx + 1;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    const posKey = `${x},${y}`;
+    this.positionToInstance.set(posKey, { key, idx });
+    this.instanceToPosition.get(key)!.set(idx, posKey);
+  }
+
+  /** Remove a single zone building instance (swap-with-last). */
+  removeBuilding(x: number, y: number): void {
+    const posKey = `${x},${y}`;
+    const entry = this.positionToInstance.get(posKey);
+    if (!entry) return;
+
+    const mesh = this.variantMeshes.get(entry.key)!;
+    const lastIdx = this.variantCounts.get(entry.key)! - 1;
+    const i2p = this.instanceToPosition.get(entry.key)!;
+
+    if (entry.idx !== lastIdx) {
+      // Swap the last instance into the removed slot
+      mesh.getMatrixAt(lastIdx, this._matrix);
+      mesh.setMatrixAt(entry.idx, this._matrix);
+      mesh.getColorAt(lastIdx, this._color);
+      mesh.setColorAt(entry.idx, this._color);
+
+      // Swap aHighlight
+      const hlAttr = mesh.geometry.getAttribute('aHighlight') as THREE.InstancedBufferAttribute;
+      (hlAttr.array as Float32Array)[entry.idx] = (hlAttr.array as Float32Array)[lastIdx]!;
+      hlAttr.needsUpdate = true;
+
+      // Update the moved instance's mappings
+      const movedPosKey = i2p.get(lastIdx)!;
+      this.positionToInstance.set(movedPosKey, { key: entry.key, idx: entry.idx });
+      i2p.set(entry.idx, movedPosKey);
+    }
+
+    i2p.delete(lastIdx);
+    this.positionToInstance.delete(posKey);
+    this.variantCounts.set(entry.key, lastIdx);
+    mesh.count = lastIdx;
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
+  /** Update an existing building's level or burned state in-place. */
+  updateBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean): void {
+    const posKey = `${x},${y}`;
+    const entry = this.positionToInstance.get(posKey);
+    if (!entry) return;
+
+    const mesh = this.variantMeshes.get(entry.key)!;
+    this.setInstanceData(mesh, entry.idx, x, y, zoneType, level, burned);
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+
+  /** Set matrix + color for a single instance. */
+  private setInstanceData(
+    mesh: THREE.InstancedMesh, idx: number,
+    x: number, y: number, zoneType: number,
+    level: number, burned: boolean,
+  ): void {
+    const h = hash(x, y);
+    const h2 = hash(x + 100, y + 100);
+    const h3 = hash(x + 200, y + 200);
+
+    const heightRange = ZONE_HEIGHTS[zoneType] ?? { min: 0.3, max: 1.0 };
+    const levelFactor = level / 3;
+    const baseHeight = heightRange.min + (heightRange.max - heightRange.min) * levelFactor;
+    const heightVar = 1.0 + (h2 - 0.5) * 0.35;
+    const finalHeight = baseHeight * heightVar;
+
+    const widthVar = 0.85 + h3 * 0.3;
+    const depthVar = 0.85 + hash(x + 300, y + 300) * 0.3;
+
+    const rotIndex = Math.floor(hash(x + 400, y + 400) * 4);
+    this._rotation.makeRotationY((rotIndex * Math.PI) / 2);
+    this._scale.makeScale(widthVar, finalHeight, depthVar);
+    this._matrix.multiplyMatrices(this._scale, this._rotation);
+    this._matrix.setPosition(x, 0.05, y);
+    mesh.setMatrixAt(idx, this._matrix);
+
+    if (burned) {
+      const burnLightness = 0.08 + h * 0.07;
+      this._color.setHSL(0.05, 0.1, burnLightness);
+    } else {
+      const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
+      const baseColor = palette[Math.floor(h * palette.length) % palette.length]!;
+      this._color.set(baseColor);
+      const hsl = { h: 0, s: 0, l: 0 };
+      this._color.getHSL(hsl);
+      hsl.h += (h2 - 0.5) * 0.03;
+      hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + (h3 - 0.5) * 0.1));
+      hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + (h - 0.5) * 0.1));
+      this._color.setHSL(hsl.h, hsl.s, hsl.l);
+    }
+    mesh.setColorAt(idx, this._color);
+  }
+
+  // ─── Full rebuild (init / save load) ───────────────────────────
+
+  build(scene: THREE.Scene, grid: Grid): void {
+    this.initVariantMeshes(scene);
+    this.disposeNonPersistent(scene);
+
+    // Reset all variant instance counts (keep GPU buffers alive)
+    for (const [key, mesh] of this.variantMeshes) {
+      mesh.count = 0;
+      this.variantCounts.set(key, 0);
+      this.instanceToPosition.get(key)!.clear();
+    }
+    this.positionToInstance.clear();
+
     const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
     const infraCells: { x: number; y: number; type: InfraType; reserved: number }[] = [];
+    const lightPositions: { x: number; y: number }[] = [];
 
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
-
-        // Skip secondary cells of multi-cell buildings (reserved=4)
         if (cell.reserved === 4) continue;
 
         const infraType = INFRA_ID_MAP[cell.buildingId];
         if (infraType) {
           infraCells.push({ x, y, type: infraType, reserved: cell.reserved });
+          lightPositions.push({ x, y });
           continue;
         }
 
         if (cell.zoneType !== ZoneType.NONE) {
           if (cell.buildingId > 0 && cell.buildingId < INFRA_WATER_ID) {
-            if (!buildingsByZone.has(cell.zoneType)) buildingsByZone.set(cell.zoneType, []);
-            buildingsByZone.get(cell.zoneType)!.push({
-              x, y,
-              level: Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1)),
-              burned: cell.reserved === 3, // BuildingStatus.BURNED
-            });
+            const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1));
+            const burned = cell.reserved === 3;
+            this.addBuilding(x, y, cell.zoneType, level, burned);
+            if (!burned) lightPositions.push({ x, y });
           } else if (cell.buildingId === 0) {
             if (!emptyZonesByType.has(cell.zoneType)) emptyZonesByType.set(cell.zoneType, []);
             emptyZonesByType.get(cell.zoneType)!.push({ x, y });
@@ -941,108 +1125,15 @@ export class BuildingRenderer {
       }
     }
 
+    // Batch needsUpdate for all variant meshes
+    for (const mesh of this.variantMeshes.values()) {
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    }
+
     this.buildInfrastructure(scene, infraCells);
     this.buildZoneOverlays(scene, emptyZonesByType);
-    this.buildVariantBuildings(scene, buildingsByZone);
-
-    // Build light spots for all buildings EXCEPT burned ones (no lights in charred ruins)
-    const allBuildingPositions: { x: number; y: number }[] = [];
-    for (const buildings of buildingsByZone.values()) {
-      for (const b of buildings) {
-        if (!b.burned) allBuildingPositions.push({ x: b.x, y: b.y });
-      }
-    }
-    for (const inf of infraCells) {
-      allBuildingPositions.push({ x: inf.x, y: inf.y });
-    }
-    this.buildLightSpots(scene, allBuildingPositions);
-  }
-
-  private buildVariantBuildings(scene: THREE.Scene, buildingsByZone: Map<number, BuildingData[]>): void {
-    const matrix = new THREE.Matrix4();
-    const scale = new THREE.Matrix4();
-    const rotation = new THREE.Matrix4();
-    const color = new THREE.Color();
-    const material = getBuildingMaterial();
-
-    for (const [zoneType, buildings] of buildingsByZone) {
-      const variants = VARIANTS[zoneType];
-      if (!variants || variants.length === 0) continue;
-
-      const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
-      const heightRange = ZONE_HEIGHTS[zoneType] ?? { min: 0.3, max: 1.0 };
-      const zoneCat = ZONE_CAT[zoneType] ?? 0;
-
-      const buckets: BuildingData[][] = variants.map(() => []);
-      for (const b of buildings) {
-        const vi = Math.floor(hash(b.x, b.y) * variants.length) % variants.length;
-        buckets[vi]!.push(b);
-      }
-
-      for (let vi = 0; vi < variants.length; vi++) {
-        const bucket = buckets[vi]!;
-        if (bucket.length === 0) continue;
-
-        const geometry = variants[vi]!();
-        // Stamp zone category into vertex color G channel
-        stampZoneCategory(geometry, zoneCat);
-
-        const count = Math.min(bucket.length, this.maxPerVariant);
-        const mesh = new THREE.InstancedMesh(geometry, material, count);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.frustumCulled = false;
-
-        for (let i = 0; i < count; i++) {
-          const b = bucket[i]!;
-          const h = hash(b.x, b.y);
-          const h2 = hash(b.x + 100, b.y + 100);
-          const h3 = hash(b.x + 200, b.y + 200);
-
-          const levelFactor = b.level / 3;
-          const baseHeight = heightRange.min + (heightRange.max - heightRange.min) * levelFactor;
-          const heightVar = 1.0 + (h2 - 0.5) * 0.35;
-          const finalHeight = baseHeight * heightVar;
-
-          const widthVar = 0.85 + h3 * 0.3;
-          const depthVar = 0.85 + hash(b.x + 300, b.y + 300) * 0.3;
-
-          const rotIndex = Math.floor(hash(b.x + 400, b.y + 400) * 4);
-          rotation.makeRotationY((rotIndex * Math.PI) / 2);
-
-          scale.makeScale(widthVar, finalHeight, depthVar);
-          matrix.multiplyMatrices(scale, rotation);
-          matrix.setPosition(b.x, 0.05, b.y);
-          mesh.setMatrixAt(i, matrix);
-
-          if (b.burned) {
-            // Charred/burned building: dark gray-black with slight variation
-            const burnLightness = 0.08 + h * 0.07; // 0.08 ~ 0.15 (very dark)
-            color.setHSL(0.05, 0.1, burnLightness);
-          } else {
-            const baseColor = palette[Math.floor(h * palette.length) % palette.length]!;
-            color.set(baseColor);
-            const hsl = { h: 0, s: 0, l: 0 };
-            color.getHSL(hsl);
-            hsl.h += (h2 - 0.5) * 0.03;
-            hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + (h3 - 0.5) * 0.1));
-            hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + (h - 0.5) * 0.1));
-            color.setHSL(hsl.h, hsl.s, hsl.l);
-          }
-          mesh.setColorAt(i, color);
-        }
-
-        // Add per-instance highlight attribute (0 = normal, 1 = highlighted)
-        const highlightData = new Float32Array(count);
-        mesh.geometry.setAttribute('aHighlight',
-          new THREE.InstancedBufferAttribute(highlightData, 1));
-
-        mesh.instanceMatrix.needsUpdate = true;
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-        scene.add(mesh);
-        this.meshes.push(mesh);
-      }
-    }
+    this.buildLightSpots(scene, lightPositions);
   }
 
   private buildZoneOverlays(scene: THREE.Scene, emptyZonesByType: Map<number, { x: number; y: number }[]>): void {
@@ -1065,7 +1156,7 @@ export class BuildingRenderer {
       }
       mesh.instanceMatrix.needsUpdate = true;
       scene.add(mesh);
-      this.meshes.push(mesh);
+      this.overlayMeshes.push(mesh);
     }
   }
 
@@ -1091,6 +1182,7 @@ export class BuildingRenderer {
 
       scene.add(group);
       this.infraGroups.push(group);
+      this.infraIndex.set(`${inf.x},${inf.y}`, group);
     }
   }
 
@@ -1100,10 +1192,7 @@ export class BuildingRenderer {
    * Meshes are NOT tracked in this.meshes so they won't interfere with normal rendering.
    */
   buildPreviewModel(type: InfraType, group: THREE.Group): void {
-    const savedMeshes = this.meshes;
-    this.meshes = [];
     this.buildModel(type, group);
-    this.meshes = savedMeshes;
   }
 
   /** Dispatch to the appropriate build method. Always scale=1 since models are pre-sized. */
@@ -2393,7 +2482,6 @@ export class BuildingRenderer {
     m.position.set(x, y, z);
     m.castShadow = shadow;
     scene.add(m);
-    this.meshes.push(m);
   }
 
   private buildLightSpots(scene: THREE.Scene, positions: { x: number; y: number }[]): void {
@@ -2508,7 +2596,8 @@ export class BuildingRenderer {
 
     if (enabled && scene) {
       // Hide originals
-      for (const mesh of this.meshes) mesh.visible = false;
+      for (const mesh of this.variantMeshes.values()) mesh.visible = false;
+      for (const mesh of this.overlayMeshes) mesh.visible = false;
       for (const group of this.infraGroups) group.visible = false;
       if (this.lightSpotMesh) this.lightSpotMesh.visible = false;
 
@@ -2523,10 +2612,13 @@ export class BuildingRenderer {
       }
 
       // Restore originals
-      for (const mesh of this.meshes) {
+      for (const mesh of this.variantMeshes.values()) {
         mesh.visible = true;
         mesh.material = getBuildingMaterial();
         mesh.renderOrder = 0;
+      }
+      for (const mesh of this.overlayMeshes) {
+        mesh.visible = true;
       }
       for (const group of this.infraGroups) group.visible = true;
       if (this.lightSpotMesh) this.lightSpotMesh.visible = true;
@@ -2545,23 +2637,14 @@ export class BuildingRenderer {
     const geos: THREE.BufferGeometry[] = [];
     const mat4 = new THREE.Matrix4();
 
-    // Bake InstancedMesh instances + plain Mesh (zone overlays)
-    for (const mesh of this.meshes) {
-      if (mesh instanceof THREE.InstancedMesh) {
-        const srcGeo = mesh.geometry;
-        const count = mesh.count;
-        for (let i = 0; i < count; i++) {
-          mesh.getMatrixAt(i, mat4);
-          const clone = srcGeo.clone();
-          clone.applyMatrix4(mat4);
-          clone.deleteAttribute('color');
-          if (clone.hasAttribute('aHighlight')) clone.deleteAttribute('aHighlight');
-          geos.push(clone);
-        }
-      } else {
-        const clone = mesh.geometry.clone();
-        mesh.updateWorldMatrix(true, false);
-        clone.applyMatrix4(mesh.matrixWorld);
+    // Bake persistent variant meshes
+    for (const mesh of this.variantMeshes.values()) {
+      const srcGeo = mesh.geometry;
+      const count = mesh.count;
+      for (let i = 0; i < count; i++) {
+        mesh.getMatrixAt(i, mat4);
+        const clone = srcGeo.clone();
+        clone.applyMatrix4(mat4);
         clone.deleteAttribute('color');
         if (clone.hasAttribute('aHighlight')) clone.deleteAttribute('aHighlight');
         geos.push(clone);
@@ -2595,26 +2678,28 @@ export class BuildingRenderer {
     scene.add(this._whiteModelMesh);
   }
 
-  dispose(scene: THREE.Scene): void {
+  /** Dispose non-persistent resources (overlays, infra, light spots). Called during rebuild. */
+  private disposeNonPersistent(scene: THREE.Scene): void {
     if (this._whiteModelMesh) {
       scene.remove(this._whiteModelMesh);
       this._whiteModelMesh.geometry.dispose();
       this._whiteModelMesh = null;
     }
 
-    for (const mesh of this.meshes) {
+    for (const mesh of this.overlayMeshes) {
       scene.remove(mesh);
       mesh.geometry.dispose();
       const mat = mesh.material;
       if (Array.isArray(mat)) mat.forEach(m => m.dispose());
-      else if (mat !== getBuildingMaterial()) (mat as THREE.Material).dispose();
+      else (mat as THREE.Material).dispose();
     }
-    this.meshes = [];
+    this.overlayMeshes = [];
 
     for (const group of this.infraGroups) {
       scene.remove(group);
     }
     this.infraGroups = [];
+    this.infraIndex.clear();
 
     if (this.lightSpotMesh) {
       scene.remove(this.lightSpotMesh);
@@ -2623,5 +2708,21 @@ export class BuildingRenderer {
       this.lightSpotMesh = null;
       this.lightSpotMaterial = null;
     }
+  }
+
+  /** Full dispose including persistent variant meshes (game exit / cleanup). */
+  dispose(scene: THREE.Scene): void {
+    this.disposeNonPersistent(scene);
+
+    // Dispose persistent variant meshes
+    for (const mesh of this.variantMeshes.values()) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+    }
+    this.variantMeshes.clear();
+    this.variantCounts.clear();
+    this.positionToInstance.clear();
+    this.instanceToPosition.clear();
+    this.variantInitialized = false;
   }
 }

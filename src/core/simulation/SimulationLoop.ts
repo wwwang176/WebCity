@@ -45,6 +45,11 @@ export class SimulationLoop {
   /** Called when terrain-related state changes (pollution/land value) */
   onTerrainChanged?: () => void;
 
+  /** Fine-grained building callbacks for incremental rendering */
+  onBuildingAdded?: (x: number, y: number, zoneType: number, level: number) => void;
+  onBuildingRemoved?: (x: number, y: number) => void;
+  onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean) => void;
+
   constructor(state: GameState) {
     this.state = state;
   }
@@ -267,6 +272,7 @@ export class SimulationLoop {
         if (Math.random() < 0.02) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
           changed = true;
+          this.onBuildingRemoved?.(x, y);
         }
         continue;
       }
@@ -282,6 +288,12 @@ export class SimulationLoop {
         conditions.hasWater = this.state.water.isSupplied(x, y);
         if (growth.tryGrow(x, y, conditions)) {
           changed = true;
+          // Read back the grown cell to get level info
+          const grown = grid.getCell(x, y);
+          if (grown) {
+            const level = Math.max(1, Math.min(3, Math.ceil(grown.serviceCoverage / 3) || 1));
+            this.onBuildingAdded?.(x, y, cell.zoneType, level);
+          }
         }
       }
     }
@@ -550,12 +562,15 @@ export class SimulationLoop {
                   const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
                   if (c && c.buildingId === cell.buildingId) {
                     this.state.grid.setCell(primary.x + dx, primary.y + dy, { reserved: 3 });
+                    this.onBuildingUpdated?.(primary.x + dx, primary.y + dy, c.zoneType, 1, true);
                   }
                 }
               }
             }
           } else {
             this.state.grid.setCell(f.x, f.y, { reserved: 3 }); // BuildingStatus.BURNED
+            const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1));
+            this.onBuildingUpdated?.(f.x, f.y, cell.zoneType, level, true);
           }
         }
       }
@@ -716,6 +731,12 @@ export class SimulationLoop {
       // Try upgrade first, then downgrade
       if (upgrade.tryUpgrade(x, y, conditions) || upgrade.tryDowngrade(x, y, conditions)) {
         changed = true;
+        // Notify with updated state
+        const updated = grid.getCell(x, y);
+        if (updated) {
+          const newLevel = Math.max(1, Math.min(3, Math.ceil(updated.serviceCoverage / 3) || 1));
+          this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === 3);
+        }
       }
     }
     if (changed) this.onBuildingsChanged?.();

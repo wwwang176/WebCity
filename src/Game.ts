@@ -186,6 +186,16 @@ export class Game {
     this.simLoop.onTerrainChanged = () => {
       this.dirty.terrain = true;
     };
+    // Fine-grained building callbacks for incremental rendering
+    this.simLoop.onBuildingAdded = (x, y, zoneType, level) => {
+      this.buildingRenderer.addBuilding(x, y, zoneType, level, false);
+    };
+    this.simLoop.onBuildingRemoved = (x, y) => {
+      this.buildingRenderer.removeBuilding(x, y);
+    };
+    this.simLoop.onBuildingUpdated = (x, y, zoneType, level, burned) => {
+      this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned);
+    };
     this.roadBuilder = new RoadBuilder(this.state.grid);
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
