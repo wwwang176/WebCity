@@ -903,7 +903,7 @@ export class BuildingRenderer {
   private infraGroups: THREE.Group[] = [];
   private infraIndex = new Map<string, THREE.Group>();
 
-  private readonly maxPerVariant = 3000;
+  private readonly maxPerVariant = 6000;
 
   // Light spot system (fake ground glow near buildings at night)
   private lightSpotMesh: THREE.InstancedMesh | null = null;
