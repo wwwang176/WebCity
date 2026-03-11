@@ -5,7 +5,7 @@ import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue } from '../economy/LandValue';
-import { ZoneType, isResidentialZone, isCommercialZone, isWorkplaceZone } from '../grid/types';
+import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, isWorkplaceZone } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
@@ -13,7 +13,7 @@ import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { getIncomeLevelMultiplier, getBuildingLevelMultiplier } from '../economy/TaxMultipliers';
-import { getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
+import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel } from '../citizen/types';
@@ -595,8 +595,8 @@ export class SimulationLoop {
       const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
       for (const [dx, dy] of dirs) {
         const nc = grid.getCell(x + dx!, y + dy!);
-        if (nc && nc.terrainType === 1) waterfront = true;
-        if (nc && (nc.terrainType === 3 || nc.buildingId === 248)) parkProximity = true;
+        if (nc && nc.terrainType === TerrainType.WATER) waterfront = true;
+        if (nc && (nc.terrainType === TerrainType.FOREST || nc.buildingId === getInfraBuildingId('park'))) parkProximity = true;
       }
       // Also check 2-cell radius for natural parks
       if (!parkProximity) {
@@ -605,7 +605,7 @@ export class SimulationLoop {
           for (let dy = -2; dy <= 2; dy++) {
             if (Math.abs(dx) + Math.abs(dy) > 2) continue;
             const nc = grid.getCell(x + dx, y + dy);
-            if (nc && (nc.terrainType === 3 || nc.buildingId === 248)) { parkProximity = true; break outer; }
+            if (nc && (nc.terrainType === TerrainType.FOREST || nc.buildingId === getInfraBuildingId('park'))) { parkProximity = true; break outer; }
           }
         }
       }

@@ -3,6 +3,7 @@ import {
   INFRA_CONFIGS,
   getInfraConfig,
   getInfraConfigById,
+  getInfraBuildingId,
   isInfrastructureBuilding,
   isZoneBuilding,
   type InfraType,
@@ -169,6 +170,20 @@ describe('InfraConfig', () => {
 
     it('should return false for 0 (empty cell)', () => {
       expect(isZoneBuilding(0)).toBe(false);
+    });
+  });
+
+  describe('getInfraBuildingId', () => {
+    it('returns the correct buildingId for known types', () => {
+      expect(getInfraBuildingId('park')).toBe(248);
+      expect(getInfraBuildingId('power')).toBe(254);
+      expect(getInfraBuildingId('airport')).toBe(237);
+    });
+
+    it('returns consistent values with getInfraConfig', () => {
+      for (const cfg of INFRA_CONFIGS) {
+        expect(getInfraBuildingId(cfg.type)).toBe(cfg.buildingId);
+      }
     });
   });
 

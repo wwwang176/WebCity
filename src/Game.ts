@@ -26,7 +26,7 @@ import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
-import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, BURNED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
@@ -734,58 +734,58 @@ export class Game {
     // Services store center coordinates, so compute center from primary cell
     const { cx, cy } = getInfraCenterById(px, py, buildingId);
 
-    if (buildingId === 254) this.state.power.removePlant(cx, cy);
-    if (buildingId === 253) this.state.water.removePlant(cx, cy);
-    if (buildingId === 252) {
+    if (buildingId === getInfraBuildingId('power')) this.state.power.removePlant(cx, cy);
+    if (buildingId === getInfraBuildingId('water')) this.state.water.removePlant(cx, cy);
+    if (buildingId === getInfraBuildingId('police')) {
       const sid = this.state.police.getStations().find(s => s.x === cx && s.y === cy);
       if (sid) this.state.police.removeStation(sid.id);
     }
-    if (buildingId === 251) {
+    if (buildingId === getInfraBuildingId('fire')) {
       const sid = this.state.fire.getStations().find(s => s.x === cx && s.y === cy);
       if (sid) this.state.fire.removeStation(sid.id);
     }
-    if (buildingId === 250) {
+    if (buildingId === getInfraBuildingId('hospital')) {
       const hid = this.state.health.getHospitals().find(h => h.x === cx && h.y === cy);
       if (hid) this.state.health.removeHospital(hid.id);
     }
-    if (buildingId === 249 || buildingId === 244 || buildingId === 243) {
+    if (buildingId === getInfraBuildingId('school') || buildingId === getInfraBuildingId('school_high') || buildingId === getInfraBuildingId('school_univ')) {
       const sid = this.state.education.getSchools().find(s => s.x === cx && s.y === cy);
       if (sid) this.state.education.removeSchool(sid.id);
     }
-    if (buildingId === 248) {
+    if (buildingId === getInfraBuildingId('park')) {
       const pid = this.state.parks.getParks().find(p => p.x === cx && p.y === cy);
       if (pid) this.state.parks.removePark(pid.id);
     }
-    if (buildingId === 247) {
+    if (buildingId === getInfraBuildingId('garbage')) {
       const gid = this.state.garbage.getFacilities().find(g => g.x === cx && g.y === cy);
       if (gid) this.state.garbage.removeFacility(gid.id);
     }
-    if (buildingId === 246) {
+    if (buildingId === getInfraBuildingId('sewage')) {
       const sid = this.state.sewage.getTreatmentPlants().find(s => s.x === cx && s.y === cy);
       if (sid) this.state.sewage.removeTreatmentPlant(sid.id);
     }
-    if (buildingId === 245) {
+    if (buildingId === getInfraBuildingId('cemetery')) {
       const cid = this.state.deathCare.getCemeteries().find(c => c.x === cx && c.y === cy);
       if (cid) this.state.deathCare.removeCemetery(cid.id);
     }
-    // Transport stops (buildingId 236-242)
-    if (buildingId === 242) {
+    // Transport stops
+    if (buildingId === getInfraBuildingId('bus_stop')) {
       const sid = this.state.bus.getStops().find(s => s.x === px && s.y === py);
       if (sid) this.state.bus.removeStop(sid.id);
     }
-    if (buildingId === 241) {
+    if (buildingId === getInfraBuildingId('metro_station')) {
       const sid = this.state.metro.getStations().find(s => s.x === px && s.y === py);
       if (sid) this.state.metro.removeStation(sid.id);
     }
-    if (buildingId === 239) {
+    if (buildingId === getInfraBuildingId('train_station')) {
       const sid = this.state.rail.getStations().find(s => s.x === px && s.y === py);
       if (sid) this.state.rail.removeStation(sid.id);
     }
-    if (buildingId === 238) {
+    if (buildingId === getInfraBuildingId('ferry_dock')) {
       const sid = this.state.ferry.getDocks().find(s => s.x === px && s.y === py);
       if (sid) this.state.ferry.removeDock(sid.id);
     }
-    if (buildingId === 237) {
+    if (buildingId === getInfraBuildingId('airport')) {
       // Find airport whose footprint covers this cell
       const airport = this.state.airport.getAirports().find(a => {
         const fp = getAirportFootprint(a.size);

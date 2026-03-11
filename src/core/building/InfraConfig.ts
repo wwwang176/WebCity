@@ -62,6 +62,11 @@ export function getInfraConfigById(buildingId: number): InfraConfig | undefined 
   return byId.get(buildingId);
 }
 
+/** Look up infrastructure buildingId by type name. */
+export function getInfraBuildingId(type: InfraType): number {
+  return byType.get(type)!.buildingId;
+}
+
 export function getRotatedSize(w: number, h: number, rotation: Rotation): { w: number; h: number } {
   if (rotation === 90 || rotation === 270) {
     return { w: h, h: w };
