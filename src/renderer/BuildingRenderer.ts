@@ -1971,8 +1971,48 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildBusStop(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly bus stop — shelter canopy + sign pole + bench
-    this.buildCivicBuilding(scene, cx, cz, 'bus_stop', scale);
+    const s = scale;
+    const y0 = 0.05;
+
+    // Platform base
+    const baseGeo = new THREE.BoxGeometry(0.40 * s, 0.02 * s, 0.25 * s);
+    baseGeo.translate(0, 0.01 * s, 0);
+    this.addInfraMesh(scene, baseGeo, new THREE.MeshLambertMaterial({ color: 0xbdbdbd }), cx, y0, cz);
+
+    // Shelter back panel
+    const backGeo = new THREE.BoxGeometry(0.28 * s, 0.15 * s, 0.01 * s);
+    backGeo.translate(0, 0.075 * s, -0.065 * s);
+    this.addInfraMesh(scene, backGeo, new THREE.MeshLambertMaterial({ color: 0xffe0b2 }), cx, y0 + 0.02 * s, cz);
+
+    // Shelter poles (front-left and front-right)
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0xe0e0e0 });
+    const poleGeoL = new THREE.CylinderGeometry(0.008 * s, 0.008 * s, 0.18 * s, 6);
+    poleGeoL.translate(-0.12 * s, 0.09 * s, 0.06 * s);
+    this.addInfraMesh(scene, poleGeoL, poleMat, cx, y0 + 0.02 * s, cz);
+
+    const poleGeoR = new THREE.CylinderGeometry(0.008 * s, 0.008 * s, 0.18 * s, 6);
+    poleGeoR.translate(0.12 * s, 0.09 * s, 0.06 * s);
+    this.addInfraMesh(scene, poleGeoR, poleMat.clone(), cx, y0 + 0.02 * s, cz);
+
+    // Shelter roof
+    const roofGeo = new THREE.BoxGeometry(0.28 * s, 0.015 * s, 0.14 * s);
+    roofGeo.translate(0, 0.18 * s, 0);
+    this.addInfraMesh(scene, roofGeo, new THREE.MeshLambertMaterial({ color: 0xff9800 }), cx, y0 + 0.02 * s, cz);
+
+    // Sign pole (to the right side)
+    const signPoleGeo = new THREE.CylinderGeometry(0.006 * s, 0.006 * s, 0.22 * s, 4);
+    signPoleGeo.translate(0.16 * s, 0.11 * s, 0.08 * s);
+    this.addInfraMesh(scene, signPoleGeo, new THREE.MeshLambertMaterial({ color: 0x888888 }), cx, y0 + 0.02 * s, cz);
+
+    // Bus sign
+    const signGeo = new THREE.BoxGeometry(0.05 * s, 0.05 * s, 0.01 * s);
+    signGeo.translate(0.16 * s, 0.23 * s, 0.08 * s);
+    this.addInfraMesh(scene, signGeo, new THREE.MeshLambertMaterial({ color: 0xff9800 }), cx, y0 + 0.02 * s, cz);
+
+    // Bench
+    const benchGeo = new THREE.BoxGeometry(0.12 * s, 0.02 * s, 0.03 * s);
+    benchGeo.translate(-0.02 * s, 0.05 * s, 0.02 * s);
+    this.addInfraMesh(scene, benchGeo, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, y0 + 0.02 * s, cz);
   }
 
   private buildMetroStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
