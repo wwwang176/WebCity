@@ -1097,8 +1097,69 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildPoliceStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly police station — L-shape + watch tower + garage doors + blue light
-    this.buildCivicBuilding(scene, cx, cz, 'police', scale);
+    // L-shaped main building — long wing
+    const longWingGeo = new THREE.BoxGeometry(0.70, 0.35, 0.35);
+    longWingGeo.translate(-0.05, 0.35 / 2, 0.10);
+    const longWingMat = new THREE.MeshLambertMaterial({ color: 0x3f51b5 });
+    this.addInfraMesh(scene, longWingGeo, longWingMat, cx, 0.05, cz);
+
+    // L-shaped main building — short wing
+    const shortWingGeo = new THREE.BoxGeometry(0.35, 0.35, 0.40);
+    shortWingGeo.translate(0.25, 0.35 / 2, -0.10);
+    const shortWingMat = new THREE.MeshLambertMaterial({ color: 0x3949a3 });
+    this.addInfraMesh(scene, shortWingGeo, shortWingMat, cx, 0.05, cz);
+
+    // Roof for long wing
+    const longRoofGeo = new THREE.BoxGeometry(0.75, 0.03, 0.40);
+    longRoofGeo.translate(-0.05, 0.015, 0.10);
+    const longRoofMat = new THREE.MeshLambertMaterial({ color: 0x303f9f });
+    this.addInfraMesh(scene, longRoofGeo, longRoofMat, cx, 0.05 + 0.35, cz);
+
+    // Roof for short wing
+    const shortRoofGeo = new THREE.BoxGeometry(0.40, 0.03, 0.45);
+    shortRoofGeo.translate(0.25, 0.015, -0.10);
+    const shortRoofMat = new THREE.MeshLambertMaterial({ color: 0x303f9f });
+    this.addInfraMesh(scene, shortRoofGeo, shortRoofMat, cx, 0.05 + 0.35, cz);
+
+    // Watch tower at corner where wings meet
+    const towerGeo = new THREE.BoxGeometry(0.12, 0.25, 0.12);
+    towerGeo.translate(0.10, 0.35 + 0.25 / 2, -0.05);
+    const towerMat = new THREE.MeshLambertMaterial({ color: 0x5c6bc0 });
+    this.addInfraMesh(scene, towerGeo, towerMat, cx, 0.05, cz);
+
+    // Tower cap
+    const towerCapGeo = new THREE.BoxGeometry(0.15, 0.02, 0.15);
+    towerCapGeo.translate(0.10, 0.35 + 0.25 + 0.01, -0.05);
+    const towerCapMat = new THREE.MeshLambertMaterial({ color: 0x283593 });
+    this.addInfraMesh(scene, towerCapGeo, towerCapMat, cx, 0.05, cz);
+
+    // 2 garage doors on front of long wing
+    const garageMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
+    const garage1Geo = new THREE.BoxGeometry(0.16, 0.18, 0.01);
+    garage1Geo.translate(-0.18, 0.18 / 2, 0.10 + 0.35 / 2 + 0.005);
+    this.addInfraMesh(scene, garage1Geo, garageMat, cx, 0.05, cz);
+
+    const garage2Geo = new THREE.BoxGeometry(0.16, 0.18, 0.01);
+    garage2Geo.translate(0.06, 0.18 / 2, 0.10 + 0.35 / 2 + 0.005);
+    this.addInfraMesh(scene, garage2Geo, garageMat, cx, 0.05, cz);
+
+    // Blue police light on tower top
+    const lightGeo = new THREE.SphereGeometry(0.025, 6, 6);
+    lightGeo.translate(0.10, 0.35 + 0.25 + 0.02 + 0.025, -0.05);
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0x42a5f5 });
+    this.addInfraMesh(scene, lightGeo, lightMat, cx, 0.05, cz, false);
+
+    // White stripe band on long wing
+    const stripeGeo = new THREE.BoxGeometry(0.70, 0.03, 0.36);
+    stripeGeo.translate(-0.05, 0.35 / 2, 0.10);
+    const stripeMat = new THREE.MeshLambertMaterial({ color: 0xe8eaf6 });
+    this.addInfraMesh(scene, stripeGeo, stripeMat, cx, 0.05, cz);
+
+    // Flagpole
+    const flagpoleGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.30, 4);
+    flagpoleGeo.translate(-0.30, 0.30 / 2, 0.35);
+    const flagpoleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    this.addInfraMesh(scene, flagpoleGeo, flagpoleMat, cx, 0.05, cz);
   }
 
   private buildFireStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
