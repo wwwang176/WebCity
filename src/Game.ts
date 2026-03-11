@@ -35,14 +35,7 @@ import { collectTransportRoutes } from './core/transport/collectTransportRoutes'
 
 import { ViewMode, VIEW_MODE_OPACITY } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
-import { buildFerryPathInfo, interpolateFerryPath, type FerryPathInfo } from './core/transport/FerryLinePath';
-
-/** 渡輪視覺移動速度（世界單位/秒），與 tick 無關 */
-const FERRY_VISUAL_SPEED = 1.5;
-/** 渡輪轉向速率（弧度/秒），越大轉越快 */
-const FERRY_TURN_RATE = 3.0;
-/** 渡輪 ID 偏移量（對應 collectTransportVehicles） */
-const FERRY_ID_OFFSET = 500_000;
+import { FerryAnimator } from './renderer/FerryAnimator';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -122,8 +115,8 @@ export class Game {
   private notificationTimer = 0;
   private vehicleTypes = new Map<number, VehicleData['type']>();
   private vehicleHeadings = new Map<number, number>();
-  /** 渡輪渲染端動畫狀態（純 LERP，不靠 tick） */
-  private ferryAnims = new Map<number, { pathInfo: FerryPathInfo; distance: number; heading: number }>();
+  /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
+  private ferryAnimator = new FerryAnimator();
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
@@ -1038,59 +1031,7 @@ export class Game {
 
     // 渡輪渲染端動畫（純 LERP，跟地鐵一樣不靠 tick）
     const ferrySpeed = this.paused ? 0 : this.state.clock.speed;
-    // 同步動畫狀態：新出發時建立動畫，動畫播完才清除
-    for (const v of this.state.ferry.getVessels()) {
-      if (v.traveling) {
-        const waterPath = this.state.ferry.getVesselPath(v.id);
-        const existing = this.ferryAnims.get(v.id);
-        // 新出發或新航段（path 參照不同）→ 建立新動畫
-        if (waterPath && waterPath.length > 1 &&
-            (!existing || existing.pathInfo.path !== waterPath)) {
-          const info = buildFerryPathInfo(waterPath);
-          const initPos = interpolateFerryPath(info, 0);
-          this.ferryAnims.set(v.id, {
-            pathInfo: info,
-            distance: 0,
-            heading: existing?.heading ?? initPos?.heading ?? 0,
-          });
-        }
-      }
-      // 不在 !traveling 時刪除 — 讓動畫播放到終點
-    }
-    // 推進渡輪動畫距離 + heading LERP & 清除已播完的動畫
-    for (const [vesselId, anim] of this.ferryAnims) {
-      anim.distance += FERRY_VISUAL_SPEED * dt * ferrySpeed;
-      // Heading LERP：取路徑目標朝向，平滑轉向
-      const target = interpolateFerryPath(anim.pathInfo, anim.distance);
-      if (target) {
-        let diff = target.heading - anim.heading;
-        while (diff > Math.PI) diff -= 2 * Math.PI;
-        while (diff < -Math.PI) diff += 2 * Math.PI;
-        const t = Math.min(1, FERRY_TURN_RATE * dt * Math.max(ferrySpeed, 0.001));
-        anim.heading += diff * t;
-      }
-      if (anim.distance >= anim.pathInfo.totalLength) {
-        const vessel = [...this.state.ferry.getVessels()].find(v => v.id === vesselId);
-        if (!vessel || !vessel.traveling) {
-          this.ferryAnims.delete(vesselId);
-        }
-      }
-    }
-    // 覆蓋渡輪的視覺位置和朝向（使用 LERP heading）
-    for (const vd of transportVehicles) {
-      if (vd.type === 'ferry') {
-        const vesselId = vd.id - FERRY_ID_OFFSET;
-        const anim = this.ferryAnims.get(vesselId);
-        if (anim) {
-          const pos = interpolateFerryPath(anim.pathInfo, anim.distance);
-          if (pos) {
-            vd.x = pos.x;
-            vd.y = pos.y;
-            vd.heading = anim.heading;
-          }
-        }
-      }
-    }
+    this.ferryAnimator.update(dt, ferrySpeed, this.state.ferry, transportVehicles);
 
     // 合併道路車輛與交通系統車輛
     const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);

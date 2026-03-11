@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { TunnelSegment } from '../core/transport/MetroTunnelPath';
 import type { TransportStop } from '../core/transport/types';
 import { UNDERGROUND_TUNNEL_Y } from '../core/ViewMode';
-import { buildMetroCarriageGeometry } from './vehicleGeometry';
+import { buildMetroCarriageGeometry } from './geometry';
 import {
   buildLinePath,
   distanceToSegmentParam,
