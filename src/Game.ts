@@ -40,6 +40,8 @@ import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
 import { RailNetwork } from './core/rail/RailNetwork';
 import { RailType, TrackDirection, RAIL_COST } from './core/rail/types';
+import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
+import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -92,6 +94,8 @@ export class Game {
   private transportRouteRenderer: TransportRouteRenderer;
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
+  private levelCrossingRenderer: LevelCrossingRenderer;
+  private levelCrossingSystem: LevelCrossingSystem;
   private state: GameState;
   private simLoop: SimulationLoop;
   private roadBuilder: RoadBuilder;
@@ -151,6 +155,7 @@ export class Game {
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
     this.state.rail.setRailNetwork(this.railNetwork);
+    this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);
 
     // 設定渡輪系統的水域網格（A* 水面導航）
@@ -185,6 +190,7 @@ export class Game {
     this.transportRouteRenderer = new TransportRouteRenderer();
     this.metroTunnelRenderer = new MetroTunnelRenderer();
     this.trackRenderer = new TrackRenderer();
+    this.levelCrossingRenderer = new LevelCrossingRenderer();
 
     this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
 
@@ -1000,6 +1006,8 @@ export class Game {
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
         this.simLoop.tick();
+        // Update level crossing state (gates/lights) based on train positions
+        this.levelCrossingSystem.tick(this.state.rail);
         // Milestone detection
         this.checkMilestone();
 
@@ -1030,6 +1038,8 @@ export class Game {
     if (this.renderDirty) {
       this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
       this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
+      this.levelCrossingSystem.rebuildFromGrid(this.state.grid);
+      this.levelCrossingRenderer.build(this.sceneManager.scene, this.levelCrossingSystem.getCrossings());
       this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
       this.terrainRenderer.refreshColors();
       // Sync traffic lights with current intersections
@@ -1045,12 +1055,15 @@ export class Game {
         this.buildingRenderer.setUndergroundMode(true, this.sceneManager.scene);
         this.roadRenderer.setUndergroundMode(true);
         this.trackRenderer.setUndergroundMode(true);
+        this.levelCrossingRenderer.setUndergroundMode(true);
       }
       this.renderDirty = false;
     }
 
     // Update traffic light colors every frame
     this.trafficLightRenderer.update(this.state.trafficLights.getLights());
+    // Update level crossing lights/gates animation every frame
+    this.levelCrossingRenderer.update(this.elapsedTime, this.levelCrossingSystem.getCrossings());
 
     // Update cursor color based on tool
     this.updateCursorColor();
@@ -1061,7 +1074,11 @@ export class Game {
       const canAdvance = (cur: string, next: string) => {
         const [cx, cy] = cur.split(',').map(Number);
         const [nx, ny] = next.split(',').map(Number);
-        return this.state.trafficLights.canPass(cx!, cy!, nx!, ny!);
+        // Block at red traffic lights
+        if (!this.state.trafficLights.canPass(cx!, cy!, nx!, ny!)) return false;
+        // Block at active level crossings (train approaching/passing)
+        if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
+        return true;
       };
       const getSpeedLimit = (cellKey: string) => {
         const [gx, gy] = cellKey.split(',').map(Number);
@@ -1307,6 +1324,7 @@ export class Game {
     this.terrainRenderer.setUndergroundMode(underground);
     this.roadRenderer.setUndergroundMode(underground);
     this.trackRenderer.setUndergroundMode(underground);
+    this.levelCrossingRenderer.setUndergroundMode(underground);
     this.vehicleRenderer.setUndergroundMode(underground);
     this.weatherRenderer.setUndergroundMode(underground);
     // Rebuild to apply/restore material settings on fresh meshes
