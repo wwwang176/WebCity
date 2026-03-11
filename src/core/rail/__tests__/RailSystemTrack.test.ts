@@ -118,9 +118,8 @@ describe('RailSystem — track-based movement', () => {
     // Doesn't matter exactly where — just verify tick doesn't crash
   });
 
-  it('should update train position progressively during travel (not teleport)', () => {
+  it('should keep position at departure station during travel (animator handles visual)', () => {
     const { grid, builder, rail } = setupTrackSystem();
-    // Build straight track from x=0 to x=18 (within 20x20 grid)
     builder.buildTrack({ x: 0, y: 5 }, { x: 18, y: 5 }, 100000);
 
     const stA = rail.buildStation(0, 5, grid)!;
@@ -130,7 +129,6 @@ describe('RailSystem — track-based movement', () => {
     // Tick: initial → atStop
     rail.tick();
     const train = rail.getTrains()[0]!;
-    expect(train.atStop).toBe(true);
 
     // Tick through dwell time (dwellTicks=3)
     rail.tick(); // waitTicks 3→2
@@ -138,24 +136,21 @@ describe('RailSystem — track-based movement', () => {
     rail.tick(); // 1→0 → depart, traveling=true
 
     expect(train.traveling).toBe(true);
+    // Position stays at departure station (visual interpolation is per-frame, not per-tick)
+    expect(train.position.x).toBe(0);
+    expect(train.position.y).toBe(5);
 
-    // Now tick once while traveling — position should NOT still be at station A
-    const startX = train.position.x;
+    // Tick once while traveling — position still at departure
     rail.tick();
-
-    // Position should have moved away from start toward destination
-    expect(train.position.x).toBeGreaterThan(startX);
-    // But should NOT have teleported to the end
-    expect(train.position.x).toBeLessThan(18);
+    expect(train.position.x).toBe(0);
   });
 
-  it('should move train along L-shaped track path', () => {
+  it('should expose travel path for animator during travel', () => {
     const { grid, builder, rail } = setupTrackSystem();
-    // Build L-shaped track: (0,5) → (5,5) → (5,10)
-    builder.buildTrack({ x: 0, y: 5 }, { x: 5, y: 10 }, 100000);
+    builder.buildTrack({ x: 0, y: 5 }, { x: 10, y: 5 }, 100000);
 
     const stA = rail.buildStation(0, 5, grid)!;
-    const stB = rail.buildStation(5, 10, grid)!;
+    const stB = rail.buildStation(10, 5, grid)!;
     rail.createLine([stA, stB]);
 
     // Move to traveling state
@@ -163,16 +158,12 @@ describe('RailSystem — track-based movement', () => {
     const train = rail.getTrains()[0]!;
     expect(train.traveling).toBe(true);
 
-    // Tick a few times and track position changes
-    const positions: { x: number; y: number }[] = [];
-    for (let i = 0; i < 5; i++) {
-      rail.tick();
-      positions.push({ x: train.position.x, y: train.position.y });
-    }
-
-    // Position should be changing each tick
-    const allSame = positions.every(p => p.x === positions[0]!.x && p.y === positions[0]!.y);
-    expect(allSame).toBe(false);
+    // Should expose path for animator
+    const path = rail.getTrainTravelPath(train.id);
+    expect(path).not.toBeNull();
+    expect(path!.length).toBeGreaterThan(1);
+    expect(path![0]!.x).toBe(0);
+    expect(path![0]!.y).toBe(5);
   });
 
   it('should snap train to destination station on arrival', () => {

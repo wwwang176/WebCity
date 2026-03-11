@@ -104,7 +104,7 @@ describe('TrainAnimator', () => {
     expect(vehicles[0]!.x + vehicles[0]!.y).toBeGreaterThan(0);
   });
 
-  it('should clean up animation when train stops traveling', () => {
+  it('should keep animation playing until path completes even after train arrives', () => {
     const animator = new TrainAnimator();
     const path = [{ x: 0, y: 5 }, { x: 5, y: 5 }];
 
@@ -117,7 +117,7 @@ describe('TrainAnimator', () => {
     animator.update(0.1, 1, railTraveling, v1);
     expect(v1[0]!.x).toBeGreaterThan(0);
 
-    // Stop traveling (arrived)
+    // Stop traveling (tick says arrived) — animation should keep playing
     const railStopped = makeFakeRailSystem(
       [{ id: 1, traveling: false }],
       new Map(),
@@ -125,8 +125,37 @@ describe('TrainAnimator', () => {
     const v2 = [makeRenderData(1, 5, 5)];
     animator.update(0.1, 1, railStopped, v2);
 
-    // Should use the tick position (5,5), not animated
-    expect(v2[0]!.x).toBe(5);
+    // Animation still playing — should override with animated position, not snap to tick position
+    expect(v2[0]!.x).toBeGreaterThan(0);
+    expect(v2[0]!.x).toBeLessThan(5);
+  });
+
+  it('should clean up animation after path completes and train not traveling', () => {
+    const animator = new TrainAnimator();
+    const path = [{ x: 0, y: 5 }, { x: 2, y: 5 }]; // Short path (2 cells)
+
+    // Start traveling
+    const railTraveling = makeFakeRailSystem(
+      [{ id: 1, traveling: true }],
+      new Map([[1, path]]),
+    );
+
+    // Advance far enough to complete the path (2 cells / 4 speed = 0.5s)
+    for (let i = 0; i < 10; i++) {
+      const v = [makeRenderData(1, 0, 5)];
+      animator.update(0.2, 1, railTraveling, v);
+    }
+
+    // Now stop traveling
+    const railStopped = makeFakeRailSystem(
+      [{ id: 1, traveling: false }],
+      new Map(),
+    );
+    const v2 = [makeRenderData(1, 2, 5)];
+    animator.update(0.1, 1, railStopped, v2);
+
+    // Animation should be cleaned up — tick position used
+    expect(v2[0]!.x).toBe(2);
   });
 
   it('should respect game speed multiplier', () => {

@@ -219,17 +219,11 @@ export class RailSystem extends BaseTransportSystem {
   }
 
   protected override tickTraveling(vehicle: TransportVehicle, route: TransportRoute): void {
-    const meta = this.trainTravelData.get(vehicle.id);
-    if (!meta) {
-      // No path data — fallback to base teleport behavior
-      super.tickTraveling(vehicle, route);
-      return;
-    }
-
+    // Position interpolation is handled by TrainAnimator (per-frame, not per-tick).
+    // Here we only manage the countdown and arrival snap — same as base class,
+    // except we clean up trainTravelData on arrival.
     vehicle.travelTicks--;
-
     if (vehicle.travelTicks <= 0) {
-      // Arrived at destination — snap to station
       const stop = route.stops[vehicle.currentStopIndex]!;
       vehicle.position = { x: stop.x, y: stop.y };
       vehicle.traveling = false;
@@ -237,25 +231,6 @@ export class RailSystem extends BaseTransportSystem {
       vehicle.waitTicks = this.config.dwellTicks;
       this.onArrive(vehicle, stop);
       this.trainTravelData.delete(vehicle.id);
-      return;
-    }
-
-    // Interpolate position along rail path
-    const progress = 1 - (vehicle.travelTicks / meta.totalTicks);
-    const targetDist = progress * meta.totalDist;
-
-    // Binary-like walk to find the right segment
-    for (let i = 1; i < meta.points.length; i++) {
-      if (targetDist <= meta.cumDists[i]! || i === meta.points.length - 1) {
-        const segStart = meta.cumDists[i - 1]!;
-        const segLen = meta.cumDists[i]! - segStart;
-        const t = segLen > 0 ? (targetDist - segStart) / segLen : 0;
-        vehicle.position = {
-          x: meta.points[i - 1]!.x + (meta.points[i]!.x - meta.points[i - 1]!.x) * t,
-          y: meta.points[i - 1]!.y + (meta.points[i]!.y - meta.points[i - 1]!.y) * t,
-        };
-        break;
-      }
     }
   }
 

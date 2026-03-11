@@ -47,14 +47,12 @@ export class TrainAnimator implements VehicleAnimator {
     railSystem: RailSystemLike,
     transportVehicles: TransportVehicleRenderData[],
   ): void {
-    // 同步動畫狀態：建立/清除
-    const travelingSet = new Set<number>();
+    // 同步動畫狀態：新出發時建立動畫，動畫播完才清除
     for (const train of railSystem.getTrains()) {
       if (train.traveling) {
-        travelingSet.add(train.id);
         const path = railSystem.getTrainTravelPath(train.id);
         const existing = this.anims.get(train.id);
-        // 新出發或新航段 → 建立新動畫
+        // 新出發或新航段（path 參照不同）→ 建立新動畫
         if (path && path.length > 1 &&
             (!existing || existing.pathRef !== path)) {
           const info = buildFerryPathInfo(path);
@@ -67,17 +65,11 @@ export class TrainAnimator implements VehicleAnimator {
           });
         }
       }
+      // 不在 !traveling 時刪除 — 讓動畫播放到終點
     }
 
-    // 清除不再 traveling 的動畫（到站即清除，讓 tick position 接管）
-    for (const trainId of this.anims.keys()) {
-      if (!travelingSet.has(trainId)) {
-        this.anims.delete(trainId);
-      }
-    }
-
-    // 推進動畫距離 + heading LERP
-    for (const [, anim] of this.anims) {
+    // 推進動畫距離 + heading LERP & 清除已播完的動畫
+    for (const [trainId, anim] of this.anims) {
       anim.distance += TRAIN_VISUAL_SPEED * dt * speed;
 
       // Heading LERP
@@ -88,6 +80,14 @@ export class TrainAnimator implements VehicleAnimator {
         while (diff < -Math.PI) diff += 2 * Math.PI;
         const t = Math.min(1, TRAIN_TURN_RATE * dt * Math.max(speed, 0.001));
         anim.heading += diff * t;
+      }
+
+      // 動畫播完 + 火車不再 traveling → 清除
+      if (anim.distance >= anim.pathInfo.totalLength) {
+        const train = [...railSystem.getTrains()].find(t => t.id === trainId);
+        if (!train || !train.traveling) {
+          this.anims.delete(trainId);
+        }
       }
     }
 
