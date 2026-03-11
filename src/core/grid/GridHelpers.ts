@@ -24,8 +24,8 @@ export function parsePosKeyUnsafe(key: string): { x: number; y: number } {
   return { x: Number(key.slice(0, i)), y: Number(key.slice(i + 1)) };
 }
 
-/** Minimal grid interface for findAdjacentRoad */
-interface ReadableGrid {
+/** Minimal grid interface for road lookups (DIP). */
+export interface ReadableGrid {
   getCell(x: number, y: number): { roadType: number } | null;
 }
 

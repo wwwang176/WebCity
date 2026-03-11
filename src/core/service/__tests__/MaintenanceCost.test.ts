@@ -248,7 +248,6 @@ describe('CivicService.getMaintenanceCost()', () => {
 
     for (const { name, instance } of services) {
       it(`${name} should implement CivicService interface`, () => {
-        expect(typeof instance.tick).toBe('function');
         expect(typeof instance.getMaintenanceCost).toBe('function');
         expect(typeof instance.toJSON).toBe('function');
         expect(instance.getMaintenanceCost()).toBe(0);

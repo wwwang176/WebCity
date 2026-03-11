@@ -1,7 +1,12 @@
-import type { Grid } from '../grid/Grid';
-import type { TrafficSimulation } from '../traffic/TrafficSimulation';
+import type { ReadableGrid } from '../grid/GridHelpers';
 import { parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
+
+/** Minimal traffic interface for congestion estimation (DIP). */
+export interface TrafficMetrics {
+  getVehicleCount(): number;
+  getTopCongested(limit: number): { segment: string; density: number }[];
+}
 
 export enum ServiceVehicleType {
   FIRE_TRUCK = 'FIRE_TRUCK',
@@ -30,12 +35,12 @@ export interface DispatchResult {
  * traffic congestion to estimate travel time.
  */
 export class ServiceDispatch {
-  private grid: Grid;
-  private traffic: TrafficSimulation;
+  private grid: ReadableGrid;
+  private traffic: TrafficMetrics;
   /** Facility ID → district name. */
   private facilityDistricts = new Map<string, string>();
 
-  constructor(grid: Grid, traffic: TrafficSimulation) {
+  constructor(grid: ReadableGrid, traffic: TrafficMetrics) {
     this.grid = grid;
     this.traffic = traffic;
   }

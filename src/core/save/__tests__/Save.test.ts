@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { serializeGameState, deserializeGameState } from '../Serializer';
 import { createGameState } from '../../simulation/GameState';
 import { AutoSaver } from '../AutoSave';
+import { SAVE_CONFIG } from '../SaveManager';
 import { TerrainType, ZoneType } from '../../grid/types';
 import { MULTI_CELL_OCCUPIED } from '../../building/InfraPlacement';
 import { getInfraConfig } from '../../building/InfraConfig';
@@ -269,6 +270,23 @@ describe('Old save migration (1×1 → multi-cell)', () => {
     expect(state.grid.getCell(5, 5)!.buildingId).toBe(248);
     // Park is 1×1, so no secondary cells needed
     expect(state.grid.getCell(6, 5)!.buildingId).toBe(0);
+  });
+});
+
+describe('SAVE_CONFIG', () => {
+  it('should export DB_NAME as a non-empty string', () => {
+    expect(typeof SAVE_CONFIG.DB_NAME).toBe('string');
+    expect(SAVE_CONFIG.DB_NAME.length).toBeGreaterThan(0);
+  });
+
+  it('should export STORE_NAME as a non-empty string', () => {
+    expect(typeof SAVE_CONFIG.STORE_NAME).toBe('string');
+    expect(SAVE_CONFIG.STORE_NAME.length).toBeGreaterThan(0);
+  });
+
+  it('should export DB_VERSION as a positive integer', () => {
+    expect(SAVE_CONFIG.DB_VERSION).toBeGreaterThan(0);
+    expect(Number.isInteger(SAVE_CONFIG.DB_VERSION)).toBe(true);
   });
 });
 
