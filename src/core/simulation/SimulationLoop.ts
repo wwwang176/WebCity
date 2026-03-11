@@ -20,7 +20,8 @@ import { IncomeLevel } from '../citizen/types';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
-import { getSystemForMode, getTransitSystems } from '../transport/TransportRegistry';
+import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
+import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 
 export class SimulationLoop {
   private state: GameState;
@@ -474,16 +475,7 @@ export class SimulationLoop {
     this.state.budget.income = totalIncome;
     // Expenses: road maintenance + service maintenance costs
     const roadMaint = this.countRoadTiles() * 0.1;
-    const serviceCost = this.state.power.getMaintenanceCost()
-      + this.state.water.getMaintenanceCost()
-      + this.state.police.getMaintenanceCost()
-      + this.state.fire.getMaintenanceCost()
-      + this.state.health.getMaintenanceCost()
-      + this.state.education.getMaintenanceCost()
-      + this.state.parks.getMaintenanceCost()
-      + this.state.garbage.getMaintenanceCost()
-      + this.state.sewage.getMaintenanceCost()
-      + this.state.deathCare.getMaintenanceCost();
+    const serviceCost = getTotalServiceMaintenanceCost(this.state);
     // District policy costs: sum all active policy costs across all districts
     let policyCost = 0;
     for (const district of this.state.districts.getAllDistricts()) {
@@ -492,11 +484,7 @@ export class SimulationLoop {
       }
     }
     // Transport operating costs
-    const transportCost = this.state.bus.getOperatingCost()
-      + this.state.metro.getOperatingCost()
-      + this.state.rail.getOperatingCost()
-      + this.state.ferry.getOperatingCost()
-      + this.state.airport.getOperatingCost();
+    const transportCost = getTotalTransportOperatingCost(this.state);
     this.state.budget.expenses = roadMaint + serviceCost + policyCost + transportCost;
   }
 

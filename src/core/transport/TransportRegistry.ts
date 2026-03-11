@@ -29,3 +29,17 @@ export function getSystemForMode(systems: TransitSystems, mode: TransportMode): 
 export function getTransitSystems(systems: TransitSystems): { type: TransportType; system: BaseTransportSystem }[] {
   return TRANSIT_MAP.map(e => ({ type: e.type, system: systems[e.key] }));
 }
+
+/** All transport system keys that have getOperatingCost(). Includes airport. */
+export interface AllTransportSystems extends TransitSystems {
+  airport: BaseTransportSystem;
+}
+
+const ALL_TRANSPORT_KEYS: readonly (keyof AllTransportSystems)[] = [
+  'bus', 'metro', 'rail', 'ferry', 'airport',
+];
+
+/** Sum getOperatingCost() across all transport systems. */
+export function getTotalTransportOperatingCost(systems: AllTransportSystems): number {
+  return ALL_TRANSPORT_KEYS.reduce((sum, key) => sum + systems[key].getOperatingCost(), 0);
+}

@@ -23,6 +23,7 @@ import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
+import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
@@ -1974,11 +1975,7 @@ export class Game {
     const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
     const powerCost = this.state.power.getMaintenanceCost();
     const waterCost = this.state.water.getMaintenanceCost();
-    const transportCost = this.state.bus.getOperatingCost()
-      + this.state.metro.getOperatingCost()
-      + this.state.rail.getOperatingCost()
-      + this.state.ferry.getOperatingCost()
-      + this.state.airport.getOperatingCost();
+    const transportCost = getTotalTransportOperatingCost(this.state);
 
     return {
       residential: Math.round(resIncome * 10) / 10,
