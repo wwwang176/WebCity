@@ -289,6 +289,57 @@ describe('RailBuilder', () => {
     expect(grid.getCell(5, 5)!.railType).toBe(RailType.NONE);
   });
 
+  // --- Infrastructure blocking (all types) ---
+
+  it('should fail to build track over hospital (buildingId 250)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { buildingId: 250 });
+    const builder = new RailBuilder(grid);
+    const result = builder.buildTrack({ x: 2, y: 5 }, { x: 6, y: 5 }, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should fail to build track over police station (buildingId 252)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { buildingId: 252 });
+    const builder = new RailBuilder(grid);
+    const result = builder.buildTrack({ x: 2, y: 5 }, { x: 6, y: 5 }, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should fail to build track over bus stop (buildingId 242)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { buildingId: 242 });
+    const builder = new RailBuilder(grid);
+    const result = builder.buildTrack({ x: 2, y: 5 }, { x: 6, y: 5 }, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should fail to build track over multi-cell infrastructure secondary cell', () => {
+    const grid = new Grid(20, 20);
+    // Simulate hospital secondary cell (reserved=4 MULTI_CELL_OCCUPIED, buildingId=250)
+    grid.setCell(4, 5, { buildingId: 250, reserved: 4 });
+    const builder = new RailBuilder(grid);
+    const result = builder.buildTrack({ x: 2, y: 5 }, { x: 6, y: 5 }, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should NOT clear infrastructure buildings when building track', () => {
+    const grid = new Grid(20, 20);
+    // Place a park (buildingId 248) on cell without road/rail — but validation blocks first
+    // This test verifies the clearing guard as defense-in-depth
+    grid.setCell(4, 5, { buildingId: 248 });
+    const builder = new RailBuilder(grid);
+    const result = builder.buildTrack({ x: 2, y: 5 }, { x: 6, y: 5 }, 10000);
+    expect(result.success).toBe(false);
+    // Park should still exist
+    expect(grid.getCell(4, 5)!.buildingId).toBe(248);
+  });
+
   // --- Single cell track ---
 
   it('should build a single-cell track (from === to)', () => {

@@ -1,5 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
+import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
 import { RailType, TrackDirection, RAIL_COST, type BuildTrackResult } from './types';
 
@@ -30,8 +31,8 @@ export class RailBuilder {
       if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
       if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
-      // Block infrastructure (power=254, water=253)
-      if (cell.buildingId === 254 || cell.buildingId === 253) {
+      // Block all infrastructure buildings (buildingId 236-254)
+      if (getInfraConfigById(cell.buildingId)) {
         return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
       }
     }
@@ -70,9 +71,10 @@ export class RailBuilder {
       const pos = cells[i]!;
       const curr = this.grid.getCell(pos.x, pos.y);
 
-      // Clear zoned buildings (but NOT roads — tracks can coexist with roads)
+      // Clear zoned buildings only (NOT infrastructure, NOT roads — tracks can coexist with roads)
       if (curr && curr.railType === RailType.NONE && curr.roadType === 0) {
-        if (curr.buildingId !== 0 || curr.zoneType !== ZoneType.NONE) {
+        const isInfra = getInfraConfigById(curr.buildingId) !== undefined;
+        if (!isInfra && (curr.buildingId !== 0 || curr.zoneType !== ZoneType.NONE)) {
           this.grid.setCell(pos.x, pos.y, { buildingId: 0, zoneType: ZoneType.NONE });
         }
       }

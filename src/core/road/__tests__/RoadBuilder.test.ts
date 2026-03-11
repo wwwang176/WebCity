@@ -228,6 +228,53 @@ describe('RoadBuilder', () => {
     expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
   });
 
+  // --- Infrastructure blocking (all types) ---
+
+  it('should fail to build road over hospital (buildingId 250)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { buildingId: 250 });
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should fail to build road over police station (buildingId 252)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { buildingId: 252 });
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should fail to build road over bus stop (buildingId 242)', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { buildingId: 242 });
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should fail to build road over multi-cell infrastructure secondary cell', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { buildingId: 250, reserved: 4 });
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+  });
+
+  it('should NOT clear infrastructure buildings when building road', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { buildingId: 248 });
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+    expect(result.success).toBe(false);
+    expect(grid.getCell(4, 5)!.buildingId).toBe(248);
+  });
+
   // --- Parallel rail blocking ---
 
   it('should block road parallel to existing rail (both EW)', () => {
