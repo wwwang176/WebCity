@@ -1572,8 +1572,77 @@ export class BuildingRenderer {
   }
 
   private buildCemetery(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly cemetery — chapel + steeple + gravestones + cypress trees
-    this.buildCivicBuilding(scene, cx, cz, 'cemetery', scale);
+    // Ground (grass)
+    const groundGeo = new THREE.BoxGeometry(0.85, 0.02, 0.85);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0x8bc34a }), cx, 0.05, cz, false);
+
+    // Chapel body (back-left corner)
+    const chapelGeo = new THREE.BoxGeometry(0.18, 0.20, 0.15);
+    chapelGeo.translate(-0.25, 0.10, -0.28);
+    this.addInfraMesh(scene, chapelGeo, new THREE.MeshLambertMaterial({ color: 0xe0e0e0 }), cx, 0.06, cz);
+
+    // Chapel spire
+    const spireGeo = new THREE.ConeGeometry(0.10, 0.15, 4);
+    spireGeo.translate(-0.25, 0.275, -0.28);
+    this.addInfraMesh(scene, spireGeo, new THREE.MeshLambertMaterial({ color: 0x757575 }), cx, 0.06, cz);
+
+    // Cross vertical on spire
+    const crossVGeo = new THREE.BoxGeometry(0.02, 0.08, 0.01);
+    crossVGeo.translate(-0.25, 0.39, -0.28);
+    this.addInfraMesh(scene, crossVGeo, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz);
+
+    // Cross horizontal on spire
+    const crossHGeo = new THREE.BoxGeometry(0.05, 0.01, 0.01);
+    crossHGeo.translate(-0.25, 0.38, -0.28);
+    this.addInfraMesh(scene, crossHGeo, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz);
+
+    // Gravestones — Row 1 (4 stones)
+    const stoneMat = new THREE.MeshLambertMaterial({ color: 0xbdbdbd });
+    const row1X = 0.05;
+    const row1Zs = [-0.20, -0.08, 0.04, 0.16];
+    for (const zOff of row1Zs) {
+      const stoneGeo = new THREE.BoxGeometry(0.03, 0.05, 0.015);
+      stoneGeo.translate(row1X, 0.025, zOff);
+      this.addInfraMesh(scene, stoneGeo, stoneMat, cx, 0.06, cz);
+    }
+
+    // Gravestones — Row 2 (4 stones)
+    const row2X = 0.20;
+    const row2Zs = [-0.16, -0.04, 0.08, 0.20];
+    for (const zOff of row2Zs) {
+      const stoneGeo = new THREE.BoxGeometry(0.03, 0.05, 0.015);
+      stoneGeo.translate(row2X, 0.025, zOff);
+      this.addInfraMesh(scene, stoneGeo, stoneMat, cx, 0.06, cz);
+    }
+
+    // Cypress tree 1 (near chapel)
+    const cypTrunk1 = new THREE.CylinderGeometry(0.008, 0.008, 0.04, 4);
+    cypTrunk1.translate(-0.10, 0.02, -0.32);
+    this.addInfraMesh(scene, cypTrunk1, new THREE.MeshLambertMaterial({ color: 0x5d4037 }), cx, 0.06, cz);
+
+    const cypTree1 = new THREE.ConeGeometry(0.03, 0.18, 6);
+    cypTree1.translate(-0.10, 0.13, -0.32);
+    this.addInfraMesh(scene, cypTree1, new THREE.MeshLambertMaterial({ color: 0x2e7d32 }), cx, 0.06, cz);
+
+    // Cypress tree 2 (opposite side)
+    const cypTrunk2 = new THREE.CylinderGeometry(0.008, 0.008, 0.04, 4);
+    cypTrunk2.translate(0.32, 0.02, -0.32);
+    this.addInfraMesh(scene, cypTrunk2, new THREE.MeshLambertMaterial({ color: 0x5d4037 }), cx, 0.06, cz);
+
+    const cypTree2 = new THREE.ConeGeometry(0.03, 0.18, 6);
+    cypTree2.translate(0.32, 0.13, -0.32);
+    this.addInfraMesh(scene, cypTree2, new THREE.MeshLambertMaterial({ color: 0x2e7d32 }), cx, 0.06, cz);
+
+    // Stone path down center
+    const pathGeo = new THREE.BoxGeometry(0.10, 0.012, 0.60);
+    pathGeo.translate(0.0, 0.006, 0.05);
+    this.addInfraMesh(scene, pathGeo, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz, false);
+
+    // Iron gate at entrance (front)
+    const gateGeo = new THREE.BoxGeometry(0.15, 0.10, 0.01);
+    gateGeo.translate(0.0, 0.05, 0.38);
+    this.addInfraMesh(scene, gateGeo, new THREE.MeshLambertMaterial({ color: 0x616161 }), cx, 0.06, cz);
   }
 
   private buildLandfill(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
