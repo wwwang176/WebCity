@@ -27,6 +27,7 @@ import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
+import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, BURNED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
@@ -1179,12 +1180,7 @@ export class Game {
 
       // Derive vehicle type from length (assigned in simulation)
       if (!this.vehicleTypes.has(v.id)) {
-        let vtype: VehicleData['type'];
-        if (v.length >= 0.44) vtype = 'bus';
-        else if (v.length >= 0.33) vtype = 'firetruck';
-        else if (v.length >= 0.28) vtype = 'truck';
-        else vtype = 'car';
-        this.vehicleTypes.set(v.id, vtype);
+        this.vehicleTypes.set(v.id, classifyVehicleType(v.length));
       }
 
       const pos = this.state.traffic.getVehiclePositionOnEdges(v);
