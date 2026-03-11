@@ -92,9 +92,9 @@ export class LevelCrossingRenderer {
         p1x = c.x - SIDE; p1z = c.y + CURB;
         p2x = c.x + SIDE; p2z = c.y - CURB;
       } else {
-        // SW: (x - curb, y + side), NE: (x + curb, y - side)
-        p1x = c.x - CURB; p1z = c.y + SIDE;
-        p2x = c.x + CURB; p2z = c.y - SIDE;
+        // Gate before track for RHT: west curb north of track, east curb south of track
+        p1x = c.x - CURB; p1z = c.y - SIDE;
+        p2x = c.x + CURB; p2z = c.y + SIDE;
       }
 
       // Posts
