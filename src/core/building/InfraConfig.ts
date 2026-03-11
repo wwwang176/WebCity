@@ -31,7 +31,7 @@ export const INFRA_CONFIGS: readonly InfraConfig[] = [
   { type: 'airport',     buildingId: 237, name: 'Airport',            width: 4, height: 4, cost: 5000 },
   { type: 'bus_stop',    buildingId: 242, name: 'Bus Stop',           width: 1, height: 1, cost: 100 },
   { type: 'metro_station', buildingId: 241, name: 'Metro Station',   width: 1, height: 1, cost: 3000 },
-  { type: 'train_station', buildingId: 239, name: 'Train Station',   width: 2, height: 2, cost: 2000 },
+  { type: 'train_station', buildingId: 239, name: 'Train Station',   width: 1, height: 1, cost: 2000 },
   { type: 'ferry_dock',  buildingId: 238, name: 'Ferry Dock',        width: 1, height: 1, cost: 1500 },
   { type: 'taxi_stand',  buildingId: 236, name: 'Taxi Stand',        width: 1, height: 1, cost: 200 },
 ];

@@ -55,7 +55,7 @@ export class PlacementPreview {
     const { w, h } = getRotatedSize(cfg.width, cfg.height, rotation);
     const offsetX = (w - 1) / 2;
     const offsetZ = (h - 1) / 2;
-    this.group.position.set(gridX + offsetX, 0.05, gridY + offsetZ);
+    this.group.position.set(gridX + offsetX, 0, gridY + offsetZ);
 
     // Apply rotation to the ghost model
     this.group.rotation.y = (rotation * Math.PI) / 180;
