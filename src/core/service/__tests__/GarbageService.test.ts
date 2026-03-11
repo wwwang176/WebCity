@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GarbageService } from '../GarbageService';
+import { GarbageService, GARBAGE } from '../GarbageService';
 
 describe('GarbageService', () => {
   it('should create a GarbageService instance', () => {
@@ -141,5 +141,20 @@ describe('GarbageService', () => {
     const loadAfterFirst = gs.getCurrentLoad();
     // Incinerator burns some garbage each tick, so load should stay manageable
     expect(loadAfterFirst).toBeLessThanOrEqual(10);
+  });
+});
+
+describe('GARBAGE constants', () => {
+  it('maintenance per facility should be positive', () => {
+    expect(GARBAGE.MAINTENANCE_PER_FACILITY).toBeGreaterThan(0);
+  });
+
+  it('pollution load threshold should be between 0 and 1', () => {
+    expect(GARBAGE.POLLUTION_LOAD_THRESHOLD).toBeGreaterThan(0);
+    expect(GARBAGE.POLLUTION_LOAD_THRESHOLD).toBeLessThanOrEqual(1);
+  });
+
+  it('overflow pollution multiplier should be positive', () => {
+    expect(GARBAGE.OVERFLOW_POLLUTION_MULTIPLIER).toBeGreaterThan(0);
   });
 });

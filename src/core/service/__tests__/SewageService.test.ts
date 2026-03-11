@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SewageService } from '../SewageService';
+import { SewageService, SEWAGE } from '../SewageService';
 
 describe('SewageService', () => {
   it('should create an instance with default state', () => {
@@ -141,5 +141,19 @@ describe('SewageService', () => {
     sewage.addTreatmentPlant(0, 0, 200);
     sewage.tick(1000); // produces 10, capacity 200 > 10
     expect(sewage.getUntreated()).toBe(0);
+  });
+});
+
+describe('SEWAGE constants', () => {
+  it('pop per sewage should be positive', () => {
+    expect(SEWAGE.POP_PER_SEWAGE).toBeGreaterThan(0);
+  });
+
+  it('water pollution multiplier should be positive', () => {
+    expect(SEWAGE.WATER_POLLUTION_MULTIPLIER).toBeGreaterThan(0);
+  });
+
+  it('maintenance per plant should be positive', () => {
+    expect(SEWAGE.MAINTENANCE_PER_PLANT).toBeGreaterThan(0);
   });
 });

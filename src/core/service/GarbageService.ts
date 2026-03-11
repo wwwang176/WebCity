@@ -23,6 +23,20 @@ const INCINERATOR_BURN_RATE = 0.05;
 /** Garbage production: 1 unit per GARBAGE_PER_POP population */
 const GARBAGE_PER_POP = 100;
 
+/** Garbage service configuration constants */
+export const GARBAGE = {
+  /** Maintenance cost per garbage facility per tick */
+  MAINTENANCE_PER_FACILITY: 3,
+  /** Max pollution penalty from garbage overflow */
+  MAX_POLLUTION_PENALTY: 100,
+  /** Overflow → pollution multiplier */
+  OVERFLOW_POLLUTION_MULTIPLIER: 2,
+  /** Load ratio above which a facility emits ground pollution */
+  POLLUTION_LOAD_THRESHOLD: 0.5,
+  /** Max pollution amount emitted per overloaded facility */
+  POLLUTION_AMOUNT_SCALE: 40,
+} as const;
+
 let nextFacilityId = 1;
 
 import type { PollutionSource } from '../environment/Pollution';
@@ -100,7 +114,7 @@ export class GarbageService {
   getPollutionPenalty(): number {
     if (this.overflow <= 0) return 0;
     // Pollution scales with overflow amount
-    return Math.min(100, this.overflow * 2);
+    return Math.min(GARBAGE.MAX_POLLUTION_PENALTY, this.overflow * GARBAGE.OVERFLOW_POLLUTION_MULTIPLIER);
   }
 
   getTotalCapacity(): number {
@@ -116,15 +130,15 @@ export class GarbageService {
   }
 
   getMaintenanceCost(): number {
-    return this.facilities.length * 3;
+    return this.facilities.length * GARBAGE.MAINTENANCE_PER_FACILITY;
   }
 
   getPollutionSources(): PollutionSource[] {
     const sources: PollutionSource[] = [];
     for (const f of this.facilities) {
       const loadRatio = f.currentLoad / f.capacity;
-      if (loadRatio > 0.5) {
-        sources.push({ x: f.x, y: f.y, amount: Math.round(loadRatio * 40), type: 'ground' });
+      if (loadRatio > GARBAGE.POLLUTION_LOAD_THRESHOLD) {
+        sources.push({ x: f.x, y: f.y, amount: Math.round(loadRatio * GARBAGE.POLLUTION_AMOUNT_SCALE), type: 'ground' });
       }
     }
     return sources;

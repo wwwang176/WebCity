@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { FireService } from '../FireService';
+import { FireService, FIRE } from '../FireService';
 
 describe('FireService', () => {
   it('should create a FireService instance', () => {
@@ -279,5 +279,24 @@ describe('FireService', () => {
     const result = fire.tryRandomFire(mockGrid, 100, 0);
     expect(result).toBe(false);
     expect(fire.getActiveFires()).toHaveLength(0);
+  });
+});
+
+describe('FIRE constants', () => {
+  it('risk factors should be between 0 and 1', () => {
+    expect(FIRE.RISK_OUTSIDE_BASE).toBeGreaterThan(0);
+    expect(FIRE.RISK_OUTSIDE_BASE).toBeLessThanOrEqual(1);
+    expect(FIRE.RISK_INSIDE_FACTOR).toBeGreaterThan(0);
+    expect(FIRE.RISK_INSIDE_FACTOR).toBeLessThanOrEqual(1);
+  });
+
+  it('ignition probability should be very small', () => {
+    expect(FIRE.MAX_IGNITION_PROB).toBeGreaterThan(0);
+    expect(FIRE.MAX_IGNITION_PROB).toBeLessThan(0.1);
+    expect(FIRE.BASE_IGNITION_PROB).toBeLessThan(FIRE.MAX_IGNITION_PROB);
+  });
+
+  it('ignition attempts should be positive', () => {
+    expect(FIRE.IGNITION_ATTEMPTS).toBeGreaterThan(0);
   });
 });

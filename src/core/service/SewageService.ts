@@ -21,6 +21,18 @@ interface SewageJSON {
 import type { PollutionSource } from '../environment/Pollution';
 import { removeById } from '../utils/removeById';
 
+/** Sewage system configuration constants */
+export const SEWAGE = {
+  /** Population per unit of sewage produced */
+  POP_PER_SEWAGE: 100,
+  /** Water pollution multiplier per untreated sewage unit */
+  WATER_POLLUTION_MULTIPLIER: 5,
+  /** Maximum pollution emitted per outlet */
+  MAX_POLLUTION_PER_OUTLET: 80,
+  /** Monthly maintenance cost per treatment plant */
+  MAINTENANCE_PER_PLANT: 4,
+} as const;
+
 export class SewageService {
   private outlets: SewageOutlet[] = [];
   private treatmentPlants: TreatmentPlant[] = [];
@@ -49,7 +61,7 @@ export class SewageService {
 
   /** Produce sewage from population without treatment (manual step). */
   produceSewage(population: number): void {
-    const produced = Math.floor(population / 100);
+    const produced = Math.floor(population / SEWAGE.POP_PER_SEWAGE);
     this.untreatedSewage += produced;
   }
 
@@ -59,7 +71,7 @@ export class SewageService {
    */
   tick(population: number): void {
     this.untreatedSewage = 0;
-    const produced = Math.floor(population / 100);
+    const produced = Math.floor(population / SEWAGE.POP_PER_SEWAGE);
     const totalCapacity = this.getTreatmentCapacity();
     this.untreatedSewage = Math.max(0, produced - totalCapacity);
   }
@@ -70,7 +82,7 @@ export class SewageService {
 
   /** Water pollution is proportional to untreated sewage. */
   getWaterPollution(): number {
-    return this.untreatedSewage * 5;
+    return this.untreatedSewage * SEWAGE.WATER_POLLUTION_MULTIPLIER;
   }
 
   getTreatmentCapacity(): number {
@@ -86,7 +98,7 @@ export class SewageService {
   }
 
   getMaintenanceCost(): number {
-    return this.treatmentPlants.length * 4;
+    return this.treatmentPlants.length * SEWAGE.MAINTENANCE_PER_PLANT;
   }
 
   getPollutionSources(): PollutionSource[] {
@@ -95,7 +107,7 @@ export class SewageService {
     return this.outlets.map(outlet => ({
       x: outlet.x,
       y: outlet.y,
-      amount: Math.min(80, pollution),
+      amount: Math.min(SEWAGE.MAX_POLLUTION_PER_OUTLET, pollution),
       type: 'ground' as const,
     }));
   }
