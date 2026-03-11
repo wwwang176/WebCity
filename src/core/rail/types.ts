@@ -11,7 +11,9 @@ export enum TrackDirection {
   EAST  = 0b1000,
 }
 
-export const RAIL_COST = 150; // per cell
+export const RAIL = {
+  COST_PER_CELL: 150,
+} as const;
 
 export interface BuildTrackResult {
   success: boolean;

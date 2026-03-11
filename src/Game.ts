@@ -49,7 +49,7 @@ import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
 import { RailNetwork } from './core/rail/RailNetwork';
-import { RailType, TrackDirection, RAIL_COST } from './core/rail/types';
+import { RailType, TrackDirection, RAIL } from './core/rail/types';
 import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
@@ -1827,7 +1827,7 @@ export class Game {
 
     // Calculate estimated cost
     if (this.isRailTool()) {
-      this.previewCost = points.length * RAIL_COST;
+      this.previewCost = points.length * RAIL.COST_PER_CELL;
     } else {
       const roadConfig = ROAD_CONFIGS[this.currentRoadType];
       this.previewCost = points.length * roadConfig.cost;

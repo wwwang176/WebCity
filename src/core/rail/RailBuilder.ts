@@ -4,7 +4,7 @@ import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getL
 import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
-import { RailType, TrackDirection, RAIL_COST, type BuildTrackResult } from './types';
+import { RailType, TrackDirection, RAIL, type BuildTrackResult } from './types';
 
 interface Position {
   x: number;
@@ -60,7 +60,7 @@ export class RailBuilder {
     for (const pos of cells) {
       const cell = this.grid.getCell(pos.x, pos.y)!;
       if (cell.railType === RailType.NONE) {
-        totalCost += RAIL_COST;
+        totalCost += RAIL.COST_PER_CELL;
       }
       // Existing track: free (just merge flags)
     }

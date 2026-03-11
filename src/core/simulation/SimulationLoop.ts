@@ -26,13 +26,12 @@ import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHB
 import { FIRE } from '../service/FireService';
 import { randomInt, randomElement } from '../utils/random';
 
-/** Ticks between service/RCI/growth updates (tuned for ticksPerDay=24, preserving ticksPerDay=4 balance) */
-export const SLOW_TICK_INTERVAL = 6;
-/** Ticks between heavier computations: pollution, land value, vehicle spawning */
-export const MEDIUM_TICK_INTERVAL = 60;
-
 /** Simulation tuning constants */
 export const SIMULATION = {
+  /** Ticks between service/RCI/growth updates */
+  SLOW_TICK_INTERVAL: 6,
+  /** Ticks between heavier computations: pollution, land value, vehicle spawning */
+  MEDIUM_TICK_INTERVAL: 60,
   /** Number of random cells sampled per growth tick */
   GROWTH_ATTEMPTS: 20,
   /** Chance per attempt for burned building auto-clearance */
@@ -142,7 +141,7 @@ export class SimulationLoop {
     const tick = this.state.clock.tick;
     // Many operations were tuned for ticksPerDay=4. With ticksPerDay=24 (6x more),
     // we gate slow-update operations to run every 6 ticks to preserve balance.
-    const isSlowTick = tick % SLOW_TICK_INTERVAL === 0;
+    const isSlowTick = tick % SIMULATION.SLOW_TICK_INTERVAL === 0;
 
     // 1. Economy: RCI demand (every 6 ticks)
     if (isSlowTick) {
@@ -194,7 +193,7 @@ export class SimulationLoop {
     }
 
     // 3.6. Pollution & land value: update every 60 ticks (was 10 with ticksPerDay=4)
-    if (tick % MEDIUM_TICK_INTERVAL === 0) {
+    if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
       this.updatePollution();
       this.updateLandValue();
       this.onTerrainChanged?.();
@@ -284,7 +283,7 @@ export class SimulationLoop {
     }
 
     // 8e. Rail external connection (every 60 ticks)
-    if (tick % MEDIUM_TICK_INTERVAL === 0) {
+    if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
       this.state.rail.updateExternalConnection(this.state.grid.width, this.state.grid.height);
       if (this.state.rail.hasExternalConnection) {
         this.state.freight.addExternalCargo(this.state.rail.externalConnection.goodsIn);
@@ -298,7 +297,7 @@ export class SimulationLoop {
     }
 
     // 10. Congestion flow prediction (first tick + every 60 ticks = ~15 sec)
-    if (tick === 1 || tick % MEDIUM_TICK_INTERVAL === 0) {
+    if (tick === 1 || tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
       this.computeCongestionFlow();
     }
   }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
 import { createGameState } from '../GameState';
-import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SLOW_TICK_INTERVAL, MEDIUM_TICK_INTERVAL, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
+import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import { PolicyType, Specialization } from '../../district/types';
@@ -10,13 +10,13 @@ import { CitySpecType } from '../../district/CitySpecialization';
 
 describe('Simulation tick interval constants', () => {
   it('SLOW_TICK_INTERVAL should be a positive integer', () => {
-    expect(SLOW_TICK_INTERVAL).toBeGreaterThan(0);
-    expect(Number.isInteger(SLOW_TICK_INTERVAL)).toBe(true);
+    expect(SIMULATION.SLOW_TICK_INTERVAL).toBeGreaterThan(0);
+    expect(Number.isInteger(SIMULATION.SLOW_TICK_INTERVAL)).toBe(true);
   });
 
   it('MEDIUM_TICK_INTERVAL should be a multiple of SLOW_TICK_INTERVAL', () => {
-    expect(MEDIUM_TICK_INTERVAL).toBeGreaterThan(SLOW_TICK_INTERVAL);
-    expect(MEDIUM_TICK_INTERVAL % SLOW_TICK_INTERVAL).toBe(0);
+    expect(SIMULATION.MEDIUM_TICK_INTERVAL).toBeGreaterThan(SIMULATION.SLOW_TICK_INTERVAL);
+    expect(SIMULATION.MEDIUM_TICK_INTERVAL % SIMULATION.SLOW_TICK_INTERVAL).toBe(0);
   });
 });
 
