@@ -12,7 +12,7 @@ import { LaneGraph } from '../traffic/LaneGraph';
 import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
-import { getInfraConfigById } from '../building/InfraConfig';
+import { getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel } from '../citizen/types';
@@ -267,7 +267,7 @@ export class SimulationLoop {
       if (!cell || cell.zoneType === 0) continue;
 
       // Burned buildings: developer must demolish ruins first (extra cost/time)
-      if (cell.reserved === 3 && cell.buildingId > 0 && cell.buildingId < 245) {
+      if (cell.reserved === 3 && isZoneBuilding(cell.buildingId)) {
         // ~2% chance per attempt to clear the ruins (developer demolition takes time)
         if (Math.random() < 0.02) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
@@ -454,7 +454,7 @@ export class SimulationLoop {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
         // Skip infrastructure, empty cells, burned (3), and multi-cell secondary (4)
-        if (cell && cell.buildingId > 0 && cell.buildingId < 245 && cell.reserved !== 3 && cell.reserved !== 4) {
+        if (cell && isZoneBuilding(cell.buildingId) && cell.reserved !== 3 && cell.reserved !== 4) {
           const btype = getBuildingType(cell.buildingId);
           if (!btype) continue;
 
@@ -548,7 +548,7 @@ export class SimulationLoop {
       if (f.damage >= 0.5) {
         // High damage: mark building as BURNED (charred ruins)
         const cell = this.state.grid.getCell(f.x, f.y);
-        if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+        if (cell && isZoneBuilding(cell.buildingId)) {
           changed = true;
           // Check if this is a multi-cell building
           const cfg = getInfraConfigById(cell.buildingId);
@@ -755,7 +755,7 @@ export class SimulationLoop {
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
-        if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+        if (cell && isZoneBuilding(cell.buildingId)) {
           this.buildingPositions.push({ pos: `${x},${y}`, x, y, buildingId: cell.buildingId });
         }
       }

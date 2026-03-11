@@ -18,6 +18,8 @@ export interface FireServiceJSON {
   nextId: number;
 }
 
+import { isZoneBuilding } from '../building/InfraConfig';
+
 /** Speed at which fire trucks travel (cells per tick for response time calculation). */
 const RESPONSE_SPEED = 2;
 
@@ -169,7 +171,7 @@ export class FireService {
       const x = Math.floor(Math.random() * grid.width);
       const y = Math.floor(Math.random() * grid.height);
       const cell = grid.getCell(x, y);
-      if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+      if (cell && isZoneBuilding(cell.buildingId)) {
         this.reportFire(x, y);
         return true;
       }

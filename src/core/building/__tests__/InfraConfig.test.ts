@@ -3,6 +3,8 @@ import {
   INFRA_CONFIGS,
   getInfraConfig,
   getInfraConfigById,
+  isInfrastructureBuilding,
+  isZoneBuilding,
   type InfraType,
   type Rotation,
   getRotatedSize,
@@ -131,6 +133,42 @@ describe('InfraConfig', () => {
       for (const rot of [0, 90, 180, 270] as Rotation[]) {
         expect(getRotatedSize(3, 3, rot)).toEqual({ w: 3, h: 3 });
       }
+    });
+  });
+
+  describe('isInfrastructureBuilding', () => {
+    it('should return true for all known infrastructure buildingIds', () => {
+      for (const cfg of INFRA_CONFIGS) {
+        expect(isInfrastructureBuilding(cfg.buildingId)).toBe(true);
+      }
+    });
+
+    it('should return false for zone building ids (1-236)', () => {
+      expect(isInfrastructureBuilding(1)).toBe(false);
+      expect(isInfrastructureBuilding(100)).toBe(false);
+      expect(isInfrastructureBuilding(236)).toBe(false);
+    });
+
+    it('should return false for 0 (empty cell)', () => {
+      expect(isInfrastructureBuilding(0)).toBe(false);
+    });
+  });
+
+  describe('isZoneBuilding', () => {
+    it('should return true for zone building ids (1-236)', () => {
+      expect(isZoneBuilding(1)).toBe(true);
+      expect(isZoneBuilding(100)).toBe(true);
+      expect(isZoneBuilding(236)).toBe(true);
+    });
+
+    it('should return false for infrastructure buildingIds', () => {
+      for (const cfg of INFRA_CONFIGS) {
+        expect(isZoneBuilding(cfg.buildingId)).toBe(false);
+      }
+    });
+
+    it('should return false for 0 (empty cell)', () => {
+      expect(isZoneBuilding(0)).toBe(false);
     });
   });
 
