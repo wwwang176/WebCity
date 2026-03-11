@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
 import { RailType, TrackDirection } from '../core/rail/types';
+import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 
 const TRACK_WIDTH = 0.15;
 const RAIL_Y = 0.035;
@@ -302,22 +303,29 @@ export class TrackRenderer {
 
   // ── Underground / Dispose ──────────────────────────────
 
-  setUndergroundMode(enabled: boolean): void {
+  setViewMode(mode: ViewMode): void {
+    const opacity = VIEW_MODE_OPACITY[mode].track;
+    const dimmed = opacity < 1.0;
     const meshes = [this.railMesh, this.tieMesh, this.ballastMesh];
     for (const mesh of meshes) {
       if (!mesh) continue;
       const mat = mesh.material as THREE.MeshLambertMaterial;
-      if (enabled) {
+      if (dimmed) {
         mat.transparent = true;
-        mat.opacity = 0.15;
+        mat.opacity = opacity;
         mat.depthWrite = false;
       } else {
         mat.transparent = false;
         mat.opacity = 1.0;
         mat.depthWrite = true;
       }
-      mesh.renderOrder = enabled ? 20 : 0;
+      mesh.renderOrder = dimmed ? 20 : 0;
     }
+  }
+
+  /** @deprecated Use setViewMode instead. */
+  setUndergroundMode(enabled: boolean): void {
+    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
   }
 
   dispose(scene: THREE.Scene): void {

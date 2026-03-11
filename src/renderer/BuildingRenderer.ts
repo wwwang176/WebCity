@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { Grid } from '../core/grid/Grid';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, type InfraType as InfraConfigType } from '../core/building/InfraConfig';
+import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION } from '../core/building/InfraPlacement';
 
 // ===== Deterministic pseudo-random based on position =====
@@ -1287,31 +1288,32 @@ export class BuildingRenderer {
   /** Update light spot visibility based on sun intensity (call each frame). */
   update(sunIntensity: number): void {
     if (!this.lightSpotMaterial) return;
-    if (this._underground) {
+    if (this._focusMode) {
       this.lightSpotMaterial.opacity = 0;
       return;
     }
     this.lightSpotMaterial.opacity = Math.max(0, 0.4 * (1 - sunIntensity / 0.3));
   }
 
-  private _underground = false;
-  private _undergroundMesh: THREE.Mesh | null = null;
-  private static _undergroundMat: THREE.MeshBasicMaterial | null = null;
+  private _focusMode = false;
+  private _whiteModelMesh: THREE.Mesh | null = null;
+  private static _whiteModelMat: THREE.MeshBasicMaterial | null = null;
 
-  private static getUndergroundMat(): THREE.MeshBasicMaterial {
-    if (!BuildingRenderer._undergroundMat) {
-      BuildingRenderer._undergroundMat = new THREE.MeshBasicMaterial({
+  private static getWhiteModelMat(): THREE.MeshBasicMaterial {
+    if (!BuildingRenderer._whiteModelMat) {
+      BuildingRenderer._whiteModelMat = new THREE.MeshBasicMaterial({
         color: 0xe0e0e0,
         opacity: 0.08,
         alphaHash: true,
       });
     }
-    return BuildingRenderer._undergroundMat;
+    return BuildingRenderer._whiteModelMat;
   }
 
-  /** Switch to underground visual mode (white model + semi-transparent). */
-  setUndergroundMode(enabled: boolean, scene?: THREE.Scene): void {
-    this._underground = enabled;
+  /** Switch view mode — any non-NORMAL mode shows white model. */
+  setViewMode(mode: ViewMode, scene?: THREE.Scene): void {
+    const enabled = mode !== ViewMode.NORMAL;
+    this._focusMode = enabled;
 
     if (enabled && scene) {
       // Hide originals
@@ -1319,14 +1321,14 @@ export class BuildingRenderer {
       for (const group of this.infraGroups) group.visible = false;
       if (this.lightSpotMesh) this.lightSpotMesh.visible = false;
 
-      // Build merged underground mesh
-      this.buildUndergroundMesh(scene);
+      // Build merged white model mesh
+      this.buildWhiteModelMesh(scene);
     } else {
-      // Remove underground mesh
-      if (this._undergroundMesh && scene) {
-        scene.remove(this._undergroundMesh);
-        this._undergroundMesh.geometry.dispose();
-        this._undergroundMesh = null;
+      // Remove white model mesh
+      if (this._whiteModelMesh && scene) {
+        scene.remove(this._whiteModelMesh);
+        this._whiteModelMesh.geometry.dispose();
+        this._whiteModelMesh = null;
       }
 
       // Restore originals
@@ -1340,13 +1342,13 @@ export class BuildingRenderer {
     }
   }
 
-  /** Bake all building InstancedMeshes + infra into one merged mesh. */
-  private buildUndergroundMesh(scene: THREE.Scene): void {
+  /** Bake all building InstancedMeshes + infra into one merged white model mesh. */
+  private buildWhiteModelMesh(scene: THREE.Scene): void {
     // Remove old one if exists
-    if (this._undergroundMesh) {
-      scene.remove(this._undergroundMesh);
-      this._undergroundMesh.geometry.dispose();
-      this._undergroundMesh = null;
+    if (this._whiteModelMesh) {
+      scene.remove(this._whiteModelMesh);
+      this._whiteModelMesh.geometry.dispose();
+      this._whiteModelMesh = null;
     }
 
     const geos: THREE.BufferGeometry[] = [];
@@ -1394,18 +1396,17 @@ export class BuildingRenderer {
     // Dispose cloned geos
     for (const g of geos) g.dispose();
 
-    this._undergroundMesh = new THREE.Mesh(merged, BuildingRenderer.getUndergroundMat());
-    this._undergroundMesh.renderOrder = 20;
-    this._undergroundMesh.frustumCulled = false;
-    scene.add(this._undergroundMesh);
+    this._whiteModelMesh = new THREE.Mesh(merged, BuildingRenderer.getWhiteModelMat());
+    this._whiteModelMesh.renderOrder = 20;
+    this._whiteModelMesh.frustumCulled = false;
+    scene.add(this._whiteModelMesh);
   }
 
   dispose(scene: THREE.Scene): void {
-    // Underground mesh
-    if (this._undergroundMesh) {
-      scene.remove(this._undergroundMesh);
-      this._undergroundMesh.geometry.dispose();
-      this._undergroundMesh = null;
+    if (this._whiteModelMesh) {
+      scene.remove(this._whiteModelMesh);
+      this._whiteModelMesh.geometry.dispose();
+      this._whiteModelMesh = null;
     }
 
     for (const mesh of this.meshes) {

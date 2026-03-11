@@ -33,7 +33,13 @@ import { getAirportFootprint, type AirportSize } from './core/transport/AirportS
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 
-import { ViewMode, VIEW_MODE_OPACITY } from './core/ViewMode';
+import {
+  ViewMode,
+  VIEW_MODE_OPACITY,
+  getTransportStopType,
+  getTransportFocusMode,
+  type TransportStopKind,
+} from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
@@ -79,7 +85,17 @@ export interface SelectedInfraBuilding {
   details: Record<string, string | number>;
 }
 
-export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding;
+export interface SelectedTransportStop {
+  kind: 'transport';
+  x: number;
+  y: number;
+  transportType: TransportStopKind;
+  name: string;
+  routes: number;
+  vehicles: number;
+}
+
+export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop;
 
 export class Game {
   private sceneManager: SceneManager;
@@ -398,26 +414,34 @@ export class Game {
               pollution: cell.pollution,
               serviceCoverage: cell.serviceCoverage,
             };
+            this.applyViewMode(ViewMode.NORMAL);
           } else {
-            const infraCfg = getInfraConfigById(cell.buildingId);
-            if (infraCfg) {
-              const primary = findPrimaryCell(this.state.grid, x1, y1);
-              const px = primary?.x ?? x1;
-              const py = primary?.y ?? y1;
-              const center = getInfraCenterById(px, py, cell.buildingId);
-              const details = this.getInfraDetails(infraCfg.type, center.cx, center.cy);
-              this.selectedBuilding = {
-                kind: 'infra',
-                x: x1, y: y1,
-                infraType: infraCfg.type,
-                name: infraCfg.name,
-                cost: infraCfg.cost,
-                details,
-              };
+            const transportType = getTransportStopType(cell.buildingId);
+            if (transportType) {
+              this.selectTransportStop(x1, y1, transportType);
+            } else {
+              const infraCfg = getInfraConfigById(cell.buildingId);
+              if (infraCfg) {
+                const primary = findPrimaryCell(this.state.grid, x1, y1);
+                const px = primary?.x ?? x1;
+                const py = primary?.y ?? y1;
+                const center = getInfraCenterById(px, py, cell.buildingId);
+                const details = this.getInfraDetails(infraCfg.type, center.cx, center.cy);
+                this.selectedBuilding = {
+                  kind: 'infra',
+                  x: x1, y: y1,
+                  infraType: infraCfg.type,
+                  name: infraCfg.name,
+                  cost: infraCfg.cost,
+                  details,
+                };
+                this.applyViewMode(ViewMode.NORMAL);
+              }
             }
           }
         } else {
           this.selectedBuilding = null;
+          this.applyViewMode(ViewMode.NORMAL);
         }
         this.audioManager.playSfx('click');
         break;
@@ -1051,12 +1075,12 @@ export class Game {
       if (currentOverlay && currentOverlay !== 'none') {
         this.setOverlay(currentOverlay);
       }
-      // Re-apply underground mode after rebuild (new meshes lose settings)
-      if (this.viewMode === ViewMode.UNDERGROUND) {
-        this.buildingRenderer.setUndergroundMode(true, this.sceneManager.scene);
-        this.roadRenderer.setUndergroundMode(true);
-        this.trackRenderer.setUndergroundMode(true);
-        this.levelCrossingRenderer.setUndergroundMode(true);
+      // Re-apply view mode after rebuild (new meshes lose settings)
+      if (this.viewMode !== ViewMode.NORMAL) {
+        this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
+        this.roadRenderer.setViewMode(this.viewMode);
+        this.trackRenderer.setViewMode(this.viewMode);
+        this.levelCrossingRenderer.setViewMode(this.viewMode);
       }
       this.renderDirty = false;
     }
@@ -1156,8 +1180,8 @@ export class Game {
       rail: this.state.rail,
       ferry: this.state.ferry,
     });
-    // Underground 模式隱藏路線預覽線（隧道已替代視覺）
-    if (this.viewMode === ViewMode.UNDERGROUND) {
+    // Focus mode: hide route lines (replaced by focused visuals)
+    if (this.viewMode !== ViewMode.NORMAL) {
       this.transportRouteRenderer.update([]);
     } else {
       this.transportRouteRenderer.update(routeData);
@@ -1329,18 +1353,66 @@ export class Game {
   }
 
   toggleViewMode(): void {
-    this.viewMode = this.viewMode === ViewMode.NORMAL ? ViewMode.UNDERGROUND : ViewMode.NORMAL;
-    const underground = this.viewMode === ViewMode.UNDERGROUND;
-    this.buildingRenderer.setUndergroundMode(underground, this.sceneManager.scene);
-    this.terrainRenderer.setUndergroundMode(underground);
-    this.roadRenderer.setUndergroundMode(underground);
-    this.trackRenderer.setUndergroundMode(underground);
-    this.levelCrossingRenderer.setUndergroundMode(underground);
-    this.vehicleRenderer.setUndergroundMode(underground);
-    this.weatherRenderer.setUndergroundMode(underground);
-    // Rebuild to apply/restore material settings on fresh meshes
+    const next = this.viewMode === ViewMode.NORMAL ? ViewMode.UNDERGROUND : ViewMode.NORMAL;
+    this.applyViewMode(next);
+  }
+
+  /** Apply a ViewMode to all renderers. */
+  private applyViewMode(mode: ViewMode): void {
+    if (this.viewMode === mode) return;
+    this.viewMode = mode;
+    this.buildingRenderer.setViewMode(mode, this.sceneManager.scene);
+    this.terrainRenderer.setViewMode(mode);
+    this.roadRenderer.setViewMode(mode);
+    this.trackRenderer.setViewMode(mode);
+    this.levelCrossingRenderer.setViewMode(mode);
+    this.vehicleRenderer.setViewMode(mode);
+    this.weatherRenderer.setViewMode(mode);
     this.renderDirty = true;
     this.onUIUpdate?.();
+  }
+
+  /** Select a transport stop and switch to its focus view mode. */
+  private selectTransportStop(x: number, y: number, type: TransportStopKind): void {
+    const system = this.getTransportSystem(type);
+    const stops = system?.getStops() ?? [];
+    const stop = stops.find(s => s.x === x && s.y === y);
+    const routes = system?.getRoutes() ?? [];
+    const routeCount = stop
+      ? routes.filter(r => r.stops.some(s => s.id === stop.id)).length
+      : 0;
+    const vehicleCount = stop
+      ? routes.filter(r => r.stops.some(s => s.id === stop.id))
+          .reduce((sum, r) => sum + r.vehicles, 0)
+      : 0;
+
+    const STOP_NAMES: Record<TransportStopKind, string> = {
+      bus: 'Bus Stop', metro: 'Metro Station', tram: 'Tram Stop',
+      rail: 'Train Station', ferry: 'Ferry Dock', taxi: 'Taxi Stand',
+    };
+
+    this.selectedBuilding = {
+      kind: 'transport',
+      x, y,
+      transportType: type,
+      name: STOP_NAMES[type],
+      routes: routeCount,
+      vehicles: vehicleCount,
+    };
+
+    this.applyViewMode(getTransportFocusMode(type));
+  }
+
+  /** Get the transport system for a given stop type. */
+  private getTransportSystem(type: TransportStopKind) {
+    switch (type) {
+      case 'bus': return this.state.bus;
+      case 'metro': return this.state.metro;
+      case 'tram': return this.state.tram;
+      case 'rail': return this.state.rail;
+      case 'ferry': return this.state.ferry;
+      default: return null;
+    }
   }
 
   private cycleRotation(): void {

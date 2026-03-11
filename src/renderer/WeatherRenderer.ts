@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { type Season } from '../core/climate/Climate';
 import { type SceneManager } from './SceneManager';
+import { ViewMode } from '../core/ViewMode';
 
 /**
  * Handles day/night cycle lighting, weather particle effects (rain/snow),
@@ -68,13 +69,17 @@ export class WeatherRenderer {
   }
 
   /** Switch to underground visual mode (fixed white lighting, no weather). */
+  setViewMode(mode: ViewMode): void {
+    const hidden = mode !== ViewMode.NORMAL;
+    this._underground = hidden;
+    if (this.rainSystem) this.rainSystem.visible = !hidden;
+    if (this.snowSystem) this.snowSystem.visible = !hidden;
+    if (this.seasonOverlay) this.seasonOverlay.visible = !hidden;
+  }
+
+  /** @deprecated Use setViewMode instead. */
   setUndergroundMode(enabled: boolean): void {
-    this._underground = enabled;
-    // Hide weather particles
-    if (this.rainSystem) this.rainSystem.visible = !enabled;
-    if (this.snowSystem) this.snowSystem.visible = !enabled;
-    // Hide season overlay
-    if (this.seasonOverlay) this.seasonOverlay.visible = !enabled;
+    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
   }
 
   // ── Day/Night Cycle ──────────────────────────────────────────
