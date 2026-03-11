@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, CITIZEN_BASE_INCOME, ROAD_MAINTENANCE_PER_TILE, INCOME_LEVEL_MULTIPLIERS, BUILDING_LEVEL_MULTIPLIERS } from '../TaxMultipliers';
+import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY, INCOME_LEVEL_MULTIPLIERS, BUILDING_LEVEL_MULTIPLIERS } from '../TaxMultipliers';
 import { IncomeLevel } from '../../citizen/types';
 
 describe('TaxMultipliers', () => {
@@ -31,13 +31,13 @@ describe('TaxMultipliers', () => {
     });
   });
 
-  describe('economy constants', () => {
+  describe('ECONOMY config', () => {
     it('CITIZEN_BASE_INCOME should be 0.5', () => {
-      expect(CITIZEN_BASE_INCOME).toBe(0.5);
+      expect(ECONOMY.CITIZEN_BASE_INCOME).toBe(0.5);
     });
 
     it('ROAD_MAINTENANCE_PER_TILE should be 0.1', () => {
-      expect(ROAD_MAINTENANCE_PER_TILE).toBe(0.1);
+      expect(ECONOMY.ROAD_MAINTENANCE_PER_TILE).toBe(0.1);
     });
   });
 

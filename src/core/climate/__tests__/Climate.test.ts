@@ -12,6 +12,7 @@ import {
   isWarned,
   calculateEvacuationTarget,
   createWarningSystem,
+  WARNING,
 } from '../WarningSystem';
 import {
   applyDamage,
@@ -167,13 +168,14 @@ describe('WarningSystem', () => {
     expect(target).toBeNull();
   });
 
-  it('warned area reduces casualties by 50%', () => {
-    // This tests the concept: warned damage multiplier is 0.5
+  it('warned area reduces casualties by WARNING.CASUALTY_REDUCTION', () => {
     const system = createWarningSystem();
     addWarningTower(system, 10, 10, 5);
     const warned = isWarned(system, 10, 10);
-    const casualtyMultiplier = warned ? 0.5 : 1.0;
-    expect(casualtyMultiplier).toBe(0.5);
+    const casualtyMultiplier = warned ? WARNING.CASUALTY_REDUCTION : 1.0;
+    expect(casualtyMultiplier).toBe(WARNING.CASUALTY_REDUCTION);
+    expect(WARNING.CASUALTY_REDUCTION).toBeLessThan(1);
+    expect(WARNING.CASUALTY_REDUCTION).toBeGreaterThan(0);
   });
 });
 

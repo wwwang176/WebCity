@@ -19,7 +19,7 @@ import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
 import { getBuildingType, type BuildingType } from './core/building/types';
 import { IncomeLevel } from './core/citizen/types';
-import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, CITIZEN_BASE_INCOME, ROAD_MAINTENANCE_PER_TILE } from './core/economy/TaxMultipliers';
+import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from './core/economy/TaxMultipliers';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
@@ -1942,7 +1942,7 @@ export class Game {
         const posKey = `${x},${y}`;
         const residents = this.state.citizens.getCitizensByHome(posKey);
         for (const citizen of residents) {
-          resIncome += CITIZEN_BASE_INCOME * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+          resIncome += ECONOMY.CITIZEN_BASE_INCOME * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
         }
       } else {
         const ci = btype.companyIncome ?? 0;
@@ -1957,7 +1957,7 @@ export class Game {
       }
     });
 
-    const roadMaintenance = roadCount * ROAD_MAINTENANCE_PER_TILE;
+    const roadMaintenance = roadCount * ECONOMY.ROAD_MAINTENANCE_PER_TILE;
     const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
     const powerCost = this.state.power.getMaintenanceCost();
     const waterCost = this.state.water.getMaintenanceCost();

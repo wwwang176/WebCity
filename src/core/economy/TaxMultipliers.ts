@@ -1,10 +1,11 @@
 import { IncomeLevel } from '../citizen/types';
 
-/** Base income per citizen for residential income tax ($0.50 per tick). */
-export const CITIZEN_BASE_INCOME = 0.5;
-
-/** Road maintenance cost per tile per budget tick. */
-export const ROAD_MAINTENANCE_PER_TILE = 0.1;
+export const ECONOMY = {
+  /** Base income per citizen for residential income tax ($0.50 per tick). */
+  CITIZEN_BASE_INCOME: 0.5,
+  /** Road maintenance cost per tile per budget tick. */
+  ROAD_MAINTENANCE_PER_TILE: 0.1,
+} as const;
 
 /** Data-driven income level multipliers for residential income tax. */
 export const INCOME_LEVEL_MULTIPLIERS: Record<IncomeLevel, number> = {

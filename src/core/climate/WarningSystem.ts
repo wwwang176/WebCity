@@ -48,5 +48,7 @@ export function calculateEvacuationTarget(
   return nearest;
 }
 
-/** Warning coverage reduces casualty by this factor */
-export const WARNING_CASUALTY_REDUCTION = 0.5;
+export const WARNING = {
+  /** Warning coverage reduces casualty by this factor */
+  CASUALTY_REDUCTION: 0.5,
+} as const;
