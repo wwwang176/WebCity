@@ -39,7 +39,6 @@ const FOCUS_MODES: { mode: ViewMode; label: string; key?: string }[] = [
   { mode: ViewMode.RAIL_FOCUS, label: '\u{1F686} Rail' },
   { mode: ViewMode.FERRY_FOCUS, label: '\u{26F4} Ferry' },
   { mode: ViewMode.BUS_FOCUS, label: '\u{1F68C} Bus' },
-  { mode: ViewMode.TAXI_FOCUS, label: '\u{1F695} Taxi' },
 ];
 
 export function LayersModal(props: { open: boolean; onClose: () => void }) {

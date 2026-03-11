@@ -130,9 +130,6 @@ describe('ViewMode', () => {
       expect(isSurfaceVehicle('ferry')).toBe(true);
     });
 
-    it('taxi 是地面車輛', () => {
-      expect(isSurfaceVehicle('taxi')).toBe(true);
-    });
   });
 });
 
@@ -144,7 +141,6 @@ describe('TRANSPORT_STOP_IDS', () => {
     expect(TRANSPORT_STOP_IDS[241]).toBe('metro');
     expect(TRANSPORT_STOP_IDS[239]).toBe('rail');
     expect(TRANSPORT_STOP_IDS[238]).toBe('ferry');
-    expect(TRANSPORT_STOP_IDS[236]).toBe('taxi');
   });
 });
 
@@ -179,9 +175,6 @@ describe('getTransportFocusMode', () => {
     expect(getTransportFocusMode('bus')).toBe(ViewMode.BUS_FOCUS);
   });
 
-  it('should return TAXI_FOCUS for taxi', () => {
-    expect(getTransportFocusMode('taxi')).toBe(ViewMode.TAXI_FOCUS);
-  });
 });
 
 // ── Vehicle visibility per ViewMode ──
@@ -220,17 +213,9 @@ describe('getVehicleVisibility', () => {
     expect(getVehicleVisibility(ViewMode.BUS_FOCUS, 'ferry')).toBe(false);
   });
 
-  it('TAXI_FOCUS mode: only taxi vehicles visible', () => {
-    expect(getVehicleVisibility(ViewMode.TAXI_FOCUS, 'taxi')).toBe(true);
-    expect(getVehicleVisibility(ViewMode.TAXI_FOCUS, 'car')).toBe(false);
-    expect(getVehicleVisibility(ViewMode.TAXI_FOCUS, 'ferry')).toBe(false);
-  });
-
   // Road-based focus modes keep roads visible
-  it('BUS/TAXI_FOCUS modes should keep roads at full opacity', () => {
-    for (const mode of [ViewMode.BUS_FOCUS, ViewMode.TAXI_FOCUS]) {
-      expect(VIEW_MODE_OPACITY[mode].road).toBe(1.0);
-      expect(VIEW_MODE_OPACITY[mode].building).toBeLessThan(0.2);
-    }
+  it('BUS_FOCUS mode should keep roads at full opacity', () => {
+    expect(VIEW_MODE_OPACITY[ViewMode.BUS_FOCUS].road).toBe(1.0);
+    expect(VIEW_MODE_OPACITY[ViewMode.BUS_FOCUS].building).toBeLessThan(0.2);
   });
 });

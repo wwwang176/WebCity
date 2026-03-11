@@ -875,9 +875,8 @@ const TRANS_METRO_STATION_ID = 241;
 const TRANS_TRAIN_STATION_ID = 239;
 const TRANS_FERRY_DOCK_ID = 238;
 const TRANS_AIRPORT_ID = 237;
-const TRANS_TAXI_STAND_ID = 236;
 type InfraType = 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery'
-  | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
+  | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport';
 const INFRA_ID_MAP: Record<number, InfraType> = {
   [INFRA_POWER_ID]: 'power', [INFRA_WATER_ID]: 'water',
   [INFRA_POLICE_ID]: 'police', [INFRA_FIRE_ID]: 'fire', [INFRA_HOSPITAL_ID]: 'hospital',
@@ -885,7 +884,7 @@ const INFRA_ID_MAP: Record<number, InfraType> = {
   [INFRA_PARK_ID]: 'park', [INFRA_GARBAGE_ID]: 'garbage', [INFRA_SEWAGE_ID]: 'sewage', [INFRA_CEMETERY_ID]: 'cemetery',
   [TRANS_BUS_STOP_ID]: 'bus_stop', [TRANS_METRO_STATION_ID]: 'metro_station',
   [TRANS_TRAIN_STATION_ID]: 'train_station',
-  [TRANS_FERRY_DOCK_ID]: 'ferry_dock', [TRANS_AIRPORT_ID]: 'airport', [TRANS_TAXI_STAND_ID]: 'taxi_stand',
+  [TRANS_FERRY_DOCK_ID]: 'ferry_dock', [TRANS_AIRPORT_ID]: 'airport',
 };
 
 interface BuildingData { x: number; y: number; level: number; burned?: boolean }
@@ -1127,7 +1126,6 @@ export class BuildingRenderer {
       case 'train_station': this.buildTrainStation(group, 0, 0); break;
       case 'ferry_dock':   this.buildFerryDock(group, 0, 0); break;
       case 'airport':      this.buildAirport(group, 0, 0); break;
-      case 'taxi_stand':   this.buildTaxiStand(group, 0, 0); break;
       default:          this.buildCivicBuilding(group, 0, 0, type); break;
     }
   }
@@ -1150,7 +1148,6 @@ export class BuildingRenderer {
       train_station:  { color: 0x795548, height: 0.45, roofColor: 0x5d4037, accent: 0xff5722 },
       ferry_dock:     { color: 0x00bcd4, height: 0.18, roofColor: 0x00838f },
       airport:        { color: 0xeceff1, height: 0.55, roofColor: 0x90a4ae, accent: 0x2196f3 },
-      taxi_stand:     { color: 0xffeb3b, height: 0.20, roofColor: 0xfbc02d },
     };
     const cfg = configs[type] ?? { color: 0x888888, height: 0.35, roofColor: 0x666666 };
     const s = scale; // scale factor for multi-cell buildings
@@ -2387,54 +2384,6 @@ export class BuildingRenderer {
     threshGeo.translate(0, 0.006, 0);
     const threshMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     this.addInfraMesh(scene, threshGeo, threshMat, cx - 0.85, 0.05, cz + 0.65, false);
-  }
-
-  private buildTaxiStand(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
-
-    // Ground pad
-    const padGeo = new THREE.BoxGeometry(0.35, 0.015, 0.25);
-    padGeo.translate(0, 0.015 / 2, 0);
-    const padMat = new THREE.MeshLambertMaterial({ color: 0xe0e0e0 });
-    this.addInfraMesh(scene, padGeo, padMat, cx, 0.05, cz, false);
-
-    // 2 shelter poles
-    const poleMat = new THREE.MeshLambertMaterial({ color: 0xe0e0e0 });
-    const poleOffsets: [number, number][] = [[-0.08, -0.04], [0.08, -0.04]];
-    for (const [dx, dz] of poleOffsets) {
-      const poleGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.16, 6);
-      poleGeo.translate(0, 0.015 + 0.16 / 2, 0);
-      this.addInfraMesh(scene, poleGeo, poleMat, cx + dx, 0.05, cz + dz);
-    }
-
-    // Shelter roof (deep yellow)
-    const shelterRoofGeo = new THREE.BoxGeometry(0.22, 0.015, 0.12);
-    shelterRoofGeo.translate(0, 0.015 + 0.16 + 0.015 / 2, 0);
-    const shelterRoofMat = new THREE.MeshLambertMaterial({ color: 0xfbc02d });
-    this.addInfraMesh(scene, shelterRoofGeo, shelterRoofMat, cx, 0.05, cz - 0.04);
-
-    // TAXI sign pole
-    const signPoleGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.22, 4);
-    signPoleGeo.translate(0, 0.015 + 0.22 / 2, 0);
-    const signPoleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-    this.addInfraMesh(scene, signPoleGeo, signPoleMat, cx - 0.14, 0.05, cz - 0.08);
-
-    // TAXI sign (glowing yellow)
-    const signGeo = new THREE.BoxGeometry(0.07, 0.05, 0.02);
-    signGeo.translate(0, 0.015 + 0.22 + 0.05 / 2, 0);
-    const signMat = new THREE.MeshBasicMaterial({ color: 0xffeb3b });
-    this.addInfraMesh(scene, signGeo, signMat, cx - 0.14, 0.05, cz - 0.08, false);
-
-    // Taxi cab body
-    const cabGeo = new THREE.BoxGeometry(0.10, 0.05, 0.05);
-    cabGeo.translate(0, 0.015 + 0.05 / 2, 0);
-    const cabMat = new THREE.MeshLambertMaterial({ color: 0xfdd835 });
-    this.addInfraMesh(scene, cabGeo, cabMat, cx + 0.08, 0.05, cz + 0.06);
-
-    // Taxi cab roof
-    const cabRoofGeo = new THREE.BoxGeometry(0.06, 0.025, 0.045);
-    cabRoofGeo.translate(0, 0.015 + 0.05 + 0.025 / 2, 0);
-    const cabRoofMat = new THREE.MeshLambertMaterial({ color: 0xfbc02d });
-    this.addInfraMesh(scene, cabRoofGeo, cabRoofMat, cx + 0.08, 0.05, cz + 0.06);
   }
 
   // ═══════════════════════════════════════════════════════════════════

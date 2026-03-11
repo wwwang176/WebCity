@@ -175,7 +175,6 @@ export class SimulationLoop {
     this.state.rail.tick();
     this.state.ferry.tick();
     this.state.airport.tick();
-    this.state.taxi.tick();
 
     // 8b. Freight: industrial→commercial cargo flow (every tick)
     this.state.freight.tick(this.state.grid);
@@ -491,8 +490,7 @@ export class SimulationLoop {
       + this.state.metro.getOperatingCost()
       + this.state.rail.getOperatingCost()
       + this.state.ferry.getOperatingCost()
-      + this.state.airport.getOperatingCost()
-      + this.state.taxi.getOperatingCost();
+      + this.state.airport.getOperatingCost();
     this.state.budget.expenses = roadMaint + powerCost + waterCost + policeCost + fireCost + healthCost + educationCost + parkCost + garbageCost + sewageCost + deathCareCost + policyCost + transportCost;
   }
 
@@ -938,8 +936,6 @@ export class SimulationLoop {
         } else if (mode === TransportMode.FERRY) {
           const nearest = this.findNearestStop(this.state.ferry.getDocks(), fromPos);
           if (nearest) nearest.passengers++;
-        } else if (mode === TransportMode.TAXI) {
-          this.state.taxi.dispatch(fromPos, toPos);
         }
 
         continue;

@@ -62,7 +62,7 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 };
 
 
-export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport';
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -594,9 +594,6 @@ export class Game {
       case 'airport':
         this.placeTransportStop(x1, y1, 'airport');
         break;
-      case 'taxi_stand':
-        this.placeTransportStop(x1, y1, 'taxi');
-        break;
     }
     this.onUIUpdate?.();
   }
@@ -772,10 +769,6 @@ export class Game {
         this.state.airport.remove(airport.id);
       }
     }
-    if (buildingId === 236) {
-      const sid = this.state.taxi.getStands().find(s => s.x === px && s.y === py);
-      if (sid) this.state.taxi.removeStand(sid.id);
-    }
   }
 
   private paintDistrict(x1: number, y1: number, x2: number, y2: number): void {
@@ -869,7 +862,7 @@ export class Game {
     this.renderDirty = true;
   }
 
-  private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport' | 'taxi'): void {
+  private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
     const cell = this.state.grid.getCell(x, y);
     if (!cell) {
       this.notification = 'Out of bounds';
@@ -894,11 +887,11 @@ export class Game {
       return;
     }
     const costs: Record<string, number> = {
-      bus: 100, metro: 3000, rail: 2000, ferry: 1500, airport: 5000, taxi: 200,
+      bus: 100, metro: 3000, rail: 2000, ferry: 1500, airport: 5000,
     };
     const airportCosts: Record<AirportSize, number> = { SMALL: 5000, MEDIUM: 15000, LARGE: 40000 };
     const buildingIds: Record<string, number> = {
-      bus: 242, metro: 241, rail: 239, ferry: 238, airport: 237, taxi: 236,
+      bus: 242, metro: 241, rail: 239, ferry: 238, airport: 237,
     };
     const cost = type === 'airport' ? airportCosts[this.selectedAirportSize ?? 'SMALL'] : (costs[type] ?? 500);
     if (this.state.budget.funds < cost) {
@@ -985,8 +978,6 @@ export class Game {
       this.audioManager.playSfx('build');
       this.renderDirty = true;
       return; // skip the default single-cell setCell below
-    } else if (type === 'taxi') {
-      this.state.taxi.addStand(x, y);
     }
     this.state.grid.setCell(x, y, {
       buildingId: buildingIds[type] ?? 242,
@@ -1150,12 +1141,11 @@ export class Game {
       };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
 
-    // 收集交通系統車輛（bus/rail/ferry/taxi）
+    // 收集交通系統車輛（bus/rail/ferry）
     const transportVehicles = collectTransportVehicles({
       bus: this.state.bus,
       rail: this.state.rail,
       ferry: this.state.ferry,
-      taxi: this.state.taxi,
     });
 
     // 渡輪渲染端動畫（純 LERP，跟地鐵一樣不靠 tick）
@@ -1308,7 +1298,6 @@ export class Game {
       train_station: 0x795548,
       ferry_dock: 0x0288d1,
       airport: 0x9c27b0,
-      taxi_stand: 0xffc107,
     };
     this.gridCursor.setColor(toolColors[this.currentTool] ?? 0xffffff);
     // Demolish tool gets higher opacity for red highlight preview
@@ -1392,7 +1381,7 @@ export class Game {
 
     const STOP_NAMES: Record<TransportStopKind, string> = {
       bus: 'Bus Stop', metro: 'Metro Station',
-      rail: 'Train Station', ferry: 'Ferry Dock', taxi: 'Taxi Stand',
+      rail: 'Train Station', ferry: 'Ferry Dock',
     };
 
     this.selectedBuilding = {
@@ -1434,7 +1423,7 @@ export class Game {
       'school', 'school_high', 'school_univ', 'park',
       'garbage', 'sewage', 'cemetery',
       'bus_stop', 'metro_station', 'train_station',
-      'ferry_dock', 'airport', 'taxi_stand',
+      'ferry_dock', 'airport',
     ].includes(tool);
   }
 
@@ -1954,8 +1943,7 @@ export class Game {
       + this.state.metro.getOperatingCost()
       + this.state.rail.getOperatingCost()
       + this.state.ferry.getOperatingCost()
-      + this.state.airport.getOperatingCost()
-      + this.state.taxi.getOperatingCost();
+      + this.state.airport.getOperatingCost();
 
     return {
       residential: Math.round(resIncome * 10) / 10,

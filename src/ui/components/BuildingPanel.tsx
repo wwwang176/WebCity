@@ -34,7 +34,6 @@ const TRANSPORT_ICONS: Record<string, string> = {
   metro: '\u{1F687}',
   rail: '\u{1F686}',
   ferry: '\u26F4',
-  taxi: '\u{1F695}',
 };
 
 function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {

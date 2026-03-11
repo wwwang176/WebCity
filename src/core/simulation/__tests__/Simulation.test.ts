@@ -516,7 +516,6 @@ describe('Transport integration', () => {
     expect(state.rail).toBeDefined();
     expect(state.ferry).toBeDefined();
     expect(state.airport).toBeDefined();
-    expect(state.taxi).toBeDefined();
   });
 
   it('transport systems should tick in simulation loop', () => {

@@ -12,8 +12,6 @@ export enum ViewMode {
   FERRY_FOCUS = 'FERRY_FOCUS',
   /** 公車聚焦（道路/公車全彩，其餘白模） */
   BUS_FOCUS = 'BUS_FOCUS',
-  /** 計程車聚焦（道路/計程車全彩，其餘白模） */
-  TAXI_FOCUS = 'TAXI_FOCUS',
 }
 
 /** Road-based transport focus: roads stay visible, everything else dimmed. */
@@ -82,7 +80,6 @@ export const VIEW_MODE_OPACITY: Record<ViewMode, {
     levelCrossing: 0.0,
   },
   [ViewMode.BUS_FOCUS]: { ...ROAD_TRANSPORT_OPACITY },
-  [ViewMode.TAXI_FOCUS]: { ...ROAD_TRANSPORT_OPACITY },
 };
 
 /** 地下模式隧道 Y 位置（負值 = 地面以下） */
@@ -98,7 +95,7 @@ export function isSurfaceVehicle(_type: string): boolean {
 
 // ── Transport stop identification ──
 
-export type TransportStopKind = 'bus' | 'metro' | 'rail' | 'ferry' | 'taxi';
+export type TransportStopKind = 'bus' | 'metro' | 'rail' | 'ferry';
 
 /** buildingId → transport stop type mapping */
 export const TRANSPORT_STOP_IDS: Record<number, TransportStopKind> = {
@@ -106,7 +103,6 @@ export const TRANSPORT_STOP_IDS: Record<number, TransportStopKind> = {
   241: 'metro',
   239: 'rail',
   238: 'ferry',
-  236: 'taxi',
 };
 
 /** Get transport stop type from buildingId, or undefined if not a transport stop. */
@@ -121,7 +117,6 @@ export function getTransportFocusMode(type: TransportStopKind): ViewMode {
     case 'rail': return ViewMode.RAIL_FOCUS;
     case 'ferry': return ViewMode.FERRY_FOCUS;
     case 'bus': return ViewMode.BUS_FOCUS;
-    case 'taxi': return ViewMode.TAXI_FOCUS;
   }
 }
 
@@ -138,7 +133,5 @@ export function getVehicleVisibility(mode: ViewMode, vehicleType: string): boole
       return vehicleType === 'ferry';
     case ViewMode.BUS_FOCUS:
       return vehicleType === 'bus' || vehicleType === 'transport_bus';
-    case ViewMode.TAXI_FOCUS:
-      return vehicleType === 'taxi';
   }
 }

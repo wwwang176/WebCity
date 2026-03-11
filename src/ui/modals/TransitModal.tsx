@@ -29,10 +29,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
       ferryDocks: state.ferry.getDocks(),
       ferryRoutes: state.ferry.getRoutes(),
       ferryCost: state.ferry.getOperatingCost(),
-      taxiStands: state.taxi.getStands(),
-      taxiVehicles: state.taxi.getVehicles(),
-      taxiActiveTrips: state.taxi.getActiveTrips(),
-      taxiCost: state.taxi.getOperatingCost(),
       airports: state.airport.getAirports(),
       airportCost: state.airport.getOperatingCost(),
     };
@@ -42,7 +38,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     const d = transitData();
     return d.busStops.length > 0 || d.metroStations.length > 0
       || d.railStations.length > 0 || d.ferryDocks.length > 0
-      || d.taxiStands.length > 0 || d.airports.length > 0;
+      || d.airports.length > 0;
   };
 
   const createRouteAll = (type: string) => {
@@ -288,19 +284,6 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
                 </span>
               </div>
             ))}
-          </div>
-        </Show>
-
-        {/* Taxi */}
-        <Show when={transitData().taxiStands.length > 0}>
-          <div style={sectionStyle}>
-            <div style="color:#ffeb3b;font-weight:600;margin-bottom:4px">{'\u{1F695}'} Taxi System</div>
-            <div style="font-size:12px;color:#aaa">
-              Stands: {transitData().taxiStands.length} |
-              Vehicles: {transitData().taxiVehicles.filter((v: any) => v.atStop && v.passengers === 0).length}/{transitData().taxiVehicles.length} available |
-              Active trips: {transitData().taxiActiveTrips.length}
-            </div>
-            <div style="font-size:12px;color:#aaa">Cost: ${transitData().taxiCost}/tick</div>
           </div>
         </Show>
 

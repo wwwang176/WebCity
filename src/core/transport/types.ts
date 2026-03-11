@@ -4,7 +4,6 @@ export enum TransportType {
   RAIL = 'RAIL',
   FERRY = 'FERRY',
   AIRPORT = 'AIRPORT',
-  TAXI = 'TAXI',
 }
 
 export enum TransportMode {
@@ -14,7 +13,6 @@ export enum TransportMode {
   METRO = 'METRO',
   RAIL = 'RAIL',
   FERRY = 'FERRY',
-  TAXI = 'TAXI',
 }
 
 export interface TransportStop {

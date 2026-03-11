@@ -29,7 +29,6 @@ import { MetroSystem } from '../transport/MetroSystem';
 import { RailSystem } from '../transport/RailSystem';
 import { FerrySystem } from '../transport/FerrySystem';
 import { AirportSystem } from '../transport/AirportSystem';
-import { TaxiSystem } from '../transport/TaxiSystem';
 import { FreightSystem } from '../traffic/FreightSystem';
 
 export interface GameState {
@@ -64,7 +63,6 @@ export interface GameState {
   rail: RailSystem;
   ferry: FerrySystem;
   airport: AirportSystem;
-  taxi: TaxiSystem;
   freight: FreightSystem;
 }
 
@@ -109,7 +107,6 @@ export function createGameState(width = 200, height = 200): GameState {
     rail: new RailSystem(),
     ferry: new FerrySystem(),
     airport: new AirportSystem(),
-    taxi: new TaxiSystem(),
     freight: new FreightSystem(),
   };
 }

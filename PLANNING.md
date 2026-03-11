@@ -200,7 +200,6 @@ web-city/
 │   │   │   ├── RailSystem.ts      # 鐵路/火車
 │   │   │   ├── FerrySystem.ts     # 渡輪
 │   │   │   ├── AirportSystem.ts   # 機場
-│   │   │   ├── TaxiSystem.ts      # 計程車
 │   │   │   └── __tests__/
 │   │   │
 │   │   ├── economy/

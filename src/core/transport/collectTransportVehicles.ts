@@ -8,7 +8,6 @@
 import type { BusSystem } from './BusSystem';
 import type { RailSystem } from './RailSystem';
 import type { FerrySystem } from './FerrySystem';
-import type { TaxiSystem } from './TaxiSystem';
 import type { TransportVehicle } from './types';
 
 /** 交通系統車輛渲染資料型別（與 VehicleData 相容）— metro_train 已移至 MetroTunnelRenderer */
@@ -17,7 +16,7 @@ export interface TransportVehicleRenderData {
   x: number;
   y: number;
   heading: number;
-  type: 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry' | 'taxi';
+  type: 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry';
   laneOffset: number;
 }
 
@@ -25,14 +24,12 @@ export interface TransportSystems {
   bus: BusSystem;
   rail: RailSystem;
   ferry: FerrySystem;
-  taxi: TaxiSystem;
 }
 
 // ID 前綴偏移量，避免跨系統碰撞（每個系統有自己的 ID 命名空間）
 const ID_OFFSET_BUS = 100_000;
 const ID_OFFSET_RAIL = 400_000;
 const ID_OFFSET_FERRY = 500_000;
-const ID_OFFSET_TAXI = 600_000;
 
 function mapVehicle(
   v: TransportVehicle,
@@ -91,11 +88,6 @@ export function collectTransportVehicles(systems: TransportSystems): TransportVe
   for (const v of systems.ferry.getVessels()) {
     const route = ferryRoutes.find(r => r.id === v.routeId);
     result.push(mapVehicle(v, 'ferry', ID_OFFSET_FERRY, route));
-  }
-
-  // Taxi
-  for (const v of systems.taxi.getVehicles()) {
-    result.push(mapVehicle(v, 'taxi', ID_OFFSET_TAXI));
   }
 
   return result;

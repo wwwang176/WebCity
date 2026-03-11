@@ -3,7 +3,6 @@ import { collectTransportVehicles, type TransportVehicleRenderData } from '../co
 import { BusSystem } from '../BusSystem';
 import { RailSystem } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
-import { TaxiSystem } from '../TaxiSystem';
 
 /** Helper to build an empty surface-transport systems object */
 function emptySystems() {
@@ -11,7 +10,6 @@ function emptySystems() {
     bus: new BusSystem(),
     rail: new RailSystem(),
     ferry: new FerrySystem(),
-    taxi: new TaxiSystem(),
   };
 }
 
@@ -67,33 +65,23 @@ describe('collectTransportVehicles', () => {
     expect(result[0]!.type).toBe('ferry');
   });
 
-  it('應該收集 TaxiSystem 的車輛並標記為 taxi 類型', () => {
-    const taxi = new TaxiSystem();
-    taxi.addStand(0, 0, 2); // 每個招呼站預設 2 輛
-
-    const result = collectTransportVehicles({ ...emptySystems(), taxi });
-
-    expect(result).toHaveLength(2);
-    for (const v of result) {
-      expect(v.type).toBe('taxi');
-    }
-  });
-
   it('應該同時收集多個系統的車輛', () => {
     const bus = new BusSystem();
     const s1 = bus.addStop(0, 0);
     const s2 = bus.addStop(5, 0);
     bus.createRoute([s1, s2], 1);
 
-    const taxi = new TaxiSystem();
-    taxi.addStand(10, 10, 1);
+    const rail = new RailSystem();
+    const rs1 = rail.buildStation(0, 0);
+    const rs2 = rail.buildStation(10, 10);
+    rail.createLine([rs1, rs2]);
 
-    const result = collectTransportVehicles({ ...emptySystems(), bus, taxi });
+    const result = collectTransportVehicles({ ...emptySystems(), bus, rail });
 
-    // 1 bus + 1 taxi = 2
+    // 1 bus + 1 rail_train = 2
     expect(result).toHaveLength(2);
     expect(result.filter(v => v.type === 'transport_bus')).toHaveLength(1);
-    expect(result.filter(v => v.type === 'taxi')).toHaveLength(1);
+    expect(result.filter(v => v.type === 'rail_train')).toHaveLength(1);
   });
 
   it('車輛的位置應該反映 TransportVehicle.position', () => {
@@ -116,10 +104,12 @@ describe('collectTransportVehicles', () => {
     const s2 = bus.addStop(5, 0);
     bus.createRoute([s1, s2], 1);
 
-    const taxi = new TaxiSystem();
-    taxi.addStand(10, 10, 1);
+    const rail = new RailSystem();
+    const rs1 = rail.buildStation(0, 0);
+    const rs2 = rail.buildStation(10, 10);
+    rail.createLine([rs1, rs2]);
 
-    const result = collectTransportVehicles({ ...emptySystems(), bus, taxi });
+    const result = collectTransportVehicles({ ...emptySystems(), bus, rail });
 
     const ids = result.map(v => v.id);
     const uniqueIds = new Set(ids);

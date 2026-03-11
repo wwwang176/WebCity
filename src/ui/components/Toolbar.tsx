@@ -64,7 +64,6 @@ const TRANSPORT_GROUP: ToolGroup = {
     { tool: 'train_station', label: 'Train Stn', key: '', color: '#795548', icon: '\u{1F689}' },
     { tool: 'ferry_dock', label: 'Ferry', key: '', color: '#0288d1', icon: '\u{26F4}' },
     { tool: 'airport', label: 'Airport', key: '', color: '#9c27b0', icon: '\u{2708}' },
-    { tool: 'taxi_stand', label: 'Taxi', key: '', color: '#ffc107', icon: '\u{1F695}' },
   ],
 };
 

@@ -19,7 +19,6 @@ import { BusSystem } from '../transport/BusSystem';
 import { MetroSystem } from '../transport/MetroSystem';
 import { RailSystem } from '../transport/RailSystem';
 import { FerrySystem } from '../transport/FerrySystem';
-import { TaxiSystem } from '../transport/TaxiSystem';
 import { AirportSystem } from '../transport/AirportSystem';
 
 interface SerializedCell {
@@ -69,7 +68,6 @@ interface SerializedState {
   metro?: ReturnType<MetroSystem['toJSON']>;
   rail?: ReturnType<RailSystem['toJSON']>;
   ferry?: ReturnType<FerrySystem['toJSON']>;
-  taxi?: ReturnType<TaxiSystem['toJSON']>;
   airport?: ReturnType<AirportSystem['toJSON']>;
 }
 
@@ -160,7 +158,6 @@ export function serializeGameState(state: GameState): string {
     metro: state.metro.toJSON(),
     rail: state.rail.toJSON(),
     ferry: state.ferry.toJSON(),
-    taxi: state.taxi.toJSON(),
     airport: state.airport.toJSON(),
   };
 
@@ -236,15 +233,12 @@ export function deserializeGameState(json: string): GameState {
   if (saved.ferry) {
     state.ferry = FerrySystem.fromJSON(saved.ferry);
   }
-  if (saved.taxi) {
-    state.taxi = TaxiSystem.fromJSON(saved.taxi);
-  }
   if (saved.airport) {
     state.airport = AirportSystem.fromJSON(saved.airport);
   }
 
   // Fallback: rebuild transit stops from grid for old saves without transport data
-  if (!saved.bus && !saved.metro && !saved.rail && !saved.ferry && !saved.taxi) {
+  if (!saved.bus && !saved.metro && !saved.rail && !saved.ferry) {
     for (let y = 0; y < saved.grid.height; y++) {
       for (let x = 0; x < saved.grid.width; x++) {
         const cell = state.grid.getCell(x, y);
@@ -254,7 +248,7 @@ export function deserializeGameState(json: string): GameState {
           case 241: state.metro.addStation(x, y); break;
           case 239: state.rail.buildStation(x, y); break;
           case 238: state.ferry.addDock(x, y); break;
-          case 236: state.taxi.addStand(x, y); break;
+          case 236: state.grid.setCell(x, y, { buildingId: 0, reserved: 0 }); break;
         }
       }
     }

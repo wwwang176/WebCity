@@ -129,10 +129,6 @@ describe('Serializer', () => {
     state.grid.setCell(15, 15, { buildingId: 241 });
     state.metro.createLine([st1, st2]);
 
-    // Set up taxi
-    state.taxi.addStand(3, 3);
-    state.grid.setCell(3, 3, { buildingId: 236 });
-
     const json = serializeGameState(state);
     const restored = deserializeGameState(json);
 
@@ -147,9 +143,6 @@ describe('Serializer', () => {
     expect(restored.metro.getLines()).toHaveLength(1);
     expect(restored.metro.getTrains()).toHaveLength(1);
 
-    // Taxi: stands preserved
-    expect(restored.taxi.getStands()).toHaveLength(1);
-    expect(restored.taxi.getVehicles()).toHaveLength(3);
   });
 });
 

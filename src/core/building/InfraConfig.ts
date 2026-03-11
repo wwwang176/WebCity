@@ -2,7 +2,7 @@ export type InfraType =
   | 'park' | 'police' | 'fire' | 'school' | 'power' | 'water'
   | 'garbage' | 'sewage' | 'cemetery' | 'hospital' | 'school_high'
   | 'school_univ' | 'bus_stop' | 'metro_station' | 'train_station'
-  | 'ferry_dock' | 'airport' | 'taxi_stand';
+  | 'ferry_dock' | 'airport';
 
 export type Rotation = 0 | 90 | 180 | 270;
 
@@ -33,7 +33,6 @@ export const INFRA_CONFIGS: readonly InfraConfig[] = [
   { type: 'metro_station', buildingId: 241, name: 'Metro Station',   width: 1, height: 1, cost: 3000 },
   { type: 'train_station', buildingId: 239, name: 'Train Station',   width: 1, height: 1, cost: 2000 },
   { type: 'ferry_dock',  buildingId: 238, name: 'Ferry Dock',        width: 1, height: 1, cost: 1500 },
-  { type: 'taxi_stand',  buildingId: 236, name: 'Taxi Stand',        width: 1, height: 1, cost: 200 },
 ];
 
 const byType = new Map<InfraType, InfraConfig>();

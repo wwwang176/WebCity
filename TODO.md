@@ -404,13 +404,9 @@
 - [x] 整合到 SimulationLoop ✅ airport.tick() + getOperatingCost()
 - [x] UI：機場放置 ✅ airport tool (requires pop >= 10000)
 
-### 8.7 計程車 ✅ 已整合到 SimulationLoop + GameState
+### 8.7 計程車 — 已移除
 
-- [x] **TEST**: 計程車站提供彈性交通
-- [x] **TEST**: 居民可呼叫計程車
-- [x] 實作 TaxiSystem 模組
-- [x] 整合到 SimulationLoop ✅ taxi.tick() + getOperatingCost()
-- [x] UI：計程車站放置 ✅ taxi_stand tool
+> Taxi 系統已從專案中完全移除（TaxiSystem.ts、buildingId 236、ViewMode.TAXI_FOCUS、相關 UI/渲染/測試）。舊存檔中的 taxi_stand (236) 會在載入時自動清除。
 
 ### 8.8 居民交通方式選擇 ✅ 已整合到通勤邏輯
 

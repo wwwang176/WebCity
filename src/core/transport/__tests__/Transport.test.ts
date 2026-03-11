@@ -8,7 +8,6 @@ import { MetroSystem } from '../MetroSystem';
 import { RailSystem, RailServiceType } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
 import { AirportSystem, getAirportFootprint } from '../AirportSystem';
-import { TaxiSystem } from '../TaxiSystem';
 import { chooseMode, AvailableTransport } from '../ModeChoice';
 import { PollutionManager } from '../../environment/Pollution';
 import { FreightSystem } from '../../traffic/FreightSystem';
@@ -367,84 +366,6 @@ describe('AirportSystem', () => {
 });
 
 // ---------------------------------------------------------------------------
-// TaxiSystem
-// ---------------------------------------------------------------------------
-describe('TaxiSystem', () => {
-  it('should add stands with taxis', () => {
-    const taxi = new TaxiSystem();
-    const stand = taxi.addStand(5, 5, 3);
-    expect(stand.type).toBe(TransportType.TAXI);
-    expect(taxi.getStands()).toHaveLength(1);
-    expect(taxi.getVehicles()).toHaveLength(3);
-  });
-
-  it('should dispatch a taxi trip', () => {
-    const taxi = new TaxiSystem();
-    taxi.addStand(0, 0, 2);
-    const trip = taxi.dispatch({ x: 0, y: 0 }, { x: 10, y: 5 });
-    expect(trip).not.toBeNull();
-    expect(trip!.from).toEqual({ x: 0, y: 0 });
-    expect(trip!.to).toEqual({ x: 10, y: 5 });
-    expect(trip!.completed).toBe(false);
-    expect(trip!.ticks).toBe(15); // Manhattan distance 10+5
-  });
-
-  it('should return null if no taxis available', () => {
-    const taxi = new TaxiSystem();
-    taxi.addStand(0, 0, 1);
-    taxi.dispatch({ x: 0, y: 0 }, { x: 10, y: 0 }); // uses the only taxi
-    const second = taxi.dispatch({ x: 0, y: 0 }, { x: 5, y: 0 });
-    expect(second).toBeNull();
-  });
-
-  it('should complete trip after ticks elapse', () => {
-    const taxi = new TaxiSystem();
-    taxi.addStand(0, 0, 1);
-    const trip = taxi.dispatch({ x: 0, y: 0 }, { x: 3, y: 0 })!;
-    expect(trip.ticks).toBe(3);
-
-    taxi.tick(); // ticks = 2
-    expect(trip.completed).toBe(false);
-    taxi.tick(); // ticks = 1
-    expect(trip.completed).toBe(false);
-    taxi.tick(); // ticks = 0, completed
-    expect(trip.completed).toBe(true);
-  });
-
-  it('should free taxi after trip completion', () => {
-    const taxi = new TaxiSystem();
-    taxi.addStand(0, 0, 1);
-    taxi.dispatch({ x: 0, y: 0 }, { x: 2, y: 0 });
-
-    taxi.tick(); // ticks = 1
-    taxi.tick(); // ticks = 0, completed
-
-    // Taxi should be available again
-    const second = taxi.dispatch({ x: 2, y: 0 }, { x: 5, y: 0 });
-    expect(second).not.toBeNull();
-  });
-
-  it('should calculate operating cost based on stands', () => {
-    const taxi = new TaxiSystem();
-    taxi.addStand(0, 0);
-    taxi.addStand(10, 10);
-    // 2 * 50 = 100
-    expect(taxi.getOperatingCost()).toBe(100);
-  });
-
-  it('should track active trips', () => {
-    const taxi = new TaxiSystem();
-    taxi.addStand(0, 0, 3);
-    taxi.dispatch({ x: 0, y: 0 }, { x: 1, y: 0 });
-    taxi.dispatch({ x: 0, y: 0 }, { x: 2, y: 0 });
-    expect(taxi.getActiveTrips()).toHaveLength(2);
-
-    taxi.tick(); // first trip completes (1 tick)
-    expect(taxi.getActiveTrips()).toHaveLength(1);
-  });
-});
-
-// ---------------------------------------------------------------------------
 // ModeChoice
 // ---------------------------------------------------------------------------
 describe('ModeChoice', () => {
@@ -631,22 +552,6 @@ describe('FerrySystem toJSON/fromJSON', () => {
   });
 });
 
-describe('TaxiSystem toJSON/fromJSON', () => {
-  it('should round-trip stands, vehicles, and active trips', () => {
-    const taxi = new TaxiSystem();
-    taxi.addStand(0, 0, 2);
-    taxi.dispatch({ x: 0, y: 0 }, { x: 5, y: 5 });
-
-    const json = taxi.toJSON();
-    const restored = TaxiSystem.fromJSON(json);
-
-    expect(restored.getStands()).toHaveLength(1);
-    expect(restored.getVehicles()).toHaveLength(2);
-    expect(restored.getActiveTrips()).toHaveLength(1);
-    expect(restored.getActiveTrips()[0]!.ticks).toBe(10);
-  });
-});
-
 describe('AirportSystem toJSON/fromJSON', () => {
   it('should round-trip airports with size and properties', () => {
     const airports = new AirportSystem();
@@ -728,17 +633,6 @@ describe('FerrySystem removeDock', () => {
     ferry.addDock(5, 5);
     ferry.removeDock(d1.id);
     expect(ferry.getDocks()).toHaveLength(1);
-  });
-});
-
-describe('TaxiSystem removeStand', () => {
-  it('should remove a stand and its vehicles', () => {
-    const taxi = new TaxiSystem();
-    const stand = taxi.addStand(0, 0, 3);
-    taxi.addStand(5, 5, 2);
-    taxi.removeStand(stand.id);
-    expect(taxi.getStands()).toHaveLength(1);
-    expect(taxi.getVehicles()).toHaveLength(2);
   });
 });
 
@@ -973,15 +867,6 @@ describe('Metro getTrainSegmentInfo', () => {
     const info = metro.getTrainSegmentInfo(train);
     expect(info.atStop).toBe(true);
     expect(info.fromStopIndex).toBe(0);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// T4.3 Taxi ModeChoice integration
-// ---------------------------------------------------------------------------
-describe('Taxi ModeChoice', () => {
-  it('should include TAXI in TransportMode', () => {
-    expect(TransportMode.TAXI).toBe('TAXI');
   });
 });
 

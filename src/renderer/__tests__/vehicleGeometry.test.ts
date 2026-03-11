@@ -10,7 +10,6 @@ import {
   buildMetroCarriageGeometry,
   buildRailTrainGeometry,
   buildFerryGeometry,
-  buildTaxiGeometry,
 } from '../geometry';
 
 // ---------------------------------------------------------------------------
@@ -33,7 +32,6 @@ describe('geometry barrel export', () => {
 
     ['buildRailTrainGeometry', buildRailTrainGeometry],
     ['buildFerryGeometry', buildFerryGeometry],
-    ['buildTaxiGeometry', buildTaxiGeometry],
   ])('%s 應該是可呼叫的函數', (_name, fn) => {
     expect(typeof fn).toBe('function');
   });
@@ -64,9 +62,4 @@ describe('geometry barrel export', () => {
     expect(transportBus.attributes.position!.count).toBe(bus.attributes.position!.count);
   });
 
-  it('buildTaxiGeometry 應與 buildCarGeometry 返回相同頂點數', () => {
-    const car = buildCarGeometry();
-    const taxi = buildTaxiGeometry();
-    expect(taxi.attributes.position!.count).toBe(car.attributes.position!.count);
-  });
 });

@@ -640,7 +640,7 @@
 
 **有程式碼但未整合到遊戲循環（僅單元測試通過）：**
 - District 管理（DistrictManager/PolicyManager/Specialization）— 無 UI
-- 公共交通 7 系統（Bus/Metro/Rail/Tram/Ferry/Taxi/Airport）— 無 GameState/UI
+- 公共交通 6 系統（Bus/Metro/Rail/Tram/Ferry/Airport）— 無 GameState/UI（Taxi 已移除）
 - 教育系統（educateTick 存在但未被呼叫）— 無 UI
 - 預警系統（WarningSystem）— 無 GameState
 - 水流系統（WaterFlow）— 無 GameState
@@ -737,7 +737,7 @@
 
 ### 未整合的進階子系統（有程式碼+單元測試，但無遊戲循環/UI）
 - District 畫區 UI + 區域政策
-- 公共交通 7 系統（Bus/Metro/Rail/Tram/Ferry/Taxi/Airport）
+- 公共交通 6 系統（Bus/Metro/Rail/Tram/Ferry/Airport）（Taxi 已移除）
 - 教育系統（educateTick 未被呼叫）
 - 預警/水流/自然資源管理
 - 消防/警察/醫療服務調度
@@ -1144,7 +1144,7 @@
 - ✅ **13/13 Overlays 切換** — power/water/traffic/zone/landValue/pollution/police/fire/health/education/park/garbage/district 全部正常 toggle
 - ✅ **Power Overlay 視覺** — 黃色供電覆蓋區域清晰，右上角 "Overlay: Power | Close" 標籤
 - ✅ **Zone Overlay 視覺** — 彩色區塊顯示各 zone 類型
-- ✅ **Transit Panel** — 7 種交通工具（Bus Stop/Metro/Tram/Train/Ferry/Airport/Taxi）+ Routes 按鈕
+- ✅ **Transit Panel** — 6 種交通工具（Bus Stop/Metro/Tram/Train/Ferry/Airport）+ Routes 按鈕（Taxi 已移除）
 - ✅ **災害系統** — "Forest Fire at (58,18)! Intensity: 78%" 災害通知正常觸發
 - ✅ 零遊戲 Console 錯誤
 - ✅ 全部 649 單元測試通過
@@ -1230,8 +1230,8 @@
 - ✅ **Stats Chart** — econ-chart 480x100 canvas 有實際內容渲染
 - ✅ **Transit Bus Stop** — 空格放置 buildingId=242，bus.getStops()=1
 - ✅ **Transit Metro Station** — 空格放置 buildingId=241，metro.getStations()=1
-- ✅ **Transit Taxi Stand** — 空格放置 buildingId=236
-- ✅ **6/6 Transit 工具切換** — bus_stop/metro_station/tram_stop/train_station/ferry_dock/taxi_stand 全部正確
+- ~~✅ **Transit Taxi Stand** — 空格放置 buildingId=236~~ （已移除）
+- ✅ **5/5 Transit 工具切換** — bus_stop/metro_station/train_station/ferry_dock/airport 全部正確（taxi_stand 已移除）
 - ✅ 零 Console 錯誤
 - ✅ 全部 652 單元測試通過
 
@@ -1252,7 +1252,7 @@
 - ✅ **BUG-025 回歸** — TWO_LANE→FOUR_LANE 6 格=$1200（差額正確），同類重建=$0
 - ✅ **BUG-026 回歸** — road_highway→road 後 currentRoadType=2 (TWO_LANE) 正確重置
 - ✅ **Save Game** — Slot 63 "R63-Regression" 成功存檔
-- ✅ **Transit 放置** — Bus Stop(242)/Metro(241)/Taxi(236) 全部正確放置
+- ✅ **Transit 放置** — Bus Stop(242)/Metro(241) 正確放置（Taxi 已移除）
 - ✅ **Building Info Panel** — Select 點擊 Medium House Level ★★☆, 6 Residents, $18/tick
 - ✅ **Economy** — Income $389/tick, Expenses $114/tick, Funds $107K, Loans=0, LoanRate=0.05
 - ✅ **Tax System** — R/C/I/O 各 9%, 稅率分項正確
@@ -1263,7 +1263,7 @@
 - ✅ **Vehicles** — 99 輛車, 99/99 有效路徑
 - ✅ **負資金穩定性** — -$5000 → 100 ticks → -$323（恢復中），負資金建路正確拒絕
 - ✅ **5000-tick 壓力測試** — 3158ms (1583 ticks/s), Pop 272 穩定, Funds $79K→$310K, 零 NaN
-- ✅ **34/34 子系統** — grid/roadNetwork/citizens/traffic/trafficLights/power/water/clock/budget/taxRates/rciDemand/buildingGrowth/buildingUpgrade/pollution/police/fire/health/education/parks/garbage/sewage/deathCare/districts/policies/citySpec/globalMarket/bus/metro/tram/rail/ferry/airport/taxi/freight 全部存在
+- ✅ **33/33 子系統** — grid/roadNetwork/citizens/traffic/trafficLights/power/water/clock/budget/taxRates/rciDemand/buildingGrowth/buildingUpgrade/pollution/police/fire/health/education/parks/garbage/sewage/deathCare/districts/policies/citySpec/globalMarket/bus/metro/tram/rail/ferry/airport/freight 全部存在（taxi 已移除）
 - ✅ **ARIA** — 9 dialog, 3 meter, 1 toolbar, 1 banner, 1 alert, 23 aria-label
 - ✅ **UI 完整** — TopBar/Toolbar/MiniMap/BuildingPanel/Notification/Tutorial/MuteBtn 全部存在
 - ✅ 零 Console 錯誤
@@ -1275,7 +1275,7 @@
 - ✅ **電力中斷/恢復** — 拆除電廠→20 ticks→重建電廠→建築繼續正常運作
 - ✅ **FreightSystem** — 貨運系統存在，cargoStorage/lastDemand 追蹤正常
 - ✅ **Bus Route 建立** — 2 站點→createRoute→1 條路線，營運成本 $100
-- ✅ **7 Transit 系統成本** — bus $0→$100(有路線後), metro/tram/rail/ferry/airport $0, taxi $50
+- ✅ **6 Transit 系統成本** — bus $0→$100(有路線後), metro/tram/rail/ferry/airport $0（taxi 已移除）
 - ✅ **District 建立** — 塗刷工具建立 "District 1"，getDistrictAt(5,12) 正確回傳
 - ✅ **PolicyManager** — 存在且可查詢
 - ✅ **CitySpec** — current=NONE（需 5000 人口解鎖）
@@ -1293,9 +1293,9 @@
 - **發現**：Round 65 回歸測試
 - **狀態**：✅ 已修復
 - **嚴重度**：Medium
-- **描述**：Save/Load 後，Transit 系統（Bus/Metro/Tram/Rail/Ferry/Taxi）的 stops 和 routes 全部遺失。Grid 中的 buildingId（如 242=BusStop）正確保留，但各 Transit 系統的內部 stops 陣列是空的。
+- **描述**：Save/Load 後，Transit 系統（Bus/Metro/Tram/Rail/Ferry）的 stops 和 routes 全部遺失。Grid 中的 buildingId（如 242=BusStop）正確保留，但各 Transit 系統的內部 stops 陣列是空的。
 - **根因**：`Serializer.ts` 的 `deserializeGameState()` 不序列化 Transit 系統內部狀態，也沒有從 grid 重建。
-- **修復**：在 `deserializeGameState()` 末尾加入 grid 掃描，根據 buildingId 重建 transit stops（242→bus, 241→metro, 240→tram, 239→rail, 238→ferry, 236→taxi）。
+- **修復**：在 `deserializeGameState()` 末尾加入 grid 掃描，根據 buildingId 重建 transit stops（242→bus, 241→metro, 240→tram, 239→rail, 238→ferry）。（Taxi 236 已移除，舊存檔中的 taxi_stand 會自動清除。）
 - **驗證**：Load Game 後 busStops=2, metroStations=1（之前都是 0）。新增 1 個單元測試，653 測試全部通過。
 
 ---
@@ -1312,7 +1312,7 @@
 
 ### 新增已驗證功能（第六十六輪測試 — Civic 恢復 / 經濟平衡 / Production Build / TS 修復）
 - ✅ **Load Game Civic 恢復** — Police:1, Fire:1, Hospital:1, Schools:3, Parks:1, Garbage:1 全部正確
-- ✅ **Transit 修復驗證** — BusStops=2, MetroStations=1, TaxiStands=1（BUG-027 修復持續有效）
+- ✅ **Transit 修復驗證** — BusStops=2, MetroStations=1（BUG-027 修復持續有效；Taxi 已移除）
 - ✅ **經濟 50-tick 平衡** — $361K→$364K（+0.7%），100-tick 後 $366K 穩定成長
 - ✅ **Income/Expense 比率** — 3.79（健康範圍 1.5-5）
 - ✅ **Production Build** — 2.32s 成功（Game 617KB, GameUI 74KB, index 56KB）
