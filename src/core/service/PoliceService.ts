@@ -1,5 +1,5 @@
-import { toPosKey, forEachCellInRadius } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
+import { RadiusCoverageMap } from './RadiusCoverageMap';
 
 export interface PoliceStation {
   id: string;
@@ -18,8 +18,7 @@ let nextStationId = 1;
 
 export class PoliceService {
   private stations: PoliceStation[] = [];
-  /** Map from "x,y" station key to count of covering stations */
-  private coverageMap = new Map<string, number>();
+  private coverage = new RadiusCoverageMap();
 
   addStation(x: number, y: number, radius = 15): string {
     const id = `police_${nextStationId++}`;
@@ -32,11 +31,11 @@ export class PoliceService {
   }
 
   getCoverage(x: number, y: number): boolean {
-    return this.coverageMap.has(toPosKey(x, y));
+    return this.coverage.hasCoverage(x, y);
   }
 
   getCrimeReduction(x: number, y: number): number {
-    const count = this.coverageMap.get(toPosKey(x, y)) ?? 0;
+    const count = this.coverage.getCoverageCount(x, y);
     if (count === 0) return 0;
     return Math.max(POLICE.CRIME_REDUCTION_CAP, count * POLICE.CRIME_REDUCTION_PER_STATION);
   }
@@ -46,17 +45,7 @@ export class PoliceService {
   }
 
   tick(): void {
-    this.coverageMap.clear();
-    for (const station of this.stations) {
-      this.addCoverage(station);
-    }
-  }
-
-  private addCoverage(station: PoliceStation): void {
-    forEachCellInRadius(station.x, station.y, station.radius, (x, y) => {
-      const key = toPosKey(x, y);
-      this.coverageMap.set(key, (this.coverageMap.get(key) ?? 0) + 1);
-    });
+    this.coverage.recalculate(this.stations);
   }
 
   getMaintenanceCost(): number {
