@@ -6,7 +6,7 @@ export interface SpecializationBonus {
   revenueMultiplier: number;
 }
 
-const SPECIALIZATION_BONUSES: Record<Specialization, SpecializationBonus> = {
+export const SPECIALIZATION_BONUSES: Record<Specialization, SpecializationBonus> = {
   [Specialization.NONE]: { efficiencyMultiplier: 1, revenueMultiplier: 1 },
   [Specialization.FARMING]: { efficiencyMultiplier: 1.3, revenueMultiplier: 1.1 },
   [Specialization.FORESTRY]: { efficiencyMultiplier: 1.25, revenueMultiplier: 1.15 },

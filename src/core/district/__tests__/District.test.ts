@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DistrictManager } from '../DistrictManager';
 import { PolicyManager } from '../PolicyManager';
-import { setSpecialization, getSpecialization, getSpecializationBonus } from '../Specialization';
+import { setSpecialization, getSpecialization, getSpecializationBonus, SPECIALIZATION_BONUSES } from '../Specialization';
 import { CitySpecialization, CitySpecType } from '../CitySpecialization';
 import { PolicyType, Specialization } from '../types';
 import { ZoneType } from '../../grid/types';
@@ -191,6 +191,15 @@ describe('Specialization', () => {
     // Both should have bonuses but they may differ
     expect(highTech.efficiencyMultiplier).toBeGreaterThan(1);
     expect(mining.efficiencyMultiplier).toBeGreaterThan(1);
+  });
+
+  it('SPECIALIZATION_BONUSES should have entry for every Specialization enum value', () => {
+    const allSpecs = Object.values(Specialization).filter(v => typeof v === 'number') as Specialization[];
+    for (const spec of allSpecs) {
+      expect(SPECIALIZATION_BONUSES[spec]).toBeDefined();
+      expect(SPECIALIZATION_BONUSES[spec].efficiencyMultiplier).toBeGreaterThanOrEqual(1);
+      expect(SPECIALIZATION_BONUSES[spec].revenueMultiplier).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 

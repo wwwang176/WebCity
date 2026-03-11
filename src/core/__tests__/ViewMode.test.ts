@@ -9,6 +9,7 @@ import {
   getTransportFocusMode,
   getVehicleVisibility,
 } from '../ViewMode';
+import { OVERLAY_SCALE } from '../../Game';
 
 describe('ViewMode', () => {
   describe('VIEW_MODE_OPACITY', () => {
@@ -217,5 +218,26 @@ describe('getVehicleVisibility', () => {
   it('BUS_FOCUS mode should keep roads at full opacity', () => {
     expect(VIEW_MODE_OPACITY[ViewMode.BUS_FOCUS].road).toBe(1.0);
     expect(VIEW_MODE_OPACITY[ViewMode.BUS_FOCUS].building).toBeLessThan(0.2);
+  });
+});
+
+describe('OVERLAY_SCALE constants', () => {
+  it('display max should be 100', () => {
+    expect(OVERLAY_SCALE.DISPLAY_MAX).toBe(100);
+  });
+
+  it('raw max should be 255 (uint8 range)', () => {
+    expect(OVERLAY_SCALE.RAW_MAX).toBe(255);
+  });
+
+  it('coverage value should be positive and ≤ display max', () => {
+    expect(OVERLAY_SCALE.COVERAGE_VALUE).toBeGreaterThan(0);
+    expect(OVERLAY_SCALE.COVERAGE_VALUE).toBeLessThanOrEqual(OVERLAY_SCALE.DISPLAY_MAX);
+  });
+
+  it('scaling factors should be positive', () => {
+    expect(OVERLAY_SCALE.GROUNDWATER_FACTOR).toBeGreaterThan(0);
+    expect(OVERLAY_SCALE.ZONE_TYPE_FACTOR).toBeGreaterThan(0);
+    expect(OVERLAY_SCALE.TRAFFIC_DENSITY_FACTOR).toBeGreaterThan(0);
   });
 });

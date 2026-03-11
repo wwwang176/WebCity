@@ -53,6 +53,24 @@ import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 
+/** Overlay display scaling constants used by buildOverlayData. */
+export const OVERLAY_SCALE = {
+  /** Groundwater level → overlay value multiplier */
+  GROUNDWATER_FACTOR: 0.4,
+  /** ZoneType enum → overlay value multiplier */
+  ZONE_TYPE_FACTOR: 15,
+  /** Traffic density → overlay value multiplier */
+  TRAFFIC_DENSITY_FACTOR: 20,
+  /** Max raw value for pollution/landValue (stored as 0-255) */
+  RAW_MAX: 255,
+  /** Overlay display maximum */
+  DISPLAY_MAX: 100,
+  /** Base crime value before reduction */
+  CRIME_BASE: 40,
+  /** Boolean coverage display value (for police/fire/health/etc.) */
+  COVERAGE_VALUE: 80,
+} as const;
+
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -1644,53 +1662,54 @@ export class Game {
       const key = `${x},${y}`;
       let value = 0;
 
+      const O = OVERLAY_SCALE;
       switch (type) {
         case 'power':
-          value = this.state.power.isPowered(x, y) ? 100 : 0;
+          value = this.state.power.isPowered(x, y) ? O.DISPLAY_MAX : 0;
           break;
         case 'water': {
-          const supplied = this.state.water.isSupplied(x, y) ? 100 : 0;
+          const supplied = this.state.water.isSupplied(x, y) ? O.DISPLAY_MAX : 0;
           const gw = this.getGroundwaterLevel(x, y);
-          value = Math.max(supplied, gw * 0.4);
+          value = Math.max(supplied, gw * O.GROUNDWATER_FACTOR);
           break;
         }
         case 'zone':
-          if (cell.zoneType > 0) value = cell.zoneType * 15;
+          if (cell.zoneType > 0) value = cell.zoneType * O.ZONE_TYPE_FACTOR;
           break;
         case 'traffic': {
           const density = this.state.traffic.getSegmentDensity(key);
-          value = density * 20;
+          value = density * O.TRAFFIC_DENSITY_FACTOR;
           break;
         }
         case 'pollution':
-          value = Math.min(100, cell.pollution * 100 / 255);
+          value = Math.min(O.DISPLAY_MAX, cell.pollution * O.DISPLAY_MAX / O.RAW_MAX);
           break;
         case 'landValue':
-          if (cell.buildingId > 0) value = Math.min(100, cell.landValue * 100 / 255);
+          if (cell.buildingId > 0) value = Math.min(O.DISPLAY_MAX, cell.landValue * O.DISPLAY_MAX / O.RAW_MAX);
           break;
         case 'crime':
           if (cell.buildingId > 0) {
             const reduction = this.state.police.getCrimeReduction(x, y);
-            value = Math.max(0, 40 + reduction);
+            value = Math.max(0, O.CRIME_BASE + reduction);
           }
           break;
         case 'police':
-          value = this.state.police.getCoverage(x, y) ? 80 : 0;
+          value = this.state.police.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
           break;
         case 'fire':
-          value = this.state.fire.getCoverage(x, y) ? 80 : 0;
+          value = this.state.fire.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
           break;
         case 'health':
-          value = this.state.health.getCoverage(x, y) ? 80 : 0;
+          value = this.state.health.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
           break;
         case 'education':
-          value = this.state.education.getCoverage(x, y) ? 80 : 0;
+          value = this.state.education.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
           break;
         case 'park':
-          value = this.state.parks.getCoverage(x, y) ? 80 : 0;
+          value = this.state.parks.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
           break;
         case 'garbage':
-          value = this.state.garbage.getCoverage(x, y) ? 80 : 0;
+          value = this.state.garbage.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
           break;
         case 'district': {
           const d = this.state.districts.getDistrictAt(x, y);
