@@ -8,6 +8,8 @@ export class Grid {
   private view: DataView;
   readonly naturalResources: Uint8Array;
   readonly reservedData: Uint8Array;
+  readonly railTypeData: Uint8Array;
+  readonly railFlagsData: Uint8Array;
 
   constructor(width: number, height: number) {
     this.width = width;
@@ -17,6 +19,8 @@ export class Grid {
     this.view = new DataView(this.buffer);
     this.naturalResources = new Uint8Array(this.totalCells);
     this.reservedData = new Uint8Array(this.totalCells);
+    this.railTypeData = new Uint8Array(this.totalCells);
+    this.railFlagsData = new Uint8Array(this.totalCells);
   }
 
   private isInBounds(x: number, y: number): boolean {
@@ -43,6 +47,8 @@ export class Grid {
       serviceCoverage: this.view.getUint8(offset + 10),
       elevation: this.view.getInt8(offset + 11),
       reserved: this.reservedData[y * this.width + x] ?? 0,
+      railType: this.railTypeData[y * this.width + x] ?? 0,
+      railFlags: this.railFlagsData[y * this.width + x] ?? 0,
     };
   }
 
@@ -62,6 +68,8 @@ export class Grid {
     if (data.serviceCoverage !== undefined) this.view.setUint8(offset + 10, data.serviceCoverage);
     if (data.elevation !== undefined) this.view.setInt8(offset + 11, data.elevation);
     if (data.reserved !== undefined) this.reservedData[y * this.width + x] = data.reserved;
+    if (data.railType !== undefined) this.railTypeData[y * this.width + x] = data.railType;
+    if (data.railFlags !== undefined) this.railFlagsData[y * this.width + x] = data.railFlags;
   }
 
   getCellsInRect(from: Position, to: Position): CellData[] {

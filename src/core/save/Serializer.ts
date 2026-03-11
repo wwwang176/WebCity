@@ -82,6 +82,8 @@ function isCellDefault(cell: CellData): boolean {
     cell.buildingId === DEFAULT_CELL.buildingId &&
     cell.roadFlags === DEFAULT_CELL.roadFlags &&
     cell.roadType === DEFAULT_CELL.roadType &&
+    cell.railType === DEFAULT_CELL.railType &&
+    cell.railFlags === DEFAULT_CELL.railFlags &&
     cell.trafficDensity === DEFAULT_CELL.trafficDensity &&
     cell.landValue === DEFAULT_CELL.landValue &&
     cell.pollution === DEFAULT_CELL.pollution &&
@@ -105,6 +107,8 @@ export function serializeGameState(state: GameState): string {
         if (cell.buildingId !== DEFAULT_CELL.buildingId) data.buildingId = cell.buildingId;
         if (cell.roadFlags !== DEFAULT_CELL.roadFlags) data.roadFlags = cell.roadFlags;
         if (cell.roadType !== DEFAULT_CELL.roadType) data.roadType = cell.roadType;
+        if (cell.railType !== DEFAULT_CELL.railType) data.railType = cell.railType;
+        if (cell.railFlags !== DEFAULT_CELL.railFlags) data.railFlags = cell.railFlags;
         if (cell.trafficDensity !== DEFAULT_CELL.trafficDensity) data.trafficDensity = cell.trafficDensity;
         if (cell.landValue !== DEFAULT_CELL.landValue) data.landValue = cell.landValue;
         if (cell.pollution !== DEFAULT_CELL.pollution) data.pollution = cell.pollution;

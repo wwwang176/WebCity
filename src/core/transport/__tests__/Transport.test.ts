@@ -258,7 +258,7 @@ describe('RailSystem', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);
     const st2 = rail.buildStation(20, 0);
-    const line = rail.createLine([st1, st2], RailServiceType.PASSENGER);
+    const line = rail.createLine([st1, st2], RailServiceType.PASSENGER)!;
     expect(rail.getLineServiceType(line.id)).toBe(RailServiceType.PASSENGER);
     expect(rail.getTrains()[0]!.capacity).toBe(300);
   });
@@ -267,7 +267,7 @@ describe('RailSystem', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);
     const st2 = rail.buildStation(20, 0);
-    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT);
+    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT)!;
     expect(rail.getLineServiceType(line.id)).toBe(RailServiceType.FREIGHT);
     expect(rail.getTrains()[0]!.capacity).toBe(500);
   });
@@ -674,7 +674,7 @@ describe('RailSystem toJSON/fromJSON', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);
     const st2 = rail.buildStation(20, 0);
-    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT, 2);
+    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT, 2)!;
     rail.hasExternalConnection = true;
     rail.externalConnection = { populationIn: 10, goodsIn: 50, goodsOut: 30 };
 
@@ -1099,7 +1099,7 @@ describe('Route deletion', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);
     const st2 = rail.buildStation(10, 0);
-    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT);
+    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT)!;
     rail.deleteLine(line.id);
     expect(rail.getLineServiceType(line.id)).toBeUndefined();
   });
@@ -1277,7 +1277,7 @@ describe('Rail FREIGHT → FreightSystem', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);
     const st2 = rail.buildStation(10, 0);
-    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT, 2);
+    const line = rail.createLine([st1, st2], RailServiceType.FREIGHT, 2)!;
 
     // Count active freight trains
     const freightTrains = rail.getTrains().filter(
@@ -1368,7 +1368,7 @@ describe('Vehicle count adjustment', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);
     const st2 = rail.buildStation(10, 0);
-    const line = rail.createLine([st1, st2], RailServiceType.PASSENGER, 1);
+    const line = rail.createLine([st1, st2], RailServiceType.PASSENGER, 1)!;
     const costBefore = line.operatingCost;
 
     rail.addVehicleToRoute(line.id);

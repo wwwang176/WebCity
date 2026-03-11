@@ -36,6 +36,10 @@ import { collectTransportRoutes } from './core/transport/collectTransportRoutes'
 import { ViewMode, VIEW_MODE_OPACITY } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { FerryAnimator } from './renderer/FerryAnimator';
+import { TrackRenderer } from './renderer/TrackRenderer';
+import { RailBuilder } from './core/rail/RailBuilder';
+import { RailNetwork } from './core/rail/RailNetwork';
+import { RailType, TrackDirection, RAIL_COST } from './core/rail/types';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
@@ -48,7 +52,7 @@ const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
 };
 
 
-export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'tram_stop' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'tram_stop' | 'train_station' | 'ferry_dock' | 'airport' | 'taxi_stand';
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -87,9 +91,12 @@ export class Game {
   private placementPreview: PlacementPreview;
   private transportRouteRenderer: TransportRouteRenderer;
   private metroTunnelRenderer: MetroTunnelRenderer;
+  private trackRenderer: TrackRenderer;
   private state: GameState;
   private simLoop: SimulationLoop;
   private roadBuilder: RoadBuilder;
+  private railBuilder: RailBuilder;
+  private railNetwork: RailNetwork;
   private zoneManager: ZoneManager;
   private audioManager: AudioManager;
   private autoSaver: AutoSaver;
@@ -141,6 +148,9 @@ export class Game {
     }
     this.simLoop = new SimulationLoop(this.state);
     this.roadBuilder = new RoadBuilder(this.state.grid);
+    this.railNetwork = new RailNetwork();
+    this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
+    this.state.rail.setRailNetwork(this.railNetwork);
     this.zoneManager = new ZoneManager(this.state.grid);
 
     // 設定渡輪系統的水域網格（A* 水面導航）
@@ -153,6 +163,11 @@ export class Game {
         return cell ? cell.terrainType === TerrainType.WATER : false;
       },
     });
+
+    // Rebuild rail network from existing grid data (for loaded games)
+    if (loadedState) {
+      this.rebuildRailNetworkFromGrid();
+    }
 
     // Generate terrain only for new games
     if (!loadedState) {
@@ -169,6 +184,7 @@ export class Game {
     this.overlayRenderer = new OverlayRenderer();
     this.transportRouteRenderer = new TransportRouteRenderer();
     this.metroTunnelRenderer = new MetroTunnelRenderer();
+    this.trackRenderer = new TrackRenderer();
 
     this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
 
@@ -189,6 +205,26 @@ export class Game {
     // Game loop
     this.sceneManager.onUpdate((dt) => this.update(dt));
     this.sceneManager.start();
+  }
+
+  /** Rebuild rail network graph from grid data (used when loading saved games). */
+  private rebuildRailNetworkFromGrid(): void {
+    const g = this.state.grid;
+    for (let y = 0; y < g.height; y++) {
+      for (let x = 0; x < g.width; x++) {
+        const cell = g.getCell(x, y);
+        if (!cell || cell.railType === RailType.NONE) continue;
+        const id = `${x},${y}`;
+        this.railNetwork.addNode(id);
+        // Connect to south/east neighbors to avoid duplicate edges
+        if ((cell.railFlags & TrackDirection.SOUTH) !== 0) {
+          this.railNetwork.addEdge(id, `${x},${y + 1}`);
+        }
+        if ((cell.railFlags & TrackDirection.EAST) !== 0) {
+          this.railNetwork.addEdge(id, `${x + 1},${y}`);
+        }
+      }
+    }
   }
 
   private generateTerrain(size: number): void {
@@ -407,6 +443,29 @@ export class Game {
         this.renderDirty = true;
         break;
       }
+      case 'rail_track': {
+        const result = this.railBuilder.buildTrack(
+          { x: x1, y: y1 }, { x: x2, y: y2 },
+          this.state.budget.funds,
+        );
+        if (result.success && result.cost) {
+          this.state.budget.funds -= result.cost;
+          this.audioManager.playSfx('build');
+        } else if (!result.success && result.reason) {
+          const reasonMessages: Record<string, string> = {
+            WATER_TILE: 'water in the way',
+            MOUNTAIN_TILE: 'mountain in the way',
+            INFRASTRUCTURE_EXISTS: 'infrastructure in the way',
+            OUT_OF_BOUNDS: 'out of bounds',
+            INSUFFICIENT_FUNDS: 'insufficient funds',
+          };
+          const msg = reasonMessages[result.reason] ?? result.reason;
+          this.notification = `Cannot build track: ${msg}`;
+          this.notificationTimer = 4;
+        }
+        this.renderDirty = true;
+        break;
+      }
       case 'zone_r':
         this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_LOW);
         this.audioManager.playSfx('zone');
@@ -581,7 +640,10 @@ export class Game {
           }
         }
 
-        // Regular cell demolition (roads, zones, regular buildings)
+        // Regular cell demolition (roads, zones, regular buildings, track)
+        if (cell.railType !== RailType.NONE) {
+          this.railBuilder.removeTrack(x, y);
+        }
         this.state.grid.setCell(x, y, {
           roadType: 0,
           roadFlags: 0,
@@ -779,7 +841,19 @@ export class Game {
       this.notificationTimer = 3;
       return;
     }
-    if (cell.roadType !== 0 || cell.buildingId !== 0) {
+    // Rail stations can be built on track cells (may have road for level crossing)
+    if (type === 'rail') {
+      if (cell.railType === RailType.NONE) {
+        this.notification = 'Train station must be built on rail track';
+        this.notificationTimer = 3;
+        return;
+      }
+      if (cell.buildingId !== 0) {
+        this.notification = 'Tile is occupied';
+        this.notificationTimer = 3;
+        return;
+      }
+    } else if (cell.roadType !== 0 || cell.buildingId !== 0) {
       this.notification = 'Tile is occupied';
       this.notificationTimer = 3;
       return;
@@ -806,7 +880,13 @@ export class Game {
     } else if (type === 'tram') {
       this.state.tram.addStop(x, y);
     } else if (type === 'rail') {
-      this.state.rail.buildStation(x, y);
+      const station = this.state.rail.buildStation(x, y, this.state.grid);
+      if (!station) {
+        this.state.budget.funds += cost;
+        this.notification = 'Train station must be built on rail track';
+        this.notificationTimer = 4;
+        return;
+      }
     } else if (type === 'ferry') {
       // Validate shore placement: must be land AND adjacent to water
       const waterChecker = {
@@ -949,6 +1029,7 @@ export class Game {
     // Rebuild meshes when dirty
     if (this.renderDirty) {
       this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
+      this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
       this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
       this.terrainRenderer.refreshColors();
       // Sync traffic lights with current intersections
@@ -963,6 +1044,7 @@ export class Game {
       if (this.viewMode === ViewMode.UNDERGROUND) {
         this.buildingRenderer.setUndergroundMode(true, this.sceneManager.scene);
         this.roadRenderer.setUndergroundMode(true);
+        this.trackRenderer.setUndergroundMode(true);
       }
       this.renderDirty = false;
     }
@@ -1144,6 +1226,7 @@ export class Game {
       road_4lane: 0x424242,
       road_6lane: 0x424242,
       road_highway: 0x424242,
+      rail_track: 0x6d4c2a,
       zone_r: 0x4caf50,
       zone_rh: 0x2e7d32,
       zone_c: 0x2196f3,
@@ -1182,6 +1265,16 @@ export class Game {
     return t === 'road' || t === 'road_rural' || t === 'road_2lane' || t === 'road_4lane' || t === 'road_6lane' || t === 'road_highway';
   }
 
+  isRailTool(tool?: ToolType): boolean {
+    const t = tool ?? this.currentTool;
+    return t === 'rail_track';
+  }
+
+  /** True if the current tool uses drag-to-build (road or rail). */
+  isDragBuildTool(tool?: ToolType): boolean {
+    return this.isRoadTool(tool) || this.isRailTool(tool);
+  }
+
   setTool(tool: ToolType): void {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
@@ -1213,6 +1306,7 @@ export class Game {
     this.buildingRenderer.setUndergroundMode(underground, this.sceneManager.scene);
     this.terrainRenderer.setUndergroundMode(underground);
     this.roadRenderer.setUndergroundMode(underground);
+    this.trackRenderer.setUndergroundMode(underground);
     this.vehicleRenderer.setUndergroundMode(underground);
     this.weatherRenderer.setUndergroundMode(underground);
     // Rebuild to apply/restore material settings on fresh meshes
@@ -1495,7 +1589,7 @@ export class Game {
   }
 
   private updatePreviewLine(): void {
-    if (!this.dragStart || !this.isRoadTool()) {
+    if (!this.dragStart || !this.isDragBuildTool()) {
       this.clearPreviewLine();
       this.placementPreview.hide();
       this.previewCost = null;
@@ -1519,8 +1613,12 @@ export class Game {
     if (points.length < 2) return;
 
     // Calculate estimated cost
-    const roadConfig = ROAD_CONFIGS[this.currentRoadType];
-    this.previewCost = points.length * roadConfig.cost;
+    if (this.isRailTool()) {
+      this.previewCost = points.length * RAIL_COST;
+    } else {
+      const roadConfig = ROAD_CONFIGS[this.currentRoadType];
+      this.previewCost = points.length * roadConfig.cost;
+    }
     this.onUIUpdate?.();
 
     // Show semi-transparent road surface preview
