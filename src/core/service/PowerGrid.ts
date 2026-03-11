@@ -42,6 +42,10 @@ export class PowerGrid {
     return this.plants.reduce((sum, p) => sum + p.output, 0);
   }
 
+  getMaintenanceCost(): number {
+    return this.plants.length * 5;
+  }
+
   getPlants(): readonly PowerPlant[] {
     return this.plants;
   }

@@ -113,6 +113,10 @@ export class GarbageService {
     return this.facilities;
   }
 
+  getMaintenanceCost(): number {
+    return this.facilities.length * 3;
+  }
+
   toJSON(): {
     facilities: GarbageFacility[];
     overflow: number;

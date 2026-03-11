@@ -97,6 +97,10 @@ export class EducationService {
     // Future: track enrollment, education progress, etc.
   }
 
+  getMaintenanceCost(): number {
+    return this.schools.length * 5;
+  }
+
   toJSON(): { schools: School[] } {
     return { schools: this.schools.map(s => ({ ...s })) };
   }

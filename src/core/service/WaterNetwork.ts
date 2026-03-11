@@ -40,6 +40,10 @@ export class WaterNetwork {
     return this.plants.reduce((sum, p) => sum + p.output, 0);
   }
 
+  getMaintenanceCost(): number {
+    return this.plants.length * 3;
+  }
+
   getPlants(): readonly WaterPlant[] {
     return this.plants;
   }

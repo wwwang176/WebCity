@@ -92,6 +92,10 @@ export class DeathCareService {
     return this.crematoriums;
   }
 
+  getMaintenanceCost(): number {
+    return (this.cemeteries.length + this.crematoriums.length) * 2;
+  }
+
   toJSON(): DeathCareJSON {
     return {
       cemeteries: this.cemeteries.map(c => ({ ...c })),

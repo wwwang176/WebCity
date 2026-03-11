@@ -74,6 +74,10 @@ export class HealthService {
     }
   }
 
+  getMaintenanceCost(): number {
+    return this.hospitals.length * 8;
+  }
+
   toJSON(): HealthServiceJSON {
     return {
       hospitals: this.hospitals.map(h => ({ ...h })),

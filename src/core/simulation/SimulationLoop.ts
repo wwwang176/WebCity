@@ -490,18 +490,18 @@ export class SimulationLoop {
     totalIncome *= citySpecBonus.revenueMultiplier;
 
     this.state.budget.income = totalIncome;
-    // Expenses: road maintenance + infrastructure + civic service operating costs
+    // Expenses: road maintenance + service maintenance costs
     const roadMaint = this.countRoadTiles() * 0.1;
-    const powerCost = this.state.power.getPlants().length * 5;
-    const waterCost = this.state.water.getPlants().length * 3;
-    const policeCost = this.state.police.getStations().length * 4;
-    const fireCost = this.state.fire.getStations().length * 4;
-    const healthCost = this.state.health.getHospitals().length * 8;
-    const educationCost = this.state.education.getSchools().length * 5;
-    const parkCost = this.state.parks.getParks().length * 2;
-    const garbageCost = this.state.garbage.getFacilities().length * 3;
-    const sewageCost = this.state.sewage.getTreatmentPlants().length * 4;
-    const deathCareCost = (this.state.deathCare.getCemeteries().length + this.state.deathCare.getCrematoria().length) * 2;
+    const serviceCost = this.state.power.getMaintenanceCost()
+      + this.state.water.getMaintenanceCost()
+      + this.state.police.getMaintenanceCost()
+      + this.state.fire.getMaintenanceCost()
+      + this.state.health.getMaintenanceCost()
+      + this.state.education.getMaintenanceCost()
+      + this.state.parks.getMaintenanceCost()
+      + this.state.garbage.getMaintenanceCost()
+      + this.state.sewage.getMaintenanceCost()
+      + this.state.deathCare.getMaintenanceCost();
     // District policy costs: sum all active policy costs across all districts
     let policyCost = 0;
     for (const district of this.state.districts.getAllDistricts()) {
@@ -515,7 +515,7 @@ export class SimulationLoop {
       + this.state.rail.getOperatingCost()
       + this.state.ferry.getOperatingCost()
       + this.state.airport.getOperatingCost();
-    this.state.budget.expenses = roadMaint + powerCost + waterCost + policeCost + fireCost + healthCost + educationCost + parkCost + garbageCost + sewageCost + deathCareCost + policyCost + transportCost;
+    this.state.budget.expenses = roadMaint + serviceCost + policyCost + transportCost;
   }
 
   private countRoadTiles(): number {

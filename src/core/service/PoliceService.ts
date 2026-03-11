@@ -63,6 +63,10 @@ export class PoliceService {
     }
   }
 
+  getMaintenanceCost(): number {
+    return this.stations.length * 4;
+  }
+
   toJSON(): { stations: PoliceStation[] } {
     return {
       stations: this.stations.map(s => ({ ...s })),

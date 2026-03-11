@@ -1989,8 +1989,8 @@ export class Game {
 
     const roadMaintenance = roadCount * 0.1;
     const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
-    const powerCost = this.state.power.getPlants().length * 5;
-    const waterCost = this.state.water.getPlants().length * 3;
+    const powerCost = this.state.power.getMaintenanceCost();
+    const waterCost = this.state.water.getMaintenanceCost();
     const transportCost = this.state.bus.getOperatingCost()
       + this.state.metro.getOperatingCost()
       + this.state.rail.getOperatingCost()

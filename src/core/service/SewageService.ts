@@ -86,6 +86,10 @@ export class SewageService {
     return this.treatmentPlants;
   }
 
+  getMaintenanceCost(): number {
+    return this.treatmentPlants.length * 4;
+  }
+
   toJSON(): SewageJSON {
     return {
       outlets: this.outlets.map(o => ({ ...o })),

@@ -177,6 +177,10 @@ export class FireService {
     return false;
   }
 
+  getMaintenanceCost(): number {
+    return this.stations.length * 4;
+  }
+
   toJSON(): FireServiceJSON {
     return {
       stations: this.stations.map(s => ({ ...s })),

@@ -60,6 +60,10 @@ export class ParkService {
     // Placeholder for future park maintenance / decay logic
   }
 
+  getMaintenanceCost(): number {
+    return this.parks.length * 2;
+  }
+
   toJSON(): Park[] {
     return this.parks.map(p => ({ ...p }));
   }
