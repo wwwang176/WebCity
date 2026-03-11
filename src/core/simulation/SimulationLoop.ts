@@ -23,6 +23,7 @@ import { TransportMode, TransportType } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
+import { FIRE } from '../service/FireService';
 import { randomInt, randomElement } from '../utils/random';
 
 /** Ticks between service/RCI/growth updates (tuned for ticksPerDay=24, preserving ticksPerDay=4 balance) */
@@ -577,7 +578,7 @@ export class SimulationLoop {
     let changed = false;
     const resolved = fire.resolveCompletedFires();
     for (const f of resolved) {
-      if (f.damage >= 0.5) {
+      if (f.damage >= FIRE.BURN_DAMAGE_THRESHOLD) {
         // High damage: mark building as BURNED (charred ruins)
         const cell = this.state.grid.getCell(f.x, f.y);
         if (cell && isZoneBuilding(cell.buildingId)) {

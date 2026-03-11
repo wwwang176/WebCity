@@ -49,6 +49,8 @@ export const FIRE = {
   /** Number of random cell attempts to find a building for fire */
   IGNITION_ATTEMPTS: 10,
   MAINTENANCE_PER_STATION: 4,
+  /** Damage threshold above which a building becomes BURNED ruins */
+  BURN_DAMAGE_THRESHOLD: 0.5,
 } as const;
 
 export class FireService {

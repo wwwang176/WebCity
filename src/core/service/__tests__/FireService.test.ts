@@ -313,4 +313,9 @@ describe('FIRE constants', () => {
     expect(FIRE.COVERED_DAMAGE).toBeGreaterThanOrEqual(0);
     expect(FIRE.UNCOVERED_DAMAGE).toBeLessThanOrEqual(1);
   });
+
+  it('burn damage threshold should be between covered and uncovered damage', () => {
+    expect(FIRE.BURN_DAMAGE_THRESHOLD).toBeGreaterThan(0);
+    expect(FIRE.BURN_DAMAGE_THRESHOLD).toBeLessThanOrEqual(1);
+  });
 });
