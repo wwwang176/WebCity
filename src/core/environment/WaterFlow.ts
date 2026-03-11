@@ -1,8 +1,7 @@
 import { toPosKey } from '../grid/GridHelpers';
+import { POLLUTION } from './Pollution';
 
 export type FlowDirection = 'N' | 'S' | 'E' | 'W' | '';
-
-const DECAY_PER_CELL = 30;
 
 /** Data-driven direction offsets for water flow. */
 export const FLOW_DIRECTION_OFFSETS: Record<FlowDirection, { dx: number; dy: number }> = {
@@ -58,7 +57,7 @@ export class WaterFlow {
 
       if (nextX < 0 || nextX >= this.width || nextY < 0 || nextY >= this.height) break;
 
-      currentAmount -= DECAY_PER_CELL;
+      currentAmount -= POLLUTION.DECAY_PER_CELL;
       if (currentAmount <= 0) break;
 
       const nextKey = this.cellKey(nextX, nextY);
