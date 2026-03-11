@@ -780,14 +780,11 @@ export class SimulationLoop {
       },
     };
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (cell && cell.roadType !== RoadType.NONE) {
-          cellKeys.push(`${x},${y}`);
-        }
+    grid.forEachCell((cell, x, y) => {
+      if (cell.roadType !== RoadType.NONE) {
+        cellKeys.push(`${x},${y}`);
       }
-    }
+    });
 
     this.laneGraph.buildFromGrid(gridLookup, cellKeys);
   }
@@ -1030,17 +1027,12 @@ export class SimulationLoop {
     const roads: { x: number; y: number }[] = [];
     const commercialCells: { x: number; y: number }[] = [];
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell) continue;
-        if (cell.roadType > 0) roads.push({ x, y });
-        if (cell.buildingId > 0 &&
-            (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH)) {
-          commercialCells.push({ x, y });
-        }
+    grid.forEachCell((cell, x, y) => {
+      if (cell.roadType > 0) roads.push({ x, y });
+      if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)) {
+        commercialCells.push({ x, y });
       }
-    }
+    });
 
     if (roads.length < 2) return;
     const startPool = commercialCells.length > 0 ? commercialCells : roads;
