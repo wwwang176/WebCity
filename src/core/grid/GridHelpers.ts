@@ -75,6 +75,16 @@ export const CARDINAL_DIRECTIONS: ReadonlyArray<{
   { dx: 1, dy: 0, flag: 0b1000, opposite: 0b0100 },  // EAST → WEST
 ];
 
+/** Check if direction flags contain any vertical (NORTH/SOUTH) component. Works with both RoadDirection and TrackDirection. */
+export function hasVerticalFlag(flags: number): boolean {
+  return (flags & (0b0001 | 0b0010)) !== 0; // NORTH | SOUTH
+}
+
+/** Check if direction flags contain any horizontal (WEST/EAST) component. Works with both RoadDirection and TrackDirection. */
+export function hasHorizontalFlag(flags: number): boolean {
+  return (flags & (0b0100 | 0b1000)) !== 0; // WEST | EAST
+}
+
 /** Find the cell itself or an adjacent road cell. Returns null if none found. */
 export function findAdjacentRoad(
   grid: ReadableGrid,

@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
-import { toPosKey, CARDINAL_DIRECTIONS } from '../grid/GridHelpers';
+import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag } from '../grid/GridHelpers';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, RoadDirection, ROAD_CONFIGS, type BuildRoadResult, type Position } from './types';
@@ -39,10 +39,10 @@ export class RoadBuilder {
         let roadFlags = 0;
         if (i > 0) roadFlags |= this.getDirection(pos, cells[i - 1]!);
         if (i < cells.length - 1) roadFlags |= this.getDirection(pos, cells[i + 1]!);
-        const roadVert = (roadFlags & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
-        const roadHorz = (roadFlags & (RoadDirection.WEST | RoadDirection.EAST)) !== 0;
-        const railVert = (cell.railFlags & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
-        const railHorz = (cell.railFlags & (RoadDirection.WEST | RoadDirection.EAST)) !== 0;
+        const roadVert = hasVerticalFlag(roadFlags);
+        const roadHorz = hasHorizontalFlag(roadFlags);
+        const railVert = hasVerticalFlag(cell.railFlags);
+        const railHorz = hasHorizontalFlag(cell.railFlags);
         if ((roadVert && railVert) || (roadHorz && railHorz)) {
           return { success: false, reason: 'PARALLEL_RAIL' };
         }

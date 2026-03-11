@@ -1,5 +1,5 @@
 import type { Grid } from '../grid/Grid';
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, hasVerticalFlag } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { RailType, TrackDirection } from './types';
 
@@ -42,7 +42,7 @@ export class LevelCrossingSystem {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
         if (cell.railType !== RailType.NONE && cell.roadType !== RoadType.NONE) {
-          const hasVert = (cell.railFlags & (TrackDirection.NORTH | TrackDirection.SOUTH)) !== 0;
+          const hasVert = hasVerticalFlag(cell.railFlags);
           const railOrientation: 'NS' | 'EW' = hasVert ? 'NS' : 'EW';
 
           this.crossings.set(cellKey(x, y), {

@@ -3,6 +3,7 @@ import { Grid } from '../Grid';
 import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
+  hasVerticalFlag, hasHorizontalFlag,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -252,5 +253,42 @@ describe('CARDINAL_DIRECTIONS', () => {
     expect(flags).toContain(0b0010); // SOUTH
     expect(flags).toContain(0b0100); // WEST
     expect(flags).toContain(0b1000); // EAST
+  });
+});
+
+describe('hasVerticalFlag / hasHorizontalFlag', () => {
+  it('hasVerticalFlag detects NORTH', () => {
+    expect(hasVerticalFlag(0b0001)).toBe(true);
+  });
+
+  it('hasVerticalFlag detects SOUTH', () => {
+    expect(hasVerticalFlag(0b0010)).toBe(true);
+  });
+
+  it('hasVerticalFlag returns false for WEST/EAST only', () => {
+    expect(hasVerticalFlag(0b1100)).toBe(false);
+  });
+
+  it('hasHorizontalFlag detects WEST', () => {
+    expect(hasHorizontalFlag(0b0100)).toBe(true);
+  });
+
+  it('hasHorizontalFlag detects EAST', () => {
+    expect(hasHorizontalFlag(0b1000)).toBe(true);
+  });
+
+  it('hasHorizontalFlag returns false for NORTH/SOUTH only', () => {
+    expect(hasHorizontalFlag(0b0011)).toBe(false);
+  });
+
+  it('both detect combined flags', () => {
+    const allDirs = 0b1111;
+    expect(hasVerticalFlag(allDirs)).toBe(true);
+    expect(hasHorizontalFlag(allDirs)).toBe(true);
+  });
+
+  it('both return false for zero flags', () => {
+    expect(hasVerticalFlag(0)).toBe(false);
+    expect(hasHorizontalFlag(0)).toBe(false);
   });
 });
