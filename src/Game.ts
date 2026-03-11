@@ -1593,6 +1593,11 @@ export class Game {
     return this.notification;
   }
 
+  showNotification(message: string, duration = 4): void {
+    this.notification = message;
+    this.notificationTimer = duration;
+  }
+
   getEconomyBreakdown(): {
     residential: number; commercial: number; industrial: number; office: number;
     roadMaintenance: number; loanInterest: number; powerCost: number; waterCost: number;

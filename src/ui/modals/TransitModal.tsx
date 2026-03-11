@@ -66,7 +66,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
       const docks = [...state.ferry.getDocks()];
       if (docks.length >= 2) {
         if (!state.ferry.validateRouteConnectivity(docks)) {
-          alert('No navigable water route between docks!');
+          getGame().showNotification('No navigable water route between docks!');
           return;
         }
         state.ferry.createRoute(docks, 1);
@@ -112,7 +112,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     else if (rb.type === 'rail') state.rail.createLine([...selected], RailServiceType.PASSENGER, 1);
     else if (rb.type === 'ferry') {
       if (!state.ferry.validateRouteConnectivity([...selected])) {
-        alert('No navigable water route between selected docks!');
+        getGame().showNotification('No navigable water route between selected docks!');
         return;
       }
       state.ferry.createRoute([...selected], 1);
