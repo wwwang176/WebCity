@@ -3,7 +3,7 @@ import { Grid } from '../Grid';
 import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
-  hasVerticalFlag, hasHorizontalFlag,
+  hasVerticalFlag, hasHorizontalFlag, normalizeRect,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -290,5 +290,25 @@ describe('hasVerticalFlag / hasHorizontalFlag', () => {
   it('both return false for zero flags', () => {
     expect(hasVerticalFlag(0)).toBe(false);
     expect(hasHorizontalFlag(0)).toBe(false);
+  });
+});
+
+describe('normalizeRect', () => {
+  it('should normalize when corners are already ordered', () => {
+    const r = normalizeRect(1, 2, 5, 8);
+    expect(r).toEqual({ minX: 1, maxX: 5, minY: 2, maxY: 8 });
+  });
+
+  it('should normalize when corners are reversed', () => {
+    const r = normalizeRect(5, 8, 1, 2);
+    expect(r).toEqual({ minX: 1, maxX: 5, minY: 2, maxY: 8 });
+  });
+
+  it('should handle same point (zero-size rect)', () => {
+    const r = normalizeRect(3, 3, 3, 3);
+    expect(r.minX).toBe(3);
+    expect(r.maxX).toBe(3);
+    expect(r.minY).toBe(3);
+    expect(r.maxY).toBe(3);
   });
 });

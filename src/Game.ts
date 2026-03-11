@@ -13,6 +13,7 @@ import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, TerrainType, isResidentialZone, isCommercialZone } from './core/grid/types';
+import { normalizeRect } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
@@ -654,10 +655,7 @@ export class Game {
   }
 
   private applyZone(x1: number, y1: number, x2: number, y2: number, zoneType: ZoneType): void {
-    const minX = Math.min(x1, x2);
-    const maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
+    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
     this.dirty.buildings = true;
     this.dirty.terrain = true;
@@ -665,10 +663,7 @@ export class Game {
 
   private collectRoadCells(x1: number, y1: number, x2: number, y2: number): string[] {
     const cells: string[] = [];
-    const minX = Math.min(x1, x2);
-    const maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
+    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
@@ -681,10 +676,7 @@ export class Game {
   }
 
   private demolish(x1: number, y1: number, x2: number, y2: number): void {
-    const minX = Math.min(x1, x2);
-    const maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
+    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     const demolished = new Set<string>(); // track already-demolished multi-cell buildings
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
@@ -835,10 +827,7 @@ export class Game {
       const d = this.state.districts.createDistrict(`District ${count + 1}`);
       this.activeDistrictId = d.id;
     }
-    const minX = Math.min(x1, x2);
-    const maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
+    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         this.state.districts.addCellToDistrict(this.activeDistrictId, x, y);

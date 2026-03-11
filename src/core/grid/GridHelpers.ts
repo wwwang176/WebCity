@@ -102,3 +102,15 @@ export function findAdjacentRoad(
   }
   return null;
 }
+
+/** Normalize two corner coordinates into { minX, maxX, minY, maxY }. */
+export function normalizeRect(x1: number, y1: number, x2: number, y2: number): {
+  minX: number; maxX: number; minY: number; maxY: number;
+} {
+  return {
+    minX: Math.min(x1, x2),
+    maxX: Math.max(x1, x2),
+    minY: Math.min(y1, y2),
+    maxY: Math.max(y1, y2),
+  };
+}
