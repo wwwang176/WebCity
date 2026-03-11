@@ -190,11 +190,11 @@ export class HighlightManager {
       const cloned = origMat.clone();
 
       if (cloned instanceof THREE.MeshLambertMaterial) {
-        cloned.color.lerp(tint, 0.5);
+        cloned.color.lerp(tint, 0.25);
         cloned.emissive.set(color);
-        cloned.emissiveIntensity = 1.0;
+        cloned.emissiveIntensity = 0.5;
       } else if (cloned instanceof THREE.MeshBasicMaterial) {
-        cloned.color.set(color);
+        cloned.color.lerp(tint, 0.5);
       }
 
       this.infraTinted.push({ mesh: child, original: origMat });

@@ -495,9 +495,9 @@ void main() {
 
   // Highlight tint (demolish / zone selection)
   if (vHighlight > 0.5) {
-    color = mix(color, uHighlightColor, 0.55);
+    color = mix(color, uHighlightColor, 0.28);
     // Add emissive glow so it's visible at night too
-    color += uHighlightColor * 0.3;
+    color += uHighlightColor * 0.15;
   }
 
   gl_FragColor = vec4(color, 1.0);
