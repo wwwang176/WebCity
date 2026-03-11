@@ -13,7 +13,7 @@ import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
-import { findPrimaryCell, MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
+import { findPrimaryCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel } from '../citizen/types';
 import type { TimeOfDay } from './GameClock';
@@ -267,7 +267,7 @@ export class SimulationLoop {
       if (!cell || cell.zoneType === 0) continue;
 
       // Burned buildings: developer must demolish ruins first (extra cost/time)
-      if (cell.reserved === 3 && isZoneBuilding(cell.buildingId)) {
+      if (cell.reserved === BURNED && isZoneBuilding(cell.buildingId)) {
         // ~2% chance per attempt to clear the ruins (developer demolition takes time)
         if (Math.random() < 0.02) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
@@ -454,7 +454,7 @@ export class SimulationLoop {
       for (let x = 0; x < this.state.grid.width; x++) {
         const cell = this.state.grid.getCell(x, y);
         // Skip infrastructure, empty cells, burned (3), and multi-cell secondary (4)
-        if (cell && isZoneBuilding(cell.buildingId) && cell.reserved !== 3 && cell.reserved !== 4) {
+        if (cell && isZoneBuilding(cell.buildingId) && cell.reserved !== BURNED && cell.reserved !== 4) {
           const btype = getBuildingType(cell.buildingId);
           if (!btype) continue;
 
@@ -561,14 +561,14 @@ export class SimulationLoop {
                 for (let dx = 0; dx < maxDim; dx++) {
                   const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
                   if (c && c.buildingId === cell.buildingId) {
-                    this.state.grid.setCell(primary.x + dx, primary.y + dy, { reserved: 3 });
+                    this.state.grid.setCell(primary.x + dx, primary.y + dy, { reserved: BURNED });
                     this.onBuildingUpdated?.(primary.x + dx, primary.y + dy, c.zoneType, 1, true);
                   }
                 }
               }
             }
           } else {
-            this.state.grid.setCell(f.x, f.y, { reserved: 3 }); // BuildingStatus.BURNED
+            this.state.grid.setCell(f.x, f.y, { reserved: BURNED }); // BuildingStatus.BURNED
             const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1));
             this.onBuildingUpdated?.(f.x, f.y, cell.zoneType, level, true);
           }
@@ -1294,7 +1294,7 @@ export function countResidentialCapacity(grid: { width: number; height: number; 
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
       // Exclude burned (reserved=3) and multi-cell secondary (reserved=4) cells
-      if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2) && cell.reserved !== 3 && cell.reserved !== 4) {
+      if (cell && cell.buildingId > 0 && (cell.zoneType === 1 || cell.zoneType === 2) && cell.reserved !== BURNED && cell.reserved !== 4) {
         const bt = getBuildingType(cell.buildingId);
         capacity += bt ? bt.residents : 0;
       }
@@ -1309,7 +1309,7 @@ export function countWorkplaceJobs(grid: { width: number; height: number; getCel
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
       // Exclude burned (reserved=3) and multi-cell secondary (reserved=4) cells
-      if (cell && cell.buildingId > 0 && cell.zoneType >= 3 && cell.reserved !== 3 && cell.reserved !== 4) {
+      if (cell && cell.buildingId > 0 && cell.zoneType >= 3 && cell.reserved !== BURNED && cell.reserved !== 4) {
         const bt = getBuildingType(cell.buildingId);
         jobs += bt ? bt.workers : 0;
       }

@@ -25,7 +25,7 @@ import { getMilestone } from './core/milestone/Milestone';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, ROTATION_RESERVED } from './core/building/InfraPlacement';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, BURNED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
@@ -1959,7 +1959,7 @@ export class Game {
         if (!cell) continue;
         if (cell.roadType > 0) roadCount++;
         if (!isZoneBuilding(cell.buildingId)) continue;
-        if (cell.reserved === 3 || cell.reserved === 4) continue; // burned or multi-cell secondary
+        if (cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) continue;
 
         const btype = getBuildingType(cell.buildingId);
         if (!btype) continue;

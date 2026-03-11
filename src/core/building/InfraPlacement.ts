@@ -11,6 +11,9 @@ import {
 /** Reserved value for secondary cells of multi-cell buildings. */
 export const MULTI_CELL_OCCUPIED = 4;
 
+/** Reserved value for burned/charred buildings. */
+export const BURNED = 3;
+
 /**
  * Reserved values for primary cell rotation encoding.
  * 0 = 0° (default), 5 = 90°, 6 = 180°, 7 = 270°

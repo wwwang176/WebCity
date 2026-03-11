@@ -4,7 +4,7 @@ import { Grid } from '../core/grid/Grid';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getRotatedSize, type InfraType as InfraConfigType, type Rotation } from '../core/building/InfraConfig';
 import { ViewMode } from '../core/ViewMode';
-import { RESERVED_TO_ROTATION } from '../core/building/InfraPlacement';
+import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED } from '../core/building/InfraPlacement';
 
 // ===== Deterministic pseudo-random based on position =====
 function hash(x: number, y: number): number {
@@ -1101,7 +1101,7 @@ export class BuildingRenderer {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
-        if (cell.reserved === 4) continue;
+        if (cell.reserved === MULTI_CELL_OCCUPIED) continue;
 
         const infraType = INFRA_ID_MAP[cell.buildingId];
         if (infraType) {
@@ -1113,7 +1113,7 @@ export class BuildingRenderer {
         if (cell.zoneType !== ZoneType.NONE) {
           if (cell.buildingId > 0 && cell.buildingId < INFRA_WATER_ID) {
             const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1));
-            const burned = cell.reserved === 3;
+            const burned = cell.reserved === BURNED;
             this.addBuilding(x, y, cell.zoneType, level, burned);
             if (!burned) lightPositions.push({ x, y });
           } else if (cell.buildingId === 0) {

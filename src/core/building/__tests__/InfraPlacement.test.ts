@@ -10,6 +10,7 @@ import {
   getInfraCenterById,
   isPrimaryCellReserved,
   MULTI_CELL_OCCUPIED,
+  BURNED,
   ROTATION_RESERVED,
   RESERVED_TO_ROTATION,
   type PlaceResult,
@@ -393,8 +394,12 @@ describe('InfraPlacement', () => {
       expect(isPrimaryCellReserved(5)).toBe(true);
       expect(isPrimaryCellReserved(6)).toBe(true);
       expect(isPrimaryCellReserved(7)).toBe(true);
-      expect(isPrimaryCellReserved(3)).toBe(false); // BURNED
-      expect(isPrimaryCellReserved(4)).toBe(false); // MULTI_CELL_OCCUPIED
+      expect(isPrimaryCellReserved(BURNED)).toBe(false);
+      expect(isPrimaryCellReserved(MULTI_CELL_OCCUPIED)).toBe(false);
+    });
+
+    it('BURNED constant should equal 3', () => {
+      expect(BURNED).toBe(3);
     });
 
     it('findPrimaryCell should work with rotated buildings', () => {
