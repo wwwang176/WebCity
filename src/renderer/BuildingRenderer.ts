@@ -319,24 +319,27 @@ void main() {
       float fx = wallU / winW;
       float fracY = fract(fy);
       float fracX = fract(fx);
-      bool inWin = onWall &&
-                   fracX > 0.2 && fracX < 0.8 &&
-                   fracY > 0.25 && fracY < 0.68;
-      if (inWin) {
-        vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 7.13;
-        float lit = hash21(wid);
-        if (lit > 0.4) {
-          float w = hash21(wid + 77.7);
-          color = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
-          isLitWindow = true;
-        } else {
-          color = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
-        }
-      } else if (onWall && (fracY > 0.92 || fracY < 0.08)) {
-        color = vBldgColor * 0.72;
-      } else {
-        color = vBldgColor * 0.88;
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      float winMask = onWall
+        ? smoothstep(0.2 - fwX, 0.2 + fwX, fracX) * smoothstep(0.8 + fwX, 0.8 - fwX, fracX)
+        * smoothstep(0.25 - fwY, 0.25 + fwY, fracY) * smoothstep(0.68 + fwY, 0.68 - fwY, fracY)
+        : 0.0;
+      vec3 wallColor = vBldgColor * 0.88;
+      if (onWall && (fracY > 0.92 || fracY < 0.08)) {
+        wallColor = vBldgColor * 0.72;
       }
+      vec3 winColor;
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
+      float lit = hash21(wid);
+      if (lit > 0.4) {
+        float w = hash21(wid + 77.7);
+        winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
+      }
+      color = mix(wallColor, winColor, winMask);
       color *= lighting;
       float ao = smoothstep(0.0, 0.1, y);
       color *= 0.6 + 0.4 * ao;
@@ -349,7 +352,7 @@ void main() {
         float glassU = fract(wallU / 0.25);
         bool inGlass = glassU > 0.06 && glassU < 0.94;
         if (inGlass) {
-          float r = hash21(floor(vec2(wallU / 0.25, 0.0)) + vWorldPos.xz * 3.7);
+          float r = hash21(floor(vec2(wallU / 0.25, 0.0)) + floor(vWorldPos.xz + 0.5) * 3.7);
           color = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
         } else {
           color = vBldgColor * 0.6; // mullion
@@ -362,19 +365,21 @@ void main() {
         float fx = wallU / winW;
         float fracY = fract(fy);
         float fracX = fract(fx);
-        bool inWin = fracX > 0.3 && fracX < 0.7 && fracY > 0.3 && fracY < 0.65;
-        if (inWin) {
-          vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 5.3;
-          float lit = hash21(wid);
-          if (lit > 0.5) {
-            color = mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8;
-            isLitWindow = true;
-          } else {
-            color = vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
-          }
+        float fwX = fwidth(fracX);
+        float fwY = fwidth(fracY);
+        float winMask = smoothstep(0.3 - fwX, 0.3 + fwX, fracX) * smoothstep(0.7 + fwX, 0.7 - fwX, fracX)
+                      * smoothstep(0.3 - fwY, 0.3 + fwY, fracY) * smoothstep(0.65 + fwY, 0.65 - fwY, fracY);
+        vec3 wallColor = vBldgColor * 0.85;
+        vec3 winColor;
+        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.3;
+        float lit = hash21(wid);
+        if (lit > 0.5) {
+          winColor = mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8;
+          isLitWindow = winMask > 0.5;
         } else {
-          color = vBldgColor * 0.85;
+          winColor = vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
         }
+        color = mix(wallColor, winColor, winMask);
       } else {
         color = vBldgColor * 0.85;
       }
@@ -391,22 +396,24 @@ void main() {
       float fx = wallU / winW;
       float fracY = fract(fy);
       float fracX = fract(fx);
-      bool inWin = onWall &&
-                   fracX > 0.08 && fracX < 0.92 &&
-                   fracY > 0.12 && fracY < 0.82;
-      if (inWin) {
-        vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 7.13;
-        float lit = hash21(wid);
-        if (lit > 0.3) {
-          float w = hash21(wid + 77.7);
-          color = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
-          isLitWindow = true;
-        } else {
-          color = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
-        }
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      float winMask = onWall
+        ? smoothstep(0.08 - fwX, 0.08 + fwX, fracX) * smoothstep(0.92 + fwX, 0.92 - fwX, fracX)
+        * smoothstep(0.12 - fwY, 0.12 + fwY, fracY) * smoothstep(0.82 + fwY, 0.82 - fwY, fracY)
+        : 0.0;
+      vec3 wallColor = vBldgColor * 0.5; // narrow mullions
+      vec3 winColor;
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
+      float lit = hash21(wid);
+      if (lit > 0.3) {
+        float w = hash21(wid + 77.7);
+        winColor = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
+        isLitWindow = winMask > 0.5;
       } else {
-        color = vBldgColor * 0.5; // narrow mullions
+        winColor = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
       }
+      color = mix(wallColor, winColor, winMask);
       color *= lighting;
       float ao = smoothstep(0.0, 0.1, y);
       color *= 0.6 + 0.4 * ao;
@@ -444,24 +451,27 @@ void main() {
       float fx = wallU / winW;
       float fracY = fract(fy);
       float fracX = fract(fx);
-      bool inWin = onWall &&
-                   fracX > 0.15 && fracX < 0.85 &&
-                   fracY > 0.2 && fracY < 0.72;
-      if (inWin) {
-        vec2 wid = floor(vec2(fx, fy)) + vWorldPos.xz * 7.13;
-        float lit = hash21(wid);
-        if (lit > 0.35) {
-          float w = hash21(wid + 77.7);
-          color = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
-          isLitWindow = true;
-        } else {
-          color = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
-        }
-      } else if (onWall && (fracY > 0.92 || fracY < 0.08)) {
-        color = vBldgColor * 0.7;
-      } else {
-        color = vBldgColor * 0.88;
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      float winMask = onWall
+        ? smoothstep(0.15 - fwX, 0.15 + fwX, fracX) * smoothstep(0.85 + fwX, 0.85 - fwX, fracX)
+        * smoothstep(0.2 - fwY, 0.2 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY)
+        : 0.0;
+      vec3 wallColor = vBldgColor * 0.88;
+      if (onWall && (fracY > 0.92 || fracY < 0.08)) {
+        wallColor = vBldgColor * 0.7;
       }
+      vec3 winColor;
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
+      float lit = hash21(wid);
+      if (lit > 0.35) {
+        float w = hash21(wid + 77.7);
+        winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
+      }
+      color = mix(wallColor, winColor, winMask);
       color *= lighting;
       float ao = smoothstep(0.0, 0.1, y);
       color *= 0.6 + 0.4 * ao;
