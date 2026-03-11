@@ -5,6 +5,7 @@ import {
   createDisaster,
   calculateDamage,
   DISASTER_MODIFIERS,
+  DISASTER_CALCULATORS,
 } from '../Disaster';
 import {
   addWarningTower,
@@ -250,5 +251,30 @@ describe('DAMAGE config', () => {
 
   it('base repair cost should be positive', () => {
     expect(DAMAGE.BASE_REPAIR_COST).toBeGreaterThan(0);
+  });
+});
+
+describe('DISASTER_CALCULATORS', () => {
+  it('should have a calculator for every DisasterType', () => {
+    for (const type of Object.values(DisasterType)) {
+      expect(DISASTER_CALCULATORS[type]).toBeDefined();
+      expect(typeof DISASTER_CALCULATORS[type]).toBe('function');
+    }
+  });
+
+  it('each calculator should return 0 for distance >= radius', () => {
+    for (const type of Object.values(DisasterType)) {
+      const disaster = createDisaster(type, 10, 10, 1.0);
+      const damage = DISASTER_CALCULATORS[type](disaster, 10, 10 + disaster.radius + 5);
+      expect(damage).toBe(0);
+    }
+  });
+
+  it('each calculator should return > 0 at epicenter', () => {
+    for (const type of Object.values(DisasterType)) {
+      const disaster = createDisaster(type, 10, 10, 1.0);
+      const damage = DISASTER_CALCULATORS[type](disaster, 10, 10);
+      expect(damage).toBeGreaterThan(0);
+    }
   });
 });
