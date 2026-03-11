@@ -1008,12 +1008,26 @@ export class BuildingRenderer {
         group.rotation.y = (rotationDeg * Math.PI) / 180;
       }
 
-      if (inf.type === 'power') {
-        this.buildPowerPlant(group, 0, 0, scale);
-      } else if (inf.type === 'water') {
-        this.buildWaterPump(group, 0, 0, scale);
-      } else {
-        this.buildCivicBuilding(group, 0, 0, inf.type, scale);
+      switch (inf.type) {
+        case 'power':     this.buildPowerPlant(group, 0, 0, scale); break;
+        case 'water':     this.buildWaterPump(group, 0, 0, scale); break;
+        case 'police':    this.buildPoliceStation(group, 0, 0, scale); break;
+        case 'fire':      this.buildFireStation(group, 0, 0, scale); break;
+        case 'hospital':  this.buildHospital(group, 0, 0, scale); break;
+        case 'school':    this.buildElementarySchool(group, 0, 0, scale); break;
+        case 'school_high': this.buildHighSchool(group, 0, 0, scale); break;
+        case 'school_univ': this.buildUniversity(group, 0, 0, scale); break;
+        case 'park':      this.buildPark(group, 0, 0, scale); break;
+        case 'cemetery':  this.buildCemetery(group, 0, 0, scale); break;
+        case 'garbage':   this.buildLandfill(group, 0, 0, scale); break;
+        case 'sewage':    this.buildSewagePlant(group, 0, 0, scale); break;
+        case 'bus_stop':  this.buildBusStop(group, 0, 0, scale); break;
+        case 'metro_station': this.buildMetroStation(group, 0, 0, scale); break;
+        case 'train_station': this.buildTrainStation(group, 0, 0, scale); break;
+        case 'ferry_dock':   this.buildFerryDock(group, 0, 0, scale); break;
+        case 'airport':      this.buildAirport(group, 0, 0, scale); break;
+        case 'taxi_stand':   this.buildTaxiStand(group, 0, 0, scale); break;
+        default:          this.buildCivicBuilding(group, 0, 0, inf.type, scale); break;
       }
 
       scene.add(group);
@@ -1078,163 +1092,128 @@ export class BuildingRenderer {
     }
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // ██  GROUP A — Emergency Services (Police / Fire / Hospital)
+  // ═══════════════════════════════════════════════════════════════════
+
+  private buildPoliceStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly police station — L-shape + watch tower + garage doors + blue light
+    this.buildCivicBuilding(scene, cx, cz, 'police', scale);
+  }
+
+  private buildFireStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly fire station — 3 garage bays + drill tower + red theme
+    this.buildCivicBuilding(scene, cx, cz, 'fire', scale);
+  }
+
+  private buildHospital(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly hospital — main wing + side wing + helipad H + ER canopy
+    this.buildCivicBuilding(scene, cx, cz, 'hospital', scale);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ██  GROUP B — Education (Elementary / High School / University)
+  // ═══════════════════════════════════════════════════════════════════
+
+  private buildElementarySchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly elementary — colorful roof + playground + swing/slide + tree
+    this.buildCivicBuilding(scene, cx, cz, 'school', scale);
+  }
+
+  private buildHighSchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly high school — 2-story + clock tower + colonnade + track
+    this.buildCivicBuilding(scene, cx, cz, 'school_high', scale);
+  }
+
+  private buildUniversity(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly university — 3 wings + gold dome + colonnade + fountain
+    this.buildCivicBuilding(scene, cx, cz, 'school_univ', scale);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ██  GROUP C — Environment (Park / Cemetery / Landfill)
+  // ═══════════════════════════════════════════════════════════════════
+
+  private buildPark(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly park — trees + fountain + bench + path
+    this.buildCivicBuilding(scene, cx, cz, 'park', scale);
+  }
+
+  private buildCemetery(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly cemetery — chapel + steeple + gravestones + cypress trees
+    this.buildCivicBuilding(scene, cx, cz, 'cemetery', scale);
+  }
+
+  private buildLandfill(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly landfill — garbage mounds + bulldozer + fence
+    this.buildCivicBuilding(scene, cx, cz, 'garbage', scale);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ██  GROUP D — Utility Infrastructure (Sewage / Power / Water)
+  // ═══════════════════════════════════════════════════════════════════
+
+  private buildSewagePlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly sewage plant — circular settling tanks + walkway bridge + pipes
+    this.buildCivicBuilding(scene, cx, cz, 'sewage', scale);
+  }
+
+  private buildPowerPlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Redesign — cooling towers + turbine hall + chimney + coal yard + transformer
+    this.buildCivicBuilding(scene, cx, cz, 'power' as any, scale);
+  }
+
+  private buildWaterPump(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Redesign — elevated water tower + pump house + filtration pool + pipes
+    this.buildCivicBuilding(scene, cx, cz, 'water' as any, scale);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ██  GROUP E — Land Transport (Bus / Metro / Train)
+  // ═══════════════════════════════════════════════════════════════════
+
+  private buildBusStop(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly bus stop — shelter canopy + sign pole + bench
+    this.buildCivicBuilding(scene, cx, cz, 'bus_stop', scale);
+  }
+
+  private buildMetroStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly metro station — arch entrance + stairs + vent shaft + M sign
+    this.buildCivicBuilding(scene, cx, cz, 'metro_station', scale);
+  }
+
+  private buildTrainStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly train station — station house + clock tower + platform canopy + rails
+    this.buildCivicBuilding(scene, cx, cz, 'train_station', scale);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ██  GROUP F — Other Transport (Ferry / Airport / Taxi)
+  // ═══════════════════════════════════════════════════════════════════
+
+  private buildFerryDock(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly ferry dock — wooden pier + lighthouse + waiting shelter + bollards
+    this.buildCivicBuilding(scene, cx, cz, 'ferry_dock', scale);
+  }
+
+  private buildAirport(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly airport — terminal + control tower + runway + jet bridges
+    this.buildCivicBuilding(scene, cx, cz, 'airport', scale);
+  }
+
+  private buildTaxiStand(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
+    // TODO: Low-poly taxi stand — shelter + TAXI sign + yellow cab
+    this.buildCivicBuilding(scene, cx, cz, 'taxi_stand', scale);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+
   private addInfraMesh(scene: THREE.Scene | THREE.Group, geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z: number, shadow = true): void {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
     m.castShadow = shadow;
     scene.add(m);
     this.meshes.push(m);
-  }
-
-  private buildPowerPlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    const s = scale;
-    // --- Main industrial hall ---
-    const hallGeo = new THREE.BoxGeometry(0.55, 0.42, 0.6);
-    hallGeo.translate(0, 0.21, 0);
-    const hallMat = new THREE.MeshLambertMaterial({ color: 0x5a5550 });
-    this.addInfraMesh(scene, hallGeo, hallMat, cx - 0.05, 0.05, cz);
-
-    // Metal roof with slight overhang
-    const roofGeo = new THREE.BoxGeometry(0.6, 0.035, 0.65);
-    roofGeo.translate(0, 0.018, 0);
-    const roofMat = new THREE.MeshLambertMaterial({ color: 0x484440 });
-    this.addInfraMesh(scene, roofGeo, roofMat, cx - 0.05, 0.47, cz);
-
-    // --- Control room annex ---
-    const annexGeo = new THREE.BoxGeometry(0.24, 0.28, 0.32);
-    annexGeo.translate(0, 0.14, 0);
-    const annexMat = new THREE.MeshLambertMaterial({ color: 0x666058 });
-    this.addInfraMesh(scene, annexGeo, annexMat, cx + 0.3, 0.05, cz + 0.1);
-
-    const annexRoofGeo = new THREE.BoxGeometry(0.27, 0.025, 0.35);
-    annexRoofGeo.translate(0, 0.013, 0);
-    this.addInfraMesh(scene, annexRoofGeo, roofMat, cx + 0.3, 0.35, cz + 0.1);
-
-    // --- Tall chimney (back-left) ---
-    const ch1Geo = new THREE.CylinderGeometry(0.05, 0.065, 0.6, 8);
-    ch1Geo.translate(0, 0.3, 0);
-    const chimMat = new THREE.MeshLambertMaterial({ color: 0x8a8580 });
-    this.addInfraMesh(scene, ch1Geo, chimMat, cx - 0.15, 0.05, cz - 0.2);
-
-    // Chimney top lip
-    const ch1LipGeo = new THREE.CylinderGeometry(0.065, 0.055, 0.035, 8);
-    ch1LipGeo.translate(0, 0.018, 0);
-    const lipMat = new THREE.MeshLambertMaterial({ color: 0x9a9590 });
-    this.addInfraMesh(scene, ch1LipGeo, lipMat, cx - 0.15, 0.65, cz - 0.2, false);
-
-    // Red warning band on tall chimney
-    const band1Geo = new THREE.CylinderGeometry(0.056, 0.056, 0.035, 8);
-    band1Geo.translate(0, 0.018, 0);
-    const redMat = new THREE.MeshLambertMaterial({ color: 0xcc3333 });
-    this.addInfraMesh(scene, band1Geo, redMat, cx - 0.15, 0.55, cz - 0.2, false);
-
-    // --- Short chimney (back-right) ---
-    const ch2Geo = new THREE.CylinderGeometry(0.04, 0.055, 0.42, 8);
-    ch2Geo.translate(0, 0.21, 0);
-    const chimMat2 = new THREE.MeshLambertMaterial({ color: 0x7a7570 });
-    this.addInfraMesh(scene, ch2Geo, chimMat2, cx + 0.08, 0.05, cz - 0.22);
-
-    // Red warning band on short chimney
-    const band2Geo = new THREE.CylinderGeometry(0.046, 0.046, 0.03, 8);
-    band2Geo.translate(0, 0.015, 0);
-    this.addInfraMesh(scene, band2Geo, redMat, cx + 0.08, 0.42, cz - 0.22, false);
-
-    // --- Yellow warning sign on front wall ---
-    const signGeo = new THREE.BoxGeometry(0.1, 0.08, 0.01);
-    const signMat = new THREE.MeshLambertMaterial({ color: 0xf0c030 });
-    this.addInfraMesh(scene, signGeo, signMat, cx - 0.05, 0.22, cz + 0.31, false);
-
-    // --- Coal pile ---
-    const coalMat = new THREE.MeshLambertMaterial({ color: 0x2a2520 });
-    const coal1Geo = new THREE.ConeGeometry(0.11, 0.09, 6);
-    coal1Geo.translate(0, 0.045, 0);
-    this.addInfraMesh(scene, coal1Geo, coalMat, cx - 0.28, 0.05, cz + 0.3, false);
-
-    const coal2Geo = new THREE.ConeGeometry(0.07, 0.06, 5);
-    coal2Geo.translate(0, 0.03, 0);
-    this.addInfraMesh(scene, coal2Geo, coalMat, cx - 0.18, 0.05, cz + 0.35, false);
-
-    // --- Status indicator light ---
-    const indGeo = new THREE.BoxGeometry(0.07, 0.05, 0.07);
-    const indMat = new THREE.MeshBasicMaterial({ color: 0xffeb3b });
-    this.addInfraMesh(scene, indGeo, indMat, cx + 0.3, 0.39, cz + 0.1, false);
-  }
-
-  private buildWaterPump(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    const s = scale;
-    // --- Concrete foundation platform ---
-    const foundGeo = new THREE.BoxGeometry(0.82, 0.05, 0.82);
-    foundGeo.translate(0, 0.025, 0);
-    const foundMat = new THREE.MeshLambertMaterial({ color: 0x707a80 });
-    this.addInfraMesh(scene, foundGeo, foundMat, cx, 0.02, cz);
-
-    // --- Main pump house ---
-    const houseGeo = new THREE.BoxGeometry(0.38, 0.32, 0.45);
-    houseGeo.translate(0, 0.16, 0);
-    const houseMat = new THREE.MeshLambertMaterial({ color: 0x4a6a7a });
-    this.addInfraMesh(scene, houseGeo, houseMat, cx + 0.1, 0.07, cz + 0.02);
-
-    // Pump house roof
-    const roofGeo = new THREE.BoxGeometry(0.42, 0.035, 0.49);
-    roofGeo.translate(0, 0.018, 0);
-    const roofMat = new THREE.MeshLambertMaterial({ color: 0x3a5a6a });
-    this.addInfraMesh(scene, roofGeo, roofMat, cx + 0.1, 0.42, cz + 0.02);
-
-    // --- Large water tank (cylinder) ---
-    const tankGeo = new THREE.CylinderGeometry(0.17, 0.17, 0.38, 12);
-    tankGeo.translate(0, 0.19, 0);
-    const tankMat = new THREE.MeshLambertMaterial({ color: 0x29b6f6 });
-    this.addInfraMesh(scene, tankGeo, tankMat, cx - 0.22, 0.07, cz - 0.03);
-
-    // Tank top lid
-    const lidGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.025, 12);
-    lidGeo.translate(0, 0.013, 0);
-    const lidMat = new THREE.MeshLambertMaterial({ color: 0x1a8ac0 });
-    this.addInfraMesh(scene, lidGeo, lidMat, cx - 0.22, 0.46, cz - 0.03);
-
-    // Tank bottom ring
-    const ringGeo = new THREE.CylinderGeometry(0.18, 0.19, 0.035, 12);
-    ringGeo.translate(0, 0.018, 0);
-    const ringMat = new THREE.MeshLambertMaterial({ color: 0x1a7aaa });
-    this.addInfraMesh(scene, ringGeo, ringMat, cx - 0.22, 0.07, cz - 0.03);
-
-    // --- Connecting pipe (tank → pump house) ---
-    const pipeGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.2, 6);
-    pipeGeo.rotateZ(Math.PI / 2);
-    const pipeMat = new THREE.MeshLambertMaterial({ color: 0x607888 });
-    this.addInfraMesh(scene, pipeGeo, pipeMat, cx - 0.02, 0.24, cz - 0.03, false);
-
-    // --- Inlet pipe (vertical, from ground) ---
-    const inletGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.18, 6);
-    inletGeo.translate(0, 0.09, 0);
-    const inletMat = new THREE.MeshLambertMaterial({ color: 0x4a8898 });
-    this.addInfraMesh(scene, inletGeo, inletMat, cx - 0.22, 0.02, cz + 0.22, false);
-
-    // Inlet pipe horizontal elbow
-    const elbowGeo = new THREE.CylinderGeometry(0.028, 0.028, 0.16, 6);
-    elbowGeo.rotateX(Math.PI / 2);
-    this.addInfraMesh(scene, elbowGeo, inletMat, cx - 0.22, 0.2, cz + 0.12, false);
-
-    // --- Control gauge box on pump house wall ---
-    const gaugeGeo = new THREE.BoxGeometry(0.07, 0.09, 0.015);
-    const gaugeMat = new THREE.MeshLambertMaterial({ color: 0xd0d8e0 });
-    this.addInfraMesh(scene, gaugeGeo, gaugeMat, cx + 0.1, 0.28, cz + 0.26, false);
-
-    // --- Small antenna on roof ---
-    const antGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.14, 4);
-    antGeo.translate(0, 0.07, 0);
-    const antMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-    this.addInfraMesh(scene, antGeo, antMat, cx + 0.2, 0.46, cz - 0.12, false);
-
-    // Antenna red tip
-    const tipGeo = new THREE.SphereGeometry(0.013, 4, 4);
-    const tipMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
-    this.addInfraMesh(scene, tipGeo, tipMat, cx + 0.2, 0.6, cz - 0.12, false);
-
-    // --- Status indicator light ---
-    const indGeo = new THREE.BoxGeometry(0.06, 0.05, 0.06);
-    const indMat = new THREE.MeshBasicMaterial({ color: 0x03a9f4 });
-    this.addInfraMesh(scene, indGeo, indMat, cx + 0.1, 0.47, cz + 0.02, false);
   }
 
   private buildLightSpots(scene: THREE.Scene, positions: { x: number; y: number }[]): void {
