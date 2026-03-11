@@ -18,6 +18,7 @@ import {
   isRoadDamaged,
   DESTRUCTION_THRESHOLD,
   ROAD_DAMAGE_THRESHOLD,
+  DAMAGE,
 } from '../Damage';
 
 describe('Climate - Season System', () => {
@@ -238,5 +239,16 @@ describe('Damage', () => {
     const disaster = createDisaster(DisasterType.EARTHQUAKE, 10, 10, 1.0);
     expect(isRoadDamaged(10, 10, disaster)).toBe(true);
     expect(isRoadDamaged(50, 50, disaster)).toBe(false);
+  });
+});
+
+describe('DAMAGE config', () => {
+  it('should match backward-compatible exports', () => {
+    expect(DAMAGE.DESTRUCTION_THRESHOLD).toBe(DESTRUCTION_THRESHOLD);
+    expect(DAMAGE.ROAD_DAMAGE_THRESHOLD).toBe(ROAD_DAMAGE_THRESHOLD);
+  });
+
+  it('base repair cost should be positive', () => {
+    expect(DAMAGE.BASE_REPAIR_COST).toBeGreaterThan(0);
   });
 });

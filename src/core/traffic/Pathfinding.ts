@@ -14,10 +14,13 @@ export interface PathCostFactors {
   trafficLights: Set<string>;
 }
 
-/** Congestion weight when calculating path move cost */
-const PATH_CONGESTION_WEIGHT = 2;
-/** Extra cost added for traffic light intersections */
-const PATH_TRAFFIC_LIGHT_COST = 0.5;
+/** Pathfinding cost configuration */
+export const PATH_COST = {
+  /** Congestion weight when calculating path move cost */
+  CONGESTION_WEIGHT: 2,
+  /** Extra cost added for traffic light intersections */
+  TRAFFIC_LIGHT_COST: 0.5,
+} as const;
 
 export function findPath(
   network: RoadNetwork,
@@ -65,8 +68,8 @@ export function findPath(
       let moveCost = 1;
       if (costs) {
         const congestion = costs.congestion.get(neighborId) ?? 0;
-        moveCost += congestion * PATH_CONGESTION_WEIGHT;
-        if (costs.trafficLights.has(neighborId)) moveCost += PATH_TRAFFIC_LIGHT_COST;
+        moveCost += congestion * PATH_COST.CONGESTION_WEIGHT;
+        if (costs.trafficLights.has(neighborId)) moveCost += PATH_COST.TRAFFIC_LIGHT_COST;
       }
 
       const g = data.g + moveCost;

@@ -13,9 +13,20 @@ export interface BuildingPosition {
   y: number;
 }
 
-export const BASE_REPAIR_COST_PER_DAMAGE = 2000;
-export const DESTRUCTION_THRESHOLD = 0.9;
-export const ROAD_DAMAGE_THRESHOLD = 0.3;
+/** Damage system configuration constants */
+export const DAMAGE = {
+  /** Base repair cost per unit of damage */
+  BASE_REPAIR_COST: 2000,
+  /** Damage level at which building is considered destroyed */
+  DESTRUCTION_THRESHOLD: 0.9,
+  /** Minimum damage level for road destruction */
+  ROAD_DAMAGE_THRESHOLD: 0.3,
+} as const;
+
+// Backward-compatible named exports
+export const BASE_REPAIR_COST_PER_DAMAGE = DAMAGE.BASE_REPAIR_COST;
+export const DESTRUCTION_THRESHOLD = DAMAGE.DESTRUCTION_THRESHOLD;
+export const ROAD_DAMAGE_THRESHOLD = DAMAGE.ROAD_DAMAGE_THRESHOLD;
 
 export function applyDamage(
   buildings: BuildingPosition[],
