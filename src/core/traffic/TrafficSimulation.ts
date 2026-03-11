@@ -1,6 +1,7 @@
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
 import { cubicBezierPoint, cubicBezierTangent } from './BezierPath';
+import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
 
 export interface Vehicle {
   id: number;
@@ -134,7 +135,6 @@ export class TrafficSimulation {
 
     // Build edge index: edgeId → list of { vehicleId, progress, halfLen }
     // This allows O(1) lookup of vehicles on any given edge.
-    type EdgeEntry = { vid: number; progress: number; halfLen: number };
     const edgeIndex = new Map<string, EdgeEntry[]>();
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
@@ -151,61 +151,13 @@ export class TrafficSimulation {
       const ep = v.edgePath;
 
       // 1. Gap to nearest vehicle ahead on the SAME edge path
-      let gap = Infinity;
+      const gap = findGapAhead(v, ep, edgeIndex);
       const myHalfLen = v.length / 2;
-      {
-        let distAhead = 0;
-        for (let ei = v.edgeIndex; ei < ep.length; ei++) {
-          const edge = ep[ei]!;
-          const myProgress = ei === v.edgeIndex ? v.edgeProgress : 0;
-          const edgeRemain = edge.length - myProgress;
-
-          // Check vehicles on this edge
-          const entries = edgeIndex.get(edge.id);
-          if (entries) {
-            for (const e of entries) {
-              if (e.vid === v.id) continue;
-              if (ei === v.edgeIndex) {
-                // Same edge: only look at vehicles ahead (greater progress).
-                // When at exact same progress, lower ID is "ahead" — higher ID yields.
-                if (e.progress < v.edgeProgress) continue;
-                if (e.progress === v.edgeProgress && e.vid > v.id) continue;
-                const dist = (e.progress - v.edgeProgress) - myHalfLen - e.halfLen;
-                if (dist < gap) gap = dist;
-              } else {
-                // Future edge: distance = remaining on current edges + progress on that edge
-                const dist = distAhead + e.progress - myHalfLen - e.halfLen;
-                if (dist < gap) gap = dist;
-              }
-            }
-          }
-
-          distAhead += edgeRemain;
-          if (distAhead > TRAFFIC.LOOKAHEAD_DISTANCE) break; // don't look too far ahead
-        }
-      }
 
       // 2. Distance to nearest red light on path
-      let redLightDist = Infinity;
-      if (canAdvance) {
-        let distAhead = 0;
-        for (let ei = v.edgeIndex; ei < ep.length; ei++) {
-          const edge = ep[ei]!;
-          const startDist = ei === v.edgeIndex ? v.edgeProgress : 0;
-          const edgeRemain = edge.length - startDist;
-
-          if (edge.from.cellKey !== edge.to.cellKey) {
-            if (!canAdvance(edge.from.cellKey, edge.to.cellKey)) {
-              const stopDist = distAhead - (ei === v.edgeIndex ? 0 : startDist);
-              redLightDist = Math.max(0, stopDist - v.length / 2);
-              break;
-            }
-          }
-
-          distAhead += edgeRemain;
-          if (distAhead > TRAFFIC.LOOKAHEAD_DISTANCE) break;
-        }
-      }
+      const redLightDist = canAdvance
+        ? findRedLightDistance(v, ep, canAdvance)
+        : Infinity;
 
       // 3. Speed limit from current edge's cell
       const currentEdge = ep[v.edgeIndex];
