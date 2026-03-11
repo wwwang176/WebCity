@@ -16,7 +16,7 @@ import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '.
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { getGridPollutionSources } from '../environment/GridPollutionSources';
-import { findPrimaryCell, forEachMultiCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
+import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel, isWorkingAge } from '../citizen/types';
 import type { TimeOfDay } from './GameClock';
@@ -25,7 +25,7 @@ import { TransportMode, TransportType } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
-import { FIRE } from '../service/FireService';
+import { applyFireDamage } from '../service/FireDamageProcessor';
 import { randomInt, randomElement } from '../utils/random';
 
 /** Simulation tuning constants */
@@ -559,33 +559,12 @@ export class SimulationLoop {
     // Try to start a random fire (very low probability)
     fire.tryRandomFire(this.state.grid, pop);
 
-    // Resolve completed fires and apply damage
-    let changed = false;
+    // Resolve completed fires and apply damage (delegated to FireDamageProcessor — SRP)
     const resolved = fire.resolveCompletedFires();
-    for (const f of resolved) {
-      if (f.damage >= FIRE.BURN_DAMAGE_THRESHOLD) {
-        // High damage: mark building as BURNED (charred ruins)
-        const cell = this.state.grid.getCell(f.x, f.y);
-        if (cell && isZoneBuilding(cell.buildingId)) {
-          changed = true;
-          // Check if this is a multi-cell building
-          const cfg = getInfraConfigById(cell.buildingId);
-          if (cfg && (cfg.width > 1 || cfg.height > 1)) {
-            // Multi-cell: mark ALL cells as BURNED
-            forEachMultiCell(this.state.grid, f.x, f.y, (cx, cy) => {
-              const c = this.state.grid.getCell(cx, cy);
-              if (c) {
-                this.state.grid.setCell(cx, cy, { reserved: BURNED });
-                this.onBuildingUpdated?.(cx, cy, c.zoneType, 1, true);
-              }
-            });
-          } else {
-            this.state.grid.setCell(f.x, f.y, { reserved: BURNED }); // BuildingStatus.BURNED
-            const level = clampBuildingLevel(cell.serviceCoverage);
-            this.onBuildingUpdated?.(f.x, f.y, cell.zoneType, level, true);
-          }
-        }
-      }
+    const { changed, updates } = applyFireDamage(this.state.grid, resolved);
+
+    for (const u of updates) {
+      this.onBuildingUpdated?.(u.x, u.y, u.zoneType, u.level, u.burned);
     }
     if (changed) this.onBuildingsChanged?.();
   }
