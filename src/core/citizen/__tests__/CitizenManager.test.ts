@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CitizenManager, EDUCATION_PROGRESSION, MORTALITY } from '../CitizenManager';
-import { LifeStage, EducationLevel } from '../types';
+import { LifeStage, EducationLevel, LIFE_STAGE_AGE } from '../types';
 
 describe('CitizenManager', () => {
   it('should create a citizen with unique id', () => {
@@ -66,6 +66,12 @@ describe('CitizenManager', () => {
     mgr.createCitizen({ age: MORTALITY.MAX_AGE });
     mgr.ageTick();
     expect(mgr.getPopulation()).toBe(0);
+  });
+
+  it('LIFE_STAGE_AGE thresholds should be strictly increasing', () => {
+    expect(LIFE_STAGE_AGE.BABY_MAX).toBeLessThan(LIFE_STAGE_AGE.CHILD_MAX);
+    expect(LIFE_STAGE_AGE.CHILD_MAX).toBeLessThan(LIFE_STAGE_AGE.TEEN_MAX);
+    expect(LIFE_STAGE_AGE.TEEN_MAX).toBeLessThan(LIFE_STAGE_AGE.ADULT_MAX);
   });
 
   it('MORTALITY constants should have valid age thresholds', () => {

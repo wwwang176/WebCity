@@ -31,10 +31,18 @@ export interface Citizen {
   workplaceId: string | null; // "x,y" grid position of workplace building
 }
 
+/** Age thresholds for life stage transitions */
+export const LIFE_STAGE_AGE = {
+  BABY_MAX: 5,
+  CHILD_MAX: 12,
+  TEEN_MAX: 18,
+  ADULT_MAX: 65,
+} as const;
+
 export function getLifeStage(age: number): LifeStage {
-  if (age <= 5) return LifeStage.BABY;
-  if (age <= 12) return LifeStage.CHILD;
-  if (age <= 18) return LifeStage.TEEN;
-  if (age <= 65) return LifeStage.ADULT;
+  if (age <= LIFE_STAGE_AGE.BABY_MAX) return LifeStage.BABY;
+  if (age <= LIFE_STAGE_AGE.CHILD_MAX) return LifeStage.CHILD;
+  if (age <= LIFE_STAGE_AGE.TEEN_MAX) return LifeStage.TEEN;
+  if (age <= LIFE_STAGE_AGE.ADULT_MAX) return LifeStage.ADULT;
   return LifeStage.SENIOR;
 }
