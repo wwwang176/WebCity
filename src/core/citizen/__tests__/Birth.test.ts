@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
-import { birthTick, MAX_FERTILITY_AGE, HAPPINESS_FERTILITY_THRESHOLD, DEFAULT_CONTEXT, type BirthContext } from '../Birth';
+import { birthTick, MAX_FERTILITY_AGE, HAPPINESS_FERTILITY_THRESHOLD, DEFAULT_CONTEXT, BIRTH, type BirthContext } from '../Birth';
 import { LifeStage, EducationLevel, IncomeLevel } from '../types';
 
 /**
@@ -146,5 +146,10 @@ describe('birthTick — 自然出生機制', () => {
     expect(DEFAULT_CONTEXT.baseFertilityRate).toBeGreaterThan(0);
     expect(DEFAULT_CONTEXT.baseFertilityRate).toBeLessThan(1);
     expect(DEFAULT_CONTEXT.happinessBonus).toBeGreaterThan(0);
+  });
+
+  it('backward-compatible exports should match BIRTH config', () => {
+    expect(MAX_FERTILITY_AGE).toBe(BIRTH.MAX_FERTILITY_AGE);
+    expect(HAPPINESS_FERTILITY_THRESHOLD).toBe(BIRTH.HAPPINESS_FERTILITY_THRESHOLD);
   });
 });

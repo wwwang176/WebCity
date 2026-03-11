@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FreightSystem, INDUSTRIAL_PRODUCTION_RATE, COMMERCIAL_CONSUMPTION_RATE } from '../FreightSystem';
+import { FreightSystem, INDUSTRIAL_PRODUCTION_RATE, COMMERCIAL_CONSUMPTION_RATE, FREIGHT } from '../FreightSystem';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
 
@@ -77,5 +77,10 @@ describe('FreightSystem', () => {
 
   it('production rate should exceed consumption rate', () => {
     expect(INDUSTRIAL_PRODUCTION_RATE).toBeGreaterThanOrEqual(COMMERCIAL_CONSUMPTION_RATE);
+  });
+
+  it('backward-compatible exports should match FREIGHT config', () => {
+    expect(INDUSTRIAL_PRODUCTION_RATE).toBe(FREIGHT.INDUSTRIAL_PRODUCTION_RATE);
+    expect(COMMERCIAL_CONSUMPTION_RATE).toBe(FREIGHT.COMMERCIAL_CONSUMPTION_RATE);
   });
 });
