@@ -29,6 +29,44 @@ export const SLOW_TICK_INTERVAL = 6;
 /** Ticks between heavier computations: pollution, land value, vehicle spawning */
 export const MEDIUM_TICK_INTERVAL = 60;
 
+/** Simulation tuning constants */
+export const SIMULATION = {
+  /** Number of random cells sampled per growth tick */
+  GROWTH_ATTEMPTS: 20,
+  /** Chance per attempt for burned building auto-clearance */
+  BURNED_CLEARANCE_CHANCE: 0.02,
+  /** Service coverage divisor for building level calculation */
+  BUILDING_LEVEL_DIVISOR: 3,
+  /** Default happiness used when city has no citizens */
+  DEFAULT_HAPPINESS: 70,
+  /** Business tax baseline — penalty applies above this rate */
+  BUSINESS_TAX_BASELINE: 9,
+  /** Demand penalty per percentage point above baseline */
+  BUSINESS_TAX_PENALTY_PER_POINT: 2,
+  /** Crime: max base crime rate */
+  CRIME_BASE_MAX: 50,
+  /** Crime: population factor for base crime */
+  CRIME_POP_FACTOR: 0.02,
+  /** Crime: coverage factor per police station */
+  CRIME_COVERAGE_PER_STATION: 0.15,
+  /** Crime: max reduction from police coverage */
+  CRIME_MAX_REDUCTION: 0.6,
+  /** Commute: max estimated average commute */
+  COMMUTE_MAX: 25,
+  /** Commute: base commute distance */
+  COMMUTE_BASE: 1,
+  /** Commute: multiplier for sqrt(resCount) */
+  COMMUTE_SPREAD_FACTOR: 0.7,
+  /** Commute: random jitter range */
+  COMMUTE_JITTER: 6,
+  /** Service coverage: power weight */
+  SERVICE_POWER_WEIGHT: 2,
+  /** Service coverage: water weight */
+  SERVICE_WATER_WEIGHT: 2,
+  /** Pollution threshold for service coverage bonus */
+  LOW_POLLUTION_THRESHOLD: 10,
+} as const;
+
 export class SimulationLoop {
   private state: GameState;
   private lastAgeYear = -1;
@@ -82,9 +120,9 @@ export class SimulationLoop {
         exportDemand: 10,
       });
       // Higher business tax reduces commercial/industrial demand
-      const businessTax = this.state.taxRates.business ?? 9;
-      if (businessTax > 9) {
-        const penalty = (businessTax - 9) * 2; // 2 demand points per % over 9
+      const businessTax = this.state.taxRates.business ?? SIMULATION.BUSINESS_TAX_BASELINE;
+      if (businessTax > SIMULATION.BUSINESS_TAX_BASELINE) {
+        const penalty = (businessTax - SIMULATION.BUSINESS_TAX_BASELINE) * SIMULATION.BUSINESS_TAX_PENALTY_PER_POINT;
         rci.commercial = Math.max(-100, rci.commercial - penalty);
         rci.industrial = Math.max(-100, rci.industrial - penalty);
       }
@@ -263,7 +301,7 @@ export class SimulationLoop {
     let changed = false;
 
     // Try growing on a sample of cells each tick (not all 60x60)
-    const attempts = 20;
+    const attempts = SIMULATION.GROWTH_ATTEMPTS;
     for (let i = 0; i < attempts; i++) {
       const x = Math.floor(Math.random() * grid.width);
       const y = Math.floor(Math.random() * grid.height);
@@ -273,7 +311,7 @@ export class SimulationLoop {
       // Burned buildings: developer must demolish ruins first (extra cost/time)
       if (cell.reserved === BURNED && isZoneBuilding(cell.buildingId)) {
         // ~2% chance per attempt to clear the ruins (developer demolition takes time)
-        if (Math.random() < 0.02) {
+        if (Math.random() < SIMULATION.BURNED_CLEARANCE_CHANCE) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
           changed = true;
           this.onBuildingRemoved?.(x, y);
@@ -295,7 +333,7 @@ export class SimulationLoop {
           // Read back the grown cell to get level info
           const grown = grid.getCell(x, y);
           if (grown) {
-            const level = Math.max(1, Math.min(3, Math.ceil(grown.serviceCoverage / 3) || 1));
+            const level = Math.max(1, Math.min(3, Math.ceil(grown.serviceCoverage / SIMULATION.BUILDING_LEVEL_DIVISOR) || 1));
             this.onBuildingAdded?.(x, y, cell.zoneType, level);
           }
         }
@@ -307,7 +345,7 @@ export class SimulationLoop {
   private runMigration(): void {
     const pop = this.state.citizens.getPopulation();
     // Use actual average citizen happiness; empty city gets default 70
-    let avgHappiness = 70;
+    let avgHappiness = SIMULATION.DEFAULT_HAPPINESS;
     if (pop > 0) {
       let totalHappiness = 0;
       for (const c of this.state.citizens.citizens) {
@@ -342,25 +380,31 @@ export class SimulationLoop {
 
     // Estimate average commute from residential spread (compact city = short commutes)
     const resCount = this.countZoneBuildings('residential');
-    const avgCommute = resCount > 0 ? Math.min(25, 1 + Math.sqrt(resCount) * 0.7) : 3;
+    const avgCommute = resCount > 0
+      ? Math.min(SIMULATION.COMMUTE_MAX, SIMULATION.COMMUTE_BASE + Math.sqrt(resCount) * SIMULATION.COMMUTE_SPREAD_FACTOR)
+      : 3;
 
     // Count service coverage: power + water + low pollution bonus
     const { poweredRatio, wateredRatio } = this.getServiceRatios();
-    const serviceCoverage = Math.round(poweredRatio * 2 + wateredRatio * 2 + (avgPollution < 10 ? 1 : 0));
+    const serviceCoverage = Math.round(
+      poweredRatio * SIMULATION.SERVICE_POWER_WEIGHT +
+      wateredRatio * SIMULATION.SERVICE_WATER_WEIGHT +
+      (avgPollution < SIMULATION.LOW_POLLUTION_THRESHOLD ? 1 : 0)
+    );
 
     // Check if any parks exist for happiness bonus
     const hasParkCoverage = this.state.parks.getParks().length > 0;
 
     for (const citizen of this.state.citizens.citizens) {
       // Vary commute per citizen (+/- 3 random jitter)
-      const commute = Math.max(1, avgCommute + (Math.random() * 6 - 3));
+      const commute = Math.max(1, avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
       const factors: HappinessFactors = {
         commuteDistance: commute,
         hasPark: hasParkCoverage,
         pollution: avgPollution,
         noiseLevel: 0,
         crimeRate: avgCrime,
-        isEmployed: citizen.age <= 18 || citizen.age > 65 || Math.random() < employmentRate,
+        isEmployed: !isWorkingAge(citizen.age) || Math.random() < employmentRate,
         taxRate,
         serviceCoverage,
       };
@@ -408,12 +452,11 @@ export class SimulationLoop {
   private getAvgCrime(): number {
     // Crime scales with population, reduced by police coverage
     const pop = this.state.citizens.getPopulation();
-    const baseCrime = Math.min(50, pop * 0.02);
+    const baseCrime = Math.min(SIMULATION.CRIME_BASE_MAX, pop * SIMULATION.CRIME_POP_FACTOR);
     const stations = this.state.police.getStations();
     if (stations.length === 0) return baseCrime;
-    // Each station covers ~15 radius; rough coverage ratio
-    const coverageRatio = Math.min(1, stations.length * 0.15);
-    return baseCrime * (1 - coverageRatio * 0.6); // up to 60% crime reduction
+    const coverageRatio = Math.min(1, stations.length * SIMULATION.CRIME_COVERAGE_PER_STATION);
+    return baseCrime * (1 - coverageRatio * SIMULATION.CRIME_MAX_REDUCTION);
   }
 
   private countVacantHomes(): number {

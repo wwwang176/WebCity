@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCongestionRate, getSpeedMultiplier } from '../Congestion';
+import { getCongestionRate, getSpeedMultiplier, CONGESTION } from '../Congestion';
 import { TrafficSimulation } from '../TrafficSimulation';
 import { LaneEdge, LaneNode } from '../LaneGraph';
 
@@ -27,6 +27,17 @@ describe('Congestion', () => {
     const high = getSpeedMultiplier(0.9);
     const low = getSpeedMultiplier(0.3);
     expect(low).toBeGreaterThan(high);
+  });
+
+  it('CONGESTION thresholds should be in ascending order', () => {
+    expect(CONGESTION.LOW_THRESHOLD).toBeLessThan(CONGESTION.MEDIUM_THRESHOLD);
+    expect(CONGESTION.MEDIUM_THRESHOLD).toBeLessThan(CONGESTION.HIGH_THRESHOLD);
+  });
+
+  it('CONGESTION speed multipliers should decrease with congestion', () => {
+    expect(CONGESTION.MEDIUM_SPEED).toBeLessThan(1);
+    expect(CONGESTION.HIGH_SPEED).toBeLessThan(CONGESTION.MEDIUM_SPEED);
+    expect(CONGESTION.MIN_SPEED).toBeLessThan(CONGESTION.HIGH_SPEED);
   });
 });
 

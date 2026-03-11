@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
 import { createGameState } from '../GameState';
-import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SLOW_TICK_INTERVAL, MEDIUM_TICK_INTERVAL } from '../SimulationLoop';
+import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SLOW_TICK_INTERVAL, MEDIUM_TICK_INTERVAL, SIMULATION } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import { PolicyType, Specialization } from '../../district/types';
@@ -17,6 +17,40 @@ describe('Simulation tick interval constants', () => {
   it('MEDIUM_TICK_INTERVAL should be a multiple of SLOW_TICK_INTERVAL', () => {
     expect(MEDIUM_TICK_INTERVAL).toBeGreaterThan(SLOW_TICK_INTERVAL);
     expect(MEDIUM_TICK_INTERVAL % SLOW_TICK_INTERVAL).toBe(0);
+  });
+});
+
+describe('SIMULATION config constants', () => {
+  it('growth and clearance rates should be valid probabilities', () => {
+    expect(SIMULATION.BURNED_CLEARANCE_CHANCE).toBeGreaterThan(0);
+    expect(SIMULATION.BURNED_CLEARANCE_CHANCE).toBeLessThan(1);
+    expect(SIMULATION.GROWTH_ATTEMPTS).toBeGreaterThan(0);
+    expect(Number.isInteger(SIMULATION.GROWTH_ATTEMPTS)).toBe(true);
+  });
+
+  it('crime constants should be valid', () => {
+    expect(SIMULATION.CRIME_BASE_MAX).toBeGreaterThan(0);
+    expect(SIMULATION.CRIME_POP_FACTOR).toBeGreaterThan(0);
+    expect(SIMULATION.CRIME_COVERAGE_PER_STATION).toBeGreaterThan(0);
+    expect(SIMULATION.CRIME_MAX_REDUCTION).toBeGreaterThan(0);
+    expect(SIMULATION.CRIME_MAX_REDUCTION).toBeLessThanOrEqual(1);
+  });
+
+  it('commute constants should be valid', () => {
+    expect(SIMULATION.COMMUTE_MAX).toBeGreaterThan(SIMULATION.COMMUTE_BASE);
+    expect(SIMULATION.COMMUTE_SPREAD_FACTOR).toBeGreaterThan(0);
+    expect(SIMULATION.COMMUTE_JITTER).toBeGreaterThan(0);
+  });
+
+  it('service weights should be positive', () => {
+    expect(SIMULATION.SERVICE_POWER_WEIGHT).toBeGreaterThan(0);
+    expect(SIMULATION.SERVICE_WATER_WEIGHT).toBeGreaterThan(0);
+    expect(SIMULATION.LOW_POLLUTION_THRESHOLD).toBeGreaterThan(0);
+  });
+
+  it('business tax baseline should be positive', () => {
+    expect(SIMULATION.BUSINESS_TAX_BASELINE).toBeGreaterThan(0);
+    expect(SIMULATION.BUSINESS_TAX_PENALTY_PER_POINT).toBeGreaterThan(0);
   });
 });
 

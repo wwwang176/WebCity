@@ -34,22 +34,26 @@ const DIR_FLAGS: { dir: Direction; flag: number; dx: number; dy: number }[] = [
   { dir: 'west', flag: RoadDirection.WEST, dx: -1, dy: 0 },
 ];
 
+const DIRECTION_OPPOSITES: Record<Direction, Direction> = {
+  north: 'south',
+  south: 'north',
+  east: 'west',
+  west: 'east',
+};
+
+const DIRECTION_VECTORS: Record<Direction, { dx: number; dy: number }> = {
+  north: { dx: 0, dy: -1 },
+  south: { dx: 0, dy: 1 },
+  east: { dx: 1, dy: 0 },
+  west: { dx: -1, dy: 0 },
+};
+
 function oppositeDir(d: Direction): Direction {
-  switch (d) {
-    case 'north': return 'south';
-    case 'south': return 'north';
-    case 'east': return 'west';
-    case 'west': return 'east';
-  }
+  return DIRECTION_OPPOSITES[d];
 }
 
 function dirVec(d: Direction): { dx: number; dy: number } {
-  switch (d) {
-    case 'north': return { dx: 0, dy: -1 };
-    case 'south': return { dx: 0, dy: 1 };
-    case 'east': return { dx: 1, dy: 0 };
-    case 'west': return { dx: -1, dy: 0 };
-  }
+  return DIRECTION_VECTORS[d];
 }
 
 const parseCellKey = parsePosKeyUnsafe;
