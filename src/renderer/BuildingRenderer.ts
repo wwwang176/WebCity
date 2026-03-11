@@ -1163,8 +1163,60 @@ export class BuildingRenderer {
   }
 
   private buildFireStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
-    // TODO: Low-poly fire station — 3 garage bays + drill tower + red theme
-    this.buildCivicBuilding(scene, cx, cz, 'fire', scale);
+    // Main garage building
+    const mainGeo = new THREE.BoxGeometry(0.75, 0.35, 0.55);
+    mainGeo.translate(0, 0.35 / 2, 0.05);
+    const mainMat = new THREE.MeshLambertMaterial({ color: 0xd32f2f });
+    this.addInfraMesh(scene, mainGeo, mainMat, cx, 0.05, cz);
+
+    // Roof
+    const roofGeo = new THREE.BoxGeometry(0.80, 0.03, 0.60);
+    roofGeo.translate(0, 0.015, 0.05);
+    const roofMat = new THREE.MeshLambertMaterial({ color: 0xb71c1c });
+    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.35, cz);
+
+    // 3 garage doors evenly spaced on front face
+    const garageMat = new THREE.MeshLambertMaterial({ color: 0xef9a9a });
+    for (let i = -1; i <= 1; i++) {
+      const doorGeo = new THREE.BoxGeometry(0.18, 0.28, 0.01);
+      doorGeo.translate(i * 0.22, 0.28 / 2, 0.05 + 0.55 / 2 + 0.005);
+      this.addInfraMesh(scene, doorGeo, garageMat, cx, 0.05, cz);
+    }
+
+    // Drill tower (back)
+    const towerGeo = new THREE.BoxGeometry(0.15, 0.55, 0.15);
+    towerGeo.translate(0.25, 0.55 / 2, -0.25);
+    const towerMat = new THREE.MeshLambertMaterial({ color: 0xc62828 });
+    this.addInfraMesh(scene, towerGeo, towerMat, cx, 0.05, cz);
+
+    // Tower cap
+    const towerCapGeo = new THREE.BoxGeometry(0.18, 0.02, 0.18);
+    towerCapGeo.translate(0.25, 0.55 + 0.01, -0.25);
+    const towerCapMat = new THREE.MeshLambertMaterial({ color: 0xb71c1c });
+    this.addInfraMesh(scene, towerCapGeo, towerCapMat, cx, 0.05, cz);
+
+    // 2 tower windows
+    const windowMat = new THREE.MeshLambertMaterial({ color: 0xffcdd2 });
+    const win1Geo = new THREE.BoxGeometry(0.06, 0.06, 0.01);
+    win1Geo.translate(0.25, 0.40, -0.25 + 0.15 / 2 + 0.005);
+    this.addInfraMesh(scene, win1Geo, windowMat, cx, 0.05, cz);
+
+    const win2Geo = new THREE.BoxGeometry(0.06, 0.06, 0.01);
+    win2Geo.translate(0.25, 0.28, -0.25 + 0.15 / 2 + 0.005);
+    this.addInfraMesh(scene, win2Geo, windowMat, cx, 0.05, cz);
+
+    // Red warning light on roof
+    const lightGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.02, 8);
+    lightGeo.translate(0, 0.35 + 0.03 + 0.01, 0.05);
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xff1744 });
+    this.addInfraMesh(scene, lightGeo, lightMat, cx, 0.05, cz, false);
+
+    // Hose reel on side (rotated to lie flat)
+    const hoseGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.03, 8);
+    hoseGeo.rotateZ(Math.PI / 2);
+    hoseGeo.translate(-0.75 / 2 - 0.005, 0.15, 0.10);
+    const hoseMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    this.addInfraMesh(scene, hoseGeo, hoseMat, cx, 0.05, cz);
   }
 
   private buildHospital(scene: THREE.Scene | THREE.Group, cx: number, cz: number, scale = 1): void {
