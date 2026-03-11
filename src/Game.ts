@@ -26,7 +26,7 @@ import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
-import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, BURNED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
@@ -674,13 +674,13 @@ export class Game {
         if (!cell) continue;
 
         // Handle multi-cell infrastructure: find primary and demolish entire building
-        if (cell.buildingId >= 236 && cell.buildingId <= 254) {
-          // Airport (237) uses custom footprint — handle separately
-          if (cell.buildingId === 237) {
+        if (isInfrastructureBuilding(cell.buildingId)) {
+          // Airport uses custom footprint — handle separately
+          if (cell.buildingId === getInfraBuildingId('airport')) {
             const key = `airport:${x},${y}`;
             if (demolished.has(key)) continue;
             // removeInfraService handles clearing all airport cells
-            this.removeInfraService(237, x, y);
+            this.removeInfraService(getInfraBuildingId('airport'), x, y);
             // Mark all airport cells as demolished
             const airport = this.state.airport.getAirports().find(a => {
               const fp = getAirportFootprint(a.size);
@@ -706,8 +706,9 @@ export class Game {
             continue;
           }
 
-          // Transport stops (236-242 except 237) are 1x1 — handle directly
-          if (cell.buildingId >= 236 && cell.buildingId <= 242) {
+          // Transport stops are 1×1 infrastructure — handle directly
+          const infraCfg = getInfraConfigById(cell.buildingId);
+          if (infraCfg && infraCfg.width === 1 && infraCfg.height === 1) {
             this.removeInfraService(cell.buildingId, x, y);
             this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
             continue;
@@ -799,7 +800,7 @@ export class Game {
         for (let dy = -half; dy <= half; dy++) {
           for (let dx = -half; dx <= half; dx++) {
             const c = this.state.grid.getCell(airport.x + dx, airport.y + dy);
-            if (c && c.buildingId === 237) {
+            if (c && c.buildingId === getInfraBuildingId('airport')) {
               this.state.grid.setCell(airport.x + dx, airport.y + dy, { buildingId: 0, reserved: 0 });
             }
           }
@@ -1567,7 +1568,7 @@ export class Game {
         const gx = this.gridCursor.gridX;
         const gy = this.gridCursor.gridY;
         const cell = this.state.grid.getCell(gx, gy);
-        if (cell && cell.buildingId >= 237 && cell.buildingId <= 254) {
+        if (cell && isInfrastructureBuilding(cell.buildingId)) {
           const primary = findPrimaryCell(this.state.grid, gx, gy);
           if (primary) {
             const cfg = getInfraConfigById(cell.buildingId);
