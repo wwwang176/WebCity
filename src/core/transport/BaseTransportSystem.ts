@@ -78,19 +78,7 @@ export abstract class BaseTransportSystem {
     this.routes.push(route);
 
     for (let i = 0; i < vehicleCount; i++) {
-      const firstStop = stops[0]!;
-      this.vehicles.push({
-        id: this.nextVehicleId++,
-        routeId: route.id,
-        currentStopIndex: 0,
-        passengers: 0,
-        capacity: this.config.capacity,
-        position: { x: firstStop.x, y: firstStop.y },
-        waitTicks: 0,
-        atStop: false,
-        travelTicks: 0,
-        traveling: false,
-      });
+      this.spawnVehicle(route.id, stops[0]!);
     }
 
     return route;
@@ -104,19 +92,7 @@ export abstract class BaseTransportSystem {
   addVehicleToRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
     if (!route || route.stops.length === 0) return;
-    const first = route.stops[0]!;
-    this.vehicles.push({
-      id: this.nextVehicleId++,
-      routeId,
-      currentStopIndex: 0,
-      passengers: 0,
-      capacity: this.getCapacity(),
-      position: { x: first.x, y: first.y },
-      waitTicks: 0,
-      atStop: false,
-      travelTicks: 0,
-      traveling: false,
-    });
+    this.spawnVehicle(routeId, route.stops[0]!);
     route.vehicles++;
     route.operatingCost = route.vehicles * this.config.operatingCostPerVehicle;
   }
@@ -141,6 +117,23 @@ export abstract class BaseTransportSystem {
 
   getOperatingCost(): number {
     return this.routes.reduce((sum, r) => sum + r.operatingCost, 0);
+  }
+
+  protected spawnVehicle(routeId: number, stop: TransportStop): TransportVehicle {
+    const vehicle: TransportVehicle = {
+      id: this.nextVehicleId++,
+      routeId,
+      currentStopIndex: 0,
+      passengers: 0,
+      capacity: this.getCapacity(),
+      position: { x: stop.x, y: stop.y },
+      waitTicks: 0,
+      atStop: false,
+      travelTicks: 0,
+      traveling: false,
+    };
+    this.vehicles.push(vehicle);
+    return vehicle;
   }
 
   // ── Tick ─────────────────────────────────────────────────────────
