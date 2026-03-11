@@ -27,6 +27,7 @@ import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
+import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
@@ -108,6 +109,7 @@ export class Game {
   private weatherRenderer: WeatherRenderer;
   private gridCursor: GridCursor;
   private placementPreview: PlacementPreview;
+  private highlightManager: HighlightManager;
   private transportRouteRenderer: TransportRouteRenderer;
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
@@ -220,6 +222,10 @@ export class Game {
     this.metroTunnelRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
     this.placementPreview = new PlacementPreview(this.sceneManager.scene, this.buildingRenderer);
+    this.highlightManager = new HighlightManager(
+      this.sceneManager.scene,
+      (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
+    );
 
     // Center camera
     this.sceneManager.panCamera(mapSize / 2, mapSize / 2);
@@ -317,6 +323,7 @@ export class Game {
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0) {
         this.dragStart = { x: this.gridCursor.gridX, y: this.gridCursor.gridY };
+        this.updatePlacementPreview();
       }
       if (e.button === 2) {
         // Right-click camera pan handled in mousemove
@@ -331,6 +338,8 @@ export class Game {
         );
         this.dragStart = null;
         this.clearPreviewLine();
+        this.highlightManager.clear();
+        this.applySelectHighlight();
       }
     });
 
@@ -1076,6 +1085,9 @@ export class Game {
         this.trackRenderer.setViewMode(this.viewMode);
         this.levelCrossingRenderer.setViewMode(this.viewMode);
       }
+      // Re-apply highlight after rebuild (new meshes lose aHighlight)
+      this.updatePlacementPreview();
+
       this.renderDirty = false;
     }
 
@@ -1321,6 +1333,7 @@ export class Game {
   setTool(tool: ToolType): void {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
+    this.highlightManager.clear();
     // Road subtypes set the roadType
     if (tool === 'road') this.currentRoadType = RoadType.TWO_LANE;
     else if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
@@ -1437,6 +1450,51 @@ export class Game {
     }
   }
 
+  /** Apply white highlight on the currently selected building (select tool). */
+  private applySelectHighlight(): void {
+    const sel = this.selectedBuilding;
+    if (!sel) return;
+
+    const cell = this.state.grid.getCell(sel.x, sel.y);
+    if (!cell) return;
+
+    if (sel.kind === 'infra') {
+      const primary = findPrimaryCell(this.state.grid, sel.x, sel.y);
+      if (!primary) return;
+      const cfg = getInfraConfigById(cell.buildingId);
+      const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
+      const cells: { x: number; y: number }[] = [];
+      for (let dy = 0; dy < maxDim; dy++) {
+        for (let dx = 0; dx < maxDim; dx++) {
+          const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
+          if (c && c.buildingId === cell.buildingId) {
+            cells.push({ x: primary.x + dx, y: primary.y + dy });
+          }
+        }
+      }
+      this.highlightManager.highlightCells(
+        cells, 0xffffff,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+      );
+    } else {
+      this.highlightManager.highlightCells(
+        [{ x: sel.x, y: sel.y }], 0xffffff,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+      );
+    }
+  }
+
+  /** Collect all InstancedMeshes that support highlight (buildings + roads + tracks). */
+  private getAllHighlightMeshes(): readonly (THREE.InstancedMesh | THREE.Mesh)[] {
+    return [
+      ...this.buildingRenderer.buildingMeshes,
+      ...this.roadRenderer.highlightMeshes,
+      ...this.trackRenderer.highlightMeshes,
+    ];
+  }
+
   private updatePlacementPreview(): void {
     if (this.isInfraTool(this.currentTool)) {
       const infraType = this.currentTool as InfraType;
@@ -1452,11 +1510,15 @@ export class Game {
       );
     } else if (this.currentTool === 'demolish') {
       if (this.dragStart) {
-        // Demolish drag preview — red overlay showing affected range
-        this.placementPreview.updateZoneDrag(
-          this.dragStart.x, this.dragStart.y,
-          this.gridCursor.gridX, this.gridCursor.gridY,
-          0xff0000,
+        // Demolish drag preview — red tint on ground + buildings in range
+        const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
+        const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
+        const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
+        const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
+        this.highlightManager.highlight(
+          minX, minY, maxX, maxY, 0xff0000,
+          this.getAllHighlightMeshes(),
+          this.buildingRenderer.buildingInfraGroups,
         );
       } else {
         // Demolish hover: highlight multi-cell building footprint
@@ -1477,29 +1539,42 @@ export class Game {
                 }
               }
             }
-            this.placementPreview.updateDemolishHighlight(cells);
+            this.highlightManager.highlightCells(
+              cells, 0xff0000,
+              this.getAllHighlightMeshes(),
+              this.buildingRenderer.buildingInfraGroups,
+            );
           } else {
-            this.placementPreview.hide();
+            this.highlightManager.clear();
           }
         } else {
-          this.placementPreview.hide();
+          this.highlightManager.clear();
         }
       }
     } else if (this.dragStart && this.isZoneTool()) {
-      // Zone drag preview
+      // Zone drag preview — tint ground + buildings in range
       const zoneColors: Record<string, number> = {
         zone_r: 0x4caf50, zone_rh: 0x2e7d32,
         zone_c: 0x2196f3, zone_ch: 0x1565c0,
         zone_i: 0xffc107, zone_o: 0x9c27b0,
       };
       const color = zoneColors[this.currentTool] ?? 0xffffff;
-      this.placementPreview.updateZoneDrag(
-        this.dragStart.x, this.dragStart.y,
-        this.gridCursor.gridX, this.gridCursor.gridY,
-        color,
+      const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
+      const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
+      const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
+      const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
+      this.highlightManager.highlight(
+        minX, minY, maxX, maxY, color,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
       );
     } else {
       this.placementPreview.hide();
+      if (this.currentTool === 'select' && this.selectedBuilding) {
+        this.applySelectHighlight();
+      } else {
+        this.highlightManager.clear();
+      }
     }
   }
 

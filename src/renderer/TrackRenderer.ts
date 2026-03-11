@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
 import { RailType, TrackDirection } from '../core/rail/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
+import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
 
 const TRACK_WIDTH = 0.15;
 const RAIL_Y = 0.035;
@@ -253,8 +254,10 @@ export class TrackRenderer {
 
     const geo = new THREE.BoxGeometry(TRACK_WIDTH + 0.04, 0.015, 0.03);
     const mat = new THREE.MeshLambertMaterial({ color: TIE_COLOR });
+    injectHighlightShader(mat);
     const count = Math.min(ties.length, this.maxInstances);
     this.tieMesh = new THREE.InstancedMesh(geo, mat, count);
+    addHighlightAttribute(this.tieMesh);
     this.tieMesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
@@ -279,8 +282,10 @@ export class TrackRenderer {
     scene: THREE.Scene, strips: Strip[],
     geo: THREE.BoxGeometry, mat: THREE.MeshLambertMaterial, y: number,
   ): THREE.InstancedMesh {
+    injectHighlightShader(mat);
     const count = Math.min(strips.length, this.maxInstances);
     const mesh = new THREE.InstancedMesh(geo, mat, count);
+    addHighlightAttribute(mesh);
     mesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
@@ -326,6 +331,12 @@ export class TrackRenderer {
   /** @deprecated Use setViewMode instead. */
   setUndergroundMode(enabled: boolean): void {
     this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
+  }
+
+  /** All InstancedMeshes with highlight support (for HighlightManager). */
+  get highlightMeshes(): readonly THREE.InstancedMesh[] {
+    return [this.railMesh, this.tieMesh, this.ballastMesh]
+      .filter((m): m is THREE.InstancedMesh => m !== null);
   }
 
   dispose(scene: THREE.Scene): void {
