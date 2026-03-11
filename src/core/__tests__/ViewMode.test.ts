@@ -31,8 +31,8 @@ describe('ViewMode', () => {
       expect(op.metroTrain).toBe(1.0);
     });
 
-    it('UNDERGROUND 模式建築最半透明 (0.12)', () => {
-      expect(VIEW_MODE_OPACITY[ViewMode.UNDERGROUND].building).toBe(0.12);
+    it('UNDERGROUND 模式建築最半透明 (0.125)', () => {
+      expect(VIEW_MODE_OPACITY[ViewMode.UNDERGROUND].building).toBe(0.125);
     });
 
     it('UNDERGROUND 模式道路半透明 (0.15)', () => {
@@ -76,8 +76,8 @@ describe('ViewMode', () => {
       expect(isSurfaceVehicle('tram')).toBe(true);
     });
 
-    it('metro_train 不是地面車輛', () => {
-      expect(isSurfaceVehicle('metro_train')).toBe(false);
+    it('metro_train now rendered separately (all VehicleRenderer types are surface)', () => {
+      expect(isSurfaceVehicle('metro_train')).toBe(true);
     });
 
     it('ferry 是地面車輛', () => {

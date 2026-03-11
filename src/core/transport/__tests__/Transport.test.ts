@@ -1014,6 +1014,54 @@ describe('Metro passenger boarding', () => {
 });
 
 // ---------------------------------------------------------------------------
+// T3.1 Metro getTrainSegmentInfo
+// ---------------------------------------------------------------------------
+describe('Metro getTrainSegmentInfo', () => {
+  it('should return atStop info when train is at station', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(6, 0);
+    metro.createLine([st1, st2]);
+    metro.tick(); // initial → atStop at st1
+    const train = metro.getTrains()[0]!;
+    const info = metro.getTrainSegmentInfo(train);
+    expect(info.atStop).toBe(true);
+    expect(info.fromStopIndex).toBe(0);
+  });
+
+  it('should return travel progress when train is between stations', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(6, 0);
+    metro.createLine([st1, st2]);
+    metro.tick(); // initial → atStop
+    metro.tick(); // dwell 2→1
+    metro.tick(); // dwell 1→0, depart to st2 (travelTicks = ceil(6/3) = 2)
+    metro.tick(); // travel: travelTicks 2→1, interpolate
+    const train = metro.getTrains()[0]!;
+    expect(train.traveling).toBe(true);
+    const info = metro.getTrainSegmentInfo(train);
+    expect(info.atStop).toBe(false);
+    expect(info.fromStopIndex).toBe(0);
+    expect(info.toStopIndex).toBe(1);
+    expect(info.progress).toBeGreaterThan(0);
+    expect(info.progress).toBeLessThanOrEqual(1);
+  });
+
+  it('should return progress 0 for initial non-started train', () => {
+    const metro = new MetroSystem();
+    const st1 = metro.addStation(0, 0);
+    const st2 = metro.addStation(6, 0);
+    metro.createLine([st1, st2]);
+    // Don't tick — vehicle is in initial state (not atStop, not traveling)
+    const train = metro.getTrains()[0]!;
+    const info = metro.getTrainSegmentInfo(train);
+    expect(info.atStop).toBe(true);
+    expect(info.fromStopIndex).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T4.3 Taxi ModeChoice integration
 // ---------------------------------------------------------------------------
 describe('Taxi ModeChoice', () => {
