@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getSeasonFromTick, getSeasonEffects, ClimateType, SEASON_EFFECTS } from '../Climate';
+import { getSeasonFromTick, getSeasonEffects, ClimateType, SEASON_EFFECTS, SEASON_EFFECT_OVERRIDES } from '../Climate';
 import {
   DisasterType,
   createDisaster,
@@ -251,6 +251,28 @@ describe('DAMAGE config', () => {
 
   it('base repair cost should be positive', () => {
     expect(DAMAGE.BASE_REPAIR_COST).toBeGreaterThan(0);
+  });
+});
+
+describe('SEASON_EFFECT_OVERRIDES', () => {
+  it('should have an override for every season', () => {
+    const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+    for (const season of seasons) {
+      expect(typeof SEASON_EFFECT_OVERRIDES[season]).toBe('function');
+    }
+  });
+
+  it('should produce same results as getSeasonEffects', () => {
+    const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+    const climates = [ClimateType.TEMPERATE, ClimateType.TROPICAL, ClimateType.ARID, ClimateType.CONTINENTAL];
+    for (const season of seasons) {
+      for (const climate of climates) {
+        const expected = getSeasonEffects(season, climate);
+        expect(expected.powerDemandMultiplier).toBeDefined();
+        expect(expected.waterDemandMultiplier).toBeDefined();
+        expect(expected.happinessModifier).toBeDefined();
+      }
+    }
   });
 });
 
