@@ -1135,7 +1135,7 @@ export class SimulationLoop {
     const resMap = new Map<string, number>();
     const destMap = new Map<string, number>();
 
-    for (const c of citizens.citizens) {
+    for (const c of citizens.getCitizens()) {
       if (!isWorkingAge(c.age)) continue;
       if (!c.homeId || !c.workplaceId) continue;
       resMap.set(c.homeId, (resMap.get(c.homeId) ?? 0) + 1);
