@@ -21,9 +21,11 @@ export const BURNED = 3;
 export const ROTATION_RESERVED: Record<Rotation, number> = { 0: 0, 90: 5, 180: 6, 270: 7 };
 export const RESERVED_TO_ROTATION: Record<number, Rotation> = { 0: 0, 5: 90, 6: 180, 7: 270 };
 
+const ROTATION_VALUES = new Set(Object.values(ROTATION_RESERVED));
+
 /** Check if a reserved value represents a primary cell (not secondary, not burned). */
 export function isPrimaryCellReserved(reserved: number): boolean {
-  return reserved === 0 || reserved === 5 || reserved === 6 || reserved === 7;
+  return ROTATION_VALUES.has(reserved);
 }
 
 export type PlaceResult =

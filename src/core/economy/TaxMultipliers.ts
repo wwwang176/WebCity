@@ -1,5 +1,11 @@
 import { IncomeLevel } from '../citizen/types';
 
+/** Base income per citizen for residential income tax ($0.50 per tick). */
+export const CITIZEN_BASE_INCOME = 0.5;
+
+/** Road maintenance cost per tile per budget tick. */
+export const ROAD_MAINTENANCE_PER_TILE = 0.1;
+
 /** Income level multiplier for residential income tax. */
 export function getIncomeLevelMultiplier(level: IncomeLevel): number {
   switch (level) {

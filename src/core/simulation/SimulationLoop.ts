@@ -12,7 +12,7 @@ import { LaneGraph } from '../traffic/LaneGraph';
 import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
-import { getIncomeLevelMultiplier, getBuildingLevelMultiplier } from '../economy/TaxMultipliers';
+import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, CITIZEN_BASE_INCOME, ROAD_MAINTENANCE_PER_TILE } from '../economy/TaxMultipliers';
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { findPrimaryCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
@@ -435,7 +435,7 @@ export class SimulationLoop {
         const posKey = `${x},${y}`;
         const residents = this.state.citizens.getCitizensByHome(posKey);
         for (const citizen of residents) {
-          buildingIncome += 0.5 * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+          buildingIncome += CITIZEN_BASE_INCOME * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
         }
       } else {
         // Business tax: companyIncome x levelMultiplier x businessTaxRate
@@ -457,7 +457,7 @@ export class SimulationLoop {
 
     this.state.budget.income = totalIncome;
     // Expenses: road maintenance + service maintenance costs
-    const roadMaint = this.countRoadTiles() * 0.1;
+    const roadMaint = this.countRoadTiles() * ROAD_MAINTENANCE_PER_TILE;
     const serviceCost = getTotalServiceMaintenanceCost(this.state);
     // District policy costs: sum all active policy costs across all districts
     let policyCost = 0;
