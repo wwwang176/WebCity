@@ -14,6 +14,7 @@ import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
+import { countZoneBuildings } from '../building/BuildingQueries';
 import { findPrimaryCell, forEachMultiCell, MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { IncomeLevel, isWorkingAge } from '../citizen/types';
@@ -146,9 +147,9 @@ export class SimulationLoop {
     // 1. Economy: RCI demand (every 6 ticks)
     if (isSlowTick) {
       const rci = calculateRCIDemand({
-        residentialSupply: this.countZoneBuildings('residential'),
-        commercialSupply: this.countZoneBuildings('commercial'),
-        industrialSupply: this.countZoneBuildings('industrial'),
+        residentialSupply: countZoneBuildings(this.state.grid, isResidentialZone),
+        commercialSupply: countZoneBuildings(this.state.grid, isCommercialZone),
+        industrialSupply: countZoneBuildings(this.state.grid, t => t === ZoneType.INDUSTRIAL),
         population: this.state.citizens.getPopulation(),
         jobOpenings: this.countJobOpenings(),
         exportDemand: 10,
@@ -306,17 +307,6 @@ export class SimulationLoop {
     return this.state;
   }
 
-  private countZoneBuildings(type: string): number {
-    let count = 0;
-    this.state.grid.forEachCell((cell) => {
-      if (cell.buildingId > 0) {
-        if (type === 'residential' && isResidentialZone(cell.zoneType)) count++;
-        if (type === 'commercial' && isCommercialZone(cell.zoneType)) count++;
-        if (type === 'industrial' && cell.zoneType === ZoneType.INDUSTRIAL) count++;
-      }
-    });
-    return count;
-  }
 
   private countJobOpenings(): number {
     const totalJobs = this.countTotalJobs();
@@ -408,7 +398,7 @@ export class SimulationLoop {
     const avgCrime = this.getAvgCrime();
 
     // Estimate average commute from residential spread (compact city = short commutes)
-    const resCount = this.countZoneBuildings('residential');
+    const resCount = countZoneBuildings(this.state.grid, isResidentialZone);
     const avgCommute = resCount > 0
       ? Math.min(SIMULATION.COMMUTE_MAX, SIMULATION.COMMUTE_BASE + Math.sqrt(resCount) * SIMULATION.COMMUTE_SPREAD_FACTOR)
       : 3;
