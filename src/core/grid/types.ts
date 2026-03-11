@@ -36,6 +36,16 @@ export function isWorkplaceZone(z: ZoneType): boolean {
     || z === ZoneType.INDUSTRIAL || z === ZoneType.OFFICE;
 }
 
+export type RCICategory = 'residential' | 'commercial' | 'industrial';
+
+/** Map a zone type to its RCI demand category */
+export function zoneToRCI(z: ZoneType): RCICategory | null {
+  if (isResidentialZone(z)) return 'residential';
+  if (isCommercialZone(z)) return 'commercial';
+  if (z === ZoneType.INDUSTRIAL || z === ZoneType.OFFICE) return 'industrial';
+  return null;
+}
+
 export interface CellData {
   terrainType: TerrainType;
   zoneType: ZoneType;

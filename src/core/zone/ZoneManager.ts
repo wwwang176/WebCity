@@ -1,6 +1,7 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
 import { RoadType } from '../road/types';
+import { isAdjacentToRoad } from '../grid/GridHelpers';
 import { isInfrastructureBuilding, isZoneBuilding } from '../building/InfraConfig';
 
 interface ZoneResult {
@@ -32,7 +33,7 @@ export class ZoneManager {
     // Skip infrastructure buildings (power/water/police/fire/hospital/school/park/garbage/sewage/cemetery/transport)
     if (isInfrastructureBuilding(cell.buildingId)) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
 
-    if (!this.isAdjacentToRoad(x, y)) {
+    if (!isAdjacentToRoad(this.grid, x, y)) {
       return { success: false, reason: 'NOT_ADJACENT_TO_ROAD' };
     }
 
@@ -64,17 +65,4 @@ export class ZoneManager {
     this.grid.setCell(x, y, { zoneType: ZoneType.NONE });
   }
 
-  private isAdjacentToRoad(x: number, y: number): boolean {
-    const dirs = [
-      { dx: 0, dy: -1 },
-      { dx: 0, dy: 1 },
-      { dx: -1, dy: 0 },
-      { dx: 1, dy: 0 },
-    ];
-    for (const d of dirs) {
-      const cell = this.grid.getCell(x + d.dx, y + d.dy);
-      if (cell && cell.roadType !== RoadType.NONE) return true;
-    }
-    return false;
-  }
 }

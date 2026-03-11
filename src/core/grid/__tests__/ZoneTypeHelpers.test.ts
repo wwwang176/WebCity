@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ZoneType } from '../types';
-import { isResidentialZone, isCommercialZone, isWorkplaceZone } from '../types';
+import { isResidentialZone, isCommercialZone, isWorkplaceZone, zoneToRCI } from '../types';
 
 describe('ZoneType helper functions', () => {
   describe('isResidentialZone', () => {
@@ -66,6 +66,27 @@ describe('ZoneType helper functions', () => {
 
     it('should return false for NONE', () => {
       expect(isWorkplaceZone(ZoneType.NONE)).toBe(false);
+    });
+  });
+
+  describe('zoneToRCI', () => {
+    it('maps residential zones to residential', () => {
+      expect(zoneToRCI(ZoneType.RESIDENTIAL_LOW)).toBe('residential');
+      expect(zoneToRCI(ZoneType.RESIDENTIAL_HIGH)).toBe('residential');
+    });
+
+    it('maps commercial zones to commercial', () => {
+      expect(zoneToRCI(ZoneType.COMMERCIAL_LOW)).toBe('commercial');
+      expect(zoneToRCI(ZoneType.COMMERCIAL_HIGH)).toBe('commercial');
+    });
+
+    it('maps industrial and office to industrial', () => {
+      expect(zoneToRCI(ZoneType.INDUSTRIAL)).toBe('industrial');
+      expect(zoneToRCI(ZoneType.OFFICE)).toBe('industrial');
+    });
+
+    it('returns null for NONE', () => {
+      expect(zoneToRCI(ZoneType.NONE)).toBeNull();
     });
   });
 });
