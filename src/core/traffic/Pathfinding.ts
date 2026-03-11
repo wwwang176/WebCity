@@ -218,7 +218,7 @@ export function gridAStarPath(
       if (closed.has(nk)) continue;
 
       const cell = grid.getCell(nx, ny);
-      if (!cell || cell.roadType === 0) continue;
+      if (!cell || cell.roadType === RoadType.NONE) continue;
 
       const config = ROAD_CONFIGS[cell.roadType as RoadType];
       const speedLimit = config?.speedLimit || 50;

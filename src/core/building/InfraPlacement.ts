@@ -1,5 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType } from '../grid/types';
+import { RoadType } from '../road/types';
 import {
   getInfraConfig,
   getInfraConfigById,
@@ -60,7 +61,7 @@ export function canPlaceInfra(
       const cell = grid.getCell(cx, cy);
       if (!cell) return { ok: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { ok: false, reason: 'WATER_TILE' };
-      if (cell.roadType !== 0 || cell.buildingId !== 0) return { ok: false, reason: 'TILE_OCCUPIED' };
+      if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) return { ok: false, reason: 'TILE_OCCUPIED' };
 
       if (type === 'water' && groundwaterFn && groundwaterFn(cx, cy) > 0) {
         hasGroundwater = true;

@@ -1,6 +1,7 @@
 import { createGameState, type GameState } from '../simulation/GameState';
 import { type CellData, isCellDefault, getCellDiff } from '../grid/types';
 import { type GameSpeed } from '../simulation/GameClock';
+import { RoadType } from '../road/types';
 import { type PowerPlant } from '../service/PowerGrid';
 import { type WaterPlant } from '../service/WaterNetwork';
 import { type Citizen } from '../citizen/types';
@@ -246,7 +247,7 @@ function migrateOldInfra(grid: Grid): void {
       for (let dx = 0; dx < cfg.width && canExpand; dx++) {
         if (dx === 0 && dy === 0) continue;
         const sc = grid.getCell(x + dx, y + dy);
-        if (!sc || sc.buildingId !== 0 || sc.roadType !== 0) {
+        if (!sc || sc.buildingId !== 0 || sc.roadType !== RoadType.NONE) {
           canExpand = false;
         }
       }

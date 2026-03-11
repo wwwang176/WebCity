@@ -1,5 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType } from '../grid/types';
+import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
 import { RailType, TrackDirection, RAIL_COST, type BuildTrackResult } from './types';
@@ -72,7 +73,7 @@ export class RailBuilder {
       const curr = this.grid.getCell(pos.x, pos.y);
 
       // Clear zoned buildings only (NOT infrastructure, NOT roads — tracks can coexist with roads)
-      if (curr && curr.railType === RailType.NONE && curr.roadType === 0) {
+      if (curr && curr.railType === RailType.NONE && curr.roadType === RoadType.NONE) {
         const isInfra = getInfraConfigById(curr.buildingId) !== undefined;
         if (!isInfra && (curr.buildingId !== 0 || curr.zoneType !== ZoneType.NONE)) {
           this.grid.setCell(pos.x, pos.y, { buildingId: 0, zoneType: ZoneType.NONE });
