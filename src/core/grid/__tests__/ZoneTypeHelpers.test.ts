@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { ZoneType } from '../types';
-import { isResidentialZone, isCommercialZone, isWorkplaceZone, zoneToRCI } from '../types';
+import { isResidentialZone, isCommercialZone, isWorkplaceZone, zoneToRCI, DEFAULT_CELL, isCellDefault, getCellDiff, TerrainType } from '../types';
 
 describe('ZoneType helper functions', () => {
   describe('isResidentialZone', () => {
@@ -87,6 +87,35 @@ describe('ZoneType helper functions', () => {
 
     it('returns null for NONE', () => {
       expect(zoneToRCI(ZoneType.NONE)).toBeNull();
+    });
+  });
+
+  describe('isCellDefault', () => {
+    it('returns true for DEFAULT_CELL', () => {
+      expect(isCellDefault({ ...DEFAULT_CELL })).toBe(true);
+    });
+
+    it('returns false when any property differs', () => {
+      expect(isCellDefault({ ...DEFAULT_CELL, buildingId: 5 })).toBe(false);
+      expect(isCellDefault({ ...DEFAULT_CELL, terrainType: TerrainType.WATER })).toBe(false);
+    });
+  });
+
+  describe('getCellDiff', () => {
+    it('returns empty object for default cell', () => {
+      expect(getCellDiff({ ...DEFAULT_CELL })).toEqual({});
+    });
+
+    it('returns only changed properties', () => {
+      const cell = { ...DEFAULT_CELL, buildingId: 42, pollution: 100 };
+      const diff = getCellDiff(cell);
+      expect(diff).toEqual({ buildingId: 42, pollution: 100 });
+    });
+
+    it('ignores properties that match defaults', () => {
+      const cell = { ...DEFAULT_CELL, terrainType: TerrainType.PLAIN };
+      const diff = getCellDiff(cell);
+      expect(Object.keys(diff)).toHaveLength(0);
     });
   });
 });

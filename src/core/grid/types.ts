@@ -82,6 +82,25 @@ export const DEFAULT_CELL: CellData = {
   railFlags: 0,
 };
 
+/** All serializable CellData property keys — single source of truth */
+export const CELL_KEYS: readonly (keyof CellData)[] = Object.keys(DEFAULT_CELL) as (keyof CellData)[];
+
+/** Check if a cell equals the default (all properties match DEFAULT_CELL) */
+export function isCellDefault(cell: CellData): boolean {
+  return CELL_KEYS.every(k => cell[k] === DEFAULT_CELL[k]);
+}
+
+/** Extract only the properties that differ from DEFAULT_CELL */
+export function getCellDiff(cell: CellData): Partial<CellData> {
+  const diff: Partial<CellData> = {};
+  for (const k of CELL_KEYS) {
+    if (cell[k] !== DEFAULT_CELL[k]) {
+      (diff as Record<string, unknown>)[k] = cell[k];
+    }
+  }
+  return diff;
+}
+
 export interface Position {
   x: number;
   y: number;

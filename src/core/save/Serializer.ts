@@ -1,5 +1,5 @@
 import { createGameState, type GameState } from '../simulation/GameState';
-import { type CellData, DEFAULT_CELL } from '../grid/types';
+import { type CellData, isCellDefault, getCellDiff } from '../grid/types';
 import { type GameSpeed } from '../simulation/GameClock';
 import { type PowerPlant } from '../service/PowerGrid';
 import { type WaterPlant } from '../service/WaterNetwork';
@@ -71,51 +71,14 @@ interface SerializedState {
   airport?: ReturnType<AirportSystem['toJSON']>;
 }
 
-function isCellDefault(cell: CellData): boolean {
-  return (
-    cell.terrainType === DEFAULT_CELL.terrainType &&
-    cell.zoneType === DEFAULT_CELL.zoneType &&
-    cell.buildingId === DEFAULT_CELL.buildingId &&
-    cell.roadFlags === DEFAULT_CELL.roadFlags &&
-    cell.roadType === DEFAULT_CELL.roadType &&
-    cell.railType === DEFAULT_CELL.railType &&
-    cell.railFlags === DEFAULT_CELL.railFlags &&
-    cell.trafficDensity === DEFAULT_CELL.trafficDensity &&
-    cell.landValue === DEFAULT_CELL.landValue &&
-    cell.pollution === DEFAULT_CELL.pollution &&
-    cell.noiseLevel === DEFAULT_CELL.noiseLevel &&
-    cell.serviceCoverage === DEFAULT_CELL.serviceCoverage &&
-    cell.elevation === DEFAULT_CELL.elevation &&
-    cell.reserved === DEFAULT_CELL.reserved
-  );
-}
-
 export function serializeGameState(state: GameState): string {
   const cells: SerializedCell[] = [];
 
-  for (let y = 0; y < state.grid.height; y++) {
-    for (let x = 0; x < state.grid.width; x++) {
-      const cell = state.grid.getCell(x, y);
-      if (cell && !isCellDefault(cell)) {
-        const data: Partial<CellData> = {};
-        if (cell.terrainType !== DEFAULT_CELL.terrainType) data.terrainType = cell.terrainType;
-        if (cell.zoneType !== DEFAULT_CELL.zoneType) data.zoneType = cell.zoneType;
-        if (cell.buildingId !== DEFAULT_CELL.buildingId) data.buildingId = cell.buildingId;
-        if (cell.roadFlags !== DEFAULT_CELL.roadFlags) data.roadFlags = cell.roadFlags;
-        if (cell.roadType !== DEFAULT_CELL.roadType) data.roadType = cell.roadType;
-        if (cell.railType !== DEFAULT_CELL.railType) data.railType = cell.railType;
-        if (cell.railFlags !== DEFAULT_CELL.railFlags) data.railFlags = cell.railFlags;
-        if (cell.trafficDensity !== DEFAULT_CELL.trafficDensity) data.trafficDensity = cell.trafficDensity;
-        if (cell.landValue !== DEFAULT_CELL.landValue) data.landValue = cell.landValue;
-        if (cell.pollution !== DEFAULT_CELL.pollution) data.pollution = cell.pollution;
-        if (cell.noiseLevel !== DEFAULT_CELL.noiseLevel) data.noiseLevel = cell.noiseLevel;
-        if (cell.serviceCoverage !== DEFAULT_CELL.serviceCoverage) data.serviceCoverage = cell.serviceCoverage;
-        if (cell.elevation !== DEFAULT_CELL.elevation) data.elevation = cell.elevation;
-        if (cell.reserved !== DEFAULT_CELL.reserved) data.reserved = cell.reserved;
-        cells.push({ x, y, data });
-      }
+  state.grid.forEachCell((cell, x, y) => {
+    if (!isCellDefault(cell)) {
+      cells.push({ x, y, data: getCellDiff(cell) });
     }
-  }
+  });
 
   const serialized: SerializedState = {
     version: 1,
@@ -239,16 +202,12 @@ export function deserializeGameState(json: string): GameState {
 
   // Fallback: rebuild transit stops from grid for old saves without transport data
   if (!saved.bus && !saved.metro && !saved.rail && !saved.ferry) {
-    for (let y = 0; y < saved.grid.height; y++) {
-      for (let x = 0; x < saved.grid.width; x++) {
-        const cell = state.grid.getCell(x, y);
-        if (!cell) continue;
-        if (cell.buildingId === getInfraBuildingId('bus_stop')) state.bus.addStop(x, y);
-        else if (cell.buildingId === getInfraBuildingId('metro_station')) state.metro.addStation(x, y);
-        else if (cell.buildingId === getInfraBuildingId('train_station')) state.rail.buildStation(x, y);
-        else if (cell.buildingId === getInfraBuildingId('ferry_dock')) state.ferry.addDock(x, y);
-      }
-    }
+    state.grid.forEachCell((cell, x, y) => {
+      if (cell.buildingId === getInfraBuildingId('bus_stop')) state.bus.addStop(x, y);
+      else if (cell.buildingId === getInfraBuildingId('metro_station')) state.metro.addStation(x, y);
+      else if (cell.buildingId === getInfraBuildingId('train_station')) state.rail.buildStation(x, y);
+      else if (cell.buildingId === getInfraBuildingId('ferry_dock')) state.ferry.addDock(x, y);
+    });
   }
 
   return state;
@@ -260,57 +219,49 @@ export function deserializeGameState(json: string): GameState {
  * and expands them to their proper multi-cell footprint.
  */
 function migrateOldInfra(grid: Grid): void {
-  for (let y = 0; y < grid.height; y++) {
-    for (let x = 0; x < grid.width; x++) {
-      const cell = grid.getCell(x, y);
-      if (!cell || cell.buildingId === 0) continue;
+  grid.forEachCell((cell, x, y) => {
+    if (cell.buildingId === 0) return;
 
-      const cfg = getInfraConfigById(cell.buildingId);
-      if (!cfg || cfg.width === 1 && cfg.height === 1) continue; // skip 1×1 buildings (park) and non-infra
+    const cfg = getInfraConfigById(cell.buildingId);
+    if (!cfg || cfg.width === 1 && cfg.height === 1) return;
 
-      // Skip if this is already a secondary cell
-      if (cell.reserved === MULTI_CELL_OCCUPIED) continue;
+    if (cell.reserved === MULTI_CELL_OCCUPIED) return;
 
-      // Check if secondary cells already exist (new save format)
-      const hasSecondary = (() => {
-        for (let dy = 0; dy < cfg.height; dy++) {
-          for (let dx = 0; dx < cfg.width; dx++) {
-            if (dx === 0 && dy === 0) continue;
-            const sc = grid.getCell(x + dx, y + dy);
-            if (sc && sc.buildingId === cfg.buildingId && sc.reserved === MULTI_CELL_OCCUPIED) {
-              return true;
-            }
-          }
-        }
-        return false;
-      })();
-
-      if (hasSecondary) continue; // already multi-cell, no migration needed
-
-      // Old save: expand to multi-cell. Check if all secondary cells are free.
-      let canExpand = true;
-      for (let dy = 0; dy < cfg.height && canExpand; dy++) {
-        for (let dx = 0; dx < cfg.width && canExpand; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const sc = grid.getCell(x + dx, y + dy);
-          if (!sc || sc.buildingId !== 0 || sc.roadType !== 0) {
-            canExpand = false;
-          }
-        }
-      }
-
-      if (!canExpand) continue; // blocked, skip (leave as-is)
-
-      // Fill secondary cells
-      for (let dy = 0; dy < cfg.height; dy++) {
-        for (let dx = 0; dx < cfg.width; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          grid.setCell(x + dx, y + dy, {
-            buildingId: cfg.buildingId,
-            reserved: MULTI_CELL_OCCUPIED,
-          });
+    // Check if secondary cells already exist (new save format)
+    let hasSecondary = false;
+    for (let dy = 0; dy < cfg.height && !hasSecondary; dy++) {
+      for (let dx = 0; dx < cfg.width && !hasSecondary; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const sc = grid.getCell(x + dx, y + dy);
+        if (sc && sc.buildingId === cfg.buildingId && sc.reserved === MULTI_CELL_OCCUPIED) {
+          hasSecondary = true;
         }
       }
     }
-  }
+    if (hasSecondary) return;
+
+    // Old save: expand to multi-cell. Check if all secondary cells are free.
+    let canExpand = true;
+    for (let dy = 0; dy < cfg.height && canExpand; dy++) {
+      for (let dx = 0; dx < cfg.width && canExpand; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const sc = grid.getCell(x + dx, y + dy);
+        if (!sc || sc.buildingId !== 0 || sc.roadType !== 0) {
+          canExpand = false;
+        }
+      }
+    }
+    if (!canExpand) return;
+
+    // Fill secondary cells
+    for (let dy = 0; dy < cfg.height; dy++) {
+      for (let dx = 0; dx < cfg.width; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        grid.setCell(x + dx, y + dy, {
+          buildingId: cfg.buildingId,
+          reserved: MULTI_CELL_OCCUPIED,
+        });
+      }
+    }
+  });
 }
