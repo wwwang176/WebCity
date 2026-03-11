@@ -37,6 +37,26 @@ class TrackingTransportSystem extends BaseTransportSystem {
   }
 }
 
+/** Subclass that tracks onRouteDissolved calls for testing. */
+class DissolveTrackingSystem extends BaseTransportSystem {
+  dissolvedRouteIds: number[] = [];
+
+  constructor() {
+    super({
+      type: TransportType.BUS,
+      speed: 2,
+      capacity: 50,
+      dwellTicks: 1,
+      operatingCostPerVehicle: 100,
+      affectedByCongestion: false,
+    });
+  }
+
+  protected override onRouteDissolved(routeId: number): void {
+    this.dissolvedRouteIds.push(routeId);
+  }
+}
+
 describe('BaseTransportSystem', () => {
   describe('addStop / removeStop', () => {
     it('should add a stop with correct coordinates and type', () => {
@@ -252,6 +272,34 @@ describe('onTravelComplete hook', () => {
     expect(sys.completedVehicleIds).toEqual([]);
     sys.tick(); // travelTicks 1→0, arrive → onTravelComplete
     expect(sys.completedVehicleIds).toHaveLength(1);
+  });
+});
+
+describe('onRouteDissolved hook', () => {
+  it('should be called for each dissolved route when a stop is removed', () => {
+    const sys = new DissolveTrackingSystem();
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    const s3 = sys.addStop(10, 0);
+    const r1 = sys.createRoute([s1, s2]); // only has s1 and s2
+    const r2 = sys.createRoute([s2, s3]); // only has s2 and s3
+
+    sys.removeStop(s2.id); // dissolves both r1 and r2
+    expect(sys.dissolvedRouteIds).toContain(r1.id);
+    expect(sys.dissolvedRouteIds).toContain(r2.id);
+    expect(sys.dissolvedRouteIds).toHaveLength(2);
+  });
+
+  it('should not be called when route still has enough stops', () => {
+    const sys = new DissolveTrackingSystem();
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    const s3 = sys.addStop(10, 0);
+    sys.createRoute([s1, s2, s3]); // 3 stops, removing one leaves 2
+
+    sys.removeStop(s3.id);
+    expect(sys.dissolvedRouteIds).toHaveLength(0);
+    expect(sys.getRoutes()).toHaveLength(1);
   });
 });
 

@@ -68,6 +68,9 @@ export abstract class BaseTransportSystem {
       return true;
     });
     this.vehicles = this.vehicles.filter(v => !dissolvedIds.includes(v.routeId));
+    for (const id of dissolvedIds) {
+      this.onRouteDissolved(id);
+    }
   }
 
   // ── Route management ─────────────────────────────────────────────
@@ -219,6 +222,11 @@ export abstract class BaseTransportSystem {
 
   /** Called after a vehicle finishes traveling and arrives at a stop. Override for cleanup. */
   protected onTravelComplete(_vehicle: TransportVehicle): void {
+    // default: no-op
+  }
+
+  /** Called when a route is dissolved (< 2 stops). Override for metadata cleanup. */
+  protected onRouteDissolved(_routeId: number): void {
     // default: no-op
   }
 

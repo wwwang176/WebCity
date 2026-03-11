@@ -99,20 +99,12 @@ export class RailSystem extends BaseTransportSystem {
   }
 
   removeStation(stationId: number): void {
-    // Also clean up service types and route paths for dissolved lines
-    const dissolvedIds: number[] = [];
-    const stopExists = this.stops.some(s => s.id === stationId);
-    if (stopExists) {
-      for (const r of this.routes) {
-        const filtered = r.stops.filter(s => s.id !== stationId);
-        if (filtered.length < 2) dissolvedIds.push(r.id);
-      }
-    }
     this.removeStop(stationId);
-    for (const id of dissolvedIds) {
-      this.lineServiceTypes.delete(id);
-      this.routePaths.delete(id);
-    }
+  }
+
+  protected override onRouteDissolved(routeId: number): void {
+    this.lineServiceTypes.delete(routeId);
+    this.routePaths.delete(routeId);
   }
 
   /**

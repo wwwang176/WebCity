@@ -96,16 +96,13 @@ export class FerrySystem extends BaseTransportSystem {
   }
 
   removeDock(dockId: number): void {
-    // Clean up vessel paths for dissolved routes
-    const dissolvedIds: number[] = [];
-    for (const r of this.routes) {
-      const filtered = r.stops.filter(s => s.id !== dockId);
-      if (filtered.length < 2) dissolvedIds.push(r.id);
-    }
-    for (const v of this.vehicles) {
-      if (dissolvedIds.includes(v.routeId)) this.vesselPaths.delete(v.id);
-    }
     this.removeStop(dockId);
+  }
+
+  protected override onRouteDissolved(routeId: number): void {
+    for (const v of this.vehicles) {
+      if (v.routeId === routeId) this.vesselPaths.delete(v.id);
+    }
   }
 
   override createRoute(stops: TransportStop[], vehicleCount = 1): TransportRoute {
