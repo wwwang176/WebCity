@@ -2423,14 +2423,42 @@ export class BuildingRenderer {
 
   private _focusMode = false;
   private _whiteModelMesh: THREE.Mesh | null = null;
-  private static _whiteModelMat: THREE.MeshBasicMaterial | null = null;
+  private static _whiteModelMat: THREE.ShaderMaterial | null = null;
 
-  private static getWhiteModelMat(): THREE.MeshBasicMaterial {
+  private static getWhiteModelMat(): THREE.ShaderMaterial {
     if (!BuildingRenderer._whiteModelMat) {
-      BuildingRenderer._whiteModelMat = new THREE.MeshBasicMaterial({
-        color: 0xe0e0e0,
-        opacity: 0.08,
-        alphaHash: true,
+      BuildingRenderer._whiteModelMat = new THREE.ShaderMaterial({
+        glslVersion: THREE.GLSL3,
+        uniforms: {
+          uColor: { value: new THREE.Color(0xe0e0e0) },
+          uOpacity: { value: 0.5 },
+        },
+        vertexShader: /* glsl */ `
+          void main() {
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform vec3 uColor;
+          uniform float uOpacity;
+          out vec4 fragColor;
+
+          // 4×4 Bayer matrix (values 0..15 normalized to 0..1)
+          const float bayer[16] = float[16](
+             0.0/16.0,  8.0/16.0,  2.0/16.0, 10.0/16.0,
+            12.0/16.0,  4.0/16.0, 14.0/16.0,  6.0/16.0,
+             3.0/16.0, 11.0/16.0,  1.0/16.0,  9.0/16.0,
+            15.0/16.0,  7.0/16.0, 13.0/16.0,  5.0/16.0
+          );
+
+          void main() {
+            int ix = int(gl_FragCoord.x) % 4;
+            int iy = int(gl_FragCoord.y) % 4;
+            float threshold = bayer[iy * 4 + ix];
+            if (uOpacity < threshold) discard;
+            fragColor = vec4(uColor, 1.0);
+          }
+        `,
       });
     }
     return BuildingRenderer._whiteModelMat;
