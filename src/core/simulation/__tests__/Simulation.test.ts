@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
 import { createGameState } from '../GameState';
-import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SLOW_TICK_INTERVAL, MEDIUM_TICK_INTERVAL, SIMULATION } from '../SimulationLoop';
+import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SLOW_TICK_INTERVAL, MEDIUM_TICK_INTERVAL, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import { PolicyType, Specialization } from '../../district/types';
@@ -68,6 +68,39 @@ describe('SIMULATION config constants', () => {
 
   it('cell value max should be 255 (uint8)', () => {
     expect(SIMULATION.CELL_VALUE_MAX).toBe(255);
+  });
+
+  it('building level should be between 1 and 3', () => {
+    expect(SIMULATION.BUILDING_LEVEL_MIN).toBe(1);
+    expect(SIMULATION.BUILDING_LEVEL_MAX).toBe(3);
+  });
+
+  it('walk to stop range should be positive', () => {
+    expect(SIMULATION.WALK_TO_STOP_RANGE).toBeGreaterThan(0);
+  });
+
+  it('industrial pollution factor should be between 0 and 1', () => {
+    expect(SIMULATION.INDUSTRIAL_POLLUTION_FACTOR).toBeGreaterThan(0);
+    expect(SIMULATION.INDUSTRIAL_POLLUTION_FACTOR).toBeLessThanOrEqual(1);
+  });
+
+  it('rail transit time factor should give discount over road', () => {
+    expect(SIMULATION.RAIL_TRANSIT_TIME_FACTOR).toBeLessThan(1);
+    expect(SIMULATION.RAIL_TRANSIT_TIME_FACTOR).toBeGreaterThan(0);
+  });
+});
+
+describe('clampBuildingLevel', () => {
+  it('should clamp service coverage to building level 1-3', () => {
+    expect(clampBuildingLevel(0)).toBe(1);
+    expect(clampBuildingLevel(3)).toBe(1);
+    expect(clampBuildingLevel(4)).toBe(2);
+    expect(clampBuildingLevel(9)).toBe(3);
+    expect(clampBuildingLevel(100)).toBe(3);
+  });
+
+  it('should return 1 for NaN input', () => {
+    expect(clampBuildingLevel(NaN)).toBe(1);
   });
 });
 

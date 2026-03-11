@@ -83,7 +83,22 @@ export const SIMULATION = {
   SAMPLE_COUNT_MAX: 300,
   /** Commute sampling: eligible commuters per sample */
   SAMPLE_DIVISOR: 5,
+  /** Building level: minimum level */
+  BUILDING_LEVEL_MIN: 1,
+  /** Building level: maximum level */
+  BUILDING_LEVEL_MAX: 3,
+  /** Walking distance to transit stop (cells) */
+  WALK_TO_STOP_RANGE: 5,
+  /** Industrial zone pollution reduction factor */
+  INDUSTRIAL_POLLUTION_FACTOR: 0.2,
+  /** Rail/metro transit time discount factor */
+  RAIL_TRANSIT_TIME_FACTOR: 0.8,
 } as const;
+
+/** Clamp service coverage to a valid building level (1-3). */
+export function clampBuildingLevel(serviceCoverage: number): 1 | 2 | 3 {
+  return Math.max(SIMULATION.BUILDING_LEVEL_MIN, Math.min(SIMULATION.BUILDING_LEVEL_MAX, Math.ceil(serviceCoverage / SIMULATION.BUILDING_LEVEL_DIVISOR) || 1)) as 1 | 2 | 3;
+}
 
 export class SimulationLoop {
   private state: GameState;
@@ -351,7 +366,7 @@ export class SimulationLoop {
           // Read back the grown cell to get level info
           const grown = grid.getCell(x, y);
           if (grown) {
-            const level = Math.max(1, Math.min(3, Math.ceil(grown.serviceCoverage / SIMULATION.BUILDING_LEVEL_DIVISOR) || 1));
+            const level = clampBuildingLevel(grown.serviceCoverage);
             this.onBuildingAdded?.(x, y, cell.zoneType, level);
           }
         }
@@ -585,7 +600,7 @@ export class SimulationLoop {
             }
           } else {
             this.state.grid.setCell(f.x, f.y, { reserved: BURNED }); // BuildingStatus.BURNED
-            const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / SIMULATION.BUILDING_LEVEL_DIVISOR) || 1));
+            const level = clampBuildingLevel(cell.serviceCoverage);
             this.onBuildingUpdated?.(f.x, f.y, cell.zoneType, level, true);
           }
         }
@@ -677,7 +692,7 @@ export class SimulationLoop {
       }
 
       // Industrial zones are less affected by their own pollution
-      const pollutionFactor = cell.zoneType === ZoneType.INDUSTRIAL ? 0.2 : 1;
+      const pollutionFactor = cell.zoneType === ZoneType.INDUSTRIAL ? SIMULATION.INDUSTRIAL_POLLUTION_FACTOR : 1;
       const value = calculateLandValue({
         serviceCoverage,
         parkProximity,
@@ -733,7 +748,7 @@ export class SimulationLoop {
         // Notify with updated state
         const updated = grid.getCell(x, y);
         if (updated) {
-          const newLevel = Math.max(1, Math.min(3, Math.ceil(updated.serviceCoverage / SIMULATION.BUILDING_LEVEL_DIVISOR) || 1));
+          const newLevel = clampBuildingLevel(updated.serviceCoverage);
           this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === BURNED);
         }
       }
@@ -1037,7 +1052,6 @@ export class SimulationLoop {
     origin: { x: number; y: number },
     destination: { x: number; y: number },
   ): AvailableTransport[] {
-    const WALK_TO_STOP_RANGE = 5;
     const result: AvailableTransport[] = [];
 
     const systems = getTransitSystems(this.state).map(({ type, system }) => ({
@@ -1052,13 +1066,13 @@ export class SimulationLoop {
         for (const stop of route.stops) {
           const dOrig = Math.abs(stop.x - origin.x) + Math.abs(stop.y - origin.y);
           const dDest = Math.abs(stop.x - destination.x) + Math.abs(stop.y - destination.y);
-          if (dOrig <= WALK_TO_STOP_RANGE) nearOrigin = true;
-          if (dDest <= WALK_TO_STOP_RANGE) nearDest = true;
+          if (dOrig <= SIMULATION.WALK_TO_STOP_RANGE) nearOrigin = true;
+          if (dDest <= SIMULATION.WALK_TO_STOP_RANGE) nearDest = true;
         }
         if (nearOrigin && nearDest) {
           // Estimate transit time: Manhattan distance * factor (faster than driving for metro/rail)
           const dist = Math.abs(destination.x - origin.x) + Math.abs(destination.y - origin.y);
-          const timeFactor = sys.type === TransportType.METRO || sys.type === TransportType.RAIL ? 0.8 : 1.0;
+          const timeFactor = sys.type === TransportType.METRO || sys.type === TransportType.RAIL ? SIMULATION.RAIL_TRANSIT_TIME_FACTOR : 1.0;
           result.push({ type: sys.type, estimatedTime: dist * timeFactor });
         }
       }
@@ -1133,7 +1147,7 @@ export class SimulationLoop {
     const destMap = new Map<string, number>();
 
     for (const c of citizens.citizens) {
-      if (c.age <= 18 || c.age > 65) continue;
+      if (!isWorkingAge(c.age)) continue;
       if (!c.homeId || !c.workplaceId) continue;
       resMap.set(c.homeId, (resMap.get(c.homeId) ?? 0) + 1);
       destMap.set(c.workplaceId, (destMap.get(c.workplaceId) ?? 0) + 1);
