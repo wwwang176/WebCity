@@ -22,7 +22,7 @@ import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode, TransportType } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { randomInt, randomElement } from '../utils/random';
 
 /** Ticks between service/RCI/growth updates (tuned for ticksPerDay=24, preserving ticksPerDay=4 balance) */
@@ -674,8 +674,7 @@ export class SimulationLoop {
       // Check if near water, forest (natural park), or placed park within 2 cells
       let waterfront = false;
       let parkProximity = this.state.parks.getCoverage(x, y);
-      const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-      for (const [dx, dy] of dirs) {
+      for (const [dx, dy] of FOUR_NEIGHBORS) {
         const nc = grid.getCell(x + dx!, y + dy!);
         if (nc && nc.terrainType === TerrainType.WATER) waterfront = true;
         if (nc && (nc.terrainType === TerrainType.FOREST || nc.buildingId === getInfraBuildingId('park'))) parkProximity = true;

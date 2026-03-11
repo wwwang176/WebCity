@@ -1,5 +1,5 @@
 import { Grid } from '../grid/Grid';
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 
 export interface WaterPlant {
@@ -89,10 +89,9 @@ export class WaterNetwork {
       relayMap.set(key, WATER_NETWORK.RELAY_RANGE);
       queue.push([sx, sy, WATER_NETWORK.RELAY_RANGE]);
     }
-    const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1]];
     while (queue.length > 0) {
       const [x, y, range] = queue.shift()!;
-      for (const [ddx, ddy] of dirs) {
+      for (const [ddx, ddy] of FOUR_NEIGHBORS) {
         const nx = x + ddx!;
         const ny = y + ddy!;
         const key = toPosKey(nx, ny);

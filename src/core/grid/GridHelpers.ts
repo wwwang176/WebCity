@@ -85,6 +85,11 @@ export function hasHorizontalFlag(flags: number): boolean {
   return (flags & (0b0100 | 0b1000)) !== 0; // WEST | EAST
 }
 
+/** Simple 4-neighbor offsets as [dx, dy] tuples. */
+export const FOUR_NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
+  [0, -1], [0, 1], [-1, 0], [1, 0],
+] as const;
+
 /** Find the cell itself or an adjacent road cell. Returns null if none found. */
 export function findAdjacentRoad(
   grid: ReadableGrid,
@@ -93,8 +98,7 @@ export function findAdjacentRoad(
 ): { x: number; y: number } | null {
   const self = grid.getCell(x, y);
   if (self && self.roadType !== RoadType.NONE) return { x, y };
-  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-  for (const [dx, dy] of dirs) {
+  for (const [dx, dy] of FOUR_NEIGHBORS) {
     const nx = x + dx!;
     const ny = y + dy!;
     const cell = grid.getCell(nx, ny);

@@ -3,7 +3,7 @@ import { Grid } from '../Grid';
 import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
-  hasVerticalFlag, hasHorizontalFlag, normalizeRect,
+  hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -310,5 +310,25 @@ describe('normalizeRect', () => {
     expect(r.maxX).toBe(3);
     expect(r.minY).toBe(3);
     expect(r.maxY).toBe(3);
+  });
+});
+
+describe('FOUR_NEIGHBORS', () => {
+  it('should have exactly 4 entries', () => {
+    expect(FOUR_NEIGHBORS).toHaveLength(4);
+  });
+
+  it('each entry should be a [dx, dy] tuple with magnitude 1', () => {
+    for (const [dx, dy] of FOUR_NEIGHBORS) {
+      expect(Math.abs(dx) + Math.abs(dy)).toBe(1);
+    }
+  });
+
+  it('should cover all 4 cardinal directions', () => {
+    const keys = FOUR_NEIGHBORS.map(([dx, dy]) => `${dx},${dy}`);
+    expect(keys).toContain('0,-1');
+    expect(keys).toContain('0,1');
+    expect(keys).toContain('-1,0');
+    expect(keys).toContain('1,0');
   });
 });

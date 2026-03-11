@@ -1,7 +1,7 @@
 import { RoadNetwork } from '../road/RoadNetwork';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
-import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 
 function heuristic(a: string, b: string): number {
   const ap = parsePosKeyUnsafe(a);
@@ -114,7 +114,6 @@ export function gridAStarPath(
   const h0 = (Math.abs(end.x - start.x) + Math.abs(end.y - start.y)) / MAX_SPEED_LIMIT;
   open.push({ x: start.x, y: start.y, k: startKey, f: h0 });
 
-  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
   let steps = 0;
 
   while (open.length > 0 && steps < maxSteps) {
@@ -146,7 +145,7 @@ export function gridAStarPath(
 
     const currentG = gScore.get(current.k)!;
 
-    for (const [dx, dy] of dirs) {
+    for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = current.x + dx!;
       const ny = current.y + dy!;
       if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
