@@ -25,6 +25,8 @@ const GARBAGE_PER_POP = 100;
 
 let nextFacilityId = 1;
 
+import type { PollutionSource } from '../environment/Pollution';
+
 export class GarbageService {
   private facilities: GarbageFacility[] = [];
   private overflow = 0;
@@ -115,6 +117,17 @@ export class GarbageService {
 
   getMaintenanceCost(): number {
     return this.facilities.length * 3;
+  }
+
+  getPollutionSources(): PollutionSource[] {
+    const sources: PollutionSource[] = [];
+    for (const f of this.facilities) {
+      const loadRatio = f.currentLoad / f.capacity;
+      if (loadRatio > 0.5) {
+        sources.push({ x: f.x, y: f.y, amount: Math.round(loadRatio * 40), type: 'ground' });
+      }
+    }
+    return sources;
   }
 
   toJSON(): {

@@ -1,6 +1,6 @@
 export type PollutionType = 'ground' | 'water' | 'noise';
 
-interface PollutionSource {
+export interface PollutionSource {
   x: number;
   y: number;
   amount: number;

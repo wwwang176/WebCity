@@ -18,6 +18,8 @@ interface SewageJSON {
   nextId: number;
 }
 
+import type { PollutionSource } from '../environment/Pollution';
+
 export class SewageService {
   private outlets: SewageOutlet[] = [];
   private treatmentPlants: TreatmentPlant[] = [];
@@ -88,6 +90,17 @@ export class SewageService {
 
   getMaintenanceCost(): number {
     return this.treatmentPlants.length * 4;
+  }
+
+  getPollutionSources(): PollutionSource[] {
+    const pollution = this.getWaterPollution();
+    if (pollution <= 0) return [];
+    return this.outlets.map(outlet => ({
+      x: outlet.x,
+      y: outlet.y,
+      amount: Math.min(80, pollution),
+      type: 'ground' as const,
+    }));
   }
 
   toJSON(): SewageJSON {

@@ -580,14 +580,11 @@ export class SimulationLoop {
       }
     }
 
-    // Garbage facilities produce ground pollution based on load
-    for (const facility of this.state.garbage.getFacilities()) {
-      const loadRatio = facility.currentLoad / facility.capacity;
-      if (loadRatio > 0.5) {
-        pm.addSource(facility.x, facility.y, Math.round(loadRatio * 40), 'ground');
-      }
+    // Garbage and sewage facility pollution (delegated to services)
+    for (const src of this.state.garbage.getPollutionSources()) {
+      pm.addSource(src.x, src.y, src.amount, src.type);
     }
-    // Garbage overflow produces distributed pollution
+    // Garbage overflow produces distributed pollution at city center
     const garbagePenalty = this.state.garbage.getPollutionPenalty();
     if (garbagePenalty > 0) {
       const cx = Math.floor(grid.width / 2);
@@ -595,12 +592,8 @@ export class SimulationLoop {
       pm.addSource(cx, cy, garbagePenalty, 'ground');
     }
 
-    // Untreated sewage produces water pollution at sewage outlet locations
-    const sewagePollution = this.state.sewage.getWaterPollution();
-    if (sewagePollution > 0) {
-      for (const outlet of this.state.sewage.getOutlets()) {
-        pm.addSource(outlet.x, outlet.y, Math.min(80, sewagePollution), 'ground');
-      }
+    for (const src of this.state.sewage.getPollutionSources()) {
+      pm.addSource(src.x, src.y, src.amount, src.type);
     }
 
     // Airport noise pollution
