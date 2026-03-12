@@ -1,14 +1,26 @@
 import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage } from './types';
 
-/** Mortality configuration constants */
-export const MORTALITY = {
-  /** Age at which death is certain */
-  MAX_AGE: 100,
-  /** Age at which random death chance begins */
-  ELDERLY_AGE: 90,
-  /** Probability of death per tick when age > ELDERLY_AGE */
-  ELDERLY_DEATH_CHANCE: 0.1,
+/** Daily death rate per life stage (bathtub curve) */
+export const DAILY_DEATH_RATE: Record<LifeStage, number> = {
+  [LifeStage.BABY]:   0.00005,  // 0~5 yrs, slightly higher infant mortality
+  [LifeStage.CHILD]:  0.00001,  // 6~12 yrs, lowest
+  [LifeStage.TEEN]:   0.00001,  // 13~18 yrs, lowest
+  [LifeStage.ADULT]:  0.00003,  // 19~65 yrs, low
+  [LifeStage.SENIOR]: 0.0003,   // 66~90 yrs, significant increase
+};
+
+/** Health coverage multiplier on death rate */
+export const HEALTH_MULTIPLIER = {
+  COVERED: 0.3,      // 70% reduction with health coverage
+  NOT_COVERED: 1.0,  // baseline
 } as const;
+
+/** Elderly multiplier: ramps up death rate above age 90 */
+export function getElderlyMultiplier(age: number): number {
+  if (age <= 90) return 1;
+  if (age > 100) return Infinity;
+  return 1 + (age - 90) * 1.0;
+}
 
 /** Data-driven education progression rules (OCP: add new levels without modifying loop logic) */
 export interface EducationRule {
@@ -78,20 +90,31 @@ export class CitizenManager {
     return this.citizens.filter((c) => c.workplaceId === buildingKey);
   }
 
-  ageTick(): number {
-    const dead: number[] = [];
+  /** Called once per game year: age all citizens and update lifeStage */
+  ageTick(): void {
     for (const c of this.citizens) {
       c.age++;
       c.lifeStage = getLifeStage(c.age);
-      if (c.age > MORTALITY.MAX_AGE) {
+    }
+  }
+
+  /** Called once per game day: bathtub-curve death check with health coverage */
+  deathTick(isHealthCovered: (citizen: Citizen) => boolean): number {
+    const dead: number[] = [];
+    for (const c of this.citizens) {
+      if (c.age > 100) {
         dead.push(c.id);
-      } else if (c.age > MORTALITY.ELDERLY_AGE && Math.random() < MORTALITY.ELDERLY_DEATH_CHANCE) {
+        continue;
+      }
+      const baseRate = DAILY_DEATH_RATE[c.lifeStage];
+      const elderlyMult = getElderlyMultiplier(c.age);
+      const healthMult = isHealthCovered(c) ? HEALTH_MULTIPLIER.COVERED : HEALTH_MULTIPLIER.NOT_COVERED;
+      const finalRate = baseRate * elderlyMult * healthMult;
+      if (Math.random() < finalRate) {
         dead.push(c.id);
       }
     }
-    for (const id of dead) {
-      this.removeCitizen(id);
-    }
+    for (const id of dead) this.removeCitizen(id);
     return dead.length;
   }
 

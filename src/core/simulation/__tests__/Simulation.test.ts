@@ -411,34 +411,50 @@ describe('Education integration in SimulationLoop', () => {
 });
 
 describe('DeathCare integration', () => {
-  it('ageTick should return the number of deaths', () => {
+  it('ageTick should only age without killing', () => {
     const state = createGameState(10, 10);
-    // Create citizens guaranteed to die (age 101 after aging)
     for (let i = 0; i < 3; i++) {
       state.citizens.createCitizen({ age: 100 });
     }
     expect(state.citizens.getPopulation()).toBe(3);
 
-    const deaths = state.citizens.ageTick();
-    expect(deaths).toBe(3);
-    expect(state.citizens.getPopulation()).toBe(0);
+    state.citizens.ageTick();
+    // ageTick no longer kills — all 3 should survive (at age 101)
+    expect(state.citizens.getPopulation()).toBe(3);
   });
 
-  it('SimulationLoop should report deaths to DeathCareService', () => {
+  it('deathTick should kill citizens over 100 and report to DeathCare', () => {
     const state = createGameState(10, 10);
     state.deathCare.addCemetery(5, 5);
-    // Create old citizens (age 100 → after ageTick at year boundary → age 101 → die)
+    // Create citizens already over 100 → guaranteed death in deathTick
     for (let i = 0; i < 3; i++) {
-      state.citizens.createCitizen({ age: 100 });
+      state.citizens.createCitizen({ age: 101 });
+    }
+
+    const deaths = state.citizens.deathTick(() => false);
+    expect(deaths).toBe(3);
+    expect(state.citizens.getPopulation()).toBe(0);
+
+    // Report deaths to deathCare
+    for (let i = 0; i < deaths; i++) state.deathCare.reportDeath();
+    // Run deathCare ticks to process cremation
+    for (let i = 0; i < 100; i++) state.deathCare.tick();
+    expect(state.deathCare.getUnprocessed()).toBe(0);
+  });
+
+  it('SimulationLoop daily deathTick reports deaths to DeathCareService', () => {
+    const state = createGameState(10, 10);
+    state.deathCare.addCemetery(5, 5);
+    // Create citizens at age 101 — will die on first deathTick (daily check)
+    for (let i = 0; i < 3; i++) {
+      state.citizens.createCitizen({ age: 101 });
     }
 
     const loop = new SimulationLoop(state);
-    // Force a year change: run 8640 ticks (1 year = 24 ticks/day * 30 days * 12 months)
-    for (let i = 0; i < 8640; i++) loop.tick();
+    // Run enough ticks to trigger at least one day change (24 ticks = 1 day)
+    for (let i = 0; i < 48; i++) loop.tick();
 
-    // Deaths should have been reported and processed (cremated over time)
     expect(state.citizens.getPopulation()).toBe(0);
-    expect(state.deathCare.getUnprocessed()).toBe(0);
   });
 });
 

@@ -104,6 +104,7 @@ export { clampBuildingLevel } from '../building/BuildingLevel';
 export class SimulationLoop {
   private state: GameState;
   private lastAgeYear = -1;
+  private lastDeathDay = -1;
 
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
@@ -218,17 +219,29 @@ export class SimulationLoop {
       this.state.citizens.educateTick(hasElementary, hasHighSchool, hasUniversity);
     }
 
-    // 5. Citizens aging (once per game year)
+    // 5a. Citizens aging (once per game year) — only age, no death
     const currentYear = this.state.clock.getYear();
     if (currentYear !== this.lastAgeYear) {
       this.lastAgeYear = currentYear;
-      const deaths = this.state.citizens.ageTick();
-      // Report deaths to DeathCare for cemetery processing (cremation + storage)
+      this.state.citizens.ageTick();
+      birthTick(this.state.citizens);
+    }
+
+    // 5b. Daily death check (once per game day) — bathtub curve + health coverage
+    const currentDay = this.state.clock.getDay();
+    if (currentDay !== this.lastDeathDay) {
+      this.lastDeathDay = currentDay;
+      const deaths = this.state.citizens.deathTick(
+        (citizen) => {
+          if (!citizen.homeId) return false;
+          const pos = parsePosKey(citizen.homeId);
+          if (!pos) return false;
+          return this.state.health.getCoverage(pos.x, pos.y);
+        }
+      );
       for (let i = 0; i < deaths; i++) {
         this.state.deathCare.reportDeath();
       }
-      // 自然出生：每年結算一次
-      birthTick(this.state.citizens);
     }
 
     // 5.5. Update citizen happiness (every 6 ticks)
