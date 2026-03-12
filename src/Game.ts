@@ -742,6 +742,12 @@ export class Game {
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
         this.simLoop.tick();
+
+        // Push occupancy ratios to building renderer for night lighting
+        if (this.simLoop.occupancyRatios.size > 0 && this.state.clock.tick % 6 === 0) {
+          this.buildingRenderer.updateOccupancy(this.simLoop.occupancyRatios);
+        }
+
         // Milestone detection
         this.checkMilestone();
 

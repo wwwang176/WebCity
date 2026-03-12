@@ -132,6 +132,7 @@ const BUILDING_VERT = /* glsl */ `
 #include <shadowmap_pars_vertex>
 
 attribute float aHighlight;
+attribute float aOccupancy;
 
 varying vec3 vNormal;
 varying vec3 vLocalPos;
@@ -140,10 +141,12 @@ varying vec3 vBldgColor;
 varying float vPartType;
 varying float vZoneCat;
 varying float vHighlight;
+varying float vOccupancy;
 
 void main() {
   vLocalPos = position;
   vHighlight = aHighlight;
+  vOccupancy = aOccupancy;
 
   #ifdef USE_COLOR
     vPartType = color.r;
@@ -197,6 +200,7 @@ varying vec3 vBldgColor;
 varying float vPartType;
 varying float vZoneCat;
 varying float vHighlight;
+varying float vOccupancy;
 
 float hash21(vec2 p) {
   p = fract(p * vec2(233.34, 851.73));
@@ -298,6 +302,8 @@ void main() {
       wallU = vWorldPos.x;
     }
     bool onWall = abs(n.y) < 0.3 && y > 0.06;
+    // Occupancy-adjusted lit threshold: fewer lit windows when building is less occupied
+    float occ = clamp(vOccupancy, 0.0, 1.0);
 
     // ---- RESIDENTIAL LOW: painted siding, no window grid ----
     if (vZoneCat < 0.1) {
@@ -341,7 +347,8 @@ void main() {
       float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
       float bEpoch = floor((uTime + bPhase) / bPeriod);
       float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      if (lit > 0.4) {
+      float litThreshRH = mix(0.95, 0.4, occ);
+      if (lit > litThreshRH) {
         float w = hash21(wid + 77.7);
         winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
         winBrightness = brightness;
@@ -391,7 +398,8 @@ void main() {
       float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
       float bEpoch = floor((uTime + bPhase) / bPeriod);
       float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-        if (lit > 0.5) {
+        float litThreshCL = mix(0.95, 0.5, occ);
+        if (lit > litThreshCL) {
           winColor = mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8;
           winBrightness = brightness;
           isLitWindow = winMask > 0.5;
@@ -433,7 +441,8 @@ void main() {
       float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
       float bEpoch = floor((uTime + bPhase) / bPeriod);
       float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      if (lit > 0.3) {
+      float litThreshCH = mix(0.95, 0.3, occ);
+      if (lit > litThreshCH) {
         float w = hash21(wid + 77.7);
         winColor = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
         winBrightness = brightness;
@@ -500,7 +509,8 @@ void main() {
       float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
       float bEpoch = floor((uTime + bPhase) / bPeriod);
       float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      if (lit > 0.35) {
+      float litThreshOF = mix(0.95, 0.35, occ);
+      if (lit > litThreshOF) {
         float w = hash21(wid + 77.7);
         winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
         winBrightness = brightness;
@@ -923,6 +933,11 @@ export class BuildingRenderer {
         mesh.geometry.setAttribute('aHighlight',
           new THREE.InstancedBufferAttribute(highlightData, 1));
 
+        // Pre-allocate aOccupancy attribute (0.0 = empty, 1.0 = full)
+        const occupancyData = new Float32Array(this.maxPerVariant);
+        mesh.geometry.setAttribute('aOccupancy',
+          new THREE.InstancedBufferAttribute(occupancyData, 1));
+
         scene.add(mesh);
         this.variantMeshes.set(key, mesh);
         this.variantCounts.set(key, 0);
@@ -979,6 +994,11 @@ export class BuildingRenderer {
       const hlAttr = mesh.geometry.getAttribute('aHighlight') as THREE.InstancedBufferAttribute;
       (hlAttr.array as Float32Array)[entry.idx] = (hlAttr.array as Float32Array)[lastIdx]!;
       hlAttr.needsUpdate = true;
+
+      // Swap aOccupancy
+      const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
+      (occAttr.array as Float32Array)[entry.idx] = (occAttr.array as Float32Array)[lastIdx]!;
+      occAttr.needsUpdate = true;
 
       // Update the moved instance's mappings
       const movedPosKey = i2p.get(lastIdx)!;
@@ -2857,6 +2877,22 @@ export class BuildingRenderer {
     scene.add(this.lightSpotMesh);
   }
 
+  /** Update per-instance occupancy attribute from occupancy ratio map. */
+  updateOccupancy(ratios: Map<string, number>): void {
+    for (const [key, mesh] of this.variantMeshes) {
+      const i2p = this.instanceToPosition.get(key)!;
+      const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
+      if (!occAttr) continue;
+      const arr = occAttr.array as Float32Array;
+      const count = this.variantCounts.get(key) ?? 0;
+      for (let i = 0; i < count; i++) {
+        const posKey = i2p.get(i);
+        arr[i] = posKey ? (ratios.get(posKey) ?? 0) : 0;
+      }
+      occAttr.needsUpdate = true;
+    }
+  }
+
   private _elapsedTime = 0;
 
   /** Update light spot visibility based on sun intensity (call each frame). */
@@ -2974,6 +3010,7 @@ export class BuildingRenderer {
         clone.applyMatrix4(mat4);
         clone.deleteAttribute('color');
         if (clone.hasAttribute('aHighlight')) clone.deleteAttribute('aHighlight');
+        if (clone.hasAttribute('aOccupancy')) clone.deleteAttribute('aOccupancy');
         geos.push(clone);
       }
     }

@@ -11,6 +11,7 @@ import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
 import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
+import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
 import { getBuildingType } from '../building/types';
 import { clampBuildingLevel } from '../building/BuildingLevel';
 import { ECONOMY } from '../economy/TaxMultipliers';
@@ -21,6 +22,7 @@ import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { isWorkingAge } from '../citizen/types';
 import { countOccupancy, assignToBuildings, assignWithPreference, assignWorkWithPreference, type BuildingSlot } from '../citizen/OccupancyAssignment';
+import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { HousingCandidate } from '../citizen/HousingScore';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
 import { relocationTick } from '../citizen/Relocation';
@@ -124,6 +126,9 @@ export class SimulationLoop {
 
   // Commute path cache: stores computed LaneEdge paths for citizen commutes
   commuteCache: CommuteCache = new CommuteCache();
+
+  /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
+  occupancyRatios: Map<string, number> = new Map();
 
   /** Called when building state changes (growth/demolish/burn/upgrade) */
   onBuildingsChanged?: () => void;
@@ -764,6 +769,9 @@ export class SimulationLoop {
     // Then assign housing with preference scoring
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
     assignWithPreference(citizens, housingCandidates, homeOccupancy);
+
+    // Update occupancy ratios for rendering
+    this.occupancyRatios = computeOccupancyRatios(citizens, this.buildingPositions);
   }
 
   /**
@@ -1085,34 +1093,55 @@ export class SimulationLoop {
 
 
   /**
-   * Compute predicted congestion flow by sampling OD pairs (residential → commercial/industrial)
-   * and running the same BFS pathfinding. Updates the traffic overlay without needing actual vehicles.
+   * Compute predicted congestion flow using cached route reference counts.
+   * Falls back to Monte Carlo sampling when cache coverage is too low.
    */
   private computeCongestionFlow(): void {
     const grid = this.state.grid;
+    const flowMap = new Map<string, number>();
 
-    const pools = buildODPools(this.state.citizens.getCitizens(), parsePosKeyUnsafe);
-    if (!pools) {
-      this.state.traffic.updatePredictedFlow(new Map());
-      return;
+    // Primary: use cached routes with refCounts — O(routes × avg path length), zero A*
+    let totalRoutedCitizens = 0;
+    this.commuteCache.forEachRouteWithRefCount((path, refCount) => {
+      totalRoutedCitizens += refCount;
+      for (const cellKey of collectEdgeCells(path)) {
+        flowMap.set(cellKey, (flowMap.get(cellKey) ?? 0) + refCount);
+      }
+    });
+
+    // Fallback: if cache coverage is too low, use Monte Carlo sampling
+    if (totalRoutedCitizens < SIMULATION.SAMPLE_COUNT_MIN) {
+      this.computeCongestionFlowMonteCarlo(flowMap);
     }
 
-    const { residential, destinations, totalResWeight, totalDestWeight } = pools;
+    // Normalize by lane count
+    for (const [cellKey, rawFlow] of flowMap) {
+      const { x, y } = parsePosKeyUnsafe(cellKey);
+      const cell = grid.getCell(x, y);
+      const lanes = cell ? getLaneCount(cell.roadType) : 1;
+      flowMap.set(cellKey, rawFlow / lanes);
+    }
 
-    // Scale sample count with population (1 sample per 5 eligible commuters, clamped 50-300)
+    this.state.traffic.updatePredictedFlow(flowMap);
+  }
+
+  /** Monte Carlo fallback for congestion prediction when cache coverage is too low. */
+  private computeCongestionFlowMonteCarlo(flowMap: Map<string, number>): void {
+    const grid = this.state.grid;
+    const pools = buildODPools(this.state.citizens.getCitizens(), parsePosKeyUnsafe);
+    if (!pools) return;
+
+    const { residential, destinations, totalResWeight, totalDestWeight } = pools;
     const sampleCount = Math.max(SIMULATION.SAMPLE_COUNT_MIN, Math.min(SIMULATION.SAMPLE_COUNT_MAX, Math.ceil(totalResWeight / SIMULATION.SAMPLE_DIVISOR)));
-    const flowMap = new Map<string, number>();
 
     for (let i = 0; i < sampleCount; i++) {
       const from = pickWeighted(residential, totalResWeight, e => e.weight);
       const to = pickWeighted(destinations, totalDestWeight, e => e.weight);
       if (from.x === to.x && from.y === to.y) continue;
 
-      // Walk filter: Manhattan distance ≤ 3 → citizen walks, no car
       const manhattan = manhattanDistance(from.x, from.y, to.x, to.y);
       if (manhattan <= 3) continue;
 
-      // Transport mode choice: skip if transit is better than driving
       const availableTransport = this.getAvailableTransit(from, to);
       const mode = chooseMode(from, to, availableTransport, 0);
       if (mode !== TransportMode.DRIVE) continue;
@@ -1125,16 +1154,11 @@ export class SimulationLoop {
       }
     }
 
-    // Scale up sampled flow to match actual commuter volume, then normalize by lane count
+    // Scale up sampled flow to match actual commuter volume
     const scaleFactor = totalResWeight / sampleCount;
     for (const [cellKey, rawFlow] of flowMap) {
-      const { x, y } = parsePosKeyUnsafe(cellKey);
-      const cell = grid.getCell(x, y);
-      const lanes = cell ? getLaneCount(cell.roadType) : 1;
-      flowMap.set(cellKey, (rawFlow * scaleFactor) / lanes);
+      flowMap.set(cellKey, rawFlow * scaleFactor);
     }
-
-    this.state.traffic.updatePredictedFlow(flowMap);
   }
 
   private findNearestStop(
