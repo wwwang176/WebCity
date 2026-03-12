@@ -261,6 +261,55 @@ describe('TrainAnimator', () => {
     expect(v[0]!.y).toBeGreaterThan(0);
   });
 
+  it('should rebuild animation when route path segments change (station removed)', () => {
+    const animator = new TrainAnimator();
+
+    // 3-station route: A(0,5)→B(5,5)→C(10,5)→A (3 segments)
+    const threeStationSegments = new Map([[1, [
+      [{ x: 0, y: 5 }, { x: 5, y: 5 }],   // A→B (len 5)
+      [{ x: 5, y: 5 }, { x: 10, y: 5 }],  // B→C (len 5)
+      [{ x: 10, y: 5 }, { x: 0, y: 5 }],  // C→A (len 10)
+    ]]]);
+    // 3-station path has stationDistances [0, 5, 10], totalLength=20
+    // With station B at distance 5, train should stop there
+
+    const rail3 = makeFakeRailSystem(
+      [{ id: 1, traveling: true, routeId: 1 }],
+      threeStationSegments,
+    );
+
+    // Build initial anim and advance past station B (dwell 1.2s + travel >5 cells)
+    animator.update(1.3, 1, rail3, [makeRenderData(1, 0, 5)]); // skip initial wait
+    // Travel A→B at speed 9: 5/9 ≈ 0.56s, arrive at B, dwell 1.2s
+    animator.update(0.6, 1, rail3, [makeRenderData(1, 0, 5)]); // arrive at B
+    animator.update(1.3, 1, rail3, [makeRenderData(1, 0, 5)]); // wait at B then depart
+
+    // Verify train is now past station B (somewhere between B and C)
+    const vBefore = [makeRenderData(1, 0, 5)];
+    animator.update(0.016, 1, rail3, vBefore);
+    expect(vBefore[0]!.x).toBeGreaterThan(5); // past station B
+
+    // Now simulate station B removed: route becomes A↔C (2 segments)
+    const twoStationSegments = new Map([[1, [
+      [{ x: 0, y: 5 }, { x: 5, y: 5 }, { x: 10, y: 5 }],  // A→C
+      [{ x: 10, y: 5 }, { x: 5, y: 5 }, { x: 0, y: 5 }],  // C→A
+    ]]]);
+    // 2-station path: stationDistances [0, 10], totalLength=20
+
+    const rail2 = makeFakeRailSystem(
+      [{ id: 1, traveling: true, routeId: 1 }],
+      twoStationSegments,
+    );
+
+    // Update with new segment count — should rebuild animation
+    const v = [makeRenderData(1, 0, 5)];
+    animator.update(0.016, 1, rail2, v);
+
+    // After rebuild, train restarts at station A (distance=0, waiting)
+    expect(v[0]!.x).toBeCloseTo(0, 0);
+    expect(v[0]!.y).toBeCloseTo(5, 0);
+  });
+
   it('should add trailing carriages for stopped train (no animation)', () => {
     const animator = new TrainAnimator();
     // No route segments → no animation created

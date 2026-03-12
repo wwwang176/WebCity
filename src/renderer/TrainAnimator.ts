@@ -43,6 +43,8 @@ interface TrainAnimState {
   nextStationIdx: number;
   /** 所屬路線 ID（偵測路線變更） */
   routeId: number;
+  /** 建立動畫時的路段數量（偵測站點增減） */
+  segmentCount: number;
 }
 
 /** Minimal RailSystem interface to avoid tight coupling. */
@@ -165,6 +167,15 @@ export class TrainAnimator implements VehicleAnimator {
     for (const train of railSystem.getTrains()) {
       activeTrainIds.add(train.id);
 
+      // Invalidate stale animation when route paths change (e.g. station removed)
+      const existing = this.anims.get(train.id);
+      if (existing) {
+        const currentSegments = railSystem.getRoutePathPoints(train.routeId);
+        if (!currentSegments || currentSegments.length !== existing.segmentCount) {
+          this.anims.delete(train.id);
+        }
+      }
+
       if (!this.anims.has(train.id)) {
         const segments = railSystem.getRoutePathPoints(train.routeId);
         if (segments && segments.length > 0) {
@@ -178,6 +189,7 @@ export class TrainAnimator implements VehicleAnimator {
               waitTimer: STATION_WAIT_TIME,
               nextStationIdx: 1 % result.stationDistances.length,
               routeId: train.routeId,
+              segmentCount: segments.length,
             });
           }
         }
