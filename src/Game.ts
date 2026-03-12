@@ -52,7 +52,7 @@ import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { generateTerrain, TERRAIN_GEN } from './core/grid/TerrainGenerator';
-import { getGroundwaterLevel } from './core/grid/Terrain';
+import { getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
@@ -763,20 +763,7 @@ export class Game {
         return;
       }
     } else if (type === 'ferry') {
-      // Validate shore placement: must be land AND adjacent to water
-      const waterChecker = {
-        isWater: (fx: number, fy: number) => {
-          const fc = this.state.grid.getCell(fx, fy);
-          // Must NOT be water (must be land/shore)
-          if (fc && fc.terrainType === TerrainType.WATER) return false;
-          // Must have at least one adjacent water cell
-          for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
-            const nc = this.state.grid.getCell(fx + dx!, fy + dy!);
-            if (nc && nc.terrainType === TerrainType.WATER) return true;
-          }
-          return false;
-        },
-      };
+      const waterChecker = { isWater: (fx: number, fy: number) => isShorePosition(this.state.grid, fx, fy) };
       const dock = this.state.ferry.addDock(x, y, waterChecker);
       if (!dock) {
         this.state.budget.funds += cost;

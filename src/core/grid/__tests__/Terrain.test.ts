@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../Grid';
 import { TerrainType, NaturalResource } from '../types';
-import { canBuild, getNaturalResource, getElevation, setNaturalResource, getGroundwaterLevel } from '../Terrain';
+import { canBuild, getNaturalResource, getElevation, setNaturalResource, getGroundwaterLevel, isShorePosition } from '../Terrain';
 import { TERRAIN_GEN } from '../TerrainGenerator';
 
 describe('Terrain', () => {
@@ -72,6 +72,37 @@ describe('getGroundwaterLevel', () => {
   it('should return 0 when no water is nearby', () => {
     const grid = new Grid(10, 10);
     expect(getGroundwaterLevel(grid, 5, 5)).toBe(0);
+  });
+});
+
+describe('isShorePosition', () => {
+  it('should return true for land cell adjacent to water', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, { terrainType: TerrainType.WATER });
+    // (5,6) is land and adjacent to water at (5,5)
+    expect(isShorePosition(grid, 5, 6)).toBe(true);
+    expect(isShorePosition(grid, 6, 5)).toBe(true);
+    expect(isShorePosition(grid, 4, 5)).toBe(true);
+    expect(isShorePosition(grid, 5, 4)).toBe(true);
+  });
+
+  it('should return false for water cell', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, { terrainType: TerrainType.WATER });
+    expect(isShorePosition(grid, 5, 5)).toBe(false);
+  });
+
+  it('should return false for land cell not adjacent to water', () => {
+    const grid = new Grid(10, 10);
+    // No water anywhere
+    expect(isShorePosition(grid, 5, 5)).toBe(false);
+  });
+
+  it('should return false for diagonal water (only cardinal adjacency)', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(4, 4, { terrainType: TerrainType.WATER });
+    // (5,5) is diagonal — not adjacent
+    expect(isShorePosition(grid, 5, 5)).toBe(false);
   });
 });
 

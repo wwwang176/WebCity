@@ -23,6 +23,18 @@ export function getElevation(grid: Grid, x: number, y: number): number {
   return cell.elevation;
 }
 
+/** Check if a position is on the shore: must be land AND have at least one cardinally adjacent water cell. */
+export function isShorePosition(grid: Grid, x: number, y: number): boolean {
+  const cell = grid.getCell(x, y);
+  if (!cell || cell.terrainType === TerrainType.WATER) return false;
+  const dirs: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+  for (const [dx, dy] of dirs) {
+    const nc = grid.getCell(x + dx, y + dy);
+    if (nc && nc.terrainType === TerrainType.WATER) return true;
+  }
+  return false;
+}
+
 /** Returns groundwater level 0-100 based on Manhattan distance to nearest water (max range 3). */
 export function getGroundwaterLevel(grid: Grid, x: number, y: number): number {
   const range = 3;
