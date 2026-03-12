@@ -1,8 +1,26 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../Grid';
 import { TerrainType, NaturalResource } from '../types';
-import { canBuild, getNaturalResource, getElevation, setNaturalResource, getGroundwaterLevel, isShorePosition } from '../Terrain';
+import { isWater, canBuild, getNaturalResource, getElevation, setNaturalResource, getGroundwaterLevel, isShorePosition } from '../Terrain';
 import { TERRAIN_GEN } from '../TerrainGenerator';
+
+describe('isWater', () => {
+  it('should return true for water cell', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(3, 3, { terrainType: TerrainType.WATER });
+    expect(isWater(grid, 3, 3)).toBe(true);
+  });
+
+  it('should return false for plain cell', () => {
+    const grid = new Grid(10, 10);
+    expect(isWater(grid, 3, 3)).toBe(false);
+  });
+
+  it('should return false for out-of-bounds', () => {
+    const grid = new Grid(10, 10);
+    expect(isWater(grid, -1, -1)).toBe(false);
+  });
+});
 
 describe('Terrain', () => {
   it('should not allow building on water', () => {

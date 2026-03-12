@@ -1,6 +1,11 @@
 import { Grid } from './Grid';
 import { TerrainType, NaturalResource } from './types';
 
+export function isWater(grid: Grid, x: number, y: number): boolean {
+  const cell = grid.getCell(x, y);
+  return cell ? cell.terrainType === TerrainType.WATER : false;
+}
+
 export function canBuild(grid: Grid, x: number, y: number): boolean {
   const cell = grid.getCell(x, y);
   if (!cell) return false;

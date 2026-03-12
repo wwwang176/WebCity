@@ -13,7 +13,7 @@ import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
-import { ZoneType, TerrainType } from './core/grid/types';
+import { ZoneType } from './core/grid/types';
 import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
@@ -52,7 +52,7 @@ import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
 import { generateTerrain, TERRAIN_GEN } from './core/grid/TerrainGenerator';
-import { getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
+import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
@@ -309,10 +309,7 @@ export class Game {
     this.state.ferry.setWaterGrid({
       width: grid.width,
       height: grid.height,
-      isWater: (x: number, y: number) => {
-        const cell = grid.getCell(x, y);
-        return cell ? cell.terrainType === TerrainType.WATER : false;
-      },
+      isWater: (x: number, y: number) => isWater(grid, x, y),
     });
 
     // Rebuild rail network from existing grid data (for loaded games)
