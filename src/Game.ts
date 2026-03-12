@@ -140,6 +140,21 @@ const TOOL_TO_ZONE: Partial<Record<ToolType, ZoneType>> = {
   zone_i: ZoneType.INDUSTRIAL, zone_o: ZoneType.OFFICE,
 };
 
+/** Map of road tool types to RoadType (OCP: add new road types here). */
+const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
+  road: RoadType.TWO_LANE, road_rural: RoadType.RURAL,
+  road_2lane: RoadType.TWO_LANE, road_4lane: RoadType.FOUR_LANE,
+  road_6lane: RoadType.SIX_LANE, road_highway: RoadType.HIGHWAY,
+};
+
+/** Map of tool types to auto-activated overlay (OCP: add new overlay mappings here). */
+const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
+  power: 'power', water: 'water', police: 'police', fire: 'fire',
+  hospital: 'health', school: 'education', school_high: 'education',
+  school_univ: 'education', park: 'park', garbage: 'garbage',
+  district: 'district',
+};
+
 export interface SelectedZoneBuilding {
   kind: 'zone';
   x: number;
@@ -574,8 +589,7 @@ export class Game {
           this.simLoop.markLaneGraphDirty();
           this.audioManager.playSfx('build');
         } else if (!result.success && result.reason) {
-          this.notification = `Cannot build road: ${getBuildReasonMessage(result.reason)}`;
-          this.notificationTimer = 4;
+          this.showNotification(`Cannot build road: ${getBuildReasonMessage(result.reason)}`);
         }
         this.dirty.roads = true;
         this.dirty.crossings = true;
@@ -591,8 +605,7 @@ export class Game {
           this.state.budget.funds -= result.cost;
           this.audioManager.playSfx('build');
         } else if (!result.success && result.reason) {
-          this.notification = `Cannot build track: ${getBuildReasonMessage(result.reason)}`;
-          this.notificationTimer = 4;
+          this.showNotification(`Cannot build track: ${getBuildReasonMessage(result.reason)}`);
         }
         this.dirty.tracks = true;
         this.dirty.crossings = true;
@@ -806,15 +819,13 @@ export class Game {
         NO_GROUNDWATER: 'No groundwater here — build near rivers',
         UNKNOWN_TYPE: 'Unknown building type',
       };
-      this.notification = messages[check.reason] ?? 'Cannot build here';
-      this.notificationTimer = 3;
+      this.showNotification(messages[check.reason] ?? 'Cannot build here', 3);
       return;
     }
 
     const cost = cfg.cost;
     if (this.state.budget.funds < cost) {
-      this.notification = `Insufficient funds (need $${cost})`;
-      this.notificationTimer = 3;
+      this.showNotification(`Insufficient funds (need $${cost})`, 3);
       return;
     }
     this.state.budget.funds -= cost;
@@ -837,25 +848,21 @@ export class Game {
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
     const cell = this.state.grid.getCell(x, y);
     if (!cell) {
-      this.notification = 'Out of bounds';
-      this.notificationTimer = 3;
+      this.showNotification('Out of bounds', 3);
       return;
     }
     // Rail stations can be built on track cells (may have road for level crossing)
     if (type === 'rail') {
       if (cell.railType === RailType.NONE) {
-        this.notification = 'Train station must be built on rail track';
-        this.notificationTimer = 3;
+        this.showNotification('Train station must be built on rail track', 3);
         return;
       }
       if (cell.buildingId !== 0) {
-        this.notification = 'Tile is occupied';
-        this.notificationTimer = 3;
+        this.showNotification('Tile is occupied', 3);
         return;
       }
     } else if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) {
-      this.notification = 'Tile is occupied';
-      this.notificationTimer = 3;
+      this.showNotification('Tile is occupied', 3);
       return;
     }
     const infraTypeMap: Record<string, InfraType> = {
@@ -866,8 +873,7 @@ export class Game {
     const baseCost = infraCfg?.cost ?? 500;
     const cost = type === 'airport' ? airportCosts[this.selectedAirportSize ?? 'SMALL'] : baseCost;
     if (this.state.budget.funds < cost) {
-      this.notification = `Insufficient funds (need $${cost})`;
-      this.notificationTimer = 3;
+      this.showNotification(`Insufficient funds (need $${cost})`, 3);
       return;
     }
     this.state.budget.funds -= cost;
@@ -880,8 +886,7 @@ export class Game {
       const station = this.state.rail.buildStation(x, y, this.state.grid);
       if (!station) {
         this.state.budget.funds += cost;
-        this.notification = 'Train station must be built on rail track';
-        this.notificationTimer = 4;
+        this.showNotification('Train station must be built on rail track');
         return;
       }
     } else if (type === 'ferry') {
@@ -902,8 +907,7 @@ export class Game {
       const dock = this.state.ferry.addDock(x, y, waterChecker);
       if (!dock) {
         this.state.budget.funds += cost;
-        this.notification = 'Ferry dock must be placed on shore (land next to water)';
-        this.notificationTimer = 4;
+        this.showNotification('Ferry dock must be placed on shore (land next to water)');
         return;
       }
     } else if (type === 'airport') {
@@ -917,14 +921,12 @@ export class Game {
           const c = this.state.grid.getCell(x + dx, y + dy);
           if (!c) {
             this.state.budget.funds += cost;
-            this.notification = 'Airport area is out of bounds';
-            this.notificationTimer = 4;
+            this.showNotification('Airport area is out of bounds');
             return;
           }
           if (c.roadType !== RoadType.NONE || c.buildingId !== 0) {
             this.state.budget.funds += cost;
-            this.notification = 'Airport area is not fully clear';
-            this.notificationTimer = 4;
+            this.showNotification('Airport area is not fully clear');
             return;
           }
         }
@@ -935,8 +937,7 @@ export class Game {
       if (!result) {
         this.state.budget.funds += cost;
         const req = this.state.airport.getPopulationRequired(airportSize);
-        this.notification = `Airport requires population >= ${req.toLocaleString()}`;
-        this.notificationTimer = 4;
+        this.showNotification(`Airport requires population >= ${req.toLocaleString()}`);
         return;
       }
 
@@ -1302,22 +1303,13 @@ export class Game {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
     this.highlightManager.clear();
-    // Road subtypes set the roadType
-    if (tool === 'road') this.currentRoadType = RoadType.TWO_LANE;
-    else if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
-    else if (tool === 'road_2lane') this.currentRoadType = RoadType.TWO_LANE;
-    else if (tool === 'road_4lane') this.currentRoadType = RoadType.FOUR_LANE;
-    else if (tool === 'road_6lane') this.currentRoadType = RoadType.SIX_LANE;
-    else if (tool === 'road_highway') this.currentRoadType = RoadType.HIGHWAY;
+    // Road subtypes set the roadType (data-driven lookup)
+    const roadType = TOOL_TO_ROAD_TYPE[tool];
+    if (roadType !== undefined) this.currentRoadType = roadType;
     // Update cursor size for infrastructure tools
     this.updateCursorSize();
     // Auto-switch overlay when selecting infrastructure tools
-    const toolOverlayMap: Partial<Record<ToolType, OverlayType>> = {
-      power: 'power', water: 'water', police: 'police', fire: 'fire',
-      hospital: 'health', school: 'education', school_high: 'education', school_univ: 'education', park: 'park', garbage: 'garbage',
-      district: 'district',
-    };
-    const autoOverlay = toolOverlayMap[tool];
+    const autoOverlay = TOOL_TO_OVERLAY[tool];
     if (autoOverlay) {
       this.setOverlay(autoOverlay);
     }
@@ -1747,8 +1739,7 @@ export class Game {
     const milestone = getMilestone(pop);
     if (milestone && milestone.id !== this.lastMilestoneId) {
       this.lastMilestoneId = milestone.id;
-      this.notification = `Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`;
-      this.notificationTimer = 8;
+      this.showNotification(`Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`, 8);
       this.audioManager.playSfx('milestone');
       this.onUIUpdate?.();
     }
@@ -1788,8 +1779,7 @@ export class Game {
     const names: Record<string, string> = {
       EARTHQUAKE: 'Earthquake', TORNADO: 'Tornado', FOREST_FIRE: 'Forest Fire'
     };
-    this.notification = `Disaster: ${names[type] ?? type} at (${x},${y})! Intensity: ${Math.round(intensity * 100)}%`;
-    this.notificationTimer = 10;
+    this.showNotification(`Disaster: ${names[type] ?? type} at (${x},${y})! Intensity: ${Math.round(intensity * 100)}%`, 10);
     this.dirty.buildings = true;
     this.dirty.terrain = true;
     this.onUIUpdate?.();
@@ -1851,8 +1841,7 @@ export class Game {
     if (amount <= 0) return;
     this.state.budget.funds += amount;
     this.state.budget.loans += amount;
-    this.notification = `Loan taken: $${amount.toLocaleString()}`;
-    this.notificationTimer = 4;
+    this.showNotification(`Loan taken: $${amount.toLocaleString()}`);
     this.onUIUpdate?.();
   }
 
@@ -1862,8 +1851,7 @@ export class Game {
     if (actual <= 0) return;
     this.state.budget.funds -= actual;
     this.state.budget.loans -= actual;
-    this.notification = `Loan repaid: $${actual.toLocaleString()}`;
-    this.notificationTimer = 4;
+    this.showNotification(`Loan repaid: $${actual.toLocaleString()}`);
     this.onUIUpdate?.();
   }
 }
