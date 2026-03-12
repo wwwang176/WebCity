@@ -1011,6 +1011,7 @@ export class Game {
       this.applyViewMode(ViewMode.NORMAL);
     }
     this.audioManager.playSfx('click');
+    this.onUIUpdate?.();
   }
 
   private selectTransportStop(x: number, y: number, type: TransportStopKind): void {
@@ -1212,7 +1213,27 @@ export class Game {
   }
 
   getSelectedBuilding(): SelectedBuilding | null {
-    return this.selectedBuilding;
+    const sel = this.selectedBuilding;
+    if (!sel) return null;
+
+    if (sel.kind === 'infra') {
+      return { ...sel, details: this.getInfraDetails(sel.infraType, sel.x, sel.y) };
+    }
+
+    if (sel.kind === 'transport') {
+      const system = this.getTransportSystem(sel.transportType);
+      const stops = system?.getStops() ?? [];
+      const stop = stops.find(s => s.x === sel.x && s.y === sel.y);
+      const routes = system?.getRoutes() ?? [];
+      const stopRoutes = stop ? routes.filter(r => r.stops.some(s => s.id === stop.id)) : [];
+      return {
+        ...sel,
+        routes: stopRoutes.length,
+        vehicles: stopRoutes.reduce((sum, r) => sum + r.vehicles, 0),
+      };
+    }
+
+    return sel;
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
