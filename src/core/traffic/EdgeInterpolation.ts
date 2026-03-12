@@ -1,18 +1,17 @@
 import type { LaneEdge } from './LaneGraph';
-import { cubicBezierPoint, cubicBezierTangent } from './BezierPath';
+import { quadraticBezierPoint, quadraticBezierTangent } from './BezierPath';
 
 type Point = { x: number; y: number };
 
 /**
  * Interpolate position along a LaneEdge at parameter t ∈ [0,1].
- * Uses cubic Bezier if control points exist, otherwise linear interpolation.
+ * Uses quadratic Bezier if a control point exists, otherwise linear interpolation.
  */
 export function interpolateEdgePosition(edge: LaneEdge, t: number): Point {
-  if (edge.bezierControl && edge.bezierControl.length >= 2) {
-    return cubicBezierPoint(
+  if (edge.bezierControl && edge.bezierControl.length >= 1) {
+    return quadraticBezierPoint(
       edge.from.position,
       edge.bezierControl[0]!,
-      edge.bezierControl[1]!,
       edge.to.position,
       t,
     );
@@ -25,14 +24,13 @@ export function interpolateEdgePosition(edge: LaneEdge, t: number): Point {
 
 /**
  * Interpolate tangent (direction vector) along a LaneEdge at parameter t ∈ [0,1].
- * Uses cubic Bezier derivative if control points exist, otherwise constant linear direction.
+ * Uses quadratic Bezier derivative if a control point exists, otherwise constant linear direction.
  */
 export function interpolateEdgeTangent(edge: LaneEdge, t: number): Point {
-  if (edge.bezierControl && edge.bezierControl.length >= 2) {
-    return cubicBezierTangent(
+  if (edge.bezierControl && edge.bezierControl.length >= 1) {
+    return quadraticBezierTangent(
       edge.from.position,
       edge.bezierControl[0]!,
-      edge.bezierControl[1]!,
       edge.to.position,
       t,
     );

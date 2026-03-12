@@ -1,5 +1,23 @@
 type Point = { x: number; y: number };
 
+/** Evaluate quadratic Bezier at parameter t ∈ [0,1] */
+export function quadraticBezierPoint(p0: Point, cp: Point, p2: Point, t: number): Point {
+  const u = 1 - t;
+  return {
+    x: u * u * p0.x + 2 * u * t * cp.x + t * t * p2.x,
+    y: u * u * p0.y + 2 * u * t * cp.y + t * t * p2.y,
+  };
+}
+
+/** Evaluate quadratic Bezier first derivative (tangent) at parameter t */
+export function quadraticBezierTangent(p0: Point, cp: Point, p2: Point, t: number): Point {
+  const u = 1 - t;
+  return {
+    x: 2 * u * (cp.x - p0.x) + 2 * t * (p2.x - cp.x),
+    y: 2 * u * (cp.y - p0.y) + 2 * t * (p2.y - cp.y),
+  };
+}
+
 /** Evaluate cubic Bezier at parameter t ∈ [0,1] */
 export function cubicBezierPoint(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
   const u = 1 - t;
@@ -80,27 +98,26 @@ export function sampleAtDistance(
 }
 
 /**
- * Generate Bezier control points for a turn path through an intersection.
- * @param entry Entry position on the cell edge
- * @param entryDir Tangent direction at entry (inward)
- * @param exit Exit position on the cell edge
- * @param exitDir Tangent direction at exit (outward)
- * @returns [cp1, cp2] — the two inner control points
+ * Compute the single quadratic Bezier control point for a turn,
+ * placed at the intersection of the entry tangent line and exit tangent line.
+ * This produces a quarter-circle-like arc for 90° turns.
  */
-export function generateTurnControlPoints(
+export function computeTurnControlPoint(
   entry: Point,
   entryDir: Point,
   exit: Point,
   exitDir: Point,
-  strength = 0.35,
-): [Point, Point] {
-  const cp1: Point = {
-    x: entry.x + entryDir.x * strength,
-    y: entry.y + entryDir.y * strength,
-  };
-  const cp2: Point = {
-    x: exit.x - exitDir.x * strength,
-    y: exit.y - exitDir.y * strength,
-  };
-  return [cp1, cp2];
+): Point {
+  // Solve: entry + t * entryDir = exit - s * exitDir
+  // t * entryDir.x + s * exitDir.x = exit.x - entry.x
+  // t * entryDir.y + s * exitDir.y = exit.y - entry.y
+  const det = entryDir.x * exitDir.y - entryDir.y * exitDir.x;
+  if (Math.abs(det) < 1e-6) {
+    // Parallel (straight-through): use midpoint
+    return { x: (entry.x + exit.x) / 2, y: (entry.y + exit.y) / 2 };
+  }
+  const dx = exit.x - entry.x;
+  const dy = exit.y - entry.y;
+  const t = (dx * exitDir.y - dy * exitDir.x) / det;
+  return { x: entry.x + t * entryDir.x, y: entry.y + t * entryDir.y };
 }

@@ -15,10 +15,10 @@ function straightEdge(x1: number, y1: number, x2: number, y2: number): LaneEdge 
   };
 }
 
-/** Helper: create a curved edge with bezier control points. */
+/** Helper: create a curved edge with a single quadratic bezier control point. */
 function curvedEdge(
   x1: number, y1: number, x2: number, y2: number,
-  cp1: { x: number; y: number }, cp2: { x: number; y: number },
+  cp: { x: number; y: number },
 ): LaneEdge {
   const dx = x2 - x1;
   const dy = y2 - y1;
@@ -26,7 +26,7 @@ function curvedEdge(
     id: 'test-curve',
     from: { nodeId: 'a', position: { x: x1, y: y1 }, direction: 'north', lane: 0 },
     to: { nodeId: 'b', position: { x: x2, y: y2 }, direction: 'south', lane: 0 },
-    bezierControl: [cp1, cp2],
+    bezierControl: [cp],
     length: Math.sqrt(dx * dx + dy * dy),
     type: 'turn',
   };
@@ -55,23 +55,23 @@ describe('interpolateEdgePosition', () => {
   });
 
   it('returns start position at t=0 for curved edge', () => {
-    const edge = curvedEdge(0, 0, 10, 0, { x: 3, y: 5 }, { x: 7, y: 5 });
+    const edge = curvedEdge(0, 0, 10, 0, { x: 5, y: 5 });
     const pos = interpolateEdgePosition(edge, 0);
     expect(pos.x).toBeCloseTo(0);
     expect(pos.y).toBeCloseTo(0);
   });
 
   it('returns end position at t=1 for curved edge', () => {
-    const edge = curvedEdge(0, 0, 10, 0, { x: 3, y: 5 }, { x: 7, y: 5 });
+    const edge = curvedEdge(0, 0, 10, 0, { x: 5, y: 5 });
     const pos = interpolateEdgePosition(edge, 1);
     expect(pos.x).toBeCloseTo(10);
     expect(pos.y).toBeCloseTo(0);
   });
 
   it('returns curved midpoint (not linear) for bezier edge', () => {
-    const edge = curvedEdge(0, 0, 10, 0, { x: 0, y: 10 }, { x: 10, y: 10 });
+    const edge = curvedEdge(0, 0, 10, 0, { x: 5, y: 10 });
     const pos = interpolateEdgePosition(edge, 0.5);
-    // Cubic Bezier midpoint with these control points should have y > 0
+    // Quadratic Bezier midpoint with control point at (5,10) should have y > 0
     expect(pos.y).toBeGreaterThan(0);
   });
 });
@@ -93,18 +93,18 @@ describe('interpolateEdgeTangent', () => {
   });
 
   it('returns tangent at t=0 pointing away from start for curved edge', () => {
-    const edge = curvedEdge(0, 0, 10, 0, { x: 0, y: 10 }, { x: 10, y: 10 });
+    const edge = curvedEdge(0, 0, 10, 0, { x: 0, y: 10 });
     const tan = interpolateEdgeTangent(edge, 0);
-    // At t=0, tangent = 3*(cp1 - p0) = 3*(0-0, 10-0) = (0, 30) — pointing up
+    // At t=0, tangent = 2*(cp - p0) = 2*(0-0, 10-0) = (0, 20) — pointing up
     expect(tan.x).toBeCloseTo(0);
     expect(tan.y).toBeGreaterThan(0);
   });
 
   it('returns tangent at t=1 pointing towards end for curved edge', () => {
-    const edge = curvedEdge(0, 0, 10, 0, { x: 0, y: 10 }, { x: 10, y: 10 });
+    const edge = curvedEdge(0, 0, 10, 0, { x: 0, y: 10 });
     const tan = interpolateEdgeTangent(edge, 1);
-    // At t=1, tangent = 3*(p3 - cp2) = 3*(10-10, 0-10) = (0, -30) — pointing down
-    expect(tan.x).toBeCloseTo(0);
+    // At t=1, tangent = 2*(p2 - cp) = 2*(10-0, 0-10) = (20, -20) — pointing right-down
+    expect(tan.x).toBeGreaterThan(0);
     expect(tan.y).toBeLessThan(0);
   });
 

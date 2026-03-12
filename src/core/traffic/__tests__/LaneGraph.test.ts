@@ -224,10 +224,10 @@ describe('LaneGraph', () => {
       const allEdges = graph.getAllEdges();
       const turnEdges = allEdges.filter(e => e.type === 'turn');
 
-      // All turn edges should have bezierControl points
+      // All turn edges should have a single quadratic bezierControl point
       for (const e of turnEdges) {
         expect(e.bezierControl).toBeDefined();
-        expect(e.bezierControl!.length).toBeGreaterThanOrEqual(2);
+        expect(e.bezierControl!.length).toBe(1);
       }
     });
   });
@@ -322,11 +322,6 @@ describe('LANE_GEOMETRY constants', () => {
   it('lane width should be a small positive number', () => {
     expect(LANE_GEOMETRY.LANE_WIDTH).toBeGreaterThan(0);
     expect(LANE_GEOMETRY.LANE_WIDTH).toBeLessThan(1);
-  });
-
-  it('bezier strength should be between 0 and 1', () => {
-    expect(LANE_GEOMETRY.BEZIER_STRENGTH).toBeGreaterThan(0);
-    expect(LANE_GEOMETRY.BEZIER_STRENGTH).toBeLessThan(1);
   });
 
   it('bezier samples should be a positive integer', () => {

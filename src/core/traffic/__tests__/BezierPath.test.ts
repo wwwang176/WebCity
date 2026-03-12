@@ -1,13 +1,77 @@
 import { describe, it, expect } from 'vitest';
 import {
+  quadraticBezierPoint,
+  quadraticBezierTangent,
   cubicBezierPoint,
   cubicBezierTangent,
   buildArcLengthLUT,
   sampleAtDistance,
-  generateTurnControlPoints,
+  computeTurnControlPoint,
 } from '../BezierPath';
 
 describe('BezierPath', () => {
+  describe('quadraticBezierPoint', () => {
+    it('should return start point at t=0', () => {
+      const p0 = { x: 0, y: 0 };
+      const cp = { x: 1, y: 1 };
+      const p2 = { x: 2, y: 0 };
+      const pt = quadraticBezierPoint(p0, cp, p2, 0);
+      expect(pt.x).toBeCloseTo(0);
+      expect(pt.y).toBeCloseTo(0);
+    });
+
+    it('should return end point at t=1', () => {
+      const p0 = { x: 0, y: 0 };
+      const cp = { x: 1, y: 1 };
+      const p2 = { x: 2, y: 0 };
+      const pt = quadraticBezierPoint(p0, cp, p2, 1);
+      expect(pt.x).toBeCloseTo(2);
+      expect(pt.y).toBeCloseTo(0);
+    });
+
+    it('should return midpoint for straight line', () => {
+      const p0 = { x: 0, y: 0 };
+      const cp = { x: 1, y: 0 };
+      const p2 = { x: 2, y: 0 };
+      const pt = quadraticBezierPoint(p0, cp, p2, 0.5);
+      expect(pt.x).toBeCloseTo(1);
+      expect(pt.y).toBeCloseTo(0);
+    });
+
+    it('should curve toward control point at t=0.5', () => {
+      const p0 = { x: 0, y: 0 };
+      const cp = { x: 0, y: 1 };
+      const p2 = { x: 1, y: 1 };
+      const pt = quadraticBezierPoint(p0, cp, p2, 0.5);
+      // Quadratic midpoint: (1-0.5)²·0 + 2·0.5·0.5·0 + 0.5²·1 = 0.25
+      expect(pt.x).toBeCloseTo(0.25);
+      // y: (1-0.5)²·0 + 2·0.5·0.5·1 + 0.5²·1 = 0.5 + 0.25 = 0.75
+      expect(pt.y).toBeCloseTo(0.75);
+    });
+  });
+
+  describe('quadraticBezierTangent', () => {
+    it('should return correct tangent at t=0 (aligned with p0→cp)', () => {
+      const p0 = { x: 0, y: 0 };
+      const cp = { x: 0, y: 1 };
+      const p2 = { x: 1, y: 1 };
+      const t = quadraticBezierTangent(p0, cp, p2, 0);
+      // At t=0, tangent = 2*(cp - p0) = (0, 2)
+      expect(t.x).toBeCloseTo(0);
+      expect(t.y).toBeCloseTo(2);
+    });
+
+    it('should return correct tangent at t=1 (aligned with cp→p2)', () => {
+      const p0 = { x: 0, y: 0 };
+      const cp = { x: 0, y: 1 };
+      const p2 = { x: 1, y: 1 };
+      const t = quadraticBezierTangent(p0, cp, p2, 1);
+      // At t=1, tangent = 2*(p2 - cp) = (2, 0)
+      expect(t.x).toBeCloseTo(2);
+      expect(t.y).toBeCloseTo(0);
+    });
+  });
+
   describe('cubicBezierPoint', () => {
     it('should return start point at t=0', () => {
       const p0 = { x: 0, y: 0 };
@@ -30,7 +94,6 @@ describe('BezierPath', () => {
     });
 
     it('should return midpoint close to center for symmetric curve', () => {
-      // Straight line: all points collinear
       const p0 = { x: 0, y: 0 };
       const p1 = { x: 1, y: 0 };
       const p2 = { x: 2, y: 0 };
@@ -48,7 +111,6 @@ describe('BezierPath', () => {
       const p2 = { x: 1, y: 1 };
       const p3 = { x: 0, y: 1 };
       const t = cubicBezierTangent(p0, p1, p2, p3, 0);
-      // At t=0, tangent = 3*(p1-p0) = (3, 0)
       expect(t.x).toBeCloseTo(3);
       expect(t.y).toBeCloseTo(0);
     });
@@ -59,7 +121,6 @@ describe('BezierPath', () => {
       const p2 = { x: 1, y: 1 };
       const p3 = { x: 0, y: 1 };
       const t = cubicBezierTangent(p0, p1, p2, p3, 1);
-      // At t=1, tangent = 3*(p3-p2) = (-3, 0)
       expect(t.x).toBeCloseTo(-3);
       expect(t.y).toBeCloseTo(0);
     });
@@ -82,7 +143,6 @@ describe('BezierPath', () => {
       const p3 = { x: 3, y: 0 };
       const lut = buildArcLengthLUT(p0, p1, p2, p3, 20);
       expect(lut[0]).toBeCloseTo(0);
-      // Straight line of length 3
       expect(lut[lut.length - 1]).toBeCloseTo(3, 1);
     });
 
@@ -135,7 +195,6 @@ describe('BezierPath', () => {
     });
 
     it('arc-length parameterized samples should be roughly equal-spaced', () => {
-      // Quarter circle curve
       const p0 = { x: 1, y: 0 };
       const p1 = { x: 1, y: 0.55 };
       const p2 = { x: 0.55, y: 1 };
@@ -143,14 +202,12 @@ describe('BezierPath', () => {
       const lut = buildArcLengthLUT(p0, p1, p2, p3, 100);
       const totalLength = lut[lut.length - 1]!;
 
-      // Sample 5 equidistant points
       const points = [];
       for (let i = 0; i <= 4; i++) {
         const d = (i / 4) * totalLength;
         points.push(sampleAtDistance(p0, p1, p2, p3, lut, d));
       }
 
-      // Check distances between consecutive points are roughly equal
       const dists = [];
       for (let i = 1; i < points.length; i++) {
         const dx = points[i]!.position.x - points[i - 1]!.position.x;
@@ -160,37 +217,35 @@ describe('BezierPath', () => {
 
       const avgDist = dists.reduce((a, b) => a + b, 0) / dists.length;
       for (const d of dists) {
-        // Allow 5% tolerance
         expect(d).toBeGreaterThan(avgDist * 0.85);
         expect(d).toBeLessThan(avgDist * 1.15);
       }
     });
   });
 
-  describe('generateTurnControlPoints', () => {
-    it('should generate control points for east→north 90° turn', () => {
-      const entry = { x: 0.5, y: 0 };
-      const entryDir = { x: 1, y: 0 }; // entering from west, heading east
-      const exit = { x: 0, y: -0.5 };
-      const exitDir = { x: 0, y: -1 }; // exiting to north
+  describe('computeTurnControlPoint', () => {
+    it('should place control point at tangent intersection for 90° turn', () => {
+      // Entry from south heading north, exit heading east
+      const entry = { x: 0, y: 0.5 };
+      const entryDir = { x: 0, y: -1 };
+      const exit = { x: 0.5, y: 0 };
+      const exitDir = { x: 1, y: 0 };
 
-      const [cp1, cp2] = generateTurnControlPoints(entry, entryDir, exit, exitDir);
-      // cp1 should be ahead of entry (east direction)
-      expect(cp1.x).toBeGreaterThan(entry.x);
-      // cp2 should be before exit (south of exit, since exit goes north)
-      expect(cp2.y).toBeGreaterThan(exit.y);
+      const cp = computeTurnControlPoint(entry, entryDir, exit, exitDir);
+      // Lines intersect at (0, 0) — the corner
+      expect(cp.x).toBeCloseTo(0);
+      expect(cp.y).toBeCloseTo(0);
     });
 
-    it('should generate control points for straight-through (no turn)', () => {
+    it('should return midpoint for straight-through (parallel tangents)', () => {
       const entry = { x: -0.5, y: 0 };
       const entryDir = { x: 1, y: 0 };
       const exit = { x: 0.5, y: 0 };
       const exitDir = { x: 1, y: 0 };
 
-      const [cp1, cp2] = generateTurnControlPoints(entry, entryDir, exit, exitDir);
-      // For straight-through, control points should be along the line
-      expect(cp1.y).toBeCloseTo(0, 1);
-      expect(cp2.y).toBeCloseTo(0, 1);
+      const cp = computeTurnControlPoint(entry, entryDir, exit, exitDir);
+      expect(cp.x).toBeCloseTo(0);
+      expect(cp.y).toBeCloseTo(0);
     });
   });
 });

@@ -63,8 +63,6 @@ const parseCellKey = parsePosKeyUnsafe;
 export const LANE_GEOMETRY = {
   /** Lateral offset per lane (cells) */
   LANE_WIDTH: 0.18,
-  /** Bezier handle length for turn curves */
-  BEZIER_STRENGTH: 0.35,
   /** Number of samples for Bezier length approximation */
   BEZIER_SAMPLES: 10,
 } as const;
@@ -356,19 +354,19 @@ export class LaneGraph {
           const toPt = this.points.get(toId);
           if (!fromPt || !toPt) continue;
 
-          // Generate Bezier control points for the turn
-          const bezierControl = this.computeTurnBezier(fromPt, toPt, x, y);
+          // Compute single quadratic Bezier control point (tangent intersection)
+          const cp = this.computeTurnControlPoint(fromPt, toPt);
 
-          // Approximate length using control points
-          const length = this.approximateBezierLength(
-            fromPt.position, bezierControl[0]!, bezierControl[1]!, toPt.position
+          // Approximate length using quadratic Bezier
+          const length = this.approximateQuadraticBezierLength(
+            fromPt.position, cp, toPt.position
           );
 
           this.edges.push({
             id: `${fromId}>${toId}`,
             from: fromPt,
             to: toPt,
-            bezierControl,
+            bezierControl: [cp],
             length: Math.max(length, 0.1),
             type: 'turn',
           });
@@ -442,22 +440,28 @@ export class LaneGraph {
     }
   }
 
-  private computeTurnBezier(
+  private computeTurnControlPoint(
     from: ConnectionPoint,
     to: ConnectionPoint,
-    cx: number, cy: number,
-  ): { x: number; y: number }[] {
-    // Control points: extend tangent from entry, then curve towards exit
-    const strength = LANE_GEOMETRY.BEZIER_STRENGTH;
-    const cp1 = {
-      x: from.position.x + from.tangent.tx * strength,
-      y: from.position.y + from.tangent.ty * strength,
+  ): { x: number; y: number } {
+    // Single control point at the intersection of entry and exit tangent lines
+    const entryDir = { x: from.tangent.tx, y: from.tangent.ty };
+    const exitDir = { x: to.tangent.tx, y: to.tangent.ty };
+    const det = entryDir.x * exitDir.y - entryDir.y * exitDir.x;
+    if (Math.abs(det) < 1e-6) {
+      // Parallel (straight-through): use midpoint
+      return {
+        x: (from.position.x + to.position.x) / 2,
+        y: (from.position.y + to.position.y) / 2,
+      };
+    }
+    const dx = to.position.x - from.position.x;
+    const dy = to.position.y - from.position.y;
+    const t = (dx * exitDir.y - dy * exitDir.x) / det;
+    return {
+      x: from.position.x + t * entryDir.x,
+      y: from.position.y + t * entryDir.y,
     };
-    const cp2 = {
-      x: to.position.x - to.tangent.tx * strength,
-      y: to.position.y - to.tangent.ty * strength,
-    };
-    return [cp1, cp2];
   }
 
   /** Push a straight edge only if no edge with the same ID exists yet. */
@@ -473,21 +477,19 @@ export class LaneGraph {
     this.edges.push({ id, from, to, length: Math.max(length, minLength), type });
   }
 
-  private approximateBezierLength(
+  private approximateQuadraticBezierLength(
     p0: { x: number; y: number },
-    p1: { x: number; y: number },
+    cp: { x: number; y: number },
     p2: { x: number; y: number },
-    p3: { x: number; y: number },
   ): number {
-    // Approximate by sampling N points
     const N = LANE_GEOMETRY.BEZIER_SAMPLES;
     let length = 0;
     let prevX = p0.x, prevY = p0.y;
     for (let i = 1; i <= N; i++) {
       const t = i / N;
       const u = 1 - t;
-      const x = u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x;
-      const y = u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y;
+      const x = u * u * p0.x + 2 * u * t * cp.x + t * t * p2.x;
+      const y = u * u * p0.y + 2 * u * t * cp.y + t * t * p2.y;
       const dx = x - prevX, dy = y - prevY;
       length += Math.sqrt(dx * dx + dy * dy);
       prevX = x;
