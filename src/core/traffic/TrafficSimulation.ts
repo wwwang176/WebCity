@@ -1,6 +1,6 @@
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
-import { cubicBezierPoint, cubicBezierTangent } from './BezierPath';
+import { interpolateEdgePosition, interpolateEdgeTangent } from './EdgeInterpolation';
 import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
 import { pickWeighted } from '../utils/random';
 
@@ -247,22 +247,7 @@ export class TrafficSimulation {
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx]!;
     const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-
-    if (edge.bezierControl && edge.bezierControl.length >= 2) {
-      return cubicBezierPoint(
-        edge.from.position,
-        edge.bezierControl[0]!,
-        edge.bezierControl[1]!,
-        edge.to.position,
-        t,
-      );
-    }
-
-    // Linear interpolation for straight edges
-    return {
-      x: edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t,
-      y: edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t,
-    };
+    return interpolateEdgePosition(edge, t);
   }
 
   /** Heading angle (radians) for a vehicle. 0 = east. */
@@ -301,24 +286,10 @@ export class TrafficSimulation {
     // Compute position and heading at peeked state
     const edge = v.edgePath[ei]!;
     const t = edge.length > 0 ? Math.min(ep / edge.length, 1) : 0;
-    let x: number, y: number;
-    if (edge.bezierControl && edge.bezierControl.length >= 2) {
-      const p = cubicBezierPoint(edge.from.position, edge.bezierControl[0]!, edge.bezierControl[1]!, edge.to.position, t);
-      x = p.x; y = p.y;
-    } else {
-      x = edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t;
-      y = edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t;
-    }
-    let tx: number, ty: number;
-    if (edge.bezierControl && edge.bezierControl.length >= 2) {
-      const tan = cubicBezierTangent(edge.from.position, edge.bezierControl[0]!, edge.bezierControl[1]!, edge.to.position, t);
-      tx = tan.x; ty = tan.y;
-    } else {
-      tx = edge.to.position.x - edge.from.position.x;
-      ty = edge.to.position.y - edge.from.position.y;
-    }
-    const len = Math.sqrt(tx * tx + ty * ty) || 1;
-    const heading = Math.atan2(-ty / len, tx / len);
+    const { x, y } = interpolateEdgePosition(edge, t);
+    const tan = interpolateEdgeTangent(edge, t);
+    const len = Math.sqrt(tan.x * tan.x + tan.y * tan.y) || 1;
+    const heading = Math.atan2(-tan.y / len, tan.x / len);
     return { x, y, heading };
   }
 
@@ -328,25 +299,9 @@ export class TrafficSimulation {
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx]!;
     const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-
-    let tx: number, ty: number;
-    if (edge.bezierControl && edge.bezierControl.length >= 2) {
-      const tan = cubicBezierTangent(
-        edge.from.position,
-        edge.bezierControl[0]!,
-        edge.bezierControl[1]!,
-        edge.to.position,
-        t,
-      );
-      tx = tan.x;
-      ty = tan.y;
-    } else {
-      tx = edge.to.position.x - edge.from.position.x;
-      ty = edge.to.position.y - edge.from.position.y;
-    }
-
-    const len = Math.sqrt(tx * tx + ty * ty);
-    if (len > 0) return { hx: tx / len, hy: ty / len };
+    const tan = interpolateEdgeTangent(edge, t);
+    const len = Math.sqrt(tan.x * tan.x + tan.y * tan.y);
+    if (len > 0) return { hx: tan.x / len, hy: tan.y / len };
     return { hx: 1, hy: 0 };
   }
 
