@@ -39,6 +39,7 @@ import { collectTransportRoutes } from './core/transport/collectTransportRoutes'
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
 import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } from './core/building/InfraDetails';
 import { classifyBuilding } from './core/building/BuildingClassifier';
+import { classifyDemolishCell } from './core/building/DemolishClassifier';
 import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
 
 import {
@@ -527,58 +528,41 @@ export class Game {
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
-        if (!cell) continue;
+        const primary = cell && isInfrastructureBuilding(cell.buildingId)
+          ? findPrimaryCell(this.state.grid, x, y) : null;
+        const action = classifyDemolishCell(cell, primary);
 
-        // Handle multi-cell infrastructure: find primary and demolish entire building
-        if (isInfrastructureBuilding(cell.buildingId)) {
-          // Airport uses custom footprint — handle separately
-          if (cell.buildingId === getInfraBuildingId('airport')) {
+        switch (action.action) {
+          case 'skip': break;
+          case 'airport': {
             const key = `airport:${x},${y}`;
-            if (demolished.has(key)) continue;
-            // Pass raw cell coords; airport action handler uses findAtCell internally
-            this.removeInfraService('airport', x, y);
-            demolished.add(key);
-            continue;
-          }
-
-          const primary = findPrimaryCell(this.state.grid, x, y);
-          if (primary) {
-            const key = `${primary.x},${primary.y}`;
-            if (demolished.has(key)) continue; // already handled
-            demolished.add(key);
-
-            // Compute center from primary cell, then remove from service layer
-            const infraCfg = getInfraConfigById(cell.buildingId);
-            if (infraCfg) {
-              const { cx, cy } = getInfraCenterById(primary.x, primary.y, cell.buildingId);
-              this.removeInfraService(infraCfg.type, cx, cy);
+            if (!demolished.has(key)) {
+              this.removeInfraService('airport', x, y);
+              demolished.add(key);
             }
-
-            // Clear all cells of the multi-cell building
-            removeInfraFromGrid(this.state.grid, x, y);
-            continue;
+            break;
           }
-
-          // Transport stops are 1×1 infrastructure — handle directly
-          const infraCfg = getInfraConfigById(cell.buildingId);
-          if (infraCfg && infraCfg.width === 1 && infraCfg.height === 1) {
-            this.removeInfraService(infraCfg.type, x, y);
+          case 'multi_cell_infra': {
+            const key = `${action.primaryX},${action.primaryY}`;
+            if (!demolished.has(key)) {
+              demolished.add(key);
+              this.removeInfraService(action.infraType, action.cx, action.cy);
+              removeInfraFromGrid(this.state.grid, x, y);
+            }
+            break;
+          }
+          case 'single_cell_infra':
+            this.removeInfraService(action.infraType, x, y);
             this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
-            continue;
-          }
+            break;
+          case 'regular':
+            if (action.hasTrack) this.railBuilder.removeTrack(x, y);
+            this.state.grid.setCell(x, y, {
+              roadType: 0, roadFlags: 0, zoneType: ZoneType.NONE,
+              buildingId: 0, reserved: 0,
+            });
+            break;
         }
-
-        // Regular cell demolition (roads, zones, regular buildings, track)
-        if (cell.railType !== RailType.NONE) {
-          this.railBuilder.removeTrack(x, y);
-        }
-        this.state.grid.setCell(x, y, {
-          roadType: 0,
-          roadFlags: 0,
-          zoneType: ZoneType.NONE,
-          buildingId: 0,
-          reserved: 0,
-        });
       }
     }
     this.markAllDirty();
