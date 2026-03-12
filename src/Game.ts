@@ -55,8 +55,8 @@ import { getGroundwaterLevel } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
-import { RailNetwork } from './core/rail/RailNetwork';
-import { RailType, TrackDirection, RAIL } from './core/rail/types';
+import { RailNetwork, rebuildRailNetworkFromGrid } from './core/rail/RailNetwork';
+import { RailType, RAIL } from './core/rail/types';
 import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
@@ -346,7 +346,7 @@ export class Game {
 
     // Rebuild rail network from existing grid data (for loaded games)
     if (loadedState) {
-      this.rebuildRailNetworkFromGrid();
+      rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
     }
 
     // Generate terrain only for new games
@@ -390,26 +390,6 @@ export class Game {
     // Game loop
     this.sceneManager.onUpdate((dt) => this.update(dt));
     this.sceneManager.start();
-  }
-
-  /** Rebuild rail network graph from grid data (used when loading saved games). */
-  private rebuildRailNetworkFromGrid(): void {
-    const g = this.state.grid;
-    for (let y = 0; y < g.height; y++) {
-      for (let x = 0; x < g.width; x++) {
-        const cell = g.getCell(x, y);
-        if (!cell || cell.railType === RailType.NONE) continue;
-        const id = `${x},${y}`;
-        this.railNetwork.addNode(id);
-        // Connect to south/east neighbors to avoid duplicate edges
-        if ((cell.railFlags & TrackDirection.SOUTH) !== 0) {
-          this.railNetwork.addEdge(id, `${x},${y + 1}`);
-        }
-        if ((cell.railFlags & TrackDirection.EAST) !== 0) {
-          this.railNetwork.addEdge(id, `${x + 1},${y}`);
-        }
-      }
-    }
   }
 
   private setupInput(_container: HTMLElement): void {

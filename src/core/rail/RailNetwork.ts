@@ -1,5 +1,6 @@
 import { parsePosKeyUnsafe, euclideanDistance } from '../grid/GridHelpers';
 import { GraphNetwork } from '../graph/GraphNetwork';
+import { RailType, TrackDirection } from './types';
 
 const parseCoords = parsePosKeyUnsafe;
 
@@ -64,6 +65,31 @@ export class RailNetwork extends GraphNetwork {
     }
 
     return null; // No path found
+  }
+}
+
+/**
+ * Rebuild rail network graph from grid data (used when loading saved games).
+ * Extracted from Game.ts for SRP — pure grid→graph construction.
+ */
+export function rebuildRailNetworkFromGrid(
+  grid: { width: number; height: number; getCell(x: number, y: number): { railType: number; railFlags: number } | null },
+  railNetwork: RailNetwork,
+): void {
+  for (let y = 0; y < grid.height; y++) {
+    for (let x = 0; x < grid.width; x++) {
+      const cell = grid.getCell(x, y);
+      if (!cell || cell.railType === RailType.NONE) continue;
+      const id = `${x},${y}`;
+      railNetwork.addNode(id);
+      // Connect to south/east neighbors to avoid duplicate edges
+      if ((cell.railFlags & TrackDirection.SOUTH) !== 0) {
+        railNetwork.addEdge(id, `${x},${y + 1}`);
+      }
+      if ((cell.railFlags & TrackDirection.EAST) !== 0) {
+        railNetwork.addEdge(id, `${x + 1},${y}`);
+      }
+    }
   }
 }
 
