@@ -939,49 +939,7 @@ export class Game {
       }
     }
 
-    // Rebuild meshes per-subsystem when dirty
-    const d = this.dirty;
-    const anyDirty = d.roads || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
-    if (anyDirty) {
-      if (d.roads) {
-        this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
-        if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
-        d.roads = false;
-      }
-      if (d.tracks) {
-        this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
-        if (this.viewMode !== ViewMode.NORMAL) this.trackRenderer.setViewMode(this.viewMode);
-        d.tracks = false;
-      }
-      if (d.crossings) {
-        this.levelCrossingSystem.rebuildFromGrid(this.state.grid);
-        this.levelCrossingRenderer.build(this.sceneManager.scene, this.levelCrossingSystem.getCrossings());
-        if (this.viewMode !== ViewMode.NORMAL) this.levelCrossingRenderer.setViewMode(this.viewMode);
-        d.crossings = false;
-      }
-      if (d.buildings) {
-        this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
-        if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
-        d.buildings = false;
-      }
-      if (d.terrain) {
-        this.terrainRenderer.refreshColors();
-        d.terrain = false;
-      }
-      if (d.trafficLights) {
-        syncTrafficLightsWithGrid(this.state.grid, this.state.trafficLights);
-        this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
-        d.trafficLights = false;
-      }
-
-      // Refresh active overlay when relevant subsystems rebuilt
-      const currentOverlay = this.overlayRenderer.getOverlay();
-      if (currentOverlay && currentOverlay !== 'none') {
-        this.setOverlay(currentOverlay);
-      }
-      // Re-apply highlight after rebuild (new meshes lose aHighlight)
-      this.updatePlacementPreview();
-    }
+    this.rebuildDirtySubsystems();
 
     // Update traffic light colors every frame
     this.trafficLightRenderer.update(this.state.trafficLights.getLights());
@@ -991,116 +949,7 @@ export class Game {
     // Update cursor color based on tool
     this.updateCursorColor();
 
-    // Advance edge-based vehicles every render frame (independent of tick)
-    if (!this.paused) {
-      const scaledDt = dt * this.speed;
-      const canAdvance = (cur: string, next: string) => {
-        const [cx, cy] = cur.split(',').map(Number);
-        const [nx, ny] = next.split(',').map(Number);
-        // Block at red traffic lights
-        if (!this.state.trafficLights.canPass(cx!, cy!, nx!, ny!)) return false;
-        // Block at active level crossings (train approaching/passing)
-        if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
-        return true;
-      };
-      const getSpeedLimit = (cellKey: string) => {
-        const [gx, gy] = cellKey.split(',').map(Number);
-        const cell = this.state.grid.getCell(gx!, gy!);
-        if (!cell || cell.roadType <= 0) return 50;
-        const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
-        return cfg?.speedLimit ?? 50;
-      };
-      this.state.traffic.advanceEdgeVehicles(scaledDt, canAdvance, getSpeedLimit);
-    }
-
-    // Update vehicles — read positions for rendering
-    const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
-      if (v.arrived) return null;
-
-      // Derive vehicle type from length (assigned in simulation)
-      if (!this.vehicleTypes.has(v.id)) {
-        this.vehicleTypes.set(v.id, classifyVehicleType(v.length));
-      }
-
-      const pos = this.state.traffic.getVehiclePositionOnEdges(v);
-      if (!pos) return null;
-      const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
-      this.vehicleHeadings.set(v.id, heading);
-
-      return {
-        id: v.id,
-        x: pos.x,
-        y: pos.y,
-        heading,
-        type: this.vehicleTypes.get(v.id)!,
-        laneOffset: 0,
-      };
-    }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
-
-    // 收集交通系統車輛（bus/rail/ferry）
-    const transportVehicles = collectTransportVehicles({
-      bus: this.state.bus,
-      rail: this.state.rail,
-      ferry: this.state.ferry,
-    });
-
-    // 渡輪渲染端動畫（純 LERP，跟地鐵一樣不靠 tick）
-    const ferrySpeed = this.paused ? 0 : this.state.clock.speed;
-    this.ferryAnimator.update(dt, ferrySpeed, this.state.ferry, transportVehicles);
-
-    // 火車渲染端動畫（沿完整來回路徑循環，到站停靠）
-    const trainSpeed = this.paused ? 0 : this.state.clock.speed;
-    this.trainAnimator.update(dt, trainSpeed, this.state.rail, transportVehicles);
-
-    // 平交道：根據火車視覺位置的近接觸發（proximity-based）
-    const trainPositions = transportVehicles
-      .filter(v => v.type === 'rail_train')
-      .map(v => ({ x: v.x, y: v.y }));
-    this.levelCrossingSystem.update(dt, trainSpeed, trainPositions);
-
-    // 合併道路車輛與交通系統車輛
-    const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
-    const vmOp = VIEW_MODE_OPACITY[this.viewMode];
-    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
-
-    // 更新交通路線渲染
-    const routeData = collectTransportRoutes({
-      bus: this.state.bus,
-      metro: this.state.metro,
-      rail: this.state.rail,
-      ferry: this.state.ferry,
-    });
-    // Focus mode: hide route lines (replaced by focused visuals)
-    if (this.viewMode !== ViewMode.NORMAL) {
-      this.transportRouteRenderer.update([]);
-    } else {
-      this.transportRouteRenderer.update(routeData);
-    }
-
-    // 更新地鐵隧道 + 列車動畫（純渲染端動畫，不依賴 tick）
-    const metroLines = this.state.metro.getLines();
-    const metroLineData = metroLines.map(line => ({
-      lineId: line.id,
-      stops: line.stops.map(s => ({ x: s.x, y: s.y })),
-      segments: computeTunnelSegments(line.stops.map(s => ({ x: s.x, y: s.y }))),
-      trainCount: line.vehicles,
-    }));
-    const metroSpeedMult = this.paused ? 0 : this.state.clock.speed;
-    this.metroTunnelRenderer.update(
-      metroLineData,
-      this.state.metro.getStations(),
-      vmOp.metroTunnel,
-      dt * metroSpeedMult,
-    );
-
-    // Clean up stale vehicle rendering state
-    const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
-    for (const id of this.vehicleTypes.keys()) {
-      if (!activeIds.has(id)) {
-        this.vehicleTypes.delete(id);
-        this.vehicleHeadings.delete(id);
-      }
-    }
+    this.updateVehiclesAndTransport(dt);
 
     // Animate terrain (water)
     this.terrainRenderer.update(dt);
@@ -1122,6 +971,141 @@ export class Game {
     const sunI = this.weatherRenderer.sunIntensity;
     this.buildingRenderer.update(sunI, dt);
     this.roadRenderer.update(sunI);
+  }
+
+  /** Rebuild renderer meshes for each dirty subsystem, then clear dirty flags. */
+  private rebuildDirtySubsystems(): void {
+    const d = this.dirty;
+    const anyDirty = d.roads || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
+    if (!anyDirty) return;
+
+    if (d.roads) {
+      this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
+      if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
+      d.roads = false;
+    }
+    if (d.tracks) {
+      this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
+      if (this.viewMode !== ViewMode.NORMAL) this.trackRenderer.setViewMode(this.viewMode);
+      d.tracks = false;
+    }
+    if (d.crossings) {
+      this.levelCrossingSystem.rebuildFromGrid(this.state.grid);
+      this.levelCrossingRenderer.build(this.sceneManager.scene, this.levelCrossingSystem.getCrossings());
+      if (this.viewMode !== ViewMode.NORMAL) this.levelCrossingRenderer.setViewMode(this.viewMode);
+      d.crossings = false;
+    }
+    if (d.buildings) {
+      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
+      if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
+      d.buildings = false;
+    }
+    if (d.terrain) {
+      this.terrainRenderer.refreshColors();
+      d.terrain = false;
+    }
+    if (d.trafficLights) {
+      syncTrafficLightsWithGrid(this.state.grid, this.state.trafficLights);
+      this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
+      d.trafficLights = false;
+    }
+
+    // Refresh active overlay when relevant subsystems rebuilt
+    const currentOverlay = this.overlayRenderer.getOverlay();
+    if (currentOverlay && currentOverlay !== 'none') {
+      this.setOverlay(currentOverlay);
+    }
+    // Re-apply highlight after rebuild (new meshes lose aHighlight)
+    this.updatePlacementPreview();
+  }
+
+  /** Advance vehicles, animate transport systems, and update vehicle renderers. */
+  private updateVehiclesAndTransport(dt: number): void {
+    // Advance edge-based vehicles every render frame (independent of tick)
+    if (!this.paused) {
+      const scaledDt = dt * this.speed;
+      const canAdvance = (cur: string, next: string) => {
+        const [cx, cy] = cur.split(',').map(Number);
+        const [nx, ny] = next.split(',').map(Number);
+        if (!this.state.trafficLights.canPass(cx!, cy!, nx!, ny!)) return false;
+        if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
+        return true;
+      };
+      const getSpeedLimit = (cellKey: string) => {
+        const [gx, gy] = cellKey.split(',').map(Number);
+        const cell = this.state.grid.getCell(gx!, gy!);
+        if (!cell || cell.roadType <= 0) return 50;
+        const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
+        return cfg?.speedLimit ?? 50;
+      };
+      this.state.traffic.advanceEdgeVehicles(scaledDt, canAdvance, getSpeedLimit);
+    }
+
+    // Collect road vehicle positions for rendering
+    const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
+      if (v.arrived) return null;
+      if (!this.vehicleTypes.has(v.id)) {
+        this.vehicleTypes.set(v.id, classifyVehicleType(v.length));
+      }
+      const pos = this.state.traffic.getVehiclePositionOnEdges(v);
+      if (!pos) return null;
+      const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
+      this.vehicleHeadings.set(v.id, heading);
+      return { id: v.id, x: pos.x, y: pos.y, heading, type: this.vehicleTypes.get(v.id)!, laneOffset: 0 };
+    }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
+
+    // Collect transport system vehicles (bus/rail/ferry)
+    const transportVehicles = collectTransportVehicles({
+      bus: this.state.bus, rail: this.state.rail, ferry: this.state.ferry,
+    });
+
+    // Animate ferry and train (render-side LERP, independent of tick)
+    const simSpeed = this.paused ? 0 : this.state.clock.speed;
+    this.ferryAnimator.update(dt, simSpeed, this.state.ferry, transportVehicles);
+    this.trainAnimator.update(dt, simSpeed, this.state.rail, transportVehicles);
+
+    // Level crossing proximity trigger
+    const trainPositions = transportVehicles
+      .filter(v => v.type === 'rail_train')
+      .map(v => ({ x: v.x, y: v.y }));
+    this.levelCrossingSystem.update(dt, simSpeed, trainPositions);
+
+    // Merge road + transport vehicles and render
+    const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
+    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
+
+    // Update transport route lines
+    const routeData = collectTransportRoutes({
+      bus: this.state.bus, metro: this.state.metro, rail: this.state.rail, ferry: this.state.ferry,
+    });
+    if (this.viewMode !== ViewMode.NORMAL) {
+      this.transportRouteRenderer.update([]);
+    } else {
+      this.transportRouteRenderer.update(routeData);
+    }
+
+    // Update metro tunnel + train animation
+    const vmOp = VIEW_MODE_OPACITY[this.viewMode];
+    const metroLines = this.state.metro.getLines();
+    const metroLineData = metroLines.map(line => ({
+      lineId: line.id,
+      stops: line.stops.map(s => ({ x: s.x, y: s.y })),
+      segments: computeTunnelSegments(line.stops.map(s => ({ x: s.x, y: s.y }))),
+      trainCount: line.vehicles,
+    }));
+    const metroSpeedMult = this.paused ? 0 : this.state.clock.speed;
+    this.metroTunnelRenderer.update(
+      metroLineData, this.state.metro.getStations(), vmOp.metroTunnel, dt * metroSpeedMult,
+    );
+
+    // Clean up stale vehicle rendering state
+    const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
+    for (const id of this.vehicleTypes.keys()) {
+      if (!activeIds.has(id)) {
+        this.vehicleTypes.delete(id);
+        this.vehicleHeadings.delete(id);
+      }
+    }
   }
 
   private updateCursorColor(): void {
