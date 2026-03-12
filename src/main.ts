@@ -3,7 +3,12 @@ import { loadGame } from './core/save/SaveManager';
 import { deserializeGameState } from './core/save/Serializer';
 import { type GameState } from './core/simulation/GameState';
 
-function startGame(loadedState?: GameState): void {
+interface SaveInfo {
+  slotId: number;
+  name: string;
+}
+
+function startGame(loadedState?: GameState, saveInfo?: SaveInfo): void {
   const app = document.getElementById('app');
   if (!app) return;
 
@@ -26,6 +31,10 @@ function startGame(loadedState?: GameState): void {
           app.innerHTML = '';
           app.style.display = 'block';
           const game = new Game(app, loadedState);
+          if (saveInfo) {
+            game.loadedSlotId = saveInfo.slotId;
+            game.loadedSaveName = saveInfo.name;
+          }
           (window as unknown as Record<string, unknown>).__game = game;
           const ui = createGameUI(game);
           document.body.appendChild(ui);
@@ -40,7 +49,7 @@ async function handleLoadGame(slotId: number): Promise<void> {
     const slot = await loadGame(slotId);
     if (slot && slot.data) {
       const state = deserializeGameState(slot.data);
-      startGame(state);
+      startGame(state, { slotId: slot.id, name: slot.name });
     } else {
       // No save found, start new game
       startGame();

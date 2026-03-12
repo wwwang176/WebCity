@@ -21,6 +21,7 @@ import { CitySpecModal } from './modals/CitySpecModal';
 import { DistrictModal } from './modals/DistrictModal';
 import { TransitModal } from './modals/TransitModal';
 import { DebugModal } from './modals/DebugModal';
+import { SettingsModal } from './modals/SettingsModal';
 
 function GameUIRoot() {
   const [openModal, setOpenModal] = createSignal<string | null>(null);
@@ -50,6 +51,7 @@ function GameUIRoot() {
       <DistrictModal open={openModal() === 'district'} onClose={closeModal} />
       <TransitModal open={openModal() === 'transit'} onClose={closeModal} />
       <DebugModal open={openModal() === 'debug'} onClose={closeModal} />
+      <SettingsModal />
     </div>
   );
 }

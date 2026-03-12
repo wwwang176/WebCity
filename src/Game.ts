@@ -242,6 +242,11 @@ export class Game {
   selectedAirportSize: AirportSize | null = null; // selected airport size for placement
   viewMode: ViewMode = ViewMode.NORMAL;
 
+  /** Which save slot this game was loaded from (null = new game) */
+  loadedSlotId: number | null = null;
+  /** Name of the save slot this game was loaded from */
+  loadedSaveName: string | null = null;
+
   constructor(container: HTMLElement, loadedState?: GameState) {
     const mapSize = loadedState ? loadedState.grid.width : 60;
 

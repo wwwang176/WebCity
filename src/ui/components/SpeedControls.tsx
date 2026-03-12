@@ -1,5 +1,6 @@
 import { createSignal } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
+import { SettingsButton } from './SettingsMenu';
 
 export function SpeedControls() {
   const [muted, setMuted] = createSignal(false);
@@ -48,6 +49,7 @@ export function SpeedControls() {
         onClick={toggleMute}
         innerHTML={muted() ? '&#128264;' : '&#128266;'}
       />
+      <SettingsButton />
     </div>
   );
 }

@@ -1,0 +1,153 @@
+import { createSignal } from 'solid-js';
+import { getGame } from '../store/gameStore';
+import { settingsOpen, closeSettings } from '../components/SettingsMenu';
+import { listSaves } from '../../core/save/SaveManager';
+import { Modal } from './Modal';
+
+export function SettingsModal() {
+  const [saving, setSaving] = createSignal(false);
+  const [showConfirm, setShowConfirm] = createSignal(false);
+  const [showSaveDialog, setShowSaveDialog] = createSignal(false);
+  const [saveName, setSaveName] = createSignal('');
+
+  const close = () => {
+    closeSettings();
+    setShowConfirm(false);
+    setShowSaveDialog(false);
+  };
+
+  const isNamedSlot = () => {
+    const game = getGame();
+    return game.loadedSlotId !== null && game.loadedSlotId > 0;
+  };
+
+  const handleSaveClick = async () => {
+    if (saving()) return;
+    if (isNamedSlot()) {
+      // Loaded from a named save — overwrite directly
+      await doSave(getGame().loadedSlotId!, getGame().loadedSaveName!);
+    } else {
+      // New game or AutoSave — prompt for name
+      setSaveName('');
+      setShowSaveDialog(true);
+    }
+  };
+
+  const handleSaveConfirm = async () => {
+    const name = saveName().trim();
+    if (!name || saving()) return;
+    // Find next available slot id (skip 0 = AutoSave)
+    const saves = await listSaves();
+    const usedIds = saves.map(s => s.id);
+    let slotId = 1;
+    while (usedIds.includes(slotId)) slotId++;
+    await doSave(slotId, name);
+  };
+
+  const doSave = async (slotId: number, name: string) => {
+    setSaving(true);
+    try {
+      await getGame().saveCurrentGame(slotId, name);
+      // Update tracked slot so subsequent saves overwrite the same slot
+      getGame().loadedSlotId = slotId;
+      getGame().loadedSaveName = name;
+      getGame().showNotification('Game saved!');
+    } catch {
+      getGame().showNotification('Save failed');
+    }
+    setSaving(false);
+    close();
+  };
+
+  const cancelSaveDialog = () => setShowSaveDialog(false);
+  const openConfirm = () => setShowConfirm(true);
+  const cancelConfirm = () => setShowConfirm(false);
+  const confirmReturn = () => window.location.reload();
+
+  return (
+    <>
+      {/* Main settings modal */}
+      <Modal
+        id="settings-modal"
+        title={'\u2699\uFE0F Settings'}
+        open={settingsOpen() && !showConfirm() && !showSaveDialog()}
+        onClose={close}
+      >
+        <div class="settings-modal-list">
+          <button
+            class="settings-modal-item"
+            onClick={handleSaveClick}
+            disabled={saving()}
+          >
+            <span class="settings-modal-icon">{'\uD83D\uDCBE'}</span>
+            <span>{saving() ? 'Saving...' : 'Save Game'}</span>
+          </button>
+
+          <div class="settings-modal-divider" />
+
+          <button
+            class="settings-modal-item settings-modal-item--danger"
+            onClick={openConfirm}
+          >
+            <span class="settings-modal-icon">{'\uD83C\uDFE0'}</span>
+            <span>Return to Main Menu</span>
+          </button>
+        </div>
+      </Modal>
+
+      {/* Save name input modal */}
+      <Modal
+        id="save-dialog-modal"
+        title={'\uD83D\uDCBE Save Game'}
+        open={showSaveDialog()}
+        onClose={cancelSaveDialog}
+      >
+        <div class="save-dialog-body">
+          <label class="save-dialog-label" for="save-name-input">Save Name</label>
+          <input
+            id="save-name-input"
+            class="save-dialog-input"
+            type="text"
+            placeholder="My City"
+            maxLength={40}
+            value={saveName()}
+            onInput={(e) => setSaveName(e.currentTarget.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveConfirm(); }}
+          />
+          <div class="settings-confirm-actions" style="margin-top:12px">
+            <button
+              class="settings-confirm-btn settings-confirm-btn--save"
+              onClick={handleSaveConfirm}
+              disabled={!saveName().trim() || saving()}
+            >
+              {saving() ? 'Saving...' : 'Save'}
+            </button>
+            <button class="settings-confirm-btn settings-confirm-btn--no" onClick={cancelSaveDialog}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Confirm return to menu modal */}
+      <Modal
+        id="confirm-modal"
+        title={'\u26A0\uFE0F Unsaved progress will be lost!'}
+        open={showConfirm()}
+        onClose={cancelConfirm}
+      >
+        <p class="confirm-modal-text">
+          Are you sure you want to return to the main menu? Any unsaved progress will be lost.
+        </p>
+        <div class="settings-confirm-actions">
+          <button class="settings-confirm-btn settings-confirm-btn--yes" onClick={confirmReturn}>
+            Confirm
+          </button>
+          <button class="settings-confirm-btn settings-confirm-btn--no" onClick={cancelConfirm}>
+            Cancel
+          </button>
+        </div>
+      </Modal>
+    </>
+  );
+}
