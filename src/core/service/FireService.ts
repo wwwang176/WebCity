@@ -94,6 +94,11 @@ export class FireService {
     return this.roadCoverage.previewMerged(position, grid, ROAD_COVERAGE.FIRE_BUDGET, facilityWidth, facilityHeight);
   }
 
+  /** Get all covered cells with their road-distance costs (for overlay gradient). */
+  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
+    return this.roadCoverage.getCoveredCells();
+  }
+
   /**
    * Returns true if the position (x, y) is within road-distance coverage
    * of at least one fire station.

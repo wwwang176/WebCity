@@ -83,6 +83,11 @@ export class GarbageService {
     return this.roadCoverage.previewMerged(position, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
   }
 
+  /** Get all covered cells with their road-distance costs (for overlay gradient). */
+  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
+    return this.roadCoverage.getCoveredCells();
+  }
+
   tick(population: number): void {
     // 1. Produce garbage based on population
     const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);

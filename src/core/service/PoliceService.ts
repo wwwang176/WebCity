@@ -55,6 +55,11 @@ export class PoliceService {
     return this.coverage.previewMerged(position, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
   }
 
+  /** Get all covered cells with their road-distance costs (for overlay gradient). */
+  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
+    return this.coverage.getCoveredCells();
+  }
+
   tick(grid?: ReadableGrid): void {
     if (grid) {
       this.recalculateCoverage(grid);
