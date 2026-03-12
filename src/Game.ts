@@ -52,7 +52,7 @@ import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
-import { canPlaceTransportStop } from './core/transport/TransportPlacement';
+import { canPlaceTransportStop, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
@@ -94,12 +94,6 @@ const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
   road: RoadType.TWO_LANE, road_rural: RoadType.RURAL,
   road_2lane: RoadType.TWO_LANE, road_4lane: RoadType.FOUR_LANE,
   road_6lane: RoadType.SIX_LANE, road_highway: RoadType.HIGHWAY,
-};
-
-/** Map transport stop type to InfraType (used for cost/config lookup). */
-const TRANSPORT_TO_INFRA_TYPE: Record<string, InfraType> = {
-  bus: 'bus_stop', metro: 'metro_station', rail: 'train_station',
-  ferry: 'ferry_dock', airport: 'airport',
 };
 
 /** Zone tool preview highlight colors. */
@@ -411,23 +405,10 @@ export class Game {
       case 'e': this.sceneManager.rotateCamera(Math.PI / 4); break;
       case 'escape': this.setTool('select'); this.dragStart = null; break;
       case 'r': this.cycleRotation(); break;
-      case ' ':
-        this.paused = !this.paused;
-        if (this.paused) this.state.clock.pause();
-        else this.state.clock.resume();
-        this.onUIUpdate?.();
-        break;
+      case ' ': this.togglePause(); break;
       case '+':
-      case '=':
-        this.speed = Math.min(3, this.speed + 1) as 1 | 2 | 3;
-        this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
-        this.onUIUpdate?.();
-        break;
-      case '-':
-        this.speed = Math.max(1, this.speed - 1) as 1 | 2 | 3;
-        this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
-        this.onUIUpdate?.();
-        break;
+      case '=': this.changeSpeed(1); break;
+      case '-': this.changeSpeed(-1); break;
     }
   }
 
@@ -1383,6 +1364,29 @@ export class Game {
       avgPathLength: this.state.traffic.getAveragePathLength(),
       roadTileCount: countRoadTiles(this.state.grid),
     });
+  }
+
+  /** Toggle pause state (DRY: used by keyboard + UI). */
+  togglePause(): void {
+    this.paused = !this.paused;
+    if (this.paused) this.state.clock.pause();
+    else this.state.clock.resume();
+    this.onUIUpdate?.();
+  }
+
+  /** Set game speed directly (DRY: used by UI speed buttons). */
+  setSpeed(s: 1 | 2 | 3): void {
+    this.speed = s;
+    this.state.clock.setSpeed(s);
+    this.paused = false;
+    this.onUIUpdate?.();
+  }
+
+  /** Change speed by delta, clamped to [1,3] (DRY: used by keyboard shortcuts). */
+  changeSpeed(delta: number): void {
+    this.speed = Math.min(3, Math.max(1, this.speed + delta)) as 1 | 2 | 3;
+    this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
+    this.onUIUpdate?.();
   }
 
   takeLoan(amount: number): void {

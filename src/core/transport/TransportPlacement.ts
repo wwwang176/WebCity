@@ -3,7 +3,15 @@
  * Adding new transport types only requires adding a case here (OCP).
  */
 
+import type { InfraType } from '../building/InfraConfig';
+
 export type TransportStopType = 'bus' | 'metro' | 'rail' | 'ferry' | 'airport';
+
+/** Map transport stop type to InfraType for cost/config lookup (OCP: add new transport types here). */
+export const TRANSPORT_TO_INFRA_TYPE: Record<TransportStopType, InfraType> = {
+  bus: 'bus_stop', metro: 'metro_station', rail: 'train_station',
+  ferry: 'ferry_dock', airport: 'airport',
+};
 
 export type PlaceStopResult =
   | { ok: true }

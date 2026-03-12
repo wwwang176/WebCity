@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { canPlaceTransportStop } from '../TransportPlacement';
+import { canPlaceTransportStop, TRANSPORT_TO_INFRA_TYPE } from '../TransportPlacement';
 
 describe('canPlaceTransportStop', () => {
   it('should reject null cell (out of bounds)', () => {
@@ -72,5 +72,22 @@ describe('canPlaceTransportStop', () => {
   it('should allow airport on empty cell', () => {
     const cell = { roadType: 0, buildingId: 0, railType: 0 };
     expect(canPlaceTransportStop('airport', cell)).toEqual({ ok: true });
+  });
+});
+
+describe('TRANSPORT_TO_INFRA_TYPE', () => {
+  it('should map all transport stop types to infra types', () => {
+    expect(TRANSPORT_TO_INFRA_TYPE.bus).toBe('bus_stop');
+    expect(TRANSPORT_TO_INFRA_TYPE.metro).toBe('metro_station');
+    expect(TRANSPORT_TO_INFRA_TYPE.rail).toBe('train_station');
+    expect(TRANSPORT_TO_INFRA_TYPE.ferry).toBe('ferry_dock');
+    expect(TRANSPORT_TO_INFRA_TYPE.airport).toBe('airport');
+  });
+
+  it('should have an entry for every transport stop type', () => {
+    const types = ['bus', 'metro', 'rail', 'ferry', 'airport'] as const;
+    for (const t of types) {
+      expect(TRANSPORT_TO_INFRA_TYPE[t]).toBeDefined();
+    }
   });
 });
