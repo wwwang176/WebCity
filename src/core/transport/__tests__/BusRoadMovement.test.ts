@@ -270,7 +270,7 @@ describe('Step 4: createRouteWithTraffic', () => {
     expect(traffic.vehicles.length).toBe(0);
   });
 
-  it('should stagger multiple buses across route edges', () => {
+  it('should round-robin buses across stops (0→A, 1→B, 2→A, 3→B)', () => {
     const bus = new BusSystem();
     const traffic = new TrafficSimulation();
     const s1 = bus.addStop(0, 0);
@@ -287,17 +287,47 @@ describe('Step 4: createRouteWithTraffic', () => {
       return edges;
     };
 
-    const route = bus.createRouteWithTraffic([s1, s2], 4, findPath, refinePath, traffic);
+    // 2 stops → 2 segments (A→B, B→A). 5 buses should alternate: A,B,A,B,A
+    const route = bus.createRouteWithTraffic([s1, s2], 5, findPath, refinePath, traffic);
     expect(route).not.toBeNull();
-    expect(traffic.vehicles.length).toBe(4);
+    expect(traffic.vehicles.length).toBe(5);
 
-    // Buses should NOT all start at the same position
-    const positions = traffic.vehicles.map(v => ({
-      seg: v.busState!.segmentIndex,
-      edge: v.edgeIndex,
-    }));
-    const unique = new Set(positions.map(p => `${p.seg}:${p.edge}`));
-    expect(unique.size).toBeGreaterThan(1);
+    const segs = traffic.vehicles.map(v => v.busState!.segmentIndex);
+    expect(segs).toEqual([0, 1, 0, 1, 0]); // A, B, A, B, A
+    // All start at edge 0 (stop position)
+    for (const v of traffic.vehicles) {
+      expect(v.edgeIndex).toBe(0);
+    }
+  });
+
+  it('addVehicleWithTraffic should round-robin based on existing count', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1; s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4; s2.roadY = 0;
+
+    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
+    const refinePath = (cellPath: string[]) => {
+      const edges: LaneEdge[] = [];
+      for (let i = 0; i < cellPath.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      }
+      return edges;
+    };
+
+    // Create with 1 bus at seg 0 (A)
+    const route = bus.createRouteWithTraffic([s1, s2], 1, findPath, refinePath, traffic);
+    expect(traffic.vehicles[0]!.busState!.segmentIndex).toBe(0);
+
+    // Add via + button: existing=1 → seg 1 (B)
+    bus.addVehicleWithTraffic(route!.id, traffic);
+    expect(traffic.vehicles[1]!.busState!.segmentIndex).toBe(1);
+
+    // Add again: existing=2 → seg 0 (A)
+    bus.addVehicleWithTraffic(route!.id, traffic);
+    expect(traffic.vehicles[2]!.busState!.segmentIndex).toBe(0);
   });
 
   it('deleteRouteWithTraffic should remove from both BusSystem and TrafficSimulation', () => {

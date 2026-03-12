@@ -61,14 +61,14 @@ export class BusSystem extends BaseTransportSystem {
 
   /**
    * Spawn a bus vehicle into TrafficSimulation for the given route.
-   * offsetFraction (0–1) staggers the bus along the route.
+   * startSegment places the bus at that segment's stop (round-robin).
    * Returns the vehicle or null if no segments are cached.
    */
-  spawnBusInTraffic(routeId: number, traffic: TrafficSimulation, offsetFraction = 0): Vehicle | null {
+  spawnBusInTraffic(routeId: number, traffic: TrafficSimulation, startSegment = 0): Vehicle | null {
     const segments = this.routeSegments.get(routeId);
     if (!segments || segments.length === 0) return null;
 
-    const vehicle = traffic.addBusVehicle(segments, routeId, offsetFraction);
+    const vehicle = traffic.addBusVehicle(segments, routeId, startSegment);
     const ids = this.busVehicleIds.get(routeId) ?? [];
     ids.push(vehicle.id);
     this.busVehicleIds.set(routeId, ids);
@@ -94,8 +94,7 @@ export class BusSystem extends BaseTransportSystem {
     }
     const count = Math.max(1, vehicleCount);
     for (let i = 0; i < count; i++) {
-      const offset = count > 1 ? i / count : 0;
-      this.spawnBusInTraffic(route.id, traffic, offset);
+      this.spawnBusInTraffic(route.id, traffic, i);
     }
     return route;
   }
@@ -112,7 +111,9 @@ export class BusSystem extends BaseTransportSystem {
   addVehicleWithTraffic(routeId: number, traffic: TrafficSimulation): void {
     const route = this.routes.find(r => r.id === routeId);
     if (!route) return;
-    this.spawnBusInTraffic(routeId, traffic);
+    // Round-robin: count existing buses to pick next stop
+    const existing = (this.busVehicleIds.get(routeId) ?? []).length;
+    this.spawnBusInTraffic(routeId, traffic, existing);
     this.addVehicleToRoute(routeId);
   }
 

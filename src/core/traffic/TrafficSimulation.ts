@@ -98,32 +98,17 @@ export class TrafficSimulation {
 
 
   /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg).
-   *  offsetFraction (0–1) distributes the bus along the total route for staggering. */
-  addBusVehicle(segments: LaneEdge[][], routeId: number, offsetFraction = 0): Vehicle {
-    // Calculate total edges to determine stagger position
-    let totalEdges = 0;
-    for (const seg of segments) totalEdges += seg.length;
-
-    let targetEdge = Math.floor(offsetFraction * totalEdges);
-    let segIdx = 0;
-    let edgeIdx = 0;
-    for (let s = 0; s < segments.length; s++) {
-      if (targetEdge < segments[s]!.length) {
-        segIdx = s;
-        edgeIdx = targetEdge;
-        break;
-      }
-      targetEdge -= segments[s]!.length;
-    }
-
-    const startSegment = segments[segIdx]!;
+   *  startSegment places the bus at the beginning of that segment (a stop). */
+  addBusVehicle(segments: LaneEdge[][], routeId: number, startSegment = 0): Vehicle {
+    const segIdx = startSegment % segments.length;
+    const seg = segments[segIdx]!;
     const vehicle: Vehicle = {
       id: this.nextId++,
       length: 0.45,  // bus fixed length
       arrived: false,
-      lane: startSegment[edgeIdx]?.from.lane ?? 0,
-      edgePath: startSegment,
-      edgeIndex: edgeIdx,
+      lane: seg[0]?.from.lane ?? 0,
+      edgePath: seg,
+      edgeIndex: 0,
       edgeProgress: 0,
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
@@ -137,7 +122,7 @@ export class TrafficSimulation {
       },
     };
     this.vehicles.push(vehicle);
-    const startCell = startSegment[edgeIdx]?.from.cellKey;
+    const startCell = seg[0]?.from.cellKey;
     if (startCell) {
       this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
     }
