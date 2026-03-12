@@ -1,6 +1,6 @@
 import { RoadType, RoadDirection } from '../road/types';
 import { getLaneCount } from './TrafficSimulation';
-import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, toPosKey, euclideanDistance } from '../grid/GridHelpers';
 
 // ── Types ──
 
@@ -303,10 +303,7 @@ export class LaneGraph {
         const toPt = this.points.get(entryId);
         if (!fromPt || !toPt) continue;
 
-        const edgeDx = toPt.position.x - fromPt.position.x;
-        const edgeDy = toPt.position.y - fromPt.position.y;
-        const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-
+        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
         this.edges.push({
           id: `${exitId}>${entryId}`,
           from: fromPt,
@@ -330,20 +327,8 @@ export class LaneGraph {
 
           // Avoid duplicating: only create if not already an intersection
           // For straight road (2 directions), this is a through-connection
-          const edgeDx = toPt.position.x - fromPt.position.x;
-          const edgeDy = toPt.position.y - fromPt.position.y;
-          const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-
           const edgeId = `${fromId}>${toId}`;
-          if (!this.edges.some(e => e.id === edgeId)) {
-            this.edges.push({
-              id: edgeId,
-              from: fromPt,
-              to: toPt,
-              length: Math.max(length, 0.1),
-              type: 'straight',
-            });
-          }
+          this.pushEdgeIfNew(edgeId, fromPt, toPt, 'straight', 0.1);
         }
       }
     }
@@ -408,20 +393,8 @@ export class LaneGraph {
         const toPt = this.points.get(entryId);
         if (!fromPt || !toPt) continue;
 
-        const edgeDx = toPt.position.x - fromPt.position.x;
-        const edgeDy = toPt.position.y - fromPt.position.y;
-        const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-
         const edgeId = `${exitId}>${entryId}`;
-        if (!this.edges.some(e => e.id === edgeId)) {
-          this.edges.push({
-            id: edgeId,
-            from: fromPt,
-            to: toPt,
-            length: Math.max(length, 0.1),
-            type: 'straight',
-          });
-        }
+        this.pushEdgeIfNew(edgeId, fromPt, toPt, 'straight', 0.1);
       }
     }
   }
@@ -441,10 +414,7 @@ export class LaneGraph {
         const toPt = this.points.get(toId);
         if (!fromPt || !toPt) continue;
 
-        const dx = toPt.position.x - fromPt.position.x;
-        const dy = toPt.position.y - fromPt.position.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
-
+        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
         this.edges.push({
           id: `lc:${fromId}>${toId}`,
           from: fromPt,
@@ -460,10 +430,7 @@ export class LaneGraph {
         const toPt2 = this.points.get(toId2);
         if (!fromPt2 || !toPt2) continue;
 
-        const dx2 = toPt2.position.x - fromPt2.position.x;
-        const dy2 = toPt2.position.y - fromPt2.position.y;
-        const length2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-
+        const length2 = euclideanDistance(fromPt2.position.x, fromPt2.position.y, toPt2.position.x, toPt2.position.y);
         this.edges.push({
           id: `lc:${fromId2}>${toId2}`,
           from: fromPt2,
@@ -491,6 +458,19 @@ export class LaneGraph {
       y: to.position.y - to.tangent.ty * strength,
     };
     return [cp1, cp2];
+  }
+
+  /** Push a straight edge only if no edge with the same ID exists yet. */
+  private pushEdgeIfNew(
+    id: string,
+    from: ConnectionPoint,
+    to: ConnectionPoint,
+    type: LaneEdge['type'],
+    minLength: number,
+  ): void {
+    if (this.edges.some(e => e.id === id)) return;
+    const length = euclideanDistance(from.position.x, from.position.y, to.position.x, to.position.y);
+    this.edges.push({ id, from, to, length: Math.max(length, minLength), type });
   }
 
   private approximateBezierLength(
