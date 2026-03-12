@@ -47,6 +47,7 @@ import {
   type TransportStopKind,
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
+import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { getCoverageService } from './core/overlay/CoverageOverlay';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
@@ -573,15 +574,7 @@ export class Game {
           this.simLoop.markLaneGraphDirty();
           this.audioManager.playSfx('build');
         } else if (!result.success && result.reason) {
-          const reasonMessages: Record<string, string> = {
-            WATER_TILE: 'water in the way',
-            MOUNTAIN_TILE: 'mountain in the way',
-            BUILDING_EXISTS: 'building in the way',
-            OUT_OF_BOUNDS: 'out of bounds',
-            INSUFFICIENT_FUNDS: 'insufficient funds',
-          };
-          const msg = reasonMessages[result.reason] ?? result.reason;
-          this.notification = `Cannot build road: ${msg}`;
+          this.notification = `Cannot build road: ${getBuildReasonMessage(result.reason)}`;
           this.notificationTimer = 4;
         }
         this.dirty.roads = true;
@@ -598,15 +591,7 @@ export class Game {
           this.state.budget.funds -= result.cost;
           this.audioManager.playSfx('build');
         } else if (!result.success && result.reason) {
-          const reasonMessages: Record<string, string> = {
-            WATER_TILE: 'water in the way',
-            MOUNTAIN_TILE: 'mountain in the way',
-            INFRASTRUCTURE_EXISTS: 'infrastructure in the way',
-            OUT_OF_BOUNDS: 'out of bounds',
-            INSUFFICIENT_FUNDS: 'insufficient funds',
-          };
-          const msg = reasonMessages[result.reason] ?? result.reason;
-          this.notification = `Cannot build track: ${msg}`;
+          this.notification = `Cannot build track: ${getBuildReasonMessage(result.reason)}`;
           this.notificationTimer = 4;
         }
         this.dirty.tracks = true;
