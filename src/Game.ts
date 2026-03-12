@@ -49,7 +49,7 @@ import {
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
-import { getCoverageService } from './core/overlay/CoverageOverlay';
+import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { generateTerrain, TERRAIN_GEN } from './core/grid/TerrainGenerator';
 import { getGroundwaterLevel } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
@@ -61,23 +61,8 @@ import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 
-/** Overlay display scaling constants used by buildOverlayData. */
-export const OVERLAY_SCALE = {
-  /** Groundwater level → overlay value multiplier */
-  GROUNDWATER_FACTOR: 0.4,
-  /** ZoneType enum → overlay value multiplier */
-  ZONE_TYPE_FACTOR: 15,
-  /** Traffic density → overlay value multiplier */
-  TRAFFIC_DENSITY_FACTOR: 20,
-  /** Max raw value for pollution/landValue (stored as 0-255) */
-  RAW_MAX: 255,
-  /** Overlay display maximum */
-  DISPLAY_MAX: 100,
-  /** Base crime value before reduction */
-  CRIME_BASE: 40,
-  /** Boolean coverage display value (for police/fire/health/etc.) */
-  COVERAGE_VALUE: 80,
-} as const;
+// OVERLAY_SCALE re-exported from core/overlay/CoverageOverlay for backward compatibility
+export { OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 
 /** Road widths matching RoadRenderer (world units per cell). */
 const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {

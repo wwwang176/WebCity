@@ -3,6 +3,24 @@
  * Eliminates duplicated switch cases in buildOverlayData (OCP + DRY).
  */
 
+/** Overlay display scaling constants used by buildOverlayData. */
+export const OVERLAY_SCALE = {
+  /** Groundwater level → overlay value multiplier */
+  GROUNDWATER_FACTOR: 0.4,
+  /** ZoneType enum → overlay value multiplier */
+  ZONE_TYPE_FACTOR: 15,
+  /** Traffic density → overlay value multiplier */
+  TRAFFIC_DENSITY_FACTOR: 20,
+  /** Max raw value for pollution/landValue (stored as 0-255) */
+  RAW_MAX: 255,
+  /** Overlay display maximum */
+  DISPLAY_MAX: 100,
+  /** Base crime value before reduction */
+  CRIME_BASE: 40,
+  /** Boolean coverage display value (for police/fire/health/etc.) */
+  COVERAGE_VALUE: 80,
+} as const;
+
 export interface CoverageProvider {
   getCoverage(x: number, y: number): boolean;
 }

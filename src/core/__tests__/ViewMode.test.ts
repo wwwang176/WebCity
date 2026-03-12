@@ -10,7 +10,7 @@ import {
   TRANSPORT_FOCUS_MODES,
   VISIBLE_VEHICLE_TYPES,
 } from '../ViewMode';
-import { OVERLAY_SCALE } from '../../Game';
+import { OVERLAY_SCALE } from '../overlay/CoverageOverlay';
 
 describe('ViewMode', () => {
   describe('VIEW_MODE_OPACITY', () => {
