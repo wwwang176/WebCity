@@ -117,6 +117,17 @@ export class AirportSystem {
     return this.airports;
   }
 
+  /** Find the airport whose footprint covers the given cell. Returns null if none. */
+  findAtCell(x: number, y: number): Airport | null {
+    for (const a of this.airports) {
+      const half = Math.floor(getAirportFootprint(a.size) / 2);
+      if (x >= a.x - half && x <= a.x + half && y >= a.y - half && y <= a.y + half) {
+        return a;
+      }
+    }
+    return null;
+  }
+
   /** Noise pollution multiplier for spread calculation. */
   static readonly NOISE_SPREAD_MULTIPLIER = 5;
 

@@ -14,7 +14,7 @@ import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, TerrainType } from './core/grid/types';
-import { normalizeRect, countRoadTiles } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
@@ -576,14 +576,8 @@ export class Game {
             if (demolished.has(key)) continue;
             // removeInfraService handles clearing all airport cells
             this.removeInfraService(getInfraBuildingId('airport'), x, y);
-            // Mark all airport cells as demolished
-            const airport = this.state.airport.getAirports().find(a => {
-              const fp = getAirportFootprint(a.size);
-              const half = Math.floor(fp / 2);
-              return x >= a.x - half && x <= a.x + half && y >= a.y - half && y <= a.y + half;
-            });
-            // Airport already removed, mark center so we skip duplicate hits
-            if (!airport) demolished.add(key);
+            // Airport already removed by removeInfraService, mark so we skip duplicate hits
+            demolished.add(key);
             continue;
           }
 
@@ -641,16 +635,9 @@ export class Game {
       }
     }
     if (buildingId === getInfraBuildingId('airport')) {
-      // Find airport whose footprint covers this cell
-      const airport = this.state.airport.getAirports().find(a => {
-        const fp = getAirportFootprint(a.size);
-        const half = Math.floor(fp / 2);
-        return px >= a.x - half && px <= a.x + half && py >= a.y - half && py <= a.y + half;
-      });
+      const airport = this.state.airport.findAtCell(px, py);
       if (airport) {
-        const fp = getAirportFootprint(airport.size);
-        const half = Math.floor(fp / 2);
-        // Clear all cells in the airport footprint
+        const half = Math.floor(getAirportFootprint(airport.size) / 2);
         for (let dy = -half; dy <= half; dy++) {
           for (let dx = -half; dx <= half; dx++) {
             const c = this.state.grid.getCell(airport.x + dx, airport.y + dy);
@@ -1365,21 +1352,9 @@ export class Game {
       return;
     }
     this.clearPreviewLine();
-    const x1 = this.dragStart.x;
-    const y1 = this.dragStart.y;
-    const x2 = this.gridCursor.gridX;
-    const y2 = this.gridCursor.gridY;
-    const points: THREE.Vector3[] = [];
-    // Build L-shaped path: horizontal then vertical
-    const dx = x2 > x1 ? 1 : -1;
-    const dy = y2 > y1 ? 1 : -1;
-    for (let x = x1; x !== x2 + dx; x += dx) {
-      points.push(new THREE.Vector3(x, 0.2, y1));
-    }
-    for (let y = y1 + dy; y !== y2 + dy; y += dy) {
-      points.push(new THREE.Vector3(x2, 0.2, y));
-    }
-    if (points.length < 2) return;
+    const pathCells = getLShapedPath(this.dragStart, { x: this.gridCursor.gridX, y: this.gridCursor.gridY });
+    if (pathCells.length < 2) return;
+    const points = pathCells.map(c => new THREE.Vector3(c.x, 0.2, c.y));
 
     // Calculate estimated cost
     if (this.isRailTool()) {
