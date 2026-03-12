@@ -3,9 +3,11 @@
  *
  * 這是純邏輯模組，禁止 import Three.js。
  * 渲染層 (VehicleRenderer) 根據 type 欄位選擇對應的幾何模型。
+ *
+ * NOTE: Bus vehicles are no longer collected here — they are rendered via
+ * TrafficSimulation (same as regular cars). See BUS-ROAD-MOVEMENT-PLAN.md.
  */
 
-import type { BusSystem } from './BusSystem';
 import type { RailSystem } from './RailSystem';
 import type { FerrySystem } from './FerrySystem';
 import type { TransportVehicle } from './types';
@@ -21,7 +23,6 @@ export interface TransportVehicleRenderData {
 }
 
 export interface TransportSystems {
-  bus: BusSystem;
   rail: RailSystem;
   ferry: FerrySystem;
 }
@@ -67,17 +68,11 @@ function mapVehicle(
 }
 
 /**
- * 收集所有交通系統的車輛資料，轉換為統一的渲染格式。
+ * 收集非公車交通系統的車輛資料，轉換為統一的渲染格式。
+ * Bus vehicles are now rendered via TrafficSimulation.vehicles (with busState).
  */
 export function collectTransportVehicles(systems: TransportSystems): TransportVehicleRenderData[] {
   const result: TransportVehicleRenderData[] = [];
-
-  // Bus
-  const busRoutes = systems.bus.getRoutes();
-  for (const v of systems.bus.getVehicles()) {
-    const route = busRoutes.find(r => r.id === v.routeId);
-    result.push(mapVehicle(v, 'transport_bus', VEHICLE_ID_OFFSETS.transport_bus, route));
-  }
 
   // Rail
   const railLines = systems.rail.getLines();

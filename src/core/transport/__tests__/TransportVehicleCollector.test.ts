@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { collectTransportVehicles, type TransportVehicleRenderData } from '../collectTransportVehicles';
-import { BusSystem } from '../BusSystem';
 import { RailSystem } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
 
 /** Helper to build an empty surface-transport systems object */
 function emptySystems() {
   return {
-    bus: new BusSystem(),
     rail: new RailSystem(),
     ferry: new FerrySystem(),
   };
@@ -15,33 +13,15 @@ function emptySystems() {
 
 // ---------------------------------------------------------------------------
 // collectTransportVehicles — 將各交通系統的車輛轉換為渲染用資料
-// (metro_train 已移至 MetroTunnelRenderer，不再經過此 collector)
+// Bus vehicles are now rendered via TrafficSimulation (not collected here).
 // ---------------------------------------------------------------------------
 describe('collectTransportVehicles', () => {
-  it('應該返回空陣列當所有系統都沒有車輛時', () => {
+  it('should return empty array when no vehicles in any system', () => {
     const result = collectTransportVehicles(emptySystems());
     expect(result).toEqual([]);
   });
 
-  it('應該收集 BusSystem 的車輛並標記為 transport_bus 類型', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(10, 0);
-    bus.createRoute([s1, s2], 2);
-
-    const result = collectTransportVehicles({ ...emptySystems(), bus });
-
-    expect(result).toHaveLength(2);
-    for (const v of result) {
-      expect(v.type).toBe('transport_bus');
-      expect(v).toHaveProperty('x');
-      expect(v).toHaveProperty('y');
-      expect(v).toHaveProperty('heading');
-      expect(v).toHaveProperty('id');
-    }
-  });
-
-  it('應該收集 RailSystem 的列車並標記為 rail_train 類型', () => {
+  it('should collect RailSystem trains as rail_train type', () => {
     const rail = new RailSystem();
     const s1 = rail.buildStation(0, 0);
     const s2 = rail.buildStation(10, 10);
@@ -53,7 +33,7 @@ describe('collectTransportVehicles', () => {
     expect(result[0]!.type).toBe('rail_train');
   });
 
-  it('應該收集 FerrySystem 的渡輪並標記為 ferry 類型', () => {
+  it('should collect FerrySystem vessels as ferry type', () => {
     const ferry = new FerrySystem();
     const d1 = ferry.addDock(0, 0)!;
     const d2 = ferry.addDock(5, 5)!;
@@ -65,65 +45,50 @@ describe('collectTransportVehicles', () => {
     expect(result[0]!.type).toBe('ferry');
   });
 
-  it('應該同時收集多個系統的車輛', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(5, 0);
-    bus.createRoute([s1, s2], 1);
-
+  it('should collect vehicles from multiple systems', () => {
     const rail = new RailSystem();
     const rs1 = rail.buildStation(0, 0);
     const rs2 = rail.buildStation(10, 10);
     rail.createLine([rs1, rs2]);
 
-    const result = collectTransportVehicles({ ...emptySystems(), bus, rail });
+    const ferry = new FerrySystem();
+    const d1 = ferry.addDock(0, 0)!;
+    const d2 = ferry.addDock(5, 5)!;
+    ferry.createRoute([d1, d2], 1);
 
-    // 1 bus + 1 rail_train = 2
+    const result = collectTransportVehicles({ rail, ferry });
+
+    // 1 rail_train + 1 ferry = 2
     expect(result).toHaveLength(2);
-    expect(result.filter(v => v.type === 'transport_bus')).toHaveLength(1);
     expect(result.filter(v => v.type === 'rail_train')).toHaveLength(1);
+    expect(result.filter(v => v.type === 'ferry')).toHaveLength(1);
   });
 
-  it('車輛的位置應該反映 TransportVehicle.position', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(3, 7);
-    const s2 = bus.addStop(10, 7);
-    bus.createRoute([s1, s2], 1);
-    bus.tick();
-
-    const result = collectTransportVehicles({ ...emptySystems(), bus });
-
-    expect(result).toHaveLength(1);
-    expect(result[0]!.x).toBe(3);
-    expect(result[0]!.y).toBe(7);
-  });
-
-  it('每個車輛的 ID 應該全域唯一（含前綴避免跨系統碰撞）', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(5, 0);
-    bus.createRoute([s1, s2], 1);
-
+  it('each vehicle ID should be globally unique (with prefix offsets)', () => {
     const rail = new RailSystem();
     const rs1 = rail.buildStation(0, 0);
     const rs2 = rail.buildStation(10, 10);
     rail.createLine([rs1, rs2]);
 
-    const result = collectTransportVehicles({ ...emptySystems(), bus, rail });
+    const ferry = new FerrySystem();
+    const d1 = ferry.addDock(0, 0)!;
+    const d2 = ferry.addDock(5, 5)!;
+    ferry.createRoute([d1, d2], 1);
+
+    const result = collectTransportVehicles({ rail, ferry });
 
     const ids = result.map(v => v.id);
     const uniqueIds = new Set(ids);
     expect(uniqueIds.size).toBe(ids.length);
   });
 
-  it('laneOffset 應該為 0（交通系統車輛不走車道）', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(5, 0);
-    bus.createRoute([s1, s2], 1);
+  it('laneOffset should be 0 for transport vehicles', () => {
+    const rail = new RailSystem();
+    const rs1 = rail.buildStation(0, 0);
+    const rs2 = rail.buildStation(10, 10);
+    rail.createLine([rs1, rs2]);
 
-    const result = collectTransportVehicles({ ...emptySystems(), bus });
-
+    const result = collectTransportVehicles({ rail, ferry: new FerrySystem() });
     expect(result[0]!.laneOffset).toBe(0);
   });
 });

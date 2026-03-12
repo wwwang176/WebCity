@@ -46,56 +46,29 @@ describe('BusSystem', () => {
     expect(bus.getVehicles()).toHaveLength(2);
   });
 
-  it('should advance bus to stop and dwell for 2 ticks', () => {
+  it('should have tick as no-op (movement handled by TrafficSimulation)', () => {
     const bus = new BusSystem();
     const s1 = bus.addStop(0, 0);
     const s2 = bus.addStop(10, 0);
     bus.createRoute([s1, s2]);
 
-    // tick 1 -- bus arrives at stop 0, starts dwelling
+    // tick is now a no-op; legacy TransportVehicles are still created by createRoute
+    // but their movement is driven by TrafficSimulation.advanceEdgeVehicles()
     bus.tick();
     const v1 = bus.getVehicles()[0]!;
-    expect(v1.atStop).toBe(true);
-    expect(v1.waitTicks).toBe(2);
+    // Vehicle should still exist but not move (tick is no-op)
     expect(v1.position.x).toBe(0);
-
-    // tick 2 -- still dwelling (waitTicks 1)
-    bus.tick();
-    const v2 = bus.getVehicles()[0]!;
-    expect(v2.atStop).toBe(true);
-    expect(v2.waitTicks).toBe(1);
-
-    // tick 3 -- done dwelling, moves to next stop index
-    bus.tick();
-    const v3 = bus.getVehicles()[0]!;
-    expect(v3.atStop).toBe(false);
-    expect(v3.currentStopIndex).toBe(1);
   });
 
-  it('should cycle back to first stop after reaching the last', () => {
+  it('should still create legacy vehicles for route vehicle count tracking', () => {
     const bus = new BusSystem();
     const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(4, 0); // dist=4, speed=2 -> 2 travel ticks
-    bus.createRoute([s1, s2]);
+    const s2 = bus.addStop(4, 0);
+    bus.createRoute([s1, s2], 2);
 
-    // tick 1: arrive s1, waitTicks=2
-    bus.tick();
-    // tick 2: dwell, waitTicks=1
-    bus.tick();
-    // tick 3: depart s1, traveling to s2 (travelTicks=2)
-    bus.tick();
-    // tick 4: travelTicks=1
-    bus.tick();
-    // tick 5: arrive s2, waitTicks=2
-    bus.tick();
-    // tick 6: dwell
-    bus.tick();
-    // tick 7: depart s2, traveling to s1 (wrapped)
-    bus.tick();
-
-    const v = bus.getVehicles()[0]!;
-    expect(v.currentStopIndex).toBe(0);
-    expect(v.traveling).toBe(true);
+    // Legacy TransportVehicles are created for route tracking;
+    // actual movement happens in TrafficSimulation
+    expect(bus.getVehicles()).toHaveLength(2);
   });
 
   it('should calculate total operating cost', () => {
@@ -108,17 +81,10 @@ describe('BusSystem', () => {
     expect(bus.getOperatingCost()).toBe(300);
   });
 
-  it('should be affected by congestion (bus still moves at high congestion but slower)', () => {
+  it('should track congestion level (used by SimulationLoop)', () => {
     const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(10, 0);
-    bus.createRoute([s1, s2]);
     bus.congestionLevel = 0.8;
-
-    // Even with congestion the bus should still arrive (speedMultiplier > 0)
-    bus.tick();
-    const v = bus.getVehicles()[0]!;
-    expect(v.atStop).toBe(true);
+    expect(bus.congestionLevel).toBe(0.8);
   });
 });
 
@@ -506,6 +472,26 @@ describe('BusSystem toJSON/fromJSON', () => {
     const s3 = restored.addStop(10, 10);
     expect(s3.id).toBe(3);
   });
+
+  it('should preserve roadX/roadY on stops through serialization', () => {
+    const bus = new BusSystem();
+    const s1 = bus.addStop(5, 3);
+    s1.roadX = 5;
+    s1.roadY = 4;
+    const s2 = bus.addStop(10, 3);
+    s2.roadX = 10;
+    s2.roadY = 4;
+    bus.createRoute([s1, s2]);
+
+    const json = bus.toJSON();
+    const restored = BusSystem.fromJSON(json);
+
+    const stops = restored.getStops();
+    expect(stops[0]!.roadX).toBe(5);
+    expect(stops[0]!.roadY).toBe(4);
+    expect(stops[1]!.roadX).toBe(10);
+    expect(stops[1]!.roadY).toBe(4);
+  });
 });
 
 describe('MetroSystem toJSON/fromJSON', () => {
@@ -661,68 +647,19 @@ describe('AirportSystem remove', () => {
 // ---------------------------------------------------------------------------
 // T3 Vehicle Travel Time
 // ---------------------------------------------------------------------------
-describe('Bus travel time', () => {
-  it('should travel between stops based on distance, not instant', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(10, 0); // distance = 10
-    bus.createRoute([s1, s2]);
-
-    // tick 1: arrive at s1, dwell
-    bus.tick();
-    const v0 = bus.getVehicles()[0]!;
-    expect(v0.atStop).toBe(true);
-
-    // tick 2: still dwelling
-    bus.tick();
-    // tick 3: depart s1, start traveling to s2
-    bus.tick();
-    const v3 = bus.getVehicles()[0]!;
-    expect(v3.atStop).toBe(false);
-    expect(v3.traveling).toBe(true);
-    expect(v3.travelTicks).toBeGreaterThan(0);
-
-    // Should NOT be at s2 yet (distance 10 needs multiple ticks)
-    expect(v3.position.x).toBe(0); // still at s1 position
-  });
-
-  it('should arrive at next stop after travel ticks elapse', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(4, 0); // distance = 4, speed=2 -> 2 ticks
-    bus.createRoute([s1, s2]);
-
-    // arrive + dwell at s1
-    bus.tick(); // arrive s1, waitTicks=2
-    bus.tick(); // dwell
-    bus.tick(); // depart, traveling=true, travelTicks=2
-
-    const vTravel = bus.getVehicles()[0]!;
-    expect(vTravel.traveling).toBe(true);
-
-    bus.tick(); // travelTicks=1
-    bus.tick(); // travelTicks=0, arrive s2
-    const vArrived = bus.getVehicles()[0]!;
-    expect(vArrived.atStop).toBe(true);
-    expect(vArrived.traveling).toBe(false);
-    expect(vArrived.position.x).toBe(4);
-  });
-
-  it('should be slower with congestion', () => {
+describe('Bus travel time (now via TrafficSimulation)', () => {
+  it('bus tick should be no-op (movement via TrafficSimulation)', () => {
     const bus = new BusSystem();
     const s1 = bus.addStop(0, 0);
     const s2 = bus.addStop(10, 0);
     bus.createRoute([s1, s2]);
-    bus.congestionLevel = 0.8;
 
-    bus.tick(); // arrive s1
-    bus.tick(); // dwell
-    bus.tick(); // depart
-
+    // Multiple ticks should not change vehicle state
+    bus.tick();
+    bus.tick();
+    bus.tick();
     const v = bus.getVehicles()[0]!;
-    // With congestion, travel ticks should be higher
-    expect(v.traveling).toBe(true);
-    expect(v.travelTicks).toBeGreaterThan(3); // more ticks due to congestion
+    expect(v.position.x).toBe(0);
   });
 });
 
@@ -764,56 +701,17 @@ describe('Rail travel time', () => {
 // ---------------------------------------------------------------------------
 // T4 Passenger boarding/alighting
 // ---------------------------------------------------------------------------
-describe('Bus passenger boarding', () => {
-  it('should pick up passengers at stop (within capacity)', () => {
+describe('Bus passenger boarding (tick no-op, boarding handled at stop level)', () => {
+  it('passengers accumulate at stops (boarding logic future work)', () => {
     const bus = new BusSystem();
     const s1 = bus.addStop(0, 0);
     const s2 = bus.addStop(2, 0);
     bus.createRoute([s1, s2]);
 
-    // Add waiting passengers at s1
     s1.passengers = 5;
-
-    // tick 1: arrive s1 -> board passengers
+    // tick does not process boarding anymore
     bus.tick();
-    const v = bus.getVehicles()[0]!;
-    expect(v.passengers).toBe(5);
-    expect(s1.passengers).toBe(0);
-  });
-
-  it('should respect capacity limit', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(2, 0);
-    bus.createRoute([s1, s2]);
-
-    s1.passengers = 60; // more than capacity (50)
-
-    bus.tick(); // arrive s1, board
-    const v = bus.getVehicles()[0]!;
-    expect(v.passengers).toBe(50); // full
-    expect(s1.passengers).toBe(10); // 10 still waiting
-  });
-
-  it('should alight passengers at destination stop', () => {
-    const bus = new BusSystem();
-    const s1 = bus.addStop(0, 0);
-    const s2 = bus.addStop(2, 0); // distance=2, speed=2 -> 1 travel tick
-    bus.createRoute([s1, s2]);
-
-    s1.passengers = 10;
-
-    // tick 1: arrive s1, board 10
-    bus.tick();
-    expect(bus.getVehicles()[0]!.passengers).toBe(10);
-
-    // tick 2-3: dwell at s1
-    bus.tick();
-    bus.tick(); // depart, traveling
-
-    // tick 4: arrive s2, all alight
-    bus.tick();
-    expect(bus.getVehicles()[0]!.passengers).toBe(0);
+    expect(s1.passengers).toBe(5); // passengers remain at stop
   });
 });
 

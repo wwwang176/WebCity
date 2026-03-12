@@ -21,6 +21,10 @@ export interface TransportStop {
   y: number;
   type: TransportType;
   passengers: number;
+  /** Adjacent road cell X (bus only — used for lane pathfinding). */
+  roadX?: number;
+  /** Adjacent road cell Y (bus only — used for lane pathfinding). */
+  roadY?: number;
 }
 
 export interface TransportRoute {

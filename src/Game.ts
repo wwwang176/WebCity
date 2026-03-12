@@ -53,7 +53,7 @@ import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
-import { canPlaceTransportStop, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
+import { canPlaceTransportStop, findAdjacentRoadCell, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
@@ -644,7 +644,7 @@ export class Game {
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
     const cell = this.state.grid.getCell(x, y);
-    const check = canPlaceTransportStop(type, cell);
+    const check = canPlaceTransportStop(type, cell, this.state.grid, x, y);
     if (!check.ok) {
       this.showNotification(getBuildReasonMessage(check.reason), 3);
       return;
@@ -655,7 +655,13 @@ export class Game {
     if (!this.tryDeductFunds(cost)) return;
 
     if (type === 'bus') {
-      this.state.bus.addStop(x, y);
+      const stop = this.state.bus.addStop(x, y);
+      // Set adjacent road cell for lane pathfinding
+      const adj = findAdjacentRoadCell(this.state.grid, x, y);
+      if (adj) {
+        stop.roadX = adj.roadX;
+        stop.roadY = adj.roadY;
+      }
     } else if (type === 'metro') {
       this.state.metro.addStation(x, y);
     } else if (type === 'rail') {
@@ -859,21 +865,22 @@ export class Game {
       );
     }
 
-    // Collect road vehicle positions for rendering
+    // Collect road vehicle positions for rendering (includes bus vehicles via busState)
     const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
       if (v.arrived) return null;
-      if (!this.vehicleTypes.has(v.id)) {
-        this.vehicleTypes.set(v.id, classifyVehicleType(v.length));
-      }
       const pos = this.state.traffic.getVehiclePositionOnEdges(v);
       if (!pos) return null;
       const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
-      return { id: v.id, x: pos.x, y: pos.y, heading, type: this.vehicleTypes.get(v.id)!, laneOffset: 0 };
+      // Bus vehicles use fixed 'bus' type; regular vehicles use length-based classification
+      const type = v.busState
+        ? 'bus' as VehicleData['type']
+        : (this.vehicleTypes.get(v.id) ?? (() => { const t = classifyVehicleType(v.length); this.vehicleTypes.set(v.id, t); return t; })());
+      return { id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0 };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
 
-    // Collect transport system vehicles (bus/rail/ferry)
+    // Collect transport system vehicles (rail/ferry — bus is now in TrafficSimulation)
     const transportVehicles = collectTransportVehicles({
-      bus: this.state.bus, rail: this.state.rail, ferry: this.state.ferry,
+      rail: this.state.rail, ferry: this.state.ferry,
     });
 
     // Animate ferry and train (render-side LERP, independent of tick)
