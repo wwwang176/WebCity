@@ -1279,7 +1279,7 @@ export class Game {
       };
     }
 
-    return sel;
+    return { ...sel };
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {

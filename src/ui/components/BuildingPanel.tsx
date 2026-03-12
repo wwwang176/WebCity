@@ -64,10 +64,10 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       <div class="bp-title">{bt().name}</div>
       <div class="bp-row">Level <span>{level()}</span></div>
       <Show when={bt().residents > 0}>
-        <div class="bp-row">Residents <span>{bt().residents}</span></div>
+        <div class="bp-row">Residents <span>{citizens().residents.length}/{bt().residents}</span></div>
       </Show>
       <Show when={bt().workers > 0}>
-        <div class="bp-row">Workers <span>{bt().workers}</span></div>
+        <div class="bp-row">Workers <span>{citizens().workers.length}/{bt().workers}</span></div>
       </Show>
       <div class="bp-row">Tax <span>{tax()}</span></div>
       <div class="bp-row">Zone <span>{zoneName()}</span></div>
