@@ -45,6 +45,7 @@ import {
   VIEW_MODE_OPACITY,
   getTransportStopType,
   getTransportFocusMode,
+  STOP_NAMES,
   type TransportStopKind,
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
@@ -107,12 +108,6 @@ const INFRA_PLACEMENT_MESSAGES: Record<string, string> = {
 const TRANSPORT_TO_INFRA_TYPE: Record<string, InfraType> = {
   bus: 'bus_stop', metro: 'metro_station', rail: 'train_station',
   ferry: 'ferry_dock', airport: 'airport',
-};
-
-/** Transport stop display names. */
-const STOP_NAMES: Record<TransportStopKind, string> = {
-  bus: 'Bus Stop', metro: 'Metro Station',
-  rail: 'Train Station', ferry: 'Ferry Dock',
 };
 
 /** Zone tool preview highlight colors. */

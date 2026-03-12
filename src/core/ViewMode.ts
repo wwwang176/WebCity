@@ -117,6 +117,12 @@ export function getTransportFocusMode(type: TransportStopKind): ViewMode {
   return TRANSPORT_FOCUS_MODES[type];
 }
 
+/** Transport stop display names. */
+export const STOP_NAMES: Record<TransportStopKind, string> = {
+  bus: 'Bus Stop', metro: 'Metro Station',
+  rail: 'Train Station', ferry: 'Ferry Dock',
+};
+
 /**
  * Data-driven vehicle visibility per ViewMode.
  * null = all vehicles visible; Set = only listed types visible (empty = none).
