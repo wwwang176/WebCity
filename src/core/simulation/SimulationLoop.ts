@@ -9,7 +9,7 @@ import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, isWorkplace
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
-import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
+import { refineLanePath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { clampBuildingLevel } from '../building/BuildingLevel';
@@ -26,12 +26,13 @@ import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
 import { findAvailableTransit } from '../transport/TransitAvailability';
+import { findRoadPath } from '../traffic/RoadPathfinding';
 
 /** Simulation tuning constants */
 export const SIMULATION = {
@@ -876,30 +877,18 @@ export class SimulationLoop {
       }
 
       // --- Compute path and populate cache ---
-      const startRoad = findAdjacentRoad(grid, fromPos.x, fromPos.y);
-      const endRoad = findAdjacentRoad(grid, toPos.x, toPos.y);
-      if (!startRoad || !endRoad) {
-        commuterSet.add(citizen.id);
-        continue;
-      }
-      if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) {
-        commuterSet.add(citizen.id);
-        continue;
-      }
-
-      // Check routeIndex for shared path reuse
       const routeKey = `${fromStr}->${toStr}`;
       let edgePath = this.commuteCache.getByRoute(routeKey) ?? null;
 
       if (!edgePath) {
-        const path = gridAStarPath(startRoad, endRoad, grid);
+        const path = findRoadPath(fromPos, toPos, grid);
         if (path && path.length >= 2) {
+          const startRoad = parsePosKeyUnsafe(path[0]!);
           const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
           const dirLanes = startCell ? getLaneCount(startCell.roadType) : 1;
           const preferredLane = dirLanes > 1 ? randomInt(dirLanes) : 0;
           edgePath = refineLanePath(this.laneGraph, path, preferredLane);
           if (edgePath && edgePath.length > 0) {
-            // Store in shared routeIndex
             this.commuteCache.setRoute(routeKey, edgePath);
           }
         }
@@ -984,15 +973,10 @@ export class SimulationLoop {
       const end = randomElement(roads);
       if (start.x === end.x && start.y === end.y) continue;
 
-      const startRoad = findAdjacentRoad(grid, start.x, start.y);
-      const endRoad = findAdjacentRoad(grid, end.x, end.y);
-      if (!startRoad || !endRoad) continue;
-      if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
-
-      const path = gridAStarPath(startRoad, endRoad, grid);
+      const path = findRoadPath(start, end, grid);
       if (path && path.length >= 2) {
-        const sCell = this.state.grid.getCell(startRoad.x, startRoad.y);
-        const dLanes = sCell ? getLaneCount(sCell.roadType) : 1;
+        const startCell = this.state.grid.getCell(parsePosKeyUnsafe(path[0]!).x, parsePosKeyUnsafe(path[0]!).y);
+        const dLanes = startCell ? getLaneCount(startCell.roadType) : 1;
         const prefLane = dLanes > 1 ? randomInt(dLanes) : 0;
         const edgePath = refineLanePath(this.laneGraph, path, prefLane);
         if (edgePath && edgePath.length > 0) {
@@ -1037,12 +1021,7 @@ export class SimulationLoop {
       const mode = chooseMode(from, to, availableTransport, 0);
       if (mode !== TransportMode.DRIVE) continue;
 
-      const startRoad = findAdjacentRoad(grid, from.x, from.y);
-      const endRoad = findAdjacentRoad(grid, to.x, to.y);
-      if (!startRoad || !endRoad) continue;
-      if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) continue;
-
-      const path = gridAStarPath(startRoad, endRoad, grid);
+      const path = findRoadPath(from, to, grid);
       if (!path) continue;
 
       for (const cellKey of path) {
