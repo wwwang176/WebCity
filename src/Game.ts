@@ -27,7 +27,7 @@ import { getTotalTransportOperatingCost } from './core/transport/TransportRegist
 import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
 import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
-import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
@@ -60,7 +60,7 @@ import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
 import { RailNetwork, rebuildRailNetworkFromGrid } from './core/rail/RailNetwork';
-import { RailType, RAIL } from './core/rail/types';
+import { RAIL } from './core/rail/types';
 import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
