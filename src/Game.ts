@@ -37,6 +37,7 @@ import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
+import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
 
 import {
   ViewMode,
@@ -746,41 +747,16 @@ export class Game {
     // Services store center coordinates, so compute center from primary cell
     const { cx, cy } = getInfraCenterById(px, py, buildingId);
 
-    if (buildingId === getInfraBuildingId('power')) this.state.power.removePlant(cx, cy);
-    if (buildingId === getInfraBuildingId('water')) this.state.water.removePlant(cx, cy);
-    if (buildingId === getInfraBuildingId('police')) {
-      const sid = this.state.police.getStations().find(s => s.x === cx && s.y === cy);
-      if (sid) this.state.police.removeStation(sid.id);
+    // Data-driven civic service removal (OCP: add new services in InfraServiceActions)
+    const infraCfg = getInfraConfigById(buildingId);
+    if (infraCfg) {
+      const actions = INFRA_SERVICE_ACTIONS[infraCfg.type];
+      if (actions) {
+        actions.remove(this.state as unknown as InfraServiceContext, cx, cy);
+        return;
+      }
     }
-    if (buildingId === getInfraBuildingId('fire')) {
-      const sid = this.state.fire.getStations().find(s => s.x === cx && s.y === cy);
-      if (sid) this.state.fire.removeStation(sid.id);
-    }
-    if (buildingId === getInfraBuildingId('hospital')) {
-      const hid = this.state.health.getHospitals().find(h => h.x === cx && h.y === cy);
-      if (hid) this.state.health.removeHospital(hid.id);
-    }
-    if (buildingId === getInfraBuildingId('school') || buildingId === getInfraBuildingId('school_high') || buildingId === getInfraBuildingId('school_univ')) {
-      const sid = this.state.education.getSchools().find(s => s.x === cx && s.y === cy);
-      if (sid) this.state.education.removeSchool(sid.id);
-    }
-    if (buildingId === getInfraBuildingId('park')) {
-      const pid = this.state.parks.getParks().find(p => p.x === cx && p.y === cy);
-      if (pid) this.state.parks.removePark(pid.id);
-    }
-    if (buildingId === getInfraBuildingId('garbage')) {
-      const gid = this.state.garbage.getFacilities().find(g => g.x === cx && g.y === cy);
-      if (gid) this.state.garbage.removeFacility(gid.id);
-    }
-    if (buildingId === getInfraBuildingId('sewage')) {
-      const sid = this.state.sewage.getTreatmentPlants().find(s => s.x === cx && s.y === cy);
-      if (sid) this.state.sewage.removeTreatmentPlant(sid.id);
-    }
-    if (buildingId === getInfraBuildingId('cemetery')) {
-      const cid = this.state.deathCare.getCemeteries().find(c => c.x === cx && c.y === cy);
-      if (cid) this.state.deathCare.removeCemetery(cid.id);
-    }
-    // Transport stops
+    // Transport stops (use primary cell coordinates, not center)
     if (buildingId === getInfraBuildingId('bus_stop')) {
       const sid = this.state.bus.getStops().find(s => s.x === px && s.y === py);
       if (sid) this.state.bus.removeStop(sid.id);
@@ -879,31 +855,10 @@ export class Game {
     // Compute center for service coverage (coverage radiates from building center)
     const { cx, cy } = getInfraCenter(x, y, infraType, this.currentRotation);
 
-    // Register with service layer at center coordinates
-    if (type === 'power') {
-      this.state.power.addPlant({ x: cx, y: cy, output: 500, pollution: 10, type: 'coal' });
-    } else if (type === 'water') {
-      this.state.water.addPlant({ x: cx, y: cy, output: 500 });
-    } else if (type === 'police') {
-      this.state.police.addStation(cx, cy);
-    } else if (type === 'fire') {
-      this.state.fire.addStation(cx, cy);
-    } else if (type === 'hospital') {
-      this.state.health.addHospital(cx, cy);
-    } else if (type === 'school') {
-      this.state.education.addSchool(cx, cy, 'elementary');
-    } else if (type === 'school_high') {
-      this.state.education.addSchool(cx, cy, 'highschool');
-    } else if (type === 'school_univ') {
-      this.state.education.addSchool(cx, cy, 'university');
-    } else if (type === 'park') {
-      this.state.parks.addPark(cx, cy);
-    } else if (type === 'garbage') {
-      this.state.garbage.addFacility(cx, cy, 'landfill');
-    } else if (type === 'sewage') {
-      this.state.sewage.addTreatmentPlant(cx, cy);
-    } else if (type === 'cemetery') {
-      this.state.deathCare.addCemetery(cx, cy);
+    // Register with service layer at center coordinates (data-driven via InfraServiceActions)
+    const actions = INFRA_SERVICE_ACTIONS[type];
+    if (actions) {
+      actions.place(this.state as unknown as InfraServiceContext, cx, cy);
     }
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
