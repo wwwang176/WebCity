@@ -1,17 +1,13 @@
 import { Grid } from '../grid/Grid';
-import { TerrainType, ZoneType } from '../grid/types';
+import { ZoneType, type Position } from '../grid/types';
+import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath, getDirectionFlag } from '../grid/GridHelpers';
+import { validatePathTerrain } from '../grid/PathValidation';
+import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
-import { RailType, TrackDirection, RAIL_COST, type BuildTrackResult } from './types';
+import { RailType, TrackDirection, RAIL, type BuildTrackResult } from './types';
 
-interface Position {
-  x: number;
-  y: number;
-}
-
-function nodeId(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const nodeId = toPosKey;
 
 export class RailBuilder {
   private grid: Grid;
@@ -23,32 +19,24 @@ export class RailBuilder {
   }
 
   buildTrack(from: Position, to: Position, funds: number): BuildTrackResult {
-    const cells = this.getCellsBetween(from, to);
+    const cells = getLShapedPath(from, to);
 
-    // Validate terrain
-    for (const pos of cells) {
-      const cell = this.grid.getCell(pos.x, pos.y);
-      if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
-      if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
-      if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
-      // Block all infrastructure buildings (buildingId 236-254)
-      if (getInfraConfigById(cell.buildingId)) {
-        return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
-      }
-    }
+    // Validate terrain + infrastructure (shared DRY validation)
+    const terrainError = validatePathTerrain(this.grid, cells);
+    if (terrainError) return { success: false, reason: terrainError };
 
     // Check for parallel road conflicts
     for (let i = 0; i < cells.length; i++) {
       const pos = cells[i]!;
       const cell = this.grid.getCell(pos.x, pos.y)!;
-      if (cell.roadType > 0) {
+      if (cell.roadType !== RoadType.NONE) {
         let railFlags = 0;
-        if (i > 0) railFlags |= this.getDirection(pos, cells[i - 1]!);
-        if (i < cells.length - 1) railFlags |= this.getDirection(pos, cells[i + 1]!);
-        const railVert = (railFlags & (TrackDirection.NORTH | TrackDirection.SOUTH)) !== 0;
-        const railHorz = (railFlags & (TrackDirection.WEST | TrackDirection.EAST)) !== 0;
-        const roadVert = (cell.roadFlags & (TrackDirection.NORTH | TrackDirection.SOUTH)) !== 0;
-        const roadHorz = (cell.roadFlags & (TrackDirection.WEST | TrackDirection.EAST)) !== 0;
+        if (i > 0) railFlags |= getDirectionFlag(pos, cells[i - 1]!);
+        if (i < cells.length - 1) railFlags |= getDirectionFlag(pos, cells[i + 1]!);
+        const railVert = hasVerticalFlag(railFlags);
+        const railHorz = hasHorizontalFlag(railFlags);
+        const roadVert = hasVerticalFlag(cell.roadFlags);
+        const roadHorz = hasHorizontalFlag(cell.roadFlags);
         if ((railVert && roadVert) || (railHorz && roadHorz)) {
           return { success: false, reason: 'PARALLEL_ROAD' };
         }
@@ -60,7 +48,7 @@ export class RailBuilder {
     for (const pos of cells) {
       const cell = this.grid.getCell(pos.x, pos.y)!;
       if (cell.railType === RailType.NONE) {
-        totalCost += RAIL_COST;
+        totalCost += RAIL.COST_PER_CELL;
       }
       // Existing track: free (just merge flags)
     }
@@ -72,7 +60,7 @@ export class RailBuilder {
       const curr = this.grid.getCell(pos.x, pos.y);
 
       // Clear zoned buildings only (NOT infrastructure, NOT roads — tracks can coexist with roads)
-      if (curr && curr.railType === RailType.NONE && curr.roadType === 0) {
+      if (curr && curr.railType === RailType.NONE && curr.roadType === RoadType.NONE) {
         const isInfra = getInfraConfigById(curr.buildingId) !== undefined;
         if (!isInfra && (curr.buildingId !== 0 || curr.zoneType !== ZoneType.NONE)) {
           this.grid.setCell(pos.x, pos.y, { buildingId: 0, zoneType: ZoneType.NONE });
@@ -84,12 +72,12 @@ export class RailBuilder {
       // Connect to previous cell
       if (i > 0) {
         const prev = cells[i - 1]!;
-        flags |= this.getDirection(pos, prev);
+        flags |= getDirectionFlag(pos, prev);
       }
       // Connect to next cell
       if (i < cells.length - 1) {
         const next = cells[i + 1]!;
-        flags |= this.getDirection(pos, next);
+        flags |= getDirectionFlag(pos, next);
       }
 
       // Merge with existing rail flags
@@ -128,14 +116,7 @@ export class RailBuilder {
     this.grid.setCell(x, y, { railType: RailType.NONE, railFlags: 0 });
 
     // Update neighboring cells' flags
-    const dirs: { dx: number; dy: number; flag: number; opposite: number }[] = [
-      { dx: 0, dy: -1, flag: TrackDirection.NORTH, opposite: TrackDirection.SOUTH },
-      { dx: 0, dy: 1, flag: TrackDirection.SOUTH, opposite: TrackDirection.NORTH },
-      { dx: -1, dy: 0, flag: TrackDirection.WEST, opposite: TrackDirection.EAST },
-      { dx: 1, dy: 0, flag: TrackDirection.EAST, opposite: TrackDirection.WEST },
-    ];
-
-    for (const dir of dirs) {
+    for (const dir of CARDINAL_DIRECTIONS) {
       const nx = x + dir.dx;
       const ny = y + dir.dy;
       const neighbor = this.grid.getCell(nx, ny);
@@ -145,35 +126,5 @@ export class RailBuilder {
         });
       }
     }
-  }
-
-  private getCellsBetween(from: Position, to: Position): Position[] {
-    const cells: Position[] = [];
-    const dx = Math.sign(to.x - from.x);
-    const dy = Math.sign(to.y - from.y);
-
-    let x = from.x;
-    let y = from.y;
-
-    // L-shaped path: horizontal first, then vertical
-    while (x !== to.x) {
-      cells.push({ x, y });
-      x += dx;
-    }
-    while (y !== to.y) {
-      cells.push({ x, y });
-      y += dy;
-    }
-    cells.push({ x: to.x, y: to.y });
-
-    return cells;
-  }
-
-  private getDirection(from: Position, to: Position): number {
-    if (to.y < from.y) return TrackDirection.NORTH;
-    if (to.y > from.y) return TrackDirection.SOUTH;
-    if (to.x < from.x) return TrackDirection.WEST;
-    if (to.x > from.x) return TrackDirection.EAST;
-    return 0;
   }
 }

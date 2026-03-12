@@ -10,11 +10,16 @@ export interface BirthContext {
   happinessBonus: number;
 }
 
-const DEFAULT_CONTEXT: BirthContext = {
+export const DEFAULT_CONTEXT: BirthContext = {
   maxChildrenPerHome: 2,
   baseFertilityRate: 0.03,
   happinessBonus: 0.02,
 };
+
+export const BIRTH = {
+  MAX_FERTILITY_AGE: 45,
+  HAPPINESS_FERTILITY_THRESHOLD: 70,
+} as const;
 
 /**
  * 自然出生 tick — 根據合格成人的生育機率產生新生兒。
@@ -35,7 +40,7 @@ export function birthTick(
 
   // 先統計每個 homeId 已有的 BABY+CHILD 數量
   const childrenCount = new Map<string, number>();
-  for (const c of manager.citizens) {
+  for (const c of manager.getCitizens()) {
     if (c.homeId !== null && (c.lifeStage === LifeStage.BABY || c.lifeStage === LifeStage.CHILD)) {
       childrenCount.set(c.homeId, (childrenCount.get(c.homeId) ?? 0) + 1);
     }
@@ -45,10 +50,10 @@ export function birthTick(
   const newborns: { homeId: string; incomeLevel: IncomeLevel }[] = [];
 
   // 遍歷現有市民，篩選合格者
-  for (const c of manager.citizens) {
+  for (const c of manager.getCitizens()) {
     // 只有 ADULT、age ≤ 45、有家的市民才能生育
     if (c.lifeStage !== LifeStage.ADULT) continue;
-    if (c.age > 45) continue;
+    if (c.age > BIRTH.MAX_FERTILITY_AGE) continue;
     if (c.homeId === null) continue;
 
     // 檢查戶內上限（包含本 tick 新增的）
@@ -57,7 +62,7 @@ export function birthTick(
 
     // 計算生育機率
     let rate = ctx.baseFertilityRate;
-    if (c.happiness > 70) {
+    if (c.happiness > BIRTH.HAPPINESS_FERTILITY_THRESHOLD) {
       rate += ctx.happinessBonus;
     }
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { RoadNetwork } from '../../road/RoadNetwork';
-import { findPath, gridAStarPath } from '../Pathfinding';
+import { findPath, gridAStarPath, PATH_COST } from '../Pathfinding';
 import { RoadType } from '../../road/types';
 
 function createSimpleNetwork(): RoadNetwork {
@@ -140,5 +140,15 @@ describe('gridAStarPath', () => {
     const path = gridAStarPath({ x: 0, y: 0 }, { x: 99, y: 0 }, grid);
     expect(path).not.toBeNull();
     expect(path!.length).toBe(100);
+  });
+});
+
+describe('PATH_COST constants', () => {
+  it('congestion weight should be positive', () => {
+    expect(PATH_COST.CONGESTION_WEIGHT).toBeGreaterThan(0);
+  });
+
+  it('traffic light cost should be positive', () => {
+    expect(PATH_COST.TRAFFIC_LIGHT_COST).toBeGreaterThan(0);
   });
 });

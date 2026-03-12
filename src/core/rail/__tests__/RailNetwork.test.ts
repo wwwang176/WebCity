@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { RailNetwork } from '../RailNetwork';
+import { RailNetwork, rebuildRailNetworkFromGrid } from '../RailNetwork';
+import { Grid } from '../../grid/Grid';
+import { RailType, TrackDirection } from '../types';
 
 describe('RailNetwork', () => {
   // --- Basic graph operations ---
@@ -125,5 +127,29 @@ describe('RailNetwork', () => {
 
     const path = net.findPath('0,0', '2,0');
     expect(path).toEqual(['0,0', '1,0', '2,0']);
+  });
+});
+
+describe('rebuildRailNetworkFromGrid', () => {
+  it('should populate rail network from grid rail cells', () => {
+    const grid = new Grid(10, 10);
+    // Two adjacent rail cells connected east-west
+    grid.setCell(3, 5, { railType: RailType.STANDARD, railFlags: TrackDirection.EAST });
+    grid.setCell(4, 5, { railType: RailType.STANDARD, railFlags: TrackDirection.WEST });
+
+    const net = new RailNetwork();
+    rebuildRailNetworkFromGrid(grid, net);
+
+    // Node 3,5 should connect east to 4,5
+    const path = net.findPath('3,5', '4,5');
+    expect(path).not.toBeNull();
+  });
+
+  it('should skip non-rail cells', () => {
+    const grid = new Grid(5, 5);
+    const net = new RailNetwork();
+    rebuildRailNetworkFromGrid(grid, net);
+    // No nodes added
+    expect(net.findPath('0,0', '1,0')).toBeNull();
   });
 });

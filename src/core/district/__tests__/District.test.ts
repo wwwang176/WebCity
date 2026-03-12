@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DistrictManager } from '../DistrictManager';
-import { PolicyManager } from '../PolicyManager';
-import { setSpecialization, getSpecialization, getSpecializationBonus } from '../Specialization';
+import { PolicyManager, POLICY_CONFIG } from '../PolicyManager';
+import type { DistrictLookup } from '../PolicyManager';
+import { setSpecialization, getSpecialization, getSpecializationBonus, SPECIALIZATION_BONUSES } from '../Specialization';
 import { CitySpecialization, CitySpecType } from '../CitySpecialization';
-import { PolicyType, Specialization } from '../types';
+import { PolicyType, Specialization, type District } from '../types';
 import { ZoneType } from '../../grid/types';
 
 describe('DistrictManager', () => {
@@ -77,6 +78,44 @@ describe('DistrictManager', () => {
     expect(dm.getDistrict(d2.id)).toBeUndefined();
     // Merged keeps first district's name
     expect(merged.name).toBe('Zone A');
+  });
+
+  it('adding a cell to one district should remove it from others', () => {
+    const d1 = dm.createDistrict('Zone A');
+    const d2 = dm.createDistrict('Zone B');
+    dm.addCellToDistrict(d1.id, 5, 5);
+    expect(dm.getDistrictAt(5, 5)?.id).toBe(d1.id);
+
+    // Move cell from d1 to d2
+    dm.addCellToDistrict(d2.id, 5, 5);
+    expect(dm.getDistrictAt(5, 5)?.id).toBe(d2.id);
+    expect(dm.getDistrict(d1.id)!.cells.has('5,5')).toBe(false);
+  });
+
+  it('getDistrictAt returns null after cell removed', () => {
+    const d = dm.createDistrict('Zone');
+    dm.addCellToDistrict(d.id, 3, 3);
+    expect(dm.getDistrictAt(3, 3)).not.toBeNull();
+    dm.removeCellFromDistrict(d.id, 3, 3);
+    expect(dm.getDistrictAt(3, 3)).toBeNull();
+  });
+
+  it('getDistrictAt returns correct district after merge', () => {
+    const d1 = dm.createDistrict('Zone A');
+    const d2 = dm.createDistrict('Zone B');
+    dm.addCellToDistrict(d1.id, 1, 1);
+    dm.addCellToDistrict(d2.id, 2, 2);
+    dm.mergeDistricts(d1.id, d2.id);
+    expect(dm.getDistrictAt(2, 2)?.id).toBe(d1.id);
+  });
+
+  it('getDistrictAt returns correct district after split', () => {
+    const d = dm.createDistrict('Big');
+    dm.addCellToDistrict(d.id, 1, 1);
+    dm.addCellToDistrict(d.id, 2, 2);
+    const split = dm.splitDistrict(d.id, new Set(['2,2']));
+    expect(dm.getDistrictAt(1, 1)?.id).toBe(d.id);
+    expect(dm.getDistrictAt(2, 2)?.id).toBe(split.id);
   });
 
   it('should split a district into two', () => {
@@ -155,6 +194,44 @@ describe('PolicyManager', () => {
       expect(cost).toBeGreaterThan(0);
     }
   });
+
+  it('POLICY_CONFIG should contain name and cost for every PolicyType', () => {
+    for (const policyType of Object.values(PolicyType)) {
+      const cfg = POLICY_CONFIG[policyType];
+      expect(cfg).toBeDefined();
+      expect(cfg.name).toBeTruthy();
+      expect(cfg.cost).toBeGreaterThan(0);
+    }
+  });
+
+  it('separate PolicyManager instances should have independent ID counters', () => {
+    const dm2 = new DistrictManager();
+    const pm2 = new PolicyManager(dm2);
+    const d1 = dm.createDistrict('A');
+    const d2 = dm2.createDistrict('B');
+    pm.applyPolicy(d1.id, PolicyType.TOURISM);
+    pm2.applyPolicy(d2.id, PolicyType.TOURISM);
+    // Both should start from 1 independently
+    expect(d1.policies[0]!.id).toMatch(/^policy_1$/);
+    expect(d2.policies[0]!.id).toMatch(/^policy_1$/);
+  });
+
+  it('should work with a mock DistrictLookup (DIP)', () => {
+    const mockDistrict: District = {
+      id: 'mock_1',
+      name: 'Mock District',
+      cells: new Set<string>(),
+      policies: [],
+      specialization: Specialization.NONE,
+    };
+    const mockLookup: DistrictLookup = {
+      getDistrict: (id: string) => (id === 'mock_1' ? mockDistrict : undefined),
+    };
+    const mockPm = new PolicyManager(mockLookup);
+    mockPm.applyPolicy('mock_1', PolicyType.TOURISM);
+    expect(mockPm.isPolicyActive('mock_1', PolicyType.TOURISM)).toBe(true);
+    expect(mockPm.isPolicyActive('nonexistent', PolicyType.TOURISM)).toBe(false);
+  });
 });
 
 describe('Specialization', () => {
@@ -191,6 +268,15 @@ describe('Specialization', () => {
     // Both should have bonuses but they may differ
     expect(highTech.efficiencyMultiplier).toBeGreaterThan(1);
     expect(mining.efficiencyMultiplier).toBeGreaterThan(1);
+  });
+
+  it('SPECIALIZATION_BONUSES should have entry for every Specialization enum value', () => {
+    const allSpecs = Object.values(Specialization).filter(v => typeof v === 'number') as Specialization[];
+    for (const spec of allSpecs) {
+      expect(SPECIALIZATION_BONUSES[spec]).toBeDefined();
+      expect(SPECIALIZATION_BONUSES[spec].efficiencyMultiplier).toBeGreaterThanOrEqual(1);
+      expect(SPECIALIZATION_BONUSES[spec].revenueMultiplier).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 

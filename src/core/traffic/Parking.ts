@@ -1,3 +1,7 @@
+export const PARKING = {
+  WORKER_RATIO: 2,
+} as const;
+
 interface ParkingLot {
   capacity: number;
   occupied: number;
@@ -8,7 +12,7 @@ export class ParkingSystem {
   private overflowCount = 0;
 
   registerBuilding(buildingKey: string, workerCount: number): void {
-    const capacity = Math.max(1, Math.floor(workerCount / 2));
+    const capacity = Math.max(1, Math.floor(workerCount / PARKING.WORKER_RATIO));
     this.lots.set(buildingKey, { capacity, occupied: 0 });
   }
 

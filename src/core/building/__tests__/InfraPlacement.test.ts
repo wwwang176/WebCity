@@ -6,10 +6,12 @@ import {
   placeInfraOnGrid,
   removeInfraFromGrid,
   findPrimaryCell,
+  forEachMultiCell,
   getInfraCenter,
   getInfraCenterById,
   isPrimaryCellReserved,
   MULTI_CELL_OCCUPIED,
+  BURNED,
   ROTATION_RESERVED,
   RESERVED_TO_ROTATION,
   type PlaceResult,
@@ -354,6 +356,51 @@ describe('InfraPlacement', () => {
     it('should return same coords for unknown buildingId', () => {
       expect(getInfraCenterById(5, 5, 999)).toEqual({ cx: 5, cy: 5 });
     });
+
+    it('all 1x1 transport stops should have center === primary', () => {
+      // bus_stop=242, metro_station=241, train_station=239, ferry_dock=238
+      for (const id of [242, 241, 239, 238]) {
+        expect(getInfraCenterById(10, 20, id)).toEqual({ cx: 10, cy: 20 });
+      }
+    });
+  });
+
+  describe('forEachMultiCell', () => {
+    it('should iterate all cells of a 2x2 building', () => {
+      const grid = makeGrid();
+      placeInfraOnGrid(grid, 5, 5, 'police', 0);
+      const cells: { x: number; y: number }[] = [];
+      forEachMultiCell(grid, 5, 5, (x, y) => cells.push({ x, y }));
+      expect(cells).toHaveLength(4);
+      expect(cells).toContainEqual({ x: 5, y: 5 });
+      expect(cells).toContainEqual({ x: 6, y: 5 });
+      expect(cells).toContainEqual({ x: 5, y: 6 });
+      expect(cells).toContainEqual({ x: 6, y: 6 });
+    });
+
+    it('should iterate all cells of a 3x3 building', () => {
+      const grid = makeGrid();
+      placeInfraOnGrid(grid, 3, 3, 'school_univ', 0);
+      const cells: { x: number; y: number }[] = [];
+      forEachMultiCell(grid, 4, 4, (x, y) => cells.push({ x, y }));
+      expect(cells).toHaveLength(9);
+    });
+
+    it('should not call callback for non-infra cell', () => {
+      const grid = makeGrid();
+      const cells: { x: number; y: number }[] = [];
+      forEachMultiCell(grid, 5, 5, (x, y) => cells.push({ x, y }));
+      expect(cells).toHaveLength(0);
+    });
+
+    it('should work when called from any cell of the building', () => {
+      const grid = makeGrid();
+      placeInfraOnGrid(grid, 5, 5, 'police', 0);
+      const cells: { x: number; y: number }[] = [];
+      // Call from secondary cell (6,6)
+      forEachMultiCell(grid, 6, 6, (x, y) => cells.push({ x, y }));
+      expect(cells).toHaveLength(4);
+    });
   });
 
   describe('rotation storage in grid', () => {
@@ -393,8 +440,12 @@ describe('InfraPlacement', () => {
       expect(isPrimaryCellReserved(5)).toBe(true);
       expect(isPrimaryCellReserved(6)).toBe(true);
       expect(isPrimaryCellReserved(7)).toBe(true);
-      expect(isPrimaryCellReserved(3)).toBe(false); // BURNED
-      expect(isPrimaryCellReserved(4)).toBe(false); // MULTI_CELL_OCCUPIED
+      expect(isPrimaryCellReserved(BURNED)).toBe(false);
+      expect(isPrimaryCellReserved(MULTI_CELL_OCCUPIED)).toBe(false);
+    });
+
+    it('BURNED constant should equal 3', () => {
+      expect(BURNED).toBe(3);
     });
 
     it('findPrimaryCell should work with rotated buildings', () => {

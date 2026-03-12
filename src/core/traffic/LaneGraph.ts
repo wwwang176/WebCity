@@ -1,5 +1,6 @@
 import { RoadType, RoadDirection } from '../road/types';
 import { getLaneCount } from './TrafficSimulation';
+import { parsePosKeyUnsafe, toPosKey, euclideanDistance } from '../grid/GridHelpers';
 
 // ── Types ──
 
@@ -33,34 +34,40 @@ const DIR_FLAGS: { dir: Direction; flag: number; dx: number; dy: number }[] = [
   { dir: 'west', flag: RoadDirection.WEST, dx: -1, dy: 0 },
 ];
 
+const DIRECTION_OPPOSITES: Record<Direction, Direction> = {
+  north: 'south',
+  south: 'north',
+  east: 'west',
+  west: 'east',
+};
+
+const DIRECTION_VECTORS: Record<Direction, { dx: number; dy: number }> = {
+  north: { dx: 0, dy: -1 },
+  south: { dx: 0, dy: 1 },
+  east: { dx: 1, dy: 0 },
+  west: { dx: -1, dy: 0 },
+};
+
 function oppositeDir(d: Direction): Direction {
-  switch (d) {
-    case 'north': return 'south';
-    case 'south': return 'north';
-    case 'east': return 'west';
-    case 'west': return 'east';
-  }
+  return DIRECTION_OPPOSITES[d];
 }
 
 function dirVec(d: Direction): { dx: number; dy: number } {
-  switch (d) {
-    case 'north': return { dx: 0, dy: -1 };
-    case 'south': return { dx: 0, dy: 1 };
-    case 'east': return { dx: 1, dy: 0 };
-    case 'west': return { dx: -1, dy: 0 };
-  }
+  return DIRECTION_VECTORS[d];
 }
 
-function parseCellKey(key: string): { x: number; y: number } {
-  const [xs, ys] = key.split(',');
-  return { x: Number(xs), y: Number(ys) };
-}
+const parseCellKey = parsePosKeyUnsafe;
 
-function countFlags(flags: number): number {
-  let n = 0;
-  for (const d of DIR_FLAGS) if (flags & d.flag) n++;
-  return n;
-}
+
+/** Lane geometry rendering constants */
+export const LANE_GEOMETRY = {
+  /** Lateral offset per lane (cells) */
+  LANE_WIDTH: 0.18,
+  /** Bezier handle length for turn curves */
+  BEZIER_STRENGTH: 0.35,
+  /** Number of samples for Bezier length approximation */
+  BEZIER_SAMPLES: 10,
+} as const;
 
 // ── Grid Lookup Interface ──
 
@@ -99,7 +106,7 @@ export class LaneGraph {
       affected.add(key);
       const { x, y } = parseCellKey(key);
       for (const d of DIR_FLAGS) {
-        affected.add(`${x + d.dx},${y + d.dy}`);
+        affected.add(toPosKey(x + d.dx, y + d.dy));
       }
     }
 
@@ -187,7 +194,7 @@ export class LaneGraph {
     // For direction D with lane index L:
     //   perpendicular "right" of travel direction = lateral offset
     //   This separates opposing traffic and multi-lane same-direction traffic.
-    const LANE_WIDTH = 0.18; // lateral offset per lane
+    const LANE_WIDTH = LANE_GEOMETRY.LANE_WIDTH;
 
     for (const { dir, flag } of DIR_FLAGS) {
       if (!(cell.roadFlags & flag)) continue;
@@ -279,7 +286,7 @@ export class LaneGraph {
   ): void {
     // For a straight/curve segment: connect exit → neighbor entry
     for (const { dir, dx, dy } of activeDirections) {
-      const neighborKey = `${x + dx},${y + dy}`;
+      const neighborKey = toPosKey(x + dx, y + dy);
       const neighbor = grid.getCell(x + dx, y + dy);
       if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
 
@@ -296,10 +303,7 @@ export class LaneGraph {
         const toPt = this.points.get(entryId);
         if (!fromPt || !toPt) continue;
 
-        const edgeDx = toPt.position.x - fromPt.position.x;
-        const edgeDy = toPt.position.y - fromPt.position.y;
-        const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-
+        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
         this.edges.push({
           id: `${exitId}>${entryId}`,
           from: fromPt,
@@ -323,20 +327,8 @@ export class LaneGraph {
 
           // Avoid duplicating: only create if not already an intersection
           // For straight road (2 directions), this is a through-connection
-          const edgeDx = toPt.position.x - fromPt.position.x;
-          const edgeDy = toPt.position.y - fromPt.position.y;
-          const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-
           const edgeId = `${fromId}>${toId}`;
-          if (!this.edges.some(e => e.id === edgeId)) {
-            this.edges.push({
-              id: edgeId,
-              from: fromPt,
-              to: toPt,
-              length: Math.max(length, 0.1),
-              type: 'straight',
-            });
-          }
+          this.pushEdgeIfNew(edgeId, fromPt, toPt, 'straight', 0.1);
         }
       }
     }
@@ -386,7 +378,7 @@ export class LaneGraph {
 
     // Also connect exit points to neighbor entries (same as straight)
     for (const { dir, dx, dy } of activeDirections) {
-      const neighborKey = `${x + dx},${y + dy}`;
+      const neighborKey = toPosKey(x + dx, y + dy);
       const neighbor = grid.getCell(x + dx, y + dy);
       if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
 
@@ -401,20 +393,8 @@ export class LaneGraph {
         const toPt = this.points.get(entryId);
         if (!fromPt || !toPt) continue;
 
-        const edgeDx = toPt.position.x - fromPt.position.x;
-        const edgeDy = toPt.position.y - fromPt.position.y;
-        const length = Math.sqrt(edgeDx * edgeDx + edgeDy * edgeDy);
-
         const edgeId = `${exitId}>${entryId}`;
-        if (!this.edges.some(e => e.id === edgeId)) {
-          this.edges.push({
-            id: edgeId,
-            from: fromPt,
-            to: toPt,
-            length: Math.max(length, 0.1),
-            type: 'straight',
-          });
-        }
+        this.pushEdgeIfNew(edgeId, fromPt, toPt, 'straight', 0.1);
       }
     }
   }
@@ -434,10 +414,7 @@ export class LaneGraph {
         const toPt = this.points.get(toId);
         if (!fromPt || !toPt) continue;
 
-        const dx = toPt.position.x - fromPt.position.x;
-        const dy = toPt.position.y - fromPt.position.y;
-        const length = Math.sqrt(dx * dx + dy * dy);
-
+        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
         this.edges.push({
           id: `lc:${fromId}>${toId}`,
           from: fromPt,
@@ -453,10 +430,7 @@ export class LaneGraph {
         const toPt2 = this.points.get(toId2);
         if (!fromPt2 || !toPt2) continue;
 
-        const dx2 = toPt2.position.x - fromPt2.position.x;
-        const dy2 = toPt2.position.y - fromPt2.position.y;
-        const length2 = Math.sqrt(dx2 * dx2 + dy2 * dy2);
-
+        const length2 = euclideanDistance(fromPt2.position.x, fromPt2.position.y, toPt2.position.x, toPt2.position.y);
         this.edges.push({
           id: `lc:${fromId2}>${toId2}`,
           from: fromPt2,
@@ -474,7 +448,7 @@ export class LaneGraph {
     cx: number, cy: number,
   ): { x: number; y: number }[] {
     // Control points: extend tangent from entry, then curve towards exit
-    const strength = 0.35; // bezier handle length
+    const strength = LANE_GEOMETRY.BEZIER_STRENGTH;
     const cp1 = {
       x: from.position.x + from.tangent.tx * strength,
       y: from.position.y + from.tangent.ty * strength,
@@ -486,6 +460,19 @@ export class LaneGraph {
     return [cp1, cp2];
   }
 
+  /** Push a straight edge only if no edge with the same ID exists yet. */
+  private pushEdgeIfNew(
+    id: string,
+    from: ConnectionPoint,
+    to: ConnectionPoint,
+    type: LaneEdge['type'],
+    minLength: number,
+  ): void {
+    if (this.edges.some(e => e.id === id)) return;
+    const length = euclideanDistance(from.position.x, from.position.y, to.position.x, to.position.y);
+    this.edges.push({ id, from, to, length: Math.max(length, minLength), type });
+  }
+
   private approximateBezierLength(
     p0: { x: number; y: number },
     p1: { x: number; y: number },
@@ -493,7 +480,7 @@ export class LaneGraph {
     p3: { x: number; y: number },
   ): number {
     // Approximate by sampling N points
-    const N = 10;
+    const N = LANE_GEOMETRY.BEZIER_SAMPLES;
     let length = 0;
     let prevX = p0.x, prevY = p0.y;
     for (let i = 1; i <= N; i++) {

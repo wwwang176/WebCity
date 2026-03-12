@@ -1,15 +1,12 @@
 import { Grid } from '../grid/Grid';
-import { TerrainType, ZoneType } from '../grid/types';
+import { TerrainType, ZoneType, type Position } from '../grid/types';
 import { RoadType } from '../road/types';
+import { isAdjacentToRoad } from '../grid/GridHelpers';
+import { isInfrastructureBuilding, isZoneBuilding } from '../building/InfraConfig';
 
 interface ZoneResult {
   success: boolean;
   reason?: string;
-}
-
-interface Position {
-  x: number;
-  y: number;
 }
 
 export class ZoneManager {
@@ -28,15 +25,15 @@ export class ZoneManager {
     if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
     // Skip roads
     if (cell.roadType !== RoadType.NONE) return { success: false, reason: 'ROAD_EXISTS' };
-    // Skip infrastructure (buildingId 245-254: power/water/police/fire/hospital/school/park/garbage/sewage/cemetery)
-    if (cell.buildingId >= 245) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
+    // Skip infrastructure buildings (power/water/police/fire/hospital/school/park/garbage/sewage/cemetery/transport)
+    if (isInfrastructureBuilding(cell.buildingId)) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
 
-    if (!this.isAdjacentToRoad(x, y)) {
+    if (!isAdjacentToRoad(this.grid, x, y)) {
       return { success: false, reason: 'NOT_ADJACENT_TO_ROAD' };
     }
 
     // If rezoning to a different type and a building exists, demolish it first
-    if (cell.buildingId > 0 && cell.buildingId < 245 && cell.zoneType !== zoneType) {
+    if (isZoneBuilding(cell.buildingId) && cell.zoneType !== zoneType) {
       this.grid.setCell(x, y, { zoneType, buildingId: 0 });
     } else {
       this.grid.setCell(x, y, { zoneType });
@@ -63,17 +60,4 @@ export class ZoneManager {
     this.grid.setCell(x, y, { zoneType: ZoneType.NONE });
   }
 
-  private isAdjacentToRoad(x: number, y: number): boolean {
-    const dirs = [
-      { dx: 0, dy: -1 },
-      { dx: 0, dy: 1 },
-      { dx: -1, dy: 0 },
-      { dx: 1, dy: 0 },
-    ];
-    for (const d of dirs) {
-      const cell = this.grid.getCell(x + d.dx, y + d.dy);
-      if (cell && cell.roadType !== RoadType.NONE) return true;
-    }
-    return false;
-  }
 }

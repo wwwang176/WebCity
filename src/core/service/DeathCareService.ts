@@ -1,3 +1,6 @@
+import { removeById } from '../utils/removeById';
+import { recoverNextId } from '../utils/recoverNextId';
+
 export interface Cemetery {
   id: string;
   x: number;
@@ -14,41 +17,40 @@ export interface Crematorium {
   processRate: number;
 }
 
-export interface DeathCareJSON {
+interface DeathCareJSON {
   cemeteries: Cemetery[];
   crematoriums: Crematorium[];
   pendingDeaths: number;
 }
 
-let nextId = 1;
+export const DEATH_CARE = {
+  MAINTENANCE_PER_FACILITY: 2,
+} as const;
 
 export class DeathCareService {
   private cemeteries: Cemetery[] = [];
   private crematoriums: Crematorium[] = [];
   private pendingDeaths = 0;
+  private nextId = 1;
 
   addCemetery(x: number, y: number, capacity = 500): string {
-    const id = `cem-${nextId++}`;
+    const id = `cem-${this.nextId++}`;
     this.cemeteries.push({ id, x, y, capacity, used: 0 });
     return id;
   }
 
   addCrematorium(x: number, y: number, capacity = 100, processRate = 5): string {
-    const id = `cre-${nextId++}`;
+    const id = `cre-${this.nextId++}`;
     this.crematoriums.push({ id, x, y, capacity, processRate });
     return id;
   }
 
   removeCemetery(id: string): boolean {
-    const idx = this.cemeteries.findIndex(c => c.id === id);
-    if (idx !== -1) { this.cemeteries.splice(idx, 1); return true; }
-    return false;
+    return removeById(this.cemeteries, id);
   }
 
   removeCrematorium(id: string): boolean {
-    const idx = this.crematoriums.findIndex(c => c.id === id);
-    if (idx !== -1) { this.crematoriums.splice(idx, 1); return true; }
-    return false;
+    return removeById(this.crematoriums, id);
   }
 
   reportDeath(): void {
@@ -92,6 +94,10 @@ export class DeathCareService {
     return this.crematoriums;
   }
 
+  getMaintenanceCost(): number {
+    return (this.cemeteries.length + this.crematoriums.length) * DEATH_CARE.MAINTENANCE_PER_FACILITY;
+  }
+
   toJSON(): DeathCareJSON {
     return {
       cemeteries: this.cemeteries.map(c => ({ ...c })),
@@ -105,6 +111,10 @@ export class DeathCareService {
     service.cemeteries = json.cemeteries.map(c => ({ ...c }));
     service.crematoriums = json.crematoriums.map(c => ({ ...c }));
     service.pendingDeaths = json.pendingDeaths;
+    // Recover counter from max existing ID across both collections
+    const cemMax = recoverNextId(service.cemeteries, 'cem-');
+    const creMax = recoverNextId(service.crematoriums, 'cre-');
+    service.nextId = Math.max(cemMax, creMax);
     return service;
   }
 }

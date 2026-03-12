@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GlobalMarket, ResourceType } from '../GlobalMarket';
+import { GlobalMarket, ResourceType, MARKET_CONFIG } from '../GlobalMarket';
 
 describe('GlobalMarket', () => {
   it('should have initial prices for all resource types', () => {
@@ -113,5 +113,28 @@ describe('GlobalMarket', () => {
     expect(all[ResourceType.ORE]).toBe(80);
     expect(all[ResourceType.AGRICULTURE]).toBe(60);
     expect(all[ResourceType.ELECTRONICS]).toBe(150);
+  });
+});
+
+describe('MARKET_CONFIG constants', () => {
+  it('import markup should be > 1 (markup over base price)', () => {
+    expect(MARKET_CONFIG.IMPORT_MARKUP).toBeGreaterThan(1);
+  });
+
+  it('price ratio bounds should be ordered', () => {
+    expect(MARKET_CONFIG.PRICE_MIN_RATIO).toBeGreaterThan(0);
+    expect(MARKET_CONFIG.PRICE_MAX_RATIO).toBeGreaterThan(MARKET_CONFIG.PRICE_MIN_RATIO);
+  });
+
+  it('volatility and factors should be small positive numbers', () => {
+    expect(MARKET_CONFIG.VOLATILITY).toBeGreaterThan(0);
+    expect(MARKET_CONFIG.VOLATILITY).toBeLessThan(1);
+    expect(MARKET_CONFIG.SUPPLY_DEMAND_FACTOR).toBeGreaterThan(0);
+    expect(MARKET_CONFIG.MEAN_REVERSION_FACTOR).toBeGreaterThan(0);
+  });
+
+  it('supply pressure decay should be between 0 and 1', () => {
+    expect(MARKET_CONFIG.SUPPLY_PRESSURE_DECAY).toBeGreaterThan(0);
+    expect(MARKET_CONFIG.SUPPLY_PRESSURE_DECAY).toBeLessThan(1);
   });
 });

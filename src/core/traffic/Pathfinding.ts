@@ -1,25 +1,26 @@
 import { RoadNetwork } from '../road/RoadNetwork';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
-
-interface PathNode {
-  id: string;
-  g: number;
-  h: number;
-  f: number;
-  parent: string | null;
-}
+import { parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 
 function heuristic(a: string, b: string): number {
-  const [ax, ay] = a.split(',').map(Number);
-  const [bx, by] = b.split(',').map(Number);
-  return Math.abs(ax! - bx!) + Math.abs(ay! - by!);
+  const ap = parsePosKeyUnsafe(a);
+  const bp = parsePosKeyUnsafe(b);
+  return manhattanDistance(ap.x, ap.y, bp.x, bp.y);
 }
 
 export interface PathCostFactors {
   congestion: Map<string, number>;
   trafficLights: Set<string>;
 }
+
+/** Pathfinding cost configuration */
+export const PATH_COST = {
+  /** Congestion weight when calculating path move cost */
+  CONGESTION_WEIGHT: 2,
+  /** Extra cost added for traffic light intersections */
+  TRAFFIC_LIGHT_COST: 0.5,
+} as const;
 
 export function findPath(
   network: RoadNetwork,
@@ -29,70 +30,6 @@ export function findPath(
 ): string[] | null {
   if (!network.isConnected(from, to)) return null;
 
-  const open = new Map<string, PathNode>();
-  const closed = new Set<string>();
-
-  const startNode: PathNode = { id: from, g: 0, h: heuristic(from, to), f: 0, parent: null };
-  startNode.f = startNode.g + startNode.h;
-  open.set(from, startNode);
-
-  while (open.size > 0) {
-    let current: PathNode | null = null;
-    for (const node of open.values()) {
-      if (!current || node.f < current.f) current = node;
-    }
-    if (!current) return null;
-
-    if (current.id === to) {
-      const path: string[] = [];
-      let node: PathNode | null = current;
-      while (node) {
-        path.unshift(node.id);
-        node = node.parent ? open.get(node.parent) ?? closed.has(node.parent) ? null : null : null;
-      }
-      // Rebuild path from parents
-      // We need to track parents differently
-      return rebuildPath(from, to, network, costs);
-    }
-
-    open.delete(current.id);
-    closed.add(current.id);
-
-    for (const neighborId of network.getNeighbors(current.id)) {
-      if (closed.has(neighborId)) continue;
-
-      let moveCost = 1;
-      if (costs) {
-        const congestion = costs.congestion.get(neighborId) ?? 0;
-        moveCost += congestion * 2;
-        if (costs.trafficLights.has(neighborId)) moveCost += 0.5;
-      }
-
-      const g = current.g + moveCost;
-      const existing = open.get(neighborId);
-
-      if (!existing || g < existing.g) {
-        const node: PathNode = {
-          id: neighborId,
-          g,
-          h: heuristic(neighborId, to),
-          f: g + heuristic(neighborId, to),
-          parent: current.id,
-        };
-        open.set(neighborId, node);
-      }
-    }
-  }
-
-  return null;
-}
-
-function rebuildPath(
-  from: string,
-  to: string,
-  network: RoadNetwork,
-  costs?: PathCostFactors,
-): string[] | null {
   const open = new Map<string, { g: number; parent: string | null }>();
   const closed = new Map<string, { g: number; parent: string | null }>();
 
@@ -131,8 +68,8 @@ function rebuildPath(
       let moveCost = 1;
       if (costs) {
         const congestion = costs.congestion.get(neighborId) ?? 0;
-        moveCost += congestion * 2;
-        if (costs.trafficLights.has(neighborId)) moveCost += 0.5;
+        moveCost += congestion * PATH_COST.CONGESTION_WEIGHT;
+        if (costs.trafficLights.has(neighborId)) moveCost += PATH_COST.TRAFFIC_LIGHT_COST;
       }
 
       const g = data.g + moveCost;
@@ -160,7 +97,7 @@ export function gridAStarPath(
   grid: { getCell(x: number, y: number): { roadType: number } | null; width: number; height: number },
   maxSteps = 5000,
 ): string[] | null {
-  const key = (x: number, y: number) => `${x},${y}`;
+  const key = toPosKey;
   const target = key(end.x, end.y);
   const startKey = key(start.x, start.y);
 
@@ -174,10 +111,9 @@ export function gridAStarPath(
 
   gScore.set(startKey, 0);
   parent.set(startKey, null);
-  const h0 = (Math.abs(end.x - start.x) + Math.abs(end.y - start.y)) / MAX_SPEED_LIMIT;
+  const h0 = manhattanDistance(start.x, start.y, end.x, end.y) / MAX_SPEED_LIMIT;
   open.push({ x: start.x, y: start.y, k: startKey, f: h0 });
 
-  const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
   let steps = 0;
 
   while (open.length > 0 && steps < maxSteps) {
@@ -209,7 +145,7 @@ export function gridAStarPath(
 
     const currentG = gScore.get(current.k)!;
 
-    for (const [dx, dy] of dirs) {
+    for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = current.x + dx!;
       const ny = current.y + dy!;
       if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
@@ -217,7 +153,7 @@ export function gridAStarPath(
       if (closed.has(nk)) continue;
 
       const cell = grid.getCell(nx, ny);
-      if (!cell || cell.roadType === 0) continue;
+      if (!cell || cell.roadType === RoadType.NONE) continue;
 
       const config = ROAD_CONFIGS[cell.roadType as RoadType];
       const speedLimit = config?.speedLimit || 50;
@@ -229,7 +165,7 @@ export function gridAStarPath(
 
       gScore.set(nk, tentativeG);
       parent.set(nk, current.k);
-      const h = (Math.abs(end.x - nx) + Math.abs(end.y - ny)) / MAX_SPEED_LIMIT;
+      const h = manhattanDistance(nx, ny, end.x, end.y) / MAX_SPEED_LIMIT;
       open.push({ x: nx, y: ny, k: nk, f: tentativeG + h });
     }
   }
@@ -332,9 +268,9 @@ export function refineLanePath(
 }
 
 function cellDirection(from: string, to: string): string | null {
-  const [fx, fy] = from.split(',').map(Number);
-  const [tx, ty] = to.split(',').map(Number);
-  const dx = tx! - fx!, dy = ty! - fy!;
+  const f = parsePosKeyUnsafe(from);
+  const t = parsePosKeyUnsafe(to);
+  const dx = t.x - f.x, dy = t.y - f.y;
   if (dx === 1 && dy === 0) return 'east';
   if (dx === -1 && dy === 0) return 'west';
   if (dx === 0 && dy === 1) return 'south';

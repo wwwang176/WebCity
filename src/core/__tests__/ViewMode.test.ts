@@ -2,13 +2,15 @@ import { describe, it, expect } from 'vitest';
 import {
   ViewMode,
   VIEW_MODE_OPACITY,
-  isSurfaceVehicle,
   UNDERGROUND_TUNNEL_Y,
   TRANSPORT_STOP_IDS,
   getTransportStopType,
   getTransportFocusMode,
   getVehicleVisibility,
+  TRANSPORT_FOCUS_MODES,
+  VISIBLE_VEHICLE_TYPES,
 } from '../ViewMode';
+import { OVERLAY_SCALE } from '../overlay/CoverageOverlay';
 
 describe('ViewMode', () => {
   describe('VIEW_MODE_OPACITY', () => {
@@ -105,32 +107,6 @@ describe('ViewMode', () => {
 
   });
 
-  describe('isSurfaceVehicle', () => {
-    it('car 是地面車輛', () => {
-      expect(isSurfaceVehicle('car')).toBe(true);
-    });
-
-    it('bus 是地面車輛', () => {
-      expect(isSurfaceVehicle('bus')).toBe(true);
-    });
-
-    it('transport_bus 是地面車輛', () => {
-      expect(isSurfaceVehicle('transport_bus')).toBe(true);
-    });
-
-    it('truck 是地面車輛', () => {
-      expect(isSurfaceVehicle('truck')).toBe(true);
-    });
-
-    it('metro_train now rendered separately (all VehicleRenderer types are surface)', () => {
-      expect(isSurfaceVehicle('metro_train')).toBe(true);
-    });
-
-    it('ferry 是地面車輛', () => {
-      expect(isSurfaceVehicle('ferry')).toBe(true);
-    });
-
-  });
 });
 
 // ── Transport stop identification ──
@@ -217,5 +193,66 @@ describe('getVehicleVisibility', () => {
   it('BUS_FOCUS mode should keep roads at full opacity', () => {
     expect(VIEW_MODE_OPACITY[ViewMode.BUS_FOCUS].road).toBe(1.0);
     expect(VIEW_MODE_OPACITY[ViewMode.BUS_FOCUS].building).toBeLessThan(0.2);
+  });
+});
+
+describe('TRANSPORT_FOCUS_MODES lookup', () => {
+  it('should map all TransportStopKind to ViewMode', () => {
+    expect(TRANSPORT_FOCUS_MODES.metro).toBe(ViewMode.UNDERGROUND);
+    expect(TRANSPORT_FOCUS_MODES.rail).toBe(ViewMode.RAIL_FOCUS);
+    expect(TRANSPORT_FOCUS_MODES.ferry).toBe(ViewMode.FERRY_FOCUS);
+    expect(TRANSPORT_FOCUS_MODES.bus).toBe(ViewMode.BUS_FOCUS);
+  });
+});
+
+describe('VISIBLE_VEHICLE_TYPES lookup', () => {
+  it('NORMAL mode allows all vehicles (null)', () => {
+    expect(VISIBLE_VEHICLE_TYPES[ViewMode.NORMAL]).toBeNull();
+  });
+
+  it('UNDERGROUND mode allows no vehicles (empty set)', () => {
+    const set = VISIBLE_VEHICLE_TYPES[ViewMode.UNDERGROUND];
+    expect(set).toBeInstanceOf(Set);
+    expect(set!.size).toBe(0);
+  });
+
+  it('RAIL_FOCUS mode allows only rail vehicles', () => {
+    const set = VISIBLE_VEHICLE_TYPES[ViewMode.RAIL_FOCUS]!;
+    expect(set.has('rail_train')).toBe(true);
+    expect(set.has('rail_carriage')).toBe(true);
+    expect(set.has('car')).toBe(false);
+  });
+
+  it('BUS_FOCUS mode allows bus and transport_bus', () => {
+    const set = VISIBLE_VEHICLE_TYPES[ViewMode.BUS_FOCUS]!;
+    expect(set.has('bus')).toBe(true);
+    expect(set.has('transport_bus')).toBe(true);
+  });
+
+  it('should have an entry for every ViewMode', () => {
+    for (const mode of Object.values(ViewMode)) {
+      expect(mode in VISIBLE_VEHICLE_TYPES).toBe(true);
+    }
+  });
+});
+
+describe('OVERLAY_SCALE constants', () => {
+  it('display max should be 100', () => {
+    expect(OVERLAY_SCALE.DISPLAY_MAX).toBe(100);
+  });
+
+  it('raw max should be 255 (uint8 range)', () => {
+    expect(OVERLAY_SCALE.RAW_MAX).toBe(255);
+  });
+
+  it('coverage value should be positive and ≤ display max', () => {
+    expect(OVERLAY_SCALE.COVERAGE_VALUE).toBeGreaterThan(0);
+    expect(OVERLAY_SCALE.COVERAGE_VALUE).toBeLessThanOrEqual(OVERLAY_SCALE.DISPLAY_MAX);
+  });
+
+  it('scaling factors should be positive', () => {
+    expect(OVERLAY_SCALE.GROUNDWATER_FACTOR).toBeGreaterThan(0);
+    expect(OVERLAY_SCALE.ZONE_TYPE_FACTOR).toBeGreaterThan(0);
+    expect(OVERLAY_SCALE.TRAFFIC_DENSITY_FACTOR).toBeGreaterThan(0);
   });
 });

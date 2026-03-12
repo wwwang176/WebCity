@@ -5,6 +5,7 @@ import { RoadBuilder } from '../road/RoadBuilder';
 import { RoadType } from '../road/types';
 import { ZoneType } from '../grid/types';
 import { ZoneManager } from '../zone/ZoneManager';
+import { isZoneBuilding } from '../building/InfraConfig';
 
 describe('Integration Tests', () => {
   it('full game loop: roads + zones + services + 100 ticks', () => {
@@ -135,16 +136,14 @@ describe('Integration Tests', () => {
     }
 
     // Without services: crime should be non-zero, happiness affected
-    const avgHappiness = state.citizens.citizens.length > 0
-      ? state.citizens.citizens.reduce((s, c) => s + c.happiness, 0) / state.citizens.citizens.length
-      : 0;
+    const avgHappiness = state.citizens.getAverageHappiness();
 
     // Happiness won't be high without services
     expect(avgHappiness).toBeLessThan(80);
     // No building upgrades without service coverage (buildings stay level 1)
     for (let x = 1; x <= 10; x++) {
       const cell = state.grid.getCell(x, 9);
-      if (cell && cell.buildingId > 0 && cell.buildingId < 243) {
+      if (cell && isZoneBuilding(cell.buildingId)) {
         // Level 1 residential high = buildingId 4
         expect(cell.buildingId).toBeLessThanOrEqual(6);
       }
@@ -183,9 +182,7 @@ describe('Integration Tests', () => {
     }
 
     // With services, citizens should have reasonable happiness
-    const avgHappiness = state.citizens.citizens.length > 0
-      ? state.citizens.citizens.reduce((s, c) => s + c.happiness, 0) / state.citizens.citizens.length
-      : 0;
+    const avgHappiness = state.citizens.getAverageHappiness();
 
     // At minimum shouldn't crash and happiness should be defined
     expect(Number.isFinite(avgHappiness)).toBe(true);

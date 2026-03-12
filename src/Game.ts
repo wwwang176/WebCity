@@ -1,68 +1,148 @@
 import * as THREE from 'three';
 import { SceneManager } from './renderer/SceneManager';
 import { TerrainRenderer } from './renderer/TerrainRenderer';
-import { RoadRenderer } from './renderer/RoadRenderer';
+import { RoadRenderer, ROAD_WIDTHS } from './renderer/RoadRenderer';
 import { BuildingRenderer } from './renderer/BuildingRenderer';
 import { VehicleRenderer, type VehicleData } from './renderer/VehicleRenderer';
 import { TrafficLightRenderer } from './renderer/TrafficLightRenderer';
+import { syncTrafficLightsWithGrid } from './core/traffic/TrafficLights';
 import { OverlayRenderer } from './renderer/OverlayRenderer';
 import { GridCursor } from './renderer/GridCursor';
 import { WeatherRenderer } from './renderer/WeatherRenderer';
 import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
-import { RoadType, RoadDirection, ROAD_CONFIGS } from './core/road/types';
-import { ZoneType, TerrainType } from './core/grid/types';
+import { RoadType, ROAD_CONFIGS } from './core/road/types';
+import { ZoneType } from './core/grid/types';
+import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
-import { getBuildingType, type BuildingType } from './core/building/types';
-import { IncomeLevel } from './core/citizen/types';
+import { type BuildingType } from './core/building/types';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
-import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
-import { getLaneCount } from './core/traffic/TrafficSimulation';
-import { getInfraConfig, getInfraConfigById, getRotatedSize, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, ROTATION_RESERVED } from './core/building/InfraPlacement';
+import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
+import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
+import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
+import { classifyVehicleType } from './core/traffic/VehicleClassification';
+import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
-import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
+import { getAirportBuildCost, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
+import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
+import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } from './core/building/InfraDetails';
+import { classifyBuilding } from './core/building/BuildingClassifier';
+import { classifyDemolishCell } from './core/building/DemolishClassifier';
+import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
 
 import {
   ViewMode,
   VIEW_MODE_OPACITY,
-  getTransportStopType,
   getTransportFocusMode,
+  STOP_NAMES,
   type TransportStopKind,
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
+import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
+import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
+import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
+import { canPlaceTransportStop, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
+import { generateTerrain } from './core/grid/TerrainGenerator';
+import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
-import { RailNetwork } from './core/rail/RailNetwork';
-import { RailType, TrackDirection, RAIL_COST } from './core/rail/types';
+import { RailNetwork, rebuildRailNetworkFromGrid } from './core/rail/RailNetwork';
+import { RAIL } from './core/rail/types';
 import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 
-/** Road widths matching RoadRenderer (world units per cell). */
-const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
-  [RoadType.RURAL]: 0.5,
-  [RoadType.TWO_LANE]: 0.6,
-  [RoadType.FOUR_LANE]: 0.85,
-  [RoadType.SIX_LANE]: 0.95,
-  [RoadType.HIGHWAY]: 0.95,
-  [RoadType.ONE_WAY]: 0.55,
-};
 
 
 export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport';
+
+/** Map of tool types that directly delegate to placeInfrastructure (DRY). */
+const TOOL_TO_INFRA: Partial<Record<ToolType, InfraType>> = {
+  power: 'power', water: 'water', police: 'police', fire: 'fire',
+  hospital: 'hospital', school: 'school', school_high: 'school_high',
+  school_univ: 'school_univ', park: 'park', garbage: 'garbage',
+  sewage: 'sewage', cemetery: 'cemetery',
+};
+
+/** Map of tool types that directly delegate to placeTransportStop (DRY). */
+const TOOL_TO_TRANSPORT: Partial<Record<ToolType, 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'>> = {
+  bus_stop: 'bus', metro_station: 'metro', train_station: 'rail',
+  ferry_dock: 'ferry', airport: 'airport',
+};
+
+/** Map of zone tool types to ZoneType (DRY). */
+const TOOL_TO_ZONE: Partial<Record<ToolType, ZoneType>> = {
+  zone_r: ZoneType.RESIDENTIAL_LOW, zone_rh: ZoneType.RESIDENTIAL_HIGH,
+  zone_c: ZoneType.COMMERCIAL_LOW, zone_ch: ZoneType.COMMERCIAL_HIGH,
+  zone_i: ZoneType.INDUSTRIAL, zone_o: ZoneType.OFFICE,
+};
+
+/** Map of road tool types to RoadType (OCP: add new road types here). */
+const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
+  road: RoadType.TWO_LANE, road_rural: RoadType.RURAL,
+  road_2lane: RoadType.TWO_LANE, road_4lane: RoadType.FOUR_LANE,
+  road_6lane: RoadType.SIX_LANE, road_highway: RoadType.HIGHWAY,
+};
+
+/** Zone tool preview highlight colors. */
+const ZONE_PREVIEW_COLORS: Record<string, number> = {
+  zone_r: 0x4caf50, zone_rh: 0x2e7d32,
+  zone_c: 0x2196f3, zone_ch: 0x1565c0,
+  zone_i: 0xffc107, zone_o: 0x9c27b0,
+};
+
+/** Key-to-tool bindings (OCP: add new keyboard shortcuts here). */
+const KEY_TO_TOOL: Record<string, ToolType> = {
+  '1': 'select', '2': 'road_2lane', '3': 'zone_r', '4': 'zone_c',
+  '5': 'zone_i', '6': 'zone_o', '7': 'road_rural', '8': 'power',
+  '9': 'water', '0': 'demolish', 'delete': 'demolish',
+};
+
+/** Key-to-overlay bindings (OCP: add new overlay shortcuts here). */
+const KEY_TO_OVERLAY: Record<string, OverlayType> = {
+  'f1': 'power', 'f2': 'water', 'f3': 'pollution',
+  'f4': 'landValue', 'f5': 'traffic', 'f6': 'zone',
+};
+
+/** Tool-to-cursor-color mapping (OCP: add new tool colors here). */
+const TOOL_CURSOR_COLORS: Record<ToolType, number> = {
+  select: 0xffffff,
+  road: 0x424242, road_rural: 0x424242, road_2lane: 0x424242,
+  road_4lane: 0x424242, road_6lane: 0x424242, road_highway: 0x424242,
+  rail_track: 0x6d4c2a,
+  zone_r: 0x4caf50, zone_rh: 0x2e7d32,
+  zone_c: 0x2196f3, zone_ch: 0x1565c0,
+  zone_i: 0xffa726, zone_o: 0xab47bc,
+  demolish: 0xf44336,
+  power: 0xffeb3b, water: 0x03a9f4, police: 0x3f51b5, fire: 0xd32f2f,
+  hospital: 0xe91e63, school: 0x795548, school_high: 0x6d4c41,
+  school_univ: 0x4e342e, park: 0x4caf50, garbage: 0x795548,
+  sewage: 0x607d8b, cemetery: 0x9e9e9e,
+  district: 0xab47bc,
+  bus_stop: 0xff9800, metro_station: 0x00bcd4, train_station: 0x795548,
+  ferry_dock: 0x0288d1, airport: 0x9c27b0,
+};
+
+/** Map of tool types to auto-activated overlay (OCP: add new overlay mappings here). */
+const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
+  power: 'power', water: 'water', police: 'police', fire: 'fire',
+  hospital: 'health', school: 'education', school_high: 'education',
+  school_univ: 'education', park: 'park', garbage: 'garbage',
+  district: 'district',
+};
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -152,7 +232,6 @@ export class Game {
   private lastMilestoneId: string | null = null;
   private notificationTimer = 0;
   private vehicleTypes = new Map<number, VehicleData['type']>();
-  private vehicleHeadings = new Map<number, number>();
   /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
   private ferryAnimator = new FerryAnimator();
   /** 火車渲染端動畫（純 LERP，不靠 tick） */
@@ -206,20 +285,17 @@ export class Game {
     this.state.ferry.setWaterGrid({
       width: grid.width,
       height: grid.height,
-      isWater: (x: number, y: number) => {
-        const cell = grid.getCell(x, y);
-        return cell ? cell.terrainType === TerrainType.WATER : false;
-      },
+      isWater: (x: number, y: number) => isWater(grid, x, y),
     });
 
     // Rebuild rail network from existing grid data (for loaded games)
     if (loadedState) {
-      this.rebuildRailNetworkFromGrid();
+      rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
     }
 
     // Generate terrain only for new games
     if (!loadedState) {
-      this.generateTerrain(mapSize);
+      generateTerrain(this.state.grid);
     }
 
     // Renderer setup
@@ -258,75 +334,6 @@ export class Game {
     // Game loop
     this.sceneManager.onUpdate((dt) => this.update(dt));
     this.sceneManager.start();
-  }
-
-  /** Rebuild rail network graph from grid data (used when loading saved games). */
-  private rebuildRailNetworkFromGrid(): void {
-    const g = this.state.grid;
-    for (let y = 0; y < g.height; y++) {
-      for (let x = 0; x < g.width; x++) {
-        const cell = g.getCell(x, y);
-        if (!cell || cell.railType === RailType.NONE) continue;
-        const id = `${x},${y}`;
-        this.railNetwork.addNode(id);
-        // Connect to south/east neighbors to avoid duplicate edges
-        if ((cell.railFlags & TrackDirection.SOUTH) !== 0) {
-          this.railNetwork.addEdge(id, `${x},${y + 1}`);
-        }
-        if ((cell.railFlags & TrackDirection.EAST) !== 0) {
-          this.railNetwork.addEdge(id, `${x + 1},${y}`);
-        }
-      }
-    }
-  }
-
-  private generateTerrain(size: number): void {
-    // Create a river
-    for (let y = 0; y < size; y++) {
-      const riverX = Math.floor(size * 0.7 + Math.sin(y * 0.1) * 3);
-      for (let dx = -1; dx <= 1; dx++) {
-        const x = riverX + dx;
-        if (x >= 0 && x < size) {
-          this.state.grid.setCell(x, y, { terrainType: TerrainType.WATER });
-        }
-      }
-    }
-
-    // Create some forest patches
-    for (let i = 0; i < 8; i++) {
-      const cx = Math.floor(Math.random() * size);
-      const cy = Math.floor(Math.random() * size);
-      for (let dy = -3; dy <= 3; dy++) {
-        for (let dx = -3; dx <= 3; dx++) {
-          const x = cx + dx;
-          const y = cy + dy;
-          if (x >= 0 && x < size && y >= 0 && y < size) {
-            const cell = this.state.grid.getCell(x, y);
-            if (cell && cell.terrainType === TerrainType.PLAIN && Math.random() > 0.3) {
-              this.state.grid.setCell(x, y, { terrainType: TerrainType.FOREST });
-            }
-          }
-        }
-      }
-    }
-
-    // Small mountain area
-    const mx = Math.floor(size * 0.15);
-    const my = Math.floor(size * 0.85);
-    for (let dy = -4; dy <= 4; dy++) {
-      for (let dx = -4; dx <= 4; dx++) {
-        if (dx * dx + dy * dy <= 16) {
-          const x = mx + dx;
-          const y = my + dy;
-          if (x >= 0 && x < size && y >= 0 && y < size) {
-            this.state.grid.setCell(x, y, {
-              terrainType: TerrainType.MOUNTAIN,
-              elevation: 3 - Math.sqrt(dx * dx + dy * dy) * 0.5,
-            });
-          }
-        }
-      }
-    }
   }
 
   private setupInput(_container: HTMLElement): void {
@@ -385,177 +392,30 @@ export class Game {
   }
 
   private handleKeyDown(key: string): void {
+    // Data-driven tool selection
+    const toolBinding = KEY_TO_TOOL[key];
+    if (toolBinding) { this.setTool(toolBinding); return; }
+
+    // Data-driven overlay toggle
+    const overlayBinding = KEY_TO_OVERLAY[key];
+    if (overlayBinding) { this.toggleOverlay(overlayBinding); return; }
+
     switch (key) {
       case 'q': this.sceneManager.rotateCamera(-Math.PI / 4); break;
       case 'e': this.sceneManager.rotateCamera(Math.PI / 4); break;
-      case '1': this.setTool('select'); break;
-      case '2': this.setTool('road_2lane'); break;
-      case '3': this.setTool('zone_r'); break;
-      case '4': this.setTool('zone_c'); break;
-      case '5': this.setTool('zone_i'); break;
-      case '6': this.setTool('zone_o'); break;
-      case '7': this.setTool('road_rural'); break;
-      case '8': this.setTool('power'); break;
-      case '9': this.setTool('water'); break;
-      case '0': this.setTool('demolish'); break;
       case 'escape': this.setTool('select'); this.dragStart = null; break;
-      case 'delete': this.setTool('demolish'); break;
       case 'r': this.cycleRotation(); break;
-
-      case ' ':
-        this.paused = !this.paused;
-        if (this.paused) this.state.clock.pause();
-        else this.state.clock.resume();
-        this.onUIUpdate?.();
-        break;
+      case ' ': this.togglePause(); break;
       case '+':
-      case '=':
-        this.speed = Math.min(3, this.speed + 1) as 1 | 2 | 3;
-        this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
-        this.onUIUpdate?.();
-        break;
-      case '-':
-        this.speed = Math.max(1, this.speed - 1) as 1 | 2 | 3;
-        this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
-        this.onUIUpdate?.();
-        break;
-      // Overlay toggles
-      case 'f1': this.toggleOverlay('power'); break;
-      case 'f2': this.toggleOverlay('water'); break;
-      case 'f3': this.toggleOverlay('pollution'); break;
-      case 'f4': this.toggleOverlay('landValue'); break;
-      case 'f5': this.toggleOverlay('traffic'); break;
-      case 'f6': this.toggleOverlay('zone'); break;
+      case '=': this.changeSpeed(1); break;
+      case '-': this.changeSpeed(-1); break;
     }
   }
 
   private handleToolAction(x1: number, y1: number, x2: number, y2: number): void {
     switch (this.currentTool) {
-      case 'select': {
-        const cell = this.state.grid.getCell(x1, y1);
-        if (cell && cell.buildingId > 0) {
-          const bt = getBuildingType(cell.buildingId);
-          if (bt) {
-            this.selectedBuilding = {
-              kind: 'zone',
-              x: x1, y: y1,
-              buildingType: bt,
-              zoneType: cell.zoneType,
-              landValue: cell.landValue,
-              pollution: cell.pollution,
-              serviceCoverage: cell.serviceCoverage,
-            };
-            this.applyViewMode(ViewMode.NORMAL);
-          } else {
-            const transportType = getTransportStopType(cell.buildingId);
-            if (transportType) {
-              this.selectTransportStop(x1, y1, transportType);
-            } else {
-              const infraCfg = getInfraConfigById(cell.buildingId);
-              if (infraCfg) {
-                const primary = findPrimaryCell(this.state.grid, x1, y1);
-                const px = primary?.x ?? x1;
-                const py = primary?.y ?? y1;
-                const center = getInfraCenterById(px, py, cell.buildingId);
-                const details = this.getInfraDetails(infraCfg.type, center.cx, center.cy);
-                this.selectedBuilding = {
-                  kind: 'infra',
-                  x: x1, y: y1,
-                  infraType: infraCfg.type,
-                  name: infraCfg.name,
-                  cost: infraCfg.cost,
-                  details,
-                };
-                this.applyViewMode(ViewMode.NORMAL);
-              }
-            }
-          }
-        } else {
-          this.selectedBuilding = null;
-          this.applyViewMode(ViewMode.NORMAL);
-        }
-        this.audioManager.playSfx('click');
-        break;
-      }
-      case 'road':
-      case 'road_rural':
-      case 'road_2lane':
-      case 'road_4lane':
-      case 'road_6lane':
-      case 'road_highway': {
-        const result = this.roadBuilder.buildRoad(
-          { x: x1, y: y1 }, { x: x2, y: y2 },
-          this.currentRoadType,
-          this.state.budget.funds,
-        );
-        if (result.success && result.cost) {
-          this.state.budget.funds -= result.cost;
-          this.simLoop.markLaneGraphDirty();
-          this.audioManager.playSfx('build');
-        } else if (!result.success && result.reason) {
-          const reasonMessages: Record<string, string> = {
-            WATER_TILE: 'water in the way',
-            MOUNTAIN_TILE: 'mountain in the way',
-            BUILDING_EXISTS: 'building in the way',
-            OUT_OF_BOUNDS: 'out of bounds',
-            INSUFFICIENT_FUNDS: 'insufficient funds',
-          };
-          const msg = reasonMessages[result.reason] ?? result.reason;
-          this.notification = `Cannot build road: ${msg}`;
-          this.notificationTimer = 4;
-        }
-        this.dirty.roads = true;
-        this.dirty.crossings = true;
-        this.dirty.trafficLights = true;
-        break;
-      }
-      case 'rail_track': {
-        const result = this.railBuilder.buildTrack(
-          { x: x1, y: y1 }, { x: x2, y: y2 },
-          this.state.budget.funds,
-        );
-        if (result.success && result.cost) {
-          this.state.budget.funds -= result.cost;
-          this.audioManager.playSfx('build');
-        } else if (!result.success && result.reason) {
-          const reasonMessages: Record<string, string> = {
-            WATER_TILE: 'water in the way',
-            MOUNTAIN_TILE: 'mountain in the way',
-            INFRASTRUCTURE_EXISTS: 'infrastructure in the way',
-            OUT_OF_BOUNDS: 'out of bounds',
-            INSUFFICIENT_FUNDS: 'insufficient funds',
-          };
-          const msg = reasonMessages[result.reason] ?? result.reason;
-          this.notification = `Cannot build track: ${msg}`;
-          this.notificationTimer = 4;
-        }
-        this.dirty.tracks = true;
-        this.dirty.crossings = true;
-        break;
-      }
-      case 'zone_r':
-        this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_LOW);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_rh':
-        this.applyZone(x1, y1, x2, y2, ZoneType.RESIDENTIAL_HIGH);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_c':
-        this.applyZone(x1, y1, x2, y2, ZoneType.COMMERCIAL_LOW);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_ch':
-        this.applyZone(x1, y1, x2, y2, ZoneType.COMMERCIAL_HIGH);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_i':
-        this.applyZone(x1, y1, x2, y2, ZoneType.INDUSTRIAL);
-        this.audioManager.playSfx('zone');
-        break;
-      case 'zone_o':
-        this.applyZone(x1, y1, x2, y2, ZoneType.OFFICE);
-        this.audioManager.playSfx('zone');
+      case 'select':
+        this.handleSelectClick(x1, y1);
         break;
       case 'demolish': {
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
@@ -564,61 +424,53 @@ export class Game {
         this.audioManager.playSfx('demolish');
         break;
       }
-      case 'power':
-        this.placeInfrastructure(x1, y1, 'power');
-        break;
-      case 'water':
-        this.placeInfrastructure(x1, y1, 'water');
-        break;
-      case 'police':
-        this.placeInfrastructure(x1, y1, 'police');
-        break;
-      case 'fire':
-        this.placeInfrastructure(x1, y1, 'fire');
-        break;
-      case 'hospital':
-        this.placeInfrastructure(x1, y1, 'hospital');
-        break;
-      case 'school':
-        this.placeInfrastructure(x1, y1, 'school');
-        break;
-      case 'school_high':
-        this.placeInfrastructure(x1, y1, 'school_high');
-        break;
-      case 'school_univ':
-        this.placeInfrastructure(x1, y1, 'school_univ');
-        break;
-      case 'park':
-        this.placeInfrastructure(x1, y1, 'park');
-        break;
-      case 'garbage':
-        this.placeInfrastructure(x1, y1, 'garbage');
-        break;
-      case 'sewage':
-        this.placeInfrastructure(x1, y1, 'sewage');
-        break;
-      case 'cemetery':
-        this.placeInfrastructure(x1, y1, 'cemetery');
-        break;
       case 'district':
         this.paintDistrict(x1, y1, x2, y2);
         this.audioManager.playSfx('zone');
         break;
-      case 'bus_stop':
-        this.placeTransportStop(x1, y1, 'bus');
+      default: {
+        // Data-driven road building (OCP: add new road types in TOOL_TO_ROAD_TYPE)
+        if (TOOL_TO_ROAD_TYPE[this.currentTool] !== undefined) {
+          const result = this.roadBuilder.buildRoad(
+            { x: x1, y: y1 }, { x: x2, y: y2 },
+            this.currentRoadType,
+            this.state.budget.funds,
+          );
+          this.handleBuildResult(result, 'road', () => this.simLoop.markLaneGraphDirty());
+          this.dirty.roads = true;
+          this.dirty.crossings = true;
+          this.dirty.trafficLights = true;
+          break;
+        }
+        // Rail track building
+        if (this.currentTool === 'rail_track') {
+          const result = this.railBuilder.buildTrack(
+            { x: x1, y: y1 }, { x: x2, y: y2 },
+            this.state.budget.funds,
+          );
+          this.handleBuildResult(result, 'track');
+          this.dirty.tracks = true;
+          this.dirty.crossings = true;
+          break;
+        }
+        const zoneType = TOOL_TO_ZONE[this.currentTool];
+        if (zoneType !== undefined) {
+          this.applyZone(x1, y1, x2, y2, zoneType);
+          this.audioManager.playSfx('zone');
+          break;
+        }
+        const infraType = TOOL_TO_INFRA[this.currentTool];
+        if (infraType) {
+          this.placeInfrastructure(x1, y1, infraType);
+          break;
+        }
+        const transportType = TOOL_TO_TRANSPORT[this.currentTool];
+        if (transportType) {
+          this.placeTransportStop(x1, y1, transportType);
+          break;
+        }
         break;
-      case 'metro_station':
-        this.placeTransportStop(x1, y1, 'metro');
-        break;
-      case 'train_station':
-        this.placeTransportStop(x1, y1, 'rail');
-        break;
-      case 'ferry_dock':
-        this.placeTransportStop(x1, y1, 'ferry');
-        break;
-      case 'airport':
-        this.placeTransportStop(x1, y1, 'airport');
-        break;
+      }
     }
     this.onUIUpdate?.();
   }
@@ -633,11 +485,33 @@ export class Game {
     this.dirty.overlay = true;
   }
 
+  /** Check funds and deduct if sufficient. Returns false with notification if insufficient (DRY). */
+  private tryDeductFunds(cost: number): boolean {
+    if (this.state.budget.funds < cost) {
+      this.showNotification(`Insufficient funds (need $${cost})`, 3);
+      return false;
+    }
+    this.state.budget.funds -= cost;
+    return true;
+  }
+
+  /** Handle build result: deduct cost on success, show notification on failure (DRY). */
+  private handleBuildResult(
+    result: { success: boolean; cost?: number; reason?: string },
+    label: string,
+    onSuccess?: () => void,
+  ): void {
+    if (result.success && result.cost) {
+      this.state.budget.funds -= result.cost;
+      onSuccess?.();
+      this.audioManager.playSfx('build');
+    } else if (!result.success && result.reason) {
+      this.showNotification(`Cannot build ${label}: ${getBuildReasonMessage(result.reason)}`);
+    }
+  }
+
   private applyZone(x1: number, y1: number, x2: number, y2: number, zoneType: ZoneType): void {
-    const minX = Math.min(x1, x2);
-    const maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
+    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
     this.dirty.buildings = true;
     this.dirty.terrain = true;
@@ -645,14 +519,11 @@ export class Game {
 
   private collectRoadCells(x1: number, y1: number, x2: number, y2: number): string[] {
     const cells: string[] = [];
-    const minX = Math.min(x1, x2);
-    const maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
+    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
-        if (cell && cell.roadType > 0) {
+        if (cell && cell.roadType !== RoadType.NONE) {
           cells.push(`${x},${y}`);
         }
       }
@@ -661,149 +532,56 @@ export class Game {
   }
 
   private demolish(x1: number, y1: number, x2: number, y2: number): void {
-    const minX = Math.min(x1, x2);
-    const maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
+    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     const demolished = new Set<string>(); // track already-demolished multi-cell buildings
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
-        if (!cell) continue;
+        const primary = cell && isInfrastructureBuilding(cell.buildingId)
+          ? findPrimaryCell(this.state.grid, x, y) : null;
+        const action = classifyDemolishCell(cell, primary);
 
-        // Handle multi-cell infrastructure: find primary and demolish entire building
-        if (cell.buildingId >= 236 && cell.buildingId <= 254) {
-          // Airport (237) uses custom footprint — handle separately
-          if (cell.buildingId === 237) {
+        switch (action.action) {
+          case 'skip': break;
+          case 'airport': {
             const key = `airport:${x},${y}`;
-            if (demolished.has(key)) continue;
-            // removeInfraService handles clearing all airport cells
-            this.removeInfraService(237, x, y);
-            // Mark all airport cells as demolished
-            const airport = this.state.airport.getAirports().find(a => {
-              const fp = getAirportFootprint(a.size);
-              const half = Math.floor(fp / 2);
-              return x >= a.x - half && x <= a.x + half && y >= a.y - half && y <= a.y + half;
-            });
-            // Airport already removed, mark center so we skip duplicate hits
-            if (!airport) demolished.add(key);
-            continue;
+            if (!demolished.has(key)) {
+              this.removeInfraService('airport', x, y);
+              demolished.add(key);
+            }
+            break;
           }
-
-          const primary = findPrimaryCell(this.state.grid, x, y);
-          if (primary) {
-            const key = `${primary.x},${primary.y}`;
-            if (demolished.has(key)) continue; // already handled
-            demolished.add(key);
-
-            // Remove from service layer using primary cell coords
-            this.removeInfraService(cell.buildingId, primary.x, primary.y);
-
-            // Clear all cells of the multi-cell building
-            removeInfraFromGrid(this.state.grid, x, y);
-            continue;
+          case 'multi_cell_infra': {
+            const key = `${action.primaryX},${action.primaryY}`;
+            if (!demolished.has(key)) {
+              demolished.add(key);
+              this.removeInfraService(action.infraType, action.cx, action.cy);
+              removeInfraFromGrid(this.state.grid, x, y);
+            }
+            break;
           }
-
-          // Transport stops (236-242 except 237) are 1x1 — handle directly
-          if (cell.buildingId >= 236 && cell.buildingId <= 242) {
-            this.removeInfraService(cell.buildingId, x, y);
+          case 'single_cell_infra':
+            this.removeInfraService(action.infraType, x, y);
             this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
-            continue;
-          }
+            break;
+          case 'regular':
+            if (action.hasTrack) this.railBuilder.removeTrack(x, y);
+            this.state.grid.setCell(x, y, {
+              roadType: 0, roadFlags: 0, zoneType: ZoneType.NONE,
+              buildingId: 0, reserved: 0,
+            });
+            break;
         }
-
-        // Regular cell demolition (roads, zones, regular buildings, track)
-        if (cell.railType !== RailType.NONE) {
-          this.railBuilder.removeTrack(x, y);
-        }
-        this.state.grid.setCell(x, y, {
-          roadType: 0,
-          roadFlags: 0,
-          zoneType: ZoneType.NONE,
-          buildingId: 0,
-          reserved: 0,
-        });
       }
     }
     this.markAllDirty();
   }
 
-  private removeInfraService(buildingId: number, px: number, py: number): void {
-    // Services store center coordinates, so compute center from primary cell
-    const { cx, cy } = getInfraCenterById(px, py, buildingId);
-
-    if (buildingId === 254) this.state.power.removePlant(cx, cy);
-    if (buildingId === 253) this.state.water.removePlant(cx, cy);
-    if (buildingId === 252) {
-      const sid = this.state.police.getStations().find(s => s.x === cx && s.y === cy);
-      if (sid) this.state.police.removeStation(sid.id);
-    }
-    if (buildingId === 251) {
-      const sid = this.state.fire.getStations().find(s => s.x === cx && s.y === cy);
-      if (sid) this.state.fire.removeStation(sid.id);
-    }
-    if (buildingId === 250) {
-      const hid = this.state.health.getHospitals().find(h => h.x === cx && h.y === cy);
-      if (hid) this.state.health.removeHospital(hid.id);
-    }
-    if (buildingId === 249 || buildingId === 244 || buildingId === 243) {
-      const sid = this.state.education.getSchools().find(s => s.x === cx && s.y === cy);
-      if (sid) this.state.education.removeSchool(sid.id);
-    }
-    if (buildingId === 248) {
-      const pid = this.state.parks.getParks().find(p => p.x === cx && p.y === cy);
-      if (pid) this.state.parks.removePark(pid.id);
-    }
-    if (buildingId === 247) {
-      const gid = this.state.garbage.getFacilities().find(g => g.x === cx && g.y === cy);
-      if (gid) this.state.garbage.removeFacility(gid.id);
-    }
-    if (buildingId === 246) {
-      const sid = this.state.sewage.getTreatmentPlants().find(s => s.x === cx && s.y === cy);
-      if (sid) this.state.sewage.removeTreatmentPlant(sid.id);
-    }
-    if (buildingId === 245) {
-      const cid = this.state.deathCare.getCemeteries().find(c => c.x === cx && c.y === cy);
-      if (cid) this.state.deathCare.removeCemetery(cid.id);
-    }
-    // Transport stops (buildingId 236-242)
-    if (buildingId === 242) {
-      const sid = this.state.bus.getStops().find(s => s.x === px && s.y === py);
-      if (sid) this.state.bus.removeStop(sid.id);
-    }
-    if (buildingId === 241) {
-      const sid = this.state.metro.getStations().find(s => s.x === px && s.y === py);
-      if (sid) this.state.metro.removeStation(sid.id);
-    }
-    if (buildingId === 239) {
-      const sid = this.state.rail.getStations().find(s => s.x === px && s.y === py);
-      if (sid) this.state.rail.removeStation(sid.id);
-    }
-    if (buildingId === 238) {
-      const sid = this.state.ferry.getDocks().find(s => s.x === px && s.y === py);
-      if (sid) this.state.ferry.removeDock(sid.id);
-    }
-    if (buildingId === 237) {
-      // Find airport whose footprint covers this cell
-      const airport = this.state.airport.getAirports().find(a => {
-        const fp = getAirportFootprint(a.size);
-        const half = Math.floor(fp / 2);
-        return px >= a.x - half && px <= a.x + half && py >= a.y - half && py <= a.y + half;
-      });
-      if (airport) {
-        const fp = getAirportFootprint(airport.size);
-        const half = Math.floor(fp / 2);
-        // Clear all cells in the airport footprint
-        for (let dy = -half; dy <= half; dy++) {
-          for (let dx = -half; dx <= half; dx++) {
-            const c = this.state.grid.getCell(airport.x + dx, airport.y + dy);
-            if (c && c.buildingId === 237) {
-              this.state.grid.setCell(airport.x + dx, airport.y + dy, { buildingId: 0, reserved: 0 });
-            }
-          }
-        }
-        this.state.airport.remove(airport.id);
-      }
+  /** Dispatch to data-driven service removal. Callers provide resolved coordinates. */
+  private removeInfraService(infraType: InfraType, cx: number, cy: number): void {
+    const actions = INFRA_SERVICE_ACTIONS[infraType];
+    if (actions) {
+      actions.remove(this.state as InfraServiceContext, cx, cy);
     }
   }
 
@@ -814,10 +592,7 @@ export class Game {
       const d = this.state.districts.createDistrict(`District ${count + 1}`);
       this.activeDistrictId = d.id;
     }
-    const minX = Math.min(x1, x2);
-    const maxX = Math.max(x1, x2);
-    const minY = Math.min(y1, y2);
-    const maxY = Math.max(y1, y2);
+    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         this.state.districts.addCellToDistrict(this.activeDistrictId, x, y);
@@ -833,66 +608,30 @@ export class Game {
     return d.id;
   }
 
-  private placeInfrastructure(x: number, y: number, type: 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery'): void {
-    const infraType = type as InfraType;
-    const cfg = getInfraConfig(infraType);
+  private placeInfrastructure(x: number, y: number, type: InfraType): void {
+    const cfg = getInfraConfig(type);
     if (!cfg) return;
 
     // Validate multi-cell placement
-    const groundwaterFn = (cx: number, cy: number) => this.getGroundwaterLevel(cx, cy);
-    const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation, groundwaterFn);
+    const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
+    const check = canPlaceInfra(this.state.grid, x, y, type, this.currentRotation, groundwaterFn);
     if (!check.ok) {
-      const messages: Record<string, string> = {
-        OUT_OF_BOUNDS: 'Out of bounds',
-        WATER_TILE: 'Cannot build on water',
-        TILE_OCCUPIED: 'Tile is occupied',
-        NO_GROUNDWATER: 'No groundwater here — build near rivers',
-        UNKNOWN_TYPE: 'Unknown building type',
-      };
-      this.notification = messages[check.reason] ?? 'Cannot build here';
-      this.notificationTimer = 3;
+      this.showNotification(getBuildReasonMessage(check.reason), 3);
       return;
     }
 
-    const cost = cfg.cost;
-    if (this.state.budget.funds < cost) {
-      this.notification = `Insufficient funds (need $${cost})`;
-      this.notificationTimer = 3;
-      return;
-    }
-    this.state.budget.funds -= cost;
+    if (!this.tryDeductFunds(cfg.cost)) return;
 
     // Place on grid (multi-cell)
-    placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
+    placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
 
     // Compute center for service coverage (coverage radiates from building center)
-    const { cx, cy } = getInfraCenter(x, y, infraType, this.currentRotation);
+    const { cx, cy } = getInfraCenter(x, y, type, this.currentRotation);
 
-    // Register with service layer at center coordinates
-    if (type === 'power') {
-      this.state.power.addPlant({ x: cx, y: cy, output: 500, pollution: 10, type: 'coal' });
-    } else if (type === 'water') {
-      this.state.water.addPlant({ x: cx, y: cy, output: 500 });
-    } else if (type === 'police') {
-      this.state.police.addStation(cx, cy);
-    } else if (type === 'fire') {
-      this.state.fire.addStation(cx, cy);
-    } else if (type === 'hospital') {
-      this.state.health.addHospital(cx, cy);
-    } else if (type === 'school') {
-      this.state.education.addSchool(cx, cy, 'elementary');
-    } else if (type === 'school_high') {
-      this.state.education.addSchool(cx, cy, 'highschool');
-    } else if (type === 'school_univ') {
-      this.state.education.addSchool(cx, cy, 'university');
-    } else if (type === 'park') {
-      this.state.parks.addPark(cx, cy);
-    } else if (type === 'garbage') {
-      this.state.garbage.addFacility(cx, cy, 'landfill');
-    } else if (type === 'sewage') {
-      this.state.sewage.addTreatmentPlant(cx, cy);
-    } else if (type === 'cemetery') {
-      this.state.deathCare.addCemetery(cx, cy);
+    // Register with service layer at center coordinates (data-driven via InfraServiceActions)
+    const actions = INFRA_SERVICE_ACTIONS[type];
+    if (actions) {
+      actions.place(this.state as InfraServiceContext, cx, cy);
     }
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
@@ -900,42 +639,15 @@ export class Game {
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
     const cell = this.state.grid.getCell(x, y);
-    if (!cell) {
-      this.notification = 'Out of bounds';
-      this.notificationTimer = 3;
+    const check = canPlaceTransportStop(type, cell);
+    if (!check.ok) {
+      this.showNotification(getBuildReasonMessage(check.reason), 3);
       return;
     }
-    // Rail stations can be built on track cells (may have road for level crossing)
-    if (type === 'rail') {
-      if (cell.railType === RailType.NONE) {
-        this.notification = 'Train station must be built on rail track';
-        this.notificationTimer = 3;
-        return;
-      }
-      if (cell.buildingId !== 0) {
-        this.notification = 'Tile is occupied';
-        this.notificationTimer = 3;
-        return;
-      }
-    } else if (cell.roadType !== 0 || cell.buildingId !== 0) {
-      this.notification = 'Tile is occupied';
-      this.notificationTimer = 3;
-      return;
-    }
-    const costs: Record<string, number> = {
-      bus: 100, metro: 3000, rail: 2000, ferry: 1500, airport: 5000,
-    };
-    const airportCosts: Record<AirportSize, number> = { SMALL: 5000, MEDIUM: 15000, LARGE: 40000 };
-    const buildingIds: Record<string, number> = {
-      bus: 242, metro: 241, rail: 239, ferry: 238, airport: 237,
-    };
-    const cost = type === 'airport' ? airportCosts[this.selectedAirportSize ?? 'SMALL'] : (costs[type] ?? 500);
-    if (this.state.budget.funds < cost) {
-      this.notification = `Insufficient funds (need $${cost})`;
-      this.notificationTimer = 3;
-      return;
-    }
-    this.state.budget.funds -= cost;
+    const infraCfg = getInfraConfig(TRANSPORT_TO_INFRA_TYPE[type]!);
+    const baseCost = infraCfg?.cost ?? 500;
+    const cost = type === 'airport' ? getAirportBuildCost(this.selectedAirportSize ?? 'SMALL') : baseCost;
+    if (!this.tryDeductFunds(cost)) return;
 
     if (type === 'bus') {
       this.state.bus.addStop(x, y);
@@ -945,101 +657,55 @@ export class Game {
       const station = this.state.rail.buildStation(x, y, this.state.grid);
       if (!station) {
         this.state.budget.funds += cost;
-        this.notification = 'Train station must be built on rail track';
-        this.notificationTimer = 4;
+        this.showNotification('Train station must be built on rail track');
         return;
       }
     } else if (type === 'ferry') {
-      // Validate shore placement: must be land AND adjacent to water
-      const waterChecker = {
-        isWater: (fx: number, fy: number) => {
-          const fc = this.state.grid.getCell(fx, fy);
-          // Must NOT be water (must be land/shore)
-          if (fc && fc.terrainType === TerrainType.WATER) return false;
-          // Must have at least one adjacent water cell
-          for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
-            const nc = this.state.grid.getCell(fx + dx!, fy + dy!);
-            if (nc && nc.terrainType === TerrainType.WATER) return true;
-          }
-          return false;
-        },
-      };
+      const waterChecker = { isWater: (fx: number, fy: number) => isShorePosition(this.state.grid, fx, fy) };
       const dock = this.state.ferry.addDock(x, y, waterChecker);
       if (!dock) {
         this.state.budget.funds += cost;
-        this.notification = 'Ferry dock must be placed on shore (land next to water)';
-        this.notificationTimer = 4;
+        this.showNotification('Ferry dock must be placed on shore (land next to water)');
         return;
       }
     } else if (type === 'airport') {
-      const airportSize: AirportSize = this.selectedAirportSize ?? 'SMALL';
-      const footprint = getAirportFootprint(airportSize);
-      const half = Math.floor(footprint / 2);
-
-      // Check all NxN cells are free
-      for (let dy = -half; dy <= half; dy++) {
-        for (let dx = -half; dx <= half; dx++) {
-          const c = this.state.grid.getCell(x + dx, y + dy);
-          if (!c) {
-            this.state.budget.funds += cost;
-            this.notification = 'Airport area is out of bounds';
-            this.notificationTimer = 4;
-            return;
-          }
-          if (c.roadType !== 0 || c.buildingId !== 0) {
-            this.state.budget.funds += cost;
-            this.notification = 'Airport area is not fully clear';
-            this.notificationTimer = 4;
-            return;
-          }
-        }
-      }
-
-      const pop = this.state.citizens.getPopulation();
-      const result = this.state.airport.build(x, y, airportSize, pop);
-      if (!result) {
-        this.state.budget.funds += cost;
-        const req = this.state.airport.getPopulationRequired(airportSize);
-        this.notification = `Airport requires population >= ${req.toLocaleString()}`;
-        this.notificationTimer = 4;
-        return;
-      }
-
-      // Set all NxN cells to airport buildingId
-      for (let dy = -half; dy <= half; dy++) {
-        for (let dx = -half; dx <= half; dx++) {
-          this.state.grid.setCell(x + dx, y + dy, { buildingId: 237 });
-        }
-      }
-      this.audioManager.playSfx('build');
-      this.dirty.buildings = true;
+      if (!this.placeAirport(x, y, cost)) return;
       return; // skip the default single-cell setCell below
     }
     this.state.grid.setCell(x, y, {
-      buildingId: buildingIds[type] ?? 242,
+      buildingId: infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
       reserved: ROTATION_RESERVED[this.currentRotation],
     });
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
   }
 
-  /** Returns groundwater level 0-100 based on distance to nearest river tile (max range 3) */
-  private getGroundwaterLevel(x: number, y: number): number {
-    const grid = this.state.grid;
-    const range = 3;
-    let minDist = range + 1;
-    for (let dy = -range; dy <= range; dy++) {
-      for (let dx = -range; dx <= range; dx++) {
-        const cell = grid.getCell(x + dx, y + dy);
-        if (cell && cell.terrainType === TerrainType.WATER) {
-          const dist = Math.abs(dx) + Math.abs(dy); // Manhattan distance
-          if (dist < minDist) minDist = dist;
-        }
-      }
+  /** Place an airport at (x,y). Returns true on success, false (with funds refunded) on failure. */
+  private placeAirport(x: number, y: number, cost: number): boolean {
+    const airportSize: AirportSize = this.selectedAirportSize ?? 'SMALL';
+
+    // Validate footprint (data-driven, extracted to core)
+    const check = canPlaceAirport(this.state.grid, x, y, airportSize);
+    if (!check.ok) {
+      this.state.budget.funds += cost;
+      this.showNotification(getBuildReasonMessage(check.reason));
+      return false;
     }
-    if (minDist > range) return 0;
-    // Closer to water = higher groundwater: dist 0→100, 1→75, 2→50, 3→25
-    return Math.round(100 * (1 - (minDist - 1) / range));
+
+    const pop = this.state.citizens.getPopulation();
+    const result = this.state.airport.build(x, y, airportSize, pop);
+    if (!result) {
+      this.state.budget.funds += cost;
+      const req = this.state.airport.getPopulationRequired(airportSize);
+      this.showNotification(`Airport requires population >= ${req.toLocaleString()}`);
+      return false;
+    }
+
+    // Set all NxN cells to airport buildingId (delegated to core — SRP)
+    placeAirportOnGrid(this.state.grid, x, y, airportSize, getInfraBuildingId('airport'));
+    this.audioManager.playSfx('build');
+    this.dirty.buildings = true;
+    return true;
   }
 
   private update(dt: number): void {
@@ -1090,49 +756,7 @@ export class Game {
       }
     }
 
-    // Rebuild meshes per-subsystem when dirty
-    const d = this.dirty;
-    const anyDirty = d.roads || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
-    if (anyDirty) {
-      if (d.roads) {
-        this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
-        if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
-        d.roads = false;
-      }
-      if (d.tracks) {
-        this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
-        if (this.viewMode !== ViewMode.NORMAL) this.trackRenderer.setViewMode(this.viewMode);
-        d.tracks = false;
-      }
-      if (d.crossings) {
-        this.levelCrossingSystem.rebuildFromGrid(this.state.grid);
-        this.levelCrossingRenderer.build(this.sceneManager.scene, this.levelCrossingSystem.getCrossings());
-        if (this.viewMode !== ViewMode.NORMAL) this.levelCrossingRenderer.setViewMode(this.viewMode);
-        d.crossings = false;
-      }
-      if (d.buildings) {
-        this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
-        if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
-        d.buildings = false;
-      }
-      if (d.terrain) {
-        this.terrainRenderer.refreshColors();
-        d.terrain = false;
-      }
-      if (d.trafficLights) {
-        this.syncTrafficLights();
-        this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
-        d.trafficLights = false;
-      }
-
-      // Refresh active overlay when relevant subsystems rebuilt
-      const currentOverlay = this.overlayRenderer.getOverlay();
-      if (currentOverlay && currentOverlay !== 'none') {
-        this.setOverlay(currentOverlay);
-      }
-      // Re-apply highlight after rebuild (new meshes lose aHighlight)
-      this.updatePlacementPreview();
-    }
+    this.rebuildDirtySubsystems();
 
     // Update traffic light colors every frame
     this.trafficLightRenderer.update(this.state.trafficLights.getLights());
@@ -1142,121 +766,7 @@ export class Game {
     // Update cursor color based on tool
     this.updateCursorColor();
 
-    // Advance edge-based vehicles every render frame (independent of tick)
-    if (!this.paused) {
-      const scaledDt = dt * this.speed;
-      const canAdvance = (cur: string, next: string) => {
-        const [cx, cy] = cur.split(',').map(Number);
-        const [nx, ny] = next.split(',').map(Number);
-        // Block at red traffic lights
-        if (!this.state.trafficLights.canPass(cx!, cy!, nx!, ny!)) return false;
-        // Block at active level crossings (train approaching/passing)
-        if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
-        return true;
-      };
-      const getSpeedLimit = (cellKey: string) => {
-        const [gx, gy] = cellKey.split(',').map(Number);
-        const cell = this.state.grid.getCell(gx!, gy!);
-        if (!cell || cell.roadType <= 0) return 50;
-        const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
-        return cfg?.speedLimit ?? 50;
-      };
-      this.state.traffic.advanceEdgeVehicles(scaledDt, canAdvance, getSpeedLimit);
-    }
-
-    // Update vehicles — read positions for rendering
-    const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
-      if (v.arrived) return null;
-
-      // Derive vehicle type from length (assigned in simulation)
-      if (!this.vehicleTypes.has(v.id)) {
-        let vtype: VehicleData['type'];
-        if (v.length >= 0.44) vtype = 'bus';
-        else if (v.length >= 0.33) vtype = 'firetruck';
-        else if (v.length >= 0.28) vtype = 'truck';
-        else vtype = 'car';
-        this.vehicleTypes.set(v.id, vtype);
-      }
-
-      const pos = this.state.traffic.getVehiclePositionOnEdges(v);
-      if (!pos) return null;
-      const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
-      this.vehicleHeadings.set(v.id, heading);
-
-      return {
-        id: v.id,
-        x: pos.x,
-        y: pos.y,
-        heading,
-        type: this.vehicleTypes.get(v.id)!,
-        laneOffset: 0,
-      };
-    }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
-
-    // 收集交通系統車輛（bus/rail/ferry）
-    const transportVehicles = collectTransportVehicles({
-      bus: this.state.bus,
-      rail: this.state.rail,
-      ferry: this.state.ferry,
-    });
-
-    // 渡輪渲染端動畫（純 LERP，跟地鐵一樣不靠 tick）
-    const ferrySpeed = this.paused ? 0 : this.state.clock.speed;
-    this.ferryAnimator.update(dt, ferrySpeed, this.state.ferry, transportVehicles);
-
-    // 火車渲染端動畫（沿完整來回路徑循環，到站停靠）
-    const trainSpeed = this.paused ? 0 : this.state.clock.speed;
-    this.trainAnimator.update(dt, trainSpeed, this.state.rail, transportVehicles);
-
-    // 平交道：根據火車視覺位置的近接觸發（proximity-based）
-    const trainPositions = transportVehicles
-      .filter(v => v.type === 'rail_train')
-      .map(v => ({ x: v.x, y: v.y }));
-    this.levelCrossingSystem.update(dt, trainSpeed, trainPositions);
-
-    // 合併道路車輛與交通系統車輛
-    const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
-    const vmOp = VIEW_MODE_OPACITY[this.viewMode];
-    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
-
-    // 更新交通路線渲染
-    const routeData = collectTransportRoutes({
-      bus: this.state.bus,
-      metro: this.state.metro,
-      rail: this.state.rail,
-      ferry: this.state.ferry,
-    });
-    // Focus mode: hide route lines (replaced by focused visuals)
-    if (this.viewMode !== ViewMode.NORMAL) {
-      this.transportRouteRenderer.update([]);
-    } else {
-      this.transportRouteRenderer.update(routeData);
-    }
-
-    // 更新地鐵隧道 + 列車動畫（純渲染端動畫，不依賴 tick）
-    const metroLines = this.state.metro.getLines();
-    const metroLineData = metroLines.map(line => ({
-      lineId: line.id,
-      stops: line.stops.map(s => ({ x: s.x, y: s.y })),
-      segments: computeTunnelSegments(line.stops.map(s => ({ x: s.x, y: s.y }))),
-      trainCount: line.vehicles,
-    }));
-    const metroSpeedMult = this.paused ? 0 : this.state.clock.speed;
-    this.metroTunnelRenderer.update(
-      metroLineData,
-      this.state.metro.getStations(),
-      vmOp.metroTunnel,
-      dt * metroSpeedMult,
-    );
-
-    // Clean up stale vehicle rendering state
-    const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
-    for (const id of this.vehicleTypes.keys()) {
-      if (!activeIds.has(id)) {
-        this.vehicleTypes.delete(id);
-        this.vehicleHeadings.delete(id);
-      }
-    }
+    this.updateVehiclesAndTransport(dt);
 
     // Animate terrain (water)
     this.terrainRenderer.update(dt);
@@ -1280,85 +790,141 @@ export class Game {
     this.roadRenderer.update(sunI);
   }
 
-  /** Smoothed position & heading using quadratic bezier at turns */
+  /** Rebuild renderer meshes for each dirty subsystem, then clear dirty flags. */
+  private rebuildDirtySubsystems(): void {
+    const d = this.dirty;
+    const anyDirty = d.roads || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
+    if (!anyDirty) return;
 
-  /** Scan the grid for intersections (3+ road connections) and sync traffic lights */
-  private syncTrafficLights(): void {
-    const grid = this.state.grid;
-    const tls = this.state.trafficLights;
-    const seen = new Set<string>();
-
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell || cell.roadType === 0) continue;
-        let dirs = 0;
-        if (cell.roadFlags & RoadDirection.NORTH) dirs++;
-        if (cell.roadFlags & RoadDirection.SOUTH) dirs++;
-        if (cell.roadFlags & RoadDirection.EAST) dirs++;
-        if (cell.roadFlags & RoadDirection.WEST) dirs++;
-        if (dirs >= 3) {
-          const key = `${x},${y}`;
-          seen.add(key);
-          if (!tls.getLight(x, y)) {
-            tls.addLight(x, y);
-          }
-        }
-      }
+    if (d.roads) {
+      this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
+      if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
+      d.roads = false;
+    }
+    if (d.tracks) {
+      this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
+      if (this.viewMode !== ViewMode.NORMAL) this.trackRenderer.setViewMode(this.viewMode);
+      d.tracks = false;
+    }
+    if (d.crossings) {
+      this.levelCrossingSystem.rebuildFromGrid(this.state.grid);
+      this.levelCrossingRenderer.build(this.sceneManager.scene, this.levelCrossingSystem.getCrossings());
+      if (this.viewMode !== ViewMode.NORMAL) this.levelCrossingRenderer.setViewMode(this.viewMode);
+      d.crossings = false;
+    }
+    if (d.buildings) {
+      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
+      if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
+      d.buildings = false;
+    }
+    if (d.terrain) {
+      this.terrainRenderer.refreshColors();
+      d.terrain = false;
+    }
+    if (d.trafficLights) {
+      syncTrafficLightsWithGrid(this.state.grid, this.state.trafficLights);
+      this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
+      d.trafficLights = false;
     }
 
-    // Remove lights for intersections that no longer exist
-    for (const light of tls.getLights()) {
-      if (!seen.has(`${light.x},${light.y}`)) {
-        tls.removeLight(light.x, light.y);
+    // Refresh active overlay when relevant subsystems rebuilt
+    const currentOverlay = this.overlayRenderer.getOverlay();
+    if (currentOverlay && currentOverlay !== 'none') {
+      this.setOverlay(currentOverlay);
+    }
+    // Re-apply highlight after rebuild (new meshes lose aHighlight)
+    this.updatePlacementPreview();
+  }
+
+  /** Advance vehicles, animate transport systems, and update vehicle renderers. */
+  private updateVehiclesAndTransport(dt: number): void {
+    // Advance edge-based vehicles every render frame (independent of tick)
+    if (!this.paused) {
+      const scaledDt = dt * this.speed;
+      const canAdvance = (cur: string, next: string) => {
+        const [cx, cy] = cur.split(',').map(Number);
+        const [nx, ny] = next.split(',').map(Number);
+        if (!this.state.trafficLights.canPass(cx!, cy!, nx!, ny!)) return false;
+        if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
+        return true;
+      };
+      this.state.traffic.advanceEdgeVehicles(
+        scaledDt, canAdvance,
+        (key) => getSpeedLimitForCell(this.state.grid, key),
+      );
+    }
+
+    // Collect road vehicle positions for rendering
+    const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
+      if (v.arrived) return null;
+      if (!this.vehicleTypes.has(v.id)) {
+        this.vehicleTypes.set(v.id, classifyVehicleType(v.length));
+      }
+      const pos = this.state.traffic.getVehiclePositionOnEdges(v);
+      if (!pos) return null;
+      const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
+      return { id: v.id, x: pos.x, y: pos.y, heading, type: this.vehicleTypes.get(v.id)!, laneOffset: 0 };
+    }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
+
+    // Collect transport system vehicles (bus/rail/ferry)
+    const transportVehicles = collectTransportVehicles({
+      bus: this.state.bus, rail: this.state.rail, ferry: this.state.ferry,
+    });
+
+    // Animate ferry and train (render-side LERP, independent of tick)
+    const simSpeed = this.paused ? 0 : this.state.clock.speed;
+    this.ferryAnimator.update(dt, simSpeed, this.state.ferry, transportVehicles);
+    this.trainAnimator.update(dt, simSpeed, this.state.rail, transportVehicles);
+
+    // Level crossing proximity trigger
+    const trainPositions = transportVehicles
+      .filter(v => v.type === 'rail_train')
+      .map(v => ({ x: v.x, y: v.y }));
+    this.levelCrossingSystem.update(dt, simSpeed, trainPositions);
+
+    // Merge road + transport vehicles and render
+    const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
+    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
+
+    // Update transport route lines
+    const routeData = collectTransportRoutes({
+      bus: this.state.bus, metro: this.state.metro, rail: this.state.rail, ferry: this.state.ferry,
+    });
+    if (this.viewMode !== ViewMode.NORMAL) {
+      this.transportRouteRenderer.update([]);
+    } else {
+      this.transportRouteRenderer.update(routeData);
+    }
+
+    // Update metro tunnel + train animation
+    const vmOp = VIEW_MODE_OPACITY[this.viewMode];
+    const metroLines = this.state.metro.getLines();
+    const metroLineData = metroLines.map(line => {
+      const stops = line.stops.map(s => ({ x: s.x, y: s.y }));
+      return { lineId: line.id, stops, segments: computeTunnelSegments(stops), trainCount: line.vehicles };
+    });
+    const metroSpeedMult = this.paused ? 0 : this.state.clock.speed;
+    this.metroTunnelRenderer.update(
+      metroLineData, this.state.metro.getStations(), vmOp.metroTunnel, dt * metroSpeedMult,
+    );
+
+    // Clean up stale vehicle rendering state
+    const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
+    for (const id of this.vehicleTypes.keys()) {
+      if (!activeIds.has(id)) {
+        this.vehicleTypes.delete(id);
       }
     }
   }
 
   private updateCursorColor(): void {
-    const toolColors: Record<ToolType, number> = {
-      select: 0xffffff,
-      road: 0x424242,
-      road_rural: 0x424242,
-      road_2lane: 0x424242,
-      road_4lane: 0x424242,
-      road_6lane: 0x424242,
-      road_highway: 0x424242,
-      rail_track: 0x6d4c2a,
-      zone_r: 0x4caf50,
-      zone_rh: 0x2e7d32,
-      zone_c: 0x2196f3,
-      zone_ch: 0x1565c0,
-      zone_i: 0xffa726,
-      zone_o: 0xab47bc,
-      demolish: 0xf44336,
-      power: 0xffeb3b,
-      water: 0x03a9f4,
-      police: 0x3f51b5,
-      fire: 0xd32f2f,
-      hospital: 0xe91e63,
-      school: 0x795548,
-      school_high: 0x6d4c41,
-      school_univ: 0x4e342e,
-      park: 0x4caf50,
-      garbage: 0x795548,
-      sewage: 0x607d8b,
-      cemetery: 0x9e9e9e,
-      district: 0xab47bc,
-      bus_stop: 0xff9800,
-      metro_station: 0x00bcd4,
-      train_station: 0x795548,
-      ferry_dock: 0x0288d1,
-      airport: 0x9c27b0,
-    };
-    this.gridCursor.setColor(toolColors[this.currentTool] ?? 0xffffff);
+    this.gridCursor.setColor(TOOL_CURSOR_COLORS[this.currentTool] ?? 0xffffff);
     // Demolish tool gets higher opacity for red highlight preview
     this.gridCursor.setOpacity(this.currentTool === 'demolish' ? 0.6 : 0.3);
   }
 
   isRoadTool(tool?: ToolType): boolean {
-    const t = tool ?? this.currentTool;
-    return t === 'road' || t === 'road_rural' || t === 'road_2lane' || t === 'road_4lane' || t === 'road_6lane' || t === 'road_highway';
+    return TOOL_TO_ROAD_TYPE[tool ?? this.currentTool] !== undefined;
   }
 
   isRailTool(tool?: ToolType): boolean {
@@ -1375,22 +941,13 @@ export class Game {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
     this.highlightManager.clear();
-    // Road subtypes set the roadType
-    if (tool === 'road') this.currentRoadType = RoadType.TWO_LANE;
-    else if (tool === 'road_rural') this.currentRoadType = RoadType.RURAL;
-    else if (tool === 'road_2lane') this.currentRoadType = RoadType.TWO_LANE;
-    else if (tool === 'road_4lane') this.currentRoadType = RoadType.FOUR_LANE;
-    else if (tool === 'road_6lane') this.currentRoadType = RoadType.SIX_LANE;
-    else if (tool === 'road_highway') this.currentRoadType = RoadType.HIGHWAY;
+    // Road subtypes set the roadType (data-driven lookup)
+    const roadType = TOOL_TO_ROAD_TYPE[tool];
+    if (roadType !== undefined) this.currentRoadType = roadType;
     // Update cursor size for infrastructure tools
     this.updateCursorSize();
     // Auto-switch overlay when selecting infrastructure tools
-    const toolOverlayMap: Partial<Record<ToolType, OverlayType>> = {
-      power: 'power', water: 'water', police: 'police', fire: 'fire',
-      hospital: 'health', school: 'education', school_high: 'education', school_univ: 'education', park: 'park', garbage: 'garbage',
-      district: 'district',
-    };
-    const autoOverlay = toolOverlayMap[tool];
+    const autoOverlay = TOOL_TO_OVERLAY[tool];
     if (autoOverlay) {
       this.setOverlay(autoOverlay);
     }
@@ -1416,24 +973,54 @@ export class Game {
     this.onUIUpdate?.();
   }
 
-  /** Select a transport stop and switch to its focus view mode. */
+  /** Handle click in select mode: classify building and show details. */
+  private handleSelectClick(x: number, y: number): void {
+    const cell = this.state.grid.getCell(x, y);
+    if (cell && cell.buildingId > 0) {
+      const cls = classifyBuilding(cell.buildingId);
+      switch (cls.category) {
+        case 'zone':
+          this.selectedBuilding = {
+            kind: 'zone', x, y,
+            buildingType: cls.buildingType, zoneType: cell.zoneType,
+            landValue: cell.landValue, pollution: cell.pollution,
+            serviceCoverage: cell.serviceCoverage,
+          };
+          this.applyViewMode(ViewMode.NORMAL);
+          break;
+        case 'transport':
+          this.selectTransportStop(x, y, cls.transportType);
+          break;
+        case 'infra': {
+          const primary = findPrimaryCell(this.state.grid, x, y);
+          const px = primary?.x ?? x;
+          const py = primary?.y ?? y;
+          const center = getInfraCenterById(px, py, cell.buildingId);
+          const details = this.getInfraDetails(cls.config.type, center.cx, center.cy);
+          this.selectedBuilding = {
+            kind: 'infra', x, y,
+            infraType: cls.config.type, name: cls.config.name,
+            cost: cls.config.cost, details,
+          };
+          this.applyViewMode(ViewMode.NORMAL);
+          break;
+        }
+      }
+    } else {
+      this.selectedBuilding = null;
+      this.applyViewMode(ViewMode.NORMAL);
+    }
+    this.audioManager.playSfx('click');
+  }
+
   private selectTransportStop(x: number, y: number, type: TransportStopKind): void {
     const system = this.getTransportSystem(type);
     const stops = system?.getStops() ?? [];
     const stop = stops.find(s => s.x === x && s.y === y);
     const routes = system?.getRoutes() ?? [];
-    const routeCount = stop
-      ? routes.filter(r => r.stops.some(s => s.id === stop.id)).length
-      : 0;
-    const vehicleCount = stop
-      ? routes.filter(r => r.stops.some(s => s.id === stop.id))
-          .reduce((sum, r) => sum + r.vehicles, 0)
-      : 0;
-
-    const STOP_NAMES: Record<TransportStopKind, string> = {
-      bus: 'Bus Stop', metro: 'Metro Station',
-      rail: 'Train Station', ferry: 'Ferry Dock',
-    };
+    const stopRoutes = stop ? routes.filter(r => r.stops.some(s => s.id === stop.id)) : [];
+    const routeCount = stopRoutes.length;
+    const vehicleCount = stopRoutes.reduce((sum, r) => sum + r.vehicles, 0);
 
     this.selectedBuilding = {
       kind: 'transport',
@@ -1447,15 +1034,9 @@ export class Game {
     this.applyViewMode(getTransportFocusMode(type));
   }
 
-  /** Get the transport system for a given stop type. */
+  /** Get the transport system for a given stop type via property lookup (OCP). */
   private getTransportSystem(type: TransportStopKind) {
-    switch (type) {
-      case 'bus': return this.state.bus;
-      case 'metro': return this.state.metro;
-      case 'rail': return this.state.rail;
-      case 'ferry': return this.state.ferry;
-      default: return null;
-    }
+    return this.state[type as keyof Pick<GameState, 'bus' | 'metro' | 'rail' | 'ferry'>];
   }
 
   private cycleRotation(): void {
@@ -1469,13 +1050,7 @@ export class Game {
   }
 
   private isInfraTool(tool: ToolType): boolean {
-    return [
-      'power', 'water', 'police', 'fire', 'hospital',
-      'school', 'school_high', 'school_univ', 'park',
-      'garbage', 'sewage', 'cemetery',
-      'bus_stop', 'metro_station', 'train_station',
-      'ferry_dock', 'airport',
-    ].includes(tool);
+    return isInfraType(tool);
   }
 
   private updateCursorSize(): void {
@@ -1498,32 +1073,22 @@ export class Game {
     const cell = this.state.grid.getCell(sel.x, sel.y);
     if (!cell) return;
 
-    if (sel.kind === 'infra') {
-      const primary = findPrimaryCell(this.state.grid, sel.x, sel.y);
-      if (!primary) return;
-      const cfg = getInfraConfigById(cell.buildingId);
-      const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
-      const cells: { x: number; y: number }[] = [];
-      for (let dy = 0; dy < maxDim; dy++) {
-        for (let dx = 0; dx < maxDim; dx++) {
-          const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
-          if (c && c.buildingId === cell.buildingId) {
-            cells.push({ x: primary.x + dx, y: primary.y + dy });
-          }
-        }
-      }
-      this.highlightManager.highlightCells(
-        cells, 0xffffff,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-      );
-    } else {
-      this.highlightManager.highlightCells(
-        [{ x: sel.x, y: sel.y }], 0xffffff,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-      );
-    }
+    const cells = sel.kind === 'infra'
+      ? this.getMultiCellFootprint(sel.x, sel.y)
+      : [{ x: sel.x, y: sel.y }];
+    if (cells.length === 0) return;
+    this.highlightManager.highlightCells(
+      cells, 0xffffff,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+    );
+  }
+
+  /** Collect all cells of a multi-cell building footprint (DRY). */
+  private getMultiCellFootprint(x: number, y: number): { x: number; y: number }[] {
+    const cells: { x: number; y: number }[] = [];
+    forEachMultiCell(this.state.grid, x, y, (cx, cy) => cells.push({ x: cx, y: cy }));
+    return cells;
   }
 
   /** Collect all InstancedMeshes that support highlight (buildings + roads + tracks). */
@@ -1538,7 +1103,7 @@ export class Game {
   private updatePlacementPreview(): void {
     if (this.isInfraTool(this.currentTool)) {
       const infraType = this.currentTool as InfraType;
-      const groundwaterFn = (cx: number, cy: number) => this.getGroundwaterLevel(cx, cy);
+      const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
       this.placementPreview.updateInfra(
         infraType,
         this.currentRotation,
@@ -1550,35 +1115,15 @@ export class Game {
       );
     } else if (this.currentTool === 'demolish') {
       if (this.dragStart) {
-        // Demolish drag preview — red tint on ground + buildings in range
-        const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
-        const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
-        const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
-        const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
-        this.highlightManager.highlight(
-          minX, minY, maxX, maxY, 0xff0000,
-          this.getAllHighlightMeshes(),
-          this.buildingRenderer.buildingInfraGroups,
-        );
+        this.highlightDragRange(0xff0000);
       } else {
         // Demolish hover: highlight multi-cell building footprint
         const gx = this.gridCursor.gridX;
         const gy = this.gridCursor.gridY;
         const cell = this.state.grid.getCell(gx, gy);
-        if (cell && cell.buildingId >= 237 && cell.buildingId <= 254) {
-          const primary = findPrimaryCell(this.state.grid, gx, gy);
-          if (primary) {
-            const cfg = getInfraConfigById(cell.buildingId);
-            const maxDim = cfg ? Math.max(cfg.width, cfg.height) : 1;
-            const cells: { x: number; y: number }[] = [];
-            for (let dy = 0; dy < maxDim; dy++) {
-              for (let dx = 0; dx < maxDim; dx++) {
-                const c = this.state.grid.getCell(primary.x + dx, primary.y + dy);
-                if (c && c.buildingId === cell.buildingId) {
-                  cells.push({ x: primary.x + dx, y: primary.y + dy });
-                }
-              }
-            }
+        if (cell && isInfrastructureBuilding(cell.buildingId)) {
+          const cells = this.getMultiCellFootprint(gx, gy);
+          if (cells.length > 0) {
             this.highlightManager.highlightCells(
               cells, 0xff0000,
               this.getAllHighlightMeshes(),
@@ -1592,22 +1137,7 @@ export class Game {
         }
       }
     } else if (this.dragStart && this.isZoneTool()) {
-      // Zone drag preview — tint ground + buildings in range
-      const zoneColors: Record<string, number> = {
-        zone_r: 0x4caf50, zone_rh: 0x2e7d32,
-        zone_c: 0x2196f3, zone_ch: 0x1565c0,
-        zone_i: 0xffc107, zone_o: 0x9c27b0,
-      };
-      const color = zoneColors[this.currentTool] ?? 0xffffff;
-      const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
-      const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
-      const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
-      const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
-      this.highlightManager.highlight(
-        minX, minY, maxX, maxY, color,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-      );
+      this.highlightDragRange(ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff);
     } else {
       this.placementPreview.hide();
       if (this.currentTool === 'select' && this.selectedBuilding) {
@@ -1618,8 +1148,22 @@ export class Game {
     }
   }
 
+  /** Highlight the drag-selected rectangular area with the given color (DRY). */
+  private highlightDragRange(color: number): void {
+    if (!this.dragStart) return;
+    const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
+    const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
+    const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
+    const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
+    this.highlightManager.highlight(
+      minX, minY, maxX, maxY, color,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+    );
+  }
+
   private isZoneTool(): boolean {
-    return ['zone_r', 'zone_rh', 'zone_c', 'zone_ch', 'zone_i', 'zone_o'].includes(this.currentTool);
+    return TOOL_TO_ZONE[this.currentTool] !== undefined;
   }
 
   setOverlay(type: OverlayType): void {
@@ -1639,87 +1183,11 @@ export class Game {
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
     if (type === 'none') return undefined;
     const data = new Map<string, number>();
-    const grid = this.state.grid;
-
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const key = `${x},${y}`;
-        let value = 0;
-
-        switch (type) {
-          case 'power':
-            value = this.state.power.isPowered(x, y) ? 100 : 0;
-            break;
-          case 'water': {
-            const supplied = this.state.water.isSupplied(x, y) ? 100 : 0;
-            const gw = this.getGroundwaterLevel(x, y);
-            // Show supply (bright) or groundwater (dim) — whichever is higher
-            value = Math.max(supplied, gw * 0.4);
-            break;
-          }
-          case 'zone': {
-            const cell = grid.getCell(x, y);
-            if (cell && cell.zoneType > 0) value = cell.zoneType * 15;
-            break;
-          }
-          case 'traffic': {
-            const density = this.state.traffic.getSegmentDensity(key);
-            value = density * 20;
-            break;
-          }
-          case 'pollution': {
-            const cell = grid.getCell(x, y);
-            if (cell) value = Math.min(100, cell.pollution * 100 / 255);
-            break;
-          }
-          case 'landValue': {
-            const cell = grid.getCell(x, y);
-            if (cell && cell.buildingId > 0) value = Math.min(100, cell.landValue * 100 / 255);
-            break;
-          }
-          case 'crime': {
-            const cell = grid.getCell(x, y);
-            if (cell && cell.buildingId > 0) {
-              const reduction = this.state.police.getCrimeReduction(x, y);
-              value = Math.max(0, 40 + reduction); // base 40, reduced by police
-            }
-            break;
-          }
-          case 'police':
-            value = this.state.police.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'fire':
-            value = this.state.fire.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'health':
-            value = this.state.health.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'education':
-            value = this.state.education.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'park':
-            value = this.state.parks.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'garbage':
-            value = this.state.garbage.getCoverage(x, y) ? 80 : 0;
-            break;
-          case 'district': {
-            const d = this.state.districts.getDistrictAt(x, y);
-            if (d) {
-              // Hash district id to get a unique-ish value for coloring
-              let hash = 0;
-              for (let i = 0; i < d.id.length; i++) hash = (hash * 31 + d.id.charCodeAt(i)) & 0xff;
-              value = Math.max(20, hash % 100);
-            }
-            break;
-          }
-          default:
-            break;
-        }
-
-        if (value > 0) data.set(key, value);
-      }
-    }
+    const ctx = this.state as OverlayBuildContext;
+    this.state.grid.forEachCell((cell, x, y) => {
+      const value = buildOverlayValue(ctx, type, cell, x, y);
+      if (value > 0) data.set(`${x},${y}`, value);
+    });
     return data;
   }
 
@@ -1740,61 +1208,7 @@ export class Game {
   }
 
   private getInfraDetails(type: InfraType, cx: number, cy: number): Record<string, string | number> {
-    const s = this.state;
-    switch (type) {
-      case 'police': {
-        const st = s.police.getStations().find(p => p.x === cx && p.y === cy);
-        return { 'Radius': st?.radius ?? 15, 'Coverage': s.police.getCoverage(cx, cy) ? 'Yes' : 'No' };
-      }
-      case 'fire': {
-        const st = s.fire.getStations().find(f => f.x === cx && f.y === cy);
-        return { 'Radius': st?.radius ?? 15, 'Active Fires': s.fire.getActiveFires().length };
-      }
-      case 'hospital': {
-        const h = s.health.getHospitals().find(h => h.x === cx && h.y === cy);
-        return { 'Capacity': h?.capacity ?? 100, 'Radius': h?.radius ?? 12 };
-      }
-      case 'school': {
-        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'elementary');
-        return { 'Type': 'Elementary', 'Capacity': sc?.capacity ?? 200, 'Radius': sc?.radius ?? 10 };
-      }
-      case 'school_high': {
-        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'highschool');
-        return { 'Type': 'High School', 'Capacity': sc?.capacity ?? 300, 'Radius': sc?.radius ?? 12 };
-      }
-      case 'school_univ': {
-        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'university');
-        return { 'Type': 'University', 'Capacity': sc?.capacity ?? 500, 'Radius': sc?.radius ?? 15 };
-      }
-      case 'park': {
-        const p = s.parks.getParks().find(p => p.x === cx && p.y === cy);
-        return { 'Radius': p?.radius ?? 5 };
-      }
-      case 'garbage': {
-        const f = s.garbage.getFacilities().find(f => f.x === cx && f.y === cy);
-        return { 'Capacity': f?.capacity ?? 1000, 'Load': f?.currentLoad ?? 0 };
-      }
-      case 'sewage': {
-        return { 'Status': 'Active' };
-      }
-      case 'cemetery': {
-        const c = s.deathCare.getCemeteries().find(c => c.x === cx && c.y === cy);
-        return { 'Capacity': c?.capacity ?? 500, 'Used': c?.used ?? 0 };
-      }
-      case 'power': {
-        const p = s.power.getPlants().find(p => p.x === cx && p.y === cy);
-        return { 'Output': p?.output ?? 500, 'Type': p?.type ?? 'coal' };
-      }
-      case 'water': {
-        const w = s.water.getPlants().find(p => p.x === cx && p.y === cy);
-        return { 'Output': w?.output ?? 500 };
-      }
-      case 'airport': {
-        return { 'Status': 'Operational' };
-      }
-      default:
-        return {};
-    }
+    return getInfraDetailsFromCtx(this.state as InfraDetailContext, type, cx, cy);
   }
 
   getSelectedBuilding(): SelectedBuilding | null {
@@ -1814,25 +1228,13 @@ export class Game {
       return;
     }
     this.clearPreviewLine();
-    const x1 = this.dragStart.x;
-    const y1 = this.dragStart.y;
-    const x2 = this.gridCursor.gridX;
-    const y2 = this.gridCursor.gridY;
-    const points: THREE.Vector3[] = [];
-    // Build L-shaped path: horizontal then vertical
-    const dx = x2 > x1 ? 1 : -1;
-    const dy = y2 > y1 ? 1 : -1;
-    for (let x = x1; x !== x2 + dx; x += dx) {
-      points.push(new THREE.Vector3(x, 0.2, y1));
-    }
-    for (let y = y1 + dy; y !== y2 + dy; y += dy) {
-      points.push(new THREE.Vector3(x2, 0.2, y));
-    }
-    if (points.length < 2) return;
+    const pathCells = getLShapedPath(this.dragStart, { x: this.gridCursor.gridX, y: this.gridCursor.gridY });
+    if (pathCells.length < 2) return;
+    const points = pathCells.map(c => new THREE.Vector3(c.x, 0.2, c.y));
 
     // Calculate estimated cost
     if (this.isRailTool()) {
-      this.previewCost = points.length * RAIL_COST;
+      this.previewCost = points.length * RAIL.COST_PER_CELL;
     } else {
       const roadConfig = ROAD_CONFIGS[this.currentRoadType];
       this.previewCost = points.length * roadConfig.cost;
@@ -1841,7 +1243,7 @@ export class Game {
 
     // Show semi-transparent road surface preview
     const laneCount = getLaneCount(this.currentRoadType);
-    const roadWidth = ROAD_WIDTHS_FOR_LANES[this.currentRoadType] ?? (0.2 + laneCount * 0.15);
+    const roadWidth = ROAD_WIDTHS[this.currentRoadType] ?? (0.2 + laneCount * 0.15);
     this.placementPreview.updateRoadDrag(
       points.map(p => ({ x: p.x, y: p.z })),
       roadWidth,
@@ -1867,49 +1269,20 @@ export class Game {
     const milestone = getMilestone(pop);
     if (milestone && milestone.id !== this.lastMilestoneId) {
       this.lastMilestoneId = milestone.id;
-      this.notification = `Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`;
-      this.notificationTimer = 8;
+      this.showNotification(`Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`, 8);
       this.audioManager.playSfx('milestone');
       this.onUIUpdate?.();
     }
   }
 
   private checkRandomDisaster(): void {
-    // ~0.1% chance per tick (roughly once per 1000 ticks / ~4 game months)
-    if (Math.random() > 0.001) return;
     const pop = this.state.citizens.getPopulation();
-    if (pop < 50) return; // no disasters in tiny cities
+    const result = tryRandomDisaster(this.state.grid.width, this.state.grid.height, pop);
+    if (!result) return;
 
-    const types = [DisasterType.EARTHQUAKE, DisasterType.TORNADO, DisasterType.FOREST_FIRE];
-    const type = types[Math.floor(Math.random() * types.length)]!;
-    const x = Math.floor(Math.random() * this.state.grid.width);
-    const y = Math.floor(Math.random() * this.state.grid.height);
-    const intensity = 0.3 + Math.random() * 0.5;
-
-    const disaster = createDisaster(type, x, y, intensity);
-
-    // Apply damage to buildings in radius
-    for (let dy = -disaster.radius; dy <= disaster.radius; dy++) {
-      for (let dx = -disaster.radius; dx <= disaster.radius; dx++) {
-        const bx = x + dx;
-        const by = y + dy;
-        const cell = this.state.grid.getCell(bx, by);
-        if (!cell || cell.buildingId === 0) continue;
-        const damage = calculateDamage(disaster, bx, by);
-        if (damage > 0.5) {
-          // Destroy building
-          this.state.grid.setCell(bx, by, { buildingId: 0 });
-        }
-      }
-    }
-
-    // Play disaster sound and show notification
+    applyDisasterDamage(this.state.grid, result.damagedCells);
     this.audioManager.playSfx('disaster');
-    const names: Record<string, string> = {
-      EARTHQUAKE: 'Earthquake', TORNADO: 'Tornado', FOREST_FIRE: 'Forest Fire'
-    };
-    this.notification = `Disaster: ${names[type] ?? type} at (${x},${y})! Intensity: ${Math.round(intensity * 100)}%`;
-    this.notificationTimer = 10;
+    this.showNotification(formatDisasterMessage(result.disaster), 10);
     this.dirty.buildings = true;
     this.dirty.terrain = true;
     this.onUIUpdate?.();
@@ -1924,118 +1297,57 @@ export class Game {
     this.notificationTimer = duration;
   }
 
-  getEconomyBreakdown(): {
-    residential: number; commercial: number; industrial: number; office: number;
-    roadMaintenance: number; loanInterest: number; powerCost: number; waterCost: number;
-    transportCost: number;
-  } {
-    const grid = this.state.grid;
-    const incomeTaxRate = this.state.taxRates.residential ?? 9;
-    const businessTaxRate = this.state.taxRates.business ?? 9;
-    let resIncome = 0, comIncome = 0, indIncome = 0, offIncome = 0;
-    let roadCount = 0;
-
-    const incomeMultiplier = (level: IncomeLevel): number => {
-      switch (level) {
-        case IncomeLevel.LOW: return 1.0;
-        case IncomeLevel.MEDIUM: return 1.5;
-        case IncomeLevel.HIGH: return 2.0;
-        default: return 1.0;
-      }
-    };
-
-    const levelMultiplier = (level: 1 | 2 | 3): number => {
-      switch (level) {
-        case 1: return 1.0;
-        case 2: return 1.5;
-        case 3: return 2.0;
-        default: return 1.0;
-      }
-    };
-
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell) continue;
-        if (cell.roadType > 0) roadCount++;
-        if (cell.buildingId === 0 || cell.buildingId >= 245) continue;
-        if (cell.reserved === 3 || cell.reserved === 4) continue; // burned or multi-cell secondary
-
-        const btype = getBuildingType(cell.buildingId);
-        if (!btype) continue;
-
-        const isResidential = cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH;
-        if (isResidential) {
-          // Income tax: scan citizens living here
-          const posKey = `${x},${y}`;
-          const residents = this.state.citizens.getCitizensByHome(posKey);
-          for (const citizen of residents) {
-            resIncome += 0.5 * incomeMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
-          }
-        } else {
-          // Business tax: companyIncome x levelMultiplier x businessTaxRate
-          const ci = btype.companyIncome ?? 0;
-          const bi = ci * levelMultiplier(btype.level) * (businessTaxRate / 100);
-          if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) {
-            comIncome += bi;
-          } else if (cell.zoneType === ZoneType.INDUSTRIAL) {
-            indIncome += bi;
-          } else if (cell.zoneType === ZoneType.OFFICE) {
-            offIncome += bi;
-          }
-        }
-      }
-    }
-
-    const roadMaintenance = roadCount * 0.1;
-    const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
-    const powerCost = this.state.power.getPlants().length * 5;
-    const waterCost = this.state.water.getPlants().length * 3;
-    const transportCost = this.state.bus.getOperatingCost()
-      + this.state.metro.getOperatingCost()
-      + this.state.rail.getOperatingCost()
-      + this.state.ferry.getOperatingCost()
-      + this.state.airport.getOperatingCost();
-
-    return {
-      residential: Math.round(resIncome * 10) / 10,
-      commercial: Math.round(comIncome * 10) / 10,
-      industrial: Math.round(indIncome * 10) / 10,
-      office: Math.round(offIncome * 10) / 10,
-      roadMaintenance: Math.round(roadMaintenance * 10) / 10,
-      loanInterest: Math.round(loanInterest * 10) / 10,
-      powerCost,
-      waterCost,
-      transportCost,
-    };
+  getEconomyBreakdown() {
+    return computeEconomyBreakdown({
+      forEachCell: (fn) => this.state.grid.forEachCell(fn),
+      taxRates: this.state.taxRates,
+      getCitizensByHome: (key) => this.state.citizens.getCitizensByHome(key),
+      roadTileCount: countRoadTiles(this.state.grid),
+      loans: this.state.budget.loans,
+      loanInterestRate: this.state.budget.loanInterestRate,
+      powerMaintenanceCost: this.state.power.getMaintenanceCost(),
+      waterMaintenanceCost: this.state.water.getMaintenanceCost(),
+      transportOperatingCost: getTotalTransportOperatingCost(this.state),
+    });
   }
 
-  getTrafficStats(): {
-    vehicleCount: number; topCongested: { segment: string; density: number }[];
-    avgPathLength: number; totalRoads: number;
-  } {
-    let totalRoads = 0;
-    const grid = this.state.grid;
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (cell && cell.roadType > 0) totalRoads++;
-      }
-    }
-    return {
+  getTrafficStats() {
+    return computeTrafficStats({
       vehicleCount: this.state.traffic.getVehicleCount(),
       topCongested: this.state.traffic.getTopCongested(8),
-      avgPathLength: Math.round(this.state.traffic.getAveragePathLength() * 10) / 10,
-      totalRoads,
-    };
+      avgPathLength: this.state.traffic.getAveragePathLength(),
+      roadTileCount: countRoadTiles(this.state.grid),
+    });
+  }
+
+  /** Toggle pause state (DRY: used by keyboard + UI). */
+  togglePause(): void {
+    this.paused = !this.paused;
+    if (this.paused) this.state.clock.pause();
+    else this.state.clock.resume();
+    this.onUIUpdate?.();
+  }
+
+  /** Set game speed directly (DRY: used by UI speed buttons). */
+  setSpeed(s: 1 | 2 | 3): void {
+    this.speed = s;
+    this.state.clock.setSpeed(s);
+    this.paused = false;
+    this.onUIUpdate?.();
+  }
+
+  /** Change speed by delta, clamped to [1,3] (DRY: used by keyboard shortcuts). */
+  changeSpeed(delta: number): void {
+    this.speed = Math.min(3, Math.max(1, this.speed + delta)) as 1 | 2 | 3;
+    this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
+    this.onUIUpdate?.();
   }
 
   takeLoan(amount: number): void {
     if (amount <= 0) return;
     this.state.budget.funds += amount;
     this.state.budget.loans += amount;
-    this.notification = `Loan taken: $${amount.toLocaleString()}`;
-    this.notificationTimer = 4;
+    this.showNotification(`Loan taken: $${amount.toLocaleString()}`);
     this.onUIUpdate?.();
   }
 
@@ -2045,8 +1357,7 @@ export class Game {
     if (actual <= 0) return;
     this.state.budget.funds -= actual;
     this.state.budget.loans -= actual;
-    this.notification = `Loan repaid: $${actual.toLocaleString()}`;
-    this.notificationTimer = 4;
+    this.showNotification(`Loan repaid: $${actual.toLocaleString()}`);
     this.onUIUpdate?.();
   }
 }

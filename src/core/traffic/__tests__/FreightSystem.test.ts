@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FreightSystem } from '../FreightSystem';
+import { FreightSystem, FREIGHT } from '../FreightSystem';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
 
@@ -68,5 +68,14 @@ describe('FreightSystem', () => {
     grid.setCell(0, 0, { zoneType: ZoneType.INDUSTRIAL, buildingId: 15 });
     freight.tick(grid);
     expect(freight.getShortageRatio()).toBe(0);
+  });
+
+  it('freight rates should be positive', () => {
+    expect(FREIGHT.INDUSTRIAL_PRODUCTION_RATE).toBeGreaterThan(0);
+    expect(FREIGHT.COMMERCIAL_CONSUMPTION_RATE).toBeGreaterThan(0);
+  });
+
+  it('production rate should exceed consumption rate', () => {
+    expect(FREIGHT.INDUSTRIAL_PRODUCTION_RATE).toBeGreaterThanOrEqual(FREIGHT.COMMERCIAL_CONSUMPTION_RATE);
   });
 });

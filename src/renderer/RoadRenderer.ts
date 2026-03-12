@@ -5,7 +5,7 @@ import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
 
-const ROAD_WIDTHS: Record<number, number> = {
+export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
   [RoadType.TWO_LANE]: 0.6,
   [RoadType.FOUR_LANE]: 0.85,

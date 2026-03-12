@@ -37,9 +37,21 @@ export const INFRA_CONFIGS: readonly InfraConfig[] = [
 
 const byType = new Map<InfraType, InfraConfig>();
 const byId = new Map<number, InfraConfig>();
+const infraBuildingIds = new Set<number>();
 for (const cfg of INFRA_CONFIGS) {
   byType.set(cfg.type, cfg);
   byId.set(cfg.buildingId, cfg);
+  infraBuildingIds.add(cfg.buildingId);
+}
+
+/** Returns true if the buildingId belongs to an infrastructure building (not a zone building). */
+export function isInfrastructureBuilding(buildingId: number): boolean {
+  return infraBuildingIds.has(buildingId);
+}
+
+/** Returns true if the buildingId belongs to a zone building (residential/commercial/industrial/office). */
+export function isZoneBuilding(buildingId: number): boolean {
+  return buildingId > 0 && !infraBuildingIds.has(buildingId);
 }
 
 export function getInfraConfig(type: InfraType): InfraConfig | undefined {
@@ -48,6 +60,16 @@ export function getInfraConfig(type: InfraType): InfraConfig | undefined {
 
 export function getInfraConfigById(buildingId: number): InfraConfig | undefined {
   return byId.get(buildingId);
+}
+
+/** Look up infrastructure buildingId by type name. */
+export function getInfraBuildingId(type: InfraType): number {
+  return byType.get(type)!.buildingId;
+}
+
+/** Check if a string is a valid InfraType. */
+export function isInfraType(type: string): type is InfraType {
+  return byType.has(type as InfraType);
 }
 
 export function getRotatedSize(w: number, h: number, rotation: Rotation): { w: number; h: number } {

@@ -5,7 +5,7 @@ import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { ZoneManager } from '../../zone/ZoneManager';
 import { BuildingGrowth } from '../BuildingGrowth';
-import { BuildingUpgrade } from '../BuildingUpgrade';
+import { BuildingUpgrade, meetsUpgradeRequirements, UPGRADE_REQUIREMENTS, KEEP_REQUIREMENTS } from '../BuildingUpgrade';
 import { getBuildingType } from '../types';
 
 function setupWithBuilding(): { grid: Grid; upgrade: BuildingUpgrade } {
@@ -86,6 +86,20 @@ describe('BuildingUpgrade', () => {
     expect(after!.residents + after!.workers).toBeGreaterThan(before!.residents + before!.workers);
   });
 
+  it('UPGRADE_REQUIREMENTS level 3 should be stricter than level 2', () => {
+    expect(UPGRADE_REQUIREMENTS[3]!.minServiceCoverage)
+      .toBeGreaterThan(UPGRADE_REQUIREMENTS[2]!.minServiceCoverage);
+    expect(UPGRADE_REQUIREMENTS[3]!.minLandValue)
+      .toBeGreaterThan(UPGRADE_REQUIREMENTS[2]!.minLandValue);
+  });
+
+  it('KEEP_REQUIREMENTS should be below UPGRADE_REQUIREMENTS for same level', () => {
+    expect(KEEP_REQUIREMENTS[2]!.minLandValue)
+      .toBeLessThan(UPGRADE_REQUIREMENTS[2]!.minLandValue);
+    expect(KEEP_REQUIREMENTS[3]!.minLandValue)
+      .toBeLessThan(UPGRADE_REQUIREMENTS[3]!.minLandValue);
+  });
+
   it('should change appearance after upgrade', () => {
     const { grid, upgrade } = setupWithBuilding();
     const before = getBuildingType(grid.getCell(5, 4)!.buildingId);
@@ -97,5 +111,47 @@ describe('BuildingUpgrade', () => {
     });
     const after = getBuildingType(grid.getCell(5, 4)!.buildingId);
     expect(after!.appearanceId).not.toBe(before!.appearanceId);
+  });
+});
+
+describe('meetsUpgradeRequirements (data-driven)', () => {
+  it('returns true when all conditions meet level 2 requirements', () => {
+    const req = UPGRADE_REQUIREMENTS[2]!;
+    expect(meetsUpgradeRequirements({ serviceCoverageCount: 3, landValue: 50, crimeRate: 0, pollution: 0 }, req)).toBe(true);
+  });
+
+  it('returns false when service coverage is below level 2 threshold', () => {
+    const req = UPGRADE_REQUIREMENTS[2]!;
+    expect(meetsUpgradeRequirements({ serviceCoverageCount: 2, landValue: 50, crimeRate: 0, pollution: 0 }, req)).toBe(false);
+  });
+
+  it('returns false when land value is below level 2 threshold', () => {
+    const req = UPGRADE_REQUIREMENTS[2]!;
+    expect(meetsUpgradeRequirements({ serviceCoverageCount: 3, landValue: 49, crimeRate: 0, pollution: 0 }, req)).toBe(false);
+  });
+
+  it('returns true when all conditions meet level 3 requirements', () => {
+    const req = UPGRADE_REQUIREMENTS[3]!;
+    expect(meetsUpgradeRequirements({ serviceCoverageCount: 5, landValue: 80, crimeRate: 10, pollution: 10 }, req)).toBe(true);
+  });
+
+  it('returns false when crime exceeds level 3 threshold', () => {
+    const req = UPGRADE_REQUIREMENTS[3]!;
+    expect(meetsUpgradeRequirements({ serviceCoverageCount: 5, landValue: 80, crimeRate: 20, pollution: 10 }, req)).toBe(false);
+  });
+
+  it('returns false when pollution exceeds level 3 threshold', () => {
+    const req = UPGRADE_REQUIREMENTS[3]!;
+    expect(meetsUpgradeRequirements({ serviceCoverageCount: 5, landValue: 80, crimeRate: 10, pollution: 30 }, req)).toBe(false);
+  });
+
+  it('UPGRADE_REQUIREMENTS covers all defined levels', () => {
+    expect(UPGRADE_REQUIREMENTS[2]).toBeDefined();
+    expect(UPGRADE_REQUIREMENTS[3]).toBeDefined();
+  });
+
+  it('KEEP_REQUIREMENTS covers all defined levels', () => {
+    expect(KEEP_REQUIREMENTS[2]).toBeDefined();
+    expect(KEEP_REQUIREMENTS[3]).toBeDefined();
   });
 });

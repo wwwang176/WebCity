@@ -1,3 +1,5 @@
+import { randomInt } from '../utils/random';
+
 export interface FireStation {
   id: string;
   x: number;
@@ -12,23 +14,44 @@ export interface ActiveFire {
   damage: number;
 }
 
-export interface FireServiceJSON {
+interface FireServiceJSON {
   stations: FireStation[];
   activeFires: ActiveFire[];
   nextId: number;
 }
 
-/** Speed at which fire trucks travel (cells per tick for response time calculation). */
-const RESPONSE_SPEED = 2;
+import { isZoneBuilding } from '../building/InfraConfig';
+import { euclideanDistance, isWithinEuclideanRadius } from '../grid/GridHelpers';
+import { removeById } from '../utils/removeById';
 
-/** Ticks to resolve a fire once reported. */
-const FIRE_DURATION = 3;
-
-/** Damage when fire is within coverage (10%). */
-const COVERED_DAMAGE = 0.10;
-
-/** Damage when fire is outside coverage (80%). */
-const UNCOVERED_DAMAGE = 0.80;
+/** Fire risk and ignition probability constants */
+export const FIRE = {
+  /** Speed at which fire trucks travel (cells per tick for response time calculation) */
+  RESPONSE_SPEED: 2,
+  /** Ticks to resolve a fire once reported */
+  FIRE_DURATION: 3,
+  /** Damage when fire is within coverage (10%) */
+  COVERED_DAMAGE: 0.10,
+  /** Damage when fire is outside coverage (80%) */
+  UNCOVERED_DAMAGE: 0.80,
+  /** Base risk outside all station coverage */
+  RISK_OUTSIDE_BASE: 0.8,
+  /** Risk increase per distance ratio beyond coverage */
+  RISK_OUTSIDE_FACTOR: 0.05,
+  /** Risk multiplier inside coverage (0 at center, RISK_INSIDE_FACTOR at edge) */
+  RISK_INSIDE_FACTOR: 0.5,
+  /** Maximum random fire probability per tick */
+  MAX_IGNITION_PROB: 0.02,
+  /** Baseline random fire probability */
+  BASE_IGNITION_PROB: 0.001,
+  /** Fire probability per citizen */
+  IGNITION_POP_FACTOR: 0.000005,
+  /** Number of random cell attempts to find a building for fire */
+  IGNITION_ATTEMPTS: 10,
+  MAINTENANCE_PER_STATION: 4,
+  /** Damage threshold above which a building becomes BURNED ruins */
+  BURN_DAMAGE_THRESHOLD: 0.5,
+} as const;
 
 export class FireService {
   private stations: FireStation[] = [];
@@ -42,10 +65,7 @@ export class FireService {
   }
 
   removeStation(id: string): void {
-    const idx = this.stations.findIndex(s => s.id === id);
-    if (idx !== -1) {
-      this.stations.splice(idx, 1);
-    }
+    removeById(this.stations, id);
   }
 
   getStations(): readonly FireStation[] {
@@ -61,7 +81,7 @@ export class FireService {
    * of at least one fire station (Euclidean distance).
    */
   getCoverage(x: number, y: number): boolean {
-    return this.stations.some(s => this.distance(s.x, s.y, x, y) <= s.radius);
+    return this.stations.some(s => isWithinEuclideanRadius(s.x, s.y, x, y, s.radius));
   }
 
   /**
@@ -72,13 +92,13 @@ export class FireService {
   getResponseTime(x: number, y: number): number {
     let minDist = Infinity;
     for (const s of this.stations) {
-      const d = this.distance(s.x, s.y, x, y);
+      const d = euclideanDistance(s.x, s.y, x, y);
       if (d <= s.radius && d < minDist) {
         minDist = d;
       }
     }
     if (minDist === Infinity) return Infinity;
-    return minDist / RESPONSE_SPEED;
+    return minDist / FIRE.RESPONSE_SPEED;
   }
 
   /**
@@ -87,12 +107,12 @@ export class FireService {
    */
   reportFire(x: number, y: number): { covered: boolean; estimatedDamage: number } {
     const covered = this.getCoverage(x, y);
-    const damage = covered ? COVERED_DAMAGE : UNCOVERED_DAMAGE;
+    const damage = covered ? FIRE.COVERED_DAMAGE : FIRE.UNCOVERED_DAMAGE;
 
     this.activeFires.push({
       x,
       y,
-      ticksRemaining: FIRE_DURATION,
+      ticksRemaining: FIRE.FIRE_DURATION,
       damage,
     });
 
@@ -108,18 +128,18 @@ export class FireService {
 
     let minRatio = Infinity;
     for (const s of this.stations) {
-      const d = this.distance(s.x, s.y, x, y);
+      const d = euclideanDistance(s.x, s.y, x, y);
       const ratio = d / s.radius;
       if (ratio < minRatio) minRatio = ratio;
     }
 
     if (minRatio > 1) {
       // Outside all coverage — high risk
-      return Math.min(1, 0.8 + minRatio * 0.05);
+      return Math.min(1, FIRE.RISK_OUTSIDE_BASE + minRatio * FIRE.RISK_OUTSIDE_FACTOR);
     }
 
     // Inside coverage — risk scales with distance ratio (0 at center, approaches max at edge)
-    return Math.min(1, minRatio * 0.5);
+    return Math.min(1, minRatio * FIRE.RISK_INSIDE_FACTOR);
   }
 
   /**
@@ -160,21 +180,24 @@ export class FireService {
     probabilityOverride?: number,
   ): boolean {
     // Base probability per tick: very low, scales slightly with population
-    const baseProbability = probabilityOverride ?? Math.min(0.02, 0.001 + population * 0.000005);
+    const baseProbability = probabilityOverride ?? Math.min(FIRE.MAX_IGNITION_PROB, FIRE.BASE_IGNITION_PROB + population * FIRE.IGNITION_POP_FACTOR);
     if (Math.random() >= baseProbability) return false;
 
     // Find a random building cell to start a fire
-    const attempts = 10;
-    for (let i = 0; i < attempts; i++) {
-      const x = Math.floor(Math.random() * grid.width);
-      const y = Math.floor(Math.random() * grid.height);
+    for (let i = 0; i < FIRE.IGNITION_ATTEMPTS; i++) {
+      const x = randomInt(grid.width);
+      const y = randomInt(grid.height);
       const cell = grid.getCell(x, y);
-      if (cell && cell.buildingId > 0 && cell.buildingId < 245) {
+      if (cell && isZoneBuilding(cell.buildingId)) {
         this.reportFire(x, y);
         return true;
       }
     }
     return false;
+  }
+
+  getMaintenanceCost(): number {
+    return this.stations.length * FIRE.MAINTENANCE_PER_STATION;
   }
 
   toJSON(): FireServiceJSON {
@@ -193,9 +216,4 @@ export class FireService {
     return service;
   }
 
-  private distance(x1: number, y1: number, x2: number, y2: number): number {
-    const dx = x2 - x1;
-    const dy = y2 - y1;
-    return Math.sqrt(dx * dx + dy * dy);
-  }
 }

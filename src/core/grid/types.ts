@@ -23,6 +23,29 @@ export enum NaturalResource {
   FOREST = 4,
 }
 
+export function isResidentialZone(z: ZoneType): boolean {
+  return z === ZoneType.RESIDENTIAL_LOW || z === ZoneType.RESIDENTIAL_HIGH;
+}
+
+export function isCommercialZone(z: ZoneType): boolean {
+  return z === ZoneType.COMMERCIAL_LOW || z === ZoneType.COMMERCIAL_HIGH;
+}
+
+export function isWorkplaceZone(z: ZoneType): boolean {
+  return z === ZoneType.COMMERCIAL_LOW || z === ZoneType.COMMERCIAL_HIGH
+    || z === ZoneType.INDUSTRIAL || z === ZoneType.OFFICE;
+}
+
+export type RCICategory = 'residential' | 'commercial' | 'industrial';
+
+/** Map a zone type to its RCI demand category */
+export function zoneToRCI(z: ZoneType): RCICategory | null {
+  if (isResidentialZone(z)) return 'residential';
+  if (isCommercialZone(z)) return 'commercial';
+  if (z === ZoneType.INDUSTRIAL || z === ZoneType.OFFICE) return 'industrial';
+  return null;
+}
+
 export interface CellData {
   terrainType: TerrainType;
   zoneType: ZoneType;
@@ -58,6 +81,25 @@ export const DEFAULT_CELL: CellData = {
   railType: 0,
   railFlags: 0,
 };
+
+/** All serializable CellData property keys — single source of truth */
+export const CELL_KEYS: readonly (keyof CellData)[] = Object.keys(DEFAULT_CELL) as (keyof CellData)[];
+
+/** Check if a cell equals the default (all properties match DEFAULT_CELL) */
+export function isCellDefault(cell: CellData): boolean {
+  return CELL_KEYS.every(k => cell[k] === DEFAULT_CELL[k]);
+}
+
+/** Extract only the properties that differ from DEFAULT_CELL */
+export function getCellDiff(cell: CellData): Partial<CellData> {
+  const diff: Partial<CellData> = {};
+  for (const k of CELL_KEYS) {
+    if (cell[k] !== DEFAULT_CELL[k]) {
+      (diff as Record<string, unknown>)[k] = cell[k];
+    }
+  }
+  return diff;
+}
 
 export interface Position {
   x: number;

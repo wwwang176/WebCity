@@ -1,20 +1,19 @@
+import { toPosKey } from '../grid/GridHelpers';
+import { POLLUTION } from './Pollution';
+
 export type FlowDirection = 'N' | 'S' | 'E' | 'W' | '';
 
-const DECAY_PER_CELL = 30;
+/** Data-driven direction offsets for water flow. */
+export const FLOW_DIRECTION_OFFSETS: Record<FlowDirection, { dx: number; dy: number }> = {
+  N: { dx: 0, dy: -1 },
+  S: { dx: 0, dy: 1 },
+  E: { dx: 1, dy: 0 },
+  W: { dx: -1, dy: 0 },
+  '': { dx: 0, dy: 0 },
+} as const;
 
 function getDirectionOffset(direction: FlowDirection): { dx: number; dy: number } {
-  switch (direction) {
-    case 'N':
-      return { dx: 0, dy: -1 };
-    case 'S':
-      return { dx: 0, dy: 1 };
-    case 'E':
-      return { dx: 1, dy: 0 };
-    case 'W':
-      return { dx: -1, dy: 0 };
-    default:
-      return { dx: 0, dy: 0 };
-  }
+  return FLOW_DIRECTION_OFFSETS[direction] ?? FLOW_DIRECTION_OFFSETS[''];
 }
 
 export class WaterFlow {
@@ -28,9 +27,7 @@ export class WaterFlow {
     this.height = height;
   }
 
-  private cellKey(x: number, y: number): string {
-    return `${x},${y}`;
-  }
+  private cellKey = toPosKey;
 
   setFlowDirection(x: number, y: number, direction: FlowDirection): void {
     this.flow.set(this.cellKey(x, y), direction);
@@ -60,7 +57,7 @@ export class WaterFlow {
 
       if (nextX < 0 || nextX >= this.width || nextY < 0 || nextY >= this.height) break;
 
-      currentAmount -= DECAY_PER_CELL;
+      currentAmount -= POLLUTION.DECAY_PER_CELL;
       if (currentAmount <= 0) break;
 
       const nextKey = this.cellKey(nextX, nextY);

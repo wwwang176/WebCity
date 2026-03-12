@@ -4,11 +4,11 @@ import {
   TransportMode,
 } from '../types';
 import { BusSystem } from '../BusSystem';
-import { MetroSystem } from '../MetroSystem';
-import { RailSystem, RailServiceType } from '../RailSystem';
+import { MetroSystem, METRO } from '../MetroSystem';
+import { RailSystem, RailServiceType, RAIL } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
-import { AirportSystem, getAirportFootprint } from '../AirportSystem';
-import { chooseMode, AvailableTransport } from '../ModeChoice';
+import { AirportSystem, getAirportFootprint, AIRPORT_SIZE_CONFIG } from '../AirportSystem';
+import { chooseMode, AvailableTransport, MODE_CHOICE } from '../ModeChoice';
 import { PollutionManager } from '../../environment/Pollution';
 import { FreightSystem } from '../../traffic/FreightSystem';
 
@@ -470,6 +470,17 @@ describe('ModeChoice', () => {
       0,
     );
     expect(mode).toBe(TransportMode.WALK);
+  });
+});
+
+describe('MODE_CHOICE constants', () => {
+  it('walk max distance should be a small positive integer', () => {
+    expect(MODE_CHOICE.WALK_MAX_DISTANCE).toBeGreaterThan(0);
+    expect(Number.isInteger(MODE_CHOICE.WALK_MAX_DISTANCE)).toBe(true);
+  });
+
+  it('transit time threshold should be > 1 (transit gets a bonus)', () => {
+    expect(MODE_CHOICE.TRANSIT_TIME_MULTIPLIER_THRESHOLD).toBeGreaterThan(1);
   });
 });
 
@@ -1024,6 +1035,52 @@ describe('Airport multi-cell footprint', () => {
 });
 
 // ---------------------------------------------------------------------------
+// T5.4 Airport consolidated config (OCP)
+// ---------------------------------------------------------------------------
+describe('Airport consolidated config', () => {
+  it('each size should contain all required properties', () => {
+    for (const size of ['SMALL', 'MEDIUM', 'LARGE'] as const) {
+      const cfg = AIRPORT_SIZE_CONFIG[size];
+      expect(cfg).toBeDefined();
+      expect(cfg.footprint).toBeGreaterThan(0);
+      expect(cfg.area).toBeGreaterThan(0);
+      expect(cfg.noise).toBeGreaterThanOrEqual(0);
+      expect(cfg.tourists).toBeGreaterThan(0);
+      expect(cfg.cargo).toBeGreaterThan(0);
+      expect(cfg.operatingCost).toBeGreaterThan(0);
+      expect(cfg.populationRequired).toBeGreaterThan(0);
+    }
+  });
+
+  it('footprint values should match getAirportFootprint', () => {
+    expect(AIRPORT_SIZE_CONFIG.SMALL.footprint).toBe(getAirportFootprint('SMALL'));
+    expect(AIRPORT_SIZE_CONFIG.MEDIUM.footprint).toBe(getAirportFootprint('MEDIUM'));
+    expect(AIRPORT_SIZE_CONFIG.LARGE.footprint).toBe(getAirportFootprint('LARGE'));
+  });
+
+  it('config values scale with size', () => {
+    const s = AIRPORT_SIZE_CONFIG.SMALL;
+    const m = AIRPORT_SIZE_CONFIG.MEDIUM;
+    const l = AIRPORT_SIZE_CONFIG.LARGE;
+    expect(m.footprint).toBeGreaterThan(s.footprint);
+    expect(l.footprint).toBeGreaterThan(m.footprint);
+    expect(m.operatingCost).toBeGreaterThan(s.operatingCost);
+    expect(l.operatingCost).toBeGreaterThan(m.operatingCost);
+  });
+
+  it('build() should use config population requirement', () => {
+    const sys = new AirportSystem();
+    // Below requirement
+    expect(sys.build(0, 0, 'SMALL', AIRPORT_SIZE_CONFIG.SMALL.populationRequired - 1)).toBeNull();
+    // At requirement
+    const result = sys.build(0, 0, 'SMALL', AIRPORT_SIZE_CONFIG.SMALL.populationRequired);
+    expect(result).not.toBeNull();
+    expect(result!.operatingCost).toBe(AIRPORT_SIZE_CONFIG.SMALL.operatingCost);
+    expect(result!.noisePollution).toBe(AIRPORT_SIZE_CONFIG.SMALL.noise);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // T6.1 Rail FREIGHT connection to FreightSystem
 // ---------------------------------------------------------------------------
 describe('Rail FREIGHT → FreightSystem', () => {
@@ -1214,5 +1271,21 @@ describe('Ferry travel time', () => {
     expect(v.traveling).toBe(true);
     // travel ticks = ceil(10 / 0.375) = 27
     expect(v.travelTicks).toBe(27);
+  });
+});
+
+describe('METRO constants', () => {
+  it('build cost per station should be positive', () => {
+    expect(METRO.BUILD_COST_PER_STATION).toBeGreaterThan(0);
+  });
+});
+
+describe('RAIL constants', () => {
+  it('passenger capacity should be positive', () => {
+    expect(RAIL.PASSENGER_CAPACITY).toBeGreaterThan(0);
+  });
+
+  it('freight capacity should be greater than passenger capacity', () => {
+    expect(RAIL.FREIGHT_CAPACITY).toBeGreaterThan(RAIL.PASSENGER_CAPACITY);
   });
 });

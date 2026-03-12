@@ -1,13 +1,12 @@
 import { Grid } from '../grid/Grid';
-import { TerrainType, ZoneType } from '../grid/types';
+import { ZoneType } from '../grid/types';
+import { toPosKey, CARDINAL_DIRECTIONS, getLShapedPath, getDirectionFlag } from '../grid/GridHelpers';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
-import { RoadType, RoadDirection, ROAD_CONFIGS, type BuildRoadResult, type Position } from './types';
-import { RailType } from '../rail/types';
+import { RoadType, type BuildRoadResult, type Position } from './types';
+import { validateRoadPath, calculateRoadCost } from './RoadValidation';
 
-function nodeId(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const nodeId = toPosKey;
 
 export class RoadBuilder {
   private grid: Grid;
@@ -19,48 +18,14 @@ export class RoadBuilder {
   }
 
   buildRoad(from: Position, to: Position, roadType: RoadType, funds: number): BuildRoadResult {
-    const cells = this.getCellsBetween(from, to);
-    const config = ROAD_CONFIGS[roadType];
+    const cells = getLShapedPath(from, to);
 
-    // Check for water/mountain/infrastructure
-    for (const pos of cells) {
-      const cell = this.grid.getCell(pos.x, pos.y);
-      if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
-      if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
-      if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
-      // Block all infrastructure buildings (buildingId 236-254)
-      if (getInfraConfigById(cell.buildingId)) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
-    }
+    // Validate path (terrain, infrastructure, rail conflicts) — delegated to pure function (SRP)
+    const validationError = validateRoadPath(this.grid, cells);
+    if (validationError) return { success: false, reason: validationError };
 
-    // Check for parallel rail conflicts
-    for (let i = 0; i < cells.length; i++) {
-      const pos = cells[i]!;
-      const cell = this.grid.getCell(pos.x, pos.y)!;
-      if (cell.railType !== undefined && cell.railType !== RailType.NONE) {
-        let roadFlags = 0;
-        if (i > 0) roadFlags |= this.getDirection(pos, cells[i - 1]!);
-        if (i < cells.length - 1) roadFlags |= this.getDirection(pos, cells[i + 1]!);
-        const roadVert = (roadFlags & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
-        const roadHorz = (roadFlags & (RoadDirection.WEST | RoadDirection.EAST)) !== 0;
-        const railVert = (cell.railFlags & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
-        const railHorz = (cell.railFlags & (RoadDirection.WEST | RoadDirection.EAST)) !== 0;
-        if ((roadVert && railVert) || (roadHorz && railHorz)) {
-          return { success: false, reason: 'PARALLEL_RAIL' };
-        }
-      }
-    }
-
-    // Check funds — charge differential for cells that already have a road
-    let totalCost = 0;
-    for (const pos of cells) {
-      const cell = this.grid.getCell(pos.x, pos.y)!;
-      if (cell.roadType !== RoadType.NONE) {
-        const existingCost = ROAD_CONFIGS[cell.roadType as RoadType].cost;
-        totalCost += Math.max(0, config.cost - existingCost);
-      } else {
-        totalCost += config.cost;
-      }
-    }
+    // Calculate cost with differential pricing — delegated to pure function (SRP)
+    const totalCost = calculateRoadCost(this.grid, cells, roadType);
     if (funds < totalCost) return { success: false, reason: 'INSUFFICIENT_FUNDS' };
 
     // Build road — clear zoned buildings/zones along the path
@@ -80,12 +45,12 @@ export class RoadBuilder {
       // Connect to previous cell
       if (i > 0) {
         const prev = cells[i - 1]!;
-        flags |= this.getDirection(pos, prev);
+        flags |= getDirectionFlag(pos, prev);
       }
       // Connect to next cell
       if (i < cells.length - 1) {
         const next = cells[i + 1]!;
-        flags |= this.getDirection(pos, next);
+        flags |= getDirectionFlag(pos, next);
       }
 
       // Merge with existing road flags
@@ -125,14 +90,7 @@ export class RoadBuilder {
     this.grid.setCell(x, y, { roadType: RoadType.NONE, roadFlags: 0 });
 
     // Update neighboring cells' flags
-    const dirs: { dx: number; dy: number; flag: number; opposite: number }[] = [
-      { dx: 0, dy: -1, flag: RoadDirection.NORTH, opposite: RoadDirection.SOUTH },
-      { dx: 0, dy: 1, flag: RoadDirection.SOUTH, opposite: RoadDirection.NORTH },
-      { dx: -1, dy: 0, flag: RoadDirection.WEST, opposite: RoadDirection.EAST },
-      { dx: 1, dy: 0, flag: RoadDirection.EAST, opposite: RoadDirection.WEST },
-    ];
-
-    for (const dir of dirs) {
+    for (const dir of CARDINAL_DIRECTIONS) {
       const nx = x + dir.dx;
       const ny = y + dir.dy;
       const neighbor = this.grid.getCell(nx, ny);
@@ -142,35 +100,5 @@ export class RoadBuilder {
         });
       }
     }
-  }
-
-  private getCellsBetween(from: Position, to: Position): Position[] {
-    const cells: Position[] = [];
-    const dx = Math.sign(to.x - from.x);
-    const dy = Math.sign(to.y - from.y);
-
-    let x = from.x;
-    let y = from.y;
-
-    // First move horizontally, then vertically (L-shaped path)
-    while (x !== to.x) {
-      cells.push({ x, y });
-      x += dx;
-    }
-    while (y !== to.y) {
-      cells.push({ x, y });
-      y += dy;
-    }
-    cells.push({ x: to.x, y: to.y });
-
-    return cells;
-  }
-
-  private getDirection(from: Position, to: Position): number {
-    if (to.y < from.y) return RoadDirection.NORTH;
-    if (to.y > from.y) return RoadDirection.SOUTH;
-    if (to.x < from.x) return RoadDirection.WEST;
-    if (to.x > from.x) return RoadDirection.EAST;
-    return 0;
   }
 }

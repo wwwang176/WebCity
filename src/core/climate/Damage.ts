@@ -13,8 +13,15 @@ export interface BuildingPosition {
   y: number;
 }
 
-const BASE_REPAIR_COST_PER_DAMAGE = 2000;
-const DESTRUCTION_THRESHOLD = 0.9;
+/** Damage system configuration constants */
+export const DAMAGE = {
+  /** Base repair cost per unit of damage */
+  BASE_REPAIR_COST: 2000,
+  /** Damage level at which building is considered destroyed */
+  DESTRUCTION_THRESHOLD: 0.9,
+  /** Minimum damage level for road destruction */
+  ROAD_DAMAGE_THRESHOLD: 0.3,
+} as const;
 
 export function applyDamage(
   buildings: BuildingPosition[],
@@ -22,8 +29,8 @@ export function applyDamage(
 ): DamageState[] {
   return buildings.map((building) => {
     const damageLevel = calculateDamage(disaster, building.x, building.y);
-    const repairCost = Math.round(damageLevel * BASE_REPAIR_COST_PER_DAMAGE);
-    const destroyed = damageLevel >= DESTRUCTION_THRESHOLD;
+    const repairCost = Math.round(damageLevel * DAMAGE.BASE_REPAIR_COST);
+    const destroyed = damageLevel >= DAMAGE.DESTRUCTION_THRESHOLD;
 
     return {
       buildingId: building.id,
@@ -50,5 +57,5 @@ export function isRoadDamaged(
   disaster: Disaster,
 ): boolean {
   const damage = calculateDamage(disaster, x, y);
-  return damage > 0.3;
+  return damage > DAMAGE.ROAD_DAMAGE_THRESHOLD;
 }

@@ -1,4 +1,5 @@
 import type { LaneEdge } from './LaneGraph';
+import { collectEdgeCells } from './CommuteCacheHelpers';
 
 export interface CachedRoute {
   citizenId: number;
@@ -135,20 +136,19 @@ export class CommuteCache {
 
   // ── Internal ──
 
-  private registerCellIndex(citizenId: number, route: CachedRoute): void {
+  private collectRouteCells(route: CachedRoute): Set<string> {
     const cells = new Set<string>();
     if (route.morningPath) {
-      for (const edge of route.morningPath) {
-        cells.add(edge.from.cellKey);
-        cells.add(edge.to.cellKey);
-      }
+      for (const c of collectEdgeCells(route.morningPath)) cells.add(c);
     }
     if (route.eveningPath) {
-      for (const edge of route.eveningPath) {
-        cells.add(edge.from.cellKey);
-        cells.add(edge.to.cellKey);
-      }
+      for (const c of collectEdgeCells(route.eveningPath)) cells.add(c);
     }
+    return cells;
+  }
+
+  private registerCellIndex(citizenId: number, route: CachedRoute): void {
+    const cells = this.collectRouteCells(route);
     for (const cellKey of cells) {
       let set = this.cellIndex.get(cellKey);
       if (!set) {
@@ -160,19 +160,7 @@ export class CommuteCache {
   }
 
   private removeCellIndexEntries(citizenId: number, route: CachedRoute): void {
-    const cells = new Set<string>();
-    if (route.morningPath) {
-      for (const edge of route.morningPath) {
-        cells.add(edge.from.cellKey);
-        cells.add(edge.to.cellKey);
-      }
-    }
-    if (route.eveningPath) {
-      for (const edge of route.eveningPath) {
-        cells.add(edge.from.cellKey);
-        cells.add(edge.to.cellKey);
-      }
-    }
+    const cells = this.collectRouteCells(route);
     for (const cellKey of cells) {
       const set = this.cellIndex.get(cellKey);
       if (set) {
@@ -185,11 +173,6 @@ export class CommuteCache {
   }
 
   private collectCellsFromPath(path: LaneEdge[]): Set<string> {
-    const cells = new Set<string>();
-    for (const edge of path) {
-      cells.add(edge.from.cellKey);
-      cells.add(edge.to.cellKey);
-    }
-    return cells;
+    return collectEdgeCells(path);
   }
 }

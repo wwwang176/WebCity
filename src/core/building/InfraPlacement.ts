@@ -1,5 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType } from '../grid/types';
+import { RoadType } from '../road/types';
 import {
   getInfraConfig,
   getInfraConfigById,
@@ -11,6 +12,9 @@ import {
 /** Reserved value for secondary cells of multi-cell buildings. */
 export const MULTI_CELL_OCCUPIED = 4;
 
+/** Reserved value for burned/charred buildings. */
+export const BURNED = 3;
+
 /**
  * Reserved values for primary cell rotation encoding.
  * 0 = 0° (default), 5 = 90°, 6 = 180°, 7 = 270°
@@ -18,9 +22,11 @@ export const MULTI_CELL_OCCUPIED = 4;
 export const ROTATION_RESERVED: Record<Rotation, number> = { 0: 0, 90: 5, 180: 6, 270: 7 };
 export const RESERVED_TO_ROTATION: Record<number, Rotation> = { 0: 0, 5: 90, 6: 180, 7: 270 };
 
+const ROTATION_VALUES = new Set(Object.values(ROTATION_RESERVED));
+
 /** Check if a reserved value represents a primary cell (not secondary, not burned). */
 export function isPrimaryCellReserved(reserved: number): boolean {
-  return reserved === 0 || reserved === 5 || reserved === 6 || reserved === 7;
+  return ROTATION_VALUES.has(reserved);
 }
 
 export type PlaceResult =
@@ -55,7 +61,7 @@ export function canPlaceInfra(
       const cell = grid.getCell(cx, cy);
       if (!cell) return { ok: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { ok: false, reason: 'WATER_TILE' };
-      if (cell.roadType !== 0 || cell.buildingId !== 0) return { ok: false, reason: 'TILE_OCCUPIED' };
+      if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) return { ok: false, reason: 'TILE_OCCUPIED' };
 
       if (type === 'water' && groundwaterFn && groundwaterFn(cx, cy) > 0) {
         hasGroundwater = true;
@@ -142,6 +148,38 @@ export function findPrimaryCell(
 }
 
 /**
+ * Iterate all cells of a multi-cell building, given any cell coordinate that
+ * belongs to it. Finds the primary cell automatically, then scans the footprint.
+ */
+export function forEachMultiCell(
+  grid: Grid,
+  x: number,
+  y: number,
+  callback: (cx: number, cy: number) => void,
+): void {
+  const cell = grid.getCell(x, y);
+  if (!cell || cell.buildingId === 0) return;
+
+  const cfg = getInfraConfigById(cell.buildingId);
+  if (!cfg) return;
+
+  const primary = findPrimaryCell(grid, x, y);
+  if (!primary) return;
+
+  const maxDim = Math.max(cfg.width, cfg.height);
+  for (let dy = 0; dy < maxDim; dy++) {
+    for (let dx = 0; dx < maxDim; dx++) {
+      const cx = primary.x + dx;
+      const cy = primary.y + dy;
+      const c = grid.getCell(cx, cy);
+      if (c && c.buildingId === cell.buildingId) {
+        callback(cx, cy);
+      }
+    }
+  }
+}
+
+/**
  * Compute the center cell of a multi-cell building given its primary (top-left) cell.
  * Used for service coverage distance calculations so coverage radiates from building center.
  */
@@ -190,33 +228,18 @@ export function removeInfraFromGrid(
   const cell = grid.getCell(x, y);
   if (!cell || cell.buildingId === 0) return null;
 
-  const cfg = getInfraConfigById(cell.buildingId);
-  if (!cfg) return null;
-
   const primary = findPrimaryCell(grid, x, y);
   if (!primary) return null;
 
-  // Determine the actual footprint size
-  // Since we don't store rotation, we figure it out from the grid pattern
-  const maxDim = Math.max(cfg.width, cfg.height);
-
-  // Scan the area to find all cells belonging to this building
-  for (let dy = 0; dy < maxDim; dy++) {
-    for (let dx = 0; dx < maxDim; dx++) {
-      const cx = primary.x + dx;
-      const cy = primary.y + dy;
-      const c = grid.getCell(cx, cy);
-      if (c && c.buildingId === cfg.buildingId) {
-        grid.setCell(cx, cy, {
-          buildingId: 0,
-          reserved: 0,
-          roadType: 0,
-          roadFlags: 0,
-          zoneType: 0,
-        });
-      }
-    }
-  }
+  forEachMultiCell(grid, x, y, (cx, cy) => {
+    grid.setCell(cx, cy, {
+      buildingId: 0,
+      reserved: 0,
+      roadType: 0,
+      roadFlags: 0,
+      zoneType: 0,
+    });
+  });
 
   return { primaryX: primary.x, primaryY: primary.y };
 }

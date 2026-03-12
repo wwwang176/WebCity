@@ -15,6 +15,18 @@ export interface SeasonEffects {
 
 const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
 
+/** Seasonal effect parameters */
+export const SEASON_EFFECTS = {
+  SPRING_HAPPINESS: 5,
+  SUMMER_TROPICAL_WATER: 1.2,
+  SUMMER_ARID_WATER: 1.3,
+  SUMMER_ARID_POWER: 1.1,
+  WINTER_POWER: 1.3,
+  WINTER_HAPPINESS: -5,
+  WINTER_CONTINENTAL_POWER: 1.5,
+  WINTER_CONTINENTAL_HAPPINESS: -8,
+} as const;
+
 export function getSeasonFromTick(tick: number, ticksPerYear: number): Season {
   const tickInYear = tick % ticksPerYear;
   const quarterLength = ticksPerYear / 4;
@@ -22,38 +34,37 @@ export function getSeasonFromTick(tick: number, ticksPerYear: number): Season {
   return SEASONS[seasonIndex] ?? 'spring';
 }
 
+const DEFAULT_EFFECTS: SeasonEffects = { powerDemandMultiplier: 1.0, waterDemandMultiplier: 1.0, happinessModifier: 0 };
+
+type SeasonOverride = (base: SeasonEffects, climate: ClimateType) => void;
+
+/** Data-driven season effect overrides (OCP). */
+export const SEASON_EFFECT_OVERRIDES: Record<Season, SeasonOverride> = {
+  spring(effects) {
+    effects.happinessModifier = SEASON_EFFECTS.SPRING_HAPPINESS;
+  },
+  summer(effects, climate) {
+    if (climate === ClimateType.TROPICAL) {
+      effects.waterDemandMultiplier = SEASON_EFFECTS.SUMMER_TROPICAL_WATER;
+    }
+    if (climate === ClimateType.ARID) {
+      effects.waterDemandMultiplier = SEASON_EFFECTS.SUMMER_ARID_WATER;
+      effects.powerDemandMultiplier = SEASON_EFFECTS.SUMMER_ARID_POWER;
+    }
+  },
+  autumn() { /* no overrides */ },
+  winter(effects, climate) {
+    effects.powerDemandMultiplier = SEASON_EFFECTS.WINTER_POWER;
+    effects.happinessModifier = SEASON_EFFECTS.WINTER_HAPPINESS;
+    if (climate === ClimateType.CONTINENTAL) {
+      effects.powerDemandMultiplier = SEASON_EFFECTS.WINTER_CONTINENTAL_POWER;
+      effects.happinessModifier = SEASON_EFFECTS.WINTER_CONTINENTAL_HAPPINESS;
+    }
+  },
+};
+
 export function getSeasonEffects(season: Season, climateType: ClimateType): SeasonEffects {
-  const effects: SeasonEffects = {
-    powerDemandMultiplier: 1.0,
-    waterDemandMultiplier: 1.0,
-    happinessModifier: 0,
-  };
-
-  switch (season) {
-    case 'spring':
-      effects.happinessModifier = 5;
-      break;
-    case 'summer':
-      if (climateType === ClimateType.TROPICAL) {
-        effects.waterDemandMultiplier = 1.2;
-      }
-      if (climateType === ClimateType.ARID) {
-        effects.waterDemandMultiplier = 1.3;
-        effects.powerDemandMultiplier = 1.1;
-      }
-      break;
-    case 'autumn':
-      // Neutral effects
-      break;
-    case 'winter':
-      effects.powerDemandMultiplier = 1.3;
-      effects.happinessModifier = -5;
-      if (climateType === ClimateType.CONTINENTAL) {
-        effects.powerDemandMultiplier = 1.5;
-        effects.happinessModifier = -8;
-      }
-      break;
-  }
-
+  const effects: SeasonEffects = { ...DEFAULT_EFFECTS };
+  SEASON_EFFECT_OVERRIDES[season](effects, climateType);
   return effects;
 }

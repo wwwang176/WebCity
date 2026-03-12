@@ -1,0 +1,78 @@
+import { isZoneBuilding } from '../building/InfraConfig';
+import { getBuildingType } from '../building/types';
+import { isResidentialZone, isCommercialZone, ZoneType } from '../grid/types';
+import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
+import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from './TaxMultipliers';
+import type { IncomeLevel } from '../citizen/types';
+
+export interface ZoneIncomeBreakdown {
+  residential: number;
+  commercial: number;
+  industrial: number;
+  office: number;
+}
+
+/** Minimal cell shape needed for income calculation. */
+interface CellLike {
+  buildingId: number;
+  zoneType: number;
+  reserved: number;
+}
+
+/**
+ * Dependencies for income calculation (DIP).
+ * Both SimulationLoop and Game.ts provide these.
+ */
+export interface IncomeCalcDeps {
+  forEachCell: (fn: (cell: CellLike, x: number, y: number) => void) => void;
+  taxRates: { residential: number; business: number };
+  getCitizensByHome: (posKey: string) => Iterable<{ incomeLevel: IncomeLevel }>;
+  /** Optional per-building revenue multiplier (e.g. district specialization). */
+  getRevenueMultiplier?: (x: number, y: number) => number;
+}
+
+/**
+ * Calculate per-zone-type income breakdown from grid state.
+ * Pure function — no side effects, no dependencies on specific classes.
+ */
+export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown {
+  const incomeTaxRate = deps.taxRates.residential ?? 9;
+  const businessTaxRate = deps.taxRates.business ?? 9;
+
+  let residential = 0;
+  let commercial = 0;
+  let industrial = 0;
+  let office = 0;
+
+  deps.forEachCell((cell, x, y) => {
+    if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) return;
+
+    const btype = getBuildingType(cell.buildingId);
+    if (!btype) return;
+
+    let buildingIncome = 0;
+    if (isResidentialZone(btype.zoneType)) {
+      const posKey = `${x},${y}`;
+      const residents = deps.getCitizensByHome(posKey);
+      for (const citizen of residents) {
+        buildingIncome += ECONOMY.CITIZEN_BASE_INCOME * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+      }
+      // Apply per-building revenue multiplier (e.g. district specialization)
+      if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
+      residential += buildingIncome;
+    } else {
+      const ci = btype.companyIncome ?? 0;
+      buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
+      if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
+      if (isCommercialZone(btype.zoneType)) {
+        commercial += buildingIncome;
+      } else if (btype.zoneType === ZoneType.INDUSTRIAL) {
+        industrial += buildingIncome;
+      } else if (btype.zoneType === ZoneType.OFFICE) {
+        office += buildingIncome;
+      }
+    }
+  });
+
+  return { residential, commercial, industrial, office };
+}

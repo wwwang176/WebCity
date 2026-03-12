@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { BaseTransportSystem, TransportSystemConfig } from '../BaseTransportSystem';
-import { TransportType } from '../types';
+import { BaseTransportSystem, TransportSystemConfig, TRANSPORT_SPEED } from '../BaseTransportSystem';
+import { TransportType, TransportVehicle } from '../types';
 
 // Concrete test implementation (minimal, no overrides)
 class TestTransportSystem extends BaseTransportSystem {
@@ -14,6 +14,46 @@ class TestTransportSystem extends BaseTransportSystem {
       affectedByCongestion: false,
       ...config,
     });
+  }
+}
+
+/** Subclass that tracks onTravelComplete calls for testing. */
+class TrackingTransportSystem extends BaseTransportSystem {
+  completedVehicleIds: number[] = [];
+
+  constructor() {
+    super({
+      type: TransportType.BUS,
+      speed: 5,
+      capacity: 50,
+      dwellTicks: 1,
+      operatingCostPerVehicle: 100,
+      affectedByCongestion: false,
+    });
+  }
+
+  protected override onTravelComplete(vehicle: TransportVehicle): void {
+    this.completedVehicleIds.push(vehicle.id);
+  }
+}
+
+/** Subclass that tracks onRouteDissolved calls for testing. */
+class DissolveTrackingSystem extends BaseTransportSystem {
+  dissolvedRouteIds: number[] = [];
+
+  constructor() {
+    super({
+      type: TransportType.BUS,
+      speed: 2,
+      capacity: 50,
+      dwellTicks: 1,
+      operatingCostPerVehicle: 100,
+      affectedByCongestion: false,
+    });
+  }
+
+  protected override onRouteDissolved(routeId: number): void {
+    this.dissolvedRouteIds.push(routeId);
   }
 }
 
@@ -201,5 +241,76 @@ describe('BaseTransportSystem', () => {
       expect(restored.getVehicles().length).toBe(2);
       expect(restored.getStops()[1]!.passengers).toBe(15);
     });
+  });
+});
+
+describe('onTravelComplete hook', () => {
+  it('should be called when a vehicle arrives at a stop after traveling', () => {
+    const sys = new TrackingTransportSystem();
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    sys.createRoute([s1, s2]);
+
+    sys.tick(); // initial → atStop at s1
+    sys.tick(); // dwell 1→0, depart to s2, travelTicks = ceil(5/5) = 1
+    expect(sys.completedVehicleIds).toEqual([]);
+    sys.tick(); // travel 1→0, arrive at s2 → onTravelComplete called
+    expect(sys.completedVehicleIds).toHaveLength(1);
+    expect(sys.completedVehicleIds[0]).toBe(sys.getVehicles()[0]!.id);
+  });
+
+  it('should not be called when vehicle is still traveling', () => {
+    const sys = new TrackingTransportSystem();
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(10, 0);
+    sys.createRoute([s1, s2]);
+
+    sys.tick(); // initial → atStop
+    sys.tick(); // depart, travelTicks = ceil(10/5) = 2
+    expect(sys.completedVehicleIds).toEqual([]);
+    sys.tick(); // travelTicks 2→1, still traveling
+    expect(sys.completedVehicleIds).toEqual([]);
+    sys.tick(); // travelTicks 1→0, arrive → onTravelComplete
+    expect(sys.completedVehicleIds).toHaveLength(1);
+  });
+});
+
+describe('onRouteDissolved hook', () => {
+  it('should be called for each dissolved route when a stop is removed', () => {
+    const sys = new DissolveTrackingSystem();
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    const s3 = sys.addStop(10, 0);
+    const r1 = sys.createRoute([s1, s2]); // only has s1 and s2
+    const r2 = sys.createRoute([s2, s3]); // only has s2 and s3
+
+    sys.removeStop(s2.id); // dissolves both r1 and r2
+    expect(sys.dissolvedRouteIds).toContain(r1.id);
+    expect(sys.dissolvedRouteIds).toContain(r2.id);
+    expect(sys.dissolvedRouteIds).toHaveLength(2);
+  });
+
+  it('should not be called when route still has enough stops', () => {
+    const sys = new DissolveTrackingSystem();
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    const s3 = sys.addStop(10, 0);
+    sys.createRoute([s1, s2, s3]); // 3 stops, removing one leaves 2
+
+    sys.removeStop(s3.id);
+    expect(sys.dissolvedRouteIds).toHaveLength(0);
+    expect(sys.getRoutes()).toHaveLength(1);
+  });
+});
+
+describe('TRANSPORT_SPEED constants', () => {
+  it('min congestion speed should be between 0 and 1', () => {
+    expect(TRANSPORT_SPEED.MIN_CONGESTION_SPEED).toBeGreaterThan(0);
+    expect(TRANSPORT_SPEED.MIN_CONGESTION_SPEED).toBeLessThan(1);
+  });
+
+  it('congestion speed impact should be between 0 and 1', () => {
+    expect(TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT).toBeGreaterThan(0);
+    expect(TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT).toBeLessThanOrEqual(1);
   });
 });

@@ -1,4 +1,4 @@
-import { type Citizen } from './types';
+import { type Citizen, isWorkingAge } from './types';
 
 export interface HappinessFactors {
   commuteDistance: number;
@@ -11,43 +11,94 @@ export interface HappinessFactors {
   serviceCoverage: number;
 }
 
-export function calculateHappiness(citizen: Citizen, factors: HappinessFactors): number {
-  let happiness = 50;
+/** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
+export interface ThresholdModifier {
+  threshold: number;
+  modifier: number;
+}
 
-  // Commute
-  if (factors.commuteDistance < 5) happiness += 10;
-  else if (factors.commuteDistance > 20) happiness -= 15;
-  else if (factors.commuteDistance > 10) happiness -= 5;
-
-  // Park
-  if (factors.hasPark) happiness += 5;
-
-  // Pollution
-  if (factors.pollution > 50) happiness -= 10;
-  else if (factors.pollution > 25) happiness -= 5;
-
-  // Noise
-  if (factors.noiseLevel > 50) happiness -= 8;
-
-  // Crime
-  if (factors.crimeRate > 50) happiness -= 10;
-  else if (factors.crimeRate > 25) happiness -= 5;
-
-  // Employment
-  if (!factors.isEmployed && citizen.age > 18 && citizen.age <= 65) {
-    happiness -= 15;
+/**
+ * Apply the first matching threshold modifier (descending order, first match wins).
+ * Returns 0 if no threshold is exceeded.
+ */
+export function applyThresholdModifier(
+  value: number,
+  thresholds: readonly ThresholdModifier[],
+  comparison: 'above' | 'atOrAbove' = 'above',
+): number {
+  for (const t of thresholds) {
+    if (comparison === 'above' ? value > t.threshold : value >= t.threshold) {
+      return t.modifier;
+    }
   }
+  return 0;
+}
 
-  // Tax (graduated penalty for high rates)
-  if (factors.taxRate >= 20) happiness -= 35;
-  else if (factors.taxRate >= 18) happiness -= 25;
-  else if (factors.taxRate >= 15) happiness -= 15;
-  else if (factors.taxRate >= 12) happiness -= 5;
-  else if (factors.taxRate < 8) happiness += 5;
-
+export const HAPPINESS = {
+  BASE: 50,
+  MIN: 0,
+  MAX: 100,
+  // Commute
+  SHORT_COMMUTE: 5,
+  SHORT_COMMUTE_BONUS: 10,
+  COMMUTE_MODIFIERS: [
+    { threshold: 20, modifier: -15 },
+    { threshold: 10, modifier: -5 },
+  ] as readonly ThresholdModifier[],
+  // Environment
+  PARK_BONUS: 5,
+  POLLUTION_MODIFIERS: [
+    { threshold: 50, modifier: -10 },
+    { threshold: 25, modifier: -5 },
+  ] as readonly ThresholdModifier[],
+  NOISE_MODIFIERS: [
+    { threshold: 50, modifier: -8 },
+  ] as readonly ThresholdModifier[],
+  CRIME_MODIFIERS: [
+    { threshold: 50, modifier: -10 },
+    { threshold: 25, modifier: -5 },
+  ] as readonly ThresholdModifier[],
+  // Employment
+  UNEMPLOYMENT_PENALTY: -15,
+  // Tax brackets (descending order)
+  TAX_BRACKETS: [
+    { threshold: 20, modifier: -35 },
+    { threshold: 18, modifier: -25 },
+    { threshold: 15, modifier: -15 },
+    { threshold: 12, modifier: -5 },
+  ] as readonly ThresholdModifier[],
+  LOW_TAX_THRESHOLD: 8,
+  LOW_TAX_BONUS: 5,
   // Services
-  if (factors.serviceCoverage >= 5) happiness += 10;
-  else if (factors.serviceCoverage >= 3) happiness += 5;
+  SERVICE_MODIFIERS: [
+    { threshold: 5, modifier: 10 },
+    { threshold: 3, modifier: 5 },
+  ] as readonly ThresholdModifier[],
+} as const;
 
-  return Math.max(0, Math.min(100, happiness));
+export function calculateHappiness(citizen: Citizen, factors: HappinessFactors): number {
+  let happiness = HAPPINESS.BASE;
+
+  // Commute: short-distance bonus, otherwise threshold penalties
+  if (factors.commuteDistance < HAPPINESS.SHORT_COMMUTE) happiness += HAPPINESS.SHORT_COMMUTE_BONUS;
+  else happiness += applyThresholdModifier(factors.commuteDistance, HAPPINESS.COMMUTE_MODIFIERS);
+
+  // Boolean factors
+  if (factors.hasPark) happiness += HAPPINESS.PARK_BONUS;
+  if (!factors.isEmployed && isWorkingAge(citizen.age)) happiness += HAPPINESS.UNEMPLOYMENT_PENALTY;
+
+  // Threshold-based environmental factors (descending, first match wins)
+  happiness += applyThresholdModifier(factors.pollution, HAPPINESS.POLLUTION_MODIFIERS);
+  happiness += applyThresholdModifier(factors.noiseLevel, HAPPINESS.NOISE_MODIFIERS);
+  happiness += applyThresholdModifier(factors.crimeRate, HAPPINESS.CRIME_MODIFIERS);
+
+  // Tax brackets
+  const taxMod = applyThresholdModifier(factors.taxRate, HAPPINESS.TAX_BRACKETS, 'atOrAbove');
+  if (taxMod !== 0) happiness += taxMod;
+  else if (factors.taxRate < HAPPINESS.LOW_TAX_THRESHOLD) happiness += HAPPINESS.LOW_TAX_BONUS;
+
+  // Service coverage
+  happiness += applyThresholdModifier(factors.serviceCoverage, HAPPINESS.SERVICE_MODIFIERS, 'atOrAbove');
+
+  return Math.max(HAPPINESS.MIN, Math.min(HAPPINESS.MAX, happiness));
 }

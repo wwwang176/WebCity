@@ -52,7 +52,7 @@ export function initGameStore(game: Game): void {
     const citizens = state.citizens;
     const pop = citizens.getPopulation();
     const avgHappy = pop > 0
-      ? Math.round(citizens.citizens.reduce((s: number, c: { happiness: number }) => s + c.happiness, 0) / pop)
+      ? Math.round(citizens.getAverageHappiness())
       : 0;
     const bal = Math.floor(state.budget.income - state.budget.expenses);
     const overlay = (game as any).overlayRenderer?.getOverlay?.() ?? 'none';

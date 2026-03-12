@@ -3,7 +3,7 @@ import { Grid } from '../../grid/Grid';
 import { TerrainType, ZoneType } from '../../grid/types';
 import { RailBuilder } from '../RailBuilder';
 import { RailNetwork } from '../RailNetwork';
-import { RailType, TrackDirection, RAIL_COST } from '../types';
+import { RailType, TrackDirection, RAIL } from '../types';
 
 describe('RailBuilder', () => {
   // --- Basic track building ---
@@ -71,7 +71,7 @@ describe('RailBuilder', () => {
     const result = builder.buildTrack({ x: 2, y: 5 }, { x: 6, y: 5 }, 10000);
 
     expect(result.success).toBe(true);
-    expect(result.cost).toBe(5 * RAIL_COST);
+    expect(result.cost).toBe(5 * RAIL.COST_PER_CELL);
   });
 
   it('should charge zero for building over existing track', () => {
@@ -348,7 +348,7 @@ describe('RailBuilder', () => {
     const result = builder.buildTrack({ x: 5, y: 5 }, { x: 5, y: 5 }, 10000);
 
     expect(result.success).toBe(true);
-    expect(result.cost).toBe(RAIL_COST);
+    expect(result.cost).toBe(RAIL.COST_PER_CELL);
     expect(grid.getCell(5, 5)!.railType).toBe(RailType.STANDARD);
     expect(grid.getCell(5, 5)!.railFlags).toBe(0);
   });

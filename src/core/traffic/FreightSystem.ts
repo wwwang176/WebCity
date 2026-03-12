@@ -1,5 +1,5 @@
 import type { Grid } from '../grid/Grid';
-import { ZoneType } from '../grid/types';
+import { ZoneType, isCommercialZone } from '../grid/types';
 
 export interface FreightDemand {
   /** Total cargo produced by industrial buildings per tick. */
@@ -15,6 +15,11 @@ export interface FreightDemand {
  * to commercial zones (consumers). When commercial buildings can't get
  * enough goods, they suffer a growth penalty.
  */
+export const FREIGHT = {
+  INDUSTRIAL_PRODUCTION_RATE: 2,
+  COMMERCIAL_CONSUMPTION_RATE: 1,
+} as const;
+
 export class FreightSystem {
   private cargoStorage = 0;
   private lastDemand: FreightDemand = { production: 0, consumption: 0, shortage: 0 };
@@ -27,23 +32,14 @@ export class FreightSystem {
     let production = 0;
     let consumption = 0;
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell || cell.buildingId === 0) continue;
-
-        if (cell.zoneType === ZoneType.INDUSTRIAL) {
-          // Each industrial building produces 2 cargo units per tick
-          production += 2;
-        } else if (
-          cell.zoneType === ZoneType.COMMERCIAL_LOW ||
-          cell.zoneType === ZoneType.COMMERCIAL_HIGH
-        ) {
-          // Each commercial building consumes 1 cargo unit per tick
-          consumption += 1;
-        }
+    grid.forEachCell((cell) => {
+      if (cell.buildingId === 0) return;
+      if (cell.zoneType === ZoneType.INDUSTRIAL) {
+        production += FREIGHT.INDUSTRIAL_PRODUCTION_RATE;
+      } else if (isCommercialZone(cell.zoneType as ZoneType)) {
+        consumption += FREIGHT.COMMERCIAL_CONSUMPTION_RATE;
       }
-    }
+    });
 
     // Add production to storage
     this.cargoStorage += production;

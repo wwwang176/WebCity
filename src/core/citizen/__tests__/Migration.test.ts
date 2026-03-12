@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
-import { migrationTick, calculateAttractiveness, getImmigrationCap, type CityAttractiveness } from '../Migration';
+import { migrationTick, calculateAttractiveness, getImmigrationCap, ATTRACTIVENESS, IMMIGRATION, type CityAttractiveness } from '../Migration';
 
 const attractiveCity: CityAttractiveness = {
   jobOpenings: 10,
@@ -109,5 +109,18 @@ describe('getImmigrationCap — 移民動態縮放', () => {
       vacantHomes: 0,
     }, 100);
     expect(result.emigrated).toBe(2);
+  });
+
+  it('ATTRACTIVENESS constants should have valid weights', () => {
+    expect(ATTRACTIVENESS.JOB_SCORE).toBeGreaterThan(0);
+    expect(ATTRACTIVENESS.VACANT_SCORE).toBeGreaterThan(0);
+    expect(ATTRACTIVENESS.MAX).toBeGreaterThan(ATTRACTIVENESS.MIN);
+  });
+
+  it('IMMIGRATION constants should be consistent', () => {
+    expect(IMMIGRATION.ATTRACTIVENESS_THRESHOLD).toBeGreaterThan(0);
+    expect(IMMIGRATION.POP_CAP_MIN).toBeGreaterThan(0);
+    expect(IMMIGRATION.EMIGRATION_HAPPINESS_THRESHOLD).toBeGreaterThan(0);
+    expect(IMMIGRATION.IMMIGRANT_MIN_AGE).toBeGreaterThanOrEqual(18);
   });
 });

@@ -15,6 +15,19 @@ export enum RoadDirection {
   EAST = 0b1000,
 }
 
+const ALL_ROAD_DIRECTIONS = [
+  RoadDirection.NORTH, RoadDirection.SOUTH, RoadDirection.WEST, RoadDirection.EAST,
+] as const;
+
+/** Count how many of the 4 direction bitflags are set. */
+export function countRoadDirections(flags: number): number {
+  let count = 0;
+  for (const d of ALL_ROAD_DIRECTIONS) {
+    if (flags & d) count++;
+  }
+  return count;
+}
+
 export interface RoadConfig {
   type: RoadType;
   lanes: number;
@@ -52,7 +65,5 @@ export interface BuildRoadResult {
   cost?: number;
 }
 
-export interface Position {
-  x: number;
-  y: number;
-}
+// Re-export Position from canonical location (DRY)
+export type { Position } from '../grid/types';

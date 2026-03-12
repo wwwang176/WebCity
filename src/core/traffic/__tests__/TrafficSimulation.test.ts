@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TrafficSimulation, getLaneCount } from '../TrafficSimulation';
+import { TrafficSimulation, getLaneCount, getSpeedLimitForCell, TRAFFIC } from '../TrafficSimulation';
 import { RoadType } from '../../road/types';
 
 /** Helper: create a straight edge between two cells. */
@@ -182,6 +182,35 @@ describe('stuck vehicle despawn', () => {
   });
 });
 
+describe('TRAFFIC constants', () => {
+  it('speed multiplier range should produce values between 0 and 1', () => {
+    expect(TRAFFIC.SPEED_MULTIPLIER_MIN).toBeGreaterThan(0);
+    expect(TRAFFIC.SPEED_MULTIPLIER_MIN + TRAFFIC.SPEED_MULTIPLIER_RANGE).toBeLessThanOrEqual(1);
+  });
+
+  it('lookahead distance should be positive', () => {
+    expect(TRAFFIC.LOOKAHEAD_DISTANCE).toBeGreaterThan(0);
+  });
+
+  it('density capacity per cell should be positive', () => {
+    expect(TRAFFIC.DENSITY_CAPACITY_PER_CELL).toBeGreaterThan(0);
+  });
+
+  it('edge speed and reference limit should be positive', () => {
+    expect(TRAFFIC.EDGE_SPEED).toBeGreaterThan(0);
+    expect(TRAFFIC.REFERENCE_LIMIT).toBeGreaterThan(0);
+  });
+
+  it('min gap should be positive and less than 1', () => {
+    expect(TRAFFIC.MIN_GAP).toBeGreaterThan(0);
+    expect(TRAFFIC.MIN_GAP).toBeLessThan(1);
+  });
+
+  it('despawn stall time should be positive', () => {
+    expect(TRAFFIC.DESPAWN_STALL_TIME).toBeGreaterThan(0);
+  });
+});
+
 describe('predicted congestion flow', () => {
   it('should accept predicted flow map and use it for getSegmentDensity', () => {
     const sim = new TrafficSimulation();
@@ -249,6 +278,30 @@ describe('getLaneCount', () => {
 
   it('should return 2 for ONE_WAY (all lanes in one direction)', () => {
     expect(getLaneCount(RoadType.ONE_WAY)).toBe(2);
+  });
+});
+
+describe('getSpeedLimitForCell', () => {
+  it('should return default 50 for non-road cells', () => {
+    const grid = { getCell: () => ({ roadType: 0 }) };
+    expect(getSpeedLimitForCell(grid, '5,5')).toBe(50);
+  });
+
+  it('should return default 50 for null cell', () => {
+    const grid = { getCell: () => null };
+    expect(getSpeedLimitForCell(grid, '5,5')).toBe(50);
+  });
+
+  it('should return speed limit from road config for road cells', () => {
+    const grid = { getCell: () => ({ roadType: RoadType.HIGHWAY }) };
+    const limit = getSpeedLimitForCell(grid, '5,5');
+    expect(limit).toBeGreaterThan(50); // highways are faster
+  });
+
+  it('should return speed limit for two-lane road', () => {
+    const grid = { getCell: () => ({ roadType: RoadType.TWO_LANE }) };
+    const limit = getSpeedLimitForCell(grid, '3,3');
+    expect(limit).toBe(50); // default two-lane speed
   });
 });
 

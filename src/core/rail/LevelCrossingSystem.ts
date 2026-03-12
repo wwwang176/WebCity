@@ -1,4 +1,6 @@
 import type { Grid } from '../grid/Grid';
+import { toPosKey, hasVerticalFlag } from '../grid/GridHelpers';
+import { RoadType } from '../road/types';
 import { RailType, TrackDirection } from './types';
 
 export enum CrossingState {
@@ -16,14 +18,15 @@ export interface LevelCrossing {
   cooldownTime: number;
 }
 
-/** Activation radius (Manhattan distance in cells). Crossing activates when a train is within this distance. */
-const ACTIVATION_RADIUS = 2.5;
-/** Seconds the crossing stays active after the train moves away. */
-const COOLDOWN_DURATION = 1.5;
+/** Level crossing configuration constants */
+export const LEVEL_CROSSING = {
+  /** Activation radius (Manhattan distance in cells). Crossing activates when a train is within this distance. */
+  ACTIVATION_RADIUS: 2.5,
+  /** Seconds the crossing stays active after the train moves away. */
+  COOLDOWN_DURATION: 1.5,
+} as const;
 
-function cellKey(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const cellKey = toPosKey;
 
 /**
  * Manages level crossing (railroad crossing) state.
@@ -33,7 +36,7 @@ function cellKey(x: number, y: number): string {
 export class LevelCrossingSystem {
   private crossings = new Map<string, LevelCrossing>();
 
-  /** Scan grid for cells with both railType > 0 and roadType > 0. */
+  /** Scan grid for cells with both railType !== RailType.NONE and roadType !== RoadType.NONE. */
   rebuildFromGrid(grid: Grid): void {
     this.crossings.clear();
 
@@ -41,8 +44,8 @@ export class LevelCrossingSystem {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
-        if (cell.railType !== RailType.NONE && cell.roadType > 0) {
-          const hasVert = (cell.railFlags & (TrackDirection.NORTH | TrackDirection.SOUTH)) !== 0;
+        if (cell.railType !== RailType.NONE && cell.roadType !== RoadType.NONE) {
+          const hasVert = hasVerticalFlag(cell.railFlags);
           const railOrientation: 'NS' | 'EW' = hasVert ? 'NS' : 'EW';
 
           this.crossings.set(cellKey(x, y), {
@@ -75,7 +78,7 @@ export class LevelCrossingSystem {
       for (const [key, crossing] of this.crossings) {
         const dx = Math.abs(pos.x - crossing.x);
         const dy = Math.abs(pos.y - crossing.y);
-        if (dx + dy <= ACTIVATION_RADIUS) {
+        if (dx + dy <= LEVEL_CROSSING.ACTIVATION_RADIUS) {
           activeCrossings.add(key);
         }
       }
@@ -85,7 +88,7 @@ export class LevelCrossingSystem {
     for (const [key, crossing] of this.crossings) {
       if (activeCrossings.has(key)) {
         crossing.state = CrossingState.ACTIVE;
-        crossing.cooldownTime = COOLDOWN_DURATION;
+        crossing.cooldownTime = LEVEL_CROSSING.COOLDOWN_DURATION;
       } else if (crossing.cooldownTime > 0) {
         crossing.cooldownTime -= dt * Math.max(speed, 0.001);
         if (crossing.cooldownTime <= 0) {

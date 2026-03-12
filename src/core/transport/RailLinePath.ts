@@ -27,19 +27,13 @@ export interface RailLinePath {
   totalLength: number;
 }
 
+import { parsePosKeyUnsafe, euclideanDistance } from '../grid/GridHelpers';
+
 function dist(a: RailPathPoint, b: RailPathPoint): number {
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  return Math.sqrt(dx * dx + dy * dy);
+  return euclideanDistance(a.x, a.y, b.x, b.y);
 }
 
-/**
- * Parse "x,y" node IDs from RailNetwork.findPath into coordinates.
- */
-function parseNodeId(id: string): RailPathPoint {
-  const [xs, ys] = id.split(',');
-  return { x: Number(xs), y: Number(ys) };
-}
+const parseNodeId = parsePosKeyUnsafe as (id: string) => RailPathPoint;
 
 /**
  * Compute the total length of a sequence of grid points.

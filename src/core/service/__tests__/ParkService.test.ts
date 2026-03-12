@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { ParkService } from '../ParkService';
+import { ParkService, PARK } from '../ParkService';
 
 describe('ParkService', () => {
   it('should create an instance with no parks', () => {
@@ -208,5 +208,31 @@ describe('ParkService', () => {
       const restored = ParkService.fromJSON([]);
       expect(restored.getParks()).toHaveLength(0);
     });
+  });
+});
+
+describe('PARK constants', () => {
+  it('land value per park should be positive', () => {
+    expect(PARK.LAND_VALUE_PER_PARK).toBeGreaterThan(0);
+  });
+
+  it('land value cap should be >= land value per park', () => {
+    expect(PARK.LAND_VALUE_CAP).toBeGreaterThanOrEqual(PARK.LAND_VALUE_PER_PARK);
+  });
+
+  it('pollution per park should be negative (reduction)', () => {
+    expect(PARK.POLLUTION_PER_PARK).toBeLessThan(0);
+  });
+
+  it('pollution cap should be <= pollution per park', () => {
+    expect(PARK.POLLUTION_CAP).toBeLessThanOrEqual(PARK.POLLUTION_PER_PARK);
+  });
+
+  it('happiness per park should be positive', () => {
+    expect(PARK.HAPPINESS_PER_PARK).toBeGreaterThan(0);
+  });
+
+  it('happiness cap should be >= happiness per park', () => {
+    expect(PARK.HAPPINESS_CAP).toBeGreaterThanOrEqual(PARK.HAPPINESS_PER_PARK);
   });
 });

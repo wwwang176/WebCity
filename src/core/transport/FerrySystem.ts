@@ -96,16 +96,13 @@ export class FerrySystem extends BaseTransportSystem {
   }
 
   removeDock(dockId: number): void {
-    // Clean up vessel paths for dissolved routes
-    const dissolvedIds: number[] = [];
-    for (const r of this.routes) {
-      const filtered = r.stops.filter(s => s.id !== dockId);
-      if (filtered.length < 2) dissolvedIds.push(r.id);
-    }
-    for (const v of this.vehicles) {
-      if (dissolvedIds.includes(v.routeId)) this.vesselPaths.delete(v.id);
-    }
     this.removeStop(dockId);
+  }
+
+  protected override onRouteDissolved(routeId: number): void {
+    for (const v of this.vehicles) {
+      if (v.routeId === routeId) this.vesselPaths.delete(v.id);
+    }
   }
 
   override createRoute(stops: TransportStop[], vehicleCount = 1): TransportRoute {
@@ -189,18 +186,8 @@ export class FerrySystem extends BaseTransportSystem {
     // No water path or no grid — fallback travelTicks already set by base
   }
 
-  protected override tickTraveling(vehicle: TransportVehicle, route: TransportRoute): void {
-    // 位置移動由渲染端動畫處理，此處只倒數 travelTicks
-    vehicle.travelTicks--;
-    if (vehicle.travelTicks <= 0) {
-      const dock = route.stops[vehicle.currentStopIndex]!;
-      vehicle.position = { x: dock.x, y: dock.y };
-      vehicle.traveling = false;
-      vehicle.atStop = true;
-      vehicle.waitTicks = this.config.dwellTicks;
-      this.onArrive(vehicle, dock);
-      this.vesselPaths.delete(vehicle.id);
-    }
+  protected override onTravelComplete(vehicle: TransportVehicle): void {
+    this.vesselPaths.delete(vehicle.id);
   }
 
   // ── Serialization ───────────────────────────────────────────────

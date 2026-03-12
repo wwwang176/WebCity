@@ -1,5 +1,7 @@
 import type { GameState } from './GameState';
 import type { GameSpeed } from './GameClock';
+import { isZoneBuilding, isInfrastructureBuilding } from '../building/InfraConfig';
+import { RoadType } from '../road/types';
 
 export interface DebugSnapshot {
   tick: number;
@@ -42,22 +44,18 @@ export class DebugTools {
     let totalPollution = 0;
     let cellCount = 0;
 
-    for (let y = 0; y < grid.height; y++) {
-      for (let x = 0; x < grid.width; x++) {
-        const cell = grid.getCell(x, y);
-        if (!cell) continue;
-        cellCount++;
-        if (cell.buildingId > 0 && cell.buildingId < 243) buildingCount++;
-        if (cell.buildingId >= 243) infraCount++;
-        if (cell.roadType > 0) roadCount++;
-        totalLandValue += cell.landValue;
-        totalPollution += cell.pollution;
-      }
-    }
+    grid.forEachCell((cell) => {
+      cellCount++;
+      if (isZoneBuilding(cell.buildingId)) buildingCount++;
+      if (isInfrastructureBuilding(cell.buildingId)) infraCount++;
+      if (cell.roadType !== RoadType.NONE) roadCount++;
+      totalLandValue += cell.landValue;
+      totalPollution += cell.pollution;
+    });
 
-    const pop = citizens.citizens.length;
+    const pop = citizens.getPopulation();
     const avgHappiness = pop > 0
-      ? Math.round(citizens.citizens.reduce((sum, c) => sum + (c.happiness ?? 0), 0) / pop)
+      ? Math.round(citizens.getAverageHappiness())
       : 0;
 
     const powerSupply = power.getPlants().reduce((sum, p) => sum + p.output, 0);
@@ -102,23 +100,19 @@ export class DebugTools {
     ];
   }
 
+  private readonly paramSetters: Record<string, (value: number) => void> = {
+    funds: (v) => { this.state.budget.funds = v; },
+    speed: (v) => { this.setSpeed(v); },
+    taxRate: (v) => { this.state.taxRates.residential = v; },
+    businessTaxRate: (v) => {
+      this.state.taxRates.business = v;
+      this.state.taxRates.commercial = v;
+      this.state.taxRates.industrial = v;
+      this.state.taxRates.office = v;
+    },
+  };
+
   setParam(name: string, value: number): void {
-    switch (name) {
-      case 'funds':
-        this.state.budget.funds = value;
-        break;
-      case 'speed':
-        this.setSpeed(value);
-        break;
-      case 'taxRate':
-        this.state.taxRates.residential = value;
-        break;
-      case 'businessTaxRate':
-        this.state.taxRates.business = value;
-        this.state.taxRates.commercial = value;
-        this.state.taxRates.industrial = value;
-        this.state.taxRates.office = value;
-        break;
-    }
+    this.paramSetters[name]?.(value);
   }
 }

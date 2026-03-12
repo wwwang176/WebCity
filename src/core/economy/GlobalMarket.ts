@@ -12,11 +12,23 @@ const BASE_PRICES: Record<ResourceType, number> = {
   [ResourceType.ELECTRONICS]: 150,
 };
 
-const IMPORT_MARKUP = 1.1; // 10% markup on imports
-const PRICE_MIN_RATIO = 0.2; // Price won't go below 20% of base
-const PRICE_MAX_RATIO = 3.0; // Price won't go above 300% of base
-const VOLATILITY = 0.02; // Random price fluctuation per tick
-const SUPPLY_DEMAND_FACTOR = 0.005; // How much trade affects price
+/** Global market simulation constants */
+export const MARKET_CONFIG = {
+  /** Markup multiplier on import prices (10%) */
+  IMPORT_MARKUP: 1.1,
+  /** Price floor ratio relative to base price (20%) */
+  PRICE_MIN_RATIO: 0.2,
+  /** Price ceiling ratio relative to base price (300%) */
+  PRICE_MAX_RATIO: 3.0,
+  /** Random price fluctuation per tick */
+  VOLATILITY: 0.02,
+  /** How much trade volume affects price */
+  SUPPLY_DEMAND_FACTOR: 0.005,
+  /** Strength of price mean reversion toward base */
+  MEAN_REVERSION_FACTOR: 0.01,
+  /** Supply pressure decay per tick */
+  SUPPLY_PRESSURE_DECAY: 0.9,
+} as const;
 
 interface ResourceState {
   price: number;
@@ -54,7 +66,7 @@ export class GlobalMarket {
   }
 
   importResource(type: ResourceType, quantity: number): number {
-    const cost = this.resources[type].price * quantity * IMPORT_MARKUP;
+    const cost = this.resources[type].price * quantity * MARKET_CONFIG.IMPORT_MARKUP;
     this.resources[type].supplyPressure -= quantity;
     return Math.round(cost * 100) / 100;
   }
@@ -65,23 +77,23 @@ export class GlobalMarket {
       const base = BASE_PRICES[type];
 
       // Random market fluctuation
-      const randomChange = (Math.random() - 0.5) * 2 * VOLATILITY * base;
+      const randomChange = (Math.random() - 0.5) * 2 * MARKET_CONFIG.VOLATILITY * base;
 
       // Supply/demand pressure effect
-      const pressureEffect = -state.supplyPressure * SUPPLY_DEMAND_FACTOR;
+      const pressureEffect = -state.supplyPressure * MARKET_CONFIG.SUPPLY_DEMAND_FACTOR;
 
       // Mean reversion: gently pull price back toward base
-      const reversion = (base - state.price) * 0.01;
+      const reversion = (base - state.price) * MARKET_CONFIG.MEAN_REVERSION_FACTOR;
 
       state.price += randomChange + pressureEffect + reversion;
 
       // Clamp price
-      const minPrice = base * PRICE_MIN_RATIO;
-      const maxPrice = base * PRICE_MAX_RATIO;
+      const minPrice = base * MARKET_CONFIG.PRICE_MIN_RATIO;
+      const maxPrice = base * MARKET_CONFIG.PRICE_MAX_RATIO;
       state.price = Math.max(minPrice, Math.min(maxPrice, state.price));
 
       // Decay supply pressure over time
-      state.supplyPressure *= 0.9;
+      state.supplyPressure *= MARKET_CONFIG.SUPPLY_PRESSURE_DECAY;
     }
   }
 

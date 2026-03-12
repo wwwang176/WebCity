@@ -2,9 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
 import { ZoneType } from '../core/grid/types';
-import { getInfraConfig, getRotatedSize, type InfraType as InfraConfigType, type Rotation } from '../core/building/InfraConfig';
+import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { ViewMode } from '../core/ViewMode';
-import { RESERVED_TO_ROTATION } from '../core/building/InfraPlacement';
+import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED } from '../core/building/InfraPlacement';
 
 // ===== Deterministic pseudo-random based on position =====
 function hash(x: number, y: number): number {
@@ -855,36 +855,6 @@ const VARIANTS: Record<number, GeoBuilder[]> = {
   [ZoneType.OFFICE]:           [makeOfficeV1, makeOfficeV2, makeOfficeV3],
 };
 
-// ===== Infrastructure buildingId markers =====
-const INFRA_POWER_ID = 254;
-const INFRA_WATER_ID = 253;
-const INFRA_POLICE_ID = 252;
-const INFRA_FIRE_ID = 251;
-const INFRA_HOSPITAL_ID = 250;
-const INFRA_SCHOOL_ID = 249;
-const INFRA_PARK_ID = 248;
-const INFRA_GARBAGE_ID = 247;
-const INFRA_SEWAGE_ID = 246;
-const INFRA_CEMETERY_ID = 245;
-const INFRA_SCHOOL_HIGH_ID = 244;
-const INFRA_SCHOOL_UNIV_ID = 243;
-// Transport stop buildingIds
-const TRANS_BUS_STOP_ID = 242;
-const TRANS_METRO_STATION_ID = 241;
-const TRANS_TRAIN_STATION_ID = 239;
-const TRANS_FERRY_DOCK_ID = 238;
-const TRANS_AIRPORT_ID = 237;
-type InfraType = 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery'
-  | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport';
-const INFRA_ID_MAP: Record<number, InfraType> = {
-  [INFRA_POWER_ID]: 'power', [INFRA_WATER_ID]: 'water',
-  [INFRA_POLICE_ID]: 'police', [INFRA_FIRE_ID]: 'fire', [INFRA_HOSPITAL_ID]: 'hospital',
-  [INFRA_SCHOOL_ID]: 'school', [INFRA_SCHOOL_HIGH_ID]: 'school_high', [INFRA_SCHOOL_UNIV_ID]: 'school_univ',
-  [INFRA_PARK_ID]: 'park', [INFRA_GARBAGE_ID]: 'garbage', [INFRA_SEWAGE_ID]: 'sewage', [INFRA_CEMETERY_ID]: 'cemetery',
-  [TRANS_BUS_STOP_ID]: 'bus_stop', [TRANS_METRO_STATION_ID]: 'metro_station',
-  [TRANS_TRAIN_STATION_ID]: 'train_station',
-  [TRANS_FERRY_DOCK_ID]: 'ferry_dock', [TRANS_AIRPORT_ID]: 'airport',
-};
 
 interface BuildingData { x: number; y: number; level: number; burned?: boolean }
 
@@ -1101,19 +1071,19 @@ export class BuildingRenderer {
       for (let x = 0; x < grid.width; x++) {
         const cell = grid.getCell(x, y);
         if (!cell) continue;
-        if (cell.reserved === 4) continue;
+        if (cell.reserved === MULTI_CELL_OCCUPIED) continue;
 
-        const infraType = INFRA_ID_MAP[cell.buildingId];
-        if (infraType) {
-          infraCells.push({ x, y, type: infraType, reserved: cell.reserved });
+        const infraCfg = getInfraConfigById(cell.buildingId);
+        if (infraCfg) {
+          infraCells.push({ x, y, type: infraCfg.type, reserved: cell.reserved });
           lightPositions.push({ x, y });
           continue;
         }
 
         if (cell.zoneType !== ZoneType.NONE) {
-          if (cell.buildingId > 0 && cell.buildingId < INFRA_WATER_ID) {
+          if (isZoneBuilding(cell.buildingId)) {
             const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1));
-            const burned = cell.reserved === 3;
+            const burned = cell.reserved === BURNED;
             this.addBuilding(x, y, cell.zoneType, level, burned);
             if (!burned) lightPositions.push({ x, y });
           } else if (cell.buildingId === 0) {
@@ -1161,7 +1131,7 @@ export class BuildingRenderer {
 
   private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: InfraType; reserved: number }[]): void {
     for (const inf of cells) {
-      const cfg = getInfraConfig(inf.type as InfraConfigType);
+      const cfg = getInfraConfig(inf.type);
       const rotationDeg = RESERVED_TO_ROTATION[inf.reserved] ?? 0;
 
       // Use ROTATED dimensions for center calculation (footprint on grid is rotated)

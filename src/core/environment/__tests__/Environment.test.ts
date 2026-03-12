@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { PollutionManager } from '../Pollution';
-import { NaturalResourceManager, ResourceType } from '../NaturalResourceManager';
-import { WaterFlow } from '../WaterFlow';
+import { PollutionManager, POLLUTION } from '../Pollution';
+import { NaturalResourceManager, ResourceType, NATURAL_RESOURCE } from '../NaturalResourceManager';
+import { WaterFlow, FLOW_DIRECTION_OFFSETS } from '../WaterFlow';
 
 describe('PollutionManager', () => {
   let pm: PollutionManager;
@@ -73,6 +73,24 @@ describe('PollutionManager', () => {
   });
 });
 
+describe('Pollution constants', () => {
+  it('POLLUTION.DECAY_PER_CELL should be positive', () => {
+    expect(POLLUTION.DECAY_PER_CELL).toBeGreaterThan(0);
+  });
+
+  it('POLLUTION.PARK_REDUCTION should be positive', () => {
+    expect(POLLUTION.PARK_REDUCTION).toBeGreaterThan(0);
+  });
+
+  it('decay per cell should match spread behavior', () => {
+    const pm = new PollutionManager(10, 10);
+    pm.addSource(5, 5, 100, 'ground');
+    pm.calculateSpread();
+    // At distance 1, pollution = 100 - DECAY_PER_CELL
+    expect(pm.getPollutionAt(5, 6).ground).toBe(100 - POLLUTION.DECAY_PER_CELL);
+  });
+});
+
 describe('NaturalResourceManager', () => {
   let rm: NaturalResourceManager;
 
@@ -137,6 +155,13 @@ describe('NaturalResourceManager', () => {
     const extracted = rm.extract(6, 6, 5);
     expect(extracted).toBe(0);
   });
+
+  it('NATURAL_RESOURCE config should have valid values', () => {
+    expect(NATURAL_RESOURCE.SPAWN_CHANCE).toBeGreaterThan(0);
+    expect(NATURAL_RESOURCE.SPAWN_CHANCE).toBeLessThan(1);
+    expect(NATURAL_RESOURCE.MIN_AMOUNT).toBeGreaterThan(0);
+    expect(NATURAL_RESOURCE.MAX_AMOUNT).toBeGreaterThan(NATURAL_RESOURCE.MIN_AMOUNT);
+  });
 });
 
 describe('WaterFlow', () => {
@@ -190,5 +215,29 @@ describe('WaterFlow', () => {
     wf.spreadWaterPollution(5, 5, 100);
     // West of source should have no pollution
     expect(wf.getPollutionAt(4, 5)).toBe(0);
+  });
+});
+
+describe('POLLUTION constants', () => {
+  it('decay per cell should be positive', () => {
+    expect(POLLUTION.DECAY_PER_CELL).toBeGreaterThan(0);
+  });
+
+  it('park reduction should be positive', () => {
+    expect(POLLUTION.PARK_REDUCTION).toBeGreaterThan(0);
+  });
+
+});
+
+describe('FLOW_DIRECTION_OFFSETS', () => {
+  it('should have correct offsets for all cardinal directions', () => {
+    expect(FLOW_DIRECTION_OFFSETS.N).toEqual({ dx: 0, dy: -1 });
+    expect(FLOW_DIRECTION_OFFSETS.S).toEqual({ dx: 0, dy: 1 });
+    expect(FLOW_DIRECTION_OFFSETS.E).toEqual({ dx: 1, dy: 0 });
+    expect(FLOW_DIRECTION_OFFSETS.W).toEqual({ dx: -1, dy: 0 });
+  });
+
+  it('should have no-op offset for empty direction', () => {
+    expect(FLOW_DIRECTION_OFFSETS['']).toEqual({ dx: 0, dy: 0 });
   });
 });

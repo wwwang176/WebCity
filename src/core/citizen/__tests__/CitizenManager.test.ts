@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { CitizenManager } from '../CitizenManager';
-import { LifeStage, EducationLevel } from '../types';
+import { CitizenManager, EDUCATION_PROGRESSION, MORTALITY } from '../CitizenManager';
+import { LifeStage, EducationLevel, LIFE_STAGE_AGE, isWorkingAge } from '../types';
 
 describe('CitizenManager', () => {
   it('should create a citizen with unique id', () => {
@@ -51,21 +51,57 @@ describe('CitizenManager', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ age: 8 });
     mgr.educateTick(true, false, false);
-    expect(mgr.citizens[0]!.education).toBe(EducationLevel.ELEMENTARY);
+    expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.ELEMENTARY);
   });
 
   it('should NOT educate TEEN without high school', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ age: 15, education: EducationLevel.ELEMENTARY });
     mgr.educateTick(true, false, false);
-    expect(mgr.citizens[0]!.education).toBe(EducationLevel.ELEMENTARY);
+    expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.ELEMENTARY);
   });
 
   it('should remove citizen on death', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100 });
+    mgr.createCitizen({ age: MORTALITY.MAX_AGE });
     mgr.ageTick();
     expect(mgr.getPopulation()).toBe(0);
+  });
+
+  it('LIFE_STAGE_AGE thresholds should be strictly increasing', () => {
+    expect(LIFE_STAGE_AGE.BABY_MAX).toBeLessThan(LIFE_STAGE_AGE.CHILD_MAX);
+    expect(LIFE_STAGE_AGE.CHILD_MAX).toBeLessThan(LIFE_STAGE_AGE.TEEN_MAX);
+    expect(LIFE_STAGE_AGE.TEEN_MAX).toBeLessThan(LIFE_STAGE_AGE.ADULT_MAX);
+  });
+
+  it('isWorkingAge returns true for adults within working age', () => {
+    expect(isWorkingAge(19)).toBe(true);
+    expect(isWorkingAge(30)).toBe(true);
+    expect(isWorkingAge(65)).toBe(true);
+  });
+
+  it('isWorkingAge returns false for teens and younger', () => {
+    expect(isWorkingAge(0)).toBe(false);
+    expect(isWorkingAge(10)).toBe(false);
+    expect(isWorkingAge(18)).toBe(false);
+  });
+
+  it('isWorkingAge returns false for seniors', () => {
+    expect(isWorkingAge(66)).toBe(false);
+    expect(isWorkingAge(80)).toBe(false);
+  });
+
+  it('isWorkingAge boundary matches LIFE_STAGE_AGE', () => {
+    expect(isWorkingAge(LIFE_STAGE_AGE.TEEN_MAX)).toBe(false);
+    expect(isWorkingAge(LIFE_STAGE_AGE.TEEN_MAX + 1)).toBe(true);
+    expect(isWorkingAge(LIFE_STAGE_AGE.ADULT_MAX)).toBe(true);
+    expect(isWorkingAge(LIFE_STAGE_AGE.ADULT_MAX + 1)).toBe(false);
+  });
+
+  it('MORTALITY constants should have valid age thresholds', () => {
+    expect(MORTALITY.ELDERLY_AGE).toBeLessThan(MORTALITY.MAX_AGE);
+    expect(MORTALITY.ELDERLY_DEATH_CHANCE).toBeGreaterThan(0);
+    expect(MORTALITY.ELDERLY_DEATH_CHANCE).toBeLessThanOrEqual(1);
   });
 
   it('should get citizens by home building position', () => {
@@ -93,5 +129,81 @@ describe('CitizenManager', () => {
     mgr.createCitizen({ age: 30, homeId: '5,10' });
     expect(mgr.getCitizensByHome('99,99')).toEqual([]);
     expect(mgr.getCitizensByWorkplace('99,99')).toEqual([]);
+  });
+
+  describe('getCitizens', () => {
+    it('should return readonly array of all citizens', () => {
+      const mgr = new CitizenManager();
+      mgr.createCitizen({ age: 20 });
+      mgr.createCitizen({ age: 30 });
+      const citizens = mgr.getCitizens();
+      expect(citizens).toHaveLength(2);
+    });
+
+    it('should return empty array when no citizens', () => {
+      const mgr = new CitizenManager();
+      expect(mgr.getCitizens()).toHaveLength(0);
+    });
+  });
+
+  describe('getAverageHappiness', () => {
+    it('should return average happiness of all citizens', () => {
+      const mgr = new CitizenManager();
+      mgr.createCitizen({ age: 25, happiness: 60 });
+      mgr.createCitizen({ age: 30, happiness: 80 });
+      expect(mgr.getAverageHappiness()).toBe(70);
+    });
+
+    it('should return 0 when no citizens', () => {
+      const mgr = new CitizenManager();
+      expect(mgr.getAverageHappiness()).toBe(0);
+    });
+  });
+});
+
+describe('EDUCATION_PROGRESSION', () => {
+  it('should define rules for all three education levels', () => {
+    expect(EDUCATION_PROGRESSION.length).toBe(3);
+    expect(EDUCATION_PROGRESSION[0]!.nextEducation).toBe(EducationLevel.ELEMENTARY);
+    expect(EDUCATION_PROGRESSION[1]!.nextEducation).toBe(EducationLevel.HIGH_SCHOOL);
+    expect(EDUCATION_PROGRESSION[2]!.nextEducation).toBe(EducationLevel.UNIVERSITY);
+  });
+
+  it('should form a valid progression chain', () => {
+    for (let i = 1; i < EDUCATION_PROGRESSION.length; i++) {
+      expect(EDUCATION_PROGRESSION[i]!.requiredEducation).toBe(EDUCATION_PROGRESSION[i - 1]!.nextEducation);
+    }
+  });
+
+  it('university rule should have maxAge cap', () => {
+    const uniRule = EDUCATION_PROGRESSION.find(r => r.schoolKey === 'university');
+    expect(uniRule).toBeDefined();
+    expect(uniRule!.maxAge).toBe(25);
+  });
+
+  it('educateTick promotes through full chain with all schools', () => {
+    const mgr = new CitizenManager();
+    const child = mgr.createCitizen({ age: 8 });
+    mgr.educateTick(true, true, true);
+    expect(child.education).toBe(EducationLevel.ELEMENTARY);
+
+    // Advance to teen
+    child.age = 15;
+    child.lifeStage = LifeStage.TEEN;
+    mgr.educateTick(true, true, true);
+    expect(child.education).toBe(EducationLevel.HIGH_SCHOOL);
+
+    // Advance to young adult
+    child.age = 20;
+    child.lifeStage = LifeStage.ADULT;
+    mgr.educateTick(true, true, true);
+    expect(child.education).toBe(EducationLevel.UNIVERSITY);
+  });
+
+  it('educateTick respects university maxAge', () => {
+    const mgr = new CitizenManager();
+    const adult = mgr.createCitizen({ age: 30, education: EducationLevel.HIGH_SCHOOL });
+    mgr.educateTick(true, true, true);
+    expect(adult.education).toBe(EducationLevel.HIGH_SCHOOL); // too old
   });
 });

@@ -1,3 +1,6 @@
+import { manhattanDistance } from '../grid/GridHelpers';
+import { recoverNextId } from '../utils/recoverNextId';
+
 export type GarbageFacilityType = 'landfill' | 'incinerator';
 
 export interface GarbageFacility {
@@ -14,23 +17,35 @@ const DEFAULT_CAPACITIES: Record<GarbageFacilityType, number> = {
   incinerator: 500,
 };
 
-/** Coverage radius in Manhattan distance for garbage collection trucks */
-const COVERAGE_RANGE = 15;
+/** Garbage service configuration constants */
+export const GARBAGE = {
+  /** Coverage radius in Manhattan distance for garbage collection trucks */
+  COVERAGE_RANGE: 15,
+  /** Fraction of current load that an incinerator burns each tick */
+  INCINERATOR_BURN_RATE: 0.05,
+  /** Garbage production: 1 unit per GARBAGE_PER_POP population */
+  GARBAGE_PER_POP: 100,
+  /** Maintenance cost per garbage facility per tick */
+  MAINTENANCE_PER_FACILITY: 3,
+  /** Max pollution penalty from garbage overflow */
+  MAX_POLLUTION_PENALTY: 100,
+  /** Overflow → pollution multiplier */
+  OVERFLOW_POLLUTION_MULTIPLIER: 2,
+  /** Load ratio above which a facility emits ground pollution */
+  POLLUTION_LOAD_THRESHOLD: 0.5,
+  /** Max pollution amount emitted per overloaded facility */
+  POLLUTION_AMOUNT_SCALE: 40,
+} as const;
 
-/** Fraction of current load that an incinerator burns each tick */
-const INCINERATOR_BURN_RATE = 0.05;
-
-/** Garbage production: 1 unit per GARBAGE_PER_POP population */
-const GARBAGE_PER_POP = 100;
-
-let nextFacilityId = 1;
+import type { PollutionSource } from '../environment/Pollution';
 
 export class GarbageService {
   private facilities: GarbageFacility[] = [];
   private overflow = 0;
+  private nextId = 1;
 
   addFacility(x: number, y: number, type: GarbageFacilityType, capacity?: number): string {
-    const id = `garbage_${nextFacilityId++}`;
+    const id = `garbage_${this.nextId++}`;
     this.facilities.push({
       id,
       x,
@@ -54,19 +69,19 @@ export class GarbageService {
 
   getCoverage(x: number, y: number): boolean {
     return this.facilities.some(f => {
-      const dist = Math.abs(f.x - x) + Math.abs(f.y - y);
-      return dist <= COVERAGE_RANGE;
+      const dist = manhattanDistance(f.x, f.y, x, y);
+      return dist <= GARBAGE.COVERAGE_RANGE;
     });
   }
 
   tick(population: number): void {
     // 1. Produce garbage based on population
-    const produced = Math.floor(population / GARBAGE_PER_POP);
+    const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);
 
     // 2. Incinerators burn a fraction of their current load
     for (const f of this.facilities) {
       if (f.type === 'incinerator' && f.currentLoad > 0) {
-        const burned = Math.max(1, Math.floor(f.currentLoad * INCINERATOR_BURN_RATE));
+        const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.INCINERATOR_BURN_RATE));
         f.currentLoad = Math.max(0, f.currentLoad - burned);
       }
     }
@@ -98,7 +113,7 @@ export class GarbageService {
   getPollutionPenalty(): number {
     if (this.overflow <= 0) return 0;
     // Pollution scales with overflow amount
-    return Math.min(100, this.overflow * 2);
+    return Math.min(GARBAGE.MAX_POLLUTION_PENALTY, this.overflow * GARBAGE.OVERFLOW_POLLUTION_MULTIPLIER);
   }
 
   getTotalCapacity(): number {
@@ -111,6 +126,21 @@ export class GarbageService {
 
   getFacilities(): readonly GarbageFacility[] {
     return this.facilities;
+  }
+
+  getMaintenanceCost(): number {
+    return this.facilities.length * GARBAGE.MAINTENANCE_PER_FACILITY;
+  }
+
+  getPollutionSources(): PollutionSource[] {
+    const sources: PollutionSource[] = [];
+    for (const f of this.facilities) {
+      const loadRatio = f.currentLoad / f.capacity;
+      if (loadRatio > GARBAGE.POLLUTION_LOAD_THRESHOLD) {
+        sources.push({ x: f.x, y: f.y, amount: Math.round(loadRatio * GARBAGE.POLLUTION_AMOUNT_SCALE), type: 'ground' });
+      }
+    }
+    return sources;
   }
 
   toJSON(): {
@@ -127,13 +157,7 @@ export class GarbageService {
     const gs = new GarbageService();
     gs.facilities = data.facilities.map(f => ({ ...f }));
     gs.overflow = data.overflow;
-    // Ensure nextFacilityId stays ahead of restored IDs
-    for (const f of gs.facilities) {
-      const num = parseInt(f.id.replace('garbage_', ''), 10);
-      if (!isNaN(num) && num >= nextFacilityId) {
-        nextFacilityId = num + 1;
-      }
-    }
+    gs.nextId = recoverNextId(gs.facilities, 'garbage_');
     return gs;
   }
 }

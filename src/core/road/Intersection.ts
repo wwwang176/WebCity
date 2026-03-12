@@ -1,5 +1,6 @@
 import { Grid } from '../grid/Grid';
-import { RoadDirection, IntersectionType, TrafficControl } from './types';
+import { toPosKey } from '../grid/GridHelpers';
+import { IntersectionType, TrafficControl, countRoadDirections } from './types';
 
 export class Intersection {
   private grid: Grid;
@@ -14,7 +15,7 @@ export class Intersection {
     if (!cell) return IntersectionType.NONE;
 
     const flags = cell.roadFlags;
-    const directions = this.countDirections(flags);
+    const directions = countRoadDirections(flags);
 
     if (directions >= 4) return IntersectionType.CROSS;
     if (directions === 3) return IntersectionType.T_JUNCTION;
@@ -25,20 +26,12 @@ export class Intersection {
     const type = this.getType(x, y);
     if (type === IntersectionType.NONE) return TrafficControl.NONE;
 
-    const key = `${x},${y}`;
+    const key = toPosKey(x, y);
     return this.controls.get(key) ?? TrafficControl.TRAFFIC_LIGHT;
   }
 
   setControl(x: number, y: number, control: TrafficControl): void {
-    this.controls.set(`${x},${y}`, control);
+    this.controls.set(toPosKey(x, y), control);
   }
 
-  private countDirections(flags: number): number {
-    let count = 0;
-    if (flags & RoadDirection.NORTH) count++;
-    if (flags & RoadDirection.SOUTH) count++;
-    if (flags & RoadDirection.WEST) count++;
-    if (flags & RoadDirection.EAST) count++;
-    return count;
-  }
 }

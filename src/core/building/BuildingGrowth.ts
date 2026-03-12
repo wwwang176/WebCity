@@ -1,8 +1,9 @@
 import { Grid } from '../grid/Grid';
-import { ZoneType } from '../grid/types';
-import { RoadType } from '../road/types';
+import { ZoneType, zoneToRCI } from '../grid/types';
+import { isAdjacentToRoad } from '../grid/GridHelpers';
 import { getMaxDensity } from '../zone/DensityRules';
 import { getBuildingsForZone } from './types';
+import { randomElement } from '../utils/random';
 
 export interface RCIDemand {
   residential: number;
@@ -14,22 +15,6 @@ export interface GrowthConditions {
   hasPower: boolean;
   hasWater: boolean;
   rciDemand: RCIDemand;
-}
-
-function zoneToRCI(zone: ZoneType): 'residential' | 'commercial' | 'industrial' | null {
-  switch (zone) {
-    case ZoneType.RESIDENTIAL_LOW:
-    case ZoneType.RESIDENTIAL_HIGH:
-      return 'residential';
-    case ZoneType.COMMERCIAL_LOW:
-    case ZoneType.COMMERCIAL_HIGH:
-      return 'commercial';
-    case ZoneType.INDUSTRIAL:
-    case ZoneType.OFFICE:
-      return 'industrial';
-    default:
-      return null;
-  }
 }
 
 export class BuildingGrowth {
@@ -46,7 +31,7 @@ export class BuildingGrowth {
     if (cell.buildingId !== 0) return false;
 
     // Must have road connection
-    if (!this.isAdjacentToRoad(x, y)) return false;
+    if (!isAdjacentToRoad(this.grid, x, y)) return false;
 
     // Must have power and water
     if (!conditions.hasPower) return false;
@@ -72,17 +57,9 @@ export class BuildingGrowth {
     const buildings = getBuildingsForZone(cell.zoneType, density, 1);
     if (buildings.length === 0) return false;
 
-    const building = buildings[Math.floor(Math.random() * buildings.length)]!;
+    const building = randomElement(buildings);
     this.grid.setCell(x, y, { buildingId: building.id });
     return true;
   }
 
-  private isAdjacentToRoad(x: number, y: number): boolean {
-    const dirs = [{ dx: 0, dy: -1 }, { dx: 0, dy: 1 }, { dx: -1, dy: 0 }, { dx: 1, dy: 0 }];
-    for (const d of dirs) {
-      const cell = this.grid.getCell(x + d.dx, y + d.dy);
-      if (cell && cell.roadType !== RoadType.NONE) return true;
-    }
-    return false;
-  }
 }

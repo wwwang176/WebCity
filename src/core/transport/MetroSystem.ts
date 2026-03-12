@@ -1,7 +1,10 @@
 import { TransportType, TransportVehicle, TransportStop, TransportRoute } from './types';
 import { BaseTransportSystem, TransportSystemConfig, BaseTransportJSON } from './BaseTransportSystem';
+import { manhattanDistance } from '../grid/GridHelpers';
 
-const METRO_BUILD_COST_PER_STATION = 5000;
+export const METRO = {
+  BUILD_COST_PER_STATION: 5000,
+} as const;
 
 const METRO_CONFIG: TransportSystemConfig = {
   type: TransportType.METRO,
@@ -51,7 +54,7 @@ export class MetroSystem extends BaseTransportSystem {
   }
 
   getBuildCost(stationCount: number): number {
-    return stationCount * METRO_BUILD_COST_PER_STATION;
+    return stationCount * METRO.BUILD_COST_PER_STATION;
   }
 
   // ── Train segment info for renderer ─────────────────────────────
@@ -81,7 +84,7 @@ export class MetroSystem extends BaseTransportSystem {
     const prevIdx = (train.currentStopIndex - 1 + route.stops.length) % route.stops.length;
     const prev = route.stops[prevIdx]!;
     const next = route.stops[train.currentStopIndex]!;
-    const dist = Math.abs(next.x - prev.x) + Math.abs(next.y - prev.y);
+    const dist = manhattanDistance(prev.x, prev.y, next.x, next.y);
     const totalTicks = Math.max(1, Math.ceil(dist / this.config.speed));
     const progress = 1 - train.travelTicks / totalTicks;
 
@@ -109,7 +112,7 @@ export class MetroSystem extends BaseTransportSystem {
       const prevIdx = (vehicle.currentStopIndex - 1 + route.stops.length) % route.stops.length;
       const prev = route.stops[prevIdx]!;
       const next = route.stops[vehicle.currentStopIndex]!;
-      const dist = Math.abs(next.x - prev.x) + Math.abs(next.y - prev.y);
+      const dist = manhattanDistance(prev.x, prev.y, next.x, next.y);
       const totalTicks = Math.max(1, Math.ceil(dist / this.config.speed));
       const t = 1 - vehicle.travelTicks / totalTicks; // 0→1 progress
       vehicle.position = {

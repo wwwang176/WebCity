@@ -1,52 +1,60 @@
 
+import type { PollutionSource } from '../environment/Pollution';
+
 export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 
-const SIZE_FOOTPRINT: Record<AirportSize, number> = {
-  SMALL: 3,
-  MEDIUM: 5,
-  LARGE: 7,
+/** Consolidated per-size configuration for airports (OCP-friendly). */
+export interface AirportSizeConfig {
+  footprint: number;
+  area: number;
+  noise: number;
+  tourists: number;
+  cargo: number;
+  buildCost: number;
+  operatingCost: number;
+  populationRequired: number;
+}
+
+/** Single source of truth for all airport size parameters. */
+export const AIRPORT_SIZE_CONFIG: Record<AirportSize, AirportSizeConfig> = {
+  SMALL:  { footprint: 3, area: 9,  noise: 10, tourists: 50,  cargo: 20,  buildCost: 5000,  operatingCost: 500,  populationRequired: 10000 },
+  MEDIUM: { footprint: 5, area: 25, noise: 25, tourists: 200, cargo: 100, buildCost: 15000, operatingCost: 1500, populationRequired: 50000 },
+  LARGE:  { footprint: 7, area: 49, noise: 50, tourists: 500, cargo: 300, buildCost: 40000, operatingCost: 4000, populationRequired: 100000 },
 };
 
 /** Returns the side length (NxN) of the airport footprint for the given size. */
 export function getAirportFootprint(size: AirportSize): number {
-  return SIZE_FOOTPRINT[size];
+  return AIRPORT_SIZE_CONFIG[size].footprint;
 }
 
-const SIZE_AREA: Record<AirportSize, number> = {
-  SMALL: 9,   // 3x3
-  MEDIUM: 25, // 5x5
-  LARGE: 49,  // 7x7
-};
+/** Returns the one-time build cost for the given airport size. */
+export function getAirportBuildCost(size: AirportSize): number {
+  return AIRPORT_SIZE_CONFIG[size].buildCost;
+}
 
-const SIZE_NOISE: Record<AirportSize, number> = {
-  SMALL: 10,
-  MEDIUM: 25,
-  LARGE: 50,
-};
+/** Iterate over every cell in an airport footprint (DRY: eliminates repeated footprint loops). */
+export function forEachAirportCell(
+  x: number, y: number, size: AirportSize,
+  fn: (cx: number, cy: number) => void,
+): void {
+  const footprint = getAirportFootprint(size);
+  const half = Math.floor(footprint / 2);
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      fn(x + dx, y + dy);
+    }
+  }
+}
 
-const SIZE_TOURISTS: Record<AirportSize, number> = {
-  SMALL: 50,
-  MEDIUM: 200,
-  LARGE: 500,
-};
-
-const SIZE_CARGO: Record<AirportSize, number> = {
-  SMALL: 20,
-  MEDIUM: 100,
-  LARGE: 300,
-};
-
-const SIZE_OPERATING_COST: Record<AirportSize, number> = {
-  SMALL: 500,
-  MEDIUM: 1500,
-  LARGE: 4000,
-};
-
-const POP_REQUIRED: Record<AirportSize, number> = {
-  SMALL: 10000,
-  MEDIUM: 50000,
-  LARGE: 100000,
-};
+/** Place airport footprint cells on the grid (SRP: grid placement belongs with airport logic). */
+export function placeAirportOnGrid(
+  grid: { setCell(x: number, y: number, data: { buildingId: number }): void },
+  x: number, y: number, size: AirportSize, airportBuildingId: number,
+): void {
+  forEachAirportCell(x, y, size, (cx, cy) => {
+    grid.setCell(cx, cy, { buildingId: airportBuildingId });
+  });
+}
 
 export interface Airport {
   id: number;
@@ -58,6 +66,29 @@ export interface Airport {
   touristsPerTick: number;
   cargoPerTick: number;
   operatingCost: number;
+}
+
+export type AirportPlaceResult =
+  | { ok: true }
+  | { ok: false; reason: string };
+
+/** Validate whether an airport can be placed at (x,y) with the given size. Pure function (SRP). */
+export function canPlaceAirport(
+  grid: { getCell(x: number, y: number): { roadType: number; buildingId: number } | null },
+  x: number,
+  y: number,
+  size: AirportSize,
+): AirportPlaceResult {
+  const footprint = getAirportFootprint(size);
+  const half = Math.floor(footprint / 2);
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      const c = grid.getCell(x + dx, y + dy);
+      if (!c) return { ok: false, reason: 'AIRPORT_OUT_OF_BOUNDS' };
+      if (c.roadType !== 0 || c.buildingId !== 0) return { ok: false, reason: 'AIRPORT_AREA_OCCUPIED' };
+    }
+  }
+  return { ok: true };
 }
 
 export class AirportSystem {
@@ -80,7 +111,8 @@ export class AirportSystem {
     size: AirportSize,
     currentPopulation: number,
   ): Airport | null {
-    if (currentPopulation < POP_REQUIRED[size]) {
+    const cfg = AIRPORT_SIZE_CONFIG[size];
+    if (currentPopulation < cfg.populationRequired) {
       return null;
     }
 
@@ -89,11 +121,11 @@ export class AirportSystem {
       x,
       y,
       size,
-      area: SIZE_AREA[size],
-      noisePollution: SIZE_NOISE[size],
-      touristsPerTick: SIZE_TOURISTS[size],
-      cargoPerTick: SIZE_CARGO[size],
-      operatingCost: SIZE_OPERATING_COST[size],
+      area: cfg.area,
+      noisePollution: cfg.noise,
+      touristsPerTick: cfg.tourists,
+      cargoPerTick: cfg.cargo,
+      operatingCost: cfg.operatingCost,
     };
     this.airports.push(airport);
     return airport;
@@ -101,7 +133,7 @@ export class AirportSystem {
 
   /** Population required to unlock airport construction. */
   getPopulationRequired(size: AirportSize = 'SMALL'): number {
-    return POP_REQUIRED[size];
+    return AIRPORT_SIZE_CONFIG[size].populationRequired;
   }
 
   tick(): void {
@@ -136,6 +168,42 @@ export class AirportSystem {
 
   getAirports(): readonly Airport[] {
     return this.airports;
+  }
+
+  /** Find the airport whose footprint covers the given cell. Returns null if none. */
+  findAtCell(x: number, y: number): Airport | null {
+    for (const a of this.airports) {
+      const half = Math.floor(getAirportFootprint(a.size) / 2);
+      if (x >= a.x - half && x <= a.x + half && y >= a.y - half && y <= a.y + half) {
+        return a;
+      }
+    }
+    return null;
+  }
+
+  /** Noise pollution multiplier for spread calculation. */
+  static readonly NOISE_SPREAD_MULTIPLIER = 5;
+
+  getPollutionSources(): PollutionSource[] {
+    return this.airports.map(a => ({
+      x: a.x,
+      y: a.y,
+      amount: a.noisePollution * AirportSystem.NOISE_SPREAD_MULTIPLIER,
+      type: 'noise' as const,
+    }));
+  }
+
+  /**
+   * Find and demolish an airport that covers the given cell.
+   * Invokes clearCell for every cell in the airport footprint, then removes the airport.
+   * @returns true if an airport was found and demolished, false otherwise.
+   */
+  demolishAtCell(x: number, y: number, clearCell: (cx: number, cy: number) => void): boolean {
+    const airport = this.findAtCell(x, y);
+    if (!airport) return false;
+    forEachAirportCell(airport.x, airport.y, airport.size, clearCell);
+    this.remove(airport.id);
+    return true;
   }
 
   remove(airportId: number): void {

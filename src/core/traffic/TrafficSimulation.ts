@@ -1,6 +1,8 @@
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
-import { cubicBezierPoint, cubicBezierTangent } from './BezierPath';
+import { interpolateEdgePosition, interpolateEdgeTangent } from './EdgeInterpolation';
+import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
+import { pickWeighted } from '../utils/random';
 
 export interface Vehicle {
   id: number;
@@ -23,7 +25,41 @@ const VEHICLE_LENGTHS = [
   { weight: 0.05, length: 0.34 },  // firetruck
 ];
 
+/** Traffic simulation tuning constants */
+export const TRAFFIC = {
+  /** Base speed multiplier range: min value (vehicles randomly vary speed) */
+  SPEED_MULTIPLIER_MIN: 0.8,
+  /** Base speed multiplier range: variation range added to min */
+  SPEED_MULTIPLIER_RANGE: 0.2,
+  /** Random initial stall jitter range (negative = headstart) */
+  STALL_JITTER: 5,
+  /** Maximum lookahead distance for gap/red-light checks */
+  LOOKAHEAD_DISTANCE: 5,
+  /** Density divisor per occupied cell for congestion calculation */
+  DENSITY_CAPACITY_PER_CELL: 3,
+  /** Edge vehicle speed in world-units per second */
+  EDGE_SPEED: 14,
+  /** Speed limit that maps to base speed */
+  REFERENCE_LIMIT: 50,
+  /** Minimum distance between vehicles */
+  MIN_GAP: 0.15,
+  /** Seconds of zero movement before vehicle is despawned */
+  DESPAWN_STALL_TIME: 30,
+} as const;
+
 /** Get the number of directional lanes for a road type (lanes going one way). */
+/** Get speed limit for a grid cell identified by "x,y" key. Returns default 50 for non-road cells. */
+export function getSpeedLimitForCell(
+  grid: { getCell(x: number, y: number): { roadType: number } | null },
+  cellKey: string,
+): number {
+  const [gx, gy] = cellKey.split(',').map(Number);
+  const cell = grid.getCell(gx!, gy!);
+  if (!cell || cell.roadType <= 0) return 50;
+  const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
+  return cfg?.speedLimit ?? 50;
+}
+
 export function getLaneCount(roadType: number): number {
   const config = ROAD_CONFIGS[roadType as RoadType];
   if (!config || config.lanes === 0) return 1;
@@ -49,20 +85,10 @@ export class TrafficSimulation {
   /** Predicted congestion flow (path count per cell), set by SimulationLoop periodically. */
   private predictedFlow: Map<string, number> | null = null;
 
-  private static readonly EDGE_SPEED = 14;    // edge vehicle speed in world-units per second
-  private static readonly REFERENCE_LIMIT = 50; // speed limit that maps to base speed
-  private static readonly MIN_GAP = 0.15;    // min distance between vehicles
-  private static readonly DESPAWN_STALL_TIME = 30; // seconds of zero movement before vehicle is despawned
 
   /** Add a vehicle that follows a LaneEdge path. */
   addVehicleOnEdges(edgePath: LaneEdge[]): Vehicle {
-    let len = 0.22;
-    const roll = Math.random();
-    let cumulative = 0;
-    for (const entry of VEHICLE_LENGTHS) {
-      cumulative += entry.weight;
-      if (roll < cumulative) { len = entry.length; break; }
-    }
+    const len = pickWeighted(VEHICLE_LENGTHS, 1.0, e => e.weight).length;
 
     const vehicle: Vehicle = {
       id: this.nextId++,
@@ -73,8 +99,8 @@ export class TrafficSimulation {
       edgeIndex: 0,
       edgeProgress: 0,
       edgeMoveRate: 0,
-      speedMultiplier: 0.8 + Math.random() * 0.2,
-      stallTime: -(Math.random() * 5),
+      speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
     };
     this.vehicles.push(vehicle);
     // Update density map for immediate queries
@@ -95,7 +121,7 @@ export class TrafficSimulation {
     canAdvance?: (current: string, next: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
-    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT } = TrafficSimulation;
+    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT } = TRAFFIC;
 
     // Collect active vehicles
     const edgeVehicles = this.vehicles.filter(v => v.edgePath.length > 0 && !v.arrived);
@@ -116,7 +142,6 @@ export class TrafficSimulation {
 
     // Build edge index: edgeId → list of { vehicleId, progress, halfLen }
     // This allows O(1) lookup of vehicles on any given edge.
-    type EdgeEntry = { vid: number; progress: number; halfLen: number };
     const edgeIndex = new Map<string, EdgeEntry[]>();
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
@@ -133,61 +158,13 @@ export class TrafficSimulation {
       const ep = v.edgePath;
 
       // 1. Gap to nearest vehicle ahead on the SAME edge path
-      let gap = Infinity;
+      const gap = findGapAhead(v, ep, edgeIndex);
       const myHalfLen = v.length / 2;
-      {
-        let distAhead = 0;
-        for (let ei = v.edgeIndex; ei < ep.length; ei++) {
-          const edge = ep[ei]!;
-          const myProgress = ei === v.edgeIndex ? v.edgeProgress : 0;
-          const edgeRemain = edge.length - myProgress;
-
-          // Check vehicles on this edge
-          const entries = edgeIndex.get(edge.id);
-          if (entries) {
-            for (const e of entries) {
-              if (e.vid === v.id) continue;
-              if (ei === v.edgeIndex) {
-                // Same edge: only look at vehicles ahead (greater progress).
-                // When at exact same progress, lower ID is "ahead" — higher ID yields.
-                if (e.progress < v.edgeProgress) continue;
-                if (e.progress === v.edgeProgress && e.vid > v.id) continue;
-                const dist = (e.progress - v.edgeProgress) - myHalfLen - e.halfLen;
-                if (dist < gap) gap = dist;
-              } else {
-                // Future edge: distance = remaining on current edges + progress on that edge
-                const dist = distAhead + e.progress - myHalfLen - e.halfLen;
-                if (dist < gap) gap = dist;
-              }
-            }
-          }
-
-          distAhead += edgeRemain;
-          if (distAhead > 5) break; // don't look too far ahead
-        }
-      }
 
       // 2. Distance to nearest red light on path
-      let redLightDist = Infinity;
-      if (canAdvance) {
-        let distAhead = 0;
-        for (let ei = v.edgeIndex; ei < ep.length; ei++) {
-          const edge = ep[ei]!;
-          const startDist = ei === v.edgeIndex ? v.edgeProgress : 0;
-          const edgeRemain = edge.length - startDist;
-
-          if (edge.from.cellKey !== edge.to.cellKey) {
-            if (!canAdvance(edge.from.cellKey, edge.to.cellKey)) {
-              const stopDist = distAhead - (ei === v.edgeIndex ? 0 : startDist);
-              redLightDist = Math.max(0, stopDist - v.length / 2);
-              break;
-            }
-          }
-
-          distAhead += edgeRemain;
-          if (distAhead > 5) break;
-        }
-      }
+      const redLightDist = canAdvance
+        ? findRedLightDistance(v, ep, canAdvance)
+        : Infinity;
 
       // 3. Speed limit from current edge's cell
       const currentEdge = ep[v.edgeIndex];
@@ -216,7 +193,7 @@ export class TrafficSimulation {
       // Track stall time for stuck vehicle despawn
       if (moveDistance < 0.001 && room < 0.001) {
         v.stallTime += dtSeconds;
-        if (v.stallTime >= TrafficSimulation.DESPAWN_STALL_TIME) {
+        if (v.stallTime >= TRAFFIC.DESPAWN_STALL_TIME) {
           v.arrived = true;
         }
       } else {
@@ -282,22 +259,7 @@ export class TrafficSimulation {
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx]!;
     const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-
-    if (edge.bezierControl && edge.bezierControl.length >= 2) {
-      return cubicBezierPoint(
-        edge.from.position,
-        edge.bezierControl[0]!,
-        edge.bezierControl[1]!,
-        edge.to.position,
-        t,
-      );
-    }
-
-    // Linear interpolation for straight edges
-    return {
-      x: edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t,
-      y: edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t,
-    };
+    return interpolateEdgePosition(edge, t);
   }
 
   /** Heading angle (radians) for a vehicle. 0 = east. */
@@ -336,24 +298,10 @@ export class TrafficSimulation {
     // Compute position and heading at peeked state
     const edge = v.edgePath[ei]!;
     const t = edge.length > 0 ? Math.min(ep / edge.length, 1) : 0;
-    let x: number, y: number;
-    if (edge.bezierControl && edge.bezierControl.length >= 2) {
-      const p = cubicBezierPoint(edge.from.position, edge.bezierControl[0]!, edge.bezierControl[1]!, edge.to.position, t);
-      x = p.x; y = p.y;
-    } else {
-      x = edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t;
-      y = edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t;
-    }
-    let tx: number, ty: number;
-    if (edge.bezierControl && edge.bezierControl.length >= 2) {
-      const tan = cubicBezierTangent(edge.from.position, edge.bezierControl[0]!, edge.bezierControl[1]!, edge.to.position, t);
-      tx = tan.x; ty = tan.y;
-    } else {
-      tx = edge.to.position.x - edge.from.position.x;
-      ty = edge.to.position.y - edge.from.position.y;
-    }
-    const len = Math.sqrt(tx * tx + ty * ty) || 1;
-    const heading = Math.atan2(-ty / len, tx / len);
+    const { x, y } = interpolateEdgePosition(edge, t);
+    const tan = interpolateEdgeTangent(edge, t);
+    const len = Math.sqrt(tan.x * tan.x + tan.y * tan.y) || 1;
+    const heading = Math.atan2(-tan.y / len, tan.x / len);
     return { x, y, heading };
   }
 
@@ -363,25 +311,9 @@ export class TrafficSimulation {
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx]!;
     const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-
-    let tx: number, ty: number;
-    if (edge.bezierControl && edge.bezierControl.length >= 2) {
-      const tan = cubicBezierTangent(
-        edge.from.position,
-        edge.bezierControl[0]!,
-        edge.bezierControl[1]!,
-        edge.to.position,
-        t,
-      );
-      tx = tan.x;
-      ty = tan.y;
-    } else {
-      tx = edge.to.position.x - edge.from.position.x;
-      ty = edge.to.position.y - edge.from.position.y;
-    }
-
-    const len = Math.sqrt(tx * tx + ty * ty);
-    if (len > 0) return { hx: tx / len, hy: ty / len };
+    const tan = interpolateEdgeTangent(edge, t);
+    const len = Math.sqrt(tan.x * tan.x + tan.y * tan.y);
+    if (len > 0) return { hx: tan.x / len, hy: tan.y / len };
     return { hx: 1, hy: 0 };
   }
 
@@ -399,6 +331,18 @@ export class TrafficSimulation {
 
   getVehicleCount(): number {
     return this.vehicles.length;
+  }
+
+  /** City-wide congestion level (0 = free-flow, 1 = gridlock). */
+  getCongestionLevel(): number {
+    const vehicleCount = this.vehicles.length;
+    if (vehicleCount === 0) return 0;
+    // Use unique occupied cells vs total cells as density metric
+    const occupiedCells = this.cellDensity.size;
+    if (occupiedCells === 0) return 0;
+    // Average vehicles per occupied cell, capped at 1.0
+    const avgDensity = vehicleCount / Math.max(1, occupiedCells * TRAFFIC.DENSITY_CAPACITY_PER_CELL);
+    return Math.min(1, avgDensity);
   }
 
   getAveragePathLength(): number {

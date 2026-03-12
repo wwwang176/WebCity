@@ -146,4 +146,32 @@ describe('Grid', () => {
       expect(neighbors.length).toBe(5);
     });
   });
+
+  describe('forEachCell', () => {
+    it('visits every cell exactly once', () => {
+      const grid = new Grid(4, 3);
+      let count = 0;
+      grid.forEachCell(() => { count++; });
+      expect(count).toBe(12); // 4 * 3
+    });
+
+    it('provides correct x, y coordinates', () => {
+      const grid = new Grid(3, 2);
+      const coords: [number, number][] = [];
+      grid.forEachCell((_cell, x, y) => { coords.push([x, y]); });
+      // Should iterate row-by-row: (0,0),(1,0),(2,0),(0,1),(1,1),(2,1)
+      expect(coords).toEqual([
+        [0, 0], [1, 0], [2, 0],
+        [0, 1], [1, 1], [2, 1],
+      ]);
+    });
+
+    it('provides valid CellData for each cell', () => {
+      const grid = new Grid(2, 2);
+      grid.setCell(1, 0, { buildingId: 5 });
+      const buildings: number[] = [];
+      grid.forEachCell((cell) => { buildings.push(cell.buildingId); });
+      expect(buildings).toEqual([0, 5, 0, 0]);
+    });
+  });
 });

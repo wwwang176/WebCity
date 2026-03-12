@@ -1,5 +1,6 @@
 import { CitizenManager } from './CitizenManager';
 import { EducationLevel, IncomeLevel } from './types';
+import { randomElement, randomInt } from '../utils/random';
 
 export interface CityAttractiveness {
   jobOpenings: number;
@@ -10,15 +11,36 @@ export interface CityAttractiveness {
   crimeRate: number;
 }
 
+export const ATTRACTIVENESS = {
+  JOB_SCORE: 20,
+  VACANT_SCORE: 20,
+  HAPPINESS_WEIGHT: 0.3,
+  TAX_WEIGHT: 0.5,
+  POLLUTION_WEIGHT: 0.2,
+  CRIME_WEIGHT: 0.3,
+  MIN: 0,
+  MAX: 100,
+} as const;
+
+export const IMMIGRATION = {
+  ATTRACTIVENESS_THRESHOLD: 50,
+  POP_CAP_FACTOR: 0.01,
+  POP_CAP_MIN: 3,
+  DEMAND_CAP_DIVISOR: 10,
+  EMIGRATION_HAPPINESS_THRESHOLD: 20,
+  IMMIGRANT_MIN_AGE: 20,
+  IMMIGRANT_AGE_RANGE: 30,
+} as const;
+
 export function calculateAttractiveness(city: CityAttractiveness): number {
   let score = 0;
-  if (city.jobOpenings > 0) score += 20;
-  if (city.vacantHomes > 0) score += 20;
-  score += city.avgHappiness * 0.3;
-  score -= city.taxRate * 0.5;
-  score -= city.pollution * 0.2;
-  score -= city.crimeRate * 0.3;
-  return Math.max(0, Math.min(100, score));
+  if (city.jobOpenings > 0) score += ATTRACTIVENESS.JOB_SCORE;
+  if (city.vacantHomes > 0) score += ATTRACTIVENESS.VACANT_SCORE;
+  score += city.avgHappiness * ATTRACTIVENESS.HAPPINESS_WEIGHT;
+  score -= city.taxRate * ATTRACTIVENESS.TAX_WEIGHT;
+  score -= city.pollution * ATTRACTIVENESS.POLLUTION_WEIGHT;
+  score -= city.crimeRate * ATTRACTIVENESS.CRIME_WEIGHT;
+  return Math.max(ATTRACTIVENESS.MIN, Math.min(ATTRACTIVENESS.MAX, score));
 }
 
 /**
@@ -29,9 +51,9 @@ export function calculateAttractiveness(city: CityAttractiveness): number {
  * - 吸引力 ≤ 50 時回傳 0
  */
 export function getImmigrationCap(population: number, vacantHomes: number, attractiveness: number): number {
-  if (attractiveness <= 50) return 0;
-  const popCap = Math.max(3, Math.floor(population * 0.01));
-  const demandCap = Math.ceil((attractiveness - 50) / 10);
+  if (attractiveness <= IMMIGRATION.ATTRACTIVENESS_THRESHOLD) return 0;
+  const popCap = Math.max(IMMIGRATION.POP_CAP_MIN, Math.floor(population * IMMIGRATION.POP_CAP_FACTOR));
+  const demandCap = Math.ceil((attractiveness - IMMIGRATION.ATTRACTIVENESS_THRESHOLD) / IMMIGRATION.DEMAND_CAP_DIVISOR);
   return Math.min(popCap, vacantHomes, demandCap);
 }
 
@@ -48,22 +70,22 @@ export function migrationTick(
   const pop = population ?? manager.getPopulation();
 
   // Immigration — 使用動態縮放上限
-  if (attractiveness > 50 && city.vacantHomes > 0 && city.jobOpenings > 0) {
+  if (attractiveness > IMMIGRATION.ATTRACTIVENESS_THRESHOLD && city.vacantHomes > 0 && city.jobOpenings > 0) {
     const count = getImmigrationCap(pop, city.vacantHomes, attractiveness);
     for (let i = 0; i < count; i++) {
-      const age = 20 + Math.floor(Math.random() * 30);
+      const age = IMMIGRATION.IMMIGRANT_MIN_AGE + randomInt(IMMIGRATION.IMMIGRANT_AGE_RANGE);
       const educations = [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY];
-      const education = educations[Math.floor(Math.random() * educations.length)]!;
+      const education = randomElement(educations);
       const incomes = [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH];
-      const income = incomes[Math.floor(Math.random() * incomes.length)]!;
+      const income = randomElement(incomes);
       manager.createCitizen({ age, education, incomeLevel: income });
       immigrated++;
     }
   }
 
   // Emigration
-  for (const citizen of [...manager.citizens]) {
-    if (citizen.happiness < 20) {
+  for (const citizen of [...manager.getCitizens()]) {
+    if (citizen.happiness < IMMIGRATION.EMIGRATION_HAPPINESS_THRESHOLD) {
       manager.removeCitizen(citizen.id);
       emigrated++;
     }

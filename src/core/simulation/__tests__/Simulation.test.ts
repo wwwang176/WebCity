@@ -1,12 +1,103 @@
 import { describe, it, expect } from 'vitest';
-import { GameClock } from '../GameClock';
+import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
 import { createGameState } from '../GameState';
-import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs } from '../SimulationLoop';
+import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import { PolicyType, Specialization } from '../../district/types';
 import { setSpecialization } from '../../district/Specialization';
 import { CitySpecType } from '../../district/CitySpecialization';
+
+describe('Simulation tick interval constants', () => {
+  it('SLOW_TICK_INTERVAL should be a positive integer', () => {
+    expect(SIMULATION.SLOW_TICK_INTERVAL).toBeGreaterThan(0);
+    expect(Number.isInteger(SIMULATION.SLOW_TICK_INTERVAL)).toBe(true);
+  });
+
+  it('MEDIUM_TICK_INTERVAL should be a multiple of SLOW_TICK_INTERVAL', () => {
+    expect(SIMULATION.MEDIUM_TICK_INTERVAL).toBeGreaterThan(SIMULATION.SLOW_TICK_INTERVAL);
+    expect(SIMULATION.MEDIUM_TICK_INTERVAL % SIMULATION.SLOW_TICK_INTERVAL).toBe(0);
+  });
+});
+
+describe('SIMULATION config constants', () => {
+  it('growth and clearance rates should be valid probabilities', () => {
+    expect(SIMULATION.BURNED_CLEARANCE_CHANCE).toBeGreaterThan(0);
+    expect(SIMULATION.BURNED_CLEARANCE_CHANCE).toBeLessThan(1);
+    expect(SIMULATION.GROWTH_ATTEMPTS).toBeGreaterThan(0);
+    expect(Number.isInteger(SIMULATION.GROWTH_ATTEMPTS)).toBe(true);
+  });
+
+  it('crime constants should be valid', () => {
+    expect(SIMULATION.CRIME_BASE_MAX).toBeGreaterThan(0);
+    expect(SIMULATION.CRIME_POP_FACTOR).toBeGreaterThan(0);
+    expect(SIMULATION.CRIME_COVERAGE_PER_STATION).toBeGreaterThan(0);
+    expect(SIMULATION.CRIME_MAX_REDUCTION).toBeGreaterThan(0);
+    expect(SIMULATION.CRIME_MAX_REDUCTION).toBeLessThanOrEqual(1);
+  });
+
+  it('commute constants should be valid', () => {
+    expect(SIMULATION.COMMUTE_MAX).toBeGreaterThan(SIMULATION.COMMUTE_BASE);
+    expect(SIMULATION.COMMUTE_SPREAD_FACTOR).toBeGreaterThan(0);
+    expect(SIMULATION.COMMUTE_JITTER).toBeGreaterThan(0);
+  });
+
+  it('service weights should be positive', () => {
+    expect(SIMULATION.SERVICE_POWER_WEIGHT).toBeGreaterThan(0);
+    expect(SIMULATION.SERVICE_WATER_WEIGHT).toBeGreaterThan(0);
+    expect(SIMULATION.LOW_POLLUTION_THRESHOLD).toBeGreaterThan(0);
+  });
+
+  it('business tax baseline should be positive', () => {
+    expect(SIMULATION.BUSINESS_TAX_BASELINE).toBeGreaterThan(0);
+    expect(SIMULATION.BUSINESS_TAX_PENALTY_PER_POINT).toBeGreaterThan(0);
+  });
+
+  it('vehicle cap should be reasonable', () => {
+    expect(SIMULATION.VEHICLE_CAP_MAX).toBeGreaterThan(0);
+    expect(SIMULATION.VEHICLE_CAP_BASE).toBeGreaterThan(0);
+    expect(SIMULATION.VEHICLE_CAP_POP_RATIO).toBeGreaterThan(0);
+    expect(SIMULATION.VEHICLE_CAP_POP_RATIO).toBeLessThanOrEqual(1);
+  });
+
+  it('commute sampling limits should be ordered', () => {
+    expect(SIMULATION.SAMPLE_COUNT_MIN).toBeGreaterThan(0);
+    expect(SIMULATION.SAMPLE_COUNT_MAX).toBeGreaterThan(SIMULATION.SAMPLE_COUNT_MIN);
+    expect(SIMULATION.SAMPLE_DIVISOR).toBeGreaterThan(0);
+  });
+
+  it('cell value max should be 255 (uint8)', () => {
+    expect(SIMULATION.CELL_VALUE_MAX).toBe(255);
+  });
+
+  it('walk to stop range should be positive', () => {
+    expect(SIMULATION.WALK_TO_STOP_RANGE).toBeGreaterThan(0);
+  });
+
+  it('industrial pollution factor should be between 0 and 1', () => {
+    expect(SIMULATION.INDUSTRIAL_POLLUTION_FACTOR).toBeGreaterThan(0);
+    expect(SIMULATION.INDUSTRIAL_POLLUTION_FACTOR).toBeLessThanOrEqual(1);
+  });
+
+  it('rail transit time factor should give discount over road', () => {
+    expect(SIMULATION.RAIL_TRANSIT_TIME_FACTOR).toBeLessThan(1);
+    expect(SIMULATION.RAIL_TRANSIT_TIME_FACTOR).toBeGreaterThan(0);
+  });
+});
+
+describe('clampBuildingLevel', () => {
+  it('should clamp service coverage to building level 1-3', () => {
+    expect(clampBuildingLevel(0)).toBe(1);
+    expect(clampBuildingLevel(3)).toBe(1);
+    expect(clampBuildingLevel(4)).toBe(2);
+    expect(clampBuildingLevel(9)).toBe(3);
+    expect(clampBuildingLevel(100)).toBe(3);
+  });
+
+  it('should return 1 for NaN input', () => {
+    expect(clampBuildingLevel(NaN)).toBe(1);
+  });
+});
 
 describe('GameClock', () => {
   it('should advance tick', () => {
@@ -82,6 +173,18 @@ describe('GameClock', () => {
 
     clock.advance(); // hour 22
     expect(clock.getTimeOfDay()).toBe('night');
+  });
+
+  it('TIME_PERIOD constants should form valid non-overlapping ranges', () => {
+    expect(TIME_PERIOD.NIGHT_END).toBeLessThan(TIME_PERIOD.MORNING_RUSH_START);
+    expect(TIME_PERIOD.MORNING_RUSH_END).toBeLessThan(TIME_PERIOD.MIDDAY_START);
+    expect(TIME_PERIOD.MIDDAY_END).toBeLessThan(TIME_PERIOD.NIGHT_START);
+  });
+
+  it('SPEED_INTERVALS should have Infinity for paused and decreasing values for higher speeds', () => {
+    expect(SPEED_INTERVALS[0]).toBe(Infinity);
+    expect(SPEED_INTERVALS[1]).toBeGreaterThan(SPEED_INTERVALS[2]);
+    expect(SPEED_INTERVALS[2]).toBeGreaterThan(SPEED_INTERVALS[3]);
   });
 
   it('getDay/getMonth/getYear should still work correctly with 24 ticksPerDay', () => {

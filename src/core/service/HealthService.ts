@@ -1,3 +1,7 @@
+import { removeById } from '../utils/removeById';
+import { recoverNextId } from '../utils/recoverNextId';
+import { RadiusCoverageMap } from './RadiusCoverageMap';
+
 export interface Hospital {
   id: string;
   x: number;
@@ -6,41 +10,42 @@ export interface Hospital {
   capacity: number;
 }
 
-export interface HealthServiceJSON {
+interface HealthServiceJSON {
   hospitals: Hospital[];
 }
 
-const HEALTH_BONUS_PER_HOSPITAL = 20;
-const HEALTH_BONUS_CAP = 35;
-
-let nextId = 1;
+/** Health service configuration constants */
+export const HEALTH = {
+  /** Health bonus per hospital covering a cell */
+  BONUS_PER_HOSPITAL: 20,
+  /** Maximum health bonus from hospital coverage */
+  BONUS_CAP: 35,
+  MAINTENANCE_PER_HOSPITAL: 8,
+} as const;
 
 export class HealthService {
   private hospitals: Hospital[] = [];
-  /** Maps "x,y" to the number of hospitals covering that point (computed on tick) */
-  private coverageCount = new Map<string, number>();
+  private coverage = new RadiusCoverageMap();
+  private nextId = 1;
 
   addHospital(x: number, y: number, radius = 12, capacity = 100): string {
-    const id = `hospital_${nextId++}`;
+    const id = `hospital_${this.nextId++}`;
     this.hospitals.push({ id, x, y, radius, capacity });
     return id;
   }
 
   removeHospital(id: string): void {
-    const idx = this.hospitals.findIndex(h => h.id === id);
-    if (idx !== -1) {
-      this.hospitals.splice(idx, 1);
-    }
+    removeById(this.hospitals, id);
   }
 
   getCoverage(x: number, y: number): boolean {
-    return (this.coverageCount.get(`${x},${y}`) ?? 0) > 0;
+    return this.coverage.hasCoverage(x, y);
   }
 
   getHealthBonus(x: number, y: number): number {
-    const count = this.coverageCount.get(`${x},${y}`) ?? 0;
+    const count = this.coverage.getCoverageCount(x, y);
     if (count === 0) return 0;
-    return Math.min(count * HEALTH_BONUS_PER_HOSPITAL, HEALTH_BONUS_CAP);
+    return Math.min(count * HEALTH.BONUS_PER_HOSPITAL, HEALTH.BONUS_CAP);
   }
 
   getHospitals(): readonly Hospital[] {
@@ -48,30 +53,11 @@ export class HealthService {
   }
 
   tick(): void {
-    this.coverageCount.clear();
-    for (const hospital of this.hospitals) {
-      this.applyCoverage(hospital);
-    }
+    this.coverage.recalculate(this.hospitals);
   }
 
-  private applyCoverage(hospital: Hospital): void {
-    // Use Euclidean distance to determine coverage
-    const r = hospital.radius;
-    const minX = Math.floor(hospital.x - r);
-    const maxX = Math.ceil(hospital.x + r);
-    const minY = Math.floor(hospital.y - r);
-    const maxY = Math.ceil(hospital.y + r);
-
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const dx = x - hospital.x;
-        const dy = y - hospital.y;
-        if (dx * dx + dy * dy <= r * r) {
-          const key = `${x},${y}`;
-          this.coverageCount.set(key, (this.coverageCount.get(key) ?? 0) + 1);
-        }
-      }
-    }
+  getMaintenanceCost(): number {
+    return this.hospitals.length * HEALTH.MAINTENANCE_PER_HOSPITAL;
   }
 
   toJSON(): HealthServiceJSON {
@@ -85,6 +71,7 @@ export class HealthService {
     for (const h of json.hospitals) {
       service.hospitals.push({ ...h });
     }
+    service.nextId = recoverNextId(service.hospitals, 'hospital_');
     return service;
   }
 }

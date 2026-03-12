@@ -26,10 +26,13 @@ export interface TransportSystems {
   ferry: FerrySystem;
 }
 
-// ID 前綴偏移量，避免跨系統碰撞（每個系統有自己的 ID 命名空間）
-const ID_OFFSET_BUS = 100_000;
-const ID_OFFSET_RAIL = 400_000;
-const ID_OFFSET_FERRY = 500_000;
+/** ID prefix offsets to avoid cross-system vehicle ID collision. */
+export const VEHICLE_ID_OFFSETS: Record<TransportVehicleRenderData['type'], number> = {
+  transport_bus: 100_000,
+  rail_train: 400_000,
+  rail_carriage: 400_000,
+  ferry: 500_000,
+} as const;
 
 function mapVehicle(
   v: TransportVehicle,
@@ -73,21 +76,21 @@ export function collectTransportVehicles(systems: TransportSystems): TransportVe
   const busRoutes = systems.bus.getRoutes();
   for (const v of systems.bus.getVehicles()) {
     const route = busRoutes.find(r => r.id === v.routeId);
-    result.push(mapVehicle(v, 'transport_bus', ID_OFFSET_BUS, route));
+    result.push(mapVehicle(v, 'transport_bus', VEHICLE_ID_OFFSETS.transport_bus, route));
   }
 
   // Rail
   const railLines = systems.rail.getLines();
   for (const t of systems.rail.getTrains()) {
     const line = railLines.find(l => l.id === t.routeId);
-    result.push(mapVehicle(t, 'rail_train', ID_OFFSET_RAIL, line));
+    result.push(mapVehicle(t, 'rail_train', VEHICLE_ID_OFFSETS.rail_train, line));
   }
 
   // Ferry — 位置和 heading 由渲染端動畫覆蓋，此處僅提供基礎資料
   const ferryRoutes = systems.ferry.getRoutes();
   for (const v of systems.ferry.getVessels()) {
     const route = ferryRoutes.find(r => r.id === v.routeId);
-    result.push(mapVehicle(v, 'ferry', ID_OFFSET_FERRY, route));
+    result.push(mapVehicle(v, 'ferry', VEHICLE_ID_OFFSETS.ferry, route));
   }
 
   return result;

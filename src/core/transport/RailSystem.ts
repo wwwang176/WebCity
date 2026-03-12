@@ -3,19 +3,22 @@ import { BaseTransportSystem, TransportSystemConfig, BaseTransportJSON } from '.
 import type { Grid } from '../grid/Grid';
 import type { RailNetwork } from '../rail/RailNetwork';
 import { RailType } from '../rail/types';
+import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
 
 export enum RailServiceType {
   PASSENGER = 'PASSENGER',
   FREIGHT = 'FREIGHT',
 }
 
-const RAIL_PASSENGER_CAPACITY = 300;
-const RAIL_FREIGHT_CAPACITY = 500; // cargo units
+export const RAIL = {
+  PASSENGER_CAPACITY: 300,
+  FREIGHT_CAPACITY: 500,
+} as const;
 
 const RAIL_CONFIG: TransportSystemConfig = {
   type: TransportType.RAIL,
   speed: 4,
-  capacity: RAIL_PASSENGER_CAPACITY,
+  capacity: RAIL.PASSENGER_CAPACITY,
   dwellTicks: 3,
   operatingCostPerVehicle: 400,
   affectedByCongestion: false,
@@ -27,9 +30,7 @@ export interface ExternalConnection {
   goodsOut: number;
 }
 
-function nodeId(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const nodeId = toPosKey;
 
 /** Per-vehicle travel metadata for path-based interpolation. */
 interface TrainTravelMeta {
@@ -98,20 +99,12 @@ export class RailSystem extends BaseTransportSystem {
   }
 
   removeStation(stationId: number): void {
-    // Also clean up service types and route paths for dissolved lines
-    const dissolvedIds: number[] = [];
-    const stopExists = this.stops.some(s => s.id === stationId);
-    if (stopExists) {
-      for (const r of this.routes) {
-        const filtered = r.stops.filter(s => s.id !== stationId);
-        if (filtered.length < 2) dissolvedIds.push(r.id);
-      }
-    }
     this.removeStop(stationId);
-    for (const id of dissolvedIds) {
-      this.lineServiceTypes.delete(id);
-      this.routePaths.delete(id);
-    }
+  }
+
+  protected override onRouteDissolved(routeId: number): void {
+    this.lineServiceTypes.delete(routeId);
+    this.routePaths.delete(routeId);
   }
 
   /**
@@ -143,8 +136,8 @@ export class RailSystem extends BaseTransportSystem {
     }
 
     const capacity = serviceType === RailServiceType.PASSENGER
-      ? RAIL_PASSENGER_CAPACITY
-      : RAIL_FREIGHT_CAPACITY;
+      ? RAIL.PASSENGER_CAPACITY
+      : RAIL.FREIGHT_CAPACITY;
 
     const route = this.createRoute(stations, trainCount);
     route.frequency = stations.length * 4;
@@ -173,7 +166,7 @@ export class RailSystem extends BaseTransportSystem {
     const svcType = this.lineServiceTypes.get(lineId) ?? RailServiceType.PASSENGER;
     super.addVehicleToRoute(lineId);
     // Fix capacity for the newly added vehicle
-    const capacity = svcType === RailServiceType.PASSENGER ? RAIL_PASSENGER_CAPACITY : RAIL_FREIGHT_CAPACITY;
+    const capacity = svcType === RailServiceType.PASSENGER ? RAIL.PASSENGER_CAPACITY : RAIL.FREIGHT_CAPACITY;
     const lastVehicle = this.vehicles[this.vehicles.length - 1];
     if (lastVehicle && lastVehicle.routeId === lineId) {
       lastVehicle.capacity = capacity;
@@ -193,8 +186,7 @@ export class RailSystem extends BaseTransportSystem {
     // Parse path nodes and compute cumulative distances
     const points: Array<{ x: number; y: number }> = [];
     for (const nid of path) {
-      const [xs, ys] = nid.split(',');
-      points.push({ x: Number(xs), y: Number(ys) });
+      points.push(parsePosKeyUnsafe(nid));
     }
     const cumDists: number[] = [0];
     let totalDist = 0;
@@ -218,20 +210,8 @@ export class RailSystem extends BaseTransportSystem {
     });
   }
 
-  protected override tickTraveling(vehicle: TransportVehicle, route: TransportRoute): void {
-    // Position interpolation is handled by TrainAnimator (per-frame, not per-tick).
-    // Here we only manage the countdown and arrival snap — same as base class,
-    // except we clean up trainTravelData on arrival.
-    vehicle.travelTicks--;
-    if (vehicle.travelTicks <= 0) {
-      const stop = route.stops[vehicle.currentStopIndex]!;
-      vehicle.position = { x: stop.x, y: stop.y };
-      vehicle.traveling = false;
-      vehicle.atStop = true;
-      vehicle.waitTicks = this.config.dwellTicks;
-      this.onArrive(vehicle, stop);
-      this.trainTravelData.delete(vehicle.id);
-    }
+  protected override onTravelComplete(vehicle: TransportVehicle): void {
+    this.trainTravelData.delete(vehicle.id);
   }
 
   /** Get the parsed path points for a traveling train (for per-frame animation). */
@@ -244,10 +224,7 @@ export class RailSystem extends BaseTransportSystem {
   getRoutePathPoints(routeId: number): ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> | null {
     const paths = this.routePaths.get(routeId);
     if (!paths) return null;
-    return paths.map(seg => seg.map(nid => {
-      const [xs, ys] = nid.split(',');
-      return { x: Number(xs), y: Number(ys) };
-    }));
+    return paths.map(seg => seg.map(nid => parsePosKeyUnsafe(nid)));
   }
 
   getTrains(): readonly TransportVehicle[] {

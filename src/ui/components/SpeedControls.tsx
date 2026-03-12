@@ -4,20 +4,8 @@ import { gameSignals, getGame } from '../store/gameStore';
 export function SpeedControls() {
   const [muted, setMuted] = createSignal(false);
 
-  const togglePause = () => {
-    const game = getGame();
-    game.paused = !game.paused;
-    const state = game.getState();
-    if (game.paused) state.clock.pause();
-    else state.clock.resume();
-  };
-
-  const setSpeedVal = (s: 1 | 2 | 3) => {
-    const game = getGame();
-    game.speed = s;
-    game.getState().clock.setSpeed(s);
-    game.paused = false;
-  };
+  const togglePause = () => getGame().togglePause();
+  const setSpeedVal = (s: 1 | 2 | 3) => getGame().setSpeed(s);
 
   const toggleMute = () => {
     const m = getGame().getAudioManager().toggleMute();

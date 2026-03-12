@@ -1,3 +1,6 @@
+import { toPosKey } from '../grid/GridHelpers';
+import { RoadType, RoadDirection } from '../road/types';
+
 /**
  * Traffic light system for intersections.
  * Phase 0: N-S green, E-W red
@@ -11,21 +14,25 @@ export interface TrafficLight {
   timer: number; // ticks remaining in current phase
 }
 
-const PHASE_DURATION = 8; // ticks per phase (~2 seconds at 250ms/tick)
+/** Traffic light configuration */
+export const TRAFFIC_LIGHT = {
+  /** Ticks per phase (~2 seconds at 250ms/tick) */
+  PHASE_DURATION: 8,
+} as const;
 
 export class TrafficLightSystem {
   private lights = new Map<string, TrafficLight>();
 
   addLight(x: number, y: number): void {
-    const key = `${x},${y}`;
+    const key = toPosKey(x, y);
     if (this.lights.has(key)) return;
     // Stagger phase start by position hash to avoid all lights syncing
-    const stagger = (x * 7 + y * 13) % PHASE_DURATION;
+    const stagger = (x * 7 + y * 13) % TRAFFIC_LIGHT.PHASE_DURATION;
     this.lights.set(key, { x, y, phase: 0, timer: stagger + 1 });
   }
 
   removeLight(x: number, y: number): void {
-    this.lights.delete(`${x},${y}`);
+    this.lights.delete(toPosKey(x, y));
   }
 
   tick(): void {
@@ -33,7 +40,7 @@ export class TrafficLightSystem {
       light.timer--;
       if (light.timer <= 0) {
         light.phase = (light.phase + 1) % 2;
-        light.timer = PHASE_DURATION;
+        light.timer = TRAFFIC_LIGHT.PHASE_DURATION;
       }
     }
   }
@@ -44,7 +51,7 @@ export class TrafficLightSystem {
    * for the vehicle's direction.
    */
   canPass(fromX: number, fromY: number, toX: number, toY: number): boolean {
-    const light = this.lights.get(`${toX},${toY}`);
+    const light = this.lights.get(toPosKey(toX, toY));
     if (!light) return true;
 
     const dx = toX - fromX;
@@ -56,7 +63,7 @@ export class TrafficLightSystem {
   }
 
   getLight(x: number, y: number): TrafficLight | undefined {
-    return this.lights.get(`${x},${y}`);
+    return this.lights.get(toPosKey(x, y));
   }
 
   getLights(): TrafficLight[] {
@@ -65,5 +72,39 @@ export class TrafficLightSystem {
 
   clear(): void {
     this.lights.clear();
+  }
+}
+
+/**
+ * Sync traffic lights with current grid state: add lights at 3+ way intersections,
+ * remove stale lights where intersections no longer exist.
+ */
+export function syncTrafficLightsWithGrid(
+  grid: { forEachCell(fn: (cell: { roadType: number; roadFlags: number }, x: number, y: number) => void): void },
+  tls: TrafficLightSystem,
+): void {
+  const seen = new Set<string>();
+
+  grid.forEachCell((cell, x, y) => {
+    if (cell.roadType === RoadType.NONE) return;
+    let dirs = 0;
+    if (cell.roadFlags & RoadDirection.NORTH) dirs++;
+    if (cell.roadFlags & RoadDirection.SOUTH) dirs++;
+    if (cell.roadFlags & RoadDirection.EAST) dirs++;
+    if (cell.roadFlags & RoadDirection.WEST) dirs++;
+    if (dirs >= 3) {
+      const key = `${x},${y}`;
+      seen.add(key);
+      if (!tls.getLight(x, y)) {
+        tls.addLight(x, y);
+      }
+    }
+  });
+
+  // Remove lights for intersections that no longer exist
+  for (const light of tls.getLights()) {
+    if (!seen.has(`${light.x},${light.y}`)) {
+      tls.removeLight(light.x, light.y);
+    }
   }
 }

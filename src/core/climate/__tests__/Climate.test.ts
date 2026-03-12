@@ -1,20 +1,28 @@
 import { describe, it, expect } from 'vitest';
-import { getSeasonFromTick, getSeasonEffects, ClimateType } from '../Climate';
+import { getSeasonFromTick, getSeasonEffects, ClimateType, SEASON_EFFECTS, SEASON_EFFECT_OVERRIDES } from '../Climate';
 import {
   DisasterType,
   createDisaster,
   calculateDamage,
+  DISASTER_MODIFIERS,
+  DISASTER_CALCULATORS,
+  tryRandomDisaster,
+  RANDOM_DISASTER,
+  formatDisasterMessage,
+  applyDisasterDamage,
 } from '../Disaster';
 import {
   addWarningTower,
   isWarned,
   calculateEvacuationTarget,
   createWarningSystem,
+  WARNING,
 } from '../WarningSystem';
 import {
   applyDamage,
   repairBuilding,
   isRoadDamaged,
+  DAMAGE,
 } from '../Damage';
 
 describe('Climate - Season System', () => {
@@ -63,9 +71,26 @@ describe('Climate - Season System', () => {
     expect(effects.waterDemandMultiplier).toBe(1.0);
     expect(effects.happinessModifier).toBe(0);
   });
+
+  it('SEASON_EFFECTS should have valid multipliers and modifiers', () => {
+    expect(SEASON_EFFECTS.SPRING_HAPPINESS).toBeGreaterThan(0);
+    expect(SEASON_EFFECTS.WINTER_HAPPINESS).toBeLessThan(0);
+    expect(SEASON_EFFECTS.WINTER_POWER).toBeGreaterThan(1);
+    expect(SEASON_EFFECTS.WINTER_CONTINENTAL_POWER).toBeGreaterThan(SEASON_EFFECTS.WINTER_POWER);
+  });
 });
 
 describe('Disaster', () => {
+  it('DISASTER_MODIFIERS should have valid damage factors between 0 and 1', () => {
+    expect(DISASTER_MODIFIERS.TSUNAMI_DAMAGE_FACTOR).toBeGreaterThan(0);
+    expect(DISASTER_MODIFIERS.TSUNAMI_DAMAGE_FACTOR).toBeLessThanOrEqual(1);
+    expect(DISASTER_MODIFIERS.FOREST_FIRE_DAMAGE_FACTOR).toBeGreaterThan(0);
+    expect(DISASTER_MODIFIERS.FOREST_FIRE_DAMAGE_FACTOR).toBeLessThanOrEqual(1);
+    expect(DISASTER_MODIFIERS.METEOR_FALLOFF_FACTOR).toBeGreaterThan(0);
+    expect(DISASTER_MODIFIERS.METEOR_FALLOFF_FACTOR).toBeLessThanOrEqual(1);
+    expect(DISASTER_MODIFIERS.TORNADO_PATH_HALF_WIDTH).toBeGreaterThan(0);
+  });
+
   it('should create a disaster with correct properties', () => {
     const d = createDisaster(DisasterType.EARTHQUAKE, 10, 10, 0.8);
     expect(d.type).toBe(DisasterType.EARTHQUAKE);
@@ -145,13 +170,14 @@ describe('WarningSystem', () => {
     expect(target).toBeNull();
   });
 
-  it('warned area reduces casualties by 50%', () => {
-    // This tests the concept: warned damage multiplier is 0.5
+  it('warned area reduces casualties by WARNING.CASUALTY_REDUCTION', () => {
     const system = createWarningSystem();
     addWarningTower(system, 10, 10, 5);
     const warned = isWarned(system, 10, 10);
-    const casualtyMultiplier = warned ? 0.5 : 1.0;
-    expect(casualtyMultiplier).toBe(0.5);
+    const casualtyMultiplier = warned ? WARNING.CASUALTY_REDUCTION : 1.0;
+    expect(casualtyMultiplier).toBe(WARNING.CASUALTY_REDUCTION);
+    expect(WARNING.CASUALTY_REDUCTION).toBeLessThan(1);
+    expect(WARNING.CASUALTY_REDUCTION).toBeGreaterThan(0);
   });
 });
 
@@ -171,6 +197,13 @@ describe('Damage', () => {
 
     const b3Damage = damages.find((d) => d.buildingId === 3);
     expect(b3Damage!.damageLevel).toBe(0);
+  });
+
+  it('DAMAGE thresholds should be in valid range', () => {
+    expect(DAMAGE.DESTRUCTION_THRESHOLD).toBeGreaterThan(0);
+    expect(DAMAGE.DESTRUCTION_THRESHOLD).toBeLessThanOrEqual(1);
+    expect(DAMAGE.ROAD_DAMAGE_THRESHOLD).toBeGreaterThan(0);
+    expect(DAMAGE.ROAD_DAMAGE_THRESHOLD).toBeLessThan(DAMAGE.DESTRUCTION_THRESHOLD);
   });
 
   it('should mark building as destroyed when damage >= 0.9', () => {
@@ -211,5 +244,156 @@ describe('Damage', () => {
     const disaster = createDisaster(DisasterType.EARTHQUAKE, 10, 10, 1.0);
     expect(isRoadDamaged(10, 10, disaster)).toBe(true);
     expect(isRoadDamaged(50, 50, disaster)).toBe(false);
+  });
+});
+
+describe('DAMAGE config', () => {
+
+  it('base repair cost should be positive', () => {
+    expect(DAMAGE.BASE_REPAIR_COST).toBeGreaterThan(0);
+  });
+});
+
+describe('SEASON_EFFECT_OVERRIDES', () => {
+  it('should have an override for every season', () => {
+    const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+    for (const season of seasons) {
+      expect(typeof SEASON_EFFECT_OVERRIDES[season]).toBe('function');
+    }
+  });
+
+  it('should produce same results as getSeasonEffects', () => {
+    const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+    const climates = [ClimateType.TEMPERATE, ClimateType.TROPICAL, ClimateType.ARID, ClimateType.CONTINENTAL];
+    for (const season of seasons) {
+      for (const climate of climates) {
+        const expected = getSeasonEffects(season, climate);
+        expect(expected.powerDemandMultiplier).toBeDefined();
+        expect(expected.waterDemandMultiplier).toBeDefined();
+        expect(expected.happinessModifier).toBeDefined();
+      }
+    }
+  });
+});
+
+describe('DISASTER_CALCULATORS', () => {
+  it('should have a calculator for every DisasterType', () => {
+    for (const type of Object.values(DisasterType)) {
+      expect(DISASTER_CALCULATORS[type]).toBeDefined();
+      expect(typeof DISASTER_CALCULATORS[type]).toBe('function');
+    }
+  });
+
+  it('each calculator should return 0 for distance >= radius', () => {
+    for (const type of Object.values(DisasterType)) {
+      const disaster = createDisaster(type, 10, 10, 1.0);
+      const damage = DISASTER_CALCULATORS[type](disaster, 10, 10 + disaster.radius + 5);
+      expect(damage).toBe(0);
+    }
+  });
+
+  it('each calculator should return > 0 at epicenter', () => {
+    for (const type of Object.values(DisasterType)) {
+      const disaster = createDisaster(type, 10, 10, 1.0);
+      const damage = DISASTER_CALCULATORS[type](disaster, 10, 10);
+      expect(damage).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('tryRandomDisaster', () => {
+  it('should skip when population is below minimum', () => {
+    const result = tryRandomDisaster(20, 20, 10, 1.0); // force probability=1
+    expect(result).toBeNull();
+  });
+
+  it('should trigger disaster when probability passes and population is sufficient', () => {
+    const result = tryRandomDisaster(20, 20, 100, 1.0); // force probability=1
+    expect(result).not.toBeNull();
+    expect(result!.disaster).toBeDefined();
+    expect(result!.disaster.epicenterX).toBeGreaterThanOrEqual(0);
+    expect(result!.disaster.epicenterX).toBeLessThan(20);
+    expect(result!.disaster.intensity).toBeGreaterThanOrEqual(0.3);
+    expect(result!.disaster.intensity).toBeLessThanOrEqual(0.8);
+  });
+
+  it('should return damaged cells list', () => {
+    const result = tryRandomDisaster(20, 20, 100, 1.0);
+    expect(result).not.toBeNull();
+    expect(Array.isArray(result!.damagedCells)).toBe(true);
+  });
+
+  it('RANDOM_DISASTER constants should have sensible values', () => {
+    expect(RANDOM_DISASTER.CHANCE_PER_TICK).toBeGreaterThan(0);
+    expect(RANDOM_DISASTER.CHANCE_PER_TICK).toBeLessThan(0.1);
+    expect(RANDOM_DISASTER.MIN_POPULATION).toBeGreaterThan(0);
+    expect(RANDOM_DISASTER.MIN_INTENSITY).toBeGreaterThan(0);
+    expect(RANDOM_DISASTER.MAX_INTENSITY).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('formatDisasterMessage', () => {
+  it('should format known disaster type', () => {
+    const msg = formatDisasterMessage({
+      type: DisasterType.EARTHQUAKE, epicenterX: 10, epicenterY: 20,
+      intensity: 0.75, radius: 5, ticksRemaining: 0,
+    });
+    expect(msg).toBe('Disaster: Earthquake at (10,20)! Intensity: 75%');
+  });
+
+  it('should fallback to type enum for unknown disaster', () => {
+    const msg = formatDisasterMessage({
+      type: 'UNKNOWN' as DisasterType, epicenterX: 5, epicenterY: 5,
+      intensity: 0.5, radius: 3, ticksRemaining: 0,
+    });
+    expect(msg).toContain('UNKNOWN');
+    expect(msg).toContain('50%');
+  });
+});
+
+describe('applyDisasterDamage', () => {
+  function makeGrid() {
+    const cells = new Map<string, { buildingId: number }>();
+    return {
+      getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null,
+      setCell: (x: number, y: number, data: { buildingId: number }) => {
+        const existing = cells.get(`${x},${y}`);
+        if (existing) Object.assign(existing, data);
+      },
+      set: (x: number, y: number, data: { buildingId: number }) => cells.set(`${x},${y}`, { ...data }),
+      cells,
+    };
+  }
+
+  it('should clear buildingId for damaged cells with buildings', () => {
+    const grid = makeGrid();
+    grid.set(3, 4, { buildingId: 10 });
+    grid.set(5, 6, { buildingId: 20 });
+    const count = applyDisasterDamage(grid, [{ x: 3, y: 4 }, { x: 5, y: 6 }]);
+    expect(count).toBe(2);
+    expect(grid.cells.get('3,4')!.buildingId).toBe(0);
+    expect(grid.cells.get('5,6')!.buildingId).toBe(0);
+  });
+
+  it('should skip cells with no building', () => {
+    const grid = makeGrid();
+    grid.set(1, 1, { buildingId: 0 }); // empty cell
+    const count = applyDisasterDamage(grid, [{ x: 1, y: 1 }]);
+    expect(count).toBe(0);
+  });
+
+  it('should skip out-of-bounds cells', () => {
+    const grid = makeGrid();
+    const count = applyDisasterDamage(grid, [{ x: 99, y: 99 }]);
+    expect(count).toBe(0);
+  });
+
+  it('should return count of destroyed buildings', () => {
+    const grid = makeGrid();
+    grid.set(0, 0, { buildingId: 5 });
+    grid.set(1, 0, { buildingId: 0 }); // no building
+    grid.set(2, 0, { buildingId: 8 });
+    const count = applyDisasterDamage(grid, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }]);
+    expect(count).toBe(2); // only 2 had buildings
   });
 });

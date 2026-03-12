@@ -1,6 +1,6 @@
 export type PollutionType = 'ground' | 'water' | 'noise';
 
-interface PollutionSource {
+export interface PollutionSource {
   x: number;
   y: number;
   amount: number;
@@ -13,8 +13,10 @@ interface PollutionLevel {
   noise: number;
 }
 
-const DECAY_PER_CELL = 30;
-const PARK_REDUCTION = 20;
+export const POLLUTION = {
+  DECAY_PER_CELL: 30,
+  PARK_REDUCTION: 20,
+} as const;
 
 export class PollutionManager {
   private width: number;
@@ -37,14 +39,12 @@ export class PollutionManager {
   }
 
   private getGrid(type: PollutionType): number[][] {
-    switch (type) {
-      case 'ground':
-        return this.ground;
-      case 'water':
-        return this.water;
-      case 'noise':
-        return this.noise;
-    }
+    const grids: Record<PollutionType, number[][]> = {
+      ground: this.ground,
+      water: this.water,
+      noise: this.noise,
+    };
+    return grids[type];
   }
 
   addSource(x: number, y: number, amount: number, type: PollutionType): void {
@@ -64,7 +64,7 @@ export class PollutionManager {
 
   private spreadFromSource(source: PollutionSource): void {
     const grid = this.getGrid(source.type);
-    const maxRange = Math.ceil(source.amount / DECAY_PER_CELL);
+    const maxRange = Math.ceil(source.amount / POLLUTION.DECAY_PER_CELL);
 
     for (let dx = -maxRange; dx <= maxRange; dx++) {
       for (let dy = -maxRange; dy <= maxRange; dy++) {
@@ -74,7 +74,7 @@ export class PollutionManager {
         if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) continue;
 
         const distance = Math.abs(dx) + Math.abs(dy); // Manhattan distance
-        const value = Math.max(0, source.amount - distance * DECAY_PER_CELL);
+        const value = Math.max(0, source.amount - distance * POLLUTION.DECAY_PER_CELL);
 
         if (value > 0) {
           grid[ny]![nx]! += value;
@@ -104,8 +104,8 @@ export class PollutionManager {
 
         const distance = Math.abs(dx) + Math.abs(dy);
         if (distance <= radius) {
-          this.ground[ny]![nx] = Math.max(0, this.ground[ny]![nx]! - PARK_REDUCTION);
-          this.noise[ny]![nx] = Math.max(0, this.noise[ny]![nx]! - PARK_REDUCTION);
+          this.ground[ny]![nx] = Math.max(0, this.ground[ny]![nx]! - POLLUTION.PARK_REDUCTION);
+          this.noise[ny]![nx] = Math.max(0, this.noise[ny]![nx]! - POLLUTION.PARK_REDUCTION);
         }
       }
     }

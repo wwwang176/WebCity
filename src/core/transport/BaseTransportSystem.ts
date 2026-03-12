@@ -4,6 +4,7 @@ import {
   TransportRoute,
   TransportVehicle,
 } from './types';
+import { manhattanDistance } from '../grid/GridHelpers';
 
 export interface TransportSystemConfig {
   type: TransportType;
@@ -22,6 +23,11 @@ export interface BaseTransportJSON {
   nextRouteId: number;
   nextVehicleId: number;
 }
+
+export const TRANSPORT_SPEED = {
+  MIN_CONGESTION_SPEED: 0.1,
+  CONGESTION_SPEED_IMPACT: 0.5,
+} as const;
 
 export abstract class BaseTransportSystem {
   protected stops: TransportStop[] = [];
@@ -62,6 +68,9 @@ export abstract class BaseTransportSystem {
       return true;
     });
     this.vehicles = this.vehicles.filter(v => !dissolvedIds.includes(v.routeId));
+    for (const id of dissolvedIds) {
+      this.onRouteDissolved(id);
+    }
   }
 
   // ── Route management ─────────────────────────────────────────────
@@ -78,19 +87,7 @@ export abstract class BaseTransportSystem {
     this.routes.push(route);
 
     for (let i = 0; i < vehicleCount; i++) {
-      const firstStop = stops[0]!;
-      this.vehicles.push({
-        id: this.nextVehicleId++,
-        routeId: route.id,
-        currentStopIndex: 0,
-        passengers: 0,
-        capacity: this.config.capacity,
-        position: { x: firstStop.x, y: firstStop.y },
-        waitTicks: 0,
-        atStop: false,
-        travelTicks: 0,
-        traveling: false,
-      });
+      this.spawnVehicle(route.id, stops[0]!);
     }
 
     return route;
@@ -104,19 +101,7 @@ export abstract class BaseTransportSystem {
   addVehicleToRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
     if (!route || route.stops.length === 0) return;
-    const first = route.stops[0]!;
-    this.vehicles.push({
-      id: this.nextVehicleId++,
-      routeId,
-      currentStopIndex: 0,
-      passengers: 0,
-      capacity: this.getCapacity(),
-      position: { x: first.x, y: first.y },
-      waitTicks: 0,
-      atStop: false,
-      travelTicks: 0,
-      traveling: false,
-    });
+    this.spawnVehicle(routeId, route.stops[0]!);
     route.vehicles++;
     route.operatingCost = route.vehicles * this.config.operatingCostPerVehicle;
   }
@@ -143,6 +128,23 @@ export abstract class BaseTransportSystem {
     return this.routes.reduce((sum, r) => sum + r.operatingCost, 0);
   }
 
+  protected spawnVehicle(routeId: number, stop: TransportStop): TransportVehicle {
+    const vehicle: TransportVehicle = {
+      id: this.nextVehicleId++,
+      routeId,
+      currentStopIndex: 0,
+      passengers: 0,
+      capacity: this.getCapacity(),
+      position: { x: stop.x, y: stop.y },
+      waitTicks: 0,
+      atStop: false,
+      travelTicks: 0,
+      traveling: false,
+    };
+    this.vehicles.push(vehicle);
+    return vehicle;
+  }
+
   // ── Tick ─────────────────────────────────────────────────────────
 
   tick(): void {
@@ -166,7 +168,7 @@ export abstract class BaseTransportSystem {
       vehicle.atStop = false;
       vehicle.currentStopIndex = (vehicle.currentStopIndex + 1) % route.stops.length;
       const nextStop = route.stops[vehicle.currentStopIndex]!;
-      const dist = Math.abs(nextStop.x - vehicle.position.x) + Math.abs(nextStop.y - vehicle.position.y);
+      const dist = manhattanDistance(nextStop.x, nextStop.y, vehicle.position.x, vehicle.position.y);
       const speed = this.config.speed * this.getSpeedMultiplier();
       vehicle.travelTicks = Math.max(1, Math.ceil(dist / speed));
       vehicle.traveling = true;
@@ -183,6 +185,7 @@ export abstract class BaseTransportSystem {
       vehicle.atStop = true;
       vehicle.waitTicks = this.config.dwellTicks;
       this.onArrive(vehicle, stop);
+      this.onTravelComplete(vehicle);
     }
   }
 
@@ -198,7 +201,7 @@ export abstract class BaseTransportSystem {
 
   protected getSpeedMultiplier(): number {
     if (!this.config.affectedByCongestion) return 1;
-    return Math.max(0.1, 1 - this.congestionLevel * 0.5);
+    return Math.max(TRANSPORT_SPEED.MIN_CONGESTION_SPEED, 1 - this.congestionLevel * TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT);
   }
 
   protected getCapacity(): number {
@@ -214,6 +217,16 @@ export abstract class BaseTransportSystem {
 
   /** Called when vehicle departs from a stop. Override for special behavior. */
   protected onDepart(_vehicle: TransportVehicle, _route: TransportRoute): void {
+    // default: no-op
+  }
+
+  /** Called after a vehicle finishes traveling and arrives at a stop. Override for cleanup. */
+  protected onTravelComplete(_vehicle: TransportVehicle): void {
+    // default: no-op
+  }
+
+  /** Called when a route is dissolved (< 2 stops). Override for metadata cleanup. */
+  protected onRouteDissolved(_routeId: number): void {
     // default: no-op
   }
 

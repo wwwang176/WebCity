@@ -3,6 +3,10 @@ import {
   INFRA_CONFIGS,
   getInfraConfig,
   getInfraConfigById,
+  getInfraBuildingId,
+  isInfrastructureBuilding,
+  isInfraType,
+  isZoneBuilding,
   type InfraType,
   type Rotation,
   getRotatedSize,
@@ -109,6 +113,22 @@ describe('InfraConfig', () => {
       expect(getInfraConfigById(237)!.type).toBe('airport');
     });
 
+    it('should resolve every infrastructure buildingId to correct type', () => {
+      // All 17 infra types must be resolvable by buildingId (renderer depends on this)
+      const expected: [number, string][] = [
+        [254, 'power'], [253, 'water'], [252, 'police'], [251, 'fire'],
+        [250, 'hospital'], [249, 'school'], [248, 'park'], [247, 'garbage'],
+        [246, 'sewage'], [245, 'cemetery'], [244, 'school_high'], [243, 'school_univ'],
+        [242, 'bus_stop'], [241, 'metro_station'], [239, 'train_station'],
+        [238, 'ferry_dock'], [237, 'airport'],
+      ];
+      for (const [id, type] of expected) {
+        const cfg = getInfraConfigById(id);
+        expect(cfg, `buildingId ${id} should have config`).toBeDefined();
+        expect(cfg!.type).toBe(type);
+      }
+    });
+
     it('should return undefined for non-infra buildingId', () => {
       expect(getInfraConfigById(0)).toBeUndefined();
       expect(getInfraConfigById(1)).toBeUndefined();
@@ -131,6 +151,71 @@ describe('InfraConfig', () => {
       for (const rot of [0, 90, 180, 270] as Rotation[]) {
         expect(getRotatedSize(3, 3, rot)).toEqual({ w: 3, h: 3 });
       }
+    });
+  });
+
+  describe('isInfrastructureBuilding', () => {
+    it('should return true for all known infrastructure buildingIds', () => {
+      for (const cfg of INFRA_CONFIGS) {
+        expect(isInfrastructureBuilding(cfg.buildingId)).toBe(true);
+      }
+    });
+
+    it('should return false for zone building ids (1-236)', () => {
+      expect(isInfrastructureBuilding(1)).toBe(false);
+      expect(isInfrastructureBuilding(100)).toBe(false);
+      expect(isInfrastructureBuilding(236)).toBe(false);
+    });
+
+    it('should return false for 0 (empty cell)', () => {
+      expect(isInfrastructureBuilding(0)).toBe(false);
+    });
+  });
+
+  describe('isZoneBuilding', () => {
+    it('should return true for zone building ids (1-236)', () => {
+      expect(isZoneBuilding(1)).toBe(true);
+      expect(isZoneBuilding(100)).toBe(true);
+      expect(isZoneBuilding(236)).toBe(true);
+    });
+
+    it('should return false for infrastructure buildingIds', () => {
+      for (const cfg of INFRA_CONFIGS) {
+        expect(isZoneBuilding(cfg.buildingId)).toBe(false);
+      }
+    });
+
+    it('should return false for 0 (empty cell)', () => {
+      expect(isZoneBuilding(0)).toBe(false);
+    });
+  });
+
+  describe('getInfraBuildingId', () => {
+    it('returns the correct buildingId for known types', () => {
+      expect(getInfraBuildingId('park')).toBe(248);
+      expect(getInfraBuildingId('power')).toBe(254);
+      expect(getInfraBuildingId('airport')).toBe(237);
+    });
+
+    it('returns consistent values with getInfraConfig', () => {
+      for (const cfg of INFRA_CONFIGS) {
+        expect(getInfraBuildingId(cfg.type)).toBe(cfg.buildingId);
+      }
+    });
+  });
+
+  describe('isInfraType', () => {
+    it('should return true for all valid InfraTypes', () => {
+      for (const cfg of INFRA_CONFIGS) {
+        expect(isInfraType(cfg.type)).toBe(true);
+      }
+    });
+
+    it('should return false for non-infra strings', () => {
+      expect(isInfraType('select')).toBe(false);
+      expect(isInfraType('zone_residential')).toBe(false);
+      expect(isInfraType('demolish')).toBe(false);
+      expect(isInfraType('')).toBe(false);
     });
   });
 

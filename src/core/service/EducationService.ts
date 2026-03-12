@@ -1,3 +1,7 @@
+import { euclideanDistance } from '../grid/GridHelpers';
+import { removeById } from '../utils/removeById';
+import { recoverNextId } from '../utils/recoverNextId';
+
 export type SchoolType = 'elementary' | 'highschool' | 'university';
 
 export interface School {
@@ -8,6 +12,10 @@ export interface School {
   radius: number;
   capacity: number;
 }
+
+export const EDUCATION = {
+  MAINTENANCE_PER_SCHOOL: 5,
+} as const;
 
 const DEFAULT_RADIUS: Record<SchoolType, number> = {
   elementary: 10,
@@ -31,10 +39,9 @@ const LEVEL_RANK: Record<SchoolType | 'none', number> = {
 
 export type EducationLevelResult = 'none' | SchoolType;
 
-let nextId = 1;
-
 export class EducationService {
   private schools: School[] = [];
+  private nextId = 1;
 
   addSchool(
     x: number,
@@ -43,7 +50,7 @@ export class EducationService {
     radius?: number,
     capacity?: number,
   ): string {
-    const id = `school-${nextId++}`;
+    const id = `school-${this.nextId++}`;
     this.schools.push({
       id,
       x,
@@ -56,10 +63,7 @@ export class EducationService {
   }
 
   removeSchool(id: string): void {
-    const idx = this.schools.findIndex(s => s.id === id);
-    if (idx !== -1) {
-      this.schools.splice(idx, 1);
-    }
+    removeById(this.schools, id);
   }
 
   /**
@@ -69,7 +73,7 @@ export class EducationService {
   getCoverage(x: number, y: number, type?: SchoolType): boolean {
     for (const school of this.schools) {
       if (type !== undefined && school.type !== type) continue;
-      const dist = Math.sqrt((x - school.x) ** 2 + (y - school.y) ** 2);
+      const dist = euclideanDistance(x, y, school.x, school.y);
       if (dist < school.radius) return true;
     }
     return false;
@@ -81,7 +85,7 @@ export class EducationService {
   getEducationLevel(x: number, y: number): EducationLevelResult {
     let best: EducationLevelResult = 'none';
     for (const school of this.schools) {
-      const dist = Math.sqrt((x - school.x) ** 2 + (y - school.y) ** 2);
+      const dist = euclideanDistance(x, y, school.x, school.y);
       if (dist < school.radius && LEVEL_RANK[school.type] > LEVEL_RANK[best]) {
         best = school.type;
       }
@@ -97,6 +101,10 @@ export class EducationService {
     // Future: track enrollment, education progress, etc.
   }
 
+  getMaintenanceCost(): number {
+    return this.schools.length * EDUCATION.MAINTENANCE_PER_SCHOOL;
+  }
+
   toJSON(): { schools: School[] } {
     return { schools: this.schools.map(s => ({ ...s })) };
   }
@@ -106,6 +114,7 @@ export class EducationService {
     for (const s of data.schools) {
       service.schools.push({ ...s });
     }
+    service.nextId = recoverNextId(service.schools, 'school-');
     return service;
   }
 }

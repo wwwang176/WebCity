@@ -1,5 +1,12 @@
-import type { Grid } from '../grid/Grid';
-import type { TrafficSimulation } from '../traffic/TrafficSimulation';
+import type { ReadableGrid } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { RoadType } from '../road/types';
+
+/** Minimal traffic interface for congestion estimation (DIP). */
+export interface TrafficMetrics {
+  getVehicleCount(): number;
+  getTopCongested(limit: number): { segment: string; density: number }[];
+}
 
 export enum ServiceVehicleType {
   FIRE_TRUCK = 'FIRE_TRUCK',
@@ -28,12 +35,12 @@ export interface DispatchResult {
  * traffic congestion to estimate travel time.
  */
 export class ServiceDispatch {
-  private grid: Grid;
-  private traffic: TrafficSimulation;
+  private grid: ReadableGrid;
+  private traffic: TrafficMetrics;
   /** Facility ID → district name. */
   private facilityDistricts = new Map<string, string>();
 
-  constructor(grid: Grid, traffic: TrafficSimulation) {
+  constructor(grid: ReadableGrid, traffic: TrafficMetrics) {
     this.grid = grid;
     this.traffic = traffic;
   }
@@ -47,8 +54,8 @@ export class ServiceDispatch {
     origin: { x: number; y: number },
     destination: { x: number; y: number },
   ): DispatchResult | null {
-    const startRoad = this.findAdjacentRoad(origin.x, origin.y);
-    const endRoad = this.findAdjacentRoad(destination.x, destination.y);
+    const startRoad = findAdjacentRoad(this.grid, origin.x, origin.y);
+    const endRoad = findAdjacentRoad(this.grid, destination.x, destination.y);
     if (!startRoad || !endRoad) return null;
     if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) {
       return { vehicleType, path: [startRoad], estimatedTicks: 1 };
@@ -83,41 +90,18 @@ export class ServiceDispatch {
     return assignedDistrict === incidentDistrict;
   }
 
-  /** Find the nearest adjacent road cell to (x, y). */
-  private findAdjacentRoad(x: number, y: number): { x: number; y: number } | null {
-    // Check the cell itself first
-    const self = this.grid.getCell(x, y);
-    if (self && self.roadType > 0) return { x, y };
-
-    const dirs = [
-      { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-      { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-    ];
-    for (const { dx, dy } of dirs) {
-      const nx = x + dx;
-      const ny = y + dy;
-      const cell = this.grid.getCell(nx, ny);
-      if (cell && cell.roadType > 0) return { x: nx, y: ny };
-    }
-    return null;
-  }
 
   /** BFS to find shortest road path. */
   private bfsRoadPath(
     start: { x: number; y: number },
     end: { x: number; y: number },
   ): { x: number; y: number }[] | null {
-    const key = (x: number, y: number) => `${x},${y}`;
+    const key = toPosKey;
     const visited = new Set<string>();
     const parent = new Map<string, string>();
     const queue: { x: number; y: number }[] = [start];
     visited.add(key(start.x, start.y));
     const endKey = key(end.x, end.y);
-
-    const dirs = [
-      { dx: 1, dy: 0 }, { dx: -1, dy: 0 },
-      { dx: 0, dy: 1 }, { dx: 0, dy: -1 },
-    ];
 
     let steps = 0;
     while (queue.length > 0 && steps < 500) {
@@ -130,20 +114,20 @@ export class ServiceDispatch {
         const path: { x: number; y: number }[] = [];
         let k: string | undefined = endKey;
         while (k) {
-          const [px, py] = k.split(',').map(Number);
-          path.unshift({ x: px!, y: py! });
+          const pos = parsePosKeyUnsafe(k);
+          path.unshift(pos);
           k = parent.get(k);
         }
         return path;
       }
 
-      for (const { dx, dy } of dirs) {
+      for (const [dx, dy] of FOUR_NEIGHBORS) {
         const nx = cur.x + dx;
         const ny = cur.y + dy;
         const nk = key(nx, ny);
         if (visited.has(nk)) continue;
         const cell = this.grid.getCell(nx, ny);
-        if (!cell || cell.roadType <= 0) continue;
+        if (!cell || cell.roadType === RoadType.NONE) continue;
         visited.add(nk);
         parent.set(nk, curKey);
         queue.push({ x: nx, y: ny });
@@ -163,7 +147,7 @@ export class ServiceDispatch {
     if (vehicleCount === 0) return 0;
 
     // Check if path overlaps with top congested segments
-    const pathSet = new Set(path.map(p => `${p.x},${p.y}`));
+    const pathSet = new Set(path.map(p => toPosKey(p.x, p.y)));
     const topCongested = this.traffic.getTopCongested(20);
     let congestedOnPath = 0;
     let totalDensity = 0;

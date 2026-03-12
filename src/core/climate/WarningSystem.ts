@@ -1,3 +1,5 @@
+import { euclideanDistance } from '../grid/GridHelpers';
+
 export interface WarningTower {
   x: number;
   y: number;
@@ -22,12 +24,7 @@ export function addWarningTower(
 }
 
 export function isWarned(system: WarningSystem, x: number, y: number): boolean {
-  return system.towers.some((tower) => {
-    const dx = x - tower.x;
-    const dy = y - tower.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
-    return distance <= tower.radius;
-  });
+  return system.towers.some((tower) => euclideanDistance(x, y, tower.x, tower.y) <= tower.radius);
 }
 
 export function calculateEvacuationTarget(
@@ -41,9 +38,7 @@ export function calculateEvacuationTarget(
   let minDist = Infinity;
 
   for (const shelter of shelters) {
-    const dx = citizenX - shelter.x;
-    const dy = citizenY - shelter.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    const dist = euclideanDistance(citizenX, citizenY, shelter.x, shelter.y);
     if (dist < minDist) {
       minDist = dist;
       nearest = shelter;
@@ -53,5 +48,7 @@ export function calculateEvacuationTarget(
   return nearest;
 }
 
-/** Warning coverage reduces casualty by this factor */
-export const WARNING_CASUALTY_REDUCTION = 0.5;
+export const WARNING = {
+  /** Warning coverage reduces casualty by this factor */
+  CASUALTY_REDUCTION: 0.5,
+} as const;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PoliceService } from '../PoliceService';
+import { PoliceService, POLICE } from '../PoliceService';
 
 describe('PoliceService', () => {
   it('should create a PoliceService instance', () => {
@@ -138,5 +138,15 @@ describe('PoliceService', () => {
     expect(police.getCoverage(20, 10)).toBe(true);
     // Outside default radius (distance = 16)
     expect(police.getCoverage(26, 10)).toBe(false);
+  });
+});
+
+describe('POLICE constants', () => {
+  it('crime reduction per station should be negative', () => {
+    expect(POLICE.CRIME_REDUCTION_PER_STATION).toBeLessThan(0);
+  });
+
+  it('crime reduction cap should be <= reduction per station (more negative)', () => {
+    expect(POLICE.CRIME_REDUCTION_CAP).toBeLessThanOrEqual(POLICE.CRIME_REDUCTION_PER_STATION);
   });
 });

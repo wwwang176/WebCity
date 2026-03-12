@@ -5,6 +5,8 @@
  * 純邏輯模組，禁止 import Three.js。
  */
 
+import { parsePosKeyUnsafe, toPosKey, euclideanDistance } from '../grid/GridHelpers';
+
 export interface WaterGrid {
   width: number;
   height: number;
@@ -28,16 +30,9 @@ const DIRS: ReadonlyArray<{ dx: number; dy: number; cost: number }> = [
   { dx: 1, dy: 1, cost: Math.SQRT2 },   // SE
 ];
 
-function heuristic(ax: number, ay: number, bx: number, by: number): number {
-  // 歐幾里得距離
-  const dx = ax - bx;
-  const dy = ay - by;
-  return Math.sqrt(dx * dx + dy * dy);
-}
+const heuristic = euclideanDistance;
 
-function key(x: number, y: number): string {
-  return `${x},${y}`;
-}
+const key = toPosKey;
 
 /**
  * A* 水域尋路。
@@ -84,19 +79,19 @@ export function findWaterPath(
       const path: Array<{ x: number; y: number }> = [];
       let ck: string | undefined = currentKey;
       while (ck) {
-        const [cx, cy] = ck.split(',').map(Number);
-        path.unshift({ x: cx!, y: cy! });
+        const pos = parsePosKeyUnsafe(ck);
+        path.unshift(pos);
         ck = cameFrom.get(ck);
       }
       return { path, distance: gScore.get(currentKey)! };
     }
 
     openSet.delete(currentKey);
-    const [cx, cy] = currentKey.split(',').map(Number);
+    const cur = parsePosKeyUnsafe(currentKey);
 
     for (const dir of DIRS) {
-      const nx = cx! + dir.dx;
-      const ny = cy! + dir.dy;
+      const nx = cur.x + dir.dx;
+      const ny = cur.y + dir.dy;
 
       if (nx < 0 || nx >= grid.width || ny < 0 || ny >= grid.height) continue;
       // Allow water tiles + destination tile (shore dock)

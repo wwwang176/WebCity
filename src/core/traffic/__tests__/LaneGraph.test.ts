@@ -3,6 +3,7 @@ import {
   LaneGraph,
   ConnectionPoint,
   LaneEdge,
+  LANE_GEOMETRY,
 } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
 
@@ -314,5 +315,22 @@ describe('LaneGraph', () => {
       const edges = graph.getEdgesTo(entryWest!.id);
       expect(edges.length).toBeGreaterThanOrEqual(1);
     });
+  });
+});
+
+describe('LANE_GEOMETRY constants', () => {
+  it('lane width should be a small positive number', () => {
+    expect(LANE_GEOMETRY.LANE_WIDTH).toBeGreaterThan(0);
+    expect(LANE_GEOMETRY.LANE_WIDTH).toBeLessThan(1);
+  });
+
+  it('bezier strength should be between 0 and 1', () => {
+    expect(LANE_GEOMETRY.BEZIER_STRENGTH).toBeGreaterThan(0);
+    expect(LANE_GEOMETRY.BEZIER_STRENGTH).toBeLessThan(1);
+  });
+
+  it('bezier samples should be a positive integer', () => {
+    expect(LANE_GEOMETRY.BEZIER_SAMPLES).toBeGreaterThan(0);
+    expect(Number.isInteger(LANE_GEOMETRY.BEZIER_SAMPLES)).toBe(true);
   });
 });
