@@ -121,7 +121,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
 
   const addVehicle = (type: string, routeId: number) => {
     const state = getGame().getState();
-    if (type === 'bus') state.bus.addVehicleToRoute(routeId);
+    if (type === 'bus') getGame().addBusVehicle(routeId);
     else if (type === 'metro') state.metro.addVehicleToRoute(routeId);
     else if (type === 'rail') state.rail.addVehicleToRoute(routeId);
     else if (type === 'ferry') state.ferry.addVehicleToRoute(routeId);
@@ -130,7 +130,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
 
   const removeVehicle = (type: string, routeId: number) => {
     const state = getGame().getState();
-    if (type === 'bus') state.bus.removeVehicleFromRoute(routeId);
+    if (type === 'bus') getGame().removeBusVehicle(routeId);
     else if (type === 'metro') state.metro.removeVehicleFromRoute(routeId);
     else if (type === 'rail') state.rail.removeVehicleFromRoute(routeId);
     else if (type === 'ferry') state.ferry.removeVehicleFromRoute(routeId);
@@ -139,7 +139,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
 
   const deleteRoute = (type: string, routeId: number) => {
     const state = getGame().getState();
-    if (type === 'bus') state.bus.deleteRoute(routeId);
+    if (type === 'bus') getGame().deleteBusRoute(routeId);
     else if (type === 'metro') state.metro.deleteLine(routeId);
     else if (type === 'rail') state.rail.deleteLine(routeId);
     else if (type === 'ferry') state.ferry.deleteRoute(routeId);

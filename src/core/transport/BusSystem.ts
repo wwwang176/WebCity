@@ -61,13 +61,14 @@ export class BusSystem extends BaseTransportSystem {
 
   /**
    * Spawn a bus vehicle into TrafficSimulation for the given route.
+   * offsetFraction (0–1) staggers the bus along the route.
    * Returns the vehicle or null if no segments are cached.
    */
-  spawnBusInTraffic(routeId: number, traffic: TrafficSimulation): Vehicle | null {
+  spawnBusInTraffic(routeId: number, traffic: TrafficSimulation, offsetFraction = 0): Vehicle | null {
     const segments = this.routeSegments.get(routeId);
     if (!segments || segments.length === 0) return null;
 
-    const vehicle = traffic.addBusVehicle(segments, routeId);
+    const vehicle = traffic.addBusVehicle(segments, routeId, offsetFraction);
     const ids = this.busVehicleIds.get(routeId) ?? [];
     ids.push(vehicle.id);
     this.busVehicleIds.set(routeId, ids);
@@ -91,10 +92,43 @@ export class BusSystem extends BaseTransportSystem {
       this.deleteRoute(route.id);
       return null;
     }
-    for (let i = 0; i < Math.max(1, vehicleCount); i++) {
-      this.spawnBusInTraffic(route.id, traffic);
+    const count = Math.max(1, vehicleCount);
+    for (let i = 0; i < count; i++) {
+      const offset = count > 1 ? i / count : 0;
+      this.spawnBusInTraffic(route.id, traffic, offset);
     }
     return route;
+  }
+
+  /** Delete a bus route and remove its vehicles from TrafficSimulation. */
+  deleteRouteWithTraffic(routeId: number, traffic: TrafficSimulation): void {
+    traffic.removeBusVehicles(routeId);
+    this.routeSegments.delete(routeId);
+    this.busVehicleIds.delete(routeId);
+    this.deleteRoute(routeId);
+  }
+
+  /** Add one bus vehicle to a route in TrafficSimulation. */
+  addVehicleWithTraffic(routeId: number, traffic: TrafficSimulation): void {
+    const route = this.routes.find(r => r.id === routeId);
+    if (!route) return;
+    this.spawnBusInTraffic(routeId, traffic);
+    this.addVehicleToRoute(routeId);
+  }
+
+  /** Remove one bus vehicle from a route in TrafficSimulation. */
+  removeVehicleWithTraffic(routeId: number, traffic: TrafficSimulation): void {
+    const route = this.routes.find(r => r.id === routeId);
+    if (!route || route.vehicles <= 1) return;
+    const removedId = traffic.removeOneBusVehicle(routeId);
+    if (removedId >= 0) {
+      const ids = this.busVehicleIds.get(routeId);
+      if (ids) {
+        const idx = ids.indexOf(removedId);
+        if (idx >= 0) ids.splice(idx, 1);
+      }
+    }
+    this.removeVehicleFromRoute(routeId);
   }
 
   // ── Road change handling ────────────────────────────────────────

@@ -1268,6 +1268,21 @@ export class Game {
     );
   }
 
+  /** Delete a bus route and remove its vehicles from TrafficSimulation. */
+  deleteBusRoute(routeId: number): void {
+    this.state.bus.deleteRouteWithTraffic(routeId, this.state.traffic);
+  }
+
+  /** Add one bus vehicle to a route in TrafficSimulation. */
+  addBusVehicle(routeId: number): void {
+    this.state.bus.addVehicleWithTraffic(routeId, this.state.traffic);
+  }
+
+  /** Remove one bus vehicle from a route in TrafficSimulation. */
+  removeBusVehicle(routeId: number): void {
+    this.state.bus.removeVehicleWithTraffic(routeId, this.state.traffic);
+  }
+
   getToolType(): ToolType {
     return this.currentTool;
   }

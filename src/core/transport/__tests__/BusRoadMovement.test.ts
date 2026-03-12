@@ -269,6 +269,111 @@ describe('Step 4: createRouteWithTraffic', () => {
     expect(bus.getRoutes().length).toBe(0);
     expect(traffic.vehicles.length).toBe(0);
   });
+
+  it('should stagger multiple buses across route edges', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1; s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4; s2.roadY = 0;
+
+    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
+    const refinePath = (cellPath: string[]) => {
+      const edges: LaneEdge[] = [];
+      for (let i = 0; i < cellPath.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      }
+      return edges;
+    };
+
+    const route = bus.createRouteWithTraffic([s1, s2], 4, findPath, refinePath, traffic);
+    expect(route).not.toBeNull();
+    expect(traffic.vehicles.length).toBe(4);
+
+    // Buses should NOT all start at the same position
+    const positions = traffic.vehicles.map(v => ({
+      seg: v.busState!.segmentIndex,
+      edge: v.edgeIndex,
+    }));
+    const unique = new Set(positions.map(p => `${p.seg}:${p.edge}`));
+    expect(unique.size).toBeGreaterThan(1);
+  });
+
+  it('deleteRouteWithTraffic should remove from both BusSystem and TrafficSimulation', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1; s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4; s2.roadY = 0;
+
+    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
+    const refinePath = (cellPath: string[]) => {
+      const edges: LaneEdge[] = [];
+      for (let i = 0; i < cellPath.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      }
+      return edges;
+    };
+
+    const route = bus.createRouteWithTraffic([s1, s2], 2, findPath, refinePath, traffic);
+    expect(traffic.vehicles.length).toBe(2);
+
+    bus.deleteRouteWithTraffic(route!.id, traffic);
+    expect(bus.getRoutes().length).toBe(0);
+    expect(traffic.vehicles.length).toBe(0);
+  });
+
+  it('addVehicleWithTraffic should spawn a new bus in TrafficSimulation', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1; s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4; s2.roadY = 0;
+
+    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
+    const refinePath = (cellPath: string[]) => {
+      const edges: LaneEdge[] = [];
+      for (let i = 0; i < cellPath.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      }
+      return edges;
+    };
+
+    const route = bus.createRouteWithTraffic([s1, s2], 1, findPath, refinePath, traffic);
+    expect(traffic.vehicles.length).toBe(1);
+
+    bus.addVehicleWithTraffic(route!.id, traffic);
+    expect(traffic.vehicles.length).toBe(2);
+    expect(route!.vehicles).toBe(2);
+  });
+
+  it('removeVehicleWithTraffic should remove a bus from TrafficSimulation', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1; s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4; s2.roadY = 0;
+
+    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
+    const refinePath = (cellPath: string[]) => {
+      const edges: LaneEdge[] = [];
+      for (let i = 0; i < cellPath.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      }
+      return edges;
+    };
+
+    const route = bus.createRouteWithTraffic([s1, s2], 3, findPath, refinePath, traffic);
+    expect(traffic.vehicles.length).toBe(3);
+
+    bus.removeVehicleWithTraffic(route!.id, traffic);
+    expect(traffic.vehicles.length).toBe(2);
+    expect(route!.vehicles).toBe(2);
+  });
 });
 
 describe('Step 4: BusSystem route path management', () => {

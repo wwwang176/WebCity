@@ -97,34 +97,63 @@ export class TrafficSimulation {
   private predictedFlow: Map<string, number> | null = null;
 
 
-  /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg). */
-  addBusVehicle(segments: LaneEdge[][], routeId: number): Vehicle {
-    const firstSegment = segments[0]!;
+  /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg).
+   *  offsetFraction (0–1) distributes the bus along the total route for staggering. */
+  addBusVehicle(segments: LaneEdge[][], routeId: number, offsetFraction = 0): Vehicle {
+    // Calculate total edges to determine stagger position
+    let totalEdges = 0;
+    for (const seg of segments) totalEdges += seg.length;
+
+    let targetEdge = Math.floor(offsetFraction * totalEdges);
+    let segIdx = 0;
+    let edgeIdx = 0;
+    for (let s = 0; s < segments.length; s++) {
+      if (targetEdge < segments[s]!.length) {
+        segIdx = s;
+        edgeIdx = targetEdge;
+        break;
+      }
+      targetEdge -= segments[s]!.length;
+    }
+
+    const startSegment = segments[segIdx]!;
     const vehicle: Vehicle = {
       id: this.nextId++,
       length: 0.45,  // bus fixed length
       arrived: false,
-      lane: firstSegment[0]?.from.lane ?? 0,
-      edgePath: firstSegment,
-      edgeIndex: 0,
+      lane: startSegment[edgeIdx]?.from.lane ?? 0,
+      edgePath: startSegment,
+      edgeIndex: edgeIdx,
       edgeProgress: 0,
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
       stallTime: 0,
       busState: {
         routeId,
-        segmentIndex: 0,
+        segmentIndex: segIdx,
         dwelling: false,
         dwellTimer: 0,
         segments,
       },
     };
     this.vehicles.push(vehicle);
-    const startCell = firstSegment[0]?.from.cellKey;
+    const startCell = startSegment[edgeIdx]?.from.cellKey;
     if (startCell) {
       this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
     }
     return vehicle;
+  }
+
+  /** Remove one bus vehicle belonging to a specific route. Returns the removed vehicle ID or -1. */
+  removeOneBusVehicle(routeId: number): number {
+    for (let i = this.vehicles.length - 1; i >= 0; i--) {
+      const v = this.vehicles[i]!;
+      if (v.busState && v.busState.routeId === routeId) {
+        this.vehicles.splice(i, 1);
+        return v.id;
+      }
+    }
+    return -1;
   }
 
   /** Remove all bus vehicles belonging to a specific route. */
