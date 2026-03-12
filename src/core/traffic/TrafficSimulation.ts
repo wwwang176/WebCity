@@ -4,6 +4,14 @@ import { interpolateEdgePosition, interpolateEdgeTangent } from './EdgeInterpola
 import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
 import { pickWeighted } from '../utils/random';
 
+export interface BusVehicleState {
+  routeId: number;           // owning bus route ID
+  segmentIndex: number;      // current segment (stop[i] → stop[i+1])
+  dwelling: boolean;         // true while stopped at a bus stop
+  dwellTimer: number;        // remaining dwell time (seconds)
+  segments: LaneEdge[][];    // precomputed edge paths for all route segments
+}
+
 export interface Vehicle {
   id: number;
   length: number;  // vehicle body length in world units
@@ -15,12 +23,15 @@ export interface Vehicle {
   edgeMoveRate: number;  // distance moved last tick (for render extrapolation)
   speedMultiplier: number; // random 0.8–1.0, prevents vehicles from bunching at same speed
   stallTime: number;  // accumulated seconds at zero movement; despawned when exceeding threshold
+  busState?: BusVehicleState;  // present only for bus vehicles
 }
 
-/** Vehicle lengths matching renderer model sizes */
+/** Bus dwell time at each stop (seconds). */
+export const BUS_DWELL_SECONDS = 2.0;
+
+/** Vehicle lengths matching renderer model sizes (bus removed — spawned by BusSystem) */
 const VEHICLE_LENGTHS = [
-  { weight: 0.70, length: 0.22 },  // car
-  { weight: 0.15, length: 0.45 },  // bus
+  { weight: 0.85, length: 0.22 },  // car
   { weight: 0.10, length: 0.32 },  // truck
   { weight: 0.05, length: 0.34 },  // firetruck
 ];
@@ -85,6 +96,43 @@ export class TrafficSimulation {
   /** Predicted congestion flow (path count per cell), set by SimulationLoop periodically. */
   private predictedFlow: Map<string, number> | null = null;
 
+
+  /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg). */
+  addBusVehicle(segments: LaneEdge[][], routeId: number): Vehicle {
+    const firstSegment = segments[0]!;
+    const vehicle: Vehicle = {
+      id: this.nextId++,
+      length: 0.45,  // bus fixed length
+      arrived: false,
+      lane: firstSegment[0]?.from.lane ?? 0,
+      edgePath: firstSegment,
+      edgeIndex: 0,
+      edgeProgress: 0,
+      edgeMoveRate: 0,
+      speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      stallTime: 0,
+      busState: {
+        routeId,
+        segmentIndex: 0,
+        dwelling: false,
+        dwellTimer: 0,
+        segments,
+      },
+    };
+    this.vehicles.push(vehicle);
+    const startCell = firstSegment[0]?.from.cellKey;
+    if (startCell) {
+      this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
+    }
+    return vehicle;
+  }
+
+  /** Remove all bus vehicles belonging to a specific route. */
+  removeBusVehicles(routeId: number): void {
+    this.vehicles = this.vehicles.filter(
+      v => !(v.busState && v.busState.routeId === routeId),
+    );
+  }
 
   /** Add a vehicle that follows a LaneEdge path. */
   addVehicleOnEdges(edgePath: LaneEdge[]): Vehicle {
@@ -155,6 +203,21 @@ export class TrafficSimulation {
 
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
+
+      // Bus dwelling: count down timer, skip movement
+      if (v.busState?.dwelling) {
+        v.busState.dwellTimer -= dtSeconds;
+        if (v.busState.dwellTimer <= 0) {
+          const bs = v.busState;
+          bs.segmentIndex = (bs.segmentIndex + 1) % bs.segments.length;
+          v.edgePath = bs.segments[bs.segmentIndex]!;
+          v.edgeIndex = 0;
+          v.edgeProgress = 0;
+          bs.dwelling = false;
+        }
+        continue;
+      }
+
       const ep = v.edgePath;
 
       // 1. Gap to nearest vehicle ahead on the SAME edge path
@@ -190,10 +253,10 @@ export class TrafficSimulation {
         }
       }
 
-      // Track stall time for stuck vehicle despawn
+      // Track stall time for stuck vehicle despawn (buses exempt)
       if (moveDistance < 0.001 && room < 0.001) {
         v.stallTime += dtSeconds;
-        if (v.stallTime >= TRAFFIC.DESPAWN_STALL_TIME) {
+        if (v.stallTime >= TRAFFIC.DESPAWN_STALL_TIME && !v.busState) {
           v.arrived = true;
         }
       } else {
@@ -203,7 +266,13 @@ export class TrafficSimulation {
       if (v.edgeIndex >= ep.length) {
         v.edgeIndex = ep.length - 1;
         v.edgeProgress = ep[v.edgeIndex]!.length;
-        v.arrived = true;
+        if (v.busState) {
+          // Bus: enter dwell state instead of despawning
+          v.busState.dwelling = true;
+          v.busState.dwellTimer = BUS_DWELL_SECONDS;
+        } else {
+          v.arrived = true;
+        }
       }
 
       // Update edge index for trailing vehicles to see our new position

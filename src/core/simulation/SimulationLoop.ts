@@ -9,7 +9,7 @@ import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, isWorkplace
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
-import { refineLanePath } from '../traffic/Pathfinding';
+import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { clampBuildingLevel } from '../building/BuildingLevel';
@@ -741,11 +741,16 @@ export class SimulationLoop {
    *  If affectedCells is provided, only invalidate cached routes through those cells.
    *  If omitted, no cache invalidation (e.g. road building adds new cells but doesn't break existing routes).
    */
+  /** Cells affected by the most recent road change (for bus route revalidation). */
+  private dirtyRoadCells: Set<string> | null = null;
+
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;
     if (affectedCells) {
+      if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
       for (const cellKey of affectedCells) {
         this.commuteCache.invalidateCell(cellKey);
+        this.dirtyRoadCells.add(cellKey);
       }
     }
   }
@@ -768,6 +773,19 @@ export class SimulationLoop {
     });
 
     this.laneGraph.buildFromGrid(gridLookup, cellKeys);
+
+    // Revalidate bus routes affected by road changes
+    if (this.dirtyRoadCells && this.dirtyRoadCells.size > 0) {
+      const lg = this.laneGraph;
+      const g = { getCell: (x: number, y: number) => grid.getCell(x, y), width: grid.width, height: grid.height };
+      this.state.bus.onRoadChanged(
+        this.dirtyRoadCells,
+        (fx, fy, tx, ty) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, g),
+        (cellPath, lane) => refineLanePath(lg, cellPath, lane),
+        this.state.traffic,
+      );
+      this.dirtyRoadCells = null;
+    }
   }
 
   private spawnVehicles(): void {
