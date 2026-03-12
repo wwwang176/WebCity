@@ -50,6 +50,7 @@ import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { getCoverageService } from './core/overlay/CoverageOverlay';
 import { generateTerrain, TERRAIN_GEN } from './core/grid/TerrainGenerator';
+import { getGroundwaterLevel } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
@@ -788,7 +789,7 @@ export class Game {
     if (!cfg) return;
 
     // Validate multi-cell placement
-    const groundwaterFn = (cx: number, cy: number) => this.getGroundwaterLevel(cx, cy);
+    const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
     const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation, groundwaterFn);
     if (!check.ok) {
       this.showNotification(INFRA_PLACEMENT_MESSAGES[check.reason] ?? 'Cannot build here', 3);
@@ -925,25 +926,6 @@ export class Game {
     });
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
-  }
-
-  /** Returns groundwater level 0-100 based on distance to nearest river tile (max range 3) */
-  private getGroundwaterLevel(x: number, y: number): number {
-    const grid = this.state.grid;
-    const range = 3;
-    let minDist = range + 1;
-    for (let dy = -range; dy <= range; dy++) {
-      for (let dx = -range; dx <= range; dx++) {
-        const cell = grid.getCell(x + dx, y + dy);
-        if (cell && cell.terrainType === TerrainType.WATER) {
-          const dist = Math.abs(dx) + Math.abs(dy); // Manhattan distance
-          if (dist < minDist) minDist = dist;
-        }
-      }
-    }
-    if (minDist > range) return 0;
-    // Closer to water = higher groundwater: dist 0→100, 1→75, 2→50, 3→25
-    return Math.round(100 * (1 - (minDist - 1) / range));
   }
 
   private update(dt: number): void {
@@ -1368,7 +1350,7 @@ export class Game {
   private updatePlacementPreview(): void {
     if (this.isInfraTool(this.currentTool)) {
       const infraType = this.currentTool as InfraType;
-      const groundwaterFn = (cx: number, cy: number) => this.getGroundwaterLevel(cx, cy);
+      const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
       this.placementPreview.updateInfra(
         infraType,
         this.currentRotation,
@@ -1467,7 +1449,7 @@ export class Game {
           break;
         case 'water': {
           const supplied = this.state.water.isSupplied(x, y) ? O.DISPLAY_MAX : 0;
-          const gw = this.getGroundwaterLevel(x, y);
+          const gw = getGroundwaterLevel(grid, x, y);
           value = Math.max(supplied, gw * O.GROUNDWATER_FACTOR);
           break;
         }

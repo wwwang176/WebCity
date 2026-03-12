@@ -22,3 +22,20 @@ export function getElevation(grid: Grid, x: number, y: number): number {
   if (!cell) return 0;
   return cell.elevation;
 }
+
+/** Returns groundwater level 0-100 based on Manhattan distance to nearest water (max range 3). */
+export function getGroundwaterLevel(grid: Grid, x: number, y: number): number {
+  const range = 3;
+  let minDist = range + 1;
+  for (let dy = -range; dy <= range; dy++) {
+    for (let dx = -range; dx <= range; dx++) {
+      const cell = grid.getCell(x + dx, y + dy);
+      if (cell && cell.terrainType === TerrainType.WATER) {
+        const dist = Math.abs(dx) + Math.abs(dy);
+        if (dist < minDist) minDist = dist;
+      }
+    }
+  }
+  if (minDist > range) return 0;
+  return Math.round(100 * (1 - (minDist - 1) / range));
+}

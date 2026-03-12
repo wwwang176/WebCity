@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../Grid';
 import { TerrainType, NaturalResource } from '../types';
-import { canBuild, getNaturalResource, getElevation, setNaturalResource } from '../Terrain';
+import { canBuild, getNaturalResource, getElevation, setNaturalResource, getGroundwaterLevel } from '../Terrain';
 import { TERRAIN_GEN } from '../TerrainGenerator';
 
 describe('Terrain', () => {
@@ -43,6 +43,35 @@ describe('Terrain', () => {
     const grid = new Grid(10, 10);
     grid.setCell(4, 4, { elevation: -5 });
     expect(getElevation(grid, 4, 4)).toBe(-5);
+  });
+});
+
+describe('getGroundwaterLevel', () => {
+  it('should return max value when cell is water (dist=0)', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, { terrainType: TerrainType.WATER });
+    // Formula: round(100 * (1 - (0-1)/3)) = 133
+    expect(getGroundwaterLevel(grid, 5, 5)).toBe(133);
+  });
+
+  it('should return 100 for cells 1 step from water', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, { terrainType: TerrainType.WATER });
+    // Formula: round(100 * (1 - (1-1)/3)) = 100
+    expect(getGroundwaterLevel(grid, 5, 6)).toBe(100);
+    expect(getGroundwaterLevel(grid, 6, 5)).toBe(100);
+  });
+
+  it('should return 0 for cells beyond range 3', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(0, 0, { terrainType: TerrainType.WATER });
+    // Manhattan distance 4+ from (0,0)
+    expect(getGroundwaterLevel(grid, 4, 1)).toBe(0);
+  });
+
+  it('should return 0 when no water is nearby', () => {
+    const grid = new Grid(10, 10);
+    expect(getGroundwaterLevel(grid, 5, 5)).toBe(0);
   });
 });
 
