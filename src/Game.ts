@@ -147,6 +147,19 @@ const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
   road_6lane: RoadType.SIX_LANE, road_highway: RoadType.HIGHWAY,
 };
 
+/** Key-to-tool bindings (OCP: add new keyboard shortcuts here). */
+const KEY_TO_TOOL: Record<string, ToolType> = {
+  '1': 'select', '2': 'road_2lane', '3': 'zone_r', '4': 'zone_c',
+  '5': 'zone_i', '6': 'zone_o', '7': 'road_rural', '8': 'power',
+  '9': 'water', '0': 'demolish', 'delete': 'demolish',
+};
+
+/** Key-to-overlay bindings (OCP: add new overlay shortcuts here). */
+const KEY_TO_OVERLAY: Record<string, OverlayType> = {
+  'f1': 'power', 'f2': 'water', 'f3': 'pollution',
+  'f4': 'landValue', 'f5': 'traffic', 'f6': 'zone',
+};
+
 /** Tool-to-cursor-color mapping (OCP: add new tool colors here). */
 const TOOL_CURSOR_COLORS: Record<ToolType, number> = {
   select: 0xffffff,
@@ -500,23 +513,19 @@ export class Game {
   }
 
   private handleKeyDown(key: string): void {
+    // Data-driven tool selection
+    const toolBinding = KEY_TO_TOOL[key];
+    if (toolBinding) { this.setTool(toolBinding); return; }
+
+    // Data-driven overlay toggle
+    const overlayBinding = KEY_TO_OVERLAY[key];
+    if (overlayBinding) { this.toggleOverlay(overlayBinding); return; }
+
     switch (key) {
       case 'q': this.sceneManager.rotateCamera(-Math.PI / 4); break;
       case 'e': this.sceneManager.rotateCamera(Math.PI / 4); break;
-      case '1': this.setTool('select'); break;
-      case '2': this.setTool('road_2lane'); break;
-      case '3': this.setTool('zone_r'); break;
-      case '4': this.setTool('zone_c'); break;
-      case '5': this.setTool('zone_i'); break;
-      case '6': this.setTool('zone_o'); break;
-      case '7': this.setTool('road_rural'); break;
-      case '8': this.setTool('power'); break;
-      case '9': this.setTool('water'); break;
-      case '0': this.setTool('demolish'); break;
       case 'escape': this.setTool('select'); this.dragStart = null; break;
-      case 'delete': this.setTool('demolish'); break;
       case 'r': this.cycleRotation(); break;
-
       case ' ':
         this.paused = !this.paused;
         if (this.paused) this.state.clock.pause();
@@ -534,13 +543,6 @@ export class Game {
         this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
         this.onUIUpdate?.();
         break;
-      // Overlay toggles
-      case 'f1': this.toggleOverlay('power'); break;
-      case 'f2': this.toggleOverlay('water'); break;
-      case 'f3': this.toggleOverlay('pollution'); break;
-      case 'f4': this.toggleOverlay('landValue'); break;
-      case 'f5': this.toggleOverlay('traffic'); break;
-      case 'f6': this.toggleOverlay('zone'); break;
     }
   }
 
