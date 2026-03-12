@@ -4,7 +4,7 @@ import { calculateRCIDemand } from '../economy/RCIDemand';
 import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
-import { calculateLandValue } from '../economy/LandValue';
+import { calculateLandValue, checkParkProximity } from '../economy/LandValue';
 import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, isWorkplaceZone } from '../grid/types';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
@@ -620,23 +620,16 @@ export class SimulationLoop {
 
       // Check if near water, forest (natural park), or placed park within 2 cells
       let waterfront = false;
-      let parkProximity = this.state.parks.getCoverage(x, y);
       for (const [dx, dy] of FOUR_NEIGHBORS) {
         const nc = grid.getCell(x + dx!, y + dy!);
         if (nc && nc.terrainType === TerrainType.WATER) waterfront = true;
-        if (nc && (nc.terrainType === TerrainType.FOREST || nc.buildingId === getInfraBuildingId('park'))) parkProximity = true;
       }
-      // Also check 2-cell radius for natural parks
-      if (!parkProximity) {
-        outer:
-        for (let dx = -2; dx <= 2; dx++) {
-          for (let dy = -2; dy <= 2; dy++) {
-            if (Math.abs(dx) + Math.abs(dy) > 2) continue;
-            const nc = grid.getCell(x + dx, y + dy);
-            if (nc && (nc.terrainType === TerrainType.FOREST || nc.buildingId === getInfraBuildingId('park'))) { parkProximity = true; break outer; }
-          }
-        }
-      }
+      const parkProximity = checkParkProximity(
+        (px, py) => grid.getCell(px, py),
+        x, y,
+        this.state.parks.getCoverage(x, y),
+        getInfraBuildingId('park'),
+      );
 
       // Industrial zones are less affected by their own pollution
       const pollutionFactor = cell.zoneType === ZoneType.INDUSTRIAL ? SIMULATION.INDUSTRIAL_POLLUTION_FACTOR : 1;

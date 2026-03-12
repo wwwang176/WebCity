@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { calculateRCIDemand, RCI } from '../RCIDemand';
 import { calculateBalance, takeLoan, tickBudget } from '../Budget';
 import { calculateTaxRevenue, DEFAULT_TAX_RATES } from '../Tax';
-import { calculateLandValue, LAND_VALUE } from '../LandValue';
+import { calculateLandValue, LAND_VALUE, checkParkProximity } from '../LandValue';
 
 describe('RCIDemand', () => {
   it('should have positive R demand for empty city', () => {
@@ -131,5 +131,40 @@ describe('LandValue', () => {
       pollution: 999, noise: 999, crimeRate: 999,
     });
     expect(extreme).toBe(LAND_VALUE.MIN);
+  });
+});
+
+describe('checkParkProximity', () => {
+  // Helper: create a sparse grid from a map of position → cell data
+  function makeGetCell(cells: Map<string, { terrainType: number; buildingId: number }>) {
+    return (x: number, y: number) => cells.get(`${x},${y}`) ?? null;
+  }
+
+  it('returns true when park service covers the cell', () => {
+    const getCell = makeGetCell(new Map());
+    expect(checkParkProximity(getCell, 5, 5, true, 248)).toBe(true);
+  });
+
+  it('returns true when a forest is adjacent (1 cell)', () => {
+    const cells = new Map<string, { terrainType: number; buildingId: number }>();
+    cells.set('5,4', { terrainType: 3 /* FOREST */, buildingId: 0 });
+    expect(checkParkProximity(makeGetCell(cells), 5, 5, false, 248)).toBe(true);
+  });
+
+  it('returns true when park building is within 2 cells', () => {
+    const cells = new Map<string, { terrainType: number; buildingId: number }>();
+    cells.set('3,5', { terrainType: 0, buildingId: 248 }); // 2 cells away
+    expect(checkParkProximity(makeGetCell(cells), 5, 5, false, 248)).toBe(true);
+  });
+
+  it('returns false when nothing is nearby', () => {
+    const getCell = makeGetCell(new Map());
+    expect(checkParkProximity(getCell, 5, 5, false, 248)).toBe(false);
+  });
+
+  it('returns false when park is 3+ cells away', () => {
+    const cells = new Map<string, { terrainType: number; buildingId: number }>();
+    cells.set('2,5', { terrainType: 3 /* FOREST */, buildingId: 0 }); // 3 cells away
+    expect(checkParkProximity(makeGetCell(cells), 5, 5, false, 248)).toBe(false);
   });
 });
