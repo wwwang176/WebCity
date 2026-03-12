@@ -47,6 +47,7 @@ import {
   type TransportStopKind,
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
+import { getCoverageService } from './core/overlay/CoverageOverlay';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
@@ -1594,24 +1595,8 @@ export class Game {
             value = Math.max(0, O.CRIME_BASE + reduction);
           }
           break;
-        case 'police':
-          value = this.state.police.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
-          break;
-        case 'fire':
-          value = this.state.fire.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
-          break;
-        case 'health':
-          value = this.state.health.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
-          break;
-        case 'education':
-          value = this.state.education.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
-          break;
-        case 'park':
-          value = this.state.parks.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
-          break;
-        case 'garbage':
-          value = this.state.garbage.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
-          break;
+        // Coverage overlays: police/fire/health/education/park/garbage
+        // handled by data-driven lookup (see CoverageOverlay.ts)
         case 'district': {
           const d = this.state.districts.getDistrictAt(x, y);
           if (d) {
@@ -1621,8 +1606,14 @@ export class Game {
           }
           break;
         }
-        default:
+        default: {
+          // Data-driven coverage overlays (OCP: add new services in CoverageOverlay.ts)
+          const coverageSvc = getCoverageService(this.state, type);
+          if (coverageSvc) {
+            value = coverageSvc.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
+          }
           break;
+        }
       }
 
       if (value > 0) data.set(key, value);
