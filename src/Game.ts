@@ -147,6 +147,44 @@ const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
   road_6lane: RoadType.SIX_LANE, road_highway: RoadType.HIGHWAY,
 };
 
+/** Infrastructure placement validation error messages. */
+const INFRA_PLACEMENT_MESSAGES: Record<string, string> = {
+  OUT_OF_BOUNDS: 'Out of bounds',
+  WATER_TILE: 'Cannot build on water',
+  TILE_OCCUPIED: 'Tile is occupied',
+  NO_GROUNDWATER: 'No groundwater here — build near rivers',
+  UNKNOWN_TYPE: 'Unknown building type',
+};
+
+/** Map transport stop type to InfraType (used for cost/config lookup). */
+const TRANSPORT_TO_INFRA_TYPE: Record<string, InfraType> = {
+  bus: 'bus_stop', metro: 'metro_station', rail: 'train_station',
+  ferry: 'ferry_dock', airport: 'airport',
+};
+
+/** Airport build costs by size. */
+const AIRPORT_COSTS: Record<AirportSize, number> = {
+  SMALL: 5000, MEDIUM: 15000, LARGE: 40000,
+};
+
+/** Transport stop display names. */
+const STOP_NAMES: Record<TransportStopKind, string> = {
+  bus: 'Bus Stop', metro: 'Metro Station',
+  rail: 'Train Station', ferry: 'Ferry Dock',
+};
+
+/** Zone tool preview highlight colors. */
+const ZONE_PREVIEW_COLORS: Record<string, number> = {
+  zone_r: 0x4caf50, zone_rh: 0x2e7d32,
+  zone_c: 0x2196f3, zone_ch: 0x1565c0,
+  zone_i: 0xffc107, zone_o: 0x9c27b0,
+};
+
+/** Disaster type display names. */
+const DISASTER_NAMES: Record<string, string> = {
+  EARTHQUAKE: 'Earthquake', TORNADO: 'Tornado', FOREST_FIRE: 'Forest Fire',
+};
+
 /** Key-to-tool bindings (OCP: add new keyboard shortcuts here). */
 const KEY_TO_TOOL: Record<string, ToolType> = {
   '1': 'select', '2': 'road_2lane', '3': 'zone_r', '4': 'zone_c',
@@ -833,14 +871,7 @@ export class Game {
     const groundwaterFn = (cx: number, cy: number) => this.getGroundwaterLevel(cx, cy);
     const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation, groundwaterFn);
     if (!check.ok) {
-      const messages: Record<string, string> = {
-        OUT_OF_BOUNDS: 'Out of bounds',
-        WATER_TILE: 'Cannot build on water',
-        TILE_OCCUPIED: 'Tile is occupied',
-        NO_GROUNDWATER: 'No groundwater here — build near rivers',
-        UNKNOWN_TYPE: 'Unknown building type',
-      };
-      this.showNotification(messages[check.reason] ?? 'Cannot build here', 3);
+      this.showNotification(INFRA_PLACEMENT_MESSAGES[check.reason] ?? 'Cannot build here', 3);
       return;
     }
 
@@ -886,13 +917,9 @@ export class Game {
       this.showNotification('Tile is occupied', 3);
       return;
     }
-    const infraTypeMap: Record<string, InfraType> = {
-      bus: 'bus_stop', metro: 'metro_station', rail: 'train_station', ferry: 'ferry_dock', airport: 'airport',
-    };
-    const airportCosts: Record<AirportSize, number> = { SMALL: 5000, MEDIUM: 15000, LARGE: 40000 };
-    const infraCfg = getInfraConfig(infraTypeMap[type]!);
+    const infraCfg = getInfraConfig(TRANSPORT_TO_INFRA_TYPE[type]!);
     const baseCost = infraCfg?.cost ?? 500;
-    const cost = type === 'airport' ? airportCosts[this.selectedAirportSize ?? 'SMALL'] : baseCost;
+    const cost = type === 'airport' ? AIRPORT_COSTS[this.selectedAirportSize ?? 'SMALL'] : baseCost;
     if (this.state.budget.funds < cost) {
       this.showNotification(`Insufficient funds (need $${cost})`, 3);
       return;
@@ -1334,11 +1361,6 @@ export class Game {
           .reduce((sum, r) => sum + r.vehicles, 0)
       : 0;
 
-    const STOP_NAMES: Record<TransportStopKind, string> = {
-      bus: 'Bus Stop', metro: 'Metro Station',
-      rail: 'Train Station', ferry: 'Ferry Dock',
-    };
-
     this.selectedBuilding = {
       kind: 'transport',
       x, y,
@@ -1471,12 +1493,7 @@ export class Game {
       }
     } else if (this.dragStart && this.isZoneTool()) {
       // Zone drag preview — tint ground + buildings in range
-      const zoneColors: Record<string, number> = {
-        zone_r: 0x4caf50, zone_rh: 0x2e7d32,
-        zone_c: 0x2196f3, zone_ch: 0x1565c0,
-        zone_i: 0xffc107, zone_o: 0x9c27b0,
-      };
-      const color = zoneColors[this.currentTool] ?? 0xffffff;
+      const color = ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff;
       const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
       const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
       const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
@@ -1761,10 +1778,7 @@ export class Game {
 
     // Play disaster sound and show notification
     this.audioManager.playSfx('disaster');
-    const names: Record<string, string> = {
-      EARTHQUAKE: 'Earthquake', TORNADO: 'Tornado', FOREST_FIRE: 'Forest Fire'
-    };
-    this.showNotification(`Disaster: ${names[type] ?? type} at (${x},${y})! Intensity: ${Math.round(intensity * 100)}%`, 10);
+    this.showNotification(`Disaster: ${DISASTER_NAMES[type] ?? type} at (${x},${y})! Intensity: ${Math.round(intensity * 100)}%`, 10);
     this.dirty.buildings = true;
     this.dirty.terrain = true;
     this.onUIUpdate?.();
