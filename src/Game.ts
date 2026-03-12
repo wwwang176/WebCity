@@ -1215,7 +1215,7 @@ export class Game {
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
     if (type === 'none') return undefined;
     const data = new Map<string, number>();
-    const ctx = this.state as unknown as OverlayBuildContext;
+    const ctx = this.state as OverlayBuildContext;
     this.state.grid.forEachCell((cell, x, y) => {
       const value = buildOverlayValue(ctx, type, cell, x, y);
       if (value > 0) data.set(`${x},${y}`, value);
