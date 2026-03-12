@@ -43,6 +43,7 @@ describe('CommuteCache', () => {
       morningPath: null,
       eveningPath: null,
       status: 'pending',
+      generation: 0,
     };
     cache.set(1, route);
     expect(cache.get(1)).toEqual(route);
@@ -58,7 +59,7 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '1,1',
-      morningPath: null, eveningPath: null, status: 'pending',
+      morningPath: null, eveningPath: null, status: 'pending', generation: 0,
     });
     cache.markDirty(1);
     expect(cache.dirtyCount).toBe(1);
@@ -84,11 +85,11 @@ describe('CommuteCache', () => {
     const morningPath = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '2,0',
-      morningPath, eveningPath: null, status: 'ready',
+      morningPath, eveningPath: null, status: 'ready', generation: 0,
     });
     cache.set(2, {
       citizenId: 2, homeId: '3,3', workplaceId: '4,4',
-      morningPath: [makeEdge('3,3', '4,4')], eveningPath: null, status: 'ready',
+      morningPath: [makeEdge('3,3', '4,4')], eveningPath: null, status: 'ready', generation: 0,
     });
 
     // Invalidate cell "1,0" which is on citizen 1's path
@@ -105,7 +106,7 @@ describe('CommuteCache', () => {
     const morningPath = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '2,0',
-      morningPath, eveningPath: null, status: 'ready',
+      morningPath, eveningPath: null, status: 'ready', generation: 0,
     });
     expect(cache.size).toBe(1);
 
@@ -178,7 +179,7 @@ describe('CommuteCache', () => {
 
     cache.set(10, {
       citizenId: 10, homeId: '0,0', workplaceId: '2,0',
-      morningPath, eveningPath, status: 'ready',
+      morningPath, eveningPath, status: 'ready', generation: 0,
     });
 
     // Invalidating any cell on the path should dirty citizen 10
@@ -192,7 +193,7 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '1,0',
-      morningPath: null, eveningPath: null, status: 'pending',
+      morningPath: null, eveningPath: null, status: 'pending', generation: 0,
     });
     cache.invalidateCell('0,0');
     expect(cache.dirtyCount).toBe(0);
@@ -202,7 +203,7 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '1,0',
-      morningPath: null, eveningPath: null, status: 'pending',
+      morningPath: null, eveningPath: null, status: 'pending', generation: 0,
     });
     expect(cache.isDirty(1)).toBe(false);
     cache.markDirty(1);
@@ -214,7 +215,7 @@ describe('CommuteCache', () => {
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '2,0',
       morningPath: [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')],
-      eveningPath: null, status: 'ready',
+      eveningPath: null, status: 'ready', generation: 0,
     });
     cache.markDirty(1);
     expect(cache.isDirty(1)).toBe(true);
@@ -223,8 +224,100 @@ describe('CommuteCache', () => {
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '3,0',
       morningPath: [makeEdge('0,0', '3,0')],
-      eveningPath: null, status: 'ready',
+      eveningPath: null, status: 'ready', generation: 0,
     });
     expect(cache.isDirty(1)).toBe(false);
+  });
+
+  // ── roadGeneration + isExpired ──
+
+  it('isExpired returns false when generation matches roadGeneration', () => {
+    const cache = new CommuteCache();
+    const route: CachedRoute = {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'ready', generation: 0,
+    };
+    cache.set(1, route);
+    expect(cache.isExpired(route, 100)).toBe(false);
+  });
+
+  it('isExpired assigns random recalcAtTick on first staleness detection and returns false', () => {
+    const cache = new CommuteCache();
+    cache.roadGeneration = 2;
+    const route: CachedRoute = {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'ready', generation: 0,
+    };
+    cache.set(1, route);
+
+    // First call: assigns recalcAtTick, returns false
+    expect(cache.isExpired(route, 10)).toBe(false);
+    expect(route.recalcAtTick).toBeDefined();
+    expect(route.recalcAtTick!).toBeGreaterThanOrEqual(10);
+  });
+
+  it('isExpired returns true when currentTick reaches recalcAtTick', () => {
+    const cache = new CommuteCache();
+    cache.roadGeneration = 1;
+    const route: CachedRoute = {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'ready', generation: 0,
+      recalcAtTick: 15,
+    };
+    cache.set(1, route);
+
+    expect(cache.isExpired(route, 14)).toBe(false);
+    expect(cache.isExpired(route, 15)).toBe(true);
+    expect(cache.isExpired(route, 20)).toBe(true);
+  });
+
+  it('markLaneGraphDirty increments roadGeneration (via SimulationLoop)', () => {
+    const cache = new CommuteCache();
+    expect(cache.roadGeneration).toBe(0);
+    cache.roadGeneration++;
+    expect(cache.roadGeneration).toBe(1);
+  });
+
+  it('isExpired does not reset recalcAtTick on subsequent road changes', () => {
+    const cache = new CommuteCache();
+    cache.roadGeneration = 1;
+    const route: CachedRoute = {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'ready', generation: 0,
+    };
+    cache.set(1, route);
+
+    // First detection — assigns recalcAtTick
+    cache.isExpired(route, 10);
+    const firstRecalcAt = route.recalcAtTick;
+    expect(firstRecalcAt).toBeDefined();
+
+    // Another road change
+    cache.roadGeneration = 2;
+
+    // recalcAtTick should NOT be reassigned (it's already set)
+    cache.isExpired(route, 11);
+    expect(route.recalcAtTick).toBe(firstRecalcAt);
+  });
+
+  it('recalcAtTick is cleared after route is re-set with current generation', () => {
+    const cache = new CommuteCache();
+    cache.roadGeneration = 1;
+    const route: CachedRoute = {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'ready', generation: 0,
+      recalcAtTick: 5,
+    };
+    cache.set(1, route);
+
+    // Simulate recalculation: set new route with current generation
+    const newRoute: CachedRoute = {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'ready', generation: 1,
+    };
+    cache.set(1, newRoute);
+
+    expect(cache.isExpired(newRoute, 100)).toBe(false);
+    expect(newRoute.recalcAtTick).toBeUndefined();
   });
 });

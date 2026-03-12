@@ -8,12 +8,19 @@ export interface CachedRoute {
   morningPath: LaneEdge[] | null;
   eveningPath: LaneEdge[] | null;
   status: 'pending' | 'ready' | 'failed';
+  /** The road generation when this route was computed. */
+  generation: number;
+  /** Tick at which this route should be recalculated (set lazily on generation mismatch). */
+  recalcAtTick?: number;
 }
 
 /**
  * Caches commute paths (LaneEdge[]) for citizens.
  * Supports cell-based invalidation so road changes only recalculate affected routes.
  */
+/** Default spread window (ticks) for staggered recalculation after road changes. */
+export const RECALC_SPREAD_TICKS = 10;
+
 export class CommuteCache {
   private cache = new Map<number, CachedRoute>();
   private dirtySet = new Set<number>();
@@ -26,6 +33,9 @@ export class CommuteCache {
 
   // routeKey -> set of cellKeys that the route passes through
   private routeCellIndex = new Map<string, Set<string>>();
+
+  /** Current road network generation — incremented on every road build/demolish. */
+  roadGeneration = 0;
 
   get(citizenId: number): CachedRoute | undefined {
     return this.cache.get(citizenId);
@@ -132,6 +142,22 @@ export class CommuteCache {
 
   get dirtyCount(): number {
     return this.dirtySet.size;
+  }
+
+  /**
+   * Check if a cached route needs recalculation due to road network changes.
+   * Returns true when the route's generation is outdated AND its randomly
+   * assigned recalcAtTick has arrived. On first detection of staleness,
+   * assigns a random recalcAtTick within RECALC_SPREAD_TICKS window.
+   */
+  isExpired(route: CachedRoute, currentTick: number): boolean {
+    if (route.generation === this.roadGeneration) return false;
+    // First time detecting staleness — assign a random recalculation tick
+    if (route.recalcAtTick === undefined) {
+      route.recalcAtTick = currentTick + Math.floor(Math.random() * RECALC_SPREAD_TICKS);
+      return false;
+    }
+    return currentTick >= route.recalcAtTick;
   }
 
   // ── Internal ──

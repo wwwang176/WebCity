@@ -806,6 +806,7 @@ export class SimulationLoop {
 
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;
+    this.commuteCache.roadGeneration++;
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
       for (const cellKey of affectedCells) {
@@ -948,8 +949,11 @@ export class SimulationLoop {
       // --- Check commute cache first ---
       const isMorning = direction === 'home_to_work';
       const cached = this.commuteCache.get(citizen.id);
+      const currentTick = this.state.clock.tick;
 
-      if (cached && cached.status === 'ready' && !this.commuteCache.isDirty(citizen.id)) {
+      if (cached && cached.status === 'ready'
+          && !this.commuteCache.isDirty(citizen.id)
+          && !this.commuteCache.isExpired(cached, currentTick)) {
         const cachedPath = isMorning ? cached.morningPath : cached.eveningPath;
         if (cachedPath && cachedPath.length > 0) {
           this.state.traffic.addVehicleOnEdges(cachedPath);
@@ -989,6 +993,7 @@ export class SimulationLoop {
           morningPath: isMorning ? edgePath : (existingRoute?.morningPath ?? null),
           eveningPath: isMorning ? (existingRoute?.eveningPath ?? null) : edgePath,
           status: 'ready',
+          generation: this.commuteCache.roadGeneration,
         };
         this.commuteCache.set(citizen.id, cachedRoute);
 
@@ -1003,6 +1008,7 @@ export class SimulationLoop {
           morningPath: null,
           eveningPath: null,
           status: 'failed',
+          generation: this.commuteCache.roadGeneration,
         });
         commuterSet.add(citizen.id);
       }
