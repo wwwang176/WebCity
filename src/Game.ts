@@ -1230,16 +1230,7 @@ export class Game {
       );
     } else if (this.currentTool === 'demolish') {
       if (this.dragStart) {
-        // Demolish drag preview — red tint on ground + buildings in range
-        const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
-        const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
-        const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
-        const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
-        this.highlightManager.highlight(
-          minX, minY, maxX, maxY, 0xff0000,
-          this.getAllHighlightMeshes(),
-          this.buildingRenderer.buildingInfraGroups,
-        );
+        this.highlightDragRange(0xff0000);
       } else {
         // Demolish hover: highlight multi-cell building footprint
         const gx = this.gridCursor.gridX;
@@ -1262,17 +1253,7 @@ export class Game {
         }
       }
     } else if (this.dragStart && this.isZoneTool()) {
-      // Zone drag preview — tint ground + buildings in range
-      const color = ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff;
-      const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
-      const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
-      const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
-      const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
-      this.highlightManager.highlight(
-        minX, minY, maxX, maxY, color,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-      );
+      this.highlightDragRange(ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff);
     } else {
       this.placementPreview.hide();
       if (this.currentTool === 'select' && this.selectedBuilding) {
@@ -1281,6 +1262,20 @@ export class Game {
         this.highlightManager.clear();
       }
     }
+  }
+
+  /** Highlight the drag-selected rectangular area with the given color (DRY). */
+  private highlightDragRange(color: number): void {
+    if (!this.dragStart) return;
+    const minX = Math.min(this.dragStart.x, this.gridCursor.gridX);
+    const maxX = Math.max(this.dragStart.x, this.gridCursor.gridX);
+    const minY = Math.min(this.dragStart.y, this.gridCursor.gridY);
+    const maxY = Math.max(this.dragStart.y, this.gridCursor.gridY);
+    this.highlightManager.highlight(
+      minX, minY, maxX, maxY, color,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+    );
   }
 
   private isZoneTool(): boolean {
