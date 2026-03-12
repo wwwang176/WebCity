@@ -1205,15 +1205,9 @@ export class Game {
     this.applyViewMode(getTransportFocusMode(type));
   }
 
-  /** Get the transport system for a given stop type. */
+  /** Get the transport system for a given stop type via property lookup (OCP). */
   private getTransportSystem(type: TransportStopKind) {
-    switch (type) {
-      case 'bus': return this.state.bus;
-      case 'metro': return this.state.metro;
-      case 'rail': return this.state.rail;
-      case 'ferry': return this.state.ferry;
-      default: return null;
-    }
+    return this.state[type as keyof Pick<GameState, 'bus' | 'metro' | 'rail' | 'ferry'>];
   }
 
   private cycleRotation(): void {
