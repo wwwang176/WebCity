@@ -105,6 +105,24 @@ export class FerrySystem extends BaseTransportSystem {
     }
   }
 
+  protected override onRouteStopRemoved(route: TransportRoute): boolean {
+    if (!this.waterGrid) return true;
+    // Validate that all consecutive docks are still connected via water
+    for (let i = 0; i < route.stops.length; i++) {
+      const from = route.stops[i]!;
+      const to = route.stops[(i + 1) % route.stops.length]!;
+      const result = this.getCachedPath(from, to);
+      if (!result) return false; // disconnected → dissolve
+    }
+    // Recompute all route paths (new segments after stop removal)
+    this.precomputeRoutePaths(route);
+    return true;
+  }
+
+  protected override onVehicleReset(vehicleId: number): void {
+    this.vesselPaths.delete(vehicleId);
+  }
+
   override createRoute(stops: TransportStop[], vehicleCount = 1): TransportRoute {
     const route = super.createRoute(stops, vehicleCount);
     this.precomputeRoutePaths(route);

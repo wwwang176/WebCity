@@ -303,6 +303,72 @@ describe('onRouteDissolved hook', () => {
   });
 });
 
+describe('removeStop — vehicle reset on surviving routes', () => {
+  it('should reset vehicles to first stop when a middle stop is removed', () => {
+    const sys = new TestTransportSystem({ speed: 2, dwellTicks: 1 });
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    const s3 = sys.addStop(10, 0);
+    sys.createRoute([s1, s2, s3], 2);
+
+    // Advance vehicles so they're not at the initial position
+    for (let i = 0; i < 5; i++) sys.tick();
+
+    sys.removeStop(s2.id);
+
+    // Route should survive with 2 stops
+    expect(sys.getRoutes()).toHaveLength(1);
+    expect(sys.getRoutes()[0]!.stops).toHaveLength(2);
+
+    // All vehicles should be reset to the first stop of the route
+    for (const v of sys.getVehicles()) {
+      expect(v.currentStopIndex).toBe(0);
+      expect(v.position.x).toBe(s1.x);
+      expect(v.position.y).toBe(s1.y);
+      expect(v.traveling).toBe(false);
+      expect(v.atStop).toBe(false);
+      expect(v.travelTicks).toBe(0);
+      expect(v.waitTicks).toBe(0);
+    }
+  });
+
+  it('should not reset vehicles on unaffected routes', () => {
+    const sys = new TestTransportSystem({ speed: 5, dwellTicks: 1 });
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    const s3 = sys.addStop(10, 0);
+    const s4 = sys.addStop(15, 0);
+
+    sys.createRoute([s1, s2, s3]); // affected route (s2 removed)
+    const unaffectedRoute = sys.createRoute([s3, s4]); // unaffected
+
+    // Advance enough for vehicles to be mid-route
+    for (let i = 0; i < 5; i++) sys.tick();
+    const unaffectedVehicleBefore = { ...sys.getVehicles().find(v => v.routeId === unaffectedRoute.id)! };
+
+    sys.removeStop(s2.id);
+
+    // Unaffected route vehicle should not be reset
+    const unaffectedVehicleAfter = sys.getVehicles().find(v => v.routeId === unaffectedRoute.id)!;
+    expect(unaffectedVehicleAfter.currentStopIndex).toBe(unaffectedVehicleBefore.currentStopIndex);
+  });
+
+  it('should call onRouteStopRemoved for surviving routes that lost a stop', () => {
+    const sys = new DissolveTrackingSystem();
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    const s3 = sys.addStop(10, 0);
+    sys.createRoute([s1, s2, s3]);
+
+    sys.removeStop(s2.id);
+
+    // Route survives (2 stops left), so onRouteDissolved should NOT fire
+    expect(sys.dissolvedRouteIds).toHaveLength(0);
+    // But the route should still have only 2 stops
+    expect(sys.getRoutes()[0]!.stops).toHaveLength(2);
+  });
+});
+
 describe('TRANSPORT_SPEED constants', () => {
   it('min congestion speed should be between 0 and 1', () => {
     expect(TRANSPORT_SPEED.MIN_CONGESTION_SPEED).toBeGreaterThan(0);

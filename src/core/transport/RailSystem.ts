@@ -107,6 +107,33 @@ export class RailSystem extends BaseTransportSystem {
     this.routePaths.delete(routeId);
   }
 
+  protected override onRouteStopRemoved(route: TransportRoute): boolean {
+    if (!this.railNetwork) {
+      this.routePaths.delete(route.id);
+      return true;
+    }
+    // Recompute rail paths for the modified route
+    const stations = route.stops;
+    const segCount = stations.length === 2 ? 2 : stations.length;
+    const paths: string[][] = [];
+    for (let i = 0; i < segCount; i++) {
+      const from = stations[i % stations.length]!;
+      const to = stations[(i + 1) % stations.length]!;
+      const path = this.railNetwork.findPath(
+        nodeId(from.x, from.y),
+        nodeId(to.x, to.y),
+      );
+      if (!path) return false; // disconnected → dissolve
+      paths.push(path);
+    }
+    this.routePaths.set(route.id, paths);
+    return true;
+  }
+
+  protected override onVehicleReset(vehicleId: number): void {
+    this.trainTravelData.delete(vehicleId);
+  }
+
   /**
    * Create a line connecting the given stations.
    * If a RailNetwork is set, validates that all consecutive stations are connected

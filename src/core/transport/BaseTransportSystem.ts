@@ -59,17 +59,57 @@ export abstract class BaseTransportSystem {
   removeStop(stopId: number): void {
     this.stops = this.stops.filter(s => s.id !== stopId);
     const dissolvedIds: number[] = [];
+    const modifiedRouteIds: number[] = [];
     this.routes = this.routes.filter(r => {
+      const before = r.stops.length;
       r.stops = r.stops.filter(s => s.id !== stopId);
       if (r.stops.length < 2) {
         dissolvedIds.push(r.id);
         return false;
+      }
+      if (r.stops.length < before) {
+        modifiedRouteIds.push(r.id);
       }
       return true;
     });
     this.vehicles = this.vehicles.filter(v => !dissolvedIds.includes(v.routeId));
     for (const id of dissolvedIds) {
       this.onRouteDissolved(id);
+    }
+
+    // Revalidate modified routes (subclasses may recompute paths / dissolve)
+    const lateDissolved: number[] = [];
+    for (const routeId of modifiedRouteIds) {
+      const route = this.routes.find(r => r.id === routeId);
+      if (!route) continue;
+      if (!this.onRouteStopRemoved(route)) {
+        lateDissolved.push(routeId);
+      }
+    }
+    if (lateDissolved.length > 0) {
+      this.routes = this.routes.filter(r => !lateDissolved.includes(r.id));
+      this.vehicles = this.vehicles.filter(v => !lateDissolved.includes(v.routeId));
+      for (const id of lateDissolved) {
+        this.onRouteDissolved(id);
+      }
+    }
+
+    // Reset vehicles on surviving modified routes back to first stop
+    for (const routeId of modifiedRouteIds) {
+      if (lateDissolved.includes(routeId)) continue;
+      const route = this.routes.find(r => r.id === routeId);
+      if (!route || route.stops.length === 0) continue;
+      const first = route.stops[0]!;
+      for (const v of this.vehicles) {
+        if (v.routeId !== routeId) continue;
+        this.onVehicleReset(v.id);
+        v.currentStopIndex = 0;
+        v.position = { x: first.x, y: first.y };
+        v.atStop = false;
+        v.traveling = false;
+        v.travelTicks = 0;
+        v.waitTicks = 0;
+      }
     }
   }
 
@@ -227,6 +267,19 @@ export abstract class BaseTransportSystem {
 
   /** Called when a route is dissolved (< 2 stops). Override for metadata cleanup. */
   protected onRouteDissolved(_routeId: number): void {
+    // default: no-op
+  }
+
+  /**
+   * Called when a route survives stop removal but lost a stop.
+   * Override to recompute paths. Return false to dissolve the route.
+   */
+  protected onRouteStopRemoved(_route: TransportRoute): boolean {
+    return true; // default: route remains valid
+  }
+
+  /** Called when a vehicle is reset to first stop after route modification. */
+  protected onVehicleReset(_vehicleId: number): void {
     // default: no-op
   }
 
