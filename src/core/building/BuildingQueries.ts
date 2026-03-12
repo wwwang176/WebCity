@@ -1,6 +1,6 @@
 import type { ZoneType } from '../grid/types';
 import { isResidentialZone, isWorkplaceZone } from '../grid/types';
-import { getBuildingType } from './types';
+import { getBuildingType, type BuildingType } from './types';
 import { MULTI_CELL_OCCUPIED, BURNED } from './InfraPlacement';
 
 interface GridLike {
@@ -22,32 +22,35 @@ export function countZoneBuildings(grid: GridLike, predicate: (zoneType: ZoneTyp
   return count;
 }
 
-/** Count total residential capacity (sum of building.residents) excluding burned/secondary cells. */
-export function countResidentialCapacity(grid: CapacityGridLike): number {
-  let capacity = 0;
+/**
+ * Sum a building property across all grid cells matching a zone predicate.
+ * Excludes burned and multi-cell secondary cells.
+ * DRY generic for countResidentialCapacity / countWorkplaceJobs.
+ */
+export function sumBuildingCapacity(
+  grid: CapacityGridLike,
+  zonePredicate: (zoneType: ZoneType) => boolean,
+  getCapacity: (bt: BuildingType) => number,
+): number {
+  let total = 0;
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
-      if (cell && cell.buildingId > 0 && isResidentialZone(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== MULTI_CELL_OCCUPIED) {
+      if (cell && cell.buildingId > 0 && zonePredicate(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== MULTI_CELL_OCCUPIED) {
         const bt = getBuildingType(cell.buildingId);
-        capacity += bt ? bt.residents : 0;
+        if (bt) total += getCapacity(bt);
       }
     }
   }
-  return capacity;
+  return total;
+}
+
+/** Count total residential capacity (sum of building.residents) excluding burned/secondary cells. */
+export function countResidentialCapacity(grid: CapacityGridLike): number {
+  return sumBuildingCapacity(grid, isResidentialZone, bt => bt.residents);
 }
 
 /** Count total workplace jobs (sum of building.workers) excluding burned/secondary cells. */
 export function countWorkplaceJobs(grid: CapacityGridLike): number {
-  let jobs = 0;
-  for (let y = 0; y < grid.height; y++) {
-    for (let x = 0; x < grid.width; x++) {
-      const cell = grid.getCell(x, y);
-      if (cell && cell.buildingId > 0 && isWorkplaceZone(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== MULTI_CELL_OCCUPIED) {
-        const bt = getBuildingType(cell.buildingId);
-        jobs += bt ? bt.workers : 0;
-      }
-    }
-  }
-  return jobs;
+  return sumBuildingCapacity(grid, isWorkplaceZone, bt => bt.workers);
 }
