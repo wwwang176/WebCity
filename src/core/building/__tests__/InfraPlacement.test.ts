@@ -356,6 +356,13 @@ describe('InfraPlacement', () => {
     it('should return same coords for unknown buildingId', () => {
       expect(getInfraCenterById(5, 5, 999)).toEqual({ cx: 5, cy: 5 });
     });
+
+    it('all 1x1 transport stops should have center === primary', () => {
+      // bus_stop=242, metro_station=241, train_station=239, ferry_dock=238
+      for (const id of [242, 241, 239, 238]) {
+        expect(getInfraCenterById(10, 20, id)).toEqual({ cx: 10, cy: 20 });
+      }
+    });
   });
 
   describe('forEachMultiCell', () => {

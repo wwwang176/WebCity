@@ -753,11 +753,8 @@ export class Game {
     if (infraCfg) {
       const actions = INFRA_SERVICE_ACTIONS[infraCfg.type];
       if (actions) {
-        // Transport stops use primary cell coordinates, civic services use center
-        const isTransportStop = ['bus_stop', 'metro_station', 'train_station', 'ferry_dock'].includes(infraCfg.type);
-        const rx = isTransportStop ? px : cx;
-        const ry = isTransportStop ? py : cy;
-        actions.remove(this.state as unknown as InfraServiceContext, rx, ry);
+        // All services use center coordinates; for 1x1 buildings center === primary
+        actions.remove(this.state as unknown as InfraServiceContext, cx, cy);
         return;
       }
     }
