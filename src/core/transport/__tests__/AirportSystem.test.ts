@@ -43,6 +43,58 @@ describe('AirportSystem.findAtCell', () => {
   });
 });
 
+describe('AirportSystem.demolishAtCell', () => {
+  it('should remove airport and invoke clearCell for all footprint cells', () => {
+    const sys = new AirportSystem();
+    sys.build(5, 5, 'SMALL', 100000);
+    expect(sys.getAirports().length).toBe(1);
+
+    const cleared: string[] = [];
+    const result = sys.demolishAtCell(5, 5, (cx, cy) => cleared.push(`${cx},${cy}`));
+
+    expect(result).toBe(true);
+    expect(sys.getAirports().length).toBe(0);
+    // SMALL footprint=3, half=1 → 3x3=9 cells cleared
+    expect(cleared.length).toBe(9);
+    expect(cleared).toContain('4,4');
+    expect(cleared).toContain('6,6');
+  });
+
+  it('should return false when no airport at cell', () => {
+    const sys = new AirportSystem();
+    const result = sys.demolishAtCell(5, 5, () => {});
+    expect(result).toBe(false);
+  });
+
+  it('should handle MEDIUM airport footprint', () => {
+    const sys = new AirportSystem();
+    sys.build(10, 10, 'MEDIUM', 100000);
+
+    const cleared: string[] = [];
+    const result = sys.demolishAtCell(10, 10, (cx, cy) => cleared.push(`${cx},${cy}`));
+
+    expect(result).toBe(true);
+    expect(sys.getAirports().length).toBe(0);
+    // MEDIUM footprint=5, half=2 → 5x5=25 cells cleared
+    expect(cleared.length).toBe(25);
+    expect(cleared).toContain('8,8');
+    expect(cleared).toContain('12,12');
+  });
+
+  it('should find and demolish airport from any cell in footprint', () => {
+    const sys = new AirportSystem();
+    sys.build(5, 5, 'SMALL', 100000);
+
+    // Demolish from edge cell (4,4), not center
+    const cleared: string[] = [];
+    const result = sys.demolishAtCell(4, 4, (cx, cy) => cleared.push(`${cx},${cy}`));
+
+    expect(result).toBe(true);
+    expect(sys.getAirports().length).toBe(0);
+    expect(cleared.length).toBe(9);
+  });
+});
+
 describe('getAirportBuildCost', () => {
   it('should return build cost for each size', () => {
     expect(getAirportBuildCost('SMALL')).toBe(AIRPORT_SIZE_CONFIG.SMALL.buildCost);

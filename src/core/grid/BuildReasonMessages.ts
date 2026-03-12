@@ -12,6 +12,7 @@ export const BUILD_REASON_MESSAGES: Record<string, string> = {
   TILE_OCCUPIED: 'Tile is occupied',
   NO_GROUNDWATER: 'No groundwater here — build near rivers',
   UNKNOWN_TYPE: 'Unknown building type',
+  NEED_RAIL_TRACK: 'Train station must be built on rail track',
 };
 
 /** Get a user-friendly message for a build failure reason, falling back to the raw reason. */

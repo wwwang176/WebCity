@@ -18,6 +18,7 @@ describe('BUILD_REASON_MESSAGES', () => {
     expect(BUILD_REASON_MESSAGES.TILE_OCCUPIED).toBe('Tile is occupied');
     expect(BUILD_REASON_MESSAGES.NO_GROUNDWATER).toBe('No groundwater here — build near rivers');
     expect(BUILD_REASON_MESSAGES.UNKNOWN_TYPE).toBe('Unknown building type');
+    expect(BUILD_REASON_MESSAGES.NEED_RAIL_TRACK).toBe('Train station must be built on rail track');
   });
 });
 

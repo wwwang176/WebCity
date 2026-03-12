@@ -146,6 +146,24 @@ export class AirportSystem {
     }));
   }
 
+  /**
+   * Find and demolish an airport that covers the given cell.
+   * Invokes clearCell for every cell in the airport footprint, then removes the airport.
+   * @returns true if an airport was found and demolished, false otherwise.
+   */
+  demolishAtCell(x: number, y: number, clearCell: (cx: number, cy: number) => void): boolean {
+    const airport = this.findAtCell(x, y);
+    if (!airport) return false;
+    const half = Math.floor(getAirportFootprint(airport.size) / 2);
+    for (let dy = -half; dy <= half; dy++) {
+      for (let dx = -half; dx <= half; dx++) {
+        clearCell(airport.x + dx, airport.y + dy);
+      }
+    }
+    this.remove(airport.id);
+    return true;
+  }
+
   remove(airportId: number): void {
     this.airports = this.airports.filter(a => a.id !== airportId);
   }

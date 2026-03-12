@@ -52,6 +52,7 @@ import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
+import { canPlaceTransportStop } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
@@ -617,19 +618,13 @@ export class Game {
       }
     }
     if (buildingId === getInfraBuildingId('airport')) {
-      const airport = this.state.airport.findAtCell(px, py);
-      if (airport) {
-        const half = Math.floor(getAirportFootprint(airport.size) / 2);
-        for (let dy = -half; dy <= half; dy++) {
-          for (let dx = -half; dx <= half; dx++) {
-            const c = this.state.grid.getCell(airport.x + dx, airport.y + dy);
-            if (c && c.buildingId === getInfraBuildingId('airport')) {
-              this.state.grid.setCell(airport.x + dx, airport.y + dy, { buildingId: 0, reserved: 0 });
-            }
-          }
+      const airportBid = getInfraBuildingId('airport');
+      this.state.airport.demolishAtCell(px, py, (cx, cy) => {
+        const c = this.state.grid.getCell(cx, cy);
+        if (c && c.buildingId === airportBid) {
+          this.state.grid.setCell(cx, cy, { buildingId: 0, reserved: 0 });
         }
-        this.state.airport.remove(airport.id);
-      }
+      });
     }
   }
 
@@ -692,22 +687,9 @@ export class Game {
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
     const cell = this.state.grid.getCell(x, y);
-    if (!cell) {
-      this.showNotification('Out of bounds', 3);
-      return;
-    }
-    // Rail stations can be built on track cells (may have road for level crossing)
-    if (type === 'rail') {
-      if (cell.railType === RailType.NONE) {
-        this.showNotification('Train station must be built on rail track', 3);
-        return;
-      }
-      if (cell.buildingId !== 0) {
-        this.showNotification('Tile is occupied', 3);
-        return;
-      }
-    } else if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) {
-      this.showNotification('Tile is occupied', 3);
+    const check = canPlaceTransportStop(type, cell);
+    if (!check.ok) {
+      this.showNotification(getBuildReasonMessage(check.reason), 3);
       return;
     }
     const infraCfg = getInfraConfig(TRANSPORT_TO_INFRA_TYPE[type]!);
