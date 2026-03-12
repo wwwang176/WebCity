@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DistrictManager } from '../DistrictManager';
-import { PolicyManager } from '../PolicyManager';
+import { PolicyManager, POLICY_CONFIG } from '../PolicyManager';
 import type { DistrictLookup } from '../PolicyManager';
 import { setSpecialization, getSpecialization, getSpecializationBonus, SPECIALIZATION_BONUSES } from '../Specialization';
 import { CitySpecialization, CitySpecType } from '../CitySpecialization';
@@ -193,6 +193,27 @@ describe('PolicyManager', () => {
       expect(cost).toBeTypeOf('number');
       expect(cost).toBeGreaterThan(0);
     }
+  });
+
+  it('POLICY_CONFIG should contain name and cost for every PolicyType', () => {
+    for (const policyType of Object.values(PolicyType)) {
+      const cfg = POLICY_CONFIG[policyType];
+      expect(cfg).toBeDefined();
+      expect(cfg.name).toBeTruthy();
+      expect(cfg.cost).toBeGreaterThan(0);
+    }
+  });
+
+  it('separate PolicyManager instances should have independent ID counters', () => {
+    const dm2 = new DistrictManager();
+    const pm2 = new PolicyManager(dm2);
+    const d1 = dm.createDistrict('A');
+    const d2 = dm2.createDistrict('B');
+    pm.applyPolicy(d1.id, PolicyType.TOURISM);
+    pm2.applyPolicy(d2.id, PolicyType.TOURISM);
+    // Both should start from 1 independently
+    expect(d1.policies[0]!.id).toMatch(/^policy_1$/);
+    expect(d2.policies[0]!.id).toMatch(/^policy_1$/);
   });
 
   it('should work with a mock DistrictLookup (DIP)', () => {

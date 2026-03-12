@@ -6,26 +6,24 @@ export interface DistrictLookup {
   getDistrict(id: string): District | undefined;
 }
 
-const POLICY_COSTS: Record<PolicyType, number> = {
-  [PolicyType.NO_HEAVY_INDUSTRY]: 150,
-  [PolicyType.ENCOURAGE_RECYCLING]: 100,
-  [PolicyType.HIGH_DENSITY_BAN]: 120,
-  [PolicyType.ORGANIC_FOOD]: 80,
-  [PolicyType.TOURISM]: 200,
-};
+/** Consolidated per-policy-type configuration (OCP-friendly). */
+export interface PolicyTypeConfig {
+  name: string;
+  cost: number;
+}
 
-const POLICY_NAMES: Record<PolicyType, string> = {
-  [PolicyType.NO_HEAVY_INDUSTRY]: 'No Heavy Industry',
-  [PolicyType.ENCOURAGE_RECYCLING]: 'Encourage Recycling',
-  [PolicyType.HIGH_DENSITY_BAN]: 'High Density Ban',
-  [PolicyType.ORGANIC_FOOD]: 'Organic Food',
-  [PolicyType.TOURISM]: 'Tourism Promotion',
+/** Single source of truth for all policy type parameters. */
+export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
+  [PolicyType.NO_HEAVY_INDUSTRY]: { name: 'No Heavy Industry', cost: 150 },
+  [PolicyType.ENCOURAGE_RECYCLING]: { name: 'Encourage Recycling', cost: 100 },
+  [PolicyType.HIGH_DENSITY_BAN]: { name: 'High Density Ban', cost: 120 },
+  [PolicyType.ORGANIC_FOOD]: { name: 'Organic Food', cost: 80 },
+  [PolicyType.TOURISM]: { name: 'Tourism Promotion', cost: 200 },
 };
-
-let policyIdCounter = 1;
 
 export class PolicyManager {
   private districtLookup: DistrictLookup;
+  private nextPolicyId = 1;
 
   constructor(districtLookup: DistrictLookup) {
     this.districtLookup = districtLookup;
@@ -38,11 +36,12 @@ export class PolicyManager {
     // Don't add duplicate policies
     if (district.policies.some((p) => p.type === policyType)) return;
 
+    const cfg = POLICY_CONFIG[policyType];
     const policy: Policy = {
-      id: `policy_${policyIdCounter++}`,
-      name: POLICY_NAMES[policyType],
+      id: `policy_${this.nextPolicyId++}`,
+      name: cfg.name,
       type: policyType,
-      cost: POLICY_COSTS[policyType],
+      cost: cfg.cost,
       active: true,
     };
     district.policies.push(policy);
@@ -63,7 +62,7 @@ export class PolicyManager {
   }
 
   getPolicyCost(policyType: PolicyType): number {
-    return POLICY_COSTS[policyType];
+    return POLICY_CONFIG[policyType].cost;
   }
 
   canBuildInDistrict(districtId: string, buildingZoneType: ZoneType): boolean {
