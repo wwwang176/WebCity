@@ -14,7 +14,7 @@ import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, TerrainType } from './core/grid/types';
-import { normalizeRect, findAtPosition, countRoadTiles } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
@@ -28,8 +28,8 @@ import { getTotalTransportOperatingCost } from './core/transport/TransportRegist
 import { tryRandomDisaster, DISASTER_NAMES } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
-import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, BURNED, ROTATION_RESERVED } from './core/building/InfraPlacement';
+import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
@@ -62,13 +62,7 @@ import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 
-// OVERLAY_SCALE re-exported from core/overlay/CoverageOverlay for backward compatibility
-export { OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 
-
-
-// TERRAIN_GEN re-exported from core/grid/TerrainGenerator for backward compatibility
-export { TERRAIN_GEN } from './core/grid/TerrainGenerator';
 
 export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport';
 
