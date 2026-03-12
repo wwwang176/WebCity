@@ -20,7 +20,10 @@ import { getGridPollutionSources } from '../environment/GridPollutionSources';
 import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { isWorkingAge } from '../citizen/types';
-import { countOccupancy, assignToBuildings, type BuildingSlot } from '../citizen/OccupancyAssignment';
+import { countOccupancy, assignToBuildings, assignWithPreference, assignWorkWithPreference, type BuildingSlot } from '../citizen/OccupancyAssignment';
+import type { HousingCandidate } from '../citizen/HousingScore';
+import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
+import { relocationTick } from '../citizen/Relocation';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode } from '../transport/types';
@@ -259,6 +262,11 @@ export class SimulationLoop {
     // 6.5 Assign home/workplace to citizens who don't have them yet
     if (isSlowTick) {
       this.assignCitizenHousing();
+    }
+
+    // 6.6 Relocation: unhappy citizens may move to better housing (every 60 ticks)
+    if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
+      this.runRelocation();
     }
 
     // 7. Rebuild lane graph if roads changed
@@ -707,34 +715,86 @@ export class SimulationLoop {
   private assignCitizenHousing(): void {
     this.rebuildBuildingIndex();
 
-    // Collect residential and workplace buildings with capacity info
-    const residentialBuildings: BuildingSlot[] = [];
-    const workplaceBuildings: BuildingSlot[] = [];
+    const grid = this.state.grid;
+
+    // Build HousingCandidate[] and WorkplaceCandidate[] with full context
+    const housingCandidates: HousingCandidate[] = [];
+    const workplaceCandidates: WorkplaceCandidate[] = [];
 
     for (const b of this.buildingPositions) {
       const bt = getBuildingType(b.buildingId);
       if (!bt) continue;
+
       if (bt.residents > 0) {
-        residentialBuildings.push({ pos: b.pos, capacity: bt.residents });
+        const cell = grid.getCell(b.x, b.y);
+        const pollution = this.state.pollution.getPollutionAt(b.x, b.y);
+        housingCandidates.push({
+          pos: b.pos,
+          capacity: bt.residents,
+          level: bt.level,
+          landValue: cell ? cell.landValue : 0,
+          groundPollution: pollution ? pollution.ground : 0,
+          noisePollution: pollution ? pollution.noise : 0,
+          serviceCoverage: cell ? cell.serviceCoverage : 0,
+          hasPark: this.state.parks.getCoverage(b.x, b.y),
+        });
       }
       if (bt.workers > 0) {
-        workplaceBuildings.push({ pos: b.pos, capacity: bt.workers });
+        workplaceCandidates.push({
+          pos: b.pos,
+          capacity: bt.workers,
+          zoneType: bt.zoneType,
+        });
       }
     }
 
-    if (residentialBuildings.length === 0 && workplaceBuildings.length === 0) return;
+    if (housingCandidates.length === 0 && workplaceCandidates.length === 0) return;
 
     const citizens = this.state.citizens.getCitizens();
 
-    // Count current occupancy and assign — delegated to generic functions (SRP+DRY)
-    const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
-    assignToBuildings(citizens, residentialBuildings, homeOccupancy,
-      (c) => c.homeId, (c, pos) => { c.homeId = pos; });
-
+    // Assign workplaces first (housing scoring needs workplaceId for commute)
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
     const workingAgeCitizens = citizens.filter((c) => isWorkingAge(c.age));
-    assignToBuildings(workingAgeCitizens, workplaceBuildings, workOccupancy,
-      (c) => c.workplaceId, (c, pos) => { c.workplaceId = pos; });
+    assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy);
+
+    // Then assign housing with preference scoring
+    const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
+    assignWithPreference(citizens, housingCandidates, homeOccupancy);
+  }
+
+  /**
+   * Run relocation tick: unhappy citizens may move to better housing.
+   * Called every MEDIUM_TICK_INTERVAL ticks.
+   */
+  private runRelocation(): void {
+    this.rebuildBuildingIndex();
+
+    const grid = this.state.grid;
+    const housingCandidates: HousingCandidate[] = [];
+
+    for (const b of this.buildingPositions) {
+      const bt = getBuildingType(b.buildingId);
+      if (!bt || bt.residents <= 0) continue;
+
+      const cell = grid.getCell(b.x, b.y);
+      const pollution = this.state.pollution.getPollutionAt(b.x, b.y);
+      housingCandidates.push({
+        pos: b.pos,
+        capacity: bt.residents,
+        level: bt.level,
+        landValue: cell ? cell.landValue : 0,
+        groundPollution: pollution ? pollution.ground : 0,
+        noisePollution: pollution ? pollution.noise : 0,
+        serviceCoverage: cell ? cell.serviceCoverage : 0,
+        hasPark: this.state.parks.getCoverage(b.x, b.y),
+      });
+    }
+
+    if (housingCandidates.length === 0) return;
+
+    const citizens = this.state.citizens.getCitizens();
+    const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
+    relocationTick(citizens, housingCandidates, homeOccupancy);
   }
 
   /** Mark the lane graph as needing rebuild (call after road build/demolish).

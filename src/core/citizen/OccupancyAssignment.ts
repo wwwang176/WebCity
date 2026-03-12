@@ -1,9 +1,13 @@
 import type { Citizen } from './types';
+import { type HousingCandidate, canAfford, scoreHousing } from './HousingScore';
+import { type WorkplaceCandidate, scoreWorkplace } from './WorkplaceScore';
 
 export interface BuildingSlot {
   pos: string;
   capacity: number;
 }
+
+const MAX_CANDIDATES = 30;
 
 /**
  * Count how many citizens are currently assigned to each building position.
@@ -47,5 +51,109 @@ export function assignToBuildings(
         break;
       }
     }
+  }
+}
+
+/** Fisher-Yates shuffle (in-place) */
+function shuffle<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = arr[i]!;
+    arr[i] = arr[j]!;
+    arr[j] = tmp;
+  }
+}
+
+/**
+ * Score-based housing assignment: each citizen picks from top-3 scored candidates.
+ * Mutates citizens (homeId) and occupancy map in-place.
+ */
+export function assignWithPreference(
+  citizens: readonly Citizen[],
+  candidates: readonly HousingCandidate[],
+  occupancy: Map<string, number>,
+): void {
+  for (const citizen of citizens) {
+    if (citizen.homeId !== null) continue;
+
+    // Step 1: Filter — has capacity + can afford
+    let available = candidates.filter(c => {
+      const occ = occupancy.get(c.pos) ?? 0;
+      return occ < c.capacity && canAfford(citizen.incomeLevel, c.level);
+    });
+
+    // Step 1.5: Fallback — if no affordable candidates, relax constraint
+    if (available.length === 0) {
+      available = candidates.filter(c => {
+        const occ = occupancy.get(c.pos) ?? 0;
+        return occ < c.capacity;
+      });
+    }
+    if (available.length === 0) continue;
+
+    // Performance: sample if too many candidates
+    let pool = [...available];
+    if (pool.length > MAX_CANDIDATES) {
+      shuffle(pool);
+      pool = pool.slice(0, MAX_CANDIDATES);
+    }
+
+    // Step 2: Score
+    const scored = pool.map(c => ({
+      candidate: c,
+      score: scoreHousing(citizen, c),
+    }));
+
+    // Step 3: Pick from top-3 randomly
+    scored.sort((a, b) => b.score - a.score);
+    const topN = scored.slice(0, Math.min(3, scored.length));
+    const pick = topN[Math.floor(Math.random() * topN.length)]!;
+
+    // Step 4: Assign
+    citizen.homeId = pick.candidate.pos;
+    occupancy.set(pick.candidate.pos, (occupancy.get(pick.candidate.pos) ?? 0) + 1);
+  }
+}
+
+/**
+ * Score-based workplace assignment: each citizen picks from top-3 scored workplaces.
+ * Mutates citizens (workplaceId) and occupancy map in-place.
+ */
+export function assignWorkWithPreference(
+  citizens: readonly Citizen[],
+  candidates: readonly WorkplaceCandidate[],
+  occupancy: Map<string, number>,
+): void {
+  for (const citizen of citizens) {
+    if (citizen.workplaceId !== null) continue;
+
+    // Filter — has capacity
+    let available = candidates.filter(c => {
+      const occ = occupancy.get(c.pos) ?? 0;
+      return occ < c.capacity;
+    });
+    if (available.length === 0) continue;
+
+    // Performance: sample if too many candidates
+    let pool = [...available];
+    if (pool.length > MAX_CANDIDATES) {
+      shuffle(pool);
+      pool = pool.slice(0, MAX_CANDIDATES);
+    }
+
+    // Score
+    const scored = pool.map(c => ({
+      candidate: c,
+      score: scoreWorkplace(citizen, c.pos, c.zoneType),
+    }));
+
+    // Pick from top-3 randomly
+    scored.sort((a, b) => b.score - a.score);
+    const topN = scored.slice(0, Math.min(3, scored.length));
+    const pick = topN[Math.floor(Math.random() * topN.length)]!;
+
+    // Assign
+    citizen.workplaceId = pick.candidate.pos;
+    occupancy.set(pick.candidate.pos, (occupancy.get(pick.candidate.pos) ?? 0) + 1);
   }
 }
