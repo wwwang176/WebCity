@@ -195,6 +195,8 @@ export class Game {
   private gridCursor: GridCursor;
   private placementPreview: PlacementPreview;
   private highlightManager: HighlightManager;
+  /** Cached overlay building highlight cells (reapplied every frame). */
+  private overlayHighlightCells: { x: number; y: number; color: number }[] = [];
   private transportRouteRenderer: TransportRouteRenderer;
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
@@ -589,6 +591,12 @@ export class Game {
       }
     }
     this.markAllDirty();
+
+    // Refresh overlay cache after demolish
+    const activeOverlay = this.overlayRenderer.getOverlay();
+    if (activeOverlay !== 'none') {
+      this.computeOverlayHighlightCells(activeOverlay);
+    }
   }
 
   /** Dispatch to data-driven service removal. Callers provide resolved coordinates. */
@@ -1191,6 +1199,10 @@ export class Game {
   }
 
   private updatePlacementPreview(): void {
+    // Always clear first, then re-apply overlay base layer
+    this.highlightManager.clear();
+    this.reapplyOverlayHighlight();
+
     if (this.isInfraTool(this.currentTool)) {
       const infraType = this.currentTool as InfraType;
       const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
@@ -1204,8 +1216,7 @@ export class Game {
         groundwaterFn,
       );
 
-      // Show road-distance coverage overlay on buildings
-      this.highlightManager.clear();
+      // Show road-distance coverage preview on top of overlay
       this.applyCoverageOverlay(infraType);
     } else if (this.currentTool === 'demolish') {
       if (this.dragStart) {
@@ -1223,11 +1234,7 @@ export class Game {
               this.getAllHighlightMeshes(),
               this.buildingRenderer.buildingInfraGroups,
             );
-          } else {
-            this.highlightManager.clear();
           }
-        } else {
-          this.highlightManager.clear();
         }
       }
     } else if (this.dragStart && this.isZoneTool()) {
@@ -1236,10 +1243,19 @@ export class Game {
       this.placementPreview.hide();
       if (this.currentTool === 'select') {
         this.applySelectAndHoverHighlight();
-      } else {
-        this.highlightManager.clear();
       }
     }
+  }
+
+  /** Re-apply cached overlay building highlight (cheap: no grid traversal). */
+  private reapplyOverlayHighlight(): void {
+    if (this.overlayHighlightCells.length === 0) return;
+    this.highlightManager.hoverHighlightGradient(
+      this.overlayHighlightCells,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+      0.6,
+    );
   }
 
   /** Highlight the drag-selected rectangular area with the given color (DRY). */
@@ -1347,7 +1363,7 @@ export class Game {
   setOverlay(type: OverlayType): void {
     const data = this.buildOverlayData(type);
     this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data);
-    this.applyCoverageBuildingHighlight(type);
+    this.computeOverlayHighlightCells(type);
     this.onUIUpdate?.();
   }
 
@@ -1379,79 +1395,49 @@ export class Game {
     garbage: { key: 'garbage', budget: ROAD_COVERAGE.GARBAGE_BUDGET },
   };
 
-  /** Highlight buildings with green→yellow→red gradient when a service overlay is active. */
-  private applyCoverageBuildingHighlight(overlayType: OverlayType): void {
-    this.highlightManager.clear();
+  /** Compute and cache overlay building highlight cells. Applied every frame by reapplyOverlayHighlight(). */
+  private computeOverlayHighlightCells(overlayType: OverlayType): void {
+    this.overlayHighlightCells = [];
 
+    // Road-based services: green→yellow→red gradient
     const roadInfo = Game.ROAD_COST_OVERLAYS[overlayType];
     if (roadInfo) {
-      this.applyRoadCostGradient(overlayType, roadInfo.key, roadInfo.budget);
+      const costMap = this.state[roadInfo.key].getCoveredCellsWithCost();
+      if (costMap.size === 0) return;
+      const isGarbage = overlayType === 'garbage';
+      const grid = this.state.grid;
+      for (const [key, cost] of costMap) {
+        const i = key.indexOf(',');
+        const cx = Number(key.slice(0, i));
+        const cy = Number(key.slice(i + 1));
+        const cell = grid.getCell(cx, cy);
+        if (!cell || cell.buildingId === 0) continue;
+        if (isGarbage) {
+          if (!isResidentialZone(cell.zoneType)) continue;
+        } else {
+          if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
+        }
+        const ratio = Math.min(1, cost / roadInfo.budget);
+        const tier = Math.min(9, Math.floor(ratio * 10));
+        this.overlayHighlightCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
+      }
       return;
     }
 
-    // Non-road services (health/education/park): single-color highlight
+    // Non-road services (health/education/park): single-color
     const fallbackColors: Partial<Record<OverlayType, number>> = {
       health: 0xe91e63, education: 0x795548, park: 0x4caf50,
     };
     const color = fallbackColors[overlayType];
     if (!color) return;
-
     const service = getCoverageService(this.state as any, overlayType);
     if (!service) return;
-
-    const cells: { x: number; y: number }[] = [];
     this.state.grid.forEachCell((cell, x, y) => {
       if (!service.getCoverage(x, y)) return;
       if (cell.buildingId === 0) return;
       if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) return;
-      cells.push({ x, y });
+      this.overlayHighlightCells.push({ x, y, color });
     });
-
-    if (cells.length > 0) {
-      this.highlightManager.hoverHighlight(
-        cells, color, this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups, 0.5,
-      );
-    }
-  }
-
-  /** Apply green→yellow→red gradient using road-distance cost data. */
-  private applyRoadCostGradient(
-    overlayType: OverlayType,
-    serviceKey: 'police' | 'fire' | 'garbage',
-    budget: number,
-  ): void {
-    const costMap = this.state[serviceKey].getCoveredCellsWithCost();
-    if (costMap.size === 0) return;
-
-    const isGarbage = overlayType === 'garbage';
-    const grid = this.state.grid;
-    const gradientCells: { x: number; y: number; color: number }[] = [];
-
-    for (const [key, cost] of costMap) {
-      const i = key.indexOf(',');
-      const cx = Number(key.slice(0, i));
-      const cy = Number(key.slice(i + 1));
-      const cell = grid.getCell(cx, cy);
-      if (!cell || cell.buildingId === 0) continue;
-
-      if (isGarbage) {
-        if (!isResidentialZone(cell.zoneType)) continue;
-      } else {
-        if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
-      }
-
-      const ratio = Math.min(1, cost / budget);
-      const tier = Math.min(9, Math.floor(ratio * 10));
-      gradientCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
-    }
-
-    if (gradientCells.length > 0) {
-      this.highlightManager.hoverHighlightGradient(
-        gradientCells, this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups, 0.6,
-      );
-    }
   }
 
   setOnUIUpdate(callback: () => void): void {
