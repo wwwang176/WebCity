@@ -223,7 +223,7 @@ export class SimulationLoop {
     if (currentYear !== this.lastAgeYear) {
       this.lastAgeYear = currentYear;
       const deaths = this.state.citizens.ageTick();
-      // Report deaths to DeathCare for cemetery/crematorium processing
+      // Report deaths to DeathCare for cemetery processing (cremation + storage)
       for (let i = 0; i < deaths; i++) {
         this.state.deathCare.reportDeath();
       }

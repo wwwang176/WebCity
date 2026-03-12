@@ -123,11 +123,11 @@ describe('CivicService.getMaintenanceCost()', () => {
       expect(svc.getMaintenanceCost()).toBe(0);
     });
 
-    it('should return 2 per cemetery and crematorium', () => {
+    it('should return 2 per cemetery', () => {
       const svc = new DeathCareService();
       svc.addCemetery(5, 5);
       expect(svc.getMaintenanceCost()).toBe(2);
-      svc.addCrematorium(10, 10);
+      svc.addCemetery(10, 10);
       expect(svc.getMaintenanceCost()).toBe(4);
     });
   });

@@ -5,21 +5,16 @@ export interface Cemetery {
   id: string;
   x: number;
   y: number;
+  /** Max bodies that can be stored awaiting cremation */
   capacity: number;
+  /** Bodies currently stored */
   used: number;
-}
-
-export interface Crematorium {
-  id: string;
-  x: number;
-  y: number;
-  capacity: number;
+  /** Bodies cremated per tick */
   processRate: number;
 }
 
 interface DeathCareJSON {
   cemeteries: Cemetery[];
-  crematoriums: Crematorium[];
   pendingDeaths: number;
 }
 
@@ -29,19 +24,12 @@ export const DEATH_CARE = {
 
 export class DeathCareService {
   private cemeteries: Cemetery[] = [];
-  private crematoriums: Crematorium[] = [];
   private pendingDeaths = 0;
   private nextId = 1;
 
-  addCemetery(x: number, y: number, capacity = 500): string {
+  addCemetery(x: number, y: number, capacity = 500, processRate = 5): string {
     const id = `cem-${this.nextId++}`;
-    this.cemeteries.push({ id, x, y, capacity, used: 0 });
-    return id;
-  }
-
-  addCrematorium(x: number, y: number, capacity = 100, processRate = 5): string {
-    const id = `cre-${this.nextId++}`;
-    this.crematoriums.push({ id, x, y, capacity, processRate });
+    this.cemeteries.push({ id, x, y, capacity, used: 0, processRate });
     return id;
   }
 
@@ -49,32 +37,38 @@ export class DeathCareService {
     return removeById(this.cemeteries, id);
   }
 
-  removeCrematorium(id: string): boolean {
-    return removeById(this.crematoriums, id);
-  }
-
   reportDeath(): void {
     this.pendingDeaths++;
   }
 
   tick(): void {
-    if (this.pendingDeaths <= 0) return;
+    if (this.pendingDeaths <= 0 && this.cemeteries.every(c => c.used === 0)) return;
 
-    // Phase 1: Crematoriums process deaths (up to their processRate per tick)
-    for (const crem of this.crematoriums) {
-      if (this.pendingDeaths <= 0) break;
-      const processed = Math.min(this.pendingDeaths, crem.processRate);
-      this.pendingDeaths -= processed;
-    }
-
-    // Phase 2: Remaining deaths go to cemeteries (permanent burial)
     for (const cem of this.cemeteries) {
-      if (this.pendingDeaths <= 0) break;
-      const available = cem.capacity - cem.used;
-      if (available <= 0) continue;
-      const buried = Math.min(this.pendingDeaths, available);
-      cem.used += buried;
-      this.pendingDeaths -= buried;
+      let budget = cem.processRate;
+
+      // Phase 1: Cremate pending deaths directly
+      if (this.pendingDeaths > 0 && budget > 0) {
+        const cremated = Math.min(this.pendingDeaths, budget);
+        this.pendingDeaths -= cremated;
+        budget -= cremated;
+      }
+
+      // Phase 2: Cremate stored bodies
+      if (cem.used > 0 && budget > 0) {
+        const cremated = Math.min(cem.used, budget);
+        cem.used -= cremated;
+      }
+
+      // Phase 3: Store remaining pending deaths
+      if (this.pendingDeaths > 0) {
+        const available = cem.capacity - cem.used;
+        if (available > 0) {
+          const accepted = Math.min(this.pendingDeaths, available);
+          cem.used += accepted;
+          this.pendingDeaths -= accepted;
+        }
+      }
     }
   }
 
@@ -90,18 +84,13 @@ export class DeathCareService {
     return this.cemeteries;
   }
 
-  getCrematoria(): readonly Crematorium[] {
-    return this.crematoriums;
-  }
-
   getMaintenanceCost(): number {
-    return (this.cemeteries.length + this.crematoriums.length) * DEATH_CARE.MAINTENANCE_PER_FACILITY;
+    return this.cemeteries.length * DEATH_CARE.MAINTENANCE_PER_FACILITY;
   }
 
   toJSON(): DeathCareJSON {
     return {
       cemeteries: this.cemeteries.map(c => ({ ...c })),
-      crematoriums: this.crematoriums.map(c => ({ ...c })),
       pendingDeaths: this.pendingDeaths,
     };
   }
@@ -109,12 +98,8 @@ export class DeathCareService {
   static fromJSON(json: DeathCareJSON): DeathCareService {
     const service = new DeathCareService();
     service.cemeteries = json.cemeteries.map(c => ({ ...c }));
-    service.crematoriums = json.crematoriums.map(c => ({ ...c }));
     service.pendingDeaths = json.pendingDeaths;
-    // Recover counter from max existing ID across both collections
-    const cemMax = recoverNextId(service.cemeteries, 'cem-');
-    const creMax = recoverNextId(service.crematoriums, 'cre-');
-    service.nextId = Math.max(cemMax, creMax);
+    service.nextId = recoverNextId(service.cemeteries, 'cem-');
     return service;
   }
 }

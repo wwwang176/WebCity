@@ -436,10 +436,9 @@ describe('DeathCare integration', () => {
     // Force a year change: run 8640 ticks (1 year = 24 ticks/day * 30 days * 12 months)
     for (let i = 0; i < 8640; i++) loop.tick();
 
-    // Deaths should have been reported and processed
+    // Deaths should have been reported and processed (cremated over time)
     expect(state.citizens.getPopulation()).toBe(0);
-    const cemeteries = state.deathCare.getCemeteries();
-    expect(cemeteries[0]!.used).toBeGreaterThan(0);
+    expect(state.deathCare.getUnprocessed()).toBe(0);
   });
 });
 
