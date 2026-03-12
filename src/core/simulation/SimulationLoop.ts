@@ -22,13 +22,14 @@ import { IncomeLevel, isWorkingAge } from '../citizen/types';
 import { countOccupancy, assignToBuildings, type BuildingSlot } from '../citizen/OccupancyAssignment';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
-import { TransportMode, TransportType } from '../transport/types';
+import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
+import { findAvailableTransit } from '../transport/TransitAvailability';
 
 /** Simulation tuning constants */
 export const SIMULATION = {
@@ -967,33 +968,11 @@ export class SimulationLoop {
     origin: { x: number; y: number },
     destination: { x: number; y: number },
   ): AvailableTransport[] {
-    const result: AvailableTransport[] = [];
-
     const systems = getTransitSystems(this.state).map(({ type, system }) => ({
       type,
       routes: system.getRoutes(),
     }));
-
-    for (const sys of systems) {
-      for (const route of sys.routes) {
-        let nearOrigin = false;
-        let nearDest = false;
-        for (const stop of route.stops) {
-          const dOrig = manhattanDistance(stop.x, stop.y, origin.x, origin.y);
-          const dDest = manhattanDistance(stop.x, stop.y, destination.x, destination.y);
-          if (dOrig <= SIMULATION.WALK_TO_STOP_RANGE) nearOrigin = true;
-          if (dDest <= SIMULATION.WALK_TO_STOP_RANGE) nearDest = true;
-        }
-        if (nearOrigin && nearDest) {
-          // Estimate transit time: Manhattan distance * factor (faster than driving for metro/rail)
-          const dist = manhattanDistance(origin.x, origin.y, destination.x, destination.y);
-          const timeFactor = sys.type === TransportType.METRO || sys.type === TransportType.RAIL ? SIMULATION.RAIL_TRANSIT_TIME_FACTOR : 1.0;
-          result.push({ type: sys.type, estimatedTime: dist * timeFactor });
-        }
-      }
-    }
-
-    return result;
+    return findAvailableTransit(systems, origin, destination, SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.RAIL_TRANSIT_TIME_FACTOR);
   }
 
   /**
