@@ -5,13 +5,14 @@ import { RoadRenderer } from './renderer/RoadRenderer';
 import { BuildingRenderer } from './renderer/BuildingRenderer';
 import { VehicleRenderer, type VehicleData } from './renderer/VehicleRenderer';
 import { TrafficLightRenderer } from './renderer/TrafficLightRenderer';
+import { syncTrafficLightsWithGrid } from './core/traffic/TrafficLights';
 import { OverlayRenderer } from './renderer/OverlayRenderer';
 import { GridCursor } from './renderer/GridCursor';
 import { WeatherRenderer } from './renderer/WeatherRenderer';
 import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
-import { RoadType, RoadDirection, ROAD_CONFIGS } from './core/road/types';
+import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, TerrainType } from './core/grid/types';
 import { normalizeRect, findAtPosition, countRoadTiles } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
@@ -1001,7 +1002,7 @@ export class Game {
         d.terrain = false;
       }
       if (d.trafficLights) {
-        this.syncTrafficLights();
+        syncTrafficLightsWithGrid(this.state.grid, this.state.trafficLights);
         this.trafficLightRenderer.build(this.sceneManager.scene, this.state.trafficLights.getLights());
         d.trafficLights = false;
       }
@@ -1154,38 +1155,6 @@ export class Game {
     const sunI = this.weatherRenderer.sunIntensity;
     this.buildingRenderer.update(sunI, dt);
     this.roadRenderer.update(sunI);
-  }
-
-  /** Smoothed position & heading using quadratic bezier at turns */
-
-  /** Scan the grid for intersections (3+ road connections) and sync traffic lights */
-  private syncTrafficLights(): void {
-    const grid = this.state.grid;
-    const tls = this.state.trafficLights;
-    const seen = new Set<string>();
-
-    grid.forEachCell((cell, x, y) => {
-      if (cell.roadType === RoadType.NONE) return;
-      let dirs = 0;
-      if (cell.roadFlags & RoadDirection.NORTH) dirs++;
-      if (cell.roadFlags & RoadDirection.SOUTH) dirs++;
-      if (cell.roadFlags & RoadDirection.EAST) dirs++;
-      if (cell.roadFlags & RoadDirection.WEST) dirs++;
-      if (dirs >= 3) {
-        const key = `${x},${y}`;
-        seen.add(key);
-        if (!tls.getLight(x, y)) {
-          tls.addLight(x, y);
-        }
-      }
-    });
-
-    // Remove lights for intersections that no longer exist
-    for (const light of tls.getLights()) {
-      if (!seen.has(`${light.x},${light.y}`)) {
-        tls.removeLight(light.x, light.y);
-      }
-    }
   }
 
   private updateCursorColor(): void {

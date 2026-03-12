@@ -1,4 +1,5 @@
 import { toPosKey } from '../grid/GridHelpers';
+import { RoadType, RoadDirection } from '../road/types';
 
 /**
  * Traffic light system for intersections.
@@ -71,5 +72,39 @@ export class TrafficLightSystem {
 
   clear(): void {
     this.lights.clear();
+  }
+}
+
+/**
+ * Sync traffic lights with current grid state: add lights at 3+ way intersections,
+ * remove stale lights where intersections no longer exist.
+ */
+export function syncTrafficLightsWithGrid(
+  grid: { forEachCell(fn: (cell: { roadType: number; roadFlags: number }, x: number, y: number) => void): void },
+  tls: TrafficLightSystem,
+): void {
+  const seen = new Set<string>();
+
+  grid.forEachCell((cell, x, y) => {
+    if (cell.roadType === RoadType.NONE) return;
+    let dirs = 0;
+    if (cell.roadFlags & RoadDirection.NORTH) dirs++;
+    if (cell.roadFlags & RoadDirection.SOUTH) dirs++;
+    if (cell.roadFlags & RoadDirection.EAST) dirs++;
+    if (cell.roadFlags & RoadDirection.WEST) dirs++;
+    if (dirs >= 3) {
+      const key = `${x},${y}`;
+      seen.add(key);
+      if (!tls.getLight(x, y)) {
+        tls.addLight(x, y);
+      }
+    }
+  });
+
+  // Remove lights for intersections that no longer exist
+  for (const light of tls.getLights()) {
+    if (!seen.has(`${light.x},${light.y}`)) {
+      tls.removeLight(light.x, light.y);
+    }
   }
 }
