@@ -32,6 +32,6 @@ export class RoadUpgrade {
 
     this.grid.setCell(x, y, { roadType: newType });
 
-    return { success: true, cost };
+    return { success: true, cost, affectedCells: [`${x},${y}`] };
   }
 }

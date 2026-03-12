@@ -19,6 +19,11 @@ const [currentRotation, setCurrentRotation] = createSignal(0);
 const [rciDemand, setRciDemand] = createSignal({ residential: 0, commercial: 0, industrial: 0 });
 const [viewMode, setViewMode] = createSignal<ViewMode>(ViewMode.NORMAL);
 
+// --- Throttled tick signal for modal live-refresh (~2 updates/sec at 60fps) ---
+const [tick, setTick] = createSignal(0);
+let uiUpdateCount = 0;
+const UI_TICK_DIVISOR = 10;
+
 // --- Chart history (accumulated over time) ---
 const CHART_MAX = 60;
 const ECON_MAX = 60;
@@ -31,7 +36,7 @@ export const gameSignals = {
   currentTool, previewCost, paused, speed,
   selectedBuilding, notification, currentOverlay,
   currentRotation, rciDemand, chartHistory, econHistory,
-  viewMode,
+  viewMode, tick,
 };
 
 // --- Game instance reference ---
@@ -93,6 +98,10 @@ export function initGameStore(game: Game): void {
       const newExpenses = [...prevEcon.expenses, state.budget.expenses];
       if (newFunds.length > ECON_MAX) { newFunds.shift(); newIncome.shift(); newExpenses.shift(); }
       setEconHistory({ funds: newFunds, income: newIncome, expenses: newExpenses });
+
+      // Throttled tick for modal live-refresh
+      uiUpdateCount++;
+      if (uiUpdateCount % UI_TICK_DIVISOR === 0) setTick(t => t + 1);
     });
   });
 }

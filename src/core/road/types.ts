@@ -63,6 +63,8 @@ export interface BuildRoadResult {
   success: boolean;
   reason?: string;
   cost?: number;
+  /** Cells affected by this operation (for lane graph / cache invalidation). */
+  affectedCells?: string[];
 }
 
 // Re-export Position from canonical location (DRY)

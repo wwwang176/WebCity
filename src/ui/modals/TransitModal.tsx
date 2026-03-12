@@ -1,5 +1,5 @@
 import { createSignal, createEffect, Show, For } from 'solid-js';
-import { getGame } from '../store/gameStore';
+import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 import { RailServiceType } from '../../core/transport/RailSystem';
 import type { TransportStop } from '../../core/transport/types';
@@ -14,6 +14,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
 
   const transitData = () => {
     version();
+    gameSignals.tick(); // reactive: throttled live-refresh
     const state = getGame().getState();
     return {
       busStops: state.bus.getStops(),

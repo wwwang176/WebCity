@@ -31,8 +31,11 @@ export class CommuteCache {
   // Shared route pool: routeKey -> LaneEdge[]
   private routeIndex = new Map<string, LaneEdge[]>();
 
-  // routeKey -> set of cellKeys that the route passes through
+  // cellKey -> set of routeKeys that pass through that cell
   private routeCellIndex = new Map<string, Set<string>>();
+
+  // routeKey -> number of citizens currently using this route
+  private routeRefCount = new Map<string, number>();
 
   /** Current road network generation — incremented on every road build/demolish. */
   roadGeneration = 0;
@@ -42,6 +45,7 @@ export class CommuteCache {
     this.roadGeneration++;
     this.routeIndex.clear();
     this.routeCellIndex.clear();
+    this.routeRefCount.clear();
   }
 
   get(citizenId: number): CachedRoute | undefined {
@@ -53,6 +57,9 @@ export class CommuteCache {
     const old = this.cache.get(citizenId);
     if (old) {
       this.removeCellIndexEntries(citizenId, old);
+      if (old.status === 'ready') {
+        for (const key of this.deriveRouteKeys(old)) this.decrementRefCount(key);
+      }
     }
 
     this.cache.set(citizenId, route);
@@ -61,6 +68,7 @@ export class CommuteCache {
     // Register cells in cellIndex when path is ready
     if (route.status === 'ready') {
       this.registerCellIndex(citizenId, route);
+      for (const key of this.deriveRouteKeys(route)) this.incrementRefCount(key);
     }
   }
 
@@ -118,6 +126,9 @@ export class CommuteCache {
     const route = this.cache.get(citizenId);
     if (route) {
       this.removeCellIndexEntries(citizenId, route);
+      if (route.status === 'ready') {
+        for (const key of this.deriveRouteKeys(route)) this.decrementRefCount(key);
+      }
     }
     this.cache.delete(citizenId);
     this.dirtySet.delete(citizenId);
@@ -207,5 +218,45 @@ export class CommuteCache {
 
   private collectCellsFromPath(path: LaneEdge[]): Set<string> {
     return collectEdgeCells(path);
+  }
+
+  /** Derive routeKeys (home→work, work→home) from a cached route's non-null paths. */
+  private deriveRouteKeys(route: CachedRoute): string[] {
+    const keys: string[] = [];
+    if (route.morningPath && route.morningPath.length > 0) {
+      keys.push(`${route.homeId}->${route.workplaceId}`);
+    }
+    if (route.eveningPath && route.eveningPath.length > 0) {
+      keys.push(`${route.workplaceId}->${route.homeId}`);
+    }
+    return keys;
+  }
+
+  private incrementRefCount(routeKey: string): void {
+    this.routeRefCount.set(routeKey, (this.routeRefCount.get(routeKey) ?? 0) + 1);
+  }
+
+  private decrementRefCount(routeKey: string): void {
+    const count = this.routeRefCount.get(routeKey);
+    if (count !== undefined) {
+      if (count <= 1) {
+        this.routeRefCount.delete(routeKey);
+      } else {
+        this.routeRefCount.set(routeKey, count - 1);
+      }
+    }
+  }
+
+  /**
+   * Iterate all cached routes with their reference counts.
+   * Callback receives (path, refCount) for each route in the shared pool.
+   */
+  forEachRouteWithRefCount(callback: (path: LaneEdge[], refCount: number) => void): void {
+    for (const [routeKey, path] of this.routeIndex) {
+      const refCount = this.routeRefCount.get(routeKey) ?? 0;
+      if (refCount > 0) {
+        callback(path, refCount);
+      }
+    }
   }
 }

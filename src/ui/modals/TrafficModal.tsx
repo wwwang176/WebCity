@@ -1,16 +1,10 @@
-import { createSignal, createEffect, For, Show } from 'solid-js';
-import { getGame } from '../store/gameStore';
+import { For, Show } from 'solid-js';
+import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 
 export function TrafficModal(props: { open: boolean; onClose: () => void }) {
-  const [version, setVersion] = createSignal(0);
-
-  createEffect(() => {
-    if (props.open) setVersion(v => v + 1);
-  });
-
   const stats = () => {
-    version();
+    gameSignals.tick(); // reactive: throttled live-refresh
     return getGame().getTrafficStats();
   };
 

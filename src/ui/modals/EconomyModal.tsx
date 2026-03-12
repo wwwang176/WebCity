@@ -20,13 +20,13 @@ export function EconomyModal(props: { open: boolean; onClose: () => void }) {
 
   const breakdown = () => {
     version();
-    gameSignals.funds(); // reactive dependency
+    gameSignals.tick(); // reactive: throttled live-refresh
     return getGame().getEconomyBreakdown();
   };
 
   const state = () => {
     version();
-    gameSignals.funds();
+    gameSignals.tick();
     return getGame().getState();
   };
 

@@ -307,6 +307,152 @@ describe('CommuteCache', () => {
     expect(route.recalcAtTick).toBe(firstRecalcAt);
   });
 
+  // ── routeRefCount ──
+
+  it('should increment routeRefCount when setting a ready route', () => {
+    const cache = new CommuteCache();
+    const morningPath = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
+    cache.setRoute('0,0->2,0', morningPath);
+
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '2,0',
+      morningPath, eveningPath: null, status: 'ready', generation: 0,
+    });
+
+    const refs: number[] = [];
+    cache.forEachRouteWithRefCount((_path, refCount) => { refs.push(refCount); });
+    expect(refs).toEqual([1]);
+  });
+
+  it('should accumulate refCount for multiple citizens sharing the same route', () => {
+    const cache = new CommuteCache();
+    const morningPath = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
+    cache.setRoute('0,0->2,0', morningPath);
+
+    for (let i = 1; i <= 5; i++) {
+      cache.set(i, {
+        citizenId: i, homeId: '0,0', workplaceId: '2,0',
+        morningPath, eveningPath: null, status: 'ready', generation: 0,
+      });
+    }
+
+    let totalRef = 0;
+    cache.forEachRouteWithRefCount((_path, refCount) => { totalRef += refCount; });
+    expect(totalRef).toBe(5);
+  });
+
+  it('should decrement routeRefCount when removing a citizen', () => {
+    const cache = new CommuteCache();
+    const morningPath = [makeEdge('0,0', '1,0')];
+    cache.setRoute('0,0->1,0', morningPath);
+
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath, eveningPath: null, status: 'ready', generation: 0,
+    });
+    cache.set(2, {
+      citizenId: 2, homeId: '0,0', workplaceId: '1,0',
+      morningPath, eveningPath: null, status: 'ready', generation: 0,
+    });
+
+    cache.remove(1);
+
+    let totalRef = 0;
+    cache.forEachRouteWithRefCount((_path, refCount) => { totalRef += refCount; });
+    expect(totalRef).toBe(1);
+  });
+
+  it('should delete routeRefCount entry when last citizen is removed', () => {
+    const cache = new CommuteCache();
+    const morningPath = [makeEdge('0,0', '1,0')];
+    cache.setRoute('0,0->1,0', morningPath);
+
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath, eveningPath: null, status: 'ready', generation: 0,
+    });
+
+    cache.remove(1);
+
+    let routeCount = 0;
+    cache.forEachRouteWithRefCount(() => { routeCount++; });
+    expect(routeCount).toBe(0);
+  });
+
+  it('should clear routeRefCount on bumpGeneration', () => {
+    const cache = new CommuteCache();
+    const morningPath = [makeEdge('0,0', '1,0')];
+    cache.setRoute('0,0->1,0', morningPath);
+
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath, eveningPath: null, status: 'ready', generation: 0,
+    });
+
+    cache.bumpGeneration();
+
+    let routeCount = 0;
+    cache.forEachRouteWithRefCount(() => { routeCount++; });
+    expect(routeCount).toBe(0);
+  });
+
+  it('should adjust refCounts when a citizen route is replaced', () => {
+    const cache = new CommuteCache();
+    const path1 = [makeEdge('0,0', '1,0')];
+    const path2 = [makeEdge('0,0', '3,0')];
+    cache.setRoute('0,0->1,0', path1);
+    cache.setRoute('0,0->3,0', path2);
+
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: path1, eveningPath: null, status: 'ready', generation: 0,
+    });
+
+    // Replace with different route
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '3,0',
+      morningPath: path2, eveningPath: null, status: 'ready', generation: 0,
+    });
+
+    const refCounts: number[] = [];
+    cache.forEachRouteWithRefCount((_path, refCount) => { refCounts.push(refCount); });
+    // Old route refCount 0 excluded, new route refCount 1
+    expect(refCounts).toEqual([1]);
+  });
+
+  it('should not increment refCount for pending or failed routes', () => {
+    const cache = new CommuteCache();
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'pending', generation: 0,
+    });
+    cache.set(2, {
+      citizenId: 2, homeId: '0,0', workplaceId: '1,0',
+      morningPath: null, eveningPath: null, status: 'failed', generation: 0,
+    });
+
+    let routeCount = 0;
+    cache.forEachRouteWithRefCount(() => { routeCount++; });
+    expect(routeCount).toBe(0);
+  });
+
+  it('should count both morning and evening route refCounts separately', () => {
+    const cache = new CommuteCache();
+    const morningPath = [makeEdge('0,0', '1,0')];
+    const eveningPath = [makeEdge('1,0', '0,0')];
+    cache.setRoute('0,0->1,0', morningPath);
+    cache.setRoute('1,0->0,0', eveningPath);
+
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '1,0',
+      morningPath, eveningPath, status: 'ready', generation: 0,
+    });
+
+    const refs: number[] = [];
+    cache.forEachRouteWithRefCount((_path, refCount) => { refs.push(refCount); });
+    expect(refs.sort()).toEqual([1, 1]);
+  });
+
   it('recalcAtTick is cleared after route is re-set with current generation', () => {
     const cache = new CommuteCache();
     cache.roadGeneration = 1;

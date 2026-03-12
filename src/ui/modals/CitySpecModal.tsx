@@ -1,5 +1,5 @@
 import { createSignal, For, createEffect } from 'solid-js';
-import { getGame } from '../store/gameStore';
+import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 
 const SPECS = [
@@ -17,6 +17,7 @@ export function CitySpecModal(props: { open: boolean; onClose: () => void }) {
 
   const data = () => {
     version();
+    gameSignals.tick(); // reactive: throttled live-refresh
     const state = getGame().getState();
     return {
       pop: state.citizens.getPopulation(),

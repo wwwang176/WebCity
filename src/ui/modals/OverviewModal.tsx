@@ -1,5 +1,5 @@
-import { createSignal, createEffect, For } from 'solid-js';
-import { getGame } from '../store/gameStore';
+import { For } from 'solid-js';
+import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 import { ZoneType } from '../../core/grid/types';
 import { getBuildingType } from '../../core/building/types';
@@ -20,14 +20,8 @@ const ZONE_LABELS: Record<number, string> = {
 };
 
 export function OverviewModal(props: { open: boolean; onClose: () => void }) {
-  const [version, setVersion] = createSignal(0);
-
-  createEffect(() => {
-    if (props.open) setVersion(v => v + 1);
-  });
-
   const data = () => {
-    version();
+    gameSignals.tick(); // reactive: throttled live-refresh
     const state = getGame().getState();
     const grid = state.grid;
     const population = state.citizens.getPopulation();

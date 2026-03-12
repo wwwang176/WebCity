@@ -16,6 +16,7 @@ describe('RoadUpgrade', () => {
     const result = upgrade.upgradeRoad(4, 5, RoadType.FOUR_LANE, 100000);
 
     expect(result.success).toBe(true);
+    expect(result.affectedCells).toEqual(['4,5']);
     const cell = grid.getCell(4, 5);
     expect(cell!.roadType).toBe(RoadType.FOUR_LANE);
   });

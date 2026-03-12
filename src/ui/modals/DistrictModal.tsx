@@ -1,5 +1,5 @@
 import { createSignal, createEffect, For, Show } from 'solid-js';
-import { getGame } from '../store/gameStore';
+import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 
 const POLICY_LABELS: Record<string, string> = {
@@ -20,6 +20,7 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
 
   const districts = () => {
     version();
+    gameSignals.tick(); // reactive: throttled live-refresh
     return getGame().getState().districts.getAllDistricts();
   };
 
