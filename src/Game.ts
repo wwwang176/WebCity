@@ -19,7 +19,6 @@ import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
 import { getBuildingType, type BuildingType } from './core/building/types';
-import { ECONOMY } from './core/economy/TaxMultipliers';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
@@ -39,7 +38,7 @@ import { collectTransportVehicles } from './core/transport/collectTransportVehic
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
 import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } from './core/building/InfraDetails';
-import { calculateZoneIncomes } from './core/economy/IncomeCalculator';
+import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
 
 import {
   ViewMode,
@@ -51,6 +50,7 @@ import {
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
+import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
 import { generateTerrain, TERRAIN_GEN } from './core/grid/TerrainGenerator';
 import { getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
@@ -1454,47 +1454,27 @@ export class Game {
     this.notificationTimer = duration;
   }
 
-  getEconomyBreakdown(): {
-    residential: number; commercial: number; industrial: number; office: number;
-    roadMaintenance: number; loanInterest: number; powerCost: number; waterCost: number;
-    transportCost: number;
-  } {
-    // Shared income calculation (DRY: same logic as SimulationLoop.calculateIncome)
-    const incomes = calculateZoneIncomes({
+  getEconomyBreakdown() {
+    return computeEconomyBreakdown({
       forEachCell: (fn) => this.state.grid.forEachCell(fn),
       taxRates: this.state.taxRates,
       getCitizensByHome: (key) => this.state.citizens.getCitizensByHome(key),
+      roadTileCount: countRoadTiles(this.state.grid),
+      loans: this.state.budget.loans,
+      loanInterestRate: this.state.budget.loanInterestRate,
+      powerMaintenanceCost: this.state.power.getMaintenanceCost(),
+      waterMaintenanceCost: this.state.water.getMaintenanceCost(),
+      transportOperatingCost: getTotalTransportOperatingCost(this.state),
     });
-
-    const roadMaintenance = countRoadTiles(this.state.grid) * ECONOMY.ROAD_MAINTENANCE_PER_TILE;
-    const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
-    const powerCost = this.state.power.getMaintenanceCost();
-    const waterCost = this.state.water.getMaintenanceCost();
-    const transportCost = getTotalTransportOperatingCost(this.state);
-
-    return {
-      residential: Math.round(incomes.residential * 10) / 10,
-      commercial: Math.round(incomes.commercial * 10) / 10,
-      industrial: Math.round(incomes.industrial * 10) / 10,
-      office: Math.round(incomes.office * 10) / 10,
-      roadMaintenance: Math.round(roadMaintenance * 10) / 10,
-      loanInterest: Math.round(loanInterest * 10) / 10,
-      powerCost,
-      waterCost,
-      transportCost,
-    };
   }
 
-  getTrafficStats(): {
-    vehicleCount: number; topCongested: { segment: string; density: number }[];
-    avgPathLength: number; totalRoads: number;
-  } {
-    return {
+  getTrafficStats() {
+    return computeTrafficStats({
       vehicleCount: this.state.traffic.getVehicleCount(),
       topCongested: this.state.traffic.getTopCongested(8),
-      avgPathLength: Math.round(this.state.traffic.getAveragePathLength() * 10) / 10,
-      totalRoads: countRoadTiles(this.state.grid),
-    };
+      avgPathLength: this.state.traffic.getAveragePathLength(),
+      roadTileCount: countRoadTiles(this.state.grid),
+    });
   }
 
   takeLoan(amount: number): void {
