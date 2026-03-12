@@ -70,11 +70,6 @@ describe('SIMULATION config constants', () => {
     expect(SIMULATION.CELL_VALUE_MAX).toBe(255);
   });
 
-  it('building level should be between 1 and 3', () => {
-    expect(SIMULATION.BUILDING_LEVEL_MIN).toBe(1);
-    expect(SIMULATION.BUILDING_LEVEL_MAX).toBe(3);
-  });
-
   it('walk to stop range should be positive', () => {
     expect(SIMULATION.WALK_TO_STOP_RANGE).toBeGreaterThan(0);
   });

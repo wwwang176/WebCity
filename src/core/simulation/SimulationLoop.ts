@@ -44,8 +44,6 @@ export const SIMULATION = {
   GROWTH_ATTEMPTS: 20,
   /** Chance per attempt for burned building auto-clearance */
   BURNED_CLEARANCE_CHANCE: 0.02,
-  /** Service coverage divisor for building level calculation */
-  BUILDING_LEVEL_DIVISOR: 3,
   /** Default happiness used when city has no citizens */
   DEFAULT_HAPPINESS: 70,
   /** Business tax baseline — penalty applies above this rate */
@@ -92,10 +90,6 @@ export const SIMULATION = {
   SAMPLE_COUNT_MAX: 300,
   /** Commute sampling: eligible commuters per sample */
   SAMPLE_DIVISOR: 5,
-  /** Building level: minimum level */
-  BUILDING_LEVEL_MIN: 1,
-  /** Building level: maximum level */
-  BUILDING_LEVEL_MAX: 3,
   /** Walking distance to transit stop (cells) */
   WALK_TO_STOP_RANGE: 5,
   /** Industrial zone pollution reduction factor */
