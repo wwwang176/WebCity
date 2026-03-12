@@ -12,6 +12,7 @@ import { LaneGraph } from '../traffic/LaneGraph';
 import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
+import { clampBuildingLevel } from '../building/BuildingLevel';
 import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
@@ -101,10 +102,8 @@ export const SIMULATION = {
   RAIL_TRANSIT_TIME_FACTOR: 0.8,
 } as const;
 
-/** Clamp service coverage to a valid building level (1-3). */
-export function clampBuildingLevel(serviceCoverage: number): 1 | 2 | 3 {
-  return Math.max(SIMULATION.BUILDING_LEVEL_MIN, Math.min(SIMULATION.BUILDING_LEVEL_MAX, Math.ceil(serviceCoverage / SIMULATION.BUILDING_LEVEL_DIVISOR) || 1)) as 1 | 2 | 3;
-}
+// clampBuildingLevel re-exported from shared module for backward compatibility
+export { clampBuildingLevel } from '../building/BuildingLevel';
 
 export class SimulationLoop {
   private state: GameState;

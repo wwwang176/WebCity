@@ -1,6 +1,7 @@
 import { isZoneBuilding } from '../building/InfraConfig';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { forEachMultiCell, BURNED } from '../building/InfraPlacement';
+import { clampBuildingLevel } from '../building/BuildingLevel';
 import { FIRE } from './FireService';
 
 /** Minimal resolved-fire data needed for damage processing. */
@@ -29,12 +30,6 @@ interface GridLike {
   setCell(x: number, y: number, partial: Record<string, unknown>): void;
   readonly width: number;
   readonly height: number;
-}
-
-/** Clamp service coverage to building level 1-3 (duplicated from SimulationLoop to avoid circular dep). */
-function toBuildingLevel(serviceCoverage: number): number {
-  const raw = Math.ceil(serviceCoverage / 3) || 1;
-  return Math.max(1, Math.min(3, raw));
 }
 
 /**
@@ -66,7 +61,7 @@ export function applyFireDamage(grid: GridLike, resolvedFires: ResolvedFire[]): 
       });
     } else {
       grid.setCell(f.x, f.y, { reserved: BURNED });
-      const level = toBuildingLevel(cell.serviceCoverage);
+      const level = clampBuildingLevel(cell.serviceCoverage);
       updates.push({ x: f.x, y: f.y, zoneType: cell.zoneType, level, burned: true });
     }
   }
