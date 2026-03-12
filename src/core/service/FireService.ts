@@ -24,8 +24,9 @@ interface FireServiceJSON {
 }
 
 import { isZoneBuilding } from '../building/InfraConfig';
-import { euclideanDistance, isWithinEuclideanRadius } from '../grid/GridHelpers';
+import type { ReadableGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
+import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
 
 /** Fire risk and ignition probability constants */
 export const FIRE = {
@@ -63,6 +64,7 @@ export class FireService {
   private recentDaily: number[] = new Array(30).fill(0);
   private recentIndex = 0;
   private todayExtinguished = 0;
+  private roadCoverage = new RoadCoverageMap();
 
   addStation(x: number, y: number, radius = 15): string {
     const id = `fire_${this.nextId++}`;
@@ -82,29 +84,32 @@ export class FireService {
     return this.activeFires;
   }
 
-  /**
-   * Returns true if the position (x, y) is within the coverage radius
-   * of at least one fire station (Euclidean distance).
-   */
-  getCoverage(x: number, y: number): boolean {
-    return this.stations.some(s => isWithinEuclideanRadius(s.x, s.y, x, y, s.radius));
+  /** Recompute road-distance coverage. Call after station or road changes. */
+  recalculateCoverage(grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): void {
+    this.roadCoverage.recalculate(this.stations, grid, ROAD_COVERAGE.FIRE_BUDGET, facilityWidth, facilityHeight);
+  }
+
+  /** Preview coverage for a potential station placement (drag preview). */
+  previewCoverage(position: { x: number; y: number }, grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
+    return this.roadCoverage.preview(position, grid, ROAD_COVERAGE.FIRE_BUDGET, facilityWidth, facilityHeight);
   }
 
   /**
-   * Returns the estimated response time in ticks for a fire at (x, y).
-   * Based on distance to the nearest station divided by response speed.
-   * Returns Infinity if not covered by any station.
+   * Returns true if the position (x, y) is within road-distance coverage
+   * of at least one fire station.
+   */
+  getCoverage(x: number, y: number): boolean {
+    return this.roadCoverage.hasCoverage(x, y);
+  }
+
+  /**
+   * Returns the estimated response time based on road-distance cost.
+   * Lower cost = faster response. Returns Infinity if not covered.
    */
   getResponseTime(x: number, y: number): number {
-    let minDist = Infinity;
-    for (const s of this.stations) {
-      const d = euclideanDistance(s.x, s.y, x, y);
-      if (d <= s.radius && d < minDist) {
-        minDist = d;
-      }
-    }
-    if (minDist === Infinity) return Infinity;
-    return minDist / FIRE.RESPONSE_SPEED;
+    const cost = this.roadCoverage.getCost(x, y);
+    if (cost === Infinity) return Infinity;
+    return cost / FIRE.RESPONSE_SPEED;
   }
 
   /**
@@ -128,24 +133,22 @@ export class FireService {
   /**
    * Returns a fire risk value from 0 (no risk) to 1 (maximum risk).
    * Risk is high for uncovered areas and lower near station centers.
+   * Uses road-distance cost ratio relative to budget.
    */
   getFireRisk(x: number, y: number): number {
     if (this.stations.length === 0) return 1;
 
-    let minRatio = Infinity;
-    for (const s of this.stations) {
-      const d = euclideanDistance(s.x, s.y, x, y);
-      const ratio = d / s.radius;
-      if (ratio < minRatio) minRatio = ratio;
-    }
+    const cost = this.roadCoverage.getCost(x, y);
+    const budget = ROAD_COVERAGE.FIRE_BUDGET;
 
-    if (minRatio > 1) {
+    if (cost === Infinity) {
       // Outside all coverage — high risk
-      return Math.min(1, FIRE.RISK_OUTSIDE_BASE + minRatio * FIRE.RISK_OUTSIDE_FACTOR);
+      return Math.min(1, FIRE.RISK_OUTSIDE_BASE + FIRE.RISK_OUTSIDE_FACTOR);
     }
 
-    // Inside coverage — risk scales with distance ratio (0 at center, approaches max at edge)
-    return Math.min(1, minRatio * FIRE.RISK_INSIDE_FACTOR);
+    // Inside coverage — risk scales with cost/budget ratio
+    const ratio = cost / budget;
+    return Math.min(1, ratio * FIRE.RISK_INSIDE_FACTOR);
   }
 
   /**

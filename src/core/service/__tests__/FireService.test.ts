@@ -1,5 +1,32 @@
 import { describe, it, expect } from 'vitest';
 import { FireService, FIRE } from '../FireService';
+import { RoadType } from '../../road/types';
+import type { ReadableGrid } from '../../grid/GridHelpers';
+
+/** Grid with a cross-shaped road centered at (cx, cy). */
+function makeCrossRoadGrid(size: number, cx: number, cy: number): ReadableGrid & { width: number; height: number } {
+  return {
+    width: size,
+    height: size,
+    getCell(x: number, y: number) {
+      if (x < 0 || y < 0 || x >= size || y >= size) return null;
+      const isRoad = x === cx || y === cy;
+      return { roadType: isRoad ? RoadType.TWO_LANE : RoadType.NONE, buildingId: 0, zoneType: 0 };
+    },
+  };
+}
+
+/** Grid with a horizontal road at row roadY. */
+function makeRoadGrid(width: number, height: number, roadY?: number): ReadableGrid & { width: number; height: number } {
+  const ry = roadY ?? Math.floor(height / 2);
+  return {
+    width, height,
+    getCell(x: number, y: number) {
+      if (x < 0 || y < 0 || x >= width || y >= height) return null;
+      return { roadType: y === ry && x >= 1 ? RoadType.TWO_LANE : RoadType.NONE, buildingId: 0, zoneType: 0 };
+    },
+  };
+}
 
 describe('FireService', () => {
   it('should create a FireService instance', () => {
@@ -22,75 +49,85 @@ describe('FireService', () => {
     expect(fire.getStations()[0]!.radius).toBe(15);
   });
 
-  it('getCoverage returns true within station radius', () => {
+  it('getCoverage returns true for road-connected cells near station', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
     const fire = new FireService();
-    fire.addStation(10, 10, 15);
-    // Same position as station
-    expect(fire.getCoverage(10, 10)).toBe(true);
-    // Within radius (distance = 5)
-    expect(fire.getCoverage(13, 14)).toBe(true);
-    // Exactly at radius boundary (distance = 15)
-    expect(fire.getCoverage(10, 25)).toBe(true);
+    fire.addStation(14, 15, 15);
+    fire.recalculateCoverage(grid);
+    // Road at (15,15) — adjacent to station
+    expect(fire.getCoverage(15, 15)).toBe(true);
+    // Further along road
+    expect(fire.getCoverage(18, 15)).toBe(true);
+    // Building adjacent to covered road
+    expect(fire.getCoverage(16, 14)).toBe(true);
   });
 
-  it('getCoverage returns false outside station radius', () => {
+  it('getCoverage returns false outside road reach', () => {
+    const grid = makeRoadGrid(60, 30, 15);
     const fire = new FireService();
-    fire.addStation(10, 10, 15);
-    // Beyond radius (distance > 15)
-    expect(fire.getCoverage(10, 30)).toBe(false);
-    expect(fire.getCoverage(30, 30)).toBe(false);
+    fire.addStation(0, 15, 15);
+    fire.recalculateCoverage(grid);
+    // Far away on road (beyond budget)
+    expect(fire.getCoverage(50, 15)).toBe(false);
+    // No road connection
+    expect(fire.getCoverage(5, 0)).toBe(false);
   });
 
-  it('multiple stations coverage overlaps', () => {
+  it('multiple stations extend coverage', () => {
+    const grid = makeRoadGrid(40, 10, 5);
     const fire = new FireService();
-    fire.addStation(0, 0, 10);
-    fire.addStation(20, 0, 10);
-    // Covered by first station only
-    expect(fire.getCoverage(5, 0)).toBe(true);
-    // Covered by second station only
-    expect(fire.getCoverage(25, 0)).toBe(true);
-    // Not covered by either
-    expect(fire.getCoverage(10, 20)).toBe(false);
-    // Overlap zone — covered by both
-    expect(fire.getCoverage(10, 0)).toBe(true);
+    fire.addStation(0, 5, 10);
+    fire.addStation(20, 5, 10);
+    fire.recalculateCoverage(grid);
+    // Covered by first station
+    expect(fire.getCoverage(3, 5)).toBe(true);
+    // Covered by second station
+    expect(fire.getCoverage(25, 5)).toBe(true);
   });
 
-  it('getResponseTime returns time based on distance (closer = faster)', () => {
+  it('getResponseTime returns finite for covered cells', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
     const fire = new FireService();
-    fire.addStation(10, 10, 15);
-    const timeClose = fire.getResponseTime(11, 10);
-    const timeFar = fire.getResponseTime(20, 10);
-    expect(timeClose).toBeLessThan(timeFar);
-    expect(timeClose).toBeGreaterThan(0);
+    fire.addStation(14, 15, 15);
+    fire.recalculateCoverage(grid);
+    const time = fire.getResponseTime(15, 15);
+    expect(time).toBeGreaterThanOrEqual(0);
+    expect(time).toBeLessThan(Infinity);
   });
 
   it('getResponseTime returns Infinity when not covered', () => {
+    const grid = makeRoadGrid(60, 20, 10);
     const fire = new FireService();
-    fire.addStation(10, 10, 5);
-    expect(fire.getResponseTime(50, 50)).toBe(Infinity);
+    fire.addStation(0, 10, 5);
+    fire.recalculateCoverage(grid);
+    expect(fire.getResponseTime(50, 15)).toBe(Infinity);
   });
 
-  it('getResponseTime uses nearest station for multiple stations', () => {
+  it('getResponseTime closer cells have lower time', () => {
+    const grid = makeRoadGrid(30, 10, 5);
     const fire = new FireService();
-    fire.addStation(0, 0, 20);
-    fire.addStation(10, 0, 20);
-    // Point at (8,0) is closer to station at (10,0)
-    const time = fire.getResponseTime(8, 0);
-    const timeFromSecond = fire.getResponseTime(10, 0); // at station
-    expect(time).toBeGreaterThan(timeFromSecond);
+    fire.addStation(0, 5, 15);
+    fire.recalculateCoverage(grid);
+    const timeClose = fire.getResponseTime(2, 5);
+    const timeFar = fire.getResponseTime(10, 5);
+    expect(timeClose).toBeLessThan(timeFar);
   });
 
   it('reportFire in covered area returns covered=true and low damage', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
     const fire = new FireService();
-    fire.addStation(10, 10, 15);
-    const result = fire.reportFire(12, 10);
+    fire.addStation(14, 15, 15);
+    fire.recalculateCoverage(grid);
+    const result = fire.reportFire(15, 15);
     expect(result.covered).toBe(true);
     expect(result.estimatedDamage).toBeLessThanOrEqual(0.10);
   });
 
   it('reportFire outside covered area returns covered=false and high damage', () => {
+    const grid = makeRoadGrid(60, 60, 10);
     const fire = new FireService();
-    fire.addStation(10, 10, 5);
+    fire.addStation(0, 10, 5);
+    fire.recalculateCoverage(grid);
     const result = fire.reportFire(50, 50);
     expect(result.covered).toBe(false);
     expect(result.estimatedDamage).toBeCloseTo(0.80, 1);
@@ -98,22 +135,22 @@ describe('FireService', () => {
 
   it('reportFire creates an active fire', () => {
     const fire = new FireService();
-    fire.addStation(10, 10, 15);
     fire.reportFire(12, 10);
     expect(fire.getActiveFires()).toHaveLength(1);
     expect(fire.getActiveFires()[0]).toMatchObject({ x: 12, y: 10 });
   });
 
   it('tick processes active fires — covered fire resolves in 3 ticks', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
     const fire = new FireService();
-    fire.addStation(10, 10, 15);
-    fire.reportFire(12, 10);
+    fire.addStation(14, 15, 15);
+    fire.recalculateCoverage(grid);
+    fire.reportFire(15, 15);
     expect(fire.getActiveFires()).toHaveLength(1);
 
     fire.tick();
     fire.tick();
     fire.tick();
-    // After 3 ticks, fire is done — collect via resolveCompletedFires
     const resolved = fire.resolveCompletedFires();
     expect(resolved).toHaveLength(1);
     expect(fire.getActiveFires()).toHaveLength(0);
@@ -121,27 +158,21 @@ describe('FireService', () => {
 
   it('tick processes uncovered fire — resolves in 3 ticks with high damage', () => {
     const fire = new FireService();
-    // No stations — fire is uncovered
     fire.reportFire(50, 50);
     const activeFire = fire.getActiveFires()[0]!;
     expect(activeFire.damage).toBeCloseTo(0.80, 1);
 
-    fire.tick();
-    fire.tick();
-    fire.tick();
+    fire.tick(); fire.tick(); fire.tick();
     const resolved = fire.resolveCompletedFires();
     expect(resolved).toHaveLength(1);
     expect(fire.getActiveFires()).toHaveLength(0);
   });
 
-  it('removeStation removes the station and coverage disappears', () => {
+  it('removeStation removes the station', () => {
     const fire = new FireService();
     const id = fire.addStation(10, 10, 15);
-    expect(fire.getCoverage(10, 10)).toBe(true);
-
     fire.removeStation(id);
     expect(fire.getStations()).toHaveLength(0);
-    expect(fire.getCoverage(10, 10)).toBe(false);
   });
 
   it('removeStation with invalid id does nothing', () => {
@@ -152,22 +183,23 @@ describe('FireService', () => {
   });
 
   it('getFireRisk returns high risk for uncovered areas', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
     const fire = new FireService();
-    fire.addStation(10, 10, 5);
-    const riskCovered = fire.getFireRisk(10, 10);
-    const riskUncovered = fire.getFireRisk(50, 50);
+    fire.addStation(14, 15, 15);
+    fire.recalculateCoverage(grid);
+    const riskCovered = fire.getFireRisk(15, 15);
+    const riskUncovered = fire.getFireRisk(0, 0);
     expect(riskUncovered).toBeGreaterThan(riskCovered);
     expect(riskUncovered).toBeGreaterThanOrEqual(0.8);
-    expect(riskCovered).toBeLessThanOrEqual(0.2);
   });
 
-  it('getFireRisk at edge of coverage has moderate risk', () => {
+  it('getFireRisk near station is low', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
     const fire = new FireService();
-    fire.addStation(10, 10, 15);
-    // Just inside radius
-    const riskEdge = fire.getFireRisk(10, 25);
-    const riskCenter = fire.getFireRisk(10, 10);
-    expect(riskEdge).toBeGreaterThan(riskCenter);
+    fire.addStation(14, 15, 15);
+    fire.recalculateCoverage(grid);
+    const riskNear = fire.getFireRisk(15, 15);
+    expect(riskNear).toBeLessThanOrEqual(0.1);
   });
 
   it('toJSON serializes state correctly', () => {
@@ -183,19 +215,19 @@ describe('FireService', () => {
   });
 
   it('fromJSON restores state correctly', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
     const fire = new FireService();
-    const id1 = fire.addStation(10, 10, 15);
-    fire.addStation(20, 20, 10);
-    fire.reportFire(12, 10);
+    fire.addStation(14, 15, 15);
+    fire.addStation(16, 16, 10);
+    fire.reportFire(15, 15);
 
     const json = fire.toJSON();
     const restored = FireService.fromJSON(json);
+    restored.recalculateCoverage(grid);
 
     expect(restored.getStations()).toHaveLength(2);
     expect(restored.getActiveFires()).toHaveLength(1);
-    expect(restored.getCoverage(10, 10)).toBe(true);
-    expect(restored.getCoverage(20, 20)).toBe(true);
-    expect(restored.getCoverage(50, 50)).toBe(false);
+    expect(restored.getCoverage(15, 15)).toBe(true);
   });
 
   it('fromJSON with empty data creates clean instance', () => {
@@ -205,37 +237,27 @@ describe('FireService', () => {
     expect(restored.getActiveFires()).toHaveLength(0);
   });
 
-  // --- Fire event integration tests ---
-
   it('resolveCompletedFires returns resolved fires with damage info', () => {
+    const grid = makeCrossRoadGrid(60, 15, 15);
     const fire = new FireService();
-    fire.addStation(10, 10, 15);
-    fire.reportFire(12, 10); // covered: damage 10%
-    fire.reportFire(50, 50); // uncovered: damage 80%
+    fire.addStation(14, 15, 15);
+    fire.recalculateCoverage(grid);
+    fire.reportFire(15, 15); // covered
+    fire.reportFire(50, 50); // uncovered
 
-    // Advance to completion
-    fire.tick();
-    fire.tick();
-    fire.tick();
-
+    fire.tick(); fire.tick(); fire.tick();
     const resolved = fire.resolveCompletedFires();
     expect(resolved).toHaveLength(2);
-    // Covered fire should have low damage
-    const coveredFire = resolved.find(f => f.x === 12 && f.y === 10);
-    expect(coveredFire).toBeDefined();
+    const coveredFire = resolved.find(f => f.x === 15 && f.y === 15);
     expect(coveredFire!.damage).toBeCloseTo(0.10, 1);
-    // Uncovered fire should have high damage
     const uncoveredFire = resolved.find(f => f.x === 50 && f.y === 50);
-    expect(uncoveredFire).toBeDefined();
     expect(uncoveredFire!.damage).toBeCloseTo(0.80, 1);
   });
 
   it('resolveCompletedFires removes resolved fires from active list', () => {
     const fire = new FireService();
     fire.reportFire(5, 5);
-    fire.tick();
-    fire.tick();
-    fire.tick();
+    fire.tick(); fire.tick(); fire.tick();
     const resolved = fire.resolveCompletedFires();
     expect(resolved).toHaveLength(1);
     expect(fire.getActiveFires()).toHaveLength(0);
@@ -243,8 +265,8 @@ describe('FireService', () => {
 
   it('resolveCompletedFires does not remove fires still in progress', () => {
     const fire = new FireService();
-    fire.reportFire(5, 5); // 3 ticks to resolve
-    fire.tick(); // 2 remaining
+    fire.reportFire(5, 5);
+    fire.tick();
     const resolved = fire.resolveCompletedFires();
     expect(resolved).toHaveLength(0);
     expect(fire.getActiveFires()).toHaveLength(1);
@@ -252,17 +274,13 @@ describe('FireService', () => {
 
   it('tryRandomFire triggers fire on building cells based on probability', () => {
     const fire = new FireService();
-    // Mock grid with a building at (5,5)
     const mockGrid = {
-      width: 10,
-      height: 10,
+      width: 10, height: 10,
       getCell: (x: number, y: number) => {
-        if (x === 5 && y === 5) return { buildingId: 3, zoneType: 1 };
-        return { buildingId: 0, zoneType: 0 };
+        if (x === 5 && y === 5) return { buildingId: 3, zoneType: 1, roadType: RoadType.NONE };
+        return { buildingId: 0, zoneType: 0, roadType: RoadType.NONE };
       },
     };
-
-    // With probability 1.0, fire should always trigger if there's a building
     const result = fire.tryRandomFire(mockGrid, 100, 1.0);
     if (result) {
       expect(fire.getActiveFires().length).toBeGreaterThanOrEqual(1);
@@ -272,13 +290,21 @@ describe('FireService', () => {
   it('tryRandomFire does not trigger fire with probability 0', () => {
     const fire = new FireService();
     const mockGrid = {
-      width: 10,
-      height: 10,
-      getCell: () => ({ buildingId: 3, zoneType: 1 }),
+      width: 10, height: 10,
+      getCell: () => ({ buildingId: 3, zoneType: 1, roadType: RoadType.NONE }),
     };
     const result = fire.tryRandomFire(mockGrid, 100, 0);
     expect(result).toBe(false);
     expect(fire.getActiveFires()).toHaveLength(0);
+  });
+
+  it('previewCoverage returns coverage for drag preview', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
+    const fire = new FireService();
+    const preview = fire.previewCoverage({ x: 14, y: 15 }, grid);
+    expect(preview.size).toBeGreaterThan(0);
+    // Main state unaffected
+    expect(fire.getCoverage(15, 15)).toBe(false);
   });
 });
 
@@ -310,20 +336,18 @@ describe('Fire extinguished tracking', () => {
       fire.advanceDay();
     }
     expect(fire.getRecentExtinguished()).toBe(30);
-
-    // Day 31: oldest overwritten
     fire.reportFire(0, 0);
     fire.tick(); fire.tick(); fire.tick();
     fire.resolveCompletedFires();
     fire.advanceDay();
-    expect(fire.getRecentExtinguished()).toBe(30); // still 30
+    expect(fire.getRecentExtinguished()).toBe(30);
   });
 
   it('fromJSON should handle legacy saves without ring buffer', () => {
     const legacyJSON = { stations: [], activeFires: [], nextId: 1 };
     const restored = FireService.fromJSON(legacyJSON as any);
     expect(restored.getRecentExtinguished()).toBe(0);
-    restored.advanceDay(); // should not throw
+    restored.advanceDay();
   });
 });
 

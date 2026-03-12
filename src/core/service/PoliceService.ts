@@ -1,6 +1,7 @@
+import type { ReadableGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
-import { RadiusCoverageMap } from './RadiusCoverageMap';
+import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
 
 export interface PoliceStation {
   id: string;
@@ -17,7 +18,7 @@ export const POLICE = {
 
 export class PoliceService {
   private stations: PoliceStation[] = [];
-  private coverage = new RadiusCoverageMap();
+  private coverage = new RoadCoverageMap();
   private nextId = 1;
 
   addStation(x: number, y: number, radius = 15): string {
@@ -44,8 +45,20 @@ export class PoliceService {
     return this.stations;
   }
 
-  tick(): void {
-    this.coverage.recalculate(this.stations);
+  /** Recompute road-distance coverage. Call after station or road changes. */
+  recalculateCoverage(grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): void {
+    this.coverage.recalculate(this.stations, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
+  }
+
+  /** Preview coverage for a potential station placement (drag preview). */
+  previewCoverage(position: { x: number; y: number }, grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
+    return this.coverage.preview(position, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
+  }
+
+  tick(grid?: ReadableGrid): void {
+    if (grid) {
+      this.recalculateCoverage(grid);
+    }
   }
 
   getMaintenanceCost(): number {

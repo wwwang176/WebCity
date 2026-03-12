@@ -29,10 +29,12 @@ import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimula
 import { gridAStarPath, refineLanePath } from './core/traffic/Pathfinding';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
-import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
+import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
+import { isResidentialZone } from './core/grid/types';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { getAirportBuildCost, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
@@ -326,7 +328,11 @@ export class Game {
     this.transportRouteRenderer.build(this.sceneManager.scene);
     this.metroTunnelRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
-    this.placementPreview = new PlacementPreview(this.sceneManager.scene, this.buildingRenderer);
+    this.placementPreview = new PlacementPreview(
+      this.sceneManager.scene,
+      this.buildingRenderer,
+      (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
+    );
     this.highlightManager = new HighlightManager(
       this.sceneManager.scene,
       (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
@@ -1175,6 +1181,10 @@ export class Game {
         this.state.budget.funds,
         groundwaterFn,
       );
+
+      // Show road-distance coverage overlay on buildings
+      this.highlightManager.clear();
+      this.applyCoverageOverlay(infraType);
     } else if (this.currentTool === 'demolish') {
       if (this.dragStart) {
         this.highlightDragRange(0xff0000);
@@ -1222,6 +1232,90 @@ export class Game {
       this.getAllHighlightMeshes(),
       this.buildingRenderer.buildingInfraGroups,
     );
+  }
+
+  // ── Coverage highlight (per-building gradient via HighlightManager) ──────
+
+  /** 10-tier gradient: green → yellow → red (pre-computed hex values). */
+  private static readonly COV_GRADIENT = (() => {
+    const near = new THREE.Color(0x00e676);
+    const mid = new THREE.Color(0xffeb3b);
+    const far = new THREE.Color(0xff5252);
+    const colors: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const t = i / 9;
+      const c = new THREE.Color();
+      if (t < 0.5) c.copy(near).lerp(mid, t * 2);
+      else c.copy(mid).lerp(far, (t - 0.5) * 2);
+      colors.push(c.getHex());
+    }
+    return colors;
+  })();
+
+  /**
+   * Highlight buildings with per-instance gradient color when placing a civic service.
+   * Garbage: only residential buildings. Police/Fire: all buildings.
+   */
+  private applyCoverageOverlay(infraType: InfraType): void {
+    const cfg = getInfraConfig(infraType);
+    if (!cfg) return;
+    const gx = this.gridCursor.gridX;
+    const gy = this.gridCursor.gridY;
+    const pos = { x: gx, y: gy };
+    const grid = this.state.grid;
+
+    let coverageCells: Map<string, number> | null = null;
+    let budget = 0;
+    switch (infraType) {
+      case 'police':
+        coverageCells = this.state.police.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.POLICE_BUDGET;
+        break;
+      case 'fire':
+        coverageCells = this.state.fire.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.FIRE_BUDGET;
+        break;
+      case 'garbage':
+        coverageCells = this.state.garbage.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.GARBAGE_BUDGET;
+        break;
+      default:
+        return;
+    }
+
+    if (!coverageCells || coverageCells.size === 0) return;
+
+    // Filter to relevant buildings and compute per-cell gradient color
+    const isGarbage = infraType === 'garbage';
+    const gradientCells: { x: number; y: number; color: number }[] = [];
+
+    for (const [key, cost] of coverageCells) {
+      const i = key.indexOf(',');
+      const cx = Number(key.slice(0, i));
+      const cy = Number(key.slice(i + 1));
+      const cell = grid.getCell(cx, cy);
+      if (!cell || cell.buildingId === 0) continue;
+
+      // Garbage: only residential. Police/Fire: all buildings.
+      if (isGarbage) {
+        if (!isResidentialZone(cell.zoneType)) continue;
+      } else {
+        if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
+      }
+
+      const ratio = Math.min(1, cost / budget);
+      const tier = Math.min(9, Math.floor(ratio * 10));
+      gradientCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
+    }
+
+    if (gradientCells.length > 0) {
+      this.highlightManager.hoverHighlightGradient(
+        gradientCells,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+        0.6,
+      );
+    }
   }
 
   private isZoneTool(): boolean {

@@ -1,5 +1,6 @@
-import { manhattanDistance } from '../grid/GridHelpers';
+import type { ReadableGrid } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
+import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
 
 export type GarbageFacilityType = 'landfill' | 'incinerator';
 
@@ -19,8 +20,8 @@ const DEFAULT_CAPACITIES: Record<GarbageFacilityType, number> = {
 
 /** Garbage service configuration constants */
 export const GARBAGE = {
-  /** Coverage radius in Manhattan distance for garbage collection trucks */
-  COVERAGE_RANGE: 15,
+  /** Road-distance coverage budget for garbage collection trucks */
+  SERVICE_BUDGET: ROAD_COVERAGE.GARBAGE_BUDGET,
   /** Fraction of current load that an incinerator burns each tick */
   INCINERATOR_BURN_RATE: 0.05,
   /** Garbage production: 1 unit per GARBAGE_PER_POP population */
@@ -43,6 +44,7 @@ export class GarbageService {
   private facilities: GarbageFacility[] = [];
   private overflow = 0;
   private nextId = 1;
+  private roadCoverage = new RoadCoverageMap();
 
   addFacility(x: number, y: number, type: GarbageFacilityType, capacity?: number): string {
     const id = `garbage_${this.nextId++}`;
@@ -67,11 +69,18 @@ export class GarbageService {
     }
   }
 
+  /** Recompute road-distance coverage. Call after facility or road changes. */
+  recalculateCoverage(grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): void {
+    this.roadCoverage.recalculate(this.facilities, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
+  }
+
   getCoverage(x: number, y: number): boolean {
-    return this.facilities.some(f => {
-      const dist = manhattanDistance(f.x, f.y, x, y);
-      return dist <= GARBAGE.COVERAGE_RANGE;
-    });
+    return this.roadCoverage.hasCoverage(x, y);
+  }
+
+  /** Preview coverage for a potential facility placement (drag preview). */
+  previewCoverage(position: { x: number; y: number }, grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
+    return this.roadCoverage.preview(position, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
   }
 
   tick(population: number): void {

@@ -132,6 +132,7 @@ const BUILDING_VERT = /* glsl */ `
 #include <shadowmap_pars_vertex>
 
 attribute float aHighlight;
+attribute vec3 aHighlightColor;
 attribute float aOccupancy;
 
 varying vec3 vNormal;
@@ -141,11 +142,13 @@ varying vec3 vBldgColor;
 varying float vPartType;
 varying float vZoneCat;
 varying float vHighlight;
+varying vec3 vHighlightColor;
 varying float vOccupancy;
 
 void main() {
   vLocalPos = position;
   vHighlight = aHighlight;
+  vHighlightColor = aHighlightColor;
   vOccupancy = aOccupancy;
 
   #ifdef USE_COLOR
@@ -190,7 +193,6 @@ precision highp float;
 
 uniform float uGlobalOpacity;
 uniform float uDesaturate;
-uniform vec3 uHighlightColor;
 uniform float uTime;
 
 varying vec3 vNormal;
@@ -200,6 +202,7 @@ varying vec3 vBldgColor;
 varying float vPartType;
 varying float vZoneCat;
 varying float vHighlight;
+varying vec3 vHighlightColor;
 varying float vOccupancy;
 
 float hash21(vec2 p) {
@@ -558,11 +561,11 @@ void main() {
     color = mix(color, vec3(0.88), uDesaturate);
   }
 
-  // Highlight tint (demolish / zone selection / hover)
+  // Highlight tint (demolish / zone selection / hover / coverage gradient)
   if (vHighlight > 0.01) {
-    color = mix(color, uHighlightColor, 0.28 * vHighlight);
+    color = mix(color, vHighlightColor, 0.28 * vHighlight);
     // Add emissive glow so it's visible at night too
-    color += uHighlightColor * 0.15 * vHighlight;
+    color += vHighlightColor * 0.15 * vHighlight;
   }
 
   gl_FragColor = vec4(color, 1.0);
@@ -577,7 +580,6 @@ function createBuildingMaterial(): THREE.ShaderMaterial {
       ]),
       uGlobalOpacity: { value: 1.0 },
       uDesaturate: { value: 0.0 },
-      uHighlightColor: { value: new THREE.Color(1, 0, 0) },
       uTime: { value: 0.0 },
     },
     vertexShader: BUILDING_VERT,
@@ -928,10 +930,13 @@ export class BuildingRenderer {
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
 
-        // Pre-allocate aHighlight attribute
+        // Pre-allocate aHighlight + aHighlightColor attributes
         const highlightData = new Float32Array(this.maxPerVariant);
         mesh.geometry.setAttribute('aHighlight',
           new THREE.InstancedBufferAttribute(highlightData, 1));
+        const highlightColorData = new Float32Array(this.maxPerVariant * 3);
+        mesh.geometry.setAttribute('aHighlightColor',
+          new THREE.InstancedBufferAttribute(highlightColorData, 3));
 
         // Pre-allocate aOccupancy attribute (0.0 = empty, 1.0 = full)
         const occupancyData = new Float32Array(this.maxPerVariant);
@@ -994,6 +999,14 @@ export class BuildingRenderer {
       const hlAttr = mesh.geometry.getAttribute('aHighlight') as THREE.InstancedBufferAttribute;
       (hlAttr.array as Float32Array)[entry.idx] = (hlAttr.array as Float32Array)[lastIdx]!;
       hlAttr.needsUpdate = true;
+
+      // Swap aHighlightColor (vec3 = 3 floats)
+      const hlcAttr = mesh.geometry.getAttribute('aHighlightColor') as THREE.InstancedBufferAttribute;
+      const hlcArr = hlcAttr.array as Float32Array;
+      hlcArr[entry.idx * 3] = hlcArr[lastIdx * 3]!;
+      hlcArr[entry.idx * 3 + 1] = hlcArr[lastIdx * 3 + 1]!;
+      hlcArr[entry.idx * 3 + 2] = hlcArr[lastIdx * 3 + 2]!;
+      hlcAttr.needsUpdate = true;
 
       // Swap aOccupancy
       const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
@@ -3010,6 +3023,7 @@ export class BuildingRenderer {
         clone.applyMatrix4(mat4);
         clone.deleteAttribute('color');
         if (clone.hasAttribute('aHighlight')) clone.deleteAttribute('aHighlight');
+        if (clone.hasAttribute('aHighlightColor')) clone.deleteAttribute('aHighlightColor');
         if (clone.hasAttribute('aOccupancy')) clone.deleteAttribute('aOccupancy');
         geos.push(clone);
       }
