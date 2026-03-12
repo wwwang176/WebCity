@@ -50,7 +50,6 @@ import {
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
-import { OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { generateTerrain, TERRAIN_GEN } from './core/grid/TerrainGenerator';
 import { getGroundwaterLevel } from './core/grid/Terrain';
@@ -470,52 +469,9 @@ export class Game {
 
   private handleToolAction(x1: number, y1: number, x2: number, y2: number): void {
     switch (this.currentTool) {
-      case 'select': {
-        const cell = this.state.grid.getCell(x1, y1);
-        if (cell && cell.buildingId > 0) {
-          const bt = getBuildingType(cell.buildingId);
-          if (bt) {
-            this.selectedBuilding = {
-              kind: 'zone',
-              x: x1, y: y1,
-              buildingType: bt,
-              zoneType: cell.zoneType,
-              landValue: cell.landValue,
-              pollution: cell.pollution,
-              serviceCoverage: cell.serviceCoverage,
-            };
-            this.applyViewMode(ViewMode.NORMAL);
-          } else {
-            const transportType = getTransportStopType(cell.buildingId);
-            if (transportType) {
-              this.selectTransportStop(x1, y1, transportType);
-            } else {
-              const infraCfg = getInfraConfigById(cell.buildingId);
-              if (infraCfg) {
-                const primary = findPrimaryCell(this.state.grid, x1, y1);
-                const px = primary?.x ?? x1;
-                const py = primary?.y ?? y1;
-                const center = getInfraCenterById(px, py, cell.buildingId);
-                const details = this.getInfraDetails(infraCfg.type, center.cx, center.cy);
-                this.selectedBuilding = {
-                  kind: 'infra',
-                  x: x1, y: y1,
-                  infraType: infraCfg.type,
-                  name: infraCfg.name,
-                  cost: infraCfg.cost,
-                  details,
-                };
-                this.applyViewMode(ViewMode.NORMAL);
-              }
-            }
-          }
-        } else {
-          this.selectedBuilding = null;
-          this.applyViewMode(ViewMode.NORMAL);
-        }
-        this.audioManager.playSfx('click');
+      case 'select':
+        this.handleSelectClick(x1, y1);
         break;
-      }
       case 'road':
       case 'road_rural':
       case 'road_2lane':
@@ -1165,6 +1121,47 @@ export class Game {
   }
 
   /** Select a transport stop and switch to its focus view mode. */
+  /** Handle click in select mode: identify building type and show details. */
+  private handleSelectClick(x: number, y: number): void {
+    const cell = this.state.grid.getCell(x, y);
+    if (cell && cell.buildingId > 0) {
+      const bt = getBuildingType(cell.buildingId);
+      if (bt) {
+        this.selectedBuilding = {
+          kind: 'zone', x, y,
+          buildingType: bt, zoneType: cell.zoneType,
+          landValue: cell.landValue, pollution: cell.pollution,
+          serviceCoverage: cell.serviceCoverage,
+        };
+        this.applyViewMode(ViewMode.NORMAL);
+      } else {
+        const transportType = getTransportStopType(cell.buildingId);
+        if (transportType) {
+          this.selectTransportStop(x, y, transportType);
+        } else {
+          const infraCfg = getInfraConfigById(cell.buildingId);
+          if (infraCfg) {
+            const primary = findPrimaryCell(this.state.grid, x, y);
+            const px = primary?.x ?? x;
+            const py = primary?.y ?? y;
+            const center = getInfraCenterById(px, py, cell.buildingId);
+            const details = this.getInfraDetails(infraCfg.type, center.cx, center.cy);
+            this.selectedBuilding = {
+              kind: 'infra', x, y,
+              infraType: infraCfg.type, name: infraCfg.name,
+              cost: infraCfg.cost, details,
+            };
+            this.applyViewMode(ViewMode.NORMAL);
+          }
+        }
+      }
+    } else {
+      this.selectedBuilding = null;
+      this.applyViewMode(ViewMode.NORMAL);
+    }
+    this.audioManager.playSfx('click');
+  }
+
   private selectTransportStop(x: number, y: number, type: TransportStopKind): void {
     const system = this.getTransportSystem(type);
     const stops = system?.getStops() ?? [];
