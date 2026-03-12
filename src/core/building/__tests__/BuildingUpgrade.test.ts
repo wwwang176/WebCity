@@ -5,7 +5,7 @@ import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { ZoneManager } from '../../zone/ZoneManager';
 import { BuildingGrowth } from '../BuildingGrowth';
-import { BuildingUpgrade, UPGRADE_THRESHOLDS, meetsUpgradeRequirements, UPGRADE_REQUIREMENTS, KEEP_REQUIREMENTS } from '../BuildingUpgrade';
+import { BuildingUpgrade, meetsUpgradeRequirements, UPGRADE_REQUIREMENTS, KEEP_REQUIREMENTS } from '../BuildingUpgrade';
 import { getBuildingType } from '../types';
 
 function setupWithBuilding(): { grid: Grid; upgrade: BuildingUpgrade } {
@@ -86,18 +86,18 @@ describe('BuildingUpgrade', () => {
     expect(after!.residents + after!.workers).toBeGreaterThan(before!.residents + before!.workers);
   });
 
-  it('UPGRADE_THRESHOLDS level 3 should be stricter than level 2', () => {
-    expect(UPGRADE_THRESHOLDS.LEVEL_3.minServiceCoverage)
-      .toBeGreaterThan(UPGRADE_THRESHOLDS.LEVEL_2.minServiceCoverage);
-    expect(UPGRADE_THRESHOLDS.LEVEL_3.minLandValue)
-      .toBeGreaterThan(UPGRADE_THRESHOLDS.LEVEL_2.minLandValue);
+  it('UPGRADE_REQUIREMENTS level 3 should be stricter than level 2', () => {
+    expect(UPGRADE_REQUIREMENTS[3]!.minServiceCoverage)
+      .toBeGreaterThan(UPGRADE_REQUIREMENTS[2]!.minServiceCoverage);
+    expect(UPGRADE_REQUIREMENTS[3]!.minLandValue)
+      .toBeGreaterThan(UPGRADE_REQUIREMENTS[2]!.minLandValue);
   });
 
-  it('UPGRADE_THRESHOLDS downgrade thresholds should be below upgrade thresholds', () => {
-    expect(UPGRADE_THRESHOLDS.DOWNGRADE_2.minLandValue)
-      .toBeLessThan(UPGRADE_THRESHOLDS.LEVEL_2.minLandValue);
-    expect(UPGRADE_THRESHOLDS.DOWNGRADE_3.minLandValue)
-      .toBeLessThan(UPGRADE_THRESHOLDS.LEVEL_3.minLandValue);
+  it('KEEP_REQUIREMENTS should be below UPGRADE_REQUIREMENTS for same level', () => {
+    expect(KEEP_REQUIREMENTS[2]!.minLandValue)
+      .toBeLessThan(UPGRADE_REQUIREMENTS[2]!.minLandValue);
+    expect(KEEP_REQUIREMENTS[3]!.minLandValue)
+      .toBeLessThan(UPGRADE_REQUIREMENTS[3]!.minLandValue);
   });
 
   it('should change appearance after upgrade', () => {

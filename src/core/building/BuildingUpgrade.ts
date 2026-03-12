@@ -8,32 +8,6 @@ export interface UpgradeConditions {
   pollution: number;
 }
 
-/** Thresholds for building level upgrades and downgrades */
-export const UPGRADE_THRESHOLDS = {
-  /** Level 1 → 2 requirements */
-  LEVEL_2: {
-    minServiceCoverage: 3,
-    minLandValue: 50,
-  },
-  /** Level 2 → 3 requirements */
-  LEVEL_3: {
-    minServiceCoverage: 5,
-    minLandValue: 80,
-    maxCrimeRate: 20,
-    maxPollution: 30,
-  },
-  /** Downgrade from level 2 if below these */
-  DOWNGRADE_2: {
-    minServiceCoverage: 3,
-    minLandValue: 40,
-  },
-  /** Downgrade from level 3 if below these */
-  DOWNGRADE_3: {
-    minServiceCoverage: 5,
-    minLandValue: 70,
-  },
-} as const;
-
 /** Data-driven upgrade requirements per target level (OCP-friendly). */
 export interface LevelRequirement {
   minServiceCoverage: number;
