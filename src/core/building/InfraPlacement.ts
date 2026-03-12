@@ -9,6 +9,15 @@ import {
   type Rotation,
 } from './InfraConfig';
 
+/** Check if any of the 4 cardinal neighbors is a water tile. */
+function hasAdjacentWater(grid: Grid, x: number, y: number): boolean {
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+    const cell = grid.getCell(x + dx, y + dy);
+    if (cell && cell.terrainType === TerrainType.WATER) return true;
+  }
+  return false;
+}
+
 /** Reserved value for secondary cells of multi-cell buildings. */
 export const MULTI_CELL_OCCUPIED = 4;
 
@@ -31,7 +40,7 @@ export function isPrimaryCellReserved(reserved: number): boolean {
 
 export type PlaceResult =
   | { ok: true }
-  | { ok: false; reason: 'OUT_OF_BOUNDS' | 'WATER_TILE' | 'TILE_OCCUPIED' | 'UNKNOWN_TYPE' | 'NO_GROUNDWATER' };
+  | { ok: false; reason: 'OUT_OF_BOUNDS' | 'WATER_TILE' | 'TILE_OCCUPIED' | 'UNKNOWN_TYPE' | 'NO_GROUNDWATER' | 'NEED_RAIL_TRACK' | 'NEED_ADJACENT_WATER' };
 
 /**
  * Check whether an infrastructure building can be placed at (x, y) with given rotation.
@@ -62,6 +71,7 @@ export function canPlaceInfra(
       if (!cell) return { ok: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { ok: false, reason: 'WATER_TILE' };
       if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) return { ok: false, reason: 'TILE_OCCUPIED' };
+      if (cell.railType !== 0 && type !== 'train_station') return { ok: false, reason: 'TILE_OCCUPIED' };
 
       if (type === 'water' && groundwaterFn && groundwaterFn(cx, cy) > 0) {
         hasGroundwater = true;
@@ -70,6 +80,17 @@ export function canPlaceInfra(
   }
 
   if (!hasGroundwater) return { ok: false, reason: 'NO_GROUNDWATER' };
+
+  // Train station requires rail track on the cell
+  if (type === 'train_station') {
+    const cell = grid.getCell(x, y)!;
+    if (cell.railType === 0) return { ok: false, reason: 'NEED_RAIL_TRACK' };
+  }
+
+  // Ferry dock requires at least one adjacent water tile
+  if (type === 'ferry_dock') {
+    if (!hasAdjacentWater(grid, x, y)) return { ok: false, reason: 'NEED_ADJACENT_WATER' };
+  }
 
   return { ok: true };
 }

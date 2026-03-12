@@ -70,6 +70,36 @@ describe('InfraPlacement', () => {
       expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'TILE_OCCUPIED');
     });
 
+    it('should reject if any tile has a rail track', () => {
+      const grid = makeGrid();
+      grid.setCell(5, 6, { railType: 1 });
+      expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'TILE_OCCUPIED');
+    });
+
+    it('should allow train_station on a tile with rail track', () => {
+      const grid = makeGrid();
+      grid.setCell(5, 5, { railType: 1 });
+      const result = canPlaceInfra(grid, 5, 5, 'train_station', 0);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should reject train_station on a tile without rail track', () => {
+      const grid = makeGrid();
+      expectFail(canPlaceInfra(grid, 5, 5, 'train_station', 0), 'NEED_RAIL_TRACK');
+    });
+
+    it('should allow ferry_dock next to water', () => {
+      const grid = makeGrid();
+      grid.setCell(6, 5, { terrainType: TerrainType.WATER });
+      const result = canPlaceInfra(grid, 5, 5, 'ferry_dock', 0);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should reject ferry_dock with no adjacent water', () => {
+      const grid = makeGrid();
+      expectFail(canPlaceInfra(grid, 5, 5, 'ferry_dock', 0), 'NEED_ADJACENT_WATER');
+    });
+
     it('should handle 2x3 hospital with rotation 0 (occupies 2 wide, 3 tall)', () => {
       const grid = makeGrid();
       const result = canPlaceInfra(grid, 5, 5, 'hospital', 0);

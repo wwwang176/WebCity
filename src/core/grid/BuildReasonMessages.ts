@@ -13,6 +13,7 @@ export const BUILD_REASON_MESSAGES: Record<string, string> = {
   NO_GROUNDWATER: 'No groundwater here — build near rivers',
   UNKNOWN_TYPE: 'Unknown building type',
   NEED_RAIL_TRACK: 'Train station must be built on rail track',
+  NEED_ADJACENT_WATER: 'Ferry dock must be built next to water',
   AIRPORT_OUT_OF_BOUNDS: 'Airport area is out of bounds',
   AIRPORT_AREA_OCCUPIED: 'Airport area is not fully clear',
 };
