@@ -465,13 +465,7 @@ export class Game {
           this.currentRoadType,
           this.state.budget.funds,
         );
-        if (result.success && result.cost) {
-          this.state.budget.funds -= result.cost;
-          this.simLoop.markLaneGraphDirty();
-          this.audioManager.playSfx('build');
-        } else if (!result.success && result.reason) {
-          this.showNotification(`Cannot build road: ${getBuildReasonMessage(result.reason)}`);
-        }
+        this.handleBuildResult(result, 'road', () => this.simLoop.markLaneGraphDirty());
         this.dirty.roads = true;
         this.dirty.crossings = true;
         this.dirty.trafficLights = true;
@@ -482,12 +476,7 @@ export class Game {
           { x: x1, y: y1 }, { x: x2, y: y2 },
           this.state.budget.funds,
         );
-        if (result.success && result.cost) {
-          this.state.budget.funds -= result.cost;
-          this.audioManager.playSfx('build');
-        } else if (!result.success && result.reason) {
-          this.showNotification(`Cannot build track: ${getBuildReasonMessage(result.reason)}`);
-        }
+        this.handleBuildResult(result, 'track');
         this.dirty.tracks = true;
         this.dirty.crossings = true;
         break;
@@ -534,6 +523,21 @@ export class Game {
     this.dirty.terrain = true;
     this.dirty.trafficLights = true;
     this.dirty.overlay = true;
+  }
+
+  /** Handle build result: deduct cost on success, show notification on failure (DRY). */
+  private handleBuildResult(
+    result: { success: boolean; cost?: number; reason?: string },
+    label: string,
+    onSuccess?: () => void,
+  ): void {
+    if (result.success && result.cost) {
+      this.state.budget.funds -= result.cost;
+      onSuccess?.();
+      this.audioManager.playSfx('build');
+    } else if (!result.success && result.reason) {
+      this.showNotification(`Cannot build ${label}: ${getBuildReasonMessage(result.reason)}`);
+    }
   }
 
   private applyZone(x1: number, y1: number, x2: number, y2: number, zoneType: ZoneType): void {
