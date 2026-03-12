@@ -232,7 +232,6 @@ export class Game {
   private lastMilestoneId: string | null = null;
   private notificationTimer = 0;
   private vehicleTypes = new Map<number, VehicleData['type']>();
-  private vehicleHeadings = new Map<number, number>();
   /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
   private ferryAnimator = new FerryAnimator();
   /** 火車渲染端動畫（純 LERP，不靠 tick） */
@@ -863,7 +862,6 @@ export class Game {
       const pos = this.state.traffic.getVehiclePositionOnEdges(v);
       if (!pos) return null;
       const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
-      this.vehicleHeadings.set(v.id, heading);
       return { id: v.id, x: pos.x, y: pos.y, heading, type: this.vehicleTypes.get(v.id)!, laneOffset: 0 };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
 
@@ -900,12 +898,10 @@ export class Game {
     // Update metro tunnel + train animation
     const vmOp = VIEW_MODE_OPACITY[this.viewMode];
     const metroLines = this.state.metro.getLines();
-    const metroLineData = metroLines.map(line => ({
-      lineId: line.id,
-      stops: line.stops.map(s => ({ x: s.x, y: s.y })),
-      segments: computeTunnelSegments(line.stops.map(s => ({ x: s.x, y: s.y }))),
-      trainCount: line.vehicles,
-    }));
+    const metroLineData = metroLines.map(line => {
+      const stops = line.stops.map(s => ({ x: s.x, y: s.y }));
+      return { lineId: line.id, stops, segments: computeTunnelSegments(stops), trainCount: line.vehicles };
+    });
     const metroSpeedMult = this.paused ? 0 : this.state.clock.speed;
     this.metroTunnelRenderer.update(
       metroLineData, this.state.metro.getStations(), vmOp.metroTunnel, dt * metroSpeedMult,
@@ -916,7 +912,6 @@ export class Game {
     for (const id of this.vehicleTypes.keys()) {
       if (!activeIds.has(id)) {
         this.vehicleTypes.delete(id);
-        this.vehicleHeadings.delete(id);
       }
     }
   }
