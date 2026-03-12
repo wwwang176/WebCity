@@ -656,14 +656,13 @@ export class Game {
     return d.id;
   }
 
-  private placeInfrastructure(x: number, y: number, type: 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery'): void {
-    const infraType = type as InfraType;
-    const cfg = getInfraConfig(infraType);
+  private placeInfrastructure(x: number, y: number, type: InfraType): void {
+    const cfg = getInfraConfig(type);
     if (!cfg) return;
 
     // Validate multi-cell placement
     const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
-    const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation, groundwaterFn);
+    const check = canPlaceInfra(this.state.grid, x, y, type, this.currentRotation, groundwaterFn);
     if (!check.ok) {
       this.showNotification(getBuildReasonMessage(check.reason), 3);
       return;
@@ -677,10 +676,10 @@ export class Game {
     this.state.budget.funds -= cost;
 
     // Place on grid (multi-cell)
-    placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
+    placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
 
     // Compute center for service coverage (coverage radiates from building center)
-    const { cx, cy } = getInfraCenter(x, y, infraType, this.currentRotation);
+    const { cx, cy } = getInfraCenter(x, y, type, this.currentRotation);
 
     // Register with service layer at center coordinates (data-driven via InfraServiceActions)
     const actions = INFRA_SERVICE_ACTIONS[type];
