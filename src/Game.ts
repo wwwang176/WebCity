@@ -50,7 +50,8 @@ import {
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
-import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
+import { OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
+import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { generateTerrain, TERRAIN_GEN } from './core/grid/TerrainGenerator';
 import { getGroundwaterLevel } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
@@ -1360,65 +1361,10 @@ export class Game {
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
     if (type === 'none') return undefined;
     const data = new Map<string, number>();
-    const grid = this.state.grid;
-
-    grid.forEachCell((cell, x, y) => {
-      const key = `${x},${y}`;
-      let value = 0;
-
-      const O = OVERLAY_SCALE;
-      switch (type) {
-        case 'power':
-          value = this.state.power.isPowered(x, y) ? O.DISPLAY_MAX : 0;
-          break;
-        case 'water': {
-          const supplied = this.state.water.isSupplied(x, y) ? O.DISPLAY_MAX : 0;
-          const gw = getGroundwaterLevel(grid, x, y);
-          value = Math.max(supplied, gw * O.GROUNDWATER_FACTOR);
-          break;
-        }
-        case 'zone':
-          if (cell.zoneType > 0) value = cell.zoneType * O.ZONE_TYPE_FACTOR;
-          break;
-        case 'traffic': {
-          const density = this.state.traffic.getSegmentDensity(key);
-          value = density * O.TRAFFIC_DENSITY_FACTOR;
-          break;
-        }
-        case 'pollution':
-          value = Math.min(O.DISPLAY_MAX, cell.pollution * O.DISPLAY_MAX / O.RAW_MAX);
-          break;
-        case 'landValue':
-          if (cell.buildingId > 0) value = Math.min(O.DISPLAY_MAX, cell.landValue * O.DISPLAY_MAX / O.RAW_MAX);
-          break;
-        case 'crime':
-          if (cell.buildingId > 0) {
-            const reduction = this.state.police.getCrimeReduction(x, y);
-            value = Math.max(0, O.CRIME_BASE + reduction);
-          }
-          break;
-        // Coverage overlays: police/fire/health/education/park/garbage
-        // handled by data-driven lookup (see CoverageOverlay.ts)
-        case 'district': {
-          const d = this.state.districts.getDistrictAt(x, y);
-          if (d) {
-            let hash = 0;
-            for (let i = 0; i < d.id.length; i++) hash = (hash * 31 + d.id.charCodeAt(i)) & 0xff;
-            value = Math.max(20, hash % 100);
-          }
-          break;
-        }
-        default: {
-          // Data-driven coverage overlays (OCP: add new services in CoverageOverlay.ts)
-          const coverageSvc = getCoverageService(this.state, type);
-          if (coverageSvc) {
-            value = coverageSvc.getCoverage(x, y) ? O.COVERAGE_VALUE : 0;
-          }
-          break;
-        }
-      }
-
-      if (value > 0) data.set(key, value);
+    const ctx = this.state as unknown as OverlayBuildContext;
+    this.state.grid.forEachCell((cell, x, y) => {
+      const value = buildOverlayValue(ctx, type, cell, x, y);
+      if (value > 0) data.set(`${x},${y}`, value);
     });
     return data;
   }
