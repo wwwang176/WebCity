@@ -282,6 +282,51 @@ describe('FireService', () => {
   });
 });
 
+describe('Fire extinguished tracking', () => {
+  it('resolveCompletedFires should increment todayExtinguished', () => {
+    const fire = new FireService();
+    fire.reportFire(5, 5);
+    fire.tick(); fire.tick(); fire.tick();
+    fire.resolveCompletedFires();
+    expect(fire.getTodayExtinguished()).toBe(1);
+  });
+
+  it('advanceDay should flush to ring buffer and reset', () => {
+    const fire = new FireService();
+    fire.reportFire(5, 5);
+    fire.tick(); fire.tick(); fire.tick();
+    fire.resolveCompletedFires();
+    fire.advanceDay();
+    expect(fire.getTodayExtinguished()).toBe(0);
+    expect(fire.getRecentExtinguished()).toBe(1);
+  });
+
+  it('ring buffer rolls over after 30 days', () => {
+    const fire = new FireService();
+    for (let day = 0; day < 30; day++) {
+      fire.reportFire(day, 0);
+      fire.tick(); fire.tick(); fire.tick();
+      fire.resolveCompletedFires();
+      fire.advanceDay();
+    }
+    expect(fire.getRecentExtinguished()).toBe(30);
+
+    // Day 31: oldest overwritten
+    fire.reportFire(0, 0);
+    fire.tick(); fire.tick(); fire.tick();
+    fire.resolveCompletedFires();
+    fire.advanceDay();
+    expect(fire.getRecentExtinguished()).toBe(30); // still 30
+  });
+
+  it('fromJSON should handle legacy saves without ring buffer', () => {
+    const legacyJSON = { stations: [], activeFires: [], nextId: 1 };
+    const restored = FireService.fromJSON(legacyJSON as any);
+    expect(restored.getRecentExtinguished()).toBe(0);
+    restored.advanceDay(); // should not throw
+  });
+});
+
 describe('FIRE constants', () => {
   it('risk factors should be between 0 and 1', () => {
     expect(FIRE.RISK_OUTSIDE_BASE).toBeGreaterThan(0);

@@ -6,7 +6,7 @@ import type { InfraType } from '../InfraConfig';
 function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContext {
   return {
     police: { getStations: () => [], getCoverage: () => false },
-    fire: { getStations: () => [], getActiveFires: () => [] },
+    fire: { getStations: () => [], getActiveFires: () => [], getRecentExtinguished: () => 0 },
     health: { getHospitals: () => [] },
     education: { getSchools: () => [] },
     parks: { getParks: () => [] },
@@ -14,6 +14,8 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
     deathCare: { getCemeteries: () => [] },
     power: { getPlants: () => [] },
     water: { getPlants: () => [] },
+    citizens: { getCitizens: () => [] },
+    sewage: { getTreatmentPlants: () => [], getUntreated: () => 0 },
     ...overrides,
   };
 }
@@ -37,34 +39,46 @@ describe('getInfraDetails', () => {
     expect(d.Coverage).toBe('No');
   });
 
-  it('fire: returns radius and active fire count', () => {
+  it('fire: returns radius, active fires, and extinguished/month', () => {
     const ctx = makeCtx({
       fire: {
         getStations: () => [{ x: 3, y: 3, radius: 18 }],
         getActiveFires: () => [{ x: 1, y: 1 }, { x: 2, y: 2 }],
+        getRecentExtinguished: () => 7,
       },
     });
     const d = getInfraDetails(ctx, 'fire', 3, 3);
-    expect(d).toEqual({ Radius: 18, 'Active Fires': 2 });
+    expect(d).toEqual({ Radius: 18, 'Active Fires': 2, 'Extinguished/month': 7 });
   });
 
-  it('hospital: returns capacity and radius', () => {
+  it('hospital: returns capacity, radius, and residents covered', () => {
     const ctx = makeCtx({
-      health: { getHospitals: () => [{ x: 4, y: 4, capacity: 150, radius: 14 }] },
+      health: { getHospitals: () => [{ x: 10, y: 10, capacity: 150, radius: 12 }] },
+      citizens: { getCitizens: () => [
+        { homeId: '10,10', age: 30, lifeStage: 'ADULT' },  // distance 0, within radius
+        { homeId: '10,11', age: 40, lifeStage: 'ADULT' },  // distance 1, within radius
+        { homeId: '50,50', age: 25, lifeStage: 'ADULT' },  // far away
+        { homeId: null, age: 20, lifeStage: 'ADULT' },     // homeless
+      ] },
     });
-    const d = getInfraDetails(ctx, 'hospital', 4, 4);
-    expect(d).toEqual({ Capacity: 150, Radius: 14 });
+    const d = getInfraDetails(ctx, 'hospital', 10, 10);
+    expect(d).toEqual({ Capacity: 150, Radius: 12, Residents: 2 });
   });
 
-  it('school (elementary): returns type, capacity, radius', () => {
+  it('school (elementary): returns type, capacity, radius, and students (CHILD count)', () => {
     const ctx = makeCtx({
       education: { getSchools: () => [{ x: 2, y: 2, type: 'elementary', capacity: 250, radius: 11 }] },
+      citizens: { getCitizens: () => [
+        { homeId: '1,1', age: 8, lifeStage: 'CHILD' },
+        { homeId: '2,2', age: 10, lifeStage: 'CHILD' },
+        { homeId: '3,3', age: 30, lifeStage: 'ADULT' },
+      ] },
     });
     const d = getInfraDetails(ctx, 'school', 2, 2);
-    expect(d).toEqual({ Type: 'Elementary', Capacity: 250, Radius: 11 });
+    expect(d).toEqual({ Type: 'Elementary', Capacity: 250, Radius: 11, Students: 2 });
   });
 
-  it('school_high: filters by type=highschool', () => {
+  it('school_high: filters by type=highschool, counts TEEN', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [
@@ -72,19 +86,29 @@ describe('getInfraDetails', () => {
           { x: 1, y: 1, type: 'highschool', capacity: 350, radius: 13 },
         ],
       },
+      citizens: { getCitizens: () => [
+        { homeId: '1,1', age: 15, lifeStage: 'TEEN' },
+        { homeId: '2,2', age: 8, lifeStage: 'CHILD' },
+      ] },
     });
     const d = getInfraDetails(ctx, 'school_high', 1, 1);
-    expect(d).toEqual({ Type: 'High School', Capacity: 350, Radius: 13 });
+    expect(d).toEqual({ Type: 'High School', Capacity: 350, Radius: 13, Students: 1 });
   });
 
-  it('school_univ: filters by type=university', () => {
+  it('school_univ: filters by type=university, counts ADULT age<=25', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [{ x: 7, y: 7, type: 'university', capacity: 600, radius: 16 }],
       },
+      citizens: { getCitizens: () => [
+        { homeId: '1,1', age: 20, lifeStage: 'ADULT' },
+        { homeId: '2,2', age: 25, lifeStage: 'ADULT' },
+        { homeId: '3,3', age: 30, lifeStage: 'ADULT' },  // too old
+        { homeId: '4,4', age: 15, lifeStage: 'TEEN' },
+      ] },
     });
     const d = getInfraDetails(ctx, 'school_univ', 7, 7);
-    expect(d).toEqual({ Type: 'University', Capacity: 600, Radius: 16 });
+    expect(d).toEqual({ Type: 'University', Capacity: 600, Radius: 16, Students: 2 });
   });
 
   it('park: returns radius', () => {
@@ -103,9 +127,21 @@ describe('getInfraDetails', () => {
     expect(d).toEqual({ Capacity: 2000, Load: 500 });
   });
 
-  it('sewage: returns static status', () => {
+  it('sewage: returns capacity and untreated', () => {
+    const ctx = makeCtx({
+      sewage: {
+        getTreatmentPlants: () => [{ x: 5, y: 5, capacity: 200 }],
+        getUntreated: () => 3,
+      },
+    });
+    const d = getInfraDetails(ctx, 'sewage', 5, 5);
+    expect(d).toEqual({ Capacity: 200, Untreated: 3 });
+  });
+
+  it('sewage: defaults when plant not found', () => {
     const d = getInfraDetails(makeCtx(), 'sewage', 0, 0);
-    expect(d).toEqual({ Status: 'Active' });
+    expect(d.Capacity).toBe(200);
+    expect(d.Untreated).toBe(0);
   });
 
   it('cemetery: returns capacity, stored, and recent monthly', () => {

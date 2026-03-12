@@ -18,6 +18,9 @@ interface FireServiceJSON {
   stations: FireStation[];
   activeFires: ActiveFire[];
   nextId: number;
+  recentDaily?: number[];
+  recentIndex?: number;
+  todayExtinguished?: number;
 }
 
 import { isZoneBuilding } from '../building/InfraConfig';
@@ -57,6 +60,9 @@ export class FireService {
   private stations: FireStation[] = [];
   private activeFires: ActiveFire[] = [];
   private nextId = 1;
+  private recentDaily: number[] = new Array(30).fill(0);
+  private recentIndex = 0;
+  private todayExtinguished = 0;
 
   addStation(x: number, y: number, radius = 15): string {
     const id = `fire_${this.nextId++}`;
@@ -166,7 +172,23 @@ export class FireService {
         this.activeFires.splice(i, 1);
       }
     }
+    this.todayExtinguished += resolved.length;
     return resolved;
+  }
+
+  /** Flush today's extinguished count into the 30-day ring buffer. Call once per game day. */
+  advanceDay(): void {
+    this.recentDaily[this.recentIndex] = this.todayExtinguished;
+    this.recentIndex = (this.recentIndex + 1) % 30;
+    this.todayExtinguished = 0;
+  }
+
+  getRecentExtinguished(): number {
+    return this.recentDaily.reduce((a, b) => a + b, 0);
+  }
+
+  getTodayExtinguished(): number {
+    return this.todayExtinguished;
   }
 
   /**
@@ -205,6 +227,9 @@ export class FireService {
       stations: this.stations.map(s => ({ ...s })),
       activeFires: this.activeFires.map(f => ({ ...f })),
       nextId: this.nextId,
+      recentDaily: [...this.recentDaily],
+      recentIndex: this.recentIndex,
+      todayExtinguished: this.todayExtinguished,
     };
   }
 
@@ -213,6 +238,9 @@ export class FireService {
     service.stations = json.stations.map(s => ({ ...s }));
     service.activeFires = json.activeFires.map(f => ({ ...f }));
     service.nextId = json.nextId;
+    service.recentDaily = json.recentDaily ?? new Array(30).fill(0);
+    service.recentIndex = json.recentIndex ?? 0;
+    service.todayExtinguished = json.todayExtinguished ?? 0;
     return service;
   }
 

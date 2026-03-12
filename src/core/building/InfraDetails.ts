@@ -3,7 +3,8 @@
  * Eliminates 15-case switch in Game.ts (OCP + SRP).
  */
 import type { InfraType } from './InfraConfig';
-import { findAtPosition } from '../grid/GridHelpers';
+import { findAtPosition, parsePosKey } from '../grid/GridHelpers';
+import { euclideanDistance } from '../grid/GridHelpers';
 
 /**
  * Minimal interface for services needed to extract infrastructure details.
@@ -17,6 +18,7 @@ export interface InfraDetailContext {
   fire: {
     getStations(): readonly { x: number; y: number; radius: number }[];
     getActiveFires(): readonly unknown[];
+    getRecentExtinguished(): number;
   };
   health: {
     getHospitals(): readonly { x: number; y: number; capacity: number; radius: number }[];
@@ -39,6 +41,13 @@ export interface InfraDetailContext {
   water: {
     getPlants(): readonly { x: number; y: number; output: number }[];
   };
+  citizens: {
+    getCitizens(): readonly { homeId: string | null; age: number; lifeStage: string }[];
+  };
+  sewage: {
+    getTreatmentPlants(): readonly { x: number; y: number; capacity: number }[];
+    getUntreated(): number;
+  };
 }
 
 type DetailExtractor = (ctx: InfraDetailContext, cx: number, cy: number) => Record<string, string | number>;
@@ -54,23 +63,35 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   fire: (ctx, cx, cy) => {
     const st = findAtPosition(ctx.fire.getStations(), cx, cy);
-    return { Radius: st?.radius ?? 15, 'Active Fires': ctx.fire.getActiveFires().length };
+    return { Radius: st?.radius ?? 15, 'Active Fires': ctx.fire.getActiveFires().length, 'Extinguished/month': ctx.fire.getRecentExtinguished() };
   },
   hospital: (ctx, cx, cy) => {
     const h = findAtPosition(ctx.health.getHospitals(), cx, cy);
-    return { Capacity: h?.capacity ?? 100, Radius: h?.radius ?? 12 };
+    const radius = h?.radius ?? 12;
+    let residents = 0;
+    if (h) {
+      for (const c of ctx.citizens.getCitizens()) {
+        if (!c.homeId) continue;
+        const pos = parsePosKey(c.homeId);
+        if (pos && euclideanDistance(pos.x, pos.y, h.x, h.y) <= radius) residents++;
+      }
+    }
+    return { Capacity: h?.capacity ?? 100, Radius: radius, Residents: residents };
   },
   school: (ctx, cx, cy) => {
     const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'elementary');
-    return { Type: 'Elementary', Capacity: sc?.capacity ?? 200, Radius: sc?.radius ?? 10 };
+    const students = ctx.citizens.getCitizens().filter(c => c.lifeStage === 'CHILD').length;
+    return { Type: 'Elementary', Capacity: sc?.capacity ?? 200, Radius: sc?.radius ?? 10, Students: students };
   },
   school_high: (ctx, cx, cy) => {
     const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'highschool');
-    return { Type: 'High School', Capacity: sc?.capacity ?? 300, Radius: sc?.radius ?? 12 };
+    const students = ctx.citizens.getCitizens().filter(c => c.lifeStage === 'TEEN').length;
+    return { Type: 'High School', Capacity: sc?.capacity ?? 300, Radius: sc?.radius ?? 12, Students: students };
   },
   school_univ: (ctx, cx, cy) => {
     const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'university');
-    return { Type: 'University', Capacity: sc?.capacity ?? 500, Radius: sc?.radius ?? 15 };
+    const students = ctx.citizens.getCitizens().filter(c => c.lifeStage === 'ADULT' && c.age <= 25).length;
+    return { Type: 'University', Capacity: sc?.capacity ?? 500, Radius: sc?.radius ?? 15, Students: students };
   },
   park: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.parks.getParks(), cx, cy);
@@ -80,7 +101,10 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
     const f = findAtPosition(ctx.garbage.getFacilities(), cx, cy);
     return { Capacity: f?.capacity ?? 1000, Load: f?.currentLoad ?? 0 };
   },
-  sewage: () => ({ Status: 'Active' }),
+  sewage: (ctx, cx, cy) => {
+    const p = findAtPosition(ctx.sewage.getTreatmentPlants(), cx, cy);
+    return { Capacity: p?.capacity ?? 200, Untreated: ctx.sewage.getUntreated() };
+  },
   cemetery: (ctx, cx, cy) => {
     const c = findAtPosition(ctx.deathCare.getCemeteries(), cx, cy);
     const recent = c ? c.recentDaily.reduce((a, b) => a + b, 0) : 0;
