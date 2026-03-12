@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { Grid } from '../Grid';
 import { TerrainType, NaturalResource } from '../types';
 import { canBuild, getNaturalResource, getElevation, setNaturalResource } from '../Terrain';
-import { TERRAIN_GEN } from '../../../Game';
+import { TERRAIN_GEN } from '../TerrainGenerator';
 
 describe('Terrain', () => {
   it('should not allow building on water', () => {
