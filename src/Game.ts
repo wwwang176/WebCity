@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SceneManager } from './renderer/SceneManager';
 import { TerrainRenderer } from './renderer/TerrainRenderer';
-import { RoadRenderer } from './renderer/RoadRenderer';
+import { RoadRenderer, ROAD_WIDTHS } from './renderer/RoadRenderer';
 import { BuildingRenderer } from './renderer/BuildingRenderer';
 import { VehicleRenderer, type VehicleData } from './renderer/VehicleRenderer';
 import { TrafficLightRenderer } from './renderer/TrafficLightRenderer';
@@ -65,15 +65,6 @@ import { TrainAnimator } from './renderer/TrainAnimator';
 // OVERLAY_SCALE re-exported from core/overlay/CoverageOverlay for backward compatibility
 export { OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 
-/** Road widths matching RoadRenderer (world units per cell). */
-const ROAD_WIDTHS_FOR_LANES: Record<number, number> = {
-  [RoadType.RURAL]: 0.5,
-  [RoadType.TWO_LANE]: 0.6,
-  [RoadType.FOUR_LANE]: 0.85,
-  [RoadType.SIX_LANE]: 0.95,
-  [RoadType.HIGHWAY]: 0.95,
-  [RoadType.ONE_WAY]: 0.55,
-};
 
 
 // TERRAIN_GEN re-exported from core/grid/TerrainGenerator for backward compatibility
@@ -1414,7 +1405,7 @@ export class Game {
 
     // Show semi-transparent road surface preview
     const laneCount = getLaneCount(this.currentRoadType);
-    const roadWidth = ROAD_WIDTHS_FOR_LANES[this.currentRoadType] ?? (0.2 + laneCount * 0.15);
+    const roadWidth = ROAD_WIDTHS[this.currentRoadType] ?? (0.2 + laneCount * 0.15);
     this.placementPreview.updateRoadDrag(
       points.map(p => ({ x: p.x, y: p.z })),
       roadWidth,
