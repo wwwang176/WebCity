@@ -113,6 +113,22 @@ describe('InfraConfig', () => {
       expect(getInfraConfigById(237)!.type).toBe('airport');
     });
 
+    it('should resolve every infrastructure buildingId to correct type', () => {
+      // All 17 infra types must be resolvable by buildingId (renderer depends on this)
+      const expected: [number, string][] = [
+        [254, 'power'], [253, 'water'], [252, 'police'], [251, 'fire'],
+        [250, 'hospital'], [249, 'school'], [248, 'park'], [247, 'garbage'],
+        [246, 'sewage'], [245, 'cemetery'], [244, 'school_high'], [243, 'school_univ'],
+        [242, 'bus_stop'], [241, 'metro_station'], [239, 'train_station'],
+        [238, 'ferry_dock'], [237, 'airport'],
+      ];
+      for (const [id, type] of expected) {
+        const cfg = getInfraConfigById(id);
+        expect(cfg, `buildingId ${id} should have config`).toBeDefined();
+        expect(cfg!.type).toBe(type);
+      }
+    });
+
     it('should return undefined for non-infra buildingId', () => {
       expect(getInfraConfigById(0)).toBeUndefined();
       expect(getInfraConfigById(1)).toBeUndefined();
