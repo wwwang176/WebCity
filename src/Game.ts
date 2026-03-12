@@ -18,7 +18,7 @@ import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridH
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
-import { getBuildingType, type BuildingType } from './core/building/types';
+import { type BuildingType } from './core/building/types';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
@@ -38,12 +38,12 @@ import { collectTransportVehicles } from './core/transport/collectTransportVehic
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
 import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } from './core/building/InfraDetails';
+import { classifyBuilding } from './core/building/BuildingClassifier';
 import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
 
 import {
   ViewMode,
   VIEW_MODE_OPACITY,
-  getTransportStopType,
   getTransportFocusMode,
   STOP_NAMES,
   type TransportStopKind,
@@ -1002,39 +1002,37 @@ export class Game {
     this.onUIUpdate?.();
   }
 
-  /** Select a transport stop and switch to its focus view mode. */
-  /** Handle click in select mode: identify building type and show details. */
+  /** Handle click in select mode: classify building and show details. */
   private handleSelectClick(x: number, y: number): void {
     const cell = this.state.grid.getCell(x, y);
     if (cell && cell.buildingId > 0) {
-      const bt = getBuildingType(cell.buildingId);
-      if (bt) {
-        this.selectedBuilding = {
-          kind: 'zone', x, y,
-          buildingType: bt, zoneType: cell.zoneType,
-          landValue: cell.landValue, pollution: cell.pollution,
-          serviceCoverage: cell.serviceCoverage,
-        };
-        this.applyViewMode(ViewMode.NORMAL);
-      } else {
-        const transportType = getTransportStopType(cell.buildingId);
-        if (transportType) {
-          this.selectTransportStop(x, y, transportType);
-        } else {
-          const infraCfg = getInfraConfigById(cell.buildingId);
-          if (infraCfg) {
-            const primary = findPrimaryCell(this.state.grid, x, y);
-            const px = primary?.x ?? x;
-            const py = primary?.y ?? y;
-            const center = getInfraCenterById(px, py, cell.buildingId);
-            const details = this.getInfraDetails(infraCfg.type, center.cx, center.cy);
-            this.selectedBuilding = {
-              kind: 'infra', x, y,
-              infraType: infraCfg.type, name: infraCfg.name,
-              cost: infraCfg.cost, details,
-            };
-            this.applyViewMode(ViewMode.NORMAL);
-          }
+      const cls = classifyBuilding(cell.buildingId);
+      switch (cls.category) {
+        case 'zone':
+          this.selectedBuilding = {
+            kind: 'zone', x, y,
+            buildingType: cls.buildingType, zoneType: cell.zoneType,
+            landValue: cell.landValue, pollution: cell.pollution,
+            serviceCoverage: cell.serviceCoverage,
+          };
+          this.applyViewMode(ViewMode.NORMAL);
+          break;
+        case 'transport':
+          this.selectTransportStop(x, y, cls.transportType);
+          break;
+        case 'infra': {
+          const primary = findPrimaryCell(this.state.grid, x, y);
+          const px = primary?.x ?? x;
+          const py = primary?.y ?? y;
+          const center = getInfraCenterById(px, py, cell.buildingId);
+          const details = this.getInfraDetails(cls.config.type, center.cx, center.cy);
+          this.selectedBuilding = {
+            kind: 'infra', x, y,
+            infraType: cls.config.type, name: cls.config.name,
+            cost: cls.config.cost, details,
+          };
+          this.applyViewMode(ViewMode.NORMAL);
+          break;
         }
       }
     } else {
