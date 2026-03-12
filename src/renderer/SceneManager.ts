@@ -13,6 +13,9 @@ export class SceneManager {
   readonly directionalLight!: THREE.DirectionalLight;
   readonly hemisphereLight!: THREE.HemisphereLight;
 
+  // Sun offset – set by WeatherRenderer, applied relative to cameraTarget
+  readonly sunOffset = new THREE.Vector3(50, 80, 50);
+
   // Camera state
   private cameraAngle = Math.PI / 4; // 45 degrees isometric
   private targetCameraAngle = Math.PI / 4;
@@ -75,8 +78,8 @@ export class SceneManager {
     const dir = new THREE.DirectionalLight(0xffffff, 0.8);
     dir.position.set(50, 80, 50);
     dir.castShadow = true;
-    dir.shadow.mapSize.width = 4096;
-    dir.shadow.mapSize.height = 4096;
+    dir.shadow.mapSize.width = 2048;
+    dir.shadow.mapSize.height = 2048;
     dir.shadow.bias = -0.0005;
     dir.shadow.normalBias = 0.02;
     dir.shadow.camera.near = 1;
@@ -90,6 +93,7 @@ export class SceneManager {
       writable: false,
     });
     this.scene.add(this.directionalLight);
+    this.scene.add(this.directionalLight.target);
 
     Object.defineProperty(self, 'hemisphereLight', {
       value: new THREE.HemisphereLight(0x87ceeb, 0x556633, 0.3),
@@ -138,6 +142,30 @@ export class SceneManager {
     this.camera.updateProjectionMatrix();
   }
 
+  /** Fit shadow camera to the visible area so the shadow map is used efficiently. */
+  private updateShadowCamera(): void {
+    // Position light relative to camera target
+    this.directionalLight.position.set(
+      this.cameraTarget.x + this.sunOffset.x,
+      this.sunOffset.y,
+      this.cameraTarget.z + this.sunOffset.z,
+    );
+    this.directionalLight.target.position.copy(this.cameraTarget);
+
+    // Shadow camera covers the visible orthographic frustum + padding
+    const halfW = (this.camera.right - this.camera.left) / 2;
+    const halfH = (this.camera.top - this.camera.bottom) / 2;
+    const extent = Math.max(halfW, halfH);
+    const padded = extent * 1.3; // 30% extra for off-screen casters
+
+    const sc = this.directionalLight.shadow.camera;
+    sc.left = -padded;
+    sc.right = padded;
+    sc.top = padded;
+    sc.bottom = -padded;
+    sc.updateProjectionMatrix();
+  }
+
   onUpdate(callback: (dt: number) => void): void {
     this.callbacks.push(callback);
   }
@@ -156,6 +184,7 @@ export class SceneManager {
         this.updateCameraPosition();
       }
       for (const cb of this.callbacks) cb(dt);
+      this.updateShadowCamera();
       this.renderer.render(this.scene, this.camera);
     };
     this.animationId = requestAnimationFrame(animate);

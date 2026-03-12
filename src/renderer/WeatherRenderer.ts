@@ -92,7 +92,7 @@ export class WeatherRenderer {
       this.sceneManager.ambientLight.color.setHex(0xffffff);
       this.sceneManager.directionalLight.intensity = 0.5;
       this.sceneManager.directionalLight.color.setHex(0xffffff);
-      this.sceneManager.directionalLight.position.set(0, 80, 50);
+      this.sceneManager.sunOffset.set(0, 80, 50);
       this.sceneManager.directionalLight.castShadow = false;
       this.sceneManager.hemisphereLight.intensity = 0.25;
       this.sceneManager.hemisphereLight.color.setHex(0xffffff);
@@ -155,7 +155,7 @@ export class WeatherRenderer {
     const sunX = 50 * Math.cos(sunAngle);
     const sunY = 80 * Math.max(0.1, sunFactor);
     const sunZ = 50;
-    this.sceneManager.directionalLight.position.set(sunX, sunY, sunZ);
+    this.sceneManager.sunOffset.set(sunX, sunY, sunZ);
 
     // Hemisphere light (0.01 at midnight → 0.3 at noon)
     this.sceneManager.hemisphereLight.intensity = 0.01 + smoothFactor * (this.baseHemiIntensity - 0.01);
