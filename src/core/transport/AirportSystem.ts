@@ -44,6 +44,29 @@ export interface Airport {
   operatingCost: number;
 }
 
+export type AirportPlaceResult =
+  | { ok: true }
+  | { ok: false; reason: string };
+
+/** Validate whether an airport can be placed at (x,y) with the given size. Pure function (SRP). */
+export function canPlaceAirport(
+  grid: { getCell(x: number, y: number): { roadType: number; buildingId: number } | null },
+  x: number,
+  y: number,
+  size: AirportSize,
+): AirportPlaceResult {
+  const footprint = getAirportFootprint(size);
+  const half = Math.floor(footprint / 2);
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      const c = grid.getCell(x + dx, y + dy);
+      if (!c) return { ok: false, reason: 'AIRPORT_OUT_OF_BOUNDS' };
+      if (c.roadType !== 0 || c.buildingId !== 0) return { ok: false, reason: 'AIRPORT_AREA_OCCUPIED' };
+    }
+  }
+  return { ok: true };
+}
+
 export class AirportSystem {
   private airports: Airport[] = [];
   private nextId = 1;

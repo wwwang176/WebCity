@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AirportSystem, getAirportFootprint, getAirportBuildCost, AIRPORT_SIZE_CONFIG } from '../AirportSystem';
+import { AirportSystem, getAirportFootprint, getAirportBuildCost, AIRPORT_SIZE_CONFIG, canPlaceAirport } from '../AirportSystem';
 
 describe('AirportSystem.findAtCell', () => {
   it('should find SMALL airport covering center cell', () => {
@@ -92,6 +92,74 @@ describe('AirportSystem.demolishAtCell', () => {
     expect(result).toBe(true);
     expect(sys.getAirports().length).toBe(0);
     expect(cleared.length).toBe(9);
+  });
+});
+
+describe('canPlaceAirport', () => {
+  function makeGrid(cells: Record<string, { roadType: number; buildingId: number }>) {
+    return {
+      getCell: (x: number, y: number) => cells[`${x},${y}`] ?? null,
+    };
+  }
+
+  it('should allow placement on all-empty cells', () => {
+    const cells: Record<string, { roadType: number; buildingId: number }> = {};
+    // SMALL footprint=3, half=1 → need cells (4..6, 4..6)
+    for (let dy = 4; dy <= 6; dy++) {
+      for (let dx = 4; dx <= 6; dx++) {
+        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
+      }
+    }
+    const grid = makeGrid(cells);
+    expect(canPlaceAirport(grid, 5, 5, 'SMALL')).toEqual({ ok: true });
+  });
+
+  it('should reject when a cell is out of bounds', () => {
+    // Only provide center cell, edges are null
+    const grid = makeGrid({ '5,5': { roadType: 0, buildingId: 0 } });
+    const result = canPlaceAirport(grid, 5, 5, 'SMALL');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('AIRPORT_OUT_OF_BOUNDS');
+  });
+
+  it('should reject when a cell has a road', () => {
+    const cells: Record<string, { roadType: number; buildingId: number }> = {};
+    for (let dy = 4; dy <= 6; dy++) {
+      for (let dx = 4; dx <= 6; dx++) {
+        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
+      }
+    }
+    cells['5,5'] = { roadType: 2, buildingId: 0 }; // center has road
+    const grid = makeGrid(cells);
+    const result = canPlaceAirport(grid, 5, 5, 'SMALL');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('AIRPORT_AREA_OCCUPIED');
+  });
+
+  it('should reject when a cell has a building', () => {
+    const cells: Record<string, { roadType: number; buildingId: number }> = {};
+    for (let dy = 4; dy <= 6; dy++) {
+      for (let dx = 4; dx <= 6; dx++) {
+        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
+      }
+    }
+    cells['4,4'] = { roadType: 0, buildingId: 5 }; // corner has building
+    const grid = makeGrid(cells);
+    const result = canPlaceAirport(grid, 5, 5, 'SMALL');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('AIRPORT_AREA_OCCUPIED');
+  });
+
+  it('should check MEDIUM footprint (5x5)', () => {
+    const cells: Record<string, { roadType: number; buildingId: number }> = {};
+    // MEDIUM footprint=5, half=2 → need cells (8..12, 8..12)
+    for (let dy = 8; dy <= 12; dy++) {
+      for (let dx = 8; dx <= 12; dx++) {
+        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
+      }
+    }
+    const grid = makeGrid(cells);
+    expect(canPlaceAirport(grid, 10, 10, 'MEDIUM')).toEqual({ ok: true });
   });
 });
 

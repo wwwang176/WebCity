@@ -19,6 +19,8 @@ describe('BUILD_REASON_MESSAGES', () => {
     expect(BUILD_REASON_MESSAGES.NO_GROUNDWATER).toBe('No groundwater here — build near rivers');
     expect(BUILD_REASON_MESSAGES.UNKNOWN_TYPE).toBe('Unknown building type');
     expect(BUILD_REASON_MESSAGES.NEED_RAIL_TRACK).toBe('Train station must be built on rail track');
+    expect(BUILD_REASON_MESSAGES.AIRPORT_OUT_OF_BOUNDS).toBe('Airport area is out of bounds');
+    expect(BUILD_REASON_MESSAGES.AIRPORT_AREA_OCCUPIED).toBe('Airport area is not fully clear');
   });
 });
 

@@ -9,6 +9,7 @@ import {
   tryRandomDisaster,
   RANDOM_DISASTER,
   formatDisasterMessage,
+  applyDisasterDamage,
 } from '../Disaster';
 import {
   addWarningTower,
@@ -347,5 +348,52 @@ describe('formatDisasterMessage', () => {
     });
     expect(msg).toContain('UNKNOWN');
     expect(msg).toContain('50%');
+  });
+});
+
+describe('applyDisasterDamage', () => {
+  function makeGrid() {
+    const cells = new Map<string, { buildingId: number }>();
+    return {
+      getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null,
+      setCell: (x: number, y: number, data: { buildingId: number }) => {
+        const existing = cells.get(`${x},${y}`);
+        if (existing) Object.assign(existing, data);
+      },
+      set: (x: number, y: number, data: { buildingId: number }) => cells.set(`${x},${y}`, { ...data }),
+      cells,
+    };
+  }
+
+  it('should clear buildingId for damaged cells with buildings', () => {
+    const grid = makeGrid();
+    grid.set(3, 4, { buildingId: 10 });
+    grid.set(5, 6, { buildingId: 20 });
+    const count = applyDisasterDamage(grid, [{ x: 3, y: 4 }, { x: 5, y: 6 }]);
+    expect(count).toBe(2);
+    expect(grid.cells.get('3,4')!.buildingId).toBe(0);
+    expect(grid.cells.get('5,6')!.buildingId).toBe(0);
+  });
+
+  it('should skip cells with no building', () => {
+    const grid = makeGrid();
+    grid.set(1, 1, { buildingId: 0 }); // empty cell
+    const count = applyDisasterDamage(grid, [{ x: 1, y: 1 }]);
+    expect(count).toBe(0);
+  });
+
+  it('should skip out-of-bounds cells', () => {
+    const grid = makeGrid();
+    const count = applyDisasterDamage(grid, [{ x: 99, y: 99 }]);
+    expect(count).toBe(0);
+  });
+
+  it('should return count of destroyed buildings', () => {
+    const grid = makeGrid();
+    grid.set(0, 0, { buildingId: 5 });
+    grid.set(1, 0, { buildingId: 0 }); // no building
+    grid.set(2, 0, { buildingId: 8 });
+    const count = applyDisasterDamage(grid, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }]);
+    expect(count).toBe(2); // only 2 had buildings
   });
 });

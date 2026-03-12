@@ -140,6 +140,25 @@ export function formatDisasterMessage(d: Disaster): string {
   return `Disaster: ${DISASTER_NAMES[d.type] ?? d.type} at (${d.epicenterX},${d.epicenterY})! Intensity: ${Math.round(d.intensity * 100)}%`;
 }
 
+/**
+ * Apply disaster damage to the grid: clear buildingId for all damaged cells.
+ * Returns the number of buildings destroyed. Pure domain logic (SRP: extracted from Game.ts).
+ */
+export function applyDisasterDamage(
+  grid: { getCell(x: number, y: number): { buildingId: number } | null; setCell(x: number, y: number, data: { buildingId: number }): void },
+  damagedCells: { x: number; y: number }[],
+): number {
+  let count = 0;
+  for (const { x, y } of damagedCells) {
+    const cell = grid.getCell(x, y);
+    if (cell && cell.buildingId !== 0) {
+      grid.setCell(x, y, { buildingId: 0 });
+      count++;
+    }
+  }
+  return count;
+}
+
 export interface RandomDisasterResult {
   disaster: Disaster;
   damagedCells: { x: number; y: number }[];

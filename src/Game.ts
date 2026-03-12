@@ -24,7 +24,7 @@ import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
-import { tryRandomDisaster, formatDisasterMessage } from './core/climate/Disaster';
+import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
 import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
@@ -33,7 +33,7 @@ import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
-import { getAirportFootprint, getAirportBuildCost, type AirportSize } from './core/transport/AirportSystem';
+import { getAirportFootprint, getAirportBuildCost, canPlaceAirport, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
@@ -735,24 +735,13 @@ export class Game {
   /** Place an airport at (x,y). Returns true on success, false (with funds refunded) on failure. */
   private placeAirport(x: number, y: number, cost: number): boolean {
     const airportSize: AirportSize = this.selectedAirportSize ?? 'SMALL';
-    const footprint = getAirportFootprint(airportSize);
-    const half = Math.floor(footprint / 2);
 
-    // Check all NxN cells are free
-    for (let dy = -half; dy <= half; dy++) {
-      for (let dx = -half; dx <= half; dx++) {
-        const c = this.state.grid.getCell(x + dx, y + dy);
-        if (!c) {
-          this.state.budget.funds += cost;
-          this.showNotification('Airport area is out of bounds');
-          return false;
-        }
-        if (c.roadType !== RoadType.NONE || c.buildingId !== 0) {
-          this.state.budget.funds += cost;
-          this.showNotification('Airport area is not fully clear');
-          return false;
-        }
-      }
+    // Validate footprint (data-driven, extracted to core)
+    const check = canPlaceAirport(this.state.grid, x, y, airportSize);
+    if (!check.ok) {
+      this.state.budget.funds += cost;
+      this.showNotification(getBuildReasonMessage(check.reason));
+      return false;
     }
 
     const pop = this.state.citizens.getPopulation();
@@ -765,6 +754,8 @@ export class Game {
     }
 
     // Set all NxN cells to airport buildingId
+    const footprint = getAirportFootprint(airportSize);
+    const half = Math.floor(footprint / 2);
     for (let dy = -half; dy <= half; dy++) {
       for (let dx = -half; dx <= half; dx++) {
         this.state.grid.setCell(x + dx, y + dy, { buildingId: getInfraBuildingId('airport') });
@@ -1354,14 +1345,7 @@ export class Game {
     const result = tryRandomDisaster(this.state.grid.width, this.state.grid.height, pop);
     if (!result) return;
 
-    // Apply damage to grid
-    for (const { x, y } of result.damagedCells) {
-      const cell = this.state.grid.getCell(x, y);
-      if (cell && cell.buildingId !== 0) {
-        this.state.grid.setCell(x, y, { buildingId: 0 });
-      }
-    }
-
+    applyDisasterDamage(this.state.grid, result.damagedCells);
     this.audioManager.playSfx('disaster');
     this.showNotification(formatDisasterMessage(result.disaster), 10);
     this.dirty.buildings = true;
