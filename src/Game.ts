@@ -747,31 +747,18 @@ export class Game {
     // Services store center coordinates, so compute center from primary cell
     const { cx, cy } = getInfraCenterById(px, py, buildingId);
 
-    // Data-driven civic service removal (OCP: add new services in InfraServiceActions)
+    // Data-driven civic service + transport stop removal (OCP: add new types in InfraServiceActions)
     const infraCfg = getInfraConfigById(buildingId);
     if (infraCfg) {
       const actions = INFRA_SERVICE_ACTIONS[infraCfg.type];
       if (actions) {
-        actions.remove(this.state as unknown as InfraServiceContext, cx, cy);
+        // Transport stops use primary cell coordinates, civic services use center
+        const isTransportStop = ['bus_stop', 'metro_station', 'train_station', 'ferry_dock'].includes(infraCfg.type);
+        const rx = isTransportStop ? px : cx;
+        const ry = isTransportStop ? py : cy;
+        actions.remove(this.state as unknown as InfraServiceContext, rx, ry);
         return;
       }
-    }
-    // Transport stops (use primary cell coordinates, not center)
-    if (buildingId === getInfraBuildingId('bus_stop')) {
-      const sid = this.state.bus.getStops().find(s => s.x === px && s.y === py);
-      if (sid) this.state.bus.removeStop(sid.id);
-    }
-    if (buildingId === getInfraBuildingId('metro_station')) {
-      const sid = this.state.metro.getStations().find(s => s.x === px && s.y === py);
-      if (sid) this.state.metro.removeStation(sid.id);
-    }
-    if (buildingId === getInfraBuildingId('train_station')) {
-      const sid = this.state.rail.getStations().find(s => s.x === px && s.y === py);
-      if (sid) this.state.rail.removeStation(sid.id);
-    }
-    if (buildingId === getInfraBuildingId('ferry_dock')) {
-      const sid = this.state.ferry.getDocks().find(s => s.x === px && s.y === py);
-      if (sid) this.state.ferry.removeDock(sid.id);
     }
     if (buildingId === getInfraBuildingId('airport')) {
       // Find airport whose footprint covers this cell

@@ -15,6 +15,10 @@ export interface InfraServiceContext {
   garbage: { addFacility(x: number, y: number, type: string): void; removeFacility(id: number): void; getFacilities(): readonly { id: number; x: number; y: number }[] };
   sewage: { addTreatmentPlant(x: number, y: number): void; removeTreatmentPlant(id: number): void; getTreatmentPlants(): readonly { id: number; x: number; y: number }[] };
   deathCare: { addCemetery(x: number, y: number): void; removeCemetery(id: number): void; getCemeteries(): readonly { id: number; x: number; y: number }[] };
+  bus: { addStop(x: number, y: number): void; removeStop(id: number): void; getStops(): readonly { id: number; x: number; y: number }[] };
+  metro: { addStation(x: number, y: number): void; removeStation(id: number): void; getStations(): readonly { id: number; x: number; y: number }[] };
+  rail: { buildStation(x: number, y: number): void; removeStation(id: number): void; getStations(): readonly { id: number; x: number; y: number }[] };
+  ferry: { addDock(x: number, y: number): void; removeDock(id: number): void; getDocks(): readonly { id: number; x: number; y: number }[] };
 }
 
 export interface InfraServiceAction {
@@ -85,5 +89,21 @@ export const INFRA_SERVICE_ACTIONS: Partial<Record<InfraType, InfraServiceAction
   cemetery: {
     place: (ctx, cx, cy) => ctx.deathCare.addCemetery(cx, cy),
     remove: (ctx, cx, cy) => findAndRemove(() => ctx.deathCare.getCemeteries(), id => ctx.deathCare.removeCemetery(id), cx, cy),
+  },
+  bus_stop: {
+    place: (ctx, cx, cy) => ctx.bus.addStop(cx, cy),
+    remove: (ctx, cx, cy) => findAndRemove(() => ctx.bus.getStops(), id => ctx.bus.removeStop(id), cx, cy),
+  },
+  metro_station: {
+    place: (ctx, cx, cy) => ctx.metro.addStation(cx, cy),
+    remove: (ctx, cx, cy) => findAndRemove(() => ctx.metro.getStations(), id => ctx.metro.removeStation(id), cx, cy),
+  },
+  train_station: {
+    place: (ctx, cx, cy) => ctx.rail.buildStation(cx, cy),
+    remove: (ctx, cx, cy) => findAndRemove(() => ctx.rail.getStations(), id => ctx.rail.removeStation(id), cx, cy),
+  },
+  ferry_dock: {
+    place: (ctx, cx, cy) => ctx.ferry.addDock(cx, cy),
+    remove: (ctx, cx, cy) => findAndRemove(() => ctx.ferry.getDocks(), id => ctx.ferry.removeDock(id), cx, cy),
   },
 };
