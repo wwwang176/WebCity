@@ -538,9 +538,8 @@ export class Game {
           if (cell.buildingId === getInfraBuildingId('airport')) {
             const key = `airport:${x},${y}`;
             if (demolished.has(key)) continue;
-            // removeInfraService handles clearing all airport cells
-            this.removeInfraService(getInfraBuildingId('airport'), x, y);
-            // Airport already removed by removeInfraService, mark so we skip duplicate hits
+            // Pass raw cell coords; airport action handler uses findAtCell internally
+            this.removeInfraService('airport', x, y);
             demolished.add(key);
             continue;
           }
@@ -551,8 +550,12 @@ export class Game {
             if (demolished.has(key)) continue; // already handled
             demolished.add(key);
 
-            // Remove from service layer using primary cell coords
-            this.removeInfraService(cell.buildingId, primary.x, primary.y);
+            // Compute center from primary cell, then remove from service layer
+            const infraCfg = getInfraConfigById(cell.buildingId);
+            if (infraCfg) {
+              const { cx, cy } = getInfraCenterById(primary.x, primary.y, cell.buildingId);
+              this.removeInfraService(infraCfg.type, cx, cy);
+            }
 
             // Clear all cells of the multi-cell building
             removeInfraFromGrid(this.state.grid, x, y);
@@ -562,7 +565,7 @@ export class Game {
           // Transport stops are 1×1 infrastructure — handle directly
           const infraCfg = getInfraConfigById(cell.buildingId);
           if (infraCfg && infraCfg.width === 1 && infraCfg.height === 1) {
-            this.removeInfraService(cell.buildingId, x, y);
+            this.removeInfraService(infraCfg.type, x, y);
             this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
             continue;
           }
@@ -584,17 +587,11 @@ export class Game {
     this.markAllDirty();
   }
 
-  private removeInfraService(buildingId: number, px: number, py: number): void {
-    // Services store center coordinates, so compute center from primary cell
-    const { cx, cy } = getInfraCenterById(px, py, buildingId);
-
-    // Fully data-driven removal (OCP: add new types in InfraServiceActions)
-    const infraCfg = getInfraConfigById(buildingId);
-    if (infraCfg) {
-      const actions = INFRA_SERVICE_ACTIONS[infraCfg.type];
-      if (actions) {
-        actions.remove(this.state as unknown as InfraServiceContext, cx, cy);
-      }
+  /** Dispatch to data-driven service removal. Callers provide resolved coordinates. */
+  private removeInfraService(infraType: InfraType, cx: number, cy: number): void {
+    const actions = INFRA_SERVICE_ACTIONS[infraType];
+    if (actions) {
+      actions.remove(this.state as unknown as InfraServiceContext, cx, cy);
     }
   }
 
