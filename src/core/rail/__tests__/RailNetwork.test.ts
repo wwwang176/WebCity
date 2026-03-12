@@ -134,8 +134,8 @@ describe('rebuildRailNetworkFromGrid', () => {
   it('should populate rail network from grid rail cells', () => {
     const grid = new Grid(10, 10);
     // Two adjacent rail cells connected east-west
-    grid.setCell(3, 5, { railType: RailType.SINGLE, railFlags: TrackDirection.EAST });
-    grid.setCell(4, 5, { railType: RailType.SINGLE, railFlags: TrackDirection.WEST });
+    grid.setCell(3, 5, { railType: RailType.STANDARD, railFlags: TrackDirection.EAST });
+    grid.setCell(4, 5, { railType: RailType.STANDARD, railFlags: TrackDirection.WEST });
 
     const net = new RailNetwork();
     rebuildRailNetworkFromGrid(grid, net);

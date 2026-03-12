@@ -38,6 +38,7 @@ import { getAirportFootprint, type AirportSize } from './core/transport/AirportS
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
+import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } from './core/building/InfraDetails';
 import { calculateZoneIncomes } from './core/economy/IncomeCalculator';
 
 import {
@@ -1445,61 +1446,7 @@ export class Game {
   }
 
   private getInfraDetails(type: InfraType, cx: number, cy: number): Record<string, string | number> {
-    const s = this.state;
-    switch (type) {
-      case 'police': {
-        const st = findAtPosition(s.police.getStations(), cx, cy);
-        return { 'Radius': st?.radius ?? 15, 'Coverage': s.police.getCoverage(cx, cy) ? 'Yes' : 'No' };
-      }
-      case 'fire': {
-        const st = findAtPosition(s.fire.getStations(), cx, cy);
-        return { 'Radius': st?.radius ?? 15, 'Active Fires': s.fire.getActiveFires().length };
-      }
-      case 'hospital': {
-        const h = findAtPosition(s.health.getHospitals(), cx, cy);
-        return { 'Capacity': h?.capacity ?? 100, 'Radius': h?.radius ?? 12 };
-      }
-      case 'school': {
-        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'elementary');
-        return { 'Type': 'Elementary', 'Capacity': sc?.capacity ?? 200, 'Radius': sc?.radius ?? 10 };
-      }
-      case 'school_high': {
-        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'highschool');
-        return { 'Type': 'High School', 'Capacity': sc?.capacity ?? 300, 'Radius': sc?.radius ?? 12 };
-      }
-      case 'school_univ': {
-        const sc = s.education.getSchools().find(sc => sc.x === cx && sc.y === cy && sc.type === 'university');
-        return { 'Type': 'University', 'Capacity': sc?.capacity ?? 500, 'Radius': sc?.radius ?? 15 };
-      }
-      case 'park': {
-        const p = findAtPosition(s.parks.getParks(), cx, cy);
-        return { 'Radius': p?.radius ?? 5 };
-      }
-      case 'garbage': {
-        const f = findAtPosition(s.garbage.getFacilities(), cx, cy);
-        return { 'Capacity': f?.capacity ?? 1000, 'Load': f?.currentLoad ?? 0 };
-      }
-      case 'sewage': {
-        return { 'Status': 'Active' };
-      }
-      case 'cemetery': {
-        const c = findAtPosition(s.deathCare.getCemeteries(), cx, cy);
-        return { 'Capacity': c?.capacity ?? 500, 'Used': c?.used ?? 0 };
-      }
-      case 'power': {
-        const p = findAtPosition(s.power.getPlants(), cx, cy);
-        return { 'Output': p?.output ?? 500, 'Type': p?.type ?? 'coal' };
-      }
-      case 'water': {
-        const w = findAtPosition(s.water.getPlants(), cx, cy);
-        return { 'Output': w?.output ?? 500 };
-      }
-      case 'airport': {
-        return { 'Status': 'Operational' };
-      }
-      default:
-        return {};
-    }
+    return getInfraDetailsFromCtx(this.state as InfraDetailContext, type, cx, cy);
   }
 
   getSelectedBuilding(): SelectedBuilding | null {
