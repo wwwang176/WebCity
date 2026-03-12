@@ -1072,22 +1072,22 @@ export class Game {
     const cell = this.state.grid.getCell(sel.x, sel.y);
     if (!cell) return;
 
-    if (sel.kind === 'infra') {
-      const cells: { x: number; y: number }[] = [];
-      forEachMultiCell(this.state.grid, sel.x, sel.y, (cx, cy) => cells.push({ x: cx, y: cy }));
-      if (cells.length === 0) return;
-      this.highlightManager.highlightCells(
-        cells, 0xffffff,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-      );
-    } else {
-      this.highlightManager.highlightCells(
-        [{ x: sel.x, y: sel.y }], 0xffffff,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-      );
-    }
+    const cells = sel.kind === 'infra'
+      ? this.getMultiCellFootprint(sel.x, sel.y)
+      : [{ x: sel.x, y: sel.y }];
+    if (cells.length === 0) return;
+    this.highlightManager.highlightCells(
+      cells, 0xffffff,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+    );
+  }
+
+  /** Collect all cells of a multi-cell building footprint (DRY). */
+  private getMultiCellFootprint(x: number, y: number): { x: number; y: number }[] {
+    const cells: { x: number; y: number }[] = [];
+    forEachMultiCell(this.state.grid, x, y, (cx, cy) => cells.push({ x: cx, y: cy }));
+    return cells;
   }
 
   /** Collect all InstancedMeshes that support highlight (buildings + roads + tracks). */
@@ -1121,8 +1121,7 @@ export class Game {
         const gy = this.gridCursor.gridY;
         const cell = this.state.grid.getCell(gx, gy);
         if (cell && isInfrastructureBuilding(cell.buildingId)) {
-          const cells: { x: number; y: number }[] = [];
-          forEachMultiCell(this.state.grid, gx, gy, (cx, cy) => cells.push({ x: cx, y: cy }));
+          const cells = this.getMultiCellFootprint(gx, gy);
           if (cells.length > 0) {
             this.highlightManager.highlightCells(
               cells, 0xff0000,
