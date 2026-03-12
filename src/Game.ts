@@ -24,7 +24,7 @@ import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
-import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
+import { tryRandomDisaster, DISASTER_NAMES } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
@@ -153,11 +153,6 @@ const ZONE_PREVIEW_COLORS: Record<string, number> = {
   zone_r: 0x4caf50, zone_rh: 0x2e7d32,
   zone_c: 0x2196f3, zone_ch: 0x1565c0,
   zone_i: 0xffc107, zone_o: 0x9c27b0,
-};
-
-/** Disaster type display names. */
-const DISASTER_NAMES: Record<string, string> = {
-  EARTHQUAKE: 'Earthquake', TORNADO: 'Tornado', FOREST_FIRE: 'Forest Fire',
 };
 
 /** Key-to-tool bindings (OCP: add new keyboard shortcuts here). */
@@ -1650,37 +1645,21 @@ export class Game {
   }
 
   private checkRandomDisaster(): void {
-    // ~0.1% chance per tick (roughly once per 1000 ticks / ~4 game months)
-    if (Math.random() > 0.001) return;
     const pop = this.state.citizens.getPopulation();
-    if (pop < 50) return; // no disasters in tiny cities
+    const result = tryRandomDisaster(this.state.grid.width, this.state.grid.height, pop);
+    if (!result) return;
 
-    const types = [DisasterType.EARTHQUAKE, DisasterType.TORNADO, DisasterType.FOREST_FIRE];
-    const type = types[Math.floor(Math.random() * types.length)]!;
-    const x = Math.floor(Math.random() * this.state.grid.width);
-    const y = Math.floor(Math.random() * this.state.grid.height);
-    const intensity = 0.3 + Math.random() * 0.5;
-
-    const disaster = createDisaster(type, x, y, intensity);
-
-    // Apply damage to buildings in radius
-    for (let dy = -disaster.radius; dy <= disaster.radius; dy++) {
-      for (let dx = -disaster.radius; dx <= disaster.radius; dx++) {
-        const bx = x + dx;
-        const by = y + dy;
-        const cell = this.state.grid.getCell(bx, by);
-        if (!cell || cell.buildingId === 0) continue;
-        const damage = calculateDamage(disaster, bx, by);
-        if (damage > 0.5) {
-          // Destroy building
-          this.state.grid.setCell(bx, by, { buildingId: 0 });
-        }
+    // Apply damage to grid
+    for (const { x, y } of result.damagedCells) {
+      const cell = this.state.grid.getCell(x, y);
+      if (cell && cell.buildingId !== 0) {
+        this.state.grid.setCell(x, y, { buildingId: 0 });
       }
     }
 
-    // Play disaster sound and show notification
+    const d = result.disaster;
     this.audioManager.playSfx('disaster');
-    this.showNotification(`Disaster: ${DISASTER_NAMES[type] ?? type} at (${x},${y})! Intensity: ${Math.round(intensity * 100)}%`, 10);
+    this.showNotification(`Disaster: ${DISASTER_NAMES[d.type] ?? d.type} at (${d.epicenterX},${d.epicenterY})! Intensity: ${Math.round(d.intensity * 100)}%`, 10);
     this.dirty.buildings = true;
     this.dirty.terrain = true;
     this.onUIUpdate?.();

@@ -113,3 +113,71 @@ export function calculateDamage(
   const calculator = DISASTER_CALCULATORS[disaster.type];
   return calculator ? calculator(disaster, buildingX, buildingY) : 0;
 }
+
+/** Random disaster event configuration. */
+export const RANDOM_DISASTER = {
+  /** Probability per tick (~0.1%, roughly once per 1000 ticks / ~4 game months) */
+  CHANCE_PER_TICK: 0.001,
+  /** Minimum population before disasters can occur */
+  MIN_POPULATION: 50,
+  /** Minimum disaster intensity */
+  MIN_INTENSITY: 0.3,
+  /** Maximum disaster intensity (min + random * range) */
+  MAX_INTENSITY: 0.8,
+  /** Damage threshold above which buildings are destroyed */
+  DAMAGE_DESTROY_THRESHOLD: 0.5,
+  /** Disaster types eligible for random events */
+  ELIGIBLE_TYPES: [DisasterType.EARTHQUAKE, DisasterType.TORNADO, DisasterType.FOREST_FIRE] as readonly DisasterType[],
+} as const;
+
+/** Disaster display names. */
+export const DISASTER_NAMES: Record<string, string> = {
+  EARTHQUAKE: 'Earthquake', TORNADO: 'Tornado', FOREST_FIRE: 'Forest Fire',
+};
+
+export interface RandomDisasterResult {
+  disaster: Disaster;
+  damagedCells: { x: number; y: number }[];
+}
+
+/**
+ * Roll for a random disaster. Returns null if none triggered.
+ * @param gridWidth - grid width for random placement
+ * @param gridHeight - grid height for random placement
+ * @param population - current city population
+ * @param probabilityOverride - override for testing (0-1, default uses CHANCE_PER_TICK)
+ */
+export function tryRandomDisaster(
+  gridWidth: number,
+  gridHeight: number,
+  population: number,
+  probabilityOverride?: number,
+): RandomDisasterResult | null {
+  const chance = probabilityOverride ?? RANDOM_DISASTER.CHANCE_PER_TICK;
+  if (Math.random() > chance) return null;
+  if (population < RANDOM_DISASTER.MIN_POPULATION) return null;
+
+  const types = RANDOM_DISASTER.ELIGIBLE_TYPES;
+  const type = types[Math.floor(Math.random() * types.length)]!;
+  const x = Math.floor(Math.random() * gridWidth);
+  const y = Math.floor(Math.random() * gridHeight);
+  const intensity = RANDOM_DISASTER.MIN_INTENSITY + Math.random() * (RANDOM_DISASTER.MAX_INTENSITY - RANDOM_DISASTER.MIN_INTENSITY);
+
+  const disaster = createDisaster(type, x, y, intensity);
+
+  // Compute cells that would be damaged above threshold
+  const damagedCells: { x: number; y: number }[] = [];
+  for (let dy = -disaster.radius; dy <= disaster.radius; dy++) {
+    for (let dx = -disaster.radius; dx <= disaster.radius; dx++) {
+      const bx = x + dx;
+      const by = y + dy;
+      if (bx < 0 || bx >= gridWidth || by < 0 || by >= gridHeight) continue;
+      const damage = calculateDamage(disaster, bx, by);
+      if (damage > RANDOM_DISASTER.DAMAGE_DESTROY_THRESHOLD) {
+        damagedCells.push({ x: bx, y: by });
+      }
+    }
+  }
+
+  return { disaster, damagedCells };
+}

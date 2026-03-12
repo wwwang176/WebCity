@@ -6,6 +6,8 @@ import {
   calculateDamage,
   DISASTER_MODIFIERS,
   DISASTER_CALCULATORS,
+  tryRandomDisaster,
+  RANDOM_DISASTER,
 } from '../Disaster';
 import {
   addWarningTower,
@@ -294,5 +296,36 @@ describe('DISASTER_CALCULATORS', () => {
       const damage = DISASTER_CALCULATORS[type](disaster, 10, 10);
       expect(damage).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('tryRandomDisaster', () => {
+  it('should skip when population is below minimum', () => {
+    const result = tryRandomDisaster(20, 20, 10, 1.0); // force probability=1
+    expect(result).toBeNull();
+  });
+
+  it('should trigger disaster when probability passes and population is sufficient', () => {
+    const result = tryRandomDisaster(20, 20, 100, 1.0); // force probability=1
+    expect(result).not.toBeNull();
+    expect(result!.disaster).toBeDefined();
+    expect(result!.disaster.epicenterX).toBeGreaterThanOrEqual(0);
+    expect(result!.disaster.epicenterX).toBeLessThan(20);
+    expect(result!.disaster.intensity).toBeGreaterThanOrEqual(0.3);
+    expect(result!.disaster.intensity).toBeLessThanOrEqual(0.8);
+  });
+
+  it('should return damaged cells list', () => {
+    const result = tryRandomDisaster(20, 20, 100, 1.0);
+    expect(result).not.toBeNull();
+    expect(Array.isArray(result!.damagedCells)).toBe(true);
+  });
+
+  it('RANDOM_DISASTER constants should have sensible values', () => {
+    expect(RANDOM_DISASTER.CHANCE_PER_TICK).toBeGreaterThan(0);
+    expect(RANDOM_DISASTER.CHANCE_PER_TICK).toBeLessThan(0.1);
+    expect(RANDOM_DISASTER.MIN_POPULATION).toBeGreaterThan(0);
+    expect(RANDOM_DISASTER.MIN_INTENSITY).toBeGreaterThan(0);
+    expect(RANDOM_DISASTER.MAX_INTENSITY).toBeLessThanOrEqual(1);
   });
 });
