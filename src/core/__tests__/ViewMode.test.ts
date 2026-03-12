@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import {
   ViewMode,
   VIEW_MODE_OPACITY,
-  isSurfaceVehicle,
   UNDERGROUND_TUNNEL_Y,
   TRANSPORT_STOP_IDS,
   getTransportStopType,
@@ -108,32 +107,6 @@ describe('ViewMode', () => {
 
   });
 
-  describe('isSurfaceVehicle', () => {
-    it('car 是地面車輛', () => {
-      expect(isSurfaceVehicle('car')).toBe(true);
-    });
-
-    it('bus 是地面車輛', () => {
-      expect(isSurfaceVehicle('bus')).toBe(true);
-    });
-
-    it('transport_bus 是地面車輛', () => {
-      expect(isSurfaceVehicle('transport_bus')).toBe(true);
-    });
-
-    it('truck 是地面車輛', () => {
-      expect(isSurfaceVehicle('truck')).toBe(true);
-    });
-
-    it('metro_train now rendered separately (all VehicleRenderer types are surface)', () => {
-      expect(isSurfaceVehicle('metro_train')).toBe(true);
-    });
-
-    it('ferry 是地面車輛', () => {
-      expect(isSurfaceVehicle('ferry')).toBe(true);
-    });
-
-  });
 });
 
 // ── Transport stop identification ──
