@@ -147,6 +147,25 @@ const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
   road_6lane: RoadType.SIX_LANE, road_highway: RoadType.HIGHWAY,
 };
 
+/** Tool-to-cursor-color mapping (OCP: add new tool colors here). */
+const TOOL_CURSOR_COLORS: Record<ToolType, number> = {
+  select: 0xffffff,
+  road: 0x424242, road_rural: 0x424242, road_2lane: 0x424242,
+  road_4lane: 0x424242, road_6lane: 0x424242, road_highway: 0x424242,
+  rail_track: 0x6d4c2a,
+  zone_r: 0x4caf50, zone_rh: 0x2e7d32,
+  zone_c: 0x2196f3, zone_ch: 0x1565c0,
+  zone_i: 0xffa726, zone_o: 0xab47bc,
+  demolish: 0xf44336,
+  power: 0xffeb3b, water: 0x03a9f4, police: 0x3f51b5, fire: 0xd32f2f,
+  hospital: 0xe91e63, school: 0x795548, school_high: 0x6d4c41,
+  school_univ: 0x4e342e, park: 0x4caf50, garbage: 0x795548,
+  sewage: 0x607d8b, cemetery: 0x9e9e9e,
+  district: 0xab47bc,
+  bus_stop: 0xff9800, metro_station: 0x00bcd4, train_station: 0x795548,
+  ferry_dock: 0x0288d1, airport: 0x9c27b0,
+};
+
 /** Map of tool types to auto-activated overlay (OCP: add new overlay mappings here). */
 const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
   power: 'power', water: 'water', police: 'police', fire: 'fire',
@@ -1244,49 +1263,13 @@ export class Game {
   }
 
   private updateCursorColor(): void {
-    const toolColors: Record<ToolType, number> = {
-      select: 0xffffff,
-      road: 0x424242,
-      road_rural: 0x424242,
-      road_2lane: 0x424242,
-      road_4lane: 0x424242,
-      road_6lane: 0x424242,
-      road_highway: 0x424242,
-      rail_track: 0x6d4c2a,
-      zone_r: 0x4caf50,
-      zone_rh: 0x2e7d32,
-      zone_c: 0x2196f3,
-      zone_ch: 0x1565c0,
-      zone_i: 0xffa726,
-      zone_o: 0xab47bc,
-      demolish: 0xf44336,
-      power: 0xffeb3b,
-      water: 0x03a9f4,
-      police: 0x3f51b5,
-      fire: 0xd32f2f,
-      hospital: 0xe91e63,
-      school: 0x795548,
-      school_high: 0x6d4c41,
-      school_univ: 0x4e342e,
-      park: 0x4caf50,
-      garbage: 0x795548,
-      sewage: 0x607d8b,
-      cemetery: 0x9e9e9e,
-      district: 0xab47bc,
-      bus_stop: 0xff9800,
-      metro_station: 0x00bcd4,
-      train_station: 0x795548,
-      ferry_dock: 0x0288d1,
-      airport: 0x9c27b0,
-    };
-    this.gridCursor.setColor(toolColors[this.currentTool] ?? 0xffffff);
+    this.gridCursor.setColor(TOOL_CURSOR_COLORS[this.currentTool] ?? 0xffffff);
     // Demolish tool gets higher opacity for red highlight preview
     this.gridCursor.setOpacity(this.currentTool === 'demolish' ? 0.6 : 0.3);
   }
 
   isRoadTool(tool?: ToolType): boolean {
-    const t = tool ?? this.currentTool;
-    return t === 'road' || t === 'road_rural' || t === 'road_2lane' || t === 'road_4lane' || t === 'road_6lane' || t === 'road_highway';
+    return TOOL_TO_ROAD_TYPE[tool ?? this.currentTool] !== undefined;
   }
 
   isRailTool(tool?: ToolType): boolean {
@@ -1512,7 +1495,7 @@ export class Game {
   }
 
   private isZoneTool(): boolean {
-    return ['zone_r', 'zone_rh', 'zone_c', 'zone_ch', 'zone_i', 'zone_o'].includes(this.currentTool);
+    return TOOL_TO_ZONE[this.currentTool] !== undefined;
   }
 
   setOverlay(type: OverlayType): void {
