@@ -8,14 +8,14 @@ import { findAtPosition } from '../grid/GridHelpers';
 export interface InfraServiceContext {
   power: { addPlant(p: { x: number; y: number; output: number; pollution: number; type: string }): void; removePlant(x: number, y: number): void };
   water: { addPlant(p: { x: number; y: number; output: number }): void; removePlant(x: number, y: number): void };
-  police: { addStation(x: number, y: number): void; removeStation(id: number): void; getStations(): readonly { id: number; x: number; y: number }[] };
-  fire: { addStation(x: number, y: number): void; removeStation(id: number): void; getStations(): readonly { id: number; x: number; y: number }[] };
-  health: { addHospital(x: number, y: number): void; removeHospital(id: number): void; getHospitals(): readonly { id: number; x: number; y: number }[] };
-  education: { addSchool(x: number, y: number, level: string): void; removeSchool(id: number): void; getSchools(): readonly { id: number; x: number; y: number }[] };
-  parks: { addPark(x: number, y: number): void; removePark(id: number): void; getParks(): readonly { id: number; x: number; y: number }[] };
-  garbage: { addFacility(x: number, y: number, type: string): void; removeFacility(id: number): void; getFacilities(): readonly { id: number; x: number; y: number }[] };
-  sewage: { addTreatmentPlant(x: number, y: number): void; removeTreatmentPlant(id: number): void; getTreatmentPlants(): readonly { id: number; x: number; y: number }[] };
-  deathCare: { addCemetery(x: number, y: number): void; removeCemetery(id: number): void; getCemeteries(): readonly { id: number; x: number; y: number }[] };
+  police: { addStation(x: number, y: number): void; removeStation(id: string): void; getStations(): readonly { id: string; x: number; y: number }[] };
+  fire: { addStation(x: number, y: number): void; removeStation(id: string): void; getStations(): readonly { id: string; x: number; y: number }[] };
+  health: { addHospital(x: number, y: number): void; removeHospital(id: string): void; getHospitals(): readonly { id: string; x: number; y: number }[] };
+  education: { addSchool(x: number, y: number, level: string): void; removeSchool(id: string): void; getSchools(): readonly { id: string; x: number; y: number }[] };
+  parks: { addPark(x: number, y: number): void; removePark(id: string): void; getParks(): readonly { id: string; x: number; y: number }[] };
+  garbage: { addFacility(x: number, y: number, type: string): void; removeFacility(id: string): void; getFacilities(): readonly { id: string; x: number; y: number }[] };
+  sewage: { addTreatmentPlant(x: number, y: number): void; removeTreatmentPlant(id: string): void; getTreatmentPlants(): readonly { id: string; x: number; y: number }[] };
+  deathCare: { addCemetery(x: number, y: number): void; removeCemetery(id: string): void; getCemeteries(): readonly { id: string; x: number; y: number }[] };
   bus: { addStop(x: number, y: number): void; removeStop(id: number): void; getStops(): readonly { id: number; x: number; y: number }[] };
   metro: { addStation(x: number, y: number): void; removeStation(id: number): void; getStations(): readonly { id: number; x: number; y: number }[] };
   rail: { buildStation(x: number, y: number): void; removeStation(id: number): void; getStations(): readonly { id: number; x: number; y: number }[] };
@@ -30,9 +30,9 @@ export interface InfraServiceAction {
 }
 
 /** Helper: find and remove an entity by coordinates from a service's collection. */
-function findAndRemove(
-  getList: () => readonly { id: number; x: number; y: number }[],
-  removeFn: (id: number) => void,
+function findAndRemove<Id extends string | number>(
+  getList: () => readonly { id: Id; x: number; y: number }[],
+  removeFn: (id: Id) => void,
   cx: number,
   cy: number,
 ): void {

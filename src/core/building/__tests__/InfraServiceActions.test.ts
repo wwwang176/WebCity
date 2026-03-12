@@ -20,72 +20,32 @@ describe('INFRA_SERVICE_ACTIONS', () => {
 
   it('place("police") should call police.addStation', () => {
     const addStation = vi.fn();
-    const ctx: InfraServiceContext = {
-      power: { addPlant: vi.fn(), removePlant: vi.fn() },
-      water: { addPlant: vi.fn(), removePlant: vi.fn() },
-      police: { addStation, removeStation: vi.fn(), getStations: vi.fn().mockReturnValue([]) },
-      fire: { addStation: vi.fn(), removeStation: vi.fn(), getStations: vi.fn().mockReturnValue([]) },
-      health: { addHospital: vi.fn(), removeHospital: vi.fn(), getHospitals: vi.fn().mockReturnValue([]) },
-      education: { addSchool: vi.fn(), removeSchool: vi.fn(), getSchools: vi.fn().mockReturnValue([]) },
-      parks: { addPark: vi.fn(), removePark: vi.fn(), getParks: vi.fn().mockReturnValue([]) },
-      garbage: { addFacility: vi.fn(), removeFacility: vi.fn(), getFacilities: vi.fn().mockReturnValue([]) },
-      sewage: { addTreatmentPlant: vi.fn(), removeTreatmentPlant: vi.fn(), getTreatmentPlants: vi.fn().mockReturnValue([]) },
-      deathCare: { addCemetery: vi.fn(), removeCemetery: vi.fn(), getCemeteries: vi.fn().mockReturnValue([]) },
-    };
+    const ctx = makeMinimalCtx();
+    ctx.police = { addStation, removeStation: vi.fn(), getStations: vi.fn().mockReturnValue([]) };
     INFRA_SERVICE_ACTIONS.police!.place(ctx, 5, 10);
     expect(addStation).toHaveBeenCalledWith(5, 10);
   });
 
   it('remove("police") should find and remove station by coordinates', () => {
     const removeStation = vi.fn();
-    const ctx: InfraServiceContext = {
-      power: { addPlant: vi.fn(), removePlant: vi.fn() },
-      water: { addPlant: vi.fn(), removePlant: vi.fn() },
-      police: { addStation: vi.fn(), removeStation, getStations: vi.fn().mockReturnValue([{ id: 42, x: 5, y: 10 }]) },
-      fire: { addStation: vi.fn(), removeStation: vi.fn(), getStations: vi.fn().mockReturnValue([]) },
-      health: { addHospital: vi.fn(), removeHospital: vi.fn(), getHospitals: vi.fn().mockReturnValue([]) },
-      education: { addSchool: vi.fn(), removeSchool: vi.fn(), getSchools: vi.fn().mockReturnValue([]) },
-      parks: { addPark: vi.fn(), removePark: vi.fn(), getParks: vi.fn().mockReturnValue([]) },
-      garbage: { addFacility: vi.fn(), removeFacility: vi.fn(), getFacilities: vi.fn().mockReturnValue([]) },
-      sewage: { addTreatmentPlant: vi.fn(), removeTreatmentPlant: vi.fn(), getTreatmentPlants: vi.fn().mockReturnValue([]) },
-      deathCare: { addCemetery: vi.fn(), removeCemetery: vi.fn(), getCemeteries: vi.fn().mockReturnValue([]) },
-    };
+    const ctx = makeMinimalCtx();
+    ctx.police = { addStation: vi.fn(), removeStation, getStations: vi.fn().mockReturnValue([{ id: 'police_42', x: 5, y: 10 }]) };
     INFRA_SERVICE_ACTIONS.police!.remove(ctx, 5, 10);
-    expect(removeStation).toHaveBeenCalledWith(42);
+    expect(removeStation).toHaveBeenCalledWith('police_42');
   });
 
   it('remove should do nothing if station not found at coordinates', () => {
     const removeStation = vi.fn();
-    const ctx: InfraServiceContext = {
-      power: { addPlant: vi.fn(), removePlant: vi.fn() },
-      water: { addPlant: vi.fn(), removePlant: vi.fn() },
-      police: { addStation: vi.fn(), removeStation, getStations: vi.fn().mockReturnValue([{ id: 1, x: 0, y: 0 }]) },
-      fire: { addStation: vi.fn(), removeStation: vi.fn(), getStations: vi.fn().mockReturnValue([]) },
-      health: { addHospital: vi.fn(), removeHospital: vi.fn(), getHospitals: vi.fn().mockReturnValue([]) },
-      education: { addSchool: vi.fn(), removeSchool: vi.fn(), getSchools: vi.fn().mockReturnValue([]) },
-      parks: { addPark: vi.fn(), removePark: vi.fn(), getParks: vi.fn().mockReturnValue([]) },
-      garbage: { addFacility: vi.fn(), removeFacility: vi.fn(), getFacilities: vi.fn().mockReturnValue([]) },
-      sewage: { addTreatmentPlant: vi.fn(), removeTreatmentPlant: vi.fn(), getTreatmentPlants: vi.fn().mockReturnValue([]) },
-      deathCare: { addCemetery: vi.fn(), removeCemetery: vi.fn(), getCemeteries: vi.fn().mockReturnValue([]) },
-    };
+    const ctx = makeMinimalCtx();
+    ctx.police = { addStation: vi.fn(), removeStation, getStations: vi.fn().mockReturnValue([{ id: 'police_1', x: 0, y: 0 }]) };
     INFRA_SERVICE_ACTIONS.police!.remove(ctx, 99, 99);
     expect(removeStation).not.toHaveBeenCalled();
   });
 
   it('place("power") should call power.addPlant with default params', () => {
     const addPlant = vi.fn();
-    const ctx: InfraServiceContext = {
-      power: { addPlant, removePlant: vi.fn() },
-      water: { addPlant: vi.fn(), removePlant: vi.fn() },
-      police: { addStation: vi.fn(), removeStation: vi.fn(), getStations: vi.fn().mockReturnValue([]) },
-      fire: { addStation: vi.fn(), removeStation: vi.fn(), getStations: vi.fn().mockReturnValue([]) },
-      health: { addHospital: vi.fn(), removeHospital: vi.fn(), getHospitals: vi.fn().mockReturnValue([]) },
-      education: { addSchool: vi.fn(), removeSchool: vi.fn(), getSchools: vi.fn().mockReturnValue([]) },
-      parks: { addPark: vi.fn(), removePark: vi.fn(), getParks: vi.fn().mockReturnValue([]) },
-      garbage: { addFacility: vi.fn(), removeFacility: vi.fn(), getFacilities: vi.fn().mockReturnValue([]) },
-      sewage: { addTreatmentPlant: vi.fn(), removeTreatmentPlant: vi.fn(), getTreatmentPlants: vi.fn().mockReturnValue([]) },
-      deathCare: { addCemetery: vi.fn(), removeCemetery: vi.fn(), getCemeteries: vi.fn().mockReturnValue([]) },
-    };
+    const ctx = makeMinimalCtx();
+    ctx.power = { addPlant, removePlant: vi.fn() };
     INFRA_SERVICE_ACTIONS.power!.place(ctx, 3, 7);
     expect(addPlant).toHaveBeenCalledWith({ x: 3, y: 7, output: 500, pollution: 10, type: 'coal' });
   });

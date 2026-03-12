@@ -591,7 +591,7 @@ export class Game {
   private removeInfraService(infraType: InfraType, cx: number, cy: number): void {
     const actions = INFRA_SERVICE_ACTIONS[infraType];
     if (actions) {
-      actions.remove(this.state as unknown as InfraServiceContext, cx, cy);
+      actions.remove(this.state as InfraServiceContext, cx, cy);
     }
   }
 
@@ -646,7 +646,7 @@ export class Game {
     // Register with service layer at center coordinates (data-driven via InfraServiceActions)
     const actions = INFRA_SERVICE_ACTIONS[type];
     if (actions) {
-      actions.place(this.state as unknown as InfraServiceContext, cx, cy);
+      actions.place(this.state as InfraServiceContext, cx, cy);
     }
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
