@@ -19,10 +19,10 @@ const [currentRotation, setCurrentRotation] = createSignal(0);
 const [rciDemand, setRciDemand] = createSignal({ residential: 0, commercial: 0, industrial: 0 });
 const [viewMode, setViewMode] = createSignal<ViewMode>(ViewMode.NORMAL);
 
-// --- Throttled tick signal for modal live-refresh (~2 updates/sec at 60fps) ---
+// --- Throttled tick signal for modal live-refresh (fixed ~6 updates/sec regardless of FPS) ---
 const [tick, setTick] = createSignal(0);
-let uiUpdateCount = 0;
-const UI_TICK_DIVISOR = 10;
+let lastTickTime = 0;
+const TICK_INTERVAL_MS = 160; // ~6 updates/sec
 
 // --- Chart history (accumulated over time) ---
 const CHART_MAX = 60;
@@ -99,9 +99,12 @@ export function initGameStore(game: Game): void {
       if (newFunds.length > ECON_MAX) { newFunds.shift(); newIncome.shift(); newExpenses.shift(); }
       setEconHistory({ funds: newFunds, income: newIncome, expenses: newExpenses });
 
-      // Throttled tick for modal live-refresh
-      uiUpdateCount++;
-      if (uiUpdateCount % UI_TICK_DIVISOR === 0) setTick(t => t + 1);
+      // Throttled tick for modal live-refresh (time-based, FPS-independent)
+      const now = performance.now();
+      if (now - lastTickTime >= TICK_INTERVAL_MS) {
+        lastTickTime = now;
+        setTick(t => t + 1);
+      }
     });
   });
 }
