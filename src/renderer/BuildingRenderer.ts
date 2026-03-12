@@ -1249,208 +1249,269 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildPoliceStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Concrete ground / parking lot base
+    const groundGeo = new THREE.BoxGeometry(1.70, 0.02, 1.70);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, 0.05, cz, false);
+
     // L-shaped main building — long wing
-    const longWingGeo = new THREE.BoxGeometry(0.70, 0.35, 0.35);
-    longWingGeo.translate(-0.05, 0.35 / 2, 0.10);
+    const longWingGeo = new THREE.BoxGeometry(1.20, 0.50, 0.60);
+    longWingGeo.translate(-0.10, 0.50 / 2, -0.25);
     const longWingMat = new THREE.MeshLambertMaterial({ color: 0x3f51b5 });
     this.addInfraMesh(scene, longWingGeo, longWingMat, cx, 0.05, cz);
 
     // L-shaped main building — short wing
-    const shortWingGeo = new THREE.BoxGeometry(0.35, 0.35, 0.40);
-    shortWingGeo.translate(0.25, 0.35 / 2, -0.10);
+    const shortWingGeo = new THREE.BoxGeometry(0.60, 0.50, 0.80);
+    shortWingGeo.translate(0.45, 0.50 / 2, 0.15);
     const shortWingMat = new THREE.MeshLambertMaterial({ color: 0x3949a3 });
     this.addInfraMesh(scene, shortWingGeo, shortWingMat, cx, 0.05, cz);
 
     // Roof for long wing
-    const longRoofGeo = new THREE.BoxGeometry(0.75, 0.03, 0.40);
-    longRoofGeo.translate(-0.05, 0.015, 0.10);
+    const longRoofGeo = new THREE.BoxGeometry(1.28, 0.03, 0.68);
+    longRoofGeo.translate(-0.10, 0.015, -0.25);
     const longRoofMat = new THREE.MeshLambertMaterial({ color: 0x303f9f });
-    this.addInfraMesh(scene, longRoofGeo, longRoofMat, cx, 0.05 + 0.35, cz);
+    this.addInfraMesh(scene, longRoofGeo, longRoofMat, cx, 0.05 + 0.50, cz);
 
     // Roof for short wing
-    const shortRoofGeo = new THREE.BoxGeometry(0.40, 0.03, 0.45);
-    shortRoofGeo.translate(0.25, 0.015, -0.10);
+    const shortRoofGeo = new THREE.BoxGeometry(0.68, 0.03, 0.88);
+    shortRoofGeo.translate(0.45, 0.015, 0.15);
     const shortRoofMat = new THREE.MeshLambertMaterial({ color: 0x303f9f });
-    this.addInfraMesh(scene, shortRoofGeo, shortRoofMat, cx, 0.05 + 0.35, cz);
+    this.addInfraMesh(scene, shortRoofGeo, shortRoofMat, cx, 0.05 + 0.50, cz);
 
     // Watch tower at corner where wings meet
-    const towerGeo = new THREE.BoxGeometry(0.12, 0.25, 0.12);
-    towerGeo.translate(0.10, 0.35 + 0.25 / 2, -0.05);
+    const towerGeo = new THREE.BoxGeometry(0.20, 0.45, 0.20);
+    towerGeo.translate(0.20, 0.50 + 0.45 / 2, -0.10);
     const towerMat = new THREE.MeshLambertMaterial({ color: 0x5c6bc0 });
     this.addInfraMesh(scene, towerGeo, towerMat, cx, 0.05, cz);
 
     // Tower cap
-    const towerCapGeo = new THREE.BoxGeometry(0.15, 0.02, 0.15);
-    towerCapGeo.translate(0.10, 0.35 + 0.25 + 0.01, -0.05);
+    const towerCapGeo = new THREE.BoxGeometry(0.24, 0.02, 0.24);
+    towerCapGeo.translate(0.20, 0.50 + 0.45 + 0.01, -0.10);
     const towerCapMat = new THREE.MeshLambertMaterial({ color: 0x283593 });
     this.addInfraMesh(scene, towerCapGeo, towerCapMat, cx, 0.05, cz);
 
-    // 2 garage doors on front of long wing
+    // 2 garage doors on front of long wing (facing +Z side)
     const garageMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
-    const garage1Geo = new THREE.BoxGeometry(0.16, 0.18, 0.01);
-    garage1Geo.translate(-0.18, 0.18 / 2, 0.10 + 0.35 / 2 + 0.005);
+    const garage1Geo = new THREE.BoxGeometry(0.28, 0.35, 0.01);
+    garage1Geo.translate(-0.30, 0.35 / 2, -0.25 + 0.60 / 2 + 0.005);
     this.addInfraMesh(scene, garage1Geo, garageMat, cx, 0.05, cz);
 
-    const garage2Geo = new THREE.BoxGeometry(0.16, 0.18, 0.01);
-    garage2Geo.translate(0.06, 0.18 / 2, 0.10 + 0.35 / 2 + 0.005);
+    const garage2Geo = new THREE.BoxGeometry(0.28, 0.35, 0.01);
+    garage2Geo.translate(0.08, 0.35 / 2, -0.25 + 0.60 / 2 + 0.005);
     this.addInfraMesh(scene, garage2Geo, garageMat, cx, 0.05, cz);
 
     // Blue police light on tower top
-    const lightGeo = new THREE.SphereGeometry(0.025, 6, 6);
-    lightGeo.translate(0.10, 0.35 + 0.25 + 0.02 + 0.025, -0.05);
+    const lightGeo = new THREE.SphereGeometry(0.035, 6, 6);
+    lightGeo.translate(0.20, 0.50 + 0.45 + 0.02 + 0.035, -0.10);
     const lightMat = new THREE.MeshBasicMaterial({ color: 0x42a5f5 });
     this.addInfraMesh(scene, lightGeo, lightMat, cx, 0.05, cz, false);
 
     // White stripe band on long wing
-    const stripeGeo = new THREE.BoxGeometry(0.70, 0.03, 0.36);
-    stripeGeo.translate(-0.05, 0.35 / 2, 0.10);
+    const stripeGeo = new THREE.BoxGeometry(1.20, 0.04, 0.61);
+    stripeGeo.translate(-0.10, 0.50 / 2, -0.25);
     const stripeMat = new THREE.MeshLambertMaterial({ color: 0xe8eaf6 });
     this.addInfraMesh(scene, stripeGeo, stripeMat, cx, 0.05, cz);
 
+    // 2 patrol car boxes on parking area
+    const carMat1 = new THREE.MeshLambertMaterial({ color: 0x222222 });
+    const car1Geo = new THREE.BoxGeometry(0.14, 0.07, 0.08);
+    car1Geo.translate(-0.50, 0.07 / 2, 0.50);
+    this.addInfraMesh(scene, car1Geo, carMat1, cx, 0.05, cz);
+
+    const carMat2 = new THREE.MeshLambertMaterial({ color: 0xeeeeee });
+    const car2Geo = new THREE.BoxGeometry(0.14, 0.07, 0.08);
+    car2Geo.translate(-0.25, 0.07 / 2, 0.50);
+    this.addInfraMesh(scene, car2Geo, carMat2, cx, 0.05, cz);
+
     // Flagpole
-    const flagpoleGeo = new THREE.CylinderGeometry(0.006, 0.006, 0.30, 4);
-    flagpoleGeo.translate(-0.30, 0.30 / 2, 0.35);
+    const flagpoleGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.40, 4);
+    flagpoleGeo.translate(-0.70, 0.40 / 2, 0.70);
     const flagpoleMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
     this.addInfraMesh(scene, flagpoleGeo, flagpoleMat, cx, 0.05, cz);
   }
 
   private buildFireStation(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Paved ground base
+    const groundGeo = new THREE.BoxGeometry(1.70, 0.02, 1.70);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xa0a0a0 }), cx, 0.05, cz, false);
+
     // Main garage building
-    const mainGeo = new THREE.BoxGeometry(0.75, 0.35, 0.55);
-    mainGeo.translate(0, 0.35 / 2, 0.05);
+    const mainGeo = new THREE.BoxGeometry(1.30, 0.50, 0.80);
+    mainGeo.translate(0, 0.50 / 2, 0.10);
     const mainMat = new THREE.MeshLambertMaterial({ color: 0xd32f2f });
     this.addInfraMesh(scene, mainGeo, mainMat, cx, 0.05, cz);
 
     // Roof
-    const roofGeo = new THREE.BoxGeometry(0.80, 0.03, 0.60);
-    roofGeo.translate(0, 0.015, 0.05);
+    const roofGeo = new THREE.BoxGeometry(1.38, 0.03, 0.88);
+    roofGeo.translate(0, 0.015, 0.10);
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xb71c1c });
-    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.35, cz);
+    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.50, cz);
 
-    // 3 garage doors evenly spaced on front face
+    // 4 garage doors evenly spaced on front face (+Z)
     const garageMat = new THREE.MeshLambertMaterial({ color: 0xef9a9a });
-    for (let i = -1; i <= 1; i++) {
-      const doorGeo = new THREE.BoxGeometry(0.18, 0.28, 0.01);
-      doorGeo.translate(i * 0.22, 0.28 / 2, 0.05 + 0.55 / 2 + 0.005);
+    for (let i = 0; i < 4; i++) {
+      const doorGeo = new THREE.BoxGeometry(0.25, 0.38, 0.01);
+      doorGeo.translate(-0.45 + i * 0.30, 0.38 / 2, 0.10 + 0.80 / 2 + 0.005);
       this.addInfraMesh(scene, doorGeo, garageMat, cx, 0.05, cz);
     }
 
-    // Drill tower (back)
-    const towerGeo = new THREE.BoxGeometry(0.15, 0.55, 0.15);
-    towerGeo.translate(0.25, 0.55 / 2, -0.25);
+    // Rear office/dormitory building
+    const rearGeo = new THREE.BoxGeometry(0.60, 0.50, 0.35);
+    rearGeo.translate(-0.30, 0.50 / 2, -0.50);
+    const rearMat = new THREE.MeshLambertMaterial({ color: 0xc62828 });
+    this.addInfraMesh(scene, rearGeo, rearMat, cx, 0.05, cz);
+
+    // Rear building roof
+    const rearRoofGeo = new THREE.BoxGeometry(0.66, 0.03, 0.40);
+    rearRoofGeo.translate(-0.30, 0.015, -0.50);
+    this.addInfraMesh(scene, rearRoofGeo, roofMat, cx, 0.05 + 0.50, cz);
+
+    // Drill tower (back-right)
+    const towerGeo = new THREE.BoxGeometry(0.25, 0.80, 0.25);
+    towerGeo.translate(0.55, 0.80 / 2, -0.50);
     const towerMat = new THREE.MeshLambertMaterial({ color: 0xc62828 });
     this.addInfraMesh(scene, towerGeo, towerMat, cx, 0.05, cz);
 
     // Tower cap
-    const towerCapGeo = new THREE.BoxGeometry(0.18, 0.02, 0.18);
-    towerCapGeo.translate(0.25, 0.55 + 0.01, -0.25);
+    const towerCapGeo = new THREE.BoxGeometry(0.30, 0.02, 0.30);
+    towerCapGeo.translate(0.55, 0.80 + 0.01, -0.50);
     const towerCapMat = new THREE.MeshLambertMaterial({ color: 0xb71c1c });
     this.addInfraMesh(scene, towerCapGeo, towerCapMat, cx, 0.05, cz);
 
     // 2 tower windows
     const windowMat = new THREE.MeshLambertMaterial({ color: 0xffcdd2 });
-    const win1Geo = new THREE.BoxGeometry(0.06, 0.06, 0.01);
-    win1Geo.translate(0.25, 0.40, -0.25 + 0.15 / 2 + 0.005);
+    const win1Geo = new THREE.BoxGeometry(0.10, 0.10, 0.01);
+    win1Geo.translate(0.55, 0.60, -0.50 + 0.25 / 2 + 0.005);
     this.addInfraMesh(scene, win1Geo, windowMat, cx, 0.05, cz);
 
-    const win2Geo = new THREE.BoxGeometry(0.06, 0.06, 0.01);
-    win2Geo.translate(0.25, 0.28, -0.25 + 0.15 / 2 + 0.005);
+    const win2Geo = new THREE.BoxGeometry(0.10, 0.10, 0.01);
+    win2Geo.translate(0.55, 0.40, -0.50 + 0.25 / 2 + 0.005);
     this.addInfraMesh(scene, win2Geo, windowMat, cx, 0.05, cz);
 
     // Red warning light on roof
-    const lightGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.02, 8);
-    lightGeo.translate(0, 0.35 + 0.03 + 0.01, 0.05);
+    const lightGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.025, 8);
+    lightGeo.translate(0, 0.50 + 0.03 + 0.015, 0.10);
     const lightMat = new THREE.MeshBasicMaterial({ color: 0xff1744 });
     this.addInfraMesh(scene, lightGeo, lightMat, cx, 0.05, cz, false);
 
-    // Hose reel on side (rotated to lie flat)
-    const hoseGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.03, 8);
+    // Front driveway area
+    const drivewayGeo = new THREE.BoxGeometry(1.40, 0.015, 0.30);
+    drivewayGeo.translate(0, 0.008, 0.70);
+    this.addInfraMesh(scene, drivewayGeo, new THREE.MeshLambertMaterial({ color: 0x909090 }), cx, 0.05, cz, false);
+
+    // Fire truck parked in front
+    const truckGeo = new THREE.BoxGeometry(0.18, 0.08, 0.10);
+    truckGeo.translate(0.30, 0.08 / 2, 0.68);
+    this.addInfraMesh(scene, truckGeo, new THREE.MeshLambertMaterial({ color: 0xff0000 }), cx, 0.05, cz);
+
+    // Hose reel on side
+    const hoseGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.04, 8);
     hoseGeo.rotateZ(Math.PI / 2);
-    hoseGeo.translate(-0.75 / 2 - 0.005, 0.15, 0.10);
+    hoseGeo.translate(-1.30 / 2 - 0.005, 0.20, 0.20);
     const hoseMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     this.addInfraMesh(scene, hoseGeo, hoseMat, cx, 0.05, cz);
   }
 
   private buildHospital(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Parking lot ground in front
+    const parkingGeo = new THREE.BoxGeometry(1.50, 0.015, 0.80);
+    parkingGeo.translate(0, 0.008, 0.90);
+    this.addInfraMesh(scene, parkingGeo, new THREE.MeshLambertMaterial({ color: 0xa0a0a0 }), cx, 0.05, cz, false);
+
     // Main wing
-    const mainGeo = new THREE.BoxGeometry(0.85, 0.55, 0.55);
-    mainGeo.translate(0, 0.55 / 2, 0.05);
+    const mainGeo = new THREE.BoxGeometry(1.50, 0.75, 1.00);
+    mainGeo.translate(0, 0.75 / 2, 0.10);
     const mainMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
     this.addInfraMesh(scene, mainGeo, mainMat, cx, 0.05, cz);
 
     // Side wing
-    const sideGeo = new THREE.BoxGeometry(0.35, 0.40, 0.40);
-    sideGeo.translate(-0.35, 0.40 / 2, -0.30);
+    const sideGeo = new THREE.BoxGeometry(0.80, 0.60, 0.80);
+    sideGeo.translate(-0.30, 0.60 / 2, -0.70);
     const sideMat = new THREE.MeshLambertMaterial({ color: 0xe0e0e0 });
     this.addInfraMesh(scene, sideGeo, sideMat, cx, 0.05, cz);
 
+    // Connecting corridor between wings
+    const corridorGeo = new THREE.BoxGeometry(0.30, 0.20, 0.40);
+    corridorGeo.translate(-0.30, 0.20 / 2, -0.20);
+    this.addInfraMesh(scene, corridorGeo, new THREE.MeshLambertMaterial({ color: 0xdce0e2 }), cx, 0.05, cz);
+
     // Main roof
-    const mainRoofGeo = new THREE.BoxGeometry(0.90, 0.03, 0.60);
-    mainRoofGeo.translate(0, 0.015, 0.05);
+    const mainRoofGeo = new THREE.BoxGeometry(1.58, 0.03, 1.08);
+    mainRoofGeo.translate(0, 0.015, 0.10);
     const mainRoofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
-    this.addInfraMesh(scene, mainRoofGeo, mainRoofMat, cx, 0.05 + 0.55, cz);
+    this.addInfraMesh(scene, mainRoofGeo, mainRoofMat, cx, 0.05 + 0.75, cz);
 
     // Side roof
-    const sideRoofGeo = new THREE.BoxGeometry(0.40, 0.03, 0.45);
-    sideRoofGeo.translate(-0.35, 0.015, -0.30);
+    const sideRoofGeo = new THREE.BoxGeometry(0.88, 0.03, 0.88);
+    sideRoofGeo.translate(-0.30, 0.015, -0.70);
     const sideRoofMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
-    this.addInfraMesh(scene, sideRoofGeo, sideRoofMat, cx, 0.05 + 0.40, cz);
+    this.addInfraMesh(scene, sideRoofGeo, sideRoofMat, cx, 0.05 + 0.60, cz);
 
     // Helipad circle on main roof
-    const helipadGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.01, 16);
-    helipadGeo.translate(0.15, 0.55 + 0.03 + 0.005, 0.05);
+    const helipadGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.01, 12);
+    helipadGeo.translate(0.30, 0.75 + 0.03 + 0.005, 0.10);
     const helipadMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     this.addInfraMesh(scene, helipadGeo, helipadMat, cx, 0.05, cz);
 
     // H marking — horizontal bar
-    const hMarkHGeo = new THREE.BoxGeometry(0.08, 0.015, 0.02);
-    hMarkHGeo.translate(0.15, 0.55 + 0.03 + 0.015, 0.05);
+    const hMarkHGeo = new THREE.BoxGeometry(0.14, 0.015, 0.04);
+    hMarkHGeo.translate(0.30, 0.75 + 0.03 + 0.015, 0.10);
     const hMarkMat = new THREE.MeshLambertMaterial({ color: 0xe91e63 });
     this.addInfraMesh(scene, hMarkHGeo, hMarkMat, cx, 0.05, cz);
 
     // H marking — vertical bar left
-    const hMarkV1Geo = new THREE.BoxGeometry(0.02, 0.015, 0.08);
-    hMarkV1Geo.translate(0.15 - 0.03, 0.55 + 0.03 + 0.015, 0.05);
+    const hMarkV1Geo = new THREE.BoxGeometry(0.04, 0.015, 0.14);
+    hMarkV1Geo.translate(0.30 - 0.05, 0.75 + 0.03 + 0.015, 0.10);
     this.addInfraMesh(scene, hMarkV1Geo, hMarkMat, cx, 0.05, cz);
 
     // H marking — vertical bar right
-    const hMarkV2Geo = new THREE.BoxGeometry(0.02, 0.015, 0.08);
-    hMarkV2Geo.translate(0.15 + 0.03, 0.55 + 0.03 + 0.015, 0.05);
+    const hMarkV2Geo = new THREE.BoxGeometry(0.04, 0.015, 0.14);
+    hMarkV2Geo.translate(0.30 + 0.05, 0.75 + 0.03 + 0.015, 0.10);
     this.addInfraMesh(scene, hMarkV2Geo, hMarkMat, cx, 0.05, cz);
 
     // Red cross on front wall — horizontal
-    const crossHGeo = new THREE.BoxGeometry(0.15, 0.02, 0.04);
-    crossHGeo.translate(0, 0.40, 0.05 + 0.55 / 2 + 0.005);
+    const crossHGeo = new THREE.BoxGeometry(0.22, 0.03, 0.06);
+    crossHGeo.translate(0, 0.55, 0.10 + 1.00 / 2 + 0.005);
     const crossMat = new THREE.MeshLambertMaterial({ color: 0xe91e63 });
     this.addInfraMesh(scene, crossHGeo, crossMat, cx, 0.05, cz);
 
     // Red cross on front wall — vertical
-    const crossVGeo = new THREE.BoxGeometry(0.04, 0.02, 0.15);
-    crossVGeo.translate(0, 0.40, 0.05 + 0.55 / 2 + 0.005);
+    const crossVGeo = new THREE.BoxGeometry(0.06, 0.03, 0.22);
+    crossVGeo.translate(0, 0.55, 0.10 + 1.00 / 2 + 0.005);
     this.addInfraMesh(scene, crossVGeo, crossMat, cx, 0.05, cz);
 
     // ER canopy protruding from front
-    const canopyGeo = new THREE.BoxGeometry(0.30, 0.02, 0.15);
-    canopyGeo.translate(0, 0.20 + 0.01, 0.05 + 0.55 / 2 + 0.15 / 2);
+    const canopyGeo = new THREE.BoxGeometry(0.60, 0.02, 0.30);
+    canopyGeo.translate(0, 0.25 + 0.01, 0.10 + 1.00 / 2 + 0.30 / 2);
     const canopyMat = new THREE.MeshLambertMaterial({ color: 0xcfd8dc });
     this.addInfraMesh(scene, canopyGeo, canopyMat, cx, 0.05, cz);
 
     // Canopy pillar left
     const pillarMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
-    const pillar1Geo = new THREE.CylinderGeometry(0.012, 0.012, 0.20, 6);
-    pillar1Geo.translate(-0.12, 0.20 / 2, 0.05 + 0.55 / 2 + 0.15);
+    const pillar1Geo = new THREE.CylinderGeometry(0.018, 0.018, 0.25, 6);
+    pillar1Geo.translate(-0.25, 0.25 / 2, 0.10 + 1.00 / 2 + 0.28);
     this.addInfraMesh(scene, pillar1Geo, pillarMat, cx, 0.05, cz);
 
     // Canopy pillar right
-    const pillar2Geo = new THREE.CylinderGeometry(0.012, 0.012, 0.20, 6);
-    pillar2Geo.translate(0.12, 0.20 / 2, 0.05 + 0.55 / 2 + 0.15);
+    const pillar2Geo = new THREE.CylinderGeometry(0.018, 0.018, 0.25, 6);
+    pillar2Geo.translate(0.25, 0.25 / 2, 0.10 + 1.00 / 2 + 0.28);
     this.addInfraMesh(scene, pillar2Geo, pillarMat, cx, 0.05, cz);
 
-    // Ambulance under canopy
-    const ambulanceGeo = new THREE.BoxGeometry(0.10, 0.08, 0.06);
-    ambulanceGeo.translate(0, 0.08 / 2, 0.05 + 0.55 / 2 + 0.08);
+    // 2 ambulance boxes on parking area
     const ambulanceMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    this.addInfraMesh(scene, ambulanceGeo, ambulanceMat, cx, 0.05, cz);
+    const amb1Geo = new THREE.BoxGeometry(0.14, 0.06, 0.08);
+    amb1Geo.translate(-0.30, 0.06 / 2, 0.95);
+    this.addInfraMesh(scene, amb1Geo, ambulanceMat, cx, 0.05, cz);
+
+    const amb2Geo = new THREE.BoxGeometry(0.14, 0.06, 0.08);
+    amb2Geo.translate(0.10, 0.06 / 2, 0.95);
+    this.addInfraMesh(scene, amb2Geo, ambulanceMat, cx, 0.05, cz);
+
+    // Green garden area on one side
+    const gardenGeo = new THREE.BoxGeometry(0.60, 0.015, 0.50);
+    gardenGeo.translate(0.40, 0.008, -0.85);
+    this.addInfraMesh(scene, gardenGeo, new THREE.MeshLambertMaterial({ color: 0x66bb6a }), cx, 0.05, cz, false);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1458,212 +1519,285 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildElementarySchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
-    // Classroom building (1 story, brown)
-    const bodyGeo = new THREE.BoxGeometry(0.65, 0.25, 0.35);
-    bodyGeo.translate(0, 0.25 / 2, 0);
+    // Low perimeter wall
+    const wallMat = new THREE.MeshLambertMaterial({ color: 0xbcaaa4 });
+    // Front wall
+    const wallFGeo = new THREE.BoxGeometry(1.70, 0.06, 0.03);
+    wallFGeo.translate(0, 0.03, 0.84);
+    this.addInfraMesh(scene, wallFGeo, wallMat, cx, 0.05, cz);
+    // Back wall
+    const wallBGeo = new THREE.BoxGeometry(1.70, 0.06, 0.03);
+    wallBGeo.translate(0, 0.03, -0.84);
+    this.addInfraMesh(scene, wallBGeo, wallMat, cx, 0.05, cz);
+    // Left wall
+    const wallLGeo = new THREE.BoxGeometry(0.03, 0.06, 1.70);
+    wallLGeo.translate(-0.84, 0.03, 0);
+    this.addInfraMesh(scene, wallLGeo, wallMat, cx, 0.05, cz);
+    // Right wall
+    const wallRGeo = new THREE.BoxGeometry(0.03, 0.06, 1.70);
+    wallRGeo.translate(0.84, 0.03, 0);
+    this.addInfraMesh(scene, wallRGeo, wallMat, cx, 0.05, cz);
+
+    // Main classroom building (1 story, brown)
+    const bodyGeo = new THREE.BoxGeometry(1.10, 0.35, 0.65);
+    bodyGeo.translate(-0.20, 0.35 / 2, -0.35);
     const bodyMat = new THREE.MeshLambertMaterial({ color: 0x795548 });
     this.addInfraMesh(scene, bodyGeo, bodyMat, cx, 0.05, cz);
 
-    // Colorful tilted roof (orange-red)
-    const roofGeo = new THREE.BoxGeometry(0.70, 0.03, 0.42);
+    // Main roof
+    const roofGeo = new THREE.BoxGeometry(1.18, 0.03, 0.72);
     roofGeo.rotateX(0.05);
-    roofGeo.translate(0, 0.015, 0);
+    roofGeo.translate(-0.20, 0.015, -0.35);
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xff7043 });
-    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.25, cz);
+    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.35, cz);
 
-    // Entrance porch (protruding from front)
-    const porchGeo = new THREE.BoxGeometry(0.12, 0.20, 0.08);
-    porchGeo.translate(0, 0.20 / 2, -0.35 / 2 - 0.08 / 2);
+    // Second classroom wing parallel to main
+    const wing2Geo = new THREE.BoxGeometry(0.80, 0.30, 0.50);
+    wing2Geo.translate(-0.30, 0.30 / 2, 0.25);
+    const wing2Mat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
+    this.addInfraMesh(scene, wing2Geo, wing2Mat, cx, 0.05, cz);
+
+    // Second wing roof
+    const roof2Geo = new THREE.BoxGeometry(0.88, 0.03, 0.56);
+    roof2Geo.rotateX(0.05);
+    roof2Geo.translate(-0.30, 0.015, 0.25);
+    this.addInfraMesh(scene, roof2Geo, roofMat, cx, 0.05 + 0.30, cz);
+
+    // Entrance porch (protruding from main building front)
+    const porchGeo = new THREE.BoxGeometry(0.22, 0.30, 0.12);
+    porchGeo.translate(-0.20, 0.30 / 2, -0.35 - 0.65 / 2 - 0.12 / 2);
     const porchMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
     this.addInfraMesh(scene, porchGeo, porchMat, cx, 0.05, cz);
 
     // Porch roof
-    const porchRoofGeo = new THREE.BoxGeometry(0.16, 0.02, 0.12);
-    porchRoofGeo.translate(0, 0.01, -0.35 / 2 - 0.08 / 2);
+    const porchRoofGeo = new THREE.BoxGeometry(0.28, 0.02, 0.16);
+    porchRoofGeo.translate(-0.20, 0.01, -0.35 - 0.65 / 2 - 0.12 / 2);
     const porchRoofMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
-    this.addInfraMesh(scene, porchRoofGeo, porchRoofMat, cx, 0.05 + 0.20, cz);
+    this.addInfraMesh(scene, porchRoofGeo, porchRoofMat, cx, 0.05 + 0.30, cz);
 
-    // Playground ground (offset to the right side)
-    const playGeo = new THREE.BoxGeometry(0.35, 0.01, 0.40);
-    playGeo.translate(0.50, 0.005, 0);
+    // Playground ground (right side)
+    const playGeo = new THREE.BoxGeometry(0.80, 0.01, 0.80);
+    playGeo.translate(0.40, 0.005, 0.30);
     const playMat = new THREE.MeshLambertMaterial({ color: 0xa5d6a7 });
-    this.addInfraMesh(scene, playGeo, playMat, cx, 0.05, cz);
+    this.addInfraMesh(scene, playGeo, playMat, cx, 0.05, cz, false);
 
     // Swing frame
-    const swingGeo = new THREE.BoxGeometry(0.08, 0.12, 0.02);
-    swingGeo.translate(0.45, 0.12 / 2, -0.08);
+    const swingGeo = new THREE.BoxGeometry(0.14, 0.20, 0.03);
+    swingGeo.translate(0.25, 0.20 / 2, 0.20);
     const swingMat = new THREE.MeshLambertMaterial({ color: 0xff8a65 });
     this.addInfraMesh(scene, swingGeo, swingMat, cx, 0.05, cz);
 
     // Slide (yellow, tilted)
-    const slideGeo = new THREE.BoxGeometry(0.04, 0.10, 0.02);
+    const slideGeo = new THREE.BoxGeometry(0.08, 0.18, 0.03);
     slideGeo.rotateX(-0.4);
-    slideGeo.translate(0.55, 0.10 / 2, 0.05);
+    slideGeo.translate(0.55, 0.18 / 2, 0.35);
     const slideMat = new THREE.MeshLambertMaterial({ color: 0xffd54f });
     this.addInfraMesh(scene, slideGeo, slideMat, cx, 0.05, cz);
 
     // Tree trunk
-    const trunkGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.10, 5);
-    trunkGeo.translate(-0.40, 0.10 / 2, -0.12);
+    const trunkGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.15, 5);
+    trunkGeo.translate(-0.65, 0.15 / 2, 0.55);
     const trunkMat = new THREE.MeshLambertMaterial({ color: 0x6d4c41 });
     this.addInfraMesh(scene, trunkGeo, trunkMat, cx, 0.05, cz);
 
     // Tree canopy
-    const canopyGeo = new THREE.SphereGeometry(0.06, 6, 5);
-    canopyGeo.translate(-0.40, 0.10 + 0.04, -0.12);
+    const canopyGeo = new THREE.SphereGeometry(0.10, 6, 5);
+    canopyGeo.translate(-0.65, 0.15 + 0.06, 0.55);
     const canopyMat = new THREE.MeshLambertMaterial({ color: 0x66bb6a });
     this.addInfraMesh(scene, canopyGeo, canopyMat, cx, 0.05, cz);
 
     // Flagpole
-    const flagGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.25, 4);
-    flagGeo.translate(-0.30, 0.25 / 2, -0.22);
+    const flagGeo = new THREE.CylinderGeometry(0.007, 0.007, 0.35, 4);
+    flagGeo.translate(0.70, 0.35 / 2, -0.70);
     const flagMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
     this.addInfraMesh(scene, flagGeo, flagMat, cx, 0.05, cz);
   }
 
   private buildHighSchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Entrance plaza (paved)
+    const plazaGeo = new THREE.BoxGeometry(0.60, 0.015, 0.30);
+    plazaGeo.translate(0, 0.008, -1.15);
+    this.addInfraMesh(scene, plazaGeo, new THREE.MeshLambertMaterial({ color: 0xbcaaa4 }), cx, 0.05, cz, false);
+
     // Main teaching block (2 stories)
-    const mainGeo = new THREE.BoxGeometry(0.80, 0.40, 0.40);
-    mainGeo.translate(0, 0.40 / 2, 0);
+    const mainGeo = new THREE.BoxGeometry(1.40, 0.60, 0.70);
+    mainGeo.translate(0, 0.60 / 2, -0.60);
     const mainMat = new THREE.MeshLambertMaterial({ color: 0x6d4c41 });
     this.addInfraMesh(scene, mainGeo, mainMat, cx, 0.05, cz);
 
     // Main roof
-    const roofGeo = new THREE.BoxGeometry(0.85, 0.03, 0.45);
-    roofGeo.translate(0, 0.015, 0);
+    const roofGeo = new THREE.BoxGeometry(1.48, 0.03, 0.78);
+    roofGeo.translate(0, 0.015, -0.60);
     const roofMat = new THREE.MeshLambertMaterial({ color: 0x4e342e });
-    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.40, cz);
+    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.05 + 0.60, cz);
 
     // Clock tower (center, sitting on roof)
-    const towerGeo = new THREE.BoxGeometry(0.10, 0.22, 0.10);
-    towerGeo.translate(0, 0.22 / 2, 0);
+    const towerGeo = new THREE.BoxGeometry(0.20, 0.40, 0.20);
+    towerGeo.translate(0, 0.40 / 2, -0.60);
     const towerMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
-    this.addInfraMesh(scene, towerGeo, towerMat, cx, 0.05 + 0.40 + 0.03, cz);
+    this.addInfraMesh(scene, towerGeo, towerMat, cx, 0.05 + 0.60 + 0.03, cz);
 
     // Tower spire
-    const spireGeo = new THREE.ConeGeometry(0.08, 0.08, 4);
-    spireGeo.translate(0, 0.08 / 2, 0);
+    const spireGeo = new THREE.ConeGeometry(0.14, 0.12, 4);
+    spireGeo.translate(0, 0.12 / 2, -0.60);
     const spireMat = new THREE.MeshLambertMaterial({ color: 0x4e342e });
-    this.addInfraMesh(scene, spireGeo, spireMat, cx, 0.05 + 0.40 + 0.03 + 0.22, cz);
+    this.addInfraMesh(scene, spireGeo, spireMat, cx, 0.05 + 0.60 + 0.03 + 0.40, cz);
 
-    // Clock face (on tower front)
-    const clockGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.01, 8);
+    // Clock face (on tower front, facing -Z)
+    const clockGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.01, 8);
     clockGeo.rotateX(Math.PI / 2);
-    clockGeo.translate(0, 0.14, -0.051);
+    clockGeo.translate(0, 0.25, -0.60 - 0.101);
     const clockMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.addInfraMesh(scene, clockGeo, clockMat, cx, 0.05 + 0.40 + 0.03, cz, false);
+    this.addInfraMesh(scene, clockGeo, clockMat, cx, 0.05 + 0.60 + 0.03, cz, false);
 
-    // 3 entrance columns (spaced on front)
+    // Gymnasium building
+    const gymGeo = new THREE.BoxGeometry(0.70, 0.60, 0.45);
+    gymGeo.translate(-0.30, 0.60 / 2, 0.25);
+    const gymMat = new THREE.MeshLambertMaterial({ color: 0x795548 });
+    this.addInfraMesh(scene, gymGeo, gymMat, cx, 0.05, cz);
+
+    // Gymnasium flat roof
+    const gymRoofGeo = new THREE.BoxGeometry(0.76, 0.03, 0.50);
+    gymRoofGeo.translate(-0.30, 0.015, 0.25);
+    this.addInfraMesh(scene, gymRoofGeo, roofMat, cx, 0.05 + 0.60, cz);
+
+    // 3 entrance columns (spaced on front, facing -Z)
     const colMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
     for (let i = -1; i <= 1; i++) {
-      const colGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.22, 6);
-      colGeo.translate(i * 0.09, 0.22 / 2, -0.40 / 2 - 0.02);
+      const colGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.35, 6);
+      colGeo.translate(i * 0.16, 0.35 / 2, -0.60 - 0.70 / 2 - 0.03);
       this.addInfraMesh(scene, colGeo, colMat, cx, 0.05, cz);
     }
 
     // Entrance canopy
-    const canopyGeo = new THREE.BoxGeometry(0.25, 0.02, 0.10);
-    canopyGeo.translate(0, 0.01, -0.40 / 2 - 0.02);
+    const canopyGeo = new THREE.BoxGeometry(0.50, 0.02, 0.14);
+    canopyGeo.translate(0, 0.01, -0.60 - 0.70 / 2 - 0.03);
     const canopyMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
-    this.addInfraMesh(scene, canopyGeo, canopyMat, cx, 0.05 + 0.22, cz);
+    this.addInfraMesh(scene, canopyGeo, canopyMat, cx, 0.05 + 0.35, cz);
 
-    // Track ground (to the side)
-    const trackGeo = new THREE.BoxGeometry(0.35, 0.01, 0.50);
-    trackGeo.translate(0.60, 0.005, 0);
+    // Track/sports field
+    const trackGeo = new THREE.BoxGeometry(1.00, 0.01, 1.20);
+    trackGeo.translate(0.30, 0.005, 0.55);
     const trackMat = new THREE.MeshLambertMaterial({ color: 0xc8b896 });
-    this.addInfraMesh(scene, trackGeo, trackMat, cx, 0.05, cz);
+    this.addInfraMesh(scene, trackGeo, trackMat, cx, 0.05, cz, false);
 
     // Track white line
-    const lineGeo = new THREE.BoxGeometry(0.30, 0.012, 0.01);
-    lineGeo.translate(0.60, 0.012, -0.20);
+    const lineGeo = new THREE.BoxGeometry(0.90, 0.012, 0.01);
+    lineGeo.translate(0.30, 0.012, 0.10);
     const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     this.addInfraMesh(scene, lineGeo, lineMat, cx, 0.05, cz, false);
 
     // Flagpole
-    const flagGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.30, 4);
-    flagGeo.translate(-0.38, 0.30 / 2, -0.25);
+    const flagGeo = new THREE.CylinderGeometry(0.007, 0.007, 0.45, 4);
+    flagGeo.translate(-0.75, 0.45 / 2, -1.10);
     const flagMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
     this.addInfraMesh(scene, flagGeo, flagMat, cx, 0.05, cz);
   }
 
   private buildUniversity(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Low perimeter wall/fence
+    const fenceMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
+    const fFGeo = new THREE.BoxGeometry(2.70, 0.06, 0.03);
+    fFGeo.translate(0, 0.03, 1.34);
+    this.addInfraMesh(scene, fFGeo, fenceMat, cx, 0.05, cz);
+    const fBGeo = new THREE.BoxGeometry(2.70, 0.06, 0.03);
+    fBGeo.translate(0, 0.03, -1.34);
+    this.addInfraMesh(scene, fBGeo, fenceMat, cx, 0.05, cz);
+    const fLGeo = new THREE.BoxGeometry(0.03, 0.06, 2.70);
+    fLGeo.translate(-1.34, 0.03, 0);
+    this.addInfraMesh(scene, fLGeo, fenceMat, cx, 0.05, cz);
+    const fRGeo = new THREE.BoxGeometry(0.03, 0.06, 2.70);
+    fRGeo.translate(1.34, 0.03, 0);
+    this.addInfraMesh(scene, fRGeo, fenceMat, cx, 0.05, cz);
+
     // Central main hall
-    const hallGeo = new THREE.BoxGeometry(0.50, 0.55, 0.50);
-    hallGeo.translate(0, 0.55 / 2, 0);
+    const hallGeo = new THREE.BoxGeometry(1.00, 0.75, 1.00);
+    hallGeo.translate(0, 0.75 / 2, 0);
     const hallMat = new THREE.MeshLambertMaterial({ color: 0x4e342e });
     this.addInfraMesh(scene, hallGeo, hallMat, cx, 0.05, cz);
 
     // Left wing
-    const lwGeo = new THREE.BoxGeometry(0.40, 0.40, 0.35);
-    lwGeo.translate(-0.45, 0.40 / 2, 0);
+    const lwGeo = new THREE.BoxGeometry(0.70, 0.60, 0.70);
+    lwGeo.translate(-0.85, 0.60 / 2, 0);
     const wingMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
     this.addInfraMesh(scene, lwGeo, wingMat, cx, 0.05, cz);
 
     // Right wing
-    const rwGeo = new THREE.BoxGeometry(0.40, 0.40, 0.35);
-    rwGeo.translate(0.45, 0.40 / 2, 0);
+    const rwGeo = new THREE.BoxGeometry(0.70, 0.60, 0.70);
+    rwGeo.translate(0.85, 0.60 / 2, 0);
     this.addInfraMesh(scene, rwGeo, wingMat, cx, 0.05, cz);
 
-    // Main roof
-    const mainRoofGeo = new THREE.BoxGeometry(0.55, 0.03, 0.55);
-    mainRoofGeo.translate(0, 0.015, 0);
+    // Rear library building
+    const libGeo = new THREE.BoxGeometry(0.80, 0.60, 0.55);
+    libGeo.translate(0, 0.60 / 2, 0.78);
+    const libMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    this.addInfraMesh(scene, libGeo, libMat, cx, 0.05, cz);
+
+    // Library roof
+    const libRoofGeo = new THREE.BoxGeometry(0.88, 0.03, 0.62);
+    libRoofGeo.translate(0, 0.015, 0.78);
     const darkRoofMat = new THREE.MeshLambertMaterial({ color: 0x3e2723 });
-    this.addInfraMesh(scene, mainRoofGeo, darkRoofMat, cx, 0.05 + 0.55, cz);
+    this.addInfraMesh(scene, libRoofGeo, darkRoofMat, cx, 0.05 + 0.60, cz);
+
+    // Main roof
+    const mainRoofGeo = new THREE.BoxGeometry(1.08, 0.03, 1.08);
+    mainRoofGeo.translate(0, 0.015, 0);
+    this.addInfraMesh(scene, mainRoofGeo, darkRoofMat, cx, 0.05 + 0.75, cz);
 
     // Gold dome (half sphere)
-    const domeGeo = new THREE.SphereGeometry(0.15, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    const domeGeo = new THREE.SphereGeometry(0.28, 10, 8, 0, Math.PI * 2, 0, Math.PI / 2);
     const domeMat = new THREE.MeshLambertMaterial({ color: 0xffd600 });
-    this.addInfraMesh(scene, domeGeo, domeMat, cx, 0.05 + 0.55 + 0.03, cz);
+    this.addInfraMesh(scene, domeGeo, domeMat, cx, 0.05 + 0.75 + 0.03, cz);
 
     // Dome base ring
-    const ringGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.04, 10);
-    ringGeo.translate(0, 0.02, 0);
+    const ringGeo = new THREE.CylinderGeometry(0.30, 0.30, 0.05, 12);
+    ringGeo.translate(0, 0.025, 0);
     const ringMat = new THREE.MeshLambertMaterial({ color: 0xf9a825 });
-    this.addInfraMesh(scene, ringGeo, ringMat, cx, 0.05 + 0.55, cz);
+    this.addInfraMesh(scene, ringGeo, ringMat, cx, 0.05 + 0.75, cz);
 
-    // 4 front columns
+    // 6 front columns
     const colMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
-    for (let i = 0; i < 4; i++) {
-      const colGeo = new THREE.CylinderGeometry(0.015, 0.015, 0.30, 6);
-      colGeo.translate(-0.18 + i * 0.12, 0.30 / 2, -0.50 / 2 - 0.04);
+    for (let i = 0; i < 6; i++) {
+      const colGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.45, 6);
+      colGeo.translate(-0.30 + i * 0.12, 0.45 / 2, -1.00 / 2 - 0.06);
       this.addInfraMesh(scene, colGeo, colMat, cx, 0.05, cz);
     }
 
     // Colonnade top
-    const colTopGeo = new THREE.BoxGeometry(0.45, 0.03, 0.12);
-    colTopGeo.translate(0, 0.015, -0.50 / 2 - 0.04);
+    const colTopGeo = new THREE.BoxGeometry(0.75, 0.04, 0.16);
+    colTopGeo.translate(0, 0.02, -1.00 / 2 - 0.06);
     const colTopMat = new THREE.MeshLambertMaterial({ color: 0x4e342e });
-    this.addInfraMesh(scene, colTopGeo, colTopMat, cx, 0.05 + 0.30, cz);
+    this.addInfraMesh(scene, colTopGeo, colTopMat, cx, 0.05 + 0.45, cz);
 
     // Pediment (flat triangle facing front)
-    const pedGeo = new THREE.ConeGeometry(0.25, 0.08, 3);
+    const pedGeo = new THREE.ConeGeometry(0.40, 0.12, 3);
     pedGeo.rotateX(Math.PI / 2);
     pedGeo.rotateY(Math.PI / 2);
-    pedGeo.translate(0, 0.04, -0.50 / 2 - 0.04);
+    pedGeo.translate(0, 0.06, -1.00 / 2 - 0.06);
     const pedMat = new THREE.MeshLambertMaterial({ color: 0x3e2723 });
-    this.addInfraMesh(scene, pedGeo, pedMat, cx, 0.05 + 0.30 + 0.03, cz);
+    this.addInfraMesh(scene, pedGeo, pedMat, cx, 0.05 + 0.45 + 0.04, cz);
 
     // Courtyard ground (in front)
-    const courtGeo = new THREE.BoxGeometry(0.30, 0.01, 0.30);
-    courtGeo.translate(0, 0.005, -0.50 / 2 - 0.20);
+    const courtGeo = new THREE.BoxGeometry(1.00, 0.01, 1.00);
+    courtGeo.translate(0, 0.005, -0.80);
     const courtMat = new THREE.MeshLambertMaterial({ color: 0xa5d6a7 });
-    this.addInfraMesh(scene, courtGeo, courtMat, cx, 0.05, cz);
+    this.addInfraMesh(scene, courtGeo, courtMat, cx, 0.05, cz, false);
 
     // Fountain pool
-    const fountGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.03, 10);
-    fountGeo.translate(0, 0.03 / 2, -0.50 / 2 - 0.20);
+    const fountGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.04, 10);
+    fountGeo.translate(0, 0.04 / 2, -0.80);
     const fountMat = new THREE.MeshLambertMaterial({ color: 0x90caf9 });
     this.addInfraMesh(scene, fountGeo, fountMat, cx, 0.05, cz);
 
     // Left wing roof
-    const lwRoofGeo = new THREE.BoxGeometry(0.45, 0.03, 0.40);
-    lwRoofGeo.translate(-0.45, 0.015, 0);
-    this.addInfraMesh(scene, lwRoofGeo, darkRoofMat, cx, 0.05 + 0.40, cz);
+    const lwRoofGeo = new THREE.BoxGeometry(0.78, 0.03, 0.78);
+    lwRoofGeo.translate(-0.85, 0.015, 0);
+    this.addInfraMesh(scene, lwRoofGeo, darkRoofMat, cx, 0.05 + 0.60, cz);
 
     // Right wing roof
-    const rwRoofGeo = new THREE.BoxGeometry(0.45, 0.03, 0.40);
-    rwRoofGeo.translate(0.45, 0.015, 0);
-    this.addInfraMesh(scene, rwRoofGeo, darkRoofMat, cx, 0.05 + 0.40, cz);
+    const rwRoofGeo = new THREE.BoxGeometry(0.78, 0.03, 0.78);
+    rwRoofGeo.translate(0.85, 0.015, 0);
+    this.addInfraMesh(scene, rwRoofGeo, darkRoofMat, cx, 0.05 + 0.60, cz);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -1672,185 +1806,243 @@ export class BuildingRenderer {
 
   private buildPark(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
     // Grass base
-    const baseGeo = new THREE.BoxGeometry(0.50, 0.02, 0.50);
+    const baseGeo = new THREE.BoxGeometry(0.85, 0.02, 0.85);
     baseGeo.translate(0, 0.01, 0);
     this.addInfraMesh(scene, baseGeo, new THREE.MeshLambertMaterial({ color: 0x4caf50 }), cx, 0.05, cz, false);
 
     // Big tree trunk (offset to back-left)
-    const bigTrunkGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 5);
-    bigTrunkGeo.translate(-0.12, 0.075, -0.10);
+    const bigTrunkGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.20, 5);
+    bigTrunkGeo.translate(-0.22, 0.10, -0.20);
     this.addInfraMesh(scene, bigTrunkGeo, new THREE.MeshLambertMaterial({ color: 0x6d4c41 }), cx, 0.06, cz);
 
     // Big tree canopy
-    const bigCanopyGeo = new THREE.SphereGeometry(0.10, 6, 5);
-    bigCanopyGeo.translate(-0.12, 0.18, -0.10);
+    const bigCanopyGeo = new THREE.SphereGeometry(0.16, 6, 5);
+    bigCanopyGeo.translate(-0.22, 0.28, -0.20);
     this.addInfraMesh(scene, bigCanopyGeo, new THREE.MeshLambertMaterial({ color: 0x388e3c }), cx, 0.06, cz);
 
     // Small tree trunk (offset to front-right)
-    const smallTrunkGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.10, 5);
-    smallTrunkGeo.translate(0.15, 0.05, 0.12);
+    const smallTrunkGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.14, 5);
+    smallTrunkGeo.translate(0.25, 0.07, 0.22);
     this.addInfraMesh(scene, smallTrunkGeo, new THREE.MeshLambertMaterial({ color: 0x795548 }), cx, 0.06, cz);
 
     // Small tree canopy
-    const smallCanopyGeo = new THREE.SphereGeometry(0.06, 6, 4);
-    smallCanopyGeo.translate(0.15, 0.13, 0.12);
+    const smallCanopyGeo = new THREE.SphereGeometry(0.10, 6, 4);
+    smallCanopyGeo.translate(0.25, 0.20, 0.22);
     this.addInfraMesh(scene, smallCanopyGeo, new THREE.MeshLambertMaterial({ color: 0x66bb6a }), cx, 0.06, cz);
 
     // Fountain pool (center)
-    const poolGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.025, 10);
-    poolGeo.translate(0.02, 0.0125, 0.0);
+    const poolGeo = new THREE.CylinderGeometry(0.10, 0.10, 0.03, 10);
+    poolGeo.translate(0.02, 0.015, 0.0);
     this.addInfraMesh(scene, poolGeo, new THREE.MeshLambertMaterial({ color: 0x78909c }), cx, 0.06, cz);
 
     // Fountain water surface
-    const waterGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.01, 10);
-    waterGeo.translate(0.02, 0.025, 0.0);
+    const waterGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.01, 10);
+    waterGeo.translate(0.02, 0.035, 0.0);
     this.addInfraMesh(scene, waterGeo, new THREE.MeshLambertMaterial({ color: 0x4fc3f7 }), cx, 0.06, cz, false);
 
     // Water jet (glowing)
-    const jetGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.06, 4);
-    jetGeo.translate(0.02, 0.055, 0.0);
+    const jetGeo = new THREE.CylinderGeometry(0.007, 0.007, 0.08, 4);
+    jetGeo.translate(0.02, 0.075, 0.0);
     this.addInfraMesh(scene, jetGeo, new THREE.MeshBasicMaterial({ color: 0xb3e5fc }), cx, 0.06, cz, false);
 
-    // Bench (front-right area)
-    const benchGeo = new THREE.BoxGeometry(0.08, 0.025, 0.03);
-    benchGeo.translate(-0.05, 0.0125, 0.16);
+    // Bench (front-left area)
+    const benchGeo = new THREE.BoxGeometry(0.12, 0.03, 0.04);
+    benchGeo.translate(-0.10, 0.015, 0.28);
     this.addInfraMesh(scene, benchGeo, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, 0.06, cz);
 
+    // Second bench (opposite side)
+    const bench2Geo = new THREE.BoxGeometry(0.12, 0.03, 0.04);
+    bench2Geo.translate(0.18, 0.015, -0.28);
+    this.addInfraMesh(scene, bench2Geo, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, 0.06, cz);
+
     // Walking path (diagonal across park)
-    const pathGeo = new THREE.BoxGeometry(0.06, 0.012, 0.30);
+    const pathGeo = new THREE.BoxGeometry(0.10, 0.012, 0.50);
     pathGeo.rotateY(Math.PI / 4);
     pathGeo.translate(0.0, 0.006, 0.0);
     this.addInfraMesh(scene, pathGeo, new THREE.MeshLambertMaterial({ color: 0xd7ccc8 }), cx, 0.06, cz, false);
+
+    // Small flower bed
+    const flowerGeo = new THREE.BoxGeometry(0.10, 0.08, 0.05);
+    flowerGeo.translate(0.30, 0.04, -0.10);
+    this.addInfraMesh(scene, flowerGeo, new THREE.MeshLambertMaterial({ color: 0xe91e63 }), cx, 0.06, cz);
   }
 
   private buildCemetery(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
     // Ground (grass)
-    const groundGeo = new THREE.BoxGeometry(0.85, 0.02, 0.85);
+    const groundGeo = new THREE.BoxGeometry(1.70, 0.02, 1.70);
     groundGeo.translate(0, 0.01, 0);
     this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0x8bc34a }), cx, 0.05, cz, false);
 
+    // Low stone perimeter wall
+    const wallMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
+    const wFGeo = new THREE.BoxGeometry(1.70, 0.08, 0.04);
+    wFGeo.translate(0, 0.04, 0.83);
+    this.addInfraMesh(scene, wFGeo, wallMat, cx, 0.05, cz);
+    const wBGeo = new THREE.BoxGeometry(1.70, 0.08, 0.04);
+    wBGeo.translate(0, 0.04, -0.83);
+    this.addInfraMesh(scene, wBGeo, wallMat, cx, 0.05, cz);
+    const wLGeo = new THREE.BoxGeometry(0.04, 0.08, 1.70);
+    wLGeo.translate(-0.83, 0.04, 0);
+    this.addInfraMesh(scene, wLGeo, wallMat, cx, 0.05, cz);
+    const wRGeo = new THREE.BoxGeometry(0.04, 0.08, 1.70);
+    wRGeo.translate(0.83, 0.04, 0);
+    this.addInfraMesh(scene, wRGeo, wallMat, cx, 0.05, cz);
+
     // Chapel body (back-left corner)
-    const chapelGeo = new THREE.BoxGeometry(0.18, 0.20, 0.15);
-    chapelGeo.translate(-0.25, 0.10, -0.28);
+    const chapelGeo = new THREE.BoxGeometry(0.35, 0.35, 0.28);
+    chapelGeo.translate(-0.50, 0.175, -0.55);
     this.addInfraMesh(scene, chapelGeo, new THREE.MeshLambertMaterial({ color: 0xe0e0e0 }), cx, 0.06, cz);
 
     // Chapel spire
-    const spireGeo = new THREE.ConeGeometry(0.10, 0.15, 4);
-    spireGeo.translate(-0.25, 0.275, -0.28);
+    const spireGeo = new THREE.ConeGeometry(0.20, 0.25, 4);
+    spireGeo.translate(-0.50, 0.475, -0.55);
     this.addInfraMesh(scene, spireGeo, new THREE.MeshLambertMaterial({ color: 0x757575 }), cx, 0.06, cz);
 
     // Cross vertical on spire
-    const crossVGeo = new THREE.BoxGeometry(0.02, 0.08, 0.01);
-    crossVGeo.translate(-0.25, 0.39, -0.28);
+    const crossVGeo = new THREE.BoxGeometry(0.03, 0.12, 0.015);
+    crossVGeo.translate(-0.50, 0.66, -0.55);
     this.addInfraMesh(scene, crossVGeo, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz);
 
     // Cross horizontal on spire
-    const crossHGeo = new THREE.BoxGeometry(0.05, 0.01, 0.01);
-    crossHGeo.translate(-0.25, 0.38, -0.28);
+    const crossHGeo = new THREE.BoxGeometry(0.08, 0.015, 0.015);
+    crossHGeo.translate(-0.50, 0.64, -0.55);
     this.addInfraMesh(scene, crossHGeo, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz);
 
-    // Gravestones — Row 1 (4 stones)
+    // Gravestones — 4 rows x 5 columns, spread across 1.20 x 1.00 area
     const stoneMat = new THREE.MeshLambertMaterial({ color: 0xbdbdbd });
-    const row1X = 0.05;
-    const row1Zs = [-0.20, -0.08, 0.04, 0.16];
-    for (const zOff of row1Zs) {
-      const stoneGeo = new THREE.BoxGeometry(0.03, 0.05, 0.015);
-      stoneGeo.translate(row1X, 0.025, zOff);
-      this.addInfraMesh(scene, stoneGeo, stoneMat, cx, 0.06, cz);
-    }
-
-    // Gravestones — Row 2 (4 stones)
-    const row2X = 0.20;
-    const row2Zs = [-0.16, -0.04, 0.08, 0.20];
-    for (const zOff of row2Zs) {
-      const stoneGeo = new THREE.BoxGeometry(0.03, 0.05, 0.015);
-      stoneGeo.translate(row2X, 0.025, zOff);
-      this.addInfraMesh(scene, stoneGeo, stoneMat, cx, 0.06, cz);
+    const gsStartX = -0.10;
+    const gsStartZ = -0.35;
+    for (let row = 0; row < 4; row++) {
+      for (let col = 0; col < 5; col++) {
+        const stoneGeo = new THREE.BoxGeometry(0.05, 0.08, 0.02);
+        stoneGeo.translate(gsStartX + col * 0.25, 0.04, gsStartZ + row * 0.30);
+        this.addInfraMesh(scene, stoneGeo, stoneMat, cx, 0.06, cz);
+      }
     }
 
     // Cypress tree 1 (near chapel)
-    const cypTrunk1 = new THREE.CylinderGeometry(0.008, 0.008, 0.04, 4);
-    cypTrunk1.translate(-0.10, 0.02, -0.32);
-    this.addInfraMesh(scene, cypTrunk1, new THREE.MeshLambertMaterial({ color: 0x5d4037 }), cx, 0.06, cz);
+    const cypTrunkMat = new THREE.MeshLambertMaterial({ color: 0x5d4037 });
+    const cypTreeMat = new THREE.MeshLambertMaterial({ color: 0x2e7d32 });
 
-    const cypTree1 = new THREE.ConeGeometry(0.03, 0.18, 6);
-    cypTree1.translate(-0.10, 0.13, -0.32);
-    this.addInfraMesh(scene, cypTree1, new THREE.MeshLambertMaterial({ color: 0x2e7d32 }), cx, 0.06, cz);
+    const cypTrunk1 = new THREE.CylinderGeometry(0.012, 0.012, 0.06, 4);
+    cypTrunk1.translate(-0.25, 0.03, -0.65);
+    this.addInfraMesh(scene, cypTrunk1, cypTrunkMat, cx, 0.06, cz);
+    const cypTree1 = new THREE.ConeGeometry(0.05, 0.30, 6);
+    cypTree1.translate(-0.25, 0.21, -0.65);
+    this.addInfraMesh(scene, cypTree1, cypTreeMat, cx, 0.06, cz);
 
-    // Cypress tree 2 (opposite side)
-    const cypTrunk2 = new THREE.CylinderGeometry(0.008, 0.008, 0.04, 4);
-    cypTrunk2.translate(0.32, 0.02, -0.32);
-    this.addInfraMesh(scene, cypTrunk2, new THREE.MeshLambertMaterial({ color: 0x5d4037 }), cx, 0.06, cz);
+    // Cypress tree 2 (opposite back)
+    const cypTrunk2 = new THREE.CylinderGeometry(0.012, 0.012, 0.06, 4);
+    cypTrunk2.translate(0.60, 0.03, -0.65);
+    this.addInfraMesh(scene, cypTrunk2, cypTrunkMat, cx, 0.06, cz);
+    const cypTree2 = new THREE.ConeGeometry(0.05, 0.30, 6);
+    cypTree2.translate(0.60, 0.21, -0.65);
+    this.addInfraMesh(scene, cypTree2, cypTreeMat, cx, 0.06, cz);
 
-    const cypTree2 = new THREE.ConeGeometry(0.03, 0.18, 6);
-    cypTree2.translate(0.32, 0.13, -0.32);
-    this.addInfraMesh(scene, cypTree2, new THREE.MeshLambertMaterial({ color: 0x2e7d32 }), cx, 0.06, cz);
+    // Cypress tree 3 (front-left)
+    const cypTrunk3 = new THREE.CylinderGeometry(0.012, 0.012, 0.06, 4);
+    cypTrunk3.translate(-0.65, 0.03, 0.55);
+    this.addInfraMesh(scene, cypTrunk3, cypTrunkMat, cx, 0.06, cz);
+    const cypTree3 = new THREE.ConeGeometry(0.05, 0.30, 6);
+    cypTree3.translate(-0.65, 0.21, 0.55);
+    this.addInfraMesh(scene, cypTree3, cypTreeMat, cx, 0.06, cz);
+
+    // Cypress tree 4 (front-right)
+    const cypTrunk4 = new THREE.CylinderGeometry(0.012, 0.012, 0.06, 4);
+    cypTrunk4.translate(0.65, 0.03, 0.55);
+    this.addInfraMesh(scene, cypTrunk4, cypTrunkMat, cx, 0.06, cz);
+    const cypTree4 = new THREE.ConeGeometry(0.05, 0.30, 6);
+    cypTree4.translate(0.65, 0.21, 0.55);
+    this.addInfraMesh(scene, cypTree4, cypTreeMat, cx, 0.06, cz);
 
     // Stone path down center
-    const pathGeo = new THREE.BoxGeometry(0.10, 0.012, 0.60);
+    const pathGeo = new THREE.BoxGeometry(0.18, 0.012, 1.40);
     pathGeo.translate(0.0, 0.006, 0.05);
     this.addInfraMesh(scene, pathGeo, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz, false);
 
     // Iron gate at entrance (front)
-    const gateGeo = new THREE.BoxGeometry(0.15, 0.10, 0.01);
-    gateGeo.translate(0.0, 0.05, 0.38);
+    const gateGeo = new THREE.BoxGeometry(0.30, 0.18, 0.015);
+    gateGeo.translate(0.0, 0.09, 0.82);
     this.addInfraMesh(scene, gateGeo, new THREE.MeshLambertMaterial({ color: 0x616161 }), cx, 0.06, cz);
   }
 
   private buildLandfill(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
     // Dirt ground
-    const groundGeo = new THREE.BoxGeometry(0.85, 0.02, 0.85);
+    const groundGeo = new THREE.BoxGeometry(1.70, 0.02, 1.70);
     groundGeo.translate(0, 0.01, 0);
     this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, 0.05, cz, false);
 
     // Large garbage mound (center-back)
-    const largeMound = new THREE.ConeGeometry(0.18, 0.22, 6);
-    largeMound.translate(-0.05, 0.11, -0.10);
+    const largeMound = new THREE.ConeGeometry(0.35, 0.40, 6);
+    largeMound.translate(-0.10, 0.20, -0.20);
     this.addInfraMesh(scene, largeMound, new THREE.MeshLambertMaterial({ color: 0x6d4c41 }), cx, 0.06, cz);
 
     // Medium mound (right)
-    const medMound = new THREE.ConeGeometry(0.12, 0.15, 5);
-    medMound.translate(0.20, 0.075, 0.05);
+    const medMound = new THREE.ConeGeometry(0.25, 0.28, 5);
+    medMound.translate(0.40, 0.14, 0.10);
     this.addInfraMesh(scene, medMound, new THREE.MeshLambertMaterial({ color: 0x795548 }), cx, 0.06, cz);
 
     // Small mound (left-front)
-    const smallMound = new THREE.ConeGeometry(0.08, 0.10, 5);
-    smallMound.translate(-0.22, 0.05, 0.15);
+    const smallMound = new THREE.ConeGeometry(0.18, 0.20, 5);
+    smallMound.translate(-0.45, 0.10, 0.30);
     this.addInfraMesh(scene, smallMound, new THREE.MeshLambertMaterial({ color: 0x8d6e63 }), cx, 0.06, cz);
 
+    // Extra small mound 1
+    const xsMound1 = new THREE.ConeGeometry(0.12, 0.14, 5);
+    xsMound1.translate(0.10, 0.07, 0.45);
+    this.addInfraMesh(scene, xsMound1, new THREE.MeshLambertMaterial({ color: 0x7b5b4a }), cx, 0.06, cz);
+
+    // Extra small mound 2
+    const xsMound2 = new THREE.ConeGeometry(0.10, 0.12, 5);
+    xsMound2.translate(-0.35, 0.06, -0.50);
+    this.addInfraMesh(scene, xsMound2, new THREE.MeshLambertMaterial({ color: 0x6d5040 }), cx, 0.06, cz);
+
     // Office shack (back-right corner)
-    const shackGeo = new THREE.BoxGeometry(0.15, 0.15, 0.12);
-    shackGeo.translate(0.30, 0.075, -0.30);
+    const shackGeo = new THREE.BoxGeometry(0.30, 0.25, 0.25);
+    shackGeo.translate(0.55, 0.125, -0.55);
     this.addInfraMesh(scene, shackGeo, new THREE.MeshLambertMaterial({ color: 0xa1887f }), cx, 0.06, cz);
 
     // Shack roof
-    const shackRoof = new THREE.BoxGeometry(0.18, 0.02, 0.15);
-    shackRoof.translate(0.30, 0.16, -0.30);
+    const shackRoof = new THREE.BoxGeometry(0.35, 0.02, 0.30);
+    shackRoof.translate(0.55, 0.26, -0.55);
     this.addInfraMesh(scene, shackRoof, new THREE.MeshLambertMaterial({ color: 0x795548 }), cx, 0.06, cz);
 
     // Bulldozer body (front-left area)
-    const dozerBody = new THREE.BoxGeometry(0.10, 0.07, 0.06);
-    dozerBody.translate(-0.25, 0.035, 0.28);
+    const dozerBody = new THREE.BoxGeometry(0.20, 0.12, 0.10);
+    dozerBody.translate(-0.50, 0.06, 0.55);
     this.addInfraMesh(scene, dozerBody, new THREE.MeshLambertMaterial({ color: 0xffc107 }), cx, 0.06, cz);
 
     // Bulldozer blade
-    const dozerBlade = new THREE.BoxGeometry(0.08, 0.06, 0.02);
-    dozerBlade.translate(-0.25, 0.03, 0.24);
+    const dozerBlade = new THREE.BoxGeometry(0.16, 0.10, 0.03);
+    dozerBlade.translate(-0.50, 0.05, 0.48);
     this.addInfraMesh(scene, dozerBlade, new THREE.MeshLambertMaterial({ color: 0xff8f00 }), cx, 0.06, cz);
 
-    // Fence front
-    const fenceFront = new THREE.BoxGeometry(0.85, 0.08, 0.01);
-    fenceFront.translate(0, 0.04, 0.42);
-    this.addInfraMesh(scene, fenceFront, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz);
+    // Fences on all 4 sides (3 sides + gate opening on front)
+    const fenceMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
+    // Fence back
+    const fenceBack = new THREE.BoxGeometry(1.70, 0.10, 0.015);
+    fenceBack.translate(0, 0.05, -0.84);
+    this.addInfraMesh(scene, fenceBack, fenceMat, cx, 0.06, cz);
+    // Fence left
+    const fenceLeft = new THREE.BoxGeometry(0.015, 0.10, 1.70);
+    fenceLeft.translate(-0.84, 0.05, 0);
+    this.addInfraMesh(scene, fenceLeft, fenceMat, cx, 0.06, cz);
+    // Fence right
+    const fenceRight = new THREE.BoxGeometry(0.015, 0.10, 1.70);
+    fenceRight.translate(0.84, 0.05, 0);
+    this.addInfraMesh(scene, fenceRight, fenceMat, cx, 0.06, cz);
+    // Fence front left part (gate opening in center)
+    const fenceFL = new THREE.BoxGeometry(0.60, 0.10, 0.015);
+    fenceFL.translate(-0.55, 0.05, 0.84);
+    this.addInfraMesh(scene, fenceFL, fenceMat, cx, 0.06, cz);
+    // Fence front right part
+    const fenceFR = new THREE.BoxGeometry(0.60, 0.10, 0.015);
+    fenceFR.translate(0.55, 0.05, 0.84);
+    this.addInfraMesh(scene, fenceFR, fenceMat, cx, 0.06, cz);
 
-    // Fence side (right)
-    const fenceSide = new THREE.BoxGeometry(0.01, 0.08, 0.85);
-    fenceSide.translate(0.42, 0.04, 0);
-    this.addInfraMesh(scene, fenceSide, new THREE.MeshLambertMaterial({ color: 0x9e9e9e }), cx, 0.06, cz);
-
-    // Warning sign
-    const signGeo = new THREE.BoxGeometry(0.06, 0.06, 0.01);
-    signGeo.translate(0.0, 0.10, 0.42);
+    // Warning sign (scaled up)
+    const signGeo = new THREE.BoxGeometry(0.10, 0.10, 0.015);
+    signGeo.translate(0.0, 0.15, 0.84);
     this.addInfraMesh(scene, signGeo, new THREE.MeshLambertMaterial({ color: 0xf0c030 }), cx, 0.06, cz);
   }
 
@@ -1861,258 +2053,329 @@ export class BuildingRenderer {
   private buildSewagePlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
 
     // Concrete foundation
-    const foundGeo = new THREE.BoxGeometry(0.85, 0.04, 0.85);
+    const foundGeo = new THREE.BoxGeometry(1.70, 0.04, 1.70);
     foundGeo.translate(0, 0.02, 0);
     const foundMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
     this.addInfraMesh(scene, foundGeo, foundMat, cx, 0.05, cz);
 
-    // Large settling tank
-    const lgTankGeo = new THREE.CylinderGeometry(0.20, 0.20, 0.10, 16);
-    lgTankGeo.translate(0, 0.05, 0);
+    // Perimeter fence
+    const fenceMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
+    const sfF = new THREE.BoxGeometry(1.70, 0.08, 0.015);
+    sfF.translate(0, 0.04, 0.84);
+    this.addInfraMesh(scene, sfF, fenceMat, cx, 0.05, cz);
+    const sfB = new THREE.BoxGeometry(1.70, 0.08, 0.015);
+    sfB.translate(0, 0.04, -0.84);
+    this.addInfraMesh(scene, sfB, fenceMat, cx, 0.05, cz);
+    const sfL = new THREE.BoxGeometry(0.015, 0.08, 1.70);
+    sfL.translate(-0.84, 0.04, 0);
+    this.addInfraMesh(scene, sfL, fenceMat, cx, 0.05, cz);
+    const sfR = new THREE.BoxGeometry(0.015, 0.08, 1.70);
+    sfR.translate(0.84, 0.04, 0);
+    this.addInfraMesh(scene, sfR, fenceMat, cx, 0.05, cz);
+
+    // Large settling tank (left area)
+    const lgTankGeo = new THREE.CylinderGeometry(0.40, 0.40, 0.15, 12);
+    lgTankGeo.translate(-0.30, 0.075, -0.25);
     const lgTankMat = new THREE.MeshLambertMaterial({ color: 0x546e7a });
-    this.addInfraMesh(scene, lgTankGeo, lgTankMat, cx - 0.15, 0.05, cz - 0.10);
+    this.addInfraMesh(scene, lgTankGeo, lgTankMat, cx, 0.09, cz);
 
     // Large tank water surface
-    const lgWaterGeo = new THREE.CylinderGeometry(0.19, 0.19, 0.01, 16);
-    lgWaterGeo.translate(0, 0.10, 0);
+    const lgWaterGeo = new THREE.CylinderGeometry(0.38, 0.38, 0.01, 12);
+    lgWaterGeo.translate(-0.30, 0.15, -0.25);
     const lgWaterMat = new THREE.MeshLambertMaterial({ color: 0x80cbc4 });
-    this.addInfraMesh(scene, lgWaterGeo, lgWaterMat, cx - 0.15, 0.05, cz - 0.10);
+    this.addInfraMesh(scene, lgWaterGeo, lgWaterMat, cx, 0.09, cz);
 
     // Walkway bridge across large tank
-    const walkGeo = new THREE.BoxGeometry(0.40, 0.02, 0.03);
-    walkGeo.translate(0, 0.11, 0);
+    const walkGeo = new THREE.BoxGeometry(0.80, 0.02, 0.04);
+    walkGeo.translate(-0.30, 0.16, -0.25);
     const walkMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
-    this.addInfraMesh(scene, walkGeo, walkMat, cx - 0.15, 0.05, cz - 0.10);
+    this.addInfraMesh(scene, walkGeo, walkMat, cx, 0.09, cz);
 
-    // Small settling tank
-    const smTankGeo = new THREE.CylinderGeometry(0.12, 0.12, 0.08, 12);
-    smTankGeo.translate(0, 0.04, 0);
+    // Small settling tank (right area)
+    const smTankGeo = new THREE.CylinderGeometry(0.25, 0.25, 0.12, 10);
+    smTankGeo.translate(0.40, 0.06, -0.30);
     const smTankMat = new THREE.MeshLambertMaterial({ color: 0x546e7a });
-    this.addInfraMesh(scene, smTankGeo, smTankMat, cx + 0.18, 0.05, cz - 0.10);
+    this.addInfraMesh(scene, smTankGeo, smTankMat, cx, 0.09, cz);
 
     // Small tank water surface
-    const smWaterGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.01, 12);
-    smWaterGeo.translate(0, 0.08, 0);
+    const smWaterGeo = new THREE.CylinderGeometry(0.23, 0.23, 0.01, 10);
+    smWaterGeo.translate(0.40, 0.12, -0.30);
     const smWaterMat = new THREE.MeshLambertMaterial({ color: 0x80cbc4 });
-    this.addInfraMesh(scene, smWaterGeo, smWaterMat, cx + 0.18, 0.05, cz - 0.10);
+    this.addInfraMesh(scene, smWaterGeo, smWaterMat, cx, 0.09, cz);
+
+    // Third aeration tank (front-left)
+    const aerTankGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.10, 10);
+    aerTankGeo.translate(-0.50, 0.05, 0.40);
+    const aerTankMat = new THREE.MeshLambertMaterial({ color: 0x546e7a });
+    this.addInfraMesh(scene, aerTankGeo, aerTankMat, cx, 0.09, cz);
+
+    // Aeration tank water
+    const aerWaterGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.01, 10);
+    aerWaterGeo.translate(-0.50, 0.10, 0.40);
+    this.addInfraMesh(scene, aerWaterGeo, lgWaterMat, cx, 0.09, cz);
 
     // Control building
-    const ctrlGeo = new THREE.BoxGeometry(0.20, 0.20, 0.18);
-    ctrlGeo.translate(0, 0.10, 0);
+    const ctrlGeo = new THREE.BoxGeometry(0.40, 0.35, 0.35);
+    ctrlGeo.translate(0.45, 0.175, 0.45);
     const ctrlMat = new THREE.MeshLambertMaterial({ color: 0x607d8b });
-    this.addInfraMesh(scene, ctrlGeo, ctrlMat, cx + 0.18, 0.05, cz + 0.22);
+    this.addInfraMesh(scene, ctrlGeo, ctrlMat, cx, 0.09, cz);
 
     // Control building roof
-    const ctrlRoofGeo = new THREE.BoxGeometry(0.23, 0.02, 0.21);
-    ctrlRoofGeo.translate(0, 0.21, 0);
+    const ctrlRoofGeo = new THREE.BoxGeometry(0.45, 0.02, 0.40);
+    ctrlRoofGeo.translate(0.45, 0.36, 0.45);
     const ctrlRoofMat = new THREE.MeshLambertMaterial({ color: 0x455a64 });
-    this.addInfraMesh(scene, ctrlRoofGeo, ctrlRoofMat, cx + 0.18, 0.05, cz + 0.22);
+    this.addInfraMesh(scene, ctrlRoofGeo, ctrlRoofMat, cx, 0.09, cz);
 
-    // Connecting pipe between tanks
-    const pipeGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.18, 6);
+    // Connecting pipe between large and small tanks
+    const pipeGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.35, 6);
     pipeGeo.rotateZ(Math.PI / 2);
-    pipeGeo.translate(0, 0.06, 0);
+    pipeGeo.translate(0.05, 0.10, -0.28);
     const pipeMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
-    this.addInfraMesh(scene, pipeGeo, pipeMat, cx + 0.02, 0.05, cz - 0.10);
+    this.addInfraMesh(scene, pipeGeo, pipeMat, cx, 0.09, cz);
 
     // Outlet pipe
-    const outletGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.20, 6);
+    const outletGeo = new THREE.CylinderGeometry(0.035, 0.035, 0.30, 6);
     outletGeo.rotateX(Math.PI / 2);
-    outletGeo.translate(0, 0.06, 0);
+    outletGeo.translate(-0.30, 0.10, 0.10);
     const outletMat = new THREE.MeshLambertMaterial({ color: 0x607d8b });
-    this.addInfraMesh(scene, outletGeo, outletMat, cx - 0.15, 0.05, cz + 0.25);
+    this.addInfraMesh(scene, outletGeo, outletMat, cx, 0.09, cz);
 
     // Status indicator light
-    const lightGeo = new THREE.BoxGeometry(0.04, 0.04, 0.04);
-    lightGeo.translate(0, 0.23, 0);
+    const lightGeo = new THREE.BoxGeometry(0.06, 0.06, 0.06);
+    lightGeo.translate(0.45, 0.40, 0.45);
     const lightMat = new THREE.MeshBasicMaterial({ color: 0x26a69a });
-    this.addInfraMesh(scene, lightGeo, lightMat, cx + 0.18, 0.05, cz + 0.22, false);
+    this.addInfraMesh(scene, lightGeo, lightMat, cx, 0.09, cz, false);
   }
 
   private buildPowerPlant(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
 
+    // Concrete ground
+    const groundGeo = new THREE.BoxGeometry(1.70, 0.03, 1.70);
+    groundGeo.translate(0, 0.015, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0x909090 }), cx, 0.05, cz, false);
+
+    // Perimeter fence
+    const fenceMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
+    const pfF = new THREE.BoxGeometry(1.70, 0.08, 0.015);
+    pfF.translate(0, 0.04, 0.84);
+    this.addInfraMesh(scene, pfF, fenceMat, cx, 0.05, cz);
+    const pfB = new THREE.BoxGeometry(1.70, 0.08, 0.015);
+    pfB.translate(0, 0.04, -0.84);
+    this.addInfraMesh(scene, pfB, fenceMat, cx, 0.05, cz);
+    const pfL = new THREE.BoxGeometry(0.015, 0.08, 1.70);
+    pfL.translate(-0.84, 0.04, 0);
+    this.addInfraMesh(scene, pfL, fenceMat, cx, 0.05, cz);
+    const pfR = new THREE.BoxGeometry(0.015, 0.08, 1.70);
+    pfR.translate(0.84, 0.04, 0);
+    this.addInfraMesh(scene, pfR, fenceMat, cx, 0.05, cz);
+
     // Main turbine hall
-    const hallGeo = new THREE.BoxGeometry(0.50, 0.40, 0.55);
-    hallGeo.translate(0, 0.20, 0);
+    const hallGeo = new THREE.BoxGeometry(0.85, 0.60, 0.80);
+    hallGeo.translate(0.15, 0.30, 0.20);
     const hallMat = new THREE.MeshLambertMaterial({ color: 0x5a5550 });
-    this.addInfraMesh(scene, hallGeo, hallMat, cx + 0.08, 0.05, cz + 0.05);
+    this.addInfraMesh(scene, hallGeo, hallMat, cx, 0.08, cz);
 
     // Hall roof
-    const hallRoofGeo = new THREE.BoxGeometry(0.55, 0.03, 0.60);
-    hallRoofGeo.translate(0, 0.415, 0);
+    const hallRoofGeo = new THREE.BoxGeometry(0.92, 0.03, 0.88);
+    hallRoofGeo.translate(0.15, 0.615, 0.20);
     const hallRoofMat = new THREE.MeshLambertMaterial({ color: 0x484440 });
-    this.addInfraMesh(scene, hallRoofGeo, hallRoofMat, cx + 0.08, 0.05, cz + 0.05);
+    this.addInfraMesh(scene, hallRoofGeo, hallRoofMat, cx, 0.08, cz);
 
     // Large cooling tower
-    const lgCoolGeo = new THREE.CylinderGeometry(0.10, 0.14, 0.55, 10);
-    lgCoolGeo.translate(0, 0.275, 0);
+    const lgCoolGeo = new THREE.CylinderGeometry(0.20, 0.28, 0.85, 10);
+    lgCoolGeo.translate(-0.45, 0.425, -0.30);
     const lgCoolMat = new THREE.MeshLambertMaterial({ color: 0x9e9e9e });
-    this.addInfraMesh(scene, lgCoolGeo, lgCoolMat, cx - 0.25, 0.05, cz - 0.15);
+    this.addInfraMesh(scene, lgCoolGeo, lgCoolMat, cx, 0.08, cz);
 
     // Cooling tower top ring
-    const lgRingGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.03, 10);
-    lgRingGeo.translate(0, 0.555, 0);
+    const lgRingGeo = new THREE.CylinderGeometry(0.22, 0.22, 0.04, 10);
+    lgRingGeo.translate(-0.45, 0.87, -0.30);
     const lgRingMat = new THREE.MeshLambertMaterial({ color: 0xbdbdbd });
-    this.addInfraMesh(scene, lgRingGeo, lgRingMat, cx - 0.25, 0.05, cz - 0.15);
+    this.addInfraMesh(scene, lgRingGeo, lgRingMat, cx, 0.08, cz);
 
     // Small cooling tower
-    const smCoolGeo = new THREE.CylinderGeometry(0.07, 0.10, 0.42, 10);
-    smCoolGeo.translate(0, 0.21, 0);
+    const smCoolGeo = new THREE.CylinderGeometry(0.14, 0.20, 0.65, 10);
+    smCoolGeo.translate(-0.10, 0.325, -0.50);
     const smCoolMat = new THREE.MeshLambertMaterial({ color: 0x8a8a8a });
-    this.addInfraMesh(scene, smCoolGeo, smCoolMat, cx - 0.10, 0.05, cz - 0.28);
+    this.addInfraMesh(scene, smCoolGeo, smCoolMat, cx, 0.08, cz);
 
     // Smokestack
-    const stackGeo = new THREE.CylinderGeometry(0.035, 0.04, 0.65, 8);
-    stackGeo.translate(0, 0.325, 0);
+    const stackGeo = new THREE.CylinderGeometry(0.06, 0.07, 0.95, 8);
+    stackGeo.translate(0.55, 0.475, -0.40);
     const stackMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
-    this.addInfraMesh(scene, stackGeo, stackMat, cx + 0.28, 0.05, cz - 0.20);
+    this.addInfraMesh(scene, stackGeo, stackMat, cx, 0.08, cz);
 
     // Chimney red band 1 (near top)
-    const band1Geo = new THREE.CylinderGeometry(0.042, 0.042, 0.03, 8);
-    band1Geo.translate(0, 0.62, 0);
+    const band1Geo = new THREE.CylinderGeometry(0.07, 0.07, 0.04, 8);
+    band1Geo.translate(0.55, 0.91, -0.40);
     const bandMat = new THREE.MeshLambertMaterial({ color: 0xcc3333 });
-    this.addInfraMesh(scene, band1Geo, bandMat, cx + 0.28, 0.05, cz - 0.20);
+    this.addInfraMesh(scene, band1Geo, bandMat, cx, 0.08, cz);
 
     // Chimney red band 2 (mid area)
-    const band2Geo = new THREE.CylinderGeometry(0.042, 0.042, 0.03, 8);
-    band2Geo.translate(0, 0.42, 0);
-    this.addInfraMesh(scene, band2Geo, bandMat, cx + 0.28, 0.05, cz - 0.20);
+    const band2Geo = new THREE.CylinderGeometry(0.07, 0.07, 0.04, 8);
+    band2Geo.translate(0.55, 0.60, -0.40);
+    this.addInfraMesh(scene, band2Geo, bandMat, cx, 0.08, cz);
 
     // Coal pile 1
-    const coal1Geo = new THREE.ConeGeometry(0.10, 0.08, 6);
-    coal1Geo.translate(0, 0.04, 0);
+    const coal1Geo = new THREE.ConeGeometry(0.20, 0.14, 6);
+    coal1Geo.translate(-0.40, 0.07, 0.55);
     const coalMat = new THREE.MeshLambertMaterial({ color: 0x2a2520 });
-    this.addInfraMesh(scene, coal1Geo, coalMat, cx - 0.22, 0.05, cz + 0.25);
+    this.addInfraMesh(scene, coal1Geo, coalMat, cx, 0.08, cz);
 
     // Coal pile 2
-    const coal2Geo = new THREE.ConeGeometry(0.07, 0.05, 5);
-    coal2Geo.translate(0, 0.025, 0);
-    this.addInfraMesh(scene, coal2Geo, coalMat, cx - 0.08, 0.05, cz + 0.28);
+    const coal2Geo = new THREE.ConeGeometry(0.14, 0.10, 5);
+    coal2Geo.translate(-0.12, 0.05, 0.60);
+    this.addInfraMesh(scene, coal2Geo, coalMat, cx, 0.08, cz);
 
     // Transformer box 1
-    const tx1Geo = new THREE.BoxGeometry(0.06, 0.10, 0.06);
-    tx1Geo.translate(0, 0.05, 0);
+    const tx1Geo = new THREE.BoxGeometry(0.10, 0.15, 0.10);
+    tx1Geo.translate(0.65, 0.075, 0.35);
     const txMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
-    this.addInfraMesh(scene, tx1Geo, txMat, cx + 0.35, 0.05, cz + 0.15);
+    this.addInfraMesh(scene, tx1Geo, txMat, cx, 0.08, cz);
 
     // Transformer box 2
-    const tx2Geo = new THREE.BoxGeometry(0.06, 0.10, 0.06);
-    tx2Geo.translate(0, 0.05, 0);
-    this.addInfraMesh(scene, tx2Geo, txMat, cx + 0.35, 0.05, cz + 0.25);
+    const tx2Geo = new THREE.BoxGeometry(0.10, 0.15, 0.10);
+    tx2Geo.translate(0.65, 0.075, 0.55);
+    this.addInfraMesh(scene, tx2Geo, txMat, cx, 0.08, cz);
 
     // Power pylon
-    const pylonGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.30, 4);
-    pylonGeo.translate(0, 0.15, 0);
+    const pylonGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.45, 4);
+    pylonGeo.translate(0.70, 0.225, -0.15);
     const pylonMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-    this.addInfraMesh(scene, pylonGeo, pylonMat, cx + 0.38, 0.05, cz - 0.10);
+    this.addInfraMesh(scene, pylonGeo, pylonMat, cx, 0.08, cz);
 
     // Pylon crossarm
-    const crossGeo = new THREE.BoxGeometry(0.12, 0.01, 0.01);
-    crossGeo.translate(0, 0.28, 0);
-    this.addInfraMesh(scene, crossGeo, pylonMat, cx + 0.38, 0.05, cz - 0.10);
+    const crossGeo = new THREE.BoxGeometry(0.18, 0.015, 0.015);
+    crossGeo.translate(0.70, 0.42, -0.15);
+    this.addInfraMesh(scene, crossGeo, pylonMat, cx, 0.08, cz);
 
     // Warning sign
-    const signGeo = new THREE.BoxGeometry(0.08, 0.06, 0.01);
-    signGeo.translate(0, 0.10, 0);
+    const signGeo = new THREE.BoxGeometry(0.10, 0.08, 0.015);
+    signGeo.translate(0.70, 0.12, -0.55);
     const signMat = new THREE.MeshLambertMaterial({ color: 0xf0c030 });
-    this.addInfraMesh(scene, signGeo, signMat, cx + 0.35, 0.05, cz - 0.28);
+    this.addInfraMesh(scene, signGeo, signMat, cx, 0.08, cz);
 
     // Status light
-    const lightGeo = new THREE.BoxGeometry(0.06, 0.04, 0.06);
-    lightGeo.translate(0, 0.44, 0);
+    const lightGeo = new THREE.BoxGeometry(0.08, 0.05, 0.08);
+    lightGeo.translate(0.15, 0.65, 0.20);
     const lightMat = new THREE.MeshBasicMaterial({ color: 0xffeb3b });
-    this.addInfraMesh(scene, lightGeo, lightMat, cx + 0.08, 0.05, cz + 0.05, false);
+    this.addInfraMesh(scene, lightGeo, lightMat, cx, 0.08, cz, false);
   }
 
   private buildWaterPump(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
 
     // Concrete foundation
-    const foundGeo = new THREE.BoxGeometry(0.82, 0.04, 0.82);
+    const foundGeo = new THREE.BoxGeometry(1.70, 0.04, 1.70);
     foundGeo.translate(0, 0.02, 0);
     const foundMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
     this.addInfraMesh(scene, foundGeo, foundMat, cx, 0.05, cz);
 
+    // Perimeter fence
+    const fenceMat = new THREE.MeshLambertMaterial({ color: 0x90a4ae });
+    const wpfF = new THREE.BoxGeometry(1.70, 0.08, 0.015);
+    wpfF.translate(0, 0.04, 0.84);
+    this.addInfraMesh(scene, wpfF, fenceMat, cx, 0.05, cz);
+    const wpfB = new THREE.BoxGeometry(1.70, 0.08, 0.015);
+    wpfB.translate(0, 0.04, -0.84);
+    this.addInfraMesh(scene, wpfB, fenceMat, cx, 0.05, cz);
+    const wpfL = new THREE.BoxGeometry(0.015, 0.08, 1.70);
+    wpfL.translate(-0.84, 0.04, 0);
+    this.addInfraMesh(scene, wpfL, fenceMat, cx, 0.05, cz);
+    const wpfR = new THREE.BoxGeometry(0.015, 0.08, 1.70);
+    wpfR.translate(0.84, 0.04, 0);
+    this.addInfraMesh(scene, wpfR, fenceMat, cx, 0.05, cz);
+
     // Water tower tank (elevated)
-    const tankGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.18, 12);
-    tankGeo.translate(0, 0.09, 0);
+    const tankGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.30, 12);
+    tankGeo.translate(-0.35, 0.55 + 0.15, -0.15);
     const tankMat = new THREE.MeshLambertMaterial({ color: 0x29b6f6 });
-    this.addInfraMesh(scene, tankGeo, tankMat, cx - 0.20, 0.37, cz - 0.05);
+    this.addInfraMesh(scene, tankGeo, tankMat, cx, 0.09, cz);
 
     // Tower cone roof
-    const roofGeo = new THREE.ConeGeometry(0.16, 0.06, 12);
-    roofGeo.translate(0, 0.21, 0);
+    const roofGeo = new THREE.ConeGeometry(0.30, 0.10, 12);
+    roofGeo.translate(-0.35, 0.55 + 0.30 + 0.05, -0.15);
     const roofMat = new THREE.MeshLambertMaterial({ color: 0x0288d1 });
-    this.addInfraMesh(scene, roofGeo, roofMat, cx - 0.20, 0.37, cz - 0.05);
+    this.addInfraMesh(scene, roofGeo, roofMat, cx, 0.09, cz);
 
-    // 4 tower legs
+    // 4 tower legs (wider spread)
     const legMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
     const legOffsets = [
-      [-0.08, -0.08], [0.08, -0.08], [-0.08, 0.08], [0.08, 0.08],
+      [-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16],
     ];
     for (const [dx, dz] of legOffsets as [number, number][]) {
-      const legGeo = new THREE.CylinderGeometry(0.012, 0.012, 0.30, 6);
-      legGeo.translate(0, 0.15, 0);
-      this.addInfraMesh(scene, legGeo, legMat, cx + (-0.20 + dx), 0.07, cz + (-0.05 + dz));
+      const legGeo = new THREE.CylinderGeometry(0.018, 0.018, 0.55, 6);
+      legGeo.translate(-0.35 + dx, 0.275, -0.15 + dz);
+      this.addInfraMesh(scene, legGeo, legMat, cx, 0.09, cz);
     }
 
     // 2 horizontal braces connecting legs at mid-height
-    const braceGeo1 = new THREE.BoxGeometry(0.20, 0.01, 0.01);
-    braceGeo1.translate(0, 0.12, 0);
-    this.addInfraMesh(scene, braceGeo1, legMat, cx - 0.20, 0.07, cz - 0.05);
+    const braceGeo1 = new THREE.BoxGeometry(0.36, 0.015, 0.015);
+    braceGeo1.translate(-0.35, 0.25, -0.15);
+    this.addInfraMesh(scene, braceGeo1, legMat, cx, 0.09, cz);
 
-    const braceGeo2 = new THREE.BoxGeometry(0.01, 0.01, 0.20);
-    braceGeo2.translate(0, 0.12, 0);
-    this.addInfraMesh(scene, braceGeo2, legMat, cx - 0.20, 0.07, cz - 0.05);
+    const braceGeo2 = new THREE.BoxGeometry(0.015, 0.015, 0.36);
+    braceGeo2.translate(-0.35, 0.25, -0.15);
+    this.addInfraMesh(scene, braceGeo2, legMat, cx, 0.09, cz);
 
     // Pump house
-    const pumpGeo = new THREE.BoxGeometry(0.35, 0.28, 0.35);
-    pumpGeo.translate(0, 0.14, 0);
+    const pumpGeo = new THREE.BoxGeometry(0.65, 0.45, 0.60);
+    pumpGeo.translate(0.25, 0.225, 0.10);
     const pumpMat = new THREE.MeshLambertMaterial({ color: 0x4a6a7a });
-    this.addInfraMesh(scene, pumpGeo, pumpMat, cx + 0.12, 0.07, cz + 0.05);
+    this.addInfraMesh(scene, pumpGeo, pumpMat, cx, 0.09, cz);
 
     // Pump house roof
-    const pumpRoofGeo = new THREE.BoxGeometry(0.38, 0.03, 0.38);
-    pumpRoofGeo.translate(0, 0.29, 0);
+    const pumpRoofGeo = new THREE.BoxGeometry(0.70, 0.03, 0.65);
+    pumpRoofGeo.translate(0.25, 0.46, 0.10);
     const pumpRoofMat = new THREE.MeshLambertMaterial({ color: 0x3a5a6a });
-    this.addInfraMesh(scene, pumpRoofGeo, pumpRoofMat, cx + 0.12, 0.07, cz + 0.05);
+    this.addInfraMesh(scene, pumpRoofGeo, pumpRoofMat, cx, 0.09, cz);
 
-    // Filtration pool
-    const poolGeo = new THREE.BoxGeometry(0.30, 0.06, 0.25);
-    poolGeo.translate(0, 0.03, 0);
+    // Filtration pool 1
+    const poolGeo = new THREE.BoxGeometry(0.60, 0.08, 0.50);
+    poolGeo.translate(0.20, 0.04, -0.50);
     const poolMat = new THREE.MeshLambertMaterial({ color: 0x546e7a });
-    this.addInfraMesh(scene, poolGeo, poolMat, cx + 0.12, 0.04, cz - 0.25);
+    this.addInfraMesh(scene, poolGeo, poolMat, cx, 0.09, cz);
 
-    // Pool water surface
-    const poolWaterGeo = new THREE.BoxGeometry(0.28, 0.01, 0.23);
-    poolWaterGeo.translate(0, 0.065, 0);
+    // Pool 1 water surface
+    const poolWaterGeo = new THREE.BoxGeometry(0.56, 0.01, 0.46);
+    poolWaterGeo.translate(0.20, 0.085, -0.50);
     const poolWaterMat = new THREE.MeshLambertMaterial({ color: 0x4fc3f7 });
-    this.addInfraMesh(scene, poolWaterGeo, poolWaterMat, cx + 0.12, 0.04, cz - 0.25);
+    this.addInfraMesh(scene, poolWaterGeo, poolWaterMat, cx, 0.09, cz);
+
+    // Filtration pool 2 (second pool)
+    const pool2Geo = new THREE.BoxGeometry(0.50, 0.08, 0.40);
+    pool2Geo.translate(-0.35, 0.04, 0.50);
+    this.addInfraMesh(scene, pool2Geo, poolMat, cx, 0.09, cz);
+
+    // Pool 2 water surface
+    const pool2WaterGeo = new THREE.BoxGeometry(0.46, 0.01, 0.36);
+    pool2WaterGeo.translate(-0.35, 0.085, 0.50);
+    this.addInfraMesh(scene, pool2WaterGeo, poolWaterMat, cx, 0.09, cz);
 
     // Main pipe (tower to pump house) — horizontal along X
-    const mainPipeGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.22, 6);
+    const mainPipeGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.35, 6);
     mainPipeGeo.rotateZ(Math.PI / 2);
-    mainPipeGeo.translate(0, 0.20, 0);
+    mainPipeGeo.translate(-0.05, 0.35, 0.00);
     const mainPipeMat = new THREE.MeshLambertMaterial({ color: 0x607888 });
-    this.addInfraMesh(scene, mainPipeGeo, mainPipeMat, cx - 0.04, 0.07, cz + 0.00);
+    this.addInfraMesh(scene, mainPipeGeo, mainPipeMat, cx, 0.09, cz);
 
     // Inlet pipe — horizontal along Z
-    const inletGeo = new THREE.CylinderGeometry(0.02, 0.02, 0.15, 6);
+    const inletGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.25, 6);
     inletGeo.rotateX(Math.PI / 2);
-    inletGeo.translate(0, 0.08, 0);
+    inletGeo.translate(0.25, 0.12, -0.22);
     const inletMat = new THREE.MeshLambertMaterial({ color: 0x4a8898 });
-    this.addInfraMesh(scene, inletGeo, inletMat, cx + 0.12, 0.04, cz - 0.10);
+    this.addInfraMesh(scene, inletGeo, inletMat, cx, 0.09, cz);
 
     // Control gauge box
-    const gaugeGeo = new THREE.BoxGeometry(0.06, 0.08, 0.015);
-    gaugeGeo.translate(0, 0.18, 0);
+    const gaugeGeo = new THREE.BoxGeometry(0.08, 0.12, 0.02);
+    gaugeGeo.translate(0.58, 0.30, 0.10);
     const gaugeMat = new THREE.MeshLambertMaterial({ color: 0xd0d8e0 });
-    this.addInfraMesh(scene, gaugeGeo, gaugeMat, cx + 0.30, 0.07, cz + 0.05);
+    this.addInfraMesh(scene, gaugeGeo, gaugeMat, cx, 0.09, cz);
 
     // Status light
-    const lightGeo = new THREE.BoxGeometry(0.05, 0.04, 0.05);
-    lightGeo.translate(0, 0.31, 0);
+    const lightGeo = new THREE.BoxGeometry(0.07, 0.05, 0.07);
+    lightGeo.translate(0.25, 0.50, 0.10);
     const lightMat = new THREE.MeshBasicMaterial({ color: 0x03a9f4 });
-    this.addInfraMesh(scene, lightGeo, lightMat, cx + 0.12, 0.07, cz + 0.05, false);
+    this.addInfraMesh(scene, lightGeo, lightMat, cx, 0.09, cz, false);
   }
 
   // ═══════════════════════════════════════════════════════════════════
@@ -2360,88 +2623,125 @@ export class BuildingRenderer {
   private buildAirport(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
 
     // Terminal building
-    const termGeo = new THREE.BoxGeometry(1.60, 0.45, 0.60);
-    termGeo.translate(0, 0.45 / 2, 0);
+    const termGeo = new THREE.BoxGeometry(3.20, 0.55, 0.85);
+    termGeo.translate(0, 0.55 / 2, -1.10);
     const termMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
-    this.addInfraMesh(scene, termGeo, termMat, cx, 0.05, cz - 0.35);
+    this.addInfraMesh(scene, termGeo, termMat, cx, 0.05, cz);
 
     // Terminal roof
-    const termRoofGeo = new THREE.BoxGeometry(1.65, 0.03, 0.65);
-    termRoofGeo.translate(0, 0.45 + 0.03 / 2, 0);
+    const termRoofGeo = new THREE.BoxGeometry(3.28, 0.03, 0.92);
+    termRoofGeo.translate(0, 0.55 + 0.03 / 2, -1.10);
     const termRoofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
-    this.addInfraMesh(scene, termRoofGeo, termRoofMat, cx, 0.05, cz - 0.35);
+    this.addInfraMesh(scene, termRoofGeo, termRoofMat, cx, 0.05, cz);
 
-    // Terminal blue accent band (on front face)
-    const accentGeo = new THREE.BoxGeometry(1.60, 0.06, 0.01);
-    accentGeo.translate(0, 0.45 * 0.5, 0.60 / 2 + 0.005);
+    // Terminal blue accent band (on front face, facing +Z)
+    const accentGeo = new THREE.BoxGeometry(3.20, 0.08, 0.01);
+    accentGeo.translate(0, 0.55 * 0.5, -1.10 + 0.85 / 2 + 0.005);
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
-    this.addInfraMesh(scene, accentGeo, accentMat, cx, 0.05, cz - 0.35);
+    this.addInfraMesh(scene, accentGeo, accentMat, cx, 0.05, cz);
 
     // Control tower stem (at one end of terminal)
-    const towerStemGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.65, 10);
-    towerStemGeo.translate(0, 0.325, 0);
+    const towerStemGeo = new THREE.CylinderGeometry(0.10, 0.10, 0.90, 10);
+    towerStemGeo.translate(1.40, 0.45, -1.10);
     const towerStemMat = new THREE.MeshLambertMaterial({ color: 0xcfd8dc });
-    this.addInfraMesh(scene, towerStemGeo, towerStemMat, cx + 0.70, 0.05, cz - 0.35);
+    this.addInfraMesh(scene, towerStemGeo, towerStemMat, cx, 0.05, cz);
 
     // Control tower cab (wider top, glass blue)
-    const towerCabGeo = new THREE.CylinderGeometry(0.10, 0.10, 0.12, 10);
-    towerCabGeo.translate(0, 0.65 + 0.12 / 2, 0);
+    const towerCabGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.16, 10);
+    towerCabGeo.translate(1.40, 0.90 + 0.16 / 2, -1.10);
     const towerCabMat = new THREE.MeshLambertMaterial({ color: 0x90caf9 });
-    this.addInfraMesh(scene, towerCabGeo, towerCabMat, cx + 0.70, 0.05, cz - 0.35);
+    this.addInfraMesh(scene, towerCabGeo, towerCabMat, cx, 0.05, cz);
 
     // Tower roof cap
-    const towerCapGeo = new THREE.CylinderGeometry(0.11, 0.11, 0.02, 10);
-    towerCapGeo.translate(0, 0.65 + 0.12 + 0.02 / 2, 0);
+    const towerCapGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.02, 10);
+    towerCapGeo.translate(1.40, 0.90 + 0.16 + 0.02 / 2, -1.10);
     const towerCapMat = new THREE.MeshLambertMaterial({ color: 0x78909c });
-    this.addInfraMesh(scene, towerCapGeo, towerCapMat, cx + 0.70, 0.05, cz - 0.35);
+    this.addInfraMesh(scene, towerCapGeo, towerCapMat, cx, 0.05, cz);
 
     // Tower antenna
-    const antennaGeo = new THREE.CylinderGeometry(0.005, 0.005, 0.12, 4);
-    antennaGeo.translate(0, 0.65 + 0.12 + 0.02 + 0.12 / 2, 0);
+    const antennaGeo = new THREE.CylinderGeometry(0.008, 0.008, 0.16, 4);
+    antennaGeo.translate(1.40, 0.90 + 0.16 + 0.02 + 0.16 / 2, -1.10);
     const antennaMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-    this.addInfraMesh(scene, antennaGeo, antennaMat, cx + 0.70, 0.05, cz - 0.35);
+    this.addInfraMesh(scene, antennaGeo, antennaMat, cx, 0.05, cz);
 
     // Antenna light (red aviation light)
-    const antennaLightGeo = new THREE.SphereGeometry(0.01, 4, 4);
-    antennaLightGeo.translate(0, 0.65 + 0.12 + 0.02 + 0.12 + 0.01, 0);
+    const antennaLightGeo = new THREE.SphereGeometry(0.015, 4, 4);
+    antennaLightGeo.translate(1.40, 0.90 + 0.16 + 0.02 + 0.16 + 0.015, -1.10);
     const antennaLightMat = new THREE.MeshBasicMaterial({ color: 0xff1744 });
-    this.addInfraMesh(scene, antennaLightGeo, antennaLightMat, cx + 0.70, 0.05, cz - 0.35, false);
+    this.addInfraMesh(scene, antennaLightGeo, antennaLightMat, cx, 0.05, cz, false);
 
-    // 3 jet bridges protruding from terminal side
+    // 5 jet bridges protruding from terminal front side (+Z)
     const bridgeMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
-    const bridgeXOffsets = [-0.45, 0.0, 0.45];
+    const bridgeXOffsets = [-1.20, -0.60, 0.0, 0.60, 1.20];
     for (const dx of bridgeXOffsets) {
-      const bridgeGeo = new THREE.BoxGeometry(0.20, 0.08, 0.06);
-      bridgeGeo.translate(0, 0.20, 0.60 / 2 + 0.03);
-      this.addInfraMesh(scene, bridgeGeo, bridgeMat, cx + dx, 0.05, cz - 0.35);
+      const bridgeGeo = new THREE.BoxGeometry(0.30, 0.10, 0.08);
+      bridgeGeo.translate(dx, 0.25, -1.10 + 0.85 / 2 + 0.04);
+      this.addInfraMesh(scene, bridgeGeo, bridgeMat, cx, 0.05, cz);
     }
 
     // Apron/tarmac (between terminal and runway)
-    const apronGeo = new THREE.BoxGeometry(0.60, 0.01, 0.50);
-    apronGeo.translate(0, 0.005, 0);
+    const apronGeo = new THREE.BoxGeometry(2.20, 0.01, 1.00);
+    apronGeo.translate(0, 0.005, -0.15);
     const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
-    this.addInfraMesh(scene, apronGeo, apronMat, cx, 0.05, cz + 0.20, false);
+    this.addInfraMesh(scene, apronGeo, apronMat, cx, 0.05, cz, false);
 
-    // Runway (offset from terminal to one side)
-    const runwayGeo = new THREE.BoxGeometry(1.80, 0.01, 0.35);
-    runwayGeo.translate(0, 0.005, 0);
+    // Taxiway connecting apron to runway
+    const taxiwayGeo = new THREE.BoxGeometry(0.35, 0.01, 0.80);
+    taxiwayGeo.translate(0, 0.005, 0.70);
+    const taxiwayMat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    this.addInfraMesh(scene, taxiwayGeo, taxiwayMat, cx, 0.05, cz, false);
+
+    // Runway
+    const runwayGeo = new THREE.BoxGeometry(3.50, 0.01, 0.55);
+    runwayGeo.translate(0, 0.005, 1.20);
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
-    this.addInfraMesh(scene, runwayGeo, runwayMat, cx, 0.05, cz + 0.65, false);
+    this.addInfraMesh(scene, runwayGeo, runwayMat, cx, 0.05, cz, false);
 
-    // 3 runway center dashes
+    // 5 runway center dashes
     const dashMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    const dashXOffsets = [-0.50, 0.0, 0.50];
+    const dashXOffsets = [-1.20, -0.60, 0.0, 0.60, 1.20];
     for (const dx of dashXOffsets) {
-      const dashGeo = new THREE.BoxGeometry(0.15, 0.012, 0.03);
-      dashGeo.translate(0, 0.006, 0);
-      this.addInfraMesh(scene, dashGeo, dashMat, cx + dx, 0.05, cz + 0.65, false);
+      const dashGeo = new THREE.BoxGeometry(0.20, 0.012, 0.04);
+      dashGeo.translate(dx, 0.006, 1.20);
+      this.addInfraMesh(scene, dashGeo, dashMat, cx, 0.05, cz, false);
     }
 
     // Runway threshold line (at runway end)
-    const threshGeo = new THREE.BoxGeometry(0.03, 0.012, 0.30);
-    threshGeo.translate(0, 0.006, 0);
+    const threshGeo = new THREE.BoxGeometry(0.04, 0.012, 0.50);
+    threshGeo.translate(-1.70, 0.006, 1.20);
     const threshMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    this.addInfraMesh(scene, threshGeo, threshMat, cx - 0.85, 0.05, cz + 0.65, false);
+    this.addInfraMesh(scene, threshGeo, threshMat, cx, 0.05, cz, false);
+
+    // Parking lot area in front of terminal
+    const parkingGeo = new THREE.BoxGeometry(0.80, 0.01, 0.60);
+    parkingGeo.translate(-0.90, 0.005, -1.60);
+    this.addInfraMesh(scene, parkingGeo, new THREE.MeshLambertMaterial({ color: 0x909090 }), cx, 0.05, cz, false);
+
+    // Airplane on apron (simple low-poly: fuselage + wings)
+    const fuselageGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.30, 6);
+    fuselageGeo.rotateZ(Math.PI / 2);
+    fuselageGeo.translate(0.50, 0.10, -0.10);
+    this.addInfraMesh(scene, fuselageGeo, new THREE.MeshLambertMaterial({ color: 0xeeeeee }), cx, 0.05, cz);
+
+    // Airplane wings (triangle-ish box)
+    const wingGeo = new THREE.BoxGeometry(0.40, 0.01, 0.08);
+    wingGeo.translate(0.50, 0.10, -0.10);
+    this.addInfraMesh(scene, wingGeo, new THREE.MeshLambertMaterial({ color: 0xd0d0d0 }), cx, 0.05, cz);
+
+    // Airplane tail fin
+    const tailGeo = new THREE.BoxGeometry(0.01, 0.06, 0.04);
+    tailGeo.translate(0.35, 0.14, -0.10);
+    this.addInfraMesh(scene, tailGeo, new THREE.MeshLambertMaterial({ color: 0x2196f3 }), cx, 0.05, cz);
+
+    // Hangar building at one end
+    const hangarGeo = new THREE.BoxGeometry(0.60, 0.45, 0.45);
+    hangarGeo.translate(-1.40, 0.225, 0.10);
+    this.addInfraMesh(scene, hangarGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, 0.05, cz);
+
+    // Hangar roof
+    const hangarRoofGeo = new THREE.BoxGeometry(0.65, 0.03, 0.50);
+    hangarRoofGeo.translate(-1.40, 0.46, 0.10);
+    this.addInfraMesh(scene, hangarRoofGeo, new THREE.MeshLambertMaterial({ color: 0x909090 }), cx, 0.05, cz);
   }
 
   // ═══════════════════════════════════════════════════════════════════
