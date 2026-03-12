@@ -200,6 +200,16 @@ describe('GarbageService', () => {
     // Main coverage unaffected
     expect(gs.getCoverage(1, 5)).toBe(false);
   });
+
+  it('previewCoverage merges with existing facility coverage', () => {
+    const grid = makeRoadGrid(40, 10, 5);
+    const gs = new GarbageService();
+    addAndRecalc(gs, 0, 5, grid);
+    expect(gs.getCoverage(3, 5)).toBe(true);
+    // Preview a second facility — merged result includes existing coverage
+    const preview = gs.previewCoverage({ x: 20, y: 5 }, grid);
+    expect(preview.has('3,5')).toBe(true);
+  });
 });
 
 describe('GARBAGE constants', () => {

@@ -201,7 +201,7 @@ export class RoadCoverageMap {
     }
   }
 
-  /** Compute coverage preview for a single position (drag preview). */
+  /** Compute coverage preview for a single position (drag preview), without existing coverage. */
   preview(
     position: { x: number; y: number },
     grid: ReadableGrid,
@@ -212,6 +212,25 @@ export class RoadCoverageMap {
     const positions = expandFootprint(position.x, position.y, facilityWidth, facilityHeight);
     const roadCov = roadFlood(grid, positions, budget);
     return expandCoverageToBuildings(grid, roadCov);
+  }
+
+  /** Compute coverage preview merged with existing coverage (min cost per cell). */
+  previewMerged(
+    position: { x: number; y: number },
+    grid: ReadableGrid,
+    budget: number,
+    facilityWidth = 1,
+    facilityHeight = 1,
+  ): Map<string, number> {
+    const newCov = this.preview(position, grid, budget, facilityWidth, facilityHeight);
+    // Merge existing coverage: take min cost per cell
+    for (const [key, cost] of this.coverageMap) {
+      const prev = newCov.get(key);
+      if (prev === undefined || cost < prev) {
+        newCov.set(key, cost);
+      }
+    }
+    return newCov;
   }
 
   hasCoverage(x: number, y: number): boolean {

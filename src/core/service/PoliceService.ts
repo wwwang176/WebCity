@@ -50,9 +50,9 @@ export class PoliceService {
     this.coverage.recalculate(this.stations, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
   }
 
-  /** Preview coverage for a potential station placement (drag preview). */
+  /** Preview coverage for a potential station placement, merged with existing stations. */
   previewCoverage(position: { x: number; y: number }, grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
-    return this.coverage.preview(position, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
+    return this.coverage.previewMerged(position, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
   }
 
   tick(grid?: ReadableGrid): void {

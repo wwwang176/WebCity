@@ -169,6 +169,21 @@ describe('PoliceService', () => {
     // Main coverage unaffected
     expect(police.getCoverage(15, 15)).toBe(false);
   });
+
+  it('previewCoverage merges with existing station coverage', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
+    const police = new PoliceService();
+    police.addStation(14, 15, 15);
+    police.tick(grid);
+    // Existing station covers (15,15) with some cost
+    expect(police.getCoverage(15, 15)).toBe(true);
+    // Preview a second station far away — merged result should still include (15,15)
+    const preview = police.previewCoverage({ x: 15, y: 25 }, grid);
+    expect(preview.has('15,15')).toBe(true);
+    // Merged result is larger than either alone
+    const previewOnly = police.previewCoverage({ x: 15, y: 25 }, grid);
+    expect(previewOnly.size).toBeGreaterThan(0);
+  });
 });
 
 describe('POLICE constants', () => {

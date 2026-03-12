@@ -343,6 +343,29 @@ describe('RoadCoverageMap', () => {
     expect(map.hasCoverage(1, 0)).toBe(false);
   });
 
+  it('previewMerged merges new preview with existing coverage', () => {
+    // Road: (1,0) (2,0) (3,0) (4,0) (5,0)
+    const grid = makeGrid([
+      [_, R, R, R, R, R, _],
+    ]);
+    const map = new RoadCoverageMap();
+    // Existing facility at (0,0) covers left part of road
+    map.recalculate([{ x: 0, y: 0 }], grid, 100);
+    expect(map.hasCoverage(1, 0)).toBe(true);
+
+    // Preview new facility at (6,0) — covers right part of road
+    const merged = map.previewMerged({ x: 6, y: 0 }, grid, 100);
+    // Should include existing coverage
+    expect(merged.has(toPosKey(1, 0))).toBe(true);
+    // Should include new preview coverage
+    expect(merged.has(toPosKey(5, 0))).toBe(true);
+    // Should take min cost where both overlap (e.g. middle cell)
+    const existingCost = map.getCost(3, 0);
+    expect(merged.get(toPosKey(3, 0))!).toBeLessThanOrEqual(existingCost);
+    // Main map internal state untouched (getCoverageCount unchanged)
+    expect(map.getCoverageCount(1, 0)).toBe(1);
+  });
+
   it('recalculate clears previous state', () => {
     const grid = makeGrid([
       [_, R, R],

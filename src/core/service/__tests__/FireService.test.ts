@@ -306,6 +306,17 @@ describe('FireService', () => {
     // Main state unaffected
     expect(fire.getCoverage(15, 15)).toBe(false);
   });
+
+  it('previewCoverage merges with existing station coverage', () => {
+    const grid = makeCrossRoadGrid(40, 15, 15);
+    const fire = new FireService();
+    fire.addStation(14, 15, 15);
+    fire.recalculateCoverage(grid);
+    expect(fire.getCoverage(15, 15)).toBe(true);
+    // Preview a second station — merged result includes existing coverage
+    const preview = fire.previewCoverage({ x: 15, y: 25 }, grid);
+    expect(preview.has('15,15')).toBe(true);
+  });
 });
 
 describe('Fire extinguished tracking', () => {

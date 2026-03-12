@@ -78,9 +78,9 @@ export class GarbageService {
     return this.roadCoverage.hasCoverage(x, y);
   }
 
-  /** Preview coverage for a potential facility placement (drag preview). */
+  /** Preview coverage for a potential facility placement, merged with existing facilities. */
   previewCoverage(position: { x: number; y: number }, grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
-    return this.roadCoverage.preview(position, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
+    return this.roadCoverage.previewMerged(position, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
   }
 
   tick(population: number): void {
