@@ -67,6 +67,11 @@ export function getInfraBuildingId(type: InfraType): number {
   return byType.get(type)!.buildingId;
 }
 
+/** Check if a string is a valid InfraType. */
+export function isInfraType(type: string): type is InfraType {
+  return byType.has(type as InfraType);
+}
+
 export function getRotatedSize(w: number, h: number, rotation: Rotation): { w: number; h: number } {
   if (rotation === 90 || rotation === 270) {
     return { w: h, h: w };

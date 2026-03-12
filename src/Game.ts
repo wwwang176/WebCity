@@ -27,7 +27,7 @@ import { getTotalTransportOperatingCost } from './core/transport/TransportRegist
 import { DisasterType, createDisaster, calculateDamage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
-import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, MULTI_CELL_OCCUPIED, BURNED, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
@@ -1413,13 +1413,7 @@ export class Game {
   }
 
   private isInfraTool(tool: ToolType): boolean {
-    return [
-      'power', 'water', 'police', 'fire', 'hospital',
-      'school', 'school_high', 'school_univ', 'park',
-      'garbage', 'sewage', 'cemetery',
-      'bus_stop', 'metro_station', 'train_station',
-      'ferry_dock', 'airport',
-    ].includes(tool);
+    return isInfraType(tool);
   }
 
   private updateCursorSize(): void {

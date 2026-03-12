@@ -5,6 +5,7 @@ import {
   getInfraConfigById,
   getInfraBuildingId,
   isInfrastructureBuilding,
+  isInfraType,
   isZoneBuilding,
   type InfraType,
   type Rotation,
@@ -184,6 +185,21 @@ describe('InfraConfig', () => {
       for (const cfg of INFRA_CONFIGS) {
         expect(getInfraBuildingId(cfg.type)).toBe(cfg.buildingId);
       }
+    });
+  });
+
+  describe('isInfraType', () => {
+    it('should return true for all valid InfraTypes', () => {
+      for (const cfg of INFRA_CONFIGS) {
+        expect(isInfraType(cfg.type)).toBe(true);
+      }
+    });
+
+    it('should return false for non-infra strings', () => {
+      expect(isInfraType('select')).toBe(false);
+      expect(isInfraType('zone_residential')).toBe(false);
+      expect(isInfraType('demolish')).toBe(false);
+      expect(isInfraType('')).toBe(false);
     });
   });
 
