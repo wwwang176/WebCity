@@ -51,7 +51,7 @@ describe('relocationTick', () => {
     ];
     const occupancy = new Map<string, number>([['1,1', 1]]);
 
-    const count = relocationTick([citizen], candidates, occupancy);
+    const { count } = relocationTick([citizen], candidates, occupancy);
 
     expect(count).toBe(0);
     expect(citizen.homeId).toBe('1,1');
@@ -78,7 +78,7 @@ describe('relocationTick', () => {
     const candidates = [currentHome, betterHome];
     const occupancy = new Map<string, number>([['1,1', 1]]);
 
-    const count = relocationTick([citizen], candidates, occupancy);
+    const { count } = relocationTick([citizen], candidates, occupancy);
 
     expect(count).toBe(1);
     expect(citizen.homeId).toBe('5,6');
@@ -100,7 +100,7 @@ describe('relocationTick', () => {
     ];
     const occupancy = new Map<string, number>([['5,5', 1]]);
 
-    const count = relocationTick([citizen], candidates, occupancy);
+    const { count } = relocationTick([citizen], candidates, occupancy);
 
     expect(count).toBe(0);
     expect(citizen.homeId).toBe('5,5');
@@ -141,7 +141,7 @@ describe('relocationTick', () => {
     ];
     const occupancy = new Map<string, number>([['1,1', 100]]);
 
-    const count = relocationTick(citizens, candidates, occupancy);
+    const { count } = relocationTick(citizens, candidates, occupancy);
 
     expect(count).toBeLessThanOrEqual(5);
     expect(count).toBeGreaterThan(0);
@@ -162,7 +162,7 @@ describe('relocationTick', () => {
     ];
     const occupancy = new Map<string, number>([['1,1', 1]]);
 
-    const count = relocationTick([citizen], candidates, occupancy);
+    const { count } = relocationTick([citizen], candidates, occupancy);
 
     // Cannot relocate because the only other option is not affordable
     expect(count).toBe(0);
@@ -176,7 +176,7 @@ describe('relocationTick', () => {
     ];
     const occupancy = new Map<string, number>();
 
-    const count = relocationTick([citizen], candidates, occupancy);
+    const { count } = relocationTick([citizen], candidates, occupancy);
 
     expect(count).toBe(0);
     expect(citizen.homeId).toBeNull();
@@ -186,7 +186,7 @@ describe('relocationTick', () => {
     const citizen = makeCitizen({ id: 1, happiness: 10, homeId: '1,1' });
     const occupancy = new Map<string, number>([['1,1', 1]]);
 
-    const count = relocationTick([citizen], [], occupancy);
+    const { count } = relocationTick([citizen], [], occupancy);
 
     expect(count).toBe(0);
   });

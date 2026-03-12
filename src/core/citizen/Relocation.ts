@@ -25,23 +25,23 @@ export function relocationTick(
   candidates: readonly HousingCandidate[],
   occupancy: Map<string, number>,
   config?: Partial<RelocationConfig>,
-): number {
+): { count: number; relocatedIds: number[] } {
   const cfg: RelocationConfig = { ...DEFAULT_RELOCATION_CONFIG, ...config };
 
-  if (candidates.length === 0) return 0;
+  if (candidates.length === 0) return { count: 0, relocatedIds: [] };
 
   // Filter unhappy citizens who have a home (homeless are handled by assignWithPreference)
   const unhappy = citizens.filter(
     c => c.homeId !== null && c.happiness < cfg.happinessThreshold,
   );
-  if (unhappy.length === 0) return 0;
+  if (unhappy.length === 0) return { count: 0, relocatedIds: [] };
 
   // Cap the number of relocations per tick
   const maxRelocations = Math.max(1, Math.floor(unhappy.length * cfg.maxRelocateRatio));
-  let relocated = 0;
+  const relocatedIds: number[] = [];
 
   for (const citizen of unhappy) {
-    if (relocated >= maxRelocations) break;
+    if (relocatedIds.length >= maxRelocations) break;
 
     const currentPos = citizen.homeId!;
 
@@ -81,8 +81,8 @@ export function relocationTick(
     citizen.homeId = bestCandidate.pos;
     occupancy.set(bestCandidate.pos, (occupancy.get(bestCandidate.pos) ?? 0) + 1);
 
-    relocated++;
+    relocatedIds.push(citizen.id);
   }
 
-  return relocated;
+  return { count: relocatedIds.length, relocatedIds };
 }

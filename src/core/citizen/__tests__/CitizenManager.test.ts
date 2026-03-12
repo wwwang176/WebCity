@@ -195,7 +195,7 @@ describe('deathTick', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ age: 101 });
     const deaths = mgr.deathTick(() => false);
-    expect(deaths).toBe(1);
+    expect(deaths.length).toBe(1);
     expect(mgr.getPopulation()).toBe(0);
   });
 
@@ -207,7 +207,7 @@ describe('deathTick', () => {
     // Mock Math.random to always return 1.0 (never triggers death)
     vi.spyOn(Math, 'random').mockReturnValue(1.0);
     const deaths = mgr.deathTick(() => false);
-    expect(deaths).toBe(0);
+    expect(deaths.length).toBe(0);
     expect(mgr.getPopulation()).toBe(100);
     vi.restoreAllMocks();
   });
@@ -218,7 +218,7 @@ describe('deathTick', () => {
     // Mock random to return 0 (always below any positive rate)
     vi.spyOn(Math, 'random').mockReturnValue(0);
     const deaths = mgr.deathTick(() => false);
-    expect(deaths).toBe(1);
+    expect(deaths.length).toBe(1);
     expect(mgr.getPopulation()).toBe(0);
     vi.restoreAllMocks();
   });
@@ -230,7 +230,7 @@ describe('deathTick', () => {
     mgr1.createCitizen({ age: 70 }); // SENIOR, base=0.0003
     vi.spyOn(Math, 'random').mockReturnValue(0.0001);
     const deaths1 = mgr1.deathTick(() => true);
-    expect(deaths1).toBe(0);
+    expect(deaths1.length).toBe(0);
     vi.restoreAllMocks();
 
     // Without coverage: 0.0003 * 1.0 = 0.0003
@@ -239,7 +239,7 @@ describe('deathTick', () => {
     mgr2.createCitizen({ age: 70 });
     vi.spyOn(Math, 'random').mockReturnValue(0.0001);
     const deaths2 = mgr2.deathTick(() => false);
-    expect(deaths2).toBe(1);
+    expect(deaths2.length).toBe(1);
     vi.restoreAllMocks();
   });
 
@@ -261,7 +261,7 @@ describe('deathTick', () => {
     // random = 0.001 → below 0.0018 → dies
     vi.spyOn(Math, 'random').mockReturnValue(0.001);
     const deaths = mgr.deathTick(() => false);
-    expect(deaths).toBe(1);
+    expect(deaths.length).toBe(1);
     vi.restoreAllMocks();
   });
 
@@ -271,7 +271,7 @@ describe('deathTick', () => {
     mgr.createCitizen({ age: 30 }); // young, won't die with high random
     vi.spyOn(Math, 'random').mockReturnValue(1.0);
     const deaths = mgr.deathTick(() => false);
-    expect(deaths).toBe(5); // only the 101+ die
+    expect(deaths.length).toBe(5); // only the 101+ die
     expect(mgr.getPopulation()).toBe(1);
     vi.restoreAllMocks();
   });
@@ -285,14 +285,14 @@ describe('deathTick', () => {
       const mgr = new CitizenManager();
       mgr.createCitizen({ age: 70 }); // SENIOR
       const d = mgr.deathTick(() => false);
-      seniorDeaths += d;
+      seniorDeaths += d.length;
     }
 
     for (let i = 0; i < RUNS; i++) {
       const mgr = new CitizenManager();
       mgr.createCitizen({ age: 30 }); // ADULT
       const d = mgr.deathTick(() => false);
-      adultDeaths += d;
+      adultDeaths += d.length;
     }
 
     // SENIOR rate (0.0003) should produce ~10x more deaths than ADULT (0.00003)

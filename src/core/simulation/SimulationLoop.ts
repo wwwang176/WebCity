@@ -236,7 +236,7 @@ export class SimulationLoop {
       this.lastDeathDay = currentDay;
       this.state.deathCare.advanceDay();
       this.state.fire.advanceDay();
-      const deaths = this.state.citizens.deathTick(
+      const deadIds = this.state.citizens.deathTick(
         (citizen) => {
           if (!citizen.homeId) return false;
           const pos = parsePosKey(citizen.homeId);
@@ -244,7 +244,8 @@ export class SimulationLoop {
           return this.state.health.getCoverage(pos.x, pos.y);
         }
       );
-      for (let i = 0; i < deaths; i++) {
+      for (const id of deadIds) {
+        this.commuteCache.remove(id);
         this.state.deathCare.reportDeath();
       }
     }
@@ -402,7 +403,10 @@ export class SimulationLoop {
       pollution: this.getAvgPollution(),
       crimeRate: this.getAvgCrime(),
     };
-    migrationTick(this.state.citizens, city, pop);
+    const { emigratedIds } = migrationTick(this.state.citizens, city, pop);
+    for (const id of emigratedIds) {
+      this.commuteCache.remove(id);
+    }
   }
 
   private updateCitizenHappiness(): void {
@@ -794,7 +798,10 @@ export class SimulationLoop {
 
     const citizens = this.state.citizens.getCitizens();
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
-    relocationTick(citizens, housingCandidates, homeOccupancy);
+    const { relocatedIds } = relocationTick(citizens, housingCandidates, homeOccupancy);
+    for (const id of relocatedIds) {
+      this.commuteCache.remove(id);
+    }
   }
 
   /** Mark the lane graph as needing rebuild (call after road build/demolish).

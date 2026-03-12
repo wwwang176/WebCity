@@ -61,9 +61,9 @@ export function migrationTick(
   manager: CitizenManager,
   city: CityAttractiveness,
   population?: number,
-): { immigrated: number; emigrated: number } {
+): { immigrated: number; emigrated: number; emigratedIds: number[] } {
   let immigrated = 0;
-  let emigrated = 0;
+  const emigratedIds: number[] = [];
 
   const attractiveness = calculateAttractiveness(city);
   // 使用傳入的 population，若未傳入則以 manager 現有人口為準
@@ -86,10 +86,10 @@ export function migrationTick(
   // Emigration
   for (const citizen of [...manager.getCitizens()]) {
     if (citizen.happiness < IMMIGRATION.EMIGRATION_HAPPINESS_THRESHOLD) {
+      emigratedIds.push(citizen.id);
       manager.removeCitizen(citizen.id);
-      emigrated++;
     }
   }
 
-  return { immigrated, emigrated };
+  return { immigrated, emigrated: emigratedIds.length, emigratedIds };
 }

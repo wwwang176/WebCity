@@ -431,12 +431,12 @@ describe('DeathCare integration', () => {
       state.citizens.createCitizen({ age: 101 });
     }
 
-    const deaths = state.citizens.deathTick(() => false);
-    expect(deaths).toBe(3);
+    const deadIds = state.citizens.deathTick(() => false);
+    expect(deadIds.length).toBe(3);
     expect(state.citizens.getPopulation()).toBe(0);
 
     // Report deaths to deathCare
-    for (let i = 0; i < deaths; i++) state.deathCare.reportDeath();
+    for (let i = 0; i < deadIds.length; i++) state.deathCare.reportDeath();
     // Run deathCare ticks to process cremation
     for (let i = 0; i < 100; i++) state.deathCare.tick();
     expect(state.deathCare.getUnprocessed()).toBe(0);

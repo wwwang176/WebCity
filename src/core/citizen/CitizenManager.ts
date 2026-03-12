@@ -98,8 +98,9 @@ export class CitizenManager {
     }
   }
 
-  /** Called once per game day: bathtub-curve death check with health coverage */
-  deathTick(isHealthCovered: (citizen: Citizen) => boolean): number {
+  /** Called once per game day: bathtub-curve death check with health coverage.
+   *  Returns array of dead citizen IDs (for cache cleanup). */
+  deathTick(isHealthCovered: (citizen: Citizen) => boolean): number[] {
     const dead: number[] = [];
     for (const c of this.citizens) {
       if (c.age > 100) {
@@ -115,7 +116,7 @@ export class CitizenManager {
       }
     }
     for (const id of dead) this.removeCitizen(id);
-    return dead.length;
+    return dead;
   }
 
   educateTick(hasElementary: boolean, hasHighSchool: boolean, hasUniversity: boolean): void {
