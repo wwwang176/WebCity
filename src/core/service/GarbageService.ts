@@ -1,4 +1,5 @@
 import { manhattanDistance } from '../grid/GridHelpers';
+import { recoverNextId } from '../utils/recoverNextId';
 
 export type GarbageFacilityType = 'landfill' | 'incinerator';
 
@@ -156,10 +157,7 @@ export class GarbageService {
     const gs = new GarbageService();
     gs.facilities = data.facilities.map(f => ({ ...f }));
     gs.overflow = data.overflow;
-    for (const f of gs.facilities) {
-      const num = parseInt(f.id.replace('garbage_', ''), 10);
-      if (num >= gs.nextId) gs.nextId = num + 1;
-    }
+    gs.nextId = recoverNextId(gs.facilities, 'garbage_');
     return gs;
   }
 }

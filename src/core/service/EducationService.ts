@@ -1,5 +1,6 @@
 import { euclideanDistance } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
+import { recoverNextId } from '../utils/recoverNextId';
 
 export type SchoolType = 'elementary' | 'highschool' | 'university';
 
@@ -113,10 +114,7 @@ export class EducationService {
     for (const s of data.schools) {
       service.schools.push({ ...s });
     }
-    for (const s of service.schools) {
-      const num = parseInt(s.id.replace('school-', ''), 10);
-      if (num >= service.nextId) service.nextId = num + 1;
-    }
+    service.nextId = recoverNextId(service.schools, 'school-');
     return service;
   }
 }

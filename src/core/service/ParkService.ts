@@ -1,5 +1,6 @@
 import { isWithinEuclideanRadius } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
+import { recoverNextId } from '../utils/recoverNextId';
 
 export interface Park {
   id: string;
@@ -75,10 +76,7 @@ export class ParkService {
     for (const p of data) {
       ps.parks.push({ ...p });
     }
-    for (const p of ps.parks) {
-      const num = parseInt(p.id.replace('park-', ''), 10);
-      if (num >= ps.nextId) ps.nextId = num + 1;
-    }
+    ps.nextId = recoverNextId(ps.parks, 'park-');
     return ps;
   }
 

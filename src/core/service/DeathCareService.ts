@@ -1,4 +1,5 @@
 import { removeById } from '../utils/removeById';
+import { recoverNextId } from '../utils/recoverNextId';
 
 export interface Cemetery {
   id: string;
@@ -110,15 +111,10 @@ export class DeathCareService {
     service.cemeteries = json.cemeteries.map(c => ({ ...c }));
     service.crematoriums = json.crematoriums.map(c => ({ ...c }));
     service.pendingDeaths = json.pendingDeaths;
-    // Recover counter from max existing ID (cem-N / cre-N)
-    for (const c of service.cemeteries) {
-      const num = parseInt(c.id.replace('cem-', ''), 10);
-      if (num >= service.nextId) service.nextId = num + 1;
-    }
-    for (const c of service.crematoriums) {
-      const num = parseInt(c.id.replace('cre-', ''), 10);
-      if (num >= service.nextId) service.nextId = num + 1;
-    }
+    // Recover counter from max existing ID across both collections
+    const cemMax = recoverNextId(service.cemeteries, 'cem-');
+    const creMax = recoverNextId(service.crematoriums, 'cre-');
+    service.nextId = Math.max(cemMax, creMax);
     return service;
   }
 }

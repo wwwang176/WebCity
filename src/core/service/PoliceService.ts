@@ -1,4 +1,5 @@
 import { removeById } from '../utils/removeById';
+import { recoverNextId } from '../utils/recoverNextId';
 import { RadiusCoverageMap } from './RadiusCoverageMap';
 
 export interface PoliceStation {
@@ -62,11 +63,7 @@ export class PoliceService {
     for (const s of data.stations) {
       service.stations.push({ ...s });
     }
-    // Recover counter from max existing ID to avoid duplicates
-    for (const s of service.stations) {
-      const num = parseInt(s.id.replace('police_', ''), 10);
-      if (num >= service.nextId) service.nextId = num + 1;
-    }
+    service.nextId = recoverNextId(service.stations, 'police_');
     return service;
   }
 }

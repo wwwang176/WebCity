@@ -1,4 +1,5 @@
 import { removeById } from '../utils/removeById';
+import { recoverNextId } from '../utils/recoverNextId';
 import { RadiusCoverageMap } from './RadiusCoverageMap';
 
 export interface Hospital {
@@ -70,10 +71,7 @@ export class HealthService {
     for (const h of json.hospitals) {
       service.hospitals.push({ ...h });
     }
-    for (const h of service.hospitals) {
-      const num = parseInt(h.id.replace('hospital_', ''), 10);
-      if (num >= service.nextId) service.nextId = num + 1;
-    }
+    service.nextId = recoverNextId(service.hospitals, 'hospital_');
     return service;
   }
 }
