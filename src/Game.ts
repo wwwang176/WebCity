@@ -1090,6 +1090,47 @@ export class Game {
     );
   }
 
+  /** Apply selection highlight (100%) + hover highlight (30%) for select tool. */
+  private applySelectAndHoverHighlight(): void {
+    // 1. Apply full selection highlight if a building is selected
+    if (this.selectedBuilding) {
+      this.applySelectHighlight();
+    } else {
+      this.highlightManager.clear();
+    }
+
+    // 2. Check if cursor is over a building (different from selected)
+    const gx = this.gridCursor.gridX;
+    const gy = this.gridCursor.gridY;
+    const cell = this.state.grid.getCell(gx, gy);
+    if (!cell || cell.buildingId <= 0) return;
+
+    // Skip if hovering over the already-selected building
+    if (this.selectedBuilding) {
+      if (this.selectedBuilding.x === gx && this.selectedBuilding.y === gy) return;
+      // For multi-cell infra: compare primary cells (selectedBuilding.x/y may be a non-primary cell)
+      if (this.selectedBuilding.kind === 'infra') {
+        const hoverPrimary = findPrimaryCell(this.state.grid, gx, gy);
+        const selPrimary = findPrimaryCell(this.state.grid, this.selectedBuilding.x, this.selectedBuilding.y);
+        if (hoverPrimary && selPrimary &&
+          hoverPrimary.x === selPrimary.x && hoverPrimary.y === selPrimary.y) return;
+      }
+    }
+
+    // Determine hover footprint
+    const hoverCells = isInfrastructureBuilding(cell.buildingId)
+      ? this.getMultiCellFootprint(gx, gy)
+      : [{ x: gx, y: gy }];
+    if (hoverCells.length === 0) return;
+
+    // Apply 30% hover glow (additive, won't overwrite stronger selection highlight)
+    this.highlightManager.hoverHighlight(
+      hoverCells, 0xffffff,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups, 0.3,
+    );
+  }
+
   /** Collect all cells of a multi-cell building footprint (DRY). */
   private getMultiCellFootprint(x: number, y: number): { x: number; y: number }[] {
     const cells: { x: number; y: number }[] = [];
@@ -1146,8 +1187,8 @@ export class Game {
       this.highlightDragRange(ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff);
     } else {
       this.placementPreview.hide();
-      if (this.currentTool === 'select' && this.selectedBuilding) {
-        this.applySelectHighlight();
+      if (this.currentTool === 'select') {
+        this.applySelectAndHoverHighlight();
       } else {
         this.highlightManager.clear();
       }

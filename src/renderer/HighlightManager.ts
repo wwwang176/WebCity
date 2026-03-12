@@ -35,9 +35,9 @@ export function injectHighlightShader(material: THREE.MeshLambertMaterial): void
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <opaque_fragment>',
       `#include <opaque_fragment>
-      if (vHighlight > 0.5) {
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, uHighlightColor, 0.22);
-        gl_FragColor.rgb += uHighlightColor * 0.12;
+      if (vHighlight > 0.01) {
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, uHighlightColor, 0.22 * vHighlight);
+        gl_FragColor.rgb += uHighlightColor * 0.12 * vHighlight;
       }`,
     );
   };
@@ -217,30 +217,32 @@ export class HighlightManager {
   }
 
   private tintInfraGroupsByCells(
-    groups: readonly THREE.Group[], cellSet: Set<string>, color: number,
+    groups: readonly THREE.Group[], cellSet: Set<string>, color: number, intensity: number = 1.0,
   ): void {
     for (const group of groups) {
       const gx = Math.round(group.position.x);
       const gz = Math.round(group.position.z);
       if (cellSet.has(`${gx},${gz}`)) {
-        this.applyTintToGroup(group, color);
+        this.applyTintToGroup(group, color, intensity);
       }
     }
   }
 
-  private applyTintToGroup(group: THREE.Group, color: number): void {
+  private applyTintToGroup(group: THREE.Group, color: number, intensity: number = 1.0): void {
     const tint = new THREE.Color(color);
     group.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
+      // Prevent double-tinting: skip meshes already recorded in infraTinted
+      if (this.infraTinted.some(e => e.mesh === child)) return;
       const origMat = child.material as THREE.Material;
       const cloned = origMat.clone();
 
       if (cloned instanceof THREE.MeshLambertMaterial) {
-        cloned.color.lerp(tint, 0.25);
+        cloned.color.lerp(tint, 0.25 * intensity);
         cloned.emissive.set(color);
-        cloned.emissiveIntensity = 0.5;
+        cloned.emissiveIntensity = 0.5 * intensity;
       } else if (cloned instanceof THREE.MeshBasicMaterial) {
-        cloned.color.lerp(tint, 0.5);
+        cloned.color.lerp(tint, 0.5 * intensity);
       }
 
       this.infraTinted.push({ mesh: child, original: origMat });
@@ -248,15 +250,39 @@ export class HighlightManager {
     });
   }
 
+  // ─── Hover highlight (instance attribute only, no overlays) ─────
+
+  /**
+   * Lightweight hover highlight: sets instance aHighlight attribute + infra tint.
+   * Does NOT call clear() or create ground overlays.
+   * Uses Math.max so it won't overwrite a higher-intensity selection highlight.
+   */
+  hoverHighlight(
+    cells: { x: number; y: number }[],
+    color: number,
+    meshes: readonly (THREE.InstancedMesh | THREE.Mesh)[],
+    infraGroups: readonly THREE.Group[],
+    intensity: number = 0.3,
+  ): void {
+    if (cells.length === 0) return;
+    const cellSet = new Set<string>();
+    for (const c of cells) cellSet.add(`${c.x},${c.y}`);
+    this.tintInfraGroupsByCells(infraGroups, cellSet, color, intensity);
+    this.setInstanceHighlights(meshes, color,
+      (gx, gz) => cellSet.has(`${gx},${gz}`), intensity);
+  }
+
   // ─── Zone building instance highlights ───────────────────────────
 
   /**
    * Set aHighlight attribute and uHighlightColor uniform on zone building InstancedMeshes.
+   * @param intensity highlight intensity (0.0–1.0); uses Math.max to not overwrite stronger highlights.
    */
   private setInstanceHighlights(
     meshes: readonly (THREE.InstancedMesh | THREE.Mesh)[],
     color: number,
     inRange: (gx: number, gz: number) => boolean,
+    intensity: number = 1.0,
   ): void {
     for (const mesh of meshes) {
       if (!(mesh instanceof THREE.InstancedMesh)) continue;
@@ -283,14 +309,19 @@ export class HighlightManager {
         const gz = Math.round(this._pos.z);
 
         if (inRange(gx, gz)) {
-          data[i] = 1.0;
-          anySet = true;
+          const newVal = Math.max(data[i]!, intensity);
+          if (newVal !== data[i]) {
+            data[i] = newVal;
+            anySet = true;
+          }
         }
       }
 
       if (anySet) {
         attr.needsUpdate = true;
-        this.highlightedMeshes.push(mesh);
+        if (!this.highlightedMeshes.includes(mesh)) {
+          this.highlightedMeshes.push(mesh);
+        }
       }
     }
   }

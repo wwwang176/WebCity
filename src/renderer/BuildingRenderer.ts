@@ -548,11 +548,11 @@ void main() {
     color = mix(color, vec3(0.88), uDesaturate);
   }
 
-  // Highlight tint (demolish / zone selection)
-  if (vHighlight > 0.5) {
-    color = mix(color, uHighlightColor, 0.28);
+  // Highlight tint (demolish / zone selection / hover)
+  if (vHighlight > 0.01) {
+    color = mix(color, uHighlightColor, 0.28 * vHighlight);
     // Add emissive glow so it's visible at night too
-    color += uHighlightColor * 0.15;
+    color += uHighlightColor * 0.15 * vHighlight;
   }
 
   gl_FragColor = vec4(color, 1.0);
