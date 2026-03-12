@@ -7,7 +7,7 @@ import { BusSystem } from '../BusSystem';
 import { MetroSystem, METRO } from '../MetroSystem';
 import { RailSystem, RailServiceType, RAIL } from '../RailSystem';
 import { FerrySystem } from '../FerrySystem';
-import { AirportSystem, getAirportFootprint } from '../AirportSystem';
+import { AirportSystem, getAirportFootprint, AIRPORT_SIZE_CONFIG } from '../AirportSystem';
 import { chooseMode, AvailableTransport, MODE_CHOICE } from '../ModeChoice';
 import { PollutionManager } from '../../environment/Pollution';
 import { FreightSystem } from '../../traffic/FreightSystem';
@@ -1031,6 +1031,52 @@ describe('Airport multi-cell footprint', () => {
 
   it('LARGE airport should have 7x7 footprint', () => {
     expect(getAirportFootprint('LARGE')).toBe(7);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// T5.4 Airport consolidated config (OCP)
+// ---------------------------------------------------------------------------
+describe('Airport consolidated config', () => {
+  it('each size should contain all required properties', () => {
+    for (const size of ['SMALL', 'MEDIUM', 'LARGE'] as const) {
+      const cfg = AIRPORT_SIZE_CONFIG[size];
+      expect(cfg).toBeDefined();
+      expect(cfg.footprint).toBeGreaterThan(0);
+      expect(cfg.area).toBeGreaterThan(0);
+      expect(cfg.noise).toBeGreaterThanOrEqual(0);
+      expect(cfg.tourists).toBeGreaterThan(0);
+      expect(cfg.cargo).toBeGreaterThan(0);
+      expect(cfg.operatingCost).toBeGreaterThan(0);
+      expect(cfg.populationRequired).toBeGreaterThan(0);
+    }
+  });
+
+  it('footprint values should match getAirportFootprint', () => {
+    expect(AIRPORT_SIZE_CONFIG.SMALL.footprint).toBe(getAirportFootprint('SMALL'));
+    expect(AIRPORT_SIZE_CONFIG.MEDIUM.footprint).toBe(getAirportFootprint('MEDIUM'));
+    expect(AIRPORT_SIZE_CONFIG.LARGE.footprint).toBe(getAirportFootprint('LARGE'));
+  });
+
+  it('config values scale with size', () => {
+    const s = AIRPORT_SIZE_CONFIG.SMALL;
+    const m = AIRPORT_SIZE_CONFIG.MEDIUM;
+    const l = AIRPORT_SIZE_CONFIG.LARGE;
+    expect(m.footprint).toBeGreaterThan(s.footprint);
+    expect(l.footprint).toBeGreaterThan(m.footprint);
+    expect(m.operatingCost).toBeGreaterThan(s.operatingCost);
+    expect(l.operatingCost).toBeGreaterThan(m.operatingCost);
+  });
+
+  it('build() should use config population requirement', () => {
+    const sys = new AirportSystem();
+    // Below requirement
+    expect(sys.build(0, 0, 'SMALL', AIRPORT_SIZE_CONFIG.SMALL.populationRequired - 1)).toBeNull();
+    // At requirement
+    const result = sys.build(0, 0, 'SMALL', AIRPORT_SIZE_CONFIG.SMALL.populationRequired);
+    expect(result).not.toBeNull();
+    expect(result!.operatingCost).toBe(AIRPORT_SIZE_CONFIG.SMALL.operatingCost);
+    expect(result!.noisePollution).toBe(AIRPORT_SIZE_CONFIG.SMALL.noise);
   });
 });
 

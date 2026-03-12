@@ -3,52 +3,28 @@ import type { PollutionSource } from '../environment/Pollution';
 
 export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 
-const SIZE_FOOTPRINT: Record<AirportSize, number> = {
-  SMALL: 3,
-  MEDIUM: 5,
-  LARGE: 7,
+/** Consolidated per-size configuration for airports (OCP-friendly). */
+export interface AirportSizeConfig {
+  footprint: number;
+  area: number;
+  noise: number;
+  tourists: number;
+  cargo: number;
+  operatingCost: number;
+  populationRequired: number;
+}
+
+/** Single source of truth for all airport size parameters. */
+export const AIRPORT_SIZE_CONFIG: Record<AirportSize, AirportSizeConfig> = {
+  SMALL:  { footprint: 3, area: 9,  noise: 10, tourists: 50,  cargo: 20,  operatingCost: 500,  populationRequired: 10000 },
+  MEDIUM: { footprint: 5, area: 25, noise: 25, tourists: 200, cargo: 100, operatingCost: 1500, populationRequired: 50000 },
+  LARGE:  { footprint: 7, area: 49, noise: 50, tourists: 500, cargo: 300, operatingCost: 4000, populationRequired: 100000 },
 };
 
 /** Returns the side length (NxN) of the airport footprint for the given size. */
 export function getAirportFootprint(size: AirportSize): number {
-  return SIZE_FOOTPRINT[size];
+  return AIRPORT_SIZE_CONFIG[size].footprint;
 }
-
-const SIZE_AREA: Record<AirportSize, number> = {
-  SMALL: 9,   // 3x3
-  MEDIUM: 25, // 5x5
-  LARGE: 49,  // 7x7
-};
-
-const SIZE_NOISE: Record<AirportSize, number> = {
-  SMALL: 10,
-  MEDIUM: 25,
-  LARGE: 50,
-};
-
-const SIZE_TOURISTS: Record<AirportSize, number> = {
-  SMALL: 50,
-  MEDIUM: 200,
-  LARGE: 500,
-};
-
-const SIZE_CARGO: Record<AirportSize, number> = {
-  SMALL: 20,
-  MEDIUM: 100,
-  LARGE: 300,
-};
-
-const SIZE_OPERATING_COST: Record<AirportSize, number> = {
-  SMALL: 500,
-  MEDIUM: 1500,
-  LARGE: 4000,
-};
-
-const POP_REQUIRED: Record<AirportSize, number> = {
-  SMALL: 10000,
-  MEDIUM: 50000,
-  LARGE: 100000,
-};
 
 export interface Airport {
   id: number;
@@ -82,7 +58,8 @@ export class AirportSystem {
     size: AirportSize,
     currentPopulation: number,
   ): Airport | null {
-    if (currentPopulation < POP_REQUIRED[size]) {
+    const cfg = AIRPORT_SIZE_CONFIG[size];
+    if (currentPopulation < cfg.populationRequired) {
       return null;
     }
 
@@ -91,11 +68,11 @@ export class AirportSystem {
       x,
       y,
       size,
-      area: SIZE_AREA[size],
-      noisePollution: SIZE_NOISE[size],
-      touristsPerTick: SIZE_TOURISTS[size],
-      cargoPerTick: SIZE_CARGO[size],
-      operatingCost: SIZE_OPERATING_COST[size],
+      area: cfg.area,
+      noisePollution: cfg.noise,
+      touristsPerTick: cfg.tourists,
+      cargoPerTick: cfg.cargo,
+      operatingCost: cfg.operatingCost,
     };
     this.airports.push(airport);
     return airport;
@@ -103,7 +80,7 @@ export class AirportSystem {
 
   /** Population required to unlock airport construction. */
   getPopulationRequired(size: AirportSize = 'SMALL'): number {
-    return POP_REQUIRED[size];
+    return AIRPORT_SIZE_CONFIG[size].populationRequired;
   }
 
   tick(): void {
