@@ -28,6 +28,7 @@ import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
+import { buildODPools } from '../traffic/ODPoolBuilder';
 
 /** Simulation tuning constants */
 export const SIMULATION = {
@@ -1052,41 +1053,14 @@ export class SimulationLoop {
    */
   private computeCongestionFlow(): void {
     const grid = this.state.grid;
-    const citizens = this.state.citizens;
 
-    // Build weighted OD pools directly from citizen data (not zoneType).
-    // This avoids mismatch between cell.zoneType and actual buildingId usage.
-    type WeightedEntry = { x: number; y: number; weight: number };
-    const resMap = new Map<string, number>();
-    const destMap = new Map<string, number>();
-
-    for (const c of citizens.getCitizens()) {
-      if (!isWorkingAge(c.age)) continue;
-      if (!c.homeId || !c.workplaceId) continue;
-      resMap.set(c.homeId, (resMap.get(c.homeId) ?? 0) + 1);
-      destMap.set(c.workplaceId, (destMap.get(c.workplaceId) ?? 0) + 1);
-    }
-
-    const residential: WeightedEntry[] = [];
-    const destinations: WeightedEntry[] = [];
-    let totalResWeight = 0;
-    let totalDestWeight = 0;
-
-    for (const [posKey, weight] of resMap) {
-      const { x, y } = parsePosKeyUnsafe(posKey);
-      residential.push({ x, y, weight });
-      totalResWeight += weight;
-    }
-    for (const [posKey, weight] of destMap) {
-      const { x, y } = parsePosKeyUnsafe(posKey);
-      destinations.push({ x, y, weight });
-      totalDestWeight += weight;
-    }
-
-    if (residential.length === 0 || destinations.length === 0) {
+    const pools = buildODPools(this.state.citizens.getCitizens(), parsePosKeyUnsafe);
+    if (!pools) {
       this.state.traffic.updatePredictedFlow(new Map());
       return;
     }
+
+    const { residential, destinations, totalResWeight, totalDestWeight } = pools;
 
     // Scale sample count with population (1 sample per 5 eligible commuters, clamped 50-300)
     const sampleCount = Math.max(SIMULATION.SAMPLE_COUNT_MIN, Math.min(SIMULATION.SAMPLE_COUNT_MAX, Math.ceil(totalResWeight / SIMULATION.SAMPLE_DIVISOR)));
