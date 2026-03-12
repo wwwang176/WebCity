@@ -1,4 +1,4 @@
-import type { InfraType } from './InfraConfig';
+import { type InfraType, getInfraBuildingId } from './InfraConfig';
 import { findAtPosition } from '../grid/GridHelpers';
 
 /**
@@ -20,6 +20,8 @@ export interface InfraServiceContext {
   metro: { addStation(x: number, y: number): void; removeStation(id: number): void; getStations(): readonly { id: number; x: number; y: number }[] };
   rail: { buildStation(x: number, y: number): void; removeStation(id: number): void; getStations(): readonly { id: number; x: number; y: number }[] };
   ferry: { addDock(x: number, y: number): void; removeDock(id: number): void; getDocks(): readonly { id: number; x: number; y: number }[] };
+  airport: { demolishAtCell(x: number, y: number, clearCell: (cx: number, cy: number) => void): boolean };
+  grid: { getCell(x: number, y: number): { buildingId: number } | null; setCell(x: number, y: number, data: { buildingId: number; reserved?: number }): void };
 }
 
 export interface InfraServiceAction {
@@ -106,5 +108,17 @@ export const INFRA_SERVICE_ACTIONS: Partial<Record<InfraType, InfraServiceAction
   ferry_dock: {
     place: (ctx, cx, cy) => ctx.ferry.addDock(cx, cy),
     remove: (ctx, cx, cy) => findAndRemove(() => ctx.ferry.getDocks(), id => ctx.ferry.removeDock(id), cx, cy),
+  },
+  airport: {
+    place: () => { /* airport placement handled by placeAirport (custom footprint) */ },
+    remove: (ctx, cx, cy) => {
+      const airportBid = getInfraBuildingId('airport');
+      ctx.airport.demolishAtCell(cx, cy, (cellX, cellY) => {
+        const c = ctx.grid.getCell(cellX, cellY);
+        if (c && c.buildingId === airportBid) {
+          ctx.grid.setCell(cellX, cellY, { buildingId: 0, reserved: 0 });
+        }
+      });
+    },
   },
 };

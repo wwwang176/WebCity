@@ -588,24 +588,13 @@ export class Game {
     // Services store center coordinates, so compute center from primary cell
     const { cx, cy } = getInfraCenterById(px, py, buildingId);
 
-    // Data-driven civic service + transport stop removal (OCP: add new types in InfraServiceActions)
+    // Fully data-driven removal (OCP: add new types in InfraServiceActions)
     const infraCfg = getInfraConfigById(buildingId);
     if (infraCfg) {
       const actions = INFRA_SERVICE_ACTIONS[infraCfg.type];
       if (actions) {
-        // All services use center coordinates; for 1x1 buildings center === primary
         actions.remove(this.state as unknown as InfraServiceContext, cx, cy);
-        return;
       }
-    }
-    if (buildingId === getInfraBuildingId('airport')) {
-      const airportBid = getInfraBuildingId('airport');
-      this.state.airport.demolishAtCell(px, py, (cx, cy) => {
-        const c = this.state.grid.getCell(cx, cy);
-        if (c && c.buildingId === airportBid) {
-          this.state.grid.setCell(cx, cy, { buildingId: 0, reserved: 0 });
-        }
-      });
     }
   }
 
