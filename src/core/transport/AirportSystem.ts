@@ -10,20 +10,26 @@ export interface AirportSizeConfig {
   noise: number;
   tourists: number;
   cargo: number;
+  buildCost: number;
   operatingCost: number;
   populationRequired: number;
 }
 
 /** Single source of truth for all airport size parameters. */
 export const AIRPORT_SIZE_CONFIG: Record<AirportSize, AirportSizeConfig> = {
-  SMALL:  { footprint: 3, area: 9,  noise: 10, tourists: 50,  cargo: 20,  operatingCost: 500,  populationRequired: 10000 },
-  MEDIUM: { footprint: 5, area: 25, noise: 25, tourists: 200, cargo: 100, operatingCost: 1500, populationRequired: 50000 },
-  LARGE:  { footprint: 7, area: 49, noise: 50, tourists: 500, cargo: 300, operatingCost: 4000, populationRequired: 100000 },
+  SMALL:  { footprint: 3, area: 9,  noise: 10, tourists: 50,  cargo: 20,  buildCost: 5000,  operatingCost: 500,  populationRequired: 10000 },
+  MEDIUM: { footprint: 5, area: 25, noise: 25, tourists: 200, cargo: 100, buildCost: 15000, operatingCost: 1500, populationRequired: 50000 },
+  LARGE:  { footprint: 7, area: 49, noise: 50, tourists: 500, cargo: 300, buildCost: 40000, operatingCost: 4000, populationRequired: 100000 },
 };
 
 /** Returns the side length (NxN) of the airport footprint for the given size. */
 export function getAirportFootprint(size: AirportSize): number {
   return AIRPORT_SIZE_CONFIG[size].footprint;
+}
+
+/** Returns the one-time build cost for the given airport size. */
+export function getAirportBuildCost(size: AirportSize): number {
+  return AIRPORT_SIZE_CONFIG[size].buildCost;
 }
 
 export interface Airport {

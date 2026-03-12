@@ -33,7 +33,7 @@ import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
-import { getAirportFootprint, type AirportSize } from './core/transport/AirportSystem';
+import { getAirportFootprint, getAirportBuildCost, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
@@ -107,11 +107,6 @@ const INFRA_PLACEMENT_MESSAGES: Record<string, string> = {
 const TRANSPORT_TO_INFRA_TYPE: Record<string, InfraType> = {
   bus: 'bus_stop', metro: 'metro_station', rail: 'train_station',
   ferry: 'ferry_dock', airport: 'airport',
-};
-
-/** Airport build costs by size. */
-const AIRPORT_COSTS: Record<AirportSize, number> = {
-  SMALL: 5000, MEDIUM: 15000, LARGE: 40000,
 };
 
 /** Transport stop display names. */
@@ -732,7 +727,7 @@ export class Game {
     }
     const infraCfg = getInfraConfig(TRANSPORT_TO_INFRA_TYPE[type]!);
     const baseCost = infraCfg?.cost ?? 500;
-    const cost = type === 'airport' ? AIRPORT_COSTS[this.selectedAirportSize ?? 'SMALL'] : baseCost;
+    const cost = type === 'airport' ? getAirportBuildCost(this.selectedAirportSize ?? 'SMALL') : baseCost;
     if (this.state.budget.funds < cost) {
       this.showNotification(`Insufficient funds (need $${cost})`, 3);
       return;

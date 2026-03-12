@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AirportSystem, getAirportFootprint } from '../AirportSystem';
+import { AirportSystem, getAirportFootprint, getAirportBuildCost, AIRPORT_SIZE_CONFIG } from '../AirportSystem';
 
 describe('AirportSystem.findAtCell', () => {
   it('should find SMALL airport covering center cell', () => {
@@ -40,5 +40,18 @@ describe('AirportSystem.findAtCell', () => {
     expect(sys.findAtCell(8, 8)).not.toBeNull();
     expect(sys.findAtCell(12, 12)).not.toBeNull();
     expect(sys.findAtCell(7, 10)).toBeNull();
+  });
+});
+
+describe('getAirportBuildCost', () => {
+  it('should return build cost for each size', () => {
+    expect(getAirportBuildCost('SMALL')).toBe(AIRPORT_SIZE_CONFIG.SMALL.buildCost);
+    expect(getAirportBuildCost('MEDIUM')).toBe(AIRPORT_SIZE_CONFIG.MEDIUM.buildCost);
+    expect(getAirportBuildCost('LARGE')).toBe(AIRPORT_SIZE_CONFIG.LARGE.buildCost);
+  });
+
+  it('build costs should increase with size', () => {
+    expect(getAirportBuildCost('SMALL')).toBeLessThan(getAirportBuildCost('MEDIUM'));
+    expect(getAirportBuildCost('MEDIUM')).toBeLessThan(getAirportBuildCost('LARGE'));
   });
 });
