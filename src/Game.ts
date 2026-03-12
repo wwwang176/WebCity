@@ -790,44 +790,7 @@ export class Game {
         return;
       }
     } else if (type === 'airport') {
-      const airportSize: AirportSize = this.selectedAirportSize ?? 'SMALL';
-      const footprint = getAirportFootprint(airportSize);
-      const half = Math.floor(footprint / 2);
-
-      // Check all NxN cells are free
-      for (let dy = -half; dy <= half; dy++) {
-        for (let dx = -half; dx <= half; dx++) {
-          const c = this.state.grid.getCell(x + dx, y + dy);
-          if (!c) {
-            this.state.budget.funds += cost;
-            this.showNotification('Airport area is out of bounds');
-            return;
-          }
-          if (c.roadType !== RoadType.NONE || c.buildingId !== 0) {
-            this.state.budget.funds += cost;
-            this.showNotification('Airport area is not fully clear');
-            return;
-          }
-        }
-      }
-
-      const pop = this.state.citizens.getPopulation();
-      const result = this.state.airport.build(x, y, airportSize, pop);
-      if (!result) {
-        this.state.budget.funds += cost;
-        const req = this.state.airport.getPopulationRequired(airportSize);
-        this.showNotification(`Airport requires population >= ${req.toLocaleString()}`);
-        return;
-      }
-
-      // Set all NxN cells to airport buildingId
-      for (let dy = -half; dy <= half; dy++) {
-        for (let dx = -half; dx <= half; dx++) {
-          this.state.grid.setCell(x + dx, y + dy, { buildingId: getInfraBuildingId('airport') });
-        }
-      }
-      this.audioManager.playSfx('build');
-      this.dirty.buildings = true;
+      if (!this.placeAirport(x, y, cost)) return;
       return; // skip the default single-cell setCell below
     }
     this.state.grid.setCell(x, y, {
@@ -836,6 +799,49 @@ export class Game {
     });
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
+  }
+
+  /** Place an airport at (x,y). Returns true on success, false (with funds refunded) on failure. */
+  private placeAirport(x: number, y: number, cost: number): boolean {
+    const airportSize: AirportSize = this.selectedAirportSize ?? 'SMALL';
+    const footprint = getAirportFootprint(airportSize);
+    const half = Math.floor(footprint / 2);
+
+    // Check all NxN cells are free
+    for (let dy = -half; dy <= half; dy++) {
+      for (let dx = -half; dx <= half; dx++) {
+        const c = this.state.grid.getCell(x + dx, y + dy);
+        if (!c) {
+          this.state.budget.funds += cost;
+          this.showNotification('Airport area is out of bounds');
+          return false;
+        }
+        if (c.roadType !== RoadType.NONE || c.buildingId !== 0) {
+          this.state.budget.funds += cost;
+          this.showNotification('Airport area is not fully clear');
+          return false;
+        }
+      }
+    }
+
+    const pop = this.state.citizens.getPopulation();
+    const result = this.state.airport.build(x, y, airportSize, pop);
+    if (!result) {
+      this.state.budget.funds += cost;
+      const req = this.state.airport.getPopulationRequired(airportSize);
+      this.showNotification(`Airport requires population >= ${req.toLocaleString()}`);
+      return false;
+    }
+
+    // Set all NxN cells to airport buildingId
+    for (let dy = -half; dy <= half; dy++) {
+      for (let dx = -half; dx <= half; dx++) {
+        this.state.grid.setCell(x + dx, y + dy, { buildingId: getInfraBuildingId('airport') });
+      }
+    }
+    this.audioManager.playSfx('build');
+    this.dirty.buildings = true;
+    return true;
   }
 
   private update(dt: number): void {
