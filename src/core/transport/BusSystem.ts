@@ -74,6 +74,29 @@ export class BusSystem extends BaseTransportSystem {
     return vehicle;
   }
 
+  /**
+   * Create a bus route AND spawn its vehicle into TrafficSimulation.
+   * Returns the route, or null if path computation fails.
+   */
+  createRouteWithTraffic(
+    stops: TransportStop[],
+    vehicleCount: number,
+    findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
+    refinePath: (cellPath: string[], preferredLane: number) => LaneEdge[] | null,
+    traffic: TrafficSimulation,
+  ): TransportRoute | null {
+    const route = this.createRoute(stops, vehicleCount);
+    const segments = this.computeRouteSegments(route, findPath, refinePath);
+    if (!segments) {
+      this.deleteRoute(route.id);
+      return null;
+    }
+    for (let i = 0; i < Math.max(1, vehicleCount); i++) {
+      this.spawnBusInTraffic(route.id, traffic);
+    }
+    return route;
+  }
+
   // ── Road change handling ────────────────────────────────────────
 
   /**

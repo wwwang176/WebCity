@@ -26,6 +26,8 @@ import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
 import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
+import { gridAStarPath, refineLanePath } from './core/traffic/Pathfinding';
+import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
@@ -1251,6 +1253,19 @@ export class Game {
 
   getState(): GameState {
     return this.state;
+  }
+
+  /** Create a bus route with traffic pathfinding. Returns the route or null if no path. */
+  createBusRoute(stops: readonly TransportStop[], vehicleCount = 1): TransportRoute | null {
+    const lg = this.simLoop.laneGraph;
+    const grid = this.state.grid;
+    return this.state.bus.createRouteWithTraffic(
+      [...stops],
+      vehicleCount,
+      (fx, fy, tx, ty) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, grid),
+      (cellPath, lane) => refineLanePath(lg, cellPath, lane),
+      this.state.traffic,
+    );
   }
 
   getToolType(): ToolType {

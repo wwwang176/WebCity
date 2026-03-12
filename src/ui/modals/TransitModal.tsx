@@ -45,7 +45,12 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     const state = getGame().getState();
     if (type === 'bus') {
       const stops = [...state.bus.getStops()];
-      if (stops.length >= 2) state.bus.createRoute(stops, 1);
+      if (stops.length >= 2) {
+        if (!getGame().createBusRoute(stops, 1)) {
+          getGame().showNotification('No road path between bus stops!');
+          return;
+        }
+      }
     } else if (type === 'metro') {
       const stations = [...state.metro.getStations()];
       if (stations.length >= 2) state.metro.createLine(stations, 1);
@@ -95,8 +100,12 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     const selected = rb.selectedIds.map(id => allStops.find(s => s.id === id)!).filter(Boolean);
     if (selected.length < 2) return;
 
-    if (rb.type === 'bus') state.bus.createRoute([...selected], 1);
-    else if (rb.type === 'metro') state.metro.createLine([...selected], 1);
+    if (rb.type === 'bus') {
+      if (!getGame().createBusRoute([...selected], 1)) {
+        getGame().showNotification('No road path between bus stops!');
+        return;
+      }
+    } else if (rb.type === 'metro') state.metro.createLine([...selected], 1);
     else if (rb.type === 'rail') state.rail.createLine([...selected], RailServiceType.PASSENGER, 1);
     else if (rb.type === 'ferry') {
       if (!state.ferry.validateRouteConnectivity([...selected])) {

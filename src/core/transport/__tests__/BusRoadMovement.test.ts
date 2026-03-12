@@ -226,6 +226,51 @@ describe('Step 3: bus vehicle in TrafficSimulation', () => {
 
 // ── Step 4: BusSystem path management ───────────────────────────
 
+describe('Step 4: createRouteWithTraffic', () => {
+  it('should create route, compute segments, and spawn bus in one call', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1;
+    s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4;
+    s2.roadY = 0;
+
+    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
+    const refinePath = (cellPath: string[]) => {
+      const edges: LaneEdge[] = [];
+      for (let i = 0; i < cellPath.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      }
+      return edges;
+    };
+
+    const route = bus.createRouteWithTraffic([s1, s2], 1, findPath, refinePath, traffic);
+    expect(route).not.toBeNull();
+    expect(bus.getRoutes().length).toBe(1);
+    expect(traffic.vehicles.length).toBe(1);
+    expect(traffic.vehicles[0]!.busState).toBeDefined();
+    expect(traffic.vehicles[0]!.busState!.routeId).toBe(route!.id);
+  });
+
+  it('should return null and not create route when path fails', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1;
+    s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4;
+    s2.roadY = 0;
+
+    const route = bus.createRouteWithTraffic([s1, s2], 1, () => null, () => [], traffic);
+    expect(route).toBeNull();
+    expect(bus.getRoutes().length).toBe(0);
+    expect(traffic.vehicles.length).toBe(0);
+  });
+});
+
 describe('Step 4: BusSystem route path management', () => {
   it('computeRouteSegments should compute paths for all stop pairs', () => {
     const bus = new BusSystem();
