@@ -91,7 +91,6 @@ export class HighlightManager {
     buildingMeshes: readonly (THREE.InstancedMesh | THREE.Mesh)[],
     infraGroups: readonly THREE.Group[],
   ): void {
-    this.clear();
     this.createGroundOverlay(minX, minY, maxX, maxY, color);
     this.tintInfraGroups(infraGroups, minX, minY, maxX, maxY, color);
     this.setInstanceHighlights(buildingMeshes, color,
@@ -108,7 +107,6 @@ export class HighlightManager {
     infraGroups: readonly THREE.Group[],
   ): void {
     if (cells.length === 0) return;
-    this.clear();
 
     const cellSet = new Set<string>();
     for (const c of cells) cellSet.add(`${c.x},${c.y}`);
@@ -238,11 +236,22 @@ export class HighlightManager {
     const tint = new THREE.Color(color);
     group.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
-      // Prevent double-tinting: skip meshes already recorded in infraTinted
-      if (this.infraTinted.some(e => e.mesh === child)) return;
-      const origMat = child.material as THREE.Material;
-      const cloned = origMat.clone();
 
+      // If already tinted, retrieve original; otherwise save it
+      const existing = this.infraTinted.find(e => e.mesh === child);
+      let origMat: THREE.Material;
+      if (existing) {
+        origMat = existing.original;
+        // Dispose the previous tinted material
+        if (child.material !== origMat) {
+          (child.material as THREE.Material).dispose();
+        }
+      } else {
+        origMat = child.material as THREE.Material;
+        this.infraTinted.push({ mesh: child, original: origMat });
+      }
+
+      const cloned = origMat.clone();
       if (cloned instanceof THREE.MeshLambertMaterial) {
         cloned.color.lerp(tint, 0.25 * intensity);
         cloned.emissive.set(color);
@@ -251,7 +260,6 @@ export class HighlightManager {
         cloned.color.lerp(tint, 0.5 * intensity);
       }
 
-      this.infraTinted.push({ mesh: child, original: origMat });
       child.material = cloned;
     });
   }
@@ -308,7 +316,7 @@ export class HighlightManager {
   /**
    * Set aHighlight + aHighlightColor per-instance attributes on zone building InstancedMeshes.
    * @param color single color for all highlighted instances, or a function (gx,gz)=>number for per-instance color.
-   * @param intensity highlight intensity (0.0–1.0); uses Math.max to not overwrite stronger highlights.
+   * @param intensity highlight intensity (0.0–1.0); last-writer-wins (later layers overwrite earlier ones).
    */
   private setInstanceHighlights(
     meshes: readonly (THREE.InstancedMesh | THREE.Mesh)[],
@@ -338,11 +346,8 @@ export class HighlightManager {
         const gz = Math.round(this._pos.z);
 
         if (inRange(gx, gz)) {
-          const newVal = Math.max(data[i]!, intensity);
-          if (newVal !== data[i]) {
-            data[i] = newVal;
-            anySet = true;
-          }
+          data[i] = intensity;
+          anySet = true;
 
           // Set per-instance color
           if (colorData) {
@@ -354,7 +359,6 @@ export class HighlightManager {
             colorData[i * 3] = tmpColor.r;
             colorData[i * 3 + 1] = tmpColor.g;
             colorData[i * 3 + 2] = tmpColor.b;
-            anySet = true;
           }
         }
       }

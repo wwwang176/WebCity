@@ -1141,45 +1141,44 @@ export class Game {
     );
   }
 
-  /** Apply selection highlight (100%) + hover highlight (30%) for select tool. */
+  /** Apply hover (bottom) → selection (top) for select tool. */
   private applySelectAndHoverHighlight(): void {
-    // 1. Apply full selection highlight if a building is selected
-    if (this.selectedBuilding) {
-      this.applySelectHighlight();
-    } else {
-      this.highlightManager.clear();
-    }
-
-    // 2. Check if cursor is over a building (different from selected)
+    // 1. Hover first (bottom layer within tool — may be overwritten by selection)
     const gx = this.gridCursor.gridX;
     const gy = this.gridCursor.gridY;
     const cell = this.state.grid.getCell(gx, gy);
-    if (!cell || cell.buildingId <= 0) return;
 
-    // Skip if hovering over the already-selected building
-    if (this.selectedBuilding) {
-      if (this.selectedBuilding.x === gx && this.selectedBuilding.y === gy) return;
-      // For multi-cell infra: compare primary cells (selectedBuilding.x/y may be a non-primary cell)
-      if (this.selectedBuilding.kind === 'infra') {
+    let isHoveringSelected = false;
+    if (cell && cell.buildingId > 0 && this.selectedBuilding) {
+      if (this.selectedBuilding.x === gx && this.selectedBuilding.y === gy) {
+        isHoveringSelected = true;
+      } else if (this.selectedBuilding.kind === 'infra') {
         const hoverPrimary = findPrimaryCell(this.state.grid, gx, gy);
         const selPrimary = findPrimaryCell(this.state.grid, this.selectedBuilding.x, this.selectedBuilding.y);
         if (hoverPrimary && selPrimary &&
-          hoverPrimary.x === selPrimary.x && hoverPrimary.y === selPrimary.y) return;
+          hoverPrimary.x === selPrimary.x && hoverPrimary.y === selPrimary.y) {
+          isHoveringSelected = true;
+        }
       }
     }
 
-    // Determine hover footprint
-    const hoverCells = isInfrastructureBuilding(cell.buildingId)
-      ? this.getMultiCellFootprint(gx, gy)
-      : [{ x: gx, y: gy }];
-    if (hoverCells.length === 0) return;
+    if (cell && cell.buildingId > 0 && !isHoveringSelected) {
+      const hoverCells = isInfrastructureBuilding(cell.buildingId)
+        ? this.getMultiCellFootprint(gx, gy)
+        : [{ x: gx, y: gy }];
+      if (hoverCells.length > 0) {
+        this.highlightManager.hoverHighlight(
+          hoverCells, 0xffffff,
+          this.getAllHighlightMeshes(),
+          this.buildingRenderer.buildingInfraGroups, 0.3,
+        );
+      }
+    }
 
-    // Apply 30% hover glow (additive, won't overwrite stronger selection highlight)
-    this.highlightManager.hoverHighlight(
-      hoverCells, 0xffffff,
-      this.getAllHighlightMeshes(),
-      this.buildingRenderer.buildingInfraGroups, 0.3,
-    );
+    // 2. Selection on top (overwrites overlay + hover on selected cells)
+    if (this.selectedBuilding) {
+      this.applySelectHighlight();
+    }
   }
 
   /** Collect all cells of a multi-cell building footprint (DRY). */
@@ -1199,7 +1198,7 @@ export class Game {
   }
 
   private updatePlacementPreview(): void {
-    // Always clear first, then re-apply overlay base layer
+    // Clear all highlights, then layer: overlay (base) → tool (top)
     this.highlightManager.clear();
     this.reapplyOverlayHighlight();
 
@@ -1216,7 +1215,7 @@ export class Game {
         groundwaterFn,
       );
 
-      // Show road-distance coverage preview on top of overlay
+      // Coverage preview overwrites overlay with merged data (existing + new)
       this.applyCoverageOverlay(infraType);
     } else if (this.currentTool === 'demolish') {
       if (this.dragStart) {
@@ -1364,6 +1363,7 @@ export class Game {
     const data = this.buildOverlayData(type);
     this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data);
     this.computeOverlayHighlightCells(type);
+    this.updatePlacementPreview();
     this.onUIUpdate?.();
   }
 
