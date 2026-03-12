@@ -37,6 +37,13 @@ export class CommuteCache {
   /** Current road network generation — incremented on every road build/demolish. */
   roadGeneration = 0;
 
+  /** Increment road generation and clear shared route pool so stale routes are recalculated. */
+  bumpGeneration(): void {
+    this.roadGeneration++;
+    this.routeIndex.clear();
+    this.routeCellIndex.clear();
+  }
+
   get(citizenId: number): CachedRoute | undefined {
     return this.cache.get(citizenId);
   }

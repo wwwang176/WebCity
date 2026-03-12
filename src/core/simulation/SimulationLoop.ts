@@ -806,7 +806,7 @@ export class SimulationLoop {
 
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;
-    this.commuteCache.roadGeneration++;
+    this.commuteCache.bumpGeneration();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
       for (const cellKey of affectedCells) {

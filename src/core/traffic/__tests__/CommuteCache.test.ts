@@ -271,11 +271,18 @@ describe('CommuteCache', () => {
     expect(cache.isExpired(route, 20)).toBe(true);
   });
 
-  it('markLaneGraphDirty increments roadGeneration (via SimulationLoop)', () => {
+  it('bumpGeneration increments roadGeneration and clears routeIndex', () => {
     const cache = new CommuteCache();
+    const path = [makeEdge('0,0', '1,0')];
+    cache.setRoute('0,0->1,0', path);
+    expect(cache.getByRoute('0,0->1,0')).toEqual(path);
     expect(cache.roadGeneration).toBe(0);
-    cache.roadGeneration++;
+
+    cache.bumpGeneration();
+
     expect(cache.roadGeneration).toBe(1);
+    // Shared route pool should be cleared
+    expect(cache.getByRoute('0,0->1,0')).toBeUndefined();
   });
 
   it('isExpired does not reset recalcAtTick on subsequent road changes', () => {
