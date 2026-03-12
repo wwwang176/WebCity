@@ -95,9 +95,9 @@ describe('Income tax calculation (residential buildings)', () => {
     // Place a residential building
     state.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // Small House, 4 residents
     // Create citizens living in that building
-    const c1 = state.citizens.createCitizen({ age: 30, incomeLevel: IncomeLevel.LOW });
+    const c1 = state.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.LOW });
     c1.homeId = '5,5';
-    const c2 = state.citizens.createCitizen({ age: 35, incomeLevel: IncomeLevel.LOW });
+    const c2 = state.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.LOW });
     c2.homeId = '5,5';
 
     state.taxRates.residential = 10; // 10% income tax
@@ -115,7 +115,7 @@ describe('Income tax calculation (residential buildings)', () => {
     const stateLow = createGameState(20, 20);
     stateLow.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     for (let i = 0; i < 4; i++) {
-      const c = stateLow.citizens.createCitizen({ age: 30, incomeLevel: IncomeLevel.LOW });
+      const c = stateLow.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.LOW });
       c.homeId = '5,5';
     }
     stateLow.taxRates.residential = 10;
@@ -129,7 +129,7 @@ describe('Income tax calculation (residential buildings)', () => {
     const stateHigh = createGameState(20, 20);
     stateHigh.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     for (let i = 0; i < 4; i++) {
-      const c = stateHigh.citizens.createCitizen({ age: 30, incomeLevel: IncomeLevel.HIGH });
+      const c = stateHigh.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.HIGH });
       c.homeId = '5,5';
     }
     stateHigh.taxRates.residential = 10;
@@ -147,7 +147,7 @@ describe('Income tax calculation (residential buildings)', () => {
   it('MEDIUM income citizens should generate 1.5x tax of LOW income', () => {
     const state = createGameState(20, 20);
     state.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
-    const c = state.citizens.createCitizen({ age: 30, incomeLevel: IncomeLevel.MEDIUM });
+    const c = state.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.MEDIUM });
     c.homeId = '5,5';
     state.taxRates.residential = 10;
     state.taxRates.business = 0;
@@ -232,7 +232,7 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     // Residential building with citizens (fill to capacity to prevent migration adding more)
     state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 4 capacity
     for (let i = 0; i < 4; i++) {
-      const c = state.citizens.createCitizen({ age: 30, incomeLevel: IncomeLevel.LOW });
+      const c = state.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.LOW });
       c.homeId = '3,3';
     }
     // Commercial building
