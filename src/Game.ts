@@ -951,7 +951,7 @@ export class Game {
             this.notificationTimer = 4;
             return;
           }
-          if (c.roadType !== 0 || c.buildingId !== 0) {
+          if (c.roadType !== RoadType.NONE || c.buildingId !== 0) {
             this.state.budget.funds += cost;
             this.notification = 'Airport area is not fully clear';
             this.notificationTimer = 4;
@@ -973,7 +973,7 @@ export class Game {
       // Set all NxN cells to airport buildingId
       for (let dy = -half; dy <= half; dy++) {
         for (let dx = -half; dx <= half; dx++) {
-          this.state.grid.setCell(x + dx, y + dy, { buildingId: 237 });
+          this.state.grid.setCell(x + dx, y + dy, { buildingId: getInfraBuildingId('airport') });
         }
       }
       this.audioManager.playSfx('build');
