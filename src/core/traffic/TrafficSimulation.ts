@@ -48,6 +48,18 @@ export const TRAFFIC = {
 } as const;
 
 /** Get the number of directional lanes for a road type (lanes going one way). */
+/** Get speed limit for a grid cell identified by "x,y" key. Returns default 50 for non-road cells. */
+export function getSpeedLimitForCell(
+  grid: { getCell(x: number, y: number): { roadType: number } | null },
+  cellKey: string,
+): number {
+  const [gx, gy] = cellKey.split(',').map(Number);
+  const cell = grid.getCell(gx!, gy!);
+  if (!cell || cell.roadType <= 0) return 50;
+  const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
+  return cfg?.speedLimit ?? 50;
+}
+
 export function getLaneCount(roadType: number): number {
   const config = ROAD_CONFIGS[roadType as RoadType];
   if (!config || config.lanes === 0) return 1;

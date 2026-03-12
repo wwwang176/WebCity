@@ -25,7 +25,7 @@ import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { tryRandomDisaster, formatDisasterMessage } from './core/climate/Disaster';
-import { getLaneCount } from './core/traffic/TrafficSimulation';
+import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
@@ -934,14 +934,10 @@ export class Game {
         if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
         return true;
       };
-      const getSpeedLimit = (cellKey: string) => {
-        const [gx, gy] = cellKey.split(',').map(Number);
-        const cell = this.state.grid.getCell(gx!, gy!);
-        if (!cell || cell.roadType <= 0) return 50;
-        const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
-        return cfg?.speedLimit ?? 50;
-      };
-      this.state.traffic.advanceEdgeVehicles(scaledDt, canAdvance, getSpeedLimit);
+      this.state.traffic.advanceEdgeVehicles(
+        scaledDt, canAdvance,
+        (key) => getSpeedLimitForCell(this.state.grid, key),
+      );
     }
 
     // Collect road vehicle positions for rendering
