@@ -152,6 +152,15 @@ export function findAdjacentRoad(
   return null;
 }
 
+/** Find the first item in an array that matches the given (x, y) coordinates. */
+export function findAtPosition<T extends { x: number; y: number }>(
+  items: readonly T[],
+  x: number,
+  y: number,
+): T | undefined {
+  return items.find(item => item.x === x && item.y === y);
+}
+
 /** Normalize two corner coordinates into { minX, maxX, minY, maxY }. */
 export function normalizeRect(x1: number, y1: number, x2: number, y2: number): {
   minX: number; maxX: number; minY: number; maxY: number;

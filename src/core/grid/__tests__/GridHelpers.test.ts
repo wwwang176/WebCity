@@ -4,7 +4,7 @@ import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
   hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS, getLShapedPath,
-  getDirectionFlag, manhattanDistance,
+  getDirectionFlag, manhattanDistance, findAtPosition,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -424,5 +424,36 @@ describe('FOUR_NEIGHBORS', () => {
     expect(keys).toContain('0,1');
     expect(keys).toContain('-1,0');
     expect(keys).toContain('1,0');
+  });
+});
+
+describe('findAtPosition', () => {
+  const items = [
+    { x: 5, y: 10, name: 'alpha' },
+    { x: 20, y: 30, name: 'beta' },
+    { x: 0, y: 0, name: 'origin' },
+  ];
+
+  it('should find item at matching coordinates', () => {
+    expect(findAtPosition(items, 5, 10)).toBe(items[0]);
+    expect(findAtPosition(items, 20, 30)).toBe(items[1]);
+    expect(findAtPosition(items, 0, 0)).toBe(items[2]);
+  });
+
+  it('should return undefined when no item matches', () => {
+    expect(findAtPosition(items, 99, 99)).toBeUndefined();
+    expect(findAtPosition(items, 5, 30)).toBeUndefined();
+  });
+
+  it('should return undefined for empty array', () => {
+    expect(findAtPosition([], 5, 10)).toBeUndefined();
+  });
+
+  it('should return first match when duplicates exist', () => {
+    const dupes = [
+      { x: 1, y: 1, id: 'first' },
+      { x: 1, y: 1, id: 'second' },
+    ];
+    expect(findAtPosition(dupes, 1, 1)).toBe(dupes[0]);
   });
 });

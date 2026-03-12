@@ -1,4 +1,5 @@
 import type { InfraType } from './InfraConfig';
+import { findAtPosition } from '../grid/GridHelpers';
 
 /**
  * Minimal interfaces for the services needed by infra place/remove actions.
@@ -33,7 +34,7 @@ function findAndRemove(
   cx: number,
   cy: number,
 ): void {
-  const item = getList().find(s => s.x === cx && s.y === cy);
+  const item = findAtPosition(getList(), cx, cy);
   if (item) removeFn(item.id);
 }
 

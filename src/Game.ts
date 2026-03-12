@@ -13,7 +13,7 @@ import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, TerrainType } from './core/grid/types';
-import { normalizeRect } from './core/grid/GridHelpers';
+import { normalizeRect, findAtPosition } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
@@ -1641,15 +1641,15 @@ export class Game {
     const s = this.state;
     switch (type) {
       case 'police': {
-        const st = s.police.getStations().find(p => p.x === cx && p.y === cy);
+        const st = findAtPosition(s.police.getStations(), cx, cy);
         return { 'Radius': st?.radius ?? 15, 'Coverage': s.police.getCoverage(cx, cy) ? 'Yes' : 'No' };
       }
       case 'fire': {
-        const st = s.fire.getStations().find(f => f.x === cx && f.y === cy);
+        const st = findAtPosition(s.fire.getStations(), cx, cy);
         return { 'Radius': st?.radius ?? 15, 'Active Fires': s.fire.getActiveFires().length };
       }
       case 'hospital': {
-        const h = s.health.getHospitals().find(h => h.x === cx && h.y === cy);
+        const h = findAtPosition(s.health.getHospitals(), cx, cy);
         return { 'Capacity': h?.capacity ?? 100, 'Radius': h?.radius ?? 12 };
       }
       case 'school': {
@@ -1665,26 +1665,26 @@ export class Game {
         return { 'Type': 'University', 'Capacity': sc?.capacity ?? 500, 'Radius': sc?.radius ?? 15 };
       }
       case 'park': {
-        const p = s.parks.getParks().find(p => p.x === cx && p.y === cy);
+        const p = findAtPosition(s.parks.getParks(), cx, cy);
         return { 'Radius': p?.radius ?? 5 };
       }
       case 'garbage': {
-        const f = s.garbage.getFacilities().find(f => f.x === cx && f.y === cy);
+        const f = findAtPosition(s.garbage.getFacilities(), cx, cy);
         return { 'Capacity': f?.capacity ?? 1000, 'Load': f?.currentLoad ?? 0 };
       }
       case 'sewage': {
         return { 'Status': 'Active' };
       }
       case 'cemetery': {
-        const c = s.deathCare.getCemeteries().find(c => c.x === cx && c.y === cy);
+        const c = findAtPosition(s.deathCare.getCemeteries(), cx, cy);
         return { 'Capacity': c?.capacity ?? 500, 'Used': c?.used ?? 0 };
       }
       case 'power': {
-        const p = s.power.getPlants().find(p => p.x === cx && p.y === cy);
+        const p = findAtPosition(s.power.getPlants(), cx, cy);
         return { 'Output': p?.output ?? 500, 'Type': p?.type ?? 'coal' };
       }
       case 'water': {
-        const w = s.water.getPlants().find(p => p.x === cx && p.y === cy);
+        const w = findAtPosition(s.water.getPlants(), cx, cy);
         return { 'Output': w?.output ?? 500 };
       }
       case 'airport': {
