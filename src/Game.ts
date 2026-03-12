@@ -417,33 +417,6 @@ export class Game {
       case 'select':
         this.handleSelectClick(x1, y1);
         break;
-      case 'road':
-      case 'road_rural':
-      case 'road_2lane':
-      case 'road_4lane':
-      case 'road_6lane':
-      case 'road_highway': {
-        const result = this.roadBuilder.buildRoad(
-          { x: x1, y: y1 }, { x: x2, y: y2 },
-          this.currentRoadType,
-          this.state.budget.funds,
-        );
-        this.handleBuildResult(result, 'road', () => this.simLoop.markLaneGraphDirty());
-        this.dirty.roads = true;
-        this.dirty.crossings = true;
-        this.dirty.trafficLights = true;
-        break;
-      }
-      case 'rail_track': {
-        const result = this.railBuilder.buildTrack(
-          { x: x1, y: y1 }, { x: x2, y: y2 },
-          this.state.budget.funds,
-        );
-        this.handleBuildResult(result, 'track');
-        this.dirty.tracks = true;
-        this.dirty.crossings = true;
-        break;
-      }
       case 'demolish': {
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         this.demolish(x1, y1, x2, y2);
@@ -456,6 +429,30 @@ export class Game {
         this.audioManager.playSfx('zone');
         break;
       default: {
+        // Data-driven road building (OCP: add new road types in TOOL_TO_ROAD_TYPE)
+        if (TOOL_TO_ROAD_TYPE[this.currentTool] !== undefined) {
+          const result = this.roadBuilder.buildRoad(
+            { x: x1, y: y1 }, { x: x2, y: y2 },
+            this.currentRoadType,
+            this.state.budget.funds,
+          );
+          this.handleBuildResult(result, 'road', () => this.simLoop.markLaneGraphDirty());
+          this.dirty.roads = true;
+          this.dirty.crossings = true;
+          this.dirty.trafficLights = true;
+          break;
+        }
+        // Rail track building
+        if (this.currentTool === 'rail_track') {
+          const result = this.railBuilder.buildTrack(
+            { x: x1, y: y1 }, { x: x2, y: y2 },
+            this.state.budget.funds,
+          );
+          this.handleBuildResult(result, 'track');
+          this.dirty.tracks = true;
+          this.dirty.crossings = true;
+          break;
+        }
         const zoneType = TOOL_TO_ZONE[this.currentTool];
         if (zoneType !== undefined) {
           this.applyZone(x1, y1, x2, y2, zoneType);
