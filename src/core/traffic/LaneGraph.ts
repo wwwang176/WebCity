@@ -313,8 +313,6 @@ export class LaneGraph {
 
       // Also connect within cell: entry[oppositeDir] → exit[dir] (traversal through cell)
       for (let lane = 0; lane < dirLanes; lane++) {
-        // Traffic entering from the opposite side exits in this direction
-        // But only if there IS an opposite direction connection
         for (const otherD of activeDirections) {
           if (otherD.dir === dir) continue;
           const fromId = `${cellKey}:${otherD.dir}:${lane}:entry`;
@@ -323,10 +321,34 @@ export class LaneGraph {
           const toPt = this.points.get(toId);
           if (!fromPt || !toPt) continue;
 
-          // Avoid duplicating: only create if not already an intersection
-          // For straight road (2 directions), this is a through-connection
           const edgeId = `${fromId}>${toId}`;
-          this.pushEdgeIfNew(edgeId, fromPt, toPt, 'straight', 0.1);
+          if (this.edges.some(e => e.id === edgeId)) continue;
+
+          // L-bend (non-opposite directions): create turn edge with bezier
+          if (otherD.dir !== oppositeDir(dir)) {
+            const cp = this.computeTurnControlPoint(fromPt, toPt);
+            const length = this.approximateQuadraticBezierLength(
+              fromPt.position, cp, toPt.position
+            );
+            this.edges.push({
+              id: edgeId,
+              from: fromPt,
+              to: toPt,
+              bezierControl: [cp],
+              length: Math.max(length, 0.1),
+              type: 'turn',
+            });
+          } else {
+            // Straight through: keep as straight
+            const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
+            this.edges.push({
+              id: edgeId,
+              from: fromPt,
+              to: toPt,
+              length: Math.max(length, 0.1),
+              type: 'straight',
+            });
+          }
         }
       }
     }

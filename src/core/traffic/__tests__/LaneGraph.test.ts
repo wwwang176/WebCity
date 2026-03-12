@@ -232,6 +232,68 @@ describe('LaneGraph', () => {
     });
   });
 
+  describe('L-bend turn edges', () => {
+    it('should create turn edges with bezier for a 2-direction L-bend', () => {
+      // L-bend at (1,0): EAST + SOUTH (perpendicular, not opposite)
+      const cells = new Map([
+        ['1,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST | RoadDirection.SOUTH }],
+        ['2,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.WEST }],
+        ['1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH }],
+      ]);
+      const graph = new LaneGraph();
+      graph.buildFromGrid(makeGridLookup(cells), ['1,0', '2,0', '1,1']);
+
+      const allEdges = graph.getAllEdges();
+      const turnEdges = allEdges.filter(e => e.type === 'turn' && e.from.cellKey === '1,0');
+
+      // 2 directions, not opposite → 2 turn edges (east→south, south→east)
+      expect(turnEdges.length).toBe(2);
+
+      for (const e of turnEdges) {
+        expect(e.bezierControl).toBeDefined();
+        expect(e.bezierControl!.length).toBe(1);
+      }
+    });
+
+    it('should NOT create turn edges for a straight road (opposite directions)', () => {
+      const cells = new Map([
+        ['0,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST }],
+        ['1,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST | RoadDirection.WEST }],
+        ['2,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.WEST }],
+      ]);
+      const graph = new LaneGraph();
+      graph.buildFromGrid(makeGridLookup(cells), ['0,0', '1,0', '2,0']);
+
+      const allEdges = graph.getAllEdges();
+      const turnEdgesInMiddle = allEdges.filter(
+        e => e.type === 'turn' && e.from.cellKey === '1,0'
+      );
+      // Opposite directions (east↔west) → no turn edges, only straight
+      expect(turnEdgesInMiddle.length).toBe(0);
+    });
+
+    it('should create turn edges with bezier for 4-lane L-bend', () => {
+      const cells = new Map([
+        ['1,0', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST | RoadDirection.SOUTH }],
+        ['2,0', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.WEST }],
+        ['1,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.NORTH }],
+      ]);
+      const graph = new LaneGraph();
+      graph.buildFromGrid(makeGridLookup(cells), ['1,0', '2,0', '1,1']);
+
+      const allEdges = graph.getAllEdges();
+      const turnEdges = allEdges.filter(e => e.type === 'turn' && e.from.cellKey === '1,0');
+
+      // 4-lane = 2 lanes per direction, 2 turn directions → 2 × 2 = 4 turn edges
+      expect(turnEdges.length).toBe(4);
+
+      for (const e of turnEdges) {
+        expect(e.bezierControl).toBeDefined();
+        expect(e.bezierControl!.length).toBe(1);
+      }
+    });
+  });
+
   describe('Graph update on road changes', () => {
     it('should update graph when a road cell is added', () => {
       const cells = new Map([
