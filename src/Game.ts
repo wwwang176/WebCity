@@ -12,14 +12,13 @@ import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from './core/road/types';
-import { ZoneType, TerrainType, isResidentialZone, isCommercialZone } from './core/grid/types';
+import { ZoneType, TerrainType } from './core/grid/types';
 import { normalizeRect } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
 import { getBuildingType, type BuildingType } from './core/building/types';
-import { IncomeLevel } from './core/citizen/types';
-import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from './core/economy/TaxMultipliers';
+import { ECONOMY } from './core/economy/TaxMultipliers';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
@@ -38,6 +37,7 @@ import { getAirportFootprint, type AirportSize } from './core/transport/AirportS
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
+import { calculateZoneIncomes } from './core/economy/IncomeCalculator';
 
 import {
   ViewMode,
@@ -1855,37 +1855,16 @@ export class Game {
     roadMaintenance: number; loanInterest: number; powerCost: number; waterCost: number;
     transportCost: number;
   } {
-    const grid = this.state.grid;
-    const incomeTaxRate = this.state.taxRates.residential ?? 9;
-    const businessTaxRate = this.state.taxRates.business ?? 9;
-    let resIncome = 0, comIncome = 0, indIncome = 0, offIncome = 0;
+    // Shared income calculation (DRY: same logic as SimulationLoop.calculateIncome)
+    const incomes = calculateZoneIncomes({
+      forEachCell: (fn) => this.state.grid.forEachCell(fn),
+      taxRates: this.state.taxRates,
+      getCitizensByHome: (key) => this.state.citizens.getCitizensByHome(key),
+    });
+
     let roadCount = 0;
-
-    grid.forEachCell((cell, x, y) => {
+    this.state.grid.forEachCell((cell) => {
       if (cell.roadType !== RoadType.NONE) roadCount++;
-      if (!isZoneBuilding(cell.buildingId)) return;
-      if (cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) return;
-
-      const btype = getBuildingType(cell.buildingId);
-      if (!btype) return;
-
-      if (isResidentialZone(cell.zoneType)) {
-        const posKey = `${x},${y}`;
-        const residents = this.state.citizens.getCitizensByHome(posKey);
-        for (const citizen of residents) {
-          resIncome += ECONOMY.CITIZEN_BASE_INCOME * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
-        }
-      } else {
-        const ci = btype.companyIncome ?? 0;
-        const bi = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
-        if (isCommercialZone(cell.zoneType)) {
-          comIncome += bi;
-        } else if (cell.zoneType === ZoneType.INDUSTRIAL) {
-          indIncome += bi;
-        } else if (cell.zoneType === ZoneType.OFFICE) {
-          offIncome += bi;
-        }
-      }
     });
 
     const roadMaintenance = roadCount * ECONOMY.ROAD_MAINTENANCE_PER_TILE;
@@ -1895,10 +1874,10 @@ export class Game {
     const transportCost = getTotalTransportOperatingCost(this.state);
 
     return {
-      residential: Math.round(resIncome * 10) / 10,
-      commercial: Math.round(comIncome * 10) / 10,
-      industrial: Math.round(indIncome * 10) / 10,
-      office: Math.round(offIncome * 10) / 10,
+      residential: Math.round(incomes.residential * 10) / 10,
+      commercial: Math.round(incomes.commercial * 10) / 10,
+      industrial: Math.round(incomes.industrial * 10) / 10,
+      office: Math.round(incomes.office * 10) / 10,
       roadMaintenance: Math.round(roadMaintenance * 10) / 10,
       loanInterest: Math.round(loanInterest * 10) / 10,
       powerCost,

@@ -13,13 +13,13 @@ import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { getBuildingType } from '../building/types';
 import { clampBuildingLevel } from '../building/BuildingLevel';
-import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../economy/TaxMultipliers';
+import { ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraConfigById, getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { getGridPollutionSources } from '../environment/GridPollutionSources';
 import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
-import { IncomeLevel, isWorkingAge } from '../citizen/types';
+import { isWorkingAge } from '../citizen/types';
 import { countOccupancy, assignToBuildings, type BuildingSlot } from '../citizen/OccupancyAssignment';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
@@ -28,6 +28,7 @@ import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } f
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
+import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
 import { findAvailableTransit } from '../transport/TransitAvailability';
@@ -487,40 +488,18 @@ export class SimulationLoop {
   }
 
   private calculateIncome(): void {
-    const incomeTaxRate = this.state.taxRates.residential ?? 9;
-    const businessTaxRate = this.state.taxRates.business ?? 9;
-
-    let totalIncome = 0;
-
-    this.state.grid.forEachCell((cell, x, y) => {
-      // Skip infrastructure, empty cells, burned, and multi-cell secondary
-      if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) return;
-      const btype = getBuildingType(cell.buildingId);
-      if (!btype) return;
-
-      let buildingIncome = 0;
-
-      if (isResidentialZone(btype.zoneType)) {
-        // Income tax: scan citizens living in this building
-        const posKey = toPosKey(x, y);
-        const residents = this.state.citizens.getCitizensByHome(posKey);
-        for (const citizen of residents) {
-          buildingIncome += ECONOMY.CITIZEN_BASE_INCOME * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
-        }
-      } else {
-        // Business tax: companyIncome x levelMultiplier x businessTaxRate
-        const ci = btype.companyIncome ?? 0;
-        buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
-      }
-
-      // Apply district specialization revenue multiplier
-      const district = this.state.districts.getDistrictAt(x, y);
-      if (district) {
-        const bonus = getSpecializationBonus(district.specialization);
-        buildingIncome *= bonus.revenueMultiplier;
-      }
-      totalIncome += buildingIncome;
+    // Shared zone income calculation (DRY: same logic used by Game.getEconomyBreakdown)
+    const incomes = calculateZoneIncomes({
+      forEachCell: (fn) => this.state.grid.forEachCell(fn),
+      taxRates: this.state.taxRates,
+      getCitizensByHome: (key) => this.state.citizens.getCitizensByHome(key),
+      getRevenueMultiplier: (x, y) => {
+        const district = this.state.districts.getDistrictAt(x, y);
+        return district ? getSpecializationBonus(district.specialization).revenueMultiplier : 1;
+      },
     });
+    let totalIncome = incomes.residential + incomes.commercial + incomes.industrial + incomes.office;
+
     // Apply city-wide specialization revenue multiplier
     const citySpecBonus = this.state.citySpec.getBonus();
     totalIncome *= citySpecBonus.revenueMultiplier;
