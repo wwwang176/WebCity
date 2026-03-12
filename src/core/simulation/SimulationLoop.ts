@@ -27,7 +27,7 @@ import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } f
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
-import { randomInt, randomElement } from '../utils/random';
+import { randomInt, randomElement, pickWeighted } from '../utils/random';
 
 /** Simulation tuning constants */
 export const SIMULATION = {
@@ -1095,23 +1095,13 @@ export class SimulationLoop {
       return;
     }
 
-    // Weighted random pick helper
-    const pickWeighted = (pool: WeightedEntry[], totalWeight: number) => {
-      let r = Math.random() * totalWeight;
-      for (const entry of pool) {
-        r -= entry.weight;
-        if (r <= 0) return entry;
-      }
-      return pool[pool.length - 1]!;
-    };
-
     // Scale sample count with population (1 sample per 5 eligible commuters, clamped 50-300)
     const sampleCount = Math.max(SIMULATION.SAMPLE_COUNT_MIN, Math.min(SIMULATION.SAMPLE_COUNT_MAX, Math.ceil(totalResWeight / SIMULATION.SAMPLE_DIVISOR)));
     const flowMap = new Map<string, number>();
 
     for (let i = 0; i < sampleCount; i++) {
-      const from = pickWeighted(residential, totalResWeight);
-      const to = pickWeighted(destinations, totalDestWeight);
+      const from = pickWeighted(residential, totalResWeight, e => e.weight);
+      const to = pickWeighted(destinations, totalDestWeight, e => e.weight);
       if (from.x === to.x && from.y === to.y) continue;
 
       // Walk filter: Manhattan distance ≤ 3 → citizen walks, no car

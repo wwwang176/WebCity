@@ -2,6 +2,7 @@ import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
 import { cubicBezierPoint, cubicBezierTangent } from './BezierPath';
 import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
+import { pickWeighted } from '../utils/random';
 
 export interface Vehicle {
   id: number;
@@ -75,13 +76,7 @@ export class TrafficSimulation {
 
   /** Add a vehicle that follows a LaneEdge path. */
   addVehicleOnEdges(edgePath: LaneEdge[]): Vehicle {
-    let len = 0.22;
-    const roll = Math.random();
-    let cumulative = 0;
-    for (const entry of VEHICLE_LENGTHS) {
-      cumulative += entry.weight;
-      if (roll < cumulative) { len = entry.length; break; }
-    }
+    const len = pickWeighted(VEHICLE_LENGTHS, 1.0, e => e.weight).length;
 
     const vehicle: Vehicle = {
       id: this.nextId++,
