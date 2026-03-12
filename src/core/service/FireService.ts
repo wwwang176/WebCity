@@ -14,7 +14,7 @@ export interface ActiveFire {
   damage: number;
 }
 
-export interface FireServiceJSON {
+interface FireServiceJSON {
   stations: FireStation[];
   activeFires: ActiveFire[];
   nextId: number;

@@ -17,7 +17,7 @@ export interface Crematorium {
   processRate: number;
 }
 
-export interface DeathCareJSON {
+interface DeathCareJSON {
   cemeteries: Cemetery[];
   crematoriums: Crematorium[];
   pendingDeaths: number;

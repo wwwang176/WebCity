@@ -10,7 +10,7 @@ export interface Hospital {
   capacity: number;
 }
 
-export interface HealthServiceJSON {
+interface HealthServiceJSON {
   hospitals: Hospital[];
 }
 
