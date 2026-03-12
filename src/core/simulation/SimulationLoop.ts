@@ -26,7 +26,7 @@ import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
@@ -522,11 +522,7 @@ export class SimulationLoop {
   }
 
   private countRoadTiles(): number {
-    let count = 0;
-    this.state.grid.forEachCell((cell) => {
-      if (cell.roadType !== RoadType.NONE) count++;
-    });
-    return count;
+    return countRoadTiles(this.state.grid);
   }
 
   /**

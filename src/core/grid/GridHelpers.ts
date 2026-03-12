@@ -161,6 +161,15 @@ export function findAtPosition<T extends { x: number; y: number }>(
   return items.find(item => item.x === x && item.y === y);
 }
 
+/** Count the number of grid cells that contain a road. */
+export function countRoadTiles(grid: { forEachCell(fn: (cell: { roadType: number }, x: number, y: number) => void): void }): number {
+  let count = 0;
+  grid.forEachCell((cell) => {
+    if (cell.roadType !== RoadType.NONE) count++;
+  });
+  return count;
+}
+
 /** Normalize two corner coordinates into { minX, maxX, minY, maxY }. */
 export function normalizeRect(x1: number, y1: number, x2: number, y2: number): {
   minX: number; maxX: number; minY: number; maxY: number;

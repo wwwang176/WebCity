@@ -13,7 +13,7 @@ import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, TerrainType } from './core/grid/types';
-import { normalizeRect, findAtPosition } from './core/grid/GridHelpers';
+import { normalizeRect, findAtPosition, countRoadTiles } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
@@ -1816,12 +1816,7 @@ export class Game {
       getCitizensByHome: (key) => this.state.citizens.getCitizensByHome(key),
     });
 
-    let roadCount = 0;
-    this.state.grid.forEachCell((cell) => {
-      if (cell.roadType !== RoadType.NONE) roadCount++;
-    });
-
-    const roadMaintenance = roadCount * ECONOMY.ROAD_MAINTENANCE_PER_TILE;
+    const roadMaintenance = countRoadTiles(this.state.grid) * ECONOMY.ROAD_MAINTENANCE_PER_TILE;
     const loanInterest = this.state.budget.loans * this.state.budget.loanInterestRate;
     const powerCost = this.state.power.getMaintenanceCost();
     const waterCost = this.state.water.getMaintenanceCost();
@@ -1844,16 +1839,11 @@ export class Game {
     vehicleCount: number; topCongested: { segment: string; density: number }[];
     avgPathLength: number; totalRoads: number;
   } {
-    let totalRoads = 0;
-    const grid = this.state.grid;
-    grid.forEachCell((cell) => {
-      if (cell.roadType !== RoadType.NONE) totalRoads++;
-    });
     return {
       vehicleCount: this.state.traffic.getVehicleCount(),
       topCongested: this.state.traffic.getTopCongested(8),
       avgPathLength: Math.round(this.state.traffic.getAveragePathLength() * 10) / 10,
-      totalRoads,
+      totalRoads: countRoadTiles(this.state.grid),
     };
   }
 

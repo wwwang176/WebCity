@@ -4,7 +4,7 @@ import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
   hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS, getLShapedPath,
-  getDirectionFlag, manhattanDistance, findAtPosition,
+  getDirectionFlag, manhattanDistance, findAtPosition, countRoadTiles,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -455,5 +455,27 @@ describe('findAtPosition', () => {
       { x: 1, y: 1, id: 'second' },
     ];
     expect(findAtPosition(dupes, 1, 1)).toBe(dupes[0]);
+  });
+});
+
+describe('countRoadTiles', () => {
+  it('should return 0 for grid with no roads', () => {
+    const grid = new Grid(5, 5);
+    expect(countRoadTiles(grid)).toBe(0);
+  });
+
+  it('should count road tiles correctly', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(1, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(2, 0, { roadType: RoadType.FOUR_LANE });
+    expect(countRoadTiles(grid)).toBe(3);
+  });
+
+  it('should not count non-road cells', () => {
+    const grid = new Grid(3, 3);
+    grid.setCell(1, 1, { roadType: RoadType.TWO_LANE });
+    grid.setCell(0, 0, { buildingId: 1 }); // not a road
+    expect(countRoadTiles(grid)).toBe(1);
   });
 });
