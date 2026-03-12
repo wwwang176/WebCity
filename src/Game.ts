@@ -485,6 +485,16 @@ export class Game {
     this.dirty.overlay = true;
   }
 
+  /** Check funds and deduct if sufficient. Returns false with notification if insufficient (DRY). */
+  private tryDeductFunds(cost: number): boolean {
+    if (this.state.budget.funds < cost) {
+      this.showNotification(`Insufficient funds (need $${cost})`, 3);
+      return false;
+    }
+    this.state.budget.funds -= cost;
+    return true;
+  }
+
   /** Handle build result: deduct cost on success, show notification on failure (DRY). */
   private handleBuildResult(
     result: { success: boolean; cost?: number; reason?: string },
@@ -610,12 +620,7 @@ export class Game {
       return;
     }
 
-    const cost = cfg.cost;
-    if (this.state.budget.funds < cost) {
-      this.showNotification(`Insufficient funds (need $${cost})`, 3);
-      return;
-    }
-    this.state.budget.funds -= cost;
+    if (!this.tryDeductFunds(cfg.cost)) return;
 
     // Place on grid (multi-cell)
     placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
@@ -642,11 +647,7 @@ export class Game {
     const infraCfg = getInfraConfig(TRANSPORT_TO_INFRA_TYPE[type]!);
     const baseCost = infraCfg?.cost ?? 500;
     const cost = type === 'airport' ? getAirportBuildCost(this.selectedAirportSize ?? 'SMALL') : baseCost;
-    if (this.state.budget.funds < cost) {
-      this.showNotification(`Insufficient funds (need $${cost})`, 3);
-      return;
-    }
-    this.state.budget.funds -= cost;
+    if (!this.tryDeductFunds(cost)) return;
 
     if (type === 'bus') {
       this.state.bus.addStop(x, y);
