@@ -95,15 +95,6 @@ const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
   road_6lane: RoadType.SIX_LANE, road_highway: RoadType.HIGHWAY,
 };
 
-/** Infrastructure placement validation error messages. */
-const INFRA_PLACEMENT_MESSAGES: Record<string, string> = {
-  OUT_OF_BOUNDS: 'Out of bounds',
-  WATER_TILE: 'Cannot build on water',
-  TILE_OCCUPIED: 'Tile is occupied',
-  NO_GROUNDWATER: 'No groundwater here — build near rivers',
-  UNKNOWN_TYPE: 'Unknown building type',
-};
-
 /** Map transport stop type to InfraType (used for cost/config lookup). */
 const TRANSPORT_TO_INFRA_TYPE: Record<string, InfraType> = {
   bus: 'bus_stop', metro: 'metro_station', rail: 'train_station',
@@ -674,7 +665,7 @@ export class Game {
     const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
     const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation, groundwaterFn);
     if (!check.ok) {
-      this.showNotification(INFRA_PLACEMENT_MESSAGES[check.reason] ?? 'Cannot build here', 3);
+      this.showNotification(getBuildReasonMessage(check.reason), 3);
       return;
     }
 
