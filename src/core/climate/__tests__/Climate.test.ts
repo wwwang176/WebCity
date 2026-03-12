@@ -8,6 +8,7 @@ import {
   DISASTER_CALCULATORS,
   tryRandomDisaster,
   RANDOM_DISASTER,
+  formatDisasterMessage,
 } from '../Disaster';
 import {
   addWarningTower,
@@ -327,5 +328,24 @@ describe('tryRandomDisaster', () => {
     expect(RANDOM_DISASTER.MIN_POPULATION).toBeGreaterThan(0);
     expect(RANDOM_DISASTER.MIN_INTENSITY).toBeGreaterThan(0);
     expect(RANDOM_DISASTER.MAX_INTENSITY).toBeLessThanOrEqual(1);
+  });
+});
+
+describe('formatDisasterMessage', () => {
+  it('should format known disaster type', () => {
+    const msg = formatDisasterMessage({
+      type: DisasterType.EARTHQUAKE, epicenterX: 10, epicenterY: 20,
+      intensity: 0.75, radius: 5, ticksRemaining: 0,
+    });
+    expect(msg).toBe('Disaster: Earthquake at (10,20)! Intensity: 75%');
+  });
+
+  it('should fallback to type enum for unknown disaster', () => {
+    const msg = formatDisasterMessage({
+      type: 'UNKNOWN' as DisasterType, epicenterX: 5, epicenterY: 5,
+      intensity: 0.5, radius: 3, ticksRemaining: 0,
+    });
+    expect(msg).toContain('UNKNOWN');
+    expect(msg).toContain('50%');
   });
 });

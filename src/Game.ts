@@ -24,7 +24,7 @@ import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
-import { tryRandomDisaster, DISASTER_NAMES } from './core/climate/Disaster';
+import { tryRandomDisaster, formatDisasterMessage } from './core/climate/Disaster';
 import { getLaneCount } from './core/traffic/TrafficSimulation';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
@@ -51,7 +51,7 @@ import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
-import { generateTerrain, TERRAIN_GEN } from './core/grid/TerrainGenerator';
+import { generateTerrain } from './core/grid/TerrainGenerator';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
@@ -1133,13 +1133,9 @@ export class Game {
     const stops = system?.getStops() ?? [];
     const stop = stops.find(s => s.x === x && s.y === y);
     const routes = system?.getRoutes() ?? [];
-    const routeCount = stop
-      ? routes.filter(r => r.stops.some(s => s.id === stop.id)).length
-      : 0;
-    const vehicleCount = stop
-      ? routes.filter(r => r.stops.some(s => s.id === stop.id))
-          .reduce((sum, r) => sum + r.vehicles, 0)
-      : 0;
+    const stopRoutes = stop ? routes.filter(r => r.stops.some(s => s.id === stop.id)) : [];
+    const routeCount = stopRoutes.length;
+    const vehicleCount = stopRoutes.reduce((sum, r) => sum + r.vehicles, 0);
 
     this.selectedBuilding = {
       kind: 'transport',
@@ -1413,9 +1409,8 @@ export class Game {
       }
     }
 
-    const d = result.disaster;
     this.audioManager.playSfx('disaster');
-    this.showNotification(`Disaster: ${DISASTER_NAMES[d.type] ?? d.type} at (${d.epicenterX},${d.epicenterY})! Intensity: ${Math.round(d.intensity * 100)}%`, 10);
+    this.showNotification(formatDisasterMessage(result.disaster), 10);
     this.dirty.buildings = true;
     this.dirty.terrain = true;
     this.onUIUpdate?.();

@@ -135,6 +135,11 @@ export const DISASTER_NAMES: Record<string, string> = {
   EARTHQUAKE: 'Earthquake', TORNADO: 'Tornado', FOREST_FIRE: 'Forest Fire',
 };
 
+/** Format a disaster event into a human-readable notification message. */
+export function formatDisasterMessage(d: Disaster): string {
+  return `Disaster: ${DISASTER_NAMES[d.type] ?? d.type} at (${d.epicenterX},${d.epicenterY})! Intensity: ${Math.round(d.intensity * 100)}%`;
+}
+
 export interface RandomDisasterResult {
   disaster: Disaster;
   damagedCells: { x: number; y: number }[];
