@@ -31,7 +31,7 @@ export interface InfraDetailContext {
     getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number }[];
   };
   deathCare: {
-    getCemeteries(): readonly { x: number; y: number; capacity: number; used: number }[];
+    getCemeteries(): readonly { x: number; y: number; capacity: number; used: number; recentDaily: number[]; recentIndex: number; todayCremated: number }[];
   };
   power: {
     getPlants(): readonly { x: number; y: number; output: number; type: string }[];
@@ -83,7 +83,8 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   sewage: () => ({ Status: 'Active' }),
   cemetery: (ctx, cx, cy) => {
     const c = findAtPosition(ctx.deathCare.getCemeteries(), cx, cy);
-    return { Capacity: c?.capacity ?? 500, Used: c?.used ?? 0 };
+    const recent = c ? c.recentDaily.reduce((a, b) => a + b, 0) : 0;
+    return { Capacity: c?.capacity ?? 500, Stored: c?.used ?? 0, 'Recent/month': recent };
   },
   power: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.power.getPlants(), cx, cy);

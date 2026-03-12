@@ -231,6 +231,7 @@ export class SimulationLoop {
     const currentDay = this.state.clock.getDay();
     if (currentDay !== this.lastDeathDay) {
       this.lastDeathDay = currentDay;
+      this.state.deathCare.advanceDay();
       const deaths = this.state.citizens.deathTick(
         (citizen) => {
           if (!citizen.homeId) return false;

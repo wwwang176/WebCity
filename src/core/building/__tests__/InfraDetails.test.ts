@@ -108,12 +108,15 @@ describe('getInfraDetails', () => {
     expect(d).toEqual({ Status: 'Active' });
   });
 
-  it('cemetery: returns capacity and used', () => {
+  it('cemetery: returns capacity, stored, and recent monthly', () => {
+    const recentDaily = new Array(30).fill(0);
+    recentDaily[0] = 5;
+    recentDaily[1] = 3;
     const ctx = makeCtx({
-      deathCare: { getCemeteries: () => [{ x: 5, y: 5, capacity: 800, used: 120 }] },
+      deathCare: { getCemeteries: () => [{ x: 5, y: 5, capacity: 800, used: 120, recentDaily, recentIndex: 2, todayCremated: 0 }] },
     });
     const d = getInfraDetails(ctx, 'cemetery', 5, 5);
-    expect(d).toEqual({ Capacity: 800, Used: 120 });
+    expect(d).toEqual({ Capacity: 800, Stored: 120, 'Recent/month': 8 });
   });
 
   it('power: returns output and type', () => {

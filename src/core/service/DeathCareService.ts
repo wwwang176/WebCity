@@ -11,6 +11,12 @@ export interface Cemetery {
   used: number;
   /** Bodies cremated per tick */
   processRate: number;
+  /** Rolling 30-day window of daily cremation counts */
+  recentDaily: number[];
+  /** Current write position in ring buffer */
+  recentIndex: number;
+  /** Cremations accumulated today (before advanceDay flush) */
+  todayCremated: number;
 }
 
 interface DeathCareJSON {
@@ -29,7 +35,7 @@ export class DeathCareService {
 
   addCemetery(x: number, y: number, capacity = 500, processRate = 5): string {
     const id = `cem-${this.nextId++}`;
-    this.cemeteries.push({ id, x, y, capacity, used: 0, processRate });
+    this.cemeteries.push({ id, x, y, capacity, used: 0, processRate, recentDaily: new Array(30).fill(0), recentIndex: 0, todayCremated: 0 });
     return id;
   }
 
@@ -52,12 +58,14 @@ export class DeathCareService {
         const cremated = Math.min(this.pendingDeaths, budget);
         this.pendingDeaths -= cremated;
         budget -= cremated;
+        cem.todayCremated += cremated;
       }
 
       // Phase 2: Cremate stored bodies
       if (cem.used > 0 && budget > 0) {
         const cremated = Math.min(cem.used, budget);
         cem.used -= cremated;
+        cem.todayCremated += cremated;
       }
 
       // Phase 3: Store remaining pending deaths
@@ -69,6 +77,15 @@ export class DeathCareService {
           this.pendingDeaths -= accepted;
         }
       }
+    }
+  }
+
+  /** Flush today's cremation count into the 30-day ring buffer and reset. Call once per game day. */
+  advanceDay(): void {
+    for (const cem of this.cemeteries) {
+      cem.recentDaily[cem.recentIndex] = cem.todayCremated;
+      cem.recentIndex = (cem.recentIndex + 1) % 30;
+      cem.todayCremated = 0;
     }
   }
 
@@ -97,7 +114,12 @@ export class DeathCareService {
 
   static fromJSON(json: DeathCareJSON): DeathCareService {
     const service = new DeathCareService();
-    service.cemeteries = json.cemeteries.map(c => ({ ...c }));
+    service.cemeteries = json.cemeteries.map(c => ({
+      ...c,
+      recentDaily: c.recentDaily ?? new Array(30).fill(0),
+      recentIndex: c.recentIndex ?? 0,
+      todayCremated: c.todayCremated ?? 0,
+    }));
     service.pendingDeaths = json.pendingDeaths;
     service.nextId = recoverNextId(service.cemeteries, 'cem-');
     return service;
