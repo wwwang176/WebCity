@@ -56,6 +56,7 @@ import {
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
+import { getCoverageService } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
 import { canPlaceTransportStop, findAdjacentRoadCell, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
@@ -1325,6 +1326,7 @@ export class Game {
   setOverlay(type: OverlayType): void {
     const data = this.buildOverlayData(type);
     this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data);
+    this.applyCoverageBuildingHighlight(type);
     this.onUIUpdate?.();
   }
 
@@ -1345,6 +1347,45 @@ export class Game {
       if (value > 0) data.set(`${x},${y}`, value);
     });
     return data;
+  }
+
+  // ── Coverage overlay: building highlight ─────────────────────────
+
+  private static readonly COVERAGE_OVERLAY_COLORS: Partial<Record<OverlayType, number>> = {
+    police: 0x3f51b5, fire: 0xd32f2f, health: 0xe91e63,
+    education: 0x795548, park: 0x4caf50, garbage: 0x795548,
+  };
+
+  /** Highlight buildings within coverage when a service overlay is active. */
+  private applyCoverageBuildingHighlight(overlayType: OverlayType): void {
+    this.highlightManager.clear();
+    const color = Game.COVERAGE_OVERLAY_COLORS[overlayType];
+    if (!color) return;
+
+    const service = getCoverageService(this.state as any, overlayType);
+    if (!service) return;
+
+    const isGarbage = overlayType === 'garbage';
+    const cells: { x: number; y: number }[] = [];
+    this.state.grid.forEachCell((cell, x, y) => {
+      if (!service.getCoverage(x, y)) return;
+      if (cell.buildingId === 0) return;
+      if (isGarbage) {
+        if (!isResidentialZone(cell.zoneType)) return;
+      } else {
+        if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) return;
+      }
+      cells.push({ x, y });
+    });
+
+    if (cells.length > 0) {
+      this.highlightManager.hoverHighlight(
+        cells, color,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+        0.5,
+      );
+    }
   }
 
   setOnUIUpdate(callback: () => void): void {
