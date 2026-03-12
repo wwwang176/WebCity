@@ -11,7 +11,7 @@ function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
     incomeLevel: IncomeLevel.LOW,
     happiness: 50,
     health: 80,
-    homeId: null,
+    homeId: '5,5',
     workplaceId: null,
     ...overrides,
   };
@@ -83,6 +83,18 @@ describe('Happiness', () => {
     for (let i = 1; i < HAPPINESS.TAX_BRACKETS.length; i++) {
       expect(HAPPINESS.TAX_BRACKETS[i]!.threshold).toBeLessThan(HAPPINESS.TAX_BRACKETS[i - 1]!.threshold);
     }
+  });
+
+  it('should penalize homeless citizens (-20)', () => {
+    const homeless = makeCitizen({ homeId: null });
+    const housed = makeCitizen({ homeId: '5,5' });
+    const hHomeless = calculateHappiness(homeless, baseFactors);
+    const hHoused = calculateHappiness(housed, baseFactors);
+    expect(hHoused - hHomeless).toBe(20);
+  });
+
+  it('HAPPINESS.HOMELESS_PENALTY should be -20', () => {
+    expect(HAPPINESS.HOMELESS_PENALTY).toBe(-20);
   });
 });
 

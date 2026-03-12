@@ -74,6 +74,8 @@ export const HAPPINESS = {
     { threshold: 5, modifier: 10 },
     { threshold: 3, modifier: 5 },
   ] as readonly ThresholdModifier[],
+  // Housing
+  HOMELESS_PENALTY: -20,
 } as const;
 
 export function calculateHappiness(citizen: Citizen, factors: HappinessFactors): number {
@@ -99,6 +101,11 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
 
   // Service coverage
   happiness += applyThresholdModifier(factors.serviceCoverage, HAPPINESS.SERVICE_MODIFIERS, 'atOrAbove');
+
+  // Homeless penalty
+  if (!citizen.homeId) {
+    happiness += HAPPINESS.HOMELESS_PENALTY;
+  }
 
   return Math.max(HAPPINESS.MIN, Math.min(HAPPINESS.MAX, happiness));
 }
