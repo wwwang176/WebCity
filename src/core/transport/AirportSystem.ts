@@ -32,6 +32,30 @@ export function getAirportBuildCost(size: AirportSize): number {
   return AIRPORT_SIZE_CONFIG[size].buildCost;
 }
 
+/** Iterate over every cell in an airport footprint (DRY: eliminates repeated footprint loops). */
+export function forEachAirportCell(
+  x: number, y: number, size: AirportSize,
+  fn: (cx: number, cy: number) => void,
+): void {
+  const footprint = getAirportFootprint(size);
+  const half = Math.floor(footprint / 2);
+  for (let dy = -half; dy <= half; dy++) {
+    for (let dx = -half; dx <= half; dx++) {
+      fn(x + dx, y + dy);
+    }
+  }
+}
+
+/** Place airport footprint cells on the grid (SRP: grid placement belongs with airport logic). */
+export function placeAirportOnGrid(
+  grid: { setCell(x: number, y: number, data: { buildingId: number }): void },
+  x: number, y: number, size: AirportSize, airportBuildingId: number,
+): void {
+  forEachAirportCell(x, y, size, (cx, cy) => {
+    grid.setCell(cx, cy, { buildingId: airportBuildingId });
+  });
+}
+
 export interface Airport {
   id: number;
   x: number;
@@ -177,12 +201,7 @@ export class AirportSystem {
   demolishAtCell(x: number, y: number, clearCell: (cx: number, cy: number) => void): boolean {
     const airport = this.findAtCell(x, y);
     if (!airport) return false;
-    const half = Math.floor(getAirportFootprint(airport.size) / 2);
-    for (let dy = -half; dy <= half; dy++) {
-      for (let dx = -half; dx <= half; dx++) {
-        clearCell(airport.x + dx, airport.y + dy);
-      }
-    }
+    forEachAirportCell(airport.x, airport.y, airport.size, clearCell);
     this.remove(airport.id);
     return true;
   }

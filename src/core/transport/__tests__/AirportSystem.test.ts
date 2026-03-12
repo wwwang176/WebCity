@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { AirportSystem, getAirportFootprint, getAirportBuildCost, AIRPORT_SIZE_CONFIG, canPlaceAirport } from '../AirportSystem';
+import { AirportSystem, getAirportFootprint, getAirportBuildCost, AIRPORT_SIZE_CONFIG, canPlaceAirport, forEachAirportCell, placeAirportOnGrid } from '../AirportSystem';
 
 describe('AirportSystem.findAtCell', () => {
   it('should find SMALL airport covering center cell', () => {
@@ -160,6 +160,64 @@ describe('canPlaceAirport', () => {
     }
     const grid = makeGrid(cells);
     expect(canPlaceAirport(grid, 10, 10, 'MEDIUM')).toEqual({ ok: true });
+  });
+});
+
+describe('forEachAirportCell', () => {
+  it('should iterate over all cells in SMALL footprint (3x3)', () => {
+    const cells: string[] = [];
+    forEachAirportCell(5, 5, 'SMALL', (cx, cy) => cells.push(`${cx},${cy}`));
+    expect(cells.length).toBe(9);
+    expect(cells).toContain('4,4');
+    expect(cells).toContain('5,5');
+    expect(cells).toContain('6,6');
+  });
+
+  it('should iterate over all cells in MEDIUM footprint (5x5)', () => {
+    const cells: string[] = [];
+    forEachAirportCell(10, 10, 'MEDIUM', (cx, cy) => cells.push(`${cx},${cy}`));
+    expect(cells.length).toBe(25);
+    expect(cells).toContain('8,8');
+    expect(cells).toContain('10,10');
+    expect(cells).toContain('12,12');
+  });
+
+  it('should iterate over all cells in LARGE footprint (7x7)', () => {
+    const cells: string[] = [];
+    forEachAirportCell(20, 20, 'LARGE', (cx, cy) => cells.push(`${cx},${cy}`));
+    expect(cells.length).toBe(49);
+    expect(cells).toContain('17,17');
+    expect(cells).toContain('20,20');
+    expect(cells).toContain('23,23');
+  });
+});
+
+describe('placeAirportOnGrid', () => {
+  it('should set all footprint cells to the given buildingId', () => {
+    const cells = new Map<string, number>();
+    const grid = {
+      setCell: (x: number, y: number, data: { buildingId: number }) => {
+        cells.set(`${x},${y}`, data.buildingId);
+      },
+    };
+    placeAirportOnGrid(grid, 5, 5, 'SMALL', 237);
+    expect(cells.size).toBe(9);
+    expect(cells.get('4,4')).toBe(237);
+    expect(cells.get('5,5')).toBe(237);
+    expect(cells.get('6,6')).toBe(237);
+  });
+
+  it('should handle MEDIUM footprint correctly', () => {
+    const cells = new Map<string, number>();
+    const grid = {
+      setCell: (x: number, y: number, data: { buildingId: number }) => {
+        cells.set(`${x},${y}`, data.buildingId);
+      },
+    };
+    placeAirportOnGrid(grid, 10, 10, 'MEDIUM', 237);
+    expect(cells.size).toBe(25);
+    expect(cells.get('8,8')).toBe(237);
+    expect(cells.get('12,12')).toBe(237);
   });
 });
 

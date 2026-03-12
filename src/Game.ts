@@ -33,7 +33,7 @@ import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
-import { getAirportFootprint, getAirportBuildCost, canPlaceAirport, type AirportSize } from './core/transport/AirportSystem';
+import { getAirportBuildCost, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
@@ -701,14 +701,8 @@ export class Game {
       return false;
     }
 
-    // Set all NxN cells to airport buildingId
-    const footprint = getAirportFootprint(airportSize);
-    const half = Math.floor(footprint / 2);
-    for (let dy = -half; dy <= half; dy++) {
-      for (let dx = -half; dx <= half; dx++) {
-        this.state.grid.setCell(x + dx, y + dy, { buildingId: getInfraBuildingId('airport') });
-      }
-    }
+    // Set all NxN cells to airport buildingId (delegated to core — SRP)
+    placeAirportOnGrid(this.state.grid, x, y, airportSize, getInfraBuildingId('airport'));
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
     return true;
