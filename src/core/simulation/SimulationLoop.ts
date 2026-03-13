@@ -628,12 +628,9 @@ export class SimulationLoop {
       pm.addSource(src.x, src.y, src.amount, src.type);
     }
 
-    // Garbage overflow produces distributed pollution at city center
-    const garbagePenalty = this.state.garbage.getPollutionPenalty();
-    if (garbagePenalty > 0) {
-      const cx = Math.floor(grid.width / 2);
-      const cy = Math.floor(grid.height / 2);
-      pm.addSource(cx, cy, garbagePenalty, 'ground');
+    // Garbage overflow pollution distributed across facility locations
+    for (const src of this.state.garbage.getOverflowPollutionSources()) {
+      pm.addSource(src.x, src.y, src.amount, src.type);
     }
 
     pm.calculateSpread();

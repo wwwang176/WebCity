@@ -130,6 +130,17 @@ export class GarbageService {
     return Math.min(GARBAGE.MAX_POLLUTION_PENALTY, this.overflow * GARBAGE.OVERFLOW_POLLUTION_MULTIPLIER);
   }
 
+  /** Distribute overflow pollution evenly across facility locations. */
+  getOverflowPollutionSources(): PollutionSource[] {
+    if (this.overflow <= 0) return [];
+    const totalPenalty = this.getPollutionPenalty();
+    if (this.facilities.length === 0) return [];
+    const perFacility = Math.ceil(totalPenalty / this.facilities.length);
+    return this.facilities.map(f => ({
+      x: f.x, y: f.y, amount: perFacility, type: 'ground' as const,
+    }));
+  }
+
   getTotalCapacity(): number {
     return this.facilities.reduce((sum, f) => sum + f.capacity, 0);
   }

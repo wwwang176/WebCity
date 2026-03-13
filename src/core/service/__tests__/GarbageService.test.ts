@@ -131,6 +131,40 @@ describe('GarbageService', () => {
     expect(gs.getPollutionPenalty()).toBe(0);
   });
 
+  it('should distribute overflow pollution across facility locations', () => {
+    const gs = new GarbageService();
+    gs.addFacility(5, 5, 'landfill', 5);
+    gs.addFacility(20, 20, 'landfill', 5);
+    gs.tick(5000); // large population → overflow
+    const sources = gs.getOverflowPollutionSources();
+    expect(sources.length).toBe(2);
+    expect(sources[0]!.x).toBe(5);
+    expect(sources[0]!.y).toBe(5);
+    expect(sources[1]!.x).toBe(20);
+    expect(sources[1]!.y).toBe(20);
+    // Each facility gets an equal share
+    expect(sources[0]!.amount).toBe(sources[1]!.amount);
+    expect(sources[0]!.type).toBe('ground');
+  });
+
+  it('should return empty overflow sources when no overflow', () => {
+    const gs = new GarbageService();
+    gs.addFacility(5, 5, 'landfill', 10000);
+    gs.tick(100);
+    expect(gs.getOverflowPollutionSources()).toHaveLength(0);
+  });
+
+  it('should return empty overflow sources when no facilities', () => {
+    const gs = new GarbageService();
+    // No facilities, but manually trigger overflow scenario via removeFacility
+    gs.addFacility(5, 5, 'landfill', 10);
+    gs.tick(5000);
+    expect(gs.getOverflow()).toBeGreaterThan(0);
+    // Remove facility — overflow still exists but no location to emit from
+    gs.removeFacility(gs.getFacilities()[0]!.id);
+    expect(gs.getOverflowPollutionSources()).toHaveLength(0);
+  });
+
   it('should removeFacility by id', () => {
     const gs = new GarbageService();
     const id = gs.addFacility(5, 5, 'landfill', 1000);
