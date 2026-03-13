@@ -377,4 +377,55 @@ describe('RoadCoverageMap', () => {
     map.recalculate([], grid, 100);
     expect(map.hasCoverage(1, 0)).toBe(false);
   });
+
+  it('recalculate with top-left matches preview for 2x2 facility', () => {
+    // 2x2 facility at top-left (1,1), road along row 0
+    //   R R R R R
+    //   _ F F _ _
+    //   _ F F _ _
+    const grid = makeGrid([
+      [R, R, R, R, R],
+      [_, _, _, _, _],
+      [_, _, _, _, _],
+    ]);
+    const map = new RoadCoverageMap();
+    const topLeft = { x: 1, y: 1 };
+    const budget = ROAD_COVERAGE.POLICE_BUDGET;
+
+    // preview uses top-left (as Game.ts passes mouse position)
+    const previewCov = map.preview(topLeft, grid, budget, 2, 2);
+
+    // recalculate also uses top-left (after the fix)
+    map.recalculate([topLeft], grid, budget, 2, 2);
+    const recalcCov = map.getCoveredCells();
+
+    // Both should produce identical coverage maps
+    expect(recalcCov.size).toBe(previewCov.size);
+    for (const [key, cost] of previewCov) {
+      expect(recalcCov.get(key)).toBe(cost);
+    }
+  });
+
+  it('recalculate with center (old bug) gives DIFFERENT coverage than preview', () => {
+    // Demonstrates the bug: if we stored center instead of top-left,
+    // expandFootprint would shift the flood origin
+    const grid = makeGrid([
+      [R, R, R, R, R],
+      [_, _, _, _, _],
+      [_, _, _, _, _],
+    ]);
+    const map = new RoadCoverageMap();
+    const topLeft = { x: 1, y: 1 };
+    const center = { x: 2, y: 2 }; // getInfraCenter for 2x2 = topLeft + (1,1)
+    const budget = ROAD_COVERAGE.POLICE_BUDGET;
+
+    const previewCov = map.preview(topLeft, grid, budget, 2, 2);
+    map.recalculate([center], grid, budget, 2, 2);
+    const centerCov = map.getCoveredCells();
+
+    // Center-based coverage is different (the old bug)
+    // Center (2,2) expands to (2,2)(3,2)(2,3)(3,3) — row 0 road only adjacent to column 2,3
+    // vs top-left (1,1) expands to (1,1)(2,1)(1,2)(2,2) — row 0 road adjacent to column 1,2
+    expect(centerCov.size).not.toBe(previewCov.size);
+  });
 });

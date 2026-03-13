@@ -30,7 +30,7 @@ import { gridAStarPath, refineLanePath } from './core/traffic/Pathfinding';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
@@ -570,7 +570,7 @@ export class Game {
             const key = `${action.primaryX},${action.primaryY}`;
             if (!demolished.has(key)) {
               demolished.add(key);
-              this.removeInfraService(action.infraType, action.cx, action.cy);
+              this.removeInfraService(action.infraType, action.primaryX, action.primaryY);
               removeInfraFromGrid(this.state.grid, x, y);
             }
             break;
@@ -647,13 +647,10 @@ export class Game {
     // Place on grid (multi-cell)
     placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
 
-    // Compute center for service coverage (coverage radiates from building center)
-    const { cx, cy } = getInfraCenter(x, y, type, this.currentRotation);
-
-    // Register with service layer at center coordinates (data-driven via InfraServiceActions)
+    // Register with service layer at top-left coordinates (matches expandFootprint expectation)
     const actions = INFRA_SERVICE_ACTIONS[type];
     if (actions) {
-      actions.place(this.state as InfraServiceContext, cx, cy);
+      actions.place(this.state as InfraServiceContext, x, y);
     }
 
     // Immediately recalculate coverage for road-based services so overlay updates
