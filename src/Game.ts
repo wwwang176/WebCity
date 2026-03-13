@@ -29,6 +29,7 @@ import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimula
 import { gridAStarPath, refineLanePath } from './core/traffic/Pathfinding';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
+import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
@@ -71,6 +72,14 @@ import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 
 
+
+/** Map service vehicle types to renderer vehicle type keys. */
+const SERVICE_TYPE_TO_VEHICLE_TYPE: Record<ServiceVehicleType, VehicleData['type']> = {
+  police: 'police_car',
+  fire: 'firetruck',
+  health: 'ambulance',
+  garbage: 'garbage_truck',
+};
 
 export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport';
 
@@ -952,10 +961,12 @@ export class Game {
       const pos = this.state.traffic.getVehiclePositionOnEdges(v);
       if (!pos) return null;
       const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
-      // Bus vehicles use fixed 'bus' type; regular vehicles use length-based classification
-      const type = v.busState
-        ? 'bus' as VehicleData['type']
-        : (this.vehicleTypes.get(v.id) ?? (() => { const t = classifyVehicleType(v.length); this.vehicleTypes.set(v.id, t); return t; })());
+      // Service vehicles use dedicated types; bus vehicles use fixed 'bus'; regular vehicles use length-based classification
+      const type = v.serviceType
+        ? SERVICE_TYPE_TO_VEHICLE_TYPE[v.serviceType]
+        : v.busState
+          ? 'bus' as VehicleData['type']
+          : (this.vehicleTypes.get(v.id) ?? (() => { const t = classifyVehicleType(v.length); this.vehicleTypes.set(v.id, t); return t; })());
       return { id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0 };
     }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
 

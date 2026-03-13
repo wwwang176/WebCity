@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { TrafficSimulation, getLaneCount, getSpeedLimitForCell, TRAFFIC } from '../TrafficSimulation';
+import { TrafficSimulation, getLaneCount, getSpeedLimitForCell, TRAFFIC, SERVICE_VEHICLE_LENGTHS } from '../TrafficSimulation';
+import type { ServiceVehicleType } from '../TrafficSimulation';
 import { RoadType } from '../../road/types';
 
 /** Helper: create a straight edge between two cells. */
@@ -321,5 +322,117 @@ describe('stall jitter', () => {
     // At least some should be negative (probabilistic but 100 samples makes it near-certain)
     const hasNegative = results.some(st => st < 0);
     expect(hasNegative).toBe(true);
+  });
+});
+
+describe('addServiceVehicle', () => {
+  it('should add a service vehicle with correct serviceType', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    const v = sim.addServiceVehicle(edges, 'police');
+    expect(v.serviceType).toBe('police');
+    expect(v.arrived).toBe(false);
+    expect(v.length).toBe(SERVICE_VEHICLE_LENGTHS.police);
+  });
+
+  it('should use correct lengths for each service type', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    for (const type of ['police', 'fire', 'health', 'garbage'] as ServiceVehicleType[]) {
+      const v = sim.addServiceVehicle(edges, type);
+      expect(v.length).toBe(SERVICE_VEHICLE_LENGTHS[type]);
+    }
+  });
+
+  it('service vehicle should be counted in getVehicleCount', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    sim.addServiceVehicle(edges, 'police');
+    expect(sim.getVehicleCount()).toBe(1);
+  });
+});
+
+describe('removeServiceVehicles', () => {
+  it('should remove all vehicles of a specific service type', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    sim.addServiceVehicle(edges, 'police');
+    sim.addServiceVehicle(edges, 'police');
+    sim.addServiceVehicle(edges, 'fire');
+
+    sim.removeServiceVehicles('police');
+
+    expect(sim.getVehicleCount()).toBe(1);
+    expect(sim.vehicles[0]!.serviceType).toBe('fire');
+  });
+
+  it('should not remove other vehicle types', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    sim.addVehicleOnEdges(edges);
+    sim.addServiceVehicle(edges, 'police');
+
+    sim.removeServiceVehicles('police');
+
+    expect(sim.getVehicleCount()).toBe(1);
+    expect(sim.vehicles[0]!.serviceType).toBeUndefined();
+  });
+});
+
+describe('getServiceVehicleCount', () => {
+  it('should count all service vehicles when no type specified', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    sim.addServiceVehicle(edges, 'police');
+    sim.addServiceVehicle(edges, 'fire');
+    sim.addServiceVehicle(edges, 'health');
+
+    expect(sim.getServiceVehicleCount()).toBe(3);
+  });
+
+  it('should count service vehicles of a specific type', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    sim.addServiceVehicle(edges, 'police');
+    sim.addServiceVehicle(edges, 'police');
+    sim.addServiceVehicle(edges, 'fire');
+
+    expect(sim.getServiceVehicleCount('police')).toBe(2);
+    expect(sim.getServiceVehicleCount('fire')).toBe(1);
+    expect(sim.getServiceVehicleCount('garbage')).toBe(0);
+  });
+
+  it('should not count regular vehicles', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    sim.addVehicleOnEdges(edges);
+    sim.addServiceVehicle(edges, 'police');
+
+    expect(sim.getServiceVehicleCount()).toBe(1);
+  });
+});
+
+describe('service vehicle stall exemption', () => {
+  it('should not despawn service vehicles due to stall time', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+
+    const leader = sim.addVehicleOnEdges(edges);
+    leader.edgeIndex = 0;
+    leader.edgeProgress = 0.5;
+
+    const serviceV = sim.addServiceVehicle(edges, 'police');
+    serviceV.edgeIndex = 0;
+    serviceV.edgeProgress = 0.0;
+    serviceV.stallTime = 0; // reset jitter
+
+    // Block all cross-cell movement
+    for (let i = 0; i < 150; i++) {
+      sim.advanceEdgeVehicles(0.25, () => false);
+    }
+
+    // Regular vehicle should be despawned, but service vehicle should remain
+    const remaining = sim.vehicles.filter(v => v.serviceType === 'police');
+    expect(remaining.length).toBe(1);
   });
 });

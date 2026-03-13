@@ -12,6 +12,8 @@ export interface BusVehicleState {
   segments: LaneEdge[][];    // precomputed edge paths for all route segments
 }
 
+export type ServiceVehicleType = 'police' | 'fire' | 'health' | 'garbage';
+
 export interface Vehicle {
   id: number;
   length: number;  // vehicle body length in world units
@@ -24,10 +26,19 @@ export interface Vehicle {
   speedMultiplier: number; // random 0.8–1.0, prevents vehicles from bunching at same speed
   stallTime: number;  // accumulated seconds at zero movement; despawned when exceeding threshold
   busState?: BusVehicleState;  // present only for bus vehicles
+  serviceType?: ServiceVehicleType;  // present only for service vehicles
 }
 
 /** Bus dwell time at each stop (seconds). */
 export const BUS_DWELL_SECONDS = 2.0;
+
+/** Fixed vehicle lengths for service vehicles (matching renderer model sizes). */
+export const SERVICE_VEHICLE_LENGTHS: Record<ServiceVehicleType, number> = {
+  police: 0.22,
+  fire: 0.34,
+  health: 0.24,
+  garbage: 0.32,
+};
 
 /** Vehicle lengths matching renderer model sizes (bus removed — spawned by BusSystem) */
 const VEHICLE_LENGTHS = [
@@ -146,6 +157,42 @@ export class TrafficSimulation {
     this.vehicles = this.vehicles.filter(
       v => !(v.busState && v.busState.routeId === routeId),
     );
+  }
+
+  /** Add a service vehicle (police car, fire truck, ambulance, garbage truck) on a LaneEdge path. */
+  addServiceVehicle(edgePath: LaneEdge[], serviceType: ServiceVehicleType): Vehicle {
+    const vehicle: Vehicle = {
+      id: this.nextId++,
+      length: SERVICE_VEHICLE_LENGTHS[serviceType],
+      arrived: false,
+      lane: edgePath[0]?.from.lane ?? 0,
+      edgePath,
+      edgeIndex: 0,
+      edgeProgress: 0,
+      edgeMoveRate: 0,
+      speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
+      serviceType,
+    };
+    this.vehicles.push(vehicle);
+    const startCell = edgePath[0]?.from.cellKey;
+    if (startCell) {
+      this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
+    }
+    return vehicle;
+  }
+
+  /** Remove all service vehicles of a given type. */
+  removeServiceVehicles(serviceType: ServiceVehicleType): void {
+    this.vehicles = this.vehicles.filter(v => v.serviceType !== serviceType);
+  }
+
+  /** Count service vehicles, optionally filtered by type. */
+  getServiceVehicleCount(serviceType?: ServiceVehicleType): number {
+    if (serviceType) {
+      return this.vehicles.filter(v => v.serviceType === serviceType).length;
+    }
+    return this.vehicles.filter(v => v.serviceType !== undefined).length;
   }
 
   /** Add a vehicle that follows a LaneEdge path. */
@@ -267,10 +314,10 @@ export class TrafficSimulation {
         }
       }
 
-      // Track stall time for stuck vehicle despawn (buses exempt)
+      // Track stall time for stuck vehicle despawn (buses and service vehicles exempt)
       if (moveDistance < 0.001 && room < 0.001) {
         v.stallTime += dtSeconds;
-        if (v.stallTime >= TRAFFIC.DESPAWN_STALL_TIME && !v.busState) {
+        if (v.stallTime >= TRAFFIC.DESPAWN_STALL_TIME && !v.busState && !v.serviceType) {
           v.arrived = true;
         }
       } else {
@@ -284,6 +331,9 @@ export class TrafficSimulation {
           // Bus: enter dwell state instead of despawning
           v.busState.dwelling = true;
           v.busState.dwellTimer = BUS_DWELL_SECONDS;
+        } else if (v.serviceType) {
+          // Service vehicle: stop at path end, ServiceVehicleManager will repath
+          // Keep it alive — don't mark arrived
         } else {
           v.arrived = true;
         }
