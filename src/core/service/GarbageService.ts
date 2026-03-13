@@ -1,28 +1,24 @@
-import { manhattanDistance } from '../grid/GridHelpers';
+import type { SizedGrid } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
-
-export type GarbageFacilityType = 'landfill' | 'incinerator';
+import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
+import type { PollutionSource } from '../environment/Pollution';
 
 export interface GarbageFacility {
   id: string;
   x: number;
   y: number;
-  type: GarbageFacilityType;
   capacity: number;
   currentLoad: number;
 }
 
-const DEFAULT_CAPACITIES: Record<GarbageFacilityType, number> = {
-  landfill: 1000,
-  incinerator: 500,
-};
-
 /** Garbage service configuration constants */
 export const GARBAGE = {
-  /** Coverage radius in Manhattan distance for garbage collection trucks */
-  COVERAGE_RANGE: 15,
-  /** Fraction of current load that an incinerator burns each tick */
-  INCINERATOR_BURN_RATE: 0.05,
+  /** Road-distance coverage budget for garbage collection trucks */
+  SERVICE_BUDGET: ROAD_COVERAGE.GARBAGE_BUDGET,
+  /** Default capacity per facility */
+  DEFAULT_CAPACITY: 1000,
+  /** Fraction of current load burned (incinerated) each tick */
+  BURN_RATE: 0.05,
   /** Garbage production: 1 unit per GARBAGE_PER_POP population */
   GARBAGE_PER_POP: 100,
   /** Maintenance cost per garbage facility per tick */
@@ -37,21 +33,19 @@ export const GARBAGE = {
   POLLUTION_AMOUNT_SCALE: 40,
 } as const;
 
-import type { PollutionSource } from '../environment/Pollution';
-
 export class GarbageService {
   private facilities: GarbageFacility[] = [];
   private overflow = 0;
   private nextId = 1;
+  private roadCoverage = new RoadCoverageMap();
 
-  addFacility(x: number, y: number, type: GarbageFacilityType, capacity?: number): string {
+  addFacility(x: number, y: number, capacity?: number): string {
     const id = `garbage_${this.nextId++}`;
     this.facilities.push({
       id,
       x,
       y,
-      type,
-      capacity: capacity ?? DEFAULT_CAPACITIES[type],
+      capacity: capacity ?? GARBAGE.DEFAULT_CAPACITY,
       currentLoad: 0,
     });
     return id;
@@ -67,21 +61,38 @@ export class GarbageService {
     }
   }
 
+  /** Recompute road-distance coverage. Call after facility or road changes. */
+  recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): void {
+    this.roadCoverage.recalculate(this.facilities, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
+  }
+
   getCoverage(x: number, y: number): boolean {
-    return this.facilities.some(f => {
-      const dist = manhattanDistance(f.x, f.y, x, y);
-      return dist <= GARBAGE.COVERAGE_RANGE;
-    });
+    return this.roadCoverage.hasCoverage(x, y);
+  }
+
+  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    return this.roadCoverage.getCostRatio(x, y);
+  }
+
+  /** Preview coverage for a potential facility placement, merged with existing facilities. */
+  previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
+    return this.roadCoverage.previewMerged(position, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
+  }
+
+  /** Get all covered cells with their road-distance costs (for overlay gradient). */
+  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
+    return this.roadCoverage.getCoveredCells();
   }
 
   tick(population: number): void {
     // 1. Produce garbage based on population
     const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);
 
-    // 2. Incinerators burn a fraction of their current load
+    // 2. Burn (incinerate) a fraction of current load at each facility
     for (const f of this.facilities) {
-      if (f.type === 'incinerator' && f.currentLoad > 0) {
-        const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.INCINERATOR_BURN_RATE));
+      if (f.currentLoad > 0) {
+        const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.BURN_RATE));
         f.currentLoad = Math.max(0, f.currentLoad - burned);
       }
     }
@@ -112,8 +123,18 @@ export class GarbageService {
 
   getPollutionPenalty(): number {
     if (this.overflow <= 0) return 0;
-    // Pollution scales with overflow amount
     return Math.min(GARBAGE.MAX_POLLUTION_PENALTY, this.overflow * GARBAGE.OVERFLOW_POLLUTION_MULTIPLIER);
+  }
+
+  /** Distribute overflow pollution evenly across facility locations. */
+  getOverflowPollutionSources(): PollutionSource[] {
+    if (this.overflow <= 0) return [];
+    const totalPenalty = this.getPollutionPenalty();
+    if (this.facilities.length === 0) return [];
+    const perFacility = Math.ceil(totalPenalty / this.facilities.length);
+    return this.facilities.map(f => ({
+      x: f.x, y: f.y, amount: perFacility, type: 'ground' as const,
+    }));
   }
 
   getTotalCapacity(): number {

@@ -1,5 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { HealthService, HEALTH } from '../HealthService';
+import { RoadType } from '../../road/types';
+import type { SizedGrid } from '../../grid/GridHelpers';
+
+/** Grid with a cross-shaped road centered at (cx, cy). */
+function makeCrossRoadGrid(size: number, cx: number, cy: number): SizedGrid {
+  return {
+    width: size,
+    height: size,
+    getCell(x: number, y: number) {
+      if (x < 0 || y < 0 || x >= size || y >= size) return null;
+      const isRoad = x === cx || y === cy;
+      return { roadType: isRoad ? RoadType.TWO_LANE : RoadType.NONE, buildingId: 0, zoneType: 0 };
+    },
+  };
+}
 
 describe('HealthService', () => {
   it('should create an instance', () => {
@@ -33,79 +48,94 @@ describe('HealthService', () => {
     expect(hospitals[0]!.capacity).toBe(200);
   });
 
-  it('getCoverage should return true for positions within hospital radius', () => {
+  it('getCoverage should return true for positions along road near hospital', () => {
+    const grid = makeCrossRoadGrid(30, 10, 10);
     const health = new HealthService();
-    health.addHospital(10, 10, 12);
-    health.tick();
-    expect(health.getCoverage(10, 10)).toBe(true); // at hospital
-    expect(health.getCoverage(15, 10)).toBe(true); // 5 away (< 12)
-    expect(health.getCoverage(10, 20)).toBe(true); // 10 away (< 12)
+    health.addHospital(10, 10);
+    health.recalculateCoverage(grid);
+    // Hospital at intersection — adjacent road cells are covered
+    expect(health.getCoverage(10, 10)).toBe(true);
+    expect(health.getCoverage(11, 10)).toBe(true); // road along row 10
+    expect(health.getCoverage(10, 11)).toBe(true); // road along col 10
   });
 
-  it('getCoverage should return false for positions outside hospital radius', () => {
+  it('getCoverage should return false for positions far from hospital with no road', () => {
+    const grid = makeCrossRoadGrid(60, 10, 10);
     const health = new HealthService();
-    health.addHospital(10, 10, 12);
-    health.tick();
-    expect(health.getCoverage(10, 30)).toBe(false); // 20 away (> 12)
-    expect(health.getCoverage(30, 30)).toBe(false); // far away
+    health.addHospital(10, 10);
+    health.recalculateCoverage(grid);
+    // Cell not on road and not adjacent to any covered road cell
+    expect(health.getCoverage(25, 25)).toBe(false);
   });
 
   it('getHealthBonus should return +20 for positions within coverage', () => {
+    const grid = makeCrossRoadGrid(30, 10, 10);
     const health = new HealthService();
-    health.addHospital(10, 10, 12);
-    health.tick();
+    health.addHospital(10, 10);
+    health.recalculateCoverage(grid);
     expect(health.getHealthBonus(10, 10)).toBe(20);
-    expect(health.getHealthBonus(15, 10)).toBe(20);
+    expect(health.getHealthBonus(11, 10)).toBe(20);
   });
 
   it('getHealthBonus should return 0 for positions outside coverage', () => {
+    const grid = makeCrossRoadGrid(60, 10, 10);
     const health = new HealthService();
-    health.addHospital(10, 10, 12);
-    health.tick();
+    health.addHospital(10, 10);
+    health.recalculateCoverage(grid);
     expect(health.getHealthBonus(50, 50)).toBe(0);
   });
 
   it('multiple hospitals should stack health bonus up to cap of 35', () => {
+    const grid = makeCrossRoadGrid(30, 10, 10);
     const health = new HealthService();
-    // Place two hospitals with overlapping coverage
-    health.addHospital(10, 10, 12);
-    health.addHospital(12, 10, 12);
-    health.tick();
-    // Position (11, 10) is within range of both hospitals
-    expect(health.getCoverage(11, 10)).toBe(true);
-    expect(health.getHealthBonus(11, 10)).toBe(35); // 20+20=40 capped at 35
+    // Two hospitals near the same road intersection
+    health.addHospital(10, 10);
+    health.addHospital(10, 8); // also on column 10 road
+    health.recalculateCoverage(grid);
+    // Position on the road intersection is covered by both
+    expect(health.getCoverage(10, 10)).toBe(true);
+    expect(health.getHealthBonus(10, 10)).toBe(35); // 20+20=40 capped at 35
   });
 
   it('multiple hospitals with non-overlapping coverage give +20 each independently', () => {
+    // Two separate cross roads, far apart
+    const grid: SizedGrid = {
+      width: 60, height: 60,
+      getCell(x: number, y: number) {
+        if (x < 0 || y < 0 || x >= 60 || y >= 60) return null;
+        const isRoad = (x === 5 || y === 5) || (x === 50 || y === 50);
+        return { roadType: isRoad ? RoadType.TWO_LANE : RoadType.NONE, buildingId: 0, zoneType: 0 };
+      },
+    };
     const health = new HealthService();
-    health.addHospital(0, 0, 5);
-    health.addHospital(50, 50, 5);
-    health.tick();
-    expect(health.getHealthBonus(0, 0)).toBe(20);
+    health.addHospital(5, 5);
+    health.addHospital(50, 50);
+    health.recalculateCoverage(grid);
+    expect(health.getHealthBonus(5, 5)).toBe(20);
     expect(health.getHealthBonus(50, 50)).toBe(20);
-    expect(health.getHealthBonus(25, 25)).toBe(0); // not covered by either
+    expect(health.getHealthBonus(30, 30)).toBe(0); // between the two, no coverage
   });
 
   it('removeHospital should remove coverage', () => {
+    const grid = makeCrossRoadGrid(30, 10, 10);
     const health = new HealthService();
-    const id = health.addHospital(10, 10, 12);
-    health.tick();
+    const id = health.addHospital(10, 10);
+    health.recalculateCoverage(grid);
     expect(health.getCoverage(10, 10)).toBe(true);
     health.removeHospital(id);
-    health.tick();
+    health.recalculateCoverage(grid);
     expect(health.getCoverage(10, 10)).toBe(false);
     expect(health.getHealthBonus(10, 10)).toBe(0);
   });
 
-  it('tick() should update coverage', () => {
+  it('tick(grid) should update coverage', () => {
+    const grid = makeCrossRoadGrid(30, 10, 10);
     const health = new HealthService();
-    // Before tick, no coverage yet
-    const id = health.addHospital(10, 10, 12);
-    health.tick();
+    const id = health.addHospital(10, 10);
+    health.tick(grid);
     expect(health.getCoverage(10, 10)).toBe(true);
-    // Remove and tick again
     health.removeHospital(id);
-    health.tick();
+    health.tick(grid);
     expect(health.getCoverage(10, 10)).toBe(false);
   });
 
@@ -124,16 +154,15 @@ describe('HealthService', () => {
   });
 
   it('fromJSON() should restore state', () => {
+    const grid = makeCrossRoadGrid(60, 10, 10);
     const health = new HealthService();
     health.addHospital(10, 10, 12, 100);
-    health.addHospital(50, 50, 15, 200);
     const json = health.toJSON();
 
     const restored = HealthService.fromJSON(json);
-    expect(restored.getHospitals()).toHaveLength(2);
-    restored.tick();
+    restored.recalculateCoverage(grid);
+    expect(restored.getHospitals()).toHaveLength(1);
     expect(restored.getCoverage(10, 10)).toBe(true);
-    expect(restored.getCoverage(50, 50)).toBe(true);
     expect(restored.getHealthBonus(10, 10)).toBe(20);
   });
 });

@@ -426,6 +426,7 @@ export class SimulationLoop {
     ).length;
     const employmentRate = adultCount > 0 ? Math.min(1, totalJobs / adultCount) : 1;
     const avgPollution = this.getAvgPollution();
+    const avgNoise = this.getAvgNoise();
     const avgCrime = this.getAvgCrime();
 
     // Estimate average commute from residential spread (compact city = short commutes)
@@ -434,11 +435,13 @@ export class SimulationLoop {
       ? Math.min(SIMULATION.COMMUTE_MAX, SIMULATION.COMMUTE_BASE + Math.sqrt(resCount) * SIMULATION.COMMUTE_SPREAD_FACTOR)
       : 3;
 
-    // Count service coverage: power + water + low pollution bonus
-    const { poweredRatio, wateredRatio } = this.getServiceRatios();
+    // Count service coverage: power + water + police/fire/garbage + low pollution bonus
+    const { poweredRatio, wateredRatio, policeRatio, fireRatio, garbageRatio, healthRatio, educationRatio, deathCareRatio } = this.getServiceRatios();
     const serviceCoverage = Math.round(
       poweredRatio * SIMULATION.SERVICE_POWER_WEIGHT +
       wateredRatio * SIMULATION.SERVICE_WATER_WEIGHT +
+      policeRatio + fireRatio + garbageRatio +
+      healthRatio + educationRatio + deathCareRatio +
       (avgPollution < SIMULATION.LOW_POLLUTION_THRESHOLD ? 1 : 0)
     );
 
@@ -452,7 +455,7 @@ export class SimulationLoop {
         commuteDistance: commute,
         hasPark: hasParkCoverage,
         pollution: avgPollution,
-        noiseLevel: 0,
+        noiseLevel: avgNoise,
         crimeRate: avgCrime,
         isEmployed: !isWorkingAge(citizen.age) || Math.random() < employmentRate,
         taxRate,
@@ -464,20 +467,42 @@ export class SimulationLoop {
 
   // Only check service coverage for residential buildings — residents care about
   // their own power/water, not whether distant factories have coverage.
-  private getServiceRatios(): { poweredRatio: number; wateredRatio: number } {
+  private getServiceRatios(): {
+    poweredRatio: number; wateredRatio: number;
+    policeRatio: number; fireRatio: number; garbageRatio: number;
+    healthRatio: number; educationRatio: number; deathCareRatio: number;
+  } {
     let powered = 0;
     let watered = 0;
+    let police = 0;
+    let fire = 0;
+    let garbage = 0;
+    let health = 0;
+    let education = 0;
+    let deathCare = 0;
     let total = 0;
     this.state.grid.forEachCell((cell, x, y) => {
       if (cell.buildingId > 0 && isResidentialZone(cell.zoneType)) {
         total++;
         if (this.state.power.isPowered(x, y)) powered++;
         if (this.state.water.isSupplied(x, y)) watered++;
+        if (this.state.police.getCoverage(x, y)) police++;
+        if (this.state.fire.getCoverage(x, y)) fire++;
+        if (this.state.garbage.getCoverage(x, y)) garbage++;
+        if (this.state.health.getCoverage(x, y)) health++;
+        if (this.state.education.getCoverage(x, y)) education++;
+        if (this.state.deathCare.getCoverage(x, y)) deathCare++;
       }
     });
     return {
       poweredRatio: total > 0 ? powered / total : 0,
       wateredRatio: total > 0 ? watered / total : 0,
+      policeRatio: total > 0 ? police / total : 0,
+      fireRatio: total > 0 ? fire / total : 0,
+      garbageRatio: total > 0 ? garbage / total : 0,
+      healthRatio: total > 0 ? health / total : 0,
+      educationRatio: total > 0 ? education / total : 0,
+      deathCareRatio: total > 0 ? deathCare / total : 0,
     };
   }
 
@@ -493,6 +518,19 @@ export class SimulationLoop {
     this.state.grid.forEachCell((cell) => {
       if (isResidentialZone(cell.zoneType)) {
         total += cell.pollution;
+        count++;
+      }
+    });
+    return count > 0 ? total / count : 0;
+  }
+
+  // Average noise over residential cells only (same rationale as getAvgPollution).
+  private getAvgNoise(): number {
+    let total = 0;
+    let count = 0;
+    this.state.grid.forEachCell((cell) => {
+      if (isResidentialZone(cell.zoneType)) {
+        total += cell.noiseLevel;
         count++;
       }
     });
@@ -590,12 +628,9 @@ export class SimulationLoop {
       pm.addSource(src.x, src.y, src.amount, src.type);
     }
 
-    // Garbage overflow produces distributed pollution at city center
-    const garbagePenalty = this.state.garbage.getPollutionPenalty();
-    if (garbagePenalty > 0) {
-      const cx = Math.floor(grid.width / 2);
-      const cy = Math.floor(grid.height / 2);
-      pm.addSource(cx, cy, garbagePenalty, 'ground');
+    // Garbage overflow pollution distributed across facility locations
+    for (const src of this.state.garbage.getOverflowPollutionSources()) {
+      pm.addSource(src.x, src.y, src.amount, src.type);
     }
 
     pm.calculateSpread();
@@ -619,7 +654,15 @@ export class SimulationLoop {
       const pollution = this.state.pollution.getPollutionAt(x, y);
       const isPowered = this.state.power.isPowered(x, y);
       const isWatered = this.state.water.isSupplied(x, y);
-      const serviceCoverage = (isPowered ? 2 : 0) + (isWatered ? 2 : 0);
+      const hasPolice = this.state.police.getCoverage(x, y);
+      const hasFire = this.state.fire.getCoverage(x, y);
+      const hasGarbage = this.state.garbage.getCoverage(x, y);
+      const hasHealth = this.state.health.getCoverage(x, y);
+      const hasEducation = this.state.education.getCoverage(x, y);
+      const hasDeathCare = this.state.deathCare.getCoverage(x, y);
+      const serviceCoverage = (isPowered ? 2 : 0) + (isWatered ? 2 : 0)
+        + (hasPolice ? 1 : 0) + (hasFire ? 1 : 0) + (hasGarbage ? 1 : 0)
+        + (hasHealth ? 1 : 0) + (hasEducation ? 1 : 0) + (hasDeathCare ? 1 : 0);
 
       // Check if near water, forest (natural park), or placed park within 2 cells
       let waterfront = false;
@@ -673,8 +716,16 @@ export class SimulationLoop {
       const isPowered = this.state.power.isPowered(x, y);
       const isWatered = this.state.water.isSupplied(x, y);
       const pollution = this.state.pollution.getPollutionAt(x, y);
-      // Count service types: power, water, + bonus for low pollution/crime
-      let serviceCoverageCount = (isPowered ? 2 : 0) + (isWatered ? 2 : 0);
+      // Count service types: power, water, road-based services, + bonus for low pollution/crime
+      const hasPolice = this.state.police.getCoverage(x, y);
+      const hasFire = this.state.fire.getCoverage(x, y);
+      const hasGarbage = this.state.garbage.getCoverage(x, y);
+      const hasHealth = this.state.health.getCoverage(x, y);
+      const hasEducation = this.state.education.getCoverage(x, y);
+      const hasDeathCare = this.state.deathCare.getCoverage(x, y);
+      let serviceCoverageCount = (isPowered ? 2 : 0) + (isWatered ? 2 : 0)
+        + (hasPolice ? 1 : 0) + (hasFire ? 1 : 0) + (hasGarbage ? 1 : 0)
+        + (hasHealth ? 1 : 0) + (hasEducation ? 1 : 0) + (hasDeathCare ? 1 : 0);
       if (pollution.ground < 10) serviceCoverageCount += 1; // clean air bonus
       if (this.getAvgCrime() < 15) serviceCoverageCount += 1; // low crime bonus
 

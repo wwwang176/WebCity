@@ -6,48 +6,49 @@ import * as THREE from 'three';
  * Also adds a uHighlightColor uniform to the material's userData for later access.
  */
 export function injectHighlightShader(material: THREE.MeshLambertMaterial): void {
-  const highlightColor = new THREE.Color(1, 0, 0);
-  material.userData.uHighlightColor = { value: highlightColor };
-
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uHighlightColor = material.userData.uHighlightColor;
-
-    // Vertex: pass aHighlight to fragment
+    // Vertex: pass aHighlight + aHighlightColor to fragment
     shader.vertexShader = shader.vertexShader.replace(
       '#include <common>',
       `#include <common>
       attribute float aHighlight;
-      varying float vHighlight;`,
+      attribute vec3 aHighlightColor;
+      varying float vHighlight;
+      varying vec3 vHighlightColor;`,
     );
     shader.vertexShader = shader.vertexShader.replace(
       '#include <begin_vertex>',
       `#include <begin_vertex>
-      vHighlight = aHighlight;`,
+      vHighlight = aHighlight;
+      vHighlightColor = aHighlightColor;`,
     );
 
-    // Fragment: mix highlight color when flagged
+    // Fragment: mix per-instance highlight color when flagged
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <common>',
       `#include <common>
-      uniform vec3 uHighlightColor;
-      varying float vHighlight;`,
+      varying float vHighlight;
+      varying vec3 vHighlightColor;`,
     );
     shader.fragmentShader = shader.fragmentShader.replace(
       '#include <opaque_fragment>',
       `#include <opaque_fragment>
       if (vHighlight > 0.01) {
-        gl_FragColor.rgb = mix(gl_FragColor.rgb, uHighlightColor, 0.22 * vHighlight);
-        gl_FragColor.rgb += uHighlightColor * 0.12 * vHighlight;
+        gl_FragColor.rgb = mix(gl_FragColor.rgb, vHighlightColor, 0.22 * vHighlight);
+        gl_FragColor.rgb += vHighlightColor * 0.12 * vHighlight;
       }`,
     );
   };
 }
 
-/** Add aHighlight InstancedBufferAttribute to an InstancedMesh. */
+/** Add aHighlight + aHighlightColor InstancedBufferAttributes to an InstancedMesh. */
 export function addHighlightAttribute(mesh: THREE.InstancedMesh): void {
   const data = new Float32Array(mesh.count);
   mesh.geometry.setAttribute('aHighlight',
     new THREE.InstancedBufferAttribute(data, 1));
+  const colorData = new Float32Array(mesh.count * 3);
+  mesh.geometry.setAttribute('aHighlightColor',
+    new THREE.InstancedBufferAttribute(colorData, 3));
 }
 
 /**
@@ -90,7 +91,6 @@ export class HighlightManager {
     buildingMeshes: readonly (THREE.InstancedMesh | THREE.Mesh)[],
     infraGroups: readonly THREE.Group[],
   ): void {
-    this.clear();
     this.createGroundOverlay(minX, minY, maxX, maxY, color);
     this.tintInfraGroups(infraGroups, minX, minY, maxX, maxY, color);
     this.setInstanceHighlights(buildingMeshes, color,
@@ -107,7 +107,6 @@ export class HighlightManager {
     infraGroups: readonly THREE.Group[],
   ): void {
     if (cells.length === 0) return;
-    this.clear();
 
     const cellSet = new Set<string>();
     for (const c of cells) cellSet.add(`${c.x},${c.y}`);
@@ -134,6 +133,11 @@ export class HighlightManager {
       if (attr) {
         (attr.array as Float32Array).fill(0);
         attr.needsUpdate = true;
+      }
+      const colorAttr = mesh.geometry.getAttribute('aHighlightColor') as THREE.InstancedBufferAttribute | undefined;
+      if (colorAttr) {
+        (colorAttr.array as Float32Array).fill(0);
+        colorAttr.needsUpdate = true;
       }
     }
     this.highlightedMeshes.length = 0;
@@ -232,11 +236,22 @@ export class HighlightManager {
     const tint = new THREE.Color(color);
     group.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
-      // Prevent double-tinting: skip meshes already recorded in infraTinted
-      if (this.infraTinted.some(e => e.mesh === child)) return;
-      const origMat = child.material as THREE.Material;
-      const cloned = origMat.clone();
 
+      // If already tinted, retrieve original; otherwise save it
+      const existing = this.infraTinted.find(e => e.mesh === child);
+      let origMat: THREE.Material;
+      if (existing) {
+        origMat = existing.original;
+        // Dispose the previous tinted material
+        if (child.material !== origMat) {
+          (child.material as THREE.Material).dispose();
+        }
+      } else {
+        origMat = child.material as THREE.Material;
+        this.infraTinted.push({ mesh: child, original: origMat });
+      }
+
+      const cloned = origMat.clone();
       if (cloned instanceof THREE.MeshLambertMaterial) {
         cloned.color.lerp(tint, 0.25 * intensity);
         cloned.emissive.set(color);
@@ -245,7 +260,6 @@ export class HighlightManager {
         cloned.color.lerp(tint, 0.5 * intensity);
       }
 
-      this.infraTinted.push({ mesh: child, original: origMat });
       child.material = cloned;
     });
   }
@@ -272,35 +286,58 @@ export class HighlightManager {
       (gx, gz) => cellSet.has(`${gx},${gz}`), intensity);
   }
 
+  /**
+   * Hover highlight with per-cell gradient colors (coverage preview).
+   * Each cell gets its own color via per-instance aHighlightColor attribute.
+   */
+  hoverHighlightGradient(
+    cells: { x: number; y: number; color: number }[],
+    meshes: readonly (THREE.InstancedMesh | THREE.Mesh)[],
+    infraGroups: readonly THREE.Group[],
+    intensity: number = 0.6,
+  ): void {
+    if (cells.length === 0) return;
+    const cellMap = new Map<string, number>();
+    for (const c of cells) cellMap.set(`${c.x},${c.y}`, c.color);
+
+    // Tint infra groups with average color (simplified: use first cell's color)
+    if (infraGroups.length > 0) {
+      const cellSet = new Set<string>(cellMap.keys());
+      this.tintInfraGroupsByCells(infraGroups, cellSet, cells[0]!.color, intensity);
+    }
+
+    this.setInstanceHighlights(meshes,
+      (gx, gz) => cellMap.get(`${gx},${gz}`) ?? 0xff0000,
+      (gx, gz) => cellMap.has(`${gx},${gz}`), intensity);
+  }
+
   // ─── Zone building instance highlights ───────────────────────────
 
   /**
-   * Set aHighlight attribute and uHighlightColor uniform on zone building InstancedMeshes.
-   * @param intensity highlight intensity (0.0–1.0); uses Math.max to not overwrite stronger highlights.
+   * Set aHighlight + aHighlightColor per-instance attributes on zone building InstancedMeshes.
+   * @param color single color for all highlighted instances, or a function (gx,gz)=>number for per-instance color.
+   * @param intensity highlight intensity (0.0–1.0); last-writer-wins (later layers overwrite earlier ones).
    */
   private setInstanceHighlights(
     meshes: readonly (THREE.InstancedMesh | THREE.Mesh)[],
-    color: number,
+    color: number | ((gx: number, gz: number) => number),
     inRange: (gx: number, gz: number) => boolean,
     intensity: number = 1.0,
   ): void {
+    const isColorFn = typeof color === 'function';
+    const fixedColor = isColorFn ? null : new THREE.Color(color);
+
     for (const mesh of meshes) {
       if (!(mesh instanceof THREE.InstancedMesh)) continue;
       const attr = mesh.geometry.getAttribute('aHighlight') as THREE.InstancedBufferAttribute | undefined;
       if (!attr) continue; // skip meshes without highlight attribute (zone overlays, light spots)
 
-      // Set highlight color uniform on the material
-      // ShaderMaterial (custom building shader): uniforms on material directly
-      // MeshLambertMaterial (road/track via onBeforeCompile): uniforms in userData
-      const mat = mesh.material as THREE.ShaderMaterial;
-      if (mat.uniforms?.uHighlightColor) {
-        (mat.uniforms.uHighlightColor.value as THREE.Color).set(color);
-      } else if ((mesh.material as THREE.Material).userData?.uHighlightColor) {
-        ((mesh.material as THREE.Material).userData.uHighlightColor.value as THREE.Color).set(color);
-      }
+      const colorAttr = mesh.geometry.getAttribute('aHighlightColor') as THREE.InstancedBufferAttribute | undefined;
 
       const data = attr.array as Float32Array;
+      const colorData = colorAttr ? colorAttr.array as Float32Array : null;
       let anySet = false;
+      const tmpColor = new THREE.Color();
 
       for (let i = 0; i < mesh.count; i++) {
         mesh.getMatrixAt(i, this._mat4);
@@ -309,16 +346,26 @@ export class HighlightManager {
         const gz = Math.round(this._pos.z);
 
         if (inRange(gx, gz)) {
-          const newVal = Math.max(data[i]!, intensity);
-          if (newVal !== data[i]) {
-            data[i] = newVal;
-            anySet = true;
+          data[i] = intensity;
+          anySet = true;
+
+          // Set per-instance color
+          if (colorData) {
+            if (isColorFn) {
+              tmpColor.set(color(gx, gz));
+            } else {
+              tmpColor.copy(fixedColor!);
+            }
+            colorData[i * 3] = tmpColor.r;
+            colorData[i * 3 + 1] = tmpColor.g;
+            colorData[i * 3 + 2] = tmpColor.b;
           }
         }
       }
 
       if (anySet) {
         attr.needsUpdate = true;
+        if (colorAttr) colorAttr.needsUpdate = true;
         if (!this.highlightedMeshes.includes(mesh)) {
           this.highlightedMeshes.push(mesh);
         }

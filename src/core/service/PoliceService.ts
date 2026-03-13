@@ -1,6 +1,7 @@
+import type { SizedGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
-import { RadiusCoverageMap } from './RadiusCoverageMap';
+import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
 
 export interface PoliceStation {
   id: string;
@@ -17,7 +18,7 @@ export const POLICE = {
 
 export class PoliceService {
   private stations: PoliceStation[] = [];
-  private coverage = new RadiusCoverageMap();
+  private coverage = new RoadCoverageMap();
   private nextId = 1;
 
   addStation(x: number, y: number, radius = 15): string {
@@ -34,6 +35,11 @@ export class PoliceService {
     return this.coverage.hasCoverage(x, y);
   }
 
+  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    return this.coverage.getCostRatio(x, y);
+  }
+
   getCrimeReduction(x: number, y: number): number {
     const count = this.coverage.getCoverageCount(x, y);
     if (count === 0) return 0;
@@ -44,8 +50,25 @@ export class PoliceService {
     return this.stations;
   }
 
-  tick(): void {
-    this.coverage.recalculate(this.stations);
+  /** Recompute road-distance coverage. Call after station or road changes. */
+  recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): void {
+    this.coverage.recalculate(this.stations, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
+  }
+
+  /** Preview coverage for a potential station placement, merged with existing stations. */
+  previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
+    return this.coverage.previewMerged(position, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
+  }
+
+  /** Get all covered cells with their road-distance costs (for overlay gradient). */
+  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
+    return this.coverage.getCoveredCells();
+  }
+
+  tick(grid?: SizedGrid): void {
+    if (grid) {
+      this.recalculateCoverage(grid);
+    }
   }
 
   getMaintenanceCost(): number {

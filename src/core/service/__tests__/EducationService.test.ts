@@ -1,5 +1,33 @@
 import { describe, it, expect } from 'vitest';
 import { EducationService, type SchoolType } from '../EducationService';
+import { RoadType } from '../../road/types';
+import type { SizedGrid } from '../../grid/GridHelpers';
+
+/** Grid with a cross-shaped road centered at (cx, cy). */
+function makeCrossRoadGrid(size: number, cx: number, cy: number): SizedGrid {
+  return {
+    width: size,
+    height: size,
+    getCell(x: number, y: number) {
+      if (x < 0 || y < 0 || x >= size || y >= size) return null;
+      const isRoad = x === cx || y === cy;
+      return { roadType: isRoad ? RoadType.TWO_LANE : RoadType.NONE, buildingId: 0, zoneType: 0 };
+    },
+  };
+}
+
+/** Grid with multiple cross roads for testing non-overlapping coverage. */
+function makeMultiCrossGrid(size: number, centers: [number, number][]): SizedGrid {
+  return {
+    width: size,
+    height: size,
+    getCell(x: number, y: number) {
+      if (x < 0 || y < 0 || x >= size || y >= size) return null;
+      const isRoad = centers.some(([cx, cy]) => x === cx || y === cy);
+      return { roadType: isRoad ? RoadType.TWO_LANE : RoadType.NONE, buildingId: 0, zoneType: 0 };
+    },
+  };
+}
 
 describe('EducationService', () => {
   it('should create an instance with no schools', () => {
@@ -59,58 +87,74 @@ describe('EducationService', () => {
   });
 
   describe('getCoverage', () => {
-    it('should return true for a position within elementary school radius', () => {
+    it('should return true for a position within elementary school road coverage', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'elementary', 10);
+      edu.addSchool(10, 10, 'elementary');
+      edu.recalculateCoverage(grid);
       expect(edu.getCoverage(10, 10, 'elementary')).toBe(true);
-      expect(edu.getCoverage(15, 10, 'elementary')).toBe(true); // distance 5 < 10
-      expect(edu.getCoverage(10, 19, 'elementary')).toBe(true); // distance 9 < 10
+      expect(edu.getCoverage(11, 10, 'elementary')).toBe(true); // adjacent road
     });
 
-    it('should return false for a position outside elementary school radius', () => {
+    it('should return false for a position outside elementary school road coverage', () => {
+      const grid = makeCrossRoadGrid(60, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'elementary', 10);
-      expect(edu.getCoverage(25, 10, 'elementary')).toBe(false); // distance 15 > 10
+      edu.addSchool(10, 10, 'elementary');
+      edu.recalculateCoverage(grid);
+      // Far away and not on road
+      expect(edu.getCoverage(50, 50, 'elementary')).toBe(false);
     });
 
-    it('should return true for a position within highschool radius', () => {
+    it('should return true for a position within highschool road coverage', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'highschool', 12);
+      edu.addSchool(10, 10, 'highschool');
+      edu.recalculateCoverage(grid);
       expect(edu.getCoverage(10, 10, 'highschool')).toBe(true);
-      expect(edu.getCoverage(10, 21, 'highschool')).toBe(true); // distance 11 < 12
+      expect(edu.getCoverage(11, 10, 'highschool')).toBe(true);
     });
 
-    it('should return false for a position outside highschool radius', () => {
+    it('should return false for a position outside highschool road coverage', () => {
+      const grid = makeCrossRoadGrid(60, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'highschool', 12);
-      expect(edu.getCoverage(30, 10, 'highschool')).toBe(false);
+      edu.addSchool(10, 10, 'highschool');
+      edu.recalculateCoverage(grid);
+      expect(edu.getCoverage(50, 50, 'highschool')).toBe(false);
     });
 
-    it('should return true for a position within university radius', () => {
+    it('should return true for a position within university road coverage', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'university', 15);
+      edu.addSchool(10, 10, 'university');
+      edu.recalculateCoverage(grid);
       expect(edu.getCoverage(10, 10, 'university')).toBe(true);
-      expect(edu.getCoverage(10, 24, 'university')).toBe(true); // distance 14 < 15
+      expect(edu.getCoverage(11, 10, 'university')).toBe(true);
     });
 
-    it('should return false for a position outside university radius', () => {
+    it('should return false for a position outside university road coverage', () => {
+      const grid = makeCrossRoadGrid(60, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'university', 15);
-      expect(edu.getCoverage(30, 30, 'university')).toBe(false);
+      edu.addSchool(10, 10, 'university');
+      edu.recalculateCoverage(grid);
+      expect(edu.getCoverage(50, 50, 'university')).toBe(false);
     });
 
     it('should check coverage across all schools when type is not specified', () => {
+      const grid = makeMultiCrossGrid(60, [[10, 10], [40, 40]]);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'elementary', 5);
-      edu.addSchool(30, 30, 'university', 5);
-      expect(edu.getCoverage(10, 10)).toBe(true); // near elementary
-      expect(edu.getCoverage(30, 30)).toBe(true); // near university
-      expect(edu.getCoverage(50, 50)).toBe(false); // nowhere
+      edu.addSchool(10, 10, 'elementary');
+      edu.addSchool(40, 40, 'university');
+      edu.recalculateCoverage(grid);
+      expect(edu.getCoverage(10, 10)).toBe(true);  // near elementary
+      expect(edu.getCoverage(40, 40)).toBe(true);  // near university
+      expect(edu.getCoverage(25, 25)).toBe(false); // between, not on any road
     });
 
     it('should only check coverage for the specified type', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'elementary', 5);
+      edu.addSchool(10, 10, 'elementary');
+      edu.recalculateCoverage(grid);
       // Position is covered by elementary but NOT by highschool
       expect(edu.getCoverage(10, 10, 'elementary')).toBe(true);
       expect(edu.getCoverage(10, 10, 'highschool')).toBe(false);
@@ -124,44 +168,57 @@ describe('EducationService', () => {
     });
 
     it('should return elementary when only elementary school covers position', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'elementary', 10);
+      edu.addSchool(10, 10, 'elementary');
+      edu.recalculateCoverage(grid);
       expect(edu.getEducationLevel(10, 10)).toBe('elementary');
     });
 
     it('should return highschool when highschool covers position', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'highschool', 10);
+      edu.addSchool(10, 10, 'highschool');
+      edu.recalculateCoverage(grid);
       expect(edu.getEducationLevel(10, 10)).toBe('highschool');
     });
 
     it('should return university when university covers position', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'university', 10);
+      edu.addSchool(10, 10, 'university');
+      edu.recalculateCoverage(grid);
       expect(edu.getEducationLevel(10, 10)).toBe('university');
     });
 
     it('should return the highest education level when multiple schools cover position', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'elementary', 10);
-      edu.addSchool(10, 10, 'highschool', 10);
+      edu.addSchool(10, 10, 'elementary');
+      edu.addSchool(10, 10, 'highschool');
+      edu.recalculateCoverage(grid);
       expect(edu.getEducationLevel(10, 10)).toBe('highschool');
     });
 
     it('should return university as highest when all three types cover position', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'elementary', 10);
-      edu.addSchool(10, 10, 'highschool', 10);
-      edu.addSchool(10, 10, 'university', 10);
+      edu.addSchool(10, 10, 'elementary');
+      edu.addSchool(10, 10, 'highschool');
+      edu.addSchool(10, 10, 'university');
+      edu.recalculateCoverage(grid);
       expect(edu.getEducationLevel(10, 10)).toBe('university');
     });
 
     it('should return elementary even with highschool and university if only elementary is in range', () => {
+      const grid = makeMultiCrossGrid(90, [[10, 10], [50, 50], [80, 80]]);
       const edu = new EducationService();
-      edu.addSchool(10, 10, 'elementary', 20);
-      edu.addSchool(50, 50, 'highschool', 5);
-      edu.addSchool(80, 80, 'university', 5);
-      expect(edu.getEducationLevel(15, 15)).toBe('elementary');
+      edu.addSchool(10, 10, 'elementary');
+      edu.addSchool(50, 50, 'highschool');
+      edu.addSchool(80, 80, 'university');
+      edu.recalculateCoverage(grid);
+      // (11, 10) is on road near elementary only, far from highschool/university
+      expect(edu.getEducationLevel(11, 10)).toBe('elementary');
     });
   });
 
@@ -175,22 +232,28 @@ describe('EducationService', () => {
     });
 
     it('should remove coverage after school is removed', () => {
+      const grid = makeCrossRoadGrid(30, 10, 10);
       const edu = new EducationService();
-      const id = edu.addSchool(10, 10, 'elementary', 10);
+      const id = edu.addSchool(10, 10, 'elementary');
+      edu.recalculateCoverage(grid);
       expect(edu.getCoverage(10, 10, 'elementary')).toBe(true);
       expect(edu.getEducationLevel(10, 10)).toBe('elementary');
       edu.removeSchool(id);
+      edu.recalculateCoverage(grid);
       expect(edu.getCoverage(10, 10, 'elementary')).toBe(false);
       expect(edu.getEducationLevel(10, 10)).toBe('none');
     });
 
     it('should not affect other schools when one is removed', () => {
+      const grid = makeMultiCrossGrid(60, [[10, 10], [40, 40]]);
       const edu = new EducationService();
-      const id1 = edu.addSchool(10, 10, 'elementary', 5);
-      const id2 = edu.addSchool(30, 30, 'highschool', 5);
+      const id1 = edu.addSchool(10, 10, 'elementary');
+      edu.addSchool(40, 40, 'highschool');
+      edu.recalculateCoverage(grid);
       edu.removeSchool(id1);
+      edu.recalculateCoverage(grid);
       expect(edu.getSchools()).toHaveLength(1);
-      expect(edu.getCoverage(30, 30, 'highschool')).toBe(true);
+      expect(edu.getCoverage(40, 40, 'highschool')).toBe(true);
     });
 
     it('should do nothing when removing a nonexistent id', () => {
@@ -211,6 +274,7 @@ describe('EducationService', () => {
 
   describe('serialization', () => {
     it('should serialize to JSON and deserialize back', () => {
+      const grid = makeMultiCrossGrid(60, [[5, 5], [15, 15], [25, 25]]);
       const edu = new EducationService();
       edu.addSchool(5, 5, 'elementary', 10, 200);
       edu.addSchool(15, 15, 'highschool', 12, 300);
@@ -230,6 +294,7 @@ describe('EducationService', () => {
       expect(restored.getSchools()[2]!.type).toBe('university');
 
       // Verify coverage works after deserialization
+      restored.recalculateCoverage(grid);
       expect(restored.getCoverage(5, 5, 'elementary')).toBe(true);
       expect(restored.getEducationLevel(25, 25)).toBe('university');
     });

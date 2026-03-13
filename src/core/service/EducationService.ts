@@ -1,6 +1,7 @@
-import { euclideanDistance } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
+import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
+import type { SizedGrid } from '../grid/GridHelpers';
 
 export type SchoolType = 'elementary' | 'highschool' | 'university';
 
@@ -29,6 +30,20 @@ const DEFAULT_CAPACITY: Record<SchoolType, number> = {
   university: 500,
 };
 
+/** Road-coverage budget per school type. Higher level = wider coverage. */
+const SCHOOL_BUDGET: Record<SchoolType, number> = {
+  elementary: ROAD_COVERAGE.EDUCATION_ELEMENTARY_BUDGET,
+  highschool: ROAD_COVERAGE.EDUCATION_HIGHSCHOOL_BUDGET,
+  university: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET,
+};
+
+/** Facility footprint per school type (from InfraConfig). */
+const SCHOOL_SIZE: Record<SchoolType, { width: number; height: number }> = {
+  elementary: { width: 2, height: 2 },
+  highschool: { width: 2, height: 3 },
+  university: { width: 3, height: 3 },
+};
+
 /** Education level ranking for comparison (higher = better). */
 const LEVEL_RANK: Record<SchoolType | 'none', number> = {
   none: 0,
@@ -42,6 +57,12 @@ export type EducationLevelResult = 'none' | SchoolType;
 export class EducationService {
   private schools: School[] = [];
   private nextId = 1;
+  /** One RoadCoverageMap per school type, each with its own budget. */
+  private coverageMaps: Record<SchoolType, RoadCoverageMap> = {
+    elementary: new RoadCoverageMap(),
+    highschool: new RoadCoverageMap(),
+    university: new RoadCoverageMap(),
+  };
 
   addSchool(
     x: number,
@@ -66,35 +87,84 @@ export class EducationService {
     removeById(this.schools, id);
   }
 
+  /** Recompute road-distance coverage for all school types. */
+  recalculateCoverage(grid: SizedGrid): void {
+    const types: SchoolType[] = ['elementary', 'highschool', 'university'];
+    for (const type of types) {
+      const facilities = this.schools.filter(s => s.type === type);
+      const size = SCHOOL_SIZE[type];
+      this.coverageMaps[type].recalculate(
+        facilities, grid, SCHOOL_BUDGET[type], size.width, size.height,
+      );
+    }
+  }
+
   /**
-   * Returns true if position (x, y) is within the coverage radius of any
+   * Returns true if position (x, y) is within road-distance coverage of any
    * school of the given type. If type is omitted, checks all school types.
    */
   getCoverage(x: number, y: number, type?: SchoolType): boolean {
-    for (const school of this.schools) {
-      if (type !== undefined && school.type !== type) continue;
-      const dist = euclideanDistance(x, y, school.x, school.y);
-      if (dist < school.radius) return true;
+    if (type !== undefined) {
+      return this.coverageMaps[type].hasCoverage(x, y);
     }
-    return false;
+    return this.coverageMaps.elementary.hasCoverage(x, y)
+      || this.coverageMaps.highschool.hasCoverage(x, y)
+      || this.coverageMaps.university.hasCoverage(x, y);
+  }
+
+  /** Cost ratio: best (minimum) across all school types. -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    let best = -1;
+    for (const type of ['elementary', 'highschool', 'university'] as SchoolType[]) {
+      const r = this.coverageMaps[type].getCostRatio(x, y);
+      if (r >= 0 && (best < 0 || r < best)) best = r;
+    }
+    return best;
   }
 
   /**
    * Returns the highest education level available at position (x, y).
    */
   getEducationLevel(x: number, y: number): EducationLevelResult {
-    let best: EducationLevelResult = 'none';
-    for (const school of this.schools) {
-      const dist = euclideanDistance(x, y, school.x, school.y);
-      if (dist < school.radius && LEVEL_RANK[school.type] > LEVEL_RANK[best]) {
-        best = school.type;
-      }
-    }
-    return best;
+    if (this.coverageMaps.university.hasCoverage(x, y)) return 'university';
+    if (this.coverageMaps.highschool.hasCoverage(x, y)) return 'highschool';
+    if (this.coverageMaps.elementary.hasCoverage(x, y)) return 'elementary';
+    return 'none';
   }
 
   getSchools(): readonly School[] {
     return this.schools;
+  }
+
+  /** Preview coverage for a potential school placement, merged with existing. */
+  previewCoverage(
+    position: { x: number; y: number },
+    grid: SizedGrid,
+    type: SchoolType,
+    facilityWidth?: number,
+    facilityHeight?: number,
+  ): Map<string, number> {
+    const size = SCHOOL_SIZE[type];
+    return this.coverageMaps[type].previewMerged(
+      position, grid, SCHOOL_BUDGET[type],
+      facilityWidth ?? size.width, facilityHeight ?? size.height,
+    );
+  }
+
+  /** Get all covered cells across all school types (for overlay gradient). */
+  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
+    // Merge all three maps, taking min cost
+    const merged = new Map<string, number>();
+    for (const type of ['elementary', 'highschool', 'university'] as SchoolType[]) {
+      const cells = this.coverageMaps[type].getCoveredCells();
+      for (const [key, cost] of cells) {
+        const existing = merged.get(key);
+        if (existing === undefined || cost < existing) {
+          merged.set(key, cost);
+        }
+      }
+    }
+    return merged;
   }
 
   tick(): void {

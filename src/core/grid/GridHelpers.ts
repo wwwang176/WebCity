@@ -29,6 +29,12 @@ export interface ReadableGrid {
   getCell(x: number, y: number): { roadType: number } | null;
 }
 
+/** ReadableGrid with known dimensions — needed for dense array coverage caches. */
+export interface SizedGrid extends ReadableGrid {
+  readonly width: number;
+  readonly height: number;
+}
+
 /** Euclidean distance between two points */
 export function euclideanDistance(x1: number, y1: number, x2: number, y2: number): number {
   const dx = x2 - x1;

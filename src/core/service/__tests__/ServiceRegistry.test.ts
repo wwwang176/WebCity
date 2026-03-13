@@ -30,7 +30,7 @@ describe('ServiceRegistry', () => {
       // Add some facilities
       state.police.addStation(0, 0);      // cost: 4
       state.fire.addStation(1, 1);        // cost: 4
-      state.garbage.addFacility(2, 2, 'landfill'); // cost: 3
+      state.garbage.addFacility(2, 2); // cost: 3
       // Expected sum: 4 + 4 + 3 = 11
       expect(getTotalServiceMaintenanceCost(state)).toBe(11);
     });
@@ -44,7 +44,7 @@ describe('ServiceRegistry', () => {
       state.health.addHospital(4, 4);
       state.education.addSchool(5, 5, 'elementary');
       state.parks.addPark(6, 6);
-      state.garbage.addFacility(7, 7, 'landfill');
+      state.garbage.addFacility(7, 7);
       state.sewage.addTreatmentPlant(8, 8);
       state.deathCare.addCemetery(9, 9);
 

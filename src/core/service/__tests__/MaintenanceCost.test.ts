@@ -95,9 +95,9 @@ describe('CivicService.getMaintenanceCost()', () => {
 
     it('should return 3 per facility', () => {
       const svc = new GarbageService();
-      svc.addFacility(5, 5, 'landfill');
+      svc.addFacility(5, 5);
       expect(svc.getMaintenanceCost()).toBe(3);
-      svc.addFacility(10, 10, 'incinerator');
+      svc.addFacility(10, 10);
       expect(svc.getMaintenanceCost()).toBe(6);
     });
   });
@@ -201,7 +201,7 @@ describe('CivicService.getMaintenanceCost()', () => {
     it('GARBAGE.MAINTENANCE_PER_FACILITY should match actual cost', () => {
       expect(GARBAGE.MAINTENANCE_PER_FACILITY).toBeGreaterThan(0);
       const svc = new GarbageService();
-      svc.addFacility(0, 0, 'landfill');
+      svc.addFacility(0, 0);
       expect(svc.getMaintenanceCost()).toBe(GARBAGE.MAINTENANCE_PER_FACILITY);
     });
 

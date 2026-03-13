@@ -29,10 +29,12 @@ import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimula
 import { gridAStarPath, refineLanePath } from './core/traffic/Pathfinding';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
-import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenter, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
+import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
+import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
+import { isResidentialZone } from './core/grid/types';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { getAirportBuildCost, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
@@ -54,6 +56,7 @@ import {
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
+import { getCoverageService } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
 import { canPlaceTransportStop, findAdjacentRoadCell, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
@@ -146,6 +149,22 @@ const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
   district: 'district',
 };
 
+/**
+ * Per-service coverage ratio for the selected building.
+ * -1 = no coverage, 0.0 = nearest (best), 1.0 = farthest (worst).
+ * Power/water use 0 (covered) or -1 (not covered).
+ */
+export interface ServiceStatus {
+  power: number;
+  water: number;
+  police: number;
+  fire: number;
+  garbage: number;
+  health: number;
+  education: number;
+  deathCare: number;
+}
+
 export interface SelectedZoneBuilding {
   kind: 'zone';
   x: number;
@@ -155,6 +174,7 @@ export interface SelectedZoneBuilding {
   landValue: number;
   pollution: number;
   serviceCoverage: number;
+  services: ServiceStatus;
 }
 
 export interface SelectedInfraBuilding {
@@ -192,6 +212,8 @@ export class Game {
   private gridCursor: GridCursor;
   private placementPreview: PlacementPreview;
   private highlightManager: HighlightManager;
+  /** Cached overlay building highlight cells (reapplied every frame). */
+  private overlayHighlightCells: { x: number; y: number; color: number }[] = [];
   private transportRouteRenderer: TransportRouteRenderer;
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
@@ -326,7 +348,11 @@ export class Game {
     this.transportRouteRenderer.build(this.sceneManager.scene);
     this.metroTunnelRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
-    this.placementPreview = new PlacementPreview(this.sceneManager.scene, this.buildingRenderer);
+    this.placementPreview = new PlacementPreview(
+      this.sceneManager.scene,
+      this.buildingRenderer,
+      (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
+    );
     this.highlightManager = new HighlightManager(
       this.sceneManager.scene,
       (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
@@ -374,8 +400,7 @@ export class Game {
         );
         this.dragStart = null;
         this.clearPreviewLine();
-        this.highlightManager.clear();
-        this.applySelectHighlight();
+        this.updatePlacementPreview();
       }
     });
 
@@ -443,7 +468,10 @@ export class Game {
             this.currentRoadType,
             this.state.budget.funds,
           );
-          this.handleBuildResult(result, 'road', () => this.simLoop.markLaneGraphDirty());
+          this.handleBuildResult(result, 'road', () => {
+            this.simLoop.markLaneGraphDirty();
+            this.recalculateAllRoadCoverage();
+          });
           this.dirty.roads = true;
           this.dirty.crossings = true;
           this.dirty.trafficLights = true;
@@ -541,6 +569,7 @@ export class Game {
   private demolish(x1: number, y1: number, x2: number, y2: number): void {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     const demolished = new Set<string>(); // track already-demolished multi-cell buildings
+    let hadRoadDemolished = false;
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
@@ -562,7 +591,7 @@ export class Game {
             const key = `${action.primaryX},${action.primaryY}`;
             if (!demolished.has(key)) {
               demolished.add(key);
-              this.removeInfraService(action.infraType, action.cx, action.cy);
+              this.removeInfraService(action.infraType, action.primaryX, action.primaryY);
               removeInfraFromGrid(this.state.grid, x, y);
             }
             break;
@@ -572,6 +601,7 @@ export class Game {
             this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
             break;
           case 'regular':
+            if (cell && cell.roadType !== RoadType.NONE) hadRoadDemolished = true;
             if (action.hasTrack) this.railBuilder.removeTrack(x, y);
             this.state.grid.setCell(x, y, {
               roadType: 0, roadFlags: 0, zoneType: ZoneType.NONE,
@@ -581,7 +611,16 @@ export class Game {
         }
       }
     }
+    if (hadRoadDemolished) {
+      this.recalculateAllRoadCoverage();
+    }
     this.markAllDirty();
+
+    // Refresh overlay cache after demolish
+    const activeOverlay = this.overlayRenderer.getOverlay();
+    if (activeOverlay !== 'none') {
+      this.computeOverlayHighlightCells(activeOverlay);
+    }
   }
 
   /** Dispatch to data-driven service removal. Callers provide resolved coordinates. */
@@ -590,6 +629,7 @@ export class Game {
     if (actions) {
       actions.remove(this.state as InfraServiceContext, cx, cy);
     }
+    this.recalculateServiceCoverage(infraType);
   }
 
   private paintDistrict(x1: number, y1: number, x2: number, y2: number): void {
@@ -632,16 +672,49 @@ export class Game {
     // Place on grid (multi-cell)
     placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
 
-    // Compute center for service coverage (coverage radiates from building center)
-    const { cx, cy } = getInfraCenter(x, y, type, this.currentRotation);
-
-    // Register with service layer at center coordinates (data-driven via InfraServiceActions)
+    // Register with service layer at top-left coordinates (matches expandFootprint expectation)
     const actions = INFRA_SERVICE_ACTIONS[type];
     if (actions) {
-      actions.place(this.state as InfraServiceContext, cx, cy);
+      actions.place(this.state as InfraServiceContext, x, y);
     }
+
+    // Immediately recalculate coverage for road-based services so overlay updates
+    this.recalculateServiceCoverage(type);
+
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
+
+    // Refresh overlay if one is active for this service
+    const activeOverlay = this.overlayRenderer.getOverlay();
+    if (activeOverlay !== 'none') {
+      this.setOverlay(activeOverlay);
+    }
+  }
+
+  /** Immediately recalculate road-based coverage after placing/removing a service building. */
+  private recalculateServiceCoverage(infraType: InfraType): void {
+    const grid = this.state.grid;
+    switch (infraType) {
+      case 'police': this.state.police.recalculateCoverage(grid); break;
+      case 'fire': this.state.fire.recalculateCoverage(grid); break;
+      case 'garbage': this.state.garbage.recalculateCoverage(grid); break;
+      case 'hospital': this.state.health.recalculateCoverage(grid); break;
+      case 'school':
+      case 'school_high':
+      case 'school_univ': this.state.education.recalculateCoverage(grid); break;
+      case 'cemetery': this.state.deathCare.recalculateCoverage(grid); break;
+    }
+  }
+
+  /** Recalculate all road-based service coverage after road topology changes. */
+  private recalculateAllRoadCoverage(): void {
+    const grid = this.state.grid;
+    this.state.police.recalculateCoverage(grid);
+    this.state.fire.recalculateCoverage(grid);
+    this.state.garbage.recalculateCoverage(grid);
+    this.state.health.recalculateCoverage(grid);
+    this.state.education.recalculateCoverage(grid);
+    this.state.deathCare.recalculateCoverage(grid);
   }
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
@@ -960,7 +1033,6 @@ export class Game {
   setTool(tool: ToolType): void {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
-    this.highlightManager.clear();
     // Road subtypes set the roadType (data-driven lookup)
     const roadType = TOOL_TO_ROAD_TYPE[tool];
     if (roadType !== undefined) this.currentRoadType = roadType;
@@ -971,6 +1043,7 @@ export class Game {
     if (autoOverlay) {
       this.setOverlay(autoOverlay);
     }
+    this.updatePlacementPreview();
     this.onUIUpdate?.();
   }
 
@@ -1005,6 +1078,16 @@ export class Game {
             buildingType: cls.buildingType, zoneType: cell.zoneType,
             landValue: cell.landValue, pollution: cell.pollution,
             serviceCoverage: cell.serviceCoverage,
+            services: {
+              power: this.state.power.isPowered(x, y) ? 0 : -1,
+              water: this.state.water.isSupplied(x, y) ? 0 : -1,
+              police: this.state.police.getCostRatio(x, y),
+              fire: this.state.fire.getCostRatio(x, y),
+              garbage: this.state.garbage.getCostRatio(x, y),
+              health: this.state.health.getCostRatio(x, y),
+              education: this.state.education.getCostRatio(x, y),
+              deathCare: this.state.deathCare.getCostRatio(x, y),
+            },
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -1105,45 +1188,44 @@ export class Game {
     );
   }
 
-  /** Apply selection highlight (100%) + hover highlight (30%) for select tool. */
+  /** Apply hover (bottom) → selection (top) for select tool. */
   private applySelectAndHoverHighlight(): void {
-    // 1. Apply full selection highlight if a building is selected
-    if (this.selectedBuilding) {
-      this.applySelectHighlight();
-    } else {
-      this.highlightManager.clear();
-    }
-
-    // 2. Check if cursor is over a building (different from selected)
+    // 1. Hover first (bottom layer within tool — may be overwritten by selection)
     const gx = this.gridCursor.gridX;
     const gy = this.gridCursor.gridY;
     const cell = this.state.grid.getCell(gx, gy);
-    if (!cell || cell.buildingId <= 0) return;
 
-    // Skip if hovering over the already-selected building
-    if (this.selectedBuilding) {
-      if (this.selectedBuilding.x === gx && this.selectedBuilding.y === gy) return;
-      // For multi-cell infra: compare primary cells (selectedBuilding.x/y may be a non-primary cell)
-      if (this.selectedBuilding.kind === 'infra') {
+    let isHoveringSelected = false;
+    if (cell && cell.buildingId > 0 && this.selectedBuilding) {
+      if (this.selectedBuilding.x === gx && this.selectedBuilding.y === gy) {
+        isHoveringSelected = true;
+      } else if (this.selectedBuilding.kind === 'infra') {
         const hoverPrimary = findPrimaryCell(this.state.grid, gx, gy);
         const selPrimary = findPrimaryCell(this.state.grid, this.selectedBuilding.x, this.selectedBuilding.y);
         if (hoverPrimary && selPrimary &&
-          hoverPrimary.x === selPrimary.x && hoverPrimary.y === selPrimary.y) return;
+          hoverPrimary.x === selPrimary.x && hoverPrimary.y === selPrimary.y) {
+          isHoveringSelected = true;
+        }
       }
     }
 
-    // Determine hover footprint
-    const hoverCells = isInfrastructureBuilding(cell.buildingId)
-      ? this.getMultiCellFootprint(gx, gy)
-      : [{ x: gx, y: gy }];
-    if (hoverCells.length === 0) return;
+    if (cell && cell.buildingId > 0 && !isHoveringSelected) {
+      const hoverCells = isInfrastructureBuilding(cell.buildingId)
+        ? this.getMultiCellFootprint(gx, gy)
+        : [{ x: gx, y: gy }];
+      if (hoverCells.length > 0) {
+        this.highlightManager.hoverHighlight(
+          hoverCells, 0xffffff,
+          this.getAllHighlightMeshes(),
+          this.buildingRenderer.buildingInfraGroups, 0.3,
+        );
+      }
+    }
 
-    // Apply 30% hover glow (additive, won't overwrite stronger selection highlight)
-    this.highlightManager.hoverHighlight(
-      hoverCells, 0xffffff,
-      this.getAllHighlightMeshes(),
-      this.buildingRenderer.buildingInfraGroups, 0.3,
-    );
+    // 2. Selection on top (overwrites overlay + hover on selected cells)
+    if (this.selectedBuilding) {
+      this.applySelectHighlight();
+    }
   }
 
   /** Collect all cells of a multi-cell building footprint (DRY). */
@@ -1163,6 +1245,10 @@ export class Game {
   }
 
   private updatePlacementPreview(): void {
+    // Clear all highlights, then layer: overlay (base) → tool (top)
+    this.highlightManager.clear();
+    this.reapplyOverlayHighlight();
+
     if (this.isInfraTool(this.currentTool)) {
       const infraType = this.currentTool as InfraType;
       const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
@@ -1175,6 +1261,9 @@ export class Game {
         this.state.budget.funds,
         groundwaterFn,
       );
+
+      // Coverage preview overwrites overlay with merged data (existing + new)
+      this.applyCoverageOverlay(infraType);
     } else if (this.currentTool === 'demolish') {
       if (this.dragStart) {
         this.highlightDragRange(0xff0000);
@@ -1191,11 +1280,7 @@ export class Game {
               this.getAllHighlightMeshes(),
               this.buildingRenderer.buildingInfraGroups,
             );
-          } else {
-            this.highlightManager.clear();
           }
-        } else {
-          this.highlightManager.clear();
         }
       }
     } else if (this.dragStart && this.isZoneTool()) {
@@ -1204,10 +1289,19 @@ export class Game {
       this.placementPreview.hide();
       if (this.currentTool === 'select') {
         this.applySelectAndHoverHighlight();
-      } else {
-        this.highlightManager.clear();
       }
     }
+  }
+
+  /** Re-apply cached overlay building highlight (cheap: no grid traversal). */
+  private reapplyOverlayHighlight(): void {
+    if (this.overlayHighlightCells.length === 0) return;
+    this.highlightManager.hoverHighlightGradient(
+      this.overlayHighlightCells,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+      0.6,
+    );
   }
 
   /** Highlight the drag-selected rectangular area with the given color (DRY). */
@@ -1224,6 +1318,110 @@ export class Game {
     );
   }
 
+  // ── Coverage highlight (per-building gradient via HighlightManager) ──────
+
+  /** 10-tier gradient: green → yellow → red (pre-computed hex values). */
+  private static readonly COV_GRADIENT = (() => {
+    const near = new THREE.Color(0x00e676);
+    const mid = new THREE.Color(0xffeb3b);
+    const far = new THREE.Color(0xff5252);
+    const colors: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      const t = i / 9;
+      const c = new THREE.Color();
+      if (t < 0.5) c.copy(near).lerp(mid, t * 2);
+      else c.copy(mid).lerp(far, (t - 0.5) * 2);
+      colors.push(c.getHex());
+    }
+    return colors;
+  })();
+
+  /**
+   * Highlight buildings with per-instance gradient color when placing a civic service.
+   * Garbage: only residential buildings. Police/Fire: all buildings.
+   */
+  private applyCoverageOverlay(infraType: InfraType): void {
+    const cfg = getInfraConfig(infraType);
+    if (!cfg) return;
+    const gx = this.gridCursor.gridX;
+    const gy = this.gridCursor.gridY;
+    const pos = { x: gx, y: gy };
+    const grid = this.state.grid;
+
+    let coverageCells: Map<string, number> | null = null;
+    let budget = 0;
+    switch (infraType) {
+      case 'police':
+        coverageCells = this.state.police.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.POLICE_BUDGET;
+        break;
+      case 'fire':
+        coverageCells = this.state.fire.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.FIRE_BUDGET;
+        break;
+      case 'garbage':
+        coverageCells = this.state.garbage.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.GARBAGE_BUDGET;
+        break;
+      case 'hospital':
+        coverageCells = this.state.health.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.HEALTH_BUDGET;
+        break;
+      case 'school':
+        coverageCells = this.state.education.previewCoverage(pos, grid, 'elementary', cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.EDUCATION_ELEMENTARY_BUDGET;
+        break;
+      case 'school_high':
+        coverageCells = this.state.education.previewCoverage(pos, grid, 'highschool', cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.EDUCATION_HIGHSCHOOL_BUDGET;
+        break;
+      case 'school_univ':
+        coverageCells = this.state.education.previewCoverage(pos, grid, 'university', cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET;
+        break;
+      case 'cemetery':
+        coverageCells = this.state.deathCare.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.DEATHCARE_BUDGET;
+        break;
+      default:
+        return;
+    }
+
+    if (!coverageCells || coverageCells.size === 0) return;
+
+    // Filter to relevant buildings and compute per-cell gradient color
+    const isGarbage = infraType === 'garbage';
+    const gradientCells: { x: number; y: number; color: number }[] = [];
+
+    for (const [key, cost] of coverageCells) {
+      const i = key.indexOf(',');
+      const cx = Number(key.slice(0, i));
+      const cy = Number(key.slice(i + 1));
+      const cell = grid.getCell(cx, cy);
+      if (!cell || cell.buildingId === 0) continue;
+
+      // Garbage: only residential. Police/Fire: all buildings.
+      if (isGarbage) {
+        if (!isResidentialZone(cell.zoneType)) continue;
+      } else {
+        if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
+      }
+
+      const ratio = Math.min(1, cost / budget);
+      const tier = Math.min(9, Math.floor(ratio * 10));
+      gradientCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
+    }
+
+    if (gradientCells.length > 0) {
+      this.highlightManager.hoverHighlightGradient(
+        gradientCells,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+        0.6,
+      );
+    }
+  }
+
   private isZoneTool(): boolean {
     return TOOL_TO_ZONE[this.currentTool] !== undefined;
   }
@@ -1231,6 +1429,8 @@ export class Game {
   setOverlay(type: OverlayType): void {
     const data = this.buildOverlayData(type);
     this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data);
+    this.computeOverlayHighlightCells(type);
+    this.updatePlacementPreview();
     this.onUIUpdate?.();
   }
 
@@ -1251,6 +1451,64 @@ export class Game {
       if (value > 0) data.set(`${x},${y}`, value);
     });
     return data;
+  }
+
+  // ── Coverage overlay: building highlight (green→yellow→red gradient) ──
+
+  /** Get road-cost overlay info: cost map + budget for a given overlay type. */
+  private getRoadCostOverlay(overlayType: OverlayType): { costMap: ReadonlyMap<string, number>; budget: number; residentialOnly: boolean } | null {
+    switch (overlayType) {
+      case 'police': return { costMap: this.state.police.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.POLICE_BUDGET, residentialOnly: false };
+      case 'fire': return { costMap: this.state.fire.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.FIRE_BUDGET, residentialOnly: false };
+      case 'garbage': return { costMap: this.state.garbage.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.GARBAGE_BUDGET, residentialOnly: true };
+      case 'health': return { costMap: this.state.health.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.HEALTH_BUDGET, residentialOnly: false };
+      case 'education': return { costMap: this.state.education.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET, residentialOnly: false };
+      default: return null;
+    }
+  }
+
+  /** Compute and cache overlay building highlight cells. Applied every frame by reapplyOverlayHighlight(). */
+  private computeOverlayHighlightCells(overlayType: OverlayType): void {
+    this.overlayHighlightCells = [];
+
+    // Road-based services: green→yellow→red gradient
+    const roadInfo = this.getRoadCostOverlay(overlayType);
+    if (roadInfo) {
+      const { costMap, budget, residentialOnly } = roadInfo;
+      if (costMap.size === 0) return;
+      const grid = this.state.grid;
+      for (const [key, cost] of costMap) {
+        const i = key.indexOf(',');
+        const cx = Number(key.slice(0, i));
+        const cy = Number(key.slice(i + 1));
+        const cell = grid.getCell(cx, cy);
+        if (!cell || cell.buildingId === 0) continue;
+        if (residentialOnly) {
+          if (!isResidentialZone(cell.zoneType)) continue;
+        } else {
+          if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
+        }
+        const ratio = Math.min(1, cost / budget);
+        const tier = Math.min(9, Math.floor(ratio * 10));
+        this.overlayHighlightCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
+      }
+      return;
+    }
+
+    // Non-road services (park): single-color
+    const fallbackColors: Partial<Record<OverlayType, number>> = {
+      park: 0x4caf50,
+    };
+    const color = fallbackColors[overlayType];
+    if (!color) return;
+    const service = getCoverageService(this.state as any, overlayType);
+    if (!service) return;
+    this.state.grid.forEachCell((cell, x, y) => {
+      if (!service.getCoverage(x, y)) return;
+      if (cell.buildingId === 0) return;
+      if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) return;
+      this.overlayHighlightCells.push({ x, y, color });
+    });
   }
 
   setOnUIUpdate(callback: () => void): void {
@@ -1319,6 +1577,27 @@ export class Game {
         ...sel,
         routes: stopRoutes.length,
         vehicles: stopRoutes.reduce((sum, r) => sum + r.vehicles, 0),
+      };
+    }
+
+    if (sel.kind === 'zone') {
+      const { x, y } = sel;
+      const cell = this.state.grid.getCell(x, y);
+      return {
+        ...sel,
+        landValue: cell?.landValue ?? sel.landValue,
+        pollution: cell?.pollution ?? sel.pollution,
+        serviceCoverage: cell?.serviceCoverage ?? sel.serviceCoverage,
+        services: {
+          power: this.state.power.isPowered(x, y) ? 0 : -1,
+          water: this.state.water.isSupplied(x, y) ? 0 : -1,
+          police: this.state.police.getCostRatio(x, y),
+          fire: this.state.fire.getCostRatio(x, y),
+          garbage: this.state.garbage.getCostRatio(x, y),
+          health: this.state.health.getCostRatio(x, y),
+          education: this.state.education.getCostRatio(x, y),
+          deathCare: this.state.deathCare.getCostRatio(x, y),
+        },
       };
     }
 
