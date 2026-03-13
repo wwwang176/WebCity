@@ -124,11 +124,17 @@ export class ServiceVehicleManager {
       const currentCell = lastEdge.to.cellKey;
       const currentPos = parsePosKeyUnsafe(currentCell);
 
-      // Pick random destination from covered roads
-      const destKey = coveredRoads[Math.floor(Math.random() * coveredRoads.length)]!;
-      const destPos = parsePosKeyUnsafe(destKey);
-
-      if (currentPos.x === destPos.x && currentPos.y === destPos.y) continue;
+      // Pick random destination from covered roads (retry to avoid same cell)
+      let destPos: { x: number; y: number } | null = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const destKey = coveredRoads[Math.floor(Math.random() * coveredRoads.length)]!;
+        const candidate = parsePosKeyUnsafe(destKey);
+        if (candidate.x !== currentPos.x || candidate.y !== currentPos.y) {
+          destPos = candidate;
+          break;
+        }
+      }
+      if (!destPos) continue;
 
       const edgePath = this.findEdgePath(currentPos, destPos, grid, laneGraph);
       if (edgePath && edgePath.length > 0) {
@@ -175,11 +181,17 @@ export class ServiceVehicleManager {
       const startRoad = findAdjacentRoad(grid, facility.x, facility.y);
       if (!startRoad) continue;
 
-      // Pick random destination from covered roads
-      const destKey = coveredRoads[Math.floor(Math.random() * coveredRoads.length)]!;
-      const destPos = parsePosKeyUnsafe(destKey);
-
-      if (startRoad.x === destPos.x && startRoad.y === destPos.y) continue;
+      // Pick random destination from covered roads (retry up to 5 times to avoid same cell)
+      let destPos: { x: number; y: number } | null = null;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const destKey = coveredRoads[Math.floor(Math.random() * coveredRoads.length)]!;
+        const candidate = parsePosKeyUnsafe(destKey);
+        if (candidate.x !== startRoad.x || candidate.y !== startRoad.y) {
+          destPos = candidate;
+          break;
+        }
+      }
+      if (!destPos) continue;
 
       const edgePath = this.findEdgePath(startRoad, destPos, grid, laneGraph);
       if (edgePath && edgePath.length > 0) {
