@@ -1,4 +1,4 @@
-import type { ReadableGrid } from '../grid/GridHelpers';
+import type { SizedGrid } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
 import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
 
@@ -70,7 +70,7 @@ export class GarbageService {
   }
 
   /** Recompute road-distance coverage. Call after facility or road changes. */
-  recalculateCoverage(grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): void {
+  recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): void {
     this.roadCoverage.recalculate(this.facilities, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
   }
 
@@ -79,7 +79,7 @@ export class GarbageService {
   }
 
   /** Preview coverage for a potential facility placement, merged with existing facilities. */
-  previewCoverage(position: { x: number; y: number }, grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
+  previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
     return this.roadCoverage.previewMerged(position, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
   }
 

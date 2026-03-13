@@ -451,7 +451,10 @@ export class Game {
             this.currentRoadType,
             this.state.budget.funds,
           );
-          this.handleBuildResult(result, 'road', () => this.simLoop.markLaneGraphDirty());
+          this.handleBuildResult(result, 'road', () => {
+            this.simLoop.markLaneGraphDirty();
+            this.recalculateAllRoadCoverage();
+          });
           this.dirty.roads = true;
           this.dirty.crossings = true;
           this.dirty.trafficLights = true;
@@ -549,6 +552,7 @@ export class Game {
   private demolish(x1: number, y1: number, x2: number, y2: number): void {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     const demolished = new Set<string>(); // track already-demolished multi-cell buildings
+    let hadRoadDemolished = false;
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
@@ -580,6 +584,7 @@ export class Game {
             this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
             break;
           case 'regular':
+            if (cell && cell.roadType !== RoadType.NONE) hadRoadDemolished = true;
             if (action.hasTrack) this.railBuilder.removeTrack(x, y);
             this.state.grid.setCell(x, y, {
               roadType: 0, roadFlags: 0, zoneType: ZoneType.NONE,
@@ -588,6 +593,9 @@ export class Game {
             break;
         }
       }
+    }
+    if (hadRoadDemolished) {
+      this.recalculateAllRoadCoverage();
     }
     this.markAllDirty();
 
@@ -674,6 +682,14 @@ export class Game {
       case 'fire': this.state.fire.recalculateCoverage(grid); break;
       case 'garbage': this.state.garbage.recalculateCoverage(grid); break;
     }
+  }
+
+  /** Recalculate all road-based service coverage after road topology changes. */
+  private recalculateAllRoadCoverage(): void {
+    const grid = this.state.grid;
+    this.state.police.recalculateCoverage(grid);
+    this.state.fire.recalculateCoverage(grid);
+    this.state.garbage.recalculateCoverage(grid);
   }
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {

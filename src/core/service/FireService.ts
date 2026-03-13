@@ -24,7 +24,7 @@ interface FireServiceJSON {
 }
 
 import { isZoneBuilding } from '../building/InfraConfig';
-import type { ReadableGrid } from '../grid/GridHelpers';
+import type { SizedGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
 
@@ -85,12 +85,12 @@ export class FireService {
   }
 
   /** Recompute road-distance coverage. Call after station or road changes. */
-  recalculateCoverage(grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): void {
+  recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): void {
     this.roadCoverage.recalculate(this.stations, grid, ROAD_COVERAGE.FIRE_BUDGET, facilityWidth, facilityHeight);
   }
 
   /** Preview coverage for a potential station placement, merged with existing stations. */
-  previewCoverage(position: { x: number; y: number }, grid: ReadableGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
+  previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
     return this.roadCoverage.previewMerged(position, grid, ROAD_COVERAGE.FIRE_BUDGET, facilityWidth, facilityHeight);
   }
 

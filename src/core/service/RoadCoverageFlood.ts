@@ -8,7 +8,8 @@
 
 import { ROAD_CONFIGS, RoadType } from '../road/types';
 import { FOUR_NEIGHBORS, toPosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
-import type { ReadableGrid } from '../grid/GridHelpers';
+import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
+import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
 
 /** Service coverage budget constants */
 export const ROAD_COVERAGE = {
@@ -169,35 +170,38 @@ export function expandCoverageToBuildings(
 
 /**
  * RoadCoverageMap — precomputed road-distance coverage for civic services.
- * Replaces RadiusCoverageMap. O(1) coverage queries after recalculation.
+ * Internal storage uses GridCoverageArray (Uint8Array) for O(1) queries with zero GC.
  */
 export class RoadCoverageMap {
-  private coverageMap = new Map<string, number>();
-  private coverageCount = new Map<string, number>();
+  private main: GridCoverageArray | null = null;
+  private previewArr: GridCoverageArray | null = null;
+  private lastBudget = 0;
+
+  /** Ensure arrays are allocated for the given grid dimensions. */
+  private ensureArrays(width: number, height: number): void {
+    if (!this.main || this.main.width !== width || this.main.height !== height) {
+      this.main = new GridCoverageArray(width, height);
+      this.previewArr = new GridCoverageArray(width, height);
+    }
+  }
 
   /** Recalculate coverage from all facilities. Call when facilities or roads change. */
   recalculate(
     facilities: readonly { x: number; y: number }[],
-    grid: ReadableGrid,
+    grid: SizedGrid,
     budget: number,
     facilityWidth = 1,
     facilityHeight = 1,
   ): void {
-    this.coverageMap.clear();
-    this.coverageCount.clear();
+    this.ensureArrays(grid.width, grid.height);
+    this.main!.clear();
+    this.lastBudget = budget;
 
     for (const f of facilities) {
       const positions = expandFootprint(f.x, f.y, facilityWidth, facilityHeight);
       const roadCov = roadFlood(grid, positions, budget);
       const fullCov = expandCoverageToBuildings(grid, roadCov);
-
-      for (const [key, cost] of fullCov) {
-        const existing = this.coverageMap.get(key);
-        if (existing === undefined || cost < existing) {
-          this.coverageMap.set(key, cost);
-        }
-        this.coverageCount.set(key, (this.coverageCount.get(key) ?? 0) + 1);
-      }
+      this.main!.applyFlood(fullCov, budget);
     }
   }
 
@@ -223,30 +227,79 @@ export class RoadCoverageMap {
     facilityHeight = 1,
   ): Map<string, number> {
     const newCov = this.preview(position, grid, budget, facilityWidth, facilityHeight);
-    // Merge existing coverage: take min cost per cell
-    for (const [key, cost] of this.coverageMap) {
-      const prev = newCov.get(key);
-      if (prev === undefined || cost < prev) {
-        newCov.set(key, cost);
-      }
+    // Merge existing coverage from array: reconstruct cost per covered cell
+    if (this.main) {
+      this.main.forEachCovered((x, y, ratio) => {
+        const key = toPosKey(x, y);
+        const cost = ratio * this.lastBudget;
+        const prev = newCov.get(key);
+        if (prev === undefined || cost < prev) {
+          newCov.set(key, cost);
+        }
+      });
     }
     return newCov;
   }
 
+  /** Update the reusable preview array (no Map allocation). */
+  updatePreview(
+    position: { x: number; y: number },
+    grid: SizedGrid,
+    budget: number,
+    facilityWidth = 1,
+    facilityHeight = 1,
+  ): void {
+    this.ensureArrays(grid.width, grid.height);
+    const positions = expandFootprint(position.x, position.y, facilityWidth, facilityHeight);
+    const roadCov = roadFlood(grid, positions, budget);
+    const fullCov = expandCoverageToBuildings(grid, roadCov);
+    this.previewArr!.applyMerged(fullCov, this.main!, budget);
+  }
+
   hasCoverage(x: number, y: number): boolean {
-    return this.coverageMap.has(toPosKey(x, y));
+    return this.main?.hasCoverage(x, y) ?? false;
   }
 
   getCost(x: number, y: number): number {
-    return this.coverageMap.get(toPosKey(x, y)) ?? Infinity;
+    if (!this.main) return Infinity;
+    const raw = this.main.getRaw(x, y);
+    if (raw === 0) return Infinity;
+    return decodeCostRatio(raw) * this.lastBudget;
   }
 
   getCoverageCount(x: number, y: number): number {
-    return this.coverageCount.get(toPosKey(x, y)) ?? 0;
+    return this.main?.getCoverageCount(x, y) ?? 0;
   }
 
+  /** Backward-compatible: build Map from array. Prefer forEachCovered() for new code. */
   getCoveredCells(): ReadonlyMap<string, number> {
-    return this.coverageMap;
+    const map = new Map<string, number>();
+    if (!this.main) return map;
+    const budget = this.lastBudget;
+    this.main.forEachCovered((x, y, ratio) => {
+      map.set(toPosKey(x, y), ratio * budget);
+    });
+    return map;
+  }
+
+  /** Efficient iteration over all covered cells with cost ratio. */
+  forEachCovered(callback: (x: number, y: number, costRatio: number) => void): void {
+    this.main?.forEachCovered(callback);
+  }
+
+  /** Efficient iteration over preview covered cells with cost ratio. */
+  forEachPreviewCovered(callback: (x: number, y: number, costRatio: number) => void): void {
+    this.previewArr?.forEachCovered(callback);
+  }
+
+  /** Check if preview covers a cell. */
+  hasPreviewCoverage(x: number, y: number): boolean {
+    return this.previewArr?.hasCoverage(x, y) ?? false;
+  }
+
+  /** Get preview cost ratio (0.0–1.0) for a cell. */
+  getPreviewCostRatio(x: number, y: number): number {
+    return this.previewArr?.getCostRatio(x, y) ?? 0;
   }
 }
 

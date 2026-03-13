@@ -434,11 +434,12 @@ export class SimulationLoop {
       ? Math.min(SIMULATION.COMMUTE_MAX, SIMULATION.COMMUTE_BASE + Math.sqrt(resCount) * SIMULATION.COMMUTE_SPREAD_FACTOR)
       : 3;
 
-    // Count service coverage: power + water + low pollution bonus
-    const { poweredRatio, wateredRatio } = this.getServiceRatios();
+    // Count service coverage: power + water + police/fire/garbage + low pollution bonus
+    const { poweredRatio, wateredRatio, policeRatio, fireRatio, garbageRatio } = this.getServiceRatios();
     const serviceCoverage = Math.round(
       poweredRatio * SIMULATION.SERVICE_POWER_WEIGHT +
       wateredRatio * SIMULATION.SERVICE_WATER_WEIGHT +
+      policeRatio + fireRatio + garbageRatio +
       (avgPollution < SIMULATION.LOW_POLLUTION_THRESHOLD ? 1 : 0)
     );
 
@@ -464,20 +465,32 @@ export class SimulationLoop {
 
   // Only check service coverage for residential buildings — residents care about
   // their own power/water, not whether distant factories have coverage.
-  private getServiceRatios(): { poweredRatio: number; wateredRatio: number } {
+  private getServiceRatios(): {
+    poweredRatio: number; wateredRatio: number;
+    policeRatio: number; fireRatio: number; garbageRatio: number;
+  } {
     let powered = 0;
     let watered = 0;
+    let police = 0;
+    let fire = 0;
+    let garbage = 0;
     let total = 0;
     this.state.grid.forEachCell((cell, x, y) => {
       if (cell.buildingId > 0 && isResidentialZone(cell.zoneType)) {
         total++;
         if (this.state.power.isPowered(x, y)) powered++;
         if (this.state.water.isSupplied(x, y)) watered++;
+        if (this.state.police.getCoverage(x, y)) police++;
+        if (this.state.fire.getCoverage(x, y)) fire++;
+        if (this.state.garbage.getCoverage(x, y)) garbage++;
       }
     });
     return {
       poweredRatio: total > 0 ? powered / total : 0,
       wateredRatio: total > 0 ? watered / total : 0,
+      policeRatio: total > 0 ? police / total : 0,
+      fireRatio: total > 0 ? fire / total : 0,
+      garbageRatio: total > 0 ? garbage / total : 0,
     };
   }
 
@@ -619,7 +632,11 @@ export class SimulationLoop {
       const pollution = this.state.pollution.getPollutionAt(x, y);
       const isPowered = this.state.power.isPowered(x, y);
       const isWatered = this.state.water.isSupplied(x, y);
-      const serviceCoverage = (isPowered ? 2 : 0) + (isWatered ? 2 : 0);
+      const hasPolice = this.state.police.getCoverage(x, y);
+      const hasFire = this.state.fire.getCoverage(x, y);
+      const hasGarbage = this.state.garbage.getCoverage(x, y);
+      const serviceCoverage = (isPowered ? 2 : 0) + (isWatered ? 2 : 0)
+        + (hasPolice ? 1 : 0) + (hasFire ? 1 : 0) + (hasGarbage ? 1 : 0);
 
       // Check if near water, forest (natural park), or placed park within 2 cells
       let waterfront = false;
@@ -673,8 +690,12 @@ export class SimulationLoop {
       const isPowered = this.state.power.isPowered(x, y);
       const isWatered = this.state.water.isSupplied(x, y);
       const pollution = this.state.pollution.getPollutionAt(x, y);
-      // Count service types: power, water, + bonus for low pollution/crime
-      let serviceCoverageCount = (isPowered ? 2 : 0) + (isWatered ? 2 : 0);
+      // Count service types: power, water, road-based services, + bonus for low pollution/crime
+      const hasPolice = this.state.police.getCoverage(x, y);
+      const hasFire = this.state.fire.getCoverage(x, y);
+      const hasGarbage = this.state.garbage.getCoverage(x, y);
+      let serviceCoverageCount = (isPowered ? 2 : 0) + (isWatered ? 2 : 0)
+        + (hasPolice ? 1 : 0) + (hasFire ? 1 : 0) + (hasGarbage ? 1 : 0);
       if (pollution.ground < 10) serviceCoverageCount += 1; // clean air bonus
       if (this.getAvgCrime() < 15) serviceCoverageCount += 1; // low crime bonus
 

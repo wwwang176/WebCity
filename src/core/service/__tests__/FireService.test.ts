@@ -1,10 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { FireService, FIRE } from '../FireService';
 import { RoadType } from '../../road/types';
-import type { ReadableGrid } from '../../grid/GridHelpers';
+import type { SizedGrid } from '../../grid/GridHelpers';
 
 /** Grid with a cross-shaped road centered at (cx, cy). */
-function makeCrossRoadGrid(size: number, cx: number, cy: number): ReadableGrid & { width: number; height: number } {
+function makeCrossRoadGrid(size: number, cx: number, cy: number): SizedGrid {
   return {
     width: size,
     height: size,
@@ -17,7 +17,7 @@ function makeCrossRoadGrid(size: number, cx: number, cy: number): ReadableGrid &
 }
 
 /** Grid with a horizontal road at row roadY. */
-function makeRoadGrid(width: number, height: number, roadY?: number): ReadableGrid & { width: number; height: number } {
+function makeRoadGrid(width: number, height: number, roadY?: number): SizedGrid {
   const ry = roadY ?? Math.floor(height / 2);
   return {
     width, height,

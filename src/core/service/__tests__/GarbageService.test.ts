@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { GarbageService, GARBAGE } from '../GarbageService';
 import { RoadType } from '../../road/types';
-import type { ReadableGrid } from '../../grid/GridHelpers';
+import type { SizedGrid } from '../../grid/GridHelpers';
 
 /** Create a grid with a road running from (1,y) to (width-1,y) at row y=center. */
-function makeRoadGrid(width: number, height: number, roadY?: number): ReadableGrid {
+function makeRoadGrid(width: number, height: number, roadY?: number): SizedGrid {
   const ry = roadY ?? Math.floor(height / 2);
   return {
+    width,
+    height,
     getCell(x: number, y: number) {
       if (x < 0 || y < 0 || x >= width || y >= height) return null;
       return { roadType: y === ry && x >= 1 ? RoadType.TWO_LANE : RoadType.NONE };
@@ -17,7 +19,7 @@ function makeRoadGrid(width: number, height: number, roadY?: number): ReadableGr
 /** Helper: add facility and recalculate coverage. */
 function addAndRecalc(
   gs: GarbageService, x: number, y: number,
-  grid: ReadableGrid, type: 'landfill' | 'incinerator' = 'landfill', capacity?: number,
+  grid: SizedGrid, type: 'landfill' | 'incinerator' = 'landfill', capacity?: number,
 ): string {
   const id = gs.addFacility(x, y, type, capacity);
   gs.recalculateCoverage(grid);
@@ -77,7 +79,9 @@ describe('GarbageService', () => {
   });
 
   it('should getCoverage return false when no roads', () => {
-    const noRoadGrid: ReadableGrid = {
+    const noRoadGrid: SizedGrid = {
+      width: 20,
+      height: 20,
       getCell(x, y) {
         if (x < 0 || y < 0 || x >= 20 || y >= 20) return null;
         return { roadType: RoadType.NONE };
@@ -167,7 +171,9 @@ describe('GarbageService', () => {
 
   it('should have combined coverage from multiple facilities', () => {
     // Two separate road segments
-    const grid: ReadableGrid = {
+    const grid: SizedGrid = {
+      width: 50,
+      height: 50,
       getCell(x, y) {
         if (x < 0 || y < 0 || x >= 50 || y >= 50) return null;
         // Road at y=5 from x=1..20, road at y=40 from x=38..48

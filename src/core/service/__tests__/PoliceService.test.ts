@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { PoliceService, POLICE } from '../PoliceService';
 import { RoadType } from '../../road/types';
-import type { ReadableGrid } from '../../grid/GridHelpers';
+import type { SizedGrid } from '../../grid/GridHelpers';
 
 /** Grid with a horizontal road at row roadY from x=1 onward. */
-function makeRoadGrid(width: number, height: number, roadY?: number): ReadableGrid {
+function makeRoadGrid(width: number, height: number, roadY?: number): SizedGrid {
   const ry = roadY ?? Math.floor(height / 2);
   return {
+    width,
+    height,
     getCell(x: number, y: number) {
       if (x < 0 || y < 0 || x >= width || y >= height) return null;
       return { roadType: y === ry && x >= 1 ? RoadType.TWO_LANE : RoadType.NONE };
@@ -15,8 +17,10 @@ function makeRoadGrid(width: number, height: number, roadY?: number): ReadableGr
 }
 
 /** Grid with a cross-shaped road network centered at (cx, cy). */
-function makeCrossRoadGrid(size: number, cx: number, cy: number): ReadableGrid {
+function makeCrossRoadGrid(size: number, cx: number, cy: number): SizedGrid {
   return {
+    width: size,
+    height: size,
     getCell(x: number, y: number) {
       if (x < 0 || y < 0 || x >= size || y >= size) return null;
       const isRoad = x === cx || y === cy;
