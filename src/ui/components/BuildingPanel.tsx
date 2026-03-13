@@ -47,27 +47,18 @@ const SERVICE_LABELS: { key: keyof ServiceStatus; label: string }[] = [
   { key: 'deathCare', label: 'Death Care' },
 ];
 
-/** Map cost ratio (-1=none, 0=best, 1=worst) to a color string. */
+/** Map cost ratio (-1=none, 0=best, 1=worst) to a dot color. */
 function ratioColor(ratio: number): string {
   if (ratio < 0) return '#616161'; // grey — no coverage
-  // 0.0 → green, 0.5 → yellow, 1.0 → red
   const r = Math.min(1, ratio);
   if (r <= 0.5) {
-    // green → yellow
     const t = r * 2;
     const red = Math.round(255 * t);
     return `rgb(${red},200,50)`;
   }
-  // yellow → red
   const t = (r - 0.5) * 2;
   const green = Math.round(200 * (1 - t));
   return `rgb(255,${green},50)`;
-}
-
-function ratioLabel(ratio: number): string {
-  if (ratio < 0) return '--';
-  const pct = Math.round((1 - ratio) * 100);
-  return `${pct}%`;
 }
 
 function ServiceCoverage(props: { services: ServiceStatus }) {
@@ -80,9 +71,9 @@ function ServiceCoverage(props: { services: ServiceStatus }) {
           return (
             <div class="bp-row">
               {s.label}
-              <span style={`color:${ratioColor(r())};font-weight:600`}>
-                {ratioLabel(r())}
-              </span>
+              <span
+                style={`display:inline-block;width:8px;height:8px;border-radius:50%;background:${ratioColor(r())}`}
+              />
             </div>
           );
         }}
