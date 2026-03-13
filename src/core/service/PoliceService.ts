@@ -35,6 +35,11 @@ export class PoliceService {
     return this.coverage.hasCoverage(x, y);
   }
 
+  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    return this.coverage.getCostRatio(x, y);
+  }
+
   getCrimeReduction(x: number, y: number): number {
     const count = this.coverage.getCoverageCount(x, y);
     if (count === 0) return 0;

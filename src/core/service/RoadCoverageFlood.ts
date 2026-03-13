@@ -265,6 +265,14 @@ export class RoadCoverageMap {
     return this.main?.hasCoverage(x, y) ?? false;
   }
 
+  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). Returns -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    if (!this.main) return -1;
+    const raw = this.main.getRaw(x, y);
+    if (raw === 0) return -1;
+    return decodeCostRatio(raw);
+  }
+
   getCost(x: number, y: number): number {
     if (!this.main) return Infinity;
     const raw = this.main.getRaw(x, y);

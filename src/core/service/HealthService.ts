@@ -43,6 +43,11 @@ export class HealthService {
     return this.coverage.hasCoverage(x, y);
   }
 
+  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    return this.coverage.getCostRatio(x, y);
+  }
+
   getHealthBonus(x: number, y: number): number {
     const count = this.coverage.getCoverageCount(x, y);
     if (count === 0) return 0;

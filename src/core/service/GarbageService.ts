@@ -70,6 +70,11 @@ export class GarbageService {
     return this.roadCoverage.hasCoverage(x, y);
   }
 
+  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    return this.roadCoverage.getCostRatio(x, y);
+  }
+
   /** Preview coverage for a potential facility placement, merged with existing facilities. */
   previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
     return this.roadCoverage.previewMerged(position, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);

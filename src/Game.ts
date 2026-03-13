@@ -149,6 +149,22 @@ const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
   district: 'district',
 };
 
+/**
+ * Per-service coverage ratio for the selected building.
+ * -1 = no coverage, 0.0 = nearest (best), 1.0 = farthest (worst).
+ * Power/water use 0 (covered) or -1 (not covered).
+ */
+export interface ServiceStatus {
+  power: number;
+  water: number;
+  police: number;
+  fire: number;
+  garbage: number;
+  health: number;
+  education: number;
+  deathCare: number;
+}
+
 export interface SelectedZoneBuilding {
   kind: 'zone';
   x: number;
@@ -158,6 +174,7 @@ export interface SelectedZoneBuilding {
   landValue: number;
   pollution: number;
   serviceCoverage: number;
+  services: ServiceStatus;
 }
 
 export interface SelectedInfraBuilding {
@@ -1061,6 +1078,16 @@ export class Game {
             buildingType: cls.buildingType, zoneType: cell.zoneType,
             landValue: cell.landValue, pollution: cell.pollution,
             serviceCoverage: cell.serviceCoverage,
+            services: {
+              power: this.state.power.isPowered(x, y) ? 0 : -1,
+              water: this.state.water.isSupplied(x, y) ? 0 : -1,
+              police: this.state.police.getCostRatio(x, y),
+              fire: this.state.fire.getCostRatio(x, y),
+              garbage: this.state.garbage.getCostRatio(x, y),
+              health: this.state.health.getCostRatio(x, y),
+              education: this.state.education.getCostRatio(x, y),
+              deathCare: this.state.deathCare.getCostRatio(x, y),
+            },
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -1550,6 +1577,27 @@ export class Game {
         ...sel,
         routes: stopRoutes.length,
         vehicles: stopRoutes.reduce((sum, r) => sum + r.vehicles, 0),
+      };
+    }
+
+    if (sel.kind === 'zone') {
+      const { x, y } = sel;
+      const cell = this.state.grid.getCell(x, y);
+      return {
+        ...sel,
+        landValue: cell?.landValue ?? sel.landValue,
+        pollution: cell?.pollution ?? sel.pollution,
+        serviceCoverage: cell?.serviceCoverage ?? sel.serviceCoverage,
+        services: {
+          power: this.state.power.isPowered(x, y) ? 0 : -1,
+          water: this.state.water.isSupplied(x, y) ? 0 : -1,
+          police: this.state.police.getCostRatio(x, y),
+          fire: this.state.fire.getCostRatio(x, y),
+          garbage: this.state.garbage.getCostRatio(x, y),
+          health: this.state.health.getCostRatio(x, y),
+          education: this.state.education.getCostRatio(x, y),
+          deathCare: this.state.deathCare.getCostRatio(x, y),
+        },
       };
     }
 

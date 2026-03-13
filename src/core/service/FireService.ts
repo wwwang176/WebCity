@@ -107,6 +107,11 @@ export class FireService {
     return this.roadCoverage.hasCoverage(x, y);
   }
 
+  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    return this.roadCoverage.getCostRatio(x, y);
+  }
+
   /**
    * Returns the estimated response time based on road-distance cost.
    * Lower cost = faster response. Returns Infinity if not covered.

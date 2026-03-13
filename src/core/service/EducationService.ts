@@ -112,6 +112,16 @@ export class EducationService {
       || this.coverageMaps.university.hasCoverage(x, y);
   }
 
+  /** Cost ratio: best (minimum) across all school types. -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    let best = -1;
+    for (const type of ['elementary', 'highschool', 'university'] as SchoolType[]) {
+      const r = this.coverageMaps[type].getCostRatio(x, y);
+      if (r >= 0 && (best < 0 || r < best)) best = r;
+    }
+    return best;
+  }
+
   /**
    * Returns the highest education level available at position (x, y).
    */

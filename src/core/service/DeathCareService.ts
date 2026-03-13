@@ -50,6 +50,11 @@ export class DeathCareService {
     return this.roadCoverage.hasCoverage(x, y);
   }
 
+  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
+  getCostRatio(x: number, y: number): number {
+    return this.roadCoverage.getCostRatio(x, y);
+  }
+
   /** Recompute road-distance coverage. Call after cemetery or road changes. */
   recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): void {
     this.roadCoverage.recalculate(this.cemeteries, grid, ROAD_COVERAGE.DEATHCARE_BUDGET, facilityWidth, facilityHeight);
