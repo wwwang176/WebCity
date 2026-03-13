@@ -426,6 +426,7 @@ export class SimulationLoop {
     ).length;
     const employmentRate = adultCount > 0 ? Math.min(1, totalJobs / adultCount) : 1;
     const avgPollution = this.getAvgPollution();
+    const avgNoise = this.getAvgNoise();
     const avgCrime = this.getAvgCrime();
 
     // Estimate average commute from residential spread (compact city = short commutes)
@@ -454,7 +455,7 @@ export class SimulationLoop {
         commuteDistance: commute,
         hasPark: hasParkCoverage,
         pollution: avgPollution,
-        noiseLevel: 0,
+        noiseLevel: avgNoise,
         crimeRate: avgCrime,
         isEmployed: !isWorkingAge(citizen.age) || Math.random() < employmentRate,
         taxRate,
@@ -517,6 +518,19 @@ export class SimulationLoop {
     this.state.grid.forEachCell((cell) => {
       if (isResidentialZone(cell.zoneType)) {
         total += cell.pollution;
+        count++;
+      }
+    });
+    return count > 0 ? total / count : 0;
+  }
+
+  // Average noise over residential cells only (same rationale as getAvgPollution).
+  private getAvgNoise(): number {
+    let total = 0;
+    let count = 0;
+    this.state.grid.forEachCell((cell) => {
+      if (isResidentialZone(cell.zoneType)) {
+        total += cell.noiseLevel;
         count++;
       }
     });
