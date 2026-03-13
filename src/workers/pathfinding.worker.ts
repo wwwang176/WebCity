@@ -237,7 +237,7 @@ self.onmessage = (e: MessageEvent<PathWorkerMessage>) => {
         break;
       }
 
-      const edgePath = refineLanePath(laneGraph, msg.cellPath, msg.preferredLane ?? 0);
+      const edgePath = refineLanePath(laneGraph, msg.cellPath);
       (self as unknown as Worker).postMessage({
         type: 'LANE_PATH_RESULT',
         id: msg.id,
@@ -261,7 +261,7 @@ self.onmessage = (e: MessageEvent<PathWorkerMessage>) => {
         const cellKeys = cellPath.map(p => `${p.x},${p.y}`);
 
         if (!laneGraph) return { id: req.id, edgePath: null };
-        const edgePath = refineLanePath(laneGraph, cellKeys, req.preferredLane);
+        const edgePath = refineLanePath(laneGraph, cellKeys);
         if (!edgePath || edgePath.length === 0) return { id: req.id, edgePath: null };
 
         return { id: req.id, edgePath: edgePath.map(serializeLaneEdge) };

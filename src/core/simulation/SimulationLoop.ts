@@ -917,7 +917,7 @@ export class SimulationLoop {
       this.state.bus.onRoadChanged(
         this.dirtyRoadCells,
         (fx, fy, tx, ty) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, g),
-        (cellPath, lane) => refineLanePath(lg, cellPath, lane),
+        (cellPath) => refineLanePath(lg, cellPath),
         this.state.traffic,
       );
       this.dirtyRoadCells = null;
@@ -1047,11 +1047,7 @@ export class SimulationLoop {
       if (!edgePath) {
         const path = findRoadPath(fromPos, toPos, grid);
         if (path && path.length >= 2) {
-          const startRoad = parsePosKeyUnsafe(path[0]!);
-          const startCell = this.state.grid.getCell(startRoad.x, startRoad.y);
-          const dirLanes = startCell ? getLaneCount(startCell.roadType) : 1;
-          const preferredLane = dirLanes > 1 ? randomInt(dirLanes) : 0;
-          edgePath = refineLanePath(this.laneGraph, path, preferredLane);
+          edgePath = refineLanePath(this.laneGraph, path);
           if (edgePath && edgePath.length > 0) {
             this.commuteCache.setRoute(routeKey, edgePath);
           }
@@ -1141,10 +1137,7 @@ export class SimulationLoop {
 
       const path = findRoadPath(start, end, grid);
       if (path && path.length >= 2) {
-        const startCell = this.state.grid.getCell(parsePosKeyUnsafe(path[0]!).x, parsePosKeyUnsafe(path[0]!).y);
-        const dLanes = startCell ? getLaneCount(startCell.roadType) : 1;
-        const prefLane = dLanes > 1 ? randomInt(dLanes) : 0;
-        const edgePath = refineLanePath(this.laneGraph, path, prefLane);
+        const edgePath = refineLanePath(this.laneGraph, path);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         }

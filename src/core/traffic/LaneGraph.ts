@@ -424,40 +424,50 @@ export class LaneGraph {
     activeDirections: typeof DIR_FLAGS,
     dirLanes: number,
   ): void {
-    // For each direction pair that forms a through-route, add lane change edges
-    for (const d of activeDirections) {
-      for (let lane = 0; lane < dirLanes - 1; lane++) {
-        // lane → lane+1
-        const fromId = `${cellKey}:${d.dir}:${lane}:entry`;
-        const toId = `${cellKey}:${d.dir}:${lane + 1}:exit`;
-        const fromPt = this.points.get(fromId);
-        const toPt = this.points.get(toId);
-        if (!fromPt || !toPt) continue;
+    // For each (entryDir, exitDir) traversal pair, add adjacent-lane change edges.
+    // e.g. eastbound: entry[west:0] → exit[east:1] (change to outer lane while moving forward)
+    for (const inDir of activeDirections) {
+      for (const outDir of activeDirections) {
+        if (inDir.dir === outDir.dir) continue; // no U-turn
+        for (let lane = 0; lane < dirLanes - 1; lane++) {
+          // lane → lane+1
+          const fromId = `${cellKey}:${inDir.dir}:${lane}:entry`;
+          const toId = `${cellKey}:${outDir.dir}:${lane + 1}:exit`;
+          const fromPt = this.points.get(fromId);
+          const toPt = this.points.get(toId);
+          if (fromPt && toPt) {
+            const edgeId = `lc:${fromId}>${toId}`;
+            if (!this.edges.some(e => e.id === edgeId)) {
+              const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
+              this.edges.push({
+                id: edgeId,
+                from: fromPt,
+                to: toPt,
+                length: Math.max(length, 0.3),
+                type: 'lane_change',
+              });
+            }
+          }
 
-        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
-        this.edges.push({
-          id: `lc:${fromId}>${toId}`,
-          from: fromPt,
-          to: toPt,
-          length: Math.max(length, 0.3),
-          type: 'lane_change',
-        });
-
-        // lane+1 → lane
-        const fromId2 = `${cellKey}:${d.dir}:${lane + 1}:entry`;
-        const toId2 = `${cellKey}:${d.dir}:${lane}:exit`;
-        const fromPt2 = this.points.get(fromId2);
-        const toPt2 = this.points.get(toId2);
-        if (!fromPt2 || !toPt2) continue;
-
-        const length2 = euclideanDistance(fromPt2.position.x, fromPt2.position.y, toPt2.position.x, toPt2.position.y);
-        this.edges.push({
-          id: `lc:${fromId2}>${toId2}`,
-          from: fromPt2,
-          to: toPt2,
-          length: Math.max(length2, 0.3),
-          type: 'lane_change',
-        });
+          // lane+1 → lane
+          const fromId2 = `${cellKey}:${inDir.dir}:${lane + 1}:entry`;
+          const toId2 = `${cellKey}:${outDir.dir}:${lane}:exit`;
+          const fromPt2 = this.points.get(fromId2);
+          const toPt2 = this.points.get(toId2);
+          if (fromPt2 && toPt2) {
+            const edgeId2 = `lc:${fromId2}>${toId2}`;
+            if (!this.edges.some(e => e.id === edgeId2)) {
+              const length2 = euclideanDistance(fromPt2.position.x, fromPt2.position.y, toPt2.position.x, toPt2.position.y);
+              this.edges.push({
+                id: edgeId2,
+                from: fromPt2,
+                to: toPt2,
+                length: Math.max(length2, 0.3),
+                type: 'lane_change',
+              });
+            }
+          }
+        }
       }
     }
   }

@@ -31,7 +31,7 @@ export class BusSystem extends BaseTransportSystem {
   computeRouteSegments(
     route: TransportRoute,
     findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
-    refinePath: (cellPath: string[], preferredLane: number) => LaneEdge[] | null,
+    refinePath: (cellPath: string[]) => LaneEdge[] | null,
   ): LaneEdge[][] | null {
     const stops = route.stops;
     if (stops.length < 2) return null;
@@ -83,7 +83,7 @@ export class BusSystem extends BaseTransportSystem {
     stops: TransportStop[],
     vehicleCount: number,
     findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
-    refinePath: (cellPath: string[], preferredLane: number) => LaneEdge[] | null,
+    refinePath: (cellPath: string[]) => LaneEdge[] | null,
     traffic: TrafficSimulation,
   ): TransportRoute | null {
     const route = this.createRoute(stops, vehicleCount);
@@ -142,7 +142,7 @@ export class BusSystem extends BaseTransportSystem {
   onRoadChanged(
     affectedCells: Set<string>,
     findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
-    refinePath: (cellPath: string[], preferredLane: number) => LaneEdge[] | null,
+    refinePath: (cellPath: string[]) => LaneEdge[] | null,
     traffic: TrafficSimulation,
   ): number[] {
     const dissolvedRouteIds: number[] = [];

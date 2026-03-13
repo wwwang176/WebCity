@@ -1538,7 +1538,7 @@ export class Game {
       [...stops],
       vehicleCount,
       (fx, fy, tx, ty) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, grid),
-      (cellPath, lane) => refineLanePath(lg, cellPath, lane),
+      (cellPath) => refineLanePath(lg, cellPath),
       this.state.traffic,
     );
   }

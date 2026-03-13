@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { refineLanePath } from '../Pathfinding';
+import { refineLanePath, getLaneSpeedMultiplier, LANE_SPEED_DECAY } from '../Pathfinding';
 import { LaneGraph, LaneEdge } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
 
@@ -82,16 +82,21 @@ describe('refineLanePath', () => {
     expect(edgePath).toBeNull();
   });
 
-  it('should prefer same-lane traversal (minimize lane changes)', () => {
+  it('should start and end on outermost lane on multi-lane road', () => {
     const { graph } = buildStraightRoad(5, RoadType.FOUR_LANE);
     const cellPath = ['0,0', '1,0', '2,0', '3,0', '4,0'];
 
     const edgePath = refineLanePath(graph, cellPath);
     expect(edgePath).not.toBeNull();
+    expect(edgePath!.length).toBeGreaterThan(0);
 
-    // Count lane changes
-    const laneChanges = edgePath!.filter(e => e.type === 'lane_change').length;
-    expect(laneChanges).toBe(0); // no reason to change lanes on straight road
+    // First edge should start on outermost lane (lane 1 for 2 dir-lanes)
+    const firstEdge = edgePath![0]!;
+    expect(firstEdge.from.lane).toBe(1);
+
+    // Last edge should end on outermost lane
+    const lastEdge = edgePath![edgePath!.length - 1]!;
+    expect(lastEdge.to.lane).toBe(1);
   });
 
   it('should handle single-cell path gracefully', () => {
@@ -102,46 +107,38 @@ describe('refineLanePath', () => {
     expect(edgePath!.length).toBe(0);
   });
 
-  it('should use preferredLane parameter on multi-lane road', () => {
-    const { graph } = buildStraightRoad(5, RoadType.FOUR_LANE);
-    const cellPath = ['0,0', '1,0', '2,0', '3,0', '4,0'];
+  it('should use lane changes on long multi-lane road to optimize speed', () => {
+    const { graph } = buildStraightRoad(10, RoadType.FOUR_LANE);
+    const cellPath = Array.from({ length: 10 }, (_, i) => `${i},0`);
 
-    // Request lane 1 (second lane)
-    const edgePath = refineLanePath(graph, cellPath, 1);
+    const edgePath = refineLanePath(graph, cellPath);
     expect(edgePath).not.toBeNull();
     expect(edgePath!.length).toBeGreaterThan(0);
 
-    // All cross-cell edges should be on lane 1
-    const crossEdges = edgePath!.filter(
-      e => e.from.cellKey !== e.to.cellKey
-    );
-    for (const e of crossEdges) {
-      expect(e.from.lane).toBe(1);
-      expect(e.to.lane).toBe(1);
-    }
+    // On a long road, Dijkstra should find lane changes worthwhile
+    // (start outer → inner for speed → back to outer)
+    const laneChanges = edgePath!.filter(e => e.type === 'lane_change').length;
+    expect(laneChanges).toBeGreaterThan(0);
   });
 
-  it('should produce different paths for different preferredLane values', () => {
-    const { graph } = buildStraightRoad(5, RoadType.FOUR_LANE);
-    const cellPath = ['0,0', '1,0', '2,0', '3,0', '4,0'];
+  it('should NOT lane-change on short multi-lane road (cost not worth it)', () => {
+    const { graph } = buildStraightRoad(3, RoadType.FOUR_LANE);
+    const cellPath = ['0,0', '1,0', '2,0'];
 
-    const pathLane0 = refineLanePath(graph, cellPath, 0);
-    const pathLane1 = refineLanePath(graph, cellPath, 1);
+    const edgePath = refineLanePath(graph, cellPath);
+    expect(edgePath).not.toBeNull();
 
-    expect(pathLane0).not.toBeNull();
-    expect(pathLane1).not.toBeNull();
-
-    // Paths should differ — different lane edges
-    const lane0CrossIds = pathLane0!.filter(e => e.from.cellKey !== e.to.cellKey).map(e => e.id);
-    const lane1CrossIds = pathLane1!.filter(e => e.from.cellKey !== e.to.cellKey).map(e => e.id);
-
-    // At least some edges should be different
-    const allSame = lane0CrossIds.every((id, i) => id === lane1CrossIds[i]);
-    expect(allSame).toBe(false);
+    const laneChanges = edgePath!.filter(e => e.type === 'lane_change').length;
+    expect(laneChanges).toBe(0);
   });
 
-  it('should prefer right lane for right turn at intersection (4-lane)', () => {
-    // Build L-shaped 4-lane road: east then south
+  it('getLaneSpeedMultiplier should decay per lane', () => {
+    expect(getLaneSpeedMultiplier(0)).toBe(1.0);
+    expect(getLaneSpeedMultiplier(1)).toBeCloseTo(LANE_SPEED_DECAY);
+    expect(getLaneSpeedMultiplier(2)).toBeCloseTo(LANE_SPEED_DECAY ** 2);
+  });
+
+  it('should handle right turn at intersection (4-lane)', () => {
     const cells = new Map<string, { roadType: RoadType; roadFlags: number }>([
       ['0,0', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST }],
       ['1,0', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.WEST | RoadDirection.SOUTH }],
@@ -151,17 +148,8 @@ describe('refineLanePath', () => {
     graph.buildFromGrid(makeGridLookup(cells), ['0,0', '1,0', '1,1']);
 
     const cellPath = ['0,0', '1,0', '1,1'];
-
-    // With preferred lane 0 (inner/right lane for eastbound turning south)
-    const edgePath0 = refineLanePath(graph, cellPath, 0);
-    expect(edgePath0).not.toBeNull();
-
-    // With preferred lane 1 (outer lane)
-    const edgePath1 = refineLanePath(graph, cellPath, 1);
-    expect(edgePath1).not.toBeNull();
-
-    // Both should produce valid paths (no lane changes forced in this simple case)
-    expect(edgePath0!.length).toBeGreaterThan(0);
-    expect(edgePath1!.length).toBeGreaterThan(0);
+    const edgePath = refineLanePath(graph, cellPath);
+    expect(edgePath).not.toBeNull();
+    expect(edgePath!.length).toBeGreaterThan(0);
   });
 });
