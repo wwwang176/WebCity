@@ -63,8 +63,8 @@ describe('Service ID isolation (instance-level counters)', () => {
   it('GarbageService: new instances start with _1 IDs', () => {
     const a = new GarbageService();
     const b = new GarbageService();
-    const idA = a.addFacility(0, 0, 'landfill');
-    const idB = b.addFacility(0, 0, 'landfill');
+    const idA = a.addFacility(0, 0);
+    const idB = b.addFacility(0, 0);
     expect(idA).toBe('garbage_1');
     expect(idB).toBe('garbage_1');
   });

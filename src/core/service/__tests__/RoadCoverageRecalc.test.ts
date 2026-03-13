@@ -60,7 +60,7 @@ describe('Road coverage recalculation on road changes', () => {
   it('garbage coverage extends when road connects to new area', () => {
     const grid = new Grid(30, 30);
     const garbage = new GarbageService();
-    garbage.addFacility(0, 15, 'landfill');
+    garbage.addFacility(0, 15);
 
     // Road segment 1: x=1..10 at y=15
     for (let x = 1; x <= 10; x++) {

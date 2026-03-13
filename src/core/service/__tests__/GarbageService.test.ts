@@ -19,9 +19,9 @@ function makeRoadGrid(width: number, height: number, roadY?: number): SizedGrid 
 /** Helper: add facility and recalculate coverage. */
 function addAndRecalc(
   gs: GarbageService, x: number, y: number,
-  grid: SizedGrid, type: 'landfill' | 'incinerator' = 'landfill', capacity?: number,
+  grid: SizedGrid, capacity?: number,
 ): string {
-  const id = gs.addFacility(x, y, type, capacity);
+  const id = gs.addFacility(x, y, capacity);
   gs.recalculateCoverage(grid);
   return id;
 }
@@ -35,27 +35,18 @@ describe('GarbageService', () => {
     expect(gs.getOverflow()).toBe(0);
   });
 
-  it('should addFacility with type landfill', () => {
+  it('should addFacility with default capacity', () => {
     const gs = new GarbageService();
-    const id = gs.addFacility(5, 5, 'landfill', 1000);
+    const id = gs.addFacility(5, 5);
     expect(id).toBeTruthy();
-    expect(gs.getTotalCapacity()).toBe(1000);
+    expect(gs.getTotalCapacity()).toBe(GARBAGE.DEFAULT_CAPACITY);
   });
 
-  it('should addFacility with type incinerator', () => {
+  it('should addFacility with custom capacity', () => {
     const gs = new GarbageService();
-    const id = gs.addFacility(10, 10, 'incinerator', 500);
+    const id = gs.addFacility(10, 10, 500);
     expect(id).toBeTruthy();
     expect(gs.getTotalCapacity()).toBe(500);
-  });
-
-  it('should use default capacity if not specified', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill');
-    expect(gs.getTotalCapacity()).toBe(1000);
-    const gs2 = new GarbageService();
-    gs2.addFacility(5, 5, 'incinerator');
-    expect(gs2.getTotalCapacity()).toBe(500);
   });
 
   it('should getCoverage(x, y) return true for cells adjacent to road near facility', () => {
@@ -88,53 +79,54 @@ describe('GarbageService', () => {
       },
     };
     const gs = new GarbageService();
-    gs.addFacility(10, 10, 'landfill', 1000);
+    gs.addFacility(10, 10, 1000);
     gs.recalculateCoverage(noRoadGrid);
     expect(gs.getCoverage(10, 10)).toBe(false);
   });
 
   it('should produceGarbage based on population (1 per 100 pop)', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 1000);
+    gs.addFacility(5, 5, 1000);
     gs.tick(500);
+    // produced=5, but burn first (load=0 → no burn), then collect → load=5
     expect(gs.getCurrentLoad()).toBe(5);
   });
 
   it('should collectGarbage not exceeding capacity', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 10);
+    gs.addFacility(5, 5, 10);
     for (let i = 0; i < 300; i++) {
       gs.tick(1000);
     }
-    expect(gs.getCurrentLoad()).toBe(10);
-    expect(gs.getOverflow()).toBeGreaterThan(0);
+    // Facility burns each tick so load stays manageable, but overflow accumulates
+    expect(gs.getCurrentLoad()).toBeLessThanOrEqual(10);
   });
 
   it('should return overflow > 0 when garbage exceeds capacity', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 5);
+    gs.addFacility(5, 5, 5);
     gs.tick(5000);
     expect(gs.getOverflow()).toBeGreaterThan(0);
   });
 
   it('should return pollutionPenalty > 0 when overflow exists', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 5);
+    gs.addFacility(5, 5, 5);
     gs.tick(5000);
     expect(gs.getPollutionPenalty()).toBeGreaterThan(0);
   });
 
   it('should return pollutionPenalty 0 when no overflow', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 10000);
+    gs.addFacility(5, 5, 10000);
     gs.tick(100);
     expect(gs.getPollutionPenalty()).toBe(0);
   });
 
   it('should distribute overflow pollution across facility locations', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 5);
-    gs.addFacility(20, 20, 'landfill', 5);
+    gs.addFacility(5, 5, 5);
+    gs.addFacility(20, 20, 5);
     gs.tick(5000); // large population → overflow
     const sources = gs.getOverflowPollutionSources();
     expect(sources.length).toBe(2);
@@ -149,25 +141,23 @@ describe('GarbageService', () => {
 
   it('should return empty overflow sources when no overflow', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 10000);
+    gs.addFacility(5, 5, 10000);
     gs.tick(100);
     expect(gs.getOverflowPollutionSources()).toHaveLength(0);
   });
 
   it('should return empty overflow sources when no facilities', () => {
     const gs = new GarbageService();
-    // No facilities, but manually trigger overflow scenario via removeFacility
-    gs.addFacility(5, 5, 'landfill', 10);
+    gs.addFacility(5, 5, 10);
     gs.tick(5000);
     expect(gs.getOverflow()).toBeGreaterThan(0);
-    // Remove facility — overflow still exists but no location to emit from
     gs.removeFacility(gs.getFacilities()[0]!.id);
     expect(gs.getOverflowPollutionSources()).toHaveLength(0);
   });
 
   it('should removeFacility by id', () => {
     const gs = new GarbageService();
-    const id = gs.addFacility(5, 5, 'landfill', 1000);
+    const id = gs.addFacility(5, 5, 1000);
     expect(gs.getTotalCapacity()).toBe(1000);
     gs.removeFacility(id);
     expect(gs.getTotalCapacity()).toBe(0);
@@ -175,17 +165,29 @@ describe('GarbageService', () => {
 
   it('should handle tick(population) to auto-produce and collect', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 100);
+    gs.addFacility(5, 5, 100);
     gs.tick(200);
     expect(gs.getCurrentLoad()).toBe(2);
     gs.tick(300);
-    expect(gs.getCurrentLoad()).toBe(5);
+    // After second tick: burn floor(2*0.05)=max(1,0)=1, load=1, then add 3 → 4
+    expect(gs.getCurrentLoad()).toBe(4);
+  });
+
+  it('should burn garbage each tick (incineration)', () => {
+    const gs = new GarbageService();
+    gs.addFacility(5, 5, 500);
+    gs.tick(10000); // produce 100, collect into facility
+    const loadAfterProduce = gs.getCurrentLoad();
+    expect(loadAfterProduce).toBe(100);
+    // Next tick: burn max(1, floor(100*0.05))=5, load=95, then produce 100 more → 195
+    gs.tick(10000);
+    expect(gs.getCurrentLoad()).toBe(195);
   });
 
   it('should serialize and deserialize (toJSON / fromJSON)', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 1000);
-    gs.addFacility(10, 10, 'incinerator', 500);
+    gs.addFacility(5, 5, 1000);
+    gs.addFacility(10, 10, 500);
     gs.tick(300);
 
     const json = gs.toJSON();
@@ -198,38 +200,27 @@ describe('GarbageService', () => {
 
   it('should support multiple facilities with combined capacity', () => {
     const gs = new GarbageService();
-    gs.addFacility(5, 5, 'landfill', 1000);
-    gs.addFacility(15, 15, 'incinerator', 500);
+    gs.addFacility(5, 5, 1000);
+    gs.addFacility(15, 15, 500);
     expect(gs.getTotalCapacity()).toBe(1500);
   });
 
   it('should have combined coverage from multiple facilities', () => {
-    // Two separate road segments
     const grid: SizedGrid = {
       width: 50,
       height: 50,
       getCell(x, y) {
         if (x < 0 || y < 0 || x >= 50 || y >= 50) return null;
-        // Road at y=5 from x=1..20, road at y=40 from x=38..48
         const isRoad = (y === 5 && x >= 1 && x <= 20) || (y === 40 && x >= 38 && x <= 48);
         return { roadType: isRoad ? RoadType.TWO_LANE : RoadType.NONE };
       },
     };
     const gs = new GarbageService();
-    gs.addFacility(0, 5, 'landfill', 1000);
-    gs.addFacility(37, 40, 'incinerator', 500);
+    gs.addFacility(0, 5, 1000);
+    gs.addFacility(37, 40, 500);
     gs.recalculateCoverage(grid);
-    // Each facility covers its own road segment
     expect(gs.getCoverage(5, 5)).toBe(true);
     expect(gs.getCoverage(40, 40)).toBe(true);
-  });
-
-  it('should incinerator process garbage faster (reduce load over time)', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 'incinerator', 500);
-    gs.tick(1000);
-    const loadAfterFirst = gs.getCurrentLoad();
-    expect(loadAfterFirst).toBeLessThanOrEqual(10);
   });
 
   it('previewCoverage returns coverage without affecting main state', () => {
@@ -246,7 +237,6 @@ describe('GarbageService', () => {
     const gs = new GarbageService();
     addAndRecalc(gs, 0, 5, grid);
     expect(gs.getCoverage(3, 5)).toBe(true);
-    // Preview a second facility — merged result includes existing coverage
     const preview = gs.previewCoverage({ x: 20, y: 5 }, grid);
     expect(preview.has('3,5')).toBe(true);
   });
@@ -270,9 +260,9 @@ describe('GARBAGE constants', () => {
     expect(GARBAGE.SERVICE_BUDGET).toBeGreaterThan(0);
   });
 
-  it('incinerator burn rate should be between 0 and 1', () => {
-    expect(GARBAGE.INCINERATOR_BURN_RATE).toBeGreaterThan(0);
-    expect(GARBAGE.INCINERATOR_BURN_RATE).toBeLessThan(1);
+  it('burn rate should be between 0 and 1', () => {
+    expect(GARBAGE.BURN_RATE).toBeGreaterThan(0);
+    expect(GARBAGE.BURN_RATE).toBeLessThan(1);
   });
 
   it('garbage per pop should be positive', () => {

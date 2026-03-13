@@ -13,7 +13,7 @@ export interface InfraServiceContext {
   health: { addHospital(x: number, y: number): void; removeHospital(id: string): void; getHospitals(): readonly { id: string; x: number; y: number }[] };
   education: { addSchool(x: number, y: number, level: string): void; removeSchool(id: string): void; getSchools(): readonly { id: string; x: number; y: number }[] };
   parks: { addPark(x: number, y: number): void; removePark(id: string): void; getParks(): readonly { id: string; x: number; y: number }[] };
-  garbage: { addFacility(x: number, y: number, type: string): void; removeFacility(id: string): void; getFacilities(): readonly { id: string; x: number; y: number }[] };
+  garbage: { addFacility(x: number, y: number): void; removeFacility(id: string): void; getFacilities(): readonly { id: string; x: number; y: number }[] };
   sewage: { addTreatmentPlant(x: number, y: number): void; removeTreatmentPlant(id: string): void; getTreatmentPlants(): readonly { id: string; x: number; y: number }[] };
   deathCare: { addCemetery(x: number, y: number): void; removeCemetery(id: string): void; getCemeteries(): readonly { id: string; x: number; y: number }[] };
   bus: { addStop(x: number, y: number): void; removeStop(id: number): void; getStops(): readonly { id: number; x: number; y: number }[] };
@@ -82,7 +82,7 @@ export const INFRA_SERVICE_ACTIONS: Partial<Record<InfraType, InfraServiceAction
     remove: (ctx, cx, cy) => findAndRemove(() => ctx.parks.getParks(), id => ctx.parks.removePark(id), cx, cy),
   },
   garbage: {
-    place: (ctx, cx, cy) => ctx.garbage.addFacility(cx, cy, 'landfill'),
+    place: (ctx, cx, cy) => ctx.garbage.addFacility(cx, cy),
     remove: (ctx, cx, cy) => findAndRemove(() => ctx.garbage.getFacilities(), id => ctx.garbage.removeFacility(id), cx, cy),
   },
   sewage: {

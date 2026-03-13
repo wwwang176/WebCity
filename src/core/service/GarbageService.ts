@@ -1,29 +1,24 @@
 import type { SizedGrid } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
 import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
-
-export type GarbageFacilityType = 'landfill' | 'incinerator';
+import type { PollutionSource } from '../environment/Pollution';
 
 export interface GarbageFacility {
   id: string;
   x: number;
   y: number;
-  type: GarbageFacilityType;
   capacity: number;
   currentLoad: number;
 }
-
-const DEFAULT_CAPACITIES: Record<GarbageFacilityType, number> = {
-  landfill: 1000,
-  incinerator: 500,
-};
 
 /** Garbage service configuration constants */
 export const GARBAGE = {
   /** Road-distance coverage budget for garbage collection trucks */
   SERVICE_BUDGET: ROAD_COVERAGE.GARBAGE_BUDGET,
-  /** Fraction of current load that an incinerator burns each tick */
-  INCINERATOR_BURN_RATE: 0.05,
+  /** Default capacity per facility */
+  DEFAULT_CAPACITY: 1000,
+  /** Fraction of current load burned (incinerated) each tick */
+  BURN_RATE: 0.05,
   /** Garbage production: 1 unit per GARBAGE_PER_POP population */
   GARBAGE_PER_POP: 100,
   /** Maintenance cost per garbage facility per tick */
@@ -38,22 +33,19 @@ export const GARBAGE = {
   POLLUTION_AMOUNT_SCALE: 40,
 } as const;
 
-import type { PollutionSource } from '../environment/Pollution';
-
 export class GarbageService {
   private facilities: GarbageFacility[] = [];
   private overflow = 0;
   private nextId = 1;
   private roadCoverage = new RoadCoverageMap();
 
-  addFacility(x: number, y: number, type: GarbageFacilityType, capacity?: number): string {
+  addFacility(x: number, y: number, capacity?: number): string {
     const id = `garbage_${this.nextId++}`;
     this.facilities.push({
       id,
       x,
       y,
-      type,
-      capacity: capacity ?? DEFAULT_CAPACITIES[type],
+      capacity: capacity ?? GARBAGE.DEFAULT_CAPACITY,
       currentLoad: 0,
     });
     return id;
@@ -92,10 +84,10 @@ export class GarbageService {
     // 1. Produce garbage based on population
     const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);
 
-    // 2. Incinerators burn a fraction of their current load
+    // 2. Burn (incinerate) a fraction of current load at each facility
     for (const f of this.facilities) {
-      if (f.type === 'incinerator' && f.currentLoad > 0) {
-        const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.INCINERATOR_BURN_RATE));
+      if (f.currentLoad > 0) {
+        const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.BURN_RATE));
         f.currentLoad = Math.max(0, f.currentLoad - burned);
       }
     }
@@ -126,7 +118,6 @@ export class GarbageService {
 
   getPollutionPenalty(): number {
     if (this.overflow <= 0) return 0;
-    // Pollution scales with overflow amount
     return Math.min(GARBAGE.MAX_POLLUTION_PENALTY, this.overflow * GARBAGE.OVERFLOW_POLLUTION_MULTIPLIER);
   }
 

@@ -12,14 +12,14 @@ describe('PollutionContributor', () => {
 
     it('should return empty array when facilities are under 50% load', () => {
       const svc = new GarbageService();
-      svc.addFacility(5, 5, 'landfill', 1000);
+      svc.addFacility(5, 5, 1000);
       // Don't add any load
       expect(svc.getPollutionSources()).toEqual([]);
     });
 
     it('should return ground pollution source when facility is over 50% load', () => {
       const svc = new GarbageService();
-      svc.addFacility(5, 5, 'landfill', 100);
+      svc.addFacility(5, 5, 100);
       // Manually set load by ticking with high population
       // Tick with enough population to fill more than 50%
       svc.tick(10000); // produces 100 units of garbage
