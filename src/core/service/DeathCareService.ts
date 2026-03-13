@@ -1,5 +1,7 @@
 import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
+import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
+import type { SizedGrid } from '../grid/GridHelpers';
 
 export interface Cemetery {
   id: string;
@@ -32,6 +34,7 @@ export class DeathCareService {
   private cemeteries: Cemetery[] = [];
   private pendingDeaths = 0;
   private nextId = 1;
+  private roadCoverage = new RoadCoverageMap();
 
   addCemetery(x: number, y: number, capacity = 500, processRate = 5): string {
     const id = `cem-${this.nextId++}`;
@@ -41,6 +44,25 @@ export class DeathCareService {
 
   removeCemetery(id: string): boolean {
     return removeById(this.cemeteries, id);
+  }
+
+  getCoverage(x: number, y: number): boolean {
+    return this.roadCoverage.hasCoverage(x, y);
+  }
+
+  /** Recompute road-distance coverage. Call after cemetery or road changes. */
+  recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): void {
+    this.roadCoverage.recalculate(this.cemeteries, grid, ROAD_COVERAGE.DEATHCARE_BUDGET, facilityWidth, facilityHeight);
+  }
+
+  /** Preview coverage for a potential cemetery placement, merged with existing. */
+  previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
+    return this.roadCoverage.previewMerged(position, grid, ROAD_COVERAGE.DEATHCARE_BUDGET, facilityWidth, facilityHeight);
+  }
+
+  /** Get all covered cells with their road-distance costs (for overlay gradient). */
+  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
+    return this.roadCoverage.getCoveredCells();
   }
 
   reportDeath(): void {

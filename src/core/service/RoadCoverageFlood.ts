@@ -14,9 +14,14 @@ import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
 /** Service coverage budget constants */
 export const ROAD_COVERAGE = {
   BASE_COST: 100,
-  GARBAGE_BUDGET: 30,
+  GARBAGE_BUDGET: 80,
   POLICE_BUDGET: 30,
   FIRE_BUDGET: 30,
+  HEALTH_BUDGET: 40,
+  DEATHCARE_BUDGET: 35,
+  EDUCATION_ELEMENTARY_BUDGET: 20,
+  EDUCATION_HIGHSCHOOL_BUDGET: 30,
+  EDUCATION_UNIVERSITY_BUDGET: 45,
 } as const;
 
 /** Calculate traversal cost of a single road tile based on its type. */

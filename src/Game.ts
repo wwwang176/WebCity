@@ -681,6 +681,11 @@ export class Game {
       case 'police': this.state.police.recalculateCoverage(grid); break;
       case 'fire': this.state.fire.recalculateCoverage(grid); break;
       case 'garbage': this.state.garbage.recalculateCoverage(grid); break;
+      case 'hospital': this.state.health.recalculateCoverage(grid); break;
+      case 'school':
+      case 'school_high':
+      case 'school_univ': this.state.education.recalculateCoverage(grid); break;
+      case 'cemetery': this.state.deathCare.recalculateCoverage(grid); break;
     }
   }
 
@@ -690,6 +695,9 @@ export class Game {
     this.state.police.recalculateCoverage(grid);
     this.state.fire.recalculateCoverage(grid);
     this.state.garbage.recalculateCoverage(grid);
+    this.state.health.recalculateCoverage(grid);
+    this.state.education.recalculateCoverage(grid);
+    this.state.deathCare.recalculateCoverage(grid);
   }
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
@@ -1328,6 +1336,26 @@ export class Game {
         coverageCells = this.state.garbage.previewCoverage(pos, grid, cfg.width, cfg.height);
         budget = ROAD_COVERAGE.GARBAGE_BUDGET;
         break;
+      case 'hospital':
+        coverageCells = this.state.health.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.HEALTH_BUDGET;
+        break;
+      case 'school':
+        coverageCells = this.state.education.previewCoverage(pos, grid, 'elementary', cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.EDUCATION_ELEMENTARY_BUDGET;
+        break;
+      case 'school_high':
+        coverageCells = this.state.education.previewCoverage(pos, grid, 'highschool', cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.EDUCATION_HIGHSCHOOL_BUDGET;
+        break;
+      case 'school_univ':
+        coverageCells = this.state.education.previewCoverage(pos, grid, 'university', cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET;
+        break;
+      case 'cemetery':
+        coverageCells = this.state.deathCare.previewCoverage(pos, grid, cfg.width, cfg.height);
+        budget = ROAD_COVERAGE.DEATHCARE_BUDGET;
+        break;
       default:
         return;
     }
@@ -1400,23 +1428,27 @@ export class Game {
 
   // ── Coverage overlay: building highlight (green→yellow→red gradient) ──
 
-  /** Overlay types that have road-distance cost data for gradient coloring. */
-  private static readonly ROAD_COST_OVERLAYS: Partial<Record<OverlayType, { key: 'police' | 'fire' | 'garbage'; budget: number }>> = {
-    police: { key: 'police', budget: ROAD_COVERAGE.POLICE_BUDGET },
-    fire: { key: 'fire', budget: ROAD_COVERAGE.FIRE_BUDGET },
-    garbage: { key: 'garbage', budget: ROAD_COVERAGE.GARBAGE_BUDGET },
-  };
+  /** Get road-cost overlay info: cost map + budget for a given overlay type. */
+  private getRoadCostOverlay(overlayType: OverlayType): { costMap: ReadonlyMap<string, number>; budget: number; residentialOnly: boolean } | null {
+    switch (overlayType) {
+      case 'police': return { costMap: this.state.police.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.POLICE_BUDGET, residentialOnly: false };
+      case 'fire': return { costMap: this.state.fire.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.FIRE_BUDGET, residentialOnly: false };
+      case 'garbage': return { costMap: this.state.garbage.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.GARBAGE_BUDGET, residentialOnly: true };
+      case 'health': return { costMap: this.state.health.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.HEALTH_BUDGET, residentialOnly: false };
+      case 'education': return { costMap: this.state.education.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET, residentialOnly: false };
+      default: return null;
+    }
+  }
 
   /** Compute and cache overlay building highlight cells. Applied every frame by reapplyOverlayHighlight(). */
   private computeOverlayHighlightCells(overlayType: OverlayType): void {
     this.overlayHighlightCells = [];
 
     // Road-based services: green→yellow→red gradient
-    const roadInfo = Game.ROAD_COST_OVERLAYS[overlayType];
+    const roadInfo = this.getRoadCostOverlay(overlayType);
     if (roadInfo) {
-      const costMap = this.state[roadInfo.key].getCoveredCellsWithCost();
+      const { costMap, budget, residentialOnly } = roadInfo;
       if (costMap.size === 0) return;
-      const isGarbage = overlayType === 'garbage';
       const grid = this.state.grid;
       for (const [key, cost] of costMap) {
         const i = key.indexOf(',');
@@ -1424,21 +1456,21 @@ export class Game {
         const cy = Number(key.slice(i + 1));
         const cell = grid.getCell(cx, cy);
         if (!cell || cell.buildingId === 0) continue;
-        if (isGarbage) {
+        if (residentialOnly) {
           if (!isResidentialZone(cell.zoneType)) continue;
         } else {
           if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
         }
-        const ratio = Math.min(1, cost / roadInfo.budget);
+        const ratio = Math.min(1, cost / budget);
         const tier = Math.min(9, Math.floor(ratio * 10));
         this.overlayHighlightCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
       }
       return;
     }
 
-    // Non-road services (health/education/park): single-color
+    // Non-road services (park): single-color
     const fallbackColors: Partial<Record<OverlayType, number>> = {
-      health: 0xe91e63, education: 0x795548, park: 0x4caf50,
+      park: 0x4caf50,
     };
     const color = fallbackColors[overlayType];
     if (!color) return;

@@ -71,8 +71,8 @@ export const HAPPINESS = {
   LOW_TAX_BONUS: 5,
   // Services
   SERVICE_MODIFIERS: [
-    { threshold: 6, modifier: 10 },
-    { threshold: 4, modifier: 5 },
+    { threshold: 8, modifier: 10 },
+    { threshold: 5, modifier: 5 },
   ] as readonly ThresholdModifier[],
   // Housing
   HOMELESS_PENALTY: -20,
