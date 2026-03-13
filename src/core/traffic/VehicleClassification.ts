@@ -1,5 +1,5 @@
 /** Road vehicle types for rendering classification. */
-export type RoadVehicleType = 'car' | 'bus' | 'truck' | 'firetruck';
+export type RoadVehicleType = 'car' | 'bus' | 'truck' | 'firetruck' | 'police_car' | 'ambulance' | 'garbage_truck';
 
 /** Data-driven vehicle type thresholds, sorted descending by minLength (OCP-friendly). */
 export const VEHICLE_TYPE_THRESHOLDS: readonly { minLength: number; type: RoadVehicleType }[] = [

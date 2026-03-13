@@ -38,6 +38,7 @@ import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
 import { findAvailableTransit } from '../transport/TransitAvailability';
 import { findRoadPath } from '../traffic/RoadPathfinding';
+import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicleType } from '../traffic/ServiceVehicleManager';
 
 /** Simulation tuning constants */
 export const SIMULATION = {
@@ -126,6 +127,9 @@ export class SimulationLoop {
 
   // Commute path cache: stores computed LaneEdge paths for citizen commutes
   commuteCache: CommuteCache = new CommuteCache();
+
+  // Service vehicle manager: spawns patrol vehicles within service coverage
+  private serviceVehicleManager = new ServiceVehicleManager();
 
   /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
   occupancyRatios: Map<string, number> = new Map();
@@ -284,6 +288,11 @@ export class SimulationLoop {
     // 7b. Traffic - spawn commute vehicles and advance (every tick for smooth traffic)
     this.spawnVehicles();
     this.state.trafficLights.tick();
+
+    // 7c. Service vehicles — patrol within coverage areas (every 6 ticks)
+    if (isSlowTick) {
+      this.tickServiceVehicles();
+    }
 
     // 8. Transport systems (every tick)
     // Set congestion level for surface transit
@@ -920,8 +929,10 @@ export class SimulationLoop {
     if (pop === 0) return;
 
     // Vehicle cap: ~30% of population can be on the road simultaneously
+    // Exclude service vehicles from the cap (they are cosmetic and should not block commute traffic)
     const vehicleCap = Math.min(SIMULATION.VEHICLE_CAP_MAX, SIMULATION.VEHICLE_CAP_BASE + Math.floor(pop * SIMULATION.VEHICLE_CAP_POP_RATIO));
-    if (this.state.traffic.getVehicleCount() >= vehicleCap) return;
+    const commuteVehicles = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
+    if (commuteVehicles >= vehicleCap) return;
 
     this.rebuildBuildingIndex();
 
@@ -1142,6 +1153,35 @@ export class SimulationLoop {
   }
 
 
+
+  /** Tick service vehicle manager: spawn/repath patrol vehicles in coverage areas. */
+  private tickServiceVehicles(): void {
+    const grid = this.state.grid;
+    const services: Record<ServiceVehicleType, ServiceFacilityProvider | null> = {
+      police: this.adaptService(this.state.police.getStations(), this.state.police),
+      fire: this.adaptService(this.state.fire.getStations(), this.state.fire),
+      health: this.adaptService(this.state.health.getHospitals(), this.state.health),
+      garbage: this.adaptService(this.state.garbage.getFacilities(), this.state.garbage),
+    };
+    this.serviceVehicleManager.tick(
+      this.state.traffic,
+      services,
+      grid,
+      this.laneGraph,
+    );
+  }
+
+  /** Adapt a civic service to ServiceFacilityProvider interface. */
+  private adaptService(
+    facilities: ReadonlyArray<{ x: number; y: number }>,
+    service: { getCoveredCellsWithCost(): ReadonlyMap<string, number> },
+  ): ServiceFacilityProvider | null {
+    if (facilities.length === 0) return null;
+    return {
+      getFacilityPositions: () => facilities,
+      getCoveredCellsWithCost: () => service.getCoveredCellsWithCost(),
+    };
+  }
 
   /**
    * Compute predicted congestion flow using cached route reference counts.
