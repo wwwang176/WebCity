@@ -383,8 +383,7 @@ export class Game {
         );
         this.dragStart = null;
         this.clearPreviewLine();
-        this.highlightManager.clear();
-        this.applySelectHighlight();
+        this.updatePlacementPreview();
       }
     });
 
@@ -996,7 +995,6 @@ export class Game {
   setTool(tool: ToolType): void {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
-    this.highlightManager.clear();
     // Road subtypes set the roadType (data-driven lookup)
     const roadType = TOOL_TO_ROAD_TYPE[tool];
     if (roadType !== undefined) this.currentRoadType = roadType;
@@ -1007,6 +1005,7 @@ export class Game {
     if (autoOverlay) {
       this.setOverlay(autoOverlay);
     }
+    this.updatePlacementPreview();
     this.onUIUpdate?.();
   }
 
