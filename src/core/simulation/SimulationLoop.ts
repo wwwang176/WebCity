@@ -9,7 +9,7 @@ import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, isWorkplace
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
-import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
+import { refineLanePath, refineLanePathVariants, gridAStarPath } from '../traffic/Pathfinding';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
 import { getBuildingType } from '../building/types';
@@ -1052,17 +1052,22 @@ export class SimulationLoop {
 
       // --- Compute path and populate cache ---
       const routeKey = `${fromStr}->${toStr}`;
-      let edgePath = this.commuteCache.getByRoute(routeKey) ?? null;
+      let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
 
-      if (!edgePath) {
+      if (!variants) {
         const path = findRoadPath(fromPos, toPos, grid);
         if (path && path.length >= 2) {
-          edgePath = refineLanePath(this.laneGraph, path);
-          if (edgePath && edgePath.length > 0) {
-            this.commuteCache.setRoute(routeKey, edgePath);
+          variants = refineLanePathVariants(this.laneGraph, path);
+          if (variants.length > 0) {
+            this.commuteCache.setRouteVariants(routeKey, variants);
           }
         }
       }
+
+      // Pick a random variant to distribute vehicles across lanes
+      const edgePath = variants && variants.length > 0
+        ? variants[Math.floor(Math.random() * variants.length)]!
+        : null;
 
       if (edgePath && edgePath.length > 0) {
         this.state.traffic.addVehicleOnEdges(edgePath);

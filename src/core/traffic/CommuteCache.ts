@@ -28,8 +28,8 @@ export class CommuteCache {
   // cellKey -> set of citizenIds whose paths pass through that cell
   private cellIndex = new Map<string, Set<number>>();
 
-  // Shared route pool: routeKey -> LaneEdge[]
-  private routeIndex = new Map<string, LaneEdge[]>();
+  // Shared route pool: routeKey -> LaneEdge[][] (lane path variants)
+  private routeIndex = new Map<string, LaneEdge[][]>();
 
   // cellKey -> set of routeKeys that pass through that cell
   private routeCellIndex = new Map<string, Set<string>>();
@@ -134,23 +134,37 @@ export class CommuteCache {
     this.dirtySet.delete(citizenId);
   }
 
+  /** Get first variant for backward compatibility. */
   getByRoute(routeKey: string): LaneEdge[] | undefined {
+    const variants = this.routeIndex.get(routeKey);
+    return variants?.[0];
+  }
+
+  /** Get all lane path variants for a route. */
+  getRouteVariants(routeKey: string): LaneEdge[][] | undefined {
     return this.routeIndex.get(routeKey);
   }
 
+  /** @deprecated Use setRouteVariants instead. */
   setRoute(routeKey: string, path: LaneEdge[]): void {
-    this.routeIndex.set(routeKey, path);
+    this.setRouteVariants(routeKey, [path]);
+  }
 
-    // Build routeCellIndex: collect all cells in the path
-    const cells = this.collectCellsFromPath(path);
-    // Store in routeCellIndex (we use a reverse map: cellKey -> Set<routeKey>)
-    for (const cellKey of cells) {
-      let routeKeys = this.routeCellIndex.get(cellKey);
-      if (!routeKeys) {
-        routeKeys = new Set();
-        this.routeCellIndex.set(cellKey, routeKeys);
+  /** Store lane path variants for a shared route. */
+  setRouteVariants(routeKey: string, variants: LaneEdge[][]): void {
+    this.routeIndex.set(routeKey, variants);
+
+    // Build routeCellIndex using first variant (all variants share the same cells)
+    if (variants.length > 0) {
+      const cells = this.collectCellsFromPath(variants[0]!);
+      for (const cellKey of cells) {
+        let routeKeys = this.routeCellIndex.get(cellKey);
+        if (!routeKeys) {
+          routeKeys = new Set();
+          this.routeCellIndex.set(cellKey, routeKeys);
+        }
+        routeKeys.add(routeKey);
       }
-      routeKeys.add(routeKey);
     }
   }
 
@@ -249,13 +263,17 @@ export class CommuteCache {
 
   /**
    * Iterate all cached routes with their reference counts.
-   * Callback receives (path, refCount) for each route in the shared pool.
+   * Callback receives (path, refCount) for each variant in the shared pool.
+   * RefCount is distributed evenly across variants.
    */
   forEachRouteWithRefCount(callback: (path: LaneEdge[], refCount: number) => void): void {
-    for (const [routeKey, path] of this.routeIndex) {
+    for (const [routeKey, variants] of this.routeIndex) {
       const refCount = this.routeRefCount.get(routeKey) ?? 0;
-      if (refCount > 0) {
-        callback(path, refCount);
+      if (refCount > 0 && variants.length > 0) {
+        const perVariant = refCount / variants.length;
+        for (const variant of variants) {
+          callback(variant, perVariant);
+        }
       }
     }
   }
