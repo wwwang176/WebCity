@@ -291,27 +291,26 @@ export class LaneGraph {
       const neighborDirLanes = getLaneCount(neighbor.roadType);
       const oppositeDirection = oppositeDir(dir);
 
-      // Connect: this cell exit[dir] → neighbor entry[oppositeDir] (all-to-all)
-      // All exit lanes can reach all neighbor entry lanes, enabling smooth
-      // transitions between roads of different widths.
-      for (let exitLane = 0; exitLane < dirLanes; exitLane++) {
-        for (let entryLane = 0; entryLane < neighborDirLanes; entryLane++) {
-          const exitId = `${cellKey}:${dir}:${exitLane}:exit`;
-          const entryId = `${neighborKey}:${oppositeDirection}:${entryLane}:entry`;
+      // Connect: this cell exit[dir] → neighbor entry[oppositeDir] (same-lane only)
+      // Straight segments use same-lane connections; lane changes happen within
+      // the cell via lane_change edges, not at the cell boundary.
+      const minLanes = Math.min(dirLanes, neighborDirLanes);
+      for (let lane = 0; lane < minLanes; lane++) {
+        const exitId = `${cellKey}:${dir}:${lane}:exit`;
+        const entryId = `${neighborKey}:${oppositeDirection}:${lane}:entry`;
 
-          const fromPt = this.points.get(exitId);
-          const toPt = this.points.get(entryId);
-          if (!fromPt || !toPt) continue;
+        const fromPt = this.points.get(exitId);
+        const toPt = this.points.get(entryId);
+        if (!fromPt || !toPt) continue;
 
-          const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
-          this.edges.push({
-            id: `${exitId}>${entryId}`,
-            from: fromPt,
-            to: toPt,
-            length: Math.max(length, 0.1),
-            type: 'straight',
-          });
-        }
+        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
+        this.edges.push({
+          id: `${exitId}>${entryId}`,
+          from: fromPt,
+          to: toPt,
+          length: Math.max(length, 0.1),
+          type: 'straight',
+        });
       }
 
       // Also connect within cell: entry[oppositeDir] → exit[dir] (traversal through cell)
