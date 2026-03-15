@@ -207,6 +207,16 @@ describe('RoadBuilder', () => {
     expect(center.roadType).toBe(RoadType.FOUR_LANE);
   });
 
+  it('should allow downgrade when rebuilding same-direction road', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.FOUR_LANE, 100000);
+
+    // Rebuild same direction as TWO_LANE — should downgrade
+    builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 100000);
+    expect(grid.getCell(4, 5)!.roadType).toBe(RoadType.TWO_LANE);
+  });
+
   // --- Terrain blocking ---
 
   it('should fail to build road on mountain', () => {
