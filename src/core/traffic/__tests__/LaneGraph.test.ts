@@ -378,6 +378,51 @@ describe('LaneGraph', () => {
       expect(edges.length).toBeGreaterThanOrEqual(1);
     });
   });
+
+  describe('All-to-all cross-cell edges at intersections', () => {
+    it('FOUR_LANE intersection should connect all exit lanes to TWO_LANE neighbor', () => {
+      // T-junction: FOUR_LANE E-W, TWO_LANE south
+      const cells = new Map([
+        ['0,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST }],
+        ['1,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST | RoadDirection.WEST | RoadDirection.SOUTH }],
+        ['2,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.WEST }],
+        ['1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH }],
+      ]);
+      const graph = new LaneGraph();
+      graph.buildFromGrid(makeGridLookup(cells), ['0,1', '1,1', '2,1', '1,2']);
+
+      // Cross-cell edges from intersection (1,1) south to TWO_LANE (1,2)
+      const crossEdges = graph.getAllEdges().filter(
+        e => e.from.cellKey === '1,1' && e.to.cellKey === '1,2' && e.type === 'straight'
+      );
+
+      // Both exit:0 AND exit:1 should connect to TWO_LANE's entry:0
+      expect(crossEdges.length).toBe(2);
+      const fromLanes = new Set(crossEdges.map(e => e.from.lane));
+      expect(fromLanes.has(0)).toBe(true);
+      expect(fromLanes.has(1)).toBe(true);
+    });
+
+    it('FOUR_LANE intersection should have all-to-all edges to FOUR_LANE neighbor', () => {
+      const cells = new Map([
+        ['0,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST }],
+        ['1,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST | RoadDirection.WEST | RoadDirection.SOUTH | RoadDirection.NORTH }],
+        ['2,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.WEST }],
+        ['1,0', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.SOUTH }],
+        ['1,2', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.NORTH }],
+      ]);
+      const graph = new LaneGraph();
+      graph.buildFromGrid(makeGridLookup(cells), ['0,1', '1,1', '2,1', '1,0', '1,2']);
+
+      // Cross-cell edges from intersection east to FOUR_LANE neighbor
+      const crossEdges = graph.getAllEdges().filter(
+        e => e.from.cellKey === '1,1' && e.to.cellKey === '2,1' && e.type === 'straight'
+      );
+
+      // 2 exit lanes × 2 entry lanes = 4 cross-cell edges
+      expect(crossEdges.length).toBe(4);
+    });
+  });
 });
 
 describe('LANE_GEOMETRY constants', () => {
