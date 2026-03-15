@@ -565,19 +565,6 @@ export class LaneGraph {
     };
   }
 
-  /** Push a straight edge only if no edge with the same ID exists yet. */
-  private pushEdgeIfNew(
-    id: string,
-    from: ConnectionPoint,
-    to: ConnectionPoint,
-    type: LaneEdge['type'],
-    minLength: number,
-  ): void {
-    if (this.edges.some(e => e.id === id)) return;
-    const length = euclideanDistance(from.position.x, from.position.y, to.position.x, to.position.y);
-    this.edges.push({ id, from, to, length: Math.max(length, minLength), type });
-  }
-
   private approximateQuadraticBezierLength(
     p0: { x: number; y: number },
     cp: { x: number; y: number },

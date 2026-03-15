@@ -1,7 +1,6 @@
 import { RoadNetwork } from '../road/RoadNetwork';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
-import { isIntersectionCell } from './LaneGraph';
 import { parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 
 function heuristic(a: string, b: string): number {
