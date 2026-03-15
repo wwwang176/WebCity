@@ -74,7 +74,7 @@ export class RoadBuilder {
       }
     }
 
-    return { success: true, cost: totalCost };
+    return { success: true, cost: totalCost, affectedCells: cells.map(p => toPosKey(p.x, p.y)) };
   }
 
   removeRoad(x: number, y: number): void {

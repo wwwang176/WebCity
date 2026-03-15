@@ -1,5 +1,6 @@
 import { TransportType, type TransportRoute, type TransportStop } from './types';
 import { BaseTransportSystem, type TransportSystemConfig } from './BaseTransportSystem';
+import { findAdjacentRoadCell, type PlacementGrid } from './TransportPlacement';
 import type { LaneEdge } from '../traffic/LaneGraph';
 import type { TrafficSimulation, Vehicle } from '../traffic/TrafficSimulation';
 
@@ -144,6 +145,7 @@ export class BusSystem extends BaseTransportSystem {
     findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
     refinePath: (cellPath: string[]) => LaneEdge[] | null,
     traffic: TrafficSimulation,
+    grid?: PlacementGrid,
   ): number[] {
     const dissolvedRouteIds: number[] = [];
 
@@ -164,6 +166,17 @@ export class BusSystem extends BaseTransportSystem {
       }
 
       if (!affected) continue;
+
+      // Re-resolve stop roadX/roadY in case adjacent road cells changed
+      if (grid) {
+        for (const stop of route.stops) {
+          const adj = findAdjacentRoadCell(grid, stop.x, stop.y);
+          if (adj) {
+            stop.roadX = adj.roadX;
+            stop.roadY = adj.roadY;
+          }
+        }
+      }
 
       // Try to recalculate
       const newSegments = this.computeRouteSegments(route, findPath, refinePath);
