@@ -113,6 +113,51 @@ describe('refineLanePathVariants', () => {
     expect(variants.length).toBe(0);
   });
 
+  it('should NOT zigzag on alternating straight-intersection pattern', () => {
+    // Build: straight → cross → straight → cross → straight (4-lane)
+    // This is the pattern the user reported zigzag on
+    const cells = new Map<string, { roadType: RoadType; roadFlags: number }>();
+    const cellKeys: string[] = [];
+    for (let x = 0; x < 9; x++) {
+      let flags = 0;
+      if (x > 0) flags |= RoadDirection.WEST;
+      if (x < 8) flags |= RoadDirection.EAST;
+      // Every other cell is a cross intersection (has N+S too)
+      if (x % 2 === 1) {
+        flags |= RoadDirection.NORTH | RoadDirection.SOUTH;
+      }
+      cells.set(`${x},1`, { roadType: RoadType.FOUR_LANE, roadFlags: flags });
+      cellKeys.push(`${x},1`);
+      // Add north/south arms for intersections
+      if (x % 2 === 1) {
+        cells.set(`${x},0`, { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.SOUTH });
+        cells.set(`${x},2`, { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.NORTH });
+      }
+    }
+    const allKeys = [...cellKeys];
+    for (let x = 1; x < 9; x += 2) {
+      allKeys.push(`${x},0`, `${x},2`);
+    }
+    const graph = new LaneGraph();
+    graph.buildFromGrid(makeGridLookup(cells), allKeys);
+
+    const variants = refineLanePathVariants(graph, cellKeys);
+    expect(variants.length).toBeGreaterThanOrEqual(2);
+
+    // Check no variant zigzags: count lane changes per variant
+    for (let vi = 0; vi < variants.length; vi++) {
+      const v = variants[vi]!;
+      let laneChanges = 0;
+      for (const e of v) {
+        if (e.type === 'lane_change') laneChanges++;
+      }
+      // A non-zigzag path should have at most ~2 lane changes
+      // (one at start to move inner, one at end to move outer)
+      // Zigzag would have 8+ lane changes on a 9-cell path
+      expect(laneChanges).toBeLessThanOrEqual(4);
+    }
+  });
+
   it('on 6-lane road should produce 3 distinct variants', () => {
     const { graph, cellKeys } = buildStraightRoad(10, RoadType.SIX_LANE);
     const variants = refineLanePathVariants(graph, cellKeys);

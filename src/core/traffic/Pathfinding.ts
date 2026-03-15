@@ -394,12 +394,12 @@ function buildLaneAdjacency(
   return adjacency;
 }
 
-/** Run Dijkstra on lane adjacency with optional edge penalties. */
+/** Run Dijkstra on lane adjacency with lane-based penalties. */
 function runLaneDijkstra(
   adjacency: Map<string, { edge: LaneEdge; cost: number }[]>,
   startId: string,
   endId: string,
-  penalties: Map<string, number>,
+  lanePenalties: Map<number, number>,
 ): LaneEdge[] | null {
   const dist = new Map<string, number>();
   const prev = new Map<string, { pointId: string; edge: LaneEdge }>();
@@ -423,7 +423,7 @@ function runLaneDijkstra(
     const neighbors = adjacency.get(pointId);
     if (!neighbors) continue;
     for (const { edge, cost: baseCost } of neighbors) {
-      const penalty = penalties.get(edge.id) ?? 1;
+      const penalty = lanePenalties.get(edge.to.lane) ?? 1;
       const newCost = cost + baseCost * penalty;
       if (newCost < (dist.get(edge.to.id) ?? Infinity)) {
         dist.set(edge.to.id, newCost);
@@ -462,18 +462,26 @@ export function refineLanePathVariants(
 
   const { startId, endId } = endpoints;
   const adjacency = buildLaneAdjacency(graph, cellPath);
-  const penalties = new Map<string, number>();
+  const lanePenalties = new Map<number, number>();
   const variants: LaneEdge[][] = [];
 
   for (let v = 0; v < LANE_PATH_VARIANT_COUNT; v++) {
-    const path = runLaneDijkstra(adjacency, startId, endId, penalties);
+    const path = runLaneDijkstra(adjacency, startId, endId, lanePenalties);
     if (!path || path.length === 0) break;
     variants.push(path);
 
-    // Penalize edges used in this variant so next iteration picks different lanes
+    // Penalize the dominant cruise lane (most-used to.lane) so next variant picks a different lane.
+    // Only the dominant lane is penalized — start/end transitional lanes are excluded
+    // to avoid over-penalizing when all variants must share the outermost lane at endpoints.
+    const laneCounts = new Map<number, number>();
     for (const edge of path) {
-      penalties.set(edge.id, (penalties.get(edge.id) ?? 1) * LANE_PENALTY_MULTIPLIER);
+      laneCounts.set(edge.to.lane, (laneCounts.get(edge.to.lane) ?? 0) + 1);
     }
+    let dominantLane = 0, maxCount = 0;
+    for (const [lane, count] of laneCounts) {
+      if (count > maxCount) { dominantLane = lane; maxCount = count; }
+    }
+    lanePenalties.set(dominantLane, (lanePenalties.get(dominantLane) ?? 1) * LANE_PENALTY_MULTIPLIER);
   }
 
   return variants;
