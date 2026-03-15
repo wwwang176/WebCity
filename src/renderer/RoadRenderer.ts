@@ -85,14 +85,28 @@ export class RoadRenderer {
       const hasVert = hasN || hasS;
       const hasHoriz = hasE || hasW;
 
-      // Infer per-axis road type from neighbors; fall back to cell's own type
+      // Determine per-axis width. Intersections (≥3 directions) use neighbor
+      // road types so mixed intersections (e.g. 4-lane × 2-lane) become rectangular.
+      // Straight/curve segments (≤2 directions) use their own width to prevent
+      // curb jumps when adjacent to a wider intersection.
       const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
-      const nN = hasN ? cellMap.get(`${r.x},${r.y - 1}`) : null;
-      const nS = hasS ? cellMap.get(`${r.x},${r.y + 1}`) : null;
-      const nE = hasE ? cellMap.get(`${r.x + 1},${r.y}`) : null;
-      const nW = hasW ? cellMap.get(`${r.x - 1},${r.y}`) : null;
-      const vertW = ROAD_WIDTHS[(nN ?? nS)?.roadType ?? r.roadType] ?? ownW;
-      const horizW = ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW;
+      let dirCount = 0;
+      if (hasN) dirCount++;
+      if (hasS) dirCount++;
+      if (hasE) dirCount++;
+      if (hasW) dirCount++;
+      const isIntersection = dirCount >= 3;
+
+      let vertW = ownW;
+      let horizW = ownW;
+      if (isIntersection) {
+        const nN = hasN ? cellMap.get(`${r.x},${r.y - 1}`) : null;
+        const nS = hasS ? cellMap.get(`${r.x},${r.y + 1}`) : null;
+        const nE = hasE ? cellMap.get(`${r.x + 1},${r.y}`) : null;
+        const nW = hasW ? cellMap.get(`${r.x - 1},${r.y}`) : null;
+        vertW = ROAD_WIDTHS[(nN ?? nS)?.roadType ?? r.roadType] ?? ownW;
+        horizW = ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW;
+      }
 
       // Vertical (N-S) strip — width from vertical neighbors
       if (hasVert || !hasHoriz) {
@@ -160,14 +174,25 @@ export class RoadRenderer {
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
       const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-      // Per-axis width from neighbors (same logic as buildRoadSurface)
+      // Per-axis width: intersections use neighbor types, straight segments use own type
       const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
-      const nN = hasN ? cellMap.get(`${r.x},${r.y - 1}`) : null;
-      const nS = hasS ? cellMap.get(`${r.x},${r.y + 1}`) : null;
-      const nE = hasE ? cellMap.get(`${r.x + 1},${r.y}`) : null;
-      const nW = hasW ? cellMap.get(`${r.x - 1},${r.y}`) : null;
-      const vertW = (hasN || hasS) ? (ROAD_WIDTHS[(nN ?? nS)?.roadType ?? r.roadType] ?? ownW) : ownW;
-      const horizW = (hasE || hasW) ? (ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW) : ownW;
+      let dirCount = 0;
+      if (hasN) dirCount++;
+      if (hasS) dirCount++;
+      if (hasE) dirCount++;
+      if (hasW) dirCount++;
+      const isIntersection = dirCount >= 3;
+
+      let vertW = ownW;
+      let horizW = ownW;
+      if (isIntersection) {
+        const nN = hasN ? cellMap.get(`${r.x},${r.y - 1}`) : null;
+        const nS = hasS ? cellMap.get(`${r.x},${r.y + 1}`) : null;
+        const nE = hasE ? cellMap.get(`${r.x + 1},${r.y}`) : null;
+        const nW = hasW ? cellMap.get(`${r.x - 1},${r.y}`) : null;
+        vertW = (hasN || hasS) ? (ROAD_WIDTHS[(nN ?? nS)?.roadType ?? r.roadType] ?? ownW) : ownW;
+        horizW = (hasE || hasW) ? (ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW) : ownW;
+      }
 
       // N/S sidewalks use horizW (horizontal road width), E/W use vertW
       const hHalf = horizW / 2;
