@@ -185,24 +185,24 @@ describe('RoadBuilder', () => {
     expect(center.roadFlags & RoadDirection.WEST).toBeTruthy();
   });
 
-  it('should use max roadType when crossing roads of different types', () => {
+  it('crossing road should always use the new roadType at intersection (transparent intersection)', () => {
     const grid = new Grid(20, 20);
     const builder = new RoadBuilder(grid);
     builder.buildRoad({ x: 3, y: 5 }, { x: 7, y: 5 }, RoadType.FOUR_LANE, 100000);
     builder.buildRoad({ x: 5, y: 3 }, { x: 5, y: 7 }, RoadType.TWO_LANE, 100000);
 
-    // Intersection cell should keep FOUR_LANE (higher), not be overwritten to TWO_LANE
+    // Intersection cell uses the new road's type (TWO_LANE), no max-preservation
     const center = grid.getCell(5, 5)!;
-    expect(center.roadType).toBe(RoadType.FOUR_LANE);
+    expect(center.roadType).toBe(RoadType.TWO_LANE);
   });
 
-  it('should upgrade roadType at intersection when new road is higher', () => {
+  it('crossing road with higher type should use that higher type at intersection', () => {
     const grid = new Grid(20, 20);
     const builder = new RoadBuilder(grid);
     builder.buildRoad({ x: 3, y: 5 }, { x: 7, y: 5 }, RoadType.TWO_LANE, 100000);
     builder.buildRoad({ x: 5, y: 3 }, { x: 5, y: 7 }, RoadType.FOUR_LANE, 100000);
 
-    // Intersection cell should upgrade to FOUR_LANE
+    // Intersection cell uses the new road's type (FOUR_LANE)
     const center = grid.getCell(5, 5)!;
     expect(center.roadType).toBe(RoadType.FOUR_LANE);
   });
