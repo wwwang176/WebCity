@@ -478,7 +478,7 @@ export class Game {
             this.state.budget.funds,
           );
           this.handleBuildResult(result, 'road', () => {
-            this.simLoop.markLaneGraphDirty();
+            this.simLoop.markLaneGraphDirty(result.affectedCells);
             this.recalculateAllRoadCoverage();
           });
           this.dirty.roads = true;
@@ -1532,6 +1532,7 @@ export class Game {
 
   /** Create a bus route with traffic pathfinding. Returns the route or null if no path. */
   createBusRoute(stops: readonly TransportStop[], vehicleCount = 1): TransportRoute | null {
+    this.simLoop.ensureLaneGraph();
     const lg = this.simLoop.laneGraph;
     const grid = this.state.grid;
     return this.state.bus.createRouteWithTraffic(

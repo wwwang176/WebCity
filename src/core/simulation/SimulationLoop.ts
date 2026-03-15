@@ -879,6 +879,15 @@ export class SimulationLoop {
   /** Cells affected by the most recent road change (for bus route revalidation). */
   private dirtyRoadCells: Set<string> | null = null;
 
+  /** Force an immediate lane graph rebuild if dirty. Call before operations
+   *  that need the latest graph (e.g. bus route creation). */
+  ensureLaneGraph(): void {
+    if (this.laneGraphDirty) {
+      this.rebuildLaneGraph();
+      this.laneGraphDirty = false;
+    }
+  }
+
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;
     this.commuteCache.bumpGeneration();
@@ -919,6 +928,7 @@ export class SimulationLoop {
         (fx, fy, tx, ty) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, g),
         (cellPath) => refineLanePath(lg, cellPath),
         this.state.traffic,
+        grid,
       );
       this.dirtyRoadCells = null;
     }
@@ -1059,12 +1069,15 @@ export class SimulationLoop {
 
         // Build or update the citizen's cached route
         const existingRoute = this.commuteCache.get(citizen.id);
+        // If roads changed since the last cache, clear the other direction too
+        // so it gets recalculated on its next use (prevents permanently stale paths)
+        const isRoadChange = existingRoute != null && existingRoute.generation !== this.commuteCache.roadGeneration;
         const cachedRoute: CachedRoute = {
           citizenId: citizen.id,
           homeId: citizen.homeId!,
           workplaceId: citizen.workplaceId!,
-          morningPath: isMorning ? edgePath : (existingRoute?.morningPath ?? null),
-          eveningPath: isMorning ? (existingRoute?.eveningPath ?? null) : edgePath,
+          morningPath: isMorning ? edgePath : (isRoadChange ? null : (existingRoute?.morningPath ?? null)),
+          eveningPath: isMorning ? (isRoadChange ? null : (existingRoute?.eveningPath ?? null)) : edgePath,
           status: 'ready',
           generation: this.commuteCache.roadGeneration,
         };
