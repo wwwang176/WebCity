@@ -21,6 +21,7 @@ import { MetroSystem } from '../transport/MetroSystem';
 import { RailSystem } from '../transport/RailSystem';
 import { FerrySystem } from '../transport/FerrySystem';
 import { AirportSystem } from '../transport/AirportSystem';
+import { CURRENT_SAVE_VERSION, runMigrations } from './migrations';
 
 interface SerializedCell {
   x: number;
@@ -29,7 +30,7 @@ interface SerializedCell {
 }
 
 interface SerializedState {
-  version: 1;
+  version: number;
   grid: {
     width: number;
     height: number;
@@ -82,7 +83,7 @@ export function serializeGameState(state: GameState): string {
   });
 
   const serialized: SerializedState = {
-    version: 1,
+    version: CURRENT_SAVE_VERSION,
     grid: {
       width: state.grid.width,
       height: state.grid.height,
@@ -209,6 +210,12 @@ export function deserializeGameState(json: string): GameState {
       else if (cell.buildingId === getInfraBuildingId('train_station')) state.rail.buildStation(x, y);
       else if (cell.buildingId === getInfraBuildingId('ferry_dock')) state.ferry.addDock(x, y);
     });
+  }
+
+  // Run save migrations for older versions
+  const saveVersion = saved.version ?? 0;
+  if (saveVersion < CURRENT_SAVE_VERSION) {
+    runMigrations(state, saveVersion);
   }
 
   return state;
