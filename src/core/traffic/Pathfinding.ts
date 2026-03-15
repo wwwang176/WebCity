@@ -344,7 +344,7 @@ function refineLanePathFallback(
 function resolveLaneEndpoints(
   graph: LaneGraph,
   cellPath: string[],
-): { startId: string; endId: string } | null {
+): { startId: string; endId: string; outermostLane: number } | null {
   const firstDir = cellDirection(cellPath[0]!, cellPath[1]!);
   if (!firstDir) return null;
   const lastDir = cellDirection(cellPath[cellPath.length - 2]!, cellPath[cellPath.length - 1]!);
@@ -358,7 +358,7 @@ function resolveLaneEndpoints(
   const endId = `${cellPath[cellPath.length - 1]}:${endDir}:${lastMaxLane}:entry`;
 
   if (!graph.getPoint(startId) || !graph.getPoint(endId)) return null;
-  return { startId, endId };
+  return { startId, endId, outermostLane: Math.max(firstMaxLane, lastMaxLane) };
 }
 
 /** Build adjacency map for lane-level Dijkstra, restricted to a cell-level path. */
@@ -460,7 +460,7 @@ export function refineLanePathVariants(
   const endpoints = resolveLaneEndpoints(graph, cellPath);
   if (!endpoints) return [];
 
-  const { startId, endId } = endpoints;
+  const { startId, endId, outermostLane } = endpoints;
   const adjacency = buildLaneAdjacency(graph, cellPath);
   const lanePenalties = new Map<number, number>();
   const variants: LaneEdge[][] = [];
@@ -470,18 +470,17 @@ export function refineLanePathVariants(
     if (!path || path.length === 0) break;
     variants.push(path);
 
-    // Penalize the dominant cruise lane (most-used to.lane) so next variant picks a different lane.
-    // Only the dominant lane is penalized — start/end transitional lanes are excluded
-    // to avoid over-penalizing when all variants must share the outermost lane at endpoints.
-    const laneCounts = new Map<number, number>();
+    // Penalize all lanes this variant used, EXCEPT the outermost lane.
+    // The outermost lane is shared by all variants (forced start/end point)
+    // and should never be penalized.
+    const usedLanes = new Set<number>();
     for (const edge of path) {
-      laneCounts.set(edge.to.lane, (laneCounts.get(edge.to.lane) ?? 0) + 1);
+      usedLanes.add(edge.to.lane);
     }
-    let dominantLane = 0, maxCount = 0;
-    for (const [lane, count] of laneCounts) {
-      if (count > maxCount) { dominantLane = lane; maxCount = count; }
+    usedLanes.delete(outermostLane);
+    for (const lane of usedLanes) {
+      lanePenalties.set(lane, (lanePenalties.get(lane) ?? 1) * LANE_PENALTY_MULTIPLIER);
     }
-    lanePenalties.set(dominantLane, (lanePenalties.get(dominantLane) ?? 1) * LANE_PENALTY_MULTIPLIER);
   }
 
   return variants;
