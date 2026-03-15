@@ -117,6 +117,24 @@ export class LaneGraph {
       }
     }
 
+    // Expand through transparent intersections: if an affected cell neighbors
+    // an intersection, also include cells on the other side of that intersection.
+    // This ensures cross-intersection edges are regenerated properly.
+    const extraCells = new Set<string>();
+    for (const key of affected) {
+      const { x, y } = parseCellKey(key);
+      const cell = grid.getCell(x, y);
+      if (!cell || cell.roadType === RoadType.NONE) continue;
+      if (!isIntersectionCell(cell.roadFlags)) continue;
+
+      // This affected cell IS an intersection — include its far-side neighbors
+      for (const d of DIR_FLAGS) {
+        if (!(cell.roadFlags & d.flag)) continue;
+        extraCells.add(toPosKey(x + d.dx, y + d.dy));
+      }
+    }
+    for (const key of extraCells) affected.add(key);
+
     // Remove old points + edges for affected cells
     for (const key of affected) {
       this.removeCellData(key);

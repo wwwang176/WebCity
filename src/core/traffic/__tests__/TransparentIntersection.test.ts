@@ -289,6 +289,29 @@ describe('Transparent Intersection — updateCells', () => {
     const crossEdges = graph.getEdgesBetween('0,1', '2,1');
     expect(crossEdges.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('updateCells on a neighbor should preserve cross-intersection edges from far-side cells', () => {
+    // Build cross intersection
+    const cells = new Map([
+      ['0,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST }],
+      ['1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST }],
+      ['2,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.WEST }],
+      ['1,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH }],
+      ['1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH }],
+    ]);
+    const graph = new LaneGraph();
+    graph.buildFromGrid(makeGridLookup(cells), ['0,1', '1,1', '2,1', '1,0', '1,2']);
+
+    // Verify cross-intersection edges exist before update
+    const beforeEdges = graph.getEdgesBetween('2,1', '0,1');
+    expect(beforeEdges.length).toBeGreaterThanOrEqual(1);
+
+    // Update only cell (0,1) — should still have cross edges from (2,1)→(0,1)
+    graph.updateCells(makeGridLookup(cells), ['0,1']);
+
+    const afterEdges = graph.getEdgesBetween('2,1', '0,1');
+    expect(afterEdges.length).toBeGreaterThanOrEqual(1);
+  });
 });
 
 describe('Transparent Intersection — Non-intersection cells adjacent to intersection', () => {
