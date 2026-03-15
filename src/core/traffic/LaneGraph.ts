@@ -313,46 +313,8 @@ export class LaneGraph {
     activeDirections: typeof DIR_FLAGS,
     dirLanes: number,
   ): void {
-    // For a straight/curve segment: connect exit → neighbor entry
-    for (const { dir, dx, dy } of activeDirections) {
-      const nx = x + dx, ny = y + dy;
-      const neighbor = grid.getCell(nx, ny);
-      if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
-
-      // If the neighbor is an intersection, generate cross-intersection edges
-      // that span through it to cells on the other side.
-      if (isIntersectionCell(neighbor.roadFlags)) {
-        this.generateCrossIntersectionEdges(grid, cellKey, dir, nx, ny, dirLanes);
-        continue;
-      }
-
-      const neighborKey = toPosKey(nx, ny);
-      const neighborDirLanes = getLaneCount(neighbor.roadType);
-      const oppositeDirection = oppositeDir(dir);
-
-      // Connect: this cell exit[dir] → neighbor entry[oppositeDir] (same-lane only)
-      // Straight segments use same-lane connections; lane changes happen within
-      // the cell via lane_change edges, not at the cell boundary.
-      const minLanes = Math.min(dirLanes, neighborDirLanes);
-      for (let lane = 0; lane < minLanes; lane++) {
-        const exitId = `${cellKey}:${dir}:${lane}:exit`;
-        const entryId = `${neighborKey}:${oppositeDirection}:${lane}:entry`;
-
-        const fromPt = this.points.get(exitId);
-        const toPt = this.points.get(entryId);
-        if (!fromPt || !toPt) continue;
-
-        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
-        this.edges.push({
-          id: `${exitId}>${entryId}`,
-          from: fromPt,
-          to: toPt,
-          length: Math.max(length, 0.1),
-          type: 'straight',
-        });
-      }
-
-      // Also connect within cell: entry[oppositeDir] → exit[dir] (traversal through cell)
+    // Within-cell traversal edges: entry[otherDir] → exit[dir] (independent of neighbors)
+    for (const { dir } of activeDirections) {
       for (let lane = 0; lane < dirLanes; lane++) {
         for (const otherD of activeDirections) {
           if (otherD.dir === dir) continue;
@@ -391,6 +353,44 @@ export class LaneGraph {
             });
           }
         }
+      }
+    }
+
+    // Cross-cell edges: exit → neighbor entry
+    for (const { dir, dx, dy } of activeDirections) {
+      const nx = x + dx, ny = y + dy;
+      const neighbor = grid.getCell(nx, ny);
+      if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
+
+      // If the neighbor is an intersection, generate cross-intersection edges
+      // that span through it to cells on the other side.
+      if (isIntersectionCell(neighbor.roadFlags)) {
+        this.generateCrossIntersectionEdges(grid, cellKey, dir, nx, ny, dirLanes);
+        continue;
+      }
+
+      const neighborKey = toPosKey(nx, ny);
+      const neighborDirLanes = getLaneCount(neighbor.roadType);
+      const oppositeDirection = oppositeDir(dir);
+
+      // Same-lane connections to non-intersection neighbors
+      const minLanes = Math.min(dirLanes, neighborDirLanes);
+      for (let lane = 0; lane < minLanes; lane++) {
+        const exitId = `${cellKey}:${dir}:${lane}:exit`;
+        const entryId = `${neighborKey}:${oppositeDirection}:${lane}:entry`;
+
+        const fromPt = this.points.get(exitId);
+        const toPt = this.points.get(entryId);
+        if (!fromPt || !toPt) continue;
+
+        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
+        this.edges.push({
+          id: `${exitId}>${entryId}`,
+          from: fromPt,
+          to: toPt,
+          length: Math.max(length, 0.1),
+          type: 'straight',
+        });
       }
     }
   }
