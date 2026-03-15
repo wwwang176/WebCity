@@ -53,25 +53,15 @@ export class RoadBuilder {
         flags |= getDirectionFlag(pos, next);
       }
 
-      // Merge with existing road flags. At crossing intersections (≥3 directions
-      // after merge), keep the higher roadType to prevent lane count downgrades.
-      // For same-direction rebuilds (≤2 directions), allow the new type to overwrite.
+      // Merge with existing road flags. Intersection cells are "transparent"
+      // in the lane graph (no own points/edges), so we always use the new roadType.
       const existing = this.grid.getCell(pos.x, pos.y);
-      let effectiveRoadType = roadType;
       if (existing && existing.roadType !== RoadType.NONE) {
         flags |= existing.roadFlags;
-        let mergedDirCount = 0;
-        if (flags & 0b0001) mergedDirCount++; // NORTH
-        if (flags & 0b0010) mergedDirCount++; // SOUTH
-        if (flags & 0b0100) mergedDirCount++; // WEST
-        if (flags & 0b1000) mergedDirCount++; // EAST
-        if (mergedDirCount >= 3 && existing.roadType > roadType) {
-          effectiveRoadType = existing.roadType;
-        }
       }
 
       this.grid.setCell(pos.x, pos.y, {
-        roadType: effectiveRoadType,
+        roadType: roadType,
         roadFlags: flags,
       });
     }
