@@ -53,14 +53,18 @@ export class RoadBuilder {
         flags |= getDirectionFlag(pos, next);
       }
 
-      // Merge with existing road flags
+      // Merge with existing road flags and keep higher roadType at intersections
       const existing = this.grid.getCell(pos.x, pos.y);
+      let effectiveRoadType = roadType;
       if (existing && existing.roadType !== RoadType.NONE) {
         flags |= existing.roadFlags;
+        if (existing.roadType > roadType) {
+          effectiveRoadType = existing.roadType;
+        }
       }
 
       this.grid.setCell(pos.x, pos.y, {
-        roadType: roadType,
+        roadType: effectiveRoadType,
         roadFlags: flags,
       });
     }
