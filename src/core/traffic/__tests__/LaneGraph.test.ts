@@ -171,34 +171,42 @@ describe('LaneGraph', () => {
     });
   });
 
-  describe('Intersection turn edges', () => {
-    it('should create turn edges at a cross intersection', () => {
-      // Cross intersection at (1,1)
+  describe('Intersection turn edges (transparent intersection)', () => {
+    it('should create cross-intersection turn edges at a cross intersection', () => {
+      // Cross intersection at (1,1) — transparent: no internal edges
+      // Neighbor stubs must have flags pointing TOWARD the intersection
       const cells = new Map([
         ['0,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST }],
         ['1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST }],
         ['2,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.WEST }],
-        ['1,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH }],
-        ['1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH }],
+        ['1,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH }],
+        ['1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH }],
       ]);
       const graph = new LaneGraph();
       graph.buildFromGrid(makeGridLookup(cells), ['0,1', '1,1', '2,1', '1,0', '1,2']);
 
+      // Intersection cell has NO internal edges
+      const internalEdges = graph.getAllEdges().filter(
+        e => e.from.cellKey === '1,1' || e.to.cellKey === '1,1'
+      );
+      expect(internalEdges.length).toBe(0);
+
+      // Turn edges are cross-intersection: neighbor → opposite neighbor
       const allEdges = graph.getAllEdges();
       const turnEdges = allEdges.filter(e => e.type === 'turn');
 
-      // 4 incoming directions, each can go to 3 outgoing directions
-      // 2LINE = 1 lane per direction → 4 × 3 = 12 turn edges
-      expect(turnEdges.length).toBe(12);
+      // 4 neighbors × 2 turn targets each × 1 lane = 8 turn edges
+      expect(turnEdges.length).toBe(8);
     });
 
-    it('should create turn edges at a T-junction (3 directions only)', () => {
+    it('should create cross-intersection turn edges at a T-junction (3 directions only)', () => {
       // T-junction at (1,1): EAST, WEST, SOUTH (no NORTH)
+      // Neighbors must have flags toward intersection
       const cells = new Map([
         ['0,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST }],
         ['1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST }],
         ['2,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.WEST }],
-        ['1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH }],
+        ['1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH }],
       ]);
       const graph = new LaneGraph();
       graph.buildFromGrid(makeGridLookup(cells), ['0,1', '1,1', '2,1', '1,2']);
@@ -206,8 +214,13 @@ describe('LaneGraph', () => {
       const allEdges = graph.getAllEdges();
       const turnEdges = allEdges.filter(e => e.type === 'turn');
 
-      // 3 incoming dirs × 2 outgoing dirs = 6 turn edges
-      expect(turnEdges.length).toBe(6);
+      // 3 neighbors: each has 1 turn target (not counting straight-through)
+      // (0,1)→(1,2) turn, (2,1)→(1,2) turn, (1,2)→(0,1) turn, (1,2)→(2,1) turn
+      // Wait: (0,1) exits east → targets are south(1,2) [turn] and east(2,1) [straight]
+      // (2,1) exits west → targets are south(1,2) [turn] and west(0,1) [straight]
+      // (1,2) exits north → targets are east(2,1) [turn] and west(0,1) [turn]
+      // Total turn edges: 1 + 1 + 2 = 4
+      expect(turnEdges.length).toBe(4);
     });
 
     it('should create turn edges with Bezier control points for 90° turns', () => {
@@ -215,8 +228,8 @@ describe('LaneGraph', () => {
         ['0,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST }],
         ['1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST }],
         ['2,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.WEST }],
-        ['1,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH }],
-        ['1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH }],
+        ['1,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH }],
+        ['1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.NORTH }],
       ]);
       const graph = new LaneGraph();
       graph.buildFromGrid(makeGridLookup(cells), ['0,1', '1,1', '2,1', '1,0', '1,2']);
@@ -379,9 +392,10 @@ describe('LaneGraph', () => {
     });
   });
 
-  describe('All-to-all cross-cell edges at intersections', () => {
-    it('FOUR_LANE intersection should connect all exit lanes to TWO_LANE neighbor', () => {
+  describe('All-to-all cross-intersection edges (transparent)', () => {
+    it('FOUR_LANE through intersection to TWO_LANE: all exit lanes connect', () => {
       // T-junction: FOUR_LANE E-W, TWO_LANE south
+      // With transparent intersection, edges go from (0,1) → (1,2) directly
       const cells = new Map([
         ['0,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST }],
         ['1,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST | RoadDirection.WEST | RoadDirection.SOUTH }],
@@ -391,19 +405,19 @@ describe('LaneGraph', () => {
       const graph = new LaneGraph();
       graph.buildFromGrid(makeGridLookup(cells), ['0,1', '1,1', '2,1', '1,2']);
 
-      // Cross-cell edges from intersection (1,1) south to TWO_LANE (1,2)
+      // Cross-intersection turn edges from (0,1) → (1,2) [turn, east→south]
       const crossEdges = graph.getAllEdges().filter(
-        e => e.from.cellKey === '1,1' && e.to.cellKey === '1,2' && e.type === 'straight'
+        e => e.from.cellKey === '0,1' && e.to.cellKey === '1,2'
       );
 
-      // Both exit:0 AND exit:1 should connect to TWO_LANE's entry:0
+      // 2 exit lanes × 1 entry lane = 2 cross-intersection edges
       expect(crossEdges.length).toBe(2);
       const fromLanes = new Set(crossEdges.map(e => e.from.lane));
       expect(fromLanes.has(0)).toBe(true);
       expect(fromLanes.has(1)).toBe(true);
     });
 
-    it('FOUR_LANE intersection should have all-to-all edges to FOUR_LANE neighbor', () => {
+    it('FOUR_LANE through intersection to FOUR_LANE: all-to-all edges', () => {
       const cells = new Map([
         ['0,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST }],
         ['1,1', { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.EAST | RoadDirection.WEST | RoadDirection.SOUTH | RoadDirection.NORTH }],
@@ -414,12 +428,12 @@ describe('LaneGraph', () => {
       const graph = new LaneGraph();
       graph.buildFromGrid(makeGridLookup(cells), ['0,1', '1,1', '2,1', '1,0', '1,2']);
 
-      // Cross-cell edges from intersection east to FOUR_LANE neighbor
+      // Cross-intersection straight edges from (0,1) → (2,1) [straight-through]
       const crossEdges = graph.getAllEdges().filter(
-        e => e.from.cellKey === '1,1' && e.to.cellKey === '2,1' && e.type === 'straight'
+        e => e.from.cellKey === '0,1' && e.to.cellKey === '2,1'
       );
 
-      // 2 exit lanes × 2 entry lanes = 4 cross-cell edges
+      // 2 exit lanes × 2 entry lanes = 4 cross-intersection edges
       expect(crossEdges.length).toBe(4);
     });
   });

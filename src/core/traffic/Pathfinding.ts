@@ -1,6 +1,7 @@
 import { RoadNetwork } from '../road/RoadNetwork';
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
+import { isIntersectionCell } from './LaneGraph';
 import { parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance } from '../grid/GridHelpers';
 
 function heuristic(a: string, b: string): number {
@@ -226,10 +227,7 @@ export function refineLanePath(
 
   // ── Build valid edge set restricted to cellPath ──
   const cellSet = new Set(cellPath);
-  const validCrossPairs = new Set<string>();
-  for (let i = 0; i < cellPath.length - 1; i++) {
-    validCrossPairs.add(`${cellPath[i]}->${cellPath[i + 1]}`);
-  }
+  const validCrossPairs = buildValidCrossPairs(graph, cellPath);
 
   const adjacency = new Map<string, { edge: LaneEdge; cost: number }[]>();
 
@@ -361,16 +359,35 @@ function resolveLaneEndpoints(
   return { startId, endId, outermostLane: Math.max(firstMaxLane, lastMaxLane) };
 }
 
+/**
+ * Build the set of valid cross-cell pairs for a cell-level path,
+ * including skip-pairs for transparent intersection cells.
+ */
+function buildValidCrossPairs(
+  graph: LaneGraph,
+  cellPath: string[],
+): Set<string> {
+  const validCrossPairs = new Set<string>();
+  for (let i = 0; i < cellPath.length - 1; i++) {
+    validCrossPairs.add(`${cellPath[i]}->${cellPath[i + 1]}`);
+  }
+  // Add skip-pairs: if cellPath[i] is a transparent intersection (no connection
+  // points in the graph), cross-intersection edges skip from [i-1] to [i+1].
+  for (let i = 1; i < cellPath.length - 1; i++) {
+    if (graph.getConnectionPoints(cellPath[i]!).length === 0) {
+      validCrossPairs.add(`${cellPath[i - 1]}->${cellPath[i + 1]}`);
+    }
+  }
+  return validCrossPairs;
+}
+
 /** Build adjacency map for lane-level Dijkstra, restricted to a cell-level path. */
 function buildLaneAdjacency(
   graph: LaneGraph,
   cellPath: string[],
 ): Map<string, { edge: LaneEdge; cost: number }[]> {
   const cellSet = new Set(cellPath);
-  const validCrossPairs = new Set<string>();
-  for (let i = 0; i < cellPath.length - 1; i++) {
-    validCrossPairs.add(`${cellPath[i]}->${cellPath[i + 1]}`);
-  }
+  const validCrossPairs = buildValidCrossPairs(graph, cellPath);
 
   const adjacency = new Map<string, { edge: LaneEdge; cost: number }[]>();
 
