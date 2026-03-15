@@ -545,8 +545,8 @@ export class Game {
     label: string,
     onSuccess?: () => void,
   ): void {
-    if (result.success && result.cost) {
-      this.state.budget.funds -= result.cost;
+    if (result.success) {
+      if (result.cost) this.state.budget.funds -= result.cost;
       onSuccess?.();
       this.audioManager.playSfx('build');
     } else if (!result.success && result.reason) {
