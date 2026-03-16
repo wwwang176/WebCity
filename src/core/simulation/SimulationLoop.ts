@@ -118,6 +118,7 @@ export class SimulationLoop {
   private state: GameState;
   private lastAgeYear = -1;
   private lastDeathDay = -1;
+  private hasEverHadUtilities = false;
 
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
@@ -201,6 +202,9 @@ export class SimulationLoop {
       const infraPositions = new Set<string>();
       for (const p of this.state.power.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
       for (const p of this.state.water.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
+      if (!this.hasEverHadUtilities && (this.state.power.getPlants().length > 0 || this.state.water.getPlants().length > 0)) {
+        this.hasEverHadUtilities = true;
+      }
       // Calculate demand before coverage so supplyRatio is available for budget-drain
       this.state.power.calculateDemand(this.state.grid);
       this.state.power.calculateCoverage(this.state.grid, infraPositions);
@@ -500,18 +504,14 @@ export class SimulationLoop {
       const commute = Math.max(1, avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
 
       // Check if citizen's home has power and water
-      // Skip check if no plants exist (initial city state)
+      // Only check if city has (or had) utility plants — skip for tests without infrastructure
       let homePowered = true;
       let homeWatered = true;
-      if (citizen.homeId) {
+      if (citizen.homeId && this.hasEverHadUtilities) {
         const pos = parsePosKey(citizen.homeId);
         if (pos) {
-          if (this.state.power.getPlants().length > 0) {
-            homePowered = this.state.power.isPowered(pos.x, pos.y);
-          }
-          if (this.state.water.getPlants().length > 0) {
-            homeWatered = this.state.water.isSupplied(pos.x, pos.y);
-          }
+          homePowered = this.state.power.isPowered(pos.x, pos.y);
+          homeWatered = this.state.water.isSupplied(pos.x, pos.y);
         }
       }
 
