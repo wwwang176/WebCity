@@ -1228,31 +1228,19 @@ export class SimulationLoop {
 
   /** Tick service vehicle manager: spawn/repath patrol vehicles in coverage areas. */
   private tickServiceVehicles(): void {
-    const grid = this.state.grid;
+    // RoadCoverageService implements ServiceFacilityProvider — no adapter needed
     const services: Record<ServiceVehicleType, ServiceFacilityProvider | null> = {
-      police: this.adaptService(this.state.police.getStations(), this.state.police),
-      fire: this.adaptService(this.state.fire.getStations(), this.state.fire),
-      health: this.adaptService(this.state.health.getHospitals(), this.state.health),
-      garbage: this.adaptService(this.state.garbage.getFacilities(), this.state.garbage),
+      police: this.state.police.getFacilities().length > 0 ? this.state.police : null,
+      fire: this.state.fire.getFacilities().length > 0 ? this.state.fire : null,
+      health: this.state.health.getFacilities().length > 0 ? this.state.health : null,
+      garbage: this.state.garbage.getFacilities().length > 0 ? this.state.garbage : null,
     };
     this.serviceVehicleManager.tick(
       this.state.traffic,
       services,
-      grid,
+      this.state.grid,
       this.laneGraph,
     );
-  }
-
-  /** Adapt a civic service to ServiceFacilityProvider interface. */
-  private adaptService(
-    facilities: ReadonlyArray<{ x: number; y: number }>,
-    service: { getCoveredCellsWithCost(): ReadonlyMap<string, number> },
-  ): ServiceFacilityProvider | null {
-    if (facilities.length === 0) return null;
-    return {
-      getFacilityPositions: () => facilities,
-      getCoveredCellsWithCost: () => service.getCoveredCellsWithCost(),
-    };
   }
 
   /**

@@ -1,5 +1,6 @@
 import type { SizedGrid } from '../grid/GridHelpers';
 import { RoadCoverageMap } from './RoadCoverageFlood';
+import type { ServiceFacilityProvider } from '../traffic/ServiceVehicleManager';
 
 /** Minimum facility shape: must have id and position. */
 export interface Facility {
@@ -18,7 +19,7 @@ export interface Facility {
  * - defaultFacilityWidth/Height: building footprint for coverage origin
  * - idPrefix: e.g. "police_", "hospital_"
  */
-export abstract class RoadCoverageService<F extends Facility> {
+export abstract class RoadCoverageService<F extends Facility> implements ServiceFacilityProvider {
   protected facilities: F[] = [];
   protected coverage = new RoadCoverageMap();
   protected nextId = 1;
@@ -81,6 +82,11 @@ export abstract class RoadCoverageService<F extends Facility> {
 
   /** Get all facilities (read-only). Subclasses may alias this (e.g. getStations). */
   getFacilities(): readonly F[] {
+    return this.facilities;
+  }
+
+  /** ServiceFacilityProvider: return facility positions for service vehicle spawning. */
+  getFacilityPositions(): ReadonlyArray<{ x: number; y: number }> {
     return this.facilities;
   }
 }
