@@ -204,6 +204,9 @@ export class SidewalkGraph {
     return result;
   }
 
+  /** Max search radius for findNearestNode (cells). Beyond this, return null. */
+  static readonly MAX_NEAREST_DISTANCE = 2;
+
   findNearestNode(bx: number, by: number): SidewalkNode | null {
     let best: SidewalkNode | null = null;
     let bestDist = Infinity;
@@ -215,6 +218,8 @@ export class SidewalkGraph {
         best = node;
       }
     }
+    // Reject matches too far away — prevents pedestrians on unrelated roads
+    if (bestDist > SidewalkGraph.MAX_NEAREST_DISTANCE) return null;
     return best;
   }
 
