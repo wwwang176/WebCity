@@ -201,9 +201,10 @@ export class SimulationLoop {
       const infraPositions = new Set<string>();
       for (const p of this.state.power.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
       for (const p of this.state.water.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
-      // Calculate demand before coverage so supplyRatio is available for trimming
+      // Calculate demand before coverage so supplyRatio is available for budget-drain
       this.state.power.calculateDemand(this.state.grid);
       this.state.power.calculateCoverage(this.state.grid, infraPositions);
+      this.state.water.calculateDemand(this.state.grid);
       this.state.water.calculateCoverage(this.state.grid, infraPositions);
     }
 

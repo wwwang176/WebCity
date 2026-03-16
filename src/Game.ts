@@ -1555,13 +1555,21 @@ export class Game {
       return;
     }
 
-    // Water overlay: binary building highlight (green/red)
+    // Water overlay: 3-state building highlight (blue/yellow/red)
     if (overlayType === 'water') {
       const water = this.state.water;
+      const ratio = water.getSupplyRatio();
       this.state.grid.forEachCell((cell, x, y) => {
         if (cell.buildingId === 0) return;
         if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) return;
-        const color = water.isSupplied(x, y) ? 0x00e676 : 0xff5252;
+        let color: number;
+        if (water.isSupplied(x, y)) {
+          color = 0x42a5f5; // blue: supplied
+        } else if (ratio < 1 && water.isInCoverage(x, y)) {
+          color = 0xffeb3b; // yellow: in coverage but undersupplied
+        } else {
+          color = 0xff5252; // red: no coverage
+        }
         this.overlayHighlightCells.push({ x, y, color });
       });
       return;

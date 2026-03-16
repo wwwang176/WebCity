@@ -43,6 +43,9 @@ export interface InfraDetailContext {
   };
   water: {
     getPlants(): readonly { x: number; y: number; output: number }[];
+    getSupply(): number;
+    getDemand(): number;
+    getSupplyRatio(): number;
   };
   citizens: {
     getCitizens(): readonly { homeId: string | null; age: number; lifeStage: string }[];
@@ -127,7 +130,14 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   water: (ctx, cx, cy) => {
     const w = findAtPosition(ctx.water.getPlants(), cx, cy);
-    return { Output: w?.output ?? 500 };
+    const ratio = ctx.water.getSupplyRatio();
+    const ratioStr = `${(ratio * 100).toFixed(1)}%${ratio < 1 ? ' ⚠️' : ''}`;
+    return {
+      Output: w?.output ?? 1500,
+      'City Supply': Math.round(ctx.water.getSupply()),
+      'City Demand': Math.round(ctx.water.getDemand()),
+      'Supply Ratio': ratioStr,
+    };
   },
   airport: () => ({ Status: 'Operational' }),
 };

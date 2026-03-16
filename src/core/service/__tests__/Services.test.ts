@@ -139,42 +139,27 @@ describe('PowerGrid', () => {
 });
 
 describe('WaterNetwork', () => {
-  it('should supply cells within Euclidean radius of plant', () => {
-    const grid = new Grid(30, 30);
+  it('should supply cells connected via roads from plant', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 0, y: 5 }, { x: 10, y: 5 }, RoadType.TWO_LANE, 100000);
+
     const water = new WaterNetwork();
-    water.addPlant({ x: 15, y: 15, output: 100 });
+    water.addPlant({ x: 0, y: 5, output: 500 });
     water.calculateCoverage(grid);
 
-    // Within radius
-    expect(water.isSupplied(15, 15)).toBe(true);
-    expect(water.isSupplied(20, 15)).toBe(true);
-    expect(water.isSupplied(25, 15)).toBe(true);
-    // Diagonal within circle
-    expect(water.isSupplied(22, 22)).toBe(true);
+    expect(water.isSupplied(0, 5)).toBe(true);
+    expect(water.isSupplied(5, 5)).toBe(true);
+    expect(water.isSupplied(10, 5)).toBe(true);
   });
 
-  it('should NOT supply cells beyond Euclidean radius', () => {
-    const grid = new Grid(30, 30);
+  it('should NOT supply cells not connected by road or building', () => {
+    const grid = new Grid(20, 20);
     const water = new WaterNetwork();
-    water.addPlant({ x: 15, y: 15, output: 100 });
+    water.addPlant({ x: 0, y: 0, output: 500 });
     water.calculateCoverage(grid);
 
-    // Beyond radius
-    expect(water.isSupplied(26, 15)).toBe(false);
-    // Diagonal corner — outside circle
-    expect(water.isSupplied(25, 25)).toBe(false);
-  });
-
-  it('should produce circular coverage, not diamond/square', () => {
-    const grid = new Grid(30, 30);
-    const water = new WaterNetwork();
-    water.addPlant({ x: 15, y: 15, output: 100 });
-    water.calculateCoverage(grid);
-
-    // (22, 22) at Euclidean ~9.9 from (15,15) — inside circle
-    expect(water.isSupplied(22, 22)).toBe(true);
-    // (25, 25) at Euclidean ~14.14 — outside circle
-    expect(water.isSupplied(25, 25)).toBe(false);
+    expect(water.isSupplied(3, 0)).toBe(false);
   });
 
   it('should relay water infinitely through continuous roads', () => {
@@ -183,29 +168,24 @@ describe('WaterNetwork', () => {
     builder.buildRoad({ x: 10, y: 5 }, { x: 35, y: 5 }, RoadType.TWO_LANE, 100000);
 
     const water = new WaterNetwork();
-    water.addPlant({ x: 10, y: 5, output: 100 });
+    water.addPlant({ x: 10, y: 5, output: 500 });
     water.calculateCoverage(grid);
 
-    // Within base circle (dist 10)
     expect(water.isSupplied(20, 5)).toBe(true);
-    // Far beyond circle but on road — relay keeps going
-    expect(water.isSupplied(25, 5)).toBe(true); // dist 15
-    expect(water.isSupplied(30, 5)).toBe(true); // dist 20
-    expect(water.isSupplied(35, 5)).toBe(true); // dist 25
-    // 1 past road end — range spill
-    expect(water.isSupplied(36, 5)).toBe(true);
-    // Far past road end — NOT covered
-    expect(water.isSupplied(38, 5)).toBe(false);
+    expect(water.isSupplied(30, 5)).toBe(true);
+    expect(water.isSupplied(35, 5)).toBe(true);
+    // Past road end — not connected
+    expect(water.isSupplied(37, 5)).toBe(false);
   });
 
-  it('should supply buildings connected via roads (backward compat)', () => {
+  it('should supply buildings connected via roads', () => {
     const grid = new Grid(20, 20);
     const builder = new RoadBuilder(grid);
     builder.buildRoad({ x: 0, y: 5 }, { x: 10, y: 5 }, RoadType.TWO_LANE, 100000);
     grid.setCell(5, 4, { buildingId: 1 });
 
     const water = new WaterNetwork();
-    water.addPlant({ x: 0, y: 5, output: 100 });
+    water.addPlant({ x: 0, y: 5, output: 500 });
     water.calculateCoverage(grid);
 
     expect(water.isSupplied(5, 4)).toBe(true);
@@ -216,9 +196,25 @@ describe('WaterNetwork', () => {
     grid.setCell(15, 15, { buildingId: 1 });
 
     const water = new WaterNetwork();
-    water.addPlant({ x: 0, y: 0, output: 100 });
+    water.addPlant({ x: 0, y: 0, output: 500 });
     water.calculateCoverage(grid);
 
     expect(water.isSupplied(15, 15)).toBe(false);
+  });
+
+  it('should drain budget per building via BFS', () => {
+    const grid = new Grid(20, 20);
+    for (let i = 0; i < 15; i++) grid.setCell(i, 0, { roadFlags: 1, roadType: 1 });
+    grid.setCell(1, 0, { zoneType: 1, buildingId: 1, roadFlags: 1, roadType: 1 }); // near
+    grid.setCell(9, 0, { zoneType: 1, buildingId: 1, roadFlags: 1, roadType: 1 }); // far
+
+    const water = new WaterNetwork();
+    water.addPlant({ x: 0, y: 0, output: 1 }); // very low budget
+    water.calculateDemand(grid);
+    water.calculateCoverage(grid);
+
+    // Near building powered, far building not
+    expect(water.isSupplied(1, 0)).toBe(true);
+    expect(water.isSupplied(9, 0)).toBe(false);
   });
 });

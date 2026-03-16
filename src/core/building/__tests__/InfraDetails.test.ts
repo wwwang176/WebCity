@@ -13,7 +13,7 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
     garbage: { getFacilities: () => [] },
     deathCare: { getCemeteries: () => [] },
     power: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
-    water: { getPlants: () => [] },
+    water: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
     citizens: { getCitizens: () => [] },
     sewage: { getTreatmentPlants: () => [], getUntreated: () => 0 },
     ...overrides,
@@ -172,12 +172,20 @@ describe('getInfraDetails', () => {
     expect(d['Supply Ratio']).toBe('100.0%');
   });
 
-  it('water: returns output', () => {
+  it('water: returns output and city supply/demand info', () => {
     const ctx = makeCtx({
-      water: { getPlants: () => [{ x: 1, y: 1, output: 600 }] },
+      water: {
+        getPlants: () => [{ x: 1, y: 1, output: 600 }],
+        getSupply: () => 600,
+        getDemand: () => 400,
+        getSupplyRatio: () => 1.5,
+      },
     });
     const d = getInfraDetails(ctx, 'water', 1, 1);
-    expect(d).toEqual({ Output: 600 });
+    expect(d.Output).toBe(600);
+    expect(d['City Supply']).toBe(600);
+    expect(d['City Demand']).toBe(400);
+    expect(d['Supply Ratio']).toBe('150.0%');
   });
 
   it('airport: returns static status', () => {

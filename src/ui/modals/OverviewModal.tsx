@@ -71,12 +71,15 @@ export function OverviewModal(props: { open: boolean; onClose: () => void }) {
     const pwrSupply = state.power.getSupply();
     const pwrDemand = state.power.getDemand();
     const pwrRatio = state.power.getSupplyRatio();
-    const waterSupply = state.water.getTotalOutput();
+    const wtrSupply = state.water.getSupply();
+    const wtrDemand = state.water.getDemand();
+    const wtrRatio = state.water.getSupplyRatio();
 
     return {
       population, totalHomes, totalJobs, vacantHomes, jobOpenings,
       zoneCounts, attractiveness, canMigrate,
-      pwrSupply, pwrDemand, pwrRatio, waterSupply,
+      pwrSupply, pwrDemand, pwrRatio,
+      wtrSupply, wtrDemand, wtrRatio,
       checks: [
         { label: 'Attractiveness > 50', value: attractiveness.toFixed(1), ok: attractiveness > 50 },
         { label: 'Vacant Homes > 0', value: String(vacantHomes), ok: vacantHomes > 0 },
@@ -139,7 +142,20 @@ export function OverviewModal(props: { open: boolean; onClose: () => void }) {
         </div>
         <div class="summary-card">
           <div class="sc-label" style="margin-bottom:6px">Water</div>
-          <div style="font-size:12px;display:flex;justify-content:space-between"><span>Supply</span><span>{data().waterSupply}</span></div>
+          <div style="font-size:12px;display:flex;justify-content:space-between"><span>Supply</span><span>{Math.round(data().wtrSupply)}</span></div>
+          <div style="font-size:12px;display:flex;justify-content:space-between"><span>Demand</span><span>{Math.round(data().wtrDemand)}</span></div>
+          <div style="font-size:12px;display:flex;justify-content:space-between"><span>Ratio</span><span>{(data().wtrRatio * 100).toFixed(1)}%</span></div>
+          <div style={{
+            'margin-top': '4px', height: '6px', 'border-radius': '3px',
+            background: 'rgba(255,255,255,0.1)', overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${Math.min(100, data().wtrRatio * 100)}%`,
+              height: '100%', 'border-radius': '3px',
+              background: data().wtrRatio >= 1 ? '#42a5f5' : data().wtrRatio >= 0.7 ? '#ffa726' : '#ef5350',
+            }} />
+          </div>
+          {data().wtrRatio < 1 && <div style={{ 'font-size': '11px', color: '#ef5350', 'margin-top': '4px' }}>Needs more water plants</div>}
         </div>
       </div>
 

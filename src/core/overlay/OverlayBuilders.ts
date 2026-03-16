@@ -16,7 +16,7 @@ export interface OverlayCell {
 /** Minimal service interface for overlay building (DIP). */
 export interface OverlayBuildContext {
   power: { isPowered(x: number, y: number): boolean; isInCoverage(x: number, y: number): boolean; getSupplyRatio(): number };
-  water: { isSupplied(x: number, y: number): boolean };
+  water: { isSupplied(x: number, y: number): boolean; isInCoverage(x: number, y: number): boolean; getSupplyRatio(): number };
   traffic: { getSegmentDensity(key: string): number };
   police: { getCrimeReduction(x: number, y: number): number; getCoverage(x: number, y: number): boolean };
   fire: { getCoverage(x: number, y: number): boolean };
@@ -44,10 +44,13 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
     return 0;
   },
 
-  water: (ctx, _cell, x, y) => {
-    const supplied = ctx.water.isSupplied(x, y) ? O.DISPLAY_MAX : 0;
+  water: (ctx, cell, x, y) => {
     const gw = getGroundwaterLevel(ctx.grid, x, y);
-    return Math.max(supplied, gw * O.GROUNDWATER_FACTOR);
+    const gwValue = gw * O.GROUNDWATER_FACTOR;
+    if (ctx.water.isSupplied(x, y)) return Math.max(O.DISPLAY_MAX, gwValue); // supplied
+    if (ctx.water.getSupplyRatio() < 1 && ctx.water.isInCoverage(x, y)) return Math.max(O.DISPLAY_MAX * 0.5, gwValue); // in range but undersupplied
+    if (cell.buildingId > 0) return Math.max(O.DISPLAY_MAX * 0.15, gwValue); // building with no water
+    return gwValue;
   },
 
   zone: (_ctx, cell) =>

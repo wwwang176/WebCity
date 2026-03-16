@@ -16,7 +16,7 @@ function makeCell(overrides: Partial<{
 function makeCtx(overrides: Partial<OverlayBuildContext> = {}): OverlayBuildContext {
   return {
     power: { isPowered: () => false, isInCoverage: () => false, getSupplyRatio: () => 1 },
-    water: { isSupplied: () => false },
+    water: { isSupplied: () => false, isInCoverage: () => false, getSupplyRatio: () => 1 },
     traffic: { getSegmentDensity: () => 0 },
     police: { getCrimeReduction: () => 0, getCoverage: () => false },
     fire: { getCoverage: () => false },
@@ -77,7 +77,7 @@ describe('buildOverlayValue', () => {
   });
 
   it('water: supplied cell returns DISPLAY_MAX', () => {
-    const ctx = makeCtx({ water: { isSupplied: () => true } });
+    const ctx = makeCtx({ water: { isSupplied: () => true, isInCoverage: () => true, getSupplyRatio: () => 1 } });
     expect(buildOverlayValue(ctx, 'water', makeCell(), 5, 5)).toBe(O.DISPLAY_MAX);
   });
 

@@ -87,6 +87,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
 
   const bt = () => props.sel.buildingType;
   const hasPower = () => props.sel.services.power >= 0;
+  const hasWater = () => props.sel.services.water >= 0;
   const tax = () => {
     if (!hasPower()) return '$0/tick';
     const b = bt();
@@ -126,6 +127,15 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           'font-size': '11px', 'font-weight': '600',
         }}>
           No Power - No income
+        </div>
+      </Show>
+      <Show when={!hasWater()}>
+        <div style={{
+          'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+          background: 'rgba(239,83,80,0.15)', color: '#ef5350',
+          'font-size': '11px', 'font-weight': '600',
+        }}>
+          No Water
         </div>
       </Show>
       <ServiceCoverage services={props.sel.services} />

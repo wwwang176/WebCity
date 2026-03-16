@@ -50,7 +50,7 @@ export const INFRA_SERVICE_ACTIONS: Partial<Record<InfraType, InfraServiceAction
     remove: (ctx, cx, cy) => ctx.power.removePlant(cx, cy),
   },
   water: {
-    place: (ctx, cx, cy) => ctx.water.addPlant({ x: cx, y: cy, output: 500 }),
+    place: (ctx, cx, cy) => ctx.water.addPlant({ x: cx, y: cy, output: 1500 }),
     remove: (ctx, cx, cy) => ctx.water.removePlant(cx, cy),
   },
   police: {
