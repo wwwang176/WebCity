@@ -57,8 +57,23 @@ describe('buildOverlayValue', () => {
     expect(buildOverlayValue(ctx, 'power', makeCell(), 0, 0)).toBe(O.DISPLAY_MAX);
   });
 
-  it('power: unpowered cell returns 0', () => {
+  it('power: unpowered empty cell returns 0', () => {
     expect(buildOverlayValue(makeCtx(), 'power', makeCell(), 0, 0)).toBe(0);
+  });
+
+  it('power: underpowered cell in coverage returns half DISPLAY_MAX', () => {
+    const ctx = makeCtx({
+      power: { isPowered: () => false, isInCoverage: () => true, getSupplyRatio: () => 0.5 },
+    });
+    expect(buildOverlayValue(ctx, 'power', makeCell(), 0, 0)).toBe(O.DISPLAY_MAX * 0.5);
+  });
+
+  it('power: building outside coverage returns 15% DISPLAY_MAX', () => {
+    const ctx = makeCtx({
+      power: { isPowered: () => false, isInCoverage: () => false, getSupplyRatio: () => 0.5 },
+    });
+    const cell = makeCell({ buildingId: 1 });
+    expect(buildOverlayValue(ctx, 'power', cell, 0, 0)).toBeCloseTo(O.DISPLAY_MAX * 0.15, 1);
   });
 
   it('water: supplied cell returns DISPLAY_MAX', () => {

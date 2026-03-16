@@ -1535,6 +1535,38 @@ export class Game {
       return;
     }
 
+    // Power overlay: 3-state building highlight (green/yellow/red)
+    if (overlayType === 'power') {
+      const power = this.state.power;
+      const ratio = power.getSupplyRatio();
+      this.state.grid.forEachCell((cell, x, y) => {
+        if (cell.buildingId === 0) return;
+        if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) return;
+        let color: number;
+        if (power.isPowered(x, y)) {
+          color = 0x00e676; // green: powered
+        } else if (ratio < 1 && power.isInCoverage(x, y)) {
+          color = 0xffeb3b; // yellow: in coverage but underpowered
+        } else {
+          color = 0xff5252; // red: no coverage
+        }
+        this.overlayHighlightCells.push({ x, y, color });
+      });
+      return;
+    }
+
+    // Water overlay: binary building highlight (green/red)
+    if (overlayType === 'water') {
+      const water = this.state.water;
+      this.state.grid.forEachCell((cell, x, y) => {
+        if (cell.buildingId === 0) return;
+        if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) return;
+        const color = water.isSupplied(x, y) ? 0x00e676 : 0xff5252;
+        this.overlayHighlightCells.push({ x, y, color });
+      });
+      return;
+    }
+
     // Non-road services (park): single-color
     const fallbackColors: Partial<Record<OverlayType, number>> = {
       park: 0x4caf50,

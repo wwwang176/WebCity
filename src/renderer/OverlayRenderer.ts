@@ -66,7 +66,11 @@ export class OverlayRenderer {
       case 'crime':
         return new THREE.Color(value, 0, value * 0.5); // Purple
       case 'power':
-        return new THREE.Color(value, value, 0); // Yellow
+        // 3-state: green (powered, ≥0.8) → yellow (underpowered, ~0.3) → red (no coverage but has building, >0)
+        if (value >= 0.8) return new THREE.Color(0.2, 0.9, 0.3); // green: powered
+        if (value >= 0.3) return new THREE.Color(1.0, 0.8, 0.1); // yellow: in range but supply insufficient
+        if (value > 0) return new THREE.Color(0.9, 0.2, 0.15); // red: building with no power coverage
+        return new THREE.Color(0, 0, 0); // empty land: invisible (dark)
       case 'water':
         return new THREE.Color(0, value * 0.5, value); // Blue
       case 'zone':

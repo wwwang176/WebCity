@@ -37,10 +37,11 @@ const O = OVERLAY_SCALE;
  * requires adding an entry here (OCP).
  */
 export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
-  power: (ctx, _cell, x, y) => {
-    if (ctx.power.isPowered(x, y)) return O.DISPLAY_MAX; // green: powered
-    if (ctx.power.getSupplyRatio() < 1 && ctx.power.isInCoverage(x, y)) return O.DISPLAY_MAX * 0.5; // yellow: in range but supply insufficient
-    return 0; // red/gray: not in range
+  power: (ctx, cell, x, y) => {
+    if (ctx.power.isPowered(x, y)) return O.DISPLAY_MAX; // green: powered (100)
+    if (ctx.power.getSupplyRatio() < 1 && ctx.power.isInCoverage(x, y)) return O.DISPLAY_MAX * 0.5; // yellow: in range but underpowered (50)
+    if (cell.buildingId > 0) return O.DISPLAY_MAX * 0.15; // red: has building but no coverage (15)
+    return 0;
   },
 
   water: (ctx, _cell, x, y) => {
