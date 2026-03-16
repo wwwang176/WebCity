@@ -187,6 +187,16 @@ export class TrafficSimulation {
     this.vehicles = this.vehicles.filter(v => v.serviceType !== serviceType);
   }
 
+  /** Remove vehicles by their IDs. */
+  removeVehiclesByIds(ids: Set<number>): void {
+    this.vehicles = this.vehicles.filter(v => !ids.has(v.id));
+  }
+
+  /** Get IDs of all currently active vehicles. */
+  getActiveVehicleIds(): Set<number> {
+    return new Set(this.vehicles.map(v => v.id));
+  }
+
   /** Count service vehicles, optionally filtered by type. */
   getServiceVehicleCount(serviceType?: ServiceVehicleType): number {
     if (serviceType) {

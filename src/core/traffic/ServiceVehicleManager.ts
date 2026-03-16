@@ -52,7 +52,7 @@ export class ServiceVehicleManager {
     grid: PathfindGrid,
     laneGraph: LaneGraph,
   ): void {
-    // 1. Clean up stale entries (vehicles no longer in traffic.vehicles)
+    // 1. Clean up stale entries (vehicles no longer in traffic)
     this.cleanupStale(traffic);
 
     // 2. Remove vehicles for service types with no facilities
@@ -60,7 +60,6 @@ export class ServiceVehicleManager {
       const provider = services[type];
       const positions = provider?.getFacilityPositions() ?? [];
       if (positions.length === 0) {
-        // Remove all tracked vehicles of this type
         this.removeAllOfType(traffic, type);
       }
     }
@@ -83,7 +82,7 @@ export class ServiceVehicleManager {
   // ── Internal ──
 
   private cleanupStale(traffic: TrafficSimulation): void {
-    const activeIds = new Set(traffic.vehicles.map(v => v.id));
+    const activeIds = traffic.getActiveVehicleIds();
     this.tracked = this.tracked.filter(t => activeIds.has(t.vehicleId));
   }
 
@@ -92,7 +91,7 @@ export class ServiceVehicleManager {
     if (toRemove.length === 0) return;
 
     const removeIds = new Set(toRemove.map(t => t.vehicleId));
-    traffic.vehicles = traffic.vehicles.filter(v => !removeIds.has(v.id));
+    traffic.removeVehiclesByIds(removeIds);
     this.tracked = this.tracked.filter(t => t.serviceType !== serviceType);
   }
 
@@ -124,16 +123,7 @@ export class ServiceVehicleManager {
       const currentCell = lastEdge.to.cellKey;
       const currentPos = parsePosKeyUnsafe(currentCell);
 
-      // Pick random destination from covered roads (retry to avoid same cell)
-      let destPos: { x: number; y: number } | null = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const destKey = coveredRoads[Math.floor(Math.random() * coveredRoads.length)]!;
-        const candidate = parsePosKeyUnsafe(destKey);
-        if (candidate.x !== currentPos.x || candidate.y !== currentPos.y) {
-          destPos = candidate;
-          break;
-        }
-      }
+      const destPos = pickRandomDestination(coveredRoads, currentPos);
       if (!destPos) continue;
 
       const edgePath = this.findEdgePath(currentPos, destPos, grid, laneGraph);
@@ -181,16 +171,7 @@ export class ServiceVehicleManager {
       const startRoad = findAdjacentRoad(grid, facility.x, facility.y);
       if (!startRoad) continue;
 
-      // Pick random destination from covered roads (retry up to 5 times to avoid same cell)
-      let destPos: { x: number; y: number } | null = null;
-      for (let attempt = 0; attempt < 5; attempt++) {
-        const destKey = coveredRoads[Math.floor(Math.random() * coveredRoads.length)]!;
-        const candidate = parsePosKeyUnsafe(destKey);
-        if (candidate.x !== startRoad.x || candidate.y !== startRoad.y) {
-          destPos = candidate;
-          break;
-        }
-      }
+      const destPos = pickRandomDestination(coveredRoads, startRoad);
       if (!destPos) continue;
 
       const edgePath = this.findEdgePath(startRoad, destPos, grid, laneGraph);
@@ -227,6 +208,23 @@ export class ServiceVehicleManager {
     if (!cellPath || cellPath.length < 2) return null;
     return refineLanePath(laneGraph, cellPath);
   }
+}
+
+/** Pick a random destination from covered roads, avoiding the current position.
+ *  Extracted to eliminate duplication between repathStoppedVehicles and spawnVehicles.
+ */
+function pickRandomDestination(
+  coveredRoads: string[],
+  currentPos: { x: number; y: number },
+): { x: number; y: number } | null {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const destKey = coveredRoads[Math.floor(Math.random() * coveredRoads.length)]!;
+    const candidate = parsePosKeyUnsafe(destKey);
+    if (candidate.x !== currentPos.x || candidate.y !== currentPos.y) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 const SERVICE_VEHICLE_TYPES: ServiceVehicleType[] = ['police', 'fire', 'health', 'garbage'];
