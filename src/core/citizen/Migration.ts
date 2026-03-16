@@ -30,6 +30,8 @@ export const IMMIGRATION = {
   POP_CAP_MIN: 3,
   DEMAND_CAP_DIVISOR: 10,
   EMIGRATION_HAPPINESS_THRESHOLD: 20,
+  EMIGRATION_MIN_RATE: 0.01,
+  EMIGRATION_MAX_RATE: 0.03,
   IMMIGRANT_MIN_AGE: 20,
   IMMIGRANT_AGE_RANGE: 30,
 } as const;
@@ -88,8 +90,12 @@ export function migrationTick(
     }
   }
 
-  // Emigration
+  // Emigration — capped at random 1-3% of population per tick
+  const emigrationRate = IMMIGRATION.EMIGRATION_MIN_RATE +
+    Math.random() * (IMMIGRATION.EMIGRATION_MAX_RATE - IMMIGRATION.EMIGRATION_MIN_RATE);
+  const emigrationCap = Math.max(1, Math.floor(pop * emigrationRate));
   for (const citizen of [...manager.getCitizens()]) {
+    if (emigratedIds.length >= emigrationCap) break;
     if (citizen.happiness < IMMIGRATION.EMIGRATION_HAPPINESS_THRESHOLD) {
       emigratedIds.push(citizen.id);
       manager.removeCitizen(citizen.id);

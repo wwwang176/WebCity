@@ -31,13 +31,30 @@ describe('Migration', () => {
     expect(result.immigrated).toBe(0);
   });
 
-  it('should emigrate unhappy citizens', () => {
+  it('should emigrate unhappy citizens (capped at 1-3% of population)', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ happiness: 10 });
-    mgr.createCitizen({ happiness: 10 });
-    const result = migrationTick(mgr, attractiveCity);
-    expect(result.emigrated).toBe(2);
-    expect(mgr.getPopulation()).toBeGreaterThanOrEqual(0);
+    for (let i = 0; i < 100; i++) mgr.createCitizen({ happiness: 10 });
+    const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 10, taxRate: 20, pollution: 50, crimeRate: 50 };
+    const result = migrationTick(mgr, badCity, 100);
+    // Should emigrate 1-3% = 1 to 3 citizens, not all 100
+    expect(result.emigrated).toBeGreaterThanOrEqual(1);
+    expect(result.emigrated).toBeLessThanOrEqual(3);
+    expect(mgr.getPopulation()).toBe(100 - result.emigrated);
+  });
+
+  it('should eventually emigrate all unhappy citizens over many ticks', () => {
+    const mgr = new CitizenManager();
+    for (let i = 0; i < 20; i++) mgr.createCitizen({ happiness: 10 });
+    const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 10, taxRate: 20, pollution: 50, crimeRate: 50 };
+    let totalEmigrated = 0;
+    for (let tick = 0; tick < 500; tick++) {
+      const pop = mgr.getPopulation();
+      if (pop === 0) break;
+      const result = migrationTick(mgr, badCity, pop);
+      totalEmigrated += result.emigrated;
+    }
+    expect(totalEmigrated).toBe(20);
+    expect(mgr.getPopulation()).toBe(0);
   });
 
   it('should calculate attractiveness correctly', () => {
@@ -101,14 +118,14 @@ describe('getImmigrationCap — 移民動態縮放', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ happiness: 10 });
     mgr.createCitizen({ happiness: 10 });
-    // 即使吸引力很低，emigration 仍然照常運作
+    // 即使吸引力很低，emigration 仍然照常運作 (2 people, cap = max(1, 2*0.03)=1, so 1-2 leave)
     const result = migrationTick(mgr, {
       ...attractiveCity,
       avgHappiness: 10,
       jobOpenings: 0,
       vacantHomes: 0,
-    }, 100);
-    expect(result.emigrated).toBe(2);
+    }, 2);
+    expect(result.emigrated).toBeGreaterThanOrEqual(1);
   });
 
   it('high unemployment rate reduces attractiveness', () => {
