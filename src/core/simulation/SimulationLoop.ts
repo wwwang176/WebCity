@@ -1194,18 +1194,19 @@ export class SimulationLoop {
             });
           } else {
             // BUS/RAIL/METRO/FERRY: first-mile + last-mile walking trips
-            const transitSystem = getSystemForMode(this.state, mode);
-            if (transitSystem) {
-              const originStop = this.findNearestStop(transitSystem.getStops(), fromPos);
-              const destStop = this.findNearestStop(transitSystem.getStops(), toPos);
-              if (originStop) {
+            // Skip trips shorter than 2 cells — too short to be visually meaningful
+            const transitSystem2 = getSystemForMode(this.state, mode);
+            if (transitSystem2) {
+              const originStop = this.findNearestStop(transitSystem2.getStops(), fromPos);
+              const destStop = this.findNearestStop(transitSystem2.getStops(), toPos);
+              if (originStop && manhattanDistance(fromPos.x, fromPos.y, originStop.x, originStop.y) >= 2) {
                 this.pendingTrips.push({
                   fromX: fromPos.x, fromY: fromPos.y,
                   toX: originStop.x, toY: originStop.y,
                   tripType: PedestrianTripType.FIRST_MILE, count: 1,
                 });
               }
-              if (destStop) {
+              if (destStop && manhattanDistance(destStop.x, destStop.y, toPos.x, toPos.y) >= 2) {
                 this.pendingTrips.push({
                   fromX: destStop.x, fromY: destStop.y,
                   toX: toPos.x, toY: toPos.y,
