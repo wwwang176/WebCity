@@ -19,7 +19,6 @@ import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { getGridPollutionSources } from '../environment/GridPollutionSources';
 import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
-import { getSpecializationBonus } from '../district/Specialization';
 import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
@@ -40,6 +39,7 @@ import { getCellServiceScore, getResidentialServiceRatios } from '../service/Ser
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
 import { collectAllPollutionSources } from '../environment/PollutionSourceRegistry';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
+import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../economy/ExpenseCalculator';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
@@ -553,17 +553,8 @@ export class SimulationLoop {
   }
 
   private calculateIncome(): void {
-    // Shared zone income calculation (DRY: same logic used by Game.getEconomyBreakdown)
-    const incomes = calculateZoneIncomes({
-      forEachCell: (fn) => this.state.grid.forEachCell(fn),
-      taxRates: this.state.taxRates,
-      getCitizensByHome: (key) => this.state.citizens.getCitizensByHome(key),
-      getRevenueMultiplier: (x, y) => {
-        const district = this.state.districts.getDistrictAt(x, y);
-        return district ? getSpecializationBonus(district.specialization).revenueMultiplier : 1;
-      },
-      isPowered: (x, y) => this.state.power.isPowered(x, y),
-    });
+    // DRY: same adapter used by Game.getEconomyBreakdown
+    const incomes = calculateZoneIncomes(buildIncomeCalcDeps(this.state));
     let totalIncome = incomes.residential + incomes.commercial + incomes.industrial + incomes.office;
 
     // Apply city-wide specialization revenue multiplier

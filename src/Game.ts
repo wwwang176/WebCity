@@ -47,6 +47,7 @@ import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } fr
 import { classifyBuilding } from './core/building/BuildingClassifier';
 import { classifyDemolishCell } from './core/building/DemolishClassifier';
 import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
+import { buildIncomeCalcDeps } from './core/economy/IncomeCalcAdapter';
 
 import {
   ViewMode,
@@ -1813,10 +1814,7 @@ export class Game {
 
   getEconomyBreakdown() {
     return computeEconomyBreakdown({
-      forEachCell: (fn) => this.state.grid.forEachCell(fn),
-      taxRates: this.state.taxRates,
-      getCitizensByHome: (key) => this.state.citizens.getCitizensByHome(key),
-      isPowered: (x, y) => this.state.power.isPowered(x, y),
+      ...buildIncomeCalcDeps(this.state),
       roadTileCount: countRoadTiles(this.state.grid),
       loans: this.state.budget.loans,
       loanInterestRate: this.state.budget.loanInterestRate,
