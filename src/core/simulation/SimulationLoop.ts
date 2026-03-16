@@ -1,6 +1,6 @@
 import { type GameState } from './GameState';
 import { tickBudget } from '../economy/Budget';
-import { calculateRCIDemand } from '../economy/RCIDemand';
+import { calculateRCIDemand, applyBusinessTaxPenalty, BUSINESS_TAX } from '../economy/RCIDemand';
 import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
@@ -186,14 +186,9 @@ export class SimulationLoop {
         jobOpenings: this.countJobOpenings(),
         exportDemand: 10,
       });
-      // Higher business tax reduces commercial/industrial demand
-      const businessTax = this.state.taxRates.business ?? SIMULATION.BUSINESS_TAX_BASELINE;
-      if (businessTax > SIMULATION.BUSINESS_TAX_BASELINE) {
-        const penalty = (businessTax - SIMULATION.BUSINESS_TAX_BASELINE) * SIMULATION.BUSINESS_TAX_PENALTY_PER_POINT;
-        rci.commercial = Math.max(-100, rci.commercial - penalty);
-        rci.industrial = Math.max(-100, rci.industrial - penalty);
-      }
-      this.state.rciDemand = rci;
+      this.state.rciDemand = applyBusinessTaxPenalty(
+        rci, this.state.taxRates.business ?? BUSINESS_TAX.BASELINE,
+      );
     }
 
     // 2. Budget tick (every 6 ticks to maintain same daily income/expense rate)

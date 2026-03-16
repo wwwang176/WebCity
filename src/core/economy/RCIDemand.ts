@@ -29,6 +29,29 @@ function clampDemand(value: number): number {
   return Math.min(RCI.DEMAND_MAX, Math.max(RCI.DEMAND_MIN, value));
 }
 
+/** Business tax constants for demand penalty. */
+export const BUSINESS_TAX = {
+  BASELINE: 9,
+  PENALTY_PER_POINT: 2,
+} as const;
+
+/**
+ * Apply business tax penalty to commercial/industrial demand.
+ * Taxes above BASELINE reduce C/I demand proportionally.
+ */
+export function applyBusinessTaxPenalty(
+  demand: RCIDemandValues,
+  businessTaxRate: number,
+): RCIDemandValues {
+  if (businessTaxRate <= BUSINESS_TAX.BASELINE) return demand;
+  const penalty = (businessTaxRate - BUSINESS_TAX.BASELINE) * BUSINESS_TAX.PENALTY_PER_POINT;
+  return {
+    residential: demand.residential,
+    commercial: Math.max(RCI.DEMAND_MIN, demand.commercial - penalty),
+    industrial: Math.max(RCI.DEMAND_MIN, demand.industrial - penalty),
+  };
+}
+
 export function calculateRCIDemand(state: RCIState): RCIDemandValues {
   const rDemand = clampDemand(
     (state.jobOpenings * RCI.JOB_MULTIPLIER + RCI.RESIDENTIAL_BASE) - state.residentialSupply

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateRCIDemand, RCI } from '../RCIDemand';
+import { calculateRCIDemand, applyBusinessTaxPenalty, BUSINESS_TAX, RCI } from '../RCIDemand';
 import { calculateBalance, takeLoan, tickBudget } from '../Budget';
 import { calculateTaxRevenue, DEFAULT_TAX_RATES } from '../Tax';
 import { calculateLandValue, LAND_VALUE, checkParkProximity } from '../LandValue';
@@ -39,6 +39,30 @@ describe('RCIDemand', () => {
     expect(RCI.RESIDENTIAL_BASE).toBeGreaterThan(0);
     expect(RCI.DEMAND_MIN).toBeLessThan(0);
     expect(RCI.DEMAND_MAX).toBeGreaterThan(0);
+  });
+});
+
+describe('applyBusinessTaxPenalty', () => {
+  const baseDemand = { residential: 50, commercial: 50, industrial: 50 };
+
+  it('should not modify demand when tax is at or below baseline', () => {
+    const result = applyBusinessTaxPenalty(baseDemand, BUSINESS_TAX.BASELINE);
+    expect(result.commercial).toBe(50);
+    expect(result.industrial).toBe(50);
+    expect(result.residential).toBe(50);
+  });
+
+  it('should reduce commercial and industrial demand above baseline', () => {
+    const result = applyBusinessTaxPenalty(baseDemand, BUSINESS_TAX.BASELINE + 5);
+    expect(result.commercial).toBe(50 - 5 * BUSINESS_TAX.PENALTY_PER_POINT);
+    expect(result.industrial).toBe(50 - 5 * BUSINESS_TAX.PENALTY_PER_POINT);
+    expect(result.residential).toBe(50); // unchanged
+  });
+
+  it('should clamp at DEMAND_MIN', () => {
+    const result = applyBusinessTaxPenalty(baseDemand, 100);
+    expect(result.commercial).toBeGreaterThanOrEqual(RCI.DEMAND_MIN);
+    expect(result.industrial).toBeGreaterThanOrEqual(RCI.DEMAND_MIN);
   });
 });
 
