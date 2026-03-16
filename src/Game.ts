@@ -545,8 +545,8 @@ export class Game {
     label: string,
     onSuccess?: () => void,
   ): void {
-    if (result.success && result.cost) {
-      this.state.budget.funds -= result.cost;
+    if (result.success) {
+      if (result.cost) this.state.budget.funds -= result.cost;
       onSuccess?.();
       this.audioManager.playSfx('build');
     } else if (!result.success && result.reason) {
@@ -945,6 +945,17 @@ export class Game {
       const canAdvance = (cur: string, next: string) => {
         const [cx, cy] = cur.split(',').map(Number);
         const [nx, ny] = next.split(',').map(Number);
+        // Transparent intersection edges skip the intersection cell (from→far-side).
+        // Infer the intersection at the midpoint and check its traffic light / crossing.
+        const dx = Math.abs(nx! - cx!), dy = Math.abs(ny! - cy!);
+        if (dx + dy === 2) {
+          const ix = (cx! + nx!) / 2;
+          const iy = (cy! + ny!) / 2;
+          if (Number.isInteger(ix) && Number.isInteger(iy)) {
+            if (!this.state.trafficLights.canPass(cx!, cy!, ix, iy)) return false;
+            if (this.levelCrossingSystem.isCrossingBlocked(ix, iy)) return false;
+          }
+        }
         if (!this.state.trafficLights.canPass(cx!, cy!, nx!, ny!)) return false;
         if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
         return true;

@@ -53,7 +53,8 @@ export class RoadBuilder {
         flags |= getDirectionFlag(pos, next);
       }
 
-      // Merge with existing road flags
+      // Merge with existing road flags. Intersection cells are "transparent"
+      // in the lane graph (no own points/edges), so we always use the new roadType.
       const existing = this.grid.getCell(pos.x, pos.y);
       if (existing && existing.roadType !== RoadType.NONE) {
         flags |= existing.roadFlags;

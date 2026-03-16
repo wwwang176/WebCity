@@ -176,6 +176,12 @@ export function gridAStarPath(
 /** Speed decay per lane away from road center. lane 0 (inner) = 1.0, lane 1 = 0.9, … */
 export const LANE_SPEED_DECAY = 0.9;
 
+/** Number of lane path variants to generate per route. */
+export const LANE_PATH_VARIANT_COUNT = 3;
+
+/** Cost multiplier applied to edges used in previous variants (penalty method). */
+export const LANE_PENALTY_MULTIPLIER = 3;
+
 /** Returns speed multiplier for a given lane index. lane 0 (innermost) is fastest. */
 export function getLaneSpeedMultiplier(lane: number): number {
   return Math.pow(LANE_SPEED_DECAY, lane);
@@ -220,10 +226,7 @@ export function refineLanePath(
 
   // ── Build valid edge set restricted to cellPath ──
   const cellSet = new Set(cellPath);
-  const validCrossPairs = new Set<string>();
-  for (let i = 0; i < cellPath.length - 1; i++) {
-    validCrossPairs.add(`${cellPath[i]}->${cellPath[i + 1]}`);
-  }
+  const validCrossPairs = buildValidCrossPairs(graph, cellPath);
 
   const adjacency = new Map<string, { edge: LaneEdge; cost: number }[]>();
 
@@ -330,6 +333,176 @@ function refineLanePathFallback(
   // Build a minimal 2-point path through the start→end directly
   // For simplicity, return null and let caller handle gracefully
   return null;
+}
+
+// ── Lane path variant generation (penalty method) ──
+
+/** Resolve start/end connection point IDs for a cell-level path. */
+function resolveLaneEndpoints(
+  graph: LaneGraph,
+  cellPath: string[],
+): { startId: string; endId: string } | null {
+  const firstDir = cellDirection(cellPath[0]!, cellPath[1]!);
+  if (!firstDir) return null;
+  const lastDir = cellDirection(cellPath[cellPath.length - 2]!, cellPath[cellPath.length - 1]!);
+  if (!lastDir) return null;
+
+  const firstMaxLane = maxLaneInCell(graph, cellPath[0]!);
+  const lastMaxLane = maxLaneInCell(graph, cellPath[cellPath.length - 1]!);
+
+  const startId = `${cellPath[0]}:${firstDir}:${firstMaxLane}:exit`;
+  const endDir = OPPOSITE_DIR[lastDir] ?? lastDir;
+  const endId = `${cellPath[cellPath.length - 1]}:${endDir}:${lastMaxLane}:entry`;
+
+  if (!graph.getPoint(startId) || !graph.getPoint(endId)) return null;
+  return { startId, endId };
+}
+
+/**
+ * Build the set of valid cross-cell pairs for a cell-level path,
+ * including skip-pairs for transparent intersection cells.
+ */
+function buildValidCrossPairs(
+  graph: LaneGraph,
+  cellPath: string[],
+): Set<string> {
+  const validCrossPairs = new Set<string>();
+  for (let i = 0; i < cellPath.length - 1; i++) {
+    validCrossPairs.add(`${cellPath[i]}->${cellPath[i + 1]}`);
+  }
+  // Add skip-pairs: if cellPath[i] is a transparent intersection (no connection
+  // points in the graph), cross-intersection edges skip from [i-1] to [i+1].
+  for (let i = 1; i < cellPath.length - 1; i++) {
+    if (graph.getConnectionPoints(cellPath[i]!).length === 0) {
+      validCrossPairs.add(`${cellPath[i - 1]}->${cellPath[i + 1]}`);
+    }
+  }
+  return validCrossPairs;
+}
+
+/** Build adjacency map for lane-level Dijkstra, restricted to a cell-level path. */
+function buildLaneAdjacency(
+  graph: LaneGraph,
+  cellPath: string[],
+): Map<string, { edge: LaneEdge; cost: number }[]> {
+  const cellSet = new Set(cellPath);
+  const validCrossPairs = buildValidCrossPairs(graph, cellPath);
+
+  const adjacency = new Map<string, { edge: LaneEdge; cost: number }[]>();
+
+  for (const cell of cellPath) {
+    for (const pt of graph.getConnectionPoints(cell)) {
+      for (const edge of graph.getEdgesFrom(pt.id)) {
+        const fromCell = edge.from.cellKey;
+        const toCell = edge.to.cellKey;
+        const valid = (fromCell === toCell && cellSet.has(fromCell))
+          || validCrossPairs.has(`${fromCell}->${toCell}`);
+        if (!valid) continue;
+
+        const speed = getLaneSpeedMultiplier(edge.to.lane);
+        const cost = edge.length / speed;
+        let list = adjacency.get(edge.from.id);
+        if (!list) { list = []; adjacency.set(edge.from.id, list); }
+        list.push({ edge, cost });
+      }
+    }
+  }
+  return adjacency;
+}
+
+/** Run Dijkstra on lane adjacency with per-cell-lane penalties. */
+function runLaneDijkstra(
+  adjacency: Map<string, { edge: LaneEdge; cost: number }[]>,
+  startId: string,
+  endId: string,
+  cellLanePenalties: Map<string, number>,
+): LaneEdge[] | null {
+  const dist = new Map<string, number>();
+  const prev = new Map<string, { pointId: string; edge: LaneEdge }>();
+  const pq: { pointId: string; cost: number }[] = [];
+
+  dist.set(startId, 0);
+  pq.push({ pointId: startId, cost: 0 });
+
+  while (pq.length > 0) {
+    let minIdx = 0;
+    for (let i = 1; i < pq.length; i++) {
+      if (pq[i]!.cost < pq[minIdx]!.cost) minIdx = i;
+    }
+    const { pointId, cost } = pq[minIdx]!;
+    pq[minIdx] = pq[pq.length - 1]!;
+    pq.pop();
+
+    if (cost > (dist.get(pointId) ?? Infinity)) continue;
+    if (pointId === endId) break;
+
+    const neighbors = adjacency.get(pointId);
+    if (!neighbors) continue;
+    for (const { edge, cost: baseCost } of neighbors) {
+      const penaltyKey = `${edge.to.cellKey}:${edge.to.lane}`;
+      const penalty = cellLanePenalties.get(penaltyKey) ?? 1;
+      const newCost = cost + baseCost * penalty;
+      if (newCost < (dist.get(edge.to.id) ?? Infinity)) {
+        dist.set(edge.to.id, newCost);
+        prev.set(edge.to.id, { pointId, edge });
+        pq.push({ pointId: edge.to.id, cost: newCost });
+      }
+    }
+  }
+
+  if (!prev.has(endId)) return null;
+
+  const result: LaneEdge[] = [];
+  let cur = endId;
+  while (prev.has(cur)) {
+    const { pointId, edge } = prev.get(cur)!;
+    result.push(edge);
+    cur = pointId;
+  }
+  result.reverse();
+  return result.length > 0 ? result : null;
+}
+
+/**
+ * Generate multiple lane path variants for a cell-level path using the penalty method.
+ * Each successive variant penalizes edges used by previous variants, naturally
+ * distributing vehicles across different lanes.
+ */
+export function refineLanePathVariants(
+  graph: LaneGraph,
+  cellPath: string[],
+): LaneEdge[][] {
+  if (cellPath.length <= 1) return [[]];
+
+  const endpoints = resolveLaneEndpoints(graph, cellPath);
+  if (!endpoints) return [];
+
+  const { startId, endId } = endpoints;
+  const adjacency = buildLaneAdjacency(graph, cellPath);
+  const cellLanePenalties = new Map<string, number>();
+  const variants: LaneEdge[][] = [];
+
+  // Start and end cells are excluded from penalties (all variants share outermost lane there)
+  const startCell = cellPath[0]!;
+  const endCell = cellPath[cellPath.length - 1]!;
+
+  for (let v = 0; v < LANE_PATH_VARIANT_COUNT; v++) {
+    const path = runLaneDijkstra(adjacency, startId, endId, cellLanePenalties);
+    if (!path || path.length === 0) break;
+    variants.push(path);
+
+    // Penalize per cell+lane: each cell's lane used by this variant gets penalized,
+    // so V2 avoids V1's exact cell+lane combinations.
+    // Start and end cells are excluded (forced outermost lane, shared by all variants).
+    for (const edge of path) {
+      const cell = edge.to.cellKey;
+      if (cell === startCell || cell === endCell) continue;
+      const key = `${cell}:${edge.to.lane}`;
+      cellLanePenalties.set(key, (cellLanePenalties.get(key) ?? 1) * LANE_PENALTY_MULTIPLIER);
+    }
+  }
+
+  return variants;
 }
 
 function cellDirection(from: string, to: string): string | null {

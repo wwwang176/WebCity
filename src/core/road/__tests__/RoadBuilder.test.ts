@@ -185,15 +185,36 @@ describe('RoadBuilder', () => {
     expect(center.roadFlags & RoadDirection.WEST).toBeTruthy();
   });
 
-  it('should overwrite roadType when building different type over existing', () => {
+  it('crossing road should always use the new roadType at intersection (transparent intersection)', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 3, y: 5 }, { x: 7, y: 5 }, RoadType.FOUR_LANE, 100000);
+    builder.buildRoad({ x: 5, y: 3 }, { x: 5, y: 7 }, RoadType.TWO_LANE, 100000);
+
+    // Intersection cell uses the new road's type (TWO_LANE), no max-preservation
+    const center = grid.getCell(5, 5)!;
+    expect(center.roadType).toBe(RoadType.TWO_LANE);
+  });
+
+  it('crossing road with higher type should use that higher type at intersection', () => {
     const grid = new Grid(20, 20);
     const builder = new RoadBuilder(grid);
     builder.buildRoad({ x: 3, y: 5 }, { x: 7, y: 5 }, RoadType.TWO_LANE, 100000);
     builder.buildRoad({ x: 5, y: 3 }, { x: 5, y: 7 }, RoadType.FOUR_LANE, 100000);
 
-    // Intersection cell takes the type of the last road built
+    // Intersection cell uses the new road's type (FOUR_LANE)
     const center = grid.getCell(5, 5)!;
     expect(center.roadType).toBe(RoadType.FOUR_LANE);
+  });
+
+  it('should allow downgrade when rebuilding same-direction road', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.FOUR_LANE, 100000);
+
+    // Rebuild same direction as TWO_LANE — should downgrade
+    builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 100000);
+    expect(grid.getCell(4, 5)!.roadType).toBe(RoadType.TWO_LANE);
   });
 
   // --- Terrain blocking ---

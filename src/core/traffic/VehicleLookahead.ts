@@ -1,6 +1,9 @@
 import type { LaneEdge } from './LaneGraph';
 import { TRAFFIC } from './TrafficSimulation';
 
+/** Distance (grid units) to stop behind the intersection edge, matching the rendered stop line position. */
+export const STOP_LINE_OFFSET = 0.25;
+
 /** Compact representation of a vehicle on an edge, for O(1) lookup. */
 export interface EdgeEntry {
   vid: number;
@@ -76,7 +79,7 @@ export function findRedLightDistance(
     if (edge.from.cellKey !== edge.to.cellKey) {
       if (!canAdvance(edge.from.cellKey, edge.to.cellKey)) {
         const stopDist = distAhead - (ei === v.edgeIndex ? 0 : startDist);
-        return Math.max(0, stopDist - v.length / 2);
+        return Math.max(0, stopDist - v.length / 2 - STOP_LINE_OFFSET);
       }
     }
 
