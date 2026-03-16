@@ -36,6 +36,7 @@ import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
+import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
@@ -549,41 +550,19 @@ export class SimulationLoop {
     return countWorkplaceJobs(this.state.grid);
   }
 
-  // Only average pollution over residential cells (zoneType 1=RES_LOW, 2=RES_HIGH)
-  // so industrial pollution far away doesn't drag down citizen happiness unfairly.
   private getAvgPollution(): number {
-    let total = 0;
-    let count = 0;
-    this.state.grid.forEachCell((cell) => {
-      if (isResidentialZone(cell.zoneType)) {
-        total += cell.pollution;
-        count++;
-      }
-    });
-    return count > 0 ? total / count : 0;
+    return getAvgResidentialPollution(this.state.grid);
   }
 
-  // Average noise over residential cells only (same rationale as getAvgPollution).
   private getAvgNoise(): number {
-    let total = 0;
-    let count = 0;
-    this.state.grid.forEachCell((cell) => {
-      if (isResidentialZone(cell.zoneType)) {
-        total += cell.noiseLevel;
-        count++;
-      }
-    });
-    return count > 0 ? total / count : 0;
+    return getAvgResidentialNoise(this.state.grid);
   }
 
   private getAvgCrime(): number {
-    // Crime scales with population, reduced by police coverage
-    const pop = this.state.citizens.getPopulation();
-    const baseCrime = Math.min(SIMULATION.CRIME_BASE_MAX, pop * SIMULATION.CRIME_POP_FACTOR);
-    const stations = this.state.police.getStations();
-    if (stations.length === 0) return baseCrime;
-    const coverageRatio = Math.min(1, stations.length * SIMULATION.CRIME_COVERAGE_PER_STATION);
-    return baseCrime * (1 - coverageRatio * SIMULATION.CRIME_MAX_REDUCTION);
+    return calculateCrimeRate(
+      this.state.citizens.getPopulation(),
+      this.state.police.getStations().length,
+    );
   }
 
   private countVacantHomes(): number {
