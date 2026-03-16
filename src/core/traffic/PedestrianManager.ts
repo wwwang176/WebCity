@@ -151,31 +151,26 @@ export class PedestrianManager {
     // Per-frame refill: continuously spawn to maintain target density
     this.refillFromPool(dt);
 
-    for (let i = this.agents.length - 1; i >= 0; i--) {
+    // Single-pass update + compact: O(N) with no splice/shift
+    let writeIdx = 0;
+    for (let i = 0; i < this.agents.length; i++) {
       const agent = this.agents[i]!;
 
-      if (agent.state === PedestrianState.ARRIVED) {
-        this.agents.splice(i, 1);
-        continue;
-      }
+      // Remove arrived agents
+      if (agent.state === PedestrianState.ARRIVED) continue;
 
-      // Despawn timeout: prevent stuck pedestrians from hogging slots
+      // Despawn timeout
       agent.age += dt;
-      if (agent.age >= PEDESTRIAN.DESPAWN_TIMEOUT) {
-        this.agents.splice(i, 1);
-        continue;
-      }
+      if (agent.age >= PEDESTRIAN.DESPAWN_TIMEOUT) continue;
 
       const currentEdge = agent.edgePath[agent.edgeIndex];
-      if (!currentEdge) {
-        agent.state = PedestrianState.ARRIVED;
-        continue;
-      }
+      if (!currentEdge) continue; // no edge → skip
 
       // Crosswalk signal check
       if (currentEdge.type === 'crosswalk' && agent.edgeProgress === 0) {
         if (this.trafficLights && !this.canPassCrosswalk(currentEdge)) {
           agent.state = PedestrianState.WAITING_SIGNAL;
+          this.agents[writeIdx++] = agent; // keep alive, just waiting
           continue;
         }
         agent.state = PedestrianState.WALKING;
@@ -190,6 +185,7 @@ export class PedestrianManager {
           const cy = Number(parts[1]);
           if (this.levelCrossings.isCrossingBlocked(cx, cy)) {
             agent.state = PedestrianState.WAITING_CROSSING;
+            this.agents[writeIdx++] = agent; // keep alive, just waiting
             continue;
           }
         }
@@ -222,7 +218,10 @@ export class PedestrianManager {
         -(edge.to.position.y - edge.from.position.y),
         edge.to.position.x - edge.from.position.x,
       );
+
+      this.agents[writeIdx++] = agent;
     }
+    this.agents.length = writeIdx; // compact: truncate removed agents
   }
 
   getPedestrians(): ReadonlyArray<PedestrianAgent> {
