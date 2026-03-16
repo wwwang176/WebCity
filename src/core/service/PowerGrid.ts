@@ -1,6 +1,5 @@
 import { Grid } from '../grid/Grid';
 import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
-import { calculateNetworkCoverage } from './NetworkCoverage';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
@@ -75,17 +74,16 @@ export class PowerGrid {
   }
 
   /**
-   * Calculate power coverage using BFS budget-drain per plant.
-   * Each plant starts BFS from its position with its own output as budget.
-   * When a building cell is reached, its demand is subtracted from the budget.
-   * If budget runs out, BFS stops — remaining cells in range have no power.
-   * fullCoverage is computed separately (no budget) for overlay display.
+   * Calculate power coverage using pure BFS through roads/buildings.
+   * Power only spreads through adjacent road or building cells (no free Euclidean radius).
+   * fullCoverage = all reachable cells via road/building BFS (no budget limit).
+   * powered = same BFS but each plant drains its output budget per building reached.
    */
   calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
-    // Phase 1: compute fullCoverage (no budget limit) for overlay "in range" display
+    // Phase 1: compute fullCoverage (no budget limit) — shows where the network reaches
     this.fullCoverage = new Set<string>();
     for (const plant of this.plants) {
-      calculateNetworkCoverage(grid, plant.x, plant.y, POWER.PLANT_RANGE, POWER.RELAY_RANGE, this.fullCoverage, infrastructurePositions);
+      this.bfsRoadNetwork(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions);
     }
 
     // Phase 2: BFS budget-drain per plant to determine actual powered cells
@@ -189,101 +187,67 @@ export class PowerGrid {
   }
 
   /**
-   * BFS from a single plant, draining its budget as buildings are reached.
-   * Uses same 2-phase approach as NetworkCoverage: Euclidean circle + BFS relay.
-   * Cells already in this.powered (from earlier plants) are skipped — no double-drain.
+   * Pure BFS through roads/buildings from a starting position.
+   * Adds all reachable cells to the given set. No budget limit.
+   */
+  private bfsRoadNetwork(grid: Grid, startX: number, startY: number, coverage: Set<string>, infra?: Set<string>): void {
+    const startKey = toPosKey(startX, startY);
+    if (coverage.has(startKey)) return;
+    coverage.add(startKey);
+    const queue: [number, number][] = [[startX, startY]];
+    while (queue.length > 0) {
+      const [x, y] = queue.shift()!;
+      for (const [dx, dy] of FOUR_NEIGHBORS) {
+        const nx = x + dx!;
+        const ny = y + dy!;
+        const key = toPosKey(nx, ny);
+        if (coverage.has(key)) continue;
+        const cell = grid.getCell(nx, ny);
+        if (!cell) continue;
+        const canRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
+        if (!canRelay) continue;
+        coverage.add(key);
+        queue.push([nx, ny]);
+      }
+    }
+  }
+
+  /**
+   * BFS from a single plant through roads/buildings, draining budget per building.
+   * Cells already powered by another plant are skipped (no double-drain).
    */
   private bfsBudgetDrain(grid: Grid, plant: PowerPlant, infra?: Set<string>): void {
     let budget = plant.output;
-    const r = POWER.PLANT_RANGE;
-    const r2 = r * r;
+    const startKey = toPosKey(plant.x, plant.y);
     const visited = new Set<string>();
-    const relayRange = POWER.RELAY_RANGE;
-
-    // BFS queue: [x, y, phase] — phase 1 = euclidean circle sorted by distance, phase 2 = relay
-    // We do a combined BFS: first circle cells by distance, then relay cells
-    const circleCells: { x: number; y: number; dist2: number }[] = [];
-
-    // Collect all cells in Euclidean circle
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const d2 = dx * dx + dy * dy;
-        if (d2 > r2) continue;
-        const nx = plant.x + dx;
-        const ny = plant.y + dy;
-        if (!grid.getCell(nx, ny)) continue;
-        circleCells.push({ x: nx, y: ny, dist2: d2 });
-      }
-    }
-    // Sort by distance from plant (nearest first = BFS order)
-    circleCells.sort((a, b) => a.dist2 - b.dist2);
-
-    const relaySeeds: [number, number][] = [];
-
-    // Phase 1: process circle cells in distance order, drain budget
-    for (const { x, y, dist2 } of circleCells) {
-      const key = toPosKey(x, y);
-      if (visited.has(key)) continue;
-      visited.add(key);
-
-      // Drain budget for building cells not already powered by another plant
-      if (!this.powered.has(key)) {
-        const demand = this.getCellDemand(grid, x, y);
-        if (demand > 0) {
-          if (budget < demand) continue; // skip this building, try others at same distance
-          budget -= demand;
-        }
-        this.powered.add(key);
-      }
-
-      // Collect relay seeds from circle edge
-      if (dist2 > (r - 1) * (r - 1)) {
-        const cell = grid.getCell(x, y)!;
-        const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
-        if (isRelay) relaySeeds.push([x, y]);
-      }
-    }
-
-    // Phase 2: BFS relay from edge, with budget drain
-    if (relaySeeds.length === 0 || budget <= 0) return;
-    const relayMap = new Map<string, number>();
-    const queue: [number, number, number][] = [];
-    for (const [sx, sy] of relaySeeds) {
-      const key = toPosKey(sx, sy);
-      if (!relayMap.has(key)) {
-        relayMap.set(key, relayRange);
-        queue.push([sx, sy, relayRange]);
-      }
-    }
+    visited.add(startKey);
+    this.powered.add(startKey);
+    const queue: [number, number][] = [[plant.x, plant.y]];
     while (queue.length > 0) {
       if (budget <= 0) break;
-      const [x, y, remaining] = queue.shift()!;
-      for (const [ddx, ddy] of FOUR_NEIGHBORS) {
-        const nx = x + ddx!;
-        const ny = y + ddy!;
+      const [x, y] = queue.shift()!;
+      for (const [dx, dy] of FOUR_NEIGHBORS) {
+        const nx = x + dx!;
+        const ny = y + dy!;
         const key = toPosKey(nx, ny);
         if (visited.has(key)) continue;
         const cell = grid.getCell(nx, ny);
         if (!cell) continue;
-        const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
-        const newRange = Math.max(isRelay ? relayRange : 0, remaining - 1);
-        if (newRange <= 0) continue;
-        const prev = relayMap.get(key) ?? 0;
-        if (newRange <= prev) continue;
-        relayMap.set(key, newRange);
+        const canRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
+        if (!canRelay) continue;
         visited.add(key);
 
-        // Drain budget
+        // Drain budget for building cells not already powered by another plant
         if (!this.powered.has(key)) {
           const demand = this.getCellDemand(grid, nx, ny);
           if (demand > 0) {
-            if (budget < demand) continue;
+            if (budget < demand) continue; // not enough budget for this building
             budget -= demand;
           }
           this.powered.add(key);
         }
 
-        queue.push([nx, ny, newRange]);
+        queue.push([nx, ny]);
       }
     }
   }
