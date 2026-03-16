@@ -1,0 +1,312 @@
+/**
+ * PedestrianManager — manages pedestrian agents.
+ *
+ * Spawns, moves, and despawns pedestrians along the sidewalk graph.
+ * Uses a WalkingTripPool for probability-based spawning proportional
+ * to actual commute mode distribution.
+ */
+
+import { SidewalkGraph, SidewalkEdge } from './SidewalkGraph';
+import { PedestrianAgent, PedestrianState, PedestrianTripType } from './PedestrianAgent';
+import { euclideanDistance } from '../grid/GridHelpers';
+
+// ── Constants ──────────────────────────────────────────────────────────
+
+export const PEDESTRIAN = {
+  SPEED: 1.5,
+  MIN_ACTIVE: 50,
+  MAX_ACTIVE: 2000,
+  POPULATION_RATIO: 0.05,
+  DESPAWN_TIMEOUT: 120,
+} as const;
+
+export const DECORATIVE_PEDESTRIAN = {
+  MAX_RATIO: 0.15,
+  SPAWN_INTERVAL: 8,
+  BATCH_SIZE: 3,
+} as const;
+
+export function getMaxPedestrians(population: number): number {
+  return Math.max(
+    PEDESTRIAN.MIN_ACTIVE,
+    Math.min(Math.floor(population * PEDESTRIAN.POPULATION_RATIO), PEDESTRIAN.MAX_ACTIVE),
+  );
+}
+
+// ── WalkingTripPool ────────────────────────────────────────────────────
+
+export interface AggregatedTrip {
+  fromX: number;
+  fromY: number;
+  toX: number;
+  toY: number;
+  tripType: PedestrianTripType;
+  count: number;
+}
+
+export interface WalkingTripPool {
+  trips: AggregatedTrip[];
+  totalWeight: number;
+  prefixSums: number[];
+}
+
+export function buildTripPool(trips: AggregatedTrip[]): WalkingTripPool {
+  let total = 0;
+  const prefixSums: number[] = [];
+  for (const t of trips) {
+    total += t.count;
+    prefixSums.push(total);
+  }
+  return { trips, totalWeight: total, prefixSums };
+}
+
+export function sampleTrip(pool: WalkingTripPool, rand = Math.random): AggregatedTrip | null {
+  if (pool.totalWeight === 0) return null;
+  const r = rand() * pool.totalWeight;
+  // Binary search in prefix sums
+  let lo = 0, hi = pool.prefixSums.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (pool.prefixSums[mid]! <= r) lo = mid + 1;
+    else hi = mid;
+  }
+  return pool.trips[lo] ?? null;
+}
+
+// ── Traffic light / level crossing interfaces ──────────────────────────
+
+export interface TrafficLightQuery {
+  canPass(fromX: number, fromY: number, toX: number, toY: number): boolean;
+}
+
+export interface LevelCrossingQuery {
+  isCrossingBlocked(x: number, y: number): boolean;
+}
+
+// ── PedestrianManager ──────────────────────────────────────────────────
+
+export class PedestrianManager {
+  private agents: PedestrianAgent[] = [];
+  private nextId = 1;
+  private pathCache = new Map<string, SidewalkEdge[] | null>();
+  private cellIndex = new Map<string, Set<string>>();
+
+  constructor(
+    private sidewalkGraph: SidewalkGraph,
+    private trafficLights: TrafficLightQuery | null = null,
+    private levelCrossings: LevelCrossingQuery | null = null,
+  ) {}
+
+  spawnPedestrian(
+    originX: number, originY: number,
+    destX: number, destY: number,
+    citizenId: number,
+    tripType: PedestrianTripType,
+    population = 0,
+  ): number | null {
+    const maxActive = population > 0 ? getMaxPedestrians(population) : PEDESTRIAN.MAX_ACTIVE;
+    if (this.agents.length >= maxActive) return null;
+
+    const path = this.getCachedPath(originX, originY, destX, destY);
+    if (!path || path.length === 0) return null;
+
+    const id = this.nextId++;
+    const agent: PedestrianAgent = {
+      id,
+      citizenId,
+      tripType,
+      edgePath: path,
+      edgeIndex: 0,
+      edgeProgress: 0,
+      position: { x: path[0]!.from.position.x, y: path[0]!.from.position.y },
+      heading: 0,
+      state: PedestrianState.WALKING,
+      waitTimer: 0,
+      colorIndex: id % 12,
+    };
+    this.agents.push(agent);
+    return id;
+  }
+
+  tick(dt: number): void {
+    for (let i = this.agents.length - 1; i >= 0; i--) {
+      const agent = this.agents[i]!;
+
+      if (agent.state === PedestrianState.ARRIVED) {
+        this.agents.splice(i, 1);
+        continue;
+      }
+
+      const currentEdge = agent.edgePath[agent.edgeIndex];
+      if (!currentEdge) {
+        agent.state = PedestrianState.ARRIVED;
+        continue;
+      }
+
+      // Crosswalk signal check
+      if (currentEdge.type === 'crosswalk' && agent.edgeProgress === 0) {
+        if (this.trafficLights && !this.canPassCrosswalk(currentEdge)) {
+          agent.state = PedestrianState.WAITING_SIGNAL;
+          continue;
+        }
+        agent.state = PedestrianState.WALKING;
+      }
+
+      // Level crossing check
+      if (currentEdge.type === 'level_crossing' && agent.edgeProgress === 0) {
+        if (this.levelCrossings) {
+          const cellKey = currentEdge.from.cellKey;
+          const parts = cellKey.split(',');
+          const cx = Number(parts[0]);
+          const cy = Number(parts[1]);
+          if (this.levelCrossings.isCrossingBlocked(cx, cy)) {
+            agent.state = PedestrianState.WAITING_CROSSING;
+            continue;
+          }
+        }
+        agent.state = PedestrianState.WALKING;
+      }
+
+      // Move
+      const moveDistance = PEDESTRIAN.SPEED * dt;
+      agent.edgeProgress += moveDistance;
+
+      // Advance through edges
+      let edge = currentEdge;
+      while (agent.edgeProgress >= edge.length) {
+        agent.edgeProgress -= edge.length;
+        agent.edgeIndex++;
+        if (agent.edgeIndex >= agent.edgePath.length) {
+          agent.state = PedestrianState.ARRIVED;
+          break;
+        }
+        edge = agent.edgePath[agent.edgeIndex]!;
+      }
+
+      if (agent.state === PedestrianState.ARRIVED) continue;
+
+      // Interpolate position
+      const t = edge.length > 0 ? agent.edgeProgress / edge.length : 0;
+      agent.position.x = edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t;
+      agent.position.y = edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t;
+      agent.heading = Math.atan2(
+        -(edge.to.position.y - edge.from.position.y),
+        edge.to.position.x - edge.from.position.x,
+      );
+    }
+  }
+
+  getPedestrians(): ReadonlyArray<PedestrianAgent> {
+    return this.agents;
+  }
+
+  getActiveCount(): number {
+    return this.agents.length;
+  }
+
+  spawnDecorativeBatch(population: number): void {
+    const maxDecorative = Math.floor(getMaxPedestrians(population) * DECORATIVE_PEDESTRIAN.MAX_RATIO);
+    const currentDecorative = this.agents.filter(a => a.tripType === PedestrianTripType.DECORATIVE).length;
+    if (currentDecorative >= maxDecorative) return;
+
+    const allEdges = this.sidewalkGraph.getAllEdges().filter(e => e.type === 'sidewalk');
+    if (allEdges.length === 0) return;
+
+    const count = Math.min(DECORATIVE_PEDESTRIAN.BATCH_SIZE, maxDecorative - currentDecorative);
+    for (let i = 0; i < count; i++) {
+      const edge = allEdges[Math.floor(Math.random() * allEdges.length)]!;
+      const maxActive = getMaxPedestrians(population);
+      if (this.agents.length >= maxActive) break;
+
+      const id = this.nextId++;
+      const agent: PedestrianAgent = {
+        id,
+        citizenId: -1,
+        tripType: PedestrianTripType.DECORATIVE,
+        edgePath: [edge],
+        edgeIndex: 0,
+        edgeProgress: 0,
+        position: { x: edge.from.position.x, y: edge.from.position.y },
+        heading: 0,
+        state: PedestrianState.WALKING,
+        waitTimer: 0,
+        colorIndex: id % 12,
+      };
+      this.agents.push(agent);
+    }
+  }
+
+  // ── Path cache ──
+
+  invalidateCells(affectedCells: Iterable<string>): void {
+    for (const cellKey of affectedCells) {
+      const pathKeys = this.cellIndex.get(cellKey);
+      if (!pathKeys) continue;
+      for (const pathKey of pathKeys) {
+        this.pathCache.delete(pathKey);
+      }
+      this.cellIndex.delete(cellKey);
+    }
+  }
+
+  clearPathCache(): void {
+    this.pathCache.clear();
+    this.cellIndex.clear();
+  }
+
+  // ── Serialization ──
+
+  toJSON(): { agents: PedestrianAgent[]; nextId: number } {
+    return { agents: [...this.agents], nextId: this.nextId };
+  }
+
+  fromJSON(data: { agents: PedestrianAgent[]; nextId: number }): void {
+    this.agents = data.agents;
+    this.nextId = data.nextId;
+  }
+
+  // ── Private ──
+
+  private getCachedPath(
+    fromX: number, fromY: number, toX: number, toY: number,
+  ): SidewalkEdge[] | null {
+    const key = `${fromX},${fromY}→${toX},${toY}`;
+    if (this.pathCache.has(key)) {
+      return this.pathCache.get(key) ?? null;
+    }
+
+    const fromNode = this.sidewalkGraph.findNearestNode(fromX, fromY);
+    const toNode = this.sidewalkGraph.findNearestNode(toX, toY);
+    if (!fromNode || !toNode) {
+      this.pathCache.set(key, null);
+      return null;
+    }
+
+    const path = this.sidewalkGraph.findPath(fromNode.id, toNode.id);
+    this.pathCache.set(key, path);
+
+    // Build cell index
+    if (path) {
+      for (const edge of path) {
+        const cellKey = edge.from.cellKey;
+        if (!this.cellIndex.has(cellKey)) this.cellIndex.set(cellKey, new Set());
+        this.cellIndex.get(cellKey)!.add(key);
+      }
+    }
+
+    return path;
+  }
+
+  private canPassCrosswalk(edge: SidewalkEdge): boolean {
+    if (!this.trafficLights) return true;
+    const from = edge.from;
+    const to = edge.to;
+    // Use cell positions for traffic light query
+    const fromPos = from.cellKey.split(',');
+    const toPos = to.cellKey.split(',');
+    return this.trafficLights.canPass(
+      Number(fromPos[0]), Number(fromPos[1]),
+      Number(toPos[0]), Number(toPos[1]),
+    );
+  }
+}
