@@ -9,6 +9,7 @@ export interface CityAttractiveness {
   taxRate: number;
   pollution: number;
   crimeRate: number;
+  unemploymentRate?: number;  // 0.0–1.0, fraction of working-age citizens without a job
 }
 
 export const ATTRACTIVENESS = {
@@ -18,6 +19,7 @@ export const ATTRACTIVENESS = {
   TAX_WEIGHT: 0.5,
   POLLUTION_WEIGHT: 0.2,
   CRIME_WEIGHT: 0.3,
+  UNEMPLOYMENT_WEIGHT: 60,
   MIN: 0,
   MAX: 100,
 } as const;
@@ -40,6 +42,9 @@ export function calculateAttractiveness(city: CityAttractiveness): number {
   score -= city.taxRate * ATTRACTIVENESS.TAX_WEIGHT;
   score -= city.pollution * ATTRACTIVENESS.POLLUTION_WEIGHT;
   score -= city.crimeRate * ATTRACTIVENESS.CRIME_WEIGHT;
+  if (city.unemploymentRate !== undefined) {
+    score -= city.unemploymentRate * ATTRACTIVENESS.UNEMPLOYMENT_WEIGHT;
+  }
   return Math.max(ATTRACTIVENESS.MIN, Math.min(ATTRACTIVENESS.MAX, score));
 }
 

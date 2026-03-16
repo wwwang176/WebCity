@@ -418,6 +418,13 @@ export class SimulationLoop {
     const avgHappiness = pop > 0
       ? this.state.citizens.getAverageHappiness()
       : SIMULATION.DEFAULT_HAPPINESS;
+    // Calculate unemployment rate: fraction of working-age citizens without a job
+    const citizens = this.state.citizens.getCitizens();
+    const workingAge = citizens.filter(c => isWorkingAge(c.age));
+    const unemploymentRate = workingAge.length > 0
+      ? workingAge.filter(c => c.workplaceId === null).length / workingAge.length
+      : 0;
+
     const city = {
       jobOpenings: this.countJobOpenings(),
       vacantHomes: this.countVacantHomes(),
@@ -425,6 +432,7 @@ export class SimulationLoop {
       taxRate: this.state.taxRates.residential ?? 9,
       pollution: this.getAvgPollution(),
       crimeRate: this.getAvgCrime(),
+      unemploymentRate,
     };
     const { emigratedIds } = migrationTick(this.state.citizens, city, pop);
     for (const id of emigratedIds) {
