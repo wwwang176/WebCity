@@ -1,5 +1,4 @@
 import type { SizedGrid } from '../grid/GridHelpers';
-import { recoverNextId } from '../utils/recoverNextId';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
 import type { PollutionSource } from '../environment/Pollution';
@@ -154,7 +153,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     const gs = new GarbageService();
     gs.facilities = data.facilities.map(f => ({ ...f }));
     gs.overflow = data.overflow;
-    gs.nextId = recoverNextId(gs.facilities, 'garbage_');
+    gs.restoreNextId();
     return gs;
   }
 }

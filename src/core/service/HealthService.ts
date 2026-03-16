@@ -1,5 +1,4 @@
 import { removeById } from '../utils/removeById';
-import { recoverNextId } from '../utils/recoverNextId';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
 import type { SizedGrid } from '../grid/GridHelpers';
@@ -69,7 +68,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
     for (const h of json.hospitals) {
       service.facilities.push({ ...h });
     }
-    service.nextId = recoverNextId(service.facilities, 'hospital_');
+    service.restoreNextId();
     return service;
   }
 }

@@ -1,6 +1,5 @@
 import type { SizedGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
-import { recoverNextId } from '../utils/recoverNextId';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
 
@@ -61,7 +60,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
     for (const s of data.stations) {
       service.facilities.push({ ...s });
     }
-    service.nextId = recoverNextId(service.facilities, 'police_');
+    service.restoreNextId();
     return service;
   }
 }

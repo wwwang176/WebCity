@@ -1,5 +1,4 @@
 import { removeById } from '../utils/removeById';
-import { recoverNextId } from '../utils/recoverNextId';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
 
@@ -123,7 +122,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
       todayCremated: c.todayCremated ?? 0,
     }));
     service.pendingDeaths = json.pendingDeaths;
-    service.nextId = recoverNextId(service.facilities, 'cem-');
+    service.restoreNextId();
     return service;
   }
 }
