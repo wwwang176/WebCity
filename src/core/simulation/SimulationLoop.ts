@@ -1482,7 +1482,8 @@ export class SimulationLoop {
 
     const maxPed = getMaxPedestrians(population);
     const currentPed = this.state.pedestrianManager.getActiveCount();
-    const budget = Math.min(5, maxPed - currentPed);
+    // Fill to cap within ~8 ticks (a full rush period)
+    const budget = Math.min(Math.max(5, Math.ceil(maxPed / 8)), maxPed - currentPed);
 
     for (let i = 0; i < budget; i++) {
       const trip = sampleTrip(this.walkingTripPool);
