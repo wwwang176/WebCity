@@ -52,6 +52,9 @@ const LEVEL_RANK: Record<SchoolType | 'none', number> = {
   university: 3,
 };
 
+/** All school types in order (OCP: add new types here). */
+const SCHOOL_TYPES: readonly SchoolType[] = ['elementary', 'highschool', 'university'];
+
 export type EducationLevelResult = 'none' | SchoolType;
 
 export class EducationService {
@@ -89,7 +92,7 @@ export class EducationService {
 
   /** Recompute road-distance coverage for all school types. */
   recalculateCoverage(grid: SizedGrid): void {
-    const types: SchoolType[] = ['elementary', 'highschool', 'university'];
+    const types = SCHOOL_TYPES;
     for (const type of types) {
       const facilities = this.schools.filter(s => s.type === type);
       const size = SCHOOL_SIZE[type];
@@ -107,15 +110,13 @@ export class EducationService {
     if (type !== undefined) {
       return this.coverageMaps[type].hasCoverage(x, y);
     }
-    return this.coverageMaps.elementary.hasCoverage(x, y)
-      || this.coverageMaps.highschool.hasCoverage(x, y)
-      || this.coverageMaps.university.hasCoverage(x, y);
+    return SCHOOL_TYPES.some(t => this.coverageMaps[t].hasCoverage(x, y));
   }
 
   /** Cost ratio: best (minimum) across all school types. -1 if uncovered. */
   getCostRatio(x: number, y: number): number {
     let best = -1;
-    for (const type of ['elementary', 'highschool', 'university'] as SchoolType[]) {
+    for (const type of SCHOOL_TYPES) {
       const r = this.coverageMaps[type].getCostRatio(x, y);
       if (r >= 0 && (best < 0 || r < best)) best = r;
     }
@@ -155,7 +156,7 @@ export class EducationService {
   getCoveredCellsWithCost(): ReadonlyMap<string, number> {
     // Merge all three maps, taking min cost
     const merged = new Map<string, number>();
-    for (const type of ['elementary', 'highschool', 'university'] as SchoolType[]) {
+    for (const type of SCHOOL_TYPES) {
       const cells = this.coverageMaps[type].getCoveredCells();
       for (const [key, cost] of cells) {
         const existing = merged.get(key);
