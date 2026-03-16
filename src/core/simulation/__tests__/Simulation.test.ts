@@ -1,12 +1,20 @@
 import { describe, it, expect } from 'vitest';
 import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
-import { createGameState } from '../GameState';
+import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import { PolicyType, Specialization } from '../../district/types';
 import { setSpecialization } from '../../district/Specialization';
 import { CitySpecType } from '../../district/CitySpecialization';
+
+/** Add power+water plants adjacent to a position so buildings there get utilities. */
+function provideUtilities(state: GameState, x: number, y: number): void {
+  state.grid.setCell(x - 1, y, { roadFlags: 1, roadType: 1 });
+  state.power.addPlant({ x: x - 2, y, output: 1500, pollution: 0, type: 'coal' });
+  state.water.addPlant({ x: x - 2, y: y + 1, output: 1500 });
+  state.grid.setCell(x - 2, y + 1, { roadFlags: 1, roadType: 1 });
+}
 
 describe('Simulation tick interval constants', () => {
   it('SLOW_TICK_INTERVAL should be a positive integer', () => {
@@ -529,11 +537,10 @@ describe('Specialization integration', () => {
     setSpecialization(state.districts, d.id, Specialization.MINING);
     state.districts.addCellToDistrict(d.id, 5, 5);
 
-    // Place an industrial building in the district
-    state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 }); // Small Factory
-
-    // Place same building outside district for comparison
+    state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    provideUtilities(state, 5, 5);
     state.grid.setCell(10, 10, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    provideUtilities(state, 10, 10);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -550,11 +557,11 @@ describe('Specialization integration', () => {
     const d = state.districts.createDistrict('TourismDistrict');
     setSpecialization(state.districts, d.id, Specialization.TOURISM);
 
-    // Add multiple cells to district and place commercial buildings
     for (let x = 3; x <= 5; x++) {
       state.districts.addCellToDistrict(d.id, x, 5);
-      state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 }); // Small Shop: companyIncome=10, Lv1
+      state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     }
+    provideUtilities(state, 3, 5);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -568,12 +575,11 @@ describe('Specialization integration', () => {
   it('NONE specialization should not modify revenue', () => {
     const state = createGameState(20, 20);
     const d = state.districts.createDistrict('NormalDistrict');
-    // Default is NONE, keep it
     state.districts.addCellToDistrict(d.id, 5, 5);
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-
-    // Same building outside district
+    provideUtilities(state, 5, 5);
     state.grid.setCell(10, 10, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    provideUtilities(state, 10, 10);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -597,8 +603,8 @@ describe('CitySpecialization integration', () => {
     const state = createGameState(20, 20);
     state.citySpec.choose(CitySpecType.GAMBLING_CITY, 5000);
 
-    // Place a commercial building: Small Shop companyIncome=10, Lv1
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    provideUtilities(state, 5, 5);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -613,8 +619,8 @@ describe('CitySpecialization integration', () => {
     const state = createGameState(20, 20);
     state.citySpec.choose(CitySpecType.TECH_CITY, 5000);
 
-    // Small Office (id=16): companyIncome=20, Lv1
     state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
+    provideUtilities(state, 3, 3);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();

@@ -1,11 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { createGameState } from '../GameState';
+import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { BUILDING_TYPES, getBuildingType } from '../../building/types';
 import { IncomeLevel } from '../../citizen/types';
 import { DEFAULT_TAX_RATES, type TaxRates } from '../../economy/Tax';
 import { serializeGameState, deserializeGameState } from '../../save/Serializer';
+
+/** Add power+water plants adjacent to a position so buildings there get utilities. */
+function provideUtilities(state: GameState, x: number, y: number): void {
+  state.grid.setCell(x - 1, y, { roadFlags: 1, roadType: 1 });
+  state.power.addPlant({ x: x - 2, y, output: 1500, pollution: 0, type: 'coal' });
+  state.water.addPlant({ x: x - 2, y: y + 1, output: 1500 });
+  state.grid.setCell(x - 2, y + 1, { roadFlags: 1, roadType: 1 });
+}
 
 describe('BuildingType companyIncome', () => {
   it('should have companyIncome for commercial low buildings', () => {
@@ -92,16 +100,15 @@ describe('TaxRates: income tax + business tax', () => {
 describe('Income tax calculation (residential buildings)', () => {
   it('should calculate income tax from citizens in residential buildings', () => {
     const state = createGameState(20, 20);
-    // Place a residential building
-    state.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // Small House, 4 residents
-    // Create citizens living in that building
+    state.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    provideUtilities(state, 5, 5);
     const c1 = state.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.LOW });
     c1.homeId = '5,5';
     const c2 = state.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.LOW });
     c2.homeId = '5,5';
 
-    state.taxRates.residential = 10; // 10% income tax
-    state.taxRates.business = 0; // no business tax to isolate
+    state.taxRates.residential = 10;
+    state.taxRates.business = 0;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -111,9 +118,9 @@ describe('Income tax calculation (residential buildings)', () => {
   });
 
   it('same building with LOW vs HIGH income citizens should give different tax revenue', () => {
-    // LOW income citizens
     const stateLow = createGameState(20, 20);
     stateLow.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    provideUtilities(stateLow, 5, 5);
     for (let i = 0; i < 4; i++) {
       const c = stateLow.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.LOW });
       c.homeId = '5,5';
@@ -125,9 +132,9 @@ describe('Income tax calculation (residential buildings)', () => {
     for (let i = 0; i < 6; i++) loopLow.tick();
     const incomeLow = stateLow.budget.income;
 
-    // HIGH income citizens
     const stateHigh = createGameState(20, 20);
     stateHigh.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    provideUtilities(stateHigh, 5, 5);
     for (let i = 0; i < 4; i++) {
       const c = stateHigh.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.HIGH });
       c.homeId = '5,5';
@@ -147,6 +154,7 @@ describe('Income tax calculation (residential buildings)', () => {
   it('MEDIUM income citizens should generate 1.5x tax of LOW income', () => {
     const state = createGameState(20, 20);
     state.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    provideUtilities(state, 5, 5);
     const c = state.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.MEDIUM });
     c.homeId = '5,5';
     state.taxRates.residential = 10;
@@ -163,10 +171,10 @@ describe('Income tax calculation (residential buildings)', () => {
 describe('Business tax calculation (commercial/industrial/office)', () => {
   it('should calculate business tax for commercial building: companyIncome x levelMultiplier x businessTaxRate', () => {
     const state = createGameState(20, 20);
-    // Small Shop (id=7): companyIncome=10, level=1
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    state.taxRates.residential = 0; // no income tax
-    state.taxRates.business = 10;   // 10% business tax
+    provideUtilities(state, 5, 5);
+    state.taxRates.residential = 0;
+    state.taxRates.business = 10;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -215,8 +223,8 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
 
   it('should calculate business tax for office building', () => {
     const state = createGameState(20, 20);
-    // Office Building (id=19): companyIncome=60, level=1 (Lv1 won't be downgraded)
     state.grid.setCell(5, 5, { zoneType: ZoneType.OFFICE, buildingId: 19 });
+    provideUtilities(state, 5, 5);
     state.taxRates.residential = 0;
     state.taxRates.business = 10;
 
@@ -229,14 +237,14 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
 
   it('income tax and business tax should both contribute to total income', () => {
     const state = createGameState(20, 20);
-    // Residential building with citizens (fill to capacity to prevent migration adding more)
-    state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 4 capacity
+    state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    provideUtilities(state, 3, 3);
     for (let i = 0; i < 4; i++) {
       const c = state.citizens.createCitizen({ age: 46, incomeLevel: IncomeLevel.LOW });
       c.homeId = '3,3';
     }
-    // Commercial building
-    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 }); // companyIncome=10
+    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    provideUtilities(state, 5, 5);
 
     state.taxRates.residential = 10;
     state.taxRates.business = 10;

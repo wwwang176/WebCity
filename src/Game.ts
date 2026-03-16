@@ -1772,9 +1772,7 @@ export class Game {
       forEachCell: (fn) => this.state.grid.forEachCell(fn),
       taxRates: this.state.taxRates,
       getCitizensByHome: (key) => this.state.citizens.getCitizensByHome(key),
-      isPowered: this.state.power.getPlants().length > 0
-        ? (x, y) => this.state.power.isPowered(x, y)
-        : undefined,
+      isPowered: (x, y) => this.state.power.isPowered(x, y),
       roadTileCount: countRoadTiles(this.state.grid),
       loans: this.state.budget.loans,
       loanInterestRate: this.state.budget.loanInterestRate,
