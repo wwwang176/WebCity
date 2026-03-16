@@ -424,7 +424,7 @@ export class SimulationLoop {
           // Read back the grown cell to get level info
           const grown = grid.getCell(x, y);
           if (grown) {
-            const level = clampBuildingLevel(grown.serviceCoverage);
+            const level = getBuildingType(grown.buildingId)?.level ?? 1;
             this.onBuildingAdded?.(x, y, cell.zoneType, level);
           }
         }
@@ -510,6 +510,16 @@ export class SimulationLoop {
         }
       }
 
+      // Get workplace zone type for job mismatch penalty
+      let workplaceZoneType: ZoneType | undefined;
+      if (citizen.workplaceId) {
+        const wpos = parsePosKey(citizen.workplaceId);
+        if (wpos) {
+          const wcell = this.state.grid.getCell(wpos.x, wpos.y);
+          if (wcell) workplaceZoneType = wcell.zoneType;
+        }
+      }
+
       const factors: HappinessFactors = {
         commuteDistance: commute,
         hasPark: hasParkCoverage,
@@ -522,6 +532,7 @@ export class SimulationLoop {
         currentTick: this.state.clock.tick,
         homePowered,
         homeWatered,
+        workplaceZoneType,
       };
       citizen.happiness = calculateHappiness(citizen, factors);
     }
@@ -805,7 +816,7 @@ export class SimulationLoop {
         // Notify with updated state
         const updated = grid.getCell(x, y);
         if (updated) {
-          const newLevel = clampBuildingLevel(updated.serviceCoverage);
+          const newLevel = getBuildingType(updated.buildingId)?.level ?? 1;
           this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === BURNED);
         }
       }

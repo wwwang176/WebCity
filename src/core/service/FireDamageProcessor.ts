@@ -1,7 +1,7 @@
 import { isZoneBuilding } from '../building/InfraConfig';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { forEachMultiCell, BURNED } from '../building/InfraPlacement';
-import { clampBuildingLevel } from '../building/BuildingLevel';
+import { getBuildingType } from '../building/types';
 import { FIRE } from './FireService';
 
 /** Minimal resolved-fire data needed for damage processing. */
@@ -61,7 +61,7 @@ export function applyFireDamage(grid: GridLike, resolvedFires: ResolvedFire[]): 
       });
     } else {
       grid.setCell(f.x, f.y, { reserved: BURNED });
-      const level = clampBuildingLevel(cell.serviceCoverage);
+      const level = getBuildingType(cell.buildingId)?.level ?? 1;
       updates.push({ x: f.x, y: f.y, zoneType: cell.zoneType, level, burned: true });
     }
   }

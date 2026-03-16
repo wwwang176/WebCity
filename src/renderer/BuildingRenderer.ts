@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { Grid } from '../core/grid/Grid';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
+import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED } from '../core/building/InfraPlacement';
 
@@ -1115,7 +1116,7 @@ export class BuildingRenderer {
 
         if (cell.zoneType !== ZoneType.NONE) {
           if (isZoneBuilding(cell.buildingId)) {
-            const level = Math.max(1, Math.min(3, Math.ceil(cell.serviceCoverage / 3) || 1));
+            const level = getBuildingType(cell.buildingId)?.level ?? 1;
             const burned = cell.reserved === BURNED;
             this.addBuilding(x, y, cell.zoneType, level, burned);
             if (!burned) lightPositions.push({ x, y });

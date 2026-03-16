@@ -71,14 +71,14 @@ describe('applyFireDamage', () => {
     expect(grid.getCell(3, 3)!.reserved).toBe(BURNED);
   });
 
-  it('returns building level in update based on serviceCoverage', () => {
+  it('returns building level in update based on buildingId type level', () => {
     const grid = new Grid(5, 5);
-    grid.setCell(1, 1, { zoneType: ZoneType.RESIDENTIAL, buildingId: 1, serviceCoverage: 7 });
+    // buildingId 3 = Large House (Residential LOW, Level 3)
+    grid.setCell(1, 1, { zoneType: ZoneType.RESIDENTIAL, buildingId: 3 });
 
     const fires: ResolvedFire[] = [{ x: 1, y: 1, damage: 1.0 }];
     const result = applyFireDamage(grid, fires);
 
-    // serviceCoverage 7 / 3 = ceil(2.33) = 3, clamped to 3
     expect(result.updates[0]!.level).toBe(3);
   });
 });
