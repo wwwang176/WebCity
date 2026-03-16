@@ -114,8 +114,8 @@ describe('findRedLightDistance', () => {
     // e1 crosses A→B: canAdvance returns true
     // e2 crosses B→C: canAdvance returns false
     // distAhead after e1 = 1.0, stopDist = 1.0 - 0 = 1.0
-    // result = max(0, 1.0 - 0.11) = 0.89
-    expect(findRedLightDistance(v, edges, canAdvance)).toBeCloseTo(0.89, 5);
+    // result = max(0, 1.0 - 0.11 - 0.25) = 0.64  (STOP_LINE_OFFSET = 0.25)
+    expect(findRedLightDistance(v, edges, canAdvance)).toBeCloseTo(0.64, 5);
   });
 
   it('returns 0 when red light is immediately ahead', () => {
@@ -137,7 +137,7 @@ describe('findRedLightDistance', () => {
 
     // e1 same cell → skip, e2 A→B → red
     // distAhead after e1 = 0.5, stopDist = 0.5 - 0 = 0.5
-    // result = max(0, 0.5 - 0.11) = 0.39
-    expect(findRedLightDistance(v, edges, canAdvance)).toBeCloseTo(0.39, 5);
+    // result = max(0, 0.5 - 0.11 - 0.25) = 0.14  (STOP_LINE_OFFSET = 0.25)
+    expect(findRedLightDistance(v, edges, canAdvance)).toBeCloseTo(0.14, 5);
   });
 });
