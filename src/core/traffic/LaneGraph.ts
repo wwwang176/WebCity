@@ -314,10 +314,26 @@ export class LaneGraph {
     dirLanes: number,
   ): void {
     // Within-cell traversal edges: entry[otherDir] → exit[dir] (independent of neighbors)
+    // For turn/L-bend edges, all lane combinations use a uniform base length (from lane 0→0)
+    // so Dijkstra's choice is driven by speed multiplier + penalty, not geometry.
     for (const { dir } of activeDirections) {
-      for (let lane = 0; lane < dirLanes; lane++) {
-        for (const otherD of activeDirections) {
-          if (otherD.dir === dir) continue;
+      for (const otherD of activeDirections) {
+        if (otherD.dir === dir) continue;
+
+        const isTurn = otherD.dir !== oppositeDir(dir);
+
+        // Compute reference length from lane 0→0 for uniform turn cost
+        let refLength = 0.5; // fallback
+        if (isTurn) {
+          const ref0From = this.points.get(`${cellKey}:${otherD.dir}:0:entry`);
+          const ref0To = this.points.get(`${cellKey}:${dir}:0:exit`);
+          if (ref0From && ref0To) {
+            const cp = this.computeTurnControlPoint(ref0From, ref0To);
+            refLength = Math.max(this.approximateQuadraticBezierLength(ref0From.position, cp, ref0To.position), 0.1);
+          }
+        }
+
+        for (let lane = 0; lane < dirLanes; lane++) {
           const fromId = `${cellKey}:${otherD.dir}:${lane}:entry`;
           const toId = `${cellKey}:${dir}:${lane}:exit`;
           const fromPt = this.points.get(fromId);
@@ -327,22 +343,17 @@ export class LaneGraph {
           const edgeId = `${fromId}>${toId}`;
           if (this.edges.some(e => e.id === edgeId)) continue;
 
-          // L-bend (non-opposite directions): create turn edge with bezier
-          if (otherD.dir !== oppositeDir(dir)) {
+          if (isTurn) {
             const cp = this.computeTurnControlPoint(fromPt, toPt);
-            const length = this.approximateQuadraticBezierLength(
-              fromPt.position, cp, toPt.position
-            );
             this.edges.push({
               id: edgeId,
               from: fromPt,
               to: toPt,
               bezierControl: [cp],
-              length: Math.max(length, 0.1),
+              length: refLength,
               type: 'turn',
             });
           } else {
-            // Straight through: keep as straight
             const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
             this.edges.push({
               id: edgeId,
@@ -442,7 +453,23 @@ export class LaneGraph {
         || (exitDir === 'north' && targetDirInfo.dir === 'north')
         || (exitDir === 'south' && targetDirInfo.dir === 'south');
 
-      // Generate all-to-all lane connections
+      // Compute reference length from lane 0→0 for uniform turn/straight-through cost.
+      // All lane combinations use this length so geometry doesn't bias lane selection.
+      let refLength = 1.0; // fallback
+      {
+        const ref0Exit = this.points.get(`${cellKey}:${exitDir}:0:exit`);
+        const ref0Entry = this.points.get(`${farKey}:${farEntryDir}:0:entry`);
+        if (ref0Exit && ref0Entry) {
+          if (isSameAxis) {
+            refLength = Math.max(euclideanDistance(ref0Exit.position.x, ref0Exit.position.y, ref0Entry.position.x, ref0Entry.position.y), 0.1);
+          } else {
+            const cp = this.computeTurnControlPoint(ref0Exit, ref0Entry);
+            refLength = Math.max(this.approximateQuadraticBezierLength(ref0Exit.position, cp, ref0Entry.position), 0.1);
+          }
+        }
+      }
+
+      // Generate all-to-all lane connections with uniform base length
       for (let exitLane = 0; exitLane < dirLanes; exitLane++) {
         for (let entryLane = 0; entryLane < farDirLanes; entryLane++) {
           const exitId = `${cellKey}:${exitDir}:${exitLane}:exit`;
@@ -456,30 +483,21 @@ export class LaneGraph {
           if (this.edges.some(e => e.id === edgeId)) continue;
 
           if (isSameAxis) {
-            // Straight-through
-            const length = euclideanDistance(
-              fromPt.position.x, fromPt.position.y,
-              toPt.position.x, toPt.position.y,
-            );
             this.edges.push({
               id: edgeId,
               from: fromPt,
               to: toPt,
-              length: Math.max(length, 0.1),
+              length: refLength,
               type: 'straight',
             });
           } else {
-            // Turn — compute Bezier control point
             const cp = this.computeTurnControlPoint(fromPt, toPt);
-            const length = this.approximateQuadraticBezierLength(
-              fromPt.position, cp, toPt.position,
-            );
             this.edges.push({
               id: edgeId,
               from: fromPt,
               to: toPt,
               bezierControl: [cp],
-              length: Math.max(length, 0.1),
+              length: refLength,
               type: 'turn',
             });
           }
@@ -494,10 +512,24 @@ export class LaneGraph {
     dirLanes: number,
   ): void {
     // For each (entryDir, exitDir) traversal pair, add adjacent-lane change edges.
-    // e.g. eastbound: entry[west:0] → exit[east:1] (change to outer lane while moving forward)
+    // At L-bends/turns, lane_change edges use the same uniform length as the
+    // same-lane turn edge, so Dijkstra doesn't favor cross-lane due to geometry.
     for (const inDir of activeDirections) {
       for (const outDir of activeDirections) {
         if (inDir.dir === outDir.dir) continue; // no U-turn
+
+        // Compute reference length from lane 0 same-lane turn for uniform cost
+        const isTurn = inDir.dir !== oppositeDir(outDir.dir);
+        let refLength = 0;
+        if (isTurn) {
+          const ref0From = this.points.get(`${cellKey}:${inDir.dir}:0:entry`);
+          const ref0To = this.points.get(`${cellKey}:${outDir.dir}:0:exit`);
+          if (ref0From && ref0To) {
+            const cp = this.computeTurnControlPoint(ref0From, ref0To);
+            refLength = Math.max(this.approximateQuadraticBezierLength(ref0From.position, cp, ref0To.position), 0.3);
+          }
+        }
+
         for (let lane = 0; lane < dirLanes - 1; lane++) {
           // lane → lane+1
           const fromId = `${cellKey}:${inDir.dir}:${lane}:entry`;
@@ -507,12 +539,13 @@ export class LaneGraph {
           if (fromPt && toPt) {
             const edgeId = `lc:${fromId}>${toId}`;
             if (!this.edges.some(e => e.id === edgeId)) {
-              const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
+              const length = isTurn ? refLength
+                : Math.max(euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y), 0.3);
               this.edges.push({
                 id: edgeId,
                 from: fromPt,
                 to: toPt,
-                length: Math.max(length, 0.3),
+                length,
                 type: 'lane_change',
               });
             }
@@ -526,12 +559,13 @@ export class LaneGraph {
           if (fromPt2 && toPt2) {
             const edgeId2 = `lc:${fromId2}>${toId2}`;
             if (!this.edges.some(e => e.id === edgeId2)) {
-              const length2 = euclideanDistance(fromPt2.position.x, fromPt2.position.y, toPt2.position.x, toPt2.position.y);
+              const length2 = isTurn ? refLength
+                : Math.max(euclideanDistance(fromPt2.position.x, fromPt2.position.y, toPt2.position.x, toPt2.position.y), 0.3);
               this.edges.push({
                 id: edgeId2,
                 from: fromPt2,
                 to: toPt2,
-                length: Math.max(length2, 0.3),
+                length: length2,
                 type: 'lane_change',
               });
             }
