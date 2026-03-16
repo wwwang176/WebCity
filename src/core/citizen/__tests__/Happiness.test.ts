@@ -97,27 +97,21 @@ describe('Happiness', () => {
     expect(HAPPINESS.HOMELESS_PENALTY).toBe(-20);
   });
 
-  it('should penalize power shortage (ratio < 1.0)', () => {
+  it('should penalize citizen living in unpowered building', () => {
     const normal = calculateHappiness(makeCitizen(), baseFactors);
-    const shortage = calculateHappiness(makeCitizen(), { ...baseFactors, powerSupplyRatio: 0.8 });
-    expect(shortage).toBe(normal + HAPPINESS.POWER_SHORTAGE_PENALTY);
+    const noPower = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: false });
+    expect(noPower).toBe(normal + HAPPINESS.NO_POWER_PENALTY);
   });
 
-  it('should penalize severe power shortage (ratio < 0.5)', () => {
+  it('should not penalize when home is powered', () => {
     const normal = calculateHappiness(makeCitizen(), baseFactors);
-    const severe = calculateHappiness(makeCitizen(), { ...baseFactors, powerSupplyRatio: 0.3 });
-    expect(severe).toBe(normal + HAPPINESS.POWER_SEVERE_PENALTY);
+    const powered = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: true });
+    expect(powered).toBe(normal);
   });
 
-  it('should not penalize when power ratio >= 1.0', () => {
+  it('should not penalize when homePowered is undefined (backward compat)', () => {
     const normal = calculateHappiness(makeCitizen(), baseFactors);
-    const full = calculateHappiness(makeCitizen(), { ...baseFactors, powerSupplyRatio: 1.0 });
-    expect(full).toBe(normal);
-  });
-
-  it('should not penalize when powerSupplyRatio is undefined (backward compat)', () => {
-    const normal = calculateHappiness(makeCitizen(), baseFactors);
-    const undef = calculateHappiness(makeCitizen(), { ...baseFactors, powerSupplyRatio: undefined });
+    const undef = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: undefined });
     expect(undef).toBe(normal);
   });
 });

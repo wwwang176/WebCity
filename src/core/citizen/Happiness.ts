@@ -10,7 +10,7 @@ export interface HappinessFactors {
   taxRate: number;
   serviceCoverage: number;
   currentTick?: number;
-  powerSupplyRatio?: number;
+  homePowered?: boolean;
 }
 
 /** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
@@ -82,10 +82,8 @@ export const HAPPINESS = {
     { threshold: 8, modifier: 10 },
     { threshold: 5, modifier: 5 },
   ] as readonly ThresholdModifier[],
-  // Power supply
-  POWER_SHORTAGE_PENALTY: -10,
-  POWER_SEVERE_PENALTY: -20,
-  POWER_SEVERE_THRESHOLD: 0.5,
+  // Power
+  NO_POWER_PENALTY: -15,
   // Housing
   HOMELESS_PENALTY: -20,
 } as const;
@@ -136,11 +134,9 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
   // Service coverage
   happiness += applyThresholdModifier(factors.serviceCoverage, HAPPINESS.SERVICE_MODIFIERS, 'atOrAbove');
 
-  // Power supply ratio penalty
-  if (factors.powerSupplyRatio !== undefined && factors.powerSupplyRatio < 1) {
-    happiness += factors.powerSupplyRatio < HAPPINESS.POWER_SEVERE_THRESHOLD
-      ? HAPPINESS.POWER_SEVERE_PENALTY
-      : HAPPINESS.POWER_SHORTAGE_PENALTY;
+  // No power at home penalty
+  if (factors.homePowered === false) {
+    happiness += HAPPINESS.NO_POWER_PENALTY;
   }
 
   // Homeless penalty

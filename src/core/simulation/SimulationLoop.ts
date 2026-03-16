@@ -494,11 +494,17 @@ export class SimulationLoop {
     // Check if any parks exist for happiness bonus
     const hasParkCoverage = this.state.parks.getParks().length > 0;
 
-    const powerSupplyRatio = this.state.power.getSupplyRatio();
-
     for (const citizen of this.state.citizens.getCitizens()) {
       // Vary commute per citizen (+/- 3 random jitter)
       const commute = Math.max(1, avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
+
+      // Check if citizen's home has power
+      let homePowered = true;
+      if (citizen.homeId) {
+        const pos = parsePosKey(citizen.homeId);
+        if (pos) homePowered = this.state.power.isPowered(pos.x, pos.y);
+      }
+
       const factors: HappinessFactors = {
         commuteDistance: commute,
         hasPark: hasParkCoverage,
@@ -509,7 +515,7 @@ export class SimulationLoop {
         taxRate,
         serviceCoverage,
         currentTick: this.state.clock.tick,
-        powerSupplyRatio,
+        homePowered,
       };
       citizen.happiness = calculateHappiness(citizen, factors);
     }
