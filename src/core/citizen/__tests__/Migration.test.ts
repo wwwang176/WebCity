@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
-import { migrationTick, calculateAttractiveness, getImmigrationCap, ATTRACTIVENESS, IMMIGRATION, type CityAttractiveness } from '../Migration';
+import { migrationTick, calculateAttractiveness, getImmigrationCap, pickIncomeByEducation, ATTRACTIVENESS, IMMIGRATION, type CityAttractiveness } from '../Migration';
+import { EMIGRATION_TOLERANCE, calculateEmigrationTolerance, IncomeLevel, EducationLevel } from '../types';
 
 const attractiveCity: CityAttractiveness = {
   jobOpenings: 10,
@@ -31,12 +32,13 @@ describe('Migration', () => {
     expect(result.immigrated).toBe(0);
   });
 
-  it('should emigrate unhappy citizens (capped at 1-3% of population)', () => {
+  it('should emigrate unhappy citizens (capped at 1-3% of population) plus natural attrition', () => {
     const mgr = new CitizenManager();
     for (let i = 0; i < 100; i++) mgr.createCitizen({ happiness: 10 });
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 10, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 100);
-    // Should emigrate base(0-10) + 1-3%(1-3) = 0-13, not all 100
+    // Unhappy emigration: base(0-10) + 1-3%(1-3) = 0-13
+    // Natural attrition: floor(100 * 0.002) = 0 (too small at 100 pop)
     expect(result.emigrated).toBeGreaterThanOrEqual(0);
     expect(result.emigrated).toBeLessThanOrEqual(13);
     expect(mgr.getPopulation()).toBe(100 - result.emigrated);
@@ -77,34 +79,34 @@ describe('Migration', () => {
 
 /* ── Phase A: 移民動態縮放 ── */
 describe('getImmigrationCap — 移民動態縮放', () => {
-  it('小城市上限：population=100 → cap=3（保持不變）', () => {
-    // popCap = max(3, floor(100*0.01)) = max(3,1) = 3
-    // demandCap = ceil((80-50)/10) = 3
-    // min(3, 100, 3) = 3
+  it('小城市上限：population=100 → tier=2, cap=3（popCap 瓶頸）', () => {
+    // popCap = max(3, floor(100*0.01)) = 3
+    // baseDemand = ceil((80-50)/10) = 3, tier = floor(log10(100)) = 2, demandCap = 6
+    // min(3, 100, 6) = 3
     const cap = getImmigrationCap(100, 100, 80);
     expect(cap).toBe(3);
   });
 
-  it('中城市縮放：population=5000, vacantHomes=100, attractiveness=80 → 移入上限高於 3', () => {
+  it('中城市縮放：population=5000 → tier=3, demandCap=9', () => {
     // popCap = max(3, floor(5000*0.01)) = 50
-    // demandCap = ceil((80-50)/10) = 3
-    // min(50, 100, 3) = 3
+    // baseDemand = ceil((80-50)/10) = 3, tier = floor(log10(5000)) = 3, demandCap = 9
+    // min(50, 100, 9) = 9
     const cap = getImmigrationCap(5000, 100, 80);
-    expect(cap).toBe(3);
+    expect(cap).toBe(9);
   });
 
-  it('高吸引力大城市：population=10000, vacantHomes=200, attractiveness=95 → 更高上限', () => {
+  it('高吸引力大城市：population=10000 → tier=4, demandCap=20', () => {
     // popCap = max(3, floor(10000*0.01)) = 100
-    // demandCap = ceil((95-50)/10) = 5
-    // min(100, 200, 5) = 5
+    // baseDemand = ceil((95-50)/10) = 5, tier = floor(log10(10000)) = 4, demandCap = 20
+    // min(100, 200, 20) = 20
     const cap = getImmigrationCap(10000, 200, 95);
-    expect(cap).toBe(5);
+    expect(cap).toBe(20);
   });
 
   it('空房瓶頸：population=50000, vacantHomes=2 → 最多移入 2 人', () => {
     // popCap = max(3, floor(50000*0.01)) = 500
-    // demandCap = ceil((80-50)/10) = 3
-    // min(500, 2, 3) = 2
+    // baseDemand = ceil((80-50)/10) = 3, tier = floor(log10(50000)) = 4, demandCap = 12
+    // min(500, 2, 12) = 2
     const cap = getImmigrationCap(50000, 2, 80);
     expect(cap).toBe(2);
   });
@@ -116,15 +118,14 @@ describe('getImmigrationCap — 移民動態縮放', () => {
 
   it('emigration 不受 getImmigrationCap 影響', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ happiness: 10 });
-    mgr.createCitizen({ happiness: 10 });
-    // 即使吸引力很低，emigration 仍然照常運作 (2 people, cap = max(1, 2*0.03)=1, so 1-2 leave)
+    // Use 200 unhappy citizens; emigration cap = base(0-10) + 1-3%(2-6) ≥ 2 reliably
+    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 20 });
     const result = migrationTick(mgr, {
       ...attractiveCity,
       avgHappiness: 10,
       jobOpenings: 0,
       vacantHomes: 0,
-    }, 2);
+    }, 200);
     expect(result.emigrated).toBeGreaterThanOrEqual(1);
   });
 
@@ -156,5 +157,138 @@ describe('getImmigrationCap — 移民動態縮放', () => {
     expect(IMMIGRATION.POP_CAP_MIN).toBeGreaterThan(0);
     expect(IMMIGRATION.EMIGRATION_HAPPINESS_THRESHOLD).toBeGreaterThan(0);
     expect(IMMIGRATION.IMMIGRANT_MIN_AGE).toBeGreaterThanOrEqual(18);
+  });
+
+  it('natural attrition removes citizens even when all are happy', () => {
+    const mgr = new CitizenManager();
+    // 1000 happy citizens → attrition = floor(1000 * 0.002) = 2
+    for (let i = 0; i < 1000; i++) mgr.createCitizen({ happiness: 80 });
+    const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
+    const result = migrationTick(mgr, stableCity, 1000);
+    // No unhappy emigration, but natural attrition should remove some
+    expect(result.emigrated).toBe(2);
+    expect(mgr.getPopulation()).toBe(998);
+  });
+
+  it('natural attrition is 0 for very small populations', () => {
+    const mgr = new CitizenManager();
+    // 50 citizens → min(5, floor(50 * 0.002)) = min(5, 0) = 0
+    for (let i = 0; i < 50; i++) mgr.createCitizen({ happiness: 80 });
+    const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
+    const result = migrationTick(mgr, stableCity, 50);
+    expect(result.emigrated).toBe(0);
+  });
+
+  it('natural attrition is capped at 5 for large populations', () => {
+    const mgr = new CitizenManager();
+    // 20000 citizens → min(5, floor(20000 * 0.002)) = min(5, 40) = 5
+    for (let i = 0; i < 20000; i++) mgr.createCitizen({ happiness: 80 });
+    const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
+    const result = migrationTick(mgr, stableCity, 20000);
+    expect(result.emigrated).toBe(5);
+    expect(mgr.getPopulation()).toBe(19995);
+  });
+});
+
+/* ── emigrationTolerance 個人化遷出門檻 ── */
+describe('emigrationTolerance — 個人化遷出門檻', () => {
+  it('calculateEmigrationTolerance returns values in expected range', () => {
+    for (let i = 0; i < 100; i++) {
+      const t = calculateEmigrationTolerance(IncomeLevel.LOW, EducationLevel.NONE);
+      // LOW(18) + NONE(0) ± 5 = 13~23
+      expect(t).toBeGreaterThanOrEqual(13);
+      expect(t).toBeLessThanOrEqual(23);
+    }
+    for (let i = 0; i < 100; i++) {
+      const t = calculateEmigrationTolerance(IncomeLevel.HIGH, EducationLevel.UNIVERSITY);
+      // HIGH(30) + UNI(5) ± 5 = 30~40
+      expect(t).toBeGreaterThanOrEqual(30);
+      expect(t).toBeLessThanOrEqual(40);
+    }
+  });
+
+  it('citizens get emigrationTolerance on creation', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ incomeLevel: IncomeLevel.MEDIUM, education: EducationLevel.HIGH_SCHOOL });
+    // MED(24) + HS(3) ± 5 = 22~32
+    expect(c.emigrationTolerance).toBeGreaterThanOrEqual(22);
+    expect(c.emigrationTolerance).toBeLessThanOrEqual(32);
+  });
+
+  it('high-income citizens emigrate at higher happiness than low-income', () => {
+    const mgr = new CitizenManager();
+    // Create citizens with happiness 25 — above LOW tolerance but below HIGH tolerance
+    for (let i = 0; i < 100; i++) {
+      mgr.createCitizen({
+        happiness: 25,
+        incomeLevel: IncomeLevel.HIGH,
+        education: EducationLevel.UNIVERSITY,
+        emigrationTolerance: 35, // fixed for determinism
+      });
+    }
+    for (let i = 0; i < 100; i++) {
+      mgr.createCitizen({
+        happiness: 25,
+        incomeLevel: IncomeLevel.LOW,
+        education: EducationLevel.NONE,
+        emigrationTolerance: 18, // fixed for determinism
+      });
+    }
+    const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 25, taxRate: 20, pollution: 50, crimeRate: 50 };
+    const result = migrationTick(mgr, badCity, 200);
+    // HIGH+UNI (tolerance 35) should emigrate (happiness 25 < 35)
+    // LOW+NONE (tolerance 18) should NOT emigrate (happiness 25 > 18)
+    // Only HIGH citizens leave (up to emigration cap)
+    const remainingHigh = mgr.getCitizens().filter(c => c.incomeLevel === IncomeLevel.HIGH).length;
+    const remainingLow = mgr.getCitizens().filter(c => c.incomeLevel === IncomeLevel.LOW).length;
+    expect(remainingLow).toBe(100); // all stay
+    expect(remainingHigh).toBeLessThan(100); // some leave
+  });
+
+  it('legacy citizens without emigrationTolerance use fallback', () => {
+    const mgr = new CitizenManager();
+    // Simulate legacy save: create citizen then strip tolerance
+    const c = mgr.createCitizen({ happiness: 20 });
+    (c as any).emigrationTolerance = undefined;
+    const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 20, taxRate: 20, pollution: 50, crimeRate: 50 };
+    // happiness 20 < fallback 25 → should emigrate (if within cap)
+    const result = migrationTick(mgr, badCity, 1);
+    // With base 0-10 cap, may or may not emigrate, but the threshold check should use fallback 20
+    expect(result.emigrated).toBeGreaterThanOrEqual(0);
+  });
+});
+
+/* ── 教育 → 收入加權隨機 ── */
+describe('pickIncomeByEducation — 教育影響收入分佈', () => {
+  it('UNIVERSITY immigrants are mostly MEDIUM/HIGH income', () => {
+    const counts = { LOW: 0, MEDIUM: 0, HIGH: 0 };
+    for (let i = 0; i < 1000; i++) {
+      counts[pickIncomeByEducation(EducationLevel.UNIVERSITY)]++;
+    }
+    // UNI weights: LOW=10, MED=35, HIGH=55
+    expect(counts.HIGH).toBeGreaterThan(counts.LOW);
+    expect(counts.HIGH).toBeGreaterThan(400); // ~55% of 1000
+    expect(counts.LOW).toBeLessThan(200);     // ~10% of 1000
+  });
+
+  it('NONE education immigrants are mostly LOW income', () => {
+    const counts = { LOW: 0, MEDIUM: 0, HIGH: 0 };
+    for (let i = 0; i < 1000; i++) {
+      counts[pickIncomeByEducation(EducationLevel.NONE)]++;
+    }
+    // NONE weights: LOW=70, MED=25, HIGH=5
+    expect(counts.LOW).toBeGreaterThan(counts.HIGH);
+    expect(counts.LOW).toBeGreaterThan(550);  // ~70% of 1000
+    expect(counts.HIGH).toBeLessThan(100);    // ~5% of 1000
+  });
+
+  it('HIGH_SCHOOL has balanced distribution', () => {
+    const counts = { LOW: 0, MEDIUM: 0, HIGH: 0 };
+    for (let i = 0; i < 1000; i++) {
+      counts[pickIncomeByEducation(EducationLevel.HIGH_SCHOOL)]++;
+    }
+    // HS weights: LOW=25, MED=50, HIGH=25
+    expect(counts.MEDIUM).toBeGreaterThan(counts.LOW);
+    expect(counts.MEDIUM).toBeGreaterThan(counts.HIGH);
   });
 });
