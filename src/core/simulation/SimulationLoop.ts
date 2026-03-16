@@ -31,7 +31,7 @@ import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode } from '../transport/types';
-import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost } from '../transport/TransportRegistry';
+import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
@@ -328,16 +328,9 @@ export class SimulationLoop {
       this.tickServiceVehicles();
     }
 
-    // 8. Transport systems (every tick)
-    // Set congestion level for surface transit
-    const currentCongestion = this.state.traffic.getCongestionLevel();
-    this.state.bus.congestionLevel = currentCongestion;
-
-    this.state.bus.tick();
-    this.state.metro.tick();
-    this.state.rail.tick();
-    this.state.ferry.tick();
-    this.state.airport.tick();
+    // 8. Transport systems (every tick — OCP: adding systems only requires TransportRegistry update)
+    this.state.bus.congestionLevel = this.state.traffic.getCongestionLevel();
+    tickAllTransportSystems(this.state);
 
     // 8b. Freight: industrial→commercial cargo flow (every tick)
     this.state.freight.tick(this.state.grid);

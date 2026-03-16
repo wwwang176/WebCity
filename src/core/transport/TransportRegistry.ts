@@ -43,3 +43,10 @@ const ALL_TRANSPORT_KEYS: readonly (keyof AllTransportSystems)[] = [
 export function getTotalTransportOperatingCost(systems: AllTransportSystems): number {
   return ALL_TRANSPORT_KEYS.reduce((sum, key) => sum + systems[key].getOperatingCost(), 0);
 }
+
+/** Tick all transport systems (OCP: add new systems to ALL_TRANSPORT_KEYS only). */
+export function tickAllTransportSystems(systems: AllTransportSystems): void {
+  for (const key of ALL_TRANSPORT_KEYS) {
+    systems[key].tick();
+  }
+}
