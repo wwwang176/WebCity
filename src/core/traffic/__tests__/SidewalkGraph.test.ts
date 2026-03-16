@@ -154,7 +154,7 @@ describe('SidewalkGraph', () => {
       expect(nw).toBeDefined();
 
       const halfWidth = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2; // 0.3
-      expect(nw!.position.x).toBeCloseTo(-0.4);
+      expect(nw!.position.x).toBeCloseTo(-0.35);
       expect(nw!.position.y).toBeCloseTo(-halfWidth);
     });
 
@@ -515,8 +515,8 @@ describe('SidewalkGraph', () => {
       const halfWidth = ROAD_WIDTHS[RoadType.FOUR_LANE]! / 2; // 0.425
       expect(nw!.position.y).toBeCloseTo(3 - halfWidth);
       expect(ne!.position.y).toBeCloseTo(3 - halfWidth);
-      expect(nw!.position.x).toBeCloseTo(5 - 0.4);
-      expect(ne!.position.x).toBeCloseTo(5 + 0.4);
+      expect(nw!.position.x).toBeCloseTo(5 - 0.35);
+      expect(ne!.position.x).toBeCloseTo(5 + 0.35);
     });
 
     it('south sidewalk nodes should be at y = cellY + halfWidth', () => {
