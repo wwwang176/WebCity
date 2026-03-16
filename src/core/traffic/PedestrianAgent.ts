@@ -2,6 +2,8 @@
  * Pedestrian agent types and interfaces.
  */
 
+import type { SidewalkEdge } from './SidewalkGraph';
+
 export enum PedestrianTripType {
   FULL_WALK = 0,
   FIRST_MILE = 1,

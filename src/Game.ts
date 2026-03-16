@@ -41,6 +41,7 @@ import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { getAirportBuildCost, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
+import { PedestrianRenderer, cullPedestrians } from './renderer/PedestrianRenderer';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
 import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } from './core/building/InfraDetails';
 import { classifyBuilding } from './core/building/BuildingClassifier';
@@ -215,6 +216,7 @@ export class Game {
   private roadRenderer: RoadRenderer;
   private buildingRenderer: BuildingRenderer;
   private vehicleRenderer: VehicleRenderer;
+  private pedestrianRenderer: PedestrianRenderer;
   private trafficLightRenderer: TrafficLightRenderer;
   private overlayRenderer: OverlayRenderer;
   private weatherRenderer: WeatherRenderer;
@@ -342,6 +344,7 @@ export class Game {
     this.roadRenderer = new RoadRenderer();
     this.buildingRenderer = new BuildingRenderer();
     this.vehicleRenderer = new VehicleRenderer();
+    this.pedestrianRenderer = new PedestrianRenderer();
     this.trafficLightRenderer = new TrafficLightRenderer();
     this.overlayRenderer = new OverlayRenderer();
     this.transportRouteRenderer = new TransportRouteRenderer();
@@ -354,6 +357,7 @@ export class Game {
     // Build initial scene
     this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
     this.vehicleRenderer.build(this.sceneManager.scene);
+    this.pedestrianRenderer.build(this.sceneManager.scene);
     this.transportRouteRenderer.build(this.sceneManager.scene);
     this.metroTunnelRenderer.build(this.sceneManager.scene);
     this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
@@ -1000,6 +1004,14 @@ export class Game {
     // Merge road + transport vehicles and render
     const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
     this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
+
+    // Render pedestrians with camera culling
+    const camTarget = this.sceneManager.getCameraTarget();
+    const pedData = cullPedestrians(
+      this.state.pedestrianManager.getPedestrians(),
+      camTarget.x, camTarget.z,
+    );
+    this.pedestrianRenderer.update(pedData);
 
     // Update transport route lines
     const routeData = collectTransportRoutes({

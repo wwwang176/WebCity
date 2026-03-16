@@ -41,6 +41,9 @@ import { buildODPools } from '../traffic/ODPoolBuilder';
 import { findAvailableTransit } from '../transport/TransitAvailability';
 import { findRoadPath } from '../traffic/RoadPathfinding';
 import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicleType } from '../traffic/ServiceVehicleManager';
+import { SidewalkGraph } from '../traffic/SidewalkGraph';
+import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
+import { PedestrianTripType } from '../traffic/PedestrianAgent';
 
 /** Simulation tuning constants */
 export const SIMULATION = {
@@ -134,6 +137,14 @@ export class SimulationLoop {
 
   // Service vehicle manager: spawns patrol vehicles within service coverage
   private serviceVehicleManager = new ServiceVehicleManager();
+
+  // Sidewalk graph: built alongside laneGraph
+  private sidewalkGraphDirty = true;
+
+  // Walking trip pool: rebuilt each rush period from commute mode distribution
+  private walkingTripPool: WalkingTripPool = { trips: [], totalWeight: 0, prefixSums: [] };
+  private tripPoolDirty = true;
+  private pendingTrips: AggregatedTrip[] = [];
 
   /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
   occupancyRatios: Map<string, number> = new Map();
@@ -293,10 +304,18 @@ export class SimulationLoop {
       this.rebuildLaneGraph();
       this.laneGraphDirty = false;
     }
+    // 7a. Rebuild sidewalk graph if roads changed
+    if (this.sidewalkGraphDirty) {
+      this.rebuildSidewalkGraph();
+      this.sidewalkGraphDirty = false;
+    }
 
     // 7b. Traffic - spawn commute vehicles and advance (every tick for smooth traffic)
     this.spawnVehicles();
     this.state.trafficLights.tick();
+
+    // 7b2. Pedestrian tick: advance all active pedestrians
+    this.state.pedestrianManager.tick(1 / this.state.clock.ticksPerDay);
 
     // 7c. Service vehicles — patrol within coverage areas (every 6 ticks)
     if (isSlowTick) {
@@ -987,6 +1006,8 @@ export class SimulationLoop {
 
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;
+    this.sidewalkGraphDirty = true;
+    this.tripPoolDirty = true;
     this.commuteCache.bumpGeneration();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
@@ -994,6 +1015,8 @@ export class SimulationLoop {
         this.commuteCache.invalidateCell(cellKey);
         this.dirtyRoadCells.add(cellKey);
       }
+      // Invalidate pedestrian path cache for affected cells
+      this.state.pedestrianManager.invalidateCells(affectedCells);
     }
   }
 
@@ -1031,6 +1054,36 @@ export class SimulationLoop {
     }
   }
 
+  private rebuildSidewalkGraph(): void {
+    const grid = this.state.grid;
+    const cellKeys: string[] = [];
+    const gridLookup = {
+      getCell: (x: number, y: number) => {
+        const cell = grid.getCell(x, y);
+        if (!cell) return null;
+        return {
+          roadType: cell.roadType,
+          roadFlags: cell.roadFlags,
+          railType: cell.railType,
+        };
+      },
+    };
+
+    grid.forEachCell((cell, x, y) => {
+      if (cell.roadType !== RoadType.NONE) {
+        cellKeys.push(toPosKey(x, y));
+      }
+    });
+
+    this.state.sidewalkGraph.buildFromGrid(gridLookup, cellKeys);
+    // Re-link pedestrianManager to the updated graph
+    this.state.pedestrianManager = new PedestrianManager(
+      this.state.sidewalkGraph,
+      this.state.trafficLights,
+      null, // levelCrossings — connected via Game.ts
+    );
+  }
+
   private spawnVehicles(): void {
     const pop = this.state.citizens.getPopulation();
     if (pop === 0) return;
@@ -1049,6 +1102,7 @@ export class SimulationLoop {
     if (timeOfDay !== this.lastTimeOfDay) {
       if (timeOfDay === 'morning_rush') this.morningCommuters.clear();
       if (timeOfDay === 'evening_rush') this.eveningCommuters.clear();
+      this.tripPoolDirty = true; // Rebuild trip pool each rush period
       this.lastTimeOfDay = timeOfDay;
     }
 
@@ -1063,8 +1117,18 @@ export class SimulationLoop {
     } else if (timeOfDay === 'midday') {
       // Midday: spawn small amount of random commercial traffic
       this.spawnRandomTraffic(grid, vehicleCap);
+      // Midday: decorative pedestrians fill streets
+      this.state.pedestrianManager.spawnDecorativeBatch(pop);
     }
-    // Night: no spawning
+    // Night: decorative pedestrians only (sparse)
+    if (timeOfDay === 'night') {
+      this.state.pedestrianManager.spawnDecorativeBatch(pop);
+    }
+
+    // Spawn pedestrians from walking trip pool during rush hours
+    if (timeOfDay === 'morning_rush' || timeOfDay === 'evening_rush') {
+      this.spawnPedestriansFromPool(pop);
+    }
   }
 
 
@@ -1119,6 +1183,38 @@ export class SimulationLoop {
       if (mode !== TransportMode.DRIVE) {
         // Walk or transit — no car vehicle needed
         commuterSet.add(citizen.id);
+
+        // Collect walking trips for pedestrian spawning (trip pool)
+        if (this.tripPoolDirty) {
+          if (mode === TransportMode.WALK) {
+            this.pendingTrips.push({
+              fromX: fromPos.x, fromY: fromPos.y,
+              toX: toPos.x, toY: toPos.y,
+              tripType: PedestrianTripType.FULL_WALK, count: 1,
+            });
+          } else {
+            // BUS/RAIL/METRO/FERRY: first-mile + last-mile walking trips
+            const transitSystem = getSystemForMode(this.state, mode);
+            if (transitSystem) {
+              const originStop = this.findNearestStop(transitSystem.getStops(), fromPos);
+              const destStop = this.findNearestStop(transitSystem.getStops(), toPos);
+              if (originStop) {
+                this.pendingTrips.push({
+                  fromX: fromPos.x, fromY: fromPos.y,
+                  toX: originStop.x, toY: originStop.y,
+                  tripType: PedestrianTripType.FIRST_MILE, count: 1,
+                });
+              }
+              if (destStop) {
+                this.pendingTrips.push({
+                  fromX: destStop.x, fromY: destStop.y,
+                  toX: toPos.x, toY: toPos.y,
+                  tripType: PedestrianTripType.LAST_MILE, count: 1,
+                });
+              }
+            }
+          }
+        }
 
         // Add waiting passenger at the nearest transit stop
         const transitSystem = getSystemForMode(this.state, mode);
@@ -1357,6 +1453,48 @@ export class SimulationLoop {
     const scaleFactor = totalResWeight / sampleCount;
     for (const [cellKey, rawFlow] of flowMap) {
       flowMap.set(cellKey, rawFlow * scaleFactor);
+    }
+  }
+
+  /**
+   * Build the walking trip pool from pending trips (aggregated),
+   * then spawn pedestrians by weighted random sampling.
+   */
+  private spawnPedestriansFromPool(population: number): void {
+    // Finalize trip pool if it was being rebuilt this rush period
+    if (this.tripPoolDirty && this.pendingTrips.length > 0) {
+      // Aggregate identical routes
+      const tripMap = new Map<string, AggregatedTrip>();
+      for (const t of this.pendingTrips) {
+        const key = `${t.fromX},${t.fromY}→${t.toX},${t.toY}`;
+        const existing = tripMap.get(key);
+        if (existing) {
+          existing.count += t.count;
+        } else {
+          tripMap.set(key, { ...t });
+        }
+      }
+      this.walkingTripPool = buildTripPool([...tripMap.values()]);
+      this.pendingTrips = [];
+      this.tripPoolDirty = false;
+    }
+
+    if (this.walkingTripPool.totalWeight === 0) return;
+
+    const maxPed = getMaxPedestrians(population);
+    const currentPed = this.state.pedestrianManager.getActiveCount();
+    const budget = Math.min(5, maxPed - currentPed);
+
+    for (let i = 0; i < budget; i++) {
+      const trip = sampleTrip(this.walkingTripPool);
+      if (!trip) break;
+      this.state.pedestrianManager.spawnPedestrian(
+        trip.fromX, trip.fromY,
+        trip.toX, trip.toY,
+        -1,
+        trip.tripType,
+        population,
+      );
     }
   }
 

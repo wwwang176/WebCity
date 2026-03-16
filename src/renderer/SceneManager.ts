@@ -115,6 +115,10 @@ export class SceneManager {
     this.camera.updateProjectionMatrix();
   }
 
+  getCameraTarget(): THREE.Vector3 {
+    return this.cameraTarget;
+  }
+
   panCamera(dx: number, dz: number): void {
     const forward = new THREE.Vector3(Math.cos(this.cameraAngle), 0, Math.sin(this.cameraAngle));
     const right = new THREE.Vector3(Math.sin(this.cameraAngle), 0, -Math.cos(this.cameraAngle));

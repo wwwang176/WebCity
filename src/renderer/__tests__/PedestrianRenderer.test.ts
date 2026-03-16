@@ -8,19 +8,23 @@ describe('buildPersonGeometry', () => {
   it('should return geometry with position attribute', () => {
     const geo = buildPersonGeometry();
     expect(geo).toBeDefined();
-    expect(geo.attributes.position).toBeDefined();
-    expect(geo.attributes.position.count).toBeGreaterThan(0);
+    const pos = geo.getAttribute('position');
+    expect(pos).toBeDefined();
+    expect(pos!.count).toBeGreaterThan(0);
   });
 
   it('should have color attribute', () => {
     const geo = buildPersonGeometry();
-    expect(geo.attributes.color).toBeDefined();
-    expect(geo.attributes.color.count).toBeGreaterThan(0);
+    const col = geo.getAttribute('color');
+    expect(col).toBeDefined();
+    expect(col!.count).toBeGreaterThan(0);
   });
 
   it('should have matching position and color vertex counts', () => {
     const geo = buildPersonGeometry();
-    expect(geo.attributes.position.count).toBe(geo.attributes.color.count);
+    const pos = geo.getAttribute('position');
+    const col = geo.getAttribute('color');
+    expect(pos!.count).toBe(col!.count);
   });
 });
 
