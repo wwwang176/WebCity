@@ -37,6 +37,7 @@ import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDist
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
+import { collectAllPollutionSources } from '../environment/PollutionSourceRegistry';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
@@ -636,19 +637,17 @@ export class SimulationLoop {
 
     pm.clearSources();
 
-    // Collect pollution sources from all providers (DIP: each source manages its own emissions)
-    const allSources = [
-      ...getGridPollutionSources(grid),
-      ...this.state.garbage.getPollutionSources(),
-      ...this.state.sewage.getPollutionSources(),
-      ...this.state.airport.getPollutionSources(),
-    ];
+    // Collect pollution sources from all providers via DIP registry
+    const gridProvider = { getPollutionSources: () => getGridPollutionSources(grid) };
+    const overflowProvider = { getPollutionSources: () => this.state.garbage.getOverflowPollutionSources() };
+    const allSources = collectAllPollutionSources([
+      gridProvider,
+      this.state.garbage,
+      this.state.sewage,
+      this.state.airport,
+      overflowProvider,
+    ]);
     for (const src of allSources) {
-      pm.addSource(src.x, src.y, src.amount, src.type);
-    }
-
-    // Garbage overflow pollution distributed across facility locations
-    for (const src of this.state.garbage.getOverflowPollutionSources()) {
       pm.addSource(src.x, src.y, src.amount, src.type);
     }
 
