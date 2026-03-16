@@ -35,6 +35,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
   protected readonly defaultFacilityWidth = 2;
   protected readonly defaultFacilityHeight = 2;
   protected readonly idPrefix = 'cem-';
+  protected readonly maintenanceCostPerFacility = DEATH_CARE.MAINTENANCE_PER_FACILITY;
 
   private pendingDeaths = 0;
 
@@ -104,10 +105,6 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
 
   getCemeteries(): readonly Cemetery[] {
     return this.facilities;
-  }
-
-  getMaintenanceCost(): number {
-    return this.facilities.length * DEATH_CARE.MAINTENANCE_PER_FACILITY;
   }
 
   toJSON(): DeathCareJSON {

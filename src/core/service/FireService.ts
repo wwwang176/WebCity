@@ -50,6 +50,7 @@ export class FireService extends RoadCoverageService<FireStation> {
   protected readonly defaultFacilityWidth = 2;
   protected readonly defaultFacilityHeight = 2;
   protected readonly idPrefix = 'fire_';
+  protected readonly maintenanceCostPerFacility = FIRE.MAINTENANCE_PER_STATION;
 
   private activeFires: ActiveFire[] = [];
   private recentDaily: number[] = new Array(30).fill(0);
@@ -160,10 +161,6 @@ export class FireService extends RoadCoverageService<FireStation> {
       }
     }
     return false;
-  }
-
-  getMaintenanceCost(): number {
-    return this.facilities.length * FIRE.MAINTENANCE_PER_STATION;
   }
 
   toJSON(): FireServiceJSON {

@@ -15,6 +15,7 @@ class TestService extends RoadCoverageService<TestFacility> {
   protected defaultFacilityWidth = 2;
   protected defaultFacilityHeight = 2;
   protected idPrefix = 'test_';
+  protected maintenanceCostPerFacility = 5;
 
   addFacility(x: number, y: number): string {
     const id = this.generateId();
@@ -24,14 +25,6 @@ class TestService extends RoadCoverageService<TestFacility> {
 
   removeFacility(id: string): void {
     this.facilities = this.facilities.filter(f => f.id !== id);
-  }
-
-  getFacilities(): readonly TestFacility[] {
-    return this.facilities;
-  }
-
-  getMaintenanceCost(): number {
-    return this.facilities.length * 5;
   }
 
   toJSON() {
@@ -103,7 +96,25 @@ describe('RoadCoverageService', () => {
 
     const restored = new TestService();
     for (const f of json.facilities) restored.addFacility(f.x, f.y);
-    // IDs should start from test_1, test_2 — restoring would give test_1, test_2 too
     expect(restored.getFacilities()).toHaveLength(2);
+  });
+
+  it('getMaintenanceCost returns count * costPerFacility', () => {
+    const svc = new TestService();
+    expect(svc.getMaintenanceCost()).toBe(0);
+    svc.addFacility(1, 1);
+    expect(svc.getMaintenanceCost()).toBe(5);
+    svc.addFacility(2, 2);
+    expect(svc.getMaintenanceCost()).toBe(10);
+  });
+
+  it('getFacilities returns all added facilities', () => {
+    const svc = new TestService();
+    svc.addFacility(3, 4);
+    svc.addFacility(5, 6);
+    const facilities = svc.getFacilities();
+    expect(facilities).toHaveLength(2);
+    expect(facilities[0]!.x).toBe(3);
+    expect(facilities[1]!.x).toBe(5);
   });
 });

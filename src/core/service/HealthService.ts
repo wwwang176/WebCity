@@ -30,6 +30,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
   protected readonly defaultFacilityWidth = 2;
   protected readonly defaultFacilityHeight = 3;
   protected readonly idPrefix = 'hospital_';
+  protected readonly maintenanceCostPerFacility = HEALTH.MAINTENANCE_PER_HOSPITAL;
 
   addHospital(x: number, y: number, radius = 12, capacity = 100): string {
     const id = this.generateId();
@@ -55,10 +56,6 @@ export class HealthService extends RoadCoverageService<Hospital> {
     if (grid) {
       this.recalculateCoverage(grid);
     }
-  }
-
-  getMaintenanceCost(): number {
-    return this.facilities.length * HEALTH.MAINTENANCE_PER_HOSPITAL;
   }
 
   toJSON(): HealthServiceJSON {

@@ -39,6 +39,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
   protected readonly defaultFacilityWidth = 2;
   protected readonly defaultFacilityHeight = 2;
   protected readonly idPrefix = 'garbage_';
+  protected readonly maintenanceCostPerFacility = GARBAGE.MAINTENANCE_PER_FACILITY;
 
   private overflow = 0;
 
@@ -126,10 +127,6 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
 
   getFacilities(): readonly GarbageFacility[] {
     return this.facilities;
-  }
-
-  getMaintenanceCost(): number {
-    return this.facilities.length * GARBAGE.MAINTENANCE_PER_FACILITY;
   }
 
   getPollutionSources(): PollutionSource[] {

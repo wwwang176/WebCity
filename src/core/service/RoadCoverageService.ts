@@ -27,6 +27,8 @@ export abstract class RoadCoverageService<F extends Facility> {
   protected abstract readonly defaultFacilityWidth: number;
   protected abstract readonly defaultFacilityHeight: number;
   protected abstract readonly idPrefix: string;
+  /** Maintenance cost per facility (used by default getMaintenanceCost). */
+  protected abstract readonly maintenanceCostPerFacility: number;
 
   /** Generate a unique ID for a new facility. */
   protected generateId(): string {
@@ -70,5 +72,15 @@ export abstract class RoadCoverageService<F extends Facility> {
     facilityHeight = this.defaultFacilityHeight,
   ): Map<string, number> {
     return this.coverage.previewMerged(position, grid, this.coverageBudget, facilityWidth, facilityHeight);
+  }
+
+  /** Default maintenance cost: count × per-facility cost. Override for custom logic. */
+  getMaintenanceCost(): number {
+    return this.facilities.length * this.maintenanceCostPerFacility;
+  }
+
+  /** Get all facilities (read-only). Subclasses may alias this (e.g. getStations). */
+  getFacilities(): readonly F[] {
+    return this.facilities;
   }
 }

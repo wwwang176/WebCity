@@ -22,6 +22,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   protected readonly defaultFacilityWidth = 2;
   protected readonly defaultFacilityHeight = 2;
   protected readonly idPrefix = 'police_';
+  protected readonly maintenanceCostPerFacility = POLICE.MAINTENANCE_PER_STATION;
 
   addStation(x: number, y: number, radius = 15): string {
     const id = this.generateId();
@@ -47,10 +48,6 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
     if (grid) {
       this.recalculateCoverage(grid);
     }
-  }
-
-  getMaintenanceCost(): number {
-    return this.facilities.length * POLICE.MAINTENANCE_PER_STATION;
   }
 
   toJSON(): { stations: PoliceStation[] } {
