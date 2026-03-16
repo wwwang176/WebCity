@@ -20,24 +20,24 @@ export const POWER = {
 } as const;
 
 export const POWER_CONSUMPTION = {
-  RESIDENTIAL: { base: 0.5, perCapita: 0.05 },
-  COMMERCIAL:  { base: 1,   perCapita: 0.08 },
-  INDUSTRIAL:  { base: 2,   perCapita: 0.12 },
-  OFFICE:      { base: 1,   perCapita: 0.05 },
+  RESIDENTIAL: { base: 0.25, perCapita: 0.025 },
+  COMMERCIAL:  { base: 0.5,  perCapita: 0.04 },
+  INDUSTRIAL:  { base: 1,    perCapita: 0.06 },
+  OFFICE:      { base: 0.5,  perCapita: 0.025 },
 } as const;
 
 export const INFRA_POWER_CONSUMPTION: Record<string, number> = {
-  police: 10,
-  fire: 10,
-  health: 18,
-  elementary: 8,
-  highschool: 12,
-  university: 16,
-  garbage: 15,
-  water: 20,
-  sewage: 15,
-  park: 3,
-  cemetery: 3,
+  police: 5,
+  fire: 5,
+  health: 9,
+  elementary: 4,
+  highschool: 6,
+  university: 8,
+  garbage: 8,
+  water: 10,
+  sewage: 8,
+  park: 1.5,
+  cemetery: 1.5,
 };
 
 const INFRA_TYPE_TO_CONSUMPTION_KEY: Record<string, string> = {

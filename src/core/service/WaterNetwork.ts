@@ -4,8 +4,6 @@ import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
 import { getInfraConfigById, getInfraBuildingId } from '../building/InfraConfig';
-import { POWER_CONSUMPTION, INFRA_POWER_CONSUMPTION } from './PowerGrid';
-
 export interface WaterPlant {
   x: number;
   y: number;
@@ -18,14 +16,25 @@ export const WATER_NETWORK = {
   MAINTENANCE_PER_PLANT: 3,
 } as const;
 
-/** Per-zone water consumption scale relative to power formula */
-export const WATER_CONSUMPTION_SCALE = {
-  RESIDENTIAL: 1.5,  // high: bathing, toilet, laundry
-  COMMERCIAL:  0.4,  // low: restrooms, cleaning
-  INDUSTRIAL:  0.8,  // moderate: process water
-  OFFICE:      0.3,  // minimal: restrooms, drinking
-  INFRA:       0.5,  // moderate for civic facilities
+export const WATER_CONSUMPTION = {
+  RESIDENTIAL: { base: 0.375, perCapita: 0.0375 },  // high: bathing, toilet, laundry
+  COMMERCIAL:  { base: 0.2,   perCapita: 0.016 },   // low: restrooms, cleaning
+  INDUSTRIAL:  { base: 0.8,   perCapita: 0.048 },   // moderate: process water
+  OFFICE:      { base: 0.15,  perCapita: 0.0075 },  // minimal: restrooms, drinking
 } as const;
+
+export const INFRA_WATER_CONSUMPTION: Record<string, number> = {
+  police: 2.5,
+  fire: 2.5,
+  health: 4.5,
+  elementary: 2,
+  highschool: 3,
+  university: 4,
+  garbage: 4,
+  sewage: 4,
+  park: 0.75,
+  cemetery: 0.75,
+};
 
 const WATER_PLANT_ID = getInfraBuildingId('water');
 
@@ -119,8 +128,8 @@ export class WaterNetwork {
     const infraCfg = getInfraConfigById(buildingId);
     if (infraCfg) {
       const key = INFRA_TYPE_TO_KEY[infraCfg.type];
-      if (key && INFRA_POWER_CONSUMPTION[key] !== undefined) {
-        return INFRA_POWER_CONSUMPTION[key] * WATER_CONSUMPTION_SCALE.INFRA;
+      if (key && INFRA_WATER_CONSUMPTION[key] !== undefined) {
+        return INFRA_WATER_CONSUMPTION[key];
       }
     }
     return 0;
@@ -128,16 +137,16 @@ export class WaterNetwork {
 
   private getZoneDemand(zoneType: ZoneType, residents: number, workers: number): number {
     if (isResidentialZone(zoneType)) {
-      return (POWER_CONSUMPTION.RESIDENTIAL.base + POWER_CONSUMPTION.RESIDENTIAL.perCapita * residents) * WATER_CONSUMPTION_SCALE.RESIDENTIAL;
+      return WATER_CONSUMPTION.RESIDENTIAL.base + WATER_CONSUMPTION.RESIDENTIAL.perCapita * residents;
     }
     if (isCommercialZone(zoneType)) {
-      return (POWER_CONSUMPTION.COMMERCIAL.base + POWER_CONSUMPTION.COMMERCIAL.perCapita * workers) * WATER_CONSUMPTION_SCALE.COMMERCIAL;
+      return WATER_CONSUMPTION.COMMERCIAL.base + WATER_CONSUMPTION.COMMERCIAL.perCapita * workers;
     }
     if (zoneType === ZoneType.INDUSTRIAL) {
-      return (POWER_CONSUMPTION.INDUSTRIAL.base + POWER_CONSUMPTION.INDUSTRIAL.perCapita * workers) * WATER_CONSUMPTION_SCALE.INDUSTRIAL;
+      return WATER_CONSUMPTION.INDUSTRIAL.base + WATER_CONSUMPTION.INDUSTRIAL.perCapita * workers;
     }
     if (zoneType === ZoneType.OFFICE) {
-      return (POWER_CONSUMPTION.OFFICE.base + POWER_CONSUMPTION.OFFICE.perCapita * workers) * WATER_CONSUMPTION_SCALE.OFFICE;
+      return WATER_CONSUMPTION.OFFICE.base + WATER_CONSUMPTION.OFFICE.perCapita * workers;
     }
     return 0;
   }

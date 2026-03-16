@@ -209,7 +209,7 @@ describe('WaterNetwork', () => {
     grid.setCell(9, 0, { zoneType: 1, buildingId: 1, roadFlags: 1, roadType: 1 }); // far
 
     const water = new WaterNetwork();
-    water.addPlant({ x: 0, y: 0, output: 2 }); // enough for 1 house (demand ~1.05) but not 2
+    water.addPlant({ x: 0, y: 0, output: 0.8 }); // enough for 1 house (demand ~0.525) but not 2
     water.calculateDemand(grid);
     water.calculateCoverage(grid);
 
