@@ -1,6 +1,7 @@
 import type { SizedGrid } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
-import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
+import { ROAD_COVERAGE } from './RoadCoverageFlood';
+import { RoadCoverageService } from './RoadCoverageService';
 import type { PollutionSource } from '../environment/Pollution';
 
 export interface GarbageFacility {
@@ -33,14 +34,16 @@ export const GARBAGE = {
   POLLUTION_AMOUNT_SCALE: 40,
 } as const;
 
-export class GarbageService {
-  private facilities: GarbageFacility[] = [];
+export class GarbageService extends RoadCoverageService<GarbageFacility> {
+  protected readonly coverageBudget = GARBAGE.SERVICE_BUDGET;
+  protected readonly defaultFacilityWidth = 2;
+  protected readonly defaultFacilityHeight = 2;
+  protected readonly idPrefix = 'garbage_';
+
   private overflow = 0;
-  private nextId = 1;
-  private roadCoverage = new RoadCoverageMap();
 
   addFacility(x: number, y: number, capacity?: number): string {
-    const id = `garbage_${this.nextId++}`;
+    const id = this.generateId();
     this.facilities.push({
       id,
       x,
@@ -59,30 +62,6 @@ export class GarbageService {
       this.overflow += facility.currentLoad;
       this.facilities.splice(idx, 1);
     }
-  }
-
-  /** Recompute road-distance coverage. Call after facility or road changes. */
-  recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): void {
-    this.roadCoverage.recalculate(this.facilities, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
-  }
-
-  getCoverage(x: number, y: number): boolean {
-    return this.roadCoverage.hasCoverage(x, y);
-  }
-
-  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
-  getCostRatio(x: number, y: number): number {
-    return this.roadCoverage.getCostRatio(x, y);
-  }
-
-  /** Preview coverage for a potential facility placement, merged with existing facilities. */
-  previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
-    return this.roadCoverage.previewMerged(position, grid, GARBAGE.SERVICE_BUDGET, facilityWidth, facilityHeight);
-  }
-
-  /** Get all covered cells with their road-distance costs (for overlay gradient). */
-  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
-    return this.roadCoverage.getCoveredCells();
   }
 
   tick(population: number): void {

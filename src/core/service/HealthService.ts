@@ -1,6 +1,7 @@
 import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
-import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
+import { ROAD_COVERAGE } from './RoadCoverageFlood';
+import { RoadCoverageService } from './RoadCoverageService';
 import type { SizedGrid } from '../grid/GridHelpers';
 
 export interface Hospital {
@@ -24,28 +25,20 @@ export const HEALTH = {
   MAINTENANCE_PER_HOSPITAL: 8,
 } as const;
 
-export class HealthService {
-  private hospitals: Hospital[] = [];
-  private coverage = new RoadCoverageMap();
-  private nextId = 1;
+export class HealthService extends RoadCoverageService<Hospital> {
+  protected readonly coverageBudget = ROAD_COVERAGE.HEALTH_BUDGET;
+  protected readonly defaultFacilityWidth = 2;
+  protected readonly defaultFacilityHeight = 3;
+  protected readonly idPrefix = 'hospital_';
 
   addHospital(x: number, y: number, radius = 12, capacity = 100): string {
-    const id = `hospital_${this.nextId++}`;
-    this.hospitals.push({ id, x, y, radius, capacity });
+    const id = this.generateId();
+    this.facilities.push({ id, x, y, radius, capacity });
     return id;
   }
 
   removeHospital(id: string): void {
-    removeById(this.hospitals, id);
-  }
-
-  getCoverage(x: number, y: number): boolean {
-    return this.coverage.hasCoverage(x, y);
-  }
-
-  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
-  getCostRatio(x: number, y: number): number {
-    return this.coverage.getCostRatio(x, y);
+    removeById(this.facilities, id);
   }
 
   getHealthBonus(x: number, y: number): number {
@@ -55,22 +48,7 @@ export class HealthService {
   }
 
   getHospitals(): readonly Hospital[] {
-    return this.hospitals;
-  }
-
-  /** Recompute road-distance coverage. Call after hospital or road changes. */
-  recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 3): void {
-    this.coverage.recalculate(this.hospitals, grid, ROAD_COVERAGE.HEALTH_BUDGET, facilityWidth, facilityHeight);
-  }
-
-  /** Preview coverage for a potential hospital placement, merged with existing. */
-  previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 3): Map<string, number> {
-    return this.coverage.previewMerged(position, grid, ROAD_COVERAGE.HEALTH_BUDGET, facilityWidth, facilityHeight);
-  }
-
-  /** Get all covered cells with their road-distance costs (for overlay gradient). */
-  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
-    return this.coverage.getCoveredCells();
+    return this.facilities;
   }
 
   tick(grid?: SizedGrid): void {
@@ -80,21 +58,21 @@ export class HealthService {
   }
 
   getMaintenanceCost(): number {
-    return this.hospitals.length * HEALTH.MAINTENANCE_PER_HOSPITAL;
+    return this.facilities.length * HEALTH.MAINTENANCE_PER_HOSPITAL;
   }
 
   toJSON(): HealthServiceJSON {
     return {
-      hospitals: this.hospitals.map(h => ({ ...h })),
+      hospitals: this.facilities.map(h => ({ ...h })),
     };
   }
 
   static fromJSON(json: HealthServiceJSON): HealthService {
     const service = new HealthService();
     for (const h of json.hospitals) {
-      service.hospitals.push({ ...h });
+      service.facilities.push({ ...h });
     }
-    service.nextId = recoverNextId(service.hospitals, 'hospital_');
+    service.nextId = recoverNextId(service.facilities, 'hospital_');
     return service;
   }
 }

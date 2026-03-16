@@ -1,7 +1,8 @@
 import type { SizedGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
-import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
+import { ROAD_COVERAGE } from './RoadCoverageFlood';
+import { RoadCoverageService } from './RoadCoverageService';
 
 export interface PoliceStation {
   id: string;
@@ -16,28 +17,20 @@ export const POLICE = {
   MAINTENANCE_PER_STATION: 4,
 } as const;
 
-export class PoliceService {
-  private stations: PoliceStation[] = [];
-  private coverage = new RoadCoverageMap();
-  private nextId = 1;
+export class PoliceService extends RoadCoverageService<PoliceStation> {
+  protected readonly coverageBudget = ROAD_COVERAGE.POLICE_BUDGET;
+  protected readonly defaultFacilityWidth = 2;
+  protected readonly defaultFacilityHeight = 2;
+  protected readonly idPrefix = 'police_';
 
   addStation(x: number, y: number, radius = 15): string {
-    const id = `police_${this.nextId++}`;
-    this.stations.push({ id, x, y, radius });
+    const id = this.generateId();
+    this.facilities.push({ id, x, y, radius });
     return id;
   }
 
   removeStation(id: string): void {
-    removeById(this.stations, id);
-  }
-
-  getCoverage(x: number, y: number): boolean {
-    return this.coverage.hasCoverage(x, y);
-  }
-
-  /** Cost ratio: 0.0 (nearest) to 1.0 (farthest). -1 if uncovered. */
-  getCostRatio(x: number, y: number): number {
-    return this.coverage.getCostRatio(x, y);
+    removeById(this.facilities, id);
   }
 
   getCrimeReduction(x: number, y: number): number {
@@ -47,22 +40,7 @@ export class PoliceService {
   }
 
   getStations(): readonly PoliceStation[] {
-    return this.stations;
-  }
-
-  /** Recompute road-distance coverage. Call after station or road changes. */
-  recalculateCoverage(grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): void {
-    this.coverage.recalculate(this.stations, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
-  }
-
-  /** Preview coverage for a potential station placement, merged with existing stations. */
-  previewCoverage(position: { x: number; y: number }, grid: SizedGrid, facilityWidth = 2, facilityHeight = 2): Map<string, number> {
-    return this.coverage.previewMerged(position, grid, ROAD_COVERAGE.POLICE_BUDGET, facilityWidth, facilityHeight);
-  }
-
-  /** Get all covered cells with their road-distance costs (for overlay gradient). */
-  getCoveredCellsWithCost(): ReadonlyMap<string, number> {
-    return this.coverage.getCoveredCells();
+    return this.facilities;
   }
 
   tick(grid?: SizedGrid): void {
@@ -72,21 +50,21 @@ export class PoliceService {
   }
 
   getMaintenanceCost(): number {
-    return this.stations.length * POLICE.MAINTENANCE_PER_STATION;
+    return this.facilities.length * POLICE.MAINTENANCE_PER_STATION;
   }
 
   toJSON(): { stations: PoliceStation[] } {
     return {
-      stations: this.stations.map(s => ({ ...s })),
+      stations: this.facilities.map(s => ({ ...s })),
     };
   }
 
   static fromJSON(data: { stations: PoliceStation[] }): PoliceService {
     const service = new PoliceService();
     for (const s of data.stations) {
-      service.stations.push({ ...s });
+      service.facilities.push({ ...s });
     }
-    service.nextId = recoverNextId(service.stations, 'police_');
+    service.nextId = recoverNextId(service.facilities, 'police_');
     return service;
   }
 }
