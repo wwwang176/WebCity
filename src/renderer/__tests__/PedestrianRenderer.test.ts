@@ -30,7 +30,7 @@ describe('buildPersonGeometry', () => {
 
 describe('cullPedestrians', () => {
   const makePed = (id: number, x: number, y: number, state = PedestrianState.WALKING) => ({
-    id, position: { x, y }, heading: 0, colorIndex: 0, state,
+    id, position: { x, y }, heading: 0, colorIndex: 0, state, lateralOffset: 0,
   });
 
   // C5: Camera culling

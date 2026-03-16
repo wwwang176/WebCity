@@ -130,6 +130,7 @@ export class PedestrianManager {
       waitTimer: 0,
       colorIndex: id % 12,
       age: 0,
+      lateralOffset: (Math.random() - 0.5) * 0.08,
     };
     this.agents.push(agent);
     return id;

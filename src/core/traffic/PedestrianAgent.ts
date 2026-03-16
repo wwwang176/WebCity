@@ -32,6 +32,8 @@ export interface PedestrianAgent {
   colorIndex: number;
   /** Elapsed time in seconds since spawn — despawned after DESPAWN_TIMEOUT */
   age: number;
+  /** Random lateral offset perpendicular to heading (visual only) */
+  lateralOffset: number;
 }
 
 // Re-export sidewalk types for convenience
