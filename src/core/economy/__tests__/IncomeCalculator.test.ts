@@ -8,6 +8,7 @@ function makeDeps(overrides: Partial<IncomeCalcDeps> = {}): IncomeCalcDeps {
     forEachCell: overrides.forEachCell ?? (() => {}),
     taxRates: overrides.taxRates ?? { residential: 9, business: 9 },
     getCitizensByHome: overrides.getCitizensByHome ?? (() => []),
+    isPowered: overrides.isPowered,
   };
 }
 
@@ -107,5 +108,53 @@ describe('calculateZoneIncomes', () => {
     const low = calculateZoneIncomes(makeTaxDeps(5));
     const high = calculateZoneIncomes(makeTaxDeps(15));
     expect(high.commercial).toBeGreaterThan(low.commercial);
+  });
+
+  it('unpowered buildings produce zero income', () => {
+    const deps = makeDeps({
+      forEachCell: (fn) => {
+        fn({ buildingId: 7, zoneType: ZoneType.COMMERCIAL_LOW, reserved: 0 }, 2, 2);
+      },
+      taxRates: { residential: 9, business: 10 },
+      isPowered: () => false,
+    });
+    const result = calculateZoneIncomes(deps);
+    expect(result.commercial).toBe(0);
+  });
+
+  it('powered buildings produce normal income', () => {
+    const deps = makeDeps({
+      forEachCell: (fn) => {
+        fn({ buildingId: 7, zoneType: ZoneType.COMMERCIAL_LOW, reserved: 0 }, 2, 2);
+      },
+      taxRates: { residential: 9, business: 10 },
+      isPowered: () => true,
+    });
+    const result = calculateZoneIncomes(deps);
+    expect(result.commercial).toBeGreaterThan(0);
+  });
+
+  it('unpowered residential buildings produce zero income', () => {
+    const deps = makeDeps({
+      forEachCell: (fn) => {
+        fn({ buildingId: 1, zoneType: ZoneType.RESIDENTIAL_LOW, reserved: 0 }, 1, 1);
+      },
+      taxRates: { residential: 10, business: 9 },
+      getCitizensByHome: (key) => key === '1,1' ? [{ incomeLevel: IncomeLevel.LOW }] : [],
+      isPowered: () => false,
+    });
+    const result = calculateZoneIncomes(deps);
+    expect(result.residential).toBe(0);
+  });
+
+  it('defaults to powered when isPowered not provided (backward compat)', () => {
+    const deps = makeDeps({
+      forEachCell: (fn) => {
+        fn({ buildingId: 7, zoneType: ZoneType.COMMERCIAL_LOW, reserved: 0 }, 0, 0);
+      },
+      taxRates: { residential: 9, business: 10 },
+    });
+    const result = calculateZoneIncomes(deps);
+    expect(result.commercial).toBeGreaterThan(0);
   });
 });

@@ -29,6 +29,8 @@ export interface IncomeCalcDeps {
   getCitizensByHome: (posKey: string) => Iterable<{ incomeLevel: IncomeLevel }>;
   /** Optional per-building revenue multiplier (e.g. district specialization). */
   getRevenueMultiplier?: (x: number, y: number) => number;
+  /** Optional power check — unpowered buildings produce zero income. Defaults to true. */
+  isPowered?: (x: number, y: number) => boolean;
 }
 
 /**
@@ -46,6 +48,8 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
 
   deps.forEachCell((cell, x, y) => {
     if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) return;
+    // Unpowered buildings produce zero income
+    if (deps.isPowered && !deps.isPowered(x, y)) return;
 
     const btype = getBuildingType(cell.buildingId);
     if (!btype) return;

@@ -618,6 +618,9 @@ export class SimulationLoop {
         const district = this.state.districts.getDistrictAt(x, y);
         return district ? getSpecializationBonus(district.specialization).revenueMultiplier : 1;
       },
+      isPowered: this.state.power.getPlants().length > 0
+        ? (x, y) => this.state.power.isPowered(x, y)
+        : undefined,
     });
     let totalIncome = incomes.residential + incomes.commercial + incomes.industrial + incomes.office;
 

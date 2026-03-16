@@ -86,7 +86,9 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   const [selectedCitizen, setSelectedCitizen] = createSignal<number | null>(null);
 
   const bt = () => props.sel.buildingType;
+  const hasPower = () => props.sel.services.power >= 0;
   const tax = () => {
+    if (!hasPower()) return '$0/tick';
     const b = bt();
     return `$${((b.residents + b.workers) * 0.5).toFixed(0)}/tick`;
   };
@@ -117,6 +119,15 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       </Show>
       <div class="bp-row">Tax <span>{tax()}</span></div>
       <div class="bp-row">Zone <span>{zoneName()}</span></div>
+      <Show when={!hasPower()}>
+        <div style={{
+          'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+          background: 'rgba(239,83,80,0.15)', color: '#ef5350',
+          'font-size': '11px', 'font-weight': '600',
+        }}>
+          No Power - No income
+        </div>
+      </Show>
       <ServiceCoverage services={props.sel.services} />
 
       <div id="bp-citizen-list">
