@@ -1,7 +1,6 @@
 import { randomInt } from '../utils/random';
 import { isZoneBuilding } from '../building/InfraConfig';
 import type { SizedGrid } from '../grid/GridHelpers';
-import { removeById } from '../utils/removeById';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
 
@@ -64,7 +63,7 @@ export class FireService extends RoadCoverageService<FireStation> {
   }
 
   removeStation(id: string): void {
-    removeById(this.facilities, id);
+    this.removeFacilityById(id);
   }
 
   getStations(): readonly FireStation[] {

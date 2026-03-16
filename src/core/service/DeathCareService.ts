@@ -1,4 +1,3 @@
-import { removeById } from '../utils/removeById';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
 
@@ -45,7 +44,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
   }
 
   removeCemetery(id: string): boolean {
-    return removeById(this.facilities, id);
+    return this.removeFacilityById(id);
   }
 
   reportDeath(): void {

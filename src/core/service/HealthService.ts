@@ -1,4 +1,3 @@
-import { removeById } from '../utils/removeById';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
 import type { SizedGrid } from '../grid/GridHelpers';
@@ -38,7 +37,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
   }
 
   removeHospital(id: string): void {
-    removeById(this.facilities, id);
+    this.removeFacilityById(id);
   }
 
   getHealthBonus(x: number, y: number): number {

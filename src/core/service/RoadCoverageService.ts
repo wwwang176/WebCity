@@ -1,6 +1,7 @@
 import type { SizedGrid } from '../grid/GridHelpers';
 import { RoadCoverageMap } from './RoadCoverageFlood';
 import type { ServiceFacilityProvider } from '../traffic/ServiceVehicleManager';
+import { removeById } from '../utils/removeById';
 
 /** Minimum facility shape: must have id and position. */
 export interface Facility {
@@ -83,6 +84,11 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   /** Get all facilities (read-only). Subclasses may alias this (e.g. getStations). */
   getFacilities(): readonly F[] {
     return this.facilities;
+  }
+
+  /** Remove a facility by ID. Override for custom cleanup (e.g. GarbageService overflow). */
+  removeFacilityById(id: string): boolean {
+    return removeById(this.facilities, id);
   }
 
   /** ServiceFacilityProvider: return facility positions for service vehicle spawning. */
