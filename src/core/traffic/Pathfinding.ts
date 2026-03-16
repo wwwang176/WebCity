@@ -341,7 +341,7 @@ function refineLanePathFallback(
 function resolveLaneEndpoints(
   graph: LaneGraph,
   cellPath: string[],
-): { startId: string; endId: string; outermostLane: number } | null {
+): { startId: string; endId: string } | null {
   const firstDir = cellDirection(cellPath[0]!, cellPath[1]!);
   if (!firstDir) return null;
   const lastDir = cellDirection(cellPath[cellPath.length - 2]!, cellPath[cellPath.length - 1]!);
@@ -355,7 +355,7 @@ function resolveLaneEndpoints(
   const endId = `${cellPath[cellPath.length - 1]}:${endDir}:${lastMaxLane}:entry`;
 
   if (!graph.getPoint(startId) || !graph.getPoint(endId)) return null;
-  return { startId, endId, outermostLane: Math.max(firstMaxLane, lastMaxLane) };
+  return { startId, endId };
 }
 
 /**
@@ -410,12 +410,12 @@ function buildLaneAdjacency(
   return adjacency;
 }
 
-/** Run Dijkstra on lane adjacency with lane-based penalties. */
+/** Run Dijkstra on lane adjacency with per-cell-lane penalties. */
 function runLaneDijkstra(
   adjacency: Map<string, { edge: LaneEdge; cost: number }[]>,
   startId: string,
   endId: string,
-  lanePenalties: Map<number, number>,
+  cellLanePenalties: Map<string, number>,
 ): LaneEdge[] | null {
   const dist = new Map<string, number>();
   const prev = new Map<string, { pointId: string; edge: LaneEdge }>();
@@ -439,7 +439,8 @@ function runLaneDijkstra(
     const neighbors = adjacency.get(pointId);
     if (!neighbors) continue;
     for (const { edge, cost: baseCost } of neighbors) {
-      const penalty = lanePenalties.get(edge.to.lane) ?? 1;
+      const penaltyKey = `${edge.to.cellKey}:${edge.to.lane}`;
+      const penalty = cellLanePenalties.get(penaltyKey) ?? 1;
       const newCost = cost + baseCost * penalty;
       if (newCost < (dist.get(edge.to.id) ?? Infinity)) {
         dist.set(edge.to.id, newCost);
@@ -476,26 +477,28 @@ export function refineLanePathVariants(
   const endpoints = resolveLaneEndpoints(graph, cellPath);
   if (!endpoints) return [];
 
-  const { startId, endId, outermostLane } = endpoints;
+  const { startId, endId } = endpoints;
   const adjacency = buildLaneAdjacency(graph, cellPath);
-  const lanePenalties = new Map<number, number>();
+  const cellLanePenalties = new Map<string, number>();
   const variants: LaneEdge[][] = [];
 
+  // Start and end cells are excluded from penalties (all variants share outermost lane there)
+  const startCell = cellPath[0]!;
+  const endCell = cellPath[cellPath.length - 1]!;
+
   for (let v = 0; v < LANE_PATH_VARIANT_COUNT; v++) {
-    const path = runLaneDijkstra(adjacency, startId, endId, lanePenalties);
+    const path = runLaneDijkstra(adjacency, startId, endId, cellLanePenalties);
     if (!path || path.length === 0) break;
     variants.push(path);
 
-    // Penalize all lanes this variant used, EXCEPT the outermost lane.
-    // The outermost lane is shared by all variants (forced start/end point)
-    // and should never be penalized.
-    const usedLanes = new Set<number>();
+    // Penalize per cell+lane: each cell's lane used by this variant gets penalized,
+    // so V2 avoids V1's exact cell+lane combinations.
+    // Start and end cells are excluded (forced outermost lane, shared by all variants).
     for (const edge of path) {
-      usedLanes.add(edge.to.lane);
-    }
-    usedLanes.delete(outermostLane);
-    for (const lane of usedLanes) {
-      lanePenalties.set(lane, (lanePenalties.get(lane) ?? 1) * LANE_PENALTY_MULTIPLIER);
+      const cell = edge.to.cellKey;
+      if (cell === startCell || cell === endCell) continue;
+      const key = `${cell}:${edge.to.lane}`;
+      cellLanePenalties.set(key, (cellLanePenalties.get(key) ?? 1) * LANE_PENALTY_MULTIPLIER);
     }
   }
 
