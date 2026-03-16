@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { calculateHappiness, HAPPINESS, applyThresholdModifier, getUnemploymentPenalty, type HappinessFactors } from '../Happiness';
+import { calculateHappiness, HAPPINESS, applyThresholdModifier, getUnemploymentPenalty, getHomelessPenalty, getJobMismatchPenalty, type HappinessFactors } from '../Happiness';
+import { ZoneType } from '../../grid/types';
 import { type Citizen, LifeStage, EducationLevel, IncomeLevel } from '../types';
 
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
@@ -13,6 +14,9 @@ function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
     health: 80,
     homeId: '5,5',
     workplaceId: null,
+    unemployedSince: null,
+    homelessSince: null,
+    emigrationTolerance: 25,
     ...overrides,
   };
 }
@@ -174,6 +178,40 @@ describe('getUnemploymentPenalty', () => {
   });
 });
 
+describe('getHomelessPenalty', () => {
+  it('returns -20 for short homelessness (< 20 ticks)', () => {
+    const citizen = makeCitizen({ homeId: null, homelessSince: 100 });
+    expect(getHomelessPenalty(citizen, 110)).toBe(-20);
+    expect(getHomelessPenalty(citizen, 119)).toBe(-20);
+  });
+
+  it('returns -100 after 20 ticks (forced emigration)', () => {
+    const citizen = makeCitizen({ homeId: null, homelessSince: 100 });
+    expect(getHomelessPenalty(citizen, 120)).toBe(-100);
+    expect(getHomelessPenalty(citizen, 200)).toBe(-100);
+  });
+
+  it('applies equally regardless of income level', () => {
+    const low = makeCitizen({ homeId: null, incomeLevel: IncomeLevel.LOW, homelessSince: 0 });
+    const high = makeCitizen({ homeId: null, incomeLevel: IncomeLevel.HIGH, homelessSince: 0 });
+    expect(getHomelessPenalty(low, 20)).toBe(-100);
+    expect(getHomelessPenalty(high, 20)).toBe(-100);
+  });
+
+  it('returns base -20 when homelessSince is null', () => {
+    const citizen = makeCitizen({ homeId: null, homelessSince: null });
+    expect(getHomelessPenalty(citizen, 500)).toBe(-20);
+  });
+
+  it('homeless duration penalty is reflected in calculateHappiness', () => {
+    const shortHomeless = makeCitizen({ homeId: null, homelessSince: 100 });
+    const longHomeless = makeCitizen({ homeId: null, homelessSince: 0 });
+    const hShort = calculateHappiness(shortHomeless, { ...baseFactors, currentTick: 110 });
+    const hLong = calculateHappiness(longHomeless, { ...baseFactors, currentTick: 20 });
+    expect(hShort).toBeGreaterThan(hLong);
+  });
+});
+
 describe('applyThresholdModifier', () => {
   const thresholds = [
     { threshold: 50, modifier: -10 },
@@ -211,5 +249,43 @@ describe('applyThresholdModifier', () => {
         expect(arr[i]!.threshold).toBeLessThan(arr[i - 1]!.threshold);
       }
     }
+  });
+});
+
+/* ── Job mismatch penalty ── */
+describe('getJobMismatchPenalty', () => {
+  it('UNI in INDUSTRIAL → severe penalty (-10)', () => {
+    expect(getJobMismatchPenalty(EducationLevel.UNIVERSITY, ZoneType.INDUSTRIAL)).toBe(-10);
+  });
+
+  it('HS in INDUSTRIAL → mild penalty (-5)', () => {
+    expect(getJobMismatchPenalty(EducationLevel.HIGH_SCHOOL, ZoneType.INDUSTRIAL)).toBe(-5);
+  });
+
+  it('NONE in OFFICE → mild penalty (-5)', () => {
+    expect(getJobMismatchPenalty(EducationLevel.NONE, ZoneType.OFFICE)).toBe(-5);
+  });
+
+  it('ELEMENTARY in OFFICE → mild penalty (-5)', () => {
+    expect(getJobMismatchPenalty(EducationLevel.ELEMENTARY, ZoneType.OFFICE)).toBe(-5);
+  });
+
+  it('UNI in OFFICE → no penalty', () => {
+    expect(getJobMismatchPenalty(EducationLevel.UNIVERSITY, ZoneType.OFFICE)).toBe(0);
+  });
+
+  it('NONE in INDUSTRIAL → no penalty', () => {
+    expect(getJobMismatchPenalty(EducationLevel.NONE, ZoneType.INDUSTRIAL)).toBe(0);
+  });
+
+  it('no workplace → no penalty', () => {
+    expect(getJobMismatchPenalty(EducationLevel.UNIVERSITY, undefined)).toBe(0);
+  });
+
+  it('mismatch penalty is reflected in calculateHappiness', () => {
+    const citizen = makeCitizen({ education: EducationLevel.UNIVERSITY });
+    const matched = calculateHappiness(citizen, { ...baseFactors, workplaceZoneType: ZoneType.OFFICE });
+    const mismatched = calculateHappiness(citizen, { ...baseFactors, workplaceZoneType: ZoneType.INDUSTRIAL });
+    expect(mismatched).toBe(matched - 10);
   });
 });

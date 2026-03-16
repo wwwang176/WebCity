@@ -19,4 +19,6 @@ export interface BuildTrackResult {
   success: boolean;
   reason?: string;
   cost?: number;
+  /** Position keys of zone buildings demolished during this operation. */
+  demolishedCells?: string[];
 }

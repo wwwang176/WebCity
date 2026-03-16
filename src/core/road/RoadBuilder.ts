@@ -29,6 +29,7 @@ export class RoadBuilder {
     if (funds < totalCost) return { success: false, reason: 'INSUFFICIENT_FUNDS' };
 
     // Build road — clear zoned buildings/zones along the path
+    const demolished: string[] = [];
     for (let i = 0; i < cells.length; i++) {
       const pos = cells[i]!;
       const curr = this.grid.getCell(pos.x, pos.y);
@@ -36,7 +37,8 @@ export class RoadBuilder {
         // Clear zoned buildings only (NOT infrastructure)
         const isInfra = getInfraConfigById(curr.buildingId) !== undefined;
         if (!isInfra && (curr.buildingId !== 0 || curr.zoneType !== ZoneType.NONE)) {
-          this.grid.setCell(pos.x, pos.y, { buildingId: 0, zoneType: ZoneType.NONE });
+          if (curr.buildingId !== 0) demolished.push(toPosKey(pos.x, pos.y));
+          this.grid.setCell(pos.x, pos.y, { buildingId: 0, zoneType: ZoneType.NONE, reserved: 0 });
         }
       }
 
@@ -75,7 +77,11 @@ export class RoadBuilder {
       }
     }
 
-    return { success: true, cost: totalCost, affectedCells: cells.map(p => toPosKey(p.x, p.y)) };
+    return {
+      success: true, cost: totalCost,
+      affectedCells: cells.map(p => toPosKey(p.x, p.y)),
+      demolishedCells: demolished.length > 0 ? demolished : undefined,
+    };
   }
 
   removeRoad(x: number, y: number): void {

@@ -1,4 +1,4 @@
-import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage } from './types';
+import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage, calculateEmigrationTolerance, EMIGRATION_TOLERANCE } from './types';
 
 /** Daily death rate per life stage (bathtub curve) */
 export const DAILY_DEATH_RATE: Record<LifeStage, number> = {
@@ -43,19 +43,27 @@ export class CitizenManager {
 
   createCitizen(overrides: Partial<Citizen> = {}): Citizen {
     const age = overrides.age ?? 25;
+    const income = overrides.incomeLevel ?? IncomeLevel.LOW;
+    const education = overrides.education ?? EducationLevel.NONE;
     const citizen: Citizen = {
       id: this.nextId++,
       age,
       lifeStage: getLifeStage(age),
-      education: EducationLevel.NONE,
-      incomeLevel: IncomeLevel.LOW,
+      education,
+      incomeLevel: income,
       happiness: 50,
       health: 80,
       homeId: null,
       workplaceId: null,
       unemployedSince: null,
+      homelessSince: null,
+      emigrationTolerance: calculateEmigrationTolerance(income, education),
       ...overrides,
     };
+    // Legacy saves may not have emigrationTolerance — assign fallback
+    if (citizen.emigrationTolerance === undefined || citizen.emigrationTolerance === null) {
+      citizen.emigrationTolerance = EMIGRATION_TOLERANCE.FALLBACK;
+    }
     this.citizens.push(citizen);
     return citizen;
   }
@@ -89,6 +97,19 @@ export class CitizenManager {
 
   getCitizensByWorkplace(buildingKey: string): Citizen[] {
     return this.citizens.filter((c) => c.workplaceId === buildingKey);
+  }
+
+  /** Evict all citizens from a demolished building at the given position key.
+   *  Nullifies homeId / workplaceId so citizens become homeless / unemployed.
+   *  @param currentTick Current simulation tick — records homelessSince for duration tracking. */
+  evictBuilding(posKey: string, currentTick?: number): void {
+    for (const c of this.citizens) {
+      if (c.homeId === posKey) {
+        c.homeId = null;
+        c.homelessSince = currentTick ?? null;
+      }
+      if (c.workplaceId === posKey) c.workplaceId = null;
+    }
   }
 
   /** Called once per game year: age all citizens and update lifeStage */

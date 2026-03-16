@@ -55,6 +55,7 @@ export class RailBuilder {
     if (funds < totalCost) return { success: false, reason: 'INSUFFICIENT_FUNDS' };
 
     // Place track
+    const demolished: string[] = [];
     for (let i = 0; i < cells.length; i++) {
       const pos = cells[i]!;
       const curr = this.grid.getCell(pos.x, pos.y);
@@ -63,7 +64,8 @@ export class RailBuilder {
       if (curr && curr.railType === RailType.NONE && curr.roadType === RoadType.NONE) {
         const isInfra = getInfraConfigById(curr.buildingId) !== undefined;
         if (!isInfra && (curr.buildingId !== 0 || curr.zoneType !== ZoneType.NONE)) {
-          this.grid.setCell(pos.x, pos.y, { buildingId: 0, zoneType: ZoneType.NONE });
+          if (curr.buildingId !== 0) demolished.push(toPosKey(pos.x, pos.y));
+          this.grid.setCell(pos.x, pos.y, { buildingId: 0, zoneType: ZoneType.NONE, reserved: 0 });
         }
       }
 
@@ -100,7 +102,10 @@ export class RailBuilder {
       }
     }
 
-    return { success: true, cost: totalCost };
+    return {
+      success: true, cost: totalCost,
+      demolishedCells: demolished.length > 0 ? demolished : undefined,
+    };
   }
 
   removeTrack(x: number, y: number): void {

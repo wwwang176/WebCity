@@ -484,10 +484,14 @@ export class Game {
           this.handleBuildResult(result, 'road', () => {
             this.simLoop.markLaneGraphDirty(result.affectedCells);
             this.recalculateAllRoadCoverage();
+            if (result.demolishedCells) {
+              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+            }
           });
           this.dirty.roads = true;
           this.dirty.crossings = true;
           this.dirty.trafficLights = true;
+          this.dirty.buildings = true;
           break;
         }
         // Rail track building
@@ -496,9 +500,14 @@ export class Game {
             { x: x1, y: y1 }, { x: x2, y: y2 },
             this.state.budget.funds,
           );
-          this.handleBuildResult(result, 'track');
+          this.handleBuildResult(result, 'track', () => {
+            if (result.demolishedCells) {
+              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+            }
+          });
           this.dirty.tracks = true;
           this.dirty.crossings = true;
+          this.dirty.buildings = true;
           break;
         }
         const zoneType = TOOL_TO_ZONE[this.currentTool];
@@ -560,6 +569,15 @@ export class Game {
 
   private applyZone(x1: number, y1: number, x2: number, y2: number, zoneType: ZoneType): void {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
+    // Pre-scan: collect cells where rezoning will demolish an existing building
+    for (let y = minY; y <= maxY; y++) {
+      for (let x = minX; x <= maxX; x++) {
+        const cell = this.state.grid.getCell(x, y);
+        if (cell && isZoneBuilding(cell.buildingId) && cell.zoneType !== zoneType) {
+          this.state.citizens.evictBuilding(`${x},${y}`, this.state.clock.tick);
+        }
+      }
+    }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
     this.dirty.buildings = true;
     this.dirty.terrain = true;
@@ -582,6 +600,7 @@ export class Game {
   private demolish(x1: number, y1: number, x2: number, y2: number): void {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     const demolished = new Set<string>(); // track already-demolished multi-cell buildings
+    const evictCells: string[] = []; // cells whose citizens need eviction
     let hadRoadDemolished = false;
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
@@ -614,6 +633,7 @@ export class Game {
             this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
             break;
           case 'regular':
+            if (cell && cell.buildingId !== 0) evictCells.push(`${x},${y}`);
             if (cell && cell.roadType !== RoadType.NONE) hadRoadDemolished = true;
             if (action.hasTrack) this.railBuilder.removeTrack(x, y);
             this.state.grid.setCell(x, y, {
@@ -624,6 +644,8 @@ export class Game {
         }
       }
     }
+    // Evict citizens from demolished zone buildings
+    for (const pos of evictCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
     if (hadRoadDemolished) {
       this.recalculateAllRoadCoverage();
     }
@@ -1751,6 +1773,10 @@ export class Game {
     if (!result) return;
 
     applyDisasterDamage(this.state.grid, result.damagedCells);
+    // Evict citizens from destroyed buildings
+    for (const { x, y } of result.damagedCells) {
+      this.state.citizens.evictBuilding(`${x},${y}`, this.state.clock.tick);
+    }
     this.audioManager.playSfx('disaster');
     this.showNotification(formatDisasterMessage(result.disaster), 10);
     this.dirty.buildings = true;

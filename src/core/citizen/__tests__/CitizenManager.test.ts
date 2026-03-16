@@ -172,6 +172,85 @@ describe('CitizenManager', () => {
   });
 });
 
+describe('evictBuilding', () => {
+  it('should nullify homeId for citizens living at demolished position', () => {
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 30, homeId: '5,10' });
+    const c2 = mgr.createCitizen({ age: 25, homeId: '5,10' });
+    const c3 = mgr.createCitizen({ age: 40, homeId: '8,8' });
+
+    mgr.evictBuilding('5,10');
+
+    expect(c1.homeId).toBeNull();
+    expect(c2.homeId).toBeNull();
+    expect(c3.homeId).toBe('8,8'); // unaffected
+  });
+
+  it('should nullify workplaceId for citizens working at demolished position', () => {
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 30, workplaceId: '3,7' });
+    const c2 = mgr.createCitizen({ age: 25, workplaceId: '3,7' });
+    const c3 = mgr.createCitizen({ age: 40, workplaceId: '9,2' });
+
+    mgr.evictBuilding('3,7');
+
+    expect(c1.workplaceId).toBeNull();
+    expect(c2.workplaceId).toBeNull();
+    expect(c3.workplaceId).toBe('9,2'); // unaffected
+  });
+
+  it('should handle citizens who both live and work at demolished position', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 30, homeId: '5,5', workplaceId: '5,5' });
+
+    mgr.evictBuilding('5,5');
+
+    expect(c.homeId).toBeNull();
+    expect(c.workplaceId).toBeNull();
+  });
+
+  it('should do nothing when no citizens at position', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 30, homeId: '1,1' });
+
+    mgr.evictBuilding('99,99');
+
+    expect(mgr.getPopulation()).toBe(1);
+    expect(mgr.getCitizens()[0]!.homeId).toBe('1,1');
+  });
+
+  it('should not remove citizens from population', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 30, homeId: '5,10' });
+    mgr.createCitizen({ age: 25, homeId: '5,10' });
+
+    mgr.evictBuilding('5,10');
+
+    expect(mgr.getPopulation()).toBe(2); // still in city, just homeless
+  });
+
+  it('should record homelessSince when currentTick is provided', () => {
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 30, homeId: '5,10' });
+    const c2 = mgr.createCitizen({ age: 25, homeId: '8,8' });
+
+    mgr.evictBuilding('5,10', 42);
+
+    expect(c1.homelessSince).toBe(42);
+    expect(c2.homelessSince).toBeNull(); // unaffected
+  });
+
+  it('should not set homelessSince for workplace-only evictions', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 30, homeId: '1,1', workplaceId: '5,10' });
+
+    mgr.evictBuilding('5,10', 100);
+
+    expect(c.homelessSince).toBeNull(); // home not affected
+    expect(c.workplaceId).toBeNull();
+  });
+});
+
 describe('getElderlyMultiplier', () => {
   it('returns 1 for age <= 90', () => {
     expect(getElderlyMultiplier(70)).toBe(1);

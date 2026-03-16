@@ -347,6 +347,52 @@ describe('RoadBuilder', () => {
     expect(cell.roadType).toBe(RoadType.TWO_LANE);
   });
 
+  it('should clear reserved field when demolishing zone building via road', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 3 }); // BURNED
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+
+    expect(result.success).toBe(true);
+    const cell = grid.getCell(4, 5)!;
+    expect(cell.buildingId).toBe(0);
+    expect(cell.zoneType).toBe(ZoneType.NONE);
+    expect(cell.reserved).toBe(0);
+  });
+
+  it('should return demolishedCells for zone buildings cleared by road', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(3, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 5 });
+    grid.setCell(4, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 12 });
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+
+    expect(result.success).toBe(true);
+    expect(result.demolishedCells).toEqual(['3,5', '4,5']);
+  });
+
+  it('should not include zone-only cells (no building) in demolishedCells', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { zoneType: ZoneType.RESIDENTIAL_LOW }); // zone only, no building
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+
+    expect(result.success).toBe(true);
+    expect(result.demolishedCells).toBeUndefined();
+  });
+
+  it('should clear zone-only cells (no building yet) when building road', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(4, 5, { zoneType: ZoneType.COMMERCIAL_LOW });
+    const builder = new RoadBuilder(grid);
+    const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+
+    expect(result.success).toBe(true);
+    const cell = grid.getCell(4, 5)!;
+    expect(cell.zoneType).toBe(ZoneType.NONE);
+    expect(cell.roadType).toBe(RoadType.TWO_LANE);
+  });
+
   // --- Road removal ---
 
   it('should clear road data on removal', () => {

@@ -111,6 +111,7 @@ export function assignWithPreference(
 
     // Step 4: Assign
     citizen.homeId = pick.candidate.pos;
+    citizen.homelessSince = null;
     occupancy.set(pick.candidate.pos, (occupancy.get(pick.candidate.pos) ?? 0) + 1);
   }
 }

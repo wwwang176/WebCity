@@ -65,6 +65,8 @@ export interface BuildRoadResult {
   cost?: number;
   /** Cells affected by this operation (for lane graph / cache invalidation). */
   affectedCells?: string[];
+  /** Position keys of zone buildings demolished during this operation. */
+  demolishedCells?: string[];
 }
 
 // Re-export Position from canonical location (DRY)

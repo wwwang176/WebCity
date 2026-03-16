@@ -1,4 +1,5 @@
-import { type Citizen, isWorkingAge } from './types';
+import { type Citizen, EducationLevel, isWorkingAge } from './types';
+import { ZoneType } from '../grid/types';
 
 export interface HappinessFactors {
   commuteDistance: number;
@@ -12,6 +13,7 @@ export interface HappinessFactors {
   currentTick?: number;
   homePowered?: boolean;
   homeWatered?: boolean;
+  workplaceZoneType?: ZoneType;
 }
 
 /** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
@@ -88,6 +90,11 @@ export const HAPPINESS = {
   NO_WATER_PENALTY: -25,
   // Housing
   HOMELESS_PENALTY: -20,
+  HOMELESS_FORCED_PENALTY: -100,
+  HOMELESS_FORCED_TICKS: 20,
+  // Job mismatch: education vs workplace zone type
+  JOB_MISMATCH_SEVERE: -10,  // UNI in INDUSTRIAL
+  JOB_MISMATCH_MILD: -5,     // HS in INDUSTRIAL, or NONE/ELEM in OFFICE
 } as const;
 
 /**
@@ -106,6 +113,37 @@ export function getUnemploymentPenalty(citizen: Citizen, currentTick: number): n
   if (duration >= tolerance) return HAPPINESS.UNEMPLOYMENT_FORCED_PENALTY;
   if (duration >= HAPPINESS.UNEMPLOYMENT_MEDIUM_TICKS) return HAPPINESS.UNEMPLOYMENT_MEDIUM_PENALTY;
   return HAPPINESS.UNEMPLOYMENT_PENALTY;
+}
+
+/**
+ * Calculate homeless penalty based on duration.
+ * < 20 ticks: -20, >= 20 ticks: -100 (forced emigration).
+ */
+export function getHomelessPenalty(citizen: Citizen, currentTick: number): number {
+  if (citizen.homelessSince === null || citizen.homelessSince === undefined) {
+    return HAPPINESS.HOMELESS_PENALTY;
+  }
+  const duration = currentTick - citizen.homelessSince;
+  if (duration >= HAPPINESS.HOMELESS_FORCED_TICKS) return HAPPINESS.HOMELESS_FORCED_PENALTY;
+  return HAPPINESS.HOMELESS_PENALTY;
+}
+
+/** Calculate job mismatch penalty based on education vs workplace zone type */
+export function getJobMismatchPenalty(education: EducationLevel, zoneType?: ZoneType): number {
+  if (zoneType === undefined) return 0;
+  // UNI in industrial → severe
+  if (education === EducationLevel.UNIVERSITY && zoneType === ZoneType.INDUSTRIAL) {
+    return HAPPINESS.JOB_MISMATCH_SEVERE;
+  }
+  // HS in industrial → mild
+  if (education === EducationLevel.HIGH_SCHOOL && zoneType === ZoneType.INDUSTRIAL) {
+    return HAPPINESS.JOB_MISMATCH_MILD;
+  }
+  // NONE/ELEM in office → mild
+  if ((education === EducationLevel.NONE || education === EducationLevel.ELEMENTARY) && zoneType === ZoneType.OFFICE) {
+    return HAPPINESS.JOB_MISMATCH_MILD;
+  }
+  return 0;
 }
 
 export function calculateHappiness(citizen: Citizen, factors: HappinessFactors): number {
@@ -144,10 +182,15 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
     happiness += HAPPINESS.NO_WATER_PENALTY;
   }
 
-  // Homeless penalty
+  // Homeless penalty (escalating with duration)
   if (!citizen.homeId) {
-    happiness += HAPPINESS.HOMELESS_PENALTY;
+    happiness += factors.currentTick !== undefined
+      ? getHomelessPenalty(citizen, factors.currentTick)
+      : HAPPINESS.HOMELESS_PENALTY;
   }
+
+  // Job mismatch penalty
+  happiness += getJobMismatchPenalty(citizen.education, factors.workplaceZoneType);
 
   return Math.max(HAPPINESS.MIN, Math.min(HAPPINESS.MAX, happiness));
 }
