@@ -18,8 +18,14 @@ export const WATER_NETWORK = {
   MAINTENANCE_PER_PLANT: 3,
 } as const;
 
-/** Water consumption uses same formula as power but scaled by 0.8 */
-export const WATER_CONSUMPTION_SCALE = 0.8;
+/** Per-zone water consumption scale relative to power formula */
+export const WATER_CONSUMPTION_SCALE = {
+  RESIDENTIAL: 1.5,  // high: bathing, toilet, laundry
+  COMMERCIAL:  0.4,  // low: restrooms, cleaning
+  INDUSTRIAL:  0.8,  // moderate: process water
+  OFFICE:      0.3,  // minimal: restrooms, drinking
+  INFRA:       0.5,  // moderate for civic facilities
+} as const;
 
 const WATER_PLANT_ID = getInfraBuildingId('water');
 
@@ -114,7 +120,7 @@ export class WaterNetwork {
     if (infraCfg) {
       const key = INFRA_TYPE_TO_KEY[infraCfg.type];
       if (key && INFRA_POWER_CONSUMPTION[key] !== undefined) {
-        return INFRA_POWER_CONSUMPTION[key] * WATER_CONSUMPTION_SCALE;
+        return INFRA_POWER_CONSUMPTION[key] * WATER_CONSUMPTION_SCALE.INFRA;
       }
     }
     return 0;
@@ -122,16 +128,16 @@ export class WaterNetwork {
 
   private getZoneDemand(zoneType: ZoneType, residents: number, workers: number): number {
     if (isResidentialZone(zoneType)) {
-      return (POWER_CONSUMPTION.RESIDENTIAL.base + POWER_CONSUMPTION.RESIDENTIAL.perCapita * residents) * WATER_CONSUMPTION_SCALE;
+      return (POWER_CONSUMPTION.RESIDENTIAL.base + POWER_CONSUMPTION.RESIDENTIAL.perCapita * residents) * WATER_CONSUMPTION_SCALE.RESIDENTIAL;
     }
     if (isCommercialZone(zoneType)) {
-      return (POWER_CONSUMPTION.COMMERCIAL.base + POWER_CONSUMPTION.COMMERCIAL.perCapita * workers) * WATER_CONSUMPTION_SCALE;
+      return (POWER_CONSUMPTION.COMMERCIAL.base + POWER_CONSUMPTION.COMMERCIAL.perCapita * workers) * WATER_CONSUMPTION_SCALE.COMMERCIAL;
     }
     if (zoneType === ZoneType.INDUSTRIAL) {
-      return (POWER_CONSUMPTION.INDUSTRIAL.base + POWER_CONSUMPTION.INDUSTRIAL.perCapita * workers) * WATER_CONSUMPTION_SCALE;
+      return (POWER_CONSUMPTION.INDUSTRIAL.base + POWER_CONSUMPTION.INDUSTRIAL.perCapita * workers) * WATER_CONSUMPTION_SCALE.INDUSTRIAL;
     }
     if (zoneType === ZoneType.OFFICE) {
-      return (POWER_CONSUMPTION.OFFICE.base + POWER_CONSUMPTION.OFFICE.perCapita * workers) * WATER_CONSUMPTION_SCALE;
+      return (POWER_CONSUMPTION.OFFICE.base + POWER_CONSUMPTION.OFFICE.perCapita * workers) * WATER_CONSUMPTION_SCALE.OFFICE;
     }
     return 0;
   }
