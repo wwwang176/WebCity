@@ -1116,18 +1116,19 @@ export class SimulationLoop {
     } else if (timeOfDay === 'midday') {
       // Midday: spawn small amount of random commercial traffic
       this.spawnRandomTraffic(grid, vehicleCap);
-      // Midday: decorative pedestrians fill streets
-      this.state.pedestrianManager.spawnDecorativeBatch(pop);
-    }
-    // Night: decorative pedestrians only (sparse)
-    if (timeOfDay === 'night') {
-      this.state.pedestrianManager.spawnDecorativeBatch(pop);
     }
 
-    // Spawn pedestrians from walking trip pool during rush hours
+    // Build/update trip pool during rush hours
     if (timeOfDay === 'morning_rush' || timeOfDay === 'evening_rush') {
       this.spawnPedestriansFromPool(pop);
+      this.state.pedestrianManager.setDensityMultiplier(1.0);
+    } else if (timeOfDay === 'midday') {
+      this.state.pedestrianManager.setDensityMultiplier(0.3);
+    } else {
+      // night
+      this.state.pedestrianManager.setDensityMultiplier(0.05);
     }
+    // Per-frame refill (in Game.ts) uses the last trip pool continuously
   }
 
 

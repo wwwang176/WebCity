@@ -94,6 +94,8 @@ export class PedestrianManager {
   /** Current trip pool for continuous per-frame spawning */
   private tripPool: WalkingTripPool = { trips: [], totalWeight: 0, prefixSums: [] };
   private currentPopulation = 0;
+  /** Density multiplier: 1.0 during rush, lower during off-peak */
+  private densityMultiplier = 1.0;
 
   constructor(
     private sidewalkGraph: SidewalkGraph,
@@ -137,6 +139,11 @@ export class PedestrianManager {
   setTripPool(pool: WalkingTripPool, population: number): void {
     this.tripPool = pool;
     this.currentPopulation = population;
+  }
+
+  /** Set density multiplier for off-peak periods (0.0–1.0) */
+  setDensityMultiplier(multiplier: number): void {
+    this.densityMultiplier = Math.max(0, Math.min(1, multiplier));
   }
 
   tick(dt: number): void {
@@ -265,8 +272,8 @@ export class PedestrianManager {
   private refillFromPool(dt: number): void {
     if (this.tripPool.totalWeight === 0 || this.currentPopulation === 0) return;
 
-    const maxPed = getMaxPedestrians(this.currentPopulation);
-    const deficit = maxPed - this.agents.length;
+    const targetPed = Math.floor(getMaxPedestrians(this.currentPopulation) * this.densityMultiplier);
+    const deficit = targetPed - this.agents.length;
     if (deficit <= 0) return;
 
     // Target spawn rate: fill deficit over ~1 second
@@ -277,7 +284,7 @@ export class PedestrianManager {
     this.spawnAccumulator -= toSpawn;
 
     for (let i = 0; i < toSpawn; i++) {
-      if (this.agents.length >= maxPed) break;
+      if (this.agents.length >= targetPed) break;
       const trip = sampleTrip(this.tripPool);
       if (!trip) break;
       this.spawnPedestrian(
