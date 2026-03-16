@@ -30,6 +30,8 @@ export interface PedestrianAgent {
   state: PedestrianState;
   waitTimer: number;
   colorIndex: number;
+  /** Elapsed time in seconds since spawn — despawned after DESPAWN_TIMEOUT */
+  age: number;
 }
 
 // Re-export sidewalk types for convenience

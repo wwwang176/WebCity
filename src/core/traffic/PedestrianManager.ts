@@ -123,6 +123,7 @@ export class PedestrianManager {
       state: PedestrianState.WALKING,
       waitTimer: 0,
       colorIndex: id % 12,
+      age: 0,
     };
     this.agents.push(agent);
     return id;
@@ -133,6 +134,13 @@ export class PedestrianManager {
       const agent = this.agents[i]!;
 
       if (agent.state === PedestrianState.ARRIVED) {
+        this.agents.splice(i, 1);
+        continue;
+      }
+
+      // Despawn timeout: prevent stuck pedestrians from hogging slots
+      agent.age += dt;
+      if (agent.age >= PEDESTRIAN.DESPAWN_TIMEOUT) {
         this.agents.splice(i, 1);
         continue;
       }
@@ -231,6 +239,7 @@ export class PedestrianManager {
         state: PedestrianState.WALKING,
         waitTimer: 0,
         colorIndex: id % 12,
+        age: 0,
       };
       this.agents.push(agent);
     }
