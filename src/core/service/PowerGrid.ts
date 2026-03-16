@@ -138,7 +138,7 @@ export class PowerGrid {
     if (this.totalDemand === 0) return 1.0;
     const supply = this.getTotalOutput();
     if (supply === 0) return 0;
-    return Math.min(1.0, supply / this.totalDemand);
+    return supply / this.totalDemand;
   }
 
   getMaintenanceCost(): number {

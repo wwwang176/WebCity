@@ -46,7 +46,7 @@ function findAndRemove<Id extends string | number>(
  */
 export const INFRA_SERVICE_ACTIONS: Partial<Record<InfraType, InfraServiceAction>> = {
   power: {
-    place: (ctx, cx, cy) => ctx.power.addPlant({ x: cx, y: cy, output: 500, pollution: 10, type: 'coal' }),
+    place: (ctx, cx, cy) => ctx.power.addPlant({ x: cx, y: cy, output: 1500, pollution: 10, type: 'coal' }),
     remove: (ctx, cx, cy) => ctx.power.removePlant(cx, cy),
   },
   water: {

@@ -47,7 +47,7 @@ describe('INFRA_SERVICE_ACTIONS', () => {
     const ctx = makeMinimalCtx();
     ctx.power = { addPlant, removePlant: vi.fn() };
     INFRA_SERVICE_ACTIONS.power!.place(ctx, 3, 7);
-    expect(addPlant).toHaveBeenCalledWith({ x: 3, y: 7, output: 500, pollution: 10, type: 'coal' });
+    expect(addPlant).toHaveBeenCalledWith({ x: 3, y: 7, output: 1500, pollution: 10, type: 'coal' });
   });
 
   it('should have actions for all 3 school types', () => {

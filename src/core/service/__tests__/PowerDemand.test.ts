@@ -173,14 +173,14 @@ describe('PowerGrid.getSupplyRatio', () => {
     expect(pg.getSupplyRatio()).toBe(1.0);
   });
 
-  it('should return 1.0 when supply exceeds demand', () => {
+  it('should return ratio > 1.0 when supply exceeds demand', () => {
     const pg = new PowerGrid();
     pg.addPlant({ x: 0, y: 0, output: 500, pollution: 50, type: 'coal' });
     const grid = makeGrid();
     // Small House: 0.7 demand
     grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     pg.calculateDemand(grid);
-    expect(pg.getSupplyRatio()).toBe(1.0);
+    expect(pg.getSupplyRatio()).toBeCloseTo(500 / 0.7, 1);
   });
 
   it('should return supply/demand when supply < demand', () => {
@@ -201,13 +201,13 @@ describe('PowerGrid.getSupplyRatio', () => {
     expect(pg.getSupplyRatio()).toBe(0);
   });
 
-  it('should cap at 1.0', () => {
+  it('should allow ratio above 1.0 (surplus)', () => {
     const pg = new PowerGrid();
     pg.addPlant({ x: 0, y: 0, output: 10000, pollution: 50, type: 'coal' });
     const grid = makeGrid();
     grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 0.7 demand
     pg.calculateDemand(grid);
-    expect(pg.getSupplyRatio()).toBe(1.0);
+    expect(pg.getSupplyRatio()).toBeCloseTo(10000 / 0.7, 1);
   });
 });
 

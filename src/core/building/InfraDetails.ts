@@ -118,7 +118,7 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
     const ratio = ctx.power.getSupplyRatio();
     const ratioStr = `${(ratio * 100).toFixed(1)}%${ratio < 1 ? ' ⚠️' : ''}`;
     return {
-      Output: p?.output ?? 500,
+      Output: p?.output ?? 1500,
       Type: p?.type ?? 'coal',
       'City Supply': Math.round(ctx.power.getSupply()),
       'City Demand': Math.round(ctx.power.getDemand()),
