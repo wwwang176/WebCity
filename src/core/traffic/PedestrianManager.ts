@@ -156,6 +156,7 @@ export class PedestrianManager {
       colorIndex: id % 12,
       age: 0,
       lateralOffset: (Math.random() - 0.5) * 0.08,
+      speedMultiplier: 0.5 + Math.random() * 0.5,
     };
     this.agents.push(agent);
     return id;
@@ -218,7 +219,7 @@ export class PedestrianManager {
       }
 
       // Move
-      const moveDistance = PEDESTRIAN.SPEED * dt;
+      const moveDistance = PEDESTRIAN.SPEED * agent.speedMultiplier * dt;
       agent.edgeProgress += moveDistance;
 
       // Advance through edges

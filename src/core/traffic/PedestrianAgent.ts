@@ -34,6 +34,8 @@ export interface PedestrianAgent {
   age: number;
   /** Random lateral offset perpendicular to heading (visual only) */
   lateralOffset: number;
+  /** Individual speed multiplier (0.5–1.0) */
+  speedMultiplier: number;
 }
 
 // Re-export sidewalk types for convenience
