@@ -116,16 +116,41 @@ export class PedestrianManager {
     const path = this.getCachedPath(originX, originY, destX, destY);
     if (!path || path.length === 0) return null;
 
+    // Calculate total path length for random start position
+    let totalLength = 0;
+    for (const edge of path) totalLength += edge.length;
+
+    // Random initial progress along the path — prevents synchronized cohorts
+    const startOffset = Math.random() * totalLength;
+    let edgeIndex = 0;
+    let edgeProgress = startOffset;
+    while (edgeIndex < path.length && edgeProgress >= path[edgeIndex]!.length) {
+      edgeProgress -= path[edgeIndex]!.length;
+      edgeIndex++;
+    }
+    if (edgeIndex >= path.length) {
+      // Random offset landed past the end — just skip this spawn
+      return null;
+    }
+
+    const edge = path[edgeIndex]!;
+    const t = edge.length > 0 ? edgeProgress / edge.length : 0;
+    const startX = edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t;
+    const startY = edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t;
+
     const id = this.nextId++;
     const agent: PedestrianAgent = {
       id,
       citizenId,
       tripType,
       edgePath: path,
-      edgeIndex: 0,
-      edgeProgress: 0,
-      position: { x: path[0]!.from.position.x, y: path[0]!.from.position.y },
-      heading: 0,
+      edgeIndex,
+      edgeProgress,
+      position: { x: startX, y: startY },
+      heading: Math.atan2(
+        -(edge.to.position.y - edge.from.position.y),
+        edge.to.position.x - edge.from.position.x,
+      ),
       state: PedestrianState.WALKING,
       waitTimer: 0,
       colorIndex: id % 12,
