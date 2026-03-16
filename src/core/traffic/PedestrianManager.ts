@@ -91,6 +91,10 @@ export class PedestrianManager {
   private pathCache = new Map<string, SidewalkEdge[] | null>();
   private cellIndex = new Map<string, Set<string>>();
 
+  /** Current trip pool for continuous per-frame spawning */
+  private tripPool: WalkingTripPool = { trips: [], totalWeight: 0, prefixSums: [] };
+  private currentPopulation = 0;
+
   constructor(
     private sidewalkGraph: SidewalkGraph,
     private trafficLights: TrafficLightQuery | null = null,
@@ -129,7 +133,16 @@ export class PedestrianManager {
     return id;
   }
 
+  /** Set the walking trip pool (called from SimulationLoop when pool is rebuilt) */
+  setTripPool(pool: WalkingTripPool, population: number): void {
+    this.tripPool = pool;
+    this.currentPopulation = population;
+  }
+
   tick(dt: number): void {
+    // Per-frame refill: continuously spawn to maintain target density
+    this.refillFromPool(dt);
+
     for (let i = this.agents.length - 1; i >= 0; i--) {
       const agent = this.agents[i]!;
 
@@ -242,6 +255,38 @@ export class PedestrianManager {
         age: 0,
       };
       this.agents.push(agent);
+    }
+  }
+
+  // ── Per-frame refill ──
+
+  private spawnAccumulator = 0;
+
+  private refillFromPool(dt: number): void {
+    if (this.tripPool.totalWeight === 0 || this.currentPopulation === 0) return;
+
+    const maxPed = getMaxPedestrians(this.currentPopulation);
+    const deficit = maxPed - this.agents.length;
+    if (deficit <= 0) return;
+
+    // Target spawn rate: fill deficit over ~1 second
+    // This ensures rapid refill when many pedestrians despawn at once
+    const spawnRate = deficit;
+    this.spawnAccumulator += spawnRate * dt;
+    const toSpawn = Math.floor(this.spawnAccumulator);
+    this.spawnAccumulator -= toSpawn;
+
+    for (let i = 0; i < toSpawn; i++) {
+      if (this.agents.length >= maxPed) break;
+      const trip = sampleTrip(this.tripPool);
+      if (!trip) break;
+      this.spawnPedestrian(
+        trip.fromX, trip.fromY,
+        trip.toX, trip.toY,
+        -1,
+        trip.tripType,
+        this.currentPopulation,
+      );
     }
   }
 

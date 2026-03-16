@@ -1478,24 +1478,8 @@ export class SimulationLoop {
       this.tripPoolDirty = false;
     }
 
-    if (this.walkingTripPool.totalWeight === 0) return;
-
-    const maxPed = getMaxPedestrians(population);
-    const currentPed = this.state.pedestrianManager.getActiveCount();
-    // Fill to cap within ~8 ticks (a full rush period)
-    const budget = Math.min(Math.max(5, Math.ceil(maxPed / 8)), maxPed - currentPed);
-
-    for (let i = 0; i < budget; i++) {
-      const trip = sampleTrip(this.walkingTripPool);
-      if (!trip) break;
-      this.state.pedestrianManager.spawnPedestrian(
-        trip.fromX, trip.fromY,
-        trip.toX, trip.toY,
-        -1,
-        trip.tripType,
-        population,
-      );
-    }
+    // Hand the pool to PedestrianManager for continuous per-frame spawning
+    this.state.pedestrianManager.setTripPool(this.walkingTripPool, population);
   }
 
   private findNearestStop(
