@@ -39,6 +39,7 @@ import { getCellServiceScore, getResidentialServiceRatios } from '../service/Ser
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
 import { collectAllPollutionSources } from '../environment/PollutionSourceRegistry';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
+import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../economy/ExpenseCalculator';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
 import { findAvailableTransit } from '../transport/TransitAvailability';
@@ -590,19 +591,13 @@ export class SimulationLoop {
     totalIncome *= citySpecBonus.revenueMultiplier;
 
     this.state.budget.income = totalIncome;
-    // Expenses: road maintenance + service maintenance costs
-    const roadMaint = this.countRoadTiles() * ECONOMY.ROAD_MAINTENANCE_PER_TILE;
-    const serviceCost = getTotalServiceMaintenanceCost(this.state);
-    // District policy costs: sum all active policy costs across all districts
-    let policyCost = 0;
-    for (const district of this.state.districts.getAllDistricts()) {
-      for (const policy of district.policies) {
-        if (policy.active) policyCost += policy.cost;
-      }
-    }
-    // Transport operating costs
-    const transportCost = getTotalTransportOperatingCost(this.state);
-    this.state.budget.expenses = roadMaint + serviceCost + policyCost + transportCost;
+    // Expenses: road maintenance + service + district policies + transport
+    this.state.budget.expenses = calculateTotalExpenses({
+      roadMaintenance: this.countRoadTiles() * ECONOMY.ROAD_MAINTENANCE_PER_TILE,
+      serviceCost: getTotalServiceMaintenanceCost(this.state),
+      policyCost: calculateDistrictPolicyCost(this.state.districts.getAllDistricts()),
+      transportCost: getTotalTransportOperatingCost(this.state),
+    });
   }
 
   private countRoadTiles(): number {
