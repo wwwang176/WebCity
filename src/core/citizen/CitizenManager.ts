@@ -53,6 +53,7 @@ export class CitizenManager {
       health: 80,
       homeId: null,
       workplaceId: null,
+      unemployedSince: null,
       ...overrides,
     };
     this.citizens.push(citizen);
