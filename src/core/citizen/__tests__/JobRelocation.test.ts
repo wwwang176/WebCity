@@ -109,7 +109,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 1], ['6,1', 0]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, config);
     expect(result.count).toBe(1);
     expect(citizen.workplaceId).toBe('6,1');
     // Occupancy updated
@@ -128,7 +128,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 1], ['6,1', 0]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, config);
     expect(result.count).toBe(1);
     expect(citizen.workplaceId).toBe('6,1');
   });
@@ -143,7 +143,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 1], ['6,1', 0]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, {
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, {
       ...config,
       manhattanFallback: 5, // manhattan from (5,1) to (40,1) = 35 > 5, triggers
     });
@@ -160,7 +160,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 1], ['6,1', 0]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, {
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, {
       ...config,
       manhattanFallback: 15, // manhattan 35 > 15 triggers
     });
@@ -177,7 +177,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['6,1', 1], ['7,1', 0]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, {
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, {
       ...config,
       manhattanFallback: 15, // manhattan from (5,1) to (6,1) = 1 <= 15
     });
@@ -202,7 +202,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['6,1', 1], ['7,1', 0]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, {
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, {
       ...config,
       scoreGap: 100, // impossible gap
     });
@@ -227,7 +227,7 @@ describe('jobRelocationTick', () => {
     // (6,1) is full
     const occupancy = new Map([['40,1', 1], ['6,1', 2]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, config);
     expect(result.count).toBe(0);
   });
 
@@ -252,7 +252,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 100], ['6,1', 0]]);
 
-    const result = jobRelocationTick(citizens, candidates, occupancy, cache, grid, {
+    const result = jobRelocationTick(citizens, candidates, occupancy, cache, grid, 0, {
       ...config,
       maxRelocateRatio: 0.05,
     });
@@ -283,7 +283,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 100]]);
 
-    const result = jobRelocationTick(citizens, candidates, occupancy, cache, disconnectedGrid, {
+    const result = jobRelocationTick(citizens, candidates, occupancy, cache, disconnectedGrid, 0, {
       ...config,
       maxRelocateRatio: 0.05, // would cap at 5, but failed should bypass
     });
@@ -299,7 +299,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map<string, number>();
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, config);
     expect(result.count).toBe(0);
   });
 
@@ -311,7 +311,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map<string, number>();
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, config);
     expect(result.count).toBe(0);
   });
 
@@ -324,7 +324,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map<string, number>();
 
-    const result = jobRelocationTick([teen, senior], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([teen, senior], candidates, occupancy, cache, grid, 0, config);
     expect(result.count).toBe(0);
   });
 
@@ -344,7 +344,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['6,1', 1]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, config);
     expect(result.count).toBe(0);
     expect(result.relocatedIds).toEqual([]);
   });
@@ -374,7 +374,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 1], ['6,1', 1]]);
 
-    const result = jobRelocationTick([c1, c2], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([c1, c2], candidates, occupancy, cache, grid, 0, config);
     expect(result.relocatedIds).toContain(20);
     expect(result.relocatedIds).not.toContain(21);
   });
@@ -403,7 +403,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 1]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, disconnectedGrid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, disconnectedGrid, 0, config);
     // Citizen should become unemployed since no reachable workplace
     expect(result.count).toBe(1);
     expect(citizen.workplaceId).toBeNull();
@@ -439,7 +439,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['40,1', 1]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, disconnectedGrid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, disconnectedGrid, 0, config);
     expect(result.count).toBe(1);
     expect(citizen.workplaceId).toBeNull();
   });
@@ -462,7 +462,7 @@ describe('jobRelocationTick', () => {
     ];
     const occupancy = new Map([['6,1', 1]]);
 
-    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, config);
+    const result = jobRelocationTick([citizen], candidates, occupancy, cache, grid, 0, config);
     // Workplace is reachable — citizen stays employed
     expect(result.count).toBe(0);
     expect(citizen.workplaceId).toBe('6,1');

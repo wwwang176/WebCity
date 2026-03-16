@@ -161,6 +161,7 @@ export function assignWorkWithPreference(
 
     // Assign
     citizen.workplaceId = pick.candidate.pos;
+    citizen.unemployedSince = null;
     occupancy.set(pick.candidate.pos, (occupancy.get(pick.candidate.pos) ?? 0) + 1);
   }
 }

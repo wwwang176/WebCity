@@ -486,6 +486,7 @@ export class SimulationLoop {
         isEmployed: !isWorkingAge(citizen.age) || Math.random() < employmentRate,
         taxRate,
         serviceCoverage,
+        currentTick: this.state.clock.tick,
       };
       citizen.happiness = calculateHappiness(citizen, factors);
     }
@@ -959,6 +960,7 @@ export class SimulationLoop {
       workOccupancy,
       this.commuteCache,
       grid,
+      this.state.clock.tick,
     );
 
     // Clear commute cache for relocated citizens so routes are recalculated

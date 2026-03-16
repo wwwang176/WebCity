@@ -77,6 +77,7 @@ export function jobRelocationTick(
   occupancy: Map<string, number>,
   cache: { get(id: number): CachedRoute | undefined; roadGeneration: number },
   grid: ReadableGrid,
+  currentTick: number,
   config?: Partial<JobRelocationConfig>,
 ): { count: number; relocatedIds: number[] } {
   const cfg: JobRelocationConfig = { ...DEFAULT_JOB_RELOCATION_CONFIG, ...config };
@@ -128,6 +129,7 @@ export function jobRelocationTick(
           const oldOcc = occupancy.get(currentPos) ?? 0;
           occupancy.set(currentPos, Math.max(0, oldOcc - 1));
           (citizen as Citizen).workplaceId = null;
+          (citizen as Citizen).unemployedSince = currentTick;
           relocatedIds.push(citizen.id);
         }
       }
@@ -162,6 +164,7 @@ export function jobRelocationTick(
       const oldOcc = occupancy.get(currentPos) ?? 0;
       occupancy.set(currentPos, Math.max(0, oldOcc - 1));
       citizen.workplaceId = bestCandidate.pos;
+      (citizen as Citizen).unemployedSince = null;
       occupancy.set(bestCandidate.pos, (occupancy.get(bestCandidate.pos) ?? 0) + 1);
       relocatedIds.push(citizen.id);
       if (reason !== 'failed') nonUrgentCount++;
@@ -184,10 +187,12 @@ export function jobRelocationTick(
 
       if (reachableAlt) {
         citizen.workplaceId = reachableAlt.pos;
+        (citizen as Citizen).unemployedSince = null;
         occupancy.set(reachableAlt.pos, (occupancy.get(reachableAlt.pos) ?? 0) + 1);
       } else {
         // No reachable alternative — become unemployed
         (citizen as Citizen).workplaceId = null;
+        (citizen as Citizen).unemployedSince = currentTick;
       }
       relocatedIds.push(citizen.id);
     }
