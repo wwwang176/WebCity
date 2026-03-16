@@ -22,8 +22,8 @@ import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
 import { getSpecializationBonus } from '../district/Specialization';
 import { isWorkingAge } from '../citizen/types';
 import { countOccupancy, assignToBuildings, assignWithPreference, assignWorkWithPreference, type BuildingSlot } from '../citizen/OccupancyAssignment';
+import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
-import type { HousingCandidate } from '../citizen/HousingScore';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
 import { relocationTick } from '../citizen/Relocation';
 import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG, type WorkplaceCandidateWithZone } from '../citizen/JobRelocation';
@@ -774,38 +774,10 @@ export class SimulationLoop {
   private assignCitizenHousing(): void {
     this.rebuildBuildingIndex();
 
-    const grid = this.state.grid;
-
-    // Build HousingCandidate[] and WorkplaceCandidate[] with full context
-    const housingCandidates: HousingCandidate[] = [];
-    const workplaceCandidates: WorkplaceCandidate[] = [];
-
-    for (const b of this.buildingPositions) {
-      const bt = getBuildingType(b.buildingId);
-      if (!bt) continue;
-
-      if (bt.residents > 0) {
-        const cell = grid.getCell(b.x, b.y);
-        const pollution = this.state.pollution.getPollutionAt(b.x, b.y);
-        housingCandidates.push({
-          pos: b.pos,
-          capacity: bt.residents,
-          level: bt.level,
-          landValue: cell ? cell.landValue : 0,
-          groundPollution: pollution ? pollution.ground : 0,
-          noisePollution: pollution ? pollution.noise : 0,
-          serviceCoverage: cell ? cell.serviceCoverage : 0,
-          hasPark: this.state.parks.getCoverage(b.x, b.y),
-        });
-      }
-      if (bt.workers > 0) {
-        workplaceCandidates.push({
-          pos: b.pos,
-          capacity: bt.workers,
-          zoneType: bt.zoneType,
-        });
-      }
-    }
+    const housingCandidates = buildHousingCandidates(
+      this.buildingPositions, this.state.grid, this.state.pollution, this.state.parks,
+    );
+    const workplaceCandidates = buildWorkplaceCandidates(this.buildingPositions);
 
     if (housingCandidates.length === 0 && workplaceCandidates.length === 0) return;
 
@@ -835,26 +807,9 @@ export class SimulationLoop {
   private runRelocation(): void {
     this.rebuildBuildingIndex();
 
-    const grid = this.state.grid;
-    const housingCandidates: HousingCandidate[] = [];
-
-    for (const b of this.buildingPositions) {
-      const bt = getBuildingType(b.buildingId);
-      if (!bt || bt.residents <= 0) continue;
-
-      const cell = grid.getCell(b.x, b.y);
-      const pollution = this.state.pollution.getPollutionAt(b.x, b.y);
-      housingCandidates.push({
-        pos: b.pos,
-        capacity: bt.residents,
-        level: bt.level,
-        landValue: cell ? cell.landValue : 0,
-        groundPollution: pollution ? pollution.ground : 0,
-        noisePollution: pollution ? pollution.noise : 0,
-        serviceCoverage: cell ? cell.serviceCoverage : 0,
-        hasPark: this.state.parks.getCoverage(b.x, b.y),
-      });
-    }
+    const housingCandidates = buildHousingCandidates(
+      this.buildingPositions, this.state.grid, this.state.pollution, this.state.parks,
+    );
 
     if (housingCandidates.length === 0) return;
 
@@ -909,18 +864,7 @@ export class SimulationLoop {
   private runJobRelocation(): void {
     this.rebuildBuildingIndex();
 
-    const grid = this.state.grid;
-    const workplaceCandidates: WorkplaceCandidateWithZone[] = [];
-
-    for (const b of this.buildingPositions) {
-      const bt = getBuildingType(b.buildingId);
-      if (!bt || bt.workers <= 0) continue;
-      workplaceCandidates.push({
-        pos: b.pos,
-        capacity: bt.workers,
-        zoneType: bt.zoneType,
-      });
-    }
+    const workplaceCandidates = buildWorkplaceCandidates(this.buildingPositions);
     if (workplaceCandidates.length === 0) return;
 
     const citizens = this.state.citizens.getCitizens();
@@ -931,7 +875,7 @@ export class SimulationLoop {
       workplaceCandidates,
       workOccupancy,
       this.commuteCache,
-      grid,
+      this.state.grid,
       this.state.clock.tick,
     );
 
