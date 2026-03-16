@@ -1,7 +1,8 @@
 import { Grid } from '../grid/Grid';
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { calculateNetworkCoverage } from './NetworkCoverage';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
+import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
 import { getInfraConfigById, getInfraBuildingId } from '../building/InfraConfig';
 
@@ -73,18 +74,24 @@ export class PowerGrid {
     return false;
   }
 
+  /**
+   * Calculate power coverage using BFS budget-drain per plant.
+   * Each plant starts BFS from its position with its own output as budget.
+   * When a building cell is reached, its demand is subtracted from the budget.
+   * If budget runs out, BFS stops — remaining cells in range have no power.
+   * fullCoverage is computed separately (no budget) for overlay display.
+   */
   calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
+    // Phase 1: compute fullCoverage (no budget limit) for overlay "in range" display
     this.fullCoverage = new Set<string>();
     for (const plant of this.plants) {
       calculateNetworkCoverage(grid, plant.x, plant.y, POWER.PLANT_RANGE, POWER.RELAY_RANGE, this.fullCoverage, infrastructurePositions);
     }
 
-    // Apply supply ratio: if supply < demand, trim coverage from farthest cells
-    const ratio = this.getSupplyRatio();
-    if (ratio >= 1.0 || this.fullCoverage.size === 0) {
-      this.powered = new Set(this.fullCoverage);
-    } else {
-      this.powered = this.trimCoverageByDistance(this.fullCoverage, ratio);
+    // Phase 2: BFS budget-drain per plant to determine actual powered cells
+    this.powered = new Set<string>();
+    for (const plant of this.plants) {
+      this.bfsBudgetDrain(grid, plant, infrastructurePositions);
     }
     return this.powered;
   }
@@ -149,6 +156,22 @@ export class PowerGrid {
     return this.plants;
   }
 
+  getCellDemand(grid: Grid, x: number, y: number): number {
+    const cell = grid.getCell(x, y);
+    if (!cell || cell.buildingId <= 0) return 0;
+    const bt = getBuildingType(cell.buildingId);
+    if (bt) return this.getZoneDemand(cell.zoneType, bt.residents, bt.workers);
+    if (cell.buildingId === POWER_PLANT_ID) return 0;
+    const infraCfg = getInfraConfigById(cell.buildingId);
+    if (infraCfg) {
+      const key = INFRA_TYPE_TO_CONSUMPTION_KEY[infraCfg.type];
+      if (key && INFRA_POWER_CONSUMPTION[key] !== undefined) {
+        return INFRA_POWER_CONSUMPTION[key];
+      }
+    }
+    return 0;
+  }
+
   private getZoneDemand(zoneType: ZoneType, residents: number, workers: number): number {
     if (isResidentialZone(zoneType)) {
       return POWER_CONSUMPTION.RESIDENTIAL.base + POWER_CONSUMPTION.RESIDENTIAL.perCapita * residents;
@@ -165,28 +188,103 @@ export class PowerGrid {
     return 0;
   }
 
-  private trimCoverageByDistance(fullCoverage: Set<string>, ratio: number): Set<string> {
-    // Calculate distance from nearest plant for each covered cell
-    const entries: { key: string; dist: number }[] = [];
-    for (const key of fullCoverage) {
-      const i = key.indexOf(',');
-      const cx = Number(key.slice(0, i));
-      const cy = Number(key.slice(i + 1));
-      let minDist = Infinity;
-      for (const p of this.plants) {
-        const d = Math.sqrt((cx - p.x) ** 2 + (cy - p.y) ** 2);
-        if (d < minDist) minDist = d;
+  /**
+   * BFS from a single plant, draining its budget as buildings are reached.
+   * Uses same 2-phase approach as NetworkCoverage: Euclidean circle + BFS relay.
+   * Cells already in this.powered (from earlier plants) are skipped — no double-drain.
+   */
+  private bfsBudgetDrain(grid: Grid, plant: PowerPlant, infra?: Set<string>): void {
+    let budget = plant.output;
+    const r = POWER.PLANT_RANGE;
+    const r2 = r * r;
+    const visited = new Set<string>();
+    const relayRange = POWER.RELAY_RANGE;
+
+    // BFS queue: [x, y, phase] — phase 1 = euclidean circle sorted by distance, phase 2 = relay
+    // We do a combined BFS: first circle cells by distance, then relay cells
+    const circleCells: { x: number; y: number; dist2: number }[] = [];
+
+    // Collect all cells in Euclidean circle
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        const d2 = dx * dx + dy * dy;
+        if (d2 > r2) continue;
+        const nx = plant.x + dx;
+        const ny = plant.y + dy;
+        if (!grid.getCell(nx, ny)) continue;
+        circleCells.push({ x: nx, y: ny, dist2: d2 });
       }
-      entries.push({ key, dist: minDist });
     }
-    // Sort by distance (nearest first)
-    entries.sort((a, b) => a.dist - b.dist);
-    // Keep only ratio fraction of cells (nearest first)
-    const keep = Math.max(1, Math.floor(entries.length * ratio));
-    const trimmed = new Set<string>();
-    for (let i = 0; i < keep; i++) {
-      trimmed.add(entries[i]!.key);
+    // Sort by distance from plant (nearest first = BFS order)
+    circleCells.sort((a, b) => a.dist2 - b.dist2);
+
+    const relaySeeds: [number, number][] = [];
+
+    // Phase 1: process circle cells in distance order, drain budget
+    for (const { x, y, dist2 } of circleCells) {
+      const key = toPosKey(x, y);
+      if (visited.has(key)) continue;
+      visited.add(key);
+
+      // Drain budget for building cells not already powered by another plant
+      if (!this.powered.has(key)) {
+        const demand = this.getCellDemand(grid, x, y);
+        if (demand > 0) {
+          if (budget < demand) continue; // skip this building, try others at same distance
+          budget -= demand;
+        }
+        this.powered.add(key);
+      }
+
+      // Collect relay seeds from circle edge
+      if (dist2 > (r - 1) * (r - 1)) {
+        const cell = grid.getCell(x, y)!;
+        const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
+        if (isRelay) relaySeeds.push([x, y]);
+      }
     }
-    return trimmed;
+
+    // Phase 2: BFS relay from edge, with budget drain
+    if (relaySeeds.length === 0 || budget <= 0) return;
+    const relayMap = new Map<string, number>();
+    const queue: [number, number, number][] = [];
+    for (const [sx, sy] of relaySeeds) {
+      const key = toPosKey(sx, sy);
+      if (!relayMap.has(key)) {
+        relayMap.set(key, relayRange);
+        queue.push([sx, sy, relayRange]);
+      }
+    }
+    while (queue.length > 0) {
+      if (budget <= 0) break;
+      const [x, y, remaining] = queue.shift()!;
+      for (const [ddx, ddy] of FOUR_NEIGHBORS) {
+        const nx = x + ddx!;
+        const ny = y + ddy!;
+        const key = toPosKey(nx, ny);
+        if (visited.has(key)) continue;
+        const cell = grid.getCell(nx, ny);
+        if (!cell) continue;
+        const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
+        const newRange = Math.max(isRelay ? relayRange : 0, remaining - 1);
+        if (newRange <= 0) continue;
+        const prev = relayMap.get(key) ?? 0;
+        if (newRange <= prev) continue;
+        relayMap.set(key, newRange);
+        visited.add(key);
+
+        // Drain budget
+        if (!this.powered.has(key)) {
+          const demand = this.getCellDemand(grid, nx, ny);
+          if (demand > 0) {
+            if (budget < demand) continue;
+            budget -= demand;
+          }
+          this.powered.add(key);
+        }
+
+        queue.push([nx, ny, newRange]);
+      }
+    }
   }
 }

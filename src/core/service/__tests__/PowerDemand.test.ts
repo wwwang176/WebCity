@@ -211,40 +211,97 @@ describe('PowerGrid.getSupplyRatio', () => {
   });
 });
 
-describe('PowerGrid.isPowered with supply ratio', () => {
-  it('should power all buildings when supplyRatio >= 1.0', () => {
+describe('PowerGrid BFS budget-drain coverage', () => {
+  it('should power all buildings when supply is sufficient', () => {
     const pg = new PowerGrid();
     pg.addPlant({ x: 5, y: 5, output: 500, pollution: 50, type: 'coal' });
     const grid = makeGrid();
-    grid.setCell(5, 6, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
-    grid.setCell(5, 4, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    pg.calculateCoverage(grid);
+    grid.setCell(5, 6, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 0.7
+    grid.setCell(5, 4, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 }); // 1.32
     pg.calculateDemand(grid);
-    // Both cells are in coverage range and supply is sufficient
+    pg.calculateCoverage(grid);
     expect(pg.isPowered(5, 6)).toBe(true);
     expect(pg.isPowered(5, 4)).toBe(true);
   });
 
-  it('should mark distant buildings as unpowered when supplyRatio < 1.0', () => {
+  it('should power near buildings first via BFS when supply is low', () => {
     const pg = new PowerGrid();
-    // Very low output, but coverage still reaches
+    // output=1, only enough for one Small House (0.7)
     pg.addPlant({ x: 0, y: 0, output: 1, pollution: 50, type: 'coal' });
     const grid = makeGrid(20, 20);
-    // Place road connections for relay
+    // Road for relay
     for (let i = 0; i < 15; i++) grid.setCell(i, 0, { roadFlags: 1, roadType: 1 });
-    // Building near plant and building far from plant
-    grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
-    grid.setCell(9, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
-    // Must calculateDemand BEFORE calculateCoverage (ratio depends on demand)
+    // Near building (BFS reaches first) and far building
+    grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 0.7
+    grid.setCell(9, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 0.7
     pg.calculateDemand(grid);
     pg.calculateCoverage(grid);
-    // supply=1, demand=1.4, ratio<1
-    // Near building should be powered, far building should not
-    expect(pg.getSupplyRatio()).toBeLessThan(1);
-    const near = pg.isPowered(1, 0);
-    const far = pg.isPowered(9, 0);
-    // Near should be powered before far
-    expect(near).toBe(true);
-    expect(far).toBe(false);
+    // supply=1, first building costs 0.7 → 0.3 left, second costs 0.7 → budget exhausted
+    expect(pg.isPowered(1, 0)).toBe(true);
+    expect(pg.isPowered(9, 0)).toBe(false);
+  });
+
+  it('should drain budget per building demand (heavy building drains faster)', () => {
+    const pg = new PowerGrid();
+    // output=5, enough for Small House (0.7) but not Small Factory (3.2) after it
+    pg.addPlant({ x: 5, y: 5, output: 5, pollution: 50, type: 'coal' });
+    const grid = makeGrid();
+    // Near: factory at (5,6) costs 3.2 → remaining 1.8
+    grid.setCell(5, 6, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 }); // 3.2
+    // Far: factory at (5,7) costs 3.2 → 1.8 < 3.2, no power
+    grid.setCell(5, 7, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 }); // 3.2
+    pg.calculateDemand(grid);
+    pg.calculateCoverage(grid);
+    expect(pg.isPowered(5, 6)).toBe(true);
+    expect(pg.isPowered(5, 7)).toBe(false);
+  });
+
+  it('should keep fullCoverage for all reachable cells regardless of budget', () => {
+    const pg = new PowerGrid();
+    pg.addPlant({ x: 0, y: 0, output: 1, pollution: 50, type: 'coal' });
+    const grid = makeGrid();
+    grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    grid.setCell(2, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    pg.calculateDemand(grid);
+    pg.calculateCoverage(grid);
+    // Both cells are within Euclidean range (coverage), but only first has power
+    expect(pg.isInCoverage(1, 0)).toBe(true);
+    expect(pg.isInCoverage(2, 0)).toBe(true);
+    expect(pg.isPowered(1, 0)).toBe(true);
+    expect(pg.isPowered(2, 0)).toBe(false);
+  });
+
+  it('multiple plants each have their own budget', () => {
+    const pg = new PowerGrid();
+    // Two plants, each with output=1 (enough for one house each)
+    pg.addPlant({ x: 0, y: 0, output: 1, pollution: 50, type: 'coal' });
+    pg.addPlant({ x: 9, y: 0, output: 1, pollution: 50, type: 'coal' });
+    const grid = makeGrid();
+    for (let i = 0; i < 10; i++) grid.setCell(i, 0, { roadFlags: 1, roadType: 1 });
+    // House near plant 1
+    grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 0.7
+    // House near plant 2
+    grid.setCell(8, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 0.7
+    // House in middle — might not get power from either
+    grid.setCell(5, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 0.7
+    pg.calculateDemand(grid);
+    pg.calculateCoverage(grid);
+    // Near each plant should be powered
+    expect(pg.isPowered(1, 0)).toBe(true);
+    expect(pg.isPowered(8, 0)).toBe(true);
+  });
+
+  it('non-building cells do not drain budget', () => {
+    const pg = new PowerGrid();
+    pg.addPlant({ x: 0, y: 0, output: 1, pollution: 50, type: 'coal' });
+    const grid = makeGrid();
+    // Roads don't consume power
+    for (let i = 1; i < 8; i++) grid.setCell(i, 0, { roadFlags: 1, roadType: 1 });
+    // Building at end of road
+    grid.setCell(8, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // 0.7
+    pg.calculateDemand(grid);
+    pg.calculateCoverage(grid);
+    // Road doesn't drain budget, so building should still get power
+    expect(pg.isPowered(8, 0)).toBe(true);
   });
 });
