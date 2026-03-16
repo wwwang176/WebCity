@@ -498,11 +498,20 @@ export class SimulationLoop {
       // Vary commute per citizen (+/- 3 random jitter)
       const commute = Math.max(1, avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
 
-      // Check if citizen's home has power
+      // Check if citizen's home has power and water
+      // Skip check if no plants exist (initial city state)
       let homePowered = true;
+      let homeWatered = true;
       if (citizen.homeId) {
         const pos = parsePosKey(citizen.homeId);
-        if (pos) homePowered = this.state.power.isPowered(pos.x, pos.y);
+        if (pos) {
+          if (this.state.power.getPlants().length > 0) {
+            homePowered = this.state.power.isPowered(pos.x, pos.y);
+          }
+          if (this.state.water.getPlants().length > 0) {
+            homeWatered = this.state.water.isSupplied(pos.x, pos.y);
+          }
+        }
       }
 
       const factors: HappinessFactors = {
@@ -516,6 +525,7 @@ export class SimulationLoop {
         serviceCoverage,
         currentTick: this.state.clock.tick,
         homePowered,
+        homeWatered,
       };
       citizen.happiness = calculateHappiness(citizen, factors);
     }

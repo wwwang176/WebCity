@@ -97,21 +97,35 @@ describe('Happiness', () => {
     expect(HAPPINESS.HOMELESS_PENALTY).toBe(-20);
   });
 
-  it('should penalize citizen living in unpowered building', () => {
+  it('should penalize citizen living in unpowered building (-20)', () => {
     const normal = calculateHappiness(makeCitizen(), baseFactors);
     const noPower = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: false });
     expect(noPower).toBe(normal + HAPPINESS.NO_POWER_PENALTY);
+    expect(HAPPINESS.NO_POWER_PENALTY).toBe(-20);
   });
 
-  it('should not penalize when home is powered', () => {
+  it('should penalize citizen living in unwaterered building (-25)', () => {
     const normal = calculateHappiness(makeCitizen(), baseFactors);
-    const powered = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: true });
-    expect(powered).toBe(normal);
+    const noWater = calculateHappiness(makeCitizen(), { ...baseFactors, homeWatered: false });
+    expect(noWater).toBe(normal + HAPPINESS.NO_WATER_PENALTY);
+    expect(HAPPINESS.NO_WATER_PENALTY).toBe(-25);
   });
 
-  it('should not penalize when homePowered is undefined (backward compat)', () => {
+  it('should stack power + water penalties (-45 total)', () => {
     const normal = calculateHappiness(makeCitizen(), baseFactors);
-    const undef = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: undefined });
+    const neither = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: false, homeWatered: false });
+    expect(neither).toBe(normal + HAPPINESS.NO_POWER_PENALTY + HAPPINESS.NO_WATER_PENALTY);
+  });
+
+  it('should not penalize when home is powered and watered', () => {
+    const normal = calculateHappiness(makeCitizen(), baseFactors);
+    const full = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: true, homeWatered: true });
+    expect(full).toBe(normal);
+  });
+
+  it('should not penalize when homePowered/homeWatered is undefined (backward compat)', () => {
+    const normal = calculateHappiness(makeCitizen(), baseFactors);
+    const undef = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: undefined, homeWatered: undefined });
     expect(undef).toBe(normal);
   });
 });

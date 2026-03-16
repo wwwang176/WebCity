@@ -11,6 +11,7 @@ export interface HappinessFactors {
   serviceCoverage: number;
   currentTick?: number;
   homePowered?: boolean;
+  homeWatered?: boolean;
 }
 
 /** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
@@ -82,8 +83,9 @@ export const HAPPINESS = {
     { threshold: 8, modifier: 10 },
     { threshold: 5, modifier: 5 },
   ] as readonly ThresholdModifier[],
-  // Power
-  NO_POWER_PENALTY: -15,
+  // Power & Water
+  NO_POWER_PENALTY: -20,
+  NO_WATER_PENALTY: -25,
   // Housing
   HOMELESS_PENALTY: -20,
 } as const;
@@ -134,9 +136,12 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
   // Service coverage
   happiness += applyThresholdModifier(factors.serviceCoverage, HAPPINESS.SERVICE_MODIFIERS, 'atOrAbove');
 
-  // No power at home penalty
+  // No power / no water at home penalty
   if (factors.homePowered === false) {
     happiness += HAPPINESS.NO_POWER_PENALTY;
+  }
+  if (factors.homeWatered === false) {
+    happiness += HAPPINESS.NO_WATER_PENALTY;
   }
 
   // Homeless penalty
