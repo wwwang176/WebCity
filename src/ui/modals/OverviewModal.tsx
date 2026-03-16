@@ -68,9 +68,15 @@ export function OverviewModal(props: { open: boolean; onClose: () => void }) {
     });
     const canMigrate = attractiveness > 50 && vacantHomes > 0 && jobOpenings > 0;
 
+    const pwrSupply = state.power.getSupply();
+    const pwrDemand = state.power.getDemand();
+    const pwrRatio = state.power.getSupplyRatio();
+    const waterSupply = state.water.getTotalOutput();
+
     return {
       population, totalHomes, totalJobs, vacantHomes, jobOpenings,
       zoneCounts, attractiveness, canMigrate,
+      pwrSupply, pwrDemand, pwrRatio, waterSupply,
       checks: [
         { label: 'Attractiveness > 50', value: attractiveness.toFixed(1), ok: attractiveness > 50 },
         { label: 'Vacant Homes > 0', value: String(vacantHomes), ok: vacantHomes > 0 },
@@ -111,6 +117,31 @@ export function OverviewModal(props: { open: boolean; onClose: () => void }) {
           </tr>
         </tbody>
       </table>
+
+      <div class="section-title">Utilities</div>
+      <div class="summary-grid" style="grid-template-columns:1fr 1fr">
+        <div class="summary-card">
+          <div class="sc-label" style="margin-bottom:6px">Power</div>
+          <div style="font-size:12px;display:flex;justify-content:space-between"><span>Supply</span><span>{Math.round(data().pwrSupply)}</span></div>
+          <div style="font-size:12px;display:flex;justify-content:space-between"><span>Demand</span><span>{Math.round(data().pwrDemand)}</span></div>
+          <div style="font-size:12px;display:flex;justify-content:space-between"><span>Ratio</span><span>{(data().pwrRatio * 100).toFixed(1)}%</span></div>
+          <div style={{
+            'margin-top': '4px', height: '6px', 'border-radius': '3px',
+            background: 'rgba(255,255,255,0.1)', overflow: 'hidden',
+          }}>
+            <div style={{
+              width: `${Math.min(100, data().pwrRatio * 100)}%`,
+              height: '100%', 'border-radius': '3px',
+              background: data().pwrRatio >= 1 ? '#66bb6a' : data().pwrRatio >= 0.7 ? '#ffa726' : '#ef5350',
+            }} />
+          </div>
+          {data().pwrRatio < 1 && <div style={{ 'font-size': '11px', color: '#ef5350', 'margin-top': '4px' }}>Needs more power plants</div>}
+        </div>
+        <div class="summary-card">
+          <div class="sc-label" style="margin-bottom:6px">Water</div>
+          <div style="font-size:12px;display:flex;justify-content:space-between"><span>Supply</span><span>{data().waterSupply}</span></div>
+        </div>
+      </div>
 
       <div class="section-title">Migration Status</div>
       <table class="data-table">

@@ -15,7 +15,7 @@ function makeCell(overrides: Partial<{
 /** Minimal context stub. */
 function makeCtx(overrides: Partial<OverlayBuildContext> = {}): OverlayBuildContext {
   return {
-    power: { isPowered: () => false },
+    power: { isPowered: () => false, isInCoverage: () => false, getSupplyRatio: () => 1 },
     water: { isSupplied: () => false },
     traffic: { getSegmentDensity: () => 0 },
     police: { getCrimeReduction: () => 0, getCoverage: () => false },
@@ -53,7 +53,7 @@ describe('buildOverlayValue', () => {
   const O = OVERLAY_SCALE;
 
   it('power: powered cell returns DISPLAY_MAX', () => {
-    const ctx = makeCtx({ power: { isPowered: () => true } });
+    const ctx = makeCtx({ power: { isPowered: () => true, isInCoverage: () => true, getSupplyRatio: () => 1 } });
     expect(buildOverlayValue(ctx, 'power', makeCell(), 0, 0)).toBe(O.DISPLAY_MAX);
   });
 

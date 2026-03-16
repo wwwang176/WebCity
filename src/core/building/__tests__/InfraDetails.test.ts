@@ -12,7 +12,7 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
     parks: { getParks: () => [] },
     garbage: { getFacilities: () => [] },
     deathCare: { getCemeteries: () => [] },
-    power: { getPlants: () => [] },
+    power: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
     water: { getPlants: () => [] },
     citizens: { getCitizens: () => [] },
     sewage: { getTreatmentPlants: () => [], getUntreated: () => 0 },
@@ -155,12 +155,21 @@ describe('getInfraDetails', () => {
     expect(d).toEqual({ Capacity: 800, Stored: 120, 'Recent/month': 8 });
   });
 
-  it('power: returns output and type', () => {
+  it('power: returns output, type, and city supply/demand info', () => {
     const ctx = makeCtx({
-      power: { getPlants: () => [{ x: 2, y: 2, output: 750, type: 'solar' }] },
+      power: {
+        getPlants: () => [{ x: 2, y: 2, output: 750, type: 'solar' }],
+        getSupply: () => 750,
+        getDemand: () => 500,
+        getSupplyRatio: () => 1,
+      },
     });
     const d = getInfraDetails(ctx, 'power', 2, 2);
-    expect(d).toEqual({ Output: 750, Type: 'solar' });
+    expect(d.Output).toBe(750);
+    expect(d.Type).toBe('solar');
+    expect(d['City Supply']).toBe(750);
+    expect(d['City Demand']).toBe(500);
+    expect(d['Supply Ratio']).toBe('100.0%');
   });
 
   it('water: returns output', () => {

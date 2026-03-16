@@ -201,6 +201,8 @@ export class SimulationLoop {
       const infraPositions = new Set<string>();
       for (const p of this.state.power.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
       for (const p of this.state.water.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
+      // Calculate demand before coverage so supplyRatio is available for trimming
+      this.state.power.calculateDemand(this.state.grid);
       this.state.power.calculateCoverage(this.state.grid, infraPositions);
       this.state.water.calculateCoverage(this.state.grid, infraPositions);
     }
@@ -492,6 +494,8 @@ export class SimulationLoop {
     // Check if any parks exist for happiness bonus
     const hasParkCoverage = this.state.parks.getParks().length > 0;
 
+    const powerSupplyRatio = this.state.power.getSupplyRatio();
+
     for (const citizen of this.state.citizens.getCitizens()) {
       // Vary commute per citizen (+/- 3 random jitter)
       const commute = Math.max(1, avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
@@ -505,6 +509,7 @@ export class SimulationLoop {
         taxRate,
         serviceCoverage,
         currentTick: this.state.clock.tick,
+        powerSupplyRatio,
       };
       citizen.happiness = calculateHappiness(citizen, factors);
     }

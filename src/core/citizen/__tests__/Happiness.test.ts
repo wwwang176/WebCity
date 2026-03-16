@@ -96,6 +96,30 @@ describe('Happiness', () => {
   it('HAPPINESS.HOMELESS_PENALTY should be -20', () => {
     expect(HAPPINESS.HOMELESS_PENALTY).toBe(-20);
   });
+
+  it('should penalize power shortage (ratio < 1.0)', () => {
+    const normal = calculateHappiness(makeCitizen(), baseFactors);
+    const shortage = calculateHappiness(makeCitizen(), { ...baseFactors, powerSupplyRatio: 0.8 });
+    expect(shortage).toBe(normal + HAPPINESS.POWER_SHORTAGE_PENALTY);
+  });
+
+  it('should penalize severe power shortage (ratio < 0.5)', () => {
+    const normal = calculateHappiness(makeCitizen(), baseFactors);
+    const severe = calculateHappiness(makeCitizen(), { ...baseFactors, powerSupplyRatio: 0.3 });
+    expect(severe).toBe(normal + HAPPINESS.POWER_SEVERE_PENALTY);
+  });
+
+  it('should not penalize when power ratio >= 1.0', () => {
+    const normal = calculateHappiness(makeCitizen(), baseFactors);
+    const full = calculateHappiness(makeCitizen(), { ...baseFactors, powerSupplyRatio: 1.0 });
+    expect(full).toBe(normal);
+  });
+
+  it('should not penalize when powerSupplyRatio is undefined (backward compat)', () => {
+    const normal = calculateHappiness(makeCitizen(), baseFactors);
+    const undef = calculateHappiness(makeCitizen(), { ...baseFactors, powerSupplyRatio: undefined });
+    expect(undef).toBe(normal);
+  });
 });
 
 describe('getUnemploymentPenalty', () => {

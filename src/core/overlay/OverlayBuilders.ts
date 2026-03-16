@@ -15,7 +15,7 @@ export interface OverlayCell {
 
 /** Minimal service interface for overlay building (DIP). */
 export interface OverlayBuildContext {
-  power: { isPowered(x: number, y: number): boolean };
+  power: { isPowered(x: number, y: number): boolean; isInCoverage(x: number, y: number): boolean; getSupplyRatio(): number };
   water: { isSupplied(x: number, y: number): boolean };
   traffic: { getSegmentDensity(key: string): number };
   police: { getCrimeReduction(x: number, y: number): number; getCoverage(x: number, y: number): boolean };
@@ -37,8 +37,11 @@ const O = OVERLAY_SCALE;
  * requires adding an entry here (OCP).
  */
 export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
-  power: (ctx, _cell, x, y) =>
-    ctx.power.isPowered(x, y) ? O.DISPLAY_MAX : 0,
+  power: (ctx, _cell, x, y) => {
+    if (ctx.power.isPowered(x, y)) return O.DISPLAY_MAX; // green: powered
+    if (ctx.power.getSupplyRatio() < 1 && ctx.power.isInCoverage(x, y)) return O.DISPLAY_MAX * 0.5; // yellow: in range but supply insufficient
+    return 0; // red/gray: not in range
+  },
 
   water: (ctx, _cell, x, y) => {
     const supplied = ctx.water.isSupplied(x, y) ? O.DISPLAY_MAX : 0;

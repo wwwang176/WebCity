@@ -18,6 +18,8 @@ const [currentOverlay, setCurrentOverlay] = createSignal('none');
 const [currentRotation, setCurrentRotation] = createSignal(0);
 const [rciDemand, setRciDemand] = createSignal({ residential: 0, commercial: 0, industrial: 0 });
 const [viewMode, setViewMode] = createSignal<ViewMode>(ViewMode.NORMAL);
+const [powerSupply, setPowerSupply] = createSignal(0);
+const [powerDemand, setPowerDemand] = createSignal(0);
 
 // --- Throttled tick signal for modal live-refresh (fixed ~6 updates/sec regardless of FPS) ---
 const [tick, setTick] = createSignal(0);
@@ -36,7 +38,7 @@ export const gameSignals = {
   currentTool, previewCost, paused, speed,
   selectedBuilding, notification, currentOverlay,
   currentRotation, rciDemand, chartHistory, econHistory,
-  viewMode, tick,
+  viewMode, tick, powerSupply, powerDemand,
 };
 
 // --- Game instance reference ---
@@ -77,6 +79,8 @@ export function initGameStore(game: Game): void {
       setCurrentOverlay(overlay);
       setCurrentRotation(game.currentRotation);
       setViewMode(game.viewMode);
+      setPowerSupply(state.power.getSupply());
+      setPowerDemand(Math.round(state.power.getDemand()));
       if (state.rciDemand) {
         setRciDemand({
           residential: state.rciDemand.residential,
