@@ -72,10 +72,11 @@ export class OverlayRenderer {
         if (value > 0) return new THREE.Color(0.9, 0.2, 0.15); // red: building with no power coverage
         return new THREE.Color(0, 0, 0); // empty land: invisible (dark)
       case 'water':
-        // 3-state: blue (supplied, ≥0.8) → yellow (undersupplied, ~0.3) → red (no coverage, >0)
-        if (value >= 0.8) return new THREE.Color(0.1, 0.5, 0.9); // blue: supplied
+        // 4-band: bright blue (supplied) → yellow (undersupplied) → red (no coverage) → deep blue (groundwater)
+        if (value >= 0.8) return new THREE.Color(0.1, 0.5, 0.9); // bright blue: supplied
         if (value >= 0.3) return new THREE.Color(1.0, 0.8, 0.1); // yellow: in range but undersupplied
-        if (value > 0) return new THREE.Color(0.9, 0.2, 0.15); // red: no water coverage
+        if (value >= 0.1) return new THREE.Color(0.9, 0.2, 0.15); // red: building with no water
+        if (value > 0) return new THREE.Color(0.0, 0.1 + value * 3, 0.3 + value * 5); // deep blue gradient: groundwater
         return new THREE.Color(0, 0, 0); // empty land
       case 'zone':
         return new THREE.Color(value * 0.5, value, value * 0.3); // Green-ish

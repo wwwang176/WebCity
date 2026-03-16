@@ -45,12 +45,13 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
   },
 
   water: (ctx, cell, x, y) => {
+    // Supply status takes priority over groundwater
+    if (ctx.water.isSupplied(x, y)) return O.DISPLAY_MAX; // 100: supplied (bright blue)
+    if (ctx.water.getSupplyRatio() < 1 && ctx.water.isInCoverage(x, y)) return O.DISPLAY_MAX * 0.5; // 50: undersupplied (yellow)
+    if (cell.buildingId > 0) return O.DISPLAY_MAX * 0.15; // 15: no water (red)
+    // Groundwater only: cap at 8 so it stays in the deep-blue band (0 < value < 0.1 normalized)
     const gw = getGroundwaterLevel(ctx.grid, x, y);
-    const gwValue = gw * O.GROUNDWATER_FACTOR;
-    if (ctx.water.isSupplied(x, y)) return Math.max(O.DISPLAY_MAX, gwValue); // supplied
-    if (ctx.water.getSupplyRatio() < 1 && ctx.water.isInCoverage(x, y)) return Math.max(O.DISPLAY_MAX * 0.5, gwValue); // in range but undersupplied
-    if (cell.buildingId > 0) return Math.max(O.DISPLAY_MAX * 0.15, gwValue); // building with no water
-    return gwValue;
+    return Math.min(8, gw * O.GROUNDWATER_FACTOR * 20);
   },
 
   zone: (_ctx, cell) =>
