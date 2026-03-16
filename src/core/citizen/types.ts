@@ -29,6 +29,7 @@ export interface Citizen {
   health: number;
   homeId: string | null;      // "x,y" grid position of home building
   workplaceId: string | null; // "x,y" grid position of workplace building
+  unemployedSince: number | null; // tick when citizen became unemployed (working-age only)
 }
 
 /** Age thresholds for life stage transitions */

@@ -9,6 +9,7 @@ export interface HappinessFactors {
   isEmployed: boolean;
   taxRate: number;
   serviceCoverage: number;
+  currentTick?: number;
 }
 
 /** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
@@ -60,6 +61,12 @@ export const HAPPINESS = {
   ] as readonly ThresholdModifier[],
   // Employment
   UNEMPLOYMENT_PENALTY: -15,
+  UNEMPLOYMENT_MEDIUM_PENALTY: -25,
+  UNEMPLOYMENT_FORCED_PENALTY: -100,
+  UNEMPLOYMENT_MEDIUM_TICKS: 30,
+  UNEMPLOYMENT_BASE_TOLERANCE: 90,
+  UNEMPLOYMENT_INCOME_BONUS: { LOW: 0, MEDIUM: 15, HIGH: 30 } as Record<string, number>,
+  UNEMPLOYMENT_ID_SPREAD: 30,
   // Tax brackets (descending order)
   TAX_BRACKETS: [
     { threshold: 20, modifier: -35 },
@@ -78,6 +85,24 @@ export const HAPPINESS = {
   HOMELESS_PENALTY: -20,
 } as const;
 
+/**
+ * Calculate unemployment penalty based on duration.
+ * Short: -15, Medium: -25, Long (past personal tolerance): -100 (forced emigration).
+ * Tolerance varies by income level and citizen ID for natural spread.
+ */
+export function getUnemploymentPenalty(citizen: Citizen, currentTick: number): number {
+  if (citizen.unemployedSince === null || citizen.unemployedSince === undefined) {
+    return HAPPINESS.UNEMPLOYMENT_PENALTY;
+  }
+  const duration = currentTick - citizen.unemployedSince;
+  const incomeBonus = HAPPINESS.UNEMPLOYMENT_INCOME_BONUS[citizen.incomeLevel] ?? 0;
+  const tolerance = HAPPINESS.UNEMPLOYMENT_BASE_TOLERANCE + incomeBonus + (citizen.id % HAPPINESS.UNEMPLOYMENT_ID_SPREAD);
+
+  if (duration >= tolerance) return HAPPINESS.UNEMPLOYMENT_FORCED_PENALTY;
+  if (duration >= HAPPINESS.UNEMPLOYMENT_MEDIUM_TICKS) return HAPPINESS.UNEMPLOYMENT_MEDIUM_PENALTY;
+  return HAPPINESS.UNEMPLOYMENT_PENALTY;
+}
+
 export function calculateHappiness(citizen: Citizen, factors: HappinessFactors): number {
   let happiness = HAPPINESS.BASE;
 
@@ -87,7 +112,11 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
 
   // Boolean factors
   if (factors.hasPark) happiness += HAPPINESS.PARK_BONUS;
-  if (!factors.isEmployed && isWorkingAge(citizen.age)) happiness += HAPPINESS.UNEMPLOYMENT_PENALTY;
+  if (!factors.isEmployed && isWorkingAge(citizen.age)) {
+    happiness += factors.currentTick !== undefined
+      ? getUnemploymentPenalty(citizen, factors.currentTick)
+      : HAPPINESS.UNEMPLOYMENT_PENALTY;
+  }
 
   // Threshold-based environmental factors (descending, first match wins)
   happiness += applyThresholdModifier(factors.pollution, HAPPINESS.POLLUTION_MODIFIERS);

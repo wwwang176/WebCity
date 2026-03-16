@@ -5,6 +5,7 @@ import {
   expandCoverageToBuildings,
   RoadCoverageMap,
   ROAD_COVERAGE,
+  roadDistanceToTargets,
 } from '../RoadCoverageFlood';
 import { RoadType, ROAD_CONFIGS } from '../../road/types';
 import { toPosKey } from '../../grid/GridHelpers';
@@ -429,5 +430,96 @@ describe('RoadCoverageMap', () => {
     // Center (2,2) expands to (2,2)(3,2)(2,3)(3,3) — row 0 road only adjacent to column 2,3
     // vs top-left (1,1) expands to (1,1)(2,1)(1,2)(2,2) — row 0 road adjacent to column 1,2
     expect(centerCov.size).not.toBe(previewCov.size);
+  });
+});
+
+// ── roadDistanceToTargets ─────────────────────────────────────────
+
+describe('roadDistanceToTargets', () => {
+  it('returns correct cost for straight road connecting home and target', () => {
+    // Home at (0,0), target at (3,0), road: (1,0) (2,0)
+    // Home neighbors road at (1,0), target neighbors road at (2,0)
+    const grid = makeGrid([
+      [_, R, R, _],
+    ]);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['3,0']), 100);
+    expect(result.has('3,0')).toBe(true);
+    const cost = result.get('3,0')!;
+    // Cost = seed at 0 + 1 step from (1,0) to (2,0) = roadTileCost(TWO_LANE)
+    expect(cost).toBeCloseTo(roadTileCost(R), 5);
+  });
+
+  it('returns empty for unreachable target (road gap)', () => {
+    // Home at (0,0), road at (1,0), gap at (2,0), road at (3,0), target at (4,0)
+    const grid = makeGrid([
+      [_, R, _, R, _],
+    ]);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['4,0']), 100);
+    expect(result.has('4,0')).toBe(false);
+  });
+
+  it('budget limits reachable targets', () => {
+    // Long road, tight budget
+    const row = [_, ...Array(20).fill(R), _] as number[];
+    const grid = makeGrid([row]);
+    const tileCost = roadTileCost(R);
+    const budget = tileCost * 3; // afford ~3 tiles of expansion
+    // Near target at col 4 (3 road steps) vs far target at col 20
+    const result = roadDistanceToTargets(
+      grid, { x: 0, y: 0 },
+      new Set([toPosKey(4, 0), toPosKey(21, 0)]),
+      budget,
+    );
+    expect(result.has(toPosKey(4, 0))).toBe(true);
+    expect(result.has(toPosKey(21, 0))).toBe(false);
+  });
+
+  it('highway costs less than rural for same distance', () => {
+    const ruralGrid = makeGrid([[_, RU, RU, RU, _]]);
+    const hwGrid = makeGrid([[_, H, H, H, _]]);
+    const target = new Set(['4,0']);
+    const ruralResult = roadDistanceToTargets(ruralGrid, { x: 0, y: 0 }, target, 100);
+    const hwResult = roadDistanceToTargets(hwGrid, { x: 0, y: 0 }, target, 100);
+    expect(hwResult.get('4,0')!).toBeLessThan(ruralResult.get('4,0')!);
+  });
+
+  it('home not on road — seeds from adjacent road cells', () => {
+    // Home at (1,1) surrounded by roads
+    const grid = makeGrid([
+      [_, R, _],
+      [R, _, R],
+      [_, R, _],
+    ]);
+    const result = roadDistanceToTargets(grid, { x: 1, y: 1 }, new Set(['0,0']), 100);
+    // (0,0) is not a road and not adjacent to a covered road... let's use a reachable target
+    // Actually (0,0) is _ and adjacent to (1,0)=R and (0,1)=R, so it IS reachable as a building neighbor
+    expect(result.has('0,0')).toBe(true);
+  });
+
+  it('target not on road — found via adjacent road cell', () => {
+    // Road from (1,0) to (3,0), target building at (4,0) not on road
+    const grid = makeGrid([
+      [_, R, R, R, _],
+    ]);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['4,0']), 100);
+    expect(result.has('4,0')).toBe(true);
+  });
+
+  it('stops early when all targets found', () => {
+    // Two close targets, should not need to explore entire grid
+    const grid = makeGrid([
+      [_, R, R, R, R, R, R, R, R, R],
+    ]);
+    const targets = new Set([toPosKey(2, 0), toPosKey(3, 0)]);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, targets, 1000);
+    expect(result.size).toBe(2);
+    expect(result.has(toPosKey(2, 0))).toBe(true);
+    expect(result.has(toPosKey(3, 0))).toBe(true);
+  });
+
+  it('returns empty map for empty targets', () => {
+    const grid = makeGrid([[_, R, R]]);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(), 100);
+    expect(result.size).toBe(0);
   });
 });

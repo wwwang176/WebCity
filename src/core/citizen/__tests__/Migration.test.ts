@@ -111,6 +111,23 @@ describe('getImmigrationCap — 移民動態縮放', () => {
     expect(result.emigrated).toBe(2);
   });
 
+  it('high unemployment rate reduces attractiveness', () => {
+    const noUnemployment = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 0 });
+    const highUnemployment = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 0.5 });
+    expect(highUnemployment).toBeLessThan(noUnemployment);
+  });
+
+  it('full unemployment makes city unattractive (below threshold)', () => {
+    const score = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 1.0 });
+    expect(score).toBeLessThanOrEqual(IMMIGRATION.ATTRACTIVENESS_THRESHOLD);
+  });
+
+  it('no immigration when unemployment rate is high', () => {
+    const mgr = new CitizenManager();
+    const result = migrationTick(mgr, { ...attractiveCity, unemploymentRate: 0.8 });
+    expect(result.immigrated).toBe(0);
+  });
+
   it('ATTRACTIVENESS constants should have valid weights', () => {
     expect(ATTRACTIVENESS.JOB_SCORE).toBeGreaterThan(0);
     expect(ATTRACTIVENESS.VACANT_SCORE).toBeGreaterThan(0);

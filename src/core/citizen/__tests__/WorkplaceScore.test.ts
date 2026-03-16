@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scoreWorkplace, type WorkplaceCandidate } from '../WorkplaceScore';
+import { scoreWorkplace, scoreCommuteByCost, scoreWorkplaceWithCost, type WorkplaceCandidate } from '../WorkplaceScore';
 import type { Citizen } from '../types';
 import { LifeStage, EducationLevel, IncomeLevel } from '../types';
 import { ZoneType } from '../../grid/types';
@@ -73,5 +73,43 @@ describe('scoreWorkplace', () => {
     const score = scoreWorkplace(citizen, '5,5', ZoneType.COMMERCIAL_HIGH);
     expect(typeof score).toBe('number');
     expect(Number.isFinite(score)).toBe(true);
+  });
+});
+
+describe('scoreCommuteByCost', () => {
+  it('unreachable (null) returns -20', () => {
+    expect(scoreCommuteByCost(null)).toBe(-20);
+  });
+
+  it('very close (cost <= 10) returns +15', () => {
+    expect(scoreCommuteByCost(0)).toBe(15);
+    expect(scoreCommuteByCost(5)).toBe(15);
+    expect(scoreCommuteByCost(10)).toBe(15);
+  });
+
+  it('very far (cost > 40) returns -15', () => {
+    expect(scoreCommuteByCost(41)).toBe(-15);
+    expect(scoreCommuteByCost(100)).toBe(-15);
+  });
+
+  it('mid-range linearly interpolates', () => {
+    // cost=25 → 15 - (25-10) * (30/30) = 15 - 15 = 0
+    expect(scoreCommuteByCost(25)).toBe(0);
+  });
+});
+
+describe('scoreWorkplaceWithCost', () => {
+  it('LOW income + INDUSTRIAL + close commute', () => {
+    const citizen = makeCitizen({ incomeLevel: IncomeLevel.LOW });
+    const score = scoreWorkplaceWithCost(citizen, ZoneType.INDUSTRIAL, 5);
+    // INDUSTRIAL pref for LOW = 20, commute cost 5 → +15
+    expect(score).toBe(35);
+  });
+
+  it('HIGH income + OFFICE + unreachable', () => {
+    const citizen = makeCitizen({ incomeLevel: IncomeLevel.HIGH });
+    const score = scoreWorkplaceWithCost(citizen, ZoneType.OFFICE, null);
+    // OFFICE pref for HIGH = 20, unreachable → -20
+    expect(score).toBe(0);
   });
 });
