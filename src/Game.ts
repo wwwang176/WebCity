@@ -1005,6 +1005,12 @@ export class Game {
     const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
     this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
 
+    // Advance pedestrians every render frame (same pattern as vehicles)
+    if (!this.paused) {
+      const scaledDt = dt * this.speed;
+      this.state.pedestrianManager.tick(scaledDt);
+    }
+
     // Render pedestrians with camera culling
     const camTarget = this.sceneManager.getCameraTarget();
     const pedData = cullPedestrians(

@@ -314,8 +314,7 @@ export class SimulationLoop {
     this.spawnVehicles();
     this.state.trafficLights.tick();
 
-    // 7b2. Pedestrian tick: advance all active pedestrians
-    this.state.pedestrianManager.tick(1 / this.state.clock.ticksPerDay);
+    // 7b2. Pedestrian spawning/despawn happens per tick (movement is per-frame in Game.ts)
 
     // 7c. Service vehicles — patrol within coverage areas (every 6 ticks)
     if (isSlowTick) {
