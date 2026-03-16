@@ -316,6 +316,111 @@ export class RoadCoverageMap {
   }
 }
 
+/**
+ * Single-source Dijkstra from home along the road network.
+ * Returns the road cost to reach each target position.
+ * Targets (buildings) may not be on road cells — they are discovered
+ * when a Dijkstra-expanded road cell has a target as a 4-neighbor.
+ * Stops when all targets are found or maxBudget is exceeded.
+ */
+export function roadDistanceToTargets(
+  grid: ReadableGrid,
+  home: { x: number; y: number },
+  targets: Set<string>,
+  maxBudget: number,
+): Map<string, number> {
+  const result = new Map<string, number>();
+  if (targets.size === 0) return result;
+
+  const costs = new Map<string, number>();
+  const pq = new MinHeap();
+  let foundCount = 0;
+
+  // Helper: check 4-neighbors of a road cell for targets
+  const checkNeighborsForTargets = (x: number, y: number, cost: number): void => {
+    for (const [dx, dy] of FOUR_NEIGHBORS) {
+      const nx = x + dx!;
+      const ny = y + dy!;
+      const nk = toPosKey(nx, ny);
+      if (targets.has(nk) && !result.has(nk)) {
+        result.set(nk, cost);
+        foundCount++;
+      }
+    }
+  };
+
+  // Seed: home itself + adjacent road cells (cost 0), same as roadFlood
+  const seedCell = grid.getCell(home.x, home.y);
+  if (seedCell && seedCell.roadType !== RoadType.NONE) {
+    const key = toPosKey(home.x, home.y);
+    costs.set(key, 0);
+    pq.push(key, 0);
+  }
+  for (const [dx, dy] of FOUR_NEIGHBORS) {
+    const nx = home.x + dx!;
+    const ny = home.y + dy!;
+    const cell = grid.getCell(nx, ny);
+    if (cell && cell.roadType !== RoadType.NONE) {
+      const key = toPosKey(nx, ny);
+      if (!costs.has(key)) {
+        costs.set(key, 0);
+        pq.push(key, 0);
+      }
+    }
+  }
+
+  // Also check if home itself is a target neighbor (seed cells at cost 0)
+  // Check seeds for adjacent targets
+  for (const [key] of costs) {
+    const { x, y } = parsePosKeyUnsafe(key);
+    checkNeighborsForTargets(x, y, 0);
+    // Also check if the road cell itself is a target
+    if (targets.has(key) && !result.has(key)) {
+      result.set(key, 0);
+      foundCount++;
+    }
+  }
+  if (foundCount >= targets.size) return result;
+
+  // Dijkstra expansion
+  while (pq.size > 0) {
+    const cur = pq.pop()!;
+    const best = costs.get(cur.key);
+    if (best !== undefined && best < cur.cost) continue; // stale
+
+    const { x, y } = parsePosKeyUnsafe(cur.key);
+    for (const [dx, dy] of FOUR_NEIGHBORS) {
+      const nx = x + dx!;
+      const ny = y + dy!;
+      const cell = grid.getCell(nx, ny);
+      if (!cell || cell.roadType === RoadType.NONE) continue;
+
+      const newCost = cur.cost + roadTileCost(cell.roadType);
+      if (newCost > maxBudget) continue;
+
+      const nk = toPosKey(nx, ny);
+      const prev = costs.get(nk);
+      if (prev === undefined || newCost < prev) {
+        costs.set(nk, newCost);
+        pq.push(nk, newCost);
+
+        // Check if this road cell is a target
+        if (targets.has(nk) && !result.has(nk)) {
+          result.set(nk, newCost);
+          foundCount++;
+          if (foundCount >= targets.size) return result;
+        }
+
+        // Check 4-neighbors of this road cell for non-road targets
+        checkNeighborsForTargets(nx, ny, newCost);
+        if (foundCount >= targets.size) return result;
+      }
+    }
+  }
+
+  return result;
+}
+
 /** Expand a facility's top-left (x, y) into all occupied cell positions. */
 function expandFootprint(
   x: number, y: number, width: number, height: number,

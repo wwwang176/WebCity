@@ -378,4 +378,58 @@ describe('assignWorkWithPreference', () => {
 
     expect(occupancy.get('6,6')).toBe(2);
   });
+
+  it('reachable filter: skips unreachable workplaces', () => {
+    const citizen = makeCitizen({ id: 1, homeId: '5,5' });
+    const candidates: WorkplaceCandidate[] = [
+      { pos: '6,6', capacity: 10, zoneType: ZoneType.COMMERCIAL_LOW },  // unreachable
+      { pos: '5,6', capacity: 10, zoneType: ZoneType.COMMERCIAL_LOW },  // reachable
+    ];
+    const occupancy = new Map<string, number>();
+    const reachable = new Map([['5,5', new Set(['5,6'])]]);
+
+    assignWorkWithPreference([citizen], candidates, occupancy, reachable);
+
+    expect(citizen.workplaceId).toBe('5,6');
+  });
+
+  it('reachable filter: citizen with no homeId ignores filter', () => {
+    const citizen = makeCitizen({ id: 1, homeId: null });
+    const candidates: WorkplaceCandidate[] = [
+      { pos: '6,6', capacity: 10, zoneType: ZoneType.COMMERCIAL_LOW },
+    ];
+    const occupancy = new Map<string, number>();
+    const reachable = new Map<string, Set<string>>(); // empty — no homes mapped
+
+    assignWorkWithPreference([citizen], candidates, occupancy, reachable);
+
+    expect(citizen.workplaceId).toBe('6,6'); // assigned anyway
+  });
+
+  it('reachable filter: no reachable workplaces = stays unemployed', () => {
+    const citizen = makeCitizen({ id: 1, homeId: '5,5' });
+    const candidates: WorkplaceCandidate[] = [
+      { pos: '6,6', capacity: 10, zoneType: ZoneType.COMMERCIAL_LOW },
+    ];
+    const occupancy = new Map<string, number>();
+    const reachable = new Map([['5,5', new Set<string>()]]); // nothing reachable
+
+    assignWorkWithPreference([citizen], candidates, occupancy, reachable);
+
+    expect(citizen.workplaceId).toBeNull();
+  });
+
+  it('reachable filter: home not in map = no filter applied', () => {
+    const citizen = makeCitizen({ id: 1, homeId: '9,9' });
+    const candidates: WorkplaceCandidate[] = [
+      { pos: '6,6', capacity: 10, zoneType: ZoneType.COMMERCIAL_LOW },
+    ];
+    const occupancy = new Map<string, number>();
+    const reachable = new Map([['5,5', new Set(['6,6'])]]); // different home
+
+    assignWorkWithPreference([citizen], candidates, occupancy, reachable);
+
+    // Home 9,9 not in reachable map → no filter → assigned normally
+    expect(citizen.workplaceId).toBe('6,6');
+  });
 });

@@ -118,19 +118,26 @@ export function assignWithPreference(
 /**
  * Score-based workplace assignment: each citizen picks from top-3 scored workplaces.
  * Mutates citizens (workplaceId) and occupancy map in-place.
+ * @param reachable Optional road-reachability map: homeId → Set of reachable workplace positions.
+ *   When provided, citizens with a homeId in the map can only be assigned to reachable workplaces.
+ *   Citizens without homeId or whose homeId is not in the map are unfiltered.
  */
 export function assignWorkWithPreference(
   citizens: readonly Citizen[],
   candidates: readonly WorkplaceCandidate[],
   occupancy: Map<string, number>,
+  reachable?: ReadonlyMap<string, ReadonlySet<string>>,
 ): void {
   for (const citizen of citizens) {
     if (citizen.workplaceId !== null) continue;
 
-    // Filter — has capacity
+    // Filter — has capacity + reachable from home
+    const reachableSet = citizen.homeId ? reachable?.get(citizen.homeId) : undefined;
     let available = candidates.filter(c => {
       const occ = occupancy.get(c.pos) ?? 0;
-      return occ < c.capacity;
+      if (occ >= c.capacity) return false;
+      if (reachableSet && !reachableSet.has(c.pos)) return false;
+      return true;
     });
     if (available.length === 0) continue;
 

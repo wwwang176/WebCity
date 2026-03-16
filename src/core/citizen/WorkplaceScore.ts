@@ -48,6 +48,24 @@ function scoreWorkplaceCommute(homePos: string | null, candidatePos: string): nu
   return Math.round(15 - (dist - 5) * (30 / 15));
 }
 
+/** Score commute based on Dijkstra road cost (used by job relocation). */
+export function scoreCommuteByCost(cost: number | null): number {
+  if (cost === null) return -20;
+  if (cost <= 10) return 15;
+  if (cost > 40) return -15;
+  return Math.round(15 - (cost - 10) * (30 / 30));
+}
+
+/** Job relocation scoring: zone preference + road-cost commute. */
+export function scoreWorkplaceWithCost(
+  citizen: Citizen,
+  zoneType: ZoneType,
+  roadCost: number | null,
+): number {
+  const prefs = ZONE_PREFERENCE[citizen.incomeLevel];
+  return (prefs[zoneType] ?? 0) + scoreCommuteByCost(roadCost);
+}
+
 /** Compute total workplace preference score */
 export function scoreWorkplace(
   citizen: Citizen,

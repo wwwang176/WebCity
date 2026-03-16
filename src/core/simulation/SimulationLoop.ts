@@ -26,6 +26,8 @@ import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { HousingCandidate } from '../citizen/HousingScore';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
 import { relocationTick } from '../citizen/Relocation';
+import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG, type WorkplaceCandidateWithZone } from '../citizen/JobRelocation';
+import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode } from '../transport/types';
@@ -46,6 +48,8 @@ export const SIMULATION = {
   SLOW_TICK_INTERVAL: 6,
   /** Ticks between heavier computations: pollution, land value, vehicle spawning */
   MEDIUM_TICK_INTERVAL: 60,
+  /** Ticks between job relocation checks */
+  JOB_RELOCATION_INTERVAL: 60,
   /** Number of random cells sampled per growth tick */
   GROWTH_ATTEMPTS: 20,
   /** Chance per attempt for burned building auto-clearance */
@@ -277,6 +281,11 @@ export class SimulationLoop {
     // 6.6 Relocation: unhappy citizens may move to better housing (every 60 ticks)
     if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
       this.runRelocation();
+    }
+
+    // 6.7 Job relocation: citizens with long/failed commutes switch workplace (every 120 ticks)
+    if (tick % SIMULATION.JOB_RELOCATION_INTERVAL === 0) {
+      this.runJobRelocation();
     }
 
     // 7. Rebuild lane graph if roads changed
@@ -824,7 +833,11 @@ export class SimulationLoop {
     // Assign workplaces first (housing scoring needs workplaceId for commute)
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
     const workingAgeCitizens = citizens.filter((c) => isWorkingAge(c.age));
-    assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy);
+
+    // Build reachability map: homeId → Set of reachable workplace positions
+    // Group unassigned citizens by homeId to avoid duplicate Dijkstra calls
+    const reachable = this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
+    assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable);
 
     // Then assign housing with preference scoring
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
@@ -867,6 +880,80 @@ export class SimulationLoop {
     const citizens = this.state.citizens.getCitizens();
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
     const { relocatedIds } = relocationTick(citizens, housingCandidates, homeOccupancy);
+    for (const id of relocatedIds) {
+      this.commuteCache.remove(id);
+    }
+  }
+
+  /**
+   * Build a reachability map for workplace assignment.
+   * For each unique homeId among unassigned citizens, run Dijkstra to find
+   * which workplace positions are reachable via the road network.
+   */
+  private buildWorkplaceReachability(
+    citizens: readonly Citizen[],
+    workplaceCandidates: readonly WorkplaceCandidate[],
+  ): Map<string, Set<string>> {
+    const reachable = new Map<string, Set<string>>();
+    if (workplaceCandidates.length === 0) return reachable;
+
+    // Collect unique homeIds of unassigned citizens
+    const homeIds = new Set<string>();
+    for (const c of citizens) {
+      if (c.workplaceId === null && c.homeId !== null) {
+        homeIds.add(c.homeId);
+      }
+    }
+    if (homeIds.size === 0) return reachable;
+
+    // All workplace positions as Dijkstra targets
+    const targetSet = new Set<string>(workplaceCandidates.map(c => c.pos));
+
+    for (const homeId of homeIds) {
+      const homePos = parsePosKeyUnsafe(homeId);
+      const distMap = roadDistanceToTargets(
+        this.state.grid, homePos, targetSet,
+        DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+      );
+      reachable.set(homeId, new Set(distMap.keys()));
+    }
+
+    return reachable;
+  }
+
+  /**
+   * Run job relocation tick: citizens with long/failed commutes may switch workplace.
+   * Called every JOB_RELOCATION_INTERVAL ticks (after housing relocation).
+   */
+  private runJobRelocation(): void {
+    this.rebuildBuildingIndex();
+
+    const grid = this.state.grid;
+    const workplaceCandidates: WorkplaceCandidateWithZone[] = [];
+
+    for (const b of this.buildingPositions) {
+      const bt = getBuildingType(b.buildingId);
+      if (!bt || bt.workers <= 0) continue;
+      workplaceCandidates.push({
+        pos: b.pos,
+        capacity: bt.workers,
+        zoneType: bt.zoneType,
+      });
+    }
+    if (workplaceCandidates.length === 0) return;
+
+    const citizens = this.state.citizens.getCitizens();
+    const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
+
+    const { relocatedIds } = jobRelocationTick(
+      citizens,
+      workplaceCandidates,
+      workOccupancy,
+      this.commuteCache,
+      grid,
+    );
+
+    // Clear commute cache for relocated citizens so routes are recalculated
     for (const id of relocatedIds) {
       this.commuteCache.remove(id);
     }
