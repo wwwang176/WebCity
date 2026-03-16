@@ -36,9 +36,9 @@ describe('Migration', () => {
     for (let i = 0; i < 100; i++) mgr.createCitizen({ happiness: 10 });
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 10, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 100);
-    // Should emigrate 1-3% = 1 to 3 citizens, not all 100
-    expect(result.emigrated).toBeGreaterThanOrEqual(1);
-    expect(result.emigrated).toBeLessThanOrEqual(3);
+    // Should emigrate base(0-10) + 1-3%(1-3) = 0-13, not all 100
+    expect(result.emigrated).toBeGreaterThanOrEqual(0);
+    expect(result.emigrated).toBeLessThanOrEqual(13);
     expect(mgr.getPopulation()).toBe(100 - result.emigrated);
   });
 
