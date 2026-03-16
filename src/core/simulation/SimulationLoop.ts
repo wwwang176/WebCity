@@ -23,6 +23,7 @@ import { getSpecializationBonus } from '../district/Specialization';
 import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
+import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
 import { relocationTick } from '../citizen/Relocation';
@@ -463,38 +464,24 @@ export class SimulationLoop {
     const pop = this.state.citizens.getPopulation();
     if (pop === 0) return;
 
-    // Calculate employment ratio for the city
-    const totalJobs = this.countTotalJobs();
-    const adultCount = this.state.citizens.getCitizens().filter(
-      c => isWorkingAge(c.age)
-    ).length;
-    const employmentRate = adultCount > 0 ? Math.min(1, totalJobs / adultCount) : 1;
-    const avgPollution = this.getAvgPollution();
-    const avgNoise = this.getAvgNoise();
-    const avgCrime = this.getAvgCrime();
-
-    // Estimate average commute from residential spread (compact city = short commutes)
-    const resCount = countZoneBuildings(this.state.grid, isResidentialZone);
-    const avgCommute = resCount > 0
-      ? Math.min(SIMULATION.COMMUTE_MAX, SIMULATION.COMMUTE_BASE + Math.sqrt(resCount) * SIMULATION.COMMUTE_SPREAD_FACTOR)
-      : 3;
-
-    // Count service coverage: power + water + police/fire/garbage + low pollution bonus
-    const { poweredRatio, wateredRatio, policeRatio, fireRatio, garbageRatio, healthRatio, educationRatio, deathCareRatio } = this.getServiceRatios();
-    const serviceCoverage = Math.round(
-      poweredRatio * SIMULATION.SERVICE_POWER_WEIGHT +
-      wateredRatio * SIMULATION.SERVICE_WATER_WEIGHT +
-      policeRatio + fireRatio + garbageRatio +
-      healthRatio + educationRatio + deathCareRatio +
-      (avgPollution < SIMULATION.LOW_POLLUTION_THRESHOLD ? 1 : 0)
-    );
+    // Calculate city-wide happiness context (SRP: pure calculation in CityHappinessContext)
+    const citizens = this.state.citizens.getCitizens();
+    const ctx = calculateCityHappinessContext({
+      totalJobs: this.countTotalJobs(),
+      adultCount: citizens.filter(c => isWorkingAge(c.age)).length,
+      avgPollution: this.getAvgPollution(),
+      avgNoise: this.getAvgNoise(),
+      avgCrime: this.getAvgCrime(),
+      residentialBuildingCount: countZoneBuildings(this.state.grid, isResidentialZone),
+      serviceRatios: this.getServiceRatios(),
+    });
 
     // Check if any parks exist for happiness bonus
     const hasParkCoverage = this.state.parks.getParks().length > 0;
 
-    for (const citizen of this.state.citizens.getCitizens()) {
+    for (const citizen of citizens) {
       // Vary commute per citizen (+/- 3 random jitter)
-      const commute = Math.max(1, avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
+      const commute = Math.max(1, ctx.avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
 
       // Check if citizen's home has power and water
       let homePowered = true;
@@ -520,12 +507,12 @@ export class SimulationLoop {
       const factors: HappinessFactors = {
         commuteDistance: commute,
         hasPark: hasParkCoverage,
-        pollution: avgPollution,
-        noiseLevel: avgNoise,
-        crimeRate: avgCrime,
-        isEmployed: !isWorkingAge(citizen.age) || Math.random() < employmentRate,
+        pollution: ctx.avgPollution,
+        noiseLevel: ctx.avgNoise,
+        crimeRate: ctx.avgCrime,
+        isEmployed: !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate,
         taxRate,
-        serviceCoverage,
+        serviceCoverage: ctx.serviceCoverage,
         currentTick: this.state.clock.tick,
         homePowered,
         homeWatered,
