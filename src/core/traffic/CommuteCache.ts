@@ -89,22 +89,11 @@ export class CommuteCache {
       }
     }
 
-    // 2. Remove affected routes from routeIndex
+    // 2. Remove affected routes from shared pool
+    // routeCellIndex maps cellKey → Set<routeKey>, so we can find which routes pass through this cell
     const routeKeys = this.routeCellIndex.get(cellKey);
     if (routeKeys) {
-      // Must copy since we're modifying during iteration
-      const keysToRemove = [...routeKeys];
-      for (const routeKey of keysToRemove) {
-        // Clean up routeCellIndex for all cells this route touches
-        const cells = this.routeCellIndex.get(routeKey) as Set<string> | undefined;
-        // Actually routeCellIndex maps cellKey -> Set<routeKey>, let me rethink...
-        // Wait, the map is routeKey -> Set<cellKey>, but we also need cellKey -> Set<routeKey>
-        // Current structure: routeCellIndex maps routeKey -> Set<cellKey>
-        // But here we have cellKey and need to find routeKeys...
-        // Let me re-read the design: routeCellIndex maps routeKey -> Set<cellKey>
-        // So we need a reverse index too... But the spec says routeCellIndex: Map<string, Set<string>>
-        // Looking at the task: "routeCellIndex cleanup on invalidateCell"
-        // The approach: we need cellKey -> Set<routeKey> for efficient lookup
+      for (const routeKey of [...routeKeys]) {
         this.routeIndex.delete(routeKey);
       }
     }
@@ -156,7 +145,7 @@ export class CommuteCache {
 
     // Build routeCellIndex using first variant (all variants share the same cells)
     if (variants.length > 0) {
-      const cells = this.collectCellsFromPath(variants[0]!);
+      const cells = collectEdgeCells(variants[0]!);
       for (const cellKey of cells) {
         let routeKeys = this.routeCellIndex.get(cellKey);
         if (!routeKeys) {
@@ -228,10 +217,6 @@ export class CommuteCache {
         }
       }
     }
-  }
-
-  private collectCellsFromPath(path: LaneEdge[]): Set<string> {
-    return collectEdgeCells(path);
   }
 
   /** Derive routeKeys (home→work, work→home) from a cached route's non-null paths. */
