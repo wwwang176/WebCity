@@ -464,8 +464,9 @@ export class Game {
         break;
       case 'demolish': {
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
-        this.demolish(x1, y1, x2, y2);
-        this.simLoop.markLaneGraphDirty(demolishedRoadCells);
+        const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
+        this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
+        this.simLoop.removeCitizenCommutes(evictedCitizenIds);
         this.audioManager.playSfx('demolish');
         break;
       }
@@ -482,10 +483,12 @@ export class Game {
             this.state.budget.funds,
           );
           this.handleBuildResult(result, 'road', () => {
-            this.simLoop.markLaneGraphDirty(result.affectedCells);
+            this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])]);
             this.recalculateAllRoadCoverage();
             if (result.demolishedCells) {
-              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+              const ids: number[] = [];
+              for (const pos of result.demolishedCells) ids.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
+              this.simLoop.removeCitizenCommutes(ids);
             }
           });
           this.dirty.roads = true;
@@ -502,7 +505,10 @@ export class Game {
           );
           this.handleBuildResult(result, 'track', () => {
             if (result.demolishedCells) {
-              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+              const ids: number[] = [];
+              for (const pos of result.demolishedCells) ids.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
+              this.simLoop.removeCitizenCommutes(ids);
+              this.simLoop.markLaneGraphDirty(result.demolishedCells);
             }
           });
           this.dirty.tracks = true;
@@ -570,13 +576,21 @@ export class Game {
   private applyZone(x1: number, y1: number, x2: number, y2: number, zoneType: ZoneType): void {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     // Pre-scan: collect cells where rezoning will demolish an existing building
+    const evictedIds: number[] = [];
+    const buildingCells: string[] = [];
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
         if (cell && isZoneBuilding(cell.buildingId) && cell.zoneType !== zoneType) {
-          this.state.citizens.evictBuilding(`${x},${y}`, this.state.clock.tick);
+          const posKey = `${x},${y}`;
+          evictedIds.push(...this.state.citizens.evictBuilding(posKey, this.state.clock.tick));
+          buildingCells.push(posKey);
         }
       }
+    }
+    if (evictedIds.length > 0) {
+      this.simLoop.removeCitizenCommutes(evictedIds);
+      this.simLoop.markLaneGraphDirty(buildingCells);
     }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
     this.dirty.buildings = true;
@@ -597,7 +611,7 @@ export class Game {
     return cells;
   }
 
-  private demolish(x1: number, y1: number, x2: number, y2: number): void {
+  private demolish(x1: number, y1: number, x2: number, y2: number): { evictedCitizenIds: number[]; buildingCells: string[] } {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     const demolished = new Set<string>(); // track already-demolished multi-cell buildings
     const evictCells: string[] = []; // cells whose citizens need eviction
@@ -645,7 +659,10 @@ export class Game {
       }
     }
     // Evict citizens from demolished zone buildings
-    for (const pos of evictCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+    const evictedCitizenIds: number[] = [];
+    for (const pos of evictCells) {
+      evictedCitizenIds.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
+    }
     if (hadRoadDemolished) {
       this.recalculateAllRoadCoverage();
     }
@@ -656,6 +673,7 @@ export class Game {
     if (activeOverlay !== 'none') {
       this.computeOverlayHighlightCells(activeOverlay);
     }
+    return { evictedCitizenIds, buildingCells: evictCells };
   }
 
   /** Dispatch to data-driven service removal. Callers provide resolved coordinates. */

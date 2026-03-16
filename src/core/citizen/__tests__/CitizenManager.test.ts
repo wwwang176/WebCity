@@ -249,6 +249,36 @@ describe('evictBuilding', () => {
     expect(c.homelessSince).toBeNull(); // home not affected
     expect(c.workplaceId).toBeNull();
   });
+
+  it('should return evicted citizen IDs', () => {
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 30, homeId: '5,10' });
+    const c2 = mgr.createCitizen({ age: 25, homeId: '5,10' });
+    const c3 = mgr.createCitizen({ age: 40, homeId: '8,8' });
+
+    const ids = mgr.evictBuilding('5,10');
+
+    expect(ids).toEqual([c1.id, c2.id]);
+    expect(ids).not.toContain(c3.id);
+  });
+
+  it('should return empty array when no citizens at position', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 30, homeId: '1,1' });
+
+    const ids = mgr.evictBuilding('99,99');
+
+    expect(ids).toEqual([]);
+  });
+
+  it('should include citizen only once when both home and workplace match', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 30, homeId: '5,5', workplaceId: '5,5' });
+
+    const ids = mgr.evictBuilding('5,5');
+
+    expect(ids).toEqual([c.id]);
+  });
 });
 
 describe('getElderlyMultiplier', () => {

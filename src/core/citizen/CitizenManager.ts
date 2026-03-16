@@ -102,14 +102,22 @@ export class CitizenManager {
   /** Evict all citizens from a demolished building at the given position key.
    *  Nullifies homeId / workplaceId so citizens become homeless / unemployed.
    *  @param currentTick Current simulation tick — records homelessSince for duration tracking. */
-  evictBuilding(posKey: string, currentTick?: number): void {
+  evictBuilding(posKey: string, currentTick?: number): number[] {
+    const evictedIds: number[] = [];
     for (const c of this.citizens) {
+      let affected = false;
       if (c.homeId === posKey) {
         c.homeId = null;
         c.homelessSince = currentTick ?? null;
+        affected = true;
       }
-      if (c.workplaceId === posKey) c.workplaceId = null;
+      if (c.workplaceId === posKey) {
+        c.workplaceId = null;
+        affected = true;
+      }
+      if (affected) evictedIds.push(c.id);
     }
+    return evictedIds;
   }
 
   /** Called once per game year: age all citizens and update lifeStage */

@@ -1032,6 +1032,11 @@ export class SimulationLoop {
     }
   }
 
+  /** Remove commute cache entries for evicted/removed citizens. */
+  removeCitizenCommutes(citizenIds: number[]): void {
+    for (const id of citizenIds) this.commuteCache.remove(id);
+  }
+
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;
     this.sidewalkGraphDirty = true;
