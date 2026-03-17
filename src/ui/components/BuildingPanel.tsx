@@ -119,10 +119,6 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
   }
 
 
-  // Overall
-  if (sel.abandonmentStress >= 75) {
-    warnings.push({ level: 'red', text: 'No income - Near abandonment' });
-  }
 
   // Sort: red first, then yellow
   warnings.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
