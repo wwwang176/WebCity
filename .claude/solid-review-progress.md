@@ -35,10 +35,28 @@
 32. `src/core/road/RoadBuilder.ts` — PASS (delegates validation/cost to pure functions)
 33. `src/core/transport/ModeChoice.ts` — PASS (data-driven TRANSPORT_TYPE_TO_MODE)
 34. `src/core/transport/TransitAvailability.ts` — **REFACTORED** (OCP: hardcoded METRO/RAIL check → data-driven)
+35. `src/core/building/InfraConfig.ts` — PASS (data-driven lookup maps)
+36. `src/core/traffic/PedestrianManager.ts` — PASS (cohesive pedestrian lifecycle)
+37. `src/core/traffic/ServiceVehicleManager.ts` — PASS (DIP with ServiceFacilityProvider)
+38. `src/core/transport/BusSystem.ts` — PASS (proper Template Method inheritance)
+39. `src/core/ViewMode.ts` — PASS (excellent data-driven design)
+40. `src/core/citizen/Migration.ts` — PASS (pure functions, configurable constants)
+41. `src/core/citizen/Relocation.ts` — PASS (clean, configurable)
+42. `src/core/district/Specialization.ts` — PASS (data-driven bonuses)
+43. `src/core/district/CitySpecialization.ts` — PASS (data-driven config)
+44. `src/core/economy/LandValue.ts` — PASS (pure calculation)
+45. `src/core/economy/ExpenseCalculator.ts` — PASS (clean)
+46. `src/core/grid/Grid.ts` — PASS (focused data storage)
+47. `src/core/save/SaveManager.ts` — PASS (minor DRY but IndexedDB boilerplate is acceptable)
+48. `src/core/traffic/Pathfinding.ts` — PASS (already extracted shared Dijkstra)
+49. `src/core/environment/PollutionSourceRegistry.ts` — PASS (DIP with PollutionSourceProvider)
+50. `src/core/environment/CityMetrics.ts` — **REFACTORED** (DRY: extracted avgResidentialMetric)
+51. `src/core/climate/Climate.ts` — PASS (data-driven season overrides)
+52. `src/core/climate/Disaster.ts` — PASS (data-driven calculators)
 
 ## Pending Files
 - `src/core/simulation/SimulationLoop.ts` — Large file (1534 lines), multiple SRP violations. Needs multi-phase refactoring.
-- Remaining ~95 src/core/**/*.ts files not yet reviewed
+- Remaining ~75 src/core/**/*.ts files not yet reviewed
 
 ## Refactoring Summary
 ### Iteration 1: PowerGrid / WaterNetwork BFS deduplication
@@ -50,3 +68,8 @@
 - **Issue**: Hardcoded `sys.type === TransportType.METRO || sys.type === TransportType.RAIL` violates OCP
 - **Fix**: Created `USES_RAIL_TIME_FACTOR` data-driven config map; adding new fast transit types only needs a map entry
 - **Tests**: 2 new tests (RAIL factor, FERRY no-factor), all 2549 tests pass
+
+### Iteration 3: CityMetrics DRY extraction
+- **Issue**: `getAvgResidentialPollution` and `getAvgResidentialNoise` were nearly identical (differ only in cell accessor)
+- **Fix**: Extracted `avgResidentialMetric(grid, accessor)` shared helper; both functions now delegate to it
+- **Tests**: 2 new tests for the shared helper, all 2551 tests pass
