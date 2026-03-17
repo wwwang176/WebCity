@@ -879,6 +879,46 @@ export class SimulationLoop {
       }
       // Invalidate pedestrian path cache for affected cells
       this.state.pedestrianManager.invalidateCells(affectedCells);
+      // Immediately check if affected citizens can still reach their workplace
+      this.immediateUnreachableJobCheck(affectedCells);
+    }
+  }
+
+  /**
+   * When roads are cut, immediately unemploy citizens whose workplace
+   * is no longer reachable from home (don't wait for jobRelocationTick).
+   * Checks ALL employed citizens, using a cache to avoid redundant Dijkstra calls
+   * for citizens sharing the same home→workplace pair.
+   */
+  private immediateUnreachableJobCheck(_affectedCells: string[]): void {
+    const citizens = this.state.citizens.getCitizens();
+    const grid = this.state.grid;
+    const tick = this.state.clock.tick;
+
+    // Cache: "homeId->workplaceId" → reachable?
+    const reachCache = new Map<string, boolean>();
+
+    for (const citizen of citizens) {
+      if (!citizen.workplaceId || !citizen.homeId || !isWorkingAge(citizen.age)) continue;
+
+      const key = `${citizen.homeId}->${citizen.workplaceId}`;
+      let reachable = reachCache.get(key);
+
+      if (reachable === undefined) {
+        const home = parsePosKeyUnsafe(citizen.homeId);
+        const distMap = roadDistanceToTargets(
+          grid, home, new Set([citizen.workplaceId]),
+          DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+        );
+        reachable = distMap.has(citizen.workplaceId);
+        reachCache.set(key, reachable);
+      }
+
+      if (!reachable) {
+        citizen.workplaceId = null;
+        citizen.unemployedSince = tick;
+        this.commuteCache.remove(citizen.id);
+      }
     }
   }
 
@@ -901,14 +941,20 @@ export class SimulationLoop {
 
     this.laneGraph.buildFromGrid(gridLookup, cellKeys);
 
+    const lg = this.laneGraph;
+    const g = { getCell: (x: number, y: number) => grid.getCell(x, y), width: grid.width, height: grid.height };
+    const findPath = (fx: number, fy: number, tx: number, ty: number) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, g);
+    const refine = (cellPath: string[]) => refineLanePath(lg, cellPath);
+
+    // Rebuild segments for routes loaded from save (no segments yet)
+    this.state.bus.rebuildAllSegments(findPath, refine, this.state.traffic, grid);
+
     // Revalidate bus routes affected by road changes
     if (this.dirtyRoadCells && this.dirtyRoadCells.size > 0) {
-      const lg = this.laneGraph;
-      const g = { getCell: (x: number, y: number) => grid.getCell(x, y), width: grid.width, height: grid.height };
       this.state.bus.onRoadChanged(
         this.dirtyRoadCells,
-        (fx, fy, tx, ty) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, g),
-        (cellPath) => refineLanePath(lg, cellPath),
+        findPath,
+        refine,
         this.state.traffic,
         grid,
       );

@@ -186,6 +186,70 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     expect(cachedAfter!.status).toBe('ready');
   });
 
+  it('should immediately unemploy citizen when road is cut and workplace unreachable', () => {
+    const citizen = state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    advanceToHour(state, 7);
+    const loop = new SimulationLoop(state);
+    loop.tick();
+
+    // Verify citizen has a cached route
+    expect(loop.commuteCache.get(citizen.id)?.status).toBe('ready');
+    expect(citizen.workplaceId).toBe('15,1');
+
+    // Cut the road at cell (8,1) — remove it from the grid
+    state.grid.setCell(8, 1, { roadType: 0, roadFlags: 0 });
+    loop.markLaneGraphDirty(['8,1']);
+
+    // Citizen should be immediately unemployed (not waiting for jobRelocationTick)
+    expect(citizen.workplaceId).toBeNull();
+    expect(citizen.unemployedSince).toBe(state.clock.tick);
+  });
+
+  it('should immediately unemploy citizen even without cached route', () => {
+    // Citizen assigned a job but never commuted (no cached route)
+    const citizen = state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    const loop = new SimulationLoop(state);
+    // Do NOT tick — citizen has no cached route, no cellIndex entry
+
+    expect(loop.commuteCache.get(citizen.id)).toBeUndefined();
+    expect(citizen.workplaceId).toBe('15,1');
+
+    // Cut the road
+    state.grid.setCell(8, 1, { roadType: 0, roadFlags: 0 });
+    loop.markLaneGraphDirty(['8,1']);
+
+    // Should still be unemployed — new logic checks ALL citizens
+    expect(citizen.workplaceId).toBeNull();
+  });
+
+  it('should NOT unemploy citizen if road is cut but workplace still reachable', () => {
+    const citizen = state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    advanceToHour(state, 7);
+    const loop = new SimulationLoop(state);
+    loop.tick();
+
+    // Invalidate a cell that doesn't break connectivity (road still exists)
+    loop.markLaneGraphDirty(['8,1']);
+
+    // Road at 8,1 still exists in grid, so workplace is still reachable
+    expect(citizen.workplaceId).toBe('15,1');
+  });
+
   it('should only invalidate affected cells on markLaneGraphDirty with cell list', () => {
     state.citizens.createCitizen({
       age: 30,

@@ -1,4 +1,4 @@
-import type { SizedGrid } from '../grid/GridHelpers';
+import { isFootprintAdjacentToRoad, type SizedGrid } from '../grid/GridHelpers';
 import { RoadCoverageMap } from './RoadCoverageFlood';
 import type { ServiceFacilityProvider } from '../traffic/ServiceVehicleManager';
 import { removeById } from '../utils/removeById';
@@ -23,6 +23,7 @@ export interface Facility {
 export abstract class RoadCoverageService<F extends Facility> implements ServiceFacilityProvider {
   protected facilities: F[] = [];
   protected coverage = new RoadCoverageMap();
+  protected connectedFacilityIds = new Set<string>();
   protected nextId = 1;
 
   protected abstract readonly coverageBudget: number;
@@ -37,12 +38,19 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     return `${this.idPrefix}${this.nextId++}`;
   }
 
-  /** Restore nextId from loaded facilities (for fromJSON). */
+  /** Push a facility and mark it connected (placement requires road adjacency). */
+  protected pushFacility(f: F): void {
+    this.facilities.push(f);
+    this.connectedFacilityIds.add(f.id);
+  }
+
+  /** Restore nextId from loaded facilities (for fromJSON). Also marks all loaded facilities as connected. */
   protected restoreNextId(): void {
     let max = 0;
     for (const f of this.facilities) {
       const n = parseInt(f.id.replace(this.idPrefix, ''), 10);
       if (n > max) max = n;
+      this.connectedFacilityIds.add(f.id);
     }
     this.nextId = max + 1;
   }
@@ -65,6 +73,24 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     facilityHeight = this.defaultFacilityHeight,
   ): void {
     this.coverage.recalculate(this.facilities, grid, this.coverageBudget, facilityWidth, facilityHeight);
+    this.updateConnectedFacilities(grid);
+  }
+
+  /** Recompute which facilities are adjacent to at least one road cell. */
+  protected updateConnectedFacilities(grid: SizedGrid): void {
+    this.connectedFacilityIds.clear();
+    const w = this.defaultFacilityWidth;
+    const h = this.defaultFacilityHeight;
+    for (const f of this.facilities) {
+      if (isFootprintAdjacentToRoad(grid, f.x, f.y, w, h)) {
+        this.connectedFacilityIds.add(f.id);
+      }
+    }
+  }
+
+  /** Check if a facility is currently connected to a road. */
+  isFacilityConnected(id: string): boolean {
+    return this.connectedFacilityIds.has(id);
   }
 
   previewCoverage(
@@ -88,6 +114,7 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
 
   /** Remove a facility by ID. Override for custom cleanup (e.g. GarbageService overflow). */
   removeFacilityById(id: string): boolean {
+    this.connectedFacilityIds.delete(id);
     return removeById(this.facilities, id);
   }
 

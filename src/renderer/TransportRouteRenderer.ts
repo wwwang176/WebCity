@@ -50,15 +50,18 @@ export class TransportRouteRenderer {
       points.push(points[0]!.clone());
 
       const geometry = new THREE.BufferGeometry().setFromPoints(points);
-      const material = new THREE.LineBasicMaterial({
+      const material = new THREE.LineDashedMaterial({
         color: route.color,
         linewidth: 2,
         transparent: true,
-        opacity: 0.7,
+        opacity: route.suspended ? 0.35 : 0.7,
         depthWrite: false,
+        dashSize: route.suspended ? 0.3 : 1000, // solid when active
+        gapSize: route.suspended ? 0.2 : 0,
       });
 
       const line = new THREE.Line(geometry, material);
+      line.computeLineDistances(); // required for LineDashedMaterial
       line.renderOrder = 5;
       this.scene.add(line);
       this.lines.push(line);

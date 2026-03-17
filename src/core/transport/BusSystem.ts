@@ -137,8 +137,9 @@ export class BusSystem extends BaseTransportSystem {
 
   /**
    * Called when road cells change. Checks all routes for impact,
-   * recalculates paths or dissolves routes as needed.
-   * Returns IDs of dissolved routes.
+   * recalculates paths, suspends unreachable routes, and resumes previously
+   * suspended routes that are now reachable.
+   * Returns IDs of newly suspended routes (for UI notification).
    */
   onRoadChanged(
     affectedCells: Set<string>,
@@ -147,9 +148,34 @@ export class BusSystem extends BaseTransportSystem {
     traffic: TrafficSimulation,
     grid?: PlacementGrid,
   ): number[] {
-    const dissolvedRouteIds: number[] = [];
+    const newlySuspendedIds: number[] = [];
 
     for (const route of this.routes) {
+      // Re-resolve stop roadX/roadY in case adjacent road cells changed
+      if (grid) {
+        for (const stop of route.stops) {
+          const adj = findAdjacentRoadCell(grid, stop.x, stop.y);
+          if (adj) {
+            stop.roadX = adj.roadX;
+            stop.roadY = adj.roadY;
+          }
+        }
+      }
+
+      if (route.suspended) {
+        // Try to resume suspended routes
+        const newSegments = this.computeRouteSegments(route, findPath, refinePath);
+        if (newSegments) {
+          route.suspended = false;
+          // Re-spawn bus vehicles
+          const count = Math.max(1, route.vehicles);
+          for (let i = 0; i < count; i++) {
+            this.spawnBusInTraffic(route.id, traffic, i);
+          }
+        }
+        continue;
+      }
+
       const segments = this.routeSegments.get(route.id);
       if (!segments) continue;
 
@@ -167,7 +193,44 @@ export class BusSystem extends BaseTransportSystem {
 
       if (!affected) continue;
 
-      // Re-resolve stop roadX/roadY in case adjacent road cells changed
+      // Try to recalculate
+      const newSegments = this.computeRouteSegments(route, findPath, refinePath);
+      if (!newSegments) {
+        // Suspend route instead of dissolving
+        route.suspended = true;
+        traffic.removeBusVehicles(route.id);
+        this.routeSegments.delete(route.id);
+        this.busVehicleIds.delete(route.id);
+        newlySuspendedIds.push(route.id);
+        continue;
+      }
+
+      // Update running bus vehicles' segments
+      this.updateRunningBusSegments(route.id, newSegments, traffic);
+    }
+
+    return newlySuspendedIds;
+  }
+
+  /** Get all currently suspended route IDs. */
+  getSuspendedRouteIds(): number[] {
+    return this.routes.filter(r => r.suspended).map(r => r.id);
+  }
+
+  /**
+   * Rebuild routeSegments for all routes that don't have them yet
+   * (e.g. after loading from save). Spawns bus vehicles for valid routes.
+   */
+  rebuildAllSegments(
+    findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
+    refinePath: (cellPath: string[]) => LaneEdge[] | null,
+    traffic: TrafficSimulation,
+    grid?: PlacementGrid,
+  ): void {
+    for (const route of this.routes) {
+      if (this.routeSegments.has(route.id)) continue; // already computed
+
+      // Re-resolve stop roadX/roadY
       if (grid) {
         for (const stop of route.stops) {
           const adj = findAdjacentRoadCell(grid, stop.x, stop.y);
@@ -178,24 +241,19 @@ export class BusSystem extends BaseTransportSystem {
         }
       }
 
-      // Try to recalculate
-      const newSegments = this.computeRouteSegments(route, findPath, refinePath);
-      if (!newSegments) {
-        dissolvedRouteIds.push(route.id);
+      const segments = this.computeRouteSegments(route, findPath, refinePath);
+      if (!segments) {
+        route.suspended = true;
         continue;
       }
 
-      // Update running bus vehicles' segments
-      this.updateRunningBusSegments(route.id, newSegments, traffic);
+      route.suspended = false;
+      // Spawn bus vehicles
+      const count = Math.max(1, route.vehicles);
+      for (let i = 0; i < count; i++) {
+        this.spawnBusInTraffic(route.id, traffic, i);
+      }
     }
-
-    // Dissolve failed routes
-    for (const routeId of dissolvedRouteIds) {
-      this.dissolveRoute(routeId);
-      traffic.removeBusVehicles(routeId);
-    }
-
-    return dissolvedRouteIds;
   }
 
   /** Update segments for running bus vehicles after path recalculation. */

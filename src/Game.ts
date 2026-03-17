@@ -467,6 +467,7 @@ export class Game {
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
         this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
+        this.simLoop.ensureLaneGraph(); // immediately rebuild + reroute buses
         this.simLoop.removeCitizenCommutes(evictedCitizenIds);
         this.audioManager.playSfx('demolish');
         break;
@@ -723,6 +724,20 @@ export class Game {
 
     if (!this.tryDeductFunds(cfg.cost)) return;
 
+    // Auto-demolish zone buildings in the footprint (evict citizens)
+    const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const cx = x + dx;
+        const cy = y + dy;
+        const cell = this.state.grid.getCell(cx, cy);
+        if (cell && cell.buildingId !== 0 && isZoneBuilding(cell.buildingId)) {
+          this.state.citizens.evictBuilding(`${cx},${cy}`, this.state.clock.tick);
+          this.state.grid.setCell(cx, cy, { buildingId: 0, reserved: 0, zoneType: 0 });
+        }
+      }
+    }
+
     // Place on grid (multi-cell)
     placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
 
@@ -757,6 +772,8 @@ export class Game {
       case 'school_high':
       case 'school_univ': this.state.education.recalculateCoverage(grid); break;
       case 'cemetery': this.state.deathCare.recalculateCoverage(grid); break;
+      case 'park': this.state.parks.updateConnectedParks(grid); break;
+      case 'sewage': this.state.sewage.updateConnectedPlants(grid); break;
     }
   }
 
@@ -769,6 +786,8 @@ export class Game {
     this.state.health.recalculateCoverage(grid);
     this.state.education.recalculateCoverage(grid);
     this.state.deathCare.recalculateCoverage(grid);
+    this.state.parks.updateConnectedParks(grid);
+    this.state.sewage.updateConnectedPlants(grid);
   }
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {

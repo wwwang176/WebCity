@@ -393,17 +393,17 @@ describe('assignWorkWithPreference', () => {
     expect(citizen.workplaceId).toBe('5,6');
   });
 
-  it('reachable filter: citizen with no homeId ignores filter', () => {
+  it('reachable filter: citizen with no homeId is skipped (needs home first)', () => {
     const citizen = makeCitizen({ id: 1, homeId: null });
     const candidates: WorkplaceCandidate[] = [
       { pos: '6,6', capacity: 10, zoneType: ZoneType.COMMERCIAL_LOW },
     ];
     const occupancy = new Map<string, number>();
-    const reachable = new Map<string, Set<string>>(); // empty — no homes mapped
+    const reachable = new Map<string, Set<string>>();
 
     assignWorkWithPreference([citizen], candidates, occupancy, reachable);
 
-    expect(citizen.workplaceId).toBe('6,6'); // assigned anyway
+    expect(citizen.workplaceId).toBeNull(); // skipped — no homeId
   });
 
   it('reachable filter: no reachable workplaces = stays unemployed', () => {

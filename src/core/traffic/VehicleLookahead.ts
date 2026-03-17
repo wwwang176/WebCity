@@ -77,7 +77,10 @@ export function findRedLightDistance(
     const edgeRemain = edge.length - startDist;
 
     if (edge.from.cellKey !== edge.to.cellKey) {
-      if (!canAdvance(edge.from.cellKey, edge.to.cellKey)) {
+      // If vehicle is already partway through this crossing, let it complete
+      // (it entered the intersection when the light was green)
+      const alreadyCrossing = ei === v.edgeIndex && v.edgeProgress > 0;
+      if (!alreadyCrossing && !canAdvance(edge.from.cellKey, edge.to.cellKey)) {
         const stopDist = distAhead - (ei === v.edgeIndex ? 0 : startDist);
         return Math.max(0, stopDist - v.length / 2 - STOP_LINE_OFFSET);
       }

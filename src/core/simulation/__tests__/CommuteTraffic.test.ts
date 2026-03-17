@@ -252,7 +252,9 @@ describe('Transport Mode Choice Integration', () => {
     loop.tick();
 
     // With bus route covering commute, citizen should take bus → no car spawned
-    expect(state.traffic.getVehicleCount()).toBe(0);
+    // (bus vehicles may exist from route segment rebuild, so count only non-bus vehicles)
+    const carCount = state.traffic.vehicles.filter(v => !v.busState).length;
+    expect(carCount).toBe(0);
   });
 
   it('should spawn car when no transit is available', () => {

@@ -131,9 +131,12 @@ export function assignWorkWithPreference(
 ): void {
   for (const citizen of citizens) {
     if (citizen.workplaceId !== null) continue;
+    // Skip citizens without a home — need homeId for reachability check.
+    // They'll get a home this tick and a workplace next tick.
+    if (citizen.homeId === null) continue;
 
     // Filter — has capacity + reachable from home
-    const reachableSet = citizen.homeId ? reachable?.get(citizen.homeId) : undefined;
+    const reachableSet = reachable?.get(citizen.homeId);
     let available = candidates.filter(c => {
       const occ = occupancy.get(c.pos) ?? 0;
       if (occ >= c.capacity) return false;

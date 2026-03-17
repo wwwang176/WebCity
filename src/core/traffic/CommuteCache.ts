@@ -157,6 +157,11 @@ export class CommuteCache {
     }
   }
 
+  /** Get citizen IDs whose commute paths pass through a given cell. */
+  getCitizensByCell(cellKey: string): ReadonlySet<number> | undefined {
+    return this.cellIndex.get(cellKey);
+  }
+
   get size(): number {
     return this.cache.size;
   }

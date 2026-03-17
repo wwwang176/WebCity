@@ -24,7 +24,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
 
   addStation(x: number, y: number, radius = 15): string {
     const id = this.generateId();
-    this.facilities.push({ id, x, y, radius });
+    this.pushFacility({ id, x, y, radius });
     return id;
   }
 
@@ -59,7 +59,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
     for (const s of data.stations) {
       service.facilities.push({ ...s });
     }
-    service.restoreNextId();
+    service.restoreNextId(); // also marks facilities connected
     return service;
   }
 }

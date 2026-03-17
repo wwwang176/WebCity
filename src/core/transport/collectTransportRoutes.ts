@@ -16,6 +16,7 @@ export interface TransportRouteRenderData {
   system: 'BUS' | 'METRO' | 'RAIL' | 'FERRY';
   color: number;
   stops: { x: number; y: number }[];
+  suspended?: boolean;
 }
 
 export interface RouteSystems {
@@ -49,8 +50,9 @@ function mapRoute(
   return {
     routeId: route.id + idOffset,
     system,
-    color: ROUTE_COLORS[system],
+    color: route.suspended ? 0x666666 : ROUTE_COLORS[system],
     stops: route.stops.map(s => ({ x: s.x, y: s.y })),
+    suspended: route.suspended,
   };
 }
 
