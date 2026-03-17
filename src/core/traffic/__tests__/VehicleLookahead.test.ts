@@ -127,6 +127,33 @@ describe('findRedLightDistance', () => {
     expect(findRedLightDistance(v, edges, canAdvance)).toBe(0);
   });
 
+  it('lets vehicle already crossing an intersection complete the crossing', () => {
+    const edges = [
+      makeEdge('e1', 'A', 'B', 1.0),  // cross-cell edge
+      makeEdge('e2', 'B', 'C', 1.0),
+    ];
+    // Vehicle is already partway through e1 (entered when light was green)
+    const v = makeVehicle({ id: 1, edgeIndex: 0, edgeProgress: 0.5 });
+    // Light turns red for A→B
+    const canAdvance = () => false;
+
+    // e1 A→B: vehicle has progress > 0, so it should NOT be stopped
+    // e2 B→C: canAdvance returns false → red
+    // distAhead after e1 = 1.0 - 0.5 = 0.5, stopDist = 0.5 - 0 = 0.5
+    // result = max(0, 0.5 - 0.11 - 0.25) = 0.14
+    expect(findRedLightDistance(v, edges, canAdvance)).toBeCloseTo(0.14, 5);
+  });
+
+  it('stops vehicle at current edge if it has not started crossing', () => {
+    const edges = [makeEdge('e1', 'A', 'B', 1.0)];
+    // Vehicle has NOT started crossing (edgeProgress = 0)
+    const v = makeVehicle({ id: 1, edgeIndex: 0, edgeProgress: 0 });
+    const canAdvance = () => false;
+
+    // e1 A→B: edgeProgress === 0, so it SHOULD be stopped
+    expect(findRedLightDistance(v, edges, canAdvance)).toBe(0);
+  });
+
   it('ignores edges within the same cell', () => {
     const edges = [
       makeEdge('e1', 'A', 'A', 0.5),  // same cell — no light check
