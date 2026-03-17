@@ -723,6 +723,20 @@ export class Game {
 
     if (!this.tryDeductFunds(cfg.cost)) return;
 
+    // Auto-demolish zone buildings in the footprint (evict citizens)
+    const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const cx = x + dx;
+        const cy = y + dy;
+        const cell = this.state.grid.getCell(cx, cy);
+        if (cell && cell.buildingId !== 0 && isZoneBuilding(cell.buildingId)) {
+          this.state.citizens.evictBuilding(`${cx},${cy}`, this.state.clock.tick);
+          this.state.grid.setCell(cx, cy, { buildingId: 0, reserved: 0, zoneType: 0 });
+        }
+      }
+    }
+
     // Place on grid (multi-cell)
     placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
 

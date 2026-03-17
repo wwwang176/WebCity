@@ -6,6 +6,7 @@ import {
   getInfraConfig,
   getInfraConfigById,
   getRotatedSize,
+  isInfrastructureBuilding,
   type InfraType,
   type Rotation,
 } from './InfraConfig';
@@ -41,7 +42,7 @@ export function isPrimaryCellReserved(reserved: number): boolean {
 
 export type PlaceResult =
   | { ok: true }
-  | { ok: false; reason: 'OUT_OF_BOUNDS' | 'WATER_TILE' | 'TILE_OCCUPIED' | 'UNKNOWN_TYPE' | 'NO_GROUNDWATER' | 'NEED_RAIL_TRACK' | 'NEED_ADJACENT_WATER' | 'NOT_ADJACENT_TO_ROAD' };
+  | { ok: false; reason: 'OUT_OF_BOUNDS' | 'WATER_TILE' | 'TILE_OCCUPIED' | 'UNKNOWN_TYPE' | 'NO_GROUNDWATER' | 'NEED_RAIL_TRACK' | 'NEED_ADJACENT_WATER' | 'NOT_ADJACENT_TO_ROAD' | 'INFRASTRUCTURE_EXISTS' };
 
 /**
  * Check whether an infrastructure building can be placed at (x, y) with given rotation.
@@ -71,7 +72,11 @@ export function canPlaceInfra(
       const cell = grid.getCell(cx, cy);
       if (!cell) return { ok: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { ok: false, reason: 'WATER_TILE' };
-      if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0) return { ok: false, reason: 'TILE_OCCUPIED' };
+      if (cell.roadType !== RoadType.NONE) return { ok: false, reason: 'TILE_OCCUPIED' };
+      if (cell.buildingId !== 0 && isInfrastructureBuilding(cell.buildingId)) {
+        return { ok: false, reason: 'INFRASTRUCTURE_EXISTS' };
+      }
+      // Zone buildings (non-infrastructure) are allowed — they will be auto-demolished
       if (cell.railType !== 0 && type !== 'train_station') return { ok: false, reason: 'TILE_OCCUPIED' };
 
       if (type === 'water' && groundwaterFn && groundwaterFn(cx, cy) > 0) {

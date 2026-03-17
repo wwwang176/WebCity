@@ -90,10 +90,19 @@ describe('InfraPlacement', () => {
       expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'TILE_OCCUPIED');
     });
 
-    it('should reject if any tile has a building', () => {
+    it('should allow placement on zone buildings (auto-demolish)', () => {
       const grid = makeGrid();
-      grid.setCell(6, 6, { buildingId: 1 });
-      expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'TILE_OCCUPIED');
+      placeAdjacentRoad(grid, 5, 5);
+      grid.setCell(6, 6, { buildingId: 1 }); // zone building
+      const result = canPlaceInfra(grid, 5, 5, 'police', 0);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should reject if any tile has infrastructure building', () => {
+      const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
+      grid.setCell(6, 6, { buildingId: 252 }); // police station buildingId
+      expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'INFRASTRUCTURE_EXISTS');
     });
 
     it('should reject if any tile has a rail track', () => {
@@ -353,11 +362,19 @@ describe('InfraPlacement', () => {
       expect(count).toBe(16);
     });
 
-    it('should reject 3x3 placement when partially occupied', () => {
+    it('should allow 3x3 placement when zone building exists (auto-demolish)', () => {
       const grid = makeGrid();
       placeAdjacentRoad(grid, 3, 3);
-      grid.setCell(4, 4, { buildingId: 1 });
-      expectFail(canPlaceInfra(grid, 3, 3, 'school_univ', 0), 'TILE_OCCUPIED');
+      grid.setCell(4, 4, { buildingId: 1 }); // zone building
+      const result = canPlaceInfra(grid, 3, 3, 'school_univ', 0);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should reject 3x3 placement when infra building exists', () => {
+      const grid = makeGrid();
+      placeAdjacentRoad(grid, 3, 3);
+      grid.setCell(4, 4, { buildingId: 252 }); // police station
+      expectFail(canPlaceInfra(grid, 3, 3, 'school_univ', 0), 'INFRASTRUCTURE_EXISTS');
     });
 
     it('should reject placement at map edge', () => {
