@@ -94,44 +94,52 @@ const WARNING_STYLE_RED = {
   'font-size': '11px', 'font-weight': '600',
 } as const;
 
+type WarnLevel = 'red' | 'yellow';
+interface Warning { level: WarnLevel; text: string }
+
+function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
+  if (sel.isAbandoned || sel.abandonmentStress <= 0) return [];
+
+  const warnings: Warning[] = [];
+  const game = getGame();
+  const isRes = sel.zoneType === ZoneType.RESIDENTIAL_LOW || sel.zoneType === ZoneType.RESIDENTIAL_HIGH;
+  const taxRate = isRes ? game.getState().taxRates.residential : game.getState().taxRates.business;
+  const over = taxRate - (isRes ? 12 : 9);
+
+  // Tax
+  if (over >= 8) warnings.push({ level: 'red', text: 'Tax rate unbearable' });
+  else if (over >= 4) warnings.push({ level: 'red', text: 'Tax rate too high' });
+  else if (over > 0) warnings.push({ level: 'yellow', text: 'Tax rate slightly high' });
+
+  // Pollution (industrial immune)
+  if (sel.pollution > 70 && sel.zoneType !== ZoneType.INDUSTRIAL) {
+    warnings.push({ level: 'red', text: 'Severe pollution' });
+  } else if (sel.pollution > 40 && sel.zoneType !== ZoneType.INDUSTRIAL) {
+    warnings.push({ level: 'yellow', text: 'High pollution' });
+  }
+
+  // Crime
+  if (sel.services.police < 0 && game.getState().citizens.getPopulation() > 0) {
+    warnings.push({ level: 'yellow', text: 'High crime - No police coverage' });
+  }
+
+  // Overall
+  if (sel.abandonmentStress >= 75) {
+    warnings.push({ level: 'red', text: 'No income - Near abandonment' });
+  }
+
+  // Sort: red first, then yellow
+  warnings.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
+  return warnings;
+}
+
 function AbandonmentWarnings(props: { sel: SelectedZoneBuilding }) {
-  const stress = () => props.sel.abandonmentStress;
-  const isAbandoned = () => props.sel.isAbandoned;
-  const isRes = () => props.sel.zoneType === ZoneType.RESIDENTIAL_LOW || props.sel.zoneType === ZoneType.RESIDENTIAL_HIGH;
-  const game = () => getGame();
-  const taxRate = () => isRes() ? game().getState().taxRates.residential : game().getState().taxRates.business;
-  const taxThreshold = () => isRes() ? 12 : 9;
+  const warnings = () => collectWarnings(props.sel);
 
   return (
-    <Show when={!isAbandoned() && stress() > 0}>
-      {/* Tax warnings */}
-      <Show when={taxRate() > taxThreshold()}>
-        {(() => {
-          const over = taxRate() - taxThreshold();
-          if (over >= 8) return <div style={WARNING_STYLE_RED}>Tax rate unbearable</div>;
-          if (over >= 4) return <div style={WARNING_STYLE_RED}>Tax rate too high</div>;
-          return <div style={WARNING_STYLE_YELLOW}>Tax rate slightly high</div>;
-        })()}
-      </Show>
-      {/* Crime */}
-      <Show when={stress() > 0 && (() => {
-        const base = game().getState().citizens.getPopulation() > 0 ? 1 : 0;
-        return base > 0 && props.sel.services.police < 0;
-      })()}>
-        <div style={WARNING_STYLE_YELLOW}>High crime - No police coverage</div>
-      </Show>
-      {/* Pollution */}
-      <Show when={props.sel.pollution > 40 && props.sel.zoneType !== ZoneType.INDUSTRIAL}>
-        {props.sel.pollution > 70
-          ? <div style={WARNING_STYLE_RED}>Severe pollution</div>
-          : <div style={WARNING_STYLE_YELLOW}>High pollution</div>
-        }
-      </Show>
-      {/* Overall stress level */}
-      <Show when={stress() >= 75}>
-        <div style={WARNING_STYLE_RED}>No income - Near abandonment</div>
-      </Show>
-    </Show>
+    <For each={warnings()}>
+      {(w) => <div style={w.level === 'red' ? WARNING_STYLE_RED : WARNING_STYLE_YELLOW}>{w.text}</div>}
+    </For>
   );
 }
 
