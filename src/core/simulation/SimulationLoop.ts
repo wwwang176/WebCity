@@ -131,9 +131,8 @@ export class SimulationLoop {
   laneGraph: LaneGraph = new LaneGraph();
   private laneGraphDirty = true;
 
-  // Building index: "x,y" position → buildingId (type). Rebuilt once per day.
+  // Building index: active zone buildings (excludes ABANDONED/BURNED). Rebuilt every slow tick.
   private buildingPositions: { pos: string; x: number; y: number; buildingId: number }[] = [];
-  private buildingIndexDay = -1; // last day the index was rebuilt
 
   // Track which citizens have already commuted this rush period
   private morningCommuters = new Set<number>(); // citizen ids that have spawned morning commute
@@ -809,20 +808,17 @@ export class SimulationLoop {
   }
 
   /**
-   * Rebuild the building position list. Called once per game day.
-   * Stores every building's grid position so each is uniquely addressable.
+   * Rebuild the building position list.
+   * Scans all active zone buildings (excludes ABANDONED/BURNED).
+   * Called every slow tick — 3600 cells is negligible, no caching needed.
    */
   private rebuildBuildingIndex(): void {
-    const currentDay = this.state.clock.getDay();
-    if (this.buildingIndexDay === currentDay && this.buildingPositions.length > 0) return;
-
     this.buildingPositions = [];
     this.state.grid.forEachCell((cell, x, y) => {
       if (isZoneBuilding(cell.buildingId) && cell.reserved !== ABANDONED && cell.reserved !== BURNED) {
         this.buildingPositions.push({ pos: toPosKey(x, y), x, y, buildingId: cell.buildingId });
       }
     });
-    this.buildingIndexDay = currentDay;
   }
 
   /**
