@@ -13,6 +13,7 @@ import { refineLanePath, refineLanePathVariants, gridAStarPath } from '../traffi
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
 import { getBuildingType } from '../building/types';
+import { avgEducationScore } from '../building/BuildingUpgrade';
 import { clampBuildingLevel } from '../building/BuildingLevel';
 import { ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
@@ -715,17 +716,12 @@ export class SimulationLoop {
       const cell = grid.getCell(x, y);
       if (!cell || cell.buildingId === 0) continue;
 
-      const pollution = this.state.pollution.getPollutionAt(x, y);
-      // Count service types: power, water, road-based services, + bonus for low pollution/crime
-      let serviceCoverageCount = getCellServiceScore(this.state, x, y);
-      if (pollution.ground < 10) serviceCoverageCount += 1; // clean air bonus
-      if (this.getAvgCrime() < 15) serviceCoverageCount += 1; // low crime bonus
-
+      // Compute average worker education for industrial/office upgrade checks
+      const posKey = `${x},${y}`;
+      const workers = this.state.citizens.getCitizensByWorkplace(posKey);
       const conditions = {
-        serviceCoverageCount,
         landValue: cell.landValue,
-        crimeRate: this.getAvgCrime(),
-        pollution: pollution.ground,
+        avgEducation: avgEducationScore(workers),
       };
 
       // Try upgrade first, then downgrade

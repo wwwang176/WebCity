@@ -1,41 +1,73 @@
 import { Grid } from '../grid/Grid';
+import { isResidentialZone, isCommercialZone } from '../grid/types';
 import { getBuildingType, getBuildingsForZone } from './types';
+import { EducationLevel } from '../citizen/types';
 
+/** Education score mapping (NONE=0, ELEMENTARY=1, HIGH_SCHOOL=2, UNIVERSITY=3). */
+export const EDUCATION_SCORE: Record<EducationLevel, number> = {
+  [EducationLevel.NONE]: 0,
+  [EducationLevel.ELEMENTARY]: 1,
+  [EducationLevel.HIGH_SCHOOL]: 2,
+  [EducationLevel.UNIVERSITY]: 3,
+};
+
+/** Compute average education score from a list of citizens. Returns 0 if empty. */
+export function avgEducationScore(workers: Iterable<{ education: EducationLevel }>): number {
+  let sum = 0;
+  let count = 0;
+  for (const w of workers) {
+    sum += EDUCATION_SCORE[w.education] ?? 0;
+    count++;
+  }
+  return count === 0 ? 0 : sum / count;
+}
+
+/** Zone-aware upgrade conditions.
+ *  - Residential/Commercial: landValue drives leveling (services affect it indirectly).
+ *  - Industrial/Office: average worker education drives leveling (matches C:S). */
 export interface UpgradeConditions {
-  serviceCoverageCount: number;
   landValue: number;
-  crimeRate: number;
-  pollution: number;
+  avgEducation: number;
 }
 
-/** Data-driven upgrade requirements per target level (OCP-friendly). */
+// ── Requirements tables ──────────────────────────────────────────────
+
 export interface LevelRequirement {
-  minServiceCoverage: number;
-  minLandValue: number;
-  maxCrimeRate?: number;
-  maxPollution?: number;
+  minLandValue: number;       // for residential/commercial
+  minAvgEducation: number;    // for industrial/office
 }
 
-/** Requirements to REACH each level (keyed by target level). */
+/** Requirements to REACH each level (keyed by target level).
+ *  Residential/Commercial use minLandValue; Industrial/Office use minAvgEducation.
+ *  Services, crime, pollution affect residential/commercial indirectly via landValue. */
 export const UPGRADE_REQUIREMENTS: Record<number, LevelRequirement> = {
-  2: { minServiceCoverage: 3, minLandValue: 50 },
-  3: { minServiceCoverage: 5, minLandValue: 80, maxCrimeRate: 20, maxPollution: 30 },
+  2: { minLandValue: 50, minAvgEducation: 1.0 },
+  3: { minLandValue: 80, minAvgEducation: 2.0 },
 };
 
-/** Requirements to KEEP each level (downgrade if not met). */
-export const KEEP_REQUIREMENTS: Record<number, { minServiceCoverage: number; minLandValue: number }> = {
-  2: { minServiceCoverage: 3, minLandValue: 40 },
-  3: { minServiceCoverage: 5, minLandValue: 70 },
+/** Requirements to KEEP each level (downgrade if not met).
+ *  Thresholds are lower than upgrade to create hysteresis and avoid oscillation. */
+export const KEEP_REQUIREMENTS: Record<number, LevelRequirement> = {
+  2: { minLandValue: 35, minAvgEducation: 0.5 },
+  3: { minLandValue: 60, minAvgEducation: 1.5 },
 };
 
-/** Check if conditions meet a level requirement (pure function, OCP-friendly). */
-export function meetsUpgradeRequirements(conditions: UpgradeConditions, req: LevelRequirement): boolean {
-  if (conditions.serviceCoverageCount < req.minServiceCoverage) return false;
-  if (conditions.landValue < req.minLandValue) return false;
-  if (req.maxCrimeRate !== undefined && conditions.crimeRate >= req.maxCrimeRate) return false;
-  if (req.maxPollution !== undefined && conditions.pollution >= req.maxPollution) return false;
-  return true;
+// ── Pure check functions ─────────────────────────────────────────────
+
+/** Check if conditions meet a level requirement for the given zone type. */
+export function meetsRequirement(
+  zoneType: number,
+  conditions: UpgradeConditions,
+  req: LevelRequirement,
+): boolean {
+  if (isResidentialZone(zoneType) || isCommercialZone(zoneType)) {
+    return conditions.landValue >= req.minLandValue;
+  }
+  // Industrial / Office
+  return conditions.avgEducation >= req.minAvgEducation;
 }
+
+// ── BuildingUpgrade class ────────────────────────────────────────────
 
 export class BuildingUpgrade {
   private grid: Grid;
@@ -53,7 +85,7 @@ export class BuildingUpgrade {
 
     const req = UPGRADE_REQUIREMENTS[building.level + 1];
     if (!req) return false;
-    return meetsUpgradeRequirements(conditions, req);
+    return meetsRequirement(building.zoneType, conditions, req);
   }
 
   tryUpgrade(x: number, y: number, conditions: UpgradeConditions): boolean {
@@ -83,8 +115,7 @@ export class BuildingUpgrade {
 
     const req = KEEP_REQUIREMENTS[building.level];
     if (!req) return false;
-    return conditions.serviceCoverageCount < req.minServiceCoverage
-      || conditions.landValue < req.minLandValue;
+    return !meetsRequirement(building.zoneType, conditions, req);
   }
 
   tryDowngrade(x: number, y: number, conditions: UpgradeConditions): boolean {
