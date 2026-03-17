@@ -217,6 +217,45 @@ export class BusSystem extends BaseTransportSystem {
     return this.routes.filter(r => r.suspended).map(r => r.id);
   }
 
+  /**
+   * Rebuild routeSegments for all routes that don't have them yet
+   * (e.g. after loading from save). Spawns bus vehicles for valid routes.
+   */
+  rebuildAllSegments(
+    findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
+    refinePath: (cellPath: string[]) => LaneEdge[] | null,
+    traffic: TrafficSimulation,
+    grid?: PlacementGrid,
+  ): void {
+    for (const route of this.routes) {
+      if (this.routeSegments.has(route.id)) continue; // already computed
+
+      // Re-resolve stop roadX/roadY
+      if (grid) {
+        for (const stop of route.stops) {
+          const adj = findAdjacentRoadCell(grid, stop.x, stop.y);
+          if (adj) {
+            stop.roadX = adj.roadX;
+            stop.roadY = adj.roadY;
+          }
+        }
+      }
+
+      const segments = this.computeRouteSegments(route, findPath, refinePath);
+      if (!segments) {
+        route.suspended = true;
+        continue;
+      }
+
+      route.suspended = false;
+      // Spawn bus vehicles
+      const count = Math.max(1, route.vehicles);
+      for (let i = 0; i < count; i++) {
+        this.spawnBusInTraffic(route.id, traffic, i);
+      }
+    }
+  }
+
   /** Update segments for running bus vehicles after path recalculation. */
   private updateRunningBusSegments(
     routeId: number,

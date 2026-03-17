@@ -666,6 +666,11 @@ describe('Transport integration', () => {
     const state = createGameState(20, 20);
     state.budget.funds = 100000;
 
+    // Add roads so bus route can compute segments
+    for (let x = 1; x <= 4; x++) {
+      state.grid.setCell(x, 0, { roadType: 1, roadFlags: 0b1100 }); // E+W
+    }
+
     // Add bus route (has operating cost)
     const s1 = state.bus.addStop(0, 0);
     const s2 = state.bus.addStop(5, 0);
