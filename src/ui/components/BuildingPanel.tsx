@@ -118,10 +118,6 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     warnings.push({ level: 'yellow', text: 'High pollution' });
   }
 
-  // Crime
-  if (sel.services.police < 0 && game.getState().citizens.getPopulation() > 0) {
-    warnings.push({ level: 'yellow', text: 'High crime - No police coverage' });
-  }
 
   // Overall
   if (sel.abandonmentStress >= 75) {
