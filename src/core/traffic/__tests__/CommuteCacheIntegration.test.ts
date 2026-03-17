@@ -210,6 +210,28 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     expect(citizen.unemployedSince).toBe(state.clock.tick);
   });
 
+  it('should immediately unemploy citizen even without cached route', () => {
+    // Citizen assigned a job but never commuted (no cached route)
+    const citizen = state.citizens.createCitizen({
+      age: 30,
+      homeId: '1,1',
+      workplaceId: '15,1',
+    });
+
+    const loop = new SimulationLoop(state);
+    // Do NOT tick — citizen has no cached route, no cellIndex entry
+
+    expect(loop.commuteCache.get(citizen.id)).toBeUndefined();
+    expect(citizen.workplaceId).toBe('15,1');
+
+    // Cut the road
+    state.grid.setCell(8, 1, { roadType: 0, roadFlags: 0 });
+    loop.markLaneGraphDirty(['8,1']);
+
+    // Should still be unemployed — new logic checks ALL citizens
+    expect(citizen.workplaceId).toBeNull();
+  });
+
   it('should NOT unemploy citizen if road is cut but workplace still reachable', () => {
     const citizen = state.citizens.createCitizen({
       age: 30,
