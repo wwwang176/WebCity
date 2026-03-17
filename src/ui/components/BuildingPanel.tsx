@@ -82,6 +82,59 @@ function ServiceCoverage(props: { services: ServiceStatus }) {
   );
 }
 
+const WARNING_STYLE_YELLOW = {
+  'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+  background: 'rgba(255,152,0,0.15)', color: '#ff9800',
+  'font-size': '11px', 'font-weight': '600',
+} as const;
+
+const WARNING_STYLE_RED = {
+  'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+  background: 'rgba(239,83,80,0.15)', color: '#ef5350',
+  'font-size': '11px', 'font-weight': '600',
+} as const;
+
+function AbandonmentWarnings(props: { sel: SelectedZoneBuilding }) {
+  const stress = () => props.sel.abandonmentStress;
+  const isAbandoned = () => props.sel.isAbandoned;
+  const isRes = () => props.sel.zoneType === ZoneType.RESIDENTIAL_LOW || props.sel.zoneType === ZoneType.RESIDENTIAL_HIGH;
+  const game = () => getGame();
+  const taxRate = () => isRes() ? game().getState().taxRates.residential : game().getState().taxRates.business;
+  const taxThreshold = () => isRes() ? 12 : 9;
+
+  return (
+    <Show when={!isAbandoned() && stress() > 0}>
+      {/* Tax warnings */}
+      <Show when={taxRate() > taxThreshold()}>
+        {(() => {
+          const over = taxRate() - taxThreshold();
+          if (over >= 8) return <div style={WARNING_STYLE_RED}>Tax rate unbearable</div>;
+          if (over >= 4) return <div style={WARNING_STYLE_RED}>Tax rate too high</div>;
+          return <div style={WARNING_STYLE_YELLOW}>Tax rate slightly high</div>;
+        })()}
+      </Show>
+      {/* Crime */}
+      <Show when={stress() > 0 && (() => {
+        const base = game().getState().citizens.getPopulation() > 0 ? 1 : 0;
+        return base > 0 && props.sel.services.police < 0;
+      })()}>
+        <div style={WARNING_STYLE_YELLOW}>High crime - No police coverage</div>
+      </Show>
+      {/* Pollution */}
+      <Show when={props.sel.pollution > 40 && props.sel.zoneType !== ZoneType.INDUSTRIAL}>
+        {props.sel.pollution > 70
+          ? <div style={WARNING_STYLE_RED}>Severe pollution</div>
+          : <div style={WARNING_STYLE_YELLOW}>High pollution</div>
+        }
+      </Show>
+      {/* Overall stress level */}
+      <Show when={stress() >= 75}>
+        <div style={WARNING_STYLE_RED}>No income - Near abandonment</div>
+      </Show>
+    </Show>
+  );
+}
+
 function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   const [selectedCitizen, setSelectedCitizen] = createSignal<number | null>(null);
 
@@ -147,11 +200,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           ABANDONED
         </div>
       </Show>
-      <Show when={props.sel.abandonmentStress > 0 && !props.sel.isAbandoned}>
-        <div class="bp-row" style="color:#ff9800">
-          Stress <span>{Math.round(props.sel.abandonmentStress)}%</span>
-        </div>
-      </Show>
+      <AbandonmentWarnings sel={props.sel} />
       <ServiceCoverage services={props.sel.services} />
 
       <div id="bp-citizen-list">
