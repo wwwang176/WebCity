@@ -58,10 +58,41 @@
 55. `src/core/citizen/HousingScore.ts` — PASS (data-driven scoring)
 56. `src/core/citizen/WorkplaceScore.ts` — **REFACTORED** (DRY: removed duplicate scoreWorkplaceCommute, reuses HousingScore.scoreCommute)
 57. `src/core/building/InfraDetails.ts` — **REFACTORED** (DRY: 3 identical school extractors → makeSchoolExtractor factory)
+58. `src/core/transport/TransportRegistry.ts` — PASS (OCP-compliant registry)
+59. `src/core/service/ServiceRegistry.ts` — PASS (OCP-compliant)
+60. `src/core/traffic/FreightSystem.ts` — PASS (clean, focused)
+61. `src/core/transport/RailSystem.ts` — PASS (extends BaseTransportSystem)
+62. `src/core/transport/MetroSystem.ts` — PASS (extends BaseTransportSystem)
+63. `src/core/transport/FerrySystem.ts` — PASS (extends BaseTransportSystem)
+64. `src/core/transport/AirportSystem.ts` — PASS (data-driven size config)
+65. `src/core/zone/ZoneManager.ts` — PASS (clean, focused)
+66. `src/core/simulation/GameClock.ts` — PASS (simple, focused)
+67. `src/core/simulation/DebugTools.ts` — PASS (data-driven paramSetters)
+68. `src/core/zone/DensityRules.ts` — PASS (clean)
+69. `src/core/climate/Damage.ts` — PASS (pure functions)
+70. `src/core/climate/WarningSystem.ts` — PASS (clean)
+71. `src/core/road/types.ts` — PASS (data-driven ROAD_CONFIGS)
+72. `src/core/rail/RailNetwork.ts` — PASS (extends GraphNetwork)
+73. `src/core/rail/RailBuilder.ts` — PASS (uses shared PathValidation)
+74. `src/core/service/GarbageService.ts` — PASS (extends RoadCoverageService)
+75. `src/core/service/SewageService.ts` — PASS (clean)
+76. `src/core/service/HealthService.ts` — PASS (extends RoadCoverageService)
+77. `src/core/service/DeathCareService.ts` — PASS (extends RoadCoverageService)
+78. `src/core/service/RoadCoverageFlood.ts` — PASS (clean Dijkstra + MinHeap)
+79. `src/core/district/PolicyManager.ts` — PASS (DIP + data-driven POLICY_CONFIG)
+80. `src/core/citizen/JobRelocation.ts` — PASS (configurable constants)
+81. `src/core/citizen/OccupancyRatio.ts` — PASS (clean)
+82. `src/core/citizen/OccupancyAssignment.ts` — PASS (acceptable similar patterns)
+83. `src/core/citizen/BuildingCandidateBuilder.ts` — PASS (clean factory functions)
+84. `src/core/citizen/types.ts` — PASS (type definitions + data-driven config)
+85. `src/core/grid/types.ts` — PASS (type definitions + zone helpers)
+86. `src/core/traffic/CommuteCache.ts` — PASS (focused cache with cell index)
+87. `src/core/building/BuildingUpgrade.ts` — PASS (data-driven requirements)
+88. `src/core/building/BuildingAbandonment.ts` — PASS (data-driven zone sensitivity)
 
 ## Pending Files
 - `src/core/simulation/SimulationLoop.ts` — Large file (1534 lines), multiple SRP violations. Needs multi-phase refactoring.
-- Remaining ~70 src/core/**/*.ts files not yet reviewed
+- ~60 small utility/helper/type files remaining (grid helpers, traffic utils, transport paths, etc.)
 
 ## Refactoring Summary
 ### Iteration 1: PowerGrid / WaterNetwork BFS deduplication
