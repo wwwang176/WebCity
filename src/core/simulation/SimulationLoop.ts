@@ -5,7 +5,7 @@ import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue, checkParkProximity } from '../economy/LandValue';
-import { ZoneType, TerrainType, isResidentialZone, isCommercialZone } from '../grid/types';
+import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI } from '../grid/types';
 import { RoadType } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
@@ -414,27 +414,40 @@ export class SimulationLoop {
         continue;
       }
 
-      // Abandoned buildings: demolish first, then try to grow (demand-driven clearance)
+      // Abandoned: only demolish if growth conditions are met, then build
       if (cell.reserved === ABANDONED && isZoneBuilding(cell.buildingId)) {
+        conditions.hasPower = this.state.power.isPowered(x, y);
+        conditions.hasWater = this.state.water.isSupplied(x, y);
+        const rciType = zoneToRCI(cell.zoneType);
+        if (!conditions.hasPower || !conditions.hasWater || !rciType || conditions.rciDemand[rciType] <= 0) continue;
+        const district = this.state.districts.getDistrictAt(x, y);
+        if (district && !this.state.policies.canBuildInDistrict(district.id, cell.zoneType)) continue;
+        // Conditions met: demolish abandoned building, then grow
         grid.setCell(x, y, { buildingId: 0, reserved: 0 });
         this.abandonmentStress.delete(`${x},${y}`);
-        changed = true;
         this.onBuildingRemoved?.(x, y);
-        // Fall through to growth check below
+        if (growth.tryGrow(x, y, conditions)) {
+          const grown = grid.getCell(x, y);
+          if (grown) {
+            const level = getBuildingType(grown.buildingId)?.level ?? 1;
+            this.onBuildingAdded?.(x, y, cell.zoneType, level);
+          }
+        }
+        changed = true;
+        continue;
       }
 
       if (cell.buildingId === 0) {
         // Check district policy restrictions
         const district = this.state.districts.getDistrictAt(x, y);
         if (district && !this.state.policies.canBuildInDistrict(district.id, cell.zoneType)) {
-          continue; // Policy blocks this zone type in this district
+          continue;
         }
         // Check power/water for this specific cell
         conditions.hasPower = this.state.power.isPowered(x, y);
         conditions.hasWater = this.state.water.isSupplied(x, y);
         if (growth.tryGrow(x, y, conditions)) {
           changed = true;
-          // Read back the grown cell to get level info
           const grown = grid.getCell(x, y);
           if (grown) {
             const level = getBuildingType(grown.buildingId)?.level ?? 1;
