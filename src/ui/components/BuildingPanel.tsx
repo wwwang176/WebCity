@@ -109,6 +109,11 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   };
   // Read tick signal to trigger Solid reactivity on each UI tick (~6/sec)
   const stress = () => { gameSignals.tick(); return getGame().getAbandonmentStress(props.sel.x, props.sel.y); };
+  const isAbandoned = () => {
+    gameSignals.tick();
+    const cell = getGame().getState().grid.getCell(props.sel.x, props.sel.y);
+    return cell ? cell.reserved === 1 : false; // ABANDONED = 1
+  };
 
   return (
     <>
@@ -140,7 +145,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           No Water
         </div>
       </Show>
-      <Show when={props.sel.isAbandoned}>
+      <Show when={isAbandoned()}>
         <div style={{
           'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
           background: 'rgba(239,83,80,0.2)', color: '#ef5350',
@@ -149,7 +154,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           ABANDONED
         </div>
       </Show>
-      <Show when={stress() > 0 && !props.sel.isAbandoned}>
+      <Show when={stress() > 0 && !isAbandoned()}>
         <div class="bp-row" style="color:#ff9800">
           Stress <span>{Math.round(stress())}%</span>
         </div>
