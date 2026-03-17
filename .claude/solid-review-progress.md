@@ -57,6 +57,7 @@
 54. `src/core/building/BuildingAbandonment.ts` — PASS (pure function, data-driven sensitivity)
 55. `src/core/citizen/HousingScore.ts` — PASS (data-driven scoring)
 56. `src/core/citizen/WorkplaceScore.ts` — **REFACTORED** (DRY: removed duplicate scoreWorkplaceCommute, reuses HousingScore.scoreCommute)
+57. `src/core/building/InfraDetails.ts` — **REFACTORED** (DRY: 3 identical school extractors → makeSchoolExtractor factory)
 
 ## Pending Files
 - `src/core/simulation/SimulationLoop.ts` — Large file (1534 lines), multiple SRP violations. Needs multi-phase refactoring.
@@ -82,3 +83,8 @@
 - **Issue**: `scoreWorkplaceCommute` in WorkplaceScore.ts was 100% identical to `scoreCommute` in HousingScore.ts
 - **Fix**: Removed the duplicate, WorkplaceScore now imports and uses `scoreCommute` from HousingScore
 - **Tests**: All 2551 existing tests pass (no new tests needed — exact same behavior)
+
+### Iteration 5: InfraDetails school extractor deduplication
+- **Issue**: 3 school extractors (school, school_high, school_univ) had identical logic differing only in config values
+- **Fix**: Extracted `makeSchoolExtractor` factory function; each school type is now a single-line factory call
+- **Tests**: All 18 existing InfraDetails tests pass, all 2551 total tests pass

@@ -59,6 +59,22 @@ export interface InfraDetailContext {
 
 type DetailExtractor = (ctx: InfraDetailContext, cx: number, cy: number) => Record<string, string | number>;
 
+/** Factory for school detail extractors — eliminates duplicate code across 3 school types (DRY). */
+function makeSchoolExtractor(
+  schoolType: string,
+  enrollKey: 'elementary' | 'highSchool' | 'university',
+  label: string,
+  defaultCap: number,
+  defaultRadius: number,
+): DetailExtractor {
+  return (ctx, cx, cy) => {
+    const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === schoolType);
+    const enrolled = ctx.citizens.getEnrolledCounts()[enrollKey];
+    const totalCap = ctx.education.getSchools().filter(s => s.type === schoolType).reduce((sum, s) => sum + s.capacity, 0);
+    return { Type: label, Capacity: sc?.capacity ?? defaultCap, Radius: sc?.radius ?? defaultRadius, Students: `${enrolled} / ${totalCap}` };
+  };
+}
+
 /**
  * Data-driven mapping from InfraType → detail extractor function.
  * Adding a new infrastructure type only requires adding an entry here (OCP).
@@ -85,24 +101,9 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
     }
     return { Capacity: h?.capacity ?? 100, Radius: radius, Residents: residents };
   },
-  school: (ctx, cx, cy) => {
-    const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'elementary');
-    const enrolled = ctx.citizens.getEnrolledCounts().elementary;
-    const totalCap = ctx.education.getSchools().filter(s => s.type === 'elementary').reduce((sum, s) => sum + s.capacity, 0);
-    return { Type: 'Elementary', Capacity: sc?.capacity ?? 200, Radius: sc?.radius ?? 10, Students: `${enrolled} / ${totalCap}` };
-  },
-  school_high: (ctx, cx, cy) => {
-    const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'highschool');
-    const enrolled = ctx.citizens.getEnrolledCounts().highSchool;
-    const totalCap = ctx.education.getSchools().filter(s => s.type === 'highschool').reduce((sum, s) => sum + s.capacity, 0);
-    return { Type: 'High School', Capacity: sc?.capacity ?? 300, Radius: sc?.radius ?? 12, Students: `${enrolled} / ${totalCap}` };
-  },
-  school_univ: (ctx, cx, cy) => {
-    const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'university');
-    const enrolled = ctx.citizens.getEnrolledCounts().university;
-    const totalCap = ctx.education.getSchools().filter(s => s.type === 'university').reduce((sum, s) => sum + s.capacity, 0);
-    return { Type: 'University', Capacity: sc?.capacity ?? 500, Radius: sc?.radius ?? 15, Students: `${enrolled} / ${totalCap}` };
-  },
+  school: makeSchoolExtractor('elementary', 'elementary', 'Elementary', 200, 10),
+  school_high: makeSchoolExtractor('highschool', 'highSchool', 'High School', 300, 12),
+  school_univ: makeSchoolExtractor('university', 'university', 'University', 500, 15),
   park: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.parks.getParks(), cx, cy);
     return { Radius: p?.radius ?? 5 };
