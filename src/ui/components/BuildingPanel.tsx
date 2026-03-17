@@ -107,6 +107,8 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       workers: cm.getCitizensByWorkplace(key),
     };
   };
+  // Read tick signal to trigger Solid reactivity on each UI tick (~6/sec)
+  const stress = () => { gameSignals.tick(); return getGame().getAbandonmentStress(props.sel.x, props.sel.y); };
 
   return (
     <>
@@ -147,9 +149,9 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           ABANDONED
         </div>
       </Show>
-      <Show when={props.sel.abandonmentStress > 0 && !props.sel.isAbandoned}>
+      <Show when={stress() > 0 && !props.sel.isAbandoned}>
         <div class="bp-row" style="color:#ff9800">
-          Stress <span>{Math.round(props.sel.abandonmentStress)}%</span>
+          Stress <span>{Math.round(stress())}%</span>
         </div>
       </Show>
       <ServiceCoverage services={props.sel.services} />

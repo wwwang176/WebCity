@@ -1670,6 +1670,10 @@ export class Game {
     return this.state;
   }
 
+  getAbandonmentStress(x: number, y: number): number {
+    return this.simLoop.getAbandonmentStress(x, y);
+  }
+
   /** Create a bus route with traffic pathfinding. Returns the route or null if no path. */
   createBusRoute(stops: readonly TransportStop[], vehicleCount = 1): TransportRoute | null {
     this.simLoop.ensureLaneGraph();
