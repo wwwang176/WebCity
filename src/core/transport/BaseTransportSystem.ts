@@ -165,7 +165,7 @@ export abstract class BaseTransportSystem {
   getVehicles(): readonly TransportVehicle[] { return this.vehicles; }
 
   getOperatingCost(): number {
-    return this.routes.reduce((sum, r) => sum + r.operatingCost, 0);
+    return this.routes.reduce((sum, r) => r.suspended ? sum : sum + r.operatingCost, 0);
   }
 
   protected spawnVehicle(routeId: number, stop: TransportStop): TransportVehicle {

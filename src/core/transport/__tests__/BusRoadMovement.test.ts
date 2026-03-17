@@ -501,7 +501,7 @@ describe('Step 4: BusSystem route path management', () => {
 // ── Step 5: Road change invalidation ────────────────────────────
 
 describe('Step 5: road change invalidation', () => {
-  it('onRoadChanged should dissolve route when path cannot be recalculated', () => {
+  it('onRoadChanged should suspend route when path cannot be recalculated', () => {
     const bus = new BusSystem();
     const traffic = new TrafficSimulation();
     const s1 = bus.addStop(0, 0);
@@ -525,16 +525,77 @@ describe('Step 5: road change invalidation', () => {
     bus.spawnBusInTraffic(route.id, traffic);
 
     // Road at 2,0 destroyed — path through it no longer works
-    const dissolved = bus.onRoadChanged(
+    const suspended = bus.onRoadChanged(
       new Set(['2,0']),
       () => null, // can't find new path
       () => [],
       traffic,
     );
 
-    expect(dissolved).toContain(route.id);
-    expect(bus.getRoutes().length).toBe(0);
+    expect(suspended).toContain(route.id);
+    // Route is suspended, not dissolved — still in list
+    expect(bus.getRoutes().length).toBe(1);
+    expect(bus.getRoutes()[0]!.suspended).toBe(true);
+    // Vehicles removed
     expect(traffic.vehicles.length).toBe(0);
+  });
+
+  it('onRoadChanged should resume suspended route when path becomes available', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1; s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4; s2.roadY = 0;
+    const route = bus.createRoute([s1, s2], 1);
+
+    const makePath = (cellPath: string[]) => {
+      const edges: LaneEdge[] = [];
+      for (let i = 0; i < cellPath.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      }
+      return edges;
+    };
+
+    const origPath = ['1,0', '2,0', '3,0', '4,0'];
+    bus.computeRouteSegments(route, () => origPath, (cp) => makePath(cp));
+    bus.spawnBusInTraffic(route.id, traffic);
+
+    // Suspend: road broken
+    bus.onRoadChanged(new Set(['2,0']), () => null, () => [], traffic);
+    expect(route.suspended).toBe(true);
+    expect(traffic.vehicles.length).toBe(0);
+
+    // Resume: road repaired, path available again
+    bus.onRoadChanged(new Set(['2,0']), () => origPath, (cp) => makePath(cp), traffic);
+    expect(route.suspended).toBeFalsy();
+    expect(traffic.vehicles.length).toBe(1); // bus re-spawned
+  });
+
+  it('getSuspendedRouteIds returns only suspended route IDs', () => {
+    const bus = new BusSystem();
+    const traffic = new TrafficSimulation();
+    const s1 = bus.addStop(0, 0);
+    s1.roadX = 1; s1.roadY = 0;
+    const s2 = bus.addStop(5, 0);
+    s2.roadX = 4; s2.roadY = 0;
+
+    const makePath = (cellPath: string[]) => {
+      const edges: LaneEdge[] = [];
+      for (let i = 0; i < cellPath.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      }
+      return edges;
+    };
+
+    const origPath = ['1,0', '2,0', '3,0', '4,0'];
+    const route = bus.createRoute([s1, s2], 0);
+    bus.computeRouteSegments(route, () => origPath, (cp) => makePath(cp));
+    bus.spawnBusInTraffic(route.id, traffic);
+
+    expect(bus.getSuspendedRouteIds()).toEqual([]);
+    bus.onRoadChanged(new Set(['2,0']), () => null, () => [], traffic);
+    expect(bus.getSuspendedRouteIds()).toEqual([route.id]);
   });
 
   it('onRoadChanged should recalculate when alternative path exists', () => {

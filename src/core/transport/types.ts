@@ -34,6 +34,8 @@ export interface TransportRoute {
   vehicles: number;
   frequency: number;
   operatingCost: number;
+  /** True if the route is suspended due to road disconnection. */
+  suspended?: boolean;
 }
 
 export interface TransportVehicle {
