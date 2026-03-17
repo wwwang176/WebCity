@@ -209,27 +209,17 @@ export class CitizenManager {
   ): void {
     const enrolledCount: Record<EducationRule['schoolKey'], number> = { elementary: 0, highSchool: 0, university: 0 };
 
-    // Phase 1 — advance enrolled students + graduate + drop uncovered
+    // Phase 1 — advance enrolled students, pause if homeless/uncovered (never reset progress)
     for (const c of this.citizens) {
       if (c.educationProgress <= 0) continue;
       const matched = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
-      if (!matched || c.age < MIN_SCHOOL_AGE) {
-        c.educationProgress = 0;
-        continue;
-      }
-      if (!c.homeId) {
-        c.educationProgress = 0;
-        continue;
-      }
+      if (!matched || c.age < MIN_SCHOOL_AGE || !c.homeId) continue; // paused, keep progress
       const pos = parsePosKeyUnsafe(c.homeId);
-      if (!isSchoolCovered(pos.x, pos.y, matched.schoolKey)) {
-        c.educationProgress = 0;
-        continue;
-      }
+      if (!isSchoolCovered(pos.x, pos.y, matched.schoolKey)) continue; // paused, keep progress
       c.educationProgress += jitteredSpeed(getLearningSpeed(c.age));
       if (c.educationProgress >= GRADUATION_TICKS[matched.schoolKey]) {
         c.education = matched.nextEducation;
-        c.educationProgress = 0;
+        c.educationProgress = 0; // only graduation resets progress
       } else {
         enrolledCount[matched.schoolKey]++;
       }

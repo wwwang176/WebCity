@@ -683,23 +683,33 @@ describe('educateTick enrollment & capacity', () => {
     expect(teen.educationProgress).toBeGreaterThan(0);  // highSchool slot taken — independent
   });
 
-  it('enrolled student loses coverage → dropped (progress reset)', () => {
+  it('enrolled student loses coverage → paused (progress preserved)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
     const c = mgr.createCitizen({ age: 8, homeId: '5,5' });
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
-    expect(c.educationProgress).toBeGreaterThan(0);
+    const saved = c.educationProgress;
+    expect(saved).toBeGreaterThan(0);
+    // Coverage disappears — progress stays
     mgr.educateTick(() => false, UNLIMITED_CAPACITY);
-    expect(c.educationProgress).toBe(0);
+    expect(c.educationProgress).toBe(saved);
+    vi.restoreAllMocks();
   });
 
-  it('dropped student can re-enroll (progress restarts)', () => {
+  it('homeless student paused, resumes when re-housed in coverage', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
     const c = mgr.createCitizen({ age: 8, homeId: '5,5' });
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
-    expect(c.educationProgress).toBeGreaterThan(0);
-    mgr.educateTick(() => false, UNLIMITED_CAPACITY);
-    expect(c.educationProgress).toBe(0);
+    const saved = c.educationProgress;
+    // Become homeless — paused
+    c.homeId = null;
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
-    expect(c.educationProgress).toBeGreaterThan(0);
+    expect(c.educationProgress).toBe(saved);
+    // Re-housed in coverage — resumes
+    c.homeId = '5,5';
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBeGreaterThan(saved);
+    vi.restoreAllMocks();
   });
 });
