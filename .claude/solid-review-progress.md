@@ -53,10 +53,14 @@
 50. `src/core/environment/CityMetrics.ts` — **REFACTORED** (DRY: extracted avgResidentialMetric)
 51. `src/core/climate/Climate.ts` — PASS (data-driven season overrides)
 52. `src/core/climate/Disaster.ts` — PASS (data-driven calculators)
+53. `src/core/building/BuildingUpgrade.ts` — PASS (data-driven requirements tables)
+54. `src/core/building/BuildingAbandonment.ts` — PASS (pure function, data-driven sensitivity)
+55. `src/core/citizen/HousingScore.ts` — PASS (data-driven scoring)
+56. `src/core/citizen/WorkplaceScore.ts` — **REFACTORED** (DRY: removed duplicate scoreWorkplaceCommute, reuses HousingScore.scoreCommute)
 
 ## Pending Files
 - `src/core/simulation/SimulationLoop.ts` — Large file (1534 lines), multiple SRP violations. Needs multi-phase refactoring.
-- Remaining ~75 src/core/**/*.ts files not yet reviewed
+- Remaining ~70 src/core/**/*.ts files not yet reviewed
 
 ## Refactoring Summary
 ### Iteration 1: PowerGrid / WaterNetwork BFS deduplication
@@ -73,3 +77,8 @@
 - **Issue**: `getAvgResidentialPollution` and `getAvgResidentialNoise` were nearly identical (differ only in cell accessor)
 - **Fix**: Extracted `avgResidentialMetric(grid, accessor)` shared helper; both functions now delegate to it
 - **Tests**: 2 new tests for the shared helper, all 2551 tests pass
+
+### Iteration 4: WorkplaceScore DRY fix
+- **Issue**: `scoreWorkplaceCommute` in WorkplaceScore.ts was 100% identical to `scoreCommute` in HousingScore.ts
+- **Fix**: Removed the duplicate, WorkplaceScore now imports and uses `scoreCommute` from HousingScore
+- **Tests**: All 2551 existing tests pass (no new tests needed — exact same behavior)
