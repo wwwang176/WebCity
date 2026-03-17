@@ -7,7 +7,6 @@ export interface AbandonmentConditions {
   isWatered: boolean;
   crimeRate: number;
   pollution: number; // ground pollution
-  occupancy: number; // 0~1
 }
 
 export interface AbandonmentFactors {
@@ -16,7 +15,6 @@ export interface AbandonmentFactors {
   water: number;
   crime: number;
   pollution: number;
-  vacancy: number;
 }
 
 export interface AbandonmentResult {
@@ -60,7 +58,7 @@ export function calculateAbandonmentStress(
   const cat = getZoneCategory(zoneType);
   const sens = ZONE_SENSITIVITY[cat]!;
 
-  const factors: AbandonmentFactors = { tax: 0, power: 0, water: 0, crime: 0, pollution: 0, vacancy: 0 };
+  const factors: AbandonmentFactors = { tax: 0, power: 0, water: 0, crime: 0, pollution: 0 };
 
   // Tax pressure
   if (isResidentialZone(zoneType)) {
@@ -89,12 +87,7 @@ export function calculateAbandonmentStress(
     factors.pollution = (conditions.pollution - 40) * 0.1 * sens.pollution;
   }
 
-  // Vacancy
-  if (conditions.occupancy < 0.1) {
-    factors.vacancy = 3;
-  }
-
-  const sum = factors.tax + factors.power + factors.water + factors.crime + factors.pollution + factors.vacancy;
+  const sum = factors.tax + factors.power + factors.water + factors.crime + factors.pollution;
 
   // Recovery only when ALL factors are zero
   const totalDelta = sum === 0 ? -ABANDONMENT.RECOVERY_RATE : sum;

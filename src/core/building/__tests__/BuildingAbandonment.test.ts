@@ -16,7 +16,6 @@ function goodConditions(): AbandonmentConditions {
     isWatered: true,
     crimeRate: 10,
     pollution: 10,
-    occupancy: 0.8,
   };
 }
 
@@ -35,7 +34,6 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(result.factors.water).toBe(0);
     expect(result.factors.crime).toBe(0);
     expect(result.factors.pollution).toBe(0);
-    expect(result.factors.vacancy).toBe(0);
   });
 
   // --- Tax ---
@@ -121,20 +119,6 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(result.factors.pollution).toBe(0);
   });
 
-  // --- Vacancy ---
-
-  it('occupancy < 0.1 → +3 vacancy stress', () => {
-    const cond = { ...goodConditions(), occupancy: 0.05 };
-    const result = calculateAbandonmentStress(ZoneType.OFFICE, cond);
-    expect(result.factors.vacancy).toBe(3);
-  });
-
-  it('occupancy ≥ 0.1 → no vacancy stress', () => {
-    const cond = { ...goodConditions(), occupancy: 0.1 };
-    const result = calculateAbandonmentStress(ZoneType.OFFICE, cond);
-    expect(result.factors.vacancy).toBe(0);
-  });
-
   // --- Multi-factor ---
 
   it('multiple factors stack correctly', () => {
@@ -145,7 +129,6 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
       isWatered: false,
       crimeRate: 50,
       pollution: 60,
-      occupancy: 0.05,
     };
     const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
     // tax: (15-9)*1.5*1.5 = 13.5
@@ -153,8 +136,7 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     // water: 6
     // crime: (50-30)*0.15*1.3 = 3.9
     // pollution: (60-40)*0.1*1.0 = 2.0
-    // vacancy: 3
-    const expected = 13.5 + 8 + 6 + 3.9 + 2.0 + 3;
+    const expected = 13.5 + 8 + 6 + 3.9 + 2.0;
     expect(result.totalDelta).toBeCloseTo(expected);
   });
 

@@ -757,7 +757,6 @@ export class SimulationLoop {
 
       const posKey = `${x},${y}`;
       const pollution = this.state.pollution.getPollutionAt(x, y);
-      const occupancy = this.occupancyRatios.get(posKey) ?? 1;
 
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
@@ -766,7 +765,6 @@ export class SimulationLoop {
         isWatered: this.state.water.isSupplied(x, y),
         crimeRate,
         pollution: pollution.ground,
-        occupancy,
       };
 
       const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);
