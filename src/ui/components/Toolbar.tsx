@@ -195,14 +195,6 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
         <span class="tb-icon">{'\u{1F3D9}'}</span>
         <span>Overview</span>
       </button>
-      <button class="tb-action" onClick={() => props.onOpenModal('economy')} title="Economy Panel">
-        <span class="tb-icon">$</span>
-        <span>Economy</span>
-      </button>
-      <button class="tb-action" onClick={() => props.onOpenModal('traffic')} title="Traffic Panel">
-        <span class="tb-icon">{'\u{1F697}'}</span>
-        <span>Traffic</span>
-      </button>
       <button class="tb-action" onClick={() => props.onOpenModal('layers')} title="Layers / Overlays">
         <span class="tb-icon">{'\u{1F5FA}'}</span>
         <span>Layers</span>

@@ -13,8 +13,6 @@ import { MiniMap } from './components/MiniMap';
 import { BuildingPanel } from './components/BuildingPanel';
 import { TutorialOverlay } from './components/Tutorial';
 
-import { EconomyModal } from './modals/EconomyModal';
-import { TrafficModal } from './modals/TrafficModal';
 import { OverviewModal } from './modals/OverviewModal';
 import { LayersModal } from './modals/LayersModal';
 import { CitySpecModal } from './modals/CitySpecModal';
@@ -43,8 +41,6 @@ function GameUIRoot() {
       <BuildingPanel />
       <TutorialOverlay />
 
-      <EconomyModal open={openModal() === 'economy'} onClose={closeModal} />
-      <TrafficModal open={openModal() === 'traffic'} onClose={closeModal} />
       <OverviewModal open={openModal() === 'overview'} onClose={closeModal} />
       <LayersModal open={openModal() === 'layers'} onClose={closeModal} />
       <CitySpecModal open={openModal() === 'cityspec'} onClose={closeModal} />
