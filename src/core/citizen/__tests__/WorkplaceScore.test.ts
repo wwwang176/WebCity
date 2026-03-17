@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scoreWorkplace, scoreCommuteByCost, scoreWorkplaceWithCost, type WorkplaceCandidate } from '../WorkplaceScore';
+import { scoreWorkplace, scoreCommuteByCost, scoreWorkplaceWithCost, scoreEducationMatch, type WorkplaceCandidate } from '../WorkplaceScore';
 import type { Citizen } from '../types';
 import { LifeStage, EducationLevel, IncomeLevel } from '../types';
 import { ZoneType } from '../../grid/types';
@@ -27,9 +27,10 @@ describe('scoreWorkplace', () => {
     expect(nearScore).toBeGreaterThan(farScore);
   });
 
-  it('HIGH income prefers OFFICE', () => {
+  it('HIGH income + high education prefers OFFICE', () => {
     const citizen = makeCitizen({
       incomeLevel: IncomeLevel.HIGH,
+      education: EducationLevel.UNIVERSITY,
       homeId: '10,10',
     });
     const officeScore = scoreWorkplace(citizen, '11,11', ZoneType.OFFICE);
@@ -47,9 +48,10 @@ describe('scoreWorkplace', () => {
     expect(industrialScore).toBeGreaterThan(officeScore);
   });
 
-  it('no homeId = commute score is 0, only zone preference counts', () => {
+  it('no homeId = commute score is 0, zone + education preference counts', () => {
     const citizen = makeCitizen({
       incomeLevel: IncomeLevel.HIGH,
+      education: EducationLevel.UNIVERSITY,
       homeId: null,
     });
     // With no home, commute is 0 for both — only zone preference matters
@@ -99,17 +101,49 @@ describe('scoreCommuteByCost', () => {
 });
 
 describe('scoreWorkplaceWithCost', () => {
-  it('LOW income + INDUSTRIAL + close commute', () => {
-    const citizen = makeCitizen({ incomeLevel: IncomeLevel.LOW });
+  it('LOW income + NONE edu + INDUSTRIAL + close commute', () => {
+    const citizen = makeCitizen({ incomeLevel: IncomeLevel.LOW, education: EducationLevel.NONE });
     const score = scoreWorkplaceWithCost(citizen, ZoneType.INDUSTRIAL, 5);
-    // INDUSTRIAL pref for LOW = 20, commute cost 5 → +15
-    expect(score).toBe(35);
+    // INDUSTRIAL pref for LOW = 20, edu match NONE→IND = +10, commute cost 5 → +15
+    expect(score).toBe(45);
   });
 
-  it('HIGH income + OFFICE + unreachable', () => {
-    const citizen = makeCitizen({ incomeLevel: IncomeLevel.HIGH });
+  it('HIGH income + NONE edu + OFFICE + unreachable', () => {
+    const citizen = makeCitizen({ incomeLevel: IncomeLevel.HIGH, education: EducationLevel.NONE });
     const score = scoreWorkplaceWithCost(citizen, ZoneType.OFFICE, null);
-    // OFFICE pref for HIGH = 20, unreachable → -20
-    expect(score).toBe(0);
+    // OFFICE pref for HIGH = 20, edu match NONE→OFFICE = -10, unreachable → -20
+    expect(score).toBe(-10);
+  });
+});
+
+describe('scoreEducationMatch', () => {
+  it('UNIVERSITY citizen strongly prefers OFFICE', () => {
+    expect(scoreEducationMatch(EducationLevel.UNIVERSITY, ZoneType.OFFICE)).toBe(15);
+  });
+
+  it('UNIVERSITY citizen dislikes INDUSTRIAL', () => {
+    expect(scoreEducationMatch(EducationLevel.UNIVERSITY, ZoneType.INDUSTRIAL)).toBe(-10);
+  });
+
+  it('NONE citizen prefers INDUSTRIAL', () => {
+    expect(scoreEducationMatch(EducationLevel.NONE, ZoneType.INDUSTRIAL)).toBe(10);
+  });
+
+  it('NONE citizen dislikes OFFICE', () => {
+    expect(scoreEducationMatch(EducationLevel.NONE, ZoneType.OFFICE)).toBe(-10);
+  });
+
+  it('ELEMENTARY/HIGH_SCHOOL citizen mildly prefers COMMERCIAL', () => {
+    expect(scoreEducationMatch(EducationLevel.ELEMENTARY, ZoneType.COMMERCIAL_LOW)).toBe(5);
+    expect(scoreEducationMatch(EducationLevel.HIGH_SCHOOL, ZoneType.COMMERCIAL_HIGH)).toBe(5);
+  });
+
+  it('education-zone match affects overall workplace score', () => {
+    const uneducated = makeCitizen({ incomeLevel: IncomeLevel.MEDIUM, education: EducationLevel.NONE, homeId: '10,10' });
+    const university = makeCitizen({ incomeLevel: IncomeLevel.MEDIUM, education: EducationLevel.UNIVERSITY, homeId: '10,10' });
+
+    const uneducatedOffice = scoreWorkplace(uneducated, '11,11', ZoneType.OFFICE);
+    const universityOffice = scoreWorkplace(university, '11,11', ZoneType.OFFICE);
+    expect(universityOffice).toBeGreaterThan(uneducatedOffice);
   });
 });

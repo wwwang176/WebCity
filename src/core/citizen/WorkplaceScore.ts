@@ -1,5 +1,5 @@
-import { IncomeLevel, type Citizen } from './types';
-import { ZoneType } from '../grid/types';
+import { EducationLevel, IncomeLevel, type Citizen } from './types';
+import { ZoneType, isCommercialZone } from '../grid/types';
 import { parsePosKeyUnsafe, manhattanDistance } from '../grid/GridHelpers';
 
 export interface WorkplaceCandidate {
@@ -34,6 +34,23 @@ const ZONE_PREFERENCE: Record<IncomeLevel, Partial<Record<ZoneType, number>>> = 
   },
 };
 
+/**
+ * Education-zone match scores.
+ * Office wants high education, Industrial wants low, Commercial is mild.
+ */
+const EDUCATION_ZONE_SCORE: Record<string, Record<EducationLevel, number>> = {
+  office:     { [EducationLevel.NONE]: -10, [EducationLevel.ELEMENTARY]: -5, [EducationLevel.HIGH_SCHOOL]: 5, [EducationLevel.UNIVERSITY]: 15 },
+  industrial: { [EducationLevel.NONE]: 10,  [EducationLevel.ELEMENTARY]: 5,  [EducationLevel.HIGH_SCHOOL]: 0, [EducationLevel.UNIVERSITY]: -10 },
+  commercial: { [EducationLevel.NONE]: 0,   [EducationLevel.ELEMENTARY]: 5,  [EducationLevel.HIGH_SCHOOL]: 5, [EducationLevel.UNIVERSITY]: 0 },
+};
+
+export function scoreEducationMatch(education: EducationLevel, zoneType: ZoneType): number {
+  if (zoneType === ZoneType.OFFICE) return EDUCATION_ZONE_SCORE.office[education];
+  if (zoneType === ZoneType.INDUSTRIAL) return EDUCATION_ZONE_SCORE.industrial[education];
+  if (isCommercialZone(zoneType)) return EDUCATION_ZONE_SCORE.commercial[education];
+  return 0;
+}
+
 /** Score commute from home to workplace candidate */
 function scoreWorkplaceCommute(homePos: string | null, candidatePos: string): number {
   if (homePos === null) return 0;
@@ -56,14 +73,14 @@ export function scoreCommuteByCost(cost: number | null): number {
   return Math.round(15 - (cost - 10) * (30 / 30));
 }
 
-/** Job relocation scoring: zone preference + road-cost commute. */
+/** Job relocation scoring: zone preference + education match + road-cost commute. */
 export function scoreWorkplaceWithCost(
   citizen: Citizen,
   zoneType: ZoneType,
   roadCost: number | null,
 ): number {
   const prefs = ZONE_PREFERENCE[citizen.incomeLevel];
-  return (prefs[zoneType] ?? 0) + scoreCommuteByCost(roadCost);
+  return (prefs[zoneType] ?? 0) + scoreEducationMatch(citizen.education, zoneType) + scoreCommuteByCost(roadCost);
 }
 
 /** Compute total workplace preference score */
@@ -77,6 +94,9 @@ export function scoreWorkplace(
   // Zone-type preference based on income level
   const prefs = ZONE_PREFERENCE[citizen.incomeLevel];
   score += prefs[zoneType] ?? 0;
+
+  // Education-zone match
+  score += scoreEducationMatch(citizen.education, zoneType);
 
   // Commute distance from home
   score += scoreWorkplaceCommute(citizen.homeId, workplacePos);
