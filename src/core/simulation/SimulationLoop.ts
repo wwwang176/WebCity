@@ -63,8 +63,6 @@ export const SIMULATION = {
   GROWTH_ATTEMPTS: 20,
   /** Chance per attempt for burned building auto-clearance */
   BURNED_CLEARANCE_CHANCE: 0.02,
-  /** Chance per attempt for abandoned building auto-clearance */
-  ABANDONED_CLEARANCE_CHANCE: 0.03,
   /** Default happiness used when city has no citizens */
   DEFAULT_HAPPINESS: 70,
   /** Business tax baseline — penalty applies above this rate */
@@ -408,7 +406,6 @@ export class SimulationLoop {
 
       // Burned buildings: developer must demolish ruins first (extra cost/time)
       if (cell.reserved === BURNED && isZoneBuilding(cell.buildingId)) {
-        // ~2% chance per attempt to clear the ruins (developer demolition takes time)
         if (Math.random() < SIMULATION.BURNED_CLEARANCE_CHANCE) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
           changed = true;
@@ -417,15 +414,13 @@ export class SimulationLoop {
         continue;
       }
 
-      // Abandoned buildings: slightly faster auto-clearance (~3%)
+      // Abandoned buildings: demolish first, then try to grow (demand-driven clearance)
       if (cell.reserved === ABANDONED && isZoneBuilding(cell.buildingId)) {
-        if (Math.random() < SIMULATION.ABANDONED_CLEARANCE_CHANCE) {
-          grid.setCell(x, y, { buildingId: 0, reserved: 0 });
-          this.abandonmentStress.delete(`${x},${y}`);
-          changed = true;
-          this.onBuildingRemoved?.(x, y);
-        }
-        continue;
+        grid.setCell(x, y, { buildingId: 0, reserved: 0 });
+        this.abandonmentStress.delete(`${x},${y}`);
+        changed = true;
+        this.onBuildingRemoved?.(x, y);
+        // Fall through to growth check below
       }
 
       if (cell.buildingId === 0) {
