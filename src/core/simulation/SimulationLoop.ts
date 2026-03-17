@@ -36,7 +36,7 @@ import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
-import { getTotalServiceMaintenanceCost } from '../service/ServiceRegistry';
+import { getTotalServiceMaintenanceCost, tickAllCivicServices } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles } from '../grid/GridHelpers';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
@@ -225,16 +225,9 @@ export class SimulationLoop {
       this.state.water.calculateCoverage(this.state.grid, infraPositions);
     }
 
-    // 3.5 Civic services tick (every 6 ticks)
+    // 3.5 Civic services tick (every 6 ticks) — OCP: adding services only requires ServiceRegistry update
     if (isSlowTick) {
-      this.state.police.tick();
-      this.state.fire.tick();
-      this.state.health.tick();
-      this.state.education.tick();
-      this.state.parks.tick();
-      this.state.garbage.tick(this.state.citizens.getPopulation());
-      this.state.sewage.tick(this.state.citizens.getPopulation());
-      this.state.deathCare.tick();
+      tickAllCivicServices(this.state);
 
       // Fire events: try random fire and resolve completed fires
       this.processFireEvents();
