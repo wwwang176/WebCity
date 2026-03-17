@@ -31,7 +31,6 @@ export interface AbandonmentResult {
 
 /** Stress thresholds */
 export const ABANDONMENT = {
-  STRESS_NO_INCOME: 75,
   STRESS_ABANDON: 100,
   RECOVERY_RATE: 2,
   /** Service score multiplier for stress offset. score × this = stress reduction per tick. */

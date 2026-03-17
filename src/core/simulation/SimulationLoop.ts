@@ -574,10 +574,7 @@ export class SimulationLoop {
 
   private calculateIncome(): void {
     // DRY: same adapter used by Game.getEconomyBreakdown
-    const incomes = calculateZoneIncomes(buildIncomeCalcDeps(
-      this.state,
-      (x, y) => this.getAbandonmentStress(x, y),
-    ));
+    const incomes = calculateZoneIncomes(buildIncomeCalcDeps(this.state));
     let totalIncome = incomes.residential + incomes.commercial + incomes.industrial + incomes.office;
 
     // Apply city-wide specialization revenue multiplier

@@ -31,8 +31,6 @@ export interface IncomeCalcDeps {
   getRevenueMultiplier?: (x: number, y: number) => number;
   /** Optional power check — unpowered buildings produce zero income. Defaults to true. */
   isPowered?: (x: number, y: number) => boolean;
-  /** Optional abandonment stress check — buildings with stress ≥ 75 produce zero income. */
-  getAbandonmentStress?: (x: number, y: number) => number;
 }
 
 /**
@@ -52,8 +50,6 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
     if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === ABANDONED || cell.reserved === MULTI_CELL_OCCUPIED) return;
     // Unpowered buildings produce zero income
     if (deps.isPowered && !deps.isPowered(x, y)) return;
-    // High-stress buildings produce zero income (pre-abandonment)
-    if (deps.getAbandonmentStress && deps.getAbandonmentStress(x, y) >= 75) return;
 
     const btype = getBuildingType(cell.buildingId);
     if (!btype) return;

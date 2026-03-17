@@ -97,21 +97,6 @@ describe('Building Abandonment Integration', () => {
     expect(abandonedIncome.commercial).toBe(0);
   });
 
-  it('high stress (≥75) buildings produce zero income via getAbandonmentStress', () => {
-    const state = createGameState(20, 20);
-    placeBuilding(state, 5, 5, ZoneType.COMMERCIAL_LOW);
-    const simLoop = new SimulationLoop(state);
-    simLoop.abandonmentStress.set('5,5', 80);
-
-    const incomeWithStress = calculateZoneIncomes({
-      forEachCell: (fn) => state.grid.forEachCell(fn),
-      taxRates: { residential: 9, business: 9 },
-      getCitizensByHome: () => [],
-      getAbandonmentStress: (x, y) => simLoop.getAbandonmentStress(x, y),
-    });
-    expect(incomeWithStress.commercial).toBe(0);
-  });
-
   it('clearBuildingState removes stress from map', () => {
     const state = createGameState(20, 20);
     const simLoop = new SimulationLoop(state);

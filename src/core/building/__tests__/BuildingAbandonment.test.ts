@@ -215,9 +215,12 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
   });
 
   it('thresholds have correct values', () => {
-    expect(ABANDONMENT.STRESS_NO_INCOME).toBe(75);
     expect(ABANDONMENT.STRESS_ABANDON).toBe(100);
     expect(ABANDONMENT.RECOVERY_RATE).toBe(2);
     expect(ABANDONMENT.SERVICE_OFFSET_MULTIPLIER).toBe(1.5);
+  });
+
+  it('no STRESS_NO_INCOME (removed — buildings earn until abandonment)', () => {
+    expect(ABANDONMENT).not.toHaveProperty('STRESS_NO_INCOME');
   });
 });
