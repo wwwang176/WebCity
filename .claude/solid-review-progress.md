@@ -24,13 +24,29 @@
 21. `src/core/service/WaterNetwork.ts` — **REFACTORED** (DRY violation: duplicated BFS with PowerGrid)
 22. `src/core/service/NetworkCoverage.ts` — **ENHANCED** (added shared bfsRoadNetworkFlood, bfsBudgetDrainFlood)
 23. `src/core/traffic/TrafficSimulation.ts` — PASS (single domain: vehicle management)
+24. `src/core/environment/Pollution.ts` — PASS (clean, single responsibility)
+25. `src/core/traffic/LaneGraph.ts` — PASS (large but cohesive: lane graph construction)
+26. `src/core/traffic/SidewalkGraph.ts` — PASS (cohesive: sidewalk graph + A*)
+27. `src/core/district/DistrictManager.ts` — PASS (clean CRUD)
+28. `src/core/economy/GlobalMarket.ts` — PASS (clean, self-contained)
+29. `src/core/service/EducationService.ts` — PASS (multi-type coverage maps, reasonable design)
+30. `src/core/economy/IncomeCalculator.ts` — PASS (DIP-compliant, pure function)
+31. `src/core/economy/EconomyBreakdown.ts` — PASS (composes on IncomeCalculator)
+32. `src/core/road/RoadBuilder.ts` — PASS (delegates validation/cost to pure functions)
+33. `src/core/transport/ModeChoice.ts` — PASS (data-driven TRANSPORT_TYPE_TO_MODE)
+34. `src/core/transport/TransitAvailability.ts` — **REFACTORED** (OCP: hardcoded METRO/RAIL check → data-driven)
 
 ## Pending Files
 - `src/core/simulation/SimulationLoop.ts` — Large file (1534 lines), multiple SRP violations. Needs multi-phase refactoring.
-- All remaining src/core/**/*.ts files not yet reviewed
+- Remaining ~95 src/core/**/*.ts files not yet reviewed
 
 ## Refactoring Summary
 ### Iteration 1: PowerGrid / WaterNetwork BFS deduplication
 - **Issue**: `bfsRoadNetwork` (20 lines) 100% identical in both files; `bfsBudgetDrain` (~35 lines) 95% identical
 - **Fix**: Extracted `bfsRoadNetworkFlood()` and `bfsBudgetDrainFlood()` into `NetworkCoverage.ts`
 - **Tests**: 10 new tests in `UtilityNetworkBfs.test.ts`, all 2547 tests pass
+
+### Iteration 2: TransitAvailability OCP fix
+- **Issue**: Hardcoded `sys.type === TransportType.METRO || sys.type === TransportType.RAIL` violates OCP
+- **Fix**: Created `USES_RAIL_TIME_FACTOR` data-driven config map; adding new fast transit types only needs a map entry
+- **Tests**: 2 new tests (RAIL factor, FERRY no-factor), all 2549 tests pass

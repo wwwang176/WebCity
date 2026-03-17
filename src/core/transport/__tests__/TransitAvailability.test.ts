@@ -91,6 +91,57 @@ describe('findAvailableTransit', () => {
     expect(metro.estimatedTime).toBeLessThan(bus.estimatedTime);
   });
 
+  it('applies rail time factor for RAIL systems same as METRO', () => {
+    const systems: TransitSystemInfo[] = [
+      {
+        type: TransportType.RAIL,
+        routes: [{
+          id: 1, type: TransportType.RAIL,
+          stops: [makeStop(0, 0), makeStop(10, 10)],
+          vehicles: 1, frequency: 4, operatingCost: 200,
+        }],
+      },
+      {
+        type: TransportType.BUS,
+        routes: [{
+          id: 2, type: TransportType.BUS,
+          stops: [makeStop(0, 0), makeStop(10, 10)],
+          vehicles: 1, frequency: 4, operatingCost: 100,
+        }],
+      },
+    ];
+    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, 5, 0.8);
+    const rail = result.find(r => r.type === TransportType.RAIL)!;
+    const bus = result.find(r => r.type === TransportType.BUS)!;
+    expect(rail.estimatedTime).toBeLessThan(bus.estimatedTime);
+  });
+
+  it('does not apply rail time factor for ferry', () => {
+    const systems: TransitSystemInfo[] = [
+      {
+        type: TransportType.FERRY,
+        routes: [{
+          id: 1, type: TransportType.FERRY,
+          stops: [makeStop(0, 0), makeStop(10, 10)],
+          vehicles: 1, frequency: 4, operatingCost: 150,
+        }],
+      },
+      {
+        type: TransportType.BUS,
+        routes: [{
+          id: 2, type: TransportType.BUS,
+          stops: [makeStop(0, 0), makeStop(10, 10)],
+          vehicles: 1, frequency: 4, operatingCost: 100,
+        }],
+      },
+    ];
+    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, 5, 0.8);
+    const ferry = result.find(r => r.type === TransportType.FERRY)!;
+    const bus = result.find(r => r.type === TransportType.BUS)!;
+    // Ferry and bus should have the same estimated time (both use factor 1.0)
+    expect(ferry.estimatedTime).toBe(bus.estimatedTime);
+  });
+
   it('only considers stops within walk range', () => {
     const systems: TransitSystemInfo[] = [{
       type: TransportType.BUS,
