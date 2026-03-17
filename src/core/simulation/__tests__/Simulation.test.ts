@@ -354,67 +354,104 @@ describe('countWorkplaceJobs', () => {
 });
 
 describe('Education integration in SimulationLoop', () => {
-  it('should upgrade CHILD education to ELEMENTARY when elementary school exists', () => {
-    const state = createGameState(20, 20);
-    // Add elementary school
-    state.education.addSchool(10, 10, 'elementary', 15);
-    // Create a child citizen (age 8, CHILD stage)
-    const child = state.citizens.createCitizen({ age: 8 });
+  /** Place a horizontal road at row y from x=0..endX and recalculate education coverage. */
+  function setupRoadAndCoverage(state: GameState, roadY: number, endX: number): void {
+    for (let x = 0; x <= endX; x++) {
+      state.grid.setCell(x, roadY, { roadType: RoadType.TWO_LANE, roadFlags: 1 });
+    }
+    state.education.recalculateCoverage(state.grid);
+  }
+
+  it('should enroll CHILD in elementary within a few slow ticks', () => {
+    const state = createGameState(30, 30);
+    state.education.addSchool(0, 10, 'elementary');
+    setupRoadAndCoverage(state, 10, 20);
+    const child = state.citizens.createCitizen({ age: 8, homeId: '5,10' });
     expect(child.education).toBe('NONE');
 
     const loop = new SimulationLoop(state);
-    // Run enough ticks for education tick to fire (every 6 ticks)
-    for (let i = 0; i < 12; i++) loop.tick();
-
-    expect(child.education).toBe('ELEMENTARY');
+    for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
+    expect(child.educationProgress).toBeGreaterThan(0);
   });
 
-  it('should NOT upgrade CHILD education when no elementary school', () => {
-    const state = createGameState(20, 20);
-    // No school added
-    const child = state.citizens.createCitizen({ age: 8 });
-    expect(child.education).toBe('NONE');
+  it('should NOT enroll CHILD when home is outside school coverage', () => {
+    const state = createGameState(30, 30);
+    state.education.addSchool(0, 10, 'elementary');
+    setupRoadAndCoverage(state, 10, 5);
+    const child = state.citizens.createCitizen({ age: 8, homeId: '25,25' });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick();
-
+    expect(child.educationProgress).toBe(0);
     expect(child.education).toBe('NONE');
   });
 
-  it('should upgrade TEEN education to HIGH_SCHOOL when high school exists', () => {
-    const state = createGameState(20, 20);
-    state.education.addSchool(10, 10, 'highschool', 15);
-    // Teen with elementary education
-    const teen = state.citizens.createCitizen({ age: 15, education: 'ELEMENTARY' as any });
+  it('should enroll TEEN in highschool within a few slow ticks', () => {
+    const state = createGameState(30, 30);
+    state.education.addSchool(0, 10, 'highschool');
+    setupRoadAndCoverage(state, 10, 20);
+    const teen = state.citizens.createCitizen({ age: 15, education: 'ELEMENTARY' as any, homeId: '5,10' });
 
     const loop = new SimulationLoop(state);
-    for (let i = 0; i < 12; i++) loop.tick();
-
-    expect(teen.education).toBe('HIGH_SCHOOL');
+    for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
+    expect(teen.educationProgress).toBeGreaterThan(0);
   });
 
-  it('should upgrade young ADULT to UNIVERSITY when university exists', () => {
-    const state = createGameState(20, 20);
-    state.education.addSchool(10, 10, 'university', 15);
-    // Young adult (age 22) with high school education
-    const adult = state.citizens.createCitizen({ age: 22, education: 'HIGH_SCHOOL' as any });
+  it('should enroll young ADULT in university within a few slow ticks', () => {
+    const state = createGameState(30, 30);
+    state.education.addSchool(0, 10, 'university');
+    setupRoadAndCoverage(state, 10, 20);
+    const adult = state.citizens.createCitizen({ age: 22, education: 'HIGH_SCHOOL' as any, homeId: '5,10' });
 
     const loop = new SimulationLoop(state);
-    for (let i = 0; i < 12; i++) loop.tick();
-
-    expect(adult.education).toBe('UNIVERSITY');
+    for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
+    expect(adult.educationProgress).toBeGreaterThan(0);
   });
 
-  it('should NOT upgrade ADULT over 25 to UNIVERSITY', () => {
-    const state = createGameState(20, 20);
-    state.education.addSchool(10, 10, 'university', 15);
-    // Adult age 30 with high school education
-    const adult = state.citizens.createCitizen({ age: 30, education: 'HIGH_SCHOOL' as any });
+  it('should enroll ADULT over 25 in university (slower learning)', () => {
+    const state = createGameState(30, 30);
+    state.education.addSchool(0, 10, 'university');
+    setupRoadAndCoverage(state, 10, 20);
+    const adult = state.citizens.createCitizen({ age: 30, education: 'HIGH_SCHOOL' as any, homeId: '5,10' });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
+    expect(adult.educationProgress).toBeGreaterThan(0); // enrolled, but needs 3x ticks to graduate
+  });
+
+  it('should NOT enroll homeless citizen even when school exists', () => {
+    const state = createGameState(30, 30);
+    state.education.addSchool(0, 10, 'elementary');
+    setupRoadAndCoverage(state, 10, 20);
+    const child = state.citizens.createCitizen({ age: 8, homeId: null });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick();
+    expect(child.educationProgress).toBe(0);
+    expect(child.education).toBe('NONE');
+  });
 
-    expect(adult.education).toBe('HIGH_SCHOOL');
+  it('students > capacity → only capacity count enrolled', () => {
+    const state = createGameState(30, 30);
+    state.education.addSchool(0, 10, 'elementary', undefined, 1);
+    setupRoadAndCoverage(state, 10, 20);
+    const c1 = state.citizens.createCitizen({ age: 8, homeId: '5,10' });
+    const c2 = state.citizens.createCitizen({ age: 9, homeId: '5,10' });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick(); // 1 slow tick
+    const enrolled = [c1, c2].filter(c => c.educationProgress > 0);
+    expect(enrolled).toHaveLength(1);
+  });
+
+  it('no school → no enrollment progress', () => {
+    const state = createGameState(30, 30);
+    const child = state.citizens.createCitizen({ age: 8, homeId: '5,10' });
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 12; i++) loop.tick();
+    expect(child.educationProgress).toBe(0);
+    expect(child.education).toBe('NONE');
   });
 });
 

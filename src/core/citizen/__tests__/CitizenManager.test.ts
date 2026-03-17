@@ -1,6 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
-import { CitizenManager, EDUCATION_PROGRESSION, DAILY_DEATH_RATE, HEALTH_MULTIPLIER, getElderlyMultiplier } from '../CitizenManager';
+import { CitizenManager, EDUCATION_PROGRESSION, GRADUATION_TICKS, EDUCATION_SCALE, getLearningSpeed, jitteredSpeed, LEARNING_JITTER, MIN_SCHOOL_AGE, DAILY_DEATH_RATE, HEALTH_MULTIPLIER, getElderlyMultiplier } from '../CitizenManager';
 import { LifeStage, EducationLevel, LIFE_STAGE_AGE, isWorkingAge } from '../types';
+
+/** Unlimited capacity for simple tests that don't test capacity limits */
+const UNLIMITED_CAPACITY = { elementary: 9999, highSchool: 9999, university: 9999 };
 
 describe('CitizenManager', () => {
   it('should create a citizen with unique id', () => {
@@ -47,18 +50,59 @@ describe('CitizenManager', () => {
     expect(c.lifeStage).toBe(LifeStage.TEEN);
   });
 
-  it('should educate CHILD with elementary coverage', () => {
+  it('should enroll CHILD with elementary coverage (progress > 0 after first tick)', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 8 });
-    mgr.educateTick(true, false, false);
-    expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.ELEMENTARY);
+    const c = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    mgr.educateTick((_x, _y, key) => key === 'elementary', UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBeGreaterThan(0);
+    expect(c.education).toBe(EducationLevel.NONE); // not yet graduated
   });
 
-  it('should NOT educate TEEN without high school', () => {
+  it('should graduate CHILD after enough ticks (speed-based, no jitter)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter = 1.0
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 15, education: EducationLevel.ELEMENTARY });
-    mgr.educateTick(true, false, false);
+    const c = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    const speed = getLearningSpeed(8); // 100
+    const ticksNeeded = Math.ceil(GRADUATION_TICKS.elementary / speed);
+    for (let i = 0; i < ticksNeeded; i++) {
+      mgr.educateTick((_x, _y, key) => key === 'elementary', UNLIMITED_CAPACITY);
+    }
+    expect(c.education).toBe(EducationLevel.ELEMENTARY);
+    expect(c.educationProgress).toBe(0);
+    vi.restoreAllMocks();
+  });
+
+  it('should NOT enroll citizen with ELEMENTARY when only elementary coverage (needs highSchool)', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 15, education: EducationLevel.ELEMENTARY, homeId: '5,5' });
+    mgr.educateTick((_x, _y, key) => key === 'elementary', UNLIMITED_CAPACITY);
     expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.ELEMENTARY);
+    expect(mgr.getCitizens()[0]!.educationProgress).toBe(0);
+  });
+
+  it('should NOT educate homeless citizen (no homeId)', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 8, homeId: null });
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.NONE);
+    expect(mgr.getCitizens()[0]!.educationProgress).toBe(0);
+  });
+
+  it('should NOT educate citizen outside school coverage', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 8, homeId: '50,50' });
+    mgr.educateTick((x, y) => x === 5 && y === 5, UNLIMITED_CAPACITY);
+    expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.NONE);
+    expect(mgr.getCitizens()[0]!.educationProgress).toBe(0);
+  });
+
+  it('should enroll citizen inside school coverage but not outside', () => {
+    const mgr = new CitizenManager();
+    const covered = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    const uncovered = mgr.createCitizen({ age: 8, homeId: '50,50' });
+    mgr.educateTick((x, y) => x === 5 && y === 5, UNLIMITED_CAPACITY);
+    expect(covered.educationProgress).toBeGreaterThan(0);
+    expect(uncovered.educationProgress).toBe(0);
   });
 
   it('ageTick should only age citizens without killing them', () => {
@@ -423,35 +467,239 @@ describe('EDUCATION_PROGRESSION', () => {
     }
   });
 
-  it('university rule should have maxAge cap', () => {
-    const uniRule = EDUCATION_PROGRESSION.find(r => r.schoolKey === 'university');
-    expect(uniRule).toBeDefined();
-    expect(uniRule!.maxAge).toBe(25);
+  it('rules should not have lifeStage or maxAge restrictions', () => {
+    for (const rule of EDUCATION_PROGRESSION) {
+      expect((rule as any).lifeStage).toBeUndefined();
+      expect((rule as any).maxAge).toBeUndefined();
+    }
   });
 
-  it('educateTick promotes through full chain with all schools', () => {
+  it('educateTick promotes child through full chain', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter = 1.0
     const mgr = new CitizenManager();
-    const child = mgr.createCitizen({ age: 8 });
-    mgr.educateTick(true, true, true);
+    const child = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    const speed = getLearningSpeed(8);
+    const elemTicks = Math.ceil(GRADUATION_TICKS.elementary / speed);
+    for (let i = 0; i < elemTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     expect(child.education).toBe(EducationLevel.ELEMENTARY);
 
-    // Advance to teen
-    child.age = 15;
-    child.lifeStage = LifeStage.TEEN;
-    mgr.educateTick(true, true, true);
+    const hsTicks = Math.ceil(GRADUATION_TICKS.highSchool / speed);
+    for (let i = 0; i < hsTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     expect(child.education).toBe(EducationLevel.HIGH_SCHOOL);
 
-    // Advance to young adult
-    child.age = 20;
-    child.lifeStage = LifeStage.ADULT;
-    mgr.educateTick(true, true, true);
+    const uniTicks = Math.ceil(GRADUATION_TICKS.university / speed);
+    for (let i = 0; i < uniTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     expect(child.education).toBe(EducationLevel.UNIVERSITY);
+    vi.restoreAllMocks();
   });
 
-  it('educateTick respects university maxAge', () => {
+  it('adult graduates elementary in ~3x more ticks than child', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
-    const adult = mgr.createCitizen({ age: 30, education: EducationLevel.HIGH_SCHOOL });
-    mgr.educateTick(true, true, true);
-    expect(adult.education).toBe(EducationLevel.HIGH_SCHOOL); // too old
+    const adult = mgr.createCitizen({ age: 30, homeId: '5,5' });
+    const adultSpeed = getLearningSpeed(30);
+    const childSpeed = getLearningSpeed(8);
+    const adultTicks = Math.ceil(GRADUATION_TICKS.elementary / adultSpeed);
+    const childTicks = Math.ceil(GRADUATION_TICKS.elementary / childSpeed);
+    expect(adultTicks).toBeGreaterThan(childTicks * 2);
+    for (let i = 0; i < childTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(adult.education).toBe(EducationLevel.NONE);
+    for (let i = childTicks; i < adultTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(adult.education).toBe(EducationLevel.ELEMENTARY);
+    vi.restoreAllMocks();
+  });
+
+  it('senior takes 5x more ticks than child', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const mgr = new CitizenManager();
+    const senior = mgr.createCitizen({ age: 70, homeId: '5,5' });
+    const seniorSpeed = getLearningSpeed(70);
+    const childSpeed = getLearningSpeed(8);
+    const seniorTicks = Math.ceil(GRADUATION_TICKS.elementary / seniorSpeed);
+    const childTicks = Math.ceil(GRADUATION_TICKS.elementary / childSpeed);
+    expect(seniorTicks).toBe(childTicks * 5);
+    for (let i = 0; i < seniorTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(senior.education).toBe(EducationLevel.ELEMENTARY);
+    vi.restoreAllMocks();
+  });
+
+  it('teen→adult mid-enrollment: progress preserved, only speed changes', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 18, homeId: '5,5' });
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(100);
+    c.age = 19;
+    c.lifeStage = LifeStage.ADULT;
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(100 + 33);
+    vi.restoreAllMocks();
+  });
+
+  it('baby (age ≤ 5) cannot enroll', () => {
+    const mgr = new CitizenManager();
+    const baby = mgr.createCitizen({ age: 3, homeId: '5,5' });
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(baby.educationProgress).toBe(0);
+  });
+});
+
+describe('getLearningSpeed', () => {
+  it('children and teens: speed 100', () => {
+    expect(getLearningSpeed(6)).toBe(100);
+    expect(getLearningSpeed(12)).toBe(100);
+    expect(getLearningSpeed(18)).toBe(100);
+  });
+
+  it('adults: speed 33 (~3x slower)', () => {
+    expect(getLearningSpeed(19)).toBe(33);
+    expect(getLearningSpeed(40)).toBe(33);
+    expect(getLearningSpeed(65)).toBe(33);
+  });
+
+  it('seniors: speed 20 (5x slower)', () => {
+    expect(getLearningSpeed(66)).toBe(20);
+    expect(getLearningSpeed(80)).toBe(20);
+  });
+});
+
+describe('jitteredSpeed', () => {
+  it('returns base speed when random=0.5 (jitter=1.0)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    expect(jitteredSpeed(100)).toBe(100);
+    expect(jitteredSpeed(33)).toBe(33);
+    vi.restoreAllMocks();
+  });
+
+  it('returns 80% speed at minimum jitter (random=0)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    expect(jitteredSpeed(100)).toBe(80);
+    vi.restoreAllMocks();
+  });
+
+  it('returns 120% speed at maximum jitter (random=1)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.9999);
+    expect(jitteredSpeed(100)).toBe(120);
+    vi.restoreAllMocks();
+  });
+
+  it('students enrolled together graduate at different times', () => {
+    const mgr = new CitizenManager();
+    for (let i = 0; i < 20; i++) mgr.createCitizen({ age: 8, homeId: '5,5' });
+    // Run many ticks — with jitter, not all should graduate at the exact same tick
+    const speed = getLearningSpeed(8);
+    const baseTicks = Math.ceil(GRADUATION_TICKS.elementary / speed);
+    // Run 80% of base ticks — no one should graduate yet (even with max jitter 120%)
+    const safeTicks = Math.ceil(baseTicks * 0.7);
+    for (let i = 0; i < safeTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(mgr.getCitizens().every(c => c.education === EducationLevel.NONE)).toBe(true);
+    // Run enough ticks for everyone to graduate (even with min jitter 80%)
+    const maxTicks = Math.ceil(baseTicks * 1.3);
+    for (let i = safeTicks; i < maxTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(mgr.getCitizens().every(c => c.education === EducationLevel.ELEMENTARY)).toBe(true);
+  });
+});
+
+describe('educateTick enrollment & capacity', () => {
+  it('enrolled student progress increments by speed each tick (with jitter)', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter = 1.0
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    const speed = getLearningSpeed(8);
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(speed);
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(speed * 2);
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(speed * 3);
+    vi.restoreAllMocks();
+  });
+
+  it('does not graduate before reaching threshold', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    const speed = getLearningSpeed(8);
+    const ticksNeeded = Math.ceil(GRADUATION_TICKS.elementary / speed);
+    for (let i = 0; i < ticksNeeded - 1; i++) {
+      mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    }
+    expect(c.education).toBe(EducationLevel.NONE);
+    expect(c.educationProgress).toBeLessThan(GRADUATION_TICKS.elementary);
+    vi.restoreAllMocks();
+  });
+
+  it('capacity full prevents new enrollment', () => {
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    const c2 = mgr.createCitizen({ age: 9, homeId: '5,5' });
+    const cap = { elementary: 1, highSchool: 9999, university: 9999 };
+    mgr.educateTick(() => true, cap);
+    // Only one should be enrolled
+    const enrolled = [c1, c2].filter(c => c.educationProgress > 0);
+    expect(enrolled).toHaveLength(1);
+    const notEnrolled = [c1, c2].filter(c => c.educationProgress === 0);
+    expect(notEnrolled).toHaveLength(1);
+  });
+
+  it('graduation frees a slot for the next student', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    const c2 = mgr.createCitizen({ age: 9, homeId: '5,5' });
+    const cap = { elementary: 1, highSchool: 9999, university: 9999 };
+    const speed = getLearningSpeed(8);
+    const ticksNeeded = Math.ceil(GRADUATION_TICKS.elementary / speed);
+    for (let i = 0; i < ticksNeeded; i++) {
+      mgr.educateTick(() => true, cap);
+    }
+    expect(c1.education).toBe(EducationLevel.ELEMENTARY);
+    expect(c2.educationProgress).toBeGreaterThan(0);
+    vi.restoreAllMocks();
+  });
+
+  it('homeless citizen cannot enroll', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 8, homeId: null });
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(0);
+    expect(c.education).toBe(EducationLevel.NONE);
+  });
+
+  it('citizen outside coverage cannot enroll', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 8, homeId: '50,50' });
+    mgr.educateTick((x, y) => x === 5 && y === 5, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(0);
+  });
+
+  it('different school types have independent capacities', () => {
+    const mgr = new CitizenManager();
+    const child = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    const teen = mgr.createCitizen({ age: 15, education: EducationLevel.ELEMENTARY, homeId: '5,5' });
+    const cap = { elementary: 1, highSchool: 1, university: 0 };
+    mgr.educateTick(() => true, cap);
+    expect(child.educationProgress).toBeGreaterThan(0); // elementary slot taken
+    expect(teen.educationProgress).toBeGreaterThan(0);  // highSchool slot taken — independent
+  });
+
+  it('enrolled student loses coverage → dropped (progress reset)', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBeGreaterThan(0);
+    mgr.educateTick(() => false, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(0);
+  });
+
+  it('dropped student can re-enroll (progress restarts)', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 8, homeId: '5,5' });
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBeGreaterThan(0);
+    mgr.educateTick(() => false, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBe(0);
+    mgr.educateTick(() => true, UNLIMITED_CAPACITY);
+    expect(c.educationProgress).toBeGreaterThan(0);
   });
 });

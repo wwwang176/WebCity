@@ -1,4 +1,5 @@
-import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage, calculateEmigrationTolerance, EMIGRATION_TOLERANCE } from './types';
+import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage, calculateEmigrationTolerance, EMIGRATION_TOLERANCE, LIFE_STAGE_AGE } from './types';
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 /** Daily death rate per life stage (bathtub curve) */
 export const DAILY_DEATH_RATE: Record<LifeStage, number> = {
@@ -22,19 +23,47 @@ export function getElderlyMultiplier(age: number): number {
   return 1 + (age - 90) * 1.0;
 }
 
-/** Data-driven education progression rules (OCP: add new levels without modifying loop logic) */
+/** Data-driven education progression rules — no age/lifeStage restriction, anyone can learn. */
 export interface EducationRule {
-  lifeStage: LifeStage;
   requiredEducation: EducationLevel;
   nextEducation: EducationLevel;
   schoolKey: 'elementary' | 'highSchool' | 'university';
-  maxAge?: number;
+}
+
+/** Minimum age to enroll in school (babies excluded). */
+export const MIN_SCHOOL_AGE = LIFE_STAGE_AGE.BABY_MAX + 1; // 6
+
+/** Progress scale factor — all progress/thresholds use ×100 for integer math. */
+export const EDUCATION_SCALE = 100;
+
+/** Graduation thresholds (×100 scale, 80% of full life-stage proportion).
+ *  Child slow ticks = value / 100. Adult ≈ value / 33. Senior = value / 20. */
+export const GRADUATION_TICKS: Record<EducationRule['schoolKey'], number> = {
+  elementary: 2400 * EDUCATION_SCALE,  // 240,000 → child 2400, adult ~7273, senior 12000 slow ticks
+  highSchool: 2000 * EDUCATION_SCALE,  // 200,000 → child 2000, adult ~6061, senior 10000 slow ticks
+  university: 1600 * EDUCATION_SCALE,  // 160,000 → child 1600, adult ~4849, senior 8000 slow ticks
+};
+
+/** Base speed points per tick. Younger = faster, older = slower. */
+export function getLearningSpeed(age: number): number {
+  if (age <= LIFE_STAGE_AGE.TEEN_MAX) return 100;  // children & teens: full speed
+  if (age <= LIFE_STAGE_AGE.ADULT_MAX) return 33;  // adults: ~3x slower
+  return 20;                                         // seniors: 5x slower
+}
+
+/** Jitter range for per-tick learning speed (80%~120%) to stagger graduations. */
+export const LEARNING_JITTER = { MIN: 0.8, MAX: 1.2 } as const;
+
+/** Apply jitter to base speed: returns integer speed with 80%~120% random variation. */
+export function jitteredSpeed(baseSpeed: number): number {
+  const jitter = LEARNING_JITTER.MIN + Math.random() * (LEARNING_JITTER.MAX - LEARNING_JITTER.MIN);
+  return Math.round(baseSpeed * jitter);
 }
 
 export const EDUCATION_PROGRESSION: readonly EducationRule[] = [
-  { lifeStage: LifeStage.CHILD, requiredEducation: EducationLevel.NONE, nextEducation: EducationLevel.ELEMENTARY, schoolKey: 'elementary' },
-  { lifeStage: LifeStage.TEEN, requiredEducation: EducationLevel.ELEMENTARY, nextEducation: EducationLevel.HIGH_SCHOOL, schoolKey: 'highSchool' },
-  { lifeStage: LifeStage.ADULT, requiredEducation: EducationLevel.HIGH_SCHOOL, nextEducation: EducationLevel.UNIVERSITY, schoolKey: 'university', maxAge: 25 },
+  { requiredEducation: EducationLevel.NONE, nextEducation: EducationLevel.ELEMENTARY, schoolKey: 'elementary' },
+  { requiredEducation: EducationLevel.ELEMENTARY, nextEducation: EducationLevel.HIGH_SCHOOL, schoolKey: 'highSchool' },
+  { requiredEducation: EducationLevel.HIGH_SCHOOL, nextEducation: EducationLevel.UNIVERSITY, schoolKey: 'university' },
 ];
 
 export class CitizenManager {
@@ -61,6 +90,7 @@ export class CitizenManager {
       unemployedSince: null,
       homelessSince: null,
       emigrationTolerance: calculateEmigrationTolerance(income, education),
+      educationProgress: 0,
       ...overrides,
     };
     // Legacy saves may not have emigrationTolerance — assign fallback
@@ -85,6 +115,21 @@ export class CitizenManager {
 
   getCitizens(): readonly Citizen[] {
     return this.citizens;
+  }
+
+  /** Count currently enrolled students per school type. */
+  getEnrolledCounts(): Record<EducationRule['schoolKey'], number> {
+    const counts: Record<EducationRule['schoolKey'], number> = { elementary: 0, highSchool: 0, university: 0 };
+    for (const c of this.citizens) {
+      if (c.educationProgress <= 0) continue;
+      for (const r of EDUCATION_PROGRESSION) {
+        if (c.education === r.requiredEducation) {
+          counts[r.schoolKey]++;
+          break;
+        }
+      }
+    }
+    return counts;
   }
 
   getAverageHappiness(): number {
@@ -153,15 +198,58 @@ export class CitizenManager {
     return dead;
   }
 
-  educateTick(hasElementary: boolean, hasHighSchool: boolean, hasUniversity: boolean): void {
-    const schools: Record<string, boolean> = { elementary: hasElementary, highSchool: hasHighSchool, university: hasUniversity };
+  /**
+   * Two-phase education tick with capacity limits and graduation time.
+   * Phase 1: advance enrolled students, graduate those who reach the threshold, drop those who lost coverage.
+   * Phase 2: enroll new students up to remaining capacity.
+   */
+  educateTick(
+    isSchoolCovered: (x: number, y: number, schoolKey: EducationRule['schoolKey']) => boolean,
+    capacityBySchoolKey: Record<EducationRule['schoolKey'], number>,
+  ): void {
+    const enrolledCount: Record<EducationRule['schoolKey'], number> = { elementary: 0, highSchool: 0, university: 0 };
+
+    // Phase 1 — advance enrolled students + graduate + drop uncovered
     for (const c of this.citizens) {
-      for (const rule of EDUCATION_PROGRESSION) {
-        if (c.lifeStage === rule.lifeStage && schools[rule.schoolKey] && c.education === rule.requiredEducation) {
-          if (rule.maxAge === undefined || c.age <= rule.maxAge) {
-            c.education = rule.nextEducation;
-          }
-          break;
+      if (c.educationProgress <= 0) continue;
+      const matched = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
+      if (!matched || c.age < MIN_SCHOOL_AGE) {
+        c.educationProgress = 0;
+        continue;
+      }
+      if (!c.homeId) {
+        c.educationProgress = 0;
+        continue;
+      }
+      const pos = parsePosKeyUnsafe(c.homeId);
+      if (!isSchoolCovered(pos.x, pos.y, matched.schoolKey)) {
+        c.educationProgress = 0;
+        continue;
+      }
+      c.educationProgress += jitteredSpeed(getLearningSpeed(c.age));
+      if (c.educationProgress >= GRADUATION_TICKS[matched.schoolKey]) {
+        c.education = matched.nextEducation;
+        c.educationProgress = 0;
+      } else {
+        enrolledCount[matched.schoolKey]++;
+      }
+    }
+
+    // Phase 2 — enroll new students (remaining capacity)
+    const remaining: Record<EducationRule['schoolKey'], number> = {
+      elementary: capacityBySchoolKey.elementary - enrolledCount.elementary,
+      highSchool: capacityBySchoolKey.highSchool - enrolledCount.highSchool,
+      university: capacityBySchoolKey.university - enrolledCount.university,
+    };
+
+    for (const c of this.citizens) {
+      if (!c.homeId || c.educationProgress > 0 || c.age < MIN_SCHOOL_AGE) continue;
+      const rule = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
+      if (rule && remaining[rule.schoolKey] > 0) {
+        const pos = parsePosKeyUnsafe(c.homeId);
+        if (isSchoolCovered(pos.x, pos.y, rule.schoolKey)) {
+          c.educationProgress = jitteredSpeed(getLearningSpeed(c.age));
+          remaining[rule.schoolKey]--;
         }
       }
     }

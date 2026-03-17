@@ -86,6 +86,44 @@ describe('EducationService', () => {
     });
   });
 
+  describe('getTotalCapacity', () => {
+    it('should return 0 when no schools exist', () => {
+      const edu = new EducationService();
+      expect(edu.getTotalCapacity('elementary')).toBe(0);
+      expect(edu.getTotalCapacity('highschool')).toBe(0);
+      expect(edu.getTotalCapacity('university')).toBe(0);
+    });
+
+    it('should return capacity of a single school', () => {
+      const edu = new EducationService();
+      edu.addSchool(5, 5, 'elementary');
+      expect(edu.getTotalCapacity('elementary')).toBe(200); // DEFAULT_CAPACITY
+    });
+
+    it('should sum capacities of same-type schools', () => {
+      const edu = new EducationService();
+      edu.addSchool(5, 5, 'elementary');
+      edu.addSchool(10, 10, 'elementary');
+      expect(edu.getTotalCapacity('elementary')).toBe(400);
+    });
+
+    it('should only count specified type', () => {
+      const edu = new EducationService();
+      edu.addSchool(5, 5, 'elementary');
+      edu.addSchool(10, 10, 'highschool');
+      expect(edu.getTotalCapacity('elementary')).toBe(200);
+      expect(edu.getTotalCapacity('highschool')).toBe(300);
+      expect(edu.getTotalCapacity('university')).toBe(0);
+    });
+
+    it('should return custom capacity correctly', () => {
+      const edu = new EducationService();
+      edu.addSchool(5, 5, 'elementary', undefined, 100);
+      edu.addSchool(10, 10, 'elementary', undefined, 150);
+      expect(edu.getTotalCapacity('elementary')).toBe(250);
+    });
+  });
+
   describe('getCoverage', () => {
     it('should return true for a position within elementary school road coverage', () => {
       const grid = makeCrossRoadGrid(30, 10, 10);

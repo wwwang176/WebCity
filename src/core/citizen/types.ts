@@ -32,6 +32,7 @@ export interface Citizen {
   unemployedSince: number | null; // tick when citizen became unemployed (working-age only)
   homelessSince: number | null;   // tick when citizen became homeless (evicted from building)
   emigrationTolerance: number; // personal happiness threshold below which citizen wants to leave
+  educationProgress: number;   // 0=not enrolled, >0=enrolled (accumulated ticks)
 }
 
 /** Emigration tolerance: income base + education bonus + random jitter */

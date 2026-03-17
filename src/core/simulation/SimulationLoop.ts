@@ -30,6 +30,8 @@ import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
 import { relocationTick } from '../citizen/Relocation';
 import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
+import type { SchoolType } from '../service/EducationService';
+import type { EducationRule } from '../citizen/CitizenManager';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { TransportMode } from '../transport/types';
@@ -120,6 +122,13 @@ export const SIMULATION = {
 
 // clampBuildingLevel re-exported from shared module for backward compatibility
 export { clampBuildingLevel } from '../building/BuildingLevel';
+
+/** Map CitizenManager schoolKey to EducationService SchoolType */
+const SCHOOL_KEY_TO_TYPE: Record<EducationRule['schoolKey'], SchoolType> = {
+  elementary: 'elementary',
+  highSchool: 'highschool',
+  university: 'university',
+};
 
 export class SimulationLoop {
   private state: GameState;
@@ -253,13 +262,17 @@ export class SimulationLoop {
       this.processAbandonmentStress();
     }
 
-    // 4.7 Education: upgrade citizen education based on school availability
+    // 4.7 Education: upgrade citizen education based on school road-coverage
     if (isSlowTick) {
-      const schools = this.state.education.getSchools();
-      const hasElementary = schools.some(s => s.type === 'elementary');
-      const hasHighSchool = schools.some(s => s.type === 'highschool');
-      const hasUniversity = schools.some(s => s.type === 'university');
-      this.state.citizens.educateTick(hasElementary, hasHighSchool, hasUniversity);
+      const capacity = {
+        elementary: this.state.education.getTotalCapacity('elementary'),
+        highSchool: this.state.education.getTotalCapacity('highschool'),
+        university: this.state.education.getTotalCapacity('university'),
+      };
+      this.state.citizens.educateTick((x, y, schoolKey) => {
+        const type = SCHOOL_KEY_TO_TYPE[schoolKey];
+        return this.state.education.getCoverage(x, y, type);
+      }, capacity);
     }
 
     // 5a. Citizens aging (once per game year) — only age, no death

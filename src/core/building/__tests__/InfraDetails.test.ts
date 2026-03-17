@@ -14,7 +14,7 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
     deathCare: { getCemeteries: () => [] },
     power: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
     water: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
-    citizens: { getCitizens: () => [] },
+    citizens: { getCitizens: () => [], getEnrolledCounts: () => ({ elementary: 0, highSchool: 0, university: 0 }) },
     sewage: { getTreatmentPlants: () => [], getUntreated: () => 0 },
     ...overrides,
   };
@@ -59,26 +59,25 @@ describe('getInfraDetails', () => {
         { homeId: '10,11', age: 40, lifeStage: 'ADULT' },  // distance 1, within radius
         { homeId: '50,50', age: 25, lifeStage: 'ADULT' },  // far away
         { homeId: null, age: 20, lifeStage: 'ADULT' },     // homeless
-      ] },
+      ], getEnrolledCounts: () => ({ elementary: 0, highSchool: 0, university: 0 }) },
     });
     const d = getInfraDetails(ctx, 'hospital', 10, 10);
     expect(d).toEqual({ Capacity: 150, Radius: 12, Residents: 2 });
   });
 
-  it('school (elementary): returns type, capacity, radius, and students (CHILD count)', () => {
+  it('school (elementary): returns type, capacity, radius, and enrolled/total students', () => {
     const ctx = makeCtx({
       education: { getSchools: () => [{ x: 2, y: 2, type: 'elementary', capacity: 250, radius: 11 }] },
-      citizens: { getCitizens: () => [
-        { homeId: '1,1', age: 8, lifeStage: 'CHILD' },
-        { homeId: '2,2', age: 10, lifeStage: 'CHILD' },
-        { homeId: '3,3', age: 30, lifeStage: 'ADULT' },
-      ] },
+      citizens: {
+        getCitizens: () => [],
+        getEnrolledCounts: () => ({ elementary: 45, highSchool: 0, university: 0 }),
+      },
     });
     const d = getInfraDetails(ctx, 'school', 2, 2);
-    expect(d).toEqual({ Type: 'Elementary', Capacity: 250, Radius: 11, Students: 2 });
+    expect(d).toEqual({ Type: 'Elementary', Capacity: 250, Radius: 11, Students: '45 / 250' });
   });
 
-  it('school_high: filters by type=highschool, counts TEEN', () => {
+  it('school_high: shows enrolled highSchool students / total highschool capacity', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [
@@ -86,29 +85,27 @@ describe('getInfraDetails', () => {
           { x: 1, y: 1, type: 'highschool', capacity: 350, radius: 13 },
         ],
       },
-      citizens: { getCitizens: () => [
-        { homeId: '1,1', age: 15, lifeStage: 'TEEN' },
-        { homeId: '2,2', age: 8, lifeStage: 'CHILD' },
-      ] },
+      citizens: {
+        getCitizens: () => [],
+        getEnrolledCounts: () => ({ elementary: 0, highSchool: 120, university: 0 }),
+      },
     });
     const d = getInfraDetails(ctx, 'school_high', 1, 1);
-    expect(d).toEqual({ Type: 'High School', Capacity: 350, Radius: 13, Students: 1 });
+    expect(d).toEqual({ Type: 'High School', Capacity: 350, Radius: 13, Students: '120 / 350' });
   });
 
-  it('school_univ: filters by type=university, counts ADULT age<=25', () => {
+  it('school_univ: shows enrolled university students / total university capacity', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [{ x: 7, y: 7, type: 'university', capacity: 600, radius: 16 }],
       },
-      citizens: { getCitizens: () => [
-        { homeId: '1,1', age: 20, lifeStage: 'ADULT' },
-        { homeId: '2,2', age: 25, lifeStage: 'ADULT' },
-        { homeId: '3,3', age: 30, lifeStage: 'ADULT' },  // too old
-        { homeId: '4,4', age: 15, lifeStage: 'TEEN' },
-      ] },
+      citizens: {
+        getCitizens: () => [],
+        getEnrolledCounts: () => ({ elementary: 0, highSchool: 0, university: 88 }),
+      },
     });
     const d = getInfraDetails(ctx, 'school_univ', 7, 7);
-    expect(d).toEqual({ Type: 'University', Capacity: 600, Radius: 16, Students: 2 });
+    expect(d).toEqual({ Type: 'University', Capacity: 600, Radius: 16, Students: '88 / 600' });
   });
 
   it('park: returns radius', () => {

@@ -49,6 +49,7 @@ export interface InfraDetailContext {
   };
   citizens: {
     getCitizens(): readonly { homeId: string | null; age: number; lifeStage: string }[];
+    getEnrolledCounts(): Record<'elementary' | 'highSchool' | 'university', number>;
   };
   sewage: {
     getTreatmentPlants(): readonly { x: number; y: number; capacity: number }[];
@@ -86,18 +87,21 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   school: (ctx, cx, cy) => {
     const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'elementary');
-    const students = ctx.citizens.getCitizens().filter(c => c.lifeStage === 'CHILD').length;
-    return { Type: 'Elementary', Capacity: sc?.capacity ?? 200, Radius: sc?.radius ?? 10, Students: students };
+    const enrolled = ctx.citizens.getEnrolledCounts().elementary;
+    const totalCap = ctx.education.getSchools().filter(s => s.type === 'elementary').reduce((sum, s) => sum + s.capacity, 0);
+    return { Type: 'Elementary', Capacity: sc?.capacity ?? 200, Radius: sc?.radius ?? 10, Students: `${enrolled} / ${totalCap}` };
   },
   school_high: (ctx, cx, cy) => {
     const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'highschool');
-    const students = ctx.citizens.getCitizens().filter(c => c.lifeStage === 'TEEN').length;
-    return { Type: 'High School', Capacity: sc?.capacity ?? 300, Radius: sc?.radius ?? 12, Students: students };
+    const enrolled = ctx.citizens.getEnrolledCounts().highSchool;
+    const totalCap = ctx.education.getSchools().filter(s => s.type === 'highschool').reduce((sum, s) => sum + s.capacity, 0);
+    return { Type: 'High School', Capacity: sc?.capacity ?? 300, Radius: sc?.radius ?? 12, Students: `${enrolled} / ${totalCap}` };
   },
   school_univ: (ctx, cx, cy) => {
     const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === 'university');
-    const students = ctx.citizens.getCitizens().filter(c => c.lifeStage === 'ADULT' && c.age <= 25).length;
-    return { Type: 'University', Capacity: sc?.capacity ?? 500, Radius: sc?.radius ?? 15, Students: students };
+    const enrolled = ctx.citizens.getEnrolledCounts().university;
+    const totalCap = ctx.education.getSchools().filter(s => s.type === 'university').reduce((sum, s) => sum + s.capacity, 0);
+    return { Type: 'University', Capacity: sc?.capacity ?? 500, Radius: sc?.radius ?? 15, Students: `${enrolled} / ${totalCap}` };
   },
   park: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.parks.getParks(), cx, cy);

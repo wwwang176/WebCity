@@ -133,6 +133,11 @@ export class EducationService {
     return 'none';
   }
 
+  /** Total student capacity across all schools of a given type. */
+  getTotalCapacity(type: SchoolType): number {
+    return this.schools.filter(s => s.type === type).reduce((sum, s) => sum + s.capacity, 0);
+  }
+
   getSchools(): readonly School[] {
     return this.schools;
   }
