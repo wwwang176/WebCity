@@ -5,7 +5,7 @@ import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue, checkParkProximity } from '../economy/LandValue';
-import { ZoneType, TerrainType, isResidentialZone, isCommercialZone } from '../grid/types';
+import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI } from '../grid/types';
 import { RoadType } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
@@ -18,7 +18,8 @@ import { ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { getGridPollutionSources } from '../environment/GridPollutionSources';
-import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
+import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
+import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
 import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
@@ -128,9 +129,8 @@ export class SimulationLoop {
   laneGraph: LaneGraph = new LaneGraph();
   private laneGraphDirty = true;
 
-  // Building index: "x,y" position → buildingId (type). Rebuilt once per day.
+  // Building index: active zone buildings (excludes ABANDONED/BURNED). Rebuilt every slow tick.
   private buildingPositions: { pos: string; x: number; y: number; buildingId: number }[] = [];
-  private buildingIndexDay = -1; // last day the index was rebuilt
 
   // Track which citizens have already commuted this rush period
   private morningCommuters = new Set<number>(); // citizen ids that have spawned morning commute
@@ -154,6 +154,9 @@ export class SimulationLoop {
   /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
   occupancyRatios: Map<string, number> = new Map();
 
+  /** Per-building abandonment stress (0–100). Key is "x,y". */
+  abandonmentStress: Map<string, number> = new Map();
+
   /** Called when building state changes (growth/demolish/burn/upgrade) */
   onBuildingsChanged?: () => void;
   /** Called when terrain-related state changes (pollution/land value) */
@@ -162,10 +165,14 @@ export class SimulationLoop {
   /** Fine-grained building callbacks for incremental rendering */
   onBuildingAdded?: (x: number, y: number, zoneType: number, level: number) => void;
   onBuildingRemoved?: (x: number, y: number) => void;
-  onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean) => void;
+  onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned?: boolean) => void;
 
   constructor(state: GameState) {
     this.state = state;
+    // Auto-clear commute cache when citizens are evicted from any building
+    this.state.citizens.onEvicted = (ids) => {
+      for (const id of ids) this.commuteCache.remove(id);
+    };
   }
 
   tick(): void {
@@ -238,6 +245,11 @@ export class SimulationLoop {
     // 4.5. Building upgrades/downgrades (every 6 ticks)
     if (isSlowTick) {
       this.tryBuildingUpgrades();
+    }
+
+    // 4.6. Abandonment stress (every 6 ticks)
+    if (isSlowTick) {
+      this.processAbandonmentStress();
     }
 
     // 4.7 Education: upgrade citizen education based on school availability
@@ -394,7 +406,6 @@ export class SimulationLoop {
 
       // Burned buildings: developer must demolish ruins first (extra cost/time)
       if (cell.reserved === BURNED && isZoneBuilding(cell.buildingId)) {
-        // ~2% chance per attempt to clear the ruins (developer demolition takes time)
         if (Math.random() < SIMULATION.BURNED_CLEARANCE_CHANCE) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
           changed = true;
@@ -403,18 +414,40 @@ export class SimulationLoop {
         continue;
       }
 
+      // Abandoned: only demolish if growth conditions are met, then build
+      if (cell.reserved === ABANDONED && isZoneBuilding(cell.buildingId)) {
+        conditions.hasPower = this.state.power.isPowered(x, y);
+        conditions.hasWater = this.state.water.isSupplied(x, y);
+        const rciType = zoneToRCI(cell.zoneType);
+        if (!conditions.hasPower || !conditions.hasWater || !rciType || conditions.rciDemand[rciType] <= 0) continue;
+        const district = this.state.districts.getDistrictAt(x, y);
+        if (district && !this.state.policies.canBuildInDistrict(district.id, cell.zoneType)) continue;
+        // Conditions met: demolish abandoned building, then grow
+        grid.setCell(x, y, { buildingId: 0, reserved: 0 });
+        this.abandonmentStress.delete(`${x},${y}`);
+        this.onBuildingRemoved?.(x, y);
+        if (growth.tryGrow(x, y, conditions)) {
+          const grown = grid.getCell(x, y);
+          if (grown) {
+            const level = getBuildingType(grown.buildingId)?.level ?? 1;
+            this.onBuildingAdded?.(x, y, cell.zoneType, level);
+          }
+        }
+        changed = true;
+        continue;
+      }
+
       if (cell.buildingId === 0) {
         // Check district policy restrictions
         const district = this.state.districts.getDistrictAt(x, y);
         if (district && !this.state.policies.canBuildInDistrict(district.id, cell.zoneType)) {
-          continue; // Policy blocks this zone type in this district
+          continue;
         }
         // Check power/water for this specific cell
         conditions.hasPower = this.state.power.isPowered(x, y);
         conditions.hasWater = this.state.water.isSupplied(x, y);
         if (growth.tryGrow(x, y, conditions)) {
           changed = true;
-          // Read back the grown cell to get level info
           const grown = grid.getCell(x, y);
           if (grown) {
             const level = getBuildingType(grown.buildingId)?.level ?? 1;
@@ -710,20 +743,104 @@ export class SimulationLoop {
   }
 
   /**
-   * Rebuild the building position list. Called once per game day.
-   * Stores every building's grid position so each is uniquely addressable.
+   * Process abandonment stress for all active buildings.
+   * Scans grid directly (decoupled from buildingPositions used by housing assignment).
+   * Each building has a deterministic resilience factor (0.5–1.5) based on
+   * position hash, so buildings abandon at different rates under same conditions.
+   */
+  private processAbandonmentStress(): void {
+    const grid = this.state.grid;
+    const businessTax = this.state.taxRates.business ?? 9;
+    const resTax = this.state.taxRates.residential ?? 9;
+    const baseCrime = this.getAvgCrime();
+    let changed = false;
+
+    grid.forEachCell((cell, x, y) => {
+      if (!isZoneBuilding(cell.buildingId)) return;
+      if (cell.reserved === ABANDONED || cell.reserved === BURNED) return;
+
+      const pollution = this.state.pollution.getPollutionAt(x, y);
+      const building = getBuildingType(cell.buildingId);
+      if (!building) return;
+
+      const posKey = toPosKey(x, y);
+
+      // Per-cell crime: base crime adjusted by local police coverage
+      const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
+
+      // Continuous service score: each service contributes (1 - costRatio), power/water weight 2
+      const svc = (ratio: number) => ratio < 0 ? 0 : 1 - ratio; // -1=uncovered→0, 0=nearest→1, 1=farthest→0
+      const serviceScore =
+        (this.state.power.isPowered(x, y) ? 2 : 0) +
+        (this.state.water.isSupplied(x, y) ? 2 : 0) +
+        svc(this.state.police.getCostRatio(x, y)) +
+        svc(this.state.fire.getCostRatio(x, y)) +
+        svc(this.state.garbage.getCostRatio(x, y)) +
+        svc(this.state.health.getCostRatio(x, y)) +
+        svc(this.state.education.getCostRatio(x, y)) +
+        svc(this.state.deathCare.getCostRatio(x, y));
+
+      const conditions: AbandonmentConditions = {
+        businessTaxRate: businessTax,
+        residentialTaxRate: resTax,
+        isPowered: this.state.power.isPowered(x, y),
+        isWatered: this.state.water.isSupplied(x, y),
+        crimeRate: localCrime,
+        pollution: pollution.ground,
+        buildingLevel: building.level,
+        serviceScore,
+      };
+
+      const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);
+
+      // Per-building resilience: deterministic hash → 0.5~1.5 multiplier
+      // Low resilience buildings break first, high resilience ones hold longer
+      const resilience = 0.5 + ((x * 7919 + y * 104729) % 1000) / 1000;
+      const adjustedDelta = totalDelta > 0 ? totalDelta / resilience : totalDelta;
+
+      const current = this.abandonmentStress.get(posKey) ?? 0;
+      const next = Math.max(0, Math.min(100, current + adjustedDelta));
+
+      if (next === 0) {
+        this.abandonmentStress.delete(posKey);
+      } else {
+        this.abandonmentStress.set(posKey, next);
+      }
+
+      // Stress ≥ 100: abandon
+      if (next >= ABANDONMENT.STRESS_ABANDON) {
+        grid.setCell(x, y, { reserved: ABANDONED });
+        this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
+        changed = true;
+        this.onBuildingUpdated?.(x, y, cell.zoneType, building.level, false, true);
+      }
+    });
+
+    if (changed) this.onBuildingsChanged?.();
+  }
+
+  /** Get the abandonment stress for a building at (x, y). */
+  getAbandonmentStress(x: number, y: number): number {
+    return this.abandonmentStress.get(`${x},${y}`) ?? 0;
+  }
+
+  /** Clear abandonment stress for a building (e.g., after demolish). */
+  clearBuildingState(x: number, y: number): void {
+    this.abandonmentStress.delete(`${x},${y}`);
+  }
+
+  /**
+   * Rebuild the building position list.
+   * Scans all active zone buildings (excludes ABANDONED/BURNED).
+   * Called every slow tick — 3600 cells is negligible, no caching needed.
    */
   private rebuildBuildingIndex(): void {
-    const currentDay = this.state.clock.getDay();
-    if (this.buildingIndexDay === currentDay && this.buildingPositions.length > 0) return;
-
     this.buildingPositions = [];
     this.state.grid.forEachCell((cell, x, y) => {
-      if (isZoneBuilding(cell.buildingId)) {
+      if (isZoneBuilding(cell.buildingId) && cell.reserved !== ABANDONED && cell.reserved !== BURNED) {
         this.buildingPositions.push({ pos: toPosKey(x, y), x, y, buildingId: cell.buildingId });
       }
     });
-    this.buildingIndexDay = currentDay;
   }
 
   /**
@@ -758,6 +875,14 @@ export class SimulationLoop {
 
     // Update occupancy ratios for rendering
     this.occupancyRatios = computeOccupancyRatios(citizens, this.buildingPositions);
+
+    // Force occupancy to 0 for abandoned/burned buildings (windows must be dark)
+    for (const bp of this.buildingPositions) {
+      const cell = this.state.grid.getCell(bp.x, bp.y);
+      if (cell && (cell.reserved === ABANDONED || cell.reserved === BURNED)) {
+        this.occupancyRatios.set(bp.pos, 0);
+      }
+    }
   }
 
   /**
@@ -861,10 +986,6 @@ export class SimulationLoop {
     }
   }
 
-  /** Remove commute cache entries for evicted/removed citizens. */
-  removeCitizenCommutes(citizenIds: number[]): void {
-    for (const id of citizenIds) this.commuteCache.remove(id);
-  }
 
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;

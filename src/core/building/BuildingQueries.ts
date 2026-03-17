@@ -1,7 +1,7 @@
 import type { ZoneType } from '../grid/types';
 import { isResidentialZone, isWorkplaceZone } from '../grid/types';
 import { getBuildingType, type BuildingType } from './types';
-import { MULTI_CELL_OCCUPIED, BURNED } from './InfraPlacement';
+import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from './InfraPlacement';
 
 interface GridLike {
   forEachCell(callback: (cell: { buildingId: number; zoneType: number }, x: number, y: number) => void): void;
@@ -36,7 +36,7 @@ export function sumBuildingCapacity(
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
-      if (cell && cell.buildingId > 0 && zonePredicate(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== MULTI_CELL_OCCUPIED) {
+      if (cell && cell.buildingId > 0 && zonePredicate(cell.zoneType as ZoneType) && cell.reserved !== BURNED && cell.reserved !== ABANDONED && cell.reserved !== MULTI_CELL_OCCUPIED) {
         const bt = getBuildingType(cell.buildingId);
         if (bt) total += getCapacity(bt);
       }

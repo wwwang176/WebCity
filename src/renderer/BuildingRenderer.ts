@@ -5,7 +5,7 @@ import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
-import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED } from '../core/building/InfraPlacement';
+import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
 
 // ===== Deterministic pseudo-random based on position =====
 function hash(x: number, y: number): number {
@@ -307,7 +307,8 @@ void main() {
     }
     bool onWall = abs(n.y) < 0.3 && y > 0.06;
     // Occupancy-adjusted lit threshold: fewer lit windows when building is less occupied
-    float occ = clamp(vOccupancy, 0.0, 1.0);
+    // occ=0 → no windows lit at all (abandoned/burned/empty buildings)
+    float occ = vOccupancy < 0.01 ? -1.0 : clamp(vOccupancy, 0.0, 1.0);
 
     // ---- RESIDENTIAL LOW: painted siding, no window grid ----
     if (vZoneCat < 0.1) {
@@ -955,7 +956,7 @@ export class BuildingRenderer {
   // ─── Incremental building operations ───────────────────────────
 
   /** Add a single zone building instance. */
-  addBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean): void {
+  addBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned = false): void {
     const variants = VARIANTS[zoneType];
     if (!variants || variants.length === 0) return;
 
@@ -967,7 +968,7 @@ export class BuildingRenderer {
     const idx = this.variantCounts.get(key)!;
     if (idx >= this.maxPerVariant) return;
 
-    this.setInstanceData(mesh, idx, x, y, zoneType, level, burned);
+    this.setInstanceData(mesh, idx, x, y, zoneType, level, burned, abandoned);
 
     this.variantCounts.set(key, idx + 1);
     mesh.count = idx + 1;
@@ -1028,14 +1029,14 @@ export class BuildingRenderer {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
 
-  /** Update an existing building's level or burned state in-place. */
-  updateBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean): void {
+  /** Update an existing building's level or burned/abandoned state in-place. */
+  updateBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned = false): void {
     const posKey = `${x},${y}`;
     const entry = this.positionToInstance.get(posKey);
     if (!entry) return;
 
     const mesh = this.variantMeshes.get(entry.key)!;
-    this.setInstanceData(mesh, entry.idx, x, y, zoneType, level, burned);
+    this.setInstanceData(mesh, entry.idx, x, y, zoneType, level, burned, abandoned);
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
@@ -1044,7 +1045,7 @@ export class BuildingRenderer {
   private setInstanceData(
     mesh: THREE.InstancedMesh, idx: number,
     x: number, y: number, zoneType: number,
-    level: number, burned: boolean,
+    level: number, burned: boolean, abandoned = false,
   ): void {
     const h = hash(x, y);
     const h2 = hash(x + 100, y + 100);
@@ -1081,6 +1082,15 @@ export class BuildingRenderer {
       this._color.setHSL(hsl.h, hsl.s, hsl.l);
     }
     mesh.setColorAt(idx, this._color);
+
+    // Force occupancy to 0 for burned/abandoned buildings (all windows dark)
+    if (burned || abandoned) {
+      const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
+      if (occAttr) {
+        (occAttr.array as Float32Array)[idx] = 0;
+        occAttr.needsUpdate = true;
+      }
+    }
   }
 
   // ─── Full rebuild (init / save load) ───────────────────────────
@@ -1118,8 +1128,9 @@ export class BuildingRenderer {
           if (isZoneBuilding(cell.buildingId)) {
             const level = getBuildingType(cell.buildingId)?.level ?? 1;
             const burned = cell.reserved === BURNED;
-            this.addBuilding(x, y, cell.zoneType, level, burned);
-            if (!burned) lightPositions.push({ x, y });
+            const abandoned = cell.reserved === ABANDONED;
+            this.addBuilding(x, y, cell.zoneType, level, burned, abandoned);
+            if (!burned && !abandoned) lightPositions.push({ x, y });
           } else if (cell.buildingId === 0) {
             if (!emptyZonesByType.has(cell.zoneType)) emptyZonesByType.set(cell.zoneType, []);
             emptyZonesByType.get(cell.zoneType)!.push({ x, y });

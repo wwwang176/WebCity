@@ -82,6 +82,59 @@ function ServiceCoverage(props: { services: ServiceStatus }) {
   );
 }
 
+const WARNING_STYLE_YELLOW = {
+  'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+  background: 'rgba(255,152,0,0.15)', color: '#ff9800',
+  'font-size': '11px', 'font-weight': '600',
+} as const;
+
+const WARNING_STYLE_RED = {
+  'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+  background: 'rgba(239,83,80,0.15)', color: '#ef5350',
+  'font-size': '11px', 'font-weight': '600',
+} as const;
+
+type WarnLevel = 'red' | 'yellow';
+interface Warning { level: WarnLevel; text: string }
+
+function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
+  if (sel.isAbandoned || sel.abandonmentStress <= 0) return [];
+
+  const warnings: Warning[] = [];
+  const game = getGame();
+  const isRes = sel.zoneType === ZoneType.RESIDENTIAL_LOW || sel.zoneType === ZoneType.RESIDENTIAL_HIGH;
+  const taxRate = isRes ? game.getState().taxRates.residential : game.getState().taxRates.business;
+  const over = taxRate - (isRes ? 12 : 9);
+
+  // Tax
+  if (over >= 8) warnings.push({ level: 'red', text: 'Tax rate unbearable' });
+  else if (over >= 4) warnings.push({ level: 'red', text: 'Tax rate too high' });
+  else if (over > 0) warnings.push({ level: 'yellow', text: 'Tax rate slightly high' });
+
+  // Pollution (industrial immune)
+  if (sel.pollution > 70 && sel.zoneType !== ZoneType.INDUSTRIAL) {
+    warnings.push({ level: 'red', text: 'Severe pollution' });
+  } else if (sel.pollution > 40 && sel.zoneType !== ZoneType.INDUSTRIAL) {
+    warnings.push({ level: 'yellow', text: 'High pollution' });
+  }
+
+
+
+  // Sort: red first, then yellow
+  warnings.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
+  return warnings;
+}
+
+function AbandonmentWarnings(props: { sel: SelectedZoneBuilding }) {
+  const warnings = () => collectWarnings(props.sel);
+
+  return (
+    <For each={warnings()}>
+      {(w) => <div style={w.level === 'red' ? WARNING_STYLE_RED : WARNING_STYLE_YELLOW}>{w.text}</div>}
+    </For>
+  );
+}
+
 function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   const [selectedCitizen, setSelectedCitizen] = createSignal<number | null>(null);
 
@@ -138,6 +191,16 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           No Water
         </div>
       </Show>
+      <Show when={props.sel.isAbandoned}>
+        <div style={{
+          'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+          background: 'rgba(239,83,80,0.2)', color: '#ef5350',
+          'font-size': '11px', 'font-weight': '700',
+        }}>
+          ABANDONED
+        </div>
+      </Show>
+      <AbandonmentWarnings sel={props.sel} />
       <ServiceCoverage services={props.sel.services} />
 
       <div id="bp-citizen-list">

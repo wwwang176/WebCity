@@ -23,6 +23,9 @@ function hasAdjacentWater(grid: Grid, x: number, y: number): boolean {
 /** Reserved value for secondary cells of multi-cell buildings. */
 export const MULTI_CELL_OCCUPIED = 4;
 
+/** Reserved value for abandoned buildings. */
+export const ABANDONED = 1;
+
 /** Reserved value for burned/charred buildings. */
 export const BURNED = 3;
 
