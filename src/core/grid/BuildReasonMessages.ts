@@ -16,6 +16,7 @@ export const BUILD_REASON_MESSAGES: Record<string, string> = {
   NEED_ADJACENT_WATER: 'Ferry dock must be built next to water',
   AIRPORT_OUT_OF_BOUNDS: 'Airport area is out of bounds',
   AIRPORT_AREA_OCCUPIED: 'Airport area is not fully clear',
+  NOT_ADJACENT_TO_ROAD: 'Must be built adjacent to a road',
 };
 
 /** Get a user-friendly message for a build failure reason, falling back to the raw reason. */

@@ -44,7 +44,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
 
   addFacility(x: number, y: number, capacity?: number): string {
     const id = this.generateId();
-    this.facilities.push({
+    this.pushFacility({
       id,
       x,
       y,
@@ -61,6 +61,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
       // Spill remaining load into overflow
       this.overflow += facility.currentLoad;
       this.facilities.splice(idx, 1);
+      this.connectedFacilityIds.delete(id);
     }
   }
 
@@ -68,19 +69,21 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     // 1. Produce garbage based on population
     const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);
 
-    // 2. Burn (incinerate) a fraction of current load at each facility
+    // 2. Burn (incinerate) a fraction of current load at connected facilities only
     for (const f of this.facilities) {
+      if (!this.connectedFacilityIds.has(f.id)) continue;
       if (f.currentLoad > 0) {
         const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.BURN_RATE));
         f.currentLoad = Math.max(0, f.currentLoad - burned);
       }
     }
 
-    // 3. Distribute new garbage across facilities with remaining capacity
+    // 3. Distribute new garbage across connected facilities with remaining capacity
     let remaining = produced + this.overflow;
     this.overflow = 0;
 
     for (const f of this.facilities) {
+      if (!this.connectedFacilityIds.has(f.id)) continue;
       if (remaining <= 0) break;
       const space = f.capacity - f.currentLoad;
       if (space > 0) {

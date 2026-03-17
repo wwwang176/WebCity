@@ -19,6 +19,7 @@ interface SewageJSON {
 }
 
 import type { PollutionSource } from '../environment/Pollution';
+import { isFootprintAdjacentToRoad, type ReadableGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 
 /** Sewage system configuration constants */
@@ -36,6 +37,7 @@ export const SEWAGE = {
 export class SewageService {
   private outlets: SewageOutlet[] = [];
   private treatmentPlants: TreatmentPlant[] = [];
+  private connectedPlantIds = new Set<string>();
   private untreatedSewage = 0;
   private nextId = 1;
 
@@ -48,6 +50,7 @@ export class SewageService {
   addTreatmentPlant(x: number, y: number, capacity = 200): string {
     const id = `plant-${this.nextId++}`;
     this.treatmentPlants.push({ id, x, y, capacity });
+    this.connectedPlantIds.add(id);
     return id;
   }
 
@@ -56,6 +59,7 @@ export class SewageService {
   }
 
   removeTreatmentPlant(id: string): boolean {
+    this.connectedPlantIds.delete(id);
     return removeById(this.treatmentPlants, id);
   }
 
@@ -65,15 +69,34 @@ export class SewageService {
     this.untreatedSewage += produced;
   }
 
+  /** Recompute which treatment plants are adjacent to at least one road cell. */
+  updateConnectedPlants(grid: ReadableGrid): void {
+    this.connectedPlantIds.clear();
+    for (const p of this.treatmentPlants) {
+      if (isFootprintAdjacentToRoad(grid, p.x, p.y, 2, 2)) {
+        this.connectedPlantIds.add(p.id);
+      }
+    }
+  }
+
   /**
-   * Full tick: produce sewage from population, then treat as much as capacity allows.
+   * Full tick: produce sewage from population, then treat as much as connected capacity allows.
    * Resets untreated count each tick before producing new sewage.
    */
   tick(population: number): void {
     this.untreatedSewage = 0;
     const produced = Math.floor(population / SEWAGE.POP_PER_SEWAGE);
-    const totalCapacity = this.getTreatmentCapacity();
-    this.untreatedSewage = Math.max(0, produced - totalCapacity);
+    const connectedCapacity = this.getConnectedTreatmentCapacity();
+    this.untreatedSewage = Math.max(0, produced - connectedCapacity);
+  }
+
+  /** Treatment capacity from connected plants only. */
+  private getConnectedTreatmentCapacity(): number {
+    let cap = 0;
+    for (const p of this.treatmentPlants) {
+      if (this.connectedPlantIds.has(p.id)) cap += p.capacity;
+    }
+    return cap;
   }
 
   getUntreated(): number {
@@ -125,6 +148,7 @@ export class SewageService {
     const svc = new SewageService();
     svc.outlets = json.outlets.map(o => ({ ...o }));
     svc.treatmentPlants = json.treatmentPlants.map(p => ({ ...p }));
+    for (const p of svc.treatmentPlants) svc.connectedPlantIds.add(p.id);
     svc.untreatedSewage = json.untreatedSewage;
     svc.nextId = json.nextId;
     return svc;

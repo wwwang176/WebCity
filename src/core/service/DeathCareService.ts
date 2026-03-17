@@ -39,7 +39,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
 
   addCemetery(x: number, y: number, capacity = 500, processRate = 5): string {
     const id = this.generateId();
-    this.facilities.push({ id, x, y, capacity, used: 0, processRate, recentDaily: new Array(30).fill(0), recentIndex: 0, todayCremated: 0 });
+    this.pushFacility({ id, x, y, capacity, used: 0, processRate, recentDaily: new Array(30).fill(0), recentIndex: 0, todayCremated: 0 });
     return id;
   }
 
@@ -55,6 +55,9 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     if (this.pendingDeaths <= 0 && this.facilities.every(c => c.used === 0)) return;
 
     for (const cem of this.facilities) {
+      // Skip facilities not connected to road
+      if (!this.connectedFacilityIds.has(cem.id)) continue;
+
       let budget = cem.processRate;
 
       // Phase 1: Cremate pending deaths directly

@@ -1,4 +1,4 @@
-import { isWithinEuclideanRadius } from '../grid/GridHelpers';
+import { isFootprintAdjacentToRoad, isWithinEuclideanRadius, type ReadableGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
 
@@ -21,15 +21,18 @@ export const PARK = {
 
 export class ParkService {
   private parks: Park[] = [];
+  private connectedParkIds = new Set<string>();
   private nextId = 1;
 
   addPark(x: number, y: number, radius = 5): string {
     const id = `park-${this.nextId++}`;
     this.parks.push({ id, x, y, radius });
+    this.connectedParkIds.add(id);
     return id;
   }
 
   removePark(id: string): void {
+    this.connectedParkIds.delete(id);
     removeById(this.parks, id);
   }
 
@@ -38,7 +41,7 @@ export class ParkService {
   }
 
   getCoverage(x: number, y: number): boolean {
-    return this.parks.some(p => this.isInRange(p, x, y));
+    return this.parks.some(p => this.connectedParkIds.has(p.id) && this.isInRange(p, x, y));
   }
 
   getLandValueBonus(x: number, y: number): number {
@@ -59,6 +62,16 @@ export class ParkService {
     return Math.min(count * PARK.HAPPINESS_PER_PARK, PARK.HAPPINESS_CAP);
   }
 
+  /** Recompute which parks are adjacent to at least one road cell. */
+  updateConnectedParks(grid: ReadableGrid): void {
+    this.connectedParkIds.clear();
+    for (const p of this.parks) {
+      if (isFootprintAdjacentToRoad(grid, p.x, p.y, 1, 1)) {
+        this.connectedParkIds.add(p.id);
+      }
+    }
+  }
+
   tick(): void {
     // Placeholder for future park maintenance / decay logic
   }
@@ -75,6 +88,7 @@ export class ParkService {
     const ps = new ParkService();
     for (const p of data) {
       ps.parks.push({ ...p });
+      ps.connectedParkIds.add(p.id);
     }
     ps.nextId = recoverNextId(ps.parks, 'park-');
     return ps;
@@ -87,6 +101,7 @@ export class ParkService {
   private countCoveringParks(x: number, y: number): number {
     let count = 0;
     for (const p of this.parks) {
+      if (!this.connectedParkIds.has(p.id)) continue;
       if (this.isInRange(p, x, y)) count++;
     }
     return count;

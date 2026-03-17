@@ -757,6 +757,8 @@ export class Game {
       case 'school_high':
       case 'school_univ': this.state.education.recalculateCoverage(grid); break;
       case 'cemetery': this.state.deathCare.recalculateCoverage(grid); break;
+      case 'park': this.state.parks.updateConnectedParks(grid); break;
+      case 'sewage': this.state.sewage.updateConnectedPlants(grid); break;
     }
   }
 
@@ -769,6 +771,8 @@ export class Game {
     this.state.health.recalculateCoverage(grid);
     this.state.education.recalculateCoverage(grid);
     this.state.deathCare.recalculateCoverage(grid);
+    this.state.parks.updateConnectedParks(grid);
+    this.state.sewage.updateConnectedPlants(grid);
   }
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {

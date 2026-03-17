@@ -141,6 +141,31 @@ export function getLShapedPath(from: { x: number; y: number }, to: { x: number; 
   return cells;
 }
 
+/** Check if a footprint (w×h starting at x,y) has any adjacent road cell outside the footprint. */
+export function isFootprintAdjacentToRoad(
+  grid: ReadableGrid,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): boolean {
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      const cx = x + dx;
+      const cy = y + dy;
+      for (const [ndx, ndy] of FOUR_NEIGHBORS) {
+        const nx = cx + ndx!;
+        const ny = cy + ndy!;
+        // Skip if neighbor is within footprint
+        if (nx >= x && nx < x + w && ny >= y && ny < y + h) continue;
+        const cell = grid.getCell(nx, ny);
+        if (cell && cell.roadType !== 0) return true;
+      }
+    }
+  }
+  return false;
+}
+
 /** Find the cell itself or an adjacent road cell. Returns null if none found. */
 export function findAdjacentRoad(
   grid: ReadableGrid,

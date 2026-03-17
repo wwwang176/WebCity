@@ -32,7 +32,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
 
   addHospital(x: number, y: number, radius = 12, capacity = 100): string {
     const id = this.generateId();
-    this.facilities.push({ id, x, y, radius, capacity });
+    this.pushFacility({ id, x, y, radius, capacity });
     return id;
   }
 
@@ -67,7 +67,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
     for (const h of json.hospitals) {
       service.facilities.push({ ...h });
     }
-    service.restoreNextId();
+    service.restoreNextId(); // also marks facilities connected
     return service;
   }
 }

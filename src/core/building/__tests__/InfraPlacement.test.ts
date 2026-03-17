@@ -22,6 +22,11 @@ function makeGrid(w = 20, h = 20): Grid {
   return new Grid(w, h);
 }
 
+/** Place a road adjacent to position (x, y) so infrastructure can be placed. */
+function placeAdjacentRoad(grid: Grid, x: number, y: number): void {
+  grid.setCell(x - 1, y, { roadType: 1 });
+}
+
 function expectFail(result: PlaceResult, reason: string): void {
   expect(result.ok).toBe(false);
   if (!result.ok) expect(result.reason).toBe(reason);
@@ -29,21 +34,42 @@ function expectFail(result: PlaceResult, reason: string): void {
 
 describe('InfraPlacement', () => {
   describe('canPlaceInfra', () => {
-    it('should allow placing 1x1 park on empty tile', () => {
+    it('should allow placing 1x1 park on empty tile with adjacent road', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
       const result = canPlaceInfra(grid, 5, 5, 'park', 0);
       expect(result.ok).toBe(true);
     });
 
-    it('should allow placing 2x2 police on empty tiles', () => {
+    it('should allow placing 2x2 police on empty tiles with adjacent road', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
       const result = canPlaceInfra(grid, 5, 5, 'police', 0);
       expect(result.ok).toBe(true);
     });
 
-    it('should allow placing 3x3 university on empty tiles', () => {
+    it('should allow placing 3x3 university on empty tiles with adjacent road', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
       const result = canPlaceInfra(grid, 5, 5, 'school_univ', 0);
+      expect(result.ok).toBe(true);
+    });
+
+    it('should reject if no adjacent road', () => {
+      const grid = makeGrid();
+      expectFail(canPlaceInfra(grid, 5, 5, 'park', 0), 'NOT_ADJACENT_TO_ROAD');
+    });
+
+    it('should reject 2x2 police if no adjacent road', () => {
+      const grid = makeGrid();
+      expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'NOT_ADJACENT_TO_ROAD');
+    });
+
+    it('should allow if road is adjacent to any cell of footprint', () => {
+      const grid = makeGrid();
+      // Road adjacent to bottom-right cell of 2x2
+      grid.setCell(7, 6, { roadType: 1 });
+      const result = canPlaceInfra(grid, 5, 5, 'police', 0);
       expect(result.ok).toBe(true);
     });
 
@@ -76,38 +102,44 @@ describe('InfraPlacement', () => {
       expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'TILE_OCCUPIED');
     });
 
-    it('should allow train_station on a tile with rail track', () => {
+    it('should allow train_station on a tile with rail track and adjacent road', () => {
       const grid = makeGrid();
       grid.setCell(5, 5, { railType: 1 });
+      placeAdjacentRoad(grid, 5, 5);
       const result = canPlaceInfra(grid, 5, 5, 'train_station', 0);
       expect(result.ok).toBe(true);
     });
 
     it('should reject train_station on a tile without rail track', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
       expectFail(canPlaceInfra(grid, 5, 5, 'train_station', 0), 'NEED_RAIL_TRACK');
     });
 
-    it('should allow ferry_dock next to water', () => {
+    it('should allow ferry_dock next to water with adjacent road', () => {
       const grid = makeGrid();
       grid.setCell(6, 5, { terrainType: TerrainType.WATER });
+      placeAdjacentRoad(grid, 5, 5);
       const result = canPlaceInfra(grid, 5, 5, 'ferry_dock', 0);
       expect(result.ok).toBe(true);
     });
 
     it('should reject ferry_dock with no adjacent water', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
       expectFail(canPlaceInfra(grid, 5, 5, 'ferry_dock', 0), 'NEED_ADJACENT_WATER');
     });
 
     it('should handle 2x3 hospital with rotation 0 (occupies 2 wide, 3 tall)', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
       const result = canPlaceInfra(grid, 5, 5, 'hospital', 0);
       expect(result.ok).toBe(true);
     });
 
     it('should handle 2x3 hospital with rotation 90 (occupies 3 wide, 2 tall)', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
       const result = canPlaceInfra(grid, 5, 5, 'hospital', 90);
       expect(result.ok).toBe(true);
     });
@@ -117,9 +149,9 @@ describe('InfraPlacement', () => {
       expectFail(canPlaceInfra(grid, 18, 5, 'hospital', 90), 'OUT_OF_BOUNDS');
     });
 
-    it('should allow water plant if any tile has groundwater', () => {
+    it('should allow water plant if any tile has groundwater and adjacent road', () => {
       const grid = makeGrid();
-      grid.setCell(6, 5, { terrainType: TerrainType.WATER });
+      placeAdjacentRoad(grid, 4, 4);
       const result = canPlaceInfra(grid, 4, 4, 'water', 0, (x: number, y: number) => {
         return Math.abs(x - 6) + Math.abs(y - 5) <= 3 ? 1 : 0;
       });
@@ -128,6 +160,7 @@ describe('InfraPlacement', () => {
 
     it('should reject water plant if no tile has groundwater', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 5, 5);
       expectFail(canPlaceInfra(grid, 5, 5, 'water', 0, () => 0), 'NO_GROUNDWATER');
     });
   });
@@ -322,6 +355,7 @@ describe('InfraPlacement', () => {
 
     it('should reject 3x3 placement when partially occupied', () => {
       const grid = makeGrid();
+      placeAdjacentRoad(grid, 3, 3);
       grid.setCell(4, 4, { buildingId: 1 });
       expectFail(canPlaceInfra(grid, 3, 3, 'school_univ', 0), 'TILE_OCCUPIED');
     });

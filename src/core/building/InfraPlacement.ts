@@ -1,4 +1,5 @@
 import { Grid } from '../grid/Grid';
+import { isFootprintAdjacentToRoad } from '../grid/GridHelpers';
 import { TerrainType } from '../grid/types';
 import { RoadType } from '../road/types';
 import {
@@ -40,7 +41,7 @@ export function isPrimaryCellReserved(reserved: number): boolean {
 
 export type PlaceResult =
   | { ok: true }
-  | { ok: false; reason: 'OUT_OF_BOUNDS' | 'WATER_TILE' | 'TILE_OCCUPIED' | 'UNKNOWN_TYPE' | 'NO_GROUNDWATER' | 'NEED_RAIL_TRACK' | 'NEED_ADJACENT_WATER' };
+  | { ok: false; reason: 'OUT_OF_BOUNDS' | 'WATER_TILE' | 'TILE_OCCUPIED' | 'UNKNOWN_TYPE' | 'NO_GROUNDWATER' | 'NEED_RAIL_TRACK' | 'NEED_ADJACENT_WATER' | 'NOT_ADJACENT_TO_ROAD' };
 
 /**
  * Check whether an infrastructure building can be placed at (x, y) with given rotation.
@@ -90,6 +91,11 @@ export function canPlaceInfra(
   // Ferry dock requires at least one adjacent water tile
   if (type === 'ferry_dock') {
     if (!hasAdjacentWater(grid, x, y)) return { ok: false, reason: 'NEED_ADJACENT_WATER' };
+  }
+
+  // All infrastructure must be adjacent to at least one road
+  if (!isFootprintAdjacentToRoad(grid, x, y, w, h)) {
+    return { ok: false, reason: 'NOT_ADJACENT_TO_ROAD' };
   }
 
   return { ok: true };

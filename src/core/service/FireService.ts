@@ -58,7 +58,7 @@ export class FireService extends RoadCoverageService<FireStation> {
 
   addStation(x: number, y: number, radius = 15): string {
     const id = this.generateId();
-    this.facilities.push({ id, x, y, radius });
+    this.pushFacility({ id, x, y, radius });
     return id;
   }
 
@@ -176,6 +176,7 @@ export class FireService extends RoadCoverageService<FireStation> {
   static fromJSON(json: FireServiceJSON): FireService {
     const service = new FireService();
     service.facilities = json.stations.map(s => ({ ...s }));
+    for (const f of service.facilities) service.connectedFacilityIds.add(f.id);
     service.activeFires = json.activeFires.map(f => ({ ...f }));
     service.nextId = json.nextId;
     service.recentDaily = json.recentDaily ?? new Array(30).fill(0);
