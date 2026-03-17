@@ -736,34 +736,35 @@ export class SimulationLoop {
 
   /**
    * Process abandonment stress for all active buildings.
-   * Iterates buildingPositions (rebuilt daily, excludes ABANDONED/BURNED).
+   * Scans grid directly (decoupled from buildingPositions used by housing assignment).
    * Each building has a deterministic resilience factor (0.5–1.5) based on
    * position hash, so buildings abandon at different rates under same conditions.
    */
   private processAbandonmentStress(): void {
-    this.rebuildBuildingIndex();
     const grid = this.state.grid;
     const businessTax = this.state.taxRates.business ?? 9;
     const resTax = this.state.taxRates.residential ?? 9;
     const baseCrime = this.getAvgCrime();
     let changed = false;
 
-    for (const bp of this.buildingPositions) {
-      const cell = grid.getCell(bp.x, bp.y);
-      if (!cell) continue;
+    grid.forEachCell((cell, x, y) => {
+      if (!isZoneBuilding(cell.buildingId)) return;
+      if (cell.reserved === ABANDONED || cell.reserved === BURNED) return;
 
-      const pollution = this.state.pollution.getPollutionAt(bp.x, bp.y);
+      const pollution = this.state.pollution.getPollutionAt(x, y);
       const building = getBuildingType(cell.buildingId);
-      if (!building) continue;
+      if (!building) return;
+
+      const posKey = toPosKey(x, y);
 
       // Per-cell crime: base crime adjusted by local police coverage
-      const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(bp.x, bp.y));
+      const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
 
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
         residentialTaxRate: resTax,
-        isPowered: this.state.power.isPowered(bp.x, bp.y),
-        isWatered: this.state.water.isSupplied(bp.x, bp.y),
+        isPowered: this.state.power.isPowered(x, y),
+        isWatered: this.state.water.isSupplied(x, y),
         crimeRate: localCrime,
         pollution: pollution.ground,
         buildingLevel: building.level,
@@ -773,31 +774,28 @@ export class SimulationLoop {
 
       // Per-building resilience: deterministic hash → 0.5~1.5 multiplier
       // Low resilience buildings break first, high resilience ones hold longer
-      const resilience = 0.5 + ((bp.x * 7919 + bp.y * 104729) % 1000) / 1000;
+      const resilience = 0.5 + ((x * 7919 + y * 104729) % 1000) / 1000;
       const adjustedDelta = totalDelta > 0 ? totalDelta / resilience : totalDelta;
 
-      const current = this.abandonmentStress.get(bp.pos) ?? 0;
+      const current = this.abandonmentStress.get(posKey) ?? 0;
       const next = Math.max(0, Math.min(100, current + adjustedDelta));
 
       if (next === 0) {
-        this.abandonmentStress.delete(bp.pos);
+        this.abandonmentStress.delete(posKey);
       } else {
-        this.abandonmentStress.set(bp.pos, next);
+        this.abandonmentStress.set(posKey, next);
       }
 
       // Stress ≥ 100: abandon
       if (next >= ABANDONMENT.STRESS_ABANDON) {
-        grid.setCell(bp.x, bp.y, { reserved: ABANDONED });
-        this.state.citizens.evictBuilding(bp.pos, this.state.clock.tick);
+        grid.setCell(x, y, { reserved: ABANDONED });
+        this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
         changed = true;
-        this.onBuildingUpdated?.(bp.x, bp.y, cell.zoneType, building.level, false, true);
+        this.onBuildingUpdated?.(x, y, cell.zoneType, building.level, false, true);
       }
-    }
-    // Invalidate building index so assignCitizenHousing won't reassign to abandoned buildings
-    if (changed) {
-      this.buildingIndexDay = -1;
-      this.onBuildingsChanged?.();
-    }
+    });
+
+    if (changed) this.onBuildingsChanged?.();
   }
 
   /** Get the abandonment stress for a building at (x, y). */
