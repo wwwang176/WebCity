@@ -827,7 +827,7 @@ export class SimulationLoop {
 
     this.buildingPositions = [];
     this.state.grid.forEachCell((cell, x, y) => {
-      if (isZoneBuilding(cell.buildingId)) {
+      if (isZoneBuilding(cell.buildingId) && cell.reserved !== ABANDONED && cell.reserved !== BURNED) {
         this.buildingPositions.push({ pos: toPosKey(x, y), x, y, buildingId: cell.buildingId });
       }
     });

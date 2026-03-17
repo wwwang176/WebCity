@@ -1070,10 +1070,6 @@ export class BuildingRenderer {
     if (burned) {
       const burnLightness = 0.08 + h * 0.07;
       this._color.setHSL(0.05, 0.1, burnLightness);
-    } else if (abandoned) {
-      // Grayish-brown: darker and desaturated compared to normal, lighter than burned
-      const abandonLightness = 0.25 + h * 0.1;
-      this._color.setHSL(0.08, 0.15, abandonLightness);
     } else {
       const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
       const baseColor = palette[Math.floor(h * palette.length) % palette.length]!;
