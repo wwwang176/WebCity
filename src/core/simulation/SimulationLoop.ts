@@ -735,59 +735,55 @@ export class SimulationLoop {
   }
 
   /**
-   * Process abandonment stress for sampled buildings.
-   * Shares the same sampling pattern as tryBuildingUpgrades.
+   * Process abandonment stress for all active buildings.
+   * Iterates buildingPositions (rebuilt daily, excludes ABANDONED/BURNED).
+   * Cheap per-building: just arithmetic comparisons.
    */
   private processAbandonmentStress(): void {
+    this.rebuildBuildingIndex();
     const grid = this.state.grid;
     const businessTax = this.state.taxRates.business ?? 9;
     const resTax = this.state.taxRates.residential ?? 9;
     const baseCrime = this.getAvgCrime();
     let changed = false;
 
-    const attempts = 30;
-    for (let i = 0; i < attempts; i++) {
-      const x = randomInt(grid.width);
-      const y = randomInt(grid.height);
-      const cell = grid.getCell(x, y);
-      if (!cell || !isZoneBuilding(cell.buildingId)) continue;
-      // Skip already-abandoned or burned buildings
-      if (cell.reserved === ABANDONED || cell.reserved === BURNED) continue;
+    for (const bp of this.buildingPositions) {
+      const cell = grid.getCell(bp.x, bp.y);
+      if (!cell) continue;
 
-      const posKey = `${x},${y}`;
-      const pollution = this.state.pollution.getPollutionAt(x, y);
+      const pollution = this.state.pollution.getPollutionAt(bp.x, bp.y);
       const building = getBuildingType(cell.buildingId);
       if (!building) continue;
 
       // Per-cell crime: base crime adjusted by local police coverage
-      const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
+      const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(bp.x, bp.y));
 
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
         residentialTaxRate: resTax,
-        isPowered: this.state.power.isPowered(x, y),
-        isWatered: this.state.water.isSupplied(x, y),
+        isPowered: this.state.power.isPowered(bp.x, bp.y),
+        isWatered: this.state.water.isSupplied(bp.x, bp.y),
         crimeRate: localCrime,
         pollution: pollution.ground,
         buildingLevel: building.level,
       };
 
       const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);
-      const current = this.abandonmentStress.get(posKey) ?? 0;
+      const current = this.abandonmentStress.get(bp.pos) ?? 0;
       const next = Math.max(0, Math.min(100, current + totalDelta));
 
       if (next === 0) {
-        this.abandonmentStress.delete(posKey);
+        this.abandonmentStress.delete(bp.pos);
       } else {
-        this.abandonmentStress.set(posKey, next);
+        this.abandonmentStress.set(bp.pos, next);
       }
 
       // Stress ≥ 100: abandon
       if (next >= ABANDONMENT.STRESS_ABANDON) {
-        grid.setCell(x, y, { reserved: ABANDONED });
-        this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
+        grid.setCell(bp.x, bp.y, { reserved: ABANDONED });
+        this.state.citizens.evictBuilding(bp.pos, this.state.clock.tick);
         changed = true;
-        this.onBuildingUpdated?.(x, y, cell.zoneType, building.level, false, true);
+        this.onBuildingUpdated?.(bp.x, bp.y, cell.zoneType, building.level, false, true);
       }
     }
     if (changed) this.onBuildingsChanged?.();
