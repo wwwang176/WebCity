@@ -31,7 +31,7 @@ import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenterById, ROTATION_RESERVED } from './core/building/InfraPlacement';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenterById, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
@@ -186,6 +186,8 @@ export interface SelectedZoneBuilding {
   pollution: number;
   serviceCoverage: number;
   services: ServiceStatus;
+  abandonmentStress: number;
+  isAbandoned: boolean;
 }
 
 export interface SelectedInfraBuilding {
@@ -300,6 +302,11 @@ export class Game {
       this.state = createGameState(mapSize, mapSize);
     }
     this.simLoop = new SimulationLoop(this.state);
+    // Restore abandonment stress from loaded save
+    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number> } } | undefined)?._extra;
+    if (extra?.abandonmentStress) {
+      this.simLoop.abandonmentStress = extra.abandonmentStress;
+    }
     this.simLoop.onTerrainChanged = () => {
       this.dirty.terrain = true;
     };
@@ -311,8 +318,8 @@ export class Game {
     this.simLoop.onBuildingRemoved = (x, y) => {
       this.buildingRenderer.removeBuilding(x, y);
     };
-    this.simLoop.onBuildingUpdated = (x, y, zoneType, level, burned) => {
-      this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned);
+    this.simLoop.onBuildingUpdated = (x, y, zoneType, level, burned, abandoned) => {
+      this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned, abandoned);
     };
     this.roadBuilder = new RoadBuilder(this.state.grid);
     this.railNetwork = new RailNetwork();
@@ -660,10 +667,12 @@ export class Game {
         }
       }
     }
-    // Evict citizens from demolished zone buildings
+    // Evict citizens from demolished zone buildings and clear abandonment stress
     const evictedCitizenIds: number[] = [];
     for (const pos of evictCells) {
       evictedCitizenIds.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
+      const [px, py] = pos.split(',').map(Number);
+      this.simLoop.clearBuildingState(px!, py!);
     }
     if (hadRoadDemolished) {
       this.recalculateAllRoadCoverage();
@@ -902,7 +911,7 @@ export class Game {
 
         // Auto-save
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
-          const data = serializeGameState(this.state);
+          const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress });
           saveGame(0, 'AutoSave', data).catch(() => { /* ignore save errors */ });
         }
 
@@ -1188,6 +1197,8 @@ export class Game {
               education: this.state.education.getCostRatio(x, y),
               deathCare: this.state.deathCare.getCostRatio(x, y),
             },
+            abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
+            isAbandoned: cell.reserved === ABANDONED,
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -1746,7 +1757,7 @@ export class Game {
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
-    const data = serializeGameState(this.state);
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress });
     await saveGame(slotId, name, data);
   }
 

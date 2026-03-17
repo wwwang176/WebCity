@@ -138,6 +138,20 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           No Water
         </div>
       </Show>
+      <Show when={props.sel.isAbandoned}>
+        <div style={{
+          'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+          background: 'rgba(239,83,80,0.2)', color: '#ef5350',
+          'font-size': '11px', 'font-weight': '700',
+        }}>
+          ABANDONED
+        </div>
+      </Show>
+      <Show when={props.sel.abandonmentStress > 0 && !props.sel.isAbandoned}>
+        <div class="bp-row" style="color:#ff9800">
+          Stress <span>{Math.round(props.sel.abandonmentStress)}%</span>
+        </div>
+      </Show>
       <ServiceCoverage services={props.sel.services} />
 
       <div id="bp-citizen-list">

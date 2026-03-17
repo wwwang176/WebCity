@@ -71,9 +71,13 @@ interface SerializedState {
   rail?: ReturnType<RailSystem['toJSON']>;
   ferry?: ReturnType<FerrySystem['toJSON']>;
   airport?: ReturnType<AirportSystem['toJSON']>;
+  abandonmentStress?: Record<string, number>;
 }
 
-export function serializeGameState(state: GameState): string {
+export function serializeGameState(
+  state: GameState,
+  extra?: { abandonmentStress?: Map<string, number> },
+): string {
   const cells: SerializedCell[] = [];
 
   state.grid.forEachCell((cell, x, y) => {
@@ -124,12 +128,19 @@ export function serializeGameState(state: GameState): string {
     rail: state.rail.toJSON(),
     ferry: state.ferry.toJSON(),
     airport: state.airport.toJSON(),
+    abandonmentStress: extra?.abandonmentStress
+      ? Object.fromEntries(extra.abandonmentStress)
+      : undefined,
   };
 
   return JSON.stringify(serialized);
 }
 
-export function deserializeGameState(json: string): GameState {
+export interface DeserializedExtra {
+  abandonmentStress: Map<string, number>;
+}
+
+export function deserializeGameState(json: string): GameState & { _extra?: DeserializedExtra } {
   const saved: SerializedState = JSON.parse(json) as SerializedState;
 
   const state = createGameState(saved.grid.width, saved.grid.height);
@@ -218,7 +229,14 @@ export function deserializeGameState(json: string): GameState {
     runMigrations(state, saveVersion);
   }
 
-  return state;
+  // Restore abandonment stress (backward compat: missing field → empty Map)
+  const extra: DeserializedExtra = {
+    abandonmentStress: saved.abandonmentStress
+      ? new Map(Object.entries(saved.abandonmentStress).map(([k, v]) => [k, Number(v)]))
+      : new Map(),
+  };
+
+  return Object.assign(state, { _extra: extra });
 }
 
 /**

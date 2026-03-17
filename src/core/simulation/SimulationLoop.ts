@@ -18,7 +18,8 @@ import { ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { getGridPollutionSources } from '../environment/GridPollutionSources';
-import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
+import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
+import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
 import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
@@ -62,6 +63,8 @@ export const SIMULATION = {
   GROWTH_ATTEMPTS: 20,
   /** Chance per attempt for burned building auto-clearance */
   BURNED_CLEARANCE_CHANCE: 0.02,
+  /** Chance per attempt for abandoned building auto-clearance */
+  ABANDONED_CLEARANCE_CHANCE: 0.03,
   /** Default happiness used when city has no citizens */
   DEFAULT_HAPPINESS: 70,
   /** Business tax baseline — penalty applies above this rate */
@@ -154,6 +157,9 @@ export class SimulationLoop {
   /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
   occupancyRatios: Map<string, number> = new Map();
 
+  /** Per-building abandonment stress (0–100). Key is "x,y". */
+  abandonmentStress: Map<string, number> = new Map();
+
   /** Called when building state changes (growth/demolish/burn/upgrade) */
   onBuildingsChanged?: () => void;
   /** Called when terrain-related state changes (pollution/land value) */
@@ -162,7 +168,7 @@ export class SimulationLoop {
   /** Fine-grained building callbacks for incremental rendering */
   onBuildingAdded?: (x: number, y: number, zoneType: number, level: number) => void;
   onBuildingRemoved?: (x: number, y: number) => void;
-  onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean) => void;
+  onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned?: boolean) => void;
 
   constructor(state: GameState) {
     this.state = state;
@@ -238,6 +244,11 @@ export class SimulationLoop {
     // 4.5. Building upgrades/downgrades (every 6 ticks)
     if (isSlowTick) {
       this.tryBuildingUpgrades();
+    }
+
+    // 4.6. Abandonment stress (every 6 ticks)
+    if (isSlowTick) {
+      this.processAbandonmentStress();
     }
 
     // 4.7 Education: upgrade citizen education based on school availability
@@ -403,6 +414,17 @@ export class SimulationLoop {
         continue;
       }
 
+      // Abandoned buildings: slightly faster auto-clearance (~3%)
+      if (cell.reserved === ABANDONED && isZoneBuilding(cell.buildingId)) {
+        if (Math.random() < SIMULATION.ABANDONED_CLEARANCE_CHANCE) {
+          grid.setCell(x, y, { buildingId: 0, reserved: 0 });
+          this.abandonmentStress.delete(`${x},${y}`);
+          changed = true;
+          this.onBuildingRemoved?.(x, y);
+        }
+        continue;
+      }
+
       if (cell.buildingId === 0) {
         // Check district policy restrictions
         const district = this.state.districts.getDistrictAt(x, y);
@@ -549,7 +571,10 @@ export class SimulationLoop {
 
   private calculateIncome(): void {
     // DRY: same adapter used by Game.getEconomyBreakdown
-    const incomes = calculateZoneIncomes(buildIncomeCalcDeps(this.state));
+    const incomes = calculateZoneIncomes(buildIncomeCalcDeps(
+      this.state,
+      (x, y) => this.getAbandonmentStress(x, y),
+    ));
     let totalIncome = incomes.residential + incomes.commercial + incomes.industrial + incomes.office;
 
     // Apply city-wide specialization revenue multiplier
@@ -707,6 +732,89 @@ export class SimulationLoop {
       }
     }
     if (changed) this.onBuildingsChanged?.();
+  }
+
+  /**
+   * Process abandonment stress for sampled buildings.
+   * Shares the same sampling pattern as tryBuildingUpgrades.
+   */
+  private processAbandonmentStress(): void {
+    const grid = this.state.grid;
+    const upgrade = this.state.buildingUpgrade;
+    const businessTax = this.state.taxRates.business ?? 9;
+    const resTax = this.state.taxRates.residential ?? 9;
+    const crimeRate = this.getAvgCrime();
+    let changed = false;
+
+    const attempts = 30;
+    for (let i = 0; i < attempts; i++) {
+      const x = randomInt(grid.width);
+      const y = randomInt(grid.height);
+      const cell = grid.getCell(x, y);
+      if (!cell || !isZoneBuilding(cell.buildingId)) continue;
+      // Skip already-abandoned or burned buildings
+      if (cell.reserved === ABANDONED || cell.reserved === BURNED) continue;
+
+      const posKey = `${x},${y}`;
+      const pollution = this.state.pollution.getPollutionAt(x, y);
+      const occupancy = this.occupancyRatios.get(posKey) ?? 1;
+
+      const conditions: AbandonmentConditions = {
+        businessTaxRate: businessTax,
+        residentialTaxRate: resTax,
+        isPowered: this.state.power.isPowered(x, y),
+        isWatered: this.state.water.isSupplied(x, y),
+        crimeRate,
+        pollution: pollution.ground,
+        occupancy,
+      };
+
+      const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);
+      const current = this.abandonmentStress.get(posKey) ?? 0;
+      const next = Math.max(0, Math.min(100, current + totalDelta));
+
+      if (next === 0) {
+        this.abandonmentStress.delete(posKey);
+      } else {
+        this.abandonmentStress.set(posKey, next);
+      }
+
+      // Stress ≥ 50: try downgrade (force by passing zeroed conditions)
+      if (next >= ABANDONMENT.STRESS_DOWNGRADE && next < ABANDONMENT.STRESS_ABANDON) {
+        const building = getBuildingType(cell.buildingId);
+        if (building && building.level > 1) {
+          // Force downgrade by passing conditions that fail KEEP_REQUIREMENTS
+          if (upgrade.tryDowngrade(x, y, { serviceCoverageCount: 0, landValue: 0, crimeRate: 100, pollution: 100 })) {
+            changed = true;
+            const updated = grid.getCell(x, y);
+            if (updated) {
+              const newLevel = getBuildingType(updated.buildingId)?.level ?? 1;
+              this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, false);
+            }
+          }
+        }
+      }
+
+      // Stress ≥ 100: abandon
+      if (next >= ABANDONMENT.STRESS_ABANDON) {
+        grid.setCell(x, y, { reserved: ABANDONED });
+        this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
+        changed = true;
+        const level = getBuildingType(cell.buildingId)?.level ?? 1;
+        this.onBuildingUpdated?.(x, y, cell.zoneType, level, false, true);
+      }
+    }
+    if (changed) this.onBuildingsChanged?.();
+  }
+
+  /** Get the abandonment stress for a building at (x, y). */
+  getAbandonmentStress(x: number, y: number): number {
+    return this.abandonmentStress.get(`${x},${y}`) ?? 0;
+  }
+
+  /** Clear abandonment stress for a building (e.g., after demolish). */
+  clearBuildingState(x: number, y: number): void {
+    this.abandonmentStress.delete(`${x},${y}`);
   }
 
   /**

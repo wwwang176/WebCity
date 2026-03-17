@@ -7,7 +7,10 @@ import { getSpecializationBonus } from '../district/Specialization';
  * Both SimulationLoop.calculateIncome and Game.getEconomyBreakdown
  * need the same adapter — extracted here to eliminate duplication.
  */
-export function buildIncomeCalcDeps(state: GameState): IncomeCalcDeps {
+export function buildIncomeCalcDeps(
+  state: GameState,
+  getAbandonmentStress?: (x: number, y: number) => number,
+): IncomeCalcDeps {
   return {
     forEachCell: (fn) => state.grid.forEachCell(fn),
     taxRates: state.taxRates,
@@ -17,5 +20,6 @@ export function buildIncomeCalcDeps(state: GameState): IncomeCalcDeps {
       return district ? getSpecializationBonus(district.specialization).revenueMultiplier : 1;
     },
     isPowered: (x, y) => state.power.isPowered(x, y),
+    getAbandonmentStress,
   };
 }

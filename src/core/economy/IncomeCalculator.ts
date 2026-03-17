@@ -1,7 +1,7 @@
 import { isZoneBuilding } from '../building/InfraConfig';
 import { getBuildingType } from '../building/types';
 import { isResidentialZone, isCommercialZone, ZoneType } from '../grid/types';
-import { MULTI_CELL_OCCUPIED, BURNED } from '../building/InfraPlacement';
+import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from './TaxMultipliers';
 import type { IncomeLevel } from '../citizen/types';
 
@@ -31,6 +31,8 @@ export interface IncomeCalcDeps {
   getRevenueMultiplier?: (x: number, y: number) => number;
   /** Optional power check — unpowered buildings produce zero income. Defaults to true. */
   isPowered?: (x: number, y: number) => boolean;
+  /** Optional abandonment stress check — buildings with stress ≥ 75 produce zero income. */
+  getAbandonmentStress?: (x: number, y: number) => number;
 }
 
 /**
@@ -47,9 +49,11 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
   let office = 0;
 
   deps.forEachCell((cell, x, y) => {
-    if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === MULTI_CELL_OCCUPIED) return;
+    if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === ABANDONED || cell.reserved === MULTI_CELL_OCCUPIED) return;
     // Unpowered buildings produce zero income
     if (deps.isPowered && !deps.isPowered(x, y)) return;
+    // High-stress buildings produce zero income (pre-abandonment)
+    if (deps.getAbandonmentStress && deps.getAbandonmentStress(x, y) >= 75) return;
 
     const btype = getBuildingType(cell.buildingId);
     if (!btype) return;
