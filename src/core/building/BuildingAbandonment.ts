@@ -5,8 +5,12 @@ export interface AbandonmentConditions {
   residentialTaxRate: number;
   isPowered: boolean;
   isWatered: boolean;
+  /** Per-cell crime rate (0~50, adjusted by local police coverage). */
   crimeRate: number;
-  pollution: number; // ground pollution
+  /** Per-cell ground pollution. */
+  pollution: number;
+  /** Building level (1~3). Higher levels are more tax-sensitive. */
+  buildingLevel: number;
 }
 
 export interface AbandonmentFactors {
@@ -24,7 +28,6 @@ export interface AbandonmentResult {
 
 /** Stress thresholds */
 export const ABANDONMENT = {
-  STRESS_DOWNGRADE: 50,
   STRESS_NO_INCOME: 75,
   STRESS_ABANDON: 100,
   RECOVERY_RATE: 2,
@@ -37,6 +40,12 @@ const ZONE_SENSITIVITY: Record<string, { tax: number; pollution: number; crime: 
   industrial: { tax: 1.0, pollution: 0, crime: 0.5 },
   office: { tax: 1.3, pollution: 1.2, crime: 1.0 },
 };
+
+/**
+ * Building level makes tax sensitivity higher.
+ * Level 1: 1.0x, Level 2: 1.3x, Level 3: 1.6x
+ */
+const LEVEL_TAX_SENSITIVITY: Record<number, number> = { 1: 1.0, 2: 1.3, 3: 1.6 };
 
 function getZoneCategory(zoneType: ZoneType): string {
   if (isResidentialZone(zoneType)) return 'residential';
@@ -57,17 +66,18 @@ export function calculateAbandonmentStress(
 ): AbandonmentResult {
   const cat = getZoneCategory(zoneType);
   const sens = ZONE_SENSITIVITY[cat]!;
+  const levelSens = LEVEL_TAX_SENSITIVITY[conditions.buildingLevel] ?? 1.0;
 
   const factors: AbandonmentFactors = { tax: 0, power: 0, water: 0, crime: 0, pollution: 0 };
 
-  // Tax pressure
+  // Tax pressure (higher level → lower threshold, higher sensitivity)
   if (isResidentialZone(zoneType)) {
     if (conditions.residentialTaxRate > 12) {
-      factors.tax = (conditions.residentialTaxRate - 12) * 1.0 * sens.tax;
+      factors.tax = (conditions.residentialTaxRate - 12) * 1.0 * sens.tax * levelSens;
     }
   } else {
     if (conditions.businessTaxRate > 9) {
-      factors.tax = (conditions.businessTaxRate - 9) * 1.5 * sens.tax;
+      factors.tax = (conditions.businessTaxRate - 9) * 1.5 * sens.tax * levelSens;
     }
   }
 
@@ -77,12 +87,12 @@ export function calculateAbandonmentStress(
   // Water
   if (!conditions.isWatered) factors.water = 6;
 
-  // Crime
+  // Crime (per-cell, already adjusted by police coverage)
   if (conditions.crimeRate > 30) {
     factors.crime = (conditions.crimeRate - 30) * 0.15 * sens.crime;
   }
 
-  // Pollution (industrial is immune)
+  // Pollution (per-cell, industrial is immune)
   if (conditions.pollution > 40) {
     factors.pollution = (conditions.pollution - 40) * 0.1 * sens.pollution;
   }

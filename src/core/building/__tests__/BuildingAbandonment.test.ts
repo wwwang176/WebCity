@@ -8,7 +8,7 @@ import {
 import { ABANDONED } from '../InfraPlacement';
 
 /** Default "all good" conditions — should produce recovery. */
-function goodConditions(): AbandonmentConditions {
+function goodConditions(level = 1): AbandonmentConditions {
   return {
     businessTaxRate: 9,
     residentialTaxRate: 9,
@@ -16,6 +16,7 @@ function goodConditions(): AbandonmentConditions {
     isWatered: true,
     crimeRate: 10,
     pollution: 10,
+    buildingLevel: level,
   };
 }
 
@@ -43,18 +44,18 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(result.factors.tax).toBe(0);
   });
 
-  it('business tax 15% (Commercial) → tax stress = (15-9)*1.5*1.5 = 13.5', () => {
+  it('business tax 15% (Commercial Lv1) → tax stress = (15-9)*1.5*1.5*1.0 = 13.5', () => {
     const cond = { ...goodConditions(), businessTaxRate: 15 };
     const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
     expect(result.factors.tax).toBeCloseTo(13.5);
   });
 
-  it('business tax 15% (Industrial) → lower than Commercial (sens 1.0)', () => {
+  it('business tax 15% (Industrial Lv1) → lower than Commercial (sens 1.0)', () => {
     const cond = { ...goodConditions(), businessTaxRate: 15 };
     const resultI = calculateAbandonmentStress(ZoneType.INDUSTRIAL, cond);
     const resultC = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
     expect(resultI.factors.tax).toBeLessThan(resultC.factors.tax);
-    expect(resultI.factors.tax).toBeCloseTo(9); // (15-9)*1.5*1.0
+    expect(resultI.factors.tax).toBeCloseTo(9); // (15-9)*1.5*1.0*1.0
   });
 
   it('residential tax ≤ 12% → no tax pressure (Residential)', () => {
@@ -63,10 +64,28 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(result.factors.tax).toBe(0);
   });
 
-  it('residential tax 15% → tax stress = (15-12)*1.0*0.7 = 2.1', () => {
+  it('residential tax 15% Lv1 → tax stress = (15-12)*1.0*0.7*1.0 = 2.1', () => {
     const cond = { ...goodConditions(), residentialTaxRate: 15 };
     const result = calculateAbandonmentStress(ZoneType.RESIDENTIAL_LOW, cond);
     expect(result.factors.tax).toBeCloseTo(2.1);
+  });
+
+  // --- Building level tax sensitivity ---
+
+  it('Lv3 Commercial has 1.6x tax stress vs Lv1', () => {
+    const condLv1 = { ...goodConditions(1), businessTaxRate: 15 };
+    const condLv3 = { ...goodConditions(3), businessTaxRate: 15 };
+    const lv1 = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, condLv1);
+    const lv3 = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, condLv3);
+    expect(lv3.factors.tax).toBeCloseTo(lv1.factors.tax * 1.6);
+  });
+
+  it('Lv2 has 1.3x tax stress vs Lv1', () => {
+    const condLv1 = { ...goodConditions(1), businessTaxRate: 15 };
+    const condLv2 = { ...goodConditions(2), businessTaxRate: 15 };
+    const lv1 = calculateAbandonmentStress(ZoneType.OFFICE, condLv1);
+    const lv2 = calculateAbandonmentStress(ZoneType.OFFICE, condLv2);
+    expect(lv2.factors.tax).toBeCloseTo(lv1.factors.tax * 1.3);
   });
 
   // --- Power ---
@@ -85,7 +104,7 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(result.factors.water).toBe(6);
   });
 
-  // --- Crime ---
+  // --- Crime (per-cell) ---
 
   it('crime ≤ 30 → no crime pressure', () => {
     const cond = { ...goodConditions(), crimeRate: 30 };
@@ -97,6 +116,12 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     const cond = { ...goodConditions(), crimeRate: 50 };
     const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
     expect(result.factors.crime).toBeCloseTo(3.9);
+  });
+
+  it('crime 0 (police covered area) → no crime pressure', () => {
+    const cond = { ...goodConditions(), crimeRate: 0 };
+    const result = calculateAbandonmentStress(ZoneType.RESIDENTIAL_LOW, cond);
+    expect(result.factors.crime).toBe(0);
   });
 
   // --- Pollution ---
@@ -129,9 +154,10 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
       isWatered: false,
       crimeRate: 50,
       pollution: 60,
+      buildingLevel: 1,
     };
     const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
-    // tax: (15-9)*1.5*1.5 = 13.5
+    // tax: (15-9)*1.5*1.5*1.0 = 13.5
     // power: 8
     // water: 6
     // crime: (50-30)*0.15*1.3 = 3.9
@@ -156,8 +182,11 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
 
   // --- Threshold constants ---
 
+  it('no STRESS_DOWNGRADE (removed — C:S style)', () => {
+    expect(ABANDONMENT).not.toHaveProperty('STRESS_DOWNGRADE');
+  });
+
   it('thresholds have correct values', () => {
-    expect(ABANDONMENT.STRESS_DOWNGRADE).toBe(50);
     expect(ABANDONMENT.STRESS_NO_INCOME).toBe(75);
     expect(ABANDONMENT.STRESS_ABANDON).toBe(100);
     expect(ABANDONMENT.RECOVERY_RATE).toBe(2);

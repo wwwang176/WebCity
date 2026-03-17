@@ -740,10 +740,9 @@ export class SimulationLoop {
    */
   private processAbandonmentStress(): void {
     const grid = this.state.grid;
-    const upgrade = this.state.buildingUpgrade;
     const businessTax = this.state.taxRates.business ?? 9;
     const resTax = this.state.taxRates.residential ?? 9;
-    const crimeRate = this.getAvgCrime();
+    const baseCrime = this.getAvgCrime();
     let changed = false;
 
     const attempts = 30;
@@ -757,14 +756,20 @@ export class SimulationLoop {
 
       const posKey = `${x},${y}`;
       const pollution = this.state.pollution.getPollutionAt(x, y);
+      const building = getBuildingType(cell.buildingId);
+      if (!building) continue;
+
+      // Per-cell crime: base crime adjusted by local police coverage
+      const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
 
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
         residentialTaxRate: resTax,
         isPowered: this.state.power.isPowered(x, y),
         isWatered: this.state.water.isSupplied(x, y),
-        crimeRate,
+        crimeRate: localCrime,
         pollution: pollution.ground,
+        buildingLevel: building.level,
       };
 
       const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);
@@ -777,29 +782,12 @@ export class SimulationLoop {
         this.abandonmentStress.set(posKey, next);
       }
 
-      // Stress ≥ 50: try downgrade (force by passing zeroed conditions)
-      if (next >= ABANDONMENT.STRESS_DOWNGRADE && next < ABANDONMENT.STRESS_ABANDON) {
-        const building = getBuildingType(cell.buildingId);
-        if (building && building.level > 1) {
-          // Force downgrade by passing conditions that fail KEEP_REQUIREMENTS
-          if (upgrade.tryDowngrade(x, y, { serviceCoverageCount: 0, landValue: 0, crimeRate: 100, pollution: 100 })) {
-            changed = true;
-            const updated = grid.getCell(x, y);
-            if (updated) {
-              const newLevel = getBuildingType(updated.buildingId)?.level ?? 1;
-              this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, false);
-            }
-          }
-        }
-      }
-
       // Stress ≥ 100: abandon
       if (next >= ABANDONMENT.STRESS_ABANDON) {
         grid.setCell(x, y, { reserved: ABANDONED });
         this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
         changed = true;
-        const level = getBuildingType(cell.buildingId)?.level ?? 1;
-        this.onBuildingUpdated?.(x, y, cell.zoneType, level, false, true);
+        this.onBuildingUpdated?.(x, y, cell.zoneType, building.level, false, true);
       }
     }
     if (changed) this.onBuildingsChanged?.();
