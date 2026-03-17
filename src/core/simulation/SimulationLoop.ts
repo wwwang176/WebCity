@@ -879,6 +879,47 @@ export class SimulationLoop {
       }
       // Invalidate pedestrian path cache for affected cells
       this.state.pedestrianManager.invalidateCells(affectedCells);
+      // Immediately check if affected citizens can still reach their workplace
+      this.immediateUnreachableJobCheck(affectedCells);
+    }
+  }
+
+  /**
+   * When roads are cut, immediately unemploy citizens whose workplace
+   * is no longer reachable from home (don't wait for jobRelocationTick).
+   */
+  private immediateUnreachableJobCheck(affectedCells: string[]): void {
+    const citizens = this.state.citizens.getCitizens();
+    const grid = this.state.grid;
+    const tick = this.state.clock.tick;
+
+    // Collect citizen IDs whose commute paths pass through affected cells
+    const affectedIds = new Set<number>();
+    for (const cellKey of affectedCells) {
+      const ids = this.commuteCache.getCitizensByCell(cellKey);
+      if (ids) for (const id of ids) affectedIds.add(id);
+    }
+    if (affectedIds.size === 0) return;
+
+    // Build a fast citizen lookup
+    const citizenMap = new Map<number, Citizen>();
+    for (const c of citizens) citizenMap.set(c.id, c);
+
+    for (const citizenId of affectedIds) {
+      const citizen = citizenMap.get(citizenId);
+      if (!citizen || !citizen.workplaceId || !citizen.homeId) continue;
+
+      const home = parsePosKeyUnsafe(citizen.homeId);
+      const distMap = roadDistanceToTargets(
+        grid, home, new Set([citizen.workplaceId]),
+        DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+      );
+
+      if (!distMap.has(citizen.workplaceId)) {
+        citizen.workplaceId = null;
+        citizen.unemployedSince = tick;
+        this.commuteCache.remove(citizenId);
+      }
     }
   }
 
