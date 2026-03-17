@@ -475,7 +475,6 @@ export class Game {
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
         this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
         this.simLoop.ensureLaneGraph(); // immediately rebuild + reroute buses
-        this.simLoop.removeCitizenCommutes(evictedCitizenIds);
         this.audioManager.playSfx('demolish');
         break;
       }
@@ -495,9 +494,7 @@ export class Game {
             this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])]);
             this.recalculateAllRoadCoverage();
             if (result.demolishedCells) {
-              const ids: number[] = [];
-              for (const pos of result.demolishedCells) ids.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
-              this.simLoop.removeCitizenCommutes(ids);
+              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
             }
           });
           this.dirty.roads = true;
@@ -514,9 +511,7 @@ export class Game {
           );
           this.handleBuildResult(result, 'track', () => {
             if (result.demolishedCells) {
-              const ids: number[] = [];
-              for (const pos of result.demolishedCells) ids.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
-              this.simLoop.removeCitizenCommutes(ids);
+              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
               this.simLoop.markLaneGraphDirty(result.demolishedCells);
             }
           });
@@ -598,7 +593,6 @@ export class Game {
       }
     }
     if (evictedIds.length > 0) {
-      this.simLoop.removeCitizenCommutes(evictedIds);
       this.simLoop.markLaneGraphDirty(buildingCells);
     }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);

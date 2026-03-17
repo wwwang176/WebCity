@@ -171,6 +171,10 @@ export class SimulationLoop {
 
   constructor(state: GameState) {
     this.state = state;
+    // Auto-clear commute cache when citizens are evicted from any building
+    this.state.citizens.onEvicted = (ids) => {
+      for (const id of ids) this.commuteCache.remove(id);
+    };
   }
 
   tick(): void {
@@ -964,10 +968,6 @@ export class SimulationLoop {
     }
   }
 
-  /** Remove commute cache entries for evicted/removed citizens. */
-  removeCitizenCommutes(citizenIds: number[]): void {
-    for (const id of citizenIds) this.commuteCache.remove(id);
-  }
 
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;

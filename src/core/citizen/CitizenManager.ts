@@ -41,6 +41,9 @@ export class CitizenManager {
   private citizens: Citizen[] = [];
   private nextId = 1;
 
+  /** Hook called after citizens are evicted from a building. Subscribers handle cleanup (e.g. commute cache). */
+  onEvicted?: (citizenIds: number[]) => void;
+
   createCitizen(overrides: Partial<Citizen> = {}): Citizen {
     const age = overrides.age ?? 25;
     const income = overrides.incomeLevel ?? IncomeLevel.LOW;
@@ -117,6 +120,7 @@ export class CitizenManager {
       }
       if (affected) evictedIds.push(c.id);
     }
+    if (evictedIds.length > 0) this.onEvicted?.(evictedIds);
     return evictedIds;
   }
 
