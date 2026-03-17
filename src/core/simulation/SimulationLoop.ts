@@ -793,7 +793,11 @@ export class SimulationLoop {
         this.onBuildingUpdated?.(bp.x, bp.y, cell.zoneType, building.level, false, true);
       }
     }
-    if (changed) this.onBuildingsChanged?.();
+    // Invalidate building index so assignCitizenHousing won't reassign to abandoned buildings
+    if (changed) {
+      this.buildingIndexDay = -1;
+      this.onBuildingsChanged?.();
+    }
   }
 
   /** Get the abandonment stress for a building at (x, y). */
