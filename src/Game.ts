@@ -1754,6 +1754,8 @@ export class Game {
           education: this.state.education.getCostRatio(x, y),
           deathCare: this.state.deathCare.getCostRatio(x, y),
         },
+        abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
+        isAbandoned: cell?.reserved === ABANDONED,
       };
     }
 
