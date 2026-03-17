@@ -737,7 +737,8 @@ export class SimulationLoop {
   /**
    * Process abandonment stress for all active buildings.
    * Iterates buildingPositions (rebuilt daily, excludes ABANDONED/BURNED).
-   * Cheap per-building: just arithmetic comparisons.
+   * Each building has a deterministic resilience factor (0.5–1.5) based on
+   * position hash, so buildings abandon at different rates under same conditions.
    */
   private processAbandonmentStress(): void {
     this.rebuildBuildingIndex();
@@ -769,8 +770,14 @@ export class SimulationLoop {
       };
 
       const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);
+
+      // Per-building resilience: deterministic hash → 0.5~1.5 multiplier
+      // Low resilience buildings break first, high resilience ones hold longer
+      const resilience = 0.5 + ((bp.x * 7919 + bp.y * 104729) % 1000) / 1000;
+      const adjustedDelta = totalDelta > 0 ? totalDelta / resilience : totalDelta;
+
       const current = this.abandonmentStress.get(bp.pos) ?? 0;
-      const next = Math.max(0, Math.min(100, current + totalDelta));
+      const next = Math.max(0, Math.min(100, current + adjustedDelta));
 
       if (next === 0) {
         this.abandonmentStress.delete(bp.pos);
