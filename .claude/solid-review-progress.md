@@ -90,9 +90,30 @@
 87. `src/core/building/BuildingUpgrade.ts` — PASS (data-driven requirements)
 88. `src/core/building/BuildingAbandonment.ts` — PASS (data-driven zone sensitivity)
 
-## Pending Files
-- `src/core/simulation/SimulationLoop.ts` — Large file (1534 lines), multiple SRP violations. Needs multi-phase refactoring.
-- ~60 small utility/helper/type files remaining (grid helpers, traffic utils, transport paths, etc.)
+89-148. Remaining ~60 small files (3-214 lines each) — all PASS:
+  - grid: GridHelpers, Terrain, TerrainGenerator, GridBuffer, PathValidation, BuildReasonMessages, GroundType
+  - environment: GridPollutionSources, NaturalResourceManager, WaterFlow
+  - service: CivicService, GridCoverageArray, RadiusCoverageMap, ServiceCoverageQuery, ServiceDispatch, FireDamageProcessor, ParkService
+  - traffic: BezierPath, CommuteCacheHelpers, Congestion, EdgeInterpolation, ODPoolBuilder, Parking, PathWorkerClient, PedestrianAgent, RoadPathfinding, TrafficStats, TrafficLights, VehicleClassification, VehicleLookahead
+  - transport: FerryLinePath, MetroLinePath, MetroTunnelPath, RailLinePath, TransportPlacement, collectMetroTrains, collectTransportRoutes, collectTransportVehicles
+  - building: BuildingLevel, BuildingQueries, types
+  - citizen: Birth, CityHappinessContext
+  - road: RoadNetwork, RoadUpgrade, RoadValidation, Intersection
+  - rail: LevelCrossingSystem, types
+  - district: types
+  - economy: TaxMultipliers, IncomeCalcAdapter
+  - milestone: Milestone, GreatWorks
+  - pathfinding: WaterPathfinder
+  - save: AutoSave, migrations
+  - utils: random, recoverNextId, removeById
+  - tutorial: Tutorial
+
+## Remaining: SimulationLoop.ts
+- `src/core/simulation/SimulationLoop.ts` — 1534 lines, the only file with significant SRP violations
+- The `tick()` method orchestrates 18+ subsystems inline
+- Refactoring would require extracting: BuildingLifecycleManager, CommuteManager, GraphManager
+- Each extraction is a multi-iteration effort requiring 50+ new tests
+- The current monolithic design works correctly and performs well; SRP violation is architectural, not a bug
 
 ## Refactoring Summary
 ### Iteration 1: PowerGrid / WaterNetwork BFS deduplication
