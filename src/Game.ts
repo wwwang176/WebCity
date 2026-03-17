@@ -467,6 +467,7 @@ export class Game {
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
         this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
+        this.simLoop.ensureLaneGraph(); // immediately rebuild + reroute buses
         this.simLoop.removeCitizenCommutes(evictedCitizenIds);
         this.audioManager.playSfx('demolish');
         break;

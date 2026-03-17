@@ -207,8 +207,8 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
             </Show>
             <RouteBuilderPanel type="bus" color="#ff9800" />
             {transitData().busRoutes.map((r: any, i: number) => (
-              <div style="font-size:11px;color:#ccc;margin-top:4px;display:flex;justify-content:space-between;align-items:center">
-                <span>Route {i + 1}: {r.stops.length} stops, {r.vehicles} vehicle(s)</span>
+              <div style={`font-size:11px;color:${r.suspended ? '#f44336' : '#ccc'};margin-top:4px;display:flex;justify-content:space-between;align-items:center`}>
+                <span>{r.suspended ? '\u26A0 ' : ''}Route {i + 1}: {r.stops.length} stops, {r.vehicles} vehicle(s){r.suspended ? ' (suspended)' : ''}</span>
                 <span style="display:flex;gap:2px">
                   <button onClick={() => removeVehicle('bus', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #888;background:transparent;color:#aaa;cursor:pointer">-</button>
                   <button onClick={() => addVehicle('bus', r.id)} style="font-size:10px;padding:1px 4px;border-radius:3px;border:1px solid #4caf50;background:transparent;color:#4caf50;cursor:pointer">+</button>
