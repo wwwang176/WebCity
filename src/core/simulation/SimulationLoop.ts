@@ -866,6 +866,14 @@ export class SimulationLoop {
 
     // Update occupancy ratios for rendering
     this.occupancyRatios = computeOccupancyRatios(citizens, this.buildingPositions);
+
+    // Force occupancy to 0 for abandoned/burned buildings (windows must be dark)
+    for (const bp of this.buildingPositions) {
+      const cell = this.state.grid.getCell(bp.x, bp.y);
+      if (cell && (cell.reserved === ABANDONED || cell.reserved === BURNED)) {
+        this.occupancyRatios.set(bp.pos, 0);
+      }
+    }
   }
 
   /**

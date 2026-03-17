@@ -307,7 +307,8 @@ void main() {
     }
     bool onWall = abs(n.y) < 0.3 && y > 0.06;
     // Occupancy-adjusted lit threshold: fewer lit windows when building is less occupied
-    float occ = clamp(vOccupancy, 0.0, 1.0);
+    // occ=0 → no windows lit at all (abandoned/burned/empty buildings)
+    float occ = vOccupancy < 0.01 ? -1.0 : clamp(vOccupancy, 0.0, 1.0);
 
     // ---- RESIDENTIAL LOW: painted siding, no window grid ----
     if (vZoneCat < 0.1) {
@@ -1085,6 +1086,15 @@ export class BuildingRenderer {
       this._color.setHSL(hsl.h, hsl.s, hsl.l);
     }
     mesh.setColorAt(idx, this._color);
+
+    // Force occupancy to 0 for burned/abandoned buildings (all windows dark)
+    if (burned || abandoned) {
+      const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
+      if (occAttr) {
+        (occAttr.array as Float32Array)[idx] = 0;
+        occAttr.needsUpdate = true;
+      }
+    }
   }
 
   // ─── Full rebuild (init / save load) ───────────────────────────
