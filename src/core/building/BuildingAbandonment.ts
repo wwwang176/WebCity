@@ -11,6 +11,8 @@ export interface AbandonmentConditions {
   pollution: number;
   /** Building level (1~3). Higher levels are more tax-sensitive. */
   buildingLevel: number;
+  /** Continuous service score (0~10) based on distance to facilities. */
+  serviceScore: number;
 }
 
 export interface AbandonmentFactors {
@@ -19,6 +21,7 @@ export interface AbandonmentFactors {
   water: number;
   crime: number;
   pollution: number;
+  serviceOffset: number;
 }
 
 export interface AbandonmentResult {
@@ -31,6 +34,8 @@ export const ABANDONMENT = {
   STRESS_NO_INCOME: 75,
   STRESS_ABANDON: 100,
   RECOVERY_RATE: 2,
+  /** Service score multiplier for stress offset. score × this = stress reduction per tick. */
+  SERVICE_OFFSET_MULTIPLIER: 1.5,
 } as const;
 
 /** Zone sensitivity multipliers: [tax, pollution, crime] */
@@ -68,7 +73,7 @@ export function calculateAbandonmentStress(
   const sens = ZONE_SENSITIVITY[cat]!;
   const levelSens = LEVEL_TAX_SENSITIVITY[conditions.buildingLevel] ?? 1.0;
 
-  const factors: AbandonmentFactors = { tax: 0, power: 0, water: 0, crime: 0, pollution: 0 };
+  const factors: AbandonmentFactors = { tax: 0, power: 0, water: 0, crime: 0, pollution: 0, serviceOffset: 0 };
 
   // Tax pressure (higher level → lower threshold, higher sensitivity)
   if (isResidentialZone(zoneType)) {
@@ -97,10 +102,14 @@ export function calculateAbandonmentStress(
     factors.pollution = (conditions.pollution - 40) * 0.1 * sens.pollution;
   }
 
-  const sum = factors.tax + factors.power + factors.water + factors.crime + factors.pollution;
+  // Service offset: good services reduce stress (distance-based, 0~10 score)
+  factors.serviceOffset = conditions.serviceScore * ABANDONMENT.SERVICE_OFFSET_MULTIPLIER;
 
-  // Recovery only when ALL factors are zero
-  const totalDelta = sum === 0 ? -ABANDONMENT.RECOVERY_RATE : sum;
+  const pressure = factors.tax + factors.power + factors.water + factors.crime + factors.pollution;
+  const net = pressure - factors.serviceOffset;
+
+  // net > 0: stress increases; net ≤ 0: stress recovers
+  const totalDelta = net > 0 ? net : -ABANDONMENT.RECOVERY_RATE;
 
   return { totalDelta, factors };
 }

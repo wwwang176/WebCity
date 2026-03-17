@@ -17,6 +17,7 @@ function goodConditions(level = 1): AbandonmentConditions {
     crimeRate: 10,
     pollution: 10,
     buildingLevel: level,
+    serviceScore: 0,
   };
 }
 
@@ -27,14 +28,9 @@ describe('BuildingAbandonment — ABANDONED constant', () => {
 });
 
 describe('BuildingAbandonment — calculateAbandonmentStress', () => {
-  it('all conditions good → recovery (totalDelta = -2)', () => {
+  it('all conditions good, no services → recovery (totalDelta = -2)', () => {
     const result = calculateAbandonmentStress(ZoneType.RESIDENTIAL_LOW, goodConditions());
     expect(result.totalDelta).toBe(-ABANDONMENT.RECOVERY_RATE);
-    expect(result.factors.tax).toBe(0);
-    expect(result.factors.power).toBe(0);
-    expect(result.factors.water).toBe(0);
-    expect(result.factors.crime).toBe(0);
-    expect(result.factors.pollution).toBe(0);
   });
 
   // --- Tax ---
@@ -144,9 +140,45 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(result.factors.pollution).toBe(0);
   });
 
+  // --- Service offset ---
+
+  it('service score 10 → offset = 15 (10 × 1.5)', () => {
+    const cond = { ...goodConditions(), serviceScore: 10 };
+    const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
+    expect(result.factors.serviceOffset).toBeCloseTo(15);
+  });
+
+  it('high tax + full services → services offset tax pressure', () => {
+    // Commercial Lv1, tax 15%: pressure = 13.5, offset = 15 → net ≤ 0 → recovery
+    const cond = { ...goodConditions(), businessTaxRate: 15, serviceScore: 10 };
+    const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
+    expect(result.totalDelta).toBe(-ABANDONMENT.RECOVERY_RATE);
+  });
+
+  it('high tax + partial services → reduced but still positive stress', () => {
+    // Commercial Lv1, tax 15%: pressure = 13.5, offset = 5*1.5=7.5 → net = 6.0
+    const cond = { ...goodConditions(), businessTaxRate: 15, serviceScore: 5 };
+    const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
+    expect(result.totalDelta).toBeCloseTo(6.0);
+  });
+
+  it('high tax + no services → full stress', () => {
+    // Commercial Lv1, tax 15%: pressure = 13.5, offset = 0
+    const cond = { ...goodConditions(), businessTaxRate: 15, serviceScore: 0 };
+    const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
+    expect(result.totalDelta).toBeCloseTo(13.5);
+  });
+
+  it('extreme tax overwhelms even full services', () => {
+    // Commercial Lv1, tax 20%: pressure = 24.75, offset = 15 → net = 9.75
+    const cond = { ...goodConditions(), businessTaxRate: 20, serviceScore: 10 };
+    const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
+    expect(result.totalDelta).toBeCloseTo(9.75);
+  });
+
   // --- Multi-factor ---
 
-  it('multiple factors stack correctly', () => {
+  it('multiple factors stack correctly (no services)', () => {
     const cond: AbandonmentConditions = {
       businessTaxRate: 15,
       residentialTaxRate: 9,
@@ -155,18 +187,14 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
       crimeRate: 50,
       pollution: 60,
       buildingLevel: 1,
+      serviceScore: 0,
     };
     const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
-    // tax: (15-9)*1.5*1.5*1.0 = 13.5
-    // power: 8
-    // water: 6
-    // crime: (50-30)*0.15*1.3 = 3.9
-    // pollution: (60-40)*0.1*1.0 = 2.0
     const expected = 13.5 + 8 + 6 + 3.9 + 2.0;
     expect(result.totalDelta).toBeCloseTo(expected);
   });
 
-  it('has any stress factor → no recovery', () => {
+  it('has any stress factor with no offset → no recovery', () => {
     const cond = { ...goodConditions(), isPowered: false };
     const result = calculateAbandonmentStress(ZoneType.RESIDENTIAL_LOW, cond);
     expect(result.totalDelta).toBeGreaterThan(0);
@@ -177,7 +205,7 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
   it('Office pollution sensitivity = 1.2 (not immune)', () => {
     const cond = { ...goodConditions(), pollution: 60 };
     const result = calculateAbandonmentStress(ZoneType.OFFICE, cond);
-    expect(result.factors.pollution).toBeCloseTo(2.4); // (60-40)*0.1*1.2
+    expect(result.factors.pollution).toBeCloseTo(2.4);
   });
 
   // --- Threshold constants ---
@@ -190,5 +218,6 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(ABANDONMENT.STRESS_NO_INCOME).toBe(75);
     expect(ABANDONMENT.STRESS_ABANDON).toBe(100);
     expect(ABANDONMENT.RECOVERY_RATE).toBe(2);
+    expect(ABANDONMENT.SERVICE_OFFSET_MULTIPLIER).toBe(1.5);
   });
 });

@@ -763,6 +763,18 @@ export class SimulationLoop {
       // Per-cell crime: base crime adjusted by local police coverage
       const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
 
+      // Continuous service score: each service contributes (1 - costRatio), power/water weight 2
+      const svc = (ratio: number) => ratio < 0 ? 0 : 1 - ratio; // -1=uncovered→0, 0=nearest→1, 1=farthest→0
+      const serviceScore =
+        (this.state.power.isPowered(x, y) ? 2 : 0) +
+        (this.state.water.isSupplied(x, y) ? 2 : 0) +
+        svc(this.state.police.getCostRatio(x, y)) +
+        svc(this.state.fire.getCostRatio(x, y)) +
+        svc(this.state.garbage.getCostRatio(x, y)) +
+        svc(this.state.health.getCostRatio(x, y)) +
+        svc(this.state.education.getCostRatio(x, y)) +
+        svc(this.state.deathCare.getCostRatio(x, y));
+
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
         residentialTaxRate: resTax,
@@ -771,6 +783,7 @@ export class SimulationLoop {
         crimeRate: localCrime,
         pollution: pollution.ground,
         buildingLevel: building.level,
+        serviceScore,
       };
 
       const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);
