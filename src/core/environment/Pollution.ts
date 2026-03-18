@@ -22,29 +22,25 @@ export class PollutionManager {
   private width: number;
   private height: number;
   private sources: PollutionSource[] = [];
-  private ground: number[][];
-  private water: number[][];
-  private noise: number[][];
+  private ground: Float64Array;
+  private water: Float64Array;
+  private noise: Float64Array;
+
+  /** Reusable return object for getPollutionAt — callers must not store the reference. */
+  private readonly _reusableLevel: PollutionLevel = { ground: 0, water: 0, noise: 0 };
 
   constructor(width: number, height: number) {
     this.width = width;
     this.height = height;
-    this.ground = this.createGrid();
-    this.water = this.createGrid();
-    this.noise = this.createGrid();
+    this.ground = new Float64Array(width * height);
+    this.water = new Float64Array(width * height);
+    this.noise = new Float64Array(width * height);
   }
 
-  private createGrid(): number[][] {
-    return Array.from({ length: this.height }, () => new Array<number>(this.width).fill(0));
-  }
-
-  private getGrid(type: PollutionType): number[][] {
-    const grids: Record<PollutionType, number[][]> = {
-      ground: this.ground,
-      water: this.water,
-      noise: this.noise,
-    };
-    return grids[type];
+  private getGrid(type: PollutionType): Float64Array {
+    if (type === 'ground') return this.ground;
+    if (type === 'water') return this.water;
+    return this.noise;
   }
 
   addSource(x: number, y: number, amount: number, type: PollutionType): void {
@@ -52,10 +48,10 @@ export class PollutionManager {
   }
 
   calculateSpread(): void {
-    // Reset grids
-    this.ground = this.createGrid();
-    this.water = this.createGrid();
-    this.noise = this.createGrid();
+    // Zero grids in-place (no allocation)
+    this.ground.fill(0);
+    this.water.fill(0);
+    this.noise.fill(0);
 
     for (const source of this.sources) {
       this.spreadFromSource(source);
@@ -64,6 +60,7 @@ export class PollutionManager {
 
   private spreadFromSource(source: PollutionSource): void {
     const grid = this.getGrid(source.type);
+    const w = this.width;
     const maxRange = Math.ceil(source.amount / POLLUTION.DECAY_PER_CELL);
 
     for (let dx = -maxRange; dx <= maxRange; dx++) {
@@ -77,7 +74,7 @@ export class PollutionManager {
         const value = Math.max(0, source.amount - distance * POLLUTION.DECAY_PER_CELL);
 
         if (value > 0) {
-          grid[ny]![nx]! += value;
+          grid[ny * w + nx] += value;
         }
       }
     }
@@ -85,16 +82,20 @@ export class PollutionManager {
 
   getPollutionAt(x: number, y: number): PollutionLevel {
     if (x < 0 || x >= this.width || y < 0 || y >= this.height) {
-      return { ground: 0, water: 0, noise: 0 };
+      this._reusableLevel.ground = 0;
+      this._reusableLevel.water = 0;
+      this._reusableLevel.noise = 0;
+      return this._reusableLevel;
     }
-    return {
-      ground: this.ground[y]![x]!,
-      water: this.water[y]![x]!,
-      noise: this.noise[y]![x]!,
-    };
+    const idx = y * this.width + x;
+    this._reusableLevel.ground = this.ground[idx]!;
+    this._reusableLevel.water = this.water[idx]!;
+    this._reusableLevel.noise = this.noise[idx]!;
+    return this._reusableLevel;
   }
 
   addParkEffect(x: number, y: number, radius: number): void {
+    const w = this.width;
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dy = -radius; dy <= radius; dy++) {
         const nx = x + dx;
@@ -104,8 +105,9 @@ export class PollutionManager {
 
         const distance = Math.abs(dx) + Math.abs(dy);
         if (distance <= radius) {
-          this.ground[ny]![nx] = Math.max(0, this.ground[ny]![nx]! - POLLUTION.PARK_REDUCTION);
-          this.noise[ny]![nx] = Math.max(0, this.noise[ny]![nx]! - POLLUTION.PARK_REDUCTION);
+          const idx = ny * w + nx;
+          this.ground[idx] = Math.max(0, this.ground[idx]! - POLLUTION.PARK_REDUCTION);
+          this.noise[idx] = Math.max(0, this.noise[idx]! - POLLUTION.PARK_REDUCTION);
         }
       }
     }
