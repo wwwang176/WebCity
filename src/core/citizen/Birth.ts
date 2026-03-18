@@ -20,8 +20,15 @@ export const DEFAULT_CONTEXT: BirthContext = {
 
 export const BIRTH = {
   MAX_FERTILITY_AGE: 130,   // life-weeks (~first 52% of adult period)
-  HAPPINESS_FERTILITY_THRESHOLD: 70,
 } as const;
+
+/** Per-education fertility parameters: base rate, happiness threshold, happiness bonus */
+export const FERTILITY_BY_EDUCATION: Record<EducationLevel, { baseRate: number; happyThreshold: number; happyBonus: number }> = {
+  [EducationLevel.NONE]:        { baseRate: 0.05,  happyThreshold: 60, happyBonus: 0.04 },
+  [EducationLevel.ELEMENTARY]:  { baseRate: 0.04,  happyThreshold: 65, happyBonus: 0.03 },
+  [EducationLevel.HIGH_SCHOOL]: { baseRate: 0.035, happyThreshold: 70, happyBonus: 0.025 },
+  [EducationLevel.UNIVERSITY]:  { baseRate: 0.03,  happyThreshold: 75, happyBonus: 0.02 },
+};
 
 /** 根據住宅容量計算該棟建築的 BABY+CHILD 上限 */
 export function getMaxChildren(residents: number): number {
@@ -68,10 +75,15 @@ export function birthTick(
     const residents = ctx.getResidents ? ctx.getResidents(c.homeId) : 8;
     if (currentChildren >= getMaxChildren(residents)) continue;
 
-    // 計算生育機率
-    let rate = ctx.baseFertilityRate;
-    if (c.happiness > BIRTH.HAPPINESS_FERTILITY_THRESHOLD) {
-      rate += ctx.happinessBonus;
+    // 計算生育機率（按教育等級調整）
+    const fertility = FERTILITY_BY_EDUCATION[c.education] ?? FERTILITY_BY_EDUCATION[EducationLevel.NONE];
+    let rate = ctx.baseFertilityRate !== DEFAULT_CONTEXT.baseFertilityRate
+      ? ctx.baseFertilityRate   // test override: use fixed rate
+      : fertility.baseRate;
+    if (c.happiness > fertility.happyThreshold) {
+      rate += ctx.happinessBonus !== DEFAULT_CONTEXT.happinessBonus
+        ? ctx.happinessBonus    // test override: use fixed bonus
+        : fertility.happyBonus;
     }
 
     // 隨機判定
