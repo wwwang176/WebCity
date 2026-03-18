@@ -167,6 +167,14 @@ export class SimulationLoop {
   /** Per-building abandonment stress (0–100). Key is "x,y". */
   abandonmentStress: Map<string, number> = new Map();
 
+  /** Workplace distance cache — observer-invalidated, worker-computed. */
+  private wpDistCache: import('../workplace/WorkplaceDistanceCache').WorkplaceDistanceCache | null = null;
+
+  /** Set the workplace distance cache (called by Game.ts after construction). */
+  setWorkplaceDistanceCache(cache: import('../workplace/WorkplaceDistanceCache').WorkplaceDistanceCache): void {
+    this.wpDistCache = cache;
+  }
+
   /** Called when building state changes (growth/demolish/burn/upgrade) */
   onBuildingsChanged?: () => void;
   /** Called when terrain-related state changes (pollution/land value) */
@@ -474,7 +482,7 @@ export class SimulationLoop {
         }
       }
     }
-    if (changed) this.onBuildingsChanged?.();
+    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   private runMigration(): void {
@@ -671,7 +679,7 @@ export class SimulationLoop {
     for (const u of updates) {
       this.onBuildingUpdated?.(u.x, u.y, u.zoneType, u.level, u.burned);
     }
-    if (changed) this.onBuildingsChanged?.();
+    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   private updatePollution(): void {
@@ -778,7 +786,7 @@ export class SimulationLoop {
         }
       }
     }
-    if (changed) this.onBuildingsChanged?.();
+    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   /**
@@ -860,7 +868,7 @@ export class SimulationLoop {
       }
     });
 
-    if (changed) this.onBuildingsChanged?.();
+    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   /** Get the abandonment stress for a building at (x, y). */
@@ -916,9 +924,26 @@ export class SimulationLoop {
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
     const workingAgeCitizens = citizens.filter((c) => isWorkingAge(c.age));
 
-    // Build reachability map: homeId → Set of reachable workplace positions
-    // Group unassigned citizens by homeId to avoid duplicate Dijkstra calls
-    const reachable = this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
+    // Trigger async cache update if stale
+    if (this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
+      const wpPositions = workplaceCandidates.map(c => {
+        const p = parsePosKeyUnsafe(c.pos);
+        return { pos: c.pos, x: p.x, y: p.y };
+      });
+      // Copy grid buffer for worker (ArrayBuffer → new copy for transfer)
+      const srcBuf = this.state.grid.getBuffer();
+      const copy = new ArrayBuffer(srcBuf.byteLength);
+      new Uint8Array(copy).set(new Uint8Array(srcBuf));
+      this.wpDistCache.requestUpdate(
+        this.state.grid.width, this.state.grid.height,
+        copy, wpPositions, DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+      );
+    }
+
+    // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback
+    const reachable = (this.wpDistCache?.isReady)
+      ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
+      : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
     assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable);
 
     // Then assign housing with preference scoring
@@ -996,6 +1021,21 @@ export class SimulationLoop {
     return reachable;
   }
 
+  /** Cache-based reachability: O(1) per homeId, no Dijkstra. */
+  private buildWorkplaceReachabilityFromCache(
+    citizens: readonly Citizen[],
+    workplaceCandidates: readonly WorkplaceCandidate[],
+  ): Map<string, Set<string>> {
+    const reachable = new Map<string, Set<string>>();
+    const cache = this.wpDistCache!;
+    for (const c of citizens) {
+      if (c.workplaceId === null && c.homeId !== null && !reachable.has(c.homeId)) {
+        reachable.set(c.homeId, cache.getReachableWorkplaces(c.homeId));
+      }
+    }
+    return reachable;
+  }
+
   /**
    * Run job relocation tick: citizens with long/failed commutes may switch workplace.
    * Called every JOB_RELOCATION_INTERVAL ticks (after housing relocation).
@@ -1009,6 +1049,14 @@ export class SimulationLoop {
     const citizens = this.state.citizens.getCitizens();
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
 
+    // Use cache-based distance lookup when ready (O(1) per lookup, no Dijkstra)
+    const distanceLookup = (this.wpDistCache?.isReady)
+      ? (_grid: any, homePos: { x: number; y: number }, targets: Set<string>, _budget: number) => {
+          const homeKey = toPosKey(homePos.x, homePos.y);
+          return this.wpDistCache!.getDistancesFromHome(homeKey, targets);
+        }
+      : undefined;
+
     const { relocatedIds } = jobRelocationTick(
       citizens,
       workplaceCandidates,
@@ -1016,6 +1064,8 @@ export class SimulationLoop {
       this.commuteCache,
       this.state.grid,
       this.state.clock.tick,
+      undefined,
+      distanceLookup,
     );
 
     // Clear commute cache for relocated citizens so routes are recalculated
@@ -1046,6 +1096,7 @@ export class SimulationLoop {
     this.sidewalkGraphDirty = true;
     this.tripPoolDirty = true;
     this.commuteCache.bumpGeneration();
+    this.wpDistCache?.invalidate();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
       for (const cellKey of affectedCells) {

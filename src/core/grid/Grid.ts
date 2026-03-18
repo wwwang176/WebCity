@@ -23,6 +23,9 @@ export class Grid {
     this.railFlagsData = new Uint8Array(this.totalCells);
   }
 
+  /** Expose raw buffer for worker transfer (read-only intent). */
+  getBuffer(): ArrayBuffer { return this.buffer; }
+
   private isInBounds(x: number, y: number): boolean {
     return x >= 0 && x < this.width && y >= 0 && y < this.height;
   }

@@ -71,6 +71,14 @@ function getTriggerReason(
  * If the commute route is confirmed failed and no reachable workplace exists,
  * the citizen becomes unemployed (workplaceId = null).
  */
+/** Optional distance lookup matching roadDistanceToTargets signature. */
+export type DistanceLookup = (
+  grid: ReadableGrid,
+  homePos: { x: number; y: number },
+  targets: Set<string>,
+  maxBudget: number,
+) => Map<string, number>;
+
 export function jobRelocationTick(
   citizens: readonly Citizen[],
   candidates: readonly WorkplaceCandidateWithZone[],
@@ -79,6 +87,7 @@ export function jobRelocationTick(
   grid: ReadableGrid,
   currentTick: number,
   config?: Partial<JobRelocationConfig>,
+  distanceLookup?: DistanceLookup,
 ): { count: number; relocatedIds: number[] } {
   const cfg: JobRelocationConfig = config
     ? { ...DEFAULT_JOB_RELOCATION_CONFIG, ...config }
@@ -133,7 +142,7 @@ export function jobRelocationTick(
     if (!hasAlternatives) {
       // No alternatives — only become unemployed if route is failed AND current unreachable
       if (reason === 'failed') {
-        const distCheck = roadDistanceToTargets(grid, homePos, new Set([currentPos]), cfg.dijkstraMaxBudget);
+        const distCheck = (distanceLookup ?? roadDistanceToTargets)(grid, homePos, new Set([currentPos]), cfg.dijkstraMaxBudget);
         if (!distCheck.has(currentPos)) {
           const oldOcc = occupancy.get(currentPos) ?? 0;
           occupancy.set(currentPos, Math.max(0, oldOcc - 1));
@@ -146,7 +155,7 @@ export function jobRelocationTick(
     }
 
     // Dijkstra from home to all targets
-    const distMap = roadDistanceToTargets(grid, homePos, targetSet, cfg.dijkstraMaxBudget);
+    const distMap = (distanceLookup ?? roadDistanceToTargets)(grid, homePos, targetSet, cfg.dijkstraMaxBudget);
 
     // Score current workplace
     const currentScore = currentZoneType !== undefined
