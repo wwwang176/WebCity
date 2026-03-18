@@ -88,11 +88,39 @@ export class Grid {
     return cells;
   }
 
-  /** Iterate over every cell in row-major order (y then x). */
+  /** Fill a pre-allocated CellData object from the binary buffer (no allocation). */
+  fillCell(x: number, y: number, out: CellData): void {
+    const offset = this.getOffset(x, y);
+    const idx = y * this.width + x;
+    out.terrainType = this.view.getUint8(offset + 0);
+    out.zoneType = this.view.getUint8(offset + 1);
+    out.buildingId = this.view.getUint16(offset + 2, true);
+    out.roadFlags = this.view.getUint8(offset + 4);
+    out.roadType = this.view.getUint8(offset + 5);
+    out.trafficDensity = this.view.getUint8(offset + 6);
+    out.landValue = this.view.getUint8(offset + 7);
+    out.pollution = this.view.getUint8(offset + 8);
+    out.noiseLevel = this.view.getUint8(offset + 9);
+    out.serviceCoverage = this.view.getUint8(offset + 10);
+    out.elevation = this.view.getInt8(offset + 11);
+    out.reserved = this.reservedData[idx]!;
+    out.railType = this.railTypeData[idx]!;
+    out.railFlags = this.railFlagsData[idx]!;
+  }
+
+  /** Iterate over every cell in row-major order (y then x).
+   *  Uses a single reusable CellData object — do NOT store the cell reference. */
   forEachCell(fn: (cell: CellData, x: number, y: number) => void): void {
+    const cell: CellData = {
+      terrainType: 0, zoneType: 0, buildingId: 0, roadFlags: 0,
+      roadType: 0, trafficDensity: 0, landValue: 0, pollution: 0,
+      noiseLevel: 0, serviceCoverage: 0, elevation: 0, reserved: 0,
+      railType: 0, railFlags: 0,
+    };
     for (let y = 0; y < this.height; y++) {
       for (let x = 0; x < this.width; x++) {
-        fn(this.getCell(x, y)!, x, y);
+        this.fillCell(x, y, cell);
+        fn(cell, x, y);
       }
     }
   }
