@@ -11,6 +11,7 @@ import { GridCursor } from './renderer/GridCursor';
 import { WeatherRenderer } from './renderer/WeatherRenderer';
 import { createGameState, type GameState } from './core/simulation/GameState';
 import { SimulationLoop } from './core/simulation/SimulationLoop';
+import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType } from './core/grid/types';
@@ -1872,17 +1873,21 @@ export class Game {
   }
 
   /** Set game speed directly (DRY: used by UI speed buttons). */
-  setSpeed(s: 1 | 2 | 3): void {
+  setSpeed(s: GameSpeed): void {
+    if (s === 0) return;
     this.speed = s;
     this.state.clock.setSpeed(s);
     this.paused = false;
     this.onUIUpdate?.();
   }
 
-  /** Change speed by delta, clamped to [1,3] (DRY: used by keyboard shortcuts). */
+  /** Cycle to next/prev speed (DRY: used by keyboard shortcuts). */
   changeSpeed(delta: number): void {
-    this.speed = Math.min(3, Math.max(1, this.speed + delta)) as 1 | 2 | 3;
-    this.state.clock.setSpeed(this.speed as 1 | 2 | 3);
+    const speeds = GameClock.SPEEDS;
+    const idx = speeds.indexOf(this.speed as GameSpeed);
+    const newIdx = Math.max(0, Math.min(speeds.length - 1, (idx === -1 ? 0 : idx) + delta));
+    this.speed = speeds[newIdx]!;
+    this.state.clock.setSpeed(speeds[newIdx]!);
     this.onUIUpdate?.();
   }
 

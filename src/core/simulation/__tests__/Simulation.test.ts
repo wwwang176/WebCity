@@ -191,8 +191,9 @@ describe('GameClock', () => {
 
   it('SPEED_INTERVALS should have Infinity for paused and decreasing values for higher speeds', () => {
     expect(SPEED_INTERVALS[0]).toBe(Infinity);
-    expect(SPEED_INTERVALS[1]).toBeGreaterThan(SPEED_INTERVALS[2]);
-    expect(SPEED_INTERVALS[2]).toBeGreaterThan(SPEED_INTERVALS[3]);
+    expect(SPEED_INTERVALS[1]).toBeGreaterThan(SPEED_INTERVALS[3]);
+    expect(SPEED_INTERVALS[3]).toBeGreaterThan(SPEED_INTERVALS[5]);
+    expect(SPEED_INTERVALS[5]).toBeGreaterThan(SPEED_INTERVALS[10]);
   });
 
   it('getDay/getMonth/getYear should still work correctly with 24 ticksPerDay', () => {
