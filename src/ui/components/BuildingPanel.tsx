@@ -1,8 +1,9 @@
 import { Show, For, createSignal } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { CitizenDetail } from './CitizenDetail';
-import { ZoneType } from '../../core/grid/types';
+import { ZoneType, isResidentialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
+import { getEducationSalaryMultiplier, getResidentialLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../../core/economy/TaxMultipliers';
 
 const ZONE_NAMES: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
@@ -153,7 +154,22 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   const tax = () => {
     if (!hasPower()) return '$0/tick';
     const b = bt();
-    return `$${((b.residents + b.workers) * 0.5).toFixed(0)}/tick`;
+    const state = getGame().getState();
+    const isRes = isResidentialZone(props.sel.zoneType);
+    if (isRes) {
+      const residents = citizens().residents;
+      let salarySum = 0;
+      for (const r of residents) {
+        salarySum += ECONOMY.CITIZEN_BASE_INCOME * getEducationSalaryMultiplier(r.education);
+      }
+      const taxRate = state.taxRates.residential ?? 9;
+      const income = salarySum * getResidentialLevelMultiplier(b.level as 1 | 2 | 3) * (taxRate / 100);
+      return `$${income.toFixed(1)}/tick`;
+    } else {
+      const taxRate = state.taxRates.business ?? 9;
+      const income = (b.companyIncome ?? 0) * getBuildingLevelMultiplier(b.level as 1 | 2 | 3) * (taxRate / 100);
+      return `$${income.toFixed(1)}/tick`;
+    }
   };
   const level = () => {
     const b = bt();
