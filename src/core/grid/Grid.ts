@@ -96,6 +96,29 @@ export class Grid {
     if (data.railFlags !== undefined) this.railFlagsData[y * this.width + x] = data.railFlags;
   }
 
+  /** Write a single field without allocating a Partial<CellData> object. */
+  setField(x: number, y: number, field: keyof CellData, value: number): void {
+    if (!this.isInBounds(x, y)) return;
+    const offset = this.getOffset(x, y);
+    const idx = y * this.width + x;
+    switch (field) {
+      case 'terrainType': this.view.setUint8(offset + 0, value); break;
+      case 'zoneType': this.view.setUint8(offset + 1, value); break;
+      case 'buildingId': this.view.setUint16(offset + 2, value, true); break;
+      case 'roadFlags': this.view.setUint8(offset + 4, value); break;
+      case 'roadType': this.view.setUint8(offset + 5, value); break;
+      case 'trafficDensity': this.view.setUint8(offset + 6, value); break;
+      case 'landValue': this.view.setUint8(offset + 7, value); break;
+      case 'pollution': this.view.setUint8(offset + 8, value); break;
+      case 'noiseLevel': this.view.setUint8(offset + 9, value); break;
+      case 'serviceCoverage': this.view.setUint8(offset + 10, value); break;
+      case 'elevation': this.view.setInt8(offset + 11, value); break;
+      case 'reserved': this.reservedData[idx] = value; break;
+      case 'railType': this.railTypeData[idx] = value; break;
+      case 'railFlags': this.railFlagsData[idx] = value; break;
+    }
+  }
+
   getCellsInRect(from: Position, to: Position): CellData[] {
     const x1 = Math.max(0, Math.min(from.x, to.x));
     const y1 = Math.max(0, Math.min(from.y, to.y));

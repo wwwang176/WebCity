@@ -693,12 +693,12 @@ export class SimulationLoop {
 
     pm.calculateSpread();
 
-    // Write pollution back to grid cells
+    // Write pollution back to grid cells (single-field write, no object allocation)
     grid.forEachCell((cell, x, y) => {
       const p = pm.getPollutionAt(x, y);
       const total = Math.min(SIMULATION.CELL_VALUE_MAX, p.ground + p.noise);
       if (cell.pollution !== total) {
-        grid.setCell(x, y, { pollution: total });
+        grid.setField(x, y, 'pollution', total);
       }
     });
   }
