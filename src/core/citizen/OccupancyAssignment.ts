@@ -1,5 +1,5 @@
 import type { Citizen } from './types';
-import { type HousingCandidate, canAfford, scoreHousing } from './HousingScore';
+import { type HousingCandidate, scoreHousing } from './HousingScore';
 import { type WorkplaceCandidate, scoreWorkplace } from './WorkplaceScore';
 
 export interface BuildingSlot {
@@ -76,19 +76,11 @@ export function assignWithPreference(
   for (const citizen of citizens) {
     if (citizen.homeId !== null) continue;
 
-    // Step 1: Filter — has capacity + can afford
+    // Step 1: Filter — has capacity
     let available = candidates.filter(c => {
       const occ = occupancy.get(c.pos) ?? 0;
-      return occ < c.capacity && canAfford(citizen.incomeLevel, c.level);
+      return occ < c.capacity;
     });
-
-    // Step 1.5: Fallback — if no affordable candidates, relax constraint
-    if (available.length === 0) {
-      available = candidates.filter(c => {
-        const occ = occupancy.get(c.pos) ?? 0;
-        return occ < c.capacity;
-      });
-    }
     if (available.length === 0) continue;
 
     // Performance: sample if too many candidates

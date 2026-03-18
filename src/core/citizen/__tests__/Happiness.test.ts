@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { calculateHappiness, HAPPINESS, applyThresholdModifier, getUnemploymentPenalty, getHomelessPenalty, getJobMismatchPenalty, type HappinessFactors } from '../Happiness';
 import { ZoneType } from '../../grid/types';
-import { type Citizen, LifeStage, EducationLevel, IncomeLevel } from '../types';
+import { type Citizen, LifeStage, EducationLevel } from '../types';
 
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
   return {
@@ -10,7 +10,6 @@ function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
     age: 100,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
-    incomeLevel: IncomeLevel.LOW,
     happiness: 50,
     health: 80,
     homeId: '5,5',
@@ -18,6 +17,7 @@ function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
     unemployedSince: null,
     homelessSince: null,
     emigrationTolerance: 25,
+    educationProgress: 0,
     ...overrides,
   };
 }
@@ -137,35 +137,35 @@ describe('Happiness', () => {
 
 describe('getUnemploymentPenalty', () => {
   it('returns -15 for short unemployment (< 30 ticks)', () => {
-    const citizen = makeCitizen({ id: 1, incomeLevel: IncomeLevel.LOW, unemployedSince: 100 });
+    const citizen = makeCitizen({ id: 1, education: EducationLevel.NONE, unemployedSince: 100 });
     expect(getUnemploymentPenalty(citizen, 110)).toBe(-15);
     expect(getUnemploymentPenalty(citizen, 129)).toBe(-15);
   });
 
   it('returns -25 for medium unemployment (30~90 ticks)', () => {
-    const citizen = makeCitizen({ id: 1, incomeLevel: IncomeLevel.LOW, unemployedSince: 100 });
+    const citizen = makeCitizen({ id: 1, education: EducationLevel.NONE, unemployedSince: 100 });
     expect(getUnemploymentPenalty(citizen, 131)).toBe(-25);
     expect(getUnemploymentPenalty(citizen, 189)).toBe(-25);
   });
 
   it('returns -100 when exceeding personal tolerance', () => {
-    // LOW income, id=1: tolerance = 90 + 0 + (1%30) = 91
-    const citizen = makeCitizen({ id: 1, incomeLevel: IncomeLevel.LOW, unemployedSince: 100 });
+    // NONE education, id=1: tolerance = 90 + 0 + (1%30) = 91
+    const citizen = makeCitizen({ id: 1, education: EducationLevel.NONE, unemployedSince: 100 });
     expect(getUnemploymentPenalty(citizen, 100 + 91)).toBe(-100);
   });
 
-  it('HIGH income tolerates longer', () => {
-    // HIGH income, id=1: tolerance = 90 + 30 + (1%30) = 121
-    const citizen = makeCitizen({ id: 1, incomeLevel: IncomeLevel.HIGH, unemployedSince: 100 });
-    // At tick 100+100=200, LOW would be -100 but HIGH is still -25
+  it('UNIVERSITY education tolerates longer', () => {
+    // UNIVERSITY education, id=1: tolerance = 90 + 30 + (1%30) = 121
+    const citizen = makeCitizen({ id: 1, education: EducationLevel.UNIVERSITY, unemployedSince: 100 });
+    // At tick 100+100=200, NONE would be -100 but UNIVERSITY is still -25
     expect(getUnemploymentPenalty(citizen, 200)).toBe(-25);
-    // At tick 100+121=221, HIGH hits -100
+    // At tick 100+121=221, UNIVERSITY hits -100
     expect(getUnemploymentPenalty(citizen, 221)).toBe(-100);
   });
 
   it('different citizen IDs produce different tolerances', () => {
-    const c1 = makeCitizen({ id: 0, incomeLevel: IncomeLevel.LOW, unemployedSince: 0 });
-    const c2 = makeCitizen({ id: 15, incomeLevel: IncomeLevel.LOW, unemployedSince: 0 });
+    const c1 = makeCitizen({ id: 0, education: EducationLevel.NONE, unemployedSince: 0 });
+    const c2 = makeCitizen({ id: 15, education: EducationLevel.NONE, unemployedSince: 0 });
     // id=0: tolerance = 90 + 0 + 0 = 90
     // id=15: tolerance = 90 + 0 + 15 = 105
     expect(getUnemploymentPenalty(c1, 90)).toBe(-100);
@@ -192,11 +192,11 @@ describe('getHomelessPenalty', () => {
     expect(getHomelessPenalty(citizen, 200)).toBe(-100);
   });
 
-  it('applies equally regardless of income level', () => {
-    const low = makeCitizen({ homeId: null, incomeLevel: IncomeLevel.LOW, homelessSince: 0 });
-    const high = makeCitizen({ homeId: null, incomeLevel: IncomeLevel.HIGH, homelessSince: 0 });
-    expect(getHomelessPenalty(low, 20)).toBe(-100);
-    expect(getHomelessPenalty(high, 20)).toBe(-100);
+  it('applies equally regardless of education level', () => {
+    const none = makeCitizen({ homeId: null, education: EducationLevel.NONE, homelessSince: 0 });
+    const uni = makeCitizen({ homeId: null, education: EducationLevel.UNIVERSITY, homelessSince: 0 });
+    expect(getHomelessPenalty(none, 20)).toBe(-100);
+    expect(getHomelessPenalty(uni, 20)).toBe(-100);
   });
 
   it('returns base -20 when homelessSince is null', () => {

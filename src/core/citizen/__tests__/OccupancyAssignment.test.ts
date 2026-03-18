@@ -7,7 +7,7 @@ import {
   type BuildingSlot,
 } from '../OccupancyAssignment';
 import type { Citizen } from '../types';
-import { LifeStage, EducationLevel, IncomeLevel } from '../types';
+import { LifeStage, EducationLevel } from '../types';
 import type { HousingCandidate } from '../HousingScore';
 import type { WorkplaceCandidate } from '../WorkplaceScore';
 import { ZoneType } from '../../grid/types';
@@ -19,11 +19,14 @@ function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
     age: 30,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
-    incomeLevel: IncomeLevel.LOW,
     happiness: 50,
     health: 80,
     homeId: null,
     workplaceId: null,
+    unemployedSince: null,
+    homelessSince: null,
+    emigrationTolerance: 25,
+    educationProgress: 0,
     ...overrides,
   };
 }
@@ -162,7 +165,7 @@ describe('assignWithPreference', () => {
     const citizen = makeCitizen({
       id: 1,
     birthTick: 0,
-      incomeLevel: IncomeLevel.HIGH,
+      education: EducationLevel.UNIVERSITY,
       workplaceId: '10,10',
     });
     // 3 good candidates near work + 1 terrible candidate far away with pollution
@@ -193,7 +196,7 @@ describe('assignWithPreference', () => {
     // With many citizens and similar-scored buildings, assignments should spread
     const citizens = Array.from({ length: 50 }, (_, i) => makeCitizen({
       id: i,
-      incomeLevel: IncomeLevel.MEDIUM,
+      education: EducationLevel.HIGH_SCHOOL,
       workplaceId: '10,10',
     }));
     const candidates: HousingCandidate[] = [
@@ -218,23 +221,27 @@ describe('assignWithPreference', () => {
     expect(counts.size).toBeGreaterThanOrEqual(2);
   });
 
-  it('LOW income skips Lv3 initially', () => {
+  it('NONE education prefers Lv1 over Lv3', () => {
     const citizen = makeCitizen({
       id: 1,
     birthTick: 0,
-      incomeLevel: IncomeLevel.LOW,
+      education: EducationLevel.NONE,
       workplaceId: '5,5',
     });
+    // 3 Lv1 candidates + 1 Lv3 so top-3 are all Lv1 (scoreLevelMatch: Lv1=+30, Lv3=-10)
     const candidates: HousingCandidate[] = [
       makeHousingCandidate({ pos: '5,6', capacity: 10, level: 1 }),
+      makeHousingCandidate({ pos: '5,4', capacity: 10, level: 1 }),
+      makeHousingCandidate({ pos: '4,5', capacity: 10, level: 1 }),
       makeHousingCandidate({ pos: '5,7', capacity: 10, level: 3 }),
     ];
     const occupancy = new Map<string, number>();
 
     assignWithPreference([citizen], candidates, occupancy);
 
-    // LOW income should prefer Lv1 (affordable match) over Lv3
-    expect(citizen.homeId).toBe('5,6');
+    // NONE education should prefer Lv1 (match) over Lv3 — top-3 excludes Lv3
+    expect(citizen.homeId).not.toBe('5,7');
+    expect(citizen.homeId).not.toBeNull();
   });
 
   it('all full = homeId stays null, no crash', () => {
@@ -261,11 +268,11 @@ describe('assignWithPreference', () => {
     expect(citizen.homeId).toBe('5,5');
   });
 
-  it('fallback — when affordable full, LOW income can live in Lv3', () => {
+  it('fallback — when preferred level is full, citizen can live in other level', () => {
     const citizen = makeCitizen({
       id: 1,
     birthTick: 0,
-      incomeLevel: IncomeLevel.LOW,
+      education: EducationLevel.NONE,
     });
     const candidates: HousingCandidate[] = [
       makeHousingCandidate({ pos: '1,1', capacity: 1, level: 1 }),
@@ -276,18 +283,18 @@ describe('assignWithPreference', () => {
 
     assignWithPreference([citizen], candidates, occupancy);
 
-    // Should fall back to Lv3 since no affordable housing is available
+    // Should fall back to Lv3 since no preferred housing is available
     expect(citizen.homeId).toBe('2,2');
   });
 
-  it('fallback still picks best score among unaffordable options', () => {
+  it('fallback still picks best score among other options', () => {
     const citizen = makeCitizen({
       id: 1,
     birthTick: 0,
-      incomeLevel: IncomeLevel.LOW,
+      education: EducationLevel.NONE,
       workplaceId: '10,10',
     });
-    // Only Lv3 buildings available — all trigger fallback for LOW income
+    // Only Lv3 buildings available — all trigger fallback for NONE education
     // Create 4 candidates so top-3 excludes the worst one
     const candidates: HousingCandidate[] = [
       makeHousingCandidate({ pos: '9,10', capacity: 10, level: 3, landValue: 200, serviceCoverage: 5, hasPark: true }),
@@ -331,7 +338,7 @@ describe('assignWorkWithPreference', () => {
     const citizen = makeCitizen({
       id: 1,
     birthTick: 0,
-      incomeLevel: IncomeLevel.HIGH,
+      education: EducationLevel.UNIVERSITY,
       homeId: '10,10',
     });
     const candidates: WorkplaceCandidate[] = [
@@ -342,7 +349,7 @@ describe('assignWorkWithPreference', () => {
 
     assignWorkWithPreference([citizen], candidates, occupancy);
 
-    // HIGH income should prefer OFFICE
+    // UNIVERSITY education should prefer OFFICE
     expect(citizen.workplaceId).toBe('11,11');
   });
 

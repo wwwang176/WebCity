@@ -69,7 +69,7 @@ export const HAPPINESS = {
   UNEMPLOYMENT_FORCED_PENALTY: -100,
   UNEMPLOYMENT_MEDIUM_TICKS: 30,
   UNEMPLOYMENT_BASE_TOLERANCE: 90,
-  UNEMPLOYMENT_INCOME_BONUS: { LOW: 0, MEDIUM: 15, HIGH: 30 } as Record<string, number>,
+  UNEMPLOYMENT_EDUCATION_BONUS: { NONE: 0, ELEMENTARY: 5, HIGH_SCHOOL: 15, UNIVERSITY: 30 } as Record<string, number>,
   UNEMPLOYMENT_ID_SPREAD: 30,
   // Tax brackets (descending order)
   TAX_BRACKETS: [
@@ -107,8 +107,8 @@ export function getUnemploymentPenalty(citizen: Citizen, currentTick: number): n
     return HAPPINESS.UNEMPLOYMENT_PENALTY;
   }
   const duration = currentTick - citizen.unemployedSince;
-  const incomeBonus = HAPPINESS.UNEMPLOYMENT_INCOME_BONUS[citizen.incomeLevel] ?? 0;
-  const tolerance = HAPPINESS.UNEMPLOYMENT_BASE_TOLERANCE + incomeBonus + (citizen.id % HAPPINESS.UNEMPLOYMENT_ID_SPREAD);
+  const eduBonus = HAPPINESS.UNEMPLOYMENT_EDUCATION_BONUS[citizen.education] ?? 0;
+  const tolerance = HAPPINESS.UNEMPLOYMENT_BASE_TOLERANCE + eduBonus + (citizen.id % HAPPINESS.UNEMPLOYMENT_ID_SPREAD);
 
   if (duration >= tolerance) return HAPPINESS.UNEMPLOYMENT_FORCED_PENALTY;
   if (duration >= HAPPINESS.UNEMPLOYMENT_MEDIUM_TICKS) return HAPPINESS.UNEMPLOYMENT_MEDIUM_PENALTY;

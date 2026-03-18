@@ -2,8 +2,8 @@ import { isZoneBuilding } from '../building/InfraConfig';
 import { getBuildingType } from '../building/types';
 import { isResidentialZone, isCommercialZone, ZoneType } from '../grid/types';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
-import { getIncomeLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from './TaxMultipliers';
-import type { IncomeLevel } from '../citizen/types';
+import { getBuildingLevelMultiplier, getResidentialLevelMultiplier, getEducationSalaryMultiplier, ECONOMY } from './TaxMultipliers';
+import type { EducationLevel } from '../citizen/types';
 
 export interface ZoneIncomeBreakdown {
   residential: number;
@@ -26,7 +26,7 @@ interface CellLike {
 export interface IncomeCalcDeps {
   forEachCell: (fn: (cell: CellLike, x: number, y: number) => void) => void;
   taxRates: { residential: number; business: number };
-  getCitizensByHome: (posKey: string) => Iterable<{ incomeLevel: IncomeLevel }>;
+  getResidentEducations: (posKey: string) => Iterable<EducationLevel>;
   /** Optional per-building revenue multiplier (e.g. district specialization). */
   getRevenueMultiplier?: (x: number, y: number) => number;
   /** Optional power check — unpowered buildings produce zero income. Defaults to true. */
@@ -36,6 +36,9 @@ export interface IncomeCalcDeps {
 /**
  * Calculate per-zone-type income breakdown from grid state.
  * Pure function — no side effects, no dependencies on specific classes.
+ *
+ * Residential tax = Σ(per resident: base × eduMultiplier) × buildingLevelMultiplier × taxRate
+ * Business tax = companyIncome × buildingLevelMultiplier × taxRate
  */
 export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown {
   const incomeTaxRate = deps.taxRates.residential ?? 9;
@@ -57,10 +60,12 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
     let buildingIncome = 0;
     if (isResidentialZone(btype.zoneType)) {
       const posKey = `${x},${y}`;
-      const residents = deps.getCitizensByHome(posKey);
-      for (const citizen of residents) {
-        buildingIncome += ECONOMY.CITIZEN_BASE_INCOME * getIncomeLevelMultiplier(citizen.incomeLevel) * (incomeTaxRate / 100);
+      // Sum per-resident education-based salary
+      let residentSalarySum = 0;
+      for (const edu of deps.getResidentEducations(posKey)) {
+        residentSalarySum += ECONOMY.CITIZEN_BASE_INCOME * getEducationSalaryMultiplier(edu);
       }
+      buildingIncome = residentSalarySum * getResidentialLevelMultiplier(btype.level as 1 | 2 | 3) * (incomeTaxRate / 100);
       // Apply per-building revenue multiplier (e.g. district specialization)
       if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
       residential += buildingIncome;

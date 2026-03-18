@@ -13,11 +13,6 @@ export enum EducationLevel {
   UNIVERSITY = 'UNIVERSITY',
 }
 
-export enum IncomeLevel {
-  LOW = 'LOW',
-  MEDIUM = 'MEDIUM',
-  HIGH = 'HIGH',
-}
 
 /** Aging rate: age (in life-weeks) gained per simulation tick.
  *  A full life (0→260 weeks) takes ~5 game years.
@@ -33,7 +28,6 @@ export interface Citizen {
   age: number;         // cached age in life-weeks (recomputed daily from birthTick)
   lifeStage: LifeStage;
   education: EducationLevel;
-  incomeLevel: IncomeLevel;
   happiness: number;
   health: number;
   homeId: string | null;      // "x,y" grid position of home building
@@ -44,19 +38,17 @@ export interface Citizen {
   educationProgress: number;   // 0=not enrolled, >0=enrolled (accumulated ticks)
 }
 
-/** Emigration tolerance: income base + education bonus + random jitter */
+/** Emigration tolerance: education base + random jitter */
 export const EMIGRATION_TOLERANCE = {
-  INCOME_BASE: { LOW: 18, MEDIUM: 24, HIGH: 30 } as Record<string, number>,
-  EDUCATION_BONUS: { NONE: 0, ELEMENTARY: 1, HIGH_SCHOOL: 3, UNIVERSITY: 5 } as Record<string, number>,
+  EDUCATION_BASE: { NONE: 18, ELEMENTARY: 22, HIGH_SCHOOL: 26, UNIVERSITY: 30 } as Record<string, number>,
   JITTER: 5,  // ±5 random
   FALLBACK: 25,  // default for legacy saves
 } as const;
 
-export function calculateEmigrationTolerance(income: IncomeLevel, education: EducationLevel): number {
-  const base = EMIGRATION_TOLERANCE.INCOME_BASE[income] ?? EMIGRATION_TOLERANCE.FALLBACK;
-  const bonus = EMIGRATION_TOLERANCE.EDUCATION_BONUS[education] ?? 0;
+export function calculateEmigrationTolerance(education: EducationLevel): number {
+  const base = EMIGRATION_TOLERANCE.EDUCATION_BASE[education] ?? EMIGRATION_TOLERANCE.FALLBACK;
   const jitter = Math.floor(Math.random() * (EMIGRATION_TOLERANCE.JITTER * 2 + 1)) - EMIGRATION_TOLERANCE.JITTER;
-  return base + bonus + jitter;
+  return base + jitter;
 }
 
 /** Age thresholds for life stage transitions (in life-weeks) */

@@ -1,4 +1,4 @@
-import { IncomeLevel, type Citizen } from './types';
+import { EducationLevel, type Citizen } from './types';
 import { parsePosKeyUnsafe, manhattanDistance } from '../grid/GridHelpers';
 
 export interface HousingCandidate {
@@ -12,64 +12,54 @@ export interface HousingCandidate {
   hasPark: boolean;
 }
 
-/** Which income levels can afford each building level */
-const AFFORDABILITY: Record<number, IncomeLevel[]> = {
-  1: [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH],
-  2: [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH],
-  3: [IncomeLevel.MEDIUM, IncomeLevel.HIGH],
+/** Map education level to a preferred building level (1-3) */
+const EDUCATION_TO_LEVEL: Record<EducationLevel, number> = {
+  [EducationLevel.NONE]: 1,
+  [EducationLevel.ELEMENTARY]: 1,
+  [EducationLevel.HIGH_SCHOOL]: 2,
+  [EducationLevel.UNIVERSITY]: 3,
 };
 
-/** Map income level to a preferred building level (1-3) */
-const INCOME_TO_LEVEL: Record<IncomeLevel, number> = {
-  [IncomeLevel.LOW]: 1,
-  [IncomeLevel.MEDIUM]: 2,
-  [IncomeLevel.HIGH]: 3,
+/** Weight multiplier for land value sensitivity by education */
+const LAND_VALUE_WEIGHT: Record<EducationLevel, number> = {
+  [EducationLevel.NONE]: 0.02,
+  [EducationLevel.ELEMENTARY]: 0.03,
+  [EducationLevel.HIGH_SCHOOL]: 0.05,
+  [EducationLevel.UNIVERSITY]: 0.1,
 };
 
-/** Weight multiplier for land value sensitivity by income */
-const LAND_VALUE_WEIGHT: Record<IncomeLevel, number> = {
-  [IncomeLevel.LOW]: 0.02,
-  [IncomeLevel.MEDIUM]: 0.05,
-  [IncomeLevel.HIGH]: 0.1,
+/** Weight multiplier for pollution sensitivity by education */
+const POLLUTION_WEIGHT: Record<EducationLevel, number> = {
+  [EducationLevel.NONE]: 0.03,
+  [EducationLevel.ELEMENTARY]: 0.04,
+  [EducationLevel.HIGH_SCHOOL]: 0.05,
+  [EducationLevel.UNIVERSITY]: 0.1,
 };
 
-/** Weight multiplier for pollution sensitivity by income */
-const POLLUTION_WEIGHT: Record<IncomeLevel, number> = {
-  [IncomeLevel.LOW]: 0.03,
-  [IncomeLevel.MEDIUM]: 0.05,
-  [IncomeLevel.HIGH]: 0.1,
-};
-
-/** Check if a citizen of the given income level can afford a building of the given level */
-export function canAfford(income: IncomeLevel, buildingLevel: number): boolean {
-  const allowed = AFFORDABILITY[buildingLevel];
-  return allowed !== undefined && allowed.includes(income);
-}
-
-/** Score how well the building level matches the citizen's income level */
-export function scoreLevelMatch(income: IncomeLevel, buildingLevel: number): number {
-  const preferred = INCOME_TO_LEVEL[income];
+/** Score how well the building level matches the citizen's education level */
+export function scoreLevelMatch(education: EducationLevel, buildingLevel: number): number {
+  const preferred = EDUCATION_TO_LEVEL[education];
   const diff = Math.abs(preferred - buildingLevel);
   if (diff === 0) return 30;
   if (diff === 1) return 10;
   return -10;
 }
 
-/** Score based on land value — high income citizens prefer high land value areas */
-export function scoreLandValue(income: IncomeLevel, landValue: number): number {
-  const weight = LAND_VALUE_WEIGHT[income];
+/** Score based on land value — high education citizens prefer high land value areas */
+export function scoreLandValue(education: EducationLevel, landValue: number): number {
+  const weight = LAND_VALUE_WEIGHT[education];
   // Normalize around midpoint (128): positive for above, negative for below
   return (landValue - 128) * weight;
 }
 
-/** Score based on pollution — penalizes all citizens, but HIGH income more */
+/** Score based on pollution — penalizes all citizens, but higher education more */
 export function scorePollution(
-  income: IncomeLevel,
+  education: EducationLevel,
   groundPollution: number,
   noisePollution: number,
 ): number {
   if (groundPollution === 0 && noisePollution === 0) return 0;
-  const weight = POLLUTION_WEIGHT[income];
+  const weight = POLLUTION_WEIGHT[education];
   const combined = groundPollution * 0.7 + noisePollution * 0.3;
   return -combined * weight;
 }
@@ -102,9 +92,9 @@ export function serviceScore(serviceCoverage: number, hasPark: boolean): number 
 /** Compute the total housing preference score for a citizen/candidate pair */
 export function scoreHousing(citizen: Citizen, candidate: HousingCandidate): number {
   let score = 0;
-  score += scoreLevelMatch(citizen.incomeLevel, candidate.level);
-  score += scoreLandValue(citizen.incomeLevel, candidate.landValue);
-  score += scorePollution(citizen.incomeLevel, candidate.groundPollution, candidate.noisePollution);
+  score += scoreLevelMatch(citizen.education, candidate.level);
+  score += scoreLandValue(citizen.education, candidate.landValue);
+  score += scorePollution(citizen.education, candidate.groundPollution, candidate.noisePollution);
   score += scoreCommute(citizen.workplaceId, candidate.pos);
   score += serviceScore(candidate.serviceCoverage, candidate.hasPark);
   return score;

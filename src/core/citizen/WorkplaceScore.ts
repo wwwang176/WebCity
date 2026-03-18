@@ -1,4 +1,4 @@
-import { EducationLevel, IncomeLevel, type Citizen } from './types';
+import { EducationLevel, type Citizen } from './types';
 import { ZoneType, isCommercialZone } from '../grid/types';
 import { scoreCommute } from './HousingScore';
 
@@ -7,32 +7,6 @@ export interface WorkplaceCandidate {
   capacity: number;
   zoneType: ZoneType;
 }
-
-/**
- * Zone-type preference scores by income level.
- * HIGH income prefers OFFICE, LOW income prefers INDUSTRIAL,
- * MEDIUM income prefers COMMERCIAL.
- */
-const ZONE_PREFERENCE: Record<IncomeLevel, Partial<Record<ZoneType, number>>> = {
-  [IncomeLevel.LOW]: {
-    [ZoneType.INDUSTRIAL]: 20,
-    [ZoneType.COMMERCIAL_LOW]: 10,
-    [ZoneType.COMMERCIAL_HIGH]: 10,
-    [ZoneType.OFFICE]: 0,
-  },
-  [IncomeLevel.MEDIUM]: {
-    [ZoneType.COMMERCIAL_LOW]: 20,
-    [ZoneType.COMMERCIAL_HIGH]: 20,
-    [ZoneType.OFFICE]: 10,
-    [ZoneType.INDUSTRIAL]: 5,
-  },
-  [IncomeLevel.HIGH]: {
-    [ZoneType.OFFICE]: 20,
-    [ZoneType.COMMERCIAL_HIGH]: 10,
-    [ZoneType.COMMERCIAL_LOW]: 5,
-    [ZoneType.INDUSTRIAL]: 0,
-  },
-};
 
 /**
  * Education-zone match scores.
@@ -45,9 +19,9 @@ const EDUCATION_ZONE_SCORE: Record<string, Record<EducationLevel, number>> = {
 };
 
 export function scoreEducationMatch(education: EducationLevel, zoneType: ZoneType): number {
-  if (zoneType === ZoneType.OFFICE) return EDUCATION_ZONE_SCORE.office[education];
-  if (zoneType === ZoneType.INDUSTRIAL) return EDUCATION_ZONE_SCORE.industrial[education];
-  if (isCommercialZone(zoneType)) return EDUCATION_ZONE_SCORE.commercial[education];
+  if (zoneType === ZoneType.OFFICE) return EDUCATION_ZONE_SCORE.office![education];
+  if (zoneType === ZoneType.INDUSTRIAL) return EDUCATION_ZONE_SCORE.industrial![education];
+  if (isCommercialZone(zoneType)) return EDUCATION_ZONE_SCORE.commercial![education];
   return 0;
 }
 
@@ -61,14 +35,13 @@ export function scoreCommuteByCost(cost: number | null): number {
   return Math.round(15 - (cost - 10) * (30 / 30));
 }
 
-/** Job relocation scoring: zone preference + education match + road-cost commute. */
+/** Job relocation scoring: education match + road-cost commute. */
 export function scoreWorkplaceWithCost(
   citizen: Citizen,
   zoneType: ZoneType,
   roadCost: number | null,
 ): number {
-  const prefs = ZONE_PREFERENCE[citizen.incomeLevel];
-  return (prefs[zoneType] ?? 0) + scoreEducationMatch(citizen.education, zoneType) + scoreCommuteByCost(roadCost);
+  return scoreEducationMatch(citizen.education, zoneType) + scoreCommuteByCost(roadCost);
 }
 
 /** Compute total workplace preference score */
@@ -78,10 +51,6 @@ export function scoreWorkplace(
   zoneType: ZoneType,
 ): number {
   let score = 0;
-
-  // Zone-type preference based on income level
-  const prefs = ZONE_PREFERENCE[citizen.incomeLevel];
-  score += prefs[zoneType] ?? 0;
 
   // Education-zone match
   score += scoreEducationMatch(citizen.education, zoneType);

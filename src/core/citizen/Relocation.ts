@@ -1,5 +1,5 @@
 import type { Citizen } from './types';
-import { type HousingCandidate, canAfford, scoreHousing } from './HousingScore';
+import { type HousingCandidate, scoreHousing } from './HousingScore';
 
 export interface RelocationConfig {
   happinessThreshold: number;  // 35
@@ -54,7 +54,7 @@ export function relocationTick(
     const alternatives = candidates.filter(c => {
       if (c.pos === currentPos) return false;
       const occ = occupancy.get(c.pos) ?? 0;
-      return occ < c.capacity && canAfford(citizen.incomeLevel, c.level);
+      return occ < c.capacity;
     });
     if (alternatives.length === 0) continue;
 

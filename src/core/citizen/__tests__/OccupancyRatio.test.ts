@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeOccupancyRatios } from '../OccupancyRatio';
 import type { Citizen } from '../types';
-import { LifeStage, EducationLevel, IncomeLevel } from '../types';
+import { LifeStage, EducationLevel } from '../types';
 
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
   return {
@@ -10,11 +10,14 @@ function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
     age: 30,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
-    incomeLevel: IncomeLevel.LOW,
     happiness: 50,
     health: 80,
     homeId: null,
     workplaceId: null,
+    unemployedSince: null,
+    homelessSince: null,
+    emigrationTolerance: 25,
+    educationProgress: 0,
     ...overrides,
   };
 }
