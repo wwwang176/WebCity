@@ -735,14 +735,10 @@ export class SimulationLoop {
         crimeRate: this.getAvgCrime(),
       });
 
-      // Write land value, service coverage, and noise to grid
-      const updates: Record<string, number> = {};
-      if (cell.landValue !== value) updates.landValue = value;
-      if (cell.serviceCoverage !== serviceCoverage) updates.serviceCoverage = serviceCoverage;
+      // Write land value, service coverage, and noise to grid (avoid temp object)
       const noiseVal = Math.min(SIMULATION.CELL_VALUE_MAX, Math.round(pollution.noise));
-      if (cell.noiseLevel !== noiseVal) updates.noiseLevel = noiseVal;
-      if (Object.keys(updates).length > 0) {
-        grid.setCell(x, y, updates);
+      if (cell.landValue !== value || cell.serviceCoverage !== serviceCoverage || cell.noiseLevel !== noiseVal) {
+        grid.setCell(x, y, { landValue: value, serviceCoverage, noiseLevel: noiseVal });
       }
     });
   }
