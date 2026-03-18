@@ -132,8 +132,8 @@ const SCHOOL_KEY_TO_TYPE: Record<EducationRule['schoolKey'], SchoolType> = {
 
 export class SimulationLoop {
   private state: GameState;
-  private lastAgeYear = -1;
   private lastDeathDay = -1;
+  private lastBirthMonth = -1;
 
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
@@ -268,18 +268,11 @@ export class SimulationLoop {
       }, capacity);
     }
 
-    // 5a. Citizens aging (once per game year) — only age, no death
-    const currentYear = this.state.clock.getYear();
-    if (currentYear !== this.lastAgeYear) {
-      this.lastAgeYear = currentYear;
-      this.state.citizens.ageTick();
-      birthTick(this.state.citizens);
-    }
-
-    // 5b. Daily death check (once per game day) — bathtub curve + health coverage
+    // 5a. Daily: update citizen ages from birthTick + death check
     const currentDay = this.state.clock.getDay();
     if (currentDay !== this.lastDeathDay) {
       this.lastDeathDay = currentDay;
+      this.state.citizens.updateAges(this.state.clock.tick);
       this.state.deathCare.advanceDay();
       this.state.fire.advanceDay();
       const deadIds = this.state.citizens.deathTick(
@@ -294,6 +287,20 @@ export class SimulationLoop {
         this.commuteCache.remove(id);
         this.state.deathCare.reportDeath();
       }
+    }
+
+    // 5b. Monthly: natural births
+    const currentMonth = this.state.clock.getMonth();
+    if (currentMonth !== this.lastBirthMonth) {
+      this.lastBirthMonth = currentMonth;
+      birthTick(this.state.citizens, {
+        getResidents: (homeId) => {
+          const [x, y] = homeId.split(',').map(Number);
+          const cell = this.state.grid.getCell(x, y);
+          if (!cell || !cell.buildingId) return 8; // fallback
+          return getBuildingType(cell.buildingId)?.residents ?? 8;
+        },
+      }, this.state.clock.tick);
     }
 
     // 5.5. Update citizen happiness (every 6 ticks)
@@ -488,7 +495,7 @@ export class SimulationLoop {
       crimeRate: this.getAvgCrime(),
       unemploymentRate,
     };
-    const { emigratedIds } = migrationTick(this.state.citizens, city, pop);
+    const { emigratedIds } = migrationTick(this.state.citizens, city, pop, this.state.clock.tick);
     for (const id of emigratedIds) {
       this.commuteCache.remove(id);
     }

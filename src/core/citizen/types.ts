@@ -19,9 +19,18 @@ export enum IncomeLevel {
   HIGH = 'HIGH',
 }
 
+/** Aging rate: age (in life-weeks) gained per simulation tick.
+ *  A full life (0→260 weeks) takes ~5 game years.
+ *  @3x speed: ~1 hour real time for a full lifespan. */
+export const AGE_PER_TICK = 0.006;
+
+/** Hard death cap: citizens above this age die immediately. */
+export const MAX_AGE = 280;
+
 export interface Citizen {
   id: number;
-  age: number;
+  birthTick: number;   // simulation tick when citizen was born or immigrated
+  age: number;         // cached age in life-weeks (recomputed daily from birthTick)
   lifeStage: LifeStage;
   education: EducationLevel;
   incomeLevel: IncomeLevel;
@@ -50,12 +59,12 @@ export function calculateEmigrationTolerance(income: IncomeLevel, education: Edu
   return base + bonus + jitter;
 }
 
-/** Age thresholds for life stage transitions */
+/** Age thresholds for life stage transitions (in life-weeks) */
 export const LIFE_STAGE_AGE = {
-  BABY_MAX: 5,
-  CHILD_MAX: 12,
-  TEEN_MAX: 18,
-  ADULT_MAX: 65,
+  BABY_MAX: 8,
+  CHILD_MAX: 32,
+  TEEN_MAX: 52,
+  ADULT_MAX: 200,
 } as const;
 
 /** Check if age falls within working age range (adults only, excludes teens and seniors) */

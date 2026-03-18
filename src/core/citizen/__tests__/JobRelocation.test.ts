@@ -17,7 +17,8 @@ import { toPosKey } from '../../grid/GridHelpers';
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
   return {
     id: 1,
-    age: 30,
+    birthTick: 0,
+    age: 100,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
     incomeLevel: IncomeLevel.LOW,
@@ -317,7 +318,7 @@ describe('jobRelocationTick', () => {
 
   it('skips non-working-age citizens', () => {
     const teen = makeCitizen({ id: 12, age: 16, lifeStage: LifeStage.TEEN });
-    const senior = makeCitizen({ id: 13, age: 70, lifeStage: LifeStage.SENIOR });
+    const senior = makeCitizen({ id: 13, age: 220, lifeStage: LifeStage.SENIOR });
     const cache = makeCacheMap([]);
     const candidates: WorkplaceCandidateWithZone[] = [
       { pos: '6,1', capacity: 5, zoneType: ZoneType.INDUSTRIAL },

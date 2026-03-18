@@ -2,11 +2,11 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { LifeStage, EducationLevel, IncomeLevel } from '../../../core/citizen/types';
 
 const STAGE_LABELS: Record<string, string> = {
-  [LifeStage.BABY]: 'Baby (0-5)',
-  [LifeStage.CHILD]: 'Child (6-12)',
-  [LifeStage.TEEN]: 'Teen (13-18)',
-  [LifeStage.ADULT]: 'Adult (19-65)',
-  [LifeStage.SENIOR]: 'Senior (66+)',
+  [LifeStage.BABY]: 'Baby',
+  [LifeStage.CHILD]: 'Child',
+  [LifeStage.TEEN]: 'Teen',
+  [LifeStage.ADULT]: 'Adult',
+  [LifeStage.SENIOR]: 'Senior',
 };
 const STAGE_COLORS: Record<string, string> = {
   [LifeStage.BABY]: '#ce93d8',
@@ -73,7 +73,6 @@ export function DemographicsPage() {
     const stages: Record<string, number> = {};
     const edus: Record<string, number> = {};
     const incomes: Record<string, number> = {};
-    let totalAge = 0;
     let totalHappiness = 0;
     let totalHealth = 0;
     let unemployed = 0;
@@ -85,7 +84,6 @@ export function DemographicsPage() {
       stages[c.lifeStage] = (stages[c.lifeStage] ?? 0) + 1;
       edus[c.education] = (edus[c.education] ?? 0) + 1;
       incomes[c.incomeLevel] = (incomes[c.incomeLevel] ?? 0) + 1;
-      totalAge += c.age;
       totalHappiness += c.happiness;
       totalHealth += c.health;
       if (c.homelessSince !== null) homeless++;
@@ -97,8 +95,7 @@ export function DemographicsPage() {
     }
 
     return {
-      pop, totalAge, totalHappiness, totalHealth,
-      avgAge: pop > 0 ? totalAge / pop : 0,
+      pop, totalHappiness, totalHealth,
       avgHappiness: pop > 0 ? totalHappiness / pop : 0,
       avgHealth: pop > 0 ? totalHealth / pop : 0,
       adults, employed, unemployed, homeless,
@@ -119,7 +116,6 @@ export function DemographicsPage() {
     <>
       <div class="summary-grid">
         <div class="summary-card"><div class="sc-value stat-accent">{stats().pop}</div><div class="sc-label">Population</div></div>
-        <div class="summary-card"><div class="sc-value">{stats().avgAge.toFixed(1)}</div><div class="sc-label">Avg Age</div></div>
         <div class="summary-card"><div class="sc-value">{stats().avgHappiness.toFixed(0)}</div><div class="sc-label">Avg Happiness</div></div>
         <div class="summary-card"><div class="sc-value">{stats().avgHealth.toFixed(0)}</div><div class="sc-label">Avg Health</div></div>
       </div>

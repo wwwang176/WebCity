@@ -209,7 +209,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           <For each={citizens().residents}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
-                Citizen #{c.id} - Age {c.age} ({c.lifeStage})
+                Citizen #{c.id} - {c.lifeStage}
               </div>
             )}
           </For>
@@ -219,7 +219,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           <For each={citizens().workers}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
-                Citizen #{c.id} - Age {c.age} ({c.lifeStage})
+                Citizen #{c.id} - {c.lifeStage}
               </div>
             )}
           </For>

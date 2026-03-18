@@ -65,7 +65,9 @@ export function initGameStore(game: Game): void {
     const overlay = (game as any).overlayRenderer?.getOverlay?.() ?? 'none';
 
     batch(() => {
-      setDate(`Y${clock.getYear() + 1} M${(clock.getMonth() % 12) + 1} D${(clock.getDay() % 30) + 1}`);
+      const SEASON_LABELS = ['Spring', 'Summer', 'Autumn', 'Winter'] as const;
+      const seasonIdx = ['spring', 'summer', 'autumn', 'winter'].indexOf(clock.getSeason());
+      setDate(`${SEASON_LABELS[seasonIdx]} · Week ${clock.getWeek() + 1}`);
       setFunds(Math.floor(state.budget.funds));
       setPopulation(pop);
       setBalance(bal);

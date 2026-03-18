@@ -1,13 +1,13 @@
-import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage, calculateEmigrationTolerance, EMIGRATION_TOLERANCE, LIFE_STAGE_AGE } from './types';
+import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage, calculateEmigrationTolerance, EMIGRATION_TOLERANCE, LIFE_STAGE_AGE, AGE_PER_TICK, MAX_AGE } from './types';
 import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
-/** Daily death rate per life stage (bathtub curve) */
+/** Daily death rate per life stage (bathtub curve) — calibrated for compressed life-week aging. */
 export const DAILY_DEATH_RATE: Record<LifeStage, number> = {
-  [LifeStage.BABY]:   0.00005,  // 0~5 yrs, slightly higher infant mortality
-  [LifeStage.CHILD]:  0.00001,  // 6~12 yrs, lowest
-  [LifeStage.TEEN]:   0.00001,  // 13~18 yrs, lowest
-  [LifeStage.ADULT]:  0.00003,  // 19~65 yrs, low
-  [LifeStage.SENIOR]: 0.0003,   // 66~90 yrs, significant increase
+  [LifeStage.BABY]:   0.0016,    // 0-8 wk: ~91% survive without health
+  [LifeStage.CHILD]:  0.00015,   // 9-32 wk: ~98% survive
+  [LifeStage.TEEN]:   0.00015,   // 33-52 wk: ~98% survive
+  [LifeStage.ADULT]:  0.0005,    // 53-200 wk: ~60% survive without health
+  [LifeStage.SENIOR]: 0.006,     // 201-260 wk: ~8% survive without health
 };
 
 /** Health coverage multiplier on death rate */
@@ -16,11 +16,11 @@ export const HEALTH_MULTIPLIER = {
   NOT_COVERED: 1.0,  // baseline
 } as const;
 
-/** Elderly multiplier: ramps up death rate above age 90 */
+/** Elderly multiplier: ramps up death rate above 240 life-weeks */
 export function getElderlyMultiplier(age: number): number {
-  if (age <= 90) return 1;
-  if (age > 100) return Infinity;
-  return 1 + (age - 90) * 1.0;
+  if (age <= 240) return 1;
+  if (age > MAX_AGE) return Infinity;
+  return 1 + (age - 240) * 0.25;
 }
 
 /** Data-driven education progression rules — no age/lifeStage restriction, anyone can learn. */
@@ -31,17 +31,17 @@ export interface EducationRule {
 }
 
 /** Minimum age to enroll in school (babies excluded). */
-export const MIN_SCHOOL_AGE = LIFE_STAGE_AGE.BABY_MAX + 1; // 6
+export const MIN_SCHOOL_AGE = LIFE_STAGE_AGE.BABY_MAX + 1; // 9 life-weeks
 
 /** Progress scale factor — all progress/thresholds use ×100 for integer math. */
 export const EDUCATION_SCALE = 100;
 
-/** Graduation thresholds (×100 scale, 80% of full life-stage proportion).
- *  Child slow ticks = value / 100. Adult ≈ value / 33. Senior = value / 20. */
+/** Graduation thresholds (×100 scale) — scaled for compressed life-week aging.
+ *  Child: 150 ticks, Teen: 120 ticks, Adult(uni): ~303 ticks. */
 export const GRADUATION_TICKS: Record<EducationRule['schoolKey'], number> = {
-  elementary: 2400 * EDUCATION_SCALE,  // 240,000 → child 2400, adult ~7273, senior 12000 slow ticks
-  highSchool: 2000 * EDUCATION_SCALE,  // 200,000 → child 2000, adult ~6061, senior 10000 slow ticks
-  university: 1600 * EDUCATION_SCALE,  // 160,000 → child 1600, adult ~4849, senior 8000 slow ticks
+  elementary: 150 * EDUCATION_SCALE,  // 15,000 → child 150, adult ~455, senior 750 ticks
+  highSchool: 120 * EDUCATION_SCALE,  // 12,000 → child 120, adult ~364, senior 600 ticks
+  university: 100 * EDUCATION_SCALE,  // 10,000 → child 100, adult ~303, senior 500 ticks
 };
 
 /** Base speed points per tick. Younger = faster, older = slower. */
@@ -73,12 +73,13 @@ export class CitizenManager {
   /** Hook called after citizens are evicted from a building. Subscribers handle cleanup (e.g. commute cache). */
   onEvicted?: (citizenIds: number[]) => void;
 
-  createCitizen(overrides: Partial<Citizen> = {}): Citizen {
-    const age = overrides.age ?? 25;
+  createCitizen(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen {
+    const age = overrides.age ?? 100; // default mid-ADULT (life-weeks)
     const income = overrides.incomeLevel ?? IncomeLevel.LOW;
     const education = overrides.education ?? EducationLevel.NONE;
     const citizen: Citizen = {
       id: this.nextId++,
+      birthTick: overrides.birthTick ?? Math.round(currentTick - age / AGE_PER_TICK),
       age,
       lifeStage: getLifeStage(age),
       education,
@@ -169,10 +170,11 @@ export class CitizenManager {
     return evictedIds;
   }
 
-  /** Called once per game year: age all citizens and update lifeStage */
-  ageTick(): void {
+  /** Called once per game day: recompute all citizen ages from birthTick.
+   *  Using birthTick avoids float accumulation errors. */
+  updateAges(currentTick: number): void {
     for (const c of this.citizens) {
-      c.age++;
+      c.age = (currentTick - c.birthTick) * AGE_PER_TICK;
       c.lifeStage = getLifeStage(c.age);
     }
   }
@@ -182,7 +184,7 @@ export class CitizenManager {
   deathTick(isHealthCovered: (citizen: Citizen) => boolean): number[] {
     const dead: number[] = [];
     for (const c of this.citizens) {
-      if (c.age > 100) {
+      if (c.age > MAX_AGE) {
         dead.push(c.id);
         continue;
       }
@@ -213,7 +215,14 @@ export class CitizenManager {
     for (const c of this.citizens) {
       if (c.educationProgress <= 0) continue;
       const matched = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
-      if (!matched || c.age < MIN_SCHOOL_AGE || !c.homeId) continue; // paused, keep progress
+      if (!matched) continue;
+      // Graduate immediately if already past threshold (handles save migration threshold changes)
+      if (c.educationProgress >= GRADUATION_TICKS[matched.schoolKey]) {
+        c.education = matched.nextEducation;
+        c.educationProgress = 0;
+        continue;
+      }
+      if (c.age < MIN_SCHOOL_AGE || !c.homeId) continue; // paused, keep progress
       const pos = parsePosKeyUnsafe(c.homeId);
       if (!isSchoolCovered(pos.x, pos.y, matched.schoolKey)) continue; // paused, keep progress
       c.educationProgress += jitteredSpeed(getLearningSpeed(c.age));

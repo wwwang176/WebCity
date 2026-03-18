@@ -367,7 +367,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'elementary');
     setupRoadAndCoverage(state, 10, 20);
-    const child = state.citizens.createCitizen({ age: 8, homeId: '5,10' });
+    const child = state.citizens.createCitizen({ age: 20, homeId: '5,10' });
     expect(child.education).toBe('NONE');
 
     const loop = new SimulationLoop(state);
@@ -379,7 +379,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'elementary');
     setupRoadAndCoverage(state, 10, 5);
-    const child = state.citizens.createCitizen({ age: 8, homeId: '25,25' });
+    const child = state.citizens.createCitizen({ age: 20, homeId: '25,25' });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick();
@@ -391,7 +391,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'highschool');
     setupRoadAndCoverage(state, 10, 20);
-    const teen = state.citizens.createCitizen({ age: 15, education: 'ELEMENTARY' as any, homeId: '5,10' });
+    const teen = state.citizens.createCitizen({ age: 40, education: 'ELEMENTARY' as any, homeId: '5,10' });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
@@ -402,7 +402,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'university');
     setupRoadAndCoverage(state, 10, 20);
-    const adult = state.citizens.createCitizen({ age: 22, education: 'HIGH_SCHOOL' as any, homeId: '5,10' });
+    const adult = state.citizens.createCitizen({ age: 60, education: 'HIGH_SCHOOL' as any, homeId: '5,10' });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
@@ -413,7 +413,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'university');
     setupRoadAndCoverage(state, 10, 20);
-    const adult = state.citizens.createCitizen({ age: 30, education: 'HIGH_SCHOOL' as any, homeId: '5,10' });
+    const adult = state.citizens.createCitizen({ age: 100, education: 'HIGH_SCHOOL' as any, homeId: '5,10' });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
@@ -424,7 +424,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'elementary');
     setupRoadAndCoverage(state, 10, 20);
-    const child = state.citizens.createCitizen({ age: 8, homeId: null });
+    const child = state.citizens.createCitizen({ age: 20, homeId: null });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick();
@@ -436,8 +436,8 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'elementary', undefined, 1);
     setupRoadAndCoverage(state, 10, 20);
-    const c1 = state.citizens.createCitizen({ age: 8, homeId: '5,10' });
-    const c2 = state.citizens.createCitizen({ age: 9, homeId: '5,10' });
+    const c1 = state.citizens.createCitizen({ age: 20, homeId: '5,10' });
+    const c2 = state.citizens.createCitizen({ age: 21, homeId: '5,10' });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick(); // 1 slow tick
@@ -447,7 +447,7 @@ describe('Education integration in SimulationLoop', () => {
 
   it('no school → no enrollment progress', () => {
     const state = createGameState(30, 30);
-    const child = state.citizens.createCitizen({ age: 8, homeId: '5,10' });
+    const child = state.citizens.createCitizen({ age: 20, homeId: '5,10' });
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick();
@@ -457,24 +457,24 @@ describe('Education integration in SimulationLoop', () => {
 });
 
 describe('DeathCare integration', () => {
-  it('ageTick should only age without killing', () => {
+  it('updateAges should only age without killing', () => {
     const state = createGameState(10, 10);
     for (let i = 0; i < 3; i++) {
-      state.citizens.createCitizen({ age: 100 });
+      state.citizens.createCitizen({ age: 281 });
     }
     expect(state.citizens.getPopulation()).toBe(3);
 
-    state.citizens.ageTick();
-    // ageTick no longer kills — all 3 should survive (at age 101)
+    state.citizens.updateAges(0);
+    // updateAges no longer kills — all 3 should survive
     expect(state.citizens.getPopulation()).toBe(3);
   });
 
-  it('deathTick should kill citizens over 100 and report to DeathCare', () => {
+  it('deathTick should kill citizens over MAX_AGE and report to DeathCare', () => {
     const state = createGameState(10, 10);
     state.deathCare.addCemetery(5, 5);
-    // Create citizens already over 100 → guaranteed death in deathTick
+    // Create citizens already over MAX_AGE (280) → guaranteed death in deathTick
     for (let i = 0; i < 3; i++) {
-      state.citizens.createCitizen({ age: 101 });
+      state.citizens.createCitizen({ age: 281 });
     }
 
     const deadIds = state.citizens.deathTick(() => false);
@@ -491,9 +491,9 @@ describe('DeathCare integration', () => {
   it('SimulationLoop daily deathTick reports deaths to DeathCareService', () => {
     const state = createGameState(10, 10);
     state.deathCare.addCemetery(5, 5);
-    // Create citizens at age 101 — will die on first deathTick (daily check)
+    // Create citizens at age 281 (> MAX_AGE 280) — will die on first deathTick (daily check)
     for (let i = 0; i < 3; i++) {
-      state.citizens.createCitizen({ age: 101 });
+      state.citizens.createCitizen({ age: 281 });
     }
 
     const loop = new SimulationLoop(state);

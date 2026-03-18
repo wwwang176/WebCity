@@ -13,7 +13,7 @@ export function CitizenDetail(props: { citizenId: number | null }) {
       {(c) => (
         <div class="bp-citizen-detail" style={{ display: 'block' }}>
           <div class="cd-name">Citizen #{c().id}</div>
-          <div class="cd-row">Age <span>{c().age} ({c().lifeStage})</span></div>
+          <div class="cd-row">Stage <span>{c().lifeStage}</span></div>
           <div class="cd-row">Education <span>{c().education}</span></div>
           <div class="cd-row">Income <span>{c().incomeLevel}</span></div>
           <div class="cd-row">Happiness <span>{c().happiness}</span></div>
