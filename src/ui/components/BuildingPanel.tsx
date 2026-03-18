@@ -36,7 +36,7 @@ const TRANSPORT_ICONS: Record<string, string> = {
   ferry: '\u26F4',
 };
 
-const SERVICE_LABELS: { key: keyof ServiceStatus; label: string }[] = [
+const SERVICE_LABELS_ALL: { key: keyof ServiceStatus; label: string }[] = [
   { key: 'power', label: 'Power' },
   { key: 'water', label: 'Water' },
   { key: 'police', label: 'Police' },
@@ -45,6 +45,14 @@ const SERVICE_LABELS: { key: keyof ServiceStatus; label: string }[] = [
   { key: 'education', label: 'Education' },
   { key: 'garbage', label: 'Garbage' },
   { key: 'deathCare', label: 'Death Care' },
+];
+
+/** Non-residential zones only need infrastructure & safety services */
+const SERVICE_LABELS_NON_RES: { key: keyof ServiceStatus; label: string }[] = [
+  { key: 'power', label: 'Power' },
+  { key: 'water', label: 'Water' },
+  { key: 'police', label: 'Police' },
+  { key: 'fire', label: 'Fire' },
 ];
 
 /** Map cost ratio (-1=none, 0=best, 1=worst) to a dot color. */
@@ -61,11 +69,12 @@ function ratioColor(ratio: number): string {
   return `rgb(255,${green},50)`;
 }
 
-function ServiceCoverage(props: { services: ServiceStatus }) {
+function ServiceCoverage(props: { services: ServiceStatus; isResidential: boolean }) {
+  const labels = () => props.isResidential ? SERVICE_LABELS_ALL : SERVICE_LABELS_NON_RES;
   return (
     <div style="margin-top:4px">
       <div style="font-size:11px;color:#90a4ae;margin-bottom:2px">Services</div>
-      <For each={SERVICE_LABELS}>
+      <For each={labels()}>
         {(s) => {
           const r = () => props.services[s.key];
           return (
@@ -201,7 +210,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
         </div>
       </Show>
       <AbandonmentWarnings sel={props.sel} />
-      <ServiceCoverage services={props.sel.services} />
+      <ServiceCoverage services={props.sel.services} isResidential={props.sel.zoneType === ZoneType.RESIDENTIAL_LOW || props.sel.zoneType === ZoneType.RESIDENTIAL_HIGH} />
 
       <div id="bp-citizen-list">
         <Show when={citizens().residents.length > 0}>

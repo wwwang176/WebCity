@@ -809,16 +809,21 @@ export class SimulationLoop {
       const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
 
       // Continuous service score: each service contributes (1 - costRatio), power/water weight 2
+      // Non-residential zones only count infrastructure & safety (power/water/police/fire),
+      // normalized to 0–10 scale so full coverage gives equal offset regardless of zone type.
       const svc = (ratio: number) => ratio < 0 ? 0 : 1 - ratio; // -1=uncovered→0, 0=nearest→1, 1=farthest→0
-      const serviceScore =
+      const isRes = isResidentialZone(cell.zoneType);
+      const rawScore =
         (this.state.power.isPowered(x, y) ? 2 : 0) +
         (this.state.water.isSupplied(x, y) ? 2 : 0) +
         svc(this.state.police.getCostRatio(x, y)) +
         svc(this.state.fire.getCostRatio(x, y)) +
-        svc(this.state.garbage.getCostRatio(x, y)) +
-        svc(this.state.health.getCostRatio(x, y)) +
-        svc(this.state.education.getCostRatio(x, y)) +
-        svc(this.state.deathCare.getCostRatio(x, y));
+        (isRes ? svc(this.state.garbage.getCostRatio(x, y)) : 0) +
+        (isRes ? svc(this.state.health.getCostRatio(x, y)) : 0) +
+        (isRes ? svc(this.state.education.getCostRatio(x, y)) : 0) +
+        (isRes ? svc(this.state.deathCare.getCostRatio(x, y)) : 0);
+      // Residential max=10, non-residential max=6 → normalize to 0–10
+      const serviceScore = isRes ? rawScore : rawScore * (10 / 6);
 
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
