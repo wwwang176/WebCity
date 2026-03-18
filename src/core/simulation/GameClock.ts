@@ -1,4 +1,4 @@
-export type GameSpeed = 0 | 1 | 2 | 3;
+export type GameSpeed = 0 | 1 | 3 | 5 | 10;
 
 export type TimeOfDay = 'night' | 'morning_rush' | 'midday' | 'evening_rush';
 
@@ -17,8 +17,9 @@ export const TIME_PERIOD = {
 export const SPEED_INTERVALS: Record<GameSpeed, number> = {
   0: Infinity,
   1: 250,
-  2: 125,
   3: 83,
+  5: 50,
+  10: 25,
 };
 
 export class GameClock {
@@ -69,6 +70,9 @@ export class GameClock {
   getTickInterval(): number {
     return SPEED_INTERVALS[this.speed];
   }
+
+  /** All valid non-zero speeds in order, for changeSpeed cycling. */
+  static readonly SPEEDS: readonly GameSpeed[] = [1, 3, 5, 10];
 
   setSpeed(speed: GameSpeed): void {
     this.speed = speed;

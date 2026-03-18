@@ -1,6 +1,6 @@
 import { EducationLevel, IncomeLevel, type Citizen } from './types';
 import { ZoneType, isCommercialZone } from '../grid/types';
-import { parsePosKeyUnsafe, manhattanDistance } from '../grid/GridHelpers';
+import { scoreCommute } from './HousingScore';
 
 export interface WorkplaceCandidate {
   pos: string;
@@ -51,19 +51,7 @@ export function scoreEducationMatch(education: EducationLevel, zoneType: ZoneTyp
   return 0;
 }
 
-/** Score commute from home to workplace candidate */
-function scoreWorkplaceCommute(homePos: string | null, candidatePos: string): number {
-  if (homePos === null) return 0;
-
-  const hp = parsePosKeyUnsafe(homePos);
-  const cp = parsePosKeyUnsafe(candidatePos);
-  const dist = manhattanDistance(hp.x, hp.y, cp.x, cp.y);
-
-  if (dist <= 5) return 15;
-  if (dist > 20) return -15;
-  // Linear interpolation between 5 and 20: 15 → -15
-  return Math.round(15 - (dist - 5) * (30 / 15));
-}
+// scoreWorkplaceCommute removed — shared scoreCommute from HousingScore.ts (DRY)
 
 /** Score commute based on Dijkstra road cost (used by job relocation). */
 export function scoreCommuteByCost(cost: number | null): number {
@@ -98,8 +86,8 @@ export function scoreWorkplace(
   // Education-zone match
   score += scoreEducationMatch(citizen.education, zoneType);
 
-  // Commute distance from home
-  score += scoreWorkplaceCommute(citizen.homeId, workplacePos);
+  // Commute distance from home (shared scoring function from HousingScore)
+  score += scoreCommute(citizen.homeId, workplacePos);
 
   return score;
 }

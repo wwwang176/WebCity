@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../CityMetrics';
+import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate, avgResidentialMetric } from '../CityMetrics';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
 import { SIMULATION } from '../../simulation/SimulationLoop';
@@ -38,6 +38,22 @@ describe('CityMetrics', () => {
       grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, noiseLevel: 10 });
       grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, noiseLevel: 30 });
       expect(getAvgResidentialNoise(grid)).toBe(20);
+    });
+  });
+
+  describe('avgResidentialMetric (shared helper)', () => {
+    it('works with arbitrary cell accessor', () => {
+      const grid = new Grid(5, 5);
+      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, landValue: 50 });
+      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_HIGH, landValue: 100 });
+      grid.setCell(2, 0, { zoneType: ZoneType.INDUSTRIAL, landValue: 200 });
+      // Average of 50 and 100 = 75, ignoring industrial
+      expect(avgResidentialMetric(grid, cell => cell.landValue)).toBe(75);
+    });
+
+    it('returns 0 when no residential cells', () => {
+      const grid = new Grid(3, 3);
+      expect(avgResidentialMetric(grid, cell => cell.pollution)).toBe(0);
     });
   });
 

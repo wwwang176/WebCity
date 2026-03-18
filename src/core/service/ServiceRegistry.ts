@@ -16,3 +16,20 @@ export function getCivicServices(state: GameState): CivicService[] {
 export function getTotalServiceMaintenanceCost(state: GameState): number {
   return getCivicServices(state).reduce((sum, svc) => sum + svc.getMaintenanceCost(), 0);
 }
+
+/**
+ * Tick all civic services (OCP: adding a new service only requires updating this function).
+ * Centralizes service ticking from SimulationLoop — services with special tick signatures
+ * (garbage/sewage need population) are handled here.
+ */
+export function tickAllCivicServices(state: GameState): void {
+  const population = state.citizens.getPopulation();
+  state.police.tick();
+  state.fire.tick();
+  state.health.tick();
+  state.education.tick();
+  state.parks.tick();
+  state.garbage.tick(population);
+  state.sewage.tick(population);
+  state.deathCare.tick();
+}

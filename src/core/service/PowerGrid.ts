@@ -1,9 +1,9 @@
 import { Grid } from '../grid/Grid';
-import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
-import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
 import { getInfraConfigById, getInfraBuildingId } from '../building/InfraConfig';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
 
 export interface PowerPlant {
   x: number;
@@ -83,13 +83,14 @@ export class PowerGrid {
     // Phase 1: compute fullCoverage (no budget limit) — shows where the network reaches
     this.fullCoverage = new Set<string>();
     for (const plant of this.plants) {
-      this.bfsRoadNetwork(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions);
+      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions);
     }
 
     // Phase 2: BFS budget-drain per plant to determine actual powered cells
     this.powered = new Set<string>();
+    const getDemand = (x: number, y: number) => this.getCellDemand(grid, x, y);
     for (const plant of this.plants) {
-      this.bfsBudgetDrain(grid, plant, infrastructurePositions);
+      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions);
     }
     return this.powered;
   }
@@ -186,69 +187,5 @@ export class PowerGrid {
     return 0;
   }
 
-  /**
-   * Pure BFS through roads/buildings from a starting position.
-   * Adds all reachable cells to the given set. No budget limit.
-   */
-  private bfsRoadNetwork(grid: Grid, startX: number, startY: number, coverage: Set<string>, infra?: Set<string>): void {
-    const startKey = toPosKey(startX, startY);
-    if (coverage.has(startKey)) return;
-    coverage.add(startKey);
-    const queue: [number, number][] = [[startX, startY]];
-    while (queue.length > 0) {
-      const [x, y] = queue.shift()!;
-      for (const [dx, dy] of FOUR_NEIGHBORS) {
-        const nx = x + dx!;
-        const ny = y + dy!;
-        const key = toPosKey(nx, ny);
-        if (coverage.has(key)) continue;
-        const cell = grid.getCell(nx, ny);
-        if (!cell) continue;
-        const canRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
-        if (!canRelay) continue;
-        coverage.add(key);
-        queue.push([nx, ny]);
-      }
-    }
-  }
-
-  /**
-   * BFS from a single plant through roads/buildings, draining budget per building.
-   * Cells already powered by another plant are skipped (no double-drain).
-   */
-  private bfsBudgetDrain(grid: Grid, plant: PowerPlant, infra?: Set<string>): void {
-    let budget = plant.output;
-    const startKey = toPosKey(plant.x, plant.y);
-    const visited = new Set<string>();
-    visited.add(startKey);
-    this.powered.add(startKey);
-    const queue: [number, number][] = [[plant.x, plant.y]];
-    while (queue.length > 0) {
-      if (budget <= 0) break;
-      const [x, y] = queue.shift()!;
-      for (const [dx, dy] of FOUR_NEIGHBORS) {
-        const nx = x + dx!;
-        const ny = y + dy!;
-        const key = toPosKey(nx, ny);
-        if (visited.has(key)) continue;
-        const cell = grid.getCell(nx, ny);
-        if (!cell) continue;
-        const canRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
-        if (!canRelay) continue;
-        visited.add(key);
-
-        // Drain budget for building cells not already powered by another plant
-        if (!this.powered.has(key)) {
-          const demand = this.getCellDemand(grid, nx, ny);
-          if (demand > 0) {
-            if (budget < demand) continue; // not enough budget for this building
-            budget -= demand;
-          }
-          this.powered.add(key);
-        }
-
-        queue.push([nx, ny]);
-      }
-    }
-  }
+  // BFS methods extracted to NetworkCoverage.ts (bfsRoadNetworkFlood / bfsBudgetDrainFlood)
 }

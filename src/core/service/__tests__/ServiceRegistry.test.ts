@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { getTotalServiceMaintenanceCost, getCivicServices } from '../ServiceRegistry';
+import { describe, it, expect, vi } from 'vitest';
+import { getTotalServiceMaintenanceCost, getCivicServices, tickAllCivicServices } from '../ServiceRegistry';
 import { createGameState } from '../../simulation/GameState';
 
 describe('ServiceRegistry', () => {
@@ -35,6 +35,48 @@ describe('ServiceRegistry', () => {
       expect(getTotalServiceMaintenanceCost(state)).toBe(11);
     });
 
+  });
+
+  describe('tickAllCivicServices', () => {
+    it('ticks all services without throwing', () => {
+      const state = createGameState(10, 10);
+      expect(() => tickAllCivicServices(state)).not.toThrow();
+    });
+
+    it('passes population to garbage and sewage', () => {
+      const state = createGameState(10, 10);
+      // Add citizens so population > 0
+      state.citizens.createCitizen({ age: 30 });
+      state.citizens.createCitizen({ age: 25 });
+      const garbageSpy = vi.spyOn(state.garbage, 'tick');
+      const sewageSpy = vi.spyOn(state.sewage, 'tick');
+
+      tickAllCivicServices(state);
+
+      expect(garbageSpy).toHaveBeenCalledWith(2); // population = 2
+      expect(sewageSpy).toHaveBeenCalledWith(2);
+    });
+
+    it('ticks police, fire, health, education, parks, deathCare without args', () => {
+      const state = createGameState(10, 10);
+      const spies = [
+        vi.spyOn(state.police, 'tick'),
+        vi.spyOn(state.fire, 'tick'),
+        vi.spyOn(state.health, 'tick'),
+        vi.spyOn(state.education, 'tick'),
+        vi.spyOn(state.parks, 'tick'),
+        vi.spyOn(state.deathCare, 'tick'),
+      ];
+
+      tickAllCivicServices(state);
+
+      for (const spy of spies) {
+        expect(spy).toHaveBeenCalledOnce();
+      }
+    });
+  });
+
+  describe('getTotalServiceMaintenanceCost (detail)', () => {
     it('matches the manual sum of all individual getMaintenanceCost() calls', () => {
       const state = createGameState(10, 10);
       state.power.addPlant({ x: 0, y: 0, capacity: 100, fuelType: 'coal' });

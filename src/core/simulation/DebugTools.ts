@@ -1,5 +1,5 @@
 import type { GameState } from './GameState';
-import type { GameSpeed } from './GameClock';
+import { GameClock, type GameSpeed } from './GameClock';
 import { isZoneBuilding, isInfrastructureBuilding } from '../building/InfraConfig';
 import { RoadType } from '../road/types';
 
@@ -87,14 +87,16 @@ export class DebugTools {
   }
 
   setSpeed(value: number): void {
-    this.state.clock.setSpeed(Math.max(1, Math.min(3, value)) as GameSpeed);
+    const speeds = GameClock.SPEEDS;
+    const closest = speeds.reduce((prev, curr) => Math.abs(curr - value) < Math.abs(prev - value) ? curr : prev);
+    this.state.clock.setSpeed(closest);
   }
 
   getModifiableParams(): ModifiableParam[] {
     const { budget, taxRates, clock } = this.state;
     return [
       { name: 'funds', type: 'number', value: budget.funds, min: 0, max: 99999999 },
-      { name: 'speed', type: 'number', value: clock.speed, min: 1, max: 3 },
+      { name: 'speed', type: 'number', value: clock.speed, min: 1, max: 10 },
       { name: 'taxRate', type: 'number', value: taxRates.residential, min: 0, max: 30 },
       { name: 'businessTaxRate', type: 'number', value: taxRates.business, min: 0, max: 30 },
     ];

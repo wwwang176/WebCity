@@ -1,17 +1,17 @@
-import { isResidentialZone } from '../grid/types';
+import { isResidentialZone, type CellData } from '../grid/types';
 import { SIMULATION } from '../simulation/SimulationLoop';
 import type { Grid } from '../grid/Grid';
 
 /**
- * Average pollution over residential cells only.
- * Industrial pollution far away shouldn't drag down citizen happiness unfairly.
+ * Compute the average of a numeric cell property across residential cells (DRY).
+ * Used by getAvgResidentialPollution and getAvgResidentialNoise.
  */
-export function getAvgResidentialPollution(grid: Grid): number {
+export function avgResidentialMetric(grid: Grid, accessor: (cell: CellData) => number): number {
   let total = 0;
   let count = 0;
   grid.forEachCell((cell) => {
     if (isResidentialZone(cell.zoneType)) {
-      total += cell.pollution;
+      total += accessor(cell);
       count++;
     }
   });
@@ -19,18 +19,18 @@ export function getAvgResidentialPollution(grid: Grid): number {
 }
 
 /**
+ * Average pollution over residential cells only.
+ * Industrial pollution far away shouldn't drag down citizen happiness unfairly.
+ */
+export function getAvgResidentialPollution(grid: Grid): number {
+  return avgResidentialMetric(grid, cell => cell.pollution);
+}
+
+/**
  * Average noise over residential cells only (same rationale as pollution).
  */
 export function getAvgResidentialNoise(grid: Grid): number {
-  let total = 0;
-  let count = 0;
-  grid.forEachCell((cell) => {
-    if (isResidentialZone(cell.zoneType)) {
-      total += cell.noiseLevel;
-      count++;
-    }
-  });
-  return count > 0 ? total / count : 0;
+  return avgResidentialMetric(grid, cell => cell.noiseLevel);
 }
 
 /**
