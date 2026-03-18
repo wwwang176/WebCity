@@ -337,9 +337,10 @@ export class Game {
       isWater: (x: number, y: number) => isWater(grid, x, y),
     });
 
-    // Rebuild rail network from existing grid data (for loaded games)
+    // Rebuild rail network and service coverage from existing grid data (for loaded games)
     if (loadedState) {
       rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
+      this.recalculateAllRoadCoverage();
     }
 
     // Generate terrain only for new games
