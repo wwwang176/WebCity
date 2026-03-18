@@ -486,6 +486,11 @@ export class SimulationLoop {
       ? workingAge.filter(c => c.workplaceId === null).length / workingAge.length
       : 0;
 
+    // Calculate workplace zone ratios for education-weighted immigration
+    const totalWorkplaces = countWorkplaceJobs(this.state.grid) || 1;
+    const officeJobs = countZoneBuildings(this.state.grid, t => t === ZoneType.OFFICE);
+    const industrialJobs = countZoneBuildings(this.state.grid, t => t === ZoneType.INDUSTRIAL);
+
     const city = {
       jobOpenings: this.countJobOpenings(),
       vacantHomes: this.countVacantHomes(),
@@ -494,6 +499,10 @@ export class SimulationLoop {
       pollution: this.getAvgPollution(),
       crimeRate: this.getAvgCrime(),
       unemploymentRate,
+      hasUniversity: this.state.education.getTotalCapacity('university') > 0,
+      officeRatio: officeJobs / totalWorkplaces,
+      industrialRatio: industrialJobs / totalWorkplaces,
+      avgLandValue: this.getAvgLandValue(),
     };
     // Build per-building vacancy list for family immigration
     const homeOcc = countOccupancy(citizens, c => c.homeId);
@@ -585,6 +594,15 @@ export class SimulationLoop {
 
   private countTotalJobs(): number {
     return countWorkplaceJobs(this.state.grid);
+  }
+
+  private getAvgLandValue(): number {
+    let total = 0;
+    let count = 0;
+    this.state.grid.forEachCell((cell) => {
+      if (cell.buildingId > 0) { total += cell.landValue; count++; }
+    });
+    return count > 0 ? total / count : 0;
   }
 
   private getAvgPollution(): number {

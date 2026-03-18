@@ -10,6 +10,11 @@ export interface CityAttractiveness {
   pollution: number;
   crimeRate: number;
   unemploymentRate?: number;  // 0.0–1.0, fraction of working-age citizens without a job
+  /** Factors that influence immigrant education distribution */
+  hasUniversity?: boolean;
+  officeRatio?: number;      // 0.0–1.0, fraction of workplaces that are office
+  industrialRatio?: number;  // 0.0–1.0, fraction of workplaces that are industrial
+  avgLandValue?: number;     // 0–255
 }
 
 export const ATTRACTIVENESS = {
@@ -111,8 +116,8 @@ export function generateChildEducation(age: number): { education: EducationLevel
   return { education: EducationLevel.NONE, progress: 0 };
 }
 
-/** Generate a random immigrant family */
-export function generateFamily(): FamilyMember[] {
+/** Generate a random immigrant family — adult education weighted by city characteristics */
+export function generateFamily(city?: CityAttractiveness): FamilyMember[] {
   const roll = randomInt(100);
   let type: typeof FAMILY_TYPES[keyof typeof FAMILY_TYPES];
   if (roll < FAMILY_TYPES.COUPLE_WITH_KIDS.weight) {
@@ -128,7 +133,7 @@ export function generateFamily(): FamilyMember[] {
   // Generate adults
   for (let i = 0; i < type.adults; i++) {
     const age = IMMIGRATION.IMMIGRANT_MIN_AGE + randomInt(IMMIGRATION.IMMIGRANT_AGE_RANGE);
-    const education = randomElement([EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY]);
+    const education = city ? pickImmigrantEducation(city) : randomElement([EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY]);
     const income = pickIncomeByEducation(education);
     members.push({ age, education, incomeLevel: income, educationProgress: 0 });
   }
@@ -144,6 +149,37 @@ export function generateFamily(): FamilyMember[] {
   }
 
   return members;
+}
+
+/** Base education weights for immigrants — adjusted by city characteristics */
+export const EDUCATION_WEIGHTS = {
+  BASE: { [EducationLevel.NONE]: 30, [EducationLevel.ELEMENTARY]: 25, [EducationLevel.HIGH_SCHOOL]: 25, [EducationLevel.UNIVERSITY]: 20 },
+  HAS_UNIVERSITY:       { [EducationLevel.NONE]: 0,   [EducationLevel.ELEMENTARY]: 0,  [EducationLevel.HIGH_SCHOOL]: 5,  [EducationLevel.UNIVERSITY]: 15 },
+  HIGH_OFFICE:          { [EducationLevel.NONE]: 0,   [EducationLevel.ELEMENTARY]: 0,  [EducationLevel.HIGH_SCHOOL]: 5,  [EducationLevel.UNIVERSITY]: 10 },
+  HIGH_INDUSTRIAL:      { [EducationLevel.NONE]: 10,  [EducationLevel.ELEMENTARY]: 5,  [EducationLevel.HIGH_SCHOOL]: 0,  [EducationLevel.UNIVERSITY]: -10 },
+  HIGH_LAND_VALUE:      { [EducationLevel.NONE]: -10, [EducationLevel.ELEMENTARY]: 0,  [EducationLevel.HIGH_SCHOOL]: 0,  [EducationLevel.UNIVERSITY]: 10 },
+  LOW_TAX:              { [EducationLevel.NONE]: 0,   [EducationLevel.ELEMENTARY]: 0,  [EducationLevel.HIGH_SCHOOL]: 5,  [EducationLevel.UNIVERSITY]: 5 },
+  HIGH_TAX:             { [EducationLevel.NONE]: 5,   [EducationLevel.ELEMENTARY]: 0,  [EducationLevel.HIGH_SCHOOL]: -5, [EducationLevel.UNIVERSITY]: -10 },
+} as const;
+
+/** Pick immigrant education level weighted by city characteristics */
+export function pickImmigrantEducation(city: CityAttractiveness): EducationLevel {
+  const w = { ...EDUCATION_WEIGHTS.BASE };
+
+  if (city.hasUniversity)                    for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HAS_UNIVERSITY[k as EducationLevel];
+  if ((city.officeRatio ?? 0) > 0.3)         for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_OFFICE[k as EducationLevel];
+  if ((city.industrialRatio ?? 0) > 0.5)     for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_INDUSTRIAL[k as EducationLevel];
+  if ((city.avgLandValue ?? 0) > 150)        for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_LAND_VALUE[k as EducationLevel];
+  if (city.taxRate < 7)                      for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.LOW_TAX[k as EducationLevel];
+  if (city.taxRate > 12)                     for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_TAX[k as EducationLevel];
+
+  // Clamp weights to >= 1 (never zero out a level entirely)
+  for (const k in w) w[k as EducationLevel] = Math.max(1, w[k as EducationLevel]);
+
+  const levels = [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY] as const;
+  const total = levels.reduce((s, l) => s + w[l], 0);
+  const pool = levels.map(level => ({ level, weight: w[level] }));
+  return pickWeighted(pool, total, e => e.weight).level;
 }
 
 const INCOME_LEVELS = [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH] as const;
@@ -216,7 +252,7 @@ export function migrationTick(
 
     let filled = 0;
     while (filled < headroom) {
-      let family = generateFamily();
+      let family = generateFamily(city);
       // If family is too large for remaining headroom, fallback to a single adult
       if (filled + family.length > headroom) {
         if (headroom - filled >= 1) {
