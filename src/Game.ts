@@ -20,6 +20,8 @@ import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
 import { type BuildingType } from './core/building/types';
+import { WorkplaceDistanceClient } from './core/workplace/WorkplaceDistanceClient';
+import { WorkplaceDistanceCache } from './core/workplace/WorkplaceDistanceCache';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
 import { serializeGameState } from './core/save/Serializer';
@@ -303,6 +305,19 @@ export class Game {
       this.state = createGameState(mapSize, mapSize);
     }
     this.simLoop = new SimulationLoop(this.state);
+
+    // Workplace distance cache: off-thread reverse Dijkstra for O(1) relocation lookups
+    try {
+      const wdWorker = new Worker(
+        new URL('./workers/workplace-distance.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
+      const wdClient = new WorkplaceDistanceClient(wdWorker);
+      const wdCache = new WorkplaceDistanceCache(wdClient);
+      this.simLoop.setWorkplaceDistanceCache(wdCache);
+    } catch {
+      // Worker not available (e.g. test environment) — falls back to sync Dijkstra
+    }
     // Restore abandonment stress from loaded save
     const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number> } } | undefined)?._extra;
     if (extra?.abandonmentStress) {
