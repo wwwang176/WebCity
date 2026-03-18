@@ -284,16 +284,19 @@ export function migrationTick(
     }
   }
 
-  // Natural attrition — random citizens leave regardless of happiness
-  const attritionCount = Math.min(
-    IMMIGRATION.NATURAL_ATTRITION_CAP,
-    Math.floor(pop * IMMIGRATION.NATURAL_ATTRITION_RATE),
-  );
+  // Natural attrition — scales inversely with attractiveness
+  // att ≥ 70: multiplier 0 (great city, nobody leaves randomly)
+  // att 50–70: multiplier linearly 1.0→0
+  // att < 50: multiplier 1.0 (full attrition)
+  const attritionMultiplier = attractiveness >= 70 ? 0 : attractiveness >= 50 ? (70 - attractiveness) / 20 : 1.0;
+  const expected = Math.min(IMMIGRATION.NATURAL_ATTRITION_CAP, pop * IMMIGRATION.NATURAL_ATTRITION_RATE * attritionMultiplier);
+  // Probabilistic rounding: fractional part becomes chance of +1
+  const attritionCount = Math.floor(expected) + (Math.random() < (expected % 1) ? 1 : 0);
   if (attritionCount > 0) {
     const candidates = manager.getCitizens().filter(c => !emigratedIds.includes(c.id));
     for (let i = 0; i < attritionCount && candidates.length > 0; i++) {
       const idx = randomInt(candidates.length);
-      const citizen = candidates[idx];
+      const citizen = candidates[idx]!;
       emigratedIds.push(citizen.id);
       manager.removeCitizen(citizen.id);
       candidates.splice(idx, 1);
