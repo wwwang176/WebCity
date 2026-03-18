@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
-import { birthTick, DEFAULT_CONTEXT, BIRTH, getMaxChildren, CHILDREN_PER_RESIDENTS, type BirthContext } from '../Birth';
+import { birthTick, DEFAULT_CONTEXT, BIRTH, getMaxChildren, CHILDREN_PER_RESIDENTS, FERTILITY_BY_EDUCATION, type BirthContext } from '../Birth';
 import { LifeStage, EducationLevel, IncomeLevel } from '../types';
 
 /**
@@ -137,9 +137,21 @@ describe('birthTick — 自然出生機制', () => {
     expect(BIRTH.MAX_FERTILITY_AGE).toBeLessThanOrEqual(200);
   });
 
-  it('BIRTH.HAPPINESS_FERTILITY_THRESHOLD should be between 0 and 100', () => {
-    expect(BIRTH.HAPPINESS_FERTILITY_THRESHOLD).toBeGreaterThan(0);
-    expect(BIRTH.HAPPINESS_FERTILITY_THRESHOLD).toBeLessThanOrEqual(100);
+  it('FERTILITY_BY_EDUCATION should have valid thresholds for all levels', () => {
+    for (const level of [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY]) {
+      const f = FERTILITY_BY_EDUCATION[level];
+      expect(f.baseRate).toBeGreaterThan(0);
+      expect(f.baseRate).toBeLessThan(1);
+      expect(f.happyThreshold).toBeGreaterThan(0);
+      expect(f.happyThreshold).toBeLessThanOrEqual(100);
+      expect(f.happyBonus).toBeGreaterThan(0);
+    }
+    // Higher education → lower base rate
+    expect(FERTILITY_BY_EDUCATION[EducationLevel.UNIVERSITY].baseRate)
+      .toBeLessThan(FERTILITY_BY_EDUCATION[EducationLevel.NONE].baseRate);
+    // Higher education → higher happiness threshold
+    expect(FERTILITY_BY_EDUCATION[EducationLevel.UNIVERSITY].happyThreshold)
+      .toBeGreaterThan(FERTILITY_BY_EDUCATION[EducationLevel.NONE].happyThreshold);
   });
 
   it('DEFAULT_CONTEXT should have valid fertility rates', () => {
