@@ -158,6 +158,7 @@ export class SimulationLoop {
   // Walking trip pool: rebuilt each rush period from commute mode distribution
   private walkingTripPool: WalkingTripPool = { trips: [], totalWeight: 0, prefixSums: [] };
   private tripPoolDirty = true;
+  private tripAggMap = new Map<string, AggregatedTrip>();
   private pendingTrips: AggregatedTrip[] = [];
 
   /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
@@ -1546,19 +1547,22 @@ export class SimulationLoop {
   private spawnPedestriansFromPool(population: number): void {
     // Finalize trip pool if it was being rebuilt this rush period
     if (this.tripPoolDirty && this.pendingTrips.length > 0) {
-      // Aggregate identical routes
-      const tripMap = new Map<string, AggregatedTrip>();
+      // Aggregate identical routes using a reusable map
+      this.tripAggMap.clear();
       for (const t of this.pendingTrips) {
         const key = `${t.fromX},${t.fromY}→${t.toX},${t.toY}`;
-        const existing = tripMap.get(key);
+        const existing = this.tripAggMap.get(key);
         if (existing) {
           existing.count += t.count;
         } else {
-          tripMap.set(key, { ...t });
+          this.tripAggMap.set(key, { ...t });
         }
       }
-      this.walkingTripPool = buildTripPool([...tripMap.values()]);
-      this.pendingTrips = [];
+      // Build trips array from map values directly
+      const trips: AggregatedTrip[] = [];
+      for (const v of this.tripAggMap.values()) trips.push(v);
+      this.walkingTripPool = buildTripPool(trips);
+      this.pendingTrips.length = 0;
       this.tripPoolDirty = false;
     }
 
