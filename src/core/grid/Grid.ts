@@ -31,6 +31,30 @@ export class Grid {
     return (y * this.width + x) * BYTES_PER_CELL;
   }
 
+  /** Read a single field without allocating a CellData object. Returns -1 if out of bounds. */
+  getField(x: number, y: number, field: keyof CellData): number {
+    if (!this.isInBounds(x, y)) return -1;
+    const offset = this.getOffset(x, y);
+    const idx = y * this.width + x;
+    switch (field) {
+      case 'terrainType': return this.view.getUint8(offset + 0);
+      case 'zoneType': return this.view.getUint8(offset + 1);
+      case 'buildingId': return this.view.getUint16(offset + 2, true);
+      case 'roadFlags': return this.view.getUint8(offset + 4);
+      case 'roadType': return this.view.getUint8(offset + 5);
+      case 'trafficDensity': return this.view.getUint8(offset + 6);
+      case 'landValue': return this.view.getUint8(offset + 7);
+      case 'pollution': return this.view.getUint8(offset + 8);
+      case 'noiseLevel': return this.view.getUint8(offset + 9);
+      case 'serviceCoverage': return this.view.getUint8(offset + 10);
+      case 'elevation': return this.view.getInt8(offset + 11);
+      case 'reserved': return this.reservedData[idx]!;
+      case 'railType': return this.railTypeData[idx]!;
+      case 'railFlags': return this.railFlagsData[idx]!;
+      default: return -1;
+    }
+  }
+
   getCell(x: number, y: number): CellData | null {
     if (!this.isInBounds(x, y)) return null;
     const offset = this.getOffset(x, y);

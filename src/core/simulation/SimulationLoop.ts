@@ -701,6 +701,7 @@ export class SimulationLoop {
 
   private updateLandValue(): void {
     const grid = this.state.grid;
+    const parkBuildingId = getInfraBuildingId('park');
 
     grid.forEachCell((cell, x, y) => {
       if (cell.buildingId === 0) return;
@@ -711,14 +712,14 @@ export class SimulationLoop {
       // Check if near water, forest (natural park), or placed park within 2 cells
       let waterfront = false;
       for (const [dx, dy] of FOUR_NEIGHBORS) {
-        const nc = grid.getCell(x + dx!, y + dy!);
-        if (nc && nc.terrainType === TerrainType.WATER) waterfront = true;
+        if (grid.getField(x + dx!, y + dy!, 'terrainType') === TerrainType.WATER) {
+          waterfront = true; break;
+        }
       }
       const parkProximity = checkParkProximity(
-        (px, py) => grid.getCell(px, py),
-        x, y,
+        grid, x, y,
         this.state.parks.getCoverage(x, y),
-        getInfraBuildingId('park'),
+        parkBuildingId,
       );
 
       // Industrial zones are less affected by their own pollution

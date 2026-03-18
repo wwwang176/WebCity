@@ -159,36 +159,40 @@ describe('LandValue', () => {
 });
 
 describe('checkParkProximity', () => {
-  // Helper: create a sparse grid from a map of position → cell data
-  function makeGetCell(cells: Map<string, { terrainType: number; buildingId: number }>) {
-    return (x: number, y: number) => cells.get(`${x},${y}`) ?? null;
+  // Helper: create a mock FieldReader grid from a sparse map
+  function makeGrid(cells: Map<string, { terrainType: number; buildingId: number }>) {
+    return {
+      getField(x: number, y: number, field: 'terrainType' | 'buildingId'): number {
+        const c = cells.get(`${x},${y}`);
+        if (!c) return -1;
+        return c[field];
+      },
+    };
   }
 
   it('returns true when park service covers the cell', () => {
-    const getCell = makeGetCell(new Map());
-    expect(checkParkProximity(getCell, 5, 5, true, 248)).toBe(true);
+    expect(checkParkProximity(makeGrid(new Map()), 5, 5, true, 248)).toBe(true);
   });
 
   it('returns true when a forest is adjacent (1 cell)', () => {
     const cells = new Map<string, { terrainType: number; buildingId: number }>();
     cells.set('5,4', { terrainType: 3 /* FOREST */, buildingId: 0 });
-    expect(checkParkProximity(makeGetCell(cells), 5, 5, false, 248)).toBe(true);
+    expect(checkParkProximity(makeGrid(cells), 5, 5, false, 248)).toBe(true);
   });
 
   it('returns true when park building is within 2 cells', () => {
     const cells = new Map<string, { terrainType: number; buildingId: number }>();
     cells.set('3,5', { terrainType: 0, buildingId: 248 }); // 2 cells away
-    expect(checkParkProximity(makeGetCell(cells), 5, 5, false, 248)).toBe(true);
+    expect(checkParkProximity(makeGrid(cells), 5, 5, false, 248)).toBe(true);
   });
 
   it('returns false when nothing is nearby', () => {
-    const getCell = makeGetCell(new Map());
-    expect(checkParkProximity(getCell, 5, 5, false, 248)).toBe(false);
+    expect(checkParkProximity(makeGrid(new Map()), 5, 5, false, 248)).toBe(false);
   });
 
   it('returns false when park is 3+ cells away', () => {
     const cells = new Map<string, { terrainType: number; buildingId: number }>();
     cells.set('2,5', { terrainType: 3 /* FOREST */, buildingId: 0 }); // 3 cells away
-    expect(checkParkProximity(makeGetCell(cells), 5, 5, false, 248)).toBe(false);
+    expect(checkParkProximity(makeGrid(cells), 5, 5, false, 248)).toBe(false);
   });
 });
