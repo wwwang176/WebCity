@@ -50,7 +50,12 @@ export class WorkplaceDistanceCache {
     this.invalidatedDuringBuild = false;
 
     this.client.compute(gridWidth, gridHeight, gridBuffer, workplaces, maxBudget)
-      .then(entries => this.applyResult(entries));
+      .then(entries => this.applyResult(entries))
+      .catch(() => {
+        // Worker error — reset to empty so next tick retries
+        this.status = 'empty';
+        this.invalidatedDuringBuild = false;
+      });
     return true;
   }
 

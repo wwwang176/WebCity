@@ -24,8 +24,6 @@ export interface WDWorkerRequest {
 }
 
 /** Worker → Main messages */
-export interface WDWorkerResponse {
-  type: 'RESULT';
-  requestId: number;
-  entries: WorkplaceDistanceEntry[];
-}
+export type WDWorkerResponse =
+  | { type: 'RESULT'; requestId: number; entries: WorkplaceDistanceEntry[] }
+  | { type: 'ERROR'; requestId: number; message: string };

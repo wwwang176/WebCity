@@ -180,15 +180,23 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
   const msg = e.data;
   if (msg.type !== 'COMPUTE') return;
 
-  const view = new DataView(msg.gridBuffer);
-  const entries = computeAllDistances(
-    view, msg.gridWidth, msg.gridHeight, msg.workplaces, msg.maxBudget,
-  );
+  try {
+    const view = new DataView(msg.gridBuffer);
+    const entries = computeAllDistances(
+      view, msg.gridWidth, msg.gridHeight, msg.workplaces, msg.maxBudget,
+    );
 
-  (self as unknown as Worker).postMessage({
-    type: 'RESULT',
-    requestId: msg.requestId,
-    entries,
-  } satisfies WDWorkerResponse);
+    (self as unknown as Worker).postMessage({
+      type: 'RESULT',
+      requestId: msg.requestId,
+      entries,
+    } satisfies WDWorkerResponse);
+  } catch (err) {
+    (self as unknown as Worker).postMessage({
+      type: 'ERROR',
+      requestId: msg.requestId,
+      message: err instanceof Error ? err.message : String(err),
+    } satisfies WDWorkerResponse);
+  }
 };
 }
