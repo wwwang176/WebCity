@@ -529,9 +529,11 @@ export class SimulationLoop {
 
     // Calculate city-wide happiness context (SRP: pure calculation in CityHappinessContext)
     const citizens = this.state.citizens.getCitizens();
+    let adultCount = 0;
+    for (const c of citizens) { if (isWorkingAge(c.age)) adultCount++; }
     const ctx = calculateCityHappinessContext({
       totalJobs: this.countTotalJobs(),
-      adultCount: citizens.filter(c => isWorkingAge(c.age)).length,
+      adultCount,
       avgPollution: this.getAvgPollution(),
       avgNoise: this.getAvgNoise(),
       avgCrime: this.getAvgCrime(),
@@ -541,46 +543,44 @@ export class SimulationLoop {
 
     // Check if any parks exist for happiness bonus
     const hasParkCoverage = this.state.parks.getParks().length > 0;
+    const currentTick = this.state.clock.tick;
+
+    // Reusable factors object — mutated per citizen, no allocation per iteration
+    const factors: HappinessFactors = {
+      commuteDistance: 0, hasPark: hasParkCoverage,
+      pollution: ctx.avgPollution, noiseLevel: ctx.avgNoise,
+      crimeRate: ctx.avgCrime, isEmployed: true,
+      taxRate, serviceCoverage: ctx.serviceCoverage,
+      currentTick, homePowered: true, homeWatered: true,
+      workplaceZoneType: undefined,
+    };
 
     for (const citizen of citizens) {
       // Vary commute per citizen (+/- 3 random jitter)
-      const commute = Math.max(1, ctx.avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
+      factors.commuteDistance = Math.max(1, ctx.avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
 
       // Check if citizen's home has power and water
-      let homePowered = true;
-      let homeWatered = true;
+      factors.homePowered = true;
+      factors.homeWatered = true;
       if (citizen.homeId) {
         const pos = parsePosKey(citizen.homeId);
         if (pos) {
-          homePowered = this.state.power.isPowered(pos.x, pos.y);
-          homeWatered = this.state.water.isSupplied(pos.x, pos.y);
+          factors.homePowered = this.state.power.isPowered(pos.x, pos.y);
+          factors.homeWatered = this.state.water.isSupplied(pos.x, pos.y);
         }
       }
 
       // Get workplace zone type for job mismatch penalty
-      let workplaceZoneType: ZoneType | undefined;
+      factors.workplaceZoneType = undefined;
       if (citizen.workplaceId) {
         const wpos = parsePosKey(citizen.workplaceId);
         if (wpos) {
           const wcell = this.state.grid.getCell(wpos.x, wpos.y);
-          if (wcell) workplaceZoneType = wcell.zoneType;
+          if (wcell) factors.workplaceZoneType = wcell.zoneType;
         }
       }
 
-      const factors: HappinessFactors = {
-        commuteDistance: commute,
-        hasPark: hasParkCoverage,
-        pollution: ctx.avgPollution,
-        noiseLevel: ctx.avgNoise,
-        crimeRate: ctx.avgCrime,
-        isEmployed: !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate,
-        taxRate,
-        serviceCoverage: ctx.serviceCoverage,
-        currentTick: this.state.clock.tick,
-        homePowered,
-        homeWatered,
-        workplaceZoneType,
-      };
+      factors.isEmployed = !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate;
       citizen.happiness = calculateHappiness(citizen, factors);
     }
   }
