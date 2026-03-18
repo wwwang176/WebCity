@@ -114,6 +114,6 @@ export class PollutionManager {
   }
 
   clearSources(): void {
-    this.sources = [];
+    this.sources.length = 0;
   }
 }

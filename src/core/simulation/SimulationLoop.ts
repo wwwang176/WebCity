@@ -1226,22 +1226,24 @@ export class SimulationLoop {
   ): void {
     const commuterSet = direction === 'home_to_work' ? this.morningCommuters : this.eveningCommuters;
 
-    // Get eligible citizens: adults (19-65) with both homeId and workplaceId
-    const eligible = this.state.citizens.getCitizens().filter(
-      c => isWorkingAge(c.age) &&
-           c.homeId !== null && c.workplaceId !== null &&
-           !commuterSet.has(c.id)
-    );
-
-    if (eligible.length === 0) return;
+    // Count eligible citizens inline (avoid .filter() array allocation)
+    const citizens = this.state.citizens.getCitizens();
+    let eligibleCount = 0;
+    for (const c of citizens) {
+      if (isWorkingAge(c.age) && c.homeId !== null && c.workplaceId !== null && !commuterSet.has(c.id)) {
+        eligibleCount++;
+      }
+    }
+    if (eligibleCount === 0) return;
 
     // Spawn enough vehicles per tick so all eligible commuters depart within the rush period (~4 ticks).
     // BFS is bounded to 500 steps so each call is cheap.
-    const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.RUSH_TICKS));
+    const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligibleCount / SIMULATION.RUSH_TICKS));
     let spawned = 0;
 
-    for (const citizen of eligible) {
+    for (const citizen of citizens) {
       if (spawned >= maxPerTick) break;
+      if (!isWorkingAge(citizen.age) || citizen.homeId === null || citizen.workplaceId === null || commuterSet.has(citizen.id)) continue;
       if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
 
       const fromStr = direction === 'home_to_work' ? citizen.homeId! : citizen.workplaceId!;
