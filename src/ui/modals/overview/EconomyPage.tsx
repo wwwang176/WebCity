@@ -96,7 +96,7 @@ export function EconomyPage(props: EconomyPageProps) {
       <table class="data-table">
         <thead><tr><th>Source</th><th>Rate</th><th style="text-align:right">Amount</th></tr></thead>
         <tbody>
-          <tr><td class="td-label">Income Tax (Residential)</td><td class="td-value">{incomeTax()}%</td><td class="td-income" style="text-align:right">+${breakdown().residential.toFixed(1)}</td></tr>
+          <tr><td class="td-label">Residential Tax</td><td class="td-value">{incomeTax()}%</td><td class="td-income" style="text-align:right">+${breakdown().residential.toFixed(1)}</td></tr>
           <tr><td class="td-label">Business Tax (Commercial)</td><td class="td-value">{businessTax()}%</td><td class="td-income" style="text-align:right">+${breakdown().commercial.toFixed(1)}</td></tr>
           <tr><td class="td-label">Business Tax (Industrial)</td><td class="td-value">{businessTax()}%</td><td class="td-income" style="text-align:right">+${breakdown().industrial.toFixed(1)}</td></tr>
           <tr><td class="td-label">Business Tax (Office)</td><td class="td-value">{businessTax()}%</td><td class="td-income" style="text-align:right">+${breakdown().office.toFixed(1)}</td></tr>
@@ -117,7 +117,7 @@ export function EconomyPage(props: EconomyPageProps) {
 
       <div class="section-title">Tax Rate</div>
       <div class="tax-row">
-        <label>Income Tax</label>
+        <label>Residential Tax</label>
         <input type="range" min="1" max="20" step="1" value={incomeTax()} onInput={onIncomeTaxChange} />
         <span class="tax-val">{incomeTax()}%</span>
       </div>
