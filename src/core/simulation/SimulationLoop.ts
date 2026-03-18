@@ -495,7 +495,20 @@ export class SimulationLoop {
       crimeRate: this.getAvgCrime(),
       unemploymentRate,
     };
-    const { emigratedIds } = migrationTick(this.state.citizens, city, pop, this.state.clock.tick);
+    // Build per-building vacancy list for family immigration
+    const homeOcc = countOccupancy(citizens, c => c.homeId);
+    const vacancies: import('../citizen/Migration').HousingVacancy[] = [];
+    this.rebuildBuildingIndex();
+    for (const bp of this.buildingPositions) {
+      const cell = this.state.grid.getCell(bp.x, bp.y);
+      if (!cell || !cell.buildingId) continue;
+      const bt = getBuildingType(cell.buildingId);
+      if (!bt || bt.residents <= 0) continue;
+      const pos = `${bp.x},${bp.y}`;
+      vacancies.push({ pos, capacity: bt.residents, occupied: homeOcc.get(pos) ?? 0 });
+    }
+
+    const { emigratedIds } = migrationTick(this.state.citizens, city, pop, this.state.clock.tick, vacancies);
     for (const id of emigratedIds) {
       this.commuteCache.remove(id);
     }

@@ -1,5 +1,5 @@
-import { CitizenManager } from './CitizenManager';
-import { EducationLevel, IncomeLevel } from './types';
+import { CitizenManager, GRADUATION_TICKS } from './CitizenManager';
+import { EducationLevel, IncomeLevel, LifeStage, LIFE_STAGE_AGE } from './types';
 import { randomElement, randomInt, pickWeighted } from '../utils/random';
 
 export interface CityAttractiveness {
@@ -55,6 +55,97 @@ export const IMMIGRATION = {
   IMMIGRANT_AGE_RANGE: 85,   // 55-140 life-weeks (working-age ADULT)
 } as const;
 
+/** Vacancy info for a residential building — used by family immigration to find suitable housing. */
+export interface HousingVacancy {
+  pos: string;       // "x,y"
+  capacity: number;  // total residents capacity
+  occupied: number;  // current occupants
+}
+
+/** Family composition weights: [type, weight] */
+export const FAMILY_TYPES = {
+  COUPLE_WITH_KIDS: { weight: 40, adults: 2, childRange: [1, 2] as [number, number] },
+  YOUNG_COUPLE:     { weight: 30, adults: 2, childRange: [0, 0] as [number, number] },
+  SINGLE:           { weight: 30, adults: 1, childRange: [0, 0] as [number, number] },
+} as const;
+
+/** A single member in a generated immigrant family */
+export interface FamilyMember {
+  age: number;
+  education: EducationLevel;
+  incomeLevel: IncomeLevel;
+  educationProgress: number;
+}
+
+/** Generate a random child age and appropriate education + progress */
+export function generateChildEducation(age: number): { education: EducationLevel; progress: number } {
+  // BABY: no education
+  if (age <= LIFE_STAGE_AGE.BABY_MAX) return { education: EducationLevel.NONE, progress: 0 };
+
+  // CHILD (9-32): working on elementary
+  if (age <= LIFE_STAGE_AGE.CHILD_MAX) {
+    const fraction = (age - LIFE_STAGE_AGE.BABY_MAX) / (LIFE_STAGE_AGE.CHILD_MAX - LIFE_STAGE_AGE.BABY_MAX);
+    if (fraction > 0.7 && Math.random() < 0.5) {
+      // Late child: 50% chance already graduated elementary, starting HS
+      return { education: EducationLevel.ELEMENTARY, progress: Math.floor(Math.random() * 0.3 * GRADUATION_TICKS.highSchool) };
+    }
+    return { education: EducationLevel.NONE, progress: Math.floor(fraction * 0.9 * GRADUATION_TICKS.elementary) };
+  }
+
+  // TEEN (33-52): working on high school
+  if (age <= LIFE_STAGE_AGE.TEEN_MAX) {
+    const fraction = (age - LIFE_STAGE_AGE.CHILD_MAX) / (LIFE_STAGE_AGE.TEEN_MAX - LIFE_STAGE_AGE.CHILD_MAX);
+    if (fraction < 0.3) {
+      // Early teen: likely still finishing elementary or just started HS
+      if (Math.random() < 0.4) return { education: EducationLevel.NONE, progress: Math.floor((0.7 + Math.random() * 0.3) * GRADUATION_TICKS.elementary) };
+      return { education: EducationLevel.ELEMENTARY, progress: Math.floor(fraction * GRADUATION_TICKS.highSchool) };
+    }
+    if (fraction > 0.7 && Math.random() < 0.5) {
+      // Late teen: 50% chance already graduated HS
+      return { education: EducationLevel.HIGH_SCHOOL, progress: 0 };
+    }
+    return { education: EducationLevel.ELEMENTARY, progress: Math.floor(fraction * 0.9 * GRADUATION_TICKS.highSchool) };
+  }
+
+  // Shouldn't reach here for children, but fallback
+  return { education: EducationLevel.NONE, progress: 0 };
+}
+
+/** Generate a random immigrant family */
+export function generateFamily(): FamilyMember[] {
+  const roll = randomInt(100);
+  let type: typeof FAMILY_TYPES[keyof typeof FAMILY_TYPES];
+  if (roll < FAMILY_TYPES.COUPLE_WITH_KIDS.weight) {
+    type = FAMILY_TYPES.COUPLE_WITH_KIDS;
+  } else if (roll < FAMILY_TYPES.COUPLE_WITH_KIDS.weight + FAMILY_TYPES.YOUNG_COUPLE.weight) {
+    type = FAMILY_TYPES.YOUNG_COUPLE;
+  } else {
+    type = FAMILY_TYPES.SINGLE;
+  }
+
+  const members: FamilyMember[] = [];
+
+  // Generate adults
+  for (let i = 0; i < type.adults; i++) {
+    const age = IMMIGRATION.IMMIGRANT_MIN_AGE + randomInt(IMMIGRATION.IMMIGRANT_AGE_RANGE);
+    const education = randomElement([EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY]);
+    const income = pickIncomeByEducation(education);
+    members.push({ age, education, incomeLevel: income, educationProgress: 0 });
+  }
+
+  // Generate children
+  const numChildren = type.childRange[0] + randomInt(type.childRange[1] - type.childRange[0] + 1);
+  for (let i = 0; i < numChildren; i++) {
+    // Random child age: BABY through TEEN (0 to TEEN_MAX)
+    const age = randomInt(LIFE_STAGE_AGE.TEEN_MAX + 1);
+    const { education, progress } = generateChildEducation(age);
+    const income = IncomeLevel.LOW; // children inherit LOW until they work
+    members.push({ age, education, incomeLevel: income, educationProgress: progress });
+  }
+
+  return members;
+}
+
 const INCOME_LEVELS = [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH] as const;
 
 /** Pick income level based on education-weighted distribution */
@@ -102,6 +193,7 @@ export function migrationTick(
   city: CityAttractiveness,
   population?: number,
   currentTick = 0,
+  vacancies?: readonly HousingVacancy[],
 ): { immigrated: number; emigrated: number; emigratedIds: number[] } {
   let immigrated = 0;
   const emigratedIds: number[] = [];
@@ -110,19 +202,54 @@ export function migrationTick(
   // 使用傳入的 population，若未傳入則以 manager 現有人口為準
   const pop = population ?? manager.getPopulation();
 
-  // Immigration — 使用動態縮放上限 × 1.5 基數 × 隨機 0.7~1.5
+  // Immigration — family-based: generate families until headroom is exhausted
   if (attractiveness > IMMIGRATION.ATTRACTIVENESS_THRESHOLD && city.vacantHomes > 0 && city.jobOpenings > 0) {
     const baseCap = getImmigrationCap(pop, city.vacantHomes, attractiveness);
     const jitter = IMMIGRATION.IMMIGRATION_JITTER_MIN +
       Math.random() * (IMMIGRATION.IMMIGRATION_JITTER_MAX - IMMIGRATION.IMMIGRATION_JITTER_MIN);
-    const count = Math.max(1, Math.floor(baseCap * IMMIGRATION.IMMIGRATION_BASE_MULTIPLIER * jitter));
-    for (let i = 0; i < count; i++) {
-      const age = IMMIGRATION.IMMIGRANT_MIN_AGE + randomInt(IMMIGRATION.IMMIGRANT_AGE_RANGE);
-      const educations = [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY];
-      const education = randomElement(educations);
-      const income = pickIncomeByEducation(education);
-      manager.createCitizen({ age, education, incomeLevel: income }, currentTick);
-      immigrated++;
+    const headroom = Math.max(1, Math.floor(baseCap * IMMIGRATION.IMMIGRATION_BASE_MULTIPLIER * jitter));
+
+    // Build mutable vacancy list sorted by available space (largest first)
+    const slots = vacancies
+      ? vacancies.map(v => ({ ...v })).filter(v => v.capacity - v.occupied > 0).sort((a, b) => (b.capacity - b.occupied) - (a.capacity - a.occupied))
+      : null;
+
+    let filled = 0;
+    while (filled < headroom) {
+      let family = generateFamily();
+      // If family is too large for remaining headroom, fallback to a single adult
+      if (filled + family.length > headroom) {
+        if (headroom - filled >= 1) {
+          family = generateFamily();
+          // Force single adult
+          family = [family[0]!];
+        } else {
+          break;
+        }
+      }
+
+      // Find housing with enough space for the entire family
+      let assignedPos: string | null = null;
+      if (slots) {
+        const idx = slots.findIndex(v => v.capacity - v.occupied >= family.length);
+        if (idx < 0) break; // no housing large enough
+        assignedPos = slots[idx]!.pos;
+        slots[idx]!.occupied += family.length;
+        // Remove slot if full
+        if (slots[idx]!.capacity - slots[idx]!.occupied <= 0) slots.splice(idx, 1);
+      }
+
+      for (const m of family) {
+        manager.createCitizen({
+          age: m.age,
+          education: m.education,
+          incomeLevel: m.incomeLevel,
+          educationProgress: m.educationProgress,
+          homeId: assignedPos,
+        }, currentTick);
+        immigrated++;
+      }
+      filled += family.length;
     }
   }
 
