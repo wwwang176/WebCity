@@ -80,32 +80,35 @@ export function jobRelocationTick(
   currentTick: number,
   config?: Partial<JobRelocationConfig>,
 ): { count: number; relocatedIds: number[] } {
-  const cfg: JobRelocationConfig = { ...DEFAULT_JOB_RELOCATION_CONFIG, ...config };
+  const cfg: JobRelocationConfig = config
+    ? { ...DEFAULT_JOB_RELOCATION_CONFIG, ...config }
+    : DEFAULT_JOB_RELOCATION_CONFIG;
 
   if (candidates.length === 0) return { count: 0, relocatedIds: [] };
 
-  // 1. Filter eligible citizens with their trigger reasons
-  const eligible: { citizen: Citizen; reason: string }[] = [];
+  // 1. Two-pass: process urgent (failed) first, then non-urgent.
+  //    Count non-urgent for rate-limiting without building filtered arrays.
+  let nonUrgentTotal = 0;
   for (const c of citizens) {
     if (c.workplaceId === null || c.homeId === null || !isWorkingAge(c.age)) continue;
     const reason = getTriggerReason(c, cache, cfg);
-    if (reason !== 'none') eligible.push({ citizen: c, reason });
+    if (reason !== 'none' && reason !== 'failed') nonUrgentTotal++;
   }
-  if (eligible.length === 0) return { count: 0, relocatedIds: [] };
 
-  // 2. Split into urgent (failed route — no cap) and non-urgent (rate-limited)
-  const urgent = eligible.filter(e => e.reason === 'failed');
-  const nonUrgent = eligible.filter(e => e.reason !== 'failed');
-  const maxNonUrgent = Math.max(1, Math.floor(nonUrgent.length * cfg.maxRelocateRatio));
+  const maxNonUrgent = Math.max(1, Math.floor(nonUrgentTotal * cfg.maxRelocateRatio));
   const relocatedIds: number[] = [];
-
-  // 3. Process all urgent citizens first (no rate limit)
-  //    Then process non-urgent citizens up to the cap
-  const ordered = [...urgent, ...nonUrgent];
   let nonUrgentCount = 0;
 
-  for (const { citizen, reason } of ordered) {
-    if (reason !== 'failed' && nonUrgentCount >= maxNonUrgent) continue;
+  // Process in two passes: urgent first, then non-urgent
+  for (let pass = 0; pass < 2; pass++) {
+  for (const citizen of citizens) {
+    if (citizen.workplaceId === null || citizen.homeId === null || !isWorkingAge(citizen.age)) continue;
+    const reason = getTriggerReason(citizen, cache, cfg);
+    if (reason === 'none') continue;
+    // Pass 0 = urgent only; pass 1 = non-urgent only
+    if (pass === 0 && reason !== 'failed') continue;
+    if (pass === 1 && reason === 'failed') continue;
+    if (pass === 1 && nonUrgentCount >= maxNonUrgent) continue;
 
     const currentPos = citizen.workplaceId!;
     const homePos = parsePosKeyUnsafe(citizen.homeId!);
@@ -114,14 +117,20 @@ export function jobRelocationTick(
     const currentCandidate = candidates.find(c => c.pos === currentPos);
     const currentZoneType = currentCandidate?.zoneType;
 
-    // Filter alternatives with remaining capacity (exclude current)
-    const alternatives = candidates.filter(c => {
-      if (c.pos === currentPos) return false;
+    // Build target set inline (avoid .filter() + .map() arrays)
+    const targetSet = new Set<string>();
+    targetSet.add(currentPos);
+    let hasAlternatives = false;
+    for (const c of candidates) {
+      if (c.pos === currentPos) continue;
       const occ = occupancy.get(c.pos) ?? 0;
-      return occ < c.capacity;
-    });
+      if (occ < c.capacity) {
+        targetSet.add(c.pos);
+        hasAlternatives = true;
+      }
+    }
 
-    if (alternatives.length === 0) {
+    if (!hasAlternatives) {
       // No alternatives — only become unemployed if route is failed AND current unreachable
       if (reason === 'failed') {
         const distCheck = roadDistanceToTargets(grid, homePos, new Set([currentPos]), cfg.dijkstraMaxBudget);
@@ -136,10 +145,6 @@ export function jobRelocationTick(
       continue;
     }
 
-    // Build target set for Dijkstra: alternatives + current position
-    const targetSet = new Set<string>(alternatives.map(c => c.pos));
-    targetSet.add(currentPos);
-
     // Dijkstra from home to all targets
     const distMap = roadDistanceToTargets(grid, homePos, targetSet, cfg.dijkstraMaxBudget);
 
@@ -148,10 +153,13 @@ export function jobRelocationTick(
       ? scoreWorkplaceWithCost(citizen, currentZoneType, distMap.get(currentPos) ?? null)
       : -Infinity;
 
-    // Score alternatives and find best
+    // Score alternatives inline and find best
     let bestCandidate: WorkplaceCandidateWithZone | null = null;
     let bestScore = -Infinity;
-    for (const alt of alternatives) {
+    for (const alt of candidates) {
+      if (alt.pos === currentPos) continue;
+      const occ = occupancy.get(alt.pos) ?? 0;
+      if (occ >= alt.capacity) continue;
       const score = scoreWorkplaceWithCost(citizen, alt.zoneType, distMap.get(alt.pos) ?? null);
       if (score > bestScore) {
         bestScore = score;
@@ -173,7 +181,10 @@ export function jobRelocationTick(
       // Try to pick any reachable alternative (even without scoreGap)
       let reachableAlt: WorkplaceCandidateWithZone | null = null;
       let reachableScore = -Infinity;
-      for (const alt of alternatives) {
+      for (const alt of candidates) {
+        if (alt.pos === currentPos) continue;
+        const occ = occupancy.get(alt.pos) ?? 0;
+        if (occ >= alt.capacity) continue;
         if (!distMap.has(alt.pos)) continue;
         const score = scoreWorkplaceWithCost(citizen, alt.zoneType, distMap.get(alt.pos)!);
         if (score > reachableScore) {
@@ -197,6 +208,7 @@ export function jobRelocationTick(
       relocatedIds.push(citizen.id);
     }
   }
+  } // end pass loop
 
   return { count: relocatedIds.length, relocatedIds };
 }
