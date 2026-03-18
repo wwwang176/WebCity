@@ -192,6 +192,10 @@ export class SimulationLoop {
     // we gate slow-update operations to run every 6 ticks to preserve balance.
     const isSlowTick = tick % SIMULATION.SLOW_TICK_INTERVAL === 0;
 
+    // Mark building index dirty each tick so the first caller gets a fresh scan.
+    // Subsequent rebuildBuildingIndex() calls within the same tick are no-ops.
+    this.buildingIndexDirty = true;
+
     // 1. Economy: RCI demand (every 6 ticks)
     if (isSlowTick) {
       const rci = calculateRCIDemand({
@@ -868,13 +872,21 @@ export class SimulationLoop {
     this.abandonmentStress.delete(`${x},${y}`);
   }
 
+  /** Dirty flag — set to true when buildings change; cleared after rebuild. */
+  private buildingIndexDirty = true;
+
+  /** Mark building index as needing rebuild (call after growth/demolish/burn). */
+  markBuildingIndexDirty(): void { this.buildingIndexDirty = true; }
+
   /**
-   * Rebuild the building position list.
+   * Rebuild the building position list if dirty.
    * Scans all active zone buildings (excludes ABANDONED/BURNED).
-   * Called every slow tick — 3600 cells is negligible, no caching needed.
+   * Deduplicates multiple callers per tick via dirty flag.
    */
   private rebuildBuildingIndex(): void {
-    this.buildingPositions = [];
+    if (!this.buildingIndexDirty) return;
+    this.buildingIndexDirty = false;
+    this.buildingPositions.length = 0;
     this.state.grid.forEachCell((cell, x, y) => {
       if (isZoneBuilding(cell.buildingId) && cell.reserved !== ABANDONED && cell.reserved !== BURNED) {
         this.buildingPositions.push({ pos: toPosKey(x, y), x, y, buildingId: cell.buildingId });
