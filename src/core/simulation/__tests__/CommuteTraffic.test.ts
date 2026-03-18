@@ -56,7 +56,7 @@ describe('Commute Traffic System', () => {
   it('should spawn home→work vehicles during morning rush (hours 6-9)', () => {
     // Create adult citizens with home and workplace assigned (position strings)
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',     // residential building at (1,1)
       workplaceId: '15,1', // commercial building at (15,1)
     });
@@ -73,7 +73,7 @@ describe('Commute Traffic System', () => {
 
   it('should spawn work→home vehicles during evening rush (hours 17-21)', () => {
     const citizen = state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -89,7 +89,7 @@ describe('Commute Traffic System', () => {
 
   it('should spawn minimal or no vehicles during night (hours 22-5)', () => {
     const citizen = state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -107,7 +107,7 @@ describe('Commute Traffic System', () => {
   it('should not spawn vehicles for citizens without workplace', () => {
     // Citizen has home but no workplace
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: null,
     });
@@ -122,7 +122,7 @@ describe('Commute Traffic System', () => {
 
   it('should not spawn vehicles for citizens without home', () => {
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: null,
       workplaceId: '15,1',
     });
@@ -134,7 +134,7 @@ describe('Commute Traffic System', () => {
     expect(state.traffic.getVehicleCount()).toBe(0);
   });
 
-  it('should not spawn commute vehicles for children (age < 19)', () => {
+  it('should not spawn commute vehicles for children (age < 53)', () => {
     state.citizens.createCitizen({
       age: 10,
       homeId: '1,1',
@@ -148,9 +148,9 @@ describe('Commute Traffic System', () => {
     expect(state.traffic.getVehicleCount()).toBe(0);
   });
 
-  it('should not spawn commute vehicles for seniors (age > 65)', () => {
+  it('should not spawn commute vehicles for seniors (age > 200)', () => {
     state.citizens.createCitizen({
-      age: 70,
+      age: 210,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -166,7 +166,7 @@ describe('Commute Traffic System', () => {
     // Create 10 adult citizens with commute assignments
     for (let i = 0; i < 10; i++) {
       state.citizens.createCitizen({
-        age: 30,
+        age: 100,
         homeId: '1,1',
         workplaceId: '15,1',
       });
@@ -184,7 +184,7 @@ describe('Commute Traffic System', () => {
     // Need citizens for population check, but also need buildings
     for (let i = 0; i < 20; i++) {
       state.citizens.createCitizen({
-        age: 30,
+        age: 100,
         homeId: '1,1',
         workplaceId: '15,1',
       });
@@ -203,7 +203,7 @@ describe('Commute Traffic System', () => {
 
   it('should not spawn duplicate commute for same citizen in same rush period', () => {
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -242,7 +242,7 @@ describe('Transport Mode Choice Integration', () => {
 
     // Create one commuting citizen
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -260,7 +260,7 @@ describe('Transport Mode Choice Integration', () => {
   it('should spawn car when no transit is available', () => {
     // No bus stops or routes set up — citizen must drive
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -280,7 +280,7 @@ describe('Transport Mode Choice Integration', () => {
       buildingId: 7,
     });
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '3,1', // Manhattan distance = 2
     });
@@ -300,7 +300,7 @@ describe('Transport Mode Choice Integration', () => {
     state.metro.createLine([stationA, stationB], 1);
 
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });

@@ -11,6 +11,7 @@ import type { HousingCandidate } from '../HousingScore';
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
   return {
     id: 1,
+    birthTick: 0,
     age: 30,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
@@ -41,6 +42,7 @@ describe('relocationTick', () => {
   it('happiness >= threshold — citizens do not relocate', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       happiness: 50,
       homeId: '1,1',
       incomeLevel: IncomeLevel.MEDIUM,
@@ -60,6 +62,7 @@ describe('relocationTick', () => {
   it('happiness < threshold + better housing (gap > scoreGap) — relocates', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       happiness: 20,
       homeId: '1,1',
       incomeLevel: IncomeLevel.MEDIUM,
@@ -89,6 +92,7 @@ describe('relocationTick', () => {
   it('score gap insufficient — does not relocate', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       happiness: 20,
       homeId: '5,5',
       incomeLevel: IncomeLevel.MEDIUM,
@@ -109,6 +113,7 @@ describe('relocationTick', () => {
   it('after relocation: old building occupancy -1, new building +1', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       happiness: 10,
       homeId: '1,1',
       incomeLevel: IncomeLevel.MEDIUM,
@@ -150,6 +155,7 @@ describe('relocationTick', () => {
   it('relocation respects affordability', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       happiness: 10,
       homeId: '1,1',
       incomeLevel: IncomeLevel.LOW,

@@ -6,7 +6,8 @@ import { type Citizen, LifeStage, EducationLevel, IncomeLevel } from '../types';
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
   return {
     id: 1,
-    age: 30,
+    birthTick: 0,
+    age: 100,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
     incomeLevel: IncomeLevel.LOW,

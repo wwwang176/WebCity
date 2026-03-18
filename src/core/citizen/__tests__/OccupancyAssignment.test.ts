@@ -15,6 +15,7 @@ import { ZoneType } from '../../grid/types';
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
   return {
     id: 1,
+    birthTick: 0,
     age: 30,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
@@ -160,6 +161,7 @@ describe('assignWithPreference', () => {
   it('citizen picks from top-scoring housing (excludes worst candidates)', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       incomeLevel: IncomeLevel.HIGH,
       workplaceId: '10,10',
     });
@@ -219,6 +221,7 @@ describe('assignWithPreference', () => {
   it('LOW income skips Lv3 initially', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       incomeLevel: IncomeLevel.LOW,
       workplaceId: '5,5',
     });
@@ -261,6 +264,7 @@ describe('assignWithPreference', () => {
   it('fallback — when affordable full, LOW income can live in Lv3', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       incomeLevel: IncomeLevel.LOW,
     });
     const candidates: HousingCandidate[] = [
@@ -279,6 +283,7 @@ describe('assignWithPreference', () => {
   it('fallback still picks best score among unaffordable options', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       incomeLevel: IncomeLevel.LOW,
       workplaceId: '10,10',
     });
@@ -325,6 +330,7 @@ describe('assignWorkWithPreference', () => {
   it('assigns working-age citizen to highest-scored workplace', () => {
     const citizen = makeCitizen({
       id: 1,
+    birthTick: 0,
       incomeLevel: IncomeLevel.HIGH,
       homeId: '10,10',
     });

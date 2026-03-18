@@ -7,6 +7,7 @@ import { ZoneType } from '../../grid/types';
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
   return {
     id: 1,
+    birthTick: 0,
     age: 30,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,

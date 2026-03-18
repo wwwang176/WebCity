@@ -47,6 +47,10 @@ export class GameClock {
     return Math.floor(this.getMonth() / 12);
   }
 
+  getWeek(): number {
+    return Math.floor(this.getDay() / 7);
+  }
+
   getHourOfDay(): number {
     return this.tick % this.ticksPerDay;
   }

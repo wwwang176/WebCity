@@ -51,8 +51,8 @@ export const IMMIGRATION = {
     [EducationLevel.HIGH_SCHOOL]: [25, 50, 25],
     [EducationLevel.UNIVERSITY]:  [10, 35, 55],
   } as Record<EducationLevel, [number, number, number]>,
-  IMMIGRANT_MIN_AGE: 20,
-  IMMIGRANT_AGE_RANGE: 30,
+  IMMIGRANT_MIN_AGE: 55,     // life-weeks (early ADULT)
+  IMMIGRANT_AGE_RANGE: 85,   // 55-140 life-weeks (working-age ADULT)
 } as const;
 
 const INCOME_LEVELS = [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH] as const;
@@ -101,6 +101,7 @@ export function migrationTick(
   manager: CitizenManager,
   city: CityAttractiveness,
   population?: number,
+  currentTick = 0,
 ): { immigrated: number; emigrated: number; emigratedIds: number[] } {
   let immigrated = 0;
   const emigratedIds: number[] = [];
@@ -120,7 +121,7 @@ export function migrationTick(
       const educations = [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY];
       const education = randomElement(educations);
       const income = pickIncomeByEducation(education);
-      manager.createCitizen({ age, education, incomeLevel: income });
+      manager.createCitizen({ age, education, incomeLevel: income }, currentTick);
       immigrated++;
     }
   }

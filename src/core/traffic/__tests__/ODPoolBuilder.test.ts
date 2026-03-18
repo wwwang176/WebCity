@@ -13,24 +13,24 @@ describe('buildODPools', () => {
 
   it('returns null when no citizens are working age', () => {
     const citizens: CommutingCitizen[] = [
-      { age: 10, homeId: '1,2', workplaceId: '3,4' }, // child
-      { age: 70, homeId: '1,2', workplaceId: '3,4' }, // senior
+      { age: 20, homeId: '1,2', workplaceId: '3,4' }, // child
+      { age: 220, homeId: '1,2', workplaceId: '3,4' }, // senior
     ];
     expect(buildODPools(citizens, parsePos)).toBeNull();
   });
 
   it('returns null when working-age citizens have no home or workplace', () => {
     const citizens: CommutingCitizen[] = [
-      { age: 30, homeId: null, workplaceId: '3,4' },
-      { age: 30, homeId: '1,2', workplaceId: null },
-      { age: 30, homeId: null, workplaceId: null },
+      { age: 100, homeId: null, workplaceId: '3,4' },
+      { age: 100, homeId: '1,2', workplaceId: null },
+      { age: 100, homeId: null, workplaceId: null },
     ];
     expect(buildODPools(citizens, parsePos)).toBeNull();
   });
 
   it('builds pools for a single valid citizen', () => {
     const citizens: CommutingCitizen[] = [
-      { age: 30, homeId: '2,3', workplaceId: '5,6' },
+      { age: 100, homeId: '2,3', workplaceId: '5,6' },
     ];
     const result = buildODPools(citizens, parsePos);
     expect(result).not.toBeNull();
@@ -42,9 +42,9 @@ describe('buildODPools', () => {
 
   it('aggregates weights for citizens at the same home', () => {
     const citizens: CommutingCitizen[] = [
-      { age: 25, homeId: '1,1', workplaceId: '3,3' },
-      { age: 35, homeId: '1,1', workplaceId: '4,4' },
-      { age: 40, homeId: '2,2', workplaceId: '3,3' },
+      { age: 100, homeId: '1,1', workplaceId: '3,3' },
+      { age: 120, homeId: '1,1', workplaceId: '4,4' },
+      { age: 150, homeId: '2,2', workplaceId: '3,3' },
     ];
     const result = buildODPools(citizens, parsePos)!;
     expect(result.residential).toHaveLength(2);
@@ -57,8 +57,8 @@ describe('buildODPools', () => {
 
   it('aggregates weights for citizens at the same workplace', () => {
     const citizens: CommutingCitizen[] = [
-      { age: 25, homeId: '1,1', workplaceId: '5,5' },
-      { age: 35, homeId: '2,2', workplaceId: '5,5' },
+      { age: 100, homeId: '1,1', workplaceId: '5,5' },
+      { age: 120, homeId: '2,2', workplaceId: '5,5' },
     ];
     const result = buildODPools(citizens, parsePos)!;
     expect(result.destinations).toHaveLength(1);
@@ -68,10 +68,10 @@ describe('buildODPools', () => {
 
   it('filters out non-working-age and homeless citizens from pool', () => {
     const citizens: CommutingCitizen[] = [
-      { age: 30, homeId: '1,1', workplaceId: '3,3' }, // valid
-      { age: 10, homeId: '1,1', workplaceId: '3,3' }, // child - filtered
-      { age: 30, homeId: null, workplaceId: '3,3' },   // no home - filtered
-      { age: 30, homeId: '2,2', workplaceId: '4,4' }, // valid
+      { age: 100, homeId: '1,1', workplaceId: '3,3' }, // valid
+      { age: 20, homeId: '1,1', workplaceId: '3,3' }, // child - filtered
+      { age: 100, homeId: null, workplaceId: '3,3' },   // no home - filtered
+      { age: 100, homeId: '2,2', workplaceId: '4,4' }, // valid
     ];
     const result = buildODPools(citizens, parsePos)!;
     expect(result.totalResWeight).toBe(2);
@@ -81,8 +81,8 @@ describe('buildODPools', () => {
 
   it('returns null when all destinations are missing (homes exist but no workplaces)', () => {
     const citizens: CommutingCitizen[] = [
-      { age: 30, homeId: '1,1', workplaceId: null },
-      { age: 30, homeId: '2,2', workplaceId: null },
+      { age: 100, homeId: '1,1', workplaceId: null },
+      { age: 100, homeId: '2,2', workplaceId: null },
     ];
     expect(buildODPools(citizens, parsePos)).toBeNull();
   });

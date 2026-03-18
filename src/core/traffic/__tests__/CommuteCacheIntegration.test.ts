@@ -51,7 +51,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should populate cache entries after commute vehicles are spawned', () => {
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -66,7 +66,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should use cached path on subsequent ticks without pathfinding again', () => {
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -84,7 +84,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should invalidate cache when lane graph is marked dirty', () => {
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -107,12 +107,12 @@ describe('CommuteCache Integration with SimulationLoop', () => {
   it('should cache route in routeIndex for shared path reuse', () => {
     // Create two citizens with the same home/workplace
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
     state.citizens.createCitizen({
-      age: 25,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -136,7 +136,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should remove cache entry when citizen is removed', () => {
     const citizen = state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -154,7 +154,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should recompute path for dirty citizen instead of using stale cache', () => {
     const citizen = state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -188,7 +188,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should immediately unemploy citizen when road is cut and workplace unreachable', () => {
     const citizen = state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -213,7 +213,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
   it('should immediately unemploy citizen even without cached route', () => {
     // Citizen assigned a job but never commuted (no cached route)
     const citizen = state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -234,7 +234,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should NOT unemploy citizen if road is cut but workplace still reachable', () => {
     const citizen = state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
@@ -252,7 +252,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should only invalidate affected cells on markLaneGraphDirty with cell list', () => {
     state.citizens.createCitizen({
-      age: 30,
+      age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
