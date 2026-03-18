@@ -11,7 +11,7 @@ export function buildIncomeCalcDeps(state: GameState): IncomeCalcDeps {
   return {
     forEachCell: (fn) => state.grid.forEachCell(fn),
     taxRates: state.taxRates,
-    getResidentCount: (key) => state.citizens.getCitizensByHome(key).length,
+    getResidentEducations: (key) => state.citizens.getCitizensByHome(key).map(c => c.education),
     getRevenueMultiplier: (x, y) => {
       const district = state.districts.getDistrictAt(x, y);
       return district ? getSpecializationBonus(district.specialization).revenueMultiplier : 1;
