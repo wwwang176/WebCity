@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 import {
-  canAfford,
   scoreLevelMatch,
   scoreLandValue,
   scorePollution,
@@ -10,7 +9,7 @@ import {
   type HousingCandidate,
 } from '../HousingScore';
 import type { Citizen } from '../types';
-import { LifeStage, EducationLevel, IncomeLevel } from '../types';
+import { LifeStage, EducationLevel } from '../types';
 
 function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
   return {
@@ -19,11 +18,14 @@ function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
     age: 30,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
-    incomeLevel: IncomeLevel.LOW,
     happiness: 50,
     health: 80,
     homeId: null,
     workplaceId: null,
+    unemployedSince: null,
+    homelessSince: null,
+    emigrationTolerance: 25,
+    educationProgress: 0,
     ...overrides,
   };
 }
@@ -42,80 +44,62 @@ function makeCandidate(overrides: Partial<HousingCandidate> = {}): HousingCandid
   };
 }
 
-describe('canAfford', () => {
-  it('LOW income can live in Lv1 and Lv2 but not Lv3', () => {
-    expect(canAfford(IncomeLevel.LOW, 1)).toBe(true);
-    expect(canAfford(IncomeLevel.LOW, 2)).toBe(true);
-    expect(canAfford(IncomeLevel.LOW, 3)).toBe(false);
-  });
-
-  it('MEDIUM income can live in all levels', () => {
-    expect(canAfford(IncomeLevel.MEDIUM, 1)).toBe(true);
-    expect(canAfford(IncomeLevel.MEDIUM, 2)).toBe(true);
-    expect(canAfford(IncomeLevel.MEDIUM, 3)).toBe(true);
-  });
-
-  it('HIGH income can live in all levels', () => {
-    expect(canAfford(IncomeLevel.HIGH, 1)).toBe(true);
-    expect(canAfford(IncomeLevel.HIGH, 2)).toBe(true);
-    expect(canAfford(IncomeLevel.HIGH, 3)).toBe(true);
-  });
-});
-
 describe('scoreLevelMatch', () => {
   it('perfect match returns +30', () => {
-    expect(scoreLevelMatch(IncomeLevel.LOW, 1)).toBe(30);
-    expect(scoreLevelMatch(IncomeLevel.MEDIUM, 2)).toBe(30);
-    expect(scoreLevelMatch(IncomeLevel.HIGH, 3)).toBe(30);
+    // NONE→1, ELEMENTARY→1, HIGH_SCHOOL→2, UNIVERSITY→3
+    expect(scoreLevelMatch(EducationLevel.NONE, 1)).toBe(30);
+    expect(scoreLevelMatch(EducationLevel.ELEMENTARY, 1)).toBe(30);
+    expect(scoreLevelMatch(EducationLevel.HIGH_SCHOOL, 2)).toBe(30);
+    expect(scoreLevelMatch(EducationLevel.UNIVERSITY, 3)).toBe(30);
   });
 
   it('off by 1 returns +10', () => {
-    expect(scoreLevelMatch(IncomeLevel.LOW, 2)).toBe(10);
-    expect(scoreLevelMatch(IncomeLevel.MEDIUM, 1)).toBe(10);
-    expect(scoreLevelMatch(IncomeLevel.MEDIUM, 3)).toBe(10);
-    expect(scoreLevelMatch(IncomeLevel.HIGH, 2)).toBe(10);
+    expect(scoreLevelMatch(EducationLevel.NONE, 2)).toBe(10);
+    expect(scoreLevelMatch(EducationLevel.HIGH_SCHOOL, 1)).toBe(10);
+    expect(scoreLevelMatch(EducationLevel.HIGH_SCHOOL, 3)).toBe(10);
+    expect(scoreLevelMatch(EducationLevel.UNIVERSITY, 2)).toBe(10);
   });
 
   it('off by 2 returns -10', () => {
-    expect(scoreLevelMatch(IncomeLevel.LOW, 3)).toBe(-10);
-    expect(scoreLevelMatch(IncomeLevel.HIGH, 1)).toBe(-10);
+    expect(scoreLevelMatch(EducationLevel.NONE, 3)).toBe(-10);
+    expect(scoreLevelMatch(EducationLevel.UNIVERSITY, 1)).toBe(-10);
   });
 });
 
 describe('scoreLandValue', () => {
-  it('HIGH income + high land value = high score', () => {
-    const score = scoreLandValue(IncomeLevel.HIGH, 200);
+  it('UNIVERSITY education + high land value = high score', () => {
+    const score = scoreLandValue(EducationLevel.UNIVERSITY, 200);
     expect(score).toBeGreaterThan(5);
   });
 
-  it('HIGH income + low land value = low/negative score', () => {
-    const highLV = scoreLandValue(IncomeLevel.HIGH, 200);
-    const lowLV = scoreLandValue(IncomeLevel.HIGH, 20);
+  it('UNIVERSITY education + low land value = low/negative score', () => {
+    const highLV = scoreLandValue(EducationLevel.UNIVERSITY, 200);
+    const lowLV = scoreLandValue(EducationLevel.UNIVERSITY, 20);
     expect(highLV).toBeGreaterThan(lowLV);
   });
 
-  it('LOW income + any land value = small difference', () => {
-    const highLV = scoreLandValue(IncomeLevel.LOW, 200);
-    const lowLV = scoreLandValue(IncomeLevel.LOW, 20);
-    // LOW income citizens don't care much about land value
+  it('NONE education + any land value = small difference', () => {
+    const highLV = scoreLandValue(EducationLevel.NONE, 200);
+    const lowLV = scoreLandValue(EducationLevel.NONE, 20);
+    // NONE education citizens don't care much about land value
     expect(Math.abs(highLV - lowLV)).toBeLessThan(10);
   });
 });
 
 describe('scorePollution', () => {
-  it('high pollution penalizes HIGH income most', () => {
-    const highIncome = scorePollution(IncomeLevel.HIGH, 200, 100);
-    const lowIncome = scorePollution(IncomeLevel.LOW, 200, 100);
-    expect(highIncome).toBeLessThan(lowIncome);
+  it('high pollution penalizes UNIVERSITY education most', () => {
+    const uniEdu = scorePollution(EducationLevel.UNIVERSITY, 200, 100);
+    const noneEdu = scorePollution(EducationLevel.NONE, 200, 100);
+    expect(uniEdu).toBeLessThan(noneEdu);
   });
 
   it('zero pollution returns 0 penalty', () => {
-    expect(scorePollution(IncomeLevel.HIGH, 0, 0)).toBe(0);
-    expect(scorePollution(IncomeLevel.LOW, 0, 0)).toBe(0);
+    expect(scorePollution(EducationLevel.UNIVERSITY, 0, 0)).toBe(0);
+    expect(scorePollution(EducationLevel.NONE, 0, 0)).toBe(0);
   });
 
   it('returns negative values for polluted areas', () => {
-    expect(scorePollution(IncomeLevel.MEDIUM, 100, 50)).toBeLessThan(0);
+    expect(scorePollution(EducationLevel.HIGH_SCHOOL, 100, 50)).toBeLessThan(0);
   });
 });
 
@@ -162,9 +146,9 @@ describe('serviceScore', () => {
 });
 
 describe('scoreHousing (integration)', () => {
-  it('HIGH income prefers high land value, low pollution, Lv3', () => {
+  it('UNIVERSITY education prefers high land value, low pollution, Lv3', () => {
     const citizen = makeCitizen({
-      incomeLevel: IncomeLevel.HIGH,
+      education: EducationLevel.UNIVERSITY,
       workplaceId: '10,10',
     });
 
@@ -193,9 +177,9 @@ describe('scoreHousing (integration)', () => {
     expect(luxuryScore).toBeGreaterThan(basicScore);
   });
 
-  it('LOW income prefers low commute, Lv1', () => {
+  it('NONE education prefers low commute, Lv1', () => {
     const citizen = makeCitizen({
-      incomeLevel: IncomeLevel.LOW,
+      education: EducationLevel.NONE,
       workplaceId: '5,5',
     });
 

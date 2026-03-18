@@ -1,13 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import { calculateZoneIncomes, type IncomeCalcDeps } from '../IncomeCalculator';
-import { IncomeLevel } from '../../citizen/types';
 import { ZoneType } from '../../grid/types';
 
 function makeDeps(overrides: Partial<IncomeCalcDeps> = {}): IncomeCalcDeps {
   return {
     forEachCell: overrides.forEachCell ?? (() => {}),
     taxRates: overrides.taxRates ?? { residential: 9, business: 9 },
-    getCitizensByHome: overrides.getCitizensByHome ?? (() => []),
+    getResidentCount: overrides.getResidentCount ?? (() => 0),
     isPowered: overrides.isPowered,
   };
 }
@@ -21,16 +20,16 @@ describe('calculateZoneIncomes', () => {
     expect(result.office).toBe(0);
   });
 
-  it('calculates residential income from citizens', () => {
+  it('calculates residential income from resident count', () => {
     const deps = makeDeps({
       forEachCell: (fn) => {
         // Simulate a residential building at (1,1) with buildingId=1, zoneType=RESIDENTIAL_LOW
         fn({ buildingId: 1, zoneType: ZoneType.RESIDENTIAL_LOW, reserved: 0 }, 1, 1);
       },
       taxRates: { residential: 10, business: 9 },
-      getCitizensByHome: (key) => {
-        if (key === '1,1') return [{ incomeLevel: IncomeLevel.LOW }];
-        return [];
+      getResidentCount: (key) => {
+        if (key === '1,1') return 1;
+        return 0;
       },
     });
     const result = calculateZoneIncomes(deps);
@@ -140,7 +139,7 @@ describe('calculateZoneIncomes', () => {
         fn({ buildingId: 1, zoneType: ZoneType.RESIDENTIAL_LOW, reserved: 0 }, 1, 1);
       },
       taxRates: { residential: 10, business: 9 },
-      getCitizensByHome: (key) => key === '1,1' ? [{ incomeLevel: IncomeLevel.LOW }] : [],
+      getResidentCount: (key) => key === '1,1' ? 1 : 0,
       isPowered: () => false,
     });
     const result = calculateZoneIncomes(deps);

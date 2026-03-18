@@ -1,5 +1,5 @@
 import { CitizenManager, GRADUATION_TICKS } from './CitizenManager';
-import { EducationLevel, IncomeLevel, LifeStage, LIFE_STAGE_AGE } from './types';
+import { EducationLevel, LIFE_STAGE_AGE } from './types';
 import { randomElement, randomInt, pickWeighted } from '../utils/random';
 
 export interface CityAttractiveness {
@@ -49,13 +49,6 @@ export const IMMIGRATION = {
   NATURAL_ATTRITION_RATE: 0.002,
   /** Hard cap on natural attrition per tick, so large cities don't bleed out */
   NATURAL_ATTRITION_CAP: 5,
-  /** Income distribution weights by education level: [LOW, MEDIUM, HIGH] */
-  INCOME_BY_EDUCATION: {
-    [EducationLevel.NONE]:        [70, 25, 5],
-    [EducationLevel.ELEMENTARY]:  [55, 35, 10],
-    [EducationLevel.HIGH_SCHOOL]: [25, 50, 25],
-    [EducationLevel.UNIVERSITY]:  [10, 35, 55],
-  } as Record<EducationLevel, [number, number, number]>,
   IMMIGRANT_MIN_AGE: 55,     // life-weeks (early ADULT)
   IMMIGRANT_AGE_RANGE: 85,   // 55-140 life-weeks (working-age ADULT)
 } as const;
@@ -78,7 +71,6 @@ export const FAMILY_TYPES = {
 export interface FamilyMember {
   age: number;
   education: EducationLevel;
-  incomeLevel: IncomeLevel;
   educationProgress: number;
 }
 
@@ -134,8 +126,7 @@ export function generateFamily(city?: CityAttractiveness): FamilyMember[] {
   for (let i = 0; i < type.adults; i++) {
     const age = IMMIGRATION.IMMIGRANT_MIN_AGE + randomInt(IMMIGRATION.IMMIGRANT_AGE_RANGE);
     const education = city ? pickImmigrantEducation(city) : randomElement([EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY]);
-    const income = pickIncomeByEducation(education);
-    members.push({ age, education, incomeLevel: income, educationProgress: 0 });
+    members.push({ age, education, educationProgress: 0 });
   }
 
   // Generate children
@@ -144,8 +135,7 @@ export function generateFamily(city?: CityAttractiveness): FamilyMember[] {
     // Random child age: BABY through TEEN (0 to TEEN_MAX)
     const age = randomInt(LIFE_STAGE_AGE.TEEN_MAX + 1);
     const { education, progress } = generateChildEducation(age);
-    const income = IncomeLevel.LOW; // children inherit LOW until they work
-    members.push({ age, education, incomeLevel: income, educationProgress: progress });
+    members.push({ age, education, educationProgress: progress });
   }
 
   return members;
@@ -164,7 +154,7 @@ export const EDUCATION_WEIGHTS = {
 
 /** Pick immigrant education level weighted by city characteristics */
 export function pickImmigrantEducation(city: CityAttractiveness): EducationLevel {
-  const w = { ...EDUCATION_WEIGHTS.BASE };
+  const w: Record<EducationLevel, number> = { ...EDUCATION_WEIGHTS.BASE };
 
   if (city.hasUniversity)                    for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HAS_UNIVERSITY[k as EducationLevel];
   if ((city.officeRatio ?? 0) > 0.3)         for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_OFFICE[k as EducationLevel];
@@ -182,15 +172,6 @@ export function pickImmigrantEducation(city: CityAttractiveness): EducationLevel
   return pickWeighted(pool, total, e => e.weight).level;
 }
 
-const INCOME_LEVELS = [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH] as const;
-
-/** Pick income level based on education-weighted distribution */
-export function pickIncomeByEducation(education: EducationLevel): IncomeLevel {
-  const weights = IMMIGRATION.INCOME_BY_EDUCATION[education];
-  const total = weights[0] + weights[1] + weights[2];
-  const pool = INCOME_LEVELS.map((level, i) => ({ level, weight: weights[i] }));
-  return pickWeighted(pool, total, e => e.weight).level;
-}
 
 export function calculateAttractiveness(city: CityAttractiveness): number {
   let score = 0;
@@ -279,7 +260,7 @@ export function migrationTick(
         manager.createCitizen({
           age: m.age,
           education: m.education,
-          incomeLevel: m.incomeLevel,
+
           educationProgress: m.educationProgress,
           homeId: assignedPos,
         }, currentTick);

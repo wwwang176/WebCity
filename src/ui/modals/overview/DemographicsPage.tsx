@@ -1,5 +1,5 @@
 import { gameSignals, getGame } from '../../store/gameStore';
-import { LifeStage, EducationLevel, IncomeLevel } from '../../../core/citizen/types';
+import { LifeStage, EducationLevel } from '../../../core/citizen/types';
 
 const STAGE_LABELS: Record<string, string> = {
   [LifeStage.BABY]: 'Baby',
@@ -29,16 +29,6 @@ const EDU_COLORS: Record<string, string> = {
   [EducationLevel.UNIVERSITY]: '#ba68c8',
 };
 
-const INCOME_LABELS: Record<string, string> = {
-  [IncomeLevel.LOW]: 'Low',
-  [IncomeLevel.MEDIUM]: 'Medium',
-  [IncomeLevel.HIGH]: 'High',
-};
-const INCOME_COLORS: Record<string, string> = {
-  [IncomeLevel.LOW]: '#ef9a9a',
-  [IncomeLevel.MEDIUM]: '#fff176',
-  [IncomeLevel.HIGH]: '#81c784',
-};
 
 function DistributionBar(props: { items: { label: string; count: number; color: string }[]; total: number }) {
   return (
@@ -72,7 +62,6 @@ export function DemographicsPage() {
 
     const stages: Record<string, number> = {};
     const edus: Record<string, number> = {};
-    const incomes: Record<string, number> = {};
     let totalHappiness = 0;
     let totalHealth = 0;
     let unemployed = 0;
@@ -83,7 +72,6 @@ export function DemographicsPage() {
     for (const c of citizens) {
       stages[c.lifeStage] = (stages[c.lifeStage] ?? 0) + 1;
       edus[c.education] = (edus[c.education] ?? 0) + 1;
-      incomes[c.incomeLevel] = (incomes[c.incomeLevel] ?? 0) + 1;
       totalHappiness += c.happiness;
       totalHealth += c.health;
       if (c.homelessSince !== null) homeless++;
@@ -106,9 +94,6 @@ export function DemographicsPage() {
       eduItems: [EducationLevel.NONE, EducationLevel.ELEMENTARY, EducationLevel.HIGH_SCHOOL, EducationLevel.UNIVERSITY].map(e => ({
         label: EDU_LABELS[e] ?? e, count: edus[e] ?? 0, color: EDU_COLORS[e] ?? '#888',
       })),
-      incomeItems: [IncomeLevel.LOW, IncomeLevel.MEDIUM, IncomeLevel.HIGH].map(i => ({
-        label: INCOME_LABELS[i] ?? i, count: incomes[i] ?? 0, color: INCOME_COLORS[i] ?? '#888',
-      })),
     };
   };
 
@@ -125,9 +110,6 @@ export function DemographicsPage() {
 
       <div class="section-title">Education Level</div>
       <DistributionBar items={stats().eduItems} total={stats().pop} />
-
-      <div class="section-title">Income Level</div>
-      <DistributionBar items={stats().incomeItems} total={stats().pop} />
 
       <div class="section-title">Employment</div>
       <div class="summary-grid" style="grid-template-columns:1fr 1fr 1fr">

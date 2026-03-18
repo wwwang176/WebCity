@@ -7,7 +7,7 @@ import {
   type WorkplaceCandidateWithZone,
 } from '../JobRelocation';
 import type { Citizen } from '../types';
-import { LifeStage, EducationLevel, IncomeLevel } from '../types';
+import { LifeStage, EducationLevel } from '../types';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import type { CachedRoute } from '../../traffic/CommuteCache';
@@ -21,11 +21,14 @@ function makeCitizen(overrides: Partial<Citizen> = {}): Citizen {
     age: 100,
     lifeStage: LifeStage.ADULT,
     education: EducationLevel.NONE,
-    incomeLevel: IncomeLevel.LOW,
     happiness: 50,
     health: 80,
     homeId: '5,5',
     workplaceId: '6,6',
+    unemployedSince: null,
+    homelessSince: null,
+    emigrationTolerance: 25,
+    educationProgress: 0,
     ...overrides,
   };
 }

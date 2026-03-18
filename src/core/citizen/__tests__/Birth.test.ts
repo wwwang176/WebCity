@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
 import { birthTick, DEFAULT_CONTEXT, BIRTH, getMaxChildren, CHILDREN_PER_RESIDENTS, FERTILITY_BY_EDUCATION, type BirthContext } from '../Birth';
-import { LifeStage, EducationLevel, IncomeLevel } from '../types';
+import { LifeStage, EducationLevel } from '../types';
 
 /**
  * Phase B: 自然出生機制測試
@@ -10,7 +10,7 @@ import { LifeStage, EducationLevel, IncomeLevel } from '../types';
  *  - 基礎 4% 機率 / eligible citizen / month
  *  - happiness > 70 時 +3%
  *  - 每棟住宅 BABY+CHILD 上限 = max(2, floor(residents / 4))
- *  - 新生兒：age=0, BABY, NONE education, 父母 incomeLevel, 父母 homeId, workplaceId=null
+ *  - 新生兒：age=0, BABY, NONE education, 父母 homeId, workplaceId=null
  */
 
 // 強制 100% 生育率的 context，方便測試確定性行為
@@ -24,7 +24,7 @@ const alwaysBirth: Partial<BirthContext> = {
 describe('birthTick — 自然出生機制', () => {
   it('基本出生：有符合條件的 ADULT → 應能產生新生兒', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, homeId: '1,1', happiness: 60, incomeLevel: IncomeLevel.MEDIUM });
+    mgr.createCitizen({ age: 100, homeId: '1,1', happiness: 60 });
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(1);
     // 新生兒應被加入 manager
@@ -97,18 +97,16 @@ describe('birthTick — 自然出生機制', () => {
       age: 100,
       homeId: '5,5',
       happiness: 60,
-      incomeLevel: IncomeLevel.HIGH,
       education: EducationLevel.UNIVERSITY,
     });
     birthTick(mgr, alwaysBirth);
     expect(mgr.getPopulation()).toBe(2);
     // 找到新生兒（非原本的 adult）
-    const baby = mgr.citizens.find(c => c.age === 0);
+    const baby = mgr.getCitizens().find(c => c.age === 0);
     expect(baby).toBeDefined();
     expect(baby!.lifeStage).toBe(LifeStage.BABY);
     expect(baby!.education).toBe(EducationLevel.NONE);
     expect(baby!.homeId).toBe('5,5');
-    expect(baby!.incomeLevel).toBe(IncomeLevel.HIGH);
     expect(baby!.workplaceId).toBeNull();
   });
 

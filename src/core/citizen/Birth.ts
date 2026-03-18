@@ -1,5 +1,5 @@
 import { CitizenManager } from './CitizenManager';
-import { LifeStage, EducationLevel, IncomeLevel } from './types';
+import { LifeStage, EducationLevel } from './types';
 
 export interface BirthContext {
   /** 基礎生育率（每位合格市民每月），預設 0.04 (4%) */
@@ -62,7 +62,7 @@ export function birthTick(
   }
 
   // 收集所有新生兒（避免在遍歷中修改 citizens 陣列）
-  const newborns: { homeId: string; incomeLevel: IncomeLevel }[] = [];
+  const newborns: { homeId: string }[] = [];
 
   // 遍歷現有市民，篩選合格者
   for (const c of manager.getCitizens()) {
@@ -88,7 +88,7 @@ export function birthTick(
 
     // 隨機判定
     if (Math.random() < rate) {
-      newborns.push({ homeId: c.homeId, incomeLevel: c.incomeLevel });
+      newborns.push({ homeId: c.homeId });
       // 更新計數，避免同一 homeId 本 tick 超生
       childrenCount.set(c.homeId, currentChildren + 1);
     }
@@ -99,7 +99,6 @@ export function birthTick(
     manager.createCitizen({
       age: 0,
       education: EducationLevel.NONE,
-      incomeLevel: nb.incomeLevel,
       homeId: nb.homeId,
       workplaceId: null,
     }, currentTick);

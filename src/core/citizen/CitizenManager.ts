@@ -1,4 +1,4 @@
-import { type Citizen, LifeStage, EducationLevel, IncomeLevel, getLifeStage, calculateEmigrationTolerance, EMIGRATION_TOLERANCE, LIFE_STAGE_AGE, AGE_PER_TICK, MAX_AGE } from './types';
+import { type Citizen, LifeStage, EducationLevel, getLifeStage, calculateEmigrationTolerance, EMIGRATION_TOLERANCE, LIFE_STAGE_AGE, AGE_PER_TICK, MAX_AGE } from './types';
 import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 /** Daily death rate per life stage (bathtub curve) — calibrated for compressed life-week aging. */
@@ -75,7 +75,6 @@ export class CitizenManager {
 
   createCitizen(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen {
     const age = overrides.age ?? 100; // default mid-ADULT (life-weeks)
-    const income = overrides.incomeLevel ?? IncomeLevel.LOW;
     const education = overrides.education ?? EducationLevel.NONE;
     const citizen: Citizen = {
       id: this.nextId++,
@@ -83,14 +82,13 @@ export class CitizenManager {
       age,
       lifeStage: getLifeStage(age),
       education,
-      incomeLevel: income,
       happiness: 50,
       health: 80,
       homeId: null,
       workplaceId: null,
       unemployedSince: null,
       homelessSince: null,
-      emigrationTolerance: calculateEmigrationTolerance(income, education),
+      emigrationTolerance: calculateEmigrationTolerance(education),
       educationProgress: 0,
       ...overrides,
     };

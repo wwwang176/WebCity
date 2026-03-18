@@ -82,7 +82,7 @@ describe('Building Abandonment Integration', () => {
     const normalIncome = calculateZoneIncomes({
       forEachCell: (fn) => state.grid.forEachCell(fn),
       taxRates: { residential: 9, business: 9 },
-      getCitizensByHome: () => [],
+      getResidentCount: () => 0,
     });
     expect(normalIncome.commercial).toBeGreaterThan(0);
 
@@ -92,7 +92,7 @@ describe('Building Abandonment Integration', () => {
     const abandonedIncome = calculateZoneIncomes({
       forEachCell: (fn) => state.grid.forEachCell(fn),
       taxRates: { residential: 9, business: 9 },
-      getCitizensByHome: () => [],
+      getResidentCount: () => 0,
     });
     expect(abandonedIncome.commercial).toBe(0);
   });

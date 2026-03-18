@@ -6,7 +6,7 @@ function makeCtx(overrides: Partial<EconomyBreakdownContext> = {}): EconomyBreak
   return {
     forEachCell: overrides.forEachCell ?? (() => {}),
     taxRates: overrides.taxRates ?? { residential: 9, business: 9 },
-    getCitizensByHome: overrides.getCitizensByHome ?? (() => []),
+    getResidentCount: overrides.getResidentCount ?? (() => 0),
     roadTileCount: overrides.roadTileCount ?? 0,
     loans: overrides.loans ?? 0,
     loanInterestRate: overrides.loanInterestRate ?? 0.05,

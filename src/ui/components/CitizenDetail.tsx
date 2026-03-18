@@ -15,7 +15,7 @@ export function CitizenDetail(props: { citizenId: number | null }) {
           <div class="cd-name">Citizen #{c().id}</div>
           <div class="cd-row">Stage <span>{c().lifeStage}</span></div>
           <div class="cd-row">Education <span>{c().education}</span></div>
-          <div class="cd-row">Income <span>{c().incomeLevel}</span></div>
+
           <div class="cd-row">Happiness <span>{c().happiness}</span></div>
           <div class="cd-row">Health <span>{c().health}</span></div>
           <div class="cd-row">Home <span>{c().homeId ?? 'Homeless'}</span></div>
