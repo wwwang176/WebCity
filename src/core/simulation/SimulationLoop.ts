@@ -924,8 +924,10 @@ export class SimulationLoop {
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
     assignWithPreference(citizens, housingCandidates, homeOccupancy);
 
-    // Update occupancy ratios for rendering
-    this.occupancyRatios = computeOccupancyRatios(citizens, this.buildingPositions);
+    // Update occupancy ratios for rendering (reuse already-built occupancy maps)
+    this.occupancyRatios = computeOccupancyRatios(
+      citizens, this.buildingPositions, homeOccupancy, workOccupancy,
+    );
 
     // Force occupancy to 0 for abandoned/burned buildings (windows must be dark)
     for (const bp of this.buildingPositions) {
