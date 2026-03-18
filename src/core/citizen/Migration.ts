@@ -20,7 +20,7 @@ export interface CityAttractiveness {
 export const ATTRACTIVENESS = {
   JOB_SCORE: 20,
   VACANT_SCORE: 20,
-  HAPPINESS_WEIGHT: 0.3,
+  HAPPINESS_WEIGHT: 0.5,
   TAX_WEIGHT: 0.5,
   POLLUTION_WEIGHT: 0.2,
   CRIME_WEIGHT: 0.3,
@@ -30,7 +30,7 @@ export const ATTRACTIVENESS = {
 } as const;
 
 export const IMMIGRATION = {
-  ATTRACTIVENESS_THRESHOLD: 50,
+  ATTRACTIVENESS_THRESHOLD: 40,
   POP_CAP_FACTOR: 0.01,
   POP_CAP_MIN: 3,
   DEMAND_CAP_DIVISOR: 10,
@@ -288,7 +288,7 @@ export function migrationTick(
   // att ≥ 70: multiplier 0 (great city, nobody leaves randomly)
   // att 50–70: multiplier linearly 1.0→0
   // att < 50: multiplier 1.0 (full attrition)
-  const attritionMultiplier = attractiveness >= 70 ? 0 : attractiveness >= 50 ? (70 - attractiveness) / 20 : 1.0;
+  const attritionMultiplier = attractiveness >= 70 ? 0 : attractiveness >= 40 ? (70 - attractiveness) / 30 : 1.0;
   const expected = Math.min(IMMIGRATION.NATURAL_ATTRITION_CAP, pop * IMMIGRATION.NATURAL_ATTRITION_RATE * attritionMultiplier);
   // Probabilistic rounding: fractional part becomes chance of +1
   const attritionCount = Math.floor(expected) + (Math.random() < (expected % 1) ? 1 : 0);

@@ -61,7 +61,7 @@ export function SummaryPage() {
       jobOpenings, vacantHomes, avgHappiness, taxRate,
       pollution: avgPollution, crimeRate: Math.min(50, population * 0.02),
     });
-    const canMigrate = attractiveness > 50 && vacantHomes > 0 && jobOpenings > 0;
+    const canMigrate = attractiveness > 40 && vacantHomes > 0 && jobOpenings > 0;
 
     const pwrRatio = state.power.getSupplyRatio();
     const wtrRatio = state.water.getSupplyRatio();
@@ -73,7 +73,7 @@ export function SummaryPage() {
       avgHappiness, zoneCounts, attractiveness, canMigrate,
       pwrRatio, wtrRatio, rci,
       checks: [
-        { label: 'Attractiveness > 50', value: attractiveness.toFixed(1), ok: attractiveness > 50 },
+        { label: 'Attractiveness > 40', value: attractiveness.toFixed(1), ok: attractiveness > 40 },
         { label: 'Vacant Homes > 0', value: String(vacantHomes), ok: vacantHomes > 0 },
         { label: 'Job Openings > 0', value: String(jobOpenings), ok: jobOpenings > 0 },
       ],
