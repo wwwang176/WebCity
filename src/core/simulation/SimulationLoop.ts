@@ -18,7 +18,7 @@ import { clampBuildingLevel } from '../building/BuildingLevel';
 import { ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
-import { getGridPollutionSources } from '../environment/GridPollutionSources';
+import { forEachGridPollutionSource } from '../environment/GridPollutionSources';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
 import { isWorkingAge, type Citizen } from '../citizen/types';
@@ -41,7 +41,6 @@ import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDist
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
-import { collectAllPollutionSources } from '../environment/PollutionSourceRegistry';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../economy/ExpenseCalculator';
@@ -676,17 +675,15 @@ export class SimulationLoop {
 
     pm.clearSources();
 
-    // Collect pollution sources from all providers via DIP registry
-    const gridProvider = { getPollutionSources: () => getGridPollutionSources(grid) };
-    const overflowProvider = { getPollutionSources: () => this.state.garbage.getOverflowPollutionSources() };
-    const allSources = collectAllPollutionSources([
-      gridProvider,
-      this.state.garbage,
-      this.state.sewage,
-      this.state.airport,
-      overflowProvider,
-    ]);
-    for (const src of allSources) {
+    // Add pollution sources directly (no intermediate arrays)
+    forEachGridPollutionSource(grid, (x, y, amount, type) => pm.addSource(x, y, amount, type));
+    const providers = [this.state.garbage, this.state.sewage, this.state.airport];
+    for (const provider of providers) {
+      for (const src of provider.getPollutionSources()) {
+        pm.addSource(src.x, src.y, src.amount, src.type);
+      }
+    }
+    for (const src of this.state.garbage.getOverflowPollutionSources()) {
       pm.addSource(src.x, src.y, src.amount, src.type);
     }
 
