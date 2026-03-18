@@ -1395,26 +1395,36 @@ export class SimulationLoop {
     const spawnCount = pop >= 50 ? 1 : 0;
     if (spawnCount === 0) return;
 
-    const roads: { x: number; y: number }[] = [];
-    const commercialCells: { x: number; y: number }[] = [];
-
-    grid.forEachCell((cell, x, y) => {
-      if (cell.roadType !== RoadType.NONE) roads.push({ x, y });
-      if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)) {
-        commercialCells.push({ x, y });
-      }
-    });
-
-    if (roads.length < 2) return;
-    const startPool = commercialCells.length > 0 ? commercialCells : roads;
+    // Random-probe for road cells instead of full grid scan (spawns only 1 vehicle)
+    const maxProbes = 40;
+    const w = grid.width;
+    const h = grid.height;
 
     for (let i = 0; i < spawnCount; i++) {
       if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
-      const start = randomElement(startPool);
-      const end = randomElement(roads);
-      if (start.x === end.x && start.y === end.y) continue;
 
-      const path = findRoadPath(start, end, grid);
+      // Find a random road cell for start
+      let startX = 0, startY = 0, endX = 0, endY = 0;
+      let foundStart = false, foundEnd = false;
+      for (let p = 0; p < maxProbes; p++) {
+        const rx = randomInt(w), ry = randomInt(h);
+        const c = grid.getCell(rx, ry);
+        if (c && c.roadType !== RoadType.NONE) {
+          startX = rx; startY = ry; foundStart = true; break;
+        }
+      }
+      if (!foundStart) return;
+
+      for (let p = 0; p < maxProbes; p++) {
+        const rx = randomInt(w), ry = randomInt(h);
+        const c = grid.getCell(rx, ry);
+        if (c && c.roadType !== RoadType.NONE && (rx !== startX || ry !== startY)) {
+          endX = rx; endY = ry; foundEnd = true; break;
+        }
+      }
+      if (!foundEnd) return;
+
+      const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid);
       if (path && path.length >= 2) {
         const edgePath = refineLanePath(this.laneGraph, path);
         if (edgePath && edgePath.length > 0) {
