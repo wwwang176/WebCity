@@ -32,6 +32,17 @@ export class VehicleRenderer {
   private headlightMaterial: THREE.MeshBasicMaterial | null = null;
   private taillightMaterial: THREE.MeshBasicMaterial | null = null;
 
+  // Reusable per-frame objects (avoids ~720 allocations/second at 60fps)
+  private readonly _groups = new Map<string, VehicleData[]>();
+  private readonly _rotation = new THREE.Matrix4();
+  private readonly _translation = new THREE.Matrix4();
+  private readonly _matrix = new THREE.Matrix4();
+  private readonly _color = new THREE.Color();
+  private readonly _hlMatrix = new THREE.Matrix4();
+  private readonly _hlTranslation = new THREE.Matrix4();
+  private readonly _tlMatrix = new THREE.Matrix4();
+  private readonly _tlTranslation = new THREE.Matrix4();
+
   build(scene: THREE.Scene): void {
     this.dispose(scene);
 
@@ -101,24 +112,26 @@ export class VehicleRenderer {
   }
 
   update(vehicles: VehicleData[], sunIntensity?: number, time?: number): void {
-    // Group vehicles by type
-    const groups = new Map<string, VehicleData[]>();
+    // Group vehicles by type (reuse Map + clear arrays instead of creating new ones)
+    const groups = this._groups;
+    for (const arr of groups.values()) arr.length = 0;
     for (const v of vehicles) {
-      if (!groups.has(v.type)) groups.set(v.type, []);
-      groups.get(v.type)!.push(v);
+      let arr = groups.get(v.type);
+      if (!arr) { arr = []; groups.set(v.type, arr); }
+      arr.push(v);
     }
 
-    const rotation = new THREE.Matrix4();
-    const translation = new THREE.Matrix4();
-    const matrix = new THREE.Matrix4();
-    const color = new THREE.Color();
+    const rotation = this._rotation;
+    const translation = this._translation;
+    const matrix = this._matrix;
+    const color = this._color;
 
     // Collect all vehicles in order for headlight/taillight indexing
     let lightIndex = 0;
-    const hlMatrix = new THREE.Matrix4();
-    const hlTranslation = new THREE.Matrix4();
-    const tlMatrix = new THREE.Matrix4();
-    const tlTranslation = new THREE.Matrix4();
+    const hlMatrix = this._hlMatrix;
+    const hlTranslation = this._hlTranslation;
+    const tlMatrix = this._tlMatrix;
+    const tlTranslation = this._tlTranslation;
 
     for (const [type, mesh] of this.meshes) {
       const list = groups.get(type) ?? [];
