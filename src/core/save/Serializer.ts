@@ -180,7 +180,7 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
 
   // Restore citizens
   if (saved.citizens) {
-    for (const c of saved.citizens) state.citizens.createCitizen(c);
+    for (const c of saved.citizens) state.citizens.restoreCitizen(c);
   }
 
   // Restore civic services

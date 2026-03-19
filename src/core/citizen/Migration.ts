@@ -258,16 +258,18 @@ export function migrationTick(
         if (slots[idx]!.capacity - slots[idx]!.occupied <= 0) slots.splice(idx, 1);
       }
 
+      let familySettled = true;
       for (const m of family) {
-        manager.createCitizen({
+        const citizen = manager.createCitizen({
           age: m.age,
           education: m.education,
-
           educationProgress: m.educationProgress,
           homeId: assignedPos,
         }, currentTick);
+        if (!citizen) { familySettled = false; break; }
         immigrated++;
       }
+      if (!familySettled) break;
       filled += family.length;
     }
   }

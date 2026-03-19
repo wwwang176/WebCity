@@ -69,11 +69,30 @@ export const EDUCATION_PROGRESSION: readonly EducationRule[] = [
 export class CitizenManager {
   private citizens: Citizen[] = [];
   private nextId = 1;
+  /** Residential capacity — updated by SimulationLoop each slowTick.
+   *  Defaults to Infinity so tests / save-loading work without explicit setup. */
+  private residentialCapacity = Infinity;
 
   /** Hook called after citizens are evicted from a building. Subscribers handle cleanup (e.g. commute cache). */
   onEvicted?: (citizenIds: number[]) => void;
 
-  createCitizen(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen {
+  /** Update the housing capacity gate. Call each slowTick from SimulationLoop. */
+  updateResidentialCapacity(cap: number): void {
+    this.residentialCapacity = cap;
+  }
+
+  /** Create a citizen if housing capacity allows. Returns null when at capacity. */
+  createCitizen(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen | null {
+    if (this.citizens.length >= this.residentialCapacity) return null;
+    return this._addCitizen(overrides, currentTick);
+  }
+
+  /** Unconditionally restore a citizen (save-loading). Bypasses capacity check. */
+  restoreCitizen(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen {
+    return this._addCitizen(overrides, currentTick);
+  }
+
+  private _addCitizen(overrides: Partial<Citizen>, currentTick: number): Citizen {
     const age = overrides.age ?? 100; // default mid-ADULT (life-weeks)
     const education = overrides.education ?? EducationLevel.NONE;
     const citizen: Citizen = {

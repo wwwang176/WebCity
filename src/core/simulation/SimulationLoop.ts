@@ -301,7 +301,10 @@ export class SimulationLoop {
       }
     }
 
-    // 5b. Monthly: natural births
+    // 5b. Sync residential capacity gate (before births + migration)
+    this.state.citizens.updateResidentialCapacity(countResidentialCapacity(this.state.grid));
+
+    // 5c. Monthly: natural births
     const currentMonth = this.state.clock.getMonth();
     if (currentMonth !== this.lastBirthMonth) {
       this.lastBirthMonth = currentMonth;

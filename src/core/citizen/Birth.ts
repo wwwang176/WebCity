@@ -94,14 +94,15 @@ export function birthTick(
     }
   }
 
-  // 產生新生兒
+  // 產生新生兒（capacity 滿時 createCitizen 回傳 null，停止生育）
   for (const nb of newborns) {
-    manager.createCitizen({
+    const citizen = manager.createCitizen({
       age: 0,
       education: EducationLevel.NONE,
       homeId: nb.homeId,
       workplaceId: null,
     }, currentTick);
+    if (!citizen) break;
     births++;
   }
 
