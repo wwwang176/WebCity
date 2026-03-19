@@ -106,6 +106,10 @@ export class TrafficSimulation {
   private cellDensity = new Map<string, number>();
   /** Predicted congestion flow (path count per cell), set by SimulationLoop periodically. */
   private predictedFlow: Map<string, number> | null = null;
+  /** Reusable scratch array for active vehicles (avoids per-frame allocation). */
+  private activeVehicleScratch: Vehicle[] = [];
+  /** Reusable edge index map (cleared each frame instead of re-allocated). */
+  private edgeIndexMap = new Map<string, EdgeEntry[]>();
 
 
   /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg).
@@ -152,11 +156,16 @@ export class TrafficSimulation {
     return -1;
   }
 
-  /** Remove all bus vehicles belonging to a specific route. */
+  /** Remove all bus vehicles belonging to a specific route (in-place compaction). */
   removeBusVehicles(routeId: number): void {
-    this.vehicles = this.vehicles.filter(
-      v => !(v.busState && v.busState.routeId === routeId),
-    );
+    let write = 0;
+    for (let read = 0; read < this.vehicles.length; read++) {
+      const v = this.vehicles[read]!;
+      if (!(v.busState && v.busState.routeId === routeId)) {
+        this.vehicles[write++] = v;
+      }
+    }
+    this.vehicles.length = write;
   }
 
   /** Add a service vehicle (police car, fire truck, ambulance, garbage truck) on a LaneEdge path. */
@@ -182,27 +191,42 @@ export class TrafficSimulation {
     return vehicle;
   }
 
-  /** Remove all service vehicles of a given type. */
+  /** Remove all service vehicles of a given type (in-place compaction). */
   removeServiceVehicles(serviceType: ServiceVehicleType): void {
-    this.vehicles = this.vehicles.filter(v => v.serviceType !== serviceType);
+    let write = 0;
+    for (let read = 0; read < this.vehicles.length; read++) {
+      if (this.vehicles[read]!.serviceType !== serviceType) {
+        this.vehicles[write++] = this.vehicles[read]!;
+      }
+    }
+    this.vehicles.length = write;
   }
 
-  /** Remove vehicles by their IDs. */
+  /** Remove vehicles by their IDs (in-place compaction). */
   removeVehiclesByIds(ids: Set<number>): void {
-    this.vehicles = this.vehicles.filter(v => !ids.has(v.id));
+    let write = 0;
+    for (let read = 0; read < this.vehicles.length; read++) {
+      if (!ids.has(this.vehicles[read]!.id)) {
+        this.vehicles[write++] = this.vehicles[read]!;
+      }
+    }
+    this.vehicles.length = write;
   }
 
   /** Get IDs of all currently active vehicles. */
   getActiveVehicleIds(): Set<number> {
-    return new Set(this.vehicles.map(v => v.id));
+    const set = new Set<number>();
+    for (const v of this.vehicles) set.add(v.id);
+    return set;
   }
 
   /** Count service vehicles, optionally filtered by type. */
   getServiceVehicleCount(serviceType?: ServiceVehicleType): number {
-    if (serviceType) {
-      return this.vehicles.filter(v => v.serviceType === serviceType).length;
+    let count = 0;
+    for (const v of this.vehicles) {
+      if (serviceType ? v.serviceType === serviceType : v.serviceType !== undefined) count++;
     }
-    return this.vehicles.filter(v => v.serviceType !== undefined).length;
+    return count;
   }
 
   /** Add a vehicle that follows a LaneEdge path. */
@@ -242,11 +266,15 @@ export class TrafficSimulation {
   ): void {
     const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT } = TRAFFIC;
 
-    // Collect active vehicles
-    const edgeVehicles = this.vehicles.filter(v => v.edgePath.length > 0 && !v.arrived);
+    // Collect active vehicles into reusable scratch array (no per-frame allocation)
+    const edgeVehicles = this.activeVehicleScratch;
+    edgeVehicles.length = 0;
+    for (const v of this.vehicles) {
+      if (v.edgePath.length > 0 && !v.arrived) edgeVehicles.push(v);
+    }
     if (edgeVehicles.length === 0) {
-      // Still clean up arrived vehicles
-      this.vehicles = this.vehicles.filter(v => !v.arrived);
+      // Still clean up arrived vehicles (in-place compaction)
+      this.compactVehicles();
       return;
     }
 
@@ -260,8 +288,9 @@ export class TrafficSimulation {
     });
 
     // Build edge index: edgeId → list of { vehicleId, progress, halfLen }
-    // This allows O(1) lookup of vehicles on any given edge.
-    const edgeIndex = new Map<string, EdgeEntry[]>();
+    // Reuse persistent Map (clear instead of re-allocate each frame).
+    const edgeIndex = this.edgeIndexMap;
+    edgeIndex.clear();
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
       const ep = v.edgePath;
@@ -376,8 +405,8 @@ export class TrafficSimulation {
       }
     }
 
-    // Remove arrived vehicles
-    this.vehicles = this.vehicles.filter(v => !v.arrived);
+    // Remove arrived vehicles (in-place compaction)
+    this.compactVehicles();
 
     // Rebuild cell density map from all active vehicles
     this.cellDensity.clear();
@@ -388,6 +417,17 @@ export class TrafficSimulation {
         this.cellDensity.set(cell, (this.cellDensity.get(cell) ?? 0) + 1);
       }
     }
+  }
+
+  /** Remove arrived vehicles from the vehicles array in-place. */
+  private compactVehicles(): void {
+    let write = 0;
+    for (let read = 0; read < this.vehicles.length; read++) {
+      if (!this.vehicles[read]!.arrived) {
+        this.vehicles[write++] = this.vehicles[read]!;
+      }
+    }
+    this.vehicles.length = write;
   }
 
   /** Total distance traveled along edge path (for sorting). */

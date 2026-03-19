@@ -412,6 +412,50 @@ describe('getServiceVehicleCount', () => {
   });
 });
 
+describe('zero-alloc vehicle removal', () => {
+  it('advanceEdgeVehicles should compact arrived vehicles in-place', () => {
+    const sim = new TrafficSimulation();
+    sim.addVehicleOnEdges(makeLongPath(2)); // will arrive quickly
+    sim.addVehicleOnEdges(makeLongPath(50)); // will stay
+    const arrRef = sim.vehicles;
+    sim.advanceEdgeVehicles(1.0);
+    // Same array reference after removal
+    expect(sim.vehicles).toBe(arrRef);
+    expect(sim.getVehicleCount()).toBe(1);
+  });
+
+  it('removeBusVehicles should compact in-place', () => {
+    const sim = new TrafficSimulation();
+    const seg = [makeLongPath(5)];
+    sim.addBusVehicle(seg, 1);
+    sim.addVehicleOnEdges(makeLongPath(5));
+    const arrRef = sim.vehicles;
+    sim.removeBusVehicles(1);
+    expect(sim.vehicles).toBe(arrRef);
+    expect(sim.getVehicleCount()).toBe(1);
+  });
+
+  it('removeServiceVehicles should compact in-place', () => {
+    const sim = new TrafficSimulation();
+    sim.addServiceVehicle(makeLongPath(5), 'police');
+    sim.addVehicleOnEdges(makeLongPath(5));
+    const arrRef = sim.vehicles;
+    sim.removeServiceVehicles('police');
+    expect(sim.vehicles).toBe(arrRef);
+    expect(sim.getVehicleCount()).toBe(1);
+  });
+
+  it('removeVehiclesByIds should compact in-place', () => {
+    const sim = new TrafficSimulation();
+    const v1 = sim.addVehicleOnEdges(makeLongPath(5));
+    sim.addVehicleOnEdges(makeLongPath(5));
+    const arrRef = sim.vehicles;
+    sim.removeVehiclesByIds(new Set([v1.id]));
+    expect(sim.vehicles).toBe(arrRef);
+    expect(sim.getVehicleCount()).toBe(1);
+  });
+});
+
 describe('service vehicle stall exemption', () => {
   it('should not despawn service vehicles due to stall time', () => {
     const sim = new TrafficSimulation();
