@@ -120,7 +120,20 @@ export class CitizenManager {
   }
 
   removeCitizen(id: number): void {
-    this.citizens = this.citizens.filter((c) => c.id !== id);
+    const idx = this.citizens.findIndex((c) => c.id === id);
+    if (idx >= 0) this.citizens.splice(idx, 1);
+  }
+
+  /** Batch-remove citizens by id set. Single-pass compaction — no intermediate arrays. */
+  removeCitizens(ids: Set<number>): void {
+    if (ids.size === 0) return;
+    let write = 0;
+    for (let read = 0; read < this.citizens.length; read++) {
+      if (!ids.has(this.citizens[read]!.id)) {
+        this.citizens[write++] = this.citizens[read]!;
+      }
+    }
+    this.citizens.length = write;
   }
 
   getCitizen(id: number): Citizen | undefined {
@@ -213,7 +226,7 @@ export class CitizenManager {
         dead.push(c.id);
       }
     }
-    for (const id of dead) this.removeCitizen(id);
+    if (dead.length > 0) this.removeCitizens(new Set(dead));
     return dead;
   }
 
