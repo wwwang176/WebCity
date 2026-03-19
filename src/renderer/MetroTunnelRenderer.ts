@@ -68,6 +68,12 @@ export class MetroTunnelRenderer {
   // Track line topology for change detection
   private lineTopologyHash = new Map<number, string>();
 
+  // Reusable per-frame objects
+  private readonly _color = new THREE.Color(TRAIN_COLOR);
+  private readonly _rotation = new THREE.Matrix4();
+  private readonly _translation = new THREE.Matrix4();
+  private readonly _matrix = new THREE.Matrix4();
+
   constructor() {
     this.tunnelGroup = new THREE.Group();
     this.tunnelGroup.visible = false;
@@ -303,10 +309,10 @@ export class MetroTunnelRenderer {
     }
 
     // Advance all trains and render carriages
-    const color = new THREE.Color(TRAIN_COLOR);
-    const rotation = new THREE.Matrix4();
-    const translation = new THREE.Matrix4();
-    const matrix = new THREE.Matrix4();
+    const color = this._color;
+    const rotation = this._rotation;
+    const translation = this._translation;
+    const matrix = this._matrix;
 
     let instanceIdx = 0;
 
