@@ -39,10 +39,17 @@ export function getCellServiceFlags(state: GameState, x: number, y: number): Ser
 
 /** Calculate the weighted service coverage score for a single cell.
  *  Power and water each count 2; all other services count 1.
+ *  Inlined to avoid allocating a ServiceFlags object per call.
  */
 export function getCellServiceScore(state: GameState, x: number, y: number): number {
-  const f = getCellServiceFlags(state, x, y);
-  return serviceFlagsToScore(f);
+  return (state.power.isPowered(x, y) ? 2 : 0)
+    + (state.water.isSupplied(x, y) ? 2 : 0)
+    + (state.police.getCoverage(x, y) ? 1 : 0)
+    + (state.fire.getCoverage(x, y) ? 1 : 0)
+    + (state.garbage.getCoverage(x, y) ? 1 : 0)
+    + (state.health.getCoverage(x, y) ? 1 : 0)
+    + (state.education.getCoverage(x, y) ? 1 : 0)
+    + (state.deathCare.getCoverage(x, y) ? 1 : 0);
 }
 
 /** Convert service flags to the weighted numeric score. */

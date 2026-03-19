@@ -64,6 +64,28 @@ function shuffle<T>(arr: T[]): void {
   }
 }
 
+// Reusable buffers for candidate selection (avoids per-citizen allocations)
+interface ScoredCandidate<T> { candidate: T; score: number; }
+const _scoredBuf: ScoredCandidate<unknown>[] = [];
+
+/** Pick a candidate from top-3 scored entries using a pre-allocated buffer. */
+function pickTop3<T>(buf: ScoredCandidate<T>[], count: number): T {
+  // Partial sort: find top-3 by selection
+  const top = Math.min(3, count);
+  for (let i = 0; i < top; i++) {
+    let bestIdx = i;
+    for (let j = i + 1; j < count; j++) {
+      if (buf[j]!.score > buf[bestIdx]!.score) bestIdx = j;
+    }
+    if (bestIdx !== i) {
+      const tmp = buf[i]!;
+      buf[i] = buf[bestIdx]!;
+      buf[bestIdx] = tmp;
+    }
+  }
+  return buf[Math.floor(Math.random() * top)]!.candidate;
+}
+
 /**
  * Score-based housing assignment: each citizen picks from top-3 scored candidates.
  * Mutates citizens (homeId) and occupancy map in-place.
@@ -73,38 +95,40 @@ export function assignWithPreference(
   candidates: readonly HousingCandidate[],
   occupancy: Map<string, number>,
 ): void {
+  // Build available pool once — reusable across citizens
+  const pool: HousingCandidate[] = [];
+
   for (const citizen of citizens) {
     if (citizen.homeId !== null) continue;
 
-    // Step 1: Filter — has capacity
-    let available = candidates.filter(c => {
+    // Collect available candidates inline
+    pool.length = 0;
+    for (const c of candidates) {
       const occ = occupancy.get(c.pos) ?? 0;
-      return occ < c.capacity;
-    });
-    if (available.length === 0) continue;
+      if (occ < c.capacity) pool.push(c);
+    }
+    if (pool.length === 0) continue;
 
-    // Performance: sample if too many candidates
-    let pool = [...available];
+    // Sample if too many
     if (pool.length > MAX_CANDIDATES) {
       shuffle(pool);
-      pool = pool.slice(0, MAX_CANDIDATES);
+      pool.length = MAX_CANDIDATES;
     }
 
-    // Step 2: Score
-    const scored = pool.map(c => ({
-      candidate: c,
-      score: scoreHousing(citizen, c),
-    }));
+    // Score into reusable buffer
+    let count = 0;
+    for (const c of pool) {
+      if (count >= _scoredBuf.length) _scoredBuf.push({ candidate: c, score: 0 });
+      else { _scoredBuf[count]!.candidate = c; }
+      _scoredBuf[count]!.score = scoreHousing(citizen, c);
+      count++;
+    }
 
-    // Step 3: Pick from top-3 randomly
-    scored.sort((a, b) => b.score - a.score);
-    const topN = scored.slice(0, Math.min(3, scored.length));
-    const pick = topN[Math.floor(Math.random() * topN.length)]!;
+    const pick = pickTop3(_scoredBuf as ScoredCandidate<HousingCandidate>[], count);
 
-    // Step 4: Assign
-    citizen.homeId = pick.candidate.pos;
+    citizen.homeId = pick.pos;
     citizen.homelessSince = null;
-    occupancy.set(pick.candidate.pos, (occupancy.get(pick.candidate.pos) ?? 0) + 1);
+    occupancy.set(pick.pos, (occupancy.get(pick.pos) ?? 0) + 1);
   }
 }
 
@@ -121,43 +145,42 @@ export function assignWorkWithPreference(
   occupancy: Map<string, number>,
   reachable?: ReadonlyMap<string, ReadonlySet<string>>,
 ): void {
+  const pool: WorkplaceCandidate[] = [];
+
   for (const citizen of citizens) {
     if (citizen.workplaceId !== null) continue;
-    // Skip citizens without a home — need homeId for reachability check.
-    // They'll get a home this tick and a workplace next tick.
     if (citizen.homeId === null) continue;
 
     // Filter — has capacity + reachable from home
     const reachableSet = reachable?.get(citizen.homeId);
-    let available = candidates.filter(c => {
+    pool.length = 0;
+    for (const c of candidates) {
       const occ = occupancy.get(c.pos) ?? 0;
-      if (occ >= c.capacity) return false;
-      if (reachableSet && !reachableSet.has(c.pos)) return false;
-      return true;
-    });
-    if (available.length === 0) continue;
+      if (occ >= c.capacity) continue;
+      if (reachableSet && !reachableSet.has(c.pos)) continue;
+      pool.push(c);
+    }
+    if (pool.length === 0) continue;
 
-    // Performance: sample if too many candidates
-    let pool = [...available];
+    // Sample if too many
     if (pool.length > MAX_CANDIDATES) {
       shuffle(pool);
-      pool = pool.slice(0, MAX_CANDIDATES);
+      pool.length = MAX_CANDIDATES;
     }
 
-    // Score
-    const scored = pool.map(c => ({
-      candidate: c,
-      score: scoreWorkplace(citizen, c.pos, c.zoneType),
-    }));
+    // Score into reusable buffer
+    let count = 0;
+    for (const c of pool) {
+      if (count >= _scoredBuf.length) _scoredBuf.push({ candidate: c, score: 0 });
+      else { _scoredBuf[count]!.candidate = c; }
+      _scoredBuf[count]!.score = scoreWorkplace(citizen, c.pos, c.zoneType);
+      count++;
+    }
 
-    // Pick from top-3 randomly
-    scored.sort((a, b) => b.score - a.score);
-    const topN = scored.slice(0, Math.min(3, scored.length));
-    const pick = topN[Math.floor(Math.random() * topN.length)]!;
+    const pick = pickTop3(_scoredBuf as ScoredCandidate<WorkplaceCandidate>[], count);
 
-    // Assign
-    citizen.workplaceId = pick.candidate.pos;
+    citizen.workplaceId = pick.pos;
     citizen.unemployedSince = null;
-    occupancy.set(pick.candidate.pos, (occupancy.get(pick.candidate.pos) ?? 0) + 1);
+    occupancy.set(pick.pos, (occupancy.get(pick.pos) ?? 0) + 1);
   }
 }

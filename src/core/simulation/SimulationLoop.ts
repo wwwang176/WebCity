@@ -18,7 +18,7 @@ import { clampBuildingLevel } from '../building/BuildingLevel';
 import { ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
-import { getGridPollutionSources } from '../environment/GridPollutionSources';
+import { forEachGridPollutionSource } from '../environment/GridPollutionSources';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
 import { isWorkingAge, type Citizen } from '../citizen/types';
@@ -41,7 +41,6 @@ import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDist
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
-import { collectAllPollutionSources } from '../environment/PollutionSourceRegistry';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../economy/ExpenseCalculator';
@@ -159,6 +158,7 @@ export class SimulationLoop {
   // Walking trip pool: rebuilt each rush period from commute mode distribution
   private walkingTripPool: WalkingTripPool = { trips: [], totalWeight: 0, prefixSums: [] };
   private tripPoolDirty = true;
+  private tripAggMap = new Map<string, AggregatedTrip>();
   private pendingTrips: AggregatedTrip[] = [];
 
   /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
@@ -166,6 +166,14 @@ export class SimulationLoop {
 
   /** Per-building abandonment stress (0–100). Key is "x,y". */
   abandonmentStress: Map<string, number> = new Map();
+
+  /** Workplace distance cache — observer-invalidated, worker-computed. */
+  private wpDistCache: import('../workplace/WorkplaceDistanceCache').WorkplaceDistanceCache | null = null;
+
+  /** Set the workplace distance cache (called by Game.ts after construction). */
+  setWorkplaceDistanceCache(cache: import('../workplace/WorkplaceDistanceCache').WorkplaceDistanceCache): void {
+    this.wpDistCache = cache;
+  }
 
   /** Called when building state changes (growth/demolish/burn/upgrade) */
   onBuildingsChanged?: () => void;
@@ -192,6 +200,10 @@ export class SimulationLoop {
     // Many operations were tuned for ticksPerDay=4. With ticksPerDay=24 (6x more),
     // we gate slow-update operations to run every 6 ticks to preserve balance.
     const isSlowTick = tick % SIMULATION.SLOW_TICK_INTERVAL === 0;
+
+    // Mark building index dirty each tick so the first caller gets a fresh scan.
+    // Subsequent rebuildBuildingIndex() calls within the same tick are no-ops.
+    this.buildingIndexDirty = true;
 
     // 1. Economy: RCI demand (every 6 ticks)
     if (isSlowTick) {
@@ -470,7 +482,7 @@ export class SimulationLoop {
         }
       }
     }
-    if (changed) this.onBuildingsChanged?.();
+    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   private runMigration(): void {
@@ -530,9 +542,11 @@ export class SimulationLoop {
 
     // Calculate city-wide happiness context (SRP: pure calculation in CityHappinessContext)
     const citizens = this.state.citizens.getCitizens();
+    let adultCount = 0;
+    for (const c of citizens) { if (isWorkingAge(c.age)) adultCount++; }
     const ctx = calculateCityHappinessContext({
       totalJobs: this.countTotalJobs(),
-      adultCount: citizens.filter(c => isWorkingAge(c.age)).length,
+      adultCount,
       avgPollution: this.getAvgPollution(),
       avgNoise: this.getAvgNoise(),
       avgCrime: this.getAvgCrime(),
@@ -542,46 +556,44 @@ export class SimulationLoop {
 
     // Check if any parks exist for happiness bonus
     const hasParkCoverage = this.state.parks.getParks().length > 0;
+    const currentTick = this.state.clock.tick;
+
+    // Reusable factors object — mutated per citizen, no allocation per iteration
+    const factors: HappinessFactors = {
+      commuteDistance: 0, hasPark: hasParkCoverage,
+      pollution: ctx.avgPollution, noiseLevel: ctx.avgNoise,
+      crimeRate: ctx.avgCrime, isEmployed: true,
+      taxRate, serviceCoverage: ctx.serviceCoverage,
+      currentTick, homePowered: true, homeWatered: true,
+      workplaceZoneType: undefined,
+    };
 
     for (const citizen of citizens) {
       // Vary commute per citizen (+/- 3 random jitter)
-      const commute = Math.max(1, ctx.avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
+      factors.commuteDistance = Math.max(1, ctx.avgCommute + (Math.random() * SIMULATION.COMMUTE_JITTER - SIMULATION.COMMUTE_JITTER / 2));
 
       // Check if citizen's home has power and water
-      let homePowered = true;
-      let homeWatered = true;
+      factors.homePowered = true;
+      factors.homeWatered = true;
       if (citizen.homeId) {
         const pos = parsePosKey(citizen.homeId);
         if (pos) {
-          homePowered = this.state.power.isPowered(pos.x, pos.y);
-          homeWatered = this.state.water.isSupplied(pos.x, pos.y);
+          factors.homePowered = this.state.power.isPowered(pos.x, pos.y);
+          factors.homeWatered = this.state.water.isSupplied(pos.x, pos.y);
         }
       }
 
       // Get workplace zone type for job mismatch penalty
-      let workplaceZoneType: ZoneType | undefined;
+      factors.workplaceZoneType = undefined;
       if (citizen.workplaceId) {
         const wpos = parsePosKey(citizen.workplaceId);
         if (wpos) {
           const wcell = this.state.grid.getCell(wpos.x, wpos.y);
-          if (wcell) workplaceZoneType = wcell.zoneType;
+          if (wcell) factors.workplaceZoneType = wcell.zoneType;
         }
       }
 
-      const factors: HappinessFactors = {
-        commuteDistance: commute,
-        hasPark: hasParkCoverage,
-        pollution: ctx.avgPollution,
-        noiseLevel: ctx.avgNoise,
-        crimeRate: ctx.avgCrime,
-        isEmployed: !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate,
-        taxRate,
-        serviceCoverage: ctx.serviceCoverage,
-        currentTick: this.state.clock.tick,
-        homePowered,
-        homeWatered,
-        workplaceZoneType,
-      };
+      factors.isEmployed = !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate;
       citizen.happiness = calculateHappiness(citizen, factors);
     }
   }
@@ -667,7 +679,7 @@ export class SimulationLoop {
     for (const u of updates) {
       this.onBuildingUpdated?.(u.x, u.y, u.zoneType, u.level, u.burned);
     }
-    if (changed) this.onBuildingsChanged?.();
+    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   private updatePollution(): void {
@@ -676,34 +688,33 @@ export class SimulationLoop {
 
     pm.clearSources();
 
-    // Collect pollution sources from all providers via DIP registry
-    const gridProvider = { getPollutionSources: () => getGridPollutionSources(grid) };
-    const overflowProvider = { getPollutionSources: () => this.state.garbage.getOverflowPollutionSources() };
-    const allSources = collectAllPollutionSources([
-      gridProvider,
-      this.state.garbage,
-      this.state.sewage,
-      this.state.airport,
-      overflowProvider,
-    ]);
-    for (const src of allSources) {
+    // Add pollution sources directly (no intermediate arrays)
+    forEachGridPollutionSource(grid, (x, y, amount, type) => pm.addSource(x, y, amount, type));
+    const providers = [this.state.garbage, this.state.sewage, this.state.airport];
+    for (const provider of providers) {
+      for (const src of provider.getPollutionSources()) {
+        pm.addSource(src.x, src.y, src.amount, src.type);
+      }
+    }
+    for (const src of this.state.garbage.getOverflowPollutionSources()) {
       pm.addSource(src.x, src.y, src.amount, src.type);
     }
 
     pm.calculateSpread();
 
-    // Write pollution back to grid cells
+    // Write pollution back to grid cells (single-field write, no object allocation)
     grid.forEachCell((cell, x, y) => {
       const p = pm.getPollutionAt(x, y);
       const total = Math.min(SIMULATION.CELL_VALUE_MAX, p.ground + p.noise);
       if (cell.pollution !== total) {
-        grid.setCell(x, y, { pollution: total });
+        grid.setField(x, y, 'pollution', total);
       }
     });
   }
 
   private updateLandValue(): void {
     const grid = this.state.grid;
+    const parkBuildingId = getInfraBuildingId('park');
 
     grid.forEachCell((cell, x, y) => {
       if (cell.buildingId === 0) return;
@@ -714,14 +725,14 @@ export class SimulationLoop {
       // Check if near water, forest (natural park), or placed park within 2 cells
       let waterfront = false;
       for (const [dx, dy] of FOUR_NEIGHBORS) {
-        const nc = grid.getCell(x + dx!, y + dy!);
-        if (nc && nc.terrainType === TerrainType.WATER) waterfront = true;
+        if (grid.getField(x + dx!, y + dy!, 'terrainType') === TerrainType.WATER) {
+          waterfront = true; break;
+        }
       }
       const parkProximity = checkParkProximity(
-        (px, py) => grid.getCell(px, py),
-        x, y,
+        grid, x, y,
         this.state.parks.getCoverage(x, y),
-        getInfraBuildingId('park'),
+        parkBuildingId,
       );
 
       // Industrial zones are less affected by their own pollution
@@ -735,14 +746,10 @@ export class SimulationLoop {
         crimeRate: this.getAvgCrime(),
       });
 
-      // Write land value, service coverage, and noise to grid
-      const updates: Record<string, number> = {};
-      if (cell.landValue !== value) updates.landValue = value;
-      if (cell.serviceCoverage !== serviceCoverage) updates.serviceCoverage = serviceCoverage;
+      // Write land value, service coverage, and noise to grid (avoid temp object)
       const noiseVal = Math.min(SIMULATION.CELL_VALUE_MAX, Math.round(pollution.noise));
-      if (cell.noiseLevel !== noiseVal) updates.noiseLevel = noiseVal;
-      if (Object.keys(updates).length > 0) {
-        grid.setCell(x, y, updates);
+      if (cell.landValue !== value || cell.serviceCoverage !== serviceCoverage || cell.noiseLevel !== noiseVal) {
+        grid.setCell(x, y, { landValue: value, serviceCoverage, noiseLevel: noiseVal });
       }
     });
   }
@@ -779,7 +786,7 @@ export class SimulationLoop {
         }
       }
     }
-    if (changed) this.onBuildingsChanged?.();
+    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   /**
@@ -861,7 +868,7 @@ export class SimulationLoop {
       }
     });
 
-    if (changed) this.onBuildingsChanged?.();
+    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   /** Get the abandonment stress for a building at (x, y). */
@@ -874,13 +881,21 @@ export class SimulationLoop {
     this.abandonmentStress.delete(`${x},${y}`);
   }
 
+  /** Dirty flag — set to true when buildings change; cleared after rebuild. */
+  private buildingIndexDirty = true;
+
+  /** Mark building index as needing rebuild (call after growth/demolish/burn). */
+  markBuildingIndexDirty(): void { this.buildingIndexDirty = true; }
+
   /**
-   * Rebuild the building position list.
+   * Rebuild the building position list if dirty.
    * Scans all active zone buildings (excludes ABANDONED/BURNED).
-   * Called every slow tick — 3600 cells is negligible, no caching needed.
+   * Deduplicates multiple callers per tick via dirty flag.
    */
   private rebuildBuildingIndex(): void {
-    this.buildingPositions = [];
+    if (!this.buildingIndexDirty) return;
+    this.buildingIndexDirty = false;
+    this.buildingPositions.length = 0;
     this.state.grid.forEachCell((cell, x, y) => {
       if (isZoneBuilding(cell.buildingId) && cell.reserved !== ABANDONED && cell.reserved !== BURNED) {
         this.buildingPositions.push({ pos: toPosKey(x, y), x, y, buildingId: cell.buildingId });
@@ -909,16 +924,33 @@ export class SimulationLoop {
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
     const workingAgeCitizens = citizens.filter((c) => isWorkingAge(c.age));
 
-    // Build reachability map: homeId → Set of reachable workplace positions
-    // Group unassigned citizens by homeId to avoid duplicate Dijkstra calls
-    const reachable = this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
+    // Trigger async cache update if stale
+    if (this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
+      const wpPositions = workplaceCandidates.map(c => {
+        const p = parsePosKeyUnsafe(c.pos);
+        return { pos: c.pos, x: p.x, y: p.y };
+      });
+      // Copy grid buffer for worker (ArrayBuffer → new copy for transfer)
+      const srcBuf = this.state.grid.getBuffer();
+      const copy = new ArrayBuffer(srcBuf.byteLength);
+      new Uint8Array(copy).set(new Uint8Array(srcBuf));
+      this.wpDistCache.requestUpdate(
+        this.state.grid.width, this.state.grid.height,
+        copy, wpPositions, DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+      );
+    }
+
+    // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback
+    const reachable = (this.wpDistCache?.isReady)
+      ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
+      : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
     assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable);
 
     // Then assign housing with preference scoring
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
     assignWithPreference(citizens, housingCandidates, homeOccupancy);
 
-    // Update occupancy ratios for rendering
+    // Update occupancy ratios for rendering (must re-count AFTER assignments)
     this.occupancyRatios = computeOccupancyRatios(citizens, this.buildingPositions);
 
     // Force occupancy to 0 for abandoned/burned buildings (windows must be dark)
@@ -987,6 +1019,21 @@ export class SimulationLoop {
     return reachable;
   }
 
+  /** Cache-based reachability: O(1) per homeId, no Dijkstra. */
+  private buildWorkplaceReachabilityFromCache(
+    citizens: readonly Citizen[],
+    workplaceCandidates: readonly WorkplaceCandidate[],
+  ): Map<string, Set<string>> {
+    const reachable = new Map<string, Set<string>>();
+    const cache = this.wpDistCache!;
+    for (const c of citizens) {
+      if (c.workplaceId === null && c.homeId !== null && !reachable.has(c.homeId)) {
+        reachable.set(c.homeId, cache.getReachableWorkplaces(c.homeId));
+      }
+    }
+    return reachable;
+  }
+
   /**
    * Run job relocation tick: citizens with long/failed commutes may switch workplace.
    * Called every JOB_RELOCATION_INTERVAL ticks (after housing relocation).
@@ -1000,6 +1047,14 @@ export class SimulationLoop {
     const citizens = this.state.citizens.getCitizens();
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
 
+    // Use cache-based distance lookup when ready (O(1) per lookup, no Dijkstra)
+    const distanceLookup = (this.wpDistCache?.isReady)
+      ? (_grid: any, homePos: { x: number; y: number }, targets: Set<string>, _budget: number) => {
+          const homeKey = toPosKey(homePos.x, homePos.y);
+          return this.wpDistCache!.getDistancesFromHome(homeKey, targets);
+        }
+      : undefined;
+
     const { relocatedIds } = jobRelocationTick(
       citizens,
       workplaceCandidates,
@@ -1007,6 +1062,8 @@ export class SimulationLoop {
       this.commuteCache,
       this.state.grid,
       this.state.clock.tick,
+      undefined,
+      distanceLookup,
     );
 
     // Clear commute cache for relocated citizens so routes are recalculated
@@ -1037,6 +1094,7 @@ export class SimulationLoop {
     this.sidewalkGraphDirty = true;
     this.tripPoolDirty = true;
     this.commuteCache.bumpGeneration();
+    this.wpDistCache?.invalidate();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
       for (const cellKey of affectedCells) {
@@ -1218,22 +1276,24 @@ export class SimulationLoop {
   ): void {
     const commuterSet = direction === 'home_to_work' ? this.morningCommuters : this.eveningCommuters;
 
-    // Get eligible citizens: adults (19-65) with both homeId and workplaceId
-    const eligible = this.state.citizens.getCitizens().filter(
-      c => isWorkingAge(c.age) &&
-           c.homeId !== null && c.workplaceId !== null &&
-           !commuterSet.has(c.id)
-    );
-
-    if (eligible.length === 0) return;
+    // Count eligible citizens inline (avoid .filter() array allocation)
+    const citizens = this.state.citizens.getCitizens();
+    let eligibleCount = 0;
+    for (const c of citizens) {
+      if (isWorkingAge(c.age) && c.homeId !== null && c.workplaceId !== null && !commuterSet.has(c.id)) {
+        eligibleCount++;
+      }
+    }
+    if (eligibleCount === 0) return;
 
     // Spawn enough vehicles per tick so all eligible commuters depart within the rush period (~4 ticks).
     // BFS is bounded to 500 steps so each call is cheap.
-    const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.RUSH_TICKS));
+    const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligibleCount / SIMULATION.RUSH_TICKS));
     let spawned = 0;
 
-    for (const citizen of eligible) {
+    for (const citizen of citizens) {
       if (spawned >= maxPerTick) break;
+      if (!isWorkingAge(citizen.age) || citizen.homeId === null || citizen.workplaceId === null || commuterSet.has(citizen.id)) continue;
       if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
 
       const fromStr = direction === 'home_to_work' ? citizen.homeId! : citizen.workplaceId!;
@@ -1402,26 +1462,36 @@ export class SimulationLoop {
     const spawnCount = pop >= 50 ? 1 : 0;
     if (spawnCount === 0) return;
 
-    const roads: { x: number; y: number }[] = [];
-    const commercialCells: { x: number; y: number }[] = [];
-
-    grid.forEachCell((cell, x, y) => {
-      if (cell.roadType !== RoadType.NONE) roads.push({ x, y });
-      if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)) {
-        commercialCells.push({ x, y });
-      }
-    });
-
-    if (roads.length < 2) return;
-    const startPool = commercialCells.length > 0 ? commercialCells : roads;
+    // Random-probe for road cells instead of full grid scan (spawns only 1 vehicle)
+    const maxProbes = 40;
+    const w = grid.width;
+    const h = grid.height;
 
     for (let i = 0; i < spawnCount; i++) {
       if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
-      const start = randomElement(startPool);
-      const end = randomElement(roads);
-      if (start.x === end.x && start.y === end.y) continue;
 
-      const path = findRoadPath(start, end, grid);
+      // Find a random road cell for start
+      let startX = 0, startY = 0, endX = 0, endY = 0;
+      let foundStart = false, foundEnd = false;
+      for (let p = 0; p < maxProbes; p++) {
+        const rx = randomInt(w), ry = randomInt(h);
+        const c = grid.getCell(rx, ry);
+        if (c && c.roadType !== RoadType.NONE) {
+          startX = rx; startY = ry; foundStart = true; break;
+        }
+      }
+      if (!foundStart) return;
+
+      for (let p = 0; p < maxProbes; p++) {
+        const rx = randomInt(w), ry = randomInt(h);
+        const c = grid.getCell(rx, ry);
+        if (c && c.roadType !== RoadType.NONE && (rx !== startX || ry !== startY)) {
+          endX = rx; endY = ry; foundEnd = true; break;
+        }
+      }
+      if (!foundEnd) return;
+
+      const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid);
       if (path && path.length >= 2) {
         const edgePath = refineLanePath(this.laneGraph, path);
         if (edgePath && edgePath.length > 0) {
@@ -1526,19 +1596,22 @@ export class SimulationLoop {
   private spawnPedestriansFromPool(population: number): void {
     // Finalize trip pool if it was being rebuilt this rush period
     if (this.tripPoolDirty && this.pendingTrips.length > 0) {
-      // Aggregate identical routes
-      const tripMap = new Map<string, AggregatedTrip>();
+      // Aggregate identical routes using a reusable map
+      this.tripAggMap.clear();
       for (const t of this.pendingTrips) {
         const key = `${t.fromX},${t.fromY}→${t.toX},${t.toY}`;
-        const existing = tripMap.get(key);
+        const existing = this.tripAggMap.get(key);
         if (existing) {
           existing.count += t.count;
         } else {
-          tripMap.set(key, { ...t });
+          this.tripAggMap.set(key, { ...t });
         }
       }
-      this.walkingTripPool = buildTripPool([...tripMap.values()]);
-      this.pendingTrips = [];
+      // Build trips array from map values directly
+      const trips: AggregatedTrip[] = [];
+      for (const v of this.tripAggMap.values()) trips.push(v);
+      this.walkingTripPool = buildTripPool(trips);
+      this.pendingTrips.length = 0;
       this.tripPoolDirty = false;
     }
 

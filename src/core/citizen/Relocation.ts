@@ -26,46 +26,45 @@ export function relocationTick(
   occupancy: Map<string, number>,
   config?: Partial<RelocationConfig>,
 ): { count: number; relocatedIds: number[] } {
-  const cfg: RelocationConfig = { ...DEFAULT_RELOCATION_CONFIG, ...config };
+  const cfg: RelocationConfig = config
+    ? { ...DEFAULT_RELOCATION_CONFIG, ...config }
+    : DEFAULT_RELOCATION_CONFIG;
 
   if (candidates.length === 0) return { count: 0, relocatedIds: [] };
 
-  // Filter unhappy citizens who have a home (homeless are handled by assignWithPreference)
-  const unhappy = citizens.filter(
-    c => c.homeId !== null && c.happiness < cfg.happinessThreshold,
-  );
-  if (unhappy.length === 0) return { count: 0, relocatedIds: [] };
+  // Count unhappy citizens inline (avoid .filter() array allocation)
+  let unhappyCount = 0;
+  for (const c of citizens) {
+    if (c.homeId !== null && c.happiness < cfg.happinessThreshold) unhappyCount++;
+  }
+  if (unhappyCount === 0) return { count: 0, relocatedIds: [] };
 
   // Cap the number of relocations per tick
-  const maxRelocations = Math.max(1, Math.floor(unhappy.length * cfg.maxRelocateRatio));
+  const maxRelocations = Math.max(1, Math.floor(unhappyCount * cfg.maxRelocateRatio));
   const relocatedIds: number[] = [];
 
-  for (const citizen of unhappy) {
+  for (const citizen of citizens) {
     if (relocatedIds.length >= maxRelocations) break;
+    if (citizen.homeId === null || citizen.happiness >= cfg.happinessThreshold) continue;
 
-    const currentPos = citizen.homeId!;
+    const currentPos = citizen.homeId;
 
     // Find the current home candidate to compute current score
     const currentCandidate = candidates.find(c => c.pos === currentPos);
     if (!currentCandidate) continue;
     const currentScore = scoreHousing(citizen, currentCandidate);
 
-    // Find affordable alternatives with capacity
-    const alternatives = candidates.filter(c => {
-      if (c.pos === currentPos) return false;
-      const occ = occupancy.get(c.pos) ?? 0;
-      return occ < c.capacity;
-    });
-    if (alternatives.length === 0) continue;
-
-    // Score alternatives and find the best
+    // Score alternatives inline (avoid .filter() array allocation)
     let bestCandidate: HousingCandidate | null = null;
     let bestScore = -Infinity;
-    for (const alt of alternatives) {
-      const s = scoreHousing(citizen, alt);
+    for (const c of candidates) {
+      if (c.pos === currentPos) continue;
+      const occ = occupancy.get(c.pos) ?? 0;
+      if (occ >= c.capacity) continue;
+      const s = scoreHousing(citizen, c);
       if (s > bestScore) {
         bestScore = s;
-        bestCandidate = alt;
+        bestCandidate = c;
       }
     }
 

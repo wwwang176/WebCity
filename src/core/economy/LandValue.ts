@@ -19,15 +19,18 @@ export const LAND_VALUE = {
   MAX: 255,
 } as const;
 
-const FOUR_DIRS: readonly [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+/** Grid-like object that supports zero-alloc field reads. */
+interface FieldReader {
+  getField(x: number, y: number, field: 'terrainType' | 'buildingId'): number;
+}
 
 /**
  * Check if a cell has park proximity (park service coverage, adjacent forest,
  * or forest/park building within 2-cell Manhattan distance).
- * Pure function extracted from SimulationLoop.updateLandValue (SRP).
+ * Uses getField() to avoid allocating CellData objects for each neighbor check.
  */
 export function checkParkProximity(
-  getCell: (x: number, y: number) => { terrainType: number; buildingId: number } | null,
+  grid: FieldReader,
   x: number,
   y: number,
   hasServiceCoverage: boolean,
@@ -37,18 +40,14 @@ export function checkParkProximity(
 
   const FOREST = 3; // TerrainType.FOREST
 
-  // Check 1-cell radius (cardinal neighbors)
-  for (const [dx, dy] of FOUR_DIRS) {
-    const nc = getCell(x + dx, y + dy);
-    if (nc && (nc.terrainType === FOREST || nc.buildingId === parkBuildingId)) return true;
-  }
-
-  // Check 2-cell Manhattan radius
+  // Check 2-cell Manhattan radius (includes 1-cell cardinal neighbors)
   for (let dx = -2; dx <= 2; dx++) {
     for (let dy = -2; dy <= 2; dy++) {
       if (Math.abs(dx) + Math.abs(dy) > 2) continue;
-      const nc = getCell(x + dx, y + dy);
-      if (nc && (nc.terrainType === FOREST || nc.buildingId === parkBuildingId)) return true;
+      if (dx === 0 && dy === 0) continue;
+      const terrain = grid.getField(x + dx, y + dy, 'terrainType');
+      if (terrain === -1) continue; // out of bounds
+      if (terrain === FOREST || grid.getField(x + dx, y + dy, 'buildingId') === parkBuildingId) return true;
     }
   }
 

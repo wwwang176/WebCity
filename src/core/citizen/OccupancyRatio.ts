@@ -6,16 +6,20 @@ import { getBuildingType } from '../building/types';
  * Compute occupancy ratios (0.0–1.0) for each building position.
  * Residential buildings use homeId occupancy, workplace buildings use workplaceId.
  * Returns a Map<posKey, ratio> where ratio is clamped to [0, 1].
+ *
+ * Accepts optional pre-built occupancy maps to avoid redundant iteration.
  */
 export function computeOccupancyRatios(
   citizens: readonly Citizen[],
   buildings: readonly { pos: string; buildingId: number }[],
+  prebuiltHome?: ReadonlyMap<string, number>,
+  prebuiltWork?: ReadonlyMap<string, number>,
 ): Map<string, number> {
   const ratios = new Map<string, number>();
   if (buildings.length === 0) return ratios;
 
-  const homeOcc = countOccupancy(citizens, (c) => c.homeId);
-  const workOcc = countOccupancy(citizens, (c) => c.workplaceId);
+  const homeOcc = prebuiltHome ?? countOccupancy(citizens, (c) => c.homeId);
+  const workOcc = prebuiltWork ?? countOccupancy(citizens, (c) => c.workplaceId);
 
   for (const b of buildings) {
     const bt = getBuildingType(b.buildingId);

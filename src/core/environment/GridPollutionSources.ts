@@ -16,14 +16,24 @@ interface GridLike {
 /** Collect pollution sources from grid cells (industrial buildings + road traffic noise). */
 export function getGridPollutionSources(grid: GridLike): PollutionSource[] {
   const sources: PollutionSource[] = [];
-  grid.forEachCell((cell, x, y) => {
-    if (cell.buildingId > 0 && cell.zoneType === ZoneType.INDUSTRIAL) {
-      sources.push({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_GROUND, type: 'ground' });
-      sources.push({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_NOISE, type: 'noise' });
-    }
-    if (cell.roadType !== RoadType.NONE && cell.trafficDensity > 0) {
-      sources.push({ x, y, amount: cell.trafficDensity * GRID_POLLUTION.TRAFFIC_NOISE_MULTIPLIER, type: 'noise' });
-    }
+  forEachGridPollutionSource(grid, (x, y, amount, type) => {
+    sources.push({ x, y, amount, type });
   });
   return sources;
+}
+
+/** Visit grid pollution sources without allocating an intermediate array. */
+export function forEachGridPollutionSource(
+  grid: GridLike,
+  emit: (x: number, y: number, amount: number, type: PollutionType) => void,
+): void {
+  grid.forEachCell((cell, x, y) => {
+    if (cell.buildingId > 0 && cell.zoneType === ZoneType.INDUSTRIAL) {
+      emit(x, y, GRID_POLLUTION.INDUSTRIAL_GROUND, 'ground');
+      emit(x, y, GRID_POLLUTION.INDUSTRIAL_NOISE, 'noise');
+    }
+    if (cell.roadType !== RoadType.NONE && cell.trafficDensity > 0) {
+      emit(x, y, cell.trafficDensity * GRID_POLLUTION.TRAFFIC_NOISE_MULTIPLIER, 'noise');
+    }
+  });
 }

@@ -307,8 +307,11 @@ export class TrafficSimulation {
       const effectiveSpeed = EDGE_SPEED * (limit / REFERENCE_LIMIT) * v.speedMultiplier * dtSeconds;
 
       // 4. Advance
+      // If a vehicle ahead is closer than the red light, just follow it
+      // (the front car is already stopped for the light — no need to double-stop).
       const gapRoom = Math.max(0, gap - MIN_GAP);
-      const room = Math.max(0, Math.min(gapRoom, redLightDist));
+      const effectiveRedLight = gap < redLightDist ? Infinity : redLightDist;
+      const room = Math.max(0, Math.min(gapRoom, effectiveRedLight));
       let moveDistance = Math.min(effectiveSpeed, room);
 
       while (moveDistance > 0 && v.edgeIndex < ep.length) {
