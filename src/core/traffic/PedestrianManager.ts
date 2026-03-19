@@ -18,8 +18,10 @@ export const PEDESTRIAN = {
   MAX_ACTIVE: 2000,
   POPULATION_RATIO: 0.05,
   DESPAWN_TIMEOUT: 120,
-  /** Visual multiplier: max spawned pedestrians = real commuter count × this */
+  /** Visual multiplier: max spawned pedestrians = effective pool size × this */
   VISUAL_MULTIPLIER: 3,
+  /** Minimum effective pool size — dilutes small pools so rare trip types don't dominate */
+  MIN_POOL_SIZE: 100,
 } as const;
 
 export const DECORATIVE_PEDESTRIAN = {
@@ -62,9 +64,18 @@ export function buildTripPool(trips: AggregatedTrip[]): WalkingTripPool {
   return { trips, totalWeight: total, prefixSums };
 }
 
-export function sampleTrip(pool: WalkingTripPool, rand = Math.random): AggregatedTrip | null {
+export function sampleTrip(pool: WalkingTripPool, effectiveWeightOrRand?: number | (() => number), rand = Math.random): AggregatedTrip | null {
   if (pool.totalWeight === 0) return null;
-  const r = rand() * pool.totalWeight;
+  let w: number;
+  if (typeof effectiveWeightOrRand === 'function') {
+    rand = effectiveWeightOrRand;
+    w = pool.totalWeight;
+  } else {
+    w = effectiveWeightOrRand ?? pool.totalWeight;
+  }
+  const r = rand() * w;
+  // Random fell outside real pool range → diluted empty slot
+  if (r >= pool.totalWeight) return null;
   // Binary search in prefix sums
   let lo = 0, hi = pool.prefixSums.length - 1;
   while (lo < hi) {
@@ -300,9 +311,9 @@ export class PedestrianManager {
   private refillFromPool(dt: number): void {
     if (this.tripPool.totalWeight === 0 || this.currentPopulation === 0) return;
 
+    const effectiveWeight = Math.max(this.tripPool.totalWeight, PEDESTRIAN.MIN_POOL_SIZE);
     const hardCap = Math.floor(getMaxPedestrians(this.currentPopulation) * this.densityMultiplier);
-    const realCap = this.tripPool.totalWeight * PEDESTRIAN.VISUAL_MULTIPLIER;
-    const targetPed = Math.min(hardCap, realCap);
+    const targetPed = Math.min(hardCap, effectiveWeight * PEDESTRIAN.VISUAL_MULTIPLIER);
     const deficit = targetPed - this.agents.length;
     if (deficit <= 0) return;
 
@@ -315,8 +326,8 @@ export class PedestrianManager {
 
     for (let i = 0; i < toSpawn; i++) {
       if (this.agents.length >= targetPed) break;
-      const trip = sampleTrip(this.tripPool);
-      if (!trip) break;
+      const trip = sampleTrip(this.tripPool, effectiveWeight);
+      if (!trip) continue; // diluted empty slot — skip, don't break
       this.spawnPedestrian(
         trip.fromX, trip.fromY,
         trip.toX, trip.toY,
