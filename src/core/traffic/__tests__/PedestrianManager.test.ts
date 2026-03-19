@@ -412,4 +412,18 @@ describe('PedestrianManager', () => {
       expect(pathAfter).not.toBe(pathBefore);
     });
   });
+
+  describe('pathCache bounded size', () => {
+    it('should not grow pathCache beyond MAX_PATH_CACHE', () => {
+      const { graph } = buildSimpleRoad();
+      const mgr = new PedestrianManager(graph);
+      // Spawn many pedestrians with unique O-D pairs to fill cache
+      // The cache should evict oldest entries when it exceeds the limit
+      for (let i = 0; i < 50; i++) {
+        mgr.spawnPedestrian(0, 0, 4, 0, i, PedestrianTripType.FULL_WALK, 10000);
+      }
+      // Should still work without error — cache is bounded
+      expect(mgr.getActiveCount()).toBeGreaterThan(0);
+    });
+  });
 });

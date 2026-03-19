@@ -98,6 +98,9 @@ export interface LevelCrossingQuery {
 
 // ── PedestrianManager ──────────────────────────────────────────────────
 
+/** Maximum cached paths before eviction (prevents unbounded growth). */
+const MAX_PATH_CACHE = 2000;
+
 export class PedestrianManager {
   private agents: PedestrianAgent[] = [];
   private nextId = 1;
@@ -273,15 +276,25 @@ export class PedestrianManager {
 
   spawnDecorativeBatch(population: number): void {
     const maxDecorative = Math.floor(getMaxPedestrians(population) * DECORATIVE_PEDESTRIAN.MAX_RATIO);
-    const currentDecorative = this.agents.filter(a => a.tripType === PedestrianTripType.DECORATIVE).length;
+    // Count decorative pedestrians inline (no filter array)
+    let currentDecorative = 0;
+    for (const a of this.agents) {
+      if (a.tripType === PedestrianTripType.DECORATIVE) currentDecorative++;
+    }
     if (currentDecorative >= maxDecorative) return;
 
-    const allEdges = this.sidewalkGraph.getAllEdges().filter(e => e.type === 'sidewalk');
+    const allEdges = this.sidewalkGraph.getAllEdges();
     if (allEdges.length === 0) return;
 
     const count = Math.min(DECORATIVE_PEDESTRIAN.BATCH_SIZE, maxDecorative - currentDecorative);
     for (let i = 0; i < count; i++) {
-      const edge = allEdges[Math.floor(Math.random() * allEdges.length)]!;
+      // Pick a random sidewalk edge (skip crosswalks via rejection sampling)
+      let edge = allEdges[Math.floor(Math.random() * allEdges.length)]!;
+      let retries = 10;
+      while (edge.type !== 'sidewalk' && retries-- > 0) {
+        edge = allEdges[Math.floor(Math.random() * allEdges.length)]!;
+      }
+      if (edge.type !== 'sidewalk') continue;
       const maxActive = getMaxPedestrians(population);
       if (this.agents.length >= maxActive) break;
 
@@ -375,6 +388,11 @@ export class PedestrianManager {
     const key = `${fromX},${fromY}→${toX},${toY}`;
     if (this.pathCache.has(key)) {
       return this.pathCache.get(key) ?? null;
+    }
+
+    // Evict entire cache when it grows too large (prevents unbounded memory growth)
+    if (this.pathCache.size >= MAX_PATH_CACHE) {
+      this.clearPathCache();
     }
 
     const fromNode = this.sidewalkGraph.findNearestNode(fromX, fromY);
