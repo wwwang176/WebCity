@@ -964,8 +964,8 @@ export class Game {
 
     this.rebuildDirtySubsystems();
 
-    // Update traffic light colors every frame
-    this.trafficLightRenderer.update(this.state.trafficLights.getLights());
+    // Update traffic light colors every frame (values() avoids array spread)
+    this.trafficLightRenderer.update(this.state.trafficLights.values());
     // Update level crossing lights/gates animation every frame
     this.levelCrossingRenderer.update(this.elapsedTime, this.levelCrossingSystem.getCrossings());
 

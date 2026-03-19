@@ -79,7 +79,7 @@ export class TrafficLightRenderer {
    * Update light colors based on current traffic light phases.
    * Call this every frame or every tick.
    */
-  update(lights: TrafficLight[]): void {
+  update(lights: Iterable<TrafficLight>): void {
     if (!this.lightMesh || this.lightCount === 0) return;
 
     const color = this._color;
