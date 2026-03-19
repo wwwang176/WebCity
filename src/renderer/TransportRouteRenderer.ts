@@ -2,14 +2,34 @@ import * as THREE from 'three';
 import type { TransportRouteRenderData } from '../core/transport/collectTransportRoutes';
 
 /**
+ * Compute a numeric fingerprint of route data.
+ * Only rebuild lines when the fingerprint changes (route add/remove/modify).
+ */
+function routeFingerprint(routes: TransportRouteRenderData[]): number {
+  let h = routes.length;
+  for (const r of routes) {
+    h = (h * 31 + r.routeId) | 0;
+    h = (h * 31 + r.color) | 0;
+    h = (h * 31 + r.stops.length) | 0;
+    h = (h * 31 + (r.suspended ? 1 : 0)) | 0;
+    for (const s of r.stops) {
+      h = (h * 31 + ((s.x * 997 + s.y) | 0)) | 0;
+    }
+  }
+  return h;
+}
+
+/**
  * TransportRouteRenderer — 渲染交通路線連線。
  *
  * 在站點之間畫出彩色線條，讓玩家在地圖上看到路線。
  * 不同交通系統使用不同顏色。
+ * Only rebuilds when route data actually changes (fingerprint check).
  */
 export class TransportRouteRenderer {
   private lines: THREE.Line[] = [];
   private scene: THREE.Scene | null = null;
+  private lastFingerprint = 0;
 
   /** 固定 Y 高度（略高於地面，避免 z-fighting） */
   private static readonly LINE_Y = 0.15;
@@ -17,14 +37,20 @@ export class TransportRouteRenderer {
   build(scene: THREE.Scene): void {
     this.dispose();
     this.scene = scene;
+    this.lastFingerprint = 0;
   }
 
   /**
    * 更新路線渲染——每幀呼叫。
-   * 完整重建所有路線線條（路線數量少，效能可接受）。
+   * 使用 fingerprint 偵測路線變更，只在變更時重建（非每幀）。
    */
   update(routes: TransportRouteRenderData[]): void {
     if (!this.scene) return;
+
+    // Skip rebuild if routes haven't changed
+    const fp = routeFingerprint(routes);
+    if (fp === this.lastFingerprint) return;
+    this.lastFingerprint = fp;
 
     // 清除舊線條
     for (const line of this.lines) {
@@ -76,6 +102,7 @@ export class TransportRouteRenderer {
       (line.material as THREE.Material).dispose();
     }
     this.lines.length = 0;
+    this.lastFingerprint = 0;
   }
 
   /** 返回當前渲染的路線數量（用於測試） */
