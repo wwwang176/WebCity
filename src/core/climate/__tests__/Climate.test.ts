@@ -353,19 +353,20 @@ describe('formatDisasterMessage', () => {
 
 describe('applyDisasterDamage', () => {
   function makeGrid() {
-    const cells = new Map<string, { buildingId: number }>();
+    const cells = new Map<string, { buildingId: number; roadType: number }>();
     return {
       getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null,
       setCell: (x: number, y: number, data: { buildingId: number }) => {
         const existing = cells.get(`${x},${y}`);
         if (existing) Object.assign(existing, data);
       },
-      set: (x: number, y: number, data: { buildingId: number }) => cells.set(`${x},${y}`, { ...data }),
+      set: (x: number, y: number, data: { buildingId: number; roadType?: number }) =>
+        cells.set(`${x},${y}`, { roadType: 0, ...data }),
       cells,
     };
   }
 
-  it('should clear buildingId for damaged cells with buildings', () => {
+  it('should clear buildingId for damaged zone buildings', () => {
     const grid = makeGrid();
     grid.set(3, 4, { buildingId: 10 });
     grid.set(5, 6, { buildingId: 20 });
@@ -395,5 +396,27 @@ describe('applyDisasterDamage', () => {
     grid.set(2, 0, { buildingId: 8 });
     const count = applyDisasterDamage(grid, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }]);
     expect(count).toBe(2); // only 2 had buildings
+  });
+
+  it('should skip infrastructure buildings (power plant, police, etc.)', () => {
+    const grid = makeGrid();
+    grid.set(0, 0, { buildingId: 254 }); // power plant
+    grid.set(1, 0, { buildingId: 252 }); // police station
+    grid.set(2, 0, { buildingId: 10 });  // zone building
+    const count = applyDisasterDamage(grid, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }]);
+    expect(count).toBe(1); // only zone building destroyed
+    expect(grid.cells.get('0,0')!.buildingId).toBe(254);
+    expect(grid.cells.get('1,0')!.buildingId).toBe(252);
+    expect(grid.cells.get('2,0')!.buildingId).toBe(0);
+  });
+
+  it('should skip cells with roads', () => {
+    const grid = makeGrid();
+    grid.set(0, 0, { buildingId: 5, roadType: 1 }); // road cell
+    grid.set(1, 0, { buildingId: 5, roadType: 0 }); // no road
+    const count = applyDisasterDamage(grid, [{ x: 0, y: 0 }, { x: 1, y: 0 }]);
+    expect(count).toBe(1);
+    expect(grid.cells.get('0,0')!.buildingId).toBe(5); // road cell untouched
+    expect(grid.cells.get('1,0')!.buildingId).toBe(0);
   });
 });

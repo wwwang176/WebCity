@@ -1,4 +1,5 @@
 import { euclideanDistance } from '../grid/GridHelpers';
+import { isInfrastructureBuilding } from '../building/InfraConfig';
 
 export enum DisasterType {
   EARTHQUAKE = 'EARTHQUAKE',
@@ -145,16 +146,18 @@ export function formatDisasterMessage(d: Disaster): string {
  * Returns the number of buildings destroyed. Pure domain logic (SRP: extracted from Game.ts).
  */
 export function applyDisasterDamage(
-  grid: { getCell(x: number, y: number): { buildingId: number } | null; setCell(x: number, y: number, data: { buildingId: number }): void },
+  grid: { getCell(x: number, y: number): { buildingId: number; roadType: number } | null; setCell(x: number, y: number, data: { buildingId: number }): void },
   damagedCells: { x: number; y: number }[],
 ): number {
   let count = 0;
   for (const { x, y } of damagedCells) {
     const cell = grid.getCell(x, y);
-    if (cell && cell.buildingId !== 0) {
-      grid.setCell(x, y, { buildingId: 0 });
-      count++;
-    }
+    if (!cell || cell.buildingId === 0) continue;
+    // Infrastructure buildings and roads are immune to disasters
+    if (isInfrastructureBuilding(cell.buildingId)) continue;
+    if (cell.roadType !== 0) continue;
+    grid.setCell(x, y, { buildingId: 0 });
+    count++;
   }
   return count;
 }
