@@ -33,6 +33,10 @@ export interface PedestrianRenderData {
 }
 
 export class PedestrianRenderer {
+  // Reusable per-frame objects
+  private readonly _matrix = new THREE.Matrix4();
+  private readonly _rotation = new THREE.Matrix4();
+  private readonly _color = new THREE.Color();
   private mesh: THREE.InstancedMesh | null = null;
   private readonly maxCount = 2000;
 
@@ -52,9 +56,9 @@ export class PedestrianRenderer {
     const count = Math.min(pedestrians.length, this.maxCount);
     this.mesh.count = count;
 
-    const matrix = new THREE.Matrix4();
-    const rotation = new THREE.Matrix4();
-    const color = new THREE.Color();
+    const matrix = this._matrix;
+    const rotation = this._rotation;
+    const color = this._color;
 
     for (let i = 0; i < count; i++) {
       const p = pedestrians[i]!;
