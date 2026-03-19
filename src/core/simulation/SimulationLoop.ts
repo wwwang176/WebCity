@@ -318,9 +318,10 @@ export class SimulationLoop {
       }, this.state.clock.tick);
     }
 
-    // 5.5. Update citizen happiness (every 6 ticks)
+    // 5.5. Update citizen happiness + health (every 6 ticks)
     if (isSlowTick) {
       this.updateCitizenHappiness();
+      this.updateCitizenHealth();
     }
 
     // 6. Migration (every 6 ticks)
@@ -598,6 +599,41 @@ export class SimulationLoop {
 
       factors.isEmployed = !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate;
       citizen.happiness = calculateHappiness(citizen, factors);
+    }
+  }
+
+  private updateCitizenHealth(): void {
+    const citizens = this.state.citizens.getCitizens();
+    if (citizens.length === 0) return;
+
+    for (const c of citizens) {
+      let health = 50;
+
+      // Hospital coverage: 0~30 (linear with distance)
+      if (c.homeId) {
+        const pos = parsePosKey(c.homeId);
+        if (pos) {
+          const costRatio = this.state.health.getCostRatio(pos.x, pos.y);
+          if (costRatio >= 0) health += (1 - costRatio) * 30;
+
+          // Park coverage: +5
+          if (this.state.parks.getCoverage(pos.x, pos.y)) health += 5;
+
+          // Pollution penalty: 0~15
+          const cell = this.state.grid.getCell(pos.x, pos.y);
+          if (cell) health -= (cell.pollution / 100) * 15;
+        }
+        // Has home: +10
+        health += 10;
+      }
+      // homeless: no home bonus, no location-based factors
+
+      // Senior age penalty: linear 0~10 for age 201~260
+      if (c.age > 200) {
+        health -= Math.min(10, ((c.age - 200) / 60) * 10);
+      }
+
+      c.health = Math.max(0, Math.min(100, Math.round(health)));
     }
   }
 
