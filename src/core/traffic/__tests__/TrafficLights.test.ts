@@ -15,10 +15,8 @@ describe('TrafficLightSystem', () => {
     sys.addLight(0, 0);
     const light = sys.getLight(0, 0)!;
     const initialPhase = light.phase;
-    // Advance past the initial timer + one full phase
-    const totalTime = light.timer + TRAFFIC_LIGHT.PHASE_DURATION + 0.01;
+    const totalTime = light.timer + light.phaseDuration + 0.01;
     sys.tick(totalTime);
-    // Phase should have changed at least once
     expect(sys.getLight(0, 0)!.phase).not.toBe(initialPhase);
   });
 
@@ -27,35 +25,103 @@ describe('TrafficLightSystem', () => {
     sys.addLight(0, 0);
     const light = sys.getLight(0, 0)!;
     const initialPhase = light.phase;
-    // Burn through initial timer
     const burnTime = light.timer + 0.001;
     sys.tick(burnTime);
-    // Now advance one full phase in small steps
     const steps = 100;
-    const stepDt = TRAFFIC_LIGHT.PHASE_DURATION / steps;
+    const stepDt = light.phaseDuration / steps;
     for (let i = 0; i < steps + 1; i++) sys.tick(stepDt);
-    // Should have toggled back to initial phase
     expect(sys.getLight(0, 0)!.phase).toBe(initialPhase);
+  });
+
+  it('should use custom phaseDuration when provided', () => {
+    const sys = new TrafficLightSystem();
+    sys.addLight(0, 0, 4);
+    expect(sys.getLight(0, 0)!.phaseDuration).toBe(4);
+  });
+
+  it('should use per-light phaseDuration in tick', () => {
+    const sys = new TrafficLightSystem();
+    sys.addLight(0, 0, 4);
+    const light = sys.getLight(0, 0)!;
+    const initialPhase = light.phase;
+    // Advance past timer but less than 4s phase — should only change once
+    sys.tick(light.timer + 4.01);
+    expect(sys.getLight(0, 0)!.phase).not.toBe(initialPhase);
   });
 });
 
 describe('TRAFFIC_LIGHT constants', () => {
   it('phase duration should be a positive number in seconds', () => {
     expect(TRAFFIC_LIGHT.PHASE_DURATION).toBeGreaterThan(0);
+    expect(TRAFFIC_LIGHT.PHASE_DURATION_LARGE).toBeGreaterThan(TRAFFIC_LIGHT.PHASE_DURATION);
   });
 });
 
 describe('syncTrafficLightsWithGrid', () => {
-  it('should add lights at 3-way intersections', () => {
+  it('should NOT add lights at small 3-way (T) intersections', () => {
     const grid = new Grid(10, 10);
-    // 3-way intersection: N, S, E
     grid.setCell(5, 5, {
       roadType: RoadType.TWO_LANE,
       roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST,
     });
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)).toBeUndefined();
+  });
+
+  it('should add lights at 3-way (T) intersections with major roads', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, {
+      roadType: RoadType.FOUR_LANE,
+      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST,
+    });
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeDefined();
+    expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION);
+  });
+
+  it('should add lights at 4-way intersections with standard duration', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, {
+      roadType: RoadType.TWO_LANE,
+      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
+    });
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)).toBeDefined();
+    expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION);
+  });
+
+  it('should use longer phase duration for large 4-way intersections', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, {
+      roadType: RoadType.FOUR_LANE,
+      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
+    });
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)).toBeDefined();
+    expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION_LARGE);
+  });
+
+  it('should update phaseDuration when road is upgraded', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, {
+      roadType: RoadType.TWO_LANE,
+      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
+    });
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION);
+
+    // Upgrade to four-lane
+    grid.setCell(5, 5, {
+      roadType: RoadType.FOUR_LANE,
+      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
+    });
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION_LARGE);
   });
 
   it('should not add lights at 2-way roads', () => {
@@ -72,8 +138,26 @@ describe('syncTrafficLightsWithGrid', () => {
   it('should remove stale lights when intersection is demolished', () => {
     const grid = new Grid(10, 10);
     const sys = new TrafficLightSystem();
-    sys.addLight(5, 5); // pre-existing light
-    // No road at 5,5 — light should be removed
+    sys.addLight(5, 5);
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)).toBeUndefined();
+  });
+
+  it('should remove lights when 4-way downgraded to small 3-way', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, {
+      roadType: RoadType.TWO_LANE,
+      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
+    });
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)).toBeDefined();
+
+    // Remove one direction → small T-intersection
+    grid.setCell(5, 5, {
+      roadType: RoadType.TWO_LANE,
+      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST,
+    });
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeUndefined();
   });
