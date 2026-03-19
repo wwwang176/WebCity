@@ -75,6 +75,7 @@ export abstract class BaseTransportSystem {
     this.vehicles = this.vehicles.filter(v => !dissolvedIds.includes(v.routeId));
     for (const id of dissolvedIds) {
       this.onRouteDissolved(id);
+      this.onRouteDissolvedHook?.(id);
     }
 
     // Revalidate modified routes (subclasses may recompute paths / dissolve)
@@ -91,6 +92,7 @@ export abstract class BaseTransportSystem {
       this.vehicles = this.vehicles.filter(v => !lateDissolved.includes(v.routeId));
       for (const id of lateDissolved) {
         this.onRouteDissolved(id);
+        this.onRouteDissolvedHook?.(id);
       }
     }
 
@@ -264,6 +266,9 @@ export abstract class BaseTransportSystem {
   protected onTravelComplete(_vehicle: TransportVehicle): void {
     // default: no-op
   }
+
+  /** External hook: called when a route is dissolved, for traffic vehicle cleanup. */
+  onRouteDissolvedHook?: (routeId: number) => void;
 
   /** Called when a route is dissolved (< 2 stops). Override for metadata cleanup. */
   protected onRouteDissolved(_routeId: number): void {

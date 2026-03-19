@@ -1092,6 +1092,11 @@ export class SimulationLoop {
   }
 
 
+  /** Immediately remove service vehicles of a given type (e.g. when facility demolished). */
+  removeServiceVehicles(serviceType: ServiceVehicleType): void {
+    this.serviceVehicleManager.removeAllOfType(this.state.traffic, serviceType);
+  }
+
   markLaneGraphDirty(affectedCells?: string[]): void {
     this.laneGraphDirty = true;
     this.sidewalkGraphDirty = true;
@@ -1187,6 +1192,10 @@ export class SimulationLoop {
       );
       this.dirtyRoadCells = null;
     }
+
+    // Invalidate all service vehicles — their edgePaths reference stale LaneEdges.
+    // They will be re-spawned on next tickServiceVehicles().
+    this.serviceVehicleManager.removeAll(this.state.traffic);
   }
 
   private rebuildSidewalkGraph(): void {

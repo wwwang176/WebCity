@@ -79,6 +79,23 @@ export class ServiceVehicleManager {
     return this.tracked.length;
   }
 
+  /** Remove all tracked service vehicles from traffic (e.g. after lane graph rebuild). */
+  removeAll(traffic: TrafficSimulation): void {
+    if (this.tracked.length === 0) return;
+    const ids = new Set(this.tracked.map(t => t.vehicleId));
+    traffic.removeVehiclesByIds(ids);
+    this.tracked = [];
+  }
+
+  /** Remove all tracked vehicles of a given service type. */
+  removeAllOfType(traffic: TrafficSimulation, serviceType: ServiceVehicleType): void {
+    const toRemove = this.tracked.filter(t => t.serviceType === serviceType);
+    if (toRemove.length === 0) return;
+    const removeIds = new Set(toRemove.map(t => t.vehicleId));
+    traffic.removeVehiclesByIds(removeIds);
+    this.tracked = this.tracked.filter(t => t.serviceType !== serviceType);
+  }
+
   // ── Internal ──
 
   private cleanupStale(traffic: TrafficSimulation): void {
@@ -86,14 +103,6 @@ export class ServiceVehicleManager {
     this.tracked = this.tracked.filter(t => activeIds.has(t.vehicleId));
   }
 
-  private removeAllOfType(traffic: TrafficSimulation, serviceType: ServiceVehicleType): void {
-    const toRemove = this.tracked.filter(t => t.serviceType === serviceType);
-    if (toRemove.length === 0) return;
-
-    const removeIds = new Set(toRemove.map(t => t.vehicleId));
-    traffic.removeVehiclesByIds(removeIds);
-    this.tracked = this.tracked.filter(t => t.serviceType !== serviceType);
-  }
 
   private repathStoppedVehicles(
     traffic: TrafficSimulation,

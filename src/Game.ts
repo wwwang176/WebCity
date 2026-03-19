@@ -337,6 +337,10 @@ export class Game {
     this.simLoop.onBuildingUpdated = (x, y, zoneType, level, burned, abandoned) => {
       this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned, abandoned);
     };
+    // When a bus route is dissolved (stop removed → <2 stops), clean up TrafficSimulation vehicles
+    this.state.bus.onRouteDissolvedHook = (routeId) => {
+      this.state.traffic.removeBusVehicles(routeId);
+    };
     this.roadBuilder = new RoadBuilder(this.state.grid);
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
@@ -698,6 +702,11 @@ export class Game {
     return { evictedCitizenIds, buildingCells: evictCells };
   }
 
+  /** Map InfraType → ServiceVehicleType for types that have patrol vehicles. */
+  private static readonly INFRA_TO_SERVICE_VEHICLE: Partial<Record<InfraType, import('./core/traffic/TrafficSimulation').ServiceVehicleType>> = {
+    police: 'police', fire: 'fire', hospital: 'health', garbage: 'garbage',
+  };
+
   /** Dispatch to data-driven service removal. Callers provide resolved coordinates. */
   private removeInfraService(infraType: InfraType, cx: number, cy: number): void {
     const actions = INFRA_SERVICE_ACTIONS[infraType];
@@ -705,6 +714,11 @@ export class Game {
       actions.remove(this.state as InfraServiceContext, cx, cy);
     }
     this.recalculateServiceCoverage(infraType);
+    // Immediately remove service vehicles if this facility type has them
+    const svType = Game.INFRA_TO_SERVICE_VEHICLE[infraType];
+    if (svType) {
+      this.simLoop.removeServiceVehicles(svType);
+    }
   }
 
   private paintDistrict(x1: number, y1: number, x2: number, y2: number): void {
