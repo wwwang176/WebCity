@@ -274,6 +274,12 @@ export class Game {
   private lastMilestoneId: string | null = null;
   private notificationTimer = 0;
   private vehicleTypes = new Map<number, VehicleData['type']>();
+  /** Reusable per-frame vehicle data array (avoids .map().filter() allocation). */
+  private vehicleDataScratch: VehicleData[] = [];
+  /** Reusable per-frame merged vehicle array. */
+  private allVehiclesScratch: VehicleData[] = [];
+  /** Reusable per-frame train positions array. */
+  private trainPosScratch: { x: number; y: number }[] = [];
   /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
   private ferryAnimator = new FerryAnimator();
   /** 火車渲染端動畫（純 LERP，不靠 tick） */
@@ -1066,20 +1072,21 @@ export class Game {
       );
     }
 
-    // Collect road vehicle positions for rendering (includes bus vehicles via busState)
-    const vehicleData: VehicleData[] = this.state.traffic.vehicles.map(v => {
-      if (v.arrived) return null;
+    // Collect road vehicle positions for rendering (single pass, reusable array)
+    const vehicleData = this.vehicleDataScratch;
+    vehicleData.length = 0;
+    for (const v of this.state.traffic.vehicles) {
+      if (v.arrived) continue;
       const pos = this.state.traffic.getVehiclePositionOnEdges(v);
-      if (!pos) return null;
+      if (!pos) continue;
       const heading = this.state.traffic.getVehicleHeadingOnEdges(v);
-      // Service vehicles use dedicated types; bus vehicles use fixed 'bus'; regular vehicles use length-based classification
       const type = v.serviceType
         ? SERVICE_TYPE_TO_VEHICLE_TYPE[v.serviceType]
         : v.busState
           ? 'bus' as VehicleData['type']
           : (this.vehicleTypes.get(v.id) ?? (() => { const t = classifyVehicleType(v.length); this.vehicleTypes.set(v.id, t); return t; })());
-      return { id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0 };
-    }).filter((v): v is NonNullable<typeof v> => v !== null) as VehicleData[];
+      vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0 });
+    }
 
     // Collect transport system vehicles (rail/ferry — bus is now in TrafficSimulation)
     const transportVehicles = collectTransportVehicles({
@@ -1091,14 +1098,19 @@ export class Game {
     this.ferryAnimator.update(dt, simSpeed, this.state.ferry, transportVehicles);
     this.trainAnimator.update(dt, simSpeed, this.state.rail, transportVehicles);
 
-    // Level crossing proximity trigger
-    const trainPositions = transportVehicles
-      .filter(v => v.type === 'rail_train')
-      .map(v => ({ x: v.x, y: v.y }));
+    // Level crossing proximity trigger (inline collection, no filter+map)
+    const trainPositions = this.trainPosScratch;
+    trainPositions.length = 0;
+    for (const v of transportVehicles) {
+      if (v.type === 'rail_train') trainPositions.push({ x: v.x, y: v.y });
+    }
     this.levelCrossingSystem.update(dt, simSpeed, trainPositions);
 
-    // Merge road + transport vehicles and render
-    const allVehicles: VehicleData[] = vehicleData.concat(transportVehicles as VehicleData[]);
+    // Merge road + transport vehicles and render (reusable array, no concat)
+    const allVehicles = this.allVehiclesScratch;
+    allVehicles.length = 0;
+    for (const v of vehicleData) allVehicles.push(v);
+    for (const v of transportVehicles) allVehicles.push(v as VehicleData);
     this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
 
     // Advance pedestrians every render frame (same pattern as vehicles)
@@ -1137,8 +1149,8 @@ export class Game {
       metroLineData, this.state.metro.getStations(), vmOp.metroTunnel, dt * metroSpeedMult,
     );
 
-    // Clean up stale vehicle rendering state
-    const activeIds = new Set(this.state.traffic.vehicles.map(v => v.id));
+    // Clean up stale vehicle rendering state (reuses Set from TrafficSimulation)
+    const activeIds = this.state.traffic.getActiveVehicleIds();
     for (const id of this.vehicleTypes.keys()) {
       if (!activeIds.has(id)) {
         this.vehicleTypes.delete(id);
