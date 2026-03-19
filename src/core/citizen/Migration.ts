@@ -74,7 +74,9 @@ export interface FamilyMember {
   educationProgress: number;
 }
 
-/** Generate a random child age and appropriate education + progress */
+/** Generate a random child age and appropriate education level.
+ *  Progress is always 0 — immigrants enroll via educateTick Phase 2
+ *  to respect school capacity limits. */
 export function generateChildEducation(age: number): { education: EducationLevel; progress: number } {
   // BABY: no education
   if (age <= LIFE_STAGE_AGE.BABY_MAX) return { education: EducationLevel.NONE, progress: 0 };
@@ -83,10 +85,10 @@ export function generateChildEducation(age: number): { education: EducationLevel
   if (age <= LIFE_STAGE_AGE.CHILD_MAX) {
     const fraction = (age - LIFE_STAGE_AGE.BABY_MAX) / (LIFE_STAGE_AGE.CHILD_MAX - LIFE_STAGE_AGE.BABY_MAX);
     if (fraction > 0.7 && Math.random() < 0.5) {
-      // Late child: 50% chance already graduated elementary, starting HS
-      return { education: EducationLevel.ELEMENTARY, progress: Math.floor(Math.random() * 0.3 * GRADUATION_TICKS.highSchool) };
+      // Late child: 50% chance already graduated elementary
+      return { education: EducationLevel.ELEMENTARY, progress: 0 };
     }
-    return { education: EducationLevel.NONE, progress: Math.floor(fraction * 0.9 * GRADUATION_TICKS.elementary) };
+    return { education: EducationLevel.NONE, progress: 0 };
   }
 
   // TEEN (33-52): working on high school
@@ -94,14 +96,14 @@ export function generateChildEducation(age: number): { education: EducationLevel
     const fraction = (age - LIFE_STAGE_AGE.CHILD_MAX) / (LIFE_STAGE_AGE.TEEN_MAX - LIFE_STAGE_AGE.CHILD_MAX);
     if (fraction < 0.3) {
       // Early teen: likely still finishing elementary or just started HS
-      if (Math.random() < 0.4) return { education: EducationLevel.NONE, progress: Math.floor((0.7 + Math.random() * 0.3) * GRADUATION_TICKS.elementary) };
-      return { education: EducationLevel.ELEMENTARY, progress: Math.floor(fraction * GRADUATION_TICKS.highSchool) };
+      if (Math.random() < 0.4) return { education: EducationLevel.NONE, progress: 0 };
+      return { education: EducationLevel.ELEMENTARY, progress: 0 };
     }
     if (fraction > 0.7 && Math.random() < 0.5) {
       // Late teen: 50% chance already graduated HS
       return { education: EducationLevel.HIGH_SCHOOL, progress: 0 };
     }
-    return { education: EducationLevel.ELEMENTARY, progress: Math.floor(fraction * 0.9 * GRADUATION_TICKS.highSchool) };
+    return { education: EducationLevel.ELEMENTARY, progress: 0 };
   }
 
   // Shouldn't reach here for children, but fallback
