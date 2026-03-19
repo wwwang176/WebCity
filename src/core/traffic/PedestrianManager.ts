@@ -18,6 +18,8 @@ export const PEDESTRIAN = {
   MAX_ACTIVE: 2000,
   POPULATION_RATIO: 0.05,
   DESPAWN_TIMEOUT: 120,
+  /** Visual multiplier: max spawned pedestrians = real commuter count × this */
+  VISUAL_MULTIPLIER: 3,
 } as const;
 
 export const DECORATIVE_PEDESTRIAN = {
@@ -298,7 +300,9 @@ export class PedestrianManager {
   private refillFromPool(dt: number): void {
     if (this.tripPool.totalWeight === 0 || this.currentPopulation === 0) return;
 
-    const targetPed = Math.floor(getMaxPedestrians(this.currentPopulation) * this.densityMultiplier);
+    const hardCap = Math.floor(getMaxPedestrians(this.currentPopulation) * this.densityMultiplier);
+    const realCap = this.tripPool.totalWeight * PEDESTRIAN.VISUAL_MULTIPLIER;
+    const targetPed = Math.min(hardCap, realCap);
     const deficit = targetPed - this.agents.length;
     if (deficit <= 0) return;
 
