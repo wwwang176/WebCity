@@ -96,26 +96,27 @@ const DIR_OFFSETS: [number, number, number][] = [
   [RoadDirection.WEST, -1,  0],
 ];
 
-/** Count how many arms of an intersection are major roads (FOUR_LANE+).
- *  Checks both the intersection cell itself and the neighboring cell in each direction. */
-function countMajorArms(grid: TrafficLightGrid, x: number, y: number, roadFlags: number, selfRoadType: number): number {
-  let count = 0;
+/** Check whether major arms exist on both axes (N-S and E-W).
+ *  A single major road passing through (e.g. FOUR_LANE N-S) only occupies one axis.
+ *  Traffic lights are only needed when two major roads cross (both axes major). */
+function hasMajorOnBothAxes(grid: TrafficLightGrid, x: number, y: number, roadFlags: number): boolean {
+  let nsMajor = false;
+  let ewMajor = false;
   for (const [flag, dx, dy] of DIR_OFFSETS) {
     if (!(roadFlags & flag)) continue;
     const neighbor = grid.getCell(x + dx, y + dy);
-    // An arm is major if either the intersection cell or the neighbor is major
-    if (isMajorRoad(selfRoadType) || (neighbor && isMajorRoad(neighbor.roadType))) {
-      count++;
-    }
+    if (!neighbor || !isMajorRoad(neighbor.roadType)) continue;
+    if (dx === 0) nsMajor = true; // N or S
+    else ewMajor = true;          // E or W
   }
-  return count;
+  return nsMajor && ewMajor;
 }
 
 /**
  * Sync traffic lights with current grid state.
- * Only intersections where 2+ arms are major roads (FOUR_LANE+) get a light.
- * - 3-way with 2+ major arms: standard phase (2s)
- * - 4-way with 2+ major arms: long phase (4s)
+ * Only intersections where two major roads cross (both axes) get a light.
+ * - 3-way with both axes major: standard phase (2s)
+ * - 4-way with both axes major: long phase (4s)
  */
 export function syncTrafficLightsWithGrid(
   grid: TrafficLightGrid,
@@ -132,8 +133,7 @@ export function syncTrafficLightsWithGrid(
     if (cell.roadFlags & RoadDirection.WEST) dirs++;
     if (dirs < 3) return;
 
-    const majorArms = countMajorArms(grid, x, y, cell.roadFlags, cell.roadType);
-    if (majorArms < 2) return;
+    if (!hasMajorOnBothAxes(grid, x, y, cell.roadFlags)) return;
 
     const key = `${x},${y}`;
     seen.add(key);

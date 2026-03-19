@@ -90,12 +90,24 @@ describe('syncTrafficLightsWithGrid', () => {
     expect(sys.getLight(5, 5)).toBeUndefined(); // only 1 major arm
   });
 
-  it('should add lights at 3-way (T) with 2+ major arms', () => {
+  it('should NOT add lights at 3-way (T) with major on one axis only (FOUR N-S, TWO E)', () => {
     const grid = new Grid(10, 10);
     setRoad(grid, 5, 5, RoadType.FOUR_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST);
     setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
     setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
     setRoad(grid, 6, 5, RoadType.TWO_LANE, RoadDirection.WEST);
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)).toBeUndefined();
+  });
+
+  it('should add lights at 3-way (T) with major on both axes', () => {
+    const grid = new Grid(10, 10);
+    // N-S: FOUR_LANE, E: FOUR_LANE → both axes major
+    setRoad(grid, 5, 5, RoadType.FOUR_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST);
+    setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.FOUR_LANE, RoadDirection.WEST);
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeDefined();
@@ -115,9 +127,8 @@ describe('syncTrafficLightsWithGrid', () => {
     expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION_LARGE);
   });
 
-  it('should add lights when FOUR_LANE crosses FOUR_LANE even if intersection cell is TWO_LANE', () => {
+  it('should NOT add lights when FOUR_LANE crosses TWO_LANE (only one axis major)', () => {
     const grid = new Grid(10, 10);
-    // Intersection cell itself is TWO_LANE, but N/S neighbors are FOUR_LANE
     setRoad(grid, 5, 5, RoadType.TWO_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST);
     setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
     setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
@@ -125,7 +136,18 @@ describe('syncTrafficLightsWithGrid', () => {
     setRoad(grid, 4, 5, RoadType.TWO_LANE, RoadDirection.EAST);
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
-    // N and S arms have FOUR_LANE neighbors → 2 major arms → light
+    expect(sys.getLight(5, 5)).toBeUndefined();
+  });
+
+  it('should add lights when FOUR_LANE crosses FOUR_LANE even if intersection cell is TWO_LANE', () => {
+    const grid = new Grid(10, 10);
+    setRoad(grid, 5, 5, RoadType.TWO_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST);
+    setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.FOUR_LANE, RoadDirection.WEST);
+    setRoad(grid, 4, 5, RoadType.FOUR_LANE, RoadDirection.EAST);
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeDefined();
   });
 
