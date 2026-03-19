@@ -194,30 +194,52 @@ describe('forEachAirportCell', () => {
 
 describe('placeAirportOnGrid', () => {
   it('should set all footprint cells to the given buildingId', () => {
-    const cells = new Map<string, number>();
+    const cells = new Map<string, { buildingId: number; reserved?: number }>();
     const grid = {
-      setCell: (x: number, y: number, data: { buildingId: number }) => {
-        cells.set(`${x},${y}`, data.buildingId);
+      setCell: (x: number, y: number, data: { buildingId: number; reserved?: number }) => {
+        cells.set(`${x},${y}`, data);
       },
     };
     placeAirportOnGrid(grid, 5, 5, 'SMALL', 237);
     expect(cells.size).toBe(9);
-    expect(cells.get('4,4')).toBe(237);
-    expect(cells.get('5,5')).toBe(237);
-    expect(cells.get('6,6')).toBe(237);
+    expect(cells.get('4,4')!.buildingId).toBe(237);
+    expect(cells.get('5,5')!.buildingId).toBe(237);
+    expect(cells.get('6,6')!.buildingId).toBe(237);
+  });
+
+  it('should mark center cell as primary and others as MULTI_CELL_OCCUPIED', () => {
+    const cells = new Map<string, { buildingId: number; reserved?: number }>();
+    const grid = {
+      setCell: (x: number, y: number, data: { buildingId: number; reserved?: number }) => {
+        cells.set(`${x},${y}`, data);
+      },
+    };
+    placeAirportOnGrid(grid, 5, 5, 'SMALL', 237);
+    // Center is primary (reserved=0)
+    expect(cells.get('5,5')!.reserved).toBe(0);
+    // All other cells are secondary (reserved=4 = MULTI_CELL_OCCUPIED)
+    for (const [key, data] of cells) {
+      if (key !== '5,5') {
+        expect(data.reserved).toBe(4);
+      }
+    }
   });
 
   it('should handle MEDIUM footprint correctly', () => {
-    const cells = new Map<string, number>();
+    const cells = new Map<string, { buildingId: number; reserved?: number }>();
     const grid = {
-      setCell: (x: number, y: number, data: { buildingId: number }) => {
-        cells.set(`${x},${y}`, data.buildingId);
+      setCell: (x: number, y: number, data: { buildingId: number; reserved?: number }) => {
+        cells.set(`${x},${y}`, data);
       },
     };
     placeAirportOnGrid(grid, 10, 10, 'MEDIUM', 237);
     expect(cells.size).toBe(25);
-    expect(cells.get('8,8')).toBe(237);
-    expect(cells.get('12,12')).toBe(237);
+    expect(cells.get('8,8')!.buildingId).toBe(237);
+    expect(cells.get('12,12')!.buildingId).toBe(237);
+    // Center is primary
+    expect(cells.get('10,10')!.reserved).toBe(0);
+    // Corner is secondary
+    expect(cells.get('8,8')!.reserved).toBe(4);
   });
 });
 

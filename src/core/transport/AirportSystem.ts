@@ -1,5 +1,6 @@
 
 import type { PollutionSource } from '../environment/Pollution';
+import { MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
 
 export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 
@@ -48,11 +49,15 @@ export function forEachAirportCell(
 
 /** Place airport footprint cells on the grid (SRP: grid placement belongs with airport logic). */
 export function placeAirportOnGrid(
-  grid: { setCell(x: number, y: number, data: { buildingId: number }): void },
+  grid: { setCell(x: number, y: number, data: { buildingId: number; reserved?: number }): void },
   x: number, y: number, size: AirportSize, airportBuildingId: number,
 ): void {
   forEachAirportCell(x, y, size, (cx, cy) => {
-    grid.setCell(cx, cy, { buildingId: airportBuildingId });
+    const isPrimary = cx === x && cy === y;
+    grid.setCell(cx, cy, {
+      buildingId: airportBuildingId,
+      reserved: isPrimary ? 0 : MULTI_CELL_OCCUPIED,
+    });
   });
 }
 

@@ -41,7 +41,7 @@ import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
 import { isResidentialZone } from './core/grid/types';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
-import { getAirportBuildCost, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
+import { getAirportBuildCost, getAirportFootprint, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { PedestrianRenderer, cullPedestrians } from './renderer/PedestrianRenderer';
@@ -1301,8 +1301,14 @@ export class Game {
       ? getInfraConfig(this.currentTool as InfraType)
       : null;
     if (cfg) {
-      const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
-      this.gridCursor.setSize(w, h);
+      if (cfg.type === 'airport') {
+        // Airport uses center-based placement with dynamic footprint
+        const footprint = getAirportFootprint(this.selectedAirportSize ?? 'SMALL');
+        this.gridCursor.setSize(footprint, footprint, true);
+      } else {
+        const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
+        this.gridCursor.setSize(w, h);
+      }
     } else {
       this.gridCursor.setSize(1, 1);
     }
@@ -1399,6 +1405,7 @@ export class Game {
         this.state.grid,
         this.state.budget.funds,
         groundwaterFn,
+        infraType === 'airport' ? (this.selectedAirportSize ?? 'SMALL') : undefined,
       );
 
       // Coverage preview overwrites overlay with merged data (existing + new)
