@@ -62,7 +62,7 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
       }
       .save-list {
         display: flex; flex-direction: column; gap: 8px;
-        min-width: 320px; max-height: 340px; overflow-y: auto;
+        min-width: 320px; max-height: 340px; overflow-y: auto; overflow-x: hidden;
         position: relative;
       }
       .save-list::-webkit-scrollbar { width: 4px; }
