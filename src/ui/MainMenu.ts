@@ -88,6 +88,9 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
         color: rgba(255,255,255,0.3); font-style: italic;
         padding: 20px; text-align: center;
       }
+      #save-container {
+        display: flex; flex-direction: column; min-width: 320px;
+      }
     </style>
     <div class="menu-title">WebCity</div>
     <div class="menu-subtitle">City Builder Simulation</div>
@@ -95,7 +98,10 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
       <button class="menu-btn" id="btn-new-game">New Game</button>
       <button class="menu-btn" id="btn-load-game">Load Game</button>
     </div>
-    <div class="save-list" id="save-list" style="display:none"></div>
+    <div id="save-container" style="display:none">
+      <div class="save-list" id="save-list"></div>
+      <button class="menu-btn" id="btn-back" style="margin-top:12px">Back</button>
+    </div>
     <div class="menu-version">v0.1.0</div>
   `;
 
@@ -104,11 +110,17 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
     onNewGame();
   });
 
+  menu.querySelector('#btn-back')!.addEventListener('click', () => {
+    (menu.querySelector('#save-container') as HTMLElement).style.display = 'none';
+    (menu.querySelector('#menu-main') as HTMLElement).style.display = 'flex';
+  });
+
   menu.querySelector('#btn-load-game')!.addEventListener('click', () => {
     const mainBtns = menu.querySelector('#menu-main') as HTMLElement;
+    const saveContainer = menu.querySelector('#save-container') as HTMLElement;
     const saveList = menu.querySelector('#save-list') as HTMLElement;
     mainBtns.style.display = 'none';
-    saveList.style.display = 'flex';
+    saveContainer.style.display = 'flex';
     saveList.innerHTML = '<div class="save-empty">Loading saves...</div>';
 
     const dbReq = indexedDB.open('webcity-saves', 1);
@@ -126,8 +138,7 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
       req.onsuccess = () => {
         const saves = req.result as { id: number; name: string; date: string; data: string }[];
         if (saves.length === 0) {
-          saveList.innerHTML = '<div class="save-empty">No saves found</div>' +
-            '<button class="menu-btn" id="btn-back" style="margin-top:12px">Back</button>';
+          saveList.innerHTML = '<div class="save-empty">No saves found</div>';
         } else {
           saveList.innerHTML = saves.map(s => {
             const d = new Date(s.date);
@@ -137,7 +148,7 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
               <div class="save-name">${s.name || 'Unnamed'} (Slot ${s.id})</div>
               <div class="save-date">${dateStr} \u2014 ${sizeKB}KB</div>
             </div>`;
-          }).join('') + '<button class="menu-btn" id="btn-back" style="margin-top:12px">Back</button>';
+          }).join('');
         }
 
         saveList.querySelectorAll('.save-slot').forEach(el => {
@@ -148,13 +159,6 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
           });
         });
 
-        const backBtn = saveList.querySelector('#btn-back');
-        if (backBtn) {
-          backBtn.addEventListener('click', () => {
-            saveList.style.display = 'none';
-            mainBtns.style.display = 'flex';
-          });
-        }
       };
       tx.oncomplete = () => db.close();
     };
