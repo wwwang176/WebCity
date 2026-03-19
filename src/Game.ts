@@ -1238,10 +1238,16 @@ export class Game {
           const py = primary?.y ?? y;
           const center = getInfraCenterById(px, py, cell.buildingId);
           const details = this.getInfraDetails(cls.config.type, center.cx, center.cy);
+          // Airport has dynamic cost based on size; other infra uses fixed InfraConfig cost
+          let infraCost = cls.config.cost;
+          if (cls.config.type === 'airport') {
+            const ap = this.state.airport.findAtCell(x, y);
+            if (ap) infraCost = getAirportBuildCost(ap.size);
+          }
           this.selectedBuilding = {
             kind: 'infra', x, y,
             infraType: cls.config.type, name: cls.config.name,
-            cost: cls.config.cost, details,
+            cost: infraCost, details,
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
