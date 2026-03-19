@@ -31,6 +31,9 @@ export class WeatherRenderer {
   // Exposed sun intensity for other renderers
   private _sunIntensity = 0.8;
 
+  // Scratch colour to avoid per-frame allocation for sky
+  private readonly _scratchSky = new THREE.Color();
+
   // Underground mode flag
   private _underground = false;
 
@@ -100,66 +103,106 @@ export class WeatherRenderer {
       return;
     }
 
-    // Compute sun factor: 1.0 at noon, 0.0 at midnight
-    // Using a sine curve that peaks at timeOfDay=0.5 (noon)
+    // Sun angle (still used for sun sky-position)
     const sunAngle = this.timeOfDay * Math.PI * 2 - Math.PI / 2;
     const sunFactor = Math.max(0, Math.sin(sunAngle));
-    const smoothFactor = sunFactor * sunFactor; // Ease for smoother transitions
 
-    // Sky color: blue during day, dark blue at night
-    const nightSky = new THREE.Color(0x0a0a2e);
-    const dawnSky = new THREE.Color(0xff7b47);
-    const daySky = this.baseSkyColor.clone();
+    const t = this.timeOfDay;
 
-    let skyColor: THREE.Color;
-    if (sunFactor < 0.15) {
-      // Night
-      skyColor = nightSky;
-    } else if (sunFactor < 0.4) {
-      // Dawn/dusk - blend from night to dawn orange to day blue
-      const t = (sunFactor - 0.15) / 0.25;
-      skyColor = nightSky.clone().lerp(dawnSky, t);
-    } else if (sunFactor < 0.6) {
-      // Dawn→Day transition
-      const t = (sunFactor - 0.4) / 0.2;
-      skyColor = dawnSky.clone().lerp(daySky, t);
+    // Time boundaries (0=midnight, 0.25=sunrise, 0.5=noon, 0.75=sunset)
+    const SR_START = 0.19; // sunrise begins
+    const SR_PEAK  = 0.27; // sunrise peak colour
+    const SR_END   = 0.36; // sunrise → day complete
+    const SS_START = 0.63; // golden hour begins
+    const SS_PEAK  = 0.73; // sunset peak colour
+    const SS_END   = 0.88; // sunset → night complete (extended for slower decay)
+
+    // ── Brightness: linear ramp with a night floor ──
+    const NIGHT_FLOOR = 0.15;
+    let brightness: number;
+    if (t < SR_START || t >= SS_END) {
+      brightness = NIGHT_FLOOR;
+    } else if (t < SR_END) {
+      brightness = NIGHT_FLOOR + (1 - NIGHT_FLOOR) * (t - SR_START) / (SR_END - SR_START);
+    } else if (t < SS_START) {
+      brightness = 1;
     } else {
-      skyColor = daySky;
+      brightness = NIGHT_FLOOR + (1 - NIGHT_FLOOR) * (1 - (t - SS_START) / (SS_END - SS_START));
     }
 
+    // ── Sky colour ──
+    const nightSky   = new THREE.Color(0x0a0a2e);
+    const sunriseSky = new THREE.Color(0xff9966);
+    const daySky     = this.baseSkyColor;
+    const sunsetSky  = new THREE.Color(0xff4422);
+
+    const skyColor = this._scratchSky;
+    this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
+      nightSky, sunriseSky, daySky, sunsetSky, skyColor);
     (this.sceneManager.scene.background as THREE.Color).copy(skyColor);
 
-    // Ambient light: dimmer at night (0.05 at midnight → 0.6 at noon)
-    this.sceneManager.ambientLight.intensity = 0.05 + smoothFactor * (this.baseAmbientIntensity - 0.05);
-    // Tint ambient light warm at dawn/dusk
-    if (sunFactor > 0.15 && sunFactor < 0.5) {
-      this.sceneManager.ambientLight.color.setHex(0xffeedd);
-    } else {
-      this.sceneManager.ambientLight.color.setHex(0xffffff);
-    }
+    // ── Ambient light ──
+    this.sceneManager.ambientLight.intensity = 0.05 + brightness * (this.baseAmbientIntensity - 0.05);
+    this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
+      new THREE.Color(0x2244aa),  // night: cool blue moonlight
+      new THREE.Color(0xffd4a0),  // sunrise: warm peach
+      new THREE.Color(0xfff8f0),  // day: warm white
+      new THREE.Color(0xffaa66),  // sunset: deep amber
+      this.sceneManager.ambientLight.color);
 
-    // Directional light (sun): intensity and color; disable shadows at night
-    this._sunIntensity = smoothFactor * this.baseDirectionalIntensity;
+    // ── Directional light (sun / moon) ──
+    const moonBase = 0.08;
+    this._sunIntensity = moonBase + brightness * (this.baseDirectionalIntensity - moonBase);
     this.sceneManager.directionalLight.intensity = this._sunIntensity;
-    this.sceneManager.directionalLight.castShadow = smoothFactor > 0.05;
-    if (sunFactor < 0.5) {
-      // Warm orange during dawn/dusk
-      const warmth = 1 - sunFactor * 2;
-      const sunColor = new THREE.Color(0xffffff).lerp(new THREE.Color(0xff9944), warmth * 0.5);
-      this.sceneManager.directionalLight.color.copy(sunColor);
-    } else {
-      this.sceneManager.directionalLight.color.setHex(0xffffff);
-    }
+    this.sceneManager.directionalLight.castShadow = brightness > 0.05;
+    this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
+      new THREE.Color(0x3355aa),  // night: blue moonlight
+      new THREE.Color(0xff8833),  // sunrise: warm orange
+      new THREE.Color(0xfffff0),  // day: warm white
+      new THREE.Color(0xff5522),  // sunset: deep orange-red
+      this.sceneManager.directionalLight.color);
 
-    // Move sun position based on time
+    // Sun position based on time
     const sunX = 50 * Math.cos(sunAngle);
     const sunY = 80 * Math.max(0.1, sunFactor);
     const sunZ = 50;
     this.sceneManager.sunOffset.set(sunX, sunY, sunZ);
 
-    // Hemisphere light (0.01 at midnight → 0.3 at noon)
-    this.sceneManager.hemisphereLight.intensity = 0.01 + smoothFactor * (this.baseHemiIntensity - 0.01);
+    // ── Hemisphere light ──
+    this.sceneManager.hemisphereLight.intensity = 0.01 + brightness * (this.baseHemiIntensity - 0.01);
     this.sceneManager.hemisphereLight.color.copy(skyColor);
+    if (t >= SS_START || t < SR_START) {
+      this.sceneManager.hemisphereLight.groundColor.setHex(0x111122);
+    } else {
+      this.sceneManager.hemisphereLight.groundColor.setHex(0x556633);
+    }
+  }
+
+  /**
+   * Blend between 4 colour keyframes (night / sunrise / day / sunset)
+   * using linear timeOfDay so transitions take equal real-time seconds.
+   */
+  private timeBlend(
+    t: number,
+    srStart: number, srPeak: number, srEnd: number,
+    ssStart: number, ssPeak: number, ssEnd: number,
+    night: THREE.Color, sunrise: THREE.Color,
+    day: THREE.Color, sunset: THREE.Color,
+    out: THREE.Color,
+  ): void {
+    if (t < srStart || t >= ssEnd) {
+      out.copy(night);
+    } else if (t < srPeak) {
+      out.copy(night).lerp(sunrise, (t - srStart) / (srPeak - srStart));
+    } else if (t < srEnd) {
+      out.copy(sunrise).lerp(day, (t - srPeak) / (srEnd - srPeak));
+    } else if (t < ssStart) {
+      out.copy(day);
+    } else if (t < ssPeak) {
+      out.copy(day).lerp(sunset, (t - ssStart) / (ssPeak - ssStart));
+    } else {
+      out.copy(sunset).lerp(night, (t - ssPeak) / (ssEnd - ssPeak));
+    }
   }
 
   // ── Seasonal Visuals ─────────────────────────────────────────
