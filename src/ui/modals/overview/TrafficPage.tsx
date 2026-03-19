@@ -1,4 +1,4 @@
-import { For, Show } from 'solid-js';
+import { createSignal, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { getTransitSystems } from '../../../core/transport/TransportRegistry';
 import { TransportType } from '../../../core/transport/types';
@@ -22,7 +22,36 @@ const TYPE_ICONS: Record<string, string> = {
   [TransportType.FERRY]: '\u26F4',
 };
 
+interface RouteRow {
+  id: number;
+  stops: number;
+  vehicles: number;
+  riders: number;
+  cost: number;
+  suspended: boolean;
+}
+
+interface SystemRow {
+  type: TransportType;
+  label: string;
+  color: string;
+  icon: string;
+  routeCount: number;
+  totalVehicles: number;
+  totalRiders: number;
+  totalCost: number;
+  routeRows: RouteRow[];
+}
+
 export function TrafficPage() {
+  const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
+
+  const toggle = (type: string) => {
+    const next = new Set(expanded());
+    if (next.has(type)) next.delete(type); else next.add(type);
+    setExpanded(next);
+  };
+
   const stats = () => {
     gameSignals.tick();
     return getGame().getTrafficStats();
@@ -34,23 +63,44 @@ export function TrafficPage() {
     const systems = getTransitSystems(state as any);
     let totalCost = 0;
 
-    const rows = systems.map(({ type, system }) => {
+    const rows: SystemRow[] = systems.map(({ type, system }) => {
       const routes = system.getRoutes();
-      const vehicles = system.getVehicles();
       const cost = system.getOperatingCost();
       totalCost += cost;
+
+      let totalRiders = 0;
+      for (const stop of system.getStops()) {
+        totalRiders += stop.lastDayRiders || stop.dailyRiders;
+      }
+
+      const routeRows: RouteRow[] = routes.map(route => {
+        let riders = 0;
+        for (const stop of route.stops) {
+          riders += stop.lastDayRiders || stop.dailyRiders;
+        }
+        return {
+          id: route.id,
+          stops: route.stops.length,
+          vehicles: route.vehicles,
+          riders,
+          cost: route.operatingCost,
+          suspended: !!route.suspended,
+        };
+      });
+
       return {
         type,
         label: TYPE_LABELS[type] ?? type,
         color: TYPE_COLORS[type] ?? '#888',
         icon: TYPE_ICONS[type] ?? '',
-        routes: routes.length,
-        vehicles: vehicles.length,
-        cost,
+        routeCount: routes.length,
+        totalVehicles: system.getVehicles().length,
+        totalRiders,
+        totalCost: cost,
+        routeRows,
       };
     });
 
-    // Airport
     const airports = state.airport.getAirports();
     const airportCost = state.airport.getOperatingCost();
     totalCost += airportCost;
@@ -107,22 +157,51 @@ export function TrafficPage() {
       </Show>
 
       <div class="section-title">Public Transit</div>
-      <Show when={transitData().rows.some(r => r.routes > 0)} fallback={<div style="font-size:12px;color:#667a90;padding:8px 0">No transit routes yet</div>}>
+      <Show when={transitData().rows.some(r => r.routeCount > 0)} fallback={<div style="font-size:12px;color:#667a90;padding:8px 0">No transit routes yet</div>}>
         <table class="data-table">
-          <thead><tr><th>System</th><th style="text-align:right">Routes</th><th style="text-align:right">Vehicles</th><th style="text-align:right">Cost/tick</th></tr></thead>
+          <thead><tr><th>System / Route</th><th style="text-align:right">Stops</th><th style="text-align:right">Vehicles</th><th style="text-align:right">Riders/Wk</th><th style="text-align:right">Cost/tick</th></tr></thead>
           <tbody>
             <For each={transitData().rows}>
-              {(row) => (
-                <tr>
-                  <td class="td-label" style="display:flex;align-items:center;gap:4px">
-                    <span>{row.icon}</span>
-                    <span style={{ color: row.color }}>{row.label}</span>
-                  </td>
-                  <td class="td-value" style="text-align:right">{row.routes}</td>
-                  <td class="td-value" style="text-align:right">{row.vehicles}</td>
-                  <td class="td-expense" style="text-align:right">${row.cost}</td>
-                </tr>
-              )}
+              {(row) => {
+                const isOpen = () => expanded().has(row.type);
+                return (
+                  <>
+                    <tr
+                      style={{ cursor: row.routeCount > 0 ? 'pointer' : 'default' }}
+                      onClick={() => { if (row.routeCount > 0) toggle(row.type); }}
+                    >
+                      <td class="td-label" style="display:flex;align-items:center;gap:4px">
+                        <Show when={row.routeCount > 0}>
+                          <span style="font-size:10px;width:12px;display:inline-block">{isOpen() ? '\u25BC' : '\u25B6'}</span>
+                        </Show>
+                        <span>{row.icon}</span>
+                        <span style={{ color: row.color }}>{row.label}</span>
+                        <span style="color:#667a90;font-size:11px;margin-left:2px">({row.routeCount})</span>
+                      </td>
+                      <td class="td-value" style="text-align:right">{row.routeRows.reduce((s, r) => s + r.stops, 0)}</td>
+                      <td class="td-value" style="text-align:right">{row.totalVehicles}</td>
+                      <td class="td-value" style="text-align:right">{row.totalRiders}</td>
+                      <td class="td-expense" style="text-align:right">${row.totalCost}</td>
+                    </tr>
+                    <Show when={isOpen()}>
+                      <For each={row.routeRows}>
+                        {(route) => (
+                          <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
+                            <td style="padding-left:32px;font-size:11px;color:#8899b0">
+                              Route #{route.id}
+                              {route.suspended ? <span style="color:#ef5350;margin-left:6px">(suspended)</span> : ''}
+                            </td>
+                            <td class="td-value" style="text-align:right;font-size:11px">{route.stops}</td>
+                            <td class="td-value" style="text-align:right;font-size:11px">{route.vehicles}</td>
+                            <td class="td-value" style="text-align:right;font-size:11px">{route.riders}</td>
+                            <td class="td-expense" style="text-align:right;font-size:11px">${route.cost}</td>
+                          </tr>
+                        )}
+                      </For>
+                    </Show>
+                  </>
+                );
+              }}
             </For>
           </tbody>
         </table>
