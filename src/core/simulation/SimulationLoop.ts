@@ -115,8 +115,6 @@ export const SIMULATION = {
   WALK_TO_STOP_RANGE: 5,
   /** Industrial zone pollution reduction factor */
   INDUSTRIAL_POLLUTION_FACTOR: 0.2,
-  /** Rail/metro transit time discount factor */
-  RAIL_TRANSIT_TIME_FACTOR: 0.8,
 } as const;
 
 // clampBuildingLevel re-exported from shared module for backward compatibility
@@ -1501,9 +1499,11 @@ export class SimulationLoop {
   ): AvailableTransport[] {
     const systems = getTransitSystems(this.state).map(({ type, system }) => ({
       type,
+      speed: system.getSpeed(),
       routes: system.getRoutes(),
+      getSegmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
     }));
-    return findAvailableTransit(systems, origin, destination, SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.RAIL_TRANSIT_TIME_FACTOR);
+    return findAvailableTransit(systems, origin, destination, SIMULATION.WALK_TO_STOP_RANGE);
   }
 
   /**

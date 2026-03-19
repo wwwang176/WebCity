@@ -77,6 +77,21 @@ export class FerrySystem extends BaseTransportSystem {
     return result;
   }
 
+  /** Return precomputed segment distances from water path cache. */
+  override getSegmentDistances(routeId: number): number[] | null {
+    const route = this.routes.find(r => r.id === routeId);
+    if (!route) return null;
+    const dists: number[] = [];
+    for (let i = 0; i < route.stops.length; i++) {
+      const from = route.stops[i]!;
+      const to = route.stops[(i + 1) % route.stops.length]!;
+      const result = this.getCachedPath(from, to);
+      if (!result) return null;
+      dists.push(result.distance);
+    }
+    return dists;
+  }
+
   // ── Alias methods for Ferry-specific naming ─────────────────────
 
   /**

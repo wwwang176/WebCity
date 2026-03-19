@@ -87,10 +87,6 @@ describe('SIMULATION config constants', () => {
     expect(SIMULATION.INDUSTRIAL_POLLUTION_FACTOR).toBeLessThanOrEqual(1);
   });
 
-  it('rail transit time factor should give discount over road', () => {
-    expect(SIMULATION.RAIL_TRANSIT_TIME_FACTOR).toBeLessThan(1);
-    expect(SIMULATION.RAIL_TRANSIT_TIME_FACTOR).toBeGreaterThan(0);
-  });
 });
 
 describe('clampBuildingLevel', () => {

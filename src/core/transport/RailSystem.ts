@@ -81,6 +81,23 @@ export class RailSystem extends BaseTransportSystem {
     return this.routePaths.get(routeId);
   }
 
+  /** Return precomputed segment distances from rail path nodes. */
+  override getSegmentDistances(routeId: number): number[] | null {
+    const paths = this.routePaths.get(routeId);
+    if (!paths) return null;
+    return paths.map(path => {
+      let dist = 0;
+      for (let i = 1; i < path.length; i++) {
+        const a = parsePosKeyUnsafe(path[i - 1]!);
+        const b = parsePosKeyUnsafe(path[i]!);
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        dist += Math.sqrt(dx * dx + dy * dy);
+      }
+      return dist;
+    });
+  }
+
   // ── Alias methods for Rail-specific naming ──────────────────────
 
   /**

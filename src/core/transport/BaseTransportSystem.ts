@@ -168,8 +168,15 @@ export abstract class BaseTransportSystem {
   getRoutes(): readonly TransportRoute[] { return this.routes; }
   getVehicles(): readonly TransportVehicle[] { return this.vehicles; }
 
+  getSpeed(): number { return this.config.speed; }
+
   getOperatingCost(): number {
     return this.routes.reduce((sum, r) => r.suspended ? sum : sum + r.operatingCost, 0);
+  }
+
+  /** Return precomputed segment distances for a route, or null if not available. */
+  getSegmentDistances(_routeId: number): number[] | null {
+    return null;
   }
 
   protected spawnVehicle(routeId: number, stop: TransportStop): TransportVehicle {

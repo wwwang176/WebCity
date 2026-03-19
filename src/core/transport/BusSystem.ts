@@ -133,6 +133,13 @@ export class BusSystem extends BaseTransportSystem {
     this.removeVehicleFromRoute(routeId);
   }
 
+  /** Return precomputed segment distances from LaneEdge paths. */
+  override getSegmentDistances(routeId: number): number[] | null {
+    const segments = this.routeSegments.get(routeId);
+    if (!segments) return null;
+    return segments.map(edges => edges.reduce((sum, e) => sum + e.length, 0));
+  }
+
   // ── Road change handling ────────────────────────────────────────
 
   /**
