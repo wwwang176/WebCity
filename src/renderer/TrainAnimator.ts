@@ -151,6 +151,8 @@ function buildFullPath(segments: ReadonlyArray<ReadonlyArray<{ x: number; y: num
 
 export class TrainAnimator implements VehicleAnimator {
   private anims = new Map<number, TrainAnimState>();
+  /** Reusable Set for active train IDs (avoids per-frame allocation). */
+  private activeIds = new Set<number>();
 
   /**
    * 每幀推進火車動畫，並覆蓋 transportVehicles 中 rail_train 的位置/heading。
@@ -163,7 +165,8 @@ export class TrainAnimator implements VehicleAnimator {
     transportVehicles: TransportVehicleRenderData[],
   ): void {
     // ── 建立 / 清理動畫 ──
-    const activeTrainIds = new Set<number>();
+    const activeTrainIds = this.activeIds;
+    activeTrainIds.clear();
     for (const train of railSystem.getTrains()) {
       activeTrainIds.add(train.id);
 
@@ -238,9 +241,12 @@ export class TrainAnimator implements VehicleAnimator {
     }
 
     // ── 覆蓋 rail_train 位置 + 追加尾隨車廂 ──
-    const extraCarriages: TransportVehicleRenderData[] = [];
+    // Push carriages directly to transportVehicles (no intermediate array).
+    // Iterate only the original range to avoid processing just-added carriages.
+    const originalLen = transportVehicles.length;
 
-    for (const vd of transportVehicles) {
+    for (let vi = 0; vi < originalLen; vi++) {
+      const vd = transportVehicles[vi]!;
       if (vd.type !== 'rail_train') continue;
 
       const trainId = vd.id - RAIL_ID_OFFSET;
@@ -258,13 +264,12 @@ export class TrainAnimator implements VehicleAnimator {
         // 尾隨車廂沿路徑往後排列
         for (let c = 1; c < CARRIAGES_PER_TRAIN; c++) {
           const cDist = anim.distance - c * CARRIAGE_SPACING;
-          // 處理環繞（距離為負 → wrap 到路徑尾端）
           const wrappedDist = cDist >= 0
             ? cDist
             : cDist + anim.pathInfo.totalLength;
           const cPos = interpolateFerryPath(anim.pathInfo, wrappedDist);
           if (cPos) {
-            extraCarriages.push({
+            transportVehicles.push({
               id: vd.id + c * 10000,
               x: cPos.x,
               y: cPos.y,
@@ -277,7 +282,7 @@ export class TrainAnimator implements VehicleAnimator {
       } else {
         // 無動畫 → 車廂沿 heading 反方向排列
         for (let c = 1; c < CARRIAGES_PER_TRAIN; c++) {
-          extraCarriages.push({
+          transportVehicles.push({
             id: vd.id + c * 10000,
             x: vd.x - Math.cos(vd.heading) * c * CARRIAGE_SPACING,
             y: vd.y + Math.sin(vd.heading) * c * CARRIAGE_SPACING,
@@ -288,8 +293,6 @@ export class TrainAnimator implements VehicleAnimator {
         }
       }
     }
-
-    transportVehicles.push(...extraCarriages);
   }
 
   dispose(): void {
