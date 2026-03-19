@@ -351,9 +351,9 @@ export class SimulationLoop {
       this.sidewalkGraphDirty = false;
     }
 
-    // 7b. Traffic - spawn commute vehicles and advance (every tick for smooth traffic)
+    // 7b. Traffic - spawn commute vehicles (every tick)
     this.spawnVehicles();
-    this.state.trafficLights.tick();
+    // NOTE: trafficLights.tick(dt) is now frame-based, called in Game.ts updateVehiclesAndTransport
 
     // 7b2. Pedestrian spawning/despawn happens per tick (movement is per-frame in Game.ts)
 

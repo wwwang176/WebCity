@@ -10,22 +10,38 @@ describe('TrafficLightSystem', () => {
     expect(sys.getLight(5, 5)).toBeDefined();
   });
 
-  it('should advance phase after PHASE_DURATION ticks', () => {
+  it('should advance phase after PHASE_DURATION seconds', () => {
     const sys = new TrafficLightSystem();
     sys.addLight(0, 0);
-    const initialPhase = sys.getLight(0, 0)!.phase;
-    for (let i = 0; i < TRAFFIC_LIGHT.PHASE_DURATION + 1; i++) sys.tick();
+    const light = sys.getLight(0, 0)!;
+    const initialPhase = light.phase;
+    // Advance past the initial timer + one full phase
+    const totalTime = light.timer + TRAFFIC_LIGHT.PHASE_DURATION + 0.01;
+    sys.tick(totalTime);
     // Phase should have changed at least once
-    // (exact timing depends on stagger offset)
-    const afterTicks = sys.getLight(0, 0)!;
-    expect(afterTicks).toBeDefined();
+    expect(sys.getLight(0, 0)!.phase).not.toBe(initialPhase);
+  });
+
+  it('should cycle phases with small dt increments', () => {
+    const sys = new TrafficLightSystem();
+    sys.addLight(0, 0);
+    const light = sys.getLight(0, 0)!;
+    const initialPhase = light.phase;
+    // Burn through initial timer
+    const burnTime = light.timer + 0.001;
+    sys.tick(burnTime);
+    // Now advance one full phase in small steps
+    const steps = 100;
+    const stepDt = TRAFFIC_LIGHT.PHASE_DURATION / steps;
+    for (let i = 0; i < steps + 1; i++) sys.tick(stepDt);
+    // Should have toggled back to initial phase
+    expect(sys.getLight(0, 0)!.phase).toBe(initialPhase);
   });
 });
 
 describe('TRAFFIC_LIGHT constants', () => {
-  it('phase duration should be a positive integer', () => {
+  it('phase duration should be a positive number in seconds', () => {
     expect(TRAFFIC_LIGHT.PHASE_DURATION).toBeGreaterThan(0);
-    expect(Number.isInteger(TRAFFIC_LIGHT.PHASE_DURATION)).toBe(true);
   });
 });
 

@@ -1044,6 +1044,7 @@ export class Game {
         if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
         return true;
       };
+      this.state.trafficLights.tick(scaledDt);
       this.state.traffic.advanceEdgeVehicles(
         scaledDt, canAdvance,
         (key) => getSpeedLimitForCell(this.state.grid, key),
