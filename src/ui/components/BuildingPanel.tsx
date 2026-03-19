@@ -284,6 +284,7 @@ function TransportStopInfo(props: { sel: SelectedTransportStop }) {
       <div class="bp-row">Position <span>({props.sel.x}, {props.sel.y})</span></div>
       <div class="bp-row">Routes <span>{props.sel.routes}</span></div>
       <div class="bp-row">Vehicles <span>{props.sel.vehicles}</span></div>
+      <div class="bp-row">Riders/Week <span>{props.sel.ridersPerWeek}</span></div>
     </>
   );
 }

@@ -133,6 +133,7 @@ export class SimulationLoop {
   private state: GameState;
   private lastDeathDay = -1;
   private lastBirthMonth = -1;
+  private lastRiderWeek = -1;
 
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
@@ -299,6 +300,13 @@ export class SimulationLoop {
         this.commuteCache.remove(id);
         this.state.deathCare.reportDeath();
       }
+    }
+
+    // 5a2. Weekly: roll over transit stop rider counts
+    const currentWeek = this.state.clock.getWeek();
+    if (currentWeek !== this.lastRiderWeek) {
+      this.lastRiderWeek = currentWeek;
+      this.rolloverTransitRiders();
     }
 
     // 5b. Sync residential capacity gate (before births + migration)
@@ -1403,7 +1411,7 @@ export class SimulationLoop {
         const transitSystem = getSystemForMode(this.state, mode);
         if (transitSystem) {
           const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
-          if (nearest) nearest.passengers++;
+          if (nearest) { nearest.passengers++; nearest.dailyRiders++; }
         }
 
         continue;
@@ -1550,6 +1558,16 @@ export class SimulationLoop {
   }
 
 
+
+  /** Roll over dailyRiders → lastDayRiders for all transit stops. */
+  private rolloverTransitRiders(): void {
+    for (const { system } of getTransitSystems(this.state)) {
+      for (const stop of system.getStops()) {
+        stop.lastDayRiders = stop.dailyRiders;
+        stop.dailyRiders = 0;
+      }
+    }
+  }
 
   /** Tick service vehicle manager: spawn/repath patrol vehicles in coverage areas. */
   private tickServiceVehicles(): void {

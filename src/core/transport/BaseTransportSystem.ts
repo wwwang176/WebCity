@@ -51,6 +51,8 @@ export abstract class BaseTransportSystem {
       y,
       type: this.config.type,
       passengers: 0,
+      dailyRiders: 0,
+      lastDayRiders: 0,
     };
     this.stops.push(stop);
     return stop;
@@ -311,7 +313,7 @@ export abstract class BaseTransportSystem {
     Ctor: { new (...args: any[]): T },
   ): T {
     const sys = new Ctor();
-    sys.stops = data.stops.map((s: TransportStop) => ({ ...s }));
+    sys.stops = data.stops.map((s: TransportStop) => ({ dailyRiders: 0, lastDayRiders: 0, ...s }));
     sys.routes = data.routes.map((r: any) => ({
       ...r,
       stops: (r.stops as number[]).map((id: number) => sys.stops.find(s => s.id === id)!),
