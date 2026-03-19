@@ -546,8 +546,11 @@ void main() {
 
   // Window day/night appearance
   if (windowMask > 0.01) {
-    float dayFactor = smoothstep(0.1, 0.4, sunIntensity);
-    float nightFactor = 1.0 - smoothstep(0.0, 0.3, sunIntensity);
+    // Per-building random offset so lights turn on gradually during dusk
+    float bldgRand = fract(sin(dot(floor(vWorldPos.xz), vec2(12.9898, 78.233))) * 43758.5453);
+    float onOffset = bldgRand * 0.3; // stagger over 0.3 sunIntensity range
+    float dayFactor = smoothstep(0.25 + onOffset, 0.55 + onOffset, sunIntensity);
+    float nightFactor = 1.0 - smoothstep(0.15 + onOffset, 0.5 + onOffset, sunIntensity);
     // Daytime: all windows show blue-white glass reflection
     vec3 dayGlass = vec3(0.6, 0.72, 0.82);
     color = mix(color, dayGlass * lighting, dayFactor * windowMask);
@@ -1179,12 +1182,18 @@ export class BuildingRenderer {
       const cfg = getInfraConfig(inf.type);
       const rotationDeg = RESERVED_TO_ROTATION[inf.reserved] ?? 0;
 
-      // Use ROTATED dimensions for center calculation (footprint on grid is rotated)
-      const { w, h } = cfg
-        ? getRotatedSize(cfg.width, cfg.height, rotationDeg as Rotation)
-        : { w: 1, h: 1 };
-      const centerX = inf.x + (w - 1) / 2;
-      const centerZ = inf.y + (h - 1) / 2;
+      // Airport primary cell IS the center (center-based placement), other infra uses top-left
+      let centerX: number, centerZ: number;
+      if (inf.type === 'airport') {
+        centerX = inf.x;
+        centerZ = inf.y;
+      } else {
+        const { w, h } = cfg
+          ? getRotatedSize(cfg.width, cfg.height, rotationDeg as Rotation)
+          : { w: 1, h: 1 };
+        centerX = inf.x + (w - 1) / 2;
+        centerZ = inf.y + (h - 1) / 2;
+      }
 
       const group = new THREE.Group();
       group.position.set(centerX, 0, centerZ);

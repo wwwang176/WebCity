@@ -117,17 +117,22 @@ export class WeatherRenderer {
     const SS_PEAK  = 0.73; // sunset peak colour
     const SS_END   = 0.88; // sunset → night complete (extended for slower decay)
 
-    // ── Brightness: linear ramp with a night floor ──
+    // ── Brightness: 6-segment ramp matching colour keyframes ──
     const NIGHT_FLOOR = 0.15;
+    const PEAK_BRIGHTNESS = 0.6;
     let brightness: number;
     if (t < SR_START || t >= SS_END) {
       brightness = NIGHT_FLOOR;
+    } else if (t < SR_PEAK) {
+      brightness = NIGHT_FLOOR + (PEAK_BRIGHTNESS - NIGHT_FLOOR) * (t - SR_START) / (SR_PEAK - SR_START);
     } else if (t < SR_END) {
-      brightness = NIGHT_FLOOR + (1 - NIGHT_FLOOR) * (t - SR_START) / (SR_END - SR_START);
+      brightness = PEAK_BRIGHTNESS + (1 - PEAK_BRIGHTNESS) * (t - SR_PEAK) / (SR_END - SR_PEAK);
     } else if (t < SS_START) {
       brightness = 1;
+    } else if (t < SS_PEAK) {
+      brightness = 1 - (1 - PEAK_BRIGHTNESS) * (t - SS_START) / (SS_PEAK - SS_START);
     } else {
-      brightness = NIGHT_FLOOR + (1 - NIGHT_FLOOR) * (1 - (t - SS_START) / (SS_END - SS_START));
+      brightness = PEAK_BRIGHTNESS - (PEAK_BRIGHTNESS - NIGHT_FLOOR) * (t - SS_PEAK) / (SS_END - SS_PEAK);
     }
 
     // ── Sky colour ──
@@ -171,11 +176,12 @@ export class WeatherRenderer {
     // ── Hemisphere light ──
     this.sceneManager.hemisphereLight.intensity = 0.01 + brightness * (this.baseHemiIntensity - 0.01);
     this.sceneManager.hemisphereLight.color.copy(skyColor);
-    if (t >= SS_START || t < SR_START) {
-      this.sceneManager.hemisphereLight.groundColor.setHex(0x111122);
-    } else {
-      this.sceneManager.hemisphereLight.groundColor.setHex(0x556633);
-    }
+    this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
+      new THREE.Color(0x111122),  // night: cool dark
+      new THREE.Color(0x556633),  // sunrise: earth tone
+      new THREE.Color(0x556633),  // day: earth tone
+      new THREE.Color(0x332211),  // sunset: warm dark
+      this.sceneManager.hemisphereLight.groundColor);
   }
 
   /**
