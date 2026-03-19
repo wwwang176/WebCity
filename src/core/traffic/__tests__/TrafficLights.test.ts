@@ -10,7 +10,7 @@ describe('TrafficLightSystem', () => {
     expect(sys.getLight(5, 5)).toBeDefined();
   });
 
-  it('should advance phase after PHASE_DURATION seconds', () => {
+  it('should advance phase after phaseDuration seconds', () => {
     const sys = new TrafficLightSystem();
     sys.addLight(0, 0);
     const light = sys.getLight(0, 0)!;
@@ -44,7 +44,6 @@ describe('TrafficLightSystem', () => {
     sys.addLight(0, 0, 4);
     const light = sys.getLight(0, 0)!;
     const initialPhase = light.phase;
-    // Advance past timer but less than 4s phase — should only change once
     sys.tick(light.timer + 4.01);
     expect(sys.getLight(0, 0)!.phase).not.toBe(initialPhase);
   });
@@ -58,78 +57,99 @@ describe('TRAFFIC_LIGHT constants', () => {
 });
 
 describe('syncTrafficLightsWithGrid', () => {
-  it('should NOT add lights at small 3-way (T) intersections', () => {
+  // Helper: set a road cell and its neighbors to form a proper intersection
+  function setRoad(grid: Grid, x: number, y: number, roadType: number, flags: number) {
+    grid.setCell(x, y, { roadType, roadFlags: flags });
+  }
+
+  it('should NOT add lights at small 3-way (T) intersections (all TWO_LANE)', () => {
     const grid = new Grid(10, 10);
-    grid.setCell(5, 5, {
-      roadType: RoadType.TWO_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST,
-    });
+    // T-intersection at (5,5) with all TWO_LANE neighbors
+    setRoad(grid, 5, 5, RoadType.TWO_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST);
+    setRoad(grid, 5, 4, RoadType.TWO_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.TWO_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.TWO_LANE, RoadDirection.WEST);
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeUndefined();
   });
 
-  it('should add lights at 3-way (T) intersections with major roads', () => {
+  it('should NOT add lights at mixed 4-way (FOUR_LANE × TWO_LANE) — only 1 major arm pair', () => {
     const grid = new Grid(10, 10);
-    grid.setCell(5, 5, {
-      roadType: RoadType.FOUR_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST,
-    });
+    // Intersection cell is TWO_LANE, N/S neighbors are FOUR_LANE, E/W are TWO_LANE
+    // majorArms: N=FOUR_LANE(neighbor), S=FOUR_LANE(neighbor), E=TWO_LANE, W=TWO_LANE
+    // Actually this has 2 major arms (N,S), so it SHOULD get a light
+    // Let's test a case with only 1 major arm:
+    setRoad(grid, 5, 5, RoadType.TWO_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST);
+    setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH); // N arm: major
+    setRoad(grid, 5, 6, RoadType.TWO_LANE, RoadDirection.NORTH);  // S arm: small
+    setRoad(grid, 6, 5, RoadType.TWO_LANE, RoadDirection.WEST);   // E arm: small
+    setRoad(grid, 4, 5, RoadType.TWO_LANE, RoadDirection.EAST);   // W arm: small
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)).toBeUndefined(); // only 1 major arm
+  });
+
+  it('should add lights at 3-way (T) with 2+ major arms', () => {
+    const grid = new Grid(10, 10);
+    setRoad(grid, 5, 5, RoadType.FOUR_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST);
+    setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.TWO_LANE, RoadDirection.WEST);
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeDefined();
     expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION);
   });
 
-  it('should add lights at 4-way intersections with standard duration', () => {
+  it('should add lights at 4-way with 2+ major arms and use long phase', () => {
     const grid = new Grid(10, 10);
-    grid.setCell(5, 5, {
-      roadType: RoadType.TWO_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
-    });
-    const sys = new TrafficLightSystem();
-    syncTrafficLightsWithGrid(grid, sys);
-    expect(sys.getLight(5, 5)).toBeDefined();
-    expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION);
-  });
-
-  it('should use longer phase duration for large 4-way intersections', () => {
-    const grid = new Grid(10, 10);
-    grid.setCell(5, 5, {
-      roadType: RoadType.FOUR_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
-    });
+    setRoad(grid, 5, 5, RoadType.FOUR_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST);
+    setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.FOUR_LANE, RoadDirection.WEST);
+    setRoad(grid, 4, 5, RoadType.FOUR_LANE, RoadDirection.EAST);
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeDefined();
     expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION_LARGE);
   });
 
+  it('should add lights when FOUR_LANE crosses FOUR_LANE even if intersection cell is TWO_LANE', () => {
+    const grid = new Grid(10, 10);
+    // Intersection cell itself is TWO_LANE, but N/S neighbors are FOUR_LANE
+    setRoad(grid, 5, 5, RoadType.TWO_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST);
+    setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.TWO_LANE, RoadDirection.WEST);
+    setRoad(grid, 4, 5, RoadType.TWO_LANE, RoadDirection.EAST);
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    // N and S arms have FOUR_LANE neighbors → 2 major arms → light
+    expect(sys.getLight(5, 5)).toBeDefined();
+  });
+
   it('should update phaseDuration when road is upgraded', () => {
     const grid = new Grid(10, 10);
-    grid.setCell(5, 5, {
-      roadType: RoadType.TWO_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
-    });
+    // Start as 3-way all FOUR_LANE → standard duration
+    setRoad(grid, 5, 5, RoadType.FOUR_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST);
+    setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.FOUR_LANE, RoadDirection.WEST);
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION);
 
-    // Upgrade to four-lane
-    grid.setCell(5, 5, {
-      roadType: RoadType.FOUR_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
-    });
+    // Add 4th arm → becomes 4-way → long duration
+    setRoad(grid, 5, 5, RoadType.FOUR_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST);
+    setRoad(grid, 4, 5, RoadType.FOUR_LANE, RoadDirection.EAST);
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)!.phaseDuration).toBe(TRAFFIC_LIGHT.PHASE_DURATION_LARGE);
   });
 
   it('should not add lights at 2-way roads', () => {
     const grid = new Grid(10, 10);
-    grid.setCell(5, 5, {
-      roadType: RoadType.TWO_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH,
-    });
+    setRoad(grid, 5, 5, RoadType.FOUR_LANE, RoadDirection.NORTH | RoadDirection.SOUTH);
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeUndefined();
@@ -143,21 +163,21 @@ describe('syncTrafficLightsWithGrid', () => {
     expect(sys.getLight(5, 5)).toBeUndefined();
   });
 
-  it('should remove lights when 4-way downgraded to small 3-way', () => {
+  it('should remove lights when major road downgraded to small', () => {
     const grid = new Grid(10, 10);
-    grid.setCell(5, 5, {
-      roadType: RoadType.TWO_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST | RoadDirection.WEST,
-    });
+    setRoad(grid, 5, 5, RoadType.FOUR_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST);
+    setRoad(grid, 5, 4, RoadType.FOUR_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.FOUR_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.FOUR_LANE, RoadDirection.WEST);
     const sys = new TrafficLightSystem();
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeDefined();
 
-    // Remove one direction → small T-intersection
-    grid.setCell(5, 5, {
-      roadType: RoadType.TWO_LANE,
-      roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST,
-    });
+    // Downgrade all to TWO_LANE → no longer qualifies
+    setRoad(grid, 5, 5, RoadType.TWO_LANE, RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST);
+    setRoad(grid, 5, 4, RoadType.TWO_LANE, RoadDirection.SOUTH);
+    setRoad(grid, 5, 6, RoadType.TWO_LANE, RoadDirection.NORTH);
+    setRoad(grid, 6, 5, RoadType.TWO_LANE, RoadDirection.WEST);
     syncTrafficLightsWithGrid(grid, sys);
     expect(sys.getLight(5, 5)).toBeUndefined();
   });

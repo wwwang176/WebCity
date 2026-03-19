@@ -84,14 +84,41 @@ function isMajorRoad(roadType: number): boolean {
   return roadType === RoadType.FOUR_LANE || roadType === RoadType.SIX_LANE;
 }
 
+interface TrafficLightGrid {
+  forEachCell(fn: (cell: { roadType: number; roadFlags: number }, x: number, y: number) => void): void;
+  getCell(x: number, y: number): { roadType: number } | null;
+}
+
+const DIR_OFFSETS: [number, number, number][] = [
+  [RoadDirection.NORTH, 0, -1],
+  [RoadDirection.SOUTH, 0,  1],
+  [RoadDirection.EAST,  1,  0],
+  [RoadDirection.WEST, -1,  0],
+];
+
+/** Count how many arms of an intersection are major roads (FOUR_LANE+).
+ *  Checks both the intersection cell itself and the neighboring cell in each direction. */
+function countMajorArms(grid: TrafficLightGrid, x: number, y: number, roadFlags: number, selfRoadType: number): number {
+  let count = 0;
+  for (const [flag, dx, dy] of DIR_OFFSETS) {
+    if (!(roadFlags & flag)) continue;
+    const neighbor = grid.getCell(x + dx, y + dy);
+    // An arm is major if either the intersection cell or the neighbor is major
+    if (isMajorRoad(selfRoadType) || (neighbor && isMajorRoad(neighbor.roadType))) {
+      count++;
+    }
+  }
+  return count;
+}
+
 /**
- * Sync traffic lights with current grid state:
- * - 4-way intersection: always gets a light
- * - 3-way (T) intersection: only if any arm is FOUR_LANE+
- * - Large intersections (4-way + major road): longer phase duration
+ * Sync traffic lights with current grid state.
+ * Only intersections where 2+ arms are major roads (FOUR_LANE+) get a light.
+ * - 3-way with 2+ major arms: standard phase (2s)
+ * - 4-way with 2+ major arms: long phase (4s)
  */
 export function syncTrafficLightsWithGrid(
-  grid: { forEachCell(fn: (cell: { roadType: number; roadFlags: number }, x: number, y: number) => void): void },
+  grid: TrafficLightGrid,
   tls: TrafficLightSystem,
 ): void {
   const seen = new Set<string>();
@@ -105,15 +132,13 @@ export function syncTrafficLightsWithGrid(
     if (cell.roadFlags & RoadDirection.WEST) dirs++;
     if (dirs < 3) return;
 
-    const major = isMajorRoad(cell.roadType);
-
-    // 3-way (T) intersection: skip if small road
-    if (dirs === 3 && !major) return;
+    const majorArms = countMajorArms(grid, x, y, cell.roadFlags, cell.roadType);
+    if (majorArms < 2) return;
 
     const key = `${x},${y}`;
     seen.add(key);
 
-    const duration = (dirs >= 4 && major)
+    const duration = (dirs >= 4)
       ? TRAFFIC_LIGHT.PHASE_DURATION_LARGE
       : TRAFFIC_LIGHT.PHASE_DURATION;
 
@@ -121,7 +146,6 @@ export function syncTrafficLightsWithGrid(
     if (!existing) {
       tls.addLight(x, y, duration);
     } else if (existing.phaseDuration !== duration) {
-      // Road was upgraded/downgraded — update duration
       existing.phaseDuration = duration;
     }
   });
