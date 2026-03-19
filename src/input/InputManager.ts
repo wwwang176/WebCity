@@ -11,6 +11,7 @@ export class InputManager {
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private intersection = new THREE.Vector3();
   private gridWidth: number;
   private gridHeight: number;
 
@@ -27,7 +28,7 @@ export class InputManager {
     this.mouse.y = -((screenY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.mouse, this.camera);
-    const intersection = new THREE.Vector3();
+    const intersection = this.intersection;
     this.raycaster.ray.intersectPlane(this.groundPlane, intersection);
 
     if (!intersection) return null;
