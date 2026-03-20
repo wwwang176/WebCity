@@ -16,6 +16,8 @@
 | INDUSTRIAL (5) | 工業 | 工廠、倉儲 |
 | OFFICE (6) | 辦公 | 辦公大樓 |
 
+> RCI 分類與輔助函式詳見[網格系統 — RCI 分類](grid-system.md#rci-分類)。
+
 ---
 
 ## 規劃規則

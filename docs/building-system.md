@@ -114,7 +114,7 @@ grid.setCell(x, y, { buildingId: building.id })
 
 ### 焦黑建築清除
 
-焦黑建築 (`reserved = BURNED`) 在成長 tick 中有 2% 機率被建商自動清除（拆除），變為空地。
+焦黑建築 (`reserved = BURNED`) 在成長 tick 中有 2% 機率被建商自動清除（拆除），變為空地。火災如何產生焦黑建築詳見[市政服務 — 消防服務](services-system.md#消防服務-fireservice)。
 
 ### 廢棄建築重建
 
@@ -157,12 +157,7 @@ grid.setCell(x, y, { buildingId: building.id })
 
 ### 教育分數
 
-| 教育等級 | 分數 |
-|---------|------|
-| NONE | 0 |
-| ELEMENTARY | 1 |
-| HIGH_SCHOOL | 2 |
-| UNIVERSITY | 3 |
+教育等級與分數對應詳見[市民系統 — 教育系統](citizen-system.md#教育系統)（NONE=0, ELEMENTARY=1, HIGH_SCHOOL=2, UNIVERSITY=3）。
 
 升級指標 `avgEducation` = 建築工人教育分數的平均值。
 

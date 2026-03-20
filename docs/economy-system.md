@@ -61,11 +61,11 @@ WebCity 的經濟由稅收、支出、預算和全球市場組成。
 
 ### 區域特化加成
 
-如果建築位於有特化加成的區域，收入會乘以區域特化的 `revenueMultiplier`。
+如果建築位於有特化加成的區域，收入會乘以區域特化的 `revenueMultiplier`（特化加成表見[區域與政策 — 特化](district-policy-system.md#特化-specialization)）。
 
 ### 城市特化加成
 
-城市特化的 `revenueMultiplier` 對**全城市總收入**生效（在所有建築收入加總後乘以倍率）。
+城市特化的 `revenueMultiplier` 對**全城市總收入**生效（城市特化列表見[區域與政策 — 城市特化](district-policy-system.md#城市特化-cityspecialization)）。
 
 ### 地價對工業區的減免
 
@@ -174,7 +174,7 @@ RCI（住宅-商業-工業）需求決定城市的建築成長方向。
 
 ### 公園鄰近判定
 
-以下任一條件滿足即為有公園鄰近：
+以下任一條件滿足即為有公園鄰近（公園服務詳見[市政服務 — 公園服務](services-system.md#公園服務-parkservice)）：
 1. 有公園服務覆蓋
 2. 曼哈頓距離 2 格內有森林地形
 3. 曼哈頓距離 2 格內有公園建築 (buildingId=248)
