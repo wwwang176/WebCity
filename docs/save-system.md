@@ -92,4 +92,39 @@ isCellDefault(cell) → 全部屬性與預設相同則跳過
 
 ### 存檔遷移 (migrations)
 
-`migrations.ts` 處理舊版存檔的格式升級，確保向後相容。版本號遞增，每個遷移函式處理一個版本的升級。
+`migrations.ts` 處理舊版存檔的格式升級，確保向後相容。
+
+**目前版本**: `CURRENT_SAVE_VERSION = 3`
+
+**遷移機制**:
+1. 載入存檔時檢查 `version` 欄位
+2. 依序執行所有 `version > 存檔版本` 的遷移
+3. 每個遷移直接修改 GameState（in-place mutation）
+4. 完成後更新版本號
+
+**已有遷移**:
+- Version 2: `fix_intersection_roadtype` — 修正路口處低階道路覆蓋高階道路的問題
+- Version 3: 市民年齡系統從 float 改為 birthTick-based
+
+**新增遷移步驟**:
+1. 遞增 `CURRENT_SAVE_VERSION`
+2. 在 `MIGRATIONS` 陣列新增 `{ version, name, migrate }` 項目
+
+---
+
+## Web Worker 整合
+
+### 通勤路徑 Worker (PathWorkerClient)
+
+批次尋路請求發送到 Web Worker，避免阻塞主執行緒：
+- 批次提交多個起訖點
+- Worker 計算 LaneEdge 路徑
+- Promise-based 非同步回傳
+
+### 工作場所距離 Worker (WorkplaceDistanceClient)
+
+預計算從所有工作場所到可達格子的道路距離：
+- 使用 SharedArrayBuffer 傳遞網格資料
+- 計算結果為 `workplace → (cell → cost)` 映射表
+- 結果快取在 `WorkplaceDistanceCache` 中
+- 道路或建築變更時標記失效，下次 tick 重新計算

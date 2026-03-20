@@ -73,6 +73,25 @@ roadFlags 中有 3 個以上方向旗標的格子為路口（intersection）。�
 
 ---
 
+## 車道邊的曲線幾何
+
+### Bezier 曲線
+
+車道邊的轉彎路段使用**二次 Bezier 曲線**（quadratic Bezier）表示：
+- 起點: `edge.from.position`
+- 控制點: `edge.bezierControl[0]`
+- 終點: `edge.to.position`
+
+直行路段使用線性插值。
+
+控制點的計算使用進入和離開方向的切線交點，產生近似 90° 圓弧的曲線。
+
+### 弧長查找表
+
+三次 Bezier 曲線使用弧長查找表（arc-length LUT）進行等速插值，通過二分搜尋將距離映射到參數 t。
+
+---
+
 ## 車輛移動
 
 ### 基礎速度
