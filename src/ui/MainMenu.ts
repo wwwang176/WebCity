@@ -210,6 +210,7 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
   function renderSaveList(saveList: HTMLElement) {
     saveList.innerHTML = '<div class="save-empty">Loading saves...</div>';
     listSaves().then(saves => {
+      saves.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       if (saves.length === 0) {
         saveList.innerHTML = '<div class="save-empty">No saves found</div>';
         return;
