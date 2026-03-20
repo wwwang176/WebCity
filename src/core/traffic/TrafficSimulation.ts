@@ -35,16 +35,16 @@ export const BUS_DWELL_SECONDS = 2.0;
 /** Fixed vehicle lengths for service vehicles (matching renderer model sizes). */
 export const SERVICE_VEHICLE_LENGTHS: Record<ServiceVehicleType, number> = {
   police: 0.22,
-  fire: 0.34,
-  health: 0.24,
-  garbage: 0.32,
+  fire: 0.55,
+  health: 0.30,
+  garbage: 0.45,
 };
 
 /** Vehicle lengths matching renderer model sizes (bus removed — spawned by BusSystem) */
 const VEHICLE_LENGTHS = [
   { weight: 0.85, length: 0.22 },  // car
-  { weight: 0.10, length: 0.32 },  // truck
-  { weight: 0.05, length: 0.34 },  // firetruck
+  { weight: 0.10, length: 0.45 },  // truck
+  { weight: 0.05, length: 0.55 },  // firetruck
 ];
 
 /** Traffic simulation tuning constants */
@@ -123,7 +123,7 @@ export class TrafficSimulation {
     const seg = segments[segIdx]!;
     const vehicle: Vehicle = {
       id: this.nextId++,
-      length: 0.45,  // bus fixed length
+      length: 0.60,  // bus fixed length
       arrived: false,
       lane: seg[0]?.from.lane ?? 0,
       edgePath: seg,

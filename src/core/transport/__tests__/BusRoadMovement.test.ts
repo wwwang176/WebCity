@@ -44,14 +44,14 @@ function makeGrid(roads: Set<string>) {
 // ── Step 1: No random bus vehicles ──────────────────────────────
 
 describe('Step 1: random vehicle spawning excludes bus', () => {
-  it('addVehicleOnEdges should never produce length 0.45 (bus)', () => {
+  it('addVehicleOnEdges should never produce length 0.60 (bus)', () => {
     const sim = new TrafficSimulation();
     const lengths = new Set<number>();
     for (let i = 0; i < 200; i++) {
       const v = sim.addVehicleOnEdges(makeLongPath(5));
       lengths.add(v.length);
     }
-    expect(lengths.has(0.45)).toBe(false);
+    expect(lengths.has(0.60)).toBe(false);
   });
 });
 
@@ -124,7 +124,7 @@ describe('Step 3: bus vehicle in TrafficSimulation', () => {
     expect(v.busState!.routeId).toBe(42);
     expect(v.busState!.segmentIndex).toBe(0);
     expect(v.busState!.dwelling).toBe(false);
-    expect(v.length).toBe(0.45);
+    expect(v.length).toBe(0.60);
     expect(v.edgePath).toBe(seg1);
   });
 

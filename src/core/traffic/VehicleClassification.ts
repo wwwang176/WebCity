@@ -3,9 +3,9 @@ export type RoadVehicleType = 'car' | 'bus' | 'truck' | 'firetruck' | 'police_ca
 
 /** Data-driven vehicle type thresholds, sorted descending by minLength (OCP-friendly). */
 export const VEHICLE_TYPE_THRESHOLDS: readonly { minLength: number; type: RoadVehicleType }[] = [
-  { minLength: 0.44, type: 'bus' },
-  { minLength: 0.33, type: 'firetruck' },
-  { minLength: 0.28, type: 'truck' },
+  { minLength: 0.58, type: 'bus' },
+  { minLength: 0.50, type: 'firetruck' },
+  { minLength: 0.35, type: 'truck' },
 ];
 
 const DEFAULT_VEHICLE_TYPE: RoadVehicleType = 'car';
