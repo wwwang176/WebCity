@@ -214,8 +214,12 @@ export class TrafficSimulation {
   }
 
   /** Get IDs of all currently active vehicles. */
+  /** Reusable Set for getActiveVehicleIds — caller must not hold reference across frames. */
+  private _activeIdSet = new Set<number>();
+
   getActiveVehicleIds(): Set<number> {
-    const set = new Set<number>();
+    const set = this._activeIdSet;
+    set.clear();
     for (const v of this.vehicles) set.add(v.id);
     return set;
   }
