@@ -43,6 +43,22 @@ export class WeatherRenderer {
   private readonly baseDirectionalIntensity = 0.8;
   private readonly baseHemiIntensity = 0.3;
 
+  // Colour keyframes — reusable (avoids 15 new Color() per frame)
+  private readonly _nightSky   = new THREE.Color(0x0a0a2e);
+  private readonly _sunriseSky = new THREE.Color(0xff9966);
+  private readonly _sunsetSky  = new THREE.Color(0xff4422);
+  private readonly _ambNight   = new THREE.Color(0x2244aa);
+  private readonly _ambSunrise = new THREE.Color(0xffd4a0);
+  private readonly _ambDay     = new THREE.Color(0xfff8f0);
+  private readonly _ambSunset  = new THREE.Color(0xffaa66);
+  private readonly _dirNight   = new THREE.Color(0x3355aa);
+  private readonly _dirSunrise = new THREE.Color(0xff8833);
+  private readonly _dirDay     = new THREE.Color(0xfffff0);
+  private readonly _dirSunset  = new THREE.Color(0xff5522);
+  private readonly _hemiNight  = new THREE.Color(0x111122);
+  private readonly _hemiDay    = new THREE.Color(0x556633);
+  private readonly _hemiSunset = new THREE.Color(0x332211);
+
   constructor(sceneManager: SceneManager, mapSize: number) {
     this.sceneManager = sceneManager;
     this.mapSize = mapSize;
@@ -136,23 +152,15 @@ export class WeatherRenderer {
     }
 
     // ── Sky colour ──
-    const nightSky   = new THREE.Color(0x0a0a2e);
-    const sunriseSky = new THREE.Color(0xff9966);
-    const daySky     = this.baseSkyColor;
-    const sunsetSky  = new THREE.Color(0xff4422);
-
     const skyColor = this._scratchSky;
     this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
-      nightSky, sunriseSky, daySky, sunsetSky, skyColor);
+      this._nightSky, this._sunriseSky, this.baseSkyColor, this._sunsetSky, skyColor);
     (this.sceneManager.scene.background as THREE.Color).copy(skyColor);
 
     // ── Ambient light ──
     this.sceneManager.ambientLight.intensity = 0.05 + brightness * (this.baseAmbientIntensity - 0.05);
     this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
-      new THREE.Color(0x2244aa),  // night: cool blue moonlight
-      new THREE.Color(0xffd4a0),  // sunrise: warm peach
-      new THREE.Color(0xfff8f0),  // day: warm white
-      new THREE.Color(0xffaa66),  // sunset: deep amber
+      this._ambNight, this._ambSunrise, this._ambDay, this._ambSunset,
       this.sceneManager.ambientLight.color);
 
     // ── Directional light (sun / moon) ──
@@ -161,10 +169,7 @@ export class WeatherRenderer {
     this.sceneManager.directionalLight.intensity = this._sunIntensity;
     this.sceneManager.directionalLight.castShadow = brightness > 0.05;
     this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
-      new THREE.Color(0x3355aa),  // night: blue moonlight
-      new THREE.Color(0xff8833),  // sunrise: warm orange
-      new THREE.Color(0xfffff0),  // day: warm white
-      new THREE.Color(0xff5522),  // sunset: deep orange-red
+      this._dirNight, this._dirSunrise, this._dirDay, this._dirSunset,
       this.sceneManager.directionalLight.color);
 
     // Sun position based on time
@@ -177,10 +182,7 @@ export class WeatherRenderer {
     this.sceneManager.hemisphereLight.intensity = 0.01 + brightness * (this.baseHemiIntensity - 0.01);
     this.sceneManager.hemisphereLight.color.copy(skyColor);
     this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
-      new THREE.Color(0x111122),  // night: cool dark
-      new THREE.Color(0x556633),  // sunrise: earth tone
-      new THREE.Color(0x556633),  // day: earth tone
-      new THREE.Color(0x332211),  // sunset: warm dark
+      this._hemiNight, this._hemiDay, this._hemiDay, this._hemiSunset,
       this.sceneManager.hemisphereLight.groundColor);
   }
 

@@ -37,6 +37,9 @@ export class CommuteCache {
   // routeKey -> number of citizens currently using this route
   private routeRefCount = new Map<string, number>();
 
+  /** Reusable Set for collectRouteCells — avoids per-call allocation. */
+  private reusableCellSet = new Set<string>();
+
   /** Current road network generation — incremented on every road build/demolish. */
   roadGeneration = 0;
 
@@ -58,7 +61,7 @@ export class CommuteCache {
     if (old) {
       this.removeCellIndexEntries(citizenId, old);
       if (old.status === 'ready') {
-        for (const key of this.deriveRouteKeys(old)) this.decrementRefCount(key);
+        this.adjustRefCounts(old, -1);
       }
     }
 
@@ -68,7 +71,7 @@ export class CommuteCache {
     // Register cells in cellIndex when path is ready
     if (route.status === 'ready') {
       this.registerCellIndex(citizenId, route);
-      for (const key of this.deriveRouteKeys(route)) this.incrementRefCount(key);
+      this.adjustRefCounts(route, 1);
     }
   }
 
@@ -91,9 +94,10 @@ export class CommuteCache {
 
     // 2. Remove affected routes from shared pool
     // routeCellIndex maps cellKey → Set<routeKey>, so we can find which routes pass through this cell
+    // Iterating Set directly is safe — we only modify routeIndex, not routeCellIndex.
     const routeKeys = this.routeCellIndex.get(cellKey);
     if (routeKeys) {
-      for (const routeKey of [...routeKeys]) {
+      for (const routeKey of routeKeys) {
         this.routeIndex.delete(routeKey);
       }
     }
@@ -116,7 +120,7 @@ export class CommuteCache {
     if (route) {
       this.removeCellIndexEntries(citizenId, route);
       if (route.status === 'ready') {
-        for (const key of this.deriveRouteKeys(route)) this.decrementRefCount(key);
+        this.adjustRefCounts(route, -1);
       }
     }
     this.cache.delete(citizenId);
@@ -188,14 +192,12 @@ export class CommuteCache {
 
   // ── Internal ──
 
+  /** Collect unique cells from a route's paths into the reusable Set (caller must not hold reference). */
   private collectRouteCells(route: CachedRoute): Set<string> {
-    const cells = new Set<string>();
-    if (route.morningPath) {
-      for (const c of collectEdgeCells(route.morningPath)) cells.add(c);
-    }
-    if (route.eveningPath) {
-      for (const c of collectEdgeCells(route.eveningPath)) cells.add(c);
-    }
+    const cells = this.reusableCellSet;
+    cells.clear();
+    if (route.morningPath) collectEdgeCells(route.morningPath, cells);
+    if (route.eveningPath) collectEdgeCells(route.eveningPath, cells);
     return cells;
   }
 
@@ -224,30 +226,23 @@ export class CommuteCache {
     }
   }
 
-  /** Derive routeKeys (home→work, work→home) from a cached route's non-null paths. */
-  private deriveRouteKeys(route: CachedRoute): string[] {
-    const keys: string[] = [];
+  /** Adjust ref counts for a route's keys inline (no array allocation).
+   *  delta = +1 for increment, -1 for decrement. */
+  private adjustRefCounts(route: CachedRoute, delta: number): void {
     if (route.morningPath && route.morningPath.length > 0) {
-      keys.push(`${route.homeId}->${route.workplaceId}`);
+      this.applyRefDelta(`${route.homeId}->${route.workplaceId}`, delta);
     }
     if (route.eveningPath && route.eveningPath.length > 0) {
-      keys.push(`${route.workplaceId}->${route.homeId}`);
+      this.applyRefDelta(`${route.workplaceId}->${route.homeId}`, delta);
     }
-    return keys;
   }
 
-  private incrementRefCount(routeKey: string): void {
-    this.routeRefCount.set(routeKey, (this.routeRefCount.get(routeKey) ?? 0) + 1);
-  }
-
-  private decrementRefCount(routeKey: string): void {
-    const count = this.routeRefCount.get(routeKey);
-    if (count !== undefined) {
-      if (count <= 1) {
-        this.routeRefCount.delete(routeKey);
-      } else {
-        this.routeRefCount.set(routeKey, count - 1);
-      }
+  private applyRefDelta(routeKey: string, delta: number): void {
+    const count = (this.routeRefCount.get(routeKey) ?? 0) + delta;
+    if (count <= 0) {
+      this.routeRefCount.delete(routeKey);
+    } else {
+      this.routeRefCount.set(routeKey, count);
     }
   }
 

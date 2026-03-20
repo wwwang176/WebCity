@@ -255,3 +255,36 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
     expect(result.emigrated).toBeGreaterThanOrEqual(0);
   });
 });
+
+describe('migrationTick — emigration+attrition no duplicate removal', () => {
+  it('emigratedIds should contain no duplicates', () => {
+    const mgr = new CitizenManager();
+    for (let i = 0; i < 500; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+    const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };
+    const result = migrationTick(mgr, badCity, 500);
+    const unique = new Set(result.emigratedIds);
+    expect(unique.size).toBe(result.emigratedIds.length);
+  });
+
+  it('population after emigration matches emigrated count', () => {
+    const mgr = new CitizenManager();
+    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+    const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };
+    const result = migrationTick(mgr, badCity, 200);
+    expect(mgr.getPopulation()).toBe(200 - result.emigrated);
+  });
+
+  it('emigratedIds only contains IDs that were actually in the population', () => {
+    const mgr = new CitizenManager();
+    const ids: number[] = [];
+    for (let i = 0; i < 100; i++) {
+      const c = mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+      ids.push(c.id);
+    }
+    const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };
+    const result = migrationTick(mgr, badCity, 100);
+    for (const eid of result.emigratedIds) {
+      expect(ids).toContain(eid);
+    }
+  });
+});

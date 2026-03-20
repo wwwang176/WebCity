@@ -275,16 +275,20 @@ export function migrationTick(
   }
 
   // Emigration — citizens leave when happiness < personal emigrationTolerance
+  // Iterate directly — no spread copy needed since we defer removal to the end.
   const emigrationRate = IMMIGRATION.EMIGRATION_MIN_RATE +
     Math.random() * (IMMIGRATION.EMIGRATION_MAX_RATE - IMMIGRATION.EMIGRATION_MIN_RATE);
   const base = Math.floor(Math.random() * (IMMIGRATION.EMIGRATION_BASE_MAX + 1));
   const emigrationCap = base + Math.floor(pop * emigrationRate);
-  for (const citizen of [...manager.getCitizens()]) {
-    if (emigratedIds.length >= emigrationCap) break;
+  const toRemove = new Set<number>();
+  const citizens = manager.getCitizens();
+  for (let i = 0; i < citizens.length; i++) {
+    if (toRemove.size >= emigrationCap) break;
+    const citizen = citizens[i]!;
     const threshold = citizen.emigrationTolerance ?? IMMIGRATION.EMIGRATION_HAPPINESS_THRESHOLD;
     if (citizen.happiness < threshold) {
       emigratedIds.push(citizen.id);
-      manager.removeCitizen(citizen.id);
+      toRemove.add(citizen.id);
     }
   }
 
@@ -297,15 +301,28 @@ export function migrationTick(
   // Probabilistic rounding: fractional part becomes chance of +1
   const attritionCount = Math.floor(expected) + (Math.random() < (expected % 1) ? 1 : 0);
   if (attritionCount > 0) {
-    const candidates = manager.getCitizens().filter(c => !emigratedIds.includes(c.id));
-    for (let i = 0; i < attritionCount && candidates.length > 0; i++) {
-      const idx = randomInt(candidates.length);
-      const citizen = candidates[idx]!;
-      emigratedIds.push(citizen.id);
-      manager.removeCitizen(citizen.id);
-      candidates.splice(idx, 1);
+    // Rejection sampling — pick random non-emigrated citizens. NATURAL_ATTRITION_CAP=5 so few attempts.
+    const totalCitizens = citizens.length;
+    const available = totalCitizens - toRemove.size;
+    if (available > 0) {
+      let remaining = Math.min(attritionCount, available);
+      let attempts = 0;
+      const maxAttempts = remaining * 20;
+      while (remaining > 0 && attempts < maxAttempts) {
+        const idx = randomInt(totalCitizens);
+        const citizen = citizens[idx]!;
+        if (!toRemove.has(citizen.id)) {
+          emigratedIds.push(citizen.id);
+          toRemove.add(citizen.id);
+          remaining--;
+        }
+        attempts++;
+      }
     }
   }
+
+  // Single batch removal — no intermediate array copies
+  if (toRemove.size > 0) manager.removeCitizens(toRemove);
 
   return { immigrated, emigrated: emigratedIds.length, emigratedIds };
 }

@@ -35,6 +35,8 @@ export class LevelCrossingRenderer {
 
   private lightMeshesL: THREE.Mesh[] = [];
   private lightMeshesR: THREE.Mesh[] = [];
+  /** Reusable Map for crossing state lookup (avoids per-frame allocation). */
+  private readonly _stateMap = new Map<string, CrossingState>();
 
   /** Per-crossing metadata for animation. */
   private crossingData: Array<{
@@ -167,7 +169,8 @@ export class LevelCrossingRenderer {
   update(elapsedTime: number, crossings: readonly LevelCrossing[]): void {
     if (this.crossingData.length === 0) return;
 
-    const stateMap = new Map<string, CrossingState>();
+    const stateMap = this._stateMap;
+    stateMap.clear();
     for (const c of crossings) {
       stateMap.set(`${c.x},${c.y}`, c.state);
     }

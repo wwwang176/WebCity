@@ -8,6 +8,7 @@ export class GridCursor {
   private sizeW = 1;
   private sizeH = 1;
   private centered = false;
+  private readonly _intersection = new THREE.Vector3();
   gridX = 0;
   gridY = 0;
 
@@ -46,7 +47,7 @@ export class GridCursor {
   }
 
   update(raycaster: THREE.Raycaster, groundPlane: THREE.Plane): void {
-    const intersection = new THREE.Vector3();
+    const intersection = this._intersection;
     raycaster.ray.intersectPlane(groundPlane, intersection);
 
     if (intersection) {

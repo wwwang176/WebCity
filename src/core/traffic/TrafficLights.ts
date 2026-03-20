@@ -74,6 +74,11 @@ export class TrafficLightSystem {
     return [...this.lights.values()];
   }
 
+  /** Iterate lights without array allocation (for per-frame rendering). */
+  values(): IterableIterator<TrafficLight> {
+    return this.lights.values();
+  }
+
   clear(): void {
     this.lights.clear();
   }

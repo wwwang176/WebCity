@@ -222,6 +222,75 @@ describe('CitizenManager', () => {
   });
 });
 
+describe('removeCitizen in-place', () => {
+  it('should remove citizen without creating a new array reference', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 100 });
+    const c2 = mgr.createCitizen({ age: 100 });
+    mgr.createCitizen({ age: 100 });
+    const arrBefore = mgr.getCitizens();
+    mgr.removeCitizen(c2.id);
+    // After removal, getCitizens() should still return the same backing array
+    expect(mgr.getCitizens()).toBe(arrBefore);
+    expect(mgr.getPopulation()).toBe(2);
+    expect(mgr.getCitizen(c2.id)).toBeUndefined();
+  });
+
+  it('should handle removing last citizen', () => {
+    const mgr = new CitizenManager();
+    const c = mgr.createCitizen({ age: 100 });
+    mgr.removeCitizen(c.id);
+    expect(mgr.getPopulation()).toBe(0);
+  });
+
+  it('should handle removing non-existent id gracefully', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 100 });
+    mgr.removeCitizen(9999);
+    expect(mgr.getPopulation()).toBe(1);
+  });
+});
+
+describe('removeCitizens batch', () => {
+  it('should remove multiple citizens in a single pass', () => {
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 100 });
+    const c2 = mgr.createCitizen({ age: 100 });
+    const c3 = mgr.createCitizen({ age: 100 });
+    const c4 = mgr.createCitizen({ age: 100 });
+    mgr.removeCitizens(new Set([c1.id, c3.id]));
+    expect(mgr.getPopulation()).toBe(2);
+    expect(mgr.getCitizen(c1.id)).toBeUndefined();
+    expect(mgr.getCitizen(c2.id)).toBeDefined();
+    expect(mgr.getCitizen(c3.id)).toBeUndefined();
+    expect(mgr.getCitizen(c4.id)).toBeDefined();
+  });
+
+  it('should not create a new array reference', () => {
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 100 });
+    mgr.createCitizen({ age: 100 });
+    const arrBefore = mgr.getCitizens();
+    mgr.removeCitizens(new Set([c1.id]));
+    expect(mgr.getCitizens()).toBe(arrBefore);
+  });
+
+  it('should handle empty set', () => {
+    const mgr = new CitizenManager();
+    mgr.createCitizen({ age: 100 });
+    mgr.removeCitizens(new Set());
+    expect(mgr.getPopulation()).toBe(1);
+  });
+
+  it('should handle removing all citizens', () => {
+    const mgr = new CitizenManager();
+    const c1 = mgr.createCitizen({ age: 100 });
+    const c2 = mgr.createCitizen({ age: 100 });
+    mgr.removeCitizens(new Set([c1.id, c2.id]));
+    expect(mgr.getPopulation()).toBe(0);
+  });
+});
+
 describe('evictBuilding', () => {
   it('should nullify homeId for citizens living at demolished position', () => {
     const mgr = new CitizenManager();

@@ -68,6 +68,22 @@ export class MetroTunnelRenderer {
   // Track line topology for change detection
   private lineTopologyHash = new Map<number, string>();
 
+  // Cached tunnel meshes per line (avoid per-frame rebuild)
+  private lineTunnelMeshes = new Map<number, THREE.Mesh[]>();
+
+  // Cached station meshes (avoid per-frame rebuild)
+  private stationMeshes: THREE.Mesh[] = [];
+  private stationHash = '';
+
+  // Last opacity applied (for material-only updates)
+  private lastOpacity = -1;
+
+  // Reusable per-frame objects
+  private readonly _color = new THREE.Color(TRAIN_COLOR);
+  private readonly _rotation = new THREE.Matrix4();
+  private readonly _translation = new THREE.Matrix4();
+  private readonly _matrix = new THREE.Matrix4();
+
   constructor() {
     this.tunnelGroup = new THREE.Group();
     this.tunnelGroup.visible = false;
@@ -98,48 +114,51 @@ export class MetroTunnelRenderer {
     opacity: number,
     dt: number,
   ): void {
-    // 清除舊幾何（保留 carriageMesh）
-    const children = [...this.tunnelGroup.children];
-    for (const child of children) {
-      if (child === this.carriageMesh) continue;
-      this.tunnelGroup.remove(child);
-      if (child instanceof THREE.Mesh) {
-        child.geometry.dispose();
-        if (child.material instanceof THREE.Material) child.material.dispose();
-      }
-    }
-
     this.tunnelGroup.visible = opacity > 0;
     if (opacity <= 0) {
       if (this.carriageMesh) this.carriageMesh.count = 0;
       return;
     }
 
-    // Build tunnel tubes and update line render paths
+    // Build/update tunnel tubes (only rebuilds changed lines)
     this.rebuildTunnels(lines, opacity);
 
-    // Station spheres
-    this.buildStationSpheres(stations, opacity);
+    // Build/update station spheres (only rebuilds when stations change)
+    this.updateStationSpheres(stations, opacity);
+
+    // Update opacity on all cached meshes if changed
+    if (opacity !== this.lastOpacity) {
+      this.lastOpacity = opacity;
+      this.updateAllMeshOpacity(opacity);
+    }
 
     // Advance and render train animation
     this.updateTrainAnimation(dt, lines);
   }
 
   private rebuildTunnels(lines: MetroLineData[], opacity: number): void {
+    const activeLineIds = new Set<number>();
+
     for (const lineData of lines) {
+      activeLineIds.add(lineData.lineId);
+
       // Check if topology changed
       const hash = lineData.stops.map(s => `${s.x},${s.y}`).join('|');
       const needsRebuild = this.lineTopologyHash.get(lineData.lineId) !== hash;
 
-      if (needsRebuild) {
-        this.lineTopologyHash.set(lineData.lineId, hash);
-        this.rebuildLineRenderPath(lineData);
-      }
+      if (!needsRebuild) continue;
 
-      // Always rebuild tunnel geometry (since we clear children each frame)
+      this.lineTopologyHash.set(lineData.lineId, hash);
+      this.rebuildLineRenderPath(lineData);
+
+      // Dispose old tunnel meshes for this line
+      this.disposeLineTunnelMeshes(lineData.lineId);
+
+      // Build new tunnel geometry
       const renderPath = this.lineRenderPaths.get(lineData.lineId);
       if (!renderPath) continue;
 
+      const meshes: THREE.Mesh[] = [];
       for (const curve of renderPath.curves) {
         // Outer shell
         const outerGeo = new THREE.TubeGeometry(curve, TUNNEL_SEGMENTS, TUNNEL_RADIUS, 8, false);
@@ -153,6 +172,7 @@ export class MetroTunnelRenderer {
         const outerMesh = new THREE.Mesh(outerGeo, outerMat);
         outerMesh.renderOrder = 10;
         this.tunnelGroup.add(outerMesh);
+        meshes.push(outerMesh);
 
         // Inner core
         const innerGeo = new THREE.TubeGeometry(curve, TUNNEL_SEGMENTS, TUNNEL_RADIUS * 0.4, 6, false);
@@ -164,16 +184,31 @@ export class MetroTunnelRenderer {
         const innerMesh = new THREE.Mesh(innerGeo, innerMat);
         innerMesh.renderOrder = 11;
         this.tunnelGroup.add(innerMesh);
+        meshes.push(innerMesh);
       }
+      this.lineTunnelMeshes.set(lineData.lineId, meshes);
+      this.lastOpacity = opacity;
     }
 
     // Clean up removed lines
-    const activeLineIds = new Set(lines.map(l => l.lineId));
     for (const lineId of this.lineRenderPaths.keys()) {
       if (!activeLineIds.has(lineId)) {
+        this.disposeLineTunnelMeshes(lineId);
         this.lineRenderPaths.delete(lineId);
         this.lineTopologyHash.delete(lineId);
       }
+    }
+  }
+
+  private disposeLineTunnelMeshes(lineId: number): void {
+    const meshes = this.lineTunnelMeshes.get(lineId);
+    if (meshes) {
+      for (const mesh of meshes) {
+        this.tunnelGroup.remove(mesh);
+        mesh.geometry.dispose();
+        if (mesh.material instanceof THREE.Material) mesh.material.dispose();
+      }
+      this.lineTunnelMeshes.delete(lineId);
     }
   }
 
@@ -227,7 +262,22 @@ export class MetroTunnelRenderer {
     }
   }
 
-  private buildStationSpheres(stations: readonly TransportStop[], opacity: number): void {
+  private updateStationSpheres(stations: readonly TransportStop[], opacity: number): void {
+    // Compute station hash for change detection
+    let hash = `${stations.length}`;
+    for (const s of stations) hash += `:${s.x},${s.y}`;
+    if (hash === this.stationHash) return;
+    this.stationHash = hash;
+
+    // Dispose old station meshes
+    for (const mesh of this.stationMeshes) {
+      this.tunnelGroup.remove(mesh);
+      mesh.geometry.dispose();
+      if (mesh.material instanceof THREE.Material) mesh.material.dispose();
+    }
+    this.stationMeshes.length = 0;
+
+    // Build new station meshes
     for (const station of stations) {
       const geo = new THREE.SphereGeometry(STATION_RADIUS, 12, 8);
       const mat = new THREE.MeshBasicMaterial({
@@ -239,6 +289,7 @@ export class MetroTunnelRenderer {
       mesh.position.set(station.x, TUNNEL_Y, station.y);
       mesh.renderOrder = 12;
       this.tunnelGroup.add(mesh);
+      this.stationMeshes.push(mesh);
 
       const glowGeo = new THREE.SphereGeometry(STATION_RADIUS * 1.5, 10, 6);
       const glowMat = new THREE.MeshBasicMaterial({
@@ -251,6 +302,22 @@ export class MetroTunnelRenderer {
       glowMesh.position.set(station.x, TUNNEL_Y, station.y);
       glowMesh.renderOrder = 9;
       this.tunnelGroup.add(glowMesh);
+      this.stationMeshes.push(glowMesh);
+    }
+    this.lastOpacity = opacity;
+  }
+
+  /** Update opacity on all cached tunnel + station meshes (no geometry rebuild). */
+  private updateAllMeshOpacity(opacity: number): void {
+    for (const meshes of this.lineTunnelMeshes.values()) {
+      for (let i = 0; i < meshes.length; i++) {
+        const mat = meshes[i]!.material as THREE.MeshBasicMaterial;
+        mat.opacity = (i % 2 === 0) ? opacity * 0.6 : opacity * 0.9;
+      }
+    }
+    for (let i = 0; i < this.stationMeshes.length; i++) {
+      const mat = this.stationMeshes[i]!.material as THREE.MeshBasicMaterial;
+      mat.opacity = (i % 2 === 0) ? opacity * 0.85 : opacity * 0.2;
     }
   }
 
@@ -303,10 +370,10 @@ export class MetroTunnelRenderer {
     }
 
     // Advance all trains and render carriages
-    const color = new THREE.Color(TRAIN_COLOR);
-    const rotation = new THREE.Matrix4();
-    const translation = new THREE.Matrix4();
-    const matrix = new THREE.Matrix4();
+    const color = this._color;
+    const rotation = this._rotation;
+    const translation = this._translation;
+    const matrix = this._matrix;
 
     let instanceIdx = 0;
 
@@ -388,6 +455,22 @@ export class MetroTunnelRenderer {
   }
 
   dispose(): void {
+    // Dispose all cached tunnel meshes
+    for (const lineId of this.lineTunnelMeshes.keys()) {
+      this.disposeLineTunnelMeshes(lineId);
+    }
+
+    // Dispose cached station meshes
+    for (const mesh of this.stationMeshes) {
+      this.tunnelGroup.remove(mesh);
+      mesh.geometry.dispose();
+      if (mesh.material instanceof THREE.Material) mesh.material.dispose();
+    }
+    this.stationMeshes.length = 0;
+    this.stationHash = '';
+    this.lastOpacity = -1;
+
+    // Dispose any remaining children (carriageMesh, etc.)
     while (this.tunnelGroup.children.length > 0) {
       const child = this.tunnelGroup.children[0]!;
       this.tunnelGroup.remove(child);
@@ -404,6 +487,7 @@ export class MetroTunnelRenderer {
     this.lineRenderPaths.clear();
     this.trainStates.clear();
     this.lineTopologyHash.clear();
+    this.lineTunnelMeshes.clear();
   }
 
   /** 返回當前渲染的隧道段數量 + 站點球體數量（用於測試） */

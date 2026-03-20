@@ -1,6 +1,6 @@
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
-import { interpolateEdgePosition, interpolateEdgeTangent } from './EdgeInterpolation';
+import { interpolateEdgePosition, interpolateEdgeTangent, interpolateEdgePositionInto, interpolateEdgeTangentInto } from './EdgeInterpolation';
 import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
 import { pickWeighted } from '../utils/random';
 
@@ -106,6 +106,14 @@ export class TrafficSimulation {
   private cellDensity = new Map<string, number>();
   /** Predicted congestion flow (path count per cell), set by SimulationLoop periodically. */
   private predictedFlow: Map<string, number> | null = null;
+  /** Reusable scratch array for active vehicles (avoids per-frame allocation). */
+  private activeVehicleScratch: Vehicle[] = [];
+  /** Reusable edge index map (cleared each frame instead of re-allocated). */
+  private edgeIndexMap = new Map<string, EdgeEntry[]>();
+  /** Reusable output objects for per-vehicle position/heading (avoid per-call allocation). */
+  private readonly _posOut = { x: 0, y: 0 };
+  private readonly _tanOut = { x: 0, y: 0 };
+  private readonly _headingOut = { hx: 0, hy: 0 };
 
 
   /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg).
@@ -152,11 +160,16 @@ export class TrafficSimulation {
     return -1;
   }
 
-  /** Remove all bus vehicles belonging to a specific route. */
+  /** Remove all bus vehicles belonging to a specific route (in-place compaction). */
   removeBusVehicles(routeId: number): void {
-    this.vehicles = this.vehicles.filter(
-      v => !(v.busState && v.busState.routeId === routeId),
-    );
+    let write = 0;
+    for (let read = 0; read < this.vehicles.length; read++) {
+      const v = this.vehicles[read]!;
+      if (!(v.busState && v.busState.routeId === routeId)) {
+        this.vehicles[write++] = v;
+      }
+    }
+    this.vehicles.length = write;
   }
 
   /** Add a service vehicle (police car, fire truck, ambulance, garbage truck) on a LaneEdge path. */
@@ -182,27 +195,46 @@ export class TrafficSimulation {
     return vehicle;
   }
 
-  /** Remove all service vehicles of a given type. */
+  /** Remove all service vehicles of a given type (in-place compaction). */
   removeServiceVehicles(serviceType: ServiceVehicleType): void {
-    this.vehicles = this.vehicles.filter(v => v.serviceType !== serviceType);
+    let write = 0;
+    for (let read = 0; read < this.vehicles.length; read++) {
+      if (this.vehicles[read]!.serviceType !== serviceType) {
+        this.vehicles[write++] = this.vehicles[read]!;
+      }
+    }
+    this.vehicles.length = write;
   }
 
-  /** Remove vehicles by their IDs. */
+  /** Remove vehicles by their IDs (in-place compaction). */
   removeVehiclesByIds(ids: Set<number>): void {
-    this.vehicles = this.vehicles.filter(v => !ids.has(v.id));
+    let write = 0;
+    for (let read = 0; read < this.vehicles.length; read++) {
+      if (!ids.has(this.vehicles[read]!.id)) {
+        this.vehicles[write++] = this.vehicles[read]!;
+      }
+    }
+    this.vehicles.length = write;
   }
 
   /** Get IDs of all currently active vehicles. */
+  /** Reusable Set for getActiveVehicleIds — caller must not hold reference across frames. */
+  private _activeIdSet = new Set<number>();
+
   getActiveVehicleIds(): Set<number> {
-    return new Set(this.vehicles.map(v => v.id));
+    const set = this._activeIdSet;
+    set.clear();
+    for (const v of this.vehicles) set.add(v.id);
+    return set;
   }
 
   /** Count service vehicles, optionally filtered by type. */
   getServiceVehicleCount(serviceType?: ServiceVehicleType): number {
-    if (serviceType) {
-      return this.vehicles.filter(v => v.serviceType === serviceType).length;
+    let count = 0;
+    for (const v of this.vehicles) {
+      if (serviceType ? v.serviceType === serviceType : v.serviceType !== undefined) count++;
     }
-    return this.vehicles.filter(v => v.serviceType !== undefined).length;
+    return count;
   }
 
   /** Add a vehicle that follows a LaneEdge path. */
@@ -242,11 +274,15 @@ export class TrafficSimulation {
   ): void {
     const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT } = TRAFFIC;
 
-    // Collect active vehicles
-    const edgeVehicles = this.vehicles.filter(v => v.edgePath.length > 0 && !v.arrived);
+    // Collect active vehicles into reusable scratch array (no per-frame allocation)
+    const edgeVehicles = this.activeVehicleScratch;
+    edgeVehicles.length = 0;
+    for (const v of this.vehicles) {
+      if (v.edgePath.length > 0 && !v.arrived) edgeVehicles.push(v);
+    }
     if (edgeVehicles.length === 0) {
-      // Still clean up arrived vehicles
-      this.vehicles = this.vehicles.filter(v => !v.arrived);
+      // Still clean up arrived vehicles (in-place compaction)
+      this.compactVehicles();
       return;
     }
 
@@ -260,8 +296,9 @@ export class TrafficSimulation {
     });
 
     // Build edge index: edgeId → list of { vehicleId, progress, halfLen }
-    // This allows O(1) lookup of vehicles on any given edge.
-    const edgeIndex = new Map<string, EdgeEntry[]>();
+    // Reuse persistent Map (clear instead of re-allocate each frame).
+    const edgeIndex = this.edgeIndexMap;
+    edgeIndex.clear();
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
       const ep = v.edgePath;
@@ -376,8 +413,8 @@ export class TrafficSimulation {
       }
     }
 
-    // Remove arrived vehicles
-    this.vehicles = this.vehicles.filter(v => !v.arrived);
+    // Remove arrived vehicles (in-place compaction)
+    this.compactVehicles();
 
     // Rebuild cell density map from all active vehicles
     this.cellDensity.clear();
@@ -390,6 +427,17 @@ export class TrafficSimulation {
     }
   }
 
+  /** Remove arrived vehicles from the vehicles array in-place. */
+  private compactVehicles(): void {
+    let write = 0;
+    for (let read = 0; read < this.vehicles.length; read++) {
+      if (!this.vehicles[read]!.arrived) {
+        this.vehicles[write++] = this.vehicles[read]!;
+      }
+    }
+    this.vehicles.length = write;
+  }
+
   /** Total distance traveled along edge path (for sorting). */
   private edgeTotalProgress(v: Vehicle): number {
     let total = 0;
@@ -399,18 +447,19 @@ export class TrafficSimulation {
     return total + v.edgeProgress;
   }
 
-  /** World position for a vehicle. */
+  /** World position for a vehicle (writes to reusable object — caller must read immediately). */
   getVehiclePositionOnEdges(v: Vehicle): { x: number; y: number } | null {
     if (v.edgePath.length === 0) return null;
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx]!;
     const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-    return interpolateEdgePosition(edge, t);
+    interpolateEdgePositionInto(edge, t, this._posOut);
+    return this._posOut;
   }
 
   /** Heading angle (radians) for a vehicle. 0 = east. */
   getVehicleHeadingOnEdges(v: Vehicle): number {
-    const h = this.edgeHeadingVec(v);
+    const h = this.edgeHeadingVecInto(v);
     // Negate Y to match Three.js convention: game +Y = south, Three.js +Z = south
     return Math.atan2(-h.hy, h.hx);
   }
@@ -451,16 +500,18 @@ export class TrafficSimulation {
     return { x, y, heading };
   }
 
-  /** Unit heading vector for a vehicle. */
-  private edgeHeadingVec(v: Vehicle): { hx: number; hy: number } {
-    if (v.edgePath.length === 0) return { hx: 1, hy: 0 };
+  /** Unit heading vector for a vehicle (writes to reusable object). */
+  private edgeHeadingVecInto(v: Vehicle): { hx: number; hy: number } {
+    const out = this._headingOut;
+    if (v.edgePath.length === 0) { out.hx = 1; out.hy = 0; return out; }
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx]!;
     const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-    const tan = interpolateEdgeTangent(edge, t);
-    const len = Math.sqrt(tan.x * tan.x + tan.y * tan.y);
-    if (len > 0) return { hx: tan.x / len, hy: tan.y / len };
-    return { hx: 1, hy: 0 };
+    interpolateEdgeTangentInto(edge, t, this._tanOut);
+    const len = Math.sqrt(this._tanOut.x * this._tanOut.x + this._tanOut.y * this._tanOut.y);
+    if (len > 0) { out.hx = this._tanOut.x / len; out.hy = this._tanOut.y / len; }
+    else { out.hx = 1; out.hy = 0; }
+    return out;
   }
 
   // ── Stats (for overlays / UI) ──

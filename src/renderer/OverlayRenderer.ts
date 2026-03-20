@@ -6,6 +6,7 @@ export type OverlayType = 'none' | 'traffic' | 'landValue' | 'pollution' | 'crim
 export class OverlayRenderer {
   private mesh: THREE.Mesh | null = null;
   private currentOverlay: OverlayType = 'none';
+  private readonly _reusableColor = new THREE.Color();
 
   getOverlay(): OverlayType {
     return this.currentOverlay;
@@ -55,45 +56,45 @@ export class OverlayRenderer {
     scene.add(this.mesh);
   }
 
+  /** Returns a reusable Color — caller must read r/g/b before calling again. */
   private getColor(type: OverlayType, value: number): THREE.Color {
+    const c = this._reusableColor;
     switch (type) {
       case 'traffic':
-        return new THREE.Color().setHSL(0.33 - value * 0.33, 0.8, 0.5); // Green to red
+        return c.setHSL(0.33 - value * 0.33, 0.8, 0.5); // Green to red
       case 'landValue':
-        return new THREE.Color().setHSL(0.6 - value * 0.6, 0.7, 0.5); // Blue to red
+        return c.setHSL(0.6 - value * 0.6, 0.7, 0.5); // Blue to red
       case 'pollution':
-        return new THREE.Color(value, value * 0.3, 0); // Dark brown/orange
+        return c.setRGB(value, value * 0.3, 0); // Dark brown/orange
       case 'crime':
-        return new THREE.Color(value, 0, value * 0.5); // Purple
+        return c.setRGB(value, 0, value * 0.5); // Purple
       case 'power':
-        // 3-state: green (powered, ≥0.8) → yellow (underpowered, ~0.3) → red (no coverage but has building, >0)
-        if (value >= 0.8) return new THREE.Color(0.2, 0.9, 0.3); // green: powered
-        if (value >= 0.3) return new THREE.Color(1.0, 0.8, 0.1); // yellow: in range but supply insufficient
-        if (value > 0) return new THREE.Color(0.9, 0.2, 0.15); // red: building with no power coverage
-        return new THREE.Color(0, 0, 0); // empty land: invisible (dark)
+        if (value >= 0.8) return c.setRGB(0.2, 0.9, 0.3);
+        if (value >= 0.3) return c.setRGB(1.0, 0.8, 0.1);
+        if (value > 0) return c.setRGB(0.9, 0.2, 0.15);
+        return c.setRGB(0, 0, 0);
       case 'water':
-        // 4-band: bright blue (supplied) → yellow (undersupplied) → red (no coverage) → deep blue (groundwater)
-        if (value >= 0.8) return new THREE.Color(0.1, 0.5, 0.9); // bright blue: supplied
-        if (value >= 0.3) return new THREE.Color(1.0, 0.8, 0.1); // yellow: in range but undersupplied
-        if (value >= 0.1) return new THREE.Color(0.9, 0.2, 0.15); // red: building with no water
-        if (value > 0) return new THREE.Color(0.0, 0.1 + value * 3, 0.3 + value * 5); // deep blue gradient: groundwater
-        return new THREE.Color(0, 0, 0); // empty land
+        if (value >= 0.8) return c.setRGB(0.1, 0.5, 0.9);
+        if (value >= 0.3) return c.setRGB(1.0, 0.8, 0.1);
+        if (value >= 0.1) return c.setRGB(0.9, 0.2, 0.15);
+        if (value > 0) return c.setRGB(0.0, 0.1 + value * 3, 0.3 + value * 5);
+        return c.setRGB(0, 0, 0);
       case 'zone':
-        return new THREE.Color(value * 0.5, value, value * 0.3); // Green-ish
+        return c.setRGB(value * 0.5, value, value * 0.3);
       case 'police':
-        return new THREE.Color(0.2, 0.3, value); // Blue
+        return c.setRGB(0.2, 0.3, value);
       case 'fire':
-        return new THREE.Color(value, 0.15, 0.1); // Red
+        return c.setRGB(value, 0.15, 0.1);
       case 'health':
-        return new THREE.Color(value, 0.1, 0.4); // Pink
+        return c.setRGB(value, 0.1, 0.4);
       case 'education':
-        return new THREE.Color(0.4, 0.3, value * 0.6); // Brown
+        return c.setRGB(0.4, 0.3, value * 0.6);
       case 'park':
-        return new THREE.Color(0.1, value, 0.2); // Green
+        return c.setRGB(0.1, value, 0.2);
       case 'garbage':
-        return new THREE.Color(value * 0.5, value * 0.4, 0.1); // Olive
+        return c.setRGB(value * 0.5, value * 0.4, 0.1);
       default:
-        return new THREE.Color(0.5, 0.5, 0.5);
+        return c.setRGB(0.5, 0.5, 0.5);
     }
   }
 

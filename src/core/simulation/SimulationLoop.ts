@@ -160,6 +160,13 @@ export class SimulationLoop {
   private tripAggMap = new Map<string, AggregatedTrip>();
   private pendingTrips: AggregatedTrip[] = [];
 
+  /** Reusable Set for infrastructure positions (power/water plants). */
+  private infraPositions = new Set<string>();
+  /** Reusable scratch array for working-age citizens. */
+  private workingAgeScratch: Citizen[] = [];
+  /** Reusable Set for congestion flow cell collection. */
+  private flowCellSet = new Set<string>();
+
   /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
   occupancyRatios: Map<string, number> = new Map();
 
@@ -226,14 +233,14 @@ export class SimulationLoop {
 
     // 3. Services (power/water coverage) — every 6 ticks
     if (isSlowTick) {
-      const infraPositions = new Set<string>();
-      for (const p of this.state.power.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
-      for (const p of this.state.water.getPlants()) infraPositions.add(toPosKey(p.x, p.y));
+      this.infraPositions.clear();
+      for (const p of this.state.power.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
+      for (const p of this.state.water.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
       // Calculate demand before coverage so supplyRatio is available for budget-drain
       this.state.power.calculateDemand(this.state.grid);
-      this.state.power.calculateCoverage(this.state.grid, infraPositions);
+      this.state.power.calculateCoverage(this.state.grid, this.infraPositions);
       this.state.water.calculateDemand(this.state.grid);
-      this.state.water.calculateCoverage(this.state.grid, infraPositions);
+      this.state.water.calculateCoverage(this.state.grid, this.infraPositions);
     }
 
     // 3.5 Civic services tick (every 6 ticks) — OCP: adding services only requires ServiceRegistry update
@@ -501,12 +508,17 @@ export class SimulationLoop {
     const avgHappiness = pop > 0
       ? this.state.citizens.getAverageHappiness()
       : SIMULATION.DEFAULT_HAPPINESS;
-    // Calculate unemployment rate: fraction of working-age citizens without a job
+    // Calculate unemployment rate inline (no filter arrays)
     const citizens = this.state.citizens.getCitizens();
-    const workingAge = citizens.filter(c => isWorkingAge(c.age));
-    const unemploymentRate = workingAge.length > 0
-      ? workingAge.filter(c => c.workplaceId === null).length / workingAge.length
-      : 0;
+    let workingAgeCount = 0;
+    let unemployedCount = 0;
+    for (const c of citizens) {
+      if (isWorkingAge(c.age)) {
+        workingAgeCount++;
+        if (c.workplaceId === null) unemployedCount++;
+      }
+    }
+    const unemploymentRate = workingAgeCount > 0 ? unemployedCount / workingAgeCount : 0;
 
     // Calculate workplace zone ratios for education-weighted immigration
     const totalWorkplaces = countWorkplaceJobs(this.state.grid) || 1;
@@ -967,7 +979,12 @@ export class SimulationLoop {
 
     // Assign workplaces first (housing scoring needs workplaceId for commute)
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
-    const workingAgeCitizens = citizens.filter((c) => isWorkingAge(c.age));
+    // Reuse scratch array for working-age citizens (avoid per-tick filter allocation)
+    const workingAgeCitizens = this.workingAgeScratch;
+    workingAgeCitizens.length = 0;
+    for (const c of citizens) {
+      if (isWorkingAge(c.age)) workingAgeCitizens.push(c);
+    }
 
     // Trigger async cache update if stale
     if (this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
@@ -1596,9 +1613,12 @@ export class SimulationLoop {
 
     // Primary: use cached routes with refCounts — O(routes × avg path length), zero A*
     let totalRoutedCitizens = 0;
+    const cellSet = this.flowCellSet;
     this.commuteCache.forEachRouteWithRefCount((path, refCount) => {
       totalRoutedCitizens += refCount;
-      for (const cellKey of collectEdgeCells(path)) {
+      cellSet.clear();
+      collectEdgeCells(path, cellSet);
+      for (const cellKey of cellSet) {
         flowMap.set(cellKey, (flowMap.get(cellKey) ?? 0) + refCount);
       }
     });
@@ -1670,7 +1690,8 @@ export class SimulationLoop {
         if (existing) {
           existing.count += t.count;
         } else {
-          this.tripAggMap.set(key, { ...t });
+          // Reuse the trip object from pendingTrips instead of spreading
+          this.tripAggMap.set(key, t);
         }
       }
       // Build trips array from map values directly

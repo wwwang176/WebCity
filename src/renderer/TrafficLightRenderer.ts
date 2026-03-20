@@ -12,6 +12,10 @@ export class TrafficLightRenderer {
   private readonly maxLights = 2000; // 500 intersections × 4 indicators
   private lightCount = 0;
   private lightData: { x: number; z: number; isNS: boolean }[] = [];
+  // Reusable per-frame colors
+  private readonly _color = new THREE.Color();
+  private readonly _green = new THREE.Color(0x00cc44);
+  private readonly _red = new THREE.Color(0xdd2200);
 
   build(scene: THREE.Scene, lights: TrafficLight[]): void {
     this.dispose(scene);
@@ -75,12 +79,12 @@ export class TrafficLightRenderer {
    * Update light colors based on current traffic light phases.
    * Call this every frame or every tick.
    */
-  update(lights: TrafficLight[]): void {
+  update(lights: Iterable<TrafficLight>): void {
     if (!this.lightMesh || this.lightCount === 0) return;
 
-    const color = new THREE.Color();
-    const GREEN = new THREE.Color(0x00cc44);
-    const RED = new THREE.Color(0xdd2200);
+    const color = this._color;
+    const GREEN = this._green;
+    const RED = this._red;
 
     let idx = 0;
     for (const light of lights) {
