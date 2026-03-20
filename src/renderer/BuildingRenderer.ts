@@ -903,9 +903,20 @@ export class BuildingRenderer {
   private _rotation = new THREE.Matrix4();
   private _color = new THREE.Color();
 
+  /** Cached building meshes array (invalidated on build/dispose). */
+  private _buildingMeshesCache: (THREE.InstancedMesh | THREE.Mesh)[] = [];
+  private _buildingMeshesDirty = true;
+
   /** Expose building meshes for highlight tinting (read-only). */
   get buildingMeshes(): readonly (THREE.InstancedMesh | THREE.Mesh)[] {
-    return [...this.variantMeshes.values(), ...this.overlayMeshes];
+    if (this._buildingMeshesDirty) {
+      this._buildingMeshesDirty = false;
+      const arr = this._buildingMeshesCache;
+      arr.length = 0;
+      for (const m of this.variantMeshes.values()) arr.push(m);
+      for (const m of this.overlayMeshes) arr.push(m);
+    }
+    return this._buildingMeshesCache;
   }
 
   /** Expose infrastructure groups for highlight tinting (read-only). */
@@ -3094,6 +3105,7 @@ export class BuildingRenderer {
       else (mat as THREE.Material).dispose();
     }
     this.overlayMeshes = [];
+    this._buildingMeshesDirty = true;
 
     for (const group of this.infraGroups) {
       scene.remove(group);

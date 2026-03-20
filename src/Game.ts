@@ -1403,13 +1403,17 @@ export class Game {
     return cells;
   }
 
+  /** Reusable highlight meshes array (sub-renderers cache their own, we just merge). */
+  private _highlightMeshesScratch: (THREE.InstancedMesh | THREE.Mesh)[] = [];
+
   /** Collect all InstancedMeshes that support highlight (buildings + roads + tracks). */
   private getAllHighlightMeshes(): readonly (THREE.InstancedMesh | THREE.Mesh)[] {
-    return [
-      ...this.buildingRenderer.buildingMeshes,
-      ...this.roadRenderer.highlightMeshes,
-      ...this.trackRenderer.highlightMeshes,
-    ];
+    const arr = this._highlightMeshesScratch;
+    arr.length = 0;
+    for (const m of this.buildingRenderer.buildingMeshes) arr.push(m);
+    for (const m of this.roadRenderer.highlightMeshes) arr.push(m);
+    for (const m of this.trackRenderer.highlightMeshes) arr.push(m);
+    return arr;
   }
 
   private updatePlacementPreview(): void {

@@ -334,9 +334,19 @@ export class TrackRenderer {
   }
 
   /** All InstancedMeshes with highlight support (for HighlightManager). */
+  private _highlightCache: THREE.InstancedMesh[] = [];
+  private _highlightDirty = true;
+
   get highlightMeshes(): readonly THREE.InstancedMesh[] {
-    return [this.railMesh, this.tieMesh, this.ballastMesh]
-      .filter((m): m is THREE.InstancedMesh => m !== null);
+    if (this._highlightDirty) {
+      this._highlightDirty = false;
+      const arr = this._highlightCache;
+      arr.length = 0;
+      if (this.railMesh) arr.push(this.railMesh);
+      if (this.tieMesh) arr.push(this.tieMesh);
+      if (this.ballastMesh) arr.push(this.ballastMesh);
+    }
+    return this._highlightCache;
   }
 
   dispose(scene: THREE.Scene): void {
@@ -351,5 +361,6 @@ export class TrackRenderer {
     this.railMesh = null;
     this.tieMesh = null;
     this.ballastMesh = null;
+    this._highlightDirty = true;
   }
 }

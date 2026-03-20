@@ -614,11 +614,24 @@ export class RoadRenderer {
     this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
   }
 
+  /** Cached highlight meshes (invalidated on build/dispose). */
+  private _highlightCache: THREE.InstancedMesh[] = [];
+  private _highlightDirty = true;
+
   /** All InstancedMeshes with highlight support (for HighlightManager). */
   get highlightMeshes(): readonly THREE.InstancedMesh[] {
-    return [this.roadMesh, this.sidewalkMesh, this.markingMesh,
-      this.crosswalkMesh, this.stopLineMesh, this.lampMesh]
-      .filter((m): m is THREE.InstancedMesh => m !== null);
+    if (this._highlightDirty) {
+      this._highlightDirty = false;
+      const arr = this._highlightCache;
+      arr.length = 0;
+      if (this.roadMesh) arr.push(this.roadMesh);
+      if (this.sidewalkMesh) arr.push(this.sidewalkMesh);
+      if (this.markingMesh) arr.push(this.markingMesh);
+      if (this.crosswalkMesh) arr.push(this.crosswalkMesh);
+      if (this.stopLineMesh) arr.push(this.stopLineMesh);
+      if (this.lampMesh) arr.push(this.lampMesh);
+    }
+    return this._highlightCache;
   }
 
   dispose(scene: THREE.Scene): void {
@@ -641,5 +654,6 @@ export class RoadRenderer {
     this.lampMesh = null;
     this.lampGlowMesh = null;
     this.lampGlowMaterial = null;
+    this._highlightDirty = true;
   }
 }
