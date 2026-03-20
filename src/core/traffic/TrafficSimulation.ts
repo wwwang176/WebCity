@@ -2,6 +2,8 @@ import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
 import { interpolateEdgePosition, interpolateEdgeTangent, interpolateEdgePositionInto, interpolateEdgeTangentInto } from './EdgeInterpolation';
 import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
+import { SpatialHash, type SpatialEntry } from './SpatialHash';
+import { findCrossEdgeGap, CROSS_EDGE } from './CrossEdgeCollision';
 import { pickWeighted } from '../utils/random';
 
 export interface BusVehicleState {
@@ -17,6 +19,7 @@ export type ServiceVehicleType = 'police' | 'fire' | 'health' | 'garbage';
 export interface Vehicle {
   id: number;
   length: number;  // vehicle body length in world units
+  width: number;   // vehicle body width in world units
   arrived: boolean;
   lane: number;    // assigned lane (0-based), used for lateral offset on multi-lane roads
   edgePath: LaneEdge[];
@@ -32,7 +35,14 @@ export interface Vehicle {
 /** Bus dwell time at each stop (seconds). */
 export const BUS_DWELL_SECONDS = 2.0;
 
-/** Fixed vehicle lengths for service vehicles (matching renderer model sizes). */
+/** Fixed vehicle dimensions for service vehicles (matching renderer model sizes). */
+export const SERVICE_VEHICLE_DIMS: Record<ServiceVehicleType, { length: number; width: number }> = {
+  police: { length: 0.22, width: 0.09 },
+  fire: { length: 0.55, width: 0.125 },
+  health: { length: 0.30, width: 0.10 },
+  garbage: { length: 0.45, width: 0.125 },
+};
+/** @deprecated Use SERVICE_VEHICLE_DIMS instead. */
 export const SERVICE_VEHICLE_LENGTHS: Record<ServiceVehicleType, number> = {
   police: 0.22,
   fire: 0.55,
@@ -40,11 +50,11 @@ export const SERVICE_VEHICLE_LENGTHS: Record<ServiceVehicleType, number> = {
   garbage: 0.45,
 };
 
-/** Vehicle lengths matching renderer model sizes (bus removed — spawned by BusSystem) */
-const VEHICLE_LENGTHS = [
-  { weight: 0.75, length: 0.22 },  // car
-  { weight: 0.15, length: 0.26 },  // van
-  { weight: 0.10, length: 0.45 },  // truck
+/** Vehicle dimensions matching renderer model sizes (bus removed — spawned by BusSystem) */
+const VEHICLE_DIMS = [
+  { weight: 0.75, length: 0.22, width: 0.09 },   // car
+  { weight: 0.15, length: 0.26, width: 0.10 },   // van
+  { weight: 0.10, length: 0.45, width: 0.125 },  // truck
 ];
 
 /** Traffic simulation tuning constants */
@@ -110,6 +120,14 @@ export class TrafficSimulation {
   private activeVehicleScratch: Vehicle[] = [];
   /** Reusable edge index map (cleared each frame instead of re-allocated). */
   private edgeIndexMap = new Map<string, EdgeEntry[]>();
+  /** Reusable spatial hash for cross-edge collision detection. */
+  private spatialHash = new SpatialHash(CROSS_EDGE.CELL_SIZE);
+  /** Reusable array for spatial entries (object pool — grows to high-water mark). */
+  private spatialEntries: SpatialEntry[] = [];
+  /** Reusable vid → SpatialEntry map (cleared each frame). */
+  private vidToSpatialMap = new Map<number, SpatialEntry>();
+  /** Reusable scratch array for queryNearbyInto (avoids per-call allocation). */
+  private nearbyScratch: SpatialEntry[] = [];
   /** Reusable output objects for per-vehicle position/heading (avoid per-call allocation). */
   private readonly _posOut = { x: 0, y: 0 };
   private readonly _tanOut = { x: 0, y: 0 };
@@ -124,6 +142,7 @@ export class TrafficSimulation {
     const vehicle: Vehicle = {
       id: this.nextId++,
       length: 0.60,  // bus fixed length
+      width: 0.125,  // bus fixed width
       arrived: false,
       lane: seg[0]?.from.lane ?? 0,
       edgePath: seg,
@@ -176,7 +195,8 @@ export class TrafficSimulation {
   addServiceVehicle(edgePath: LaneEdge[], serviceType: ServiceVehicleType): Vehicle {
     const vehicle: Vehicle = {
       id: this.nextId++,
-      length: SERVICE_VEHICLE_LENGTHS[serviceType],
+      length: SERVICE_VEHICLE_DIMS[serviceType].length,
+      width: SERVICE_VEHICLE_DIMS[serviceType].width,
       arrived: false,
       lane: edgePath[0]?.from.lane ?? 0,
       edgePath,
@@ -239,11 +259,12 @@ export class TrafficSimulation {
 
   /** Add a vehicle that follows a LaneEdge path. */
   addVehicleOnEdges(edgePath: LaneEdge[]): Vehicle {
-    const len = pickWeighted(VEHICLE_LENGTHS, 1.0, e => e.weight).length;
+    const dims = pickWeighted(VEHICLE_DIMS, 1.0, e => e.weight);
 
     const vehicle: Vehicle = {
       id: this.nextId++,
-      length: len,
+      length: dims.length,
+      width: dims.width,
       arrived: false,
       lane: edgePath[0]?.from.lane ?? 0,
       edgePath,
@@ -309,6 +330,56 @@ export class TrafficSimulation {
       arr.push({ vid: v.id, progress: v.edgeProgress, halfLen: v.length / 2 });
     }
 
+    // Build spatial hash for cross-edge collision detection.
+    // Positions are computed once at frame start (read-only during processing).
+    // SpatialEntry objects are pooled: reuse existing slots, grow only when needed.
+    const spatialHash = this.spatialHash;
+    spatialHash.clear();
+    const spatialEntries = this.spatialEntries;
+    const _posTemp = { x: 0, y: 0 };
+    const _tanTemp = { x: 0, y: 0 };
+    let seCount = 0;
+    for (const v of edgeVehicles) {
+      if (v.arrived) continue;
+      const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+      const edge = v.edgePath[idx];
+      if (!edge) continue;
+      const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
+      interpolateEdgePositionInto(edge, t, _posTemp);
+      interpolateEdgeTangentInto(edge, t, _tanTemp);
+      const tanLen = Math.sqrt(_tanTemp.x * _tanTemp.x + _tanTemp.y * _tanTemp.y) || 1;
+      let se = spatialEntries[seCount];
+      if (se) {
+        se.vid = v.id;
+        se.x = _posTemp.x;
+        se.y = _posTemp.y;
+        se.hx = _tanTemp.x / tanLen;
+        se.hy = _tanTemp.y / tanLen;
+        se.halfLen = v.length / 2;
+        se.halfWidth = v.width / 2;
+        se.edgeId = edge.id;
+        se.toId = edge.to.id;
+        se.progressRatio = t;
+      } else {
+        se = {
+          vid: v.id,
+          x: _posTemp.x, y: _posTemp.y,
+          hx: _tanTemp.x / tanLen, hy: _tanTemp.y / tanLen,
+          halfLen: v.length / 2, halfWidth: v.width / 2,
+          edgeId: edge.id, toId: edge.to.id, progressRatio: t,
+        };
+        spatialEntries.push(se);
+      }
+      spatialHash.insert(se);
+      seCount++;
+    }
+    // Trim pool to active count (no dealloc — array capacity retained)
+    spatialEntries.length = seCount;
+    // Build vid → spatialEntry index (reuse persistent Map)
+    const vidToSpatial = this.vidToSpatialMap;
+    vidToSpatial.clear();
+    for (let i = 0; i < seCount; i++) vidToSpatial.set(spatialEntries[i]!.vid, spatialEntries[i]!);
+
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
 
@@ -332,6 +403,10 @@ export class TrafficSimulation {
       const gap = findGapAhead(v, ep, edgeIndex);
       const myHalfLen = v.length / 2;
 
+      // 1b. Gap to nearest vehicle on a DIFFERENT edge (cross-edge spatial check)
+      const mySpatial = vidToSpatial.get(v.id);
+      const crossGap = mySpatial ? findCrossEdgeGap(mySpatial, spatialHash, this.nearbyScratch) : Infinity;
+
       // 2. Distance to nearest red light on path
       const redLightDist = canAdvance
         ? findRedLightDistance(v, ep, canAdvance)
@@ -346,7 +421,7 @@ export class TrafficSimulation {
       // 4. Advance
       // If a vehicle ahead is closer than the red light, just follow it
       // (the front car is already stopped for the light — no need to double-stop).
-      const gapRoom = Math.max(0, gap - MIN_GAP);
+      const gapRoom = Math.max(0, Math.min(gap, crossGap) - MIN_GAP);
       const effectiveRedLight = gap < redLightDist ? Infinity : redLightDist;
       const room = Math.max(0, Math.min(gapRoom, effectiveRedLight));
       let moveDistance = Math.min(effectiveSpeed, room);
