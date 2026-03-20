@@ -7,7 +7,7 @@ export interface VehicleData {
   x: number;
   y: number;
   heading: number; // radians, 0 = facing +x (east)
-  type: 'car' | 'bus' | 'truck' | 'firetruck' | 'police_car' | 'ambulance' | 'garbage_truck' | 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry';
+  type: 'car' | 'van' | 'bus' | 'truck' | 'firetruck' | 'police_car' | 'ambulance' | 'garbage_truck' | 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry';
   laneOffset: number; // lateral offset perpendicular to heading (positive = right of heading)
 }
 
@@ -16,6 +16,16 @@ const CAR_COLORS = [
   0x8e24aa, 0x546e7a, 0xd4e157, 0xff8a65, 0x90a4ae,
   0x3949ab, 0x00897b, 0xc0ca33, 0x6d4c41, 0xffffff,
   0x263238, 0x1565c0, 0x4e342e,
+];
+
+/** Commercial / utility vehicle colors (trucks & vans). */
+const COMMERCIAL_COLORS = [
+  0xffffff, 0xeceff1, 0xcfd8dc,  // white / light grey (most common)
+  0x37474f, 0x263238,             // dark grey / charcoal
+  0x1565c0, 0x0d47a1,            // blue fleet
+  0xc62828, 0xbf360c,            // red / dark orange
+  0x2e7d32, 0x1b5e20,            // green
+  0xf9a825, 0xff8f00,            // yellow / amber
 ];
 
 // ── Renderer ─────────────────────────────────────────────────────────
@@ -164,9 +174,11 @@ export class VehicleRenderer {
         matrix.copy(translation).multiply(rotation);
         mesh.setMatrixAt(i, matrix);
 
-        // Color: cars get random per-ID color, others use config
+        // Color: cars get random car color, trucks/vans get random commercial color
         if (cfg && cfg.color === -1) {
-          color.set(CAR_COLORS[v.id % CAR_COLORS.length]!);
+          const palette = (type === 'truck' || type === 'van')
+            ? COMMERCIAL_COLORS : CAR_COLORS;
+          color.set(palette[v.id % palette.length]!);
         } else {
           color.set(cfg?.color ?? 0xd32f2f);
         }

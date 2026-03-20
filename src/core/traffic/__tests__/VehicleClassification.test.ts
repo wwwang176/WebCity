@@ -7,19 +7,19 @@ describe('classifyVehicleType', () => {
     expect(classifyVehicleType(0.60)).toBe('bus');
   });
 
-  it('classifies firetruck for length >= 0.50 and < 0.58', () => {
-    expect(classifyVehicleType(0.50)).toBe('firetruck');
-    expect(classifyVehicleType(0.57)).toBe('firetruck');
-  });
-
-  it('classifies truck for length >= 0.35 and < 0.50', () => {
+  it('classifies truck for length >= 0.35 and < 0.58', () => {
     expect(classifyVehicleType(0.35)).toBe('truck');
-    expect(classifyVehicleType(0.49)).toBe('truck');
+    expect(classifyVehicleType(0.57)).toBe('truck');
   });
 
-  it('classifies car for length < 0.35', () => {
+  it('classifies van for length >= 0.24 and < 0.35', () => {
+    expect(classifyVehicleType(0.24)).toBe('van');
+    expect(classifyVehicleType(0.34)).toBe('van');
+  });
+
+  it('classifies car for length < 0.24', () => {
     expect(classifyVehicleType(0.2)).toBe('car');
-    expect(classifyVehicleType(0.34)).toBe('car');
+    expect(classifyVehicleType(0.23)).toBe('car');
   });
 
   it('VEHICLE_TYPE_THRESHOLDS are sorted descending by threshold', () => {

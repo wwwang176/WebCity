@@ -7,6 +7,7 @@ import {
   buildPoliceCarGeometry,
   buildAmbulanceGeometry,
   buildGarbageTruckGeometry,
+  buildVanGeometry,
   buildTransportBusGeometry,
   buildRailTrainGeometry,
   buildRailCarriageGeometry,
@@ -24,7 +25,8 @@ export interface VehicleTypeConfig {
 export const VEHICLE_CONFIG: Record<string, VehicleTypeConfig> = {
   car:            { color: -1,       frontOffset: 0.12, rearOffset: 0.12, yPosition: 0.025, buildGeometry: buildCarGeometry },
   bus:            { color: 0xff9800, frontOffset: 0.30, rearOffset: 0.30, yPosition: 0.025, buildGeometry: buildBusGeometry },
-  truck:          { color: 0x78909c, frontOffset: 0.225, rearOffset: 0.225, yPosition: 0.025, buildGeometry: buildTruckGeometry },
+  van:            { color: -1,       frontOffset: 0.135, rearOffset: 0.135, yPosition: 0.025, buildGeometry: buildVanGeometry },
+  truck:          { color: -1,       frontOffset: 0.225, rearOffset: 0.225, yPosition: 0.025, buildGeometry: buildTruckGeometry },
   firetruck:      { color: 0xd32f2f, frontOffset: 0.275, rearOffset: 0.275, yPosition: 0.025, buildGeometry: buildFiretruckGeometry },
   police_car:     { color: 0x1a237e, frontOffset: 0.12, rearOffset: 0.12, yPosition: 0.025, buildGeometry: buildPoliceCarGeometry },
   ambulance:      { color: 0xffffff, frontOffset: 0.15, rearOffset: 0.15, yPosition: 0.025, buildGeometry: buildAmbulanceGeometry },

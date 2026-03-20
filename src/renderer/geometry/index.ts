@@ -7,6 +7,7 @@ export { buildFiretruckGeometry } from './firetruck';
 export { buildPoliceCarGeometry } from './policeCar';
 export { buildAmbulanceGeometry } from './ambulance';
 export { buildGarbageTruckGeometry } from './garbageTruck';
+export { buildVanGeometry } from './van';
 export { buildMetroTrainGeometry, buildMetroCarriageGeometry } from './metro';
 export { buildRailTrainGeometry, buildRailCarriageGeometry } from './railTrain';
 export { buildFerryGeometry } from './ferry';

@@ -42,9 +42,9 @@ export const SERVICE_VEHICLE_LENGTHS: Record<ServiceVehicleType, number> = {
 
 /** Vehicle lengths matching renderer model sizes (bus removed — spawned by BusSystem) */
 const VEHICLE_LENGTHS = [
-  { weight: 0.85, length: 0.22 },  // car
+  { weight: 0.75, length: 0.22 },  // car
+  { weight: 0.15, length: 0.26 },  // van
   { weight: 0.10, length: 0.45 },  // truck
-  { weight: 0.05, length: 0.55 },  // firetruck
 ];
 
 /** Traffic simulation tuning constants */
