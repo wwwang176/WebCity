@@ -4,7 +4,7 @@ import { settingsOpen, closeSettings } from '../components/SettingsMenu';
 import { listSaves } from '../../core/save/SaveManager';
 import { Modal } from './Modal';
 
-export function SettingsModal() {
+export function SettingsModal(props: { onOpenDebug?: () => void }) {
   const [saving, setSaving] = createSignal(false);
   const [showConfirm, setShowConfirm] = createSignal(false);
   const [showSaveDialog, setShowSaveDialog] = createSignal(false);
@@ -96,6 +96,14 @@ export function SettingsModal() {
           >
             <span class="settings-modal-icon">{'\uD83D\uDCCB'}</span>
             <span>Save As...</span>
+          </button>
+
+          <button
+            class="settings-modal-item"
+            onClick={() => { close(); props.onOpenDebug?.(); }}
+          >
+            <span class="settings-modal-icon">{'\uD83D\uDD27'}</span>
+            <span>Debug Tools</span>
           </button>
 
           <div class="settings-modal-divider" />

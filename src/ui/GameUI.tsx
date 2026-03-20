@@ -47,7 +47,7 @@ function GameUIRoot() {
       <DistrictModal open={openModal() === 'district'} onClose={closeModal} />
       <TransitModal open={openModal() === 'transit'} onClose={closeModal} />
       <DebugModal open={openModal() === 'debug'} onClose={closeModal} />
-      <SettingsModal />
+      <SettingsModal onOpenDebug={() => toggleModal('debug')} />
     </div>
   );
 }

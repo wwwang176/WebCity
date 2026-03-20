@@ -203,10 +203,6 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
         <span class="tb-icon">{'\u2B50'}</span>
         <span>Specialize</span>
       </button>
-      <button class="tb-action" onClick={() => props.onOpenModal('debug')} title="Developer Debug Tools">
-        <span class="tb-icon">{'\u{1F527}'}</span>
-        <span>Debug</span>
-      </button>
     </div>
   );
 }
