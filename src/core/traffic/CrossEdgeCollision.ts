@@ -18,16 +18,19 @@ export const CROSS_EDGE = {
  * Uses vehicle body dimensions (length × width) scaled by AABB_SCALE
  * to detect cross-edge merge conflicts at intersections.
  *
+ * @param scratch — reusable array for queryNearbyInto (avoids per-call allocation)
  * Returns Infinity if no cross-edge blocker is found.
  */
 export function findCrossEdgeGap(
   me: SpatialEntry,
   spatialHash: SpatialHash,
+  scratch: SpatialEntry[],
 ): number {
-  const nearby = spatialHash.queryNearby(me.x, me.y, CROSS_EDGE.CHECK_RADIUS);
+  spatialHash.queryNearbyInto(me.x, me.y, CROSS_EDGE.CHECK_RADIUS, scratch);
   let minGap = Infinity;
 
-  for (const other of nearby) {
+  for (let i = 0; i < scratch.length; i++) {
+    const other = scratch[i]!;
     // Skip self
     if (other.vid === me.vid) continue;
     // Skip vehicles on the same edge (already handled by findGapAhead)

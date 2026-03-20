@@ -3,6 +3,7 @@ import { SpatialHash, type SpatialEntry } from '../SpatialHash';
 import { findCrossEdgeGap, CROSS_EDGE } from '../CrossEdgeCollision';
 
 const S = CROSS_EDGE.AABB_SCALE; // 1.1
+const scratch: SpatialEntry[] = [];
 
 /** Default halfWidth=0.045 (car: width 0.09 / 2) */
 function entry(
@@ -25,28 +26,28 @@ describe('findCrossEdgeGap', () => {
   it('returns Infinity when no nearby vehicles', () => {
     const me = entry(1, 0, 0, 1, 0, 0.11, 'eA');
     const sh = buildHash([me]);
-    expect(findCrossEdgeGap(me, sh)).toBe(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBe(Infinity);
   });
 
   it('returns Infinity for vehicle on SAME edge', () => {
     const me = entry(5, 0, 0, 1, 0, 0.11, 'eA');
     const other = entry(2, 0.5, 0, 1, 0, 0.11, 'eA');
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBe(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBe(Infinity);
   });
 
   it('returns Infinity for vehicle on non-merging edge (different toId)', () => {
     const me = entry(5, 0, 0, 1, 0, 0.11, 'eA', 'westExit');
     const other = entry(2, 0.3, 0.05, 0, -1, 0.11, 'eB', 'eastExit');
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBe(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBe(Infinity);
   });
 
   it('returns Infinity for vehicle behind (negative forward projection)', () => {
     const me = entry(5, 1, 0, 1, 0, 0.11, 'eA', 'mp1', 0.3);
     const other = entry(2, 0, 0, 0, 1, 0.11, 'eB', 'mp1', 0.8);
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBe(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBe(Infinity);
   });
 
   it('returns Infinity for vehicle far laterally (exceeds combined half-widths)', () => {
@@ -55,14 +56,14 @@ describe('findCrossEdgeGap', () => {
     const me = entry(5, 0, 0, 1, 0, 0.11, 'eA', 'mp1', 0.3);
     const other = entry(2, 0.3, 0.15, 1, 0, 0.11, 'eB', 'mp1', 0.8);
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBe(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBe(Infinity);
   });
 
   it('returns Infinity for vehicle beyond check radius', () => {
     const me = entry(5, 0, 0, 1, 0, 0.11, 'eA', 'mp1', 0.3);
     const other = entry(2, 10, 0, 0, 1, 0.11, 'eB', 'mp1', 0.8);
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBe(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBe(Infinity);
   });
 
   // ── AABB with 1.1x scaling ──
@@ -71,7 +72,7 @@ describe('findCrossEdgeGap', () => {
     const me = entry(1, 0, 0, 1, 0, 0.11, 'eA', 'mp1', 0.3);
     const other = entry(2, 0.5, 0.03, 0, -1, 0.11, 'eB', 'mp1', 0.8);
     const sh = buildHash([me, other]);
-    const gap = findCrossEdgeGap(me, sh);
+    const gap = findCrossEdgeGap(me, sh, scratch);
     // forward=0.5, gap = 0.5 - (0.11 + 0.11) * 1.1 = 0.5 - 0.242 = 0.258
     expect(gap).toBeCloseTo(0.258, 2);
   });
@@ -82,7 +83,7 @@ describe('findCrossEdgeGap', () => {
     const me = entry(1, 0, 0, 1, 0, 0.11, 'eA', 'mp1', 0.3);
     const other = entry(2, 0.5, 0.08, 0, -1, 0.11, 'eB', 'mp1', 0.8);
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBeLessThan(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBeLessThan(Infinity);
   });
 
   it('wider vehicles have larger lateral threshold', () => {
@@ -91,7 +92,7 @@ describe('findCrossEdgeGap', () => {
     const me = entry(1, 0, 0, 1, 0, 0.30, 'eA', 'mp1', 0.3, 0.0625);
     const other = entry(2, 0.8, 0.12, 0, -1, 0.30, 'eB', 'mp1', 0.8, 0.0625);
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBeLessThan(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBeLessThan(Infinity);
   });
 
   // ── Progress ratio priority ──
@@ -100,14 +101,14 @@ describe('findCrossEdgeGap', () => {
     const me = entry(1, 0, 0, 1, 0, 0.11, 'eA', 'mp1', 0.3);
     const other = entry(2, 0.5, 0.03, 0, -1, 0.11, 'eB', 'mp1', 0.8);
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBeLessThan(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBeLessThan(Infinity);
   });
 
   it('higher-ratio vehicle ignores lower-ratio vehicle', () => {
     const me = entry(2, 0, 0, 1, 0, 0.11, 'eA', 'mp1', 0.8);
     const other = entry(1, 0.3, 0.03, 0, -1, 0.11, 'eB', 'mp1', 0.3);
     const sh = buildHash([me, other]);
-    expect(findCrossEdgeGap(me, sh)).toBe(Infinity);
+    expect(findCrossEdgeGap(me, sh, scratch)).toBe(Infinity);
   });
 
   it('equal ratio: lower ID has priority', () => {
@@ -115,15 +116,15 @@ describe('findCrossEdgeGap', () => {
     const high = entry(5, 0.3, 0.05, 0, -1, 0.11, 'eB', 'mp1', 0.5);
     const sh = buildHash([low, high]);
 
-    expect(findCrossEdgeGap(low, sh)).toBe(Infinity);
-    expect(findCrossEdgeGap(high, sh)).toBeLessThan(Infinity);
+    expect(findCrossEdgeGap(low, sh, scratch)).toBe(Infinity);
+    expect(findCrossEdgeGap(high, sh, scratch)).toBeLessThan(Infinity);
   });
 
   it('following vehicle (high ratio) not blocked by merging vehicle (low ratio)', () => {
     const B = entry(10, 0, 0, 1, 0, 0.11, 'eA', 'mp1', 0.7);
     const C = entry(3, -0.1, 0.3, 0.5, -0.5, 0.11, 'eB', 'mp1', 0.2);
     const sh = buildHash([B, C]);
-    expect(findCrossEdgeGap(B, sh)).toBe(Infinity);
+    expect(findCrossEdgeGap(B, sh, scratch)).toBe(Infinity);
   });
 
   it('picks closest blocking vehicle among merge siblings', () => {
@@ -131,7 +132,7 @@ describe('findCrossEdgeGap', () => {
     const near = entry(2, 0.4, 0.03, 0, -1, 0.11, 'eB', 'mp1', 0.9);
     const far = entry(3, 1.0, 0.03, 0, -1, 0.11, 'eC', 'mp1', 0.8);
     const sh = buildHash([me, near, far]);
-    const gap = findCrossEdgeGap(me, sh);
+    const gap = findCrossEdgeGap(me, sh, scratch);
     // nearest: forward=0.4, gap = 0.4 - (0.11+0.11)*1.1 = 0.4 - 0.242 = 0.158
     expect(gap).toBeCloseTo(0.158, 2);
   });

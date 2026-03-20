@@ -15,6 +15,9 @@ export interface SpatialEntry {
 /**
  * Simple 2D spatial hash grid for fast proximity queries.
  * Used to find nearby vehicles across different lane edges.
+ *
+ * Zero-alloc after warm-up: clear() retains allocated cell arrays,
+ * queryNearbyInto() writes into a caller-provided reusable array.
  */
 export class SpatialHash {
   private readonly cellSize: number;
@@ -26,8 +29,11 @@ export class SpatialHash {
     this.invCellSize = 1 / cellSize;
   }
 
+  /** Reset all cells for the next frame. Retains allocated arrays to avoid GC. */
   clear(): void {
-    this.cells.clear();
+    for (const arr of this.cells.values()) {
+      arr.length = 0;
+    }
   }
 
   insert(entry: SpatialEntry): void {
@@ -37,9 +43,9 @@ export class SpatialHash {
     arr.push(entry);
   }
 
-  /** Return all entries within `radius` of (qx, qy). */
-  queryNearby(qx: number, qy: number, radius: number): SpatialEntry[] {
-    const results: SpatialEntry[] = [];
+  /** Write all entries within `radius` of (qx, qy) into `out`. Returns entry count. */
+  queryNearbyInto(qx: number, qy: number, radius: number, out: SpatialEntry[]): number {
+    out.length = 0;
     const r2 = radius * radius;
     const minCx = Math.floor((qx - radius) * this.invCellSize);
     const maxCx = Math.floor((qx + radius) * this.invCellSize);
@@ -53,11 +59,11 @@ export class SpatialHash {
         for (const e of arr) {
           const dx = e.x - qx;
           const dy = e.y - qy;
-          if (dx * dx + dy * dy <= r2) results.push(e);
+          if (dx * dx + dy * dy <= r2) out.push(e);
         }
       }
     }
-    return results;
+    return out.length;
   }
 
   private key(x: number, y: number): number {

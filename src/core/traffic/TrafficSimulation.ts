@@ -122,8 +122,12 @@ export class TrafficSimulation {
   private edgeIndexMap = new Map<string, EdgeEntry[]>();
   /** Reusable spatial hash for cross-edge collision detection. */
   private spatialHash = new SpatialHash(CROSS_EDGE.CELL_SIZE);
-  /** Reusable array for spatial entries (avoids per-frame allocation). */
+  /** Reusable array for spatial entries (object pool — grows to high-water mark). */
   private spatialEntries: SpatialEntry[] = [];
+  /** Reusable vid → SpatialEntry map (cleared each frame). */
+  private vidToSpatialMap = new Map<number, SpatialEntry>();
+  /** Reusable scratch array for queryNearbyInto (avoids per-call allocation). */
+  private nearbyScratch: SpatialEntry[] = [];
   /** Reusable output objects for per-vehicle position/heading (avoid per-call allocation). */
   private readonly _posOut = { x: 0, y: 0 };
   private readonly _tanOut = { x: 0, y: 0 };
@@ -328,12 +332,13 @@ export class TrafficSimulation {
 
     // Build spatial hash for cross-edge collision detection.
     // Positions are computed once at frame start (read-only during processing).
+    // SpatialEntry objects are pooled: reuse existing slots, grow only when needed.
     const spatialHash = this.spatialHash;
     spatialHash.clear();
     const spatialEntries = this.spatialEntries;
-    spatialEntries.length = 0;
     const _posTemp = { x: 0, y: 0 };
     const _tanTemp = { x: 0, y: 0 };
+    let seCount = 0;
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
       const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
@@ -343,24 +348,37 @@ export class TrafficSimulation {
       interpolateEdgePositionInto(edge, t, _posTemp);
       interpolateEdgeTangentInto(edge, t, _tanTemp);
       const tanLen = Math.sqrt(_tanTemp.x * _tanTemp.x + _tanTemp.y * _tanTemp.y) || 1;
-      const se: SpatialEntry = {
-        vid: v.id,
-        x: _posTemp.x,
-        y: _posTemp.y,
-        hx: _tanTemp.x / tanLen,
-        hy: _tanTemp.y / tanLen,
-        halfLen: v.length / 2,
-        halfWidth: v.width / 2,
-        edgeId: edge.id,
-        toId: edge.to.id,
-        progressRatio: t,
-      };
-      spatialEntries.push(se);
+      let se = spatialEntries[seCount];
+      if (se) {
+        se.vid = v.id;
+        se.x = _posTemp.x;
+        se.y = _posTemp.y;
+        se.hx = _tanTemp.x / tanLen;
+        se.hy = _tanTemp.y / tanLen;
+        se.halfLen = v.length / 2;
+        se.halfWidth = v.width / 2;
+        se.edgeId = edge.id;
+        se.toId = edge.to.id;
+        se.progressRatio = t;
+      } else {
+        se = {
+          vid: v.id,
+          x: _posTemp.x, y: _posTemp.y,
+          hx: _tanTemp.x / tanLen, hy: _tanTemp.y / tanLen,
+          halfLen: v.length / 2, halfWidth: v.width / 2,
+          edgeId: edge.id, toId: edge.to.id, progressRatio: t,
+        };
+        spatialEntries.push(se);
+      }
       spatialHash.insert(se);
+      seCount++;
     }
-    // Build vid → spatialEntry index for O(1) lookup during per-vehicle processing
-    const vidToSpatial = new Map<number, SpatialEntry>();
-    for (const se of spatialEntries) vidToSpatial.set(se.vid, se);
+    // Trim pool to active count (no dealloc — array capacity retained)
+    spatialEntries.length = seCount;
+    // Build vid → spatialEntry index (reuse persistent Map)
+    const vidToSpatial = this.vidToSpatialMap;
+    vidToSpatial.clear();
+    for (let i = 0; i < seCount; i++) vidToSpatial.set(spatialEntries[i]!.vid, spatialEntries[i]!);
 
     for (const v of edgeVehicles) {
       if (v.arrived) continue;
@@ -387,7 +405,7 @@ export class TrafficSimulation {
 
       // 1b. Gap to nearest vehicle on a DIFFERENT edge (cross-edge spatial check)
       const mySpatial = vidToSpatial.get(v.id);
-      const crossGap = mySpatial ? findCrossEdgeGap(mySpatial, spatialHash) : Infinity;
+      const crossGap = mySpatial ? findCrossEdgeGap(mySpatial, spatialHash, this.nearbyScratch) : Infinity;
 
       // 2. Distance to nearest red light on path
       const redLightDist = canAdvance
