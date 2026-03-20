@@ -23,6 +23,10 @@ export class SceneManager {
   private cameraTarget = new THREE.Vector3(0, 0, 0);
   private cameraElevation = Math.PI / 6; // 30 degrees
 
+  // Reusable vectors for panCamera (avoid per-call allocation)
+  private readonly _panForward = new THREE.Vector3();
+  private readonly _panRight = new THREE.Vector3();
+
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x87ceeb); // Sky blue
@@ -120,10 +124,10 @@ export class SceneManager {
   }
 
   panCamera(dx: number, dz: number): void {
-    const forward = new THREE.Vector3(Math.cos(this.cameraAngle), 0, Math.sin(this.cameraAngle));
-    const right = new THREE.Vector3(Math.sin(this.cameraAngle), 0, -Math.cos(this.cameraAngle));
-    this.cameraTarget.addScaledVector(right, dx);
-    this.cameraTarget.addScaledVector(forward, dz);
+    this._panForward.set(Math.cos(this.cameraAngle), 0, Math.sin(this.cameraAngle));
+    this._panRight.set(Math.sin(this.cameraAngle), 0, -Math.cos(this.cameraAngle));
+    this.cameraTarget.addScaledVector(this._panRight, dx);
+    this.cameraTarget.addScaledVector(this._panForward, dz);
     // Clamp camera target to map bounds with small margin
     const margin = 10;
     this.cameraTarget.x = Math.max(-margin, Math.min(60 + margin, this.cameraTarget.x));
