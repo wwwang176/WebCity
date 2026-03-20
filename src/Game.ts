@@ -1048,21 +1048,26 @@ export class Game {
     if (!this.paused) {
       const scaledDt = dt * this.speed;
       const canAdvance = (cur: string, next: string) => {
-        const [cx, cy] = cur.split(',').map(Number);
-        const [nx, ny] = next.split(',').map(Number);
+        // Inline parse "x,y" without split/map array allocation
+        const ci = cur.indexOf(',');
+        const cx = Number(cur.slice(0, ci));
+        const cy = Number(cur.slice(ci + 1));
+        const ni = next.indexOf(',');
+        const nx = Number(next.slice(0, ni));
+        const ny = Number(next.slice(ni + 1));
         // Transparent intersection edges skip the intersection cell (from→far-side).
         // Infer the intersection at the midpoint and check its traffic light / crossing.
-        const dx = Math.abs(nx! - cx!), dy = Math.abs(ny! - cy!);
+        const dx = Math.abs(nx - cx), dy = Math.abs(ny - cy);
         if (dx + dy === 2) {
-          const ix = (cx! + nx!) / 2;
-          const iy = (cy! + ny!) / 2;
+          const ix = (cx + nx) / 2;
+          const iy = (cy + ny) / 2;
           if (Number.isInteger(ix) && Number.isInteger(iy)) {
-            if (!this.state.trafficLights.canPass(cx!, cy!, ix, iy)) return false;
+            if (!this.state.trafficLights.canPass(cx, cy, ix, iy)) return false;
             if (this.levelCrossingSystem.isCrossingBlocked(ix, iy)) return false;
           }
         }
-        if (!this.state.trafficLights.canPass(cx!, cy!, nx!, ny!)) return false;
-        if (this.levelCrossingSystem.isCrossingBlocked(nx!, ny!)) return false;
+        if (!this.state.trafficLights.canPass(cx, cy, nx, ny)) return false;
+        if (this.levelCrossingSystem.isCrossingBlocked(nx, ny)) return false;
         return true;
       };
       this.state.trafficLights.tick(scaledDt);
