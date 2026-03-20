@@ -264,18 +264,19 @@ void main() {
   float winBrightness = 1.0;
 
   // Read real lights from Three.js uniforms (set by lights_pars_begin)
-  float ambient = (ambientLightColor.r + ambientLightColor.g + ambientLightColor.b) / 3.0;
   #if NUM_DIR_LIGHTS > 0
     vec3 sunDir = normalize(directionalLights[0].direction);
-    float sunIntensity = length(directionalLights[0].color);
+    vec3 sunColor = directionalLights[0].color;
+    float sunIntensity = length(sunColor);
   #else
     vec3 sunDir = normalize(vec3(0.5, 0.8, 0.3));
+    vec3 sunColor = vec3(1.0);
     float sunIntensity = 1.0;
   #endif
   float sunDiff = max(dot(n, sunDir), 0.0);
   vec3 fillDir = normalize(vec3(-0.6, 0.3, -0.4));
   float fillDiff = max(dot(n, fillDir), 0.0);
-  float lighting = max(0.08, ambient * 0.7) + (0.45 * sunDiff + 0.13 * fillDiff) * sunIntensity;
+  vec3 lighting = max(vec3(0.08), ambientLightColor * 0.7) + (0.45 * sunDiff + 0.13 * fillDiff) * sunColor;
 
   bool isFoliage = vPartType > 0.35 && vPartType < 0.65;
   bool isRoof = vPartType > 0.8 || (n.y > 0.85 && vPartType < 0.1);
@@ -558,7 +559,7 @@ void main() {
     // Nighttime: only lit windows show warm yellow glow
     if (isLitWindow) {
       vec3 warmGlow = vec3(0.95, 0.85, 0.5);
-      color = mix(color, warmGlow * 0.9 * winBrightness, nightFactor * 0.7);
+      color = mix(color, warmGlow * 1.35 * winBrightness, nightFactor * 0.7);
     }
   }
 
@@ -2952,7 +2953,7 @@ export class BuildingRenderer {
       this.lightSpotMaterial.opacity = 0;
       return;
     }
-    this.lightSpotMaterial.opacity = Math.max(0, 0.4 * (1 - sunIntensity / 0.3));
+    this.lightSpotMaterial.opacity = Math.max(0, 0.4 * (1 - sunIntensity / 0.45));
   }
 
   private _focusMode = false;

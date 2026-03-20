@@ -578,7 +578,7 @@ export class RoadRenderer {
       this.lampGlowMaterial.opacity = 0;
       return;
     }
-    this.lampGlowMaterial.opacity = Math.max(0, 0.5 * (1 - sunIntensity / 0.3));
+    this.lampGlowMaterial.opacity = Math.max(0, 0.75 * (1 - sunIntensity / 0.45));
   }
 
   setViewMode(mode: ViewMode): void {

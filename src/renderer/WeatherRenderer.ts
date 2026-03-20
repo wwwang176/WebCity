@@ -45,14 +45,14 @@ export class WeatherRenderer {
 
   // Colour keyframes — reusable (avoids 15 new Color() per frame)
   private readonly _nightSky   = new THREE.Color(0x0a0a2e);
-  private readonly _sunriseSky = new THREE.Color(0xff9966);
+  private readonly _sunriseSky = new THREE.Color(0x8899cc);
   private readonly _sunsetSky  = new THREE.Color(0xff4422);
   private readonly _ambNight   = new THREE.Color(0x2244aa);
-  private readonly _ambSunrise = new THREE.Color(0xffd4a0);
+  private readonly _ambSunrise = new THREE.Color(0x99aacc);
   private readonly _ambDay     = new THREE.Color(0xfff8f0);
   private readonly _ambSunset  = new THREE.Color(0xffaa66);
   private readonly _dirNight   = new THREE.Color(0x3355aa);
-  private readonly _dirSunrise = new THREE.Color(0xff8833);
+  private readonly _dirSunrise = new THREE.Color(0xccaaff);
   private readonly _dirDay     = new THREE.Color(0xfffff0);
   private readonly _dirSunset  = new THREE.Color(0xff5522);
   private readonly _hemiNight  = new THREE.Color(0x111122);
@@ -134,7 +134,7 @@ export class WeatherRenderer {
     const SS_END   = 0.88; // sunset → night complete (extended for slower decay)
 
     // ── Brightness: 6-segment ramp matching colour keyframes ──
-    const NIGHT_FLOOR = 0.15;
+    const NIGHT_FLOOR = 0.225;
     const PEAK_BRIGHTNESS = 0.6;
     let brightness: number;
     if (t < SR_START || t >= SS_END) {

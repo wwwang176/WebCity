@@ -218,8 +218,8 @@ export class VehicleRenderer {
       } else {
         // Control opacity based on sun intensity
         const sun = sunIntensity ?? 1;
-        const hlOpacity = Math.max(0, 0.4 * (1 - sun / 0.3));
-        const tlOpacity = Math.max(0, 0.25 * (1 - sun / 0.3));
+        const hlOpacity = Math.max(0, 0.6 * (1 - sun / 0.8));
+        const tlOpacity = Math.max(0, 0.375 * (1 - sun / 0.8));
         if (this.headlightMaterial) this.headlightMaterial.opacity = hlOpacity;
         if (this.taillightMaterial) this.taillightMaterial.opacity = tlOpacity;
       }
