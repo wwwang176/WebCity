@@ -447,6 +447,11 @@ export class Game {
     const canvas = this.sceneManager.getCanvas();
 
     canvas.addEventListener('mousemove', (e) => {
+      // Middle-button drag → orbit camera
+      if (e.buttons & 4) {
+        this.sceneManager.orbitCamera(e.movementX * 0.005, e.movementY * 0.005);
+        return;
+      }
       // Space + left-button drag → pan camera
       if (this.spacePanning && (e.buttons & 1)) {
         const scale = (this.sceneManager.camera.top - this.sceneManager.camera.bottom) / canvas.clientHeight;

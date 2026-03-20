@@ -22,6 +22,8 @@ export class SceneManager {
   private cameraDistance = 50;
   private cameraTarget = new THREE.Vector3(0, 0, 0);
   private cameraElevation = Math.PI / 6; // 30 degrees
+  private targetCameraElevation = Math.PI / 6;
+  private static readonly DEFAULT_ELEVATION = Math.PI / 6;
 
   // Reusable vectors for panCamera (avoid per-call allocation)
   private readonly _panForward = new THREE.Vector3();
@@ -142,7 +144,24 @@ export class SceneManager {
   }
 
   rotateCamera(deltaAngle: number): void {
-    this.targetCameraAngle += deltaAngle;
+    // Snap to nearest 45° increment in the given direction
+    const step = Math.PI / 4;
+    const current = this.cameraAngle;
+    const snapped = deltaAngle > 0
+      ? Math.ceil((current + 0.01) / step) * step
+      : Math.floor((current - 0.01) / step) * step;
+    this.targetCameraAngle = snapped;
+    // Also reset elevation to default
+    this.targetCameraElevation = SceneManager.DEFAULT_ELEVATION;
+  }
+
+  /** Immediate rotation + elevation change (middle-mouse drag). */
+  orbitCamera(deltaAngle: number, deltaElevation: number): void {
+    this.cameraAngle += deltaAngle;
+    this.targetCameraAngle = this.cameraAngle;
+    this.cameraElevation = Math.max(Math.PI / 18, Math.min(Math.PI * 4 / 9, this.cameraElevation + deltaElevation));
+    this.targetCameraElevation = this.cameraElevation;
+    this.updateCameraPosition();
   }
 
   zoomCamera(delta: number): void {
@@ -190,11 +209,13 @@ export class SceneManager {
       this.animationId = requestAnimationFrame(animate);
       const dt = (time - this.lastTime) / 1000;
       this.lastTime = time;
-      // Smoothly interpolate camera rotation
+      // Smoothly interpolate camera rotation and elevation
       const angleDiff = this.targetCameraAngle - this.cameraAngle;
-      if (Math.abs(angleDiff) > 0.001) {
+      const elevDiff = this.targetCameraElevation - this.cameraElevation;
+      if (Math.abs(angleDiff) > 0.001 || Math.abs(elevDiff) > 0.001) {
         const speed = 8; // higher = faster transition
         this.cameraAngle += angleDiff * Math.min(1, speed * dt);
+        this.cameraElevation += elevDiff * Math.min(1, speed * dt);
         this.updateCameraPosition();
       }
       for (const cb of this.callbacks) cb(dt);
