@@ -9,6 +9,8 @@ export function SettingsModal(props: { onOpenDebug?: () => void }) {
   const [showConfirm, setShowConfirm] = createSignal(false);
   const [showSaveDialog, setShowSaveDialog] = createSignal(false);
   const [saveName, setSaveName] = createSignal('');
+  const [sfxOff, setSfxOff] = createSignal(false);
+  const [musicOff, setMusicOff] = createSignal(false);
 
   const close = () => {
     closeSettings();
@@ -97,6 +99,26 @@ export function SettingsModal(props: { onOpenDebug?: () => void }) {
             <span class="settings-modal-icon">{'\uD83D\uDCCB'}</span>
             <span>Save As...</span>
           </button>
+
+          <div class="settings-modal-divider" />
+
+          <button
+            class="settings-modal-item"
+            onClick={() => { setSfxOff(getGame().getAudioManager().toggleSfxMute()); }}
+          >
+            <span class="settings-modal-icon">{sfxOff() ? '\uD83D\uDD07' : '\uD83D\uDD0A'}</span>
+            <span>Sound Effects: {sfxOff() ? 'OFF' : 'ON'}</span>
+          </button>
+
+          <button
+            class="settings-modal-item"
+            onClick={() => { setMusicOff(getGame().getAudioManager().toggleMusicMute()); }}
+          >
+            <span class="settings-modal-icon">{musicOff() ? '\uD83D\uDD07' : '\uD83C\uDFB5'}</span>
+            <span>Music: {musicOff() ? 'OFF' : 'ON'}</span>
+          </button>
+
+          <div class="settings-modal-divider" />
 
           <button
             class="settings-modal-item"

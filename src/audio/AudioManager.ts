@@ -6,6 +6,8 @@ export class AudioManager {
   private musicVolume = 0.3;
   private sfxVolume = 0.7;
   private muted = false;
+  private sfxMuted = false;
+  private musicMuted = false;
   private bgmOscillators: OscillatorNode[] = [];
   private bgmGainNode: GainNode | null = null;
   private bgmPlaying = false;
@@ -48,7 +50,7 @@ export class AudioManager {
 
     // Create a master gain for BGM
     this.bgmGainNode = ctx.createGain();
-    this.bgmGainNode.gain.value = this.muted ? 0 : bgmVolume;
+    this.bgmGainNode.gain.value = (this.muted || this.musicMuted) ? 0 : bgmVolume;
     this.bgmGainNode.connect(ctx.destination);
 
     let chordIndex = 0;
@@ -112,7 +114,7 @@ export class AudioManager {
   }
 
   playSfx(type: SoundType): void {
-    if (this.muted) return;
+    if (this.muted || this.sfxMuted) return;
     const ctx = this.getContext();
     if (!ctx) return;
 
@@ -185,7 +187,7 @@ export class AudioManager {
 
     // Master ambient gain
     this.ambientGainNode = ctx.createGain();
-    this.ambientGainNode.gain.value = this.muted ? 0 : this.masterVolume * 0.04;
+    this.ambientGainNode.gain.value = (this.muted || this.musicMuted) ? 0 : this.masterVolume * 0.04;
     this.ambientGainNode.connect(ctx.destination);
 
     // City ambient noise (brown noise via filtered white noise)
@@ -193,14 +195,14 @@ export class AudioManager {
 
     // Bird chirps (random interval)
     this.birdIntervalId = setInterval(() => {
-      if (this.muted || !this.ambientPlaying) return;
+      if (this.muted || this.musicMuted || !this.ambientPlaying) return;
       // Only chirp during daytime (we don't track time here, so always play but randomly)
       if (Math.random() < 0.3) this.playBirdChirp(ctx);
     }, 3000 + Math.random() * 4000);
 
     // Traffic hum (periodic based on vehicle count)
     this.trafficIntervalId = setInterval(() => {
-      if (this.muted || !this.ambientPlaying) return;
+      if (this.muted || this.musicMuted || !this.ambientPlaying) return;
       if (this.ambientVehicles > 5) this.playTrafficHum(ctx);
     }, 5000);
   }
@@ -230,7 +232,7 @@ export class AudioManager {
     this.ambientVehicles = vehicleCount;
 
     // Adjust ambient noise volume based on city size
-    if (this.ambientGainNode && !this.muted) {
+    if (this.ambientGainNode && !this.muted && !this.musicMuted) {
       const popFactor = Math.min(1, population / 1000); // 0-1 based on pop up to 1000
       this.ambientGainNode.gain.value = this.masterVolume * 0.04 * (0.3 + popFactor * 0.7);
     }
@@ -330,18 +332,40 @@ export class AudioManager {
 
   toggleMute(): boolean {
     this.muted = !this.muted;
-    // Update BGM volume based on mute state
-    if (this.bgmGainNode) {
-      this.bgmGainNode.gain.value = this.muted ? 0 : this.masterVolume * this.musicVolume * 0.08;
-    }
-    // Update ambient volume based on mute state
-    if (this.ambientGainNode) {
-      this.ambientGainNode.gain.value = this.muted ? 0 : this.masterVolume * 0.04;
-    }
+    this.applyMusicGain();
     return this.muted;
+  }
+
+  toggleSfxMute(): boolean {
+    this.sfxMuted = !this.sfxMuted;
+    return this.sfxMuted;
+  }
+
+  toggleMusicMute(): boolean {
+    this.musicMuted = !this.musicMuted;
+    this.applyMusicGain();
+    return this.musicMuted;
+  }
+
+  private applyMusicGain(): void {
+    const off = this.muted || this.musicMuted;
+    if (this.bgmGainNode) {
+      this.bgmGainNode.gain.value = off ? 0 : this.masterVolume * this.musicVolume * 0.08;
+    }
+    if (this.ambientGainNode) {
+      this.ambientGainNode.gain.value = off ? 0 : this.masterVolume * 0.04;
+    }
   }
 
   isMuted(): boolean {
     return this.muted;
+  }
+
+  isSfxMuted(): boolean {
+    return this.sfxMuted;
+  }
+
+  isMusicMuted(): boolean {
+    return this.musicMuted;
   }
 }
