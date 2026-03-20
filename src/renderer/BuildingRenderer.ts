@@ -1166,11 +1166,19 @@ export class BuildingRenderer {
     this.buildLightSpots(scene, lightPositions);
   }
 
+  private static readonly ZONE_GROUND_COLORS: Record<number, number> = {
+    [ZoneType.RESIDENTIAL_LOW]: 0x66bb6a,
+    [ZoneType.RESIDENTIAL_HIGH]: 0x2e7d32,
+    [ZoneType.COMMERCIAL_LOW]: 0x42a5f5,
+    [ZoneType.COMMERCIAL_HIGH]: 0x1565c0,
+    [ZoneType.INDUSTRIAL]: 0xffa726,
+    [ZoneType.OFFICE]: 0xab47bc,
+  };
+
   private buildZoneOverlays(scene: THREE.Scene, emptyZonesByType: Map<number, { x: number; y: number }[]>): void {
     const matrix = new THREE.Matrix4();
     for (const [zoneType, cells] of emptyZonesByType) {
-      const palette = ZONE_PALETTES[zoneType];
-      const baseColor = palette ? palette[0]! : 0x888888;
+      const baseColor = BuildingRenderer.ZONE_GROUND_COLORS[zoneType] ?? 0x888888;
       const count = Math.min(cells.length, this.maxPerVariant);
       const geometry = new THREE.PlaneGeometry(0.9, 0.9);
       geometry.rotateX(-Math.PI / 2);
