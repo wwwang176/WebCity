@@ -269,6 +269,7 @@ export class Game {
   notification: string | null = null;
   private dragStart: { x: number; y: number } | null = null;
   private keys = new Set<string>();
+  private spacePanning = false;
   private onUIUpdate: (() => void) | null = null;
   private previewLine: THREE.Line | null = null;
   private lastMilestoneId: string | null = null;
@@ -446,6 +447,12 @@ export class Game {
     const canvas = this.sceneManager.getCanvas();
 
     canvas.addEventListener('mousemove', (e) => {
+      // Space + left-button drag → pan camera
+      if (this.spacePanning && (e.buttons & 1)) {
+        const scale = (this.sceneManager.camera.top - this.sceneManager.camera.bottom) / canvas.clientHeight;
+        this.sceneManager.panCamera(-e.movementX * scale, -e.movementY * scale);
+        return;
+      }
       const rect = canvas.getBoundingClientRect();
       this.mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       this.mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
@@ -456,7 +463,7 @@ export class Game {
     });
 
     canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 0) {
+      if (e.button === 0 && !this.spacePanning) {
         this.dragStart = { x: this.gridCursor.gridX, y: this.gridCursor.gridY };
         this.updatePlacementPreview();
       }
@@ -487,11 +494,25 @@ export class Game {
     window.addEventListener('keydown', (e) => {
       // Prevent default for F1-F6 (overlay toggles)
       if (/^f[1-6]$/i.test(e.key)) e.preventDefault();
+      // Space: ignore if focus is on an input element
+      if (e.key === ' ') {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+        e.preventDefault();
+        this.spacePanning = true;
+        canvas.style.cursor = 'grab';
+        return;
+      }
       this.keys.add(e.key.toLowerCase());
       this.handleKeyDown(e.key.toLowerCase());
     });
 
     window.addEventListener('keyup', (e) => {
+      if (e.key === ' ') {
+        this.spacePanning = false;
+        canvas.style.cursor = '';
+        return;
+      }
       this.keys.delete(e.key.toLowerCase());
     });
   }
@@ -510,7 +531,7 @@ export class Game {
       case 'e': this.sceneManager.rotateCamera(Math.PI / 4); break;
       case 'escape': this.setTool('select'); this.dragStart = null; break;
       case 'r': this.cycleRotation(); break;
-      case ' ': this.togglePause(); break;
+      case 'p': this.togglePause(); break;
       case '+':
       case '=': this.changeSpeed(1); break;
       case '-': this.changeSpeed(-1); break;
