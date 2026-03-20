@@ -968,7 +968,7 @@ export class Game {
         // Auto-save
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
           const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress });
-          saveGame(0, 'AutoSave', data).catch(() => { /* ignore save errors */ });
+          saveGame(0, 'AutoSave', data, this.state.citizens.getPopulation()).catch(() => { /* ignore save errors */ });
         }
 
         // Safety-net rebuild: low-frequency fallback in case events are missed
@@ -1827,7 +1827,8 @@ export class Game {
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
     const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress });
-    await saveGame(slotId, name, data);
+    const population = this.state.citizens.getPopulation();
+    await saveGame(slotId, name, data, population);
   }
 
   private updatePreviewLine(): void {

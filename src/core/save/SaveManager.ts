@@ -3,6 +3,7 @@ export interface SaveSlot {
   name: string;
   date: string;
   data: string;
+  population?: number;
 }
 
 export const SAVE_CONFIG = {
@@ -27,7 +28,7 @@ export function openDB(): Promise<IDBDatabase> {
   });
 }
 
-export async function saveGame(slotId: number, name: string, data: string): Promise<void> {
+export async function saveGame(slotId: number, name: string, data: string, population?: number): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(SAVE_CONFIG.STORE_NAME, 'readwrite');
@@ -38,6 +39,7 @@ export async function saveGame(slotId: number, name: string, data: string): Prom
       date: new Date().toISOString(),
       data,
     };
+    if (population !== undefined) slot.population = population;
     const request = store.put(slot);
     request.onsuccess = () => resolve();
     request.onerror = () => reject(request.error);

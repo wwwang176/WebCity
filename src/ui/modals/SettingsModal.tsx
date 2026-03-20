@@ -33,6 +33,12 @@ export function SettingsModal() {
     }
   };
 
+  const handleSaveAsClick = () => {
+    if (saving()) return;
+    setSaveName('');
+    setShowSaveDialog(true);
+  };
+
   const handleSaveConfirm = async () => {
     const name = saveName().trim();
     if (!name || saving()) return;
@@ -81,6 +87,15 @@ export function SettingsModal() {
           >
             <span class="settings-modal-icon">{'\uD83D\uDCBE'}</span>
             <span>{saving() ? 'Saving...' : 'Save Game'}</span>
+          </button>
+
+          <button
+            class="settings-modal-item"
+            onClick={handleSaveAsClick}
+            disabled={saving()}
+          >
+            <span class="settings-modal-icon">{'\uD83D\uDCCB'}</span>
+            <span>Save As...</span>
           </button>
 
           <div class="settings-modal-divider" />
