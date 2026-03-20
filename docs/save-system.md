@@ -38,7 +38,7 @@ WebCity 使用 IndexedDB 進行本地存檔。
 
 ## 自動存檔 (AutoSave)
 
-系統定期自動存檔到指定欄位。
+自動存檔每 100 ticks 觸發一次（預設間隔）。第 0 tick 不存檔。
 
 ---
 
@@ -46,18 +46,50 @@ WebCity 使用 IndexedDB 進行本地存檔。
 
 `Serializer` 負責將 GameState 轉換為 JSON 字串，以及從 JSON 恢復 GameState。
 
+### 序列化格式
+
+```typescript
+SerializedState {
+  version: number;       // 存檔版本號
+  grid: {
+    width, height,
+    cells: SerializedCell[]  // 只儲存與預設值不同的格子
+  };
+  clock: { tick, speed, paused };
+  budget: { funds, income, expenses, loans, loanInterestRate };
+  taxRates: { residential, commercial, industrial, office, business? };
+  powerPlants?: PowerPlant[];
+  waterPlants?: WaterPlant[];
+  citizens?: Citizen[];
+  // + 各服務系統的 toJSON() 資料
+  // + 交通系統的 toJSON() 資料
+  // + 區域和政策資料
+  // + 全球市場資料
+}
+```
+
+### 差分壓縮
+
+Grid 序列化只儲存與 `DEFAULT_CELL` 不同的格子。空格子不佔空間。
+
+```
+getCellDiff(cell) → 只包含與預設不同的屬性
+isCellDefault(cell) → 全部屬性與預設相同則跳過
+```
+
 ### 序列化項目
 
 所有子系統都支援 `toJSON()` / `fromJSON()` 介面：
-- Grid（格子資料，使用差分壓縮——只儲存與預設值不同的格子）
-- 市民列表
+- Grid（格子資料，差分壓縮）
+- 市民列表（完整屬性）
 - 預算狀態
 - 稅率
-- 各服務狀態
-- 交通路線和站點
+- 電力/供水（電廠/水廠列表）
+- 警察/消防/醫療/教育/公園/垃圾/污水/殯葬（設施列表 + 狀態）
+- 公車/地鐵/鐵路/渡輪/機場（站點 + 路線 + 車輛）
 - 區域和政策
-- 全球市場
+- 全球市場（價格 + 供給壓力）
 
 ### 存檔遷移 (migrations)
 
-`migrations.ts` 處理舊版存檔的格式升級，確保向後相容。
+`migrations.ts` 處理舊版存檔的格式升級，確保向後相容。版本號遞增，每個遷移函式處理一個版本的升級。
