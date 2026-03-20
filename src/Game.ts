@@ -431,8 +431,8 @@ export class Game {
       (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
     );
 
-    // Center camera
-    this.sceneManager.panCamera(mapSize / 2, mapSize / 2);
+    // Center camera on map
+    this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
 
     // Input handlers
     this.setupInput(container);

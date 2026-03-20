@@ -123,6 +123,12 @@ export class SceneManager {
     return this.cameraTarget;
   }
 
+  setCameraTarget(x: number, z: number): void {
+    this.cameraTarget.x = x;
+    this.cameraTarget.z = z;
+    this.updateCameraPosition();
+  }
+
   panCamera(dx: number, dz: number): void {
     this._panForward.set(Math.cos(this.cameraAngle), 0, Math.sin(this.cameraAngle));
     this._panRight.set(Math.sin(this.cameraAngle), 0, -Math.cos(this.cameraAngle));
