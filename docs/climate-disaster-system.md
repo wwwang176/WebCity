@@ -77,6 +77,43 @@ WebCity 模擬四季變化和隨機天災事件。
 
 ---
 
+## 建築損傷系統 (Damage System)
+
+### 損傷狀態
+
+| 屬性 | 說明 |
+|------|------|
+| `damageLevel` | 損傷程度 (0~1) |
+| `repairCost` | 修復費用 = damageLevel × $2000 |
+| `destroyed` | 損傷 ≥ 0.9 時視為摧毀 |
+
+### 道路損傷
+
+道路損傷閾值: 0.3。傷害超過此值的道路格會受損。
+
+### 修復
+
+```
+repairBuilding(state, funds):
+  若 funds < repairCost → 修復失敗
+  否則 → 修復成功，扣除 repairCost
+```
+
+---
+
 ## 預警系統 (Warning System)
 
-為即將到來的災害提供預警，讓玩家有準備時間。
+預警塔可以減少災害造成的傷亡。
+
+### 預警塔 (Warning Tower)
+
+- 每座塔有位置 (x, y) 和覆蓋半徑
+- 歐幾里得距離在半徑內的區域視為「已預警」
+
+### 預警效果
+
+- 預警覆蓋區域內，傷亡減少 50% (`CASUALTY_REDUCTION = 0.5`)
+
+### 疏散
+
+`calculateEvacuationTarget()` 為受災市民計算最近的避難所位置。
