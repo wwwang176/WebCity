@@ -6,6 +6,7 @@ import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, typ
 import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
+import { disposeGroup } from './disposeGroup';
 
 // ===== Deterministic pseudo-random based on position =====
 function hash(x: number, y: number): number {
@@ -3096,6 +3097,7 @@ export class BuildingRenderer {
 
     for (const group of this.infraGroups) {
       scene.remove(group);
+      disposeGroup(group);
     }
     this.infraGroups = [];
     this.infraIndex.clear();

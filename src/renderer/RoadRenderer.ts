@@ -510,6 +510,8 @@ export class RoadRenderer {
     const head = new THREE.SphereGeometry(0.018, 4, 3);
     head.translate(0, poleH + 0.01, 0);
     const merged = mergeGeometries([pole, head]);
+    pole.dispose();
+    head.dispose();
     if (!merged) return;
 
     const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
