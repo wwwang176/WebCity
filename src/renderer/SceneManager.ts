@@ -145,8 +145,9 @@ export class SceneManager {
 
   rotateCamera(deltaAngle: number): void {
     // Always find the next 45° grid point in the pressed direction
+    // Use targetCameraAngle (not cameraAngle) so rapid presses accumulate
     const step = Math.PI / 4;
-    const current = this.cameraAngle;
+    const current = this.targetCameraAngle;
     const snapped = deltaAngle > 0
       ? Math.floor(current / step + 1) * step
       : Math.ceil(current / step - 1) * step;
