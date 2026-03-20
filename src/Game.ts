@@ -435,6 +435,9 @@ export class Game {
     // Center camera on map
     this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
 
+    // Initialize milestone tracking so loaded saves don't re-notify
+    this.lastMilestoneId = getMilestone(this.state.citizens.getPopulation())?.id ?? null;
+
     // Input handlers
     this.setupInput(container);
 
