@@ -144,12 +144,12 @@ export class SceneManager {
   }
 
   rotateCamera(deltaAngle: number): void {
-    // Snap to nearest 45° increment in the given direction
+    // Always find the next 45° grid point in the pressed direction
     const step = Math.PI / 4;
     const current = this.cameraAngle;
     const snapped = deltaAngle > 0
-      ? Math.ceil((current + 0.01) / step) * step
-      : Math.floor((current - 0.01) / step) * step;
+      ? Math.floor(current / step + 1) * step
+      : Math.ceil(current / step - 1) * step;
     this.targetCameraAngle = snapped;
     // Also reset elevation to default
     this.targetCameraElevation = SceneManager.DEFAULT_ELEVATION;
