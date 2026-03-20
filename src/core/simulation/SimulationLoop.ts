@@ -131,7 +131,7 @@ export class SimulationLoop {
   private state: GameState;
   private lastDeathDay = -1;
   private lastBirthMonth = -1;
-  private lastRiderWeek = -1;
+  private lastRiderDay = -1;
 
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
@@ -307,10 +307,9 @@ export class SimulationLoop {
       }
     }
 
-    // 5a2. Weekly: roll over transit stop rider counts
-    const currentWeek = this.state.clock.getWeek();
-    if (currentWeek !== this.lastRiderWeek) {
-      this.lastRiderWeek = currentWeek;
+    // 5a2. Daily: roll over transit stop rider counts (aligned with commute cycle)
+    if (currentDay !== this.lastRiderDay) {
+      this.lastRiderDay = currentDay;
       this.rolloverTransitRiders();
     }
 
@@ -1426,7 +1425,7 @@ export class SimulationLoop {
         const transitSystem = getSystemForMode(this.state, mode);
         if (transitSystem) {
           const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
-          if (nearest) { nearest.passengers++; nearest.dailyRiders++; }
+          if (nearest) { nearest.dailyRiders++; }
         }
 
         continue;
@@ -1517,6 +1516,7 @@ export class SimulationLoop {
     const systems = getTransitSystems(this.state).map(({ type, system }) => ({
       type,
       speed: system.getSpeed(),
+      vehicleCapacity: system.getCapacity(),
       routes: system.getRoutes(),
       getSegmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
     }));
@@ -1576,13 +1576,10 @@ export class SimulationLoop {
 
 
 
-  /** Roll over dailyRiders → lastDayRiders for all transit stops. */
+  /** Roll over dailyRiders for all transit systems (EMA smooth + reset). */
   private rolloverTransitRiders(): void {
     for (const { system } of getTransitSystems(this.state)) {
-      for (const stop of system.getStops()) {
-        stop.lastDayRiders = stop.dailyRiders;
-        stop.dailyRiders = 0;
-      }
+      system.rolloverDailyRiders();
     }
   }
 

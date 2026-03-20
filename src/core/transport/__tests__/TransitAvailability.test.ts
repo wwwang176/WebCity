@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { findAvailableTransit, type TransitSystemInfo } from '../TransitAvailability';
+import { findAvailableTransit, getRouteDailyRiders, type TransitSystemInfo } from '../TransitAvailability';
 import { TransportType, type TransportStop } from '../types';
 
 function makeStop(x: number, y: number, id = 1): TransportStop {
-  return { id, x, y, type: TransportType.BUS, passengers: 0, dailyRiders: 0, lastDayRiders: 0 };
+  return { id, x, y, type: TransportType.BUS, passengers: 0, dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0 };
 }
 
 describe('findAvailableTransit', () => {
@@ -199,5 +199,112 @@ describe('findAvailableTransit', () => {
     const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 8, y: 8 }, 5);
     expect(result).toHaveLength(1);
     expect(result[0]!.estimatedTime).toBeCloseTo(15 / 0.375);
+  });
+
+  // ── Capacity filtering tests ──────────────────────────────────
+
+  it('filters out routes where dailyRiders >= routeCapacity', () => {
+    const stops = [makeStop(1, 1, 1), makeStop(9, 9, 2)];
+    stops[0]!.dailyRiders = 100;
+    stops[1]!.dailyRiders = 50;
+    // 3 vehicles × capacity 50 = 150, dailyRiders = 150 → full
+    const systems: TransitSystemInfo[] = [{
+      type: TransportType.BUS,
+      speed: 2,
+      vehicleCapacity: 50,
+      routes: [{
+        id: 1, type: TransportType.BUS, stops, vehicles: 3,
+        frequency: 4, operatingCost: 100,
+      }],
+    }];
+    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, 5);
+    expect(result).toEqual([]);
+  });
+
+  it('returns route with remaining capacity', () => {
+    const stops = [makeStop(1, 1, 1), makeStop(9, 9, 2)];
+    stops[0]!.dailyRiders = 50;
+    stops[1]!.dailyRiders = 30;
+    // 3 vehicles × capacity 50 = 150, dailyRiders = 80 → has room
+    const systems: TransitSystemInfo[] = [{
+      type: TransportType.BUS,
+      speed: 2,
+      vehicleCapacity: 50,
+      routes: [{
+        id: 1, type: TransportType.BUS, stops, vehicles: 3,
+        frequency: 4, operatingCost: 100,
+      }],
+    }];
+    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, 5);
+    expect(result).toHaveLength(1);
+    expect(result[0]!.type).toBe(TransportType.BUS);
+  });
+
+  it('adding vehicles increases route capacity (allows more riders)', () => {
+    const stops = [makeStop(1, 1, 1), makeStop(9, 9, 2)];
+    stops[0]!.dailyRiders = 100;
+    stops[1]!.dailyRiders = 50;
+    // 3 vehicles × 50 = 150 → full at 150 riders
+    const sys3: TransitSystemInfo = {
+      type: TransportType.BUS,
+      speed: 2,
+      vehicleCapacity: 50,
+      routes: [{
+        id: 1, type: TransportType.BUS, stops, vehicles: 3,
+        frequency: 4, operatingCost: 100,
+      }],
+    };
+    expect(findAvailableTransit([sys3], { x: 0, y: 0 }, { x: 10, y: 10 }, 5)).toEqual([]);
+
+    // 5 vehicles × 50 = 250 → 150 < 250, has room
+    const sys5: TransitSystemInfo = {
+      type: TransportType.BUS,
+      speed: 2,
+      vehicleCapacity: 50,
+      routes: [{
+        id: 1, type: TransportType.BUS, stops: [...stops], vehicles: 5,
+        frequency: 4, operatingCost: 100,
+      }],
+    };
+    expect(findAvailableTransit([sys5], { x: 0, y: 0 }, { x: 10, y: 10 }, 5)).toHaveLength(1);
+  });
+
+  it('filters only full routes, keeps routes with capacity from same system', () => {
+    const stopsA = [makeStop(1, 1, 1), makeStop(9, 9, 2)];
+    stopsA[0]!.dailyRiders = 50;
+    stopsA[1]!.dailyRiders = 50; // total 100 = full (2×50)
+
+    const stopsB = [makeStop(2, 2, 3), makeStop(8, 8, 4)];
+    stopsB[0]!.dailyRiders = 10;
+    stopsB[1]!.dailyRiders = 10; // total 20 < 100 (2×50)
+
+    const systems: TransitSystemInfo[] = [{
+      type: TransportType.BUS,
+      speed: 2,
+      vehicleCapacity: 50,
+      routes: [
+        { id: 1, type: TransportType.BUS, stops: stopsA, vehicles: 2, frequency: 4, operatingCost: 100 },
+        { id: 2, type: TransportType.BUS, stops: stopsB, vehicles: 2, frequency: 4, operatingCost: 100 },
+      ],
+    }];
+    const result = findAvailableTransit(systems, { x: 0, y: 0 }, { x: 10, y: 10 }, 5);
+    expect(result).toHaveLength(1);
+  });
+});
+
+describe('getRouteDailyRiders', () => {
+  it('sums dailyRiders across all stops', () => {
+    const stops = [makeStop(0, 0, 1), makeStop(5, 5, 2), makeStop(10, 10, 3)];
+    stops[0]!.dailyRiders = 10;
+    stops[1]!.dailyRiders = 25;
+    stops[2]!.dailyRiders = 15;
+    const route = { id: 1, type: TransportType.BUS, stops, vehicles: 1, frequency: 4, operatingCost: 100 };
+    expect(getRouteDailyRiders(route)).toBe(50);
+  });
+
+  it('returns 0 for route with no riders', () => {
+    const stops = [makeStop(0, 0, 1), makeStop(5, 5, 2)];
+    const route = { id: 1, type: TransportType.BUS, stops, vehicles: 1, frequency: 4, operatingCost: 100 };
+    expect(getRouteDailyRiders(route)).toBe(0);
   });
 });

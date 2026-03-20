@@ -53,6 +53,7 @@ export abstract class BaseTransportSystem {
       passengers: 0,
       dailyRiders: 0,
       lastDayRiders: 0,
+      smoothedDailyRiders: 0,
     };
     this.stops.push(stop);
     return stop;
@@ -174,6 +175,17 @@ export abstract class BaseTransportSystem {
     return this.routes.reduce((sum, r) => r.suspended ? sum : sum + r.operatingCost, 0);
   }
 
+  /** Roll over daily riders: EMA smooth, then reset dailyRiders. */
+  rolloverDailyRiders(): void {
+    const alpha = 0.7;
+    for (let i = 0; i < this.stops.length; i++) {
+      const s = this.stops[i]!;
+      s.smoothedDailyRiders = alpha * s.smoothedDailyRiders + (1 - alpha) * s.dailyRiders;
+      s.lastDayRiders = s.dailyRiders;
+      s.dailyRiders = 0;
+    }
+  }
+
   /** Return precomputed segment distances for a route, or null if not available. */
   getSegmentDistances(_routeId: number): number[] | null {
     return null;
@@ -255,15 +267,29 @@ export abstract class BaseTransportSystem {
     return Math.max(TRANSPORT_SPEED.MIN_CONGESTION_SPEED, 1 - this.congestionLevel * TRANSPORT_SPEED.CONGESTION_SPEED_IMPACT);
   }
 
-  protected getCapacity(): number {
+  getCapacity(): number {
     return this.config.capacity;
   }
 
-  protected onArrive(vehicle: TransportVehicle, stop: TransportStop): void {
-    vehicle.passengers = 0;
-    const board = Math.min(stop.passengers, this.getCapacity());
-    vehicle.passengers = board;
-    stop.passengers -= board;
+  protected onArrive(vehicle: TransportVehicle, _stop: TransportStop): void {
+    // Visual-only: derive passengers from route loadFactor
+    const route = this.findRouteForVehicle(vehicle);
+    if (!route) { vehicle.passengers = 0; return; }
+    const cap = this.getCapacity();
+    const routeCapacity = route.vehicles * cap;
+    if (routeCapacity <= 0) { vehicle.passengers = 0; return; }
+    let riders = 0;
+    for (let i = 0; i < route.stops.length; i++) riders += route.stops[i]!.dailyRiders;
+    const loadFactor = Math.min(1, riders / routeCapacity);
+    vehicle.passengers = Math.round(loadFactor * cap);
+  }
+
+  /** Find the route a vehicle belongs to. */
+  protected findRouteForVehicle(vehicle: TransportVehicle): TransportRoute | undefined {
+    for (let i = 0; i < this.routes.length; i++) {
+      if (this.routes[i]!.id === vehicle.routeId) return this.routes[i]!;
+    }
+    return undefined;
   }
 
   /** Called when vehicle departs from a stop. Override for special behavior. */
@@ -320,7 +346,7 @@ export abstract class BaseTransportSystem {
     Ctor: { new (...args: any[]): T },
   ): T {
     const sys = new Ctor();
-    sys.stops = data.stops.map((s: TransportStop) => ({ dailyRiders: 0, lastDayRiders: 0, ...s }));
+    sys.stops = data.stops.map((s: TransportStop) => ({ dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0, ...s }));
     sys.routes = data.routes.map((r: any) => ({
       ...r,
       stops: (r.stops as number[]).map((id: number) => sys.stops.find(s => s.id === id)!),

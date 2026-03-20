@@ -23,8 +23,10 @@ export interface TransportStop {
   passengers: number;
   /** Today's accumulated rider count (internal, reset daily). */
   dailyRiders: number;
-  /** Yesterday's complete rider count (displayed in UI). */
+  /** Yesterday's complete rider count. */
   lastDayRiders: number;
+  /** EMA-smoothed daily riders for stable UI display. */
+  smoothedDailyRiders: number;
   /** Adjacent road cell X (bus only — used for lane pathfinding). */
   roadX?: number;
   /** Adjacent road cell Y (bus only — used for lane pathfinding). */

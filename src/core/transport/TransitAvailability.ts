@@ -5,15 +5,26 @@ import type { AvailableTransport } from './ModeChoice';
 export interface TransitSystemInfo {
   type: TransportType;
   speed: number;
+  /** Single-vehicle passenger capacity (e.g. 50 for bus). 0 or omitted = unlimited. */
+  vehicleCapacity?: number;
   routes: readonly TransportRoute[];
   /** Return precomputed segment distances for a route (one per stop pair). */
   getSegmentDistances?: (routeId: number) => number[] | null;
 }
 
+/** Sum dailyRiders across all stops of a route (zero-alloc). */
+export function getRouteDailyRiders(route: TransportRoute): number {
+  let total = 0;
+  for (let i = 0; i < route.stops.length; i++) {
+    total += route.stops[i]!.dailyRiders;
+  }
+  return total;
+}
+
 /**
  * Find available transit options between origin and destination.
  * A transit route is "available" if it has stops within walkRange
- * of both origin and destination.
+ * of both origin and destination, AND has remaining capacity.
  *
  * Estimated time is computed from actual route distances when available,
  * falling back to euclidean stop-to-stop distance.
@@ -28,6 +39,10 @@ export function findAvailableTransit(
 
   for (const sys of systems) {
     for (const route of sys.routes) {
+      // Capacity check: full routes are unavailable
+      const cap = sys.vehicleCapacity ?? 0;
+      if (cap > 0 && getRouteDailyRiders(route) >= route.vehicles * cap) continue;
+
       // Find nearest origin and destination stops within walk range
       let bestOriginIdx = -1, bestOriginDist = Infinity;
       let bestDestIdx = -1, bestDestDist = Infinity;

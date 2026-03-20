@@ -715,18 +715,22 @@ describe('Bus passenger boarding (tick no-op, boarding handled at stop level)', 
   });
 });
 
-describe('Metro passenger boarding', () => {
-  it('should pick up passengers at station (capacity 200)', () => {
+describe('Metro passenger boarding (visual-only from loadFactor)', () => {
+  it('sets train passengers from dailyRiders loadFactor (capacity 200)', () => {
     const metro = new MetroSystem();
     const st1 = metro.addStation(0, 0);
     const st2 = metro.addStation(2, 0);
     metro.createLine([st1, st2]);
 
-    st1.passengers = 150;
+    // 1 vehicle × 200 capacity = 200 total, 100 dailyRiders → loadFactor 0.5
+    st1.dailyRiders = 60;
+    st2.dailyRiders = 40;
 
-    metro.tick(); // arrive st1, board
+    metro.tick(); // arrive st1, visual onArrive
     const t = metro.getTrains()[0]!;
-    expect(t.passengers).toBe(150);
+    // vehicle.passengers = round(0.5 × 200) = 100
+    expect(t.passengers).toBe(100);
+    // stop.passengers unchanged
     expect(st1.passengers).toBe(0);
   });
 });
@@ -1097,59 +1101,60 @@ describe('Vehicle count adjustment', () => {
 // ---------------------------------------------------------------------------
 // Phase T4.2c-e: Rail / Ferry passenger boarding acceptance tests
 // ---------------------------------------------------------------------------
-describe('Rail passenger boarding', () => {
-  it('should pick up passengers at station (capacity 300)', () => {
+describe('Rail passenger boarding (visual-only from loadFactor)', () => {
+  it('sets train passengers from dailyRiders loadFactor (capacity 300)', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);
     const st2 = rail.buildStation(2, 0);
     rail.createLine([st1, st2], RailServiceType.PASSENGER);
 
-    st1.passengers = 250;
+    // 1 vehicle × 300 = 300 total, 150 riders → loadFactor 0.5
+    st1.dailyRiders = 100;
+    st2.dailyRiders = 50;
     rail.tick();
     const t = rail.getTrains()[0]!;
-    expect(t.passengers).toBe(250);
-    expect(st1.passengers).toBe(0);
+    expect(t.passengers).toBe(150); // round(0.5 × 300)
   });
 
-  it('should respect capacity limit of 300', () => {
+  it('caps passengers at capacity when loadFactor > 1', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);
     const st2 = rail.buildStation(2, 0);
     rail.createLine([st1, st2], RailServiceType.PASSENGER);
 
-    st1.passengers = 400;
+    st1.dailyRiders = 400; // exceeds 300 capacity → loadFactor capped at 1
     rail.tick();
     const t = rail.getTrains()[0]!;
-    expect(t.passengers).toBe(300);
-    expect(st1.passengers).toBe(100);
+    expect(t.passengers).toBe(300); // capped
   });
 });
 
-describe('Ferry passenger boarding', () => {
-  it('should pick up passengers at dock (capacity 100)', () => {
+describe('Ferry passenger boarding (visual-only from loadFactor)', () => {
+  it('sets vessel passengers from dailyRiders loadFactor (capacity 100)', () => {
     const ferry = new FerrySystem();
     const d1 = ferry.addDock(0, 0)!;
     const d2 = ferry.addDock(2, 0)!;
     ferry.createRoute([d1, d2]);
 
-    d1.passengers = 80;
+    // 1 vessel × 100 = 100 total, 60 riders → loadFactor 0.6
+    d1.dailyRiders = 40;
+    d2.dailyRiders = 20;
     ferry.tick();
     const v = ferry.getVessels()[0]!;
-    expect(v.passengers).toBe(80);
-    expect(d1.passengers).toBe(0);
+    expect(v.passengers).toBe(60); // round(0.6 × 100)
+    expect(d1.passengers).toBe(0); // unchanged (was 0)
   });
 
-  it('should respect capacity limit of 100', () => {
+  it('caps vessel passengers at capacity when loadFactor > 1', () => {
     const ferry = new FerrySystem();
     const d1 = ferry.addDock(0, 0)!;
     const d2 = ferry.addDock(2, 0)!;
     ferry.createRoute([d1, d2]);
 
-    d1.passengers = 150;
+    d1.dailyRiders = 150; // exceeds 100 → capped
     ferry.tick();
     const v = ferry.getVessels()[0]!;
-    expect(v.passengers).toBe(100);
-    expect(d1.passengers).toBe(50);
+    expect(v.passengers).toBe(100); // capped at capacity
   });
 });
 

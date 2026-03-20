@@ -175,19 +175,16 @@ describe('BaseTransportSystem', () => {
       expect(v.position.y).toBe(0);
     });
 
-    it('should board passengers on arrival', () => {
+    it('onArrive is visual-only — stop.passengers unchanged', () => {
       const sys = new TestTransportSystem({ capacity: 50 });
       const s1 = sys.addStop(0, 0);
       const s2 = sys.addStop(5, 0);
       s2.passengers = 30;
       sys.createRoute([s1, s2]);
       sys.tick(); // initial → atStop at s1
-      // Run enough ticks to reach s2
       for (let i = 0; i < 20; i++) sys.tick();
-      const v = sys.getVehicles()[0]!;
-      // At some point the vehicle should have boarded passengers
-      // After a full cycle the vehicle visits s2
-      expect(s2.passengers).toBeLessThan(30);
+      // onArrive no longer touches stop.passengers
+      expect(s2.passengers).toBe(30);
     });
 
     it('should handle congestion for affected systems', () => {
@@ -366,6 +363,113 @@ describe('removeStop — vehicle reset on surviving routes', () => {
     expect(sys.dissolvedRouteIds).toHaveLength(0);
     // But the route should still have only 2 stops
     expect(sys.getRoutes()[0]!.stops).toHaveLength(2);
+  });
+});
+
+describe('onArrive — visual-only passengers from loadFactor', () => {
+  it('sets vehicle.passengers from route loadFactor', () => {
+    const sys = new TestTransportSystem({ capacity: 50, speed: 5, dwellTicks: 1 });
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    const route = sys.createRoute([s1, s2], 2); // capacity = 2 × 50 = 100
+
+    // Simulate 60 daily riders on this route
+    s1.dailyRiders = 40;
+    s2.dailyRiders = 20; // total = 60, loadFactor = 60/100 = 0.6
+
+    sys.tick(); // initial → atStop at s1, onArrive called
+    const v = sys.getVehicles()[0]!;
+    // vehicle.passengers = round(0.6 × 50) = 30
+    expect(v.passengers).toBe(30);
+  });
+
+  it('caps vehicle.passengers at capacity when overloaded', () => {
+    const sys = new TestTransportSystem({ capacity: 50, speed: 5, dwellTicks: 1 });
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    sys.createRoute([s1, s2], 1); // capacity = 1 × 50 = 50
+
+    s1.dailyRiders = 80; // exceeds capacity, loadFactor capped at 1.0
+
+    sys.tick();
+    const v = sys.getVehicles()[0]!;
+    expect(v.passengers).toBe(50); // capped at capacity
+  });
+
+  it('sets 0 passengers when no riders', () => {
+    const sys = new TestTransportSystem({ capacity: 50, speed: 5, dwellTicks: 1 });
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    sys.createRoute([s1, s2]);
+
+    sys.tick();
+    const v = sys.getVehicles()[0]!;
+    expect(v.passengers).toBe(0);
+  });
+
+  it('does not modify stop.passengers', () => {
+    const sys = new TestTransportSystem({ capacity: 50, speed: 5, dwellTicks: 1 });
+    const s1 = sys.addStop(0, 0);
+    const s2 = sys.addStop(5, 0);
+    s1.passengers = 30;
+    s2.passengers = 20;
+    sys.createRoute([s1, s2]);
+
+    sys.tick(); // onArrive at s1
+    expect(s1.passengers).toBe(30); // unchanged
+    expect(s2.passengers).toBe(20); // unchanged
+  });
+});
+
+describe('smoothedDailyRiders (EMA)', () => {
+  it('addStop initializes smoothedDailyRiders to 0', () => {
+    const sys = new TestTransportSystem();
+    const stop = sys.addStop(0, 0);
+    expect(stop.smoothedDailyRiders).toBe(0);
+  });
+
+  it('rolloverDailyRiders updates EMA: smoothed = 0.7 * old + 0.3 * today', () => {
+    const sys = new TestTransportSystem();
+    const s = sys.addStop(0, 0);
+    sys.createRoute([s, sys.addStop(5, 0)]);
+
+    s.dailyRiders = 100;
+    s.smoothedDailyRiders = 0;
+    sys.rolloverDailyRiders();
+
+    // 0.7 * 0 + 0.3 * 100 = 30
+    expect(s.smoothedDailyRiders).toBeCloseTo(30);
+    expect(s.lastDayRiders).toBe(100);
+    expect(s.dailyRiders).toBe(0);
+  });
+
+  it('EMA converges over multiple rollovers', () => {
+    const sys = new TestTransportSystem();
+    const s = sys.addStop(0, 0);
+    sys.createRoute([s, sys.addStop(5, 0)]);
+
+    // Simulate 10 days of constant 100 riders
+    for (let day = 0; day < 10; day++) {
+      s.dailyRiders = 100;
+      sys.rolloverDailyRiders();
+    }
+
+    // EMA should converge close to 100
+    expect(s.smoothedDailyRiders).toBeGreaterThan(90);
+    expect(s.smoothedDailyRiders).toBeLessThanOrEqual(100);
+  });
+
+  it('EMA decays when ridership drops to 0', () => {
+    const sys = new TestTransportSystem();
+    const s = sys.addStop(0, 0);
+    sys.createRoute([s, sys.addStop(5, 0)]);
+
+    s.smoothedDailyRiders = 100;
+    s.dailyRiders = 0;
+    sys.rolloverDailyRiders();
+
+    // 0.7 * 100 + 0.3 * 0 = 70
+    expect(s.smoothedDailyRiders).toBe(70);
   });
 });
 

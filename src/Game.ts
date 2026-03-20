@@ -212,7 +212,7 @@ export interface SelectedTransportStop {
   name: string;
   routes: number;
   vehicles: number;
-  ridersPerWeek: number;
+  ridersPerDay: number;
 }
 
 export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop;
@@ -1323,7 +1323,7 @@ export class Game {
       name: STOP_NAMES[type],
       routes: routeCount,
       vehicles: vehicleCount,
-      ridersPerWeek: (stop?.lastDayRiders || stop?.dailyRiders) ?? 0,
+      ridersPerDay: Math.round(stop?.smoothedDailyRiders ?? 0),
     };
 
     this.applyViewMode(getTransportFocusMode(type));
@@ -1824,7 +1824,7 @@ export class Game {
         ...sel,
         routes: stopRoutes.length,
         vehicles: stopRoutes.reduce((sum, r) => sum + r.vehicles, 0),
-        ridersPerWeek: (stop?.lastDayRiders || stop?.dailyRiders) ?? 0,
+        ridersPerDay: Math.round(stop?.smoothedDailyRiders ?? 0),
       };
     }
 

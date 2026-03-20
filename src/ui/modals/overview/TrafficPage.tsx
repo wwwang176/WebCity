@@ -27,6 +27,7 @@ interface RouteRow {
   stops: number;
   vehicles: number;
   riders: number;
+  capacity: number;
   cost: number;
   suspended: boolean;
 }
@@ -39,6 +40,7 @@ interface SystemRow {
   routeCount: number;
   totalVehicles: number;
   totalRiders: number;
+  totalCapacity: number;
   totalCost: number;
   routeRows: RouteRow[];
 }
@@ -70,19 +72,21 @@ export function TrafficPage() {
 
       let totalRiders = 0;
       for (const stop of system.getStops()) {
-        totalRiders += stop.lastDayRiders || stop.dailyRiders;
+        totalRiders += stop.smoothedDailyRiders;
       }
 
+      const vehicleCapacity = system.getCapacity();
       const routeRows: RouteRow[] = routes.map(route => {
         let riders = 0;
         for (const stop of route.stops) {
-          riders += stop.lastDayRiders || stop.dailyRiders;
+          riders += stop.smoothedDailyRiders;
         }
         return {
           id: route.id,
           stops: route.stops.length,
           vehicles: route.vehicles,
           riders,
+          capacity: route.vehicles * vehicleCapacity,
           cost: route.operatingCost,
           suspended: !!route.suspended,
         };
@@ -96,6 +100,7 @@ export function TrafficPage() {
         routeCount: routes.length,
         totalVehicles: system.getVehicles().length,
         totalRiders,
+        totalCapacity: routeRows.reduce((s, r) => s + r.capacity, 0),
         totalCost: cost,
         routeRows,
       };
@@ -159,7 +164,7 @@ export function TrafficPage() {
       <div class="section-title">Public Transit</div>
       <Show when={transitData().rows.some(r => r.routeCount > 0)} fallback={<div style="font-size:12px;color:#667a90;padding:8px 0">No transit routes yet</div>}>
         <table class="data-table">
-          <thead><tr><th>System / Route</th><th style="text-align:right">Stops</th><th style="text-align:right">Vehicles</th><th style="text-align:right">Riders/Wk</th><th style="text-align:right">Cost/tick</th></tr></thead>
+          <thead><tr><th>System / Route</th><th style="text-align:right">Stops</th><th style="text-align:right">Vehicles</th><th style="text-align:right">Riders/Wk</th><th style="text-align:right">Usage</th><th style="text-align:right">Cost/tick</th></tr></thead>
           <tbody>
             <For each={transitData().rows}>
               {(row) => {
@@ -180,7 +185,8 @@ export function TrafficPage() {
                       </td>
                       <td class="td-value" style="text-align:right">{row.routeRows.reduce((s, r) => s + r.stops, 0)}</td>
                       <td class="td-value" style="text-align:right">{row.totalVehicles}</td>
-                      <td class="td-value" style="text-align:right">{row.totalRiders}</td>
+                      <td class="td-value" style="text-align:right">{Math.round(row.totalRiders * 7)}</td>
+                      <td class="td-value" style={`text-align:right;color:${row.totalCapacity > 0 && row.totalRiders / row.totalCapacity > 0.8 ? '#ef5350' : row.totalCapacity > 0 && row.totalRiders / row.totalCapacity > 0.5 ? '#ffa726' : '#66bb6a'}`}>{row.totalCapacity > 0 ? `${Math.min(100, Math.round(row.totalRiders / row.totalCapacity * 100))}%` : '—'}</td>
                       <td class="td-expense" style="text-align:right">${row.totalCost}</td>
                     </tr>
                     <Show when={isOpen()}>
@@ -193,7 +199,8 @@ export function TrafficPage() {
                             </td>
                             <td class="td-value" style="text-align:right;font-size:11px">{route.stops}</td>
                             <td class="td-value" style="text-align:right;font-size:11px">{route.vehicles}</td>
-                            <td class="td-value" style="text-align:right;font-size:11px">{route.riders}</td>
+                            <td class="td-value" style="text-align:right;font-size:11px">{Math.round(route.riders * 7)}</td>
+                            <td class="td-value" style={`text-align:right;font-size:11px;color:${route.capacity > 0 && route.riders / route.capacity > 0.8 ? '#ef5350' : route.capacity > 0 && route.riders / route.capacity > 0.5 ? '#ffa726' : '#66bb6a'}`}>{route.capacity > 0 ? `${Math.min(100, Math.round(route.riders / route.capacity * 100))}%` : '—'}</td>
                             <td class="td-expense" style="text-align:right;font-size:11px">${route.cost}</td>
                           </tr>
                         )}
