@@ -1,6 +1,6 @@
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
-import { interpolateEdgePosition, interpolateEdgeTangent } from './EdgeInterpolation';
+import { interpolateEdgePosition, interpolateEdgeTangent, interpolateEdgePositionInto, interpolateEdgeTangentInto } from './EdgeInterpolation';
 import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
 import { pickWeighted } from '../utils/random';
 
@@ -110,6 +110,10 @@ export class TrafficSimulation {
   private activeVehicleScratch: Vehicle[] = [];
   /** Reusable edge index map (cleared each frame instead of re-allocated). */
   private edgeIndexMap = new Map<string, EdgeEntry[]>();
+  /** Reusable output objects for per-vehicle position/heading (avoid per-call allocation). */
+  private readonly _posOut = { x: 0, y: 0 };
+  private readonly _tanOut = { x: 0, y: 0 };
+  private readonly _headingOut = { hx: 0, hy: 0 };
 
 
   /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg).
@@ -443,18 +447,19 @@ export class TrafficSimulation {
     return total + v.edgeProgress;
   }
 
-  /** World position for a vehicle. */
+  /** World position for a vehicle (writes to reusable object — caller must read immediately). */
   getVehiclePositionOnEdges(v: Vehicle): { x: number; y: number } | null {
     if (v.edgePath.length === 0) return null;
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx]!;
     const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-    return interpolateEdgePosition(edge, t);
+    interpolateEdgePositionInto(edge, t, this._posOut);
+    return this._posOut;
   }
 
   /** Heading angle (radians) for a vehicle. 0 = east. */
   getVehicleHeadingOnEdges(v: Vehicle): number {
-    const h = this.edgeHeadingVec(v);
+    const h = this.edgeHeadingVecInto(v);
     // Negate Y to match Three.js convention: game +Y = south, Three.js +Z = south
     return Math.atan2(-h.hy, h.hx);
   }
@@ -495,16 +500,18 @@ export class TrafficSimulation {
     return { x, y, heading };
   }
 
-  /** Unit heading vector for a vehicle. */
-  private edgeHeadingVec(v: Vehicle): { hx: number; hy: number } {
-    if (v.edgePath.length === 0) return { hx: 1, hy: 0 };
+  /** Unit heading vector for a vehicle (writes to reusable object). */
+  private edgeHeadingVecInto(v: Vehicle): { hx: number; hy: number } {
+    const out = this._headingOut;
+    if (v.edgePath.length === 0) { out.hx = 1; out.hy = 0; return out; }
     const idx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[idx]!;
     const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-    const tan = interpolateEdgeTangent(edge, t);
-    const len = Math.sqrt(tan.x * tan.x + tan.y * tan.y);
-    if (len > 0) return { hx: tan.x / len, hy: tan.y / len };
-    return { hx: 1, hy: 0 };
+    interpolateEdgeTangentInto(edge, t, this._tanOut);
+    const len = Math.sqrt(this._tanOut.x * this._tanOut.x + this._tanOut.y * this._tanOut.y);
+    if (len > 0) { out.hx = this._tanOut.x / len; out.hy = this._tanOut.y / len; }
+    else { out.hx = 1; out.hy = 0; }
+    return out;
   }
 
   // ── Stats (for overlays / UI) ──

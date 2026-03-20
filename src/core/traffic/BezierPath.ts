@@ -18,6 +18,20 @@ export function quadraticBezierTangent(p0: Point, cp: Point, p2: Point, t: numbe
   };
 }
 
+/** Zero-alloc: write quadratic Bezier point into `out`. */
+export function quadraticBezierPointInto(p0: Point, cp: Point, p2: Point, t: number, out: Point): void {
+  const u = 1 - t;
+  out.x = u * u * p0.x + 2 * u * t * cp.x + t * t * p2.x;
+  out.y = u * u * p0.y + 2 * u * t * cp.y + t * t * p2.y;
+}
+
+/** Zero-alloc: write quadratic Bezier tangent into `out`. */
+export function quadraticBezierTangentInto(p0: Point, cp: Point, p2: Point, t: number, out: Point): void {
+  const u = 1 - t;
+  out.x = 2 * u * (cp.x - p0.x) + 2 * t * (p2.x - cp.x);
+  out.y = 2 * u * (cp.y - p0.y) + 2 * t * (p2.y - cp.y);
+}
+
 /** Evaluate cubic Bezier at parameter t ∈ [0,1] */
 export function cubicBezierPoint(p0: Point, p1: Point, p2: Point, p3: Point, t: number): Point {
   const u = 1 - t;
