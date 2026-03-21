@@ -52,6 +52,7 @@ import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicl
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
 import { PedestrianTripType } from '../traffic/PedestrianAgent';
+import { TRADE } from '../traffic/FreightSystem';
 
 /** Simulation tuning constants */
 export const SIMULATION = {
@@ -384,29 +385,27 @@ export class SimulationLoop {
     this.state.bus.congestionLevel = this.state.traffic.getCongestionLevel();
     tickAllTransportSystems(this.state);
 
-    // 8b. Freight: BFS-based supply calculation (every 6 ticks)
-    if (isSlowTick) {
-      this.state.freight.calculateSupply(this.state.grid);
-    }
-
-    // 8c. Rail freight bonus: each active freight train adds cargo throughput
-    const freightTrainCount = this.state.rail.getFreightTrainCount();
-    if (freightTrainCount > 0) {
-      this.state.freight.addExternalCargo(freightTrainCount * 10);
-    }
-
-    // 8d. Airport cargo contribution
-    const airportCargo = this.state.airport.consumeCargo();
-    if (airportCargo > 0) {
-      this.state.freight.addExternalCargo(airportCargo);
-    }
-
-    // 8e. Rail external connection (every 60 ticks)
+    // 8b. Rail external connection update (every 60 ticks)
     if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
-      this.state.rail.updateExternalConnection(this.state.grid.width, this.state.grid.height);
-      if (this.state.rail.hasExternalConnection) {
-        this.state.freight.addExternalCargo(this.state.rail.externalConnection.goodsIn);
+      this.state.rail.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
+    }
+
+    // 8c. Freight: BFS-based supply + trade calculation (every 6 ticks)
+    if (isSlowTick) {
+      // Calculate trade throughput from rail stations + airports
+      const railThroughput = this.state.rail.hasExternalConnection
+        ? this.state.rail.getExternalStationCount() * TRADE.RAIL_THROUGHPUT_PER_STATION
+        : 0;
+      let airportThroughput = 0;
+      for (const ap of this.state.airport.getAirports()) {
+        airportThroughput += ap.cargoPerTick;
       }
+      const totalThroughput = railThroughput + airportThroughput;
+
+      this.state.freight.calculateSupply(this.state.grid, {
+        importCapacity: totalThroughput,
+        exportCapacity: totalThroughput,
+      });
     }
 
     // 9. Calculate income from buildings (every 6 ticks)

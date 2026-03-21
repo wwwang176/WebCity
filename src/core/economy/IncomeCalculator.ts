@@ -3,6 +3,9 @@ import { getBuildingType } from '../building/types';
 import { isResidentialZone, isCommercialZone, ZoneType } from '../grid/types';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { getBuildingLevelMultiplier, getResidentialLevelMultiplier, getEducationSalaryMultiplier, ECONOMY } from './TaxMultipliers';
+import { TRADE } from '../traffic/FreightSystem';
+
+const TRADE_IMPORT_MULTIPLIER = TRADE.IMPORT_INCOME_MULTIPLIER;
 import type { EducationLevel } from '../citizen/types';
 
 export interface ZoneIncomeBreakdown {
@@ -31,10 +34,12 @@ export interface IncomeCalcDeps {
   getRevenueMultiplier?: (x: number, y: number) => number;
   /** Optional power check — unpowered buildings produce zero income. Defaults to true. */
   isPowered?: (x: number, y: number) => boolean;
-  /** Optional freight supply check — unsupplied commercial buildings earn half income. */
-  isFreightSupplied?: (x: number, y: number) => boolean;
+  /** Optional freight supply status: 'local' | 'imported' | 'unsupplied'. */
+  getFreightSupplyStatus?: (x: number, y: number) => 'local' | 'imported' | 'unsupplied';
   /** Optional freight surplus ratio (0~1) — industrial income reduced proportionally. */
   freightSurplusRatio?: number;
+  /** Whether industrial surplus is being exported (reduces surplus income penalty). */
+  isExporting?: boolean;
 }
 
 /**
@@ -78,15 +83,18 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
       buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
       if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
       if (isCommercialZone(btype.zoneType)) {
-        // Unsupplied commercial buildings earn half income
-        if (deps.isFreightSupplied && !deps.isFreightSupplied(x, y)) {
-          buildingIncome *= 0.5;
+        // Freight supply status affects commercial income
+        if (deps.getFreightSupplyStatus) {
+          const status = deps.getFreightSupplyStatus(x, y);
+          if (status === 'imported') buildingIncome *= TRADE_IMPORT_MULTIPLIER;
+          else if (status === 'unsupplied') buildingIncome *= 0.5;
         }
         commercial += buildingIncome;
       } else if (btype.zoneType === ZoneType.INDUSTRIAL) {
-        // Surplus reduces industrial income
+        // Surplus reduces industrial income; export softens the penalty
         if (deps.freightSurplusRatio != null && deps.freightSurplusRatio > 0) {
-          buildingIncome *= 1 - deps.freightSurplusRatio * 0.5;
+          const penalty = deps.isExporting ? 0.5 : 1.0;
+          buildingIncome *= 1 - deps.freightSurplusRatio * penalty;
         }
         industrial += buildingIncome;
       } else if (btype.zoneType === ZoneType.OFFICE) {

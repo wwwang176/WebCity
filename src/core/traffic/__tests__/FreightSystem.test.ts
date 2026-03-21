@@ -84,19 +84,34 @@ describe('FreightSystem', () => {
     expect(freight.getSurplusRatio()).toBe(0);
   });
 
-  it('should include external cargo in BFS budget', () => {
+  it('should import goods to fill shortage when trade capacity available', () => {
     for (let x = 0; x <= 2; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
-    // 1 factory Lv1 (produces 3), 1 Small Mall (consumes 8) — normally can't supply
+    // 1 factory Lv1 (produces 3), 1 Small Mall (consumes 8) — locally can't supply
     grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
     grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 10 });
 
-    // Add enough external cargo to cover the gap
-    freight.addExternalCargo(10);
-    freight.calculateSupply(grid);
+    // Import capacity covers the gap
+    freight.calculateSupply(grid, { importCapacity: 10, exportCapacity: 0 });
 
-    // budget = 3 (factory) + 10 (external) = 13 ≥ 8 (mall demand)
     expect(freight.isSupplied(2, 1)).toBe(true);
+    expect(freight.getSupplyStatus(2, 1)).toBe('imported');
     expect(freight.getShortageRatio()).toBe(0);
+    expect(freight.getLastTrade().imported).toBe(8);
+  });
+
+  it('should export surplus when trade capacity available', () => {
+    for (let x = 0; x <= 2; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    // 3 factories Lv1 (produce 9), 1 small shop (consumes 1) — surplus 8
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(1, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(1, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    freight.calculateSupply(grid, { importCapacity: 0, exportCapacity: 50 });
+
+    expect(freight.getLastTrade().exported).toBe(8); // surplus capped at 8
+    expect(freight.getSurplusRatio()).toBe(0); // export absorbs surplus
+    expect(freight.getIsExporting()).toBe(true);
   });
 
   it('should report correct production and consumption with per-building rates', () => {

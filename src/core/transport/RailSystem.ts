@@ -283,11 +283,78 @@ export class RailSystem extends BaseTransportSystem {
     return this.getStops();
   }
 
-  /** Check if any station is at the map edge and update external connection flags. */
-  updateExternalConnection(mapWidth: number, mapHeight: number): void {
-    this.hasExternalConnection = this.stops.some(
-      s => s.x === 0 || s.y === 0 || s.x === mapWidth - 1 || s.y === mapHeight - 1
-    );
+  /** Set of station position keys that can reach the map edge via rail BFS. */
+  private externalStations = new Set<string>();
+
+  /** Check which stations can reach the map edge via rail tracks (BFS). */
+  updateExternalConnection(mapWidth: number, mapHeight: number, grid?: { getCell(x: number, y: number): { railType: number } | null }): void {
+    this.externalStations.clear();
+
+    if (!grid) {
+      // Legacy fallback: check if any station is at the edge
+      this.hasExternalConnection = this.stops.some(
+        s => s.x === 0 || s.y === 0 || s.x === mapWidth - 1 || s.y === mapHeight - 1
+      );
+      if (this.hasExternalConnection) {
+        for (const s of this.stops) this.externalStations.add(toPosKey(s.x, s.y));
+      }
+    } else {
+      // BFS from all edge rail cells, mark reachable stations
+      const edgeRailCells: [number, number][] = [];
+      for (let x = 0; x < mapWidth; x++) {
+        for (const y of [0, mapHeight - 1]) {
+          const cell = grid.getCell(x, y);
+          if (cell && cell.railType !== 0) edgeRailCells.push([x, y]);
+        }
+      }
+      for (let y = 1; y < mapHeight - 1; y++) {
+        for (const x of [0, mapWidth - 1]) {
+          const cell = grid.getCell(x, y);
+          if (cell && cell.railType !== 0) edgeRailCells.push([x, y]);
+        }
+      }
+
+      if (edgeRailCells.length === 0) {
+        this.hasExternalConnection = false;
+        this.externalConnection = { populationIn: 0, goodsIn: 0, goodsOut: 0 };
+        return;
+      }
+
+      // BFS through rail cells from edge
+      const reachable = new Set<string>();
+      const queue: [number, number][] = [];
+      for (const [ex, ey] of edgeRailCells) {
+        const key = toPosKey(ex, ey);
+        if (!reachable.has(key)) {
+          reachable.add(key);
+          queue.push([ex, ey]);
+        }
+      }
+      const DIRS: [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+      while (queue.length > 0) {
+        const [cx, cy] = queue.shift()!;
+        for (const [ddx, ddy] of DIRS) {
+          const nx = cx + ddx;
+          const ny = cy + ddy;
+          const key = toPosKey(nx, ny);
+          if (reachable.has(key)) continue;
+          const cell = grid.getCell(nx, ny);
+          if (!cell || cell.railType === 0) continue;
+          reachable.add(key);
+          queue.push([nx, ny]);
+        }
+      }
+
+      // Check which stations are reachable from edge
+      for (const s of this.stops) {
+        if (reachable.has(toPosKey(s.x, s.y))) {
+          this.externalStations.add(toPosKey(s.x, s.y));
+        }
+      }
+
+      this.hasExternalConnection = this.externalStations.size > 0;
+    }
+
     if (this.hasExternalConnection) {
       const lineCount = this.routes.length;
       this.externalConnection = {
@@ -298,6 +365,16 @@ export class RailSystem extends BaseTransportSystem {
     } else {
       this.externalConnection = { populationIn: 0, goodsIn: 0, goodsOut: 0 };
     }
+  }
+
+  /** Number of stations with external rail access (for freight throughput). */
+  getExternalStationCount(): number {
+    return this.externalStations.size;
+  }
+
+  /** Check if a specific station has external rail access. */
+  isStationExternal(x: number, y: number): boolean {
+    return this.externalStations.has(toPosKey(x, y));
   }
 
   /** Count active freight trains. */

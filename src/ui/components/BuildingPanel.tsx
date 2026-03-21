@@ -111,11 +111,19 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
   const warnings: Warning[] = [];
 
   // Freight warnings always show (not gated by abandonment stress)
-  if (isCommercialZone(sel.zoneType) && sel.freightSupplied === false) {
-    warnings.push({ level: 'red', text: 'No goods to sell' });
+  if (isCommercialZone(sel.zoneType) && sel.freightStatus) {
+    if (sel.freightStatus === 'unsupplied') {
+      warnings.push({ level: 'red', text: 'No goods to sell' });
+    } else if (sel.freightStatus === 'imported') {
+      warnings.push({ level: 'yellow', text: 'Importing goods' });
+    }
   }
-  if (sel.zoneType === ZoneType.INDUSTRIAL && (sel.freightSurplusRatio ?? 0) > 0.5) {
-    warnings.push({ level: sel.freightSurplusRatio! > 0.8 ? 'red' : 'yellow', text: 'Goods not selling' });
+  if (sel.zoneType === ZoneType.INDUSTRIAL) {
+    if (sel.freightExporting) {
+      warnings.push({ level: 'yellow', text: 'Exporting goods' });
+    } else if ((sel.freightSurplusRatio ?? 0) > 0.5) {
+      warnings.push({ level: sel.freightSurplusRatio! > 0.8 ? 'red' : 'yellow', text: 'Goods not selling' });
+    }
   }
 
   // Remaining warnings only when building is under stress

@@ -17,7 +17,8 @@ export function buildIncomeCalcDeps(state: GameState): IncomeCalcDeps {
       return district ? getSpecializationBonus(district.specialization).revenueMultiplier : 1;
     },
     isPowered: (x, y) => state.power.isPowered(x, y),
-    isFreightSupplied: (x, y) => state.freight.isSupplied(x, y),
+    getFreightSupplyStatus: (x, y) => state.freight.getSupplyStatus(x, y),
     freightSurplusRatio: state.freight.getSurplusRatio(),
+    isExporting: state.freight.getIsExporting(),
   };
 }
