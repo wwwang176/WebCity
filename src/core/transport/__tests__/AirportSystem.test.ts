@@ -98,9 +98,12 @@ describe('AirportSystem.demolishAtCell', () => {
 });
 
 describe('canPlaceAirport', () => {
-  function makeGrid(cells: Record<string, { roadType: number; buildingId: number }>) {
+  function makeGrid(cells: Record<string, { roadType: number; buildingId: number; railType?: number }>) {
     return {
-      getCell: (x: number, y: number) => cells[`${x},${y}`] ?? null,
+      getCell: (x: number, y: number) => {
+        const c = cells[`${x},${y}`];
+        return c ? { roadType: c.roadType, buildingId: c.buildingId, railType: c.railType ?? 0 } : null;
+      },
     };
   }
 
@@ -116,6 +119,21 @@ describe('canPlaceAirport', () => {
     cells['5,4'] = { roadType: 2, buildingId: 0 };
     const grid = makeGrid(cells);
     expect(canPlaceAirport(grid, 5, 5, 'SMALL')).toEqual({ ok: true });
+  });
+
+  it('should reject when cell has rail track', () => {
+    const cells: Record<string, { roadType: number; buildingId: number; railType?: number }> = {};
+    for (let dy = 5; dy <= 6; dy++) {
+      for (let dx = 5; dx <= 7; dx++) {
+        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
+      }
+    }
+    cells['6,5'] = { roadType: 0, buildingId: 0, railType: 1 };
+    cells['5,4'] = { roadType: 2, buildingId: 0 };
+    const grid = makeGrid(cells);
+    const result = canPlaceAirport(grid, 5, 5, 'SMALL');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('AIRPORT_AREA_OCCUPIED');
   });
 
   it('should reject when no adjacent road', () => {

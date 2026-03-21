@@ -97,7 +97,7 @@ export type AirportPlaceResult =
 
 /** Validate whether an airport can be placed at (x,y). (x,y) = top-left cell. */
 export function canPlaceAirport(
-  grid: ReadableGrid,
+  grid: { getCell(x: number, y: number): { roadType: number; buildingId: number; railType: number } | null },
   x: number,
   y: number,
   size: AirportSize,
@@ -109,7 +109,7 @@ export function canPlaceAirport(
     for (let dx = 0; dx < w; dx++) {
       const c = grid.getCell(x + dx, y + dy);
       if (!c) return { ok: false, reason: 'AIRPORT_OUT_OF_BOUNDS' };
-      if (c.roadType !== 0 || c.buildingId !== 0) return { ok: false, reason: 'AIRPORT_AREA_OCCUPIED' };
+      if (c.roadType !== 0 || c.buildingId !== 0 || c.railType !== 0) return { ok: false, reason: 'AIRPORT_AREA_OCCUPIED' };
     }
   }
   // Must be adjacent to at least one road (same as other infra)
