@@ -220,6 +220,8 @@ export class SimulationLoop {
         population: this.state.citizens.getPopulation(),
         jobOpenings: this.countJobOpenings(),
         exportDemand: 10,
+        freightShortageRatio: this.state.freight.getShortageRatio(),
+        freightSurplusRatio: this.state.freight.getSurplusRatio(),
       });
       this.state.rciDemand = applyBusinessTaxPenalty(
         rci, this.state.taxRates.business ?? BUSINESS_TAX.BASELINE,
@@ -382,8 +384,10 @@ export class SimulationLoop {
     this.state.bus.congestionLevel = this.state.traffic.getCongestionLevel();
     tickAllTransportSystems(this.state);
 
-    // 8b. Freight: industrial→commercial cargo flow (every tick)
-    this.state.freight.tick(this.state.grid);
+    // 8b. Freight: BFS-based supply calculation (every 6 ticks)
+    if (isSlowTick) {
+      this.state.freight.calculateSupply(this.state.grid);
+    }
 
     // 8c. Rail freight bonus: each active freight train adds cargo throughput
     const freightTrainCount = this.state.rail.getFreightTrainCount();
@@ -897,6 +901,8 @@ export class SimulationLoop {
         pollution: pollution.ground,
         buildingLevel: building.level,
         serviceScore,
+        freightSupplied: isCommercialZone(cell.zoneType) ? this.state.freight.isSupplied(x, y) : undefined,
+        freightSurplusRatio: cell.zoneType === ZoneType.INDUSTRIAL ? this.state.freight.getSurplusRatio() : undefined,
       };
 
       const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);

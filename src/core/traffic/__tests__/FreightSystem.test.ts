@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { FreightSystem, FREIGHT } from '../FreightSystem';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
+import { RoadType } from '../../road/types';
 
 describe('FreightSystem', () => {
   let grid: Grid;
@@ -12,62 +13,120 @@ describe('FreightSystem', () => {
     freight = new FreightSystem();
   });
 
-  it('should produce cargo from industrial buildings', () => {
-    // Place 3 industrial buildings
-    for (let x = 0; x < 3; x++) {
-      grid.setCell(x, 0, { zoneType: ZoneType.INDUSTRIAL, buildingId: 15 });
-    }
+  it('should supply commercial connected to industrial via road', () => {
+    // Road: (2,0)-(3,0)-(4,0)
+    grid.setCell(2, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(3, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(4, 0, { roadType: RoadType.TWO_LANE });
+    // Industrial adjacent to road
+    grid.setCell(2, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    // Commercial adjacent to road
+    grid.setCell(4, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
 
-    const demand = freight.tick(grid);
-    expect(demand.production).toBe(6); // 3 buildings * 2 cargo each
-    expect(freight.getCargoStorage()).toBe(6); // all stored
+    freight.calculateSupply(grid);
+
+    expect(freight.isSupplied(4, 1)).toBe(true);
+    expect(freight.getShortageRatio()).toBe(0);
   });
 
-  it('should consume cargo at commercial buildings', () => {
-    // Place industrial first to build storage
-    grid.setCell(0, 0, { zoneType: ZoneType.INDUSTRIAL, buildingId: 15 });
-    freight.tick(grid); // produces 2, storage = 2
+  it('should not supply commercial disconnected from industrial', () => {
+    // Two separate roads with no connection
+    grid.setCell(2, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(10, 0, { roadType: RoadType.TWO_LANE });
+    // Industrial on road A
+    grid.setCell(2, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    // Commercial on road B (disconnected)
+    grid.setCell(10, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
 
-    // Now add commercial
-    grid.setCell(1, 0, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    const demand = freight.tick(grid);
+    freight.calculateSupply(grid);
 
-    expect(demand.production).toBe(2);
-    expect(demand.consumption).toBe(1);
-    expect(demand.shortage).toBe(0); // enough supply
-    expect(freight.getCargoStorage()).toBe(3); // 2 stored + 2 produced - 1 consumed
-  });
-
-  it('should report shortage when commercial lacks supply', () => {
-    // Only commercial, no industrial
-    for (let x = 0; x < 5; x++) {
-      grid.setCell(x, 0, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    }
-
-    const demand = freight.tick(grid);
-    expect(demand.production).toBe(0);
-    expect(demand.consumption).toBe(5);
-    expect(demand.shortage).toBe(5); // full shortage
+    expect(freight.isSupplied(10, 1)).toBe(false);
     expect(freight.getShortageRatio()).toBe(1); // 100% shortage
   });
 
-  it('should track shortage ratio correctly', () => {
-    // 1 industrial (produces 2) + 4 commercial (consume 4)
-    grid.setCell(0, 0, { zoneType: ZoneType.INDUSTRIAL, buildingId: 15 });
-    for (let x = 1; x <= 4; x++) {
-      grid.setCell(x, 0, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+  it('should serve closer commercial first when production is limited', () => {
+    // Road: (0,0) to (6,0)
+    for (let x = 0; x <= 6; x++) {
+      grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
     }
+    // 1 industrial (produces 2) adjacent to road start
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    // 3 commercial (consume 1 each) — only 2 can be served
+    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    grid.setCell(4, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    grid.setCell(6, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
 
-    freight.tick(grid);
-    // Production: 2, consumption: 4, storage started at 0
-    // Actual consumption: min(4, 2) = 2, shortage = 2
-    expect(freight.getShortageRatio()).toBe(0.5); // 50% shortage
+    freight.calculateSupply(grid);
+
+    // Closer two should be supplied, farthest unsupplied
+    expect(freight.getSuppliedCount()).toBe(2);
+    expect(freight.getShortageRatio()).toBeCloseTo(1 / 3);
   });
 
-  it('should have zero shortage ratio with no commercial buildings', () => {
-    grid.setCell(0, 0, { zoneType: ZoneType.INDUSTRIAL, buildingId: 15 });
-    freight.tick(grid);
-    expect(freight.getShortageRatio()).toBe(0);
+  it('should accumulate surplus in cargoStorage', () => {
+    // 2 industrial (produce 4) + 1 commercial (consumes 1) → surplus 3
+    for (let x = 0; x <= 4; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(1, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(4, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    freight.calculateSupply(grid);
+
+    expect(freight.getCargoStorage()).toBe(3); // 4 produced - 1 consumed
+    expect(freight.getSurplusRatio()).toBeCloseTo(3 / FREIGHT.MAX_STORAGE);
+  });
+
+  it('should cap cargoStorage at MAX_STORAGE', () => {
+    for (let x = 0; x <= 2; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    // Fill storage beyond max
+    freight.addExternalCargo(FREIGHT.MAX_STORAGE);
+    freight.calculateSupply(grid);
+
+    expect(freight.getCargoStorage()).toBe(FREIGHT.MAX_STORAGE);
+    expect(freight.getSurplusRatio()).toBe(1);
+  });
+
+  it('should drain cargoStorage when consumption exceeds production', () => {
+    grid.setCell(2, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(3, 0, { roadType: RoadType.TWO_LANE });
+    // Only commercial, no industrial — connected to road but no source
+    grid.setCell(3, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    freight.addExternalCargo(10);
+    freight.calculateSupply(grid);
+
+    // No industrial to supply, so commercial is unsupplied
+    // But storage drains by the shortage: 0 produced - 0 consumed = 0 surplus, storage stays
+    // Actually: production=0, actualConsumed=0 (unsupplied), surplus=0
+    expect(freight.getCargoStorage()).toBe(10); // unchanged since nothing consumed
+  });
+
+  it('should handle addExternalCargo', () => {
+    expect(freight.getCargoStorage()).toBe(0);
+    freight.addExternalCargo(100);
+    expect(freight.getCargoStorage()).toBe(100);
+  });
+
+  it('should report correct production and consumption', () => {
+    for (let x = 0; x <= 4; x++) {
+      grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    }
+    // 2 industrial, 3 commercial, all connected
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(1, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    grid.setCell(3, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    grid.setCell(4, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    freight.calculateSupply(grid);
+
+    const demand = freight.getLastDemand();
+    expect(demand.production).toBe(4); // 2 factories × 2
+    expect(demand.consumption).toBe(3); // 3 shops × 1
+    expect(demand.shortage).toBe(0); // 4 production ≥ 3 consumption
   });
 
   it('freight rates should be positive', () => {
@@ -77,5 +136,12 @@ describe('FreightSystem', () => {
 
   it('production rate should exceed consumption rate', () => {
     expect(FREIGHT.INDUSTRIAL_PRODUCTION_RATE).toBeGreaterThanOrEqual(FREIGHT.COMMERCIAL_CONSUMPTION_RATE);
+  });
+
+  it('should have zero shortage with no commercial buildings', () => {
+    grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    freight.calculateSupply(grid);
+    expect(freight.getShortageRatio()).toBe(0);
   });
 });

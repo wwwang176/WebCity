@@ -31,6 +31,10 @@ export interface IncomeCalcDeps {
   getRevenueMultiplier?: (x: number, y: number) => number;
   /** Optional power check — unpowered buildings produce zero income. Defaults to true. */
   isPowered?: (x: number, y: number) => boolean;
+  /** Optional freight supply check — unsupplied commercial buildings earn half income. */
+  isFreightSupplied?: (x: number, y: number) => boolean;
+  /** Optional freight surplus ratio (0~1) — industrial income reduced proportionally. */
+  freightSurplusRatio?: number;
 }
 
 /**
@@ -74,8 +78,16 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
       buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
       if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
       if (isCommercialZone(btype.zoneType)) {
+        // Unsupplied commercial buildings earn half income
+        if (deps.isFreightSupplied && !deps.isFreightSupplied(x, y)) {
+          buildingIncome *= 0.5;
+        }
         commercial += buildingIncome;
       } else if (btype.zoneType === ZoneType.INDUSTRIAL) {
+        // Surplus reduces industrial income
+        if (deps.freightSurplusRatio != null && deps.freightSurplusRatio > 0) {
+          buildingIncome *= 1 - deps.freightSurplusRatio * 0.5;
+        }
         industrial += buildingIncome;
       } else if (btype.zoneType === ZoneType.OFFICE) {
         office += buildingIncome;

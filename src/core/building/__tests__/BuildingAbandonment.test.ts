@@ -176,6 +176,38 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(result.totalDelta).toBeCloseTo(9.75);
   });
 
+  // --- Freight ---
+
+  it('commercial without freight supply → +6 stress', () => {
+    const cond = { ...goodConditions(), freightSupplied: false };
+    const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
+    expect(result.factors.freight).toBe(6);
+  });
+
+  it('commercial with freight supply → no freight stress', () => {
+    const cond = { ...goodConditions(), freightSupplied: true };
+    const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
+    expect(result.factors.freight).toBe(0);
+  });
+
+  it('industrial with surplus → proportional stress', () => {
+    const cond = { ...goodConditions(), freightSurplusRatio: 0.5 };
+    const result = calculateAbandonmentStress(ZoneType.INDUSTRIAL, cond);
+    expect(result.factors.freight).toBeCloseTo(3); // 0.5 × 6
+  });
+
+  it('industrial with no surplus → no freight stress', () => {
+    const cond = { ...goodConditions(), freightSurplusRatio: 0 };
+    const result = calculateAbandonmentStress(ZoneType.INDUSTRIAL, cond);
+    expect(result.factors.freight).toBe(0);
+  });
+
+  it('residential ignores freight conditions', () => {
+    const cond = { ...goodConditions(), freightSupplied: false, freightSurplusRatio: 1.0 };
+    const result = calculateAbandonmentStress(ZoneType.RESIDENTIAL_LOW, cond);
+    expect(result.factors.freight).toBe(0);
+  });
+
   // --- Multi-factor ---
 
   it('multiple factors stack correctly (no services)', () => {

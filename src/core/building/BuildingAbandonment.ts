@@ -13,6 +13,10 @@ export interface AbandonmentConditions {
   buildingLevel: number;
   /** Continuous service score (0~10) based on distance to facilities. */
   serviceScore: number;
+  /** Commercial: true if this building received freight goods. */
+  freightSupplied?: boolean;
+  /** Industrial: surplus ratio (0 = balanced, 1 = storage full). */
+  freightSurplusRatio?: number;
 }
 
 export interface AbandonmentFactors {
@@ -21,6 +25,7 @@ export interface AbandonmentFactors {
   water: number;
   crime: number;
   pollution: number;
+  freight: number;
   serviceOffset: number;
 }
 
@@ -72,7 +77,7 @@ export function calculateAbandonmentStress(
   const sens = ZONE_SENSITIVITY[cat]!;
   const levelSens = LEVEL_TAX_SENSITIVITY[conditions.buildingLevel] ?? 1.0;
 
-  const factors: AbandonmentFactors = { tax: 0, power: 0, water: 0, crime: 0, pollution: 0, serviceOffset: 0 };
+  const factors: AbandonmentFactors = { tax: 0, power: 0, water: 0, crime: 0, pollution: 0, freight: 0, serviceOffset: 0 };
 
   // Tax pressure (higher level → lower threshold, higher sensitivity)
   if (isResidentialZone(zoneType)) {
@@ -101,10 +106,18 @@ export function calculateAbandonmentStress(
     factors.pollution = (conditions.pollution - 40) * 0.1 * sens.pollution;
   }
 
+  // Freight: commercial without goods, industrial with surplus
+  if (isCommercialZone(zoneType) && conditions.freightSupplied === false) {
+    factors.freight = 6;
+  }
+  if (zoneType === ZoneType.INDUSTRIAL && (conditions.freightSurplusRatio ?? 0) > 0) {
+    factors.freight = (conditions.freightSurplusRatio!) * 6;
+  }
+
   // Service offset: good services reduce stress (distance-based, 0~10 score)
   factors.serviceOffset = conditions.serviceScore * ABANDONMENT.SERVICE_OFFSET_MULTIPLIER;
 
-  const pressure = factors.tax + factors.power + factors.water + factors.crime + factors.pollution;
+  const pressure = factors.tax + factors.power + factors.water + factors.crime + factors.pollution + factors.freight;
   const net = pressure - factors.serviceOffset;
 
   // net > 0: stress increases; net ≤ 0: stress recovers

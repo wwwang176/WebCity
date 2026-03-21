@@ -5,6 +5,10 @@ export interface RCIState {
   population: number;
   jobOpenings: number;
   exportDemand: number;
+  /** Freight shortage ratio (0 = all supplied, 1 = no supply). Reduces commercial demand. */
+  freightShortageRatio?: number;
+  /** Freight surplus ratio (0 = balanced, 1 = storage full). Reduces industrial demand. */
+  freightSurplusRatio?: number;
 }
 
 export interface RCIDemandValues {
@@ -23,6 +27,10 @@ export const RCI = {
   INDUSTRIAL_BASE: 5,
   DEMAND_MIN: -100,
   DEMAND_MAX: 100,
+  /** Max demand penalty from freight shortage on commercial. */
+  FREIGHT_SHORTAGE_PENALTY: 10,
+  /** Max demand penalty from freight surplus on industrial. */
+  FREIGHT_SURPLUS_PENALTY: 10,
 } as const;
 
 function clampDemand(value: number): number {
@@ -58,9 +66,11 @@ export function calculateRCIDemand(state: RCIState): RCIDemandValues {
   );
   const cDemand = clampDemand(
     (state.population * RCI.POPULATION_FACTOR + RCI.COMMERCIAL_BASE) - state.commercialSupply
+    - (state.freightShortageRatio ?? 0) * RCI.FREIGHT_SHORTAGE_PENALTY
   );
   const iDemand = clampDemand(
     (state.commercialSupply * RCI.COMMERCIAL_TO_INDUSTRIAL + state.exportDemand + RCI.INDUSTRIAL_BASE) - state.industrialSupply
+    - (state.freightSurplusRatio ?? 0) * RCI.FREIGHT_SURPLUS_PENALTY
   );
 
   return { residential: rDemand, commercial: cDemand, industrial: iDemand };

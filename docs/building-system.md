@@ -179,6 +179,8 @@ grid.setCell(x, y, { buildingId: building.id })
 | 稅率(商業) | 商業稅率 > 9% | (稅率 - 9) × 1.5 × 區域敏感度 × 等級敏感度 |
 | 無電力 | isPowered = false | +8 |
 | 無供水 | isWatered = false | +6 |
+| 缺貨 | 商業未被貨運供應 | +6 |
+| 過剩 | 工業貨物堆積 | surplusRatio × 6 |
 | 犯罪 | crimeRate > 30 | (犯罪率 - 30) × 0.15 × 區域敏感度 |
 | 污染 | pollution > 40 | (污染 - 40) × 0.1 × 區域敏感度 |
 
