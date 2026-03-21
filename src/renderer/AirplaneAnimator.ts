@@ -14,6 +14,7 @@ import type { TransportVehicleRenderData } from '../core/transport/collectTransp
 import type { Airport, AirportSize } from '../core/transport/AirportSystem';
 import { getAirportDimensions } from '../core/transport/AirportSystem';
 import { getRotatedSize } from '../core/building/InfraConfig';
+import { smoothTrackPath } from './TrainAnimator';
 import type { VehicleAnimator } from './VehicleAnimator';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -92,50 +93,69 @@ interface Vec2 { x: number; z: number }
 interface SizeFlightPaths {
   approachStart: Vec2;
   threshold: Vec2;
-  /** Far end of runway — plane decelerates to here after landing. */
-  runwayEnd: Vec2;
-  /** Where taxiway meets the runway — plane turns here to enter/exit taxiway. */
-  taxiJunction: Vec2;
-  taxiInWaypoints: Vec2[];
+  /** Roll stop: before right junction, leaving arc space. */
+  rollStop: Vec2;
+  /** Right taxiway junction on runway. */
+  rightJunction: Vec2;
+  /** Top of right taxiway at apron level. */
+  rightTaxiTop: Vec2;
+  /** Z level for horizontal apron taxi. */
+  apronZ: number;
+  /** Left taxiway top at apron level. */
+  leftTaxiTop: Vec2;
+  /** Left taxiway junction on runway. */
+  leftJunction: Vec2;
+  /** Short distance onto runway from leftJunction (for arc detection). */
+  runwayEntry: Vec2;
   gates: Vec2[];
-  taxiOutEnd: Vec2;
   takeoffEnd: Vec2;
   climbEnd: Vec2;
 }
 
+// SMALL (3×2): left taxi x=-1.05, right taxi x=+1.05
 const SMALL_PATHS: SizeFlightPaths = {
   approachStart:   { x: -10.3, z: 0.60 },
   threshold:       { x: -1.00, z: 0.60 },
-  runwayEnd:       { x: 1.20, z: 0.60 },
-  taxiJunction:    { x: 0, z: 0.60 },
-  taxiInWaypoints: [{ x: 0, z: 0.30 }, { x: 0, z: -0.05 }],
-  gates:           [{ x: 0, z: -0.15 }],
-  taxiOutEnd:      { x: -1.00, z: 0.60 },
+  rollStop:        { x: 0.55, z: 0.60 },
+  rightJunction:   { x: 1.05, z: 0.60 },
+  rightTaxiTop:    { x: 1.05, z: -0.10 },
+  apronZ:          -0.10,
+  leftTaxiTop:     { x: -1.05, z: -0.10 },
+  leftJunction:    { x: -1.05, z: 0.60 },
+  runwayEntry:     { x: -0.55, z: 0.60 },
+  gates:           [{ x: 0, z: -0.45 }],
   takeoffEnd:      { x: 1.40, z: 0.60 },
   climbEnd:        { x: 6.0, z: 0.60 },
 };
 
+// MEDIUM (5×4): left taxi x=-1.80, right taxi x=+1.80
 const MEDIUM_PATHS: SizeFlightPaths = {
   approachStart:   { x: -11.3, z: 1.20 },
   threshold:       { x: -2.00, z: 1.20 },
-  runwayEnd:       { x: 2.00, z: 1.20 },
-  taxiJunction:    { x: 0, z: 1.20 },
-  taxiInWaypoints: [{ x: 0, z: 0.60 }, { x: 0, z: -0.35 }],
-  gates:           [{ x: -0.60, z: -0.60 }, { x: 0, z: -0.60 }, { x: 0.60, z: -0.60 }],
-  taxiOutEnd:      { x: -2.00, z: 1.20 },
+  rollStop:        { x: 1.30, z: 1.20 },
+  rightJunction:   { x: 1.80, z: 1.20 },
+  rightTaxiTop:    { x: 1.80, z: -0.10 },
+  apronZ:          -0.10,
+  leftTaxiTop:     { x: -1.80, z: -0.10 },
+  leftJunction:    { x: -1.80, z: 1.20 },
+  runwayEntry:     { x: -1.30, z: 1.20 },
+  gates:           [{ x: -0.60, z: -0.65 }, { x: 0, z: -0.65 }, { x: 0.60, z: -0.65 }],
   takeoffEnd:      { x: 2.25, z: 1.20 },
   climbEnd:        { x: 7.0, z: 1.20 },
 };
 
-// Large: dual runways — path A uses runway1 + left taxiway, path B uses runway2 + right taxiway
+// LARGE (7×6): left taxi x=-2.80, right taxi x=+2.80
 const LARGE_PATH_A: SizeFlightPaths = {
   approachStart:   { x: -12.3, z: 0.80 },
   threshold:       { x: -3.00, z: 0.80 },
-  runwayEnd:       { x: 3.00, z: 0.80 },
-  taxiJunction:    { x: -1.00, z: 0.80 },
-  taxiInWaypoints: [{ x: -1.00, z: 0.00 }, { x: -1.00, z: -1.20 }],
-  gates:           [{ x: -1.40, z: -1.50 }, { x: -0.70, z: -1.50 }, { x: 0, z: -1.50 }],
-  taxiOutEnd:      { x: -3.00, z: 0.80 },
+  rollStop:        { x: 2.30, z: 0.80 },
+  rightJunction:   { x: 2.80, z: 0.80 },
+  rightTaxiTop:    { x: 2.80, z: -0.80 },
+  apronZ:          -0.80,
+  leftTaxiTop:     { x: -2.80, z: -0.80 },
+  leftJunction:    { x: -2.80, z: 0.80 },
+  runwayEntry:     { x: -2.30, z: 0.80 },
+  gates:           [{ x: -0.50, z: -1.30 }, { x: 0.20, z: -1.30 }],
   takeoffEnd:      { x: 3.25, z: 0.80 },
   climbEnd:        { x: 8.0, z: 0.80 },
 };
@@ -143,11 +163,14 @@ const LARGE_PATH_A: SizeFlightPaths = {
 const LARGE_PATH_B: SizeFlightPaths = {
   approachStart:   { x: -12.3, z: 2.20 },
   threshold:       { x: -3.00, z: 2.20 },
-  runwayEnd:       { x: 3.00, z: 2.20 },
-  taxiJunction:    { x: 1.20, z: 2.20 },
-  taxiInWaypoints: [{ x: 1.20, z: 1.50 }, { x: 1.20, z: -1.20 }],
-  gates:           [{ x: 0, z: -1.50 }, { x: 0.70, z: -1.50 }, { x: 1.40, z: -1.50 }],
-  taxiOutEnd:      { x: -3.00, z: 2.20 },
+  rollStop:        { x: 2.30, z: 2.20 },
+  rightJunction:   { x: 2.80, z: 2.20 },
+  rightTaxiTop:    { x: 2.80, z: -0.80 },
+  apronZ:          -0.80,
+  leftTaxiTop:     { x: -2.80, z: -0.80 },
+  leftJunction:    { x: -2.80, z: 2.20 },
+  runwayEntry:     { x: -2.30, z: 2.20 },
+  gates:           [{ x: 0.20, z: -1.30 }, { x: 0.90, z: -1.30 }],
   takeoffEnd:      { x: 3.25, z: 2.20 },
   climbEnd:        { x: 8.0, z: 2.20 },
 };
@@ -560,34 +583,64 @@ export class AirplaneAnimator implements VehicleAnimator {
 
   private buildPhasePath(anim: AirplaneAnimState): FerryPathInfo {
     const paths = getFlightPaths(anim.size, anim.pathIndex);
+    const az = paths.apronZ;
 
     let localWaypoints: Vec2[];
+    let smooth = false;
+
     switch (anim.phase) {
       case 'roll':
-        // Full runway: threshold → runway end (decelerate to stop)
-        localWaypoints = [paths.threshold, paths.runwayEnd];
+        // Threshold → rollStop (before right junction, leave arc space)
+        localWaypoints = [paths.threshold, paths.rollStop];
         break;
+
       case 'taxi_in':
-        // Runway end → back to taxiway junction → down taxiway → gate
-        localWaypoints = [paths.runwayEnd, paths.taxiJunction, ...paths.taxiInWaypoints, anim.gate];
+        // rollStop → arc into right taxiway → straight up → arc to apron → horiz → arc to gate
+        // All turns are interior points → smoothTrackPath generates arcs.
+        localWaypoints = [
+          paths.rollStop,                              // start on runway (= roll end)
+          paths.rightJunction,                         // ARC: → to ↑
+          paths.rightTaxiTop,                          // ARC: ↑ to ←
+          { x: anim.gate.x, z: az },                  // ARC: ← to ↑ (toward gate)
+          anim.gate,                                   // end
+        ];
+        smooth = true;
         break;
+
       case 'pushback':
-        // Gate → reverse taxiway → taxiway junction
-        localWaypoints = [anim.gate, ...[...paths.taxiInWaypoints].reverse(), paths.taxiJunction];
+        // Short arc backward to the right: gate → arcMid → pushbackEnd
+        // Heading reversed: nose stays ↑ initially, swings to ← by end.
+        localWaypoints = [
+          anim.gate,                                   // start facing terminal
+          { x: anim.gate.x, z: az },                  // ARC: ↓ to → (tail goes right)
+          { x: anim.gate.x + 0.40, z: az },           // end (nose now faces ←)
+        ];
+        smooth = true;
         break;
+
       case 'taxi_out':
-        // Taxiway junction → runway threshold (for takeoff)
-        localWaypoints = [paths.taxiJunction, paths.taxiOutEnd];
+        // Forward from pushback end → across apron → arc into left taxiway → down → arc onto runway
+        localWaypoints = [
+          { x: anim.gate.x + 0.40, z: az },           // start (= pushback end)
+          paths.leftTaxiTop,                           // ARC: ← to ↓
+          paths.leftJunction,                          // ARC: ↓ to →
+          paths.runwayEntry,                           // end (on runway)
+        ];
+        smooth = true;
         break;
+
       case 'takeoff_roll':
-        localWaypoints = [paths.taxiOutEnd, paths.takeoffEnd];
+        // runwayEntry → takeoff end (full runway)
+        localWaypoints = [paths.runwayEntry, paths.takeoffEnd];
         break;
+
       default:
         localWaypoints = [{ x: 0, z: 0 }, { x: 1, z: 0 }];
     }
 
     const worldPoints = transformPath(localWaypoints, anim.centerX, anim.centerZ, anim.rotRad);
-    return buildFerryPathInfo(worldPoints);
+    const finalPoints = smooth ? smoothTrackPath(worldPoints) : worldPoints;
+    return buildFerryPathInfo(finalPoints);
   }
 
   // ── Helpers ──
