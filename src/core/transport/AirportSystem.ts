@@ -42,34 +42,37 @@ export function getAirportBuildCost(size: AirportSize): number {
   return AIRPORT_SIZE_CONFIG[size].buildCost;
 }
 
-/** Iterate over every cell in an airport footprint (DRY: eliminates repeated footprint loops). */
+/** Iterate over every cell in an airport footprint. (x,y) = top-left cell, same as other infra. */
 export function forEachAirportCell(
   x: number, y: number, size: AirportSize,
   fn: (cx: number, cy: number) => void,
 ): void {
   const { w, h } = getAirportDimensions(size);
-  const halfW = Math.floor(w / 2);
-  const halfH = Math.floor(h / 2);
-  for (let dy = -halfH; dy <= halfH; dy++) {
-    for (let dx = -halfW; dx <= halfW; dx++) {
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
       fn(x + dx, y + dy);
     }
   }
 }
 
-/** Place airport footprint cells on the grid (SRP: grid placement belongs with airport logic). */
+/** Place airport footprint cells on the grid. (x,y) = top-left, same as placeInfraOnGrid. */
 export function placeAirportOnGrid(
   grid: { setCell(x: number, y: number, data: { buildingId: number; reserved?: number }): void },
-  x: number, y: number, size: AirportSize, airportBuildingId: number,
+  x: number, y: number, size: AirportSize, airportBuildingId: number, rotation = 0,
 ): void {
-  forEachAirportCell(x, y, size, (cx, cy) => {
-    const isPrimary = cx === x && cy === y;
-    grid.setCell(cx, cy, {
-      buildingId: airportBuildingId,
-      reserved: isPrimary ? 0 : MULTI_CELL_OCCUPIED,
-    });
-  });
+  const { w, h } = getAirportDimensions(size);
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
+      const isPrimary = dx === 0 && dy === 0;
+      grid.setCell(x + dx, y + dy, {
+        buildingId: airportBuildingId,
+        reserved: isPrimary ? ROTATION_RESERVED[rotation as 0 | 1 | 2 | 3] : MULTI_CELL_OCCUPIED,
+      });
+    }
+  }
 }
+
+const ROTATION_RESERVED: Record<number, number> = { 0: 0, 1: 5, 2: 6, 3: 7 };
 
 export interface Airport {
   id: number;
@@ -86,17 +89,16 @@ export type AirportPlaceResult =
   | { ok: true }
   | { ok: false; reason: string };
 
-/** Validate whether an airport can be placed at (x,y) with the given size. Pure function (SRP). */
+/** Validate whether an airport can be placed at (x,y). (x,y) = top-left cell. */
 export function canPlaceAirport(
   grid: { getCell(x: number, y: number): { roadType: number; buildingId: number } | null },
   x: number,
   y: number,
   size: AirportSize,
 ): AirportPlaceResult {
-  const footprint = getAirportFootprint(size);
-  const half = Math.floor(footprint / 2);
-  for (let dy = -half; dy <= half; dy++) {
-    for (let dx = -half; dx <= half; dx++) {
+  const { w, h } = getAirportDimensions(size);
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
       const c = grid.getCell(x + dx, y + dy);
       if (!c) return { ok: false, reason: 'AIRPORT_OUT_OF_BOUNDS' };
       if (c.roadType !== 0 || c.buildingId !== 0) return { ok: false, reason: 'AIRPORT_AREA_OCCUPIED' };
@@ -186,8 +188,8 @@ export class AirportSystem {
   /** Find the airport whose footprint covers the given cell. Returns null if none. */
   findAtCell(x: number, y: number): Airport | null {
     for (const a of this.airports) {
-      const half = Math.floor(getAirportFootprint(a.size) / 2);
-      if (x >= a.x - half && x <= a.x + half && y >= a.y - half && y <= a.y + half) {
+      const { w, h } = getAirportDimensions(a.size);
+      if (x >= a.x && x < a.x + w && y >= a.y && y < a.y + h) {
         return a;
       }
     }

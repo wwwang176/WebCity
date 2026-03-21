@@ -977,7 +977,7 @@ export class Game {
     }
 
     // Set all NxN cells to airport buildingId (delegated to core — SRP)
-    placeAirportOnGrid(this.state.grid, x, y, airportSize, getInfraBuildingId('airport'));
+    placeAirportOnGrid(this.state.grid, x, y, airportSize, getInfraBuildingId('airport'), this.currentRotation);
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
     return true;
@@ -1376,7 +1376,8 @@ export class Game {
   private updateCursorSize(): void {
     if (isAirportTool(this.currentTool)) {
       const { w, h } = getAirportDimensions(getAirportToolSize(this.currentTool));
-      this.gridCursor.setSize(w, h, true);
+      const rotated = getRotatedSize(w, h, this.currentRotation);
+      this.gridCursor.setSize(rotated.w, rotated.h);
       return;
     }
     const cfg = isInfraType(this.currentTool)

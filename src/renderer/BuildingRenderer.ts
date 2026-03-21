@@ -6,6 +6,7 @@ import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, typ
 import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
+import { getAirportDimensions } from '../core/transport/AirportSystem';
 import { disposeGroup } from './disposeGroup';
 
 // ===== Deterministic pseudo-random based on position =====
@@ -1203,11 +1204,13 @@ export class BuildingRenderer {
       const cfg = getInfraConfig(inf.type);
       const rotationDeg = RESERVED_TO_ROTATION[inf.reserved] ?? 0;
 
-      // Airport primary cell IS the center (center-based placement), other infra uses top-left
+      // All infra uses top-left placement — convert to center for 3D positioning
       let centerX: number, centerZ: number;
-      if (inf.type === 'airport') {
-        centerX = inf.x;
-        centerZ = inf.y;
+      if (inf.type === 'airport' && inf.airportSize) {
+        const dim = getAirportDimensions(inf.airportSize as 'SMALL' | 'MEDIUM' | 'LARGE');
+        const { w, h } = getRotatedSize(dim.w, dim.h, rotationDeg as Rotation);
+        centerX = inf.x + (w - 1) / 2;
+        centerZ = inf.y + (h - 1) / 2;
       } else {
         const { w, h } = cfg
           ? getRotatedSize(cfg.width, cfg.height, rotationDeg as Rotation)
