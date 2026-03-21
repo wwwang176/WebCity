@@ -256,6 +256,8 @@ interface AirplaneAnimState {
   centerX: number;
   centerZ: number;
   rotRad: number;
+  /** Unique ID per spawn for color randomization. */
+  vehicleId: number;
 }
 
 // ── Main animator ────────────────────────────────────────────────
@@ -269,6 +271,7 @@ export class AirplaneAnimator implements VehicleAnimator {
   private anims = new Map<string, AirplaneAnimState>();
   private spawnTimers = new Map<string, number>();
   private knownAirportIds = new Set<number>();
+  private spawnCounter = 0;
 
   update(
     dt: number,
@@ -343,7 +346,7 @@ export class AirplaneAnimator implements VehicleAnimator {
 
     // Output to transportVehicles
     transportVehicles.push({
-      id: AIRPLANE_ID_OFFSET + airport.id * 100 + pathIndex,
+      id: anim.vehicleId,
       x: anim.worldX,
       y: anim.worldZ,
       heading: anim.heading,
@@ -401,6 +404,7 @@ export class AirplaneAnimator implements VehicleAnimator {
       centerX,
       centerZ,
       rotRad,
+      vehicleId: AIRPLANE_ID_OFFSET + Math.floor(Math.random() * 10000),
     };
   }
 

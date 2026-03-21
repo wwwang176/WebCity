@@ -156,26 +156,7 @@ export function buildAirplaneGeometry(): THREE.BufferGeometry {
   setVertexColors(tailGeo, 0.93, 0.93, 0.93);
   parts.push(tailGeo);
 
-  // ── Vertical tail (swept trapezoid, double-sided, airline blue) ──
-  {
-    const baseChord = 0.14;  // base front→rear (wider)
-    const topChord = 0.04;   // top front→rear (narrower)
-    const height = 0.15;
-    const leadSweep = 0.04;  // leading edge swept back at top
-    const trailSweep = 0.14; // trailing edge sweeps more
-    const bx = tailX;
-    const vt = new THREE.BufferGeometry();
-    vt.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
-      bx,               TOP_Y,            0,   // 0: base front
-      bx - baseChord,   TOP_Y,            0,   // 1: base rear
-      bx - leadSweep,   TOP_Y + height,   0,   // 2: top front
-      bx - trailSweep,  TOP_Y + height,   0,   // 3: top rear
-    ]), 3));
-    vt.setIndex([0, 2, 3, 0, 3, 1, 0, 3, 2, 0, 1, 3]); // both sides
-    setNormals(vt, 0, 0, 1);
-    setVertexColors(vt, 0.13, 0.59, 0.95);
-    parts.push(vt);
-  }
+  // Vertical tail is in separate geometry (buildAirplaneVTailGeometry) for independent coloring
 
   // ── Horizontal tail (single piece, double-sided, swept trapezoid) ──
   {
@@ -294,4 +275,31 @@ export function buildAirplaneNavLightsGeometry(): THREE.BufferGeometry {
   parts.push(navT);
 
   return mergeGeometries(parts)!;
+}
+
+/**
+ * Vertical tail as separate geometry (rendered with per-instance airline tail color).
+ * White vertex colors so instance color shows through cleanly.
+ */
+export function buildAirplaneVTailGeometry(): THREE.BufferGeometry {
+  const R = 0.06;
+  const TOP_Y = R * 2;
+  const FUSE_LEN = 0.72;
+  const tailX = -FUSE_LEN / 2;
+  const baseChord = 0.14;
+  const height = 0.15;
+  const leadSweep = 0.04;
+  const trailSweep = 0.14;
+
+  const vt = new THREE.BufferGeometry();
+  vt.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+    tailX,               TOP_Y,            0,
+    tailX - baseChord,   TOP_Y,            0,
+    tailX - leadSweep,   TOP_Y + height,   0,
+    tailX - trailSweep,  TOP_Y + height,   0,
+  ]), 3));
+  vt.setIndex([0, 2, 3, 0, 3, 1, 0, 3, 2, 0, 1, 3]);
+  setNormals(vt, 0, 0, 1);
+  setVertexColors(vt, 1.0, 1.0, 1.0); // white → instance color = exact tail color
+  return vt;
 }

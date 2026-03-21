@@ -1,7 +1,19 @@
 import * as THREE from 'three';
 import { VEHICLE_CONFIG } from './vehicleConfig';
-import { buildAirplaneNavLightsGeometry } from './geometry';
+import { buildAirplaneNavLightsGeometry, buildAirplaneVTailGeometry } from './geometry';
 import { ViewMode, getVehicleVisibility } from '../core/ViewMode';
+
+/** Airline body colors (vivid, multiplied with near-white vertex colors). */
+const AIRLINE_BODY_COLORS = [
+  0xffffff, 0x42a5f5, 0x66bb6a, 0xffa726, 0xec407a,
+  0x26c6da, 0xab47bc, 0xffee58, 0x78909c, 0xff7043,
+];
+
+/** Airline tail colors (bold, shown directly via white vertex colors). */
+const AIRLINE_TAIL_COLORS = [
+  0x1565c0, 0xc62828, 0x2e7d32, 0xe65100, 0x6a1b9a,
+  0x00695c, 0x0d47a1, 0xd32f2f, 0xef6c00, 0x4a148c,
+];
 
 export interface VehicleData {
   id: number;
@@ -43,7 +55,8 @@ export class VehicleRenderer {
   private readonly maxLights = 2000; // total vehicles across all types
   private _viewMode = ViewMode.NORMAL;
 
-  // Airplane nav lights: separate InstancedMesh with MeshBasicMaterial (always bright, blinks)
+  // Airplane sub-meshes: separate InstancedMesh for vtail (random color) and nav lights (blink)
+  private airplaneVTailMesh: THREE.InstancedMesh | null = null;
   private airplaneNavMesh: THREE.InstancedMesh | null = null;
 
   // Headlight / taillight instanced meshes
@@ -78,6 +91,15 @@ export class VehicleRenderer {
       scene.add(mesh);
       this.meshes.set(type, mesh);
     }
+
+    // Airplane vertical tail: separate mesh for independent airline tail color
+    const vtGeo = buildAirplaneVTailGeometry();
+    const vtMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.airplaneVTailMesh = new THREE.InstancedMesh(vtGeo, vtMat, this.maxPerType);
+    this.airplaneVTailMesh.count = 0;
+    this.airplaneVTailMesh.castShadow = true;
+    this.airplaneVTailMesh.frustumCulled = false;
+    scene.add(this.airplaneVTailMesh);
 
     // Airplane nav lights: separate mesh with MeshBasicMaterial (always bright)
     const navGeo = buildAirplaneNavLightsGeometry();
@@ -208,15 +230,25 @@ export class VehicleRenderer {
         matrix.copy(translation).multiply(rotation);
         mesh.setMatrixAt(i, matrix);
 
-        // Color: cars get random car color, trucks/vans get random commercial color
+        // Color: per-instance random from type-appropriate palette
         if (cfg && cfg.color === -1) {
-          const palette = (type === 'truck' || type === 'van')
-            ? COMMERCIAL_COLORS : CAR_COLORS;
-          color.set(palette[v.id % palette.length]!);
+          if (type === 'airplane') {
+            color.set(AIRLINE_BODY_COLORS[v.id % AIRLINE_BODY_COLORS.length]!);
+          } else {
+            const palette = (type === 'truck' || type === 'van')
+              ? COMMERCIAL_COLORS : CAR_COLORS;
+            color.set(palette[v.id % palette.length]!);
+          }
         } else {
           color.set(cfg?.color ?? 0xd32f2f);
         }
         mesh.setColorAt(i, color);
+
+        // Airplane vtail: set tail color from separate palette
+        if (type === 'airplane' && this.airplaneVTailMesh) {
+          color.set(AIRLINE_TAIL_COLORS[(v.id * 7 + 3) % AIRLINE_TAIL_COLORS.length]!);
+          this.airplaneVTailMesh.setColorAt(i, color);
+        }
 
         // Headlight/taillight matrices — skip for rail carriages and airplanes
         if (type === 'rail_carriage' || type === 'airplane') continue;
@@ -251,21 +283,37 @@ export class VehicleRenderer {
       mesh.visible = getVehicleVisibility(this._viewMode, type);
     }
 
-    // Airplane nav lights: copy transforms from airplane mesh, blink visibility
+    // Airplane sub-meshes: copy transforms from main airplane mesh
     const airplaneMesh = this.meshes.get('airplane');
-    if (airplaneMesh && this.airplaneNavMesh) {
+    if (airplaneMesh) {
       const count = airplaneMesh.count;
-      this.airplaneNavMesh.count = count;
       const m = this._matrix;
-      for (let i = 0; i < count; i++) {
-        airplaneMesh.getMatrixAt(i, m);
-        this.airplaneNavMesh.setMatrixAt(i, m);
+
+      // Vertical tail (with per-instance airline tail color)
+      if (this.airplaneVTailMesh) {
+        this.airplaneVTailMesh.count = count;
+        for (let i = 0; i < count; i++) {
+          airplaneMesh.getMatrixAt(i, m);
+          this.airplaneVTailMesh.setMatrixAt(i, m);
+        }
+        if (count > 0) {
+          this.airplaneVTailMesh.instanceMatrix.needsUpdate = true;
+          if (this.airplaneVTailMesh.instanceColor) this.airplaneVTailMesh.instanceColor.needsUpdate = true;
+        }
       }
-      if (count > 0) this.airplaneNavMesh.instanceMatrix.needsUpdate = true;
-      // Blink: toggle visibility every 0.5s
-      this.airplaneNavMesh.visible = time !== undefined
-        ? Math.floor(time * 2) % 2 === 0
-        : true;
+
+      // Nav lights (blink)
+      if (this.airplaneNavMesh) {
+        this.airplaneNavMesh.count = count;
+        for (let i = 0; i < count; i++) {
+          airplaneMesh.getMatrixAt(i, m);
+          this.airplaneNavMesh.setMatrixAt(i, m);
+        }
+        if (count > 0) this.airplaneNavMesh.instanceMatrix.needsUpdate = true;
+        this.airplaneNavMesh.visible = time !== undefined
+          ? Math.floor(time * 2) % 2 === 0
+          : true;
+      }
     }
 
     // Update headlight/taillight counts and opacity
@@ -312,6 +360,12 @@ export class VehicleRenderer {
       (mesh.material as THREE.Material).dispose();
     }
     this.meshes.clear();
+    if (this.airplaneVTailMesh) {
+      scene.remove(this.airplaneVTailMesh);
+      this.airplaneVTailMesh.geometry.dispose();
+      (this.airplaneVTailMesh.material as THREE.Material).dispose();
+      this.airplaneVTailMesh = null;
+    }
     if (this.airplaneNavMesh) {
       scene.remove(this.airplaneNavMesh);
       this.airplaneNavMesh.geometry.dispose();
