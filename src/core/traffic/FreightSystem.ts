@@ -144,8 +144,8 @@ export class FreightSystem {
 
     this.lastDemand = { production: totalProduction, consumption: totalConsumption, shortage };
 
-    // Update cargo storage: surplus adds, deficit drains
-    const surplus = totalProduction - actualConsumed;
+    // Update cargo storage: only accumulate when production exceeds total demand
+    const surplus = totalProduction - totalConsumption;
     this.cargoStorage = Math.max(0, Math.min(this.cargoStorage + surplus, FREIGHT.MAX_STORAGE));
   }
 
