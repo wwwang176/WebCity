@@ -2810,7 +2810,7 @@ export class BuildingRenderer {
     this.addInfraMesh(scene, apronGeo, apronMat, cx, Y, cz, false);
     // Taxiway (runway-width vertical strip, apron→runway)
     const taxiGeo = new THREE.BoxGeometry(0.35, 0.01, 0.50);
-    taxiGeo.translate(0, 0.02, 0.30);
+    taxiGeo.translate(0, 0.018, 0.30);
     this.addInfraMesh(scene, taxiGeo, new THREE.MeshLambertMaterial({ color: 0x707070 }), cx, Y, cz, false);
     // Runway (bottom)
     const rwGeo = new THREE.BoxGeometry(2.80, 0.01, 0.35);
@@ -2882,7 +2882,7 @@ export class BuildingRenderer {
     this.addInfraMesh(scene, hangarGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, Y, cz);
     // Taxiway (runway-width vertical strip, apron→runway)
     const taxiGeo = new THREE.BoxGeometry(0.45, 0.01, 1.20);
-    taxiGeo.translate(0, 0.02, 0.60);
+    taxiGeo.translate(0, 0.018, 0.60);
     this.addInfraMesh(scene, taxiGeo, new THREE.MeshLambertMaterial({ color: 0x707070 }), cx, Y, cz, false);
     // Runway
     const rwGeo = new THREE.BoxGeometry(4.50, 0.01, 0.45);
@@ -2962,10 +2962,10 @@ export class BuildingRenderer {
     // Taxiways apron→R1 (runway-width vertical strips, aligned with R1→R2)
     const taxiMat = new THREE.MeshLambertMaterial({ color: 0x707070 });
     const taxi1 = new THREE.BoxGeometry(0.45, 0.01, 1.60);
-    taxi1.translate(-1.00, 0.02, 0.00);
+    taxi1.translate(-1.00, 0.018, 0.00);
     this.addInfraMesh(scene, taxi1, taxiMat, cx, Y, cz, false);
     const taxi2 = new THREE.BoxGeometry(0.45, 0.01, 1.60);
-    taxi2.translate(1.20, 0.02, 0.00);
+    taxi2.translate(1.20, 0.018, 0.00);
     this.addInfraMesh(scene, taxi2, taxiMat, cx, Y, cz, false);
     // Runway 1
     const rw1Geo = new THREE.BoxGeometry(6.50, 0.01, 0.45);
@@ -2981,10 +2981,10 @@ export class BuildingRenderer {
     this.addInfraMesh(scene, thr1, dashMat, cx, Y, cz, false);
     // Taxiways R1→R2 (aligned with apron→R1)
     const taxiMid1 = new THREE.BoxGeometry(0.45, 0.01, 1.00);
-    taxiMid1.translate(-1.00, 0.02, 1.50);
+    taxiMid1.translate(-1.00, 0.018, 1.50);
     this.addInfraMesh(scene, taxiMid1, taxiMat, cx, Y, cz, false);
     const taxiMid2 = new THREE.BoxGeometry(0.45, 0.01, 1.00);
-    taxiMid2.translate(1.20, 0.02, 1.50);
+    taxiMid2.translate(1.20, 0.018, 1.50);
     this.addInfraMesh(scene, taxiMid2, taxiMat, cx, Y, cz, false);
     // Runway 2
     const rw2Geo = new THREE.BoxGeometry(6.50, 0.01, 0.45);
