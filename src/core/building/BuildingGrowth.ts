@@ -54,7 +54,9 @@ export class BuildingGrowth {
     const density = getMaxDensity(this.grid, x, y);
     if (density === 'NONE') return false;
 
-    const buildings = getBuildingsForZone(cell.zoneType, density, 1);
+    // Industrial has no density tiers — any road is fine
+    const lookupDensity = cell.zoneType === ZoneType.INDUSTRIAL ? 'LOW' : density;
+    const buildings = getBuildingsForZone(cell.zoneType, lookupDensity, 1);
     if (buildings.length === 0) return false;
 
     const building = randomElement(buildings);

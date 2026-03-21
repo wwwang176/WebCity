@@ -57,6 +57,21 @@ describe('BuildingGrowth', () => {
     expect(cell!.buildingId).toBe(1);
   });
 
+  it('should grow industrial on HIGH density road by falling back to LOW', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    // FOUR_LANE has maxDensity: 'HIGH'
+    builder.buildRoad({ x: 5, y: 5 }, { x: 15, y: 5 }, RoadType.FOUR_LANE, 100000);
+    const zone = new ZoneManager(grid);
+    zone.setZone(5, 4, ZoneType.INDUSTRIAL);
+    const growth = new BuildingGrowth(grid);
+    const result = growth.tryGrow(5, 4, fullConditions);
+    expect(result).toBe(true);
+    const cell = grid.getCell(5, 4);
+    // Should place a LOW density industrial building (id 13 = Small Factory)
+    expect(cell!.buildingId).toBe(13);
+  });
+
   it('should have randomness in growth', () => {
     // Run 100 times, verify it doesn't always grow in same tick
     const results: boolean[] = [];

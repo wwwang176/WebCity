@@ -116,7 +116,11 @@ export function bfsRoadNetworkFlood(
       if (coverage.has(key)) continue;
       const cell = grid.getCell(nx, ny);
       if (!cell) continue;
-      if (!canRelay(cell, key, infra)) continue;
+      if (!canRelay(cell, key, infra)) {
+        // Zoned cells receive coverage from adjacent relay cells but don't relay
+        if (cell.zoneType !== 0) coverage.add(key);
+        continue;
+      }
       coverage.add(key);
       queue.push([nx, ny]);
     }
@@ -159,7 +163,21 @@ export function bfsBudgetDrainFlood(
       if (visited.has(key)) continue;
       const cell = grid.getCell(nx, ny);
       if (!cell) continue;
-      if (!canRelay(cell, key, infra)) continue;
+      if (!canRelay(cell, key, infra)) {
+        // Zoned cells receive supply from adjacent relay cells but don't relay
+        if (cell.zoneType !== 0) {
+          visited.add(key);
+          if (!supplied.has(key)) {
+            const demand = getDemand(nx, ny);
+            if (demand > 0) {
+              if (budget < demand) continue;
+              budget -= demand;
+            }
+            supplied.add(key);
+          }
+        }
+        continue;
+      }
       visited.add(key);
 
       if (!supplied.has(key)) {

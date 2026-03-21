@@ -86,8 +86,8 @@ BURNED            = 3   焦黑（火災後）
 1. **有區域規劃**: `zoneType` 不為 NONE
 2. **空地**: `buildingId` 為 0
 3. **道路連接**: 至少一個 4 方向鄰居有道路
-4. **有電力**: `hasPower = true`
-5. **有供水**: `hasWater = true`
+4. **有電力**: `hasPower = true`（分區空格只要鄰接有電的道路/建築即視為有電，見[服務系統 — BFS 中繼與終點](services-system.md#bfs-中繼與終點)）
+5. **有供水**: `hasWater = true`（同上）
 6. **RCI 需求**: 對應的住宅/商業/工業需求 > 0
 
 ### 成長流程
@@ -97,6 +97,8 @@ canGrow() 檢查所有條件
   ↓ 通過
 getMaxDensity() 根據鄰接道路判斷密度等級
   ↓ LOW 或 HIGH
+決定查詢密度（工業區固定用 LOW，其他用道路密度）
+  ↓
 getBuildingsForZone(zoneType, density, level=1) 取得候選建築
   ↓ 有候選者
 randomElement(candidates) 隨機選擇一個 level 1 建築
@@ -105,6 +107,8 @@ grid.setCell(x, y, { buildingId: building.id })
 ```
 
 新成長的建築一律為 Level 1。
+
+**工業區密度**: 工業建築只有 LOW 密度，不受道路密度限制。任何道路（RURAL/TWO_LANE/FOUR_LANE/SIX_LANE/ONE_WAY）旁的工業區都可以成長。
 
 ### 區域政策限制
 

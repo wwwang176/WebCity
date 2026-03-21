@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from '../NetworkCoverage';
 import { Grid } from '../../grid/Grid';
+import { ZoneType } from '../../grid/types';
 import { toPosKey } from '../../grid/GridHelpers';
 import { RoadType } from '../../road/types';
 
@@ -70,6 +71,44 @@ describe('bfsRoadNetworkFlood', () => {
 
     expect(coverage.has(toPosKey(2, 2))).toBe(true);
     expect(coverage.has(toPosKey(7, 7))).toBe(true);
+  });
+
+  it('should cover zoned cells adjacent to road as destinations', () => {
+    const grid = makeGrid(10, 10);
+    grid.setCell(3, 3, { roadType: RoadType.TWO_LANE });
+    grid.setCell(4, 3, { zoneType: ZoneType.INDUSTRIAL }); // zoned, no road/building
+
+    const coverage = new Set<string>();
+    bfsRoadNetworkFlood(grid, 3, 3, coverage);
+
+    expect(coverage.has(toPosKey(3, 3))).toBe(true);
+    expect(coverage.has(toPosKey(4, 3))).toBe(true); // zoned cell covered
+  });
+
+  it('should not relay through empty zoned cells', () => {
+    const grid = makeGrid(10, 10);
+    grid.setCell(3, 3, { roadType: RoadType.TWO_LANE });
+    grid.setCell(4, 3, { zoneType: ZoneType.RESIDENTIAL_LOW }); // zoned, no building
+    grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW }); // behind the zoned cell
+
+    const coverage = new Set<string>();
+    bfsRoadNetworkFlood(grid, 3, 3, coverage);
+
+    expect(coverage.has(toPosKey(4, 3))).toBe(true);  // adjacent to road: covered
+    expect(coverage.has(toPosKey(5, 3))).toBe(false); // behind empty zone: not covered
+  });
+
+  it('should relay through zoned cells that have buildings', () => {
+    const grid = makeGrid(10, 10);
+    grid.setCell(3, 3, { roadType: RoadType.TWO_LANE });
+    grid.setCell(4, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 }); // has building
+    grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW }); // empty behind building
+
+    const coverage = new Set<string>();
+    bfsRoadNetworkFlood(grid, 3, 3, coverage);
+
+    expect(coverage.has(toPosKey(4, 3))).toBe(true); // building: relay
+    expect(coverage.has(toPosKey(5, 3))).toBe(true); // adjacent to building: covered
   });
 
   it('should skip already-covered cells', () => {
@@ -143,6 +182,21 @@ describe('bfsBudgetDrainFlood', () => {
 
     // Should not drain budget for already-supplied cells
     expect(demandCalls).toBe(0);
+  });
+
+  it('should supply zoned cells adjacent to road without relay', () => {
+    const grid = makeGrid(10, 10);
+    grid.setCell(3, 3, { roadType: RoadType.TWO_LANE });
+    grid.setCell(4, 3, { zoneType: ZoneType.INDUSTRIAL }); // zoned, no road/building
+    grid.setCell(5, 3, { zoneType: ZoneType.INDUSTRIAL }); // behind the zoned cell
+
+    const supplied = new Set<string>();
+    const getDemand = () => 0;
+
+    bfsBudgetDrainFlood(grid, { x: 3, y: 3, output: 100 }, supplied, getDemand);
+
+    expect(supplied.has(toPosKey(4, 3))).toBe(true);  // adjacent to road: supplied
+    expect(supplied.has(toPosKey(5, 3))).toBe(false); // behind empty zone: not supplied
   });
 
   it('should accept infra positions for relay', () => {
