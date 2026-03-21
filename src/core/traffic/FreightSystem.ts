@@ -1,8 +1,8 @@
 import type { Grid } from '../grid/Grid';
 import { ZoneType, isCommercialZone } from '../grid/types';
-import { toPosKey } from '../grid/GridHelpers';
+import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
-import { bfsBudgetDrainFlood } from '../service/NetworkCoverage';
 
 export interface FreightDemand {
   /** Total cargo produced by industrial buildings per tick. */
@@ -70,7 +70,7 @@ export class FreightSystem {
    */
   calculateSupply(grid: Grid): void {
     this.hasCalculated = true;
-    const industrials: { x: number; y: number; output: number }[] = [];
+    const sources: [number, number][] = [];
     let totalProduction = 0;
     let totalConsumption = 0;
 
@@ -79,7 +79,7 @@ export class FreightSystem {
       if (cell.zoneType === ZoneType.INDUSTRIAL) {
         const rate = getProductionRate(cell.buildingId);
         if (rate > 0) {
-          industrials.push({ x, y, output: rate });
+          sources.push([x, y]);
           totalProduction += rate;
         }
       } else if (isCommercialZone(cell.zoneType as ZoneType)) {
@@ -87,22 +87,46 @@ export class FreightSystem {
       }
     });
 
-    // BFS from each industrial building with production budget
-    const allSupplied = new Set<string>();
-    const getDemand = (x: number, y: number): number => {
-      const cell = grid.getCell(x, y);
-      if (!cell || cell.buildingId === 0) return 0;
-      if (isCommercialZone(cell.zoneType as ZoneType)) return getConsumptionRate(cell.buildingId);
-      return 0;
-    };
+    // Multi-source BFS: all factories share a pooled budget
+    const supplied = new Set<string>();
+    const visited = new Set<string>();
+    const queue: [number, number][] = [];
+    let budget = totalProduction;
 
-    for (const ind of industrials) {
-      bfsBudgetDrainFlood(
-        grid,
-        { x: ind.x, y: ind.y, output: ind.output },
-        allSupplied,
-        getDemand,
-      );
+    for (const [sx, sy] of sources) {
+      const key = toPosKey(sx, sy);
+      if (!visited.has(key)) {
+        visited.add(key);
+        supplied.add(key);
+        queue.push([sx, sy]);
+      }
+    }
+
+    while (queue.length > 0) {
+      if (budget <= 0) break;
+      const [x, y] = queue.shift()!;
+      for (const [dx, dy] of FOUR_NEIGHBORS) {
+        const nx = x + dx!;
+        const ny = y + dy!;
+        const key = toPosKey(nx, ny);
+        if (visited.has(key)) continue;
+        const cell = grid.getCell(nx, ny);
+        if (!cell) continue;
+        // Only traverse through roads, buildings, or zoned cells
+        const canTraverse = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || cell.zoneType !== 0;
+        if (!canTraverse) continue;
+        visited.add(key);
+
+        if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)) {
+          const demand = getConsumptionRate(cell.buildingId);
+          if (demand > 0) {
+            if (budget < demand) continue; // can't afford this shop
+            budget -= demand;
+          }
+        }
+        supplied.add(key);
+        queue.push([nx, ny]);
+      }
     }
 
     // Extract supplied commercial buildings and sum actual consumed
@@ -110,7 +134,7 @@ export class FreightSystem {
     let actualConsumed = 0;
     grid.forEachCell((cell, x, y) => {
       if (cell.buildingId === 0) return;
-      if (isCommercialZone(cell.zoneType as ZoneType) && allSupplied.has(toPosKey(x, y))) {
+      if (isCommercialZone(cell.zoneType as ZoneType) && supplied.has(toPosKey(x, y))) {
         this.suppliedCommercial.add(toPosKey(x, y));
         actualConsumed += getConsumptionRate(cell.buildingId);
       }
