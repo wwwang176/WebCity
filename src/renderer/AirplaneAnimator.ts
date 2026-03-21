@@ -196,9 +196,10 @@ function localToWorld(
 ): { wx: number; wz: number } {
   const cos = Math.cos(rotRad);
   const sin = Math.sin(rotRad);
+  // Match Three.js Y-axis rotation convention
   return {
-    wx: centerX + localX * cos - localZ * sin,
-    wz: centerZ + localX * sin + localZ * cos,
+    wx: centerX + localX * cos + localZ * sin,
+    wz: centerZ - localX * sin + localZ * cos,
   };
 }
 
