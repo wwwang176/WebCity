@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getInfraConfig, getRotatedSize, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { canPlaceInfra } from '../core/building/InfraPlacement';
-import { canPlaceAirport, getAirportDimensions, type AirportSize } from '../core/transport/AirportSystem';
+import { getAirportDimensions, type AirportSize } from '../core/transport/AirportSystem';
 import { Grid } from '../core/grid/Grid';
 import type { BuildingRenderer } from './BuildingRenderer';
 
@@ -103,15 +103,12 @@ export class PlacementPreview {
     this.group.rotation.y = (rotation * Math.PI) / 180;
     this.currentRotation = rotation;
 
-    // Check placement validity
-    let valid: boolean;
-    if (type === 'airport') {
-      const check = canPlaceAirport(grid, gridX, gridY, airportSize ?? 'SMALL', rotation);
-      valid = check.ok && funds >= cfg.cost;
-    } else {
-      const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn);
-      valid = check.ok && funds >= cfg.cost;
-    }
+    // Check placement validity — airport passes override size, others use InfraConfig
+    const overrideSize = type === 'airport' && airportSize
+      ? (() => { const d = getAirportDimensions(airportSize); return { width: d.w, height: d.h }; })()
+      : undefined;
+    const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn, overrideSize);
+    const valid = check.ok && funds >= cfg.cost;
 
     this.material.color.set(valid ? GREEN : RED);
     this.group.visible = true;

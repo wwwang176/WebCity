@@ -59,11 +59,14 @@ export function canPlaceInfra(
   type: InfraType,
   rotation: Rotation,
   groundwaterFn?: (x: number, y: number) => number,
+  overrideSize?: { width: number; height: number },
 ): PlaceResult {
   const cfg = getInfraConfig(type);
   if (!cfg) return { ok: false, reason: 'UNKNOWN_TYPE' };
 
-  const { w, h } = getRotatedSize(cfg.width, cfg.height, rotation);
+  const baseW = overrideSize?.width ?? cfg.width;
+  const baseH = overrideSize?.height ?? cfg.height;
+  const { w, h } = getRotatedSize(baseW, baseH, rotation);
 
   // Check all cells in the W×H footprint
   let hasGroundwater = type !== 'water'; // only matters for water

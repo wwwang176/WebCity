@@ -41,7 +41,7 @@ import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
 import { isResidentialZone } from './core/grid/types';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
-import { getAirportBuildCost, getAirportFootprint, getAirportDimensions, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
+import { getAirportBuildCost, getAirportFootprint, getAirportDimensions, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { PedestrianRenderer, cullPedestrians } from './renderer/PedestrianRenderer';
@@ -953,8 +953,9 @@ export class Game {
   private placeAirport(x: number, y: number, cost: number): boolean {
     const airportSize: AirportSize = getAirportToolSize(this.currentTool);
 
-    // Validate footprint (data-driven, extracted to core)
-    const check = canPlaceAirport(this.state.grid, x, y, airportSize, this.currentRotation);
+    // Validate footprint — reuse canPlaceInfra with override size
+    const dim = getAirportDimensions(airportSize);
+    const check = canPlaceInfra(this.state.grid, x, y, 'airport', this.currentRotation, undefined, { width: dim.w, height: dim.h });
     if (!check.ok) {
       this.state.budget.funds += cost;
       this.showNotification(getBuildReasonMessage(check.reason));
