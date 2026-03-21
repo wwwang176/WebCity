@@ -65,8 +65,10 @@ export function SummaryPage() {
 
     const pwrRatio = state.power.getSupplyRatio();
     const wtrRatio = state.water.getSupplyRatio();
-    const freightSupplyRatio = 1 - state.freight.getShortageRatio();
-    const freightSurplusRatio = state.freight.getSurplusRatio();
+    const freightDemandData = state.freight.getLastDemand();
+    const freightSupplyRatio = freightDemandData.consumption > 0
+      ? freightDemandData.production / freightDemandData.consumption
+      : 1;
     const freightDemand = state.freight.getLastDemand();
     const freightSuppliedCount = state.freight.getSuppliedCount();
     const freightTotalCommercial = freightDemand.consumption > 0
@@ -77,7 +79,7 @@ export function SummaryPage() {
     return {
       population, totalHomes, totalJobs, vacantHomes, jobOpenings,
       avgHappiness, zoneCounts, attractiveness, canMigrate,
-      pwrRatio, wtrRatio, freightSupplyRatio, freightSurplusRatio,
+      pwrRatio, wtrRatio, freightSupplyRatio,
       freightProduction: freightDemand.production, freightConsumption: freightDemand.consumption,
       freightSuppliedCount, freightTotalCommercial, rci,
       checks: [
@@ -146,36 +148,19 @@ export function SummaryPage() {
       </div>
 
       <div class="section-title">Freight</div>
-      <div style="display:flex;gap:12px;margin-bottom:8px">
-        <div style="flex:1">
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
-            <span>Supply Rate</span>
-            <span style={{ color: data().freightSupplyRatio >= 1 ? '#66bb6a' : data().freightSupplyRatio >= 0.7 ? '#ffa726' : '#ef5350' }}>
-              {(data().freightSupplyRatio * 100).toFixed(0)}%
-            </span>
-          </div>
-          <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-            <div style={{
-              width: `${Math.min(100, data().freightSupplyRatio * 100)}%`, height: '100%', 'border-radius': '3px',
-              background: data().freightSupplyRatio >= 1 ? '#66bb6a' : data().freightSupplyRatio >= 0.7 ? '#ffa726' : '#ef5350',
-              transition: 'width 0.3s',
-            }} />
-          </div>
+      <div style="margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
+          <span>Supply Rate</span>
+          <span style={{ color: data().freightSupplyRatio >= 1 ? '#66bb6a' : data().freightSupplyRatio >= 0.7 ? '#ffa726' : '#ef5350' }}>
+            {(data().freightSupplyRatio * 100).toFixed(0)}%
+          </span>
         </div>
-        <div style="flex:1">
-          <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
-            <span>Surplus</span>
-            <span style={{ color: data().freightSurplusRatio > 0.5 ? '#ffa726' : data().freightSurplusRatio > 0 ? '#90a4ae' : '#66bb6a' }}>
-              {data().freightSurplusRatio > 0 ? `${(data().freightSurplusRatio * 100).toFixed(0)}%` : 'None'}
-            </span>
-          </div>
-          <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-            <div style={{
-              width: `${Math.min(100, data().freightSurplusRatio * 100)}%`, height: '100%', 'border-radius': '3px',
-              background: data().freightSurplusRatio > 0.5 ? '#ffa726' : '#42a5f5',
-              transition: 'width 0.3s',
-            }} />
-          </div>
+        <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+          <div style={{
+            width: `${Math.min(100, data().freightSupplyRatio * 100)}%`, height: '100%', 'border-radius': '3px',
+            background: data().freightSupplyRatio >= 1 ? '#66bb6a' : data().freightSupplyRatio >= 0.7 ? '#ffa726' : '#ef5350',
+            transition: 'width 0.3s',
+          }} />
         </div>
       </div>
       <div style="display:flex;gap:16px;font-size:11px;color:#8899b0;margin-bottom:12px">
