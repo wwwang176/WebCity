@@ -149,10 +149,10 @@ export function FreightPage() {
       {/* Income Impact */}
       <div class="section-title">Income Impact</div>
       <div style="font-size:11px;color:#8899b0">
-        <div style="margin-bottom:4px">Local supply: income <span style="color:#66bb6a">\u00D71.0</span></div>
-        <div style="margin-bottom:4px">Imported goods: income <span style="color:#ffa726">\u00D7{TRADE.IMPORT_INCOME_MULTIPLIER}</span></div>
-        <div style="margin-bottom:4px">Exported goods: income <span style="color:#ffa726">\u00D7{TRADE.EXPORT_INCOME_MULTIPLIER}</span></div>
-        <div>Unsupplied: income <span style="color:#ef5350">\u00D70.5</span> + abandonment stress</div>
+        <div style="margin-bottom:4px">Local supply: income <span style="color:#66bb6a">×1.0</span></div>
+        <div style="margin-bottom:4px">Imported goods: income <span style="color:#ffa726">×{TRADE.IMPORT_INCOME_MULTIPLIER}</span></div>
+        <div style="margin-bottom:4px">Exported goods: income <span style="color:#ffa726">×{TRADE.EXPORT_INCOME_MULTIPLIER}</span></div>
+        <div>Unsupplied: income <span style="color:#ef5350">×0.5</span> + abandonment stress</div>
       </div>
     </>
   );
