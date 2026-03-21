@@ -199,6 +199,14 @@ export interface SelectedZoneBuilding {
   freightSurplusRatio?: number;
   /** Industrial: whether surplus is being exported. */
   freightExporting?: boolean;
+  /** Residential: shopping access ratio (0~1). */
+  shoppingRatio?: number;
+  /** Residential: has any commercial reachable. */
+  shoppingAccess?: boolean;
+  /** Commercial: customer ratio (0~1). */
+  customerRatio?: number;
+  /** Commercial: has any residential reachable. */
+  hasCustomers?: boolean;
 }
 
 export interface SelectedInfraBuilding {
@@ -1860,6 +1868,10 @@ export class Game {
         freightSource: isCommercialZone(sel.zoneType) ? this.state.freight.getSupplyStatus(x, y).source : undefined,
         freightSurplusRatio: sel.zoneType === ZoneType.INDUSTRIAL ? this.state.freight.getSurplusRatio() : undefined,
         freightExporting: sel.zoneType === ZoneType.INDUSTRIAL ? this.state.freight.isFactoryExporting(x, y) : undefined,
+        shoppingRatio: isResidentialZone(sel.zoneType) ? this.state.shopping.getResidentialAccess(x, y).ratio : undefined,
+        shoppingAccess: isResidentialZone(sel.zoneType) ? this.state.shopping.getResidentialAccess(x, y).hasAccess : undefined,
+        customerRatio: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).ratio : undefined,
+        hasCustomers: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).hasCustomers : undefined,
       };
     }
 

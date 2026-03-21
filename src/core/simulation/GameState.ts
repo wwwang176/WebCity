@@ -32,6 +32,7 @@ import { AirportSystem } from '../transport/AirportSystem';
 import { FreightSystem } from '../traffic/FreightSystem';
 import { PedestrianManager } from '../traffic/PedestrianManager';
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
+import { ShoppingAccess } from '../economy/ShoppingAccess';
 
 export interface GameState {
   grid: Grid;
@@ -66,6 +67,7 @@ export interface GameState {
   ferry: FerrySystem;
   airport: AirportSystem;
   freight: FreightSystem;
+  shopping: ShoppingAccess;
   sidewalkGraph: SidewalkGraph;
   pedestrianManager: PedestrianManager;
 }
@@ -112,6 +114,7 @@ export function createGameState(width = 200, height = 200): GameState {
     ferry: new FerrySystem(),
     airport: new AirportSystem(),
     freight: new FreightSystem(),
+    shopping: new ShoppingAccess(),
     sidewalkGraph: new SidewalkGraph(),
     pedestrianManager: new PedestrianManager(new SidewalkGraph()),
   };

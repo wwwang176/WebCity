@@ -14,6 +14,8 @@ export interface HappinessFactors {
   homePowered?: boolean;
   homeWatered?: boolean;
   workplaceZoneType?: ZoneType;
+  /** Shopping access ratio (0~1) for this citizen's home. undefined = skip. */
+  shoppingAccess?: number;
 }
 
 /** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
@@ -95,6 +97,10 @@ export const HAPPINESS = {
   // Job mismatch: education vs workplace zone type
   JOB_MISMATCH_SEVERE: -10,  // UNI in INDUSTRIAL
   JOB_MISMATCH_MILD: -5,     // HS in INDUSTRIAL, or NONE/ELEM in OFFICE
+  // Shopping access
+  SHOPPING_GOOD_BONUS: 8,       // ratio >= 0.8
+  SHOPPING_PARTIAL_BONUS: 3,    // ratio 0.3~0.8
+  SHOPPING_NONE_PENALTY: -12,   // ratio < 0.1
 } as const;
 
 /**
@@ -191,6 +197,13 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
 
   // Job mismatch penalty
   happiness += getJobMismatchPenalty(citizen.education, factors.workplaceZoneType);
+
+  // Shopping access
+  if (factors.shoppingAccess !== undefined) {
+    if (factors.shoppingAccess >= 0.8) happiness += HAPPINESS.SHOPPING_GOOD_BONUS;
+    else if (factors.shoppingAccess >= 0.3) happiness += HAPPINESS.SHOPPING_PARTIAL_BONUS;
+    else if (factors.shoppingAccess < 0.1) happiness += HAPPINESS.SHOPPING_NONE_PENALTY;
+  }
 
   return Math.max(HAPPINESS.MIN, Math.min(HAPPINESS.MAX, happiness));
 }

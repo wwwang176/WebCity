@@ -38,6 +38,7 @@ import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles } from '../grid/GridHelpers';
+import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
@@ -418,6 +419,9 @@ export class SimulationLoop {
         exportCapacity: totalThroughput,
         tradePositions,
       });
+
+      // 8d. Shopping access: BFS from commercial to residential (every 6 ticks)
+      this.state.shopping.calculate(this.state.grid);
     }
 
     // 9. Calculate income from buildings (every 6 ticks)
@@ -594,6 +598,9 @@ export class SimulationLoop {
     const hasParkCoverage = this.state.parks.getParks().length > 0;
     const currentTick = this.state.clock.tick;
 
+    // Shopping access: only penalise when population >= 50 (early game protection)
+    const enableShopping = pop >= 50;
+
     // Reusable factors object — mutated per citizen, no allocation per iteration
     const factors: HappinessFactors = {
       commuteDistance: 0, hasPark: hasParkCoverage,
@@ -602,6 +609,7 @@ export class SimulationLoop {
       taxRate, serviceCoverage: ctx.serviceCoverage,
       currentTick, homePowered: true, homeWatered: true,
       workplaceZoneType: undefined,
+      shoppingAccess: undefined,
     };
 
     for (const citizen of citizens) {
@@ -611,11 +619,15 @@ export class SimulationLoop {
       // Check if citizen's home has power and water
       factors.homePowered = true;
       factors.homeWatered = true;
+      factors.shoppingAccess = undefined;
       if (citizen.homeId) {
         const pos = parsePosKey(citizen.homeId);
         if (pos) {
           factors.homePowered = this.state.power.isPowered(pos.x, pos.y);
           factors.homeWatered = this.state.water.isSupplied(pos.x, pos.y);
+          if (enableShopping) {
+            factors.shoppingAccess = this.state.shopping.getResidentialAccess(pos.x, pos.y).ratio;
+          }
         }
       }
 

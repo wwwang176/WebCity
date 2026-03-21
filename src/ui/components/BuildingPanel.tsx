@@ -115,8 +115,7 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     if (sel.freightRatio === 0) {
       warnings.push({ level: 'red', text: 'No goods to sell' });
     } else if (sel.freightRatio < 1) {
-      const pct = Math.round(sel.freightRatio * 100);
-      const label = sel.freightSource === 'imported' ? `Importing goods (${pct}%)` : `Partially supplied (${pct}%)`;
+      const label = sel.freightSource === 'imported' ? 'Importing goods' : 'Partially supplied';
       warnings.push({ level: sel.freightRatio < 0.5 ? 'red' : 'yellow', text: label });
     } else if (sel.freightSource === 'imported') {
       warnings.push({ level: 'yellow', text: 'Importing goods' });
@@ -127,6 +126,22 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
       warnings.push({ level: 'yellow', text: 'Exporting goods' });
     } else if ((sel.freightSurplusRatio ?? 0) > 0.5) {
       warnings.push({ level: sel.freightSurplusRatio! > 0.8 ? 'red' : 'yellow', text: 'Goods not selling' });
+    }
+  }
+
+  // Shopping access warnings (always show)
+  if (isCommercialZone(sel.zoneType) && sel.hasCustomers != null) {
+    if (!sel.hasCustomers) {
+      warnings.push({ level: 'red', text: 'No consumers nearby' });
+    } else if (sel.customerRatio != null && sel.customerRatio < 0.3) {
+      warnings.push({ level: 'yellow', text: 'Needs more residents' });
+    }
+  }
+  if (isResidentialZone(sel.zoneType) && sel.shoppingAccess != null) {
+    if (!sel.shoppingAccess) {
+      warnings.push({ level: 'red', text: 'No shops nearby' });
+    } else if (sel.shoppingRatio != null && sel.shoppingRatio < 0.3) {
+      warnings.push({ level: 'yellow', text: 'Needs more shops' });
     }
   }
 

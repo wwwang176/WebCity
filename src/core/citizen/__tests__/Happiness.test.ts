@@ -133,6 +133,36 @@ describe('Happiness', () => {
     const undef = calculateHappiness(makeCitizen(), { ...baseFactors, homePowered: undefined, homeWatered: undefined });
     expect(undef).toBe(normal);
   });
+
+  it('should give shopping bonus when ratio >= 0.8', () => {
+    const base = calculateHappiness(makeCitizen(), baseFactors);
+    const withShop = calculateHappiness(makeCitizen(), { ...baseFactors, shoppingAccess: 0.9 });
+    expect(withShop - base).toBe(HAPPINESS.SHOPPING_GOOD_BONUS);
+  });
+
+  it('should give partial shopping bonus when ratio 0.3~0.8', () => {
+    const base = calculateHappiness(makeCitizen(), baseFactors);
+    const withShop = calculateHappiness(makeCitizen(), { ...baseFactors, shoppingAccess: 0.5 });
+    expect(withShop - base).toBe(HAPPINESS.SHOPPING_PARTIAL_BONUS);
+  });
+
+  it('should penalize when no shops nearby (ratio < 0.1)', () => {
+    const base = calculateHappiness(makeCitizen(), baseFactors);
+    const noShop = calculateHappiness(makeCitizen(), { ...baseFactors, shoppingAccess: 0 });
+    expect(noShop - base).toBe(HAPPINESS.SHOPPING_NONE_PENALTY);
+  });
+
+  it('should not apply shopping penalty when shoppingAccess is undefined', () => {
+    const base = calculateHappiness(makeCitizen(), baseFactors);
+    const undef = calculateHappiness(makeCitizen(), { ...baseFactors, shoppingAccess: undefined });
+    expect(undef).toBe(base);
+  });
+
+  it('should have no shopping modifier for ratio between 0.1 and 0.3', () => {
+    const base = calculateHappiness(makeCitizen(), baseFactors);
+    const mid = calculateHappiness(makeCitizen(), { ...baseFactors, shoppingAccess: 0.2 });
+    expect(mid).toBe(base);
+  });
 });
 
 describe('getUnemploymentPenalty', () => {
