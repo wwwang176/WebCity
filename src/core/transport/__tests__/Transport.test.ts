@@ -271,61 +271,48 @@ describe('FerrySystem', () => {
 // AirportSystem
 // ---------------------------------------------------------------------------
 describe('AirportSystem', () => {
-  it('should require population milestone to build', () => {
+  it('should build airport with any population (populationRequired=0 for testing)', () => {
     const airports = new AirportSystem();
-    const result = airports.build(10, 10, 'SMALL', 5000);
-    expect(result).toBeNull();
-    expect(airports.getAirports()).toHaveLength(0);
-  });
-
-  it('should build when population requirement is met', () => {
-    const airports = new AirportSystem();
-    const airport = airports.build(10, 10, 'MEDIUM', 50000);
-    expect(airport).not.toBeNull();
-    expect(airport!.size).toBe('MEDIUM');
+    const result = airports.build(10, 10, 'SMALL', 0);
+    expect(result).not.toBeNull();
+    expect(result!.size).toBe('SMALL');
     expect(airports.getAirports()).toHaveLength(1);
   });
 
-  it('should reject MEDIUM if population < 50000', () => {
+  it('should build different sizes', () => {
     const airports = new AirportSystem();
-    expect(airports.build(10, 10, 'MEDIUM', 15000)).toBeNull();
+    const s = airports.build(0, 0, 'SMALL', 0);
+    const m = airports.build(10, 10, 'MEDIUM', 0);
+    const l = airports.build(20, 20, 'LARGE', 0);
+    expect(s).not.toBeNull();
+    expect(m!.size).toBe('MEDIUM');
+    expect(l!.size).toBe('LARGE');
+    expect(airports.getAirports()).toHaveLength(3);
   });
 
-  it('should reject LARGE if population < 100000', () => {
+  it('should report population required as 0 (testing mode)', () => {
     const airports = new AirportSystem();
-    expect(airports.build(10, 10, 'LARGE', 50000)).toBeNull();
-  });
-
-  it('should report population required as 10000', () => {
-    const airports = new AirportSystem();
-    expect(airports.getPopulationRequired()).toBe(10000);
+    expect(airports.getPopulationRequired()).toBe(0);
   });
 
   it('should generate noise pollution', () => {
     const airports = new AirportSystem();
-    const airport = airports.build(10, 10, 'LARGE', 100000)!;
+    const airport = airports.build(10, 10, 'LARGE', 0)!;
     expect(airports.getNoisePollution(airport.id)).toBe(50);
     expect(airport.noisePollution).toBeGreaterThan(0);
   });
 
   it('should bring tourists and cargo', () => {
     const airports = new AirportSystem();
-    const airport = airports.build(10, 10, 'LARGE', 100000)!;
+    const airport = airports.build(10, 10, 'LARGE', 0)!;
     expect(airport.touristsPerTick).toBeGreaterThan(0);
     expect(airport.cargoPerTick).toBeGreaterThan(0);
   });
 
-  it('should require larger area for bigger airports', () => {
-    const airports = new AirportSystem();
-    const small = airports.build(0, 0, 'SMALL', 10000)!;
-    const large = airports.build(20, 20, 'LARGE', 100000)!;
-    expect(large.area).toBeGreaterThan(small.area);
-  });
-
   it('should calculate operating cost', () => {
     const airports = new AirportSystem();
-    airports.build(0, 0, 'SMALL', 10000);
-    airports.build(20, 20, 'LARGE', 100000);
+    airports.build(0, 0, 'SMALL', 0);
+    airports.build(20, 20, 'LARGE', 0);
     // 500 + 4000 = 4500
     expect(airports.getOperatingCost()).toBe(4500);
   });
@@ -944,38 +931,30 @@ describe('Airport consolidated config', () => {
     for (const size of ['SMALL', 'MEDIUM', 'LARGE'] as const) {
       const cfg = AIRPORT_SIZE_CONFIG[size];
       expect(cfg).toBeDefined();
-      expect(cfg.footprint).toBeGreaterThan(0);
-      expect(cfg.area).toBeGreaterThan(0);
+      expect(cfg.width).toBeGreaterThan(0);
+      expect(cfg.height).toBeGreaterThan(0);
       expect(cfg.noise).toBeGreaterThanOrEqual(0);
       expect(cfg.tourists).toBeGreaterThan(0);
       expect(cfg.cargo).toBeGreaterThan(0);
       expect(cfg.operatingCost).toBeGreaterThan(0);
-      expect(cfg.populationRequired).toBeGreaterThan(0);
     }
   });
 
-  it('footprint values should match getAirportFootprint', () => {
-    expect(AIRPORT_SIZE_CONFIG.SMALL.footprint).toBe(getAirportFootprint('SMALL'));
-    expect(AIRPORT_SIZE_CONFIG.MEDIUM.footprint).toBe(getAirportFootprint('MEDIUM'));
-    expect(AIRPORT_SIZE_CONFIG.LARGE.footprint).toBe(getAirportFootprint('LARGE'));
-  });
-
-  it('config values scale with size', () => {
+  it('dimensions scale with size', () => {
     const s = AIRPORT_SIZE_CONFIG.SMALL;
     const m = AIRPORT_SIZE_CONFIG.MEDIUM;
     const l = AIRPORT_SIZE_CONFIG.LARGE;
-    expect(m.footprint).toBeGreaterThan(s.footprint);
-    expect(l.footprint).toBeGreaterThan(m.footprint);
+    expect(m.width).toBeGreaterThan(s.width);
+    expect(l.width).toBeGreaterThan(m.width);
+    expect(m.height).toBeGreaterThan(s.height);
+    expect(l.height).toBeGreaterThan(m.height);
     expect(m.operatingCost).toBeGreaterThan(s.operatingCost);
     expect(l.operatingCost).toBeGreaterThan(m.operatingCost);
   });
 
-  it('build() should use config population requirement', () => {
+  it('build() should use config values', () => {
     const sys = new AirportSystem();
-    // Below requirement
-    expect(sys.build(0, 0, 'SMALL', AIRPORT_SIZE_CONFIG.SMALL.populationRequired - 1)).toBeNull();
-    // At requirement
-    const result = sys.build(0, 0, 'SMALL', AIRPORT_SIZE_CONFIG.SMALL.populationRequired);
+    const result = sys.build(0, 0, 'SMALL', 0);
     expect(result).not.toBeNull();
     expect(result!.operatingCost).toBe(AIRPORT_SIZE_CONFIG.SMALL.operatingCost);
     expect(result!.noisePollution).toBe(AIRPORT_SIZE_CONFIG.SMALL.noise);

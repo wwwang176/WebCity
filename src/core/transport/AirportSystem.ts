@@ -6,8 +6,10 @@ export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 
 /** Consolidated per-size configuration for airports (OCP-friendly). */
 export interface AirportSizeConfig {
-  footprint: number;
-  area: number;
+  /** Runway direction width (X). */
+  width: number;
+  /** Perpendicular depth (Y). */
+  height: number;
   noise: number;
   tourists: number;
   cargo: number;
@@ -18,14 +20,21 @@ export interface AirportSizeConfig {
 
 /** Single source of truth for all airport size parameters. */
 export const AIRPORT_SIZE_CONFIG: Record<AirportSize, AirportSizeConfig> = {
-  SMALL:  { footprint: 3, area: 9,  noise: 10, tourists: 50,  cargo: 20,  buildCost: 5000,  operatingCost: 500,  populationRequired: 10000 },
-  MEDIUM: { footprint: 5, area: 25, noise: 25, tourists: 200, cargo: 100, buildCost: 15000, operatingCost: 1500, populationRequired: 50000 },
-  LARGE:  { footprint: 7, area: 49, noise: 50, tourists: 500, cargo: 300, buildCost: 40000, operatingCost: 4000, populationRequired: 100000 },
+  SMALL:  { width: 3, height: 2, noise: 10, tourists: 50,  cargo: 20,  buildCost: 5000,  operatingCost: 500,  populationRequired: 0 },
+  MEDIUM: { width: 5, height: 4, noise: 25, tourists: 200, cargo: 100, buildCost: 15000, operatingCost: 1500, populationRequired: 0 },
+  LARGE:  { width: 7, height: 6, noise: 50, tourists: 500, cargo: 300, buildCost: 40000, operatingCost: 4000, populationRequired: 0 },
 };
 
-/** Returns the side length (NxN) of the airport footprint for the given size. */
+/** Returns the max dimension (for cursor sizing — square bounding box). */
 export function getAirportFootprint(size: AirportSize): number {
-  return AIRPORT_SIZE_CONFIG[size].footprint;
+  const cfg = AIRPORT_SIZE_CONFIG[size];
+  return Math.max(cfg.width, cfg.height);
+}
+
+/** Returns the width and height for an airport size. */
+export function getAirportDimensions(size: AirportSize): { w: number; h: number } {
+  const cfg = AIRPORT_SIZE_CONFIG[size];
+  return { w: cfg.width, h: cfg.height };
 }
 
 /** Returns the one-time build cost for the given airport size. */
@@ -38,10 +47,11 @@ export function forEachAirportCell(
   x: number, y: number, size: AirportSize,
   fn: (cx: number, cy: number) => void,
 ): void {
-  const footprint = getAirportFootprint(size);
-  const half = Math.floor(footprint / 2);
-  for (let dy = -half; dy <= half; dy++) {
-    for (let dx = -half; dx <= half; dx++) {
+  const { w, h } = getAirportDimensions(size);
+  const halfW = Math.floor(w / 2);
+  const halfH = Math.floor(h / 2);
+  for (let dy = -halfH; dy <= halfH; dy++) {
+    for (let dx = -halfW; dx <= halfW; dx++) {
       fn(x + dx, y + dy);
     }
   }
@@ -66,7 +76,6 @@ export interface Airport {
   x: number;
   y: number;
   size: AirportSize;
-  area: number;
   noisePollution: number;
   touristsPerTick: number;
   cargoPerTick: number;
@@ -126,7 +135,6 @@ export class AirportSystem {
       x,
       y,
       size,
-      area: cfg.area,
       noisePollution: cfg.noise,
       touristsPerTick: cfg.tourists,
       cargoPerTick: cfg.cargo,

@@ -38,6 +38,7 @@ export class PlacementPreview {
   private scene: THREE.Scene;
   private buildingRenderer: BuildingRenderer;
   private currentType: string | null = null;
+  private currentAirportSize: string = '';
   private currentRotation: Rotation = 0;
   private material: THREE.MeshBasicMaterial;
 
@@ -77,9 +78,11 @@ export class PlacementPreview {
     const cfg = getInfraConfig(type);
     if (!cfg) { this.hide(); return; }
 
-    // Rebuild ghost mesh if type changed (rotation is applied to group, no rebuild needed)
-    if (this.currentType !== type) {
-      this.rebuildGhost(type);
+    // Rebuild ghost mesh if type or airport size changed
+    const sizeKey = type === 'airport' ? (airportSize ?? 'SMALL') : '';
+    if (this.currentType !== type || this.currentAirportSize !== sizeKey) {
+      this.currentAirportSize = sizeKey;
+      this.rebuildGhost(type, sizeKey);
     }
 
     if (!this.group) return;
@@ -255,7 +258,7 @@ export class PlacementPreview {
     this.material.dispose();
   }
 
-  private rebuildGhost(type: InfraType): void {
+  private rebuildGhost(type: InfraType, airportSize?: string): void {
     this.disposeGhost();
     this.currentType = type;
 
@@ -265,7 +268,7 @@ export class PlacementPreview {
     this.group = new THREE.Group();
 
     // Build the actual building model into the group
-    this.buildingRenderer.buildPreviewModel(type, this.group);
+    this.buildingRenderer.buildPreviewModel(type, this.group, airportSize);
 
     // Replace all materials with ghost material and disable shadows
     this.group.traverse((child) => {
