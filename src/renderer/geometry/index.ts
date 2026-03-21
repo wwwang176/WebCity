@@ -14,3 +14,4 @@ export { buildFerryGeometry } from './ferry';
 
 /** 交通系統公車 — 與道路 bus 相同模型（由 update() 上色） */
 export { buildBusGeometry as buildTransportBusGeometry } from './bus';
+export { buildAirplaneGeometry } from './airplane';

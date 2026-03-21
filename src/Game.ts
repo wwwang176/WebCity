@@ -75,6 +75,7 @@ import { RAIL } from './core/rail/types';
 import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
+import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 
 
 
@@ -339,6 +340,8 @@ export class Game {
   private ferryAnimator = new FerryAnimator();
   /** 火車渲染端動畫（純 LERP，不靠 tick） */
   private trainAnimator = new TrainAnimator();
+  /** 飛機起降渲染端動畫 */
+  private airplaneAnimator = new AirplaneAnimator();
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
@@ -1153,6 +1156,7 @@ export class Game {
     const simSpeed = this.paused ? 0 : this.state.clock.speed;
     this.ferryAnimator.update(dt, simSpeed, this.state.ferry, transportVehicles);
     this.trainAnimator.update(dt, simSpeed, this.state.rail, transportVehicles);
+    this.airplaneAnimator.update(dt, simSpeed, this.state.airport, transportVehicles);
 
     // Level crossing proximity trigger (inline collection, no filter+map)
     const trainPositions = this.trainPosScratch;

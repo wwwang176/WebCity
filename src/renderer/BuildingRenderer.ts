@@ -1216,7 +1216,7 @@ export class BuildingRenderer {
         group.rotation.y = (rotationDeg * Math.PI) / 180;
       }
 
-      this.buildModel(inf.type, group, inf.airportSize);
+      this.buildModel(inf.type, group);
 
       scene.add(group);
       this.infraGroups.push(group);
@@ -2776,7 +2776,7 @@ export class BuildingRenderer {
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
     const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
-    const dashMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     // Terminal (top)
     const termGeo = new THREE.BoxGeometry(1.40, 0.40, 0.50);
@@ -2826,7 +2826,7 @@ export class BuildingRenderer {
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
     const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
-    const dashMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const bridgeMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
 
     // Terminal
@@ -2898,7 +2898,7 @@ export class BuildingRenderer {
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
     const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
-    const dashMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const bridgeMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
 
     // Main Terminal (top area)

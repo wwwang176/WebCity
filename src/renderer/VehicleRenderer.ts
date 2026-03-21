@@ -7,8 +7,14 @@ export interface VehicleData {
   x: number;
   y: number;
   heading: number; // radians, 0 = facing +x (east)
-  type: 'car' | 'van' | 'bus' | 'truck' | 'firetruck' | 'police_car' | 'ambulance' | 'garbage_truck' | 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry';
+  type: 'car' | 'van' | 'bus' | 'truck' | 'firetruck' | 'police_car' | 'ambulance' | 'garbage_truck' | 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry' | 'airplane';
   laneOffset: number; // lateral offset perpendicular to heading (positive = right of heading)
+  /** World Y position override (airplane altitude). */
+  altitude?: number;
+  /** Pitch angle in radians (nose up = positive). */
+  pitch?: number;
+  /** Roll angle in radians (right wing down = positive). */
+  roll?: number;
 }
 
 const CAR_COLORS = [
@@ -45,6 +51,8 @@ export class VehicleRenderer {
   // Reusable per-frame objects (avoids ~720 allocations/second at 60fps)
   private readonly _groups = new Map<string, VehicleData[]>();
   private readonly _rotation = new THREE.Matrix4();
+  private readonly _pitchRoll = new THREE.Matrix4();
+  private readonly _pitchMat = new THREE.Matrix4();
   private readonly _translation = new THREE.Matrix4();
   private readonly _matrix = new THREE.Matrix4();
   private readonly _color = new THREE.Color();
@@ -168,8 +176,22 @@ export class VehicleRenderer {
         if (type === 'ferry' && time !== undefined) {
           yPos += Math.sin(time * 2 + v.id * 1.7) * 0.012;
         }
+        // Airplane: override Y with altitude
+        if (v.altitude !== undefined) {
+          yPos = v.altitude;
+        }
 
         rotation.makeRotationY(v.heading);
+        // Airplane pitch/roll: apply in local space (after heading rotation)
+        if (v.pitch || v.roll) {
+          const pr = this._pitchRoll;
+          pr.makeRotationX(v.roll ?? 0);   // roll around local X (wing axis)
+          if (v.pitch) {
+            this._pitchMat.makeRotationZ(v.pitch); // pitch around local Z (nose up/down)
+            pr.multiply(this._pitchMat);
+          }
+          rotation.multiply(pr);
+        }
         translation.makeTranslation(vx, yPos, vz);
         matrix.copy(translation).multiply(rotation);
         mesh.setMatrixAt(i, matrix);
@@ -184,8 +206,8 @@ export class VehicleRenderer {
         }
         mesh.setColorAt(i, color);
 
-        // Headlight/taillight matrices — skip for rail carriages (only locomotive has lights)
-        if (type === 'rail_carriage') continue;
+        // Headlight/taillight matrices — skip for rail carriages and airplanes
+        if (type === 'rail_carriage' || type === 'airplane') continue;
         if (lightIndex < this.maxLights && this.headlightMesh && this.taillightMesh) {
           const cosH = Math.cos(v.heading);
           const sinH = Math.sin(v.heading);
