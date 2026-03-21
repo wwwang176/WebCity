@@ -25,8 +25,8 @@ const AIRPLANE_ID_OFFSET = 800_000;
 const CLIMB_ALTITUDE = 3.0;
 /** Approach start altitude — ~15° glide slope with the approach distances below. */
 const APPROACH_ALTITUDE = 2.5;
-/** Ground-level Y position for airplane model. */
-const GROUND_Y = 0.15;
+/** Ground-level Y position for airplane model (belly 0.02 above footprint top at Y=0.07). */
+const GROUND_Y = 0.09;
 /** Flare begins at this fraction of approach progress (0–1). */
 const FLARE_START = 0.75;
 
@@ -59,8 +59,8 @@ const MAX_ACTIVE: Record<AirportSize, number> = {
 
 /** Pitch angle during approach descent (nose down, radians). ~3° glide slope. */
 const APPROACH_PITCH = -0.055;
-/** Pitch angle during climb (nose up, radians). */
-const CLIMB_PITCH = 0.15;
+/** Pitch angle during climb (nose up, radians). = 2× approach angle. */
+const CLIMB_PITCH = 0.11;
 /** Max roll angle during taxi turns (radians). */
 const TAXI_ROLL = 0.08;
 /** Heading smoothing rate (higher = snappier turns). */
@@ -475,7 +475,9 @@ export class AirplaneAnimator implements VehicleAnimator {
     anim.roll = 0;
   }
 
-  // ── Climb (constant forward speed, ease-in altitude) ──
+  // ── Climb (constant forward speed, Hermite arc then constant rate) ──
+  // Mirrors approach: approach = constant descent + Hermite flare at end
+  //                   climb   = Hermite arc at start + constant climb after
 
   private advanceClimb(anim: AirplaneAnimState, dt: number): void {
     const dist = distance2D(anim.takeoffEnd, anim.climbEnd);
@@ -489,9 +491,24 @@ export class AirplaneAnimator implements VehicleAnimator {
     const t = anim.progress;
     anim.worldX = lerp(anim.takeoffEnd.x, anim.climbEnd.x, t);
     anim.worldZ = lerp(anim.takeoffEnd.y, anim.climbEnd.y, t);
-    // Ease-in ascent: slow climb at start, steeper later t^2
-    anim.altitude = GROUND_Y + CLIMB_ALTITUDE * t * t;
-    anim.pitch = CLIMB_PITCH * Math.min(1, t * 2);
+
+    // Mirror of approach FLARE_START: arc for first 25%, then constant climb
+    const ARC_END = 1 - FLARE_START; // 0.25
+    if (t <= ARC_END) {
+      // Hermite arc: starts at (0, slope=0) → ends at (arcAlt, slope=climbRate)
+      const altAtArc = CLIMB_ALTITUDE * ARC_END;
+      const climbRate = CLIMB_ALTITUDE * ARC_END; // target slope scaled to s domain
+      const s = t / ARC_END; // 0→1
+      const h00 = 2 * s * s * s - 3 * s * s + 1;
+      const h10 = s * s * s - 2 * s * s + s;
+      const h01 = -2 * s * s * s + 3 * s * s;
+      anim.altitude = GROUND_Y + h01 * altAtArc + h10 * 0; // start slope=0
+    } else {
+      // Constant rate climb
+      anim.altitude = GROUND_Y + CLIMB_ALTITUDE * t;
+    }
+
+    anim.pitch = CLIMB_PITCH * Math.min(1, t / ARC_END);
     anim.heading = anim.runwayHeading;
     anim.roll = 0;
   }
@@ -530,7 +547,13 @@ export class AirplaneAnimator implements VehicleAnimator {
       // Smooth heading LERP
       anim.heading = lerpAngle(anim.heading, pos.heading, 1 - Math.exp(-HEADING_SMOOTHING * dt));
       anim.altitude = GROUND_Y;
-      anim.pitch = 0;
+      // Takeoff roll: gradual nose-up in the last 30% (rotation before liftoff)
+      if (anim.phase === 'takeoff_roll') {
+        const t = anim.pathInfo.totalLength > 0 ? anim.distance / anim.pathInfo.totalLength : 0;
+        anim.pitch = t > 0.7 ? CLIMB_PITCH * ((t - 0.7) / 0.3) : 0;
+      } else {
+        anim.pitch = 0;
+      }
       anim.roll = this.computeTaxiRoll(anim.pathInfo, anim.distance);
     }
   }

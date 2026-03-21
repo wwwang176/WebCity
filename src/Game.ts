@@ -1171,7 +1171,7 @@ export class Game {
     allVehicles.length = 0;
     for (const v of vehicleData) allVehicles.push(v);
     for (const v of transportVehicles) allVehicles.push(v as VehicleData);
-    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
+    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime, simSpeed);
 
     // Advance pedestrians every render frame (same pattern as vehicles)
     if (!this.paused) {

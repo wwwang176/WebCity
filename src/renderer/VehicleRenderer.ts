@@ -163,7 +163,7 @@ export class VehicleRenderer {
     scene.add(this.taillightMesh);
   }
 
-  update(vehicles: VehicleData[], sunIntensity?: number, time?: number): void {
+  update(vehicles: VehicleData[], sunIntensity?: number, time?: number, simSpeed?: number): void {
     // Group vehicles by type (reuse Map + clear arrays instead of creating new ones)
     const groups = this._groups;
     for (const arr of groups.values()) arr.length = 0;
@@ -250,8 +250,8 @@ export class VehicleRenderer {
           this.airplaneVTailMesh.setColorAt(i, color);
         }
 
-        // Headlight/taillight matrices — skip for rail carriages and airplanes
-        if (type === 'rail_carriage' || type === 'airplane') continue;
+        // Headlight/taillight matrices — skip for rail carriages only
+        if (type === 'rail_carriage') continue;
         if (lightIndex < this.maxLights && this.headlightMesh && this.taillightMesh) {
           const cosH = Math.cos(v.heading);
           const sinH = Math.sin(v.heading);
@@ -260,16 +260,22 @@ export class VehicleRenderer {
           // Beam geometry extends along local +X, so Y-rotate by heading
           const hlX = vx + cosH * fOff;
           const hlZ = vz - sinH * fOff;
+          // Airplane lights follow altitude; ground vehicles fixed at 0.055
+          const lightY = v.altitude !== undefined ? yPos + 0.01 : 0.055;
           hlMatrix.makeRotationY(v.heading);
-          hlTranslation.makeTranslation(hlX, 0.055, hlZ);
+          hlTranslation.makeTranslation(hlX, lightY, hlZ);
           hlMatrix.premultiply(hlTranslation);
           this.headlightMesh.setMatrixAt(lightIndex, hlMatrix);
 
-          // Taillights: offset backward
-          const tlX = vx - cosH * rOff;
-          const tlZ = vz + sinH * rOff;
-          tlTranslation.makeTranslation(tlX, 0.055, tlZ);
-          tlMatrix.copy(tlTranslation);
+          // Taillights: offset backward (airplanes: hide with zero scale)
+          if (v.altitude !== undefined) {
+            tlMatrix.makeScale(0, 0, 0);
+          } else {
+            const tlX = vx - cosH * rOff;
+            const tlZ = vz + sinH * rOff;
+            tlTranslation.makeTranslation(tlX, lightY, tlZ);
+            tlMatrix.copy(tlTranslation);
+          }
           this.taillightMesh.setMatrixAt(lightIndex, tlMatrix);
 
           lightIndex++;
@@ -310,9 +316,10 @@ export class VehicleRenderer {
           this.airplaneNavMesh.setMatrixAt(i, m);
         }
         if (count > 0) this.airplaneNavMesh.instanceMatrix.needsUpdate = true;
-        this.airplaneNavMesh.visible = time !== undefined
-          ? Math.floor(time * 2) % 2 === 0
-          : true;
+        // Blink: short bright (20%), long dark (80%), follows game speed
+        const blinkTime = time !== undefined ? time * (simSpeed ?? 1) : 0;
+        const cycle = blinkTime % 1.0; // 1-second cycle
+        this.airplaneNavMesh.visible = cycle < 0.2; // bright 0.2s, dark 0.8s
       }
     }
 
