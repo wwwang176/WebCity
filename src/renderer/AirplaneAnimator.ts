@@ -276,10 +276,11 @@ export class AirplaneAnimator implements VehicleAnimator {
     airportSystem: AirportSystemLike,
     transportVehicles: TransportVehicleRenderData[],
   ): void {
-    if (dt <= 0 || speed <= 0) return;
+    if (dt <= 0) return;
 
+    const paused = speed <= 0;
     const airports = airportSystem.getAirports();
-    const effectiveDt = dt * speed;
+    const effectiveDt = paused ? 0 : dt * speed;
 
     // Track known airports for cleanup
     this.knownAirportIds.clear();

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { VEHICLE_CONFIG } from './vehicleConfig';
+import { buildAirplaneNavLightsGeometry } from './geometry';
 import { ViewMode, getVehicleVisibility } from '../core/ViewMode';
 
 export interface VehicleData {
@@ -42,6 +43,9 @@ export class VehicleRenderer {
   private readonly maxLights = 2000; // total vehicles across all types
   private _viewMode = ViewMode.NORMAL;
 
+  // Airplane nav lights: separate InstancedMesh with MeshBasicMaterial (always bright, blinks)
+  private airplaneNavMesh: THREE.InstancedMesh | null = null;
+
   // Headlight / taillight instanced meshes
   private headlightMesh: THREE.InstancedMesh | null = null;
   private taillightMesh: THREE.InstancedMesh | null = null;
@@ -74,6 +78,14 @@ export class VehicleRenderer {
       scene.add(mesh);
       this.meshes.set(type, mesh);
     }
+
+    // Airplane nav lights: separate mesh with MeshBasicMaterial (always bright)
+    const navGeo = buildAirplaneNavLightsGeometry();
+    const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+    this.airplaneNavMesh = new THREE.InstancedMesh(navGeo, navMat, this.maxPerType);
+    this.airplaneNavMesh.count = 0;
+    this.airplaneNavMesh.frustumCulled = false;
+    scene.add(this.airplaneNavMesh);
 
     // Headlight beam: trapezoid projected forward (narrow at car, wide at far end)
     // Vertices in local XZ plane (Y=0, facing up), beam extends along local +X
@@ -239,6 +251,23 @@ export class VehicleRenderer {
       mesh.visible = getVehicleVisibility(this._viewMode, type);
     }
 
+    // Airplane nav lights: copy transforms from airplane mesh, blink visibility
+    const airplaneMesh = this.meshes.get('airplane');
+    if (airplaneMesh && this.airplaneNavMesh) {
+      const count = airplaneMesh.count;
+      this.airplaneNavMesh.count = count;
+      const m = this._matrix;
+      for (let i = 0; i < count; i++) {
+        airplaneMesh.getMatrixAt(i, m);
+        this.airplaneNavMesh.setMatrixAt(i, m);
+      }
+      if (count > 0) this.airplaneNavMesh.instanceMatrix.needsUpdate = true;
+      // Blink: toggle visibility every 0.5s
+      this.airplaneNavMesh.visible = time !== undefined
+        ? Math.floor(time * 2) % 2 === 0
+        : true;
+    }
+
     // Update headlight/taillight counts and opacity
     if (this.headlightMesh && this.taillightMesh) {
       this.headlightMesh.count = lightIndex;
@@ -283,6 +312,12 @@ export class VehicleRenderer {
       (mesh.material as THREE.Material).dispose();
     }
     this.meshes.clear();
+    if (this.airplaneNavMesh) {
+      scene.remove(this.airplaneNavMesh);
+      this.airplaneNavMesh.geometry.dispose();
+      (this.airplaneNavMesh.material as THREE.Material).dispose();
+      this.airplaneNavMesh = null;
+    }
 
     if (this.headlightMesh) {
       scene.remove(this.headlightMesh);
