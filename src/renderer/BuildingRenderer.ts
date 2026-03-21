@@ -2774,7 +2774,7 @@ export class BuildingRenderer {
     this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, Y, cz, false);
     const termMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
-    const runwayMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
+    const runwayMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
     const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
@@ -2803,19 +2803,20 @@ export class BuildingRenderer {
     const taxiR = new THREE.BoxGeometry(0.35, 0.01, 0.50);
     taxiR.translate(1.05, 0.018, 0.30);
     this.addInfraMesh(scene, taxiR, taxiMat, cx, Y, cz, false);
-    // Runway (bottom)
-    const rwGeo = new THREE.BoxGeometry(2.80, 0.01, 0.35);
+    // Runway (bottom) — width ×1.5
+    const rwGeo = new THREE.BoxGeometry(2.80, 0.01, 0.53);
     rwGeo.translate(0, 0.02, 0.60);
     this.addInfraMesh(scene, rwGeo, runwayMat, cx, Y, cz, false);
-    // Dashes
-    for (const dx of [-0.80, 0, 0.80]) {
-      const dGeo = new THREE.BoxGeometry(0.16, 0.012, 0.03);
+    // Dashes (4× density)
+    for (let i = 0; i < 24; i++) {
+      const dx = -1.20 + i * (2.40 / 23);
+      const dGeo = new THREE.BoxGeometry(0.04, 0.012, 0.01);
       dGeo.translate(dx, 0.025, 0.60);
       this.addInfraMesh(scene, dGeo, dashMat, cx, Y, cz, false);
     }
     // Threshold
     const thrGeo = new THREE.BoxGeometry(0.03, 0.012, 0.30);
-    thrGeo.translate(-1.35, 0.025, 0.60);
+    thrGeo.translate(1.35, 0.025, 0.60);
     this.addInfraMesh(scene, thrGeo, dashMat, cx, Y, cz, false);
   }
 
@@ -2829,7 +2830,7 @@ export class BuildingRenderer {
     const termMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
-    const runwayMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
+    const runwayMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
     const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const bridgeMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
@@ -2880,19 +2881,20 @@ export class BuildingRenderer {
     const taxiR = new THREE.BoxGeometry(0.45, 0.01, 1.20);
     taxiR.translate(1.80, 0.018, 0.60);
     this.addInfraMesh(scene, taxiR, taxiMat, cx, Y, cz, false);
-    // Runway
-    const rwGeo = new THREE.BoxGeometry(4.50, 0.01, 0.45);
+    // Runway — width ×1.5
+    const rwGeo = new THREE.BoxGeometry(4.50, 0.01, 0.68);
     rwGeo.translate(0, 0.02, 1.20);
     this.addInfraMesh(scene, rwGeo, runwayMat, cx, Y, cz, false);
-    // Dashes
-    for (const dx of [-1.50, -0.75, 0, 0.75, 1.50]) {
-      const dGeo = new THREE.BoxGeometry(0.18, 0.012, 0.04);
+    // Dashes (4× density)
+    for (let i = 0; i < 40; i++) {
+      const dx = -2.00 + i * (4.00 / 39);
+      const dGeo = new THREE.BoxGeometry(0.045, 0.012, 0.013);
       dGeo.translate(dx, 0.025, 1.20);
       this.addInfraMesh(scene, dGeo, dashMat, cx, Y, cz, false);
     }
     // Threshold
     const thrGeo = new THREE.BoxGeometry(0.04, 0.012, 0.40);
-    thrGeo.translate(-2.20, 0.025, 1.20);
+    thrGeo.translate(2.20, 0.025, 1.20);
     this.addInfraMesh(scene, thrGeo, dashMat, cx, Y, cz, false);
   }
 
@@ -2906,7 +2908,7 @@ export class BuildingRenderer {
     const termMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
-    const runwayMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
+    const runwayMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
     const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const bridgeMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
@@ -2964,28 +2966,30 @@ export class BuildingRenderer {
     const taxiR = new THREE.BoxGeometry(0.45, 0.01, 3.40);
     taxiR.translate(2.80, 0.018, 0.80);
     this.addInfraMesh(scene, taxiR, taxiMat, cx, Y, cz, false);
-    // Runway 1
-    const rw1Geo = new THREE.BoxGeometry(6.50, 0.01, 0.45);
+    // Runway 1 — width ×1.5
+    const rw1Geo = new THREE.BoxGeometry(6.50, 0.01, 0.68);
     rw1Geo.translate(0, 0.02, 0.80);
     this.addInfraMesh(scene, rw1Geo, runwayMat, cx, Y, cz, false);
-    for (const dx of [-2.40, -1.20, 0, 1.20, 2.40]) {
-      const dGeo = new THREE.BoxGeometry(0.20, 0.012, 0.04);
+    for (let i = 0; i < 40; i++) {
+      const dx = -3.00 + i * (6.00 / 39);
+      const dGeo = new THREE.BoxGeometry(0.050, 0.012, 0.013);
       dGeo.translate(dx, 0.025, 0.80);
       this.addInfraMesh(scene, dGeo, dashMat, cx, Y, cz, false);
     }
-    const thr1 = new THREE.BoxGeometry(0.04, 0.012, 0.40);
-    thr1.translate(-3.20, 0.025, 0.80);
+    const thr1 = new THREE.BoxGeometry(0.04, 0.012, 0.60);
+    thr1.translate(3.20, 0.025, 0.80);
     this.addInfraMesh(scene, thr1, dashMat, cx, Y, cz, false);
-    // Runway 2
-    const rw2Geo = new THREE.BoxGeometry(6.50, 0.01, 0.45);
+    // Runway 2 — width ×1.5
+    const rw2Geo = new THREE.BoxGeometry(6.50, 0.01, 0.68);
     rw2Geo.translate(0, 0.02, 2.20);
     this.addInfraMesh(scene, rw2Geo, runwayMat, cx, Y, cz, false);
-    for (const dx of [-2.40, -1.20, 0, 1.20, 2.40]) {
-      const dGeo = new THREE.BoxGeometry(0.20, 0.012, 0.04);
+    for (let i = 0; i < 40; i++) {
+      const dx = -3.00 + i * (6.00 / 39);
+      const dGeo = new THREE.BoxGeometry(0.050, 0.012, 0.013);
       dGeo.translate(dx, 0.025, 2.20);
       this.addInfraMesh(scene, dGeo, dashMat, cx, Y, cz, false);
     }
-    const thr2 = new THREE.BoxGeometry(0.04, 0.012, 0.40);
+    const thr2 = new THREE.BoxGeometry(0.04, 0.012, 0.60);
     thr2.translate(3.20, 0.025, 2.20);
     this.addInfraMesh(scene, thr2, dashMat, cx, Y, cz, false);
   }
@@ -2996,6 +3000,7 @@ export class BuildingRenderer {
     const m = new THREE.Mesh(geo, mat);
     m.position.set(x, y, z);
     m.castShadow = shadow;
+    m.receiveShadow = true;
     scene.add(m);
   }
 

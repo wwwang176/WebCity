@@ -28,6 +28,8 @@ export interface VehicleData {
   pitch?: number;
   /** Roll angle in radians (right wing down = positive). */
   roll?: number;
+  /** Uniform scale override. */
+  scale?: number;
 }
 
 const CAR_COLORS = [
@@ -87,6 +89,7 @@ export class VehicleRenderer {
       const mesh = new THREE.InstancedMesh(geometry, material, this.maxPerType);
       mesh.count = 0;
       mesh.castShadow = true;
+      mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       scene.add(mesh);
       this.meshes.set(type, mesh);
@@ -228,6 +231,10 @@ export class VehicleRenderer {
         }
         translation.makeTranslation(vx, yPos, vz);
         matrix.copy(translation).multiply(rotation);
+        if (v.scale !== undefined) {
+          this._pitchRoll.makeScale(v.scale, v.scale, v.scale);
+          matrix.multiply(this._pitchRoll);
+        }
         mesh.setMatrixAt(i, matrix);
 
         // Color: per-instance random from type-appropriate palette

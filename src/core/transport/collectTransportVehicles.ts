@@ -26,6 +26,8 @@ export interface TransportVehicleRenderData {
   pitch?: number;
   /** Roll angle in radians (right wing down = positive, used by airplane during turns). */
   roll?: number;
+  /** Uniform scale override (e.g. 0.6 for smaller planes at S airports). */
+  scale?: number;
 }
 
 export interface TransportSystems {

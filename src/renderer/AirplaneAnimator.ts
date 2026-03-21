@@ -355,6 +355,7 @@ export class AirplaneAnimator implements VehicleAnimator {
       altitude: anim.altitude,
       pitch: anim.pitch,
       roll: anim.roll,
+      scale: anim.size === 'SMALL' ? 0.8 : undefined,
     });
   }
 
@@ -366,8 +367,16 @@ export class AirplaneAnimator implements VehicleAnimator {
     const centerZ = airport.y + (h - 1) / 2;
     const rotRad = (airport.rotation * Math.PI) / 180;
 
-    // Pick a random gate (fixed for entire cycle)
-    const gate = paths.gates[Math.floor(Math.random() * paths.gates.length)]!;
+    // Pick a random gate, avoiding gates occupied by other planes at same airport
+    const occupiedGates = new Set<string>();
+    for (const [, other] of this.anims) {
+      if (other.airportId === airport.id) {
+        occupiedGates.add(`${other.gate.x},${other.gate.z}`);
+      }
+    }
+    const freeGates = paths.gates.filter(g => !occupiedGates.has(`${g.x},${g.z}`));
+    const gatePool = freeGates.length > 0 ? freeGates : paths.gates;
+    const gate = gatePool[Math.floor(Math.random() * gatePool.length)]!;
 
     // Transform key waypoints to world coords
     const approachStart = toXY(localToWorld(paths.approachStart.x, paths.approachStart.z, centerX, centerZ, rotRad));
