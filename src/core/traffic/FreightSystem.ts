@@ -77,6 +77,8 @@ export function getConsumptionRate(buildingId: number): number {
 export class FreightSystem {
   /** Per-building supply status: source + ratio (0~1). */
   private commercialSupply = new Map<string, SupplyStatus>();
+  /** Position keys of factories that can export via trade facilities. */
+  private exportableFactorySet = new Set<string>();
   private isExporting = false;
   private lastDemand: FreightDemand = { production: 0, consumption: 0, shortage: 0 };
   private lastTrade: TradeResult = { imported: 0, exported: 0, importCapacity: 0, exportCapacity: 0 };
@@ -228,6 +230,7 @@ export class FreightSystem {
     }
 
     const shortage = totalConsumption - actualConsumed;
+    this.exportableFactorySet = exportableFactories;
     this.isExporting = exported > 0;
     this.lastDemand = { production: totalProduction, consumption: totalConsumption, shortage: Math.max(0, shortage) };
     this.lastTrade = { imported, exported, importCapacity: importCap, exportCapacity: exportCap };
@@ -248,6 +251,11 @@ export class FreightSystem {
   /** Whether industrial surplus is being exported via trade facilities. */
   getIsExporting(): boolean {
     return this.isExporting;
+  }
+
+  /** Whether a specific factory is exporting (reachable from trade facility). */
+  isFactoryExporting(x: number, y: number): boolean {
+    return this.isExporting && this.exportableFactorySet.has(toPosKey(x, y));
   }
 
   /** Surplus ratio (0 = balanced, 1 = 100% overproduction).
