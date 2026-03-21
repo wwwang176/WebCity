@@ -273,14 +273,16 @@ export class Game {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private tickAccumulator = 0;
   private elapsedTime = 0;
-  private dirty = {
-    roads: true,
-    tracks: true,
-    crossings: true,
-    buildings: true,
-    terrain: true,
-    trafficLights: true,
-    overlay: true,
+  private dirty = new class {
+    roads = true;
+    tracks = true;
+    crossings = true;
+    private _buildings = true;
+    terrain = true;
+    trafficLights = true;
+    overlay = true;
+    get buildings() { return this._buildings; }
+    set buildings(v: boolean) { this._buildings = v; if (v) this.terrain = true; }
   };
 
   // UI state
@@ -972,7 +974,6 @@ export class Game {
     placeAirportOnGrid(this.state.grid, x, y, airportSize, getInfraBuildingId('airport'), this.currentRotation);
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
-    this.dirty.terrain = true;
     return true;
   }
 
