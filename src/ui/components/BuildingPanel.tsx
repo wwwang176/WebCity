@@ -108,34 +108,34 @@ type WarnLevel = 'red' | 'yellow';
 interface Warning { level: WarnLevel; text: string }
 
 function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
-  if (sel.isAbandoned || sel.abandonmentStress <= 0) return [];
-
   const warnings: Warning[] = [];
-  const game = getGame();
-  const isRes = sel.zoneType === ZoneType.RESIDENTIAL_LOW || sel.zoneType === ZoneType.RESIDENTIAL_HIGH;
-  const taxRate = isRes ? game.getState().taxRates.residential : game.getState().taxRates.business;
-  const over = taxRate - (isRes ? 12 : 9);
 
-  // Tax
-  if (over >= 8) warnings.push({ level: 'red', text: 'Tax rate unbearable' });
-  else if (over >= 4) warnings.push({ level: 'red', text: 'Tax rate too high' });
-  else if (over > 0) warnings.push({ level: 'yellow', text: 'Tax rate slightly high' });
-
-  // Pollution (industrial immune)
-  if (sel.pollution > 70 && sel.zoneType !== ZoneType.INDUSTRIAL) {
-    warnings.push({ level: 'red', text: 'Severe pollution' });
-  } else if (sel.pollution > 40 && sel.zoneType !== ZoneType.INDUSTRIAL) {
-    warnings.push({ level: 'yellow', text: 'High pollution' });
-  }
-
-
-
-  // Freight
+  // Freight warnings always show (not gated by abandonment stress)
   if (isCommercialZone(sel.zoneType) && sel.freightSupplied === false) {
     warnings.push({ level: 'red', text: 'No goods to sell' });
   }
   if (sel.zoneType === ZoneType.INDUSTRIAL && (sel.freightSurplusRatio ?? 0) > 0.5) {
     warnings.push({ level: sel.freightSurplusRatio! > 0.8 ? 'red' : 'yellow', text: 'Goods not selling' });
+  }
+
+  // Remaining warnings only when building is under stress
+  if (!sel.isAbandoned && sel.abandonmentStress > 0) {
+    const game = getGame();
+    const isRes = sel.zoneType === ZoneType.RESIDENTIAL_LOW || sel.zoneType === ZoneType.RESIDENTIAL_HIGH;
+    const taxRate = isRes ? game.getState().taxRates.residential : game.getState().taxRates.business;
+    const over = taxRate - (isRes ? 12 : 9);
+
+    // Tax
+    if (over >= 8) warnings.push({ level: 'red', text: 'Tax rate unbearable' });
+    else if (over >= 4) warnings.push({ level: 'red', text: 'Tax rate too high' });
+    else if (over > 0) warnings.push({ level: 'yellow', text: 'Tax rate slightly high' });
+
+    // Pollution (industrial immune)
+    if (sel.pollution > 70 && sel.zoneType !== ZoneType.INDUSTRIAL) {
+      warnings.push({ level: 'red', text: 'Severe pollution' });
+    } else if (sel.pollution > 40 && sel.zoneType !== ZoneType.INDUSTRIAL) {
+      warnings.push({ level: 'yellow', text: 'High pollution' });
+    }
   }
 
   // Sort: red first, then yellow

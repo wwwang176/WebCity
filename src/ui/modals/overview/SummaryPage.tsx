@@ -68,13 +68,19 @@ export function SummaryPage() {
     const freightSupplyRatio = 1 - state.freight.getShortageRatio();
     const freightStorage = state.freight.getCargoStorage();
     const freightSurplusRatio = state.freight.getSurplusRatio();
+    const freightDemand = state.freight.getLastDemand();
+    const freightSuppliedCount = state.freight.getSuppliedCount();
+    const freightTotalCommercial = freightDemand.consumption > 0
+      ? Math.round(freightDemand.consumption / 1) : 0; // COMMERCIAL_CONSUMPTION_RATE = 1
 
     const rci = gameSignals.rciDemand();
 
     return {
       population, totalHomes, totalJobs, vacantHomes, jobOpenings,
       avgHappiness, zoneCounts, attractiveness, canMigrate,
-      pwrRatio, wtrRatio, freightSupplyRatio, freightStorage, freightSurplusRatio, rci,
+      pwrRatio, wtrRatio, freightSupplyRatio, freightStorage, freightSurplusRatio,
+      freightProduction: freightDemand.production, freightConsumption: freightDemand.consumption,
+      freightSuppliedCount, freightTotalCommercial, rci,
       checks: [
         { label: 'Attractiveness > 40', value: attractiveness.toFixed(1), ok: attractiveness > 40 },
         { label: 'Vacant Homes > 0', value: String(vacantHomes), ok: vacantHomes > 0 },
@@ -121,7 +127,6 @@ export function SummaryPage() {
         {[
           { label: 'Power', ratio: () => data().pwrRatio, color: '#66bb6a' },
           { label: 'Water', ratio: () => data().wtrRatio, color: '#42a5f5' },
-          { label: 'Freight', ratio: () => data().freightSupplyRatio, color: '#ffa726' },
         ].map(u => (
           <div style="flex:1">
             <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
@@ -141,21 +146,43 @@ export function SummaryPage() {
         ))}
       </div>
 
-      <div style="display:flex;gap:12px;margin-bottom:12px;font-size:11px;color:#8899b0">
+      <div class="section-title">Freight</div>
+      <div style="display:flex;gap:12px;margin-bottom:8px">
         <div style="flex:1">
-          <span>Freight Supplied: </span>
-          <span style={{ color: data().freightSupplyRatio >= 0.8 ? '#66bb6a' : data().freightSupplyRatio >= 0.5 ? '#ffa726' : '#ef5350' }}>
-            {data().freightStorage > 0 || data().freightSupplyRatio < 1
-              ? `${(data().freightSupplyRatio * 100).toFixed(0)}%`
-              : 'N/A'}
-          </span>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
+            <span>Supply Rate</span>
+            <span style={{ color: data().freightSupplyRatio >= 1 ? '#66bb6a' : data().freightSupplyRatio >= 0.7 ? '#ffa726' : '#ef5350' }}>
+              {(data().freightSupplyRatio * 100).toFixed(0)}%
+            </span>
+          </div>
+          <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+            <div style={{
+              width: `${Math.min(100, data().freightSupplyRatio * 100)}%`, height: '100%', 'border-radius': '3px',
+              background: data().freightSupplyRatio >= 1 ? '#66bb6a' : data().freightSupplyRatio >= 0.7 ? '#ffa726' : '#ef5350',
+              transition: 'width 0.3s',
+            }} />
+          </div>
         </div>
         <div style="flex:1">
-          <span>Cargo Storage: </span>
-          <span style={{ color: data().freightSurplusRatio > 0.8 ? '#ef5350' : data().freightSurplusRatio > 0.5 ? '#ffa726' : '#90a4ae' }}>
-            {Math.round(data().freightStorage)}/200
-          </span>
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
+            <span>Cargo Storage</span>
+            <span style={{ color: data().freightSurplusRatio > 0.8 ? '#ef5350' : data().freightSurplusRatio > 0.5 ? '#ffa726' : '#90a4ae' }}>
+              {Math.round(data().freightStorage)}/200
+            </span>
+          </div>
+          <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+            <div style={{
+              width: `${Math.min(100, data().freightSurplusRatio * 100)}%`, height: '100%', 'border-radius': '3px',
+              background: data().freightSurplusRatio > 0.8 ? '#ef5350' : data().freightSurplusRatio > 0.5 ? '#ffa726' : '#42a5f5',
+              transition: 'width 0.3s',
+            }} />
+          </div>
         </div>
+      </div>
+      <div style="display:flex;gap:16px;font-size:11px;color:#8899b0;margin-bottom:12px">
+        <span>Production: <span style="color:#ffa726">{data().freightProduction}</span>/tick</span>
+        <span>Consumption: <span style="color:#42a5f5">{data().freightConsumption}</span>/tick</span>
+        <span>Supplied: <span style={{ color: data().freightSupplyRatio >= 1 ? '#66bb6a' : '#ef5350' }}>{data().freightSuppliedCount}/{data().freightTotalCommercial}</span> shops</span>
       </div>
 
       <div class="section-title">Buildings by Zone</div>
