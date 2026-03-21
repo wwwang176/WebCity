@@ -65,14 +65,15 @@ export function SummaryPage() {
 
     const pwrRatio = state.power.getSupplyRatio();
     const wtrRatio = state.water.getSupplyRatio();
-    const freightDemandData = state.freight.getLastDemand();
-    const freightSupplyRatio = freightDemandData.consumption > 0
-      ? freightDemandData.production / freightDemandData.consumption
-      : 1;
     const freightDemand = state.freight.getLastDemand();
+    const freightSupplyRatio = freightDemand.consumption > 0
+      ? freightDemand.production / freightDemand.consumption
+      : 1;
     const freightSuppliedCount = state.freight.getSuppliedCount();
-    const freightTotalCommercial = freightDemand.consumption > 0
-      ? Math.round(freightDemand.consumption / 1) : 0; // COMMERCIAL_CONSUMPTION_RATE = 1
+    // Count actual commercial buildings from zone table
+    const freightTotalCommercial =
+      (zoneCounts[ZoneType.COMMERCIAL_LOW]?.count ?? 0) +
+      (zoneCounts[ZoneType.COMMERCIAL_HIGH]?.count ?? 0);
 
     const rci = gameSignals.rciDemand();
 
