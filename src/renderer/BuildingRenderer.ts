@@ -1492,6 +1492,10 @@ export class BuildingRenderer {
   }
 
   private buildHospital(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Footprint ground (2×3)
+    const groundGeo = new THREE.BoxGeometry(1.80, 0.02, 2.80);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, 0.05, cz, false);
     // Parking lot ground in front
     const parkingGeo = new THREE.BoxGeometry(1.50, 0.015, 0.80);
     parkingGeo.translate(0, 0.008, 0.90);
@@ -1597,6 +1601,10 @@ export class BuildingRenderer {
   // ═══════════════════════════════════════════════════════════════════
 
   private buildElementarySchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Footprint ground (2×2)
+    const groundGeo = new THREE.BoxGeometry(1.80, 0.02, 1.80);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, 0.05, cz, false);
     // Low perimeter wall
     const wallMat = new THREE.MeshLambertMaterial({ color: 0xbcaaa4 });
     // Front wall
@@ -1692,6 +1700,10 @@ export class BuildingRenderer {
   }
 
   private buildHighSchool(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Footprint ground (2×3)
+    const groundGeo = new THREE.BoxGeometry(1.80, 0.02, 2.80);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, 0.05, cz, false);
     // Entrance plaza (paved)
     const plazaGeo = new THREE.BoxGeometry(0.60, 0.015, 0.30);
     plazaGeo.translate(0, 0.008, -1.15);
@@ -1773,6 +1785,10 @@ export class BuildingRenderer {
   }
 
   private buildUniversity(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
+    // Footprint ground (3×3)
+    const groundGeo = new THREE.BoxGeometry(2.80, 0.02, 2.80);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, 0.05, cz, false);
     // Low perimeter wall/fence
     const fenceMat = new THREE.MeshLambertMaterial({ color: 0x8d6e63 });
     const fFGeo = new THREE.BoxGeometry(2.70, 0.06, 0.03);
@@ -2766,6 +2782,10 @@ export class BuildingRenderer {
   // ── SMALL Airport (3×2) ─────────────────────────────────────
   private buildAirportSmall(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
     const Y = 0.05;
+    // Footprint ground (3×2)
+    const groundGeo = new THREE.BoxGeometry(2.80, 0.02, 1.80);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, Y, cz, false);
     const termMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x616161 });
@@ -2811,6 +2831,10 @@ export class BuildingRenderer {
   // ── MEDIUM Airport (5×4) ────────────────────────────────────
   private buildAirportMedium(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
     const Y = 0.05;
+    // Footprint ground (5×4)
+    const groundGeo = new THREE.BoxGeometry(4.80, 0.02, 3.80);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, Y, cz, false);
     const termMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
@@ -2879,6 +2903,10 @@ export class BuildingRenderer {
   // ── LARGE Airport (7×6) — dual runway ───────────────────────
   private buildAirportLarge(scene: THREE.Scene | THREE.Group, cx: number, cz: number): void {
     const Y = 0.05;
+    // Footprint ground (7×6)
+    const groundGeo = new THREE.BoxGeometry(6.80, 0.02, 5.80);
+    groundGeo.translate(0, 0.01, 0);
+    this.addInfraMesh(scene, groundGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, Y, cz, false);
     const termMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });

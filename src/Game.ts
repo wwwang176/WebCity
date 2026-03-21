@@ -972,6 +972,7 @@ export class Game {
     placeAirportOnGrid(this.state.grid, x, y, airportSize, getInfraBuildingId('airport'), this.currentRotation);
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
+    this.dirty.terrain = true;
     return true;
   }
 
