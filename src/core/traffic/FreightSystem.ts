@@ -79,13 +79,25 @@ export class FreightSystem {
   private hasCalculated = false;
 
   /**
-   * Calculate freight supply via multi-source BFS from all factories,
-   * then apply trade (import/export) based on available throughput.
-   * Called every slow tick.
+   * Calculate freight supply in two phases:
+   * 1. Local BFS from factories — supplies nearby commercial buildings
+   * 2. Trade BFS from trade facilities (stations/airports) — imports for
+   *    remaining unsupplied commercial, marks reachable factories for export
+   *
+   * In both phases, commercial buildings that can't be afforded are skipped
+   * but BFS continues past them (skip-but-continue).
    */
-  calculateSupply(grid: Grid, tradeCapacity?: { importCapacity: number; exportCapacity: number }): void {
+  calculateSupply(
+    grid: Grid,
+    tradeCapacity?: {
+      importCapacity: number;
+      exportCapacity: number;
+      /** Positions of trade facilities (external rail stations + airports). */
+      tradePositions?: { x: number; y: number }[];
+    },
+  ): void {
     this.hasCalculated = true;
-    const sources: [number, number][] = [];
+    const factories: { x: number; y: number; rate: number }[] = [];
     let totalProduction = 0;
     let totalConsumption = 0;
 
@@ -94,7 +106,7 @@ export class FreightSystem {
       if (cell.zoneType === ZoneType.INDUSTRIAL) {
         const rate = getProductionRate(cell.buildingId);
         if (rate > 0) {
-          sources.push([x, y]);
+          factories.push({ x, y, rate });
           totalProduction += rate;
         }
       } else if (isCommercialZone(cell.zoneType as ZoneType)) {
@@ -102,92 +114,130 @@ export class FreightSystem {
       }
     });
 
-    // Multi-source BFS: all factories share a pooled budget
-    const supplied = new Set<string>();
-    const visited = new Set<string>();
-    const queue: [number, number][] = [];
-    let budget = totalProduction;
-
-    for (const [sx, sy] of sources) {
-      const key = toPosKey(sx, sy);
-      if (!visited.has(key)) {
-        visited.add(key);
-        supplied.add(key);
-        queue.push([sx, sy]);
-      }
-    }
-
-    while (queue.length > 0) {
-      if (budget <= 0) break;
-      const [x, y] = queue.shift()!;
-      for (const [dx, dy] of FOUR_NEIGHBORS) {
-        const nx = x + dx!;
-        const ny = y + dy!;
-        const key = toPosKey(nx, ny);
-        if (visited.has(key)) continue;
-        const cell = grid.getCell(nx, ny);
-        if (!cell) continue;
-        const canTraverse = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || cell.zoneType !== 0;
-        if (!canTraverse) continue;
-        visited.add(key);
-
-        if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)) {
-          const demand = getConsumptionRate(cell.buildingId);
-          if (demand > 0) {
-            if (budget < demand) continue;
-            budget -= demand;
-          }
+    // ── Phase 1: Local supply BFS from factories ──
+    const localSupplied = new Set<string>();
+    let localBudget = totalProduction;
+    {
+      const visited = new Set<string>();
+      const queue: [number, number][] = [];
+      for (const f of factories) {
+        const key = toPosKey(f.x, f.y);
+        if (!visited.has(key)) {
+          visited.add(key);
+          localSupplied.add(key);
+          queue.push([f.x, f.y]);
         }
-        supplied.add(key);
-        queue.push([nx, ny]);
+      }
+      while (queue.length > 0) {
+        const [x, y] = queue.shift()!;
+        for (const [dx, dy] of FOUR_NEIGHBORS) {
+          const nx = x + dx!;
+          const ny = y + dy!;
+          const key = toPosKey(nx, ny);
+          if (visited.has(key)) continue;
+          const cell = grid.getCell(nx, ny);
+          if (!cell) continue;
+          if (cell.roadType === RoadType.NONE && cell.buildingId === 0 && cell.zoneType === 0) continue;
+          visited.add(key);
+
+          if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)) {
+            const demand = getConsumptionRate(cell.buildingId);
+            if (demand > 0 && localBudget < demand) {
+              // Can't afford — skip supply but continue BFS
+              queue.push([nx, ny]);
+              continue;
+            }
+            localBudget -= demand;
+          }
+          localSupplied.add(key);
+          queue.push([nx, ny]);
+        }
       }
     }
 
-    // Extract locally supplied commercial buildings
+    // Extract locally supplied commercial
     this.suppliedCommercial = new Set<string>();
     this.importedCommercial = new Set<string>();
     let actualConsumed = 0;
-    const unsuppliedCommercial: { x: number; y: number; demand: number }[] = [];
-
     grid.forEachCell((cell, x, y) => {
       if (cell.buildingId === 0) return;
       if (!isCommercialZone(cell.zoneType as ZoneType)) return;
-      if (supplied.has(toPosKey(x, y))) {
+      if (localSupplied.has(toPosKey(x, y))) {
         this.suppliedCommercial.add(toPosKey(x, y));
         actualConsumed += getConsumptionRate(cell.buildingId);
-      } else {
-        unsuppliedCommercial.push({ x, y, demand: getConsumptionRate(cell.buildingId) });
       }
     });
 
-    let shortage = totalConsumption - actualConsumed;
-
-    // Trade: import fills shortage, export absorbs surplus
+    // ── Phase 2: Trade BFS from trade facilities ──
     const importCap = tradeCapacity?.importCapacity ?? 0;
     const exportCap = tradeCapacity?.exportCapacity ?? 0;
+    const tradePositions = tradeCapacity?.tradePositions ?? [];
     let imported = 0;
     let exported = 0;
+    const exportableFactories = new Set<string>();
 
-    if (shortage > 0 && importCap > 0) {
-      // Import: fill unsupplied commercial buildings up to import capacity
-      let importBudget = Math.min(shortage, importCap);
-      for (const shop of unsuppliedCommercial) {
-        if (importBudget < shop.demand) continue;
-        importBudget -= shop.demand;
-        imported += shop.demand;
-        this.importedCommercial.add(toPosKey(shop.x, shop.y));
+    if (tradePositions.length > 0 && (importCap > 0 || exportCap > 0)) {
+      const visited = new Set<string>();
+      const queue: [number, number][] = [];
+      let importBudget = importCap;
+
+      for (const tp of tradePositions) {
+        const key = toPosKey(tp.x, tp.y);
+        if (!visited.has(key)) {
+          visited.add(key);
+          queue.push([tp.x, tp.y]);
+        }
       }
-      shortage -= imported;
+
+      while (queue.length > 0) {
+        const [x, y] = queue.shift()!;
+        for (const [dx, dy] of FOUR_NEIGHBORS) {
+          const nx = x + dx!;
+          const ny = y + dy!;
+          const key = toPosKey(nx, ny);
+          if (visited.has(key)) continue;
+          const cell = grid.getCell(nx, ny);
+          if (!cell) continue;
+          if (cell.roadType === RoadType.NONE && cell.buildingId === 0 && cell.zoneType === 0) continue;
+          visited.add(key);
+
+          // Mark reachable factories as exportable
+          if (cell.buildingId > 0 && cell.zoneType === ZoneType.INDUSTRIAL) {
+            exportableFactories.add(key);
+          }
+
+          // Import: supply unsupplied commercial buildings
+          if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)
+              && !this.suppliedCommercial.has(key)) {
+            const demand = getConsumptionRate(cell.buildingId);
+            if (demand > 0 && importBudget >= demand) {
+              importBudget -= demand;
+              imported += demand;
+              this.importedCommercial.add(key);
+            }
+          }
+
+          queue.push([nx, ny]);
+        }
+      }
     }
 
-    if (totalProduction > totalConsumption && exportCap > 0) {
-      // Export: absorb surplus up to export capacity
+    // Calculate export from reachable factories
+    if (totalProduction > totalConsumption && exportCap > 0 && exportableFactories.size > 0) {
+      let exportableProduction = 0;
+      for (const f of factories) {
+        if (exportableFactories.has(toPosKey(f.x, f.y))) {
+          exportableProduction += f.rate;
+        }
+      }
       const surplus = totalProduction - totalConsumption;
-      exported = Math.min(surplus, exportCap);
+      // Export limited by: surplus, exportable production, and throughput capacity
+      exported = Math.min(surplus, exportableProduction, exportCap);
     }
 
+    const shortage = totalConsumption - actualConsumed - imported;
     this.isExporting = exported > 0;
-    this.lastDemand = { production: totalProduction, consumption: totalConsumption, shortage };
+    this.lastDemand = { production: totalProduction, consumption: totalConsumption, shortage: Math.max(0, shortage) };
     this.lastTrade = { imported, exported, importCapacity: importCap, exportCapacity: exportCap };
   }
 

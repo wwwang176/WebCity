@@ -397,14 +397,26 @@ export class SimulationLoop {
         ? this.state.rail.getExternalStationCount() * TRADE.RAIL_THROUGHPUT_PER_STATION
         : 0;
       let airportThroughput = 0;
+      const tradePositions: { x: number; y: number }[] = [];
+      // Collect external rail station positions
+      if (this.state.rail.hasExternalConnection) {
+        for (const s of this.state.rail.getStations()) {
+          if (this.state.rail.isStationExternal(s.x, s.y)) {
+            tradePositions.push({ x: s.x, y: s.y });
+          }
+        }
+      }
+      // Collect airport positions
       for (const ap of this.state.airport.getAirports()) {
         airportThroughput += ap.cargoPerTick;
+        tradePositions.push({ x: ap.x, y: ap.y });
       }
       const totalThroughput = railThroughput + airportThroughput;
 
       this.state.freight.calculateSupply(this.state.grid, {
         importCapacity: totalThroughput,
         exportCapacity: totalThroughput,
+        tradePositions,
       });
     }
 

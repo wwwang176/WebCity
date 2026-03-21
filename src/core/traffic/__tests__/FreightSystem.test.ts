@@ -84,34 +84,79 @@ describe('FreightSystem', () => {
     expect(freight.getSurplusRatio()).toBe(0);
   });
 
-  it('should import goods to fill shortage when trade capacity available', () => {
-    for (let x = 0; x <= 2; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
-    // 1 factory Lv1 (produces 3), 1 Small Mall (consumes 8) — locally can't supply
-    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
-    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 10 });
+  it('should import via BFS from trade facility position', () => {
+    // Road: (0,0)-(10,0), factory at left, mall at right, station at right
+    for (let x = 0; x <= 10; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 }); // produces 3
+    grid.setCell(10, 1, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 10 }); // consumes 8
+    // Station at (10,0) — near the mall
 
-    // Import capacity covers the gap
-    freight.calculateSupply(grid, { importCapacity: 10, exportCapacity: 0 });
+    freight.calculateSupply(grid, {
+      importCapacity: 10, exportCapacity: 0,
+      tradePositions: [{ x: 10, y: 0 }],
+    });
 
-    expect(freight.isSupplied(2, 1)).toBe(true);
-    expect(freight.getSupplyStatus(2, 1)).toBe('imported');
-    expect(freight.getShortageRatio()).toBe(0);
+    // Mall is near the station → can import
+    expect(freight.getSupplyStatus(10, 1)).toBe('imported');
     expect(freight.getLastTrade().imported).toBe(8);
   });
 
-  it('should export surplus when trade capacity available', () => {
-    for (let x = 0; x <= 2; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
-    // 3 factories Lv1 (produce 9), 1 small shop (consumes 1) — surplus 8
+  it('should not import to commercial far from trade facility', () => {
+    // Two disconnected roads
+    for (let x = 0; x <= 3; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(15, 0, { roadType: RoadType.TWO_LANE });
+    // Factory on road A, mall on road B (disconnected)
     grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
-    grid.setCell(1, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
-    grid.setCell(1, 2, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
-    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    grid.setCell(15, 1, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 10 });
+    // Station on road A — can't reach mall on road B
 
-    freight.calculateSupply(grid, { importCapacity: 0, exportCapacity: 50 });
+    freight.calculateSupply(grid, {
+      importCapacity: 100, exportCapacity: 0,
+      tradePositions: [{ x: 3, y: 0 }],
+    });
 
-    expect(freight.getLastTrade().exported).toBe(8); // surplus capped at 8
-    expect(freight.getSurplusRatio()).toBe(0); // export absorbs surplus
+    expect(freight.getSupplyStatus(15, 1)).toBe('unsupplied');
+  });
+
+  it('should export only from factories reachable by trade facility', () => {
+    // Two disconnected roads
+    for (let x = 0; x <= 3; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    grid.setCell(15, 0, { roadType: RoadType.TWO_LANE });
+    // Factory A on road A (near station), Factory B on road B (no station)
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 }); // produces 3
+    grid.setCell(15, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 }); // produces 3
+    // 1 shop to create some consumption
+    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 }); // consumes 1
+    // Station on road A only
+
+    freight.calculateSupply(grid, {
+      importCapacity: 0, exportCapacity: 100,
+      tradePositions: [{ x: 3, y: 0 }],
+    });
+
+    // Total production 6, consumption 1, surplus 5
+    // But only factory A (produces 3) is reachable from station
+    // Export = min(surplus=5, exportable=3, capacity=100) = 3
+    expect(freight.getLastTrade().exported).toBe(3);
     expect(freight.getIsExporting()).toBe(true);
+  });
+
+  it('should skip unaffordable commercial but continue BFS past it', () => {
+    // Road: (0,0)-(6,0)
+    for (let x = 0; x <= 6; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    // Factory produces 3
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    // Big mall (consumes 8) blocks path at (3,1) — budget can't afford
+    grid.setCell(3, 1, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 10 });
+    // Small shop (consumes 1) behind the mall at (6,1)
+    grid.setCell(6, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+
+    freight.calculateSupply(grid);
+
+    // Mall skipped (budget 3 < 8), but BFS continues → small shop gets supplied
+    expect(freight.isSupplied(3, 1)).toBe(false); // mall unsupplied
+    expect(freight.isSupplied(6, 1)).toBe(true);  // shop supplied via road
+    expect(freight.getLocalSuppliedCount()).toBe(1);
   });
 
   it('should report correct production and consumption with per-building rates', () => {
