@@ -211,13 +211,13 @@ export class VehicleRenderer {
           yPos += Math.sin(time * 2 + v.id * 1.7) * 0.012;
         }
         // Airplane: override Y with altitude
-        if (v.altitude !== undefined) {
+        if (type === 'airplane' && v.altitude !== undefined) {
           yPos = v.altitude;
         }
 
         rotation.makeRotationY(v.heading);
         // Airplane pitch/roll: apply in local space (after heading rotation)
-        if (v.pitch || v.roll) {
+        if (type === 'airplane' && (v.pitch || v.roll)) {
           const pr = this._pitchRoll;
           pr.makeRotationX(v.roll ?? 0);   // roll around local X (wing axis)
           if (v.pitch) {
@@ -261,14 +261,23 @@ export class VehicleRenderer {
           const hlX = vx + cosH * fOff;
           const hlZ = vz - sinH * fOff;
           // Airplane lights follow altitude; ground vehicles fixed at 0.055
-          const lightY = v.altitude !== undefined ? yPos + 0.01 : 0.055;
+          const lightY = type === 'airplane' ? yPos + 0.01 : 0.055;
           hlMatrix.makeRotationY(v.heading);
+          if (type === 'airplane') {
+            // Airplane: pitch rotation + 2× longer/wider beam
+            if (v.pitch) {
+              this._pitchMat.makeRotationZ(v.pitch);
+              hlMatrix.multiply(this._pitchMat);
+            }
+            this._pitchRoll.makeScale(2, 1, 2);
+            hlMatrix.multiply(this._pitchRoll);
+          }
           hlTranslation.makeTranslation(hlX, lightY, hlZ);
           hlMatrix.premultiply(hlTranslation);
           this.headlightMesh.setMatrixAt(lightIndex, hlMatrix);
 
           // Taillights: offset backward (airplanes: hide with zero scale)
-          if (v.altitude !== undefined) {
+          if (type === 'airplane') {
             tlMatrix.makeScale(0, 0, 0);
           } else {
             const tlX = vx - cosH * rOff;
