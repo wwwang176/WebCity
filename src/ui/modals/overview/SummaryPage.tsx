@@ -65,13 +65,16 @@ export function SummaryPage() {
 
     const pwrRatio = state.power.getSupplyRatio();
     const wtrRatio = state.water.getSupplyRatio();
+    const freightSupplyRatio = 1 - state.freight.getShortageRatio();
+    const freightStorage = state.freight.getCargoStorage();
+    const freightSurplusRatio = state.freight.getSurplusRatio();
 
     const rci = gameSignals.rciDemand();
 
     return {
       population, totalHomes, totalJobs, vacantHomes, jobOpenings,
       avgHappiness, zoneCounts, attractiveness, canMigrate,
-      pwrRatio, wtrRatio, rci,
+      pwrRatio, wtrRatio, freightSupplyRatio, freightStorage, freightSurplusRatio, rci,
       checks: [
         { label: 'Attractiveness > 40', value: attractiveness.toFixed(1), ok: attractiveness > 40 },
         { label: 'Vacant Homes > 0', value: String(vacantHomes), ok: vacantHomes > 0 },
@@ -118,6 +121,7 @@ export function SummaryPage() {
         {[
           { label: 'Power', ratio: () => data().pwrRatio, color: '#66bb6a' },
           { label: 'Water', ratio: () => data().wtrRatio, color: '#42a5f5' },
+          { label: 'Freight', ratio: () => data().freightSupplyRatio, color: '#ffa726' },
         ].map(u => (
           <div style="flex:1">
             <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
@@ -135,6 +139,23 @@ export function SummaryPage() {
             </div>
           </div>
         ))}
+      </div>
+
+      <div style="display:flex;gap:12px;margin-bottom:12px;font-size:11px;color:#8899b0">
+        <div style="flex:1">
+          <span>Freight Supplied: </span>
+          <span style={{ color: data().freightSupplyRatio >= 0.8 ? '#66bb6a' : data().freightSupplyRatio >= 0.5 ? '#ffa726' : '#ef5350' }}>
+            {data().freightStorage > 0 || data().freightSupplyRatio < 1
+              ? `${(data().freightSupplyRatio * 100).toFixed(0)}%`
+              : 'N/A'}
+          </span>
+        </div>
+        <div style="flex:1">
+          <span>Cargo Storage: </span>
+          <span style={{ color: data().freightSurplusRatio > 0.8 ? '#ef5350' : data().freightSurplusRatio > 0.5 ? '#ffa726' : '#90a4ae' }}>
+            {Math.round(data().freightStorage)}/200
+          </span>
+        </div>
       </div>
 
       <div class="section-title">Buildings by Zone</div>

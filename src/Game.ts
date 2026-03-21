@@ -14,7 +14,7 @@ import { SimulationLoop } from './core/simulation/SimulationLoop';
 import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
-import { ZoneType } from './core/grid/types';
+import { ZoneType, isCommercialZone } from './core/grid/types';
 import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { type OverlayType } from './renderer/OverlayRenderer';
@@ -191,6 +191,10 @@ export interface SelectedZoneBuilding {
   services: ServiceStatus;
   abandonmentStress: number;
   isAbandoned: boolean;
+  /** Commercial: whether this building receives freight goods. */
+  freightSupplied?: boolean;
+  /** Industrial: surplus ratio (0~1). */
+  freightSurplusRatio?: number;
 }
 
 export interface SelectedInfraBuilding {
@@ -1848,6 +1852,8 @@ export class Game {
         },
         abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
         isAbandoned: cell?.reserved === ABANDONED,
+        freightSupplied: isCommercialZone(sel.zoneType) ? this.state.freight.isSupplied(x, y) : undefined,
+        freightSurplusRatio: sel.zoneType === ZoneType.INDUSTRIAL ? this.state.freight.getSurplusRatio() : undefined,
       };
     }
 

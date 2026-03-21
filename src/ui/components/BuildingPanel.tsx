@@ -1,7 +1,7 @@
 import { Show, For, createSignal } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { CitizenDetail } from './CitizenDetail';
-import { ZoneType, isResidentialZone } from '../../core/grid/types';
+import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
 import { getEducationSalaryMultiplier, getResidentialLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../../core/economy/TaxMultipliers';
 
@@ -129,6 +129,14 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
   }
 
 
+
+  // Freight
+  if (isCommercialZone(sel.zoneType) && sel.freightSupplied === false) {
+    warnings.push({ level: 'red', text: 'No goods to sell' });
+  }
+  if (sel.zoneType === ZoneType.INDUSTRIAL && (sel.freightSurplusRatio ?? 0) > 0.5) {
+    warnings.push({ level: sel.freightSurplusRatio! > 0.8 ? 'red' : 'yellow', text: 'Goods not selling' });
+  }
 
   // Sort: red first, then yellow
   warnings.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
