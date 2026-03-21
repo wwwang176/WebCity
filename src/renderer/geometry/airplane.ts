@@ -41,18 +41,61 @@ export function buildAirplaneGeometry(): THREE.BufferGeometry {
   setVertexColors(fuse, 0.96, 0.96, 0.96);
   parts.push(fuse);
 
-  // ── Nose: hemisphere (front half of sphere) ──
+  // ── Nose: egg-shaped hemisphere ──
   const nose = stripUV(new THREE.SphereGeometry(R, SEGS, 4, 0, Math.PI * 2, 0, Math.PI / 2));
   nose.rotateZ(-Math.PI / 2); // point +X
+  nose.scale(1.6, 1, 1);      // stretch along X → egg shape
   nose.translate(FUSE_LEN / 2, R, 0);
   setVertexColors(nose, 0.96, 0.96, 0.96);
   parts.push(nose);
 
-  // ── Cockpit windows (dark band on nose) ──
-  const cockpit = stripUV(new THREE.BoxGeometry(0.02, 0.04, R * 1.6));
-  cockpit.translate(FUSE_LEN / 2 + R * 0.6, R + R * 0.3, 0);
-  setVertexColors(cockpit, 0.08, 0.12, 0.22);
-  parts.push(cockpit);
+  // ── Cockpit window: horizontal band on egg surface ──
+  // Fixed Y rows (horizontal, no downward curve), X solved from egg equation:
+  // ((x-cx)/(1.6R))² + ((y-cy)/R)² + (z/R)² = 1
+  // x = cx + 1.6R × sqrt(1 - ((y-cy)/R)² - (z/R)²)
+  {
+    const cx = FUSE_LEN / 2;
+    const cy = R;
+    const eggR = R + 0.003;
+    const eggRx = 1.6 * eggR;
+    const yVals = [cy + eggR * 0.55, cy + eggR * 0.45, cy + eggR * 0.35]; // rows: top → bottom (narrower band)
+    const zVals = [-0.045, -0.022, 0, 0.022, 0.045]; // cols: left → right
+    const rows = yVals.length;
+    const cols = zVals.length;
+    const verts = new Float32Array(rows * cols * 3);
+    for (let r = 0; r < rows; r++) {
+      const y = yVals[r]!;
+      for (let c = 0; c < cols; c++) {
+        const z = zVals[c]!;
+        const i = (r * cols + c) * 3;
+        // Solve X from egg surface equation
+        const dy = (y - cy) / eggR;
+        const dz = z / eggR;
+        const inside = 1 - dy * dy - dz * dz;
+        verts[i]     = cx + eggRx * Math.sqrt(Math.max(0, inside));
+        verts[i + 1] = y;
+        verts[i + 2] = z;
+      }
+    }
+    const indices: number[] = [];
+    for (let r = 0; r < rows - 1; r++) {
+      for (let c = 0; c < cols - 1; c++) {
+        const tl = r * cols + c;
+        const tr = tl + 1;
+        const bl = tl + cols;
+        const br = bl + 1;
+        // Front face + back face (double-sided)
+        indices.push(tl, bl, tr, tr, bl, br);
+        indices.push(tl, tr, bl, tr, br, bl);
+      }
+    }
+    const windGeo = new THREE.BufferGeometry();
+    windGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    windGeo.setIndex(indices);
+    windGeo.computeVertexNormals();
+    setVertexColors(windGeo, 0.08, 0.12, 0.22);
+    parts.push(windGeo);
+  }
 
   // ── Tail upsweep: bottom rises, top stays flush with fuselage upper edge ──
   // Custom BufferGeometry — a wedge shape tapering from circular cross-section
