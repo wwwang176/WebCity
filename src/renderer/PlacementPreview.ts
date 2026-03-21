@@ -106,7 +106,7 @@ export class PlacementPreview {
     // Check placement validity
     let valid: boolean;
     if (type === 'airport') {
-      const check = canPlaceAirport(grid, gridX, gridY, airportSize ?? 'SMALL');
+      const check = canPlaceAirport(grid, gridX, gridY, airportSize ?? 'SMALL', rotation);
       valid = check.ok && funds >= cfg.cost;
     } else {
       const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn);

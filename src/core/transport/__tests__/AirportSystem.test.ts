@@ -104,7 +104,7 @@ describe('canPlaceAirport', () => {
     };
   }
 
-  it('should allow placement on all-empty cells', () => {
+  it('should allow placement with adjacent road', () => {
     const cells: Record<string, { roadType: number; buildingId: number }> = {};
     // SMALL = 3×2, top-left (5,5) → need (5..7, 5..6)
     for (let dy = 5; dy <= 6; dy++) {
@@ -112,8 +112,23 @@ describe('canPlaceAirport', () => {
         cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
       }
     }
+    // Adjacent road
+    cells['5,4'] = { roadType: 2, buildingId: 0 };
     const grid = makeGrid(cells);
     expect(canPlaceAirport(grid, 5, 5, 'SMALL')).toEqual({ ok: true });
+  });
+
+  it('should reject when no adjacent road', () => {
+    const cells: Record<string, { roadType: number; buildingId: number }> = {};
+    for (let dy = 5; dy <= 6; dy++) {
+      for (let dx = 5; dx <= 7; dx++) {
+        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
+      }
+    }
+    const grid = makeGrid(cells);
+    const result = canPlaceAirport(grid, 5, 5, 'SMALL');
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe('NOT_ADJACENT_TO_ROAD');
   });
 
   it('should reject when a cell is out of bounds', () => {
@@ -131,22 +146,36 @@ describe('canPlaceAirport', () => {
       }
     }
     cells['6,5'] = { roadType: 0, buildingId: 5 };
+    cells['5,4'] = { roadType: 2, buildingId: 0 };
     const grid = makeGrid(cells);
     const result = canPlaceAirport(grid, 5, 5, 'SMALL');
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe('AIRPORT_AREA_OCCUPIED');
   });
 
-  it('should check MEDIUM footprint (5×4)', () => {
+  it('should check MEDIUM footprint (5×4) with road', () => {
     const cells: Record<string, { roadType: number; buildingId: number }> = {};
-    // MEDIUM = 5×4, top-left (10,10) → need (10..14, 10..13)
     for (let dy = 10; dy <= 13; dy++) {
       for (let dx = 10; dx <= 14; dx++) {
         cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
       }
     }
+    cells['10,9'] = { roadType: 2, buildingId: 0 };
     const grid = makeGrid(cells);
     expect(canPlaceAirport(grid, 10, 10, 'MEDIUM')).toEqual({ ok: true });
+  });
+
+  it('should swap dimensions when rotated 90°', () => {
+    const cells: Record<string, { roadType: number; buildingId: number }> = {};
+    // SMALL rotated 90°: 3×2 → 2×3, top-left (5,5) → need (5..6, 5..7)
+    for (let dy = 5; dy <= 7; dy++) {
+      for (let dx = 5; dx <= 6; dx++) {
+        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
+      }
+    }
+    cells['5,4'] = { roadType: 2, buildingId: 0 };
+    const grid = makeGrid(cells);
+    expect(canPlaceAirport(grid, 5, 5, 'SMALL', 90)).toEqual({ ok: true });
   });
 });
 

@@ -960,7 +960,7 @@ export class Game {
     const airportSize: AirportSize = getAirportToolSize(this.currentTool);
 
     // Validate footprint (data-driven, extracted to core)
-    const check = canPlaceAirport(this.state.grid, x, y, airportSize);
+    const check = canPlaceAirport(this.state.grid, x, y, airportSize, this.currentRotation);
     if (!check.ok) {
       this.state.budget.funds += cost;
       this.showNotification(getBuildReasonMessage(check.reason));
