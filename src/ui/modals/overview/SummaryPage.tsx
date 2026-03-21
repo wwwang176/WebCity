@@ -71,24 +71,13 @@ export function SummaryPage() {
     const freightSupplyRatio = freightDemand.consumption > 0
       ? effectiveProduction / freightDemand.consumption
       : 1;
-    const freightSuppliedCount = state.freight.getSuppliedCount();
-    const freightLocalCount = state.freight.getLocalSuppliedCount();
-    const freightImportedCount = state.freight.getImportedCount();
-    // Count actual commercial buildings from zone table
-    const freightTotalCommercial =
-      (zoneCounts[ZoneType.COMMERCIAL_LOW]?.count ?? 0) +
-      (zoneCounts[ZoneType.COMMERCIAL_HIGH]?.count ?? 0);
 
     const rci = gameSignals.rciDemand();
 
     return {
       population, totalHomes, totalJobs, vacantHomes, jobOpenings,
       avgHappiness, zoneCounts, attractiveness, canMigrate,
-      pwrRatio, wtrRatio, freightSupplyRatio,
-      freightProduction: freightDemand.production, freightConsumption: freightDemand.consumption,
-      freightSuppliedCount, freightLocalCount, freightImportedCount,
-      freightImported: freightTrade.imported, freightExported: freightTrade.exported,
-      freightTotalCommercial, rci,
+      pwrRatio, wtrRatio, freightSupplyRatio, rci,
       checks: [
         { label: 'Attractiveness > 40', value: attractiveness.toFixed(1), ok: attractiveness > 40 },
         { label: 'Vacant Homes > 0', value: String(vacantHomes), ok: vacantHomes > 0 },
@@ -155,7 +144,7 @@ export function SummaryPage() {
       </div>
 
       <div class="section-title">Freight</div>
-      <div style="margin-bottom:8px">
+      <div style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
           <span>Supply Rate</span>
           <span style={{ color: data().freightSupplyRatio > 1.5 ? '#ef5350' : data().freightSupplyRatio > 1.2 ? '#ffa726' : data().freightSupplyRatio >= 0.8 ? '#66bb6a' : data().freightSupplyRatio >= 0.5 ? '#ffa726' : '#ef5350' }}>
@@ -169,16 +158,6 @@ export function SummaryPage() {
             transition: 'width 0.3s',
           }} />
         </div>
-      </div>
-      <div style="display:flex;gap:16px;font-size:11px;color:#8899b0;margin-bottom:4px">
-        <span>Production: <span style="color:#ffa726">{data().freightProduction}</span>/tick</span>
-        <span>Consumption: <span style="color:#42a5f5">{data().freightConsumption}</span>/tick</span>
-        <span>Supplied: <span style={{ color: data().freightSupplyRatio >= 0.8 ? '#66bb6a' : '#ef5350' }}>{data().freightSuppliedCount}/{data().freightTotalCommercial}</span> shops</span>
-      </div>
-      <div style="display:flex;gap:16px;font-size:11px;color:#8899b0;margin-bottom:12px">
-        {data().freightImported > 0 && <span>Import: <span style="color:#ffa726">{data().freightImported}</span>/tick ({data().freightImportedCount} shops)</span>}
-        {data().freightExported > 0 && <span>Export: <span style="color:#66bb6a">{data().freightExported}</span>/tick</span>}
-        {data().freightImported === 0 && data().freightExported === 0 && <span style="color:#616161">No trade</span>}
       </div>
 
       <div class="section-title">Buildings by Zone</div>

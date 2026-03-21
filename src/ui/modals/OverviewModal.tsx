@@ -7,6 +7,7 @@ import { ServicesPage } from './overview/ServicesPage';
 import { InfraPage } from './overview/InfraPage';
 import { EnvironmentPage } from './overview/EnvironmentPage';
 import { TrafficPage } from './overview/TrafficPage';
+import { FreightPage } from './overview/FreightPage';
 
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary', icon: '\uD83D\uDCCA' },
@@ -14,6 +15,7 @@ const NAV_ITEMS = [
   { id: 'economy', label: 'Economy', icon: '$' },
   { id: 'services', label: 'Services', icon: '\uD83C\uDFDB' },
   { id: 'infrastructure', label: 'Infrastructure', icon: '\u26A1' },
+  { id: 'freight', label: 'Freight', icon: '\uD83D\uDCE6' },
   { id: 'environment', label: 'Environment', icon: '\uD83C\uDF3F' },
   { id: 'traffic', label: 'Traffic', icon: '\uD83D\uDE97' },
 ] as const;
@@ -44,6 +46,7 @@ export function OverviewModal(props: { open: boolean; onClose: () => void }) {
           <Show when={activePage() === 'economy'}><EconomyPage open={props.open} /></Show>
           <Show when={activePage() === 'services'}><ServicesPage /></Show>
           <Show when={activePage() === 'infrastructure'}><InfraPage /></Show>
+          <Show when={activePage() === 'freight'}><FreightPage /></Show>
           <Show when={activePage() === 'environment'}><EnvironmentPage /></Show>
           <Show when={activePage() === 'traffic'}><TrafficPage /></Show>
         </div>
