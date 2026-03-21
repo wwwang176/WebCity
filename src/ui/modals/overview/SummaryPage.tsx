@@ -66,13 +66,14 @@ export function SummaryPage() {
     const pwrRatio = state.power.getSupplyRatio();
     const wtrRatio = state.water.getSupplyRatio();
     const freightDemand = state.freight.getLastDemand();
+    const freightTrade = state.freight.getLastTrade();
+    const effectiveProduction = freightDemand.production - freightTrade.exported + freightTrade.imported;
     const freightSupplyRatio = freightDemand.consumption > 0
-      ? freightDemand.production / freightDemand.consumption
+      ? effectiveProduction / freightDemand.consumption
       : 1;
     const freightSuppliedCount = state.freight.getSuppliedCount();
     const freightLocalCount = state.freight.getLocalSuppliedCount();
     const freightImportedCount = state.freight.getImportedCount();
-    const freightTrade = state.freight.getLastTrade();
     // Count actual commercial buildings from zone table
     const freightTotalCommercial =
       (zoneCounts[ZoneType.COMMERCIAL_LOW]?.count ?? 0) +
