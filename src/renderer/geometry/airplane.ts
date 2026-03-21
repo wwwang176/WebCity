@@ -97,6 +97,27 @@ export function buildAirplaneGeometry(): THREE.BufferGeometry {
     parts.push(windGeo);
   }
 
+  // ── Passenger window stripes (thin band on each side of fuselage) ──
+  {
+    const bandH = 0.010;  // band height
+    const bandLen = FUSE_LEN * 0.80; // slightly shorter than fuselage
+    const bandX = -FUSE_LEN * 0.05;  // slightly aft of center
+    const bandOffset = R + 0.002;     // just outside cylinder surface
+    for (const side of [-1, 1]) {
+      const bandGeo = new THREE.BufferGeometry();
+      bandGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+        bandX + bandLen / 2, R + R * 0.35 + bandH / 2, side * bandOffset,  // 0: front-top
+        bandX + bandLen / 2, R + R * 0.35 - bandH / 2, side * bandOffset,  // 1: front-bottom
+        bandX - bandLen / 2, R + R * 0.35 + bandH / 2, side * bandOffset,  // 2: rear-top
+        bandX - bandLen / 2, R + R * 0.35 - bandH / 2, side * bandOffset,  // 3: rear-bottom
+      ]), 3));
+      bandGeo.setIndex([0, 2, 1, 1, 2, 3, 0, 1, 2, 1, 3, 2]); // double-sided
+      setNormals(bandGeo, 0, 0, side); // outward facing
+      setVertexColors(bandGeo, 0.15, 0.20, 0.30);
+      parts.push(bandGeo);
+    }
+  }
+
   // ── Tail upsweep: bottom rises, top stays flush with fuselage upper edge ──
   // Custom BufferGeometry — a wedge shape tapering from circular cross-section
   // to a point, with the top edge aligned to fuselage top.
