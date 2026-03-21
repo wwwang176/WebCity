@@ -292,11 +292,17 @@ export class AirplaneAnimator implements VehicleAnimator {
       this.knownAirportIds.add(airport.id);
     }
 
-    // Clean up animations for demolished airports
+    // Clean up animations and spawn timers for demolished airports
     for (const key of this.anims.keys()) {
       const airportId = parseInt(key.split('-')[0]!);
       if (!this.knownAirportIds.has(airportId)) {
         this.anims.delete(key);
+      }
+    }
+    for (const key of this.spawnTimers.keys()) {
+      const airportId = parseInt(key.split('-')[0]!);
+      if (!this.knownAirportIds.has(airportId)) {
+        this.spawnTimers.delete(key);
       }
     }
 
