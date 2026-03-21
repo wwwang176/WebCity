@@ -457,27 +457,28 @@ export class AirplaneAnimator implements VehicleAnimator {
     if (t <= FLARE_START) {
       // Constant-rate descent (linear)
       anim.altitude = GROUND_Y + APPROACH_ALTITUDE * (1 - t);
-      anim.pitch = APPROACH_PITCH;
     } else {
       // Flare: cubic Hermite from (altAtFlare, descentRate) → (0, 0)
-      // Ensures C1 continuity (position + derivative match at junction)
       const altAtFlare = APPROACH_ALTITUDE * (1 - FLARE_START);
-      const slopeAtFlare = -APPROACH_ALTITUDE * (1 - FLARE_START); // incoming rate scaled to s domain
-      const s = (t - FLARE_START) / (1 - FLARE_START); // 0→1 within flare
-      const h00 = 2 * s * s * s - 3 * s * s + 1;  // value: 1→0
-      const h10 = s * s * s - 2 * s * s + s;        // tangent: 1→0
+      const slopeAtFlare = -APPROACH_ALTITUDE * (1 - FLARE_START);
+      const s = (t - FLARE_START) / (1 - FLARE_START);
+      const h00 = 2 * s * s * s - 3 * s * s + 1;
+      const h10 = s * s * s - 2 * s * s + s;
       anim.altitude = GROUND_Y + h00 * altAtFlare + h10 * slopeAtFlare;
-      // Pitch eases to zero during flare
-      anim.pitch = APPROACH_PITCH * (1 - s);
     }
+    anim.pitch = 0; // approach: level flight, no nose down
 
     anim.heading = anim.runwayHeading;
     anim.roll = 0;
   }
 
-  // ── Climb (constant forward speed, Hermite arc then constant rate) ──
-  // Mirrors approach: approach = constant descent + Hermite flare at end
-  //                   climb   = Hermite arc at start + constant climb after
+  // ── Climb (cubic Bézier arc + constant rate) ──
+  // Bézier control points (altitude vs progress):
+  //   P0=0 (ground), P1=0 (horizontal tangent),
+  //   P2=2h/3, P3=h where h=CLIMB_ALT×ARC_END
+  // B(s) = h·s²(2-s),  B'(s) = h·s(4-3s)
+  // Pitch = atan2(B'(s)/ARC_END, dist) = actual flight path angle from tangent.
+  // After arc: constant-rate straight line extending the Bézier exit tangent.
 
   private advanceClimb(anim: AirplaneAnimState, dt: number): void {
     const dist = distance2D(anim.takeoffEnd, anim.climbEnd);
@@ -485,30 +486,26 @@ export class AirplaneAnimator implements VehicleAnimator {
 
     if (anim.progress >= 1) {
       anim.progress = 1;
-      return; // cleaned up by processSlot
+      return;
     }
 
     const t = anim.progress;
     anim.worldX = lerp(anim.takeoffEnd.x, anim.climbEnd.x, t);
     anim.worldZ = lerp(anim.takeoffEnd.y, anim.climbEnd.y, t);
 
-    // Mirror of approach FLARE_START: arc for first 25%, then constant climb
-    const ARC_END = 1 - FLARE_START; // 0.25
+    const ARC_END = 0.40;
     if (t <= ARC_END) {
-      // Hermite arc: starts at (0, slope=0) → ends at (arcAlt, slope=climbRate)
-      const altAtArc = CLIMB_ALTITUDE * ARC_END;
-      const climbRate = CLIMB_ALTITUDE * ARC_END; // target slope scaled to s domain
-      const s = t / ARC_END; // 0→1
-      const h00 = 2 * s * s * s - 3 * s * s + 1;
-      const h10 = s * s * s - 2 * s * s + s;
-      const h01 = -2 * s * s * s + 3 * s * s;
-      anim.altitude = GROUND_Y + h01 * altAtArc + h10 * 0; // start slope=0
+      const h = CLIMB_ALTITUDE * ARC_END;
+      const s = t / ARC_END;
+      // Bézier altitude: B(s) = h × s²(2-s)
+      anim.altitude = GROUND_Y + h * s * s * (2 - s);
+      // Pitch from Bézier tangent: B'(s) = h × s(4-3s)
+      // d(alt)/dt = B'(s)/ARC_END = CLIMB_ALT × s(4-3s)
+      anim.pitch = Math.atan2(CLIMB_ALTITUDE * s * (4 - 3 * s), dist);
     } else {
-      // Constant rate climb
       anim.altitude = GROUND_Y + CLIMB_ALTITUDE * t;
+      anim.pitch = Math.atan2(CLIMB_ALTITUDE, dist);
     }
-
-    anim.pitch = CLIMB_PITCH * Math.min(1, t / ARC_END);
     anim.heading = anim.runwayHeading;
     anim.roll = 0;
   }
