@@ -2,7 +2,6 @@ import type { Grid } from '../grid/Grid';
 import { ZoneType, isCommercialZone } from '../grid/types';
 import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
-import { getBuildingType } from '../building/types';
 
 export interface FreightDemand {
   /** Total cargo produced by industrial buildings per tick. */
@@ -17,10 +16,12 @@ export interface FreightDemand {
  * FreightSystem tracks the flow of goods from industrial zones (producers)
  * to commercial zones (consumers) via BFS through the road network.
  *
- * Industrial buildings produce cargo that travels along roads to reach
- * commercial buildings. Closer commercial buildings are served first
- * (BFS order). Commercial buildings unreachable or beyond production
- * capacity are marked as unsupplied.
+ * Every slow tick, a multi-source BFS starts from all factories with a
+ * pooled production budget. Commercial buildings are supplied in BFS order
+ * (closer first). When the budget is exhausted, remaining commercial
+ * buildings are marked as unsupplied.
+ *
+ * External cargo from rail/airport adds directly to the BFS budget.
  */
 
 /** Per-building freight rates by building ID. */
@@ -49,23 +50,18 @@ export function getConsumptionRate(buildingId: number): number {
   return COMMERCIAL_CONSUMPTION[buildingId] ?? 0;
 }
 
-export const FREIGHT = {
-  /** Maximum cargo storage capacity. */
-  MAX_STORAGE: 200,
-} as const;
-
 export class FreightSystem {
   /** Position keys of commercial buildings that received goods this tick. */
   private suppliedCommercial = new Set<string>();
-  /** Accumulated surplus cargo. */
-  private cargoStorage = 0;
   private lastDemand: FreightDemand = { production: 0, consumption: 0, shortage: 0 };
   /** True after first calculateSupply call. Before that, all buildings are considered supplied. */
   private hasCalculated = false;
+  /** External cargo accumulated between slow ticks (rail, airport). Added to BFS budget. */
+  private externalCargo = 0;
 
   /**
-   * Calculate freight supply via BFS from industrial buildings through roads.
-   * Closer commercial buildings are served first (BFS order).
+   * Calculate freight supply via multi-source BFS from all factories.
+   * All factories share a pooled production budget + external cargo.
    * Called every slow tick.
    */
   calculateSupply(grid: Grid): void {
@@ -87,11 +83,12 @@ export class FreightSystem {
       }
     });
 
-    // Multi-source BFS: all factories share a pooled budget
+    // Multi-source BFS: all factories share a pooled budget + external cargo
     const supplied = new Set<string>();
     const visited = new Set<string>();
     const queue: [number, number][] = [];
-    let budget = totalProduction;
+    let budget = totalProduction + this.externalCargo;
+    this.externalCargo = 0; // consumed
 
     for (const [sx, sy] of sources) {
       const key = toPosKey(sx, sy);
@@ -141,39 +138,29 @@ export class FreightSystem {
     });
 
     const shortage = totalConsumption - actualConsumed;
-
     this.lastDemand = { production: totalProduction, consumption: totalConsumption, shortage };
-
-    // Update cargo storage: only accumulate when production exceeds total demand
-    const surplus = totalProduction - totalConsumption;
-    this.cargoStorage = Math.max(0, Math.min(this.cargoStorage + surplus, FREIGHT.MAX_STORAGE));
   }
 
   /** Check if a commercial building at (x,y) received goods.
    *  Returns true before first calculation or when no industrial buildings exist. */
   isSupplied(x: number, y: number): boolean {
     if (!this.hasCalculated) return true;
-    // No industrial in city → no freight expectation → all supplied
     if (this.lastDemand.production === 0) return true;
     return this.suppliedCommercial.has(toPosKey(x, y));
   }
 
-  /** Surplus ratio (0 = balanced, 1 = storage full).
-   *  Returns 0 when no commercial buildings exist (nothing to sell to). */
+  /** Surplus ratio (0 = balanced, 1 = 100% overproduction).
+   *  Only positive when production exceeds consumption. */
   getSurplusRatio(): number {
-    if (FREIGHT.MAX_STORAGE === 0) return 0;
-    // No commercial in city → no surplus problem
-    if (this.lastDemand.consumption === 0) return 0;
-    return this.cargoStorage / FREIGHT.MAX_STORAGE;
+    const { production, consumption } = this.lastDemand;
+    if (consumption === 0 || production <= consumption) return 0;
+    return Math.min(1, (production - consumption) / consumption);
   }
 
-  /** Add cargo from external sources (rail freight, airport, etc.). */
+  /** Add cargo from external sources (rail freight, airport, etc.).
+   *  Accumulated until next calculateSupply call, then added to BFS budget. */
   addExternalCargo(amount: number): void {
-    this.cargoStorage = Math.min(this.cargoStorage + amount, FREIGHT.MAX_STORAGE);
-  }
-
-  getCargoStorage(): number {
-    return this.cargoStorage;
+    this.externalCargo += amount;
   }
 
   getLastDemand(): FreightDemand {

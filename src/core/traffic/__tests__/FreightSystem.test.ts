@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FreightSystem, FREIGHT, getProductionRate, getConsumptionRate } from '../FreightSystem';
+import { FreightSystem, getProductionRate, getConsumptionRate } from '../FreightSystem';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
@@ -41,7 +41,6 @@ describe('FreightSystem', () => {
   });
 
   it('should serve closer commercial first when production is limited', () => {
-    // Road: (0,0) to (6,0)
     for (let x = 0; x <= 6; x++) {
       grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
     }
@@ -59,35 +58,45 @@ describe('FreightSystem', () => {
     expect(freight.getShortageRatio()).toBeCloseTo(1 / 4);
   });
 
-  it('should accumulate surplus in cargoStorage', () => {
-    // 2 factories Lv1 (produce 6) + 1 small shop (consumes 1) → surplus 5
+  it('should report surplus when production exceeds consumption', () => {
     for (let x = 0; x <= 4; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    // 3 factories Lv1 (produce 9) + 1 small shop (consumes 1)
     grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
     grid.setCell(1, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(2, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
     grid.setCell(4, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
 
     freight.calculateSupply(grid);
 
-    expect(freight.getCargoStorage()).toBe(5); // 6 produced - 1 consumed
-    expect(freight.getSurplusRatio()).toBeCloseTo(5 / FREIGHT.MAX_STORAGE);
+    // surplus = (9-1)/1 = 8, capped at 1
+    expect(freight.getSurplusRatio()).toBe(1);
+    expect(freight.getShortageRatio()).toBe(0);
   });
 
-  it('should cap cargoStorage at MAX_STORAGE', () => {
+  it('should have zero surplus when consumption exceeds production', () => {
     for (let x = 0; x <= 2; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    // 1 factory Lv1 (produces 3) + 1 Small Mall (consumes 8)
     grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
-    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 10 });
 
-    freight.addExternalCargo(FREIGHT.MAX_STORAGE);
     freight.calculateSupply(grid);
 
-    expect(freight.getCargoStorage()).toBe(FREIGHT.MAX_STORAGE);
-    expect(freight.getSurplusRatio()).toBe(1);
+    expect(freight.getSurplusRatio()).toBe(0);
   });
 
-  it('should handle addExternalCargo', () => {
-    expect(freight.getCargoStorage()).toBe(0);
-    freight.addExternalCargo(100);
-    expect(freight.getCargoStorage()).toBe(100);
+  it('should include external cargo in BFS budget', () => {
+    for (let x = 0; x <= 2; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    // 1 factory Lv1 (produces 3), 1 Small Mall (consumes 8) — normally can't supply
+    grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    grid.setCell(2, 1, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 10 });
+
+    // Add enough external cargo to cover the gap
+    freight.addExternalCargo(10);
+    freight.calculateSupply(grid);
+
+    // budget = 3 (factory) + 10 (external) = 13 ≥ 8 (mall demand)
+    expect(freight.isSupplied(2, 1)).toBe(true);
+    expect(freight.getShortageRatio()).toBe(0);
   });
 
   it('should report correct production and consumption with per-building rates', () => {

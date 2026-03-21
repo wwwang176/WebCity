@@ -66,7 +66,6 @@ export function SummaryPage() {
     const pwrRatio = state.power.getSupplyRatio();
     const wtrRatio = state.water.getSupplyRatio();
     const freightSupplyRatio = 1 - state.freight.getShortageRatio();
-    const freightStorage = state.freight.getCargoStorage();
     const freightSurplusRatio = state.freight.getSurplusRatio();
     const freightDemand = state.freight.getLastDemand();
     const freightSuppliedCount = state.freight.getSuppliedCount();
@@ -78,7 +77,7 @@ export function SummaryPage() {
     return {
       population, totalHomes, totalJobs, vacantHomes, jobOpenings,
       avgHappiness, zoneCounts, attractiveness, canMigrate,
-      pwrRatio, wtrRatio, freightSupplyRatio, freightStorage, freightSurplusRatio,
+      pwrRatio, wtrRatio, freightSupplyRatio, freightSurplusRatio,
       freightProduction: freightDemand.production, freightConsumption: freightDemand.consumption,
       freightSuppliedCount, freightTotalCommercial, rci,
       checks: [
@@ -165,15 +164,15 @@ export function SummaryPage() {
         </div>
         <div style="flex:1">
           <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
-            <span>Cargo Storage</span>
-            <span style={{ color: data().freightSurplusRatio > 0.8 ? '#ef5350' : data().freightSurplusRatio > 0.5 ? '#ffa726' : '#90a4ae' }}>
-              {Math.round(data().freightStorage)}/200
+            <span>Surplus</span>
+            <span style={{ color: data().freightSurplusRatio > 0.5 ? '#ffa726' : data().freightSurplusRatio > 0 ? '#90a4ae' : '#66bb6a' }}>
+              {data().freightSurplusRatio > 0 ? `${(data().freightSurplusRatio * 100).toFixed(0)}%` : 'None'}
             </span>
           </div>
           <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
             <div style={{
               width: `${Math.min(100, data().freightSurplusRatio * 100)}%`, height: '100%', 'border-radius': '3px',
-              background: data().freightSurplusRatio > 0.8 ? '#ef5350' : data().freightSurplusRatio > 0.5 ? '#ffa726' : '#42a5f5',
+              background: data().freightSurplusRatio > 0.5 ? '#ffa726' : '#42a5f5',
               transition: 'width 0.3s',
             }} />
           </div>
