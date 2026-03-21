@@ -77,9 +77,11 @@ interface ExternalTrainAnim {
  */
 export function smoothTrackPath(
   points: ReadonlyArray<{ x: number; y: number }>,
+  radius = 0.5,
 ): Array<{ x: number; y: number }> {
   if (points.length < 3) return [...points];
 
+  const R = radius;
   const result: Array<{ x: number; y: number }> = [];
   result.push(points[0]!);
 
@@ -94,12 +96,12 @@ export function smoothTrackPath(
     if (eDx === xDx && eDy === xDy) { result.push(curr); continue; }
 
     // Corner — generate quarter-circle arc
-    const arcCx = curr.x + xDx * 0.5 - eDx * 0.5;
-    const arcCy = curr.y + xDy * 0.5 - eDy * 0.5;
-    const entryX = curr.x - eDx * 0.5;
-    const entryY = curr.y - eDy * 0.5;
-    const exitX = curr.x + xDx * 0.5;
-    const exitY = curr.y + xDy * 0.5;
+    const arcCx = curr.x + xDx * R - eDx * R;
+    const arcCy = curr.y + xDy * R - eDy * R;
+    const entryX = curr.x - eDx * R;
+    const entryY = curr.y - eDy * R;
+    const exitX = curr.x + xDx * R;
+    const exitY = curr.y + xDy * R;
 
     const startA = Math.atan2(entryY - arcCy, entryX - arcCx);
     const endA = Math.atan2(exitY - arcCy, exitX - arcCx);
@@ -107,7 +109,6 @@ export function smoothTrackPath(
     if (sweep > Math.PI) sweep -= 2 * Math.PI;
     if (sweep < -Math.PI) sweep += 2 * Math.PI;
 
-    const R = 0.5;
     for (let j = 0; j <= ARC_POINTS; j++) {
       const a = startA + (j / ARC_POINTS) * sweep;
       result.push({ x: arcCx + R * Math.cos(a), y: arcCy + R * Math.sin(a) });
