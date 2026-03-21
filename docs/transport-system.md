@@ -119,17 +119,80 @@ frequency = 站點數 × 3
 
 ### 規模
 
-| 規模 | 佔地 | 噪音 | 旅客/tick | 貨物/tick | 造價 | 營運費 | 最低人口 |
-|------|------|------|---------|---------|------|--------|---------|
-| SMALL | 3×3 | 10 | 50 | 20 | $5,000 | $500 | 10,000 |
-| MEDIUM | 5×5 | 25 | 200 | 100 | $15,000 | $1,500 | 50,000 |
-| LARGE | 7×7 | 50 | 500 | 300 | $40,000 | $4,000 | 100,000 |
+三種獨立 InfraType（`airport_s` / `airport_m` / `airport_l`），各有獨立 buildingId。
+
+| 規模 | InfraType | buildingId | 佔地 | 噪音 | 旅客/tick | 貨物/tick | 造價 | 營運費 |
+|------|-----------|-----------|------|------|---------|---------|------|--------|
+| SMALL | `airport_s` | 237 | 3×2 | 10 | 50 | 20 | $5,000 | $500 |
+| MEDIUM | `airport_m` | 236 | 5×4 | 25 | 200 | 100 | $15,000 | $1,500 |
+| LARGE | `airport_l` | 235 | 7×6 | 50 | 500 | 300 | $40,000 | $4,000 |
+
+### 機場配置
+
+- 左右雙 taxiway：左側=起飛入口（near threshold），右側=降落出口（near runway end）
+- 跑道顏色與道路一致（`0x3a3a3a`），分隔線使用 `MeshBasicMaterial`（恆亮）
+- L 機場為雙跑道配置，最多同時 2 架飛機
+- 放置需鄰接道路，支援 R 鍵旋轉（0°/90°/180°/270°）
+- 拆除使用標準 `multi_cell_infra` 路徑
 
 ### 效果
 
 - 旅客帶來商業需求
 - 貨物增加 FreightSystem 的外部貨物
 - 產生噪音污染
+
+### 飛機動畫 (AirplaneAnimator)
+
+渲染端動畫，與 TrainAnimator / FerryAnimator 相同模式（逐幀 LERP，不靠 tick）。
+
+#### 動畫階段（9 Phase）
+
+```
+approach → roll → roll_wait → taxi_in → dwell → pushback → taxi_out → takeoff_roll → climb
+```
+
+| Phase | 說明 | 速度 |
+|-------|------|------|
+| approach | 從高空下降，Hermite flare 著地 | 3.0 u/s |
+| roll | 跑道全長減速（線性煞車至零） | 3.0 → 0 |
+| roll_wait | 在 taxiway 入口暫停 1s | - |
+| taxi_in | 右 taxiway 上行 → apron → gate（弧線轉彎） | 1.5 u/s |
+| dwell | 停在 gate 等待 | 5s |
+| pushback | 向右弧形倒車，機頭轉向 taxiway 方向 | 0.8 u/s |
+| taxi_out | 正向穿過 apron → 左 taxiway 下行 → 入跑道（弧線轉彎） | 1.5 u/s |
+| takeoff_roll | 跑道全長加速（ease-in），後段漸進抬頭 | 5.0 u/s |
+| climb | cubic Bezier 弧線離地 → 恆定爬升率 | 3.0 u/s |
+
+#### 高度曲線
+
+- **降落 approach**：恆定下降率 + Hermite cubic flare（C1 連續，著地時斜率=0）
+- **起飛 climb**：cubic Bezier 弧線（B(s) = h·s²(2-s)）+ 恆定爬升率，pitch 從 Bezier 切線取 atan2
+
+#### 飛機模型
+
+737 風格低多邊形客機，3 層 InstancedMesh：
+
+| Mesh | Material | 用途 |
+|------|----------|------|
+| Body | MeshLambertMaterial | 機身+機翼+水平尾翼+引擎（隨機航空公司機身色） |
+| VTail | MeshLambertMaterial | 垂直尾翼（獨立隨機尾翼色） |
+| NavLights | MeshBasicMaterial | 導航燈紅/綠/白（閃爍：0.2s 亮 / 0.8s 暗） |
+
+- 圓筒機身 + 蛋形機鼻（SphereGeometry scale 1.6x）+ upsweep 尾椎
+- 後掠梯形機翼（root:tip = 7:1）
+- S 機場飛機縮放 80%
+- 每次 spawn 隨機配色（10 色機身 × 10 色尾翼）
+- Gate 碰撞避免：同機場不選已佔用的 gate
+- 夜間前照燈（隨 pitch 旋轉，2× 加長），無尾燈
+- 支援機場旋轉（localToWorld 符合 Three.js Y 軸旋轉慣例）
+
+#### 生成頻率
+
+| 尺寸 | 間隔 | 最大同時 |
+|------|------|---------|
+| S | 35s | 1 架 |
+| M | 25s | 1 架 |
+| L | 18s | 2 架（雙跑道） |
 
 ---
 
@@ -196,6 +259,7 @@ frequency = 站點數 × 3
 | METRO | +20,000 | - |
 | RAIL | +40,000 | +400,000 |
 | FERRY | +50,000 | +500,000 |
+| AIRPLANE | - | +800,000 |
 
 ---
 
