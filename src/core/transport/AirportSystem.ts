@@ -2,7 +2,6 @@
 import type { PollutionSource } from '../environment/Pollution';
 import { MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
 import { getRotatedSize, type Rotation } from '../building/InfraConfig';
-import { isFootprintAdjacentToRoad, type ReadableGrid } from '../grid/GridHelpers';
 
 export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 
@@ -91,33 +90,7 @@ export interface Airport {
   operatingCost: number;
 }
 
-export type AirportPlaceResult =
-  | { ok: true }
-  | { ok: false; reason: string };
-
-/** Validate whether an airport can be placed at (x,y). (x,y) = top-left cell. */
-export function canPlaceAirport(
-  grid: { getCell(x: number, y: number): { roadType: number; buildingId: number; railType: number } | null },
-  x: number,
-  y: number,
-  size: AirportSize,
-  rotation: Rotation = 0,
-): AirportPlaceResult {
-  const dim = getAirportDimensions(size);
-  const { w, h } = getRotatedSize(dim.w, dim.h, rotation);
-  for (let dy = 0; dy < h; dy++) {
-    for (let dx = 0; dx < w; dx++) {
-      const c = grid.getCell(x + dx, y + dy);
-      if (!c) return { ok: false, reason: 'AIRPORT_OUT_OF_BOUNDS' };
-      if (c.roadType !== 0 || c.buildingId !== 0 || c.railType !== 0) return { ok: false, reason: 'AIRPORT_AREA_OCCUPIED' };
-    }
-  }
-  // Must be adjacent to at least one road (same as other infra)
-  if (!isFootprintAdjacentToRoad(grid, x, y, w, h)) {
-    return { ok: false, reason: 'NOT_ADJACENT_TO_ROAD' };
-  }
-  return { ok: true };
-}
+// canPlaceAirport removed — use canPlaceInfra(grid, x, y, 'airport', rotation, undefined, { width, height }) instead
 
 export class AirportSystem {
   private airports: Airport[] = [];
