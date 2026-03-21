@@ -1,14 +1,35 @@
 import * as THREE from 'three';
 import { VEHICLE_CONFIG } from './vehicleConfig';
+import { buildAirplaneNavLightsGeometry, buildAirplaneVTailGeometry } from './geometry';
 import { ViewMode, getVehicleVisibility } from '../core/ViewMode';
+
+/** Airline body colors (vivid, multiplied with near-white vertex colors). */
+const AIRLINE_BODY_COLORS = [
+  0xffffff, 0x42a5f5, 0x66bb6a, 0xffa726, 0xec407a,
+  0x26c6da, 0xab47bc, 0xffee58, 0x78909c, 0xff7043,
+];
+
+/** Airline tail colors (bold, shown directly via white vertex colors). */
+const AIRLINE_TAIL_COLORS = [
+  0x1565c0, 0xc62828, 0x2e7d32, 0xe65100, 0x6a1b9a,
+  0x00695c, 0x0d47a1, 0xd32f2f, 0xef6c00, 0x4a148c,
+];
 
 export interface VehicleData {
   id: number;
   x: number;
   y: number;
   heading: number; // radians, 0 = facing +x (east)
-  type: 'car' | 'van' | 'bus' | 'truck' | 'firetruck' | 'police_car' | 'ambulance' | 'garbage_truck' | 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry';
+  type: 'car' | 'van' | 'bus' | 'truck' | 'firetruck' | 'police_car' | 'ambulance' | 'garbage_truck' | 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry' | 'airplane';
   laneOffset: number; // lateral offset perpendicular to heading (positive = right of heading)
+  /** World Y position override (airplane altitude). */
+  altitude?: number;
+  /** Pitch angle in radians (nose up = positive). */
+  pitch?: number;
+  /** Roll angle in radians (right wing down = positive). */
+  roll?: number;
+  /** Uniform scale override. */
+  scale?: number;
 }
 
 const CAR_COLORS = [
@@ -36,6 +57,10 @@ export class VehicleRenderer {
   private readonly maxLights = 2000; // total vehicles across all types
   private _viewMode = ViewMode.NORMAL;
 
+  // Airplane sub-meshes: separate InstancedMesh for vtail (random color) and nav lights (blink)
+  private airplaneVTailMesh: THREE.InstancedMesh | null = null;
+  private airplaneNavMesh: THREE.InstancedMesh | null = null;
+
   // Headlight / taillight instanced meshes
   private headlightMesh: THREE.InstancedMesh | null = null;
   private taillightMesh: THREE.InstancedMesh | null = null;
@@ -45,6 +70,8 @@ export class VehicleRenderer {
   // Reusable per-frame objects (avoids ~720 allocations/second at 60fps)
   private readonly _groups = new Map<string, VehicleData[]>();
   private readonly _rotation = new THREE.Matrix4();
+  private readonly _pitchRoll = new THREE.Matrix4();
+  private readonly _pitchMat = new THREE.Matrix4();
   private readonly _translation = new THREE.Matrix4();
   private readonly _matrix = new THREE.Matrix4();
   private readonly _color = new THREE.Color();
@@ -62,10 +89,28 @@ export class VehicleRenderer {
       const mesh = new THREE.InstancedMesh(geometry, material, this.maxPerType);
       mesh.count = 0;
       mesh.castShadow = true;
+      mesh.receiveShadow = true;
       mesh.frustumCulled = false;
       scene.add(mesh);
       this.meshes.set(type, mesh);
     }
+
+    // Airplane vertical tail: separate mesh for independent airline tail color
+    const vtGeo = buildAirplaneVTailGeometry();
+    const vtMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    this.airplaneVTailMesh = new THREE.InstancedMesh(vtGeo, vtMat, this.maxPerType);
+    this.airplaneVTailMesh.count = 0;
+    this.airplaneVTailMesh.castShadow = true;
+    this.airplaneVTailMesh.frustumCulled = false;
+    scene.add(this.airplaneVTailMesh);
+
+    // Airplane nav lights: separate mesh with MeshBasicMaterial (always bright)
+    const navGeo = buildAirplaneNavLightsGeometry();
+    const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+    this.airplaneNavMesh = new THREE.InstancedMesh(navGeo, navMat, this.maxPerType);
+    this.airplaneNavMesh.count = 0;
+    this.airplaneNavMesh.frustumCulled = false;
+    scene.add(this.airplaneNavMesh);
 
     // Headlight beam: trapezoid projected forward (narrow at car, wide at far end)
     // Vertices in local XZ plane (Y=0, facing up), beam extends along local +X
@@ -121,7 +166,7 @@ export class VehicleRenderer {
     scene.add(this.taillightMesh);
   }
 
-  update(vehicles: VehicleData[], sunIntensity?: number, time?: number): void {
+  update(vehicles: VehicleData[], sunIntensity?: number, time?: number, simSpeed?: number): void {
     // Group vehicles by type (reuse Map + clear arrays instead of creating new ones)
     const groups = this._groups;
     for (const arr of groups.values()) arr.length = 0;
@@ -168,23 +213,51 @@ export class VehicleRenderer {
         if (type === 'ferry' && time !== undefined) {
           yPos += Math.sin(time * 2 + v.id * 1.7) * 0.012;
         }
+        // Airplane: override Y with altitude
+        if (type === 'airplane' && v.altitude !== undefined) {
+          yPos = v.altitude;
+        }
 
         rotation.makeRotationY(v.heading);
+        // Airplane pitch/roll: apply in local space (after heading rotation)
+        if (type === 'airplane' && (v.pitch || v.roll)) {
+          const pr = this._pitchRoll;
+          pr.makeRotationX(v.roll ?? 0);   // roll around local X (wing axis)
+          if (v.pitch) {
+            this._pitchMat.makeRotationZ(v.pitch); // pitch around local Z (nose up/down)
+            pr.multiply(this._pitchMat);
+          }
+          rotation.multiply(pr);
+        }
         translation.makeTranslation(vx, yPos, vz);
         matrix.copy(translation).multiply(rotation);
+        if (v.scale !== undefined) {
+          this._pitchRoll.makeScale(v.scale, v.scale, v.scale);
+          matrix.multiply(this._pitchRoll);
+        }
         mesh.setMatrixAt(i, matrix);
 
-        // Color: cars get random car color, trucks/vans get random commercial color
+        // Color: per-instance random from type-appropriate palette
         if (cfg && cfg.color === -1) {
-          const palette = (type === 'truck' || type === 'van')
-            ? COMMERCIAL_COLORS : CAR_COLORS;
-          color.set(palette[v.id % palette.length]!);
+          if (type === 'airplane') {
+            color.set(AIRLINE_BODY_COLORS[v.id % AIRLINE_BODY_COLORS.length]!);
+          } else {
+            const palette = (type === 'truck' || type === 'van')
+              ? COMMERCIAL_COLORS : CAR_COLORS;
+            color.set(palette[v.id % palette.length]!);
+          }
         } else {
           color.set(cfg?.color ?? 0xd32f2f);
         }
         mesh.setColorAt(i, color);
 
-        // Headlight/taillight matrices — skip for rail carriages (only locomotive has lights)
+        // Airplane vtail: set tail color from separate palette
+        if (type === 'airplane' && this.airplaneVTailMesh) {
+          color.set(AIRLINE_TAIL_COLORS[(v.id * 7 + 3) % AIRLINE_TAIL_COLORS.length]!);
+          this.airplaneVTailMesh.setColorAt(i, color);
+        }
+
+        // Headlight/taillight matrices — skip for rail carriages only
         if (type === 'rail_carriage') continue;
         if (lightIndex < this.maxLights && this.headlightMesh && this.taillightMesh) {
           const cosH = Math.cos(v.heading);
@@ -194,16 +267,31 @@ export class VehicleRenderer {
           // Beam geometry extends along local +X, so Y-rotate by heading
           const hlX = vx + cosH * fOff;
           const hlZ = vz - sinH * fOff;
+          // Airplane lights follow altitude; ground vehicles fixed at 0.055
+          const lightY = type === 'airplane' ? yPos + 0.01 : 0.055;
           hlMatrix.makeRotationY(v.heading);
-          hlTranslation.makeTranslation(hlX, 0.055, hlZ);
+          if (type === 'airplane') {
+            // Airplane: pitch rotation + 2× longer/wider beam
+            if (v.pitch) {
+              this._pitchMat.makeRotationZ(v.pitch);
+              hlMatrix.multiply(this._pitchMat);
+            }
+            this._pitchRoll.makeScale(2, 1, 2);
+            hlMatrix.multiply(this._pitchRoll);
+          }
+          hlTranslation.makeTranslation(hlX, lightY, hlZ);
           hlMatrix.premultiply(hlTranslation);
           this.headlightMesh.setMatrixAt(lightIndex, hlMatrix);
 
-          // Taillights: offset backward
-          const tlX = vx - cosH * rOff;
-          const tlZ = vz + sinH * rOff;
-          tlTranslation.makeTranslation(tlX, 0.055, tlZ);
-          tlMatrix.copy(tlTranslation);
+          // Taillights: offset backward (airplanes: hide with zero scale)
+          if (type === 'airplane') {
+            tlMatrix.makeScale(0, 0, 0);
+          } else {
+            const tlX = vx - cosH * rOff;
+            const tlZ = vz + sinH * rOff;
+            tlTranslation.makeTranslation(tlX, lightY, tlZ);
+            tlMatrix.copy(tlTranslation);
+          }
           this.taillightMesh.setMatrixAt(lightIndex, tlMatrix);
 
           lightIndex++;
@@ -215,6 +303,40 @@ export class VehicleRenderer {
 
       // Focus modes: show only relevant vehicle types
       mesh.visible = getVehicleVisibility(this._viewMode, type);
+    }
+
+    // Airplane sub-meshes: copy transforms from main airplane mesh
+    const airplaneMesh = this.meshes.get('airplane');
+    if (airplaneMesh) {
+      const count = airplaneMesh.count;
+      const m = this._matrix;
+
+      // Vertical tail (with per-instance airline tail color)
+      if (this.airplaneVTailMesh) {
+        this.airplaneVTailMesh.count = count;
+        for (let i = 0; i < count; i++) {
+          airplaneMesh.getMatrixAt(i, m);
+          this.airplaneVTailMesh.setMatrixAt(i, m);
+        }
+        if (count > 0) {
+          this.airplaneVTailMesh.instanceMatrix.needsUpdate = true;
+          if (this.airplaneVTailMesh.instanceColor) this.airplaneVTailMesh.instanceColor.needsUpdate = true;
+        }
+      }
+
+      // Nav lights (blink)
+      if (this.airplaneNavMesh) {
+        this.airplaneNavMesh.count = count;
+        for (let i = 0; i < count; i++) {
+          airplaneMesh.getMatrixAt(i, m);
+          this.airplaneNavMesh.setMatrixAt(i, m);
+        }
+        if (count > 0) this.airplaneNavMesh.instanceMatrix.needsUpdate = true;
+        // Blink: short bright (20%), long dark (80%), follows game speed
+        const blinkTime = time !== undefined ? time * (simSpeed ?? 1) : 0;
+        const cycle = blinkTime % 1.0; // 1-second cycle
+        this.airplaneNavMesh.visible = cycle < 0.2; // bright 0.2s, dark 0.8s
+      }
     }
 
     // Update headlight/taillight counts and opacity
@@ -261,6 +383,18 @@ export class VehicleRenderer {
       (mesh.material as THREE.Material).dispose();
     }
     this.meshes.clear();
+    if (this.airplaneVTailMesh) {
+      scene.remove(this.airplaneVTailMesh);
+      this.airplaneVTailMesh.geometry.dispose();
+      (this.airplaneVTailMesh.material as THREE.Material).dispose();
+      this.airplaneVTailMesh = null;
+    }
+    if (this.airplaneNavMesh) {
+      scene.remove(this.airplaneNavMesh);
+      this.airplaneNavMesh.geometry.dispose();
+      (this.airplaneNavMesh.material as THREE.Material).dispose();
+      this.airplaneNavMesh = null;
+    }
 
     if (this.headlightMesh) {
       scene.remove(this.headlightMesh);

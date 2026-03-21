@@ -41,7 +41,7 @@ import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
 import { isResidentialZone } from './core/grid/types';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
-import { getAirportBuildCost, getAirportFootprint, canPlaceAirport, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
+import { type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { PedestrianRenderer, cullPedestrians } from './renderer/PedestrianRenderer';
@@ -75,6 +75,7 @@ import { RAIL } from './core/rail/types';
 import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
+import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 
 
 
@@ -86,7 +87,19 @@ const SERVICE_TYPE_TO_VEHICLE_TYPE: Record<ServiceVehicleType, VehicleData['type
   garbage: 'garbage_truck',
 };
 
-export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport';
+export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport_s' | 'airport_m' | 'airport_l';
+
+/** Map airport tool types to AirportSize. */
+const AIRPORT_TOOL_SIZE: Partial<Record<ToolType, AirportSize>> = {
+  airport_s: 'SMALL', airport_m: 'MEDIUM', airport_l: 'LARGE',
+};
+function isAirportTool(tool: ToolType): boolean { return tool in AIRPORT_TOOL_SIZE; }
+function getAirportToolSize(tool: ToolType): AirportSize { return AIRPORT_TOOL_SIZE[tool] ?? 'SMALL'; }
+
+/** Map airport tool to InfraType. */
+const AIRPORT_TOOL_INFRA: Partial<Record<ToolType, InfraType>> = {
+  airport_s: 'airport_s', airport_m: 'airport_m', airport_l: 'airport_l',
+};
 
 /** Map of tool types that directly delegate to placeInfrastructure (DRY). */
 const TOOL_TO_INFRA: Partial<Record<ToolType, InfraType>> = {
@@ -99,7 +112,7 @@ const TOOL_TO_INFRA: Partial<Record<ToolType, InfraType>> = {
 /** Map of tool types that directly delegate to placeTransportStop (DRY). */
 const TOOL_TO_TRANSPORT: Partial<Record<ToolType, 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'>> = {
   bus_stop: 'bus', metro_station: 'metro', train_station: 'rail',
-  ferry_dock: 'ferry', airport: 'airport',
+  ferry_dock: 'ferry', airport_s: 'airport', airport_m: 'airport', airport_l: 'airport',
 };
 
 /** Map of zone tool types to ZoneType (DRY). */
@@ -266,14 +279,16 @@ export class Game {
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
   private tickAccumulator = 0;
   private elapsedTime = 0;
-  private dirty = {
-    roads: true,
-    tracks: true,
-    crossings: true,
-    buildings: true,
-    terrain: true,
-    trafficLights: true,
-    overlay: true,
+  private dirty = new class {
+    roads = true;
+    tracks = true;
+    crossings = true;
+    private _buildings = true;
+    terrain = true;
+    trafficLights = true;
+    overlay = true;
+    get buildings() { return this._buildings; }
+    set buildings(v: boolean) { this._buildings = v; if (v) this.terrain = true; }
   };
 
   // UI state
@@ -325,10 +340,11 @@ export class Game {
   private ferryAnimator = new FerryAnimator();
   /** 火車渲染端動畫（純 LERP，不靠 tick） */
   private trainAnimator = new TrainAnimator();
+  /** 飛機起降渲染端動畫 */
+  private airplaneAnimator = new AirplaneAnimator();
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
-  selectedAirportSize: AirportSize | null = null; // selected airport size for placement
   viewMode: ViewMode = ViewMode.NORMAL;
 
   /** Which save slot this game was loaded from (null = new game) */
@@ -725,14 +741,6 @@ export class Game {
 
         switch (action.action) {
           case 'skip': break;
-          case 'airport': {
-            const key = `airport:${x},${y}`;
-            if (!demolished.has(key)) {
-              this.removeInfraService('airport', x, y);
-              demolished.add(key);
-            }
-            break;
-          }
           case 'multi_cell_infra': {
             const key = `${action.primaryX},${action.primaryY}`;
             if (!demolished.has(key)) {
@@ -907,9 +915,9 @@ export class Game {
       this.showNotification(getBuildReasonMessage(check.reason), 3);
       return;
     }
-    const infraCfg = getInfraConfig(TRANSPORT_TO_INFRA_TYPE[type]!);
-    const baseCost = infraCfg?.cost ?? 500;
-    const cost = type === 'airport' ? getAirportBuildCost(this.selectedAirportSize ?? 'SMALL') : baseCost;
+    const airportInfra = AIRPORT_TOOL_INFRA[this.currentTool];
+    const infraCfg = getInfraConfig(airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!);
+    const cost = infraCfg?.cost ?? 500;
     if (!this.tryDeductFunds(cost)) return;
 
     if (type === 'bus') {
@@ -951,10 +959,11 @@ export class Game {
 
   /** Place an airport at (x,y). Returns true on success, false (with funds refunded) on failure. */
   private placeAirport(x: number, y: number, cost: number): boolean {
-    const airportSize: AirportSize = this.selectedAirportSize ?? 'SMALL';
+    const airportSize: AirportSize = getAirportToolSize(this.currentTool);
+    const infraType = AIRPORT_TOOL_INFRA[this.currentTool]!;
 
-    // Validate footprint (data-driven, extracted to core)
-    const check = canPlaceAirport(this.state.grid, x, y, airportSize);
+    // Validate footprint — standard canPlaceInfra (correct dimensions from InfraConfig)
+    const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation);
     if (!check.ok) {
       this.state.budget.funds += cost;
       this.showNotification(getBuildReasonMessage(check.reason));
@@ -962,7 +971,7 @@ export class Game {
     }
 
     const pop = this.state.citizens.getPopulation();
-    const result = this.state.airport.build(x, y, airportSize, pop);
+    const result = this.state.airport.build(x, y, airportSize, pop, this.currentRotation);
     if (!result) {
       this.state.budget.funds += cost;
       const req = this.state.airport.getPopulationRequired(airportSize);
@@ -970,8 +979,8 @@ export class Game {
       return false;
     }
 
-    // Set all NxN cells to airport buildingId (delegated to core — SRP)
-    placeAirportOnGrid(this.state.grid, x, y, airportSize, getInfraBuildingId('airport'));
+    // Place on grid — standard placeInfraOnGrid (correct dimensions from InfraConfig)
+    placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
     return true;
@@ -1147,6 +1156,7 @@ export class Game {
     const simSpeed = this.paused ? 0 : this.state.clock.speed;
     this.ferryAnimator.update(dt, simSpeed, this.state.ferry, transportVehicles);
     this.trainAnimator.update(dt, simSpeed, this.state.rail, transportVehicles);
+    this.airplaneAnimator.update(dt, simSpeed, this.state.airport, transportVehicles);
 
     // Level crossing proximity trigger (inline collection, no filter+map)
     const trainPositions = this.trainPosScratch;
@@ -1161,7 +1171,7 @@ export class Game {
     allVehicles.length = 0;
     for (const v of vehicleData) allVehicles.push(v);
     for (const v of transportVehicles) allVehicles.push(v as VehicleData);
-    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime);
+    this.vehicleRenderer.update(allVehicles, this.weatherRenderer.sunIntensity, this.elapsedTime, simSpeed);
 
     // Advance pedestrians every render frame (same pattern as vehicles)
     if (!this.paused) {
@@ -1300,16 +1310,10 @@ export class Game {
           const py = primary?.y ?? y;
           const center = getInfraCenterById(px, py, cell.buildingId);
           const details = this.getInfraDetails(cls.config.type, center.cx, center.cy);
-          // Airport has dynamic cost based on size; other infra uses fixed InfraConfig cost
-          let infraCost = cls.config.cost;
-          if (cls.config.type === 'airport') {
-            const ap = this.state.airport.findAtCell(x, y);
-            if (ap) infraCost = getAirportBuildCost(ap.size);
-          }
           this.selectedBuilding = {
             kind: 'infra', x, y,
             infraType: cls.config.type, name: cls.config.name,
-            cost: infraCost, details,
+            cost: cls.config.cost, details,
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -1361,22 +1365,17 @@ export class Game {
   }
 
   private isInfraTool(tool: ToolType): boolean {
-    return isInfraType(tool);
+    return isInfraType(tool) || isAirportTool(tool);
   }
 
   private updateCursorSize(): void {
-    const cfg = this.isInfraTool(this.currentTool)
-      ? getInfraConfig(this.currentTool as InfraType)
-      : null;
+    const airportInfra = AIRPORT_TOOL_INFRA[this.currentTool];
+    const cfg = airportInfra
+      ? getInfraConfig(airportInfra)
+      : isInfraType(this.currentTool) ? getInfraConfig(this.currentTool as InfraType) : null;
     if (cfg) {
-      if (cfg.type === 'airport') {
-        // Airport uses center-based placement with dynamic footprint
-        const footprint = getAirportFootprint(this.selectedAirportSize ?? 'SMALL');
-        this.gridCursor.setSize(footprint, footprint, true);
-      } else {
-        const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
-        this.gridCursor.setSize(w, h);
-      }
+      const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
+      this.gridCursor.setSize(w, h);
     } else {
       this.gridCursor.setSize(1, 1);
     }
@@ -1467,7 +1466,7 @@ export class Game {
     this.reapplyOverlayHighlight();
 
     if (this.isInfraTool(this.currentTool)) {
-      const infraType = this.currentTool as InfraType;
+      const infraType = AIRPORT_TOOL_INFRA[this.currentTool] ?? this.currentTool as InfraType;
       const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
       this.placementPreview.updateInfra(
         infraType,
@@ -1477,7 +1476,6 @@ export class Game {
         this.state.grid,
         this.state.budget.funds,
         groundwaterFn,
-        infraType === 'airport' ? (this.selectedAirportSize ?? 'SMALL') : undefined,
       );
 
       // Coverage preview overwrites overlay with merged data (existing + new)

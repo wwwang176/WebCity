@@ -2,7 +2,7 @@ export type InfraType =
   | 'park' | 'police' | 'fire' | 'school' | 'power' | 'water'
   | 'garbage' | 'sewage' | 'cemetery' | 'hospital' | 'school_high'
   | 'school_univ' | 'bus_stop' | 'metro_station' | 'train_station'
-  | 'ferry_dock' | 'airport';
+  | 'ferry_dock' | 'airport_s' | 'airport_m' | 'airport_l';
 
 export type Rotation = 0 | 90 | 180 | 270;
 
@@ -28,7 +28,9 @@ export const INFRA_CONFIGS: readonly InfraConfig[] = [
   { type: 'hospital',    buildingId: 250, name: 'Hospital',           width: 2, height: 3, cost: 1600 },
   { type: 'school_high', buildingId: 244, name: 'High School',        width: 2, height: 3, cost: 1200 },
   { type: 'school_univ', buildingId: 243, name: 'University',         width: 3, height: 3, cost: 3000 },
-  { type: 'airport',     buildingId: 237, name: 'Airport',            width: 4, height: 4, cost: 5000 },
+  { type: 'airport_s',   buildingId: 237, name: 'Airport (S)',         width: 3, height: 2, cost: 5000 },
+  { type: 'airport_m',   buildingId: 236, name: 'Airport (M)',         width: 5, height: 4, cost: 15000 },
+  { type: 'airport_l',   buildingId: 235, name: 'Airport (L)',         width: 7, height: 6, cost: 40000 },
   { type: 'bus_stop',    buildingId: 242, name: 'Bus Stop',           width: 1, height: 1, cost: 100 },
   { type: 'metro_station', buildingId: 241, name: 'Metro Station',   width: 1, height: 1, cost: 3000 },
   { type: 'train_station', buildingId: 239, name: 'Train Station',   width: 1, height: 1, cost: 2000 },

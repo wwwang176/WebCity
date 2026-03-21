@@ -109,16 +109,16 @@ export const INFRA_SERVICE_ACTIONS: Partial<Record<InfraType, InfraServiceAction
     place: (ctx, cx, cy) => ctx.ferry.addDock(cx, cy),
     remove: (ctx, cx, cy) => findAndRemove(() => ctx.ferry.getDocks(), id => ctx.ferry.removeDock(id), cx, cy),
   },
-  airport: {
-    place: () => { /* airport placement handled by placeAirport (custom footprint) */ },
-    remove: (ctx, cx, cy) => {
-      const airportBid = getInfraBuildingId('airport');
-      ctx.airport.demolishAtCell(cx, cy, (cellX, cellY) => {
-        const c = ctx.grid.getCell(cellX, cellY);
-        if (c && c.buildingId === airportBid) {
-          ctx.grid.setCell(cellX, cellY, { buildingId: 0, reserved: 0 });
-        }
-      });
-    },
+  airport_s: {
+    place: () => { /* airport placement handled by placeAirport */ },
+    remove: (ctx, cx, cy) => { ctx.airport.demolishAtCell(cx, cy, () => {}); },
+  },
+  airport_m: {
+    place: () => { /* airport placement handled by placeAirport */ },
+    remove: (ctx, cx, cy) => { ctx.airport.demolishAtCell(cx, cy, () => {}); },
+  },
+  airport_l: {
+    place: () => { /* airport placement handled by placeAirport */ },
+    remove: (ctx, cx, cy) => { ctx.airport.demolishAtCell(cx, cy, () => {}); },
   },
 };

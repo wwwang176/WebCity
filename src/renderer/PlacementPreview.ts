@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { getInfraConfig, getRotatedSize, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { canPlaceInfra } from '../core/building/InfraPlacement';
-import { canPlaceAirport, type AirportSize } from '../core/transport/AirportSystem';
 import { Grid } from '../core/grid/Grid';
 import type { BuildingRenderer } from './BuildingRenderer';
 
@@ -72,43 +71,30 @@ export class PlacementPreview {
     grid: Grid,
     funds: number,
     groundwaterFn?: (x: number, y: number) => number,
-    airportSize?: AirportSize,
   ): void {
     const cfg = getInfraConfig(type);
     if (!cfg) { this.hide(); return; }
 
-    // Rebuild ghost mesh if type changed (rotation is applied to group, no rebuild needed)
+    // Rebuild ghost mesh if type changed
     if (this.currentType !== type) {
       this.rebuildGhost(type);
     }
 
     if (!this.group) return;
 
-    // Position at cursor — airport is center-based, others are top-left-based
-    let offsetX: number, offsetZ: number;
-    if (type === 'airport') {
-      offsetX = 0;
-      offsetZ = 0;
-    } else {
-      const { w, h } = getRotatedSize(cfg.width, cfg.height, rotation);
-      offsetX = (w - 1) / 2;
-      offsetZ = (h - 1) / 2;
-    }
+    // Position at cursor — all infra uses top-left-based placement
+    const { w, h } = getRotatedSize(cfg.width, cfg.height, rotation);
+    const offsetX = (w - 1) / 2;
+    const offsetZ = (h - 1) / 2;
     this.group.position.set(gridX + offsetX, 0, gridY + offsetZ);
 
     // Apply rotation to the ghost model
     this.group.rotation.y = (rotation * Math.PI) / 180;
     this.currentRotation = rotation;
 
-    // Check placement validity — airport uses its own center-based validation
-    let valid: boolean;
-    if (type === 'airport') {
-      const check = canPlaceAirport(grid, gridX, gridY, airportSize ?? 'SMALL');
-      valid = check.ok && funds >= cfg.cost;
-    } else {
-      const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn);
-      valid = check.ok && funds >= cfg.cost;
-    }
+    // Check placement validity
+    const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn);
+    const valid = check.ok && funds >= cfg.cost;
 
     this.material.color.set(valid ? GREEN : RED);
     this.group.visible = true;

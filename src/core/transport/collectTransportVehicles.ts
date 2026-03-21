@@ -18,8 +18,16 @@ export interface TransportVehicleRenderData {
   x: number;
   y: number;
   heading: number;
-  type: 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry';
+  type: 'transport_bus' | 'rail_train' | 'rail_carriage' | 'ferry' | 'airplane';
   laneOffset: number;
+  /** World Y position override (used by airplane for altitude). */
+  altitude?: number;
+  /** Pitch angle in radians (nose up = positive, used by airplane during approach/climb). */
+  pitch?: number;
+  /** Roll angle in radians (right wing down = positive, used by airplane during turns). */
+  roll?: number;
+  /** Uniform scale override (e.g. 0.6 for smaller planes at S airports). */
+  scale?: number;
 }
 
 export interface TransportSystems {
@@ -33,6 +41,7 @@ export const VEHICLE_ID_OFFSETS: Record<TransportVehicleRenderData['type'], numb
   rail_train: 400_000,
   rail_carriage: 400_000,
   ferry: 500_000,
+  airplane: 800_000,
 } as const;
 
 function mapVehicle(

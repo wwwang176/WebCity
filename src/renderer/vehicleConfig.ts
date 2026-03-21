@@ -12,6 +12,7 @@ import {
   buildRailTrainGeometry,
   buildRailCarriageGeometry,
   buildFerryGeometry,
+  buildAirplaneGeometry,
 } from './geometry';
 
 export interface VehicleTypeConfig {
@@ -35,4 +36,5 @@ export const VEHICLE_CONFIG: Record<string, VehicleTypeConfig> = {
   rail_train:     { color: 0xff5722, frontOffset: 0.11, rearOffset: 0.11, yPosition: 0.025, buildGeometry: buildRailTrainGeometry },
   rail_carriage:  { color: 0xff5722, frontOffset: 0.125, rearOffset: 0.125, yPosition: 0.025, buildGeometry: buildRailCarriageGeometry },
   ferry:          { color: 0x0097a7, frontOffset: 0.42, rearOffset: 0.32, yPosition: -0.06,  buildGeometry: buildFerryGeometry },
+  airplane:       { color: -1,       frontOffset: 0.45, rearOffset: 0.45, yPosition: 0.09,  buildGeometry: buildAirplaneGeometry },
 };

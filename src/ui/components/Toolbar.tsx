@@ -2,7 +2,7 @@ import { createSignal, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
 import type { ToolType } from '../../Game';
-import type { AirportSize } from '../../core/transport/AirportSystem';
+// AirportSize import removed — airport tools now use separate ToolType entries
 
 
 interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
@@ -63,7 +63,9 @@ const TRANSPORT_GROUP: ToolGroup = {
     { tool: 'rail_track', label: 'Rail Track', key: '', color: '#6d4c2a', icon: '\u{1F6E4}' },
     { tool: 'train_station', label: 'Train Stn', key: '', color: '#795548', icon: '\u{1F689}' },
     { tool: 'ferry_dock', label: 'Ferry', key: '', color: '#0288d1', icon: '\u{26F4}' },
-    { tool: 'airport', label: 'Airport', key: '', color: '#9c27b0', icon: '\u{2708}' },
+    { tool: 'airport_s', label: 'Airport(S)', key: '', color: '#9c27b0', icon: '\u{2708}' },
+    { tool: 'airport_m', label: 'Airport(M)', key: '', color: '#9c27b0', icon: '\u{2708}' },
+    { tool: 'airport_l', label: 'Airport(L)', key: '', color: '#9c27b0', icon: '\u{2708}' },
   ],
 };
 
@@ -122,25 +124,10 @@ function ToolGroupComponent(props: {
           </button>
         )}
         {props.group.id === 'transport' && (
-          <>
-            <Show when={gameSignals.currentTool() === 'airport'}>
-              <div style="display:flex;gap:2px;padding:2px 4px;background:#1a1a2e;border-radius:4px;margin:2px 4px">
-                {(['SMALL', 'MEDIUM', 'LARGE'] as AirportSize[]).map(size => (
-                  <button
-                    class="tb-btn"
-                    style={`font-size:10px;padding:2px 6px;border-radius:3px;border:1px solid ${(getGame().selectedAirportSize ?? 'SMALL') === size ? '#9c27b0' : '#555'};background:${(getGame().selectedAirportSize ?? 'SMALL') === size ? '#9c27b022' : 'transparent'};color:${(getGame().selectedAirportSize ?? 'SMALL') === size ? '#ce93d8' : '#888'};cursor:pointer`}
-                    onClick={(e) => { e.stopPropagation(); getGame().selectedAirportSize = size as AirportSize; }}
-                  >
-                    {size === 'SMALL' ? 'S $5K' : size === 'MEDIUM' ? 'M $15K' : 'L $40K'}
-                  </button>
-                ))}
-              </div>
-            </Show>
-            <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
-              <span class="tb-icon">{'\u{1F5FA}'}</span>
-              <span style={{ color: '#ff9800' }}>Routes</span>
-            </button>
-          </>
+          <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
+            <span class="tb-icon">{'\u{1F5FA}'}</span>
+            <span style={{ color: '#ff9800' }}>Routes</span>
+          </button>
         )}
       </div>
     </div>

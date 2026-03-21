@@ -6,7 +6,6 @@ import { getInfraCenterById } from './InfraPlacement';
  * Replaces nested if-else in Game.ts demolish method (SRP + OCP).
  */
 export type DemolishAction =
-  | { action: 'airport' }
   | { action: 'multi_cell_infra'; infraType: InfraType; primaryX: number; primaryY: number; cx: number; cy: number }
   | { action: 'single_cell_infra'; infraType: InfraType }
   | { action: 'regular'; hasTrack: boolean }
@@ -29,12 +28,7 @@ export function classifyDemolishCell(
     return { action: 'regular', hasTrack: cell.railType !== 0 };
   }
 
-  // Airport has custom footprint — needs special removal via findAtCell
-  if (cell.buildingId === getInfraBuildingId('airport')) {
-    return { action: 'airport' };
-  }
-
-  // Multi-cell infra: primary cell found → compute center for service removal
+  // Multi-cell infra (including airports): primary cell found → compute center for service removal
   if (primary) {
     const infraCfg = getInfraConfigById(cell.buildingId);
     if (infraCfg) {

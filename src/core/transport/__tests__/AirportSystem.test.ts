@@ -1,31 +1,35 @@
 import { describe, it, expect } from 'vitest';
-import { AirportSystem, getAirportFootprint, getAirportBuildCost, AIRPORT_SIZE_CONFIG, canPlaceAirport, forEachAirportCell, placeAirportOnGrid } from '../AirportSystem';
+import { AirportSystem, getAirportFootprint, getAirportBuildCost, getAirportDimensions, AIRPORT_SIZE_CONFIG, forEachAirportCell, placeAirportOnGrid } from '../AirportSystem';
+import { canPlaceInfra } from '../../building/InfraPlacement';
+import { Grid } from '../../grid/Grid';
+import { RoadType } from '../../road/types';
+
+// SMALL=3×2, MEDIUM=5×4, LARGE=7×6  (top-left based placement)
 
 describe('AirportSystem.findAtCell', () => {
-  it('should find SMALL airport covering center cell', () => {
+  it('should find SMALL airport at top-left cell', () => {
     const sys = new AirportSystem();
-    sys.build(5, 5, 'SMALL', 100000);
+    sys.build(5, 5, 'SMALL', 0);
     const found = sys.findAtCell(5, 5);
     expect(found).not.toBeNull();
     expect(found!.x).toBe(5);
-    expect(found!.y).toBe(5);
   });
 
-  it('should find SMALL airport covering edge cell', () => {
+  it('should find SMALL airport at any cell in footprint', () => {
     const sys = new AirportSystem();
-    sys.build(5, 5, 'SMALL', 100000);
-    // SMALL footprint = 3, half = 1 → covers (4..6, 4..6)
-    expect(sys.findAtCell(4, 4)).not.toBeNull();
-    expect(sys.findAtCell(6, 6)).not.toBeNull();
-    expect(sys.findAtCell(4, 6)).not.toBeNull();
+    sys.build(5, 5, 'SMALL', 0);
+    // SMALL = 3×2, top-left (5,5) → covers (5..7, 5..6)
+    expect(sys.findAtCell(5, 5)).not.toBeNull();
+    expect(sys.findAtCell(7, 6)).not.toBeNull();
+    expect(sys.findAtCell(6, 5)).not.toBeNull();
   });
 
   it('should return null for cell outside airport footprint', () => {
     const sys = new AirportSystem();
-    sys.build(5, 5, 'SMALL', 100000);
-    // SMALL footprint = 3, half = 1 → (3,3) is outside
-    expect(sys.findAtCell(3, 3)).toBeNull();
-    expect(sys.findAtCell(7, 5)).toBeNull();
+    sys.build(5, 5, 'SMALL', 0);
+    expect(sys.findAtCell(4, 4)).toBeNull();
+    expect(sys.findAtCell(8, 5)).toBeNull();
+    expect(sys.findAtCell(5, 7)).toBeNull();
   });
 
   it('should return null when no airports exist', () => {
@@ -35,18 +39,19 @@ describe('AirportSystem.findAtCell', () => {
 
   it('should find MEDIUM airport covering wider footprint', () => {
     const sys = new AirportSystem();
-    sys.build(10, 10, 'MEDIUM', 100000);
-    // MEDIUM footprint = 5, half = 2 → covers (8..12, 8..12)
-    expect(sys.findAtCell(8, 8)).not.toBeNull();
-    expect(sys.findAtCell(12, 12)).not.toBeNull();
-    expect(sys.findAtCell(7, 10)).toBeNull();
+    sys.build(10, 10, 'MEDIUM', 0);
+    // MEDIUM = 5×4, top-left (10,10) → covers (10..14, 10..13)
+    expect(sys.findAtCell(10, 10)).not.toBeNull();
+    expect(sys.findAtCell(14, 13)).not.toBeNull();
+    expect(sys.findAtCell(9, 10)).toBeNull();
+    expect(sys.findAtCell(10, 14)).toBeNull();
   });
 });
 
 describe('AirportSystem.demolishAtCell', () => {
   it('should remove airport and invoke clearCell for all footprint cells', () => {
     const sys = new AirportSystem();
-    sys.build(5, 5, 'SMALL', 100000);
+    sys.build(5, 5, 'SMALL', 0);
     expect(sys.getAirports().length).toBe(1);
 
     const cleared: string[] = [];
@@ -54,10 +59,10 @@ describe('AirportSystem.demolishAtCell', () => {
 
     expect(result).toBe(true);
     expect(sys.getAirports().length).toBe(0);
-    // SMALL footprint=3, half=1 → 3x3=9 cells cleared
-    expect(cleared.length).toBe(9);
-    expect(cleared).toContain('4,4');
-    expect(cleared).toContain('6,6');
+    // SMALL = 3×2 = 6 cells
+    expect(cleared.length).toBe(6);
+    expect(cleared).toContain('5,5');
+    expect(cleared).toContain('7,6');
   });
 
   it('should return false when no airport at cell', () => {
@@ -68,127 +73,115 @@ describe('AirportSystem.demolishAtCell', () => {
 
   it('should handle MEDIUM airport footprint', () => {
     const sys = new AirportSystem();
-    sys.build(10, 10, 'MEDIUM', 100000);
+    sys.build(10, 10, 'MEDIUM', 0);
 
     const cleared: string[] = [];
     const result = sys.demolishAtCell(10, 10, (cx, cy) => cleared.push(`${cx},${cy}`));
 
     expect(result).toBe(true);
     expect(sys.getAirports().length).toBe(0);
-    // MEDIUM footprint=5, half=2 → 5x5=25 cells cleared
-    expect(cleared.length).toBe(25);
-    expect(cleared).toContain('8,8');
-    expect(cleared).toContain('12,12');
+    // MEDIUM = 5×4 = 20 cells
+    expect(cleared.length).toBe(20);
+    expect(cleared).toContain('10,10');
+    expect(cleared).toContain('14,13');
   });
 
   it('should find and demolish airport from any cell in footprint', () => {
     const sys = new AirportSystem();
-    sys.build(5, 5, 'SMALL', 100000);
+    sys.build(5, 5, 'SMALL', 0);
 
-    // Demolish from edge cell (4,4), not center
+    // Demolish from non-primary cell
     const cleared: string[] = [];
-    const result = sys.demolishAtCell(4, 4, (cx, cy) => cleared.push(`${cx},${cy}`));
+    const result = sys.demolishAtCell(6, 6, (cx, cy) => cleared.push(`${cx},${cy}`));
 
     expect(result).toBe(true);
     expect(sys.getAirports().length).toBe(0);
-    expect(cleared.length).toBe(9);
+    expect(cleared.length).toBe(6);
   });
 });
 
-describe('canPlaceAirport', () => {
-  function makeGrid(cells: Record<string, { roadType: number; buildingId: number }>) {
-    return {
-      getCell: (x: number, y: number) => cells[`${x},${y}`] ?? null,
-    };
+describe('canPlaceInfra for airport (via overrideSize)', () => {
+  function makeAirportGrid(size: 'SMALL' | 'MEDIUM' | 'LARGE', x: number, y: number, opts?: { railAt?: string; buildingAt?: string; noRoad?: boolean }): Grid {
+    const grid = new Grid(50, 50);
+    // Place adjacent road unless noRoad
+    if (!opts?.noRoad) grid.setCell(x, y - 1, { roadType: RoadType.TWO_LANE });
+    // Place rail if specified
+    if (opts?.railAt) {
+      const [rx, ry] = opts.railAt.split(',').map(Number);
+      grid.setCell(rx, ry, { railType: 1 });
+    }
+    // Place building if specified
+    if (opts?.buildingAt) {
+      const [bx, by] = opts.buildingAt.split(',').map(Number);
+      grid.setCell(bx, by, { buildingId: 5 });
+    }
+    return grid;
   }
 
-  it('should allow placement on all-empty cells', () => {
-    const cells: Record<string, { roadType: number; buildingId: number }> = {};
-    // SMALL footprint=3, half=1 → need cells (4..6, 4..6)
-    for (let dy = 4; dy <= 6; dy++) {
-      for (let dx = 4; dx <= 6; dx++) {
-        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
-      }
-    }
-    const grid = makeGrid(cells);
-    expect(canPlaceAirport(grid, 5, 5, 'SMALL')).toEqual({ ok: true });
+  function airportSize(size: 'SMALL' | 'MEDIUM' | 'LARGE') {
+    const d = getAirportDimensions(size);
+    return { width: d.w, height: d.h };
+  }
+
+  it('should allow SMALL placement with adjacent road', () => {
+    const grid = makeAirportGrid('SMALL', 5, 5);
+    expect(canPlaceInfra(grid, 5, 5, 'airport_s', 0, undefined, airportSize('SMALL'))).toEqual({ ok: true });
   });
 
-  it('should reject when a cell is out of bounds', () => {
-    // Only provide center cell, edges are null
-    const grid = makeGrid({ '5,5': { roadType: 0, buildingId: 0 } });
-    const result = canPlaceAirport(grid, 5, 5, 'SMALL');
+  it('should reject when cell has rail track', () => {
+    const grid = makeAirportGrid('SMALL', 5, 5, { railAt: '6,5' });
+    const result = canPlaceInfra(grid, 5, 5, 'airport_s', 0, undefined, airportSize('SMALL'));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('AIRPORT_OUT_OF_BOUNDS');
   });
 
-  it('should reject when a cell has a road', () => {
-    const cells: Record<string, { roadType: number; buildingId: number }> = {};
-    for (let dy = 4; dy <= 6; dy++) {
-      for (let dx = 4; dx <= 6; dx++) {
-        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
-      }
-    }
-    cells['5,5'] = { roadType: 2, buildingId: 0 }; // center has road
-    const grid = makeGrid(cells);
-    const result = canPlaceAirport(grid, 5, 5, 'SMALL');
+  it('should reject when no adjacent road', () => {
+    const grid = makeAirportGrid('SMALL', 5, 5, { noRoad: true });
+    const result = canPlaceInfra(grid, 5, 5, 'airport_s', 0, undefined, airportSize('SMALL'));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('AIRPORT_AREA_OCCUPIED');
   });
 
-  it('should reject when a cell has a building', () => {
-    const cells: Record<string, { roadType: number; buildingId: number }> = {};
-    for (let dy = 4; dy <= 6; dy++) {
-      for (let dx = 4; dx <= 6; dx++) {
-        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
-      }
-    }
-    cells['4,4'] = { roadType: 0, buildingId: 5 }; // corner has building
-    const grid = makeGrid(cells);
-    const result = canPlaceAirport(grid, 5, 5, 'SMALL');
+  it('should reject out of bounds', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(3, 2, { roadType: RoadType.TWO_LANE });
+    const result = canPlaceInfra(grid, 3, 3, 'airport_s', 0, undefined, airportSize('SMALL'));
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.reason).toBe('AIRPORT_AREA_OCCUPIED');
   });
 
-  it('should check MEDIUM footprint (5x5)', () => {
-    const cells: Record<string, { roadType: number; buildingId: number }> = {};
-    // MEDIUM footprint=5, half=2 → need cells (8..12, 8..12)
-    for (let dy = 8; dy <= 12; dy++) {
-      for (let dx = 8; dx <= 12; dx++) {
-        cells[`${dx},${dy}`] = { roadType: 0, buildingId: 0 };
-      }
-    }
-    const grid = makeGrid(cells);
-    expect(canPlaceAirport(grid, 10, 10, 'MEDIUM')).toEqual({ ok: true });
+  it('should check MEDIUM footprint (5×4)', () => {
+    const grid = makeAirportGrid('MEDIUM', 10, 10);
+    expect(canPlaceInfra(grid, 10, 10, 'airport_m', 0, undefined, airportSize('MEDIUM'))).toEqual({ ok: true });
+  });
+
+  it('should swap dimensions when rotated 90°', () => {
+    // SMALL 3×2 → rotated 90° → 2×3
+    const grid = makeAirportGrid('SMALL', 5, 5);
+    expect(canPlaceInfra(grid, 5, 5, 'airport_s', 90, undefined, airportSize('SMALL'))).toEqual({ ok: true });
   });
 });
 
 describe('forEachAirportCell', () => {
-  it('should iterate over all cells in SMALL footprint (3x3)', () => {
+  it('should iterate over all cells in SMALL footprint (3×2)', () => {
     const cells: string[] = [];
     forEachAirportCell(5, 5, 'SMALL', (cx, cy) => cells.push(`${cx},${cy}`));
-    expect(cells.length).toBe(9);
-    expect(cells).toContain('4,4');
+    expect(cells.length).toBe(6);
     expect(cells).toContain('5,5');
-    expect(cells).toContain('6,6');
+    expect(cells).toContain('7,6');
   });
 
-  it('should iterate over all cells in MEDIUM footprint (5x5)', () => {
+  it('should iterate over all cells in MEDIUM footprint (5×4)', () => {
     const cells: string[] = [];
     forEachAirportCell(10, 10, 'MEDIUM', (cx, cy) => cells.push(`${cx},${cy}`));
-    expect(cells.length).toBe(25);
-    expect(cells).toContain('8,8');
+    expect(cells.length).toBe(20);
     expect(cells).toContain('10,10');
-    expect(cells).toContain('12,12');
+    expect(cells).toContain('14,13');
   });
 
-  it('should iterate over all cells in LARGE footprint (7x7)', () => {
+  it('should iterate over all cells in LARGE footprint (7×6)', () => {
     const cells: string[] = [];
     forEachAirportCell(20, 20, 'LARGE', (cx, cy) => cells.push(`${cx},${cy}`));
-    expect(cells.length).toBe(49);
-    expect(cells).toContain('17,17');
+    expect(cells.length).toBe(42);
     expect(cells).toContain('20,20');
-    expect(cells).toContain('23,23');
+    expect(cells).toContain('26,25');
   });
 });
 
@@ -201,13 +194,12 @@ describe('placeAirportOnGrid', () => {
       },
     };
     placeAirportOnGrid(grid, 5, 5, 'SMALL', 237);
-    expect(cells.size).toBe(9);
-    expect(cells.get('4,4')!.buildingId).toBe(237);
+    expect(cells.size).toBe(6);
     expect(cells.get('5,5')!.buildingId).toBe(237);
-    expect(cells.get('6,6')!.buildingId).toBe(237);
+    expect(cells.get('7,6')!.buildingId).toBe(237);
   });
 
-  it('should mark center cell as primary and others as MULTI_CELL_OCCUPIED', () => {
+  it('should mark top-left cell as primary and others as MULTI_CELL_OCCUPIED', () => {
     const cells = new Map<string, { buildingId: number; reserved?: number }>();
     const grid = {
       setCell: (x: number, y: number, data: { buildingId: number; reserved?: number }) => {
@@ -215,7 +207,7 @@ describe('placeAirportOnGrid', () => {
       },
     };
     placeAirportOnGrid(grid, 5, 5, 'SMALL', 237);
-    // Center is primary (reserved=0)
+    // Top-left is primary (reserved=0)
     expect(cells.get('5,5')!.reserved).toBe(0);
     // All other cells are secondary (reserved=4 = MULTI_CELL_OCCUPIED)
     for (const [key, data] of cells) {
@@ -233,13 +225,13 @@ describe('placeAirportOnGrid', () => {
       },
     };
     placeAirportOnGrid(grid, 10, 10, 'MEDIUM', 237);
-    expect(cells.size).toBe(25);
-    expect(cells.get('8,8')!.buildingId).toBe(237);
-    expect(cells.get('12,12')!.buildingId).toBe(237);
-    // Center is primary
+    expect(cells.size).toBe(20);
+    expect(cells.get('10,10')!.buildingId).toBe(237);
+    expect(cells.get('14,13')!.buildingId).toBe(237);
+    // Top-left is primary
     expect(cells.get('10,10')!.reserved).toBe(0);
-    // Corner is secondary
-    expect(cells.get('8,8')!.reserved).toBe(4);
+    // Other cells are secondary
+    expect(cells.get('14,13')!.reserved).toBe(4);
   });
 });
 

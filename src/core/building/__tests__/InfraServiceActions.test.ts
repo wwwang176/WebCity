@@ -78,38 +78,20 @@ describe('INFRA_SERVICE_ACTIONS', () => {
     }
   });
 
-  it('should have airport actions', () => {
-    expect(INFRA_SERVICE_ACTIONS.airport).toBeDefined();
-    expect(typeof INFRA_SERVICE_ACTIONS.airport!.place).toBe('function');
-    expect(typeof INFRA_SERVICE_ACTIONS.airport!.remove).toBe('function');
+  it('should have airport actions for all three sizes', () => {
+    for (const type of ['airport_s', 'airport_m', 'airport_l'] as InfraType[]) {
+      expect(INFRA_SERVICE_ACTIONS[type]).toBeDefined();
+      expect(typeof INFRA_SERVICE_ACTIONS[type]!.place).toBe('function');
+      expect(typeof INFRA_SERVICE_ACTIONS[type]!.remove).toBe('function');
+    }
   });
 
-  it('remove("airport") should call airport.demolishAtCell with grid clearing callback', () => {
+  it('remove("airport_s") should call airport.demolishAtCell', () => {
     const demolishAtCell = vi.fn();
     const ctx = makeMinimalCtx();
     ctx.airport = { demolishAtCell };
-    INFRA_SERVICE_ACTIONS.airport!.remove(ctx, 5, 5);
+    INFRA_SERVICE_ACTIONS.airport_s!.remove(ctx, 5, 5);
     expect(demolishAtCell).toHaveBeenCalledWith(5, 5, expect.any(Function));
-  });
-
-  it('remove("airport") clearCell callback should clear matching airport cells', () => {
-    let clearCellFn: ((cx: number, cy: number) => void) | undefined;
-    const demolishAtCell = vi.fn((_x: number, _y: number, fn: (cx: number, cy: number) => void) => {
-      clearCellFn = fn;
-      return true;
-    });
-    const setCell = vi.fn();
-    const ctx = makeMinimalCtx();
-    ctx.airport = { demolishAtCell };
-    // airport buildingId = 237 (from InfraConfig)
-    ctx.grid = {
-      getCell: vi.fn().mockReturnValue({ buildingId: 237 }),
-      setCell,
-    };
-    INFRA_SERVICE_ACTIONS.airport!.remove(ctx, 5, 5);
-    expect(clearCellFn).toBeDefined();
-    clearCellFn!(3, 4);
-    expect(setCell).toHaveBeenCalledWith(3, 4, { buildingId: 0, reserved: 0 });
   });
 });
 
