@@ -27,6 +27,10 @@ const CARRIAGES_PER_TRAIN = 3;
 const STATION_WAIT_TIME = 1.2;
 /** 轉角圓弧插值點數 */
 const ARC_POINTS = 6;
+/** 外部火車生成間隔（秒） */
+const EXTERNAL_TRAIN_INTERVAL = 12.0;
+/** 外部火車 ID 起始偏移 */
+const EXTERNAL_TRAIN_ID = 900_000;
 
 interface TrainAnimState {
   /** 完整來回路徑（A→B→A 串接） */
@@ -52,6 +56,19 @@ export interface RailSystemLike {
   getTrains(): Iterable<{ id: number; traveling: boolean; routeId: number }>;
   /** Get parsed route path segments for building full round-trip animation. */
   getRoutePathPoints(routeId: number): ReadonlyArray<ReadonlyArray<{ x: number; y: number }>> | null;
+  /** Whether any station has external connection. */
+  hasExternalConnection: boolean;
+  /** Get a random path from map edge to an external station. */
+  getExternalTrainPath(): ReadonlyArray<{ x: number; y: number }> | null;
+}
+
+/** External train animation state (edge → station → edge, then despawn). */
+interface ExternalTrainAnim {
+  pathInfo: FerryPathInfo;
+  distance: number;
+  stationDist: number;
+  phase: 'incoming' | 'dwell' | 'outgoing';
+  waitTimer: number;
 }
 
 /**
@@ -149,10 +166,47 @@ function buildFullPath(segments: ReadonlyArray<ReadonlyArray<{ x: number; y: num
   return { pathInfo, stationDistances };
 }
 
+/**
+ * Build a round-trip path for an external train: edge → station → edge.
+ * Returns path info and the distance at the station (midpoint).
+ */
+function buildExternalPath(points: ReadonlyArray<{ x: number; y: number }>): {
+  pathInfo: FerryPathInfo;
+  stationDist: number;
+} | null {
+  if (points.length < 2) return null;
+
+  const forward = smoothTrackPath(points);
+  const reversed = [...points].reverse();
+  const backward = smoothTrackPath(reversed);
+
+  // Concatenate forward + backward, skip duplicate midpoint
+  const fullPoints: Array<{ x: number; y: number }> = [...forward];
+  for (let i = 1; i < backward.length; i++) {
+    fullPoints.push(backward[i]!);
+  }
+
+  // Station distance = length of forward path
+  let stationDist = 0;
+  for (let i = 1; i < forward.length; i++) {
+    const dx = forward[i]!.x - forward[i - 1]!.x;
+    const dy = forward[i]!.y - forward[i - 1]!.y;
+    stationDist += Math.sqrt(dx * dx + dy * dy);
+  }
+
+  if (fullPoints.length < 2) return null;
+  const pathInfo = buildFerryPathInfo(fullPoints);
+  return { pathInfo, stationDist };
+}
+
 export class TrainAnimator implements VehicleAnimator {
   private anims = new Map<number, TrainAnimState>();
   /** Reusable Set for active train IDs (avoids per-frame allocation). */
   private activeIds = new Set<number>();
+  /** External train animation (at most one at a time). */
+  private externalTrain: ExternalTrainAnim | null = null;
+  /** Countdown to next external train spawn (seconds). */
+  private externalSpawnTimer = EXTERNAL_TRAIN_INTERVAL * 0.5; // first one sooner
 
   /**
    * 每幀推進火車動畫，並覆蓋 transportVehicles 中 rail_train 的位置/heading。
@@ -293,9 +347,91 @@ export class TrainAnimator implements VehicleAnimator {
         }
       }
     }
+
+    // ── External train (edge → station → edge) ──
+    this.updateExternalTrain(dt, speed, railSystem, transportVehicles);
+  }
+
+  // ── External train implementation ──
+
+  private updateExternalTrain(
+    dt: number,
+    speed: number,
+    railSystem: RailSystemLike,
+    transportVehicles: TransportVehicleRenderData[],
+  ): void {
+    if (dt <= 0 || speed <= 0) return;
+
+    // Spawn logic
+    if (!this.externalTrain) {
+      if (!railSystem.hasExternalConnection) return;
+      this.externalSpawnTimer -= dt * speed;
+      if (this.externalSpawnTimer > 0) return;
+
+      const pathPoints = railSystem.getExternalTrainPath();
+      if (!pathPoints) { this.externalSpawnTimer = EXTERNAL_TRAIN_INTERVAL; return; }
+
+      const result = buildExternalPath(pathPoints);
+      if (!result) { this.externalSpawnTimer = EXTERNAL_TRAIN_INTERVAL; return; }
+
+      this.externalTrain = {
+        pathInfo: result.pathInfo,
+        distance: 0,
+        stationDist: result.stationDist,
+        phase: 'incoming',
+        waitTimer: 0,
+      };
+    }
+
+    const ext = this.externalTrain;
+
+    // Animate
+    if (ext.phase === 'incoming') {
+      ext.distance += TRAIN_VISUAL_SPEED * dt * speed;
+      if (ext.distance >= ext.stationDist) {
+        ext.distance = ext.stationDist;
+        ext.phase = 'dwell';
+        ext.waitTimer = STATION_WAIT_TIME;
+      }
+    } else if (ext.phase === 'dwell') {
+      ext.waitTimer -= dt * speed;
+      if (ext.waitTimer <= 0) {
+        ext.phase = 'outgoing';
+      }
+    } else {
+      ext.distance += TRAIN_VISUAL_SPEED * dt * speed;
+      if (ext.distance >= ext.pathInfo.totalLength) {
+        this.externalTrain = null;
+        this.externalSpawnTimer = EXTERNAL_TRAIN_INTERVAL;
+        return;
+      }
+    }
+
+    // Render: add locomotive + carriages to transportVehicles
+    const pos = interpolateFerryPath(ext.pathInfo, ext.distance);
+    if (!pos) return;
+
+    transportVehicles.push({
+      id: EXTERNAL_TRAIN_ID,
+      x: pos.x, y: pos.y, heading: pos.heading,
+      type: 'rail_train', laneOffset: 0,
+    });
+
+    for (let c = 1; c < CARRIAGES_PER_TRAIN; c++) {
+      const cDist = Math.max(0, ext.distance - c * CARRIAGE_SPACING);
+      const cPos = interpolateFerryPath(ext.pathInfo, cDist);
+      if (cPos) {
+        transportVehicles.push({
+          id: EXTERNAL_TRAIN_ID + c * 10000,
+          x: cPos.x, y: cPos.y, heading: cPos.heading,
+          type: 'rail_carriage', laneOffset: 0,
+        });
+      }
+    }
   }
 
   dispose(): void {
     this.anims.clear();
+    this.externalTrain = null;
   }
 }

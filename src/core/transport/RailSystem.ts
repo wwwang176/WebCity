@@ -285,10 +285,13 @@ export class RailSystem extends BaseTransportSystem {
 
   /** Set of station position keys that can reach the map edge via rail BFS. */
   private externalStations = new Set<string>();
+  /** Edge rail cell positions (for external train spawning). */
+  private edgeRailCells: Array<{ x: number; y: number }> = [];
 
   /** Check which stations can reach the map edge via rail tracks (BFS). */
   updateExternalConnection(mapWidth: number, mapHeight: number, grid?: { getCell(x: number, y: number): { railType: number } | null }): void {
     this.externalStations.clear();
+    this.edgeRailCells = [];
 
     if (!grid) {
       // Legacy fallback: check if any station is at the edge
@@ -313,6 +316,8 @@ export class RailSystem extends BaseTransportSystem {
           if (cell && cell.railType !== 0) edgeRailCells.push([x, y]);
         }
       }
+
+      this.edgeRailCells = edgeRailCells.map(([x, y]) => ({ x, y }));
 
       if (edgeRailCells.length === 0) {
         this.hasExternalConnection = false;
@@ -384,6 +389,26 @@ export class RailSystem extends BaseTransportSystem {
 
   getLineServiceType(lineId: number): RailServiceType | undefined {
     return this.lineServiceTypes.get(lineId);
+  }
+
+  // ── External train path ────────────────────────────────────────
+
+  /**
+   * Get a path from a random map-edge rail cell to a random external station.
+   * Returns parsed points for animation, or null if no external connection.
+   */
+  getExternalTrainPath(): ReadonlyArray<{ x: number; y: number }> | null {
+    if (!this.hasExternalConnection || !this.railNetwork) return null;
+    if (this.edgeRailCells.length === 0 || this.externalStations.size === 0) return null;
+
+    const edge = this.edgeRailCells[Math.floor(Math.random() * this.edgeRailCells.length)]!;
+    const stationKeys = [...this.externalStations];
+    const stationKey = stationKeys[Math.floor(Math.random() * stationKeys.length)]!;
+
+    const path = this.railNetwork.findPath(toPosKey(edge.x, edge.y), stationKey);
+    if (!path || path.length < 2) return null;
+
+    return path.map(nid => parsePosKeyUnsafe(nid));
   }
 
   // ── Serialization ───────────────────────────────────────────────
