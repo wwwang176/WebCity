@@ -7,11 +7,11 @@ describe('classifyDemolishCell', () => {
     expect(classifyDemolishCell(null, null)).toEqual({ action: 'skip' });
   });
 
-  it('should classify airport cell', () => {
+  it('should classify airport cell as multi_cell_infra', () => {
     const airportBid = getInfraBuildingId('airport');
     const cell = { buildingId: airportBid, railType: 0 };
-    const result = classifyDemolishCell(cell, null);
-    expect(result.action).toBe('airport');
+    const result = classifyDemolishCell(cell, { x: 5, y: 5 });
+    expect(result.action).toBe('multi_cell_infra');
   });
 
   it('should classify multi-cell infra with primary cell', () => {

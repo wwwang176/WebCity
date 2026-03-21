@@ -731,14 +731,6 @@ export class Game {
 
         switch (action.action) {
           case 'skip': break;
-          case 'airport': {
-            const key = `airport:${x},${y}`;
-            if (!demolished.has(key)) {
-              this.removeInfraService('airport', x, y);
-              demolished.add(key);
-            }
-            break;
-          }
           case 'multi_cell_infra': {
             const key = `${action.primaryX},${action.primaryY}`;
             if (!demolished.has(key)) {
@@ -968,7 +960,7 @@ export class Game {
     }
 
     const pop = this.state.citizens.getPopulation();
-    const result = this.state.airport.build(x, y, airportSize, pop);
+    const result = this.state.airport.build(x, y, airportSize, pop, this.currentRotation);
     if (!result) {
       this.state.budget.funds += cost;
       const req = this.state.airport.getPopulationRequired(airportSize);

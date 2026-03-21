@@ -84,6 +84,7 @@ export interface Airport {
   x: number;
   y: number;
   size: AirportSize;
+  rotation: Rotation;
   noisePollution: number;
   touristsPerTick: number;
   cargoPerTick: number;
@@ -137,6 +138,7 @@ export class AirportSystem {
     y: number,
     size: AirportSize,
     currentPopulation: number,
+    rotation: Rotation = 0,
   ): Airport | null {
     const cfg = AIRPORT_SIZE_CONFIG[size];
     if (currentPopulation < cfg.populationRequired) {
@@ -147,6 +149,7 @@ export class AirportSystem {
       id: this.nextId++,
       x,
       y,
+      rotation,
       size,
       noisePollution: cfg.noise,
       touristsPerTick: cfg.tourists,
@@ -199,7 +202,8 @@ export class AirportSystem {
   /** Find the airport whose footprint covers the given cell. Returns null if none. */
   findAtCell(x: number, y: number): Airport | null {
     for (const a of this.airports) {
-      const { w, h } = getAirportDimensions(a.size);
+      const dim = getAirportDimensions(a.size);
+      const { w, h } = getRotatedSize(dim.w, dim.h, a.rotation);
       if (x >= a.x && x < a.x + w && y >= a.y && y < a.y + h) {
         return a;
       }
@@ -227,7 +231,7 @@ export class AirportSystem {
   demolishAtCell(x: number, y: number, clearCell: (cx: number, cy: number) => void): boolean {
     const airport = this.findAtCell(x, y);
     if (!airport) return false;
-    forEachAirportCell(airport.x, airport.y, airport.size, clearCell);
+    forEachAirportCell(airport.x, airport.y, airport.size, clearCell, airport.rotation);
     this.remove(airport.id);
     return true;
   }

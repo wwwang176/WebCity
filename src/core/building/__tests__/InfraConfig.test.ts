@@ -70,9 +70,9 @@ describe('InfraConfig', () => {
     expect(getInfraConfig('school_univ')!.width).toBe(3);
     expect(getInfraConfig('school_univ')!.height).toBe(3);
 
-    // 4x4
-    expect(getInfraConfig('airport')!.width).toBe(4);
-    expect(getInfraConfig('airport')!.height).toBe(4);
+    // 7x6 (max airport size for forEachMultiCell search range)
+    expect(getInfraConfig('airport')!.width).toBe(7);
+    expect(getInfraConfig('airport')!.height).toBe(6);
   });
 
   it('should have correct costs', () => {

@@ -347,19 +347,19 @@ describe('InfraPlacement', () => {
   });
 
   describe('edge cases', () => {
-    it('should place 4x4 airport', () => {
+    it('should place 7x6 airport', () => {
       const grid = makeGrid();
       placeInfraOnGrid(grid, 0, 0, 'airport', 0);
 
       let count = 0;
-      for (let dy = 0; dy < 4; dy++) {
-        for (let dx = 0; dx < 4; dx++) {
+      for (let dy = 0; dy < 6; dy++) {
+        for (let dx = 0; dx < 7; dx++) {
           const cell = grid.getCell(dx, dy)!;
           expect(cell.buildingId).toBe(237);
           count++;
         }
       }
-      expect(count).toBe(16);
+      expect(count).toBe(42);
     });
 
     it('should allow 3x3 placement when zone building exists (auto-demolish)', () => {
@@ -406,8 +406,9 @@ describe('InfraPlacement', () => {
       expect(getInfraCenter(5, 5, 'school_univ', 0)).toEqual({ cx: 6, cy: 6 });
     });
 
-    it('should return offset (2,2) for 4x4 airport', () => {
-      expect(getInfraCenter(5, 5, 'airport', 0)).toEqual({ cx: 7, cy: 7 });
+    it('should return center for 7x6 airport', () => {
+      // Math.floor(7/2)=3, Math.floor(6/2)=3
+      expect(getInfraCenter(5, 5, 'airport', 0)).toEqual({ cx: 8, cy: 8 });
     });
 
     it('should give same center regardless of rotation for 2x3', () => {
@@ -430,8 +431,8 @@ describe('InfraPlacement', () => {
       expect(getInfraCenterById(5, 5, 248)).toEqual({ cx: 5, cy: 5 });
     });
 
-    it('should compute center for 4x4 airport by buildingId', () => {
-      expect(getInfraCenterById(0, 0, 237)).toEqual({ cx: 2, cy: 2 });
+    it('should compute center for 7x6 airport by buildingId', () => {
+      expect(getInfraCenterById(0, 0, 237)).toEqual({ cx: 3, cy: 3 });
     });
 
     it('should return same coords for unknown buildingId', () => {
