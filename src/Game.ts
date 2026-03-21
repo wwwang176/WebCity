@@ -191,8 +191,10 @@ export interface SelectedZoneBuilding {
   services: ServiceStatus;
   abandonmentStress: number;
   isAbandoned: boolean;
-  /** Commercial: supply status ('local' | 'imported' | 'unsupplied'). */
-  freightStatus?: 'local' | 'imported' | 'unsupplied';
+  /** Commercial: supply ratio (0~1). */
+  freightRatio?: number;
+  /** Commercial: supply source ('local' | 'imported' | 'none'). */
+  freightSource?: 'local' | 'imported' | 'none';
   /** Industrial: surplus ratio (0~1). */
   freightSurplusRatio?: number;
   /** Industrial: whether surplus is being exported. */
@@ -1854,7 +1856,8 @@ export class Game {
         },
         abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
         isAbandoned: cell?.reserved === ABANDONED,
-        freightStatus: isCommercialZone(sel.zoneType) ? this.state.freight.getSupplyStatus(x, y) : undefined,
+        freightRatio: isCommercialZone(sel.zoneType) ? this.state.freight.getSupplyStatus(x, y).ratio : undefined,
+        freightSource: isCommercialZone(sel.zoneType) ? this.state.freight.getSupplyStatus(x, y).source : undefined,
         freightSurplusRatio: sel.zoneType === ZoneType.INDUSTRIAL ? this.state.freight.getSurplusRatio() : undefined,
         freightExporting: sel.zoneType === ZoneType.INDUSTRIAL ? this.state.freight.getIsExporting() : undefined,
       };

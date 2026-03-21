@@ -178,14 +178,20 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
 
   // --- Freight ---
 
-  it('commercial without freight supply → +6 stress', () => {
-    const cond = { ...goodConditions(), freightSupplied: false };
+  it('commercial with no freight → +6 stress', () => {
+    const cond = { ...goodConditions(), freightRatio: 0 };
     const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
     expect(result.factors.freight).toBe(6);
   });
 
-  it('commercial with freight supply → no freight stress', () => {
-    const cond = { ...goodConditions(), freightSupplied: true };
+  it('commercial partially supplied → proportional stress', () => {
+    const cond = { ...goodConditions(), freightRatio: 0.5 };
+    const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
+    expect(result.factors.freight).toBeCloseTo(3); // (1-0.5) × 6
+  });
+
+  it('commercial fully supplied → no freight stress', () => {
+    const cond = { ...goodConditions(), freightRatio: 1 };
     const result = calculateAbandonmentStress(ZoneType.COMMERCIAL_LOW, cond);
     expect(result.factors.freight).toBe(0);
   });
@@ -203,7 +209,7 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
   });
 
   it('residential ignores freight conditions', () => {
-    const cond = { ...goodConditions(), freightSupplied: false, freightSurplusRatio: 1.0 };
+    const cond = { ...goodConditions(), freightRatio: 0, freightSurplusRatio: 1.0 };
     const result = calculateAbandonmentStress(ZoneType.RESIDENTIAL_LOW, cond);
     expect(result.factors.freight).toBe(0);
   });

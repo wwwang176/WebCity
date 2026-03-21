@@ -111,10 +111,14 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
   const warnings: Warning[] = [];
 
   // Freight warnings always show (not gated by abandonment stress)
-  if (isCommercialZone(sel.zoneType) && sel.freightStatus) {
-    if (sel.freightStatus === 'unsupplied') {
+  if (isCommercialZone(sel.zoneType) && sel.freightRatio != null) {
+    if (sel.freightRatio === 0) {
       warnings.push({ level: 'red', text: 'No goods to sell' });
-    } else if (sel.freightStatus === 'imported') {
+    } else if (sel.freightRatio < 1) {
+      const pct = Math.round(sel.freightRatio * 100);
+      const label = sel.freightSource === 'imported' ? `Importing goods (${pct}%)` : `Partially supplied (${pct}%)`;
+      warnings.push({ level: sel.freightRatio < 0.5 ? 'red' : 'yellow', text: label });
+    } else if (sel.freightSource === 'imported') {
       warnings.push({ level: 'yellow', text: 'Importing goods' });
     }
   }

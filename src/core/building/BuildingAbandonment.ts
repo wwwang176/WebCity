@@ -13,8 +13,8 @@ export interface AbandonmentConditions {
   buildingLevel: number;
   /** Continuous service score (0~10) based on distance to facilities. */
   serviceScore: number;
-  /** Commercial: true if this building received freight goods. */
-  freightSupplied?: boolean;
+  /** Commercial: supply ratio (0 = no goods, 1 = fully supplied). */
+  freightRatio?: number;
   /** Industrial: surplus ratio (0 = balanced, 1 = storage full). */
   freightSurplusRatio?: number;
 }
@@ -106,9 +106,9 @@ export function calculateAbandonmentStress(
     factors.pollution = (conditions.pollution - 40) * 0.1 * sens.pollution;
   }
 
-  // Freight: commercial without goods, industrial with surplus
-  if (isCommercialZone(zoneType) && conditions.freightSupplied === false) {
-    factors.freight = 6;
+  // Freight: commercial with insufficient goods, industrial with surplus
+  if (isCommercialZone(zoneType) && conditions.freightRatio != null && conditions.freightRatio < 1) {
+    factors.freight = (1 - conditions.freightRatio) * 6;
   }
   if (zoneType === ZoneType.INDUSTRIAL && (conditions.freightSurplusRatio ?? 0) > 0) {
     factors.freight = (conditions.freightSurplusRatio!) * 6;

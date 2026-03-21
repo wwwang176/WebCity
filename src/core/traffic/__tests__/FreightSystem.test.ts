@@ -96,9 +96,10 @@ describe('FreightSystem', () => {
       tradePositions: [{ x: 10, y: 0 }],
     });
 
-    // Mall is near the station → can import
-    expect(freight.getSupplyStatus(10, 1)).toBe('imported');
-    expect(freight.getLastTrade().imported).toBe(8);
+    // Mall gets 3 local + 5 import = 8 total → fully supplied via import top-up
+    expect(freight.getSupplyStatus(10, 1).source).toBe('imported');
+    expect(freight.getSupplyStatus(10, 1).ratio).toBe(1);
+    expect(freight.getLastTrade().imported).toBe(5); // only the import portion
   });
 
   it('should not import to commercial far from trade facility', () => {
@@ -115,7 +116,8 @@ describe('FreightSystem', () => {
       tradePositions: [{ x: 3, y: 0 }],
     });
 
-    expect(freight.getSupplyStatus(15, 1)).toBe('unsupplied');
+    expect(freight.getSupplyStatus(15, 1).source).toBe('none');
+    expect(freight.getSupplyStatus(15, 1).ratio).toBe(0);
   });
 
   it('should export only from factories reachable by trade facility', () => {
@@ -141,22 +143,23 @@ describe('FreightSystem', () => {
     expect(freight.getIsExporting()).toBe(true);
   });
 
-  it('should skip unaffordable commercial but continue BFS past it', () => {
+  it('should partially supply unaffordable commercial and continue BFS', () => {
     // Road: (0,0)-(6,0)
     for (let x = 0; x <= 6; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
     // Factory produces 3
     grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
-    // Big mall (consumes 8) blocks path at (3,1) — budget can't afford
+    // Big mall (consumes 8) at (3,1) — budget can only partially cover
     grid.setCell(3, 1, { zoneType: ZoneType.COMMERCIAL_HIGH, buildingId: 10 });
     // Small shop (consumes 1) behind the mall at (6,1)
     grid.setCell(6, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
 
     freight.calculateSupply(grid);
 
-    // Mall skipped (budget 3 < 8), but BFS continues → small shop gets supplied
-    expect(freight.isSupplied(3, 1)).toBe(false); // mall unsupplied
-    expect(freight.isSupplied(6, 1)).toBe(true);  // shop supplied via road
-    expect(freight.getLocalSuppliedCount()).toBe(1);
+    // Mall gets partial supply: 3/8 = 0.375, budget exhausted
+    expect(freight.getSupplyStatus(3, 1).ratio).toBeCloseTo(3 / 8);
+    expect(freight.isSupplied(3, 1)).toBe(true); // partially supplied counts
+    // Shop behind gets nothing (budget = 0)
+    expect(freight.isSupplied(6, 1)).toBe(false);
   });
 
   it('should report correct production and consumption with per-building rates', () => {
@@ -178,7 +181,7 @@ describe('FreightSystem', () => {
     expect(demand.shortage).toBe(0);
   });
 
-  it('high density commercial should consume more', () => {
+  it('high density commercial gets partial supply when production insufficient', () => {
     for (let x = 0; x <= 2; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
     // 1 factory Lv1 (produces 3) vs 1 Small Mall (consumes 8)
     grid.setCell(0, 1, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
@@ -186,9 +189,10 @@ describe('FreightSystem', () => {
 
     freight.calculateSupply(grid);
 
-    // Factory budget 3 < Mall demand 8 → mall unsupplied
-    expect(freight.isSupplied(2, 1)).toBe(false);
-    expect(freight.getLastDemand().shortage).toBe(8);
+    // Factory budget 3 < Mall demand 8 → partial supply 3/8
+    expect(freight.getSupplyStatus(2, 1).ratio).toBeCloseTo(3 / 8);
+    expect(freight.isSupplied(2, 1)).toBe(true); // partial counts as supplied
+    expect(freight.getLastDemand().shortage).toBe(5); // 8 - 3 = 5 unmet
   });
 
   it('should have zero shortage with no commercial buildings', () => {

@@ -912,7 +912,7 @@ export class SimulationLoop {
         pollution: pollution.ground,
         buildingLevel: building.level,
         serviceScore,
-        freightSupplied: isCommercialZone(cell.zoneType) ? this.state.freight.isSupplied(x, y) : undefined,
+        freightRatio: isCommercialZone(cell.zoneType) ? this.state.freight.getSupplyStatus(x, y).ratio : undefined,
         freightSurplusRatio: cell.zoneType === ZoneType.INDUSTRIAL ? this.state.freight.getSurplusRatio() : undefined,
       };
 

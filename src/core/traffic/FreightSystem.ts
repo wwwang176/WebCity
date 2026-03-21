@@ -23,13 +23,20 @@ export interface TradeResult {
   exportCapacity: number;
 }
 
+export type SupplySource = 'local' | 'imported' | 'none';
+
+export interface SupplyStatus {
+  source: SupplySource;
+  /** 0~1: fraction of demand fulfilled. */
+  ratio: number;
+}
+
 /**
  * FreightSystem tracks the flow of goods from industrial zones (producers)
  * to commercial zones (consumers) via BFS through the road network.
  *
- * After local supply is calculated, trade with external markets fills
- * remaining shortage (import) or absorbs surplus (export) up to the
- * throughput capacity of rail stations and airports.
+ * Supply is proportional: if budget can only partially cover a building's
+ * demand, it receives a partial ratio (e.g. 0.86 = 86% supplied).
  */
 
 /** Per-building freight rates by building ID. */
@@ -68,11 +75,8 @@ export function getConsumptionRate(buildingId: number): number {
 }
 
 export class FreightSystem {
-  /** Position keys of commercial buildings that received local goods. */
-  private suppliedCommercial = new Set<string>();
-  /** Position keys of commercial buildings supplied via import. */
-  private importedCommercial = new Set<string>();
-  /** Whether industrial surplus is being exported. */
+  /** Per-building supply status: source + ratio (0~1). */
+  private commercialSupply = new Map<string, SupplyStatus>();
   private isExporting = false;
   private lastDemand: FreightDemand = { production: 0, consumption: 0, shortage: 0 };
   private lastTrade: TradeResult = { imported: 0, exported: 0, importCapacity: 0, exportCapacity: 0 };
@@ -81,18 +85,16 @@ export class FreightSystem {
   /**
    * Calculate freight supply in two phases:
    * 1. Local BFS from factories — supplies nearby commercial buildings
-   * 2. Trade BFS from trade facilities (stations/airports) — imports for
-   *    remaining unsupplied commercial, marks reachable factories for export
+   * 2. Trade BFS from trade facilities — imports for remaining, marks exportable factories
    *
-   * In both phases, commercial buildings that can't be afforded are skipped
-   * but BFS continues past them (skip-but-continue).
+   * Both phases support proportional supply: if budget partially covers
+   * a building's demand, it gets a fractional ratio.
    */
   calculateSupply(
     grid: Grid,
     tradeCapacity?: {
       importCapacity: number;
       exportCapacity: number;
-      /** Positions of trade facilities (external rail stations + airports). */
       tradePositions?: { x: number; y: number }[];
     },
   ): void {
@@ -115,18 +117,15 @@ export class FreightSystem {
     });
 
     // ── Phase 1: Local supply BFS from factories ──
-    const localSupplied = new Set<string>();
+    this.commercialSupply = new Map();
     let localBudget = totalProduction;
+    let actualConsumed = 0;
     {
       const visited = new Set<string>();
       const queue: [number, number][] = [];
       for (const f of factories) {
         const key = toPosKey(f.x, f.y);
-        if (!visited.has(key)) {
-          visited.add(key);
-          localSupplied.add(key);
-          queue.push([f.x, f.y]);
-        }
+        if (!visited.has(key)) { visited.add(key); queue.push([f.x, f.y]); }
       }
       while (queue.length > 0) {
         const [x, y] = queue.shift()!;
@@ -142,31 +141,17 @@ export class FreightSystem {
 
           if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)) {
             const demand = getConsumptionRate(cell.buildingId);
-            if (demand > 0 && localBudget < demand) {
-              // Can't afford — skip supply but continue BFS
-              queue.push([nx, ny]);
-              continue;
+            if (demand > 0 && localBudget > 0) {
+              const supplied = Math.min(demand, localBudget);
+              localBudget -= supplied;
+              actualConsumed += supplied;
+              this.commercialSupply.set(key, { source: 'local', ratio: supplied / demand });
             }
-            localBudget -= demand;
           }
-          localSupplied.add(key);
           queue.push([nx, ny]);
         }
       }
     }
-
-    // Extract locally supplied commercial
-    this.suppliedCommercial = new Set<string>();
-    this.importedCommercial = new Set<string>();
-    let actualConsumed = 0;
-    grid.forEachCell((cell, x, y) => {
-      if (cell.buildingId === 0) return;
-      if (!isCommercialZone(cell.zoneType as ZoneType)) return;
-      if (localSupplied.has(toPosKey(x, y))) {
-        this.suppliedCommercial.add(toPosKey(x, y));
-        actualConsumed += getConsumptionRate(cell.buildingId);
-      }
-    });
 
     // ── Phase 2: Trade BFS from trade facilities ──
     const importCap = tradeCapacity?.importCapacity ?? 0;
@@ -183,10 +168,7 @@ export class FreightSystem {
 
       for (const tp of tradePositions) {
         const key = toPosKey(tp.x, tp.y);
-        if (!visited.has(key)) {
-          visited.add(key);
-          queue.push([tp.x, tp.y]);
-        }
+        if (!visited.has(key)) { visited.add(key); queue.push([tp.x, tp.y]); }
       }
 
       while (queue.length > 0) {
@@ -206,14 +188,25 @@ export class FreightSystem {
             exportableFactories.add(key);
           }
 
-          // Import: supply unsupplied commercial buildings
-          if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType)
-              && !this.suppliedCommercial.has(key)) {
+          // Import: supply or top-up unsupplied/partial commercial buildings
+          if (cell.buildingId > 0 && isCommercialZone(cell.zoneType as ZoneType) && importBudget > 0) {
             const demand = getConsumptionRate(cell.buildingId);
-            if (demand > 0 && importBudget >= demand) {
-              importBudget -= demand;
-              imported += demand;
-              this.importedCommercial.add(key);
+            if (demand > 0) {
+              const existing = this.commercialSupply.get(key);
+              const alreadySupplied = existing ? existing.ratio * demand : 0;
+              const remaining = demand - alreadySupplied;
+              if (remaining > 0) {
+                const fill = Math.min(remaining, importBudget);
+                importBudget -= fill;
+                imported += fill;
+                actualConsumed += fill;
+                const newRatio = (alreadySupplied + fill) / demand;
+                // If import contributed, mark as 'imported'; keep 'local' only if fully local
+                this.commercialSupply.set(key, {
+                  source: 'imported',
+                  ratio: Math.min(1, newRatio),
+                });
+              }
             }
           }
 
@@ -231,29 +224,25 @@ export class FreightSystem {
         }
       }
       const surplus = totalProduction - totalConsumption;
-      // Export limited by: surplus, exportable production, and throughput capacity
       exported = Math.min(surplus, exportableProduction, exportCap);
     }
 
-    const shortage = totalConsumption - actualConsumed - imported;
+    const shortage = totalConsumption - actualConsumed;
     this.isExporting = exported > 0;
     this.lastDemand = { production: totalProduction, consumption: totalConsumption, shortage: Math.max(0, shortage) };
     this.lastTrade = { imported, exported, importCapacity: importCap, exportCapacity: exportCap };
   }
 
-  /** Building supply status: 'local' | 'imported' | 'unsupplied'. */
-  getSupplyStatus(x: number, y: number): 'local' | 'imported' | 'unsupplied' {
-    if (!this.hasCalculated) return 'local';
-    if (this.lastDemand.production === 0 && this.lastTrade.importCapacity === 0) return 'local';
-    const key = toPosKey(x, y);
-    if (this.suppliedCommercial.has(key)) return 'local';
-    if (this.importedCommercial.has(key)) return 'imported';
-    return 'unsupplied';
+  /** Get supply status for a commercial building. */
+  getSupplyStatus(x: number, y: number): SupplyStatus {
+    if (!this.hasCalculated) return { source: 'local', ratio: 1 };
+    if (this.lastDemand.production === 0 && this.lastTrade.importCapacity === 0) return { source: 'local', ratio: 1 };
+    return this.commercialSupply.get(toPosKey(x, y)) ?? { source: 'none', ratio: 0 };
   }
 
-  /** Backward-compatible: returns true if locally supplied OR imported. */
+  /** Backward-compatible: returns true if any supply (ratio > 0). */
   isSupplied(x: number, y: number): boolean {
-    return this.getSupplyStatus(x, y) !== 'unsupplied';
+    return this.getSupplyStatus(x, y).ratio > 0;
   }
 
   /** Whether industrial surplus is being exported via trade facilities. */
@@ -262,7 +251,6 @@ export class FreightSystem {
   }
 
   /** Surplus ratio (0 = balanced, 1 = 100% overproduction).
-   *  Only positive when production exceeds consumption.
    *  Export reduces effective surplus. */
   getSurplusRatio(): number {
     const { production, consumption } = this.lastDemand;
@@ -272,36 +260,33 @@ export class FreightSystem {
     return Math.min(1, effectiveSurplus / consumption);
   }
 
-  /** Add cargo from external sources (rail freight, airport, etc.).
-   *  @deprecated Use tradeCapacity parameter in calculateSupply instead. */
-  addExternalCargo(_amount: number): void {
-    // No-op: external cargo now handled via trade calculation
-  }
+  /** @deprecated Use tradeCapacity parameter in calculateSupply instead. */
+  addExternalCargo(_amount: number): void {}
 
-  getLastDemand(): FreightDemand {
-    return this.lastDemand;
-  }
+  getLastDemand(): FreightDemand { return this.lastDemand; }
+  getLastTrade(): TradeResult { return this.lastTrade; }
 
-  getLastTrade(): TradeResult {
-    return this.lastTrade;
-  }
-
-  /** Commercial shortage ratio (0 = all supplied, 1 = no supply).
-   *  Import-supplied buildings count as supplied. */
+  /** Commercial shortage ratio based on actual supplied volume. */
   getShortageRatio(): number {
     if (this.lastDemand.consumption === 0) return 0;
     return this.lastDemand.shortage / this.lastDemand.consumption;
   }
 
   getSuppliedCount(): number {
-    return this.suppliedCommercial.size + this.importedCommercial.size;
+    let count = 0;
+    for (const s of this.commercialSupply.values()) { if (s.ratio > 0) count++; }
+    return count;
   }
 
   getLocalSuppliedCount(): number {
-    return this.suppliedCommercial.size;
+    let count = 0;
+    for (const s of this.commercialSupply.values()) { if (s.source === 'local' && s.ratio > 0) count++; }
+    return count;
   }
 
   getImportedCount(): number {
-    return this.importedCommercial.size;
+    let count = 0;
+    for (const s of this.commercialSupply.values()) { if (s.source === 'imported' && s.ratio > 0) count++; }
+    return count;
   }
 }

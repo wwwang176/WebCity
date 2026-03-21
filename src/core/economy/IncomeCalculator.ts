@@ -34,8 +34,8 @@ export interface IncomeCalcDeps {
   getRevenueMultiplier?: (x: number, y: number) => number;
   /** Optional power check — unpowered buildings produce zero income. Defaults to true. */
   isPowered?: (x: number, y: number) => boolean;
-  /** Optional freight supply status: 'local' | 'imported' | 'unsupplied'. */
-  getFreightSupplyStatus?: (x: number, y: number) => 'local' | 'imported' | 'unsupplied';
+  /** Optional freight supply status with ratio. */
+  getFreightSupply?: (x: number, y: number) => { source: string; ratio: number };
   /** Optional freight surplus ratio (0~1) — industrial income reduced proportionally. */
   freightSurplusRatio?: number;
   /** Whether industrial surplus is being exported (reduces surplus income penalty). */
@@ -83,11 +83,17 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
       buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
       if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
       if (isCommercialZone(btype.zoneType)) {
-        // Freight supply status affects commercial income
-        if (deps.getFreightSupplyStatus) {
-          const status = deps.getFreightSupplyStatus(x, y);
-          if (status === 'imported') buildingIncome *= TRADE_IMPORT_MULTIPLIER;
-          else if (status === 'unsupplied') buildingIncome *= 0.5;
+        // Freight supply ratio affects commercial income
+        if (deps.getFreightSupply) {
+          const supply = deps.getFreightSupply(x, y);
+          if (supply.source === 'imported') {
+            buildingIncome *= TRADE_IMPORT_MULTIPLIER * supply.ratio + 0.5 * (1 - supply.ratio);
+          } else if (supply.source === 'none') {
+            buildingIncome *= 0.5;
+          } else {
+            // local: scale between full income and 0.5 based on ratio
+            buildingIncome *= 0.5 + 0.5 * supply.ratio;
+          }
         }
         commercial += buildingIncome;
       } else if (btype.zoneType === ZoneType.INDUSTRIAL) {
