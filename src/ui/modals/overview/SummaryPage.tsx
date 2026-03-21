@@ -151,14 +151,14 @@ export function SummaryPage() {
       <div style="margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
           <span>Supply Rate</span>
-          <span style={{ color: data().freightSupplyRatio >= 1 ? '#66bb6a' : data().freightSupplyRatio >= 0.7 ? '#ffa726' : '#ef5350' }}>
+          <span style={{ color: data().freightSupplyRatio > 1.5 ? '#ef5350' : data().freightSupplyRatio > 1.2 ? '#ffa726' : data().freightSupplyRatio >= 0.8 ? '#66bb6a' : data().freightSupplyRatio >= 0.5 ? '#ffa726' : '#ef5350' }}>
             {(data().freightSupplyRatio * 100).toFixed(0)}%
           </span>
         </div>
         <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
           <div style={{
             width: `${Math.min(100, data().freightSupplyRatio * 100)}%`, height: '100%', 'border-radius': '3px',
-            background: data().freightSupplyRatio >= 1 ? '#66bb6a' : data().freightSupplyRatio >= 0.7 ? '#ffa726' : '#ef5350',
+            background: data().freightSupplyRatio > 1.5 ? '#ef5350' : data().freightSupplyRatio > 1.2 ? '#ffa726' : data().freightSupplyRatio >= 0.8 ? '#66bb6a' : data().freightSupplyRatio >= 0.5 ? '#ffa726' : '#ef5350',
             transition: 'width 0.3s',
           }} />
         </div>
