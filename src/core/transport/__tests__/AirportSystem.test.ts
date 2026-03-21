@@ -125,37 +125,37 @@ describe('canPlaceInfra for airport (via overrideSize)', () => {
 
   it('should allow SMALL placement with adjacent road', () => {
     const grid = makeAirportGrid('SMALL', 5, 5);
-    expect(canPlaceInfra(grid, 5, 5, 'airport', 0, undefined, airportSize('SMALL'))).toEqual({ ok: true });
+    expect(canPlaceInfra(grid, 5, 5, 'airport_s', 0, undefined, airportSize('SMALL'))).toEqual({ ok: true });
   });
 
   it('should reject when cell has rail track', () => {
     const grid = makeAirportGrid('SMALL', 5, 5, { railAt: '6,5' });
-    const result = canPlaceInfra(grid, 5, 5, 'airport', 0, undefined, airportSize('SMALL'));
+    const result = canPlaceInfra(grid, 5, 5, 'airport_s', 0, undefined, airportSize('SMALL'));
     expect(result.ok).toBe(false);
   });
 
   it('should reject when no adjacent road', () => {
     const grid = makeAirportGrid('SMALL', 5, 5, { noRoad: true });
-    const result = canPlaceInfra(grid, 5, 5, 'airport', 0, undefined, airportSize('SMALL'));
+    const result = canPlaceInfra(grid, 5, 5, 'airport_s', 0, undefined, airportSize('SMALL'));
     expect(result.ok).toBe(false);
   });
 
   it('should reject out of bounds', () => {
     const grid = new Grid(5, 5);
     grid.setCell(3, 2, { roadType: RoadType.TWO_LANE });
-    const result = canPlaceInfra(grid, 3, 3, 'airport', 0, undefined, airportSize('SMALL'));
+    const result = canPlaceInfra(grid, 3, 3, 'airport_s', 0, undefined, airportSize('SMALL'));
     expect(result.ok).toBe(false);
   });
 
   it('should check MEDIUM footprint (5×4)', () => {
     const grid = makeAirportGrid('MEDIUM', 10, 10);
-    expect(canPlaceInfra(grid, 10, 10, 'airport', 0, undefined, airportSize('MEDIUM'))).toEqual({ ok: true });
+    expect(canPlaceInfra(grid, 10, 10, 'airport_m', 0, undefined, airportSize('MEDIUM'))).toEqual({ ok: true });
   });
 
   it('should swap dimensions when rotated 90°', () => {
     // SMALL 3×2 → rotated 90° → 2×3
     const grid = makeAirportGrid('SMALL', 5, 5);
-    expect(canPlaceInfra(grid, 5, 5, 'airport', 90, undefined, airportSize('SMALL'))).toEqual({ ok: true });
+    expect(canPlaceInfra(grid, 5, 5, 'airport_s', 90, undefined, airportSize('SMALL'))).toEqual({ ok: true });
   });
 });
 

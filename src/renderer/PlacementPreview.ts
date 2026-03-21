@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { getInfraConfig, getRotatedSize, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { canPlaceInfra } from '../core/building/InfraPlacement';
-import { getAirportDimensions, type AirportSize } from '../core/transport/AirportSystem';
 import { Grid } from '../core/grid/Grid';
 import type { BuildingRenderer } from './BuildingRenderer';
 
@@ -38,7 +37,6 @@ export class PlacementPreview {
   private scene: THREE.Scene;
   private buildingRenderer: BuildingRenderer;
   private currentType: string | null = null;
-  private currentAirportSize: string = '';
   private currentRotation: Rotation = 0;
   private material: THREE.MeshBasicMaterial;
 
@@ -73,28 +71,19 @@ export class PlacementPreview {
     grid: Grid,
     funds: number,
     groundwaterFn?: (x: number, y: number) => number,
-    airportSize?: AirportSize,
   ): void {
     const cfg = getInfraConfig(type);
     if (!cfg) { this.hide(); return; }
 
-    // Rebuild ghost mesh if type or airport size changed
-    const sizeKey = type === 'airport' ? (airportSize ?? 'SMALL') : '';
-    if (this.currentType !== type || this.currentAirportSize !== sizeKey) {
-      this.currentAirportSize = sizeKey;
-      this.rebuildGhost(type, sizeKey);
+    // Rebuild ghost mesh if type changed
+    if (this.currentType !== type) {
+      this.rebuildGhost(type);
     }
 
     if (!this.group) return;
 
     // Position at cursor — all infra uses top-left-based placement
-    let w: number, h: number;
-    if (type === 'airport') {
-      const dim = getAirportDimensions(airportSize ?? 'SMALL');
-      ({ w, h } = getRotatedSize(dim.w, dim.h, rotation));
-    } else {
-      ({ w, h } = getRotatedSize(cfg.width, cfg.height, rotation));
-    }
+    const { w, h } = getRotatedSize(cfg.width, cfg.height, rotation);
     const offsetX = (w - 1) / 2;
     const offsetZ = (h - 1) / 2;
     this.group.position.set(gridX + offsetX, 0, gridY + offsetZ);
@@ -103,11 +92,8 @@ export class PlacementPreview {
     this.group.rotation.y = (rotation * Math.PI) / 180;
     this.currentRotation = rotation;
 
-    // Check placement validity — airport passes override size, others use InfraConfig
-    const overrideSize = type === 'airport' && airportSize
-      ? (() => { const d = getAirportDimensions(airportSize); return { width: d.w, height: d.h }; })()
-      : undefined;
-    const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn, overrideSize);
+    // Check placement validity
+    const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn);
     const valid = check.ok && funds >= cfg.cost;
 
     this.material.color.set(valid ? GREEN : RED);
@@ -255,7 +241,7 @@ export class PlacementPreview {
     this.material.dispose();
   }
 
-  private rebuildGhost(type: InfraType, airportSize?: string): void {
+  private rebuildGhost(type: InfraType): void {
     this.disposeGhost();
     this.currentType = type;
 
@@ -265,7 +251,7 @@ export class PlacementPreview {
     this.group = new THREE.Group();
 
     // Build the actual building model into the group
-    this.buildingRenderer.buildPreviewModel(type, this.group, airportSize);
+    this.buildingRenderer.buildPreviewModel(type, this.group);
 
     // Replace all materials with ghost material and disable shadows
     this.group.traverse((child) => {

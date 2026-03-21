@@ -27,7 +27,9 @@ const INFRA_ICONS: Record<string, string> = {
   cemetery: '\u26B0',
   power: '\u26A1',
   water: '\u{1F4A7}',
-  airport: '\u2708',
+  airport_s: '\u2708',
+  airport_m: '\u2708',
+  airport_l: '\u2708',
 };
 
 const TRANSPORT_ICONS: Record<string, string> = {

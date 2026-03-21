@@ -81,7 +81,7 @@ describe('TRANSPORT_TO_INFRA_TYPE', () => {
     expect(TRANSPORT_TO_INFRA_TYPE.metro).toBe('metro_station');
     expect(TRANSPORT_TO_INFRA_TYPE.rail).toBe('train_station');
     expect(TRANSPORT_TO_INFRA_TYPE.ferry).toBe('ferry_dock');
-    expect(TRANSPORT_TO_INFRA_TYPE.airport).toBe('airport');
+    expect(TRANSPORT_TO_INFRA_TYPE.airport).toBe('airport_s');
   });
 
   it('should have an entry for every transport stop type', () => {

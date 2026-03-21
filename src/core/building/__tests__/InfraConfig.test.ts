@@ -16,7 +16,7 @@ describe('InfraConfig', () => {
   const ALL_TYPES: InfraType[] = [
     'park', 'police', 'fire', 'school', 'power', 'water',
     'garbage', 'sewage', 'cemetery', 'hospital', 'school_high',
-    'school_univ', 'airport',
+    'school_univ', 'airport_s', 'airport_m', 'airport_l',
   ];
 
   it('should have config for every infrastructure type', () => {
@@ -45,7 +45,9 @@ describe('InfraConfig', () => {
     expect(getInfraConfig('cemetery')!.buildingId).toBe(245);
     expect(getInfraConfig('school_high')!.buildingId).toBe(244);
     expect(getInfraConfig('school_univ')!.buildingId).toBe(243);
-    expect(getInfraConfig('airport')!.buildingId).toBe(237);
+    expect(getInfraConfig('airport_s')!.buildingId).toBe(237);
+    expect(getInfraConfig('airport_m')!.buildingId).toBe(236);
+    expect(getInfraConfig('airport_l')!.buildingId).toBe(235);
   });
 
   it('should have correct dimensions', () => {
@@ -70,9 +72,17 @@ describe('InfraConfig', () => {
     expect(getInfraConfig('school_univ')!.width).toBe(3);
     expect(getInfraConfig('school_univ')!.height).toBe(3);
 
-    // 7x6 (max airport size for forEachMultiCell search range)
-    expect(getInfraConfig('airport')!.width).toBe(7);
-    expect(getInfraConfig('airport')!.height).toBe(6);
+    // airport_s: 3x2
+    expect(getInfraConfig('airport_s')!.width).toBe(3);
+    expect(getInfraConfig('airport_s')!.height).toBe(2);
+
+    // airport_m: 5x4
+    expect(getInfraConfig('airport_m')!.width).toBe(5);
+    expect(getInfraConfig('airport_m')!.height).toBe(4);
+
+    // airport_l: 7x6 (max airport size for forEachMultiCell search range)
+    expect(getInfraConfig('airport_l')!.width).toBe(7);
+    expect(getInfraConfig('airport_l')!.height).toBe(6);
   });
 
   it('should have correct costs', () => {
@@ -110,7 +120,9 @@ describe('InfraConfig', () => {
       expect(getInfraConfigById(254)!.type).toBe('power');
       expect(getInfraConfigById(248)!.type).toBe('park');
       expect(getInfraConfigById(243)!.type).toBe('school_univ');
-      expect(getInfraConfigById(237)!.type).toBe('airport');
+      expect(getInfraConfigById(237)!.type).toBe('airport_s');
+      expect(getInfraConfigById(236)!.type).toBe('airport_m');
+      expect(getInfraConfigById(235)!.type).toBe('airport_l');
     });
 
     it('should resolve every infrastructure buildingId to correct type', () => {
@@ -120,7 +132,7 @@ describe('InfraConfig', () => {
         [250, 'hospital'], [249, 'school'], [248, 'park'], [247, 'garbage'],
         [246, 'sewage'], [245, 'cemetery'], [244, 'school_high'], [243, 'school_univ'],
         [242, 'bus_stop'], [241, 'metro_station'], [239, 'train_station'],
-        [238, 'ferry_dock'], [237, 'airport'],
+        [238, 'ferry_dock'], [237, 'airport_s'], [236, 'airport_m'], [235, 'airport_l'],
       ];
       for (const [id, type] of expected) {
         const cfg = getInfraConfigById(id);
@@ -161,10 +173,10 @@ describe('InfraConfig', () => {
       }
     });
 
-    it('should return false for zone building ids (1-236)', () => {
+    it('should return false for zone building ids (1-234)', () => {
       expect(isInfrastructureBuilding(1)).toBe(false);
       expect(isInfrastructureBuilding(100)).toBe(false);
-      expect(isInfrastructureBuilding(236)).toBe(false);
+      expect(isInfrastructureBuilding(234)).toBe(false);
     });
 
     it('should return false for 0 (empty cell)', () => {
@@ -173,10 +185,10 @@ describe('InfraConfig', () => {
   });
 
   describe('isZoneBuilding', () => {
-    it('should return true for zone building ids (1-236)', () => {
+    it('should return true for zone building ids (1-234)', () => {
       expect(isZoneBuilding(1)).toBe(true);
       expect(isZoneBuilding(100)).toBe(true);
-      expect(isZoneBuilding(236)).toBe(true);
+      expect(isZoneBuilding(234)).toBe(true);
     });
 
     it('should return false for infrastructure buildingIds', () => {
@@ -194,7 +206,9 @@ describe('InfraConfig', () => {
     it('returns the correct buildingId for known types', () => {
       expect(getInfraBuildingId('park')).toBe(248);
       expect(getInfraBuildingId('power')).toBe(254);
-      expect(getInfraBuildingId('airport')).toBe(237);
+      expect(getInfraBuildingId('airport_s')).toBe(237);
+      expect(getInfraBuildingId('airport_m')).toBe(236);
+      expect(getInfraBuildingId('airport_l')).toBe(235);
     });
 
     it('returns consistent values with getInfraConfig', () => {

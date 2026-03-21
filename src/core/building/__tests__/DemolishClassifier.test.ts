@@ -8,7 +8,7 @@ describe('classifyDemolishCell', () => {
   });
 
   it('should classify airport cell as multi_cell_infra', () => {
-    const airportBid = getInfraBuildingId('airport');
+    const airportBid = getInfraBuildingId('airport_s');
     const cell = { buildingId: airportBid, railType: 0 };
     const result = classifyDemolishCell(cell, { x: 5, y: 5 });
     expect(result.action).toBe('multi_cell_infra');

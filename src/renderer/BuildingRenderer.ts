@@ -6,7 +6,6 @@ import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, typ
 import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
-import { getAirportDimensions } from '../core/transport/AirportSystem';
 import { disposeGroup } from './disposeGroup';
 
 // ===== Deterministic pseudo-random based on position =====
@@ -1112,7 +1111,7 @@ export class BuildingRenderer {
 
   // ─── Full rebuild (init / save load) ───────────────────────────
 
-  build(scene: THREE.Scene, grid: Grid, airportSizeLookup?: (x: number, y: number) => string | undefined): void {
+  build(scene: THREE.Scene, grid: Grid): void {
     this.initVariantMeshes(scene);
     this.disposeNonPersistent(scene);
 
@@ -1125,7 +1124,7 @@ export class BuildingRenderer {
     this.positionToInstance.clear();
 
     const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
-    const infraCells: { x: number; y: number; type: InfraType; reserved: number; airportSize?: string }[] = [];
+    const infraCells: { x: number; y: number; type: InfraType; reserved: number }[] = [];
     const lightPositions: { x: number; y: number }[] = [];
 
     for (let y = 0; y < grid.height; y++) {
@@ -1136,7 +1135,7 @@ export class BuildingRenderer {
 
         const infraCfg = getInfraConfigById(cell.buildingId);
         if (infraCfg) {
-          infraCells.push({ x, y, type: infraCfg.type, reserved: cell.reserved, airportSize: infraCfg.type === 'airport' && airportSizeLookup ? airportSizeLookup(x, y) : undefined });
+          infraCells.push({ x, y, type: infraCfg.type, reserved: cell.reserved });
           lightPositions.push({ x, y });
           continue;
         }
@@ -1199,25 +1198,17 @@ export class BuildingRenderer {
     }
   }
 
-  private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: InfraType; reserved: number; airportSize?: string }[]): void {
+  private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: InfraType; reserved: number }[]): void {
     for (const inf of cells) {
       const cfg = getInfraConfig(inf.type);
       const rotationDeg = RESERVED_TO_ROTATION[inf.reserved] ?? 0;
 
       // All infra uses top-left placement — convert to center for 3D positioning
-      let centerX: number, centerZ: number;
-      if (inf.type === 'airport' && inf.airportSize) {
-        const dim = getAirportDimensions(inf.airportSize as 'SMALL' | 'MEDIUM' | 'LARGE');
-        const { w, h } = getRotatedSize(dim.w, dim.h, rotationDeg as Rotation);
-        centerX = inf.x + (w - 1) / 2;
-        centerZ = inf.y + (h - 1) / 2;
-      } else {
-        const { w, h } = cfg
-          ? getRotatedSize(cfg.width, cfg.height, rotationDeg as Rotation)
-          : { w: 1, h: 1 };
-        centerX = inf.x + (w - 1) / 2;
-        centerZ = inf.y + (h - 1) / 2;
-      }
+      const { w, h } = cfg
+        ? getRotatedSize(cfg.width, cfg.height, rotationDeg as Rotation)
+        : { w: 1, h: 1 };
+      const centerX = inf.x + (w - 1) / 2;
+      const centerZ = inf.y + (h - 1) / 2;
 
       const group = new THREE.Group();
       group.position.set(centerX, 0, centerZ);
@@ -1238,12 +1229,12 @@ export class BuildingRenderer {
    * Used by PlacementPreview to show the actual building shape as a ghost.
    * Meshes are NOT tracked in this.meshes so they won't interfere with normal rendering.
    */
-  buildPreviewModel(type: InfraType, group: THREE.Group, airportSize?: string): void {
-    this.buildModel(type, group, airportSize);
+  buildPreviewModel(type: InfraType, group: THREE.Group): void {
+    this.buildModel(type, group);
   }
 
   /** Dispatch to the appropriate build method. Always scale=1 since models are pre-sized. */
-  private buildModel(type: InfraType, group: THREE.Group, airportSize?: string): void {
+  private buildModel(type: InfraType, group: THREE.Group): void {
     switch (type) {
       case 'power':     this.buildPowerPlant(group, 0, 0); break;
       case 'water':     this.buildWaterPump(group, 0, 0); break;
@@ -1261,7 +1252,9 @@ export class BuildingRenderer {
       case 'metro_station': this.buildMetroStation(group, 0, 0); break;
       case 'train_station': this.buildTrainStation(group, 0, 0); break;
       case 'ferry_dock':   this.buildFerryDock(group, 0, 0); break;
-      case 'airport':      this.buildAirport(group, 0, 0, airportSize as 'SMALL' | 'MEDIUM' | 'LARGE' | undefined); break;
+      case 'airport_s':    this.buildAirportSmall(group, 0, 0); break;
+      case 'airport_m':    this.buildAirportMedium(group, 0, 0); break;
+      case 'airport_l':    this.buildAirportLarge(group, 0, 0); break;
       default:          this.buildCivicBuilding(group, 0, 0, type); break;
     }
   }
@@ -2770,13 +2763,6 @@ export class BuildingRenderer {
     const railRGeo = new THREE.BoxGeometry(0.01, 0.06, 0.50);
     railRGeo.translate(0.37, 0.07, 0.15);
     this.addInfraMesh(scene, railRGeo, railMat, cx, y0, cz);
-  }
-
-  private buildAirport(scene: THREE.Scene | THREE.Group, cx: number, cz: number, size?: 'SMALL' | 'MEDIUM' | 'LARGE'): void {
-    const s = size ?? 'SMALL';
-    if (s === 'SMALL') this.buildAirportSmall(scene, cx, cz);
-    else if (s === 'MEDIUM') this.buildAirportMedium(scene, cx, cz);
-    else this.buildAirportLarge(scene, cx, cz);
   }
 
   // ── SMALL Airport (3×2) ─────────────────────────────────────

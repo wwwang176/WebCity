@@ -41,7 +41,7 @@ import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
 import { isResidentialZone } from './core/grid/types';
 import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
-import { getAirportBuildCost, getAirportFootprint, getAirportDimensions, placeAirportOnGrid, type AirportSize } from './core/transport/AirportSystem';
+import { type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
 import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
 import { PedestrianRenderer, cullPedestrians } from './renderer/PedestrianRenderer';
@@ -94,6 +94,11 @@ const AIRPORT_TOOL_SIZE: Partial<Record<ToolType, AirportSize>> = {
 };
 function isAirportTool(tool: ToolType): boolean { return tool in AIRPORT_TOOL_SIZE; }
 function getAirportToolSize(tool: ToolType): AirportSize { return AIRPORT_TOOL_SIZE[tool] ?? 'SMALL'; }
+
+/** Map airport tool to InfraType. */
+const AIRPORT_TOOL_INFRA: Partial<Record<ToolType, InfraType>> = {
+  airport_s: 'airport_s', airport_m: 'airport_m', airport_l: 'airport_l',
+};
 
 /** Map of tool types that directly delegate to placeInfrastructure (DRY). */
 const TOOL_TO_INFRA: Partial<Record<ToolType, InfraType>> = {
@@ -907,9 +912,9 @@ export class Game {
       this.showNotification(getBuildReasonMessage(check.reason), 3);
       return;
     }
-    const infraCfg = getInfraConfig(TRANSPORT_TO_INFRA_TYPE[type]!);
-    const baseCost = infraCfg?.cost ?? 500;
-    const cost = type === 'airport' ? getAirportBuildCost(getAirportToolSize(this.currentTool)) : baseCost;
+    const airportInfra = AIRPORT_TOOL_INFRA[this.currentTool];
+    const infraCfg = getInfraConfig(airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!);
+    const cost = infraCfg?.cost ?? 500;
     if (!this.tryDeductFunds(cost)) return;
 
     if (type === 'bus') {
@@ -952,10 +957,10 @@ export class Game {
   /** Place an airport at (x,y). Returns true on success, false (with funds refunded) on failure. */
   private placeAirport(x: number, y: number, cost: number): boolean {
     const airportSize: AirportSize = getAirportToolSize(this.currentTool);
+    const infraType = AIRPORT_TOOL_INFRA[this.currentTool]!;
 
-    // Validate footprint — reuse canPlaceInfra with override size
-    const dim = getAirportDimensions(airportSize);
-    const check = canPlaceInfra(this.state.grid, x, y, 'airport', this.currentRotation, undefined, { width: dim.w, height: dim.h });
+    // Validate footprint — standard canPlaceInfra (correct dimensions from InfraConfig)
+    const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation);
     if (!check.ok) {
       this.state.budget.funds += cost;
       this.showNotification(getBuildReasonMessage(check.reason));
@@ -971,8 +976,8 @@ export class Game {
       return false;
     }
 
-    // Set all NxN cells to airport buildingId (delegated to core — SRP)
-    placeAirportOnGrid(this.state.grid, x, y, airportSize, getInfraBuildingId('airport'), this.currentRotation);
+    // Place on grid — standard placeInfraOnGrid (correct dimensions from InfraConfig)
+    placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
     this.audioManager.playSfx('build');
     this.dirty.buildings = true;
     return true;
@@ -1089,10 +1094,7 @@ export class Game {
       d.crossings = false;
     }
     if (d.buildings) {
-      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid, (x, y) => {
-        const ap = this.state.airport.findAtCell(x, y);
-        return ap?.size;
-      });
+      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
       if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
       d.buildings = false;
     }
@@ -1304,16 +1306,10 @@ export class Game {
           const py = primary?.y ?? y;
           const center = getInfraCenterById(px, py, cell.buildingId);
           const details = this.getInfraDetails(cls.config.type, center.cx, center.cy);
-          // Airport has dynamic cost based on size; other infra uses fixed InfraConfig cost
-          let infraCost = cls.config.cost;
-          if (cls.config.type === 'airport') {
-            const ap = this.state.airport.findAtCell(x, y);
-            if (ap) infraCost = getAirportBuildCost(ap.size);
-          }
           this.selectedBuilding = {
             kind: 'infra', x, y,
             infraType: cls.config.type, name: cls.config.name,
-            cost: infraCost, details,
+            cost: cls.config.cost, details,
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -1369,15 +1365,10 @@ export class Game {
   }
 
   private updateCursorSize(): void {
-    if (isAirportTool(this.currentTool)) {
-      const { w, h } = getAirportDimensions(getAirportToolSize(this.currentTool));
-      const rotated = getRotatedSize(w, h, this.currentRotation);
-      this.gridCursor.setSize(rotated.w, rotated.h);
-      return;
-    }
-    const cfg = isInfraType(this.currentTool)
-      ? getInfraConfig(this.currentTool as InfraType)
-      : null;
+    const airportInfra = AIRPORT_TOOL_INFRA[this.currentTool];
+    const cfg = airportInfra
+      ? getInfraConfig(airportInfra)
+      : isInfraType(this.currentTool) ? getInfraConfig(this.currentTool as InfraType) : null;
     if (cfg) {
       const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
       this.gridCursor.setSize(w, h);
@@ -1471,7 +1462,7 @@ export class Game {
     this.reapplyOverlayHighlight();
 
     if (this.isInfraTool(this.currentTool)) {
-      const infraType = isAirportTool(this.currentTool) ? 'airport' as InfraType : this.currentTool as InfraType;
+      const infraType = AIRPORT_TOOL_INFRA[this.currentTool] ?? this.currentTool as InfraType;
       const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
       this.placementPreview.updateInfra(
         infraType,
@@ -1481,7 +1472,6 @@ export class Game {
         this.state.grid,
         this.state.budget.funds,
         groundwaterFn,
-        isAirportTool(this.currentTool) ? getAirportToolSize(this.currentTool) : undefined,
       );
 
       // Coverage preview overwrites overlay with merged data (existing + new)

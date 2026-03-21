@@ -347,15 +347,15 @@ describe('InfraPlacement', () => {
   });
 
   describe('edge cases', () => {
-    it('should place 7x6 airport', () => {
+    it('should place 7x6 airport_l', () => {
       const grid = makeGrid();
-      placeInfraOnGrid(grid, 0, 0, 'airport', 0);
+      placeInfraOnGrid(grid, 0, 0, 'airport_l', 0);
 
       let count = 0;
       for (let dy = 0; dy < 6; dy++) {
         for (let dx = 0; dx < 7; dx++) {
           const cell = grid.getCell(dx, dy)!;
-          expect(cell.buildingId).toBe(237);
+          expect(cell.buildingId).toBe(235);
           count++;
         }
       }
@@ -406,9 +406,9 @@ describe('InfraPlacement', () => {
       expect(getInfraCenter(5, 5, 'school_univ', 0)).toEqual({ cx: 6, cy: 6 });
     });
 
-    it('should return center for 7x6 airport', () => {
+    it('should return center for 7x6 airport_l', () => {
       // Math.floor(7/2)=3, Math.floor(6/2)=3
-      expect(getInfraCenter(5, 5, 'airport', 0)).toEqual({ cx: 8, cy: 8 });
+      expect(getInfraCenter(5, 5, 'airport_l', 0)).toEqual({ cx: 8, cy: 8 });
     });
 
     it('should give same center regardless of rotation for 2x3', () => {
@@ -431,8 +431,8 @@ describe('InfraPlacement', () => {
       expect(getInfraCenterById(5, 5, 248)).toEqual({ cx: 5, cy: 5 });
     });
 
-    it('should compute center for 7x6 airport by buildingId', () => {
-      expect(getInfraCenterById(0, 0, 237)).toEqual({ cx: 3, cy: 3 });
+    it('should compute center for 7x6 airport_l by buildingId', () => {
+      expect(getInfraCenterById(0, 0, 235)).toEqual({ cx: 3, cy: 3 });
     });
 
     it('should return same coords for unknown buildingId', () => {
