@@ -73,20 +73,31 @@ export class RailNetwork extends GraphNetwork {
  * Extracted from Game.ts for SRP — pure grid→graph construction.
  */
 export function rebuildRailNetworkFromGrid(
-  grid: { width: number; height: number; getCell(x: number, y: number): { railType: number; railFlags: number } | null },
+  grid: { width: number; height: number; getCell(x: number, y: number): { railType: number; railFlags: number } | null; setCell?(x: number, y: number, partial: Record<string, unknown>): void },
   railNetwork: RailNetwork,
 ): void {
   for (let y = 0; y < grid.height; y++) {
     for (let x = 0; x < grid.width; x++) {
       const cell = grid.getCell(x, y);
       if (!cell || cell.railType === RailType.NONE) continue;
+
+      // Fix legacy saves: ensure edge rail cells have outward flags
+      let flags = cell.railFlags;
+      if (x === 0) flags |= TrackDirection.WEST;
+      if (x === grid.width - 1) flags |= TrackDirection.EAST;
+      if (y === 0) flags |= TrackDirection.NORTH;
+      if (y === grid.height - 1) flags |= TrackDirection.SOUTH;
+      if (flags !== cell.railFlags && grid.setCell) {
+        grid.setCell(x, y, { railFlags: flags });
+      }
+
       const id = `${x},${y}`;
       railNetwork.addNode(id);
       // Connect to south/east neighbors to avoid duplicate edges
-      if ((cell.railFlags & TrackDirection.SOUTH) !== 0) {
+      if ((flags & TrackDirection.SOUTH) !== 0 && y < grid.height - 1) {
         railNetwork.addEdge(id, `${x},${y + 1}`);
       }
-      if ((cell.railFlags & TrackDirection.EAST) !== 0) {
+      if ((flags & TrackDirection.EAST) !== 0 && x < grid.width - 1) {
         railNetwork.addEdge(id, `${x + 1},${y}`);
       }
     }

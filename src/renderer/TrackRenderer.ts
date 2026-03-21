@@ -31,6 +31,50 @@ interface TrackCell { x: number; y: number; railFlags: number }
 interface Strip { x: number; z: number; sx: number; sz: number; rotY: number }
 interface Tie { x: number; z: number; rotY: number }
 
+/** Length of the visual extension beyond the map edge. */
+const EDGE_EXTEND = 0.5;
+
+/** Generate extension strips for a rail cell at the map edge. */
+function edgeExtensionStrips(
+  cx: number, cz: number, flags: number,
+  mapW: number, mapH: number, width: number,
+): { ballast: Strip[]; rails: Strip[]; ties: Tie[] } {
+  const ballast: Strip[] = [];
+  const rails: Strip[] = [];
+  const ties: Tie[] = [];
+  const gauge = TRACK_WIDTH * 0.7;
+  const rw = 0.012;
+  const spacing = 0.18;
+  const tieCount = Math.floor(EDGE_EXTEND / spacing);
+
+  const extend = (dx: number, dz: number, isVert: boolean) => {
+    const ex = cx + dx * (0.5 + EDGE_EXTEND / 2);
+    const ez = cz + dz * (0.5 + EDGE_EXTEND / 2);
+    if (isVert) {
+      ballast.push({ x: ex, z: ez, sx: width, sz: EDGE_EXTEND, rotY: 0 });
+      rails.push({ x: ex - gauge / 2, z: ez, sx: rw, sz: EDGE_EXTEND, rotY: 0 });
+      rails.push({ x: ex + gauge / 2, z: ez, sx: rw, sz: EDGE_EXTEND, rotY: 0 });
+      for (let i = 0; i < tieCount; i++) {
+        ties.push({ x: cx, z: cz + dz * (0.6 + i * spacing), rotY: 0 });
+      }
+    } else {
+      ballast.push({ x: ex, z: ez, sx: EDGE_EXTEND, sz: width, rotY: 0 });
+      rails.push({ x: ex, z: ez - gauge / 2, sx: EDGE_EXTEND, sz: rw, rotY: 0 });
+      rails.push({ x: ex, z: ez + gauge / 2, sx: EDGE_EXTEND, sz: rw, rotY: 0 });
+      for (let i = 0; i < tieCount; i++) {
+        ties.push({ x: cx + dx * (0.6 + i * spacing), z: cz, rotY: Math.PI / 2 });
+      }
+    }
+  };
+
+  if (cz === 0 && (flags & TrackDirection.NORTH)) extend(0, -1, true);
+  if (cz === mapH - 1 && (flags & TrackDirection.SOUTH)) extend(0, 1, true);
+  if (cx === 0 && (flags & TrackDirection.WEST)) extend(-1, 0, false);
+  if (cx === mapW - 1 && (flags & TrackDirection.EAST)) extend(1, 0, false);
+
+  return { ballast, rails, ties };
+}
+
 // ── Decomposition ──────────────────────────────────────────
 
 export function decomposeFlags(flags: number) {
@@ -148,14 +192,26 @@ export class TrackRenderer {
     }
     if (cells.length === 0) return;
 
-    this.buildBallast(scene, cells);
-    this.buildRails(scene, cells);
-    this.buildTies(scene, cells);
+    // Collect edge extensions for all edge rail cells
+    const extBallast: Strip[] = [];
+    const extRails: Strip[] = [];
+    const extTies: Tie[] = [];
+    const w = TRACK_WIDTH + 0.06;
+    for (const c of cells) {
+      const ext = edgeExtensionStrips(c.x, c.y, c.railFlags, grid.width, grid.height, w);
+      extBallast.push(...ext.ballast);
+      extRails.push(...ext.rails);
+      extTies.push(...ext.ties);
+    }
+
+    this.buildBallast(scene, cells, extBallast);
+    this.buildRails(scene, cells, extRails);
+    this.buildTies(scene, cells, extTies);
   }
 
   // ── Ballast ────────────────────────────────────────────
 
-  private buildBallast(scene: THREE.Scene, cells: TrackCell[]): void {
+  private buildBallast(scene: THREE.Scene, cells: TrackCell[], extensions: Strip[]): void {
     const strips: Strip[] = [];
     const w = TRACK_WIDTH + 0.06;
 
@@ -173,6 +229,7 @@ export class TrackRenderer {
         strips.push(orphanBallast(c.x, c.y, dir, w));
       }
     }
+    strips.push(...extensions);
 
     if (strips.length === 0) return;
     const geo = new THREE.BoxGeometry(1, 0.02, 1);
@@ -183,7 +240,7 @@ export class TrackRenderer {
 
   // ── Rails ──────────────────────────────────────────────
 
-  private buildRails(scene: THREE.Scene, cells: TrackCell[]): void {
+  private buildRails(scene: THREE.Scene, cells: TrackCell[], extensions: Strip[]): void {
     const strips: Strip[] = [];
     const gauge = TRACK_WIDTH * 0.7;
     const rw = 0.012;
@@ -209,6 +266,7 @@ export class TrackRenderer {
         strips.push(...orphanRails(c.x, c.y, dir, gauge, rw));
       }
     }
+    strips.push(...extensions);
 
     if (strips.length === 0) return;
     const geo = new THREE.BoxGeometry(1, 0.015, 1);
@@ -218,7 +276,7 @@ export class TrackRenderer {
 
   // ── Ties ───────────────────────────────────────────────
 
-  private buildTies(scene: THREE.Scene, cells: TrackCell[]): void {
+  private buildTies(scene: THREE.Scene, cells: TrackCell[], extensions: Tie[]): void {
     const ties: Tie[] = [];
     const spacing = 0.18;
 
@@ -249,6 +307,7 @@ export class TrackRenderer {
         ties.push(...orphanTies(c.x, c.y, dir));
       }
     }
+    ties.push(...extensions);
 
     if (ties.length === 0) return;
 

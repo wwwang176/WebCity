@@ -9,6 +9,16 @@ import { RailType, TrackDirection, RAIL, type BuildTrackResult } from './types';
 
 const nodeId = toPosKey;
 
+/** Add outward direction flag for rail cells on the map edge. */
+function getEdgeOutwardFlag(x: number, y: number, width: number, height: number): number {
+  let flag = 0;
+  if (x === 0) flag |= TrackDirection.WEST;
+  if (x === width - 1) flag |= TrackDirection.EAST;
+  if (y === 0) flag |= TrackDirection.NORTH;
+  if (y === height - 1) flag |= TrackDirection.SOUTH;
+  return flag;
+}
+
 export class RailBuilder {
   private grid: Grid;
   private network: RailNetwork | null;
@@ -86,6 +96,9 @@ export class RailBuilder {
       if (curr && curr.railType !== RailType.NONE) {
         flags |= curr.railFlags;
       }
+
+      // Auto-add outward flag for edge cells (track extends beyond map)
+      flags |= getEdgeOutwardFlag(pos.x, pos.y, this.grid.width, this.grid.height);
 
       this.grid.setCell(pos.x, pos.y, {
         railType: RailType.STANDARD,
