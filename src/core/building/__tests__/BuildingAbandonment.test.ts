@@ -258,6 +258,20 @@ describe('BuildingAbandonment — calculateAbandonmentStress', () => {
     expect(ABANDONMENT.SERVICE_OFFSET_MULTIPLIER).toBe(1.5);
   });
 
+  it('pressure constants have correct values', () => {
+    expect(ABANDONMENT.RESIDENTIAL_TAX_STRESS_THRESHOLD).toBe(12);
+    expect(ABANDONMENT.RESIDENTIAL_TAX_PRESSURE_MULTIPLIER).toBe(1.0);
+    expect(ABANDONMENT.BUSINESS_TAX_STRESS_THRESHOLD).toBe(9);
+    expect(ABANDONMENT.BUSINESS_TAX_PRESSURE_MULTIPLIER).toBe(1.5);
+    expect(ABANDONMENT.NO_POWER_STRESS).toBe(8);
+    expect(ABANDONMENT.NO_WATER_STRESS).toBe(6);
+    expect(ABANDONMENT.CRIME_STRESS_THRESHOLD).toBe(30);
+    expect(ABANDONMENT.CRIME_STRESS_MULTIPLIER).toBe(0.15);
+    expect(ABANDONMENT.POLLUTION_STRESS_THRESHOLD).toBe(40);
+    expect(ABANDONMENT.POLLUTION_STRESS_MULTIPLIER).toBe(0.1);
+    expect(ABANDONMENT.FREIGHT_STRESS_MAX).toBe(6);
+  });
+
   it('no STRESS_NO_INCOME (removed — buildings earn until abandonment)', () => {
     expect(ABANDONMENT).not.toHaveProperty('STRESS_NO_INCOME');
   });

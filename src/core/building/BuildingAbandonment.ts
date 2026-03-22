@@ -1,4 +1,5 @@
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
+import { DEFAULT_TAX_RATE } from '../economy/Tax';
 
 export interface AbandonmentConditions {
   businessTaxRate: number;
@@ -34,12 +35,34 @@ export interface AbandonmentResult {
   factors: AbandonmentFactors;
 }
 
-/** Stress thresholds */
+/** Stress thresholds and pressure constants */
 export const ABANDONMENT = {
   STRESS_ABANDON: 100,
   RECOVERY_RATE: 2,
   /** Service score multiplier for stress offset. score × this = stress reduction per tick. */
   SERVICE_OFFSET_MULTIPLIER: 1.5,
+  /** Residential tax threshold — no stress at or below this rate */
+  RESIDENTIAL_TAX_STRESS_THRESHOLD: 12,
+  /** Residential tax pressure multiplier per point above threshold */
+  RESIDENTIAL_TAX_PRESSURE_MULTIPLIER: 1.0,
+  /** Business tax threshold — no stress at or below this rate */
+  BUSINESS_TAX_STRESS_THRESHOLD: DEFAULT_TAX_RATE,
+  /** Business tax pressure multiplier per point above threshold */
+  BUSINESS_TAX_PRESSURE_MULTIPLIER: 1.5,
+  /** Stress from no power */
+  NO_POWER_STRESS: 8,
+  /** Stress from no water */
+  NO_WATER_STRESS: 6,
+  /** Crime rate threshold — no stress at or below this */
+  CRIME_STRESS_THRESHOLD: 30,
+  /** Crime stress multiplier per point above threshold */
+  CRIME_STRESS_MULTIPLIER: 0.15,
+  /** Pollution threshold — no stress at or below this */
+  POLLUTION_STRESS_THRESHOLD: 40,
+  /** Pollution stress multiplier per point above threshold */
+  POLLUTION_STRESS_MULTIPLIER: 0.1,
+  /** Max freight stress for commercial (no goods) or industrial (surplus) */
+  FREIGHT_STRESS_MAX: 6,
 } as const;
 
 /** Zone sensitivity multipliers: [tax, pollution, crime] */
@@ -81,37 +104,37 @@ export function calculateAbandonmentStress(
 
   // Tax pressure (higher level → lower threshold, higher sensitivity)
   if (isResidentialZone(zoneType)) {
-    if (conditions.residentialTaxRate > 12) {
-      factors.tax = (conditions.residentialTaxRate - 12) * 1.0 * sens.tax * levelSens;
+    if (conditions.residentialTaxRate > ABANDONMENT.RESIDENTIAL_TAX_STRESS_THRESHOLD) {
+      factors.tax = (conditions.residentialTaxRate - ABANDONMENT.RESIDENTIAL_TAX_STRESS_THRESHOLD) * ABANDONMENT.RESIDENTIAL_TAX_PRESSURE_MULTIPLIER * sens.tax * levelSens;
     }
   } else {
-    if (conditions.businessTaxRate > 9) {
-      factors.tax = (conditions.businessTaxRate - 9) * 1.5 * sens.tax * levelSens;
+    if (conditions.businessTaxRate > ABANDONMENT.BUSINESS_TAX_STRESS_THRESHOLD) {
+      factors.tax = (conditions.businessTaxRate - ABANDONMENT.BUSINESS_TAX_STRESS_THRESHOLD) * ABANDONMENT.BUSINESS_TAX_PRESSURE_MULTIPLIER * sens.tax * levelSens;
     }
   }
 
   // Power
-  if (!conditions.isPowered) factors.power = 8;
+  if (!conditions.isPowered) factors.power = ABANDONMENT.NO_POWER_STRESS;
 
   // Water
-  if (!conditions.isWatered) factors.water = 6;
+  if (!conditions.isWatered) factors.water = ABANDONMENT.NO_WATER_STRESS;
 
   // Crime (per-cell, already adjusted by police coverage)
-  if (conditions.crimeRate > 30) {
-    factors.crime = (conditions.crimeRate - 30) * 0.15 * sens.crime;
+  if (conditions.crimeRate > ABANDONMENT.CRIME_STRESS_THRESHOLD) {
+    factors.crime = (conditions.crimeRate - ABANDONMENT.CRIME_STRESS_THRESHOLD) * ABANDONMENT.CRIME_STRESS_MULTIPLIER * sens.crime;
   }
 
   // Pollution (per-cell, industrial is immune)
-  if (conditions.pollution > 40) {
-    factors.pollution = (conditions.pollution - 40) * 0.1 * sens.pollution;
+  if (conditions.pollution > ABANDONMENT.POLLUTION_STRESS_THRESHOLD) {
+    factors.pollution = (conditions.pollution - ABANDONMENT.POLLUTION_STRESS_THRESHOLD) * ABANDONMENT.POLLUTION_STRESS_MULTIPLIER * sens.pollution;
   }
 
   // Freight: commercial with insufficient goods, industrial with surplus
   if (isCommercialZone(zoneType) && conditions.freightRatio != null && conditions.freightRatio < 1) {
-    factors.freight = (1 - conditions.freightRatio) * 6;
+    factors.freight = (1 - conditions.freightRatio) * ABANDONMENT.FREIGHT_STRESS_MAX;
   }
   if (zoneType === ZoneType.INDUSTRIAL && (conditions.freightSurplusRatio ?? 0) > 0) {
-    factors.freight = (conditions.freightSurplusRatio!) * 6;
+    factors.freight = (conditions.freightSurplusRatio!) * ABANDONMENT.FREIGHT_STRESS_MAX;
   }
 
   // Service offset: good services reduce stress (distance-based, 0~10 score)
