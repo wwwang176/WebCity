@@ -9,6 +9,14 @@ import { DEFAULT_TAX_RATE } from './Tax';
 const TRADE_IMPORT_MULTIPLIER = TRADE.IMPORT_INCOME_MULTIPLIER;
 import type { EducationLevel } from '../citizen/types';
 
+/** Freight supply impact on commercial/industrial income */
+export const FREIGHT_INCOME = {
+  /** Minimum income ratio when no freight supply */
+  NO_SUPPLY_RATIO: 0.5,
+  /** Surplus export penalty softening factor */
+  EXPORT_PENALTY: 0.5,
+} as const;
+
 export interface ZoneIncomeBreakdown {
   residential: number;
   commercial: number;
@@ -88,19 +96,19 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
         if (deps.getFreightSupply) {
           const supply = deps.getFreightSupply(x, y);
           if (supply.source === 'imported') {
-            buildingIncome *= TRADE_IMPORT_MULTIPLIER * supply.ratio + 0.5 * (1 - supply.ratio);
+            buildingIncome *= TRADE_IMPORT_MULTIPLIER * supply.ratio + FREIGHT_INCOME.NO_SUPPLY_RATIO * (1 - supply.ratio);
           } else if (supply.source === 'none') {
-            buildingIncome *= 0.5;
+            buildingIncome *= FREIGHT_INCOME.NO_SUPPLY_RATIO;
           } else {
-            // local: scale between full income and 0.5 based on ratio
-            buildingIncome *= 0.5 + 0.5 * supply.ratio;
+            // local: scale between full income and NO_SUPPLY_RATIO based on ratio
+            buildingIncome *= FREIGHT_INCOME.NO_SUPPLY_RATIO + FREIGHT_INCOME.NO_SUPPLY_RATIO * supply.ratio;
           }
         }
         commercial += buildingIncome;
       } else if (btype.zoneType === ZoneType.INDUSTRIAL) {
         // Surplus reduces industrial income; export softens the penalty
         if (deps.freightSurplusRatio != null && deps.freightSurplusRatio > 0) {
-          const penalty = deps.isExporting ? 0.5 : 1.0;
+          const penalty = deps.isExporting ? FREIGHT_INCOME.EXPORT_PENALTY : 1.0;
           buildingIncome *= 1 - deps.freightSurplusRatio * penalty;
         }
         industrial += buildingIncome;

@@ -50,11 +50,18 @@ export const GRADUATION_TICKS: Record<EducationRule['schoolKey'], number> = {
   university: 100 * EDUCATION_SCALE,  // 10,000 → child 100, adult ~303, senior 500 ticks
 };
 
+/** Learning speed points per tick by life stage */
+export const LEARNING_SPEED = {
+  YOUNG: 100,   // children & teens: full speed
+  ADULT: 33,    // adults: ~3x slower
+  SENIOR: 20,   // seniors: 5x slower
+} as const;
+
 /** Base speed points per tick. Younger = faster, older = slower. */
 export function getLearningSpeed(age: number): number {
-  if (age <= LIFE_STAGE_AGE.TEEN_MAX) return 100;  // children & teens: full speed
-  if (age <= LIFE_STAGE_AGE.ADULT_MAX) return 33;  // adults: ~3x slower
-  return 20;                                         // seniors: 5x slower
+  if (age <= LIFE_STAGE_AGE.TEEN_MAX) return LEARNING_SPEED.YOUNG;
+  if (age <= LIFE_STAGE_AGE.ADULT_MAX) return LEARNING_SPEED.ADULT;
+  return LEARNING_SPEED.SENIOR;
 }
 
 /** Jitter range for per-tick learning speed (80%~120%) to stagger graduations. */
