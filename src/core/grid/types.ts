@@ -65,6 +65,21 @@ export interface CellData {
 
 export const BYTES_PER_CELL = 12;
 
+/** Byte offsets for DataView-backed fields within a cell's binary layout. */
+export const CELL_OFFSET = {
+  terrainType: 0,
+  zoneType: 1,
+  buildingId: 2,
+  roadFlags: 4,
+  roadType: 5,
+  trafficDensity: 6,
+  landValue: 7,
+  pollution: 8,
+  noiseLevel: 9,
+  serviceCoverage: 10,
+  elevation: 11,
+} as const;
+
 export const DEFAULT_CELL: CellData = {
   terrainType: TerrainType.PLAIN,
   zoneType: ZoneType.NONE,
