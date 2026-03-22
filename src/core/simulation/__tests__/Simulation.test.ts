@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
-import { createGameState, type GameState } from '../GameState';
+import { createGameState, DEFAULT_GRID_SIZE, INITIAL_RCI_DEMAND, type GameState } from '../GameState';
 import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
@@ -209,6 +209,21 @@ describe('GameState', () => {
     expect(state.grid.width).toBe(50);
     expect(state.budget.funds).toBe(50000);
     expect(state.citizens.getPopulation()).toBe(0);
+  });
+
+  it('DEFAULT_GRID_SIZE should be 200', () => {
+    expect(DEFAULT_GRID_SIZE).toBe(200);
+  });
+
+  it('INITIAL_RCI_DEMAND should be 50', () => {
+    expect(INITIAL_RCI_DEMAND).toBe(50);
+  });
+
+  it('createGameState uses defaults for RCI demand', () => {
+    const state = createGameState(10, 10);
+    expect(state.rciDemand.residential).toBe(INITIAL_RCI_DEMAND);
+    expect(state.rciDemand.commercial).toBe(INITIAL_RCI_DEMAND);
+    expect(state.rciDemand.industrial).toBe(INITIAL_RCI_DEMAND);
   });
 });
 

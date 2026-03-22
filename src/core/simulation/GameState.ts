@@ -74,7 +74,13 @@ export interface GameState {
   highwayConnection: HighwayConnection;
 }
 
-export function createGameState(width = 200, height = 200): GameState {
+/** Default game world dimensions */
+export const DEFAULT_GRID_SIZE = 200;
+
+/** Initial RCI demand when starting a new game */
+export const INITIAL_RCI_DEMAND = 50;
+
+export function createGameState(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID_SIZE): GameState {
   const grid = new Grid(width, height);
   const dm = new DistrictManager();
   return {
@@ -94,7 +100,7 @@ export function createGameState(width = 200, height = 200): GameState {
       loanInterestRate: 0.05,
     },
     taxRates: { ...DEFAULT_TAX_RATES },
-    rciDemand: { residential: 50, commercial: 50, industrial: 50 },
+    rciDemand: { residential: INITIAL_RCI_DEMAND, commercial: INITIAL_RCI_DEMAND, industrial: INITIAL_RCI_DEMAND },
     buildingGrowth: new BuildingGrowth(grid),
     buildingUpgrade: new BuildingUpgrade(grid),
     pollution: new PollutionManager(width, height),
