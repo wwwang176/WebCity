@@ -5,6 +5,7 @@ import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
 import { SIDEWALK_WIDTH, CW_OFFSET } from '../core/traffic/SidewalkGraph';
+import { STOP_LINE_OFFSET } from '../core/traffic/VehicleLookahead';
 
 export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -437,7 +438,7 @@ export class RoadRenderer {
 
     // Stop line position: closer to intersection than crosswalk
     // Crosswalk is at cwOffset=0.35 from center, stop line at 0.25 (between crosswalk and intersection)
-    const stopOffset = 0.25;
+    const stopOffset = STOP_LINE_OFFSET;
     const halfLane = 0.15; // half the road width for one lane side
 
     for (const r of cells) {
