@@ -72,16 +72,16 @@ describe('InfraConfig', () => {
     expect(getInfraConfig('school_univ')!.width).toBe(3);
     expect(getInfraConfig('school_univ')!.height).toBe(3);
 
-    // airport_s: 3x2
-    expect(getInfraConfig('airport_s')!.width).toBe(3);
-    expect(getInfraConfig('airport_s')!.height).toBe(2);
+    // airport_s: 5x4
+    expect(getInfraConfig('airport_s')!.width).toBe(5);
+    expect(getInfraConfig('airport_s')!.height).toBe(4);
 
-    // airport_m: 5x4
-    expect(getInfraConfig('airport_m')!.width).toBe(5);
+    // airport_m: 7x4
+    expect(getInfraConfig('airport_m')!.width).toBe(7);
     expect(getInfraConfig('airport_m')!.height).toBe(4);
 
-    // airport_l: 7x6 (max airport size for forEachMultiCell search range)
-    expect(getInfraConfig('airport_l')!.width).toBe(7);
+    // airport_l: 9x6 (max airport size for forEachMultiCell search range)
+    expect(getInfraConfig('airport_l')!.width).toBe(9);
     expect(getInfraConfig('airport_l')!.height).toBe(6);
   });
 

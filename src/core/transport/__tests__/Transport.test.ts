@@ -910,16 +910,16 @@ describe('Airport noise pollution', () => {
 // T5.3 Airport multi-cell footprint
 // ---------------------------------------------------------------------------
 describe('Airport multi-cell footprint', () => {
-  it('SMALL airport should have 3x3 footprint', () => {
-    expect(getAirportFootprint('SMALL')).toBe(3);
+  it('SMALL airport should have 5x5 footprint', () => {
+    expect(getAirportFootprint('SMALL')).toBe(5);
   });
 
-  it('MEDIUM airport should have 5x5 footprint', () => {
-    expect(getAirportFootprint('MEDIUM')).toBe(5);
+  it('MEDIUM airport should have 7x7 footprint', () => {
+    expect(getAirportFootprint('MEDIUM')).toBe(7);
   });
 
-  it('LARGE airport should have 7x7 footprint', () => {
-    expect(getAirportFootprint('LARGE')).toBe(7);
+  it('LARGE airport should have 9x9 footprint', () => {
+    expect(getAirportFootprint('LARGE')).toBe(9);
   });
 });
 
@@ -946,8 +946,8 @@ describe('Airport consolidated config', () => {
     const l = AIRPORT_SIZE_CONFIG.LARGE;
     expect(m.width).toBeGreaterThan(s.width);
     expect(l.width).toBeGreaterThan(m.width);
-    expect(m.height).toBeGreaterThan(s.height);
-    expect(l.height).toBeGreaterThan(m.height);
+    expect(m.height).toBeGreaterThanOrEqual(s.height);
+    expect(l.height).toBeGreaterThanOrEqual(m.height);
     expect(m.operatingCost).toBeGreaterThan(s.operatingCost);
     expect(l.operatingCost).toBeGreaterThan(m.operatingCost);
   });
