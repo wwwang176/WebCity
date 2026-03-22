@@ -134,7 +134,7 @@ const MEDIUM_PATHS: SizeFlightPaths = {
 const LARGE_PATH_A: SizeFlightPaths = {
   approachStart:   { x: -13.3, z: 0.80 },
   threshold:       { x: -4.00, z: 0.80 },
-  rollStop:        { x: 3.30, z: 0.80 },
+  rollStop:        { x: 3.10, z: 0.80 },
   rightJunction:   { x: 3.80, z: 0.80 },
   rightTaxiTop:    { x: 3.80, z: -0.80 },
   apronZ:          -0.80,
@@ -151,7 +151,7 @@ const LARGE_PATH_A: SizeFlightPaths = {
 const LARGE_PATH_B: SizeFlightPaths = {
   approachStart:   { x: -13.3, z: 2.20 },
   threshold:       { x: -4.00, z: 2.20 },
-  rollStop:        { x: 3.30, z: 2.20 },
+  rollStop:        { x: 3.10, z: 2.20 },
   rightJunction:   { x: 3.80, z: 2.20 },
   rightTaxiTop:    { x: 3.80, z: -0.80 },
   apronZ:          -0.80,
