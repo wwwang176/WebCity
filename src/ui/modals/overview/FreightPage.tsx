@@ -1,6 +1,7 @@
 import { gameSignals, getGame } from '../../store/gameStore';
 import { ZoneType } from '../../../core/grid/types';
 import { TRADE } from '../../../core/traffic/FreightSystem';
+import { HIGHWAY_EXTERNAL } from '../../../core/traffic/HighwayConnection';
 
 function supplyColor(ratio: number): string {
   if (ratio > 1.5 || ratio < 0.5) return '#ef5350';
@@ -46,7 +47,11 @@ export function FreightPage() {
       airportDetails.push({ size: ap.size, cargo: ap.cargoPerTick });
     }
 
-    const totalThroughput = railThroughput + airportThroughput;
+    const hc = state.highwayConnection;
+    const highwayThroughput = hc.hasExternalConnection ? hc.getThroughput() : 0;
+    const highwayConnections = hc.getEdgeHighwayCellCount();
+
+    const totalThroughput = railThroughput + airportThroughput + highwayThroughput;
 
     return {
       supplyRatio,
@@ -59,6 +64,8 @@ export function FreightPage() {
       totalThroughput,
       railThroughput, extStations, totalStations: rail.getStations().length,
       hasRailConnection: rail.hasExternalConnection,
+      highwayThroughput, highwayConnections,
+      hasHighwayConnection: hc.hasExternalConnection,
       airportThroughput, airportDetails,
       surplusRatio: freight.getSurplusRatio(),
       isExporting: freight.getIsExporting(),
@@ -129,6 +136,13 @@ export function FreightPage() {
               {!data().hasRailConnection && <span style="color:#ef5350;font-size:10px"> (no edge connection)</span>}
             </td>
             <td class="td-value" style="text-align:right">{data().railThroughput}/tick</td>
+          </tr>
+          <tr>
+            <td class="td-label">
+              Highway ({data().highwayConnections} connections)
+              {!data().hasHighwayConnection && <span style="color:#ef5350;font-size:10px"> (no edge connection)</span>}
+            </td>
+            <td class="td-value" style="text-align:right">{data().highwayThroughput}/tick</td>
           </tr>
           {data().airportDetails.length > 0
             ? data().airportDetails.map((ap, i) => (
