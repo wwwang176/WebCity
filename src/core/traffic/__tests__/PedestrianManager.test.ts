@@ -426,4 +426,14 @@ describe('PedestrianManager', () => {
       expect(mgr.getActiveCount()).toBeGreaterThan(0);
     });
   });
+
+  describe('PEDESTRIAN constants', () => {
+    it('should have correct visual/spawn constants', () => {
+      expect(PEDESTRIAN.COLOR_COUNT).toBe(12);
+      expect(PEDESTRIAN.LATERAL_OFFSET_RANGE).toBe(0.08);
+      expect(PEDESTRIAN.SPEED_MULTIPLIER_MIN).toBe(0.5);
+      expect(PEDESTRIAN.SPEED_MULTIPLIER_RANGE).toBe(0.5);
+      expect(PEDESTRIAN.EDGE_SAMPLE_RETRIES).toBe(10);
+    });
+  });
 });
