@@ -39,7 +39,7 @@ import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHe
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findAdjacentRoad } from '../grid/GridHelpers';
 import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
@@ -56,6 +56,7 @@ import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
 import { PedestrianTripType } from '../traffic/PedestrianAgent';
 import { TRADE } from '../traffic/FreightSystem';
+import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
 
 /** Simulation tuning constants */
 export const SIMULATION = {
@@ -388,9 +389,10 @@ export class SimulationLoop {
     this.state.bus.congestionLevel = this.state.traffic.getCongestionLevel();
     tickAllTransportSystems(this.state);
 
-    // 8b. Rail external connection update (every 60 ticks)
+    // 8b. Rail + highway external connection update (every 60 ticks)
     if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
       this.state.rail.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
+      this.state.highwayConnection.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
     }
 
     // 8c. Freight: BFS-based supply + trade calculation (every 6 ticks)
@@ -414,7 +416,15 @@ export class SimulationLoop {
         airportThroughput += ap.cargoPerTick;
         tradePositions.push({ x: ap.x, y: ap.y });
       }
-      const totalThroughput = railThroughput + airportThroughput;
+      // Collect edge highway positions
+      let highwayThroughput = 0;
+      if (this.state.highwayConnection.hasExternalConnection) {
+        highwayThroughput = this.state.highwayConnection.getThroughput();
+        for (const cell of this.state.highwayConnection.getEdgeHighwayCells()) {
+          tradePositions.push({ x: cell.x, y: cell.y });
+        }
+      }
+      const totalThroughput = railThroughput + airportThroughput + highwayThroughput;
 
       this.state.freight.calculateSupply(this.state.grid, {
         importCapacity: totalThroughput,
@@ -1343,6 +1353,9 @@ export class SimulationLoop {
       this.spawnRandomTraffic(grid, vehicleCap);
     }
 
+    // Spawn external highway traffic (all time periods)
+    this.spawnExternalHighwayTraffic(grid, vehicleCap);
+
     // Build/update trip pool during rush hours
     if (timeOfDay === 'morning_rush' || timeOfDay === 'evening_rush') {
       this.spawnPedestriansFromPool(pop);
@@ -1597,6 +1610,70 @@ export class SimulationLoop {
   }
 
 
+
+  /**
+   * Spawn external vehicles entering/leaving the city via highway edge connections.
+   * Vehicles are real TrafficSimulation entities that participate in congestion.
+   */
+  private spawnExternalHighwayTraffic(
+    grid: { getCell(x: number, y: number): { roadType: number } | null; width: number; height: number },
+    vehicleCap: number,
+  ): void {
+    if (!this.state.highwayConnection.hasExternalConnection) return;
+    const pop = this.state.citizens.getPopulation();
+    if (pop === 0) return;
+
+    // Reserve 10% of vehicle cap for commute traffic
+    const currentCount = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
+    if (currentCount >= vehicleCap * HIGHWAY_EXTERNAL.CAP_RATIO) return;
+
+    // Time-of-day multiplier and direction bias
+    const timeOfDay = this.state.clock.getTimeOfDay();
+    let multiplier = 1.0;
+    let incomingRatio = 0.5;
+    switch (timeOfDay) {
+      case 'morning_rush': incomingRatio = 0.6; break;
+      case 'evening_rush': incomingRatio = 0.4; break;
+      case 'midday': multiplier = HIGHWAY_EXTERNAL.MIDDAY_MULTIPLIER; break;
+      case 'night': multiplier = HIGHWAY_EXTERNAL.NIGHT_MULTIPLIER; break;
+    }
+
+    const count = Math.min(
+      HIGHWAY_EXTERNAL.MAX_PER_TICK,
+      Math.floor(pop / 100 * HIGHWAY_EXTERNAL.SPAWN_PER_100_POP * multiplier),
+    );
+    if (count <= 0) return;
+
+    const edgeCells = this.state.highwayConnection.getEdgeHighwayCells();
+    if (edgeCells.length === 0) return;
+
+    for (let i = 0; i < count; i++) {
+      if (this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount() >= vehicleCap * HIGHWAY_EXTERNAL.CAP_RATIO) break;
+      if (this.buildingPositions.length === 0) return;
+
+      const isIncoming = Math.random() < incomingRatio;
+      const edge = edgeCells[Math.floor(Math.random() * edgeCells.length)]!;
+      const bp = this.buildingPositions[Math.floor(Math.random() * this.buildingPositions.length)]!;
+
+      let path: string[] | null = null;
+      if (isIncoming) {
+        const endRoad = findAdjacentRoad(grid, bp.x, bp.y);
+        if (!endRoad || (endRoad.x === edge.x && endRoad.y === edge.y)) continue;
+        path = gridAStarPath(edge, endRoad, grid);
+      } else {
+        const startRoad = findAdjacentRoad(grid, bp.x, bp.y);
+        if (!startRoad || (startRoad.x === edge.x && startRoad.y === edge.y)) continue;
+        path = gridAStarPath(startRoad, edge, grid);
+      }
+
+      if (path && path.length >= 2) {
+        const edgePath = refineLanePath(this.laneGraph, path);
+        if (edgePath && edgePath.length > 0) {
+          this.state.traffic.addVehicleOnEdges(edgePath);
+        }
+      }
+    }
+  }
 
   /** Roll over dailyRiders for all transit systems (EMA smooth + reset). */
   private rolloverTransitRiders(): void {

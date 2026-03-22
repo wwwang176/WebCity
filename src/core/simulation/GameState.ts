@@ -33,6 +33,7 @@ import { FreightSystem } from '../traffic/FreightSystem';
 import { PedestrianManager } from '../traffic/PedestrianManager';
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { ShoppingAccess } from '../economy/ShoppingAccess';
+import { HighwayConnection } from '../traffic/HighwayConnection';
 
 export interface GameState {
   grid: Grid;
@@ -70,6 +71,7 @@ export interface GameState {
   shopping: ShoppingAccess;
   sidewalkGraph: SidewalkGraph;
   pedestrianManager: PedestrianManager;
+  highwayConnection: HighwayConnection;
 }
 
 export function createGameState(width = 200, height = 200): GameState {
@@ -117,5 +119,6 @@ export function createGameState(width = 200, height = 200): GameState {
     shopping: new ShoppingAccess(),
     sidewalkGraph: new SidewalkGraph(),
     pedestrianManager: new PedestrianManager(new SidewalkGraph()),
+    highwayConnection: new HighwayConnection(),
   };
 }
