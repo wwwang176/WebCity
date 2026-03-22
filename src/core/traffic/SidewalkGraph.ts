@@ -25,8 +25,8 @@ export const ROAD_WIDTHS: Record<number, number> = {
 /** Crosswalk offset from intersection center (matches RoadRenderer cwOffset) */
 export const CW_OFFSET = 0.35;
 
-/** Node offset within a cell — aligned with crosswalk rendering (cwOffset=0.35) */
-const NODE_X_OFFSET = 0.35;
+/** Node offset within a cell — aligned with crosswalk rendering */
+const NODE_X_OFFSET = CW_OFFSET;
 
 // ── Types ──────────────────────────────────────────────────────────────
 

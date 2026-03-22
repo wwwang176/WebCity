@@ -4,7 +4,7 @@ import { Grid } from '../core/grid/Grid';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
-import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
+import { SIDEWALK_WIDTH, CW_OFFSET } from '../core/traffic/SidewalkGraph';
 
 export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -357,7 +357,7 @@ export class RoadRenderer {
     const stripeGap = 0.042;
     const stripeLen = 0.11;
     // Place stripes near the end of the cell closest to the intersection
-    const cwOffset = 0.35;
+    const cwOffset = CW_OFFSET;
 
     for (const r of cells) {
       const connections = countBits(r.roadFlags);
