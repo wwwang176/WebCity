@@ -21,6 +21,15 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.TOURISM]: { name: 'Tourism Promotion', cost: 200 },
 };
 
+/**
+ * Data-driven zone restrictions per policy type (OCP).
+ * Adding a new zone-restricting policy only requires a new entry here.
+ */
+export const POLICY_ZONE_RESTRICTIONS: Partial<Record<PolicyType, ReadonlySet<ZoneType>>> = {
+  [PolicyType.NO_HEAVY_INDUSTRY]: new Set([ZoneType.INDUSTRIAL]),
+  [PolicyType.HIGH_DENSITY_BAN]: new Set([ZoneType.RESIDENTIAL_HIGH, ZoneType.COMMERCIAL_HIGH]),
+};
+
 export class PolicyManager {
   private districtLookup: DistrictLookup;
   private nextPolicyId = 1;
@@ -69,20 +78,9 @@ export class PolicyManager {
     const district = this.districtLookup.getDistrict(districtId);
     if (!district) return true;
 
-    // NO_HEAVY_INDUSTRY blocks industrial zones
-    if (
-      this.isPolicyActive(districtId, PolicyType.NO_HEAVY_INDUSTRY) &&
-      buildingZoneType === ZoneType.INDUSTRIAL
-    ) {
-      return false;
-    }
-
-    // HIGH_DENSITY_BAN blocks high density residential and commercial
-    if (this.isPolicyActive(districtId, PolicyType.HIGH_DENSITY_BAN)) {
-      if (
-        buildingZoneType === ZoneType.RESIDENTIAL_HIGH ||
-        buildingZoneType === ZoneType.COMMERCIAL_HIGH
-      ) {
+    // Data-driven zone restrictions (OCP: adding new policies only needs POLICY_ZONE_RESTRICTIONS entry)
+    for (const [policyType, blockedZones] of Object.entries(POLICY_ZONE_RESTRICTIONS)) {
+      if (blockedZones!.has(buildingZoneType) && this.isPolicyActive(districtId, policyType as PolicyType)) {
         return false;
       }
     }

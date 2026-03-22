@@ -19,6 +19,7 @@ import { ECONOMY } from '../economy/TaxMultipliers';
 import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { forEachGridPollutionSource } from '../environment/GridPollutionSources';
+import { forEachServicePollutionSource } from '../environment/PollutionSourceRegistry';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
 import { isWorkingAge, type Citizen } from '../citizen/types';
@@ -34,6 +35,7 @@ import type { SchoolType } from '../service/EducationService';
 import type { EducationRule } from '../citizen/CitizenManager';
 import type { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
+import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices } from '../service/ServiceRegistry';
@@ -646,38 +648,36 @@ export class SimulationLoop {
     }
   }
 
+  /** Reusable health factors object — mutated per citizen, no allocation per iteration. */
+  private healthFactors: HealthFactors = {
+    hospitalCostRatio: -1, hasParkCoverage: false,
+    pollution: 0, hasHome: false, age: 0,
+  };
+
   private updateCitizenHealth(): void {
     const citizens = this.state.citizens.getCitizens();
     if (citizens.length === 0) return;
 
-    for (const c of citizens) {
-      let health = 50;
+    const f = this.healthFactors;
 
-      // Hospital coverage: 0~30 (linear with distance)
+    for (const c of citizens) {
+      f.hasHome = !!c.homeId;
+      f.hospitalCostRatio = -1;
+      f.hasParkCoverage = false;
+      f.pollution = 0;
+      f.age = c.age;
+
       if (c.homeId) {
         const pos = parsePosKey(c.homeId);
         if (pos) {
-          const costRatio = this.state.health.getCostRatio(pos.x, pos.y);
-          if (costRatio >= 0) health += (1 - costRatio) * 30;
-
-          // Park coverage: +5
-          if (this.state.parks.getCoverage(pos.x, pos.y)) health += 5;
-
-          // Pollution penalty: 0~15
+          f.hospitalCostRatio = this.state.health.getCostRatio(pos.x, pos.y);
+          f.hasParkCoverage = this.state.parks.getCoverage(pos.x, pos.y);
           const cell = this.state.grid.getCell(pos.x, pos.y);
-          if (cell) health -= (cell.pollution / 100) * 15;
+          if (cell) f.pollution = cell.pollution;
         }
-        // Has home: +10
-        health += 10;
-      }
-      // homeless: no home bonus, no location-based factors
-
-      // Senior age penalty: linear 0~10 for age 201~260
-      if (c.age > 200) {
-        health -= Math.min(10, ((c.age - 200) / 60) * 10);
       }
 
-      c.health = Math.max(0, Math.min(100, Math.round(health)));
+      c.health = calculateCitizenHealth(f);
     }
   }
 
@@ -773,15 +773,8 @@ export class SimulationLoop {
 
     // Add pollution sources directly (no intermediate arrays)
     forEachGridPollutionSource(grid, (x, y, amount, type) => pm.addSource(x, y, amount, type));
-    const providers = [this.state.garbage, this.state.sewage, this.state.airport];
-    for (const provider of providers) {
-      for (const src of provider.getPollutionSources()) {
-        pm.addSource(src.x, src.y, src.amount, src.type);
-      }
-    }
-    for (const src of this.state.garbage.getOverflowPollutionSources()) {
-      pm.addSource(src.x, src.y, src.amount, src.type);
-    }
+    // OCP: service-based pollution sources via registry — adding new sources only needs registry update
+    forEachServicePollutionSource(this.state, (x, y, amount, type) => pm.addSource(x, y, amount, type));
 
     pm.calculateSpread();
 

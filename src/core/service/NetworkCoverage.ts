@@ -1,6 +1,7 @@
 import { Grid } from '../grid/Grid';
 import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
+import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 
 /**
  * Shared network coverage algorithm used by both PowerGrid and WaterNetwork.
@@ -192,4 +193,40 @@ export function bfsBudgetDrainFlood(
       queue.push([nx, ny]);
     }
   }
+}
+
+// ── Shared zone demand calculation ──────────────
+
+/** Per-zone consumption config: base + perCapita for each zone category. */
+export interface ZoneConsumptionConfig {
+  RESIDENTIAL: { base: number; perCapita: number };
+  COMMERCIAL:  { base: number; perCapita: number };
+  INDUSTRIAL:  { base: number; perCapita: number };
+  OFFICE:      { base: number; perCapita: number };
+}
+
+/**
+ * Calculate utility demand for a zone building.
+ * Shared between PowerGrid and WaterNetwork (eliminates duplicate getZoneDemand).
+ * Residential uses residents for perCapita; all others use workers.
+ */
+export function calculateZoneDemand(
+  config: ZoneConsumptionConfig,
+  zoneType: ZoneType,
+  residents: number,
+  workers: number,
+): number {
+  if (isResidentialZone(zoneType)) {
+    return config.RESIDENTIAL.base + config.RESIDENTIAL.perCapita * residents;
+  }
+  if (isCommercialZone(zoneType)) {
+    return config.COMMERCIAL.base + config.COMMERCIAL.perCapita * workers;
+  }
+  if (zoneType === ZoneType.INDUSTRIAL) {
+    return config.INDUSTRIAL.base + config.INDUSTRIAL.perCapita * workers;
+  }
+  if (zoneType === ZoneType.OFFICE) {
+    return config.OFFICE.base + config.OFFICE.perCapita * workers;
+  }
+  return 0;
 }

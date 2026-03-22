@@ -1,9 +1,9 @@
 import { Grid } from '../grid/Grid';
 import { toPosKey } from '../grid/GridHelpers';
-import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
+import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraConfigById, getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, calculateZoneDemand } from './NetworkCoverage';
 
 export interface PowerPlant {
   x: number;
@@ -172,19 +172,7 @@ export class PowerGrid {
   }
 
   private getZoneDemand(zoneType: ZoneType, residents: number, workers: number): number {
-    if (isResidentialZone(zoneType)) {
-      return POWER_CONSUMPTION.RESIDENTIAL.base + POWER_CONSUMPTION.RESIDENTIAL.perCapita * residents;
-    }
-    if (isCommercialZone(zoneType)) {
-      return POWER_CONSUMPTION.COMMERCIAL.base + POWER_CONSUMPTION.COMMERCIAL.perCapita * workers;
-    }
-    if (zoneType === ZoneType.INDUSTRIAL) {
-      return POWER_CONSUMPTION.INDUSTRIAL.base + POWER_CONSUMPTION.INDUSTRIAL.perCapita * workers;
-    }
-    if (zoneType === ZoneType.OFFICE) {
-      return POWER_CONSUMPTION.OFFICE.base + POWER_CONSUMPTION.OFFICE.perCapita * workers;
-    }
-    return 0;
+    return calculateZoneDemand(POWER_CONSUMPTION, zoneType, residents, workers);
   }
 
   // BFS methods extracted to NetworkCoverage.ts (bfsRoadNetworkFlood / bfsBudgetDrainFlood)
