@@ -145,6 +145,9 @@ export class SimulationLoop {
   // Building index: active zone buildings (excludes ABANDONED/BURNED). Rebuilt every slow tick.
   private buildingPositions: { pos: string; x: number; y: number; buildingId: number }[] = [];
 
+  // Cached trade positions (rail stations + airports + highway edges) for freight vehicle spawning.
+  private cachedTradePositions: { x: number; y: number }[] = [];
+
   // Track which citizens have already commuted this rush period
   private morningCommuters = new Set<number>(); // citizen ids that have spawned morning commute
   private eveningCommuters = new Set<number>(); // citizen ids that have spawned evening commute
@@ -431,6 +434,7 @@ export class SimulationLoop {
         exportCapacity: totalThroughput,
         tradePositions,
       });
+      this.cachedTradePositions = tradePositions;
 
       // 8d. Shopping access: BFS from commercial to residential (every 6 ticks)
       this.state.shopping.calculate(this.state.grid);
@@ -1356,6 +1360,9 @@ export class SimulationLoop {
     // Spawn external highway traffic (all time periods)
     this.spawnExternalHighwayTraffic(grid, vehicleCap);
 
+    // Spawn freight trucks (industrial↔commercial, factory↔trade, trade↔commercial)
+    this.spawnFreightTraffic(grid, vehicleCap);
+
     // Build/update trip pool during rush hours
     if (timeOfDay === 'morning_rush' || timeOfDay === 'evening_rush') {
       this.spawnPedestriansFromPool(pop);
@@ -1670,6 +1677,101 @@ export class SimulationLoop {
         const edgePath = refineLanePath(this.laneGraph, path);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
+        }
+      }
+    }
+  }
+
+  /**
+   * Spawn freight trucks for three trade routes:
+   * 1. Local supply: industrial → commercial
+   * 2. Export: industrial → trade node (station/airport/highway edge)
+   * 3. Import: trade node → commercial
+   */
+  private spawnFreightTraffic(
+    grid: { getCell(x: number, y: number): { roadType: number; zoneType: number } | null; width: number; height: number },
+    vehicleCap: number,
+  ): void {
+    const freight = this.state.freight;
+    const lastTrade = freight.getLastTrade();
+    const lastDemand = freight.getLastDemand();
+
+    // Skip if no production and no trade
+    if (lastDemand.production === 0 && lastTrade.importCapacity === 0) return;
+
+    // Cap check: freight uses up to 5% of vehicle cap
+    const freightCap = Math.floor(vehicleCap * 0.05);
+    const currentCount = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
+    if (currentCount >= vehicleCap) return;
+
+    // Collect industrial and commercial building positions from cached index
+    if (this.buildingPositions.length === 0) return;
+
+    const industrials: { x: number; y: number }[] = [];
+    const commercials: { x: number; y: number }[] = [];
+    for (const bp of this.buildingPositions) {
+      const cell = grid.getCell(bp.x, bp.y);
+      if (!cell) continue;
+      if (cell.zoneType === ZoneType.INDUSTRIAL) industrials.push(bp);
+      else if (isCommercialZone(cell.zoneType)) commercials.push(bp);
+    }
+
+    // At most 2 freight trucks per tick
+    const maxPerTick = Math.min(2, freightCap);
+    let spawned = 0;
+
+    for (let i = 0; i < maxPerTick; i++) {
+      if (currentCount + spawned >= vehicleCap) break;
+
+      // Weighted random route selection based on actual freight activity
+      const hasLocal = industrials.length > 0 && commercials.length > 0 && lastDemand.production > 0;
+      const hasExport = industrials.length > 0 && this.cachedTradePositions.length > 0 && lastTrade.exported > 0;
+      const hasImport = commercials.length > 0 && this.cachedTradePositions.length > 0 && lastTrade.imported > 0;
+
+      if (!hasLocal && !hasExport && !hasImport) return;
+
+      // Build weighted options
+      const options: Array<{ type: 'local' | 'export' | 'import'; weight: number }> = [];
+      if (hasLocal) options.push({ type: 'local', weight: 3 });
+      if (hasExport) options.push({ type: 'export', weight: 2 });
+      if (hasImport) options.push({ type: 'import', weight: 2 });
+
+      const totalWeight = options.reduce((s, o) => s + o.weight, 0);
+      let roll = Math.random() * totalWeight;
+      let routeType: 'local' | 'export' | 'import' = 'local';
+      for (const o of options) {
+        roll -= o.weight;
+        if (roll <= 0) { routeType = o.type; break; }
+      }
+
+      let from: { x: number; y: number };
+      let to: { x: number; y: number };
+
+      switch (routeType) {
+        case 'local':
+          from = industrials[Math.floor(Math.random() * industrials.length)]!;
+          to = commercials[Math.floor(Math.random() * commercials.length)]!;
+          break;
+        case 'export':
+          from = industrials[Math.floor(Math.random() * industrials.length)]!;
+          to = this.cachedTradePositions[Math.floor(Math.random() * this.cachedTradePositions.length)]!;
+          break;
+        case 'import':
+          from = this.cachedTradePositions[Math.floor(Math.random() * this.cachedTradePositions.length)]!;
+          to = commercials[Math.floor(Math.random() * commercials.length)]!;
+          break;
+      }
+
+      const startRoad = findAdjacentRoad(grid, from.x, from.y);
+      const endRoad = findAdjacentRoad(grid, to.x, to.y);
+      if (!startRoad || !endRoad || (startRoad.x === endRoad.x && startRoad.y === endRoad.y)) continue;
+
+      const path = gridAStarPath(startRoad, endRoad, grid);
+      if (path && path.length >= 2) {
+        const edgePath = refineLanePath(this.laneGraph, path);
+        if (edgePath && edgePath.length > 0) {
+          this.state.traffic.addFreightVehicle(edgePath);
+          spawned++;
         }
       }
     }
