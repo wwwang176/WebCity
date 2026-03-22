@@ -84,8 +84,8 @@ export function generateChildEducation(age: number): { education: EducationLevel
   // CHILD (9-32): working on elementary
   if (age <= LIFE_STAGE_AGE.CHILD_MAX) {
     const fraction = (age - LIFE_STAGE_AGE.BABY_MAX) / (LIFE_STAGE_AGE.CHILD_MAX - LIFE_STAGE_AGE.BABY_MAX);
-    if (fraction > 0.7 && Math.random() < 0.5) {
-      // Late child: 50% chance already graduated elementary
+    if (fraction > CHILD_EDUCATION.LATE_FRACTION && Math.random() < CHILD_EDUCATION.LATE_GRADUATION_CHANCE) {
+      // Late child: chance already graduated elementary
       return { education: EducationLevel.ELEMENTARY, progress: 0 };
     }
     return { education: EducationLevel.NONE, progress: 0 };
@@ -94,12 +94,12 @@ export function generateChildEducation(age: number): { education: EducationLevel
   // TEEN (33-52): working on high school
   if (age <= LIFE_STAGE_AGE.TEEN_MAX) {
     const fraction = (age - LIFE_STAGE_AGE.CHILD_MAX) / (LIFE_STAGE_AGE.TEEN_MAX - LIFE_STAGE_AGE.CHILD_MAX);
-    if (fraction < 0.3) {
+    if (fraction < CHILD_EDUCATION.EARLY_FRACTION) {
       // Early teen: likely still finishing elementary or just started HS
-      if (Math.random() < 0.4) return { education: EducationLevel.NONE, progress: 0 };
+      if (Math.random() < CHILD_EDUCATION.EARLY_TEEN_NO_EDUCATION_CHANCE) return { education: EducationLevel.NONE, progress: 0 };
       return { education: EducationLevel.ELEMENTARY, progress: 0 };
     }
-    if (fraction > 0.7 && Math.random() < 0.5) {
+    if (fraction > CHILD_EDUCATION.LATE_FRACTION && Math.random() < CHILD_EDUCATION.LATE_GRADUATION_CHANCE) {
       // Late teen: 50% chance already graduated HS
       return { education: EducationLevel.HIGH_SCHOOL, progress: 0 };
     }
@@ -143,6 +143,31 @@ export function generateFamily(city?: CityAttractiveness): FamilyMember[] {
   return members;
 }
 
+/** Thresholds for education weight adjustments in pickImmigrantEducation */
+export const EDUCATION_THRESHOLDS = {
+  OFFICE_RATIO: 0.3,
+  INDUSTRIAL_RATIO: 0.5,
+  AVG_LAND_VALUE: 150,
+  LOW_TAX: 7,
+  HIGH_TAX: 12,
+} as const;
+
+/** Child education generation probabilities */
+export const CHILD_EDUCATION = {
+  LATE_FRACTION: 0.7,
+  EARLY_FRACTION: 0.3,
+  LATE_GRADUATION_CHANCE: 0.5,
+  EARLY_TEEN_NO_EDUCATION_CHANCE: 0.4,
+} as const;
+
+/** Natural attrition tuning */
+export const ATTRITION = {
+  /** Attractiveness above this → no attrition */
+  GOOD_THRESHOLD: 70,
+  /** Attractiveness below this → full attrition */
+  POOR_THRESHOLD: 40,
+} as const;
+
 /** Base education weights for immigrants — adjusted by city characteristics */
 export const EDUCATION_WEIGHTS = {
   BASE: { [EducationLevel.NONE]: 30, [EducationLevel.ELEMENTARY]: 25, [EducationLevel.HIGH_SCHOOL]: 25, [EducationLevel.UNIVERSITY]: 20 },
@@ -159,11 +184,11 @@ export function pickImmigrantEducation(city: CityAttractiveness): EducationLevel
   const w: Record<EducationLevel, number> = { ...EDUCATION_WEIGHTS.BASE };
 
   if (city.hasUniversity)                    for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HAS_UNIVERSITY[k as EducationLevel];
-  if ((city.officeRatio ?? 0) > 0.3)         for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_OFFICE[k as EducationLevel];
-  if ((city.industrialRatio ?? 0) > 0.5)     for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_INDUSTRIAL[k as EducationLevel];
-  if ((city.avgLandValue ?? 0) > 150)        for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_LAND_VALUE[k as EducationLevel];
-  if (city.taxRate < 7)                      for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.LOW_TAX[k as EducationLevel];
-  if (city.taxRate > 12)                     for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_TAX[k as EducationLevel];
+  if ((city.officeRatio ?? 0) > EDUCATION_THRESHOLDS.OFFICE_RATIO)       for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_OFFICE[k as EducationLevel];
+  if ((city.industrialRatio ?? 0) > EDUCATION_THRESHOLDS.INDUSTRIAL_RATIO) for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_INDUSTRIAL[k as EducationLevel];
+  if ((city.avgLandValue ?? 0) > EDUCATION_THRESHOLDS.AVG_LAND_VALUE)   for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_LAND_VALUE[k as EducationLevel];
+  if (city.taxRate < EDUCATION_THRESHOLDS.LOW_TAX)                      for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.LOW_TAX[k as EducationLevel];
+  if (city.taxRate > EDUCATION_THRESHOLDS.HIGH_TAX)                     for (const k in w) w[k as EducationLevel] += EDUCATION_WEIGHTS.HIGH_TAX[k as EducationLevel];
 
   // Clamp weights to >= 1 (never zero out a level entirely)
   for (const k in w) w[k as EducationLevel] = Math.max(1, w[k as EducationLevel]);
@@ -296,7 +321,8 @@ export function migrationTick(
   // att ≥ 70: multiplier 0 (great city, nobody leaves randomly)
   // att 50–70: multiplier linearly 1.0→0
   // att < 50: multiplier 1.0 (full attrition)
-  const attritionMultiplier = attractiveness >= 70 ? 0 : attractiveness >= 40 ? (70 - attractiveness) / 30 : 1.0;
+  const attritionMultiplier = attractiveness >= ATTRITION.GOOD_THRESHOLD ? 0
+    : attractiveness >= ATTRITION.POOR_THRESHOLD ? (ATTRITION.GOOD_THRESHOLD - attractiveness) / (ATTRITION.GOOD_THRESHOLD - ATTRITION.POOR_THRESHOLD) : 1.0;
   const expected = Math.min(IMMIGRATION.NATURAL_ATTRITION_CAP, pop * IMMIGRATION.NATURAL_ATTRITION_RATE * attritionMultiplier);
   // Probabilistic rounding: fractional part becomes chance of +1
   const attritionCount = Math.floor(expected) + (Math.random() < (expected % 1) ? 1 : 0);

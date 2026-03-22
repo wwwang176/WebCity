@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
-import { migrationTick, calculateAttractiveness, getImmigrationCap, ATTRACTIVENESS, IMMIGRATION, type CityAttractiveness } from '../Migration';
+import { migrationTick, calculateAttractiveness, getImmigrationCap, ATTRACTIVENESS, IMMIGRATION, EDUCATION_THRESHOLDS, CHILD_EDUCATION, ATTRITION, type CityAttractiveness } from '../Migration';
 import { EMIGRATION_TOLERANCE, calculateEmigrationTolerance, EducationLevel } from '../types';
 
 const attractiveCity: CityAttractiveness = {
@@ -286,5 +286,27 @@ describe('migrationTick — emigration+attrition no duplicate removal', () => {
     for (const eid of result.emigratedIds) {
       expect(ids).toContain(eid);
     }
+  });
+});
+
+describe('Migration constants', () => {
+  it('EDUCATION_THRESHOLDS should have correct values', () => {
+    expect(EDUCATION_THRESHOLDS.OFFICE_RATIO).toBe(0.3);
+    expect(EDUCATION_THRESHOLDS.INDUSTRIAL_RATIO).toBe(0.5);
+    expect(EDUCATION_THRESHOLDS.AVG_LAND_VALUE).toBe(150);
+    expect(EDUCATION_THRESHOLDS.LOW_TAX).toBe(7);
+    expect(EDUCATION_THRESHOLDS.HIGH_TAX).toBe(12);
+  });
+
+  it('CHILD_EDUCATION should have correct values', () => {
+    expect(CHILD_EDUCATION.LATE_FRACTION).toBe(0.7);
+    expect(CHILD_EDUCATION.EARLY_FRACTION).toBe(0.3);
+    expect(CHILD_EDUCATION.LATE_GRADUATION_CHANCE).toBe(0.5);
+    expect(CHILD_EDUCATION.EARLY_TEEN_NO_EDUCATION_CHANCE).toBe(0.4);
+  });
+
+  it('ATTRITION should have correct values', () => {
+    expect(ATTRITION.GOOD_THRESHOLD).toBe(70);
+    expect(ATTRITION.POOR_THRESHOLD).toBe(40);
   });
 });
