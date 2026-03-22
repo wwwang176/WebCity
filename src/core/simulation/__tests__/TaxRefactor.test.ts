@@ -3,7 +3,7 @@ import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { BUILDING_TYPES, getBuildingType } from '../../building/types';
-import { DEFAULT_TAX_RATES, type TaxRates } from '../../economy/Tax';
+import { DEFAULT_TAX_RATE, DEFAULT_TAX_RATES, type TaxRates } from '../../economy/Tax';
 import { serializeGameState, deserializeGameState } from '../../save/Serializer';
 
 /** Add power+water plants adjacent to a position so buildings there get utilities. */
@@ -82,9 +82,16 @@ describe('TaxRates: income tax + business tax', () => {
     expect(state.taxRates.business).toBeDefined();
   });
 
-  it('DEFAULT_TAX_RATES should include business rate', () => {
-    expect(DEFAULT_TAX_RATES.residential).toBe(9);
-    expect(DEFAULT_TAX_RATES.business).toBe(9);
+  it('DEFAULT_TAX_RATE should be 9', () => {
+    expect(DEFAULT_TAX_RATE).toBe(9);
+  });
+
+  it('DEFAULT_TAX_RATES should use DEFAULT_TAX_RATE for all fields', () => {
+    expect(DEFAULT_TAX_RATES.residential).toBe(DEFAULT_TAX_RATE);
+    expect(DEFAULT_TAX_RATES.commercial).toBe(DEFAULT_TAX_RATE);
+    expect(DEFAULT_TAX_RATES.industrial).toBe(DEFAULT_TAX_RATE);
+    expect(DEFAULT_TAX_RATES.office).toBe(DEFAULT_TAX_RATE);
+    expect(DEFAULT_TAX_RATES.business).toBe(DEFAULT_TAX_RATE);
   });
 
   it('income tax rate and business tax rate should be independent', () => {

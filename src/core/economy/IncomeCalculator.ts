@@ -4,6 +4,7 @@ import { isResidentialZone, isCommercialZone, ZoneType } from '../grid/types';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { getBuildingLevelMultiplier, getResidentialLevelMultiplier, getEducationSalaryMultiplier, ECONOMY } from './TaxMultipliers';
 import { TRADE } from '../traffic/FreightSystem';
+import { DEFAULT_TAX_RATE } from './Tax';
 
 const TRADE_IMPORT_MULTIPLIER = TRADE.IMPORT_INCOME_MULTIPLIER;
 import type { EducationLevel } from '../citizen/types';
@@ -50,8 +51,8 @@ export interface IncomeCalcDeps {
  * Business tax = companyIncome × buildingLevelMultiplier × taxRate
  */
 export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown {
-  const incomeTaxRate = deps.taxRates.residential ?? 9;
-  const businessTaxRate = deps.taxRates.business ?? 9;
+  const incomeTaxRate = deps.taxRates.residential ?? DEFAULT_TAX_RATE;
+  const businessTaxRate = deps.taxRates.business ?? DEFAULT_TAX_RATE;
 
   let residential = 0;
   let commercial = 0;

@@ -3,6 +3,7 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { ZoneType } from '../../../core/grid/types';
 import { getBuildingType } from '../../../core/building/types';
 import { calculateAttractiveness } from '../../../core/citizen/Migration';
+import { DEFAULT_TAX_RATE } from '../../../core/economy/Tax';
 
 const ZONE_ORDER = [
   ZoneType.RESIDENTIAL_LOW, ZoneType.RESIDENTIAL_HIGH,
@@ -56,7 +57,7 @@ export function SummaryPage() {
     const avgHappiness = population > 0
       ? Math.round(state.citizens.getAverageHappiness())
       : 70;
-    const taxRate = state.taxRates.residential ?? 9;
+    const taxRate = state.taxRates.residential ?? DEFAULT_TAX_RATE;
     const attractiveness = calculateAttractiveness({
       jobOpenings, vacantHomes, avgHappiness, taxRate,
       pollution: avgPollution, crimeRate: Math.min(50, population * 0.02),

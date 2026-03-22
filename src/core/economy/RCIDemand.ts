@@ -37,9 +37,11 @@ function clampDemand(value: number): number {
   return Math.min(RCI.DEMAND_MAX, Math.max(RCI.DEMAND_MIN, value));
 }
 
+import { DEFAULT_TAX_RATE } from './Tax';
+
 /** Business tax constants for demand penalty. */
 export const BUSINESS_TAX = {
-  BASELINE: 9,
+  BASELINE: DEFAULT_TAX_RATE,
   PENALTY_PER_POINT: 2,
 } as const;
 

@@ -7,6 +7,7 @@ import { RoadType } from '../../road/types';
 import { PolicyType, Specialization } from '../../district/types';
 import { setSpecialization } from '../../district/Specialization';
 import { CitySpecType } from '../../district/CitySpecialization';
+import { DEFAULT_TAX_RATE } from '../../economy/Tax';
 
 /** Add power+water plants adjacent to a position so buildings there get utilities. */
 function provideUtilities(state: GameState, x: number, y: number): void {
@@ -601,7 +602,7 @@ describe('Specialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     // 3 buildings × companyIncome(10) × levelMult(1.0) × 1.5 (tourism bonus) × businessTaxRate/100
-    const businessTax = state.taxRates.business ?? 9;
+    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
     const expectedWithBonus = 3 * 10 * 1.0 * 1.5 * (businessTax / 100);
     expect(state.budget.income).toBeCloseTo(expectedWithBonus, 1);
   });
@@ -620,7 +621,7 @@ describe('Specialization integration', () => {
 
     // Both buildings should generate same revenue (no bonus)
     // Small Shop: companyIncome=10, Lv1, levelMult=1.0
-    const businessTax = state.taxRates.business ?? 9;
+    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
     const expected = 2 * 10 * 1.0 * (businessTax / 100); // 2 buildings × companyIncome × businessTax
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
@@ -644,7 +645,7 @@ describe('CitySpecialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     // companyIncome(10) × levelMult(1.0) × businessTax/100 × gambling(1.4)
-    const businessTax = state.taxRates.business ?? 9;
+    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
     const expected = 10 * 1.0 * (businessTax / 100) * 1.4;
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
@@ -660,7 +661,7 @@ describe('CitySpecialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     // companyIncome(20) × levelMult(1.0) × businessTax/100 × tech(1.25)
-    const businessTax = state.taxRates.business ?? 9;
+    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
     const expected = 20 * 1.0 * (businessTax / 100) * 1.25;
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });

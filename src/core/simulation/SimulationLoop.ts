@@ -16,6 +16,7 @@ import { getBuildingType } from '../building/types';
 import { avgEducationScore } from '../building/BuildingUpgrade';
 import { clampBuildingLevel } from '../building/BuildingLevel';
 import { ECONOMY } from '../economy/TaxMultipliers';
+import { DEFAULT_TAX_RATE } from '../economy/Tax';
 import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { forEachGridPollutionSource } from '../environment/GridPollutionSources';
@@ -73,7 +74,7 @@ export const SIMULATION = {
   /** Default happiness used when city has no citizens */
   DEFAULT_HAPPINESS: 70,
   /** Business tax baseline — penalty applies above this rate */
-  BUSINESS_TAX_BASELINE: 9,
+  BUSINESS_TAX_BASELINE: DEFAULT_TAX_RATE,
   /** Demand penalty per percentage point above baseline */
   BUSINESS_TAX_PENALTY_PER_POINT: 2,
   /** Crime: max base crime rate */
@@ -563,7 +564,7 @@ export class SimulationLoop {
       jobOpenings: this.countJobOpenings(),
       vacantHomes: this.countVacantHomes(),
       avgHappiness,
-      taxRate: this.state.taxRates.residential ?? 9,
+      taxRate: this.state.taxRates.residential ?? DEFAULT_TAX_RATE,
       pollution: this.getAvgPollution(),
       crimeRate: this.getAvgCrime(),
       unemploymentRate,
@@ -592,7 +593,7 @@ export class SimulationLoop {
   }
 
   private updateCitizenHappiness(): void {
-    const taxRate = this.state.taxRates.residential ?? 9;
+    const taxRate = this.state.taxRates.residential ?? DEFAULT_TAX_RATE;
     const pop = this.state.citizens.getPopulation();
     if (pop === 0) return;
 
@@ -887,8 +888,8 @@ export class SimulationLoop {
    */
   private processAbandonmentStress(): void {
     const grid = this.state.grid;
-    const businessTax = this.state.taxRates.business ?? 9;
-    const resTax = this.state.taxRates.residential ?? 9;
+    const businessTax = this.state.taxRates.business ?? DEFAULT_TAX_RATE;
+    const resTax = this.state.taxRates.residential ?? DEFAULT_TAX_RATE;
     const baseCrime = this.getAvgCrime();
     let changed = false;
 

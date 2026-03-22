@@ -4,6 +4,7 @@ import { CitizenDetail } from './CitizenDetail';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
 import { getEducationSalaryMultiplier, getResidentialLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../../core/economy/TaxMultipliers';
+import { DEFAULT_TAX_RATE } from '../../core/economy/Tax';
 
 const ZONE_NAMES: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
@@ -199,11 +200,11 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       for (const r of residents) {
         salarySum += ECONOMY.CITIZEN_BASE_INCOME * getEducationSalaryMultiplier(r.education);
       }
-      const taxRate = state.taxRates.residential ?? 9;
+      const taxRate = state.taxRates.residential ?? DEFAULT_TAX_RATE;
       const income = salarySum * getResidentialLevelMultiplier(b.level as 1 | 2 | 3) * (taxRate / 100);
       return `$${income.toFixed(1)}/tick`;
     } else {
-      const taxRate = state.taxRates.business ?? 9;
+      const taxRate = state.taxRates.business ?? DEFAULT_TAX_RATE;
       const income = (b.companyIncome ?? 0) * getBuildingLevelMultiplier(b.level as 1 | 2 | 3) * (taxRate / 100);
       return `$${income.toFixed(1)}/tick`;
     }
