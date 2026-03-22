@@ -1687,6 +1687,9 @@ export class SimulationLoop {
    * 1. Local supply: industrial → commercial
    * 2. Export: industrial → trade node (station/airport/highway edge)
    * 3. Import: trade node → commercial
+   *
+   * Spawn count scales with actual freight activity (production + trade volume).
+   * Route weights are proportional to real data so truck distribution matches economy.
    */
   private spawnFreightTraffic(
     grid: { getCell(x: number, y: number): { roadType: number; zoneType: number } | null; width: number; height: number },
@@ -1696,11 +1699,15 @@ export class SimulationLoop {
     const lastTrade = freight.getLastTrade();
     const lastDemand = freight.getLastDemand();
 
-    // Skip if no production and no trade
-    if (lastDemand.production === 0 && lastTrade.importCapacity === 0) return;
+    const production = lastDemand.production;
+    const imported = lastTrade.imported;
+    const exported = lastTrade.exported;
 
-    // Cap check: freight uses up to 5% of vehicle cap
-    const freightCap = Math.floor(vehicleCap * 0.05);
+    // Skip if no freight activity
+    if (production === 0 && imported === 0) return;
+
+    // Cap check: freight uses up to 15% of vehicle cap
+    const freightCap = Math.floor(vehicleCap * 0.15);
     const currentCount = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
     if (currentCount >= vehicleCap) return;
 
@@ -1716,27 +1723,34 @@ export class SimulationLoop {
       else if (isCommercialZone(cell.zoneType)) commercials.push(bp);
     }
 
-    // At most 2 freight trucks per tick
-    const maxPerTick = Math.min(2, freightCap);
-    let spawned = 0;
+    // Spawn count scales with freight activity + population
+    const pop = this.state.citizens.getPopulation();
+    const activityBase = Math.floor((production + imported + exported) / 20);
+    const maxForPop = Math.min(10, 3 + Math.floor(pop / 2000));
+    const maxPerTick = Math.min(activityBase, maxForPop);
+    if (maxPerTick <= 0) return;
 
+    // Route weights proportional to actual data
+    const localVolume = Math.max(0, production - exported);
+    const hasLocal = industrials.length > 0 && commercials.length > 0 && localVolume > 0;
+    const hasExport = industrials.length > 0 && this.cachedTradePositions.length > 0 && exported > 0;
+    const hasImport = commercials.length > 0 && this.cachedTradePositions.length > 0 && imported > 0;
+
+    if (!hasLocal && !hasExport && !hasImport) return;
+
+    const options: Array<{ type: 'local' | 'export' | 'import'; weight: number }> = [];
+    if (hasLocal) options.push({ type: 'local', weight: localVolume });
+    if (hasExport) options.push({ type: 'export', weight: exported });
+    if (hasImport) options.push({ type: 'import', weight: imported });
+    const totalWeight = options.reduce((s, o) => s + o.weight, 0);
+    if (totalWeight === 0) return;
+
+    let spawned = 0;
     for (let i = 0; i < maxPerTick; i++) {
       if (currentCount + spawned >= vehicleCap) break;
+      if (spawned >= freightCap) break;
 
-      // Weighted random route selection based on actual freight activity
-      const hasLocal = industrials.length > 0 && commercials.length > 0 && lastDemand.production > 0;
-      const hasExport = industrials.length > 0 && this.cachedTradePositions.length > 0 && lastTrade.exported > 0;
-      const hasImport = commercials.length > 0 && this.cachedTradePositions.length > 0 && lastTrade.imported > 0;
-
-      if (!hasLocal && !hasExport && !hasImport) return;
-
-      // Build weighted options
-      const options: Array<{ type: 'local' | 'export' | 'import'; weight: number }> = [];
-      if (hasLocal) options.push({ type: 'local', weight: 3 });
-      if (hasExport) options.push({ type: 'export', weight: 2 });
-      if (hasImport) options.push({ type: 'import', weight: 2 });
-
-      const totalWeight = options.reduce((s, o) => s + o.weight, 0);
+      // Weighted random route selection
       let roll = Math.random() * totalWeight;
       let routeType: 'local' | 'export' | 'import' = 'local';
       for (const o of options) {
