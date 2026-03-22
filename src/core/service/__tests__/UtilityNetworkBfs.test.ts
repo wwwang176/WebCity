@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from '../NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, calculateZoneDemand, type ZoneConsumptionConfig } from '../NetworkCoverage';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
 import { toPosKey } from '../../grid/GridHelpers';
@@ -210,5 +210,70 @@ describe('bfsBudgetDrainFlood', () => {
 
     expect(supplied.has(toPosKey(3, 3))).toBe(true);
     expect(supplied.has(toPosKey(4, 3))).toBe(true);
+  });
+});
+
+describe('calculateZoneDemand', () => {
+  const config: ZoneConsumptionConfig = {
+    RESIDENTIAL: { base: 1, perCapita: 0.1 },
+    COMMERCIAL:  { base: 2, perCapita: 0.2 },
+    INDUSTRIAL:  { base: 3, perCapita: 0.3 },
+    OFFICE:      { base: 4, perCapita: 0.4 },
+  };
+
+  it('residential zone uses residents for perCapita', () => {
+    const d = calculateZoneDemand(config, ZoneType.RESIDENTIAL_LOW, 10, 5);
+    // base 1 + 0.1 * 10 residents = 2
+    expect(d).toBe(2);
+  });
+
+  it('residential high also uses residents', () => {
+    const d = calculateZoneDemand(config, ZoneType.RESIDENTIAL_HIGH, 20, 0);
+    expect(d).toBe(1 + 0.1 * 20);
+  });
+
+  it('commercial zone uses workers for perCapita', () => {
+    const d = calculateZoneDemand(config, ZoneType.COMMERCIAL_LOW, 0, 8);
+    // base 2 + 0.2 * 8 workers = 3.6
+    expect(d).toBeCloseTo(3.6);
+  });
+
+  it('industrial zone uses workers', () => {
+    const d = calculateZoneDemand(config, ZoneType.INDUSTRIAL, 0, 10);
+    // base 3 + 0.3 * 10 = 6
+    expect(d).toBe(6);
+  });
+
+  it('office zone uses workers', () => {
+    const d = calculateZoneDemand(config, ZoneType.OFFICE, 0, 5);
+    // base 4 + 0.4 * 5 = 6
+    expect(d).toBe(6);
+  });
+
+  it('returns 0 for NONE zone', () => {
+    expect(calculateZoneDemand(config, ZoneType.NONE, 10, 10)).toBe(0);
+  });
+
+  it('works with POWER_CONSUMPTION values', () => {
+    // Verify it produces same result as the old hardcoded PowerGrid.getZoneDemand
+    const powerConfig: ZoneConsumptionConfig = {
+      RESIDENTIAL: { base: 0.25, perCapita: 0.025 },
+      COMMERCIAL:  { base: 0.5,  perCapita: 0.04 },
+      INDUSTRIAL:  { base: 1,    perCapita: 0.06 },
+      OFFICE:      { base: 0.5,  perCapita: 0.025 },
+    };
+    expect(calculateZoneDemand(powerConfig, ZoneType.RESIDENTIAL_LOW, 8, 0)).toBeCloseTo(0.45);
+    expect(calculateZoneDemand(powerConfig, ZoneType.INDUSTRIAL, 0, 10)).toBeCloseTo(1.6);
+  });
+
+  it('works with WATER_CONSUMPTION values', () => {
+    const waterConfig: ZoneConsumptionConfig = {
+      RESIDENTIAL: { base: 0.375, perCapita: 0.0375 },
+      COMMERCIAL:  { base: 0.2,   perCapita: 0.016 },
+      INDUSTRIAL:  { base: 0.8,   perCapita: 0.048 },
+      OFFICE:      { base: 0.15,  perCapita: 0.0075 },
+    };
+    expect(calculateZoneDemand(waterConfig, ZoneType.RESIDENTIAL_HIGH, 8, 0)).toBeCloseTo(0.675);
+    expect(calculateZoneDemand(waterConfig, ZoneType.OFFICE, 0, 10)).toBeCloseTo(0.225);
   });
 });

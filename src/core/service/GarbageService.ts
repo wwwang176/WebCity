@@ -139,6 +139,14 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
         sources.push({ x: f.x, y: f.y, amount: Math.round(loadRatio * GARBAGE.POLLUTION_AMOUNT_SCALE), type: 'ground' });
       }
     }
+    // Include overflow pollution sources (previously a separate method)
+    if (this.overflow > 0 && this.facilities.length > 0) {
+      const totalPenalty = this.getPollutionPenalty();
+      const perFacility = Math.ceil(totalPenalty / this.facilities.length);
+      for (const f of this.facilities) {
+        sources.push({ x: f.x, y: f.y, amount: perFacility, type: 'ground' });
+      }
+    }
     return sources;
   }
 

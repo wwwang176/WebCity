@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateHappiness, HAPPINESS, applyThresholdModifier, getUnemploymentPenalty, getHomelessPenalty, getJobMismatchPenalty, type HappinessFactors } from '../Happiness';
+import { calculateHappiness, HAPPINESS, applyThresholdModifier, getUnemploymentPenalty, getHomelessPenalty, getJobMismatchPenalty, JOB_MISMATCH_TABLE, type HappinessFactors } from '../Happiness';
 import { ZoneType } from '../../grid/types';
 import { type Citizen, LifeStage, EducationLevel } from '../types';
 
@@ -318,5 +318,18 @@ describe('getJobMismatchPenalty', () => {
     const matched = calculateHappiness(citizen, { ...baseFactors, workplaceZoneType: ZoneType.OFFICE });
     const mismatched = calculateHappiness(citizen, { ...baseFactors, workplaceZoneType: ZoneType.INDUSTRIAL });
     expect(mismatched).toBe(matched - 10);
+  });
+
+  it('JOB_MISMATCH_TABLE has entries for all 4 mismatch rules', () => {
+    expect(Object.keys(JOB_MISMATCH_TABLE)).toHaveLength(4);
+  });
+
+  it('table lookup matches function output for all entries', () => {
+    for (const [key, penalty] of Object.entries(JOB_MISMATCH_TABLE)) {
+      const sep = key.lastIndexOf(':');
+      const edu = key.slice(0, sep) as EducationLevel;
+      const zone = Number(key.slice(sep + 1)) as ZoneType;
+      expect(getJobMismatchPenalty(edu, zone)).toBe(penalty);
+    }
   });
 });

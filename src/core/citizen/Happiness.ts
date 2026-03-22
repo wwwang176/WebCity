@@ -134,22 +134,21 @@ export function getHomelessPenalty(citizen: Citizen, currentTick: number): numbe
   return HAPPINESS.HOMELESS_PENALTY;
 }
 
-/** Calculate job mismatch penalty based on education vs workplace zone type */
+/**
+ * Data-driven job mismatch table: `"education:zoneType"` → penalty.
+ * Adding new mismatch rules only requires a new table entry (OCP).
+ */
+export const JOB_MISMATCH_TABLE: Record<string, number> = {
+  [`${EducationLevel.UNIVERSITY}:${ZoneType.INDUSTRIAL}`]: HAPPINESS.JOB_MISMATCH_SEVERE,
+  [`${EducationLevel.HIGH_SCHOOL}:${ZoneType.INDUSTRIAL}`]: HAPPINESS.JOB_MISMATCH_MILD,
+  [`${EducationLevel.NONE}:${ZoneType.OFFICE}`]: HAPPINESS.JOB_MISMATCH_MILD,
+  [`${EducationLevel.ELEMENTARY}:${ZoneType.OFFICE}`]: HAPPINESS.JOB_MISMATCH_MILD,
+};
+
+/** Calculate job mismatch penalty based on education vs workplace zone type (data-driven). */
 export function getJobMismatchPenalty(education: EducationLevel, zoneType?: ZoneType): number {
   if (zoneType === undefined) return 0;
-  // UNI in industrial → severe
-  if (education === EducationLevel.UNIVERSITY && zoneType === ZoneType.INDUSTRIAL) {
-    return HAPPINESS.JOB_MISMATCH_SEVERE;
-  }
-  // HS in industrial → mild
-  if (education === EducationLevel.HIGH_SCHOOL && zoneType === ZoneType.INDUSTRIAL) {
-    return HAPPINESS.JOB_MISMATCH_MILD;
-  }
-  // NONE/ELEM in office → mild
-  if ((education === EducationLevel.NONE || education === EducationLevel.ELEMENTARY) && zoneType === ZoneType.OFFICE) {
-    return HAPPINESS.JOB_MISMATCH_MILD;
-  }
-  return 0;
+  return JOB_MISMATCH_TABLE[`${education}:${zoneType}`] ?? 0;
 }
 
 export function calculateHappiness(citizen: Citizen, factors: HappinessFactors): number {

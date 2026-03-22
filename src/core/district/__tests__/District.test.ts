@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { DistrictManager } from '../DistrictManager';
-import { PolicyManager, POLICY_CONFIG } from '../PolicyManager';
+import { PolicyManager, POLICY_CONFIG, POLICY_ZONE_RESTRICTIONS } from '../PolicyManager';
 import type { DistrictLookup } from '../PolicyManager';
 import { setSpecialization, getSpecialization, getSpecializationBonus, SPECIALIZATION_BONUSES } from '../Specialization';
 import { CitySpecialization, CitySpecType } from '../CitySpecialization';
@@ -185,6 +185,18 @@ describe('PolicyManager', () => {
     expect(pm.canBuildInDistrict(district.id, ZoneType.COMMERCIAL_HIGH)).toBe(false);
     expect(pm.canBuildInDistrict(district.id, ZoneType.RESIDENTIAL_LOW)).toBe(true);
     expect(pm.canBuildInDistrict(district.id, ZoneType.COMMERCIAL_LOW)).toBe(true);
+  });
+
+  it('POLICY_ZONE_RESTRICTIONS table drives canBuildInDistrict (OCP)', () => {
+    const district = dm.createDistrict('Test');
+    // Verify each restriction entry blocks the right zones
+    for (const [policyType, blockedZones] of Object.entries(POLICY_ZONE_RESTRICTIONS)) {
+      pm.applyPolicy(district.id, policyType as PolicyType);
+      for (const zone of blockedZones!) {
+        expect(pm.canBuildInDistrict(district.id, zone)).toBe(false);
+      }
+      pm.removePolicy(district.id, policyType as PolicyType);
+    }
   });
 
   it('should get all policy costs', () => {

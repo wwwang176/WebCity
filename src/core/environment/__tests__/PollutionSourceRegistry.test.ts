@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { collectAllPollutionSources, type PollutionSourceProvider } from '../PollutionSourceRegistry';
-import type { PollutionSource } from '../Pollution';
+import { collectAllPollutionSources, forEachServicePollutionSource, type PollutionSourceProvider } from '../PollutionSourceRegistry';
+import type { PollutionSource, PollutionType } from '../Pollution';
 
 describe('PollutionSourceRegistry', () => {
   describe('collectAllPollutionSources', () => {
@@ -47,6 +47,49 @@ describe('PollutionSourceRegistry', () => {
       };
       const result = collectAllPollutionSources([emptyProvider, nonEmptyProvider]);
       expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('forEachServicePollutionSource', () => {
+    it('collects sources from garbage, sewage, airport providers on state', () => {
+      const collected: PollutionSource[] = [];
+      const state = {
+        garbage: { getPollutionSources: () => [{ x: 1, y: 2, amount: 10, type: 'ground' as PollutionType }] },
+        sewage: { getPollutionSources: () => [{ x: 3, y: 4, amount: 20, type: 'water' as PollutionType }] },
+        airport: { getPollutionSources: () => [{ x: 5, y: 6, amount: 15, type: 'noise' as PollutionType }] },
+      };
+      forEachServicePollutionSource(state, (x, y, amount, type) => {
+        collected.push({ x, y, amount, type });
+      });
+      expect(collected).toHaveLength(3);
+      expect(collected[0]).toEqual({ x: 1, y: 2, amount: 10, type: 'ground' });
+      expect(collected[1]).toEqual({ x: 3, y: 4, amount: 20, type: 'water' });
+      expect(collected[2]).toEqual({ x: 5, y: 6, amount: 15, type: 'noise' });
+    });
+
+    it('skips missing providers gracefully', () => {
+      const collected: PollutionSource[] = [];
+      const state = {
+        garbage: { getPollutionSources: () => [{ x: 1, y: 1, amount: 5, type: 'ground' as PollutionType }] },
+        // no sewage or airport
+      };
+      forEachServicePollutionSource(state, (x, y, amount, type) => {
+        collected.push({ x, y, amount, type });
+      });
+      expect(collected).toHaveLength(1);
+    });
+
+    it('handles providers returning empty arrays', () => {
+      const collected: PollutionSource[] = [];
+      const state = {
+        garbage: { getPollutionSources: () => [] },
+        sewage: { getPollutionSources: () => [] },
+        airport: { getPollutionSources: () => [] },
+      };
+      forEachServicePollutionSource(state, (x, y, amount, type) => {
+        collected.push({ x, y, amount, type });
+      });
+      expect(collected).toHaveLength(0);
     });
   });
 });
