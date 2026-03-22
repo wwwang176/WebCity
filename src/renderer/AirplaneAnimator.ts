@@ -105,8 +105,10 @@ interface SizeFlightPaths {
   gates: Vec2[];
   takeoffEnd: Vec2;
   climbEnd: Vec2;
-  /** Arc radius for smoothTrackPath (smaller airports need tighter turns). */
+  /** Arc radius for taxiway turns. */
   arcRadius: number;
+  /** Smaller arc radius for the gate approach turn. */
+  gateRadius: number;
 }
 
 // SMALL (3×2): left taxi x=-1.05, right taxi x=+1.05, tight turns (R=0.25)
@@ -120,10 +122,11 @@ const SMALL_PATHS: SizeFlightPaths = {
   leftTaxiTop:     { x: -1.05, z: 0.32 },
   leftJunction:    { x: -1.05, z: 0.60 },
   runwayEntry:     { x: -0.55, z: 0.60 },
-  gates:           [{ x: 0, z: 0.05 }],
+  gates:           [{ x: 0, z: 0.17 }],
   takeoffEnd:      { x: 1.40, z: 0.60 },
   climbEnd:        { x: 6.0, z: 0.60 },
   arcRadius:       0.14,
+  gateRadius:      0.13,
 };
 
 // MEDIUM (5×4): left taxi x=-1.80, right taxi x=+1.80, medium turns (R=0.35)
@@ -137,10 +140,11 @@ const MEDIUM_PATHS: SizeFlightPaths = {
   leftTaxiTop:     { x: -1.80, z: -0.10 },
   leftJunction:    { x: -1.80, z: 1.20 },
   runwayEntry:     { x: -1.30, z: 1.20 },
-  gates:           [{ x: -0.60, z: -0.50 }, { x: 0, z: -0.50 }, { x: 0.60, z: -0.50 }],
+  gates:           [{ x: -0.60, z: -0.34 }, { x: 0, z: -0.34 }, { x: 0.60, z: -0.34 }],
   takeoffEnd:      { x: 2.25, z: 1.20 },
   climbEnd:        { x: 7.0, z: 1.20 },
   arcRadius:       0.35,
+  gateRadius:      0.20,
 };
 
 // LARGE (7×6): left taxi x=-2.80, right taxi x=+2.80
@@ -154,10 +158,11 @@ const LARGE_PATH_A: SizeFlightPaths = {
   leftTaxiTop:     { x: -2.80, z: -0.80 },
   leftJunction:    { x: -2.80, z: 0.80 },
   runwayEntry:     { x: -2.10, z: 0.80 },
-  gates:           [{ x: -0.50, z: -1.44 }, { x: 0.20, z: -1.44 }],
+  gates:           [{ x: -0.50, z: -1.28 }, { x: 0.20, z: -1.28 }],
   takeoffEnd:      { x: 3.25, z: 0.80 },
   climbEnd:        { x: 8.0, z: 0.80 },
   arcRadius:       0.5,
+  gateRadius:      0.43,
 };
 
 const LARGE_PATH_B: SizeFlightPaths = {
@@ -170,10 +175,11 @@ const LARGE_PATH_B: SizeFlightPaths = {
   leftTaxiTop:     { x: -2.80, z: -0.80 },
   leftJunction:    { x: -2.80, z: 2.20 },
   runwayEntry:     { x: -2.10, z: 2.20 },
-  gates:           [{ x: 0.20, z: -1.44 }, { x: 0.90, z: -1.44 }],
+  gates:           [{ x: 0.20, z: -1.28 }, { x: 0.90, z: -1.28 }],
   takeoffEnd:      { x: 3.25, z: 2.20 },
   climbEnd:        { x: 8.0, z: 2.20 },
   arcRadius:       0.5,
+  gateRadius:      0.43,
 };
 
 function getFlightPaths(size: AirportSize, pathIndex: number): SizeFlightPaths {
@@ -643,47 +649,47 @@ export class AirplaneAnimator implements VehicleAnimator {
     const az = paths.apronZ;
 
     let localWaypoints: Vec2[];
+    const R = paths.arcRadius;
+    const gR = paths.gateRadius;
+    let radii: number | number[] = R;
 
     switch (anim.phase) {
       case 'roll':
-        // Threshold → rollStop (before right junction, leave arc space)
         localWaypoints = [paths.threshold, paths.rollStop];
         break;
 
       case 'taxi_in':
-        // rollStop → arc into right taxiway → straight up → arc to apron → horiz → arc to gate
-        // All turns are interior points → smoothTrackPath generates arcs.
+        // 5 points, 3 interior turns: rightJunction(R), rightTaxiTop(R), gateApproach(gR)
         localWaypoints = [
-          paths.rollStop,                              // start on runway (= roll end)
-          paths.rightJunction,                         // ARC: → to ↑
-          paths.rightTaxiTop,                          // ARC: ↑ to ←
-          { x: anim.gate.x, z: az },                  // ARC: ← to ↑ (toward gate)
-          anim.gate,                                   // end
+          paths.rollStop,
+          paths.rightJunction,
+          paths.rightTaxiTop,
+          { x: anim.gate.x, z: az },
+          anim.gate,
         ];
+        radii = [R, R, gR];
         break;
 
       case 'pushback':
-        // Short arc backward to the right: gate → arcMid → pushbackEnd
-        // Heading reversed: nose stays ↑ initially, swings to ← by end.
+        // 3 points, 1 interior turn: gate departure(gR)
         localWaypoints = [
-          anim.gate,                                   // start facing terminal
-          { x: anim.gate.x, z: az },                  // ARC: ↓ to → (tail goes right)
-          { x: anim.gate.x + 0.60, z: az },           // end (nose now faces ←)
+          anim.gate,
+          { x: anim.gate.x, z: az },
+          { x: anim.gate.x + 0.60, z: az },
         ];
+        radii = [gR];
         break;
 
       case 'taxi_out':
-        // Forward from pushback end → across apron → arc into left taxiway → down → arc onto runway
         localWaypoints = [
-          { x: anim.gate.x + 0.60, z: az },           // start (= pushback end)
-          paths.leftTaxiTop,                           // ARC: ← to ↓
-          paths.leftJunction,                          // ARC: ↓ to →
-          paths.runwayEntry,                           // end (on runway)
+          { x: anim.gate.x + 0.60, z: az },
+          paths.leftTaxiTop,
+          paths.leftJunction,
+          paths.runwayEntry,
         ];
         break;
 
       case 'takeoff_roll':
-        // runwayEntry → takeoff end (full runway)
         localWaypoints = [paths.runwayEntry, paths.takeoffEnd];
         break;
 
@@ -692,7 +698,7 @@ export class AirplaneAnimator implements VehicleAnimator {
     }
 
     const worldPoints = transformPath(localWaypoints, anim.centerX, anim.centerZ, anim.rotRad);
-    return buildBezierPath(worldPoints, paths.arcRadius);
+    return buildBezierPath(worldPoints, radii);
   }
 
   // ── Helpers ──
@@ -768,11 +774,10 @@ function bezierArcLength(
 /** Build a path of straight + Bézier segments from waypoints. */
 function buildBezierPath(
   points: ReadonlyArray<{ x: number; y: number }>,
-  radius: number,
+  radius: number | number[],
 ): BezierPath {
   if (points.length < 2) return { segs: [], cumLen: [0], total: 0 };
 
-  const R = radius;
   const segs: PathSeg[] = [];
   let curX = points[0]!.x, curY = points[0]!.y;
 
@@ -785,6 +790,8 @@ function buildBezierPath(
 
     // Straight through — no turn
     if (eDx === xDx && eDy === xDy) continue;
+
+    const R = typeof radius === 'number' ? radius : radius[i - 1]!;
 
     // Corner — entry/exit points
     const entryX = curr.x - eDx * R, entryY = curr.y - eDy * R;
