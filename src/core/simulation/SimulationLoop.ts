@@ -121,6 +121,38 @@ export const SIMULATION = {
   WALK_TO_STOP_RANGE: 5,
   /** Industrial zone pollution reduction factor */
   INDUSTRIAL_POLLUTION_FACTOR: 0.2,
+  /** Export demand base value for RCI calculation */
+  EXPORT_DEMAND: 10,
+  /** Fallback resident count when building type lookup fails */
+  FALLBACK_RESIDENTS: 8,
+  /** Population threshold before shopping access affects happiness */
+  SHOPPING_POP_THRESHOLD: 50,
+  /** Number of random cells sampled per upgrade tick */
+  UPGRADE_ATTEMPTS: 30,
+  /** Pedestrian density multiplier during midday */
+  PEDESTRIAN_DENSITY_MIDDAY: 0.3,
+  /** Pedestrian density multiplier during night */
+  PEDESTRIAN_DENSITY_NIGHT: 0.05,
+  /** Fraction of vehicle cap reserved for freight */
+  FREIGHT_CAP_RATIO: 0.15,
+  /** Divisor for freight activity to spawn count */
+  FREIGHT_ACTIVITY_DIVISOR: 20,
+  /** Population divisor for max freight trucks */
+  FREIGHT_POP_DIVISOR: 2000,
+  /** Freight max trucks from population component */
+  FREIGHT_MAX_FROM_POP: 10,
+  /** Freight base trucks from population */
+  FREIGHT_BASE_TRUCKS: 3,
+  /** Minimum Manhattan distance for commute trip */
+  MANHATTAN_DISTANCE_THRESHOLD: 3,
+  /** Highway external: incoming ratio during morning rush */
+  HIGHWAY_MORNING_INCOMING: 0.6,
+  /** Highway external: incoming ratio during evening rush */
+  HIGHWAY_EVENING_INCOMING: 0.4,
+  /** Abandonment: service normalization max (residential) */
+  SERVICE_MAX_RES: 10,
+  /** Abandonment: service normalization max (non-residential) */
+  SERVICE_MAX_NON_RES: 6,
 } as const;
 
 // clampBuildingLevel re-exported from shared module for backward compatibility
@@ -228,7 +260,7 @@ export class SimulationLoop {
         industrialSupply: countZoneBuildings(this.state.grid, t => t === ZoneType.INDUSTRIAL),
         population: this.state.citizens.getPopulation(),
         jobOpenings: this.countJobOpenings(),
-        exportDemand: 10,
+        exportDemand: SIMULATION.EXPORT_DEMAND,
         freightShortageRatio: this.state.freight.getShortageRatio(),
         freightSurplusRatio: this.state.freight.getSurplusRatio(),
       });
@@ -335,8 +367,8 @@ export class SimulationLoop {
         getResidents: (homeId) => {
           const [x, y] = homeId.split(',').map(Number);
           const cell = this.state.grid.getCell(x, y);
-          if (!cell || !cell.buildingId) return 8; // fallback
-          return getBuildingType(cell.buildingId)?.residents ?? 8;
+          if (!cell || !cell.buildingId) return SIMULATION.FALLBACK_RESIDENTS;
+          return getBuildingType(cell.buildingId)?.residents ?? SIMULATION.FALLBACK_RESIDENTS;
         },
       }, this.state.clock.tick);
     }
@@ -615,8 +647,8 @@ export class SimulationLoop {
     const hasParkCoverage = this.state.parks.getParks().length > 0;
     const currentTick = this.state.clock.tick;
 
-    // Shopping access: only penalise when population >= 50 (early game protection)
-    const enableShopping = pop >= 50;
+    // Shopping access: only penalise when population >= threshold (early game protection)
+    const enableShopping = pop >= SIMULATION.SHOPPING_POP_THRESHOLD;
 
     // Reusable factors object — mutated per citizen, no allocation per iteration
     const factors: HappinessFactors = {
@@ -851,7 +883,7 @@ export class SimulationLoop {
     let changed = false;
 
     // Sample cells each tick rather than scanning all (performance)
-    const attempts = 30;
+    const attempts = SIMULATION.UPGRADE_ATTEMPTS;
     for (let i = 0; i < attempts; i++) {
       const x = randomInt(grid.width);
       const y = randomInt(grid.height);
@@ -920,8 +952,8 @@ export class SimulationLoop {
         (isRes ? svc(this.state.health.getCostRatio(x, y)) : 0) +
         (isRes ? svc(this.state.education.getCostRatio(x, y)) : 0) +
         (isRes ? svc(this.state.deathCare.getCostRatio(x, y)) : 0);
-      // Residential max=10, non-residential max=6 → normalize to 0–10
-      const serviceScore = isRes ? rawScore : rawScore * (10 / 6);
+      // Residential max=SERVICE_MAX_RES, non-residential max=SERVICE_MAX_NON_RES → normalize
+      const serviceScore = isRes ? rawScore : rawScore * (SIMULATION.SERVICE_MAX_RES / SIMULATION.SERVICE_MAX_NON_RES);
 
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
@@ -1369,10 +1401,10 @@ export class SimulationLoop {
       this.spawnPedestriansFromPool(pop);
       this.state.pedestrianManager.setDensityMultiplier(1.0);
     } else if (timeOfDay === 'midday') {
-      this.state.pedestrianManager.setDensityMultiplier(0.3);
+      this.state.pedestrianManager.setDensityMultiplier(SIMULATION.PEDESTRIAN_DENSITY_MIDDAY);
     } else {
       // night
-      this.state.pedestrianManager.setDensityMultiplier(0.05);
+      this.state.pedestrianManager.setDensityMultiplier(SIMULATION.PEDESTRIAN_DENSITY_NIGHT);
     }
     // Per-frame refill (in Game.ts) uses the last trip pool continuously
   }
@@ -1640,8 +1672,8 @@ export class SimulationLoop {
     let multiplier = 1.0;
     let incomingRatio = 0.5;
     switch (timeOfDay) {
-      case 'morning_rush': incomingRatio = 0.6; break;
-      case 'evening_rush': incomingRatio = 0.4; break;
+      case 'morning_rush': incomingRatio = SIMULATION.HIGHWAY_MORNING_INCOMING; break;
+      case 'evening_rush': incomingRatio = SIMULATION.HIGHWAY_EVENING_INCOMING; break;
       case 'midday': multiplier = HIGHWAY_EXTERNAL.MIDDAY_MULTIPLIER; break;
       case 'night': multiplier = HIGHWAY_EXTERNAL.NIGHT_MULTIPLIER; break;
     }
@@ -1707,8 +1739,8 @@ export class SimulationLoop {
     // Skip if no freight activity
     if (production === 0 && imported === 0) return;
 
-    // Cap check: freight uses up to 15% of vehicle cap
-    const freightCap = Math.floor(vehicleCap * 0.15);
+    // Cap check: freight uses up to FREIGHT_CAP_RATIO of vehicle cap
+    const freightCap = Math.floor(vehicleCap * SIMULATION.FREIGHT_CAP_RATIO);
     const currentCount = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
     if (currentCount >= vehicleCap) return;
 
@@ -1726,8 +1758,8 @@ export class SimulationLoop {
 
     // Spawn count scales with freight activity + population
     const pop = this.state.citizens.getPopulation();
-    const activityBase = Math.floor((production + imported + exported) / 20);
-    const maxForPop = Math.min(10, 3 + Math.floor(pop / 2000));
+    const activityBase = Math.floor((production + imported + exported) / SIMULATION.FREIGHT_ACTIVITY_DIVISOR);
+    const maxForPop = Math.min(SIMULATION.FREIGHT_MAX_FROM_POP, SIMULATION.FREIGHT_BASE_TRUCKS + Math.floor(pop / SIMULATION.FREIGHT_POP_DIVISOR));
     const maxPerTick = Math.min(activityBase, maxForPop);
     if (maxPerTick <= 0) return;
 
@@ -1867,7 +1899,7 @@ export class SimulationLoop {
       if (from.x === to.x && from.y === to.y) continue;
 
       const manhattan = manhattanDistance(from.x, from.y, to.x, to.y);
-      if (manhattan <= 3) continue;
+      if (manhattan <= SIMULATION.MANHATTAN_DISTANCE_THRESHOLD) continue;
 
       const availableTransport = this.getAvailableTransit(from, to);
       const mode = chooseMode(from, to, availableTransport, 0);
