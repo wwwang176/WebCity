@@ -2775,7 +2775,7 @@ export class BuildingRenderer {
     const termMat = new THREE.MeshLambertMaterial({ color: 0xeceff1 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
-    const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
+    const apronMat = new THREE.MeshLambertMaterial({ color: 0x505050 });
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 
     // Terminal (top)
@@ -2786,15 +2786,22 @@ export class BuildingRenderer {
     const accGeo = new THREE.BoxGeometry(1.40, 0.05, 0.01);
     accGeo.translate(0, 0.20, -0.50 + 0.255);
     this.addInfraMesh(scene, accGeo, accentMat, cx, Y, cz);
+    // Control tower
+    const stemGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.50, 8);
+    stemGeo.translate(-0.90, 0.25, -0.50);
+    this.addInfraMesh(scene, stemGeo, new THREE.MeshLambertMaterial({ color: 0xcfd8dc }), cx, Y, cz);
+    const cabGeo = new THREE.CylinderGeometry(0.30, 0.30, 0.10, 8);
+    cabGeo.translate(-0.90, 0.56, -0.50);
+    this.addInfraMesh(scene, cabGeo, new THREE.MeshLambertMaterial({ color: 0x90caf9 }), cx, Y, cz);
     // 1 jet bridge
     const bridgeGeo = new THREE.BoxGeometry(0.10, 0.08, 0.10);
     bridgeGeo.translate(0, 0.15, -0.20);
     this.addInfraMesh(scene, bridgeGeo, new THREE.MeshLambertMaterial({ color: 0xb0bec5 }), cx, Y, cz);
     // Apron (full width to reach both taxiways)
-    const apronGeo = new THREE.BoxGeometry(2.20, 0.01, 0.40);
+    const apronGeo = new THREE.BoxGeometry(2.50, 0.01, 0.40);
     apronGeo.translate(0, 0.02, -0.05);
     this.addInfraMesh(scene, apronGeo, apronMat, cx, Y, cz, false);
-    const taxiMat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    const taxiMat = new THREE.MeshLambertMaterial({ color: 0x505050 });
     // Left taxiway (takeoff entry, at threshold end)
     const taxiL = new THREE.BoxGeometry(0.35, 0.01, 0.50);
     taxiL.translate(-1.05, 0.018, 0.30);
@@ -2831,7 +2838,7 @@ export class BuildingRenderer {
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
-    const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
+    const apronMat = new THREE.MeshLambertMaterial({ color: 0x505050 });
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const bridgeMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
 
@@ -2848,10 +2855,10 @@ export class BuildingRenderer {
     accGeo.translate(0, 0.25, -1.20 + 0.355);
     this.addInfraMesh(scene, accGeo, accentMat, cx, Y, cz);
     // Control tower
-    const stemGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.65, 8);
+    const stemGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.65, 8);
     stemGeo.translate(-1.80, 0.325, -1.20);
     this.addInfraMesh(scene, stemGeo, new THREE.MeshLambertMaterial({ color: 0xcfd8dc }), cx, Y, cz);
-    const cabGeo = new THREE.CylinderGeometry(0.13, 0.13, 0.12, 8);
+    const cabGeo = new THREE.CylinderGeometry(0.39, 0.39, 0.12, 8);
     cabGeo.translate(-1.80, 0.72, -1.20);
     this.addInfraMesh(scene, cabGeo, new THREE.MeshLambertMaterial({ color: 0x90caf9 }), cx, Y, cz);
     // 3 jet bridges
@@ -2860,19 +2867,15 @@ export class BuildingRenderer {
       bGeo.translate(dx, 0.18, -0.80);
       this.addInfraMesh(scene, bGeo, bridgeMat, cx, Y, cz);
     }
-    // Parking
-    const parkGeo = new THREE.BoxGeometry(0.60, 0.01, 0.50);
-    parkGeo.translate(-1.60, 0.02, -1.50);
-    this.addInfraMesh(scene, parkGeo, new THREE.MeshLambertMaterial({ color: 0x909090 }), cx, Y, cz, false);
+    // Hangar (right side, away from tower)
+    const hangarGeo = new THREE.BoxGeometry(0.50, 0.35, 0.45);
+    hangarGeo.translate(1.90, 0.175, -1.20);
+    this.addInfraMesh(scene, hangarGeo, new THREE.MeshLambertMaterial({ color: 0x808080 }), cx, Y, cz);
     // Apron (full width to reach both taxiways)
-    const apronGeo = new THREE.BoxGeometry(3.80, 0.01, 0.70);
+    const apronGeo = new THREE.BoxGeometry(4.10, 0.01, 0.70);
     apronGeo.translate(0, 0.02, -0.35);
     this.addInfraMesh(scene, apronGeo, apronMat, cx, Y, cz, false);
-    // Hangar
-    const hangarGeo = new THREE.BoxGeometry(0.50, 0.35, 0.45);
-    hangarGeo.translate(-1.80, 0.175, -0.35);
-    this.addInfraMesh(scene, hangarGeo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, Y, cz);
-    const taxiMat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    const taxiMat = new THREE.MeshLambertMaterial({ color: 0x505050 });
     // Left taxiway (takeoff entry, at threshold end)
     const taxiL = new THREE.BoxGeometry(0.45, 0.01, 1.20);
     taxiL.translate(-1.80, 0.018, 0.60);
@@ -2909,7 +2912,7 @@ export class BuildingRenderer {
     const roofMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
     const accentMat = new THREE.MeshLambertMaterial({ color: 0x2196f3 });
     const runwayMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
-    const apronMat = new THREE.MeshLambertMaterial({ color: 0x757575 });
+    const apronMat = new THREE.MeshLambertMaterial({ color: 0x505050 });
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const bridgeMat = new THREE.MeshLambertMaterial({ color: 0xb0bec5 });
 
@@ -2926,16 +2929,16 @@ export class BuildingRenderer {
     accGeo.translate(0, 0.30, -2.20 + 0.405);
     this.addInfraMesh(scene, accGeo, accentMat, cx, Y, cz);
     // Control tower (tall)
-    const stemGeo = new THREE.CylinderGeometry(0.10, 0.10, 0.90, 10);
+    const stemGeo = new THREE.CylinderGeometry(0.30, 0.30, 0.90, 10);
     stemGeo.translate(2.60, 0.45, -2.20);
     this.addInfraMesh(scene, stemGeo, new THREE.MeshLambertMaterial({ color: 0xcfd8dc }), cx, Y, cz);
-    const cabGeo = new THREE.CylinderGeometry(0.16, 0.16, 0.14, 10);
+    const cabGeo = new THREE.CylinderGeometry(0.48, 0.48, 0.14, 10);
     cabGeo.translate(2.60, 0.97, -2.20);
     this.addInfraMesh(scene, cabGeo, new THREE.MeshLambertMaterial({ color: 0x90caf9 }), cx, Y, cz);
-    // Parking
-    const parkGeo = new THREE.BoxGeometry(0.70, 0.01, 0.50);
-    parkGeo.translate(-2.50, 0.02, -2.50);
-    this.addInfraMesh(scene, parkGeo, new THREE.MeshLambertMaterial({ color: 0x909090 }), cx, Y, cz, false);
+    // Hangar (left of terminal, with gap)
+    const hangarGeo = new THREE.BoxGeometry(0.55, 0.35, 0.45);
+    hangarGeo.translate(-2.60, 0.175, -2.20);
+    this.addInfraMesh(scene, hangarGeo, new THREE.MeshLambertMaterial({ color: 0x808080 }), cx, Y, cz);
     // 5 jet bridges
     for (const dx of [-1.40, -0.70, 0, 0.70, 1.40]) {
       const bGeo = new THREE.BoxGeometry(0.12, 0.08, 0.14);
@@ -2943,22 +2946,11 @@ export class BuildingRenderer {
       this.addInfraMesh(scene, bGeo, bridgeMat, cx, Y, cz);
     }
     // Apron (full width to reach both taxiways)
-    const apronGeo = new THREE.BoxGeometry(5.20, 0.01, 0.80);
+    const apronGeo = new THREE.BoxGeometry(6.10, 0.01, 0.80);
     apronGeo.translate(0, 0.02, -1.20);
     this.addInfraMesh(scene, apronGeo, apronMat, cx, Y, cz, false);
-    // Hangars (between left taxiway and terminal)
-    const h1Geo = new THREE.BoxGeometry(0.55, 0.40, 0.50);
-    h1Geo.translate(-2.10, 0.20, -1.90);
-    this.addInfraMesh(scene, h1Geo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, Y, cz);
-    const h2Geo = new THREE.BoxGeometry(0.55, 0.40, 0.50);
-    h2Geo.translate(-2.10, 0.20, -1.20);
-    this.addInfraMesh(scene, h2Geo, new THREE.MeshLambertMaterial({ color: 0xb0b0b0 }), cx, Y, cz);
-    // Cargo (between right taxiway and terminal)
-    const cargoGeo = new THREE.BoxGeometry(0.50, 0.30, 0.70);
-    cargoGeo.translate(2.10, 0.15, -1.50);
-    this.addInfraMesh(scene, cargoGeo, new THREE.MeshLambertMaterial({ color: 0xa1887f }), cx, Y, cz);
     // Left taxiway (takeoff entry) — spans from apron to R2 threshold level
-    const taxiMat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    const taxiMat = new THREE.MeshLambertMaterial({ color: 0x505050 });
     const taxiL = new THREE.BoxGeometry(0.45, 0.01, 3.40);
     taxiL.translate(-2.80, 0.018, 0.80);
     this.addInfraMesh(scene, taxiL, taxiMat, cx, Y, cz, false);
