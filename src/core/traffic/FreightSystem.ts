@@ -3,6 +3,13 @@ import { ZoneType, isCommercialZone } from '../grid/types';
 import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 
+/** Freight truck route types */
+export enum FreightRouteType {
+  LOCAL = 'local',
+  EXPORT = 'export',
+  IMPORT = 'import',
+}
+
 export interface FreightDemand {
   /** Total cargo produced by industrial buildings per tick. */
   production: number;

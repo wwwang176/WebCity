@@ -56,7 +56,7 @@ import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicl
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
 import { PedestrianTripType } from '../traffic/PedestrianAgent';
-import { TRADE } from '../traffic/FreightSystem';
+import { TRADE, FreightRouteType } from '../traffic/FreightSystem';
 import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
 
 /** Simulation tuning constants */
@@ -1771,10 +1771,10 @@ export class SimulationLoop {
 
     if (!hasLocal && !hasExport && !hasImport) return;
 
-    const options: Array<{ type: 'local' | 'export' | 'import'; weight: number }> = [];
-    if (hasLocal) options.push({ type: 'local', weight: localVolume });
-    if (hasExport) options.push({ type: 'export', weight: exported });
-    if (hasImport) options.push({ type: 'import', weight: imported });
+    const options: Array<{ type: FreightRouteType; weight: number }> = [];
+    if (hasLocal) options.push({ type: FreightRouteType.LOCAL, weight: localVolume });
+    if (hasExport) options.push({ type: FreightRouteType.EXPORT, weight: exported });
+    if (hasImport) options.push({ type: FreightRouteType.IMPORT, weight: imported });
     const totalWeight = options.reduce((s, o) => s + o.weight, 0);
     if (totalWeight === 0) return;
 
@@ -1785,7 +1785,7 @@ export class SimulationLoop {
 
       // Weighted random route selection
       let roll = Math.random() * totalWeight;
-      let routeType: 'local' | 'export' | 'import' = 'local';
+      let routeType: FreightRouteType = FreightRouteType.LOCAL;
       for (const o of options) {
         roll -= o.weight;
         if (roll <= 0) { routeType = o.type; break; }
@@ -1795,15 +1795,15 @@ export class SimulationLoop {
       let to: { x: number; y: number };
 
       switch (routeType) {
-        case 'local':
+        case FreightRouteType.LOCAL:
           from = industrials[Math.floor(Math.random() * industrials.length)]!;
           to = commercials[Math.floor(Math.random() * commercials.length)]!;
           break;
-        case 'export':
+        case FreightRouteType.EXPORT:
           from = industrials[Math.floor(Math.random() * industrials.length)]!;
           to = this.cachedTradePositions[Math.floor(Math.random() * this.cachedTradePositions.length)]!;
           break;
-        case 'import':
+        case FreightRouteType.IMPORT:
           from = this.cachedTradePositions[Math.floor(Math.random() * this.cachedTradePositions.length)]!;
           to = commercials[Math.floor(Math.random() * commercials.length)]!;
           break;
