@@ -111,79 +111,62 @@ interface SizeFlightPaths {
   gateRadius: number;
 }
 
-// SMALL (3×2): left taxi x=-1.05, right taxi x=+1.05, tight turns (R=0.25)
-const SMALL_PATHS: SizeFlightPaths = {
-  approachStart:   { x: -10.3, z: 0.60 },
-  threshold:       { x: -1.00, z: 0.60 },
-  rollStop:        { x: 0.55, z: 0.60 },
-  rightJunction:   { x: 1.05, z: 0.60 },
-  rightTaxiTop:    { x: 1.05, z: 0.32 },
-  apronZ:          0.32,
-  leftTaxiTop:     { x: -1.05, z: 0.32 },
-  leftJunction:    { x: -1.05, z: 0.60 },
-  runwayEntry:     { x: -0.55, z: 0.60 },
-  gates:           [{ x: 0, z: 0.17 }],
-  takeoffEnd:      { x: 1.40, z: 0.60 },
-  climbEnd:        { x: 6.0, z: 0.60 },
-  arcRadius:       0.14,
-  gateRadius:      0.13,
-};
-
-// MEDIUM (5×4): left taxi x=-1.80, right taxi x=+1.80, medium turns (R=0.35)
+// SMALL (5×4) — reuses MEDIUM layout and paths
+// MEDIUM (7×4): left taxi x=-2.80, right taxi x=+2.80
 const MEDIUM_PATHS: SizeFlightPaths = {
-  approachStart:   { x: -11.3, z: 1.20 },
-  threshold:       { x: -2.00, z: 1.20 },
-  rollStop:        { x: 1.30, z: 1.20 },
-  rightJunction:   { x: 1.80, z: 1.20 },
-  rightTaxiTop:    { x: 1.80, z: -0.10 },
+  approachStart:   { x: -12.3, z: 1.20 },
+  threshold:       { x: -3.00, z: 1.20 },
+  rollStop:        { x: 2.30, z: 1.20 },
+  rightJunction:   { x: 2.80, z: 1.20 },
+  rightTaxiTop:    { x: 2.80, z: -0.10 },
   apronZ:          -0.10,
-  leftTaxiTop:     { x: -1.80, z: -0.10 },
-  leftJunction:    { x: -1.80, z: 1.20 },
-  runwayEntry:     { x: -1.30, z: 1.20 },
+  leftTaxiTop:     { x: -2.80, z: -0.10 },
+  leftJunction:    { x: -2.80, z: 1.20 },
+  runwayEntry:     { x: -2.10, z: 1.20 },
   gates:           [{ x: -0.60, z: -0.34 }, { x: 0, z: -0.34 }, { x: 0.60, z: -0.34 }],
-  takeoffEnd:      { x: 2.25, z: 1.20 },
-  climbEnd:        { x: 7.0, z: 1.20 },
-  arcRadius:       0.35,
+  takeoffEnd:      { x: 3.25, z: 1.20 },
+  climbEnd:        { x: 8.0, z: 1.20 },
+  arcRadius:       0.50,
   gateRadius:      0.20,
 };
 
-// LARGE (7×6): left taxi x=-2.80, right taxi x=+2.80
+// LARGE (9×6): left taxi x=-3.80, right taxi x=+3.80
 const LARGE_PATH_A: SizeFlightPaths = {
-  approachStart:   { x: -12.3, z: 0.80 },
-  threshold:       { x: -3.00, z: 0.80 },
-  rollStop:        { x: 2.30, z: 0.80 },
-  rightJunction:   { x: 2.80, z: 0.80 },
-  rightTaxiTop:    { x: 2.80, z: -0.80 },
+  approachStart:   { x: -13.3, z: 0.80 },
+  threshold:       { x: -4.00, z: 0.80 },
+  rollStop:        { x: 3.30, z: 0.80 },
+  rightJunction:   { x: 3.80, z: 0.80 },
+  rightTaxiTop:    { x: 3.80, z: -0.80 },
   apronZ:          -0.80,
-  leftTaxiTop:     { x: -2.80, z: -0.80 },
-  leftJunction:    { x: -2.80, z: 0.80 },
-  runwayEntry:     { x: -2.10, z: 0.80 },
+  leftTaxiTop:     { x: -3.80, z: -0.80 },
+  leftJunction:    { x: -3.80, z: 0.80 },
+  runwayEntry:     { x: -3.10, z: 0.80 },
   gates:           [{ x: -0.50, z: -1.28 }, { x: 0.20, z: -1.28 }],
-  takeoffEnd:      { x: 3.25, z: 0.80 },
-  climbEnd:        { x: 8.0, z: 0.80 },
-  arcRadius:       0.5,
+  takeoffEnd:      { x: 4.25, z: 0.80 },
+  climbEnd:        { x: 9.0, z: 0.80 },
+  arcRadius:       0.65,
   gateRadius:      0.43,
 };
 
 const LARGE_PATH_B: SizeFlightPaths = {
-  approachStart:   { x: -12.3, z: 2.20 },
-  threshold:       { x: -3.00, z: 2.20 },
-  rollStop:        { x: 2.30, z: 2.20 },
-  rightJunction:   { x: 2.80, z: 2.20 },
-  rightTaxiTop:    { x: 2.80, z: -0.80 },
+  approachStart:   { x: -13.3, z: 2.20 },
+  threshold:       { x: -4.00, z: 2.20 },
+  rollStop:        { x: 3.30, z: 2.20 },
+  rightJunction:   { x: 3.80, z: 2.20 },
+  rightTaxiTop:    { x: 3.80, z: -0.80 },
   apronZ:          -0.80,
-  leftTaxiTop:     { x: -2.80, z: -0.80 },
-  leftJunction:    { x: -2.80, z: 2.20 },
-  runwayEntry:     { x: -2.10, z: 2.20 },
+  leftTaxiTop:     { x: -3.80, z: -0.80 },
+  leftJunction:    { x: -3.80, z: 2.20 },
+  runwayEntry:     { x: -3.10, z: 2.20 },
   gates:           [{ x: 0.20, z: -1.28 }, { x: 0.90, z: -1.28 }],
-  takeoffEnd:      { x: 3.25, z: 2.20 },
-  climbEnd:        { x: 8.0, z: 2.20 },
-  arcRadius:       0.5,
+  takeoffEnd:      { x: 4.25, z: 2.20 },
+  climbEnd:        { x: 9.0, z: 2.20 },
+  arcRadius:       0.65,
   gateRadius:      0.43,
 };
 
 function getFlightPaths(size: AirportSize, pathIndex: number): SizeFlightPaths {
-  if (size === 'SMALL') return SMALL_PATHS;
+  if (size === 'SMALL') return MEDIUM_PATHS;
   if (size === 'MEDIUM') return MEDIUM_PATHS;
   return pathIndex === 0 ? LARGE_PATH_A : LARGE_PATH_B;
 }
@@ -363,7 +346,7 @@ export class AirplaneAnimator implements VehicleAnimator {
       altitude: anim.altitude,
       pitch: anim.pitch,
       roll: anim.roll,
-      scale: anim.size === 'SMALL' ? 0.8 : undefined,
+      scale: undefined,
     });
   }
 

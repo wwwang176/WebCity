@@ -282,11 +282,11 @@ describe('AirplaneAnimator', () => {
   });
 
   describe('S airport scale', () => {
-    it('should output scale=0.8 for SMALL airports', () => {
+    it('should not output scale for SMALL airports (same size as Medium)', () => {
       const system = makeSystem([makeAirport({ size: 'SMALL' })]);
       const vehicle = advanceUntilVehicle(animator, system);
       expect(vehicle).not.toBeNull();
-      expect(vehicle!.scale).toBe(0.8);
+      expect(vehicle!.scale).toBeUndefined();
     });
 
     it('should not output scale for MEDIUM airports', () => {
