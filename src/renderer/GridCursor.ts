@@ -53,8 +53,9 @@ export class GridCursor {
     if (intersection) {
       this.gridX = Math.round(intersection.x);
       this.gridY = Math.round(intersection.z);
-      this.gridX = Math.max(0, Math.min(this.gridWidth - 1, this.gridX));
-      this.gridY = Math.max(0, Math.min(this.gridHeight - 1, this.gridY));
+      // Allow 1 cell beyond edge so road/rail can be dragged outside to create external connections
+      this.gridX = Math.max(-1, Math.min(this.gridWidth, this.gridX));
+      this.gridY = Math.max(-1, Math.min(this.gridHeight, this.gridY));
       // Offset so cursor covers the multi-cell footprint from the primary cell
       const offsetX = this.centered ? 0 : (this.sizeW - 1) / 2;
       const offsetZ = this.centered ? 0 : (this.sizeH - 1) / 2;

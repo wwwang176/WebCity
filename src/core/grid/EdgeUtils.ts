@@ -21,6 +21,32 @@ const WEST  = 0b0100;
  *  - Cell at y=0 with only EAST|WEST flags → false (runs parallel)
  *  - Corner cell (0,0) with SOUTH or EAST → true
  */
+/**
+ * If the last cell of a path is outside the map, returns the outward
+ * direction flag for the edge cell and the truncated path length.
+ * Returns null if the path does not extend beyond the map.
+ */
+export function extractOutOfBoundsEdge(
+  path: ReadonlyArray<{ x: number; y: number }>,
+  mapWidth: number, mapHeight: number,
+): { outwardFlag: number; truncatedLength: number } | null {
+  if (path.length < 2) return null;
+  const last = path[path.length - 1]!;
+  if (last.x >= 0 && last.x < mapWidth && last.y >= 0 && last.y < mapHeight) return null;
+
+  const prev = path[path.length - 2]!;
+  const dx = last.x - prev.x;
+  const dy = last.y - prev.y;
+
+  let flag = 0;
+  if (dx > 0) flag |= EAST;
+  if (dx < 0) flag |= WEST;
+  if (dy > 0) flag |= SOUTH;
+  if (dy < 0) flag |= NORTH;
+
+  return { outwardFlag: flag, truncatedLength: path.length - 1 };
+}
+
 export function hasInwardFlag(
   x: number, y: number,
   mapWidth: number, mapHeight: number,

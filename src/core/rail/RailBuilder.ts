@@ -2,22 +2,13 @@ import { Grid } from '../grid/Grid';
 import { ZoneType, type Position } from '../grid/types';
 import { toPosKey, CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, getLShapedPath, getDirectionFlag } from '../grid/GridHelpers';
 import { validatePathTerrain } from '../grid/PathValidation';
+import { extractOutOfBoundsEdge } from '../grid/EdgeUtils';
 import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
-import { RailType, TrackDirection, RAIL, type BuildTrackResult } from './types';
+import { RailType, RAIL, type BuildTrackResult } from './types';
 
 const nodeId = toPosKey;
-
-/** Add outward direction flag for rail cells on the map edge. */
-function getEdgeOutwardFlag(x: number, y: number, width: number, height: number): number {
-  let flag = 0;
-  if (x === 0) flag |= TrackDirection.WEST;
-  if (x === width - 1) flag |= TrackDirection.EAST;
-  if (y === 0) flag |= TrackDirection.NORTH;
-  if (y === height - 1) flag |= TrackDirection.SOUTH;
-  return flag;
-}
 
 export class RailBuilder {
   private grid: Grid;
@@ -29,7 +20,13 @@ export class RailBuilder {
   }
 
   buildTrack(from: Position, to: Position, funds: number): BuildTrackResult {
-    const cells = getLShapedPath(from, to);
+    const fullPath = getLShapedPath(from, to);
+
+    // Detect if the last cell is beyond the map edge (user dragged outside)
+    const oob = extractOutOfBoundsEdge(fullPath, this.grid.width, this.grid.height);
+    const cells = oob ? fullPath.slice(0, oob.truncatedLength) : fullPath;
+
+    if (cells.length === 0) return { success: false, reason: 'EMPTY_PATH' };
 
     // Validate terrain + infrastructure (shared DRY validation)
     const terrainError = validatePathTerrain(this.grid, cells);
@@ -92,13 +89,15 @@ export class RailBuilder {
         flags |= getDirectionFlag(pos, next);
       }
 
+      // Add outward flag if this is the last cell and user dragged beyond edge
+      if (oob && i === cells.length - 1) {
+        flags |= oob.outwardFlag;
+      }
+
       // Merge with existing rail flags
       if (curr && curr.railType !== RailType.NONE) {
         flags |= curr.railFlags;
       }
-
-      // Auto-add outward flag for edge cells (track extends beyond map)
-      flags |= getEdgeOutwardFlag(pos.x, pos.y, this.grid.width, this.grid.height);
 
       this.grid.setCell(pos.x, pos.y, {
         railType: RailType.STANDARD,

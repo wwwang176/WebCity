@@ -1,6 +1,7 @@
 import { Grid } from '../grid/Grid';
 import { ZoneType } from '../grid/types';
 import { toPosKey, CARDINAL_DIRECTIONS, getLShapedPath, getDirectionFlag } from '../grid/GridHelpers';
+import { extractOutOfBoundsEdge } from '../grid/EdgeUtils';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, type BuildRoadResult, type Position } from './types';
@@ -18,7 +19,13 @@ export class RoadBuilder {
   }
 
   buildRoad(from: Position, to: Position, roadType: RoadType, funds: number): BuildRoadResult {
-    const cells = getLShapedPath(from, to);
+    const fullPath = getLShapedPath(from, to);
+
+    // Detect if the last cell is beyond the map edge (user dragged outside)
+    const oob = extractOutOfBoundsEdge(fullPath, this.grid.width, this.grid.height);
+    const cells = oob ? fullPath.slice(0, oob.truncatedLength) : fullPath;
+
+    if (cells.length === 0) return { success: false, reason: 'EMPTY_PATH' };
 
     // Validate path (terrain, infrastructure, rail conflicts) — delegated to pure function (SRP)
     const validationError = validateRoadPath(this.grid, cells);
@@ -53,6 +60,11 @@ export class RoadBuilder {
       if (i < cells.length - 1) {
         const next = cells[i + 1]!;
         flags |= getDirectionFlag(pos, next);
+      }
+
+      // Add outward flag if this is the last cell and user dragged beyond edge
+      if (oob && i === cells.length - 1) {
+        flags |= oob.outwardFlag;
       }
 
       // Merge with existing road flags. Intersection cells are "transparent"

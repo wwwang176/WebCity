@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { hasInwardFlag } from '../EdgeUtils';
+import { hasInwardFlag, extractOutOfBoundsEdge } from '../EdgeUtils';
 
 // Direction flag values (shared by RoadDirection and TrackDirection)
 const NORTH = 0b0001;
@@ -56,5 +56,56 @@ describe('hasInwardFlag', () => {
   // Interior cell: not on any edge
   it('interior cell → false regardless of flags', () => {
     expect(hasInwardFlag(5, 5, W, H, NORTH | SOUTH | EAST | WEST)).toBe(false);
+  });
+});
+
+describe('extractOutOfBoundsEdge', () => {
+  const W = 10, H = 10;
+
+  it('returns null when path is within bounds', () => {
+    const path = [{ x: 5, y: 5 }, { x: 5, y: 6 }, { x: 5, y: 7 }];
+    expect(extractOutOfBoundsEdge(path, W, H)).toBeNull();
+  });
+
+  it('returns null for path with fewer than 2 cells', () => {
+    expect(extractOutOfBoundsEdge([{ x: -1, y: 0 }], W, H)).toBeNull();
+    expect(extractOutOfBoundsEdge([], W, H)).toBeNull();
+  });
+
+  it('detects path extending beyond south edge (y=H)', () => {
+    const path = [{ x: 5, y: 8 }, { x: 5, y: 9 }, { x: 5, y: 10 }];
+    const result = extractOutOfBoundsEdge(path, W, H);
+    expect(result).not.toBeNull();
+    expect(result!.outwardFlag).toBe(SOUTH);
+    expect(result!.truncatedLength).toBe(2);
+  });
+
+  it('detects path extending beyond north edge (y=-1)', () => {
+    const path = [{ x: 5, y: 1 }, { x: 5, y: 0 }, { x: 5, y: -1 }];
+    const result = extractOutOfBoundsEdge(path, W, H);
+    expect(result).not.toBeNull();
+    expect(result!.outwardFlag).toBe(NORTH);
+    expect(result!.truncatedLength).toBe(2);
+  });
+
+  it('detects path extending beyond east edge (x=W)', () => {
+    const path = [{ x: 8, y: 5 }, { x: 9, y: 5 }, { x: 10, y: 5 }];
+    const result = extractOutOfBoundsEdge(path, W, H);
+    expect(result).not.toBeNull();
+    expect(result!.outwardFlag).toBe(EAST);
+    expect(result!.truncatedLength).toBe(2);
+  });
+
+  it('detects path extending beyond west edge (x=-1)', () => {
+    const path = [{ x: 1, y: 5 }, { x: 0, y: 5 }, { x: -1, y: 5 }];
+    const result = extractOutOfBoundsEdge(path, W, H);
+    expect(result).not.toBeNull();
+    expect(result!.outwardFlag).toBe(WEST);
+    expect(result!.truncatedLength).toBe(2);
+  });
+
+  it('path ending exactly on edge is within bounds', () => {
+    const path = [{ x: 5, y: 8 }, { x: 5, y: 9 }];
+    expect(extractOutOfBoundsEdge(path, W, H)).toBeNull();
   });
 });
