@@ -1,6 +1,7 @@
 import { createEffect, onMount } from 'solid-js';
+import { CHART_HISTORY_LENGTH } from '../constants';
 
-const ECON_MAX = 60;
+const ECON_MAX = CHART_HISTORY_LENGTH;
 
 export function EconChart(props: { history: { funds: number[]; income: number[]; expenses: number[] } }) {
   let canvas: HTMLCanvasElement | undefined;

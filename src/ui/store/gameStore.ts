@@ -1,6 +1,7 @@
 import { createSignal, batch } from 'solid-js';
 import type { Game, ToolType, SelectedBuilding } from '../../Game';
 import { ViewMode } from '../../core/ViewMode';
+import { CHART_HISTORY_LENGTH } from '../constants';
 
 // --- High-frequency signals (updated every updateUI call) ---
 const [date, setDate] = createSignal('Day 1');
@@ -27,8 +28,8 @@ let lastTickTime = 0;
 const TICK_INTERVAL_MS = 160; // ~6 updates/sec
 
 // --- Chart history (accumulated over time) ---
-const CHART_MAX = 60;
-const ECON_MAX = 60;
+const CHART_MAX = CHART_HISTORY_LENGTH;
+const ECON_MAX = CHART_HISTORY_LENGTH;
 const [chartHistory, setChartHistory] = createSignal<{ pop: number[]; happiness: number[] }>({ pop: [], happiness: [] });
 const [econHistory, setEconHistory] = createSignal<{ funds: number[]; income: number[]; expenses: number[] }>({ funds: [], income: [], expenses: [] });
 

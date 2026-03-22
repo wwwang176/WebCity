@@ -1,6 +1,7 @@
 import { createEffect, onMount } from 'solid-js';
+import { CHART_HISTORY_LENGTH } from '../constants';
 
-const CHART_MAX = 60;
+const CHART_MAX = CHART_HISTORY_LENGTH;
 
 export function PopChart(props: { history: { pop: number[]; happiness: number[] } }) {
   let canvas: HTMLCanvasElement | undefined;
