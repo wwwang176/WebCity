@@ -34,7 +34,7 @@ import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG } from '../citizen/Job
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import type { SchoolType } from '../service/EducationService';
 import type { EducationRule } from '../citizen/CitizenManager';
-import type { TimeOfDay } from './GameClock';
+import { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { TransportMode } from '../transport/types';
@@ -184,7 +184,7 @@ export class SimulationLoop {
   // Track which citizens have already commuted this rush period
   private morningCommuters = new Set<number>(); // citizen ids that have spawned morning commute
   private eveningCommuters = new Set<number>(); // citizen ids that have spawned evening commute
-  private lastTimeOfDay: TimeOfDay = 'night'; // to detect period transitions
+  private lastTimeOfDay: TimeOfDay = TimeOfDay.NIGHT;
 
   // Commute path cache: stores computed LaneEdge paths for citizen commutes
   commuteCache: CommuteCache = new CommuteCache();
@@ -1371,21 +1371,21 @@ export class SimulationLoop {
 
     // Clear commuter tracking on period transitions
     if (timeOfDay !== this.lastTimeOfDay) {
-      if (timeOfDay === 'morning_rush') this.morningCommuters.clear();
-      if (timeOfDay === 'evening_rush') this.eveningCommuters.clear();
+      if (timeOfDay === TimeOfDay.MORNING_RUSH) this.morningCommuters.clear();
+      if (timeOfDay === TimeOfDay.EVENING_RUSH) this.eveningCommuters.clear();
       this.tripPoolDirty = true; // Rebuild trip pool each rush period
       this.lastTimeOfDay = timeOfDay;
     }
 
     const grid = this.state.grid;
 
-    if (timeOfDay === 'morning_rush') {
+    if (timeOfDay === TimeOfDay.MORNING_RUSH) {
       // Morning rush: citizens commute home → work
       this.spawnCommuteVehicles('home_to_work', grid, vehicleCap);
-    } else if (timeOfDay === 'evening_rush') {
+    } else if (timeOfDay === TimeOfDay.EVENING_RUSH) {
       // Evening rush: citizens commute work → home
       this.spawnCommuteVehicles('work_to_home', grid, vehicleCap);
-    } else if (timeOfDay === 'midday') {
+    } else if (timeOfDay === TimeOfDay.MIDDAY) {
       // Midday: spawn small amount of random commercial traffic
       this.spawnRandomTraffic(grid, vehicleCap);
     }
@@ -1397,10 +1397,10 @@ export class SimulationLoop {
     this.spawnFreightTraffic(grid, vehicleCap);
 
     // Build/update trip pool during rush hours
-    if (timeOfDay === 'morning_rush' || timeOfDay === 'evening_rush') {
+    if (timeOfDay === TimeOfDay.MORNING_RUSH || timeOfDay === TimeOfDay.EVENING_RUSH) {
       this.spawnPedestriansFromPool(pop);
       this.state.pedestrianManager.setDensityMultiplier(1.0);
-    } else if (timeOfDay === 'midday') {
+    } else if (timeOfDay === TimeOfDay.MIDDAY) {
       this.state.pedestrianManager.setDensityMultiplier(SIMULATION.PEDESTRIAN_DENSITY_MIDDAY);
     } else {
       // night
@@ -1672,10 +1672,10 @@ export class SimulationLoop {
     let multiplier = 1.0;
     let incomingRatio = 0.5;
     switch (timeOfDay) {
-      case 'morning_rush': incomingRatio = SIMULATION.HIGHWAY_MORNING_INCOMING; break;
-      case 'evening_rush': incomingRatio = SIMULATION.HIGHWAY_EVENING_INCOMING; break;
-      case 'midday': multiplier = HIGHWAY_EXTERNAL.MIDDAY_MULTIPLIER; break;
-      case 'night': multiplier = HIGHWAY_EXTERNAL.NIGHT_MULTIPLIER; break;
+      case TimeOfDay.MORNING_RUSH: incomingRatio = SIMULATION.HIGHWAY_MORNING_INCOMING; break;
+      case TimeOfDay.EVENING_RUSH: incomingRatio = SIMULATION.HIGHWAY_EVENING_INCOMING; break;
+      case TimeOfDay.MIDDAY: multiplier = HIGHWAY_EXTERNAL.MIDDAY_MULTIPLIER; break;
+      case TimeOfDay.NIGHT: multiplier = HIGHWAY_EXTERNAL.NIGHT_MULTIPLIER; break;
     }
 
     const count = Math.min(

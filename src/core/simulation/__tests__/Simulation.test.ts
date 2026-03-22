@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
+import { GameClock, TIME_PERIOD, SPEED_INTERVALS, TimeOfDay } from '../GameClock';
 import { createGameState, DEFAULT_GRID_SIZE, INITIAL_RCI_DEMAND, type GameState } from '../GameState';
 import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
@@ -157,27 +157,27 @@ describe('GameClock', () => {
   it('getTimeOfDay should return correct period for each hour range', () => {
     const clock = new GameClock();
     // night: 22-5
-    expect(clock.getTimeOfDay()).toBe('night'); // hour 0
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.NIGHT); // hour 0
     for (let i = 0; i < 5; i++) clock.advance();
-    expect(clock.getTimeOfDay()).toBe('night'); // hour 5
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.NIGHT); // hour 5
 
     clock.advance(); // hour 6
-    expect(clock.getTimeOfDay()).toBe('morning_rush');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.MORNING_RUSH);
     for (let i = 0; i < 3; i++) clock.advance(); // hour 9
-    expect(clock.getTimeOfDay()).toBe('morning_rush');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.MORNING_RUSH);
 
     clock.advance(); // hour 10
-    expect(clock.getTimeOfDay()).toBe('midday');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.MIDDAY);
     for (let i = 0; i < 6; i++) clock.advance(); // hour 16
-    expect(clock.getTimeOfDay()).toBe('midday');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.MIDDAY);
 
     clock.advance(); // hour 17
-    expect(clock.getTimeOfDay()).toBe('evening_rush');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.EVENING_RUSH);
     for (let i = 0; i < 4; i++) clock.advance(); // hour 21
-    expect(clock.getTimeOfDay()).toBe('evening_rush');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.EVENING_RUSH);
 
     clock.advance(); // hour 22
-    expect(clock.getTimeOfDay()).toBe('night');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.NIGHT);
   });
 
   it('TIME_PERIOD constants should form valid non-overlapping ranges', () => {
