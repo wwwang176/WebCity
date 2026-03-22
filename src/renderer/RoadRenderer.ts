@@ -58,7 +58,7 @@ export class RoadRenderer {
 
     if (roadCells.length === 0) return;
 
-    this.buildRoadSurface(scene, roadCells);
+    this.buildRoadSurface(scene, roadCells, grid.width, grid.height);
     this.buildSidewalks(scene, roadCells);
     this.buildLaneMarkings(scene, roadCells);
     this.buildCrosswalkMarkings(scene, roadCells);
@@ -66,7 +66,10 @@ export class RoadRenderer {
     this.buildStreetLamps(scene, roadCells);
   }
 
-  private buildRoadSurface(scene: THREE.Scene, cells: RoadCell[]): void {
+  /** Length of the visual road extension beyond the map edge. */
+  private static readonly EDGE_EXTEND = 0.5;
+
+  private buildRoadSurface(scene: THREE.Scene, cells: RoadCell[], mapW: number, mapH: number): void {
     // Two-strip method: each cell emits 1-2 strips whose width comes from
     // the neighboring road type in that axis, so mixed intersections (e.g.
     // 4-lane × 2-lane) naturally become rectangular.
@@ -124,6 +127,21 @@ export class RoadRenderer {
         const xMin = hasW ? -0.5 : -half;
         const xMax = hasE ? 0.5 : half;
         strips.push({ x: r.x + (xMin + xMax) / 2, z: r.y, sx: xMax - xMin, sz: w, roadType: r.roadType });
+      }
+
+      // Edge extension: if road cell is at map border with outward flag, extend 0.5 beyond
+      const ext = RoadRenderer.EDGE_EXTEND;
+      if (r.y === 0 && hasN) {
+        strips.push({ x: r.x, z: r.y - 0.5 - ext / 2, sx: ownW, sz: ext, roadType: r.roadType });
+      }
+      if (r.y === mapH - 1 && hasS) {
+        strips.push({ x: r.x, z: r.y + 0.5 + ext / 2, sx: ownW, sz: ext, roadType: r.roadType });
+      }
+      if (r.x === 0 && hasW) {
+        strips.push({ x: r.x - 0.5 - ext / 2, z: r.y, sx: ext, sz: ownW, roadType: r.roadType });
+      }
+      if (r.x === mapW - 1 && hasE) {
+        strips.push({ x: r.x + 0.5 + ext / 2, z: r.y, sx: ext, sz: ownW, roadType: r.roadType });
       }
     }
 
