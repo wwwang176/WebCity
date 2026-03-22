@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SidewalkGraph, ROAD_WIDTHS, GridLookup, SidewalkEdge } from '../SidewalkGraph';
+import { SidewalkGraph, ROAD_WIDTHS, GridLookup, SidewalkEdge, SIDEWALK_WIDTH } from '../SidewalkGraph';
 import { RoadType, RoadDirection } from '../../road/types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -107,6 +107,10 @@ function hasEdgeOfType(graph: SidewalkGraph, type: SidewalkEdge['type']): boolea
 // ── Tests ────────────────────────────────────────────────────────────────
 
 describe('SidewalkGraph', () => {
+  it('SIDEWALK_WIDTH should be 0.14', () => {
+    expect(SIDEWALK_WIDTH).toBe(0.14);
+  });
+
   // A1: Straight road should generate sidewalk nodes on both sides
   describe('A1: straight road node generation', () => {
     it('should generate nodes on north and south sides of a horizontal road', () => {

@@ -4,6 +4,7 @@ import { Grid } from '../core/grid/Grid';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
+import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 
 export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -14,7 +15,6 @@ export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.ONE_WAY]: 0.55,
 };
 
-const SIDEWALK_WIDTH = 0.14;
 const ROAD_Y = 0.025;
 const SIDEWALK_Y = 0.028;
 const MARKING_Y = 0.052;
