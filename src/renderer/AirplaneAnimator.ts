@@ -2,19 +2,13 @@
  * AirplaneAnimator — 飛機起降渲染端動畫。
  *
  * 每個機場獨立生成飛機，執行完整降落→滑行→停泊→推出→起飛循環。
- * 使用距離 LERP 沿預定義路徑插值，與 TrainAnimator 相同模式。
+ * 使用距離插值沿 Bézier 曲線路徑，轉彎 heading 逐幀平滑。
  * 支援 pitch（俯仰）和 roll（傾斜）。
  */
-import {
-  buildFerryPathInfo,
-  interpolateFerryPath,
-  type FerryPathInfo,
-} from '../core/transport/FerryLinePath';
 import type { TransportVehicleRenderData } from '../core/transport/collectTransportVehicles';
 import type { Airport, AirportSize } from '../core/transport/AirportSystem';
 import { getAirportDimensions } from '../core/transport/AirportSystem';
 import { getRotatedSize } from '../core/building/InfraConfig';
-import { smoothTrackPath } from './TrainAnimator';
 import type { VehicleAnimator } from './VehicleAnimator';
 
 // ── Constants ────────────────────────────────────────────────────
@@ -63,8 +57,6 @@ const APPROACH_PITCH = -0.055;
 const CLIMB_PITCH = 0.11;
 /** Max roll angle during taxi turns (radians). */
 const TAXI_ROLL = 0.08;
-/** Heading smoothing rate (higher = snappier turns). */
-const HEADING_SMOOTHING = 4.0;
 
 // ── Phase types ──────────────────────────────────────────────────
 
@@ -76,15 +68,18 @@ type AirplanePhase =
   | 'dwell'
   | 'pushback'
   | 'taxi_out'
+  | 'lineup_wait'
   | 'takeoff_roll'
   | 'climb';
 
 const PHASE_ORDER: AirplanePhase[] = [
-  'approach', 'roll', 'roll_wait', 'taxi_in', 'dwell', 'pushback', 'taxi_out', 'takeoff_roll', 'climb',
+  'approach', 'roll', 'roll_wait', 'taxi_in', 'dwell', 'pushback', 'taxi_out', 'lineup_wait', 'takeoff_roll', 'climb',
 ];
 
 /** Brief pause at runway end before turning into taxiway (seconds). */
 const ROLL_WAIT_TIME = 1.0;
+/** Pause on runway before takeoff — waiting for ATC clearance (seconds). */
+const LINEUP_WAIT_TIME = 1.0;
 
 // ── Per-size waypoint definitions (local coords, rotation=0) ────
 
@@ -158,7 +153,7 @@ const LARGE_PATH_A: SizeFlightPaths = {
   apronZ:          -0.80,
   leftTaxiTop:     { x: -2.80, z: -0.80 },
   leftJunction:    { x: -2.80, z: 0.80 },
-  runwayEntry:     { x: -2.30, z: 0.80 },
+  runwayEntry:     { x: -2.10, z: 0.80 },
   gates:           [{ x: -0.50, z: -1.44 }, { x: 0.20, z: -1.44 }],
   takeoffEnd:      { x: 3.25, z: 0.80 },
   climbEnd:        { x: 8.0, z: 0.80 },
@@ -174,7 +169,7 @@ const LARGE_PATH_B: SizeFlightPaths = {
   apronZ:          -0.80,
   leftTaxiTop:     { x: -2.80, z: -0.80 },
   leftJunction:    { x: -2.80, z: 2.20 },
-  runwayEntry:     { x: -2.30, z: 2.20 },
+  runwayEntry:     { x: -2.10, z: 2.20 },
   gates:           [{ x: 0.20, z: -1.44 }, { x: 0.90, z: -1.44 }],
   takeoffEnd:      { x: 3.25, z: 2.20 },
   climbEnd:        { x: 8.0, z: 2.20 },
@@ -226,7 +221,7 @@ interface AirplaneAnimState {
   pathIndex: number;       // 0 or 1 (for L airport dual runways)
 
   // Ground phases (path-based)
-  pathInfo: FerryPathInfo | null;
+  pathInfo: BezierPath | null;
   distance: number;
 
   // Air phases (parametric 0→1)
@@ -329,7 +324,7 @@ export class AirplaneAnimator implements VehicleAnimator {
     if (!anim) {
       let timer = this.spawnTimers.get(key);
       if (timer === undefined) {
-        timer = SPAWN_INTERVAL[airport.size] * 0.5; // first spawn sooner
+        timer = SPAWN_INTERVAL[airport.size] * (0.125 + Math.random() * 0.25); // first spawn: half of normal
         this.spawnTimers.set(key, timer);
       }
       timer -= effectiveDt;
@@ -347,7 +342,7 @@ export class AirplaneAnimator implements VehicleAnimator {
     // Check if completed (climb finished)
     if (anim.phase === 'climb' && anim.progress >= 1) {
       this.anims.delete(key);
-      this.spawnTimers.set(key, SPAWN_INTERVAL[airport.size]);
+      this.spawnTimers.set(key, SPAWN_INTERVAL[airport.size] * (0.25 + Math.random() * 0.5));
       return;
     }
 
@@ -442,6 +437,7 @@ export class AirplaneAnimator implements VehicleAnimator {
         break;
       case 'roll_wait':
       case 'dwell':
+      case 'lineup_wait':
         this.advanceWait(anim, dt);
         break;
       case 'climb':
@@ -537,32 +533,39 @@ export class AirplaneAnimator implements VehicleAnimator {
     let speed = this.getPhaseSpeed(anim.phase);
     // Landing roll: linear deceleration to zero at rollStop
     if (anim.phase === 'roll') {
-      const t = anim.pathInfo.totalLength > 0 ? anim.distance / anim.pathInfo.totalLength : 0;
+      const t = anim.pathInfo.total > 0 ? anim.distance / anim.pathInfo.total : 0;
       speed *= Math.max(0.05, 1 - t);  // linear: full speed → ~0 at end
     }
     // Takeoff roll: ease-in acceleration (slow→fast)
     if (anim.phase === 'takeoff_roll') {
-      const t = anim.pathInfo.totalLength > 0 ? anim.distance / anim.pathInfo.totalLength : 0;
+      const t = anim.pathInfo.total > 0 ? anim.distance / anim.pathInfo.total : 0;
       speed *= 0.3 + 0.7 * t;
     }
     anim.distance += speed * dt;
 
-    if (anim.distance >= anim.pathInfo.totalLength) {
-      anim.distance = anim.pathInfo.totalLength;
+    if (anim.distance >= anim.pathInfo.total) {
+      anim.distance = anim.pathInfo.total;
+      // Snap to final position and heading before transitioning
+      const finalPos = interpolateBezierPath(anim.pathInfo, anim.pathInfo.total);
+      if (finalPos) {
+        anim.worldX = finalPos.x;
+        anim.worldZ = finalPos.y;
+        anim.heading = finalPos.heading;
+      }
       this.transitionToNextPhase(anim);
       return;
     }
 
-    const pos = interpolateFerryPath(anim.pathInfo, anim.distance);
+    const pos = interpolateBezierPath(anim.pathInfo, anim.distance);
     if (pos) {
       anim.worldX = pos.x;
       anim.worldZ = pos.y;
-      // Smooth heading LERP
-      anim.heading = lerpAngle(anim.heading, pos.heading, 1 - Math.exp(-HEADING_SMOOTHING * dt));
+      // Direct heading from path (smoothTrackPath arcs are already smooth)
+      anim.heading = pos.heading;
       anim.altitude = GROUND_Y;
       // Takeoff roll: gradual nose-up in the last 30% (rotation before liftoff)
       if (anim.phase === 'takeoff_roll') {
-        const t = anim.pathInfo.totalLength > 0 ? anim.distance / anim.pathInfo.totalLength : 0;
+        const t = anim.pathInfo.total > 0 ? anim.distance / anim.pathInfo.total : 0;
         anim.pitch = t > 0.7 ? CLIMB_PITCH * ((t - 0.7) / 0.3) : 0;
       } else {
         anim.pitch = 0;
@@ -581,18 +584,23 @@ export class AirplaneAnimator implements VehicleAnimator {
 
     anim.distance += SPEED.pushback * dt;
 
-    if (anim.distance >= anim.pathInfo.totalLength) {
-      anim.distance = anim.pathInfo.totalLength;
+    if (anim.distance >= anim.pathInfo.total) {
+      anim.distance = anim.pathInfo.total;
+      const finalPos = interpolateBezierPath(anim.pathInfo, anim.pathInfo.total);
+      if (finalPos) {
+        anim.worldX = finalPos.x;
+        anim.worldZ = finalPos.y;
+        anim.heading = finalPos.heading + Math.PI;
+      }
       this.transitionToNextPhase(anim);
       return;
     }
 
-    const pos = interpolateFerryPath(anim.pathInfo, anim.distance);
+    const pos = interpolateBezierPath(anim.pathInfo, anim.distance);
     if (pos) {
       anim.worldX = pos.x;
       anim.worldZ = pos.y;
-      const targetHeading = pos.heading + Math.PI;
-      anim.heading = lerpAngle(anim.heading, targetHeading, 1 - Math.exp(-HEADING_SMOOTHING * dt));
+      anim.heading = pos.heading + Math.PI;
       anim.altitude = GROUND_Y;
       anim.pitch = 0;
       anim.roll = 0;
@@ -623,17 +631,18 @@ export class AirplaneAnimator implements VehicleAnimator {
       anim.timer = DWELL_TIME;
     } else if (anim.phase === 'roll_wait') {
       anim.timer = ROLL_WAIT_TIME;
+    } else if (anim.phase === 'lineup_wait') {
+      anim.timer = LINEUP_WAIT_TIME;
     }
   }
 
   // ── Build path for ground phases ──
 
-  private buildPhasePath(anim: AirplaneAnimState): FerryPathInfo {
+  private buildPhasePath(anim: AirplaneAnimState): BezierPath {
     const paths = getFlightPaths(anim.size, anim.pathIndex);
     const az = paths.apronZ;
 
     let localWaypoints: Vec2[];
-    let smooth = false;
 
     switch (anim.phase) {
       case 'roll':
@@ -651,7 +660,6 @@ export class AirplaneAnimator implements VehicleAnimator {
           { x: anim.gate.x, z: az },                  // ARC: ← to ↑ (toward gate)
           anim.gate,                                   // end
         ];
-        smooth = true;
         break;
 
       case 'pushback':
@@ -662,7 +670,6 @@ export class AirplaneAnimator implements VehicleAnimator {
           { x: anim.gate.x, z: az },                  // ARC: ↓ to → (tail goes right)
           { x: anim.gate.x + 0.60, z: az },           // end (nose now faces ←)
         ];
-        smooth = true;
         break;
 
       case 'taxi_out':
@@ -673,7 +680,6 @@ export class AirplaneAnimator implements VehicleAnimator {
           paths.leftJunction,                          // ARC: ↓ to →
           paths.runwayEntry,                           // end (on runway)
         ];
-        smooth = true;
         break;
 
       case 'takeoff_roll':
@@ -686,8 +692,7 @@ export class AirplaneAnimator implements VehicleAnimator {
     }
 
     const worldPoints = transformPath(localWaypoints, anim.centerX, anim.centerZ, anim.rotRad);
-    const finalPoints = smooth ? smoothTrackPath(worldPoints, paths.arcRadius) : worldPoints;
-    return buildFerryPathInfo(finalPoints);
+    return buildBezierPath(worldPoints, paths.arcRadius);
   }
 
   // ── Helpers ──
@@ -703,9 +708,9 @@ export class AirplaneAnimator implements VehicleAnimator {
   }
 
   /** Compute roll angle based on path curvature at current position. */
-  private computeTaxiRoll(pathInfo: FerryPathInfo, distance: number): number {
-    const ahead = interpolateFerryPath(pathInfo, Math.min(distance + 0.15, pathInfo.totalLength));
-    const behind = interpolateFerryPath(pathInfo, Math.max(distance - 0.15, 0));
+  private computeTaxiRoll(pathInfo: BezierPath, distance: number): number {
+    const ahead = interpolateBezierPath(pathInfo, Math.min(distance + 0.15, pathInfo.total));
+    const behind = interpolateBezierPath(pathInfo, Math.max(distance - 0.15, 0));
     if (!ahead || !behind) return 0;
 
     let diff = ahead.heading - behind.heading;
@@ -733,11 +738,118 @@ function distance2D(a: { x: number; y: number }, b: { x: number; y: number }): n
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/** Interpolate between two angles, handling wrap-around at ±PI. */
-function lerpAngle(from: number, to: number, alpha: number): number {
-  let diff = to - from;
-  // Normalize to [-PI, PI]
-  if (diff > Math.PI) diff -= 2 * Math.PI;
-  if (diff < -Math.PI) diff += 2 * Math.PI;
-  return from + diff * alpha;
+// ── Bézier path system ───────────────────────────────────────────
+
+type PathSeg =
+  | { kind: 'line'; x0: number; y0: number; x1: number; y1: number; len: number }
+  | { kind: 'bezier'; x0: number; y0: number; cx: number; cy: number; x2: number; y2: number; len: number };
+
+interface BezierPath {
+  segs: PathSeg[];
+  cumLen: number[];
+  total: number;
 }
+
+/** Approximate arc length of a quadratic Bézier by sampling. */
+function bezierArcLength(
+  x0: number, y0: number, cx: number, cy: number, x2: number, y2: number, samples = 20,
+): number {
+  let len = 0, px = x0, py = y0;
+  for (let i = 1; i <= samples; i++) {
+    const t = i / samples, u = 1 - t;
+    const x = u * u * x0 + 2 * u * t * cx + t * t * x2;
+    const y = u * u * y0 + 2 * u * t * cy + t * t * y2;
+    len += Math.sqrt((x - px) * (x - px) + (y - py) * (y - py));
+    px = x; py = y;
+  }
+  return len;
+}
+
+/** Build a path of straight + Bézier segments from waypoints. */
+function buildBezierPath(
+  points: ReadonlyArray<{ x: number; y: number }>,
+  radius: number,
+): BezierPath {
+  if (points.length < 2) return { segs: [], cumLen: [0], total: 0 };
+
+  const R = radius;
+  const segs: PathSeg[] = [];
+  let curX = points[0]!.x, curY = points[0]!.y;
+
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = points[i - 1]!, curr = points[i]!, next = points[i + 1]!;
+    const eDx = Math.sign(curr.x - prev.x);
+    const eDy = Math.sign(curr.y - prev.y);
+    const xDx = Math.sign(next.x - curr.x);
+    const xDy = Math.sign(next.y - curr.y);
+
+    // Straight through — no turn
+    if (eDx === xDx && eDy === xDy) continue;
+
+    // Corner — entry/exit points
+    const entryX = curr.x - eDx * R, entryY = curr.y - eDy * R;
+    const exitX = curr.x + xDx * R, exitY = curr.y + xDy * R;
+
+    // Straight from cursor to entry
+    const dx = entryX - curX, dy = entryY - curY;
+    const sLen = Math.sqrt(dx * dx + dy * dy);
+    if (sLen > 1e-6) {
+      segs.push({ kind: 'line', x0: curX, y0: curY, x1: entryX, y1: entryY, len: sLen });
+    }
+
+    // Bézier from entry through corner(CP) to exit
+    const bLen = bezierArcLength(entryX, entryY, curr.x, curr.y, exitX, exitY);
+    segs.push({ kind: 'bezier', x0: entryX, y0: entryY, cx: curr.x, cy: curr.y, x2: exitX, y2: exitY, len: bLen });
+
+    curX = exitX; curY = exitY;
+  }
+
+  // Final straight to last point
+  const last = points[points.length - 1]!;
+  const fdx = last.x - curX, fdy = last.y - curY;
+  const fLen = Math.sqrt(fdx * fdx + fdy * fdy);
+  if (fLen > 1e-6) {
+    segs.push({ kind: 'line', x0: curX, y0: curY, x1: last.x, y1: last.y, len: fLen });
+  }
+
+  const cumLen = [0];
+  for (const seg of segs) cumLen.push(cumLen[cumLen.length - 1]! + seg.len);
+  return { segs, cumLen, total: cumLen[cumLen.length - 1]! };
+}
+
+/** Interpolate position + heading along a BezierPath at a given distance. */
+function interpolateBezierPath(
+  path: BezierPath, distance: number,
+): { x: number; y: number; heading: number } | null {
+  if (path.segs.length === 0) return null;
+  const d = Math.max(0, Math.min(distance, path.total));
+
+  for (let i = 0; i < path.segs.length; i++) {
+    const segEnd = path.cumLen[i + 1]!;
+    if (d <= segEnd || i === path.segs.length - 1) {
+      const seg = path.segs[i]!;
+      const local = d - path.cumLen[i]!;
+      const t = seg.len > 0 ? Math.min(local / seg.len, 1) : 0;
+
+      if (seg.kind === 'line') {
+        return {
+          x: seg.x0 + (seg.x1 - seg.x0) * t,
+          y: seg.y0 + (seg.y1 - seg.y0) * t,
+          heading: Math.atan2(-(seg.y1 - seg.y0), seg.x1 - seg.x0),
+        };
+      }
+
+      // Quadratic Bézier
+      const u = 1 - t;
+      const tx = 2 * u * (seg.cx - seg.x0) + 2 * t * (seg.x2 - seg.cx);
+      const ty = 2 * u * (seg.cy - seg.y0) + 2 * t * (seg.y2 - seg.cy);
+      return {
+        x: u * u * seg.x0 + 2 * u * t * seg.cx + t * t * seg.x2,
+        y: u * u * seg.y0 + 2 * u * t * seg.cy + t * t * seg.y2,
+        heading: Math.atan2(-ty, tx),
+      };
+    }
+  }
+  return null;
+}
+

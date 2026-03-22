@@ -28,7 +28,7 @@ function makeSystem(airports: Airport[]): AirportSystemLike {
 function advanceUntilVehicle(
   animator: AirplaneAnimator,
   system: AirportSystemLike,
-  maxFrames = 3000,
+  maxFrames = 5000,
 ): TransportVehicleRenderData | null {
   for (let i = 0; i < maxFrames; i++) {
     const vehicles: TransportVehicleRenderData[] = [];
