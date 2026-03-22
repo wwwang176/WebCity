@@ -111,19 +111,36 @@ interface SizeFlightPaths {
   gateRadius: number;
 }
 
-// SMALL (5×4) — reuses MEDIUM layout and paths
+// SMALL (5×4): left taxi x=-1.80, right taxi x=+1.80 (old Medium layout)
+const SMALL_PATHS: SizeFlightPaths = {
+  approachStart:   { x: -11.3, z: 1.20 },
+  threshold:       { x: -2.00, z: 1.20 },
+  rollStop:        { x: 1.30, z: 1.20 },
+  rightJunction:   { x: 1.80, z: 1.20 },
+  rightTaxiTop:    { x: 1.80, z: -0.10 },
+  apronZ:          -0.10,
+  leftTaxiTop:     { x: -1.80, z: -0.10 },
+  leftJunction:    { x: -1.80, z: 1.20 },
+  runwayEntry:     { x: -1.30, z: 1.20 },
+  gates:           [{ x: -0.60, z: -0.34 }, { x: 0, z: -0.34 }, { x: 0.60, z: -0.34 }],
+  takeoffEnd:      { x: 2.25, z: 1.20 },
+  climbEnd:        { x: 7.0, z: 1.20 },
+  arcRadius:       0.35,
+  gateRadius:      0.20,
+};
+
 // MEDIUM (7×4): left taxi x=-2.80, right taxi x=+2.80
 const MEDIUM_PATHS: SizeFlightPaths = {
   approachStart:   { x: -12.3, z: 1.20 },
   threshold:       { x: -3.00, z: 1.20 },
-  rollStop:        { x: 2.30, z: 1.20 },
+  rollStop:        { x: 2.10, z: 1.20 },
   rightJunction:   { x: 2.80, z: 1.20 },
   rightTaxiTop:    { x: 2.80, z: -0.10 },
   apronZ:          -0.10,
   leftTaxiTop:     { x: -2.80, z: -0.10 },
   leftJunction:    { x: -2.80, z: 1.20 },
   runwayEntry:     { x: -2.10, z: 1.20 },
-  gates:           [{ x: -0.60, z: -0.34 }, { x: 0, z: -0.34 }, { x: 0.60, z: -0.34 }],
+  gates:           [{ x: -0.90, z: -0.34 }, { x: -0.30, z: -0.34 }, { x: 0.30, z: -0.34 }, { x: 0.90, z: -0.34 }],
   takeoffEnd:      { x: 3.25, z: 1.20 },
   climbEnd:        { x: 8.0, z: 1.20 },
   arcRadius:       0.50,
@@ -166,7 +183,7 @@ const LARGE_PATH_B: SizeFlightPaths = {
 };
 
 function getFlightPaths(size: AirportSize, pathIndex: number): SizeFlightPaths {
-  if (size === 'SMALL') return MEDIUM_PATHS;
+  if (size === 'SMALL') return SMALL_PATHS;
   if (size === 'MEDIUM') return MEDIUM_PATHS;
   return pathIndex === 0 ? LARGE_PATH_A : LARGE_PATH_B;
 }
