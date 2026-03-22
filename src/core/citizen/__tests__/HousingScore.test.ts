@@ -6,6 +6,7 @@ import {
   scoreCommute,
   serviceScore,
   scoreHousing,
+  POLLUTION_COMBO,
   type HousingCandidate,
 } from '../HousingScore';
 import type { Citizen } from '../types';
@@ -214,5 +215,11 @@ describe('scoreHousing (integration)', () => {
     const score = scoreHousing(citizen, candidate);
     expect(typeof score).toBe('number');
     expect(Number.isFinite(score)).toBe(true);
+  });
+
+  it('POLLUTION_COMBO weights should sum to 1', () => {
+    expect(POLLUTION_COMBO.GROUND_WEIGHT).toBe(0.7);
+    expect(POLLUTION_COMBO.NOISE_WEIGHT).toBe(0.3);
+    expect(POLLUTION_COMBO.GROUND_WEIGHT + POLLUTION_COMBO.NOISE_WEIGHT).toBeCloseTo(1.0);
   });
 });

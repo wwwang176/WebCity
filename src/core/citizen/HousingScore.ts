@@ -52,6 +52,12 @@ export function scoreLandValue(education: EducationLevel, landValue: number): nu
   return (landValue - 128) * weight;
 }
 
+/** Pollution combination weights for housing score */
+export const POLLUTION_COMBO = {
+  GROUND_WEIGHT: 0.7,
+  NOISE_WEIGHT: 0.3,
+} as const;
+
 /** Score based on pollution — penalizes all citizens, but higher education more */
 export function scorePollution(
   education: EducationLevel,
@@ -60,7 +66,7 @@ export function scorePollution(
 ): number {
   if (groundPollution === 0 && noisePollution === 0) return 0;
   const weight = POLLUTION_WEIGHT[education];
-  const combined = groundPollution * 0.7 + noisePollution * 0.3;
+  const combined = groundPollution * POLLUTION_COMBO.GROUND_WEIGHT + noisePollution * POLLUTION_COMBO.NOISE_WEIGHT;
   return -combined * weight;
 }
 

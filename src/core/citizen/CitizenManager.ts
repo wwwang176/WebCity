@@ -16,11 +16,17 @@ export const HEALTH_MULTIPLIER = {
   NOT_COVERED: 1.0,  // baseline
 } as const;
 
-/** Elderly multiplier: ramps up death rate above 240 life-weeks */
+/** Elderly age threshold and rate factor */
+export const ELDERLY = {
+  AGE_THRESHOLD: 240,
+  RATE_FACTOR: 0.25,
+} as const;
+
+/** Elderly multiplier: ramps up death rate above AGE_THRESHOLD life-weeks */
 export function getElderlyMultiplier(age: number): number {
-  if (age <= 240) return 1;
+  if (age <= ELDERLY.AGE_THRESHOLD) return 1;
   if (age > MAX_AGE) return Infinity;
-  return 1 + (age - 240) * 0.25;
+  return 1 + (age - ELDERLY.AGE_THRESHOLD) * ELDERLY.RATE_FACTOR;
 }
 
 /** Data-driven education progression rules — no age/lifeStage restriction, anyone can learn. */

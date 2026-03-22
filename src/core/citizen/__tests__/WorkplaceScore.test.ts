@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scoreWorkplace, scoreCommuteByCost, scoreWorkplaceWithCost, scoreEducationMatch, type WorkplaceCandidate } from '../WorkplaceScore';
+import { scoreWorkplace, scoreCommuteByCost, scoreWorkplaceWithCost, scoreEducationMatch, COMMUTE_SCORE, type WorkplaceCandidate } from '../WorkplaceScore';
 import type { Citizen } from '../types';
 import { LifeStage, EducationLevel } from '../types';
 import { ZoneType } from '../../grid/types';
@@ -137,5 +137,13 @@ describe('scoreEducationMatch', () => {
     const uneducatedOffice = scoreWorkplace(uneducated, '11,11', ZoneType.OFFICE);
     const universityOffice = scoreWorkplace(university, '11,11', ZoneType.OFFICE);
     expect(universityOffice).toBeGreaterThan(uneducatedOffice);
+  });
+
+  it('COMMUTE_SCORE constants should have correct values', () => {
+    expect(COMMUTE_SCORE.NO_PATH_PENALTY).toBe(-20);
+    expect(COMMUTE_SCORE.SHORT_DISTANCE).toBe(10);
+    expect(COMMUTE_SCORE.SHORT_BONUS).toBe(15);
+    expect(COMMUTE_SCORE.LONG_DISTANCE).toBe(40);
+    expect(COMMUTE_SCORE.LONG_PENALTY).toBe(-15);
   });
 });
