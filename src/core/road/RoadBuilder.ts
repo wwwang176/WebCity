@@ -22,8 +22,10 @@ export class RoadBuilder {
     const fullPath = getLShapedPath(from, to);
 
     // Detect if the last cell is beyond the map edge (user dragged outside)
-    const oob = extractOutOfBoundsEdge(fullPath, this.grid.width, this.grid.height);
-    const cells = oob ? fullPath.slice(0, oob.truncatedLength) : fullPath;
+    // Only HIGHWAY can create external connections; other road types ignore the out-of-bounds cell.
+    const rawOob = extractOutOfBoundsEdge(fullPath, this.grid.width, this.grid.height);
+    const oob = rawOob && roadType === RoadType.HIGHWAY ? rawOob : null;
+    const cells = rawOob ? fullPath.slice(0, rawOob.truncatedLength) : fullPath;
 
     if (cells.length === 0) return { success: false, reason: 'EMPTY_PATH' };
 
