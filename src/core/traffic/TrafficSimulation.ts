@@ -50,12 +50,14 @@ export const SERVICE_VEHICLE_LENGTHS: Record<ServiceVehicleType, number> = {
   garbage: 0.45,
 };
 
-/** Vehicle dimensions matching renderer model sizes (bus removed — spawned by BusSystem) */
+/** Vehicle dimensions for commute/random traffic (car + van only; trucks use addFreightVehicle) */
 const VEHICLE_DIMS = [
-  { weight: 0.75, length: 0.22, width: 0.09 },   // car
-  { weight: 0.15, length: 0.26, width: 0.10 },   // van
-  { weight: 0.10, length: 0.45, width: 0.125 },  // truck
+  { weight: 0.80, length: 0.22, width: 0.09 },   // car
+  { weight: 0.20, length: 0.26, width: 0.10 },   // van
 ];
+
+/** Fixed truck dimensions for freight vehicles. */
+const TRUCK_DIMS = { length: 0.45, width: 0.125 };
 
 /** Traffic simulation tuning constants */
 export const TRAFFIC = {
@@ -276,6 +278,29 @@ export class TrafficSimulation {
     };
     this.vehicles.push(vehicle);
     // Update density map for immediate queries
+    const startCell = edgePath[0]?.from.cellKey;
+    if (startCell) {
+      this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
+    }
+    return vehicle;
+  }
+
+  /** Add a freight truck that follows a LaneEdge path. Always uses truck dimensions. */
+  addFreightVehicle(edgePath: LaneEdge[]): Vehicle {
+    const vehicle: Vehicle = {
+      id: this.nextId++,
+      length: TRUCK_DIMS.length,
+      width: TRUCK_DIMS.width,
+      arrived: false,
+      lane: edgePath[0]?.from.lane ?? 0,
+      edgePath,
+      edgeIndex: 0,
+      edgeProgress: 0,
+      edgeMoveRate: 0,
+      speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
+    };
+    this.vehicles.push(vehicle);
     const startCell = edgePath[0]?.from.cellKey;
     if (startCell) {
       this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);

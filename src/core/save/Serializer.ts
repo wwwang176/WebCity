@@ -21,6 +21,7 @@ import { MetroSystem } from '../transport/MetroSystem';
 import { RailSystem } from '../transport/RailSystem';
 import { FerrySystem } from '../transport/FerrySystem';
 import { AirportSystem } from '../transport/AirportSystem';
+import { HighwayConnection } from '../traffic/HighwayConnection';
 import { CURRENT_SAVE_VERSION, runMigrations } from './migrations';
 
 interface SerializedCell {
@@ -71,6 +72,7 @@ interface SerializedState {
   rail?: ReturnType<RailSystem['toJSON']>;
   ferry?: ReturnType<FerrySystem['toJSON']>;
   airport?: ReturnType<AirportSystem['toJSON']>;
+  highwayConnection?: ReturnType<HighwayConnection['toJSON']>;
   abandonmentStress?: Record<string, number>;
 }
 
@@ -128,6 +130,7 @@ export function serializeGameState(
     rail: state.rail.toJSON(),
     ferry: state.ferry.toJSON(),
     airport: state.airport.toJSON(),
+    highwayConnection: state.highwayConnection.toJSON(),
     abandonmentStress: extra?.abandonmentStress
       ? Object.fromEntries(extra.abandonmentStress)
       : undefined,
@@ -211,6 +214,9 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
   }
   if (saved.airport) {
     state.airport = AirportSystem.fromJSON(saved.airport);
+  }
+  if (saved.highwayConnection) {
+    state.highwayConnection = HighwayConnection.fromJSON(saved.highwayConnection);
   }
 
   // Fallback: rebuild transit stops from grid for old saves without transport data

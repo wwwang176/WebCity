@@ -504,7 +504,12 @@ export class Game {
 
     canvas.addEventListener('mousedown', (e) => {
       if (e.button === 0 && !this.spacePanning) {
-        this.dragStart = { x: this.gridCursor.gridX, y: this.gridCursor.gridY };
+        // Clamp drag start to map bounds (start point always inside map)
+        const w = this.state.grid.width, h = this.state.grid.height;
+        this.dragStart = {
+          x: Math.max(0, Math.min(w - 1, this.gridCursor.gridX)),
+          y: Math.max(0, Math.min(h - 1, this.gridCursor.gridY)),
+        };
         this.updatePlacementPreview();
       }
       if (e.button === 2) {
@@ -579,6 +584,15 @@ export class Game {
   }
 
   private handleToolAction(x1: number, y1: number, x2: number, y2: number): void {
+    // Only road/rail tools allow endpoint beyond map edge; clamp for everything else
+    const isRoadOrRail = TOOL_TO_ROAD_TYPE[this.currentTool] !== undefined || this.currentTool === 'rail_track';
+    if (!isRoadOrRail) {
+      const w = this.state.grid.width, h = this.state.grid.height;
+      x1 = Math.max(0, Math.min(w - 1, x1));
+      y1 = Math.max(0, Math.min(h - 1, y1));
+      x2 = Math.max(0, Math.min(w - 1, x2));
+      y2 = Math.max(0, Math.min(h - 1, y2));
+    }
     switch (this.currentTool) {
       case 'select':
         this.handleSelectClick(x1, y1);
