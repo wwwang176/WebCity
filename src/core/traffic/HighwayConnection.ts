@@ -1,4 +1,5 @@
-import { RoadType } from '../road/types';
+import { RoadType, RoadDirection } from '../road/types';
+import { hasInwardFlag } from '../grid/EdgeUtils';
 
 export interface HighwayExternalConnection {
   populationIn: number;
@@ -16,7 +17,7 @@ export const HIGHWAY_EXTERNAL = {
 } as const;
 
 interface GridLike {
-  getCell(x: number, y: number): { roadType: number } | null;
+  getCell(x: number, y: number): { roadType: number; roadFlags: number } | null;
 }
 
 export class HighwayConnection {
@@ -53,7 +54,8 @@ export class HighwayConnection {
       if (seen.has(key)) return;
       seen.add(key);
       const cell = grid.getCell(x, y);
-      if (cell && cell.roadType === RoadType.HIGHWAY) {
+      if (cell && cell.roadType === RoadType.HIGHWAY
+          && hasInwardFlag(x, y, mapWidth, mapHeight, cell.roadFlags)) {
         this.edgeHighwayCells.push({ x, y });
       }
     };

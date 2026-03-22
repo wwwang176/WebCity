@@ -4,6 +4,7 @@ import type { Grid } from '../grid/Grid';
 import type { RailNetwork } from '../rail/RailNetwork';
 import { RailType } from '../rail/types';
 import { parsePosKeyUnsafe, toPosKey } from '../grid/GridHelpers';
+import { hasInwardFlag } from '../grid/EdgeUtils';
 
 export enum RailServiceType {
   PASSENGER = 'PASSENGER',
@@ -289,7 +290,7 @@ export class RailSystem extends BaseTransportSystem {
   private edgeRailCells: Array<{ x: number; y: number }> = [];
 
   /** Check which stations can reach the map edge via rail tracks (BFS). */
-  updateExternalConnection(mapWidth: number, mapHeight: number, grid?: { getCell(x: number, y: number): { railType: number } | null }): void {
+  updateExternalConnection(mapWidth: number, mapHeight: number, grid?: { getCell(x: number, y: number): { railType: number; railFlags: number } | null }): void {
     this.externalStations.clear();
     this.edgeRailCells = [];
 
@@ -302,18 +303,22 @@ export class RailSystem extends BaseTransportSystem {
         for (const s of this.stops) this.externalStations.add(toPosKey(s.x, s.y));
       }
     } else {
-      // BFS from all edge rail cells, mark reachable stations
+      // BFS from edge rail cells that point inward (perpendicular to border)
       const edgeRailCells: [number, number][] = [];
       for (let x = 0; x < mapWidth; x++) {
         for (const y of [0, mapHeight - 1]) {
           const cell = grid.getCell(x, y);
-          if (cell && cell.railType !== 0) edgeRailCells.push([x, y]);
+          if (cell && cell.railType !== 0 && hasInwardFlag(x, y, mapWidth, mapHeight, cell.railFlags)) {
+            edgeRailCells.push([x, y]);
+          }
         }
       }
       for (let y = 1; y < mapHeight - 1; y++) {
         for (const x of [0, mapWidth - 1]) {
           const cell = grid.getCell(x, y);
-          if (cell && cell.railType !== 0) edgeRailCells.push([x, y]);
+          if (cell && cell.railType !== 0 && hasInwardFlag(x, y, mapWidth, mapHeight, cell.railFlags)) {
+            edgeRailCells.push([x, y]);
+          }
         }
       }
 
