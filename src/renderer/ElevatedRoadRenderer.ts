@@ -47,7 +47,7 @@ interface ElevatedCell {
 export class ElevatedRoadRenderer {
   private group = new THREE.Group();
   private built = false;
-  private lampGlowMaterial: THREE.MeshBasicMaterial | null = null;
+  private lampGlowMaterials: THREE.MeshBasicMaterial[] = [];
 
   constructor() {
     this.group.name = 'ElevatedRoads';
@@ -110,6 +110,9 @@ export class ElevatedRoadRenderer {
 
       // Ramp cells — rendered individually with tilt rotation
       this.buildRampSurfaces(rampCells);
+
+      // Ramp sidewalks (tilted to match ramp surface)
+      this.buildRampSidewalks(rampCells);
 
       // Ramp lane markings (tilted to match ramp surface)
       this.buildRampMarkings(rampCells);
@@ -277,6 +280,59 @@ export class ElevatedRoadRenderer {
     this.group.add(mesh);
   }
 
+  /** Sidewalks on ramp cells, tilted to match ramp surface. */
+  private buildRampSidewalks(rampCells: ElevatedCell[]): void {
+    if (rampCells.length === 0) return;
+
+    const roadCells: RoadCell[] = rampCells.map(c => ({
+      x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags,
+    }));
+    const strips = buildSidewalkStrips(roadCells);
+    if (strips.length === 0) return;
+
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    const mesh = new THREE.InstancedMesh(geo, mat, strips.length);
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+
+    const matrix = new THREE.Matrix4();
+    const rot = new THREE.Matrix4();
+
+    const rampMap = new Map<string, ElevatedCell>();
+    for (const c of rampCells) rampMap.set(`${c.x},${c.y}`, c);
+
+    for (let i = 0; i < strips.length; i++) {
+      const s = strips[i]!;
+      const cellX = Math.round(s.x);
+      const cellZ = Math.round(s.z);
+      const ramp = rampMap.get(`${cellX},${cellZ}`);
+
+      let sY = SIDEWALK_Y;
+      if (ramp) {
+        const ascend = ramp.seg.rampAscendDirection;
+        const ax = (ascend & 0b1000) ? 1 : (ascend & 0b0100) ? -1 : 0;
+        const ay = (ascend & 0b0010) ? 1 : (ascend & 0b0001) ? -1 : 0;
+        const along = (s.x - cellX) * ax + (s.z - cellZ) * ay;
+        sY = ((ramp.level - 0.5) + along) * LEVEL_HEIGHT + SIDEWALK_Y;
+      }
+
+      matrix.makeScale(s.sx, 1, s.sz);
+      matrix.setPosition(s.x, sY, s.z);
+      if (ramp) {
+        const tiltX = this.getRampTiltX(ramp.seg.rampAscendDirection);
+        const tiltZ = this.getRampTiltZ(ramp.seg.rampAscendDirection);
+        if (tiltX !== 0) { rot.makeRotationX(tiltX); matrix.premultiply(rot); }
+        if (tiltZ !== 0) { rot.makeRotationZ(tiltZ); matrix.premultiply(rot); }
+      }
+      mesh.setMatrixAt(i, matrix);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    this.group.add(mesh);
+  }
+
   /** Full-angle tilt for ramp: ascendDir points toward the HIGH end. */
   private getRampTiltX(ascendDir: number): number {
     if (ascendDir & RoadDirection.NORTH) return RAMP_ANGLE;
@@ -351,9 +407,17 @@ export class ElevatedRoadRenderer {
       const cellX = Math.round(m.x);
       const cellZ = Math.round(m.z);
       const ramp = rampMap.get(`${cellX},${cellZ}`);
-      const midY = ramp ? (ramp.level - 0.5) * LEVEL_HEIGHT + MARKING_Y : MARKING_Y;
+      // Compute Y from position along ramp axis (same formula as vehicle elevation)
+      let markY = MARKING_Y;
+      if (ramp) {
+        const ascend = ramp.seg.rampAscendDirection;
+        const ax = (ascend & 0b1000) ? 1 : (ascend & 0b0100) ? -1 : 0;
+        const ay = (ascend & 0b0010) ? 1 : (ascend & 0b0001) ? -1 : 0;
+        const along = (m.x - cellX) * ax + (m.z - cellZ) * ay;
+        markY = ((ramp.level - 0.5) + along) * LEVEL_HEIGHT + MARKING_Y;
+      }
 
-      matrix.makeTranslation(m.x + perpX, midY, m.z + perpZ);
+      matrix.makeTranslation(m.x + perpX, markY, m.z + perpZ);
       if (m.rotY !== 0) {
         rot.makeRotationY(m.rotY);
         matrix.multiply(rot);
@@ -427,7 +491,7 @@ export class ElevatedRoadRenderer {
     }
     glowGeo.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
 
-    this.lampGlowMaterial = new THREE.MeshBasicMaterial({
+    const glowMat = new THREE.MeshBasicMaterial({
       color: 0xffdd88,
       vertexColors: true,
       transparent: true,
@@ -435,7 +499,8 @@ export class ElevatedRoadRenderer {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    const glowMesh = new THREE.InstancedMesh(glowGeo, this.lampGlowMaterial, lamps.length);
+    this.lampGlowMaterials.push(glowMat);
+    const glowMesh = new THREE.InstancedMesh(glowGeo, glowMat, lamps.length);
     glowMesh.frustumCulled = false;
     glowMesh.renderOrder = 2;
 
@@ -457,8 +522,8 @@ export class ElevatedRoadRenderer {
 
   /** Update lamp glow based on sun intensity (call each frame). */
   update(sunIntensity: number): void {
-    if (!this.lampGlowMaterial) return;
-    this.lampGlowMaterial.opacity = Math.max(0, 0.75 * (1 - sunIntensity / 0.45));
+    const opacity = Math.max(0, 0.75 * (1 - sunIntensity / 0.45));
+    for (const mat of this.lampGlowMaterials) mat.opacity = opacity;
   }
 
   dispose(scene: THREE.Scene): void {
@@ -475,6 +540,7 @@ export class ElevatedRoadRenderer {
         }
       });
       this.group.clear();
+      this.lampGlowMaterials.length = 0;
       this.built = false;
     }
   }
