@@ -2,11 +2,12 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { ZoneType } from '../../../core/grid/types';
 import { TRADE } from '../../../core/traffic/FreightSystem';
 import { HIGHWAY_EXTERNAL } from '../../../core/traffic/HighwayConnection';
+import { UI_COLORS } from '../../constants';
 
 function supplyColor(ratio: number): string {
-  if (ratio > 1.5 || ratio < 0.5) return '#ef5350';
-  if (ratio > 1.2 || ratio < 0.8) return '#ffa726';
-  return '#66bb6a';
+  if (ratio > 1.5 || ratio < 0.5) return UI_COLORS.STATUS_BAD;
+  if (ratio > 1.2 || ratio < 0.8) return UI_COLORS.STATUS_WARN;
+  return UI_COLORS.STATUS_GOOD;
 }
 
 export function FreightPage() {
@@ -93,8 +94,8 @@ export function FreightPage() {
       </div>
 
       <div class="summary-grid" style="margin-bottom:12px">
-        <div class="summary-card"><div class="sc-value" style="color:#ffa726">{data().production}</div><div class="sc-label">Production/tick</div></div>
-        <div class="summary-card"><div class="sc-value" style="color:#42a5f5">{data().consumption}</div><div class="sc-label">Consumption/tick</div></div>
+        <div class="summary-card"><div class="sc-value" style={`color:${UI_COLORS.STATUS_WARN}`}>{data().production}</div><div class="sc-label">Production/tick</div></div>
+        <div class="summary-card"><div class="sc-value" style={`color:${UI_COLORS.ACCENT}`}>{data().consumption}</div><div class="sc-label">Consumption/tick</div></div>
       </div>
 
       {/* Commercial Supply Status */}
@@ -102,9 +103,9 @@ export function FreightPage() {
       <table class="data-table" style="margin-bottom:12px">
         <thead><tr><th>Status</th><th style="text-align:right">Shops</th></tr></thead>
         <tbody>
-          <tr><td class="td-label" style="color:#66bb6a">Local Supply</td><td class="td-value" style="text-align:right">{data().localCount}</td></tr>
-          <tr><td class="td-label" style="color:#ffa726">Imported</td><td class="td-value" style="text-align:right">{data().importedCount}</td></tr>
-          <tr><td class="td-label" style="color:#ef5350">Unsupplied</td><td class="td-value" style="text-align:right">{data().unsuppliedCount}</td></tr>
+          <tr><td class="td-label" style={`color:${UI_COLORS.STATUS_GOOD}`}>Local Supply</td><td class="td-value" style="text-align:right">{data().localCount}</td></tr>
+          <tr><td class="td-label" style={`color:${UI_COLORS.STATUS_WARN}`}>Imported</td><td class="td-value" style="text-align:right">{data().importedCount}</td></tr>
+          <tr><td class="td-label" style={`color:${UI_COLORS.STATUS_BAD}`}>Unsupplied</td><td class="td-value" style="text-align:right">{data().unsuppliedCount}</td></tr>
           <tr style="border-top:1px solid rgba(100,120,150,0.3)">
             <td class="td-label" style="font-weight:600">Total</td>
             <td class="td-value" style="text-align:right;font-weight:600">{data().totalCommercial}</td>
@@ -117,11 +118,11 @@ export function FreightPage() {
       <div style="display:flex;gap:12px;margin-bottom:8px">
         <div style="flex:1;padding:8px 12px;border-radius:6px;background:rgba(255,167,38,0.1)">
           <div style="font-size:10px;color:#8899b0;margin-bottom:2px">Import</div>
-          <div style="font-size:16px;font-weight:600;color:#ffa726">{data().imported}<span style="font-size:11px;font-weight:400">/tick</span></div>
+          <div style={`font-size:16px;font-weight:600;color:${UI_COLORS.STATUS_WARN}`}>{data().imported}<span style="font-size:11px;font-weight:400">/tick</span></div>
         </div>
         <div style="flex:1;padding:8px 12px;border-radius:6px;background:rgba(102,187,106,0.1)">
           <div style="font-size:10px;color:#8899b0;margin-bottom:2px">Export</div>
-          <div style="font-size:16px;font-weight:600;color:#66bb6a">{data().exported}<span style="font-size:11px;font-weight:400">/tick</span></div>
+          <div style={`font-size:16px;font-weight:600;color:${UI_COLORS.STATUS_GOOD}`}>{data().exported}<span style="font-size:11px;font-weight:400">/tick</span></div>
         </div>
       </div>
 
@@ -133,14 +134,14 @@ export function FreightPage() {
           <tr>
             <td class="td-label">
               Rail ({data().extStations}/{data().totalStations} stations)
-              {!data().hasRailConnection && <span style="color:#ef5350;font-size:10px"> (no edge connection)</span>}
+              {!data().hasRailConnection && <span style={`color:${UI_COLORS.STATUS_BAD};font-size:10px`}> (no edge connection)</span>}
             </td>
             <td class="td-value" style="text-align:right">{data().railThroughput}/tick</td>
           </tr>
           <tr>
             <td class="td-label">
               Highway ({data().highwayConnections} connections)
-              {!data().hasHighwayConnection && <span style="color:#ef5350;font-size:10px"> (no edge connection)</span>}
+              {!data().hasHighwayConnection && <span style={`color:${UI_COLORS.STATUS_BAD};font-size:10px`}> (no edge connection)</span>}
             </td>
             <td class="td-value" style="text-align:right">{data().highwayThroughput}/tick</td>
           </tr>
@@ -163,10 +164,10 @@ export function FreightPage() {
       {/* Income Impact */}
       <div class="section-title">Income Impact</div>
       <div style="font-size:11px;color:#8899b0">
-        <div style="margin-bottom:4px">Local supply: income <span style="color:#66bb6a">×1.0</span></div>
-        <div style="margin-bottom:4px">Imported goods: income <span style="color:#ffa726">×{TRADE.IMPORT_INCOME_MULTIPLIER}</span></div>
-        <div style="margin-bottom:4px">Exported goods: income <span style="color:#ffa726">×{TRADE.EXPORT_INCOME_MULTIPLIER}</span></div>
-        <div>Unsupplied: income <span style="color:#ef5350">×0.5</span> + abandonment stress</div>
+        <div style="margin-bottom:4px">Local supply: income <span style={`color:${UI_COLORS.STATUS_GOOD}`}>×1.0</span></div>
+        <div style="margin-bottom:4px">Imported goods: income <span style={`color:${UI_COLORS.STATUS_WARN}`}>×{TRADE.IMPORT_INCOME_MULTIPLIER}</span></div>
+        <div style="margin-bottom:4px">Exported goods: income <span style={`color:${UI_COLORS.STATUS_WARN}`}>×{TRADE.EXPORT_INCOME_MULTIPLIER}</span></div>
+        <div>Unsupplied: income <span style={`color:${UI_COLORS.STATUS_BAD}`}>×0.5</span> + abandonment stress</div>
       </div>
     </>
   );

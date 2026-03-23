@@ -2,6 +2,7 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { LifeStage, EducationLevel } from '../../../core/citizen/types';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../../core/grid/types';
 import { getBuildingType } from '../../../core/building/types';
+import { UI_COLORS } from '../../constants';
 
 const STAGE_LABELS: Record<string, string> = {
   [LifeStage.BABY]: 'Baby',
@@ -14,7 +15,7 @@ const STAGE_COLORS: Record<string, string> = {
   [LifeStage.BABY]: '#ce93d8',
   [LifeStage.CHILD]: '#81d4fa',
   [LifeStage.TEEN]: '#80cbc4',
-  [LifeStage.ADULT]: '#66bb6a',
+  [LifeStage.ADULT]: UI_COLORS.STATUS_GOOD,
   [LifeStage.SENIOR]: '#ffb74d',
 };
 
@@ -40,14 +41,14 @@ const ZONE_LABELS: Record<string, string> = {
   UNEMPLOYED: 'Unemployed',
 };
 const ZONE_COLORS: Record<string, string> = {
-  COM: '#42a5f5',
-  IND: '#ffa726',
+  COM: UI_COLORS.ACCENT,
+  IND: UI_COLORS.STATUS_WARN,
   OFFICE: '#ab47bc',
-  UNEMPLOYED: '#ef5350',
+  UNEMPLOYED: UI_COLORS.STATUS_BAD,
 };
 
 const LEVEL_LABELS: Record<number, string> = { 1: 'Lv1', 2: 'Lv2', 3: 'Lv3' };
-const LEVEL_COLORS: Record<number, string> = { 1: '#78909c', 2: '#66bb6a', 3: '#ffd54f' };
+const LEVEL_COLORS: Record<number, string> = { 1: '#78909c', 2: UI_COLORS.STATUS_GOOD, 3: '#ffd54f' };
 
 function getWorkZoneKey(zoneType: number): string {
   if (isCommercialZone(zoneType)) return 'COM';
@@ -70,7 +71,7 @@ function DistributionBar(props: { items: { label: string; count: number; color: 
           <div style="display:flex;align-items:center;gap:4px;font-size:11px">
             <div style={{ width: '8px', height: '8px', 'border-radius': '2px', background: item.color }} />
             <span style="color:#8899b0">{item.label}</span>
-            <span style="color:#d0d8e8;font-weight:500">{item.count}</span>
+            <span style={`color:${UI_COLORS.NEUTRAL};font-weight:500`}>{item.count}</span>
             <span style="color:#667a90">({props.total > 0 ? ((item.count / props.total) * 100).toFixed(0) : 0}%)</span>
           </div>
         ))}
@@ -106,7 +107,7 @@ function CrossTable(props: {
               {props.colLabels.map((_, ci) => {
                 const val = props.data[ri]?.[ci] ?? 0;
                 return (
-                  <td style={{ 'text-align': 'right', padding: '4px 6px', color: val > 0 ? '#d0d8e8' : '#444' }}>
+                  <td style={{ 'text-align': 'right', padding: '4px 6px', color: val > 0 ? UI_COLORS.NEUTRAL : '#444' }}>
                     {val}
                   </td>
                 );
@@ -276,7 +277,7 @@ export function DemographicsPage() {
           <div class="sc-label">Unemployed</div>
         </div>
         <div class="summary-card">
-          <div class="sc-value" style="color:#ffa726">{stats().homeless}</div>
+          <div class="sc-value" style={`color:${UI_COLORS.STATUS_WARN}`}>{stats().homeless}</div>
           <div class="sc-label">Homeless</div>
         </div>
       </div>

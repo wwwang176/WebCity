@@ -5,6 +5,7 @@ import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/t
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
 import { getEducationSalaryMultiplier, getResidentialLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../../core/economy/TaxMultipliers';
 import { DEFAULT_TAX_RATE } from '../../core/economy/Tax';
+import { UI_COLORS } from '../constants';
 
 const ZONE_NAMES: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
@@ -103,7 +104,7 @@ const WARNING_STYLE_YELLOW = {
 
 const WARNING_STYLE_RED = {
   'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
-  background: 'rgba(239,83,80,0.15)', color: '#ef5350',
+  background: 'rgba(239,83,80,0.15)', color: UI_COLORS.STATUS_BAD,
   'font-size': '11px', 'font-weight': '600',
 } as const;
 
@@ -239,7 +240,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       <Show when={!hasPower()}>
         <div style={{
           'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
-          background: 'rgba(239,83,80,0.15)', color: '#ef5350',
+          background: 'rgba(239,83,80,0.15)', color: UI_COLORS.STATUS_BAD,
           'font-size': '11px', 'font-weight': '600',
         }}>
           No Power - No income
@@ -248,7 +249,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       <Show when={!hasWater()}>
         <div style={{
           'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
-          background: 'rgba(239,83,80,0.15)', color: '#ef5350',
+          background: 'rgba(239,83,80,0.15)', color: UI_COLORS.STATUS_BAD,
           'font-size': '11px', 'font-weight': '600',
         }}>
           No Water
@@ -257,7 +258,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       <Show when={props.sel.isAbandoned}>
         <div style={{
           'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
-          background: 'rgba(239,83,80,0.2)', color: '#ef5350',
+          background: 'rgba(239,83,80,0.2)', color: UI_COLORS.STATUS_BAD,
           'font-size': '11px', 'font-weight': '700',
         }}>
           ABANDONED
@@ -268,7 +269,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
 
       <div id="bp-citizen-list">
         <Show when={citizens().residents.length > 0}>
-          <div style="font-size:11px;color:#66bb6a;margin-top:4px">Residents ({citizens().residents.length})</div>
+          <div style={`font-size:11px;color:${UI_COLORS.STATUS_GOOD};margin-top:4px`}>Residents ({citizens().residents.length})</div>
           <For each={citizens().residents}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
@@ -278,7 +279,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           </For>
         </Show>
         <Show when={citizens().workers.length > 0}>
-          <div style="font-size:11px;color:#42a5f5;margin-top:4px">Workers ({citizens().workers.length})</div>
+          <div style={`font-size:11px;color:${UI_COLORS.ACCENT};margin-top:4px`}>Workers ({citizens().workers.length})</div>
           <For each={citizens().workers}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>

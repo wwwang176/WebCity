@@ -2,6 +2,7 @@ import { createSignal, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
 import type { ToolType } from '../../Game';
+import { UI_COLORS } from '../constants';
 // AirportSize import removed — airport tools now use separate ToolType entries
 
 
@@ -9,13 +10,13 @@ interface SubTool { tool: ToolType; label: string; key: string; color: string; i
 interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[] }
 
 const ZONE_GROUP: ToolGroup = {
-  id: 'zone', label: 'Zones', icon: '\u{1F3D8}', color: '#66bb6a',
+  id: 'zone', label: 'Zones', icon: '\u{1F3D8}', color: UI_COLORS.STATUS_GOOD,
   items: [
-    { tool: 'zone_r', label: 'Res Low', key: '3', color: '#66bb6a', icon: '\u{1F3E0}' },
+    { tool: 'zone_r', label: 'Res Low', key: '3', color: UI_COLORS.STATUS_GOOD, icon: '\u{1F3E0}' },
     { tool: 'zone_rh', label: 'Res High', key: '', color: '#2e7d32', icon: '\u{1F3E2}' },
-    { tool: 'zone_c', label: 'Com Low', key: '4', color: '#42a5f5', icon: '\u{1F3EC}' },
+    { tool: 'zone_c', label: 'Com Low', key: '4', color: UI_COLORS.ACCENT, icon: '\u{1F3EC}' },
     { tool: 'zone_ch', label: 'Com High', key: '', color: '#1565c0', icon: '\u{1F3EC}' },
-    { tool: 'zone_i', label: 'Industrial', key: '5', color: '#ffa726', icon: '\u{1F3ED}' },
+    { tool: 'zone_i', label: 'Industrial', key: '5', color: UI_COLORS.STATUS_WARN, icon: '\u{1F3ED}' },
     { tool: 'zone_o', label: 'Office', key: '6', color: '#ab47bc', icon: '\u{1F3E2}' },
   ],
 };
@@ -170,7 +171,7 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
       </For>
 
       <ToolButton
-        item={{ tool: 'demolish', label: 'Demolish', key: '0', color: '#ef5350', icon: '\u{1F4A5}' }}
+        item={{ tool: 'demolish', label: 'Demolish', key: '0', color: UI_COLORS.STATUS_BAD, icon: '\u{1F4A5}' }}
         onClick={selectStandalone}
       />
 
