@@ -126,21 +126,34 @@ function getNeighbors(
   const result: Neighbor[] = [];
 
   if (level === 0) {
-    // --- Ground level: check 4 neighbors on ground ---
+    // --- Ground level: check 4 neighbors ---
     for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = x + dx!;
       const ny = y + dy!;
       if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
 
       const cell = grid.getCell(nx, ny);
+
+      // Ground road neighbor
       if (cell && cell.roadType !== RoadType.NONE) {
         const config = ROAD_CONFIGS[cell.roadType as RoadType];
         const speed = config?.speedLimit || 50;
         result.push({ key: nodeKey(nx, ny, 0), x: nx, y: ny, level: 0, cost: 1 / speed });
       }
+
+      // Elevated road neighbor (cell may have no ground road but has elevated segment)
+      for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+        const seg = em.get(nx, ny, lv);
+        if (seg && seg.roadType !== RoadType.NONE) {
+          const config = ROAD_CONFIGS[seg.roadType as RoadType];
+          const speed = config?.speedLimit || 50;
+          const cost = seg.isRamp ? (1 / speed) * RAMP_COST_MULTIPLIER : 1 / speed;
+          result.push({ key: nodeKey(nx, ny, lv), x: nx, y: ny, level: lv, cost });
+        }
+      }
     }
 
-    // --- Check if any ramp at this cell connects ground to elevated ---
+    // --- Check if any ramp at THIS cell connects ground to elevated ---
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
       const seg = em.get(x, y, lv);
       if (seg && seg.isRamp && seg.roadType !== RoadType.NONE) {
@@ -154,12 +167,13 @@ function getNeighbors(
       }
     }
   } else {
-    // --- Elevated level: check 4 neighbors at same level ---
+    // --- Elevated level: check 4 neighbors ---
     for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = x + dx!;
       const ny = y + dy!;
       if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
 
+      // Same level elevated neighbor
       const seg = em.get(nx, ny, level);
       if (seg && seg.roadType !== RoadType.NONE) {
         const config = ROAD_CONFIGS[seg.roadType as RoadType];
@@ -167,12 +181,19 @@ function getNeighbors(
         const cost = seg.isRamp ? (1 / speed) * RAMP_COST_MULTIPLIER : 1 / speed;
         result.push({ key: nodeKey(nx, ny, level), x: nx, y: ny, level, cost });
       }
+
+      // Ground road neighbor (elevated can step down to adjacent ground road)
+      const groundCell = grid.getCell(nx, ny);
+      if (groundCell && groundCell.roadType !== RoadType.NONE) {
+        const config = ROAD_CONFIGS[groundCell.roadType as RoadType];
+        const speed = config?.speedLimit || 50;
+        result.push({ key: nodeKey(nx, ny, 0), x: nx, y: ny, level: 0, cost: 1 / speed });
+      }
     }
 
-    // --- Check if this cell's ramp connects back to ground ---
+    // --- Check if this cell's ramp connects back to ground at same position ---
     const thisSeg = em.get(x, y, level);
     if (thisSeg && thisSeg.isRamp) {
-      // Connect to ground level at same (x, y)
       const groundCell = grid.getCell(x, y);
       if (groundCell && groundCell.roadType !== RoadType.NONE) {
         const config = ROAD_CONFIGS[groundCell.roadType as RoadType];
