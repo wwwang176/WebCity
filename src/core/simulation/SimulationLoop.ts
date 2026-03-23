@@ -10,6 +10,7 @@ import { RoadType } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
 import { refineLanePath, refineLanePathVariants, gridAStarPath } from '../traffic/Pathfinding';
+import { buildSimpleEdgePath, hasElevatedKeys } from '../traffic/ElevatedLanePath';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
 import { getBuildingType } from '../building/types';
@@ -1539,8 +1540,14 @@ export class SimulationLoop {
       if (!variants) {
         const path = findRoadPath(fromPos, toPos, grid, this._elevationManager ?? undefined);
         if (path && path.length >= 2) {
-          variants = refineLanePathVariants(this.laneGraph, path);
-          if (variants.length > 0) {
+          if (hasElevatedKeys(path)) {
+            // Elevated path: use simple cell-to-cell edges (no lane graph)
+            const simple = buildSimpleEdgePath(path);
+            if (simple.length > 0) variants = [simple];
+          } else {
+            variants = refineLanePathVariants(this.laneGraph, path);
+          }
+          if (variants && variants.length > 0) {
             this.commuteCache.setRouteVariants(routeKey, variants);
           }
         }
@@ -1650,7 +1657,9 @@ export class SimulationLoop {
 
       const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid, this._elevationManager ?? undefined);
       if (path && path.length >= 2) {
-        const edgePath = refineLanePath(this.laneGraph, path);
+        const edgePath = hasElevatedKeys(path)
+          ? buildSimpleEdgePath(path)
+          : refineLanePath(this.laneGraph, path);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         }

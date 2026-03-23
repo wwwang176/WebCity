@@ -15,7 +15,7 @@ import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
-import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -1251,7 +1251,37 @@ export class Game {
         : v.busState
           ? 'bus' as VehicleData['type']
           : (this.vehicleTypes.get(v.id) ?? (() => { const t = classifyVehicleType(v.length); this.vehicleTypes.set(v.id, t); return t; })());
-      vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0 });
+      // Determine elevation + ramp pitch from current edge's cell key
+      let elevation = 0;
+      let pitch = 0;
+      if (v.edgePath.length > 0) {
+        const edgeIdx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+        const edge = v.edgePath[edgeIdx]!;
+        const cellKey = edge.from.cellKey;
+        elevation = parseLevelFromKey(cellKey);
+        // Check if cell is a ramp for pitch tilt
+        if (elevation > 0) {
+          const seg = this.elevationManager.get(
+            parsePosKeyUnsafe(cellKey).x,
+            parsePosKeyUnsafe(cellKey).y,
+            elevation,
+          );
+          if (seg?.isRamp) {
+            // Ramp pitch: ~31° tilt (matching road ramp visual)
+            const RAMP_ANGLE = Math.atan2(0.6, 1.0);
+            const ascend = seg.rampAscendDirection;
+            // Pitch based on vehicle heading vs ascend direction
+            // Simplified: if heading aligns with ascend, nose up; opposite, nose down
+            const hx = Math.cos(heading);
+            const hy = -Math.sin(heading);
+            const ax = (ascend & 0b1000) ? 1 : (ascend & 0b0100) ? -1 : 0;
+            const ay = (ascend & 0b0010) ? 1 : (ascend & 0b0001) ? -1 : 0;
+            const dot = hx * ax + hy * ay;
+            pitch = dot * RAMP_ANGLE;
+          }
+        }
+      }
+      vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0, elevation, pitch: pitch || undefined });
     }
 
     // Collect transport system vehicles (rail/ferry — bus is now in TrafficSimulation)

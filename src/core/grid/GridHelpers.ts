@@ -27,17 +27,31 @@ export function toPosKey(x: number, y: number): string {
   return `${x},${y}`;
 }
 
-/** Parse a "x,y" position key string — returns null if invalid */
+/** Parse a "x,y" or "x,y,level" position key string — returns null if invalid */
 export function parsePosKey(key: string): { x: number; y: number } | null {
   const i = key.indexOf(',');
   if (i === -1) return null;
+  const j = key.indexOf(',', i + 1);
+  // "x,y,level" — only take x and y
+  if (j !== -1) return { x: Number(key.slice(0, i)), y: Number(key.slice(i + 1, j)) };
   return { x: Number(key.slice(0, i)), y: Number(key.slice(i + 1)) };
 }
 
-/** Parse a "x,y" position key — unsafe, assumes valid input */
+/** Parse a "x,y" or "x,y,level" position key — unsafe, assumes valid input */
 export function parsePosKeyUnsafe(key: string): { x: number; y: number } {
   const i = key.indexOf(',');
+  const j = key.indexOf(',', i + 1);
+  if (j !== -1) return { x: Number(key.slice(0, i)), y: Number(key.slice(i + 1, j)) };
   return { x: Number(key.slice(0, i)), y: Number(key.slice(i + 1)) };
+}
+
+/** Parse the elevation level from a "x,y,level" key. Returns 0 for "x,y" format. */
+export function parseLevelFromKey(key: string): number {
+  const i = key.indexOf(',');
+  if (i === -1) return 0;
+  const j = key.indexOf(',', i + 1);
+  if (j === -1) return 0;
+  return Number(key.slice(j + 1));
 }
 
 /** Minimal grid interface for road lookups (DIP). */

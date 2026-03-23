@@ -30,6 +30,8 @@ export interface VehicleData {
   roll?: number;
   /** Uniform scale override. */
   scale?: number;
+  /** Elevation level (0 = ground, 1-3 = elevated). Adds level × 0.6 to Y. */
+  elevation?: number;
 }
 
 const CAR_COLORS = [
@@ -217,14 +219,18 @@ export class VehicleRenderer {
         if (type === 'airplane' && v.altitude !== undefined) {
           yPos = v.altitude;
         }
+        // Elevated road: add elevation height
+        if (v.elevation && v.elevation > 0) {
+          yPos += v.elevation * 0.6;
+        }
 
         rotation.makeRotationY(v.heading);
-        // Airplane pitch/roll: apply in local space (after heading rotation)
-        if (type === 'airplane' && (v.pitch || v.roll)) {
+        // Pitch/roll: apply in local space (airplane, ramp vehicles, etc.)
+        if (v.pitch || v.roll) {
           const pr = this._pitchRoll;
-          pr.makeRotationX(v.roll ?? 0);   // roll around local X (wing axis)
+          pr.makeRotationX(v.roll ?? 0);
           if (v.pitch) {
-            this._pitchMat.makeRotationZ(v.pitch); // pitch around local Z (nose up/down)
+            this._pitchMat.makeRotationZ(v.pitch);
             pr.multiply(this._pitchMat);
           }
           rotation.multiply(pr);
