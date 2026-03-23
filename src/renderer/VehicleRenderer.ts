@@ -291,7 +291,9 @@ export class VehicleRenderer {
             this._pitchRoll.makeScale(2, 1, 2);
             hlMatrix.multiply(this._pitchRoll);
           }
-          hlTranslation.makeTranslation(hlX, lightY, hlZ);
+          // Headlight Y: adjust for slope height at front position
+          const hlY = lightY + (v.pitch ? fOff * Math.sin(v.pitch) : 0);
+          hlTranslation.makeTranslation(hlX, hlY, hlZ);
           hlMatrix.premultiply(hlTranslation);
           this.headlightMesh.setMatrixAt(lightIndex, hlMatrix);
 
@@ -301,7 +303,9 @@ export class VehicleRenderer {
           } else {
             const tlX = vx - cosH * rOff;
             const tlZ = vz + sinH * rOff;
-            tlTranslation.makeTranslation(tlX, lightY, tlZ);
+            // Taillight Y: adjust for slope height at rear position (opposite direction)
+            const tlY = lightY - (v.pitch ? rOff * Math.sin(v.pitch) : 0);
+            tlTranslation.makeTranslation(tlX, tlY, tlZ);
             tlMatrix.copy(tlTranslation);
             // Apply pitch to taillights too
             if (v.pitch) {
