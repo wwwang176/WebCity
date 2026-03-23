@@ -1,6 +1,7 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, type Position } from '../grid/types';
-import { toPosKey, getDirectionFlag } from '../grid/GridHelpers';
+import { toPosKey, getDirectionFlag, getLShapedPath } from '../grid/GridHelpers';
+import { extractOutOfBoundsEdge } from '../grid/EdgeUtils';
 import { RoadType, ROAD_CONFIGS, type BuildRoadResult } from '../road/types';
 import { RoadNetwork } from '../road/RoadNetwork';
 import { ElevationManager } from './ElevationManager';
@@ -37,6 +38,18 @@ export class ElevatedRoadBuilder {
     funds: number,
     targetLevel: number,
   ): BuildRoadResult {
+    // Detect out-of-bounds edge (highway external connection)
+    const fullPath = getLShapedPath(from, to);
+    const rawOob = extractOutOfBoundsEdge(fullPath, this.grid.width, this.grid.height);
+    const oob = rawOob && roadType === RoadType.HIGHWAY ? rawOob : null;
+    // Truncate `to` if user dragged beyond map edge
+    if (rawOob) {
+      const lastInBounds = fullPath[rawOob.truncatedLength - 1];
+      if (lastInBounds) {
+        to = { x: lastInBounds.x, y: lastInBounds.y };
+      }
+    }
+
     // Determine start level
     const startLevel = this.detectLevel(from.x, from.y);
     const startOnGround = this.isGroundRoad(from.x, from.y);
@@ -101,6 +114,11 @@ export class ElevatedRoadBuilder {
       if (i < path.length - 1) {
         const next = path[i + 1]!;
         flags |= getDirectionFlag(pos, next);
+      }
+
+      // Add outward flag for highway edge connection
+      if (oob && i === path.length - 1) {
+        flags |= oob.outwardFlag;
       }
 
       // Merge with existing flags at same level
