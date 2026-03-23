@@ -1264,20 +1264,11 @@ export class Game {
         const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
         elevation = fromLevel + (toLevel - fromLevel) * t;
 
-        // Check if current cell is a ramp for pitch tilt
-        const cellLevel = Math.max(fromLevel, toLevel);
-        if (cellLevel > 0) {
-          const cp = parsePosKeyUnsafe(edge.from.cellKey);
-          const seg = this.elevationManager.get(cp.x, cp.y, cellLevel);
-          if (seg?.isRamp) {
-            const RAMP_ANGLE = Math.atan2(0.6, 1.0);
-            const ascend = seg.rampAscendDirection;
-            const hx = Math.cos(heading);
-            const hy = -Math.sin(heading);
-            const ax = (ascend & 0b1000) ? 1 : (ascend & 0b0100) ? -1 : 0;
-            const ay = (ascend & 0b0010) ? 1 : (ascend & 0b0001) ? -1 : 0;
-            pitch = (hx * ax + hy * ay) * RAMP_ANGLE;
-          }
+        // Ramp pitch: if levels differ, this edge IS the ramp
+        if (fromLevel !== toLevel) {
+          const RAMP_ANGLE = Math.atan2(0.6, 1.0);
+          // Ascending (fromLevel < toLevel) → positive pitch (nose up)
+          pitch = fromLevel < toLevel ? RAMP_ANGLE : -RAMP_ANGLE;
         }
       }
       vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0, elevation: elevation || undefined, pitch: pitch || undefined });
