@@ -108,6 +108,8 @@ export class LaneGraph {
       this.generateEdgesForCell(grid, key);
     }
     this.rebuildEdgeIndices();
+    // Phase 3: add virtual connections for transparent intersections
+    this.addIntersectionConnections(grid, cellKeys);
   }
 
   updateCells(grid: GridLookup, affectedCellKeys: string[]): void {
@@ -631,6 +633,41 @@ export class LaneGraph {
       prevY = y;
     }
     return length;
+  }
+
+  /**
+   * Add virtual cellNeighbor connections for transparent intersection cells.
+   * These cells (3+ direction flags) don't generate their own edges,
+   * so they're missing from edge-based cellNeighbors. We add them
+   * directly from their flags.
+   */
+  private addIntersectionConnections(grid: GridLookup, cellKeys: string[]): void {
+    for (const key of cellKeys) {
+      const cell = grid.getCellByKey(key);
+      if (!cell || !isIntersectionCell(cell.roadFlags)) continue;
+
+      const { x, y } = parseCellKey(key);
+      for (const d of DIR_FLAGS) {
+        if (!(cell.roadFlags & d.flag)) continue;
+        const nx = x + d.dx;
+        const ny = y + d.dy;
+        const neighborKeys = grid.getCompatibleNeighborKeys(key, nx, ny);
+        for (const nk of neighborKeys) {
+          const neighbor = grid.getCellByKey(nk);
+          if (!neighbor) continue;
+          // Check neighbor has opposite flag pointing back
+          const oppositeFlag = DIR_FLAGS.find(dd => dd.dir === oppositeDir(d.dir))?.flag ?? 0;
+          if (!(neighbor.roadFlags & oppositeFlag)) continue;
+          // Add bidirectional connection
+          let set = this.cellNeighbors.get(key);
+          if (!set) { set = new Set(); this.cellNeighbors.set(key, set); }
+          set.add(nk);
+          let set2 = this.cellNeighbors.get(nk);
+          if (!set2) { set2 = new Set(); this.cellNeighbors.set(nk, set2); }
+          set2.add(key);
+        }
+      }
+    }
   }
 
   /** Get all cell keys that have LaneGraph edges connecting FROM the given cell. */
