@@ -1176,6 +1176,7 @@ export class Game {
     const sunI = this.weatherRenderer.sunIntensity;
     this.buildingRenderer.update(sunI, dt);
     this.roadRenderer.update(sunI);
+    this.elevatedRoadRenderer.update(sunI);
   }
 
   /** Rebuild renderer meshes for each dirty subsystem, then clear dirty flags. */

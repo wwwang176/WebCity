@@ -47,6 +47,7 @@ interface ElevatedCell {
 export class ElevatedRoadRenderer {
   private group = new THREE.Group();
   private built = false;
+  private lampGlowMaterial: THREE.MeshBasicMaterial | null = null;
 
   constructor() {
     this.group.name = 'ElevatedRoads';
@@ -399,20 +400,60 @@ export class ElevatedRoadRenderer {
     if (!merged) return;
 
     const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-    const mesh = new THREE.InstancedMesh(merged, lampMat, lamps.length);
-    mesh.castShadow = true;
-    mesh.frustumCulled = false;
+    const lampMesh = new THREE.InstancedMesh(merged, lampMat, lamps.length);
+    lampMesh.castShadow = true;
+    lampMesh.frustumCulled = false;
+
+    // Glow disc (radial gradient, additive blending — same as RoadRenderer)
+    const glowSegs = 12;
+    const glowRadius = 0.4;
+    const glowGeo = new THREE.CircleGeometry(glowRadius, glowSegs);
+    glowGeo.rotateX(-Math.PI / 2);
+    const posAttr = glowGeo.attributes['position']!;
+    const vColors = new Float32Array(posAttr.count * 3);
+    for (let i = 0; i < posAttr.count; i++) {
+      const px = posAttr.getX(i);
+      const pz = posAttr.getZ(i);
+      const dist = Math.sqrt(px * px + pz * pz) / glowRadius;
+      const brightness = Math.max(0, 1 - dist);
+      vColors[i * 3] = brightness;
+      vColors[i * 3 + 1] = brightness;
+      vColors[i * 3 + 2] = brightness;
+    }
+    glowGeo.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
+
+    this.lampGlowMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffdd88,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const glowMesh = new THREE.InstancedMesh(glowGeo, this.lampGlowMaterial, lamps.length);
+    glowMesh.frustumCulled = false;
+    glowMesh.renderOrder = 2;
 
     const matrix = new THREE.Matrix4();
     for (let i = 0; i < lamps.length; i++) {
       const p = lamps[i]!;
       matrix.identity();
       matrix.setPosition(p.x, baseY + SIDEWALK_Y, p.z);
-      mesh.setMatrixAt(i, matrix);
+      lampMesh.setMatrixAt(i, matrix);
+      matrix.setPosition(p.x, baseY + 0.055, p.z);
+      glowMesh.setMatrixAt(i, matrix);
     }
 
-    mesh.instanceMatrix.needsUpdate = true;
-    this.group.add(mesh);
+    lampMesh.instanceMatrix.needsUpdate = true;
+    glowMesh.instanceMatrix.needsUpdate = true;
+    this.group.add(lampMesh);
+    this.group.add(glowMesh);
+  }
+
+  /** Update lamp glow based on sun intensity (call each frame). */
+  update(sunIntensity: number): void {
+    if (!this.lampGlowMaterial) return;
+    this.lampGlowMaterial.opacity = Math.max(0, 0.75 * (1 - sunIntensity / 0.45));
   }
 
   dispose(scene: THREE.Scene): void {
