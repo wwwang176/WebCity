@@ -60,7 +60,7 @@ export function buildSimpleEdgePath(cellPath: string[]): LaneEdge[] {
         waypoints.push({
           x: (pos.x + next.x) / 2,
           y: (pos.y + next.y) / 2,
-          cellKey: cellPath[i + 1]!, // neighbor's key → neighbor's level
+          cellKey: cellPath[i]!, // own key → this ramp's level
         });
       }
     } else {
