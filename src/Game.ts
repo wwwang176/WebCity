@@ -18,7 +18,7 @@ import { ZoneType, isCommercialZone } from './core/grid/types';
 import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
-import { AudioManager } from './audio/AudioManager';
+import { AudioManager, SoundType } from './audio/AudioManager';
 import { type BuildingType } from './core/building/types';
 import { WorkplaceDistanceClient } from './core/workplace/WorkplaceDistanceClient';
 import { WorkplaceDistanceCache } from './core/workplace/WorkplaceDistanceCache';
@@ -602,12 +602,12 @@ export class Game {
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
         this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
         this.simLoop.ensureLaneGraph(); // immediately rebuild + reroute buses
-        this.audioManager.playSfx('demolish');
+        this.audioManager.playSfx(SoundType.DEMOLISH);
         break;
       }
       case 'district':
         this.paintDistrict(x1, y1, x2, y2);
-        this.audioManager.playSfx('zone');
+        this.audioManager.playSfx(SoundType.ZONE);
         break;
       default: {
         // Data-driven road building (OCP: add new road types in TOOL_TO_ROAD_TYPE)
@@ -650,7 +650,7 @@ export class Game {
         const zoneType = TOOL_TO_ZONE[this.currentTool];
         if (zoneType !== undefined) {
           this.applyZone(x1, y1, x2, y2, zoneType);
-          this.audioManager.playSfx('zone');
+          this.audioManager.playSfx(SoundType.ZONE);
           break;
         }
         const infraType = TOOL_TO_INFRA[this.currentTool];
@@ -698,7 +698,7 @@ export class Game {
     if (result.success) {
       if (result.cost) this.state.budget.funds -= result.cost;
       onSuccess?.();
-      this.audioManager.playSfx('build');
+      this.audioManager.playSfx(SoundType.BUILD);
     } else if (!result.success && result.reason) {
       this.showNotification(`Cannot build ${label}: ${getBuildReasonMessage(result.reason)}`);
     }
@@ -882,7 +882,7 @@ export class Game {
     // Immediately recalculate coverage for road-based services so overlay updates
     this.recalculateServiceCoverage(type);
 
-    this.audioManager.playSfx('build');
+    this.audioManager.playSfx(SoundType.BUILD);
     this.dirty.buildings = true;
 
     // Refresh overlay if one is active for this service
@@ -967,7 +967,7 @@ export class Game {
       buildingId: infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
       reserved: ROTATION_RESERVED[this.currentRotation],
     });
-    this.audioManager.playSfx('build');
+    this.audioManager.playSfx(SoundType.BUILD);
     this.dirty.buildings = true;
   }
 
@@ -995,7 +995,7 @@ export class Game {
 
     // Place on grid — standard placeInfraOnGrid (correct dimensions from InfraConfig)
     placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
-    this.audioManager.playSfx('build');
+    this.audioManager.playSfx(SoundType.BUILD);
     this.dirty.buildings = true;
     return true;
   }
@@ -1337,7 +1337,7 @@ export class Game {
       this.selectedBuilding = null;
       this.applyViewMode(ViewMode.NORMAL);
     }
-    this.audioManager.playSfx('click');
+    this.audioManager.playSfx(SoundType.CLICK);
     this.onUIUpdate?.();
   }
 
@@ -1946,7 +1946,7 @@ export class Game {
     if (milestone && milestone.id !== this.lastMilestoneId) {
       this.lastMilestoneId = milestone.id;
       this.showNotification(`Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`, 8);
-      this.audioManager.playSfx('milestone');
+      this.audioManager.playSfx(SoundType.MILESTONE);
       this.onUIUpdate?.();
     }
   }
@@ -1961,7 +1961,7 @@ export class Game {
     for (const { x, y } of result.damagedCells) {
       this.state.citizens.evictBuilding(`${x},${y}`, this.state.clock.tick);
     }
-    this.audioManager.playSfx('disaster');
+    this.audioManager.playSfx(SoundType.DISASTER);
     this.showNotification(formatDisasterMessage(result.disaster), 10);
     this.dirty.buildings = true;
     this.dirty.terrain = true;

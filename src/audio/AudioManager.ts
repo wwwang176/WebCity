@@ -1,4 +1,11 @@
-export type SoundType = 'build' | 'demolish' | 'zone' | 'milestone' | 'disaster' | 'click';
+export enum SoundType {
+  BUILD = 'build',
+  DEMOLISH = 'demolish',
+  ZONE = 'zone',
+  MILESTONE = 'milestone',
+  DISASTER = 'disaster',
+  CLICK = 'click',
+}
 
 export class AudioManager {
   private audioContext: AudioContext | null = null;
