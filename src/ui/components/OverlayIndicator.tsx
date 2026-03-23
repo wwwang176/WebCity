@@ -1,12 +1,13 @@
 import { Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { ViewMode } from '../../core/ViewMode';
+import { OverlayType } from '../../renderer/OverlayRenderer';
 
 const OVERLAY_NAMES: Record<string, string> = {
-  power: 'Power', water: 'Water', zone: 'Zones',
-  traffic: 'Traffic', pollution: 'Pollution', landValue: 'Land Value',
-  police: 'Police', fire: 'Fire', health: 'Health',
-  education: 'Education', park: 'Park', garbage: 'Garbage', district: 'Districts',
+  [OverlayType.POWER]: 'Power', [OverlayType.WATER]: 'Water', [OverlayType.ZONE]: 'Zones',
+  [OverlayType.TRAFFIC]: 'Traffic', [OverlayType.POLLUTION]: 'Pollution', [OverlayType.LAND_VALUE]: 'Land Value',
+  [OverlayType.POLICE]: 'Police', [OverlayType.FIRE]: 'Fire', [OverlayType.HEALTH]: 'Health',
+  [OverlayType.EDUCATION]: 'Education', [OverlayType.PARK]: 'Park', [OverlayType.GARBAGE]: 'Garbage', [OverlayType.DISTRICT]: 'Districts',
 };
 
 const FOCUS_NAMES: Record<string, string> = {
@@ -19,11 +20,11 @@ const FOCUS_NAMES: Record<string, string> = {
 export function OverlayIndicator() {
   const ov = () => gameSignals.currentOverlay();
   const vm = () => gameSignals.viewMode();
-  const overlayVisible = () => ov() !== 'none';
+  const overlayVisible = () => ov() !== OverlayType.NONE;
   const focusVisible = () => vm() !== ViewMode.NORMAL;
 
   const closeOverlay = () => {
-    getGame().setOverlay('none');
+    getGame().setOverlay(OverlayType.NONE);
   };
 
   const closeFocus = () => {

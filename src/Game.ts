@@ -17,7 +17,7 @@ import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
 import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
-import { type OverlayType } from './renderer/OverlayRenderer';
+import { OverlayType } from './renderer/OverlayRenderer';
 import { AudioManager } from './audio/AudioManager';
 import { type BuildingType } from './core/building/types';
 import { WorkplaceDistanceClient } from './core/workplace/WorkplaceDistanceClient';
@@ -145,8 +145,8 @@ const KEY_TO_TOOL: Record<string, ToolType> = {
 
 /** Key-to-overlay bindings (OCP: add new overlay shortcuts here). */
 const KEY_TO_OVERLAY: Record<string, OverlayType> = {
-  'f1': 'power', 'f2': 'water', 'f3': 'pollution',
-  'f4': 'landValue', 'f5': 'traffic', 'f6': 'zone',
+  'f1': OverlayType.POWER, 'f2': OverlayType.WATER, 'f3': OverlayType.POLLUTION,
+  'f4': OverlayType.LAND_VALUE, 'f5': OverlayType.TRAFFIC, 'f6': OverlayType.ZONE,
 };
 
 /** Tool-to-cursor-color mapping (OCP: add new tool colors here). */
@@ -170,10 +170,10 @@ const TOOL_CURSOR_COLORS: Record<ToolType, number> = {
 
 /** Map of tool types to auto-activated overlay (OCP: add new overlay mappings here). */
 const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
-  power: 'power', water: 'water', police: 'police', fire: 'fire',
-  hospital: 'health', school: 'education', school_high: 'education',
-  school_univ: 'education', park: 'park', garbage: 'garbage',
-  district: 'district',
+  power: OverlayType.POWER, water: OverlayType.WATER, police: OverlayType.POLICE, fire: OverlayType.FIRE,
+  hospital: OverlayType.HEALTH, school: OverlayType.EDUCATION, school_high: OverlayType.EDUCATION,
+  school_univ: OverlayType.EDUCATION, park: OverlayType.PARK, garbage: OverlayType.GARBAGE,
+  district: OverlayType.DISTRICT,
 };
 
 /**
@@ -794,7 +794,7 @@ export class Game {
 
     // Refresh overlay cache after demolish
     const activeOverlay = this.overlayRenderer.getOverlay();
-    if (activeOverlay !== 'none') {
+    if (activeOverlay !== OverlayType.NONE) {
       this.computeOverlayHighlightCells(activeOverlay);
     }
     return { evictedCitizenIds, buildingCells: evictCells };
@@ -887,7 +887,7 @@ export class Game {
 
     // Refresh overlay if one is active for this service
     const activeOverlay = this.overlayRenderer.getOverlay();
-    if (activeOverlay !== 'none') {
+    if (activeOverlay !== OverlayType.NONE) {
       this.setOverlay(activeOverlay);
     }
   }
@@ -1127,7 +1127,7 @@ export class Game {
 
     // Refresh active overlay when relevant subsystems rebuilt
     const currentOverlay = this.overlayRenderer.getOverlay();
-    if (currentOverlay && currentOverlay !== 'none') {
+    if (currentOverlay && currentOverlay !== OverlayType.NONE) {
       this.setOverlay(currentOverlay);
     }
     // Re-apply highlight after rebuild (new meshes lose aHighlight)
@@ -1666,14 +1666,14 @@ export class Game {
 
   toggleOverlay(type: OverlayType): void {
     if (this.overlayRenderer.getOverlay() === type) {
-      this.setOverlay('none');
+      this.setOverlay(OverlayType.NONE);
     } else {
       this.setOverlay(type);
     }
   }
 
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
-    if (type === 'none') return undefined;
+    if (type === OverlayType.NONE) return undefined;
     const data = new Map<string, number>();
     const ctx = this.state as OverlayBuildContext;
     this.state.grid.forEachCell((cell, x, y) => {
@@ -1688,11 +1688,11 @@ export class Game {
   /** Get road-cost overlay info: cost map + budget for a given overlay type. */
   private getRoadCostOverlay(overlayType: OverlayType): { costMap: ReadonlyMap<string, number>; budget: number; residentialOnly: boolean } | null {
     switch (overlayType) {
-      case 'police': return { costMap: this.state.police.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.POLICE_BUDGET, residentialOnly: false };
-      case 'fire': return { costMap: this.state.fire.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.FIRE_BUDGET, residentialOnly: false };
-      case 'garbage': return { costMap: this.state.garbage.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.GARBAGE_BUDGET, residentialOnly: true };
-      case 'health': return { costMap: this.state.health.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.HEALTH_BUDGET, residentialOnly: false };
-      case 'education': return { costMap: this.state.education.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET, residentialOnly: false };
+      case OverlayType.POLICE: return { costMap: this.state.police.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.POLICE_BUDGET, residentialOnly: false };
+      case OverlayType.FIRE: return { costMap: this.state.fire.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.FIRE_BUDGET, residentialOnly: false };
+      case OverlayType.GARBAGE: return { costMap: this.state.garbage.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.GARBAGE_BUDGET, residentialOnly: true };
+      case OverlayType.HEALTH: return { costMap: this.state.health.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.HEALTH_BUDGET, residentialOnly: false };
+      case OverlayType.EDUCATION: return { costMap: this.state.education.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET, residentialOnly: false };
       default: return null;
     }
   }
@@ -1767,7 +1767,7 @@ export class Game {
 
     // Non-road services (park): single-color
     const fallbackColors: Partial<Record<OverlayType, number>> = {
-      park: 0x4caf50,
+      [OverlayType.PARK]: 0x4caf50,
     };
     const color = fallbackColors[overlayType];
     if (!color) return;
