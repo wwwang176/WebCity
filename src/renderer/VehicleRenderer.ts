@@ -273,8 +273,8 @@ export class VehicleRenderer {
           // Beam geometry extends along local +X, so Y-rotate by heading
           const hlX = vx + cosH * fOff;
           const hlZ = vz - sinH * fOff;
-          // Airplane lights follow altitude; ground vehicles fixed at 0.055
-          const lightY = type === 'airplane' ? yPos + 0.01 : 0.055;
+          // Light Y: airplane follows altitude; others use base + elevation
+          const lightY = type === 'airplane' ? yPos + 0.01 : 0.055 + (v.elevation ? v.elevation * 0.6 : 0);
           hlMatrix.makeRotationY(v.heading);
           if (type === 'airplane') {
             // Airplane: pitch rotation + 2× longer/wider beam
