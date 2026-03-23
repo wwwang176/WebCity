@@ -426,16 +426,16 @@ export class ElevatedRoadRenderer {
       }
 
       matrix.makeTranslation(m.x + perpX, markY, m.z + perpZ);
+      // Ramp tilt FIRST (as rotX in default marking orientation), THEN rotY for direction
+      if (ramp) {
+        // Unified tilt: N-S ramps use tiltX, E-W ramps use tiltZ value as rotX
+        const tiltAngle = this.getRampTiltX(ramp.seg.rampAscendDirection)
+          || this.getRampTiltZ(ramp.seg.rampAscendDirection);
+        if (tiltAngle !== 0) { rot.makeRotationX(tiltAngle); matrix.multiply(rot); }
+      }
       if (m.rotY !== 0) {
         rot.makeRotationY(m.rotY);
         matrix.multiply(rot);
-      }
-      // Apply ramp tilt
-      if (ramp) {
-        const tiltX = this.getRampTiltX(ramp.seg.rampAscendDirection);
-        const tiltZ = this.getRampTiltZ(ramp.seg.rampAscendDirection);
-        if (tiltX !== 0) { rot.makeRotationX(tiltX); matrix.multiply(rot); }
-        if (tiltZ !== 0) { rot.makeRotationZ(tiltZ); matrix.multiply(rot); }
       }
       mesh.setMatrixAt(i, matrix);
     }
