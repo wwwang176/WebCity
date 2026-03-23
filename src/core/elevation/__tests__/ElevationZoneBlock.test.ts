@@ -10,13 +10,13 @@ describe('isBlockedByElevation', () => {
 
   it('returns true when elevated segment exists above cell', () => {
     const em = new ElevationManager();
-    em.set(5, 5, 1, { roadType: 5, roadFlags: 0, railType: 0, railFlags: 0, isRamp: false });
+    em.set(5, 5, 1, { roadType: 5, roadFlags: 0, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
     expect(isBlockedByElevation(em, 5, 5)).toBe(true);
   });
 
   it('returns true for ramp cell too', () => {
     const em = new ElevationManager();
-    em.set(5, 5, 1, { roadType: 5, roadFlags: 0, railType: 0, railFlags: 0, isRamp: true });
+    em.set(5, 5, 1, { roadType: 5, roadFlags: 0, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0 });
     expect(isBlockedByElevation(em, 5, 5)).toBe(true);
   });
 });

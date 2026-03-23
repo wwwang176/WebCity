@@ -6,6 +6,8 @@ export interface ElevatedSegment {
   railFlags: number;
   /** Whether this cell is a ramp (transitioning between levels). */
   isRamp: boolean;
+  /** For ramps: the cardinal direction toward the HIGHER end (N/S/E/W bit). 0 if not a ramp. */
+  rampAscendDirection: number;
 }
 
 /** A position annotated with elevation info, used during path building. */

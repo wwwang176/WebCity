@@ -80,12 +80,23 @@ export class ElevatedRailBuilder {
       const existing = this.elevationManager.get(pos.x, pos.y, storeLevel);
       if (existing) flags |= existing.railFlags;
 
+      // Compute ramp ascend direction: the cardinal direction toward the HIGHER end
+      let rampAscendDir = 0;
+      if (pos.isRamp) {
+        if (pos.rampDirection === 'up' && i < path.length - 1) {
+          rampAscendDir = getDirectionFlag(pos, path[i + 1]!);
+        } else if (pos.rampDirection === 'down' && i > 0) {
+          rampAscendDir = getDirectionFlag(pos, path[i - 1]!);
+        }
+      }
+
       this.elevationManager.set(pos.x, pos.y, storeLevel, {
         roadType: existing?.roadType ?? 0,
         roadFlags: existing?.roadFlags ?? 0,
         railType: RailType.STANDARD,
         railFlags: flags,
         isRamp: pos.isRamp,
+        rampAscendDirection: rampAscendDir,
       });
     }
 

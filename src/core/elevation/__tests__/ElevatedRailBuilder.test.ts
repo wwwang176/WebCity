@@ -68,11 +68,11 @@ describe('ElevatedRailBuilder', () => {
   it('charges elevated rail cost', () => {
     placeGroundRail(grid, 2, 5);
     const result = builder.buildElevatedTrack(
-      { x: 2, y: 5 }, { x: 5, y: 5 }, 100000, 1,
+      { x: 2, y: 5 }, { x: 6, y: 5 }, 100000, 1,
     );
     expect(result.success).toBe(true);
     const base = RAIL.COST_PER_CELL;
-    // 4 cells: 1 ramp + 3 elevated
+    // [2]=origin(free) [3]=ramp [4]=elevated [5]=elevated [6]=elevated
     const expected = base * ELEVATION_COST.RAMP + 3 * base * ELEVATION_COST.ELEVATED;
     expect(result.cost).toBe(expected);
   });
@@ -102,8 +102,8 @@ describe('ElevatedRailBuilder', () => {
   });
 
   it('removes highest rail level first', () => {
-    em.set(5, 5, 1, { roadType: 0, roadFlags: 0, railType: RailType.STANDARD, railFlags: 0b1010, isRamp: false });
-    em.set(5, 5, 2, { roadType: 0, roadFlags: 0, railType: RailType.STANDARD, railFlags: 0b0101, isRamp: false });
+    em.set(5, 5, 1, { roadType: 0, roadFlags: 0, railType: RailType.STANDARD, railFlags: 0b1010, isRamp: false, rampAscendDirection: 0 });
+    em.set(5, 5, 2, { roadType: 0, roadFlags: 0, railType: RailType.STANDARD, railFlags: 0b0101, isRamp: false, rampAscendDirection: 0 });
     builder.removeElevated(5, 5);
     expect(em.get(5, 5, 2)).toBeNull();
     expect(em.get(5, 5, 1)).not.toBeNull();

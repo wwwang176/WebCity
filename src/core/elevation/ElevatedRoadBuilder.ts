@@ -109,12 +109,23 @@ export class ElevatedRoadBuilder {
         flags |= existing.roadFlags;
       }
 
+      // Compute ramp ascend direction: the cardinal direction toward the HIGHER end
+      let rampAscendDir = 0;
+      if (pos.isRamp) {
+        if (pos.rampDirection === 'up' && i < path.length - 1) {
+          rampAscendDir = getDirectionFlag(pos, path[i + 1]!);
+        } else if (pos.rampDirection === 'down' && i > 0) {
+          rampAscendDir = getDirectionFlag(pos, path[i - 1]!);
+        }
+      }
+
       this.elevationManager.set(pos.x, pos.y, storeLevel, {
         roadType,
         roadFlags: flags,
         railType: 0,
         railFlags: 0,
         isRamp: pos.isRamp,
+        rampAscendDirection: rampAscendDir,
       });
 
       affectedCells.push(toPosKey(pos.x, pos.y));

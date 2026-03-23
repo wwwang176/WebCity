@@ -44,8 +44,9 @@ describe('ElevatedRoadBuilder', () => {
     );
     expect(result.success).toBe(true);
     expect(result.cost).toBeGreaterThan(0);
-    // First cell is ramp
-    expect(em.get(2, 5, 1)?.isRamp).toBe(true);
+    // Origin (2,5) stays ground — no elevated segment stored
+    // Ramp starts at (3,5)
+    expect(em.get(3, 5, 1)?.isRamp).toBe(true);
     // Middle cells are elevated
     expect(em.get(5, 5, 1)).not.toBeNull();
     expect(em.get(5, 5, 1)?.roadType).toBe(RoadType.HIGHWAY);
@@ -106,12 +107,12 @@ describe('ElevatedRoadBuilder', () => {
   it('charges elevated cost multiplier', () => {
     placeGroundRoad(grid, 2, 5);
     const result = builder.buildElevatedRoad(
-      { x: 2, y: 5 }, { x: 5, y: 5 },
+      { x: 2, y: 5 }, { x: 6, y: 5 },
       RoadType.HIGHWAY, 100000, 1,
     );
     expect(result.success).toBe(true);
     const baseCost = ROAD_CONFIGS[RoadType.HIGHWAY].cost;
-    // 4 cells: 1 ramp (×1.5) + 3 elevated (×2)
+    // 5 cells: [2]=origin(free) [3]=ramp(×1.5) [4]=elevated(×2) [5]=elevated(×2) [6]=elevated(×2)
     const expectedCost = baseCost * ELEVATION_COST.RAMP + 3 * baseCost * ELEVATION_COST.ELEVATED;
     expect(result.cost).toBe(expectedCost);
   });
@@ -126,10 +127,10 @@ describe('ElevatedRoadBuilder', () => {
     );
     expect(result.success).toBe(true);
     const baseCost = ROAD_CONFIGS[RoadType.HIGHWAY].cost;
-    // cells: [2]=ramp, [3]=elevated, [4]=elevated, [5]=bridge, [6]=bridge, [7]=elevated, [8]=elevated, [9]=elevated
+    // [2]=origin(free), [3]=ramp, [4]=elevated, [5]=bridge, [6]=bridge, [7]=elevated, [8]=elevated, [9]=elevated
     const expected =
-      baseCost * ELEVATION_COST.RAMP +       // [2] ramp
-      baseCost * ELEVATION_COST.ELEVATED * 2 + // [3,4] elevated
+      baseCost * ELEVATION_COST.RAMP +       // [3] ramp
+      baseCost * ELEVATION_COST.ELEVATED * 1 + // [4] elevated
       baseCost * ELEVATION_COST.BRIDGE * 2 +   // [5,6] bridge
       baseCost * ELEVATION_COST.ELEVATED * 3;  // [7,8,9] elevated
     expect(result.cost).toBe(expected);
@@ -183,8 +184,8 @@ describe('ElevatedRoadBuilder', () => {
 
   it('removes higher level before lower level', () => {
     // Manually set up two levels
-    em.set(3, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b1010, railType: 0, railFlags: 0, isRamp: false });
-    em.set(3, 5, 2, { roadType: RoadType.HIGHWAY, roadFlags: 0b0101, railType: 0, railFlags: 0, isRamp: false });
+    em.set(3, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b1010, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
+    em.set(3, 5, 2, { roadType: RoadType.HIGHWAY, roadFlags: 0b0101, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
 
     builder.removeElevated(3, 5);
     // Level 2 removed, level 1 remains
@@ -197,14 +198,13 @@ describe('ElevatedRoadBuilder', () => {
   it('adds elevated edges to network with level suffix', () => {
     placeGroundRoad(grid, 2, 5);
     builder.buildElevatedRoad(
-      { x: 2, y: 5 }, { x: 5, y: 5 },
+      { x: 2, y: 5 }, { x: 6, y: 5 },
       RoadType.HIGHWAY, 100000, 1,
     );
-    // Elevated nodes should use "x,y,level" format
+    // Ramp at (3,5) and elevated at (4,5), (5,5), (6,5)
     expect(network.hasNode('3,5,1')).toBe(true);
     expect(network.hasNode('4,5,1')).toBe(true);
-    // Ramp connects ground to elevated
-    expect(network.hasNode('2,5,1')).toBe(true);
+    expect(network.hasNode('5,5,1')).toBe(true);
   });
 
   // --- Path too short ---

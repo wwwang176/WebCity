@@ -34,13 +34,13 @@ describe('findElevatedPath', () => {
 
     // Elevated bridge from x=2 to x=8 at level 1
     // x=2: ramp (connects ground ↔ elevated)
-    em.set(2, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b1000, railType: 0, railFlags: 0, isRamp: true });
+    em.set(2, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b1000, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0 });
     // x=3..7: elevated
     for (let x = 3; x <= 7; x++) {
-      em.set(x, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b1010, railType: 0, railFlags: 0, isRamp: false });
+      em.set(x, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b1010, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
     }
     // x=8: ramp (connects elevated ↔ ground)
-    em.set(8, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b0100, railType: 0, railFlags: 0, isRamp: true });
+    em.set(8, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b0100, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0 });
 
     const path = findElevatedPath(grid, em, { x: 0, y: 5 }, { x: 10, y: 5 });
     expect(path).not.toBeNull();

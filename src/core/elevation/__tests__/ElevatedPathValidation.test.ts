@@ -74,9 +74,8 @@ describe('validateElevatedPath', () => {
   // --- Ramp on water blocked ---
 
   it('rejects ramp cells on water', () => {
-    // Water starts at x=1, ramp would be at x=0 (ok) but body enters water at level 1
-    // Actually let's put water at x=0 where the ramp would be
-    grid.setCell(0, 0, { terrainType: TerrainType.WATER });
+    // Origin at x=0 (plain), ramp at x=1 — put water at x=1 where the ramp is
+    grid.setCell(1, 0, { terrainType: TerrainType.WATER });
     const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
     expect(path).not.toBeNull();
     const error = validateElevatedPath(grid, em, path!);
@@ -96,7 +95,7 @@ describe('validateElevatedPath', () => {
   // --- Level collision ---
 
   it('rejects path that collides with existing elevated segment at same level', () => {
-    em.set(3, 0, 1, { roadType: 1, roadFlags: 0b0101, railType: 0, railFlags: 0, isRamp: false });
+    em.set(3, 0, 1, { roadType: 1, roadFlags: 0b0101, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
     const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
     expect(path).not.toBeNull();
     const error = validateElevatedPath(grid, em, path!);
@@ -104,7 +103,7 @@ describe('validateElevatedPath', () => {
   });
 
   it('allows path at different level from existing elevated segment', () => {
-    em.set(3, 0, 1, { roadType: 1, roadFlags: 0b0101, railType: 0, railFlags: 0, isRamp: false });
+    em.set(3, 0, 1, { roadType: 1, roadFlags: 0b0101, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
     const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 2);
     expect(path).not.toBeNull();
     const error = validateElevatedPath(grid, em, path!);

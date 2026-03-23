@@ -4,9 +4,14 @@ import { type ElevatedPosition, MAX_ELEVATION_LEVEL } from './types';
 /**
  * Compute an elevated L-shaped path with automatic ramp generation.
  *
- * - Ramps are placed at the START of the path (ascending/descending from startLevel toward targetLevel).
- * - If endLevel is provided, descending ramps are also placed at the END of the path.
- * - Returns null if the path is too short to fit the required ramps.
+ * Layout: [origin] [ramp...] [body...] [ramp...] [landing]
+ *
+ * - The FIRST cell (origin) stays at startLevel, not a ramp — it is the
+ *   existing ground road the user clicked on.
+ * - Ramps begin at the SECOND cell onward.
+ * - If endLevel is provided, the LAST cell (landing) stays at endLevel,
+ *   and descending ramps are placed just before it.
+ * - Returns null if the path is too short to fit origin + ramps + body.
  *
  * Pure function — no side effects.
  */
@@ -27,17 +32,28 @@ export function getElevatedPath(
   const endDiff = endLevel !== undefined ? targetLevel - endLevel : 0;
   const endRampCount = Math.abs(endDiff);
 
-  // Need startRamps + body(≥1) + endRamps + landing(1 if endRamps>0)
+  // Layout: origin(1) + startRamps + body(≥1) + endRamps + landing(1 if endRamps>0)
   const landingCount = endRampCount > 0 ? 1 : 0;
-  const minLength = startRampCount + 1 + endRampCount + landingCount;
+  const minLength = 1 + startRampCount + 1 + endRampCount + landingCount;
 
   if (basePath.length < minLength) return null;
 
   const result: ElevatedPosition[] = [];
 
-  // --- Start ramps ---
+  // --- Origin cell (stays at startLevel, not a ramp) ---
+  const origin = basePath[0]!;
+  result.push({
+    x: origin.x,
+    y: origin.y,
+    level: startLevel,
+    targetLevel: startLevel,
+    isRamp: false,
+    rampDirection: null,
+  });
+
+  // --- Start ramps (begin at index 1) ---
   for (let i = 0; i < startRampCount; i++) {
-    const pos = basePath[i]!;
+    const pos = basePath[1 + i]!;
     const step = Math.sign(startDiff);
     const level = startLevel + i * step;
     result.push({
@@ -50,10 +66,11 @@ export function getElevatedPath(
     });
   }
 
-  // --- Body cells (between start ramps and end ramps + landing) ---
+  // --- Body cells ---
+  const bodyStart = 1 + startRampCount;
   const tailCount = endRampCount + landingCount;
   const bodyEnd = basePath.length - tailCount;
-  for (let i = startRampCount; i < bodyEnd; i++) {
+  for (let i = bodyStart; i < bodyEnd; i++) {
     const pos = basePath[i]!;
     result.push({
       x: pos.x,
@@ -65,7 +82,7 @@ export function getElevatedPath(
     });
   }
 
-  // --- End ramps ---
+  // --- End ramps + landing ---
   if (endRampCount > 0 && endLevel !== undefined) {
     const endDir: 'up' | 'down' = endDiff > 0 ? 'down' : 'up';
     const endStep = -Math.sign(endDiff);
@@ -82,7 +99,7 @@ export function getElevatedPath(
       });
     }
 
-    // --- Landing cell at endLevel ---
+    // Landing cell (stays at endLevel, not a ramp)
     const landingPos = basePath[basePath.length - 1]!;
     result.push({
       x: landingPos.x,

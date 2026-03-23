@@ -638,6 +638,16 @@ export class Game {
         this.handleSelectClick(x1, y1);
         break;
       case 'demolish': {
+        // Check elevated segments first — demolish highest level before ground
+        const hasElevated = this.elevationManager.hasElevatedSegment(x1, y1);
+        if (hasElevated) {
+          this.elevatedRoadBuilder.removeElevated(x1, y1);
+          this.dirty.roads = true;
+          this.dirty.tracks = true;
+          this.dirty.buildings = true;
+          this.audioManager.playSfx(SoundType.DEMOLISH);
+          break;
+        }
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
         this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
