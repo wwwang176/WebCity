@@ -296,6 +296,7 @@ export class Game {
   private railNetwork: RailNetwork;
   private elevationManager: ElevationManager;
   private elevatedRoadBuilder: ElevatedRoadBuilder;
+  private roadLookup!: UnifiedRoadLookup;
   private elevatedRailBuilder: ElevatedRailBuilder;
   private zoneManager: ZoneManager;
   private audioManager: AudioManager;
@@ -363,7 +364,7 @@ export class Game {
     return true;
   };
   /** Bound speed limit callback (avoids per-frame closure creation). */
-  private readonly _getSpeedLimit = (key: string): number => getSpeedLimitForCell(this.state.grid, key);
+  private readonly _getSpeedLimit = (key: string): number => getSpeedLimitForCell(this.roadLookup ?? this.state.grid, key);
   /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
   private ferryAnimator = new FerryAnimator();
   /** 火車渲染端動畫（純 LERP，不靠 tick） */
@@ -443,11 +444,11 @@ export class Game {
     this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
     this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
     this.simLoop.setElevationManager(this.elevationManager);
-    const roadLookup = new UnifiedRoadLookup(this.state.grid, this.elevationManager);
-    this.simLoop.setRoadLookup(roadLookup);
-    setNetworkRoadLookup(roadLookup);
-    setRoadCoverageRoadLookup(roadLookup);
-    setShoppingRoadLookup(roadLookup);
+    this.roadLookup = new UnifiedRoadLookup(this.state.grid, this.elevationManager);
+    this.simLoop.setRoadLookup(this.roadLookup);
+    setNetworkRoadLookup(this.roadLookup);
+    setRoadCoverageRoadLookup(this.roadLookup);
+    setShoppingRoadLookup(this.roadLookup);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);
