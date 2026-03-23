@@ -1257,17 +1257,21 @@ export class Game {
       if (v.edgePath.length > 0) {
         const edgeIdx = Math.min(v.edgeIndex, v.edgePath.length - 1);
         const edge = v.edgePath[edgeIdx]!;
-        const fromLevel = parseLevelFromKey(edge.from.cellKey);
-        const toLevel = parseLevelFromKey(edge.to.cellKey);
+
+        // Compute effective level for from/to (ramp cells use midpoint level)
+        const fromRawLevel = parseLevelFromKey(edge.from.cellKey);
+        const toRawLevel = parseLevelFromKey(edge.to.cellKey);
+        const fromEffective = this.getEffectiveLevel(edge.from.cellKey, fromRawLevel);
+        const toEffective = this.getEffectiveLevel(edge.to.cellKey, toRawLevel);
+
         // Interpolate elevation along edge progress
         const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-        elevation = fromLevel + (toLevel - fromLevel) * t;
+        elevation = fromEffective + (toEffective - fromEffective) * t;
 
         // Check if current cell is a ramp for pitch tilt
-        const cellKey = edge.from.cellKey;
-        const cellLevel = Math.max(fromLevel, toLevel);
+        const cellLevel = Math.max(fromRawLevel, toRawLevel);
         if (cellLevel > 0) {
-          const cp = parsePosKeyUnsafe(cellKey);
+          const cp = parsePosKeyUnsafe(edge.from.cellKey);
           const seg = this.elevationManager.get(cp.x, cp.y, cellLevel);
           if (seg?.isRamp) {
             const RAMP_ANGLE = Math.atan2(0.6, 1.0);
@@ -1405,6 +1409,15 @@ export class Game {
   getPlacementMode(): PlacementMode { return this.placementMode; }
   getElevationLevel(): number { return this.elevationLevel; }
   getElevationManager(): ElevationManager { return this.elevationManager; }
+
+  /** Get effective elevation level for a cell key (ramp cells return midpoint). */
+  private getEffectiveLevel(cellKey: string, rawLevel: number): number {
+    if (rawLevel === 0) return 0;
+    const cp = parsePosKeyUnsafe(cellKey);
+    const seg = this.elevationManager.get(cp.x, cp.y, rawLevel);
+    if (seg?.isRamp) return rawLevel - 0.5; // ramp center = midpoint between levels
+    return rawLevel;
+  }
 
   toggleViewMode(mode: ViewMode = ViewMode.UNDERGROUND): void {
     const next = this.viewMode === mode ? ViewMode.NORMAL : mode;

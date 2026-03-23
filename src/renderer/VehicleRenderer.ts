@@ -276,12 +276,13 @@ export class VehicleRenderer {
           // Light Y: airplane follows altitude; others use base + elevation
           const lightY = type === 'airplane' ? yPos + 0.01 : 0.055 + (v.elevation ? v.elevation * 0.6 : 0);
           hlMatrix.makeRotationY(v.heading);
+          // Apply pitch rotation to headlights (ramp vehicles + airplanes)
+          if (v.pitch) {
+            this._pitchMat.makeRotationZ(v.pitch);
+            hlMatrix.multiply(this._pitchMat);
+          }
           if (type === 'airplane') {
-            // Airplane: pitch rotation + 2× longer/wider beam
-            if (v.pitch) {
-              this._pitchMat.makeRotationZ(v.pitch);
-              hlMatrix.multiply(this._pitchMat);
-            }
+            // Airplane: 2× longer/wider beam
             this._pitchRoll.makeScale(2, 1, 2);
             hlMatrix.multiply(this._pitchRoll);
           }
@@ -297,6 +298,11 @@ export class VehicleRenderer {
             const tlZ = vz + sinH * rOff;
             tlTranslation.makeTranslation(tlX, lightY, tlZ);
             tlMatrix.copy(tlTranslation);
+            // Apply pitch to taillights too
+            if (v.pitch) {
+              this._pitchMat.makeRotationZ(v.pitch);
+              tlMatrix.multiply(this._pitchMat);
+            }
           }
           this.taillightMesh.setMatrixAt(lightIndex, tlMatrix);
 
