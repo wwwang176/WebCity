@@ -212,8 +212,8 @@ export class ElevatedRoadRenderer {
       const c = rampCells[i]!;
       const w = ROAD_WIDTHS[c.seg.roadType] ?? 0.6;
 
-      // Ramp center Y = midpoint between low and high level
-      const midY = (c.level * LEVEL_HEIGHT + LEVEL_HEIGHT / 2) + ROAD_Y;
+      // Ramp center Y = midpoint between (level-1) and level
+      const midY = (c.level - 0.5) * LEVEL_HEIGHT + ROAD_Y;
 
       // Determine which axis the ramp slopes along (N/S = Z axis, E/W = X axis)
       const isNS = (c.seg.rampAscendDirection & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
