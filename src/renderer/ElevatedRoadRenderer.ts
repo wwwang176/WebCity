@@ -67,29 +67,35 @@ export class ElevatedRoadRenderer {
     for (const [level, cells] of cellsByLevel) {
       const y = level * LEVEL_HEIGHT;
 
-      // Convert elevated cells to RoadCell format for shared strip builders
-      const roadCells: RoadCell[] = [];
+      // Separate ramp cells from flat elevated cells
+      const flatRoadCells: RoadCell[] = [];
+      const rampCells: ElevatedCell[] = [];
       for (const c of cells) {
         if (c.seg.roadType !== RoadType.NONE) {
-          roadCells.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
+          if (c.seg.isRamp) {
+            rampCells.push(c);
+          } else {
+            flatRoadCells.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
+          }
         }
       }
 
-      if (roadCells.length > 0) {
-        // Road surface strips (no edge extension for elevated)
-        const roadStrips = buildRoadStrips(roadCells);
+      // Flat elevated segments — use shared strip builders (connected, with curbs + markings)
+      if (flatRoadCells.length > 0) {
+        const roadStrips = buildRoadStrips(flatRoadCells);
         this.buildRoadSurface(roadStrips, y);
 
-        // Sidewalk / guard rail strips
-        const sidewalkStrips = buildSidewalkStrips(roadCells);
+        const sidewalkStrips = buildSidewalkStrips(flatRoadCells);
         this.buildSidewalks(sidewalkStrips, y);
 
-        // Lane markings
-        const markings = buildLaneMarkingData(roadCells);
+        const markings = buildLaneMarkingData(flatRoadCells);
         this.buildLaneMarkings(markings, y);
       }
 
-      // Rail cells (simple narrow surface)
+      // Ramp cells — rendered individually with tilt rotation
+      this.buildRampSurfaces(rampCells);
+
+      // Rail cells
       for (const c of cells) {
         if (c.seg.railType !== RailType.NONE) {
           this.buildRailSurface(c, y);
@@ -181,6 +187,71 @@ export class ElevatedRoadRenderer {
 
     mesh.instanceMatrix.needsUpdate = true;
     this.group.add(mesh);
+  }
+
+  private buildRampSurfaces(rampCells: ElevatedCell[]): void {
+    if (rampCells.length === 0) return;
+
+    const geometry = new THREE.BoxGeometry(1, 0.05, 1);
+    const material = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+    const mesh = new THREE.InstancedMesh(geometry, material, rampCells.length);
+    mesh.receiveShadow = true;
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+
+    const scale = new THREE.Matrix4();
+    const rot = new THREE.Matrix4();
+    const pos = new THREE.Matrix4();
+    const combined = new THREE.Matrix4();
+    const color = new THREE.Color();
+
+    for (let i = 0; i < rampCells.length; i++) {
+      const c = rampCells[i]!;
+      const w = ROAD_WIDTHS[c.seg.roadType] ?? 0.6;
+      const y = c.level * LEVEL_HEIGHT;
+
+      // Build matrix: scale → rotate → translate
+      combined.identity();
+      scale.makeScale(w, 1, w);
+      combined.multiply(scale);
+
+      const tiltX = this.getRampTiltX(c.seg.rampAscendDirection);
+      const tiltZ = this.getRampTiltZ(c.seg.rampAscendDirection);
+      if (tiltX !== 0) {
+        rot.makeRotationX(tiltX);
+        combined.premultiply(rot);
+      }
+      if (tiltZ !== 0) {
+        rot.makeRotationZ(tiltZ);
+        combined.premultiply(rot);
+      }
+
+      combined.setPosition(c.x, y + ROAD_Y, c.y);
+      mesh.setMatrixAt(i, combined);
+
+      // Ramp color — slightly lighter to distinguish
+      const cfg = ROAD_CONFIGS[c.seg.roadType as RoadType];
+      const base = cfg ? Math.max(0.20, 0.32 - cfg.lanes * 0.02) : 0.27;
+      color.setRGB(base, base, base + 0.01);
+      mesh.setColorAt(i, color);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    this.group.add(mesh);
+  }
+
+  /** Tilt helpers for ramp rendering. */
+  private getRampTiltX(ascendDir: number): number {
+    if (ascendDir & RoadDirection.NORTH) return RAMP_TILT * 0.3;
+    if (ascendDir & RoadDirection.SOUTH) return -RAMP_TILT * 0.3;
+    return 0;
+  }
+
+  private getRampTiltZ(ascendDir: number): number {
+    if (ascendDir & RoadDirection.EAST) return RAMP_TILT * 0.3;
+    if (ascendDir & RoadDirection.WEST) return -RAMP_TILT * 0.3;
+    return 0;
   }
 
   private buildRailSurface(c: ElevatedCell, baseY: number): void {
