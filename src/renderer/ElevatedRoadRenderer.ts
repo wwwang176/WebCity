@@ -1,6 +1,8 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { type ElevationManager } from '../core/elevation/ElevationManager';
 import { type ElevatedSegment } from '../core/elevation/types';
+import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 import { Grid } from '../core/grid/Grid';
 import { TerrainType } from '../core/grid/types';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
@@ -83,6 +85,14 @@ export class ElevatedRoadRenderer {
         }
       }
 
+      // All road cells (for street lamps)
+      const allRoadCells: RoadCell[] = [];
+      for (const c of cells) {
+        if (c.seg.roadType !== RoadType.NONE) {
+          allRoadCells.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
+        }
+      }
+
       // Flat elevated segments — use shared strip builders (connected, with curbs + markings)
       if (flatRoadCells.length > 0) {
         const roadStrips = buildRoadStrips(flatRoadCells, grid.width, grid.height, 0.5);
@@ -97,6 +107,14 @@ export class ElevatedRoadRenderer {
 
       // Ramp cells — rendered individually with tilt rotation
       this.buildRampSurfaces(rampCells);
+
+      // Ramp lane markings (tilted to match ramp surface)
+      this.buildRampMarkings(rampCells);
+
+      // Street lamps on all elevated road cells (flat + ramp)
+      if (allRoadCells.length > 0) {
+        this.buildStreetLamps(allRoadCells, y);
+      }
 
       // Rail cells
       for (const c of cells) {
@@ -293,6 +311,108 @@ export class ElevatedRoadRenderer {
       mesh.castShadow = true;
       this.group.add(mesh);
     }
+  }
+
+  /** Lane markings on ramp cells, tilted to match ramp surface. */
+  private buildRampMarkings(rampCells: ElevatedCell[]): void {
+    if (rampCells.length === 0) return;
+
+    // Convert ramp cells to RoadCell for shared marking generator
+    const roadCells: RoadCell[] = rampCells.map(c => ({
+      x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags,
+    }));
+    const markings = buildLaneMarkingData(roadCells);
+    if (markings.length === 0) return;
+
+    const geo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
+    const mat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+    const mesh = new THREE.InstancedMesh(geo, mat, markings.length);
+    mesh.frustumCulled = false;
+
+    const matrix = new THREE.Matrix4();
+    const rot = new THREE.Matrix4();
+
+    // Build lookup for ramp tilt by cell position
+    const rampMap = new Map<string, ElevatedCell>();
+    for (const c of rampCells) rampMap.set(`${c.x},${c.y}`, c);
+
+    for (let i = 0; i < markings.length; i++) {
+      const m = markings[i]!;
+      const perpX = m.rotY === 0 ? m.offsetPerp : 0;
+      const perpZ = m.rotY !== 0 ? m.offsetPerp : 0;
+
+      // Find which ramp cell this marking belongs to
+      const cellX = Math.round(m.x);
+      const cellZ = Math.round(m.z);
+      const ramp = rampMap.get(`${cellX},${cellZ}`);
+      const midY = ramp ? (ramp.level - 0.5) * LEVEL_HEIGHT + MARKING_Y : MARKING_Y;
+
+      matrix.makeTranslation(m.x + perpX, midY, m.z + perpZ);
+      if (m.rotY !== 0) {
+        rot.makeRotationY(m.rotY);
+        matrix.multiply(rot);
+      }
+      // Apply ramp tilt
+      if (ramp) {
+        const tiltX = this.getRampTiltX(ramp.seg.rampAscendDirection);
+        const tiltZ = this.getRampTiltZ(ramp.seg.rampAscendDirection);
+        if (tiltX !== 0) { rot.makeRotationX(tiltX); matrix.multiply(rot); }
+        if (tiltZ !== 0) { rot.makeRotationZ(tiltZ); matrix.multiply(rot); }
+      }
+      mesh.setMatrixAt(i, matrix);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    this.group.add(mesh);
+  }
+
+  /** Street lamps on elevated road cells. */
+  private buildStreetLamps(cells: RoadCell[], baseY: number): void {
+    type LampPos = { x: number; z: number };
+    const lamps: LampPos[] = [];
+
+    for (const r of cells) {
+      const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+      const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
+      const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
+      const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+
+      const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
+      const half = ownW / 2 + SIDEWALK_WIDTH / 2;
+
+      if (!hasN) lamps.push({ x: r.x, z: r.y - half });
+      if (!hasS) lamps.push({ x: r.x, z: r.y + half });
+      if (!hasW) lamps.push({ x: r.x - half, z: r.y });
+      if (!hasE) lamps.push({ x: r.x + half, z: r.y });
+    }
+
+    if (lamps.length === 0) return;
+
+    const poleH = 0.28;
+    const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4);
+    pole.translate(0, poleH / 2, 0);
+    const head = new THREE.SphereGeometry(0.018, 4, 3);
+    head.translate(0, poleH + 0.01, 0);
+    const merged = mergeGeometries([pole, head]);
+    pole.dispose();
+    head.dispose();
+    if (!merged) return;
+
+    const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+    const mesh = new THREE.InstancedMesh(merged, lampMat, lamps.length);
+    mesh.castShadow = true;
+    mesh.frustumCulled = false;
+
+    const matrix = new THREE.Matrix4();
+    for (let i = 0; i < lamps.length; i++) {
+      const p = lamps[i]!;
+      matrix.identity();
+      matrix.setPosition(p.x, baseY + SIDEWALK_Y, p.z);
+      mesh.setMatrixAt(i, matrix);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    this.group.add(mesh);
   }
 
   dispose(scene: THREE.Scene): void {
