@@ -89,6 +89,19 @@ const SERVICE_TYPE_TO_VEHICLE_TYPE: Record<ServiceVehicleType, VehicleData['type
 
 export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport_s' | 'airport_m' | 'airport_l';
 
+/** Camera and input tuning constants */
+export const CAMERA_INPUT = {
+  PAN_SPEED: 15,
+  ORBIT_SENSITIVITY: 0.005,
+  ZOOM_SENSITIVITY: 0.05,
+  /** Sync building meshes every N ticks */
+  BUILDING_SYNC_INTERVAL: 6,
+  /** Full safety rebuild every N ticks */
+  SAFETY_REBUILD_INTERVAL: 200,
+  /** Max tick accumulator = tickInterval × this */
+  ACCUMULATOR_CAP_FACTOR: 10,
+} as const;
+
 /** Map airport tool types to AirportSize. */
 const AIRPORT_TOOL_SIZE: Partial<Record<ToolType, AirportSize>> = {
   airport_s: 'SMALL', airport_m: 'MEDIUM', airport_l: 'LARGE',
@@ -484,7 +497,7 @@ export class Game {
     canvas.addEventListener('mousemove', (e) => {
       // Middle-button drag → orbit camera
       if (e.buttons & 4) {
-        this.sceneManager.orbitCamera(e.movementX * 0.005, e.movementY * 0.005);
+        this.sceneManager.orbitCamera(e.movementX * CAMERA_INPUT.ORBIT_SENSITIVITY, e.movementY * CAMERA_INPUT.ORBIT_SENSITIVITY);
         return;
       }
       // Space + left-button drag → pan camera
@@ -533,7 +546,7 @@ export class Game {
 
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.sceneManager.zoomCamera(e.deltaY * 0.05);
+      this.sceneManager.zoomCamera(e.deltaY * CAMERA_INPUT.ZOOM_SENSITIVITY);
     }, { passive: false });
 
     window.addEventListener('keydown', (e) => {
@@ -1004,7 +1017,7 @@ export class Game {
     this.elapsedTime += dt;
 
     // Camera movement
-    const panSpeed = 15 * dt;
+    const panSpeed = CAMERA_INPUT.PAN_SPEED * dt;
     if (this.keys.has('w') || this.keys.has('arrowup')) this.sceneManager.panCamera(0, -panSpeed);
     if (this.keys.has('s') || this.keys.has('arrowdown')) this.sceneManager.panCamera(0, panSpeed);
     if (this.keys.has('a') || this.keys.has('arrowleft')) this.sceneManager.panCamera(-panSpeed, 0);
@@ -1015,15 +1028,15 @@ export class Game {
       const tickInterval = this.state.clock.getTickInterval() / 1000;
       this.tickAccumulator += dt;
       // Cap accumulator to prevent massive backlog when tab regains focus
-      if (this.tickAccumulator > tickInterval * 10) {
-        this.tickAccumulator = tickInterval * 10;
+      if (this.tickAccumulator > tickInterval * CAMERA_INPUT.ACCUMULATOR_CAP_FACTOR) {
+        this.tickAccumulator = tickInterval * CAMERA_INPUT.ACCUMULATOR_CAP_FACTOR;
       }
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
         this.simLoop.tick();
 
         // Push occupancy ratios to building renderer for night lighting
-        if (this.simLoop.occupancyRatios.size > 0 && this.state.clock.tick % 6 === 0) {
+        if (this.simLoop.occupancyRatios.size > 0 && this.state.clock.tick % CAMERA_INPUT.BUILDING_SYNC_INTERVAL === 0) {
           this.buildingRenderer.updateOccupancy(this.simLoop.occupancyRatios);
         }
 
@@ -1040,7 +1053,7 @@ export class Game {
         }
 
         // Safety-net rebuild: low-frequency fallback in case events are missed
-        if (this.state.clock.tick % 200 === 0) {
+        if (this.state.clock.tick % CAMERA_INPUT.SAFETY_REBUILD_INTERVAL === 0) {
           this.dirty.buildings = true;
           this.dirty.terrain = true;
         }
