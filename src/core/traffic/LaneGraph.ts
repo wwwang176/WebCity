@@ -689,15 +689,19 @@ export class LaneGraph {
       if (!toArr) { toArr = []; this.edgeToIdx.set(e.to.id, toArr); }
       toArr.push(i);
 
-      // Build cell-level connectivity index
+      // Build cell-level connectivity index (only adjacent cells, skip cross-intersection jumps)
       if (e.from.cellKey !== e.to.cellKey) {
-        let set = this.cellNeighbors.get(e.from.cellKey);
-        if (!set) { set = new Set(); this.cellNeighbors.set(e.from.cellKey, set); }
-        set.add(e.to.cellKey);
-        // Bidirectional
-        let set2 = this.cellNeighbors.get(e.to.cellKey);
-        if (!set2) { set2 = new Set(); this.cellNeighbors.set(e.to.cellKey, set2); }
-        set2.add(e.from.cellKey);
+        const fp = parseCellKey(e.from.cellKey);
+        const tp = parseCellKey(e.to.cellKey);
+        const dist = Math.abs(tp.x - fp.x) + Math.abs(tp.y - fp.y);
+        if (dist <= 1) {
+          let set = this.cellNeighbors.get(e.from.cellKey);
+          if (!set) { set = new Set(); this.cellNeighbors.set(e.from.cellKey, set); }
+          set.add(e.to.cellKey);
+          let set2 = this.cellNeighbors.get(e.to.cellKey);
+          if (!set2) { set2 = new Set(); this.cellNeighbors.set(e.to.cellKey, set2); }
+          set2.add(e.from.cellKey);
+        }
       }
     }
   }
