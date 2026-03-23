@@ -1,5 +1,7 @@
 import { RoadType, RoadDirection } from '../road/types';
 import { hasInwardFlag } from '../grid/EdgeUtils';
+import { type ElevationManager } from '../elevation/ElevationManager';
+import { MIN_ELEVATION_LEVEL, MAX_ELEVATION_LEVEL } from '../elevation/types';
 
 export interface HighwayExternalConnection {
   populationIn: number;
@@ -41,6 +43,12 @@ export class HighwayConnection {
    * Scan map border cells for HIGHWAY and update external connection state.
    * Called every 60 ticks from SimulationLoop.
    */
+  private _elevationManager: ElevationManager | null = null;
+
+  setElevationManager(em: ElevationManager): void {
+    this._elevationManager = em;
+  }
+
   updateExternalConnection(
     mapWidth: number,
     mapHeight: number,
@@ -53,10 +61,25 @@ export class HighwayConnection {
       const key = `${x},${y}`;
       if (seen.has(key)) return;
       seen.add(key);
+
+      // Check ground-level highway
       const cell = grid.getCell(x, y);
       if (cell && cell.roadType === RoadType.HIGHWAY
           && hasInwardFlag(x, y, mapWidth, mapHeight, cell.roadFlags)) {
         this.edgeHighwayCells.push({ x, y });
+        return;
+      }
+
+      // Check elevated highway segments at this edge cell
+      if (this._elevationManager) {
+        for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+          const seg = this._elevationManager.get(x, y, lv);
+          if (seg && seg.roadType === RoadType.HIGHWAY
+              && hasInwardFlag(x, y, mapWidth, mapHeight, seg.roadFlags)) {
+            this.edgeHighwayCells.push({ x, y });
+            return;
+          }
+        }
       }
     };
 

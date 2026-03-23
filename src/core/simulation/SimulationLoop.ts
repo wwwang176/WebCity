@@ -236,6 +236,7 @@ export class SimulationLoop {
 
   setElevationManager(em: import('../elevation/ElevationManager').ElevationManager): void {
     this._elevationManager = em;
+    this.state.highwayConnection.setElevationManager(em);
   }
 
   constructor(state: GameState) {

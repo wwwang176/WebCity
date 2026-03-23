@@ -85,7 +85,7 @@ export class ElevatedRoadRenderer {
 
       // Flat elevated segments — use shared strip builders (connected, with curbs + markings)
       if (flatRoadCells.length > 0) {
-        const roadStrips = buildRoadStrips(flatRoadCells);
+        const roadStrips = buildRoadStrips(flatRoadCells, grid.width, grid.height, 0.5);
         this.buildRoadSurface(roadStrips, y);
 
         const sidewalkStrips = buildSidewalkStrips(flatRoadCells);
