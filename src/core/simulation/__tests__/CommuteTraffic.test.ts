@@ -3,6 +3,7 @@ import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType, RoadDirection } from '../../road/types';
+import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 
 /**
  * Helper: set up a minimal city with residential + commercial buildings
@@ -65,6 +66,7 @@ describe('Commute Traffic System', () => {
     advanceToHour(state, 7);
 
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // Should have spawned at least 1 commute vehicle
@@ -82,6 +84,7 @@ describe('Commute Traffic System', () => {
     advanceToHour(state, 18);
 
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     expect(state.traffic.getVehicleCount()).toBeGreaterThan(0);
@@ -98,6 +101,7 @@ describe('Commute Traffic System', () => {
     advanceToHour(state, 2);
 
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // Night: no commute vehicles should spawn
@@ -114,6 +118,7 @@ describe('Commute Traffic System', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // No commute should happen
@@ -129,6 +134,7 @@ describe('Commute Traffic System', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     expect(state.traffic.getVehicleCount()).toBe(0);
@@ -143,6 +149,7 @@ describe('Commute Traffic System', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     expect(state.traffic.getVehicleCount()).toBe(0);
@@ -157,6 +164,7 @@ describe('Commute Traffic System', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     expect(state.traffic.getVehicleCount()).toBe(0);
@@ -174,6 +182,7 @@ describe('Commute Traffic System', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // With 10 working citizens, should spawn multiple vehicles
@@ -192,6 +201,7 @@ describe('Commute Traffic System', () => {
 
     advanceToHour(state, 12);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // Midday: some random commercial traffic should spawn
@@ -210,6 +220,7 @@ describe('Commute Traffic System', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
 
     // Tick multiple times during morning rush
     loop.tick(); // hour 7
@@ -249,6 +260,7 @@ describe('Transport Mode Choice Integration', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // With bus route covering commute, citizen should take bus → no car spawned
@@ -267,6 +279,7 @@ describe('Transport Mode Choice Integration', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // No transit → citizen drives → car spawned
@@ -287,6 +300,7 @@ describe('Transport Mode Choice Integration', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // Walking distance → no car
@@ -307,6 +321,7 @@ describe('Transport Mode Choice Integration', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // Metro covers commute → no car spawned
@@ -333,6 +348,7 @@ describe('Citizen Home/Workplace Assignment', () => {
     }
 
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     // Run enough ticks for migration to add citizens
     for (let i = 0; i < 100; i++) loop.tick();
 

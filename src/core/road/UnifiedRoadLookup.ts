@@ -10,7 +10,7 @@
 
 import { RoadType } from './types';
 import { toPosKey, parsePosKeyUnsafe, parseLevelFromKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
-import { type ElevationManager } from '../elevation/ElevationManager';
+import { ElevationManager } from '../elevation/ElevationManager';
 import { MIN_ELEVATION_LEVEL, MAX_ELEVATION_LEVEL } from '../elevation/types';
 
 export interface RoadCellInfo {

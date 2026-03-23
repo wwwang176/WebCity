@@ -9,7 +9,8 @@ import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI }
 import { RoadType } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
-import { refineLanePath, refineLanePathVariants, gridAStarPath } from '../traffic/Pathfinding';
+import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
+import { findLanePath, findLanePathVariants } from '../traffic/LaneGraphPathfinder';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
 import { getBuildingType } from '../building/types';
@@ -52,7 +53,6 @@ import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance'
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
 import { findAvailableTransit } from '../transport/TransitAvailability';
-import { findRoadPath } from '../traffic/RoadPathfinding';
 import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicleType } from '../traffic/ServiceVehicleManager';
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
@@ -1551,13 +1551,10 @@ export class SimulationLoop {
       const routeKey = `${fromStr}->${toStr}`;
       let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
 
-      if (!variants) {
-        const path = findRoadPath(fromPos, toPos, grid, this._roadLookup ?? undefined, this.laneGraph);
-        if (path && path.length >= 2) {
-          variants = refineLanePathVariants(this.laneGraph, path);
-          if (variants && variants.length > 0) {
-            this.commuteCache.setRouteVariants(routeKey, variants);
-          }
+      if (!variants && this._roadLookup) {
+        variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromPos, toPos);
+        if (variants.length > 0) {
+          this.commuteCache.setRouteVariants(routeKey, variants);
         }
       }
 
@@ -1663,9 +1660,8 @@ export class SimulationLoop {
       }
       if (!foundEnd) return;
 
-      const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid, this._roadLookup ?? undefined, this.laneGraph);
-      if (path && path.length >= 2) {
-        const edgePath = refineLanePath(this.laneGraph, path);
+      if (this._roadLookup) {
+        const edgePath = findLanePath(this.laneGraph, this._roadLookup, { x: startX, y: startY }, { x: endX, y: endY });
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         }
@@ -1929,11 +1925,12 @@ export class SimulationLoop {
       const mode = chooseMode(from, to, availableTransport, 0);
       if (mode !== TransportMode.DRIVE) continue;
 
-      const path = findRoadPath(from, to, grid, this._roadLookup ?? undefined, this.laneGraph);
-      if (!path) continue;
+      if (!this._roadLookup) continue;
+      const edgePath = findLanePath(this.laneGraph, this._roadLookup, from, to);
+      if (!edgePath) continue;
 
-      for (const cellKey of path) {
-        flowMap.set(cellKey, (flowMap.get(cellKey) ?? 0) + 1);
+      for (const edge of edgePath) {
+        flowMap.set(edge.from.cellKey, (flowMap.get(edge.from.cellKey) ?? 0) + 1);
       }
     }
 
