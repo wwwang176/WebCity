@@ -319,13 +319,13 @@ export class ElevatedRoadRenderer {
       }
 
       matrix.makeScale(s.sx, 1, s.sz);
-      matrix.setPosition(s.x, sY, s.z);
       if (ramp) {
         const tiltX = this.getRampTiltX(ramp.seg.rampAscendDirection);
         const tiltZ = this.getRampTiltZ(ramp.seg.rampAscendDirection);
         if (tiltX !== 0) { rot.makeRotationX(tiltX); matrix.premultiply(rot); }
         if (tiltZ !== 0) { rot.makeRotationZ(tiltZ); matrix.premultiply(rot); }
       }
+      matrix.setPosition(s.x, sY, s.z);
       mesh.setMatrixAt(i, matrix);
     }
 
