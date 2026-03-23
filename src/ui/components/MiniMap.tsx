@@ -1,6 +1,7 @@
 import { onMount, createEffect } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { ZoneType, TerrainType } from '../../core/grid/types';
+import { PALETTE, toCSS } from '../../ColorPalette';
 
 export function MiniMap() {
   let canvas: HTMLCanvasElement | undefined;
@@ -46,10 +47,10 @@ export function MiniMap() {
           if (cell.roadType > 0) color = '#555';
 
           if (cell.buildingId > 0 && cell.buildingId < 243) {
-            if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) color = '#4caf50';
-            else if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) color = '#42a5f5';
-            else if (cell.zoneType === ZoneType.INDUSTRIAL) color = '#ffa726';
-            else if (cell.zoneType === ZoneType.OFFICE) color = '#ab47bc';
+            if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) color = toCSS(PALETTE.ZONE.RES_LOW);
+            else if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) color = toCSS(PALETTE.ZONE.COM_LOW_LIGHT);
+            else if (cell.zoneType === ZoneType.INDUSTRIAL) color = toCSS(PALETTE.ZONE.IND);
+            else if (cell.zoneType === ZoneType.OFFICE) color = toCSS(PALETTE.ZONE.OFFICE);
           }
           if (cell.buildingId >= 243) color = '#ffeb3b';
 

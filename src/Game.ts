@@ -18,6 +18,7 @@ import { ZoneType, isCommercialZone } from './core/grid/types';
 import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
+import { PALETTE } from './ColorPalette';
 import { AudioManager, SoundType } from './audio/AudioManager';
 import { type BuildingType } from './core/building/types';
 import { WorkplaceDistanceClient } from './core/workplace/WorkplaceDistanceClient';
@@ -144,9 +145,9 @@ const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
 
 /** Zone tool preview highlight colors. */
 const ZONE_PREVIEW_COLORS: Record<string, number> = {
-  zone_r: 0x4caf50, zone_rh: 0x2e7d32,
-  zone_c: 0x2196f3, zone_ch: 0x1565c0,
-  zone_i: 0xffc107, zone_o: 0x9c27b0,
+  zone_r: PALETTE.ZONE.RES_LOW, zone_rh: PALETTE.ZONE.RES_HIGH,
+  zone_c: PALETTE.ZONE.COM_LOW, zone_ch: PALETTE.ZONE.COM_HIGH,
+  zone_i: PALETTE.ZONE.IND_PREVIEW, zone_o: PALETTE.ZONE.OFFICE_PREVIEW,
 };
 
 /** Key-to-tool bindings (OCP: add new keyboard shortcuts here). */
@@ -164,21 +165,21 @@ const KEY_TO_OVERLAY: Record<string, OverlayType> = {
 
 /** Tool-to-cursor-color mapping (OCP: add new tool colors here). */
 const TOOL_CURSOR_COLORS: Record<ToolType, number> = {
-  select: 0xffffff,
-  road: 0x424242, road_rural: 0x424242, road_2lane: 0x424242,
-  road_4lane: 0x424242, road_6lane: 0x424242, road_highway: 0x424242,
-  rail_track: 0x6d4c2a,
-  zone_r: 0x4caf50, zone_rh: 0x2e7d32,
-  zone_c: 0x2196f3, zone_ch: 0x1565c0,
-  zone_i: 0xffa726, zone_o: 0xab47bc,
-  demolish: 0xf44336,
-  power: 0xffeb3b, water: 0x03a9f4, police: 0x3f51b5, fire: 0xd32f2f,
-  hospital: 0xe91e63, school: 0x795548, school_high: 0x6d4c41,
-  school_univ: 0x4e342e, park: 0x4caf50, garbage: 0x795548,
-  sewage: 0x607d8b, cemetery: 0x9e9e9e,
-  district: 0xab47bc,
-  bus_stop: 0xff9800, metro_station: 0x00bcd4, train_station: 0x795548,
-  ferry_dock: 0x0288d1, airport: 0x9c27b0,
+  select: PALETTE.TOOL.SELECT,
+  road: PALETTE.TOOL.ROAD, road_rural: PALETTE.TOOL.ROAD, road_2lane: PALETTE.TOOL.ROAD,
+  road_4lane: PALETTE.TOOL.ROAD, road_6lane: PALETTE.TOOL.ROAD, road_highway: PALETTE.TOOL.ROAD,
+  rail_track: PALETTE.TOOL.RAIL_TRACK,
+  zone_r: PALETTE.ZONE.RES_LOW, zone_rh: PALETTE.ZONE.RES_HIGH,
+  zone_c: PALETTE.ZONE.COM_LOW, zone_ch: PALETTE.ZONE.COM_HIGH,
+  zone_i: PALETTE.ZONE.IND, zone_o: PALETTE.ZONE.OFFICE,
+  demolish: PALETTE.TOOL.DEMOLISH,
+  power: PALETTE.INFRA.POWER, water: PALETTE.INFRA.WATER, police: PALETTE.INFRA.POLICE, fire: PALETTE.INFRA.FIRE,
+  hospital: PALETTE.INFRA.HOSPITAL, school: PALETTE.INFRA.SCHOOL, school_high: PALETTE.INFRA.SCHOOL_HIGH,
+  school_univ: PALETTE.INFRA.SCHOOL_UNIV, park: PALETTE.INFRA.PARK, garbage: PALETTE.INFRA.GARBAGE,
+  sewage: PALETTE.INFRA.SEWAGE, cemetery: PALETTE.INFRA.CEMETERY,
+  district: PALETTE.TOOL.DISTRICT,
+  bus_stop: PALETTE.TRANSPORT.BUS, metro_station: PALETTE.TRANSPORT.METRO, train_station: PALETTE.INFRA.SCHOOL,
+  ferry_dock: PALETTE.TRANSPORT.FERRY_DOCK, airport: PALETTE.TOOL.AIRPORT,
 };
 
 /** Map of tool types to auto-activated overlay (OCP: add new overlay mappings here). */

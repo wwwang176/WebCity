@@ -3,6 +3,7 @@ import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
 import type { ToolType } from '../../Game';
 import { UI_COLORS } from '../constants';
+import { PALETTE, toCSS } from '../../ColorPalette';
 // AirportSize import removed — airport tools now use separate ToolType entries
 
 
@@ -13,11 +14,11 @@ const ZONE_GROUP: ToolGroup = {
   id: 'zone', label: 'Zones', icon: '\u{1F3D8}', color: UI_COLORS.STATUS_GOOD,
   items: [
     { tool: 'zone_r', label: 'Res Low', key: '3', color: UI_COLORS.STATUS_GOOD, icon: '\u{1F3E0}' },
-    { tool: 'zone_rh', label: 'Res High', key: '', color: '#2e7d32', icon: '\u{1F3E2}' },
+    { tool: 'zone_rh', label: 'Res High', key: '', color: toCSS(PALETTE.ZONE.RES_HIGH), icon: '\u{1F3E2}' },
     { tool: 'zone_c', label: 'Com Low', key: '4', color: UI_COLORS.ACCENT, icon: '\u{1F3EC}' },
-    { tool: 'zone_ch', label: 'Com High', key: '', color: '#1565c0', icon: '\u{1F3EC}' },
+    { tool: 'zone_ch', label: 'Com High', key: '', color: toCSS(PALETTE.ZONE.COM_HIGH), icon: '\u{1F3EC}' },
     { tool: 'zone_i', label: 'Industrial', key: '5', color: UI_COLORS.STATUS_WARN, icon: '\u{1F3ED}' },
-    { tool: 'zone_o', label: 'Office', key: '6', color: '#ab47bc', icon: '\u{1F3E2}' },
+    { tool: 'zone_o', label: 'Office', key: '6', color: toCSS(PALETTE.ZONE.OFFICE), icon: '\u{1F3E2}' },
   ],
 };
 
@@ -35,38 +36,38 @@ const ROAD_GROUP: ToolGroup = {
 const CIVIC_GROUP: ToolGroup = {
   id: 'civic', label: 'Civic', icon: '\u{1F3DB}', color: '#5c6bc0',
   items: [
-    { tool: 'police', label: 'Police', key: '', color: '#3f51b5', icon: '\u{1F694}' },
-    { tool: 'fire', label: 'Fire Dept', key: '', color: '#d32f2f', icon: '\u{1F692}' },
-    { tool: 'hospital', label: 'Hospital', key: '', color: '#e91e63', icon: '\u{1F3E5}' },
-    { tool: 'school', label: 'Elementary', key: '', color: '#795548', icon: '\u{1F3EB}' },
-    { tool: 'school_high', label: 'High School', key: '', color: '#6d4c41', icon: '\u{1F3E2}' },
-    { tool: 'school_univ', label: 'University', key: '', color: '#4e342e', icon: '\u{1F393}' },
-    { tool: 'cemetery', label: 'Cemetery', key: '', color: '#9e9e9e', icon: '\u{26B0}' },
+    { tool: 'police', label: 'Police', key: '', color: toCSS(PALETTE.INFRA.POLICE), icon: '\u{1F694}' },
+    { tool: 'fire', label: 'Fire Dept', key: '', color: toCSS(PALETTE.INFRA.FIRE), icon: '\u{1F692}' },
+    { tool: 'hospital', label: 'Hospital', key: '', color: toCSS(PALETTE.INFRA.HOSPITAL), icon: '\u{1F3E5}' },
+    { tool: 'school', label: 'Elementary', key: '', color: toCSS(PALETTE.INFRA.SCHOOL), icon: '\u{1F3EB}' },
+    { tool: 'school_high', label: 'High School', key: '', color: toCSS(PALETTE.INFRA.SCHOOL_HIGH), icon: '\u{1F3E2}' },
+    { tool: 'school_univ', label: 'University', key: '', color: toCSS(PALETTE.INFRA.SCHOOL_UNIV), icon: '\u{1F393}' },
+    { tool: 'cemetery', label: 'Cemetery', key: '', color: toCSS(PALETTE.INFRA.CEMETERY), icon: '\u{26B0}' },
   ],
 };
 
 const UTILITY_GROUP: ToolGroup = {
   id: 'utility', label: 'Utility', icon: '\u{26A1}', color: '#ffb300',
   items: [
-    { tool: 'power', label: 'Power', key: '8', color: '#ffeb3b', icon: '\u{26A1}' },
-    { tool: 'water', label: 'Water', key: '9', color: '#03a9f4', icon: '\u{1F4A7}' },
-    { tool: 'sewage', label: 'Sewage', key: '', color: '#607d8b', icon: '\u{1F6B0}' },
-    { tool: 'garbage', label: 'Landfill', key: '', color: '#795548', icon: '\u{1F5D1}' },
-    { tool: 'park', label: 'Park', key: '', color: '#4caf50', icon: '\u{1F333}' },
+    { tool: 'power', label: 'Power', key: '8', color: toCSS(PALETTE.INFRA.POWER), icon: '\u{26A1}' },
+    { tool: 'water', label: 'Water', key: '9', color: toCSS(PALETTE.INFRA.WATER), icon: '\u{1F4A7}' },
+    { tool: 'sewage', label: 'Sewage', key: '', color: toCSS(PALETTE.INFRA.SEWAGE), icon: '\u{1F6B0}' },
+    { tool: 'garbage', label: 'Landfill', key: '', color: toCSS(PALETTE.INFRA.GARBAGE), icon: '\u{1F5D1}' },
+    { tool: 'park', label: 'Park', key: '', color: toCSS(PALETTE.INFRA.PARK), icon: '\u{1F333}' },
   ],
 };
 
 const TRANSPORT_GROUP: ToolGroup = {
-  id: 'transport', label: 'Transit', icon: '\u{1F68C}', color: '#ff9800',
+  id: 'transport', label: 'Transit', icon: '\u{1F68C}', color: toCSS(PALETTE.TRANSPORT.BUS),
   items: [
-    { tool: 'bus_stop', label: 'Bus Stop', key: '', color: '#ff9800', icon: '\u{1F68F}' },
-    { tool: 'metro_station', label: 'Metro', key: '', color: '#00bcd4', icon: '\u{1F687}' },
-    { tool: 'rail_track', label: 'Rail Track', key: '', color: '#6d4c2a', icon: '\u{1F6E4}' },
-    { tool: 'train_station', label: 'Train Stn', key: '', color: '#795548', icon: '\u{1F689}' },
-    { tool: 'ferry_dock', label: 'Ferry', key: '', color: '#0288d1', icon: '\u{26F4}' },
-    { tool: 'airport_s', label: 'Airport(S)', key: '', color: '#9c27b0', icon: '\u{2708}' },
-    { tool: 'airport_m', label: 'Airport(M)', key: '', color: '#9c27b0', icon: '\u{2708}' },
-    { tool: 'airport_l', label: 'Airport(L)', key: '', color: '#9c27b0', icon: '\u{2708}' },
+    { tool: 'bus_stop', label: 'Bus Stop', key: '', color: toCSS(PALETTE.TRANSPORT.BUS), icon: '\u{1F68F}' },
+    { tool: 'metro_station', label: 'Metro', key: '', color: toCSS(PALETTE.TRANSPORT.METRO), icon: '\u{1F687}' },
+    { tool: 'rail_track', label: 'Rail Track', key: '', color: toCSS(PALETTE.TOOL.RAIL_TRACK), icon: '\u{1F6E4}' },
+    { tool: 'train_station', label: 'Train Stn', key: '', color: toCSS(PALETTE.INFRA.SCHOOL), icon: '\u{1F689}' },
+    { tool: 'ferry_dock', label: 'Ferry', key: '', color: toCSS(PALETTE.TRANSPORT.FERRY_DOCK), icon: '\u{26F4}' },
+    { tool: 'airport_s', label: 'Airport(S)', key: '', color: toCSS(PALETTE.TOOL.AIRPORT), icon: '\u{2708}' },
+    { tool: 'airport_m', label: 'Airport(M)', key: '', color: toCSS(PALETTE.TOOL.AIRPORT), icon: '\u{2708}' },
+    { tool: 'airport_l', label: 'Airport(L)', key: '', color: toCSS(PALETTE.TOOL.AIRPORT), icon: '\u{2708}' },
   ],
 };
 

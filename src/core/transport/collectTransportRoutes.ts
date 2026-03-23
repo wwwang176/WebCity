@@ -9,6 +9,7 @@ import type { MetroSystem } from './MetroSystem';
 import type { RailSystem } from './RailSystem';
 import type { FerrySystem } from './FerrySystem';
 import type { TransportRoute } from './types';
+import { PALETTE } from '../../ColorPalette';
 
 /** 路線渲染資料 */
 export interface TransportRouteRenderData {
@@ -28,10 +29,10 @@ export interface RouteSystems {
 
 /** 各系統的路線顏色 */
 const ROUTE_COLORS: Record<TransportRouteRenderData['system'], number> = {
-  BUS: 0xff9800,
-  METRO: 0x00bcd4,
-  RAIL: 0xff5722,
-  FERRY: 0x0097a7,
+  BUS: PALETTE.TRANSPORT.BUS,
+  METRO: PALETTE.TRANSPORT.METRO,
+  RAIL: PALETTE.TRANSPORT.RAIL,
+  FERRY: PALETTE.TRANSPORT.FERRY,
 };
 
 /** ID prefix offsets to avoid cross-system route ID collision. */
