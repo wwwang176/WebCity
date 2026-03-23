@@ -4,6 +4,8 @@ import { Grid } from '../core/grid/Grid';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
+import { SIDEWALK_WIDTH, CW_OFFSET } from '../core/traffic/SidewalkGraph';
+import { STOP_LINE_OFFSET } from '../core/traffic/VehicleLookahead';
 
 export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -14,7 +16,6 @@ export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.ONE_WAY]: 0.55,
 };
 
-const SIDEWALK_WIDTH = 0.14;
 const ROAD_Y = 0.025;
 const SIDEWALK_Y = 0.028;
 const MARKING_Y = 0.052;
@@ -357,7 +358,7 @@ export class RoadRenderer {
     const stripeGap = 0.042;
     const stripeLen = 0.11;
     // Place stripes near the end of the cell closest to the intersection
-    const cwOffset = 0.35;
+    const cwOffset = CW_OFFSET;
 
     for (const r of cells) {
       const connections = countBits(r.roadFlags);
@@ -437,7 +438,7 @@ export class RoadRenderer {
 
     // Stop line position: closer to intersection than crosswalk
     // Crosswalk is at cwOffset=0.35 from center, stop line at 0.25 (between crosswalk and intersection)
-    const stopOffset = 0.25;
+    const stopOffset = STOP_LINE_OFFSET;
     const halfLane = 0.15; // half the road width for one lane side
 
     for (const r of cells) {

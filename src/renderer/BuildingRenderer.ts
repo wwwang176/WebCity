@@ -7,6 +7,7 @@ import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
 import { disposeGroup } from './disposeGroup';
+import { PALETTE } from '../ColorPalette';
 
 // ===== Deterministic pseudo-random based on position =====
 function hash(x: number, y: number): number {
@@ -1167,12 +1168,12 @@ export class BuildingRenderer {
   }
 
   private static readonly ZONE_GROUND_COLORS: Record<number, number> = {
-    [ZoneType.RESIDENTIAL_LOW]: 0x66bb6a,
-    [ZoneType.RESIDENTIAL_HIGH]: 0x2e7d32,
-    [ZoneType.COMMERCIAL_LOW]: 0x42a5f5,
-    [ZoneType.COMMERCIAL_HIGH]: 0x1565c0,
-    [ZoneType.INDUSTRIAL]: 0xffa726,
-    [ZoneType.OFFICE]: 0xab47bc,
+    [ZoneType.RESIDENTIAL_LOW]: PALETTE.ZONE.RES_LOW_OVERLAY,
+    [ZoneType.RESIDENTIAL_HIGH]: PALETTE.ZONE.RES_HIGH,
+    [ZoneType.COMMERCIAL_LOW]: PALETTE.ZONE.COM_LOW_LIGHT,
+    [ZoneType.COMMERCIAL_HIGH]: PALETTE.ZONE.COM_HIGH,
+    [ZoneType.INDUSTRIAL]: PALETTE.ZONE.IND,
+    [ZoneType.OFFICE]: PALETTE.ZONE.OFFICE,
   };
 
   private buildZoneOverlays(scene: THREE.Scene, emptyZonesByType: Map<number, { x: number; y: number }[]>): void {

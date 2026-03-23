@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { type Season } from '../core/climate/Climate';
+import { Season } from '../core/climate/Climate';
 import { type SceneManager } from './SceneManager';
 import { ViewMode } from '../core/ViewMode';
 
@@ -20,7 +20,7 @@ export class WeatherRenderer {
   private particleCount = 3000;
 
   // Current weather/season
-  private currentSeason: Season = 'spring';
+  private currentSeason: Season = Season.SPRING;
   private isRaining = false;
   private isSnowing = false;
 
@@ -232,19 +232,19 @@ export class WeatherRenderer {
     let opacity: number;
 
     switch (season) {
-      case 'spring':
+      case Season.SPRING:
         tintColor = 0x90ee90; // Light green
         opacity = 0.05;
         break;
-      case 'summer':
+      case Season.SUMMER:
         tintColor = 0x228b22; // Deep green
         opacity = 0.03;
         break;
-      case 'autumn':
+      case Season.AUTUMN:
         tintColor = 0xcc7722; // Orange-brown (fall foliage)
         opacity = 0.08;
         break;
-      case 'winter':
+      case Season.WINTER:
         tintColor = 0xeeeeff; // White-blue (snow/frost)
         opacity = 0.15;
         break;
@@ -271,8 +271,8 @@ export class WeatherRenderer {
     const wasRaining = this.isRaining;
     const wasSnowing = this.isSnowing;
 
-    this.isRaining = season === 'spring' || season === 'autumn';
-    this.isSnowing = season === 'winter';
+    this.isRaining = season === Season.SPRING || season === Season.AUTUMN;
+    this.isSnowing = season === Season.WINTER;
 
     if (wasRaining && !this.isRaining) this.removeRain();
     if (wasSnowing && !this.isSnowing) this.removeSnow();

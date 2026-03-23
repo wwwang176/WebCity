@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../Grid';
-import { TerrainType, ZoneType } from '../types';
+import { TerrainType, ZoneType, CELL_OFFSET, BYTES_PER_CELL } from '../types';
 
 describe('Grid', () => {
   describe('creation', () => {
@@ -172,6 +172,23 @@ describe('Grid', () => {
       const buildings: number[] = [];
       grid.forEachCell((cell) => { buildings.push(cell.buildingId); });
       expect(buildings).toEqual([0, 5, 0, 0]);
+    });
+  });
+
+  describe('CELL_OFFSET', () => {
+    it('should have correct byte offsets matching BYTES_PER_CELL layout', () => {
+      expect(CELL_OFFSET.terrainType).toBe(0);
+      expect(CELL_OFFSET.zoneType).toBe(1);
+      expect(CELL_OFFSET.buildingId).toBe(2); // uint16 = 2 bytes
+      expect(CELL_OFFSET.roadFlags).toBe(4);
+      expect(CELL_OFFSET.roadType).toBe(5);
+      expect(CELL_OFFSET.trafficDensity).toBe(6);
+      expect(CELL_OFFSET.landValue).toBe(7);
+      expect(CELL_OFFSET.pollution).toBe(8);
+      expect(CELL_OFFSET.noiseLevel).toBe(9);
+      expect(CELL_OFFSET.serviceCoverage).toBe(10);
+      expect(CELL_OFFSET.elevation).toBe(11);
+      expect(BYTES_PER_CELL).toBe(12);
     });
   });
 });

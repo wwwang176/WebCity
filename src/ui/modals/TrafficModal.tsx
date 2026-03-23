@@ -1,6 +1,7 @@
 import { For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
+import { UI_COLORS } from '../constants';
 
 export function TrafficModal(props: { open: boolean; onClose: () => void }) {
   const stats = () => {
@@ -38,7 +39,7 @@ export function TrafficModal(props: { open: boolean; onClose: () => void }) {
               {(seg) => {
                 const maxDensity = () => stats().topCongested[0]?.density ?? 1;
                 const pct = () => Math.round((seg.density / maxDensity()) * 100);
-                const color = () => pct() > 75 ? '#ef5350' : pct() > 40 ? '#ffa726' : '#66bb6a';
+                const color = () => pct() > 75 ? UI_COLORS.STATUS_BAD : pct() > 40 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD;
                 return (
                   <tr>
                     <td class="td-label">({seg.segment})</td>

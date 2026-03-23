@@ -1,6 +1,9 @@
 import { createSignal, batch } from 'solid-js';
 import type { Game, ToolType, SelectedBuilding } from '../../Game';
 import { ViewMode } from '../../core/ViewMode';
+import { CHART_HISTORY_LENGTH } from '../constants';
+import { Season } from '../../core/climate/Climate';
+import { OverlayType } from '../../renderer/OverlayRenderer';
 
 // --- High-frequency signals (updated every updateUI call) ---
 const [date, setDate] = createSignal('Day 1');
@@ -14,7 +17,7 @@ const [paused, setPaused] = createSignal(false);
 const [speed, setSpeed] = createSignal(1);
 const [selectedBuilding, setSelectedBuilding] = createSignal<SelectedBuilding | null>(null);
 const [notification, setNotification] = createSignal<string | null>(null);
-const [currentOverlay, setCurrentOverlay] = createSignal('none');
+const [currentOverlay, setCurrentOverlay] = createSignal<string>(OverlayType.NONE);
 const [currentRotation, setCurrentRotation] = createSignal(0);
 const [rciDemand, setRciDemand] = createSignal({ residential: 0, commercial: 0, industrial: 0 });
 const [viewMode, setViewMode] = createSignal<ViewMode>(ViewMode.NORMAL);
@@ -27,8 +30,8 @@ let lastTickTime = 0;
 const TICK_INTERVAL_MS = 160; // ~6 updates/sec
 
 // --- Chart history (accumulated over time) ---
-const CHART_MAX = 60;
-const ECON_MAX = 60;
+const CHART_MAX = CHART_HISTORY_LENGTH;
+const ECON_MAX = CHART_HISTORY_LENGTH;
 const [chartHistory, setChartHistory] = createSignal<{ pop: number[]; happiness: number[] }>({ pop: [], happiness: [] });
 const [econHistory, setEconHistory] = createSignal<{ funds: number[]; income: number[]; expenses: number[] }>({ funds: [], income: [], expenses: [] });
 
@@ -62,11 +65,11 @@ export function initGameStore(game: Game): void {
       ? Math.round(citizens.getAverageHappiness())
       : 0;
     const bal = Math.floor(state.budget.income - state.budget.expenses);
-    const overlay = (game as any).overlayRenderer?.getOverlay?.() ?? 'none';
+    const overlay = (game as any).overlayRenderer?.getOverlay?.() ?? OverlayType.NONE;
 
     batch(() => {
       const SEASON_LABELS = ['Spring', 'Summer', 'Autumn', 'Winter'] as const;
-      const seasonIdx = ['spring', 'summer', 'autumn', 'winter'].indexOf(clock.getSeason());
+      const seasonIdx = [Season.SPRING, Season.SUMMER, Season.AUTUMN, Season.WINTER].indexOf(clock.getSeason());
       setDate(`${SEASON_LABELS[seasonIdx]} · Week ${clock.getWeek() + 1}`);
       setFunds(Math.floor(state.budget.funds));
       setPopulation(pop);

@@ -40,9 +40,12 @@ export function isShorePosition(grid: Grid, x: number, y: number): boolean {
   return false;
 }
 
-/** Returns groundwater level 0-100 based on Manhattan distance to nearest water (max range 3). */
+/** Maximum Manhattan distance for groundwater detection */
+export const GROUNDWATER_SEARCH_RANGE = 3;
+
+/** Returns groundwater level 0-100 based on Manhattan distance to nearest water. */
 export function getGroundwaterLevel(grid: Grid, x: number, y: number): number {
-  const range = 3;
+  const range = GROUNDWATER_SEARCH_RANGE;
   let minDist = range + 1;
   for (let dy = -range; dy <= range; dy++) {
     for (let dx = -range; dx <= range; dx++) {

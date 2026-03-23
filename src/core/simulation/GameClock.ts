@@ -1,6 +1,13 @@
+import { Season } from '../climate/Climate';
+
 export type GameSpeed = 0 | 1 | 3 | 5 | 10;
 
-export type TimeOfDay = 'night' | 'morning_rush' | 'midday' | 'evening_rush';
+export enum TimeOfDay {
+  NIGHT = 'night',
+  MORNING_RUSH = 'morning_rush',
+  MIDDAY = 'midday',
+  EVENING_RUSH = 'evening_rush',
+}
 
 /** Hour boundaries for time-of-day periods (24-hour cycle based on ticksPerDay) */
 export const TIME_PERIOD = {
@@ -57,18 +64,18 @@ export class GameClock {
 
   getTimeOfDay(): TimeOfDay {
     const hour = this.getHourOfDay();
-    if (hour >= TIME_PERIOD.NIGHT_START || hour <= TIME_PERIOD.NIGHT_END) return 'night';
-    if (hour >= TIME_PERIOD.MORNING_RUSH_START && hour <= TIME_PERIOD.MORNING_RUSH_END) return 'morning_rush';
-    if (hour >= TIME_PERIOD.MIDDAY_START && hour <= TIME_PERIOD.MIDDAY_END) return 'midday';
-    return 'evening_rush';
+    if (hour >= TIME_PERIOD.NIGHT_START || hour <= TIME_PERIOD.NIGHT_END) return TimeOfDay.NIGHT;
+    if (hour >= TIME_PERIOD.MORNING_RUSH_START && hour <= TIME_PERIOD.MORNING_RUSH_END) return TimeOfDay.MORNING_RUSH;
+    if (hour >= TIME_PERIOD.MIDDAY_START && hour <= TIME_PERIOD.MIDDAY_END) return TimeOfDay.MIDDAY;
+    return TimeOfDay.EVENING_RUSH;
   }
 
-  getSeason(): 'spring' | 'summer' | 'autumn' | 'winter' {
+  getSeason(): Season {
     const month = this.getMonth() % 12;
-    if (month < 3) return 'spring';
-    if (month < 6) return 'summer';
-    if (month < 9) return 'autumn';
-    return 'winter';
+    if (month < 3) return Season.SPRING;
+    if (month < 6) return Season.SUMMER;
+    if (month < 9) return Season.AUTUMN;
+    return Season.WINTER;
   }
 
   getTickInterval(): number {

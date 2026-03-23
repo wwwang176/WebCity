@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { CitizenManager, EDUCATION_PROGRESSION, GRADUATION_TICKS, EDUCATION_SCALE, getLearningSpeed, jitteredSpeed, LEARNING_JITTER, MIN_SCHOOL_AGE, DAILY_DEATH_RATE, HEALTH_MULTIPLIER, getElderlyMultiplier } from '../CitizenManager';
+import { CitizenManager, EDUCATION_PROGRESSION, GRADUATION_TICKS, EDUCATION_SCALE, getLearningSpeed, jitteredSpeed, LEARNING_JITTER, MIN_SCHOOL_AGE, DAILY_DEATH_RATE, HEALTH_MULTIPLIER, getElderlyMultiplier, ELDERLY } from '../CitizenManager';
 import { LifeStage, EducationLevel, LIFE_STAGE_AGE, isWorkingAge, AGE_PER_TICK, MAX_AGE } from '../types';
 
 /** Unlimited capacity for simple tests that don't test capacity limits */
@@ -397,6 +397,13 @@ describe('evictBuilding', () => {
     const ids = mgr.evictBuilding('5,5');
 
     expect(ids).toEqual([c.id]);
+  });
+});
+
+describe('ELDERLY constants', () => {
+  it('should have correct values', () => {
+    expect(ELDERLY.AGE_THRESHOLD).toBe(240);
+    expect(ELDERLY.RATE_FACTOR).toBe(0.25);
   });
 });
 

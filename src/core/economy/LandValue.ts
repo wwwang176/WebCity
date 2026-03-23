@@ -1,3 +1,5 @@
+import { TerrainType } from '../grid/types';
+
 export interface LandValueFactors {
   serviceCoverage: number;
   parkProximity: boolean;
@@ -38,7 +40,7 @@ export function checkParkProximity(
 ): boolean {
   if (hasServiceCoverage) return true;
 
-  const FOREST = 3; // TerrainType.FOREST
+  const FOREST = TerrainType.FOREST;
 
   // Check 2-cell Manhattan radius (includes 1-cell cardinal neighbors)
   for (let dx = -2; dx <= 2; dx++) {

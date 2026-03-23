@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { FreightSystem, getProductionRate, getConsumptionRate } from '../FreightSystem';
+import { FreightSystem, FreightRouteType, getProductionRate, getConsumptionRate } from '../FreightSystem';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
@@ -221,6 +221,14 @@ describe('FreightSystem', () => {
     it('unknown building ID returns 0', () => {
       expect(getProductionRate(999)).toBe(0);
       expect(getConsumptionRate(999)).toBe(0);
+    });
+  });
+
+  describe('FreightRouteType enum', () => {
+    it('should have correct string values', () => {
+      expect(FreightRouteType.LOCAL).toBe('local');
+      expect(FreightRouteType.EXPORT).toBe('export');
+      expect(FreightRouteType.IMPORT).toBe('import');
     });
   });
 });

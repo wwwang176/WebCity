@@ -3,6 +3,8 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { ZoneType } from '../../../core/grid/types';
 import { getBuildingType } from '../../../core/building/types';
 import { calculateAttractiveness } from '../../../core/citizen/Migration';
+import { DEFAULT_TAX_RATE } from '../../../core/economy/Tax';
+import { UI_COLORS } from '../../constants';
 
 const ZONE_ORDER = [
   ZoneType.RESIDENTIAL_LOW, ZoneType.RESIDENTIAL_HIGH,
@@ -56,7 +58,7 @@ export function SummaryPage() {
     const avgHappiness = population > 0
       ? Math.round(state.citizens.getAverageHappiness())
       : 70;
-    const taxRate = state.taxRates.residential ?? 9;
+    const taxRate = state.taxRates.residential ?? DEFAULT_TAX_RATE;
     const attractiveness = calculateAttractiveness({
       jobOpenings, vacantHomes, avgHappiness, taxRate,
       pollution: avgPollution, crimeRate: Math.min(50, population * 0.02),
@@ -100,7 +102,7 @@ export function SummaryPage() {
       <div class="section-title">RCI Demand</div>
       <div style="display:flex;gap:12px;margin-bottom:12px">
         {(['R', 'C', 'I'] as const).map((label, i) => {
-          const colors = ['#66bb6a', '#42a5f5', '#ffa726'];
+          const colors = [UI_COLORS.STATUS_GOOD, UI_COLORS.ACCENT, UI_COLORS.STATUS_WARN];
           const keys: ('residential' | 'commercial' | 'industrial')[] = ['residential', 'commercial', 'industrial'];
           const key = keys[i]!;
           const val = () => {
@@ -122,20 +124,20 @@ export function SummaryPage() {
       <div class="section-title">Utilities</div>
       <div style="display:flex;gap:12px;margin-bottom:12px">
         {[
-          { label: 'Power', ratio: () => data().pwrRatio, color: '#66bb6a' },
-          { label: 'Water', ratio: () => data().wtrRatio, color: '#42a5f5' },
+          { label: 'Power', ratio: () => data().pwrRatio, color: UI_COLORS.STATUS_GOOD },
+          { label: 'Water', ratio: () => data().wtrRatio, color: UI_COLORS.ACCENT },
         ].map(u => (
           <div style="flex:1">
             <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
               <span>{u.label}</span>
-              <span style={{ color: u.ratio() >= 1 ? '#66bb6a' : u.ratio() >= 0.7 ? '#ffa726' : '#ef5350' }}>
+              <span style={{ color: u.ratio() >= 1 ? UI_COLORS.STATUS_GOOD : u.ratio() >= 0.7 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD }}>
                 {(u.ratio() * 100).toFixed(0)}%
               </span>
             </div>
             <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
               <div style={{
                 width: `${Math.min(100, u.ratio() * 100)}%`, height: '100%', 'border-radius': '3px',
-                background: u.ratio() >= 1 ? u.color : u.ratio() >= 0.7 ? '#ffa726' : '#ef5350',
+                background: u.ratio() >= 1 ? u.color : u.ratio() >= 0.7 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD,
                 transition: 'width 0.3s',
               }} />
             </div>
@@ -147,14 +149,14 @@ export function SummaryPage() {
       <div style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;font-size:11px;color:#8899b0;margin-bottom:4px">
           <span>Supply Rate</span>
-          <span style={{ color: data().freightSupplyRatio > 1.5 ? '#ef5350' : data().freightSupplyRatio > 1.2 ? '#ffa726' : data().freightSupplyRatio >= 0.8 ? '#66bb6a' : data().freightSupplyRatio >= 0.5 ? '#ffa726' : '#ef5350' }}>
+          <span style={{ color: data().freightSupplyRatio > 1.5 ? UI_COLORS.STATUS_BAD : data().freightSupplyRatio > 1.2 ? UI_COLORS.STATUS_WARN : data().freightSupplyRatio >= 0.8 ? UI_COLORS.STATUS_GOOD : data().freightSupplyRatio >= 0.5 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD }}>
             {(data().freightSupplyRatio * 100).toFixed(0)}%
           </span>
         </div>
         <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
           <div style={{
             width: `${Math.min(100, data().freightSupplyRatio * 100)}%`, height: '100%', 'border-radius': '3px',
-            background: data().freightSupplyRatio > 1.5 ? '#ef5350' : data().freightSupplyRatio > 1.2 ? '#ffa726' : data().freightSupplyRatio >= 0.8 ? '#66bb6a' : data().freightSupplyRatio >= 0.5 ? '#ffa726' : '#ef5350',
+            background: data().freightSupplyRatio > 1.5 ? UI_COLORS.STATUS_BAD : data().freightSupplyRatio > 1.2 ? UI_COLORS.STATUS_WARN : data().freightSupplyRatio >= 0.8 ? UI_COLORS.STATUS_GOOD : data().freightSupplyRatio >= 0.5 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD,
             transition: 'width 0.3s',
           }} />
         </div>
@@ -191,7 +193,7 @@ export function SummaryPage() {
               <tr>
                 <td class="td-label">{chk.label}</td>
                 <td class="td-value" style="text-align:right">{chk.value}</td>
-                <td style={{ 'text-align': 'center', color: chk.ok ? '#66bb6a' : '#ef5350' }}>{chk.ok ? '\u2713' : '\u2717'}</td>
+                <td style={{ 'text-align': 'center', color: chk.ok ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD }}>{chk.ok ? '\u2713' : '\u2717'}</td>
               </tr>
             )}
           </For>
@@ -201,7 +203,7 @@ export function SummaryPage() {
         'margin-top': '8px', padding: '8px 12px', 'border-radius': '6px',
         'font-size': '12px', 'font-weight': '600',
         background: data().canMigrate ? 'rgba(102,187,106,0.15)' : 'rgba(239,83,80,0.15)',
-        color: data().canMigrate ? '#66bb6a' : '#ef5350',
+        color: data().canMigrate ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
       }}>
         {data().canMigrate ? '\u2713 Citizens can migrate in' : '\u2717 Migration blocked \u2014 fix conditions marked \u2717 above'}
       </div>

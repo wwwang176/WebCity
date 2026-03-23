@@ -1,12 +1,14 @@
 import { gameSignals, getGame } from '../../store/gameStore';
+import { BURNED, ABANDONED } from '../../../core/building/InfraPlacement';
+import { UI_COLORS } from '../../constants';
 
 function StatRow(props: { label: string; value: string; status: 'good' | 'warn' | 'bad' | 'neutral' }) {
   const color = () => {
     switch (props.status) {
-      case 'good': return '#66bb6a';
-      case 'warn': return '#ffa726';
-      case 'bad': return '#ef5350';
-      default: return '#d0d8e8';
+      case 'good': return UI_COLORS.STATUS_GOOD;
+      case 'warn': return UI_COLORS.STATUS_WARN;
+      case 'bad': return UI_COLORS.STATUS_BAD;
+      default: return UI_COLORS.NEUTRAL;
     }
   };
   return (
@@ -45,8 +47,8 @@ export function EnvironmentPage() {
     let burnedCount = 0;
     let abandonedCount = 0;
     grid.forEachCell((cell) => {
-      if (cell.reserved === 0xFD) burnedCount++; // BURNED constant
-      if (cell.reserved === 0xFE) abandonedCount++; // approximate abandoned marker
+      if (cell.reserved === BURNED) burnedCount++;
+      if (cell.reserved === ABANDONED) abandonedCount++;
     });
 
     return {
@@ -65,7 +67,7 @@ export function EnvironmentPage() {
       <div class="summary-grid" style="grid-template-columns:1fr 1fr 1fr">
         <div class="summary-card">
           <div class="sc-value" style={{
-            color: data().avgGround < 10 ? '#66bb6a' : data().avgGround < 30 ? '#ffa726' : '#ef5350'
+            color: data().avgGround < 10 ? UI_COLORS.STATUS_GOOD : data().avgGround < 30 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD
           }}>
             {data().avgGround.toFixed(1)}
           </div>
@@ -73,7 +75,7 @@ export function EnvironmentPage() {
         </div>
         <div class="summary-card">
           <div class="sc-value" style={{
-            color: data().waterPollution < 10 ? '#66bb6a' : data().waterPollution < 30 ? '#ffa726' : '#ef5350'
+            color: data().waterPollution < 10 ? UI_COLORS.STATUS_GOOD : data().waterPollution < 30 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD
           }}>
             {data().waterPollution.toFixed(1)}
           </div>

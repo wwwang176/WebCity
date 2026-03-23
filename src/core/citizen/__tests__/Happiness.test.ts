@@ -158,6 +158,12 @@ describe('Happiness', () => {
     expect(undef).toBe(base);
   });
 
+  it('shopping ratio thresholds should have correct values', () => {
+    expect(HAPPINESS.SHOPPING_GOOD_RATIO).toBe(0.8);
+    expect(HAPPINESS.SHOPPING_PARTIAL_RATIO).toBe(0.3);
+    expect(HAPPINESS.SHOPPING_NONE_RATIO).toBe(0.1);
+  });
+
   it('should have no shopping modifier for ratio between 0.1 and 0.3', () => {
     const base = calculateHappiness(makeCitizen(), baseFactors);
     const mid = calculateHappiness(makeCitizen(), { ...baseFactors, shoppingAccess: 0.2 });

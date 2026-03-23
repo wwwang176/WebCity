@@ -1,4 +1,4 @@
-import { CellData, BYTES_PER_CELL, type Position } from './types';
+import { CellData, BYTES_PER_CELL, CELL_OFFSET, type Position } from './types';
 
 export class Grid {
   readonly width: number;
@@ -40,17 +40,17 @@ export class Grid {
     const offset = this.getOffset(x, y);
     const idx = y * this.width + x;
     switch (field) {
-      case 'terrainType': return this.view.getUint8(offset + 0);
-      case 'zoneType': return this.view.getUint8(offset + 1);
-      case 'buildingId': return this.view.getUint16(offset + 2, true);
-      case 'roadFlags': return this.view.getUint8(offset + 4);
-      case 'roadType': return this.view.getUint8(offset + 5);
-      case 'trafficDensity': return this.view.getUint8(offset + 6);
-      case 'landValue': return this.view.getUint8(offset + 7);
-      case 'pollution': return this.view.getUint8(offset + 8);
-      case 'noiseLevel': return this.view.getUint8(offset + 9);
-      case 'serviceCoverage': return this.view.getUint8(offset + 10);
-      case 'elevation': return this.view.getInt8(offset + 11);
+      case 'terrainType': return this.view.getUint8(offset + CELL_OFFSET.terrainType);
+      case 'zoneType': return this.view.getUint8(offset + CELL_OFFSET.zoneType);
+      case 'buildingId': return this.view.getUint16(offset + CELL_OFFSET.buildingId, true);
+      case 'roadFlags': return this.view.getUint8(offset + CELL_OFFSET.roadFlags);
+      case 'roadType': return this.view.getUint8(offset + CELL_OFFSET.roadType);
+      case 'trafficDensity': return this.view.getUint8(offset + CELL_OFFSET.trafficDensity);
+      case 'landValue': return this.view.getUint8(offset + CELL_OFFSET.landValue);
+      case 'pollution': return this.view.getUint8(offset + CELL_OFFSET.pollution);
+      case 'noiseLevel': return this.view.getUint8(offset + CELL_OFFSET.noiseLevel);
+      case 'serviceCoverage': return this.view.getUint8(offset + CELL_OFFSET.serviceCoverage);
+      case 'elevation': return this.view.getInt8(offset + CELL_OFFSET.elevation);
       case 'reserved': return this.reservedData[idx]!;
       case 'railType': return this.railTypeData[idx]!;
       case 'railFlags': return this.railFlagsData[idx]!;
@@ -62,17 +62,17 @@ export class Grid {
     if (!this.isInBounds(x, y)) return null;
     const offset = this.getOffset(x, y);
     return {
-      terrainType: this.view.getUint8(offset + 0),
-      zoneType: this.view.getUint8(offset + 1),
-      buildingId: this.view.getUint16(offset + 2, true),
-      roadFlags: this.view.getUint8(offset + 4),
-      roadType: this.view.getUint8(offset + 5),
-      trafficDensity: this.view.getUint8(offset + 6),
-      landValue: this.view.getUint8(offset + 7),
-      pollution: this.view.getUint8(offset + 8),
-      noiseLevel: this.view.getUint8(offset + 9),
-      serviceCoverage: this.view.getUint8(offset + 10),
-      elevation: this.view.getInt8(offset + 11),
+      terrainType: this.view.getUint8(offset + CELL_OFFSET.terrainType),
+      zoneType: this.view.getUint8(offset + CELL_OFFSET.zoneType),
+      buildingId: this.view.getUint16(offset + CELL_OFFSET.buildingId, true),
+      roadFlags: this.view.getUint8(offset + CELL_OFFSET.roadFlags),
+      roadType: this.view.getUint8(offset + CELL_OFFSET.roadType),
+      trafficDensity: this.view.getUint8(offset + CELL_OFFSET.trafficDensity),
+      landValue: this.view.getUint8(offset + CELL_OFFSET.landValue),
+      pollution: this.view.getUint8(offset + CELL_OFFSET.pollution),
+      noiseLevel: this.view.getUint8(offset + CELL_OFFSET.noiseLevel),
+      serviceCoverage: this.view.getUint8(offset + CELL_OFFSET.serviceCoverage),
+      elevation: this.view.getInt8(offset + CELL_OFFSET.elevation),
       reserved: this.reservedData[y * this.width + x] ?? 0,
       railType: this.railTypeData[y * this.width + x] ?? 0,
       railFlags: this.railFlagsData[y * this.width + x] ?? 0,
@@ -83,17 +83,17 @@ export class Grid {
     if (!this.isInBounds(x, y)) return;
     const offset = this.getOffset(x, y);
 
-    if (data.terrainType !== undefined) this.view.setUint8(offset + 0, data.terrainType);
-    if (data.zoneType !== undefined) this.view.setUint8(offset + 1, data.zoneType);
-    if (data.buildingId !== undefined) this.view.setUint16(offset + 2, data.buildingId, true);
-    if (data.roadFlags !== undefined) this.view.setUint8(offset + 4, data.roadFlags);
-    if (data.roadType !== undefined) this.view.setUint8(offset + 5, data.roadType);
-    if (data.trafficDensity !== undefined) this.view.setUint8(offset + 6, data.trafficDensity);
-    if (data.landValue !== undefined) this.view.setUint8(offset + 7, data.landValue);
-    if (data.pollution !== undefined) this.view.setUint8(offset + 8, data.pollution);
-    if (data.noiseLevel !== undefined) this.view.setUint8(offset + 9, data.noiseLevel);
-    if (data.serviceCoverage !== undefined) this.view.setUint8(offset + 10, data.serviceCoverage);
-    if (data.elevation !== undefined) this.view.setInt8(offset + 11, data.elevation);
+    if (data.terrainType !== undefined) this.view.setUint8(offset + CELL_OFFSET.terrainType, data.terrainType);
+    if (data.zoneType !== undefined) this.view.setUint8(offset + CELL_OFFSET.zoneType, data.zoneType);
+    if (data.buildingId !== undefined) this.view.setUint16(offset + CELL_OFFSET.buildingId, data.buildingId, true);
+    if (data.roadFlags !== undefined) this.view.setUint8(offset + CELL_OFFSET.roadFlags, data.roadFlags);
+    if (data.roadType !== undefined) this.view.setUint8(offset + CELL_OFFSET.roadType, data.roadType);
+    if (data.trafficDensity !== undefined) this.view.setUint8(offset + CELL_OFFSET.trafficDensity, data.trafficDensity);
+    if (data.landValue !== undefined) this.view.setUint8(offset + CELL_OFFSET.landValue, data.landValue);
+    if (data.pollution !== undefined) this.view.setUint8(offset + CELL_OFFSET.pollution, data.pollution);
+    if (data.noiseLevel !== undefined) this.view.setUint8(offset + CELL_OFFSET.noiseLevel, data.noiseLevel);
+    if (data.serviceCoverage !== undefined) this.view.setUint8(offset + CELL_OFFSET.serviceCoverage, data.serviceCoverage);
+    if (data.elevation !== undefined) this.view.setInt8(offset + CELL_OFFSET.elevation, data.elevation);
     if (data.reserved !== undefined) this.reservedData[y * this.width + x] = data.reserved;
     if (data.railType !== undefined) this.railTypeData[y * this.width + x] = data.railType;
     if (data.railFlags !== undefined) this.railFlagsData[y * this.width + x] = data.railFlags;
@@ -105,17 +105,17 @@ export class Grid {
     const offset = this.getOffset(x, y);
     const idx = y * this.width + x;
     switch (field) {
-      case 'terrainType': this.view.setUint8(offset + 0, value); break;
-      case 'zoneType': this.view.setUint8(offset + 1, value); break;
-      case 'buildingId': this.view.setUint16(offset + 2, value, true); break;
-      case 'roadFlags': this.view.setUint8(offset + 4, value); break;
-      case 'roadType': this.view.setUint8(offset + 5, value); break;
-      case 'trafficDensity': this.view.setUint8(offset + 6, value); break;
-      case 'landValue': this.view.setUint8(offset + 7, value); break;
-      case 'pollution': this.view.setUint8(offset + 8, value); break;
-      case 'noiseLevel': this.view.setUint8(offset + 9, value); break;
-      case 'serviceCoverage': this.view.setUint8(offset + 10, value); break;
-      case 'elevation': this.view.setInt8(offset + 11, value); break;
+      case 'terrainType': this.view.setUint8(offset + CELL_OFFSET.terrainType, value); break;
+      case 'zoneType': this.view.setUint8(offset + CELL_OFFSET.zoneType, value); break;
+      case 'buildingId': this.view.setUint16(offset + CELL_OFFSET.buildingId, value, true); break;
+      case 'roadFlags': this.view.setUint8(offset + CELL_OFFSET.roadFlags, value); break;
+      case 'roadType': this.view.setUint8(offset + CELL_OFFSET.roadType, value); break;
+      case 'trafficDensity': this.view.setUint8(offset + CELL_OFFSET.trafficDensity, value); break;
+      case 'landValue': this.view.setUint8(offset + CELL_OFFSET.landValue, value); break;
+      case 'pollution': this.view.setUint8(offset + CELL_OFFSET.pollution, value); break;
+      case 'noiseLevel': this.view.setUint8(offset + CELL_OFFSET.noiseLevel, value); break;
+      case 'serviceCoverage': this.view.setUint8(offset + CELL_OFFSET.serviceCoverage, value); break;
+      case 'elevation': this.view.setInt8(offset + CELL_OFFSET.elevation, value); break;
       case 'reserved': this.reservedData[idx] = value; break;
       case 'railType': this.railTypeData[idx] = value; break;
       case 'railFlags': this.railFlagsData[idx] = value; break;

@@ -2,6 +2,7 @@ import { createSignal, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { getTransitSystems } from '../../../core/transport/TransportRegistry';
 import { TransportType } from '../../../core/transport/types';
+import { UI_COLORS } from '../../constants';
 
 const TYPE_LABELS: Record<string, string> = {
   [TransportType.BUS]: 'Bus',
@@ -143,7 +144,7 @@ export function TrafficPage() {
               {(seg) => {
                 const maxDensity = () => stats().topCongested[0]?.density ?? 1;
                 const pct = () => Math.round((seg.density / maxDensity()) * 100);
-                const color = () => pct() > 75 ? '#ef5350' : pct() > 40 ? '#ffa726' : '#66bb6a';
+                const color = () => pct() > 75 ? UI_COLORS.STATUS_BAD : pct() > 40 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD;
                 return (
                   <tr>
                     <td class="td-label">({seg.segment})</td>
@@ -186,7 +187,7 @@ export function TrafficPage() {
                       <td class="td-value" style="text-align:right">{row.routeRows.reduce((s, r) => s + r.stops, 0)}</td>
                       <td class="td-value" style="text-align:right">{row.totalVehicles}</td>
                       <td class="td-value" style="text-align:right">{Math.round(row.totalRiders * 7)}</td>
-                      <td class="td-value" style={`text-align:right;color:${row.totalCapacity > 0 && row.totalRiders / row.totalCapacity > 0.8 ? '#ef5350' : row.totalCapacity > 0 && row.totalRiders / row.totalCapacity > 0.5 ? '#ffa726' : '#66bb6a'}`}>{row.totalCapacity > 0 ? `${Math.min(100, Math.round(row.totalRiders / row.totalCapacity * 100))}%` : '—'}</td>
+                      <td class="td-value" style={`text-align:right;color:${row.totalCapacity > 0 && row.totalRiders / row.totalCapacity > 0.8 ? UI_COLORS.STATUS_BAD : row.totalCapacity > 0 && row.totalRiders / row.totalCapacity > 0.5 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD}`}>{row.totalCapacity > 0 ? `${Math.min(100, Math.round(row.totalRiders / row.totalCapacity * 100))}%` : '—'}</td>
                       <td class="td-expense" style="text-align:right">${row.totalCost}</td>
                     </tr>
                     <Show when={isOpen()}>
@@ -195,12 +196,12 @@ export function TrafficPage() {
                           <tr style={{ background: 'rgba(255,255,255,0.02)' }}>
                             <td style="padding-left:32px;font-size:11px;color:#8899b0">
                               Route #{route.id}
-                              {route.suspended ? <span style="color:#ef5350;margin-left:6px">(suspended)</span> : ''}
+                              {route.suspended ? <span style={`color:${UI_COLORS.STATUS_BAD};margin-left:6px`}>(suspended)</span> : ''}
                             </td>
                             <td class="td-value" style="text-align:right;font-size:11px">{route.stops}</td>
                             <td class="td-value" style="text-align:right;font-size:11px">{route.vehicles}</td>
                             <td class="td-value" style="text-align:right;font-size:11px">{Math.round(route.riders * 7)}</td>
-                            <td class="td-value" style={`text-align:right;font-size:11px;color:${route.capacity > 0 && route.riders / route.capacity > 0.8 ? '#ef5350' : route.capacity > 0 && route.riders / route.capacity > 0.5 ? '#ffa726' : '#66bb6a'}`}>{route.capacity > 0 ? `${Math.min(100, Math.round(route.riders / route.capacity * 100))}%` : '—'}</td>
+                            <td class="td-value" style={`text-align:right;font-size:11px;color:${route.capacity > 0 && route.riders / route.capacity > 0.8 ? UI_COLORS.STATUS_BAD : route.capacity > 0 && route.riders / route.capacity > 0.5 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD}`}>{route.capacity > 0 ? `${Math.min(100, Math.round(route.riders / route.capacity * 100))}%` : '—'}</td>
                             <td class="td-expense" style="text-align:right;font-size:11px">${route.cost}</td>
                           </tr>
                         )}
@@ -216,7 +217,7 @@ export function TrafficPage() {
 
       <Show when={transitData().airportCount > 0}>
         <div style="font-size:12px;color:#8899b0;margin-top:8px">
-          Airports: <span style="color:#d0d8e8;font-weight:500">{transitData().airportCount}</span>
+          Airports: <span style={`color:${UI_COLORS.NEUTRAL};font-weight:500`}>{transitData().airportCount}</span>
           <span style="margin-left:12px">Cost: <span class="td-expense">${transitData().airportCost}/tick</span></span>
         </div>
       </Show>

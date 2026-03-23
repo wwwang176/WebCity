@@ -16,11 +16,17 @@ export const HEALTH_MULTIPLIER = {
   NOT_COVERED: 1.0,  // baseline
 } as const;
 
-/** Elderly multiplier: ramps up death rate above 240 life-weeks */
+/** Elderly age threshold and rate factor */
+export const ELDERLY = {
+  AGE_THRESHOLD: 240,
+  RATE_FACTOR: 0.25,
+} as const;
+
+/** Elderly multiplier: ramps up death rate above AGE_THRESHOLD life-weeks */
 export function getElderlyMultiplier(age: number): number {
-  if (age <= 240) return 1;
+  if (age <= ELDERLY.AGE_THRESHOLD) return 1;
   if (age > MAX_AGE) return Infinity;
-  return 1 + (age - 240) * 0.25;
+  return 1 + (age - ELDERLY.AGE_THRESHOLD) * ELDERLY.RATE_FACTOR;
 }
 
 /** Data-driven education progression rules — no age/lifeStage restriction, anyone can learn. */
@@ -44,11 +50,18 @@ export const GRADUATION_TICKS: Record<EducationRule['schoolKey'], number> = {
   university: 100 * EDUCATION_SCALE,  // 10,000 → child 100, adult ~303, senior 500 ticks
 };
 
+/** Learning speed points per tick by life stage */
+export const LEARNING_SPEED = {
+  YOUNG: 100,   // children & teens: full speed
+  ADULT: 33,    // adults: ~3x slower
+  SENIOR: 20,   // seniors: 5x slower
+} as const;
+
 /** Base speed points per tick. Younger = faster, older = slower. */
 export function getLearningSpeed(age: number): number {
-  if (age <= LIFE_STAGE_AGE.TEEN_MAX) return 100;  // children & teens: full speed
-  if (age <= LIFE_STAGE_AGE.ADULT_MAX) return 33;  // adults: ~3x slower
-  return 20;                                         // seniors: 5x slower
+  if (age <= LIFE_STAGE_AGE.TEEN_MAX) return LEARNING_SPEED.YOUNG;
+  if (age <= LIFE_STAGE_AGE.ADULT_MAX) return LEARNING_SPEED.ADULT;
+  return LEARNING_SPEED.SENIOR;
 }
 
 /** Jitter range for per-tick learning speed (80%~120%) to stagger graduations. */

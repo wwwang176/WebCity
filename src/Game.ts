@@ -17,8 +17,9 @@ import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
 import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
-import { type OverlayType } from './renderer/OverlayRenderer';
-import { AudioManager } from './audio/AudioManager';
+import { OverlayType } from './renderer/OverlayRenderer';
+import { PALETTE } from './ColorPalette';
+import { AudioManager, SoundType } from './audio/AudioManager';
 import { type BuildingType } from './core/building/types';
 import { WorkplaceDistanceClient } from './core/workplace/WorkplaceDistanceClient';
 import { WorkplaceDistanceCache } from './core/workplace/WorkplaceDistanceCache';
@@ -89,6 +90,19 @@ const SERVICE_TYPE_TO_VEHICLE_TYPE: Record<ServiceVehicleType, VehicleData['type
 
 export type ToolType = 'select' | 'road' | 'road_rural' | 'road_2lane' | 'road_4lane' | 'road_6lane' | 'road_highway' | 'rail_track' | 'zone_r' | 'zone_rh' | 'zone_c' | 'zone_ch' | 'zone_i' | 'zone_o' | 'demolish' | 'power' | 'water' | 'police' | 'fire' | 'hospital' | 'school' | 'school_high' | 'school_univ' | 'park' | 'garbage' | 'sewage' | 'cemetery' | 'district' | 'bus_stop' | 'metro_station' | 'train_station' | 'ferry_dock' | 'airport_s' | 'airport_m' | 'airport_l';
 
+/** Camera and input tuning constants */
+export const CAMERA_INPUT = {
+  PAN_SPEED: 15,
+  ORBIT_SENSITIVITY: 0.005,
+  ZOOM_SENSITIVITY: 0.05,
+  /** Sync building meshes every N ticks */
+  BUILDING_SYNC_INTERVAL: 6,
+  /** Full safety rebuild every N ticks */
+  SAFETY_REBUILD_INTERVAL: 200,
+  /** Max tick accumulator = tickInterval × this */
+  ACCUMULATOR_CAP_FACTOR: 10,
+} as const;
+
 /** Map airport tool types to AirportSize. */
 const AIRPORT_TOOL_SIZE: Partial<Record<ToolType, AirportSize>> = {
   airport_s: 'SMALL', airport_m: 'MEDIUM', airport_l: 'LARGE',
@@ -131,9 +145,9 @@ const TOOL_TO_ROAD_TYPE: Partial<Record<ToolType, RoadType>> = {
 
 /** Zone tool preview highlight colors. */
 const ZONE_PREVIEW_COLORS: Record<string, number> = {
-  zone_r: 0x4caf50, zone_rh: 0x2e7d32,
-  zone_c: 0x2196f3, zone_ch: 0x1565c0,
-  zone_i: 0xffc107, zone_o: 0x9c27b0,
+  zone_r: PALETTE.ZONE.RES_LOW, zone_rh: PALETTE.ZONE.RES_HIGH,
+  zone_c: PALETTE.ZONE.COM_LOW, zone_ch: PALETTE.ZONE.COM_HIGH,
+  zone_i: PALETTE.ZONE.IND_PREVIEW, zone_o: PALETTE.ZONE.OFFICE_PREVIEW,
 };
 
 /** Key-to-tool bindings (OCP: add new keyboard shortcuts here). */
@@ -145,35 +159,35 @@ const KEY_TO_TOOL: Record<string, ToolType> = {
 
 /** Key-to-overlay bindings (OCP: add new overlay shortcuts here). */
 const KEY_TO_OVERLAY: Record<string, OverlayType> = {
-  'f1': 'power', 'f2': 'water', 'f3': 'pollution',
-  'f4': 'landValue', 'f5': 'traffic', 'f6': 'zone',
+  'f1': OverlayType.POWER, 'f2': OverlayType.WATER, 'f3': OverlayType.POLLUTION,
+  'f4': OverlayType.LAND_VALUE, 'f5': OverlayType.TRAFFIC, 'f6': OverlayType.ZONE,
 };
 
 /** Tool-to-cursor-color mapping (OCP: add new tool colors here). */
 const TOOL_CURSOR_COLORS: Record<ToolType, number> = {
-  select: 0xffffff,
-  road: 0x424242, road_rural: 0x424242, road_2lane: 0x424242,
-  road_4lane: 0x424242, road_6lane: 0x424242, road_highway: 0x424242,
-  rail_track: 0x6d4c2a,
-  zone_r: 0x4caf50, zone_rh: 0x2e7d32,
-  zone_c: 0x2196f3, zone_ch: 0x1565c0,
-  zone_i: 0xffa726, zone_o: 0xab47bc,
-  demolish: 0xf44336,
-  power: 0xffeb3b, water: 0x03a9f4, police: 0x3f51b5, fire: 0xd32f2f,
-  hospital: 0xe91e63, school: 0x795548, school_high: 0x6d4c41,
-  school_univ: 0x4e342e, park: 0x4caf50, garbage: 0x795548,
-  sewage: 0x607d8b, cemetery: 0x9e9e9e,
-  district: 0xab47bc,
-  bus_stop: 0xff9800, metro_station: 0x00bcd4, train_station: 0x795548,
-  ferry_dock: 0x0288d1, airport: 0x9c27b0,
+  select: PALETTE.TOOL.SELECT,
+  road: PALETTE.TOOL.ROAD, road_rural: PALETTE.TOOL.ROAD, road_2lane: PALETTE.TOOL.ROAD,
+  road_4lane: PALETTE.TOOL.ROAD, road_6lane: PALETTE.TOOL.ROAD, road_highway: PALETTE.TOOL.ROAD,
+  rail_track: PALETTE.TOOL.RAIL_TRACK,
+  zone_r: PALETTE.ZONE.RES_LOW, zone_rh: PALETTE.ZONE.RES_HIGH,
+  zone_c: PALETTE.ZONE.COM_LOW, zone_ch: PALETTE.ZONE.COM_HIGH,
+  zone_i: PALETTE.ZONE.IND, zone_o: PALETTE.ZONE.OFFICE,
+  demolish: PALETTE.TOOL.DEMOLISH,
+  power: PALETTE.INFRA.POWER, water: PALETTE.INFRA.WATER, police: PALETTE.INFRA.POLICE, fire: PALETTE.INFRA.FIRE,
+  hospital: PALETTE.INFRA.HOSPITAL, school: PALETTE.INFRA.SCHOOL, school_high: PALETTE.INFRA.SCHOOL_HIGH,
+  school_univ: PALETTE.INFRA.SCHOOL_UNIV, park: PALETTE.INFRA.PARK, garbage: PALETTE.INFRA.GARBAGE,
+  sewage: PALETTE.INFRA.SEWAGE, cemetery: PALETTE.INFRA.CEMETERY,
+  district: PALETTE.TOOL.DISTRICT,
+  bus_stop: PALETTE.TRANSPORT.BUS, metro_station: PALETTE.TRANSPORT.METRO, train_station: PALETTE.INFRA.SCHOOL,
+  ferry_dock: PALETTE.TRANSPORT.FERRY_DOCK, airport: PALETTE.TOOL.AIRPORT,
 };
 
 /** Map of tool types to auto-activated overlay (OCP: add new overlay mappings here). */
 const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
-  power: 'power', water: 'water', police: 'police', fire: 'fire',
-  hospital: 'health', school: 'education', school_high: 'education',
-  school_univ: 'education', park: 'park', garbage: 'garbage',
-  district: 'district',
+  power: OverlayType.POWER, water: OverlayType.WATER, police: OverlayType.POLICE, fire: OverlayType.FIRE,
+  hospital: OverlayType.HEALTH, school: OverlayType.EDUCATION, school_high: OverlayType.EDUCATION,
+  school_univ: OverlayType.EDUCATION, park: OverlayType.PARK, garbage: OverlayType.GARBAGE,
+  district: OverlayType.DISTRICT,
 };
 
 /**
@@ -484,7 +498,7 @@ export class Game {
     canvas.addEventListener('mousemove', (e) => {
       // Middle-button drag → orbit camera
       if (e.buttons & 4) {
-        this.sceneManager.orbitCamera(e.movementX * 0.005, e.movementY * 0.005);
+        this.sceneManager.orbitCamera(e.movementX * CAMERA_INPUT.ORBIT_SENSITIVITY, e.movementY * CAMERA_INPUT.ORBIT_SENSITIVITY);
         return;
       }
       // Space + left-button drag → pan camera
@@ -533,7 +547,7 @@ export class Game {
 
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      this.sceneManager.zoomCamera(e.deltaY * 0.05);
+      this.sceneManager.zoomCamera(e.deltaY * CAMERA_INPUT.ZOOM_SENSITIVITY);
     }, { passive: false });
 
     window.addEventListener('keydown', (e) => {
@@ -602,12 +616,12 @@ export class Game {
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
         this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
         this.simLoop.ensureLaneGraph(); // immediately rebuild + reroute buses
-        this.audioManager.playSfx('demolish');
+        this.audioManager.playSfx(SoundType.DEMOLISH);
         break;
       }
       case 'district':
         this.paintDistrict(x1, y1, x2, y2);
-        this.audioManager.playSfx('zone');
+        this.audioManager.playSfx(SoundType.ZONE);
         break;
       default: {
         // Data-driven road building (OCP: add new road types in TOOL_TO_ROAD_TYPE)
@@ -650,7 +664,7 @@ export class Game {
         const zoneType = TOOL_TO_ZONE[this.currentTool];
         if (zoneType !== undefined) {
           this.applyZone(x1, y1, x2, y2, zoneType);
-          this.audioManager.playSfx('zone');
+          this.audioManager.playSfx(SoundType.ZONE);
           break;
         }
         const infraType = TOOL_TO_INFRA[this.currentTool];
@@ -698,7 +712,7 @@ export class Game {
     if (result.success) {
       if (result.cost) this.state.budget.funds -= result.cost;
       onSuccess?.();
-      this.audioManager.playSfx('build');
+      this.audioManager.playSfx(SoundType.BUILD);
     } else if (!result.success && result.reason) {
       this.showNotification(`Cannot build ${label}: ${getBuildReasonMessage(result.reason)}`);
     }
@@ -794,7 +808,7 @@ export class Game {
 
     // Refresh overlay cache after demolish
     const activeOverlay = this.overlayRenderer.getOverlay();
-    if (activeOverlay !== 'none') {
+    if (activeOverlay !== OverlayType.NONE) {
       this.computeOverlayHighlightCells(activeOverlay);
     }
     return { evictedCitizenIds, buildingCells: evictCells };
@@ -882,12 +896,12 @@ export class Game {
     // Immediately recalculate coverage for road-based services so overlay updates
     this.recalculateServiceCoverage(type);
 
-    this.audioManager.playSfx('build');
+    this.audioManager.playSfx(SoundType.BUILD);
     this.dirty.buildings = true;
 
     // Refresh overlay if one is active for this service
     const activeOverlay = this.overlayRenderer.getOverlay();
-    if (activeOverlay !== 'none') {
+    if (activeOverlay !== OverlayType.NONE) {
       this.setOverlay(activeOverlay);
     }
   }
@@ -967,7 +981,7 @@ export class Game {
       buildingId: infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
       reserved: ROTATION_RESERVED[this.currentRotation],
     });
-    this.audioManager.playSfx('build');
+    this.audioManager.playSfx(SoundType.BUILD);
     this.dirty.buildings = true;
   }
 
@@ -995,7 +1009,7 @@ export class Game {
 
     // Place on grid — standard placeInfraOnGrid (correct dimensions from InfraConfig)
     placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
-    this.audioManager.playSfx('build');
+    this.audioManager.playSfx(SoundType.BUILD);
     this.dirty.buildings = true;
     return true;
   }
@@ -1004,7 +1018,7 @@ export class Game {
     this.elapsedTime += dt;
 
     // Camera movement
-    const panSpeed = 15 * dt;
+    const panSpeed = CAMERA_INPUT.PAN_SPEED * dt;
     if (this.keys.has('w') || this.keys.has('arrowup')) this.sceneManager.panCamera(0, -panSpeed);
     if (this.keys.has('s') || this.keys.has('arrowdown')) this.sceneManager.panCamera(0, panSpeed);
     if (this.keys.has('a') || this.keys.has('arrowleft')) this.sceneManager.panCamera(-panSpeed, 0);
@@ -1015,15 +1029,15 @@ export class Game {
       const tickInterval = this.state.clock.getTickInterval() / 1000;
       this.tickAccumulator += dt;
       // Cap accumulator to prevent massive backlog when tab regains focus
-      if (this.tickAccumulator > tickInterval * 10) {
-        this.tickAccumulator = tickInterval * 10;
+      if (this.tickAccumulator > tickInterval * CAMERA_INPUT.ACCUMULATOR_CAP_FACTOR) {
+        this.tickAccumulator = tickInterval * CAMERA_INPUT.ACCUMULATOR_CAP_FACTOR;
       }
       if (this.tickAccumulator >= tickInterval) {
         this.tickAccumulator -= tickInterval;
         this.simLoop.tick();
 
         // Push occupancy ratios to building renderer for night lighting
-        if (this.simLoop.occupancyRatios.size > 0 && this.state.clock.tick % 6 === 0) {
+        if (this.simLoop.occupancyRatios.size > 0 && this.state.clock.tick % CAMERA_INPUT.BUILDING_SYNC_INTERVAL === 0) {
           this.buildingRenderer.updateOccupancy(this.simLoop.occupancyRatios);
         }
 
@@ -1040,7 +1054,7 @@ export class Game {
         }
 
         // Safety-net rebuild: low-frequency fallback in case events are missed
-        if (this.state.clock.tick % 200 === 0) {
+        if (this.state.clock.tick % CAMERA_INPUT.SAFETY_REBUILD_INTERVAL === 0) {
           this.dirty.buildings = true;
           this.dirty.terrain = true;
         }
@@ -1127,7 +1141,7 @@ export class Game {
 
     // Refresh active overlay when relevant subsystems rebuilt
     const currentOverlay = this.overlayRenderer.getOverlay();
-    if (currentOverlay && currentOverlay !== 'none') {
+    if (currentOverlay && currentOverlay !== OverlayType.NONE) {
       this.setOverlay(currentOverlay);
     }
     // Re-apply highlight after rebuild (new meshes lose aHighlight)
@@ -1337,7 +1351,7 @@ export class Game {
       this.selectedBuilding = null;
       this.applyViewMode(ViewMode.NORMAL);
     }
-    this.audioManager.playSfx('click');
+    this.audioManager.playSfx(SoundType.CLICK);
     this.onUIUpdate?.();
   }
 
@@ -1666,14 +1680,14 @@ export class Game {
 
   toggleOverlay(type: OverlayType): void {
     if (this.overlayRenderer.getOverlay() === type) {
-      this.setOverlay('none');
+      this.setOverlay(OverlayType.NONE);
     } else {
       this.setOverlay(type);
     }
   }
 
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
-    if (type === 'none') return undefined;
+    if (type === OverlayType.NONE) return undefined;
     const data = new Map<string, number>();
     const ctx = this.state as OverlayBuildContext;
     this.state.grid.forEachCell((cell, x, y) => {
@@ -1688,11 +1702,11 @@ export class Game {
   /** Get road-cost overlay info: cost map + budget for a given overlay type. */
   private getRoadCostOverlay(overlayType: OverlayType): { costMap: ReadonlyMap<string, number>; budget: number; residentialOnly: boolean } | null {
     switch (overlayType) {
-      case 'police': return { costMap: this.state.police.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.POLICE_BUDGET, residentialOnly: false };
-      case 'fire': return { costMap: this.state.fire.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.FIRE_BUDGET, residentialOnly: false };
-      case 'garbage': return { costMap: this.state.garbage.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.GARBAGE_BUDGET, residentialOnly: true };
-      case 'health': return { costMap: this.state.health.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.HEALTH_BUDGET, residentialOnly: false };
-      case 'education': return { costMap: this.state.education.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET, residentialOnly: false };
+      case OverlayType.POLICE: return { costMap: this.state.police.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.POLICE_BUDGET, residentialOnly: false };
+      case OverlayType.FIRE: return { costMap: this.state.fire.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.FIRE_BUDGET, residentialOnly: false };
+      case OverlayType.GARBAGE: return { costMap: this.state.garbage.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.GARBAGE_BUDGET, residentialOnly: true };
+      case OverlayType.HEALTH: return { costMap: this.state.health.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.HEALTH_BUDGET, residentialOnly: false };
+      case OverlayType.EDUCATION: return { costMap: this.state.education.getCoveredCellsWithCost(), budget: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET, residentialOnly: false };
       default: return null;
     }
   }
@@ -1767,7 +1781,7 @@ export class Game {
 
     // Non-road services (park): single-color
     const fallbackColors: Partial<Record<OverlayType, number>> = {
-      park: 0x4caf50,
+      [OverlayType.PARK]: 0x4caf50,
     };
     const color = fallbackColors[overlayType];
     if (!color) return;
@@ -1946,7 +1960,7 @@ export class Game {
     if (milestone && milestone.id !== this.lastMilestoneId) {
       this.lastMilestoneId = milestone.id;
       this.showNotification(`Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`, 8);
-      this.audioManager.playSfx('milestone');
+      this.audioManager.playSfx(SoundType.MILESTONE);
       this.onUIUpdate?.();
     }
   }
@@ -1961,7 +1975,7 @@ export class Game {
     for (const { x, y } of result.damagedCells) {
       this.state.citizens.evictBuilding(`${x},${y}`, this.state.clock.tick);
     }
-    this.audioManager.playSfx('disaster');
+    this.audioManager.playSfx(SoundType.DISASTER);
     this.showNotification(formatDisasterMessage(result.disaster), 10);
     this.dirty.buildings = true;
     this.dirty.terrain = true;

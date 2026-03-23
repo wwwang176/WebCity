@@ -22,6 +22,16 @@ export const PEDESTRIAN = {
   VISUAL_MULTIPLIER: 3,
   /** Minimum effective pool size — dilutes small pools so rare trip types don't dominate */
   MIN_POOL_SIZE: 100,
+  /** Number of distinct pedestrian color variants */
+  COLOR_COUNT: 12,
+  /** Lateral offset random range (±half this value) */
+  LATERAL_OFFSET_RANGE: 0.08,
+  /** Minimum speed multiplier (random range: min .. min + SPEED_MULTIPLIER_RANGE) */
+  SPEED_MULTIPLIER_MIN: 0.5,
+  /** Speed multiplier random range added to min */
+  SPEED_MULTIPLIER_RANGE: 0.5,
+  /** Max retries for rejection sampling a sidewalk edge */
+  EDGE_SAMPLE_RETRIES: 10,
 } as const;
 
 export const DECORATIVE_PEDESTRIAN = {
@@ -169,10 +179,10 @@ export class PedestrianManager {
       ),
       state: PedestrianState.WALKING,
       waitTimer: 0,
-      colorIndex: id % 12,
+      colorIndex: id % PEDESTRIAN.COLOR_COUNT,
       age: 0,
-      lateralOffset: (Math.random() - 0.5) * 0.08,
-      speedMultiplier: 0.5 + Math.random() * 0.5,
+      lateralOffset: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+      speedMultiplier: PEDESTRIAN.SPEED_MULTIPLIER_MIN + Math.random() * PEDESTRIAN.SPEED_MULTIPLIER_RANGE,
     };
     this.agents.push(agent);
     return id;
@@ -290,7 +300,7 @@ export class PedestrianManager {
     for (let i = 0; i < count; i++) {
       // Pick a random sidewalk edge (skip crosswalks via rejection sampling)
       let edge = allEdges[Math.floor(Math.random() * allEdges.length)]!;
-      let retries = 10;
+      let retries = PEDESTRIAN.EDGE_SAMPLE_RETRIES;
       while (edge.type !== 'sidewalk' && retries-- > 0) {
         edge = allEdges[Math.floor(Math.random() * allEdges.length)]!;
       }
@@ -310,7 +320,7 @@ export class PedestrianManager {
         heading: 0,
         state: PedestrianState.WALKING,
         waitTimer: 0,
-        colorIndex: id % 12,
+        colorIndex: id % PEDESTRIAN.COLOR_COUNT,
         age: 0,
       };
       this.agents.push(agent);

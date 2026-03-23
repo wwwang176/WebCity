@@ -1,8 +1,9 @@
 import { gameSignals, getGame } from '../../store/gameStore';
+import { UI_COLORS } from '../../constants';
 
 function CapacityRow(props: { label: string; current: number; max: number; unit?: string; color: string }) {
   const pct = () => props.max > 0 ? Math.min(100, (props.current / props.max) * 100) : 0;
-  const fillColor = () => pct() > 90 ? '#ef5350' : pct() > 70 ? '#ffa726' : props.color;
+  const fillColor = () => pct() > 90 ? UI_COLORS.STATUS_BAD : pct() > 70 ? UI_COLORS.STATUS_WARN : props.color;
   return (
     <div style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px">
@@ -20,18 +21,18 @@ function CapacityRow(props: { label: string; current: number; max: number; unit?
 
 function SupplyDemandRow(props: { label: string; supply: number; demand: number; color: string; icon: string }) {
   const ratio = () => props.demand > 0 ? props.supply / props.demand : props.supply > 0 ? 2 : 0;
-  const statusColor = () => ratio() >= 1 ? '#66bb6a' : ratio() >= 0.7 ? '#ffa726' : '#ef5350';
+  const statusColor = () => ratio() >= 1 ? UI_COLORS.STATUS_GOOD : ratio() >= 0.7 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD;
   return (
     <div style="margin-bottom:14px">
       <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px">
         <span style="font-size:14px">{props.icon}</span>
-        <span style="font-size:13px;font-weight:600;color:#d0d8e8">{props.label}</span>
+        <span style={`font-size:13px;font-weight:600;color:${UI_COLORS.NEUTRAL}`}>{props.label}</span>
         <span style={{ 'font-size': '11px', 'margin-left': 'auto', color: statusColor(), 'font-weight': '600' }}>
           {(ratio() * 100).toFixed(0)}%
         </span>
       </div>
       <div style="display:flex;gap:16px;font-size:12px;margin-bottom:4px">
-        <div style="display:flex;gap:6px"><span style="color:#667a90">Supply</span><span style="color:#66bb6a;font-weight:500">{Math.round(props.supply)}</span></div>
+        <div style="display:flex;gap:6px"><span style="color:#667a90">Supply</span><span style={`color:${UI_COLORS.STATUS_GOOD};font-weight:500`}>{Math.round(props.supply)}</span></div>
         <div style="display:flex;gap:6px"><span style="color:#667a90">Demand</span><span style="color:#ef9a9a;font-weight:500">{Math.round(props.demand)}</span></div>
       </div>
       <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
@@ -76,12 +77,12 @@ export function InfraPage() {
   return (
     <>
       <SupplyDemandRow label="Power Grid" supply={data().pwrSupply} demand={data().pwrDemand} color="#ffeb3b" icon={'\u26A1'} />
-      <SupplyDemandRow label="Water Network" supply={data().wtrSupply} demand={data().wtrDemand} color="#42a5f5" icon={'\uD83D\uDCA7'} />
+      <SupplyDemandRow label="Water Network" supply={data().wtrSupply} demand={data().wtrDemand} color={UI_COLORS.ACCENT} icon={'\uD83D\uDCA7'} />
 
       <div class="section-title">Waste Management</div>
       <CapacityRow label="Landfill Usage" current={data().garbageLoad} max={data().garbageCap} color="#8d6e63" />
       {data().garbageOverflow > 0 && (
-        <div style="font-size:11px;color:#ef5350;margin-bottom:8px">
+        <div style={`font-size:11px;color:${UI_COLORS.STATUS_BAD};margin-bottom:8px`}>
           Overflow: {Math.round(data().garbageOverflow)} units (causing pollution)
         </div>
       )}
@@ -89,7 +90,7 @@ export function InfraPage() {
       <div class="section-title">Sewage Treatment</div>
       <CapacityRow label="Treatment Capacity" current={data().sewageCap > 0 ? data().sewageCap - data().sewageUntreated : 0} max={data().sewageCap} color="#607d8b" />
       {data().sewageUntreated > 0 && (
-        <div style="font-size:11px;color:#ffa726;margin-bottom:8px">
+        <div style={`font-size:11px;color:${UI_COLORS.STATUS_WARN};margin-bottom:8px`}>
           Untreated: {Math.round(data().sewageUntreated)} &rarr; Water pollution: {Math.round(data().waterPollution)}
         </div>
       )}
@@ -97,7 +98,7 @@ export function InfraPage() {
       <div class="section-title">Death Care</div>
       <CapacityRow label="Cemetery Capacity" current={data().cemUsed} max={data().cemCap} color="#78909c" />
       {data().unprocessed > 0 && (
-        <div style="font-size:11px;color:#ef5350;margin-bottom:8px">
+        <div style={`font-size:11px;color:${UI_COLORS.STATUS_BAD};margin-bottom:8px`}>
           Unprocessed deaths: {data().unprocessed} (happiness -20)
         </div>
       )}

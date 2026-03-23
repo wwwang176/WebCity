@@ -1,11 +1,27 @@
 import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
 
-export type OverlayType = 'none' | 'traffic' | 'landValue' | 'pollution' | 'crime' | 'power' | 'water' | 'zone' | 'police' | 'fire' | 'health' | 'education' | 'park' | 'garbage' | 'district';
+export enum OverlayType {
+  NONE = 'none',
+  TRAFFIC = 'traffic',
+  LAND_VALUE = 'landValue',
+  POLLUTION = 'pollution',
+  CRIME = 'crime',
+  POWER = 'power',
+  WATER = 'water',
+  ZONE = 'zone',
+  POLICE = 'police',
+  FIRE = 'fire',
+  HEALTH = 'health',
+  EDUCATION = 'education',
+  PARK = 'park',
+  GARBAGE = 'garbage',
+  DISTRICT = 'district',
+}
 
 export class OverlayRenderer {
   private mesh: THREE.Mesh | null = null;
-  private currentOverlay: OverlayType = 'none';
+  private currentOverlay: OverlayType = OverlayType.NONE;
   private readonly _reusableColor = new THREE.Color();
 
   getOverlay(): OverlayType {
@@ -16,7 +32,7 @@ export class OverlayRenderer {
     this.dispose(scene);
     this.currentOverlay = type;
 
-    if (type === 'none') return;
+    if (type === OverlayType.NONE) return;
 
     const w = grid.width;
     const h = grid.height;
@@ -60,38 +76,38 @@ export class OverlayRenderer {
   private getColor(type: OverlayType, value: number): THREE.Color {
     const c = this._reusableColor;
     switch (type) {
-      case 'traffic':
+      case OverlayType.TRAFFIC:
         return c.setHSL(0.33 - value * 0.33, 0.8, 0.5); // Green to red
-      case 'landValue':
+      case OverlayType.LAND_VALUE:
         return c.setHSL(0.6 - value * 0.6, 0.7, 0.5); // Blue to red
-      case 'pollution':
+      case OverlayType.POLLUTION:
         return c.setRGB(value, value * 0.3, 0); // Dark brown/orange
-      case 'crime':
+      case OverlayType.CRIME:
         return c.setRGB(value, 0, value * 0.5); // Purple
-      case 'power':
+      case OverlayType.POWER:
         if (value >= 0.8) return c.setRGB(0.2, 0.9, 0.3);
         if (value >= 0.3) return c.setRGB(1.0, 0.8, 0.1);
         if (value > 0) return c.setRGB(0.9, 0.2, 0.15);
         return c.setRGB(0, 0, 0);
-      case 'water':
+      case OverlayType.WATER:
         if (value >= 0.8) return c.setRGB(0.1, 0.5, 0.9);
         if (value >= 0.3) return c.setRGB(1.0, 0.8, 0.1);
         if (value >= 0.1) return c.setRGB(0.9, 0.2, 0.15);
         if (value > 0) return c.setRGB(0.0, 0.1 + value * 3, 0.3 + value * 5);
         return c.setRGB(0, 0, 0);
-      case 'zone':
+      case OverlayType.ZONE:
         return c.setRGB(value * 0.5, value, value * 0.3);
-      case 'police':
+      case OverlayType.POLICE:
         return c.setRGB(0.2, 0.3, value);
-      case 'fire':
+      case OverlayType.FIRE:
         return c.setRGB(value, 0.15, 0.1);
-      case 'health':
+      case OverlayType.HEALTH:
         return c.setRGB(value, 0.1, 0.4);
-      case 'education':
+      case OverlayType.EDUCATION:
         return c.setRGB(0.4, 0.3, value * 0.6);
-      case 'park':
+      case OverlayType.PARK:
         return c.setRGB(0.1, value, 0.2);
-      case 'garbage':
+      case OverlayType.GARBAGE:
         return c.setRGB(value * 0.5, value * 0.4, 0.1);
       default:
         return c.setRGB(0.5, 0.5, 0.5);

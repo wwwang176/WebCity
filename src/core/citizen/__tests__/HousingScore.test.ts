@@ -6,6 +6,8 @@ import {
   scoreCommute,
   serviceScore,
   scoreHousing,
+  POLLUTION_COMBO,
+  HOUSING_SCORE,
   type HousingCandidate,
 } from '../HousingScore';
 import type { Citizen } from '../types';
@@ -214,5 +216,22 @@ describe('scoreHousing (integration)', () => {
     const score = scoreHousing(citizen, candidate);
     expect(typeof score).toBe('number');
     expect(Number.isFinite(score)).toBe(true);
+  });
+
+  it('POLLUTION_COMBO weights should sum to 1', () => {
+    expect(POLLUTION_COMBO.GROUND_WEIGHT).toBe(0.7);
+    expect(POLLUTION_COMBO.NOISE_WEIGHT).toBe(0.3);
+    expect(POLLUTION_COMBO.GROUND_WEIGHT + POLLUTION_COMBO.NOISE_WEIGHT).toBeCloseTo(1.0);
+  });
+
+  it('HOUSING_SCORE constants should have correct values', () => {
+    expect(HOUSING_SCORE.LEVEL_MATCH_EXACT).toBe(30);
+    expect(HOUSING_SCORE.LEVEL_MATCH_NEAR).toBe(10);
+    expect(HOUSING_SCORE.LEVEL_MATCH_FAR).toBe(-10);
+    expect(HOUSING_SCORE.LAND_VALUE_MIDPOINT).toBe(128);
+    expect(HOUSING_SCORE.COMMUTE_NEAR).toBe(5);
+    expect(HOUSING_SCORE.COMMUTE_FAR).toBe(20);
+    expect(HOUSING_SCORE.SERVICE_MAX).toBe(6);
+    expect(HOUSING_SCORE.PARK_BONUS).toBe(5);
   });
 });

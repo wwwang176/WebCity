@@ -1,6 +1,7 @@
 import { createEffect, onMount } from 'solid-js';
+import { CHART_HISTORY_LENGTH, UI_COLORS } from '../constants';
 
-const ECON_MAX = 60;
+const ECON_MAX = CHART_HISTORY_LENGTH;
 
 export function EconChart(props: { history: { funds: number[]; income: number[]; expenses: number[] } }) {
   let canvas: HTMLCanvasElement | undefined;
@@ -23,7 +24,7 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
     const minFunds = Math.min(0, ...props.history.funds);
     const range = maxFunds - minFunds || 1;
 
-    ctx.strokeStyle = '#42a5f5';
+    ctx.strokeStyle = UI_COLORS.ACCENT;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < props.history.funds.length; i++) {
@@ -34,7 +35,7 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
     ctx.stroke();
 
     const maxInc = Math.max(1, ...props.history.income, ...props.history.expenses);
-    ctx.strokeStyle = '#66bb6a';
+    ctx.strokeStyle = UI_COLORS.STATUS_GOOD;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < props.history.income.length; i++) {
@@ -44,7 +45,7 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
     }
     ctx.stroke();
 
-    ctx.strokeStyle = '#ef5350';
+    ctx.strokeStyle = UI_COLORS.STATUS_BAD;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     for (let i = 0; i < props.history.expenses.length; i++) {
@@ -55,11 +56,11 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
     ctx.stroke();
 
     ctx.font = '9px sans-serif';
-    ctx.fillStyle = '#42a5f5';
+    ctx.fillStyle = UI_COLORS.ACCENT;
     ctx.fillText('Funds', 4, 10);
-    ctx.fillStyle = '#66bb6a';
+    ctx.fillStyle = UI_COLORS.STATUS_GOOD;
     ctx.fillText('Income', 50, 10);
-    ctx.fillStyle = '#ef5350';
+    ctx.fillStyle = UI_COLORS.STATUS_BAD;
     ctx.fillText('Expenses', 100, 10);
   };
 

@@ -3,6 +3,7 @@ import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 import { RailServiceType } from '../../core/transport/RailSystem';
 import type { TransportStop } from '../../core/transport/types';
+import { PALETTE, toCSS } from '../../ColorPalette';
 
 export function TransitModal(props: { open: boolean; onClose: () => void }) {
   const [version, setVersion] = createSignal(0);
@@ -197,15 +198,15 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
         {/* Bus */}
         <Show when={transitData().busStops.length > 0}>
           <div style={sectionStyle}>
-            <div style="color:#ff9800;font-weight:600;margin-bottom:4px">{'\u{1F68F}'} Bus System</div>
+            <div style="color:${toCSS(PALETTE.TRANSPORT.BUS)};font-weight:600;margin-bottom:4px">{'\u{1F68F}'} Bus System</div>
             <div style="font-size:12px;color:#aaa">Stops: {transitData().busStops.length} | Routes: {transitData().busRoutes.length} | Cost: ${transitData().busCost}/tick</div>
             <Show when={transitData().busStops.length >= 2}>
               <div style="display:flex;gap:4px">
-                <button onClick={() => createRouteAll('bus')} style={btnStyle('#ff9800')}>+ All stops</button>
-                <button onClick={() => startRouteBuilder('bus')} style={btnStyle('#ff9800')}>+ Custom</button>
+                <button onClick={() => createRouteAll('bus')} style={btnStyle('${toCSS(PALETTE.TRANSPORT.BUS)}')}>+ All stops</button>
+                <button onClick={() => startRouteBuilder('bus')} style={btnStyle('${toCSS(PALETTE.TRANSPORT.BUS)}')}>+ Custom</button>
               </div>
             </Show>
-            <RouteBuilderPanel type="bus" color="#ff9800" />
+            <RouteBuilderPanel type="bus" color="${toCSS(PALETTE.TRANSPORT.BUS)}" />
             {transitData().busRoutes.map((r: any, i: number) => (
               <div style={`font-size:11px;color:${r.suspended ? '#f44336' : '#ccc'};margin-top:4px;display:flex;justify-content:space-between;align-items:center`}>
                 <span>{r.suspended ? '\u26A0 ' : ''}Route {i + 1}: {r.stops.length} stops, {r.vehicles} vehicle(s){r.suspended ? ' (suspended)' : ''}</span>

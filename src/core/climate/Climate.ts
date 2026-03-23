@@ -1,4 +1,9 @@
-export type Season = 'spring' | 'summer' | 'autumn' | 'winter';
+export enum Season {
+  SPRING = 'spring',
+  SUMMER = 'summer',
+  AUTUMN = 'autumn',
+  WINTER = 'winter',
+}
 
 export enum ClimateType {
   TEMPERATE = 'TEMPERATE',
@@ -13,7 +18,7 @@ export interface SeasonEffects {
   happinessModifier: number;
 }
 
-const SEASONS: Season[] = ['spring', 'summer', 'autumn', 'winter'];
+const SEASONS: Season[] = [Season.SPRING, Season.SUMMER, Season.AUTUMN, Season.WINTER];
 
 /** Seasonal effect parameters */
 export const SEASON_EFFECTS = {
@@ -31,7 +36,7 @@ export function getSeasonFromTick(tick: number, ticksPerYear: number): Season {
   const tickInYear = tick % ticksPerYear;
   const quarterLength = ticksPerYear / 4;
   const seasonIndex = Math.floor(tickInYear / quarterLength);
-  return SEASONS[seasonIndex] ?? 'spring';
+  return SEASONS[seasonIndex] ?? Season.SPRING;
 }
 
 const DEFAULT_EFFECTS: SeasonEffects = { powerDemandMultiplier: 1.0, waterDemandMultiplier: 1.0, happinessModifier: 0 };

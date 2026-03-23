@@ -1,6 +1,7 @@
 import { createEffect, onMount } from 'solid-js';
+import { CHART_HISTORY_LENGTH, UI_COLORS } from '../constants';
 
-const CHART_MAX = 60;
+const CHART_MAX = CHART_HISTORY_LENGTH;
 
 export function PopChart(props: { history: { pop: number[]; happiness: number[] } }) {
   let canvas: HTMLCanvasElement | undefined;
@@ -20,7 +21,7 @@ export function PopChart(props: { history: { pop: number[]; happiness: number[] 
     }
 
     const maxPop = Math.max(10, ...props.history.pop);
-    ctx.strokeStyle = '#66bb6a';
+    ctx.strokeStyle = UI_COLORS.STATUS_GOOD;
     ctx.lineWidth = 2;
     ctx.beginPath();
     for (let i = 0; i < props.history.pop.length; i++) {
@@ -41,7 +42,7 @@ export function PopChart(props: { history: { pop: number[]; happiness: number[] 
     ctx.stroke();
 
     ctx.font = '9px sans-serif';
-    ctx.fillStyle = '#66bb6a';
+    ctx.fillStyle = UI_COLORS.STATUS_GOOD;
     ctx.fillText(`Pop: ${props.history.pop[props.history.pop.length - 1] ?? 0}`, 4, 10);
     ctx.fillStyle = '#ffd54f';
     ctx.fillText(`Happy: ${props.history.happiness[props.history.happiness.length - 1] ?? 0}%`, 80, 10);

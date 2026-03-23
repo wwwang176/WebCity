@@ -1,12 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { GameClock, TIME_PERIOD, SPEED_INTERVALS } from '../GameClock';
-import { createGameState, type GameState } from '../GameState';
+import { GameClock, TIME_PERIOD, SPEED_INTERVALS, TimeOfDay } from '../GameClock';
+import { createGameState, DEFAULT_GRID_SIZE, INITIAL_RCI_DEMAND, type GameState } from '../GameState';
 import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import { PolicyType, Specialization } from '../../district/types';
 import { setSpecialization } from '../../district/Specialization';
 import { CitySpecType } from '../../district/CitySpecialization';
+import { DEFAULT_TAX_RATE } from '../../economy/Tax';
 
 /** Add power+water plants adjacent to a position so buildings there get utilities. */
 function provideUtilities(state: GameState, x: number, y: number): void {
@@ -156,27 +157,27 @@ describe('GameClock', () => {
   it('getTimeOfDay should return correct period for each hour range', () => {
     const clock = new GameClock();
     // night: 22-5
-    expect(clock.getTimeOfDay()).toBe('night'); // hour 0
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.NIGHT); // hour 0
     for (let i = 0; i < 5; i++) clock.advance();
-    expect(clock.getTimeOfDay()).toBe('night'); // hour 5
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.NIGHT); // hour 5
 
     clock.advance(); // hour 6
-    expect(clock.getTimeOfDay()).toBe('morning_rush');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.MORNING_RUSH);
     for (let i = 0; i < 3; i++) clock.advance(); // hour 9
-    expect(clock.getTimeOfDay()).toBe('morning_rush');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.MORNING_RUSH);
 
     clock.advance(); // hour 10
-    expect(clock.getTimeOfDay()).toBe('midday');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.MIDDAY);
     for (let i = 0; i < 6; i++) clock.advance(); // hour 16
-    expect(clock.getTimeOfDay()).toBe('midday');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.MIDDAY);
 
     clock.advance(); // hour 17
-    expect(clock.getTimeOfDay()).toBe('evening_rush');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.EVENING_RUSH);
     for (let i = 0; i < 4; i++) clock.advance(); // hour 21
-    expect(clock.getTimeOfDay()).toBe('evening_rush');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.EVENING_RUSH);
 
     clock.advance(); // hour 22
-    expect(clock.getTimeOfDay()).toBe('night');
+    expect(clock.getTimeOfDay()).toBe(TimeOfDay.NIGHT);
   });
 
   it('TIME_PERIOD constants should form valid non-overlapping ranges', () => {
@@ -208,6 +209,21 @@ describe('GameState', () => {
     expect(state.grid.width).toBe(50);
     expect(state.budget.funds).toBe(50000);
     expect(state.citizens.getPopulation()).toBe(0);
+  });
+
+  it('DEFAULT_GRID_SIZE should be 200', () => {
+    expect(DEFAULT_GRID_SIZE).toBe(200);
+  });
+
+  it('INITIAL_RCI_DEMAND should be 50', () => {
+    expect(INITIAL_RCI_DEMAND).toBe(50);
+  });
+
+  it('createGameState uses defaults for RCI demand', () => {
+    const state = createGameState(10, 10);
+    expect(state.rciDemand.residential).toBe(INITIAL_RCI_DEMAND);
+    expect(state.rciDemand.commercial).toBe(INITIAL_RCI_DEMAND);
+    expect(state.rciDemand.industrial).toBe(INITIAL_RCI_DEMAND);
   });
 });
 
@@ -601,7 +617,7 @@ describe('Specialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     // 3 buildings × companyIncome(10) × levelMult(1.0) × 1.5 (tourism bonus) × businessTaxRate/100
-    const businessTax = state.taxRates.business ?? 9;
+    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
     const expectedWithBonus = 3 * 10 * 1.0 * 1.5 * (businessTax / 100);
     expect(state.budget.income).toBeCloseTo(expectedWithBonus, 1);
   });
@@ -620,7 +636,7 @@ describe('Specialization integration', () => {
 
     // Both buildings should generate same revenue (no bonus)
     // Small Shop: companyIncome=10, Lv1, levelMult=1.0
-    const businessTax = state.taxRates.business ?? 9;
+    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
     const expected = 2 * 10 * 1.0 * (businessTax / 100); // 2 buildings × companyIncome × businessTax
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
@@ -644,7 +660,7 @@ describe('CitySpecialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     // companyIncome(10) × levelMult(1.0) × businessTax/100 × gambling(1.4)
-    const businessTax = state.taxRates.business ?? 9;
+    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
     const expected = 10 * 1.0 * (businessTax / 100) * 1.4;
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });
@@ -660,7 +676,7 @@ describe('CitySpecialization integration', () => {
     for (let i = 0; i < 6; i++) loop.tick();
 
     // companyIncome(20) × levelMult(1.0) × businessTax/100 × tech(1.25)
-    const businessTax = state.taxRates.business ?? 9;
+    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
     const expected = 20 * 1.0 * (businessTax / 100) * 1.25;
     expect(state.budget.income).toBeCloseTo(expected, 1);
   });

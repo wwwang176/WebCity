@@ -27,12 +27,21 @@ export function scoreEducationMatch(education: EducationLevel, zoneType: ZoneTyp
 
 // scoreWorkplaceCommute removed — shared scoreCommute from HousingScore.ts (DRY)
 
+/** Commute scoring constants for job relocation */
+export const COMMUTE_SCORE = {
+  NO_PATH_PENALTY: -20,
+  SHORT_DISTANCE: 10,
+  SHORT_BONUS: 15,
+  LONG_DISTANCE: 40,
+  LONG_PENALTY: -15,
+} as const;
+
 /** Score commute based on Dijkstra road cost (used by job relocation). */
 export function scoreCommuteByCost(cost: number | null): number {
-  if (cost === null) return -20;
-  if (cost <= 10) return 15;
-  if (cost > 40) return -15;
-  return Math.round(15 - (cost - 10) * (30 / 30));
+  if (cost === null) return COMMUTE_SCORE.NO_PATH_PENALTY;
+  if (cost <= COMMUTE_SCORE.SHORT_DISTANCE) return COMMUTE_SCORE.SHORT_BONUS;
+  if (cost > COMMUTE_SCORE.LONG_DISTANCE) return COMMUTE_SCORE.LONG_PENALTY;
+  return Math.round(COMMUTE_SCORE.SHORT_BONUS - (cost - COMMUTE_SCORE.SHORT_DISTANCE) * ((COMMUTE_SCORE.SHORT_BONUS - COMMUTE_SCORE.LONG_PENALTY) / (COMMUTE_SCORE.LONG_DISTANCE - COMMUTE_SCORE.SHORT_DISTANCE)));
 }
 
 /** Job relocation scoring: education match + road-cost commute. */

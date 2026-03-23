@@ -1,5 +1,6 @@
 import { gameSignals, getGame } from '../../store/gameStore';
 import { getResidentialServiceRatios } from '../../../core/service/ServiceCoverageQuery';
+import { UI_COLORS } from '../../constants';
 
 interface ServiceRow {
   label: string;
@@ -10,7 +11,7 @@ interface ServiceRow {
 
 function CoverageBar(props: { row: ServiceRow }) {
   const pct = () => Math.round(props.row.ratio * 100);
-  const barColor = () => pct() >= 80 ? props.row.color : pct() >= 50 ? '#ffa726' : '#ef5350';
+  const barColor = () => pct() >= 80 ? props.row.color : pct() >= 50 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD;
   return (
     <div style="margin-bottom:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
@@ -38,9 +39,9 @@ export function ServicesPage() {
 
     const rows: ServiceRow[] = [
       { label: 'Power', ratio: ratios.poweredRatio, color: '#ffeb3b', icon: '\u26A1' },
-      { label: 'Water', ratio: ratios.wateredRatio, color: '#42a5f5', icon: '\uD83D\uDCA7' },
+      { label: 'Water', ratio: ratios.wateredRatio, color: UI_COLORS.ACCENT, icon: '\uD83D\uDCA7' },
       { label: 'Police', ratio: ratios.policeRatio, color: '#5c6bc0', icon: '\uD83D\uDE94' },
-      { label: 'Fire', ratio: ratios.fireRatio, color: '#ef5350', icon: '\uD83D\uDE92' },
+      { label: 'Fire', ratio: ratios.fireRatio, color: UI_COLORS.STATUS_BAD, icon: '\uD83D\uDE92' },
       { label: 'Health', ratio: ratios.healthRatio, color: '#ec407a', icon: '\uD83C\uDFE5' },
       { label: 'Education', ratio: ratios.educationRatio, color: '#ab47bc', icon: '\uD83C\uDFEB' },
       { label: 'Garbage', ratio: ratios.garbageRatio, color: '#8d6e63', icon: '\uD83D\uDDD1' },
@@ -58,14 +59,14 @@ export function ServicesPage() {
       <div class="summary-grid" style="grid-template-columns:1fr 1fr">
         <div class="summary-card">
           <div class="sc-value" style={{
-            color: data().avgCoverage >= 0.8 ? '#66bb6a' : data().avgCoverage >= 0.5 ? '#ffa726' : '#ef5350'
+            color: data().avgCoverage >= 0.8 ? UI_COLORS.STATUS_GOOD : data().avgCoverage >= 0.5 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD
           }}>
             {(data().avgCoverage * 100).toFixed(0)}%
           </div>
           <div class="sc-label">Avg Coverage</div>
         </div>
         <div class="summary-card">
-          <div class="sc-value" style={{ color: data().gaps.length === 0 ? '#66bb6a' : '#ef5350' }}>
+          <div class="sc-value" style={{ color: data().gaps.length === 0 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD }}>
             {data().gaps.length}
           </div>
           <div class="sc-label">Critical Gaps (&lt;50%)</div>
