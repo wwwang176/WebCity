@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getSeasonFromTick, getSeasonEffects, ClimateType, SEASON_EFFECTS, SEASON_EFFECT_OVERRIDES } from '../Climate';
+import { getSeasonFromTick, getSeasonEffects, ClimateType, Season, SEASON_EFFECTS, SEASON_EFFECT_OVERRIDES } from '../Climate';
 import {
   DisasterType,
   createDisaster,
@@ -29,44 +29,44 @@ describe('Climate - Season System', () => {
   const TICKS_PER_YEAR = 1200;
 
   it('should return spring for tick 0', () => {
-    expect(getSeasonFromTick(0, TICKS_PER_YEAR)).toBe('spring');
+    expect(getSeasonFromTick(0, TICKS_PER_YEAR)).toBe(Season.SPRING);
   });
 
   it('should cycle spring -> summer -> autumn -> winter', () => {
     const quarter = TICKS_PER_YEAR / 4;
-    expect(getSeasonFromTick(0, TICKS_PER_YEAR)).toBe('spring');
-    expect(getSeasonFromTick(quarter, TICKS_PER_YEAR)).toBe('summer');
-    expect(getSeasonFromTick(quarter * 2, TICKS_PER_YEAR)).toBe('autumn');
-    expect(getSeasonFromTick(quarter * 3, TICKS_PER_YEAR)).toBe('winter');
+    expect(getSeasonFromTick(0, TICKS_PER_YEAR)).toBe(Season.SPRING);
+    expect(getSeasonFromTick(quarter, TICKS_PER_YEAR)).toBe(Season.SUMMER);
+    expect(getSeasonFromTick(quarter * 2, TICKS_PER_YEAR)).toBe(Season.AUTUMN);
+    expect(getSeasonFromTick(quarter * 3, TICKS_PER_YEAR)).toBe(Season.WINTER);
   });
 
   it('should wrap around after a full year', () => {
-    expect(getSeasonFromTick(TICKS_PER_YEAR, TICKS_PER_YEAR)).toBe('spring');
-    expect(getSeasonFromTick(TICKS_PER_YEAR + 1, TICKS_PER_YEAR)).toBe('spring');
+    expect(getSeasonFromTick(TICKS_PER_YEAR, TICKS_PER_YEAR)).toBe(Season.SPRING);
+    expect(getSeasonFromTick(TICKS_PER_YEAR + 1, TICKS_PER_YEAR)).toBe(Season.SPRING);
   });
 
   it('winter should increase power demand by x1.3', () => {
-    const effects = getSeasonEffects('winter', ClimateType.TEMPERATE);
+    const effects = getSeasonEffects(Season.WINTER, ClimateType.TEMPERATE);
     expect(effects.powerDemandMultiplier).toBe(1.3);
   });
 
   it('winter should decrease happiness by -5', () => {
-    const effects = getSeasonEffects('winter', ClimateType.TEMPERATE);
+    const effects = getSeasonEffects(Season.WINTER, ClimateType.TEMPERATE);
     expect(effects.happinessModifier).toBe(-5);
   });
 
   it('spring should give happiness +5', () => {
-    const effects = getSeasonEffects('spring', ClimateType.TEMPERATE);
+    const effects = getSeasonEffects(Season.SPRING, ClimateType.TEMPERATE);
     expect(effects.happinessModifier).toBe(5);
   });
 
   it('summer in tropical should increase water demand by x1.2', () => {
-    const effects = getSeasonEffects('summer', ClimateType.TROPICAL);
+    const effects = getSeasonEffects(Season.SUMMER, ClimateType.TROPICAL);
     expect(effects.waterDemandMultiplier).toBe(1.2);
   });
 
   it('autumn in temperate should have neutral effects', () => {
-    const effects = getSeasonEffects('autumn', ClimateType.TEMPERATE);
+    const effects = getSeasonEffects(Season.AUTUMN, ClimateType.TEMPERATE);
     expect(effects.powerDemandMultiplier).toBe(1.0);
     expect(effects.waterDemandMultiplier).toBe(1.0);
     expect(effects.happinessModifier).toBe(0);
@@ -256,14 +256,14 @@ describe('DAMAGE config', () => {
 
 describe('SEASON_EFFECT_OVERRIDES', () => {
   it('should have an override for every season', () => {
-    const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+    const seasons = [Season.SPRING, Season.SUMMER, Season.AUTUMN, Season.WINTER];
     for (const season of seasons) {
       expect(typeof SEASON_EFFECT_OVERRIDES[season]).toBe('function');
     }
   });
 
   it('should produce same results as getSeasonEffects', () => {
-    const seasons = ['spring', 'summer', 'autumn', 'winter'] as const;
+    const seasons = [Season.SPRING, Season.SUMMER, Season.AUTUMN, Season.WINTER];
     const climates = [ClimateType.TEMPERATE, ClimateType.TROPICAL, ClimateType.ARID, ClimateType.CONTINENTAL];
     for (const season of seasons) {
       for (const climate of climates) {

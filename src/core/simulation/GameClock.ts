@@ -1,3 +1,5 @@
+import { Season } from '../climate/Climate';
+
 export type GameSpeed = 0 | 1 | 3 | 5 | 10;
 
 export enum TimeOfDay {
@@ -68,12 +70,12 @@ export class GameClock {
     return TimeOfDay.EVENING_RUSH;
   }
 
-  getSeason(): 'spring' | 'summer' | 'autumn' | 'winter' {
+  getSeason(): Season {
     const month = this.getMonth() % 12;
-    if (month < 3) return 'spring';
-    if (month < 6) return 'summer';
-    if (month < 9) return 'autumn';
-    return 'winter';
+    if (month < 3) return Season.SPRING;
+    if (month < 6) return Season.SUMMER;
+    if (month < 9) return Season.AUTUMN;
+    return Season.WINTER;
   }
 
   getTickInterval(): number {

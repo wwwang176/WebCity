@@ -2,6 +2,7 @@ import { createSignal, batch } from 'solid-js';
 import type { Game, ToolType, SelectedBuilding } from '../../Game';
 import { ViewMode } from '../../core/ViewMode';
 import { CHART_HISTORY_LENGTH } from '../constants';
+import { Season } from '../../core/climate/Climate';
 
 // --- High-frequency signals (updated every updateUI call) ---
 const [date, setDate] = createSignal('Day 1');
@@ -67,7 +68,7 @@ export function initGameStore(game: Game): void {
 
     batch(() => {
       const SEASON_LABELS = ['Spring', 'Summer', 'Autumn', 'Winter'] as const;
-      const seasonIdx = ['spring', 'summer', 'autumn', 'winter'].indexOf(clock.getSeason());
+      const seasonIdx = [Season.SPRING, Season.SUMMER, Season.AUTUMN, Season.WINTER].indexOf(clock.getSeason());
       setDate(`${SEASON_LABELS[seasonIdx]} · Week ${clock.getWeek() + 1}`);
       setFunds(Math.floor(state.budget.funds));
       setPopulation(pop);
