@@ -1258,18 +1258,14 @@ export class Game {
         const edgeIdx = Math.min(v.edgeIndex, v.edgePath.length - 1);
         const edge = v.edgePath[edgeIdx]!;
 
-        // Compute effective level for from/to (ramp cells use midpoint level)
-        const fromRawLevel = parseLevelFromKey(edge.from.cellKey);
-        const toRawLevel = parseLevelFromKey(edge.to.cellKey);
-        const fromEffective = this.getEffectiveLevel(edge.from.cellKey, fromRawLevel);
-        const toEffective = this.getEffectiveLevel(edge.to.cellKey, toRawLevel);
-
-        // Interpolate elevation along edge progress
+        // Interpolate elevation along edge (boundary points align with ramp)
+        const fromLevel = parseLevelFromKey(edge.from.cellKey);
+        const toLevel = parseLevelFromKey(edge.to.cellKey);
         const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-        elevation = fromEffective + (toEffective - fromEffective) * t;
+        elevation = fromLevel + (toLevel - fromLevel) * t;
 
         // Check if current cell is a ramp for pitch tilt
-        const cellLevel = Math.max(fromRawLevel, toRawLevel);
+        const cellLevel = Math.max(fromLevel, toLevel);
         if (cellLevel > 0) {
           const cp = parsePosKeyUnsafe(edge.from.cellKey);
           const seg = this.elevationManager.get(cp.x, cp.y, cellLevel);
@@ -1410,14 +1406,6 @@ export class Game {
   getElevationLevel(): number { return this.elevationLevel; }
   getElevationManager(): ElevationManager { return this.elevationManager; }
 
-  /** Get effective elevation level for a cell key (ramp cells return midpoint). */
-  private getEffectiveLevel(cellKey: string, rawLevel: number): number {
-    if (rawLevel === 0) return 0;
-    const cp = parsePosKeyUnsafe(cellKey);
-    const seg = this.elevationManager.get(cp.x, cp.y, rawLevel);
-    if (seg?.isRamp) return rawLevel - 0.5; // ramp center = midpoint between levels
-    return rawLevel;
-  }
 
   toggleViewMode(mode: ViewMode = ViewMode.UNDERGROUND): void {
     const next = this.viewMode === mode ? ViewMode.NORMAL : mode;
