@@ -1,7 +1,11 @@
 import type { WorkplaceDistanceClient } from './WorkplaceDistanceClient';
 import type { WorkplaceDistanceEntry, WorkplacePosition } from './WorkplaceDistanceTypes';
 
-export type CacheStatus = 'empty' | 'computing' | 'ready';
+export enum CacheStatus {
+  EMPTY = 'empty',
+  COMPUTING = 'computing',
+  READY = 'ready',
+}
 
 /**
  * Caches precomputed road distances from workplaces to all reachable cells.
@@ -9,8 +13,8 @@ export type CacheStatus = 'empty' | 'computing' | 'ready';
  * Computation is done in a web worker; main thread only does O(1) lookups.
  */
 export class WorkplaceDistanceCache {
-  private status: CacheStatus = 'empty';
-  /** Set to true if invalidate() is called while status === 'computing'. */
+  private status: CacheStatus = CacheStatus.EMPTY;
+  /** Set to true if invalidate() is called while status === CacheStatus.COMPUTING. */
   private invalidatedDuringBuild = false;
   /** workplace pos → (cell pos → cost) */
   private table = new Map<string, Map<string, number>>();
@@ -22,16 +26,16 @@ export class WorkplaceDistanceCache {
 
   /** Mark cache as invalid. If computing, the result will be discarded. */
   invalidate(): void {
-    if (this.status === 'computing') {
+    if (this.status === CacheStatus.COMPUTING) {
       this.invalidatedDuringBuild = true;
     } else {
-      this.status = 'empty';
+      this.status = CacheStatus.EMPTY;
     }
   }
 
   /** Force full reset (e.g. on game load). */
   reset(): void {
-    this.status = 'empty';
+    this.status = CacheStatus.EMPTY;
     this.table.clear();
     this.invalidatedDuringBuild = false;
   }
@@ -45,15 +49,15 @@ export class WorkplaceDistanceCache {
     maxBudget: number,
   ): boolean {
     if (!this.client) return false;
-    if (this.status === 'computing') return false;
-    this.status = 'computing';
+    if (this.status === CacheStatus.COMPUTING) return false;
+    this.status = CacheStatus.COMPUTING;
     this.invalidatedDuringBuild = false;
 
     this.client.compute(gridWidth, gridHeight, gridBuffer, workplaces, maxBudget)
       .then(entries => this.applyResult(entries))
       .catch(() => {
         // Worker error — reset to empty so next tick retries
-        this.status = 'empty';
+        this.status = CacheStatus.EMPTY;
         this.invalidatedDuringBuild = false;
       });
     return true;
@@ -64,7 +68,7 @@ export class WorkplaceDistanceCache {
     if (this.invalidatedDuringBuild) {
       // Data changed while computing → discard and wait for next request
       this.invalidatedDuringBuild = false;
-      this.status = 'empty';
+      this.status = CacheStatus.EMPTY;
       return;
     }
     this.table.clear();
@@ -73,7 +77,7 @@ export class WorkplaceDistanceCache {
         ([k, v]) => [k, v as number],
       )));
     }
-    this.status = 'ready';
+    this.status = CacheStatus.READY;
   }
 
   /** For testing: synchronously populate the cache from pre-built entries. */
@@ -84,7 +88,7 @@ export class WorkplaceDistanceCache {
         ([k, v]) => [k, v as number],
       )));
     }
-    this.status = 'ready';
+    this.status = CacheStatus.READY;
     this.invalidatedDuringBuild = false;
   }
 
@@ -112,7 +116,7 @@ export class WorkplaceDistanceCache {
     return result;
   }
 
-  get isReady(): boolean { return this.status === 'ready'; }
-  get isStale(): boolean { return this.status === 'empty'; }
+  get isReady(): boolean { return this.status === CacheStatus.READY; }
+  get isStale(): boolean { return this.status === CacheStatus.EMPTY; }
   getStatus(): CacheStatus { return this.status; }
 }
