@@ -1,5 +1,5 @@
 import { createSignal, batch } from 'solid-js';
-import type { Game, ToolType, SelectedBuilding } from '../../Game';
+import type { Game, ToolType, SelectedBuilding, PlacementMode } from '../../Game';
 import { ViewMode } from '../../core/ViewMode';
 import { CHART_HISTORY_LENGTH } from '../constants';
 import { Season } from '../../core/climate/Climate';
@@ -23,6 +23,8 @@ const [rciDemand, setRciDemand] = createSignal({ residential: 0, commercial: 0, 
 const [viewMode, setViewMode] = createSignal<ViewMode>(ViewMode.NORMAL);
 const [powerSupply, setPowerSupply] = createSignal(0);
 const [powerDemand, setPowerDemand] = createSignal(0);
+const [placementMode, setPlacementMode] = createSignal<PlacementMode>('ground');
+const [elevationLevel, setElevationLevel] = createSignal(1);
 
 // --- Throttled tick signal for modal live-refresh (fixed ~6 updates/sec regardless of FPS) ---
 const [tick, setTick] = createSignal(0);
@@ -41,7 +43,7 @@ export const gameSignals = {
   currentTool, previewCost, paused, speed,
   selectedBuilding, notification, currentOverlay,
   currentRotation, rciDemand, chartHistory, econHistory,
-  viewMode, tick, powerSupply, powerDemand,
+  viewMode, tick, powerSupply, powerDemand, placementMode, elevationLevel,
 };
 
 // --- Game instance reference ---
@@ -86,6 +88,8 @@ export function initGameStore(game: Game): void {
       setViewMode(game.viewMode);
       setPowerSupply(state.power.getSupply());
       setPowerDemand(Math.round(state.power.getDemand()));
+      setPlacementMode(game.getPlacementMode());
+      setElevationLevel(game.getElevationLevel());
       if (state.rciDemand) {
         setRciDemand({
           residential: state.rciDemand.residential,

@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
-import type { ToolType } from '../../Game';
+import type { ToolType, PlacementMode } from '../../Game';
 import { UI_COLORS } from '../constants';
 import { PALETTE, toCSS } from '../../ColorPalette';
 // AirportSize import removed — airport tools now use separate ToolType entries
@@ -175,6 +175,35 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
         item={{ tool: 'demolish', label: 'Demolish', key: '0', color: UI_COLORS.STATUS_BAD, icon: '\u{1F4A5}' }}
         onClick={selectStandalone}
       />
+
+      <Show when={gameSignals.currentTool() === 'road_rural' || gameSignals.currentTool() === 'road_2lane' || gameSignals.currentTool() === 'road_4lane' || gameSignals.currentTool() === 'road_6lane' || gameSignals.currentTool() === 'road_highway' || gameSignals.currentTool() === 'road' || gameSignals.currentTool() === 'rail_track'}>
+        <div class="tb-sep" />
+        <div class="tb-elevation-mode" role="radiogroup" aria-label="Placement mode">
+          <button
+            class="tb-btn"
+            classList={{ active: gameSignals.placementMode() === 'ground' }}
+            onClick={() => getGame().setPlacementMode('ground')}
+            aria-label="Ground mode"
+          >
+            <span class="tb-icon">{'\u{1F6E3}'}</span>
+            <span>Ground</span>
+          </button>
+          <button
+            class="tb-btn"
+            classList={{ active: gameSignals.placementMode() === 'elevated' }}
+            onClick={() => getGame().setPlacementMode('elevated')}
+            aria-label="Elevated mode"
+          >
+            <span class="tb-icon">{'\u{1F309}'}</span>
+            <span>Elevated</span>
+          </button>
+          <Show when={gameSignals.placementMode() === 'elevated'}>
+            <span class="tb-elevation-level" aria-label="Elevation level">
+              Lv.{gameSignals.elevationLevel()}
+            </span>
+          </Show>
+        </div>
+      </Show>
 
       <div class="tb-sep" />
       <RCIBar />

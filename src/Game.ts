@@ -77,6 +77,9 @@ import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 import { AirplaneAnimator } from './renderer/AirplaneAnimator';
+import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath } from './core/elevation';
+
+export type PlacementMode = 'ground' | 'elevated';
 
 
 
@@ -285,6 +288,9 @@ export class Game {
   private roadBuilder: RoadBuilder;
   private railBuilder: RailBuilder;
   private railNetwork: RailNetwork;
+  private elevationManager: ElevationManager;
+  private elevatedRoadBuilder: ElevatedRoadBuilder;
+  private elevatedRailBuilder: ElevatedRailBuilder;
   private zoneManager: ZoneManager;
   private audioManager: AudioManager;
   private autoSaver: AutoSaver;
@@ -308,6 +314,8 @@ export class Game {
   // UI state
   currentTool: ToolType = 'select';
   currentRoadType: RoadType = RoadType.TWO_LANE;
+  placementMode: PlacementMode = 'ground';
+  elevationLevel = 1; // target elevation level when in elevated mode (1-3)
   paused = false;
   speed = 1;
   selectedBuilding: SelectedBuilding | null = null;
@@ -422,6 +430,9 @@ export class Game {
     this.roadBuilder = new RoadBuilder(this.state.grid);
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
+    this.elevationManager = new ElevationManager();
+    this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
+    this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);
@@ -553,6 +564,18 @@ export class Game {
     window.addEventListener('keydown', (e) => {
       // Prevent default for F1-F6 (overlay toggles)
       if (/^f[1-6]$/i.test(e.key)) e.preventDefault();
+      // PageUp/PageDown: adjust elevation level during elevated drag
+      if (e.key === 'PageUp' || e.key === 'PageDown') {
+        e.preventDefault();
+        if (this.placementMode === 'elevated' && this.isDragBuildTool()) {
+          this.elevationLevel = e.key === 'PageUp'
+            ? Math.min(3, this.elevationLevel + 1)
+            : Math.max(1, this.elevationLevel - 1);
+          this.updatePreviewLine();
+          this.onUIUpdate?.();
+        }
+        return;
+      }
       // Space: ignore if focus is on an input element
       if (e.key === ' ') {
         const tag = (document.activeElement as HTMLElement)?.tagName;
@@ -626,39 +649,61 @@ export class Game {
       default: {
         // Data-driven road building (OCP: add new road types in TOOL_TO_ROAD_TYPE)
         if (TOOL_TO_ROAD_TYPE[this.currentTool] !== undefined) {
-          const result = this.roadBuilder.buildRoad(
-            { x: x1, y: y1 }, { x: x2, y: y2 },
-            this.currentRoadType,
-            this.state.budget.funds,
-          );
-          this.handleBuildResult(result, 'road', () => {
-            this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])]);
-            this.recalculateAllRoadCoverage();
-            if (result.demolishedCells) {
-              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
-            }
-          });
-          this.dirty.roads = true;
-          this.dirty.crossings = true;
-          this.dirty.trafficLights = true;
-          this.dirty.buildings = true;
+          if (this.placementMode === 'elevated') {
+            const result = this.elevatedRoadBuilder.buildElevatedRoad(
+              { x: x1, y: y1 }, { x: x2, y: y2 },
+              this.currentRoadType, this.state.budget.funds, this.elevationLevel,
+            );
+            this.handleBuildResult(result, 'elevated road', () => {
+              if (result.affectedCells) this.simLoop.markLaneGraphDirty(result.affectedCells);
+            });
+            this.dirty.roads = true;
+            this.dirty.buildings = true;
+          } else {
+            const result = this.roadBuilder.buildRoad(
+              { x: x1, y: y1 }, { x: x2, y: y2 },
+              this.currentRoadType,
+              this.state.budget.funds,
+            );
+            this.handleBuildResult(result, 'road', () => {
+              this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])]);
+              this.recalculateAllRoadCoverage();
+              if (result.demolishedCells) {
+                for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+              }
+            });
+            this.dirty.roads = true;
+            this.dirty.crossings = true;
+            this.dirty.trafficLights = true;
+            this.dirty.buildings = true;
+          }
           break;
         }
         // Rail track building
         if (this.currentTool === 'rail_track') {
-          const result = this.railBuilder.buildTrack(
-            { x: x1, y: y1 }, { x: x2, y: y2 },
-            this.state.budget.funds,
-          );
-          this.handleBuildResult(result, 'track', () => {
-            if (result.demolishedCells) {
-              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
-              this.simLoop.markLaneGraphDirty(result.demolishedCells);
-            }
-          });
-          this.dirty.tracks = true;
-          this.dirty.crossings = true;
-          this.dirty.buildings = true;
+          if (this.placementMode === 'elevated') {
+            const result = this.elevatedRailBuilder.buildElevatedTrack(
+              { x: x1, y: y1 }, { x: x2, y: y2 },
+              this.state.budget.funds, this.elevationLevel,
+            );
+            this.handleBuildResult(result, 'elevated track');
+            this.dirty.tracks = true;
+            this.dirty.buildings = true;
+          } else {
+            const result = this.railBuilder.buildTrack(
+              { x: x1, y: y1 }, { x: x2, y: y2 },
+              this.state.budget.funds,
+            );
+            this.handleBuildResult(result, 'track', () => {
+              if (result.demolishedCells) {
+                for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+                this.simLoop.markLaneGraphDirty(result.demolishedCells);
+              }
+            });
+            this.dirty.tracks = true;
+            this.dirty.crossings = true;
+            this.dirty.buildings = true;
+          }
           break;
         }
         const zoneType = TOOL_TO_ZONE[this.currentTool];
@@ -1269,6 +1314,11 @@ export class Game {
   setTool(tool: ToolType): void {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
+    // Reset placement mode when switching away from road/rail tools
+    if (!this.isDragBuildTool(tool)) {
+      this.placementMode = 'ground';
+      this.elevationLevel = 1;
+    }
     // Road subtypes set the roadType (data-driven lookup)
     const roadType = TOOL_TO_ROAD_TYPE[tool];
     if (roadType !== undefined) this.currentRoadType = roadType;
@@ -1282,6 +1332,16 @@ export class Game {
     this.updatePlacementPreview();
     this.onUIUpdate?.();
   }
+
+  setPlacementMode(mode: PlacementMode): void {
+    this.placementMode = mode;
+    if (mode === 'ground') this.elevationLevel = 1;
+    this.onUIUpdate?.();
+  }
+
+  getPlacementMode(): PlacementMode { return this.placementMode; }
+  getElevationLevel(): number { return this.elevationLevel; }
+  getElevationManager(): ElevationManager { return this.elevationManager; }
 
   toggleViewMode(mode: ViewMode = ViewMode.UNDERGROUND): void {
     const next = this.viewMode === mode ? ViewMode.NORMAL : mode;
@@ -1923,7 +1983,16 @@ export class Game {
     const points = pathCells.map(c => new THREE.Vector3(c.x, 0.2, c.y));
 
     // Calculate estimated cost
-    if (this.isRailTool()) {
+    if (this.placementMode === 'elevated') {
+      const baseCost = this.isRailTool()
+        ? RAIL.COST_PER_CELL
+        : ROAD_CONFIGS[this.currentRoadType].cost;
+      // Estimate: 1 ramp + rest elevated (simplified preview)
+      const rampCells = Math.min(this.elevationLevel, points.length - 1);
+      const elevatedCells = Math.max(0, points.length - rampCells);
+      this.previewCost = rampCells * baseCost * ELEVATION_COST.RAMP
+        + elevatedCells * baseCost * ELEVATION_COST.ELEVATED;
+    } else if (this.isRailTool()) {
       this.previewCost = points.length * RAIL.COST_PER_CELL;
     } else {
       const roadConfig = ROAD_CONFIGS[this.currentRoadType];
