@@ -1294,19 +1294,26 @@ export class SimulationLoop {
   private rebuildLaneGraph(): void {
     const grid = this.state.grid;
     const cellKeys: string[] = [];
-    const gridLookup = {
-      getCell: (x: number, y: number) => {
-        const cell = grid.getCell(x, y);
-        if (!cell) return null;
-        return { roadType: cell.roadType as RoadType, roadFlags: cell.roadFlags };
-      },
-    };
 
     grid.forEachCell((cell, x, y) => {
       if (cell.roadType !== RoadType.NONE) {
         cellKeys.push(toPosKey(x, y));
       }
     });
+
+    const cellKeySet = new Set(cellKeys);
+    const gridLookup = {
+      getCellByKey(key: string) {
+        const { x, y } = parsePosKeyUnsafe(key);
+        const cell = grid.getCell(x, y);
+        if (!cell || cell.roadType === RoadType.NONE) return null;
+        return { roadType: cell.roadType as RoadType, roadFlags: cell.roadFlags };
+      },
+      getCompatibleNeighborKeys(_sourceKey: string, nx: number, ny: number) {
+        const groundKey = toPosKey(nx, ny);
+        return cellKeySet.has(groundKey) ? [groundKey] : [];
+      },
+    };
 
     this.laneGraph.buildFromGrid(gridLookup, cellKeys);
 

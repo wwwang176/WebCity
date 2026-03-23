@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { TrafficSimulation, Vehicle } from '../TrafficSimulation';
 import { LaneGraph, LaneEdge } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
+import { makeGridLookup } from '../../../../tests/helpers/makeGridLookup';
 
 /** Helper: build a simple horizontal road grid and lane graph */
 function buildHorizontalRoad(length: number, roadType = RoadType.TWO_LANE) {
@@ -16,7 +17,7 @@ function buildHorizontalRoad(length: number, roadType = RoadType.TWO_LANE) {
     cellKeys.push(`${x},0`);
   }
 
-  const grid = { getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null };
+  const grid = makeGridLookup(cells);
   const graph = new LaneGraph();
   graph.buildFromGrid(grid, cellKeys);
 

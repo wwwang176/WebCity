@@ -79,7 +79,8 @@ export const LANE_GEOMETRY = {
 // ── Grid Lookup Interface ──
 
 export interface GridLookup {
-  getCell(x: number, y: number): { roadType: RoadType; roadFlags: number } | null;
+  getCellByKey(key: string): { roadType: number; roadFlags: number } | null;
+  getCompatibleNeighborKeys(sourceKey: string, nx: number, ny: number): string[];
 }
 
 // ── LaneGraph ──
@@ -107,30 +108,31 @@ export class LaneGraph {
   }
 
   updateCells(grid: GridLookup, affectedCellKeys: string[]): void {
-    // Collect the wider affected set (include neighbors)
+    // Collect the wider affected set (include neighbors at all compatible levels)
     const affected = new Set<string>();
     for (const key of affectedCellKeys) {
       affected.add(key);
       const { x, y } = parseCellKey(key);
       for (const d of DIR_FLAGS) {
-        affected.add(toPosKey(x + d.dx, y + d.dy));
+        for (const nk of grid.getCompatibleNeighborKeys(key, x + d.dx, y + d.dy)) {
+          affected.add(nk);
+        }
       }
     }
 
-    // Expand through transparent intersections: if an affected cell neighbors
-    // an intersection, also include cells on the other side of that intersection.
-    // This ensures cross-intersection edges are regenerated properly.
+    // Expand through transparent intersections
     const extraCells = new Set<string>();
     for (const key of affected) {
-      const { x, y } = parseCellKey(key);
-      const cell = grid.getCell(x, y);
+      const cell = grid.getCellByKey(key);
       if (!cell || cell.roadType === RoadType.NONE) continue;
       if (!isIntersectionCell(cell.roadFlags)) continue;
 
-      // This affected cell IS an intersection — include its far-side neighbors
+      const { x, y } = parseCellKey(key);
       for (const d of DIR_FLAGS) {
         if (!(cell.roadFlags & d.flag)) continue;
-        extraCells.add(toPosKey(x + d.dx, y + d.dy));
+        for (const nk of grid.getCompatibleNeighborKeys(key, x + d.dx, y + d.dy)) {
+          extraCells.add(nk);
+        }
       }
     }
     for (const key of extraCells) affected.add(key);
@@ -208,9 +210,9 @@ export class LaneGraph {
   }
 
   private generatePointsForCell(grid: GridLookup, cellKey: string): void {
-    const { x, y } = parseCellKey(cellKey);
-    const cell = grid.getCell(x, y);
+    const cell = grid.getCellByKey(cellKey);
     if (!cell || cell.roadType === RoadType.NONE) return;
+    const { x, y } = parseCellKey(cellKey);
 
     // Intersection cells (>=3 active directions) are "transparent":
     // they don't generate their own connection points or internal edges.
@@ -287,7 +289,7 @@ export class LaneGraph {
 
   private generateEdgesForCell(grid: GridLookup, cellKey: string): void {
     const { x, y } = parseCellKey(cellKey);
-    const cell = grid.getCell(x, y);
+    const cell = grid.getCellByKey(cellKey);
     if (!cell || cell.roadType === RoadType.NONE) return;
 
     // Intersection cells are transparent — skip edge generation entirely.
@@ -370,38 +372,41 @@ export class LaneGraph {
     // Cross-cell edges: exit → neighbor entry
     for (const { dir, dx, dy } of activeDirections) {
       const nx = x + dx, ny = y + dy;
-      const neighbor = grid.getCell(nx, ny);
-      if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
+      const neighborKeys = grid.getCompatibleNeighborKeys(cellKey, nx, ny);
+      if (neighborKeys.length === 0) continue;
 
-      // If the neighbor is an intersection, generate cross-intersection edges
-      // that span through it to cells on the other side.
-      if (isIntersectionCell(neighbor.roadFlags)) {
-        this.generateCrossIntersectionEdges(grid, cellKey, dir, nx, ny, dirLanes);
-        continue;
-      }
+      for (const neighborKey of neighborKeys) {
+        const neighbor = grid.getCellByKey(neighborKey);
+        if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
 
-      const neighborKey = toPosKey(nx, ny);
-      const neighborDirLanes = getLaneCount(neighbor.roadType);
-      const oppositeDirection = oppositeDir(dir);
+        // If the neighbor is an intersection, generate cross-intersection edges
+        if (isIntersectionCell(neighbor.roadFlags)) {
+          this.generateCrossIntersectionEdges(grid, cellKey, dir, nx, ny, dirLanes);
+          continue;
+        }
 
-      // Same-lane connections to non-intersection neighbors
-      const minLanes = Math.min(dirLanes, neighborDirLanes);
-      for (let lane = 0; lane < minLanes; lane++) {
-        const exitId = `${cellKey}:${dir}:${lane}:exit`;
-        const entryId = `${neighborKey}:${oppositeDirection}:${lane}:entry`;
+        const neighborDirLanes = getLaneCount(neighbor.roadType);
+        const oppositeDirection = oppositeDir(dir);
 
-        const fromPt = this.points.get(exitId);
-        const toPt = this.points.get(entryId);
-        if (!fromPt || !toPt) continue;
+        // Same-lane connections to non-intersection neighbors
+        const minLanes = Math.min(dirLanes, neighborDirLanes);
+        for (let lane = 0; lane < minLanes; lane++) {
+          const exitId = `${cellKey}:${dir}:${lane}:exit`;
+          const entryId = `${neighborKey}:${oppositeDirection}:${lane}:entry`;
 
-        const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
-        this.edges.push({
-          id: `${exitId}>${entryId}`,
-          from: fromPt,
-          to: toPt,
-          length: Math.max(length, 0.1),
-          type: 'straight',
-        });
+          const fromPt = this.points.get(exitId);
+          const toPt = this.points.get(entryId);
+          if (!fromPt || !toPt) continue;
+
+          const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
+          this.edges.push({
+            id: `${exitId}>${entryId}`,
+            from: fromPt,
+            to: toPt,
+            length: Math.max(length, 0.1),
+            type: 'straight',
+          });
+        }
       }
     }
   }
@@ -424,26 +429,30 @@ export class LaneGraph {
     intX: number, intY: number,
     dirLanes: number,
   ): void {
-    const intCell = grid.getCell(intX, intY);
+    // For cross-intersection, the intersection cell key could be at any level
+    // Find it via compatible neighbors from source
+    const intKeys = grid.getCompatibleNeighborKeys(cellKey, intX, intY);
+    if (intKeys.length === 0) return;
+    const intKey = intKeys[0]!;
+    const intCell = grid.getCellByKey(intKey);
     if (!intCell) return;
 
-    // Determine the intersection's active directions
     const intActiveDirections = DIR_FLAGS.filter(d => intCell.roadFlags & d.flag);
-    // The direction back toward the source cell
     const backDir = oppositeDir(exitDir);
 
     for (const targetDirInfo of intActiveDirections) {
-      // Skip the direction back to the source cell (no U-turn)
       if (targetDirInfo.dir === backDir) continue;
 
       const farX = intX + targetDirInfo.dx;
       const farY = intY + targetDirInfo.dy;
-      const farCell = grid.getCell(farX, farY);
-      if (!farCell || farCell.roadType === RoadType.NONE) continue;
-      // Skip if the far-side cell is also an intersection — don't chain transparently
-      if (isIntersectionCell(farCell.roadFlags)) continue;
+      const farKeys = grid.getCompatibleNeighborKeys(intKey, farX, farY);
+      if (farKeys.length === 0) continue;
 
-      const farKey = toPosKey(farX, farY);
+      for (const farKey of farKeys) {
+        const farCell = grid.getCellByKey(farKey);
+        if (!farCell || farCell.roadType === RoadType.NONE) continue;
+        if (isIntersectionCell(farCell.roadFlags)) continue;
+
       const farDirLanes = getLaneCount(farCell.roadType);
       const farEntryDir = oppositeDir(targetDirInfo.dir);
 
@@ -502,7 +511,8 @@ export class LaneGraph {
             });
           }
         }
-      }
+      } // end for farKey
+    } // end for targetDirInfo
     }
   }
 

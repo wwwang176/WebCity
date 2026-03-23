@@ -3,6 +3,7 @@ import { ServiceVehicleManager, SERVICE_VEHICLE, type ServiceFacilityProvider, t
 import { TrafficSimulation } from '../TrafficSimulation';
 import { LaneGraph, type LaneEdge } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
+import { makeGridLookup } from '../../../../tests/helpers/makeGridLookup';
 
 /** Build a simple horizontal road grid and lane graph */
 function buildHorizontalRoad(length: number, roadType = RoadType.TWO_LANE) {
@@ -17,7 +18,9 @@ function buildHorizontalRoad(length: number, roadType = RoadType.TWO_LANE) {
     cellKeys.push(`${x},0`);
   }
 
+  const gridLookup = makeGridLookup(cells);
   const grid = {
+    ...gridLookup,
     getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null,
     width: length,
     height: 1,

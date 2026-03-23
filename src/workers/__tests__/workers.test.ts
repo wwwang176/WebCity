@@ -3,6 +3,7 @@ import type { SimWorkerMessage, SimWorkerResponse, SimulationSnapshot } from '..
 import type { PathWorkerMessage, PathWorkerResponse, SerializedLaneEdge } from '../pathfinding.worker';
 import { buildLaneGraphFromGrid } from '../pathfinding.worker';
 import { LaneGraph } from '../../core/traffic/LaneGraph';
+import { makeGridLookup } from '../../../tests/helpers/makeGridLookup';
 import { refineLanePath } from '../../core/traffic/Pathfinding';
 import { RoadType, RoadDirection } from '../../core/road/types';
 import { GridBuffer } from '../../core/grid/GridBuffer';
@@ -166,7 +167,7 @@ describe('LaneGraph Worker Integration', () => {
     }
     const graph = new LaneGraph();
     graph.buildFromGrid(
-      { getCell: (gx: number, gy: number) => cells.get(`${gx},${gy}`) ?? null },
+      makeGridLookup(cells),
       ['0,0', '1,0', '2,0'],
     );
 
@@ -213,7 +214,7 @@ describe('LaneGraph Worker Integration', () => {
 
     const graph = new LaneGraph();
     graph.buildFromGrid(
-      { getCell: (gx: number, gy: number) => cellMap.get(`${gx},${gy}`) ?? null },
+      makeGridLookup(cellMap),
       cellKeys,
     );
 
@@ -243,7 +244,7 @@ describe('LaneGraph Worker Integration', () => {
 
     const graph2 = new LaneGraph();
     graph2.buildFromGrid(
-      { getCell: (gx: number, gy: number) => cellMap2.get(`${gx},${gy}`) ?? null },
+      makeGridLookup(cellMap2),
       cellKeys2,
     );
 

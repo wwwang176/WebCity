@@ -2,10 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { refineLanePathVariants } from '../Pathfinding';
 import { LaneGraph } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
-
-function makeGridLookup(cells: Map<string, { roadType: RoadType; roadFlags: number }>) {
-  return { getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null };
-}
+import { makeGridLookup } from '../../../../tests/helpers/makeGridLookup';
 
 /**
  * Build an L-shaped road: south on x=5 then west on y=10, with a FOUR_LANE L-bend at (5,10).

@@ -31,6 +31,11 @@ export class UnifiedRoadLookup {
     private em: ElevationManager,
   ) {}
 
+  /** Create a lookup from a plain Grid (no elevation). */
+  static fromGrid(grid: GridLike): UnifiedRoadLookup {
+    return new UnifiedRoadLookup(grid, new ElevationManager());
+  }
+
   /** Look up road data by key. Routes to Grid (level 0) or ElevationManager (level 1-3). */
   getCellByKey(key: string): RoadCellInfo | null {
     const level = parseLevelFromKey(key);

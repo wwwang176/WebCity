@@ -6,13 +6,7 @@ import {
   LANE_GEOMETRY,
 } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
-
-/** Helper: create a minimal grid-like lookup for LaneGraph */
-function makeGridLookup(cells: Map<string, { roadType: RoadType; roadFlags: number }>) {
-  return {
-    getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null,
-  };
-}
+import { makeGridLookup } from '../../../../tests/helpers/makeGridLookup';
 
 describe('LaneGraph', () => {
   describe('ConnectionPoint generation', () => {

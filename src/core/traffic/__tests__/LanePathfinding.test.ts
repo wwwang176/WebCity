@@ -2,10 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { refineLanePath, getLaneSpeedMultiplier, LANE_SPEED_DECAY } from '../Pathfinding';
 import { LaneGraph, LaneEdge } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
-
-function makeGridLookup(cells: Map<string, { roadType: RoadType; roadFlags: number }>) {
-  return { getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null };
-}
+import { makeGridLookup } from '../../../../tests/helpers/makeGridLookup';
 
 function buildStraightRoad(length: number, roadType = RoadType.TWO_LANE) {
   const cells = new Map<string, { roadType: RoadType; roadFlags: number }>();
