@@ -10,7 +10,6 @@ import { RoadType } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
 import { refineLanePath, refineLanePathVariants, gridAStarPath } from '../traffic/Pathfinding';
-import { buildSimpleEdgePath, hasElevatedKeys } from '../traffic/ElevatedLanePath';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
 import { getBuildingType } from '../building/types';
@@ -1298,29 +1297,32 @@ export class SimulationLoop {
 
   private rebuildLaneGraph(): void {
     const grid = this.state.grid;
-    const cellKeys: string[] = [];
 
-    grid.forEachCell((cell, x, y) => {
-      if (cell.roadType !== RoadType.NONE) {
-        cellKeys.push(toPosKey(x, y));
-      }
-    });
-
-    const cellKeySet = new Set(cellKeys);
-    const gridLookup = {
-      getCellByKey(key: string) {
-        const { x, y } = parsePosKeyUnsafe(key);
-        const cell = grid.getCell(x, y);
-        if (!cell || cell.roadType === RoadType.NONE) return null;
-        return { roadType: cell.roadType as RoadType, roadFlags: cell.roadFlags };
-      },
-      getCompatibleNeighborKeys(_sourceKey: string, nx: number, ny: number) {
-        const groundKey = toPosKey(nx, ny);
-        return cellKeySet.has(groundKey) ? [groundKey] : [];
-      },
-    };
-
-    this.laneGraph.buildFromGrid(gridLookup, cellKeys);
+    // Use UnifiedRoadLookup for all road cells (ground + elevated)
+    const lookup = this._roadLookup;
+    if (lookup) {
+      const cellKeys = lookup.getAllCellKeys();
+      this.laneGraph.buildFromGrid(lookup, cellKeys);
+    } else {
+      // Fallback: ground-only (no elevation manager set)
+      const cellKeys: string[] = [];
+      grid.forEachCell((cell, x, y) => {
+        if (cell.roadType !== RoadType.NONE) cellKeys.push(toPosKey(x, y));
+      });
+      const cellKeySet = new Set(cellKeys);
+      this.laneGraph.buildFromGrid({
+        getCellByKey(key: string) {
+          const { x, y } = parsePosKeyUnsafe(key);
+          const cell = grid.getCell(x, y);
+          if (!cell || cell.roadType === RoadType.NONE) return null;
+          return { roadType: cell.roadType, roadFlags: cell.roadFlags };
+        },
+        getCompatibleNeighborKeys(_sourceKey: string, nx: number, ny: number) {
+          const k = toPosKey(nx, ny);
+          return cellKeySet.has(k) ? [k] : [];
+        },
+      }, cellKeys);
+    }
 
     const lg = this.laneGraph;
     const g = { getCell: (x: number, y: number) => grid.getCell(x, y), width: grid.width, height: grid.height };
@@ -1552,13 +1554,7 @@ export class SimulationLoop {
       if (!variants) {
         const path = findRoadPath(fromPos, toPos, grid, this._roadLookup ?? undefined);
         if (path && path.length >= 2) {
-          if (hasElevatedKeys(path)) {
-            // Elevated path: use simple cell-to-cell edges (no lane graph)
-            const simple = buildSimpleEdgePath(path);
-            if (simple.length > 0) variants = [simple];
-          } else {
-            variants = refineLanePathVariants(this.laneGraph, path);
-          }
+          variants = refineLanePathVariants(this.laneGraph, path);
           if (variants && variants.length > 0) {
             this.commuteCache.setRouteVariants(routeKey, variants);
           }
@@ -1669,9 +1665,7 @@ export class SimulationLoop {
 
       const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid, this._roadLookup ?? undefined);
       if (path && path.length >= 2) {
-        const edgePath = hasElevatedKeys(path)
-          ? buildSimpleEdgePath(path)
-          : refineLanePath(this.laneGraph, path);
+        const edgePath = refineLanePath(this.laneGraph, path);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         }
