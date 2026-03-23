@@ -5,6 +5,7 @@ import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { ZoneManager } from '../../zone/ZoneManager';
 import { BuildingGrowth, type GrowthConditions } from '../BuildingGrowth';
+import { RailType } from '../../rail/types';
 
 function setupWithZone(): { grid: Grid; growth: BuildingGrowth } {
   const grid = new Grid(20, 20);
@@ -81,5 +82,11 @@ describe('BuildingGrowth', () => {
     }
     // All should grow since conditions are met
     expect(results.every((r) => r)).toBe(true);
+  });
+
+  it('should not grow on cell with rail track', () => {
+    const { grid, growth } = setupWithZone();
+    grid.setCell(5, 4, { railType: RailType.STANDARD, railFlags: 3 });
+    expect(growth.canGrow(5, 4, fullConditions)).toBe(false);
   });
 });

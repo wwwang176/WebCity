@@ -1,5 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { ZoneType, zoneToRCI } from '../grid/types';
+import { RailType } from '../rail/types';
 import { isAdjacentToRoad } from '../grid/GridHelpers';
 import { getMaxDensity } from '../zone/DensityRules';
 import { getBuildingsForZone } from './types';
@@ -29,6 +30,7 @@ export class BuildingGrowth {
     if (!cell) return false;
     if (cell.zoneType === ZoneType.NONE) return false;
     if (cell.buildingId !== 0) return false;
+    if (cell.railType !== RailType.NONE) return false;
 
     // Must have road connection
     if (!isAdjacentToRoad(this.grid, x, y)) return false;

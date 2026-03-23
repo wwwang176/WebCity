@@ -1,6 +1,7 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, ZoneType, type Position } from '../grid/types';
 import { RoadType } from '../road/types';
+import { RailType } from '../rail/types';
 import { isAdjacentToRoad } from '../grid/GridHelpers';
 import { isInfrastructureBuilding, isZoneBuilding } from '../building/InfraConfig';
 
@@ -23,8 +24,9 @@ export class ZoneManager {
     // Skip unbuildable terrain
     if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
     if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
-    // Skip roads
+    // Skip roads and rail tracks
     if (cell.roadType !== RoadType.NONE) return { success: false, reason: 'ROAD_EXISTS' };
+    if (cell.railType !== RailType.NONE) return { success: false, reason: 'RAIL_TRACK_EXISTS' };
     // Skip infrastructure buildings (power/water/police/fire/hospital/school/park/garbage/sewage/cemetery/transport)
     if (isInfrastructureBuilding(cell.buildingId)) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
 

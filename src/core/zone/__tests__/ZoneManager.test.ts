@@ -4,6 +4,7 @@ import { TerrainType, ZoneType } from '../../grid/types';
 import { RoadBuilder } from '../../road/RoadBuilder';
 import { RoadType } from '../../road/types';
 import { ZoneManager } from '../ZoneManager';
+import { RailType } from '../../rail/types';
 
 describe('ZoneManager', () => {
   function setupGridWithRoad(): { grid: Grid; zone: ZoneManager } {
@@ -118,5 +119,23 @@ describe('ZoneManager', () => {
     const waterFails = results.filter(r => r.reason === 'WATER_TILE').length;
     expect(successes).toBe(2); // 5,4 and 7,4
     expect(waterFails).toBe(1); // 6,4
+  });
+
+  it('should fail to zone a cell with rail track', () => {
+    const { grid, zone } = setupGridWithRoad();
+    grid.setCell(5, 4, { railType: RailType.STANDARD, railFlags: 3 });
+    const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('RAIL_TRACK_EXISTS');
+  });
+
+  it('should skip rail track cells in batch zone', () => {
+    const { grid, zone } = setupGridWithRoad();
+    grid.setCell(6, 4, { railType: RailType.STANDARD, railFlags: 3 });
+    const results = zone.setZoneRect({ x: 5, y: 4 }, { x: 7, y: 4 }, ZoneType.COMMERCIAL_LOW);
+    const successes = results.filter(r => r.success).length;
+    const railFails = results.filter(r => r.reason === 'RAIL_TRACK_EXISTS').length;
+    expect(successes).toBe(2);
+    expect(railFails).toBe(1);
   });
 });
