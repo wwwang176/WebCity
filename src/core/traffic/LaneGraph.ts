@@ -57,6 +57,7 @@ function dirVec(d: Direction): { dx: number; dy: number } {
 }
 
 const parseCellKey = parsePosKeyUnsafe;
+const EMPTY_SET: ReadonlySet<string> = new Set();
 
 /** Check whether a road cell is an intersection (>=3 active directions). */
 export function isIntersectionCell(roadFlags: number): boolean {
@@ -91,6 +92,8 @@ export class LaneGraph {
   private edges: LaneEdge[] = [];
   private edgeFromIdx = new Map<string, number[]>();     // pointId → edge indices (from)
   private edgeToIdx = new Map<string, number[]>();       // pointId → edge indices (to)
+  /** Cell-level connectivity: cellKey → set of connected cellKeys (has edge between them). */
+  private cellNeighbors = new Map<string, Set<string>>();
 
   // ── Public API ──
 
@@ -630,9 +633,15 @@ export class LaneGraph {
     return length;
   }
 
+  /** Get all cell keys that have LaneGraph edges connecting FROM the given cell. */
+  getConnectedCellKeys(cellKey: string): ReadonlySet<string> {
+    return this.cellNeighbors.get(cellKey) ?? EMPTY_SET;
+  }
+
   private rebuildEdgeIndices(): void {
     this.edgeFromIdx.clear();
     this.edgeToIdx.clear();
+    this.cellNeighbors.clear();
     for (let i = 0; i < this.edges.length; i++) {
       const e = this.edges[i]!;
       let fromArr = this.edgeFromIdx.get(e.from.id);
@@ -642,6 +651,17 @@ export class LaneGraph {
       let toArr = this.edgeToIdx.get(e.to.id);
       if (!toArr) { toArr = []; this.edgeToIdx.set(e.to.id, toArr); }
       toArr.push(i);
+
+      // Build cell-level connectivity index
+      if (e.from.cellKey !== e.to.cellKey) {
+        let set = this.cellNeighbors.get(e.from.cellKey);
+        if (!set) { set = new Set(); this.cellNeighbors.set(e.from.cellKey, set); }
+        set.add(e.to.cellKey);
+        // Bidirectional
+        let set2 = this.cellNeighbors.get(e.to.cellKey);
+        if (!set2) { set2 = new Set(); this.cellNeighbors.set(e.to.cellKey, set2); }
+        set2.add(e.from.cellKey);
+      }
     }
   }
 }

@@ -1,18 +1,15 @@
 import { ROAD_CONFIGS, RoadType } from '../road/types';
-import { toPosKey, parsePosKeyUnsafe, parseLevelFromKey, manhattanDistance, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { toPosKey, parsePosKeyUnsafe, parseLevelFromKey, manhattanDistance } from '../grid/GridHelpers';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
+import { type LaneGraph } from '../traffic/LaneGraph';
 
 /** Cost multiplier for ramp cells (slower due to incline). */
 const RAMP_COST_MULTIPLIER = 1.5;
 const MAX_SPEED = 100;
 
 /**
- * A* pathfinding that traverses both ground roads and elevated segments
- * using UnifiedRoadLookup for level-aware neighbor discovery.
- *
- * Node IDs:
- * - "x,y" = ground level
- * - "x,y,L" = elevated level L
+ * A* pathfinding using LaneGraph cell-level connectivity as the source of truth.
+ * Only traverses cells that have actual LaneGraph edges between them.
  */
 export function findElevatedPath(
   _grid: { readonly width: number; readonly height: number; getCell(x: number, y: number): { roadType: number } | null },
@@ -20,6 +17,7 @@ export function findElevatedPath(
   start: { x: number; y: number },
   end: { x: number; y: number },
   maxSteps = 5000,
+  laneGraph?: LaneGraph,
 ): string[] | null {
   const target = toPosKey(end.x, end.y); // destination is always ground level
   const startKey = toPosKey(start.x, start.y);
@@ -65,67 +63,32 @@ export function findElevatedPath(
 
     const currentG = gScore.get(current.k)!;
 
-    // Get neighbors via UnifiedRoadLookup (level-aware)
-    for (const [dx, dy] of FOUR_NEIGHBORS) {
-      const nx = current.x + dx!;
-      const ny = current.y + dy!;
-      const neighborKeys = lookup.getCompatibleNeighborKeys(current.k, nx, ny);
+    // Get neighbors from LaneGraph (source of truth for actual road connections)
+    const connectedKeys = laneGraph
+      ? laneGraph.getConnectedCellKeys(current.k)
+      : lookup.getCompatibleNeighborKeys(current.k, current.x, current.y); // fallback
 
-      for (const nk of neighborKeys) {
-        if (closed.has(nk)) continue;
+    for (const nk of connectedKeys) {
+      if (closed.has(nk)) continue;
 
-        const roadInfo = lookup.getCellByKey(nk);
-        if (!roadInfo) continue;
-
-        const config = ROAD_CONFIGS[roadInfo.roadType as RoadType];
-        const speed = config?.speedLimit || 50;
-        const isRamp = lookup.isRamp(nk);
-        const moveCost = isRamp ? (1 / speed) * RAMP_COST_MULTIPLIER : 1 / speed;
-
-        const tentativeG = currentG + moveCost;
-        const prevG = gScore.get(nk);
-        if (prevG !== undefined && tentativeG >= prevG) continue;
-
-        gScore.set(nk, tentativeG);
-        parent.set(nk, current.k);
-        const nPos = parsePosKeyUnsafe(nk);
-        const nLevel = parseLevelFromKey(nk);
-        const h = manhattanDistance(nPos.x, nPos.y, end.x, end.y) / MAX_SPEED;
-        open.push({ k: nk, x: nPos.x, y: nPos.y, level: nLevel, f: tentativeG + h });
-      }
-    }
-
-    // Also check same-position level transitions (ramp at current position)
-    // getCompatibleNeighborKeys handles neighbor positions, but we also need
-    // to check transitions at the SAME position (standing on a ramp, go up/down).
-    const samePositionKeys = lookup.getAllKeysAtPosition(current.x, current.y);
-    for (const spk of samePositionKeys) {
-      if (spk === current.k) continue;
-      if (closed.has(spk)) continue;
-
-      // Check compatibility: must be adjacent levels and at least one is a ramp
-      const spLevel = parseLevelFromKey(spk);
-      const levelDiff = Math.abs(spLevel - current.level);
-      if (levelDiff !== 1) continue;
-      const currentIsRamp = lookup.isRamp(current.k);
-      const neighborIsRamp = lookup.isRamp(spk);
-      if (!currentIsRamp && !neighborIsRamp) continue;
-
-      const roadInfo = lookup.getCellByKey(spk);
+      const roadInfo = lookup.getCellByKey(nk);
       if (!roadInfo) continue;
 
       const config = ROAD_CONFIGS[roadInfo.roadType as RoadType];
       const speed = config?.speedLimit || 50;
-      const moveCost = (1 / speed) * RAMP_COST_MULTIPLIER;
+      const isRamp = lookup.isRamp(nk);
+      const moveCost = isRamp ? (1 / speed) * RAMP_COST_MULTIPLIER : 1 / speed;
 
       const tentativeG = currentG + moveCost;
-      const prevG = gScore.get(spk);
+      const prevG = gScore.get(nk);
       if (prevG !== undefined && tentativeG >= prevG) continue;
 
-      gScore.set(spk, tentativeG);
-      parent.set(spk, current.k);
-      const h = manhattanDistance(current.x, current.y, end.x, end.y) / MAX_SPEED;
-      open.push({ k: spk, x: current.x, y: current.y, level: spLevel, f: tentativeG + h });
+      gScore.set(nk, tentativeG);
+      parent.set(nk, current.k);
+      const nPos = parsePosKeyUnsafe(nk);
+      const nLevel = parseLevelFromKey(nk);
+      const h = manhattanDistance(nPos.x, nPos.y, end.x, end.y) / MAX_SPEED;
+      open.push({ k: nk, x: nPos.x, y: nPos.y, level: nLevel, f: tentativeG + h });
     }
   }
 
