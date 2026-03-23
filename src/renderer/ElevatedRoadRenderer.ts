@@ -1,22 +1,31 @@
 import * as THREE from 'three';
 import { type ElevationManager } from '../core/elevation/ElevationManager';
-import { type ElevatedSegment, MAX_ELEVATION_LEVEL, MIN_ELEVATION_LEVEL } from '../core/elevation/types';
+import { type ElevatedSegment } from '../core/elevation/types';
 import { Grid } from '../core/grid/Grid';
 import { TerrainType } from '../core/grid/types';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { RailType } from '../core/rail/types';
-import { ROAD_WIDTHS } from './RoadRenderer';
+import {
+  ROAD_WIDTHS,
+  buildRoadStrips,
+  buildSidewalkStrips,
+  buildLaneMarkingData,
+  type RoadCell,
+  type Strip,
+  type SidewalkStrip,
+  type LaneMarking,
+} from './RoadStripBuilder';
 
 /** Height per elevation level in world units. */
 const LEVEL_HEIGHT = 0.6;
 /** Pillar/column width. */
 const PILLAR_W = 0.08;
-/** Road surface thickness (same as RoadRenderer). */
-const SURFACE_H = 0.05;
-/** Ramp angle visual — how much the surface tilts. */
-const RAMP_TILT = Math.atan2(LEVEL_HEIGHT, 1);
+const ROAD_Y = 0.025;
+const SIDEWALK_Y = 0.028;
+const MARKING_Y = 0.052;
 
 const PILLAR_COLOR = 0x888888;
+const RAMP_TILT = Math.atan2(LEVEL_HEIGHT, 1);
 
 interface ElevatedCell {
   x: number;
@@ -27,8 +36,8 @@ interface ElevatedCell {
 }
 
 /**
- * Renders elevated road/rail segments, ramps, and pillars.
- * Reads from ElevationManager (sparse data).
+ * Renders elevated road/rail segments using the same strip logic as
+ * RoadRenderer (road surface, sidewalks, lane markings) but at elevated Y.
  */
 export class ElevatedRoadRenderer {
   private group = new THREE.Group();
@@ -41,98 +50,145 @@ export class ElevatedRoadRenderer {
   build(scene: THREE.Scene, grid: Grid, em: ElevationManager): void {
     this.dispose(scene);
 
-    const cells: ElevatedCell[] = [];
     const entries = em.toJSON();
+    if (entries.length === 0) return;
+
+    // Group elevated cells by level so we can run strip generation per level
+    const cellsByLevel = new Map<number, ElevatedCell[]>();
     for (const entry of entries) {
       const cell = grid.getCell(entry.x, entry.y);
       const isBridge = cell?.terrainType === TerrainType.WATER;
-      cells.push({
-        x: entry.x,
-        y: entry.y,
-        level: entry.level,
-        seg: entry.data,
-        isBridge,
-      });
+      const ec: ElevatedCell = { x: entry.x, y: entry.y, level: entry.level, seg: entry.data, isBridge };
+      const arr = cellsByLevel.get(entry.level) ?? [];
+      arr.push(ec);
+      cellsByLevel.set(entry.level, arr);
     }
 
-    if (cells.length === 0) return;
+    for (const [level, cells] of cellsByLevel) {
+      const y = level * LEVEL_HEIGHT;
 
-    this.buildSurfaces(cells);
-    this.buildPillars(cells);
+      // Convert elevated cells to RoadCell format for shared strip builders
+      const roadCells: RoadCell[] = [];
+      for (const c of cells) {
+        if (c.seg.roadType !== RoadType.NONE) {
+          roadCells.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
+        }
+      }
+
+      if (roadCells.length > 0) {
+        // Road surface strips (no edge extension for elevated)
+        const roadStrips = buildRoadStrips(roadCells);
+        this.buildRoadSurface(roadStrips, y);
+
+        // Sidewalk / guard rail strips
+        const sidewalkStrips = buildSidewalkStrips(roadCells);
+        this.buildSidewalks(sidewalkStrips, y);
+
+        // Lane markings
+        const markings = buildLaneMarkingData(roadCells);
+        this.buildLaneMarkings(markings, y);
+      }
+
+      // Rail cells (simple narrow surface)
+      for (const c of cells) {
+        if (c.seg.railType !== RailType.NONE) {
+          this.buildRailSurface(c, y);
+        }
+      }
+
+      // Pillars
+      this.buildPillars(cells);
+    }
 
     scene.add(this.group);
     this.built = true;
   }
 
-  private buildSurfaces(cells: ElevatedCell[]): void {
-    if (cells.length === 0) return;
+  private buildRoadSurface(strips: Strip[], baseY: number): void {
+    if (strips.length === 0) return;
 
-    // Use InstancedMesh like RoadRenderer for consistent look
-    const geometry = new THREE.BoxGeometry(1, SURFACE_H, 1);
+    const geometry = new THREE.BoxGeometry(1, 0.05, 1);
     const material = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
-    const mesh = new THREE.InstancedMesh(geometry, material, cells.length * 2);
+    const mesh = new THREE.InstancedMesh(geometry, material, strips.length);
     mesh.receiveShadow = true;
     mesh.castShadow = true;
     mesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
-    const rot = new THREE.Matrix4();
     const color = new THREE.Color();
-    let idx = 0;
 
-    for (const c of cells) {
-      const y = c.level * LEVEL_HEIGHT;
-      const hasRoad = c.seg.roadType !== RoadType.NONE;
-      const hasRail = c.seg.railType !== RailType.NONE;
+    for (let i = 0; i < strips.length; i++) {
+      const s = strips[i]!;
+      matrix.makeScale(s.sx, 1, s.sz);
+      matrix.setPosition(s.x, baseY + ROAD_Y, s.z);
+      mesh.setMatrixAt(i, matrix);
 
-      if (hasRoad) {
-        const w = ROAD_WIDTHS[c.seg.roadType] ?? 0.6;
-
-        matrix.makeScale(w, 1, w);
-        if (c.seg.isRamp) {
-          rot.makeRotationX(this.getRampTiltX(c.seg.rampAscendDirection));
-          matrix.premultiply(rot);
-          const tz = this.getRampTiltZ(c.seg.rampAscendDirection);
-          if (tz !== 0) {
-            rot.makeRotationZ(tz);
-            matrix.premultiply(rot);
-          }
-        }
-        matrix.setPosition(c.x, y, c.y);
-        mesh.setMatrixAt(idx, matrix);
-
-        // Asphalt color matching RoadRenderer — varies by road type
-        const cfg = ROAD_CONFIGS[c.seg.roadType as RoadType];
-        const base = cfg ? Math.max(0.18, 0.30 - cfg.lanes * 0.02) : 0.25;
-        // Bridge tint slightly lighter
-        const tint = c.isBridge ? 0.04 : 0;
-        color.setRGB(base + tint, base + tint, base + tint + 0.01);
-        mesh.setColorAt(idx, color);
-        idx++;
-      }
-
-      if (hasRail) {
-        matrix.makeScale(0.35, 1, 0.35);
-        if (c.seg.isRamp) {
-          rot.makeRotationX(this.getRampTiltX(c.seg.rampAscendDirection));
-          matrix.premultiply(rot);
-          const tz = this.getRampTiltZ(c.seg.rampAscendDirection);
-          if (tz !== 0) {
-            rot.makeRotationZ(tz);
-            matrix.premultiply(rot);
-          }
-        }
-        matrix.setPosition(c.x, y, c.y);
-        mesh.setMatrixAt(idx, matrix);
-        color.setRGB(0.35, 0.33, 0.30);
-        mesh.setColorAt(idx, color);
-        idx++;
-      }
+      const cfg = ROAD_CONFIGS[s.roadType as RoadType];
+      const base = cfg ? Math.max(0.18, 0.30 - cfg.lanes * 0.02) : 0.25;
+      color.setRGB(base, base, base + 0.01);
+      mesh.setColorAt(i, color);
     }
 
-    mesh.count = idx;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    this.group.add(mesh);
+  }
+
+  private buildSidewalks(strips: SidewalkStrip[], baseY: number): void {
+    if (strips.length === 0) return;
+
+    const geo = new THREE.PlaneGeometry(1, 1);
+    geo.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    const mesh = new THREE.InstancedMesh(geo, mat, strips.length);
+    mesh.receiveShadow = true;
+    mesh.frustumCulled = false;
+
+    const matrix = new THREE.Matrix4();
+    for (let i = 0; i < strips.length; i++) {
+      const s = strips[i]!;
+      matrix.makeScale(s.sx, 1, s.sz);
+      matrix.setPosition(s.x, baseY + SIDEWALK_Y, s.z);
+      mesh.setMatrixAt(i, matrix);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    this.group.add(mesh);
+  }
+
+  private buildLaneMarkings(markings: LaneMarking[], baseY: number): void {
+    if (markings.length === 0) return;
+
+    const geo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
+    const mat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+    const mesh = new THREE.InstancedMesh(geo, mat, markings.length);
+    mesh.frustumCulled = false;
+
+    const matrix = new THREE.Matrix4();
+    const rot = new THREE.Matrix4();
+
+    for (let i = 0; i < markings.length; i++) {
+      const m = markings[i]!;
+      const perpX = m.rotY === 0 ? m.offsetPerp : 0;
+      const perpZ = m.rotY !== 0 ? m.offsetPerp : 0;
+      matrix.makeTranslation(m.x + perpX, baseY + MARKING_Y, m.z + perpZ);
+      if (m.rotY !== 0) {
+        rot.makeRotationY(m.rotY);
+        matrix.multiply(rot);
+      }
+      mesh.setMatrixAt(i, matrix);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    this.group.add(mesh);
+  }
+
+  private buildRailSurface(c: ElevatedCell, baseY: number): void {
+    const geometry = new THREE.BoxGeometry(0.35, 0.05, 0.35);
+    const material = new THREE.MeshLambertMaterial({ color: 0x555050 });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(c.x, baseY + ROAD_Y, c.y);
+    mesh.receiveShadow = true;
     this.group.add(mesh);
   }
 
@@ -141,10 +197,10 @@ export class ElevatedRoadRenderer {
     const pillarMat = new THREE.MeshLambertMaterial({ color: PILLAR_COLOR });
 
     for (const c of cells) {
-      if (c.seg.isRamp) continue; // No pillars on ramps (they rest on the slope)
+      if (c.seg.isRamp) continue;
 
       const topY = c.level * LEVEL_HEIGHT;
-      const bottomY = c.isBridge ? -0.15 : 0; // Bridge pillars start below water surface
+      const bottomY = c.isBridge ? -0.15 : 0;
       const pillarHeight = topY - bottomY;
       if (pillarHeight <= 0) continue;
 
@@ -156,35 +212,17 @@ export class ElevatedRoadRenderer {
     }
   }
 
-  /**
-   * Get X-axis tilt based on rampAscendDirection.
-   * ascendDir points toward the HIGH end.
-   * In Three.js XZ plane: +rotation.x → north side rises, south side drops.
-   */
-  private getRampTiltX(ascendDir: number): number {
-    // NORTH (high end is north) → tilt so north is higher → positive rotation.x
-    if (ascendDir & RoadDirection.NORTH) return RAMP_TILT * 0.3;
-    // SOUTH (high end is south) → tilt so south is higher → negative rotation.x
-    if (ascendDir & RoadDirection.SOUTH) return -RAMP_TILT * 0.3;
-    return 0;
-  }
-
-  /** Get Z-axis tilt based on rampAscendDirection. */
-  private getRampTiltZ(ascendDir: number): number {
-    // EAST (high end is east) → tilt so east is higher → negative rotation.z
-    if (ascendDir & RoadDirection.EAST) return -RAMP_TILT * 0.3;
-    // WEST (high end is west) → tilt so west is higher → positive rotation.z
-    if (ascendDir & RoadDirection.WEST) return RAMP_TILT * 0.3;
-    return 0;
-  }
-
   dispose(scene: THREE.Scene): void {
     if (this.built) {
       scene.remove(this.group);
-      // Dispose all meshes in group
       this.group.traverse((child) => {
-        if (child instanceof THREE.Mesh) {
+        if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
           child.geometry.dispose();
+          if (Array.isArray(child.material)) {
+            child.material.forEach(m => m.dispose());
+          } else {
+            (child.material as THREE.Material).dispose();
+          }
         }
       });
       this.group.clear();
