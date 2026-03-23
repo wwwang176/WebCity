@@ -3,6 +3,13 @@ import { ZoneType, isCommercialZone, isResidentialZone } from '../grid/types';
 import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
+import { type ElevationManager } from '../elevation/ElevationManager';
+
+let _elevationManager: ElevationManager | null = null;
+
+export function setShoppingElevationManager(em: ElevationManager): void {
+  _elevationManager = em;
+}
 
 export interface ResidentialShoppingStatus {
   /** 0~1: ratio of commercial capacity vs residential population in the connected road network. */
@@ -91,7 +98,8 @@ export class ShoppingAccess {
           if (globalVisited.has(nkey)) continue;
           const ncell = grid.getCell(nx, ny);
           if (!ncell) continue;
-          if (ncell.roadType === RoadType.NONE && ncell.buildingId === 0 && ncell.zoneType === 0) continue;
+          const hasElevated = _elevationManager?.hasElevatedSegment(nx, ny) ?? false;
+          if (ncell.roadType === RoadType.NONE && ncell.buildingId === 0 && ncell.zoneType === 0 && !hasElevated) continue;
           globalVisited.add(nkey);
           queue.push([nx, ny]);
         }

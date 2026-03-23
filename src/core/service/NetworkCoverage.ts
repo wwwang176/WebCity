@@ -2,6 +2,19 @@ import { Grid } from '../grid/Grid';
 import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
+import { type ElevationManager } from '../elevation/ElevationManager';
+
+/** Module-level ElevationManager reference, set once by Game.ts. */
+let _elevationManager: ElevationManager | null = null;
+
+/** Set the shared ElevationManager for all coverage BFS systems. */
+export function setNetworkElevationManager(em: ElevationManager): void {
+  _elevationManager = em;
+}
+
+function hasElevatedRoad(x: number, y: number): boolean {
+  return _elevationManager?.hasElevatedSegment(x, y) ?? false;
+}
 
 /**
  * Shared network coverage algorithm used by both PowerGrid and WaterNetwork.
@@ -44,7 +57,7 @@ export function calculateNetworkCoverage(
 
       // Collect relay-capable cells on the circle edge (distance > r-1)
       if (dx * dx + dy * dy > (r - 1) * (r - 1)) {
-        const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(toPosKey(nx, ny));
+        const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(toPosKey(nx, ny)) || hasElevatedRoad(nx, ny);
         if (isRelay) relaySeeds.push([nx, ny]);
       }
     }
@@ -68,7 +81,7 @@ export function calculateNetworkCoverage(
       if (coverageSet.has(key)) continue;
       const cell = grid.getCell(nx, ny);
       if (!cell) continue;
-      const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key);
+      const isRelay = cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || infra?.has(key) || hasElevatedRoad(nx, ny);
       // Roads/buildings keep range at relayRange (never decreases below it)
       const newRange = Math.max(isRelay ? relayRange : 0, remaining - 1);
       if (newRange <= 0) continue;
@@ -88,8 +101,13 @@ function canRelay(
   cell: { roadType: number; buildingId: number },
   key: string,
   infra?: Set<string>,
+  x?: number,
+  y?: number,
 ): boolean {
-  return cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || (infra?.has(key) ?? false);
+  return cell.roadType !== RoadType.NONE
+    || cell.buildingId !== 0
+    || (infra?.has(key) ?? false)
+    || (x !== undefined && y !== undefined && hasElevatedRoad(x, y));
 }
 
 /**
@@ -117,7 +135,7 @@ export function bfsRoadNetworkFlood(
       if (coverage.has(key)) continue;
       const cell = grid.getCell(nx, ny);
       if (!cell) continue;
-      if (!canRelay(cell, key, infra)) {
+      if (!canRelay(cell, key, infra, nx, ny)) {
         // Zoned cells receive coverage from adjacent relay cells but don't relay
         if (cell.zoneType !== 0) coverage.add(key);
         continue;
@@ -164,7 +182,7 @@ export function bfsBudgetDrainFlood(
       if (visited.has(key)) continue;
       const cell = grid.getCell(nx, ny);
       if (!cell) continue;
-      if (!canRelay(cell, key, infra)) {
+      if (!canRelay(cell, key, infra, nx, ny)) {
         // Zoned cells receive supply from adjacent relay cells but don't relay
         if (cell.zoneType !== 0) {
           visited.add(key);

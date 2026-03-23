@@ -79,6 +79,9 @@ import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath } from './core/elevation';
+import { setNetworkElevationManager } from './core/service/NetworkCoverage';
+import { setRoadCoverageElevationManager } from './core/service/RoadCoverageFlood';
+import { setShoppingElevationManager } from './core/economy/ShoppingAccess';
 
 export type PlacementMode = 'ground' | 'elevated';
 
@@ -439,6 +442,9 @@ export class Game {
     this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
     this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
     this.simLoop.setElevationManager(this.elevationManager);
+    setNetworkElevationManager(this.elevationManager);
+    setRoadCoverageElevationManager(this.elevationManager);
+    setShoppingElevationManager(this.elevationManager);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);

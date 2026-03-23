@@ -10,6 +10,19 @@ import { ROAD_CONFIGS, RoadType } from '../road/types';
 import { FOUR_NEIGHBORS, toPosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
 import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
 import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
+import { type ElevationManager } from '../elevation/ElevationManager';
+
+/** Module-level ElevationManager reference for road coverage flood. */
+let _elevationManager: ElevationManager | null = null;
+
+/** Set the shared ElevationManager for road coverage flood. */
+export function setRoadCoverageElevationManager(em: ElevationManager): void {
+  _elevationManager = em;
+}
+
+function hasElevatedRoad(x: number, y: number): boolean {
+  return _elevationManager?.hasElevatedSegment(x, y) ?? false;
+}
 
 /** Service coverage budget constants */
 export const ROAD_COVERAGE = {
@@ -99,7 +112,7 @@ export function roadFlood(
   // Seed: find road cells at or adjacent to each facility cell
   for (const pos of facilityPositions) {
     const self = grid.getCell(pos.x, pos.y);
-    if (self && self.roadType !== RoadType.NONE) {
+    if (self && (self.roadType !== RoadType.NONE || hasElevatedRoad(pos.x, pos.y))) {
       const key = toPosKey(pos.x, pos.y);
       if (!costs.has(key)) { costs.set(key, 0); pq.push(key, 0); }
     }
@@ -107,7 +120,7 @@ export function roadFlood(
       const nx = pos.x + dx!;
       const ny = pos.y + dy!;
       const cell = grid.getCell(nx, ny);
-      if (cell && cell.roadType !== RoadType.NONE) {
+      if (cell && (cell.roadType !== RoadType.NONE || hasElevatedRoad(nx, ny))) {
         const key = toPosKey(nx, ny);
         if (!costs.has(key)) { costs.set(key, 0); pq.push(key, 0); }
       }
@@ -125,9 +138,11 @@ export function roadFlood(
       const nx = x + dx!;
       const ny = y + dy!;
       const cell = grid.getCell(nx, ny);
-      if (!cell || cell.roadType === RoadType.NONE) continue;
+      const hasRoad = cell && (cell.roadType !== RoadType.NONE || hasElevatedRoad(nx, ny));
+      if (!hasRoad) continue;
 
-      const newCost = cur.cost + roadTileCost(cell.roadType);
+      const effectiveRoadType = cell!.roadType !== RoadType.NONE ? cell!.roadType : RoadType.HIGHWAY;
+      const newCost = cur.cost + roadTileCost(effectiveRoadType);
       if (newCost > budget) continue;
 
       const nk = toPosKey(nx, ny);
@@ -393,9 +408,11 @@ export function roadDistanceToTargets(
       const nx = x + dx!;
       const ny = y + dy!;
       const cell = grid.getCell(nx, ny);
-      if (!cell || cell.roadType === RoadType.NONE) continue;
+      const hasRoad = cell && (cell.roadType !== RoadType.NONE || hasElevatedRoad(nx, ny));
+      if (!hasRoad) continue;
 
-      const newCost = cur.cost + roadTileCost(cell.roadType);
+      const effectiveRoadType = cell!.roadType !== RoadType.NONE ? cell!.roadType : RoadType.HIGHWAY;
+      const newCost = cur.cost + roadTileCost(effectiveRoadType);
       if (newCost > maxBudget) continue;
 
       const nk = toPosKey(nx, ny);
