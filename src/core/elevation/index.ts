@@ -5,7 +5,6 @@ export { getElevatedPath } from './ElevatedPath';
 export { validateElevatedPath } from './ElevatedPathValidation';
 export { isBlockedByElevation } from './ElevationZoneBlock';
 export { calculateElevatedMaintenance } from './ElevationMaintenance';
-export { findElevatedPath } from './ElevatedPathfinding';
 export {
   type ElevatedSegment,
   type ElevatedPosition,
