@@ -36,13 +36,17 @@ export function isWorkplaceZone(z: ZoneType): boolean {
     || z === ZoneType.INDUSTRIAL || z === ZoneType.OFFICE;
 }
 
-export type RCICategory = 'residential' | 'commercial' | 'industrial';
+export enum RCICategory {
+  RESIDENTIAL = 'residential',
+  COMMERCIAL = 'commercial',
+  INDUSTRIAL = 'industrial',
+}
 
 /** Map a zone type to its RCI demand category */
 export function zoneToRCI(z: ZoneType): RCICategory | null {
-  if (isResidentialZone(z)) return 'residential';
-  if (isCommercialZone(z)) return 'commercial';
-  if (z === ZoneType.INDUSTRIAL || z === ZoneType.OFFICE) return 'industrial';
+  if (isResidentialZone(z)) return RCICategory.RESIDENTIAL;
+  if (isCommercialZone(z)) return RCICategory.COMMERCIAL;
+  if (z === ZoneType.INDUSTRIAL || z === ZoneType.OFFICE) return RCICategory.INDUSTRIAL;
   return null;
 }
 
