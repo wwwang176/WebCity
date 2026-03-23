@@ -1,0 +1,218 @@
+/**
+ * Single-phase lane-level A* pathfinder on LaneGraph.
+ *
+ * Replaces the two-phase system (cell-level A* + refineLanePathVariants).
+ * Uses LaneGraph edges as the sole source of truth — no cell-level
+ * heuristics, no intersection transparency issues.
+ *
+ * Returns LaneEdge[] directly usable by TrafficSimulation.
+ */
+
+import { type LaneGraph, type LaneEdge, type ConnectionPoint } from './LaneGraph';
+import { ROAD_CONFIGS, RoadType } from '../road/types';
+import { parsePosKeyUnsafe, parseLevelFromKey, FOUR_NEIGHBORS, toPosKey } from '../grid/GridHelpers';
+import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
+
+/** Cost multiplier applied to edges used in previous variants (penalty method). */
+const VARIANT_PENALTY = 3;
+
+/** Number of lane path variants to generate per route. */
+const VARIANT_COUNT = 3;
+
+/**
+ * Find the nearest LaneGraph exit points for a building position.
+ * Checks the building cell and its 4 neighbors for road cells with exit points.
+ */
+function findNearbyExitPoints(
+  graph: LaneGraph,
+  bx: number, by: number,
+  lookup: UnifiedRoadLookup,
+): ConnectionPoint[] {
+  const results: ConnectionPoint[] = [];
+  const positions = [{ x: bx, y: by }];
+  for (const [dx, dy] of FOUR_NEIGHBORS) {
+    positions.push({ x: bx + dx!, y: by + dy! });
+  }
+
+  for (const pos of positions) {
+    // Check all levels at this position
+    const keys = lookup.getAllKeysAtPosition(pos.x, pos.y);
+    for (const key of keys) {
+      const pts = graph.getConnectionPoints(key);
+      for (const pt of pts) {
+        if (pt.type === 'exit') results.push(pt);
+      }
+    }
+  }
+  return results;
+}
+
+/**
+ * Find the nearest LaneGraph entry points for a building position.
+ */
+function findNearbyEntryPoints(
+  graph: LaneGraph,
+  bx: number, by: number,
+  lookup: UnifiedRoadLookup,
+): ConnectionPoint[] {
+  const results: ConnectionPoint[] = [];
+  const positions = [{ x: bx, y: by }];
+  for (const [dx, dy] of FOUR_NEIGHBORS) {
+    positions.push({ x: bx + dx!, y: by + dy! });
+  }
+
+  for (const pos of positions) {
+    const keys = lookup.getAllKeysAtPosition(pos.x, pos.y);
+    for (const key of keys) {
+      const pts = graph.getConnectionPoints(key);
+      for (const pt of pts) {
+        if (pt.type === 'entry') results.push(pt);
+      }
+    }
+  }
+  return results;
+}
+
+function manhattanDist(a: { x: number; y: number }, b: { x: number; y: number }): number {
+  return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+}
+
+/**
+ * A* on LaneGraph from start point(s) to end point(s).
+ * Multi-source / multi-target: starts from all exit points near the origin,
+ * terminates when any entry point near the destination is reached.
+ *
+ * @param penalty Map of edgeId → penalty multiplier (for variant generation)
+ */
+function laneAStar(
+  graph: LaneGraph,
+  startPoints: ConnectionPoint[],
+  endPoints: ConnectionPoint[],
+  endPos: { x: number; y: number },
+  maxSteps = 8000,
+  penalty?: Map<string, number>,
+): LaneEdge[] | null {
+  if (startPoints.length === 0 || endPoints.length === 0) return null;
+
+  const endSet = new Set(endPoints.map(p => p.id));
+  const gScore = new Map<string, number>();
+  const parentEdge = new Map<string, LaneEdge | null>();
+
+  // Open list: { pointId, f-score }
+  const open: { id: string; pos: { x: number; y: number }; f: number }[] = [];
+
+  // Seed: all start exit points at cost 0
+  for (const sp of startPoints) {
+    gScore.set(sp.id, 0);
+    parentEdge.set(sp.id, null);
+    const h = manhattanDist(sp.position, endPos) * 0.01; // admissible heuristic
+    open.push({ id: sp.id, pos: sp.position, f: h });
+  }
+
+  let steps = 0;
+  const closed = new Set<string>();
+
+  while (open.length > 0 && steps < maxSteps) {
+    steps++;
+
+    // Find best node
+    let bestIdx = 0;
+    for (let i = 1; i < open.length; i++) {
+      if (open[i]!.f < open[bestIdx]!.f) bestIdx = i;
+    }
+    const current = open[bestIdx]!;
+    open[bestIdx] = open[open.length - 1]!;
+    open.pop();
+
+    // Reached destination?
+    if (endSet.has(current.id)) {
+      // Reconstruct LaneEdge path
+      const path: LaneEdge[] = [];
+      let curId: string | undefined = current.id;
+      while (curId) {
+        const edge = parentEdge.get(curId);
+        if (!edge) break;
+        path.unshift(edge);
+        curId = edge.from.id;
+      }
+      return path;
+    }
+
+    if (closed.has(current.id)) continue;
+    closed.add(current.id);
+
+    const currentG = gScore.get(current.id)!;
+
+    // Expand neighbors via edges from this point
+    for (const edge of graph.getEdgesFrom(current.id)) {
+      const neighborId = edge.to.id;
+      if (closed.has(neighborId)) continue;
+
+      // Cost = edge length / speed (+ penalty for variant diversity)
+      let cost = edge.length;
+      if (penalty) {
+        const p = penalty.get(edge.id);
+        if (p) cost *= p;
+      }
+
+      const tentativeG = currentG + cost;
+      const prevG = gScore.get(neighborId);
+      if (prevG !== undefined && tentativeG >= prevG) continue;
+
+      gScore.set(neighborId, tentativeG);
+      parentEdge.set(neighborId, edge);
+      const h = manhattanDist(edge.to.position, endPos) * 0.01;
+      open.push({ id: neighborId, pos: edge.to.position, f: tentativeG + h });
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Find a lane-level path from building position `from` to building position `to`.
+ * Returns LaneEdge[] directly usable by TrafficSimulation.
+ */
+export function findLanePath(
+  graph: LaneGraph,
+  lookup: UnifiedRoadLookup,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): LaneEdge[] | null {
+  const startPoints = findNearbyExitPoints(graph, from.x, from.y, lookup);
+  const endPoints = findNearbyEntryPoints(graph, to.x, to.y, lookup);
+  return laneAStar(graph, startPoints, endPoints, to);
+}
+
+/**
+ * Generate multiple lane path variants for vehicle distribution across lanes.
+ * Uses penalty method: edges used in previous variants get higher cost.
+ */
+export function findLanePathVariants(
+  graph: LaneGraph,
+  lookup: UnifiedRoadLookup,
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  count = VARIANT_COUNT,
+): LaneEdge[][] {
+  const startPoints = findNearbyExitPoints(graph, from.x, from.y, lookup);
+  const endPoints = findNearbyEntryPoints(graph, to.x, to.y, lookup);
+  if (startPoints.length === 0 || endPoints.length === 0) return [];
+
+  const variants: LaneEdge[][] = [];
+  const penalty = new Map<string, number>();
+
+  for (let i = 0; i < count; i++) {
+    const path = laneAStar(graph, startPoints, endPoints, to, 8000, i > 0 ? penalty : undefined);
+    if (!path || path.length === 0) break;
+    variants.push(path);
+
+    // Apply penalty to edges used in this variant
+    for (const edge of path) {
+      const prev = penalty.get(edge.id) ?? 1;
+      penalty.set(edge.id, prev * VARIANT_PENALTY);
+    }
+  }
+
+  return variants;
+}
