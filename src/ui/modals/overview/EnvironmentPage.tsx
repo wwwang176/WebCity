@@ -1,4 +1,5 @@
 import { gameSignals, getGame } from '../../store/gameStore';
+import { BURNED, ABANDONED } from '../../../core/building/InfraPlacement';
 
 function StatRow(props: { label: string; value: string; status: 'good' | 'warn' | 'bad' | 'neutral' }) {
   const color = () => {
@@ -45,8 +46,8 @@ export function EnvironmentPage() {
     let burnedCount = 0;
     let abandonedCount = 0;
     grid.forEachCell((cell) => {
-      if (cell.reserved === 0xFD) burnedCount++; // BURNED constant
-      if (cell.reserved === 0xFE) abandonedCount++; // approximate abandoned marker
+      if (cell.reserved === BURNED) burnedCount++;
+      if (cell.reserved === ABANDONED) abandonedCount++;
     });
 
     return {
