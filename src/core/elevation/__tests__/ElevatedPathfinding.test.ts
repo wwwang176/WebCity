@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { Grid } from '../../grid/Grid';
 import { RoadType } from '../../road/types';
 import { ElevationManager } from '../ElevationManager';
+import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { findElevatedPath } from '../ElevatedPathfinding';
 
 function makeGrid(size: number): Grid {
@@ -22,7 +23,8 @@ describe('findElevatedPath', () => {
     for (let x = 0; x <= 5; x++) {
       grid.setCell(x, 0, { roadType: RoadType.TWO_LANE, roadFlags: 0b1010 });
     }
-    const path = findElevatedPath(grid, em, { x: 0, y: 0 }, { x: 5, y: 0 });
+    const lookup = new UnifiedRoadLookup(grid, em);
+    const path = findElevatedPath(grid, lookup, { x: 0, y: 0 }, { x: 5, y: 0 });
     expect(path).not.toBeNull();
     expect(path!.length).toBe(6);
   });
@@ -42,7 +44,8 @@ describe('findElevatedPath', () => {
     // x=8: ramp (connects elevated ↔ ground)
     em.set(8, 5, 1, { roadType: RoadType.HIGHWAY, roadFlags: 0b0100, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0 });
 
-    const path = findElevatedPath(grid, em, { x: 0, y: 5 }, { x: 10, y: 5 });
+    const lookup = new UnifiedRoadLookup(grid, em);
+    const path = findElevatedPath(grid, lookup, { x: 0, y: 5 }, { x: 10, y: 5 });
     expect(path).not.toBeNull();
     expect(path!.length).toBeGreaterThan(0);
     // Path should go through elevated nodes
@@ -53,7 +56,8 @@ describe('findElevatedPath', () => {
     grid.setCell(0, 0, { roadType: RoadType.TWO_LANE, roadFlags: 0b1000 });
     grid.setCell(10, 0, { roadType: RoadType.TWO_LANE, roadFlags: 0b0100 });
     // Disconnected — no path
-    const path = findElevatedPath(grid, em, { x: 0, y: 0 }, { x: 10, y: 0 });
+    const lookup = new UnifiedRoadLookup(grid, em);
+    const path = findElevatedPath(grid, lookup, { x: 0, y: 0 }, { x: 10, y: 0 });
     expect(path).toBeNull();
   });
 
@@ -62,7 +66,8 @@ describe('findElevatedPath', () => {
     for (let x = 0; x <= 5; x++) {
       grid.setCell(x, 0, { roadType: RoadType.TWO_LANE, roadFlags: 0b1010 });
     }
-    const path = findElevatedPath(grid, em, { x: 0, y: 0 }, { x: 5, y: 0 });
+    const lookup = new UnifiedRoadLookup(grid, em);
+    const path = findElevatedPath(grid, lookup, { x: 0, y: 0 }, { x: 5, y: 0 });
     expect(path).not.toBeNull();
     // All ground nodes (no level suffix)
     expect(path!.every(k => !k.includes(',0,'))).toBe(true);

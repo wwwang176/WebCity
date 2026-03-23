@@ -95,6 +95,28 @@ export class UnifiedRoadLookup {
     return result;
   }
 
+  /** Get all road cell keys at a specific (x, y) position across all levels. */
+  getAllKeysAtPosition(x: number, y: number): string[] {
+    if (x < 0 || y < 0 || x >= this.grid.width || y >= this.grid.height) return [];
+    const result: string[] = [];
+
+    // Check ground level
+    const groundCell = this.grid.getCell(x, y);
+    if (groundCell && groundCell.roadType !== RoadType.NONE) {
+      result.push(toPosKey(x, y));
+    }
+
+    // Check all elevated levels
+    for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+      const seg = this.em.get(x, y, lv);
+      if (seg && seg.roadType !== RoadType.NONE) {
+        result.push(`${x},${y},${lv}`);
+      }
+    }
+
+    return result;
+  }
+
   /** Get ALL road cell keys (ground + elevated). */
   getAllCellKeys(): string[] {
     const keys: string[] = [];

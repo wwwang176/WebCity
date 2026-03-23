@@ -170,6 +170,7 @@ const SCHOOL_KEY_TO_TYPE: Record<EducationRule['schoolKey'], SchoolType> = {
 export class SimulationLoop {
   private state: GameState;
   private _elevationManager: import('../elevation/ElevationManager').ElevationManager | null = null;
+  private _roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
   private lastDeathDay = -1;
   private lastBirthMonth = -1;
   private lastRiderDay = -1;
@@ -238,6 +239,10 @@ export class SimulationLoop {
   setElevationManager(em: import('../elevation/ElevationManager').ElevationManager): void {
     this._elevationManager = em;
     this.state.highwayConnection.setElevationManager(em);
+  }
+
+  setRoadLookup(lookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup): void {
+    this._roadLookup = lookup;
   }
 
   constructor(state: GameState) {
@@ -1545,7 +1550,7 @@ export class SimulationLoop {
       let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
 
       if (!variants) {
-        const path = findRoadPath(fromPos, toPos, grid, this._elevationManager ?? undefined);
+        const path = findRoadPath(fromPos, toPos, grid, this._roadLookup ?? undefined);
         if (path && path.length >= 2) {
           if (hasElevatedKeys(path)) {
             // Elevated path: use simple cell-to-cell edges (no lane graph)
@@ -1662,7 +1667,7 @@ export class SimulationLoop {
       }
       if (!foundEnd) return;
 
-      const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid, this._elevationManager ?? undefined);
+      const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid, this._roadLookup ?? undefined);
       if (path && path.length >= 2) {
         const edgePath = hasElevatedKeys(path)
           ? buildSimpleEdgePath(path)
@@ -1930,7 +1935,7 @@ export class SimulationLoop {
       const mode = chooseMode(from, to, availableTransport, 0);
       if (mode !== TransportMode.DRIVE) continue;
 
-      const path = findRoadPath(from, to, grid, this._elevationManager ?? undefined);
+      const path = findRoadPath(from, to, grid, this._roadLookup ?? undefined);
       if (!path) continue;
 
       for (const cellKey of path) {

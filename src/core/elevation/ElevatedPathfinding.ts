@@ -1,45 +1,22 @@
-import { RoadType, ROAD_CONFIGS } from '../road/types';
-import { toPosKey, manhattanDistance, FOUR_NEIGHBORS } from '../grid/GridHelpers';
-import { type ElevationManager } from './ElevationManager';
-import { MIN_ELEVATION_LEVEL, MAX_ELEVATION_LEVEL } from './types';
-
-interface GridLike {
-  getCell(x: number, y: number): { roadType: number } | null;
-  readonly width: number;
-  readonly height: number;
-}
+import { ROAD_CONFIGS, RoadType } from '../road/types';
+import { toPosKey, parsePosKeyUnsafe, parseLevelFromKey, manhattanDistance, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
 /** Cost multiplier for ramp cells (slower due to incline). */
 const RAMP_COST_MULTIPLIER = 1.5;
 const MAX_SPEED = 100;
 
 /**
- * Parse an elevated node key. Format: "x,y" (level 0) or "x,y,level" (level > 0).
- */
-function parseNodeKey(key: string): { x: number; y: number; level: number } {
-  const parts = key.split(',');
-  return {
-    x: Number(parts[0]),
-    y: Number(parts[1]),
-    level: parts.length > 2 ? Number(parts[2]) : 0,
-  };
-}
-
-function nodeKey(x: number, y: number, level: number): string {
-  return level === 0 ? toPosKey(x, y) : `${x},${y},${level}`;
-}
-
-/**
- * A* pathfinding that traverses both ground roads and elevated segments.
- * Ramp cells act as portals between ground (level 0) and elevated levels.
+ * A* pathfinding that traverses both ground roads and elevated segments
+ * using UnifiedRoadLookup for level-aware neighbor discovery.
  *
  * Node IDs:
  * - "x,y" = ground level
  * - "x,y,L" = elevated level L
  */
 export function findElevatedPath(
-  grid: GridLike,
-  em: ElevationManager,
+  _grid: { readonly width: number; readonly height: number; getCell(x: number, y: number): { roadType: number } | null },
+  lookup: UnifiedRoadLookup,
   start: { x: number; y: number },
   end: { x: number; y: number },
   maxSteps = 5000,
@@ -87,127 +64,70 @@ export function findElevatedPath(
     closed.add(current.k);
 
     const currentG = gScore.get(current.k)!;
-    const neighbors = getNeighbors(grid, em, current.x, current.y, current.level);
 
-    for (const n of neighbors) {
-      if (closed.has(n.key)) continue;
+    // Get neighbors via UnifiedRoadLookup (level-aware)
+    for (const [dx, dy] of FOUR_NEIGHBORS) {
+      const nx = current.x + dx!;
+      const ny = current.y + dy!;
+      const neighborKeys = lookup.getCompatibleNeighborKeys(current.k, nx, ny);
 
-      const moveCost = n.cost;
+      for (const nk of neighborKeys) {
+        if (closed.has(nk)) continue;
+
+        const roadInfo = lookup.getCellByKey(nk);
+        if (!roadInfo) continue;
+
+        const config = ROAD_CONFIGS[roadInfo.roadType as RoadType];
+        const speed = config?.speedLimit || 50;
+        const isRamp = lookup.isRamp(nk);
+        const moveCost = isRamp ? (1 / speed) * RAMP_COST_MULTIPLIER : 1 / speed;
+
+        const tentativeG = currentG + moveCost;
+        const prevG = gScore.get(nk);
+        if (prevG !== undefined && tentativeG >= prevG) continue;
+
+        gScore.set(nk, tentativeG);
+        parent.set(nk, current.k);
+        const nPos = parsePosKeyUnsafe(nk);
+        const nLevel = parseLevelFromKey(nk);
+        const h = manhattanDistance(nPos.x, nPos.y, end.x, end.y) / MAX_SPEED;
+        open.push({ k: nk, x: nPos.x, y: nPos.y, level: nLevel, f: tentativeG + h });
+      }
+    }
+
+    // Also check same-position level transitions (ramp at current position)
+    // getCompatibleNeighborKeys handles neighbor positions, but we also need
+    // to check transitions at the SAME position (standing on a ramp, go up/down).
+    const samePositionKeys = lookup.getAllKeysAtPosition(current.x, current.y);
+    for (const spk of samePositionKeys) {
+      if (spk === current.k) continue;
+      if (closed.has(spk)) continue;
+
+      // Check compatibility: must be adjacent levels and at least one is a ramp
+      const spLevel = parseLevelFromKey(spk);
+      const levelDiff = Math.abs(spLevel - current.level);
+      if (levelDiff !== 1) continue;
+      const currentIsRamp = lookup.isRamp(current.k);
+      const neighborIsRamp = lookup.isRamp(spk);
+      if (!currentIsRamp && !neighborIsRamp) continue;
+
+      const roadInfo = lookup.getCellByKey(spk);
+      if (!roadInfo) continue;
+
+      const config = ROAD_CONFIGS[roadInfo.roadType as RoadType];
+      const speed = config?.speedLimit || 50;
+      const moveCost = (1 / speed) * RAMP_COST_MULTIPLIER;
+
       const tentativeG = currentG + moveCost;
-      const prevG = gScore.get(n.key);
+      const prevG = gScore.get(spk);
       if (prevG !== undefined && tentativeG >= prevG) continue;
 
-      gScore.set(n.key, tentativeG);
-      parent.set(n.key, current.k);
-      const h = manhattanDistance(n.x, n.y, end.x, end.y) / MAX_SPEED;
-      open.push({ k: n.key, x: n.x, y: n.y, level: n.level, f: tentativeG + h });
+      gScore.set(spk, tentativeG);
+      parent.set(spk, current.k);
+      const h = manhattanDistance(current.x, current.y, end.x, end.y) / MAX_SPEED;
+      open.push({ k: spk, x: current.x, y: current.y, level: spLevel, f: tentativeG + h });
     }
   }
 
   return null;
-}
-
-interface Neighbor {
-  key: string;
-  x: number;
-  y: number;
-  level: number;
-  cost: number;
-}
-
-/** Get all traversable neighbors of a node (same level + ramp transitions). */
-function getNeighbors(
-  grid: GridLike,
-  em: ElevationManager,
-  x: number,
-  y: number,
-  level: number,
-): Neighbor[] {
-  const result: Neighbor[] = [];
-
-  if (level === 0) {
-    // --- Ground level: check 4 neighbors ---
-    for (const [dx, dy] of FOUR_NEIGHBORS) {
-      const nx = x + dx!;
-      const ny = y + dy!;
-      if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
-
-      const cell = grid.getCell(nx, ny);
-
-      // Ground road neighbor
-      if (cell && cell.roadType !== RoadType.NONE) {
-        const config = ROAD_CONFIGS[cell.roadType as RoadType];
-        const speed = config?.speedLimit || 50;
-        result.push({ key: nodeKey(nx, ny, 0), x: nx, y: ny, level: 0, cost: 1 / speed });
-      }
-
-      // Elevated road neighbor (cell may have no ground road but has elevated segment)
-      for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
-        const seg = em.get(nx, ny, lv);
-        if (seg && seg.roadType !== RoadType.NONE) {
-          const config = ROAD_CONFIGS[seg.roadType as RoadType];
-          const speed = config?.speedLimit || 50;
-          const cost = seg.isRamp ? (1 / speed) * RAMP_COST_MULTIPLIER : 1 / speed;
-          result.push({ key: nodeKey(nx, ny, lv), x: nx, y: ny, level: lv, cost });
-        }
-      }
-    }
-
-    // --- Check if any ramp at THIS cell connects ground to elevated ---
-    for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
-      const seg = em.get(x, y, lv);
-      if (seg && seg.isRamp && seg.roadType !== RoadType.NONE) {
-        const config = ROAD_CONFIGS[seg.roadType as RoadType];
-        const speed = config?.speedLimit || 50;
-        result.push({
-          key: nodeKey(x, y, lv),
-          x, y, level: lv,
-          cost: (1 / speed) * RAMP_COST_MULTIPLIER,
-        });
-      }
-    }
-  } else {
-    // --- Elevated level: check 4 neighbors at all levels ---
-    for (const [dx, dy] of FOUR_NEIGHBORS) {
-      const nx = x + dx!;
-      const ny = y + dy!;
-      if (nx < 0 || ny < 0 || nx >= grid.width || ny >= grid.height) continue;
-
-      // Check all elevated levels at neighbor (same level + other levels for ramp transitions)
-      for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
-        const seg = em.get(nx, ny, lv);
-        if (seg && seg.roadType !== RoadType.NONE) {
-          const config = ROAD_CONFIGS[seg.roadType as RoadType];
-          const speed = config?.speedLimit || 50;
-          const cost = seg.isRamp ? (1 / speed) * RAMP_COST_MULTIPLIER : 1 / speed;
-          result.push({ key: nodeKey(nx, ny, lv), x: nx, y: ny, level: lv, cost });
-        }
-      }
-
-      // Ground road neighbor
-      const groundCell = grid.getCell(nx, ny);
-      if (groundCell && groundCell.roadType !== RoadType.NONE) {
-        const config = ROAD_CONFIGS[groundCell.roadType as RoadType];
-        const speed = config?.speedLimit || 50;
-        result.push({ key: nodeKey(nx, ny, 0), x: nx, y: ny, level: 0, cost: 1 / speed });
-      }
-    }
-
-    // --- Check if this cell's ramp connects back to ground at same position ---
-    const thisSeg = em.get(x, y, level);
-    if (thisSeg && thisSeg.isRamp) {
-      const groundCell = grid.getCell(x, y);
-      if (groundCell && groundCell.roadType !== RoadType.NONE) {
-        const config = ROAD_CONFIGS[groundCell.roadType as RoadType];
-        const speed = config?.speedLimit || 50;
-        result.push({
-          key: nodeKey(x, y, 0),
-          x, y, level: 0,
-          cost: (1 / speed) * RAMP_COST_MULTIPLIER,
-        });
-      }
-    }
-  }
-
-  return result;
 }
