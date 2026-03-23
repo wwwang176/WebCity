@@ -1256,47 +1256,58 @@ export class Game {
         : v.busState
           ? 'bus' as VehicleData['type']
           : (this.vehicleTypes.get(v.id) ?? (() => { const t = classifyVehicleType(v.length); this.vehicleTypes.set(v.id, t); return t; })());
-      // Determine elevation + ramp pitch from current edge's cell keys
+      // Determine elevation + pitch from vehicle XZ position
       let elevation = 0;
       let pitch = 0;
       if (v.edgePath.length > 0) {
         const edgeIdx = Math.min(v.edgeIndex, v.edgePath.length - 1);
         const edge = v.edgePath[edgeIdx]!;
+        const cellLevel = parseLevelFromKey(edge.from.cellKey);
 
-        // Determine elevation from edge cell keys
-        const fromLevel = parseLevelFromKey(edge.from.cellKey);
-        const toLevel = parseLevelFromKey(edge.to.cellKey);
-        const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-
-        if (fromLevel !== toLevel) {
-          // Cross-level edge: interpolate between levels
-          elevation = fromLevel + (toLevel - fromLevel) * t;
-          const RAMP_ANGLE = Math.atan2(0.6, 1.0);
-          pitch = fromLevel < toLevel ? RAMP_ANGLE : -RAMP_ANGLE;
-        } else if (fromLevel > 0) {
-          // Check if this cell is a ramp
-          const cp = parsePosKeyUnsafe(edge.from.cellKey);
-          const seg = this.elevationManager.get(cp.x, cp.y, fromLevel);
-          if (seg?.isRamp) {
-            // Ramp at stored level L transitions from L-1 to L
-            // Use rampAscendDirection + vehicle heading to determine up/down
-            const RAMP_ANGLE = Math.atan2(0.6, 1.0);
-            const ascend = seg.rampAscendDirection;
-            const hx = Math.cos(heading);
-            const hy = -Math.sin(heading);
-            const ax = (ascend & 0b1000) ? 1 : (ascend & 0b0100) ? -1 : 0;
-            const ay = (ascend & 0b0010) ? 1 : (ascend & 0b0001) ? -1 : 0;
-            const dot = hx * ax + hy * ay;
-            const goingUp = dot > 0;
-            // Ramp spans exactly one level: L-1 to L
-            elevation = goingUp ? (fromLevel - 1) + t : fromLevel - t;
-            pitch = goingUp ? RAMP_ANGLE : -RAMP_ANGLE;
-          } else {
-            elevation = fromLevel;
+        // Check if vehicle is on a ramp cell (position-based)
+        const gx = Math.round(pos.x);
+        const gy = Math.round(pos.y);
+        const rampSeg = cellLevel > 0
+          ? this.elevationManager.get(gx, gy, cellLevel)
+          : null;
+        // Also check if we're on a ramp at any level (for cross-cell edges)
+        const rampAtPos = rampSeg?.isRamp ? rampSeg : (() => {
+          for (let lv = 1; lv <= 3; lv++) {
+            const s = this.elevationManager.get(gx, gy, lv);
+            if (s?.isRamp) return s;
           }
+          return null;
+        })();
+        const rampLevel = rampAtPos ? (() => {
+          for (let lv = 1; lv <= 3; lv++) {
+            if (this.elevationManager.get(gx, gy, lv) === rampAtPos) return lv;
+          }
+          return 0;
+        })() : 0;
+
+        if (rampAtPos && rampLevel > 0) {
+          // Vehicle is on a ramp cell — compute elevation from position
+          const ascend = rampAtPos.rampAscendDirection;
+          // Ramp axis: ascend direction component
+          const ax = (ascend & 0b1000) ? 1 : (ascend & 0b0100) ? -1 : 0; // E/W
+          const ay = (ascend & 0b0010) ? 1 : (ascend & 0b0001) ? -1 : 0; // S/N
+          // Position within cell: -0.5 to +0.5 along ramp axis
+          const dx = pos.x - gx;
+          const dy = pos.y - gy;
+          const along = dx * ax + dy * ay; // -0.5 (low end) to +0.5 (high end)
+          // Ramp at level L: low end = L-1, high end = L
+          // along=-0.5 → elevation=L-1, along=+0.5 → elevation=L
+          elevation = (rampLevel - 0.5) + along;
+
+          // Pitch from heading vs ascend direction
+          const RAMP_ANGLE = Math.atan2(0.6, 1.0);
+          const hx = Math.cos(heading);
+          const hy = -Math.sin(heading);
+          const dot = hx * ax + hy * ay;
+          pitch = dot > 0 ? RAMP_ANGLE : dot < 0 ? -RAMP_ANGLE : 0;
         } else {
-          // Flat edge (ground or elevated)
-          elevation = fromLevel;
+          // Flat cell — constant elevation from cellKey level
+          elevation = cellLevel;
         }
       }
       vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0, elevation: elevation || undefined, pitch: pitch || undefined });
