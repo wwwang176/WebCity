@@ -1306,8 +1306,9 @@ export class Game {
           const dot = hx * ax + hy * ay;
           pitch = dot > 0 ? RAMP_ANGLE : dot < 0 ? -RAMP_ANGLE : 0;
         } else {
-          // Flat cell — constant elevation from cellKey level
-          elevation = cellLevel;
+          // Flat cell — verify edge level is valid at current position
+          const segHere = cellLevel > 0 ? this.elevationManager.get(gx, gy, cellLevel) : null;
+          elevation = segHere ? cellLevel : 0;
         }
       }
       vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0, elevation: elevation || undefined, pitch: pitch || undefined });
