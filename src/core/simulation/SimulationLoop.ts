@@ -48,6 +48,7 @@ import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate 
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../economy/ExpenseCalculator';
+import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
 import { findAvailableTransit } from '../transport/TransitAvailability';
@@ -167,6 +168,7 @@ const SCHOOL_KEY_TO_TYPE: Record<EducationRule['schoolKey'], SchoolType> = {
 
 export class SimulationLoop {
   private state: GameState;
+  private _elevationManager: import('../elevation/ElevationManager').ElevationManager | null = null;
   private lastDeathDay = -1;
   private lastBirthMonth = -1;
   private lastRiderDay = -1;
@@ -231,6 +233,10 @@ export class SimulationLoop {
   onBuildingAdded?: (x: number, y: number, zoneType: number, level: number) => void;
   onBuildingRemoved?: (x: number, y: number) => void;
   onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned?: boolean) => void;
+
+  setElevationManager(em: import('../elevation/ElevationManager').ElevationManager): void {
+    this._elevationManager = em;
+  }
 
   constructor(state: GameState) {
     this.state = state;
@@ -783,6 +789,8 @@ export class SimulationLoop {
       serviceCost: getTotalServiceMaintenanceCost(this.state),
       policyCost: calculateDistrictPolicyCost(this.state.districts.getAllDistricts()),
       transportCost: getTotalTransportOperatingCost(this.state),
+      elevatedMaintenance: this._elevationManager
+        ? calculateElevatedMaintenance(this._elevationManager) : 0,
     });
   }
 
@@ -1528,7 +1536,7 @@ export class SimulationLoop {
       let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
 
       if (!variants) {
-        const path = findRoadPath(fromPos, toPos, grid);
+        const path = findRoadPath(fromPos, toPos, grid, this._elevationManager ?? undefined);
         if (path && path.length >= 2) {
           variants = refineLanePathVariants(this.laneGraph, path);
           if (variants.length > 0) {
@@ -1639,7 +1647,7 @@ export class SimulationLoop {
       }
       if (!foundEnd) return;
 
-      const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid);
+      const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid, this._elevationManager ?? undefined);
       if (path && path.length >= 2) {
         const edgePath = refineLanePath(this.laneGraph, path);
         if (edgePath && edgePath.length > 0) {
@@ -1905,7 +1913,7 @@ export class SimulationLoop {
       const mode = chooseMode(from, to, availableTransport, 0);
       if (mode !== TransportMode.DRIVE) continue;
 
-      const path = findRoadPath(from, to, grid);
+      const path = findRoadPath(from, to, grid, this._elevationManager ?? undefined);
       if (!path) continue;
 
       for (const cellKey of path) {

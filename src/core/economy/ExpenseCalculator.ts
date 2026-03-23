@@ -16,6 +16,7 @@ export interface ExpenseBreakdown {
   serviceCost: number;
   policyCost: number;
   transportCost: number;
+  elevatedMaintenance: number;
 }
 
 /** Calculate total expenses from all categories. */
@@ -23,5 +24,6 @@ export function calculateTotalExpenses(breakdown: ExpenseBreakdown): number {
   return breakdown.roadMaintenance
     + breakdown.serviceCost
     + breakdown.policyCost
-    + breakdown.transportCost;
+    + breakdown.transportCost
+    + breakdown.elevatedMaintenance;
 }

@@ -407,9 +407,12 @@ export class Game {
       // Worker not available (e.g. test environment) — falls back to sync Dijkstra
     }
     // Restore abandonment stress from loaded save
-    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number> } } | undefined)?._extra;
+    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number>; elevationData?: Parameters<typeof this.elevationManager.fromJSON>[0] } } | undefined)?._extra;
     if (extra?.abandonmentStress) {
       this.simLoop.abandonmentStress = extra.abandonmentStress;
+    }
+    if (extra?.elevationData) {
+      this.elevationManager.fromJSON(extra.elevationData);
     }
     this.simLoop.onTerrainChanged = () => {
       this.dirty.terrain = true;
@@ -435,9 +438,11 @@ export class Game {
     this.elevationManager = new ElevationManager();
     this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
     this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
+    this.simLoop.setElevationManager(this.elevationManager);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);
+    this.zoneManager.setElevationManager(this.elevationManager);
 
     // 設定渡輪系統的水域網格（A* 水面導航）
     const grid = this.state.grid;
@@ -1107,7 +1112,7 @@ export class Game {
 
         // Auto-save
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
-          const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress });
+          const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
           saveGame(0, 'AutoSave', data, this.state.citizens.getPopulation()).catch(() => { /* ignore save errors */ });
         }
 
@@ -1981,7 +1986,7 @@ export class Game {
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
-    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress });
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
     const population = this.state.citizens.getPopulation();
     await saveGame(slotId, name, data, population);
   }
@@ -1996,7 +2001,20 @@ export class Game {
     this.clearPreviewLine();
     const pathCells = getLShapedPath(this.dragStart, { x: this.gridCursor.gridX, y: this.gridCursor.gridY });
     if (pathCells.length < 2) return;
-    const points = pathCells.map(c => new THREE.Vector3(c.x, 0.2, c.y));
+
+    // Elevated mode: origin at ground, ramp cells rise, body at elevated height
+    const LEVEL_HEIGHT = 0.6;
+    const elevatedY = this.placementMode === 'elevated' ? this.elevationLevel * LEVEL_HEIGHT + 0.2 : 0.2;
+    const rampCount = this.placementMode === 'elevated' ? Math.min(this.elevationLevel, pathCells.length - 1) : 0;
+    const points = pathCells.map((c, i) => {
+      let y = 0.2; // ground
+      if (this.placementMode === 'elevated') {
+        if (i === 0) y = 0.2; // origin stays on ground
+        else if (i <= rampCount) y = 0.2 + (i / rampCount) * (elevatedY - 0.2); // ramp interpolation
+        else y = elevatedY; // elevated body
+      }
+      return new THREE.Vector3(c.x, y, c.y);
+    });
 
     // Calculate estimated cost
     if (this.placementMode === 'elevated') {
