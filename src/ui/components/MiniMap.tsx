@@ -1,5 +1,6 @@
 import { onMount, createEffect } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
+import { ZoneType, TerrainType } from '../../core/grid/types';
 
 export function MiniMap() {
   let canvas: HTMLCanvasElement | undefined;
@@ -38,25 +39,25 @@ export function MiniMap() {
 
           let color: string | null = null;
 
-          if (cell.terrainType === 1) color = '#1a3a5c';
-          else if (cell.terrainType === 2) color = '#5c5c4c';
-          else if (cell.terrainType === 3) color = '#1c3a1c';
+          if (cell.terrainType === TerrainType.WATER) color = '#1a3a5c';
+          else if (cell.terrainType === TerrainType.MOUNTAIN) color = '#5c5c4c';
+          else if (cell.terrainType === TerrainType.FOREST) color = '#1c3a1c';
 
           if (cell.roadType > 0) color = '#555';
 
           if (cell.buildingId > 0 && cell.buildingId < 243) {
-            if (cell.zoneType === 1 || cell.zoneType === 2) color = '#4caf50';
-            else if (cell.zoneType === 3 || cell.zoneType === 4) color = '#42a5f5';
-            else if (cell.zoneType === 5) color = '#ffa726';
-            else if (cell.zoneType === 6) color = '#ab47bc';
+            if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) color = '#4caf50';
+            else if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) color = '#42a5f5';
+            else if (cell.zoneType === ZoneType.INDUSTRIAL) color = '#ffa726';
+            else if (cell.zoneType === ZoneType.OFFICE) color = '#ab47bc';
           }
           if (cell.buildingId >= 243) color = '#ffeb3b';
 
           if (cell.buildingId === 0 && cell.zoneType > 0 && !color) {
-            if (cell.zoneType === 1 || cell.zoneType === 2) color = '#2e5e2e';
-            else if (cell.zoneType === 3 || cell.zoneType === 4) color = '#1e4a6e';
-            else if (cell.zoneType === 5) color = '#5e3e1e';
-            else if (cell.zoneType === 6) color = '#4e2e5e';
+            if (cell.zoneType === ZoneType.RESIDENTIAL_LOW || cell.zoneType === ZoneType.RESIDENTIAL_HIGH) color = '#2e5e2e';
+            else if (cell.zoneType === ZoneType.COMMERCIAL_LOW || cell.zoneType === ZoneType.COMMERCIAL_HIGH) color = '#1e4a6e';
+            else if (cell.zoneType === ZoneType.INDUSTRIAL) color = '#5e3e1e';
+            else if (cell.zoneType === ZoneType.OFFICE) color = '#4e2e5e';
           }
 
           if (color) {
