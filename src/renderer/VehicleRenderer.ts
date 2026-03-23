@@ -223,6 +223,10 @@ export class VehicleRenderer {
         if (v.elevation && v.elevation > 0) {
           yPos += v.elevation * 0.6;
         }
+        // Ramp pitch compensation: restore normal-direction offset lost to tilt
+        if (v.pitch) {
+          yPos += 0.025 * (1 - Math.cos(v.pitch));
+        }
 
         rotation.makeRotationY(v.heading);
         // Pitch/roll: apply in local space (airplane, ramp vehicles, etc.)
@@ -274,7 +278,8 @@ export class VehicleRenderer {
           const hlX = vx + cosH * fOff;
           const hlZ = vz - sinH * fOff;
           // Light Y: airplane follows altitude; others use base + elevation
-          const lightY = type === 'airplane' ? yPos + 0.01 : 0.055 + (v.elevation ? v.elevation * 0.6 : 0);
+          let lightY = type === 'airplane' ? yPos + 0.01 : 0.055 + (v.elevation ? v.elevation * 0.6 : 0);
+          if (v.pitch && type !== 'airplane') lightY += 0.025 * (1 - Math.cos(v.pitch));
           hlMatrix.makeRotationY(v.heading);
           // Apply pitch rotation to headlights (ramp vehicles + airplanes)
           if (v.pitch) {
