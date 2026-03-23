@@ -7,11 +7,56 @@ export enum SoundType {
   CLICK = 'click',
 }
 
+/** Audio tuning constants — adjust without reading implementation */
+export const AUDIO = {
+  VOLUME: { MASTER: 0.5, MUSIC: 0.3, SFX: 0.7 },
+  BGM: {
+    GAIN: 0.08,
+    CHORD_INTERVAL_MS: 4000,
+    CHORDS: [
+      [261.63, 329.63, 392.00], // C major
+      [293.66, 349.23, 440.00], // Dm
+      [246.94, 311.13, 369.99], // Bm (as Am)
+      [261.63, 329.63, 392.00], // C major repeat
+    ],
+  },
+  SFX: {
+    [SoundType.BUILD]:    { freq: 440, wave: 'sine'     as OscillatorType, gain: 0.3, dur: 0.2 },
+    [SoundType.DEMOLISH]: { freq: 200, wave: 'sawtooth' as OscillatorType, gain: 0.3, dur: 0.3 },
+    [SoundType.ZONE]:     { freq: 523, wave: 'triangle' as OscillatorType, gain: 0.2, dur: 0.15 },
+    [SoundType.MILESTONE]:{ freq: 660, wave: 'sine'     as OscillatorType, gain: 0.4, dur: 0.5 },
+    [SoundType.DISASTER]: { freq: 150, wave: 'square'   as OscillatorType, gain: 0.5, dur: 0.8 },
+    [SoundType.CLICK]:    { freq: 800, wave: 'sine'     as OscillatorType, gain: 0.1, dur: 0.05 },
+  },
+  AMBIENT: {
+    GAIN: 0.04,
+    POP_SCALE_MAX: 1000,
+    POP_GAIN_MIN: 0.3,
+    POP_GAIN_RANGE: 0.7,
+    BIRD_CHANCE: 0.3,
+    BIRD_INTERVAL_BASE_MS: 3000,
+    BIRD_INTERVAL_RANGE_MS: 4000,
+    BIRD_FREQ_BASE: 2000,
+    BIRD_FREQ_RANGE: 2000,
+    BIRD_DOUBLE_CHANCE: 0.5,
+    TRAFFIC_VEHICLE_THRESHOLD: 5,
+    TRAFFIC_INTERVAL_MS: 5000,
+    TRAFFIC_FREQ_BASE: 80,
+    TRAFFIC_FREQ_RANGE: 40,
+    TRAFFIC_VEHICLE_SCALE: 50,
+    TRAFFIC_GAIN: 0.15,
+    TRAFFIC_DURATION: 1.5,
+    NOISE_WALK_STEP: 0.02,
+    NOISE_DECAY: 1.02,
+    NOISE_SCALE: 3.5,
+  },
+} as const;
+
 export class AudioManager {
   private audioContext: AudioContext | null = null;
-  private masterVolume = 0.5;
-  private musicVolume = 0.3;
-  private sfxVolume = 0.7;
+  private masterVolume = AUDIO.VOLUME.MASTER;
+  private musicVolume = AUDIO.VOLUME.MUSIC;
+  private sfxVolume = AUDIO.VOLUME.SFX;
   private muted = false;
   private sfxMuted = false;
   private musicMuted = false;
@@ -45,15 +90,8 @@ export class AudioManager {
 
     this.bgmPlaying = true;
 
-    // Chord progressions: each entry is an array of frequencies forming a chord
-    const chords = [
-      [261.63, 329.63, 392.00], // C major  (C4, E4, G4)
-      [293.66, 349.23, 440.00], // Dm       (D4, F4, A4)
-      [246.94, 311.13, 369.99], // Bm       (B3, Eb4, F#4) - acts as Am
-      [261.63, 329.63, 392.00], // C major  repeat
-    ];
-
-    const bgmVolume = this.masterVolume * this.musicVolume * 0.08;
+    const chords = AUDIO.BGM.CHORDS;
+    const bgmVolume = this.masterVolume * this.musicVolume * AUDIO.BGM.GAIN;
 
     // Create a master gain for BGM
     this.bgmGainNode = ctx.createGain();
@@ -90,7 +128,7 @@ export class AudioManager {
 
     // Play first chord immediately and then cycle every 4 seconds
     playChord();
-    this.bgmIntervalId = setInterval(playChord, 4000);
+    this.bgmIntervalId = setInterval(playChord, AUDIO.BGM.CHORD_INTERVAL_MS);
   }
 
   stopBGM(): void {
@@ -131,57 +169,13 @@ export class AudioManager {
     gain.connect(ctx.destination);
 
     const volume = this.masterVolume * this.sfxVolume;
-
-    switch (type) {
-      case 'build':
-        osc.frequency.value = 440;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(volume * 0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.2);
-        break;
-      case 'demolish':
-        osc.frequency.value = 200;
-        osc.type = 'sawtooth';
-        gain.gain.setValueAtTime(volume * 0.3, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.3);
-        break;
-      case 'zone':
-        osc.frequency.value = 523;
-        osc.type = 'triangle';
-        gain.gain.setValueAtTime(volume * 0.2, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.15);
-        break;
-      case 'milestone':
-        osc.frequency.value = 660;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(volume * 0.4, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.5);
-        break;
-      case 'disaster':
-        osc.frequency.value = 150;
-        osc.type = 'square';
-        gain.gain.setValueAtTime(volume * 0.5, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.8);
-        break;
-      case 'click':
-        osc.frequency.value = 800;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(volume * 0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + 0.05);
-        break;
-    }
+    const sfx = AUDIO.SFX[type];
+    osc.frequency.value = sfx.freq;
+    osc.type = sfx.wave;
+    gain.gain.setValueAtTime(volume * sfx.gain, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + sfx.dur);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + sfx.dur);
   }
 
   // ===== Ambient Environment Audio =====
@@ -194,24 +188,20 @@ export class AudioManager {
 
     // Master ambient gain
     this.ambientGainNode = ctx.createGain();
-    this.ambientGainNode.gain.value = (this.muted || this.musicMuted) ? 0 : this.masterVolume * 0.04;
+    this.ambientGainNode.gain.value = (this.muted || this.musicMuted) ? 0 : this.masterVolume * AUDIO.AMBIENT.GAIN;
     this.ambientGainNode.connect(ctx.destination);
 
-    // City ambient noise (brown noise via filtered white noise)
     this.startCityNoise(ctx);
 
-    // Bird chirps (random interval)
     this.birdIntervalId = setInterval(() => {
       if (this.muted || this.musicMuted || !this.ambientPlaying) return;
-      // Only chirp during daytime (we don't track time here, so always play but randomly)
-      if (Math.random() < 0.3) this.playBirdChirp(ctx);
-    }, 3000 + Math.random() * 4000);
+      if (Math.random() < AUDIO.AMBIENT.BIRD_CHANCE) this.playBirdChirp(ctx);
+    }, AUDIO.AMBIENT.BIRD_INTERVAL_BASE_MS + Math.random() * AUDIO.AMBIENT.BIRD_INTERVAL_RANGE_MS);
 
-    // Traffic hum (periodic based on vehicle count)
     this.trafficIntervalId = setInterval(() => {
       if (this.muted || this.musicMuted || !this.ambientPlaying) return;
-      if (this.ambientVehicles > 5) this.playTrafficHum(ctx);
-    }, 5000);
+      if (this.ambientVehicles > AUDIO.AMBIENT.TRAFFIC_VEHICLE_THRESHOLD) this.playTrafficHum(ctx);
+    }, AUDIO.AMBIENT.TRAFFIC_INTERVAL_MS);
   }
 
   stopAmbient(): void {
@@ -240,8 +230,8 @@ export class AudioManager {
 
     // Adjust ambient noise volume based on city size
     if (this.ambientGainNode && !this.muted && !this.musicMuted) {
-      const popFactor = Math.min(1, population / 1000); // 0-1 based on pop up to 1000
-      this.ambientGainNode.gain.value = this.masterVolume * 0.04 * (0.3 + popFactor * 0.7);
+      const popFactor = Math.min(1, population / AUDIO.AMBIENT.POP_SCALE_MAX);
+      this.ambientGainNode.gain.value = this.masterVolume * AUDIO.AMBIENT.GAIN * (AUDIO.AMBIENT.POP_GAIN_MIN + popFactor * AUDIO.AMBIENT.POP_GAIN_RANGE);
     }
   }
 
@@ -255,8 +245,8 @@ export class AudioManager {
     let last = 0;
     for (let i = 0; i < bufferSize; i++) {
       const white = Math.random() * 2 - 1;
-      last = (last + (0.02 * white)) / 1.02;
-      data[i] = last * 3.5; // scale up
+      last = (last + (AUDIO.AMBIENT.NOISE_WALK_STEP * white)) / AUDIO.AMBIENT.NOISE_DECAY;
+      data[i] = last * AUDIO.AMBIENT.NOISE_SCALE;
     }
 
     const source = ctx.createBufferSource();
@@ -275,7 +265,7 @@ export class AudioManager {
     const osc = ctx.createOscillator();
     osc.type = 'sine';
     // Random bird frequencies (high pitched chirp)
-    const baseFreq = 2000 + Math.random() * 2000;
+    const baseFreq = AUDIO.AMBIENT.BIRD_FREQ_BASE + Math.random() * AUDIO.AMBIENT.BIRD_FREQ_RANGE;
     osc.frequency.setValueAtTime(baseFreq, ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.3, ctx.currentTime + 0.05);
     osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.8, ctx.currentTime + 0.1);
@@ -288,7 +278,7 @@ export class AudioManager {
     osc.stop(ctx.currentTime + 0.15);
 
     // Optional second chirp after a short delay
-    if (Math.random() < 0.5) {
+    if (Math.random() < AUDIO.AMBIENT.BIRD_DOUBLE_CHANCE) {
       const osc2 = ctx.createOscillator();
       osc2.type = 'sine';
       const freq2 = baseFreq * (0.9 + Math.random() * 0.2);
@@ -314,15 +304,15 @@ export class AudioManager {
     // Low rumble for traffic
     const osc = ctx.createOscillator();
     osc.type = 'sawtooth';
-    osc.frequency.value = 80 + Math.random() * 40;
+    osc.frequency.value = AUDIO.AMBIENT.TRAFFIC_FREQ_BASE + Math.random() * AUDIO.AMBIENT.TRAFFIC_FREQ_RANGE;
 
-    const intensity = Math.min(1, this.ambientVehicles / 50);
-    gain.gain.setValueAtTime(0.15 * intensity, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.5);
+    const intensity = Math.min(1, this.ambientVehicles / AUDIO.AMBIENT.TRAFFIC_VEHICLE_SCALE);
+    gain.gain.setValueAtTime(AUDIO.AMBIENT.TRAFFIC_GAIN * intensity, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + AUDIO.AMBIENT.TRAFFIC_DURATION);
 
     osc.connect(gain);
     osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 1.5);
+    osc.stop(ctx.currentTime + AUDIO.AMBIENT.TRAFFIC_DURATION);
   }
 
   setMasterVolume(vol: number): void {
@@ -357,10 +347,10 @@ export class AudioManager {
   private applyMusicGain(): void {
     const off = this.muted || this.musicMuted;
     if (this.bgmGainNode) {
-      this.bgmGainNode.gain.value = off ? 0 : this.masterVolume * this.musicVolume * 0.08;
+      this.bgmGainNode.gain.value = off ? 0 : this.masterVolume * this.musicVolume * AUDIO.BGM.GAIN;
     }
     if (this.ambientGainNode) {
-      this.ambientGainNode.gain.value = off ? 0 : this.masterVolume * 0.04;
+      this.ambientGainNode.gain.value = off ? 0 : this.masterVolume * AUDIO.AMBIENT.GAIN;
     }
   }
 

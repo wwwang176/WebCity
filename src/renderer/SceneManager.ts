@@ -1,5 +1,27 @@
 import * as THREE from 'three';
 
+/** Scene setup constants */
+export const SCENE = {
+  SKY_COLOR: 0x87ceeb,
+  FRUSTUM_SIZE: 60,
+  NEAR_CLIP: 0.1,
+  FAR_CLIP: 1000,
+  CAMERA_ANGLE: Math.PI / 4,
+  CAMERA_ELEVATION: Math.PI / 6,
+  CAMERA_DISTANCE: 50,
+  SUN_OFFSET: { x: 50, y: 80, z: 50 },
+  AMBIENT_INTENSITY: 0.6,
+  DIRECTIONAL_INTENSITY: 0.8,
+  HEMISPHERE_INTENSITY: 0.3,
+  HEMISPHERE_GROUND: 0x556633,
+  SHADOW_MAP_SIZE: 2048,
+  SHADOW_BIAS: -0.0005,
+  SHADOW_NORMAL_BIAS: 0.02,
+  SHADOW_NEAR: 1,
+  SHADOW_FAR: 200,
+  SHADOW_EXTENT: 60,
+} as const;
+
 export class SceneManager {
   readonly scene: THREE.Scene;
   readonly camera: THREE.OrthographicCamera;
@@ -14,16 +36,16 @@ export class SceneManager {
   readonly hemisphereLight!: THREE.HemisphereLight;
 
   // Sun offset – set by WeatherRenderer, applied relative to cameraTarget
-  readonly sunOffset = new THREE.Vector3(50, 80, 50);
+  readonly sunOffset = new THREE.Vector3(SCENE.SUN_OFFSET.x, SCENE.SUN_OFFSET.y, SCENE.SUN_OFFSET.z);
 
   // Camera state
-  private cameraAngle = Math.PI / 4; // 45 degrees isometric
-  private targetCameraAngle = Math.PI / 4;
-  private cameraDistance = 50;
+  private cameraAngle = SCENE.CAMERA_ANGLE;
+  private targetCameraAngle = SCENE.CAMERA_ANGLE;
+  private cameraDistance = SCENE.CAMERA_DISTANCE;
   private cameraTarget = new THREE.Vector3(0, 0, 0);
-  private cameraElevation = Math.PI / 6; // 30 degrees
-  private targetCameraElevation = Math.PI / 6;
-  private static readonly DEFAULT_ELEVATION = Math.PI / 6;
+  private cameraElevation = SCENE.CAMERA_ELEVATION;
+  private targetCameraElevation = SCENE.CAMERA_ELEVATION;
+  private static readonly DEFAULT_ELEVATION = SCENE.CAMERA_ELEVATION;
 
   // Reusable vectors for panCamera (avoid per-call allocation)
   private readonly _panForward = new THREE.Vector3();
@@ -31,18 +53,17 @@ export class SceneManager {
 
   constructor(container: HTMLElement) {
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x87ceeb); // Sky blue
+    this.scene.background = new THREE.Color(SCENE.SKY_COLOR);
 
-    // Orthographic camera for isometric view
     const aspect = container.clientWidth / container.clientHeight;
-    const frustumSize = 60;
+    const frustumSize = SCENE.FRUSTUM_SIZE;
     this.camera = new THREE.OrthographicCamera(
       -frustumSize * aspect / 2,
       frustumSize * aspect / 2,
       frustumSize / 2,
       -frustumSize / 2,
-      0.1,
-      1000,
+      SCENE.NEAR_CLIP,
+      SCENE.FAR_CLIP,
     );
     this.updateCameraPosition();
 
@@ -76,24 +97,24 @@ export class SceneManager {
     const self = this as SceneManager;
 
     Object.defineProperty(self, 'ambientLight', {
-      value: new THREE.AmbientLight(0xffffff, 0.6),
+      value: new THREE.AmbientLight(0xffffff, SCENE.AMBIENT_INTENSITY),
       writable: false,
     });
     this.scene.add(this.ambientLight);
 
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(50, 80, 50);
+    const dir = new THREE.DirectionalLight(0xffffff, SCENE.DIRECTIONAL_INTENSITY);
+    dir.position.set(SCENE.SUN_OFFSET.x, SCENE.SUN_OFFSET.y, SCENE.SUN_OFFSET.z);
     dir.castShadow = true;
-    dir.shadow.mapSize.width = 2048;
-    dir.shadow.mapSize.height = 2048;
-    dir.shadow.bias = -0.0005;
-    dir.shadow.normalBias = 0.02;
-    dir.shadow.camera.near = 1;
-    dir.shadow.camera.far = 200;
-    dir.shadow.camera.left = -60;
-    dir.shadow.camera.right = 60;
-    dir.shadow.camera.top = 60;
-    dir.shadow.camera.bottom = -60;
+    dir.shadow.mapSize.width = SCENE.SHADOW_MAP_SIZE;
+    dir.shadow.mapSize.height = SCENE.SHADOW_MAP_SIZE;
+    dir.shadow.bias = SCENE.SHADOW_BIAS;
+    dir.shadow.normalBias = SCENE.SHADOW_NORMAL_BIAS;
+    dir.shadow.camera.near = SCENE.SHADOW_NEAR;
+    dir.shadow.camera.far = SCENE.SHADOW_FAR;
+    dir.shadow.camera.left = -SCENE.SHADOW_EXTENT;
+    dir.shadow.camera.right = SCENE.SHADOW_EXTENT;
+    dir.shadow.camera.top = SCENE.SHADOW_EXTENT;
+    dir.shadow.camera.bottom = -SCENE.SHADOW_EXTENT;
     Object.defineProperty(self, 'directionalLight', {
       value: dir,
       writable: false,
@@ -102,7 +123,7 @@ export class SceneManager {
     this.scene.add(this.directionalLight.target);
 
     Object.defineProperty(self, 'hemisphereLight', {
-      value: new THREE.HemisphereLight(0x87ceeb, 0x556633, 0.3),
+      value: new THREE.HemisphereLight(SCENE.SKY_COLOR, SCENE.HEMISPHERE_GROUND, SCENE.HEMISPHERE_INTENSITY),
       writable: false,
     });
     this.scene.add(this.hemisphereLight);
