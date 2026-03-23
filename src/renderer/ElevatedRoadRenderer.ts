@@ -318,7 +318,15 @@ export class ElevatedRoadRenderer {
         sY = ((ramp.level - 0.5) + along) * LEVEL_HEIGHT + SIDEWALK_Y;
       }
 
-      matrix.makeScale(s.sx, 1, s.sz);
+      // Scale: stretch along ramp axis to fill sloped surface
+      let sx = s.sx;
+      let sz = s.sz;
+      if (ramp) {
+        const ascend = ramp.seg.rampAscendDirection;
+        const isNS = (ascend & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
+        if (isNS) sz *= RAMP_LENGTH; else sx *= RAMP_LENGTH;
+      }
+      matrix.makeScale(sx, 1, sz);
       if (ramp) {
         const tiltX = this.getRampTiltX(ramp.seg.rampAscendDirection);
         const tiltZ = this.getRampTiltZ(ramp.seg.rampAscendDirection);
