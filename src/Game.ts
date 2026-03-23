@@ -1262,17 +1262,45 @@ export class Game {
         const edgeIdx = Math.min(v.edgeIndex, v.edgePath.length - 1);
         const edge = v.edgePath[edgeIdx]!;
 
-        // Interpolate elevation along edge (boundary points align with ramp)
+        // Determine elevation from edge cell keys
         const fromLevel = parseLevelFromKey(edge.from.cellKey);
         const toLevel = parseLevelFromKey(edge.to.cellKey);
         const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
-        elevation = fromLevel + (toLevel - fromLevel) * t;
 
-        // Ramp pitch: if levels differ, this edge IS the ramp
         if (fromLevel !== toLevel) {
+          // Cross-level edge (e.g., ground→ramp boundary): interpolate
+          elevation = fromLevel + (toLevel - fromLevel) * t;
           const RAMP_ANGLE = Math.atan2(0.6, 1.0);
-          // Ascending (fromLevel < toLevel) → positive pitch (nose up)
           pitch = fromLevel < toLevel ? RAMP_ANGLE : -RAMP_ANGLE;
+        } else if (fromLevel > 0 && this.elevationManager.get(
+          parsePosKeyUnsafe(edge.from.cellKey).x,
+          parsePosKeyUnsafe(edge.from.cellKey).y,
+          fromLevel,
+        )?.isRamp) {
+          // Within-ramp-cell edge: both ends at same level but cell is a ramp
+          // Determine ramp direction from adjacent edges
+          const prevEdge = edgeIdx > 0 ? v.edgePath[edgeIdx - 1] : null;
+          const nextEdge = edgeIdx < v.edgePath.length - 1 ? v.edgePath[edgeIdx + 1] : null;
+          const prevLevel = prevEdge ? parseLevelFromKey(prevEdge.from.cellKey) : fromLevel;
+          const nextLevel = nextEdge ? parseLevelFromKey(nextEdge.to.cellKey) : fromLevel;
+
+          // Interpolate within ramp cell: from prevLevel-side to nextLevel-side
+          const lowLevel = Math.min(prevLevel, fromLevel, nextLevel);
+          const highLevel = Math.max(prevLevel, fromLevel, nextLevel);
+          if (lowLevel !== highLevel) {
+            // Determine if we're going up or down through this ramp
+            const goingUp = prevLevel < nextLevel;
+            const rampFrom = goingUp ? lowLevel : highLevel;
+            const rampTo = goingUp ? highLevel : lowLevel;
+            elevation = rampFrom + (rampTo - rampFrom) * t;
+            const RAMP_ANGLE = Math.atan2(0.6, 1.0);
+            pitch = goingUp ? RAMP_ANGLE : -RAMP_ANGLE;
+          } else {
+            elevation = fromLevel;
+          }
+        } else {
+          // Flat edge (ground or elevated)
+          elevation = fromLevel;
         }
       }
       vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0, elevation: elevation || undefined, pitch: pitch || undefined });
