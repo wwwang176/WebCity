@@ -1,9 +1,7 @@
 import { Grid } from '../grid/Grid';
-import { TerrainType, ZoneType, type Position } from '../grid/types';
-import { RoadType } from '../road/types';
-import { RailType } from '../rail/types';
-import { isAdjacentToRoad } from '../grid/GridHelpers';
-import { isInfrastructureBuilding, isZoneBuilding } from '../building/InfraConfig';
+import { ZoneType, type Position } from '../grid/types';
+import { isAdjacentToRoad, isCellBuildable } from '../grid/GridHelpers';
+import { isZoneBuilding } from '../building/InfraConfig';
 
 interface ZoneResult {
   success: boolean;
@@ -21,14 +19,8 @@ export class ZoneManager {
     const cell = this.grid.getCell(x, y);
     if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
 
-    // Skip unbuildable terrain
-    if (cell.terrainType === TerrainType.WATER) return { success: false, reason: 'WATER_TILE' };
-    if (cell.terrainType === TerrainType.MOUNTAIN) return { success: false, reason: 'MOUNTAIN_TILE' };
-    // Skip roads and rail tracks
-    if (cell.roadType !== RoadType.NONE) return { success: false, reason: 'ROAD_EXISTS' };
-    if (cell.railType !== RailType.NONE) return { success: false, reason: 'RAIL_TRACK_EXISTS' };
-    // Skip infrastructure buildings (power/water/police/fire/hospital/school/park/garbage/sewage/cemetery/transport)
-    if (isInfrastructureBuilding(cell.buildingId)) return { success: false, reason: 'INFRASTRUCTURE_EXISTS' };
+    // White-list: cell must be buildable (no water/mountain/road/rail/infra)
+    if (!isCellBuildable(cell)) return { success: false, reason: 'CELL_NOT_BUILDABLE' };
 
     if (!isAdjacentToRoad(this.grid, x, y)) {
       return { success: false, reason: 'NOT_ADJACENT_TO_ROAD' };

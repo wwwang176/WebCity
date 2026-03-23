@@ -85,7 +85,7 @@ describe('ZoneManager', () => {
     grid.setCell(5, 4, { buildingId: 254 }); // power plant
     const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
     expect(result.success).toBe(false);
-    expect(result.reason).toBe('INFRASTRUCTURE_EXISTS');
+    expect(result.reason).toBe('CELL_NOT_BUILDABLE');
   });
 
   it('should fail to zone a water tile', () => {
@@ -93,7 +93,7 @@ describe('ZoneManager', () => {
     grid.setCell(5, 4, { terrainType: TerrainType.WATER });
     const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
     expect(result.success).toBe(false);
-    expect(result.reason).toBe('WATER_TILE');
+    expect(result.reason).toBe('CELL_NOT_BUILDABLE');
   });
 
   it('should fail to zone a mountain tile', () => {
@@ -101,7 +101,7 @@ describe('ZoneManager', () => {
     grid.setCell(5, 4, { terrainType: TerrainType.MOUNTAIN });
     const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
     expect(result.success).toBe(false);
-    expect(result.reason).toBe('MOUNTAIN_TILE');
+    expect(result.reason).toBe('CELL_NOT_BUILDABLE');
   });
 
   it('should allow zoning a forest tile adjacent to road', () => {
@@ -116,9 +116,9 @@ describe('ZoneManager', () => {
     grid.setCell(6, 4, { terrainType: TerrainType.WATER });
     const results = zone.setZoneRect({ x: 5, y: 4 }, { x: 7, y: 4 }, ZoneType.RESIDENTIAL_LOW);
     const successes = results.filter(r => r.success).length;
-    const waterFails = results.filter(r => r.reason === 'WATER_TILE').length;
+    const blocked = results.filter(r => r.reason === 'CELL_NOT_BUILDABLE').length;
     expect(successes).toBe(2); // 5,4 and 7,4
-    expect(waterFails).toBe(1); // 6,4
+    expect(blocked).toBe(1); // 6,4 (water)
   });
 
   it('should fail to zone a cell with rail track', () => {
@@ -126,7 +126,7 @@ describe('ZoneManager', () => {
     grid.setCell(5, 4, { railType: RailType.STANDARD, railFlags: 3 });
     const result = zone.setZone(5, 4, ZoneType.RESIDENTIAL_LOW);
     expect(result.success).toBe(false);
-    expect(result.reason).toBe('RAIL_TRACK_EXISTS');
+    expect(result.reason).toBe('CELL_NOT_BUILDABLE');
   });
 
   it('should skip rail track cells in batch zone', () => {
@@ -134,8 +134,8 @@ describe('ZoneManager', () => {
     grid.setCell(6, 4, { railType: RailType.STANDARD, railFlags: 3 });
     const results = zone.setZoneRect({ x: 5, y: 4 }, { x: 7, y: 4 }, ZoneType.COMMERCIAL_LOW);
     const successes = results.filter(r => r.success).length;
-    const railFails = results.filter(r => r.reason === 'RAIL_TRACK_EXISTS').length;
+    const blocked = results.filter(r => r.reason === 'CELL_NOT_BUILDABLE').length;
     expect(successes).toBe(2);
-    expect(railFails).toBe(1);
+    expect(blocked).toBe(1);
   });
 });

@@ -1,5 +1,21 @@
 import { Grid } from './Grid';
+import { TerrainType, type CellData } from './types';
 import { RoadType } from '../road/types';
+import { RailType } from '../rail/types';
+import { isInfrastructureBuilding } from '../building/InfraConfig';
+
+/**
+ * White-list check: a cell is buildable (can receive a zone) if it has
+ * buildable terrain AND no infrastructure occupying it (road/rail/infra building).
+ * Zone buildings are allowed (rezoning replaces them).
+ */
+export function isCellBuildable(cell: CellData): boolean {
+  if (cell.terrainType === TerrainType.WATER || cell.terrainType === TerrainType.MOUNTAIN) return false;
+  if (cell.roadType !== RoadType.NONE) return false;
+  if (cell.railType !== RailType.NONE) return false;
+  if (isInfrastructureBuilding(cell.buildingId)) return false;
+  return true;
+}
 
 /** Check if any of the 4-directional neighbors has a road */
 export function isAdjacentToRoad(grid: Grid, x: number, y: number): boolean {

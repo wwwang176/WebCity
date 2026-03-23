@@ -4,9 +4,11 @@ import {
   isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
   euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
   hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS, getLShapedPath,
-  getDirectionFlag, manhattanDistance, findAtPosition, countRoadTiles,
+  getDirectionFlag, manhattanDistance, findAtPosition, countRoadTiles, isCellBuildable,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
+import { RailType } from '../../rail/types';
+import { TerrainType } from '../types';
 
 describe('isAdjacentToRoad', () => {
   it('returns false when no adjacent roads', () => {
@@ -477,5 +479,54 @@ describe('countRoadTiles', () => {
     grid.setCell(1, 1, { roadType: RoadType.TWO_LANE });
     grid.setCell(0, 0, { buildingId: 1 }); // not a road
     expect(countRoadTiles(grid)).toBe(1);
+  });
+});
+
+describe('isCellBuildable', () => {
+  it('empty plain cell is buildable', () => {
+    const grid = new Grid(5, 5);
+    expect(isCellBuildable(grid.getCell(2, 2)!)).toBe(true);
+  });
+
+  it('water cell is not buildable', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(2, 2, { terrainType: TerrainType.WATER });
+    expect(isCellBuildable(grid.getCell(2, 2)!)).toBe(false);
+  });
+
+  it('mountain cell is not buildable', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(2, 2, { terrainType: TerrainType.MOUNTAIN });
+    expect(isCellBuildable(grid.getCell(2, 2)!)).toBe(false);
+  });
+
+  it('cell with road is not buildable', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(2, 2, { roadType: RoadType.TWO_LANE });
+    expect(isCellBuildable(grid.getCell(2, 2)!)).toBe(false);
+  });
+
+  it('cell with rail track is not buildable', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(2, 2, { railType: RailType.STANDARD });
+    expect(isCellBuildable(grid.getCell(2, 2)!)).toBe(false);
+  });
+
+  it('cell with infrastructure building is not buildable', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(2, 2, { buildingId: 252 }); // police station
+    expect(isCellBuildable(grid.getCell(2, 2)!)).toBe(false);
+  });
+
+  it('cell with zone building is buildable (rezoning allowed)', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(2, 2, { buildingId: 1 }); // residential Lv1
+    expect(isCellBuildable(grid.getCell(2, 2)!)).toBe(true);
+  });
+
+  it('forest terrain is buildable', () => {
+    const grid = new Grid(5, 5);
+    grid.setCell(2, 2, { terrainType: TerrainType.FOREST });
+    expect(isCellBuildable(grid.getCell(2, 2)!)).toBe(true);
   });
 });
