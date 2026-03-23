@@ -2,78 +2,75 @@
  * Build a simplified LaneEdge[] path from a cell-level path that may
  * contain elevated node keys ("x,y,level").
  *
- * Inserts boundary points around ramp cells so the height change is
- * concentrated within the ramp cell (not spread across two edges).
+ * For ramp cells, replaces center with two boundary waypoints so
+ * the height change is confined to exactly one grid cell.
  */
 
 import { type LaneEdge, type ConnectionPoint } from './LaneGraph';
 import { parsePosKeyUnsafe, parseLevelFromKey } from '../grid/GridHelpers';
-
-/** Height per elevation level in world units — must match ElevatedRoadRenderer. */
-const LEVEL_HEIGHT = 0.6;
 
 type Direction = 'north' | 'south' | 'east' | 'west';
 
 interface Waypoint {
   x: number;
   y: number;
-  cellKey: string; // original cell key (for elevation lookup)
+  cellKey: string;
 }
 
 /**
- * Convert a cell-key path (possibly with "x,y,level" keys) into a simple
- * LaneEdge[] that the TrafficSimulation can drive vehicles along.
- *
- * For ramp cells, inserts boundary waypoints so the slope is confined
- * to exactly one grid cell.
+ * Convert a cell-key path into LaneEdges.
+ * Ramp cells are replaced with boundary waypoints so the slope
+ * spans exactly one grid cell.
  */
 export function buildSimpleEdgePath(cellPath: string[]): LaneEdge[] {
   if (cellPath.length < 2) return [];
 
-  // Build waypoint list: cell centers + boundary points around ramps
+  const n = cellPath.length;
+
+  // Pass 1: identify ramp cells
+  // A ramp is an elevated cell (level > 0) that has a neighbor at a different level.
+  const isRamp: boolean[] = [];
+  for (let i = 0; i < n; i++) {
+    const lv = parseLevelFromKey(cellPath[i]!);
+    if (lv === 0) { isRamp.push(false); continue; }
+    const prevLv = i > 0 ? parseLevelFromKey(cellPath[i - 1]!) : lv;
+    const nextLv = i < n - 1 ? parseLevelFromKey(cellPath[i + 1]!) : lv;
+    isRamp.push(lv !== prevLv || lv !== nextLv);
+  }
+
+  // Pass 2: build waypoints
   const waypoints: Waypoint[] = [];
+  for (let i = 0; i < n; i++) {
+    if (isRamp[i]) {
+      const pos = parsePosKeyUnsafe(cellPath[i]!);
 
-  for (let i = 0; i < cellPath.length; i++) {
-    const key = cellPath[i]!;
-    const pos = parsePosKeyUnsafe(key);
-    const level = parseLevelFromKey(key);
-    const prevKey = i > 0 ? cellPath[i - 1]! : null;
-    const nextKey = i < cellPath.length - 1 ? cellPath[i + 1]! : null;
-    const prevLevel = prevKey ? parseLevelFromKey(prevKey) : level;
-    const nextLevel = nextKey ? parseLevelFromKey(nextKey) : level;
-
-    const isRamp = level !== prevLevel || level !== nextLevel;
-    const isLevelTransition = (prevKey !== null && prevLevel !== level)
-                           || (nextKey !== null && nextLevel !== level);
-
-    if (isRamp && isLevelTransition) {
-      // Insert boundary point BEFORE ramp center (between prev and this)
-      if (prevKey !== null) {
-        const prev = parsePosKeyUnsafe(prevKey);
-        const bx = (prev.x + pos.x) / 2;
-        const by = (prev.y + pos.y) / 2;
-        // Use the LOWER level's key so elevation = lower level
-        waypoints.push({ x: bx, y: by, cellKey: prevLevel < level ? prevKey : key });
+      // Entry boundary (between prev cell and this ramp)
+      if (i > 0) {
+        const prev = parsePosKeyUnsafe(cellPath[i - 1]!);
+        waypoints.push({
+          x: (prev.x + pos.x) / 2,
+          y: (prev.y + pos.y) / 2,
+          cellKey: cellPath[i - 1]!, // neighbor's key → neighbor's level
+        });
       }
 
-      // Ramp center
-      waypoints.push({ x: pos.x, y: pos.y, cellKey: key });
-
-      // Insert boundary point AFTER ramp center (between this and next)
-      if (nextKey !== null) {
-        const next = parsePosKeyUnsafe(nextKey);
-        const bx = (pos.x + next.x) / 2;
-        const by = (pos.y + next.y) / 2;
-        // Use the HIGHER level's key so elevation = higher level
-        waypoints.push({ x: bx, y: by, cellKey: nextLevel > level ? nextKey : key });
+      // Exit boundary (between this ramp and next cell)
+      if (i < n - 1) {
+        const next = parsePosKeyUnsafe(cellPath[i + 1]!);
+        waypoints.push({
+          x: (pos.x + next.x) / 2,
+          y: (pos.y + next.y) / 2,
+          cellKey: cellPath[i + 1]!, // neighbor's key → neighbor's level
+        });
       }
     } else {
-      // Normal cell: just add center
-      waypoints.push({ x: pos.x, y: pos.y, cellKey: key });
+      // Normal cell: emit center
+      const pos = parsePosKeyUnsafe(cellPath[i]!);
+      waypoints.push({ x: pos.x, y: pos.y, cellKey: cellPath[i]! });
     }
   }
 
-  // Deduplicate waypoints at same position (can happen at boundaries)
+  // Deduplicate waypoints at same position
   const deduped: Waypoint[] = [waypoints[0]!];
   for (let i = 1; i < waypoints.length; i++) {
     const prev = deduped[deduped.length - 1]!;
@@ -143,7 +140,7 @@ export function getElevationForKey(key: string): number {
 
 /** Get the world Y height for an elevation level. */
 export function getElevationY(level: number): number {
-  return level * LEVEL_HEIGHT;
+  return level * 0.6;
 }
 
 function getDir(tx: number, ty: number): Direction {
