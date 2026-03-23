@@ -184,6 +184,30 @@ export class ElevatedRoadBuilder {
       }
     }
 
+    // Update ground road flags at origin/landing to form proper junctions
+    // Origin: path[0] is ground, path[1] is ramp → add flag from origin toward ramp
+    if (path.length >= 2 && path[0]!.level === 0 && !path[0]!.isRamp) {
+      const origin = path[0]!;
+      const ramp = path[1]!;
+      const dirFlag = getDirectionFlag(origin, ramp);
+      const existing = this.grid.getCell(origin.x, origin.y);
+      if (existing) {
+        this.grid.setCell(origin.x, origin.y, { roadFlags: existing.roadFlags | dirFlag });
+      }
+    }
+    // Landing: last cell is ground, second-to-last is ramp → add flag from landing toward ramp
+    if (endLevel === 0 && path.length >= 2) {
+      const landing = path[path.length - 1]!;
+      const prevCell = path[path.length - 2]!;
+      if (landing.level === 0 && !landing.isRamp) {
+        const dirFlag = getDirectionFlag(landing, prevCell);
+        const existing = this.grid.getCell(landing.x, landing.y);
+        if (existing) {
+          this.grid.setCell(landing.x, landing.y, { roadFlags: existing.roadFlags | dirFlag });
+        }
+      }
+    }
+
     return {
       success: true,
       cost: totalCost,
