@@ -1269,32 +1269,27 @@ export class Game {
         const t = edge.length > 0 ? Math.min(v.edgeProgress / edge.length, 1) : 0;
 
         if (fromLevel !== toLevel) {
-          // Cross-level edge (e.g., ground→ramp boundary): interpolate
+          // Cross-level edge: interpolate between levels
           elevation = fromLevel + (toLevel - fromLevel) * t;
           const RAMP_ANGLE = Math.atan2(0.6, 1.0);
           pitch = fromLevel < toLevel ? RAMP_ANGLE : -RAMP_ANGLE;
-        } else if (fromLevel > 0 && this.elevationManager.get(
-          parsePosKeyUnsafe(edge.from.cellKey).x,
-          parsePosKeyUnsafe(edge.from.cellKey).y,
-          fromLevel,
-        )?.isRamp) {
-          // Within-ramp-cell edge: both ends at same level but cell is a ramp
-          // Determine ramp direction from adjacent edges
-          const prevEdge = edgeIdx > 0 ? v.edgePath[edgeIdx - 1] : null;
-          const nextEdge = edgeIdx < v.edgePath.length - 1 ? v.edgePath[edgeIdx + 1] : null;
-          const prevLevel = prevEdge ? parseLevelFromKey(prevEdge.from.cellKey) : fromLevel;
-          const nextLevel = nextEdge ? parseLevelFromKey(nextEdge.to.cellKey) : fromLevel;
-
-          // Interpolate within ramp cell: from prevLevel-side to nextLevel-side
-          const lowLevel = Math.min(prevLevel, fromLevel, nextLevel);
-          const highLevel = Math.max(prevLevel, fromLevel, nextLevel);
-          if (lowLevel !== highLevel) {
-            // Determine if we're going up or down through this ramp
-            const goingUp = prevLevel < nextLevel;
-            const rampFrom = goingUp ? lowLevel : highLevel;
-            const rampTo = goingUp ? highLevel : lowLevel;
-            elevation = rampFrom + (rampTo - rampFrom) * t;
+        } else if (fromLevel > 0) {
+          // Check if this cell is a ramp
+          const cp = parsePosKeyUnsafe(edge.from.cellKey);
+          const seg = this.elevationManager.get(cp.x, cp.y, fromLevel);
+          if (seg?.isRamp) {
+            // Ramp at stored level L transitions from L-1 to L
+            // Use rampAscendDirection + vehicle heading to determine up/down
             const RAMP_ANGLE = Math.atan2(0.6, 1.0);
+            const ascend = seg.rampAscendDirection;
+            const hx = Math.cos(heading);
+            const hy = -Math.sin(heading);
+            const ax = (ascend & 0b1000) ? 1 : (ascend & 0b0100) ? -1 : 0;
+            const ay = (ascend & 0b0010) ? 1 : (ascend & 0b0001) ? -1 : 0;
+            const dot = hx * ax + hy * ay;
+            const goingUp = dot > 0;
+            // Ramp spans exactly one level: L-1 to L
+            elevation = goingUp ? (fromLevel - 1) + t : fromLevel - t;
             pitch = goingUp ? RAMP_ANGLE : -RAMP_ANGLE;
           } else {
             elevation = fromLevel;

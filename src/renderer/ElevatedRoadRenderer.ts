@@ -86,11 +86,13 @@ export class ElevatedRoadRenderer {
         }
       }
 
-      // All road cells (for street lamps)
-      const allRoadCells: RoadCell[] = [];
+      // Road cells split by ramp/flat for street lamp height
+      const flatLampCells: RoadCell[] = [];
+      const rampLampCells: RoadCell[] = [];
       for (const c of cells) {
         if (c.seg.roadType !== RoadType.NONE) {
-          allRoadCells.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
+          const target = c.seg.isRamp ? rampLampCells : flatLampCells;
+          target.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
         }
       }
 
@@ -112,9 +114,12 @@ export class ElevatedRoadRenderer {
       // Ramp lane markings (tilted to match ramp surface)
       this.buildRampMarkings(rampCells);
 
-      // Street lamps on all elevated road cells (flat + ramp)
-      if (allRoadCells.length > 0) {
-        this.buildStreetLamps(allRoadCells, y);
+      // Street lamps: flat at baseY, ramps at baseY - half level
+      if (flatLampCells.length > 0) {
+        this.buildStreetLamps(flatLampCells, y);
+      }
+      if (rampLampCells.length > 0) {
+        this.buildStreetLamps(rampLampCells, y - LEVEL_HEIGHT * 0.5);
       }
 
       // Rail cells
