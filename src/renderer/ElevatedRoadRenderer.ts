@@ -25,7 +25,10 @@ const SIDEWALK_Y = 0.028;
 const MARKING_Y = 0.052;
 
 const PILLAR_COLOR = 0x888888;
-const RAMP_TILT = Math.atan2(LEVEL_HEIGHT, 1);
+/** Full ramp angle to span 1 cell rising LEVEL_HEIGHT. */
+const RAMP_ANGLE = Math.atan2(LEVEL_HEIGHT, 1.0);
+/** Hypotenuse length so the tilted surface fills the full cell gap. */
+const RAMP_LENGTH = Math.sqrt(1.0 + LEVEL_HEIGHT * LEVEL_HEIGHT);
 
 interface ElevatedCell {
   x: number;
@@ -208,13 +211,22 @@ export class ElevatedRoadRenderer {
     for (let i = 0; i < rampCells.length; i++) {
       const c = rampCells[i]!;
       const w = ROAD_WIDTHS[c.seg.roadType] ?? 0.6;
-      const y = c.level * LEVEL_HEIGHT;
 
-      // Build matrix: scale → rotate → translate
+      // Ramp center Y = midpoint between low and high level
+      const midY = (c.level * LEVEL_HEIGHT + LEVEL_HEIGHT / 2) + ROAD_Y;
+
+      // Determine which axis the ramp slopes along (N/S = Z axis, E/W = X axis)
+      const isNS = (c.seg.rampAscendDirection & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
+
+      // Scale: road width on the cross axis, hypotenuse length on the slope axis
+      const sx = isNS ? w : RAMP_LENGTH;
+      const sz = isNS ? RAMP_LENGTH : w;
+
       combined.identity();
-      scale.makeScale(w, 1, w);
+      scale.makeScale(sx, 1, sz);
       combined.multiply(scale);
 
+      // Full-angle tilt
       const tiltX = this.getRampTiltX(c.seg.rampAscendDirection);
       const tiltZ = this.getRampTiltZ(c.seg.rampAscendDirection);
       if (tiltX !== 0) {
@@ -226,7 +238,7 @@ export class ElevatedRoadRenderer {
         combined.premultiply(rot);
       }
 
-      combined.setPosition(c.x, y + ROAD_Y, c.y);
+      combined.setPosition(c.x, midY, c.y);
       mesh.setMatrixAt(i, combined);
 
       // Ramp color — slightly lighter to distinguish
@@ -241,16 +253,16 @@ export class ElevatedRoadRenderer {
     this.group.add(mesh);
   }
 
-  /** Tilt helpers for ramp rendering. */
+  /** Full-angle tilt for ramp: ascendDir points toward the HIGH end. */
   private getRampTiltX(ascendDir: number): number {
-    if (ascendDir & RoadDirection.NORTH) return RAMP_TILT * 0.3;
-    if (ascendDir & RoadDirection.SOUTH) return -RAMP_TILT * 0.3;
+    if (ascendDir & RoadDirection.NORTH) return RAMP_ANGLE;
+    if (ascendDir & RoadDirection.SOUTH) return -RAMP_ANGLE;
     return 0;
   }
 
   private getRampTiltZ(ascendDir: number): number {
-    if (ascendDir & RoadDirection.EAST) return RAMP_TILT * 0.3;
-    if (ascendDir & RoadDirection.WEST) return -RAMP_TILT * 0.3;
+    if (ascendDir & RoadDirection.EAST) return RAMP_ANGLE;
+    if (ascendDir & RoadDirection.WEST) return -RAMP_ANGLE;
     return 0;
   }
 
