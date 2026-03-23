@@ -70,6 +70,7 @@ import { generateTerrain } from './core/grid/TerrainGenerator';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
+import { ElevatedRoadRenderer } from './renderer/ElevatedRoadRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
 import { RailNetwork, rebuildRailNetworkFromGrid } from './core/rail/RailNetwork';
 import { RAIL } from './core/rail/types';
@@ -281,6 +282,7 @@ export class Game {
   private transportRouteRenderer: TransportRouteRenderer;
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
+  private elevatedRoadRenderer: ElevatedRoadRenderer;
   private levelCrossingRenderer: LevelCrossingRenderer;
   private levelCrossingSystem: LevelCrossingSystem;
   private state: GameState;
@@ -468,6 +470,7 @@ export class Game {
     this.transportRouteRenderer = new TransportRouteRenderer();
     this.metroTunnelRenderer = new MetroTunnelRenderer();
     this.trackRenderer = new TrackRenderer();
+    this.elevatedRoadRenderer = new ElevatedRoadRenderer();
     this.levelCrossingRenderer = new LevelCrossingRenderer();
 
     this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
@@ -1155,11 +1158,14 @@ export class Game {
 
     if (d.roads) {
       this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
+      this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
       if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
       d.roads = false;
     }
     if (d.tracks) {
       this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
+      // Elevated roads/rails are rebuilt on either road or track dirty
+      this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
       if (this.viewMode !== ViewMode.NORMAL) this.trackRenderer.setViewMode(this.viewMode);
       d.tracks = false;
     }
