@@ -83,6 +83,10 @@ export function validateElevatedPath(
       const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level;
       const existing = elevationManager.get(pos.x, pos.y, storeLevel);
       if (existing) return 'LEVEL_OCCUPIED';
+      // Flat elevated cell blocked by ramp occupying the same level
+      if (!pos.isRamp && elevationManager.hasRampAtLevel(pos.x, pos.y, pos.level)) {
+        return 'LEVEL_OCCUPIED';
+      }
     }
 
     // Ramp cells cannot be placed over existing ground roads or other-level elevated segments
