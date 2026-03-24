@@ -51,7 +51,6 @@ export class ElevatedRoadBuilder {
     }
 
     // Determine start level
-    const startLevel = this.detectLevel(from.x, from.y);
     const startOnGround = this.isGroundRoad(from.x, from.y);
     const startOnElevated = this.elevationManager.get(from.x, from.y, targetLevel) !== null
       || this.elevationManager.hasElevatedSegment(from.x, from.y);
@@ -64,8 +63,8 @@ export class ElevatedRoadBuilder {
     const endOnGround = this.isGroundRoad(to.x, to.y);
     const endLevel = endOnGround ? 0 : undefined;
 
-    // Compute the actual start level for ramp generation
-    const actualStartLevel = startOnGround && !startOnElevated ? 0 : startLevel;
+    // Use ground level (0) when starting from ground, otherwise respect user's targetLevel
+    const actualStartLevel = startOnGround && !startOnElevated ? 0 : targetLevel;
 
     // Generate path with elevation
     const path = getElevatedPath(from, to, actualStartLevel, targetLevel, endLevel);
@@ -74,7 +73,7 @@ export class ElevatedRoadBuilder {
     // If start cell is an existing ramp, only allow extending in the ascend direction
     let startIsRamp = false;
     if (startOnElevated && path.length >= 2) {
-      const existingSeg = this.elevationManager.get(from.x, from.y, startLevel);
+      const existingSeg = this.elevationManager.get(from.x, from.y, actualStartLevel);
       if (existingSeg?.isRamp) {
         const buildDir = getDirectionFlag(path[0]!, path[1]!);
         if (buildDir !== existingSeg.rampAscendDirection) {
@@ -249,11 +248,6 @@ export class ElevatedRoadBuilder {
   private isGroundRoad(x: number, y: number): boolean {
     const cell = this.grid.getCell(x, y);
     return cell !== null && cell.roadType !== RoadType.NONE;
-  }
-
-  private detectLevel(x: number, y: number): number {
-    const highest = this.elevationManager.getHighestLevel(x, y);
-    return highest > 0 ? highest : 0;
   }
 
   private elevatedNodeId(x: number, y: number, level: number): string {
