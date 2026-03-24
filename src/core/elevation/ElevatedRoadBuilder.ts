@@ -1,6 +1,6 @@
 import { Grid } from '../grid/Grid';
 import { TerrainType, type Position } from '../grid/types';
-import { toPosKey, getDirectionFlag, getLShapedPath } from '../grid/GridHelpers';
+import { toPosKey, getDirectionFlag, getLShapedPath, CARDINAL_DIRECTIONS } from '../grid/GridHelpers';
 import { extractOutOfBoundsEdge } from '../grid/EdgeUtils';
 import { RoadType, ROAD_CONFIGS, type BuildRoadResult } from '../road/types';
 import { RoadNetwork } from '../road/RoadNetwork';
@@ -242,6 +242,29 @@ export class ElevatedRoadBuilder {
     if (this.network) {
       const nodeId = this.elevatedNodeId(x, y, highest);
       this.network.removeNode(nodeId);
+    }
+
+    // Update neighboring elevated segments' flags (clear direction pointing to removed cell)
+    for (const dir of CARDINAL_DIRECTIONS) {
+      const neighbor = this.elevationManager.get(x + dir.dx, y + dir.dy, highest);
+      if (neighbor && neighbor.roadFlags & dir.opposite) {
+        this.elevationManager.set(x + dir.dx, y + dir.dy, highest, {
+          ...neighbor,
+          roadFlags: neighbor.roadFlags & ~dir.opposite,
+        });
+      }
+    }
+
+    // If removed segment was a ramp, clear ground road flags pointing to it
+    if (seg?.isRamp) {
+      for (const dir of CARDINAL_DIRECTIONS) {
+        const groundCell = this.grid.getCell(x + dir.dx, y + dir.dy);
+        if (groundCell && groundCell.roadType !== RoadType.NONE && (groundCell.roadFlags & dir.opposite)) {
+          this.grid.setCell(x + dir.dx, y + dir.dy, {
+            roadFlags: groundCell.roadFlags & ~dir.opposite,
+          });
+        }
+      }
     }
   }
 

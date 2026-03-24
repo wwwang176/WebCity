@@ -867,9 +867,11 @@ export class Game {
             if (cell && cell.buildingId !== 0) evictCells.push(`${x},${y}`);
             if (cell && cell.roadType !== RoadType.NONE) hadRoadDemolished = true;
             if (action.hasTrack) this.railBuilder.removeTrack(x, y);
+            if (cell && cell.roadType !== RoadType.NONE) {
+              this.roadBuilder.removeRoad(x, y);
+            }
             this.state.grid.setCell(x, y, {
-              roadType: 0, roadFlags: 0, zoneType: ZoneType.NONE,
-              buildingId: 0, reserved: 0,
+              zoneType: ZoneType.NONE, buildingId: 0, reserved: 0,
             });
             break;
         }
