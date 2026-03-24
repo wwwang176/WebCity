@@ -412,7 +412,7 @@ export class Game {
       // Worker not available (e.g. test environment) — falls back to sync Dijkstra
     }
     // Restore abandonment stress from loaded save
-    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number>; elevationData?: Parameters<typeof this.elevationManager.fromJSON>[0] } } | undefined)?._extra;
+    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number>; elevationData?: unknown } } | undefined)?._extra;
     if (extra?.abandonmentStress) {
       this.simLoop.abandonmentStress = extra.abandonmentStress;
     }
@@ -440,7 +440,7 @@ export class Game {
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
     this.elevationManager = new ElevationManager();
     if (extra?.elevationData) {
-      this.elevationManager.fromJSON(extra.elevationData);
+      this.elevationManager.fromJSON(extra.elevationData as any);
     }
     this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
     this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
@@ -1385,9 +1385,21 @@ export class Game {
   getElevationLevel(): number { return this.elevationLevel; }
   getElevationManager(): ElevationManager { return this.elevationManager; }
 
+  /**
+   * Ramp ground-side direction lookup.
+   * Maps rampAscendDirection flag → the direction that is at ground level (rampLevel - 1).
+   * Derived from the bit→vector mapping in the elevation formula.
+   */
+  private static readonly RAMP_GROUND_SIDE: Record<number, string> = {
+    8: 'west',   // WEST  ascend → ground side = west
+    4: 'east',   // EAST  ascend → ground side = east
+    2: 'north',  // SOUTH ascend → ground side = north
+    1: 'south',  // NORTH ascend → ground side = south
+  };
+
   /** Compute vehicle elevation and pitch from its edgePath and XZ position. */
   private computeVehicleElevation(
-    v: { edgePath: { from: { cellKey: string }; to: { cellKey: string } }[]; edgeIndex: number },
+    v: { edgePath: { from: { cellKey: string; direction?: string }; to: { cellKey: string } }[]; edgeIndex: number },
     pos: { x: number; y: number },
     heading: number,
   ): { elevation: number; pitch: number } {
@@ -1395,7 +1407,21 @@ export class Game {
 
     const edgeIdx = Math.min(v.edgeIndex, v.edgePath.length - 1);
     const edge = v.edgePath[edgeIdx]!;
-    const cellLevel = parseLevelFromKey(edge.from.cellKey);
+    let cellLevel = parseLevelFromKey(edge.from.cellKey);
+
+    // If from cell is a ramp, determine the effective level based on which side
+    // the from point exits from. Ground side = rampLevel - 1, elevated side = rampLevel.
+    // This prevents vehicles from "flying" on cross-intersection edges that start
+    // from a ramp's ground side (e.g., descending ramp → ground L-bend → north road).
+    if (cellLevel > 0 && edge.from.direction) {
+      const { x: fx, y: fy } = parsePosKeyUnsafe(edge.from.cellKey);
+      const fromRamp = this.elevationManager.get(fx, fy, cellLevel);
+      if (fromRamp?.isRamp) {
+        const groundSide = Game.RAMP_GROUND_SIDE[fromRamp.rampAscendDirection];
+        cellLevel = edge.from.direction === groundSide ? cellLevel - 1 : cellLevel;
+      }
+    }
+
     const gx = Math.round(pos.x);
     const gy = Math.round(pos.y);
 
