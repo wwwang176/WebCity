@@ -113,6 +113,11 @@
   width: 1px; margin: 4px 2px;
   background: rgba(100,180,255,0.1);
 }
+.tb-sep-v {
+  width: 1px; height: 28px; margin: 0 4px;
+  background: rgba(100,180,255,0.2);
+  align-self: center;
+}
 
 /* ===== Tool Group (expandable) ===== */
 .tb-group { position: relative; }

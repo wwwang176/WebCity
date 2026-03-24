@@ -119,6 +119,31 @@ function ToolGroupComponent(props: {
         <For each={props.group.items}>
           {(item) => <ToolButton item={item} onClick={props.onSelectTool} />}
         </For>
+        {(props.group.id === 'road' || props.group.id === 'transport') && (
+          <div class="tb-sep-v" />
+        )}
+        {props.group.id === 'road' && (
+          <>
+            <button
+              class="tb-btn"
+              classList={{ active: gameSignals.placementMode() === 'ground' }}
+              onClick={(e) => { e.stopPropagation(); getGame().setPlacementMode('ground'); }}
+              aria-label="Ground mode"
+            >
+              <span class="tb-icon">{'\u{1F6E3}'}</span>
+              <span>Ground</span>
+            </button>
+            <button
+              class="tb-btn"
+              classList={{ active: gameSignals.placementMode() === 'elevated' }}
+              onClick={(e) => { e.stopPropagation(); getGame().setPlacementMode('elevated'); }}
+              aria-label="Elevated mode"
+            >
+              <span class="tb-icon">{'\u{1F309}'}</span>
+              <span>Elevated{gameSignals.placementMode() === 'elevated' ? ` Lv.${gameSignals.elevationLevel()}` : ''}</span>
+            </button>
+          </>
+        )}
         {props.group.id === 'district' && (
           <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}>
             <span class="tb-icon">{'\u2699'}</span>
@@ -126,10 +151,30 @@ function ToolGroupComponent(props: {
           </button>
         )}
         {props.group.id === 'transport' && (
-          <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
-            <span class="tb-icon">{'\u{1F5FA}'}</span>
-            <span style={{ color: '#ff9800' }}>Routes</span>
-          </button>
+          <>
+            <button
+              class="tb-btn"
+              classList={{ active: gameSignals.placementMode() === 'ground' }}
+              onClick={(e) => { e.stopPropagation(); getGame().setPlacementMode('ground'); }}
+              aria-label="Ground mode"
+            >
+              <span class="tb-icon">{'\u{1F6E3}'}</span>
+              <span>Ground</span>
+            </button>
+            <button
+              class="tb-btn"
+              classList={{ active: gameSignals.placementMode() === 'elevated' }}
+              onClick={(e) => { e.stopPropagation(); getGame().setPlacementMode('elevated'); }}
+              aria-label="Elevated mode"
+            >
+              <span class="tb-icon">{'\u{1F309}'}</span>
+              <span>Elevated{gameSignals.placementMode() === 'elevated' ? ` Lv.${gameSignals.elevationLevel()}` : ''}</span>
+            </button>
+            <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
+              <span class="tb-icon">{'\u{1F5FA}'}</span>
+              <span style={{ color: '#ff9800' }}>Routes</span>
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -176,34 +221,6 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
         onClick={selectStandalone}
       />
 
-      <Show when={gameSignals.currentTool() === 'road_rural' || gameSignals.currentTool() === 'road_2lane' || gameSignals.currentTool() === 'road_4lane' || gameSignals.currentTool() === 'road_6lane' || gameSignals.currentTool() === 'road_highway' || gameSignals.currentTool() === 'road' || gameSignals.currentTool() === 'rail_track'}>
-        <div class="tb-sep" />
-        <div class="tb-elevation-mode" role="radiogroup" aria-label="Placement mode">
-          <button
-            class="tb-btn"
-            classList={{ active: gameSignals.placementMode() === 'ground' }}
-            onClick={() => getGame().setPlacementMode('ground')}
-            aria-label="Ground mode"
-          >
-            <span class="tb-icon">{'\u{1F6E3}'}</span>
-            <span>Ground</span>
-          </button>
-          <button
-            class="tb-btn"
-            classList={{ active: gameSignals.placementMode() === 'elevated' }}
-            onClick={() => getGame().setPlacementMode('elevated')}
-            aria-label="Elevated mode"
-          >
-            <span class="tb-icon">{'\u{1F309}'}</span>
-            <span>Elevated</span>
-          </button>
-          <Show when={gameSignals.placementMode() === 'elevated'}>
-            <span class="tb-elevation-level" aria-label="Elevation level">
-              Lv.{gameSignals.elevationLevel()}
-            </span>
-          </Show>
-        </div>
-      </Show>
 
       <div class="tb-sep" />
       <RCIBar />
