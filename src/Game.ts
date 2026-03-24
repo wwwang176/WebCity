@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SceneManager } from './renderer/SceneManager';
 import { TerrainRenderer } from './renderer/TerrainRenderer';
-import { RoadRenderer, ROAD_WIDTHS } from './renderer/RoadRenderer';
+import { RoadRenderer } from './renderer/RoadRenderer';
 import { BuildingRenderer } from './renderer/BuildingRenderer';
 import { VehicleRenderer, type VehicleData } from './renderer/VehicleRenderer';
 import { TrafficLightRenderer } from './renderer/TrafficLightRenderer';
@@ -15,7 +15,7 @@ import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
-import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe, getDirectionFlag } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -29,7 +29,7 @@ import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
-import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
+import { getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
 import { findLanePath } from './core/traffic/LaneGraphPathfinder';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
@@ -1709,6 +1709,8 @@ export class Game {
       }
     } else if (this.dragStart && this.isZoneTool()) {
       this.highlightDragRange(ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff);
+    } else if (this.dragStart && this.isDragBuildTool()) {
+      // Road/rail drag preview is managed by updatePreviewLine — don't hide
     } else {
       this.placementPreview.hide();
       if (this.currentTool === 'select') {
@@ -2132,18 +2134,30 @@ export class Game {
     }
     this.onUIUpdate?.();
 
-    // Show semi-transparent road surface preview
-    const laneCount = getLaneCount(this.currentRoadType);
-    const roadWidth = ROAD_WIDTHS[this.currentRoadType] ?? (0.2 + laneCount * 0.15);
-    this.placementPreview.updateRoadDrag(
-      points.map(p => ({ x: p.x, y: p.z })),
-      roadWidth,
-    );
+    // Build RoadCell array with proper flags for strip builders
+    const roadType = this.isRailTool() ? RoadType.TWO_LANE : this.currentRoadType;
+    const flatCells: { x: number; y: number; roadType: number; roadFlags: number }[] = [];
+    const rampPreview: { x: number; y: number; level: number; ascendDir: number; roadType: number }[] = [];
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({ color: 0x4fc3f7, linewidth: 2, transparent: true, opacity: 0.6 });
-    this.previewLine = new THREE.Line(geometry, material);
-    this.sceneManager.scene.add(this.previewLine);
+    for (let i = 0; i < pathCells.length; i++) {
+      const c = pathCells[i]!;
+      const isRamp = this.placementMode === 'elevated' && i > 0 && i <= rampCount;
+      if (isRamp) {
+        // Compute ascend direction: from this cell toward next cell (higher end)
+        const next = pathCells[Math.min(i + 1, pathCells.length - 1)]!;
+        const ascendDir = getDirectionFlag(c, next);
+        rampPreview.push({ x: c.x, y: c.y, level: i, ascendDir, roadType });
+      } else {
+        // Flat cell: compute flags from neighbors in path
+        let flags = 0;
+        if (i > 0) flags |= getDirectionFlag(c, pathCells[i - 1]!);
+        if (i < pathCells.length - 1) flags |= getDirectionFlag(c, pathCells[i + 1]!);
+        flatCells.push({ x: c.x, y: c.y, roadType, roadFlags: flags });
+      }
+    }
+
+    const baseY = this.placementMode === 'elevated' ? this.elevationLevel * 0.6 : 0;
+    this.placementPreview.updateRoadDrag(flatCells, rampPreview.length > 0 ? rampPreview : undefined, baseY);
   }
 
   private clearPreviewLine(): void {

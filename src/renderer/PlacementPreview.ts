@@ -3,10 +3,18 @@ import { getInfraConfig, getRotatedSize, type InfraType, type Rotation } from '.
 import { canPlaceInfra } from '../core/building/InfraPlacement';
 import { Grid } from '../core/grid/Grid';
 import type { BuildingRenderer } from './BuildingRenderer';
+import { buildRoadStrips, buildSidewalkStrips, ROAD_WIDTHS, type RoadCell } from './RoadStripBuilder';
+import { RoadDirection } from '../core/road/types';
 
 const GREEN = 0x00ff00;
 const RED = 0xff0000;
 const GHOST_OPACITY = 0.35;
+
+const LEVEL_HEIGHT = 0.6;
+const ROAD_Y = 0.025;
+const SIDEWALK_Y = 0.028;
+const RAMP_ANGLE = Math.atan2(LEVEL_HEIGHT, 1.0);
+const RAMP_LENGTH = Math.sqrt(1.0 + LEVEL_HEIGHT * LEVEL_HEIGHT);
 
 /** Coverage overlay entry: position + normalized cost ratio (0 = near, 1 = far). */
 export interface CoverageCell { x: number; y: number; ratio: number }
@@ -157,29 +165,85 @@ export class PlacementPreview {
     this.scene.add(this.group);
   }
 
-  /** Show road drag preview as semi-transparent road surface along the L-shaped path. */
-  updateRoadDrag(points: { x: number; y: number }[], roadWidth: number): void {
+  /** Show road drag preview using real road geometry (strips + sidewalks). */
+  updateRoadDrag(
+    cells: RoadCell[],
+    rampCells?: { x: number; y: number; level: number; ascendDir: number; roadType: number }[],
+    baseY = 0,
+  ): void {
     this.disposeGhost();
     this.currentType = '__road_drag__';
     this.currentRotation = 0;
 
-    if (points.length < 1) return;
+    if (cells.length < 1) return;
 
     this.group = new THREE.Group();
-    const mat = new THREE.MeshBasicMaterial({
-      color: 0x555555,
-      transparent: true,
-      opacity: 0.4,
-      depthWrite: false,
+    const ghostMat = new THREE.MeshBasicMaterial({
+      color: 0x888888, transparent: true, opacity: GHOST_OPACITY, depthWrite: false,
+    });
+    const sidewalkMat = new THREE.MeshBasicMaterial({
+      color: 0xaaaaaa, transparent: true, opacity: GHOST_OPACITY, depthWrite: false,
     });
 
-    const w = Math.max(0.3, roadWidth);
-    for (const pt of points) {
-      const geo = new THREE.PlaneGeometry(w, w);
+    // --- Flat road surface ---
+    const strips = buildRoadStrips(cells);
+    if (strips.length > 0) {
+      const geo = new THREE.BoxGeometry(1, 0.05, 1);
+      const matrix = new THREE.Matrix4();
+      for (const s of strips) {
+        const m = new THREE.Mesh(geo, ghostMat);
+        matrix.makeScale(s.sx, 1, s.sz);
+        matrix.setPosition(s.x, baseY + ROAD_Y, s.z);
+        m.applyMatrix4(matrix);
+        this.group.add(m);
+      }
+    }
+
+    // --- Flat sidewalks ---
+    const swStrips = buildSidewalkStrips(cells);
+    if (swStrips.length > 0) {
+      const geo = new THREE.PlaneGeometry(1, 1);
       geo.rotateX(-Math.PI / 2);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(pt.x, 0.12, pt.y);
-      this.group.add(mesh);
+      const matrix = new THREE.Matrix4();
+      for (const s of swStrips) {
+        const m = new THREE.Mesh(geo, sidewalkMat);
+        matrix.makeScale(s.sx, 1, s.sz);
+        matrix.setPosition(s.x, baseY + SIDEWALK_Y, s.z);
+        m.applyMatrix4(matrix);
+        this.group.add(m);
+      }
+    }
+
+    // --- Ramp surfaces ---
+    if (rampCells && rampCells.length > 0) {
+      const rampGeo = new THREE.BoxGeometry(1, 0.05, 1);
+      const scale = new THREE.Matrix4();
+      const rot = new THREE.Matrix4();
+      const combined = new THREE.Matrix4();
+
+      for (const rc of rampCells) {
+        const w = ROAD_WIDTHS[rc.roadType] ?? 0.6;
+        const midY = (rc.level - 0.5) * LEVEL_HEIGHT + ROAD_Y;
+        const isNS = (rc.ascendDir & (RoadDirection.NORTH | RoadDirection.SOUTH)) !== 0;
+        const sx = isNS ? w : RAMP_LENGTH;
+        const sz = isNS ? RAMP_LENGTH : w;
+
+        combined.identity();
+        scale.makeScale(sx, 1, sz);
+        combined.multiply(scale);
+
+        const tiltX = (rc.ascendDir & RoadDirection.NORTH) ? RAMP_ANGLE
+          : (rc.ascendDir & RoadDirection.SOUTH) ? -RAMP_ANGLE : 0;
+        const tiltZ = (rc.ascendDir & RoadDirection.EAST) ? RAMP_ANGLE
+          : (rc.ascendDir & RoadDirection.WEST) ? -RAMP_ANGLE : 0;
+        if (tiltX !== 0) { rot.makeRotationX(tiltX); combined.premultiply(rot); }
+        if (tiltZ !== 0) { rot.makeRotationZ(tiltZ); combined.premultiply(rot); }
+
+        combined.setPosition(rc.x, midY, rc.y);
+        const m = new THREE.Mesh(rampGeo, ghostMat);
+        m.applyMatrix4(combined);
+        this.group.add(m);
+      }
     }
 
     this.scene.add(this.group);
