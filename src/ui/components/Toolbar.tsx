@@ -141,6 +141,7 @@ function ToolGroupComponent(props: {
             >
               <span class="tb-icon">{'\u{1F309}'}</span>
               <span>Elevated{gameSignals.placementMode() === 'elevated' ? ` Lv.${gameSignals.elevationLevel()}` : ''}</span>
+              <span class="tb-key">PgUp/Dn</span>
             </button>
           </>
         )}
@@ -169,6 +170,7 @@ function ToolGroupComponent(props: {
             >
               <span class="tb-icon">{'\u{1F309}'}</span>
               <span>Elevated{gameSignals.placementMode() === 'elevated' ? ` Lv.${gameSignals.elevationLevel()}` : ''}</span>
+              <span class="tb-key">PgUp/Dn</span>
             </button>
             <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
               <span class="tb-icon">{'\u{1F5FA}'}</span>
