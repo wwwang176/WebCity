@@ -1,9 +1,11 @@
 import { TerrainType } from '../grid/types';
 import { type ElevatedPosition } from './types';
 import { type ElevationManager } from './ElevationManager';
+import { RoadType } from '../road/types';
 
 interface CellLike {
   terrainType: number;
+  roadType: number;
 }
 
 interface GridLike {
@@ -81,6 +83,18 @@ export function validateElevatedPath(
       const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level;
       const existing = elevationManager.get(pos.x, pos.y, storeLevel);
       if (existing) return 'LEVEL_OCCUPIED';
+    }
+
+    // Ramp cells cannot be placed over existing ground roads or other-level elevated segments
+    if (pos.isRamp) {
+      const lowLevel = Math.min(pos.level, pos.targetLevel);
+      // Ground road under ramp (only when ramp's low side is level 0)
+      if (lowLevel === 0 && cell.roadType !== RoadType.NONE) return 'RAMP_OVER_ROAD';
+      // Elevated segment at ramp's low side level
+      if (lowLevel > 0) {
+        const below = elevationManager.get(pos.x, pos.y, lowLevel);
+        if (below) return 'RAMP_OVER_ELEVATED';
+      }
     }
   }
 

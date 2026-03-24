@@ -59,6 +59,17 @@ export class ElevationManager {
     return 0;
   }
 
+  /** Check if any ramp occupies level `level` at (x, y) — either as low side or high side. */
+  hasRampAtLevel(x: number, y: number, level: number): boolean {
+    for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
+      const seg = this.layers.get(ElevationManager.key(x, y, lv));
+      if (!seg || !seg.isRamp) continue;
+      // Ramp stored at lv occupies lv (high side) and lv-1 (low side)
+      if (lv === level || lv - 1 === level) return true;
+    }
+    return false;
+  }
+
   clear(): void {
     this.layers.clear();
   }

@@ -7,16 +7,19 @@ import { RoadType } from '../road/types';
 import { getInfraConfigById } from '../building/InfraConfig';
 import { RailNetwork } from './RailNetwork';
 import { RailType, RAIL, type BuildTrackResult } from './types';
+import { type ElevationManager } from '../elevation/ElevationManager';
 
 const nodeId = toPosKey;
 
 export class RailBuilder {
   private grid: Grid;
   private network: RailNetwork | null;
+  private elevationManager: ElevationManager | null;
 
-  constructor(grid: Grid, network?: RailNetwork) {
+  constructor(grid: Grid, network?: RailNetwork, elevationManager?: ElevationManager) {
     this.grid = grid;
     this.network = network ?? null;
+    this.elevationManager = elevationManager ?? null;
   }
 
   buildTrack(from: Position, to: Position, funds: number): BuildTrackResult {
@@ -29,7 +32,7 @@ export class RailBuilder {
     if (cells.length === 0) return { success: false, reason: 'EMPTY_PATH' };
 
     // Validate terrain + infrastructure (shared DRY validation)
-    const terrainError = validatePathTerrain(this.grid, cells);
+    const terrainError = validatePathTerrain(this.grid, cells, this.elevationManager ?? undefined);
     if (terrainError) return { success: false, reason: terrainError };
 
     // Check for parallel road conflicts

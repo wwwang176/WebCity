@@ -3,6 +3,7 @@ import { validatePathTerrain } from '../grid/PathValidation';
 import { hasVerticalFlag, hasHorizontalFlag, getDirectionFlag } from '../grid/GridHelpers';
 import { RoadType, ROAD_CONFIGS } from './types';
 import { RailType } from '../rail/types';
+import { type ElevationManager } from '../elevation/ElevationManager';
 
 interface CellLike {
   terrainType: number;
@@ -22,9 +23,9 @@ interface GridLike {
  * Returns null if valid, or a reason string if invalid.
  * Uses shared validatePathTerrain (DRY) + road-specific parallel rail check.
  */
-export function validateRoadPath(grid: GridLike, cells: Position[]): string | null {
+export function validateRoadPath(grid: GridLike, cells: Position[], elevationManager?: ElevationManager): string | null {
   // Shared terrain + infrastructure check (DRY)
-  const terrainError = validatePathTerrain(grid, cells);
+  const terrainError = validatePathTerrain(grid, cells, elevationManager);
   if (terrainError) return terrainError;
 
   // Road-specific: parallel rail conflict check

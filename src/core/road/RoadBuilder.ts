@@ -6,16 +6,19 @@ import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, type BuildRoadResult, type Position } from './types';
 import { validateRoadPath, calculateRoadCost } from './RoadValidation';
+import { type ElevationManager } from '../elevation/ElevationManager';
 
 const nodeId = toPosKey;
 
 export class RoadBuilder {
   private grid: Grid;
   private network: RoadNetwork | null;
+  private elevationManager: ElevationManager | null;
 
-  constructor(grid: Grid, network?: RoadNetwork) {
+  constructor(grid: Grid, network?: RoadNetwork, elevationManager?: ElevationManager) {
     this.grid = grid;
     this.network = network ?? null;
+    this.elevationManager = elevationManager ?? null;
   }
 
   buildRoad(from: Position, to: Position, roadType: RoadType, funds: number): BuildRoadResult {
@@ -30,7 +33,7 @@ export class RoadBuilder {
     if (cells.length === 0) return { success: false, reason: 'EMPTY_PATH' };
 
     // Validate path (terrain, infrastructure, rail conflicts) — delegated to pure function (SRP)
-    const validationError = validateRoadPath(this.grid, cells);
+    const validationError = validateRoadPath(this.grid, cells, this.elevationManager ?? undefined);
     if (validationError) return { success: false, reason: validationError };
 
     // Calculate cost with differential pricing — delegated to pure function (SRP)
