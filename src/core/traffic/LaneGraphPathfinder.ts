@@ -12,6 +12,7 @@ import { type LaneGraph, type LaneEdge, type ConnectionPoint } from './LaneGraph
 import { ROAD_CONFIGS, RoadType } from '../road/types';
 import { parsePosKeyUnsafe, parseLevelFromKey, FOUR_NEIGHBORS, toPosKey } from '../grid/GridHelpers';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
+import { getLaneSpeedMultiplier } from './Pathfinding';
 
 /** Cost multiplier applied per cell+lane used in previous variants (penalty method). */
 const VARIANT_PENALTY = 3;
@@ -148,8 +149,9 @@ function laneAStar(
       const neighborId = edge.to.id;
       if (closed.has(neighborId)) continue;
 
-      // Cost = edge length (+ cell+lane penalty for variant diversity)
-      let cost = edge.length;
+      // Cost = edge length / lane speed (+ cell+lane penalty for variant diversity)
+      // Inner lanes (lane 0) are faster, encouraging lane changes on straight segments.
+      let cost = edge.length / getLaneSpeedMultiplier(edge.to.lane);
       if (penalty) {
         const p = penalty.get(`${edge.to.cellKey}:${edge.to.lane}`);
         if (p) cost *= p;

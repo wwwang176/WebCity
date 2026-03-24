@@ -416,9 +416,7 @@ export class Game {
     if (extra?.abandonmentStress) {
       this.simLoop.abandonmentStress = extra.abandonmentStress;
     }
-    if (extra?.elevationData) {
-      this.elevationManager.fromJSON(extra.elevationData);
-    }
+    // elevationData is restored after elevationManager is initialized (below)
     this.simLoop.onTerrainChanged = () => {
       this.dirty.terrain = true;
     };
@@ -441,6 +439,9 @@ export class Game {
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
     this.elevationManager = new ElevationManager();
+    if (extra?.elevationData) {
+      this.elevationManager.fromJSON(extra.elevationData);
+    }
     this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
     this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
     this.simLoop.setElevationManager(this.elevationManager);
