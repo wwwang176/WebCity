@@ -113,16 +113,31 @@ export class RoadBuilder {
     // Clear road data
     this.grid.setCell(x, y, { roadType: RoadType.NONE, roadFlags: 0 });
 
-    // Update neighboring cells' flags
+    // Update neighboring cells' flags and restore roadType from remaining connections
     for (const dir of CARDINAL_DIRECTIONS) {
       const nx = x + dir.dx;
       const ny = y + dir.dy;
       const neighbor = this.grid.getCell(nx, ny);
       if (neighbor && neighbor.roadType !== RoadType.NONE) {
-        this.grid.setCell(nx, ny, {
-          roadFlags: neighbor.roadFlags & ~dir.opposite,
-        });
+        const newFlags = neighbor.roadFlags & ~dir.opposite;
+        this.grid.setCell(nx, ny, { roadFlags: newFlags });
+        // Restore roadType from remaining connected neighbors
+        const maxType = this.getMaxNeighborRoadType(nx, ny, newFlags);
+        if (maxType > 0) {
+          this.grid.setCell(nx, ny, { roadType: maxType });
+        }
       }
     }
+  }
+
+  /** Find the max roadType among connected neighbors based on flags. */
+  private getMaxNeighborRoadType(x: number, y: number, flags: number): number {
+    let max = 0;
+    for (const dir of CARDINAL_DIRECTIONS) {
+      if (!(flags & dir.flag)) continue;
+      const neighbor = this.grid.getCell(x + dir.dx, y + dir.dy);
+      if (neighbor && neighbor.roadType > max) max = neighbor.roadType;
+    }
+    return max;
   }
 }

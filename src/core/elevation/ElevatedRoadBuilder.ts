@@ -244,13 +244,22 @@ export class ElevatedRoadBuilder {
       this.network.removeNode(nodeId);
     }
 
-    // Update neighboring elevated segments' flags (clear direction pointing to removed cell)
+    // Update neighboring elevated segments' flags and restore roadType
     for (const dir of CARDINAL_DIRECTIONS) {
       const neighbor = this.elevationManager.get(x + dir.dx, y + dir.dy, highest);
       if (neighbor && neighbor.roadFlags & dir.opposite) {
+        const newFlags = neighbor.roadFlags & ~dir.opposite;
+        // Restore roadType from remaining connected elevated neighbors
+        let maxType = 0;
+        for (const d of CARDINAL_DIRECTIONS) {
+          if (!(newFlags & d.flag)) continue;
+          const nn = this.elevationManager.get(x + dir.dx + d.dx, y + dir.dy + d.dy, highest);
+          if (nn && nn.roadType > maxType) maxType = nn.roadType;
+        }
         this.elevationManager.set(x + dir.dx, y + dir.dy, highest, {
           ...neighbor,
-          roadFlags: neighbor.roadFlags & ~dir.opposite,
+          roadFlags: newFlags,
+          roadType: maxType > 0 ? maxType : neighbor.roadType,
         });
       }
     }
