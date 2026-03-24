@@ -94,8 +94,16 @@ describe('validateElevatedPath', () => {
 
   // --- Level collision ---
 
-  it('rejects path that collides with existing elevated segment at same level', () => {
+  it('allows flat-on-flat overlap at same level (merge like ground roads)', () => {
     em.set(3, 0, 1, { roadType: 1, roadFlags: 0b0101, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
+    const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
+    expect(path).not.toBeNull();
+    const error = validateElevatedPath(grid, em, path!);
+    expect(error).toBeNull();
+  });
+
+  it('rejects path that collides with existing ramp at same level', () => {
+    em.set(3, 0, 1, { roadType: 1, roadFlags: 0b0101, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0b1000 });
     const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
     expect(path).not.toBeNull();
     const error = validateElevatedPath(grid, em, path!);

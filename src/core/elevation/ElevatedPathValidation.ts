@@ -78,12 +78,13 @@ export function validateElevatedPath(
       if (pos.isRamp) return 'RAMP_ON_WATER';
     }
 
-    // Check level collision with existing elevated segments (including ramps)
+    // Check level collision with existing elevated segments
     if (pos.level > 0 && !excludeCollisionIndices?.has(i)) {
       const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level;
       const existing = elevationManager.get(pos.x, pos.y, storeLevel);
-      if (existing) return 'LEVEL_OCCUPIED';
-      // Flat elevated cell blocked by ramp occupying the same level
+      // Flat-on-flat is allowed (merge flags, like ground roads); any ramp involvement blocks
+      if (existing && (existing.isRamp || pos.isRamp)) return 'LEVEL_OCCUPIED';
+      // Flat elevated cell blocked by ramp occupying the same level (stored at a different level)
       if (!pos.isRamp && elevationManager.hasRampAtLevel(pos.x, pos.y, pos.level)) {
         return 'LEVEL_OCCUPIED';
       }
