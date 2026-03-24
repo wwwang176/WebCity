@@ -13,7 +13,7 @@ import { ROAD_CONFIGS, RoadType } from '../road/types';
 import { parsePosKeyUnsafe, parseLevelFromKey, FOUR_NEIGHBORS, toPosKey } from '../grid/GridHelpers';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
-/** Cost multiplier applied to edges used in previous variants (penalty method). */
+/** Cost multiplier applied per cell+lane used in previous variants (penalty method). */
 const VARIANT_PENALTY = 3;
 
 /** Number of lane path variants to generate per route. */
@@ -82,7 +82,7 @@ function manhattanDist(a: { x: number; y: number }, b: { x: number; y: number })
  * Multi-source / multi-target: starts from all exit points near the origin,
  * terminates when any entry point near the destination is reached.
  *
- * @param penalty Map of edgeId → penalty multiplier (for variant generation)
+ * @param penalty Map of "cellKey:lane" → penalty multiplier (for variant generation)
  */
 function laneAStar(
   graph: LaneGraph,
@@ -148,10 +148,10 @@ function laneAStar(
       const neighborId = edge.to.id;
       if (closed.has(neighborId)) continue;
 
-      // Cost = edge length / speed (+ penalty for variant diversity)
+      // Cost = edge length (+ cell+lane penalty for variant diversity)
       let cost = edge.length;
       if (penalty) {
-        const p = penalty.get(edge.id);
+        const p = penalty.get(`${edge.to.cellKey}:${edge.to.lane}`);
         if (p) cost *= p;
       }
 
@@ -202,15 +202,23 @@ export function findLanePathVariants(
   const variants: LaneEdge[][] = [];
   const penalty = new Map<string, number>();
 
+  // Determine start/end cells to exclude from penalties (shared by all variants)
+  const startCells = new Set(startPoints.map(p => p.cellKey));
+  const endCells = new Set(endPoints.map(p => p.cellKey));
+
   for (let i = 0; i < count; i++) {
     const path = laneAStar(graph, startPoints, endPoints, to, 8000, i > 0 ? penalty : undefined);
     if (!path || path.length === 0) break;
     variants.push(path);
 
-    // Apply penalty to edges used in this variant
+    // Apply penalty per cell+lane: each cell's lane used by this variant gets penalized,
+    // so the next variant avoids the same cell+lane combinations and stays in a different lane.
+    // Start and end cells are excluded (all variants may share the same lane there).
     for (const edge of path) {
-      const prev = penalty.get(edge.id) ?? 1;
-      penalty.set(edge.id, prev * VARIANT_PENALTY);
+      const cell = edge.to.cellKey;
+      if (startCells.has(cell) || endCells.has(cell)) continue;
+      const key = `${cell}:${edge.to.lane}`;
+      penalty.set(key, (penalty.get(key) ?? 1) * VARIANT_PENALTY);
     }
   }
 
