@@ -32,9 +32,11 @@ export function getElevatedPath(
   const endDiff = endLevel !== undefined ? targetLevel - endLevel : 0;
   const endRampCount = Math.abs(endDiff);
 
-  // Layout: origin(1) + startRamps + body(≥1) + endRamps + landing(1 if endRamps>0)
+  // Layout: origin(1) + startRamps + body(≥0 or ≥1) + endRamps + landing(1 if endRamps>0)
+  // When origin is already at targetLevel (startRampCount=0), it serves as the body — no extra body needed.
   const landingCount = endRampCount > 0 ? 1 : 0;
-  const minLength = 1 + startRampCount + 1 + endRampCount + landingCount;
+  const minBodyCount = startRampCount > 0 ? 1 : 0;
+  const minLength = 1 + startRampCount + minBodyCount + endRampCount + landingCount;
 
   if (basePath.length < minLength) return null;
 
