@@ -2141,7 +2141,19 @@ export class Game {
 
     for (let i = 0; i < pathCells.length; i++) {
       const c = pathCells[i]!;
+      // Skip cells that already have road/elevated (no ghost over existing)
       const isRamp = this.placementMode === 'elevated' && i > 0 && i <= rampCount;
+      if (this.placementMode === 'elevated') {
+        if (this.elevationManager.get(c.x, c.y, this.elevationLevel)) continue;
+        // Non-ramp cells at ground level (origin): skip if ground road exists
+        if (!isRamp) {
+          const existing = this.state.grid.getCell(c.x, c.y);
+          if (existing && existing.roadType !== RoadType.NONE) continue;
+        }
+      } else {
+        const existing = this.state.grid.getCell(c.x, c.y);
+        if (existing && existing.roadType !== RoadType.NONE) continue;
+      }
       if (isRamp) {
         // Compute ascend direction: from this cell toward next cell (higher end)
         const next = pathCells[Math.min(i + 1, pathCells.length - 1)]!;
