@@ -71,6 +71,19 @@ export class ElevatedRoadBuilder {
     const path = getElevatedPath(from, to, actualStartLevel, targetLevel, endLevel);
     if (!path) return { success: false, reason: 'PATH_TOO_SHORT' };
 
+    // If start cell is an existing ramp, only allow extending in the ascend direction
+    let startIsRamp = false;
+    if (startOnElevated && path.length >= 2) {
+      const existingSeg = this.elevationManager.get(from.x, from.y, startLevel);
+      if (existingSeg?.isRamp) {
+        const buildDir = getDirectionFlag(path[0]!, path[1]!);
+        if (buildDir !== existingSeg.rampAscendDirection) {
+          return { success: false, reason: 'RAMP_OCCUPIED' };
+        }
+        startIsRamp = true;
+      }
+    }
+
     // Validate — exclude start cell from collision check if extending from existing segment
     const excludeIndices = new Set<number>();
     if (startOnElevated) excludeIndices.add(0);
@@ -102,6 +115,7 @@ export class ElevatedRoadBuilder {
     for (let i = 0; i < path.length; i++) {
       const pos = path[i]!;
       if (pos.level === 0 && !pos.isRamp) continue; // Ground cell, skip
+      if (i === 0 && startIsRamp) continue; // Preserve existing ramp data
 
       const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level;
       if (storeLevel === 0) continue; // Don't store in ElevationManager at level 0

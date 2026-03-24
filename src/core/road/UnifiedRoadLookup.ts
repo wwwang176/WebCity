@@ -8,7 +8,7 @@
  * Pure logic module — no Three.js imports.
  */
 
-import { RoadType } from './types';
+import { RoadType, RoadDirection } from './types';
 import { toPosKey, parsePosKeyUnsafe, parseLevelFromKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { ElevationManager } from '../elevation/ElevationManager';
 import { MIN_ELEVATION_LEVEL, MAX_ELEVATION_LEVEL } from '../elevation/types';
@@ -70,14 +70,19 @@ export class UnifiedRoadLookup {
     if (nx < 0 || ny < 0 || nx >= this.grid.width || ny >= this.grid.height) return [];
 
     const sourceLevel = parseLevelFromKey(sourceKey);
+    const { x: sx, y: sy } = parsePosKeyUnsafe(sourceKey);
     const sourceIsRamp = this.isRamp(sourceKey);
+    const sourceRampDir = sourceIsRamp && sourceLevel > 0
+      ? this.em.get(sx, sy, sourceLevel)?.rampAscendDirection ?? 0
+      : 0;
     const result: string[] = [];
 
     // Check ground level at neighbor
     const groundCell = this.grid.getCell(nx, ny);
     if (groundCell && groundCell.roadType !== RoadType.NONE) {
       const neighborLevel = 0;
-      if (this.isCompatible(sourceLevel, sourceIsRamp, neighborLevel, false)) {
+      if (this.isCompatible(sourceLevel, sourceIsRamp, neighborLevel, false)
+        && (!sourceIsRamp || this.isAlongRampAxis(sourceRampDir, sx, sy, nx, ny))) {
         result.push(toPosKey(nx, ny));
       }
     }
@@ -86,7 +91,9 @@ export class UnifiedRoadLookup {
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {
       const seg = this.em.get(nx, ny, lv);
       if (seg && seg.roadType !== RoadType.NONE) {
-        if (this.isCompatible(sourceLevel, sourceIsRamp, lv, seg.isRamp)) {
+        if (this.isCompatible(sourceLevel, sourceIsRamp, lv, seg.isRamp)
+          && (!sourceIsRamp || this.isAlongRampAxis(sourceRampDir, sx, sy, nx, ny))
+          && (!seg.isRamp || this.isAlongRampAxis(seg.rampAscendDirection, nx, ny, sx, sy))) {
           result.push(`${nx},${ny},${lv}`);
         }
       }
@@ -147,5 +154,14 @@ export class UnifiedRoadLookup {
     if (srcLevel === dstLevel) return true;
     if (Math.abs(srcLevel - dstLevel) !== 1) return false;
     return srcIsRamp || dstIsRamp;
+  }
+
+  /** Check if the direction from (sx,sy) to (nx,ny) is along the ramp's axis. */
+  private isAlongRampAxis(rampAscendDir: number, sx: number, sy: number, nx: number, ny: number): boolean {
+    const dx = nx - sx;
+    const dy = ny - sy;
+    if (rampAscendDir & (RoadDirection.EAST | RoadDirection.WEST)) return dx !== 0;
+    if (rampAscendDir & (RoadDirection.NORTH | RoadDirection.SOUTH)) return dy !== 0;
+    return true; // unknown direction — allow
   }
 }

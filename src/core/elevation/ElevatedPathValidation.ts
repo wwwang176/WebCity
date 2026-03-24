@@ -76,9 +76,10 @@ export function validateElevatedPath(
       if (pos.isRamp) return 'RAMP_ON_WATER';
     }
 
-    // Check level collision with existing elevated segments
-    if (pos.level > 0 && !pos.isRamp && !excludeCollisionIndices?.has(i)) {
-      const existing = elevationManager.get(pos.x, pos.y, pos.level);
+    // Check level collision with existing elevated segments (including ramps)
+    if (pos.level > 0 && !excludeCollisionIndices?.has(i)) {
+      const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level;
+      const existing = elevationManager.get(pos.x, pos.y, storeLevel);
       if (existing) return 'LEVEL_OCCUPIED';
     }
   }
