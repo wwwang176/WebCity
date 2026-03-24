@@ -31,8 +31,7 @@ export class BusSystem extends BaseTransportSystem {
    */
   computeRouteSegments(
     route: TransportRoute,
-    findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
-    refinePath: (cellPath: string[]) => LaneEdge[] | null,
+    findEdgePath: (fromX: number, fromY: number, toX: number, toY: number) => LaneEdge[] | null,
   ): LaneEdge[][] | null {
     const stops = route.stops;
     if (stops.length < 2) return null;
@@ -47,10 +46,7 @@ export class BusSystem extends BaseTransportSystem {
       const toRX = to.roadX ?? to.x;
       const toRY = to.roadY ?? to.y;
 
-      const cellPath = findPath(fromRX, fromRY, toRX, toRY);
-      if (!cellPath) return null;
-
-      const edgePath = refinePath(cellPath, 0); // lane 0 = outermost
+      const edgePath = findEdgePath(fromRX, fromRY, toRX, toRY);
       if (!edgePath || edgePath.length === 0) return null;
 
       segments.push(edgePath);
@@ -83,12 +79,11 @@ export class BusSystem extends BaseTransportSystem {
   createRouteWithTraffic(
     stops: TransportStop[],
     vehicleCount: number,
-    findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
-    refinePath: (cellPath: string[]) => LaneEdge[] | null,
+    findEdgePath: (fromX: number, fromY: number, toX: number, toY: number) => LaneEdge[] | null,
     traffic: TrafficSimulation,
   ): TransportRoute | null {
     const route = this.createRoute(stops, vehicleCount);
-    const segments = this.computeRouteSegments(route, findPath, refinePath);
+    const segments = this.computeRouteSegments(route, findEdgePath);
     if (!segments) {
       this.deleteRoute(route.id);
       return null;
@@ -150,8 +145,7 @@ export class BusSystem extends BaseTransportSystem {
    */
   onRoadChanged(
     affectedCells: Set<string>,
-    findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
-    refinePath: (cellPath: string[]) => LaneEdge[] | null,
+    findEdgePath: (fromX: number, fromY: number, toX: number, toY: number) => LaneEdge[] | null,
     traffic: TrafficSimulation,
     grid?: PlacementGrid,
   ): number[] {
@@ -171,7 +165,7 @@ export class BusSystem extends BaseTransportSystem {
 
       if (route.suspended) {
         // Try to resume suspended routes
-        const newSegments = this.computeRouteSegments(route, findPath, refinePath);
+        const newSegments = this.computeRouteSegments(route, findEdgePath);
         if (newSegments) {
           route.suspended = false;
           // Re-spawn bus vehicles
@@ -201,7 +195,7 @@ export class BusSystem extends BaseTransportSystem {
       if (!affected) continue;
 
       // Try to recalculate
-      const newSegments = this.computeRouteSegments(route, findPath, refinePath);
+      const newSegments = this.computeRouteSegments(route, findEdgePath);
       if (!newSegments) {
         // Suspend route instead of dissolving
         route.suspended = true;
@@ -229,8 +223,7 @@ export class BusSystem extends BaseTransportSystem {
    * (e.g. after loading from save). Spawns bus vehicles for valid routes.
    */
   rebuildAllSegments(
-    findPath: (fromX: number, fromY: number, toX: number, toY: number) => string[] | null,
-    refinePath: (cellPath: string[]) => LaneEdge[] | null,
+    findEdgePath: (fromX: number, fromY: number, toX: number, toY: number) => LaneEdge[] | null,
     traffic: TrafficSimulation,
     grid?: PlacementGrid,
   ): void {
@@ -248,7 +241,7 @@ export class BusSystem extends BaseTransportSystem {
         }
       }
 
-      const segments = this.computeRouteSegments(route, findPath, refinePath);
+      const segments = this.computeRouteSegments(route, findEdgePath);
       if (!segments) {
         route.suspended = true;
         continue;

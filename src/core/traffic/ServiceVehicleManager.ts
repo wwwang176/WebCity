@@ -9,9 +9,10 @@
 
 import type { TrafficSimulation, Vehicle, ServiceVehicleType } from './TrafficSimulation';
 import type { LaneGraph, LaneEdge } from './LaneGraph';
-import { gridAStarPath, refineLanePath } from './Pathfinding';
+import { findLanePath } from './LaneGraphPathfinder';
 import { parsePosKeyUnsafe, toPosKey, findAdjacentRoad } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
+import type { UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
 /** Interface for services to provide facility positions and coverage data. */
 export interface ServiceFacilityProvider {
@@ -51,6 +52,7 @@ export class ServiceVehicleManager {
     services: Record<ServiceVehicleType, ServiceFacilityProvider | null>,
     grid: PathfindGrid,
     laneGraph: LaneGraph,
+    roadLookup?: UnifiedRoadLookup,
   ): void {
     // 1. Clean up stale entries (vehicles no longer in traffic)
     this.cleanupStale(traffic);
@@ -65,10 +67,10 @@ export class ServiceVehicleManager {
     }
 
     // 3. Repath stopped service vehicles (reached path end)
-    this.repathStoppedVehicles(traffic, services, grid, laneGraph);
+    this.repathStoppedVehicles(traffic, services, grid, laneGraph, roadLookup);
 
     // 4. Spawn new vehicles up to target
-    this.spawnVehicles(traffic, services, grid, laneGraph);
+    this.spawnVehicles(traffic, services, grid, laneGraph, roadLookup);
   }
 
   /** Count tracked service vehicles, optionally filtered by type. */
@@ -109,6 +111,7 @@ export class ServiceVehicleManager {
     services: Record<ServiceVehicleType, ServiceFacilityProvider | null>,
     grid: PathfindGrid,
     laneGraph: LaneGraph,
+    roadLookup?: UnifiedRoadLookup,
   ): void {
     for (const entry of this.tracked) {
       const vehicle = traffic.vehicles.find(v => v.id === entry.vehicleId);
@@ -135,7 +138,7 @@ export class ServiceVehicleManager {
       const destPos = pickRandomDestination(coveredRoads, currentPos);
       if (!destPos) continue;
 
-      const edgePath = this.findEdgePath(currentPos, destPos, grid, laneGraph);
+      const edgePath = this.findEdgePath(currentPos, destPos, laneGraph, roadLookup);
       if (edgePath && edgePath.length > 0) {
         vehicle.edgePath = edgePath;
         vehicle.edgeIndex = 0;
@@ -150,6 +153,7 @@ export class ServiceVehicleManager {
     services: Record<ServiceVehicleType, ServiceFacilityProvider | null>,
     grid: PathfindGrid,
     laneGraph: LaneGraph,
+    roadLookup?: UnifiedRoadLookup,
   ): void {
     // Don't exceed total cap
     if (this.tracked.length >= SERVICE_VEHICLE.MAX_TOTAL) return;
@@ -183,7 +187,7 @@ export class ServiceVehicleManager {
       const destPos = pickRandomDestination(coveredRoads, startRoad);
       if (!destPos) continue;
 
-      const edgePath = this.findEdgePath(startRoad, destPos, grid, laneGraph);
+      const edgePath = this.findEdgePath(startRoad, destPos, laneGraph, roadLookup);
       if (edgePath && edgePath.length > 0) {
         const vehicle = traffic.addServiceVehicle(edgePath, type);
         this.tracked.push({ vehicleId: vehicle.id, serviceType: type });
@@ -210,12 +214,11 @@ export class ServiceVehicleManager {
   private findEdgePath(
     from: { x: number; y: number },
     to: { x: number; y: number },
-    grid: PathfindGrid,
     laneGraph: LaneGraph,
+    roadLookup?: UnifiedRoadLookup,
   ): LaneEdge[] | null {
-    const cellPath = gridAStarPath(from, to, grid);
-    if (!cellPath || cellPath.length < 2) return null;
-    return refineLanePath(laneGraph, cellPath);
+    if (!roadLookup) return null;
+    return findLanePath(laneGraph, roadLookup, from, to);
   }
 }
 

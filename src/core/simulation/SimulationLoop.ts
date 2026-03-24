@@ -9,7 +9,6 @@ import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI }
 import { RoadType } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
-import { refineLanePath, gridAStarPath } from '../traffic/Pathfinding';
 import { findLanePath, findLanePathVariants } from '../traffic/LaneGraphPathfinder';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
@@ -1325,19 +1324,18 @@ export class SimulationLoop {
     }
 
     const lg = this.laneGraph;
-    const g = { getCell: (x: number, y: number) => grid.getCell(x, y), width: grid.width, height: grid.height };
-    const findPath = (fx: number, fy: number, tx: number, ty: number) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, g);
-    const refine = (cellPath: string[]) => refineLanePath(lg, cellPath);
+    const busLookup = this._roadLookup;
+    const findEdgePath = (fx: number, fy: number, tx: number, ty: number) =>
+      busLookup ? findLanePath(lg, busLookup, { x: fx, y: fy }, { x: tx, y: ty }) : null;
 
     // Rebuild segments for routes loaded from save (no segments yet)
-    this.state.bus.rebuildAllSegments(findPath, refine, this.state.traffic, grid);
+    this.state.bus.rebuildAllSegments(findEdgePath, this.state.traffic, grid);
 
     // Revalidate bus routes affected by road changes
     if (this.dirtyRoadCells && this.dirtyRoadCells.size > 0) {
       this.state.bus.onRoadChanged(
         this.dirtyRoadCells,
-        findPath,
-        refine,
+        findEdgePath,
         this.state.traffic,
         grid,
       );
@@ -1715,19 +1713,18 @@ export class SimulationLoop {
       const edge = edgeCells[Math.floor(Math.random() * edgeCells.length)]!;
       const bp = this.buildingPositions[Math.floor(Math.random() * this.buildingPositions.length)]!;
 
-      let path: string[] | null = null;
+      if (!this._roadLookup) continue;
       if (isIncoming) {
         const endRoad = findAdjacentRoad(grid, bp.x, bp.y);
         if (!endRoad || (endRoad.x === edge.x && endRoad.y === edge.y)) continue;
-        path = gridAStarPath(edge, endRoad, grid);
+        const edgePath = findLanePath(this.laneGraph, this._roadLookup, edge, endRoad);
+        if (edgePath && edgePath.length > 0) {
+          this.state.traffic.addVehicleOnEdges(edgePath);
+        }
       } else {
         const startRoad = findAdjacentRoad(grid, bp.x, bp.y);
         if (!startRoad || (startRoad.x === edge.x && startRoad.y === edge.y)) continue;
-        path = gridAStarPath(startRoad, edge, grid);
-      }
-
-      if (path && path.length >= 2) {
-        const edgePath = refineLanePath(this.laneGraph, path);
+        const edgePath = findLanePath(this.laneGraph, this._roadLookup, startRoad, edge);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         }
@@ -1833,13 +1830,11 @@ export class SimulationLoop {
       const endRoad = findAdjacentRoad(grid, to.x, to.y);
       if (!startRoad || !endRoad || (startRoad.x === endRoad.x && startRoad.y === endRoad.y)) continue;
 
-      const path = gridAStarPath(startRoad, endRoad, grid);
-      if (path && path.length >= 2) {
-        const edgePath = refineLanePath(this.laneGraph, path);
-        if (edgePath && edgePath.length > 0) {
-          this.state.traffic.addFreightVehicle(edgePath);
-          spawned++;
-        }
+      if (!this._roadLookup) continue;
+      const edgePath = findLanePath(this.laneGraph, this._roadLookup, startRoad, endRoad);
+      if (edgePath && edgePath.length > 0) {
+        this.state.traffic.addFreightVehicle(edgePath);
+        spawned++;
       }
     }
   }
@@ -1865,6 +1860,7 @@ export class SimulationLoop {
       services,
       this.state.grid,
       this.laneGraph,
+      this._roadLookup ?? undefined,
     );
   }
 

@@ -32,6 +32,15 @@ function makeLongPath(n: number): LaneEdge[] {
   return edges;
 }
 
+/** Convert cell key array to LaneEdge array (single-phase helper for tests). */
+function cellsToEdges(cells: string[]): LaneEdge[] {
+  const edges: LaneEdge[] = [];
+  for (let i = 0; i < cells.length - 1; i++) {
+    edges.push(makeEdge(`e${i}`, cells[i]!, cells[i + 1]!));
+  }
+  return edges;
+}
+
 function makeGrid(roads: Set<string>) {
   return {
     getCell(x: number, y: number) {
@@ -237,16 +246,16 @@ describe('Step 4: createRouteWithTraffic', () => {
     s2.roadX = 4;
     s2.roadY = 0;
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
+    const findEdgePath = () => {
+      const cells = ['1,0', '2,0', '3,0', '4,0'];
       const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      for (let i = 0; i < cells.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cells[i]!, cells[i + 1]!));
       }
       return edges;
     };
 
-    const route = bus.createRouteWithTraffic([s1, s2], 1, findPath, refinePath, traffic);
+    const route = bus.createRouteWithTraffic([s1, s2], 1, findEdgePath, traffic);
     expect(route).not.toBeNull();
     expect(bus.getRoutes().length).toBe(1);
     expect(traffic.vehicles.length).toBe(1);
@@ -264,7 +273,7 @@ describe('Step 4: createRouteWithTraffic', () => {
     s2.roadX = 4;
     s2.roadY = 0;
 
-    const route = bus.createRouteWithTraffic([s1, s2], 1, () => null, () => [], traffic);
+    const route = bus.createRouteWithTraffic([s1, s2], 1, () => null, traffic);
     expect(route).toBeNull();
     expect(bus.getRoutes().length).toBe(0);
     expect(traffic.vehicles.length).toBe(0);
@@ -278,17 +287,10 @@ describe('Step 4: createRouteWithTraffic', () => {
     const s2 = bus.addStop(5, 0);
     s2.roadX = 4; s2.roadY = 0;
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
+    const findEdgePath = () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']);
 
     // 2 stops → 2 segments (A→B, B→A). 5 buses should alternate: A,B,A,B,A
-    const route = bus.createRouteWithTraffic([s1, s2], 5, findPath, refinePath, traffic);
+    const route = bus.createRouteWithTraffic([s1, s2], 5, findEdgePath, traffic);
     expect(route).not.toBeNull();
     expect(traffic.vehicles.length).toBe(5);
 
@@ -308,17 +310,10 @@ describe('Step 4: createRouteWithTraffic', () => {
     const s2 = bus.addStop(5, 0);
     s2.roadX = 4; s2.roadY = 0;
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
+    const findEdgePath = () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']);
 
     // Create with 1 bus at seg 0 (A)
-    const route = bus.createRouteWithTraffic([s1, s2], 1, findPath, refinePath, traffic);
+    const route = bus.createRouteWithTraffic([s1, s2], 1, findEdgePath, traffic);
     expect(traffic.vehicles[0]!.busState!.segmentIndex).toBe(0);
 
     // Add via + button: existing=1 → seg 1 (B)
@@ -338,16 +333,9 @@ describe('Step 4: createRouteWithTraffic', () => {
     const s2 = bus.addStop(5, 0);
     s2.roadX = 4; s2.roadY = 0;
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
+    const findEdgePath = () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']);
 
-    const route = bus.createRouteWithTraffic([s1, s2], 2, findPath, refinePath, traffic);
+    const route = bus.createRouteWithTraffic([s1, s2], 2, findEdgePath, traffic);
     expect(traffic.vehicles.length).toBe(2);
 
     bus.deleteRouteWithTraffic(route!.id, traffic);
@@ -363,16 +351,16 @@ describe('Step 4: createRouteWithTraffic', () => {
     const s2 = bus.addStop(5, 0);
     s2.roadX = 4; s2.roadY = 0;
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
+    const findEdgePath = () => {
+      const cells = ['1,0', '2,0', '3,0', '4,0'];
       const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
+      for (let i = 0; i < cells.length - 1; i++) {
+        edges.push(makeEdge(`e${i}`, cells[i]!, cells[i + 1]!));
       }
       return edges;
     };
 
-    const route = bus.createRouteWithTraffic([s1, s2], 1, findPath, refinePath, traffic);
+    const route = bus.createRouteWithTraffic([s1, s2], 1, findEdgePath, traffic);
     expect(traffic.vehicles.length).toBe(1);
 
     bus.addVehicleWithTraffic(route!.id, traffic);
@@ -388,16 +376,9 @@ describe('Step 4: createRouteWithTraffic', () => {
     const s2 = bus.addStop(5, 0);
     s2.roadX = 4; s2.roadY = 0;
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
+    const findEdgePath = () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']);
 
-    const route = bus.createRouteWithTraffic([s1, s2], 3, findPath, refinePath, traffic);
+    const route = bus.createRouteWithTraffic([s1, s2], 3, findEdgePath, traffic);
     expect(traffic.vehicles.length).toBe(3);
 
     bus.removeVehicleWithTraffic(route!.id, traffic);
@@ -417,16 +398,9 @@ describe('Step 4: BusSystem route path management', () => {
     s2.roadY = 0;
     const route = bus.createRoute([s1, s2], 0);
 
-    const findPath = (_fx: number, _fy: number, _tx: number, _ty: number) => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[], _lane: number) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
+    const findEdgePath = () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']);
 
-    const segments = bus.computeRouteSegments(route, findPath, refinePath);
+    const segments = bus.computeRouteSegments(route, findEdgePath);
     expect(segments).not.toBeNull();
     expect(segments!.length).toBe(2); // s1→s2 and s2→s1 (loop)
   });
@@ -441,10 +415,7 @@ describe('Step 4: BusSystem route path management', () => {
     s2.roadY = 0;
     const route = bus.createRoute([s1, s2], 0);
 
-    const findPath = () => null; // no path found
-    const refinePath = () => [];
-
-    const segments = bus.computeRouteSegments(route, findPath, refinePath);
+    const segments = bus.computeRouteSegments(route, () => null);
     expect(segments).toBeNull();
   });
 
@@ -459,16 +430,7 @@ describe('Step 4: BusSystem route path management', () => {
     s2.roadY = 0;
     const route = bus.createRoute([s1, s2], 0);
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
-
-    bus.computeRouteSegments(route, findPath, refinePath);
+    bus.computeRouteSegments(route, () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']));
     const v = bus.spawnBusInTraffic(route.id, traffic);
 
     expect(v).not.toBeNull();
@@ -512,23 +474,13 @@ describe('Step 5: road change invalidation', () => {
     s2.roadY = 0;
     const route = bus.createRoute([s1, s2], 0);
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
-
-    bus.computeRouteSegments(route, findPath, refinePath);
+    bus.computeRouteSegments(route, () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']));
     bus.spawnBusInTraffic(route.id, traffic);
 
     // Road at 2,0 destroyed — path through it no longer works
     const suspended = bus.onRoadChanged(
       new Set(['2,0']),
       () => null, // can't find new path
-      () => [],
       traffic,
     );
 
@@ -549,25 +501,17 @@ describe('Step 5: road change invalidation', () => {
     s2.roadX = 4; s2.roadY = 0;
     const route = bus.createRoute([s1, s2], 1);
 
-    const makePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
-
-    const origPath = ['1,0', '2,0', '3,0', '4,0'];
-    bus.computeRouteSegments(route, () => origPath, (cp) => makePath(cp));
+    const origEdgePath = () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']);
+    bus.computeRouteSegments(route, origEdgePath);
     bus.spawnBusInTraffic(route.id, traffic);
 
     // Suspend: road broken
-    bus.onRoadChanged(new Set(['2,0']), () => null, () => [], traffic);
+    bus.onRoadChanged(new Set(['2,0']), () => null, traffic);
     expect(route.suspended).toBe(true);
     expect(traffic.vehicles.length).toBe(0);
 
     // Resume: road repaired, path available again
-    bus.onRoadChanged(new Set(['2,0']), () => origPath, (cp) => makePath(cp), traffic);
+    bus.onRoadChanged(new Set(['2,0']), origEdgePath, traffic);
     expect(route.suspended).toBeFalsy();
     expect(traffic.vehicles.length).toBe(1); // bus re-spawned
   });
@@ -580,21 +524,13 @@ describe('Step 5: road change invalidation', () => {
     const s2 = bus.addStop(5, 0);
     s2.roadX = 4; s2.roadY = 0;
 
-    const makePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
-
-    const origPath = ['1,0', '2,0', '3,0', '4,0'];
+    const origEdgePath = () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']);
     const route = bus.createRoute([s1, s2], 0);
-    bus.computeRouteSegments(route, () => origPath, (cp) => makePath(cp));
+    bus.computeRouteSegments(route, origEdgePath);
     bus.spawnBusInTraffic(route.id, traffic);
 
     expect(bus.getSuspendedRouteIds()).toEqual([]);
-    bus.onRoadChanged(new Set(['2,0']), () => null, () => [], traffic);
+    bus.onRoadChanged(new Set(['2,0']), () => null, traffic);
     expect(bus.getSuspendedRouteIds()).toEqual([route.id]);
   });
 
@@ -609,24 +545,13 @@ describe('Step 5: road change invalidation', () => {
     s2.roadY = 0;
     const route = bus.createRoute([s1, s2], 0);
 
-    const origPath = ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
-
-    bus.computeRouteSegments(route, () => origPath, refinePath);
+    bus.computeRouteSegments(route, () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']));
     bus.spawnBusInTraffic(route.id, traffic);
 
     // Road changed at 2,0 but alternative path exists
-    const newPath = ['1,0', '1,1', '2,1', '3,1', '4,0'];
     const dissolved = bus.onRoadChanged(
       new Set(['2,0']),
-      () => newPath,
-      refinePath,
+      () => cellsToEdges(['1,0', '1,1', '2,1', '3,1', '4,0']),
       traffic,
     );
 
@@ -645,22 +570,13 @@ describe('Step 5: road change invalidation', () => {
     s2.roadY = 0;
     const route = bus.createRoute([s1, s2], 0);
 
-    const findPath = () => ['1,0', '2,0', '3,0', '4,0'];
-    const refinePath = (cellPath: string[]) => {
-      const edges: LaneEdge[] = [];
-      for (let i = 0; i < cellPath.length - 1; i++) {
-        edges.push(makeEdge(`e${i}`, cellPath[i]!, cellPath[i + 1]!));
-      }
-      return edges;
-    };
-
-    bus.computeRouteSegments(route, findPath, refinePath);
+    const findEdgePath = () => cellsToEdges(['1,0', '2,0', '3,0', '4,0']);
+    bus.computeRouteSegments(route, findEdgePath);
 
     // Road changed far away at 99,99
     const dissolved = bus.onRoadChanged(
       new Set(['99,99']),
-      findPath,
-      refinePath,
+      findEdgePath,
       traffic,
     );
 

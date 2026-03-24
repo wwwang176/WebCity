@@ -30,7 +30,7 @@ import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
 import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
-import { gridAStarPath, refineLanePath } from './core/traffic/Pathfinding';
+import { findLanePath } from './core/traffic/LaneGraphPathfinder';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
@@ -435,13 +435,13 @@ export class Game {
     this.state.bus.onRouteDissolvedHook = (routeId) => {
       this.state.traffic.removeBusVehicles(routeId);
     };
-    this.roadBuilder = new RoadBuilder(this.state.grid);
-    this.railNetwork = new RailNetwork();
-    this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
     this.elevationManager = new ElevationManager();
     if (extra?.elevationData) {
       this.elevationManager.fromJSON(extra.elevationData as any);
     }
+    this.roadBuilder = new RoadBuilder(this.state.grid, undefined, this.elevationManager);
+    this.railNetwork = new RailNetwork();
+    this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork, this.elevationManager);
     this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
     this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
     this.simLoop.setElevationManager(this.elevationManager);
@@ -1989,12 +1989,11 @@ export class Game {
   createBusRoute(stops: readonly TransportStop[], vehicleCount = 1): TransportRoute | null {
     this.simLoop.ensureLaneGraph();
     const lg = this.simLoop.laneGraph;
-    const grid = this.state.grid;
+    const lookup = this.roadLookup;
     return this.state.bus.createRouteWithTraffic(
       [...stops],
       vehicleCount,
-      (fx, fy, tx, ty) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, grid),
-      (cellPath) => refineLanePath(lg, cellPath),
+      (fx, fy, tx, ty) => findLanePath(lg, lookup, { x: fx, y: fy }, { x: tx, y: ty }),
       this.state.traffic,
     );
   }
