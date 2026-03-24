@@ -178,6 +178,7 @@ export class ElevatedRoadRenderer {
     const mat = new THREE.MeshLambertMaterial({ color: 0x707070 });
     const mesh = new THREE.InstancedMesh(geo, mat, strips.length);
     mesh.receiveShadow = true;
+    mesh.castShadow = true;
     mesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
@@ -295,6 +296,7 @@ export class ElevatedRoadRenderer {
     const mat = new THREE.MeshLambertMaterial({ color: 0x707070 });
     const mesh = new THREE.InstancedMesh(geo, mat, strips.length);
     mesh.receiveShadow = true;
+    mesh.castShadow = true;
     mesh.frustumCulled = false;
 
     const matrix = new THREE.Matrix4();
