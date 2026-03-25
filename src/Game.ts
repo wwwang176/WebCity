@@ -696,7 +696,6 @@ export class Game {
               if (result.affectedCells) this.simLoop.markLaneGraphDirty(result.affectedCells, true);
             });
             this.dirty.roads = true;
-            this.dirty.buildings = true;
           } else {
             const result = this.roadBuilder.buildRoad(
               { x: x1, y: y1 }, { x: x2, y: y2 },
@@ -708,12 +707,12 @@ export class Game {
               this.recalculateAllRoadCoverage();
               if (result.demolishedCells) {
                 for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+                this.dirty.buildings = true;
               }
             });
             this.dirty.roads = true;
             this.dirty.crossings = true;
             this.dirty.trafficLights = true;
-            this.dirty.buildings = true;
           }
           break;
         }
