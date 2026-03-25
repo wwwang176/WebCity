@@ -1315,8 +1315,14 @@ export class SimulationLoop {
     // Use UnifiedRoadLookup for all road cells (ground + elevated)
     const lookup = this._roadLookup;
     if (lookup) {
-      const cellKeys = lookup.getAllCellKeys();
-      this.laneGraph.buildFromGrid(lookup, cellKeys);
+      if (this.dirtyRoadCells && this.dirtyRoadCells.size > 0) {
+        // Incremental update: only rebuild affected cells + neighbors
+        this.laneGraph.updateCells(lookup, [...this.dirtyRoadCells]);
+      } else {
+        // Full rebuild (save load, initial build, or unknown changes)
+        const cellKeys = lookup.getAllCellKeys();
+        this.laneGraph.buildFromGrid(lookup, cellKeys);
+      }
     } else {
       // Fallback: ground-only (no elevation manager set)
       const cellKeys: string[] = [];
