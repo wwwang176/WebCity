@@ -1237,7 +1237,7 @@ export class SimulationLoop {
     this.serviceVehicleManager.removeAllOfType(this.state.traffic, serviceType);
   }
 
-  markLaneGraphDirty(affectedCells?: string[]): void {
+  markLaneGraphDirty(affectedCells?: string[], skipUnreachableCheck = false): void {
     this.laneGraphDirty = true;
     this.sidewalkGraphDirty = true;
     this.tripPoolDirty = true;
@@ -1251,27 +1251,42 @@ export class SimulationLoop {
       }
       // Invalidate pedestrian path cache for affected cells
       this.state.pedestrianManager.invalidateCells(affectedCells);
-      // Immediately check if affected citizens can still reach their workplace
-      this.immediateUnreachableJobCheck(affectedCells);
+      // Only check unreachable jobs when roads are removed (demolish).
+      // Building new roads/tracks only adds connectivity, never breaks it.
+      if (!skipUnreachableCheck) {
+        this.immediateUnreachableJobCheck(affectedCells);
+      }
     }
   }
 
   /**
    * When roads are cut, immediately unemploy citizens whose workplace
    * is no longer reachable from home (don't wait for jobRelocationTick).
-   * Checks ALL employed citizens, using a cache to avoid redundant Dijkstra calls
-   * for citizens sharing the same home→workplace pair.
+   * Only checks citizens whose cached commute paths pass through the
+   * affected cells (via CommuteCache cellIndex), avoiding a full scan.
    */
-  private immediateUnreachableJobCheck(_affectedCells: string[]): void {
-    const citizens = this.state.citizens.getCitizens();
+  private immediateUnreachableJobCheck(affectedCells: string[]): void {
+    // Collect citizen IDs whose commute routes pass through demolished cells
+    const affectedIds = new Set<number>();
+    for (const cellKey of affectedCells) {
+      const ids = this.commuteCache.getCitizensByCell(cellKey);
+      if (ids) for (const id of ids) affectedIds.add(id);
+    }
+    if (affectedIds.size === 0) return;
+
+    // Build temporary id→citizen map for O(1) lookup
+    const citizenById = new Map<number, Citizen>();
+    for (const c of this.state.citizens.getCitizens()) {
+      if (affectedIds.has(c.id)) citizenById.set(c.id, c);
+    }
+
     const grid = this.state.grid;
     const tick = this.state.clock.tick;
-
-    // Cache: "homeId->workplaceId" → reachable?
     const reachCache = new Map<string, boolean>();
 
-    for (const citizen of citizens) {
-      if (!citizen.workplaceId || !citizen.homeId || !isWorkingAge(citizen.age)) continue;
+    for (const id of affectedIds) {
+      const citizen = citizenById.get(id);
+      if (!citizen || !citizen.workplaceId || !citizen.homeId || !isWorkingAge(citizen.age)) continue;
 
       const key = `${citizen.homeId}->${citizen.workplaceId}`;
       let reachable = reachCache.get(key);

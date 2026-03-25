@@ -657,9 +657,12 @@ export class Game {
         // Demolish elevated segments first across entire drag area
         const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
         let anyElevatedRemoved = false;
+        const elevatedKeys: string[] = [];
         for (let dy = minY; dy <= maxY; dy++) {
           for (let dx = minX; dx <= maxX; dx++) {
             if (this.elevationManager.hasElevatedSegment(dx, dy)) {
+              const level = this.elevationManager.getHighestLevel(dx, dy);
+              if (level > 0) elevatedKeys.push(`${dx},${dy},${level}`);
               this.elevatedRoadBuilder.removeElevated(dx, dy);
               anyElevatedRemoved = true;
             }
@@ -673,8 +676,7 @@ export class Game {
         // Then demolish ground-level items
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
-        this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
-        this.simLoop.ensureLaneGraph();
+        this.simLoop.markLaneGraphDirty([...elevatedKeys, ...demolishedRoadCells, ...buildingCells]);
         this.audioManager.playSfx(SoundType.DEMOLISH);
         break;
       }
@@ -691,7 +693,7 @@ export class Game {
               this.currentRoadType, this.state.budget.funds, this.elevationLevel,
             );
             this.handleBuildResult(result, 'elevated road', () => {
-              if (result.affectedCells) this.simLoop.markLaneGraphDirty(result.affectedCells);
+              if (result.affectedCells) this.simLoop.markLaneGraphDirty(result.affectedCells, true);
             });
             this.dirty.roads = true;
             this.dirty.buildings = true;
@@ -702,7 +704,7 @@ export class Game {
               this.state.budget.funds,
             );
             this.handleBuildResult(result, 'road', () => {
-              this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])]);
+              this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])], true);
               this.recalculateAllRoadCoverage();
               if (result.demolishedCells) {
                 for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
@@ -733,7 +735,7 @@ export class Game {
             this.handleBuildResult(result, 'track', () => {
               if (result.demolishedCells) {
                 for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
-                this.simLoop.markLaneGraphDirty(result.demolishedCells);
+                this.simLoop.markLaneGraphDirty(result.demolishedCells, true);
               }
             });
             this.dirty.tracks = true;
@@ -815,7 +817,7 @@ export class Game {
       }
     }
     if (evictedIds.length > 0) {
-      this.simLoop.markLaneGraphDirty(buildingCells);
+      this.simLoop.markLaneGraphDirty(buildingCells, true);
     }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
     this.dirty.buildings = true;

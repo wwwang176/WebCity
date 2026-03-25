@@ -219,8 +219,10 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     expect(citizen.unemployedSince).toBe(state.clock.tick);
   });
 
-  it('should immediately unemploy citizen even without cached route', () => {
-    // Citizen assigned a job but never commuted (no cached route)
+  it('should not immediately unemploy citizen without cached route (deferred to next tick)', () => {
+    // Citizen assigned a job but never commuted (no cached route, no cellIndex entry).
+    // The immediate unreachable check only covers citizens tracked in the cellIndex.
+    // Citizens without cached routes are handled on the next commute/job-relocation tick.
     const citizen = state.citizens.createCitizen({
       age: 100,
       homeId: '1,1',
@@ -238,8 +240,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     state.grid.setCell(8, 1, { roadType: 0, roadFlags: 0 });
     loop.markLaneGraphDirty(['8,1']);
 
-    // Should still be unemployed — new logic checks ALL citizens
-    expect(citizen.workplaceId).toBeNull();
+    // Citizen keeps job until next commute tick detects the broken path
+    expect(citizen.workplaceId).toBe('15,1');
   });
 
   it('should NOT unemploy citizen if road is cut but workplace still reachable', () => {
