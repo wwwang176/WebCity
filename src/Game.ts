@@ -105,8 +105,6 @@ export const CAMERA_INPUT = {
   ZOOM_SENSITIVITY: 0.05,
   /** Sync building meshes every N ticks */
   BUILDING_SYNC_INTERVAL: 6,
-  /** Full safety rebuild every N ticks */
-  SAFETY_REBUILD_INTERVAL: 200,
   /** Max tick accumulator = tickInterval × this */
   ACCUMULATOR_CAP_FACTOR: 10,
 } as const;
@@ -671,7 +669,6 @@ export class Game {
         if (anyElevatedRemoved) {
           this.dirty.roads = true;
           this.dirty.tracks = true;
-          this.dirty.buildings = true;
         }
         // Then demolish ground-level items
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
@@ -706,8 +703,11 @@ export class Game {
               this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])], true);
               this.recalculateAllRoadCoverage();
               if (result.demolishedCells) {
-                for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
-                this.dirty.buildings = true;
+                for (const pos of result.demolishedCells) {
+                  this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+                  const [px, py] = pos.split(',').map(Number);
+                  this.buildingRenderer.removeBuilding(px!, py!);
+                }
               }
             });
             this.dirty.roads = true;
@@ -725,7 +725,6 @@ export class Game {
             );
             this.handleBuildResult(result, 'elevated track');
             this.dirty.tracks = true;
-            this.dirty.buildings = true;
           } else {
             const result = this.railBuilder.buildTrack(
               { x: x1, y: y1 }, { x: x2, y: y2 },
@@ -733,13 +732,16 @@ export class Game {
             );
             this.handleBuildResult(result, 'track', () => {
               if (result.demolishedCells) {
-                for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+                for (const pos of result.demolishedCells) {
+                  this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+                  const [px, py] = pos.split(',').map(Number);
+                  this.buildingRenderer.removeBuilding(px!, py!);
+                }
                 this.simLoop.markLaneGraphDirty(result.demolishedCells, true);
               }
             });
             this.dirty.tracks = true;
             this.dirty.crossings = true;
-            this.dirty.buildings = true;
           }
           break;
         }
@@ -769,7 +771,6 @@ export class Game {
     this.dirty.roads = true;
     this.dirty.tracks = true;
     this.dirty.crossings = true;
-    this.dirty.buildings = true;
     this.dirty.terrain = true;
     this.dirty.trafficLights = true;
     this.dirty.overlay = true;
@@ -811,6 +812,7 @@ export class Game {
         if (cell && isZoneBuilding(cell.buildingId) && cell.zoneType !== zoneType) {
           const posKey = `${x},${y}`;
           evictedIds.push(...this.state.citizens.evictBuilding(posKey, this.state.clock.tick));
+          this.buildingRenderer.removeBuilding(x, y);
           buildingCells.push(posKey);
         }
       }
@@ -819,7 +821,7 @@ export class Game {
       this.simLoop.markLaneGraphDirty(buildingCells, true);
     }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
-    this.dirty.buildings = true;
+    this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
     this.dirty.terrain = true;
   }
 
@@ -856,12 +858,14 @@ export class Game {
             if (!demolished.has(key)) {
               demolished.add(key);
               this.removeInfraService(action.infraType, action.primaryX, action.primaryY);
+              this.buildingRenderer.removeInfrastructure(this.sceneManager.scene, action.primaryX, action.primaryY);
               removeInfraFromGrid(this.state.grid, x, y);
             }
             break;
           }
           case 'single_cell_infra':
             this.removeInfraService(action.infraType, x, y);
+            this.buildingRenderer.removeInfrastructure(this.sceneManager.scene, x, y);
             this.state.grid.setCell(x, y, { buildingId: 0, reserved: 0 });
             break;
           case 'regular':
@@ -883,12 +887,14 @@ export class Game {
     for (const pos of evictCells) {
       evictedCitizenIds.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
       const [px, py] = pos.split(',').map(Number);
+      this.buildingRenderer.removeBuilding(px!, py!);
       this.simLoop.clearBuildingState(px!, py!);
     }
     if (hadRoadDemolished) {
       this.recalculateAllRoadCoverage();
     }
     this.markAllDirty();
+    this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
 
     // Refresh overlay cache after demolish
     const activeOverlay = this.overlayRenderer.getOverlay();
@@ -963,6 +969,7 @@ export class Game {
         const cell = this.state.grid.getCell(cx, cy);
         if (cell && cell.buildingId !== 0 && isZoneBuilding(cell.buildingId)) {
           this.state.citizens.evictBuilding(`${cx},${cy}`, this.state.clock.tick);
+          this.buildingRenderer.removeBuilding(cx, cy);
           this.state.grid.setCell(cx, cy, { buildingId: 0, reserved: 0, zoneType: 0 });
         }
       }
@@ -981,7 +988,7 @@ export class Game {
     this.recalculateServiceCoverage(type);
 
     this.audioManager.playSfx(SoundType.BUILD);
-    this.dirty.buildings = true;
+    this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, type, ROTATION_RESERVED[this.currentRotation]);
 
     // Refresh overlay if one is active for this service
     const activeOverlay = this.overlayRenderer.getOverlay();
@@ -1065,8 +1072,9 @@ export class Game {
       buildingId: infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
       reserved: ROTATION_RESERVED[this.currentRotation],
     });
+    const infraType = airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!;
+    this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
     this.audioManager.playSfx(SoundType.BUILD);
-    this.dirty.buildings = true;
   }
 
   /** Place an airport at (x,y). Returns true on success, false (with funds refunded) on failure. */
@@ -1094,7 +1102,7 @@ export class Game {
     // Place on grid — standard placeInfraOnGrid (correct dimensions from InfraConfig)
     placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
     this.audioManager.playSfx(SoundType.BUILD);
-    this.dirty.buildings = true;
+    this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
     return true;
   }
 
@@ -1137,11 +1145,6 @@ export class Game {
           saveGame(0, 'AutoSave', data, this.state.citizens.getPopulation()).catch(() => { /* ignore save errors */ });
         }
 
-        // Safety-net rebuild: low-frequency fallback in case events are missed
-        if (this.state.clock.tick % CAMERA_INPUT.SAFETY_REBUILD_INTERVAL === 0) {
-          this.dirty.buildings = true;
-          this.dirty.terrain = true;
-        }
         // Update ambient audio with current city state
         this.audioManager.updateAmbientState(
           this.state.citizens.getPopulation(),

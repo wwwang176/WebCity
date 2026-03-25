@@ -1110,6 +1110,70 @@ export class BuildingRenderer {
     }
   }
 
+  // ─── Incremental infrastructure operations ─────────────────────
+
+  /** Add a single infrastructure building to the scene (O(1), no full rebuild). */
+  addInfrastructure(scene: THREE.Scene, x: number, y: number, type: InfraType, reserved: number): void {
+    const cfg = getInfraConfig(type);
+    const rotationDeg = RESERVED_TO_ROTATION[reserved] ?? 0;
+    const { w, h } = cfg
+      ? getRotatedSize(cfg.width, cfg.height, rotationDeg as Rotation)
+      : { w: 1, h: 1 };
+    const centerX = x + (w - 1) / 2;
+    const centerZ = y + (h - 1) / 2;
+
+    const group = new THREE.Group();
+    group.position.set(centerX, 0, centerZ);
+    if (rotationDeg !== 0) {
+      group.rotation.y = (rotationDeg * Math.PI) / 180;
+    }
+
+    this.buildModel(type, group);
+
+    scene.add(group);
+    this.infraGroups.push(group);
+    this.infraIndex.set(`${x},${y}`, group);
+    this._buildingMeshesDirty = true;
+  }
+
+  /** Remove a single infrastructure building from the scene (O(1), no full rebuild). */
+  removeInfrastructure(scene: THREE.Scene, x: number, y: number): void {
+    const key = `${x},${y}`;
+    const group = this.infraIndex.get(key);
+    if (!group) return;
+
+    scene.remove(group);
+    disposeGroup(group);
+
+    const idx = this.infraGroups.indexOf(group);
+    if (idx >= 0) this.infraGroups.splice(idx, 1);
+    this.infraIndex.delete(key);
+    this._buildingMeshesDirty = true;
+  }
+
+  /** Rebuild only zone overlay meshes (cheap grid scan + InstancedMesh creation). */
+  rebuildZoneOverlays(scene: THREE.Scene, grid: Grid): void {
+    for (const mesh of this.overlayMeshes) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      const mat = mesh.material;
+      if (Array.isArray(mat)) mat.forEach(m => m.dispose());
+      else (mat as THREE.Material).dispose();
+    }
+    this.overlayMeshes = [];
+
+    const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
+    grid.forEachCell((cell, x, y) => {
+      if (cell.zoneType !== ZoneType.NONE && cell.buildingId === 0) {
+        const arr = emptyZonesByType.get(cell.zoneType);
+        if (arr) arr.push({ x, y });
+        else emptyZonesByType.set(cell.zoneType, [{ x, y }]);
+      }
+    });
+
+    this.buildZoneOverlays(scene, emptyZonesByType);
+  }
+
   // ─── Full rebuild (init / save load) ───────────────────────────
 
   build(scene: THREE.Scene, grid: Grid): void {
