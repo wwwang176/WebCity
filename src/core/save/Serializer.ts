@@ -77,13 +77,14 @@ interface SerializedState {
   abandonmentStress?: Record<string, number>;
 }
 
-export function serializeGameState(
+/** Build a plain-object snapshot of the game state (no stringify). */
+export function snapshotGameState(
   state: GameState,
   extra?: {
     abandonmentStress?: Map<string, number>;
     elevationManager?: import('../elevation/ElevationManager').ElevationManager;
   },
-): string {
+): SerializedState {
   const cells: SerializedCell[] = [];
 
   state.grid.forEachCell((cell, x, y) => {
@@ -92,7 +93,7 @@ export function serializeGameState(
     }
   });
 
-  const serialized: SerializedState = {
+  return {
     version: CURRENT_SAVE_VERSION,
     grid: {
       width: state.grid.width,
@@ -140,8 +141,17 @@ export function serializeGameState(
       ? Object.fromEntries(extra.abandonmentStress)
       : undefined,
   };
+}
 
-  return JSON.stringify(serialized);
+/** Serialize game state to JSON string (snapshot + stringify). */
+export function serializeGameState(
+  state: GameState,
+  extra?: {
+    abandonmentStress?: Map<string, number>;
+    elevationManager?: import('../elevation/ElevationManager').ElevationManager;
+  },
+): string {
+  return JSON.stringify(snapshotGameState(state, extra));
 }
 
 export interface DeserializedExtra {

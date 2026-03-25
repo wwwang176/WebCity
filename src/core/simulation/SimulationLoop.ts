@@ -255,16 +255,16 @@ export class SimulationLoop {
     if (!this.state.clock.advance()) return;
 
     const tick = this.state.clock.tick;
-    // Many operations were tuned for ticksPerDay=4. With ticksPerDay=24 (6x more),
-    // we gate slow-update operations to run every 6 ticks to preserve balance.
-    const isSlowTick = tick % SIMULATION.SLOW_TICK_INTERVAL === 0;
+    // Slow-update operations are staggered across 6 tick offsets to spread CPU load.
+    // Each subsystem still runs every 6 ticks, but on different frames.
+    const slowSlot = tick % SIMULATION.SLOW_TICK_INTERVAL;
 
     // Mark building index dirty each tick so the first caller gets a fresh scan.
     // Subsequent rebuildBuildingIndex() calls within the same tick are no-ops.
     this.buildingIndexDirty = true;
 
-    // 1. Economy: RCI demand (every 6 ticks)
-    if (isSlowTick) {
+    // ── Slot 0: Economy (RCI demand + budget) ──
+    if (slowSlot === 0) {
       const rci = calculateRCIDemand({
         residentialSupply: countZoneBuildings(this.state.grid, isResidentialZone),
         commercialSupply: countZoneBuildings(this.state.grid, isCommercialZone),
@@ -278,57 +278,37 @@ export class SimulationLoop {
       this.state.rciDemand = applyBusinessTaxPenalty(
         rci, this.state.taxRates.business ?? BUSINESS_TAX.BASELINE,
       );
-    }
-
-    // 2. Budget tick (every 6 ticks to maintain same daily income/expense rate)
-    if (isSlowTick) {
       this.state.budget = tickBudget(this.state.budget);
+      this.state.globalMarket.tick();
     }
 
-    // 3. Services (power/water coverage) — every 6 ticks
-    if (isSlowTick) {
+    // ── Slot 1: Power / Water coverage ──
+    if (slowSlot === 1) {
       this.infraPositions.clear();
       for (const p of this.state.power.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
       for (const p of this.state.water.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
-      // Calculate demand before coverage so supplyRatio is available for budget-drain
       this.state.power.calculateDemand(this.state.grid);
       this.state.power.calculateCoverage(this.state.grid, this.infraPositions);
       this.state.water.calculateDemand(this.state.grid);
       this.state.water.calculateCoverage(this.state.grid, this.infraPositions);
     }
 
-    // 3.5 Civic services tick (every 6 ticks) — OCP: adding services only requires ServiceRegistry update
-    if (isSlowTick) {
+    // ── Slot 2: Civic services + fire + service vehicles ──
+    if (slowSlot === 2) {
       tickAllCivicServices(this.state);
-
-      // Fire events: try random fire and resolve completed fires
       this.processFireEvents();
+      this.tickServiceVehicles();
     }
 
-    // 3.6. Pollution & land value: update every 60 ticks (was 10 with ticksPerDay=4)
-    if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
-      this.updatePollution();
-      this.updateLandValue();
-      this.onTerrainChanged?.();
-    }
-
-    // 4. Building growth (every 6 ticks)
-    if (isSlowTick) {
+    // ── Slot 3: Building growth + upgrades + abandonment ──
+    if (slowSlot === 3) {
       this.tryBuildingGrowth();
-    }
-
-    // 4.5. Building upgrades/downgrades (every 6 ticks)
-    if (isSlowTick) {
       this.tryBuildingUpgrades();
-    }
-
-    // 4.6. Abandonment stress (every 6 ticks)
-    if (isSlowTick) {
       this.processAbandonmentStress();
     }
 
-    // 4.7 Education: upgrade citizen education based on school road-coverage
-    if (isSlowTick) {
+    // ── Slot 4: Education + happiness + health ──
+    if (slowSlot === 4) {
       const capacity = {
         elementary: this.state.education.getTotalCapacity('elementary'),
         highSchool: this.state.education.getTotalCapacity('highschool'),
@@ -338,7 +318,62 @@ export class SimulationLoop {
         const type = SCHOOL_KEY_TO_TYPE[schoolKey];
         return this.state.education.getCoverage(x, y, type);
       }, capacity);
+      this.updateCitizenHappiness();
+      this.updateCitizenHealth();
     }
+
+    // ── Slot 5: Migration + housing + freight + shopping ──
+    if (slowSlot === 5) {
+      this.runMigration();
+      this.assignCitizenHousing();
+
+      // Freight: BFS-based supply + trade calculation
+      const railThroughput = this.state.rail.hasExternalConnection
+        ? this.state.rail.getExternalStationCount() * TRADE.RAIL_THROUGHPUT_PER_STATION
+        : 0;
+      let airportThroughput = 0;
+      const tradePositions: { x: number; y: number }[] = [];
+      if (this.state.rail.hasExternalConnection) {
+        for (const s of this.state.rail.getStations()) {
+          if (this.state.rail.isStationExternal(s.x, s.y)) {
+            tradePositions.push({ x: s.x, y: s.y });
+          }
+        }
+      }
+      for (const ap of this.state.airport.getAirports()) {
+        airportThroughput += ap.cargoPerTick;
+        tradePositions.push({ x: ap.x, y: ap.y });
+      }
+      let highwayThroughput = 0;
+      if (this.state.highwayConnection.hasExternalConnection) {
+        highwayThroughput = this.state.highwayConnection.getThroughput();
+        for (const cell of this.state.highwayConnection.getEdgeHighwayCells()) {
+          tradePositions.push({ x: cell.x, y: cell.y });
+        }
+      }
+      const totalThroughput = railThroughput + airportThroughput + highwayThroughput;
+      this.state.freight.calculateSupply(this.state.grid, {
+        importCapacity: totalThroughput,
+        exportCapacity: totalThroughput,
+        tradePositions,
+      });
+      this.cachedTradePositions = tradePositions;
+      this.state.shopping.calculate(this.state.grid);
+      // Income calculated last in the 6-tick cycle (after all subsystems have updated)
+      this.calculateIncome();
+    }
+
+    // ── Medium-frequency operations (every 60 ticks, offset to slot 2 to avoid collision with slot 0) ──
+    if (tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
+      this.updatePollution();
+      this.updateLandValue();
+      this.onTerrainChanged?.();
+      this.runRelocation();
+      this.state.rail.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
+      this.state.highwayConnection.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
+    }
+
+    // ── Per-day operations ──
 
     // 5a. Daily: update citizen ages from birthTick + death check
     const currentDay = this.state.clock.getDay();
@@ -361,16 +396,18 @@ export class SimulationLoop {
       }
     }
 
-    // 5a2. Daily: roll over transit stop rider counts (aligned with commute cycle)
+    // 5a2. Daily: roll over transit stop rider counts
     if (currentDay !== this.lastRiderDay) {
       this.lastRiderDay = currentDay;
       this.rolloverTransitRiders();
     }
 
-    // 5b. Sync residential capacity gate (before births + migration)
+    // ── Per-tick operations ──
+
+    // Sync residential capacity gate (before births + migration)
     this.state.citizens.updateResidentialCapacity(countResidentialCapacity(this.state.grid));
 
-    // 5c. Monthly: natural births
+    // Monthly: natural births
     const currentMonth = this.state.clock.getMonth();
     if (currentMonth !== this.lastBirthMonth) {
       this.lastBirthMonth = currentMonth;
@@ -384,114 +421,31 @@ export class SimulationLoop {
       }, this.state.clock.tick);
     }
 
-    // 5.5. Update citizen happiness + health (every 6 ticks)
-    if (isSlowTick) {
-      this.updateCitizenHappiness();
-      this.updateCitizenHealth();
-    }
-
-    // 6. Migration (every 6 ticks)
-    if (isSlowTick) {
-      this.runMigration();
-    }
-
-    // 6.5 Assign home/workplace to citizens who don't have them yet
-    if (isSlowTick) {
-      this.assignCitizenHousing();
-    }
-
-    // 6.6 Relocation: unhappy citizens may move to better housing (every 60 ticks)
-    if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
-      this.runRelocation();
-    }
-
-    // 6.7 Job relocation: citizens with long/failed commutes switch workplace (every 120 ticks)
-    if (tick % SIMULATION.JOB_RELOCATION_INTERVAL === 0) {
+    // Job relocation (every 120 ticks, offset to slot 4)
+    if (tick >= 4 && (tick - 4) % SIMULATION.JOB_RELOCATION_INTERVAL === 0) {
       this.runJobRelocation();
     }
 
-    // 7. Rebuild lane graph if roads changed
+    // Rebuild lane graph if roads changed
     if (this.laneGraphDirty) {
       this.rebuildLaneGraph();
       this.laneGraphDirty = false;
     }
-    // 7a. Rebuild sidewalk graph if roads changed
+    // Rebuild sidewalk graph if roads changed
     if (this.sidewalkGraphDirty) {
       this.rebuildSidewalkGraph();
       this.sidewalkGraphDirty = false;
     }
 
-    // 7b. Traffic - spawn commute vehicles (every tick)
+    // Traffic - spawn commute vehicles (every tick)
     this.spawnVehicles();
-    // NOTE: trafficLights.tick(dt) is now frame-based, called in Game.ts updateVehiclesAndTransport
 
-    // 7b2. Pedestrian spawning/despawn happens per tick (movement is per-frame in Game.ts)
-
-    // 7c. Service vehicles — patrol within coverage areas (every 6 ticks)
-    if (isSlowTick) {
-      this.tickServiceVehicles();
-    }
-
-    // 8. Transport systems (every tick — OCP: adding systems only requires TransportRegistry update)
+    // Transport systems (every tick)
     this.state.bus.congestionLevel = this.state.traffic.getCongestionLevel();
     tickAllTransportSystems(this.state);
 
-    // 8b. Rail + highway external connection update (every 60 ticks)
-    if (tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
-      this.state.rail.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
-      this.state.highwayConnection.updateExternalConnection(this.state.grid.width, this.state.grid.height, this.state.grid);
-    }
-
-    // 8c. Freight: BFS-based supply + trade calculation (every 6 ticks)
-    if (isSlowTick) {
-      // Calculate trade throughput from rail stations + airports
-      const railThroughput = this.state.rail.hasExternalConnection
-        ? this.state.rail.getExternalStationCount() * TRADE.RAIL_THROUGHPUT_PER_STATION
-        : 0;
-      let airportThroughput = 0;
-      const tradePositions: { x: number; y: number }[] = [];
-      // Collect external rail station positions
-      if (this.state.rail.hasExternalConnection) {
-        for (const s of this.state.rail.getStations()) {
-          if (this.state.rail.isStationExternal(s.x, s.y)) {
-            tradePositions.push({ x: s.x, y: s.y });
-          }
-        }
-      }
-      // Collect airport positions
-      for (const ap of this.state.airport.getAirports()) {
-        airportThroughput += ap.cargoPerTick;
-        tradePositions.push({ x: ap.x, y: ap.y });
-      }
-      // Collect edge highway positions
-      let highwayThroughput = 0;
-      if (this.state.highwayConnection.hasExternalConnection) {
-        highwayThroughput = this.state.highwayConnection.getThroughput();
-        for (const cell of this.state.highwayConnection.getEdgeHighwayCells()) {
-          tradePositions.push({ x: cell.x, y: cell.y });
-        }
-      }
-      const totalThroughput = railThroughput + airportThroughput + highwayThroughput;
-
-      this.state.freight.calculateSupply(this.state.grid, {
-        importCapacity: totalThroughput,
-        exportCapacity: totalThroughput,
-        tradePositions,
-      });
-      this.cachedTradePositions = tradePositions;
-
-      // 8d. Shopping access: BFS from commercial to residential (every 6 ticks)
-      this.state.shopping.calculate(this.state.grid);
-    }
-
-    // 9. Calculate income from buildings (every 6 ticks)
-    if (isSlowTick) {
-      this.calculateIncome();
-      this.state.globalMarket.tick();
-    }
-
-    // 10. Congestion flow prediction (first tick + every 60 ticks = ~15 sec)
-    if (tick === 1 || tick % SIMULATION.MEDIUM_TICK_INTERVAL === 0) {
+    // Congestion flow prediction (first tick + every 60 ticks, offset to slot 2)
+    if (tick === 1 || (tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
       this.computeCongestionFlow();
     }
   }

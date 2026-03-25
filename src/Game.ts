@@ -25,7 +25,7 @@ import { WorkplaceDistanceClient } from './core/workplace/WorkplaceDistanceClien
 import { WorkplaceDistanceCache } from './core/workplace/WorkplaceDistanceCache';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
-import { serializeGameState } from './core/save/Serializer';
+import { serializeGameState, snapshotGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
@@ -299,6 +299,8 @@ export class Game {
   private zoneManager: ZoneManager;
   private audioManager: AudioManager;
   private autoSaver: AutoSaver;
+  private saveWorker: Worker | null = null;
+  private roadCoverageDirty = false;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
@@ -389,6 +391,9 @@ export class Game {
 
     // Auto-save every 100 ticks
     this.autoSaver = new AutoSaver(100);
+    try {
+      this.saveWorker = new Worker(new URL('./workers/save.worker.ts', import.meta.url), { type: 'module' });
+    } catch { this.saveWorker = null; }
 
     if (loadedState) {
       this.state = loadedState;
@@ -701,7 +706,7 @@ export class Game {
             );
             this.handleBuildResult(result, 'road', () => {
               this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])], true);
-              this.recalculateAllRoadCoverage();
+              this.roadCoverageDirty = true;
               if (result.demolishedCells) {
                 for (const pos of result.demolishedCells) {
                   this.state.citizens.evictBuilding(pos, this.state.clock.tick);
@@ -891,7 +896,7 @@ export class Game {
       this.simLoop.clearBuildingState(px!, py!);
     }
     if (hadRoadDemolished) {
-      this.recalculateAllRoadCoverage();
+      this.roadCoverageDirty = true;
     }
     this.markAllDirty();
     this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
@@ -1133,16 +1138,27 @@ export class Game {
           this.buildingRenderer.updateOccupancy(this.simLoop.occupancyRatios);
         }
 
+        // Deferred road coverage recalculation (batched to next slow tick)
+        if (this.roadCoverageDirty && this.state.clock.tick % 6 === 0) {
+          this.recalculateAllRoadCoverage();
+          this.roadCoverageDirty = false;
+        }
+
         // Milestone detection
         this.checkMilestone();
 
         // Random disaster events (small chance per tick)
         this.checkRandomDisaster();
 
-        // Auto-save
+        // Auto-save (off main thread via SaveWorker)
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
-          const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
-          saveGame(0, 'AutoSave', data, this.state.citizens.getPopulation()).catch(() => { /* ignore save errors */ });
+          const snapshot = snapshotGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
+          if (this.saveWorker) {
+            this.saveWorker.postMessage({ type: 'SAVE', snapshot, slotId: 0, name: 'AutoSave', population: this.state.citizens.getPopulation() });
+          } else {
+            // Fallback: synchronous save if worker unavailable
+            saveGame(0, 'AutoSave', JSON.stringify(snapshot), this.state.citizens.getPopulation()).catch(() => {});
+          }
         }
 
         // Update ambient audio with current city state
