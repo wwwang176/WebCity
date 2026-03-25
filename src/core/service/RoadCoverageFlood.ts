@@ -1,7 +1,9 @@
 /**
  * RoadCoverageFlood — Dijkstra flood fill along road network for civic service coverage.
  *
- * Replaces radius-based coverage with road-distance-based coverage.
+ * Level-aware: uses UnifiedRoadLookup to traverse both ground and elevated roads.
+ * Elevated roads only relay through compatible neighbors (via ramps).
+ *
  * Cost per road tile = BASE_COST / (speedLimit * laneFactor).
  * Faster/wider roads extend coverage further.
  */
@@ -10,6 +12,15 @@ import { ROAD_CONFIGS, RoadType } from '../road/types';
 import { FOUR_NEIGHBORS, toPosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
 import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
 import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
+import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
+
+/** Module-level UnifiedRoadLookup reference for road coverage flood. */
+let _roadLookup: UnifiedRoadLookup | null = null;
+
+/** Set the shared UnifiedRoadLookup for road coverage flood. */
+export function setRoadCoverageRoadLookup(lookup: UnifiedRoadLookup): void {
+  _roadLookup = lookup;
+}
 
 /** Service coverage budget constants */
 export const ROAD_COVERAGE = {
@@ -84,62 +95,114 @@ class MinHeap {
 // ── Flood Fill ──────────────────────────────────────────────────────
 
 /**
- * Dijkstra flood fill along road tiles from given facility cell positions.
- * Adjacent road cells of the positions are used as starting points (cost 0).
- * Returns Map<posKey, cost> of all reachable road cells within budget.
+ * Level-aware Dijkstra flood fill along road tiles from given facility positions.
+ * Adjacent road cells (at all compatible levels) are used as starting points (cost 0).
+ * Returns Map<posKey, cost> of all reachable positions within budget.
+ * When a position is reached at multiple levels, the lowest cost is kept.
  */
 export function roadFlood(
   grid: ReadableGrid,
   facilityPositions: { x: number; y: number }[],
   budget: number,
 ): Map<string, number> {
-  const costs = new Map<string, number>();
+  // Internal costs tracked by cell key (with level)
+  const cellCosts = new Map<string, number>();
+  // Output costs by position key (min cost across all levels)
+  const posCosts = new Map<string, number>();
   const pq = new MinHeap();
 
-  // Seed: find road cells at or adjacent to each facility cell
+  // Seed: find road cells at or adjacent to each facility cell (all levels)
   for (const pos of facilityPositions) {
-    const self = grid.getCell(pos.x, pos.y);
-    if (self && self.roadType !== RoadType.NONE) {
-      const key = toPosKey(pos.x, pos.y);
-      if (!costs.has(key)) { costs.set(key, 0); pq.push(key, 0); }
-    }
+    const seedPositions = [{ x: pos.x, y: pos.y }];
     for (const [dx, dy] of FOUR_NEIGHBORS) {
-      const nx = pos.x + dx!;
-      const ny = pos.y + dy!;
-      const cell = grid.getCell(nx, ny);
-      if (cell && cell.roadType !== RoadType.NONE) {
-        const key = toPosKey(nx, ny);
-        if (!costs.has(key)) { costs.set(key, 0); pq.push(key, 0); }
+      seedPositions.push({ x: pos.x + dx!, y: pos.y + dy! });
+    }
+    for (const sp of seedPositions) {
+      if (_roadLookup) {
+        const keys = _roadLookup.getAllKeysAtPosition(sp.x, sp.y);
+        for (const k of keys) {
+          if (!cellCosts.has(k)) {
+            cellCosts.set(k, 0);
+            pq.push(k, 0);
+            const pk = toPosKey(sp.x, sp.y);
+            posCosts.set(pk, 0);
+          }
+        }
+      } else {
+        // Fallback: ground-only
+        const cell = grid.getCell(sp.x, sp.y);
+        if (cell && cell.roadType !== RoadType.NONE) {
+          const k = toPosKey(sp.x, sp.y);
+          if (!cellCosts.has(k)) {
+            cellCosts.set(k, 0);
+            pq.push(k, 0);
+            posCosts.set(k, 0);
+          }
+        }
       }
     }
   }
 
-  // Dijkstra expansion
+  // Dijkstra expansion (level-aware)
   while (pq.size > 0) {
     const cur = pq.pop()!;
-    const best = costs.get(cur.key);
+    const best = cellCosts.get(cur.key);
     if (best !== undefined && best < cur.cost) continue; // stale
 
     const { x, y } = parsePosKeyUnsafe(cur.key);
+
+    // Get compatible neighbors via UnifiedRoadLookup
     for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = x + dx!;
       const ny = y + dy!;
-      const cell = grid.getCell(nx, ny);
-      if (!cell || cell.roadType === RoadType.NONE) continue;
 
-      const newCost = cur.cost + roadTileCost(cell.roadType);
-      if (newCost > budget) continue;
+      const neighborKeys = _roadLookup
+        ? _roadLookup.getCompatibleNeighborKeys(cur.key, nx, ny)
+        : [];
 
-      const nk = toPosKey(nx, ny);
-      const prev = costs.get(nk);
-      if (prev === undefined || newCost < prev) {
-        costs.set(nk, newCost);
-        pq.push(nk, newCost);
+      // Fallback: ground-only when no lookup
+      if (!_roadLookup) {
+        const cell = grid.getCell(nx, ny);
+        if (cell && cell.roadType !== RoadType.NONE) {
+          const nk = toPosKey(nx, ny);
+          const newCost = cur.cost + roadTileCost(cell.roadType);
+          if (newCost > budget) continue;
+          const prev = cellCosts.get(nk);
+          if (prev === undefined || newCost < prev) {
+            cellCosts.set(nk, newCost);
+            pq.push(nk, newCost);
+            const prevPos = posCosts.get(nk);
+            if (prevPos === undefined || newCost < prevPos) {
+              posCosts.set(nk, newCost);
+            }
+          }
+        }
+        continue;
+      }
+
+      for (const nk of neighborKeys) {
+        const roadInfo = _roadLookup.getCellByKey(nk);
+        if (!roadInfo) continue;
+        const newCost = cur.cost + roadTileCost(roadInfo.roadType);
+        if (newCost > budget) continue;
+
+        const prev = cellCosts.get(nk);
+        if (prev === undefined || newCost < prev) {
+          cellCosts.set(nk, newCost);
+          pq.push(nk, newCost);
+
+          // Update position-level cost (min across all levels)
+          const pk = toPosKey(nx, ny);
+          const prevPos = posCosts.get(pk);
+          if (prevPos === undefined || newCost < prevPos) {
+            posCosts.set(pk, newCost);
+          }
+        }
       }
     }
   }
 
-  return costs;
+  return posCosts;
 }
 
 /**
@@ -318,6 +381,7 @@ export class RoadCoverageMap {
 
 /**
  * Single-source Dijkstra from home along the road network.
+ * Level-aware: uses UnifiedRoadLookup for compatible neighbor discovery.
  * Returns the road cost to reach each target position.
  * Targets (buildings) may not be on road cells — they are discovered
  * when a Dijkstra-expanded road cell has a target as a 4-neighbor.
@@ -332,11 +396,12 @@ export function roadDistanceToTargets(
   const result = new Map<string, number>();
   if (targets.size === 0) return result;
 
-  const costs = new Map<string, number>();
+  // Internal costs tracked by cell key (with level)
+  const cellCosts = new Map<string, number>();
   const pq = new MinHeap();
   let foundCount = 0;
 
-  // Helper: check 4-neighbors of a road cell for targets
+  // Helper: check 4-neighbors of a road cell for targets (by position)
   const checkNeighborsForTargets = (x: number, y: number, cost: number): void => {
     for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = x + dx!;
@@ -349,71 +414,108 @@ export function roadDistanceToTargets(
     }
   };
 
-  // Seed: home itself + adjacent road cells (cost 0), same as roadFlood
-  const seedCell = grid.getCell(home.x, home.y);
-  if (seedCell && seedCell.roadType !== RoadType.NONE) {
-    const key = toPosKey(home.x, home.y);
-    costs.set(key, 0);
-    pq.push(key, 0);
-  }
+  // Seed: home itself + adjacent road cells (cost 0, all levels)
+  const seedPositions = [{ x: home.x, y: home.y }];
   for (const [dx, dy] of FOUR_NEIGHBORS) {
-    const nx = home.x + dx!;
-    const ny = home.y + dy!;
-    const cell = grid.getCell(nx, ny);
-    if (cell && cell.roadType !== RoadType.NONE) {
-      const key = toPosKey(nx, ny);
-      if (!costs.has(key)) {
-        costs.set(key, 0);
-        pq.push(key, 0);
+    seedPositions.push({ x: home.x + dx!, y: home.y + dy! });
+  }
+
+  for (const sp of seedPositions) {
+    if (_roadLookup) {
+      const keys = _roadLookup.getAllKeysAtPosition(sp.x, sp.y);
+      for (const k of keys) {
+        if (!cellCosts.has(k)) {
+          cellCosts.set(k, 0);
+          pq.push(k, 0);
+        }
+      }
+    } else {
+      // Fallback: ground-only
+      const cell = grid.getCell(sp.x, sp.y);
+      if (cell && cell.roadType !== RoadType.NONE) {
+        const k = toPosKey(sp.x, sp.y);
+        if (!cellCosts.has(k)) {
+          cellCosts.set(k, 0);
+          pq.push(k, 0);
+        }
       }
     }
   }
 
-  // Also check if home itself is a target neighbor (seed cells at cost 0)
   // Check seeds for adjacent targets
-  for (const [key] of costs) {
+  for (const [key] of cellCosts) {
     const { x, y } = parsePosKeyUnsafe(key);
+    const pk = toPosKey(x, y);
     checkNeighborsForTargets(x, y, 0);
     // Also check if the road cell itself is a target
-    if (targets.has(key) && !result.has(key)) {
-      result.set(key, 0);
+    if (targets.has(pk) && !result.has(pk)) {
+      result.set(pk, 0);
       foundCount++;
     }
   }
   if (foundCount >= targets.size) return result;
 
-  // Dijkstra expansion
+  // Dijkstra expansion (level-aware)
   while (pq.size > 0) {
     const cur = pq.pop()!;
-    const best = costs.get(cur.key);
+    const best = cellCosts.get(cur.key);
     if (best !== undefined && best < cur.cost) continue; // stale
 
     const { x, y } = parsePosKeyUnsafe(cur.key);
+
     for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = x + dx!;
       const ny = y + dy!;
-      const cell = grid.getCell(nx, ny);
-      if (!cell || cell.roadType === RoadType.NONE) continue;
 
-      const newCost = cur.cost + roadTileCost(cell.roadType);
-      if (newCost > maxBudget) continue;
+      const neighborKeys = _roadLookup
+        ? _roadLookup.getCompatibleNeighborKeys(cur.key, nx, ny)
+        : [];
 
-      const nk = toPosKey(nx, ny);
-      const prev = costs.get(nk);
-      if (prev === undefined || newCost < prev) {
-        costs.set(nk, newCost);
-        pq.push(nk, newCost);
-
-        // Check if this road cell is a target
-        if (targets.has(nk) && !result.has(nk)) {
-          result.set(nk, newCost);
-          foundCount++;
+      // Fallback: ground-only
+      if (!_roadLookup) {
+        const cell = grid.getCell(nx, ny);
+        if (!cell || cell.roadType === RoadType.NONE) continue;
+        const nk = toPosKey(nx, ny);
+        const newCost = cur.cost + roadTileCost(cell.roadType);
+        if (newCost > maxBudget) continue;
+        const prev = cellCosts.get(nk);
+        if (prev === undefined || newCost < prev) {
+          cellCosts.set(nk, newCost);
+          pq.push(nk, newCost);
+          if (targets.has(nk) && !result.has(nk)) {
+            result.set(nk, newCost);
+            foundCount++;
+            if (foundCount >= targets.size) return result;
+          }
+          checkNeighborsForTargets(nx, ny, newCost);
           if (foundCount >= targets.size) return result;
         }
+        continue;
+      }
 
-        // Check 4-neighbors of this road cell for non-road targets
-        checkNeighborsForTargets(nx, ny, newCost);
-        if (foundCount >= targets.size) return result;
+      for (const nk of neighborKeys) {
+        const roadInfo = _roadLookup.getCellByKey(nk);
+        if (!roadInfo) continue;
+        const newCost = cur.cost + roadTileCost(roadInfo.roadType);
+        if (newCost > maxBudget) continue;
+
+        const prev = cellCosts.get(nk);
+        if (prev === undefined || newCost < prev) {
+          cellCosts.set(nk, newCost);
+          pq.push(nk, newCost);
+
+          // Check position-level targets
+          const pk = toPosKey(nx, ny);
+          if (targets.has(pk) && !result.has(pk)) {
+            result.set(pk, newCost);
+            foundCount++;
+            if (foundCount >= targets.size) return result;
+          }
+
+          // Check 4-neighbors for non-road targets
+          checkNeighborsForTargets(nx, ny, newCost);
+          if (foundCount >= targets.size) return result;
+        }
       }
     }
   }

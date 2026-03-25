@@ -45,6 +45,7 @@ describe('ExpenseCalculator', () => {
         serviceCost: 200,
         policyCost: 50,
         transportCost: 150,
+        elevatedMaintenance: 0,
       });
       expect(result).toBe(500);
     });
@@ -55,6 +56,7 @@ describe('ExpenseCalculator', () => {
         serviceCost: 0,
         policyCost: 0,
         transportCost: 0,
+        elevatedMaintenance: 0,
       });
       expect(result).toBe(0);
     });

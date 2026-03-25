@@ -1,11 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { refineLanePath, getLaneSpeedMultiplier, LANE_SPEED_DECAY } from '../Pathfinding';
+import { findLanePathVariants } from '../LaneGraphPathfinder';
 import { LaneGraph, LaneEdge } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
-
-function makeGridLookup(cells: Map<string, { roadType: RoadType; roadFlags: number }>) {
-  return { getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null };
-}
+import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
+import { makeGridLookup } from '../../../../tests/helpers/makeGridLookup';
 
 function buildStraightRoad(length: number, roadType = RoadType.TWO_LANE) {
   const cells = new Map<string, { roadType: RoadType; roadFlags: number }>();
@@ -21,6 +20,30 @@ function buildStraightRoad(length: number, roadType = RoadType.TWO_LANE) {
   const graph = new LaneGraph();
   graph.buildFromGrid(grid, cellKeys);
   return { grid, graph, cellKeys };
+}
+
+/** Build a minimal GridLike + UnifiedRoadLookup from a cell map for findLanePathVariants tests. */
+function buildLookupFromCells(
+  cells: Map<string, { roadType: RoadType; roadFlags: number }>,
+  width: number,
+  height: number,
+): UnifiedRoadLookup {
+  const gridLike = {
+    width,
+    height,
+    getCell(x: number, y: number) {
+      const c = cells.get(`${x},${y}`);
+      return c ?? null;
+    },
+    forEachCell(fn: (cell: { roadType: number }, x: number, y: number) => void) {
+      for (let y = 0; y < height; y++)
+        for (let x = 0; x < width; x++) {
+          const c = cells.get(`${x},${y}`);
+          if (c) fn(c, x, y);
+        }
+    },
+  };
+  return UnifiedRoadLookup.fromGrid(gridLike as any);
 }
 
 describe('refineLanePath', () => {
@@ -151,5 +174,79 @@ describe('refineLanePath', () => {
     const edgePath = refineLanePath(graph, cellPath);
     expect(edgePath).not.toBeNull();
     expect(edgePath!.length).toBeGreaterThan(0);
+  });
+});
+
+describe('findLanePathVariants (A* single-phase) zigzag prevention', () => {
+  it('should NOT zigzag on straight 4-lane road', () => {
+    // Build a straight 4-lane road with buildings adjacent at start/end
+    const cells = new Map<string, { roadType: RoadType; roadFlags: number }>();
+    const length = 9;
+    const allKeys: string[] = [];
+    for (let x = 0; x < length; x++) {
+      let flags = 0;
+      if (x > 0) flags |= RoadDirection.WEST;
+      if (x < length - 1) flags |= RoadDirection.EAST;
+      cells.set(`${x},1`, { roadType: RoadType.FOUR_LANE, roadFlags: flags });
+      allKeys.push(`${x},1`);
+    }
+
+    const lookup = buildLookupFromCells(cells, length, 3);
+    const graph = new LaneGraph();
+    graph.buildFromGrid(lookup, allKeys);
+
+    // Find path from building at (0,0) to building at (8,2)
+    // These are adjacent to road cells at (0,1) and (8,1)
+    const variants = findLanePathVariants(graph, lookup, { x: 0, y: 0 }, { x: length - 1, y: 2 });
+    expect(variants.length).toBeGreaterThanOrEqual(2);
+
+    // Each variant should NOT zigzag: max ~2 lane changes (in→cruise, cruise→out)
+    for (let vi = 0; vi < variants.length; vi++) {
+      const v = variants[vi]!;
+      let laneChanges = 0;
+      for (const e of v) {
+        if (e.type === 'lane_change') laneChanges++;
+      }
+      // A zigzag path on 9 cells would have 8+ lane changes
+      // A good path should have at most ~4 (entry + exit lane adjustments)
+      expect(laneChanges).toBeLessThanOrEqual(4);
+    }
+  });
+
+  it('should NOT zigzag on alternating straight-intersection pattern', () => {
+    // Build: straight → cross → straight → cross → straight (4-lane)
+    const cells = new Map<string, { roadType: RoadType; roadFlags: number }>();
+    const allKeys: string[] = [];
+    for (let x = 0; x < 9; x++) {
+      let flags = 0;
+      if (x > 0) flags |= RoadDirection.WEST;
+      if (x < 8) flags |= RoadDirection.EAST;
+      if (x % 2 === 1) {
+        flags |= RoadDirection.NORTH | RoadDirection.SOUTH;
+      }
+      cells.set(`${x},1`, { roadType: RoadType.FOUR_LANE, roadFlags: flags });
+      allKeys.push(`${x},1`);
+      if (x % 2 === 1) {
+        cells.set(`${x},0`, { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.SOUTH });
+        cells.set(`${x},2`, { roadType: RoadType.FOUR_LANE, roadFlags: RoadDirection.NORTH });
+        allKeys.push(`${x},0`, `${x},2`);
+      }
+    }
+
+    const lookup = buildLookupFromCells(cells, 9, 3);
+    const graph = new LaneGraph();
+    graph.buildFromGrid(lookup, allKeys);
+
+    const variants = findLanePathVariants(graph, lookup, { x: 0, y: 0 }, { x: 8, y: 2 });
+    expect(variants.length).toBeGreaterThanOrEqual(2);
+
+    for (let vi = 0; vi < variants.length; vi++) {
+      const v = variants[vi]!;
+      let laneChanges = 0;
+      for (const e of v) {
+        if (e.type === 'lane_change') laneChanges++;
+      }
+      expect(laneChanges).toBeLessThanOrEqual(4);
+    }
   });
 });

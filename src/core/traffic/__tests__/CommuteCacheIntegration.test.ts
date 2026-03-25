@@ -3,6 +3,7 @@ import { createGameState, type GameState } from '../../simulation/GameState';
 import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType, RoadDirection } from '../../road/types';
+import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 
 /**
  * Helper: set up a minimal city with residential + commercial buildings
@@ -45,6 +46,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
   it('should expose commuteCache on SimulationLoop', () => {
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     expect(loop.commuteCache).toBeDefined();
     expect(loop.commuteCache.size).toBe(0);
   });
@@ -58,6 +60,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // After a tick during morning rush, the commute cache should have at least 1 entry
@@ -73,6 +76,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     const cachedRoute = loop.commuteCache.get(state.citizens.getCitizens()[0]!.id);
@@ -91,6 +95,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     const cacheSize = loop.commuteCache.size;
@@ -119,6 +124,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // Both citizens should have the same route key cached
@@ -143,6 +149,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     expect(loop.commuteCache.size).toBeGreaterThan(0);
@@ -161,6 +168,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     const citizenId = citizen.id;
@@ -195,6 +203,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // Verify citizen has a cached route
@@ -210,8 +219,10 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     expect(citizen.unemployedSince).toBe(state.clock.tick);
   });
 
-  it('should immediately unemploy citizen even without cached route', () => {
-    // Citizen assigned a job but never commuted (no cached route)
+  it('should not immediately unemploy citizen without cached route (deferred to next tick)', () => {
+    // Citizen assigned a job but never commuted (no cached route, no cellIndex entry).
+    // The immediate unreachable check only covers citizens tracked in the cellIndex.
+    // Citizens without cached routes are handled on the next commute/job-relocation tick.
     const citizen = state.citizens.createCitizen({
       age: 100,
       homeId: '1,1',
@@ -219,6 +230,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     });
 
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     // Do NOT tick — citizen has no cached route, no cellIndex entry
 
     expect(loop.commuteCache.get(citizen.id)).toBeUndefined();
@@ -228,8 +240,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     state.grid.setCell(8, 1, { roadType: 0, roadFlags: 0 });
     loop.markLaneGraphDirty(['8,1']);
 
-    // Should still be unemployed — new logic checks ALL citizens
-    expect(citizen.workplaceId).toBeNull();
+    // Citizen keeps job until next commute tick detects the broken path
+    expect(citizen.workplaceId).toBe('15,1');
   });
 
   it('should NOT unemploy citizen if road is cut but workplace still reachable', () => {
@@ -241,6 +253,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     // Invalidate a cell that doesn't break connectivity (road still exists)
@@ -259,6 +272,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
+    loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
     const citizenId = state.citizens.getCitizens()[0]!.id;

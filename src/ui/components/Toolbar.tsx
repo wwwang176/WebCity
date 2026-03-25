@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
-import type { ToolType } from '../../Game';
+import type { ToolType, PlacementMode } from '../../Game';
 import { UI_COLORS } from '../constants';
 import { PALETTE, toCSS } from '../../ColorPalette';
 // AirportSize import removed — airport tools now use separate ToolType entries
@@ -119,6 +119,32 @@ function ToolGroupComponent(props: {
         <For each={props.group.items}>
           {(item) => <ToolButton item={item} onClick={props.onSelectTool} />}
         </For>
+        {(props.group.id === 'road' || props.group.id === 'transport') && (
+          <div class="tb-sep-v" />
+        )}
+        {props.group.id === 'road' && (
+          <>
+            <button
+              class="tb-btn"
+              classList={{ active: gameSignals.placementMode() === 'ground' }}
+              onClick={(e) => { e.stopPropagation(); getGame().setPlacementMode('ground'); }}
+              aria-label="Ground mode"
+            >
+              <span class="tb-icon">{'\u{1F6E3}'}</span>
+              <span>Ground</span>
+            </button>
+            <button
+              class="tb-btn"
+              classList={{ active: gameSignals.placementMode() === 'elevated' }}
+              onClick={(e) => { e.stopPropagation(); getGame().setPlacementMode('elevated'); }}
+              aria-label="Elevated mode"
+            >
+              <span class="tb-icon">{'\u{1F309}'}</span>
+              <span>Elevated{gameSignals.placementMode() === 'elevated' ? ` Lv.${gameSignals.elevationLevel()}` : ''}</span>
+              <span class="tb-key">PgUp/Dn</span>
+            </button>
+          </>
+        )}
         {props.group.id === 'district' && (
           <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}>
             <span class="tb-icon">{'\u2699'}</span>
@@ -126,10 +152,31 @@ function ToolGroupComponent(props: {
           </button>
         )}
         {props.group.id === 'transport' && (
-          <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
-            <span class="tb-icon">{'\u{1F5FA}'}</span>
-            <span style={{ color: '#ff9800' }}>Routes</span>
-          </button>
+          <>
+            <button
+              class="tb-btn"
+              classList={{ active: gameSignals.placementMode() === 'ground' }}
+              onClick={(e) => { e.stopPropagation(); getGame().setPlacementMode('ground'); }}
+              aria-label="Ground mode"
+            >
+              <span class="tb-icon">{'\u{1F6E3}'}</span>
+              <span>Ground</span>
+            </button>
+            <button
+              class="tb-btn"
+              classList={{ active: gameSignals.placementMode() === 'elevated' }}
+              onClick={(e) => { e.stopPropagation(); getGame().setPlacementMode('elevated'); }}
+              aria-label="Elevated mode"
+            >
+              <span class="tb-icon">{'\u{1F309}'}</span>
+              <span>Elevated{gameSignals.placementMode() === 'elevated' ? ` Lv.${gameSignals.elevationLevel()}` : ''}</span>
+              <span class="tb-key">PgUp/Dn</span>
+            </button>
+            <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('transit'); }}>
+              <span class="tb-icon">{'\u{1F5FA}'}</span>
+              <span style={{ color: '#ff9800' }}>Routes</span>
+            </button>
+          </>
         )}
       </div>
     </div>
@@ -175,6 +222,7 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
         item={{ tool: 'demolish', label: 'Demolish', key: '0', color: UI_COLORS.STATUS_BAD, icon: '\u{1F4A5}' }}
         onClick={selectStandalone}
       />
+
 
       <div class="tb-sep" />
       <RCIBar />

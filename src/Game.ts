@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { SceneManager } from './renderer/SceneManager';
 import { TerrainRenderer } from './renderer/TerrainRenderer';
-import { RoadRenderer, ROAD_WIDTHS } from './renderer/RoadRenderer';
+import { RoadRenderer } from './renderer/RoadRenderer';
 import { BuildingRenderer } from './renderer/BuildingRenderer';
 import { VehicleRenderer, type VehicleData } from './renderer/VehicleRenderer';
 import { TrafficLightRenderer } from './renderer/TrafficLightRenderer';
@@ -15,7 +15,7 @@ import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
-import { normalizeRect, countRoadTiles, getLShapedPath } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe, getDirectionFlag } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -29,8 +29,8 @@ import { serializeGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
 import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
-import { getLaneCount, getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
-import { gridAStarPath, refineLanePath } from './core/traffic/Pathfinding';
+import { getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
+import { findLanePath } from './core/traffic/LaneGraphPathfinder';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
@@ -70,6 +70,7 @@ import { generateTerrain } from './core/grid/TerrainGenerator';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
+import { ElevatedRoadRenderer } from './renderer/ElevatedRoadRenderer';
 import { RailBuilder } from './core/rail/RailBuilder';
 import { RailNetwork, rebuildRailNetworkFromGrid } from './core/rail/RailNetwork';
 import { RAIL } from './core/rail/types';
@@ -77,6 +78,13 @@ import { LevelCrossingSystem } from './core/rail/LevelCrossingSystem';
 import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 import { AirplaneAnimator } from './renderer/AirplaneAnimator';
+import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath } from './core/elevation';
+import { setNetworkRoadLookup } from './core/service/NetworkCoverage';
+import { setRoadCoverageRoadLookup } from './core/service/RoadCoverageFlood';
+import { setShoppingRoadLookup } from './core/economy/ShoppingAccess';
+import { UnifiedRoadLookup } from './core/road/UnifiedRoadLookup';
+
+export type PlacementMode = 'ground' | 'elevated';
 
 
 
@@ -278,6 +286,7 @@ export class Game {
   private transportRouteRenderer: TransportRouteRenderer;
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
+  private elevatedRoadRenderer: ElevatedRoadRenderer;
   private levelCrossingRenderer: LevelCrossingRenderer;
   private levelCrossingSystem: LevelCrossingSystem;
   private state: GameState;
@@ -285,6 +294,10 @@ export class Game {
   private roadBuilder: RoadBuilder;
   private railBuilder: RailBuilder;
   private railNetwork: RailNetwork;
+  private elevationManager: ElevationManager;
+  private elevatedRoadBuilder: ElevatedRoadBuilder;
+  private roadLookup!: UnifiedRoadLookup;
+  private elevatedRailBuilder: ElevatedRailBuilder;
   private zoneManager: ZoneManager;
   private audioManager: AudioManager;
   private autoSaver: AutoSaver;
@@ -308,6 +321,8 @@ export class Game {
   // UI state
   currentTool: ToolType = 'select';
   currentRoadType: RoadType = RoadType.TWO_LANE;
+  placementMode: PlacementMode = 'ground';
+  elevationLevel = 1; // target elevation level when in elevated mode (1-3)
   paused = false;
   speed = 1;
   selectedBuilding: SelectedBuilding | null = null;
@@ -349,7 +364,7 @@ export class Game {
     return true;
   };
   /** Bound speed limit callback (avoids per-frame closure creation). */
-  private readonly _getSpeedLimit = (key: string): number => getSpeedLimitForCell(this.state.grid, key);
+  private readonly _getSpeedLimit = (key: string): number => getSpeedLimitForCell(this.roadLookup ?? this.state.grid, key);
   /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
   private ferryAnimator = new FerryAnimator();
   /** 火車渲染端動畫（純 LERP，不靠 tick） */
@@ -397,10 +412,11 @@ export class Game {
       // Worker not available (e.g. test environment) — falls back to sync Dijkstra
     }
     // Restore abandonment stress from loaded save
-    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number> } } | undefined)?._extra;
+    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number>; elevationData?: unknown } } | undefined)?._extra;
     if (extra?.abandonmentStress) {
       this.simLoop.abandonmentStress = extra.abandonmentStress;
     }
+    // elevationData is restored after elevationManager is initialized (below)
     this.simLoop.onTerrainChanged = () => {
       this.dirty.terrain = true;
     };
@@ -419,12 +435,25 @@ export class Game {
     this.state.bus.onRouteDissolvedHook = (routeId) => {
       this.state.traffic.removeBusVehicles(routeId);
     };
-    this.roadBuilder = new RoadBuilder(this.state.grid);
+    this.elevationManager = new ElevationManager();
+    if (extra?.elevationData) {
+      this.elevationManager.fromJSON(extra.elevationData as any);
+    }
+    this.roadBuilder = new RoadBuilder(this.state.grid, undefined, this.elevationManager);
     this.railNetwork = new RailNetwork();
-    this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork);
+    this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork, this.elevationManager);
+    this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
+    this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
+    this.simLoop.setElevationManager(this.elevationManager);
+    this.roadLookup = new UnifiedRoadLookup(this.state.grid, this.elevationManager);
+    this.simLoop.setRoadLookup(this.roadLookup);
+    setNetworkRoadLookup(this.roadLookup);
+    setRoadCoverageRoadLookup(this.roadLookup);
+    setShoppingRoadLookup(this.roadLookup);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);
+    this.zoneManager.setElevationManager(this.elevationManager);
 
     // 設定渡輪系統的水域網格（A* 水面導航）
     const grid = this.state.grid;
@@ -457,6 +486,7 @@ export class Game {
     this.transportRouteRenderer = new TransportRouteRenderer();
     this.metroTunnelRenderer = new MetroTunnelRenderer();
     this.trackRenderer = new TrackRenderer();
+    this.elevatedRoadRenderer = new ElevatedRoadRenderer();
     this.levelCrossingRenderer = new LevelCrossingRenderer();
 
     this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
@@ -553,6 +583,18 @@ export class Game {
     window.addEventListener('keydown', (e) => {
       // Prevent default for F1-F6 (overlay toggles)
       if (/^f[1-6]$/i.test(e.key)) e.preventDefault();
+      // PageUp/PageDown: adjust elevation level during elevated drag
+      if (e.key === 'PageUp' || e.key === 'PageDown') {
+        e.preventDefault();
+        if (this.placementMode === 'elevated' && this.isDragBuildTool()) {
+          this.elevationLevel = e.key === 'PageUp'
+            ? Math.min(3, this.elevationLevel + 1)
+            : Math.max(1, this.elevationLevel - 1);
+          this.updatePreviewLine();
+          this.onUIUpdate?.();
+        }
+        return;
+      }
       // Space: ignore if focus is on an input element
       if (e.key === ' ') {
         const tag = (document.activeElement as HTMLElement)?.tagName;
@@ -612,10 +654,29 @@ export class Game {
         this.handleSelectClick(x1, y1);
         break;
       case 'demolish': {
+        // Demolish elevated segments first across entire drag area
+        const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
+        let anyElevatedRemoved = false;
+        const elevatedKeys: string[] = [];
+        for (let dy = minY; dy <= maxY; dy++) {
+          for (let dx = minX; dx <= maxX; dx++) {
+            if (this.elevationManager.hasElevatedSegment(dx, dy)) {
+              const level = this.elevationManager.getHighestLevel(dx, dy);
+              if (level > 0) elevatedKeys.push(`${dx},${dy},${level}`);
+              this.elevatedRoadBuilder.removeElevated(dx, dy);
+              anyElevatedRemoved = true;
+            }
+          }
+        }
+        if (anyElevatedRemoved) {
+          this.dirty.roads = true;
+          this.dirty.tracks = true;
+          this.dirty.buildings = true;
+        }
+        // Then demolish ground-level items
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
-        this.simLoop.markLaneGraphDirty([...demolishedRoadCells, ...buildingCells]);
-        this.simLoop.ensureLaneGraph(); // immediately rebuild + reroute buses
+        this.simLoop.markLaneGraphDirty([...elevatedKeys, ...demolishedRoadCells, ...buildingCells]);
         this.audioManager.playSfx(SoundType.DEMOLISH);
         break;
       }
@@ -626,39 +687,60 @@ export class Game {
       default: {
         // Data-driven road building (OCP: add new road types in TOOL_TO_ROAD_TYPE)
         if (TOOL_TO_ROAD_TYPE[this.currentTool] !== undefined) {
-          const result = this.roadBuilder.buildRoad(
-            { x: x1, y: y1 }, { x: x2, y: y2 },
-            this.currentRoadType,
-            this.state.budget.funds,
-          );
-          this.handleBuildResult(result, 'road', () => {
-            this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])]);
-            this.recalculateAllRoadCoverage();
-            if (result.demolishedCells) {
-              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
-            }
-          });
-          this.dirty.roads = true;
-          this.dirty.crossings = true;
-          this.dirty.trafficLights = true;
-          this.dirty.buildings = true;
+          if (this.placementMode === 'elevated') {
+            const result = this.elevatedRoadBuilder.buildElevatedRoad(
+              { x: x1, y: y1 }, { x: x2, y: y2 },
+              this.currentRoadType, this.state.budget.funds, this.elevationLevel,
+            );
+            this.handleBuildResult(result, 'elevated road', () => {
+              if (result.affectedCells) this.simLoop.markLaneGraphDirty(result.affectedCells, true);
+            });
+            this.dirty.roads = true;
+          } else {
+            const result = this.roadBuilder.buildRoad(
+              { x: x1, y: y1 }, { x: x2, y: y2 },
+              this.currentRoadType,
+              this.state.budget.funds,
+            );
+            this.handleBuildResult(result, 'road', () => {
+              this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])], true);
+              this.recalculateAllRoadCoverage();
+              if (result.demolishedCells) {
+                for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+                this.dirty.buildings = true;
+              }
+            });
+            this.dirty.roads = true;
+            this.dirty.crossings = true;
+            this.dirty.trafficLights = true;
+          }
           break;
         }
         // Rail track building
         if (this.currentTool === 'rail_track') {
-          const result = this.railBuilder.buildTrack(
-            { x: x1, y: y1 }, { x: x2, y: y2 },
-            this.state.budget.funds,
-          );
-          this.handleBuildResult(result, 'track', () => {
-            if (result.demolishedCells) {
-              for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
-              this.simLoop.markLaneGraphDirty(result.demolishedCells);
-            }
-          });
-          this.dirty.tracks = true;
-          this.dirty.crossings = true;
-          this.dirty.buildings = true;
+          if (this.placementMode === 'elevated') {
+            const result = this.elevatedRailBuilder.buildElevatedTrack(
+              { x: x1, y: y1 }, { x: x2, y: y2 },
+              this.state.budget.funds, this.elevationLevel,
+            );
+            this.handleBuildResult(result, 'elevated track');
+            this.dirty.tracks = true;
+            this.dirty.buildings = true;
+          } else {
+            const result = this.railBuilder.buildTrack(
+              { x: x1, y: y1 }, { x: x2, y: y2 },
+              this.state.budget.funds,
+            );
+            this.handleBuildResult(result, 'track', () => {
+              if (result.demolishedCells) {
+                for (const pos of result.demolishedCells) this.state.citizens.evictBuilding(pos, this.state.clock.tick);
+                this.simLoop.markLaneGraphDirty(result.demolishedCells, true);
+              }
+            });
+            this.dirty.tracks = true;
+            this.dirty.crossings = true;
+            this.dirty.buildings = true;
+          }
           break;
         }
         const zoneType = TOOL_TO_ZONE[this.currentTool];
@@ -734,7 +816,7 @@ export class Game {
       }
     }
     if (evictedIds.length > 0) {
-      this.simLoop.markLaneGraphDirty(buildingCells);
+      this.simLoop.markLaneGraphDirty(buildingCells, true);
     }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
     this.dirty.buildings = true;
@@ -786,9 +868,11 @@ export class Game {
             if (cell && cell.buildingId !== 0) evictCells.push(`${x},${y}`);
             if (cell && cell.roadType !== RoadType.NONE) hadRoadDemolished = true;
             if (action.hasTrack) this.railBuilder.removeTrack(x, y);
+            if (cell && cell.roadType !== RoadType.NONE) {
+              this.roadBuilder.removeRoad(x, y);
+            }
             this.state.grid.setCell(x, y, {
-              roadType: 0, roadFlags: 0, zoneType: ZoneType.NONE,
-              buildingId: 0, reserved: 0,
+              zoneType: ZoneType.NONE, buildingId: 0, reserved: 0,
             });
             break;
         }
@@ -1049,7 +1133,7 @@ export class Game {
 
         // Auto-save
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
-          const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress });
+          const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
           saveGame(0, 'AutoSave', data, this.state.citizens.getPopulation()).catch(() => { /* ignore save errors */ });
         }
 
@@ -1100,6 +1184,7 @@ export class Game {
     const sunI = this.weatherRenderer.sunIntensity;
     this.buildingRenderer.update(sunI, dt);
     this.roadRenderer.update(sunI);
+    this.elevatedRoadRenderer.update(sunI);
   }
 
   /** Rebuild renderer meshes for each dirty subsystem, then clear dirty flags. */
@@ -1110,11 +1195,14 @@ export class Game {
 
     if (d.roads) {
       this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
+      this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
       if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
       d.roads = false;
     }
     if (d.tracks) {
       this.trackRenderer.build(this.sceneManager.scene, this.state.grid);
+      // Elevated roads/rails are rebuilt on either road or track dirty
+      this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
       if (this.viewMode !== ViewMode.NORMAL) this.trackRenderer.setViewMode(this.viewMode);
       d.tracks = false;
     }
@@ -1172,7 +1260,9 @@ export class Game {
         : v.busState
           ? 'bus' as VehicleData['type']
           : (this.vehicleTypes.get(v.id) ?? (() => { const t = classifyVehicleType(v.length); this.vehicleTypes.set(v.id, t); return t; })());
-      vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0 });
+      // Determine elevation + pitch from vehicle position
+      const { elevation, pitch } = this.computeVehicleElevation(v, pos, heading);
+      vehicleData.push({ id: v.id, x: pos.x, y: pos.y, heading, type, laneOffset: 0, elevation: elevation || undefined, pitch: pitch || undefined });
     }
 
     // Collect transport system vehicles (rail/ferry — bus is now in TrafficSimulation)
@@ -1269,6 +1359,11 @@ export class Game {
   setTool(tool: ToolType): void {
     this.currentTool = tool;
     this.currentRotation = 0; // reset rotation when switching tools
+    // Reset placement mode when switching away from road/rail tools
+    if (!this.isDragBuildTool(tool)) {
+      this.placementMode = 'ground';
+      this.elevationLevel = 1;
+    }
     // Road subtypes set the roadType (data-driven lookup)
     const roadType = TOOL_TO_ROAD_TYPE[tool];
     if (roadType !== undefined) this.currentRoadType = roadType;
@@ -1282,6 +1377,92 @@ export class Game {
     this.updatePlacementPreview();
     this.onUIUpdate?.();
   }
+
+  setPlacementMode(mode: PlacementMode): void {
+    this.placementMode = mode;
+    if (mode === 'ground') this.elevationLevel = 1;
+    this.onUIUpdate?.();
+  }
+
+  getPlacementMode(): PlacementMode { return this.placementMode; }
+  getElevationLevel(): number { return this.elevationLevel; }
+  getElevationManager(): ElevationManager { return this.elevationManager; }
+
+  /**
+   * Ramp ground-side direction lookup.
+   * Maps rampAscendDirection flag → the direction that is at ground level (rampLevel - 1).
+   * Derived from the bit→vector mapping in the elevation formula.
+   */
+  private static readonly RAMP_GROUND_SIDE: Record<number, string> = {
+    8: 'west',   // WEST  ascend → ground side = west
+    4: 'east',   // EAST  ascend → ground side = east
+    2: 'north',  // SOUTH ascend → ground side = north
+    1: 'south',  // NORTH ascend → ground side = south
+  };
+
+  /** Compute vehicle elevation and pitch from its edgePath and XZ position. */
+  private computeVehicleElevation(
+    v: { edgePath: { from: { cellKey: string; direction?: string }; to: { cellKey: string } }[]; edgeIndex: number },
+    pos: { x: number; y: number },
+    heading: number,
+  ): { elevation: number; pitch: number } {
+    if (v.edgePath.length === 0) return { elevation: 0, pitch: 0 };
+
+    const edgeIdx = Math.min(v.edgeIndex, v.edgePath.length - 1);
+    const edge = v.edgePath[edgeIdx]!;
+    let cellLevel = parseLevelFromKey(edge.from.cellKey);
+
+    // If from cell is a ramp, determine the effective level based on which side
+    // the from point exits from. Ground side = rampLevel - 1, elevated side = rampLevel.
+    // This prevents vehicles from "flying" on cross-intersection edges that start
+    // from a ramp's ground side (e.g., descending ramp → ground L-bend → north road).
+    if (cellLevel > 0 && edge.from.direction) {
+      const { x: fx, y: fy } = parsePosKeyUnsafe(edge.from.cellKey);
+      const fromRamp = this.elevationManager.get(fx, fy, cellLevel);
+      if (fromRamp?.isRamp) {
+        const groundSide = Game.RAMP_GROUND_SIDE[fromRamp.rampAscendDirection];
+        cellLevel = edge.from.direction === groundSide ? cellLevel - 1 : cellLevel;
+      }
+    }
+
+    const gx = Math.round(pos.x);
+    const gy = Math.round(pos.y);
+
+    // Check if vehicle is on a ramp cell
+    const { seg: rampSeg, level: rampLevel } = this.findRampAt(gx, gy, cellLevel);
+
+    if (rampSeg && rampLevel > 0) {
+      const ascend = rampSeg.rampAscendDirection;
+      const ax = (ascend & 0b1000) ? 1 : (ascend & 0b0100) ? -1 : 0;
+      const ay = (ascend & 0b0010) ? 1 : (ascend & 0b0001) ? -1 : 0;
+      const along = (pos.x - gx) * ax + (pos.y - gy) * ay;
+      const elevation = (rampLevel - 0.5) + along;
+
+      const RAMP_ANGLE = Math.atan2(0.6, 1.0);
+      const hx = Math.cos(heading);
+      const hy = -Math.sin(heading);
+      const dot = hx * ax + hy * ay;
+      const pitch = dot > 0 ? RAMP_ANGLE : dot < 0 ? -RAMP_ANGLE : 0;
+
+      return { elevation, pitch };
+    }
+
+    return { elevation: cellLevel, pitch: 0 };
+  }
+
+  /** Find ramp segment at position, preferring the given level. */
+  private findRampAt(gx: number, gy: number, preferLevel: number): { seg: import('./core/elevation/types').ElevatedSegment | null; level: number } {
+    if (preferLevel > 0) {
+      const seg = this.elevationManager.get(gx, gy, preferLevel);
+      if (seg?.isRamp) return { seg, level: preferLevel };
+    }
+    for (let lv = 1; lv <= 3; lv++) {
+      const seg = this.elevationManager.get(gx, gy, lv);
+      if (seg?.isRamp) return { seg, level: lv };
+    }
+    return { seg: null, level: 0 };
+  }
+
 
   toggleViewMode(mode: ViewMode = ViewMode.UNDERGROUND): void {
     const next = this.viewMode === mode ? ViewMode.NORMAL : mode;
@@ -1529,6 +1710,8 @@ export class Game {
       }
     } else if (this.dragStart && this.isZoneTool()) {
       this.highlightDragRange(ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff);
+    } else if (this.dragStart && this.isDragBuildTool()) {
+      // Road/rail drag preview is managed by updatePreviewLine — don't hide
     } else {
       this.placementPreview.hide();
       if (this.currentTool === 'select') {
@@ -1811,12 +1994,11 @@ export class Game {
   createBusRoute(stops: readonly TransportStop[], vehicleCount = 1): TransportRoute | null {
     this.simLoop.ensureLaneGraph();
     const lg = this.simLoop.laneGraph;
-    const grid = this.state.grid;
+    const lookup = this.roadLookup;
     return this.state.bus.createRouteWithTraffic(
       [...stops],
       vehicleCount,
-      (fx, fy, tx, ty) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, grid),
-      (cellPath) => refineLanePath(lg, cellPath),
+      (fx, fy, tx, ty) => findLanePath(lg, lookup, { x: fx, y: fy }, { x: tx, y: ty }),
       this.state.traffic,
     );
   }
@@ -1905,7 +2087,7 @@ export class Game {
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
-    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress });
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
     const population = this.state.citizens.getPopulation();
     await saveGame(slotId, name, data, population);
   }
@@ -1920,10 +2102,32 @@ export class Game {
     this.clearPreviewLine();
     const pathCells = getLShapedPath(this.dragStart, { x: this.gridCursor.gridX, y: this.gridCursor.gridY });
     if (pathCells.length < 2) return;
-    const points = pathCells.map(c => new THREE.Vector3(c.x, 0.2, c.y));
+
+    // Elevated mode: origin at ground, ramp cells rise, body at elevated height
+    const LEVEL_HEIGHT = 0.6;
+    const elevatedY = this.placementMode === 'elevated' ? this.elevationLevel * LEVEL_HEIGHT + 0.2 : 0.2;
+    const rampCount = this.placementMode === 'elevated' ? Math.min(this.elevationLevel, pathCells.length - 1) : 0;
+    const points = pathCells.map((c, i) => {
+      let y = 0.2; // ground
+      if (this.placementMode === 'elevated') {
+        if (i === 0) y = 0.2; // origin stays on ground
+        else if (i <= rampCount) y = 0.2 + (i / rampCount) * (elevatedY - 0.2); // ramp interpolation
+        else y = elevatedY; // elevated body
+      }
+      return new THREE.Vector3(c.x, y, c.y);
+    });
 
     // Calculate estimated cost
-    if (this.isRailTool()) {
+    if (this.placementMode === 'elevated') {
+      const baseCost = this.isRailTool()
+        ? RAIL.COST_PER_CELL
+        : ROAD_CONFIGS[this.currentRoadType].cost;
+      // Estimate: 1 ramp + rest elevated (simplified preview)
+      const rampCells = Math.min(this.elevationLevel, points.length - 1);
+      const elevatedCells = Math.max(0, points.length - rampCells);
+      this.previewCost = rampCells * baseCost * ELEVATION_COST.RAMP
+        + elevatedCells * baseCost * ELEVATION_COST.ELEVATED;
+    } else if (this.isRailTool()) {
       this.previewCost = points.length * RAIL.COST_PER_CELL;
     } else {
       const roadConfig = ROAD_CONFIGS[this.currentRoadType];
@@ -1931,18 +2135,42 @@ export class Game {
     }
     this.onUIUpdate?.();
 
-    // Show semi-transparent road surface preview
-    const laneCount = getLaneCount(this.currentRoadType);
-    const roadWidth = ROAD_WIDTHS[this.currentRoadType] ?? (0.2 + laneCount * 0.15);
-    this.placementPreview.updateRoadDrag(
-      points.map(p => ({ x: p.x, y: p.z })),
-      roadWidth,
-    );
+    // Build RoadCell array with proper flags for strip builders
+    const roadType = this.isRailTool() ? RoadType.TWO_LANE : this.currentRoadType;
+    const flatCells: { x: number; y: number; roadType: number; roadFlags: number }[] = [];
+    const rampPreview: { x: number; y: number; level: number; ascendDir: number; roadType: number }[] = [];
 
-    const geometry = new THREE.BufferGeometry().setFromPoints(points);
-    const material = new THREE.LineBasicMaterial({ color: 0x4fc3f7, linewidth: 2, transparent: true, opacity: 0.6 });
-    this.previewLine = new THREE.Line(geometry, material);
-    this.sceneManager.scene.add(this.previewLine);
+    for (let i = 0; i < pathCells.length; i++) {
+      const c = pathCells[i]!;
+      // Skip cells that already have road/elevated (no ghost over existing)
+      const isRamp = this.placementMode === 'elevated' && i > 0 && i <= rampCount;
+      if (this.placementMode === 'elevated') {
+        if (this.elevationManager.get(c.x, c.y, this.elevationLevel)) continue;
+        // Non-ramp cells at ground level (origin): skip if ground road exists
+        if (!isRamp) {
+          const existing = this.state.grid.getCell(c.x, c.y);
+          if (existing && existing.roadType !== RoadType.NONE) continue;
+        }
+      } else {
+        const existing = this.state.grid.getCell(c.x, c.y);
+        if (existing && existing.roadType !== RoadType.NONE) continue;
+      }
+      if (isRamp) {
+        // Compute ascend direction: from this cell toward next cell (higher end)
+        const next = pathCells[Math.min(i + 1, pathCells.length - 1)]!;
+        const ascendDir = getDirectionFlag(c, next);
+        rampPreview.push({ x: c.x, y: c.y, level: i, ascendDir, roadType });
+      } else {
+        // Flat cell: compute flags from neighbors in path
+        let flags = 0;
+        if (i > 0) flags |= getDirectionFlag(c, pathCells[i - 1]!);
+        if (i < pathCells.length - 1) flags |= getDirectionFlag(c, pathCells[i + 1]!);
+        flatCells.push({ x: c.x, y: c.y, roadType, roadFlags: flags });
+      }
+    }
+
+    const baseY = this.placementMode === 'elevated' ? this.elevationLevel * 0.6 : 0;
+    this.placementPreview.updateRoadDrag(flatCells, rampPreview.length > 0 ? rampPreview : undefined, baseY);
   }
 
   private clearPreviewLine(): void {

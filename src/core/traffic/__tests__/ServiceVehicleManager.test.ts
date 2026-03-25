@@ -3,6 +3,25 @@ import { ServiceVehicleManager, SERVICE_VEHICLE, type ServiceFacilityProvider, t
 import { TrafficSimulation } from '../TrafficSimulation';
 import { LaneGraph, type LaneEdge } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
+import { makeGridLookup } from '../../../../tests/helpers/makeGridLookup';
+import type { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
+
+/** Build a minimal roadLookup from cellKeys */
+function makeRoadLookup(cellKeys: string[]): UnifiedRoadLookup {
+  const keySet = new Set(cellKeys);
+  return {
+    getAllKeysAtPosition(x: number, y: number): string[] {
+      const result: string[] = [];
+      const groundKey = `${x},${y}`;
+      if (keySet.has(groundKey)) result.push(groundKey);
+      for (let lv = 1; lv <= 3; lv++) {
+        const elevKey = `${x},${y},${lv}`;
+        if (keySet.has(elevKey)) result.push(elevKey);
+      }
+      return result;
+    },
+  } as unknown as UnifiedRoadLookup;
+}
 
 /** Build a simple horizontal road grid and lane graph */
 function buildHorizontalRoad(length: number, roadType = RoadType.TWO_LANE) {
@@ -17,7 +36,9 @@ function buildHorizontalRoad(length: number, roadType = RoadType.TWO_LANE) {
     cellKeys.push(`${x},0`);
   }
 
+  const gridLookup = makeGridLookup(cells);
   const grid = {
+    ...gridLookup,
     getCell: (x: number, y: number) => cells.get(`${x},${y}`) ?? null,
     width: length,
     height: 1,
@@ -44,6 +65,7 @@ describe('ServiceVehicleManager', () => {
   let traffic: TrafficSimulation;
   let laneGraph: LaneGraph;
   let grid: ReturnType<typeof buildHorizontalRoad>['grid'];
+  let roadLookup: UnifiedRoadLookup;
 
   beforeEach(() => {
     manager = new ServiceVehicleManager();
@@ -51,6 +73,7 @@ describe('ServiceVehicleManager', () => {
     const road = buildHorizontalRoad(10);
     grid = road.grid;
     laneGraph = road.graph;
+    roadLookup = makeRoadLookup(road.cellKeys);
   });
 
   describe('tick() — spawning', () => {
@@ -65,7 +88,7 @@ describe('ServiceVehicleManager', () => {
         garbage: null,
       };
 
-      manager.tick(traffic, services, grid, laneGraph);
+      manager.tick(traffic, services, grid, laneGraph, roadLookup);
 
       // Should have spawned some service vehicles
       const count = manager.getServiceVehicleCount();
@@ -80,7 +103,7 @@ describe('ServiceVehicleManager', () => {
         garbage: null,
       };
 
-      manager.tick(traffic, services, grid, laneGraph);
+      manager.tick(traffic, services, grid, laneGraph, roadLookup);
 
       expect(manager.getServiceVehicleCount()).toBe(0);
     });
@@ -93,7 +116,7 @@ describe('ServiceVehicleManager', () => {
         garbage: null,
       };
 
-      manager.tick(traffic, services, grid, laneGraph);
+      manager.tick(traffic, services, grid, laneGraph, roadLookup);
 
       expect(manager.getServiceVehicleCount()).toBe(0);
     });
@@ -109,7 +132,7 @@ describe('ServiceVehicleManager', () => {
         garbage: null,
       };
 
-      manager.tick(traffic, services, grid, laneGraph);
+      manager.tick(traffic, services, grid, laneGraph, roadLookup);
 
       expect(manager.getServiceVehicleCount()).toBeGreaterThan(0);
       expect(manager.getServiceVehicleCount('police')).toBeGreaterThan(0);
@@ -129,7 +152,7 @@ describe('ServiceVehicleManager', () => {
 
       // Tick multiple times to fill up
       for (let i = 0; i < 10; i++) {
-        manager.tick(traffic, services, grid, laneGraph);
+        manager.tick(traffic, services, grid, laneGraph, roadLookup);
       }
 
       // Should not exceed VEHICLES_PER_FACILITY * 1 facility
@@ -152,7 +175,7 @@ describe('ServiceVehicleManager', () => {
 
       // Tick many times
       for (let i = 0; i < 50; i++) {
-        manager.tick(traffic, services, grid, laneGraph);
+        manager.tick(traffic, services, grid, laneGraph, roadLookup);
       }
 
       expect(manager.getServiceVehicleCount()).toBeLessThanOrEqual(SERVICE_VEHICLE.MAX_TOTAL);
@@ -171,7 +194,7 @@ describe('ServiceVehicleManager', () => {
         garbage: null,
       };
 
-      manager.tick(traffic, services, grid, laneGraph);
+      manager.tick(traffic, services, grid, laneGraph, roadLookup);
 
       const countBefore = manager.getServiceVehicleCount();
       expect(countBefore).toBeGreaterThan(0);
@@ -180,7 +203,7 @@ describe('ServiceVehicleManager', () => {
       traffic.vehicles = [];
 
       // Tick again — should clean up stale entries
-      manager.tick(traffic, services, grid, laneGraph);
+      manager.tick(traffic, services, grid, laneGraph, roadLookup);
 
       // Count should be refreshed: the stale entries are removed,
       // then new vehicles are spawned. But initially the stale entries are cleaned.
@@ -200,7 +223,7 @@ describe('ServiceVehicleManager', () => {
       };
 
       // Spawn some vehicles
-      manager.tick(traffic, servicesWithFacilities, grid, laneGraph);
+      manager.tick(traffic, servicesWithFacilities, grid, laneGraph, roadLookup);
       expect(manager.getServiceVehicleCount('police')).toBeGreaterThan(0);
 
       // Now remove the facility
@@ -211,7 +234,7 @@ describe('ServiceVehicleManager', () => {
         garbage: null,
       };
 
-      manager.tick(traffic, servicesWithout, grid, laneGraph);
+      manager.tick(traffic, servicesWithout, grid, laneGraph, roadLookup);
 
       // Police vehicles should be removed
       expect(manager.getServiceVehicleCount('police')).toBe(0);
@@ -230,7 +253,7 @@ describe('ServiceVehicleManager', () => {
         garbage: null,
       };
 
-      manager.tick(traffic, services, grid, laneGraph);
+      manager.tick(traffic, services, grid, laneGraph, roadLookup);
 
       // Verify the vehicle in traffic has the serviceType set
       const serviceVehicles = traffic.vehicles.filter(v => v.serviceType === 'police');
@@ -258,7 +281,7 @@ describe('ServiceVehicleManager', () => {
         garbage: null,
       };
 
-      manager.tick(traffic, services, grid, laneGraph);
+      manager.tick(traffic, services, grid, laneGraph, roadLookup);
 
       const total = manager.getServiceVehicleCount();
       const policeCount = manager.getServiceVehicleCount('police');

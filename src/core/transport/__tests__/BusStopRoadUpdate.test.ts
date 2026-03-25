@@ -47,7 +47,6 @@ describe('BusSystem.onRoadChanged updates stop roadX/roadY', () => {
     const initialEdge = makeFakeLaneEdge(4, 5, 7, 6);
     const segments = bus.computeRouteSegments(
       route,
-      () => ['4,5', '7,6'],
       () => [initialEdge],
     );
     expect(segments).not.toBeNull();
@@ -62,7 +61,6 @@ describe('BusSystem.onRoadChanged updates stop roadX/roadY', () => {
 
     bus.onRoadChanged(
       affectedCells,
-      () => ['3,6', '7,6'],
       () => [newEdge],
       fakeTraffic(),
       grid,

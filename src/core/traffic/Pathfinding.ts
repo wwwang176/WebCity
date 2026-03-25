@@ -370,12 +370,10 @@ function buildValidCrossPairs(
   for (let i = 0; i < cellPath.length - 1; i++) {
     validCrossPairs.add(`${cellPath[i]}->${cellPath[i + 1]}`);
   }
-  // Add skip-pairs: if cellPath[i] is a transparent intersection (no connection
-  // points in the graph), cross-intersection edges skip from [i-1] to [i+1].
+  // Add skip-pairs for cross-intersection turn edges: [i-1] → [i+1].
+  // These edges bypass the intersection cell entirely with a Bézier curve.
   for (let i = 1; i < cellPath.length - 1; i++) {
-    if (graph.getConnectionPoints(cellPath[i]!).length === 0) {
-      validCrossPairs.add(`${cellPath[i - 1]}->${cellPath[i + 1]}`);
-    }
+    validCrossPairs.add(`${cellPath[i - 1]}->${cellPath[i + 1]}`);
   }
   return validCrossPairs;
 }

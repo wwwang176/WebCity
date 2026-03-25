@@ -9,7 +9,7 @@ import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI }
 import { RoadType } from '../road/types';
 import { getLaneCount } from '../traffic/TrafficSimulation';
 import { LaneGraph } from '../traffic/LaneGraph';
-import { refineLanePath, refineLanePathVariants, gridAStarPath } from '../traffic/Pathfinding';
+import { findLanePath, findLanePathVariants } from '../traffic/LaneGraphPathfinder';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
 import { getBuildingType } from '../building/types';
@@ -48,10 +48,10 @@ import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate 
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../economy/ExpenseCalculator';
+import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 import { randomInt, randomElement, pickWeighted } from '../utils/random';
 import { buildODPools } from '../traffic/ODPoolBuilder';
 import { findAvailableTransit } from '../transport/TransitAvailability';
-import { findRoadPath } from '../traffic/RoadPathfinding';
 import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicleType } from '../traffic/ServiceVehicleManager';
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
@@ -167,6 +167,8 @@ const SCHOOL_KEY_TO_TYPE: Record<EducationRule['schoolKey'], SchoolType> = {
 
 export class SimulationLoop {
   private state: GameState;
+  private _elevationManager: import('../elevation/ElevationManager').ElevationManager | null = null;
+  private _roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
   private lastDeathDay = -1;
   private lastBirthMonth = -1;
   private lastRiderDay = -1;
@@ -231,6 +233,15 @@ export class SimulationLoop {
   onBuildingAdded?: (x: number, y: number, zoneType: number, level: number) => void;
   onBuildingRemoved?: (x: number, y: number) => void;
   onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned?: boolean) => void;
+
+  setElevationManager(em: import('../elevation/ElevationManager').ElevationManager): void {
+    this._elevationManager = em;
+    this.state.highwayConnection.setElevationManager(em);
+  }
+
+  setRoadLookup(lookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup): void {
+    this._roadLookup = lookup;
+  }
 
   constructor(state: GameState) {
     this.state = state;
@@ -783,6 +794,8 @@ export class SimulationLoop {
       serviceCost: getTotalServiceMaintenanceCost(this.state),
       policyCost: calculateDistrictPolicyCost(this.state.districts.getAllDistricts()),
       transportCost: getTotalTransportOperatingCost(this.state),
+      elevatedMaintenance: this._elevationManager
+        ? calculateElevatedMaintenance(this._elevationManager) : 0,
     });
   }
 
@@ -1224,7 +1237,7 @@ export class SimulationLoop {
     this.serviceVehicleManager.removeAllOfType(this.state.traffic, serviceType);
   }
 
-  markLaneGraphDirty(affectedCells?: string[]): void {
+  markLaneGraphDirty(affectedCells?: string[], skipUnreachableCheck = false): void {
     this.laneGraphDirty = true;
     this.sidewalkGraphDirty = true;
     this.tripPoolDirty = true;
@@ -1238,27 +1251,42 @@ export class SimulationLoop {
       }
       // Invalidate pedestrian path cache for affected cells
       this.state.pedestrianManager.invalidateCells(affectedCells);
-      // Immediately check if affected citizens can still reach their workplace
-      this.immediateUnreachableJobCheck(affectedCells);
+      // Only check unreachable jobs when roads are removed (demolish).
+      // Building new roads/tracks only adds connectivity, never breaks it.
+      if (!skipUnreachableCheck) {
+        this.immediateUnreachableJobCheck(affectedCells);
+      }
     }
   }
 
   /**
    * When roads are cut, immediately unemploy citizens whose workplace
    * is no longer reachable from home (don't wait for jobRelocationTick).
-   * Checks ALL employed citizens, using a cache to avoid redundant Dijkstra calls
-   * for citizens sharing the same home→workplace pair.
+   * Only checks citizens whose cached commute paths pass through the
+   * affected cells (via CommuteCache cellIndex), avoiding a full scan.
    */
-  private immediateUnreachableJobCheck(_affectedCells: string[]): void {
-    const citizens = this.state.citizens.getCitizens();
+  private immediateUnreachableJobCheck(affectedCells: string[]): void {
+    // Collect citizen IDs whose commute routes pass through demolished cells
+    const affectedIds = new Set<number>();
+    for (const cellKey of affectedCells) {
+      const ids = this.commuteCache.getCitizensByCell(cellKey);
+      if (ids) for (const id of ids) affectedIds.add(id);
+    }
+    if (affectedIds.size === 0) return;
+
+    // Build temporary id→citizen map for O(1) lookup
+    const citizenById = new Map<number, Citizen>();
+    for (const c of this.state.citizens.getCitizens()) {
+      if (affectedIds.has(c.id)) citizenById.set(c.id, c);
+    }
+
     const grid = this.state.grid;
     const tick = this.state.clock.tick;
-
-    // Cache: "homeId->workplaceId" → reachable?
     const reachCache = new Map<string, boolean>();
 
-    for (const citizen of citizens) {
-      if (!citizen.workplaceId || !citizen.homeId || !isWorkingAge(citizen.age)) continue;
+    for (const id of affectedIds) {
+      const citizen = citizenById.get(id);
+      if (!citizen || !citizen.workplaceId || !citizen.homeId || !isWorkingAge(citizen.age)) continue;
 
       const key = `${citizen.homeId}->${citizen.workplaceId}`;
       let reachable = reachCache.get(key);
@@ -1283,37 +1311,52 @@ export class SimulationLoop {
 
   private rebuildLaneGraph(): void {
     const grid = this.state.grid;
-    const cellKeys: string[] = [];
-    const gridLookup = {
-      getCell: (x: number, y: number) => {
-        const cell = grid.getCell(x, y);
-        if (!cell) return null;
-        return { roadType: cell.roadType as RoadType, roadFlags: cell.roadFlags };
-      },
-    };
 
-    grid.forEachCell((cell, x, y) => {
-      if (cell.roadType !== RoadType.NONE) {
-        cellKeys.push(toPosKey(x, y));
+    // Use UnifiedRoadLookup for all road cells (ground + elevated)
+    const lookup = this._roadLookup;
+    if (lookup) {
+      if (this.dirtyRoadCells && this.dirtyRoadCells.size > 0) {
+        // Incremental update: only rebuild affected cells + neighbors
+        this.laneGraph.updateCells(lookup, [...this.dirtyRoadCells]);
+      } else {
+        // Full rebuild (save load, initial build, or unknown changes)
+        const cellKeys = lookup.getAllCellKeys();
+        this.laneGraph.buildFromGrid(lookup, cellKeys);
       }
-    });
-
-    this.laneGraph.buildFromGrid(gridLookup, cellKeys);
+    } else {
+      // Fallback: ground-only (no elevation manager set)
+      const cellKeys: string[] = [];
+      grid.forEachCell((cell, x, y) => {
+        if (cell.roadType !== RoadType.NONE) cellKeys.push(toPosKey(x, y));
+      });
+      const cellKeySet = new Set(cellKeys);
+      this.laneGraph.buildFromGrid({
+        getCellByKey(key: string) {
+          const { x, y } = parsePosKeyUnsafe(key);
+          const cell = grid.getCell(x, y);
+          if (!cell || cell.roadType === RoadType.NONE) return null;
+          return { roadType: cell.roadType, roadFlags: cell.roadFlags };
+        },
+        getCompatibleNeighborKeys(_sourceKey: string, nx: number, ny: number) {
+          const k = toPosKey(nx, ny);
+          return cellKeySet.has(k) ? [k] : [];
+        },
+      }, cellKeys);
+    }
 
     const lg = this.laneGraph;
-    const g = { getCell: (x: number, y: number) => grid.getCell(x, y), width: grid.width, height: grid.height };
-    const findPath = (fx: number, fy: number, tx: number, ty: number) => gridAStarPath({ x: fx, y: fy }, { x: tx, y: ty }, g);
-    const refine = (cellPath: string[]) => refineLanePath(lg, cellPath);
+    const busLookup = this._roadLookup;
+    const findEdgePath = (fx: number, fy: number, tx: number, ty: number) =>
+      busLookup ? findLanePath(lg, busLookup, { x: fx, y: fy }, { x: tx, y: ty }) : null;
 
     // Rebuild segments for routes loaded from save (no segments yet)
-    this.state.bus.rebuildAllSegments(findPath, refine, this.state.traffic, grid);
+    this.state.bus.rebuildAllSegments(findEdgePath, this.state.traffic, grid);
 
     // Revalidate bus routes affected by road changes
     if (this.dirtyRoadCells && this.dirtyRoadCells.size > 0) {
       this.state.bus.onRoadChanged(
         this.dirtyRoadCells,
-        findPath,
-        refine,
+        findEdgePath,
         this.state.traffic,
         grid,
       );
@@ -1527,13 +1570,10 @@ export class SimulationLoop {
       const routeKey = `${fromStr}->${toStr}`;
       let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
 
-      if (!variants) {
-        const path = findRoadPath(fromPos, toPos, grid);
-        if (path && path.length >= 2) {
-          variants = refineLanePathVariants(this.laneGraph, path);
-          if (variants.length > 0) {
-            this.commuteCache.setRouteVariants(routeKey, variants);
-          }
+      if (!variants && this._roadLookup) {
+        variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromPos, toPos);
+        if (variants.length > 0) {
+          this.commuteCache.setRouteVariants(routeKey, variants);
         }
       }
 
@@ -1639,9 +1679,8 @@ export class SimulationLoop {
       }
       if (!foundEnd) return;
 
-      const path = findRoadPath({ x: startX, y: startY }, { x: endX, y: endY }, grid);
-      if (path && path.length >= 2) {
-        const edgePath = refineLanePath(this.laneGraph, path);
+      if (this._roadLookup) {
+        const edgePath = findLanePath(this.laneGraph, this._roadLookup, { x: startX, y: startY }, { x: endX, y: endY });
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         }
@@ -1695,19 +1734,18 @@ export class SimulationLoop {
       const edge = edgeCells[Math.floor(Math.random() * edgeCells.length)]!;
       const bp = this.buildingPositions[Math.floor(Math.random() * this.buildingPositions.length)]!;
 
-      let path: string[] | null = null;
+      if (!this._roadLookup) continue;
       if (isIncoming) {
         const endRoad = findAdjacentRoad(grid, bp.x, bp.y);
         if (!endRoad || (endRoad.x === edge.x && endRoad.y === edge.y)) continue;
-        path = gridAStarPath(edge, endRoad, grid);
+        const edgePath = findLanePath(this.laneGraph, this._roadLookup, edge, endRoad);
+        if (edgePath && edgePath.length > 0) {
+          this.state.traffic.addVehicleOnEdges(edgePath);
+        }
       } else {
         const startRoad = findAdjacentRoad(grid, bp.x, bp.y);
         if (!startRoad || (startRoad.x === edge.x && startRoad.y === edge.y)) continue;
-        path = gridAStarPath(startRoad, edge, grid);
-      }
-
-      if (path && path.length >= 2) {
-        const edgePath = refineLanePath(this.laneGraph, path);
+        const edgePath = findLanePath(this.laneGraph, this._roadLookup, startRoad, edge);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         }
@@ -1813,13 +1851,11 @@ export class SimulationLoop {
       const endRoad = findAdjacentRoad(grid, to.x, to.y);
       if (!startRoad || !endRoad || (startRoad.x === endRoad.x && startRoad.y === endRoad.y)) continue;
 
-      const path = gridAStarPath(startRoad, endRoad, grid);
-      if (path && path.length >= 2) {
-        const edgePath = refineLanePath(this.laneGraph, path);
-        if (edgePath && edgePath.length > 0) {
-          this.state.traffic.addFreightVehicle(edgePath);
-          spawned++;
-        }
+      if (!this._roadLookup) continue;
+      const edgePath = findLanePath(this.laneGraph, this._roadLookup, startRoad, endRoad);
+      if (edgePath && edgePath.length > 0) {
+        this.state.traffic.addFreightVehicle(edgePath);
+        spawned++;
       }
     }
   }
@@ -1845,6 +1881,7 @@ export class SimulationLoop {
       services,
       this.state.grid,
       this.laneGraph,
+      this._roadLookup ?? undefined,
     );
   }
 
@@ -1905,11 +1942,12 @@ export class SimulationLoop {
       const mode = chooseMode(from, to, availableTransport, 0);
       if (mode !== TransportMode.DRIVE) continue;
 
-      const path = findRoadPath(from, to, grid);
-      if (!path) continue;
+      if (!this._roadLookup) continue;
+      const edgePath = findLanePath(this.laneGraph, this._roadLookup, from, to);
+      if (!edgePath) continue;
 
-      for (const cellKey of path) {
-        flowMap.set(cellKey, (flowMap.get(cellKey) ?? 0) + 1);
+      for (const edge of edgePath) {
+        flowMap.set(edge.from.cellKey, (flowMap.get(edge.from.cellKey) ?? 0) + 1);
       }
     }
 

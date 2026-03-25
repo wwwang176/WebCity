@@ -30,6 +30,8 @@ export interface VehicleData {
   roll?: number;
   /** Uniform scale override. */
   scale?: number;
+  /** Elevation level (0 = ground, 1-3 = elevated). Adds level × 0.6 to Y. */
+  elevation?: number;
 }
 
 const CAR_COLORS = [
@@ -217,14 +219,22 @@ export class VehicleRenderer {
         if (type === 'airplane' && v.altitude !== undefined) {
           yPos = v.altitude;
         }
+        // Elevated road: add elevation height
+        if (v.elevation && v.elevation > 0) {
+          yPos += v.elevation * 0.6;
+        }
+        // Ramp pitch compensation: restore normal-direction offset lost to tilt
+        if (v.pitch) {
+          yPos += 0.025 * (1 - Math.cos(v.pitch));
+        }
 
         rotation.makeRotationY(v.heading);
-        // Airplane pitch/roll: apply in local space (after heading rotation)
-        if (type === 'airplane' && (v.pitch || v.roll)) {
+        // Pitch/roll: apply in local space (airplane, ramp vehicles, etc.)
+        if (v.pitch || v.roll) {
           const pr = this._pitchRoll;
-          pr.makeRotationX(v.roll ?? 0);   // roll around local X (wing axis)
+          pr.makeRotationX(v.roll ?? 0);
           if (v.pitch) {
-            this._pitchMat.makeRotationZ(v.pitch); // pitch around local Z (nose up/down)
+            this._pitchMat.makeRotationZ(v.pitch);
             pr.multiply(this._pitchMat);
           }
           rotation.multiply(pr);
@@ -267,19 +277,23 @@ export class VehicleRenderer {
           // Beam geometry extends along local +X, so Y-rotate by heading
           const hlX = vx + cosH * fOff;
           const hlZ = vz - sinH * fOff;
-          // Airplane lights follow altitude; ground vehicles fixed at 0.055
-          const lightY = type === 'airplane' ? yPos + 0.01 : 0.055;
+          // Light Y: airplane follows altitude; others use base + elevation
+          let lightY = type === 'airplane' ? yPos + 0.01 : 0.055 + (v.elevation ? v.elevation * 0.6 : 0);
+          if (v.pitch && type !== 'airplane') lightY += 0.025 * (1 - Math.cos(v.pitch));
           hlMatrix.makeRotationY(v.heading);
+          // Apply pitch rotation to headlights (ramp vehicles + airplanes)
+          if (v.pitch) {
+            this._pitchMat.makeRotationZ(v.pitch);
+            hlMatrix.multiply(this._pitchMat);
+          }
           if (type === 'airplane') {
-            // Airplane: pitch rotation + 2× longer/wider beam
-            if (v.pitch) {
-              this._pitchMat.makeRotationZ(v.pitch);
-              hlMatrix.multiply(this._pitchMat);
-            }
+            // Airplane: 2× longer/wider beam
             this._pitchRoll.makeScale(2, 1, 2);
             hlMatrix.multiply(this._pitchRoll);
           }
-          hlTranslation.makeTranslation(hlX, lightY, hlZ);
+          // Headlight Y: adjust for slope height at front position
+          const hlY = lightY + (v.pitch ? fOff * Math.tan(v.pitch) : 0);
+          hlTranslation.makeTranslation(hlX, hlY, hlZ);
           hlMatrix.premultiply(hlTranslation);
           this.headlightMesh.setMatrixAt(lightIndex, hlMatrix);
 
@@ -289,8 +303,15 @@ export class VehicleRenderer {
           } else {
             const tlX = vx - cosH * rOff;
             const tlZ = vz + sinH * rOff;
-            tlTranslation.makeTranslation(tlX, lightY, tlZ);
+            // Taillight Y: adjust for slope height at rear position (opposite direction)
+            const tlY = lightY - (v.pitch ? rOff * Math.tan(v.pitch) : 0);
+            tlTranslation.makeTranslation(tlX, tlY, tlZ);
             tlMatrix.copy(tlTranslation);
+            // Apply pitch to taillights too
+            if (v.pitch) {
+              this._pitchMat.makeRotationZ(v.pitch);
+              tlMatrix.multiply(this._pitchMat);
+            }
           }
           this.taillightMesh.setMatrixAt(lightIndex, tlMatrix);
 

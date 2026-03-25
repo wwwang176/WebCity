@@ -1,8 +1,15 @@
 import type { Grid } from '../grid/Grid';
 import { ZoneType, isCommercialZone, isResidentialZone } from '../grid/types';
-import { toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { toPosKey, parsePosKeyUnsafe, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
+import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
+
+let _roadLookup: UnifiedRoadLookup | null = null;
+
+export function setShoppingRoadLookup(lookup: UnifiedRoadLookup): void {
+  _roadLookup = lookup;
+}
 
 export interface ResidentialShoppingStatus {
   /** 0~1: ratio of commercial capacity vs residential population in the connected road network. */
@@ -22,6 +29,9 @@ export interface CommercialCustomerStatus {
  * ShoppingAccess determines the supply/demand relationship between residential
  * and commercial buildings within each connected road network.
  *
+ * Level-aware: uses UnifiedRoadLookup for compatible neighbor discovery so that
+ * elevated roads only connect via ramps.
+ *
  * Algorithm: flood-fill BFS to identify connected components, then compute
  * component-wide ratios of commercial capacity vs residential population.
  * No distance limit — if buildings share a connected road network, they count.
@@ -35,38 +45,70 @@ export class ShoppingAccess {
 
   /**
    * Single-pass flood-fill to find connected components and compute ratios.
-   * Much faster than per-building BFS — visits each cell at most once.
+   * Level-aware: BFS tracks cell keys (with level) so that elevated roads
+   * only relay through compatible neighbors.
    */
   calculate(grid: Grid): void {
     this.hasCalculated = true;
     this.residentialStatus = new Map();
     this.commercialStatus = new Map();
 
+    // Track visited by cell key (includes level for elevated)
     const globalVisited = new Set<string>();
+    // Track visited positions to avoid re-seeding
+    const globalVisitedPositions = new Set<string>();
 
     grid.forEachCell((cell, x, y) => {
       // Start flood-fill from any unvisited cell that is part of the road network
-      const key = toPosKey(x, y);
-      if (globalVisited.has(key)) return;
-      if (cell.roadType === RoadType.NONE && cell.buildingId === 0 && cell.zoneType === 0) return;
+      const posKey = toPosKey(x, y);
+      if (globalVisitedPositions.has(posKey)) return;
+      if (cell.roadType === RoadType.NONE && cell.buildingId === 0 && cell.zoneType === 0) {
+        // Check if there's an elevated road at this position
+        if (!_roadLookup || _roadLookup.getAllKeysAtPosition(x, y).length === 0) return;
+      }
 
-      // BFS to discover entire connected component
+      // BFS to discover entire connected component (level-aware)
       const componentResidentials: string[] = [];
       const componentCommercials: string[] = [];
       let totalPopulation = 0;
       let totalCapacity = 0;
 
-      const queue: [number, number][] = [];
-      globalVisited.add(key);
-      queue.push([x, y]);
+      // Seed with all keys at this position
+      const queue: string[] = [];
+
+      // Add ground-level seed if it's a road/building/zone
+      if (cell.roadType !== RoadType.NONE || cell.buildingId !== 0 || cell.zoneType !== 0) {
+        if (!globalVisited.has(posKey)) {
+          globalVisited.add(posKey);
+          queue.push(posKey);
+        }
+      }
+
+      // Add elevated road seeds at this position
+      if (_roadLookup) {
+        const allKeys = _roadLookup.getAllKeysAtPosition(x, y);
+        for (const k of allKeys) {
+          if (!globalVisited.has(k)) {
+            globalVisited.add(k);
+            queue.push(k);
+          }
+        }
+      }
+
+      globalVisitedPositions.add(posKey);
 
       while (queue.length > 0) {
-        const [cx, cy] = queue.shift()!;
+        const curKey = queue.shift()!;
+        const curPos = parsePosKeyUnsafe(curKey);
+        const cx = curPos.x;
+        const cy = curPos.y;
         const cc = grid.getCell(cx, cy);
-        if (!cc) continue;
 
-        // Classify buildings in this component
-        if (cc.buildingId > 0) {
+        // Track position as visited
+        globalVisitedPositions.add(toPosKey(cx, cy));
+
+        // Classify buildings in this component (buildings are always at ground level)
+        if (cc && cc.buildingId > 0) {
           const ckey = toPosKey(cx, cy);
           if (isResidentialZone(cc.zoneType as ZoneType)) {
             const bt = getBuildingType(cc.buildingId);
@@ -83,17 +125,31 @@ export class ShoppingAccess {
           }
         }
 
-        // Expand to neighbors
+        // Expand to compatible neighbors via UnifiedRoadLookup
         for (const [dx, dy] of FOUR_NEIGHBORS) {
           const nx = cx + dx!;
           const ny = cy + dy!;
-          const nkey = toPosKey(nx, ny);
-          if (globalVisited.has(nkey)) continue;
-          const ncell = grid.getCell(nx, ny);
-          if (!ncell) continue;
-          if (ncell.roadType === RoadType.NONE && ncell.buildingId === 0 && ncell.zoneType === 0) continue;
-          globalVisited.add(nkey);
-          queue.push([nx, ny]);
+
+          // Road neighbors via level-aware lookup
+          if (_roadLookup) {
+            const compatibleKeys = _roadLookup.getCompatibleNeighborKeys(curKey, nx, ny);
+            for (const nk of compatibleKeys) {
+              if (globalVisited.has(nk)) continue;
+              globalVisited.add(nk);
+              queue.push(nk);
+            }
+          }
+
+          // Ground-level non-road cells (buildings, zones)
+          const nPosKey = toPosKey(nx, ny);
+          if (!globalVisited.has(nPosKey)) {
+            const ncell = grid.getCell(nx, ny);
+            if (!ncell) continue;
+            if (ncell.roadType !== RoadType.NONE || ncell.buildingId !== 0 || ncell.zoneType !== 0) {
+              globalVisited.add(nPosKey);
+              queue.push(nPosKey);
+            }
+          }
         }
       }
 

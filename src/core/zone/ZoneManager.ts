@@ -2,6 +2,8 @@ import { Grid } from '../grid/Grid';
 import { ZoneType, type Position } from '../grid/types';
 import { isAdjacentToRoad, isCellBuildable } from '../grid/GridHelpers';
 import { isZoneBuilding } from '../building/InfraConfig';
+import { type ElevationManager } from '../elevation/ElevationManager';
+import { isBlockedByElevation } from '../elevation/ElevationZoneBlock';
 
 interface ZoneResult {
   success: boolean;
@@ -10,9 +12,14 @@ interface ZoneResult {
 
 export class ZoneManager {
   private grid: Grid;
+  private elevationManager: ElevationManager | null = null;
 
   constructor(grid: Grid) {
     this.grid = grid;
+  }
+
+  setElevationManager(em: ElevationManager): void {
+    this.elevationManager = em;
   }
 
   setZone(x: number, y: number, zoneType: ZoneType): ZoneResult {
@@ -21,6 +28,11 @@ export class ZoneManager {
 
     // White-list: cell must be buildable (no water/mountain/road/rail/infra)
     if (!isCellBuildable(cell)) return { success: false, reason: 'CELL_NOT_BUILDABLE' };
+
+    // Block zoning under elevated roads/rails
+    if (this.elevationManager && isBlockedByElevation(this.elevationManager, x, y)) {
+      return { success: false, reason: 'BLOCKED_BY_ELEVATION' };
+    }
 
     if (!isAdjacentToRoad(this.grid, x, y)) {
       return { success: false, reason: 'NOT_ADJACENT_TO_ROAD' };

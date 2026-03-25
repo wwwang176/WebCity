@@ -73,12 +73,16 @@ interface SerializedState {
   ferry?: ReturnType<FerrySystem['toJSON']>;
   airport?: ReturnType<AirportSystem['toJSON']>;
   highwayConnection?: ReturnType<HighwayConnection['toJSON']>;
+  elevation?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
   abandonmentStress?: Record<string, number>;
 }
 
 export function serializeGameState(
   state: GameState,
-  extra?: { abandonmentStress?: Map<string, number> },
+  extra?: {
+    abandonmentStress?: Map<string, number>;
+    elevationManager?: import('../elevation/ElevationManager').ElevationManager;
+  },
 ): string {
   const cells: SerializedCell[] = [];
 
@@ -131,6 +135,7 @@ export function serializeGameState(
     ferry: state.ferry.toJSON(),
     airport: state.airport.toJSON(),
     highwayConnection: state.highwayConnection.toJSON(),
+    elevation: extra?.elevationManager?.toJSON(),
     abandonmentStress: extra?.abandonmentStress
       ? Object.fromEntries(extra.abandonmentStress)
       : undefined,
@@ -141,6 +146,7 @@ export function serializeGameState(
 
 export interface DeserializedExtra {
   abandonmentStress: Map<string, number>;
+  elevationData?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
 }
 
 export function deserializeGameState(json: string): GameState & { _extra?: DeserializedExtra } {
@@ -240,6 +246,7 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
     abandonmentStress: saved.abandonmentStress
       ? new Map(Object.entries(saved.abandonmentStress).map(([k, v]) => [k, Number(v)]))
       : new Map(),
+    elevationData: saved.elevation,
   };
 
   return Object.assign(state, { _extra: extra });
