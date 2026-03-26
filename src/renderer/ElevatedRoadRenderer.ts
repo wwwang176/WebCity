@@ -16,7 +16,6 @@ import {
 } from './RoadStripBuilder';
 import { RoadInstanceTracker } from './RoadInstanceTracker';
 import { toPosKey, parsePosKeyUnsafe } from '../core/grid/GridHelpers';
-import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
 
 /** Height per elevation level in world units. */
 const LEVEL_HEIGHT = 0.6;
@@ -52,6 +51,8 @@ interface LevelData {
   markingTracker: RoadInstanceTracker;
   lampTracker: RoadInstanceTracker;
   lampGlowTracker: RoadInstanceTracker;
+  pillarMat: THREE.MeshLambertMaterial;
+  railMat: THREE.MeshLambertMaterial;
   pillarMeshes: Map<string, THREE.Mesh>;
   railMeshes: Map<string, THREE.Mesh>;
 }
@@ -407,7 +408,6 @@ export class ElevatedRoadRenderer {
 
     // ── Pillars (individual meshes, per cell) ──
     const geo = getSharedGeo();
-    const pillarMat = new THREE.MeshLambertMaterial({ color: PILLAR_COLOR });
     for (const c of allCells) {
       if (c.seg.isRamp) continue;
       const key = toPosKey(c.x, c.y);
@@ -419,7 +419,7 @@ export class ElevatedRoadRenderer {
       const h = topY - bottomY;
       if (h <= 0) continue;
 
-      const mesh = new THREE.Mesh(geo.pillar, pillarMat);
+      const mesh = new THREE.Mesh(geo.pillar, ld.pillarMat);
       mesh.scale.set(1, h, 1);
       mesh.position.set(c.x, bottomY + h / 2, c.y);
       mesh.castShadow = true;
@@ -428,14 +428,13 @@ export class ElevatedRoadRenderer {
     }
 
     // ── Rail (individual meshes, per cell) ──
-    const railMat = new THREE.MeshLambertMaterial({ color: 0x555050 });
     for (const c of allCells) {
       if (c.seg.railType === RailType.NONE) continue;
       const key = toPosKey(c.x, c.y);
       if (!targetKeys.has(key)) continue;
       if (ld.railMeshes.has(key)) continue;
 
-      const mesh = new THREE.Mesh(geo.rail, railMat);
+      const mesh = new THREE.Mesh(geo.rail, ld.railMat);
       mesh.position.set(c.x, baseY + ROAD_Y, c.y);
       mesh.receiveShadow = true;
       ld.group.add(mesh);
@@ -498,6 +497,8 @@ export class ElevatedRoadRenderer {
       markingTracker: new RoadInstanceTracker(mkMesh, cap * CAP.marking),
       lampTracker: new RoadInstanceTracker(lampMesh, cap * CAP.lamp),
       lampGlowTracker: new RoadInstanceTracker(glowMesh, cap * CAP.lampGlow),
+      pillarMat: new THREE.MeshLambertMaterial({ color: PILLAR_COLOR }),
+      railMat: new THREE.MeshLambertMaterial({ color: 0x555050 }),
       pillarMeshes: new Map(),
       railMeshes: new Map(),
     };
