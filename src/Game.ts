@@ -1235,10 +1235,8 @@ export class Game {
         this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
         this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
       } else {
-        // Incremental update
+        // Incremental update (ground roads only; elevated roads unchanged)
         this.roadRenderer.updateCells(this.state.grid, [...dirtyCells]);
-        // Elevated roads still use full rebuild for now (few segments, fast)
-        this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
       }
       if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
       d.roads = false;

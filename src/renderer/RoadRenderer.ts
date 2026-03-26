@@ -25,7 +25,7 @@ const SIDEWALK_Y = 0.028;
 const MARKING_Y = 0.052;
 
 /** Multipliers for max capacity per mesh type (relative to maxRoads). */
-const CAP = { road: 3, sidewalk: 4, marking: 14, crosswalk: 50, stopLine: 4, lamp: 4, lampGlow: 4 } as const;
+const CAP = { road: 3, sidewalk: 4, marking: 14, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
 
 export class RoadRenderer {
   private roadMesh: THREE.InstancedMesh | null = null;
@@ -432,15 +432,14 @@ export class RoadRenderer {
       }
     }
 
-    // Mark all meshes as needing GPU upload
-    this.markAllNeedsUpdate();
-  }
-
-  private markAllNeedsUpdate(): void {
-    const meshes = [this.roadMesh, this.sidewalkMesh, this.markingMesh,
-      this.crosswalkMesh, this.stopLineMesh, this.lampMesh, this.lampGlowMesh];
-    for (const m of meshes) {
-      if (m) {
+    // Mark only meshes that have content as needing GPU upload
+    const trackers = [
+      this.roadTracker, this.sidewalkTracker, this.markingTracker,
+      this.crosswalkTracker, this.stopLineTracker, this.lampTracker, this.lampGlowTracker,
+    ];
+    for (const t of trackers) {
+      if (t && t.getCount() > 0) {
+        const m = t.getMesh();
         m.instanceMatrix.needsUpdate = true;
         if (m.instanceColor) m.instanceColor.needsUpdate = true;
       }
