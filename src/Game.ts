@@ -15,7 +15,7 @@ import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
-import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe, getDirectionFlag } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe, toPosKey, getDirectionFlag } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -707,9 +707,11 @@ export class Game {
         this.simLoop.markLaneGraphDirty([...elevatedKeys, ...demolishedRoadCells, ...buildingCells]);
         // Restore incremental AFTER demolish's markAllDirty (which sets full rebuild)
         if (anyElevatedRemoved) {
+          // Normalize "x,y,level" keys to "x,y" for ground road renderer
+          const groundKeys = elevatedKeys.map(k => { const { x, y } = parsePosKeyUnsafe(k); return toPosKey(x, y); });
           this.dirty.elevatedRoadsFull = false;
           this.dirty.markElevatedCellsDirty(elevatedKeys);
-          this.dirty.markRoadCellsDirty(elevatedKeys);
+          this.dirty.markRoadCellsDirty(groundKeys);
         }
         this.audioManager.playSfx(SoundType.DEMOLISH);
         break;
