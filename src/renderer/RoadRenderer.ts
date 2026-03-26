@@ -213,7 +213,7 @@ export class RoadRenderer {
     const dirtySet = new Set<string>();
     for (const key of changedCellKeys) {
       const { x, y } = parsePosKeyUnsafe(key);
-      dirtySet.add(key);
+      dirtySet.add(toPosKey(x, y));
       if (x > 0) dirtySet.add(toPosKey(x - 1, y));
       if (x < this.gridWidth - 1) dirtySet.add(toPosKey(x + 1, y));
       if (y > 0) dirtySet.add(toPosKey(x, y - 1));
