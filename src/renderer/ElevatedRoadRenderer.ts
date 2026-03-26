@@ -67,6 +67,14 @@ let _sharedGeo: {
   rail: THREE.BoxGeometry;
 } | null = null;
 
+function isSharedGeo(geo: THREE.BufferGeometry): boolean {
+  if (!_sharedGeo) return false;
+  return geo === _sharedGeo.road || geo === _sharedGeo.sidewalk ||
+    geo === _sharedGeo.marking || geo === _sharedGeo.lamp ||
+    geo === _sharedGeo.glowGeo || geo === _sharedGeo.pillar ||
+    geo === _sharedGeo.rail;
+}
+
 function getSharedGeo() {
   if (_sharedGeo) return _sharedGeo;
   const road = new THREE.BoxGeometry(1, 0.05, 1);
@@ -175,9 +183,9 @@ export class ElevatedRoadRenderer {
         ld.lampGlowTracker.removeCell(key);
         // Remove pillar/rail individual meshes
         const pillar = ld.pillarMeshes.get(key);
-        if (pillar) { ld.group.remove(pillar); pillar.geometry.dispose(); ld.pillarMeshes.delete(key); }
+        if (pillar) { ld.group.remove(pillar); ld.pillarMeshes.delete(key); }
         const rail = ld.railMeshes.get(key);
-        if (rail) { ld.group.remove(rail); rail.geometry.dispose(); ld.railMeshes.delete(key); }
+        if (rail) { ld.group.remove(rail); ld.railMeshes.delete(key); }
       }
 
       // Re-add instances for dirty cells that still exist
@@ -522,7 +530,8 @@ export class ElevatedRoadRenderer {
       scene.remove(this.group);
       this.group.traverse((child) => {
         if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
-          child.geometry.dispose();
+          // Skip shared geometries — they live in the module-level cache
+          if (!isSharedGeo(child.geometry)) child.geometry.dispose();
           if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
           else (child.material as THREE.Material).dispose();
         }
