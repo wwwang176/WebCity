@@ -1250,26 +1250,26 @@ export class Game {
   /** Rebuild renderer meshes for each dirty subsystem, then clear dirty flags. */
   private rebuildDirtySubsystems(): void {
     const d = this.dirty;
-    const anyDirty = d.hasRoadChanges || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
+    const anyDirty = d.hasRoadChanges || d.hasElevatedChanges || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
     if (!anyDirty) return;
 
-    if (d.hasRoadChanges || d.hasElevatedChanges) {
-      // Ground roads
+    if (d.hasRoadChanges) {
       const dirtyCells = d.dirtyRoadCells;
       if (dirtyCells === null) {
         this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
       } else if (dirtyCells.size > 0) {
         this.roadRenderer.updateCells(this.state.grid, [...dirtyCells]);
       }
-      // Elevated roads
+      if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
+      d.roads = false;
+    }
+    if (d.hasElevatedChanges) {
       const elevCells = d.elevatedDirtyCells;
       if (elevCells === null) {
         this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
       } else if (elevCells.length > 0) {
         this.elevatedRoadRenderer.updateCells(this.sceneManager.scene, this.state.grid, this.elevationManager, elevCells);
       }
-      if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
-      d.roads = false;
       d.clearElevated();
     }
     if (d.tracks) {
