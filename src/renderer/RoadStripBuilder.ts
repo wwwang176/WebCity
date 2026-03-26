@@ -5,8 +5,9 @@
  * Pure functions — no Three.js, no side effects.
  */
 
-import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
-import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
+import { RoadType, RoadDirection } from '../core/road/types';
+import { SIDEWALK_WIDTH, CW_OFFSET } from '../core/traffic/SidewalkGraph';
+import { STOP_LINE_OFFSET } from '../core/traffic/VehicleLookahead';
 
 export const ROAD_WIDTHS: Record<number, number> = {
   [RoadType.RURAL]: 0.5,
@@ -30,6 +31,8 @@ export interface Strip {
   sx: number;
   sz: number;
   roadType: number;
+  srcX: number;
+  srcY: number;
 }
 
 export interface SidewalkStrip {
@@ -37,6 +40,8 @@ export interface SidewalkStrip {
   z: number;
   sx: number;
   sz: number;
+  srcX: number;
+  srcY: number;
 }
 
 export interface LaneMarking {
@@ -44,6 +49,26 @@ export interface LaneMarking {
   z: number;
   rotY: number;
   offsetPerp: number;
+  srcX: number;
+  srcY: number;
+}
+
+export interface CrosswalkStripe {
+  x: number;
+  z: number;
+  sx: number;
+  sz: number;
+  srcX: number;
+  srcY: number;
+}
+
+export interface StopLineData {
+  x: number;
+  z: number;
+  sx: number;
+  sz: number;
+  srcX: number;
+  srcY: number;
 }
 
 function countBits(n: number): number {
@@ -103,7 +128,7 @@ export function buildRoadStrips(
       const half = w / 2;
       const zMin = hasN ? -0.5 : -half;
       const zMax = hasS ? 0.5 : half;
-      strips.push({ x: r.x, z: r.y + (zMin + zMax) / 2, sx: w, sz: zMax - zMin, roadType: r.roadType });
+      strips.push({ x: r.x, z: r.y + (zMin + zMax) / 2, sx: w, sz: zMax - zMin, roadType: r.roadType, srcX: r.x, srcY: r.y });
     }
 
     // Horizontal (E-W) strip
@@ -112,16 +137,16 @@ export function buildRoadStrips(
       const half = w / 2;
       const xMin = hasW ? -0.5 : -half;
       const xMax = hasE ? 0.5 : half;
-      strips.push({ x: r.x + (xMin + xMax) / 2, z: r.y, sx: xMax - xMin, sz: w, roadType: r.roadType });
+      strips.push({ x: r.x + (xMin + xMax) / 2, z: r.y, sx: xMax - xMin, sz: w, roadType: r.roadType, srcX: r.x, srcY: r.y });
     }
 
     // Edge extension
     if (edgeExtend > 0 && mapW > 0 && mapH > 0) {
       const ext = edgeExtend;
-      if (r.y === 0 && hasN) strips.push({ x: r.x, z: r.y - 0.5 - ext / 2, sx: ownW, sz: ext, roadType: r.roadType });
-      if (r.y === mapH - 1 && hasS) strips.push({ x: r.x, z: r.y + 0.5 + ext / 2, sx: ownW, sz: ext, roadType: r.roadType });
-      if (r.x === 0 && hasW) strips.push({ x: r.x - 0.5 - ext / 2, z: r.y, sx: ext, sz: ownW, roadType: r.roadType });
-      if (r.x === mapW - 1 && hasE) strips.push({ x: r.x + 0.5 + ext / 2, z: r.y, sx: ext, sz: ownW, roadType: r.roadType });
+      if (r.y === 0 && hasN) strips.push({ x: r.x, z: r.y - 0.5 - ext / 2, sx: ownW, sz: ext, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      if (r.y === mapH - 1 && hasS) strips.push({ x: r.x, z: r.y + 0.5 + ext / 2, sx: ownW, sz: ext, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      if (r.x === 0 && hasW) strips.push({ x: r.x - 0.5 - ext / 2, z: r.y, sx: ext, sz: ownW, roadType: r.roadType, srcX: r.x, srcY: r.y });
+      if (r.x === mapW - 1 && hasE) strips.push({ x: r.x + 0.5 + ext / 2, z: r.y, sx: ext, sz: ownW, roadType: r.roadType, srcX: r.x, srcY: r.y });
     }
   }
 
@@ -169,10 +194,10 @@ export function buildSidewalkStrips(cells: RoadCell[]): SidewalkStrip[] {
     const te = hasN ? 0.5 : capV;
     const be = hasS ? 0.5 : capV;
 
-    if (!hasN) strips.push({ x: r.x + (re - le) / 2, z: r.y - hHalf, sx: le + re, sz: SIDEWALK_WIDTH });
-    if (!hasS) strips.push({ x: r.x + (re - le) / 2, z: r.y + hHalf, sx: le + re, sz: SIDEWALK_WIDTH });
-    if (!hasW) strips.push({ x: r.x - vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be });
-    if (!hasE) strips.push({ x: r.x + vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be });
+    if (!hasN) strips.push({ x: r.x + (re - le) / 2, z: r.y - hHalf, sx: le + re, sz: SIDEWALK_WIDTH, srcX: r.x, srcY: r.y });
+    if (!hasS) strips.push({ x: r.x + (re - le) / 2, z: r.y + hHalf, sx: le + re, sz: SIDEWALK_WIDTH, srcX: r.x, srcY: r.y });
+    if (!hasW) strips.push({ x: r.x - vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be, srcX: r.x, srcY: r.y });
+    if (!hasE) strips.push({ x: r.x + vHalf, z: r.y + (be - te) / 2, sx: SIDEWALK_WIDTH, sz: te + be, srcX: r.x, srcY: r.y });
   }
 
   return strips;
@@ -208,22 +233,117 @@ export function buildLaneMarkingData(cells: RoadCell[]): LaneMarking[] {
       const intN = intersections.has(`${r.x},${r.y - 1}`);
       const intS = intersections.has(`${r.x},${r.y + 1}`);
       for (const off of offsets) {
-        if (!intN) markings.push({ x: r.x, z: r.y - 0.375, rotY: 0, offsetPerp: off });
-        markings.push({ x: r.x, z: r.y - 0.125, rotY: 0, offsetPerp: off });
-        markings.push({ x: r.x, z: r.y + 0.125, rotY: 0, offsetPerp: off });
-        if (!intS) markings.push({ x: r.x, z: r.y + 0.375, rotY: 0, offsetPerp: off });
+        if (!intN) markings.push({ x: r.x, z: r.y - 0.375, rotY: 0, offsetPerp: off, srcX: r.x, srcY: r.y });
+        markings.push({ x: r.x, z: r.y - 0.125, rotY: 0, offsetPerp: off, srcX: r.x, srcY: r.y });
+        markings.push({ x: r.x, z: r.y + 0.125, rotY: 0, offsetPerp: off, srcX: r.x, srcY: r.y });
+        if (!intS) markings.push({ x: r.x, z: r.y + 0.375, rotY: 0, offsetPerp: off, srcX: r.x, srcY: r.y });
       }
     } else if (hasE && hasW) {
       const intW = intersections.has(`${r.x - 1},${r.y}`);
       const intE = intersections.has(`${r.x + 1},${r.y}`);
       for (const off of offsets) {
-        if (!intW) markings.push({ x: r.x - 0.375, z: r.y, rotY: Math.PI / 2, offsetPerp: off });
-        markings.push({ x: r.x - 0.125, z: r.y, rotY: Math.PI / 2, offsetPerp: off });
-        markings.push({ x: r.x + 0.125, z: r.y, rotY: Math.PI / 2, offsetPerp: off });
-        if (!intE) markings.push({ x: r.x + 0.375, z: r.y, rotY: Math.PI / 2, offsetPerp: off });
+        if (!intW) markings.push({ x: r.x - 0.375, z: r.y, rotY: Math.PI / 2, offsetPerp: off, srcX: r.x, srcY: r.y });
+        markings.push({ x: r.x - 0.125, z: r.y, rotY: Math.PI / 2, offsetPerp: off, srcX: r.x, srcY: r.y });
+        markings.push({ x: r.x + 0.125, z: r.y, rotY: Math.PI / 2, offsetPerp: off, srcX: r.x, srcY: r.y });
+        if (!intE) markings.push({ x: r.x + 0.375, z: r.y, rotY: Math.PI / 2, offsetPerp: off, srcX: r.x, srcY: r.y });
       }
     }
   }
 
   return markings;
+}
+
+/**
+ * Generate crosswalk stripe data for intersection neighbors.
+ * Source cell (srcX/srcY) is the NEIGHBOR where the crosswalk appears, not the intersection.
+ */
+export function buildCrosswalkData(cells: RoadCell[]): CrosswalkStripe[] {
+  const strips: CrosswalkStripe[] = [];
+  const cellMap = new Map<string, RoadCell>();
+  for (const c of cells) cellMap.set(`${c.x},${c.y}`, c);
+
+  const stripeCount = 12;
+  const stripeGap = 0.042;
+  const stripeLen = 0.11;
+  const cwOffset = CW_OFFSET;
+
+  for (const r of cells) {
+    if (countBits(r.roadFlags) < 3) continue;
+
+    const neighbors: [number, number, number][] = [
+      [0, -1, RoadDirection.NORTH],
+      [0,  1, RoadDirection.SOUTH],
+      [1,  0, RoadDirection.EAST],
+      [-1, 0, RoadDirection.WEST],
+    ];
+
+    for (const [dx, dy, dirFlag] of neighbors) {
+      if (!(r.roadFlags & dirFlag)) continue;
+      const nb = cellMap.get(`${r.x + dx},${r.y + dy}`);
+      if (!nb) continue;
+
+      if (dx === 0) {
+        const zPos = nb.y + (-dy) * cwOffset;
+        for (let s = 0; s < stripeCount; s++) {
+          strips.push({
+            x: nb.x - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
+            z: zPos, sx: 0.025, sz: stripeLen,
+            srcX: nb.x, srcY: nb.y,
+          });
+        }
+      } else {
+        const xPos = nb.x + (-dx) * cwOffset;
+        for (let s = 0; s < stripeCount; s++) {
+          strips.push({
+            x: xPos,
+            z: nb.y - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
+            sx: stripeLen, sz: 0.025,
+            srcX: nb.x, srcY: nb.y,
+          });
+        }
+      }
+    }
+  }
+  return strips;
+}
+
+/**
+ * Generate stop line data for intersection neighbors (right-hand drive).
+ * Source cell (srcX/srcY) is the NEIGHBOR where the stop line appears.
+ */
+export function buildStopLineData(cells: RoadCell[]): StopLineData[] {
+  const lines: StopLineData[] = [];
+  const cellMap = new Map<string, RoadCell>();
+  for (const c of cells) cellMap.set(`${c.x},${c.y}`, c);
+
+  const stopOffset = STOP_LINE_OFFSET;
+  const halfLane = 0.15;
+
+  for (const r of cells) {
+    if (countBits(r.roadFlags) < 3) continue;
+
+    const neighbors: [number, number, number][] = [
+      [0, -1, RoadDirection.NORTH],
+      [0,  1, RoadDirection.SOUTH],
+      [1,  0, RoadDirection.EAST],
+      [-1, 0, RoadDirection.WEST],
+    ];
+
+    for (const [dx, dy, dirFlag] of neighbors) {
+      if (!(r.roadFlags & dirFlag)) continue;
+      const nb = cellMap.get(`${r.x + dx},${r.y + dy}`);
+      if (!nb) continue;
+
+      if (dx === 0) {
+        const zPos = nb.y + (-dy) * stopOffset;
+        const laneX = nb.x + dy * halfLane;
+        lines.push({ x: laneX, z: zPos, sx: halfLane * 2, sz: 0.012, srcX: nb.x, srcY: nb.y });
+      } else {
+        const xPos = nb.x + (-dx) * stopOffset;
+        const laneZ = nb.y - dx * halfLane;
+        lines.push({ x: xPos, z: laneZ, sx: 0.012, sz: halfLane * 2, srcX: nb.x, srcY: nb.y });
+      }
+    }
+  }
+  return lines;
 }

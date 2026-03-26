@@ -15,7 +15,7 @@ import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
-import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe, getDirectionFlag } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe, toPosKey, getDirectionFlag } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -307,7 +307,34 @@ export class Game {
   private tickAccumulator = 0;
   private elapsedTime = 0;
   private dirty = new class {
-    roads = true;
+    /** Full road rebuild (load game / disaster). Use markRoadCellsDirty() for incremental. */
+    private _roadsFull = true;
+    private _dirtyRoadCells: Set<string> | null = null;
+    get roads() { return this._roadsFull; }
+    set roads(v: boolean) {
+      if (v) { this._roadsFull = true; this._dirtyRoadCells = null; }
+      else { this._roadsFull = false; this._dirtyRoadCells = null; }
+    }
+    markRoadCellsDirty(cells: string[]): void {
+      if (this._roadsFull) return;
+      if (!this._dirtyRoadCells) this._dirtyRoadCells = new Set();
+      for (const c of cells) this._dirtyRoadCells.add(c);
+    }
+    get dirtyRoadCells(): Set<string> | null { return this._roadsFull ? null : this._dirtyRoadCells; }
+    get hasRoadChanges(): boolean { return this._roadsFull || (this._dirtyRoadCells !== null && this._dirtyRoadCells.size > 0); }
+
+    /** Elevated road incremental update cells. */
+    private _elevatedDirtyCells: string[] | null = null;
+    elevatedRoadsFull = true;
+    markElevatedCellsDirty(cells: string[]): void {
+      if (this.elevatedRoadsFull) return;
+      if (!this._elevatedDirtyCells) this._elevatedDirtyCells = [];
+      this._elevatedDirtyCells.push(...cells);
+    }
+    get elevatedDirtyCells(): string[] | null { return this.elevatedRoadsFull ? null : this._elevatedDirtyCells; }
+    get hasElevatedChanges(): boolean { return this.elevatedRoadsFull || (this._elevatedDirtyCells !== null && this._elevatedDirtyCells.length > 0); }
+    clearElevated(): void { this.elevatedRoadsFull = false; this._elevatedDirtyCells = null; }
+
     tracks = true;
     crossings = true;
     private _buildings = true;
@@ -672,13 +699,20 @@ export class Game {
           }
         }
         if (anyElevatedRemoved) {
-          this.dirty.roads = true;
           this.dirty.tracks = true;
         }
-        // Then demolish ground-level items
+        // Then demolish ground-level items (markAllDirty called inside)
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
         this.simLoop.markLaneGraphDirty([...elevatedKeys, ...demolishedRoadCells, ...buildingCells]);
+        // Restore incremental AFTER demolish's markAllDirty (which sets full rebuild)
+        if (anyElevatedRemoved) {
+          // Normalize "x,y,level" keys to "x,y" for ground road renderer
+          const groundKeys = elevatedKeys.map(k => { const { x, y } = parsePosKeyUnsafe(k); return toPosKey(x, y); });
+          this.dirty.elevatedRoadsFull = false;
+          this.dirty.markElevatedCellsDirty(elevatedKeys);
+          this.dirty.markRoadCellsDirty(groundKeys);
+        }
         this.audioManager.playSfx(SoundType.DEMOLISH);
         break;
       }
@@ -695,9 +729,13 @@ export class Game {
               this.currentRoadType, this.state.budget.funds, this.elevationLevel,
             );
             this.handleBuildResult(result, 'elevated road', () => {
-              if (result.affectedCells) this.simLoop.markLaneGraphDirty(result.affectedCells, true);
+              if (result.affectedCells) {
+                this.simLoop.markLaneGraphDirty(result.affectedCells, true);
+                this.dirty.markElevatedCellsDirty(result.affectedCells);
+                // Ramp connects to ground → update ground road visuals at affected positions
+                this.dirty.markRoadCellsDirty(result.affectedCells);
+              }
             });
-            this.dirty.roads = true;
           } else {
             const result = this.roadBuilder.buildRoad(
               { x: x1, y: y1 }, { x: x2, y: y2 },
@@ -705,8 +743,10 @@ export class Game {
               this.state.budget.funds,
             );
             this.handleBuildResult(result, 'road', () => {
-              this.simLoop.markLaneGraphDirty([...result.affectedCells, ...(result.demolishedCells ?? [])], true);
+              const allAffected = [...result.affectedCells, ...(result.demolishedCells ?? [])];
+              this.simLoop.markLaneGraphDirty(allAffected, true);
               this.roadCoverageDirty = true;
+              this.dirty.markRoadCellsDirty(allAffected);
               if (result.demolishedCells) {
                 for (const pos of result.demolishedCells) {
                   this.state.citizens.evictBuilding(pos, this.state.clock.tick);
@@ -715,7 +755,6 @@ export class Game {
                 }
               }
             });
-            this.dirty.roads = true;
             this.dirty.crossings = true;
             this.dirty.trafficLights = true;
           }
@@ -774,6 +813,7 @@ export class Game {
 
   private markAllDirty(): void {
     this.dirty.roads = true;
+    this.dirty.elevatedRoadsFull = true;
     this.dirty.tracks = true;
     this.dirty.crossings = true;
     this.dirty.terrain = true;
@@ -848,7 +888,7 @@ export class Game {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     const demolished = new Set<string>(); // track already-demolished multi-cell buildings
     const evictCells: string[] = []; // cells whose citizens need eviction
-    let hadRoadDemolished = false;
+    const affectedRoadCells: string[] = []; // road cells affected by demolition
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
@@ -875,10 +915,10 @@ export class Game {
             break;
           case 'regular':
             if (cell && cell.buildingId !== 0) evictCells.push(`${x},${y}`);
-            if (cell && cell.roadType !== RoadType.NONE) hadRoadDemolished = true;
             if (action.hasTrack) this.railBuilder.removeTrack(x, y);
             if (cell && cell.roadType !== RoadType.NONE) {
-              this.roadBuilder.removeRoad(x, y);
+              const removed = this.roadBuilder.removeRoad(x, y);
+              affectedRoadCells.push(...removed);
             }
             this.state.grid.setCell(x, y, {
               zoneType: ZoneType.NONE, buildingId: 0, reserved: 0,
@@ -895,10 +935,16 @@ export class Game {
       this.buildingRenderer.removeBuilding(px!, py!);
       this.simLoop.clearBuildingState(px!, py!);
     }
-    if (hadRoadDemolished) {
+    if (affectedRoadCells.length > 0) {
       this.roadCoverageDirty = true;
     }
     this.markAllDirty();
+    // Mark specific road cells dirty AFTER markAllDirty (which sets roads=true for full rebuild).
+    // When road cells are known, downgrade to incremental by clearing full flag first.
+    if (affectedRoadCells.length > 0) {
+      this.dirty.roads = false;
+      this.dirty.markRoadCellsDirty(affectedRoadCells);
+    }
     this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
 
     // Refresh overlay cache after demolish
@@ -1209,14 +1255,27 @@ export class Game {
   /** Rebuild renderer meshes for each dirty subsystem, then clear dirty flags. */
   private rebuildDirtySubsystems(): void {
     const d = this.dirty;
-    const anyDirty = d.roads || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
+    const anyDirty = d.hasRoadChanges || d.hasElevatedChanges || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
     if (!anyDirty) return;
 
-    if (d.roads) {
-      this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
-      this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
+    if (d.hasRoadChanges) {
+      const dirtyCells = d.dirtyRoadCells;
+      if (dirtyCells === null) {
+        this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
+      } else if (dirtyCells.size > 0) {
+        this.roadRenderer.updateCells(this.state.grid, [...dirtyCells]);
+      }
       if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
       d.roads = false;
+    }
+    if (d.hasElevatedChanges) {
+      const elevCells = d.elevatedDirtyCells;
+      if (elevCells === null) {
+        this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
+      } else if (elevCells.length > 0) {
+        this.elevatedRoadRenderer.updateCells(this.sceneManager.scene, this.state.grid, this.elevationManager, elevCells);
+      }
+      d.clearElevated();
     }
     if (d.tracks) {
       this.trackRenderer.build(this.sceneManager.scene, this.state.grid);

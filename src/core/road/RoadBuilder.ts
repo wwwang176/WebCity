@@ -101,9 +101,12 @@ export class RoadBuilder {
     };
   }
 
-  removeRoad(x: number, y: number): void {
+  /** Remove road at (x,y) and update neighbor flags. Returns affected cell keys. */
+  removeRoad(x: number, y: number): string[] {
     const cell = this.grid.getCell(x, y);
-    if (!cell || cell.roadType === RoadType.NONE) return;
+    if (!cell || cell.roadType === RoadType.NONE) return [];
+
+    const affected = [toPosKey(x, y)];
 
     // Remove from network
     if (this.network) {
@@ -126,8 +129,10 @@ export class RoadBuilder {
         if (maxType > 0) {
           this.grid.setCell(nx, ny, { roadType: maxType });
         }
+        affected.push(toPosKey(nx, ny));
       }
     }
+    return affected;
   }
 
   /** Find the max roadType among connected neighbors based on flags. */

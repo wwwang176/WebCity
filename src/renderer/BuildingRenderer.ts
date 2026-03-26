@@ -898,6 +898,9 @@ export class BuildingRenderer {
   // Light spot system (fake ground glow near buildings at night)
   private lightSpotMesh: THREE.InstancedMesh | null = null;
   private lightSpotMaterial: THREE.MeshBasicMaterial | null = null;
+  private lightSpotPosToIdx = new Map<string, number>();
+  private lightSpotIdxToPos: string[] = [];
+  private lightSpotCount = 0;
 
   // Pre-allocated temp objects (avoid per-call allocation)
   private _matrix = new THREE.Matrix4();
@@ -995,6 +998,9 @@ export class BuildingRenderer {
     const posKey = `${x},${y}`;
     this.positionToInstance.set(posKey, { key, idx });
     this.instanceToPosition.get(key)!.set(idx, posKey);
+
+    // Sync lightSpot (non-burned, non-abandoned buildings emit light)
+    if (!burned && !abandoned) this.addLightSpot(x, y);
   }
 
   /** Remove a single zone building instance (swap-with-last). */
@@ -1044,6 +1050,9 @@ export class BuildingRenderer {
     mesh.count = lastIdx;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    // Sync lightSpot removal
+    this.removeLightSpot(x, y);
   }
 
   /** Update an existing building's level or burned/abandoned state in-place. */
@@ -1056,6 +1065,10 @@ export class BuildingRenderer {
     this.setInstanceData(mesh, entry.idx, x, y, zoneType, level, burned, abandoned);
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    // Sync lightSpot: burned/abandoned → remove, normal → add
+    if (burned || abandoned) this.removeLightSpot(x, y);
+    else this.addLightSpot(x, y);
   }
 
   /** Set matrix + color for a single instance. */
@@ -1134,6 +1147,7 @@ export class BuildingRenderer {
     this.infraGroups.push(group);
     this.infraIndex.set(`${x},${y}`, group);
     this._buildingMeshesDirty = true;
+    this.addLightSpot(x, y);
   }
 
   /** Remove a single infrastructure building from the scene (O(1), no full rebuild). */
@@ -1149,6 +1163,7 @@ export class BuildingRenderer {
     if (idx >= 0) this.infraGroups.splice(idx, 1);
     this.infraIndex.delete(key);
     this._buildingMeshesDirty = true;
+    this.removeLightSpot(x, y);
   }
 
   /** Rebuild only zone overlay meshes (cheap grid scan + InstancedMesh creation). */
@@ -3073,14 +3088,14 @@ export class BuildingRenderer {
     scene.add(m);
   }
 
-  private buildLightSpots(scene: THREE.Scene, positions: { x: number; y: number }[]): void {
-    if (positions.length === 0) return;
+  /** Initialize pre-allocated lightSpotMesh (called once). */
+  private initLightSpotMesh(scene: THREE.Scene): void {
+    if (this.lightSpotMesh) return;
 
     const glowRadius = 0.3;
     const glowSegs = 10;
     const geometry = new THREE.CircleGeometry(glowRadius, glowSegs);
     geometry.rotateX(-Math.PI / 2);
-    // Radial gradient: center bright, edges fade to black
     const posAttr = geometry.attributes.position!;
     const vColors = new Float32Array(posAttr.count * 3);
     for (let i = 0; i < posAttr.count; i++) {
@@ -3103,20 +3118,62 @@ export class BuildingRenderer {
       depthWrite: false,
     });
 
-    const count = Math.min(positions.length, this.maxPerVariant);
-    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, count);
+    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, this.maxPerVariant);
+    this.lightSpotMesh.count = 0;
     this.lightSpotMesh.frustumCulled = false;
     this.lightSpotMesh.renderOrder = 2;
-
-    const matrix = new THREE.Matrix4();
-    for (let i = 0; i < count; i++) {
-      const p = positions[i]!;
-      matrix.setPosition(p.x, 0.03, p.y);
-      this.lightSpotMesh.setMatrixAt(i, matrix);
-    }
-    this.lightSpotMesh.instanceMatrix.needsUpdate = true;
-
+    this.lightSpotPosToIdx.clear();
+    this.lightSpotIdxToPos.length = 0;
+    this.lightSpotCount = 0;
     scene.add(this.lightSpotMesh);
+  }
+
+  /** Populate lightSpots from positions (used by build). */
+  private buildLightSpots(scene: THREE.Scene, positions: { x: number; y: number }[]): void {
+    this.initLightSpotMesh(scene);
+    for (const p of positions) {
+      this.addLightSpot(p.x, p.y);
+    }
+  }
+
+  /** Add a single lightSpot at (x, y). O(1). */
+  addLightSpot(x: number, y: number): void {
+    if (!this.lightSpotMesh || this.lightSpotCount >= this.maxPerVariant) return;
+    const posKey = `${x},${y}`;
+    if (this.lightSpotPosToIdx.has(posKey)) return; // already exists
+
+    const idx = this.lightSpotCount;
+    this._matrix.identity();
+    this._matrix.setPosition(x, 0.03, y);
+    this.lightSpotMesh.setMatrixAt(idx, this._matrix);
+    this.lightSpotPosToIdx.set(posKey, idx);
+    this.lightSpotIdxToPos[idx] = posKey;
+    this.lightSpotCount++;
+    this.lightSpotMesh.count = this.lightSpotCount;
+    this.lightSpotMesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Remove a single lightSpot at (x, y). O(1) swap-with-last. */
+  removeLightSpot(x: number, y: number): void {
+    if (!this.lightSpotMesh) return;
+    const posKey = `${x},${y}`;
+    const idx = this.lightSpotPosToIdx.get(posKey);
+    if (idx === undefined) return;
+
+    const lastIdx = this.lightSpotCount - 1;
+    if (idx !== lastIdx) {
+      // Swap with last
+      this.lightSpotMesh.getMatrixAt(lastIdx, this._matrix);
+      this.lightSpotMesh.setMatrixAt(idx, this._matrix);
+      const movedKey = this.lightSpotIdxToPos[lastIdx]!;
+      this.lightSpotPosToIdx.set(movedKey, idx);
+      this.lightSpotIdxToPos[idx] = movedKey;
+    }
+    this.lightSpotPosToIdx.delete(posKey);
+    this.lightSpotIdxToPos.length = lastIdx;
+    this.lightSpotCount--;
+    this.lightSpotMesh.count = this.lightSpotCount;
+    this.lightSpotMesh.instanceMatrix.needsUpdate = true;
   }
 
   /** Update per-instance occupancy attribute from occupancy ratio map. */
@@ -3310,13 +3367,14 @@ export class BuildingRenderer {
     this.infraGroups = [];
     this.infraIndex.clear();
 
+    // Reset lightSpot tracking (mesh kept alive for incremental reuse)
     if (this.lightSpotMesh) {
-      scene.remove(this.lightSpotMesh);
-      this.lightSpotMesh.geometry.dispose();
-      if (this.lightSpotMaterial) this.lightSpotMaterial.dispose();
-      this.lightSpotMesh = null;
-      this.lightSpotMaterial = null;
+      this.lightSpotMesh.count = 0;
+      this.lightSpotMesh.instanceMatrix.needsUpdate = true;
     }
+    this.lightSpotPosToIdx.clear();
+    this.lightSpotIdxToPos.length = 0;
+    this.lightSpotCount = 0;
   }
 
   /** Full dispose including persistent variant meshes (game exit / cleanup). */
