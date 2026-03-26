@@ -699,15 +699,18 @@ export class Game {
           }
         }
         if (anyElevatedRemoved) {
-          this.dirty.markElevatedCellsDirty(elevatedKeys);
-          // Ramp removal affects ground road visuals at those positions
-          this.dirty.markRoadCellsDirty(elevatedKeys);
           this.dirty.tracks = true;
         }
-        // Then demolish ground-level items
+        // Then demolish ground-level items (markAllDirty called inside)
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
         this.simLoop.markLaneGraphDirty([...elevatedKeys, ...demolishedRoadCells, ...buildingCells]);
+        // Restore incremental AFTER demolish's markAllDirty (which sets full rebuild)
+        if (anyElevatedRemoved) {
+          this.dirty.elevatedRoadsFull = false;
+          this.dirty.markElevatedCellsDirty(elevatedKeys);
+          this.dirty.markRoadCellsDirty(elevatedKeys);
+        }
         this.audioManager.playSfx(SoundType.DEMOLISH);
         break;
       }
