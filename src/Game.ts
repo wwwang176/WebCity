@@ -864,7 +864,7 @@ export class Game {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
     const demolished = new Set<string>(); // track already-demolished multi-cell buildings
     const evictCells: string[] = []; // cells whose citizens need eviction
-    let hadRoadDemolished = false;
+    const affectedRoadCells: string[] = []; // road cells affected by demolition
     for (let y = minY; y <= maxY; y++) {
       for (let x = minX; x <= maxX; x++) {
         const cell = this.state.grid.getCell(x, y);
@@ -891,10 +891,10 @@ export class Game {
             break;
           case 'regular':
             if (cell && cell.buildingId !== 0) evictCells.push(`${x},${y}`);
-            if (cell && cell.roadType !== RoadType.NONE) hadRoadDemolished = true;
             if (action.hasTrack) this.railBuilder.removeTrack(x, y);
             if (cell && cell.roadType !== RoadType.NONE) {
-              this.roadBuilder.removeRoad(x, y);
+              const removed = this.roadBuilder.removeRoad(x, y);
+              affectedRoadCells.push(...removed);
             }
             this.state.grid.setCell(x, y, {
               zoneType: ZoneType.NONE, buildingId: 0, reserved: 0,
@@ -911,10 +911,16 @@ export class Game {
       this.buildingRenderer.removeBuilding(px!, py!);
       this.simLoop.clearBuildingState(px!, py!);
     }
-    if (hadRoadDemolished) {
+    if (affectedRoadCells.length > 0) {
       this.roadCoverageDirty = true;
     }
     this.markAllDirty();
+    // Mark specific road cells dirty AFTER markAllDirty (which sets roads=true for full rebuild).
+    // When road cells are known, downgrade to incremental by clearing full flag first.
+    if (affectedRoadCells.length > 0) {
+      this.dirty.roads = false;
+      this.dirty.markRoadCellsDirty(affectedRoadCells);
+    }
     this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
 
     // Refresh overlay cache after demolish
