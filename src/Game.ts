@@ -323,6 +323,18 @@ export class Game {
     get dirtyRoadCells(): Set<string> | null { return this._roadsFull ? null : this._dirtyRoadCells; }
     get hasRoadChanges(): boolean { return this._roadsFull || (this._dirtyRoadCells !== null && this._dirtyRoadCells.size > 0); }
 
+    /** Elevated road incremental update cells. */
+    private _elevatedDirtyCells: string[] | null = null;
+    elevatedRoadsFull = true;
+    markElevatedCellsDirty(cells: string[]): void {
+      if (this.elevatedRoadsFull) return;
+      if (!this._elevatedDirtyCells) this._elevatedDirtyCells = [];
+      this._elevatedDirtyCells.push(...cells);
+    }
+    get elevatedDirtyCells(): string[] | null { return this.elevatedRoadsFull ? null : this._elevatedDirtyCells; }
+    get hasElevatedChanges(): boolean { return this.elevatedRoadsFull || (this._elevatedDirtyCells !== null && this._elevatedDirtyCells.length > 0); }
+    clearElevated(): void { this.elevatedRoadsFull = false; this._elevatedDirtyCells = null; }
+
     tracks = true;
     crossings = true;
     private _buildings = true;
@@ -687,7 +699,9 @@ export class Game {
           }
         }
         if (anyElevatedRemoved) {
-          this.dirty.roads = true;
+          this.dirty.markElevatedCellsDirty(elevatedKeys);
+          // Ramp removal affects ground road visuals at those positions
+          this.dirty.markRoadCellsDirty(elevatedKeys);
           this.dirty.tracks = true;
         }
         // Then demolish ground-level items
@@ -710,9 +724,13 @@ export class Game {
               this.currentRoadType, this.state.budget.funds, this.elevationLevel,
             );
             this.handleBuildResult(result, 'elevated road', () => {
-              if (result.affectedCells) this.simLoop.markLaneGraphDirty(result.affectedCells, true);
+              if (result.affectedCells) {
+                this.simLoop.markLaneGraphDirty(result.affectedCells, true);
+                this.dirty.markElevatedCellsDirty(result.affectedCells);
+                // Ramp connects to ground → update ground road visuals at affected positions
+                this.dirty.markRoadCellsDirty(result.affectedCells);
+              }
             });
-            this.dirty.roads = true;
           } else {
             const result = this.roadBuilder.buildRoad(
               { x: x1, y: y1 }, { x: x2, y: y2 },
@@ -790,6 +808,7 @@ export class Game {
 
   private markAllDirty(): void {
     this.dirty.roads = true;
+    this.dirty.elevatedRoadsFull = true;
     this.dirty.tracks = true;
     this.dirty.crossings = true;
     this.dirty.terrain = true;
@@ -1234,18 +1253,24 @@ export class Game {
     const anyDirty = d.hasRoadChanges || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
     if (!anyDirty) return;
 
-    if (d.hasRoadChanges) {
+    if (d.hasRoadChanges || d.hasElevatedChanges) {
+      // Ground roads
       const dirtyCells = d.dirtyRoadCells;
       if (dirtyCells === null) {
-        // Full rebuild (load game, disaster, markAllDirty)
         this.roadRenderer.build(this.sceneManager.scene, this.state.grid);
-        this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
-      } else {
-        // Incremental update (ground roads only; elevated roads unchanged)
+      } else if (dirtyCells.size > 0) {
         this.roadRenderer.updateCells(this.state.grid, [...dirtyCells]);
+      }
+      // Elevated roads
+      const elevCells = d.elevatedDirtyCells;
+      if (elevCells === null) {
+        this.elevatedRoadRenderer.build(this.sceneManager.scene, this.state.grid, this.elevationManager);
+      } else if (elevCells.length > 0) {
+        this.elevatedRoadRenderer.updateCells(this.sceneManager.scene, this.state.grid, this.elevationManager, elevCells);
       }
       if (this.viewMode !== ViewMode.NORMAL) this.roadRenderer.setViewMode(this.viewMode);
       d.roads = false;
+      d.clearElevated();
     }
     if (d.tracks) {
       this.trackRenderer.build(this.sceneManager.scene, this.state.grid);

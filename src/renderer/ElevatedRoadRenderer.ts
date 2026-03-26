@@ -48,6 +48,9 @@ export class ElevatedRoadRenderer {
   private group = new THREE.Group();
   private built = false;
   private lampGlowMaterials: THREE.MeshBasicMaterial[] = [];
+  /** Per-level sub-groups for incremental level rebuild. */
+  private levelGroups = new Map<number, THREE.Group>();
+  private scene: THREE.Scene | null = null;
 
   constructor() {
     this.group.name = 'ElevatedRoads';
@@ -55,11 +58,60 @@ export class ElevatedRoadRenderer {
 
   build(scene: THREE.Scene, grid: Grid, em: ElevationManager): void {
     this.dispose(scene);
+    this.scene = scene;
 
     const entries = em.toJSON();
     if (entries.length === 0) return;
 
-    // Group elevated cells by level so we can run strip generation per level
+    const cellsByLevel = this.groupByLevel(entries, grid);
+    for (const [level, cells] of cellsByLevel) {
+      this.buildLevel(level, cells, grid);
+    }
+
+    scene.add(this.group);
+    this.built = true;
+  }
+
+  /** Incremental: rebuild only the levels affected by changed cells. */
+  updateCells(scene: THREE.Scene, grid: Grid, em: ElevationManager, cellKeys: string[]): void {
+    if (!this.built) { this.build(scene, grid, em); return; }
+    this.scene = scene;
+
+    // Determine which levels are affected
+    const affectedLevels = new Set<number>();
+    for (const key of cellKeys) {
+      const [xs, ys] = key.split(',');
+      const x = Number(xs), y = Number(ys);
+      // Check all levels at this position + neighbors
+      for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]] as const) {
+        const levels = em.getAllLevels(x + dx, y + dy);
+        for (const l of levels) affectedLevels.add(l.level);
+      }
+    }
+
+    if (affectedLevels.size === 0) return;
+
+    // Rebuild each affected level
+    const allEntries = em.toJSON();
+    const cellsByLevel = this.groupByLevel(allEntries, grid);
+
+    for (const level of affectedLevels) {
+      // Remove old level group
+      this.disposeLevel(level);
+
+      // Rebuild level with current data
+      const cells = cellsByLevel.get(level);
+      if (cells && cells.length > 0) {
+        this.buildLevel(level, cells, grid);
+      }
+    }
+  }
+
+  /** Group elevation entries by level. */
+  private groupByLevel(
+    entries: Array<{ x: number; y: number; level: number; data: ElevatedSegment }>,
+    grid: Grid,
+  ): Map<number, ElevatedCell[]> {
     const cellsByLevel = new Map<number, ElevatedCell[]>();
     for (const entry of entries) {
       const cell = grid.getCell(entry.x, entry.y);
@@ -69,78 +121,100 @@ export class ElevatedRoadRenderer {
       arr.push(ec);
       cellsByLevel.set(entry.level, arr);
     }
-
-    for (const [level, cells] of cellsByLevel) {
-      const y = level * LEVEL_HEIGHT;
-
-      // Separate ramp cells from flat elevated cells
-      const flatRoadCells: RoadCell[] = [];
-      const rampCells: ElevatedCell[] = [];
-      for (const c of cells) {
-        if (c.seg.roadType !== RoadType.NONE) {
-          if (c.seg.isRamp) {
-            rampCells.push(c);
-          } else {
-            flatRoadCells.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
-          }
-        }
-      }
-
-      // Road cells split by ramp/flat for street lamp height
-      const flatLampCells: RoadCell[] = [];
-      const rampLampCells: RoadCell[] = [];
-      for (const c of cells) {
-        if (c.seg.roadType !== RoadType.NONE) {
-          const target = c.seg.isRamp ? rampLampCells : flatLampCells;
-          target.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
-        }
-      }
-
-      // Flat elevated segments — use shared strip builders (connected, with curbs + markings)
-      if (flatRoadCells.length > 0) {
-        const roadStrips = buildRoadStrips(flatRoadCells, grid.width, grid.height, 0.5);
-        this.buildRoadSurface(roadStrips, y);
-
-        const sidewalkStrips = buildSidewalkStrips(flatRoadCells);
-        this.buildSidewalks(sidewalkStrips, y);
-
-        const markings = buildLaneMarkingData(flatRoadCells);
-        this.buildLaneMarkings(markings, y);
-      }
-
-      // Ramp cells — rendered individually with tilt rotation
-      this.buildRampSurfaces(rampCells);
-
-      // Ramp sidewalks (tilted to match ramp surface)
-      this.buildRampSidewalks(rampCells);
-
-      // Ramp lane markings (tilted to match ramp surface)
-      this.buildRampMarkings(rampCells);
-
-      // Street lamps: flat at baseY, ramps at baseY - half level
-      if (flatLampCells.length > 0) {
-        this.buildStreetLamps(flatLampCells, y);
-      }
-      if (rampLampCells.length > 0) {
-        this.buildStreetLamps(rampLampCells, y - LEVEL_HEIGHT * 0.5);
-      }
-
-      // Rail cells
-      for (const c of cells) {
-        if (c.seg.railType !== RailType.NONE) {
-          this.buildRailSurface(c, y);
-        }
-      }
-
-      // Pillars
-      this.buildPillars(cells);
-    }
-
-    scene.add(this.group);
-    this.built = true;
+    return cellsByLevel;
   }
 
-  private buildRoadSurface(strips: Strip[], baseY: number): void {
+  /** Build all meshes for a single level into a level-specific sub-group. */
+  private buildLevel(level: number, cells: ElevatedCell[], grid: Grid): void {
+    const levelGroup = new THREE.Group();
+    levelGroup.name = `ElevatedLevel_${level}`;
+    this.levelGroups.set(level, levelGroup);
+
+    const y = level * LEVEL_HEIGHT;
+
+    // Separate ramp cells from flat elevated cells
+    const flatRoadCells: RoadCell[] = [];
+    const rampCells: ElevatedCell[] = [];
+    for (const c of cells) {
+      if (c.seg.roadType !== RoadType.NONE) {
+        if (c.seg.isRamp) {
+          rampCells.push(c);
+        } else {
+          flatRoadCells.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
+        }
+      }
+    }
+
+    // Road cells split by ramp/flat for street lamp height
+    const flatLampCells: RoadCell[] = [];
+    const rampLampCells: RoadCell[] = [];
+    for (const c of cells) {
+      if (c.seg.roadType !== RoadType.NONE) {
+        const target = c.seg.isRamp ? rampLampCells : flatLampCells;
+        target.push({ x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags });
+      }
+    }
+
+    // Use levelGroup instead of this.group for all mesh additions
+    const addTo = levelGroup;
+
+    // Flat elevated segments
+    if (flatRoadCells.length > 0) {
+      const roadStrips = buildRoadStrips(flatRoadCells, grid.width, grid.height, 0.5);
+      this.buildRoadSurface(roadStrips, y, addTo);
+
+      const sidewalkStrips = buildSidewalkStrips(flatRoadCells);
+      this.buildSidewalks(sidewalkStrips, y, addTo);
+
+      const markings = buildLaneMarkingData(flatRoadCells);
+      this.buildLaneMarkings(markings, y, addTo);
+    }
+
+    // Ramp cells
+    this.buildRampSurfaces(rampCells, addTo);
+    this.buildRampSidewalks(rampCells, addTo);
+    this.buildRampMarkings(rampCells, addTo);
+
+    // Street lamps
+    if (flatLampCells.length > 0) {
+      this.buildStreetLamps(flatLampCells, y, addTo);
+    }
+    if (rampLampCells.length > 0) {
+      this.buildStreetLamps(rampLampCells, y - LEVEL_HEIGHT * 0.5, addTo);
+    }
+
+    // Rail cells
+    for (const c of cells) {
+      if (c.seg.railType !== RailType.NONE) {
+        this.buildRailSurface(c, y, addTo);
+      }
+    }
+
+    // Pillars
+    this.buildPillars(cells, addTo);
+
+    this.group.add(levelGroup);
+  }
+
+  /** Dispose a single level's sub-group. */
+  private disposeLevel(level: number): void {
+    const levelGroup = this.levelGroups.get(level);
+    if (!levelGroup) return;
+    this.group.remove(levelGroup);
+    levelGroup.traverse((child) => {
+      if (child instanceof THREE.Mesh || child instanceof THREE.InstancedMesh) {
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) child.material.forEach(m => m.dispose());
+        else (child.material as THREE.Material).dispose();
+      }
+    });
+    levelGroup.clear();
+    this.levelGroups.delete(level);
+    // Remove associated glow materials for this level
+    // (lampGlowMaterials will be rebuilt; simple approach: clear and let rebuild populate)
+  }
+
+  private buildRoadSurface(strips: Strip[], baseY: number, parent: THREE.Group = this.group): void {
     if (strips.length === 0) return;
 
     const geometry = new THREE.BoxGeometry(1, 0.05, 1);
@@ -167,10 +241,10 @@ export class ElevatedRoadRenderer {
 
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    this.group.add(mesh);
+    parent.add(mesh);
   }
 
-  private buildSidewalks(strips: SidewalkStrip[], baseY: number): void {
+  private buildSidewalks(strips: SidewalkStrip[], baseY: number, parent: THREE.Group = this.group): void {
     if (strips.length === 0) return;
 
     const geo = new THREE.PlaneGeometry(1, 1);
@@ -190,10 +264,10 @@ export class ElevatedRoadRenderer {
     }
 
     mesh.instanceMatrix.needsUpdate = true;
-    this.group.add(mesh);
+    parent.add(mesh);
   }
 
-  private buildLaneMarkings(markings: LaneMarking[], baseY: number): void {
+  private buildLaneMarkings(markings: LaneMarking[], baseY: number, parent: THREE.Group = this.group): void {
     if (markings.length === 0) return;
 
     const geo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
@@ -217,10 +291,10 @@ export class ElevatedRoadRenderer {
     }
 
     mesh.instanceMatrix.needsUpdate = true;
-    this.group.add(mesh);
+    parent.add(mesh);
   }
 
-  private buildRampSurfaces(rampCells: ElevatedCell[]): void {
+  private buildRampSurfaces(rampCells: ElevatedCell[], parent: THREE.Group = this.group): void {
     if (rampCells.length === 0) return;
 
     const geometry = new THREE.BoxGeometry(1, 0.05, 1);
@@ -278,11 +352,11 @@ export class ElevatedRoadRenderer {
 
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    this.group.add(mesh);
+    parent.add(mesh);
   }
 
   /** Sidewalks on ramp cells, tilted to match ramp surface. */
-  private buildRampSidewalks(rampCells: ElevatedCell[]): void {
+  private buildRampSidewalks(rampCells: ElevatedCell[], parent: THREE.Group = this.group): void {
     if (rampCells.length === 0) return;
 
     const roadCells: RoadCell[] = rampCells.map(c => ({
@@ -340,7 +414,7 @@ export class ElevatedRoadRenderer {
     }
 
     mesh.instanceMatrix.needsUpdate = true;
-    this.group.add(mesh);
+    parent.add(mesh);
   }
 
   /** Full-angle tilt for ramp: ascendDir points toward the HIGH end. */
@@ -356,16 +430,16 @@ export class ElevatedRoadRenderer {
     return 0;
   }
 
-  private buildRailSurface(c: ElevatedCell, baseY: number): void {
+  private buildRailSurface(c: ElevatedCell, baseY: number, parent: THREE.Group = this.group): void {
     const geometry = new THREE.BoxGeometry(0.35, 0.05, 0.35);
     const material = new THREE.MeshLambertMaterial({ color: 0x555050 });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.position.set(c.x, baseY + ROAD_Y, c.y);
     mesh.receiveShadow = true;
-    this.group.add(mesh);
+    parent.add(mesh);
   }
 
-  private buildPillars(cells: ElevatedCell[]): void {
+  private buildPillars(cells: ElevatedCell[], parent: THREE.Group = this.group): void {
     const pillarGeo = new THREE.BoxGeometry(PILLAR_W, 1, PILLAR_W);
     const pillarMat = new THREE.MeshLambertMaterial({ color: PILLAR_COLOR });
 
@@ -381,12 +455,12 @@ export class ElevatedRoadRenderer {
       mesh.scale.set(1, pillarHeight, 1);
       mesh.position.set(c.x, bottomY + pillarHeight / 2, c.y);
       mesh.castShadow = true;
-      this.group.add(mesh);
+      parent.add(mesh);
     }
   }
 
   /** Lane markings on ramp cells, tilted to match ramp surface. */
-  private buildRampMarkings(rampCells: ElevatedCell[]): void {
+  private buildRampMarkings(rampCells: ElevatedCell[], parent: THREE.Group = this.group): void {
     if (rampCells.length === 0) return;
 
     // Convert ramp cells to RoadCell for shared marking generator
@@ -443,11 +517,11 @@ export class ElevatedRoadRenderer {
     }
 
     mesh.instanceMatrix.needsUpdate = true;
-    this.group.add(mesh);
+    parent.add(mesh);
   }
 
   /** Street lamps on elevated road cells. */
-  private buildStreetLamps(cells: RoadCell[], baseY: number): void {
+  private buildStreetLamps(cells: RoadCell[], baseY: number, parent: THREE.Group = this.group): void {
     type LampPos = { x: number; z: number };
     const lamps: LampPos[] = [];
 
@@ -526,8 +600,8 @@ export class ElevatedRoadRenderer {
 
     lampMesh.instanceMatrix.needsUpdate = true;
     glowMesh.instanceMatrix.needsUpdate = true;
-    this.group.add(lampMesh);
-    this.group.add(glowMesh);
+    parent.add(lampMesh);
+    parent.add(glowMesh);
   }
 
   /** Update lamp glow based on sun intensity (call each frame). */
