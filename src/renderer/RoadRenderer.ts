@@ -4,15 +4,18 @@ import { Grid } from '../core/grid/Grid';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
-import { SIDEWALK_WIDTH, CW_OFFSET } from '../core/traffic/SidewalkGraph';
-import { STOP_LINE_OFFSET } from '../core/traffic/VehicleLookahead';
+import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 import {
   ROAD_WIDTHS,
   buildRoadStrips,
   buildSidewalkStrips,
   buildLaneMarkingData,
+  buildCrosswalkData,
+  buildStopLineData,
   type RoadCell,
 } from './RoadStripBuilder';
+import { RoadInstanceTracker } from './RoadInstanceTracker';
+import { toPosKey, parsePosKeyUnsafe } from '../core/grid/GridHelpers';
 
 // Re-export for backwards compatibility
 export { ROAD_WIDTHS } from './RoadStripBuilder';
@@ -21,11 +24,8 @@ const ROAD_Y = 0.025;
 const SIDEWALK_Y = 0.028;
 const MARKING_Y = 0.052;
 
-function countBits(n: number): number {
-  let c = 0;
-  while (n) { c += n & 1; n >>= 1; }
-  return c;
-}
+/** Multipliers for max capacity per mesh type (relative to maxRoads). */
+const CAP = { road: 3, sidewalk: 4, marking: 14, crosswalk: 50, stopLine: 4, lamp: 4, lampGlow: 4 } as const;
 
 export class RoadRenderer {
   private roadMesh: THREE.InstancedMesh | null = null;
@@ -36,11 +36,157 @@ export class RoadRenderer {
   private lampMesh: THREE.InstancedMesh | null = null;
   private lampGlowMesh: THREE.InstancedMesh | null = null;
   private lampGlowMaterial: THREE.MeshBasicMaterial | null = null;
-  private readonly maxRoads = 10000;
+
+  // Instance trackers (null until initMeshes)
+  private roadTracker: RoadInstanceTracker | null = null;
+  private sidewalkTracker: RoadInstanceTracker | null = null;
+  private markingTracker: RoadInstanceTracker | null = null;
+  private crosswalkTracker: RoadInstanceTracker | null = null;
+  private stopLineTracker: RoadInstanceTracker | null = null;
+  private lampTracker: RoadInstanceTracker | null = null;
+  private lampGlowTracker: RoadInstanceTracker | null = null;
+
+  private scene: THREE.Scene | null = null;
+  private gridWidth = 0;
+  private gridHeight = 0;
+  private maxRoads = 10000;
+  private initialized = false;
+
+  /** Length of the visual road extension beyond the map edge. */
+  private static readonly EDGE_EXTEND = 0.5;
+
+  // ─── Pre-allocated mesh initialization ─────────────────────────
+
+  private initMeshes(scene: THREE.Scene, gridW: number, gridH: number): void {
+    if (this.initialized) return;
+    this.scene = scene;
+    this.gridWidth = gridW;
+    this.gridHeight = gridH;
+    this.maxRoads = Math.min(Math.ceil(gridW * gridH * 0.4), 20000);
+
+    // Road surface
+    const roadGeo = new THREE.BoxGeometry(1, 0.05, 1);
+    const roadMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
+    injectHighlightShader(roadMat);
+    this.roadMesh = new THREE.InstancedMesh(roadGeo, roadMat, this.maxRoads * CAP.road);
+    this.roadMesh.count = 0;
+    addHighlightAttribute(this.roadMesh);
+    this.roadMesh.receiveShadow = true;
+    this.roadMesh.frustumCulled = false;
+    scene.add(this.roadMesh);
+    this.roadTracker = new RoadInstanceTracker(this.roadMesh, this.maxRoads * CAP.road);
+
+    // Sidewalks
+    const swGeo = new THREE.PlaneGeometry(1, 1);
+    swGeo.rotateX(-Math.PI / 2);
+    const swMat = new THREE.MeshLambertMaterial({ color: 0x707070 });
+    injectHighlightShader(swMat);
+    this.sidewalkMesh = new THREE.InstancedMesh(swGeo, swMat, this.maxRoads * CAP.sidewalk);
+    this.sidewalkMesh.count = 0;
+    addHighlightAttribute(this.sidewalkMesh);
+    this.sidewalkMesh.receiveShadow = true;
+    this.sidewalkMesh.frustumCulled = false;
+    scene.add(this.sidewalkMesh);
+    this.sidewalkTracker = new RoadInstanceTracker(this.sidewalkMesh, this.maxRoads * CAP.sidewalk);
+
+    // Lane markings
+    const mkGeo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
+    const mkMat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+    injectHighlightShader(mkMat);
+    this.markingMesh = new THREE.InstancedMesh(mkGeo, mkMat, this.maxRoads * CAP.marking);
+    this.markingMesh.count = 0;
+    addHighlightAttribute(this.markingMesh);
+    this.markingMesh.frustumCulled = false;
+    scene.add(this.markingMesh);
+    this.markingTracker = new RoadInstanceTracker(this.markingMesh, this.maxRoads * CAP.marking);
+
+    // Crosswalks
+    const cwGeo = new THREE.BoxGeometry(1, 0.005, 1);
+    const cwMat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
+    injectHighlightShader(cwMat);
+    this.crosswalkMesh = new THREE.InstancedMesh(cwGeo, cwMat, this.maxRoads * CAP.crosswalk);
+    this.crosswalkMesh.count = 0;
+    addHighlightAttribute(this.crosswalkMesh);
+    this.crosswalkMesh.frustumCulled = false;
+    scene.add(this.crosswalkMesh);
+    this.crosswalkTracker = new RoadInstanceTracker(this.crosswalkMesh, this.maxRoads * CAP.crosswalk);
+
+    // Stop lines
+    const slGeo = new THREE.BoxGeometry(1, 0.005, 1);
+    const slMat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
+    injectHighlightShader(slMat);
+    this.stopLineMesh = new THREE.InstancedMesh(slGeo, slMat, this.maxRoads * CAP.stopLine);
+    this.stopLineMesh.count = 0;
+    addHighlightAttribute(this.stopLineMesh);
+    this.stopLineMesh.frustumCulled = false;
+    scene.add(this.stopLineMesh);
+    this.stopLineTracker = new RoadInstanceTracker(this.stopLineMesh, this.maxRoads * CAP.stopLine);
+
+    // Street lamps
+    const poleH = 0.28;
+    const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4);
+    pole.translate(0, poleH / 2, 0);
+    const head = new THREE.SphereGeometry(0.018, 4, 3);
+    head.translate(0, poleH + 0.01, 0);
+    const merged = mergeGeometries([pole, head]);
+    pole.dispose();
+    head.dispose();
+    if (merged) {
+      const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+      injectHighlightShader(lampMat);
+      this.lampMesh = new THREE.InstancedMesh(merged, lampMat, this.maxRoads * CAP.lamp);
+      this.lampMesh.count = 0;
+      addHighlightAttribute(this.lampMesh);
+      this.lampMesh.castShadow = true;
+      this.lampMesh.frustumCulled = false;
+      scene.add(this.lampMesh);
+      this.lampTracker = new RoadInstanceTracker(this.lampMesh, this.maxRoads * CAP.lamp);
+
+      // Lamp glow
+      const glowSegs = 12;
+      const glowRadius = 0.4;
+      const glowGeo = new THREE.CircleGeometry(glowRadius, glowSegs);
+      glowGeo.rotateX(-Math.PI / 2);
+      const posAttr = glowGeo.attributes.position!;
+      const vColors = new Float32Array(posAttr.count * 3);
+      for (let i = 0; i < posAttr.count; i++) {
+        const px = posAttr.getX(i);
+        const pz = posAttr.getZ(i);
+        const dist = Math.sqrt(px * px + pz * pz) / glowRadius;
+        const brightness = Math.max(0, 1 - dist);
+        vColors[i * 3] = brightness;
+        vColors[i * 3 + 1] = brightness;
+        vColors[i * 3 + 2] = brightness;
+      }
+      glowGeo.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
+      this.lampGlowMaterial = new THREE.MeshBasicMaterial({
+        color: 0xffdd88, vertexColors: true, transparent: true, opacity: 0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      this.lampGlowMesh = new THREE.InstancedMesh(glowGeo, this.lampGlowMaterial, this.maxRoads * CAP.lampGlow);
+      this.lampGlowMesh.count = 0;
+      this.lampGlowMesh.frustumCulled = false;
+      this.lampGlowMesh.renderOrder = 2;
+      scene.add(this.lampGlowMesh);
+      this.lampGlowTracker = new RoadInstanceTracker(this.lampGlowMesh, this.maxRoads * CAP.lampGlow);
+    }
+
+    this.initialized = true;
+    this._highlightDirty = true;
+  }
+
+  // ─── Full rebuild (load game / disaster) ───────────────────────
 
   build(scene: THREE.Scene, grid: Grid): void {
-    this.dispose(scene);
+    if (this.initialized) {
+      // Clear all trackers but keep meshes
+      this.clearAllTrackers();
+    } else {
+      this.dispose(scene);
+      this.initMeshes(scene, grid.width, grid.height);
+    }
 
+    // Collect all road cells
     const roadCells: RoadCell[] = [];
     for (let y = 0; y < grid.height; y++) {
       for (let x = 0; x < grid.width; x++) {
@@ -53,271 +199,209 @@ export class RoadRenderer {
 
     if (roadCells.length === 0) return;
 
-    this.buildRoadSurface(scene, roadCells, grid.width, grid.height);
-    this.buildSidewalks(scene, roadCells);
-    this.buildLaneMarkings(scene, roadCells);
-    this.buildCrosswalkMarkings(scene, roadCells);
-    this.buildStopLines(scene, roadCells);
-    this.buildStreetLamps(scene, roadCells);
+    // Populate all trackers via the shared populateCells logic
+    this.populateCells(roadCells, new Set(roadCells.map(c => toPosKey(c.x, c.y))));
   }
 
-  /** Length of the visual road extension beyond the map edge. */
-  private static readonly EDGE_EXTEND = 0.5;
+  // ─── Incremental update ────────────────────────────────────────
 
-  private buildRoadSurface(scene: THREE.Scene, cells: RoadCell[], mapW: number, mapH: number): void {
-    const strips = buildRoadStrips(cells, mapW, mapH, RoadRenderer.EDGE_EXTEND);
-    if (strips.length === 0) return;
+  /** Update visuals for specific cells + their neighbors (O(affected) not O(all roads)). */
+  updateCells(grid: Grid, changedCellKeys: string[]): void {
+    if (!this.initialized || !this.scene) return;
 
-    const geometry = new THREE.BoxGeometry(1, 0.05, 1);
-    const material = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
-    injectHighlightShader(material);
-    const count = Math.min(strips.length, this.maxRoads * 2);
-    this.roadMesh = new THREE.InstancedMesh(geometry, material, count);
-    addHighlightAttribute(this.roadMesh);
-    this.roadMesh.receiveShadow = true;
-    this.roadMesh.frustumCulled = false;
-
-    const matrix = new THREE.Matrix4();
-    const color = new THREE.Color();
-
-    for (let i = 0; i < count; i++) {
-      const s = strips[i]!;
-
-      matrix.makeScale(s.sx, 1, s.sz);
-      matrix.setPosition(s.x, ROAD_Y, s.z);
-      this.roadMesh.setMatrixAt(i, matrix);
-
-      // Asphalt color varies by road type
-      const cfg = ROAD_CONFIGS[s.roadType as keyof typeof ROAD_CONFIGS];
-      const base = cfg ? Math.max(0.18, 0.30 - cfg.lanes * 0.02) : 0.25;
-      color.setRGB(base, base, base + 0.01);
-      this.roadMesh.setColorAt(i, color);
+    // 1. Expand dirty set: changed cells + 1-ring cardinal neighbors
+    const dirtySet = new Set<string>();
+    for (const key of changedCellKeys) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      dirtySet.add(key);
+      if (x > 0) dirtySet.add(toPosKey(x - 1, y));
+      if (x < this.gridWidth - 1) dirtySet.add(toPosKey(x + 1, y));
+      if (y > 0) dirtySet.add(toPosKey(x, y - 1));
+      if (y < this.gridHeight - 1) dirtySet.add(toPosKey(x, y + 1));
     }
 
-    this.roadMesh.instanceMatrix.needsUpdate = true;
-    if (this.roadMesh.instanceColor) this.roadMesh.instanceColor.needsUpdate = true;
-    scene.add(this.roadMesh);
-  }
-
-  private buildSidewalks(scene: THREE.Scene, cells: RoadCell[]): void {
-    const strips = buildSidewalkStrips(cells);
-    if (strips.length === 0) return;
-
-    const geo = new THREE.PlaneGeometry(1, 1);
-    geo.rotateX(-Math.PI / 2); // lay flat
-    const mat = new THREE.MeshLambertMaterial({ color: 0x707070 });
-    injectHighlightShader(mat);
-    const count = Math.min(strips.length, this.maxRoads * 4);
-    this.sidewalkMesh = new THREE.InstancedMesh(geo, mat, count);
-    addHighlightAttribute(this.sidewalkMesh);
-    this.sidewalkMesh.receiveShadow = true;
-    this.sidewalkMesh.frustumCulled = false;
-
-    const matrix = new THREE.Matrix4();
-    for (let i = 0; i < count; i++) {
-      const s = strips[i]!;
-      matrix.makeScale(s.sx, 1, s.sz);
-      matrix.setPosition(s.x, SIDEWALK_Y, s.z);
-      this.sidewalkMesh.setMatrixAt(i, matrix);
+    // 2. Crosswalk/stopLine need 2-ring expansion (they depend on neighbor's intersection status)
+    const cwDirtySet = new Set(dirtySet);
+    for (const key of dirtySet) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      if (x > 0) cwDirtySet.add(toPosKey(x - 1, y));
+      if (x < this.gridWidth - 1) cwDirtySet.add(toPosKey(x + 1, y));
+      if (y > 0) cwDirtySet.add(toPosKey(x, y - 1));
+      if (y < this.gridHeight - 1) cwDirtySet.add(toPosKey(x, y + 1));
     }
 
-    this.sidewalkMesh.instanceMatrix.needsUpdate = true;
-    scene.add(this.sidewalkMesh);
+    // 3. Remove old instances for all dirty cells
+    for (const key of dirtySet) {
+      this.roadTracker?.removeCell(key);
+      this.sidewalkTracker?.removeCell(key);
+      this.markingTracker?.removeCell(key);
+      this.lampTracker?.removeCell(key);
+      this.lampGlowTracker?.removeCell(key);
+    }
+    for (const key of cwDirtySet) {
+      this.crosswalkTracker?.removeCell(key);
+      this.stopLineTracker?.removeCell(key);
+    }
+
+    // 4. Gather context cells (dirty + their neighbors for strip builder context)
+    const contextKeys = new Set(cwDirtySet);
+    for (const key of cwDirtySet) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      if (x > 0) contextKeys.add(toPosKey(x - 1, y));
+      if (x < this.gridWidth - 1) contextKeys.add(toPosKey(x + 1, y));
+      if (y > 0) contextKeys.add(toPosKey(x, y - 1));
+      if (y < this.gridHeight - 1) contextKeys.add(toPosKey(x, y + 1));
+    }
+
+    const contextCells: RoadCell[] = [];
+    for (const key of contextKeys) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      const cell = grid.getCell(x, y);
+      if (cell && cell.roadType !== RoadType.NONE) {
+        contextCells.push({ x, y, roadType: cell.roadType, roadFlags: cell.roadFlags });
+      }
+    }
+
+    if (contextCells.length === 0) return;
+
+    // 5. Populate only dirty cells (using context for neighbor lookups)
+    this.populateCells(contextCells, dirtySet, cwDirtySet);
   }
 
-  private buildLaneMarkings(scene: THREE.Scene, cells: RoadCell[]): void {
-    const markings = buildLaneMarkingData(cells);
-    if (markings.length === 0) return;
+  // ─── Shared populate logic ─────────────────────────────────────
 
-    // Dashed center line: ~12cm wide, ~1.2m long per dash
-    const geo = new THREE.BoxGeometry(0.01, 0.005, 0.1);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
-    injectHighlightShader(mat);
-    const count = Math.min(markings.length, this.maxRoads * 3);
-    this.markingMesh = new THREE.InstancedMesh(geo, mat, count);
-    addHighlightAttribute(this.markingMesh);
-    this.markingMesh.frustumCulled = false;
-
+  /**
+   * Generate strips from contextCells and write instances for cells in targetKeys.
+   * @param contextCells All cells needed for strip builder context (targets + neighbors)
+   * @param targetKeys Only cells in this set get instances written (road/sidewalk/marking/lamp)
+   * @param cwTargetKeys Cells to write crosswalk/stopLine instances for (defaults to targetKeys)
+   */
+  private populateCells(contextCells: RoadCell[], targetKeys: Set<string>, cwTargetKeys?: Set<string>): void {
+    const cwKeys = cwTargetKeys ?? targetKeys;
     const matrix = new THREE.Matrix4();
     const rot = new THREE.Matrix4();
+    const color = new THREE.Color();
 
-    for (let i = 0; i < count; i++) {
-      const m = markings[i]!;
-      // Apply perpendicular offset: for N-S road (rotY=0), offset is in X; for E-W (rotY=PI/2), offset is in Z
-      const perpX = m.rotY === 0 ? m.offsetPerp : 0;
-      const perpZ = m.rotY !== 0 ? m.offsetPerp : 0;
-      matrix.makeTranslation(m.x + perpX, MARKING_Y, m.z + perpZ);
-      if (m.rotY !== 0) {
-        rot.makeRotationY(m.rotY);
-        matrix.multiply(rot);
+    // Road surface strips
+    const strips = buildRoadStrips(contextCells, this.gridWidth, this.gridHeight, RoadRenderer.EDGE_EXTEND);
+    // Group by source cell
+    const stripsByCell = new Map<string, typeof strips>();
+    for (const s of strips) {
+      const key = toPosKey(s.srcX, s.srcY);
+      if (!targetKeys.has(key)) continue;
+      const arr = stripsByCell.get(key);
+      if (arr) arr.push(s);
+      else stripsByCell.set(key, [s]);
+    }
+    for (const [cellKey, cellStrips] of stripsByCell) {
+      const start = this.roadTracker!.addCell(cellKey, cellStrips.length);
+      if (start < 0) continue;
+      for (let i = 0; i < cellStrips.length; i++) {
+        const s = cellStrips[i]!;
+        matrix.makeScale(s.sx, 1, s.sz);
+        matrix.setPosition(s.x, ROAD_Y, s.z);
+        this.roadMesh!.setMatrixAt(start + i, matrix);
+        const cfg = ROAD_CONFIGS[s.roadType as keyof typeof ROAD_CONFIGS];
+        const base = cfg ? Math.max(0.18, 0.30 - cfg.lanes * 0.02) : 0.25;
+        color.setRGB(base, base, base + 0.01);
+        this.roadMesh!.setColorAt(start + i, color);
       }
-      this.markingMesh.setMatrixAt(i, matrix);
     }
 
-    this.markingMesh.instanceMatrix.needsUpdate = true;
-    scene.add(this.markingMesh);
-  }
+    // Sidewalks
+    const sidewalks = buildSidewalkStrips(contextCells);
+    const swByCell = new Map<string, typeof sidewalks>();
+    for (const s of sidewalks) {
+      const key = toPosKey(s.srcX, s.srcY);
+      if (!targetKeys.has(key)) continue;
+      const arr = swByCell.get(key);
+      if (arr) arr.push(s);
+      else swByCell.set(key, [s]);
+    }
+    for (const [cellKey, cellSw] of swByCell) {
+      const start = this.sidewalkTracker!.addCell(cellKey, cellSw.length);
+      if (start < 0) continue;
+      for (let i = 0; i < cellSw.length; i++) {
+        const s = cellSw[i]!;
+        matrix.makeScale(s.sx, 1, s.sz);
+        matrix.setPosition(s.x, SIDEWALK_Y, s.z);
+        this.sidewalkMesh!.setMatrixAt(start + i, matrix);
+      }
+    }
 
-  private buildCrosswalkMarkings(scene: THREE.Scene, cells: RoadCell[]): void {
-    // Crosswalks go on the neighboring cells that connect INTO an intersection
-    type CWStrip = { x: number; z: number; sx: number; sz: number };
-    const strips: CWStrip[] = [];
-
-    // Build lookup for quick neighbor check
-    const cellMap = new Map<string, RoadCell>();
-    for (const c of cells) cellMap.set(`${c.x},${c.y}`, c);
-
-    const stripeCount = 12;
-    const stripeGap = 0.042;
-    const stripeLen = 0.11;
-    // Place stripes near the end of the cell closest to the intersection
-    const cwOffset = CW_OFFSET;
-
-    for (const r of cells) {
-      const connections = countBits(r.roadFlags);
-      if (connections < 3) continue; // only intersections
-
-      // For each direction connected to this intersection,
-      // place crosswalk on that neighbor cell, near the intersection end
-      const neighbors: [number, number, number, number][] = [
-        // [dx, dy, dirFlag, dirFromNeighbor] — neighbor coords & which direction faces intersection
-        // N neighbor is at (x, y-1), crosswalk at its south end (z + offset)
-        [0, -1, RoadDirection.NORTH, RoadDirection.SOUTH],
-        [0,  1, RoadDirection.SOUTH, RoadDirection.NORTH],
-        [1,  0, RoadDirection.EAST,  RoadDirection.WEST],
-        [-1, 0, RoadDirection.WEST,  RoadDirection.EAST],
-      ];
-
-      for (const [dx, dy, dirFlag] of neighbors) {
-        if (!(r.roadFlags & dirFlag)) continue;
-        const nb = cellMap.get(`${r.x + dx},${r.y + dy}`);
-        if (!nb) continue;
-
-        // Crosswalk is perpendicular to the road direction
-        if (dx === 0) {
-          // Vertical road neighbor — crosswalk is horizontal stripes
-          const zPos = nb.y + (-dy) * cwOffset; // near intersection end
-          for (let s = 0; s < stripeCount; s++) {
-            strips.push({
-              x: nb.x - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
-              z: zPos,
-              sx: 0.025, sz: stripeLen,
-            });
-          }
-        } else {
-          // Horizontal road neighbor — crosswalk is vertical stripes
-          const xPos = nb.x + (-dx) * cwOffset;
-          for (let s = 0; s < stripeCount; s++) {
-            strips.push({
-              x: xPos,
-              z: nb.y - (stripeCount - 1) * stripeGap / 2 + s * stripeGap,
-              sx: stripeLen, sz: 0.025,
-            });
-          }
+    // Lane markings
+    const markings = buildLaneMarkingData(contextCells);
+    const mkByCell = new Map<string, typeof markings>();
+    for (const m of markings) {
+      const key = toPosKey(m.srcX, m.srcY);
+      if (!targetKeys.has(key)) continue;
+      const arr = mkByCell.get(key);
+      if (arr) arr.push(m);
+      else mkByCell.set(key, [m]);
+    }
+    for (const [cellKey, cellMk] of mkByCell) {
+      const start = this.markingTracker!.addCell(cellKey, cellMk.length);
+      if (start < 0) continue;
+      for (let i = 0; i < cellMk.length; i++) {
+        const m = cellMk[i]!;
+        const perpX = m.rotY === 0 ? m.offsetPerp : 0;
+        const perpZ = m.rotY !== 0 ? m.offsetPerp : 0;
+        matrix.makeTranslation(m.x + perpX, MARKING_Y, m.z + perpZ);
+        if (m.rotY !== 0) {
+          rot.makeRotationY(m.rotY);
+          matrix.multiply(rot);
         }
+        this.markingMesh!.setMatrixAt(start + i, matrix);
       }
     }
 
-    if (strips.length === 0) return;
-
-    const geo = new THREE.BoxGeometry(1, 0.005, 1);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
-    injectHighlightShader(mat);
-    const count = Math.min(strips.length, this.maxRoads * 4);
-    this.crosswalkMesh = new THREE.InstancedMesh(geo, mat, count);
-    addHighlightAttribute(this.crosswalkMesh);
-    this.crosswalkMesh.frustumCulled = false;
-
-    const matrix = new THREE.Matrix4();
-    for (let i = 0; i < count; i++) {
-      const s = strips[i]!;
-      matrix.makeScale(s.sx, 1, s.sz);
-      matrix.setPosition(s.x, MARKING_Y, s.z);
-      this.crosswalkMesh.setMatrixAt(i, matrix);
+    // Crosswalks
+    const cwStripes = buildCrosswalkData(contextCells);
+    const cwByCell = new Map<string, typeof cwStripes>();
+    for (const s of cwStripes) {
+      const key = toPosKey(s.srcX, s.srcY);
+      if (!cwKeys.has(key)) continue;
+      const arr = cwByCell.get(key);
+      if (arr) arr.push(s);
+      else cwByCell.set(key, [s]);
     }
-
-    this.crosswalkMesh.instanceMatrix.needsUpdate = true;
-    scene.add(this.crosswalkMesh);
-  }
-
-  private buildStopLines(scene: THREE.Scene, cells: RoadCell[]): void {
-    // Stop lines on cells adjacent to intersections (right-hand drive = drive on LEFT)
-    // Stop line is on the LEFT half of the road (incoming lane), between crosswalk and intersection
-    type StopLine = { x: number; z: number; sx: number; sz: number };
-    const lines: StopLine[] = [];
-
-    const cellMap = new Map<string, RoadCell>();
-    for (const c of cells) cellMap.set(`${c.x},${c.y}`, c);
-
-    // Stop line position: closer to intersection than crosswalk
-    // Crosswalk is at cwOffset=0.35 from center, stop line at 0.25 (between crosswalk and intersection)
-    const stopOffset = STOP_LINE_OFFSET;
-    const halfLane = 0.15; // half the road width for one lane side
-
-    for (const r of cells) {
-      const connections = countBits(r.roadFlags);
-      if (connections < 3) continue;
-
-      const neighbors: [number, number, number][] = [
-        [0, -1, RoadDirection.NORTH],
-        [0,  1, RoadDirection.SOUTH],
-        [1,  0, RoadDirection.EAST],
-        [-1, 0, RoadDirection.WEST],
-      ];
-
-      for (const [dx, dy, dirFlag] of neighbors) {
-        if (!(r.roadFlags & dirFlag)) continue;
-        const nb = cellMap.get(`${r.x + dx},${r.y + dy}`);
-        if (!nb) continue;
-
-        if (dx === 0) {
-          // Vertical road: stop line is horizontal, on LEFT side (right-hand drive)
-          // Vehicle approaching from south (dy=1): drives on left (x - offset)
-          // Vehicle approaching from north (dy=-1): drives on left (x + offset) — wait, right-hand drive means left side of road
-          const zPos = nb.y + (-dy) * stopOffset;
-          // Right-hand drive: incoming lane is on the LEFT side of the road
-          // For N→S traffic (dy=-1, approaching intersection from north): left side = +x
-          // For S→N traffic (dy=1, approaching intersection from south): left side = -x
-          const laneX = nb.x + dy * halfLane;
-          lines.push({ x: laneX, z: zPos, sx: halfLane * 2, sz: 0.012 });
-        } else {
-          // Horizontal road: stop line is vertical, on LEFT side
-          const xPos = nb.x + (-dx) * stopOffset;
-          // For W→E traffic (dx=1): left side = -z
-          // For E→W traffic (dx=-1): left side = +z
-          const laneZ = nb.y - dx * halfLane;
-          lines.push({ x: xPos, z: laneZ, sx: 0.012, sz: halfLane * 2 });
-        }
+    for (const [cellKey, cellCw] of cwByCell) {
+      const start = this.crosswalkTracker!.addCell(cellKey, cellCw.length);
+      if (start < 0) continue;
+      for (let i = 0; i < cellCw.length; i++) {
+        const s = cellCw[i]!;
+        matrix.makeScale(s.sx, 1, s.sz);
+        matrix.setPosition(s.x, MARKING_Y, s.z);
+        this.crosswalkMesh!.setMatrixAt(start + i, matrix);
       }
     }
 
-    if (lines.length === 0) return;
-
-    const geo = new THREE.BoxGeometry(1, 0.005, 1);
-    const mat = new THREE.MeshLambertMaterial({ color: 0xbbbbbb });
-    injectHighlightShader(mat);
-    const count = Math.min(lines.length, this.maxRoads * 4);
-    this.stopLineMesh = new THREE.InstancedMesh(geo, mat, count);
-    addHighlightAttribute(this.stopLineMesh);
-    this.stopLineMesh.frustumCulled = false;
-
-    const matrix = new THREE.Matrix4();
-    for (let i = 0; i < count; i++) {
-      const s = lines[i]!;
-      matrix.makeScale(s.sx, 1, s.sz);
-      matrix.setPosition(s.x, MARKING_Y, s.z);
-      this.stopLineMesh.setMatrixAt(i, matrix);
+    // Stop lines
+    const slData = buildStopLineData(contextCells);
+    const slByCell = new Map<string, typeof slData>();
+    for (const s of slData) {
+      const key = toPosKey(s.srcX, s.srcY);
+      if (!cwKeys.has(key)) continue;
+      const arr = slByCell.get(key);
+      if (arr) arr.push(s);
+      else slByCell.set(key, [s]);
+    }
+    for (const [cellKey, cellSl] of slByCell) {
+      const start = this.stopLineTracker!.addCell(cellKey, cellSl.length);
+      if (start < 0) continue;
+      for (let i = 0; i < cellSl.length; i++) {
+        const s = cellSl[i]!;
+        matrix.makeScale(s.sx, 1, s.sz);
+        matrix.setPosition(s.x, MARKING_Y, s.z);
+        this.stopLineMesh!.setMatrixAt(start + i, matrix);
+      }
     }
 
-    this.stopLineMesh.instanceMatrix.needsUpdate = true;
-    scene.add(this.stopLineMesh);
-  }
+    // Street lamps (+ glow) — no strip builder, inline logic
+    for (const r of contextCells) {
+      const key = toPosKey(r.x, r.y);
+      if (!targetKeys.has(key)) continue;
 
-  private buildStreetLamps(scene: THREE.Scene, cells: RoadCell[]): void {
-    type LampPos = { x: number; z: number };
-    const lamps: LampPos[] = [];
-
-    for (const r of cells) {
       const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
       const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
       const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
@@ -326,80 +410,54 @@ export class RoadRenderer {
       const ownW = ROAD_WIDTHS[r.roadType] ?? 0.6;
       const half = ownW / 2 + SIDEWALK_WIDTH / 2;
 
-      // Place lamp on BOTH sides of each open sidewalk edge
-      if (!hasN) lamps.push({ x: r.x, z: r.y - half });
-      if (!hasS) lamps.push({ x: r.x, z: r.y + half });
-      if (!hasW) lamps.push({ x: r.x - half, z: r.y });
-      if (!hasE) lamps.push({ x: r.x + half, z: r.y });
+      const lamps: { lx: number; lz: number }[] = [];
+      if (!hasN) lamps.push({ lx: r.x, lz: r.y - half });
+      if (!hasS) lamps.push({ lx: r.x, lz: r.y + half });
+      if (!hasW) lamps.push({ lx: r.x - half, lz: r.y });
+      if (!hasE) lamps.push({ lx: r.x + half, lz: r.y });
+
+      if (lamps.length > 0 && this.lampTracker && this.lampGlowTracker) {
+        const lampStart = this.lampTracker.addCell(key, lamps.length);
+        const glowStart = this.lampGlowTracker.addCell(key, lamps.length);
+        if (lampStart >= 0 && glowStart >= 0) {
+          for (let i = 0; i < lamps.length; i++) {
+            const p = lamps[i]!;
+            matrix.identity();
+            matrix.setPosition(p.lx, SIDEWALK_Y, p.lz);
+            this.lampMesh!.setMatrixAt(lampStart + i, matrix);
+            matrix.setPosition(p.lx, 0.055, p.lz);
+            this.lampGlowMesh!.setMatrixAt(glowStart + i, matrix);
+          }
+        }
+      }
     }
 
-    if (lamps.length === 0) return;
-
-    // Lamp pole + head geometry — real street lamp ~8m, 1 cell = 12m → 0.67 units
-    const poleH = 0.28;  // ~3.4m pole height
-    const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4);
-    pole.translate(0, poleH / 2, 0);
-    const head = new THREE.SphereGeometry(0.018, 4, 3);
-    head.translate(0, poleH + 0.01, 0);
-    const merged = mergeGeometries([pole, head]);
-    pole.dispose();
-    head.dispose();
-    if (!merged) return;
-
-    const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
-    injectHighlightShader(lampMat);
-    const count = Math.min(lamps.length, this.maxRoads * 4);
-    this.lampMesh = new THREE.InstancedMesh(merged, lampMat, count);
-    addHighlightAttribute(this.lampMesh);
-    this.lampMesh.castShadow = true;
-    this.lampMesh.frustumCulled = false;
-
-    // Ground glow disc with radial gradient (center bright, edges fade out)
-    const glowSegs = 12;
-    const glowRadius = 0.4;
-    const glowGeo = new THREE.CircleGeometry(glowRadius, glowSegs);
-    glowGeo.rotateX(-Math.PI / 2);
-    // Apply vertex colors: center vertex = white, edge vertices = black
-    const posAttr = glowGeo.attributes.position!;
-    const vColors = new Float32Array(posAttr.count * 3);
-    for (let i = 0; i < posAttr.count; i++) {
-      const px = posAttr.getX(i);
-      const pz = posAttr.getZ(i);
-      const dist = Math.sqrt(px * px + pz * pz) / glowRadius;
-      const brightness = Math.max(0, 1 - dist);
-      vColors[i * 3] = brightness;
-      vColors[i * 3 + 1] = brightness;
-      vColors[i * 3 + 2] = brightness;
-    }
-    glowGeo.setAttribute('color', new THREE.BufferAttribute(vColors, 3));
-
-    this.lampGlowMaterial = new THREE.MeshBasicMaterial({
-      color: 0xffdd88,
-      vertexColors: true,
-      transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    this.lampGlowMesh = new THREE.InstancedMesh(glowGeo, this.lampGlowMaterial, count);
-    this.lampGlowMesh.frustumCulled = false;
-    this.lampGlowMesh.renderOrder = 2;
-
-    const matrix = new THREE.Matrix4();
-    for (let i = 0; i < count; i++) {
-      const p = lamps[i]!;
-      matrix.identity();
-      matrix.setPosition(p.x, SIDEWALK_Y, p.z);
-      this.lampMesh.setMatrixAt(i, matrix);
-      matrix.setPosition(p.x, 0.055, p.z);
-      this.lampGlowMesh.setMatrixAt(i, matrix);
-    }
-
-    this.lampMesh.instanceMatrix.needsUpdate = true;
-    this.lampGlowMesh.instanceMatrix.needsUpdate = true;
-    scene.add(this.lampMesh);
-    scene.add(this.lampGlowMesh);
+    // Mark all meshes as needing GPU upload
+    this.markAllNeedsUpdate();
   }
+
+  private markAllNeedsUpdate(): void {
+    const meshes = [this.roadMesh, this.sidewalkMesh, this.markingMesh,
+      this.crosswalkMesh, this.stopLineMesh, this.lampMesh, this.lampGlowMesh];
+    for (const m of meshes) {
+      if (m) {
+        m.instanceMatrix.needsUpdate = true;
+        if (m.instanceColor) m.instanceColor.needsUpdate = true;
+      }
+    }
+  }
+
+  private clearAllTrackers(): void {
+    this.roadTracker?.clear();
+    this.sidewalkTracker?.clear();
+    this.markingTracker?.clear();
+    this.crosswalkTracker?.clear();
+    this.stopLineTracker?.clear();
+    this.lampTracker?.clear();
+    this.lampGlowTracker?.clear();
+  }
+
+  // ─── Frame update ──────────────────────────────────────────────
 
   private _focusMode = false;
 
@@ -446,11 +504,11 @@ export class RoadRenderer {
     this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
   }
 
-  /** Cached highlight meshes (invalidated on build/dispose). */
+  // ─── Highlight support ─────────────────────────────────────────
+
   private _highlightCache: THREE.InstancedMesh[] = [];
   private _highlightDirty = true;
 
-  /** All InstancedMeshes with highlight support (for HighlightManager). */
   get highlightMeshes(): readonly THREE.InstancedMesh[] {
     if (this._highlightDirty) {
       this._highlightDirty = false;
@@ -465,6 +523,8 @@ export class RoadRenderer {
     }
     return this._highlightCache;
   }
+
+  // ─── Disposal ──────────────────────────────────────────────────
 
   dispose(scene: THREE.Scene): void {
     const meshes = [
@@ -486,6 +546,14 @@ export class RoadRenderer {
     this.lampMesh = null;
     this.lampGlowMesh = null;
     this.lampGlowMaterial = null;
+    this.roadTracker = null;
+    this.sidewalkTracker = null;
+    this.markingTracker = null;
+    this.crosswalkTracker = null;
+    this.stopLineTracker = null;
+    this.lampTracker = null;
+    this.lampGlowTracker = null;
+    this.initialized = false;
     this._highlightDirty = true;
   }
 }
