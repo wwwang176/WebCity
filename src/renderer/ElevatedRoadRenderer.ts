@@ -390,7 +390,10 @@ export class ElevatedRoadRenderer {
       if (lamps.length > 0) {
         const ls = ld.lampTracker.addCell(key, lamps.length);
         const gs = ld.lampGlowTracker.addCell(key, lamps.length);
-        if (ls >= 0 && gs >= 0) {
+        if (ls < 0 || gs < 0) {
+          if (ls >= 0) ld.lampTracker.removeCell(key);
+          if (gs >= 0) ld.lampGlowTracker.removeCell(key);
+        } else {
           for (let i = 0; i < lamps.length; i++) {
             const p = lamps[i]!;
             matrix.identity(); matrix.setPosition(p.lx, lampY + SIDEWALK_Y, p.lz);

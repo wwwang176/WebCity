@@ -419,7 +419,10 @@ export class RoadRenderer {
       if (lamps.length > 0 && this.lampTracker && this.lampGlowTracker) {
         const lampStart = this.lampTracker.addCell(key, lamps.length);
         const glowStart = this.lampGlowTracker.addCell(key, lamps.length);
-        if (lampStart >= 0 && glowStart >= 0) {
+        if (lampStart < 0 || glowStart < 0) {
+          if (lampStart >= 0) this.lampTracker.removeCell(key);
+          if (glowStart >= 0) this.lampGlowTracker.removeCell(key);
+        } else {
           for (let i = 0; i < lamps.length; i++) {
             const p = lamps[i]!;
             matrix.identity();
