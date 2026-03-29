@@ -357,8 +357,10 @@ export class ElevatedRoadRenderer {
               const along = (m.x - c.x) * ax + (m.z - c.y) * ay;
               const markY = ((c.level - 0.5) + along) * LEVEL_HEIGHT + MARKING_Y;
               matrix.makeTranslation(m.x + perpX, markY, m.z + perpZ);
-              const tiltAngle = getRampTiltX(ascend) || getRampTiltZ(ascend);
-              if (tiltAngle !== 0) { rot.makeRotationX(tiltAngle); matrix.multiply(rot); }
+              const tiltX = getRampTiltX(ascend);
+              const tiltZ = getRampTiltZ(ascend);
+              if (tiltX !== 0) { rot.makeRotationX(tiltX); matrix.multiply(rot); }
+              if (tiltZ !== 0) { rot.makeRotationZ(tiltZ); matrix.multiply(rot); }
               if (m.rotY !== 0) { rot.makeRotationY(m.rotY); matrix.multiply(rot); }
               ld.markingMesh.setMatrixAt(start + i, matrix);
             }
