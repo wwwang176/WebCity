@@ -2249,8 +2249,10 @@ export class Game {
       // Skip cells that already have road/elevated (no ghost over existing)
       if (this.placementMode === 'elevated') {
         if (this.elevationManager.get(c.x, c.y, this.elevationLevel)) continue;
-        // Non-ramp cells: skip if ground road exists
-        if (!isRamp) {
+        // Ground connection points (origin/landing): skip if ground road already exists
+        const isGroundConnection =
+          (i === 0 && startRampCount > 0) || (i === last && endRampCount > 0);
+        if (!isRamp && isGroundConnection) {
           const existing = this.state.grid.getCell(c.x, c.y);
           if (existing && existing.roadType !== RoadType.NONE) continue;
         }
