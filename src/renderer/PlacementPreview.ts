@@ -170,19 +170,22 @@ export class PlacementPreview {
     cells: RoadCell[],
     rampCells?: { x: number; y: number; level: number; ascendDir: number; roadType: number }[],
     baseY = 0,
+    valid = true,
   ): void {
     this.disposeGhost();
     this.currentType = '__road_drag__';
     this.currentRotation = 0;
 
-    if (cells.length < 1) return;
+    if (cells.length < 1 && (!rampCells || rampCells.length === 0)) return;
 
     this.group = new THREE.Group();
+    const roadColor = valid ? 0x888888 : 0xff4444;
+    const swColor = valid ? 0xaaaaaa : 0xff6666;
     const ghostMat = new THREE.MeshBasicMaterial({
-      color: 0x888888, transparent: true, opacity: GHOST_OPACITY, depthWrite: false,
+      color: roadColor, transparent: true, opacity: GHOST_OPACITY, depthWrite: false,
     });
     const sidewalkMat = new THREE.MeshBasicMaterial({
-      color: 0xaaaaaa, transparent: true, opacity: GHOST_OPACITY, depthWrite: false,
+      color: swColor, transparent: true, opacity: GHOST_OPACITY, depthWrite: false,
     });
 
     // --- Flat road surface ---
