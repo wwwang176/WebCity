@@ -79,6 +79,7 @@ import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath } from './core/elevation';
+import { computePreviewRampCounts } from './core/elevation/PreviewRampLayout';
 import { setNetworkRoadLookup } from './core/service/NetworkCoverage';
 import { setRoadCoverageRoadLookup } from './core/service/RoadCoverageFlood';
 import { setShoppingRoadLookup } from './core/economy/ShoppingAccess';
@@ -2181,16 +2182,37 @@ export class Game {
     const pathCells = getLShapedPath(this.dragStart, { x: this.gridCursor.gridX, y: this.gridCursor.gridY });
     if (pathCells.length < 2) return;
 
-    // Elevated mode: origin at ground, ramp cells rise, body at elevated height
+    // Elevated mode: detect start/end elevation states to determine ramp placement
     const LEVEL_HEIGHT = 0.6;
     const elevatedY = this.placementMode === 'elevated' ? this.elevationLevel * LEVEL_HEIGHT + 0.2 : 0.2;
-    const rampCount = this.placementMode === 'elevated' ? Math.min(this.elevationLevel, pathCells.length - 1) : 0;
+
+    let startRampCount = 0;
+    let endRampCount = 0;
+    if (this.placementMode === 'elevated') {
+      const startPt = pathCells[0]!;
+      const endPt = pathCells[pathCells.length - 1]!;
+      const startOnElevated = !!this.elevationManager.get(startPt.x, startPt.y, this.elevationLevel);
+      const endCell = this.state.grid.getCell(endPt.x, endPt.y);
+      const endOnGround = endCell !== null && endCell.roadType !== RoadType.NONE
+        && !this.elevationManager.get(endPt.x, endPt.y, this.elevationLevel);
+
+      ({ startRampCount, endRampCount } = computePreviewRampCounts(
+        pathCells.length, this.elevationLevel, startOnElevated, endOnGround,
+      ));
+    }
+
+    const last = pathCells.length - 1;
     const points = pathCells.map((c, i) => {
       let y = 0.2; // ground
       if (this.placementMode === 'elevated') {
-        if (i === 0) y = 0.2; // origin stays on ground
-        else if (i <= rampCount) y = 0.2 + (i / rampCount) * (elevatedY - 0.2); // ramp interpolation
-        else y = elevatedY; // elevated body
+        if (startRampCount > 0 && i <= startRampCount) {
+          y = 0.2 + (i / startRampCount) * (elevatedY - 0.2);
+        } else if (endRampCount > 0 && i >= last - endRampCount) {
+          const distFromEnd = last - i;
+          y = 0.2 + (distFromEnd / endRampCount) * (elevatedY - 0.2);
+        } else {
+          y = elevatedY;
+        }
       }
       return new THREE.Vector3(c.x, y, c.y);
     });
@@ -2200,10 +2222,9 @@ export class Game {
       const baseCost = this.isRailTool()
         ? RAIL.COST_PER_CELL
         : ROAD_CONFIGS[this.currentRoadType].cost;
-      // Estimate: 1 ramp + rest elevated (simplified preview)
-      const rampCells = Math.min(this.elevationLevel, points.length - 1);
-      const elevatedCells = Math.max(0, points.length - rampCells);
-      this.previewCost = rampCells * baseCost * ELEVATION_COST.RAMP
+      const totalRampCells = startRampCount + endRampCount;
+      const elevatedCells = Math.max(0, points.length - totalRampCells);
+      this.previewCost = totalRampCells * baseCost * ELEVATION_COST.RAMP
         + elevatedCells * baseCost * ELEVATION_COST.ELEVATED;
     } else if (this.isRailTool()) {
       this.previewCost = points.length * RAIL.COST_PER_CELL;
@@ -2220,11 +2241,15 @@ export class Game {
 
     for (let i = 0; i < pathCells.length; i++) {
       const c = pathCells[i]!;
+      const isStartRamp = this.placementMode === 'elevated' && i > 0 && i <= startRampCount;
+      const isEndRamp = this.placementMode === 'elevated' && endRampCount > 0
+        && !isStartRamp && i >= last - endRampCount && i < last;
+      const isRamp = isStartRamp || isEndRamp;
+
       // Skip cells that already have road/elevated (no ghost over existing)
-      const isRamp = this.placementMode === 'elevated' && i > 0 && i <= rampCount;
       if (this.placementMode === 'elevated') {
         if (this.elevationManager.get(c.x, c.y, this.elevationLevel)) continue;
-        // Non-ramp cells at ground level (origin): skip if ground road exists
+        // Non-ramp cells: skip if ground road exists
         if (!isRamp) {
           const existing = this.state.grid.getCell(c.x, c.y);
           if (existing && existing.roadType !== RoadType.NONE) continue;
@@ -2233,16 +2258,21 @@ export class Game {
         const existing = this.state.grid.getCell(c.x, c.y);
         if (existing && existing.roadType !== RoadType.NONE) continue;
       }
-      if (isRamp) {
-        // Compute ascend direction: from this cell toward next cell (higher end)
-        const next = pathCells[Math.min(i + 1, pathCells.length - 1)]!;
+
+      if (isStartRamp) {
+        const next = pathCells[Math.min(i + 1, last)]!;
         const ascendDir = getDirectionFlag(c, next);
         rampPreview.push({ x: c.x, y: c.y, level: i, ascendDir, roadType });
+      } else if (isEndRamp) {
+        // Ascend direction: toward prev cell (higher end = back toward body)
+        const prev = pathCells[Math.max(i - 1, 0)]!;
+        const ascendDir = getDirectionFlag(c, prev);
+        rampPreview.push({ x: c.x, y: c.y, level: last - i, ascendDir, roadType });
       } else {
         // Flat cell: compute flags from neighbors in path
         let flags = 0;
         if (i > 0) flags |= getDirectionFlag(c, pathCells[i - 1]!);
-        if (i < pathCells.length - 1) flags |= getDirectionFlag(c, pathCells[i + 1]!);
+        if (i < last) flags |= getDirectionFlag(c, pathCells[i + 1]!);
         flatCells.push({ x: c.x, y: c.y, roadType, roadFlags: flags });
       }
     }
