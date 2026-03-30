@@ -25,6 +25,7 @@ import { WorkplaceDistanceClient } from './core/workplace/WorkplaceDistanceClien
 import { WorkplaceDistanceCache } from './core/workplace/WorkplaceDistanceCache';
 import { AutoSaver } from './core/save/AutoSave';
 import { saveGame } from './core/save/SaveManager';
+import { exportSaveToFile } from './core/save/ImportExport';
 import { serializeGameState, snapshotGameState } from './core/save/Serializer';
 import { getMilestone } from './core/milestone/Milestone';
 import { getTotalTransportOperatingCost } from './core/transport/TransportRegistry';
@@ -2168,6 +2169,18 @@ export class Game {
     const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
     const population = this.state.citizens.getPopulation();
     await saveGame(slotId, name, data, population);
+  }
+
+  exportCurrentGame(): void {
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
+    const population = this.state.citizens.getPopulation();
+    exportSaveToFile({
+      id: 0,
+      name: this.loadedSaveName || 'WebCity Save',
+      date: new Date().toISOString(),
+      data,
+      population,
+    });
   }
 
   private updatePreviewLine(): void {

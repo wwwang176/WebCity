@@ -20,6 +20,7 @@ function makeRoadLookup(cellKeys: string[]): UnifiedRoadLookup {
       }
       return result;
     },
+    getCellByKey(): null { return null; },
   } as unknown as UnifiedRoadLookup;
 }
 

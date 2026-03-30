@@ -50,8 +50,9 @@ function getTriggerReason(
 
   if (route) {
     if (route.status === 'failed') return 'failed';
-    // Stale route — road network changed, can't trust old path data
-    if (route.generation !== cache.roadGeneration) return 'failed';
+    // Stale route — road network changed; commute path will be recalculated
+    // gradually via isExpired(). Don't treat as failed (would trigger mass firing).
+    if (route.generation !== cache.roadGeneration) return 'none';
     const len = getCommuteLength(route);
     if (len !== null && len > config.commuteLengthThreshold) return 'long_commute';
   } else {

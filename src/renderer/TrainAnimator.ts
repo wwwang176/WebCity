@@ -16,7 +16,7 @@ import type { VehicleAnimator } from './VehicleAnimator';
 import type { TransportVehicleRenderData } from '../core/transport/collectTransportVehicles';
 
 /** 火車視覺移動速度（世界單位/秒） */
-const TRAIN_VISUAL_SPEED = 9.0;
+const TRAIN_VISUAL_SPEED = 4.5;
 /** 火車 ID 偏移量（對應 collectTransportVehicles） */
 const RAIL_ID_OFFSET = 400_000;
 /** 車廂中心間距（世界單位） */

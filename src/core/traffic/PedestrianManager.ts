@@ -13,7 +13,7 @@ import { euclideanDistance } from '../grid/GridHelpers';
 // ── Constants ──────────────────────────────────────────────────────────
 
 export const PEDESTRIAN = {
-  SPEED: 1.5,
+  SPEED: 0.75,
   MIN_ACTIVE: 50,
   MAX_ACTIVE: 2000,
   POPULATION_RATIO: 0.05,

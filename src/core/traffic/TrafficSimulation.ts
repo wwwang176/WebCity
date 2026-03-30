@@ -72,7 +72,7 @@ export const TRAFFIC = {
   /** Density divisor per occupied cell for congestion calculation */
   DENSITY_CAPACITY_PER_CELL: 3,
   /** Edge vehicle speed in world-units per second */
-  EDGE_SPEED: 14,
+  EDGE_SPEED: 7,
   /** Speed limit that maps to base speed */
   REFERENCE_LIMIT: 50,
   /** Minimum distance between vehicles */

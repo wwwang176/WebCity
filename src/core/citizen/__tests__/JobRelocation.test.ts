@@ -415,8 +415,10 @@ describe('jobRelocationTick', () => {
     expect(result.relocatedIds).toContain(30);
   });
 
-  it('stale route (generation mismatch) triggers as failed', () => {
-    // Route was ready at generation 0, but road network is now at generation 1
+  it('stale route (generation mismatch) does NOT trigger relocation', () => {
+    // Route was ready at generation 0, but road network is now at generation 1.
+    // Stale routes are recalculated gradually via isExpired() in spawnCommuteVehicles,
+    // not treated as failed in jobRelocationTick (which would cause mass firing).
     const citizen = makeCitizen({ id: 31, homeId: '5,1', workplaceId: '40,1' });
     const staleRoute = makeRoute({
       citizenId: 31,
@@ -426,10 +428,9 @@ describe('jobRelocationTick', () => {
         { id: 'a', from: {} as any, to: {} as any, length: 10, type: 'straight' },
       ],
     });
-    // roadGeneration=1 but route.generation=0 → stale
+    // roadGeneration=1 but route.generation=0 → stale (not failed)
     const cache = makeCacheMap([[31, staleRoute]], 1);
 
-    // Disconnected grid: road only near home, workplace unreachable
     const disconnectedGrid: ReadableGrid = {
       getCell(x: number, y: number) {
         if (x < 0 || y < 0 || x >= 50 || y >= 3) return null;
@@ -444,8 +445,8 @@ describe('jobRelocationTick', () => {
     const occupancy = new Map([['40,1', 1]]);
 
     const result = jobRelocationTick([citizen], candidates, occupancy, cache, disconnectedGrid, 0, config);
-    expect(result.count).toBe(1);
-    expect(citizen.workplaceId).toBeNull();
+    expect(result.count).toBe(0);
+    expect(citizen.workplaceId).toBe('40,1'); // keeps job
   });
 
   it('stale route with reachable workplace does NOT cause unemployment', () => {

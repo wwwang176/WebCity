@@ -159,7 +159,7 @@ export class ElevatedRoadBuilder {
         rampAscendDirection: rampAscendDir,
       });
 
-      affectedCells.push(toPosKey(pos.x, pos.y));
+      affectedCells.push(storeLevel > 0 ? `${pos.x},${pos.y},${storeLevel}` : toPosKey(pos.x, pos.y));
     }
 
     // Update network with elevated node IDs

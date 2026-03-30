@@ -60,7 +60,7 @@ describe('TrafficSimulation', () => {
     const sim = new TrafficSimulation();
     sim.addVehicleOnEdges(makeLongPath(20));
     expect(sim.getSegmentDensity('0,0')).toBe(1);
-    sim.advanceEdgeVehicles(0.1);
+    sim.advanceEdgeVehicles(0.2);
     // Vehicle has moved forward, density should shift
     expect(sim.getSegmentDensity('0,0')).toBe(0);
   });

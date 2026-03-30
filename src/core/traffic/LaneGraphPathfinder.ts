@@ -17,6 +17,9 @@ import { getLaneSpeedMultiplier } from './Pathfinding';
 /** Cost multiplier applied per cell+lane used in previous variants (penalty method). */
 const VARIANT_PENALTY = 3;
 
+/** Reference speed limit (km/h) used as the baseline for A* cost normalization. */
+const REFERENCE_SPEED_LIMIT = 50;
+
 /** Number of lane path variants to generate per route. */
 const VARIANT_COUNT = 3;
 
@@ -92,6 +95,7 @@ function laneAStar(
   endPos: { x: number; y: number },
   maxSteps = 8000,
   penalty?: Map<string, number>,
+  lookup?: UnifiedRoadLookup,
 ): LaneEdge[] | null {
   if (startPoints.length === 0 || endPoints.length === 0) return null;
 
@@ -149,9 +153,11 @@ function laneAStar(
       const neighborId = edge.to.id;
       if (closed.has(neighborId)) continue;
 
-      // Cost = edge length / lane speed (+ cell+lane penalty for variant diversity)
-      // Inner lanes (lane 0) are faster, encouraging lane changes on straight segments.
-      let cost = edge.length / getLaneSpeedMultiplier(edge.to.lane);
+      // Cost = travel time: edge length / (lane speed × road speed ratio)
+      // Higher speed limit → lower cost → A* prefers faster roads.
+      const cell = lookup ? lookup.getCellByKey(edge.to.cellKey) : null;
+      const speedLimit = cell ? (ROAD_CONFIGS[cell.roadType as RoadType]?.speedLimit ?? REFERENCE_SPEED_LIMIT) : REFERENCE_SPEED_LIMIT;
+      let cost = edge.length / (getLaneSpeedMultiplier(edge.to.lane) * (speedLimit / REFERENCE_SPEED_LIMIT));
       if (penalty) {
         const p = penalty.get(`${edge.to.cellKey}:${edge.to.lane}`);
         if (p) cost *= p;
@@ -183,7 +189,7 @@ export function findLanePath(
 ): LaneEdge[] | null {
   const startPoints = findNearbyExitPoints(graph, from.x, from.y, lookup);
   const endPoints = findNearbyEntryPoints(graph, to.x, to.y, lookup);
-  return laneAStar(graph, startPoints, endPoints, to);
+  return laneAStar(graph, startPoints, endPoints, to, 8000, undefined, lookup);
 }
 
 /**
@@ -209,7 +215,7 @@ export function findLanePathVariants(
   const endCells = new Set(endPoints.map(p => p.cellKey));
 
   for (let i = 0; i < count; i++) {
-    const path = laneAStar(graph, startPoints, endPoints, to, 8000, i > 0 ? penalty : undefined);
+    const path = laneAStar(graph, startPoints, endPoints, to, 8000, i > 0 ? penalty : undefined, lookup);
     if (!path || path.length === 0) break;
     variants.push(path);
 

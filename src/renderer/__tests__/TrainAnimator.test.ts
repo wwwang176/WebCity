@@ -112,8 +112,8 @@ describe('TrainAnimator', () => {
     // Skip initial wait (1.2s)
     animator.update(1.3, 1, rail, [makeRenderData(1, 0, 5)]);
 
-    // Travel A→B: 10 cells / 9.0 speed ≈ 1.11s
-    animator.update(1.2, 1, rail, [makeRenderData(1, 0, 5)]);
+    // Travel A→B: 10 cells / 4.5 speed ≈ 2.22s
+    animator.update(2.3, 1, rail, [makeRenderData(1, 0, 5)]);
 
     // Should be at station B now (dwell)
     const vAtB = [makeRenderData(1, 0, 5)];
@@ -280,8 +280,8 @@ describe('TrainAnimator', () => {
 
     // Build initial anim and advance past station B (dwell 1.2s + travel >5 cells)
     animator.update(1.3, 1, rail3, [makeRenderData(1, 0, 5)]); // skip initial wait
-    // Travel A→B at speed 9: 5/9 ≈ 0.56s, arrive at B, dwell 1.2s
-    animator.update(0.6, 1, rail3, [makeRenderData(1, 0, 5)]); // arrive at B
+    // Travel A→B at speed 4.5: 5/4.5 ≈ 1.11s, arrive at B, dwell 1.2s
+    animator.update(1.2, 1, rail3, [makeRenderData(1, 0, 5)]); // arrive at B
     animator.update(1.3, 1, rail3, [makeRenderData(1, 0, 5)]); // wait at B then depart
 
     // Verify train is now past station B (somewhere between B and C)

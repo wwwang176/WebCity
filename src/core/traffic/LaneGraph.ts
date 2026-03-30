@@ -135,6 +135,25 @@ export class LaneGraph {
       this.generateEdgesForCell(grid, key);
     }
 
+    // Rebuild edges for border neighbors: non-affected cells adjacent to affected cells.
+    // removeCellData deletes edges in BOTH directions, but generateEdgesForCell only
+    // recreates outgoing edges. Border neighbors lose their outgoing edges toward
+    // affected cells — rebuild them here (points are unchanged, only edges).
+    const borderNeighbors = new Set<string>();
+    for (const key of affected) {
+      const { x, y } = parseCellKey(key);
+      for (const d of DIR_FLAGS) {
+        for (const nk of grid.getCompatibleNeighborKeys(key, x + d.dx, y + d.dy)) {
+          if (!affected.has(nk)) borderNeighbors.add(nk);
+        }
+      }
+    }
+    for (const nk of borderNeighbors) {
+      // Remove only outgoing edges (points are untouched)
+      this.edges = this.edges.filter(e => e.from.cellKey !== nk);
+      this.generateEdgesForCell(grid, nk);
+    }
+
     this.rebuildEdgeIndices();
   }
 
