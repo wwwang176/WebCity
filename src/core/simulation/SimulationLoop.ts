@@ -17,7 +17,7 @@ import { avgEducationScore } from '../building/BuildingUpgrade';
 import { clampBuildingLevel } from '../building/BuildingLevel';
 import { ECONOMY } from '../economy/TaxMultipliers';
 import { DEFAULT_TAX_RATE } from '../economy/Tax';
-import { getInfraBuildingId, isZoneBuilding } from '../building/InfraConfig';
+import { getInfraBuildingId, getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
 import { forEachGridPollutionSource } from '../environment/GridPollutionSources';
 import { forEachServicePollutionSource } from '../environment/PollutionSourceRegistry';
@@ -166,7 +166,7 @@ export class SimulationLoop {
   private buildingPositions: { pos: string; x: number; y: number; buildingId: number }[] = [];
 
   // Cached trade positions (rail stations + airports + highway edges) for freight vehicle spawning.
-  private cachedTradePositions: { x: number; y: number; throughput: number }[] = [];
+  private cachedTradePositions: { x: number; y: number; throughput: number; tradeKey: string }[] = [];
 
   /** Reusable scratch array for eligible commuting citizens. */
   private commuteEligibleScratch: Citizen[] = [];
@@ -320,17 +320,19 @@ export class SimulationLoop {
         ? this.state.rail.getExternalStationCount() * perStationThroughput
         : 0;
       let airportThroughput = 0;
-      const tradePositions: { x: number; y: number; throughput: number }[] = [];
+      const tradePositions: { x: number; y: number; throughput: number; tradeKey: string }[] = [];
+      const grid = this.state.grid;
+
       if (this.state.rail.hasExternalConnection) {
         for (const s of this.state.rail.getStations()) {
           if (this.state.rail.isStationExternal(s.x, s.y)) {
-            tradePositions.push({ x: s.x, y: s.y, throughput: perStationThroughput });
+            this.collectTradeRoadCells(grid, s.x, s.y, perStationThroughput, tradePositions);
           }
         }
       }
       for (const ap of this.state.airport.getAirports()) {
         airportThroughput += ap.cargoPerTick;
-        tradePositions.push({ x: ap.x, y: ap.y, throughput: ap.cargoPerTick });
+        this.collectTradeRoadCells(grid, ap.x, ap.y, ap.cargoPerTick, tradePositions);
       }
       let highwayThroughput = 0;
       if (this.state.highwayConnection.hasExternalConnection) {
@@ -338,7 +340,8 @@ export class SimulationLoop {
         const hwCells = this.state.highwayConnection.getEdgeHighwayCells();
         const perCell = hwCells.length > 0 ? Math.ceil(highwayThroughput / hwCells.length) : 0;
         for (const cell of hwCells) {
-          tradePositions.push({ x: cell.x, y: cell.y, throughput: perCell });
+          // Highway edge cells are road cells themselves — use directly
+          tradePositions.push({ x: cell.x, y: cell.y, throughput: perCell, tradeKey: toPosKey(cell.x, cell.y) });
         }
       }
       const totalThroughput = railThroughput + airportThroughput + highwayThroughput;
@@ -1523,6 +1526,46 @@ export class SimulationLoop {
   }
 
   /**
+   * Collect all road cells adjacent to a building (possibly multi-cell) and add them
+   * to the tradePositions array. Each road cell shares the same tradeKey so A-limit
+   * treats them as one trade node.
+   */
+  private collectTradeRoadCells(
+    grid: { getCell(x: number, y: number): { roadType: number; buildingId: number } | null },
+    bx: number, by: number,
+    throughput: number,
+    out: { x: number; y: number; throughput: number; tradeKey: string }[],
+  ): void {
+    const tradeKey = toPosKey(bx, by);
+    const cell = grid.getCell(bx, by);
+    const cfg = cell ? getInfraConfigById(cell.buildingId) : null;
+    const w = cfg?.width ?? 1;
+    const h = cfg?.height ?? 1;
+    const found = new Set<string>();
+
+    for (let dx = 0; dx < w; dx++) {
+      for (let dy = 0; dy < h; dy++) {
+        for (const [nx, ny] of FOUR_NEIGHBORS) {
+          const rx = bx + dx + nx!;
+          const ry = by + dy + ny!;
+          const rKey = toPosKey(rx, ry);
+          if (found.has(rKey)) continue;
+          const rc = grid.getCell(rx, ry);
+          if (rc && rc.roadType !== RoadType.NONE) {
+            found.add(rKey);
+            out.push({ x: rx, y: ry, throughput, tradeKey });
+          }
+        }
+      }
+    }
+
+    // Fallback: if no adjacent road found, add the building origin (will fail gracefully)
+    if (found.size === 0) {
+      out.push({ x: bx, y: by, throughput, tradeKey });
+    }
+  }
+
+  /**
    * Find available transit options that cover travel between origin and destination.
    * A transit route "covers" a trip if it has stops within walking distance (≤ 5 cells)
    * of both the origin and the destination.
@@ -1648,12 +1691,11 @@ export class SimulationLoop {
       }
     }
 
-    // A-limit: collect available trade nodes (< N trucks per node)
+    // A-limit: collect available trade road cells (< N trucks per trade node, keyed by tradeKey)
     const availableTrade: { x: number; y: number; key: string }[] = [];
     for (const tp of this.cachedTradePositions) {
-      const key = toPosKey(tp.x, tp.y);
       const maxTrucks = Math.ceil(tp.throughput / SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT);
-      if ((af.get(key) ?? 0) < maxTrucks) availableTrade.push({ x: tp.x, y: tp.y, key });
+      if ((af.get(tp.tradeKey) ?? 0) < maxTrucks) availableTrade.push({ x: tp.x, y: tp.y, key: tp.tradeKey });
     }
 
     // Route weights from economic data
@@ -1733,12 +1775,13 @@ export class SimulationLoop {
         const newCount = (af.get(from.key) ?? 0) + 1;
         af.set(from.key, newCount);
         if (routeType === FreightRouteType.IMPORT) {
-          // Remove trade node from available list if it reached its limit
-          const tp = this.cachedTradePositions.find(t => toPosKey(t.x, t.y) === from.key);
+          // Remove all road cells of this trade node if it reached its limit
+          const tp = this.cachedTradePositions.find(t => t.tradeKey === from.key);
           const maxTrucks = tp ? Math.ceil(tp.throughput / SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT) : 1;
           if (newCount >= maxTrucks) {
-            const idx = availableTrade.findIndex(t => t.key === from.key);
-            if (idx >= 0) availableTrade.splice(idx, 1);
+            for (let j = availableTrade.length - 1; j >= 0; j--) {
+              if (availableTrade[j]!.key === from.key) availableTrade.splice(j, 1);
+            }
           }
         } else {
           // Industrial: max 1, remove from available list
