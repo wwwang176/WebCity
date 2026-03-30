@@ -456,7 +456,8 @@ export class TrafficSimulation {
       const currentEdge = ep[v.edgeIndex];
       const cellKey = currentEdge?.from.cellKey;
       const limit = getSpeedLimit && cellKey ? getSpeedLimit(cellKey) : REFERENCE_LIMIT;
-      const maxSpeed = EDGE_SPEED * (limit / REFERENCE_LIMIT) * v.speedMultiplier;
+      const turnFactor = currentEdge?.type === 'turn' ? 0.5 : 1.0;
+      const maxSpeed = EDGE_SPEED * (limit / REFERENCE_LIMIT) * v.speedMultiplier * turnFactor;
 
       // 4. Target speed from distance-based braking
       // If a vehicle ahead is closer than the red light, just follow it

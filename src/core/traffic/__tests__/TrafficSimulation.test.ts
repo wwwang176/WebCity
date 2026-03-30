@@ -570,6 +570,63 @@ describe('acceleration and braking model', () => {
     expect(TRAFFIC.BRAKE_DISTANCE).toBeGreaterThan(0);
     expect(TRAFFIC.ACCEL).toBeGreaterThan(0);
   });
+
+  it('vehicle should move slower on turn edges than straight edges', () => {
+    // Build a path with a turn edge in the middle
+    const straightEdge = makeEdge('s0', '0,0', '1,0');
+    straightEdge.type = 'straight';
+    const turnEdge = makeEdge('t0', '1,0', '1,1');
+    turnEdge.type = 'turn';
+    const straightEdge2 = makeEdge('s1', '1,1', '2,1');
+    straightEdge2.type = 'straight';
+
+    // Vehicle on straight-only path
+    const sim1 = new TrafficSimulation();
+    const v1 = sim1.addVehicleOnEdges([straightEdge, straightEdge, straightEdge]);
+    v1.stallTime = 0;
+
+    // Vehicle on turn path
+    const sim2 = new TrafficSimulation();
+    const v2 = sim2.addVehicleOnEdges([straightEdge, turnEdge, straightEdge2]);
+    v2.stallTime = 0;
+    // Force same speed multiplier
+    v2.speedMultiplier = v1.speedMultiplier;
+
+    // Advance both — place vehicles on second edge to compare
+    v1.edgeIndex = 1; v1.edgeProgress = 0; v1.currentSpeed = 5;
+    v2.edgeIndex = 1; v2.edgeProgress = 0; v2.currentSpeed = 5;
+
+    sim1.advanceEdgeVehicles(0.016);
+    sim2.advanceEdgeVehicles(0.016);
+
+    // Turn vehicle should have lower currentSpeed due to turn speed cap
+    expect(v2.currentSpeed).toBeLessThan(v1.currentSpeed);
+  });
+
+  it('lane_change edges should not reduce speed', () => {
+    const straightEdge = makeEdge('s0', '0,0', '1,0');
+    straightEdge.type = 'straight';
+    const lcEdge = makeEdge('lc0', '1,0', '2,0');
+    lcEdge.type = 'lane_change';
+
+    const sim1 = new TrafficSimulation();
+    const v1 = sim1.addVehicleOnEdges([straightEdge, straightEdge]);
+    v1.stallTime = 0;
+
+    const sim2 = new TrafficSimulation();
+    const v2 = sim2.addVehicleOnEdges([straightEdge, lcEdge]);
+    v2.stallTime = 0;
+    v2.speedMultiplier = v1.speedMultiplier;
+
+    v1.edgeIndex = 1; v1.edgeProgress = 0; v1.currentSpeed = 5;
+    v2.edgeIndex = 1; v2.edgeProgress = 0; v2.currentSpeed = 5;
+
+    sim1.advanceEdgeVehicles(0.016);
+    sim2.advanceEdgeVehicles(0.016);
+
+    // Lane change should not reduce speed — same as straight
+    expect(v2.currentSpeed).toBe(v1.currentSpeed);
+  });
 });
 
 describe('service vehicle stall exemption', () => {
