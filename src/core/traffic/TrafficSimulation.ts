@@ -27,6 +27,7 @@ export interface Vehicle {
   edgeProgress: number;  // distance traveled along current edge
   edgeMoveRate: number;  // distance moved last tick (for render extrapolation)
   speedMultiplier: number; // random 0.8–1.0, prevents vehicles from bunching at same speed
+  currentSpeed: number;  // current speed in world-units/sec (used for gradual accel/decel)
   stallTime: number;  // accumulated seconds at zero movement; despawned when exceeding threshold
   citizenId?: number;  // present only for commute vehicles (prevents duplicate spawning)
   sourceBuildingKey?: string;  // present only for freight vehicles (origin building "x,y")
@@ -81,6 +82,10 @@ export const TRAFFIC = {
   MIN_GAP: 0.15,
   /** Seconds of zero movement before vehicle is despawned */
   DESPAWN_STALL_TIME: 30,
+  /** Distance at which vehicles begin braking (world units) */
+  BRAKE_DISTANCE: 1.5,
+  /** Acceleration rate (world-units/sec² ) */
+  ACCEL: 8.0,
 } as const;
 
 /** Get the number of directional lanes for a road type (lanes going one way). */
@@ -156,6 +161,7 @@ export class TrafficSimulation {
       edgeProgress: 0,
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      currentSpeed: 0,
       stallTime: 0,
       busState: {
         routeId,
@@ -210,6 +216,7 @@ export class TrafficSimulation {
       edgeProgress: 0,
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      currentSpeed: 0,
       stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
       serviceType,
     };
@@ -278,6 +285,7 @@ export class TrafficSimulation {
       edgeProgress: 0,
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      currentSpeed: 0,
       stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
       citizenId,
     };
@@ -303,6 +311,7 @@ export class TrafficSimulation {
       edgeProgress: 0,
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
+      currentSpeed: 0,
       stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
       sourceBuildingKey,
     };
@@ -324,7 +333,7 @@ export class TrafficSimulation {
     canAdvance?: (current: string, next: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
-    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT } = TRAFFIC;
+    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT, BRAKE_DISTANCE, ACCEL } = TRAFFIC;
 
     // Collect active vehicles into reusable scratch array (no per-frame allocation)
     const edgeVehicles = this.activeVehicleScratch;
@@ -447,15 +456,35 @@ export class TrafficSimulation {
       const currentEdge = ep[v.edgeIndex];
       const cellKey = currentEdge?.from.cellKey;
       const limit = getSpeedLimit && cellKey ? getSpeedLimit(cellKey) : REFERENCE_LIMIT;
-      const effectiveSpeed = EDGE_SPEED * (limit / REFERENCE_LIMIT) * v.speedMultiplier * dtSeconds;
+      const maxSpeed = EDGE_SPEED * (limit / REFERENCE_LIMIT) * v.speedMultiplier;
 
-      // 4. Advance
+      // 4. Target speed from distance-based braking
       // If a vehicle ahead is closer than the red light, just follow it
       // (the front car is already stopped for the light — no need to double-stop).
       const gapRoom = Math.max(0, Math.min(gap, crossGap) - MIN_GAP);
       const effectiveRedLight = gap < redLightDist ? Infinity : redLightDist;
-      const room = Math.max(0, Math.min(gapRoom, effectiveRedLight));
-      let moveDistance = Math.min(effectiveSpeed, room);
+      const obstacle = Math.min(gapRoom, effectiveRedLight);
+
+      let targetSpeed: number;
+      if (obstacle <= 0) {
+        targetSpeed = 0;
+      } else if (obstacle >= BRAKE_DISTANCE) {
+        targetSpeed = maxSpeed;
+      } else {
+        targetSpeed = maxSpeed * (obstacle / BRAKE_DISTANCE);
+      }
+
+      // 5. Apply acceleration / deceleration
+      if (targetSpeed > v.currentSpeed) {
+        // Accelerate: limited by ACCEL per second
+        v.currentSpeed = Math.min(targetSpeed, v.currentSpeed + ACCEL * dtSeconds);
+      } else {
+        // Decelerate: snap to distance-proportional speed
+        v.currentSpeed = targetSpeed;
+      }
+
+      // Safety cap: never move further than available space
+      let moveDistance = Math.min(v.currentSpeed * dtSeconds, obstacle);
 
       while (moveDistance > 0 && v.edgeIndex < ep.length) {
         const edge = ep[v.edgeIndex]!;
@@ -471,7 +500,7 @@ export class TrafficSimulation {
       }
 
       // Track stall time for stuck vehicle despawn (buses and service vehicles exempt)
-      if (moveDistance < 0.001 && room < 0.001) {
+      if (moveDistance < 0.001 && obstacle < 0.001) {
         v.stallTime += dtSeconds;
         if (v.stallTime >= TRAFFIC.DESPAWN_STALL_TIME && !v.busState && !v.serviceType) {
           v.arrived = true;

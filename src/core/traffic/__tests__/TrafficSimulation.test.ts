@@ -58,9 +58,11 @@ describe('TrafficSimulation', () => {
 
   it('should track segment density', () => {
     const sim = new TrafficSimulation();
-    sim.addVehicleOnEdges(makeLongPath(20));
+    const v = sim.addVehicleOnEdges(makeLongPath(20));
+    v.stallTime = 0; // remove jitter
     expect(sim.getSegmentDensity('0,0')).toBe(1);
-    sim.advanceEdgeVehicles(0.2);
+    // With acceleration model, need more frames to leave first cell
+    for (let i = 0; i < 20; i++) sim.advanceEdgeVehicles(0.1);
     // Vehicle has moved forward, density should shift
     expect(sim.getSegmentDensity('0,0')).toBe(0);
   });
@@ -74,13 +76,16 @@ describe('TrafficSimulation', () => {
 
   it('should move faster on roads with higher speed limit', () => {
     const sim1 = new TrafficSimulation();
-    const v1 = sim1.addVehicleOnEdges(makeLongPath(20));
-    sim1.advanceEdgeVehicles(0.1, undefined, () => 100);
+    const v1 = sim1.addVehicleOnEdges(makeLongPath(50));
+    v1.stallTime = 0;
+    // Run enough frames for acceleration to reveal speed-limit difference
+    for (let i = 0; i < 60; i++) sim1.advanceEdgeVehicles(0.05, undefined, () => 100);
     const progress1 = v1.edgeProgress + v1.edgeIndex;
 
     const sim2 = new TrafficSimulation();
-    const v2 = sim2.addVehicleOnEdges(makeLongPath(20));
-    sim2.advanceEdgeVehicles(0.1, undefined, () => 30);
+    const v2 = sim2.addVehicleOnEdges(makeLongPath(50));
+    v2.stallTime = 0;
+    for (let i = 0; i < 60; i++) sim2.advanceEdgeVehicles(0.05, undefined, () => 30);
     const progress2 = v2.edgeProgress + v2.edgeIndex;
 
     expect(progress1).toBeGreaterThan(progress2);
@@ -453,6 +458,117 @@ describe('zero-alloc vehicle removal', () => {
     sim.removeVehiclesByIds(new Set([v1.id]));
     expect(sim.vehicles).toBe(arrRef);
     expect(sim.getVehicleCount()).toBe(1);
+  });
+});
+
+describe('acceleration and braking model', () => {
+  it('new vehicle should start with currentSpeed = 0', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addVehicleOnEdges(makeLongPath(10));
+    expect(v.currentSpeed).toBe(0);
+  });
+
+  it('vehicle should accelerate gradually, not instantly reach max speed', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addVehicleOnEdges(makeLongPath(50));
+    v.stallTime = 0; // remove jitter
+
+    // Single small frame — should accelerate but not reach full speed
+    sim.advanceEdgeVehicles(0.016); // ~60fps frame
+    const speedAfterOneFrame = v.currentSpeed;
+    expect(speedAfterOneFrame).toBeGreaterThan(0);
+
+    // Calculate max possible speed for comparison
+    const maxSpeed = TRAFFIC.EDGE_SPEED * v.speedMultiplier;
+    expect(speedAfterOneFrame).toBeLessThan(maxSpeed);
+  });
+
+  it('vehicle should reach full speed after enough frames', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addVehicleOnEdges(makeLongPath(100));
+    v.stallTime = 0;
+
+    for (let i = 0; i < 300; i++) {
+      sim.advanceEdgeVehicles(0.016);
+    }
+
+    const maxSpeed = TRAFFIC.EDGE_SPEED * v.speedMultiplier;
+    expect(v.currentSpeed).toBeCloseTo(maxSpeed, 1);
+  });
+
+  it('vehicle should brake when approaching a stopped vehicle ahead', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(20);
+
+    // Leader stuck at red light
+    const leader = sim.addVehicleOnEdges(edges);
+    leader.edgeIndex = 5;
+    leader.edgeProgress = 0.5;
+    leader.stallTime = 0;
+
+    // Follower approaching from behind
+    const follower = sim.addVehicleOnEdges(edges);
+    follower.edgeIndex = 0;
+    follower.edgeProgress = 0.0;
+    follower.stallTime = 0;
+
+    // Advance many frames with red light blocking leader
+    for (let i = 0; i < 200; i++) {
+      sim.advanceEdgeVehicles(0.016, () => false);
+    }
+
+    // Follower should have slowed down and stopped behind leader
+    expect(follower.currentSpeed).toBeLessThan(TRAFFIC.EDGE_SPEED * follower.speedMultiplier * 0.5);
+  });
+
+  it('vehicle should decelerate proportionally to distance within BRAKE_DISTANCE', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(20);
+
+    // Place two vehicles with a gap inside BRAKE_DISTANCE
+    const leader = sim.addVehicleOnEdges(edges);
+    leader.edgeIndex = 3;
+    leader.edgeProgress = 0.0;
+    leader.stallTime = 0;
+    leader.currentSpeed = 0; // leader stopped
+
+    const follower = sim.addVehicleOnEdges(edges);
+    follower.edgeIndex = 1;
+    follower.edgeProgress = 0.0;
+    follower.stallTime = 0;
+    follower.currentSpeed = TRAFFIC.EDGE_SPEED * follower.speedMultiplier; // at full speed
+
+    // One frame — follower is ~2.0 units away from leader, within BRAKE_DISTANCE
+    sim.advanceEdgeVehicles(0.016, () => false);
+
+    // Follower should have reduced speed
+    expect(follower.currentSpeed).toBeLessThan(TRAFFIC.EDGE_SPEED * follower.speedMultiplier);
+  });
+
+  it('vehicles waiting in a queue should start moving in a wave after green light', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(30);
+
+    // Line up 3 vehicles close together, all stopped
+    const v1 = sim.addVehicleOnEdges(edges);
+    v1.edgeIndex = 2; v1.edgeProgress = 0.5; v1.stallTime = 0; v1.currentSpeed = 0;
+    const v2 = sim.addVehicleOnEdges(edges);
+    v2.edgeIndex = 1; v2.edgeProgress = 0.5; v2.stallTime = 0; v2.currentSpeed = 0;
+    const v3 = sim.addVehicleOnEdges(edges);
+    v3.edgeIndex = 0; v3.edgeProgress = 0.5; v3.stallTime = 0; v3.currentSpeed = 0;
+
+    // Green light — allow movement
+    sim.advanceEdgeVehicles(0.1);
+
+    // v1 (front) should start moving first, v3 (back) should move least
+    expect(v1.currentSpeed).toBeGreaterThan(0);
+    expect(v1.currentSpeed).toBeGreaterThanOrEqual(v2.currentSpeed);
+    expect(v2.currentSpeed).toBeGreaterThanOrEqual(v3.currentSpeed);
+  });
+
+  it('BRAKE_DISTANCE and ACCEL constants should exist', () => {
+    expect(TRAFFIC.BRAKE_DISTANCE).toBeGreaterThan(0);
+    expect(TRAFFIC.ACCEL).toBeGreaterThan(0);
   });
 });
 

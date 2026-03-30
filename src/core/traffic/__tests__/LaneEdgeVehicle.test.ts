@@ -203,17 +203,24 @@ describe('LaneEdge Vehicle Movement', () => {
   describe('speed limit integration', () => {
     it('should respect speed limit callback', () => {
       const sim = new TrafficSimulation();
-      const { graph, cellKeys } = buildHorizontalRoad(10);
+      const { graph, cellKeys } = buildHorizontalRoad(40);
       const edgePath = resolveEastPath(graph, cellKeys);
 
       // Vehicle on slow road
       const vSlow = sim.addVehicleOnEdges(edgePath);
+      vSlow.stallTime = 0;
       // Vehicle on fast road (separate sim to isolate)
       const sim2 = new TrafficSimulation();
-      const vFast = sim2.addVehicleOnEdges(edgePath);
+      const { graph: g2, cellKeys: ck2 } = buildHorizontalRoad(40);
+      const edgePath2 = resolveEastPath(g2, ck2);
+      const vFast = sim2.addVehicleOnEdges(edgePath2);
+      vFast.stallTime = 0;
 
-      advanceFor(sim, 0.25, undefined, () => 30);   // slow
-      advanceFor(sim2, 0.25, undefined, () => 100);  // fast
+      // Enough frames for slower vehicle to cap out so speed-limit gap emerges
+      for (let i = 0; i < 200; i++) {
+        advanceFor(sim, 0.016, undefined, () => 30);   // slow
+        advanceFor(sim2, 0.016, undefined, () => 100);  // fast
+      }
 
       const slowProgress = vSlow.edgeIndex + vSlow.edgeProgress;
       const fastProgress = vFast.edgeIndex + vFast.edgeProgress;
@@ -243,12 +250,17 @@ describe('LaneEdge Vehicle Movement', () => {
 
       const vSlow = sim1.addVehicleOnEdges(edgePath);
       vSlow.speedMultiplier = 0.8; // slowest
+      vSlow.stallTime = 0;
       const vFast = sim2.addVehicleOnEdges(edgePath);
       vFast.speedMultiplier = 1.0; // fastest
+      vFast.stallTime = 0;
 
-      // Advance both for 0.5 seconds
-      advanceFor(sim1, 0.5);
-      advanceFor(sim2, 0.5);
+      // Advance both for ~3 seconds — enough for slower vehicle to hit its cap
+      // so the speed multiplier difference becomes visible
+      for (let i = 0; i < 180; i++) {
+        advanceFor(sim1, 0.016);
+        advanceFor(sim2, 0.016);
+      }
 
       const slowTotal = vSlow.edgeIndex + vSlow.edgeProgress;
       const fastTotal = vFast.edgeIndex + vFast.edgeProgress;
@@ -344,11 +356,12 @@ describe('LaneEdge Vehicle Movement', () => {
       for (let i = 0; i < 5; i++) {
         const v = sim.addVehicleOnEdges(edgePath);
         v.speedMultiplier = 1.0;
+        v.stallTime = 0;
         vehicles.push(v);
       }
 
-      // Advance for 0.5 seconds (30 frames) — short enough that no vehicle arrives
-      for (let i = 0; i < 30; i++) {
+      // Advance for ~2 seconds (120 frames) — enough for acceleration to propagate
+      for (let i = 0; i < 120; i++) {
         advanceFor(sim, 1 / 60);
       }
 
