@@ -858,37 +858,38 @@ describe('AirportSystem tick', () => {
 // T5.2 Airport noise pollution integration
 // ---------------------------------------------------------------------------
 describe('Airport noise pollution', () => {
-  it('SMALL airport should produce noise pollution at its location', () => {
-    const pm = new PollutionManager(20, 20);
+  it('SMALL airport should produce noise pollution covering its footprint', () => {
+    const pm = new PollutionManager(30, 30);
     const airports = new AirportSystem();
     airports.build(10, 10, 'SMALL', 10000);
 
-    // Simulate adding airport noise as pollution source
-    for (const a of airports.getAirports()) {
-      pm.addSource(a.x, a.y, a.noisePollution * 5, 'noise');
+    for (const src of airports.getPollutionSources()) {
+      pm.addPollutionSource(src);
     }
     pm.calculateSpread();
 
     // Noise at airport location should be positive
     expect(pm.getPollutionAt(10, 10).noise).toBeGreaterThan(0);
-    // Noise should reach a few cells out
-    expect(pm.getPollutionAt(10, 11).noise).toBeGreaterThan(0);
+    // Noise at far edge of footprint (14, 13) should be positive
+    expect(pm.getPollutionAt(14, 13).noise).toBeGreaterThan(0);
+    // Noise should extend beyond footprint
+    expect(pm.getPollutionAt(10, 14).noise).toBeGreaterThan(0);
   });
 
   it('LARGE airport should produce more noise than SMALL', () => {
-    const pmSmall = new PollutionManager(20, 20);
+    const pmSmall = new PollutionManager(40, 40);
     const small = new AirportSystem();
     small.build(10, 10, 'SMALL', 10000);
-    for (const a of small.getAirports()) {
-      pmSmall.addSource(a.x, a.y, a.noisePollution * 5, 'noise');
+    for (const src of small.getPollutionSources()) {
+      pmSmall.addPollutionSource(src);
     }
     pmSmall.calculateSpread();
 
-    const pmLarge = new PollutionManager(20, 20);
+    const pmLarge = new PollutionManager(40, 40);
     const large = new AirportSystem();
     large.build(10, 10, 'LARGE', 100000);
-    for (const a of large.getAirports()) {
-      pmLarge.addSource(a.x, a.y, a.noisePollution * 5, 'noise');
+    for (const src of large.getPollutionSources()) {
+      pmLarge.addPollutionSource(src);
     }
     pmLarge.calculateSpread();
 
@@ -898,8 +899,8 @@ describe('Airport noise pollution', () => {
   it('no airport should produce no noise', () => {
     const pm = new PollutionManager(20, 20);
     const airports = new AirportSystem();
-    for (const a of airports.getAirports()) {
-      pm.addSource(a.x, a.y, a.noisePollution * 5, 'noise');
+    for (const src of airports.getPollutionSources()) {
+      pm.addPollutionSource(src);
     }
     pm.calculateSpread();
     expect(pm.getPollutionAt(10, 10).noise).toBe(0);

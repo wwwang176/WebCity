@@ -236,6 +236,68 @@ describe('placeAirportOnGrid', () => {
   });
 });
 
+describe('AirportSystem.getPollutionSources multi-cell', () => {
+  it('SMALL airport should emit from all 20 cells with radius', () => {
+    const sys = new AirportSystem();
+    sys.build(5, 5, 'SMALL', 0);
+    const sources = sys.getPollutionSources();
+    expect(sources.length).toBe(20);
+    for (const s of sources) {
+      expect(s.type).toBe('noise');
+      expect(s.amount).toBe(AIRPORT_SIZE_CONFIG.SMALL.noise);
+      expect(s.radius).toBe(AIRPORT_SIZE_CONFIG.SMALL.noiseRadius);
+    }
+  });
+
+  it('MEDIUM airport should emit from all 28 cells', () => {
+    const sys = new AirportSystem();
+    sys.build(10, 10, 'MEDIUM', 0);
+    const sources = sys.getPollutionSources();
+    expect(sources.length).toBe(28);
+    for (const s of sources) {
+      expect(s.amount).toBe(AIRPORT_SIZE_CONFIG.MEDIUM.noise);
+      expect(s.radius).toBe(AIRPORT_SIZE_CONFIG.MEDIUM.noiseRadius);
+    }
+  });
+
+  it('LARGE airport should emit from all 54 cells', () => {
+    const sys = new AirportSystem();
+    sys.build(20, 20, 'LARGE', 0);
+    const sources = sys.getPollutionSources();
+    expect(sources.length).toBe(54);
+    for (const s of sources) {
+      expect(s.amount).toBe(AIRPORT_SIZE_CONFIG.LARGE.noise);
+      expect(s.radius).toBe(AIRPORT_SIZE_CONFIG.LARGE.noiseRadius);
+    }
+  });
+
+  it('source coordinates should match forEachAirportCell output', () => {
+    const sys = new AirportSystem();
+    sys.build(5, 5, 'SMALL', 0);
+    const sources = sys.getPollutionSources();
+    const expected: string[] = [];
+    forEachAirportCell(5, 5, 'SMALL', (cx, cy) => expected.push(`${cx},${cy}`));
+    const actual = sources.map(s => `${s.x},${s.y}`);
+    expect(actual.sort()).toEqual(expected.sort());
+  });
+
+  it('rotated airport should emit from rotated footprint', () => {
+    const sys = new AirportSystem();
+    sys.build(5, 5, 'SMALL', 0, 90); // 5×4 → 4×5
+    const sources = sys.getPollutionSources();
+    expect(sources.length).toBe(20);
+    const expected: string[] = [];
+    forEachAirportCell(5, 5, 'SMALL', (cx, cy) => expected.push(`${cx},${cy}`), 90);
+    const actual = sources.map(s => `${s.x},${s.y}`);
+    expect(actual.sort()).toEqual(expected.sort());
+  });
+
+  it('no airports should return empty sources', () => {
+    const sys = new AirportSystem();
+    expect(sys.getPollutionSources()).toEqual([]);
+  });
+});
+
 describe('getAirportBuildCost', () => {
   it('should return build cost for each size', () => {
     expect(getAirportBuildCost('SMALL')).toBe(AIRPORT_SIZE_CONFIG.SMALL.buildCost);

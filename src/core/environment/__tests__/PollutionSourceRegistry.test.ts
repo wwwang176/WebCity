@@ -58,8 +58,8 @@ describe('PollutionSourceRegistry', () => {
         sewage: { getPollutionSources: () => [{ x: 3, y: 4, amount: 20, type: 'water' as PollutionType }] },
         airport: { getPollutionSources: () => [{ x: 5, y: 6, amount: 15, type: 'noise' as PollutionType }] },
       };
-      forEachServicePollutionSource(state, (x, y, amount, type) => {
-        collected.push({ x, y, amount, type });
+      forEachServicePollutionSource(state, (src) => {
+        collected.push(src);
       });
       expect(collected).toHaveLength(3);
       expect(collected[0]).toEqual({ x: 1, y: 2, amount: 10, type: 'ground' });
@@ -73,8 +73,8 @@ describe('PollutionSourceRegistry', () => {
         garbage: { getPollutionSources: () => [{ x: 1, y: 1, amount: 5, type: 'ground' as PollutionType }] },
         // no sewage or airport
       };
-      forEachServicePollutionSource(state, (x, y, amount, type) => {
-        collected.push({ x, y, amount, type });
+      forEachServicePollutionSource(state, (src) => {
+        collected.push(src);
       });
       expect(collected).toHaveLength(1);
     });
@@ -86,10 +86,21 @@ describe('PollutionSourceRegistry', () => {
         sewage: { getPollutionSources: () => [] },
         airport: { getPollutionSources: () => [] },
       };
-      forEachServicePollutionSource(state, (x, y, amount, type) => {
-        collected.push({ x, y, amount, type });
+      forEachServicePollutionSource(state, (src) => {
+        collected.push(src);
       });
       expect(collected).toHaveLength(0);
+    });
+
+    it('should pass through radius property from pollution sources', () => {
+      const collected: PollutionSource[] = [];
+      const state = {
+        airport: { getPollutionSources: () => [{ x: 5, y: 6, amount: 15, type: 'noise' as PollutionType, radius: 5 }] },
+      };
+      forEachServicePollutionSource(state, (src) => {
+        collected.push(src);
+      });
+      expect(collected[0]!.radius).toBe(5);
     });
   });
 });

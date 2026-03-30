@@ -73,6 +73,57 @@ describe('PollutionManager', () => {
   });
 });
 
+describe('PollutionManager with explicit radius', () => {
+  let pm: PollutionManager;
+
+  beforeEach(() => {
+    pm = new PollutionManager(20, 20);
+  });
+
+  it('should use custom radius as maxRange and adapt decay', () => {
+    pm.addSource(10, 10, 100, 'ground', 5);
+    pm.calculateSpread();
+    // decayPerCell = 100/5 = 20
+    expect(pm.getPollutionAt(10, 10).ground).toBe(100);
+    expect(pm.getPollutionAt(10, 11).ground).toBe(80);  // 100 - 1*20
+    expect(pm.getPollutionAt(10, 13).ground).toBe(40);  // 100 - 3*20
+  });
+
+  it('should reach zero at exactly the radius boundary', () => {
+    pm.addSource(10, 10, 60, 'noise', 3);
+    pm.calculateSpread();
+    // decayPerCell = 60/3 = 20
+    expect(pm.getPollutionAt(10, 13).noise).toBe(0);  // distance 3: 60 - 3*20 = 0
+    expect(pm.getPollutionAt(10, 14).noise).toBe(0);  // beyond radius
+  });
+
+  it('should not affect sources without radius (backward compat)', () => {
+    pm.addSource(10, 10, 100, 'ground');
+    pm.calculateSpread();
+    // Original formula: decayPerCell = DECAY_PER_CELL (30)
+    expect(pm.getPollutionAt(10, 11).ground).toBe(70);  // 100 - 30
+    expect(pm.getPollutionAt(10, 12).ground).toBe(40);  // 100 - 60
+  });
+
+  it('should handle mixed radius and non-radius sources', () => {
+    pm.addSource(5, 10, 60, 'noise', 3);   // radius: decayPerCell = 20
+    pm.addSource(15, 10, 60, 'noise');       // no radius: decayPerCell = 30
+    pm.calculateSpread();
+    // At distance 2 from each source
+    expect(pm.getPollutionAt(5, 12).noise).toBe(20);   // 60 - 2*20
+    expect(pm.getPollutionAt(15, 12).noise).toBe(0);   // 60 - 2*30 = 0
+  });
+
+  it('should support addPollutionSource with radius', () => {
+    pm.addPollutionSource({ x: 10, y: 10, amount: 90, type: 'ground', radius: 3 });
+    pm.calculateSpread();
+    // decayPerCell = 90/3 = 30
+    expect(pm.getPollutionAt(10, 10).ground).toBe(90);
+    expect(pm.getPollutionAt(10, 11).ground).toBe(60);
+    expect(pm.getPollutionAt(10, 13).ground).toBe(0);
+  });
+});
+
 describe('Pollution constants', () => {
   it('POLLUTION.DECAY_PER_CELL should be positive', () => {
     expect(POLLUTION.DECAY_PER_CELL).toBeGreaterThan(0);

@@ -12,6 +12,8 @@ export interface AirportSizeConfig {
   /** Perpendicular depth (Y). */
   height: number;
   noise: number;
+  /** Noise pollution spread radius (Manhattan distance) per cell. */
+  noiseRadius: number;
   tourists: number;
   cargo: number;
   buildCost: number;
@@ -21,9 +23,9 @@ export interface AirportSizeConfig {
 
 /** Single source of truth for all airport size parameters. */
 export const AIRPORT_SIZE_CONFIG: Record<AirportSize, AirportSizeConfig> = {
-  SMALL:  { width: 5, height: 4, noise: 10, tourists: 50,  cargo: 20,  buildCost: 5000,  operatingCost: 500,  populationRequired: 0 },
-  MEDIUM: { width: 7, height: 4, noise: 25, tourists: 200, cargo: 100, buildCost: 15000, operatingCost: 1500, populationRequired: 0 },
-  LARGE:  { width: 9, height: 6, noise: 50, tourists: 500, cargo: 300, buildCost: 40000, operatingCost: 4000, populationRequired: 0 },
+  SMALL:  { width: 5, height: 4, noise: 10, noiseRadius: 3, tourists: 50,  cargo: 20,  buildCost: 5000,  operatingCost: 500,  populationRequired: 0 },
+  MEDIUM: { width: 7, height: 4, noise: 25, noiseRadius: 5, tourists: 200, cargo: 100, buildCost: 15000, operatingCost: 1500, populationRequired: 0 },
+  LARGE:  { width: 9, height: 6, noise: 50, noiseRadius: 8, tourists: 500, cargo: 300, buildCost: 40000, operatingCost: 4000, populationRequired: 0 },
 };
 
 /** Returns the max dimension (for cursor sizing — square bounding box). */
@@ -184,16 +186,21 @@ export class AirportSystem {
     return null;
   }
 
-  /** Noise pollution multiplier for spread calculation. */
-  static readonly NOISE_SPREAD_MULTIPLIER = 5;
-
   getPollutionSources(): PollutionSource[] {
-    return this.airports.map(a => ({
-      x: a.x,
-      y: a.y,
-      amount: a.noisePollution * AirportSystem.NOISE_SPREAD_MULTIPLIER,
-      type: 'noise' as const,
-    }));
+    const sources: PollutionSource[] = [];
+    for (const a of this.airports) {
+      const cfg = AIRPORT_SIZE_CONFIG[a.size];
+      forEachAirportCell(a.x, a.y, a.size, (cx, cy) => {
+        sources.push({
+          x: cx,
+          y: cy,
+          amount: cfg.noise,
+          type: 'noise' as const,
+          radius: cfg.noiseRadius,
+        });
+      }, a.rotation);
+    }
+    return sources;
   }
 
   /**

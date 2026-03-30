@@ -1,4 +1,4 @@
-import type { PollutionSource, PollutionType } from './Pollution';
+import type { PollutionSource } from './Pollution';
 
 /** Any module that produces pollution sources implements this interface (DIP). */
 export interface PollutionSourceProvider {
@@ -32,13 +32,13 @@ const POLLUTION_PROVIDER_KEYS: readonly string[] = [
  */
 export function forEachServicePollutionSource(
   state: Record<string, unknown>,
-  emit: (x: number, y: number, amount: number, type: PollutionType) => void,
+  emit: (source: PollutionSource) => void,
 ): void {
   for (const key of POLLUTION_PROVIDER_KEYS) {
     const provider = state[key] as PollutionSourceProvider | undefined;
     if (!provider) continue;
     for (const src of provider.getPollutionSources()) {
-      emit(src.x, src.y, src.amount, src.type);
+      emit(src);
     }
   }
 }

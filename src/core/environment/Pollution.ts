@@ -5,6 +5,8 @@ export interface PollutionSource {
   y: number;
   amount: number;
   type: PollutionType;
+  /** When set, overrides the default spread range and adapts decay so pollution reaches 0 at this distance. */
+  radius?: number;
 }
 
 interface PollutionLevel {
@@ -43,8 +45,12 @@ export class PollutionManager {
     return this.noise;
   }
 
-  addSource(x: number, y: number, amount: number, type: PollutionType): void {
-    this.sources.push({ x, y, amount, type });
+  addSource(x: number, y: number, amount: number, type: PollutionType, radius?: number): void {
+    this.sources.push({ x, y, amount, type, radius });
+  }
+
+  addPollutionSource(source: PollutionSource): void {
+    this.sources.push(source);
   }
 
   calculateSpread(): void {
@@ -61,7 +67,9 @@ export class PollutionManager {
   private spreadFromSource(source: PollutionSource): void {
     const grid = this.getGrid(source.type);
     const w = this.width;
-    const maxRange = Math.ceil(source.amount / POLLUTION.DECAY_PER_CELL);
+    const hasRadius = source.radius !== undefined && source.radius > 0;
+    const maxRange = hasRadius ? source.radius : Math.ceil(source.amount / POLLUTION.DECAY_PER_CELL);
+    const decayPerCell = hasRadius ? source.amount / source.radius : POLLUTION.DECAY_PER_CELL;
 
     for (let dx = -maxRange; dx <= maxRange; dx++) {
       for (let dy = -maxRange; dy <= maxRange; dy++) {
@@ -71,7 +79,7 @@ export class PollutionManager {
         if (nx < 0 || nx >= this.width || ny < 0 || ny >= this.height) continue;
 
         const distance = Math.abs(dx) + Math.abs(dy); // Manhattan distance
-        const value = Math.max(0, source.amount - distance * POLLUTION.DECAY_PER_CELL);
+        const value = Math.max(0, source.amount - distance * decayPerCell);
 
         if (value > 0) {
           grid[ny * w + nx] += value;
