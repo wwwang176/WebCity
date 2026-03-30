@@ -253,6 +253,6 @@ describe('OVERLAY_SCALE constants', () => {
   it('scaling factors should be positive', () => {
     expect(OVERLAY_SCALE.GROUNDWATER_FACTOR).toBeGreaterThan(0);
     expect(OVERLAY_SCALE.ZONE_TYPE_FACTOR).toBeGreaterThan(0);
-    expect(OVERLAY_SCALE.TRAFFIC_DENSITY_FACTOR).toBeGreaterThan(0);
+    expect(OVERLAY_SCALE.TRAFFIC_LOG_FACTOR).toBeGreaterThan(0);
   });
 });

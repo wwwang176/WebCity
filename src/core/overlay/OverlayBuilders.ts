@@ -58,8 +58,8 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
     cell.zoneType > 0 ? cell.zoneType * O.ZONE_TYPE_FACTOR : 0,
 
   traffic: (ctx, _cell, x, y) => {
-    const density = ctx.traffic.getSegmentDensity(`${x},${y}`);
-    return density * O.TRAFFIC_DENSITY_FACTOR;
+    const flow = ctx.traffic.getSegmentDensity(`${x},${y}`);
+    return flow > 0 ? Math.min(O.DISPLAY_MAX, Math.log2(1 + flow) * O.TRAFFIC_LOG_FACTOR) : 0;
   },
 
   pollution: (_ctx, cell) =>

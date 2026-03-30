@@ -90,9 +90,23 @@ describe('buildOverlayValue', () => {
     expect(buildOverlayValue(makeCtx(), 'zone', makeCell(), 0, 0)).toBe(0);
   });
 
-  it('traffic: density multiplied by factor', () => {
-    const ctx = makeCtx({ traffic: { getSegmentDensity: () => 3 } });
-    expect(buildOverlayValue(ctx, 'traffic', makeCell(), 0, 0)).toBe(3 * O.TRAFFIC_DENSITY_FACTOR);
+  it('traffic: uses log scale for density', () => {
+    const ctx = makeCtx({ traffic: { getSegmentDensity: () => 300 } });
+    const value = buildOverlayValue(ctx, 'traffic', makeCell(), 0, 0);
+    // log2(1+300) ≈ 8.2 × TRAFFIC_LOG_FACTOR(10) ≈ 82
+    expect(value).toBeGreaterThan(70);
+    expect(value).toBeLessThan(100);
+  });
+
+  it('traffic: zero flow returns 0', () => {
+    const ctx = makeCtx({ traffic: { getSegmentDensity: () => 0 } });
+    expect(buildOverlayValue(ctx, 'traffic', makeCell(), 0, 0)).toBe(0);
+  });
+
+  it('traffic: high flow should not exceed DISPLAY_MAX', () => {
+    const ctx = makeCtx({ traffic: { getSegmentDensity: () => 10000 } });
+    const value = buildOverlayValue(ctx, 'traffic', makeCell(), 0, 0);
+    expect(value).toBeLessThanOrEqual(O.DISPLAY_MAX);
   });
 
   it('pollution: scaled from RAW_MAX to DISPLAY_MAX', () => {

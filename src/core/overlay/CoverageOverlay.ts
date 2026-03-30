@@ -9,8 +9,8 @@ export const OVERLAY_SCALE = {
   GROUNDWATER_FACTOR: 0.4,
   /** ZoneType enum → overlay value multiplier */
   ZONE_TYPE_FACTOR: 15,
-  /** Traffic density → overlay value multiplier */
-  TRAFFIC_DENSITY_FACTOR: 20,
+  /** Traffic flow log scale → overlay value multiplier */
+  TRAFFIC_LOG_FACTOR: 10,
   /** Max raw value for pollution/landValue (stored as 0-255) */
   RAW_MAX: 255,
   /** Overlay display maximum */
