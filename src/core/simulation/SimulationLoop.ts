@@ -776,6 +776,9 @@ export class SimulationLoop {
     const grid = this.state.grid;
     const pm = this.state.pollution;
 
+    // Sync predicted traffic flow → grid trafficDensity for noise pollution
+    this.syncTrafficDensity();
+
     pm.clearSources();
 
     // Add pollution sources directly (no intermediate arrays)
@@ -791,6 +794,24 @@ export class SimulationLoop {
       const total = Math.min(SIMULATION.CELL_VALUE_MAX, p.ground + p.noise);
       if (cell.pollution !== total) {
         grid.setField(x, y, 'pollution', total);
+      }
+    });
+  }
+
+  /** Write predicted traffic flow into grid trafficDensity so pollution can read it. */
+  private syncTrafficDensity(): void {
+    const grid = this.state.grid;
+    const traffic = this.state.traffic;
+    grid.forEachCell((cell, x, y) => {
+      if (cell.roadType === 0) {
+        if (cell.trafficDensity !== 0) grid.setField(x, y, 'trafficDensity', 0);
+        return;
+      }
+      const flow = traffic.getSegmentDensity(`${x},${y}`);
+      // Log scale: compress unbounded flow to 0~10 range (decibel-like)
+      const scaled = flow > 0 ? Math.min(10, Math.round(Math.log2(1 + flow))) : 0;
+      if (cell.trafficDensity !== scaled) {
+        grid.setField(x, y, 'trafficDensity', scaled);
       }
     });
   }

@@ -8,7 +8,18 @@ export const GRID_POLLUTION = {
   INDUSTRIAL_GROUND_RADIUS: 4,
   INDUSTRIAL_NOISE: 40,
   INDUSTRIAL_NOISE_RADIUS: 3,
-  TRAFFIC_NOISE_MULTIPLIER: 10,
+  TRAFFIC_NOISE_MULTIPLIER: 3,
+  TRAFFIC_NOISE_RADIUS: 2,
+  /** Speed factor per road type — faster roads are noisier. */
+  ROAD_SPEED_FACTOR: {
+    [RoadType.NONE]: 0,
+    [RoadType.RURAL]: 0.8,
+    [RoadType.TWO_LANE]: 1.0,
+    [RoadType.FOUR_LANE]: 1.5,
+    [RoadType.SIX_LANE]: 1.8,
+    [RoadType.HIGHWAY]: 2.0,
+    [RoadType.ONE_WAY]: 1.2,
+  } as Record<number, number>,
 } as const;
 
 interface GridLike {
@@ -35,7 +46,11 @@ export function forEachGridPollutionSource(
       emit({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_NOISE, type: 'noise', radius: GRID_POLLUTION.INDUSTRIAL_NOISE_RADIUS });
     }
     if (cell.roadType !== RoadType.NONE && cell.trafficDensity > 0) {
-      emit({ x, y, amount: cell.trafficDensity * GRID_POLLUTION.TRAFFIC_NOISE_MULTIPLIER, type: 'noise' });
+      const speedFactor = GRID_POLLUTION.ROAD_SPEED_FACTOR[cell.roadType] ?? 1;
+      const amount = Math.round(cell.trafficDensity * GRID_POLLUTION.TRAFFIC_NOISE_MULTIPLIER * speedFactor);
+      if (amount > 0) {
+        emit({ x, y, amount, type: 'noise', radius: GRID_POLLUTION.TRAFFIC_NOISE_RADIUS });
+      }
     }
   });
 }
