@@ -63,6 +63,19 @@ export interface CenterLine {
   srcY: number;
 }
 
+export interface CurvedCenterLine {
+  /** Arc center x */
+  cx: number;
+  /** Arc center z */
+  cz: number;
+  /** 1 or -1 to mirror the arc */
+  scaleX: number;
+  /** 0 or Math.PI to rotate 180° */
+  rotY: number;
+  srcX: number;
+  srcY: number;
+}
+
 export interface CrosswalkStripe {
   x: number;
   z: number;
@@ -258,6 +271,9 @@ export function buildLaneMarkingData(cells: RoadCell[]): LaneMarking[] {
         markings.push({ x: r.x + 0.125, z: r.y, rotY: Math.PI / 2, offsetPerp: off, srcX: r.x, srcY: r.y });
         if (!intE) markings.push({ x: r.x + 0.375, z: r.y, rotY: Math.PI / 2, offsetPerp: off, srcX: r.x, srcY: r.y });
       }
+    } else {
+      // L-bend: place dashes along arc path
+      emitLBendDashes(markings, r, offsets);
     }
   }
 
@@ -322,6 +338,79 @@ export function buildCenterLineData(cells: RoadCell[]): CenterLine[] {
   }
 
   return lines;
+}
+
+// ── L-bend arc helpers ───────────────────────────────────────
+
+/** Number of dashes placed along a 90° L-bend arc. */
+const BEND_DASH_COUNT = 3;
+const BEND_DASH_T = [1 / 6, 3 / 6, 5 / 6];
+
+function getLBendParams(hasN: boolean, hasE: boolean) {
+  const dirX = hasE ? -1 : 1;
+  const dirZ = hasN ? 1 : -1;
+  const cornerX = hasE ? 0.5 : -0.5;
+  const cornerZ = hasN ? -0.5 : 0.5;
+  return { dirX, dirZ, cornerX, cornerZ };
+}
+
+function emitLBendDashes(
+  markings: LaneMarking[], r: RoadCell, offsets: number[],
+): void {
+  const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+  const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+  const { dirX, dirZ, cornerX, cornerZ } = getLBendParams(hasN, hasE);
+  const R = 0.5;
+
+  for (const off of offsets) {
+    const Rl = R + dirX * off;
+    for (const t of BEND_DASH_T) {
+      const a = t * Math.PI / 2;
+      const cosA = Math.cos(a);
+      const sinA = Math.sin(a);
+      const x = r.x + cornerX + dirX * Rl * cosA;
+      const z = r.y + cornerZ + dirZ * Rl * sinA;
+      const rotY = Math.atan2(-dirX * sinA, dirZ * cosA);
+      markings.push({ x, z, rotY, offsetPerp: 0, srcX: r.x, srcY: r.y });
+    }
+  }
+}
+
+/** Generate curved double solid center line data for 4+ lane L-bends. */
+export function buildCurvedCenterLineData(cells: RoadCell[]): CurvedCenterLine[] {
+  const result: CurvedCenterLine[] = [];
+
+  for (const r of cells) {
+    const isFourLane = r.roadType === RoadType.FOUR_LANE || r.roadType === RoadType.SIX_LANE
+      || r.roadType === RoadType.HIGHWAY;
+    if (!isFourLane) continue;
+    const connections = countBits(r.roadFlags);
+    if (connections !== 2) continue;
+
+    const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+    const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
+    const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+    const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
+
+    // Skip straight segments (handled by buildCenterLineData)
+    if ((hasN && hasS) || (hasE && hasW)) continue;
+
+    // L-bend: N+E, N+W, S+E, S+W
+    const cornerX = hasE ? 0.5 : -0.5;
+    const cornerZ = hasN ? -0.5 : 0.5;
+    // N+E, S+W → right-curving (scaleX=1); N+W, S+E → left-curving (scaleX=-1)
+    const scaleX = ((hasN && hasE) || (hasS && hasW)) ? 1 : -1;
+    const rotY = hasS ? Math.PI : 0;
+
+    result.push({
+      cx: r.x + cornerX,
+      cz: r.y + cornerZ,
+      scaleX, rotY,
+      srcX: r.x, srcY: r.y,
+    });
+  }
+
+  return result;
 }
 
 /**

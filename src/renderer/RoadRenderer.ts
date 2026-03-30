@@ -11,10 +11,12 @@ import {
   buildSidewalkStrips,
   buildLaneMarkingData,
   buildCenterLineData,
+  buildCurvedCenterLineData,
   buildCrosswalkData,
   buildStopLineData,
   type RoadCell,
 } from './RoadStripBuilder';
+import { createDoubleArcGeometry } from './ArcGeometry';
 import { RoadInstanceTracker } from './RoadInstanceTracker';
 import { toPosKey, parsePosKeyUnsafe } from '../core/grid/GridHelpers';
 
@@ -26,13 +28,14 @@ const SIDEWALK_Y = 0.028;
 const MARKING_Y = 0.052;
 
 /** Multipliers for max capacity per mesh type (relative to maxRoads). */
-const CAP = { road: 3, sidewalk: 4, marking: 14, centerLine: 2, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
+const CAP = { road: 3, sidewalk: 4, marking: 14, centerLine: 2, curvedCL: 1, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
 
 export class RoadRenderer {
   private roadMesh: THREE.InstancedMesh | null = null;
   private sidewalkMesh: THREE.InstancedMesh | null = null;
   private markingMesh: THREE.InstancedMesh | null = null;
   private centerLineMesh: THREE.InstancedMesh | null = null;
+  private curvedCLMesh: THREE.InstancedMesh | null = null;
   private crosswalkMesh: THREE.InstancedMesh | null = null;
   private stopLineMesh: THREE.InstancedMesh | null = null;
   private lampMesh: THREE.InstancedMesh | null = null;
@@ -44,6 +47,7 @@ export class RoadRenderer {
   private sidewalkTracker: RoadInstanceTracker | null = null;
   private markingTracker: RoadInstanceTracker | null = null;
   private centerLineTracker: RoadInstanceTracker | null = null;
+  private curvedCLTracker: RoadInstanceTracker | null = null;
   private crosswalkTracker: RoadInstanceTracker | null = null;
   private stopLineTracker: RoadInstanceTracker | null = null;
   private lampTracker: RoadInstanceTracker | null = null;
@@ -104,7 +108,7 @@ export class RoadRenderer {
     this.markingTracker = new RoadInstanceTracker(this.markingMesh, this.maxRoads * CAP.marking);
 
     // Center lines (double solid yellow)
-    const clGeo = new THREE.BoxGeometry(0.008, 0.005, 1);
+    const clGeo = new THREE.BoxGeometry(0.01, 0.005, 1);
     const clMat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
     injectHighlightShader(clMat);
     this.centerLineMesh = new THREE.InstancedMesh(clGeo, clMat, this.maxRoads * CAP.centerLine);
@@ -113,6 +117,17 @@ export class RoadRenderer {
     this.centerLineMesh.frustumCulled = false;
     scene.add(this.centerLineMesh);
     this.centerLineTracker = new RoadInstanceTracker(this.centerLineMesh, this.maxRoads * CAP.centerLine);
+
+    // Curved center lines (L-bend arcs)
+    const arcGeo = createDoubleArcGeometry();
+    const arcMat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa, side: THREE.DoubleSide });
+    injectHighlightShader(arcMat);
+    this.curvedCLMesh = new THREE.InstancedMesh(arcGeo, arcMat, this.maxRoads * CAP.curvedCL);
+    this.curvedCLMesh.count = 0;
+    addHighlightAttribute(this.curvedCLMesh);
+    this.curvedCLMesh.frustumCulled = false;
+    scene.add(this.curvedCLMesh);
+    this.curvedCLTracker = new RoadInstanceTracker(this.curvedCLMesh, this.maxRoads * CAP.curvedCL);
 
     // Crosswalks
     const cwGeo = new THREE.BoxGeometry(1, 0.005, 1);
@@ -250,6 +265,7 @@ export class RoadRenderer {
       this.sidewalkTracker?.removeCell(key);
       this.markingTracker?.removeCell(key);
       this.centerLineTracker?.removeCell(key);
+      this.curvedCLTracker?.removeCell(key);
       this.lampTracker?.removeCell(key);
       this.lampGlowTracker?.removeCell(key);
     }
@@ -397,6 +413,28 @@ export class RoadRenderer {
       }
     }
 
+    // Curved center lines (L-bend arcs)
+    const curvedCLs = buildCurvedCenterLineData(contextCells);
+    const cclByCell = new Map<string, typeof curvedCLs>();
+    for (const a of curvedCLs) {
+      const key = toPosKey(a.srcX, a.srcY);
+      if (!targetKeys.has(key)) continue;
+      const arr = cclByCell.get(key);
+      if (arr) arr.push(a);
+      else cclByCell.set(key, [a]);
+    }
+    for (const [cellKey, cellArcs] of cclByCell) {
+      const start = this.curvedCLTracker!.addCell(cellKey, cellArcs.length);
+      if (start < 0) continue;
+      for (let i = 0; i < cellArcs.length; i++) {
+        const a = cellArcs[i]!;
+        matrix.makeScale(a.scaleX, 1, 1);
+        if (a.rotY !== 0) { rot.makeRotationY(a.rotY); matrix.premultiply(rot); }
+        matrix.setPosition(a.cx, MARKING_Y, a.cz);
+        this.curvedCLMesh!.setMatrixAt(start + i, matrix);
+      }
+    }
+
     // Crosswalks
     const cwStripes = buildCrosswalkData(contextCells);
     const cwByCell = new Map<string, typeof cwStripes>();
@@ -479,7 +517,7 @@ export class RoadRenderer {
 
     // Mark only meshes that have content as needing GPU upload
     const trackers = [
-      this.roadTracker, this.sidewalkTracker, this.markingTracker, this.centerLineTracker,
+      this.roadTracker, this.sidewalkTracker, this.markingTracker, this.centerLineTracker, this.curvedCLTracker,
       this.crosswalkTracker, this.stopLineTracker, this.lampTracker, this.lampGlowTracker,
     ];
     for (const t of trackers) {
@@ -496,6 +534,7 @@ export class RoadRenderer {
     this.sidewalkTracker?.clear();
     this.markingTracker?.clear();
     this.centerLineTracker?.clear();
+    this.curvedCLTracker?.clear();
     this.crosswalkTracker?.clear();
     this.stopLineTracker?.clear();
     this.lampTracker?.clear();
@@ -521,7 +560,7 @@ export class RoadRenderer {
     const dimmed = opacity < 1.0;
     this._focusMode = dimmed;
     const meshes = [
-      this.roadMesh, this.sidewalkMesh, this.markingMesh, this.centerLineMesh,
+      this.roadMesh, this.sidewalkMesh, this.markingMesh, this.centerLineMesh, this.curvedCLMesh,
       this.crosswalkMesh, this.stopLineMesh, this.lampMesh,
     ];
     for (const mesh of meshes) {
@@ -563,6 +602,7 @@ export class RoadRenderer {
       if (this.sidewalkMesh) arr.push(this.sidewalkMesh);
       if (this.markingMesh) arr.push(this.markingMesh);
       if (this.centerLineMesh) arr.push(this.centerLineMesh);
+      if (this.curvedCLMesh) arr.push(this.curvedCLMesh);
       if (this.crosswalkMesh) arr.push(this.crosswalkMesh);
       if (this.stopLineMesh) arr.push(this.stopLineMesh);
       if (this.lampMesh) arr.push(this.lampMesh);
@@ -574,7 +614,7 @@ export class RoadRenderer {
 
   dispose(scene: THREE.Scene): void {
     const meshes = [
-      this.roadMesh, this.sidewalkMesh, this.markingMesh, this.centerLineMesh,
+      this.roadMesh, this.sidewalkMesh, this.markingMesh, this.centerLineMesh, this.curvedCLMesh,
       this.crosswalkMesh, this.stopLineMesh, this.lampMesh, this.lampGlowMesh,
     ];
     for (const mesh of meshes) {
@@ -588,6 +628,7 @@ export class RoadRenderer {
     this.sidewalkMesh = null;
     this.markingMesh = null;
     this.centerLineMesh = null;
+    this.curvedCLMesh = null;
     this.crosswalkMesh = null;
     this.stopLineMesh = null;
     this.lampMesh = null;
@@ -597,6 +638,7 @@ export class RoadRenderer {
     this.sidewalkTracker = null;
     this.markingTracker = null;
     this.centerLineTracker = null;
+    this.curvedCLTracker = null;
     this.crosswalkTracker = null;
     this.stopLineTracker = null;
     this.lampTracker = null;
