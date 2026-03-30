@@ -3,6 +3,7 @@ import { getGame } from '../store/gameStore';
 import { settingsOpen, closeSettings } from '../components/SettingsMenu';
 import { listSaves } from '../../core/save/SaveManager';
 import { Modal } from './Modal';
+import { importSaveFromFile } from '../../core/save/ImportExport';
 
 export function SettingsModal(props: { onOpenDebug?: () => void }) {
   const [saving, setSaving] = createSignal(false);
@@ -72,6 +73,29 @@ export function SettingsModal(props: { onOpenDebug?: () => void }) {
   const cancelConfirm = () => setShowConfirm(false);
   const confirmReturn = () => window.location.reload();
 
+  const handleExport = () => {
+    getGame().exportCurrentGame();
+  };
+
+  const handleImport = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,.webcity.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const content = await file.text();
+      const result = await importSaveFromFile(content);
+      if (result.success) {
+        getGame().showNotification(`Save imported as "${result.saveName}". Load from main menu.`);
+      } else {
+        getGame().showNotification(`Import failed: ${(result.errors || []).join(', ')}`);
+      }
+      close();
+    };
+    input.click();
+  };
+
   return (
     <>
       {/* Main settings modal */}
@@ -98,6 +122,22 @@ export function SettingsModal(props: { onOpenDebug?: () => void }) {
           >
             <span class="settings-modal-icon">{'\uD83D\uDCCB'}</span>
             <span>Save As...</span>
+          </button>
+
+          <button
+            class="settings-modal-item"
+            onClick={handleExport}
+          >
+            <span class="settings-modal-icon">{'\uD83D\uDCE4'}</span>
+            <span>Export Save</span>
+          </button>
+
+          <button
+            class="settings-modal-item"
+            onClick={handleImport}
+          >
+            <span class="settings-modal-icon">{'\uD83D\uDCE5'}</span>
+            <span>Import Save</span>
           </button>
 
           <div class="settings-modal-divider" />

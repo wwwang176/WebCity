@@ -1,4 +1,6 @@
-import { listSaves, deleteSave } from '../core/save/SaveManager';
+import { listSaves, deleteSave, type SaveSlot } from '../core/save/SaveManager';
+import { exportSaveToFile, importSaveFromFile } from '../core/save/ImportExport';
+import { sanitizeSaveName } from '../core/save/SaveValidator';
 
 export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: number) => void): HTMLElement {
   const menu = document.createElement('div');
@@ -88,17 +90,25 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
       .save-slot .save-date {
         color: rgba(144, 202, 249, 0.5); font-size: 12px; margin-top: 4px;
       }
-      .save-slot .save-delete {
+      .save-slot .save-actions {
+        display: flex; flex-direction: column; gap: 4px;
+        flex-shrink: 0; align-self: center;
+        opacity: 0; pointer-events: none;
+        transition: opacity 0.2s ease;
+      }
+      .save-slot:hover .save-actions {
+        opacity: 1; pointer-events: auto;
+      }
+      .save-slot .save-action-btn {
         background: none; border: none;
         color: rgba(255,255,255,0.2); border-radius: 6px;
         padding: 4px 8px; font-size: 15px; cursor: pointer;
-        transition: all 0.2s ease; flex-shrink: 0; align-self: center;
-        opacity: 0; pointer-events: none; line-height: 1;
+        transition: all 0.2s ease; line-height: 1;
       }
-      .save-slot:hover .save-delete {
-        opacity: 1; pointer-events: auto;
+      .save-slot .save-action-btn:hover {
+        color: rgba(144, 202, 249, 0.8);
       }
-      .save-slot .save-delete:hover {
+      .save-slot .save-action-btn[data-delete]:hover {
         color: rgba(239,83,80,0.8);
       }
       .save-empty {
@@ -164,7 +174,9 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
     </div>
     <div id="save-container" style="display:none">
       <div class="save-list" id="save-list"></div>
-      <button class="menu-btn" id="btn-back" style="margin-top:12px">Back</button>
+      <button class="menu-btn" id="btn-import-save" style="margin-top:12px">Import Save</button>
+      <input type="file" id="import-file-input" accept=".json,.webcity.json" style="display:none">
+      <button class="menu-btn" id="btn-back" style="margin-top:8px">Back</button>
     </div>
     <div class="menu-version">v0.1.0</div>
   `;
@@ -207,6 +219,29 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
     menu.appendChild(overlay);
   }
 
+  function showInfoModal(message: string, onClose?: () => void) {
+    const overlay = document.createElement('div');
+    overlay.className = 'dm-overlay';
+    overlay.innerHTML = `
+      <div class="dm-panel">
+        <div class="dm-header">
+          <div class="dm-title">Info</div>
+          <button class="dm-close">&times;</button>
+        </div>
+        <div class="dm-body">
+          <p class="dm-text" style="white-space:pre-wrap">${sanitizeSaveName(message)}</p>
+          <div class="dm-actions">
+            <button class="dm-btn dm-btn--no">OK</button>
+          </div>
+        </div>
+      </div>`;
+    const close = () => { overlay.remove(); onClose?.(); };
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelector('.dm-close')!.addEventListener('click', close);
+    overlay.querySelector('.dm-btn--no')!.addEventListener('click', close);
+    menu.appendChild(overlay);
+  }
+
   function renderSaveList(saveList: HTMLElement) {
     saveList.innerHTML = '<div class="save-empty">Loading saves...</div>';
     listSaves().then(saves => {
@@ -220,14 +255,22 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
         const dateStr = d.toLocaleDateString() + ' ' + d.toLocaleTimeString();
         const sizeKB = Math.round(s.data.length / 1024);
         const popStr = s.population !== undefined ? ` \u2014 Pop: ${s.population.toLocaleString()}` : '';
+        const safeName = sanitizeSaveName(s.name || 'Unnamed');
         return `<div class="save-slot" data-slot="${s.id}" style="display:flex;gap:10px;align-items:stretch">
           <div class="save-info" data-action="load">
-            <div class="save-name">${s.name || 'Unnamed'} (Slot ${s.id})</div>
+            <div class="save-name">${safeName} (Slot ${s.id})</div>
             <div class="save-date">${dateStr} \u2014 ${sizeKB}KB${popStr}</div>
           </div>
-          <button class="save-delete" data-delete="${s.id}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+          <div class="save-actions">
+            <button class="save-action-btn" data-export="${s.id}" title="Export"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></button>
+            <button class="save-action-btn" data-delete="${s.id}" title="Delete"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg></button>
+          </div>
         </div>`;
       }).join('');
+
+      // Store saves map for export handler
+      const saveMap = new Map<number, SaveSlot>();
+      for (const s of saves) saveMap.set(s.id, s);
 
       saveList.querySelectorAll('.save-info').forEach(el => {
         el.addEventListener('click', () => {
@@ -237,7 +280,16 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
         });
       });
 
-      saveList.querySelectorAll('.save-delete').forEach(el => {
+      saveList.querySelectorAll('[data-export]').forEach(el => {
+        el.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const slotId = parseInt((el as HTMLButtonElement).dataset.export!, 10);
+          const slot = saveMap.get(slotId);
+          if (slot) exportSaveToFile(slot);
+        });
+      });
+
+      saveList.querySelectorAll('[data-delete]').forEach(el => {
         el.addEventListener('click', (e) => {
           e.stopPropagation();
           const btn = el as HTMLButtonElement;
@@ -259,6 +311,32 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
     mainBtns.style.display = 'none';
     saveContainer.style.display = 'flex';
     renderSaveList(saveList);
+  });
+
+  // Import save
+  const fileInput = menu.querySelector('#import-file-input') as HTMLInputElement;
+
+  menu.querySelector('#btn-import-save')!.addEventListener('click', () => {
+    fileInput.value = '';
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const content = reader.result as string;
+      const result = await importSaveFromFile(content);
+      if (result.success) {
+        showInfoModal(`Save imported as "${result.saveName}"`, () => {
+          renderSaveList(menu.querySelector('#save-list') as HTMLElement);
+        });
+      } else {
+        showInfoModal(`Import failed:\n${(result.errors || []).join('\n')}`);
+      }
+    };
+    reader.readAsText(file);
   });
 
   return menu;
