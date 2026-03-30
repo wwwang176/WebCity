@@ -34,7 +34,6 @@ import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG } from '../citizen/Job
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import type { SchoolType } from '../service/EducationService';
 import type { EducationRule } from '../citizen/CitizenManager';
-import { TimeOfDay } from './GameClock';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { TransportMode } from '../transport/types';
@@ -107,8 +106,8 @@ export const SIMULATION = {
   VEHICLE_CAP_BASE: 20,
   /** Vehicle cap: fraction of population */
   VEHICLE_CAP_POP_RATIO: 0.3,
-  /** Rush period ticks for commute spawning */
-  RUSH_TICKS: 4,
+  /** Ticks over which to spread commute spawning (higher = fewer vehicles per tick) */
+  SPAWN_SPREAD_TICKS: 8,
   /** Minimum commute spawns per tick */
   MIN_SPAWN_PER_TICK: 5,
   /** Commute sampling: minimum sample count */
@@ -129,26 +128,12 @@ export const SIMULATION = {
   SHOPPING_POP_THRESHOLD: 50,
   /** Number of random cells sampled per upgrade tick */
   UPGRADE_ATTEMPTS: 30,
-  /** Pedestrian density multiplier during midday */
-  PEDESTRIAN_DENSITY_MIDDAY: 0.3,
-  /** Pedestrian density multiplier during night */
-  PEDESTRIAN_DENSITY_NIGHT: 0.05,
   /** Fraction of vehicle cap reserved for freight */
   FREIGHT_CAP_RATIO: 0.15,
-  /** Divisor for freight activity to spawn count */
-  FREIGHT_ACTIVITY_DIVISOR: 20,
-  /** Population divisor for max freight trucks */
-  FREIGHT_POP_DIVISOR: 2000,
-  /** Freight max trucks from population component */
-  FREIGHT_MAX_FROM_POP: 10,
-  /** Freight base trucks from population */
-  FREIGHT_BASE_TRUCKS: 3,
+  /** Throughput units per concurrent freight truck at a trade node */
+  FREIGHT_TRUCKS_PER_THROUGHPUT: 10,
   /** Minimum Manhattan distance for commute trip */
   MANHATTAN_DISTANCE_THRESHOLD: 3,
-  /** Highway external: incoming ratio during morning rush */
-  HIGHWAY_MORNING_INCOMING: 0.6,
-  /** Highway external: incoming ratio during evening rush */
-  HIGHWAY_EVENING_INCOMING: 0.4,
   /** Abandonment: service normalization max (residential) */
   SERVICE_MAX_RES: 10,
   /** Abandonment: service normalization max (non-residential) */
@@ -181,12 +166,14 @@ export class SimulationLoop {
   private buildingPositions: { pos: string; x: number; y: number; buildingId: number }[] = [];
 
   // Cached trade positions (rail stations + airports + highway edges) for freight vehicle spawning.
-  private cachedTradePositions: { x: number; y: number }[] = [];
+  private cachedTradePositions: { x: number; y: number; throughput: number }[] = [];
 
-  // Track which citizens have already commuted this rush period
-  private morningCommuters = new Set<number>(); // citizen ids that have spawned morning commute
-  private eveningCommuters = new Set<number>(); // citizen ids that have spawned evening commute
-  private lastTimeOfDay: TimeOfDay = TimeOfDay.NIGHT;
+  /** Reusable scratch array for eligible commuting citizens. */
+  private commuteEligibleScratch: Citizen[] = [];
+  /** Citizens who currently have a vehicle on the road (rebuilt each tick from live vehicles). */
+  private activeCommuters = new Set<number>();
+  /** Freight source buildings with trucks on the road: key → count (rebuilt each tick). */
+  private activeFreight = new Map<string, number>();
 
   // Commute path cache: stores computed LaneEdge paths for citizen commutes
   commuteCache: CommuteCache = new CommuteCache();
@@ -328,27 +315,30 @@ export class SimulationLoop {
       this.assignCitizenHousing();
 
       // Freight: BFS-based supply + trade calculation
+      const perStationThroughput = TRADE.RAIL_THROUGHPUT_PER_STATION;
       const railThroughput = this.state.rail.hasExternalConnection
-        ? this.state.rail.getExternalStationCount() * TRADE.RAIL_THROUGHPUT_PER_STATION
+        ? this.state.rail.getExternalStationCount() * perStationThroughput
         : 0;
       let airportThroughput = 0;
-      const tradePositions: { x: number; y: number }[] = [];
+      const tradePositions: { x: number; y: number; throughput: number }[] = [];
       if (this.state.rail.hasExternalConnection) {
         for (const s of this.state.rail.getStations()) {
           if (this.state.rail.isStationExternal(s.x, s.y)) {
-            tradePositions.push({ x: s.x, y: s.y });
+            tradePositions.push({ x: s.x, y: s.y, throughput: perStationThroughput });
           }
         }
       }
       for (const ap of this.state.airport.getAirports()) {
         airportThroughput += ap.cargoPerTick;
-        tradePositions.push({ x: ap.x, y: ap.y });
+        tradePositions.push({ x: ap.x, y: ap.y, throughput: ap.cargoPerTick });
       }
       let highwayThroughput = 0;
       if (this.state.highwayConnection.hasExternalConnection) {
         highwayThroughput = this.state.highwayConnection.getThroughput();
-        for (const cell of this.state.highwayConnection.getEdgeHighwayCells()) {
-          tradePositions.push({ x: cell.x, y: cell.y });
+        const hwCells = this.state.highwayConnection.getEdgeHighwayCells();
+        const perCell = hwCells.length > 0 ? Math.ceil(highwayThroughput / hwCells.length) : 0;
+        for (const cell of hwCells) {
+          tradePositions.push({ x: cell.x, y: cell.y, throughput: perCell });
         }
       }
       const totalThroughput = railThroughput + airportThroughput + highwayThroughput;
@@ -1364,93 +1354,68 @@ export class SimulationLoop {
 
     this.rebuildBuildingIndex();
 
-    const timeOfDay = this.state.clock.getTimeOfDay();
-
-    // Clear commuter tracking on period transitions
-    if (timeOfDay !== this.lastTimeOfDay) {
-      if (timeOfDay === TimeOfDay.MORNING_RUSH) this.morningCommuters.clear();
-      if (timeOfDay === TimeOfDay.EVENING_RUSH) this.eveningCommuters.clear();
-      this.tripPoolDirty = true; // Rebuild trip pool each rush period
-      this.lastTimeOfDay = timeOfDay;
-    }
-
     const grid = this.state.grid;
 
-    if (timeOfDay === TimeOfDay.MORNING_RUSH) {
-      // Morning rush: citizens commute home → work
-      this.spawnCommuteVehicles('home_to_work', grid, vehicleCap);
-    } else if (timeOfDay === TimeOfDay.EVENING_RUSH) {
-      // Evening rush: citizens commute work → home
-      this.spawnCommuteVehicles('work_to_home', grid, vehicleCap);
-    } else if (timeOfDay === TimeOfDay.MIDDAY) {
-      // Midday: spawn small amount of random commercial traffic
-      this.spawnRandomTraffic(grid, vehicleCap);
-    }
+    // Vehicles are cosmetic — spawn uniformly every tick regardless of time-of-day.
+    // Random citizen sampling ensures route distribution matches real commute patterns.
+    this.spawnCommuteVehicles(grid, vehicleCap);
 
-    // Spawn external highway traffic (all time periods)
+    // Spawn external highway traffic
     this.spawnExternalHighwayTraffic(grid, vehicleCap);
 
     // Spawn freight trucks (industrial↔commercial, factory↔trade, trade↔commercial)
     this.spawnFreightTraffic(grid, vehicleCap);
 
-    // Build/update trip pool during rush hours
-    if (timeOfDay === TimeOfDay.MORNING_RUSH || timeOfDay === TimeOfDay.EVENING_RUSH) {
-      this.spawnPedestriansFromPool(pop);
-      this.state.pedestrianManager.setDensityMultiplier(1.0);
-    } else if (timeOfDay === TimeOfDay.MIDDAY) {
-      this.state.pedestrianManager.setDensityMultiplier(SIMULATION.PEDESTRIAN_DENSITY_MIDDAY);
-    } else {
-      // night
-      this.state.pedestrianManager.setDensityMultiplier(SIMULATION.PEDESTRIAN_DENSITY_NIGHT);
-    }
-    // Per-frame refill (in Game.ts) uses the last trip pool continuously
+    // Pedestrians: uniform density, trip pool rebuilt on demand
+    this.spawnPedestriansFromPool(pop);
+    this.state.pedestrianManager.setDensityMultiplier(1.0);
   }
 
 
   /**
-   * Spawn commute vehicles for citizens based on direction.
-   * homeId/workplaceId are "x,y" position strings.
+   * Spawn commute vehicles by randomly sampling citizens with jobs.
+   * Direction (home→work vs work→home) is randomized per citizen — vehicles are cosmetic.
    */
   private spawnCommuteVehicles(
-    direction: 'home_to_work' | 'work_to_home',
     grid: { getCell(x: number, y: number): { roadType: number } | null; width: number; height: number },
     vehicleCap: number,
   ): void {
-    const commuterSet = direction === 'home_to_work' ? this.morningCommuters : this.eveningCommuters;
+    // Rebuild activeCommuters from live vehicles (O(vehicleCount), lightweight)
+    const active = this.activeCommuters;
+    active.clear();
+    for (const v of this.state.traffic.vehicles) {
+      if (v.citizenId !== undefined && !v.arrived) active.add(v.citizenId);
+    }
 
-    // Count eligible citizens inline (avoid .filter() array allocation)
+    // Build eligible citizen list (exclude citizens already on the road)
     const citizens = this.state.citizens.getCitizens();
-    let eligibleCount = 0;
+    const eligible = this.commuteEligibleScratch;
+    eligible.length = 0;
     for (const c of citizens) {
-      if (isWorkingAge(c.age) && c.homeId !== null && c.workplaceId !== null && !commuterSet.has(c.id)) {
-        eligibleCount++;
+      if (isWorkingAge(c.age) && c.homeId !== null && c.workplaceId !== null && !active.has(c.id)) {
+        eligible.push(c);
       }
     }
-    if (eligibleCount === 0) return;
+    if (eligible.length === 0) return;
 
-    // Spawn enough vehicles per tick so all eligible commuters depart within the rush period (~4 ticks).
-    // BFS is bounded to 500 steps so each call is cheap.
-    const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligibleCount / SIMULATION.RUSH_TICKS));
+    const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
     let spawned = 0;
 
-    for (const citizen of citizens) {
-      if (spawned >= maxPerTick) break;
-      if (!isWorkingAge(citizen.age) || citizen.homeId === null || citizen.workplaceId === null || commuterSet.has(citizen.id)) continue;
+    for (let i = 0; i < maxPerTick; i++) {
       if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
 
-      const fromStr = direction === 'home_to_work' ? citizen.homeId! : citizen.workplaceId!;
-      const toStr = direction === 'home_to_work' ? citizen.workplaceId! : citizen.homeId!;
+      // Random citizen sampling — route distribution matches real commute patterns
+      const citizen = eligible[randomInt(eligible.length)]!;
+
+      // Random direction (cosmetic — visually indistinguishable)
+      const toWork = Math.random() < 0.5;
+      const fromStr = toWork ? citizen.homeId! : citizen.workplaceId!;
+      const toStr = toWork ? citizen.workplaceId! : citizen.homeId!;
 
       const fromPos = parsePosKey(fromStr);
       const toPos = parsePosKey(toStr);
-      if (!fromPos || !toPos) {
-        commuterSet.add(citizen.id);
-        continue;
-      }
-      if (fromPos.x === toPos.x && fromPos.y === toPos.y) {
-        commuterSet.add(citizen.id);
-        continue;
-      }
+      if (!fromPos || !toPos) continue;
+      if (fromPos.x === toPos.x && fromPos.y === toPos.y) continue;
 
       // --- Transport mode choice ---
       const availableTransport = this.getAvailableTransit(fromPos, toPos);
@@ -1458,9 +1423,6 @@ export class SimulationLoop {
       const mode = chooseMode(fromPos, toPos, availableTransport, congestion);
 
       if (mode !== TransportMode.DRIVE) {
-        // Walk or transit — no car vehicle needed
-        commuterSet.add(citizen.id);
-
         // Collect walking trips for pedestrian spawning (trip pool)
         if (this.tripPoolDirty) {
           if (mode === TransportMode.WALK) {
@@ -1470,7 +1432,6 @@ export class SimulationLoop {
               tripType: PedestrianTripType.FULL_WALK, count: 1,
             });
           } else {
-            // BUS/RAIL/METRO/FERRY: first-mile + last-mile walking trips
             const transitSystem2 = getSystemForMode(this.state, mode);
             if (transitSystem2) {
               const originStop = this.findNearestStop(transitSystem2.getStops(), fromPos);
@@ -1493,28 +1454,24 @@ export class SimulationLoop {
           }
         }
 
-        // Add waiting passenger at the nearest transit stop
         const transitSystem = getSystemForMode(this.state, mode);
         if (transitSystem) {
           const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
           if (nearest) { nearest.dailyRiders++; }
         }
-
         continue;
       }
 
       // --- Check commute cache first ---
-      const isMorning = direction === 'home_to_work';
       const cached = this.commuteCache.get(citizen.id);
       const currentTick = this.state.clock.tick;
 
       if (cached && cached.status === 'ready'
           && !this.commuteCache.isDirty(citizen.id)
           && !this.commuteCache.isExpired(cached, currentTick)) {
-        const cachedPath = isMorning ? cached.morningPath : cached.eveningPath;
+        const cachedPath = toWork ? cached.morningPath : cached.eveningPath;
         if (cachedPath && cachedPath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(cachedPath);
-          commuterSet.add(citizen.id);
+          this.state.traffic.addVehicleOnEdges(cachedPath, citizen.id);
           spawned++;
           continue;
         }
@@ -1531,34 +1488,27 @@ export class SimulationLoop {
         }
       }
 
-      // Pick a random variant to distribute vehicles across lanes
       const edgePath = variants && variants.length > 0
         ? variants[Math.floor(Math.random() * variants.length)]!
         : null;
 
       if (edgePath && edgePath.length > 0) {
-        this.state.traffic.addVehicleOnEdges(edgePath);
+        this.state.traffic.addVehicleOnEdges(edgePath, citizen.id);
 
-        // Build or update the citizen's cached route
         const existingRoute = this.commuteCache.get(citizen.id);
-        // If roads changed since the last cache, clear the other direction too
-        // so it gets recalculated on its next use (prevents permanently stale paths)
         const isRoadChange = existingRoute != null && existingRoute.generation !== this.commuteCache.roadGeneration;
         const cachedRoute: CachedRoute = {
           citizenId: citizen.id,
           homeId: citizen.homeId!,
           workplaceId: citizen.workplaceId!,
-          morningPath: isMorning ? edgePath : (isRoadChange ? null : (existingRoute?.morningPath ?? null)),
-          eveningPath: isMorning ? (isRoadChange ? null : (existingRoute?.eveningPath ?? null)) : edgePath,
+          morningPath: toWork ? edgePath : (isRoadChange ? null : (existingRoute?.morningPath ?? null)),
+          eveningPath: toWork ? (isRoadChange ? null : (existingRoute?.eveningPath ?? null)) : edgePath,
           status: 'ready',
           generation: this.commuteCache.roadGeneration,
         };
         this.commuteCache.set(citizen.id, cachedRoute);
-
-        commuterSet.add(citizen.id);
         spawned++;
       } else {
-        // No path found — cache as failed to avoid re-searching
         this.commuteCache.set(citizen.id, {
           citizenId: citizen.id,
           homeId: citizen.homeId!,
@@ -1568,7 +1518,6 @@ export class SimulationLoop {
           status: 'failed',
           generation: this.commuteCache.roadGeneration,
         });
-        commuterSet.add(citizen.id);
       }
     }
   }
@@ -1593,58 +1542,6 @@ export class SimulationLoop {
   }
 
   /**
-   * Spawn a small amount of random traffic during midday hours.
-   */
-  private spawnRandomTraffic(
-    grid: { getCell(x: number, y: number): { roadType: number; buildingId: number; zoneType: number } | null; width: number; height: number },
-    vehicleCap: number,
-  ): void {
-    const pop = this.state.citizens.getPopulation();
-    // Very small amount: 1 per tick if pop > 50
-    const spawnCount = pop >= 50 ? 1 : 0;
-    if (spawnCount === 0) return;
-
-    // Random-probe for road cells instead of full grid scan (spawns only 1 vehicle)
-    const maxProbes = 40;
-    const w = grid.width;
-    const h = grid.height;
-
-    for (let i = 0; i < spawnCount; i++) {
-      if (this.state.traffic.getVehicleCount() >= vehicleCap) break;
-
-      // Find a random road cell for start
-      let startX = 0, startY = 0, endX = 0, endY = 0;
-      let foundStart = false, foundEnd = false;
-      for (let p = 0; p < maxProbes; p++) {
-        const rx = randomInt(w), ry = randomInt(h);
-        const c = grid.getCell(rx, ry);
-        if (c && c.roadType !== RoadType.NONE) {
-          startX = rx; startY = ry; foundStart = true; break;
-        }
-      }
-      if (!foundStart) return;
-
-      for (let p = 0; p < maxProbes; p++) {
-        const rx = randomInt(w), ry = randomInt(h);
-        const c = grid.getCell(rx, ry);
-        if (c && c.roadType !== RoadType.NONE && (rx !== startX || ry !== startY)) {
-          endX = rx; endY = ry; foundEnd = true; break;
-        }
-      }
-      if (!foundEnd) return;
-
-      if (this._roadLookup) {
-        const edgePath = findLanePath(this.laneGraph, this._roadLookup, { x: startX, y: startY }, { x: endX, y: endY });
-        if (edgePath && edgePath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(edgePath);
-        }
-      }
-    }
-  }
-
-
-
-  /**
    * Spawn external vehicles entering/leaving the city via highway edge connections.
    * Vehicles are real TrafficSimulation entities that participate in congestion.
    */
@@ -1660,20 +1557,9 @@ export class SimulationLoop {
     const currentCount = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
     if (currentCount >= vehicleCap * HIGHWAY_EXTERNAL.CAP_RATIO) return;
 
-    // Time-of-day multiplier and direction bias
-    const timeOfDay = this.state.clock.getTimeOfDay();
-    let multiplier = 1.0;
-    let incomingRatio = 0.5;
-    switch (timeOfDay) {
-      case TimeOfDay.MORNING_RUSH: incomingRatio = SIMULATION.HIGHWAY_MORNING_INCOMING; break;
-      case TimeOfDay.EVENING_RUSH: incomingRatio = SIMULATION.HIGHWAY_EVENING_INCOMING; break;
-      case TimeOfDay.MIDDAY: multiplier = HIGHWAY_EXTERNAL.MIDDAY_MULTIPLIER; break;
-      case TimeOfDay.NIGHT: multiplier = HIGHWAY_EXTERNAL.NIGHT_MULTIPLIER; break;
-    }
-
     const count = Math.min(
       HIGHWAY_EXTERNAL.MAX_PER_TICK,
-      Math.floor(pop / 100 * HIGHWAY_EXTERNAL.SPAWN_PER_100_POP * multiplier),
+      Math.floor(pop / 100 * HIGHWAY_EXTERNAL.SPAWN_PER_100_POP),
     );
     if (count <= 0) return;
 
@@ -1684,7 +1570,7 @@ export class SimulationLoop {
       if (this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount() >= vehicleCap * HIGHWAY_EXTERNAL.CAP_RATIO) break;
       if (this.buildingPositions.length === 0) return;
 
-      const isIncoming = Math.random() < incomingRatio;
+      const isIncoming = Math.random() < 0.5;
       const edge = edgeCells[Math.floor(Math.random() * edgeCells.length)]!;
       const bp = this.buildingPositions[Math.floor(Math.random() * this.buildingPositions.length)]!;
 
@@ -1713,8 +1599,9 @@ export class SimulationLoop {
    * 2. Export: industrial → trade node (station/airport/highway edge)
    * 3. Import: trade node → commercial
    *
-   * Spawn count scales with actual freight activity (production + trade volume).
-   * Route weights are proportional to real data so truck distribution matches economy.
+   * A-limit: each industrial building has at most 1 truck; each trade node has at most N trucks.
+   * B-limit: total freight trucks on road ≤ freightCap.
+   * Routes are cached in shared CommuteCache.routeIndex.
    */
   private spawnFreightTraffic(
     grid: { getCell(x: number, y: number): { roadType: number; zoneType: number } | null; width: number; height: number },
@@ -1728,38 +1615,52 @@ export class SimulationLoop {
     const imported = lastTrade.imported;
     const exported = lastTrade.exported;
 
-    // Skip if no freight activity
     if (production === 0 && imported === 0) return;
 
-    // Cap check: freight uses up to FREIGHT_CAP_RATIO of vehicle cap
+    // B-limit: total freight trucks on road
     const freightCap = Math.floor(vehicleCap * SIMULATION.FREIGHT_CAP_RATIO);
-    const currentCount = this.state.traffic.getVehicleCount() - this.state.traffic.getServiceVehicleCount();
-    if (currentCount >= vehicleCap) return;
 
-    // Collect industrial and commercial building positions from cached index
+    // Rebuild activeFreight from live vehicles
+    const af = this.activeFreight;
+    af.clear();
+    let freightOnRoad = 0;
+    for (const v of this.state.traffic.vehicles) {
+      if (v.sourceBuildingKey && !v.arrived) {
+        af.set(v.sourceBuildingKey, (af.get(v.sourceBuildingKey) ?? 0) + 1);
+        freightOnRoad++;
+      }
+    }
+    if (freightOnRoad >= freightCap) return;
+
     if (this.buildingPositions.length === 0) return;
 
-    const industrials: { x: number; y: number }[] = [];
+    // A-limit: collect available sources (industrial buildings with < 1 truck)
+    const availableIndustrials: { x: number; y: number; key: string }[] = [];
     const commercials: { x: number; y: number }[] = [];
     for (const bp of this.buildingPositions) {
       const cell = grid.getCell(bp.x, bp.y);
       if (!cell) continue;
-      if (cell.zoneType === ZoneType.INDUSTRIAL) industrials.push(bp);
-      else if (isCommercialZone(cell.zoneType)) commercials.push(bp);
+      if (cell.zoneType === ZoneType.INDUSTRIAL) {
+        const key = toPosKey(bp.x, bp.y);
+        if ((af.get(key) ?? 0) < 1) availableIndustrials.push({ x: bp.x, y: bp.y, key });
+      } else if (isCommercialZone(cell.zoneType)) {
+        commercials.push(bp);
+      }
     }
 
-    // Spawn count scales with freight activity + population
-    const pop = this.state.citizens.getPopulation();
-    const activityBase = Math.floor((production + imported + exported) / SIMULATION.FREIGHT_ACTIVITY_DIVISOR);
-    const maxForPop = Math.min(SIMULATION.FREIGHT_MAX_FROM_POP, SIMULATION.FREIGHT_BASE_TRUCKS + Math.floor(pop / SIMULATION.FREIGHT_POP_DIVISOR));
-    const maxPerTick = Math.min(activityBase, maxForPop);
-    if (maxPerTick <= 0) return;
+    // A-limit: collect available trade nodes (< N trucks per node)
+    const availableTrade: { x: number; y: number; key: string }[] = [];
+    for (const tp of this.cachedTradePositions) {
+      const key = toPosKey(tp.x, tp.y);
+      const maxTrucks = Math.ceil(tp.throughput / SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT);
+      if ((af.get(key) ?? 0) < maxTrucks) availableTrade.push({ x: tp.x, y: tp.y, key });
+    }
 
-    // Route weights proportional to actual data
+    // Route weights from economic data
     const localVolume = Math.max(0, production - exported);
-    const hasLocal = industrials.length > 0 && commercials.length > 0 && localVolume > 0;
-    const hasExport = industrials.length > 0 && this.cachedTradePositions.length > 0 && exported > 0;
-    const hasImport = commercials.length > 0 && this.cachedTradePositions.length > 0 && imported > 0;
+    const hasLocal = availableIndustrials.length > 0 && commercials.length > 0 && localVolume > 0;
+    const hasExport = availableIndustrials.length > 0 && availableTrade.length > 0 && exported > 0;
+    const hasImport = availableTrade.length > 0 && commercials.length > 0 && imported > 0;
 
     if (!hasLocal && !hasExport && !hasImport) return;
 
@@ -1770,10 +1671,11 @@ export class SimulationLoop {
     const totalWeight = options.reduce((s, o) => s + o.weight, 0);
     if (totalWeight === 0) return;
 
-    let spawned = 0;
+    // Spawn up to (freightCap - freightOnRoad) trucks, max 5 per tick
+    const maxPerTick = Math.min(5, freightCap - freightOnRoad);
+
     for (let i = 0; i < maxPerTick; i++) {
-      if (currentCount + spawned >= vehicleCap) break;
-      if (spawned >= freightCap) break;
+      if (freightOnRoad >= freightCap) break;
 
       // Weighted random route selection
       let roll = Math.random() * totalWeight;
@@ -1783,33 +1685,66 @@ export class SimulationLoop {
         if (roll <= 0) { routeType = o.type; break; }
       }
 
-      let from: { x: number; y: number };
+      let from: { x: number; y: number; key: string };
       let to: { x: number; y: number };
 
       switch (routeType) {
         case FreightRouteType.LOCAL:
-          from = industrials[Math.floor(Math.random() * industrials.length)]!;
-          to = commercials[Math.floor(Math.random() * commercials.length)]!;
+          if (availableIndustrials.length === 0 || commercials.length === 0) continue;
+          from = availableIndustrials[randomInt(availableIndustrials.length)]!;
+          to = commercials[randomInt(commercials.length)]!;
           break;
         case FreightRouteType.EXPORT:
-          from = industrials[Math.floor(Math.random() * industrials.length)]!;
-          to = this.cachedTradePositions[Math.floor(Math.random() * this.cachedTradePositions.length)]!;
+          if (availableIndustrials.length === 0 || availableTrade.length === 0) continue;
+          from = availableIndustrials[randomInt(availableIndustrials.length)]!;
+          to = availableTrade[randomInt(availableTrade.length)]!;
           break;
         case FreightRouteType.IMPORT:
-          from = this.cachedTradePositions[Math.floor(Math.random() * this.cachedTradePositions.length)]!;
-          to = commercials[Math.floor(Math.random() * commercials.length)]!;
+          if (availableTrade.length === 0 || commercials.length === 0) continue;
+          from = availableTrade[randomInt(availableTrade.length)]!;
+          to = commercials[randomInt(commercials.length)]!;
           break;
       }
 
-      const startRoad = findAdjacentRoad(grid, from.x, from.y);
-      const endRoad = findAdjacentRoad(grid, to.x, to.y);
-      if (!startRoad || !endRoad || (startRoad.x === endRoad.x && startRoad.y === endRoad.y)) continue;
-
+      // Use shared CommuteCache.routeIndex for path caching
+      const fromRoad = findAdjacentRoad(grid, from.x, from.y);
+      const toRoad = findAdjacentRoad(grid, to.x, to.y);
+      if (!fromRoad || !toRoad || (fromRoad.x === toRoad.x && fromRoad.y === toRoad.y)) continue;
       if (!this._roadLookup) continue;
-      const edgePath = findLanePath(this.laneGraph, this._roadLookup, startRoad, endRoad);
+
+      const routeKey = `${toPosKey(from.x, from.y)}->${toPosKey(to.x, to.y)}`;
+      let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
+
+      if (!variants) {
+        variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromRoad, toRoad);
+        if (variants.length > 0) {
+          this.commuteCache.setRouteVariants(routeKey, variants);
+        }
+      }
+
+      const edgePath = variants && variants.length > 0
+        ? variants[Math.floor(Math.random() * variants.length)]!
+        : null;
+
       if (edgePath && edgePath.length > 0) {
-        this.state.traffic.addFreightVehicle(edgePath);
-        spawned++;
+        this.state.traffic.addFreightVehicle(edgePath, from.key);
+        freightOnRoad++;
+        // Update activeFreight count for A-limit within this tick
+        const newCount = (af.get(from.key) ?? 0) + 1;
+        af.set(from.key, newCount);
+        if (routeType === FreightRouteType.IMPORT) {
+          // Remove trade node from available list if it reached its limit
+          const tp = this.cachedTradePositions.find(t => toPosKey(t.x, t.y) === from.key);
+          const maxTrucks = tp ? Math.ceil(tp.throughput / SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT) : 1;
+          if (newCount >= maxTrucks) {
+            const idx = availableTrade.findIndex(t => t.key === from.key);
+            if (idx >= 0) availableTrade.splice(idx, 1);
+          }
+        } else {
+          // Industrial: max 1, remove from available list
+          const idx = availableIndustrials.indexOf(from as any);
+          if (idx >= 0) availableIndustrials.splice(idx, 1);
+        }
       }
     }
   }

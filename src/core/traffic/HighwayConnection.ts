@@ -14,8 +14,6 @@ export const HIGHWAY_EXTERNAL = {
   SPAWN_PER_100_POP: 1,
   MAX_PER_TICK: 3,
   CAP_RATIO: 0.9,
-  MIDDAY_MULTIPLIER: 0.7,
-  NIGHT_MULTIPLIER: 0.2,
 } as const;
 
 interface GridLike {

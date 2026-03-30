@@ -28,6 +28,8 @@ export interface Vehicle {
   edgeMoveRate: number;  // distance moved last tick (for render extrapolation)
   speedMultiplier: number; // random 0.8–1.0, prevents vehicles from bunching at same speed
   stallTime: number;  // accumulated seconds at zero movement; despawned when exceeding threshold
+  citizenId?: number;  // present only for commute vehicles (prevents duplicate spawning)
+  sourceBuildingKey?: string;  // present only for freight vehicles (origin building "x,y")
   busState?: BusVehicleState;  // present only for bus vehicles
   serviceType?: ServiceVehicleType;  // present only for service vehicles
 }
@@ -262,7 +264,7 @@ export class TrafficSimulation {
   }
 
   /** Add a vehicle that follows a LaneEdge path. */
-  addVehicleOnEdges(edgePath: LaneEdge[]): Vehicle {
+  addVehicleOnEdges(edgePath: LaneEdge[], citizenId?: number): Vehicle {
     const dims = pickWeighted(VEHICLE_DIMS, 1.0, e => e.weight);
 
     const vehicle: Vehicle = {
@@ -277,6 +279,7 @@ export class TrafficSimulation {
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
       stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
+      citizenId,
     };
     this.vehicles.push(vehicle);
     // Update density map for immediate queries
@@ -288,7 +291,7 @@ export class TrafficSimulation {
   }
 
   /** Add a freight truck that follows a LaneEdge path. Always uses truck dimensions. */
-  addFreightVehicle(edgePath: LaneEdge[]): Vehicle {
+  addFreightVehicle(edgePath: LaneEdge[], sourceBuildingKey?: string): Vehicle {
     const vehicle: Vehicle = {
       id: this.nextId++,
       length: TRUCK_DIMS.length,
@@ -301,6 +304,7 @@ export class TrafficSimulation {
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
       stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
+      sourceBuildingKey,
     };
     this.vehicles.push(vehicle);
     const startCell = edgePath[0]?.from.cellKey;

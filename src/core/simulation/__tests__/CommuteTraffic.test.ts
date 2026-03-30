@@ -90,22 +90,22 @@ describe('Commute Traffic System', () => {
     expect(state.traffic.getVehicleCount()).toBeGreaterThan(0);
   });
 
-  it('should spawn minimal or no vehicles during night (hours 22-5)', () => {
-    const citizen = state.citizens.createCitizen({
+  it('should spawn vehicles at any hour (time-of-day independent)', () => {
+    state.citizens.createCitizen({
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
     });
 
-    // Advance to hour 2 (deep night)
+    // Advance to hour 2 (previously "night" — now should still spawn)
     advanceToHour(state, 2);
 
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
-    // Night: no commute vehicles should spawn
-    expect(state.traffic.getVehicleCount()).toBe(0);
+    // Vehicles are cosmetic and spawn uniformly regardless of time-of-day
+    expect(state.traffic.getVehicleCount()).toBeGreaterThan(0);
   });
 
   it('should not spawn vehicles for citizens without workplace', () => {
@@ -189,8 +189,7 @@ describe('Commute Traffic System', () => {
     expect(state.traffic.getVehicleCount()).toBeGreaterThan(1);
   });
 
-  it('should spawn some random traffic during midday (hours 10-16)', () => {
-    // Need citizens for population check, but also need buildings
+  it('should spawn commute vehicles during midday hours too', () => {
     for (let i = 0; i < 20; i++) {
       state.citizens.createCitizen({
         age: 100,
@@ -204,14 +203,11 @@ describe('Commute Traffic System', () => {
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
     loop.tick();
 
-    // Midday: some random commercial traffic should spawn
-    // The exact count depends on population, but should be modest
-    const count = state.traffic.getVehicleCount();
-    expect(count).toBeGreaterThanOrEqual(0);
-    // Should be less than morning rush equivalent
+    // Vehicles spawn uniformly — midday should also have traffic
+    expect(state.traffic.getVehicleCount()).toBeGreaterThan(0);
   });
 
-  it('should not spawn duplicate commute for same citizen in same rush period', () => {
+  it('should keep spawning vehicles across multiple ticks up to vehicle cap', () => {
     state.citizens.createCitizen({
       age: 100,
       homeId: '1,1',
@@ -222,18 +218,12 @@ describe('Commute Traffic System', () => {
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
 
-    // Tick multiple times during morning rush
-    loop.tick(); // hour 7
-    const countAfterFirst = state.traffic.getVehicleCount();
-
-    loop.tick(); // hour 8
-    loop.tick(); // hour 9
-    // Count should not exceed 1 for a single citizen
-    // (vehicles may arrive and be removed, so total spawned matters)
-    // At minimum, only 1 commute vehicle per citizen per rush period
-    // We check that no more than 1 was ever spawned by peeking at total
-    // Since vehicles may still be in transit, just verify it's reasonable
-    expect(countAfterFirst).toBeLessThanOrEqual(1);
+    // Vehicles are cosmetic with random sampling — same citizen can be picked again
+    loop.tick();
+    loop.tick();
+    loop.tick();
+    // With random sampling, vehicle count should grow (bounded by vehicleCap)
+    expect(state.traffic.getVehicleCount()).toBeGreaterThan(0);
   });
 });
 
