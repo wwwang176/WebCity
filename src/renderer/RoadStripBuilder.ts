@@ -53,6 +53,16 @@ export interface LaneMarking {
   srcY: number;
 }
 
+export interface CenterLine {
+  x: number;
+  z: number;
+  rotY: number;
+  offsetPerp: number;
+  length: number;
+  srcX: number;
+  srcY: number;
+}
+
 export interface CrosswalkStripe {
   x: number;
   z: number;
@@ -224,10 +234,11 @@ export function buildLaneMarkingData(cells: RoadCell[]): LaneMarking[] {
     const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
     const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-    const isFourLane = r.roadType === RoadType.FOUR_LANE || r.roadType === RoadType.SIX_LANE;
+    const isFourLane = r.roadType === RoadType.FOUR_LANE || r.roadType === RoadType.SIX_LANE
+      || r.roadType === RoadType.HIGHWAY;
     const w = ROAD_WIDTHS[r.roadType] ?? 0.7;
     const laneOffset = w / 4;
-    const offsets = isFourLane ? [-laneOffset, 0, laneOffset] : [0];
+    const offsets = isFourLane ? [-laneOffset, laneOffset] : [0];
 
     if (hasN && hasS) {
       const intN = intersections.has(`${r.x},${r.y - 1}`);
@@ -251,6 +262,66 @@ export function buildLaneMarkingData(cells: RoadCell[]): LaneMarking[] {
   }
 
   return markings;
+}
+
+/** Half-gap between the two center lines. */
+const CENTER_LINE_HALF_GAP = 0.012;
+
+/** Generate double solid center line data for 4+ lane roads. */
+export function buildCenterLineData(cells: RoadCell[]): CenterLine[] {
+  const lines: CenterLine[] = [];
+
+  const intersections = new Set<string>();
+  for (const c of cells) {
+    if (countBits(c.roadFlags) >= 3) intersections.add(`${c.x},${c.y}`);
+  }
+
+  for (const r of cells) {
+    const isFourLane = r.roadType === RoadType.FOUR_LANE || r.roadType === RoadType.SIX_LANE
+      || r.roadType === RoadType.HIGHWAY;
+    if (!isFourLane) continue;
+    const connections = countBits(r.roadFlags);
+    if (connections !== 2) continue;
+
+    const hasN = (r.roadFlags & RoadDirection.NORTH) !== 0;
+    const hasS = (r.roadFlags & RoadDirection.SOUTH) !== 0;
+    const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
+    const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
+
+    if (hasN && hasS) {
+      const intN = intersections.has(`${r.x},${r.y - 1}`);
+      const intS = intersections.has(`${r.x},${r.y + 1}`);
+      const zMin = intN ? -0.5 + STOP_LINE_OFFSET : -0.5;
+      const zMax = intS ? 0.5 - STOP_LINE_OFFSET : 0.5;
+      const len = zMax - zMin;
+      if (len <= 0) continue;
+      const zCenter = r.y + (zMin + zMax) / 2;
+      for (const sign of [-1, 1]) {
+        lines.push({
+          x: r.x, z: zCenter, rotY: 0,
+          offsetPerp: sign * CENTER_LINE_HALF_GAP,
+          length: len, srcX: r.x, srcY: r.y,
+        });
+      }
+    } else if (hasE && hasW) {
+      const intW = intersections.has(`${r.x - 1},${r.y}`);
+      const intE = intersections.has(`${r.x + 1},${r.y}`);
+      const xMin = intW ? -0.5 + STOP_LINE_OFFSET : -0.5;
+      const xMax = intE ? 0.5 - STOP_LINE_OFFSET : 0.5;
+      const len = xMax - xMin;
+      if (len <= 0) continue;
+      const xCenter = r.x + (xMin + xMax) / 2;
+      for (const sign of [-1, 1]) {
+        lines.push({
+          x: xCenter, z: r.y, rotY: Math.PI / 2,
+          offsetPerp: sign * CENTER_LINE_HALF_GAP,
+          length: len, srcX: r.x, srcY: r.y,
+        });
+      }
+    }
+  }
+
+  return lines;
 }
 
 /**

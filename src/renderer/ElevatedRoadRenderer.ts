@@ -12,6 +12,7 @@ import {
   buildRoadStrips,
   buildSidewalkStrips,
   buildLaneMarkingData,
+  buildCenterLineData,
   type RoadCell,
 } from './RoadStripBuilder';
 import { RoadInstanceTracker } from './RoadInstanceTracker';
@@ -28,7 +29,7 @@ const RAMP_ANGLE = Math.atan2(LEVEL_HEIGHT, 1.0);
 const RAMP_LENGTH = Math.sqrt(1.0 + LEVEL_HEIGHT * LEVEL_HEIGHT);
 /** Max elevated cells per level (pre-allocated capacity). */
 const MAX_PER_LEVEL = 500;
-const CAP = { road: 3, sidewalk: 4, marking: 14, lamp: 4, lampGlow: 4 } as const;
+const CAP = { road: 3, sidewalk: 4, marking: 14, centerLine: 2, lamp: 4, lampGlow: 4 } as const;
 
 interface ElevatedCell {
   x: number;
@@ -43,12 +44,14 @@ interface LevelData {
   roadMesh: THREE.InstancedMesh;
   sidewalkMesh: THREE.InstancedMesh;
   markingMesh: THREE.InstancedMesh;
+  centerLineMesh: THREE.InstancedMesh;
   lampMesh: THREE.InstancedMesh;
   lampGlowMesh: THREE.InstancedMesh;
   lampGlowMat: THREE.MeshBasicMaterial;
   roadTracker: RoadInstanceTracker;
   sidewalkTracker: RoadInstanceTracker;
   markingTracker: RoadInstanceTracker;
+  centerLineTracker: RoadInstanceTracker;
   lampTracker: RoadInstanceTracker;
   lampGlowTracker: RoadInstanceTracker;
   pillarMat: THREE.MeshLambertMaterial;
@@ -62,6 +65,7 @@ let _sharedGeo: {
   road: THREE.BoxGeometry;
   sidewalk: THREE.PlaneGeometry;
   marking: THREE.BoxGeometry;
+  centerLine: THREE.BoxGeometry;
   lamp: THREE.BufferGeometry;
   glowGeo: THREE.CircleGeometry;
   pillar: THREE.BoxGeometry;
@@ -71,9 +75,9 @@ let _sharedGeo: {
 function isSharedGeo(geo: THREE.BufferGeometry): boolean {
   if (!_sharedGeo) return false;
   return geo === _sharedGeo.road || geo === _sharedGeo.sidewalk ||
-    geo === _sharedGeo.marking || geo === _sharedGeo.lamp ||
-    geo === _sharedGeo.glowGeo || geo === _sharedGeo.pillar ||
-    geo === _sharedGeo.rail;
+    geo === _sharedGeo.marking || geo === _sharedGeo.centerLine ||
+    geo === _sharedGeo.lamp || geo === _sharedGeo.glowGeo ||
+    geo === _sharedGeo.pillar || geo === _sharedGeo.rail;
 }
 
 function getSharedGeo() {
@@ -81,6 +85,7 @@ function getSharedGeo() {
   const road = new THREE.BoxGeometry(1, 0.05, 1);
   const sw = new THREE.PlaneGeometry(1, 1); sw.rotateX(-Math.PI / 2);
   const mk = new THREE.BoxGeometry(0.01, 0.005, 0.1);
+  const cl = new THREE.BoxGeometry(0.008, 0.005, 1);
   const poleH = 0.28;
   const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4); pole.translate(0, poleH / 2, 0);
   const head = new THREE.SphereGeometry(0.018, 4, 3); head.translate(0, poleH + 0.01, 0);
@@ -96,7 +101,7 @@ function getSharedGeo() {
   glowGeo.setAttribute('color', new THREE.BufferAttribute(vc, 3));
   const pillar = new THREE.BoxGeometry(PILLAR_W, 1, PILLAR_W);
   const rail = new THREE.BoxGeometry(0.35, 0.05, 0.35);
-  _sharedGeo = { road, sidewalk: sw, marking: mk, lamp, glowGeo, pillar, rail };
+  _sharedGeo = { road, sidewalk: sw, marking: mk, centerLine: cl, lamp, glowGeo, pillar, rail };
   return _sharedGeo;
 }
 
@@ -180,6 +185,8 @@ export class ElevatedRoadRenderer {
         ld.roadTracker.removeCell(key);
         ld.sidewalkTracker.removeCell(key);
         ld.markingTracker.removeCell(key);
+        ld.centerLineTracker.removeCell(key);
+        ld.centerLineTracker.removeCell(key + '_cl');
         ld.lampTracker.removeCell(key);
         ld.lampGlowTracker.removeCell(key);
         // Remove pillar/rail individual meshes
@@ -280,6 +287,28 @@ export class ElevatedRoadRenderer {
           ld.markingMesh.setMatrixAt(start + i, matrix);
         }
       }
+
+      // Flat center lines
+      const centerLines = buildCenterLineData(flatCells);
+      const clByCell = new Map<string, typeof centerLines>();
+      for (const cl of centerLines) {
+        const key = toPosKey(cl.srcX, cl.srcY);
+        if (!targetKeys.has(key)) continue;
+        const arr = clByCell.get(key); if (arr) arr.push(cl); else clByCell.set(key, [cl]);
+      }
+      for (const [cellKey, cellCl] of clByCell) {
+        const start = ld.centerLineTracker.addCell(cellKey, cellCl.length);
+        if (start < 0) continue;
+        for (let i = 0; i < cellCl.length; i++) {
+          const cl = cellCl[i]!;
+          const perpX = cl.rotY === 0 ? cl.offsetPerp : 0;
+          const perpZ = cl.rotY !== 0 ? cl.offsetPerp : 0;
+          matrix.makeScale(1, 1, cl.length);
+          if (cl.rotY !== 0) { rot.makeRotationY(cl.rotY); matrix.premultiply(rot); }
+          matrix.setPosition(cl.x + perpX, baseY + MARKING_Y, cl.z + perpZ);
+          ld.centerLineMesh.setMatrixAt(start + i, matrix);
+        }
+      }
     }
 
     // ── Ramp cells (per-cell transform) ──
@@ -367,6 +396,34 @@ export class ElevatedRoadRenderer {
           }
         }
       }
+
+      // Ramp center lines
+      {
+        const rc: RoadCell = { x: c.x, y: c.y, roadType: c.seg.roadType, roadFlags: c.seg.roadFlags };
+        const cls = buildCenterLineData([rc]);
+        if (cls.length > 0) {
+          const clKey = key + '_cl';
+          const start = ld.centerLineTracker.addCell(clKey, cls.length);
+          if (start >= 0) {
+            for (let i = 0; i < cls.length; i++) {
+              const cl = cls[i]!;
+              const perpX = cl.rotY === 0 ? cl.offsetPerp : 0;
+              const perpZ = cl.rotY !== 0 ? cl.offsetPerp : 0;
+              const ascend = c.seg.rampAscendDirection;
+              const midY = (c.level - 0.5) * LEVEL_HEIGHT + MARKING_Y;
+              const lenScaled = cl.length * RAMP_LENGTH;
+              matrix.makeScale(1, 1, lenScaled);
+              if (cl.rotY !== 0) { rot.makeRotationY(cl.rotY); matrix.premultiply(rot); }
+              const tiltX = getRampTiltX(ascend);
+              const tiltZ = getRampTiltZ(ascend);
+              if (tiltX !== 0) { rot.makeRotationX(tiltX); matrix.premultiply(rot); }
+              if (tiltZ !== 0) { rot.makeRotationZ(tiltZ); matrix.premultiply(rot); }
+              matrix.setPosition(cl.x + perpX, midY, cl.z + perpZ);
+              ld.centerLineMesh.setMatrixAt(start + i, matrix);
+            }
+          }
+        }
+      }
     }
 
     // ── Street lamps (flat + ramp) ──
@@ -444,7 +501,7 @@ export class ElevatedRoadRenderer {
     }
 
     // Mark mesh updates
-    for (const m of [ld.roadMesh, ld.sidewalkMesh, ld.markingMesh, ld.lampMesh, ld.lampGlowMesh]) {
+    for (const m of [ld.roadMesh, ld.sidewalkMesh, ld.markingMesh, ld.centerLineMesh, ld.lampMesh, ld.lampGlowMesh]) {
       if (m.count > 0) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     }
   }
@@ -475,6 +532,11 @@ export class ElevatedRoadRenderer {
     mkMesh.count = 0; mkMesh.frustumCulled = false;
     grp.add(mkMesh);
 
+    const clMat = new THREE.MeshLambertMaterial({ color: 0xaaaaaa });
+    const clMesh = new THREE.InstancedMesh(geo.centerLine, clMat, cap * CAP.centerLine);
+    clMesh.count = 0; clMesh.frustumCulled = false;
+    grp.add(clMesh);
+
     const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
     const lampMesh = new THREE.InstancedMesh(geo.lamp, lampMat, cap * CAP.lamp);
     lampMesh.count = 0; lampMesh.castShadow = true; lampMesh.frustumCulled = false;
@@ -492,11 +554,13 @@ export class ElevatedRoadRenderer {
 
     const ld: LevelData = {
       group: grp,
-      roadMesh, sidewalkMesh: swMesh, markingMesh: mkMesh, lampMesh, lampGlowMesh: glowMesh,
+      roadMesh, sidewalkMesh: swMesh, markingMesh: mkMesh, centerLineMesh: clMesh,
+      lampMesh, lampGlowMesh: glowMesh,
       lampGlowMat: glowMat,
       roadTracker: new RoadInstanceTracker(roadMesh, cap * CAP.road),
       sidewalkTracker: new RoadInstanceTracker(swMesh, cap * CAP.sidewalk),
       markingTracker: new RoadInstanceTracker(mkMesh, cap * CAP.marking),
+      centerLineTracker: new RoadInstanceTracker(clMesh, cap * CAP.centerLine),
       lampTracker: new RoadInstanceTracker(lampMesh, cap * CAP.lamp),
       lampGlowTracker: new RoadInstanceTracker(glowMesh, cap * CAP.lampGlow),
       pillarMat: new THREE.MeshLambertMaterial({ color: PILLAR_COLOR }),
