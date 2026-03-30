@@ -779,7 +779,7 @@ export class SimulationLoop {
     pm.clearSources();
 
     // Add pollution sources directly (no intermediate arrays)
-    forEachGridPollutionSource(grid, (x, y, amount, type) => pm.addSource(x, y, amount, type));
+    forEachGridPollutionSource(grid, (src) => pm.addPollutionSource(src));
     // OCP: service-based pollution sources via registry — adding new sources only needs registry update
     forEachServicePollutionSource(this.state, (src) => pm.addPollutionSource(src));
 
