@@ -298,7 +298,7 @@ describe('AirportSystem', () => {
   it('should generate noise pollution', () => {
     const airports = new AirportSystem();
     const airport = airports.build(10, 10, 'LARGE', 0)!;
-    expect(airports.getNoisePollution(airport.id)).toBe(50);
+    expect(airports.getNoisePollution(airport.id)).toBe(AIRPORT_SIZE_CONFIG.LARGE.noise);
     expect(airport.noisePollution).toBeGreaterThan(0);
   });
 

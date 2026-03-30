@@ -139,6 +139,38 @@ describe('GarbageService', () => {
     expect(sources[0]!.type).toBe('ground');
   });
 
+  it('should always emit base pollution per facility regardless of load', () => {
+    const gs = new GarbageService();
+    gs.addFacility(5, 5, 1000);
+    // No tick — load is 0
+    const sources = gs.getPollutionSources();
+    expect(sources.length).toBe(1);
+    expect(sources[0]!.amount).toBe(GARBAGE.BASE_POLLUTION);
+    expect(sources[0]!.radius).toBe(GARBAGE.POLLUTION_RADIUS);
+    expect(sources[0]!.type).toBe('ground');
+  });
+
+  it('should emit base + overload pollution when load > threshold', () => {
+    const gs = new GarbageService();
+    gs.addFacility(5, 5, 100);
+    gs.tick(10000); // load = 100 (full)
+    const sources = gs.getPollutionSources();
+    // 1 base + 1 overload
+    expect(sources.length).toBe(2);
+    expect(sources.every(s => s.radius === GARBAGE.POLLUTION_RADIUS)).toBe(true);
+  });
+
+  it('all pollution sources should have radius', () => {
+    const gs = new GarbageService();
+    gs.addFacility(5, 5, 5);
+    gs.addFacility(20, 20, 5);
+    gs.tick(5000); // overflow
+    const sources = gs.getPollutionSources();
+    for (const s of sources) {
+      expect(s.radius).toBe(GARBAGE.POLLUTION_RADIUS);
+    }
+  });
+
   it('should return empty overflow sources when no overflow', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 10000);

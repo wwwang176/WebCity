@@ -23,9 +23,9 @@ export interface AirportSizeConfig {
 
 /** Single source of truth for all airport size parameters. */
 export const AIRPORT_SIZE_CONFIG: Record<AirportSize, AirportSizeConfig> = {
-  SMALL:  { width: 5, height: 4, noise: 10, noiseRadius: 3, tourists: 50,  cargo: 20,  buildCost: 5000,  operatingCost: 500,  populationRequired: 0 },
-  MEDIUM: { width: 7, height: 4, noise: 25, noiseRadius: 5, tourists: 200, cargo: 100, buildCost: 15000, operatingCost: 1500, populationRequired: 0 },
-  LARGE:  { width: 9, height: 6, noise: 50, noiseRadius: 8, tourists: 500, cargo: 300, buildCost: 40000, operatingCost: 4000, populationRequired: 0 },
+  SMALL:  { width: 5, height: 4, noise: 30, noiseRadius: 5, tourists: 50,  cargo: 20,  buildCost: 5000,  operatingCost: 500,  populationRequired: 0 },
+  MEDIUM: { width: 7, height: 4, noise: 60, noiseRadius: 8, tourists: 200, cargo: 100, buildCost: 15000, operatingCost: 1500, populationRequired: 0 },
+  LARGE:  { width: 9, height: 6, noise: 100, noiseRadius: 12, tourists: 500, cargo: 300, buildCost: 40000, operatingCost: 4000, populationRequired: 0 },
 };
 
 /** Returns the max dimension (for cursor sizing — square bounding box). */

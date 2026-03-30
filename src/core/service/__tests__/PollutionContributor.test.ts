@@ -10,25 +10,28 @@ describe('PollutionContributor', () => {
       expect(svc.getPollutionSources()).toEqual([]);
     });
 
-    it('should return empty array when facilities are under 50% load', () => {
+    it('should return base pollution even when facilities are under 50% load', () => {
       const svc = new GarbageService();
       svc.addFacility(5, 5, 1000);
-      // Don't add any load
-      expect(svc.getPollutionSources()).toEqual([]);
+      // Don't add any load — still emits base pollution
+      const sources = svc.getPollutionSources();
+      expect(sources.length).toBe(1);
+      expect(sources[0]!.type).toBe('ground');
+      expect(sources[0]!.amount).toBeGreaterThan(0);
     });
 
-    it('should return ground pollution source when facility is over 50% load', () => {
+    it('should return base + overload pollution when facility is over 50% load', () => {
       const svc = new GarbageService();
       svc.addFacility(5, 5, 100);
-      // Manually set load by ticking with high population
       // Tick with enough population to fill more than 50%
       svc.tick(10000); // produces 100 units of garbage
       const sources = svc.getPollutionSources();
-      expect(sources.length).toBeGreaterThan(0);
+      // 1 base + 1 overload
+      expect(sources.length).toBe(2);
       expect(sources[0]!.x).toBe(5);
       expect(sources[0]!.y).toBe(5);
       expect(sources[0]!.type).toBe('ground');
-      expect(sources[0]!.amount).toBeGreaterThan(0);
+      expect(sources.every(s => s.amount > 0)).toBe(true);
     });
   });
 
