@@ -19,8 +19,22 @@ export enum OverlayType {
   DISTRICT = 'district',
 }
 
+export interface ElevatedOverlayCell {
+  x: number;
+  y: number;
+  /** World-space Y height for the overlay quad. */
+  height: number;
+  /** Overlay value (0–100). */
+  value: number;
+  /** Whether this cell is a ramp. */
+  isRamp?: boolean;
+  /** Ramp ascend direction bitmask (NESW). */
+  rampAscendDirection?: number;
+}
+
 export class OverlayRenderer {
   private mesh: THREE.Mesh | null = null;
+  private elevatedMesh: THREE.InstancedMesh | null = null;
   private currentOverlay: OverlayType = OverlayType.NONE;
   private readonly _reusableColor = new THREE.Color();
 
@@ -28,7 +42,13 @@ export class OverlayRenderer {
     return this.currentOverlay;
   }
 
-  setOverlay(type: OverlayType, scene: THREE.Scene, grid: Grid, data?: Map<string, number>): void {
+  setOverlay(
+    type: OverlayType,
+    scene: THREE.Scene,
+    grid: Grid,
+    data?: Map<string, number>,
+    elevatedCells?: ElevatedOverlayCell[],
+  ): void {
     this.dispose(scene);
     this.currentOverlay = type;
 
@@ -70,6 +90,61 @@ export class OverlayRenderer {
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.position.set(w / 2 - 0.5, 0.1, h / 2 - 0.5);
     scene.add(this.mesh);
+
+    // Elevated overlay: per-cell quads above elevated road surfaces
+    if (elevatedCells && elevatedCells.length > 0) {
+      this.buildElevatedOverlay(type, scene, elevatedCells);
+    }
+  }
+
+  private static readonly RAMP_ANGLE = Math.atan2(0.6, 1.0);
+  private static readonly DIR_N = 0b0001;
+  private static readonly DIR_S = 0b0010;
+  private static readonly DIR_E = 0b1000;
+  private static readonly DIR_W = 0b0100;
+
+  private buildElevatedOverlay(type: OverlayType, scene: THREE.Scene, cells: ElevatedOverlayCell[]): void {
+    const plane = new THREE.PlaneGeometry(1, 1);
+    plane.rotateX(-Math.PI / 2);
+    const mat = new THREE.MeshBasicMaterial({
+      transparent: true,
+      opacity: 0.6,
+      depthWrite: false,
+    });
+
+    const mesh = new THREE.InstancedMesh(plane, mat, cells.length);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(cells.length * 3), 3);
+    const m = new THREE.Matrix4();
+    const rot = new THREE.Matrix4();
+
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i]!;
+
+      if (c.isRamp && c.rampAscendDirection) {
+        m.identity();
+        const dir = c.rampAscendDirection;
+        const tiltX = (dir & OverlayRenderer.DIR_N) ? OverlayRenderer.RAMP_ANGLE
+          : (dir & OverlayRenderer.DIR_S) ? -OverlayRenderer.RAMP_ANGLE : 0;
+        const tiltZ = (dir & OverlayRenderer.DIR_E) ? OverlayRenderer.RAMP_ANGLE
+          : (dir & OverlayRenderer.DIR_W) ? -OverlayRenderer.RAMP_ANGLE : 0;
+        if (tiltX !== 0) { rot.makeRotationX(tiltX); m.premultiply(rot); }
+        if (tiltZ !== 0) { rot.makeRotationZ(tiltZ); m.premultiply(rot); }
+        m.setPosition(c.x, c.height, c.y);
+      } else {
+        m.makeTranslation(c.x, c.height, c.y);
+      }
+      mesh.setMatrixAt(i, m);
+
+      const normalized = Math.min(1, Math.max(0, c.value / 100));
+      const color = this.getColor(type, normalized);
+      mesh.instanceColor.setXYZ(i, color.r, color.g, color.b);
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.renderOrder = 10;
+    mesh.frustumCulled = false;
+    this.elevatedMesh = mesh;
+    scene.add(mesh);
   }
 
   /** Returns a reusable Color — caller must read r/g/b before calling again. */
@@ -120,6 +195,12 @@ export class OverlayRenderer {
       this.mesh.geometry.dispose();
       (this.mesh.material as THREE.Material).dispose();
       this.mesh = null;
+    }
+    if (this.elevatedMesh) {
+      scene.remove(this.elevatedMesh);
+      this.elevatedMesh.geometry.dispose();
+      (this.elevatedMesh.material as THREE.Material).dispose();
+      this.elevatedMesh = null;
     }
   }
 }

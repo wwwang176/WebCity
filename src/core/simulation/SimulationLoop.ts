@@ -802,13 +802,30 @@ export class SimulationLoop {
   private syncTrafficDensity(): void {
     const grid = this.state.grid;
     const traffic = this.state.traffic;
+
+    // Collect max flow per ground cell (ground + elevated projected down)
+    const maxFlow = new Map<string, number>();
+    // Ground-level roads
     grid.forEachCell((cell, x, y) => {
-      if (cell.roadType === 0) {
-        if (cell.trafficDensity !== 0) grid.setField(x, y, 'trafficDensity', 0);
-        return;
-      }
+      if (cell.roadType === 0) return;
       const flow = traffic.getSegmentDensity(`${x},${y}`);
-      // Log scale: compress unbounded flow to 0~10 range (decibel-like)
+      if (flow > 0) maxFlow.set(`${x},${y}`, flow);
+    });
+    // Elevated roads: project flow to ground cell (take max)
+    if (this._elevationManager) {
+      for (const entry of this._elevationManager.toJSON()) {
+        if (entry.data.roadType === 0) continue;
+        const flow = traffic.getSegmentDensity(`${entry.x},${entry.y},${entry.level}`);
+        if (flow > 0) {
+          const key = `${entry.x},${entry.y}`;
+          maxFlow.set(key, Math.max(maxFlow.get(key) ?? 0, flow));
+        }
+      }
+    }
+
+    // Write to grid with log scale
+    grid.forEachCell((cell, x, y) => {
+      const flow = maxFlow.get(`${x},${y}`) ?? 0;
       const scaled = flow > 0 ? Math.min(10, Math.round(Math.log2(1 + flow))) : 0;
       if (cell.trafficDensity !== scaled) {
         grid.setField(x, y, 'trafficDensity', scaled);

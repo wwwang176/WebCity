@@ -6,7 +6,7 @@ import { BuildingRenderer } from './renderer/BuildingRenderer';
 import { VehicleRenderer, type VehicleData } from './renderer/VehicleRenderer';
 import { TrafficLightRenderer } from './renderer/TrafficLightRenderer';
 import { syncTrafficLightsWithGrid } from './core/traffic/TrafficLights';
-import { OverlayRenderer } from './renderer/OverlayRenderer';
+import { OverlayRenderer, type ElevatedOverlayCell } from './renderer/OverlayRenderer';
 import { GridCursor } from './renderer/GridCursor';
 import { WeatherRenderer } from './renderer/WeatherRenderer';
 import { createGameState, type GameState } from './core/simulation/GameState';
@@ -64,7 +64,7 @@ import {
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
-import { getCoverageService } from './core/overlay/CoverageOverlay';
+import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
 import { canPlaceTransportStop, findAdjacentRoadCell, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
@@ -1934,7 +1934,8 @@ export class Game {
 
   setOverlay(type: OverlayType): void {
     const data = this.buildOverlayData(type);
-    this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data);
+    const elevated = this.buildElevatedOverlayData(type);
+    this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data, elevated);
     this.computeOverlayHighlightCells(type);
     this.updatePlacementPreview();
     this.onUIUpdate?.();
@@ -1957,6 +1958,37 @@ export class Game {
       if (value > 0) data.set(`${x},${y}`, value);
     });
     return data;
+  }
+
+  private static readonly ELEVATED_LEVEL_HEIGHT = 0.6;
+
+  private buildElevatedOverlayData(type: OverlayType): ElevatedOverlayCell[] | undefined {
+    if (type !== OverlayType.TRAFFIC) return undefined;
+    const entries = this.elevationManager.toJSON();
+    if (entries.length === 0) return undefined;
+    const cells: ElevatedOverlayCell[] = [];
+    const traffic = this.state.traffic;
+    const { TRAFFIC_LOG_FACTOR, DISPLAY_MAX } = OVERLAY_SCALE;
+    for (const entry of entries) {
+      if (entry.data.roadType === 0) continue;
+      const flow = traffic.getSegmentDensity(`${entry.x},${entry.y},${entry.level}`);
+      const value = flow > 0 ? Math.min(DISPLAY_MAX, Math.log2(1 + flow) * TRAFFIC_LOG_FACTOR) : 0;
+      if (value > 0) {
+        const isRamp = entry.data.isRamp;
+        const height = isRamp
+          ? (entry.level - 0.5) * Game.ELEVATED_LEVEL_HEIGHT + 0.1
+          : entry.level * Game.ELEVATED_LEVEL_HEIGHT + 0.1;
+        cells.push({
+          x: entry.x,
+          y: entry.y,
+          height,
+          value,
+          isRamp,
+          rampAscendDirection: entry.data.rampAscendDirection,
+        });
+      }
+    }
+    return cells.length > 0 ? cells : undefined;
   }
 
   // ── Coverage overlay: building highlight (green→yellow→red gradient) ──
