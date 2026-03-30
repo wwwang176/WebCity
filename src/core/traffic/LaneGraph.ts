@@ -23,6 +23,8 @@ export interface LaneEdge {
   bezierControl?: { x: number; y: number }[];
   length: number;
   type: 'straight' | 'turn' | 'lane_change' | 'merge';
+  /** Cell key of the intersection cell skipped by cross-intersection turn edges. */
+  viaCellKey?: string;
 }
 
 // ── Helpers ──
@@ -383,6 +385,7 @@ export class LaneGraph {
                 bezierControl: [cp],
                 length: refLength,
                 type: 'turn',
+                viaCellKey: cellKey,
               });
             }
           }

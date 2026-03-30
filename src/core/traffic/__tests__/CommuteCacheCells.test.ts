@@ -35,6 +35,19 @@ describe('collectEdgeCells', () => {
     expect(cells).toEqual(new Set(['0,0', '1,0']));
   });
 
+  it('includes viaCellKey from cross-intersection turn edges', () => {
+    const edge = makeEdge('1,2', '3,2');
+    (edge as any).viaCellKey = '2,2';
+    const cells = collectEdgeCells([edge]);
+    expect(cells).toEqual(new Set(['1,2', '2,2', '3,2']));
+  });
+
+  it('ignores viaCellKey when not set', () => {
+    const edge = makeEdge('1,2', '2,2');
+    const cells = collectEdgeCells([edge]);
+    expect(cells).toEqual(new Set(['1,2', '2,2']));
+  });
+
   it('collects from multiple paths when combined', () => {
     const morning = [makeEdge('0,0', '1,0')];
     const evening = [makeEdge('2,2', '3,3')];
