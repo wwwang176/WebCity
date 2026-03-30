@@ -139,28 +139,32 @@ describe('GarbageService', () => {
     expect(sources[0]!.type).toBe('ground');
   });
 
-  it('should always emit base pollution per facility regardless of load', () => {
+  it('should emit base pollution from all 4 cells of a 2x2 facility', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 1000);
-    // No tick — load is 0
+    // No tick — load is 0, still emits base pollution
     const sources = gs.getPollutionSources();
-    expect(sources.length).toBe(1);
-    expect(sources[0]!.amount).toBe(GARBAGE.BASE_POLLUTION);
-    expect(sources[0]!.radius).toBe(GARBAGE.POLLUTION_RADIUS);
-    expect(sources[0]!.type).toBe('ground');
+    expect(sources.length).toBe(4); // 2×2
+    const coords = sources.map(s => `${s.x},${s.y}`).sort();
+    expect(coords).toEqual(['5,5', '5,6', '6,5', '6,6']);
+    for (const s of sources) {
+      expect(s.amount).toBe(GARBAGE.BASE_POLLUTION);
+      expect(s.radius).toBe(GARBAGE.POLLUTION_RADIUS);
+      expect(s.type).toBe('ground');
+    }
   });
 
-  it('should emit base + overload pollution when load > threshold', () => {
+  it('should emit base + overload from all cells when load > threshold', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 100);
     gs.tick(10000); // load = 100 (full)
     const sources = gs.getPollutionSources();
-    // 1 base + 1 overload
-    expect(sources.length).toBe(2);
+    // 4 base + 4 overload = 8
+    expect(sources.length).toBe(8);
     expect(sources.every(s => s.radius === GARBAGE.POLLUTION_RADIUS)).toBe(true);
   });
 
-  it('all pollution sources should have radius', () => {
+  it('all pollution sources should have radius and cover multi-cell footprint', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 5);
     gs.addFacility(20, 20, 5);
@@ -169,6 +173,12 @@ describe('GarbageService', () => {
     for (const s of sources) {
       expect(s.radius).toBe(GARBAGE.POLLUTION_RADIUS);
     }
+    // Each facility has 4 cells, so coordinates should include all cells
+    const coords = new Set(sources.map(s => `${s.x},${s.y}`));
+    expect(coords.has('5,5')).toBe(true);
+    expect(coords.has('6,6')).toBe(true);
+    expect(coords.has('20,20')).toBe(true);
+    expect(coords.has('21,21')).toBe(true);
   });
 
   it('should return empty overflow sources when no overflow', () => {

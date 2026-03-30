@@ -135,18 +135,31 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     return this.facilities;
   }
 
+  private forEachFacilityCell(f: GarbageFacility, fn: (cx: number, cy: number) => void): void {
+    for (let dy = 0; dy < this.defaultFacilityHeight; dy++) {
+      for (let dx = 0; dx < this.defaultFacilityWidth; dx++) {
+        fn(f.x + dx, f.y + dy);
+      }
+    }
+  }
+
   getPollutionSources(): PollutionSource[] {
     const sources: PollutionSource[] = [];
     const radius = GARBAGE.POLLUTION_RADIUS;
-    // Base pollution: every facility always emits ground pollution
+    // Base pollution: every cell of every facility always emits ground pollution
     for (const f of this.facilities) {
-      sources.push({ x: f.x, y: f.y, amount: GARBAGE.BASE_POLLUTION, type: 'ground', radius });
+      this.forEachFacilityCell(f, (cx, cy) => {
+        sources.push({ x: cx, y: cy, amount: GARBAGE.BASE_POLLUTION, type: 'ground', radius });
+      });
     }
     // Overload pollution: extra when load exceeds threshold
     for (const f of this.facilities) {
       const loadRatio = f.currentLoad / f.capacity;
       if (loadRatio > GARBAGE.POLLUTION_LOAD_THRESHOLD) {
-        sources.push({ x: f.x, y: f.y, amount: Math.round(loadRatio * GARBAGE.POLLUTION_AMOUNT_SCALE), type: 'ground', radius });
+        const amount = Math.round(loadRatio * GARBAGE.POLLUTION_AMOUNT_SCALE);
+        this.forEachFacilityCell(f, (cx, cy) => {
+          sources.push({ x: cx, y: cy, amount, type: 'ground', radius });
+        });
       }
     }
     // Overflow pollution: distributed evenly across facilities
@@ -154,7 +167,9 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
       const totalPenalty = this.getPollutionPenalty();
       const perFacility = Math.ceil(totalPenalty / this.facilities.length);
       for (const f of this.facilities) {
-        sources.push({ x: f.x, y: f.y, amount: perFacility, type: 'ground', radius });
+        this.forEachFacilityCell(f, (cx, cy) => {
+          sources.push({ x: cx, y: cy, amount: perFacility, type: 'ground', radius });
+        });
       }
     }
     return sources;
