@@ -1,6 +1,7 @@
 import { isFootprintAdjacentToRoad, isWithinEuclideanRadius, type ReadableGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
+import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
 
 export interface Park {
   id: string;
@@ -22,6 +23,7 @@ export const PARK = {
 export class ParkService {
   private parks: Park[] = [];
   private connectedParkIds = new Set<string>();
+  private operationalParkIds: Set<string> | null = null;
   private nextId = 1;
 
   addPark(x: number, y: number, radius = 5): string {
@@ -40,8 +42,24 @@ export class ParkService {
     return this.parks;
   }
 
+  /** Update which parks are operational (have power + water). */
+  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): void {
+    this.operationalParkIds = new Set<string>();
+    for (const p of this.parks) {
+      if (isFacilityOperational(p.x, p.y, 'park', isPowered, isWaterSupplied)) {
+        this.operationalParkIds.add(p.id);
+      }
+    }
+  }
+
+  private isParkOperational(id: string): boolean {
+    return this.operationalParkIds === null || this.operationalParkIds.has(id);
+  }
+
   getCoverage(x: number, y: number): boolean {
-    return this.parks.some(p => this.connectedParkIds.has(p.id) && this.isInRange(p, x, y));
+    return this.parks.some(p =>
+      this.connectedParkIds.has(p.id) && this.isParkOperational(p.id) && this.isInRange(p, x, y),
+    );
   }
 
   getLandValueBonus(x: number, y: number): number {
@@ -101,7 +119,7 @@ export class ParkService {
   private countCoveringParks(x: number, y: number): number {
     let count = 0;
     for (const p of this.parks) {
-      if (!this.connectedParkIds.has(p.id)) continue;
+      if (!this.connectedParkIds.has(p.id) || !this.isParkOperational(p.id)) continue;
       if (this.isInRange(p, x, y)) count++;
     }
     return count;

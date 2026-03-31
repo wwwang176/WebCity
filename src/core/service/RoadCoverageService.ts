@@ -24,6 +24,8 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   protected facilities: F[] = [];
   protected coverage = new RoadCoverageMap();
   protected connectedFacilityIds = new Set<string>();
+  /** null = no filter (all operational); Set = only listed IDs are operational. */
+  protected operationalIds: Set<string> | null = null;
   protected nextId = 1;
 
   protected abstract readonly coverageBudget: number;
@@ -72,7 +74,10 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     facilityWidth = this.defaultFacilityWidth,
     facilityHeight = this.defaultFacilityHeight,
   ): void {
-    this.coverage.recalculate(this.facilities, grid, this.coverageBudget, facilityWidth, facilityHeight);
+    const active = this.operationalIds
+      ? this.facilities.filter(f => this.operationalIds!.has(f.id))
+      : this.facilities;
+    this.coverage.recalculate(active, grid, this.coverageBudget, facilityWidth, facilityHeight);
     this.updateConnectedFacilities(grid);
   }
 
@@ -100,6 +105,25 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     facilityHeight = this.defaultFacilityHeight,
   ): Map<string, number> {
     return this.coverage.previewMerged(position, grid, this.coverageBudget, facilityWidth, facilityHeight);
+  }
+
+  /** Update which facilities are operational (have power + water). */
+  updateOperationalStatus(predicate: (f: F) => boolean): void {
+    this.operationalIds = new Set<string>();
+    for (const f of this.facilities) {
+      if (predicate(f)) this.operationalIds.add(f.id);
+    }
+  }
+
+  /** Check if a facility is currently operational. Returns true if no filter is active. */
+  isFacilityOperationalById(id: string): boolean {
+    return this.operationalIds === null || this.operationalIds.has(id);
+  }
+
+  /** Return only operational facilities. */
+  getOperationalFacilities(): readonly F[] {
+    if (this.operationalIds === null) return this.facilities;
+    return this.facilities.filter(f => this.operationalIds!.has(f.id));
   }
 
   /** Default maintenance cost: count × per-facility cost. Override for custom logic. */

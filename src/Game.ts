@@ -462,6 +462,13 @@ export class Game {
     this.simLoop.onBuildingUpdated = (x, y, zoneType, level, burned, abandoned) => {
       this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned, abandoned);
     };
+    // Sync light spots when facility operational status changes (power/water dependency)
+    this.simLoop.onFacilityOperationalChanged = (changes) => {
+      for (const { x, y, operational } of changes) {
+        if (operational) this.buildingRenderer.addLightSpot(x, y);
+        else this.buildingRenderer.removeLightSpot(x, y);
+      }
+    };
     // When a bus route is dissolved (stop removed → <2 stops), clean up TrafficSimulation vehicles
     this.state.bus.onRouteDissolvedHook = (routeId) => {
       this.state.traffic.removeBusVehicles(routeId);

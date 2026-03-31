@@ -2,6 +2,8 @@ import { removeById } from '../utils/removeById';
 import { recoverNextId } from '../utils/recoverNextId';
 import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
 import type { SizedGrid } from '../grid/GridHelpers';
+import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
+import type { InfraType } from '../building/InfraConfig';
 
 export type SchoolType = 'elementary' | 'highschool' | 'university';
 
@@ -57,9 +59,17 @@ const SCHOOL_TYPES: readonly SchoolType[] = ['elementary', 'highschool', 'univer
 
 export type EducationLevelResult = 'none' | SchoolType;
 
+/** Map SchoolType → InfraType for operational checks. */
+const SCHOOL_INFRA_TYPE: Record<SchoolType, InfraType> = {
+  elementary: 'school',
+  highschool: 'school_high',
+  university: 'school_univ',
+};
+
 export class EducationService {
   private schools: School[] = [];
   private nextId = 1;
+  private operationalSchoolIds: Set<string> | null = null;
   /** One RoadCoverageMap per school type, each with its own budget. */
   private coverageMaps: Record<SchoolType, RoadCoverageMap> = {
     elementary: new RoadCoverageMap(),
@@ -90,11 +100,25 @@ export class EducationService {
     removeById(this.schools, id);
   }
 
-  /** Recompute road-distance coverage for all school types. */
+  /** Update which schools are operational (have power + water). */
+  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): void {
+    this.operationalSchoolIds = new Set<string>();
+    for (const s of this.schools) {
+      if (isFacilityOperational(s.x, s.y, SCHOOL_INFRA_TYPE[s.type], isPowered, isWaterSupplied)) {
+        this.operationalSchoolIds.add(s.id);
+      }
+    }
+  }
+
+  private isSchoolOperational(id: string): boolean {
+    return this.operationalSchoolIds === null || this.operationalSchoolIds.has(id);
+  }
+
+  /** Recompute road-distance coverage for all school types (only operational schools). */
   recalculateCoverage(grid: SizedGrid): void {
     const types = SCHOOL_TYPES;
     for (const type of types) {
-      const facilities = this.schools.filter(s => s.type === type);
+      const facilities = this.schools.filter(s => s.type === type && this.isSchoolOperational(s.id));
       const size = SCHOOL_SIZE[type];
       this.coverageMaps[type].recalculate(
         facilities, grid, SCHOOL_BUDGET[type], size.width, size.height,

@@ -73,21 +73,21 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     // 1. Produce garbage based on population
     const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);
 
-    // 2. Burn (incinerate) a fraction of current load at connected facilities only
+    // 2. Burn (incinerate) a fraction of current load at connected + operational facilities only
     for (const f of this.facilities) {
-      if (!this.connectedFacilityIds.has(f.id)) continue;
+      if (!this.connectedFacilityIds.has(f.id) || !this.isFacilityOperationalById(f.id)) continue;
       if (f.currentLoad > 0) {
         const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.BURN_RATE));
         f.currentLoad = Math.max(0, f.currentLoad - burned);
       }
     }
 
-    // 3. Distribute new garbage across connected facilities with remaining capacity
+    // 3. Distribute new garbage across connected + operational facilities with remaining capacity
     let remaining = produced + this.overflow;
     this.overflow = 0;
 
     for (const f of this.facilities) {
-      if (!this.connectedFacilityIds.has(f.id)) continue;
+      if (!this.connectedFacilityIds.has(f.id) || !this.isFacilityOperationalById(f.id)) continue;
       if (remaining <= 0) break;
       const space = f.capacity - f.currentLoad;
       if (space > 0) {
@@ -136,14 +136,16 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
   getPollutionSources(): PollutionSource[] {
     const sources: PollutionSource[] = [];
     const radius = GARBAGE.POLLUTION_RADIUS;
-    // Base pollution: every cell of every facility always emits ground pollution
-    for (const f of this.facilities) {
+    // Only operational facilities emit pollution
+    const operational = this.getOperationalFacilities();
+    // Base pollution: every cell of every operational facility emits ground pollution
+    for (const f of operational) {
       this.forEachFacilityCell(f, (cx, cy) => {
         sources.push({ x: cx, y: cy, amount: GARBAGE.BASE_POLLUTION, type: 'ground', radius });
       });
     }
     // Overload pollution: extra when load exceeds threshold
-    for (const f of this.facilities) {
+    for (const f of operational) {
       const loadRatio = f.currentLoad / f.capacity;
       if (loadRatio > GARBAGE.POLLUTION_LOAD_THRESHOLD) {
         const amount = Math.round(loadRatio * GARBAGE.POLLUTION_AMOUNT_SCALE);
@@ -152,11 +154,11 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
         });
       }
     }
-    // Overflow pollution: distributed evenly across facilities
-    if (this.overflow > 0 && this.facilities.length > 0) {
+    // Overflow pollution: distributed evenly across operational facilities
+    if (this.overflow > 0 && operational.length > 0) {
       const totalPenalty = this.getPollutionPenalty();
-      const perFacility = Math.ceil(totalPenalty / this.facilities.length);
-      for (const f of this.facilities) {
+      const perFacility = Math.ceil(totalPenalty / operational.length);
+      for (const f of operational) {
         this.forEachFacilityCell(f, (cx, cy) => {
           sources.push({ x: cx, y: cy, amount: perFacility, type: 'ground', radius });
         });

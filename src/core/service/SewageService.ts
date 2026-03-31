@@ -21,6 +21,7 @@ interface SewageJSON {
 import type { PollutionSource } from '../environment/Pollution';
 import { isFootprintAdjacentToRoad, type ReadableGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
+import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
 
 /** Sewage system configuration constants */
 export const SEWAGE = {
@@ -38,6 +39,7 @@ export class SewageService {
   private outlets: SewageOutlet[] = [];
   private treatmentPlants: TreatmentPlant[] = [];
   private connectedPlantIds = new Set<string>();
+  private operationalPlantIds: Set<string> | null = null;
   private untreatedSewage = 0;
   private nextId = 1;
 
@@ -79,6 +81,20 @@ export class SewageService {
     }
   }
 
+  /** Update which treatment plants are operational (have power; sewage is water-exempt). */
+  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): void {
+    this.operationalPlantIds = new Set<string>();
+    for (const p of this.treatmentPlants) {
+      if (isFacilityOperational(p.x, p.y, 'sewage', isPowered, isWaterSupplied)) {
+        this.operationalPlantIds.add(p.id);
+      }
+    }
+  }
+
+  private isPlantOperational(id: string): boolean {
+    return this.operationalPlantIds === null || this.operationalPlantIds.has(id);
+  }
+
   /**
    * Full tick: produce sewage from population, then treat as much as connected capacity allows.
    * Resets untreated count each tick before producing new sewage.
@@ -90,11 +106,11 @@ export class SewageService {
     this.untreatedSewage = Math.max(0, produced - connectedCapacity);
   }
 
-  /** Treatment capacity from connected plants only. */
+  /** Treatment capacity from connected AND operational plants only. */
   private getConnectedTreatmentCapacity(): number {
     let cap = 0;
     for (const p of this.treatmentPlants) {
-      if (this.connectedPlantIds.has(p.id)) cap += p.capacity;
+      if (this.connectedPlantIds.has(p.id) && this.isPlantOperational(p.id)) cap += p.capacity;
     }
     return cap;
   }

@@ -55,8 +55,8 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     if (this.pendingDeaths <= 0 && this.facilities.every(c => c.used === 0)) return;
 
     for (const cem of this.facilities) {
-      // Skip facilities not connected to road
-      if (!this.connectedFacilityIds.has(cem.id)) continue;
+      // Skip facilities not connected to road or not operational (no power/water)
+      if (!this.connectedFacilityIds.has(cem.id) || !this.isFacilityOperationalById(cem.id)) continue;
 
       let budget = cem.processRate;
 

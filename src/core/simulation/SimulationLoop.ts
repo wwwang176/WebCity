@@ -37,7 +37,7 @@ import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
-import { getTotalServiceMaintenanceCost, tickAllCivicServices } from '../service/ServiceRegistry';
+import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findAdjacentRoad } from '../grid/GridHelpers';
 import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
@@ -110,6 +110,8 @@ export class SimulationLoop {
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
+  /** Previous facility operational state keyed by "x,y" → operational boolean. */
+  private prevFacilityOps = new Map<string, boolean>();
   /** Reusable scratch array for working-age citizens. */
   private workingAgeScratch: Citizen[] = [];
   /** Reusable Set for congestion flow cell collection. */
@@ -140,6 +142,8 @@ export class SimulationLoop {
   onBuildingAdded?: (x: number, y: number, zoneType: number, level: number) => void;
   onBuildingRemoved?: (x: number, y: number) => void;
   onBuildingUpdated?: (x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned?: boolean) => void;
+  /** Called when facility operational status changes (for light sync). */
+  onFacilityOperationalChanged?: (changes: FacilityOpEntry[]) => void;
 
   setElevationManager(em: import('../elevation/ElevationManager').ElevationManager): void {
     this._elevationManager = em;
@@ -203,6 +207,7 @@ export class SimulationLoop {
     // ── Slot 2: Civic services + fire + service vehicles ──
     if (slowSlot === 2) {
       tickAllCivicServices(this.state);
+      this.emitFacilityOperationalChanges();
       this.processFireEvents();
       this.tickServiceVehicles();
     }
@@ -659,6 +664,35 @@ export class SimulationLoop {
 
   private countRoadTiles(): number {
     return countRoadTiles(this.state.grid);
+  }
+
+  /**
+   * Detect facility operational status changes and fire callback for light sync.
+   */
+  private emitFacilityOperationalChanges(): void {
+    if (!this.onFacilityOperationalChanged) return;
+    const current = collectFacilityOperationalStatus(this.state);
+    const changes: FacilityOpEntry[] = [];
+    const newMap = new Map<string, boolean>();
+    for (const entry of current) {
+      const key = `${entry.x},${entry.y}`;
+      newMap.set(key, entry.operational);
+      const prev = this.prevFacilityOps.get(key);
+      if (prev !== entry.operational) {
+        changes.push(entry);
+      }
+    }
+    // Also detect removed facilities (were in prev but not in current)
+    for (const [key, wasOp] of this.prevFacilityOps) {
+      if (!newMap.has(key) && wasOp) {
+        const [x, y] = key.split(',').map(Number);
+        changes.push({ x: x!, y: y!, operational: false });
+      }
+    }
+    this.prevFacilityOps = newMap;
+    if (changes.length > 0) {
+      this.onFacilityOperationalChanged(changes);
+    }
   }
 
   /**
