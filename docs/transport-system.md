@@ -99,6 +99,48 @@ frequency = 站點數 × 3
 
 火車沿軌道圖 (RailNetwork) 的 A* 路徑移動。
 
+### 外部列車（External Trains）
+
+當鐵軌延伸到地圖邊緣時，系統會自動偵測外部連線。外部列車從地圖邊界生成，沿軌道行駛至站點後返回。
+
+#### 連線偵測
+
+`RailSystem.updateExternalConnection()` 使用 BFS 從邊緣鐵軌格（有 inward flag 的邊界格）向內搜索，找出所有可從地圖邊緣到達的車站：
+
+1. 掃描地圖四邊的格子，找到 `railType !== 0` 且具有 `hasInwardFlag()` 的邊界格
+2. 從這些邊界格出發，透過 BFS 沿相鄰鐵軌格擴散
+3. 若 BFS 可達任一車站 → 該站標記為 `externalStations`，`hasExternalConnection = true`
+
+#### 外部連線效果
+
+```
+populationIn = max(1, 路線數 × 5)
+goodsIn      = max(1, 路線數 × 10)
+goodsOut     = max(1, 路線數 × 5)
+```
+
+這些數值影響人口流入與 FreightSystem 的貨物進出口。
+
+#### 外部列車動畫
+
+渲染端由 `TrainAnimator` 管理外部列車動畫，同時最多一列外部列車：
+
+- 生成間隔：`EXTERNAL_TRAIN_INTERVAL = 12` 秒（首列加快，初始計時器為 6 秒）
+- 車輛 ID 起始偏移：`EXTERNAL_TRAIN_ID = 900_000`
+- 動畫流程：
+  1. `RailSystem.getExternalTrainPath()` 取得從隨機邊界鐵軌格到隨機外部車站的 `RailNetwork.findPath()` 路徑
+  2. `buildExternalPath()` 將路徑平滑化並串接為來回路徑（edge → station → edge）
+  3. 動畫分三個階段（`ExternalTrainAnim.phase`）：`incoming` → `dwell`（停站等待）→ `outgoing`
+  4. 行駛完畢後清除動畫，重設計時器
+
+#### 軌道視覺延伸
+
+鐵軌在地圖邊緣不會突然斷開。`TrackRenderer` 偵測邊界鐵軌格後，使用 `edgeExtensionStrips()` 將道碴、鐵軌、枕木向地圖外延伸 `EDGE_EXTEND = 0.5` 格，營造軌道通往外界的視覺效果。
+
+#### 建造方式
+
+玩家使用鐵軌工具拖曳到地圖邊緣外即可。`RailBuilder.buildTrack()` 呼叫 `extractOutOfBoundsEdge()` 偵測超出邊界的末端格，將路徑截斷至最後一個有效格，並為該格加上 `outwardFlag`（方向旗標指向地圖外側），供後續 `hasInwardFlag()` 偵測使用。
+
 ---
 
 ## 渡輪系統 (FerrySystem)
@@ -326,3 +368,58 @@ dailyRiders 總和 ≥ 車輛數 × 單車容量
 4. 找終點附近的站點
 5. 計算環形路線上兩個方向的搭乘距離，取較短的
 6. 估計時間 = 搭乘距離 / 系統速度
+
+---
+
+## 高速公路外部連線 (Highway External Connection)
+
+高速公路可延伸到地圖邊緣，建立與外部世界的車輛交通與貨物貿易連線。
+
+### 建造方式
+
+玩家使用道路工具將道路拖曳到地圖邊緣外：
+
+1. `GridCursor` 允許游標超出地圖邊界 1 格（`// Allow 1 cell beyond edge`）
+2. `RoadBuilder.buildRoad()` 呼叫 `extractOutOfBoundsEdge()` 偵測超出邊界的末端格
+3. **僅 `RoadType.HIGHWAY` 類型會產生外部連線**，其他道路類型（一般道路、大道）即使拖到邊界外也會忽略超出的格子
+4. 最後一個有效邊界格會被加上 `outwardFlag`（指向地圖外的方向旗標）
+5. 鐵軌也支援相同的拖曳超出邊界機制（`RailBuilder.buildTrack()`）
+
+### 連線偵測
+
+`HighwayConnection.updateExternalConnection()` 每 60 tick 由 SimulationLoop 呼叫，掃描地圖四邊：
+
+1. 檢查所有邊界格是否有 `RoadType.HIGHWAY`
+2. 使用 `hasInwardFlag()` 確認該格有方向旗標指向地圖內側（過濾掉平行於邊界的高速公路）
+3. 同時檢查地面層與高架層（`ElevationManager`），高架高速公路也能形成外部連線
+4. 收集所有符合條件的格子到 `edgeHighwayCells`
+
+### 外部連線效果
+
+```
+populationIn = max(1, 連線格數 × 3)
+goodsIn      = max(1, 連線格數 × 8)
+goodsOut     = max(1, 連線格數 × 5)
+throughput   = 連線格數 × THROUGHPUT_PER_CONNECTION (30)
+```
+
+#### 配置常數（`HIGHWAY_EXTERNAL`）
+
+| 常數 | 值 | 說明 |
+|------|---|------|
+| `THROUGHPUT_PER_CONNECTION` | 30 | 每個連線格的吞吐量 |
+| `SPAWN_PER_100_POP` | 1 | 每 100 人口的外部車輛生成數 |
+| `MAX_PER_TICK` | 3 | 每 tick 最大外部車輛生成數 |
+| `CAP_RATIO` | 0.9 | 容量上限比例 |
+
+### 視覺效果
+
+道路在地圖邊緣的渲染會向外延伸 `EDGE_EXTEND = 0.5` 格（`RoadRenderer`），使高速公路不會在地圖邊界突然截斷，呈現通往外部世界的視覺效果。鐵軌同樣有 0.5 格的邊緣延伸（`TrackRenderer`）。
+
+### 邊緣工具共用模組
+
+道路與鐵軌的邊界偵測共用 `EdgeUtils`：
+
+- `extractOutOfBoundsEdge(path, mapWidth, mapHeight)` — 檢測路徑末端是否超出地圖，回傳 `outwardFlag` 與截斷長度
+- `hasInwardFlag(x, y, mapWidth, mapHeight, flags)` — 檢查邊界格的方向旗標是否指向地圖內部
+- 方向旗標值：`NORTH=0b0001`, `SOUTH=0b0010`, `WEST=0b0100`, `EAST=0b1000`
