@@ -194,10 +194,6 @@ describe('TRAFFIC constants', () => {
     expect(TRAFFIC.SPEED_MULTIPLIER_MIN + TRAFFIC.SPEED_MULTIPLIER_RANGE).toBeLessThanOrEqual(1);
   });
 
-  it('lookahead distance should be positive', () => {
-    expect(TRAFFIC.LOOKAHEAD_DISTANCE).toBeGreaterThan(0);
-  });
-
   it('density capacity per cell should be positive', () => {
     expect(TRAFFIC.DENSITY_CAPACITY_PER_CELL).toBeGreaterThan(0);
   });

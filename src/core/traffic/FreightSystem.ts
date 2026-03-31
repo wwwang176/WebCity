@@ -237,7 +237,8 @@ export class FreightSystem {
     }
 
     const shortage = totalConsumption - actualConsumed;
-    this.exportableFactorySet = exportableFactories;
+    this.exportableFactorySet.clear();
+    for (const key of exportableFactories) this.exportableFactorySet.add(key);
     this.isExporting = exported > 0;
     this.lastDemand = { production: totalProduction, consumption: totalConsumption, shortage: Math.max(0, shortage) };
     this.lastTrade = { imported, exported, importCapacity: importCap, exportCapacity: exportCap };

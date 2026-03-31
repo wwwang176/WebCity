@@ -63,8 +63,6 @@ export const TRAFFIC = {
   SPEED_MULTIPLIER_RANGE: 0.2,
   /** Random initial stall jitter range (negative = headstart) */
   STALL_JITTER: 5,
-  /** Maximum lookahead distance for gap/red-light checks */
-  LOOKAHEAD_DISTANCE: 5,
   /** Density divisor per occupied cell for congestion calculation */
   DENSITY_CAPACITY_PER_CELL: 3,
   /** Edge vehicle speed in world-units per second */
