@@ -557,6 +557,13 @@ void main() {
     // Daytime: all windows show blue-white glass reflection
     vec3 dayGlass = vec3(0.6, 0.72, 0.82);
     color = mix(color, dayGlass * lighting, dayFactor * windowMask);
+    // Specular sun reflection on glass — project to horizontal plane
+    // (vertical walls have horizontal normals, isometric camera looks down)
+    vec3 viewDirH = normalize(vec3(cameraPosition.x - vWorldPos.x, 0.0, cameraPosition.z - vWorldPos.z));
+    vec3 sunDirH = normalize(vec3(sunDir.x, 0.0, sunDir.z));
+    vec3 halfDirH = normalize(sunDirH + viewDirH);
+    float spec = pow(max(dot(n, halfDirH), 0.0), 24.0);
+    color += spec * sunColor * 0.8 * dayFactor * windowMask;
     // Nighttime: only lit windows show warm yellow glow
     if (isLitWindow) {
       vec3 warmGlow = vec3(0.95, 0.85, 0.5);
