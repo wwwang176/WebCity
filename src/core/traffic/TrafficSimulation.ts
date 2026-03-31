@@ -417,23 +417,6 @@ export class TrafficSimulation {
         targetSpeed = maxSpeed * (obstacle / BRAKE_DISTANCE);
       }
 
-      // 4b. Lookahead: pre-brake for lower speed limit on next edge
-      const nextEdge = ep[v.edgeIndex + 1];
-      if (nextEdge && getSpeedLimit && obstacle >= BRAKE_DISTANCE) {
-        const nextLimit = getSpeedLimit(nextEdge.from.cellKey) ?? REFERENCE_LIMIT;
-        const nextTurnFactor = nextEdge.type === 'turn' ? 0.5 : 1.0;
-        const nextMaxSpeed = EDGE_SPEED * (nextLimit / REFERENCE_LIMIT) * v.speedMultiplier * nextTurnFactor;
-        if (nextMaxSpeed < maxSpeed) {
-          const currentEdgeObj = ep[v.edgeIndex]!;
-          const distToEdgeEnd = currentEdgeObj.length - v.edgeProgress;
-          if (distToEdgeEnd < BRAKE_DISTANCE) {
-            const t = distToEdgeEnd / BRAKE_DISTANCE;
-            const limitedSpeed = nextMaxSpeed + (maxSpeed - nextMaxSpeed) * t;
-            targetSpeed = Math.min(targetSpeed, limitedSpeed);
-          }
-        }
-      }
-
       // 5. Apply acceleration / deceleration
       if (targetSpeed > v.currentSpeed) {
         // Accelerate: limited by ACCEL per second
@@ -444,6 +427,25 @@ export class TrafficSimulation {
       } else {
         // Speed-limit / lookahead deceleration: gradual
         v.currentSpeed = Math.max(targetSpeed, v.currentSpeed - DECEL * dtSeconds);
+      }
+
+      // 6. Lookahead: snap for lower speed limit ahead (+1 and +2 edges)
+      const next1 = ep[v.edgeIndex + 1];
+      const next2 = ep[v.edgeIndex + 2];
+      if (getSpeedLimit && (next1 || next2)) {
+        const limit1 = next1 ? getSpeedLimit(next1.from.cellKey) ?? REFERENCE_LIMIT : REFERENCE_LIMIT;
+        const limit2 = next2 ? getSpeedLimit(next2.from.cellKey) ?? REFERENCE_LIMIT : REFERENCE_LIMIT;
+        const nextLimit = Math.min(limit1, limit2);
+        const nextMaxSpeed = EDGE_SPEED * (nextLimit / REFERENCE_LIMIT) * v.speedMultiplier;
+        if (nextMaxSpeed < maxSpeed) {
+          let distToEntry = ep[v.edgeIndex]!.length - v.edgeProgress;
+          if (limit1 >= limit && next1) distToEntry += next1.length;
+          if (distToEntry < BRAKE_DISTANCE) {
+            const t = distToEntry / BRAKE_DISTANCE;
+            const limitedSpeed = nextMaxSpeed + (maxSpeed - nextMaxSpeed) * t;
+            if (limitedSpeed < v.currentSpeed) v.currentSpeed = limitedSpeed;
+          }
+        }
       }
 
       // Safety cap: never move further than available space

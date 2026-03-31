@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 820 580" font-family="monospace" font-size="12">
+  <rect width="820" height="580" fill="#1a1a2e"/>
+
+  <text x="410" y="28" text-anchor="middle" fill="#eee" font-size="16" font-weight="bold">Lane Graph Edge Structure</text>
+
+  <!-- ==================== Straight Road ==================== -->
+  <text x="410" y="58" text-anchor="middle" fill="#aaa" font-size="13">Straight Road — eastbound traffic</text>
+
+  <!-- Cell A (x=0, spans -0.5 ~ 0.5) -->
+  <rect x="60" y="75" width="250" height="90" fill="none" stroke="#555" stroke-dasharray="6,4" rx="4"/>
+  <text x="185" y="95" text-anchor="middle" fill="#777" font-size="11">Cell A (center=0)</text>
+
+  <!-- Cell B (x=1, spans 0.5 ~ 1.5) -->
+  <rect x="310" y="75" width="250" height="90" fill="none" stroke="#555" stroke-dasharray="6,4" rx="4"/>
+  <text x="435" y="95" text-anchor="middle" fill="#777" font-size="11">Cell B (center=1)</text>
+
+  <!-- Cell C -->
+  <rect x="560" y="75" width="250" height="90" fill="none" stroke="#555" stroke-dasharray="6,4" rx="4"/>
+  <text x="685" y="95" text-anchor="middle" fill="#777" font-size="11">Cell C (center=2)</text>
+
+  <!-- Scale: 250px = 1.0 unit, so 0.1 = 25px -->
+  <!-- Cell A: entry(west) at -0.4 → exit(east) at 0.5 -->
+  <!-- Pixel: cell center at 185. -0.4 = 185 - 100 = 85.  0.5 = 185 + 125 = 310 -->
+
+  <!-- Cell A entry(west) at x=-0.4 (west side) -->
+  <circle cx="110" cy="130" r="6" fill="#4ecdc4"/>
+  <text x="110" y="155" text-anchor="middle" fill="#4ecdc4" font-size="9">entry(W)</text>
+  <text x="110" y="166" text-anchor="middle" fill="#888" font-size="8">x=-0.4</text>
+
+  <!-- Cell A exit(east) at x=0.5 (east side) -->
+  <circle cx="310" cy="130" r="6" fill="#ff6b6b"/>
+  <text x="310" y="155" text-anchor="middle" fill="#ff6b6b" font-size="9">exit(E)</text>
+  <text x="310" y="166" text-anchor="middle" fill="#888" font-size="8">x=0.5</text>
+
+  <!-- Within-cell A: entry(W) → exit(E) = 0.9 -->
+  <line x1="116" y1="130" x2="304" y2="130" stroke="#ffdd57" stroke-width="3"/>
+  <polygon points="302,126 302,134 308,130" fill="#ffdd57"/>
+  <text x="210" y="122" text-anchor="middle" fill="#ffdd57" font-size="11" font-weight="bold">0.9 (within-cell)</text>
+
+  <!-- Cell B entry(west) at x=0.6 (west side of B) -->
+  <circle cx="335" cy="130" r="6" fill="#4ecdc4"/>
+  <text x="335" y="155" text-anchor="middle" fill="#4ecdc4" font-size="9">entry(W)</text>
+  <text x="335" y="166" text-anchor="middle" fill="#888" font-size="8">x=0.6</text>
+
+  <!-- Cross-cell A→B: exit(E) at 0.5 → entry(W) at 0.6 = 0.1 -->
+  <line x1="316" y1="130" x2="329" y2="130" stroke="#74b9ff" stroke-width="3"/>
+  <polygon points="327,126 327,134 333,130" fill="#74b9ff"/>
+  <text x="322" y="112" text-anchor="middle" fill="#74b9ff" font-size="10" font-weight="bold">0.1</text>
+  <text x="322" y="100" text-anchor="middle" fill="#74b9ff" font-size="8">(cross)</text>
+
+  <!-- Cell B exit(east) at x=1.5 -->
+  <circle cx="560" cy="130" r="6" fill="#ff6b6b"/>
+  <text x="560" y="155" text-anchor="middle" fill="#ff6b6b" font-size="9">exit(E)</text>
+  <text x="560" y="166" text-anchor="middle" fill="#888" font-size="8">x=1.5</text>
+
+  <!-- Within-cell B: 0.9 -->
+  <line x1="341" y1="130" x2="554" y2="130" stroke="#ffdd57" stroke-width="3"/>
+  <polygon points="552,126 552,134 558,130" fill="#ffdd57"/>
+  <text x="448" y="122" text-anchor="middle" fill="#ffdd57" font-size="11" font-weight="bold">0.9 (within-cell)</text>
+
+  <!-- Cross-cell B→C: 0.1 -->
+  <circle cx="585" cy="130" r="6" fill="#4ecdc4"/>
+  <line x1="566" y1="130" x2="579" y2="130" stroke="#74b9ff" stroke-width="3"/>
+  <polygon points="577,126 577,134 583,130" fill="#74b9ff"/>
+  <text x="572" y="112" text-anchor="middle" fill="#74b9ff" font-size="10" font-weight="bold">0.1</text>
+
+  <!-- Within-cell C: 0.9 -->
+  <circle cx="810" cy="130" r="6" fill="#ff6b6b"/>
+  <line x1="591" y1="130" x2="804" y2="130" stroke="#ffdd57" stroke-width="3"/>
+  <polygon points="802,126 802,134 808,130" fill="#ffdd57"/>
+  <text x="700" y="122" text-anchor="middle" fill="#ffdd57" font-size="11" font-weight="bold">0.9 (within-cell)</text>
+
+  <!-- Legend -->
+  <rect x="80" y="182" width="14" height="4" fill="#ffdd57"/>
+  <text x="100" y="188" fill="#ddd" font-size="10">within-cell: entry(opposite side) → exit(this side) = 0.9</text>
+  <rect x="470" y="182" width="14" height="4" fill="#74b9ff"/>
+  <text x="490" y="188" fill="#ddd" font-size="10">cross-cell: exit → next entry = 0.1</text>
+
+  <!-- ==================== Turn ==================== -->
+  <text x="410" y="225" text-anchor="middle" fill="#aaa" font-size="13">Turn — east to south (bezier at within-cell edge)</text>
+
+  <!-- Cell D (east road) -->
+  <rect x="80" y="248" width="220" height="120" fill="none" stroke="#555" stroke-dasharray="6,4" rx="4"/>
+  <text x="190" y="270" text-anchor="middle" fill="#777" font-size="11">Cell D</text>
+
+  <!-- Cell E (corner intersection) -->
+  <rect x="330" y="248" width="170" height="170" fill="none" stroke="#555" stroke-dasharray="6,4" rx="4"/>
+  <text x="415" y="270" text-anchor="middle" fill="#777" font-size="11">Cell E (turn)</text>
+
+  <!-- Cell F (south road) -->
+  <rect x="330" y="448" width="170" height="120" fill="none" stroke="#555" stroke-dasharray="6,4" rx="4"/>
+  <text x="415" y="475" text-anchor="middle" fill="#777" font-size="11">Cell F</text>
+
+  <!-- D: exit(east) on east side -->
+  <circle cx="300" cy="308" r="6" fill="#ff6b6b"/>
+  <text x="300" y="335" text-anchor="middle" fill="#ff6b6b" font-size="9">D exit(E)</text>
+
+  <!-- E: entry(east) on east side — arrives FROM east, going west -->
+  <!-- Wait, for eastbound traffic entering E from the west:
+       The vehicle arrives FROM west → Entry(west) on the west side of E -->
+  <!-- E: entry(west) on west side -->
+  <circle cx="355" cy="308" r="6" fill="#4ecdc4"/>
+  <text x="350" y="293" text-anchor="middle" fill="#4ecdc4" font-size="9">E entry(W)</text>
+
+  <!-- Cross-cell D→E: 0.1 -->
+  <line x1="306" y1="308" x2="349" y2="308" stroke="#74b9ff" stroke-width="2.5"/>
+  <polygon points="347,304 347,312 353,308" fill="#74b9ff"/>
+  <text x="327" y="300" text-anchor="middle" fill="#74b9ff" font-size="10" font-weight="bold">0.1</text>
+
+  <!-- E: exit(south) on south side -->
+  <circle cx="415" cy="418" r="6" fill="#ff6b6b"/>
+  <text x="445" y="415" text-anchor="start" fill="#ff6b6b" font-size="9">E exit(S)</text>
+
+  <!-- Within-cell E: entry(W) → exit(S) bezier curve -->
+  <path d="M 361,308 C 430,308 415,360 415,412" fill="none" stroke="#ff9ff3" stroke-width="3"/>
+  <polygon points="411,410 419,410 415,418" fill="#ff9ff3"/>
+  <text x="455" y="365" text-anchor="start" fill="#ff9ff3" font-size="10" font-weight="bold">~0.9</text>
+  <text x="455" y="378" text-anchor="start" fill="#ff9ff3" font-size="9">(bezier curve)</text>
+
+  <!-- Entry tangent arrow (traveling east → tangent points east) -->
+  <line x1="355" y1="308" x2="380" y2="308" stroke="#4ecdc4" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="377,305 377,311 383,308" fill="#4ecdc4" opacity="0.7"/>
+  <text x="385" y="305" fill="#4ecdc4" font-size="9" opacity="0.8">tangent→</text>
+
+  <!-- Exit tangent arrow (traveling south → tangent points south) -->
+  <line x1="415" y1="418" x2="415" y2="440" stroke="#ff6b6b" stroke-width="1.5" stroke-dasharray="4,3"/>
+  <polygon points="412,437 418,437 415,443" fill="#ff6b6b" opacity="0.7"/>
+  <text x="435" y="440" fill="#ff6b6b" font-size="9" opacity="0.8">tangent↓</text>
+
+  <!-- F: entry(north) on north side -->
+  <circle cx="415" cy="473" r="6" fill="#4ecdc4"/>
+  <text x="445" y="478" text-anchor="start" fill="#4ecdc4" font-size="9">F entry(N)</text>
+
+  <!-- Cross-cell E→F: 0.1 -->
+  <line x1="415" y1="424" x2="415" y2="467" stroke="#74b9ff" stroke-width="2.5"/>
+  <polygon points="411,465 419,465 415,471" fill="#74b9ff"/>
+  <text x="400" y="448" text-anchor="end" fill="#74b9ff" font-size="10" font-weight="bold">0.1</text>
+
+  <!-- Bottom legend -->
+  <rect x="80" y="555" width="14" height="4" fill="#ff9ff3"/>
+  <text x="100" y="559" fill="#ddd" font-size="10">bezier turn: two tangents (entry→east, exit→south) create smooth curve</text>
+</svg>
