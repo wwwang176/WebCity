@@ -266,7 +266,10 @@ void main() {
 
   // Read real lights from Three.js uniforms (set by lights_pars_begin)
   #if NUM_DIR_LIGHTS > 0
-    vec3 sunDir = normalize(directionalLights[0].direction);
+    // directionalLights[].direction is view-space; convert to world-space
+    vec3 sd = directionalLights[0].direction;
+    mat3 vm = mat3(viewMatrix);
+    vec3 sunDir = normalize(vec3(dot(vm[0], sd), dot(vm[1], sd), dot(vm[2], sd)));
     vec3 sunColor = directionalLights[0].color;
     float sunIntensity = length(sunColor);
   #else
@@ -557,13 +560,13 @@ void main() {
     // Daytime: all windows show blue-white glass reflection
     vec3 dayGlass = vec3(0.6, 0.72, 0.82);
     color = mix(color, dayGlass * lighting, dayFactor * windowMask);
-    // Specular sun reflection on glass — project to horizontal plane
-    // (vertical walls have horizontal normals, isometric camera looks down)
+    // Specular sun reflection on sun-facing glass only
     vec3 viewDirH = normalize(vec3(cameraPosition.x - vWorldPos.x, 0.0, cameraPosition.z - vWorldPos.z));
     vec3 sunDirH = normalize(vec3(sunDir.x, 0.0, sunDir.z));
+    float facingSun = max(dot(n, sunDirH), 0.0);
     vec3 halfDirH = normalize(sunDirH + viewDirH);
     float spec = pow(max(dot(n, halfDirH), 0.0), 24.0);
-    color += spec * sunColor * 0.8 * dayFactor * windowMask;
+    color += spec * sunColor * 0.8 * dayFactor * windowMask * facingSun;
     // Nighttime: only lit windows show warm yellow glow
     if (isLitWindow) {
       vec3 warmGlow = vec3(0.95, 0.85, 0.5);
