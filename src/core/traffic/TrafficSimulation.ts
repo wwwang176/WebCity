@@ -45,13 +45,6 @@ export const SERVICE_VEHICLE_DIMS: Record<ServiceVehicleType, { length: number; 
   health: { length: 0.30, width: 0.10 },
   garbage: { length: 0.45, width: 0.125 },
 };
-/** @deprecated Use SERVICE_VEHICLE_DIMS instead. */
-export const SERVICE_VEHICLE_LENGTHS: Record<ServiceVehicleType, number> = {
-  police: 0.22,
-  fire: 0.55,
-  health: 0.30,
-  garbage: 0.45,
-};
 
 /** Vehicle dimensions for commute/random traffic (car + van only; trucks use addFreightVehicle) */
 const VEHICLE_DIMS = [
@@ -103,15 +96,6 @@ export function getSpeedLimitForCell(
   return cfg?.speedLimit ?? 50;
 }
 
-export function getLaneCount(roadType: number): number {
-  const config = ROAD_CONFIGS[roadType as RoadType];
-  if (!config || config.lanes === 0) return 1;
-  // ROAD_CONFIGS.lanes is total lanes (both directions).
-  // For bidirectional roads, directional lanes = total / 2.
-  // ONE_WAY roads use all lanes in one direction.
-  if (roadType === RoadType.ONE_WAY) return config.lanes;
-  return Math.max(1, Math.floor(config.lanes / 2));
-}
 
 /**
  * Edge-based traffic simulation.
@@ -145,37 +129,50 @@ export class TrafficSimulation {
   private readonly _headingOut = { hx: 0, hy: 0 };
 
 
-  /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg).
-   *  startSegment places the bus at the beginning of that segment (a stop). */
-  addBusVehicle(segments: LaneEdge[][], routeId: number, startSegment = 0): Vehicle {
-    const segIdx = startSegment % segments.length;
-    const seg = segments[segIdx]!;
+  /**
+   * Create a base vehicle with common fields and register it.
+   * Centralizes ID generation, array push, and cellDensity update (DRY).
+   * @param length - vehicle body length
+   * @param width - vehicle body width
+   * @param edgePath - lane edge path to follow
+   * @param stallJitter - whether to apply random stall jitter (false for buses)
+   */
+  private createBaseVehicle(length: number, width: number, edgePath: LaneEdge[], stallJitter = true): Vehicle {
     const vehicle: Vehicle = {
       id: this.nextId++,
-      length: 0.60,  // bus fixed length
-      width: 0.125,  // bus fixed width
+      length,
+      width,
       arrived: false,
-      lane: seg[0]?.from.lane ?? 0,
-      edgePath: seg,
+      lane: edgePath[0]?.from.lane ?? 0,
+      edgePath,
       edgeIndex: 0,
       edgeProgress: 0,
       edgeMoveRate: 0,
       speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
       currentSpeed: 0,
-      stallTime: 0,
-      busState: {
-        routeId,
-        segmentIndex: segIdx,
-        dwelling: false,
-        dwellTimer: 0,
-        segments,
-      },
+      stallTime: stallJitter ? -(Math.random() * TRAFFIC.STALL_JITTER) : 0,
     };
     this.vehicles.push(vehicle);
-    const startCell = seg[0]?.from.cellKey;
+    const startCell = edgePath[0]?.from.cellKey;
     if (startCell) {
       this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
     }
+    return vehicle;
+  }
+
+  /** Add a bus vehicle that follows multi-segment LaneEdge paths (one per route leg).
+   *  startSegment places the bus at the beginning of that segment (a stop). */
+  addBusVehicle(segments: LaneEdge[][], routeId: number, startSegment = 0): Vehicle {
+    const segIdx = startSegment % segments.length;
+    const seg = segments[segIdx]!;
+    const vehicle = this.createBaseVehicle(0.60, 0.125, seg, false);
+    vehicle.busState = {
+      routeId,
+      segmentIndex: segIdx,
+      dwelling: false,
+      dwellTimer: 0,
+      segments,
+    };
     return vehicle;
   }
 
@@ -205,26 +202,9 @@ export class TrafficSimulation {
 
   /** Add a service vehicle (police car, fire truck, ambulance, garbage truck) on a LaneEdge path. */
   addServiceVehicle(edgePath: LaneEdge[], serviceType: ServiceVehicleType): Vehicle {
-    const vehicle: Vehicle = {
-      id: this.nextId++,
-      length: SERVICE_VEHICLE_DIMS[serviceType].length,
-      width: SERVICE_VEHICLE_DIMS[serviceType].width,
-      arrived: false,
-      lane: edgePath[0]?.from.lane ?? 0,
-      edgePath,
-      edgeIndex: 0,
-      edgeProgress: 0,
-      edgeMoveRate: 0,
-      speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
-      currentSpeed: 0,
-      stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
-      serviceType,
-    };
-    this.vehicles.push(vehicle);
-    const startCell = edgePath[0]?.from.cellKey;
-    if (startCell) {
-      this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
-    }
+    const dims = SERVICE_VEHICLE_DIMS[serviceType];
+    const vehicle = this.createBaseVehicle(dims.length, dims.width, edgePath);
+    vehicle.serviceType = serviceType;
     return vehicle;
   }
 
@@ -273,53 +253,15 @@ export class TrafficSimulation {
   /** Add a vehicle that follows a LaneEdge path. */
   addVehicleOnEdges(edgePath: LaneEdge[], citizenId?: number): Vehicle {
     const dims = pickWeighted(VEHICLE_DIMS, 1.0, e => e.weight);
-
-    const vehicle: Vehicle = {
-      id: this.nextId++,
-      length: dims.length,
-      width: dims.width,
-      arrived: false,
-      lane: edgePath[0]?.from.lane ?? 0,
-      edgePath,
-      edgeIndex: 0,
-      edgeProgress: 0,
-      edgeMoveRate: 0,
-      speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
-      currentSpeed: 0,
-      stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
-      citizenId,
-    };
-    this.vehicles.push(vehicle);
-    // Update density map for immediate queries
-    const startCell = edgePath[0]?.from.cellKey;
-    if (startCell) {
-      this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
-    }
+    const vehicle = this.createBaseVehicle(dims.length, dims.width, edgePath);
+    vehicle.citizenId = citizenId;
     return vehicle;
   }
 
   /** Add a freight truck that follows a LaneEdge path. Always uses truck dimensions. */
   addFreightVehicle(edgePath: LaneEdge[], sourceBuildingKey?: string): Vehicle {
-    const vehicle: Vehicle = {
-      id: this.nextId++,
-      length: TRUCK_DIMS.length,
-      width: TRUCK_DIMS.width,
-      arrived: false,
-      lane: edgePath[0]?.from.lane ?? 0,
-      edgePath,
-      edgeIndex: 0,
-      edgeProgress: 0,
-      edgeMoveRate: 0,
-      speedMultiplier: TRAFFIC.SPEED_MULTIPLIER_MIN + Math.random() * TRAFFIC.SPEED_MULTIPLIER_RANGE,
-      currentSpeed: 0,
-      stallTime: -(Math.random() * TRAFFIC.STALL_JITTER),
-      sourceBuildingKey,
-    };
-    this.vehicles.push(vehicle);
-    const startCell = edgePath[0]?.from.cellKey;
-    if (startCell) {
-      this.cellDensity.set(startCell, (this.cellDensity.get(startCell) ?? 0) + 1);
-    }
+    const vehicle = this.createBaseVehicle(TRUCK_DIMS.length, TRUCK_DIMS.width, edgePath);
+    vehicle.sourceBuildingKey = sourceBuildingKey;
     return vehicle;
   }
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { TrafficSimulation, getLaneCount, getSpeedLimitForCell, TRAFFIC, SERVICE_VEHICLE_LENGTHS } from '../TrafficSimulation';
+import { TrafficSimulation, getSpeedLimitForCell, TRAFFIC, SERVICE_VEHICLE_DIMS } from '../TrafficSimulation';
 import type { ServiceVehicleType } from '../TrafficSimulation';
-import { RoadType } from '../../road/types';
+import { RoadType, getLaneCount } from '../../road/types';
 
 /** Helper: create a straight edge between two cells. */
 function makeEdge(id: string, fromCell: string, toCell: string, length = 1.0): any {
@@ -337,7 +337,7 @@ describe('addServiceVehicle', () => {
     const v = sim.addServiceVehicle(edges, 'police');
     expect(v.serviceType).toBe('police');
     expect(v.arrived).toBe(false);
-    expect(v.length).toBe(SERVICE_VEHICLE_LENGTHS.police);
+    expect(v.length).toBe(SERVICE_VEHICLE_DIMS.police.length);
   });
 
   it('should use correct lengths for each service type', () => {
@@ -345,7 +345,7 @@ describe('addServiceVehicle', () => {
     const edges = makeLongPath(5);
     for (const type of ['police', 'fire', 'health', 'garbage'] as ServiceVehicleType[]) {
       const v = sim.addServiceVehicle(edges, type);
-      expect(v.length).toBe(SERVICE_VEHICLE_LENGTHS[type]);
+      expect(v.length).toBe(SERVICE_VEHICLE_DIMS[type].length);
     }
   });
 
@@ -626,6 +626,68 @@ describe('acceleration and braking model', () => {
 
     // Lane change should not reduce speed — same as straight
     expect(v2.currentSpeed).toBe(v1.currentSpeed);
+  });
+});
+
+describe('vehicle factory consistency', () => {
+  it('all factory methods should initialize common fields identically', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+
+    const commute = sim.addVehicleOnEdges(edges);
+    const freight = sim.addFreightVehicle(edges);
+    const service = sim.addServiceVehicle(edges, 'fire');
+    const bus = sim.addBusVehicle([edges], 0);
+
+    // All should start at edge 0, progress 0
+    for (const v of [commute, freight, service, bus]) {
+      expect(v.edgeIndex).toBe(0);
+      expect(v.edgeProgress).toBe(0);
+      expect(v.arrived).toBe(false);
+      expect(v.currentSpeed).toBe(0);
+      expect(v.edgeMoveRate).toBe(0);
+      expect(v.lane).toBe(0);
+      // speedMultiplier in valid range
+      expect(v.speedMultiplier).toBeGreaterThanOrEqual(0.8);
+      expect(v.speedMultiplier).toBeLessThanOrEqual(1.0);
+    }
+  });
+
+  it('all factory methods should update cellDensity on creation', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+
+    sim.addVehicleOnEdges(edges);
+    expect(sim.getSegmentDensity('0,0')).toBe(1);
+
+    sim.addFreightVehicle(edges);
+    expect(sim.getSegmentDensity('0,0')).toBe(2);
+
+    sim.addServiceVehicle(edges, 'police');
+    expect(sim.getSegmentDensity('0,0')).toBe(3);
+
+    sim.addBusVehicle([edges], 0);
+    expect(sim.getSegmentDensity('0,0')).toBe(4);
+  });
+
+  it('each factory should produce unique vehicle IDs', () => {
+    const sim = new TrafficSimulation();
+    const edges = makeLongPath(5);
+    const ids = new Set<number>();
+
+    ids.add(sim.addVehicleOnEdges(edges).id);
+    ids.add(sim.addFreightVehicle(edges).id);
+    ids.add(sim.addServiceVehicle(edges, 'police').id);
+    ids.add(sim.addBusVehicle([edges], 0).id);
+
+    expect(ids.size).toBe(4);
+  });
+
+  it('freight vehicle should use truck dimensions', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addFreightVehicle(makeLongPath(5));
+    expect(v.length).toBe(0.45);
+    expect(v.width).toBe(0.125);
   });
 });
 

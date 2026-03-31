@@ -1,7 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { GameClock, TIME_PERIOD, SPEED_INTERVALS, TimeOfDay } from '../GameClock';
 import { createGameState, DEFAULT_GRID_SIZE, INITIAL_RCI_DEMAND, type GameState } from '../GameState';
-import { SimulationLoop, countResidentialCapacity, countWorkplaceJobs, SIMULATION, clampBuildingLevel } from '../SimulationLoop';
+import { SimulationLoop } from '../SimulationLoop';
+import { SIMULATION } from '../SimulationConstants';
+import { countResidentialCapacity, countWorkplaceJobs } from '../../building/BuildingQueries';
+import { clampBuildingLevel } from '../../building/BuildingLevel';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import { PolicyType, Specialization } from '../../district/types';

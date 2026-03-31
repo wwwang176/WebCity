@@ -7,14 +7,13 @@ import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness'
 import { calculateLandValue, checkParkProximity } from '../economy/LandValue';
 import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI } from '../grid/types';
 import { RoadType } from '../road/types';
-import { getLaneCount } from '../traffic/TrafficSimulation';
+import { getLaneCount } from '../road/types';
 import { LaneGraph } from '../traffic/LaneGraph';
 import { findLanePath, findLanePathVariants } from '../traffic/LaneGraphPathfinder';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
-import { collectEdgeCells } from '../traffic/CommuteCacheHelpers';
+import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type CongestionFlowDeps } from '../traffic/CongestionFlowPredictor';
 import { getBuildingType } from '../building/types';
 import { avgEducationScore } from '../building/BuildingUpgrade';
-import { clampBuildingLevel } from '../building/BuildingLevel';
 import { ECONOMY } from '../economy/TaxMultipliers';
 import { DEFAULT_TAX_RATE } from '../economy/Tax';
 import { getInfraBuildingId, getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
@@ -44,12 +43,13 @@ import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
+import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
+import { collectTradePositions, type TradePosition } from '../traffic/FreightTradeCollector';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../economy/ExpenseCalculator';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
-import { randomInt, randomElement, pickWeighted } from '../utils/random';
-import { buildODPools } from '../traffic/ODPoolBuilder';
+import { randomInt } from '../utils/random';
 import { findAvailableTransit } from '../transport/TransitAvailability';
 import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicleType } from '../traffic/ServiceVehicleManager';
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
@@ -58,90 +58,8 @@ import { PedestrianTripType } from '../traffic/PedestrianAgent';
 import { TRADE, FreightRouteType } from '../traffic/FreightSystem';
 import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
 
-/** Simulation tuning constants */
-export const SIMULATION = {
-  /** Ticks between service/RCI/growth updates */
-  SLOW_TICK_INTERVAL: 6,
-  /** Ticks between heavier computations: pollution, land value, vehicle spawning */
-  MEDIUM_TICK_INTERVAL: 60,
-  /** Ticks between job relocation checks */
-  JOB_RELOCATION_INTERVAL: 60,
-  /** Number of random cells sampled per growth tick */
-  GROWTH_ATTEMPTS: 20,
-  /** Chance per attempt for burned building auto-clearance */
-  BURNED_CLEARANCE_CHANCE: 0.02,
-  /** Default happiness used when city has no citizens */
-  DEFAULT_HAPPINESS: 70,
-  /** Business tax baseline — penalty applies above this rate */
-  BUSINESS_TAX_BASELINE: DEFAULT_TAX_RATE,
-  /** Demand penalty per percentage point above baseline */
-  BUSINESS_TAX_PENALTY_PER_POINT: 2,
-  /** Crime: max base crime rate */
-  CRIME_BASE_MAX: 50,
-  /** Crime: population factor for base crime */
-  CRIME_POP_FACTOR: 0.02,
-  /** Crime: coverage factor per police station */
-  CRIME_COVERAGE_PER_STATION: 0.15,
-  /** Crime: max reduction from police coverage */
-  CRIME_MAX_REDUCTION: 0.6,
-  /** Commute: max estimated average commute */
-  COMMUTE_MAX: 25,
-  /** Commute: base commute distance */
-  COMMUTE_BASE: 1,
-  /** Commute: multiplier for sqrt(resCount) */
-  COMMUTE_SPREAD_FACTOR: 0.7,
-  /** Commute: random jitter range */
-  COMMUTE_JITTER: 6,
-  /** Service coverage: power weight */
-  SERVICE_POWER_WEIGHT: 2,
-  /** Service coverage: water weight */
-  SERVICE_WATER_WEIGHT: 2,
-  /** Pollution threshold for service coverage bonus */
-  LOW_POLLUTION_THRESHOLD: 10,
-  /** Cell value maximum (uint8 range) */
-  CELL_VALUE_MAX: 255,
-  /** Vehicle cap: maximum vehicles on road */
-  VEHICLE_CAP_MAX: 2000,
-  /** Vehicle cap: base count */
-  VEHICLE_CAP_BASE: 20,
-  /** Vehicle cap: fraction of population */
-  VEHICLE_CAP_POP_RATIO: 0.3,
-  /** Ticks over which to spread commute spawning (higher = fewer vehicles per tick) */
-  SPAWN_SPREAD_TICKS: 8,
-  /** Minimum commute spawns per tick */
-  MIN_SPAWN_PER_TICK: 5,
-  /** Commute sampling: minimum sample count */
-  SAMPLE_COUNT_MIN: 50,
-  /** Commute sampling: maximum sample count */
-  SAMPLE_COUNT_MAX: 300,
-  /** Commute sampling: eligible commuters per sample */
-  SAMPLE_DIVISOR: 5,
-  /** Walking distance to transit stop (cells) */
-  WALK_TO_STOP_RANGE: 5,
-  /** Industrial zone pollution reduction factor */
-  INDUSTRIAL_POLLUTION_FACTOR: 0.2,
-  /** Export demand base value for RCI calculation */
-  EXPORT_DEMAND: 10,
-  /** Fallback resident count when building type lookup fails */
-  FALLBACK_RESIDENTS: 8,
-  /** Population threshold before shopping access affects happiness */
-  SHOPPING_POP_THRESHOLD: 50,
-  /** Number of random cells sampled per upgrade tick */
-  UPGRADE_ATTEMPTS: 30,
-  /** Fraction of vehicle cap reserved for freight */
-  FREIGHT_CAP_RATIO: 0.15,
-  /** Throughput units per concurrent freight truck at a trade node */
-  FREIGHT_TRUCKS_PER_THROUGHPUT: 10,
-  /** Minimum Manhattan distance for commute trip */
-  MANHATTAN_DISTANCE_THRESHOLD: 3,
-  /** Abandonment: service normalization max (residential) */
-  SERVICE_MAX_RES: 10,
-  /** Abandonment: service normalization max (non-residential) */
-  SERVICE_MAX_NON_RES: 6,
-} as const;
+import { SIMULATION } from './SimulationConstants';
 
-// clampBuildingLevel re-exported from shared module for backward compatibility
-export { clampBuildingLevel } from '../building/BuildingLevel';
 
 /** Map CitizenManager schoolKey to EducationService SchoolType */
 const SCHOOL_KEY_TO_TYPE: Record<EducationRule['schoolKey'], SchoolType> = {
@@ -196,6 +114,8 @@ export class SimulationLoop {
   private workingAgeScratch: Citizen[] = [];
   /** Reusable Set for congestion flow cell collection. */
   private flowCellSet = new Set<string>();
+  /** Reusable Map for traffic density sync (avoids per-call Map allocation). */
+  private trafficFlowMap = new Map<string, number>();
 
   /** Per-building occupancy ratio (0.0–1.0) for rendering (updated after housing assignment). */
   occupancyRatios: Map<string, number> = new Map();
@@ -314,43 +234,34 @@ export class SimulationLoop {
       this.runMigration();
       this.assignCitizenHousing();
 
-      // Freight: BFS-based supply + trade calculation
+      // Freight: collect trade positions + BFS supply calculation (delegated to FreightTradeCollector)
       const perStationThroughput = TRADE.RAIL_THROUGHPUT_PER_STATION;
-      const railThroughput = this.state.rail.hasExternalConnection
-        ? this.state.rail.getExternalStationCount() * perStationThroughput
-        : 0;
-      let airportThroughput = 0;
-      const tradePositions: { x: number; y: number; throughput: number; tradeKey: string }[] = [];
-      const grid = this.state.grid;
-
+      const railStations: { x: number; y: number; throughput: number }[] = [];
       if (this.state.rail.hasExternalConnection) {
         for (const s of this.state.rail.getStations()) {
           if (this.state.rail.isStationExternal(s.x, s.y)) {
-            this.collectTradeRoadCells(grid, s.x, s.y, perStationThroughput, tradePositions);
+            railStations.push({ x: s.x, y: s.y, throughput: perStationThroughput });
           }
         }
       }
-      for (const ap of this.state.airport.getAirports()) {
-        airportThroughput += ap.cargoPerTick;
-        this.collectTradeRoadCells(grid, ap.x, ap.y, ap.cargoPerTick, tradePositions);
-      }
-      let highwayThroughput = 0;
+      const highwayCells: { x: number; y: number; throughput: number }[] = [];
       if (this.state.highwayConnection.hasExternalConnection) {
-        highwayThroughput = this.state.highwayConnection.getThroughput();
-        const hwCells = this.state.highwayConnection.getEdgeHighwayCells();
-        const perCell = hwCells.length > 0 ? Math.ceil(highwayThroughput / hwCells.length) : 0;
-        for (const cell of hwCells) {
-          // Highway edge cells are road cells themselves — use directly
-          tradePositions.push({ x: cell.x, y: cell.y, throughput: perCell, tradeKey: toPosKey(cell.x, cell.y) });
-        }
+        const hwThroughput = this.state.highwayConnection.getThroughput();
+        const hwEdge = this.state.highwayConnection.getEdgeHighwayCells();
+        const perCell = hwEdge.length > 0 ? Math.ceil(hwThroughput / hwEdge.length) : 0;
+        for (const c of hwEdge) highwayCells.push({ x: c.x, y: c.y, throughput: perCell });
       }
-      const totalThroughput = railThroughput + airportThroughput + highwayThroughput;
+      const tradeResult = collectTradePositions(this.state.grid, {
+        railStations,
+        airports: this.state.airport.getAirports().map(ap => ({ x: ap.x, y: ap.y, cargoPerTick: ap.cargoPerTick })),
+        highwayCells,
+      }, (bid) => getInfraConfigById(bid));
       this.state.freight.calculateSupply(this.state.grid, {
-        importCapacity: totalThroughput,
-        exportCapacity: totalThroughput,
-        tradePositions,
+        importCapacity: tradeResult.totalThroughput,
+        exportCapacity: tradeResult.totalThroughput,
+        tradePositions: tradeResult.positions,
       });
-      this.cachedTradePositions = tradePositions;
+      this.cachedTradePositions = tradeResult.positions;
       this.state.shopping.calculate(this.state.grid);
       // Income calculated last in the 6-tick cycle (after all subsystems have updated)
       this.calculateIncome();
@@ -798,39 +709,12 @@ export class SimulationLoop {
     });
   }
 
-  /** Write predicted traffic flow into grid trafficDensity so pollution can read it. */
+  /** Delegated to SyncTrafficDensity module (SRP) with reusable Map (zero GC). */
   private syncTrafficDensity(): void {
-    const grid = this.state.grid;
-    const traffic = this.state.traffic;
-
-    // Collect max flow per ground cell (ground + elevated projected down)
-    const maxFlow = new Map<string, number>();
-    // Ground-level roads
-    grid.forEachCell((cell, x, y) => {
-      if (cell.roadType === 0) return;
-      const flow = traffic.getSegmentDensity(`${x},${y}`);
-      if (flow > 0) maxFlow.set(`${x},${y}`, flow);
-    });
-    // Elevated roads: project flow to ground cell (take max)
-    if (this._elevationManager) {
-      for (const entry of this._elevationManager.toJSON()) {
-        if (entry.data.roadType === 0) continue;
-        const flow = traffic.getSegmentDensity(`${entry.x},${entry.y},${entry.level}`);
-        if (flow > 0) {
-          const key = `${entry.x},${entry.y}`;
-          maxFlow.set(key, Math.max(maxFlow.get(key) ?? 0, flow));
-        }
-      }
-    }
-
-    // Write to grid with log scale
-    grid.forEachCell((cell, x, y) => {
-      const flow = maxFlow.get(`${x},${y}`) ?? 0;
-      const scaled = flow > 0 ? Math.min(10, Math.round(Math.log2(1 + flow))) : 0;
-      if (cell.trafficDensity !== scaled) {
-        grid.setField(x, y, 'trafficDensity', scaled);
-      }
-    });
+    syncTrafficDensityToGrid(
+      this.state.grid, this.state.traffic,
+      this._elevationManager, this.trafficFlowMap,
+    );
   }
 
   private updateLandValue(): void {
@@ -1563,45 +1447,6 @@ export class SimulationLoop {
     }
   }
 
-  /**
-   * Collect all road cells adjacent to a building (possibly multi-cell) and add them
-   * to the tradePositions array. Each road cell shares the same tradeKey so A-limit
-   * treats them as one trade node.
-   */
-  private collectTradeRoadCells(
-    grid: { getCell(x: number, y: number): { roadType: number; buildingId: number } | null },
-    bx: number, by: number,
-    throughput: number,
-    out: { x: number; y: number; throughput: number; tradeKey: string }[],
-  ): void {
-    const tradeKey = toPosKey(bx, by);
-    const cell = grid.getCell(bx, by);
-    const cfg = cell ? getInfraConfigById(cell.buildingId) : null;
-    const w = cfg?.width ?? 1;
-    const h = cfg?.height ?? 1;
-    const found = new Set<string>();
-
-    for (let dx = 0; dx < w; dx++) {
-      for (let dy = 0; dy < h; dy++) {
-        for (const [nx, ny] of FOUR_NEIGHBORS) {
-          const rx = bx + dx + nx!;
-          const ry = by + dy + ny!;
-          const rKey = toPosKey(rx, ry);
-          if (found.has(rKey)) continue;
-          const rc = grid.getCell(rx, ry);
-          if (rc && rc.roadType !== RoadType.NONE) {
-            found.add(rKey);
-            out.push({ x: rx, y: ry, throughput, tradeKey });
-          }
-        }
-      }
-    }
-
-    // Fallback: if no adjacent road found, add the building origin (will fail gracefully)
-    if (found.size === 0) {
-      out.push({ x: bx, y: by, throughput, tradeKey });
-    }
-  }
 
   /**
    * Find available transit options that cover travel between origin and destination.
@@ -1858,74 +1703,48 @@ export class SimulationLoop {
   /**
    * Compute predicted congestion flow using cached route reference counts.
    * Falls back to Monte Carlo sampling when cache coverage is too low.
+   * Delegated to CongestionFlowPredictor (SRP).
    */
   private computeCongestionFlow(): void {
     const grid = this.state.grid;
-    const flowMap = new Map<string, number>();
 
-    // Primary: use cached routes with refCounts — O(routes × avg path length), zero A*
+    // Primary: cache-based flow prediction
+    const flowMap = computeCongestionFlow(
+      this.commuteCache,
+      this.flowCellSet,
+      (cellKey) => {
+        const { x, y } = parsePosKeyUnsafe(cellKey);
+        const cell = grid.getCell(x, y);
+        return cell ? getLaneCount(cell.roadType) : 1;
+      },
+    );
+
+    // Fallback: Monte Carlo when cache coverage is too low
     let totalRoutedCitizens = 0;
-    const cellSet = this.flowCellSet;
-    this.commuteCache.forEachRouteWithRefCount((path, refCount) => {
-      totalRoutedCitizens += refCount;
-      cellSet.clear();
-      collectEdgeCells(path, cellSet);
-      for (const cellKey of cellSet) {
-        flowMap.set(cellKey, (flowMap.get(cellKey) ?? 0) + refCount);
-      }
-    });
-
-    // Fallback: if cache coverage is too low, use Monte Carlo sampling
+    for (const flow of flowMap.values()) totalRoutedCitizens += flow;
     if (totalRoutedCitizens < SIMULATION.SAMPLE_COUNT_MIN) {
-      this.computeCongestionFlowMonteCarlo(flowMap);
-    }
-
-    // Normalize by lane count
-    for (const [cellKey, rawFlow] of flowMap) {
-      const { x, y } = parsePosKeyUnsafe(cellKey);
-      const cell = grid.getCell(x, y);
-      const lanes = cell ? getLaneCount(cell.roadType) : 1;
-      flowMap.set(cellKey, rawFlow / lanes);
+      const mcDeps: CongestionFlowDeps = {
+        citizens: this.state.citizens.getCitizens(),
+        parsePosKey: parsePosKeyUnsafe,
+        findLanePath: (from, to) => this._roadLookup
+          ? findLanePath(this.laneGraph, this._roadLookup, from, to)
+          : null,
+        getAvailableTransit: (from, to) => this.getAvailableTransit(from, to),
+        chooseTransportMode: chooseMode,
+      };
+      const mcFlow = computeCongestionFlowMonteCarlo(
+        mcDeps,
+        SIMULATION.SAMPLE_COUNT_MIN,
+        SIMULATION.SAMPLE_COUNT_MAX,
+        SIMULATION.SAMPLE_DIVISOR,
+      );
+      // Merge MC flow into main flowMap
+      for (const [cellKey, flow] of mcFlow) {
+        flowMap.set(cellKey, (flowMap.get(cellKey) ?? 0) + flow);
+      }
     }
 
     this.state.traffic.updatePredictedFlow(flowMap);
-  }
-
-  /** Monte Carlo fallback for congestion prediction when cache coverage is too low. */
-  private computeCongestionFlowMonteCarlo(flowMap: Map<string, number>): void {
-    const grid = this.state.grid;
-    const pools = buildODPools(this.state.citizens.getCitizens(), parsePosKeyUnsafe);
-    if (!pools) return;
-
-    const { residential, destinations, totalResWeight, totalDestWeight } = pools;
-    const sampleCount = Math.max(SIMULATION.SAMPLE_COUNT_MIN, Math.min(SIMULATION.SAMPLE_COUNT_MAX, Math.ceil(totalResWeight / SIMULATION.SAMPLE_DIVISOR)));
-
-    for (let i = 0; i < sampleCount; i++) {
-      const from = pickWeighted(residential, totalResWeight, e => e.weight);
-      const to = pickWeighted(destinations, totalDestWeight, e => e.weight);
-      if (from.x === to.x && from.y === to.y) continue;
-
-      const manhattan = manhattanDistance(from.x, from.y, to.x, to.y);
-      if (manhattan <= SIMULATION.MANHATTAN_DISTANCE_THRESHOLD) continue;
-
-      const availableTransport = this.getAvailableTransit(from, to);
-      const mode = chooseMode(from, to, availableTransport, 0);
-      if (mode !== TransportMode.DRIVE) continue;
-
-      if (!this._roadLookup) continue;
-      const edgePath = findLanePath(this.laneGraph, this._roadLookup, from, to);
-      if (!edgePath) continue;
-
-      for (const edge of edgePath) {
-        flowMap.set(edge.from.cellKey, (flowMap.get(edge.from.cellKey) ?? 0) + 1);
-      }
-    }
-
-    // Scale up sampled flow to match actual commuter volume
-    const scaleFactor = totalResWeight / sampleCount;
-    for (const [cellKey, rawFlow] of flowMap) {
-      flowMap.set(cellKey, rawFlow * scaleFactor);
-    }
   }
 
   /**
@@ -1977,6 +1796,3 @@ export class SimulationLoop {
 
 }
 
-// countResidentialCapacity and countWorkplaceJobs moved to BuildingQueries.ts
-// Re-export for backward compatibility with existing consumers
-export { countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
