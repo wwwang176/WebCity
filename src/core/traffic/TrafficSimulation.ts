@@ -72,7 +72,7 @@ export const TRAFFIC = {
   /** Minimum distance between vehicles */
   MIN_GAP: 0.15,
   /** Seconds of zero movement before vehicle is despawned */
-  DESPAWN_STALL_TIME: 30,
+  DESPAWN_STALL_TIME: 10,
   /** Distance at which vehicles begin braking (world units) */
   BRAKE_DISTANCE: 1.5,
   /** Acceleration rate (world-units/sec² ) */
@@ -449,7 +449,8 @@ export class TrafficSimulation {
       }
 
       // Safety cap: never move further than available space
-      let moveDistance = Math.min(v.currentSpeed * dtSeconds, obstacle);
+      const intendedMove = Math.min(v.currentSpeed * dtSeconds, obstacle);
+      let moveDistance = intendedMove;
 
       while (moveDistance > 0 && v.edgeIndex < ep.length) {
         const edge = ep[v.edgeIndex]!;
@@ -465,7 +466,7 @@ export class TrafficSimulation {
       }
 
       // Track stall time for stuck vehicle despawn (buses and service vehicles exempt)
-      if (moveDistance < 0.001 && obstacle < 0.001) {
+      if (intendedMove < 0.001) {
         v.stallTime += dtSeconds;
         if (v.stallTime >= TRAFFIC.DESPAWN_STALL_TIME && !v.busState && !v.serviceType) {
           v.arrived = true;
