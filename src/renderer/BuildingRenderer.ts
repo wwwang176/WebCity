@@ -280,7 +280,10 @@ void main() {
   float sunDiff = max(dot(n, sunDir), 0.0);
   vec3 fillDir = normalize(vec3(-0.6, 0.3, -0.4));
   float fillDiff = max(dot(n, fillDir), 0.0);
-  vec3 lighting = max(vec3(0.08), ambientLightColor * 0.7) + (0.45 * sunDiff + 0.13 * fillDiff) * sunColor;
+  vec3 indirect = max(vec3(0.08), ambientLightColor * 0.7) + 0.13 * fillDiff * sunColor;
+  vec3 direct = 0.45 * sunDiff * sunColor;
+  vec3 lighting = indirect + direct;
+  float directRatio = length(direct) / max(length(lighting), 0.001);
 
   bool isFoliage = vPartType > 0.35 && vPartType < 0.65;
   bool isRoof = vPartType > 0.8 || (n.y > 0.85 && vPartType < 0.1);
@@ -547,7 +550,9 @@ void main() {
       directionalLightShadows[0].shadowRadius,
       vDirectionalShadowCoord[0]
     );
-    color *= 0.45 + 0.55 * shadow;
+    // Shadow only attenuates direct light (like built-in PBR materials)
+    float shadowFactor = 0.45 + 0.55 * shadow;
+    color *= mix(1.0, shadowFactor, directRatio);
   #endif
 
   // Window day/night appearance
