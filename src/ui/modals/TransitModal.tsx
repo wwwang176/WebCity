@@ -302,11 +302,18 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
         <Show when={transitData().airports.length > 0}>
           <div style={sectionStyle}>
             <div style="color:#90a4ae;font-weight:600;margin-bottom:4px">{'\u{2708}'} Airport System</div>
-            {transitData().airports.map((a: any, i: number) => (
-              <div style="font-size:12px;color:#aaa;margin-bottom:4px">
-                Airport {i + 1} ({a.size}) — Tourists: {a.touristsPerTick}/tick | Cargo: {a.cargoPerTick}/tick | Noise: {a.noisePollution}
-              </div>
-            ))}
+            {transitData().airports.map((a: any, i: number) => {
+              const state = getGame().getState();
+              const operational = state.airport.isAirportOperational(a.id);
+              return (
+                <div style={`font-size:12px;color:${operational ? '#aaa' : '#f44336'};margin-bottom:4px`}>
+                  Airport {i + 1} ({a.size})
+                  {operational
+                    ? ` — Tourists: ${a.touristsPerTick}/tick | Cargo: ${a.cargoPerTick}/tick | Noise: ${a.noisePollution}`
+                    : ' — No power/water (offline)'}
+                </div>
+              );
+            })}
             <div style="font-size:12px;color:#aaa">Cost: ${transitData().airportCost}/tick</div>
           </div>
         </Show>

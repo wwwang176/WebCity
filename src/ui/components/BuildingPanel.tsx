@@ -297,6 +297,30 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   );
 }
 
+function UtilityStatus(props: { hasPower: boolean; hasWater: boolean }) {
+  return (
+    <div style="margin-top:4px">
+      <div class="bp-row">
+        Power
+        <span style={`display:inline-block;width:8px;height:8px;border-radius:50%;background:${props.hasPower ? '#4caf50' : '#ef5350'}`} />
+      </div>
+      <div class="bp-row">
+        Water
+        <span style={`display:inline-block;width:8px;height:8px;border-radius:50%;background:${props.hasWater ? '#4caf50' : '#ef5350'}`} />
+      </div>
+      <Show when={!props.hasPower || !props.hasWater}>
+        <div style={{
+          'margin-top': '4px', padding: '4px 8px', 'border-radius': '4px',
+          background: 'rgba(239,83,80,0.15)', color: UI_COLORS.STATUS_BAD,
+          'font-size': '11px', 'font-weight': '600',
+        }}>
+          {!props.hasPower && !props.hasWater ? 'No Power / No Water — Offline' : !props.hasPower ? 'No Power — Offline' : 'No Water — Offline'}
+        </div>
+      </Show>
+    </div>
+  );
+}
+
 function InfraBuildingInfo(props: { sel: SelectedInfraBuilding }) {
   const icon = () => INFRA_ICONS[props.sel.infraType] ?? '';
   const details = () => Object.entries(props.sel.details);
@@ -310,6 +334,7 @@ function InfraBuildingInfo(props: { sel: SelectedInfraBuilding }) {
           <div class="bp-row">{key} <span>{value}</span></div>
         )}
       </For>
+      <UtilityStatus hasPower={props.sel.hasPower} hasWater={props.sel.hasWater} />
     </>
   );
 }
@@ -324,6 +349,7 @@ function TransportStopInfo(props: { sel: SelectedTransportStop }) {
       <div class="bp-row">Routes <span>{props.sel.routes}</span></div>
       <div class="bp-row">Vehicles <span>{props.sel.vehicles}</span></div>
       <div class="bp-row">Riders/Week <span>{Math.round(props.sel.ridersPerDay * 7)}</span></div>
+      <UtilityStatus hasPower={props.sel.hasPower} hasWater={props.sel.hasWater} />
     </>
   );
 }

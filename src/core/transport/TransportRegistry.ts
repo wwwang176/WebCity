@@ -1,5 +1,8 @@
 import { TransportMode, TransportType } from './types';
 import type { BaseTransportSystem } from './BaseTransportSystem';
+import type { UtilityChecker } from '../service/FacilityOperational';
+import type { InfraType } from '../building/InfraConfig';
+import type { AirportSystem } from './AirportSystem';
 
 export interface TransitSystems {
   bus: BaseTransportSystem;
@@ -44,8 +47,27 @@ export function getTotalTransportOperatingCost(systems: AllTransportSystems): nu
   return ALL_TRANSPORT_KEYS.reduce((sum, key) => sum + systems[key].getOperatingCost(), 0);
 }
 
-/** Tick all transport systems (OCP: add new systems to ALL_TRANSPORT_KEYS only). */
-export function tickAllTransportSystems(systems: AllTransportSystems): void {
+/** Transport system key → InfraType mapping for operational checks. */
+const TRANSPORT_INFRA_TYPE: Record<keyof TransitSystems, InfraType> = {
+  bus: 'bus_stop',
+  metro: 'metro_station',
+  rail: 'train_station',
+  ferry: 'ferry_dock',
+};
+
+/** Update operational status for all transport systems, then tick. */
+export function tickAllTransportSystems(
+  systems: AllTransportSystems,
+  isPowered?: UtilityChecker,
+  isWaterSupplied?: UtilityChecker,
+): void {
+  // Update operational status if utility checkers are provided
+  if (isPowered && isWaterSupplied) {
+    for (const [key, infraType] of Object.entries(TRANSPORT_INFRA_TYPE) as [keyof TransitSystems, InfraType][]) {
+      systems[key].updateOperationalStatus(isPowered, isWaterSupplied, infraType);
+    }
+    (systems.airport as unknown as AirportSystem).updateOperationalStatus(isPowered, isWaterSupplied);
+  }
   for (const key of ALL_TRANSPORT_KEYS) {
     systems[key].tick();
   }

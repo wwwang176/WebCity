@@ -252,6 +252,8 @@ export interface SelectedInfraBuilding {
   cost: number;
   /** Service-specific details to display */
   details: Record<string, string | number>;
+  hasPower: boolean;
+  hasWater: boolean;
 }
 
 export interface SelectedTransportStop {
@@ -263,6 +265,8 @@ export interface SelectedTransportStop {
   routes: number;
   vehicles: number;
   ridersPerDay: number;
+  hasPower: boolean;
+  hasWater: boolean;
 }
 
 export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop;
@@ -1609,6 +1613,8 @@ export class Game {
             kind: 'infra', x, y,
             infraType: cls.config.type, name: cls.config.name,
             cost: cls.config.cost, details,
+            hasPower: this.state.power.isPowered(px, py),
+            hasWater: this.state.water.isSupplied(px, py),
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -1639,6 +1645,8 @@ export class Game {
       routes: routeCount,
       vehicles: vehicleCount,
       ridersPerDay: Math.round(stop?.smoothedDailyRiders ?? 0),
+      hasPower: this.state.power.isPowered(x, y),
+      hasWater: this.state.water.isSupplied(x, y),
     };
 
     this.applyViewMode(getTransportFocusMode(type));

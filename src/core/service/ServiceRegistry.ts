@@ -105,5 +105,24 @@ export function collectFacilityOperationalStatus(state: GameState): FacilityOpEn
     result.push({ x: p.x, y: p.y, operational: isFacilityOperational(p.x, p.y, 'sewage', isPow, isWat) });
   }
 
+  // Transport: airports
+  for (const a of state.airport.getAirports()) {
+    const infraType: InfraType = a.size === 'SMALL' ? 'airport_s' : a.size === 'MEDIUM' ? 'airport_m' : 'airport_l';
+    result.push({ x: a.x, y: a.y, operational: isFacilityOperational(a.x, a.y, infraType, isPow, isWat) });
+  }
+
+  // Transport: bus stops, metro stations, train stations, ferry docks
+  const transportKeys: { key: 'bus' | 'metro' | 'rail' | 'ferry'; infraType: InfraType }[] = [
+    { key: 'bus', infraType: 'bus_stop' },
+    { key: 'metro', infraType: 'metro_station' },
+    { key: 'rail', infraType: 'train_station' },
+    { key: 'ferry', infraType: 'ferry_dock' },
+  ];
+  for (const { key, infraType } of transportKeys) {
+    for (const stop of state[key].getStops()) {
+      result.push({ x: stop.x, y: stop.y, operational: isFacilityOperational(stop.x, stop.y, infraType, isPow, isWat) });
+    }
+  }
+
   return result;
 }

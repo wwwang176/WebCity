@@ -1,7 +1,8 @@
 
 import type { PollutionSource } from '../environment/Pollution';
 import { MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
-import { getRotatedSize, type Rotation } from '../building/InfraConfig';
+import { getRotatedSize, type Rotation, type InfraType } from '../building/InfraConfig';
+import { isFacilityOperational, type UtilityChecker } from '../service/FacilityOperational';
 
 export type AirportSize = 'SMALL' | 'MEDIUM' | 'LARGE';
 
@@ -94,9 +95,16 @@ export interface Airport {
 
 // canPlaceAirport removed — use canPlaceInfra(grid, x, y, 'airport', rotation, undefined, { width, height }) instead
 
+const SIZE_TO_INFRA: Record<AirportSize, InfraType> = {
+  SMALL: 'airport_s',
+  MEDIUM: 'airport_m',
+  LARGE: 'airport_l',
+};
+
 export class AirportSystem {
   private airports: Airport[] = [];
   private nextId = 1;
+  private operationalIds: Set<number> | null = null;
 
   /** Accumulated tourists to be consumed by population system. */
   pendingTourists = 0;
@@ -140,8 +148,23 @@ export class AirportSystem {
     return AIRPORT_SIZE_CONFIG[size].populationRequired;
   }
 
+  /** Update which airports are operational (have power + water). */
+  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): void {
+    this.operationalIds = new Set<number>();
+    for (const a of this.airports) {
+      if (isFacilityOperational(a.x, a.y, SIZE_TO_INFRA[a.size], isPowered, isWaterSupplied)) {
+        this.operationalIds.add(a.id);
+      }
+    }
+  }
+
+  isAirportOperational(id: number): boolean {
+    return this.operationalIds === null || this.operationalIds.has(id);
+  }
+
   tick(): void {
     for (const airport of this.airports) {
+      if (!this.isAirportOperational(airport.id)) continue;
       this.pendingTourists += airport.touristsPerTick;
       this.pendingCargo += airport.cargoPerTick;
     }
@@ -189,6 +212,7 @@ export class AirportSystem {
   getPollutionSources(): PollutionSource[] {
     const sources: PollutionSource[] = [];
     for (const a of this.airports) {
+      if (!this.isAirportOperational(a.id)) continue;
       const cfg = AIRPORT_SIZE_CONFIG[a.size];
       forEachAirportCell(a.x, a.y, a.size, (cx, cy) => {
         sources.push({

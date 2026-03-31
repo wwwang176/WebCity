@@ -5,6 +5,8 @@ import {
   TransportVehicle,
 } from './types';
 import { manhattanDistance } from '../grid/GridHelpers';
+import { isFacilityOperational, type UtilityChecker } from '../service/FacilityOperational';
+import type { InfraType } from '../building/InfraConfig';
 
 export interface TransportSystemConfig {
   type: TransportType;
@@ -36,11 +38,28 @@ export abstract class BaseTransportSystem {
   protected nextStopId = 1;
   protected nextRouteId = 1;
   protected nextVehicleId = 1;
+  /** null = no filter (all operational); Set = only listed stop IDs are operational. */
+  protected operationalStopIds: Set<number> | null = null;
 
   /** Current road congestion level (0 = free-flow, 1 = gridlock). */
   congestionLevel = 0;
 
   constructor(protected readonly config: TransportSystemConfig) {}
+
+  /** Update which stops are operational (have power + water). */
+  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker, infraType: InfraType): void {
+    this.operationalStopIds = new Set<number>();
+    for (const s of this.stops) {
+      if (isFacilityOperational(s.x, s.y, infraType, isPowered, isWaterSupplied)) {
+        this.operationalStopIds.add(s.id);
+      }
+    }
+  }
+
+  /** Check if a stop is currently operational. */
+  isStopOperational(id: number): boolean {
+    return this.operationalStopIds === null || this.operationalStopIds.has(id);
+  }
 
   // ── Stop management ──────────────────────────────────────────────
 
@@ -210,10 +229,18 @@ export abstract class BaseTransportSystem {
 
   // ── Tick ─────────────────────────────────────────────────────────
 
+  /** Check if all stops in a route are operational. */
+  private isRouteFullyOperational(route: TransportRoute): boolean {
+    if (this.operationalStopIds === null) return true;
+    return route.stops.every(s => this.operationalStopIds!.has(s.id));
+  }
+
   tick(): void {
     for (const vehicle of this.vehicles) {
       const route = this.routes.find(r => r.id === vehicle.routeId);
       if (!route || route.stops.length === 0) continue;
+      // Freeze vehicles on routes with any non-operational stop
+      if (!this.isRouteFullyOperational(route)) continue;
 
       if (vehicle.atStop) {
         this.tickAtStop(vehicle, route);

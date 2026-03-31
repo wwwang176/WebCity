@@ -267,6 +267,7 @@ interface AirplaneAnimState {
 /** Minimal interface to avoid tight coupling with AirportSystem. */
 export interface AirportSystemLike {
   getAirports(): readonly Airport[];
+  isAirportOperational?(id: number): boolean;
 }
 
 export class AirplaneAnimator implements VehicleAnimator {
@@ -307,8 +308,18 @@ export class AirplaneAnimator implements VehicleAnimator {
       }
     }
 
-    // Process each airport slot
+    // Process each airport slot (skip non-operational airports)
     for (const airport of airports) {
+      if (airportSystem.isAirportOperational && !airportSystem.isAirportOperational(airport.id)) {
+        // Remove existing animations for non-operational airports
+        const maxActive = MAX_ACTIVE[airport.size];
+        for (let pathIdx = 0; pathIdx < maxActive; pathIdx++) {
+          const key = pathIdx === 0 ? `${airport.id}` : `${airport.id}-${pathIdx}`;
+          this.anims.delete(key);
+          this.spawnTimers.delete(key);
+        }
+        continue;
+      }
       const maxActive = MAX_ACTIVE[airport.size];
       for (let pathIdx = 0; pathIdx < maxActive; pathIdx++) {
         const key = pathIdx === 0 ? `${airport.id}` : `${airport.id}-${pathIdx}`;

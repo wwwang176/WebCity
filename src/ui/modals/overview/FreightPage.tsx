@@ -42,10 +42,12 @@ export function FreightPage() {
 
     const airports = state.airport.getAirports();
     let airportThroughput = 0;
-    const airportDetails: { size: string; cargo: number }[] = [];
+    const airportDetails: { size: string; cargo: number; operational: boolean }[] = [];
     for (const ap of airports) {
-      airportThroughput += ap.cargoPerTick;
-      airportDetails.push({ size: ap.size, cargo: ap.cargoPerTick });
+      const operational = state.airport.isAirportOperational(ap.id);
+      const effectiveCargo = operational ? ap.cargoPerTick : 0;
+      airportThroughput += effectiveCargo;
+      airportDetails.push({ size: ap.size, cargo: effectiveCargo, operational });
     }
 
     const hc = state.highwayConnection;
@@ -148,8 +150,11 @@ export function FreightPage() {
           {data().airportDetails.length > 0
             ? data().airportDetails.map((ap, i) => (
                 <tr>
-                  <td class="td-label">Airport ({ap.size})</td>
-                  <td class="td-value" style="text-align:right">{ap.cargo}/tick</td>
+                  <td class="td-label">
+                    Airport ({ap.size})
+                    {!ap.operational && <span style={`color:${UI_COLORS.STATUS_BAD};font-size:10px`}> (no power/water)</span>}
+                  </td>
+                  <td class="td-value" style={`text-align:right${!ap.operational ? `;color:${UI_COLORS.STATUS_BAD}` : ''}`}>{ap.cargo}/tick</td>
                 </tr>
               ))
             : <tr><td class="td-label" style="color:#616161">No airport</td><td class="td-value" style="text-align:right">0</td></tr>

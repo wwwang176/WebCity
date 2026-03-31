@@ -349,9 +349,13 @@ export class SimulationLoop {
     // Traffic - spawn commute vehicles (every tick)
     this.spawnVehicles();
 
-    // Transport systems (every tick)
+    // Transport systems (every tick) — pass utility checkers for operational status
     this.state.bus.congestionLevel = this.state.traffic.getCongestionLevel();
-    tickAllTransportSystems(this.state);
+    {
+      const isPow = (x: number, y: number) => this.state.power.isPowered(x, y);
+      const isWat = (x: number, y: number) => this.state.water.isSupplied(x, y);
+      tickAllTransportSystems(this.state, isPow, isWat);
+    }
 
     // Congestion flow prediction (first tick + every 60 ticks, offset to slot 2)
     if (tick === 1 || (tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
