@@ -41,7 +41,7 @@ describe('PollutionContributor', () => {
       expect(svc.getPollutionSources()).toEqual([]);
     });
 
-    it('should return ground pollution at outlet locations when untreated sewage exists', () => {
+    it('should return water pollution at outlet locations when untreated sewage exists', () => {
       const svc = new SewageService();
       svc.addOutlet(10, 10);
       // No treatment plant, so all sewage is untreated
@@ -50,7 +50,7 @@ describe('PollutionContributor', () => {
       expect(sources.length).toBe(1);
       expect(sources[0]!.x).toBe(10);
       expect(sources[0]!.y).toBe(10);
-      expect(sources[0]!.type).toBe('ground');
+      expect(sources[0]!.type).toBe('water');
       expect(sources[0]!.amount).toBeGreaterThan(0);
     });
 

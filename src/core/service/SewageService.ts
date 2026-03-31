@@ -147,7 +147,7 @@ export class SewageService {
       x: outlet.x,
       y: outlet.y,
       amount: Math.min(SEWAGE.MAX_POLLUTION_PER_OUTLET, pollution),
-      type: 'ground' as const,
+      type: 'water' as const,
     }));
   }
 

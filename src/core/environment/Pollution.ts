@@ -18,6 +18,7 @@ interface PollutionLevel {
 export const POLLUTION = {
   DECAY_PER_CELL: 30,
   PARK_REDUCTION: 20,
+  MAX_PER_TYPE: 255,
 } as const;
 
 export class PollutionManager {
@@ -82,7 +83,8 @@ export class PollutionManager {
         const value = Math.max(0, source.amount - distance * decayPerCell);
 
         if (value > 0) {
-          grid[ny * w + nx] += value;
+          const idx = ny * w + nx;
+          grid[idx] = Math.min(POLLUTION.MAX_PER_TYPE, grid[idx]! + value);
         }
       }
     }

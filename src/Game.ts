@@ -221,6 +221,9 @@ export interface SelectedZoneBuilding {
   zoneType: ZoneType;
   landValue: number;
   pollution: number;
+  pollutionGround: number;
+  pollutionWater: number;
+  pollutionNoise: number;
   serviceCoverage: number;
   services: ServiceStatus;
   abandonmentStress: number;
@@ -1579,11 +1582,15 @@ export class Game {
     if (cell && cell.buildingId > 0) {
       const cls = classifyBuilding(cell.buildingId);
       switch (cls.category) {
-        case 'zone':
+        case 'zone': {
+          const pLevel = this.state.pollution.getPollutionAt(x, y);
           this.selectedBuilding = {
             kind: 'zone', x, y,
             buildingType: cls.buildingType, zoneType: cell.zoneType,
             landValue: cell.landValue, pollution: cell.pollution,
+            pollutionGround: pLevel.ground,
+            pollutionWater: pLevel.water,
+            pollutionNoise: pLevel.noise,
             serviceCoverage: cell.serviceCoverage,
             services: {
               power: this.state.power.isPowered(x, y) ? 0 : -1,
@@ -1600,6 +1607,7 @@ export class Game {
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
+        }
         case 'transport':
           this.selectTransportStop(x, y, cls.transportType);
           break;

@@ -149,24 +149,35 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     }
   }
 
-  // Remaining warnings only when building is under stress
+  // Pollution by type — always show (industrial immune)
+  if (sel.zoneType !== ZoneType.INDUSTRIAL) {
+    const types: [number, string][] = [
+      [sel.pollutionGround, 'Ground pollution'],
+      [sel.pollutionWater, 'Water pollution'],
+      [sel.pollutionNoise, 'Noise pollution'],
+    ];
+    for (const [val, label] of types) {
+      if (val > 70) warnings.push({ level: 'red', text: label });
+      else if (val > 40) warnings.push({ level: 'yellow', text: label });
+    }
+  }
+
+  // Abandonment stress — always show
+  if (!sel.isAbandoned) {
+    if (sel.abandonmentStress > 70) warnings.push({ level: 'red', text: 'Near abandonment' });
+    else if (sel.abandonmentStress > 40) warnings.push({ level: 'yellow', text: 'Under stress' });
+  }
+
+  // Tax — only when building is under stress
   if (!sel.isAbandoned && sel.abandonmentStress > 0) {
     const game = getGame();
     const isRes = sel.zoneType === ZoneType.RESIDENTIAL_LOW || sel.zoneType === ZoneType.RESIDENTIAL_HIGH;
     const taxRate = isRes ? game.getState().taxRates.residential : game.getState().taxRates.business;
     const over = taxRate - (isRes ? 12 : 9);
 
-    // Tax
     if (over >= 8) warnings.push({ level: 'red', text: 'Tax rate unbearable' });
     else if (over >= 4) warnings.push({ level: 'red', text: 'Tax rate too high' });
     else if (over > 0) warnings.push({ level: 'yellow', text: 'Tax rate slightly high' });
-
-    // Pollution (industrial immune)
-    if (sel.pollution > 70 && sel.zoneType !== ZoneType.INDUSTRIAL) {
-      warnings.push({ level: 'red', text: 'Severe pollution' });
-    } else if (sel.pollution > 40 && sel.zoneType !== ZoneType.INDUSTRIAL) {
-      warnings.push({ level: 'yellow', text: 'High pollution' });
-    }
   }
 
   // Sort: red first, then yellow
@@ -214,6 +225,11 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
     const b = bt();
     return '\u2605'.repeat(b.level) + '\u2606'.repeat(3 - b.level);
   };
+  const landStars = () => {
+    const v = props.sel.landValue;
+    const stars = v > 200 ? 5 : v > 150 ? 4 : v > 100 ? 3 : v > 50 ? 2 : 1;
+    return '\u2605'.repeat(stars) + '\u2606'.repeat(5 - stars);
+  };
   const zoneName = () => ZONE_NAMES[props.sel.zoneType] ?? 'Unknown';
 
   const citizens = () => {
@@ -229,6 +245,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
     <>
       <div class="bp-title">{bt().name}</div>
       <div class="bp-row">Level <span>{level()}</span></div>
+      <div class="bp-row">Land <span>{landStars()}</span></div>
       <Show when={bt().residents > 0}>
         <div class="bp-row">Residents <span>{citizens().residents.length}/{bt().residents}</span></div>
       </Show>

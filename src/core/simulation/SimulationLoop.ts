@@ -740,7 +740,7 @@ export class SimulationLoop {
     // Write pollution back to grid cells (single-field write, no object allocation)
     grid.forEachCell((cell, x, y) => {
       const p = pm.getPollutionAt(x, y);
-      const total = Math.min(SIMULATION.CELL_VALUE_MAX, p.ground + p.noise);
+      const total = Math.min(SIMULATION.CELL_VALUE_MAX, p.ground + p.water + p.noise);
       if (cell.pollution !== total) {
         grid.setField(x, y, 'pollution', total);
       }
@@ -784,7 +784,7 @@ export class SimulationLoop {
         serviceCoverage,
         parkProximity,
         waterfront,
-        pollution: pollution.ground * pollutionFactor,
+        pollution: (pollution.ground + pollution.water) * pollutionFactor,
         noise: pollution.noise * pollutionFactor,
         crimeRate: this.getAvgCrime(),
       });
@@ -881,7 +881,7 @@ export class SimulationLoop {
         isPowered: this.state.power.isPowered(x, y),
         isWatered: this.state.water.isSupplied(x, y),
         crimeRate: localCrime,
-        pollution: pollution.ground,
+        pollution: pollution.ground + pollution.water,
         buildingLevel: building.level,
         serviceScore,
         freightRatio: isCommercialZone(cell.zoneType) ? this.state.freight.getSupplyStatus(x, y).ratio : undefined,
