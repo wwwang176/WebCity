@@ -1,4 +1,4 @@
-import { For } from 'solid-js';
+import { For, createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { getResidentialServiceRatios } from '../../../core/service/ServiceCoverageQuery';
 import { UI_COLORS } from '../../constants';
@@ -40,7 +40,7 @@ function CoverageBar(props: { row: ServiceRow }) {
 }
 
 export function ServicesPage() {
-  const data = () => {
+  const data = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
     const ratios = getResidentialServiceRatios(state);
@@ -72,7 +72,9 @@ export function ServicesPage() {
     }
 
     return { rows, avgCoverage, gaps, facilities };
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   return (
     <>
@@ -106,22 +108,32 @@ export function ServicesPage() {
       )}
 
       <div class="section-title" style="margin-top:16px">Facility Load</div>
-      <For each={data().facilities}>
-        {(f) => {
-          const pct = Math.round(f.ratio * 100);
-          const color = f.ratio >= 2 ? UI_COLORS.STATUS_BAD : f.ratio > 1 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD;
-          const label = f.ratio >= 2 ? 'Overloaded' : f.ratio > 1 ? 'Over capacity' : 'Normal';
-          return (
-            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.05)">
-              <span style="color:#b0bec5">{f.name}</span>
-              <span style="display:flex;align-items:center;gap:8px">
-                <span style="color:#b0bec5">{f.load} / {f.capacity}</span>
-                <span style={{ 'font-weight': '600', color, 'min-width': '90px', 'text-align': 'right' }}>{pct}% — {label}</span>
-              </span>
-            </div>
-          );
-        }}
-      </For>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr style="color:#78909c;text-align:left;border-bottom:1px solid rgba(255,255,255,0.1)">
+            <th style="padding:4px 0;font-weight:500">Name</th>
+            <th style="padding:4px 0;font-weight:500;text-align:right">Load</th>
+            <th style="padding:4px 0;font-weight:500;text-align:right">Capacity</th>
+            <th style="padding:4px 0;font-weight:500;text-align:right">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          <For each={data().facilities}>
+            {(f) => {
+              const color = f.ratio >= 2 ? UI_COLORS.STATUS_BAD : f.ratio > 1 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD;
+              const label = f.ratio >= 2 ? 'Overloaded' : f.ratio > 1 ? 'Over capacity' : 'Normal';
+              return (
+                <tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
+                  <td style="padding:4px 0;color:#b0bec5">{f.name}</td>
+                  <td style="padding:4px 0;text-align:right;color:#b0bec5">{f.load}</td>
+                  <td style="padding:4px 0;text-align:right;color:#b0bec5">{f.capacity}</td>
+                  <td style={{ padding: '4px 0', 'text-align': 'right', 'font-weight': '600', color }}>{label}</td>
+                </tr>
+              );
+            }}
+          </For>
+        </tbody>
+      </table>
     </>
   );
 }
