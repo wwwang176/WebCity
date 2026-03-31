@@ -323,9 +323,23 @@ function UtilityStatus(props: { hasPower: boolean; hasWater: boolean }) {
   );
 }
 
+function getInfraOverloadWarning(sel: SelectedInfraBuilding): WarnLevel | null {
+  const d = sel.details;
+  // Check Load (hospital) or Students (school) for "N / Cap" format
+  const field = (d.Load ?? d.Students) as string | undefined;
+  if (!field) return null;
+  const match = field.match(/^(\d+)\s*\/\s*(\d+)/);
+  if (!match) return null;
+  const load = parseInt(match[1]!, 10);
+  const cap = parseInt(match[2]!, 10);
+  if (cap <= 0 || load <= cap) return null;
+  return load >= cap * 2 ? 'red' : 'yellow';
+}
+
 function InfraBuildingInfo(props: { sel: SelectedInfraBuilding }) {
   const icon = () => INFRA_ICONS[props.sel.infraType] ?? '';
   const details = () => Object.entries(props.sel.details);
+  const overload = () => getInfraOverloadWarning(props.sel);
 
   return (
     <>
@@ -337,6 +351,9 @@ function InfraBuildingInfo(props: { sel: SelectedInfraBuilding }) {
         )}
       </For>
       <UtilityStatus hasPower={props.sel.hasPower} hasWater={props.sel.hasWater} />
+      <Show when={overload()}>
+        {(level) => <div style={level() === 'red' ? WARNING_STYLE_RED : WARNING_STYLE_YELLOW}>Overloaded</div>}
+      </Show>
     </>
   );
 }

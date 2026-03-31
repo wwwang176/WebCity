@@ -1,3 +1,4 @@
+import { For } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { getResidentialServiceRatios } from '../../../core/service/ServiceCoverageQuery';
 import { UI_COLORS } from '../../constants';
@@ -7,6 +8,13 @@ interface ServiceRow {
   ratio: number;
   color: string;
   icon: string;
+}
+
+interface FacilityStatus {
+  name: string;
+  load: number;
+  capacity: number;
+  ratio: number;
 }
 
 function CoverageBar(props: { row: ServiceRow }) {
@@ -51,7 +59,19 @@ export function ServicesPage() {
     const avgCoverage = rows.reduce((s, r) => s + r.ratio, 0) / rows.length;
     const gaps = rows.filter(r => r.ratio < 0.5);
 
-    return { rows, avgCoverage, gaps };
+    // Facility load status
+    const facilities: FacilityStatus[] = [];
+    for (const h of state.health.getHospitals()) {
+      const load = state.health.getHospitalLoad(h.id);
+      facilities.push({ name: 'Hospital', load, capacity: h.capacity, ratio: h.capacity > 0 ? load / h.capacity : 0 });
+    }
+    const schoolLabels: Record<string, string> = { elementary: 'Elementary', highschool: 'High School', university: 'University' };
+    for (const s of state.education.getSchools()) {
+      const enrolled = state.education.getSchoolEnrollment(s.id);
+      facilities.push({ name: schoolLabels[s.type] ?? s.type, load: enrolled, capacity: s.capacity, ratio: s.capacity > 0 ? enrolled / s.capacity : 0 });
+    }
+
+    return { rows, avgCoverage, gaps, facilities };
   };
 
   return (
@@ -84,6 +104,24 @@ export function ServicesPage() {
           Low coverage: {data().gaps.map(g => g.label).join(', ')}
         </div>
       )}
+
+      <div class="section-title" style="margin-top:16px">Facility Load</div>
+      <For each={data().facilities}>
+        {(f) => {
+          const pct = Math.round(f.ratio * 100);
+          const color = f.ratio >= 2 ? UI_COLORS.STATUS_BAD : f.ratio > 1 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD;
+          const label = f.ratio >= 2 ? 'Overloaded' : f.ratio > 1 ? 'Over capacity' : 'Normal';
+          return (
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:12px;border-bottom:1px solid rgba(255,255,255,0.05)">
+              <span style="color:#b0bec5">{f.name}</span>
+              <span style="display:flex;align-items:center;gap:8px">
+                <span style="color:#b0bec5">{f.load} / {f.capacity}</span>
+                <span style={{ 'font-weight': '600', color, 'min-width': '90px', 'text-align': 'right' }}>{pct}% — {label}</span>
+              </span>
+            </div>
+          );
+        }}
+      </For>
     </>
   );
 }
