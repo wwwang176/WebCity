@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { HealthService, HEALTH } from '../HealthService';
+import { HealthService, HEALTH, HOSPITAL_LOAD, citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../HealthService';
 import { RoadType } from '../../road/types';
 import type { SizedGrid } from '../../grid/GridHelpers';
 
@@ -164,6 +164,154 @@ describe('HealthService', () => {
     expect(restored.getHospitals()).toHaveLength(1);
     expect(restored.getCoverage(10, 10)).toBe(true);
     expect(restored.getHealthBonus(10, 10)).toBe(20);
+  });
+});
+
+describe('citizenHospitalDemand', () => {
+  it('returns base demand (0.3) with zero pollution', () => {
+    expect(citizenHospitalDemand(0)).toBe(HOSPITAL_LOAD.BASE_DEMAND);
+  });
+
+  it('returns doubled demand (0.6) at max pollution', () => {
+    expect(citizenHospitalDemand(255)).toBeCloseTo(
+      HOSPITAL_LOAD.BASE_DEMAND + HOSPITAL_LOAD.POLLUTION_DEMAND,
+      5,
+    );
+  });
+
+  it('scales linearly with pollution', () => {
+    const half = citizenHospitalDemand(127.5);
+    expect(half).toBeCloseTo(0.45, 2);
+  });
+});
+
+describe('loadRatioToDeathMultiplier', () => {
+  it('returns COVERED_MIN (0.3) when load ≤ 1.0', () => {
+    expect(loadRatioToDeathMultiplier(0)).toBe(HOSPITAL_LOAD.COVERED_MIN);
+    expect(loadRatioToDeathMultiplier(0.5)).toBe(HOSPITAL_LOAD.COVERED_MIN);
+    expect(loadRatioToDeathMultiplier(1.0)).toBe(HOSPITAL_LOAD.COVERED_MIN);
+  });
+
+  it('returns COVERED_MAX (1.0) when load ≥ 2.0', () => {
+    expect(loadRatioToDeathMultiplier(2.0)).toBe(HOSPITAL_LOAD.COVERED_MAX);
+    expect(loadRatioToDeathMultiplier(3.0)).toBe(HOSPITAL_LOAD.COVERED_MAX);
+  });
+
+  it('lerps linearly between 1.0 and 2.0 load', () => {
+    const mid = loadRatioToDeathMultiplier(1.5);
+    expect(mid).toBeCloseTo(0.65, 5);
+  });
+
+  it('lerps at 25% overload', () => {
+    const quarter = loadRatioToDeathMultiplier(1.25);
+    expect(quarter).toBeCloseTo(0.475, 5);
+  });
+});
+
+describe('uncoveredPollutionMultiplier', () => {
+  it('returns 1.0 with zero pollution', () => {
+    expect(uncoveredPollutionMultiplier(0)).toBe(1.0);
+  });
+
+  it('returns 1.5 at max pollution', () => {
+    expect(uncoveredPollutionMultiplier(255)).toBeCloseTo(1.5, 5);
+  });
+
+  it('scales linearly', () => {
+    expect(uncoveredPollutionMultiplier(127.5)).toBeCloseTo(1.25, 2);
+  });
+});
+
+describe('HealthService hospital load', () => {
+  it('getTotalCapacity sums all hospital capacities', () => {
+    const health = new HealthService();
+    health.addHospital(0, 0, 12, 100);
+    health.addHospital(5, 5, 12, 200);
+    expect(health.getTotalCapacity()).toBe(300);
+  });
+
+  it('getTotalCapacity returns 0 with no hospitals', () => {
+    const health = new HealthService();
+    expect(health.getTotalCapacity()).toBe(0);
+  });
+
+  it('getLoadRatio defaults to 0', () => {
+    const health = new HealthService();
+    expect(health.getLoadRatio()).toBe(0);
+  });
+
+  it('updateLoads computes correct global load ratio', () => {
+    const health = new HealthService();
+    health.addHospital(0, 0, 12, 100);
+    // 1 citizen at (1,1), no pollution → demand 0.3 / capacity 100 = 0.003
+    health.updateLoads([{ x: 1, y: 1, pollution: 0 }]);
+    expect(health.getLoadRatio()).toBeCloseTo(0.3 / 100, 5);
+  });
+
+  it('updateLoads with zero capacity and positive demand returns Infinity', () => {
+    const health = new HealthService();
+    health.updateLoads([{ x: 0, y: 0, pollution: 0 }]);
+    expect(health.getLoadRatio()).toBe(Infinity);
+  });
+
+  it('updateLoads with zero capacity and zero demand returns 0', () => {
+    const health = new HealthService();
+    health.updateLoads([]);
+    expect(health.getLoadRatio()).toBe(0);
+  });
+
+  it('pollution doubles per-citizen demand', () => {
+    const health = new HealthService();
+    health.addHospital(0, 0, 12, 100);
+    // 100 citizens, no pollution: demand = 100×0.3 = 30
+    const noPollution = Array.from({ length: 100 }, () => ({ x: 1, y: 1, pollution: 0 }));
+    health.updateLoads(noPollution);
+    const ratioClean = health.getLoadRatio();
+    // 100 citizens, max pollution: demand = 100×0.6 = 60
+    const maxPollution = Array.from({ length: 100 }, () => ({ x: 1, y: 1, pollution: 255 }));
+    health.updateLoads(maxPollution);
+    const ratioPolluted = health.getLoadRatio();
+    expect(ratioPolluted).toBeCloseTo(ratioClean * 2, 2);
+  });
+
+  it('getHospitalLoad returns per-hospital demand', () => {
+    const health = new HealthService();
+    const id1 = health.addHospital(0, 0, 12, 100);
+    const id2 = health.addHospital(20, 20, 12, 100);
+    // 10 citizens near hospital 1 (at x=1), none near hospital 2
+    const citizens = Array.from({ length: 10 }, () => ({ x: 1, y: 1, pollution: 0 }));
+    health.updateLoads(citizens);
+    expect(health.getHospitalLoad(id1)).toBe(Math.round(10 * 0.3)); // 3
+    expect(health.getHospitalLoad(id2)).toBe(0);
+  });
+
+  it('citizens assigned to nearest hospital', () => {
+    const health = new HealthService();
+    const id1 = health.addHospital(0, 0, 12, 100);
+    const id2 = health.addHospital(10, 0, 12, 100);
+    // Citizen at (3,0) → closer to hospital 1
+    // Citizen at (8,0) → closer to hospital 2
+    health.updateLoads([
+      { x: 3, y: 0, pollution: 0 },
+      { x: 8, y: 0, pollution: 0 },
+    ]);
+    expect(health.getHospitalLoad(id1)).toBe(Math.round(0.3)); // 0
+    expect(health.getHospitalLoad(id2)).toBe(Math.round(0.3)); // 0
+    // With more citizens to see rounding
+    const nearH1 = Array.from({ length: 20 }, () => ({ x: 2, y: 0, pollution: 0 }));
+    const nearH2 = Array.from({ length: 5 }, () => ({ x: 9, y: 0, pollution: 0 }));
+    health.updateLoads([...nearH1, ...nearH2]);
+    expect(health.getHospitalLoad(id1)).toBe(Math.round(20 * 0.3)); // 6
+    expect(health.getHospitalLoad(id2)).toBe(Math.round(5 * 0.3)); // 2
+  });
+
+  it('fromJSON restores loadRatio to 0', () => {
+    const health = new HealthService();
+    health.addHospital(0, 0, 12, 100);
+    health.updateLoads([{ x: 1, y: 1, pollution: 0 }]);
+    const json = health.toJSON();
+    const restored = HealthService.fromJSON(json);
+    expect(restored.getLoadRatio()).toBe(0);
   });
 });
 

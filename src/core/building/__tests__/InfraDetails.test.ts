@@ -7,8 +7,8 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
   return {
     police: { getStations: () => [], getCoverage: () => false },
     fire: { getStations: () => [], getActiveFires: () => [], getRecentExtinguished: () => 0 },
-    health: { getHospitals: () => [] },
-    education: { getSchools: () => [] },
+    health: { getHospitals: () => [], getHospitalLoad: () => 0 },
+    education: { getSchools: () => [], getSchoolEnrollment: () => 0 },
     parks: { getParks: () => [] },
     garbage: { getFacilities: () => [] },
     deathCare: { getCemeteries: () => [] },
@@ -51,61 +51,51 @@ describe('getInfraDetails', () => {
     expect(d).toEqual({ Radius: 18, 'Active Fires': 2, 'Extinguished/month': 7 });
   });
 
-  it('hospital: returns capacity, radius, and residents covered', () => {
+  it('hospital: returns load/capacity and radius', () => {
     const ctx = makeCtx({
-      health: { getHospitals: () => [{ x: 10, y: 10, capacity: 150, radius: 12 }] },
-      citizens: { getCitizens: () => [
-        { homeId: '10,10', age: 30, lifeStage: 'ADULT' },  // distance 0, within radius
-        { homeId: '10,11', age: 40, lifeStage: 'ADULT' },  // distance 1, within radius
-        { homeId: '50,50', age: 25, lifeStage: 'ADULT' },  // far away
-        { homeId: null, age: 20, lifeStage: 'ADULT' },     // homeless
-      ], getEnrolledCounts: () => ({ elementary: 0, highSchool: 0, university: 0 }) },
+      health: {
+        getHospitals: () => [{ id: 'h1', x: 10, y: 10, capacity: 150, radius: 12 }],
+        getHospitalLoad: (id: string) => id === 'h1' ? 45 : 0,
+      },
     });
     const d = getInfraDetails(ctx, 'hospital', 10, 10);
-    expect(d).toEqual({ Capacity: 150, Radius: 12, Residents: 2 });
+    expect(d).toEqual({ Load: '45 / 150', Radius: 12 });
   });
 
-  it('school (elementary): returns type, capacity, radius, and enrolled/total students', () => {
+  it('school (elementary): returns per-school enrolled / capacity', () => {
     const ctx = makeCtx({
-      education: { getSchools: () => [{ x: 2, y: 2, type: 'elementary', capacity: 250, radius: 11 }] },
-      citizens: {
-        getCitizens: () => [],
-        getEnrolledCounts: () => ({ elementary: 45, highSchool: 0, university: 0 }),
+      education: {
+        getSchools: () => [{ id: 's1', x: 2, y: 2, type: 'elementary', capacity: 250, radius: 11 }],
+        getSchoolEnrollment: (id: string) => id === 's1' ? 45 : 0,
       },
     });
     const d = getInfraDetails(ctx, 'school', 2, 2);
-    expect(d).toEqual({ Type: 'Elementary', Capacity: 250, Radius: 11, Students: '45 / 250' });
+    expect(d).toEqual({ Type: 'Elementary', Students: '45 / 250', Radius: 11 });
   });
 
-  it('school_high: shows enrolled highSchool students / total highschool capacity', () => {
+  it('school_high: returns per-school enrolled / capacity', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [
-          { x: 1, y: 1, type: 'elementary', capacity: 200, radius: 10 },
-          { x: 1, y: 1, type: 'highschool', capacity: 350, radius: 13 },
+          { id: 's1', x: 1, y: 1, type: 'elementary', capacity: 200, radius: 10 },
+          { id: 's2', x: 1, y: 1, type: 'highschool', capacity: 350, radius: 13 },
         ],
-      },
-      citizens: {
-        getCitizens: () => [],
-        getEnrolledCounts: () => ({ elementary: 0, highSchool: 120, university: 0 }),
+        getSchoolEnrollment: (id: string) => id === 's2' ? 120 : 0,
       },
     });
     const d = getInfraDetails(ctx, 'school_high', 1, 1);
-    expect(d).toEqual({ Type: 'High School', Capacity: 350, Radius: 13, Students: '120 / 350' });
+    expect(d).toEqual({ Type: 'High School', Students: '120 / 350', Radius: 13 });
   });
 
-  it('school_univ: shows enrolled university students / total university capacity', () => {
+  it('school_univ: returns per-school enrolled / capacity', () => {
     const ctx = makeCtx({
       education: {
-        getSchools: () => [{ x: 7, y: 7, type: 'university', capacity: 600, radius: 16 }],
-      },
-      citizens: {
-        getCitizens: () => [],
-        getEnrolledCounts: () => ({ elementary: 0, highSchool: 0, university: 88 }),
+        getSchools: () => [{ id: 's1', x: 7, y: 7, type: 'university', capacity: 600, radius: 16 }],
+        getSchoolEnrollment: (id: string) => id === 's1' ? 88 : 0,
       },
     });
     const d = getInfraDetails(ctx, 'school_univ', 7, 7);
-    expect(d).toEqual({ Type: 'University', Capacity: 600, Radius: 16, Students: '88 / 600' });
+    expect(d).toEqual({ Type: 'University', Students: '88 / 600', Radius: 16 });
   });
 
   it('park: returns radius', () => {

@@ -66,10 +66,25 @@ const SCHOOL_INFRA_TYPE: Record<SchoolType, InfraType> = {
   university: 'school_univ',
 };
 
+/** Enrolled citizen info for per-school assignment. */
+export interface EnrolledCitizen {
+  x: number;
+  y: number;
+  schoolKey: 'elementary' | 'highSchool' | 'university';
+}
+
+/** Map schoolKey → SchoolType for lookups. */
+const SCHOOL_KEY_TO_TYPE: Record<EnrolledCitizen['schoolKey'], SchoolType> = {
+  elementary: 'elementary',
+  highSchool: 'highschool',
+  university: 'university',
+};
+
 export class EducationService {
   private schools: School[] = [];
   private nextId = 1;
   private operationalSchoolIds: Set<string> | null = null;
+  private readonly schoolEnrollment = new Map<string, number>();
   /** One RoadCoverageMap per school type, each with its own budget. */
   private coverageMaps: Record<SchoolType, RoadCoverageMap> = {
     elementary: new RoadCoverageMap(),
@@ -197,8 +212,35 @@ export class EducationService {
     return merged;
   }
 
+  /** Assign enrolled citizens to nearest school of their type (Euclidean). */
+  updateSchoolLoads(enrolled: ReadonlyArray<EnrolledCitizen>): void {
+    this.schoolEnrollment.clear();
+    for (const s of this.schools) this.schoolEnrollment.set(s.id, 0);
+
+    for (const c of enrolled) {
+      const schoolType = SCHOOL_KEY_TO_TYPE[c.schoolKey];
+      let nearestId = '';
+      let nearestDist = Infinity;
+      for (const s of this.schools) {
+        if (s.type !== schoolType) continue;
+        const dx = c.x - s.x;
+        const dy = c.y - s.y;
+        const dist = dx * dx + dy * dy;
+        if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
+      }
+      if (nearestId) {
+        this.schoolEnrollment.set(nearestId, (this.schoolEnrollment.get(nearestId) ?? 0) + 1);
+      }
+    }
+  }
+
+  /** Per-school enrolled student count (for UI display). */
+  getSchoolEnrollment(schoolId: string): number {
+    return this.schoolEnrollment.get(schoolId) ?? 0;
+  }
+
   tick(): void {
-    // Future: track enrollment, education progress, etc.
+    // Coverage and enrollment handled externally via SimulationLoop.
   }
 
   getMaintenanceCost(): number {

@@ -16,6 +16,14 @@ export const HEALTH_MULTIPLIER = {
   NOT_COVERED: 1.0,  // baseline
 } as const;
 
+/** Per-citizen death context returned by SimulationLoop callback. */
+export interface DeathContext {
+  /** Hospital death-rate multiplier (0.3 = full coverage, 1.0 = no benefit) */
+  hospitalMult: number;
+  /** Pollution death-rate multiplier (1.0 = no extra risk, up to 1.5 = high pollution uncovered) */
+  pollutionMult: number;
+}
+
 /** Elderly age threshold and rate factor */
 export const ELDERLY = {
   AGE_THRESHOLD: 240,
@@ -222,9 +230,10 @@ export class CitizenManager {
     }
   }
 
-  /** Called once per game day: bathtub-curve death check with health coverage.
-   *  Returns array of dead citizen IDs (for cache cleanup). */
-  deathTick(isHealthCovered: (citizen: Citizen) => boolean): number[] {
+  /** Called once per game day: bathtub-curve death check.
+   *  Callback returns per-citizen death context with hospital load and pollution multipliers.
+   *  finalRate = baseRate × elderlyMult × hospitalMult × pollutionMult */
+  deathTick(getDeathContext: (citizen: Citizen) => DeathContext): number[] {
     const dead: number[] = [];
     for (const c of this.citizens) {
       if (c.age > MAX_AGE) {
@@ -233,8 +242,8 @@ export class CitizenManager {
       }
       const baseRate = DAILY_DEATH_RATE[c.lifeStage];
       const elderlyMult = getElderlyMultiplier(c.age);
-      const healthMult = isHealthCovered(c) ? HEALTH_MULTIPLIER.COVERED : HEALTH_MULTIPLIER.NOT_COVERED;
-      const finalRate = baseRate * elderlyMult * healthMult;
+      const ctx = getDeathContext(c);
+      const finalRate = baseRate * elderlyMult * ctx.hospitalMult * ctx.pollutionMult;
       if (Math.random() < finalRate) {
         dead.push(c.id);
       }

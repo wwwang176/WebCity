@@ -501,7 +501,7 @@ describe('DeathCare integration', () => {
       state.citizens.createCitizen({ age: 281 });
     }
 
-    const deadIds = state.citizens.deathTick(() => false);
+    const deadIds = state.citizens.deathTick(() => ({ hospitalMult: 1.0, pollutionMult: 1.0 }));
     expect(deadIds.length).toBe(3);
     expect(state.citizens.getPopulation()).toBe(0);
 

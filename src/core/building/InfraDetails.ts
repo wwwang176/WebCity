@@ -3,8 +3,7 @@
  * Eliminates 15-case switch in Game.ts (OCP + SRP).
  */
 import type { InfraType } from './InfraConfig';
-import { findAtPosition, parsePosKey } from '../grid/GridHelpers';
-import { euclideanDistance } from '../grid/GridHelpers';
+import { findAtPosition } from '../grid/GridHelpers';
 
 /**
  * Minimal interface for services needed to extract infrastructure details.
@@ -21,10 +20,12 @@ export interface InfraDetailContext {
     getRecentExtinguished(): number;
   };
   health: {
-    getHospitals(): readonly { x: number; y: number; capacity: number; radius: number }[];
+    getHospitals(): readonly { id: string; x: number; y: number; capacity: number; radius: number }[];
+    getHospitalLoad(hospitalId: string): number;
   };
   education: {
-    getSchools(): readonly { x: number; y: number; type: string; capacity: number; radius: number }[];
+    getSchools(): readonly { id: string; x: number; y: number; type: string; capacity: number; radius: number }[];
+    getSchoolEnrollment(schoolId: string): number;
   };
   parks: {
     getParks(): readonly { x: number; y: number; radius: number }[];
@@ -62,16 +63,15 @@ type DetailExtractor = (ctx: InfraDetailContext, cx: number, cy: number) => Reco
 /** Factory for school detail extractors — eliminates duplicate code across 3 school types (DRY). */
 function makeSchoolExtractor(
   schoolType: string,
-  enrollKey: 'elementary' | 'highSchool' | 'university',
   label: string,
   defaultCap: number,
   defaultRadius: number,
 ): DetailExtractor {
   return (ctx, cx, cy) => {
-    const sc = ctx.education.getSchools().find(s => s.x === cx && s.y === cy && s.type === schoolType);
-    const enrolled = ctx.citizens.getEnrolledCounts()[enrollKey];
-    const totalCap = ctx.education.getSchools().filter(s => s.type === schoolType).reduce((sum, s) => sum + s.capacity, 0);
-    return { Type: label, Capacity: sc?.capacity ?? defaultCap, Radius: sc?.radius ?? defaultRadius, Students: `${enrolled} / ${totalCap}` };
+    const sc = findAtPosition(ctx.education.getSchools().filter(s => s.type === schoolType), cx, cy);
+    const cap = sc?.capacity ?? defaultCap;
+    const enrolled = sc ? ctx.education.getSchoolEnrollment(sc.id) : 0;
+    return { Type: label, Students: `${enrolled} / ${cap}`, Radius: sc?.radius ?? defaultRadius };
   };
 }
 
@@ -90,20 +90,13 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   hospital: (ctx, cx, cy) => {
     const h = findAtPosition(ctx.health.getHospitals(), cx, cy);
-    const radius = h?.radius ?? 12;
-    let residents = 0;
-    if (h) {
-      for (const c of ctx.citizens.getCitizens()) {
-        if (!c.homeId) continue;
-        const pos = parsePosKey(c.homeId);
-        if (pos && euclideanDistance(pos.x, pos.y, h.x, h.y) <= radius) residents++;
-      }
-    }
-    return { Capacity: h?.capacity ?? 100, Radius: radius, Residents: residents };
+    const cap = h?.capacity ?? 100;
+    const load = h ? ctx.health.getHospitalLoad(h.id) : 0;
+    return { Load: `${load} / ${cap}`, Radius: h?.radius ?? 12 };
   },
-  school: makeSchoolExtractor('elementary', 'elementary', 'Elementary', 200, 10),
-  school_high: makeSchoolExtractor('highschool', 'highSchool', 'High School', 300, 12),
-  school_univ: makeSchoolExtractor('university', 'university', 'University', 500, 15),
+  school: makeSchoolExtractor('elementary', 'Elementary', 200, 10),
+  school_high: makeSchoolExtractor('highschool', 'High School', 300, 12),
+  school_univ: makeSchoolExtractor('university', 'University', 500, 15),
   park: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.parks.getParks(), cx, cy);
     return { Radius: p?.radius ?? 5 };

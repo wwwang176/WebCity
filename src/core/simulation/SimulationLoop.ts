@@ -31,10 +31,11 @@ import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
 import { relocationTick } from '../citizen/Relocation';
 import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
-import type { SchoolType } from '../service/EducationService';
-import type { EducationRule } from '../citizen/CitizenManager';
+import type { SchoolType, EnrolledCitizen } from '../service/EducationService';
+import { EDUCATION_PROGRESSION, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
+import { citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
@@ -232,6 +233,8 @@ export class SimulationLoop {
       }, capacity);
       this.updateCitizenHappiness();
       this.updateCitizenHealth();
+      this.updateHospitalLoads();
+      this.updateSchoolLoads();
     }
 
     // ── Slot 5: Migration + housing + freight + shopping ──
@@ -291,12 +294,19 @@ export class SimulationLoop {
       this.state.citizens.updateAges(this.state.clock.tick);
       this.state.deathCare.advanceDay();
       this.state.fire.advanceDay();
+
+      this.updateHospitalLoads();
+      const hospitalMult = loadRatioToDeathMultiplier(this.state.health.getLoadRatio());
+
       const deadIds = this.state.citizens.deathTick(
-        (citizen) => {
-          if (!citizen.homeId) return false;
+        (citizen): DeathContext => {
+          if (!citizen.homeId) return { hospitalMult: 1.0, pollutionMult: 1.0 };
           const pos = parsePosKey(citizen.homeId);
-          if (!pos) return false;
-          return this.state.health.getCoverage(pos.x, pos.y);
+          if (!pos) return { hospitalMult: 1.0, pollutionMult: 1.0 };
+          const covered = this.state.health.getCoverage(pos.x, pos.y);
+          if (covered) return { hospitalMult, pollutionMult: 1.0 };
+          const cell = this.state.grid.getCell(pos.x, pos.y);
+          return { hospitalMult: 1.0, pollutionMult: uncoveredPollutionMultiplier(cell?.pollution ?? 0) };
         }
       );
       for (const id of deadIds) {
@@ -571,6 +581,30 @@ export class SimulationLoop {
       factors.isEmployed = !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate;
       citizen.happiness = calculateHappiness(citizen, factors);
     }
+  }
+
+  private updateHospitalLoads(): void {
+    const coveredCitizens: Array<{ x: number; y: number; pollution: number }> = [];
+    for (const c of this.state.citizens.getCitizens()) {
+      if (!c.homeId) continue;
+      const pos = parsePosKey(c.homeId);
+      if (!pos || !this.state.health.getCoverage(pos.x, pos.y)) continue;
+      const cell = this.state.grid.getCell(pos.x, pos.y);
+      coveredCitizens.push({ x: pos.x, y: pos.y, pollution: cell?.pollution ?? 0 });
+    }
+    this.state.health.updateLoads(coveredCitizens);
+  }
+
+  private updateSchoolLoads(): void {
+    const enrolled: EnrolledCitizen[] = [];
+    for (const c of this.state.citizens.getCitizens()) {
+      if (c.educationProgress <= 0 || !c.homeId) continue;
+      const pos = parsePosKey(c.homeId);
+      if (!pos) continue;
+      const rule = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
+      if (rule) enrolled.push({ x: pos.x, y: pos.y, schoolKey: rule.schoolKey });
+    }
+    this.state.education.updateSchoolLoads(enrolled);
   }
 
   /** Reusable health factors object — mutated per citizen, no allocation per iteration. */

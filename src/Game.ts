@@ -36,7 +36,7 @@ import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, getInfraCenterById, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
+import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
 import { ROAD_COVERAGE } from './core/service/RoadCoverageFlood';
@@ -257,6 +257,9 @@ export interface SelectedInfraBuilding {
   kind: 'infra';
   x: number;
   y: number;
+  /** Primary (anchor) cell coordinates for detail lookup */
+  primaryX: number;
+  primaryY: number;
   infraType: InfraType;
   name: string;
   cost: number;
@@ -1625,10 +1628,9 @@ export class Game {
           const primary = findPrimaryCell(this.state.grid, x, y);
           const px = primary?.x ?? x;
           const py = primary?.y ?? y;
-          const center = getInfraCenterById(px, py, cell.buildingId);
-          const details = this.getInfraDetails(cls.config.type, center.cx, center.cy);
+          const details = this.getInfraDetails(cls.config.type, px, py);
           this.selectedBuilding = {
-            kind: 'infra', x, y,
+            kind: 'infra', x, y, primaryX: px, primaryY: py,
             infraType: cls.config.type, name: cls.config.name,
             cost: cls.config.cost, details,
             hasPower: this.state.power.isPowered(px, py),
@@ -2185,7 +2187,7 @@ export class Game {
     if (!sel) return null;
 
     if (sel.kind === 'infra') {
-      return { ...sel, details: this.getInfraDetails(sel.infraType, sel.x, sel.y) };
+      return { ...sel, details: this.getInfraDetails(sel.infraType, sel.primaryX, sel.primaryY) };
     }
 
     if (sel.kind === 'transport') {

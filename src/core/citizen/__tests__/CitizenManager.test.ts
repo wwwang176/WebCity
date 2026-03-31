@@ -425,23 +425,26 @@ describe('getElderlyMultiplier', () => {
   });
 });
 
+/** Helper: uncovered death context (hospitalMult=1, pollutionMult=1) */
+const UNCOVERED = () => ({ hospitalMult: 1.0, pollutionMult: 1.0 });
+/** Helper: covered death context (hospitalMult=0.3, pollutionMult=1) */
+const COVERED = () => ({ hospitalMult: HEALTH_MULTIPLIER.COVERED, pollutionMult: 1.0 });
+
 describe('deathTick', () => {
   it('should kill citizens over age 280', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ age: 281 });
-    const deaths = mgr.deathTick(() => false);
+    const deaths = mgr.deathTick(UNCOVERED);
     expect(deaths.length).toBe(1);
     expect(mgr.getPopulation()).toBe(0);
   });
 
   it('should not kill young adults deterministically (low probability)', () => {
     const mgr = new CitizenManager();
-    // Create 100 adults — probability of dying is ~0.05%/day each
     for (let i = 0; i < 100; i++) mgr.createCitizen({ age: 100 });
 
-    // Mock Math.random to always return 1.0 (never triggers death)
     vi.spyOn(Math, 'random').mockReturnValue(1.0);
-    const deaths = mgr.deathTick(() => false);
+    const deaths = mgr.deathTick(UNCOVERED);
     expect(deaths.length).toBe(0);
     expect(mgr.getPopulation()).toBe(100);
     vi.restoreAllMocks();
@@ -450,9 +453,8 @@ describe('deathTick', () => {
   it('should kill when random < death rate', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ age: 220 }); // SENIOR, rate=0.006
-    // Mock random to return 0 (always below any positive rate)
     vi.spyOn(Math, 'random').mockReturnValue(0);
-    const deaths = mgr.deathTick(() => false);
+    const deaths = mgr.deathTick(UNCOVERED);
     expect(deaths.length).toBe(1);
     expect(mgr.getPopulation()).toBe(0);
     vi.restoreAllMocks();
@@ -464,7 +466,7 @@ describe('deathTick', () => {
     const mgr1 = new CitizenManager();
     mgr1.createCitizen({ age: 220 }); // SENIOR, base=0.006
     vi.spyOn(Math, 'random').mockReturnValue(0.002);
-    const deaths1 = mgr1.deathTick(() => true);
+    const deaths1 = mgr1.deathTick(COVERED);
     expect(deaths1.length).toBe(0);
     vi.restoreAllMocks();
 
@@ -473,29 +475,26 @@ describe('deathTick', () => {
     const mgr2 = new CitizenManager();
     mgr2.createCitizen({ age: 220 });
     vi.spyOn(Math, 'random').mockReturnValue(0.002);
-    const deaths2 = mgr2.deathTick(() => false);
+    const deaths2 = mgr2.deathTick(UNCOVERED);
     expect(deaths2.length).toBe(1);
     vi.restoreAllMocks();
   });
 
-  it('homeless citizens are treated as not covered', () => {
+  it('callback receives citizen object', () => {
     const mgr = new CitizenManager();
     const c = mgr.createCitizen({ age: 220, homeId: null });
-    // The callback receives the citizen — test that it's called
-    const coverageFn = vi.fn().mockReturnValue(true);
-    vi.spyOn(Math, 'random').mockReturnValue(1.0); // won't die
-    mgr.deathTick(coverageFn);
-    // The callback should be called for each citizen
-    expect(coverageFn).toHaveBeenCalledWith(c);
+    const ctxFn = vi.fn().mockReturnValue({ hospitalMult: 0.3, pollutionMult: 1.0 });
+    vi.spyOn(Math, 'random').mockReturnValue(1.0);
+    mgr.deathTick(ctxFn);
+    expect(ctxFn).toHaveBeenCalledWith(c);
     vi.restoreAllMocks();
   });
 
   it('elderly multiplier increases death rate above 240', () => {
     const mgr = new CitizenManager();
     mgr.createCitizen({ age: 260 }); // SENIOR, rate=0.006*6=0.036
-    // random = 0.01 → below 0.036 → dies
     vi.spyOn(Math, 'random').mockReturnValue(0.01);
-    const deaths = mgr.deathTick(() => false);
+    const deaths = mgr.deathTick(UNCOVERED);
     expect(deaths.length).toBe(1);
     vi.restoreAllMocks();
   });
@@ -503,11 +502,51 @@ describe('deathTick', () => {
   it('returns correct death count', () => {
     const mgr = new CitizenManager();
     for (let i = 0; i < 5; i++) mgr.createCitizen({ age: 281 });
-    mgr.createCitizen({ age: 100 }); // adult, won't die with high random
+    mgr.createCitizen({ age: 100 });
     vi.spyOn(Math, 'random').mockReturnValue(1.0);
-    const deaths = mgr.deathTick(() => false);
-    expect(deaths.length).toBe(5); // only the 281+ die
+    const deaths = mgr.deathTick(UNCOVERED);
+    expect(deaths.length).toBe(5);
     expect(mgr.getPopulation()).toBe(1);
+    vi.restoreAllMocks();
+  });
+
+  it('pollutionMult increases death rate for uncovered citizens', () => {
+    // SENIOR base=0.006, hospitalMult=1.0, pollutionMult=1.5
+    // finalRate = 0.006 * 1.0 * 1.5 = 0.009
+    // random = 0.007 → below 0.009 → dies
+    const mgr1 = new CitizenManager();
+    mgr1.createCitizen({ age: 220 });
+    vi.spyOn(Math, 'random').mockReturnValue(0.007);
+    const deaths1 = mgr1.deathTick(() => ({ hospitalMult: 1.0, pollutionMult: 1.5 }));
+    expect(deaths1.length).toBe(1);
+    vi.restoreAllMocks();
+
+    // Same random without pollution: 0.006 * 1.0 * 1.0 = 0.006
+    // random = 0.007 → above 0.006 → survives
+    const mgr2 = new CitizenManager();
+    mgr2.createCitizen({ age: 220 });
+    vi.spyOn(Math, 'random').mockReturnValue(0.007);
+    const deaths2 = mgr2.deathTick(UNCOVERED);
+    expect(deaths2.length).toBe(0);
+    vi.restoreAllMocks();
+  });
+
+  it('overloaded hospital increases death rate vs normal hospital', () => {
+    // Normal hospital: 0.006 * 0.3 = 0.0018
+    // Overloaded (150%): hospitalMult = 0.65, rate = 0.006 * 0.65 = 0.0039
+    // random = 0.003 → survives with normal, dies with overloaded
+    const mgr1 = new CitizenManager();
+    mgr1.createCitizen({ age: 220 });
+    vi.spyOn(Math, 'random').mockReturnValue(0.003);
+    const deaths1 = mgr1.deathTick(COVERED);
+    expect(deaths1.length).toBe(0); // 0.003 > 0.0018
+    vi.restoreAllMocks();
+
+    const mgr2 = new CitizenManager();
+    mgr2.createCitizen({ age: 220 });
+    vi.spyOn(Math, 'random').mockReturnValue(0.003);
+    const deaths2 = mgr2.deathTick(() => ({ hospitalMult: 0.65, pollutionMult: 1.0 }));
+    expect(deaths2.length).toBe(1); // 0.003 < 0.0039
     vi.restoreAllMocks();
   });
 
@@ -518,19 +557,18 @@ describe('deathTick', () => {
 
     for (let i = 0; i < RUNS; i++) {
       const mgr = new CitizenManager();
-      mgr.createCitizen({ age: 220 }); // SENIOR
-      const d = mgr.deathTick(() => false);
+      mgr.createCitizen({ age: 220 });
+      const d = mgr.deathTick(UNCOVERED);
       seniorDeaths += d.length;
     }
 
     for (let i = 0; i < RUNS; i++) {
       const mgr = new CitizenManager();
-      mgr.createCitizen({ age: 100 }); // ADULT
-      const d = mgr.deathTick(() => false);
+      mgr.createCitizen({ age: 100 });
+      const d = mgr.deathTick(UNCOVERED);
       adultDeaths += d.length;
     }
 
-    // SENIOR rate (0.006) should produce ~12x more deaths than ADULT (0.0005)
     expect(seniorDeaths).toBeGreaterThan(adultDeaths);
   });
 });
