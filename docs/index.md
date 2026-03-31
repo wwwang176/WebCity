@@ -42,13 +42,14 @@ WebCity 是一款網頁版都市經營模擬遊戲，靈感來自 Cities: Skylin
 
 | 文件 | 說明 |
 |------|------|
-| [services-system.md](services-system.md) | 市政服務 — 電力/供水/警察/消防/醫療/教育/垃圾/污水/殯葬/公園/貨運 |
+| [services-system.md](services-system.md) | 市政服務 — 電力/供水/警察/消防/醫療/教育/垃圾/污水/殯葬/公園 |
 
 ### 交通
 
 | 文件 | 說明 |
 |------|------|
 | [traffic-system.md](traffic-system.md) | 交通系統 — 車輛、車道圖、壅塞、LaneGraphPathfinder、高速公路外部連線 |
+| [freight-system.md](freight-system.md) | 貨運系統 — 兩階段 BFS 供貨、進出口貿易、FreightTradeCollector |
 | [transport-system.md](transport-system.md) | 大眾運輸 — 公車/地鐵/鐵路/渡輪/機場、模式選擇 |
 
 ### 環境與事件
