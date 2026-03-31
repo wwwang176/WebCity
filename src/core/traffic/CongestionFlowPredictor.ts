@@ -30,16 +30,18 @@ const MANHATTAN_DISTANCE_THRESHOLD = 3;
  * @param commuteCache - The shared commute path cache
  * @param flowCellSet - Reusable scratch Set (cleared internally, avoids GC)
  * @param getLaneCount - Returns lane count for a given cellKey
- * @returns Map of cellKey → normalized flow value
+ * @returns flowMap (cellKey → normalized flow) and totalRefCount (citizens covered by cache)
  */
 export function computeCongestionFlow(
   commuteCache: CommuteCache,
   flowCellSet: Set<string>,
   getLaneCount: (cellKey: string) => number,
-): Map<string, number> {
+): { flowMap: Map<string, number>; totalRefCount: number } {
   const flowMap = new Map<string, number>();
+  let totalRefCount = 0;
 
   commuteCache.forEachRouteWithRefCount((path, refCount) => {
+    totalRefCount += refCount;
     flowCellSet.clear();
     collectEdgeCells(path, flowCellSet);
     for (const cellKey of flowCellSet) {
@@ -55,7 +57,7 @@ export function computeCongestionFlow(
     }
   }
 
-  return flowMap;
+  return { flowMap, totalRefCount };
 }
 
 /**

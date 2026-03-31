@@ -1709,7 +1709,7 @@ export class SimulationLoop {
     const grid = this.state.grid;
 
     // Primary: cache-based flow prediction
-    const flowMap = computeCongestionFlow(
+    const { flowMap, totalRefCount } = computeCongestionFlow(
       this.commuteCache,
       this.flowCellSet,
       (cellKey) => {
@@ -1720,9 +1720,7 @@ export class SimulationLoop {
     );
 
     // Fallback: Monte Carlo when cache coverage is too low
-    let totalRoutedCitizens = 0;
-    for (const flow of flowMap.values()) totalRoutedCitizens += flow;
-    if (totalRoutedCitizens < SIMULATION.SAMPLE_COUNT_MIN) {
+    if (totalRefCount < SIMULATION.SAMPLE_COUNT_MIN) {
       const mcDeps: CongestionFlowDeps = {
         citizens: this.state.citizens.getCitizens(),
         parsePosKey: parsePosKeyUnsafe,

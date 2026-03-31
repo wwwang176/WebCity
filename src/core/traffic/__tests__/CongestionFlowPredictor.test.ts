@@ -26,8 +26,9 @@ describe('CongestionFlowPredictor', () => {
     it('returns empty map when commuteCache has no routes', () => {
       const cache = new CommuteCache();
       const flowCellSet = new Set<string>();
-      const result = computeCongestionFlow(cache, flowCellSet, (cellKey) => 1);
-      expect(result.size).toBe(0);
+      const { flowMap, totalRefCount } = computeCongestionFlow(cache, flowCellSet, (cellKey) => 1);
+      expect(flowMap.size).toBe(0);
+      expect(totalRefCount).toBe(0);
     });
 
     it('accumulates flow from cached routes weighted by refCount', () => {
@@ -56,12 +57,14 @@ describe('CongestionFlowPredictor', () => {
       }
 
       const flowCellSet = new Set<string>();
-      const result = computeCongestionFlow(cache, flowCellSet, (_cellKey) => 1);
+      const { flowMap, totalRefCount } = computeCongestionFlow(cache, flowCellSet, (_cellKey) => 1);
 
       // All 3 cells should have flow
-      expect(result.has('0,0')).toBe(true);
-      expect(result.has('1,0')).toBe(true);
-      expect(result.has('2,0')).toBe(true);
+      expect(flowMap.has('0,0')).toBe(true);
+      expect(flowMap.has('1,0')).toBe(true);
+      expect(flowMap.has('2,0')).toBe(true);
+      // totalRefCount = sum of refCounts (4 citizens)
+      expect(totalRefCount).toBe(4);
     });
 
     it('normalizes flow by lane count', () => {
@@ -81,12 +84,12 @@ describe('CongestionFlowPredictor', () => {
 
       const flowCellSet = new Set<string>();
       // 2-lane road: flow should be halved
-      const result = computeCongestionFlow(cache, flowCellSet, (cellKey) => {
+      const { flowMap } = computeCongestionFlow(cache, flowCellSet, (cellKey) => {
         return cellKey === '0,0' ? 2 : 1;
       });
 
-      const flowAt00 = result.get('0,0') ?? 0;
-      const flowAt10 = result.get('1,0') ?? 0;
+      const flowAt00 = flowMap.get('0,0') ?? 0;
+      const flowAt10 = flowMap.get('1,0') ?? 0;
       // 0,0 has 2 lanes, so its normalized flow should be half of 1,0's
       expect(flowAt00).toBeLessThan(flowAt10);
     });
@@ -113,8 +116,8 @@ describe('CongestionFlowPredictor', () => {
 
       // flowCellSet should have been cleared during use (no old_key leak into result)
       // The function should work correctly regardless of pre-existing set contents
-      const result2 = computeCongestionFlow(cache, flowCellSet, () => 1);
-      expect(result2.has('old_key')).toBe(false);
+      const { flowMap } = computeCongestionFlow(cache, flowCellSet, () => 1);
+      expect(flowMap.has('old_key')).toBe(false);
     });
   });
 
