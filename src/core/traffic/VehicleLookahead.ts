@@ -1,8 +1,10 @@
 import type { LaneEdge } from './LaneGraph';
-import { TRAFFIC } from './TrafficSimulation';
 
 /** Distance (grid units) to stop behind the intersection edge, matching the rendered stop line position. */
 export const STOP_LINE_OFFSET = 0.25;
+
+/** Maximum lookahead distance for gap/red-light checks (matches LOOKAHEAD_DISTANCE). */
+const LOOKAHEAD_DISTANCE = 5;
 
 /** Compact representation of a vehicle on an edge, for O(1) lookup. */
 export interface EdgeEntry {
@@ -54,7 +56,7 @@ export function findGapAhead(
     }
 
     distAhead += edgeRemain;
-    if (distAhead > TRAFFIC.LOOKAHEAD_DISTANCE) break;
+    if (distAhead > LOOKAHEAD_DISTANCE) break;
   }
 
   return gap;
@@ -87,7 +89,7 @@ export function findRedLightDistance(
     }
 
     distAhead += edgeRemain;
-    if (distAhead > TRAFFIC.LOOKAHEAD_DISTANCE) break;
+    if (distAhead > LOOKAHEAD_DISTANCE) break;
   }
 
   return Infinity;

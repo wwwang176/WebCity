@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate, avgResidentialMetric } from '../CityMetrics';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
-import { SIMULATION } from '../../simulation/SimulationLoop';
+import { SIMULATION } from '../../simulation/SimulationConstants';
 
 describe('CityMetrics', () => {
   describe('getAvgResidentialPollution', () => {

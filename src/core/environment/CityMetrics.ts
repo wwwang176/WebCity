@@ -1,5 +1,5 @@
 import { isResidentialZone, type CellData } from '../grid/types';
-import { SIMULATION } from '../simulation/SimulationLoop';
+import { SIMULATION } from '../simulation/SimulationConstants';
 import type { Grid } from '../grid/Grid';
 
 /**

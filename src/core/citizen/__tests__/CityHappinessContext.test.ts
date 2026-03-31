@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateCityHappinessContext, calculateAvgCommute, calculateCityServiceCoverage } from '../CityHappinessContext';
-import { SIMULATION } from '../../simulation/SimulationLoop';
+import { SIMULATION } from '../../simulation/SimulationConstants';
 
 describe('CityHappinessContext', () => {
   describe('calculateAvgCommute', () => {

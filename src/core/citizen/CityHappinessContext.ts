@@ -1,4 +1,4 @@
-import { SIMULATION } from '../simulation/SimulationLoop';
+import { SIMULATION } from '../simulation/SimulationConstants';
 import type { ServiceRatios } from '../service/ServiceCoverageQuery';
 
 /** City-wide factors that affect all citizens' happiness. */

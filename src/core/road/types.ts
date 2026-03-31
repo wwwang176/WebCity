@@ -59,6 +59,14 @@ export enum TrafficControl {
   ROUNDABOUT = 2,
 }
 
+/** Get the number of directional lanes for a road type (lanes going one way). */
+export function getLaneCount(roadType: number): number {
+  const config = ROAD_CONFIGS[roadType as RoadType];
+  if (!config || config.lanes === 0) return 1;
+  if (roadType === RoadType.ONE_WAY) return config.lanes;
+  return Math.max(1, Math.floor(config.lanes / 2));
+}
+
 export interface BuildRoadResult {
   success: boolean;
   reason?: string;
