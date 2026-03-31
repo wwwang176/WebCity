@@ -326,8 +326,8 @@ function UtilityStatus(props: { hasPower: boolean; hasWater: boolean }) {
 function getInfraOverloadWarning(sel: SelectedInfraBuilding): WarnLevel | null {
   const d = sel.details;
   // Check Load (hospital) or Students (school) for "N / Cap" format
-  const field = (d.Load ?? d.Students) as string | undefined;
-  if (!field) return null;
+  const field = (d.Load ?? d.Students);
+  if (!field || typeof field !== 'string') return null;
   const match = field.match(/^(\d+)\s*\/\s*(\d+)/);
   if (!match) return null;
   const load = parseInt(match[1]!, 10);
