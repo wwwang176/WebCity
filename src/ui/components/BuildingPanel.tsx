@@ -357,11 +357,19 @@ function TransportStopInfo(props: { sel: SelectedTransportStop }) {
 }
 
 export function BuildingPanel() {
-  const selected = () => gameSignals.selectedBuilding();
+  // Identity: only changes on selection change (instant)
+  const hasSelection = () => gameSignals.selectedBuilding() !== null;
+
+  // Live data: refreshes on tick (~6/sec, throttled)
+  const liveData = () => {
+    gameSignals.tick();
+    if (!hasSelection()) return null;
+    return getGame().getSelectedBuilding();
+  };
 
   return (
-    <div id="building-panel" class="g-panel" classList={{ visible: !!selected() }}>
-      <Show when={selected()}>
+    <div id="building-panel" class="g-panel" classList={{ visible: hasSelection() }}>
+      <Show when={liveData()}>
         {(sel) => (
           <>
             <Show when={sel().kind === 'zone'}>

@@ -2126,6 +2126,12 @@ export class Game {
     this.onUIUpdate = callback;
   }
 
+  /** Cheap identity key for selected building — no data refresh. */
+  getSelectedBuildingKey(): string | null {
+    const sel = this.selectedBuilding;
+    return sel ? `${sel.kind}:${sel.x},${sel.y}` : null;
+  }
+
   getState(): GameState {
     return this.state;
   }

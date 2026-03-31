@@ -48,6 +48,7 @@ export const gameSignals = {
 
 // --- Game instance reference ---
 let gameRef: Game | null = null;
+let lastSelKey: string | null = null;
 
 export function getGame(): Game {
   if (!gameRef) throw new Error('Game not initialized');
@@ -81,7 +82,12 @@ export function initGameStore(game: Game): void {
       setPreviewCost(game.previewCost);
       setPaused(game.paused);
       setSpeed(game.speed);
-      setSelectedBuilding(game.getSelectedBuilding());
+      // Only update selectedBuilding signal when identity changes (not every frame)
+      const selKey = game.getSelectedBuildingKey();
+      if (selKey !== lastSelKey) {
+        lastSelKey = selKey;
+        setSelectedBuilding(game.getSelectedBuilding());
+      }
       setNotification(game.getNotification());
       setCurrentOverlay(overlay);
       setCurrentRotation(game.currentRotation);
