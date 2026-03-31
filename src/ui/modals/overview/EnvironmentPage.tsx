@@ -1,3 +1,4 @@
+import { createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { BURNED, ABANDONED } from '../../../core/building/InfraPlacement';
 import { UI_COLORS } from '../../constants';
@@ -20,7 +21,7 @@ function StatRow(props: { label: string; value: string; status: 'good' | 'warn' 
 }
 
 export function EnvironmentPage() {
-  const data = () => {
+  const data = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
     const grid = state.grid;
@@ -56,7 +57,9 @@ export function EnvironmentPage() {
       activeFires: activeFires.length,
       todayExt, recentExt, burnedCount,
     };
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   const pollutionStatus = (val: number): 'good' | 'warn' | 'bad' =>
     val < 10 ? 'good' : val < 30 ? 'warn' : 'bad';

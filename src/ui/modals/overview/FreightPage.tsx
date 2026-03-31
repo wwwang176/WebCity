@@ -1,3 +1,4 @@
+import { createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { ZoneType } from '../../../core/grid/types';
 import { TRADE } from '../../../core/traffic/FreightSystem';
@@ -11,7 +12,7 @@ function supplyColor(ratio: number): string {
 }
 
 export function FreightPage() {
-  const data = () => {
+  const data = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
 
@@ -73,7 +74,9 @@ export function FreightPage() {
       surplusRatio: freight.getSurplusRatio(),
       isExporting: freight.getIsExporting(),
     };
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   return (
     <>

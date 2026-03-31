@@ -1,3 +1,4 @@
+import { createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { UI_COLORS } from '../../constants';
 
@@ -46,7 +47,7 @@ function SupplyDemandRow(props: { label: string; supply: number; demand: number;
 }
 
 export function InfraPage() {
-  const data = () => {
+  const data = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
 
@@ -72,7 +73,9 @@ export function InfraPage() {
       cemUsed, cemCap, unprocessed,
       waterPollution: state.sewage.getWaterPollution(),
     };
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   return (
     <>

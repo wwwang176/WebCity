@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, createMemo, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { getTransitSystems } from '../../../core/transport/TransportRegistry';
 import { TransportType } from '../../../core/transport/types';
@@ -55,12 +55,14 @@ export function TrafficPage() {
     setExpanded(next);
   };
 
-  const stats = () => {
+  const stats = createMemo(() => {
     gameSignals.tick();
     return getGame().getTrafficStats();
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
-  const transitData = () => {
+  const transitData = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
     const systems = getTransitSystems(state as any);
@@ -112,7 +114,9 @@ export function TrafficPage() {
     totalCost += airportCost;
 
     return { rows, totalCost, airportCount: airports.length, airportCost };
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   return (
     <>

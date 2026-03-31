@@ -1,3 +1,4 @@
+import { createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { LifeStage, EducationLevel } from '../../../core/citizen/types';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../../core/grid/types';
@@ -122,7 +123,7 @@ function CrossTable(props: {
 }
 
 export function DemographicsPage() {
-  const stats = () => {
+  const stats = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
     const grid = state.grid;
@@ -224,7 +225,9 @@ export function DemographicsPage() {
       eduWorkData, eduWorkTotals,
       eduHousingData, eduHousingTotals,
     };
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   return (
     <>

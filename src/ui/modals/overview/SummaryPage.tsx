@@ -1,4 +1,4 @@
-import { For } from 'solid-js';
+import { For, createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { ZoneType } from '../../../core/grid/types';
 import { getBuildingType } from '../../../core/building/types';
@@ -21,7 +21,7 @@ const ZONE_LABELS: Record<number, string> = {
 };
 
 export function SummaryPage() {
-  const data = () => {
+  const data = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
     const grid = state.grid;
@@ -86,7 +86,9 @@ export function SummaryPage() {
         { label: 'Job Openings > 0', value: String(jobOpenings), ok: jobOpenings > 0 },
       ],
     };
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   const capLabel = (zt: number) => zt <= ZoneType.RESIDENTIAL_HIGH ? 'Residents' : 'Workers';
 

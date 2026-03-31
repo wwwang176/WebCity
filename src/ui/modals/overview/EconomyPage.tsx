@@ -1,4 +1,4 @@
-import { createSignal, createEffect, type Accessor } from 'solid-js';
+import { createSignal, createEffect, createMemo, type Accessor } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { PopChart } from '../../charts/PopChart';
 import { EconChart } from '../../charts/EconChart';
@@ -21,17 +21,21 @@ export function EconomyPage(props: EconomyPageProps) {
     }
   });
 
-  const breakdown = () => {
+  const breakdown = createMemo(() => {
     version();
     gameSignals.tick();
     return getGame().getEconomyBreakdown();
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
-  const state = () => {
+  const state = createMemo(() => {
     version();
     gameSignals.tick();
     return getGame().getState();
-  };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
 
   const totalIncome = () => {
     const b = breakdown();
