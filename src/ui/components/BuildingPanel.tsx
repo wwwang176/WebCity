@@ -3,8 +3,6 @@ import { gameSignals, getGame } from '../store/gameStore';
 import { CitizenDetail } from './CitizenDetail';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
-import { getEducationSalaryMultiplier, getResidentialLevelMultiplier, getBuildingLevelMultiplier, ECONOMY } from '../../core/economy/TaxMultipliers';
-import { DEFAULT_TAX_RATE } from '../../core/economy/Tax';
 import { UI_COLORS } from '../constants';
 
 const ZONE_NAMES: Record<number, string> = {
@@ -149,6 +147,12 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     }
   }
 
+  // Labor shortage — always show (non-residential only)
+  if (!isResidentialZone(sel.zoneType) && sel.workerCapacity > 0) {
+    if (sel.workerCount === 0) warnings.push({ level: 'red', text: 'No workers' });
+    else if (sel.workerCount < sel.workerCapacity * 0.5) warnings.push({ level: 'yellow', text: 'Labor shortage' });
+  }
+
   // Pollution by type — always show (industrial immune)
   if (sel.zoneType !== ZoneType.INDUSTRIAL) {
     const types: [number, string][] = [
@@ -201,26 +205,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   const bt = () => props.sel.buildingType;
   const hasPower = () => props.sel.services.power >= 0;
   const hasWater = () => props.sel.services.water >= 0;
-  const tax = () => {
-    if (!hasPower()) return '$0/tick';
-    const b = bt();
-    const state = getGame().getState();
-    const isRes = isResidentialZone(props.sel.zoneType);
-    if (isRes) {
-      const residents = citizens().residents;
-      let salarySum = 0;
-      for (const r of residents) {
-        salarySum += ECONOMY.CITIZEN_BASE_INCOME * getEducationSalaryMultiplier(r.education);
-      }
-      const taxRate = state.taxRates.residential ?? DEFAULT_TAX_RATE;
-      const income = salarySum * getResidentialLevelMultiplier(b.level as 1 | 2 | 3) * (taxRate / 100);
-      return `$${income.toFixed(1)}/tick`;
-    } else {
-      const taxRate = state.taxRates.business ?? DEFAULT_TAX_RATE;
-      const income = (b.companyIncome ?? 0) * getBuildingLevelMultiplier(b.level as 1 | 2 | 3) * (taxRate / 100);
-      return `$${income.toFixed(1)}/tick`;
-    }
-  };
+  const tax = () => `$${props.sel.taxIncome.toFixed(1)}/tick`;
   const level = () => {
     const b = bt();
     return '\u2605'.repeat(b.level) + '\u2606'.repeat(3 - b.level);

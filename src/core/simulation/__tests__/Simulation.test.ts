@@ -20,6 +20,15 @@ function provideUtilities(state: GameState, x: number, y: number): void {
   state.grid.setCell(x - 2, y + 1, { roadFlags: 1, roadType: 1 });
 }
 
+/** Fill a building with workers so it produces full income. */
+function fillWorkers(state: GameState, x: number, y: number, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const c = state.citizens.createCitizen({ age: 30 });
+    c.workplaceId = `${x},${y}`;
+    c.homeId = 'none';
+  }
+}
+
 describe('Simulation tick interval constants', () => {
   it('SLOW_TICK_INTERVAL should be a positive integer', () => {
     expect(SIMULATION.SLOW_TICK_INTERVAL).toBeGreaterThan(0);
@@ -592,8 +601,10 @@ describe('Specialization integration', () => {
 
     state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
     provideUtilities(state, 5, 5);
+    fillWorkers(state, 5, 5, 10);
     state.grid.setCell(10, 10, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
     provideUtilities(state, 10, 10);
+    fillWorkers(state, 10, 10, 10);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -613,6 +624,7 @@ describe('Specialization integration', () => {
     for (let x = 3; x <= 5; x++) {
       state.districts.addCellToDistrict(d.id, x, 5);
       state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+      fillWorkers(state, x, 5, 4);
     }
     provideUtilities(state, 3, 5);
 
@@ -631,8 +643,10 @@ describe('Specialization integration', () => {
     state.districts.addCellToDistrict(d.id, 5, 5);
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     provideUtilities(state, 5, 5);
+    fillWorkers(state, 5, 5, 4);
     state.grid.setCell(10, 10, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     provideUtilities(state, 10, 10);
+    fillWorkers(state, 10, 10, 4);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -658,6 +672,7 @@ describe('CitySpecialization integration', () => {
 
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     provideUtilities(state, 5, 5);
+    fillWorkers(state, 5, 5, 4);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
@@ -674,6 +689,7 @@ describe('CitySpecialization integration', () => {
 
     state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
     provideUtilities(state, 3, 3);
+    fillWorkers(state, 3, 3, 15);
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();

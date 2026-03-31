@@ -49,6 +49,51 @@ export interface IncomeCalcDeps {
   freightSurplusRatio?: number;
   /** Whether industrial surplus is being exported (reduces surplus income penalty). */
   isExporting?: boolean;
+  /** Optional worker count per building — business income scales with worker ratio. */
+  getWorkerCount?: (posKey: string) => number;
+}
+
+/**
+ * Calculate actual tax income for a single building.
+ * Used by the building info panel to display accurate per-building income.
+ */
+export function calculateSingleBuildingIncome(
+  deps: Omit<IncomeCalcDeps, 'forEachCell'>,
+  x: number, y: number, buildingId: number,
+): number {
+  if (deps.isPowered && !deps.isPowered(x, y)) return 0;
+  const btype = getBuildingType(buildingId);
+  if (!btype) return 0;
+
+  if (isResidentialZone(btype.zoneType)) {
+    let salarySum = 0;
+    for (const edu of deps.getResidentEducations(`${x},${y}`)) {
+      salarySum += ECONOMY.CITIZEN_BASE_INCOME * getEducationSalaryMultiplier(edu);
+    }
+    let income = salarySum * getResidentialLevelMultiplier(btype.level as 1 | 2 | 3) * ((deps.taxRates.residential ?? DEFAULT_TAX_RATE) / 100);
+    if (deps.getRevenueMultiplier) income *= deps.getRevenueMultiplier(x, y);
+    return income;
+  }
+
+  let income = (btype.companyIncome ?? 0) * getBuildingLevelMultiplier(btype.level) * ((deps.taxRates.business ?? DEFAULT_TAX_RATE) / 100);
+  if (deps.getRevenueMultiplier) income *= deps.getRevenueMultiplier(x, y);
+  if (deps.getWorkerCount && btype.workers > 0) {
+    income *= Math.min(1, deps.getWorkerCount(`${x},${y}`) / btype.workers);
+  }
+  if (isCommercialZone(btype.zoneType) && deps.getFreightSupply) {
+    const supply = deps.getFreightSupply(x, y);
+    if (supply.source === 'imported') {
+      income *= TRADE_IMPORT_MULTIPLIER * supply.ratio + FREIGHT_INCOME.NO_SUPPLY_RATIO * (1 - supply.ratio);
+    } else if (supply.source === 'none') {
+      income *= FREIGHT_INCOME.NO_SUPPLY_RATIO;
+    } else {
+      income *= FREIGHT_INCOME.NO_SUPPLY_RATIO + FREIGHT_INCOME.NO_SUPPLY_RATIO * supply.ratio;
+    }
+  } else if (btype.zoneType === ZoneType.INDUSTRIAL && deps.freightSurplusRatio != null && deps.freightSurplusRatio > 0) {
+    const penalty = deps.isExporting ? FREIGHT_INCOME.EXPORT_PENALTY : 1.0;
+    income *= 1 - deps.freightSurplusRatio * penalty;
+  }
+  return income;
 }
 
 /**
@@ -91,6 +136,11 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
       const ci = btype.companyIncome ?? 0;
       buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
       if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
+      // Worker ratio: income scales linearly with staffing level
+      if (deps.getWorkerCount && btype.workers > 0) {
+        const posKey = `${x},${y}`;
+        buildingIncome *= Math.min(1, deps.getWorkerCount(posKey) / btype.workers);
+      }
       if (isCommercialZone(btype.zoneType)) {
         // Freight supply ratio affects commercial income
         if (deps.getFreightSupply) {

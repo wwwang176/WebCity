@@ -6,6 +6,15 @@ import { BUILDING_TYPES, getBuildingType } from '../../building/types';
 import { DEFAULT_TAX_RATE, DEFAULT_TAX_RATES, type TaxRates } from '../../economy/Tax';
 import { serializeGameState, deserializeGameState } from '../../save/Serializer';
 
+/** Fill a building with workers so it produces full income. */
+function fillWorkers(state: GameState, x: number, y: number, count: number): void {
+  for (let i = 0; i < count; i++) {
+    const c = state.citizens.createCitizen({ age: 30 });
+    c.workplaceId = `${x},${y}`;
+    c.homeId = 'none'; // prevent auto-assignment to residential buildings
+  }
+}
+
 /** Add power+water plants adjacent to a position so buildings there get utilities. */
 function provideUtilities(state: GameState, x: number, y: number): void {
   state.grid.setCell(x - 1, y, { roadFlags: 1, roadType: 1 });
@@ -150,6 +159,7 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     const state = createGameState(20, 20);
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     provideUtilities(state, 5, 5);
+    fillWorkers(state, 5, 5, 4);
     state.taxRates.residential = 0;
     state.taxRates.business = 10;
 
@@ -167,6 +177,7 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 9, landValue: 80 });
     state.power.addPlant({ x: 5, y: 5, output: 500, pollution: 0, type: 'solar' });
     state.water.addPlant({ x: 5, y: 5, output: 500 });
+    fillWorkers(state, 5, 5, 12);
     state.power.calculateCoverage(state.grid);
     state.water.calculateCoverage(state.grid);
     state.taxRates.residential = 0;
@@ -186,6 +197,7 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     state.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 14, landValue: 50 });
     state.power.addPlant({ x: 5, y: 5, output: 500, pollution: 0, type: 'solar' });
     state.water.addPlant({ x: 5, y: 5, output: 500 });
+    fillWorkers(state, 5, 5, 20);
     state.power.calculateCoverage(state.grid);
     state.water.calculateCoverage(state.grid);
     state.taxRates.residential = 0;
@@ -202,6 +214,7 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     const state = createGameState(20, 20);
     state.grid.setCell(5, 5, { zoneType: ZoneType.OFFICE, buildingId: 19 });
     provideUtilities(state, 5, 5);
+    fillWorkers(state, 5, 5, 160);
     state.taxRates.residential = 0;
     state.taxRates.business = 10;
 
@@ -222,6 +235,7 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     }
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
     provideUtilities(state, 5, 5);
+    fillWorkers(state, 5, 5, 4);
 
     state.taxRates.residential = 10;
     state.taxRates.business = 10;

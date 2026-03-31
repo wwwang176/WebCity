@@ -53,6 +53,7 @@ import { classifyBuilding } from './core/building/BuildingClassifier';
 import { classifyDemolishCell } from './core/building/DemolishClassifier';
 import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
 import { buildIncomeCalcDeps } from './core/economy/IncomeCalcAdapter';
+import { calculateSingleBuildingIncome } from './core/economy/IncomeCalculator';
 
 import {
   ViewMode,
@@ -244,6 +245,12 @@ export interface SelectedZoneBuilding {
   customerRatio?: number;
   /** Commercial: has any residential reachable. */
   hasCustomers?: boolean;
+  /** Actual worker count in this building. */
+  workerCount: number;
+  /** Max worker capacity of this building type. */
+  workerCapacity: number;
+  /** Pre-calculated actual tax income for this building. */
+  taxIncome: number;
 }
 
 export interface SelectedInfraBuilding {
@@ -1604,6 +1611,9 @@ export class Game {
             },
             abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
             isAbandoned: cell.reserved === ABANDONED,
+            workerCount: this.state.citizens.getCitizensByWorkplace(`${x},${y}`).length,
+            workerCapacity: cls.buildingType.workers,
+            taxIncome: calculateSingleBuildingIncome(buildIncomeCalcDeps(this.state), x, y, cell.buildingId),
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;

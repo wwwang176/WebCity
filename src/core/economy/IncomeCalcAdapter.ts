@@ -20,5 +20,6 @@ export function buildIncomeCalcDeps(state: GameState): IncomeCalcDeps {
     getFreightSupply: (x, y) => state.freight.getSupplyStatus(x, y),
     freightSurplusRatio: state.freight.getSurplusRatio(),
     isExporting: state.freight.getIsExporting(),
+    getWorkerCount: (key) => state.citizens.getCitizensByWorkplace(key).length,
   };
 }
