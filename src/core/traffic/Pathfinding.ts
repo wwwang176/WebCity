@@ -173,8 +173,8 @@ export function gridAStarPath(
   return null;
 }
 
-/** Speed decay per lane away from road center. lane 0 (inner) = 1.0, lane 1 = 0.9, … */
-export const LANE_SPEED_DECAY = 0.9;
+/** Speed decay per lane away from road center. lane 0 (inner) = 1.0, lane 1 = 0.95, … */
+export const LANE_SPEED_DECAY = 0.95;
 
 /** Number of lane path variants to generate per route. */
 export const LANE_PATH_VARIANT_COUNT = 3;
