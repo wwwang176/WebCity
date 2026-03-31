@@ -128,3 +128,93 @@ isCellDefault(cell) → 全部屬性與預設相同則跳過
 - 計算結果為 `workplace → (cell → cost)` 映射表
 - 結果快取在 `WorkplaceDistanceCache` 中
 - 道路或建築變更時標記失效，下次 tick 重新計算
+
+---
+
+## 存檔匯出入（Import/Export）
+
+`ImportExport.ts` 提供存檔的檔案匯出與匯入功能，讓玩家可以在不同裝置間分享存檔。
+
+### 匯出檔案格式（ExportFile）
+
+匯出檔案為 JSON 格式，副檔名為 `.webcity.json`，結構如下：
+
+```typescript
+interface ExportFile {
+  format: 'webcity-save';      // 固定識別字串
+  exportVersion: 1;            // 匯出格式版本
+  exportedAt: string;          // 匯出時間 (ISO 8601)
+  slot: {
+    name: string;              // 存檔名稱
+    date: string;              // 原始儲存時間
+    data: string;              // JSON 序列化的遊戲狀態（與 SaveSlot.data 相同）
+    population?: number;       // 人口數
+  };
+}
+```
+
+### 匯出流程
+
+| 函式 | 說明 |
+|------|------|
+| `buildExportPayload(slot)` | 從 `SaveSlot` 建立 `ExportFile` JSON 物件，包含 `format`、`exportVersion`、`exportedAt`、`slot` 四個欄位 |
+| `exportSaveToFile(slot)` | 完整匯出流程：呼叫 `buildExportPayload` 產生 JSON → 建立 `Blob` → 透過隱藏 `<a>` 元素觸發瀏覽器下載，檔名為 `{存檔名稱}.webcity.json`（特殊字元替換為底線） |
+
+### 匯入流程
+
+匯入分為兩層 API：
+
+| 函式 | 說明 |
+|------|------|
+| `parseAndValidateImport(fileContent)` | **純驗證**（不涉及 IndexedDB）。依序執行：檔案大小檢查 → JSON 解析 → Prototype pollution 檢測 → `validateExportFile` 完整驗證。回傳 `{ ok, data, name, warnings }` 或 `{ ok: false, errors }` |
+| `importSaveFromFile(fileContent, options?)` | **完整匯入管線**。呼叫 `parseAndValidateImport` 驗證後，自動尋找下一個可用的 slot ID，將存檔寫入 IndexedDB。支援 `options.customName` 自訂存檔名稱。回傳 `ImportResult { success, slotId, saveName, warnings, errors }` |
+
+### 匯入結果（ImportResult）
+
+```typescript
+interface ImportResult {
+  success: boolean;
+  slotId?: number;       // 寫入的存檔欄位 ID
+  saveName?: string;     // 最終使用的存檔名稱（經過 sanitize）
+  errors?: string[];     // 驗證失敗的錯誤訊息
+  warnings?: string[];   // 非致命警告
+}
+```
+
+---
+
+## 深度驗證（SaveValidator）
+
+`SaveValidator.ts` 提供匯入存檔的多階段驗證，防止惡意檔案與資料損壞。
+
+### 四階段驗證流程
+
+`validateExportFile(raw)` 執行以下四個階段：
+
+1. **外層結構檢查**（`validateExportWrapper`）— 驗證 `format` 為 `'webcity-save'`、`exportVersion` 為數字、`slot` 物件存在且包含 `name`（字串）與 `data`（字串）
+2. **JSON 解析**— 將 `slot.data` 字串以 `JSON.parse` 解析，解析失敗直接拒絕
+3. **Prototype Pollution 檢測**（`checkPrototypePollution`）— 遞迴掃描整個物件樹，偵測 `__proto__`、`constructor`、`prototype` 等危險屬性名稱。陣列元素也會被遞迴檢查。發現任一危險 key 即拒絕整份檔案
+4. **逐區段驗證**— 依序驗證以下區段，任一區段失敗即回報錯誤：
+
+| 驗證函式 | 檢查內容 |
+|----------|----------|
+| `validateVersion(version)` | 必須為正整數，且不超過 `CURRENT_SAVE_VERSION` |
+| `validateGrid(grid)` | `width`/`height` 為正整數且 <= `MAX_GRID_DIMENSION`；每個 cell 的 `x`/`y` 在範圍內；cell 資料的 `terrainType`、`zoneType`、`roadType`、`railType`、`roadFlags`（0-15）、`railFlags`（0-15）、`buildingId`、`reserved` 均須為合法列舉值 |
+| `validateClock(clock)` | `tick` 為非負整數；`speed` 必須為 0/1/3/5/10 之一；`paused` 為布林值 |
+| `validateBudget(budget)` | `funds`/`income`/`expenses`/`loans`/`loanInterestRate` 皆為有限數字 |
+| `validateTaxRates(rates)` | `residential`/`commercial`/`industrial`/`office` 為 0-100 的數字；`business` 為選填（向後相容） |
+| `validateCitizens(citizens)` | 選填。陣列長度 <= `MAX_CITIZENS`；每位市民的 `age` 為 0 到 `MAX_AGE` 的數字；`lifeStage` 與 `education` 須為合法列舉值 |
+
+### 匯入限制常數（IMPORT_LIMITS）
+
+| 常數 | 值 | 說明 |
+|------|-----|------|
+| `MAX_FILE_SIZE` | 50 MB (50 * 1024 * 1024) | 檔案大小上限 |
+| `MAX_GRID_DIMENSION` | 500 | 地圖寬/高上限 |
+| `MAX_CITIZENS` | 500,000 | 市民數量上限 |
+| `MAX_SAVE_NAME_LENGTH` | 100 | 存檔名稱字元數上限 |
+
+### 安全防護
+
+- **`checkPrototypePollution(obj)`**：遞迴檢查物件所有 key，偵測 `__proto__`、`constructor`、`prototype`。對陣列也會逐元素遞迴掃描
+- **`sanitizeSaveName(name)`**：移除 HTML 特殊字元（`<`、`>`、`&`、`"`、`'`），並截斷至 `MAX_SAVE_NAME_LENGTH`（100 字元），防止 XSS 注入

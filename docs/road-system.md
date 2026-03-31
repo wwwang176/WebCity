@@ -148,3 +148,161 @@
 - 服務車輛是否能到達目的地
 - 公車路線的有效性
 - 通勤路徑是否存在
+
+---
+
+## 統一道路查詢（UnifiedRoadLookup）
+
+`UnifiedRoadLookup` 是一個抽象層，將地面道路（level 0）與高架道路（levels 1-3）整合為統一的查詢介面，供路徑規劃與服務覆蓋等子系統使用。
+
+**原始碼**: `src/core/road/UnifiedRoadLookup.ts`
+
+### 核心 API
+
+| 方法 | 說明 |
+|------|------|
+| `getCellByKey(key)` | 依 key 查詢道路資料。level 0 路由到 `Grid`，level 1-3 路由到 `ElevationManager` |
+| `getAllKeysAtPosition(x, y)` | 回傳指定座標上所有層級的道路 key（地面 + 高架） |
+| `getCompatibleNeighborKeys(sourceKey, nx, ny)` | 回傳鄰居座標上與 source 相容的所有道路 key |
+| `getAllCellKeys()` | 回傳整張地圖所有道路 cell key（地面 + 高架） |
+| `isRamp(key)` | 判斷該 key 是否為坡道 |
+
+### Key 格式
+
+- **地面道路**: `"x,y"`（兩段式，由 `toPosKey` 產生）
+- **高架道路**: `"x,y,level"`（三段式，level 為 1-3）
+
+level 值透過 `parseLevelFromKey` 解析：兩段式 key 回傳 0，三段式 key 回傳第三段數字。
+
+### 層級相容性規則
+
+`getCompatibleNeighborKeys` 使用以下規則判定兩個道路格子是否可互相通行：
+
+1. **同一層級** → 永遠相容
+2. **不同層級** → 必須同時滿足：
+   - 層級差 `|diff|` = 1（不可跨越兩層以上）
+   - 至少一方是坡道（`isRamp = true`）
+3. **坡道方向限制** → 坡道的上升方向（`rampAscendDirection`）必須與行進方向對齊：
+   - 上升方向為 EAST/WEST 時，只允許水平方向（dx ≠ 0）通行
+   - 上升方向為 NORTH/SOUTH 時，只允許垂直方向（dy ≠ 0）通行
+   - 來源為坡道時檢查來源方向，鄰居為坡道時檢查鄰居方向（雙向皆檢查）
+
+### 使用場景
+
+| 使用者 | 用途 |
+|--------|------|
+| `LaneGraphPathfinder` | 跨層級路徑搜尋 |
+| `ShoppingAccess` | 商業可及性判定 |
+| `RoadCoverageFlood` / `NetworkCoverage` | 服務覆蓋 BFS 搜尋 |
+| `ServiceVehicleManager` | 服務車輛路徑計算 |
+| `SimulationLoop` | 建立並注入 lookup 實例 |
+
+---
+
+## 增量道路渲染（Incremental Road Renderer）
+
+傳統做法是每次道路變更時重建整個 instanced mesh，但這在大型地圖上會造成明顯卡頓。增量渲染系統改為逐格新增/移除，大幅降低每次操作的開銷。
+
+### RoadInstanceTracker
+
+**原始碼**: `src/renderer/RoadInstanceTracker.ts`
+
+`RoadInstanceTracker` 管理 `THREE.InstancedMesh` 中的實例插槽，採用 **swap-with-last** 策略實現 O(1) 的新增與移除。每個道路格子可擁有多個實例（例如 1-3 條路面條帶、0-4 條人行道、0-12 條車道標線）。
+
+#### 資料結構
+
+| 結構 | 說明 |
+|------|------|
+| `cellToIndices: Map<string, number[]>` | cell key → 該格擁有的所有實例索引 |
+| `idxToCell: string[]` | 實例索引 → cell key（密集陣列，長度 = usedCount） |
+| `usedCount` | 目前使用中的實例數 |
+
+#### 核心操作
+
+| 方法 | 複雜度 | 說明 |
+|------|--------|------|
+| `addCell(cellKey, count)` | O(count) | 在已用區域尾端保留 `count` 個插槽，回傳起始索引供呼叫者寫入矩陣/顏色資料 |
+| `removeCell(cellKey)` | O(n) | 移除該格的所有實例。每個實例以尾端實例覆蓋，然後縮減 `usedCount` |
+| `clear()` | O(1) | 重置所有追蹤狀態（用於完整重建） |
+
+#### swap-with-last 移除流程
+
+1. 取得要移除的實例索引列表，按降序排列（避免先移除低索引導致高索引失效）
+2. 對每個要移除的索引 `removeIdx`：
+   - 將尾端實例（`lastIdx`）的矩陣、顏色、highlight 屬性複製到 `removeIdx`
+   - 更新被搬移實例的 cell key 索引映射
+   - 遞減 `usedCount`
+3. 更新 `mesh.count` 並標記各屬性 `needsUpdate = true`
+
+### RoadRenderer 整合
+
+**原始碼**: `src/renderer/RoadRenderer.ts`
+
+`RoadRenderer` 為每種視覺元素維護獨立的 tracker：
+
+| Tracker | 管理對象 |
+|---------|---------|
+| `roadTracker` | 路面條帶 |
+| `sidewalkTracker` | 人行道 |
+| `markingTracker` | 車道標線 |
+| `centerLineTracker` | 中央分隔線 |
+| `curvedCLTracker` | 彎道分隔線 |
+| `crosswalkTracker` | 行人穿越道 |
+| `stopLineTracker` | 停止線 |
+| `lampTracker` | 路燈 |
+| `lampGlowTracker` | 路燈光暈 |
+
+每種 mesh 的容量以 `CAP` 倍數預分配（例如路面 3 倍、標線 14 倍），確保有足夠空間容納單格的最大實例數。
+
+### 效能優勢
+
+- **玩家建路/拆路時**：僅操作受影響格子的實例，不觸發全網格重建
+- **地面道路變更不觸發高架重建**：兩者各自獨立追蹤
+- **記憶體穩定**：預分配容量，避免重複的 geometry 建立與銷毀
+
+---
+
+## 地圖邊界延伸（Road Edge Extension）
+
+當玩家拖曳道路路徑超出地圖邊界時，系統會建立外部連接並產生視覺延伸效果。
+
+### 邊界偵測（EdgeUtils）
+
+**原始碼**: `src/core/grid/EdgeUtils.ts`
+
+`extractOutOfBoundsEdge(path, mapWidth, mapHeight)` 檢查路徑的最後一個格子是否超出地圖範圍：
+
+1. 若最後一格在地圖內 → 回傳 `null`
+2. 若最後一格超出邊界 → 計算從倒數第二格到最後一格的方向，回傳 `{ outwardFlag, truncatedLength }`
+3. `outwardFlag` 為方向位元遮罩（NORTH/SOUTH/EAST/WEST），表示道路延伸出地圖的方向
+
+### 道路類型限制
+
+只有 **HIGHWAY（高速公路）** 類型可以建立外部連接。其他道路類型即使拖曳超出邊界，也會忽略超出部分：
+
+```typescript
+const rawOob = extractOutOfBoundsEdge(fullPath, grid.width, grid.height);
+const oob = rawOob && roadType === RoadType.HIGHWAY ? rawOob : null;
+const cells = rawOob ? fullPath.slice(0, rawOob.truncatedLength) : fullPath;
+```
+
+邊界格子的 `roadFlags` 會加上 `outwardFlag`，使該格具備指向地圖外的方向旗標。
+
+### 外部連接判定（HighwayConnection）
+
+**原始碼**: `src/core/traffic/HighwayConnection.ts`
+
+`HighwayConnection` 每 60 tick 掃描地圖邊緣，使用 `hasInwardFlag` 判定哪些邊界格子具有指向地圖內部的高速公路連接。每個有效的邊界高速公路格子提供固定吞吐量（`THROUGHPUT_PER_CONNECTION = 30`），影響外部人口流入與貨物進出。
+
+### 視覺延伸（RoadStripBuilder）
+
+**原始碼**: `src/renderer/RoadStripBuilder.ts`
+
+`buildRoadStrips` 接受 `edgeExtend` 參數（預設為 0.5 格），在邊界格子的外側方向額外產生一條路面條帶：
+
+- 北邊界（`y = 0`）且具 NORTH 旗標 → 向北延伸 0.5 格
+- 南邊界（`y = mapH - 1`）且具 SOUTH 旗標 → 向南延伸 0.5 格
+- 西邊界（`x = 0`）且具 WEST 旗標 → 向西延伸 0.5 格
+- 東邊界（`x = mapW - 1`）且具 EAST 旗標 → 向東延伸 0.5 格
+
+這使得道路在視覺上自然延伸至地圖邊界之外，暗示與外部城市的連接。

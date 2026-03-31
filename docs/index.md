@@ -11,15 +11,16 @@ WebCity 是一款網頁版都市經營模擬遊戲，靈感來自 Cities: Skylin
 | 文件 | 說明 |
 |------|------|
 | [grid-system.md](grid-system.md) | 網格系統 — 世界結構、格子資料、地形、天然資源 |
-| [simulation-loop.md](simulation-loop.md) | 模擬迴圈 — 遊戲時鐘、Tick 頻率分層、執行順序 |
-| [save-system.md](save-system.md) | 存檔系統 — IndexedDB 存檔、序列化、自動存檔 |
+| [simulation-loop.md](simulation-loop.md) | 模擬迴圈 — 遊戲時鐘、Tick 頻率分層、執行順序、SimulationConstants、SRP 重構 |
+| [save-system.md](save-system.md) | 存檔系統 — IndexedDB 存檔、序列化、自動存檔、匯出入、深度驗證 |
 
 ### 城市規劃
 
 | 文件 | 說明 |
 |------|------|
-| [road-system.md](road-system.md) | 道路系統 — 道路類型、建設/拆除、路網圖 |
+| [road-system.md](road-system.md) | 道路系統 — 道路類型、建設/拆除、路網圖、統一查詢、增量渲染 |
 | [rail-system.md](rail-system.md) | 鐵路系統 — 軌道建設、平交道、火車站 |
+| [elevation-system.md](elevation-system.md) | 高架系統 — 多層高架道路/鐵路、斜坡、橋梁、統一道路查詢 |
 | [zone-system.md](zone-system.md) | 區域規劃 — 區域類型、密度規則 |
 | [district-policy-system.md](district-policy-system.md) | 區域與政策 — 行政區、政策限制、特化加成 |
 
@@ -28,7 +29,7 @@ WebCity 是一款網頁版都市經營模擬遊戲，靈感來自 Cities: Skylin
 | 文件 | 說明 |
 |------|------|
 | [building-system.md](building-system.md) | 建築系統 — 區域建築、基礎設施、成長/升級/廢棄 |
-| [economy-system.md](economy-system.md) | 經濟系統 — 稅制、RCI 需求、預算、地價、全球市場 |
+| [economy-system.md](economy-system.md) | 經濟系統 — 稅制、RCI 需求、預算、地價、全球市場、商業可及性 |
 | [milestone-greatworks.md](milestone-greatworks.md) | 里程碑與偉大工程 — 功能解鎖、偉大工程建造 |
 
 ### 市民
@@ -47,7 +48,8 @@ WebCity 是一款網頁版都市經營模擬遊戲，靈感來自 Cities: Skylin
 
 | 文件 | 說明 |
 |------|------|
-| [traffic-system.md](traffic-system.md) | 交通系統 — 車輛、車道圖、壅塞、紅綠燈、貨運 |
+| [traffic-system.md](traffic-system.md) | 交通系統 — 車輛、車道圖、壅塞、LaneGraphPathfinder、高速公路外部連線 |
+| [freight-system.md](freight-system.md) | 貨運系統 — 兩階段 BFS 供貨、進出口貿易、FreightTradeCollector |
 | [transport-system.md](transport-system.md) | 大眾運輸 — 公車/地鐵/鐵路/渡輪/機場、模式選擇 |
 
 ### 環境與事件

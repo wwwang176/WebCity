@@ -187,3 +187,131 @@ GameState 集中管理所有遊戲子系統的狀態：
 | VEHICLE_CAP_MAX | 2000 | 道路車輛上限 |
 | VEHICLE_CAP_BASE | 20 | 基礎車輛數 |
 | VEHICLE_CAP_POP_RATIO | 0.3 | 人口車輛比 |
+
+---
+
+## SimulationConstants 模組
+
+原本散落在 `SimulationLoop.ts` 內部的魔術數字和調校常數，已統一抽取至獨立模組：
+
+```
+src/core/simulation/SimulationConstants.ts
+```
+
+抽取的主要動機是**打破循環依賴**——`CityHappinessContext` 與 `CityMetrics` 原先需要 import SimulationLoop 才能取得常數值，造成 `SimulationLoop → CityHappinessContext → SimulationLoop` 的循環。將常數獨立後，所有模組均可直接 `import { SIMULATION } from './SimulationConstants'`。
+
+### 常數物件結構
+
+所有常數收斂在單一 `SIMULATION` const object 中（帶 `as const` 確保型別為 literal），依功能分為以下群組：
+
+| 群組 | 主要常數 | 說明 |
+|------|---------|------|
+| Tick 頻率 | `SLOW_TICK_INTERVAL`, `MEDIUM_TICK_INTERVAL`, `JOB_RELOCATION_INTERVAL` | 各子系統更新間隔 |
+| 建築成長 | `GROWTH_ATTEMPTS`, `UPGRADE_ATTEMPTS`, `BURNED_CLEARANCE_CHANCE` | 每 tick 取樣數與焦黑清除機率 |
+| 犯罪 | `CRIME_BASE_MAX`, `CRIME_POP_FACTOR`, `CRIME_COVERAGE_PER_STATION`, `CRIME_MAX_REDUCTION` | 犯罪率計算參數 |
+| 通勤 | `COMMUTE_MAX`, `COMMUTE_BASE`, `COMMUTE_SPREAD_FACTOR`, `COMMUTE_JITTER`, `MANHATTAN_DISTANCE_THRESHOLD` | 通勤距離估算與最短曼哈頓距離門檻 |
+| 車輛 | `VEHICLE_CAP_MAX`, `VEHICLE_CAP_BASE`, `VEHICLE_CAP_POP_RATIO`, `SPAWN_SPREAD_TICKS`, `MIN_SPAWN_PER_TICK` | 道路車輛上限與每 tick 生成量 |
+| 取樣 | `SAMPLE_COUNT_MIN`, `SAMPLE_COUNT_MAX`, `SAMPLE_DIVISOR` | Monte Carlo 擁塞取樣參數 |
+| 服務覆蓋 | `SERVICE_POWER_WEIGHT`, `SERVICE_WATER_WEIGHT`, `LOW_POLLUTION_THRESHOLD` | 幸福度/服務覆蓋權重 |
+| 稅率 | `BUSINESS_TAX_BASELINE`, `BUSINESS_TAX_PENALTY_PER_POINT` | 商業稅懲罰閾值 |
+| 貨運 | `FREIGHT_CAP_RATIO`, `FREIGHT_TRUCKS_PER_THROUGHPUT` | 貨運車輛配額與吞吐量比 |
+| 廢棄壓力 | `SERVICE_MAX_RES`, `SERVICE_MAX_NON_RES` | 住宅/非住宅的服務正規化最大值 |
+| 其他 | `DEFAULT_HAPPINESS`, `CELL_VALUE_MAX`, `WALK_TO_STOP_RANGE`, `INDUSTRIAL_POLLUTION_FACTOR`, `EXPORT_DEMAND`, `FALLBACK_RESIDENTS`, `SHOPPING_POP_THRESHOLD` | 預設幸福度、格子值上限、步行至站牌範圍等 |
+
+### 使用方式
+
+```ts
+import { SIMULATION } from '../simulation/SimulationConstants';
+
+// 直接存取
+if (tick % SIMULATION.SLOW_TICK_INTERVAL === 0) { … }
+const cap = Math.min(SIMULATION.VEHICLE_CAP_MAX, …);
+```
+
+目前引用此模組的檔案包括：`SimulationLoop.ts`、`CityHappinessContext.ts`、`CityMetrics.ts`、`CongestionFlowPredictor.ts` 以及對應的測試檔。
+
+---
+
+## SRP 重構（單一職責抽取）
+
+SimulationLoop 原本包含大量內聯邏輯，隨功能增長已超過合理的行數上限。依據**單一職責原則 (Single Responsibility Principle)**，以下三個子系統被抽取為獨立模組，SimulationLoop 僅負責在正確的 tick 時機呼叫它們。
+
+### CongestionFlowPredictor
+
+```
+src/core/traffic/CongestionFlowPredictor.ts
+```
+
+**職責**：預測交通擁塞流量分佈，供 SimulationLoop 在每 60 ticks（MEDIUM_TICK_INTERVAL）時呼叫。
+
+提供兩個函式：
+
+1. **`computeCongestionFlow(commuteCache, flowCellSet, getLaneCount)`**
+   - 從 `CommuteCache` 的 routeIndex 讀取已快取的通勤路徑與引用計數
+   - 以 `collectEdgeCells()` 展開路徑上的所有格子，累加流量
+   - 最後依車道數正規化（多車道道路分攤流量）
+   - 回傳 `flowMap`（cellKey → 正規化流量）與 `totalRefCount`（已覆蓋的市民數）
+
+2. **`computeCongestionFlowMonteCarlo(deps, sampleCountMin, sampleCountMax, sampleDivisor)`**
+   - 當快取覆蓋率不足時啟用的**蒙地卡羅回退**策略
+   - 透過 `buildODPools()` 建立加權 OD 池，隨機取樣 origin-destination 配對
+   - 濾除曼哈頓距離 ≤ `SIMULATION.MANHATTAN_DISTANCE_THRESHOLD` 的短程、非自駕模式的旅次
+   - 對取樣結果按實際通勤者總量做比例放大（scale factor = totalResWeight / sampleCount）
+
+**依賴反轉 (DIP)**：透過 `CongestionFlowDeps` 介面注入所需依賴（市民列表、路徑搜尋、運輸模式選擇），與 SimulationLoop 的具體狀態完全解耦。
+
+### FreightTradeCollector
+
+```
+src/core/traffic/FreightTradeCollector.ts
+```
+
+**職責**：收集貨運貿易基礎設施的位置資訊，供貨運車輛生成使用。
+
+**主要函式**：
+
+- **`collectTradePositions(grid, infra, infraConfigLookup)`**
+  - 遍歷三類貿易基礎設施：鐵路車站 (`railStations`)、機場 (`airports`)、高速公路邊緣 (`highwayCells`)
+  - 對鐵路車站與機場，呼叫 `collectAdjacentRoadCells()` 尋找建築物周圍的道路格子作為貨車出發點
+  - 高速公路邊緣直接加入位置清單
+  - 回傳 `TradeCollectionResult`：所有 `TradePosition[]` 與合計 `totalThroughput`
+
+- **`collectAdjacentRoadCells(grid, bx, by, throughput, out, infraConfigLookup)`**
+  - 支援多格建築物（透過 `infraConfigLookup` 查詢 width/height）
+  - 以四方向鄰居搜尋找到所有相鄰道路格子
+  - 同一建築的所有道路格子共用相同的 `tradeKey`，確保貨運 A-limit 將其視為同一貿易節點
+  - 若完全找不到相鄰道路，以建築物座標作為 fallback
+
+**型別定義**：匯出 `TradePosition`、`TradeInfrastructure`、`TradeCollectionResult` 介面，讓呼叫端無需依賴具體的 RailSystem / AirportSystem 型別。
+
+### SyncTrafficDensity
+
+```
+src/core/environment/SyncTrafficDensity.ts
+```
+
+**職責**：將交通模擬的車流數據同步至 Grid 的 `trafficDensity` 欄位，供噪音污染計算使用。此模組是交通子系統與環境子系統之間的橋梁。
+
+**主要函式**：
+
+- **`syncTrafficDensityToGrid(grid, traffic, elevationManager, reusableFlowMap)`**
+  - 掃描所有地面道路格子，透過 `traffic.getSegmentDensity()` 取得車流量
+  - 若存在高架道路，將高架層的車流**投影至地面格子**（取最大值）
+  - 以對數刻度 `Math.min(10, Math.round(Math.log2(1 + flow)))` 轉換為 0~10 的噪音等級
+  - 僅在值變更時才寫入 Grid（避免不必要的 dirty flag 觸發）
+
+**GC 優化**：`reusableFlowMap` 參數由呼叫端（SimulationLoop）持有並跨 tick 重複使用，函式在進入和離開時都呼叫 `.clear()`，避免每次分配新 Map。
+
+### 整體架構示意
+
+```
+SimulationLoop.tick()
+  ├── (每 60 ticks) computeCongestionFlow() + computeCongestionFlowMonteCarlo()
+  │     └── CongestionFlowPredictor.ts  ← traffic/
+  ├── (每 60 ticks) syncTrafficDensityToGrid()
+  │     └── SyncTrafficDensity.ts       ← environment/
+  └── (貨運 tick) collectTradePositions()
+        └── FreightTradeCollector.ts    ← traffic/
+```
+
+此重構使 SimulationLoop 回歸純粹的**排程與編排**角色，各子系統的業務邏輯可獨立測試與演進。

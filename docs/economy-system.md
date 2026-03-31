@@ -96,6 +96,55 @@ RCI（住宅-商業-工業）需求決定城市的建築成長方向。
 
 ---
 
+## 商業可及性 (ShoppingAccess)
+
+ShoppingAccess 使用 BFS flood-fill 演算法計算住宅與商業建築之間的供需平衡，範圍為同一連通道路網路內的所有建築。
+
+### 演算法概要
+
+`calculate(grid)` 執行一次性 flood-fill，遍歷整個 Grid 識別所有連通區塊（connected components）。BFS 擴展時透過 `UnifiedRoadLookup.getCompatibleNeighborKeys()` 實現**等級感知（level-aware）**——高架道路僅透過匝道連接，不會直接與地面道路互通。
+
+流程：
+1. 從每個未訪問的道路/建築/區域格子開始 BFS
+2. 收集該連通區塊中所有住宅建築的人口（`residents`）與商業建築的容量（`workers`）
+3. 計算區塊層級的供需比率
+
+### 每棟建築指標
+
+| 介面 | 適用對象 | 欄位 |
+|------|---------|------|
+| `ResidentialShoppingStatus` | 住宅建築 | `ratio: number` (0\~1), `hasAccess: boolean` |
+| `CommercialCustomerStatus` | 商業建築 | `ratio: number` (0\~1), `hasCustomers: boolean` |
+
+### 比率計算
+
+```
+住宅購物比率 = min(1, 商業容量 / 住宅人口)
+商業客源比率 = min(1, 住宅人口 / 商業容量)
+```
+
+- 住宅人口為 0 時，住宅購物比率為 0
+- 商業容量為 0 時，商業客源比率為 0
+
+### 查詢 API
+
+| 方法 | 回傳值 | 說明 |
+|------|--------|------|
+| `getResidentialAccess(x, y)` | `ResidentialShoppingStatus` | 取得住宅建築的購物可及性 |
+| `getCommercialCustomers(x, y)` | `CommercialCustomerStatus` | 取得商業建築的客源狀態 |
+
+若尚未執行過 `calculate()`，兩者皆回傳預設值（`ratio: 1`, access/customers = `true`）。若座標不在任何連通區塊中，回傳 `ratio: 0`, access/customers = `false`。
+
+### 高架道路支援
+
+透過 `UnifiedRoadLookup` 整合，BFS 會同時追蹤地面與高架層級的道路格子。高架道路僅在有匝道（ramp）連接時才與地面道路網路互通，確保路網連通性的正確判定。
+
+### 建築類型識別
+
+使用 `getBuildingType()` 取得每棟建築的 `residents`（住宅人口）與 `workers`（商業容量），搭配 `isResidentialZone()` / `isCommercialZone()` 判斷建築所屬區域類型。
+
+---
+
 ## 支出
 
 ### 支出項目

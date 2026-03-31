@@ -407,3 +407,160 @@ maxPerTick = max(5, ceil(合格通勤者數 / 4))
 | topCongested | 最壅塞的路段 |
 | avgPathLength | 平均路徑長度 |
 | totalRoads | 道路格總數 |
+
+---
+
+## LaneGraphPathfinder（車道級 A* 尋路）
+
+取代舊有的兩階段尋路系統（格子級 A* + `refineLanePathVariants`），改為**單階段車道級 A***。直接在 LaneGraph 的 LaneEdge 上搜尋，不再依賴格子級啟發式或路口透明處理，回傳的 `LaneEdge[]` 可直接供 TrafficSimulation 使用。
+
+**檔案**: `src/core/traffic/LaneGraphPathfinder.ts`
+
+### 核心函式
+
+#### `findLanePath(graph, lookup, from, to)`
+
+從建築位置 `from` 到 `to` 找出一條車道級最短路徑。內部呼叫 `laneAStar`，回傳 `LaneEdge[] | null`。
+
+#### `findLanePathVariants(graph, lookup, from, to, count?)`
+
+為同一起訖點產生**多條車道變體**（預設 `VARIANT_COUNT = 3`），使通勤車輛分散到不同車道。使用**懲罰方法（penalty method）**：
+
+1. 第 1 條路徑以零懲罰跑 A*
+2. 將已使用的 cell+lane 組合施加 `VARIANT_PENALTY = 3` 倍成本
+3. 再跑 A*，找出偏好不同車道的路徑
+4. 重複直到產生 `count` 條變體或無法再找到新路徑
+
+起點與終點的格子不計入懲罰（所有變體可共用同一車道進出）。
+
+### 多源/多目標 A*
+
+`laneAStar` 支援多個起點（multi-source）和多個目標（multi-target）：
+
+- **起點**: 呼叫 `findNearbyExitPoints` 收集出發建築及其四鄰的所有 exit ConnectionPoint，全部以 g=0 加入 open list
+- **終點**: 呼叫 `findNearbyEntryPoints` 收集目標建築及其四鄰的所有 entry ConnectionPoint，任一被到達即結束
+- 透過 `UnifiedRoadLookup.getAllKeysAtPosition()` 支援高架道路（elevation）
+
+### 成本函式
+
+```
+cost(edge) = edge.length / (laneSpeedMultiplier(lane) × speedLimit / REFERENCE_SPEED_LIMIT)
+```
+
+- `REFERENCE_SPEED_LIMIT = 50`（速限 50 km/h 為 1.0 倍基準）
+- 速限越高的道路成本越低，A* 自然偏好快速道路
+
+### 啟發式
+
+```
+h(node) = manhattanDistance(node.position, endPos) × 0.01
+```
+
+使用極小的啟發式權重（0.01）確保可容許性（admissible），同時仍提供方向性引導。
+
+### 搜尋上限
+
+`maxSteps = 8000`，超過則回傳 `null`（無路徑）。
+
+---
+
+## CongestionFlowPredictor（壅塞流量預測）
+
+預測各道路格子的通勤流量，供壅塞熱度圖與交通規劃使用。採用**雙策略**架構：當通勤快取覆蓋率足夠時使用快速的快取掃描，不足時改用蒙地卡羅抽樣。
+
+**檔案**: `src/core/traffic/CongestionFlowPredictor.ts`
+
+### 策略一：`computeCongestionFlow`（快取路線掃描）
+
+從 `CommuteCache` 的 `routeIndex` 直接掃描已快取的通勤路線，零 A* 計算。
+
+**流程**:
+1. 透過 `commuteCache.forEachRouteWithRefCount()` 遍歷所有快取路線
+2. 每條路線的 `refCount`（共用該路線的市民數）加總到 `totalRefCount`
+3. 呼叫 `collectEdgeCells` 取得路線經過的所有格子
+4. 將 `refCount` 累加至各格子的流量值
+5. **按車道數正規化**: 多車道道路的流量除以 `getLaneCount(cellKey)`
+
+**回傳**: `{ flowMap: Map<string, number>, totalRefCount: number }`
+
+複雜度: O(路線數 × 平均路徑長度)，無需重新尋路。
+
+### 策略二：`computeCongestionFlowMonteCarlo`（蒙地卡羅取樣）
+
+當快取覆蓋率太低（`totalRefCount` 遠小於通勤人口）時使用此備用策略。
+
+**流程**:
+1. 呼叫 `buildODPools(deps.citizens, deps.parsePosKey)` 建立出發地（residential）與目的地（destinations）的加權池
+2. 決定取樣數: `clamp(totalResWeight / sampleDivisor, sampleCountMin, sampleCountMax)`
+3. 每次取樣:
+   - 以 `pickWeighted` 隨機選取起點與終點
+   - 跳過同一格子或曼哈頓距離 ≤ `MANHATTAN_DISTANCE_THRESHOLD`（3 格）的 OD 對
+   - 透過 `deps.chooseTransportMode` 判斷交通模式，僅 `DRIVE` 繼續
+   - 呼叫 `deps.findLanePath` 執行 A* 尋路
+   - 路徑經過的每個格子流量 +1
+4. **按比例放大**: `scaleFactor = totalResWeight / sampleCount`，將取樣流量乘以此因子以推估實際通勤量
+
+**依賴注入**: 透過 `CongestionFlowDeps` 介面注入所有外部依賴（citizens、findLanePath、chooseTransportMode 等），遵循 DIP 原則。
+
+---
+
+## HighwayConnection（高速公路外部連線）
+
+偵測地圖邊界上的高速公路，建立與外部世界的連線，產生外部人口與貨物流入/流出。
+
+**檔案**: `src/core/traffic/HighwayConnection.ts`
+
+### 邊界掃描邏輯
+
+`updateExternalConnection(mapWidth, mapHeight, grid)` 每 60 tick 由 SimulationLoop 呼叫：
+
+1. 掃描地圖四邊（上、下、左、右）的所有邊界格子
+2. 對每個格子檢查:
+   - **地面層**: `grid.getCell(x, y)` 的 `roadType === HIGHWAY`
+   - **高架層**: 透過 `ElevationManager.get(x, y, level)` 檢查 `MIN_ELEVATION_LEVEL` 到 `MAX_ELEVATION_LEVEL` 的所有層級
+3. 使用 `hasInwardFlag(x, y, mapWidth, mapHeight, roadFlags)` 確認道路方向朝地圖**內部**（非平行於邊界）
+4. 符合條件的格子加入 `edgeHighwayCells`
+
+### 方向判定（EdgeUtils）
+
+`hasInwardFlag` 定義於 `src/core/grid/EdgeUtils.ts`：
+
+| 邊界位置 | 向內方向 |
+|----------|---------|
+| 北邊 (y=0) | SOUTH (0b0010) |
+| 南邊 (y=max) | NORTH (0b0001) |
+| 西邊 (x=0) | EAST (0b1000) |
+| 東邊 (x=max) | WEST (0b0100) |
+
+角落格子同時屬於兩條邊界，任一方向符合即可。
+
+### `extractOutOfBoundsEdge`（拖曳超出邊界建路）
+
+同樣位於 `EdgeUtils.ts`。當玩家拖曳道路建設路徑超出地圖邊界時：
+
+- 偵測路徑最後一個點是否在地圖外
+- 計算從前一個點到最後一個點的方向，回傳 `outwardFlag`（出向方向旗標）
+- 回傳 `truncatedLength`（截斷後的有效路徑長度）
+
+### 常數（`HIGHWAY_EXTERNAL`）
+
+| 常數 | 值 | 說明 |
+|------|-----|------|
+| `THROUGHPUT_PER_CONNECTION` | 30 | 每個邊界連接點的吞吐量 |
+| `SPAWN_PER_100_POP` | 1 | 每 100 人口產生的外部車輛數 |
+| `MAX_PER_TICK` | 3 | 每 tick 最大產生外部車輛數 |
+| `CAP_RATIO` | 0.9 | 容量上限比率 |
+
+### 外部資源產出
+
+當存在至少一個邊界高速公路連接時，根據連接數量 `count` 計算：
+
+| 資源 | 公式 |
+|------|------|
+| `populationIn` | max(1, count × 3) |
+| `goodsIn` | max(1, count × 8) |
+| `goodsOut` | max(1, count × 5) |
+
+### 序列化
+
+支援 `toJSON()` / `fromJSON()` 存檔與讀檔。

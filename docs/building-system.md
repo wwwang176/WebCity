@@ -343,3 +343,19 @@ level = clamp(ceil(serviceCoverage / 3), 1, 3)
 | 0~3 | 1 |
 | 4~6 | 2 |
 | 7~9 | 3 |
+
+---
+
+## 增量建築渲染（Incremental Building Renderer）
+
+傳統做法是每當玩家放置道路或建築時，重建整個場景的所有 mesh。增量渲染改為**逐格新增/移除**（per-cell add/remove），避免全場景重建的高成本操作。
+
+### 核心機制
+
+- `BuildingRenderer` 以 per-cell 為單位管理建築 mesh，玩家操作時只新增或移除受影響的格子，而非重建整個場景。
+- `dirty.buildings` setter 被觸發時，會自動將 `dirty.terrain` 一併設為 `true`，確保地形與建築始終同步。
+- `lightSpotMesh`（建築燈光光點）隨增量建築的新增/移除同步更新，無需額外的全量重建。
+
+### 效能改善
+
+透過增量渲染，每次玩家操作（放置道路、規劃區域、建造基礎設施）不再觸發昂貴的全場景 mesh 重建，大幅降低主執行緒的運算負擔，提升操作流暢度。
