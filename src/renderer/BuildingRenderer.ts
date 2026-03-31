@@ -541,8 +541,10 @@ void main() {
   }
 
   // Apply shadow from directional light
+  float shadowVal = 1.0;
+  float rawShadow = 1.0;
   #if NUM_DIR_LIGHT_SHADOWS > 0
-    float shadow = getShadow(
+    rawShadow = getShadow(
       directionalShadowMap[0],
       directionalLightShadows[0].shadowMapSize,
       directionalLightShadows[0].shadowIntensity,
@@ -551,8 +553,9 @@ void main() {
       vDirectionalShadowCoord[0]
     );
     // Shadow only attenuates direct light (like built-in PBR materials)
-    float shadowFactor = 0.45 + 0.55 * shadow;
-    color *= mix(1.0, shadowFactor, directRatio);
+    float shadowFactor = 0.45 + 0.55 * rawShadow;
+    shadowVal = mix(1.0, shadowFactor, directRatio);
+    color *= shadowVal;
   #endif
 
   // Window day/night appearance
@@ -564,14 +567,14 @@ void main() {
     float nightFactor = 1.0 - smoothstep(0.15 + onOffset, 0.5 + onOffset, sunIntensity);
     // Daytime: all windows show blue-white glass reflection
     vec3 dayGlass = vec3(0.6, 0.72, 0.82);
-    color = mix(color, dayGlass * lighting, dayFactor * windowMask);
+    color = mix(color, dayGlass * lighting * shadowVal, dayFactor * windowMask);
     // Specular sun reflection on sun-facing glass only
     vec3 viewDirH = normalize(vec3(cameraPosition.x - vWorldPos.x, 0.0, cameraPosition.z - vWorldPos.z));
     vec3 sunDirH = normalize(vec3(sunDir.x, 0.0, sunDir.z));
     float facingSun = max(dot(n, sunDirH), 0.0);
     vec3 halfDirH = normalize(sunDirH + viewDirH);
     float spec = pow(max(dot(n, halfDirH), 0.0), 24.0);
-    color += spec * sunColor * 0.8 * dayFactor * windowMask * facingSun;
+    color += spec * sunColor * 0.8 * dayFactor * windowMask * facingSun * rawShadow;
     // Nighttime: only lit windows show warm yellow glow
     if (isLitWindow) {
       vec3 warmGlow = vec3(0.95, 0.85, 0.5);
