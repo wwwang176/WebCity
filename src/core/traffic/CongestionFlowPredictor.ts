@@ -6,6 +6,7 @@ import { pickWeighted } from '../utils/random';
 import { manhattanDistance } from '../grid/GridHelpers';
 import { TransportMode } from '../transport/types';
 import type { AvailableTransport } from '../transport/ModeChoice';
+import { SIMULATION } from '../simulation/SimulationConstants';
 
 /**
  * Dependencies for Monte Carlo congestion flow fallback.
@@ -18,9 +19,6 @@ export interface CongestionFlowDeps {
   getAvailableTransit: (from: { x: number; y: number }, to: { x: number; y: number }) => AvailableTransport[];
   chooseTransportMode: (from: { x: number; y: number }, to: { x: number; y: number }, transit: AvailableTransport[], congestion: number) => TransportMode;
 }
-
-/** Manhattan distance threshold below which trips are skipped. */
-const MANHATTAN_DISTANCE_THRESHOLD = 3;
 
 /**
  * Compute predicted congestion flow from cached commute routes.
@@ -90,7 +88,7 @@ export function computeCongestionFlowMonteCarlo(
     if (from.x === to.x && from.y === to.y) continue;
 
     const manhattan = manhattanDistance(from.x, from.y, to.x, to.y);
-    if (manhattan <= MANHATTAN_DISTANCE_THRESHOLD) continue;
+    if (manhattan <= SIMULATION.MANHATTAN_DISTANCE_THRESHOLD) continue;
 
     const availableTransport = deps.getAvailableTransit(from, to);
     const mode = deps.chooseTransportMode(from, to, availableTransport, 0);
