@@ -50,8 +50,8 @@ export class ShoppingAccess {
    */
   calculate(grid: Grid): void {
     this.hasCalculated = true;
-    this.residentialStatus = new Map();
-    this.commercialStatus = new Map();
+    this.residentialStatus.clear();
+    this.commercialStatus.clear();
 
     // Track visited by cell key (includes level for elevated)
     const globalVisited = new Set<string>();

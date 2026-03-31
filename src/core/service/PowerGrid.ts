@@ -81,13 +81,13 @@ export class PowerGrid {
    */
   calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
     // Phase 1: compute fullCoverage (no budget limit) — shows where the network reaches
-    this.fullCoverage = new Set<string>();
+    this.fullCoverage.clear();
     for (const plant of this.plants) {
       bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions);
     }
 
     // Phase 2: BFS budget-drain per plant to determine actual powered cells
-    this.powered = new Set<string>();
+    this.powered.clear();
     const getDemand = (x: number, y: number) => this.getCellDemand(grid, x, y);
     for (const plant of this.plants) {
       bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions);

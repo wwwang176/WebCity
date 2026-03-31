@@ -126,7 +126,7 @@ export class FreightSystem {
     });
 
     // ── Phase 1: Local supply BFS from factories ──
-    this.commercialSupply = new Map();
+    this.commercialSupply.clear();
     let localBudget = totalProduction;
     let actualConsumed = 0;
     {

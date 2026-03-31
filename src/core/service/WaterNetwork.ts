@@ -56,13 +56,13 @@ export class WaterNetwork {
 
   calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
     // Phase 1: compute fullCoverage (no budget limit)
-    this.fullCoverage = new Set<string>();
+    this.fullCoverage.clear();
     for (const plant of this.plants) {
       bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions);
     }
 
     // Phase 2: BFS budget-drain per plant
-    this.supplied = new Set<string>();
+    this.supplied.clear();
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
     for (const plant of this.plants) {
       bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, infrastructurePositions);
