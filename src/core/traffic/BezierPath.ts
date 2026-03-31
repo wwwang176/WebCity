@@ -112,6 +112,28 @@ export function sampleAtDistance(
 }
 
 /**
+ * Approximate the arc length of a quadratic Bezier curve
+ * by summing chord distances at N uniformly-spaced samples.
+ */
+export function approximateQuadraticBezierLength(
+  p0: Point, cp: Point, p2: Point, samples: number,
+): number {
+  let length = 0;
+  let prevX = p0.x, prevY = p0.y;
+  for (let i = 1; i <= samples; i++) {
+    const t = i / samples;
+    const u = 1 - t;
+    const x = u * u * p0.x + 2 * u * t * cp.x + t * t * p2.x;
+    const y = u * u * p0.y + 2 * u * t * cp.y + t * t * p2.y;
+    const dx = x - prevX, dy = y - prevY;
+    length += Math.sqrt(dx * dx + dy * dy);
+    prevX = x;
+    prevY = y;
+  }
+  return length;
+}
+
+/**
  * Compute the single quadratic Bezier control point for a turn,
  * placed at the intersection of the entry tangent line and exit tangent line.
  * This produces a quarter-circle-like arc for 90° turns.

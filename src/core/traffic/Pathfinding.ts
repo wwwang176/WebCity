@@ -195,6 +195,7 @@ const OPPOSITE_DIR: Record<string, string> = {
  * Phase 2: Refine a cell-level path into a LaneEdge sequence.
  * Uses Dijkstra with per-lane speed weighting.
  * Starts and ends at the outermost lane (closest to buildings).
+ * Delegates to shared helpers (DRY — same logic as refineLanePathVariants).
  */
 export function refineLanePath(
   graph: LaneGraph,
@@ -202,98 +203,21 @@ export function refineLanePath(
 ): LaneEdge[] | null {
   if (cellPath.length <= 1) return [];
 
-  // ── Determine start / end points ──
-  const firstDir = cellDirection(cellPath[0]!, cellPath[1]!);
-  if (!firstDir) return null;
-  const lastDir = cellDirection(cellPath[cellPath.length - 2]!, cellPath[cellPath.length - 1]!);
-  if (!lastDir) return null;
-
-  const firstMaxLane = maxLaneInCell(graph, cellPath[0]!);
-  const lastMaxLane = maxLaneInCell(graph, cellPath[cellPath.length - 1]!);
-
-  // Start: outermost exit of first cell toward second cell
-  const startId = `${cellPath[0]}:${firstDir}:${firstMaxLane}:exit`;
-  // End: outermost entry of last cell from second-to-last cell
-  const endDir = OPPOSITE_DIR[lastDir] ?? lastDir;
-  const endId = `${cellPath[cellPath.length - 1]}:${endDir}:${lastMaxLane}:entry`;
-
-  // Verify points exist; fall back to any available lane if outermost missing
-  const startPt = graph.getPoint(startId);
-  const endPt = graph.getPoint(endId);
-  if (!startPt || !endPt) {
-    return refineLanePathFallback(graph, cellPath, startPt ? startId : null, endPt ? endId : null, firstDir, endDir);
+  const endpoints = resolveLaneEndpoints(graph, cellPath);
+  if (!endpoints) {
+    // Fall back to any available lane if outermost missing
+    const firstDir = cellDirection(cellPath[0]!, cellPath[1]!);
+    const lastDir = cellDirection(cellPath[cellPath.length - 2]!, cellPath[cellPath.length - 1]!);
+    if (!firstDir || !lastDir) return null;
+    const endDir = OPPOSITE_DIR[lastDir] ?? lastDir;
+    return refineLanePathFallback(graph, cellPath, null, null, firstDir, endDir);
   }
 
-  // ── Build valid edge set restricted to cellPath ──
-  const cellSet = new Set(cellPath);
-  const validCrossPairs = buildValidCrossPairs(graph, cellPath);
+  const { startId, endId } = endpoints;
+  const adjacency = buildLaneAdjacency(graph, cellPath);
+  const noPenalties = new Map<string, number>();
 
-  const adjacency = new Map<string, { edge: LaneEdge; cost: number }[]>();
-
-  for (const cell of cellPath) {
-    const points = graph.getConnectionPoints(cell);
-    for (const pt of points) {
-      for (const edge of graph.getEdgesFrom(pt.id)) {
-        const fromCell = edge.from.cellKey;
-        const toCell = edge.to.cellKey;
-        const valid = (fromCell === toCell && cellSet.has(fromCell))
-          || validCrossPairs.has(`${fromCell}->${toCell}`);
-        if (!valid) continue;
-
-        const speed = getLaneSpeedMultiplier(edge.to.lane);
-        const cost = edge.length / speed;
-        let list = adjacency.get(edge.from.id);
-        if (!list) { list = []; adjacency.set(edge.from.id, list); }
-        list.push({ edge, cost });
-      }
-    }
-  }
-
-  // ── Dijkstra ──
-  const dist = new Map<string, number>();
-  const prev = new Map<string, { pointId: string; edge: LaneEdge }>();
-  const pq: { pointId: string; cost: number }[] = [];
-
-  dist.set(startId, 0);
-  pq.push({ pointId: startId, cost: 0 });
-
-  while (pq.length > 0) {
-    let minIdx = 0;
-    for (let i = 1; i < pq.length; i++) {
-      if (pq[i]!.cost < pq[minIdx]!.cost) minIdx = i;
-    }
-    const { pointId, cost } = pq[minIdx]!;
-    pq[minIdx] = pq[pq.length - 1]!;
-    pq.pop();
-
-    if (cost > (dist.get(pointId) ?? Infinity)) continue;
-    if (pointId === endId) break;
-
-    const neighbors = adjacency.get(pointId);
-    if (!neighbors) continue;
-    for (const { edge, cost: edgeCost } of neighbors) {
-      const newCost = cost + edgeCost;
-      if (newCost < (dist.get(edge.to.id) ?? Infinity)) {
-        dist.set(edge.to.id, newCost);
-        prev.set(edge.to.id, { pointId, edge });
-        pq.push({ pointId: edge.to.id, cost: newCost });
-      }
-    }
-  }
-
-  // ── Reconstruct path ──
-  if (!prev.has(endId)) return null;
-
-  const result: LaneEdge[] = [];
-  let cur = endId;
-  while (prev.has(cur)) {
-    const { pointId, edge } = prev.get(cur)!;
-    result.push(edge);
-    cur = pointId;
-  }
-  result.reverse();
-
-  return result.length > 0 ? result : null;
+  return runLaneDijkstra(adjacency, startId, endId, noPenalties);
 }
 
 /** Get the maximum lane index among connection points of a cell. */

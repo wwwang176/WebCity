@@ -1,6 +1,6 @@
-import { RoadType, RoadDirection } from '../road/types';
-import { getLaneCount } from './TrafficSimulation';
+import { RoadType, RoadDirection, getLaneCount } from '../road/types';
 import { parsePosKeyUnsafe, toPosKey, euclideanDistance } from '../grid/GridHelpers';
+import { computeTurnControlPoint as computeTurnCP, approximateQuadraticBezierLength } from './BezierPath';
 
 // ── Types ──
 
@@ -363,7 +363,7 @@ export class LaneGraph {
 
             const ref0Cp = this.computeTurnControlPoint(ref0From, ref0To);
             const refLength = Math.max(
-              this.approximateQuadraticBezierLength(ref0From.position, ref0Cp, ref0To.position),
+              this.approxBezierLength(ref0From.position, ref0Cp, ref0To.position),
               0.1,
             );
 
@@ -427,7 +427,7 @@ export class LaneGraph {
           const ref0To = this.points.get(`${cellKey}:${dir}:0:exit`);
           if (ref0From && ref0To) {
             const cp = this.computeTurnControlPoint(ref0From, ref0To);
-            refLength = Math.max(this.approximateQuadraticBezierLength(ref0From.position, cp, ref0To.position), 0.1);
+            refLength = Math.max(this.approxBezierLength(ref0From.position, cp, ref0To.position), 0.1);
           }
         }
 
@@ -521,7 +521,7 @@ export class LaneGraph {
           const ref0To = this.points.get(`${cellKey}:${outDir.dir}:0:exit`);
           if (ref0From && ref0To) {
             const cp = this.computeTurnControlPoint(ref0From, ref0To);
-            refLength = Math.max(this.approximateQuadraticBezierLength(ref0From.position, cp, ref0To.position), 0.3);
+            refLength = Math.max(this.approxBezierLength(ref0From.position, cp, ref0To.position), 0.3);
           }
         }
 
@@ -562,49 +562,26 @@ export class LaneGraph {
     }
   }
 
+  /** Delegate to shared BezierPath.computeTurnControlPoint (DRY). */
   private computeTurnControlPoint(
     from: ConnectionPoint,
     to: ConnectionPoint,
   ): { x: number; y: number } {
-    // Single control point at the intersection of entry and exit tangent lines
-    const entryDir = { x: from.tangent.tx, y: from.tangent.ty };
-    const exitDir = { x: to.tangent.tx, y: to.tangent.ty };
-    const det = entryDir.x * exitDir.y - entryDir.y * exitDir.x;
-    if (Math.abs(det) < 1e-6) {
-      // Parallel (straight-through): use midpoint
-      return {
-        x: (from.position.x + to.position.x) / 2,
-        y: (from.position.y + to.position.y) / 2,
-      };
-    }
-    const dx = to.position.x - from.position.x;
-    const dy = to.position.y - from.position.y;
-    const t = (dx * exitDir.y - dy * exitDir.x) / det;
-    return {
-      x: from.position.x + t * entryDir.x,
-      y: from.position.y + t * entryDir.y,
-    };
+    return computeTurnCP(
+      from.position,
+      { x: from.tangent.tx, y: from.tangent.ty },
+      to.position,
+      { x: to.tangent.tx, y: to.tangent.ty },
+    );
   }
 
-  private approximateQuadraticBezierLength(
+  /** Delegate to shared BezierPath.approximateQuadraticBezierLength (DRY). */
+  private approxBezierLength(
     p0: { x: number; y: number },
     cp: { x: number; y: number },
     p2: { x: number; y: number },
   ): number {
-    const N = LANE_GEOMETRY.BEZIER_SAMPLES;
-    let length = 0;
-    let prevX = p0.x, prevY = p0.y;
-    for (let i = 1; i <= N; i++) {
-      const t = i / N;
-      const u = 1 - t;
-      const x = u * u * p0.x + 2 * u * t * cp.x + t * t * p2.x;
-      const y = u * u * p0.y + 2 * u * t * cp.y + t * t * p2.y;
-      const dx = x - prevX, dy = y - prevY;
-      length += Math.sqrt(dx * dx + dy * dy);
-      prevX = x;
-      prevY = y;
-    }
-    return length;
+    return approximateQuadraticBezierLength(p0, cp, p2, LANE_GEOMETRY.BEZIER_SAMPLES);
   }
 
   private rebuildEdgeIndices(): void {

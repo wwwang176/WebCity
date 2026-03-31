@@ -7,6 +7,7 @@ import {
   buildArcLengthLUT,
   sampleAtDistance,
   computeTurnControlPoint,
+  approximateQuadraticBezierLength,
 } from '../BezierPath';
 
 describe('BezierPath', () => {
@@ -220,6 +221,32 @@ describe('BezierPath', () => {
         expect(d).toBeGreaterThan(avgDist * 0.85);
         expect(d).toBeLessThan(avgDist * 1.15);
       }
+    });
+  });
+
+  describe('approximateQuadraticBezierLength', () => {
+    it('should return correct length for a straight line', () => {
+      const len = approximateQuadraticBezierLength(
+        { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, 10,
+      );
+      expect(len).toBeCloseTo(2, 1);
+    });
+
+    it('should return longer length for a curved path vs straight', () => {
+      const straight = approximateQuadraticBezierLength(
+        { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, 10,
+      );
+      const curved = approximateQuadraticBezierLength(
+        { x: 0, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 0 }, 10,
+      );
+      expect(curved).toBeGreaterThan(straight);
+    });
+
+    it('should return 0 for zero-length curve', () => {
+      const len = approximateQuadraticBezierLength(
+        { x: 5, y: 5 }, { x: 5, y: 5 }, { x: 5, y: 5 }, 10,
+      );
+      expect(len).toBeCloseTo(0);
     });
   });
 

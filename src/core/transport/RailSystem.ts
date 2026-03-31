@@ -130,8 +130,18 @@ export class RailSystem extends BaseTransportSystem {
       this.routePaths.delete(route.id);
       return true;
     }
-    // Recompute rail paths for the modified route
-    const stations = route.stops;
+    const paths = this.computeRoutePaths(route.stops);
+    if (!paths) return false; // disconnected → dissolve
+    this.routePaths.set(route.id, paths);
+    return true;
+  }
+
+  /**
+   * Compute rail track paths for all segments of a route (DRY helper).
+   * Returns null if any consecutive station pair is disconnected.
+   */
+  private computeRoutePaths(stations: readonly TransportStop[]): string[][] | null {
+    if (!this.railNetwork) return null;
     const segCount = stations.length === 2 ? 2 : stations.length;
     const paths: string[][] = [];
     for (let i = 0; i < segCount; i++) {
@@ -141,11 +151,10 @@ export class RailSystem extends BaseTransportSystem {
         nodeId(from.x, from.y),
         nodeId(to.x, to.y),
       );
-      if (!path) return false; // disconnected → dissolve
+      if (!path) return null;
       paths.push(path);
     }
-    this.routePaths.set(route.id, paths);
-    return true;
+    return paths;
   }
 
   protected override onVehicleReset(vehicleId: number): void {
@@ -163,22 +172,8 @@ export class RailSystem extends BaseTransportSystem {
     trainCount = 1,
   ): TransportRoute | null {
     // Validate connectivity and compute paths if network is available
-    let paths: string[][] | null = null;
-    if (this.railNetwork) {
-      paths = [];
-      // Round-trip: A→B, B→A  /  Loop: A→B→C→...→A
-      const segCount = stations.length === 2 ? 2 : stations.length;
-      for (let i = 0; i < segCount; i++) {
-        const from = stations[i % stations.length]!;
-        const to = stations[(i + 1) % stations.length]!;
-        const path = this.railNetwork.findPath(
-          nodeId(from.x, from.y),
-          nodeId(to.x, to.y),
-        );
-        if (!path) return null; // No rail connection
-        paths.push(path);
-      }
-    }
+    const paths = this.computeRoutePaths(stations);
+    if (this.railNetwork && !paths) return null; // No rail connection
 
     const capacity = serviceType === RailServiceType.PASSENGER
       ? RAIL.PASSENGER_CAPACITY
