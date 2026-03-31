@@ -77,6 +77,8 @@ export const TRAFFIC = {
   BRAKE_DISTANCE: 1.5,
   /** Acceleration rate (world-units/sec² ) */
   ACCEL: 8.0,
+  /** Deceleration rate for speed-limit transitions (world-units/sec²) */
+  DECEL: 12.0,
 } as const;
 
 /** Get the number of directional lanes for a road type (lanes going one way). */
@@ -273,7 +275,7 @@ export class TrafficSimulation {
     canAdvance?: (current: string, next: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
-    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT, BRAKE_DISTANCE, ACCEL } = TRAFFIC;
+    const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT, BRAKE_DISTANCE, ACCEL, DECEL } = TRAFFIC;
 
     // Collect active vehicles into reusable scratch array (no per-frame allocation)
     const edgeVehicles = this.activeVehicleScratch;
@@ -415,13 +417,33 @@ export class TrafficSimulation {
         targetSpeed = maxSpeed * (obstacle / BRAKE_DISTANCE);
       }
 
+      // 4b. Lookahead: pre-brake for lower speed limit on next edge
+      const nextEdge = ep[v.edgeIndex + 1];
+      if (nextEdge && getSpeedLimit && obstacle >= BRAKE_DISTANCE) {
+        const nextLimit = getSpeedLimit(nextEdge.from.cellKey) ?? REFERENCE_LIMIT;
+        const nextTurnFactor = nextEdge.type === 'turn' ? 0.5 : 1.0;
+        const nextMaxSpeed = EDGE_SPEED * (nextLimit / REFERENCE_LIMIT) * v.speedMultiplier * nextTurnFactor;
+        if (nextMaxSpeed < maxSpeed) {
+          const currentEdgeObj = ep[v.edgeIndex]!;
+          const distToEdgeEnd = currentEdgeObj.length - v.edgeProgress;
+          if (distToEdgeEnd < BRAKE_DISTANCE) {
+            const t = distToEdgeEnd / BRAKE_DISTANCE;
+            const limitedSpeed = nextMaxSpeed + (maxSpeed - nextMaxSpeed) * t;
+            targetSpeed = Math.min(targetSpeed, limitedSpeed);
+          }
+        }
+      }
+
       // 5. Apply acceleration / deceleration
       if (targetSpeed > v.currentSpeed) {
         // Accelerate: limited by ACCEL per second
         v.currentSpeed = Math.min(targetSpeed, v.currentSpeed + ACCEL * dtSeconds);
-      } else {
-        // Decelerate: snap to distance-proportional speed
+      } else if (obstacle < BRAKE_DISTANCE) {
+        // Safety braking for obstacles: snap to distance-proportional speed
         v.currentSpeed = targetSpeed;
+      } else {
+        // Speed-limit / lookahead deceleration: gradual
+        v.currentSpeed = Math.max(targetSpeed, v.currentSpeed - DECEL * dtSeconds);
       }
 
       // Safety cap: never move further than available space

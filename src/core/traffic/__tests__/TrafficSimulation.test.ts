@@ -623,6 +623,58 @@ describe('acceleration and braking model', () => {
     // Lane change should not reduce speed — same as straight
     expect(v2.currentSpeed).toBe(v1.currentSpeed);
   });
+
+  it('should decelerate gradually when entering a lower speed-limit edge (DECEL)', () => {
+    const sim = new TrafficSimulation();
+    // Two edges: first is highway-speed, second is low-speed
+    const fastEdge = makeEdge('fast', '0,0', '1,0');
+    const slowEdge = makeEdge('slow', '1,0', '2,0');
+    const v = sim.addVehicleOnEdges([fastEdge, slowEdge]);
+    v.stallTime = 0;
+
+    // Speed limit lookup: cell 0,0 = 100, cell 1,0 = 30
+    const getSpeedLimit = (key: string) => (key === '0,0' ? 100 : 30);
+
+    // Give vehicle high initial speed (already cruising on highway)
+    const highMaxSpeed = TRAFFIC.EDGE_SPEED * (100 / TRAFFIC.REFERENCE_LIMIT) * v.speedMultiplier;
+    v.currentSpeed = highMaxSpeed;
+    v.edgeIndex = 1;  // already on the slow edge
+    v.edgeProgress = 0;
+
+    // One frame — should NOT snap to low maxSpeed instantly
+    sim.advanceEdgeVehicles(0.016, undefined, getSpeedLimit);
+    const lowMaxSpeed = TRAFFIC.EDGE_SPEED * (30 / TRAFFIC.REFERENCE_LIMIT) * v.speedMultiplier;
+
+    // Should have decelerated but not yet reached the low limit
+    expect(v.currentSpeed).toBeLessThan(highMaxSpeed);
+    expect(v.currentSpeed).toBeGreaterThan(lowMaxSpeed);
+  });
+
+  it('should pre-brake before entering a lower speed-limit edge (lookahead)', () => {
+    const sim = new TrafficSimulation();
+    const fastEdge = makeEdge('fast', '0,0', '1,0');
+    const slowEdge = makeEdge('slow', '1,0', '2,0');
+    const v = sim.addVehicleOnEdges([fastEdge, slowEdge]);
+    v.stallTime = 0;
+
+    const getSpeedLimit = (key: string) => (key === '0,0' ? 100 : 30);
+
+    const highMaxSpeed = TRAFFIC.EDGE_SPEED * (100 / TRAFFIC.REFERENCE_LIMIT) * v.speedMultiplier;
+    v.currentSpeed = highMaxSpeed;
+    // On first edge, close to the end (within BRAKE_DISTANCE)
+    v.edgeIndex = 0;
+    v.edgeProgress = fastEdge.length - TRAFFIC.BRAKE_DISTANCE * 0.5;
+
+    sim.advanceEdgeVehicles(0.016, undefined, getSpeedLimit);
+
+    // Should already be braking before reaching the slow edge
+    expect(v.currentSpeed).toBeLessThan(highMaxSpeed);
+  });
+
+  it('DECEL constant should exist and be greater than ACCEL', () => {
+    expect(TRAFFIC.DECEL).toBeGreaterThan(0);
+    expect(TRAFFIC.DECEL).toBeGreaterThan(TRAFFIC.ACCEL);
+  });
 });
 
 describe('vehicle factory consistency', () => {
