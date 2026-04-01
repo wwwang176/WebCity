@@ -21,7 +21,7 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
 }
 
 describe('getInfraDetails', () => {
-  it('police: returns load/capacity and radius', () => {
+  it('police: returns need, capacity, and radius', () => {
     const ctx = makeCtx({
       police: {
         getStations: () => [{ id: 'p1', x: 5, y: 5, radius: 20, capacity: 500 }],
@@ -30,17 +30,16 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'police', 5, 5);
-    expect(d).toEqual({ Load: '300 / 500', Radius: 20 });
+    expect(d).toEqual({ Need: 300, Capacity: 500, Radius: 20 });
   });
 
   it('police: defaults when station not found', () => {
     const ctx = makeCtx();
     const d = getInfraDetails(ctx, 'police', 0, 0);
-    expect(d.Radius).toBe(15);
-    expect(d.Load).toBe('0 / 500');
+    expect(d).toEqual({ Need: 0, Capacity: 500, Radius: 15 });
   });
 
-  it('fire: returns load/capacity, radius, and active fires', () => {
+  it('fire: returns need, capacity, radius, and active fires', () => {
     const ctx = makeCtx({
       fire: {
         getStations: () => [{ id: 'f1', x: 3, y: 3, radius: 18, capacity: 500 }],
@@ -50,10 +49,10 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'fire', 3, 3);
-    expect(d).toEqual({ Load: '200 / 500', Radius: 18, 'Active Fires': 2 });
+    expect(d).toEqual({ Need: 200, Capacity: 500, Radius: 18, 'Active Fires': 2 });
   });
 
-  it('hospital: returns load/capacity and radius', () => {
+  it('hospital: returns need, capacity, and radius', () => {
     const ctx = makeCtx({
       health: {
         getHospitals: () => [{ id: 'h1', x: 10, y: 10, capacity: 150, radius: 12 }],
@@ -61,10 +60,10 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'hospital', 10, 10);
-    expect(d).toEqual({ Load: '45 / 150', Radius: 12 });
+    expect(d).toEqual({ Need: 45, Capacity: 150, Radius: 12 });
   });
 
-  it('school (elementary): shows need when demand exceeds capacity', () => {
+  it('school (elementary): shows need and students separately', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [{ id: 's1', x: 2, y: 2, type: 'elementary', capacity: 250, radius: 11 }],
@@ -73,10 +72,10 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'school', 2, 2);
-    expect(d).toEqual({ Type: 'Elementary', Students: '250 / 250 (Need 350)', Radius: 11 });
+    expect(d).toEqual({ Type: 'Elementary', Need: 350, Students: '250 / 250', Radius: 11 });
   });
 
-  it('school_high: no need label when demand within capacity', () => {
+  it('school_high: need shown even when within capacity', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [
@@ -88,10 +87,10 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'school_high', 1, 1);
-    expect(d).toEqual({ Type: 'High School', Students: '120 / 350', Radius: 13 });
+    expect(d).toEqual({ Type: 'High School', Need: 200, Students: '120 / 350', Radius: 13 });
   });
 
-  it('school_univ: returns per-school enrolled / capacity', () => {
+  it('school_univ: returns need, students, and capacity', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [{ id: 's1', x: 7, y: 7, type: 'university', capacity: 600, radius: 16 }],
@@ -100,7 +99,7 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'school_univ', 7, 7);
-    expect(d).toEqual({ Type: 'University', Students: '88 / 600', Radius: 16 });
+    expect(d).toEqual({ Type: 'University', Need: 88, Students: '88 / 600', Radius: 16 });
   });
 
   it('park: returns radius', () => {

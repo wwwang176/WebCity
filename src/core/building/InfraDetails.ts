@@ -75,8 +75,7 @@ function makeSchoolExtractor(
     const cap = sc?.capacity ?? defaultCap;
     const enrolled = sc ? ctx.education.getSchoolEnrollment(sc.id) : 0;
     const demand = sc ? ctx.education.getSchoolDemand(sc.id) : 0;
-    const needStr = demand > cap ? ` (Need ${demand})` : '';
-    return { Type: label, Students: `${enrolled} / ${cap}${needStr}`, Radius: sc?.radius ?? defaultRadius };
+    return { Type: label, Need: demand, Students: `${enrolled} / ${cap}`, Radius: sc?.radius ?? defaultRadius };
   };
 }
 
@@ -87,21 +86,18 @@ function makeSchoolExtractor(
 export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>> = {
   police: (ctx, cx, cy) => {
     const st = findAtPosition(ctx.police.getStations(), cx, cy);
-    const cap = st?.capacity ?? 500;
     const load = st ? ctx.police.getStationLoad(st.id) : 0;
-    return { Load: `${load} / ${cap}`, Radius: st?.radius ?? 15 };
+    return { Need: load, Capacity: st?.capacity ?? 500, Radius: st?.radius ?? 15 };
   },
   fire: (ctx, cx, cy) => {
     const st = findAtPosition(ctx.fire.getStations(), cx, cy);
-    const cap = st?.capacity ?? 500;
     const load = st ? ctx.fire.getStationLoad(st.id) : 0;
-    return { Load: `${load} / ${cap}`, Radius: st?.radius ?? 15, 'Active Fires': ctx.fire.getActiveFires().length };
+    return { Need: load, Capacity: st?.capacity ?? 500, Radius: st?.radius ?? 15, 'Active Fires': ctx.fire.getActiveFires().length };
   },
   hospital: (ctx, cx, cy) => {
     const h = findAtPosition(ctx.health.getHospitals(), cx, cy);
-    const cap = h?.capacity ?? 100;
     const load = h ? ctx.health.getHospitalLoad(h.id) : 0;
-    return { Load: `${load} / ${cap}`, Radius: h?.radius ?? 12 };
+    return { Need: load, Capacity: h?.capacity ?? 100, Radius: h?.radius ?? 12 };
   },
   school: makeSchoolExtractor('elementary', 'Elementary', 200, 10),
   school_high: makeSchoolExtractor('highschool', 'High School', 300, 12),

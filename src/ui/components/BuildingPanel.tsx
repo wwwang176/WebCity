@@ -353,15 +353,10 @@ function UtilityStatus(props: { hasPower: boolean; hasWater: boolean }) {
 
 function getInfraOverloadWarning(sel: SelectedInfraBuilding): WarnLevel | null {
   const d = sel.details;
-  // Check Load (hospital) or Students (school) for "N / Cap" format
-  const field = (d.Load ?? d.Students);
-  if (!field || typeof field !== 'string') return null;
-  const match = field.match(/^(\d+)\s*\/\s*(\d+)/);
-  if (!match) return null;
-  const load = parseInt(match[1]!, 10);
-  const cap = parseInt(match[2]!, 10);
-  if (cap <= 0 || load <= cap) return null;
-  return load >= cap * 2 ? 'red' : 'yellow';
+  const need = d.Need as number | undefined;
+  const cap = d.Capacity as number | undefined;
+  if (need == null || cap == null || cap <= 0 || need <= cap) return null;
+  return need >= cap * 2 ? 'red' : 'yellow';
 }
 
 function InfraBuildingInfo(props: { sel: SelectedInfraBuilding }) {
