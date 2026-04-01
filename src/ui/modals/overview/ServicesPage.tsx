@@ -127,11 +127,11 @@ export function ServicesPage() {
     }
 
     const cemeteries = state.deathCare.getCemeteries();
-    let cemUsed = 0, cemCap = 0;
-    for (const c of cemeteries) { cemUsed += c.used; cemCap += c.capacity; }
+    let cemUsed = 0, cemCap = 0, cemPending = 0;
+    for (const c of cemeteries) { cemUsed += c.used; cemCap += c.capacity; cemPending += (c as any).pending ?? 0; }
     const unprocessed = state.deathCare.getUnprocessed();
     const dSt = unprocessed > 0 ? { label: `Unprocessed ${unprocessed}`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemUsed / cemCap : 0);
-    wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Cemetery', cemUsed, cemCap, dSt));
+    wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Stored', cemUsed, cemCap, dSt, cemPending > 0 ? ` Pending ${cemPending}` : ''));
 
     entries.push({ group: 'Waste & Burial', items: wasteItems });
 
