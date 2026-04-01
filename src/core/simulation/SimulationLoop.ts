@@ -119,6 +119,8 @@ export class SimulationLoop {
   private transferHistoryIndex = 0;
   private transferToday = new Map<string, number>();
   private lastTransferDay = -1;
+  /** Snapshot of active transfer pedestrians (updated daily to avoid per-tick re-renders). */
+  private transferPedsSnapshot = 0;
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
@@ -1577,6 +1579,12 @@ export class SimulationLoop {
       this.transferHistory[this.transferHistoryIndex] = new Map(this.transferToday);
       this.transferHistoryIndex = (this.transferHistoryIndex + 1) % 7;
       this.transferToday.clear();
+      // Snapshot active transfer pedestrians
+      let peds = 0;
+      for (const a of this.state.pedestrianManager.agents) {
+        if (a.tripType === 4) peds++;
+      }
+      this.transferPedsSnapshot = peds;
     }
 
     // Rebuild transfer graph when transit network has changed
@@ -2102,12 +2110,7 @@ export class SimulationLoop {
     transferEdges: number;
     routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }>;
   } {
-    // Live data: active pedestrian counts
-    const agents = this.state.pedestrianManager.agents;
-    let activeTransferPeds = 0;
-    for (const a of agents) {
-      if (a.tripType === 4) activeTransferPeds++;
-    }
+    const activeTransferPeds = this.transferPedsSnapshot;
 
     const pool = this.walkingTripPool;
     let transferTrips = 0;

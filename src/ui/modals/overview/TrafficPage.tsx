@@ -226,6 +226,20 @@ export function TrafficPage() {
         </table>
       </Show>
 
+      <Show when={transitData().airportCount > 0}>
+        <div style="font-size:12px;color:#8899b0;margin-top:8px">
+          Airports: <span style={`color:${UI_COLORS.NEUTRAL};font-weight:500`}>{transitData().airportCount}</span>
+          <span style="margin-left:12px">Cost: <span class="td-expense">${transitData().airportCost}/tick</span></span>
+        </div>
+      </Show>
+
+      <div style={{
+        'margin-top': '12px', padding: '8px 12px', 'border-radius': '6px',
+        'font-size': '12px', background: 'rgba(40,55,90,0.3)', color: '#b0c4de',
+      }}>
+        Total transit cost: <span style="color:#ef9a9a;font-weight:600">${transitData().totalCost}/tick</span>
+      </div>
+
       <Show when={transferStats().multiRideRoutes > 0}>
         <div class="section-title">Multi-Modal Transfers</div>
         <div class="summary-grid" style="grid-template-columns:repeat(3,1fr)">
@@ -259,20 +273,6 @@ export function TrafficPage() {
           </tbody>
         </table>
       </Show>
-
-      <Show when={transitData().airportCount > 0}>
-        <div style="font-size:12px;color:#8899b0;margin-top:8px">
-          Airports: <span style={`color:${UI_COLORS.NEUTRAL};font-weight:500`}>{transitData().airportCount}</span>
-          <span style="margin-left:12px">Cost: <span class="td-expense">${transitData().airportCost}/tick</span></span>
-        </div>
-      </Show>
-
-      <div style={{
-        'margin-top': '12px', padding: '8px 12px', 'border-radius': '6px',
-        'font-size': '12px', background: 'rgba(40,55,90,0.3)', color: '#b0c4de',
-      }}>
-        Total transit cost: <span style="color:#ef9a9a;font-weight:600">${transitData().totalCost}/tick</span>
-      </div>
     </>
   );
 }
