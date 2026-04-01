@@ -62,13 +62,10 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     return this.removeFacilityById(id);
   }
 
-  /** Report a death at a specific location. Assigns to nearest covering cemetery. */
+  /** Report a death at a specific location. Assigns to nearest covering cemetery.
+   *  If no coverage, falls back to nearest cemetery anyway (homeless citizens, etc.). */
   reportDeath(x: number, y: number): void {
     this.todayDeaths++;
-    if (!this.getCoverage(x, y)) {
-      this.unassignedDeaths++;
-      return;
-    }
     // Find nearest cemetery by Euclidean distance
     let nearestCem: Cemetery | null = null;
     let nearestDist = Infinity;

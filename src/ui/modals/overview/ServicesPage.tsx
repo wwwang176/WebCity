@@ -134,7 +134,7 @@ export function ServicesPage() {
     const deathsWk = state.deathCare.getRecentDeaths();
     const crematedWk = state.deathCare.getRecentCremations();
     const deathSuffix = deathsWk > 0 || crematedWk > 0 ? ` Deaths ${deathsWk} Cremated ${crematedWk}/wk` : '';
-    const dSt = unassigned > 0 ? { label: `${unassigned} outside coverage`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemBodies / cemCap : 0);
+    const dSt = unassigned > 0 ? { label: `${unassigned} unprocessed`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemBodies / cemCap : 0);
     wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Bodies', cemBodies, cemCap, dSt, deathSuffix));
 
     entries.push({ group: 'Waste & Burial', items: wasteItems });
