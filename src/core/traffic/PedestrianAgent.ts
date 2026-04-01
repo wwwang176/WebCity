@@ -9,6 +9,7 @@ export enum PedestrianTripType {
   FIRST_MILE = 1,
   LAST_MILE = 2,
   DECORATIVE = 3,
+  TRANSFER_WALK = 4,
 }
 
 export enum PedestrianState {

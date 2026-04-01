@@ -33,7 +33,8 @@ import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG } from '../citizen/Job
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import type { SchoolType, EnrolledCitizen } from '../service/EducationService';
 import { EDUCATION_PROGRESSION, MIN_SCHOOL_AGE, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
-import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
+import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../transport/ModeChoice';
+import { buildTransferGraph, findMultiModalRoutes, flattenSystems, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
 import { TransportMode } from '../transport/types';
@@ -108,6 +109,11 @@ export class SimulationLoop {
   private tripPoolDirty = true;
   private tripAggMap = new Map<string, AggregatedTrip>();
   private pendingTrips: AggregatedTrip[] = [];
+
+  // Multi-modal transfer graph (rebuilt when transit network changes)
+  private transferGraph: TransferGraph = { byStop: new Map() };
+  private transferGraphDirty = true;
+  private flatRoutes: FlatRoute[] = [];
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
@@ -1344,6 +1350,7 @@ export class SimulationLoop {
     this.laneGraphDirty = true;
     this.sidewalkGraphDirty = true;
     this.tripPoolDirty = true;
+    this.transferGraphDirty = true;
     this.commuteCache.bumpGeneration();
     this.wpDistCache?.invalidate();
     if (affectedCells) {
@@ -1557,6 +1564,14 @@ export class SimulationLoop {
     }
     if (eligible.length === 0) return;
 
+    // Rebuild transfer graph when transit network has changed
+    if (this.transferGraphDirty) {
+      const systems = this.getTransitSystemInfos();
+      this.flatRoutes = flattenSystems(systems);
+      this.transferGraph = buildTransferGraph(this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE);
+      this.transferGraphDirty = false;
+    }
+
     const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
     let spawned = 0;
 
@@ -1576,10 +1591,17 @@ export class SimulationLoop {
       if (!fromPos || !toPos) continue;
       if (fromPos.x === toPos.x && fromPos.y === toPos.y) continue;
 
-      // --- Transport mode choice ---
+      // --- Transport mode choice (with multi-modal transfer support) ---
       const availableTransport = this.getAvailableTransit(fromPos, toPos);
       const congestion = this.state.traffic.getCongestionLevel();
-      const mode = chooseMode(fromPos, toPos, availableTransport, congestion);
+      const multiModalRoutes = findMultiModalRoutes(
+        this.flatRoutes, fromPos, toPos,
+        SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED,
+        SIMULATION.AVERAGE_WAIT_FACTOR, this.transferGraph, SIMULATION.MAX_TRIP_LEGS,
+      );
+      const { mode, multiLeg } = chooseModeMultiModal(
+        fromPos, toPos, availableTransport, multiModalRoutes, congestion,
+      );
 
       if (mode !== TransportMode.DRIVE) {
         // Collect walking trips for pedestrian spawning (trip pool)
@@ -1590,7 +1612,23 @@ export class SimulationLoop {
               toX: toPos.x, toY: toPos.y,
               tripType: PedestrianTripType.FULL_WALK, count: 1,
             });
+          } else if (multiLeg) {
+            // Multi-modal: generate pedestrian trips for each walk leg
+            const legs = multiLeg.legs;
+            for (let li = 0; li < legs.length; li++) {
+              const leg = legs[li]!;
+              if (leg.type !== 'walk') continue;
+              this.pendingTrips.push({
+                fromX: leg.fromX, fromY: leg.fromY,
+                toX: leg.toX, toY: leg.toY,
+                tripType: li === 0 ? PedestrianTripType.FIRST_MILE
+                  : li === legs.length - 1 ? PedestrianTripType.LAST_MILE
+                  : PedestrianTripType.TRANSFER_WALK,
+                count: 1,
+              });
+            }
           } else {
+            // Single-transit: first-mile + last-mile
             const transitSystem2 = getSystemForMode(this.state, mode);
             if (transitSystem2) {
               const originStop = this.findNearestStop(transitSystem2.getStops(), fromPos);
@@ -1613,10 +1651,23 @@ export class SimulationLoop {
           }
         }
 
-        const transitSystem = getSystemForMode(this.state, mode);
-        if (transitSystem) {
-          const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
-          if (nearest) { nearest.dailyRiders++; }
+        // Increment dailyRiders on each boarding stop
+        if (multiLeg) {
+          for (const leg of multiLeg.legs) {
+            if (leg.type === 'ride' && leg.routeIdx !== undefined && leg.boardStopIdx !== undefined) {
+              const route = this.flatRoutes[leg.routeIdx];
+              if (route) {
+                const stop = route.stops[leg.boardStopIdx] as { dailyRiders: number } | undefined;
+                if (stop) stop.dailyRiders++;
+              }
+            }
+          }
+        } else {
+          const transitSystem = getSystemForMode(this.state, mode);
+          if (transitSystem) {
+            const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
+            if (nearest) { nearest.dailyRiders++; }
+          }
         }
         continue;
       }
@@ -1682,6 +1733,16 @@ export class SimulationLoop {
   }
 
 
+  private getTransitSystemInfos() {
+    return getTransitSystems(this.state).map(({ type, system }) => ({
+      type,
+      speed: system.getSpeed(),
+      vehicleCapacity: system.getCapacity(),
+      routes: system.getRoutes(),
+      getSegmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
+    }));
+  }
+
   /**
    * Find available transit options that cover travel between origin and destination.
    * A transit route "covers" a trip if it has stops within walking distance (≤ 5 cells)
@@ -1691,14 +1752,7 @@ export class SimulationLoop {
     origin: { x: number; y: number },
     destination: { x: number; y: number },
   ): AvailableTransport[] {
-    const systems = getTransitSystems(this.state).map(({ type, system }) => ({
-      type,
-      speed: system.getSpeed(),
-      vehicleCapacity: system.getCapacity(),
-      routes: system.getRoutes(),
-      getSegmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
-    }));
-    return findAvailableTransit(systems, origin, destination, SIMULATION.WALK_TO_STOP_RANGE);
+    return findAvailableTransit(this.getTransitSystemInfos(), origin, destination, SIMULATION.WALK_TO_STOP_RANGE);
   }
 
   /**
