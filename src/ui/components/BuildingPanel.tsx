@@ -421,10 +421,9 @@ function GarbagePanel(props: { sel: SelectedInfraBuilding }) {
       <div class="bp-row">Load <span>{d().Load}</span></div>
       <div class="bp-row">Produced/wk <span>{d()['Produced/wk']}</span></div>
       <div class="bp-row">Burned/wk <span>{d()['Burned/wk']}</span></div>
-      <Show when={hasOverflow()}><div class="bp-row">Overflow <span>{d().Overflow}</span></div></Show>
       <InfraFooter sel={props.sel} />
       <Show when={hasOverflow()}>
-        <div style={WARNING_STYLE_RED}>Overloaded</div>
+        <div style={WARNING_STYLE_RED}>{d().Overflow} garbage uncollected</div>
       </Show>
     </>
   );
