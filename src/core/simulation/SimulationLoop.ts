@@ -1278,37 +1278,49 @@ export class SimulationLoop {
       const work = parsePosKey(c.workplaceId);
       if (!home || !work) continue;
 
-      // Compute path variants and cache
-      const routeKey = `${c.homeId}->${c.workplaceId}`;
-      let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
-      if (!variants) {
-        variants = findLanePathVariants(this.laneGraph, this._roadLookup, home, work);
-        if (variants.length > 0) {
-          this.commuteCache.setRouteVariants(routeKey, variants);
+      // Compute morning path (home → work)
+      const morningKey = `${c.homeId}->${c.workplaceId}`;
+      let morningVariants = this.commuteCache.getRouteVariants(morningKey) ?? null;
+      if (!morningVariants) {
+        morningVariants = findLanePathVariants(this.laneGraph, this._roadLookup, home, work);
+        if (morningVariants.length > 0) {
+          this.commuteCache.setRouteVariants(morningKey, morningVariants);
         }
       }
 
-      if (!variants || variants.length === 0) continue;
+      // Compute evening path (work → home)
+      const eveningKey = `${c.workplaceId}->${c.homeId}`;
+      let eveningVariants = this.commuteCache.getRouteVariants(eveningKey) ?? null;
+      if (!eveningVariants) {
+        eveningVariants = findLanePathVariants(this.laneGraph, this._roadLookup, work, home);
+        if (eveningVariants.length > 0) {
+          this.commuteCache.setRouteVariants(eveningKey, eveningVariants);
+        }
+      }
 
-      const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
-      if (edgePath.length === 0) continue;
+      const morningPath = morningVariants?.length ? morningVariants[Math.floor(Math.random() * morningVariants.length)]! : null;
+      const eveningPath = eveningVariants?.length ? eveningVariants[Math.floor(Math.random() * eveningVariants.length)]! : null;
+      if (!morningPath && !eveningPath) continue;
 
-      // Cache the route for this citizen
+      // Cache both directions for this citizen
       this.commuteCache.set(c.id, {
         citizenId: c.id,
         homeId: c.homeId,
         workplaceId: c.workplaceId,
-        morningPath: edgePath,
-        eveningPath: null,
+        morningPath: morningPath && morningPath.length > 0 ? morningPath : null,
+        eveningPath: eveningPath && eveningPath.length > 0 ? eveningPath : null,
         status: 'ready',
         generation: this.commuteCache.roadGeneration,
       });
       pathsComputed++;
 
-      // Spawn vehicle for a fraction of commuters
+      // Spawn vehicle for a fraction of commuters (random direction)
       if (Math.random() < spawnRatio) {
-        this.state.traffic.addVehicleOnEdges(edgePath, c.id);
-        vehiclesSpawned++;
+        const spawnPath = Math.random() < 0.5 ? morningPath : eveningPath;
+        if (spawnPath && spawnPath.length > 0) {
+          this.state.traffic.addVehicleOnEdges(spawnPath, c.id);
+          vehiclesSpawned++;
+        }
       }
 
       // Report sub-progress every 100 citizens
