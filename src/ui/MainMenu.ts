@@ -355,8 +355,12 @@ export function createLoadingScreen(): HTMLElement {
         font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
       }
       .loading-text {
-        font-size: 20px; font-weight: 500; margin-bottom: 24px;
-        color: rgba(144, 202, 249, 0.8);
+        font-size: 13px; font-weight: 400; margin-bottom: 12px;
+        color: rgba(144, 202, 249, 0.6);
+      }
+      .loading-pct {
+        font-size: 28px; font-weight: 600; margin-bottom: 20px;
+        color: rgba(144, 202, 249, 0.9);
       }
       .loading-bar-bg {
         width: 280px; height: 4px;
@@ -369,17 +373,21 @@ export function createLoadingScreen(): HTMLElement {
         border-radius: 2px; transition: width 0.3s;
       }
     </style>
-    <div class="loading-text" id="loading-label">Loading WebCity...</div>
+    <div class="loading-pct" id="loading-pct">0%</div>
     <div class="loading-bar-bg">
       <div class="loading-bar-fill" id="loading-progress"></div>
     </div>
+    <div class="loading-text" id="loading-label" style="margin-top:12px">Loading...</div>
   `;
   return loading;
 }
 
 export function updateLoadingProgress(progress: number, label?: string): void {
+  const pct = Math.min(100, Math.max(0, Math.round(progress)));
   const fill = document.getElementById('loading-progress');
-  if (fill) fill.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+  if (fill) fill.style.width = `${pct}%`;
+  const pctEl = document.getElementById('loading-pct');
+  if (pctEl) pctEl.textContent = `${pct}%`;
   if (label) {
     const lbl = document.getElementById('loading-label');
     if (lbl) lbl.textContent = label;
