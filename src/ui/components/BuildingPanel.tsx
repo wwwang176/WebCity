@@ -351,34 +351,149 @@ function UtilityStatus(props: { hasPower: boolean; hasWater: boolean }) {
   );
 }
 
-function getInfraOverloadWarning(sel: SelectedInfraBuilding): WarnLevel | null {
-  const d = sel.details;
-  // Garbage: check Overflow field
-  if (d.Overflow != null && (d.Overflow as number) > 0) return 'red';
-  // Other services: check Need vs Capacity
-  const need = d.Need as number | undefined;
-  const cap = d.Capacity as number | undefined;
-  if (need == null || cap == null || cap <= 0 || need <= cap) return null;
-  return need >= cap * 2 ? 'red' : 'yellow';
+/** Overload warning for Need/Capacity services */
+function OverloadWarning(props: { need: number; capacity: number }) {
+  const level = (): WarnLevel | null => {
+    if (props.capacity <= 0 || props.need <= props.capacity) return null;
+    return props.need >= props.capacity * 2 ? 'red' : 'yellow';
+  };
+  return (
+    <Show when={level()}>
+      {(l) => <div style={l() === 'red' ? WARNING_STYLE_RED : WARNING_STYLE_YELLOW}>Overloaded</div>}
+    </Show>
+  );
 }
 
-function InfraBuildingInfo(props: { sel: SelectedInfraBuilding }) {
+/** Shared header: icon + name + cost + utility status */
+function InfraHeader(props: { sel: SelectedInfraBuilding }) {
   const icon = () => INFRA_ICONS[props.sel.infraType] ?? '';
-  const details = () => Object.entries(props.sel.details);
-  const overload = () => getInfraOverloadWarning(props.sel);
-
   return (
     <>
       <div class="bp-title">{icon()} {props.sel.name}</div>
       <div class="bp-row">Cost <span>${props.sel.cost}</span></div>
-      <For each={details()}>
-        {([key, value]) => (
-          <div class="bp-row">{key} <span>{value}</span></div>
-        )}
+    </>
+  );
+}
+
+function InfraFooter(props: { sel: SelectedInfraBuilding }) {
+  return <UtilityStatus hasPower={props.sel.hasPower} hasWater={props.sel.hasWater} />;
+}
+
+/** Police / Fire / Hospital / Sewage: Need + Capacity + Radius */
+function NeedCapacityPanel(props: { sel: SelectedInfraBuilding }) {
+  const d = () => props.sel.details;
+  return (
+    <>
+      <InfraHeader sel={props.sel} />
+      <div class="bp-row">Need <span>{d().Need}</span></div>
+      <div class="bp-row">Capacity <span>{d().Capacity}</span></div>
+      <Show when={d().Radius}><div class="bp-row">Radius <span>{d().Radius}</span></div></Show>
+      <Show when={d()['Active Fires'] != null}><div class="bp-row">Active Fires <span>{d()['Active Fires']}</span></div></Show>
+      <InfraFooter sel={props.sel} />
+      <OverloadWarning need={d().Need as number ?? 0} capacity={d().Capacity as number ?? 0} />
+    </>
+  );
+}
+
+/** School: Type + Need + Capacity + Students + Radius */
+function SchoolPanel(props: { sel: SelectedInfraBuilding }) {
+  const d = () => props.sel.details;
+  return (
+    <>
+      <InfraHeader sel={props.sel} />
+      <div class="bp-row">Type <span>{d().Type}</span></div>
+      <div class="bp-row">Need <span>{d().Need}</span></div>
+      <div class="bp-row">Students <span>{d().Students}</span></div>
+      <div class="bp-row">Radius <span>{d().Radius}</span></div>
+      <InfraFooter sel={props.sel} />
+      <OverloadWarning need={d().Need as number ?? 0} capacity={d().Capacity as number ?? 0} />
+    </>
+  );
+}
+
+/** Garbage: Load + Produced/Burned per week + Overflow */
+function GarbagePanel(props: { sel: SelectedInfraBuilding }) {
+  const d = () => props.sel.details;
+  const hasOverflow = () => d().Overflow != null && (d().Overflow as number) > 0;
+  return (
+    <>
+      <InfraHeader sel={props.sel} />
+      <div class="bp-row">Load <span>{d().Load}</span></div>
+      <div class="bp-row">Produced/wk <span>{d()['Produced/wk']}</span></div>
+      <div class="bp-row">Burned/wk <span>{d()['Burned/wk']}</span></div>
+      <InfraFooter sel={props.sel} />
+      <Show when={hasOverflow()}>
+        <div style={WARNING_STYLE_RED}>{d().Overflow} garbage uncollected</div>
+      </Show>
+    </>
+  );
+}
+
+/** Cemetery: Bodies + Deaths/Cremated per week */
+function CemeteryPanel(props: { sel: SelectedInfraBuilding }) {
+  const d = () => props.sel.details;
+  return (
+    <>
+      <InfraHeader sel={props.sel} />
+      <div class="bp-row">Bodies <span>{d().Bodies}</span></div>
+      <div class="bp-row">Deaths/wk <span>{d()['Deaths/wk']}</span></div>
+      <div class="bp-row">Cremated/wk <span>{d()['Cremated/wk']}</span></div>
+      <InfraFooter sel={props.sel} />
+    </>
+  );
+}
+
+/** Power / Water: Output + Supply/Demand */
+function UtilityPlantPanel(props: { sel: SelectedInfraBuilding }) {
+  const d = () => props.sel.details;
+  return (
+    <>
+      <InfraHeader sel={props.sel} />
+      <For each={Object.entries(d())}>
+        {([key, value]) => <div class="bp-row">{key} <span>{value}</span></div>}
       </For>
-      <UtilityStatus hasPower={props.sel.hasPower} hasWater={props.sel.hasWater} />
-      <Show when={overload()}>
-        {(level) => <div style={level() === 'red' ? WARNING_STYLE_RED : WARNING_STYLE_YELLOW}>Overloaded</div>}
+      <InfraFooter sel={props.sel} />
+    </>
+  );
+}
+
+/** Park: Radius only */
+function ParkPanel(props: { sel: SelectedInfraBuilding }) {
+  const d = () => props.sel.details;
+  return (
+    <>
+      <InfraHeader sel={props.sel} />
+      <div class="bp-row">Radius <span>{d().Radius}</span></div>
+      <InfraFooter sel={props.sel} />
+    </>
+  );
+}
+
+/** Dispatch to per-type infra panel */
+function InfraBuildingInfo(props: { sel: SelectedInfraBuilding }) {
+  const type = () => props.sel.infraType;
+  return (
+    <>
+      <Show when={type() === 'police' || type() === 'fire' || type() === 'hospital' || type() === 'sewage'}>
+        <NeedCapacityPanel sel={props.sel} />
+      </Show>
+      <Show when={type() === 'school' || type() === 'school_high' || type() === 'school_univ'}>
+        <SchoolPanel sel={props.sel} />
+      </Show>
+      <Show when={type() === 'garbage'}>
+        <GarbagePanel sel={props.sel} />
+      </Show>
+      <Show when={type() === 'cemetery'}>
+        <CemeteryPanel sel={props.sel} />
+      </Show>
+      <Show when={type() === 'power' || type() === 'water'}>
+        <UtilityPlantPanel sel={props.sel} />
+      </Show>
+      <Show when={type() === 'park'}>
+        <ParkPanel sel={props.sel} />
+      </Show>
+      <Show when={type()?.startsWith('airport')}>
+        <UtilityPlantPanel sel={props.sel} />
       </Show>
     </>
   );

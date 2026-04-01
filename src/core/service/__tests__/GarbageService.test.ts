@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { GarbageService, GARBAGE } from '../GarbageService';
+import { GarbageService, GARBAGE, GARBAGE_PRODUCTION } from '../GarbageService';
 import { RoadType } from '../../road/types';
 import type { SizedGrid } from '../../grid/GridHelpers';
 
@@ -84,11 +84,11 @@ describe('GarbageService', () => {
     expect(gs.getCoverage(10, 10)).toBe(false);
   });
 
-  it('should produceGarbage based on population (1 per 100 pop)', () => {
+  it('should collect pre-calculated garbage amount', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 1000);
-    gs.tick(500);
-    // produced=5, but burn first (load=0 → no burn), then collect → load=5
+    gs.tick(5);
+    // load=0 → no burn, then collect 5 → load=5
     expect(gs.getCurrentLoad()).toBe(5);
   });
 
@@ -96,7 +96,7 @@ describe('GarbageService', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 10);
     for (let i = 0; i < 300; i++) {
-      gs.tick(1000);
+      gs.tick(50);
     }
     // Facility burns each tick so load stays manageable, but overflow accumulates
     expect(gs.getCurrentLoad()).toBeLessThanOrEqual(10);
@@ -105,14 +105,14 @@ describe('GarbageService', () => {
   it('should return overflow > 0 when garbage exceeds capacity', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 5);
-    gs.tick(5000);
+    gs.tick(50);
     expect(gs.getOverflow()).toBeGreaterThan(0);
   });
 
   it('should return pollutionPenalty > 0 when overflow exists', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 5);
-    gs.tick(5000);
+    gs.tick(50);
     expect(gs.getPollutionPenalty()).toBeGreaterThan(0);
   });
 
@@ -141,7 +141,7 @@ describe('GarbageService', () => {
   it('should emit base + overload from all cells when load > threshold', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 100);
-    gs.tick(10000); // load = 100 (full)
+    gs.tick(100); // load = 100 (full)
     const sources = gs.getPollutionSources();
     // 4 base + 4 overload = 8
     expect(sources.length).toBe(8);
@@ -152,7 +152,7 @@ describe('GarbageService', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 5);
     gs.addFacility(20, 20, 5);
-    gs.tick(5000); // overflow
+    gs.tick(50); // overflow
     const sources = gs.getPollutionSources();
     for (const s of sources) {
       expect(s.radius).toBe(GARBAGE.POLLUTION_RADIUS);
@@ -173,32 +173,32 @@ describe('GarbageService', () => {
     expect(gs.getTotalCapacity()).toBe(0);
   });
 
-  it('should handle tick(population) to auto-produce and collect', () => {
+  it('should handle tick(garbageProduced) to collect and burn', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 100);
-    gs.tick(200);
+    gs.tick(2);
     expect(gs.getCurrentLoad()).toBe(2);
-    gs.tick(300);
-    // After second tick: burn floor(2*0.05)=max(1,0)=1, load=1, then add 3 → 4
-    expect(gs.getCurrentLoad()).toBe(4);
+    gs.tick(3);
+    // After second tick: burn min(2, 80)=2, load=0, then add 3 → 3
+    expect(gs.getCurrentLoad()).toBe(3);
   });
 
   it('should burn garbage each tick (incineration)', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 500);
-    gs.tick(10000); // produce 100, collect into facility
+    gs.tick(100); // load=0 → no burn, then collect 100 → load=100
     const loadAfterProduce = gs.getCurrentLoad();
     expect(loadAfterProduce).toBe(100);
-    // Next tick: burn max(1, floor(100*0.05))=5, load=95, then produce 100 more → 195
-    gs.tick(10000);
-    expect(gs.getCurrentLoad()).toBe(195);
+    // Next tick: burn min(100, 80)=80, load=20, then add 100 → 120
+    gs.tick(100);
+    expect(gs.getCurrentLoad()).toBe(120);
   });
 
   it('should serialize and deserialize (toJSON / fromJSON)', () => {
     const gs = new GarbageService();
     gs.addFacility(5, 5, 1000);
     gs.addFacility(10, 10, 500);
-    gs.tick(300);
+    gs.tick(3);
 
     const json = gs.toJSON();
     const restored = GarbageService.fromJSON(json);
@@ -271,12 +271,15 @@ describe('GARBAGE constants', () => {
     expect(GARBAGE.SERVICE_BUDGET).toBeGreaterThan(0);
   });
 
-  it('burn rate should be between 0 and 1', () => {
-    expect(GARBAGE.BURN_RATE).toBeGreaterThan(0);
-    expect(GARBAGE.BURN_RATE).toBeLessThan(1);
+  it('burn rate should be a positive fixed amount', () => {
+    expect(GARBAGE.BURN_RATE).toBe(80);
   });
 
-  it('garbage per pop should be positive', () => {
-    expect(GARBAGE.GARBAGE_PER_POP).toBeGreaterThan(0);
+  it('GARBAGE_PRODUCTION has per-zone rates', () => {
+    expect(GARBAGE_PRODUCTION.RESIDENTIAL.base).toBeGreaterThan(0);
+    expect(GARBAGE_PRODUCTION.RESIDENTIAL.perCapita).toBeGreaterThan(0);
+    expect(GARBAGE_PRODUCTION.COMMERCIAL.base).toBeGreaterThan(0);
+    expect(GARBAGE_PRODUCTION.INDUSTRIAL.base).toBeGreaterThan(0);
+    expect(GARBAGE_PRODUCTION.OFFICE.base).toBeGreaterThan(0);
   });
 });
