@@ -43,17 +43,16 @@ describe('ServiceRegistry', () => {
       expect(() => tickAllCivicServices(state)).not.toThrow();
     });
 
-    it('passes population to garbage and sewage amount to sewage', () => {
+    it('passes calculated garbage amount and sewage amount', () => {
       const state = createGameState(10, 10);
-      state.citizens.createCitizen({ age: 30 });
-      state.citizens.createCitizen({ age: 25 });
       const garbageSpy = vi.spyOn(state.garbage, 'tick');
       const sewageSpy = vi.spyOn(state.sewage, 'tick');
 
       tickAllCivicServices(state);
 
-      expect(garbageSpy).toHaveBeenCalledWith(2); // population = 2
-      expect(sewageSpy).toHaveBeenCalledWith(expect.any(Number)); // sewage from water demand
+      // With no zone buildings on the grid, garbage and sewage produced are 0
+      expect(garbageSpy).toHaveBeenCalledWith(0);
+      expect(sewageSpy).toHaveBeenCalledWith(expect.any(Number));
     });
 
     it('ticks police, fire, health, education, parks, deathCare without args', () => {

@@ -11,16 +11,22 @@ export interface GarbageFacility {
   currentLoad: number;
 }
 
+/** Per-zone garbage production rates: base per building + perCapita per resident/worker */
+export const GARBAGE_PRODUCTION = {
+  RESIDENTIAL: { base: 0.05, perCapita: 0.005 },
+  COMMERCIAL:  { base: 0.1,  perCapita: 0.005 },
+  INDUSTRIAL:  { base: 0.2,  perCapita: 0.01  },
+  OFFICE:      { base: 0.02, perCapita: 0.002 },
+} as const;
+
 /** Garbage service configuration constants */
 export const GARBAGE = {
   /** Road-distance coverage budget for garbage collection trucks */
   SERVICE_BUDGET: ROAD_COVERAGE.GARBAGE_BUDGET,
   /** Default capacity per facility */
   DEFAULT_CAPACITY: 1000,
-  /** Fraction of current load burned (incinerated) each tick */
-  BURN_RATE: 0.05,
-  /** Garbage production: 1 unit per GARBAGE_PER_POP population */
-  GARBAGE_PER_POP: 100,
+  /** Fixed burn rate: units incinerated per tick per facility */
+  BURN_RATE: 80,
   /** Maintenance cost per garbage facility per tick */
   MAINTENANCE_PER_FACILITY: 3,
   /** Max pollution penalty from garbage overflow */
@@ -74,23 +80,21 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     }
   }
 
-  tick(population: number): void {
-    // 1. Produce garbage based on population
-    const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);
-    this.todayProduced += produced;
+  tick(garbageProduced: number): void {
+    this.todayProduced += garbageProduced;
 
-    // 2. Burn (incinerate) a fraction of current load at connected + operational facilities only
+    // 1. Burn (incinerate) fixed amount per tick at connected + operational facilities
     for (const f of this.facilities) {
       if (!this.connectedFacilityIds.has(f.id) || !this.isFacilityOperationalById(f.id)) continue;
       if (f.currentLoad > 0) {
-        const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.BURN_RATE));
-        f.currentLoad = Math.max(0, f.currentLoad - burned);
+        const burned = Math.min(f.currentLoad, GARBAGE.BURN_RATE);
+        f.currentLoad -= burned;
         this.todayBurned += burned;
       }
     }
 
-    // 3. Distribute new garbage across connected + operational facilities with remaining capacity
-    let remaining = produced + this.overflow;
+    // 2. Distribute new garbage across connected + operational facilities with remaining capacity
+    let remaining = garbageProduced + this.overflow;
     this.overflow = 0;
 
     for (const f of this.facilities) {
