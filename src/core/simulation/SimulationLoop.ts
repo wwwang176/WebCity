@@ -651,7 +651,7 @@ export class SimulationLoop {
           }
           if (this.state.fire.getCoverage(pos.x, pos.y)) {
             const cell = this.state.grid.getCell(pos.x, pos.y);
-            const cap = Math.max(1, getBuildingType(cell?.buildingId ?? 0)?.capacity ?? 1);
+            const cap = Math.max(1, getBuildingType(cell?.buildingId ?? 0)?.residents ?? 1);
             const occ = (homePop.get(c.homeId) ?? 0) / cap;
             fireDemands.push({ x: pos.x, y: pos.y, weight: BD * (1 + occ) });
           }
