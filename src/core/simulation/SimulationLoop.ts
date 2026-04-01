@@ -1259,6 +1259,60 @@ export class SimulationLoop {
     }
   }
 
+  /** Pre-compute commute paths and spawn initial vehicles on load.
+   *  Call after lane graph, road coverage, and power/water are ready.
+   *  @param spawnRatio fraction of commuters to place on roads (0-1) */
+  warmup(spawnRatio = 0.2): { pathsComputed: number; vehiclesSpawned: number } {
+    this.ensureLaneGraph();
+    if (!this._roadLookup) return { pathsComputed: 0, vehiclesSpawned: 0 };
+
+    const citizens = this.state.citizens.getCitizens();
+    let pathsComputed = 0;
+    let vehiclesSpawned = 0;
+
+    for (const c of citizens) {
+      if (!c.homeId || !c.workplaceId) continue;
+      const home = parsePosKey(c.homeId);
+      const work = parsePosKey(c.workplaceId);
+      if (!home || !work) continue;
+
+      // Compute path variants and cache
+      const routeKey = `${c.homeId}->${c.workplaceId}`;
+      let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
+      if (!variants) {
+        variants = findLanePathVariants(this.laneGraph, this._roadLookup, home, work);
+        if (variants.length > 0) {
+          this.commuteCache.setRouteVariants(routeKey, variants);
+        }
+      }
+
+      if (!variants || variants.length === 0) continue;
+
+      const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
+      if (edgePath.length === 0) continue;
+
+      // Cache the route for this citizen
+      this.commuteCache.set(c.id, {
+        citizenId: c.id,
+        homeId: c.homeId,
+        workplaceId: c.workplaceId,
+        morningPath: edgePath,
+        eveningPath: null,
+        status: 'ready',
+        generation: this.commuteCache.roadGeneration,
+      });
+      pathsComputed++;
+
+      // Spawn vehicle for a fraction of commuters
+      if (Math.random() < spawnRatio) {
+        this.state.traffic.addVehicleOnEdges(edgePath, c.id);
+        vehiclesSpawned++;
+      }
+    }
+
+    return { pathsComputed, vehiclesSpawned };
+  }
+
 
   /** Immediately remove service vehicles of a given type (e.g. when facility demolished). */
   removeServiceVehicles(serviceType: ServiceVehicleType): void {

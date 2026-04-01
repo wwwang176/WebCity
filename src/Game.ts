@@ -535,6 +535,8 @@ export class Game {
       this.state.power.calculateCoverage(this.state.grid);
       this.state.water.calculateDemand(this.state.grid);
       this.state.water.calculateCoverage(this.state.grid);
+      // Pre-compute commute paths and spawn initial vehicles
+      this.simLoop.warmup();
     }
 
     // Generate terrain only for new games
