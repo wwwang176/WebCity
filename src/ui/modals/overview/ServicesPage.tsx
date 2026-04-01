@@ -19,6 +19,11 @@ function statusOf(ratio: number): { label: string; color: string } {
   return { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
 }
 
+function loadDetail(label: string, load: number, cap: number, suffix = ''): string {
+  const pct = cap > 0 ? Math.round((load / cap) * 100) : 0;
+  return `${label} ${load} / ${cap} (${pct}%)${suffix}`;
+}
+
 function coverageColor(pct: number): string {
   if (pct >= 80) return UI_COLORS.STATUS_GOOD;
   if (pct >= 50) return UI_COLORS.STATUS_WARN;
@@ -56,7 +61,7 @@ export function ServicesPage() {
     for (const s of state.police.getStations()) {
       const load = state.police.getStationLoad(s.id);
       const st = statusOf(s.capacity > 0 ? load / s.capacity : 0);
-      safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: `Load ${load} / ${s.capacity}`, status: st.label, statusColor: st.color });
+      safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: loadDetail('Load', load, s.capacity), status: st.label, statusColor: st.color });
     }
     if (safetyItems.length === 0) {
       safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: 'No station', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
@@ -64,7 +69,7 @@ export function ServicesPage() {
     for (const s of state.fire.getStations()) {
       const load = state.fire.getStationLoad(s.id);
       const st = statusOf(s.capacity > 0 ? load / s.capacity : 0);
-      safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: `Load ${load} / ${s.capacity}`, status: st.label, statusColor: st.color });
+      safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: loadDetail('Load', load, s.capacity), status: st.label, statusColor: st.color });
     }
     if (!state.fire.getStations().length) {
       safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: 'No station', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
@@ -76,7 +81,7 @@ export function ServicesPage() {
     for (const h of state.health.getHospitals()) {
       const load = state.health.getHospitalLoad(h.id);
       const st = statusOf(h.capacity > 0 ? load / h.capacity : 0);
-      healthItems.push({ icon: '\uD83C\uDFE5', name: 'Hospital', coverage: r.healthRatio, detail: `Load ${load} / ${h.capacity}`, status: st.label, statusColor: st.color });
+      healthItems.push({ icon: '\uD83C\uDFE5', name: 'Hospital', coverage: r.healthRatio, detail: loadDetail('Load', load, h.capacity), status: st.label, statusColor: st.color });
     }
     if (healthItems.length === 0) {
       healthItems.push({ icon: '\uD83C\uDFE5', name: 'Hospital', coverage: r.healthRatio, detail: 'No hospital', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
@@ -89,9 +94,9 @@ export function ServicesPage() {
     for (const s of state.education.getSchools()) {
       const enrolled = state.education.getSchoolEnrollment(s.id);
       const demand = state.education.getSchoolDemand(s.id);
-      const needStr = demand > s.capacity ? ` (Need ${demand})` : '';
+      const needSuffix = demand > s.capacity ? ` Need ${demand}` : '';
       const st = demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN } : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
-      eduItems.push({ icon: '\uD83C\uDFEB', name: schoolLabels[s.type] ?? s.type, coverage: r.educationRatio, detail: `Students ${enrolled} / ${s.capacity}${needStr}`, status: st.label, statusColor: st.color });
+      eduItems.push({ icon: '\uD83C\uDFEB', name: schoolLabels[s.type] ?? s.type, coverage: r.educationRatio, detail: loadDetail('Students', enrolled, s.capacity, needSuffix), status: st.label, statusColor: st.color });
     }
     if (eduItems.length === 0) {
       eduItems.push({ icon: '\uD83C\uDFEB', name: 'Education', coverage: r.educationRatio, detail: 'No schools', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
@@ -105,19 +110,19 @@ export function ServicesPage() {
     const garbageOverflow = state.garbage.getOverflow();
     const gRatio = garbageCap > 0 ? (garbageLoad + garbageOverflow) / garbageCap : (garbageOverflow > 0 ? Infinity : 0);
     const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(gRatio);
-    wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: r.garbageRatio, detail: `Landfill ${Math.round(garbageLoad)} / ${garbageCap}`, status: gSt.label, statusColor: gSt.color });
+    wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: r.garbageRatio, detail: loadDetail('Landfill', Math.round(garbageLoad), garbageCap), status: gSt.label, statusColor: gSt.color });
 
     const sewageUntreated = state.sewage.getUntreated();
     const sewageCap = state.sewage.getTreatmentCapacity();
     const sSt = sewageUntreated > 0 ? { label: `Untreated ${Math.round(sewageUntreated)}`, color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
-    wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: `Treated ${Math.round(sewageCap - sewageUntreated)} / ${sewageCap}`, status: sSt.label, statusColor: sSt.color });
+    wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: loadDetail('Treated', Math.round(sewageCap - sewageUntreated), sewageCap), status: sSt.label, statusColor: sSt.color });
 
     const cemeteries = state.deathCare.getCemeteries();
     let cemUsed = 0, cemCap = 0;
     for (const c of cemeteries) { cemUsed += c.used; cemCap += c.capacity; }
     const unprocessed = state.deathCare.getUnprocessed();
     const dSt = unprocessed > 0 ? { label: `Unprocessed ${unprocessed}`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemUsed / cemCap : 0);
-    wasteItems.push({ icon: '\u26B0', name: 'Death Care', coverage: r.deathCareRatio, detail: `Cemetery ${cemUsed} / ${cemCap}`, status: dSt.label, statusColor: dSt.color });
+    wasteItems.push({ icon: '\u26B0', name: 'Death Care', coverage: r.deathCareRatio, detail: loadDetail('Cemetery', cemUsed, cemCap), status: dSt.label, statusColor: dSt.color });
 
     entries.push({ group: 'Waste & Burial', items: wasteItems });
 
