@@ -17,6 +17,8 @@ export interface Cemetery {
   recentIndex: number;
   /** Cremations accumulated today (before advanceDay flush) */
   todayCremated: number;
+  /** Per-cemetery pending deaths awaiting processing */
+  pending: number;
 }
 
 interface DeathCareJSON {
@@ -37,11 +39,12 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
   protected readonly idPrefix = 'cem-';
   protected readonly maintenanceCostPerFacility = DEATH_CARE.MAINTENANCE_PER_FACILITY;
 
-  private pendingDeaths = 0;
+  /** Deaths that occurred outside any cemetery coverage */
+  private unassignedDeaths = 0;
 
   addCemetery(x: number, y: number, capacity = DEATH_CARE.DEFAULT_CAPACITY, processRate = DEATH_CARE.DEFAULT_PROCESS_RATE): string {
     const id = this.generateId();
-    this.pushFacility({ id, x, y, capacity, used: 0, processRate, recentDaily: new Array(30).fill(0), recentIndex: 0, todayCremated: 0 });
+    this.pushFacility({ id, x, y, capacity, used: 0, processRate, recentDaily: new Array(30).fill(0), recentIndex: 0, todayCremated: 0, pending: 0 });
     return id;
   }
 
@@ -49,12 +52,31 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     return this.removeFacilityById(id);
   }
 
-  reportDeath(): void {
-    this.pendingDeaths++;
+  /** Report a death at a specific location. Assigns to nearest covering cemetery. */
+  reportDeath(x: number, y: number): void {
+    if (!this.getCoverage(x, y)) {
+      this.unassignedDeaths++;
+      return;
+    }
+    // Find nearest cemetery by Euclidean distance
+    let nearestCem: Cemetery | null = null;
+    let nearestDist = Infinity;
+    for (const cem of this.facilities) {
+      const dx = x - cem.x;
+      const dy = y - cem.y;
+      const dist = dx * dx + dy * dy;
+      if (dist < nearestDist) { nearestDist = dist; nearestCem = cem; }
+    }
+    if (nearestCem) {
+      nearestCem.pending++;
+    } else {
+      this.unassignedDeaths++;
+    }
   }
 
   tick(): void {
-    if (this.pendingDeaths <= 0 && this.facilities.every(c => c.used === 0)) return;
+    const totalPending = this.unassignedDeaths + this.facilities.reduce((s, c) => s + c.pending, 0);
+    if (totalPending <= 0 && this.facilities.every(c => c.used === 0)) return;
 
     for (const cem of this.facilities) {
       // Skip facilities not connected to road or not operational (no power/water)
@@ -62,10 +84,10 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
 
       let budget = cem.processRate;
 
-      // Phase 1: Cremate pending deaths directly
-      if (this.pendingDeaths > 0 && budget > 0) {
-        const cremated = Math.min(this.pendingDeaths, budget);
-        this.pendingDeaths -= cremated;
+      // Phase 1: Cremate this cemetery's pending deaths directly
+      if (cem.pending > 0 && budget > 0) {
+        const cremated = Math.min(cem.pending, budget);
+        cem.pending -= cremated;
         budget -= cremated;
         cem.todayCremated += cremated;
       }
@@ -78,12 +100,12 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
       }
 
       // Phase 3: Store remaining pending deaths
-      if (this.pendingDeaths > 0) {
+      if (cem.pending > 0) {
         const available = cem.capacity - cem.used;
         if (available > 0) {
-          const accepted = Math.min(this.pendingDeaths, available);
+          const accepted = Math.min(cem.pending, available);
           cem.used += accepted;
-          this.pendingDeaths -= accepted;
+          cem.pending -= accepted;
         }
       }
     }
@@ -98,12 +120,13 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     }
   }
 
+  /** Total unprocessed deaths (per-cemetery pending + unassigned). */
   getUnprocessed(): number {
-    return this.pendingDeaths;
+    return this.unassignedDeaths + this.facilities.reduce((s, c) => s + c.pending, 0);
   }
 
   getHappinessPenalty(): number {
-    return this.pendingDeaths > 0 ? -20 : 0;
+    return this.getUnprocessed() > 0 ? -20 : 0;
   }
 
   getCemeteries(): readonly Cemetery[] {
@@ -113,7 +136,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
   toJSON(): DeathCareJSON {
     return {
       cemeteries: this.facilities.map(c => ({ ...c })),
-      pendingDeaths: this.pendingDeaths,
+      pendingDeaths: this.unassignedDeaths,
     };
   }
 
@@ -124,8 +147,9 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
       recentDaily: c.recentDaily ?? new Array(30).fill(0),
       recentIndex: c.recentIndex ?? 0,
       todayCremated: c.todayCremated ?? 0,
+      pending: (c as any).pending ?? 0,
     }));
-    service.pendingDeaths = json.pendingDeaths;
+    service.unassignedDeaths = json.pendingDeaths;
     service.restoreNextId();
     return service;
   }

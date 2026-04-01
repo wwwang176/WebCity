@@ -121,9 +121,10 @@ describe('Facility Operational Integration', () => {
   describe('DeathCareService', () => {
     it('does not process deaths at non-operational cemetery', () => {
       const state = setupState();
+      vi.spyOn(state.deathCare, 'getCoverage').mockReturnValue(true);
       state.deathCare.addCemetery(0, 0);
-      state.deathCare.reportDeath();
-      state.deathCare.reportDeath();
+      state.deathCare.reportDeath(0, 0);
+      state.deathCare.reportDeath(0, 0);
       stubUtilities(state, false, false);
       tickAllCivicServices(state);
       // Deaths should remain unprocessed
@@ -132,9 +133,10 @@ describe('Facility Operational Integration', () => {
 
     it('processes deaths at operational cemetery', () => {
       const state = setupState();
+      vi.spyOn(state.deathCare, 'getCoverage').mockReturnValue(true);
       state.deathCare.addCemetery(0, 0);
-      state.deathCare.reportDeath();
-      state.deathCare.reportDeath();
+      state.deathCare.reportDeath(0, 0);
+      state.deathCare.reportDeath(0, 0);
       stubUtilities(state, true, true);
       tickAllCivicServices(state);
       expect(state.deathCare.getUnprocessed()).toBe(0);

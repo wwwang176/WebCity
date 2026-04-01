@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { GameClock, TIME_PERIOD, SPEED_INTERVALS, TimeOfDay } from '../GameClock';
 import { createGameState, DEFAULT_GRID_SIZE, INITIAL_RCI_DEMAND, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
@@ -495,6 +495,7 @@ describe('DeathCare integration', () => {
 
   it('deathTick should kill citizens over MAX_AGE and report to DeathCare', () => {
     const state = createGameState(10, 10);
+    vi.spyOn(state.deathCare, 'getCoverage').mockReturnValue(true);
     state.deathCare.addCemetery(5, 5);
     // Create citizens already over MAX_AGE (280) → guaranteed death in deathTick
     for (let i = 0; i < 3; i++) {
@@ -506,7 +507,7 @@ describe('DeathCare integration', () => {
     expect(state.citizens.getPopulation()).toBe(0);
 
     // Report deaths to deathCare
-    for (let i = 0; i < deadIds.length; i++) state.deathCare.reportDeath();
+    for (const d of deadIds) state.deathCare.reportDeath(0, 0);
     // Run deathCare ticks to process cremation
     for (let i = 0; i < 100; i++) state.deathCare.tick();
     expect(state.deathCare.getUnprocessed()).toBe(0);

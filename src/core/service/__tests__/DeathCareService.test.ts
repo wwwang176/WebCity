@@ -1,5 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { DeathCareService, DEATH_CARE } from '../DeathCareService';
+
+/** Create a DeathCareService with getCoverage stubbed to always return true.
+ *  This lets reportDeath(x,y) assign deaths to per-cemetery pending queues
+ *  without needing a full road-coverage grid. */
+function createDCWithCoverage(): DeathCareService {
+  const dc = new DeathCareService();
+  vi.spyOn(dc, 'getCoverage').mockReturnValue(true);
+  return dc;
+}
 
 describe('DeathCareService', () => {
   it('should create instance with no facilities', () => {
@@ -31,17 +40,17 @@ describe('DeathCareService', () => {
 
   it('should register deaths via reportDeath()', () => {
     const dc = new DeathCareService();
-    dc.reportDeath();
-    dc.reportDeath();
-    dc.reportDeath();
+    dc.reportDeath(0, 0);
+    dc.reportDeath(0, 0);
+    dc.reportDeath(0, 0);
     expect(dc.getUnprocessed()).toBe(3);
   });
 
   // Cemetery tick: first cremate (processRate), then store remainder in used slots
   it('should cremate deaths first up to processRate per tick', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 3);
-    for (let i = 0; i < 8; i++) dc.reportDeath();
+    for (let i = 0; i < 8; i++) dc.reportDeath(0, 0);
 
     dc.tick(); // cremate 3, store remaining 5 in cemetery
     expect(dc.getUnprocessed()).toBe(0);
@@ -49,9 +58,9 @@ describe('DeathCareService', () => {
   });
 
   it('should cremate stored bodies over time (used decreases)', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 3);
-    for (let i = 0; i < 8; i++) dc.reportDeath();
+    for (let i = 0; i < 8; i++) dc.reportDeath(0, 0);
 
     dc.tick(); // cremate 3 from pending, store 5
     expect(dc.getCemeteries()[0]!.used).toBe(5);
@@ -64,9 +73,9 @@ describe('DeathCareService', () => {
   });
 
   it('should overflow when cemetery storage is full', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 3, 1); // capacity 3, processRate 1
-    for (let i = 0; i < 6; i++) dc.reportDeath();
+    for (let i = 0; i < 6; i++) dc.reportDeath(0, 0);
 
     dc.tick(); // cremate 1 from pending, store 3 (full), 2 remain unprocessed
     expect(dc.getCemeteries()[0]!.used).toBe(3);
@@ -74,9 +83,9 @@ describe('DeathCareService', () => {
   });
 
   it('should process across multiple ticks correctly', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 3);
-    for (let i = 0; i < 10; i++) dc.reportDeath();
+    for (let i = 0; i < 10; i++) dc.reportDeath(0, 0);
 
     dc.tick(); // cremate 3, store 7
     expect(dc.getUnprocessed()).toBe(0);
@@ -93,13 +102,16 @@ describe('DeathCareService', () => {
   });
 
   it('should handle multiple cemeteries', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 5, 2);
     dc.addCemetery(1, 1, 5, 3);
 
-    for (let i = 0; i < 20; i++) dc.reportDeath();
+    // Distribute deaths to both cemeteries by reporting near each
+    for (let i = 0; i < 10; i++) dc.reportDeath(0, 0);
+    for (let i = 0; i < 10; i++) dc.reportDeath(1, 1);
 
-    // cremate 2+3=5 from pending, store up to 5+5=10, 5 remain unprocessed
+    // cem0: cremate 2 from pending(10), store 5 (full), 3 remain pending
+    // cem1: cremate 3 from pending(10), store 5 (full), 2 remain pending
     dc.tick();
     expect(dc.getUnprocessed()).toBe(5);
     const cems = dc.getCemeteries();
@@ -110,14 +122,14 @@ describe('DeathCareService', () => {
     const dc = new DeathCareService();
     expect(dc.getHappinessPenalty()).toBe(0);
 
-    dc.reportDeath();
+    dc.reportDeath(0, 0);
     expect(dc.getHappinessPenalty()).toBe(-20);
   });
 
   it('should return 0 penalty when all deaths are processed', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 10);
-    dc.reportDeath();
+    dc.reportDeath(0, 0);
     dc.tick();
     expect(dc.getHappinessPenalty()).toBe(0);
   });
@@ -137,11 +149,11 @@ describe('DeathCareService', () => {
   });
 
   it('should serialize to JSON and deserialize back including ring buffer', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(1, 2, 300, 7);
-    dc.reportDeath();
-    dc.reportDeath();
-    dc.reportDeath();
+    dc.reportDeath(0, 0);
+    dc.reportDeath(0, 0);
+    dc.reportDeath(0, 0);
     dc.tick();
     dc.advanceDay();
 
@@ -186,9 +198,9 @@ describe('DeathCareService', () => {
   });
 
   it('should track todayCremated during tick', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 3);
-    for (let i = 0; i < 5; i++) dc.reportDeath();
+    for (let i = 0; i < 5; i++) dc.reportDeath(0, 0);
 
     dc.tick(); // cremate 3 from pending, store 2
     expect(dc.getCemeteries()[0]!.todayCremated).toBe(3);
@@ -198,9 +210,9 @@ describe('DeathCareService', () => {
   });
 
   it('advanceDay should rotate ring buffer and reset todayCremated', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 5);
-    for (let i = 0; i < 3; i++) dc.reportDeath();
+    for (let i = 0; i < 3; i++) dc.reportDeath(0, 0);
     dc.tick(); // cremate 3, todayCremated=3
 
     dc.advanceDay(); // flush to ring buffer
@@ -210,13 +222,13 @@ describe('DeathCareService', () => {
   });
 
   it('getRecentMonthly should sum last 30 days of cremations', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 10);
 
     // Simulate 5 days with 2 cremations each
     for (let day = 0; day < 5; day++) {
-      dc.reportDeath();
-      dc.reportDeath();
+      dc.reportDeath(0, 0);
+      dc.reportDeath(0, 0);
       dc.tick();
       dc.advanceDay();
     }
@@ -227,12 +239,12 @@ describe('DeathCareService', () => {
   });
 
   it('ring buffer should roll over after 30 days', () => {
-    const dc = new DeathCareService();
+    const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 10);
 
     // Fill 30 days with 1 cremation each
     for (let day = 0; day < 30; day++) {
-      dc.reportDeath();
+      dc.reportDeath(0, 0);
       dc.tick();
       dc.advanceDay();
     }
@@ -240,7 +252,7 @@ describe('DeathCareService', () => {
     expect(cem.recentDaily.reduce((a, b) => a + b, 0)).toBe(30);
 
     // Day 31: 1 more cremation — oldest day (day 0) gets overwritten
-    dc.reportDeath();
+    dc.reportDeath(0, 0);
     dc.tick();
     dc.advanceDay();
     expect(cem.recentDaily.reduce((a, b) => a + b, 0)).toBe(30); // still 30, not 31

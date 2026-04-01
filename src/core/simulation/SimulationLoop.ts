@@ -310,9 +310,13 @@ export class SimulationLoop {
           return { hospitalMult: 1.0, pollutionMult: uncoveredPollutionMultiplier(cell?.pollution ?? 0) };
         }
       );
-      for (const id of deadIds) {
-        this.commuteCache.remove(id);
-        this.state.deathCare.reportDeath();
+      for (const d of deadIds) {
+        this.commuteCache.remove(d.id);
+        if (d.homeId) {
+          const pos = parsePosKey(d.homeId);
+          if (pos) { this.state.deathCare.reportDeath(pos.x, pos.y); continue; }
+        }
+        this.state.deathCare.reportDeath(0, 0);
       }
     }
 
