@@ -249,7 +249,7 @@ export function TrafficPage() {
                   <td class="td-label">{row.label}</td>
                   <td class="td-value" style="text-align:right">{row.rides}</td>
                   <td class="td-value" style="text-align:right">{row.count}</td>
-                  <td class="td-value" style={`text-align:right;color:${row.dailyUse > 0 ? UI_COLORS.STATUS_GOOD : '#667a90'}`}>{Math.round(row.dailyUse * 7)}</td>
+                  <td class="td-value" style={`text-align:right;color:${row.weeklyUse > 0 ? UI_COLORS.STATUS_GOOD : '#667a90'}`}>{row.weeklyUse}</td>
                   <td class="td-value" style="text-align:right">{row.avgTime.toFixed(1)}</td>
                 </tr>
               )}

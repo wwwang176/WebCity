@@ -114,9 +114,10 @@ export class SimulationLoop {
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
   private flatRoutes: FlatRoute[] = [];
-  /** Daily transfer usage count per route label (e.g. "🚌→🚇"). Reset on day rollover. */
-  private transferDailyCounts = new Map<string, number>();
-  private transferSmoothed = new Map<string, number>();
+  /** Rolling 7-day ring buffer of transfer usage per route label. */
+  private transferHistory: Map<string, number>[] = Array.from({ length: 7 }, () => new Map());
+  private transferHistoryIndex = 0;
+  private transferToday = new Map<string, number>();
   private lastTransferDay = -1;
 
   /** Reusable Set for infrastructure positions (power/water plants). */
@@ -1568,22 +1569,14 @@ export class SimulationLoop {
     }
     if (eligible.length === 0) return;
 
-    // Daily rollover for transfer usage counts (EMA smoothing)
+    // Daily rollover for transfer usage counts (7-day ring buffer)
     const day = this.state.clock.getDay();
     if (day !== this.lastTransferDay) {
       this.lastTransferDay = day;
-      const alpha = 0.3;
-      for (const [label, count] of this.transferDailyCounts) {
-        const prev = this.transferSmoothed.get(label) ?? 0;
-        this.transferSmoothed.set(label, prev * (1 - alpha) + count * alpha);
-      }
-      // Decay labels not seen today
-      for (const [label, val] of this.transferSmoothed) {
-        if (!this.transferDailyCounts.has(label)) {
-          this.transferSmoothed.set(label, val * (1 - alpha));
-        }
-      }
-      this.transferDailyCounts.clear();
+      // Flush today's counts into ring buffer, overwriting the oldest day
+      this.transferHistory[this.transferHistoryIndex] = new Map(this.transferToday);
+      this.transferHistoryIndex = (this.transferHistoryIndex + 1) % 7;
+      this.transferToday.clear();
     }
 
     // Rebuild transfer graph when transit network has changed
@@ -1695,7 +1688,7 @@ export class SimulationLoop {
               const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
               return icons[l.transitType ?? ''] ?? '?';
             }).join('\u2192');
-            this.transferDailyCounts.set(label, (this.transferDailyCounts.get(label) ?? 0) + 1);
+            this.transferToday.set(label, (this.transferToday.get(label) ?? 0) + 1);
           }
         } else {
           const transitSystem = getSystemForMode(this.state, mode);
@@ -2139,13 +2132,24 @@ export class SimulationLoop {
       else groups.set(label, { count: 1, totalTime: route.totalTime });
     });
 
-    const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number; dailyUse: number }> = [];
+    // Sum 7-day ring buffer + today for weekly totals
+    const weeklyTotals = new Map<string, number>();
+    for (const dayMap of this.transferHistory) {
+      for (const [label, count] of dayMap) {
+        weeklyTotals.set(label, (weeklyTotals.get(label) ?? 0) + count);
+      }
+    }
+    for (const [label, count] of this.transferToday) {
+      weeklyTotals.set(label, (weeklyTotals.get(label) ?? 0) + count);
+    }
+
+    const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number; weeklyUse: number }> = [];
     groups.forEach((g, label) => {
       const rides = (label.match(/\u2192/g) || []).length + 1;
-      const dailyUse = this.transferSmoothed.get(label) ?? 0;
-      routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count, dailyUse });
+      const weeklyUse = weeklyTotals.get(label) ?? 0;
+      routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count, weeklyUse });
     });
-    routeBreakdown.sort((a, b) => a.rides - b.rides || b.dailyUse - a.dailyUse);
+    routeBreakdown.sort((a, b) => a.rides - b.rides || b.weeklyUse - a.weeklyUse);
 
     return {
       activeTransferPeds,
