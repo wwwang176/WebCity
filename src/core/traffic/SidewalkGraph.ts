@@ -333,6 +333,10 @@ export class SidewalkGraph {
     // Type 3: Crosswalk edges (at intersections with ≥3 connections)
     this.generateCrosswalkEdges(grid, x, y, cellKey, cell);
 
+    // Type 4: Intersection bridge edges (connect boundary nodes of neighbors
+    // through intersection cells that have no nodes of their own)
+    this.generateIntersectionBridgeEdges(grid, x, y, cell);
+
     // Type 5: Level crossing edges
     if (cell.railType && cell.railType !== 0) {
       this.generateLevelCrossingEdges(grid, x, y, cellKey, cell);
@@ -409,6 +413,62 @@ export class SidewalkGraph {
         this.addBidirectionalEdge(fromNode, toNode, 'crosswalk');
       }
     }
+  }
+
+  /**
+   * At intersection cells with 3+ connections, the cell itself may have
+   * few or zero sidewalk nodes. Bridge boundary nodes of neighbor cells
+   * so pedestrians can cross through the intersection in all directions.
+   *
+   * Creates two types of crosswalk bridges:
+   * 1. Straight-through (N↔S, E↔W): parallel pairs of boundary nodes
+   * 2. Corner turns (N↔E, N↔W, S↔E, S↔W): diagonal through intersection
+   */
+  private generateIntersectionBridgeEdges(
+    grid: GridLookup, x: number, y: number,
+    cell: { roadType: number; roadFlags: number },
+  ): void {
+    const dirCount = countRoadDirections(cell.roadFlags);
+    if (dirCount < 3) return;
+
+    const flags = cell.roadFlags;
+
+    // Helper: resolve a boundary node from a neighbor cell
+    const getNode = (dx: number, dy: number, suffix: string) => {
+      const n = grid.getCell(x + dx, y + dy);
+      if (!n || n.roadType === RoadType.NONE) return undefined;
+      return this.nodes.get(`${toPosKey(x + dx, y + dy)}:${suffix}`);
+    };
+
+    // Straight-through bridges (opposite directions)
+    // N↔S: connect north neighbor's south-facing nodes to south neighbor's north-facing nodes
+    if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.SOUTH)) {
+      this.bridgePair(getNode(0, -1, 'WS'), getNode(0, 1, 'WN'));
+      this.bridgePair(getNode(0, -1, 'ES'), getNode(0, 1, 'EN'));
+    }
+    // E↔W
+    if ((flags & RoadDirection.EAST) && (flags & RoadDirection.WEST)) {
+      this.bridgePair(getNode(-1, 0, 'NE'), getNode(1, 0, 'NW'));
+      this.bridgePair(getNode(-1, 0, 'SE'), getNode(1, 0, 'SW'));
+    }
+
+    // Corner bridges (perpendicular directions)
+    // NW corner: N neighbor's WS ↔ W neighbor's NE
+    if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.WEST))
+      this.bridgePair(getNode(0, -1, 'WS'), getNode(-1, 0, 'NE'));
+    // NE corner: N neighbor's ES ↔ E neighbor's NW
+    if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.EAST))
+      this.bridgePair(getNode(0, -1, 'ES'), getNode(1, 0, 'NW'));
+    // SW corner: S neighbor's WN ↔ W neighbor's SE
+    if ((flags & RoadDirection.SOUTH) && (flags & RoadDirection.WEST))
+      this.bridgePair(getNode(0, 1, 'WN'), getNode(-1, 0, 'SE'));
+    // SE corner: S neighbor's EN ↔ E neighbor's SW
+    if ((flags & RoadDirection.SOUTH) && (flags & RoadDirection.EAST))
+      this.bridgePair(getNode(0, 1, 'EN'), getNode(1, 0, 'SW'));
+  }
+
+  private bridgePair(a: SidewalkNode | undefined, b: SidewalkNode | undefined): void {
+    if (a && b) this.addBidirectionalEdge(a, b, 'crosswalk');
   }
 
   private generateLevelCrossingEdges(
