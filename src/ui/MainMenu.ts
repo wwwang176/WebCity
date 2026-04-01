@@ -370,7 +370,7 @@ export function createLoadingScreen(): HTMLElement {
       .loading-bar-fill {
         width: 0%; height: 100%;
         background: linear-gradient(90deg, #42a5f5, #64b5f6);
-        border-radius: 2px; transition: width 0.1s;
+        border-radius: 2px;
       }
     </style>
     <div class="loading-pct" id="loading-pct">0%</div>
