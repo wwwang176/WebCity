@@ -117,7 +117,7 @@ export function ServicesPage() {
     const sewageDetail = sewageCap > 0
       ? loadDetail('Treated', Math.round(sewageCap - sewageUntreated), sewageCap)
       : `Need ${Math.round(sewageUntreated)}  No treatment plant`;
-    const sSt = sewageUntreated > 0 ? { label: `Untreated ${Math.round(sewageUntreated)}`, color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
+    const sSt = sewageUntreated > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
     wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: sewageDetail, status: sSt.label, statusColor: sSt.color });
 
     const cemeteries = state.deathCare.getCemeteries();
