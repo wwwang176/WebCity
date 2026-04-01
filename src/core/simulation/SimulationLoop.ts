@@ -1259,6 +1259,81 @@ export class SimulationLoop {
     }
   }
 
+  /** Pre-compute commute paths and spawn initial vehicles on load.
+   *  Call after lane graph, road coverage, and power/water are ready.
+   *  @param spawnRatio fraction of commuters to place on roads (0-1)
+   *  @param onProgress called with (0-1) for sub-progress updates */
+  async warmup(spawnRatio = 0.2, onProgress?: (ratio: number) => void): Promise<{ pathsComputed: number; vehiclesSpawned: number }> {
+    this.ensureLaneGraph();
+    if (!this._roadLookup) return { pathsComputed: 0, vehiclesSpawned: 0 };
+
+    const citizens = this.state.citizens.getCitizens();
+    let pathsComputed = 0;
+    let vehiclesSpawned = 0;
+
+    for (let i = 0; i < citizens.length; i++) {
+      const c = citizens[i]!;
+      if (!c.homeId || !c.workplaceId) continue;
+      const home = parsePosKey(c.homeId);
+      const work = parsePosKey(c.workplaceId);
+      if (!home || !work) continue;
+
+      // Compute morning path (home → work)
+      const morningKey = `${c.homeId}->${c.workplaceId}`;
+      let morningVariants = this.commuteCache.getRouteVariants(morningKey) ?? null;
+      if (!morningVariants) {
+        morningVariants = findLanePathVariants(this.laneGraph, this._roadLookup, home, work);
+        if (morningVariants.length > 0) {
+          this.commuteCache.setRouteVariants(morningKey, morningVariants);
+        }
+      }
+
+      // Compute evening path (work → home)
+      const eveningKey = `${c.workplaceId}->${c.homeId}`;
+      let eveningVariants = this.commuteCache.getRouteVariants(eveningKey) ?? null;
+      if (!eveningVariants) {
+        eveningVariants = findLanePathVariants(this.laneGraph, this._roadLookup, work, home);
+        if (eveningVariants.length > 0) {
+          this.commuteCache.setRouteVariants(eveningKey, eveningVariants);
+        }
+      }
+
+      const morningPath = morningVariants?.length ? morningVariants[Math.floor(Math.random() * morningVariants.length)]! : null;
+      const eveningPath = eveningVariants?.length ? eveningVariants[Math.floor(Math.random() * eveningVariants.length)]! : null;
+      if (!morningPath && !eveningPath) continue;
+
+      // Cache both directions for this citizen
+      this.commuteCache.set(c.id, {
+        citizenId: c.id,
+        homeId: c.homeId,
+        workplaceId: c.workplaceId,
+        morningPath: morningPath && morningPath.length > 0 ? morningPath : null,
+        eveningPath: eveningPath && eveningPath.length > 0 ? eveningPath : null,
+        status: 'ready',
+        generation: this.commuteCache.roadGeneration,
+      });
+      pathsComputed++;
+
+      // Spawn vehicle for a fraction of commuters (random direction)
+      if (Math.random() < spawnRatio) {
+        const spawnPath = Math.random() < 0.5 ? morningPath : eveningPath;
+        if (spawnPath && spawnPath.length > 0) {
+          this.state.traffic.addVehicleOnEdges(spawnPath, c.id);
+          vehiclesSpawned++;
+        }
+      }
+
+      // Report sub-progress every 100 citizens
+      if (i % 100 === 0 && onProgress) {
+        onProgress(i / citizens.length);
+        await new Promise(r => requestAnimationFrame(r));
+      }
+    }
+
+    onProgress?.(1);
+    return { pathsComputed, vehiclesSpawned };
+  }
+
 
   /** Immediately remove service vehicles of a given type (e.g. when facility demolished). */
   removeServiceVehicles(serviceType: ServiceVehicleType): void {

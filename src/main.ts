@@ -8,40 +8,45 @@ interface SaveInfo {
   name: string;
 }
 
-function startGame(loadedState?: GameState, saveInfo?: SaveInfo): void {
+async function startGame(loadedState?: GameState, saveInfo?: SaveInfo): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
 
   // Show loading screen
   const loading = createLoadingScreen();
   document.body.appendChild(loading);
+  updateLoadingProgress(5, 'Loading modules...');
+  await new Promise(r => requestAnimationFrame(r));
 
-  // Simulate loading progress
-  let progress = 0;
-  const loadInterval = setInterval(() => {
-    progress += 15;
-    updateLoadingProgress(progress);
-    if (progress >= 100) {
-      clearInterval(loadInterval);
-      removeLoadingScreen();
+  // Import game modules
+  const { Game } = await import('./Game');
+  const { createGameUI } = await import('./ui/GameUI');
 
-      // Dynamically import the game to allow loading screen to show
-      import('./Game').then(({ Game }) => {
-        import('./ui/GameUI').then(({ createGameUI }) => {
-          app.innerHTML = '';
-          app.style.display = 'block';
-          const game = new Game(app, loadedState);
-          if (saveInfo) {
-            game.loadedSlotId = saveInfo.slotId;
-            game.loadedSaveName = saveInfo.name;
-          }
-          (window as unknown as Record<string, unknown>).__game = game;
-          const ui = createGameUI(game);
-          document.body.appendChild(ui);
-        });
-      });
-    }
-  }, 100);
+  updateLoadingProgress(10, 'Initializing...');
+  await new Promise(r => requestAnimationFrame(r));
+
+  app.innerHTML = '';
+  app.style.display = 'block';
+  const game = new Game(app, loadedState);
+  if (saveInfo) {
+    game.loadedSlotId = saveInfo.slotId;
+    game.loadedSaveName = saveInfo.name;
+  }
+
+  // Run phased initialization with real progress updates
+  await game.initPhases((pct, label) => {
+    updateLoadingProgress(10 + Math.round(pct * 0.9), label);
+  });
+
+  updateLoadingProgress(100, 'Ready!');
+
+  (window as unknown as Record<string, unknown>).__game = game;
+  const ui = createGameUI(game);
+  document.body.appendChild(ui);
+
+  // Hold 100% for at least 300ms so it doesn't flash
+  await new Promise(r => setTimeout(r, 300));
+  removeLoadingScreen();
 }
 
 async function handleLoadGame(slotId: number): Promise<void> {
@@ -49,14 +54,12 @@ async function handleLoadGame(slotId: number): Promise<void> {
     const slot = await loadGame(slotId);
     if (slot && slot.data) {
       const state = deserializeGameState(slot.data);
-      startGame(state, { slotId: slot.id, name: slot.name });
+      await startGame(state, { slotId: slot.id, name: slot.name });
     } else {
-      // No save found, start new game
-      startGame();
+      await startGame();
     }
   } catch {
-    // Failed to load, start new game
-    startGame();
+    await startGame();
   }
 }
 
