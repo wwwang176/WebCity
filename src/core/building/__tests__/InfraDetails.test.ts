@@ -119,7 +119,7 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'garbage', 3, 3);
-    expect(d).toEqual({ Load: '500 / 2000', 'Produced/wk': 35, 'Burned/wk': 30 });
+    expect(d).toEqual({ Need: 500, Capacity: 2000, Load: '500 / 2000', 'Produced/wk': 35, 'Burned/wk': 30 });
   });
 
   it('sewage: returns need and capacity', () => {
