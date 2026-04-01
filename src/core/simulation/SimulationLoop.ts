@@ -235,6 +235,7 @@ export class SimulationLoop {
       this.updateCitizenHealth();
       this.updateHospitalLoads();
       this.updateSchoolLoads();
+      this.updatePoliceFireLoads();
     }
 
     // ── Slot 5: Migration + housing + freight + shopping ──
@@ -605,6 +606,20 @@ export class SimulationLoop {
       if (rule) enrolled.push({ x: pos.x, y: pos.y, schoolKey: rule.schoolKey });
     }
     this.state.education.updateSchoolLoads(enrolled);
+  }
+
+  private updatePoliceFireLoads(): void {
+    const policeCovered: Array<{ x: number; y: number }> = [];
+    const fireCovered: Array<{ x: number; y: number }> = [];
+    for (const c of this.state.citizens.getCitizens()) {
+      if (!c.homeId) continue;
+      const pos = parsePosKey(c.homeId);
+      if (!pos) continue;
+      if (this.state.police.getCoverage(pos.x, pos.y)) policeCovered.push(pos);
+      if (this.state.fire.getCoverage(pos.x, pos.y)) fireCovered.push(pos);
+    }
+    this.state.police.updateStationLoads(policeCovered);
+    this.state.fire.updateStationLoads(fireCovered);
   }
 
   /** Reusable health factors object — mutated per citizen, no allocation per iteration. */

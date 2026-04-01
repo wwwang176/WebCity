@@ -5,8 +5,8 @@ import type { InfraType } from '../InfraConfig';
 /** Minimal stub that satisfies InfraDetailContext. */
 function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContext {
   return {
-    police: { getStations: () => [], getCoverage: () => false },
-    fire: { getStations: () => [], getActiveFires: () => [], getRecentExtinguished: () => 0 },
+    police: { getStations: () => [], getCoverage: () => false, getStationLoad: () => 0 },
+    fire: { getStations: () => [], getActiveFires: () => [], getRecentExtinguished: () => 0, getStationLoad: () => 0 },
     health: { getHospitals: () => [], getHospitalLoad: () => 0 },
     education: { getSchools: () => [], getSchoolEnrollment: () => 0 },
     parks: { getParks: () => [] },
@@ -21,34 +21,36 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
 }
 
 describe('getInfraDetails', () => {
-  it('police: returns radius and coverage status', () => {
+  it('police: returns load/capacity and radius', () => {
     const ctx = makeCtx({
       police: {
-        getStations: () => [{ x: 5, y: 5, radius: 20 }],
+        getStations: () => [{ id: 'p1', x: 5, y: 5, radius: 20, capacity: 500 }],
         getCoverage: () => true,
+        getStationLoad: (id: string) => id === 'p1' ? 300 : 0,
       },
     });
     const d = getInfraDetails(ctx, 'police', 5, 5);
-    expect(d).toEqual({ Radius: 20, Coverage: 'Yes' });
+    expect(d).toEqual({ Load: '300 / 500', Radius: 20 });
   });
 
   it('police: defaults when station not found', () => {
     const ctx = makeCtx();
     const d = getInfraDetails(ctx, 'police', 0, 0);
     expect(d.Radius).toBe(15);
-    expect(d.Coverage).toBe('No');
+    expect(d.Load).toBe('0 / 500');
   });
 
-  it('fire: returns radius, active fires, and extinguished/month', () => {
+  it('fire: returns load/capacity, radius, and active fires', () => {
     const ctx = makeCtx({
       fire: {
-        getStations: () => [{ x: 3, y: 3, radius: 18 }],
+        getStations: () => [{ id: 'f1', x: 3, y: 3, radius: 18, capacity: 500 }],
         getActiveFires: () => [{ x: 1, y: 1 }, { x: 2, y: 2 }],
         getRecentExtinguished: () => 7,
+        getStationLoad: (id: string) => id === 'f1' ? 200 : 0,
       },
     });
     const d = getInfraDetails(ctx, 'fire', 3, 3);
-    expect(d).toEqual({ Radius: 18, 'Active Fires': 2, 'Extinguished/month': 7 });
+    expect(d).toEqual({ Load: '200 / 500', Radius: 18, 'Active Fires': 2 });
   });
 
   it('hospital: returns load/capacity and radius', () => {

@@ -7,12 +7,14 @@ export interface PoliceStation {
   x: number;
   y: number;
   radius: number;
+  capacity: number;
 }
 
 export const POLICE = {
   CRIME_REDUCTION_PER_STATION: -30,
   CRIME_REDUCTION_CAP: -60,
   MAINTENANCE_PER_STATION: 4,
+  DEFAULT_CAPACITY: 500,
 } as const;
 
 export class PoliceService extends RoadCoverageService<PoliceStation> {
@@ -22,10 +24,46 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   protected readonly idPrefix = 'police_';
   protected readonly maintenanceCostPerFacility = POLICE.MAINTENANCE_PER_STATION;
 
-  addStation(x: number, y: number, radius = 15): string {
+  private readonly stationLoad = new Map<string, number>();
+  private loadRatio = 0;
+
+  addStation(x: number, y: number, radius = 15, capacity = POLICE.DEFAULT_CAPACITY): string {
     const id = this.generateId();
-    this.pushFacility({ id, x, y, radius });
+    this.pushFacility({ id, x, y, radius, capacity });
     return id;
+  }
+
+  /** Assign covered citizens to nearest station (Euclidean). */
+  updateStationLoads(coveredCitizens: ReadonlyArray<{ x: number; y: number }>): void {
+    this.stationLoad.clear();
+    for (const s of this.facilities) this.stationLoad.set(s.id, 0);
+
+    let total = 0;
+    for (const c of coveredCitizens) {
+      total++;
+      let nearestId = '';
+      let nearestDist = Infinity;
+      for (const s of this.facilities) {
+        const dx = c.x - s.x;
+        const dy = c.y - s.y;
+        const dist = dx * dx + dy * dy;
+        if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
+      }
+      if (nearestId) {
+        this.stationLoad.set(nearestId, (this.stationLoad.get(nearestId) ?? 0) + 1);
+      }
+    }
+
+    const cap = this.facilities.reduce((s, f) => s + f.capacity, 0);
+    this.loadRatio = cap > 0 ? total / cap : (total > 0 ? Infinity : 0);
+  }
+
+  getStationLoad(stationId: string): number {
+    return this.stationLoad.get(stationId) ?? 0;
+  }
+
+  getLoadRatio(): number {
+    return this.loadRatio;
   }
 
   removeStation(id: string): void {
@@ -35,7 +73,11 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   getCrimeReduction(x: number, y: number): number {
     const count = this.coverage.getCoverageCount(x, y);
     if (count === 0) return 0;
-    return Math.max(POLICE.CRIME_REDUCTION_CAP, count * POLICE.CRIME_REDUCTION_PER_STATION);
+    const base = Math.max(POLICE.CRIME_REDUCTION_CAP, count * POLICE.CRIME_REDUCTION_PER_STATION);
+    // Scale by load: overloaded stations are less effective
+    if (this.loadRatio <= 1) return base;
+    const effectiveness = Math.max(0, 1 / this.loadRatio);
+    return Math.round(base * effectiveness);
   }
 
   getStations(): readonly PoliceStation[] {
@@ -57,7 +99,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   static fromJSON(data: { stations: PoliceStation[] }): PoliceService {
     const service = new PoliceService();
     for (const s of data.stations) {
-      service.facilities.push({ ...s });
+      service.facilities.push({ ...s, capacity: s.capacity ?? POLICE.DEFAULT_CAPACITY });
     }
     service.restoreNextId(); // also marks facilities connected
     return service;

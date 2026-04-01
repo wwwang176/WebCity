@@ -11,13 +11,15 @@ import { findAtPosition } from '../grid/GridHelpers';
  */
 export interface InfraDetailContext {
   police: {
-    getStations(): readonly { x: number; y: number; radius: number }[];
+    getStations(): readonly { id: string; x: number; y: number; radius: number; capacity: number }[];
     getCoverage(x: number, y: number): boolean;
+    getStationLoad(stationId: string): number;
   };
   fire: {
-    getStations(): readonly { x: number; y: number; radius: number }[];
+    getStations(): readonly { id: string; x: number; y: number; radius: number; capacity: number }[];
     getActiveFires(): readonly unknown[];
     getRecentExtinguished(): number;
+    getStationLoad(stationId: string): number;
   };
   health: {
     getHospitals(): readonly { id: string; x: number; y: number; capacity: number; radius: number }[];
@@ -82,11 +84,15 @@ function makeSchoolExtractor(
 export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>> = {
   police: (ctx, cx, cy) => {
     const st = findAtPosition(ctx.police.getStations(), cx, cy);
-    return { Radius: st?.radius ?? 15, Coverage: ctx.police.getCoverage(cx, cy) ? 'Yes' : 'No' };
+    const cap = st?.capacity ?? 500;
+    const load = st ? ctx.police.getStationLoad(st.id) : 0;
+    return { Load: `${load} / ${cap}`, Radius: st?.radius ?? 15 };
   },
   fire: (ctx, cx, cy) => {
     const st = findAtPosition(ctx.fire.getStations(), cx, cy);
-    return { Radius: st?.radius ?? 15, 'Active Fires': ctx.fire.getActiveFires().length, 'Extinguished/month': ctx.fire.getRecentExtinguished() };
+    const cap = st?.capacity ?? 500;
+    const load = st ? ctx.fire.getStationLoad(st.id) : 0;
+    return { Load: `${load} / ${cap}`, Radius: st?.radius ?? 15, 'Active Fires': ctx.fire.getActiveFires().length };
   },
   hospital: (ctx, cx, cy) => {
     const h = findAtPosition(ctx.health.getHospitals(), cx, cy);
