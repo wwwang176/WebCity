@@ -97,22 +97,22 @@ describe('EducationService', () => {
     it('should return capacity of a single school', () => {
       const edu = new EducationService();
       edu.addSchool(5, 5, 'elementary');
-      expect(edu.getTotalCapacity('elementary')).toBe(200); // DEFAULT_CAPACITY
+      expect(edu.getTotalCapacity('elementary')).toBe(400); // DEFAULT_CAPACITY
     });
 
     it('should sum capacities of same-type schools', () => {
       const edu = new EducationService();
       edu.addSchool(5, 5, 'elementary');
       edu.addSchool(10, 10, 'elementary');
-      expect(edu.getTotalCapacity('elementary')).toBe(400);
+      expect(edu.getTotalCapacity('elementary')).toBe(800);
     });
 
     it('should only count specified type', () => {
       const edu = new EducationService();
       edu.addSchool(5, 5, 'elementary');
       edu.addSchool(10, 10, 'highschool');
-      expect(edu.getTotalCapacity('elementary')).toBe(200);
-      expect(edu.getTotalCapacity('highschool')).toBe(300);
+      expect(edu.getTotalCapacity('elementary')).toBe(400);
+      expect(edu.getTotalCapacity('highschool')).toBe(500);
       expect(edu.getTotalCapacity('university')).toBe(0);
     });
 
@@ -326,7 +326,7 @@ describe('EducationService', () => {
       expect(restored.getSchools()[0]!.x).toBe(5);
       expect(restored.getSchools()[0]!.y).toBe(5);
       expect(restored.getSchools()[0]!.radius).toBe(10);
-      expect(restored.getSchools()[0]!.capacity).toBe(200);
+      expect(restored.getSchools()[0]!.capacity).toBe(200); // fromJSON preserves saved values
 
       expect(restored.getSchools()[1]!.type).toBe('highschool');
       expect(restored.getSchools()[2]!.type).toBe('university');

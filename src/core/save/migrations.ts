@@ -14,6 +14,14 @@ import type { GameState } from '../simulation/GameState';
 import { RoadType } from '../road/types';
 import { CARDINAL_DIRECTIONS } from '../grid/GridHelpers';
 import { getLifeStage, AGE_PER_TICK } from '../citizen/types';
+import { HEALTH } from '../service/HealthService';
+import { POLICE } from '../service/PoliceService';
+import { FIRE } from '../service/FireService';
+import { PARK } from '../service/ParkService';
+import { GARBAGE } from '../service/GarbageService';
+import { DEATH_CARE } from '../service/DeathCareService';
+import { DEFAULT_RADIUS as EDU_RADIUS, DEFAULT_CAPACITY as EDU_CAPACITY } from '../service/EducationService';
+import type { SchoolType } from '../service/EducationService';
 
 export interface SaveMigration {
   /** Target version — this migration runs when save version < this value. */
@@ -25,7 +33,7 @@ export interface SaveMigration {
 }
 
 /** Current save version. Increment when adding a new migration. */
-export const CURRENT_SAVE_VERSION = 3;
+export const CURRENT_SAVE_VERSION = 4;
 
 /** Ordered list of migrations. Must be sorted by version ascending. */
 export const MIGRATIONS: readonly SaveMigration[] = [
@@ -106,6 +114,65 @@ export const MIGRATIONS: readonly SaveMigration[] = [
       }
       if (converted > 0) {
         console.log(`[Migration] convert_citizen_age_to_life_weeks: converted ${converted} citizen(s)`);
+      }
+    },
+  },
+  {
+    version: 4,
+    name: 'update_facility_balance_constants',
+    migrate(state: GameState): void {
+      let updated = 0;
+
+      // Update hospitals
+      for (const h of state.health.getHospitals() as any[]) {
+        h.capacity = HEALTH.DEFAULT_CAPACITY;
+        h.radius = HEALTH.DEFAULT_RADIUS;
+        updated++;
+      }
+
+      // Update police stations
+      for (const s of state.police.getStations() as any[]) {
+        s.capacity = POLICE.DEFAULT_CAPACITY;
+        s.radius = POLICE.DEFAULT_RADIUS;
+        updated++;
+      }
+
+      // Update fire stations
+      for (const s of state.fire.getStations() as any[]) {
+        s.capacity = FIRE.DEFAULT_CAPACITY;
+        s.radius = FIRE.DEFAULT_RADIUS;
+        updated++;
+      }
+
+      // Update schools (each type has its own radius/capacity)
+      for (const s of state.education.getSchools() as any[]) {
+        const type: SchoolType = s.type;
+        s.radius = EDU_RADIUS[type];
+        s.capacity = EDU_CAPACITY[type];
+        updated++;
+      }
+
+      // Update garbage facilities
+      for (const f of state.garbage.getFacilities() as any[]) {
+        f.capacity = GARBAGE.DEFAULT_CAPACITY;
+        updated++;
+      }
+
+      // Update cemeteries (death care)
+      for (const c of state.deathCare.getCemeteries() as any[]) {
+        c.capacity = DEATH_CARE.DEFAULT_CAPACITY;
+        c.processRate = DEATH_CARE.DEFAULT_PROCESS_RATE;
+        updated++;
+      }
+
+      // Update parks
+      for (const p of state.parks.getParks() as any[]) {
+        p.radius = PARK.DEFAULT_RADIUS;
+        updated++;
+      }
+
+      if (updated > 0) {
+        console.log(`[Migration] update_facility_balance_constants: updated ${updated} facility(ies)`);
       }
     },
   },

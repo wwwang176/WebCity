@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { DeathCareService } from '../DeathCareService';
+import { DeathCareService, DEATH_CARE } from '../DeathCareService';
 
 describe('DeathCareService', () => {
   it('should create instance with no facilities', () => {
@@ -148,10 +148,14 @@ describe('DeathCareService', () => {
     const json = dc.toJSON();
     const restored = DeathCareService.fromJSON(json);
 
-    expect(restored.getCemeteries()).toEqual(dc.getCemeteries());
+    // fromJSON preserves saved values (migration handles constant updates)
+    const cem = restored.getCemeteries()[0]!;
+    expect(cem.capacity).toBe(300);
+    expect(cem.processRate).toBe(7);
+    expect(cem.x).toBe(1);
+    expect(cem.y).toBe(2);
     expect(restored.getUnprocessed()).toBe(dc.getUnprocessed());
     // Ring buffer should survive serialization
-    const cem = restored.getCemeteries()[0]!;
     expect(cem.recentDaily).toHaveLength(30);
     expect(cem.recentDaily[0]).toBe(3);
   });

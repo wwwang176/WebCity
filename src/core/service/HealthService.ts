@@ -21,6 +21,8 @@ export const HEALTH = {
   /** Maximum health bonus from hospital coverage */
   BONUS_CAP: 35,
   MAINTENANCE_PER_HOSPITAL: 8,
+  DEFAULT_CAPACITY: 1500,
+  DEFAULT_RADIUS: 12,
 } as const;
 
 /** Hospital load & death-rate constants */
@@ -114,7 +116,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
     return sum;
   }
 
-  addHospital(x: number, y: number, radius = 12, capacity = 100): string {
+  addHospital(x: number, y: number, radius = HEALTH.DEFAULT_RADIUS, capacity = HEALTH.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;

@@ -3,75 +3,138 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { getResidentialServiceRatios } from '../../../core/service/ServiceCoverageQuery';
 import { UI_COLORS } from '../../constants';
 
-interface ServiceRow {
-  label: string;
-  ratio: number;
-  color: string;
+interface ServiceEntry {
   icon: string;
-}
-
-interface FacilityStatus {
   name: string;
-  load: number;
-  capacity: number;
-  ratio: number;
+  coverage: number;
+  /** Supply/demand or load/capacity info */
+  detail: string;
+  status: string;
+  statusColor: string;
 }
 
-function CoverageBar(props: { row: ServiceRow }) {
-  const pct = () => Math.round(props.row.ratio * 100);
-  const barColor = () => pct() >= 80 ? props.row.color : pct() >= 50 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_BAD;
-  return (
-    <div style="margin-bottom:10px">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-        <span style="font-size:12px;color:#b0bec5;display:flex;align-items:center;gap:6px">
-          <span style="font-size:14px">{props.row.icon}</span>
-          {props.row.label}
-        </span>
-        <span style={{ 'font-size': '12px', 'font-weight': '600', color: barColor() }}>{pct()}%</span>
-      </div>
-      <div style={{ height: '6px', 'border-radius': '3px', background: 'rgba(255,255,255,0.06)', overflow: 'hidden' }}>
-        <div style={{
-          width: `${pct()}%`, height: '100%', 'border-radius': '3px',
-          background: barColor(), transition: 'width 0.3s',
-        }} />
-      </div>
-    </div>
-  );
+function statusOf(ratio: number): { label: string; color: string } {
+  if (ratio >= 2) return { label: 'Overloaded', color: UI_COLORS.STATUS_BAD };
+  if (ratio > 1) return { label: 'Over capacity', color: UI_COLORS.STATUS_WARN };
+  return { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
+}
+
+function loadDetail(label: string, load: number, cap: number, suffix = ''): string {
+  const pct = cap > 0 ? Math.round((load / cap) * 100) : 0;
+  return `${label} ${load} / ${cap} (${pct}%)${suffix}`;
+}
+
+function coverageColor(pct: number): string {
+  if (pct >= 80) return UI_COLORS.STATUS_GOOD;
+  if (pct >= 50) return UI_COLORS.STATUS_WARN;
+  return UI_COLORS.STATUS_BAD;
 }
 
 export function ServicesPage() {
   const data = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
-    const ratios = getResidentialServiceRatios(state);
+    const r = getResidentialServiceRatios(state);
 
-    const rows: ServiceRow[] = [
-      { label: 'Power', ratio: ratios.poweredRatio, color: '#ffeb3b', icon: '\u26A1' },
-      { label: 'Water', ratio: ratios.wateredRatio, color: UI_COLORS.ACCENT, icon: '\uD83D\uDCA7' },
-      { label: 'Police', ratio: ratios.policeRatio, color: '#5c6bc0', icon: '\uD83D\uDE94' },
-      { label: 'Fire', ratio: ratios.fireRatio, color: UI_COLORS.STATUS_BAD, icon: '\uD83D\uDE92' },
-      { label: 'Health', ratio: ratios.healthRatio, color: '#ec407a', icon: '\uD83C\uDFE5' },
-      { label: 'Education', ratio: ratios.educationRatio, color: '#ab47bc', icon: '\uD83C\uDFEB' },
-      { label: 'Garbage', ratio: ratios.garbageRatio, color: '#8d6e63', icon: '\uD83D\uDDD1' },
-      { label: 'Death Care', ratio: ratios.deathCareRatio, color: '#78909c', icon: '\u26B0' },
-    ];
+    const entries: { group: string; items: ServiceEntry[] }[] = [];
 
-    const avgCoverage = rows.reduce((s, r) => s + r.ratio, 0) / rows.length;
-    const gaps = rows.filter(r => r.ratio < 0.5);
+    // ── Utilities ──
+    const pwrRatio = state.power.getDemand() > 0 ? state.power.getSupply() / state.power.getDemand() : 0;
+    const wtrRatio = state.water.getDemand() > 0 ? state.water.getSupply() / state.water.getDemand() : 0;
+    entries.push({ group: 'Utilities', items: [
+      {
+        icon: '\u26A1', name: 'Power', coverage: r.poweredRatio,
+        detail: `Supply ${Math.round(state.power.getSupply())} / Demand ${Math.round(state.power.getDemand())}`,
+        status: pwrRatio >= 1 ? 'Surplus' : 'Shortage',
+        statusColor: pwrRatio >= 1 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
+      },
+      {
+        icon: '\uD83D\uDCA7', name: 'Water', coverage: r.wateredRatio,
+        detail: `Supply ${Math.round(state.water.getSupply())} / Demand ${Math.round(state.water.getDemand())}`,
+        status: wtrRatio >= 1 ? 'Surplus' : 'Shortage',
+        statusColor: wtrRatio >= 1 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
+      },
+    ]});
 
-    // Facility load status
-    const facilities: FacilityStatus[] = [];
+    // ── Public Safety ──
+    const safetyItems: ServiceEntry[] = [];
+    for (const s of state.police.getStations()) {
+      const load = state.police.getStationLoad(s.id);
+      const st = statusOf(s.capacity > 0 ? load / s.capacity : 0);
+      safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: loadDetail('Load', load, s.capacity), status: st.label, statusColor: st.color });
+    }
+    if (safetyItems.length === 0) {
+      safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: 'No station', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+    }
+    for (const s of state.fire.getStations()) {
+      const load = state.fire.getStationLoad(s.id);
+      const st = statusOf(s.capacity > 0 ? load / s.capacity : 0);
+      safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: loadDetail('Load', load, s.capacity), status: st.label, statusColor: st.color });
+    }
+    if (!state.fire.getStations().length) {
+      safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: 'No station', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+    }
+    entries.push({ group: 'Public Safety', items: safetyItems });
+
+    // ── Health ──
+    const healthItems: ServiceEntry[] = [];
     for (const h of state.health.getHospitals()) {
       const load = state.health.getHospitalLoad(h.id);
-      facilities.push({ name: 'Hospital', load, capacity: h.capacity, ratio: h.capacity > 0 ? load / h.capacity : 0 });
+      const st = statusOf(h.capacity > 0 ? load / h.capacity : 0);
+      healthItems.push({ icon: '\uD83C\uDFE5', name: 'Hospital', coverage: r.healthRatio, detail: loadDetail('Load', load, h.capacity), status: st.label, statusColor: st.color });
     }
+    if (healthItems.length === 0) {
+      healthItems.push({ icon: '\uD83C\uDFE5', name: 'Hospital', coverage: r.healthRatio, detail: 'No hospital', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+    }
+    entries.push({ group: 'Health', items: healthItems });
+
+    // ── Education ──
     const schoolLabels: Record<string, string> = { elementary: 'Elementary', highschool: 'High School', university: 'University' };
+    const eduItems: ServiceEntry[] = [];
     for (const s of state.education.getSchools()) {
       const enrolled = state.education.getSchoolEnrollment(s.id);
-      facilities.push({ name: schoolLabels[s.type] ?? s.type, load: enrolled, capacity: s.capacity, ratio: s.capacity > 0 ? enrolled / s.capacity : 0 });
+      const demand = state.education.getSchoolDemand(s.id);
+      const needSuffix = demand > s.capacity ? ` Need ${demand}` : '';
+      const st = demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN } : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
+      eduItems.push({ icon: '\uD83C\uDFEB', name: schoolLabels[s.type] ?? s.type, coverage: r.educationRatio, detail: loadDetail('Students', enrolled, s.capacity, needSuffix), status: st.label, statusColor: st.color });
     }
+    if (eduItems.length === 0) {
+      eduItems.push({ icon: '\uD83C\uDFEB', name: 'Education', coverage: r.educationRatio, detail: 'No schools', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+    }
+    entries.push({ group: 'Education', items: eduItems });
 
-    return { rows, avgCoverage, gaps, facilities };
+    // ── Waste & Burial ──
+    const wasteItems: ServiceEntry[] = [];
+    const garbageLoad = state.garbage.getCurrentLoad();
+    const garbageCap = state.garbage.getTotalCapacity();
+    const garbageOverflow = state.garbage.getOverflow();
+    const gRatio = garbageCap > 0 ? (garbageLoad + garbageOverflow) / garbageCap : (garbageOverflow > 0 ? Infinity : 0);
+    const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(gRatio);
+    wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: r.garbageRatio, detail: loadDetail('Landfill', Math.round(garbageLoad), garbageCap), status: gSt.label, statusColor: gSt.color });
+
+    const sewageUntreated = state.sewage.getUntreated();
+    const sewageCap = state.sewage.getTreatmentCapacity();
+    const sewageDetail = sewageCap > 0
+      ? loadDetail('Treated', Math.round(sewageCap - sewageUntreated), sewageCap)
+      : `${Math.round(sewageUntreated)} sewage untreated — build a treatment plant`;
+    const sSt = sewageUntreated > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
+    wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: sewageDetail, status: sSt.label, statusColor: sSt.color });
+
+    const cemeteries = state.deathCare.getCemeteries();
+    let cemUsed = 0, cemCap = 0;
+    for (const c of cemeteries) { cemUsed += c.used; cemCap += c.capacity; }
+    const unprocessed = state.deathCare.getUnprocessed();
+    const dSt = unprocessed > 0 ? { label: `Unprocessed ${unprocessed}`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemUsed / cemCap : 0);
+    wasteItems.push({ icon: '\u26B0', name: 'Death Care', coverage: r.deathCareRatio, detail: loadDetail('Cemetery', cemUsed, cemCap), status: dSt.label, statusColor: dSt.color });
+
+    entries.push({ group: 'Waste & Burial', items: wasteItems });
+
+    // Summary stats
+    const allCoverages = [r.poweredRatio, r.wateredRatio, r.policeRatio, r.fireRatio, r.healthRatio, r.educationRatio, r.garbageRatio, r.deathCareRatio];
+    const avgCoverage = allCoverages.reduce((s, v) => s + v, 0) / allCoverages.length;
+    const gaps = allCoverages.filter(v => v < 0.5).length;
+
+    return { entries, avgCoverage, gaps };
   }, undefined, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
@@ -88,52 +151,44 @@ export function ServicesPage() {
           <div class="sc-label">Avg Coverage</div>
         </div>
         <div class="summary-card">
-          <div class="sc-value" style={{ color: data().gaps.length === 0 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD }}>
-            {data().gaps.length}
+          <div class="sc-value" style={{ color: data().gaps === 0 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD }}>
+            {data().gaps}
           </div>
           <div class="sc-label">Critical Gaps (&lt;50%)</div>
         </div>
       </div>
 
-      <div class="section-title">Coverage by Service</div>
-      {data().rows.map(row => <CoverageBar row={row} />)}
+      <div style="display:flex;align-items:center;padding:6px 0;font-size:11px;color:#78909c;gap:8px;border-bottom:1px solid rgba(255,255,255,0.1)">
+        <span style="min-width:110px">Service</span>
+        <span style="min-width:55px">Coverage</span>
+        <span style="flex:1">Detail</span>
+        <span style="text-align:right">Status</span>
+      </div>
 
-      {data().gaps.length > 0 && (
-        <div style={{
-          'margin-top': '8px', padding: '8px 12px', 'border-radius': '6px',
-          'font-size': '12px', background: 'rgba(239,83,80,0.1)', color: '#ef9a9a',
-        }}>
-          Low coverage: {data().gaps.map(g => g.label).join(', ')}
-        </div>
-      )}
-
-      <div class="section-title" style="margin-top:16px">Facility Load</div>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">
-        <thead>
-          <tr style="color:#78909c;text-align:left;border-bottom:1px solid rgba(255,255,255,0.1)">
-            <th style="padding:4px 0;font-weight:500">Name</th>
-            <th style="padding:4px 0;font-weight:500;text-align:right">Load</th>
-            <th style="padding:4px 0;font-weight:500;text-align:right">Capacity</th>
-            <th style="padding:4px 0;font-weight:500;text-align:right">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          <For each={data().facilities}>
-            {(f) => {
-              const color = f.ratio >= 2 ? UI_COLORS.STATUS_BAD : f.ratio > 1 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD;
-              const label = f.ratio >= 2 ? 'Overloaded' : f.ratio > 1 ? 'Over capacity' : 'Normal';
-              return (
-                <tr style="border-bottom:1px solid rgba(255,255,255,0.05)">
-                  <td style="padding:4px 0;color:#b0bec5">{f.name}</td>
-                  <td style="padding:4px 0;text-align:right;color:#b0bec5">{f.load}</td>
-                  <td style="padding:4px 0;text-align:right;color:#b0bec5">{f.capacity}</td>
-                  <td style={{ padding: '4px 0', 'text-align': 'right', 'font-weight': '600', color }}>{label}</td>
-                </tr>
-              );
-            }}
-          </For>
-        </tbody>
-      </table>
+      <For each={data().entries}>
+        {(group) => (
+          <>
+            <div class="section-title" style="margin-top:12px">{group.group}</div>
+            <For each={group.items}>
+              {(item) => (
+                <div style="display:flex;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;gap:8px">
+                  <span style="display:flex;align-items:center;gap:4px;color:#b0bec5;min-width:110px">
+                    <span style="font-size:13px">{item.icon}</span>
+                    {item.name}
+                  </span>
+                  {item.coverage >= 0 && (
+                    <span style={{ 'min-width': '55px', 'font-size': '11px', color: coverageColor(item.coverage * 100) }}>
+                      {Math.round(item.coverage * 100)}%
+                    </span>
+                  )}
+                  <span style="flex:1;font-size:11px;color:#667a90">{item.detail}</span>
+                  <span style={{ 'font-weight': '600', 'font-size': '11px', color: item.statusColor, 'white-space': 'nowrap' }}>{item.status}</span>
+                </div>
+              )}
+            </For>
+          </>
+        )}
+      </For>
     </>
   );
 }

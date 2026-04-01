@@ -9,6 +9,7 @@ export interface FireStation {
   x: number;
   y: number;
   radius: number;
+  capacity: number;
 }
 
 export interface ActiveFire {
@@ -33,6 +34,8 @@ export const FIRE = {
   FIRE_DURATION: 3,
   COVERED_DAMAGE: 0.10,
   UNCOVERED_DAMAGE: 0.80,
+  DEFAULT_CAPACITY: 2000,
+  DEFAULT_RADIUS: 15,
   RISK_OUTSIDE_BASE: 0.8,
   RISK_OUTSIDE_FACTOR: 0.05,
   RISK_INSIDE_FACTOR: 0.5,
@@ -55,11 +58,46 @@ export class FireService extends RoadCoverageService<FireStation> {
   private recentDaily: number[] = new Array(30).fill(0);
   private recentIndex = 0;
   private todayExtinguished = 0;
+  private readonly stationLoad = new Map<string, number>();
+  private loadRatio = 0;
 
-  addStation(x: number, y: number, radius = 15): string {
+  addStation(x: number, y: number, radius = FIRE.DEFAULT_RADIUS, capacity = FIRE.DEFAULT_CAPACITY): string {
     const id = this.generateId();
-    this.pushFacility({ id, x, y, radius });
+    this.pushFacility({ id, x, y, radius, capacity });
     return id;
+  }
+
+  /** Assign weighted demand to nearest station (Euclidean). */
+  updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
+    this.stationLoad.clear();
+    for (const s of this.facilities) this.stationLoad.set(s.id, 0);
+
+    let total = 0;
+    for (const d of demands) {
+      total += d.weight;
+      let nearestId = '';
+      let nearestDist = Infinity;
+      for (const s of this.facilities) {
+        const dx = d.x - s.x;
+        const dy = d.y - s.y;
+        const dist = dx * dx + dy * dy;
+        if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
+      }
+      if (nearestId) {
+        this.stationLoad.set(nearestId, (this.stationLoad.get(nearestId) ?? 0) + d.weight);
+      }
+    }
+
+    const cap = this.facilities.reduce((s, f) => s + f.capacity, 0);
+    this.loadRatio = cap > 0 ? total / cap : (total > 0 ? Infinity : 0);
+  }
+
+  getStationLoad(stationId: string): number {
+    return Math.round(this.stationLoad.get(stationId) ?? 0);
+  }
+
+  getLoadRatio(): number {
+    return this.loadRatio;
   }
 
   removeStation(id: string): void {
@@ -82,7 +120,12 @@ export class FireService extends RoadCoverageService<FireStation> {
 
   reportFire(x: number, y: number): { covered: boolean; estimatedDamage: number } {
     const covered = this.getCoverage(x, y);
-    const damage = covered ? FIRE.COVERED_DAMAGE : FIRE.UNCOVERED_DAMAGE;
+    let damage = covered ? FIRE.COVERED_DAMAGE : FIRE.UNCOVERED_DAMAGE;
+    // Overloaded stations are less effective at fighting fires
+    if (covered && this.loadRatio > 1) {
+      const t = Math.min(1, (this.loadRatio - 1) / 2); // 1x→3x maps to 0→1
+      damage = FIRE.COVERED_DAMAGE + t * (FIRE.UNCOVERED_DAMAGE - FIRE.COVERED_DAMAGE);
+    }
 
     this.activeFires.push({
       x,
