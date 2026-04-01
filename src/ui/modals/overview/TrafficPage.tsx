@@ -241,7 +241,7 @@ export function TrafficPage() {
           </div>
         </div>
         <table class="data-table">
-          <thead><tr><th>Route</th><th style="text-align:right">Rides</th><th style="text-align:right">Variants</th><th style="text-align:right">Riders/Day</th><th style="text-align:right">Avg Time</th></tr></thead>
+          <thead><tr><th>Route</th><th style="text-align:right">Rides</th><th style="text-align:right">Variants</th><th style="text-align:right">Riders/Wk</th><th style="text-align:right">Avg Time</th></tr></thead>
           <tbody>
             <For each={transferStats().routeBreakdown.filter(r => r.rides >= 2)}>
               {(row) => (
@@ -249,7 +249,7 @@ export function TrafficPage() {
                   <td class="td-label">{row.label}</td>
                   <td class="td-value" style="text-align:right">{row.rides}</td>
                   <td class="td-value" style="text-align:right">{row.count}</td>
-                  <td class="td-value" style={`text-align:right;color:${row.dailyUse > 0 ? UI_COLORS.STATUS_GOOD : '#667a90'}`}>{Math.round(row.dailyUse)}</td>
+                  <td class="td-value" style={`text-align:right;color:${row.dailyUse > 0 ? UI_COLORS.STATUS_GOOD : '#667a90'}`}>{Math.round(row.dailyUse * 7)}</td>
                   <td class="td-value" style="text-align:right">{row.avgTime.toFixed(1)}</td>
                 </tr>
               )}
