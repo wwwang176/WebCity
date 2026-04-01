@@ -546,28 +546,28 @@ export class Game {
     const steps: Array<{ label: string; run: (onSub?: (ratio: number) => void) => void | Promise<void> }> = [];
 
     if (loadedState) {
-      steps.push({ label: 'Rebuilding road network...', run: () => {
+      steps.push({ label: 'Setting up roads...', run: () => {
         rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
       }});
-      steps.push({ label: 'Calculating service coverage...', run: () => {
+      steps.push({ label: 'Preparing city services...', run: () => {
         this.recalculateAllRoadCoverage();
       }});
-      steps.push({ label: 'Computing power & water...', run: () => {
+      steps.push({ label: 'Connecting utilities...', run: () => {
         this.state.power.calculateDemand(this.state.grid);
         this.state.power.calculateCoverage(this.state.grid);
         this.state.water.calculateDemand(this.state.grid);
         this.state.water.calculateCoverage(this.state.grid);
       }});
-      steps.push({ label: 'Building commute paths...', run: (onSub) => {
+      steps.push({ label: 'Planning traffic routes...', run: (onSub) => {
         return this.simLoop.warmup(0.2, onSub);
       }});
     } else {
-      steps.push({ label: 'Generating terrain...', run: () => {
+      steps.push({ label: 'Creating landscape...', run: () => {
         generateTerrain(this.state.grid);
       }});
     }
 
-    steps.push({ label: 'Creating renderers...', run: () => {
+    steps.push({ label: 'Preparing graphics...', run: () => {
       this.sceneManager = new SceneManager(container);
       this.terrainRenderer = new TerrainRenderer();
       this.roadRenderer = new RoadRenderer();
@@ -584,7 +584,7 @@ export class Game {
       this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
     }});
 
-    steps.push({ label: 'Building scene...', run: () => {
+    steps.push({ label: 'Building your city...', run: () => {
       this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
       this.vehicleRenderer.build(this.sceneManager.scene);
       this.pedestrianRenderer.build(this.sceneManager.scene);
@@ -602,7 +602,7 @@ export class Game {
       );
     }});
 
-    steps.push({ label: 'Starting game...', run: () => {
+    steps.push({ label: 'Almost ready...', run: () => {
       this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
       this.lastMilestoneId = getMilestone(this.state.citizens.getPopulation())?.id ?? null;
       this.setupInput(container);
