@@ -2507,6 +2507,10 @@ export class Game {
     });
   }
 
+  getTransferStats() {
+    return this.simLoop.getTransferStats();
+  }
+
   /** Toggle pause state (DRY: used by keyboard + UI). */
   togglePause(): void {
     this.paused = !this.paused;

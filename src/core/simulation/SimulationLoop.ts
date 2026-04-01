@@ -2068,6 +2068,53 @@ export class SimulationLoop {
     this.state.pedestrianManager.setTripPool(this.walkingTripPool, population);
   }
 
+  /** Transfer stats for UI display. */
+  getTransferStats(): {
+    transferTrips: number;
+    cachedRoutes: number;
+    multiRideRoutes: number;
+    transferEdges: number;
+    routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }>;
+  } {
+    const pool = this.walkingTripPool;
+    let transferTrips = 0;
+    for (const t of pool.trips) {
+      if (t.tripType === 4) transferTrips += t.count; // TRANSFER_WALK
+    }
+
+    const cache = this.transferGraph.stopRouteCache;
+    let multiRideRoutes = 0;
+    // Group by ride-count + transit type sequence
+    const groups = new Map<string, { count: number; totalTime: number }>();
+    cache.forEach(route => {
+      const rideLegs = route.legs.filter(l => l.type === 'ride');
+      const rides = rideLegs.length;
+      if (rides >= 2) multiRideRoutes++;
+      const label = rideLegs.map(l => {
+        const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
+        return icons[l.transitType ?? ''] ?? l.transitType ?? '?';
+      }).join('\u2192');
+      const g = groups.get(label);
+      if (g) { g.count++; g.totalTime += route.totalTime; }
+      else groups.set(label, { count: 1, totalTime: route.totalTime });
+    });
+
+    const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }> = [];
+    groups.forEach((g, label) => {
+      const rides = (label.match(/\u2192/g) || []).length + 1;
+      routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count });
+    });
+    routeBreakdown.sort((a, b) => a.rides - b.rides || b.count - a.count);
+
+    return {
+      transferTrips,
+      cachedRoutes: cache.size,
+      multiRideRoutes,
+      transferEdges: this.transferGraph.byStop.size,
+      routeBreakdown,
+    };
+  }
+
   private findNearestStop(
     stops: readonly { x: number; y: number; passengers: number }[],
     pos: { x: number; y: number },

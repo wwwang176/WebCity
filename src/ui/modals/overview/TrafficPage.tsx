@@ -62,6 +62,13 @@ export function TrafficPage() {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
 
+  const transferStats = createMemo(() => {
+    gameSignals.tick();
+    return getGame().getTransferStats();
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
+
   const transitData = createMemo(() => {
     gameSignals.tick();
     const state = getGame().getState();
@@ -214,6 +221,39 @@ export function TrafficPage() {
                   </>
                 );
               }}
+            </For>
+          </tbody>
+        </table>
+      </Show>
+
+      <Show when={transferStats().multiRideRoutes > 0}>
+        <div class="section-title">Multi-Modal Transfers</div>
+        <div class="summary-grid" style="grid-template-columns:repeat(3,1fr)">
+          <div class="summary-card">
+            <div class="sc-value stat-accent">{transferStats().transferTrips}</div>
+            <div class="sc-label">Transfer Trips</div>
+          </div>
+          <div class="summary-card">
+            <div class="sc-value">{transferStats().multiRideRoutes}</div>
+            <div class="sc-label">Transfer Routes</div>
+          </div>
+          <div class="summary-card">
+            <div class="sc-value">{transferStats().transferEdges}</div>
+            <div class="sc-label">Transfer Points</div>
+          </div>
+        </div>
+        <table class="data-table">
+          <thead><tr><th>Route</th><th style="text-align:right">Rides</th><th style="text-align:right">Variants</th><th style="text-align:right">Avg Time</th></tr></thead>
+          <tbody>
+            <For each={transferStats().routeBreakdown.filter(r => r.rides >= 2)}>
+              {(row) => (
+                <tr>
+                  <td class="td-label">{row.label}</td>
+                  <td class="td-value" style="text-align:right">{row.rides}</td>
+                  <td class="td-value" style="text-align:right">{row.count}</td>
+                  <td class="td-value" style="text-align:right">{row.avgTime.toFixed(1)}</td>
+                </tr>
+              )}
             </For>
           </tbody>
         </table>
