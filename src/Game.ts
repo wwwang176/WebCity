@@ -537,12 +537,13 @@ export class Game {
   private _mapSize!: number;
 
   /** Build the ordered list of initialization steps.
-   *  Each step has a label and a function to execute. */
-  private buildInitSteps(): Array<{ label: string; run: () => void }> {
+   *  Each step has a label and a function to execute.
+   *  Steps with sub-progress pass a callback to report 0-1 within the step. */
+  private buildInitSteps(): Array<{ label: string; run: (onSub?: (ratio: number) => void) => void | Promise<void> }> {
     const loadedState = this._loadedState;
     const mapSize = this._mapSize;
     const container = this._container;
-    const steps: Array<{ label: string; run: () => void }> = [];
+    const steps: Array<{ label: string; run: (onSub?: (ratio: number) => void) => void | Promise<void> }> = [];
 
     if (loadedState) {
       steps.push({ label: 'Rebuilding road network...', run: () => {
@@ -557,8 +558,8 @@ export class Game {
         this.state.water.calculateDemand(this.state.grid);
         this.state.water.calculateCoverage(this.state.grid);
       }});
-      steps.push({ label: 'Building commute paths...', run: () => {
-        this.simLoop.warmup();
+      steps.push({ label: 'Building commute paths...', run: (onSub) => {
+        return this.simLoop.warmup(0.2, onSub);
       }});
     } else {
       steps.push({ label: 'Generating terrain...', run: () => {
@@ -614,14 +615,21 @@ export class Game {
 
   /** Async phased initialization. Runs each step with a requestAnimationFrame
    *  between steps so the browser can repaint the loading progress.
-   *  @param onProgress called with (percentage, label) after each step */
+   *  Steps with sub-progress report granular updates within a step.
+   *  @param onProgress called with (percentage, label) as progress updates */
   async initPhases(onProgress?: (pct: number, label: string) => void): Promise<void> {
     const steps = this.buildInitSteps();
+    const stepSize = 100 / steps.length;
     for (let i = 0; i < steps.length; i++) {
-      const pct = Math.round(((i + 1) / steps.length) * 100);
-      onProgress?.(pct, steps[i]!.label);
+      const basePct = Math.round(i * stepSize);
+      const step = steps[i]!;
+      onProgress?.(basePct, step.label);
       await new Promise(r => requestAnimationFrame(r));
-      steps[i]!.run();
+      const result = step.run((subRatio) => {
+        const subPct = Math.round(basePct + subRatio * stepSize);
+        onProgress?.(subPct, step.label);
+      });
+      if (result instanceof Promise) await result;
     }
   }
 

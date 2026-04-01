@@ -1261,8 +1261,9 @@ export class SimulationLoop {
 
   /** Pre-compute commute paths and spawn initial vehicles on load.
    *  Call after lane graph, road coverage, and power/water are ready.
-   *  @param spawnRatio fraction of commuters to place on roads (0-1) */
-  warmup(spawnRatio = 0.2): { pathsComputed: number; vehiclesSpawned: number } {
+   *  @param spawnRatio fraction of commuters to place on roads (0-1)
+   *  @param onProgress called with (0-1) for sub-progress updates */
+  async warmup(spawnRatio = 0.2, onProgress?: (ratio: number) => void): Promise<{ pathsComputed: number; vehiclesSpawned: number }> {
     this.ensureLaneGraph();
     if (!this._roadLookup) return { pathsComputed: 0, vehiclesSpawned: 0 };
 
@@ -1270,7 +1271,8 @@ export class SimulationLoop {
     let pathsComputed = 0;
     let vehiclesSpawned = 0;
 
-    for (const c of citizens) {
+    for (let i = 0; i < citizens.length; i++) {
+      const c = citizens[i]!;
       if (!c.homeId || !c.workplaceId) continue;
       const home = parsePosKey(c.homeId);
       const work = parsePosKey(c.workplaceId);
@@ -1308,8 +1310,15 @@ export class SimulationLoop {
         this.state.traffic.addVehicleOnEdges(edgePath, c.id);
         vehiclesSpawned++;
       }
+
+      // Report sub-progress every 100 citizens
+      if (i % 100 === 0 && onProgress) {
+        onProgress(i / citizens.length);
+        await new Promise(r => requestAnimationFrame(r));
+      }
     }
 
+    onProgress?.(1);
     return { pathsComputed, vehiclesSpawned };
   }
 
