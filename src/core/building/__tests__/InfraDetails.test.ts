@@ -10,7 +10,7 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
     health: { getHospitals: () => [], getHospitalLoad: () => 0 },
     education: { getSchools: () => [], getSchoolEnrollment: () => 0, getSchoolDemand: () => 0 },
     parks: { getParks: () => [] },
-    garbage: { getFacilities: () => [] },
+    garbage: { getFacilities: () => [], getProducedPerWeek: () => 0, getBurnedPerWeek: () => 0, getOverflow: () => 0 },
     deathCare: { getCemeteries: () => [] },
     power: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
     water: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
@@ -110,12 +110,17 @@ describe('getInfraDetails', () => {
     expect(d).toEqual({ Radius: 8 });
   });
 
-  it('garbage: returns capacity and load', () => {
+  it('garbage: returns load, produced/wk, burned/wk', () => {
     const ctx = makeCtx({
-      garbage: { getFacilities: () => [{ x: 3, y: 3, capacity: 2000, currentLoad: 500 }] },
+      garbage: {
+        getFacilities: () => [{ x: 3, y: 3, capacity: 2000, currentLoad: 500 }],
+        getProducedPerWeek: () => 35,
+        getBurnedPerWeek: () => 30,
+        getOverflow: () => 0,
+      },
     });
     const d = getInfraDetails(ctx, 'garbage', 3, 3);
-    expect(d).toEqual({ Capacity: 2000, Load: 500 });
+    expect(d).toEqual({ Load: '500 / 2000', 'Produced/wk': 35, 'Burned/wk': 30 });
   });
 
   it('sewage: returns need and capacity', () => {
@@ -136,15 +141,16 @@ describe('getInfraDetails', () => {
     expect(d.Capacity).toBe(2250);
   });
 
-  it('cemetery: returns capacity, stored, and recent monthly', () => {
-    const recentDaily = new Array(30).fill(0);
+  it('cemetery: returns bodies, deaths/wk, cremated/wk', () => {
+    const recentDaily = new Array(7).fill(0);
     recentDaily[0] = 5;
-    recentDaily[1] = 3;
+    const deathDaily = new Array(7).fill(0);
+    deathDaily[0] = 8;
     const ctx = makeCtx({
-      deathCare: { getCemeteries: () => [{ x: 5, y: 5, capacity: 800, used: 120, recentDaily, recentIndex: 2, todayCremated: 0 }] },
+      deathCare: { getCemeteries: () => [{ x: 5, y: 5, capacity: 800, used: 120, pending: 3, recentDaily, recentIndex: 1, todayCremated: 0, deathDaily }] },
     });
     const d = getInfraDetails(ctx, 'cemetery', 5, 5);
-    expect(d).toEqual({ Capacity: 800, Stored: 120, 'Recent/month': 8 });
+    expect(d).toEqual({ Bodies: '123 / 800', 'Deaths/wk': 8, 'Cremated/wk': 5 });
   });
 
   it('power: returns output, type, and city supply/demand info', () => {

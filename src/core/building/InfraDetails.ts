@@ -36,9 +36,12 @@ export interface InfraDetailContext {
   };
   garbage: {
     getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number }[];
+    getProducedPerWeek(): number;
+    getBurnedPerWeek(): number;
+    getOverflow(): number;
   };
   deathCare: {
-    getCemeteries(): readonly { x: number; y: number; capacity: number; used: number; recentDaily: number[]; recentIndex: number; todayCremated: number }[];
+    getCemeteries(): readonly { x: number; y: number; capacity: number; used: number; pending: number; recentDaily: number[]; recentIndex: number; todayCremated: number; deathDaily: number[] }[];
   };
   power: {
     getPlants(): readonly { x: number; y: number; output: number; type: string }[];
@@ -110,7 +113,10 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   garbage: (ctx, cx, cy) => {
     const f = findAtPosition(ctx.garbage.getFacilities(), cx, cy);
-    return { Capacity: f?.capacity ?? 1000, Load: f?.currentLoad ?? 0 };
+    const load = f?.currentLoad ?? 0;
+    const cap = f?.capacity ?? 1000;
+    const overflow = ctx.garbage.getOverflow();
+    return { Load: `${load} / ${cap}`, 'Produced/wk': ctx.garbage.getProducedPerWeek(), 'Burned/wk': ctx.garbage.getBurnedPerWeek(), ...(overflow > 0 ? { Overflow: Math.round(overflow) } : {}) };
   },
   sewage: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.sewage.getTreatmentPlants(), cx, cy);
@@ -119,8 +125,11 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   cemetery: (ctx, cx, cy) => {
     const c = findAtPosition(ctx.deathCare.getCemeteries(), cx, cy);
-    const recent = c ? c.recentDaily.reduce((a, b) => a + b, 0) : 0;
-    return { Capacity: c?.capacity ?? 500, Stored: c?.used ?? 0, 'Recent/month': recent };
+    const bodies = (c?.pending ?? 0) + (c?.used ?? 0);
+    const cap = c?.capacity ?? 500;
+    const deathsWk = c ? c.deathDaily.reduce((a: number, b: number) => a + b, 0) : 0;
+    const crematedWk = c ? c.recentDaily.reduce((a: number, b: number) => a + b, 0) : 0;
+    return { Bodies: `${bodies} / ${cap}`, 'Deaths/wk': deathsWk, 'Cremated/wk': crematedWk };
   },
   power: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.power.getPlants(), cx, cy);

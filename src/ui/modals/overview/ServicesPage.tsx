@@ -113,8 +113,9 @@ export function ServicesPage() {
     const garbageLoad = state.garbage.getCurrentLoad();
     const garbageCap = state.garbage.getTotalCapacity();
     const garbageOverflow = state.garbage.getOverflow();
-    const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(garbageCap > 0 ? (garbageLoad + garbageOverflow) / garbageCap : 0);
-    wasteItems.push(mkEntry('\uD83D\uDDD1', 'Garbage', r.garbageRatio, 'Landfill', Math.round(garbageLoad), garbageCap, gSt));
+    const gOverflowSuffix = garbageOverflow > 0 ? ` Overflow ${Math.round(garbageOverflow)}` : '';
+    const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(garbageCap > 0 ? garbageLoad / garbageCap : 0);
+    wasteItems.push(mkEntry('\uD83D\uDDD1', 'Garbage', r.garbageRatio, 'Landfill', Math.round(garbageLoad), garbageCap, gSt, gOverflowSuffix));
 
     const sewageProduced = Math.round(state.sewage.getProduced());
     const sewageUntreated = state.sewage.getUntreated();
@@ -127,11 +128,14 @@ export function ServicesPage() {
     }
 
     const cemeteries = state.deathCare.getCemeteries();
-    let cemUsed = 0, cemCap = 0;
-    for (const c of cemeteries) { cemUsed += c.used; cemCap += c.capacity; }
-    const unprocessed = state.deathCare.getUnprocessed();
-    const dSt = unprocessed > 0 ? { label: `Unprocessed ${unprocessed}`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemUsed / cemCap : 0);
-    wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Cemetery', cemUsed, cemCap, dSt));
+    let cemBodies = 0, cemCap = 0;
+    for (const c of cemeteries) { cemBodies += c.used + ((c as any).pending ?? 0); cemCap += c.capacity; }
+    const unassigned = (state.deathCare as any).unassignedDeaths ?? state.deathCare.getUnprocessed();
+    const deathsWk = state.deathCare.getRecentDeaths();
+    const crematedWk = state.deathCare.getRecentCremations();
+    const deathSuffix = deathsWk > 0 || crematedWk > 0 ? ` Deaths ${deathsWk} Cremated ${crematedWk}/wk` : '';
+    const dSt = unassigned > 0 ? { label: `${unassigned} unprocessed`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemBodies / cemCap : 0);
+    wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Bodies', cemBodies, cemCap, dSt, deathSuffix));
 
     entries.push({ group: 'Waste & Burial', items: wasteItems });
 

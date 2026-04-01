@@ -45,6 +45,11 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
   protected readonly maintenanceCostPerFacility = GARBAGE.MAINTENANCE_PER_FACILITY;
 
   private overflow = 0;
+  private todayProduced = 0;
+  private todayBurned = 0;
+  private producedHistory: number[] = new Array(7).fill(0);
+  private burnedHistory: number[] = new Array(7).fill(0);
+  private historyIndex = 0;
 
   addFacility(x: number, y: number, capacity?: number): string {
     const id = this.generateId();
@@ -72,6 +77,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
   tick(population: number): void {
     // 1. Produce garbage based on population
     const produced = Math.floor(population / GARBAGE.GARBAGE_PER_POP);
+    this.todayProduced += produced;
 
     // 2. Burn (incinerate) a fraction of current load at connected + operational facilities only
     for (const f of this.facilities) {
@@ -79,6 +85,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
       if (f.currentLoad > 0) {
         const burned = Math.max(1, Math.floor(f.currentLoad * GARBAGE.BURN_RATE));
         f.currentLoad = Math.max(0, f.currentLoad - burned);
+        this.todayBurned += burned;
       }
     }
 
@@ -101,6 +108,23 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     if (remaining > 0) {
       this.overflow = remaining;
     }
+  }
+
+  /** Flush today's counts into 7-day ring buffer. Call once per game day. */
+  advanceDay(): void {
+    this.producedHistory[this.historyIndex] = this.todayProduced;
+    this.burnedHistory[this.historyIndex] = this.todayBurned;
+    this.historyIndex = (this.historyIndex + 1) % 7;
+    this.todayProduced = 0;
+    this.todayBurned = 0;
+  }
+
+  getProducedPerWeek(): number {
+    return this.producedHistory.reduce((a, b) => a + b, 0);
+  }
+
+  getBurnedPerWeek(): number {
+    return this.burnedHistory.reduce((a, b) => a + b, 0);
   }
 
   getOverflow(): number {

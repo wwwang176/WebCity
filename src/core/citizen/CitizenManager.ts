@@ -232,12 +232,13 @@ export class CitizenManager {
 
   /** Called once per game day: bathtub-curve death check.
    *  Callback returns per-citizen death context with hospital load and pollution multipliers.
-   *  finalRate = baseRate × elderlyMult × hospitalMult × pollutionMult */
-  deathTick(getDeathContext: (citizen: Citizen) => DeathContext): number[] {
-    const dead: number[] = [];
+   *  finalRate = baseRate × elderlyMult × hospitalMult × pollutionMult
+   *  Returns array of { id, homeId } so callers can look up death location. */
+  deathTick(getDeathContext: (citizen: Citizen) => DeathContext): Array<{ id: number; homeId: string | null }> {
+    const dead: Array<{ id: number; homeId: string | null }> = [];
     for (const c of this.citizens) {
       if (c.age > MAX_AGE) {
-        dead.push(c.id);
+        dead.push({ id: c.id, homeId: c.homeId });
         continue;
       }
       const baseRate = DAILY_DEATH_RATE[c.lifeStage];
@@ -245,10 +246,10 @@ export class CitizenManager {
       const ctx = getDeathContext(c);
       const finalRate = baseRate * elderlyMult * ctx.hospitalMult * ctx.pollutionMult;
       if (Math.random() < finalRate) {
-        dead.push(c.id);
+        dead.push({ id: c.id, homeId: c.homeId });
       }
     }
-    if (dead.length > 0) this.removeCitizens(new Set(dead));
+    if (dead.length > 0) this.removeCitizens(new Set(dead.map(d => d.id)));
     return dead;
   }
 
