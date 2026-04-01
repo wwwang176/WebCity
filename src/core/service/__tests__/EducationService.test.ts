@@ -326,7 +326,7 @@ describe('EducationService', () => {
       expect(restored.getSchools()[0]!.x).toBe(5);
       expect(restored.getSchools()[0]!.y).toBe(5);
       expect(restored.getSchools()[0]!.radius).toBe(10);
-      expect(restored.getSchools()[0]!.capacity).toBe(900); // always uses DEFAULT_CAPACITY
+      expect(restored.getSchools()[0]!.capacity).toBe(200); // fromJSON preserves saved values
 
       expect(restored.getSchools()[1]!.type).toBe('highschool');
       expect(restored.getSchools()[2]!.type).toBe('university');

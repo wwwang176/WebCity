@@ -148,10 +148,10 @@ describe('DeathCareService', () => {
     const json = dc.toJSON();
     const restored = DeathCareService.fromJSON(json);
 
-    // fromJSON overrides capacity and processRate with code-defined defaults
+    // fromJSON preserves saved values (migration handles constant updates)
     const cem = restored.getCemeteries()[0]!;
-    expect(cem.capacity).toBe(DEATH_CARE.DEFAULT_CAPACITY);
-    expect(cem.processRate).toBe(DEATH_CARE.DEFAULT_PROCESS_RATE);
+    expect(cem.capacity).toBe(300);
+    expect(cem.processRate).toBe(7);
     expect(cem.x).toBe(1);
     expect(cem.y).toBe(2);
     expect(restored.getUnprocessed()).toBe(dc.getUnprocessed());

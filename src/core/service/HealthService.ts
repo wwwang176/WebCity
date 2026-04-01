@@ -151,7 +151,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
   static fromJSON(json: HealthServiceJSON): HealthService {
     const service = new HealthService();
     for (const h of json.hospitals) {
-      service.facilities.push({ ...h, radius: HEALTH.DEFAULT_RADIUS, capacity: HEALTH.DEFAULT_CAPACITY });
+      service.facilities.push({ ...h });
     }
     service.restoreNextId(); // also marks facilities connected
     return service;

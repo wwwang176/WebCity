@@ -106,7 +106,7 @@ export class ParkService {
   static fromJSON(data: Park[]): ParkService {
     const ps = new ParkService();
     for (const p of data) {
-      ps.parks.push({ ...p, radius: PARK.DEFAULT_RADIUS });
+      ps.parks.push({ ...p });
       ps.connectedParkIds.add(p.id);
     }
     ps.nextId = recoverNextId(ps.parks, 'park-');

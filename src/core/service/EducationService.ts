@@ -20,13 +20,13 @@ export const EDUCATION = {
   MAINTENANCE_PER_SCHOOL: 5,
 } as const;
 
-const DEFAULT_RADIUS: Record<SchoolType, number> = {
+export const DEFAULT_RADIUS: Record<SchoolType, number> = {
   elementary: 10,
   highschool: 12,
   university: 15,
 };
 
-const DEFAULT_CAPACITY: Record<SchoolType, number> = {
+export const DEFAULT_CAPACITY: Record<SchoolType, number> = {
   elementary: 900,
   highschool: 700,
   university: 700,
@@ -275,11 +275,7 @@ export class EducationService {
   static fromJSON(data: { schools: School[] }): EducationService {
     const service = new EducationService();
     for (const s of data.schools) {
-      service.schools.push({
-        ...s,
-        radius: DEFAULT_RADIUS[s.type] ?? s.radius,
-        capacity: DEFAULT_CAPACITY[s.type] ?? s.capacity,
-      });
+      service.schools.push({ ...s });
     }
     service.nextId = recoverNextId(service.schools, 'school-');
     return service;

@@ -121,8 +121,6 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     const service = new DeathCareService();
     service.facilities = json.cemeteries.map(c => ({
       ...c,
-      capacity: DEATH_CARE.DEFAULT_CAPACITY,
-      processRate: DEATH_CARE.DEFAULT_PROCESS_RATE,
       recentDaily: c.recentDaily ?? new Array(30).fill(0),
       recentIndex: c.recentIndex ?? 0,
       todayCremated: c.todayCremated ?? 0,

@@ -179,7 +179,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
 
   static fromJSON(data: { facilities: GarbageFacility[]; overflow: number }): GarbageService {
     const gs = new GarbageService();
-    gs.facilities = data.facilities.map(f => ({ ...f, capacity: GARBAGE.DEFAULT_CAPACITY }));
+    gs.facilities = data.facilities.map(f => ({ ...f }));
     gs.overflow = data.overflow;
     gs.restoreNextId();
     return gs;

@@ -203,8 +203,8 @@ describe('GarbageService', () => {
     const json = gs.toJSON();
     const restored = GarbageService.fromJSON(json);
 
-    // fromJSON overrides capacity with code-defined default
-    expect(restored.getTotalCapacity()).toBe(GARBAGE.DEFAULT_CAPACITY * 2);
+    // fromJSON preserves saved values (migration handles constant updates)
+    expect(restored.getTotalCapacity()).toBe(1500); // 1000 + 500
     expect(restored.getCurrentLoad()).toBe(gs.getCurrentLoad());
     expect(restored.getOverflow()).toBe(gs.getOverflow());
   });
