@@ -2149,7 +2149,7 @@ export class SimulationLoop {
       const weeklyUse = weeklyTotals.get(label) ?? 0;
       routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count, weeklyUse });
     });
-    routeBreakdown.sort((a, b) => a.rides - b.rides || b.weeklyUse - a.weeklyUse);
+    routeBreakdown.sort((a, b) => b.weeklyUse - a.weeklyUse);
 
     return {
       activeTransferPeds,
