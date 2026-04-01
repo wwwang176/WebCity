@@ -251,8 +251,8 @@ export interface SelectedZoneBuilding {
   workerCapacity: number;
   /** Pre-calculated actual tax income for this building. */
   taxIncome: number;
-  /** City-wide garbage overflow amount (> 0 means overflowing). */
-  garbageOverflow: number;
+  /** City-wide garbage load ratio (totalLoad / totalCapacity). >1 = overflowing. */
+  garbageLoadRatio: number;
   /** City-wide hospital load ratio (> 1 means overloaded). */
   hospitalLoadRatio: number;
 }
@@ -1621,7 +1621,7 @@ export class Game {
             workerCount: this.state.citizens.getCitizensByWorkplace(`${x},${y}`).length,
             workerCapacity: cls.buildingType.workers,
             taxIncome: calculateSingleBuildingIncome(buildIncomeCalcDeps(this.state), x, y, cell.buildingId),
-            garbageOverflow: this.state.garbage.getOverflow(),
+            garbageLoadRatio: this.getGarbageLoadRatio(),
             hospitalLoadRatio: this.state.health.getLoadRatio(),
           };
           this.applyViewMode(ViewMode.NORMAL);
@@ -2184,6 +2184,14 @@ export class Game {
     return this.audioManager;
   }
 
+  private getGarbageLoadRatio(): number {
+    const facs = this.state.garbage.getFacilities();
+    const cap = facs.reduce((s, f) => s + f.capacity, 0);
+    if (cap <= 0) return this.state.garbage.getOverflow() > 0 ? Infinity : 0;
+    const load = facs.reduce((s, f) => s + f.currentLoad, 0) + this.state.garbage.getOverflow();
+    return load / cap;
+  }
+
   private getInfraDetails(type: InfraType, cx: number, cy: number): Record<string, string | number> {
     return getInfraDetailsFromCtx(this.state as InfraDetailContext, type, cx, cy);
   }
@@ -2238,7 +2246,7 @@ export class Game {
         shoppingAccess: isResidentialZone(sel.zoneType) ? this.state.shopping.getResidentialAccess(x, y).hasAccess : undefined,
         customerRatio: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).ratio : undefined,
         hasCustomers: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).hasCustomers : undefined,
-        garbageOverflow: this.state.garbage.getOverflow(),
+        garbageLoadRatio: this.getGarbageLoadRatio(),
         hospitalLoadRatio: this.state.health.getLoadRatio(),
       };
     }
