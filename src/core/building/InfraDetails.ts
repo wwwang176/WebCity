@@ -28,6 +28,7 @@ export interface InfraDetailContext {
   education: {
     getSchools(): readonly { id: string; x: number; y: number; type: string; capacity: number; radius: number }[];
     getSchoolEnrollment(schoolId: string): number;
+    getSchoolDemand(schoolId: string): number;
   };
   parks: {
     getParks(): readonly { x: number; y: number; radius: number }[];
@@ -73,7 +74,9 @@ function makeSchoolExtractor(
     const sc = findAtPosition(ctx.education.getSchools().filter(s => s.type === schoolType), cx, cy);
     const cap = sc?.capacity ?? defaultCap;
     const enrolled = sc ? ctx.education.getSchoolEnrollment(sc.id) : 0;
-    return { Type: label, Students: `${enrolled} / ${cap}`, Radius: sc?.radius ?? defaultRadius };
+    const demand = sc ? ctx.education.getSchoolDemand(sc.id) : 0;
+    const needStr = demand > cap ? ` (Need ${demand})` : '';
+    return { Type: label, Students: `${enrolled} / ${cap}${needStr}`, Radius: sc?.radius ?? defaultRadius };
   };
 }
 

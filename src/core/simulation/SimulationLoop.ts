@@ -32,7 +32,7 @@ import { relocationTick } from '../citizen/Relocation';
 import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import type { SchoolType, EnrolledCitizen } from '../service/EducationService';
-import { EDUCATION_PROGRESSION, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
+import { EDUCATION_PROGRESSION, MIN_SCHOOL_AGE, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
 import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
@@ -598,14 +598,24 @@ export class SimulationLoop {
 
   private updateSchoolLoads(): void {
     const enrolled: EnrolledCitizen[] = [];
+    const eligible: EnrolledCitizen[] = [];
     for (const c of this.state.citizens.getCitizens()) {
-      if (c.educationProgress <= 0 || !c.homeId) continue;
+      if (!c.homeId || c.age < MIN_SCHOOL_AGE) continue;
       const pos = parsePosKey(c.homeId);
       if (!pos) continue;
       const rule = EDUCATION_PROGRESSION.find(r => c.education === r.requiredEducation);
-      if (rule) enrolled.push({ x: pos.x, y: pos.y, schoolKey: rule.schoolKey });
+      if (!rule) continue;
+      if (c.educationProgress > 0) {
+        enrolled.push({ x: pos.x, y: pos.y, schoolKey: rule.schoolKey });
+      } else {
+        // Eligible but not enrolled (waiting for capacity)
+        const schoolType = ({ elementary: 'elementary', highSchool: 'highschool', university: 'university' } as const)[rule.schoolKey];
+        if (this.state.education.getCoverage(pos.x, pos.y, schoolType)) {
+          eligible.push({ x: pos.x, y: pos.y, schoolKey: rule.schoolKey });
+        }
+      }
     }
-    this.state.education.updateSchoolLoads(enrolled);
+    this.state.education.updateSchoolLoads(enrolled, eligible);
   }
 
   /** Police demand weight by education level (avg = 1.0). */

@@ -85,6 +85,7 @@ export class EducationService {
   private nextId = 1;
   private operationalSchoolIds: Set<string> | null = null;
   private readonly schoolEnrollment = new Map<string, number>();
+  private readonly schoolDemand = new Map<string, number>();
   /** One RoadCoverageMap per school type, each with its own budget. */
   private coverageMaps: Record<SchoolType, RoadCoverageMap> = {
     elementary: new RoadCoverageMap(),
@@ -212,31 +213,51 @@ export class EducationService {
     return merged;
   }
 
-  /** Assign enrolled citizens to nearest school of their type (Euclidean). */
-  updateSchoolLoads(enrolled: ReadonlyArray<EnrolledCitizen>): void {
+  /** Assign enrolled citizens and eligible citizens to nearest school of their type (Euclidean). */
+  updateSchoolLoads(
+    enrolled: ReadonlyArray<EnrolledCitizen>,
+    eligible: ReadonlyArray<EnrolledCitizen>,
+  ): void {
     this.schoolEnrollment.clear();
-    for (const s of this.schools) this.schoolEnrollment.set(s.id, 0);
+    this.schoolDemand.clear();
+    for (const s of this.schools) {
+      this.schoolEnrollment.set(s.id, 0);
+      this.schoolDemand.set(s.id, 0);
+    }
 
     for (const c of enrolled) {
-      const schoolType = SCHOOL_KEY_TO_TYPE[c.schoolKey];
-      let nearestId = '';
-      let nearestDist = Infinity;
-      for (const s of this.schools) {
-        if (s.type !== schoolType) continue;
-        const dx = c.x - s.x;
-        const dy = c.y - s.y;
-        const dist = dx * dx + dy * dy;
-        if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
-      }
-      if (nearestId) {
-        this.schoolEnrollment.set(nearestId, (this.schoolEnrollment.get(nearestId) ?? 0) + 1);
-      }
+      const id = this.findNearestSchool(c.x, c.y, SCHOOL_KEY_TO_TYPE[c.schoolKey]);
+      if (id) this.schoolEnrollment.set(id, (this.schoolEnrollment.get(id) ?? 0) + 1);
     }
+
+    // Demand = enrolled + eligible (total who need this school)
+    for (const c of [...enrolled, ...eligible]) {
+      const id = this.findNearestSchool(c.x, c.y, SCHOOL_KEY_TO_TYPE[c.schoolKey]);
+      if (id) this.schoolDemand.set(id, (this.schoolDemand.get(id) ?? 0) + 1);
+    }
+  }
+
+  private findNearestSchool(x: number, y: number, type: SchoolType): string | null {
+    let nearestId = '';
+    let nearestDist = Infinity;
+    for (const s of this.schools) {
+      if (s.type !== type) continue;
+      const dx = x - s.x;
+      const dy = y - s.y;
+      const dist = dx * dx + dy * dy;
+      if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
+    }
+    return nearestId || null;
   }
 
   /** Per-school enrolled student count (for UI display). */
   getSchoolEnrollment(schoolId: string): number {
     return this.schoolEnrollment.get(schoolId) ?? 0;
+  }
+
+  /** Per-school total demand: enrolled + waiting to enroll (for UI display). */
+  getSchoolDemand(schoolId: string): number {
+    return this.schoolDemand.get(schoolId) ?? 0;
   }
 
   tick(): void {

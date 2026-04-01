@@ -8,7 +8,7 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
     police: { getStations: () => [], getCoverage: () => false, getStationLoad: () => 0 },
     fire: { getStations: () => [], getActiveFires: () => [], getRecentExtinguished: () => 0, getStationLoad: () => 0 },
     health: { getHospitals: () => [], getHospitalLoad: () => 0 },
-    education: { getSchools: () => [], getSchoolEnrollment: () => 0 },
+    education: { getSchools: () => [], getSchoolEnrollment: () => 0, getSchoolDemand: () => 0 },
     parks: { getParks: () => [] },
     garbage: { getFacilities: () => [] },
     deathCare: { getCemeteries: () => [] },
@@ -64,18 +64,19 @@ describe('getInfraDetails', () => {
     expect(d).toEqual({ Load: '45 / 150', Radius: 12 });
   });
 
-  it('school (elementary): returns per-school enrolled / capacity', () => {
+  it('school (elementary): shows need when demand exceeds capacity', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [{ id: 's1', x: 2, y: 2, type: 'elementary', capacity: 250, radius: 11 }],
-        getSchoolEnrollment: (id: string) => id === 's1' ? 45 : 0,
+        getSchoolEnrollment: (id: string) => id === 's1' ? 250 : 0,
+        getSchoolDemand: (id: string) => id === 's1' ? 350 : 0,
       },
     });
     const d = getInfraDetails(ctx, 'school', 2, 2);
-    expect(d).toEqual({ Type: 'Elementary', Students: '45 / 250', Radius: 11 });
+    expect(d).toEqual({ Type: 'Elementary', Students: '250 / 250 (Need 350)', Radius: 11 });
   });
 
-  it('school_high: returns per-school enrolled / capacity', () => {
+  it('school_high: no need label when demand within capacity', () => {
     const ctx = makeCtx({
       education: {
         getSchools: () => [
@@ -83,6 +84,7 @@ describe('getInfraDetails', () => {
           { id: 's2', x: 1, y: 1, type: 'highschool', capacity: 350, radius: 13 },
         ],
         getSchoolEnrollment: (id: string) => id === 's2' ? 120 : 0,
+        getSchoolDemand: (id: string) => id === 's2' ? 200 : 0,
       },
     });
     const d = getInfraDetails(ctx, 'school_high', 1, 1);
@@ -94,6 +96,7 @@ describe('getInfraDetails', () => {
       education: {
         getSchools: () => [{ id: 's1', x: 7, y: 7, type: 'university', capacity: 600, radius: 16 }],
         getSchoolEnrollment: (id: string) => id === 's1' ? 88 : 0,
+        getSchoolDemand: (id: string) => id === 's1' ? 88 : 0,
       },
     });
     const d = getInfraDetails(ctx, 'school_univ', 7, 7);

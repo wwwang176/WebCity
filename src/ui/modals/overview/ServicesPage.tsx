@@ -88,8 +88,10 @@ export function ServicesPage() {
     const eduItems: ServiceEntry[] = [];
     for (const s of state.education.getSchools()) {
       const enrolled = state.education.getSchoolEnrollment(s.id);
-      const st = statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
-      eduItems.push({ icon: '\uD83C\uDFEB', name: schoolLabels[s.type] ?? s.type, coverage: r.educationRatio, detail: `Students ${enrolled} / ${s.capacity}`, status: st.label, statusColor: st.color });
+      const demand = state.education.getSchoolDemand(s.id);
+      const needStr = demand > s.capacity ? ` (Need ${demand})` : '';
+      const st = demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN } : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
+      eduItems.push({ icon: '\uD83C\uDFEB', name: schoolLabels[s.type] ?? s.type, coverage: r.educationRatio, detail: `Students ${enrolled} / ${s.capacity}${needStr}`, status: st.label, statusColor: st.color });
     }
     if (eduItems.length === 0) {
       eduItems.push({ icon: '\uD83C\uDFEB', name: 'Education', coverage: r.educationRatio, detail: 'No schools', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
