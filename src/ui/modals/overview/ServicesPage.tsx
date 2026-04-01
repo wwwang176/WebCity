@@ -9,6 +9,8 @@ interface ServiceEntry {
   coverage: number;
   /** Supply/demand or load/capacity info */
   detail: string;
+  /** Load percentage (-1 if not applicable) */
+  loadPct: number;
   status: string;
   statusColor: string;
 }
@@ -19,9 +21,9 @@ function statusOf(ratio: number): { label: string; color: string } {
   return { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
 }
 
-function loadDetail(label: string, load: number, cap: number, suffix = ''): string {
+function loadDetail(label: string, load: number, cap: number, suffix = ''): { detail: string; pct: number } {
   const pct = cap > 0 ? Math.round((load / cap) * 100) : 0;
-  return `${label} ${load} / ${cap} (${pct}%)${suffix}`;
+  return { detail: `${label} ${load} / ${cap}${suffix}`, pct };
 }
 
 function coverageColor(pct: number): string {
@@ -39,40 +41,44 @@ export function ServicesPage() {
     const entries: { group: string; items: ServiceEntry[] }[] = [];
 
     // ── Utilities ──
-    const pwrRatio = state.power.getDemand() > 0 ? state.power.getSupply() / state.power.getDemand() : 0;
-    const wtrRatio = state.water.getDemand() > 0 ? state.water.getSupply() / state.water.getDemand() : 0;
+    const pwrPct = state.power.getDemand() > 0 ? Math.round((state.power.getSupply() / state.power.getDemand()) * 100) : 0;
+    const wtrPct = state.water.getDemand() > 0 ? Math.round((state.water.getSupply() / state.water.getDemand()) * 100) : 0;
     entries.push({ group: 'Utilities', items: [
       {
-        icon: '\u26A1', name: 'Power', coverage: r.poweredRatio,
+        icon: '\u26A1', name: 'Power', coverage: r.poweredRatio, loadPct: pwrPct,
         detail: `Supply ${Math.round(state.power.getSupply())} / Demand ${Math.round(state.power.getDemand())}`,
-        status: pwrRatio >= 1 ? 'Surplus' : 'Shortage',
-        statusColor: pwrRatio >= 1 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
+        status: pwrPct >= 100 ? 'Surplus' : 'Shortage',
+        statusColor: pwrPct >= 100 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
       },
       {
-        icon: '\uD83D\uDCA7', name: 'Water', coverage: r.wateredRatio,
+        icon: '\uD83D\uDCA7', name: 'Water', coverage: r.wateredRatio, loadPct: wtrPct,
         detail: `Supply ${Math.round(state.water.getSupply())} / Demand ${Math.round(state.water.getDemand())}`,
-        status: wtrRatio >= 1 ? 'Surplus' : 'Shortage',
-        statusColor: wtrRatio >= 1 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
+        status: wtrPct >= 100 ? 'Surplus' : 'Shortage',
+        statusColor: wtrPct >= 100 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
       },
     ]});
+
+    // helper to build a service entry with loadDetail
+    const mkEntry = (icon: string, name: string, coverage: number, label: string, load: number, cap: number, st: { label: string; color: string }, suffix = ''): ServiceEntry => {
+      const ld = loadDetail(label, load, cap, suffix);
+      return { icon, name, coverage, detail: ld.detail, loadPct: ld.pct, status: st.label, statusColor: st.color };
+    };
 
     // ── Public Safety ──
     const safetyItems: ServiceEntry[] = [];
     for (const s of state.police.getStations()) {
       const load = state.police.getStationLoad(s.id);
-      const st = statusOf(s.capacity > 0 ? load / s.capacity : 0);
-      safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: loadDetail('Load', load, s.capacity), status: st.label, statusColor: st.color });
+      safetyItems.push(mkEntry('\uD83D\uDE94', 'Police', r.policeRatio, 'Load', load, s.capacity, statusOf(s.capacity > 0 ? load / s.capacity : 0)));
     }
     if (safetyItems.length === 0) {
-      safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: 'No station', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+      safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
     }
     for (const s of state.fire.getStations()) {
       const load = state.fire.getStationLoad(s.id);
-      const st = statusOf(s.capacity > 0 ? load / s.capacity : 0);
-      safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: loadDetail('Load', load, s.capacity), status: st.label, statusColor: st.color });
+      safetyItems.push(mkEntry('\uD83D\uDE92', 'Fire', r.fireRatio, 'Load', load, s.capacity, statusOf(s.capacity > 0 ? load / s.capacity : 0)));
     }
     if (!state.fire.getStations().length) {
-      safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: 'No station', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+      safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
     }
     entries.push({ group: 'Public Safety', items: safetyItems });
 
@@ -80,11 +86,10 @@ export function ServicesPage() {
     const healthItems: ServiceEntry[] = [];
     for (const h of state.health.getHospitals()) {
       const load = state.health.getHospitalLoad(h.id);
-      const st = statusOf(h.capacity > 0 ? load / h.capacity : 0);
-      healthItems.push({ icon: '\uD83C\uDFE5', name: 'Hospital', coverage: r.healthRatio, detail: loadDetail('Load', load, h.capacity), status: st.label, statusColor: st.color });
+      healthItems.push(mkEntry('\uD83C\uDFE5', 'Hospital', r.healthRatio, 'Load', load, h.capacity, statusOf(h.capacity > 0 ? load / h.capacity : 0)));
     }
     if (healthItems.length === 0) {
-      healthItems.push({ icon: '\uD83C\uDFE5', name: 'Hospital', coverage: r.healthRatio, detail: 'No hospital', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+      healthItems.push({ icon: '\uD83C\uDFE5', name: 'Hospital', coverage: r.healthRatio, detail: 'No hospital', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
     }
     entries.push({ group: 'Health', items: healthItems });
 
@@ -96,10 +101,10 @@ export function ServicesPage() {
       const demand = state.education.getSchoolDemand(s.id);
       const needSuffix = demand > s.capacity ? ` Need ${demand}` : '';
       const st = demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN } : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
-      eduItems.push({ icon: '\uD83C\uDFEB', name: schoolLabels[s.type] ?? s.type, coverage: r.educationRatio, detail: loadDetail('Students', enrolled, s.capacity, needSuffix), status: st.label, statusColor: st.color });
+      eduItems.push(mkEntry('\uD83C\uDFEB', schoolLabels[s.type] ?? s.type, r.educationRatio, 'Students', enrolled, s.capacity, st, needSuffix));
     }
     if (eduItems.length === 0) {
-      eduItems.push({ icon: '\uD83C\uDFEB', name: 'Education', coverage: r.educationRatio, detail: 'No schools', status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+      eduItems.push({ icon: '\uD83C\uDFEB', name: 'Education', coverage: r.educationRatio, detail: 'No schools', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
     }
     entries.push({ group: 'Education', items: eduItems });
 
@@ -108,25 +113,25 @@ export function ServicesPage() {
     const garbageLoad = state.garbage.getCurrentLoad();
     const garbageCap = state.garbage.getTotalCapacity();
     const garbageOverflow = state.garbage.getOverflow();
-    const gRatio = garbageCap > 0 ? (garbageLoad + garbageOverflow) / garbageCap : (garbageOverflow > 0 ? Infinity : 0);
-    const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(gRatio);
-    wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: r.garbageRatio, detail: loadDetail('Landfill', Math.round(garbageLoad), garbageCap), status: gSt.label, statusColor: gSt.color });
+    const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(garbageCap > 0 ? (garbageLoad + garbageOverflow) / garbageCap : 0);
+    wasteItems.push(mkEntry('\uD83D\uDDD1', 'Garbage', r.garbageRatio, 'Landfill', Math.round(garbageLoad), garbageCap, gSt));
 
     const sewageProduced = Math.round(state.sewage.getProduced());
     const sewageUntreated = state.sewage.getUntreated();
     const sewageCap = state.sewage.getTreatmentCapacity();
-    const sewageDetail = sewageCap > 0
-      ? loadDetail('Produced', sewageProduced, sewageCap)
-      : `${sewageProduced} sewage untreated — build a treatment plant`;
     const sSt = sewageUntreated > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
-    wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: sewageDetail, status: sSt.label, statusColor: sSt.color });
+    if (sewageCap > 0) {
+      wasteItems.push(mkEntry('\uD83D\uDCA7', 'Sewage', -1, 'Produced', sewageProduced, sewageCap, sSt));
+    } else {
+      wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: `${sewageProduced} sewage untreated — build a treatment plant`, loadPct: -1, status: sSt.label, statusColor: sSt.color });
+    }
 
     const cemeteries = state.deathCare.getCemeteries();
     let cemUsed = 0, cemCap = 0;
     for (const c of cemeteries) { cemUsed += c.used; cemCap += c.capacity; }
     const unprocessed = state.deathCare.getUnprocessed();
     const dSt = unprocessed > 0 ? { label: `Unprocessed ${unprocessed}`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemUsed / cemCap : 0);
-    wasteItems.push({ icon: '\u26B0', name: 'Death Care', coverage: r.deathCareRatio, detail: loadDetail('Cemetery', cemUsed, cemCap), status: dSt.label, statusColor: dSt.color });
+    wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Cemetery', cemUsed, cemCap, dSt));
 
     entries.push({ group: 'Waste & Burial', items: wasteItems });
 
@@ -163,7 +168,8 @@ export function ServicesPage() {
         <span style="min-width:110px">Service</span>
         <span style="min-width:55px">Coverage</span>
         <span style="flex:1">Detail</span>
-        <span style="text-align:right">Status</span>
+        <span style="min-width:45px;text-align:right">Load%</span>
+        <span style="min-width:85px;text-align:right">Status</span>
       </div>
 
       <For each={data().entries}>
@@ -183,7 +189,14 @@ export function ServicesPage() {
                     </span>
                   )}
                   <span style="flex:1;font-size:11px;color:#667a90">{item.detail}</span>
-                  <span style={{ 'font-weight': '600', 'font-size': '11px', color: item.statusColor, 'white-space': 'nowrap' }}>{item.status}</span>
+                  {item.loadPct >= 0 ? (
+                    <span style={{ 'min-width': '45px', 'text-align': 'right', 'font-size': '11px', 'font-weight': '600', color: item.loadPct >= 200 ? UI_COLORS.STATUS_BAD : item.loadPct > 100 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD }}>
+                      {item.loadPct}%
+                    </span>
+                  ) : (
+                    <span style="min-width:45px" />
+                  )}
+                  <span style={{ 'min-width': '85px', 'font-weight': '600', 'font-size': '11px', color: item.statusColor, 'white-space': 'nowrap', 'text-align': 'right' }}>{item.status}</span>
                 </div>
               )}
             </For>
