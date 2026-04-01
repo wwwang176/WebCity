@@ -353,6 +353,9 @@ function UtilityStatus(props: { hasPower: boolean; hasWater: boolean }) {
 
 function getInfraOverloadWarning(sel: SelectedInfraBuilding): WarnLevel | null {
   const d = sel.details;
+  // Garbage: check Overflow field
+  if (d.Overflow != null && (d.Overflow as number) > 0) return 'red';
+  // Other services: check Need vs Capacity
   const need = d.Need as number | undefined;
   const cap = d.Capacity as number | undefined;
   if (need == null || cap == null || cap <= 0 || need <= cap) return null;
