@@ -15,7 +15,7 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
     power: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
     water: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
     citizens: { getCitizens: () => [], getEnrolledCounts: () => ({ elementary: 0, highSchool: 0, university: 0 }) },
-    sewage: { getTreatmentPlants: () => [], getUntreated: () => 0 },
+    sewage: { getTreatmentPlants: () => [], getUntreated: () => 0, getProduced: () => 0 },
     ...overrides,
   };
 }
@@ -118,21 +118,22 @@ describe('getInfraDetails', () => {
     expect(d).toEqual({ Capacity: 2000, Load: 500 });
   });
 
-  it('sewage: returns capacity and untreated', () => {
+  it('sewage: returns need and capacity', () => {
     const ctx = makeCtx({
       sewage: {
-        getTreatmentPlants: () => [{ x: 5, y: 5, capacity: 200 }],
+        getTreatmentPlants: () => [{ x: 5, y: 5, capacity: 2250 }],
         getUntreated: () => 3,
+        getProduced: () => 800,
       },
     });
     const d = getInfraDetails(ctx, 'sewage', 5, 5);
-    expect(d).toEqual({ Capacity: 200, Untreated: 3 });
+    expect(d).toEqual({ Need: 800, Capacity: 2250 });
   });
 
   it('sewage: defaults when plant not found', () => {
     const d = getInfraDetails(makeCtx(), 'sewage', 0, 0);
-    expect(d.Capacity).toBe(200);
-    expect(d.Untreated).toBe(0);
+    expect(d.Need).toBe(0);
+    expect(d.Capacity).toBe(2250);
   });
 
   it('cemetery: returns capacity, stored, and recent monthly', () => {

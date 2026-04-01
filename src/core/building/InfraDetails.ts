@@ -4,6 +4,7 @@
  */
 import type { InfraType } from './InfraConfig';
 import { findAtPosition } from '../grid/GridHelpers';
+import { SEWAGE } from '../service/SewageService';
 
 /**
  * Minimal interface for services needed to extract infrastructure details.
@@ -58,6 +59,7 @@ export interface InfraDetailContext {
   sewage: {
     getTreatmentPlants(): readonly { x: number; y: number; capacity: number }[];
     getUntreated(): number;
+    getProduced(): number;
   };
 }
 
@@ -112,7 +114,8 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   sewage: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.sewage.getTreatmentPlants(), cx, cy);
-    return { Capacity: p?.capacity ?? 200, Untreated: ctx.sewage.getUntreated() };
+    const cap = p?.capacity ?? SEWAGE.DEFAULT_CAPACITY;
+    return { Need: Math.round(ctx.sewage.getProduced()), Capacity: cap };
   },
   cemetery: (ctx, cx, cy) => {
     const c = findAtPosition(ctx.deathCare.getCemeteries(), cx, cy);

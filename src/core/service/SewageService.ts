@@ -25,14 +25,21 @@ import { isFacilityOperational, type UtilityChecker } from './FacilityOperationa
 
 /** Sewage system configuration constants */
 export const SEWAGE = {
-  /** Population per unit of sewage produced */
-  POP_PER_SEWAGE: 100,
+  /** Default treatment plant capacity (1.5x water plant output of 1500) */
+  DEFAULT_CAPACITY: 2250,
   /** Water pollution multiplier per untreated sewage unit */
   WATER_POLLUTION_MULTIPLIER: 5,
   /** Maximum pollution emitted per outlet */
   MAX_POLLUTION_PER_OUTLET: 80,
   /** Monthly maintenance cost per treatment plant */
   MAINTENANCE_PER_PLANT: 4,
+  /** Sewage rate: fraction of water consumption that becomes sewage, per zone */
+  SEWAGE_RATE: {
+    RESIDENTIAL: 0.85,
+    COMMERCIAL: 0.90,
+    INDUSTRIAL: 0.90,
+    OFFICE: 0.92,
+  },
 } as const;
 
 export class SewageService {
@@ -41,6 +48,7 @@ export class SewageService {
   private connectedPlantIds = new Set<string>();
   private operationalPlantIds: Set<string> | null = null;
   private untreatedSewage = 0;
+  private produced = 0;
   private nextId = 1;
 
   addOutlet(x: number, y: number): string {
@@ -49,7 +57,7 @@ export class SewageService {
     return id;
   }
 
-  addTreatmentPlant(x: number, y: number, capacity = 200): string {
+  addTreatmentPlant(x: number, y: number, capacity = SEWAGE.DEFAULT_CAPACITY): string {
     const id = `plant-${this.nextId++}`;
     this.treatmentPlants.push({ id, x, y, capacity });
     this.connectedPlantIds.add(id);
@@ -65,10 +73,9 @@ export class SewageService {
     return removeById(this.treatmentPlants, id);
   }
 
-  /** Produce sewage from population without treatment (manual step). */
-  produceSewage(population: number): void {
-    const produced = Math.floor(population / SEWAGE.POP_PER_SEWAGE);
-    this.untreatedSewage += produced;
+  /** Produce sewage from water demand (manual step). */
+  produceSewage(sewageAmount: number): void {
+    this.untreatedSewage += sewageAmount;
   }
 
   /** Recompute which treatment plants are adjacent to at least one road cell. */
@@ -96,14 +103,19 @@ export class SewageService {
   }
 
   /**
-   * Full tick: produce sewage from population, then treat as much as connected capacity allows.
-   * Resets untreated count each tick before producing new sewage.
+   * Full tick: produce sewage from water demand, then treat as much as connected capacity allows.
+   * @param sewageProduced Total sewage produced this tick (water demand × sewage rates).
    */
-  tick(population: number): void {
+  tick(sewageProduced: number): void {
+    this.produced = sewageProduced;
     this.untreatedSewage = 0;
-    const produced = Math.floor(population / SEWAGE.POP_PER_SEWAGE);
     const connectedCapacity = this.getConnectedTreatmentCapacity();
-    this.untreatedSewage = Math.max(0, produced - connectedCapacity);
+    this.untreatedSewage = Math.max(0, sewageProduced - connectedCapacity);
+  }
+
+  /** Total sewage produced this tick (before treatment). */
+  getProduced(): number {
+    return this.produced;
   }
 
   /** Treatment capacity from connected AND operational plants only. */
