@@ -251,6 +251,10 @@ export interface SelectedZoneBuilding {
   workerCapacity: number;
   /** Pre-calculated actual tax income for this building. */
   taxIncome: number;
+  /** City-wide garbage overflow amount (> 0 means overflowing). */
+  garbageOverflow: number;
+  /** City-wide hospital load ratio (> 1 means overloaded). */
+  hospitalLoadRatio: number;
 }
 
 export interface SelectedInfraBuilding {
@@ -1617,6 +1621,8 @@ export class Game {
             workerCount: this.state.citizens.getCitizensByWorkplace(`${x},${y}`).length,
             workerCapacity: cls.buildingType.workers,
             taxIncome: calculateSingleBuildingIncome(buildIncomeCalcDeps(this.state), x, y, cell.buildingId),
+            garbageOverflow: this.state.garbage.getOverflow(),
+            hospitalLoadRatio: this.state.health.getLoadRatio(),
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -2232,6 +2238,8 @@ export class Game {
         shoppingAccess: isResidentialZone(sel.zoneType) ? this.state.shopping.getResidentialAccess(x, y).hasAccess : undefined,
         customerRatio: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).ratio : undefined,
         hasCustomers: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).hasCustomers : undefined,
+        garbageOverflow: this.state.garbage.getOverflow(),
+        hospitalLoadRatio: this.state.health.getLoadRatio(),
       };
     }
 

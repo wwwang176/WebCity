@@ -184,6 +184,18 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     else if (over > 0) warnings.push({ level: 'yellow', text: 'Tax rate slightly high' });
   }
 
+  // Garbage overflow — covered but service failing (always show)
+  if (sel.garbageOverflow > 0) {
+    warnings.push({ level: 'red', text: 'Garbage overflow' });
+  }
+
+  // Hospital overloaded — covered but death rate not reduced (always show)
+  if (sel.hospitalLoadRatio > 2) {
+    warnings.push({ level: 'red', text: 'Hospital overloaded' });
+  } else if (sel.hospitalLoadRatio > 1) {
+    warnings.push({ level: 'yellow', text: 'Hospital over capacity' });
+  }
+
   // Sort: red first, then yellow
   warnings.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
   return warnings;
