@@ -47,6 +47,17 @@ export interface TransferEdge {
 export interface TransferGraph {
   /** Key: stopKey(routeArrayIdx, stopArrayIdx) → transfer edges */
   byStop: Map<string, TransferEdge[]>;
+  /** Pre-computed best route between every (entry, exit) stop pair.
+   *  Key: "entryRI:entrySI>exitRI:exitSI" → middle legs + ride time. */
+  stopRouteCache: Map<string, StopToStopRoute>;
+}
+
+/** Cached route between two stops (excludes first/last mile walks). */
+export interface StopToStopRoute {
+  /** ride + transfer_walk legs only */
+  legs: TransitLeg[];
+  /** Total time of ride(s) + wait(s) + transfer walk(s) */
+  totalTime: number;
 }
 
 export interface FlatRoute {
@@ -128,84 +139,63 @@ export function buildTransferGraph(
     }
   }
 
-  return { byStop };
+  return { byStop, stopRouteCache: new Map() };
 }
 
-// ── Multi-Modal Route Search ────────────────────────────────────
+// ── Stop-to-Stop Route Cache ────────────────────────────────────
 
-const MAX_RESULTS = 20;
+function cacheKey(entryRI: number, entrySI: number, exitRI: number, exitSI: number): string {
+  return `${entryRI}:${entrySI}>${exitRI}:${exitSI}`;
+}
 
-export function findMultiModalRoutes(
+/**
+ * Pre-compute the best multi-modal route between every reachable
+ * (entry stop, exit stop) pair. Called once when the transfer graph
+ * is rebuilt; per-citizen search then becomes pure lookup.
+ */
+export function buildStopRouteCache(
   routes: readonly FlatRoute[],
-  origin: { x: number; y: number },
-  destination: { x: number; y: number },
-  walkRange: number,
+  transferGraph: TransferGraph,
   walkSpeed: number,
   waitFactor: number,
-  transferGraph: TransferGraph,
   maxLegs: number,
-): MultiLegRoute[] {
-  if (routes.length === 0) return [];
-  const maxRides = Math.floor((maxLegs - 1) / 2);
-  if (maxRides < 1) return [];
+): void {
+  const cache = transferGraph.stopRouteCache;
+  cache.clear();
 
-  // Index: which stops are near the destination?
-  const nearDest = new Map<string, number>(); // sk → walkDist
-  for (let ri = 0; ri < routes.length; ri++) {
-    const r = routes[ri]!;
-    for (let si = 0; si < r.stops.length; si++) {
-      const d = manhattanDistance(r.stops[si]!.x, r.stops[si]!.y, destination.x, destination.y);
-      if (d <= walkRange) nearDest.set(sk(ri, si), d);
+  const maxRides = Math.floor((maxLegs - 1) / 2);
+  if (maxRides < 1) return;
+
+  const hasTransferEdges = new Set<string>(transferGraph.byStop.keys());
+
+  function tryCache(
+    entryRI: number, entrySI: number,
+    exitRI: number, exitSI: number,
+    legs: TransitLeg[], totalTime: number,
+  ): void {
+    const key = cacheKey(entryRI, entrySI, exitRI, exitSI);
+    const existing = cache.get(key);
+    if (!existing || totalTime < existing.totalTime) {
+      cache.set(key, { legs: legs.slice(), totalTime });
     }
   }
 
-  // Index: which stops have outgoing transfer edges?
-  const hasTransferEdges = new Set<string>(transferGraph.byStop.keys());
-
-  const results: MultiLegRoute[] = [];
-
-  /**
-   * After alighting at (alightRI, alightSI), either complete the trip
-   * (walk to destination) or transfer to another route and recurse.
-   */
-  function tryCompleteOrTransfer(
-    alightRI: number,
-    alightSI: number,
-    timeSoFar: number,
-    legsSoFar: TransitLeg[],
-    usedRoutes: Set<number>,
-    rideNum: number,
+  /** DFS: from an alight stop, try transfer + ride to reach more exits. */
+  function exploreTransfers(
+    entryRI: number, entrySI: number,
+    alightRI: number, alightSI: number,
+    timeSoFar: number, legsSoFar: TransitLeg[],
+    usedRoutes: Set<number>, rideNum: number,
   ): void {
-    if (results.length >= MAX_RESULTS) return;
-
-    const key = sk(alightRI, alightSI);
-    const alightStop = routes[alightRI]!.stops[alightSI]!;
-
-    // ── Try to complete: walk to destination ──
-    const destDist = nearDest.get(key);
-    if (destDist !== undefined) {
-      const walkTime = destDist / walkSpeed;
-      results.push({
-        legs: [...legsSoFar, {
-          type: 'walk' as const,
-          fromX: alightStop.x, fromY: alightStop.y,
-          toX: destination.x, toY: destination.y,
-          estimatedTime: walkTime,
-        }],
-        totalTime: timeSoFar + walkTime,
-      });
-    }
-
-    // ── Try to transfer ──
     if (rideNum >= maxRides) return;
+    const key = sk(alightRI, alightSI);
     if (!hasTransferEdges.has(key)) return;
-    if (results.length >= MAX_RESULTS) return;
 
     const edges = transferGraph.byStop.get(key)!;
+    const alightStop = routes[alightRI]!.stops[alightSI]!;
+
     for (const edge of edges) {
       if (usedRoutes.has(edge.toRI)) continue;
-      if (results.length >= MAX_RESULTS) return;
-
       const targetRoute = routes[edge.toRI]!;
       if (targetRoute.isFull) continue;
 
@@ -220,15 +210,8 @@ export function findMultiModalRoutes(
 
       const waitTime = targetRoute.frequency * waitFactor;
 
-      // Ride the target route — only alight at useful stops
       for (let ai = 0; ai < targetRoute.stops.length; ai++) {
         if (ai === edge.toSI) continue;
-
-        const nextKey = sk(edge.toRI, ai);
-        const isNearDest = nearDest.has(nextKey);
-        const canTransferMore = rideNum + 1 < maxRides && hasTransferEdges.has(nextKey);
-        if (!isNearDest && !canTransferMore) continue;
-
         const nextStop = targetRoute.stops[ai]!;
         const rideTime = computeRideDistance(
           targetRoute.stops, edge.toSI, ai, targetRoute.segDists,
@@ -245,54 +228,39 @@ export function findMultiModalRoutes(
           alightStopIdx: ai,
         };
 
-        const newUsed = new Set(usedRoutes);
-        newUsed.add(edge.toRI);
+        const newTime = timeSoFar + transferWalkTime + waitTime + rideTime;
+        const newLegs = [...legsSoFar, transferWalkLeg, rideLeg];
 
-        tryCompleteOrTransfer(
-          edge.toRI, ai,
-          timeSoFar + transferWalkTime + waitTime + rideTime,
-          [...legsSoFar, transferWalkLeg, rideLeg],
-          newUsed, rideNum + 1,
-        );
+        // Cache this exit
+        tryCache(entryRI, entrySI, edge.toRI, ai, newLegs, newTime);
 
-        if (results.length >= MAX_RESULTS) return;
+        // Recurse for more transfers
+        if (rideNum + 1 < maxRides && hasTransferEdges.has(sk(edge.toRI, ai))) {
+          const newUsed = new Set(usedRoutes);
+          newUsed.add(edge.toRI);
+          exploreTransfers(
+            entryRI, entrySI, edge.toRI, ai,
+            newTime, newLegs, newUsed, rideNum + 1,
+          );
+        }
       }
     }
   }
 
-  // ── Main search: first ride from each entry stop ──────────────
-
+  // For each entry stop, explore all reachable exits
   for (let ri = 0; ri < routes.length; ri++) {
     const route = routes[ri]!;
     if (route.isFull) continue;
 
     for (let si = 0; si < route.stops.length; si++) {
       const entryStop = route.stops[si]!;
-      const walkDist = manhattanDistance(entryStop.x, entryStop.y, origin.x, origin.y);
-      if (walkDist > walkRange) continue;
-
-      const walkToEntry = walkDist / walkSpeed;
-      const firstWalkLeg: TransitLeg = {
-        type: 'walk',
-        fromX: origin.x, fromY: origin.y,
-        toX: entryStop.x, toY: entryStop.y,
-        estimatedTime: walkToEntry,
-      };
-
       const waitTime = route.frequency * waitFactor;
 
-      // Ride to each useful alight stop
+      // Single ride: board at (ri,si), alight at (ri,ai)
       for (let ai = 0; ai < route.stops.length; ai++) {
         if (ai === si) continue;
-
-        const alightKey = sk(ri, ai);
-        const isNearDest = nearDest.has(alightKey);
-        const hasTransfer = maxRides >= 2 && hasTransferEdges.has(alightKey);
-        if (!isNearDest && !hasTransfer) continue;
-
         const alightStop = route.stops[ai]!;
         const rideTime = computeRideDistance(route.stops, si, ai, route.segDists) / route.speed;
-
         const rideLeg: TransitLeg = {
           type: 'ride',
           fromX: entryStop.x, fromY: entryStop.y,
@@ -304,14 +272,87 @@ export function findMultiModalRoutes(
           alightStopIdx: ai,
         };
 
-        tryCompleteOrTransfer(
-          ri, ai,
-          walkToEntry + waitTime + rideTime,
-          [firstWalkLeg, rideLeg],
-          new Set([ri]),
-          1,
-        );
+        tryCache(ri, si, ri, ai, [rideLeg], waitTime + rideTime);
 
+        // Explore transfers from this alight stop
+        if (maxRides >= 2 && hasTransferEdges.has(sk(ri, ai))) {
+          exploreTransfers(
+            ri, si, ri, ai,
+            waitTime + rideTime, [rideLeg],
+            new Set([ri]), 1,
+          );
+        }
+      }
+    }
+  }
+}
+
+// ── Multi-Modal Route Search (cache-backed) ─────────────────────
+
+const MAX_RESULTS = 20;
+
+/**
+ * Find multi-modal routes using the pre-computed stop-to-stop cache.
+ * Per-citizen cost: iterate nearby stops × cache lookup (no DFS).
+ */
+export function findMultiModalRoutes(
+  routes: readonly FlatRoute[],
+  origin: { x: number; y: number },
+  destination: { x: number; y: number },
+  walkRange: number,
+  walkSpeed: number,
+  _waitFactor: number,
+  transferGraph: TransferGraph,
+  _maxLegs: number,
+): MultiLegRoute[] {
+  if (routes.length === 0) return [];
+
+  const cache = transferGraph.stopRouteCache;
+
+  const results: MultiLegRoute[] = [];
+
+  // For each entry stop near origin × each exit stop near destination, lookup cache
+  for (let eri = 0; eri < routes.length; eri++) {
+    const eRoute = routes[eri]!;
+    if (eRoute.isFull) continue;
+    for (let esi = 0; esi < eRoute.stops.length; esi++) {
+      const entryStop = eRoute.stops[esi]!;
+      const walkToEntry = manhattanDistance(entryStop.x, entryStop.y, origin.x, origin.y);
+      if (walkToEntry > walkRange) continue;
+
+      const firstWalkTime = walkToEntry / walkSpeed;
+      const firstWalkLeg: TransitLeg = {
+        type: 'walk',
+        fromX: origin.x, fromY: origin.y,
+        toX: entryStop.x, toY: entryStop.y,
+        estimatedTime: firstWalkTime,
+      };
+
+      for (let xri = 0; xri < routes.length; xri++) {
+        const xRoute = routes[xri]!;
+        for (let xsi = 0; xsi < xRoute.stops.length; xsi++) {
+          const exitStop = xRoute.stops[xsi]!;
+          const walkFromExit = manhattanDistance(exitStop.x, exitStop.y, destination.x, destination.y);
+          if (walkFromExit > walkRange) continue;
+
+          const cached = cache.get(cacheKey(eri, esi, xri, xsi));
+          if (!cached) continue;
+
+          const lastWalkTime = walkFromExit / walkSpeed;
+          const lastWalkLeg: TransitLeg = {
+            type: 'walk',
+            fromX: exitStop.x, fromY: exitStop.y,
+            toX: destination.x, toY: destination.y,
+            estimatedTime: lastWalkTime,
+          };
+
+          results.push({
+            legs: [firstWalkLeg, ...cached.legs, lastWalkLeg],
+            totalTime: firstWalkTime + cached.totalTime + lastWalkTime,
+          });
+
+          if (results.length >= MAX_RESULTS) break;
+        }
         if (results.length >= MAX_RESULTS) break;
       }
       if (results.length >= MAX_RESULTS) break;

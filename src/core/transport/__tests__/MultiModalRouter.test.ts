@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildTransferGraph,
+  buildStopRouteCache,
   findMultiModalRoutes,
   flattenSystems,
   type FlatRoute,
@@ -82,6 +83,13 @@ describe('buildTransferGraph', () => {
 
 // ── findMultiModalRoutes ────────────────────────────────────────
 
+/** Build transfer graph AND pre-compute stop route cache in one step. */
+function buildGraphWithCache(routes: FlatRoute[], transferRange: number, walkSpeed = 1, waitFactor = 0.5, maxLegs = 7) {
+  const graph = buildTransferGraph(routes, transferRange);
+  buildStopRouteCache(routes, graph, walkSpeed, waitFactor, maxLegs);
+  return graph;
+}
+
 describe('findMultiModalRoutes', () => {
   const WALK_SPEED = 1;
   const WAIT_FACTOR = 0.5;
@@ -90,7 +98,7 @@ describe('findMultiModalRoutes', () => {
   const MAX_LEGS = 7;
 
   it('returns empty array when no routes exist', () => {
-    const graph = buildTransferGraph([], TRANSFER_RANGE);
+    const graph = buildGraphWithCache([], TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       [], { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -102,7 +110,7 @@ describe('findMultiModalRoutes', () => {
     const routes: FlatRoute[] = [
       makeRoute(1, TransportType.BUS, 2, [makeStop(1, 0, 1), makeStop(9, 0, 2)], { segDists: [10, 10] }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -123,7 +131,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(2, TransportType.METRO, 3,
         [makeStop(10, 1, 3), makeStop(19, 0, 4)], { segDists: [10, 10] }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -149,7 +157,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(3, TransportType.RAIL, 4,
         [makeStop(20, 1, 5), makeStop(29, 0, 6)], { segDists: [10, 10] }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 30, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -169,7 +177,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(2, TransportType.METRO, 3,
         [makeStop(10, 1, 3), makeStop(19, 0, 4)], { segDists: [10, 10] }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE, WALK_SPEED, WAIT_FACTOR, 3);
     // maxLegs=3 → only single-ride routes
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
@@ -187,7 +195,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(2, TransportType.BUS, 2,
         [makeStop(10, 1, 3), makeStop(19, 0, 4)], { segDists: [10, 10] }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -206,7 +214,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(1, TransportType.BUS, 2,
         [makeStop(0, 0, 1), makeStop(5, 0, 2), makeStop(10, 0, 3)]),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -222,7 +230,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(1, TransportType.BUS, 2,
         [makeStop(1, 0, 1), makeStop(9, 0, 2)], { isFull: true }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -235,7 +243,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(1, TransportType.BUS, 2,
         [makeStop(2, 0, 1), makeStop(8, 0, 2)], { segDists: [10, 10], frequency: 10 }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -261,7 +269,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(2, TransportType.METRO, 5,
         [makeStop(1, 1, 3), makeStop(9, 1, 4)], { segDists: [10, 10] }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
@@ -280,7 +288,7 @@ describe('findMultiModalRoutes', () => {
       makeRoute(2, TransportType.METRO, 3,
         [makeStop(10, 1, 3), makeStop(19, 0, 4)], { segDists: [10, 10], isFull: true }),
     ];
-    const graph = buildTransferGraph(routes, TRANSFER_RANGE);
+    const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,

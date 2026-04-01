@@ -34,7 +34,7 @@ import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import type { SchoolType, EnrolledCitizen } from '../service/EducationService';
 import { EDUCATION_PROGRESSION, MIN_SCHOOL_AGE, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
 import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../transport/ModeChoice';
-import { buildTransferGraph, findMultiModalRoutes, flattenSystems, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
+import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenSystems, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
 import { TransportMode } from '../transport/types';
@@ -111,7 +111,7 @@ export class SimulationLoop {
   private pendingTrips: AggregatedTrip[] = [];
 
   // Multi-modal transfer graph (rebuilt when transit network changes)
-  private transferGraph: TransferGraph = { byStop: new Map() };
+  private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
   private flatRoutes: FlatRoute[] = [];
 
@@ -1569,6 +1569,10 @@ export class SimulationLoop {
       const systems = this.getTransitSystemInfos();
       this.flatRoutes = flattenSystems(systems);
       this.transferGraph = buildTransferGraph(this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE);
+      buildStopRouteCache(
+        this.flatRoutes, this.transferGraph,
+        SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
+      );
       this.transferGraphDirty = false;
     }
 
