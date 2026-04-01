@@ -61,6 +61,14 @@ export function ServicesPage() {
 
     // Facility load status
     const facilities: FacilityStatus[] = [];
+    for (const s of state.police.getStations()) {
+      const load = state.police.getStationLoad(s.id);
+      facilities.push({ name: 'Police', load, capacity: s.capacity, ratio: s.capacity > 0 ? load / s.capacity : 0 });
+    }
+    for (const s of state.fire.getStations()) {
+      const load = state.fire.getStationLoad(s.id);
+      facilities.push({ name: 'Fire Station', load, capacity: s.capacity, ratio: s.capacity > 0 ? load / s.capacity : 0 });
+    }
     for (const h of state.health.getHospitals()) {
       const load = state.health.getHospitalLoad(h.id);
       facilities.push({ name: 'Hospital', load, capacity: h.capacity, ratio: h.capacity > 0 ? load / h.capacity : 0 });
