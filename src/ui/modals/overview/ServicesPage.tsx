@@ -159,15 +159,15 @@ export function ServicesPage() {
                     <span style="display:flex;align-items:center;gap:6px;color:#b0bec5">
                       <span style="font-size:14px">{item.icon}</span>
                       {item.name}
-                      {item.coverage >= 0 && (
-                        <span style={{ 'font-size': '11px', color: coverageColor(item.coverage * 100) }}>
-                          {Math.round(item.coverage * 100)}%
-                        </span>
-                      )}
                     </span>
                     <span style={{ 'font-weight': '600', color: item.statusColor }}>{item.status}</span>
                   </div>
-                  <div style="color:#667a90;font-size:11px;margin-top:2px;padding-left:22px">{item.detail}</div>
+                  <div style="display:flex;gap:12px;font-size:11px;margin-top:2px;padding-left:22px;color:#667a90">
+                    {item.coverage >= 0 && (
+                      <span>Coverage <span style={{ color: coverageColor(item.coverage * 100), 'font-weight': '500' }}>{Math.round(item.coverage * 100)}%</span></span>
+                    )}
+                    <span>{item.detail}</span>
+                  </div>
                 </div>
               )}
             </For>
