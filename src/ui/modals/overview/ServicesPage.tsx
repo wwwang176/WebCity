@@ -148,6 +148,13 @@ export function ServicesPage() {
         </div>
       </div>
 
+      <div style="display:flex;align-items:center;padding:6px 0;font-size:11px;color:#78909c;gap:8px;border-bottom:1px solid rgba(255,255,255,0.1)">
+        <span style="min-width:110px">Service</span>
+        <span style="min-width:55px">Coverage</span>
+        <span style="flex:1">Detail</span>
+        <span style="text-align:right">Status</span>
+      </div>
+
       <For each={data().entries}>
         {(group) => (
           <>
