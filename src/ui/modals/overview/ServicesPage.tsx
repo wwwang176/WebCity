@@ -116,7 +116,7 @@ export function ServicesPage() {
     const sewageCap = state.sewage.getTreatmentCapacity();
     const sewageDetail = sewageCap > 0
       ? loadDetail('Treated', Math.round(sewageCap - sewageUntreated), sewageCap)
-      : `Need ${Math.round(sewageUntreated)}  No treatment plant`;
+      : `${Math.round(sewageUntreated)} sewage untreated — build a treatment plant`;
     const sSt = sewageUntreated > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
     wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: sewageDetail, status: sSt.label, statusColor: sSt.color });
 
