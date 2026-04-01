@@ -112,11 +112,12 @@ export function ServicesPage() {
     const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(gRatio);
     wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: r.garbageRatio, detail: loadDetail('Landfill', Math.round(garbageLoad), garbageCap), status: gSt.label, statusColor: gSt.color });
 
+    const sewageProduced = Math.round(state.sewage.getProduced());
     const sewageUntreated = state.sewage.getUntreated();
     const sewageCap = state.sewage.getTreatmentCapacity();
     const sewageDetail = sewageCap > 0
-      ? loadDetail('Treated', Math.round(sewageCap - sewageUntreated), sewageCap)
-      : `${Math.round(sewageUntreated)} sewage untreated — build a treatment plant`;
+      ? loadDetail('Produced', sewageProduced, sewageCap)
+      : `${sewageProduced} sewage untreated — build a treatment plant`;
     const sSt = sewageUntreated > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
     wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: sewageDetail, status: sSt.label, statusColor: sSt.color });
 

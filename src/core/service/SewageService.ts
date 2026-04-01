@@ -48,6 +48,7 @@ export class SewageService {
   private connectedPlantIds = new Set<string>();
   private operationalPlantIds: Set<string> | null = null;
   private untreatedSewage = 0;
+  private produced = 0;
   private nextId = 1;
 
   addOutlet(x: number, y: number): string {
@@ -106,9 +107,15 @@ export class SewageService {
    * @param sewageProduced Total sewage produced this tick (water demand × sewage rates).
    */
   tick(sewageProduced: number): void {
+    this.produced = sewageProduced;
     this.untreatedSewage = 0;
     const connectedCapacity = this.getConnectedTreatmentCapacity();
     this.untreatedSewage = Math.max(0, sewageProduced - connectedCapacity);
+  }
+
+  /** Total sewage produced this tick (before treatment). */
+  getProduced(): number {
+    return this.produced;
   }
 
   /** Treatment capacity from connected AND operational plants only. */
