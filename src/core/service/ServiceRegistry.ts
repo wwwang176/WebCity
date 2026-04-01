@@ -3,6 +3,7 @@ import type { GameState } from '../simulation/GameState';
 import { type InfraType, getInfraConfig } from '../building/InfraConfig';
 import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
 import type { RoadCoverageService, Facility } from './RoadCoverageService';
+import type { SizedGrid } from '../grid/GridHelpers';
 
 /** All civic-service keys on GameState that implement CivicService. */
 const CIVIC_SERVICE_KEYS: readonly (keyof GameState)[] = [
@@ -26,10 +27,12 @@ function updateRoadServiceOps<F extends Facility>(
   infraType: InfraType,
   isPow: UtilityChecker,
   isWat: UtilityChecker,
+  grid: SizedGrid,
 ): void {
-  service.updateOperationalStatus(
+  const changed = service.updateOperationalStatus(
     (f) => isFacilityOperational(f.x, f.y, infraType, isPow, isWat),
   );
+  if (changed) service.recalculateCoverage(grid);
 }
 
 /**
@@ -45,11 +48,13 @@ export function tickAllCivicServices(state: GameState): void {
   const isWat: UtilityChecker = (x, y) => state.water.isSupplied(x, y);
 
   // Update operational status for RoadCoverageService subclasses
-  updateRoadServiceOps(state.police, 'police', isPow, isWat);
-  updateRoadServiceOps(state.fire, 'fire', isPow, isWat);
-  updateRoadServiceOps(state.health, 'hospital', isPow, isWat);
-  updateRoadServiceOps(state.garbage, 'garbage', isPow, isWat);
-  updateRoadServiceOps(state.deathCare, 'cemetery', isPow, isWat);
+  // If status changed (facility gained/lost power or water), recalculate coverage immediately
+  const grid = state.grid;
+  updateRoadServiceOps(state.police, 'police', isPow, isWat, grid);
+  updateRoadServiceOps(state.fire, 'fire', isPow, isWat, grid);
+  updateRoadServiceOps(state.health, 'hospital', isPow, isWat, grid);
+  updateRoadServiceOps(state.garbage, 'garbage', isPow, isWat, grid);
+  updateRoadServiceOps(state.deathCare, 'cemetery', isPow, isWat, grid);
 
   // Update non-RoadCoverageService services
   state.education.updateOperationalStatus(isPow, isWat);

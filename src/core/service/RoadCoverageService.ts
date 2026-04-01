@@ -107,12 +107,17 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     return this.coverage.previewMerged(position, grid, this.coverageBudget, facilityWidth, facilityHeight);
   }
 
-  /** Update which facilities are operational (have power + water). */
-  updateOperationalStatus(predicate: (f: F) => boolean): void {
-    this.operationalIds = new Set<string>();
+  /** Update which facilities are operational (have power + water).
+   *  Returns true if the set changed (facility gained or lost operational status). */
+  updateOperationalStatus(predicate: (f: F) => boolean): boolean {
+    const next = new Set<string>();
     for (const f of this.facilities) {
-      if (predicate(f)) this.operationalIds.add(f.id);
+      if (predicate(f)) next.add(f.id);
     }
+    const prev = this.operationalIds;
+    const changed = !prev || prev.size !== next.size || [...next].some(id => !prev.has(id));
+    this.operationalIds = next;
+    return changed;
   }
 
   /** Check if a facility is currently operational. Returns true if no filter is active. */
