@@ -75,7 +75,7 @@ function makeSchoolExtractor(
     const cap = sc?.capacity ?? defaultCap;
     const enrolled = sc ? ctx.education.getSchoolEnrollment(sc.id) : 0;
     const demand = sc ? ctx.education.getSchoolDemand(sc.id) : 0;
-    return { Type: label, Need: demand, Students: `${enrolled} / ${cap}`, Radius: sc?.radius ?? defaultRadius };
+    return { Type: label, Need: demand, Capacity: cap, Students: `${enrolled} / ${cap}`, Radius: sc?.radius ?? defaultRadius };
   };
 }
 

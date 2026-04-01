@@ -72,7 +72,7 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'school', 2, 2);
-    expect(d).toEqual({ Type: 'Elementary', Need: 350, Students: '250 / 250', Radius: 11 });
+    expect(d).toEqual({ Type: 'Elementary', Need: 350, Capacity: 250, Students: '250 / 250', Radius: 11 });
   });
 
   it('school_high: need shown even when within capacity', () => {
@@ -87,7 +87,7 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'school_high', 1, 1);
-    expect(d).toEqual({ Type: 'High School', Need: 200, Students: '120 / 350', Radius: 13 });
+    expect(d).toEqual({ Type: 'High School', Need: 200, Capacity: 350, Students: '120 / 350', Radius: 13 });
   });
 
   it('school_univ: returns need, students, and capacity', () => {
@@ -99,7 +99,7 @@ describe('getInfraDetails', () => {
       },
     });
     const d = getInfraDetails(ctx, 'school_univ', 7, 7);
-    expect(d).toEqual({ Type: 'University', Need: 88, Students: '88 / 600', Radius: 16 });
+    expect(d).toEqual({ Type: 'University', Need: 88, Capacity: 600, Students: '88 / 600', Radius: 16 });
   });
 
   it('park: returns radius', () => {
