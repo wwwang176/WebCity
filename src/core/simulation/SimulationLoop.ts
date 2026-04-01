@@ -22,7 +22,7 @@ import { forEachGridPollutionSource } from '../environment/GridPollutionSources'
 import { forEachServicePollutionSource } from '../environment/PollutionSourceRegistry';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
-import { isWorkingAge, type Citizen } from '../citizen/types';
+import { isWorkingAge, EducationLevel, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
@@ -608,18 +608,75 @@ export class SimulationLoop {
     this.state.education.updateSchoolLoads(enrolled);
   }
 
+  /** Police demand weight by education level (avg = 1.0). */
+  private static readonly POLICE_EDUCATION_MULT: Record<string, number> = {
+    [EducationLevel.NONE]: 2.0,
+    [EducationLevel.ELEMENTARY]: 1.1,
+    [EducationLevel.HIGH_SCHOOL]: 0.6,
+    [EducationLevel.UNIVERSITY]: 0.3,
+  };
+  /** Police demand weight by workplace zone type. */
+  private static readonly POLICE_ZONE_MULT: Partial<Record<ZoneType, number>> = {
+    [ZoneType.INDUSTRIAL]: 1.5,
+    [ZoneType.COMMERCIAL_LOW]: 1.0, [ZoneType.COMMERCIAL_HIGH]: 1.0,
+    [ZoneType.OFFICE]: 0.5,
+  };
+  /** Fire demand weight by workplace zone type. */
+  private static readonly FIRE_ZONE_MULT: Partial<Record<ZoneType, number>> = {
+    [ZoneType.INDUSTRIAL]: 2.0,
+    [ZoneType.COMMERCIAL_LOW]: 1.2, [ZoneType.COMMERCIAL_HIGH]: 1.2,
+    [ZoneType.OFFICE]: 0.8,
+  };
+  private static readonly BASE_DEMAND = 0.3;
+
   private updatePoliceFireLoads(): void {
-    const policeCovered: Array<{ x: number; y: number }> = [];
-    const fireCovered: Array<{ x: number; y: number }> = [];
+    const policeDemands: Array<{ x: number; y: number; weight: number }> = [];
+    const fireDemands: Array<{ x: number; y: number; weight: number }> = [];
+    const BD = SimulationLoop.BASE_DEMAND;
+
+    // Pre-compute occupancy count per home for fire demand
+    const homePop = new Map<string, number>();
     for (const c of this.state.citizens.getCitizens()) {
-      if (!c.homeId) continue;
-      const pos = parsePosKey(c.homeId);
-      if (!pos) continue;
-      if (this.state.police.getCoverage(pos.x, pos.y)) policeCovered.push(pos);
-      if (this.state.fire.getCoverage(pos.x, pos.y)) fireCovered.push(pos);
+      if (c.homeId) homePop.set(c.homeId, (homePop.get(c.homeId) ?? 0) + 1);
     }
-    this.state.police.updateStationLoads(policeCovered);
-    this.state.fire.updateStationLoads(fireCovered);
+
+    for (const c of this.state.citizens.getCitizens()) {
+      // Residential demand (by home)
+      if (c.homeId) {
+        const pos = parsePosKey(c.homeId);
+        if (pos) {
+          if (this.state.police.getCoverage(pos.x, pos.y)) {
+            const eMult = SimulationLoop.POLICE_EDUCATION_MULT[c.education] ?? 1.0;
+            policeDemands.push({ x: pos.x, y: pos.y, weight: BD * eMult });
+          }
+          if (this.state.fire.getCoverage(pos.x, pos.y)) {
+            const cell = this.state.grid.getCell(pos.x, pos.y);
+            const cap = Math.max(1, getBuildingType(cell?.buildingId ?? 0)?.capacity ?? 1);
+            const occ = (homePop.get(c.homeId) ?? 0) / cap;
+            fireDemands.push({ x: pos.x, y: pos.y, weight: BD * (1 + occ) });
+          }
+        }
+      }
+      // Workplace demand (by job location)
+      if (c.workplaceId) {
+        const wpos = parsePosKey(c.workplaceId);
+        if (wpos) {
+          const wcell = this.state.grid.getCell(wpos.x, wpos.y);
+          const zt = wcell?.zoneType ?? ZoneType.NONE;
+          if (this.state.police.getCoverage(wpos.x, wpos.y)) {
+            const zMult = SimulationLoop.POLICE_ZONE_MULT[zt] ?? 1.0;
+            policeDemands.push({ x: wpos.x, y: wpos.y, weight: BD * zMult });
+          }
+          if (this.state.fire.getCoverage(wpos.x, wpos.y)) {
+            const zMult = SimulationLoop.FIRE_ZONE_MULT[zt] ?? 1.0;
+            fireDemands.push({ x: wpos.x, y: wpos.y, weight: BD * zMult });
+          }
+        }
+      }
+    }
+
+    this.state.police.updateStationLoads(policeDemands);
+    this.state.fire.updateStationLoads(fireDemands);
   }
 
   /** Reusable health factors object — mutated per citizen, no allocation per iteration. */

@@ -66,24 +66,24 @@ export class FireService extends RoadCoverageService<FireStation> {
     return id;
   }
 
-  /** Assign covered citizens to nearest station (Euclidean). */
-  updateStationLoads(coveredCitizens: ReadonlyArray<{ x: number; y: number }>): void {
+  /** Assign weighted demand to nearest station (Euclidean). */
+  updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
     this.stationLoad.clear();
     for (const s of this.facilities) this.stationLoad.set(s.id, 0);
 
     let total = 0;
-    for (const c of coveredCitizens) {
-      total++;
+    for (const d of demands) {
+      total += d.weight;
       let nearestId = '';
       let nearestDist = Infinity;
       for (const s of this.facilities) {
-        const dx = c.x - s.x;
-        const dy = c.y - s.y;
+        const dx = d.x - s.x;
+        const dy = d.y - s.y;
         const dist = dx * dx + dy * dy;
         if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
       }
       if (nearestId) {
-        this.stationLoad.set(nearestId, (this.stationLoad.get(nearestId) ?? 0) + 1);
+        this.stationLoad.set(nearestId, (this.stationLoad.get(nearestId) ?? 0) + d.weight);
       }
     }
 
@@ -92,7 +92,7 @@ export class FireService extends RoadCoverageService<FireStation> {
   }
 
   getStationLoad(stationId: string): number {
-    return this.stationLoad.get(stationId) ?? 0;
+    return Math.round(this.stationLoad.get(stationId) ?? 0);
   }
 
   getLoadRatio(): number {
