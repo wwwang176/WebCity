@@ -1569,7 +1569,7 @@ export class SimulationLoop {
     if (eligible.length === 0) return;
 
     // Daily rollover for transfer usage counts (EMA smoothing)
-    const day = this.state.clock.day;
+    const day = this.state.clock.getDay();
     if (day !== this.lastTransferDay) {
       this.lastTransferDay = day;
       const alpha = 0.3;
