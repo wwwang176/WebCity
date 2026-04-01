@@ -114,6 +114,10 @@ export class SimulationLoop {
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
   private flatRoutes: FlatRoute[] = [];
+  /** Daily transfer usage count per route label (e.g. "🚌→🚇"). Reset on day rollover. */
+  private transferDailyCounts = new Map<string, number>();
+  private transferSmoothed = new Map<string, number>();
+  private lastTransferDay = -1;
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
@@ -1564,6 +1568,24 @@ export class SimulationLoop {
     }
     if (eligible.length === 0) return;
 
+    // Daily rollover for transfer usage counts (EMA smoothing)
+    const day = this.state.clock.day;
+    if (day !== this.lastTransferDay) {
+      this.lastTransferDay = day;
+      const alpha = 0.3;
+      for (const [label, count] of this.transferDailyCounts) {
+        const prev = this.transferSmoothed.get(label) ?? 0;
+        this.transferSmoothed.set(label, prev * (1 - alpha) + count * alpha);
+      }
+      // Decay labels not seen today
+      for (const [label, val] of this.transferSmoothed) {
+        if (!this.transferDailyCounts.has(label)) {
+          this.transferSmoothed.set(label, val * (1 - alpha));
+        }
+      }
+      this.transferDailyCounts.clear();
+    }
+
     // Rebuild transfer graph when transit network has changed
     if (this.transferGraphDirty) {
       const systems = this.getTransitSystemInfos();
@@ -1657,14 +1679,23 @@ export class SimulationLoop {
 
         // Increment dailyRiders on each boarding stop
         if (multiLeg) {
-          for (const leg of multiLeg.legs) {
-            if (leg.type === 'ride' && leg.routeIdx !== undefined && leg.boardStopIdx !== undefined) {
+          const rideLegs = multiLeg.legs.filter(l => l.type === 'ride');
+          for (const leg of rideLegs) {
+            if (leg.routeIdx !== undefined && leg.boardStopIdx !== undefined) {
               const route = this.flatRoutes[leg.routeIdx];
               if (route) {
                 const stop = route.stops[leg.boardStopIdx] as { dailyRiders: number } | undefined;
                 if (stop) stop.dailyRiders++;
               }
             }
+          }
+          // Track transfer usage per route label
+          if (rideLegs.length >= 2) {
+            const label = rideLegs.map(l => {
+              const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
+              return icons[l.transitType ?? ''] ?? '?';
+            }).join('\u2192');
+            this.transferDailyCounts.set(label, (this.transferDailyCounts.get(label) ?? 0) + 1);
           }
         } else {
           const transitSystem = getSystemForMode(this.state, mode);
@@ -2108,12 +2139,13 @@ export class SimulationLoop {
       else groups.set(label, { count: 1, totalTime: route.totalTime });
     });
 
-    const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }> = [];
+    const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number; dailyUse: number }> = [];
     groups.forEach((g, label) => {
       const rides = (label.match(/\u2192/g) || []).length + 1;
-      routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count });
+      const dailyUse = this.transferSmoothed.get(label) ?? 0;
+      routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count, dailyUse });
     });
-    routeBreakdown.sort((a, b) => a.rides - b.rides || b.count - a.count);
+    routeBreakdown.sort((a, b) => a.rides - b.rides || b.dailyUse - a.dailyUse);
 
     return {
       activeTransferPeds,
