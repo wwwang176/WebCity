@@ -38,10 +38,14 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo): Promise<
     updateLoadingProgress(10 + Math.round(pct * 0.9), label);
   });
 
+  updateLoadingProgress(100, 'Ready!');
+
   (window as unknown as Record<string, unknown>).__game = game;
   const ui = createGameUI(game);
   document.body.appendChild(ui);
 
+  // Hold 100% for at least 300ms so it doesn't flash
+  await new Promise(r => setTimeout(r, 300));
   removeLoadingScreen();
 }
 
