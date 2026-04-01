@@ -25,6 +25,8 @@ import { isFacilityOperational, type UtilityChecker } from './FacilityOperationa
 
 /** Sewage system configuration constants */
 export const SEWAGE = {
+  /** Default treatment plant capacity (1.5x water plant output of 1500) */
+  DEFAULT_CAPACITY: 2250,
   /** Water pollution multiplier per untreated sewage unit */
   WATER_POLLUTION_MULTIPLIER: 5,
   /** Maximum pollution emitted per outlet */
@@ -54,7 +56,7 @@ export class SewageService {
     return id;
   }
 
-  addTreatmentPlant(x: number, y: number, capacity = 200): string {
+  addTreatmentPlant(x: number, y: number, capacity = SEWAGE.DEFAULT_CAPACITY): string {
     const id = `plant-${this.nextId++}`;
     this.treatmentPlants.push({ id, x, y, capacity });
     this.connectedPlantIds.add(id);

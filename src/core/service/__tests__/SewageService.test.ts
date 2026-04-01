@@ -16,11 +16,11 @@ describe('SewageService', () => {
     expect(typeof id).toBe('string');
   });
 
-  it('should add a treatment plant with default capacity 200', () => {
+  it('should add a treatment plant with default capacity', () => {
     const sewage = new SewageService();
     const id = sewage.addTreatmentPlant(3, 4);
     expect(id).toBeTruthy();
-    expect(sewage.getTreatmentCapacity()).toBe(200);
+    expect(sewage.getTreatmentCapacity()).toBe(SEWAGE.DEFAULT_CAPACITY);
   });
 
   it('should add a treatment plant with custom capacity', () => {
