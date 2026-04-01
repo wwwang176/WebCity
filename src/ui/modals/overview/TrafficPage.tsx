@@ -65,8 +65,6 @@ export function TrafficPage() {
   const transferStats = createMemo(() => {
     gameSignals.tick();
     return getGame().getTransferStats();
-  }, undefined, {
-    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
 
   const transitData = createMemo(() => {
@@ -230,8 +228,8 @@ export function TrafficPage() {
         <div class="section-title">Multi-Modal Transfers</div>
         <div class="summary-grid" style="grid-template-columns:repeat(3,1fr)">
           <div class="summary-card">
-            <div class="sc-value stat-accent">{transferStats().transferTrips}</div>
-            <div class="sc-label">Transfer Trips</div>
+            <div class="sc-value stat-accent">{transferStats().activeTransferPeds}</div>
+            <div class="sc-label">Active Transfers</div>
           </div>
           <div class="summary-card">
             <div class="sc-value">{transferStats().multiRideRoutes}</div>

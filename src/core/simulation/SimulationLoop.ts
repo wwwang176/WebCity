@@ -2070,12 +2070,21 @@ export class SimulationLoop {
 
   /** Transfer stats for UI display. */
   getTransferStats(): {
+    activeTransferPeds: number;
+    totalActivePeds: number;
     transferTrips: number;
     cachedRoutes: number;
     multiRideRoutes: number;
     transferEdges: number;
     routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }>;
   } {
+    // Live data: active pedestrian counts
+    const agents = this.state.pedestrianManager.agents;
+    let activeTransferPeds = 0;
+    for (const a of agents) {
+      if (a.tripType === 4) activeTransferPeds++;
+    }
+
     const pool = this.walkingTripPool;
     let transferTrips = 0;
     for (const t of pool.trips) {
@@ -2107,6 +2116,8 @@ export class SimulationLoop {
     routeBreakdown.sort((a, b) => a.rides - b.rides || b.count - a.count);
 
     return {
+      activeTransferPeds,
+      totalActivePeds: agents.length,
       transferTrips,
       cachedRoutes: cache.size,
       multiRideRoutes,
