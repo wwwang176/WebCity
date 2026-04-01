@@ -99,7 +99,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   static fromJSON(data: { stations: PoliceStation[] }): PoliceService {
     const service = new PoliceService();
     for (const s of data.stations) {
-      service.facilities.push({ ...s, capacity: s.capacity ?? POLICE.DEFAULT_CAPACITY });
+      service.facilities.push({ ...s, capacity: POLICE.DEFAULT_CAPACITY });
     }
     service.restoreNextId(); // also marks facilities connected
     return service;

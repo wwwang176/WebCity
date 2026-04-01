@@ -217,7 +217,7 @@ export class FireService extends RoadCoverageService<FireStation> {
 
   static fromJSON(json: FireServiceJSON): FireService {
     const service = new FireService();
-    service.facilities = json.stations.map(s => ({ ...s, capacity: s.capacity ?? FIRE.DEFAULT_CAPACITY }));
+    service.facilities = json.stations.map(s => ({ ...s, capacity: FIRE.DEFAULT_CAPACITY }));
     for (const f of service.facilities) service.connectedFacilityIds.add(f.id);
     service.activeFires = json.activeFires.map(f => ({ ...f }));
     service.nextId = json.nextId;

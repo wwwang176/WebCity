@@ -275,7 +275,7 @@ export class EducationService {
   static fromJSON(data: { schools: School[] }): EducationService {
     const service = new EducationService();
     for (const s of data.schools) {
-      service.schools.push({ ...s });
+      service.schools.push({ ...s, capacity: DEFAULT_CAPACITY[s.type] ?? s.capacity });
     }
     service.nextId = recoverNextId(service.schools, 'school-');
     return service;
