@@ -21,7 +21,7 @@ export const HEALTH = {
   /** Maximum health bonus from hospital coverage */
   BONUS_CAP: 35,
   MAINTENANCE_PER_HOSPITAL: 8,
-  DEFAULT_CAPACITY: 1200,
+  DEFAULT_CAPACITY: 1500,
   DEFAULT_RADIUS: 12,
 } as const;
 

@@ -27,9 +27,9 @@ export const DEFAULT_RADIUS: Record<SchoolType, number> = {
 };
 
 export const DEFAULT_CAPACITY: Record<SchoolType, number> = {
-  elementary: 900,
-  highschool: 700,
-  university: 700,
+  elementary: 400,
+  highschool: 500,
+  university: 800,
 };
 
 /** Road-coverage budget per school type. Higher level = wider coverage. */

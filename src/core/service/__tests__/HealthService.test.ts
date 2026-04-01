@@ -37,7 +37,7 @@ describe('HealthService', () => {
     expect(hospitals[0]!.x).toBe(10);
     expect(hospitals[0]!.y).toBe(10);
     expect(hospitals[0]!.radius).toBe(12);
-    expect(hospitals[0]!.capacity).toBe(1200);
+    expect(hospitals[0]!.capacity).toBe(1500);
   });
 
   it('should add a hospital with custom radius and capacity', () => {
@@ -141,14 +141,14 @@ describe('HealthService', () => {
 
   it('toJSON() should serialize state', () => {
     const health = new HealthService();
-    health.addHospital(10, 10, 12, 1200);
+    health.addHospital(10, 10, 12, 1500);
     health.addHospital(20, 20, 15, 200);
     const json = health.toJSON();
     expect(json.hospitals).toHaveLength(2);
     expect(json.hospitals[0]!.x).toBe(10);
     expect(json.hospitals[0]!.y).toBe(10);
     expect(json.hospitals[0]!.radius).toBe(12);
-    expect(json.hospitals[0]!.capacity).toBe(1200);
+    expect(json.hospitals[0]!.capacity).toBe(1500);
     expect(json.hospitals[1]!.x).toBe(20);
     expect(json.hospitals[1]!.y).toBe(20);
   });
