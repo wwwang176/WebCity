@@ -97,22 +97,22 @@ describe('EducationService', () => {
     it('should return capacity of a single school', () => {
       const edu = new EducationService();
       edu.addSchool(5, 5, 'elementary');
-      expect(edu.getTotalCapacity('elementary')).toBe(200); // DEFAULT_CAPACITY
+      expect(edu.getTotalCapacity('elementary')).toBe(900); // DEFAULT_CAPACITY
     });
 
     it('should sum capacities of same-type schools', () => {
       const edu = new EducationService();
       edu.addSchool(5, 5, 'elementary');
       edu.addSchool(10, 10, 'elementary');
-      expect(edu.getTotalCapacity('elementary')).toBe(400);
+      expect(edu.getTotalCapacity('elementary')).toBe(1800);
     });
 
     it('should only count specified type', () => {
       const edu = new EducationService();
       edu.addSchool(5, 5, 'elementary');
       edu.addSchool(10, 10, 'highschool');
-      expect(edu.getTotalCapacity('elementary')).toBe(200);
-      expect(edu.getTotalCapacity('highschool')).toBe(300);
+      expect(edu.getTotalCapacity('elementary')).toBe(900);
+      expect(edu.getTotalCapacity('highschool')).toBe(700);
       expect(edu.getTotalCapacity('university')).toBe(0);
     });
 

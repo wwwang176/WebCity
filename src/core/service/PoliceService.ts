@@ -14,7 +14,7 @@ export const POLICE = {
   CRIME_REDUCTION_PER_STATION: -30,
   CRIME_REDUCTION_CAP: -60,
   MAINTENANCE_PER_STATION: 4,
-  DEFAULT_CAPACITY: 500,
+  DEFAULT_CAPACITY: 1200,
 } as const;
 
 export class PoliceService extends RoadCoverageService<PoliceStation> {
