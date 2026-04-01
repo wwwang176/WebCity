@@ -36,6 +36,8 @@ export interface InfraDetailContext {
   };
   garbage: {
     getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number }[];
+    getProducedPerWeek(): number;
+    getBurnedPerWeek(): number;
   };
   deathCare: {
     getCemeteries(): readonly { x: number; y: number; capacity: number; used: number; pending: number; recentDaily: number[]; recentIndex: number; todayCremated: number; deathDaily: number[] }[];
@@ -110,7 +112,9 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   garbage: (ctx, cx, cy) => {
     const f = findAtPosition(ctx.garbage.getFacilities(), cx, cy);
-    return { Capacity: f?.capacity ?? 1000, Load: f?.currentLoad ?? 0 };
+    const load = f?.currentLoad ?? 0;
+    const cap = f?.capacity ?? 1000;
+    return { Load: `${load} / ${cap}`, 'Produced/wk': ctx.garbage.getProducedPerWeek(), 'Burned/wk': ctx.garbage.getBurnedPerWeek() };
   },
   sewage: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.sewage.getTreatmentPlants(), cx, cy);

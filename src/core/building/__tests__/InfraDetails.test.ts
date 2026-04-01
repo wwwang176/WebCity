@@ -10,7 +10,7 @@ function makeCtx(overrides: Partial<InfraDetailContext> = {}): InfraDetailContex
     health: { getHospitals: () => [], getHospitalLoad: () => 0 },
     education: { getSchools: () => [], getSchoolEnrollment: () => 0, getSchoolDemand: () => 0 },
     parks: { getParks: () => [] },
-    garbage: { getFacilities: () => [] },
+    garbage: { getFacilities: () => [], getProducedPerWeek: () => 0, getBurnedPerWeek: () => 0 },
     deathCare: { getCemeteries: () => [] },
     power: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
     water: { getPlants: () => [], getSupply: () => 0, getDemand: () => 0, getSupplyRatio: () => 1 },
@@ -110,12 +110,16 @@ describe('getInfraDetails', () => {
     expect(d).toEqual({ Radius: 8 });
   });
 
-  it('garbage: returns capacity and load', () => {
+  it('garbage: returns load, produced/wk, burned/wk', () => {
     const ctx = makeCtx({
-      garbage: { getFacilities: () => [{ x: 3, y: 3, capacity: 2000, currentLoad: 500 }] },
+      garbage: {
+        getFacilities: () => [{ x: 3, y: 3, capacity: 2000, currentLoad: 500 }],
+        getProducedPerWeek: () => 35,
+        getBurnedPerWeek: () => 30,
+      },
     });
     const d = getInfraDetails(ctx, 'garbage', 3, 3);
-    expect(d).toEqual({ Capacity: 2000, Load: 500 });
+    expect(d).toEqual({ Load: '500 / 2000', 'Produced/wk': 35, 'Burned/wk': 30 });
   });
 
   it('sewage: returns need and capacity', () => {

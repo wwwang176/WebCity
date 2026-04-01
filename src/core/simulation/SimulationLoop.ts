@@ -295,6 +295,7 @@ export class SimulationLoop {
       this.state.citizens.updateAges(this.state.clock.tick);
       this.state.deathCare.advanceDay();
       this.state.fire.advanceDay();
+      this.state.garbage.advanceDay();
 
       this.updateHospitalLoads();
       const hospitalMult = loadRatioToDeathMultiplier(this.state.health.getLoadRatio());
