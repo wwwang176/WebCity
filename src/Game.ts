@@ -255,6 +255,10 @@ export interface SelectedZoneBuilding {
   garbageLoadRatio: number;
   /** City-wide hospital load ratio (> 1 means overloaded). */
   hospitalLoadRatio: number;
+  /** City-wide police load ratio (> 1 means overloaded). */
+  policeLoadRatio: number;
+  /** City-wide fire load ratio (> 1 means overloaded). */
+  fireLoadRatio: number;
 }
 
 export interface SelectedInfraBuilding {
@@ -1623,6 +1627,8 @@ export class Game {
             taxIncome: calculateSingleBuildingIncome(buildIncomeCalcDeps(this.state), x, y, cell.buildingId),
             garbageLoadRatio: this.getGarbageLoadRatio(),
             hospitalLoadRatio: this.state.health.getLoadRatio(),
+            policeLoadRatio: this.state.police.getLoadRatio(),
+            fireLoadRatio: this.state.fire.getLoadRatio(),
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;

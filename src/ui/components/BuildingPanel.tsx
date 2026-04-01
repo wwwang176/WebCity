@@ -198,6 +198,20 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     warnings.push({ level: 'yellow', text: 'Hospital over capacity' });
   }
 
+  // Police overloaded — crime reduction diminished (always show)
+  if (sel.policeLoadRatio > 2) {
+    warnings.push({ level: 'red', text: 'Police overstretched' });
+  } else if (sel.policeLoadRatio > 1) {
+    warnings.push({ level: 'yellow', text: 'Police over capacity' });
+  }
+
+  // Fire overloaded — fire damage increased (always show)
+  if (sel.fireLoadRatio > 2) {
+    warnings.push({ level: 'red', text: 'Fire dept overstretched' });
+  } else if (sel.fireLoadRatio > 1) {
+    warnings.push({ level: 'yellow', text: 'Fire dept over capacity' });
+  }
+
   // Sort: red first, then yellow
   warnings.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
   return warnings;
