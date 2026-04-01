@@ -1614,13 +1614,37 @@ export class SimulationLoop {
             });
           } else if (multiLeg) {
             // Multi-modal: generate pedestrian trips for each walk leg
+            // Use stop roadX/roadY (road-adjacent cell) when available
+            // so sidewalk pathfinding can connect the dots.
             const legs = multiLeg.legs;
             for (let li = 0; li < legs.length; li++) {
               const leg = legs[li]!;
               if (leg.type !== 'walk') continue;
+              let wFromX = leg.fromX, wFromY = leg.fromY;
+              let wToX = leg.toX, wToY = leg.toY;
+              // Transfer & last-mile walks start at an alight stop — use its roadX/roadY
+              if (li > 0) {
+                const prevRide = legs[li - 1]!;
+                if (prevRide.routeIdx !== undefined && prevRide.alightStopIdx !== undefined) {
+                  const s = this.flatRoutes[prevRide.routeIdx]?.stops[prevRide.alightStopIdx];
+                  if (s?.roadX !== undefined && s?.roadY !== undefined) {
+                    wFromX = s.roadX; wFromY = s.roadY;
+                  }
+                }
+              }
+              // Transfer & first-mile walks end at a boarding stop — use its roadX/roadY
+              if (li < legs.length - 1) {
+                const nextRide = legs[li + 1]!;
+                if (nextRide.routeIdx !== undefined && nextRide.boardStopIdx !== undefined) {
+                  const s = this.flatRoutes[nextRide.routeIdx]?.stops[nextRide.boardStopIdx];
+                  if (s?.roadX !== undefined && s?.roadY !== undefined) {
+                    wToX = s.roadX; wToY = s.roadY;
+                  }
+                }
+              }
               this.pendingTrips.push({
-                fromX: leg.fromX, fromY: leg.fromY,
-                toX: leg.toX, toY: leg.toY,
+                fromX: wFromX, fromY: wFromY,
+                toX: wToX, toY: wToY,
                 tripType: li === 0 ? PedestrianTripType.FIRST_MILE
                   : li === legs.length - 1 ? PedestrianTripType.LAST_MILE
                   : PedestrianTripType.TRANSFER_WALK,
