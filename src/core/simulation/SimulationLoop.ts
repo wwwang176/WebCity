@@ -2156,7 +2156,7 @@ export class SimulationLoop {
 
     return {
       activeTransferPeds,
-      totalActivePeds: agents.length,
+      totalActivePeds: this.state.pedestrianManager.agents.length,
       transferTrips,
       cachedRoutes: cache.size,
       multiRideRoutes,
