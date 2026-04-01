@@ -119,11 +119,11 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   cemetery: (ctx, cx, cy) => {
     const c = findAtPosition(ctx.deathCare.getCemeteries(), cx, cy);
-    const pending = c?.pending ?? 0;
-    const stored = c?.used ?? 0;
-    const deaths30 = c ? c.deathDaily.reduce((a: number, b: number) => a + b, 0) : 0;
-    const cremated30 = c ? c.recentDaily.reduce((a: number, b: number) => a + b, 0) : 0;
-    return { Need: pending + stored, Capacity: c?.capacity ?? 500, Stored: stored, Pending: pending, 'Deaths/wk': deaths30, 'Cremated/wk': cremated30 };
+    const bodies = (c?.pending ?? 0) + (c?.used ?? 0);
+    const cap = c?.capacity ?? 500;
+    const deathsWk = c ? c.deathDaily.reduce((a: number, b: number) => a + b, 0) : 0;
+    const crematedWk = c ? c.recentDaily.reduce((a: number, b: number) => a + b, 0) : 0;
+    return { Bodies: `${bodies} / ${cap}`, 'Deaths/wk': deathsWk, 'Cremated/wk': crematedWk };
   },
   power: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.power.getPlants(), cx, cy);
