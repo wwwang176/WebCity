@@ -530,6 +530,11 @@ export class Game {
     if (loadedState) {
       rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
       this.recalculateAllRoadCoverage();
+      // Compute power/water coverage immediately so building panels show correct status
+      this.state.power.calculateDemand(this.state.grid);
+      this.state.power.calculateCoverage(this.state.grid);
+      this.state.water.calculateDemand(this.state.grid);
+      this.state.water.calculateCoverage(this.state.grid);
     }
 
     // Generate terrain only for new games
