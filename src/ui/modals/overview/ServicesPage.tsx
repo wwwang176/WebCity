@@ -154,20 +154,18 @@ export function ServicesPage() {
             <div class="section-title" style="margin-top:12px">{group.group}</div>
             <For each={group.items}>
               {(item) => (
-                <div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px">
-                  <div style="display:flex;align-items:center;justify-content:space-between">
-                    <span style="display:flex;align-items:center;gap:6px;color:#b0bec5">
-                      <span style="font-size:14px">{item.icon}</span>
-                      {item.name}
+                <div style="display:flex;align-items:center;padding:4px 0;border-bottom:1px solid rgba(255,255,255,0.05);font-size:12px;gap:8px">
+                  <span style="display:flex;align-items:center;gap:4px;color:#b0bec5;min-width:110px">
+                    <span style="font-size:13px">{item.icon}</span>
+                    {item.name}
+                  </span>
+                  {item.coverage >= 0 && (
+                    <span style={{ 'min-width': '55px', 'font-size': '11px', color: coverageColor(item.coverage * 100) }}>
+                      {Math.round(item.coverage * 100)}%
                     </span>
-                    <span style={{ 'font-weight': '600', color: item.statusColor }}>{item.status}</span>
-                  </div>
-                  <div style="display:flex;gap:12px;font-size:11px;margin-top:2px;padding-left:22px;color:#667a90">
-                    {item.coverage >= 0 && (
-                      <span>Coverage <span style={{ color: coverageColor(item.coverage * 100), 'font-weight': '500' }}>{Math.round(item.coverage * 100)}%</span></span>
-                    )}
-                    <span>{item.detail}</span>
-                  </div>
+                  )}
+                  <span style="flex:1;font-size:11px;color:#667a90">{item.detail}</span>
+                  <span style={{ 'font-weight': '600', 'font-size': '11px', color: item.statusColor, 'white-space': 'nowrap' }}>{item.status}</span>
                 </div>
               )}
             </For>
