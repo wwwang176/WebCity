@@ -526,70 +526,103 @@ export class Game {
       isWater: (x: number, y: number) => isWater(grid, x, y),
     });
 
-    // Rebuild rail network and service coverage from existing grid data (for loaded games)
+    // Defer heavy init to async initPhases() for real loading progress
+    this._container = container;
+    this._loadedState = loadedState;
+    this._mapSize = mapSize;
+  }
+
+  private _container!: HTMLElement;
+  private _loadedState?: GameState;
+  private _mapSize!: number;
+
+  /** Build the ordered list of initialization steps.
+   *  Each step has a label and a function to execute. */
+  private buildInitSteps(): Array<{ label: string; run: () => void }> {
+    const loadedState = this._loadedState;
+    const mapSize = this._mapSize;
+    const container = this._container;
+    const steps: Array<{ label: string; run: () => void }> = [];
+
     if (loadedState) {
-      rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
-      this.recalculateAllRoadCoverage();
-      // Compute power/water coverage immediately so building panels show correct status
-      this.state.power.calculateDemand(this.state.grid);
-      this.state.power.calculateCoverage(this.state.grid);
-      this.state.water.calculateDemand(this.state.grid);
-      this.state.water.calculateCoverage(this.state.grid);
-      // Pre-compute commute paths and spawn initial vehicles
-      this.simLoop.warmup();
+      steps.push({ label: 'Rebuilding road network...', run: () => {
+        rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
+      }});
+      steps.push({ label: 'Calculating service coverage...', run: () => {
+        this.recalculateAllRoadCoverage();
+      }});
+      steps.push({ label: 'Computing power & water...', run: () => {
+        this.state.power.calculateDemand(this.state.grid);
+        this.state.power.calculateCoverage(this.state.grid);
+        this.state.water.calculateDemand(this.state.grid);
+        this.state.water.calculateCoverage(this.state.grid);
+      }});
+      steps.push({ label: 'Building commute paths...', run: () => {
+        this.simLoop.warmup();
+      }});
+    } else {
+      steps.push({ label: 'Generating terrain...', run: () => {
+        generateTerrain(this.state.grid);
+      }});
     }
 
-    // Generate terrain only for new games
-    if (!loadedState) {
-      generateTerrain(this.state.grid);
+    steps.push({ label: 'Creating renderers...', run: () => {
+      this.sceneManager = new SceneManager(container);
+      this.terrainRenderer = new TerrainRenderer();
+      this.roadRenderer = new RoadRenderer();
+      this.buildingRenderer = new BuildingRenderer();
+      this.vehicleRenderer = new VehicleRenderer();
+      this.pedestrianRenderer = new PedestrianRenderer();
+      this.trafficLightRenderer = new TrafficLightRenderer();
+      this.overlayRenderer = new OverlayRenderer();
+      this.transportRouteRenderer = new TransportRouteRenderer();
+      this.metroTunnelRenderer = new MetroTunnelRenderer();
+      this.trackRenderer = new TrackRenderer();
+      this.elevatedRoadRenderer = new ElevatedRoadRenderer();
+      this.levelCrossingRenderer = new LevelCrossingRenderer();
+      this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
+    }});
+
+    steps.push({ label: 'Building scene...', run: () => {
+      this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
+      this.vehicleRenderer.build(this.sceneManager.scene);
+      this.pedestrianRenderer.build(this.sceneManager.scene);
+      this.transportRouteRenderer.build(this.sceneManager.scene);
+      this.metroTunnelRenderer.build(this.sceneManager.scene);
+      this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
+      this.placementPreview = new PlacementPreview(
+        this.sceneManager.scene,
+        this.buildingRenderer,
+        (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
+      );
+      this.highlightManager = new HighlightManager(
+        this.sceneManager.scene,
+        (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
+      );
+    }});
+
+    steps.push({ label: 'Starting game...', run: () => {
+      this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
+      this.lastMilestoneId = getMilestone(this.state.citizens.getPopulation())?.id ?? null;
+      this.setupInput(container);
+      this.sceneManager.onUpdate((dt) => this.update(dt));
+      this.sceneManager.start();
+    }});
+
+    return steps;
+  }
+
+  /** Async phased initialization. Runs each step with a requestAnimationFrame
+   *  between steps so the browser can repaint the loading progress.
+   *  @param onProgress called with (percentage, label) after each step */
+  async initPhases(onProgress?: (pct: number, label: string) => void): Promise<void> {
+    const steps = this.buildInitSteps();
+    for (let i = 0; i < steps.length; i++) {
+      const pct = Math.round(((i + 1) / steps.length) * 100);
+      onProgress?.(pct, steps[i]!.label);
+      await new Promise(r => requestAnimationFrame(r));
+      steps[i]!.run();
     }
-
-    // Renderer setup
-    this.sceneManager = new SceneManager(container);
-    this.terrainRenderer = new TerrainRenderer();
-    this.roadRenderer = new RoadRenderer();
-    this.buildingRenderer = new BuildingRenderer();
-    this.vehicleRenderer = new VehicleRenderer();
-    this.pedestrianRenderer = new PedestrianRenderer();
-    this.trafficLightRenderer = new TrafficLightRenderer();
-    this.overlayRenderer = new OverlayRenderer();
-    this.transportRouteRenderer = new TransportRouteRenderer();
-    this.metroTunnelRenderer = new MetroTunnelRenderer();
-    this.trackRenderer = new TrackRenderer();
-    this.elevatedRoadRenderer = new ElevatedRoadRenderer();
-    this.levelCrossingRenderer = new LevelCrossingRenderer();
-
-    this.weatherRenderer = new WeatherRenderer(this.sceneManager, mapSize);
-
-    // Build initial scene
-    this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
-    this.vehicleRenderer.build(this.sceneManager.scene);
-    this.pedestrianRenderer.build(this.sceneManager.scene);
-    this.transportRouteRenderer.build(this.sceneManager.scene);
-    this.metroTunnelRenderer.build(this.sceneManager.scene);
-    this.gridCursor = new GridCursor(this.sceneManager.scene, mapSize, mapSize);
-    this.placementPreview = new PlacementPreview(
-      this.sceneManager.scene,
-      this.buildingRenderer,
-      (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
-    );
-    this.highlightManager = new HighlightManager(
-      this.sceneManager.scene,
-      (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
-    );
-
-    // Center camera on map
-    this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
-
-    // Initialize milestone tracking so loaded saves don't re-notify
-    this.lastMilestoneId = getMilestone(this.state.citizens.getPopulation())?.id ?? null;
-
-    // Input handlers
-    this.setupInput(container);
-
-    // Game loop
-    this.sceneManager.onUpdate((dt) => this.update(dt));
-    this.sceneManager.start();
   }
 
   private setupInput(_container: HTMLElement): void {

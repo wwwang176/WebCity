@@ -369,7 +369,7 @@ export function createLoadingScreen(): HTMLElement {
         border-radius: 2px; transition: width 0.3s;
       }
     </style>
-    <div class="loading-text">Loading WebCity...</div>
+    <div class="loading-text" id="loading-label">Loading WebCity...</div>
     <div class="loading-bar-bg">
       <div class="loading-bar-fill" id="loading-progress"></div>
     </div>
@@ -377,9 +377,13 @@ export function createLoadingScreen(): HTMLElement {
   return loading;
 }
 
-export function updateLoadingProgress(progress: number): void {
+export function updateLoadingProgress(progress: number, label?: string): void {
   const fill = document.getElementById('loading-progress');
   if (fill) fill.style.width = `${Math.min(100, Math.max(0, progress))}%`;
+  if (label) {
+    const lbl = document.getElementById('loading-label');
+    if (lbl) lbl.textContent = label;
+  }
 }
 
 export function removeLoadingScreen(): void {
