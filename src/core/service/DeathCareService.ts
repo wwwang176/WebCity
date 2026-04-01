@@ -26,6 +26,8 @@ interface DeathCareJSON {
 
 export const DEATH_CARE = {
   MAINTENANCE_PER_FACILITY: 2,
+  DEFAULT_CAPACITY: 500,
+  DEFAULT_PROCESS_RATE: 5,
 } as const;
 
 export class DeathCareService extends RoadCoverageService<Cemetery> {
@@ -37,7 +39,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
 
   private pendingDeaths = 0;
 
-  addCemetery(x: number, y: number, capacity = 500, processRate = 5): string {
+  addCemetery(x: number, y: number, capacity = DEATH_CARE.DEFAULT_CAPACITY, processRate = DEATH_CARE.DEFAULT_PROCESS_RATE): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, capacity, used: 0, processRate, recentDaily: new Array(30).fill(0), recentIndex: 0, todayCremated: 0 });
     return id;
@@ -119,6 +121,8 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     const service = new DeathCareService();
     service.facilities = json.cemeteries.map(c => ({
       ...c,
+      capacity: DEATH_CARE.DEFAULT_CAPACITY,
+      processRate: DEATH_CARE.DEFAULT_PROCESS_RATE,
       recentDaily: c.recentDaily ?? new Array(30).fill(0),
       recentIndex: c.recentIndex ?? 0,
       todayCremated: c.todayCremated ?? 0,

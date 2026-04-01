@@ -35,6 +35,7 @@ export const FIRE = {
   COVERED_DAMAGE: 0.10,
   UNCOVERED_DAMAGE: 0.80,
   DEFAULT_CAPACITY: 2500,
+  DEFAULT_RADIUS: 15,
   RISK_OUTSIDE_BASE: 0.8,
   RISK_OUTSIDE_FACTOR: 0.05,
   RISK_INSIDE_FACTOR: 0.5,
@@ -60,7 +61,7 @@ export class FireService extends RoadCoverageService<FireStation> {
   private readonly stationLoad = new Map<string, number>();
   private loadRatio = 0;
 
-  addStation(x: number, y: number, radius = 15, capacity = FIRE.DEFAULT_CAPACITY): string {
+  addStation(x: number, y: number, radius = FIRE.DEFAULT_RADIUS, capacity = FIRE.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;
@@ -217,7 +218,7 @@ export class FireService extends RoadCoverageService<FireStation> {
 
   static fromJSON(json: FireServiceJSON): FireService {
     const service = new FireService();
-    service.facilities = json.stations.map(s => ({ ...s, capacity: FIRE.DEFAULT_CAPACITY }));
+    service.facilities = json.stations.map(s => ({ ...s, radius: FIRE.DEFAULT_RADIUS, capacity: FIRE.DEFAULT_CAPACITY }));
     for (const f of service.facilities) service.connectedFacilityIds.add(f.id);
     service.activeFires = json.activeFires.map(f => ({ ...f }));
     service.nextId = json.nextId;

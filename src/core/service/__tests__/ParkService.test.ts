@@ -198,7 +198,13 @@ describe('ParkService', () => {
 
       const restored = ParkService.fromJSON(json);
 
-      expect(restored.getParks()).toEqual(ps.getParks());
+      // fromJSON overrides radius with code-defined default
+      const parks = restored.getParks();
+      expect(parks).toHaveLength(2);
+      expect(parks[0]!.id).toBe(id1);
+      expect(parks[0]!.radius).toBe(PARK.DEFAULT_RADIUS);
+      expect(parks[1]!.id).toBe(id2);
+      expect(parks[1]!.radius).toBe(PARK.DEFAULT_RADIUS);
       expect(restored.getCoverage(10, 10)).toBe(true);
       expect(restored.getCoverage(20, 20)).toBe(true);
       expect(restored.getLandValueBonus(10, 10)).toBe(15);

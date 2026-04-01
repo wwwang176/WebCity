@@ -15,6 +15,7 @@ export const POLICE = {
   CRIME_REDUCTION_CAP: -60,
   MAINTENANCE_PER_STATION: 4,
   DEFAULT_CAPACITY: 1200,
+  DEFAULT_RADIUS: 15,
 } as const;
 
 export class PoliceService extends RoadCoverageService<PoliceStation> {
@@ -27,7 +28,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   private readonly stationLoad = new Map<string, number>();
   private loadRatio = 0;
 
-  addStation(x: number, y: number, radius = 15, capacity = POLICE.DEFAULT_CAPACITY): string {
+  addStation(x: number, y: number, radius = POLICE.DEFAULT_RADIUS, capacity = POLICE.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;
@@ -99,7 +100,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   static fromJSON(data: { stations: PoliceStation[] }): PoliceService {
     const service = new PoliceService();
     for (const s of data.stations) {
-      service.facilities.push({ ...s, capacity: POLICE.DEFAULT_CAPACITY });
+      service.facilities.push({ ...s, radius: POLICE.DEFAULT_RADIUS, capacity: POLICE.DEFAULT_CAPACITY });
     }
     service.restoreNextId(); // also marks facilities connected
     return service;

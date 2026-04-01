@@ -22,6 +22,7 @@ export const HEALTH = {
   BONUS_CAP: 35,
   MAINTENANCE_PER_HOSPITAL: 8,
   DEFAULT_CAPACITY: 1200,
+  DEFAULT_RADIUS: 12,
 } as const;
 
 /** Hospital load & death-rate constants */
@@ -115,7 +116,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
     return sum;
   }
 
-  addHospital(x: number, y: number, radius = 12, capacity = HEALTH.DEFAULT_CAPACITY): string {
+  addHospital(x: number, y: number, radius = HEALTH.DEFAULT_RADIUS, capacity = HEALTH.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;
@@ -150,7 +151,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
   static fromJSON(json: HealthServiceJSON): HealthService {
     const service = new HealthService();
     for (const h of json.hospitals) {
-      service.facilities.push({ ...h, capacity: HEALTH.DEFAULT_CAPACITY });
+      service.facilities.push({ ...h, radius: HEALTH.DEFAULT_RADIUS, capacity: HEALTH.DEFAULT_CAPACITY });
     }
     service.restoreNextId(); // also marks facilities connected
     return service;

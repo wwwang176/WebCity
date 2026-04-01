@@ -18,6 +18,7 @@ export const PARK = {
   HAPPINESS_PER_PARK: 5,
   HAPPINESS_CAP: 10,
   MAINTENANCE_PER_PARK: 2,
+  DEFAULT_RADIUS: 5,
 } as const;
 
 export class ParkService {
@@ -26,7 +27,7 @@ export class ParkService {
   private operationalParkIds: Set<string> | null = null;
   private nextId = 1;
 
-  addPark(x: number, y: number, radius = 5): string {
+  addPark(x: number, y: number, radius = PARK.DEFAULT_RADIUS): string {
     const id = `park-${this.nextId++}`;
     this.parks.push({ id, x, y, radius });
     this.connectedParkIds.add(id);
@@ -105,7 +106,7 @@ export class ParkService {
   static fromJSON(data: Park[]): ParkService {
     const ps = new ParkService();
     for (const p of data) {
-      ps.parks.push({ ...p });
+      ps.parks.push({ ...p, radius: PARK.DEFAULT_RADIUS });
       ps.connectedParkIds.add(p.id);
     }
     ps.nextId = recoverNextId(ps.parks, 'park-');
