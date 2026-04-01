@@ -113,8 +113,9 @@ export function ServicesPage() {
     const garbageLoad = state.garbage.getCurrentLoad();
     const garbageCap = state.garbage.getTotalCapacity();
     const garbageOverflow = state.garbage.getOverflow();
-    const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(garbageCap > 0 ? (garbageLoad + garbageOverflow) / garbageCap : 0);
-    wasteItems.push(mkEntry('\uD83D\uDDD1', 'Garbage', r.garbageRatio, 'Landfill', Math.round(garbageLoad), garbageCap, gSt));
+    const gOverflowSuffix = garbageOverflow > 0 ? ` Overflow ${Math.round(garbageOverflow)}` : '';
+    const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(garbageCap > 0 ? garbageLoad / garbageCap : 0);
+    wasteItems.push(mkEntry('\uD83D\uDDD1', 'Garbage', r.garbageRatio, 'Landfill', Math.round(garbageLoad), garbageCap, gSt, gOverflowSuffix));
 
     const sewageProduced = Math.round(state.sewage.getProduced());
     const sewageUntreated = state.sewage.getUntreated();
