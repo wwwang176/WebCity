@@ -66,10 +66,7 @@ export function TrafficPage() {
     gameSignals.tick();
     return getGame().getTransferStats();
   }, undefined, {
-    equals: (a, b) => a.activeTransferPeds === b.activeTransferPeds
-      && a.multiRideRoutes === b.multiRideRoutes
-      && a.routeBreakdown.length === b.routeBreakdown.length
-      && a.routeBreakdown.every((r, i) => r.weeklyUse === b.routeBreakdown[i]?.weeklyUse),
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
 
   const transitData = createMemo(() => {
