@@ -168,7 +168,7 @@ describe('DeathCareService', () => {
     expect(cem.y).toBe(2);
     expect(restored.getUnprocessed()).toBe(dc.getUnprocessed());
     // Ring buffer should survive serialization
-    expect(cem.recentDaily).toHaveLength(30);
+    expect(cem.recentDaily).toHaveLength(7);
     expect(cem.recentDaily[0]).toBe(3);
   });
 
@@ -179,7 +179,7 @@ describe('DeathCareService', () => {
     };
     const restored = DeathCareService.fromJSON(legacyJSON as any);
     const cem = restored.getCemeteries()[0]!;
-    expect(cem.recentDaily).toHaveLength(30);
+    expect(cem.recentDaily).toHaveLength(7);
     expect(cem.recentDaily.every(v => v === 0)).toBe(true);
     expect(cem.recentIndex).toBe(0);
     expect(cem.todayCremated).toBe(0);
@@ -221,7 +221,7 @@ describe('DeathCareService', () => {
     expect(cem.recentDaily[0]).toBe(3);
   });
 
-  it('getRecentMonthly should sum last 30 days of cremations', () => {
+  it('getRecentWeekly should sum last 7 days of cremations', () => {
     const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 10);
 
@@ -238,24 +238,24 @@ describe('DeathCareService', () => {
     expect(recent).toBe(10); // 5 days × 2
   });
 
-  it('ring buffer should roll over after 30 days', () => {
+  it('ring buffer should roll over after 7 days', () => {
     const dc = createDCWithCoverage();
     dc.addCemetery(0, 0, 500, 10);
 
-    // Fill 30 days with 1 cremation each
-    for (let day = 0; day < 30; day++) {
+    // Fill 7 days with 1 cremation each
+    for (let day = 0; day < 7; day++) {
       dc.reportDeath(0, 0);
       dc.tick();
       dc.advanceDay();
     }
     const cem = dc.getCemeteries()[0]!;
-    expect(cem.recentDaily.reduce((a, b) => a + b, 0)).toBe(30);
+    expect(cem.recentDaily.reduce((a, b) => a + b, 0)).toBe(7);
 
-    // Day 31: 1 more cremation — oldest day (day 0) gets overwritten
+    // Day 8: 1 more cremation — oldest day gets overwritten
     dc.reportDeath(0, 0);
     dc.tick();
     dc.advanceDay();
-    expect(cem.recentDaily.reduce((a, b) => a + b, 0)).toBe(30); // still 30, not 31
+    expect(cem.recentDaily.reduce((a, b) => a + b, 0)).toBe(7); // still 7, not 8
   });
 
   it('should not tick when pendingDeaths is 0 and no stored bodies', () => {

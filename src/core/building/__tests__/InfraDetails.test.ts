@@ -136,13 +136,16 @@ describe('getInfraDetails', () => {
     expect(d.Capacity).toBe(2250);
   });
 
-  it('cemetery: returns need, capacity, stored, and pending', () => {
-    const recentDaily = new Array(30).fill(0);
+  it('cemetery: returns need, capacity, stored, pending, deaths/wk, cremated/wk', () => {
+    const recentDaily = new Array(7).fill(0);
+    recentDaily[0] = 5;
+    const deathDaily = new Array(7).fill(0);
+    deathDaily[0] = 8;
     const ctx = makeCtx({
-      deathCare: { getCemeteries: () => [{ x: 5, y: 5, capacity: 800, used: 120, pending: 3, recentDaily, recentIndex: 0, todayCremated: 0 }] },
+      deathCare: { getCemeteries: () => [{ x: 5, y: 5, capacity: 800, used: 120, pending: 3, recentDaily, recentIndex: 1, todayCremated: 0, deathDaily }] },
     });
     const d = getInfraDetails(ctx, 'cemetery', 5, 5);
-    expect(d).toEqual({ Need: 123, Capacity: 800, Stored: 120, Pending: 3 });
+    expect(d).toEqual({ Need: 123, Capacity: 800, Stored: 120, Pending: 3, 'Deaths/wk': 8, 'Cremated/wk': 5 });
   });
 
   it('power: returns output, type, and city supply/demand info', () => {
