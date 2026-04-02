@@ -47,6 +47,9 @@ export function TransferOverlayPanel(props: { panelOrder?: number }) {
           >&times;</button>
         </div>
 
+        <Show when={routes().length > 0} fallback={
+          <div style={{ 'font-size': '11px', color: '#667a90', padding: '8px 0' }}>No active transfer routes</div>
+        }>
         <div style={{ 'font-size': '10px', color: '#667a90', 'margin-bottom': '6px', 'text-transform': 'uppercase' }}>
           Click a route to highlight on map
         </div>
@@ -79,6 +82,7 @@ export function TransferOverlayPanel(props: { panelOrder?: number }) {
             );
           }}
         </Index>
+        </Show>
 
       </div>
     </Show>
