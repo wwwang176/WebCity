@@ -627,8 +627,11 @@ export class SidewalkGraph {
       this.bridgePair(getNode(0, 1, 'EN'), getNode(1, 0, 'SW'), iKey);
   }
 
-  private bridgePair(a: SidewalkNode | undefined, b: SidewalkNode | undefined, intersectionCellKey: string): void {
-    if (a && b) this.addBidirectionalEdge(a, b, 'crosswalk', intersectionCellKey);
+  private bridgePair(a: SidewalkNode | undefined, b: SidewalkNode | undefined, _intersectionCellKey: string): void {
+    // Corner bridges are sidewalk type — they don't cross any road,
+    // just connect two sidewalk nodes at the intersection corner.
+    // Traffic light checks happen at the actual crosswalk edges.
+    if (a && b) this.addBidirectionalEdge(a, b, 'sidewalk');
   }
 
   private generateLevelCrossingEdges(
