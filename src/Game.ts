@@ -2544,7 +2544,7 @@ export class Game {
       const key = `${x},${y}`;
 
       if (isZoneBuilding(cell.buildingId)) {
-        cells.push({ x, y, color: highlightSet.has(key) ? 0xffffff : 0x222222 });
+        if (highlightSet.has(key)) cells.push({ x, y, color: 0xffffff });
       } else {
         // Infrastructure: highlight if this cell OR its main cell is in the set.
         // MULTI_CELL_OCCUPIED cells share the parent's buildingId area.
