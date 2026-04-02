@@ -1905,27 +1905,31 @@ export class Game {
         this.applySelectAndHoverHighlight();
       }
     }
+
+    // Step 4: Transfer highlight — highest priority, overwrites hover on transfer buildings
+    this.reapplyTransferHighlight();
+  }
+
+  /** Re-apply cached transfer route highlight (highest priority layer). */
+  private reapplyTransferHighlight(): void {
+    if (this.transferHighlightCells.length === 0) return;
+    this.highlightManager.hoverHighlightGradient(
+      this.transferHighlightCells,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+      1.0,
+    );
   }
 
   /** Re-apply cached overlay building highlight (cheap: no grid traversal). */
   private reapplyOverlayHighlight(): void {
-    if (this.overlayHighlightCells.length > 0) {
-      this.highlightManager.hoverHighlightGradient(
-        this.overlayHighlightCells,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-        0.6,
-      );
-    }
-    // Re-apply transfer route highlight on top
-    if (this.transferHighlightCells.length > 0) {
-      this.highlightManager.hoverHighlightGradient(
-        this.transferHighlightCells,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-        1.0,
-      );
-    }
+    if (this.overlayHighlightCells.length === 0) return;
+    this.highlightManager.hoverHighlightGradient(
+      this.overlayHighlightCells,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+      0.6,
+    );
   }
 
   /** Highlight the drag-selected rectangular area with the given color (DRY). */
@@ -2607,6 +2611,7 @@ export class Game {
     for (const s of stops) highlightSet.add(`${s.x},${s.y}`);
 
     this.transferHighlightCells = this.buildTransferHighlightCells(highlightSet);
+    this.reapplyTransferHighlight(); // apply immediately, don't wait for next frame
 
     // ── Draw route line ──
     if (stops.length >= 2) {
