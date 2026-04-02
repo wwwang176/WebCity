@@ -15,7 +15,7 @@ import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
-import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe, toPosKey, getDirectionFlag } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKey, parsePosKeyUnsafe, toPosKey, getDirectionFlag } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -2538,12 +2538,12 @@ export class Game {
     const buildings = this.simLoop.getTransferBuildings(label);
     const gradientCells: { x: number; y: number; color: number }[] = [];
     for (const posKey of buildings.homes) {
-      const p = parsePosKeyUnsafe(posKey);
-      gradientCells.push({ x: p.x, y: p.y, color: 0x66bb6a }); // green
+      const p = parsePosKey(posKey);
+      if (p) gradientCells.push({ x: p.x, y: p.y, color: 0x66bb6a }); // green
     }
     for (const posKey of buildings.works) {
-      const p = parsePosKeyUnsafe(posKey);
-      gradientCells.push({ x: p.x, y: p.y, color: 0x42a5f5 }); // blue
+      const p = parsePosKey(posKey);
+      if (p) gradientCells.push({ x: p.x, y: p.y, color: 0x42a5f5 }); // blue
     }
     if (gradientCells.length > 0) {
       this.highlightManager.hoverHighlightGradient(
