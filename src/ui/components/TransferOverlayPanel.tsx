@@ -1,4 +1,4 @@
-import { Show, For, createMemo } from 'solid-js';
+import { Show, Index, createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 export function TransferOverlayPanel() {
   const visible = () => gameSignals.selectedTransferRoute() !== null;
@@ -55,9 +55,9 @@ export function TransferOverlayPanel() {
           Click a route to highlight on map
         </div>
 
-        <For each={routes()}>
+        <Index each={routes()}>
           {(row) => {
-            const isSelected = () => selected() === row.label;
+            const isSelected = () => selected() === row().label;
             return (
               <div
                 style={{
@@ -73,16 +73,16 @@ export function TransferOverlayPanel() {
                 }}
                 onMouseEnter={(e) => { if (!isSelected()) (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.05)'; }}
                 onMouseLeave={(e) => { if (!isSelected()) (e.currentTarget as HTMLElement).style.background = 'transparent'; }}
-                onClick={() => select(row.label)}
+                onClick={() => select(row().label)}
               >
-                <span>{row.label}</span>
-                <span style={{ color: row.weeklyUse > 0 ? '#66bb6a' : '#667a90', 'font-size': '11px' }}>
-                  {row.weeklyUse}/wk
+                <span>{row().label}</span>
+                <span style={{ color: row().weeklyUse > 0 ? '#66bb6a' : '#667a90', 'font-size': '11px' }}>
+                  {row().weeklyUse}/wk
                 </span>
               </div>
             );
           }}
-        </For>
+        </Index>
 
       </div>
     </Show>
