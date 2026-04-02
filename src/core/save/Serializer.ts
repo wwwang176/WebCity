@@ -81,6 +81,7 @@ interface SerializedState {
     index: number;
     today: Record<string, number>;
     pedsSnapshot: number;
+    lastDay: number;
   };
 }
 
@@ -154,6 +155,7 @@ export function snapshotGameState(
           index: extra.transferHistory.index,
           today: Object.fromEntries(extra.transferHistory.today),
           pedsSnapshot: extra.transferHistory.pedsSnapshot,
+          lastDay: extra.transferHistory.lastDay,
         }
       : undefined,
   };
@@ -280,6 +282,7 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
           index: saved.transferHistory.index,
           today: new Map(Object.entries(saved.transferHistory.today).map(([k, v]) => [k, Number(v)])),
           pedsSnapshot: saved.transferHistory.pedsSnapshot,
+          lastDay: saved.transferHistory.lastDay,
         }
       : undefined,
   };
