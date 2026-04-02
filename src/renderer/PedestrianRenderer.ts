@@ -67,7 +67,7 @@ export class PedestrianRenderer {
       const ox = Math.sin(p.heading) * p.lateralOffset;
       const oz = Math.cos(p.heading) * p.lateralOffset;
       matrix.makeTranslation(p.x + ox, SIDEWALK_Y, p.y + oz);
-      rotation.makeRotationY(p.heading);
+      rotation.makeRotationY(p.heading + Math.PI / 2);
       matrix.multiply(rotation);
       this.mesh.setMatrixAt(i, matrix);
 
