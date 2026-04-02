@@ -488,14 +488,13 @@ export class PedestrianManager {
 
   private canPassCrosswalk(edge: SidewalkEdge): boolean {
     if (!this.trafficLights) return true;
-    const from = edge.from;
-    const to = edge.to;
-    // Use cell positions for traffic light query
-    const fromPos = from.cellKey.split(',');
-    const toPos = to.cellKey.split(',');
+    if (!edge.intersectionCellKey) return true;
+    // Query the traffic light at the intersection that controls this crosswalk
+    const fromPos = edge.from.cellKey.split(',');
+    const iPos = edge.intersectionCellKey.split(',');
     return this.trafficLights.canPass(
       Number(fromPos[0]), Number(fromPos[1]),
-      Number(toPos[0]), Number(toPos[1]),
+      Number(iPos[0]), Number(iPos[1]),
     );
   }
 }

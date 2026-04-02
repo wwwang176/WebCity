@@ -55,6 +55,8 @@ export interface SidewalkEdge {
   to: SidewalkNode;
   length: number;
   type: 'sidewalk' | 'crosswalk' | 'level_crossing' | 'building_access' | 'building_wall' | 'transit_access';
+  /** The intersection cell that controls this crosswalk/bridge (for traffic light query) */
+  intersectionCellKey?: string;
 }
 
 export type SidewalkNodeType = SidewalkNode['type'];
@@ -584,7 +586,7 @@ export class SidewalkGraph {
       const fromNode = this.nodes.get(`${neighborKey}:${dir.fromSuffix}`);
       const toNode = this.nodes.get(`${neighborKey}:${dir.toSuffix}`);
       if (fromNode && toNode) {
-        this.addBidirectionalEdge(fromNode, toNode, 'crosswalk');
+        this.addBidirectionalEdge(fromNode, toNode, 'crosswalk', toPosKey(x, y));
       }
     }
   }
@@ -606,6 +608,7 @@ export class SidewalkGraph {
     if (dirCount < 3) return;
 
     const flags = cell.roadFlags;
+    const iKey = toPosKey(x, y); // intersection cell key for traffic light lookup
 
     // Helper: resolve a boundary node from a neighbor cell
     const getNode = (dx: number, dy: number, suffix: string) => {
@@ -617,32 +620,32 @@ export class SidewalkGraph {
     // Straight-through bridges (opposite directions)
     // N↔S: connect north neighbor's south-facing nodes to south neighbor's north-facing nodes
     if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.SOUTH)) {
-      this.bridgePair(getNode(0, -1, 'WS'), getNode(0, 1, 'WN'));
-      this.bridgePair(getNode(0, -1, 'ES'), getNode(0, 1, 'EN'));
+      this.bridgePair(getNode(0, -1, 'WS'), getNode(0, 1, 'WN'), iKey);
+      this.bridgePair(getNode(0, -1, 'ES'), getNode(0, 1, 'EN'), iKey);
     }
     // E↔W
     if ((flags & RoadDirection.EAST) && (flags & RoadDirection.WEST)) {
-      this.bridgePair(getNode(-1, 0, 'NE'), getNode(1, 0, 'NW'));
-      this.bridgePair(getNode(-1, 0, 'SE'), getNode(1, 0, 'SW'));
+      this.bridgePair(getNode(-1, 0, 'NE'), getNode(1, 0, 'NW'), iKey);
+      this.bridgePair(getNode(-1, 0, 'SE'), getNode(1, 0, 'SW'), iKey);
     }
 
     // Corner bridges (perpendicular directions)
     // NW corner: N neighbor's WS ↔ W neighbor's NE
     if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.WEST))
-      this.bridgePair(getNode(0, -1, 'WS'), getNode(-1, 0, 'NE'));
+      this.bridgePair(getNode(0, -1, 'WS'), getNode(-1, 0, 'NE'), iKey);
     // NE corner: N neighbor's ES ↔ E neighbor's NW
     if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.EAST))
-      this.bridgePair(getNode(0, -1, 'ES'), getNode(1, 0, 'NW'));
+      this.bridgePair(getNode(0, -1, 'ES'), getNode(1, 0, 'NW'), iKey);
     // SW corner: S neighbor's WN ↔ W neighbor's SE
     if ((flags & RoadDirection.SOUTH) && (flags & RoadDirection.WEST))
-      this.bridgePair(getNode(0, 1, 'WN'), getNode(-1, 0, 'SE'));
+      this.bridgePair(getNode(0, 1, 'WN'), getNode(-1, 0, 'SE'), iKey);
     // SE corner: S neighbor's EN ↔ E neighbor's SW
     if ((flags & RoadDirection.SOUTH) && (flags & RoadDirection.EAST))
-      this.bridgePair(getNode(0, 1, 'EN'), getNode(1, 0, 'SW'));
+      this.bridgePair(getNode(0, 1, 'EN'), getNode(1, 0, 'SW'), iKey);
   }
 
-  private bridgePair(a: SidewalkNode | undefined, b: SidewalkNode | undefined): void {
-    if (a && b) this.addBidirectionalEdge(a, b, 'crosswalk');
+  private bridgePair(a: SidewalkNode | undefined, b: SidewalkNode | undefined, intersectionCellKey: string): void {
+    if (a && b) this.addBidirectionalEdge(a, b, 'crosswalk', intersectionCellKey);
   }
 
   private generateLevelCrossingEdges(
@@ -688,15 +691,15 @@ export class SidewalkGraph {
 
   // ── Private: Edge helpers ──
 
-  private addBidirectionalEdge(a: SidewalkNode, b: SidewalkNode, type: SidewalkEdge['type']): void {
+  private addBidirectionalEdge(a: SidewalkNode, b: SidewalkNode, type: SidewalkEdge['type'], intersectionCellKey?: string): void {
     const length = euclideanDistance(a.position.x, a.position.y, b.position.x, b.position.y);
     const edgeAB: SidewalkEdge = {
       id: `${a.id}→${b.id}`,
-      from: a, to: b, length, type,
+      from: a, to: b, length, type, intersectionCellKey,
     };
     const edgeBA: SidewalkEdge = {
       id: `${b.id}→${a.id}`,
-      from: b, to: a, length, type,
+      from: b, to: a, length, type, intersectionCellKey,
     };
 
     if (!this.adjacency.has(a.id)) this.adjacency.set(a.id, []);
