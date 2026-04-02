@@ -11,8 +11,9 @@ export interface TrafficLight {
   x: number;
   y: number;
   phase: number; // 0 = NS green / EW red, 1 = NS red / EW green
-  timer: number; // seconds remaining in current phase
+  timer: number; // seconds remaining in current phase (or clearance)
   phaseDuration: number; // seconds per phase (varies by intersection size)
+  clearing: boolean; // true during all-red clearance period
 }
 
 /** Traffic light configuration */
@@ -21,6 +22,8 @@ export const TRAFFIC_LIGHT = {
   PHASE_DURATION: 4,
   /** Seconds per phase for large intersections (4-way + FOUR_LANE or above) */
   PHASE_DURATION_LARGE: 8,
+  /** All-red clearance duration between phase switches */
+  CLEARANCE_DURATION: 1,
 } as const;
 
 export class TrafficLightSystem {
@@ -31,7 +34,7 @@ export class TrafficLightSystem {
     if (this.lights.has(key)) return;
     // Stagger phase start by position hash to avoid all lights syncing
     const stagger = ((x * 7 + y * 13) % 10) / 10 * phaseDuration;
-    this.lights.set(key, { x, y, phase: 0, timer: stagger + 0.1, phaseDuration });
+    this.lights.set(key, { x, y, phase: 0, timer: stagger + 0.1, phaseDuration, clearing: false });
   }
 
   removeLight(x: number, y: number): void {
@@ -43,8 +46,16 @@ export class TrafficLightSystem {
     for (const light of this.lights.values()) {
       light.timer -= dt;
       if (light.timer <= 0) {
-        light.phase = (light.phase + 1) % 2;
-        light.timer += light.phaseDuration;
+        if (light.clearing) {
+          // Clearance ended → switch to next phase
+          light.phase = (light.phase + 1) % 2;
+          light.timer += light.phaseDuration;
+          light.clearing = false;
+        } else {
+          // Green phase ended → enter all-red clearance
+          light.timer += TRAFFIC_LIGHT.CLEARANCE_DURATION;
+          light.clearing = true;
+        }
       }
     }
   }
@@ -57,6 +68,9 @@ export class TrafficLightSystem {
   canPass(fromX: number, fromY: number, toX: number, toY: number): boolean {
     const light = this.lights.get(toPosKey(toX, toY));
     if (!light) return true;
+
+    // All-red clearance: nobody passes
+    if (light.clearing) return false;
 
     const dx = toX - fromX;
     const dy = toY - fromY;

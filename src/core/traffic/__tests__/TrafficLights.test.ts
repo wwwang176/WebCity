@@ -10,14 +10,28 @@ describe('TrafficLightSystem', () => {
     expect(sys.getLight(5, 5)).toBeDefined();
   });
 
-  it('should advance phase after phaseDuration seconds', () => {
+  it('should enter clearance then advance phase', () => {
     const sys = new TrafficLightSystem();
     sys.addLight(0, 0);
     const light = sys.getLight(0, 0)!;
     const initialPhase = light.phase;
-    const totalTime = light.timer + light.phaseDuration + 0.01;
-    sys.tick(totalTime);
+    // Burn through initial timer → enters clearance (all red)
+    sys.tick(light.timer + 0.01);
+    expect(sys.getLight(0, 0)!.clearing).toBe(true);
+    expect(sys.getLight(0, 0)!.phase).toBe(initialPhase); // phase not yet changed
+    // Burn through clearance → phase switches
+    sys.tick(TRAFFIC_LIGHT.CLEARANCE_DURATION + 0.01);
+    expect(sys.getLight(0, 0)!.clearing).toBe(false);
     expect(sys.getLight(0, 0)!.phase).not.toBe(initialPhase);
+  });
+
+  it('should block all directions during clearance', () => {
+    const sys = new TrafficLightSystem();
+    sys.addLight(2, 2);
+    const light = sys.getLight(2, 2)!;
+    sys.tick(light.timer + 0.01); // enter clearance
+    expect(sys.canPass(2, 1, 2, 2)).toBe(false); // N-S blocked
+    expect(sys.canPass(1, 2, 2, 2)).toBe(false); // E-W blocked
   });
 
   it('should cycle phases with small dt increments', () => {
@@ -25,10 +39,12 @@ describe('TrafficLightSystem', () => {
     sys.addLight(0, 0);
     const light = sys.getLight(0, 0)!;
     const initialPhase = light.phase;
-    const burnTime = light.timer + 0.001;
-    sys.tick(burnTime);
+    // Burn initial timer
+    sys.tick(light.timer + 0.001);
+    // One full cycle = clearance + phase + clearance + phase = back to initial
+    const fullCycle = TRAFFIC_LIGHT.CLEARANCE_DURATION + light.phaseDuration;
     const steps = 100;
-    const stepDt = light.phaseDuration / steps;
+    const stepDt = (fullCycle * 2) / steps;
     for (let i = 0; i < steps + 1; i++) sys.tick(stepDt);
     expect(sys.getLight(0, 0)!.phase).toBe(initialPhase);
   });
@@ -44,7 +60,11 @@ describe('TrafficLightSystem', () => {
     sys.addLight(0, 0, 4);
     const light = sys.getLight(0, 0)!;
     const initialPhase = light.phase;
-    sys.tick(light.timer + 4.01);
+    // Tick 1: burn initial timer → enters clearance
+    sys.tick(light.timer + 0.01);
+    expect(sys.getLight(0, 0)!.clearing).toBe(true);
+    // Tick 2: burn clearance → phase switches
+    sys.tick(TRAFFIC_LIGHT.CLEARANCE_DURATION + 0.01);
     expect(sys.getLight(0, 0)!.phase).not.toBe(initialPhase);
   });
 });
