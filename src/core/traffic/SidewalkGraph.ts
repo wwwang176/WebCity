@@ -432,17 +432,18 @@ export class SidewalkGraph {
       if (c2 && door) this.addBidirectionalEdge(c2, door, 'building_wall');
     }
 
-    // Type 2: Building access edges (door → road sidewalk nodes)
+    // Type 2: Building access edges (door + corners → road sidewalk nodes)
     const accessDirs: Array<{
       dx: number; dy: number;
       doorSuffix: string;
+      cornerSuffixes: [string, string];
       // The road sidewalk node suffixes on the shared boundary
       roadNodeSuffixes: [string, string];
     }> = [
-      { dx: 0, dy: -1, doorSuffix: 'bN', roadNodeSuffixes: ['SW', 'SE'] }, // road to north
-      { dx: 0, dy: 1,  doorSuffix: 'bS', roadNodeSuffixes: ['NW', 'NE'] }, // road to south
-      { dx: -1, dy: 0, doorSuffix: 'bW', roadNodeSuffixes: ['EN', 'ES'] }, // road to west
-      { dx: 1,  dy: 0, doorSuffix: 'bE', roadNodeSuffixes: ['WN', 'WS'] }, // road to east
+      { dx: 0, dy: -1, doorSuffix: 'bN', cornerSuffixes: ['bNW', 'bNE'], roadNodeSuffixes: ['SW', 'SE'] },
+      { dx: 0, dy: 1,  doorSuffix: 'bS', cornerSuffixes: ['bSW', 'bSE'], roadNodeSuffixes: ['NW', 'NE'] },
+      { dx: -1, dy: 0, doorSuffix: 'bW', cornerSuffixes: ['bNW', 'bSW'], roadNodeSuffixes: ['EN', 'ES'] },
+      { dx: 1,  dy: 0, doorSuffix: 'bE', cornerSuffixes: ['bNE', 'bSE'], roadNodeSuffixes: ['WN', 'WS'] },
     ];
     for (const dir of accessDirs) {
       const nx = x + dir.dx;
@@ -450,13 +451,22 @@ export class SidewalkGraph {
       const neighbor = grid.getCell(nx, ny);
       if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
 
-      const doorNode = this.nodes.get(`${cellKey}:${dir.doorSuffix}`);
-      if (!doorNode) continue;
-
       const neighborKey = toPosKey(nx, ny);
-      for (const suffix of dir.roadNodeSuffixes) {
-        const roadNode = this.nodes.get(`${neighborKey}:${suffix}`);
-        if (roadNode) this.addBidirectionalEdge(doorNode, roadNode, 'building_access');
+
+      // Door → both road nodes
+      const doorNode = this.nodes.get(`${cellKey}:${dir.doorSuffix}`);
+      if (doorNode) {
+        for (const suffix of dir.roadNodeSuffixes) {
+          const roadNode = this.nodes.get(`${neighborKey}:${suffix}`);
+          if (roadNode) this.addBidirectionalEdge(doorNode, roadNode, 'building_access');
+        }
+      }
+
+      // Corners → nearest road node (each corner connects to the closer road node)
+      for (let i = 0; i < 2; i++) {
+        const cornerNode = this.nodes.get(`${cellKey}:${dir.cornerSuffixes[i]}`);
+        const roadNode = this.nodes.get(`${neighborKey}:${dir.roadNodeSuffixes[i]}`);
+        if (cornerNode && roadNode) this.addBidirectionalEdge(cornerNode, roadNode, 'building_access');
       }
     }
 

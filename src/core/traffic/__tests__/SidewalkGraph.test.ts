@@ -675,8 +675,9 @@ describe('SidewalkGraph', () => {
       graph.buildFromGrid(grid, ['1,2', '2,1'], ['1,1']);
 
       const accessEdges = graph.getAllEdges().filter(e => e.type === 'building_access');
-      // South door → 2 road nodes + east door → 2 road nodes = 4 connections × 2 directions = 8
-      expect(accessEdges.length).toBe(8);
+      // Per road-facing side: door → 2 road nodes + 2 corners → 1 road node each = 4 connections × 2 directions = 8
+      // Two road-facing sides: 8 × 2 = 16
+      expect(accessEdges.length).toBe(16);
     });
   });
 
