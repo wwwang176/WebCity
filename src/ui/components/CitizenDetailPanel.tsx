@@ -1,6 +1,13 @@
 import { Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 
+const STAGE_NAMES: Record<string, string> = {
+  BABY: 'Baby', CHILD: 'Child', TEEN: 'Teen', ADULT: 'Adult', SENIOR: 'Senior',
+};
+const EDU_NAMES: Record<string, string> = {
+  NONE: 'None', ELEMENTARY: 'Elementary', HIGH_SCHOOL: 'High School', UNIVERSITY: 'University',
+};
+
 export function CitizenDetailPanel(props: { panelOrder?: number }) {
   const citizenId = () => gameSignals.selectedCitizenId();
   const visible = () => citizenId() !== null;
@@ -32,8 +39,8 @@ export function CitizenDetailPanel(props: { panelOrder?: number }) {
         <Show when={citizen()}>
           {(c) => (
             <>
-              <div class="bp-row">Stage <span>{c().lifeStage}</span></div>
-              <div class="bp-row">Education <span>{c().education}</span></div>
+              <div class="bp-row">Stage <span>{STAGE_NAMES[c().lifeStage] ?? c().lifeStage}</span></div>
+              <div class="bp-row">Education <span>{EDU_NAMES[c().education] ?? c().education}</span></div>
               <div class="bp-row">Happiness <span>{c().happiness}</span></div>
               <div class="bp-row">Health <span>{c().health}</span></div>
               <div class="bp-row">Home <span>{c().homeId ?? 'Homeless'}</span></div>
