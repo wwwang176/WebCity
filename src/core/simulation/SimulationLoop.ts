@@ -2100,6 +2100,22 @@ export class SimulationLoop {
     this.state.pedestrianManager.setTripPool(this.walkingTripPool, population);
   }
 
+  getTransferHistory() {
+    return {
+      history: this.transferHistory,
+      index: this.transferHistoryIndex,
+      today: this.transferToday,
+      pedsSnapshot: this.transferPedsSnapshot,
+    };
+  }
+
+  setTransferHistory(data: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number }) {
+    this.transferHistory = data.history;
+    this.transferHistoryIndex = data.index;
+    this.transferToday = data.today;
+    this.transferPedsSnapshot = data.pedsSnapshot;
+  }
+
   /** Transfer stats for UI display. */
   getTransferStats(): {
     activeTransferPeds: number;

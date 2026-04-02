@@ -75,6 +75,13 @@ interface SerializedState {
   highwayConnection?: ReturnType<HighwayConnection['toJSON']>;
   elevation?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
   abandonmentStress?: Record<string, number>;
+  /** Rolling 7-day transfer usage history + current day + ring index */
+  transferHistory?: {
+    history: Array<Record<string, number>>;
+    index: number;
+    today: Record<string, number>;
+    pedsSnapshot: number;
+  };
 }
 
 /** Build a plain-object snapshot of the game state (no stringify). */
@@ -83,6 +90,7 @@ export function snapshotGameState(
   extra?: {
     abandonmentStress?: Map<string, number>;
     elevationManager?: import('../elevation/ElevationManager').ElevationManager;
+    transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number };
   },
 ): SerializedState {
   const cells: SerializedCell[] = [];
@@ -140,6 +148,14 @@ export function snapshotGameState(
     abandonmentStress: extra?.abandonmentStress
       ? Object.fromEntries(extra.abandonmentStress)
       : undefined,
+    transferHistory: extra?.transferHistory
+      ? {
+          history: extra.transferHistory.history.map(m => Object.fromEntries(m)),
+          index: extra.transferHistory.index,
+          today: Object.fromEntries(extra.transferHistory.today),
+          pedsSnapshot: extra.transferHistory.pedsSnapshot,
+        }
+      : undefined,
   };
 }
 
@@ -157,6 +173,7 @@ export function serializeGameState(
 export interface DeserializedExtra {
   abandonmentStress: Map<string, number>;
   elevationData?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
+  transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number };
 }
 
 export function deserializeGameState(json: string): GameState & { _extra?: DeserializedExtra } {
@@ -257,6 +274,14 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
       ? new Map(Object.entries(saved.abandonmentStress).map(([k, v]) => [k, Number(v)]))
       : new Map(),
     elevationData: saved.elevation,
+    transferHistory: saved.transferHistory
+      ? {
+          history: saved.transferHistory.history.map(obj => new Map(Object.entries(obj).map(([k, v]) => [k, Number(v)]))),
+          index: saved.transferHistory.index,
+          today: new Map(Object.entries(saved.transferHistory.today).map(([k, v]) => [k, Number(v)])),
+          pedsSnapshot: saved.transferHistory.pedsSnapshot,
+        }
+      : undefined,
   };
 
   return Object.assign(state, { _extra: extra });
