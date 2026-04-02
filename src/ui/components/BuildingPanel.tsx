@@ -514,7 +514,7 @@ function TransportStopInfo(props: { sel: SelectedTransportStop }) {
   );
 }
 
-export function BuildingPanel() {
+export function BuildingPanel(props: { panelOrder?: number }) {
   // Identity: only changes on selection change (instant)
   const hasSelection = () => gameSignals.selectedBuilding() !== null;
 
@@ -526,7 +526,7 @@ export function BuildingPanel() {
   };
 
   return (
-    <div id="building-panel" class="g-panel" classList={{ visible: hasSelection() }}>
+    <div id="building-panel" class="g-panel" classList={{ visible: hasSelection() }} style={{ order: props.panelOrder ?? 0 }}>
       <Show when={liveData()}>
         {(sel) => (
           <>

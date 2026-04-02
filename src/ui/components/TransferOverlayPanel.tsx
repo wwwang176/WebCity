@@ -1,6 +1,6 @@
 import { Show, Index, createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
-export function TransferOverlayPanel() {
+export function TransferOverlayPanel(props: { panelOrder?: number }) {
   const visible = () => gameSignals.selectedTransferRoute() !== null;
   const selected = () => gameSignals.selectedTransferRoute();
 
@@ -23,9 +23,7 @@ export function TransferOverlayPanel() {
   return (
     <Show when={visible()}>
       <div id="transfer-overlay-panel" class="visible" style={{
-        position: 'absolute',
-        top: '56px',
-        left: '12px',
+        order: props.panelOrder ?? 0,
         'min-width': '220px',
         'max-width': '280px',
         background: 'rgba(14, 22, 38, 0.92)',
@@ -33,8 +31,6 @@ export function TransferOverlayPanel() {
         padding: '10px 12px',
         color: '#b0c4de',
         'font-size': '12px',
-        'z-index': '50',
-        'pointer-events': 'auto',
         'backdrop-filter': 'blur(8px)',
         border: '1px solid rgba(66,165,245,0.2)',
       }}>

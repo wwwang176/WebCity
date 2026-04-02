@@ -1,6 +1,6 @@
 import { render } from 'solid-js/web';
-import { createSignal } from 'solid-js';
-import { initGameStore } from './store/gameStore';
+import { createSignal, createEffect, on } from 'solid-js';
+import { initGameStore, gameSignals } from './store/gameStore';
 import type { Game } from '../Game';
 import './styles/game-ui.css';
 
@@ -22,6 +22,30 @@ import { TransitModal } from './modals/TransitModal';
 import { DebugModal } from './modals/DebugModal';
 import { SettingsModal } from './modals/SettingsModal';
 
+function LeftPanelStack() {
+  const [nextOrder, setNextOrder] = createSignal(0);
+  const [buildingOrder, setBuildingOrder] = createSignal(0);
+  const [transferOrder, setTransferOrder] = createSignal(0);
+
+  const hasBuilding = () => gameSignals.selectedBuilding() !== null;
+  const hasTransfer = () => gameSignals.selectedTransferRoute() !== null;
+
+  createEffect(on(hasBuilding, (v, prev) => {
+    if (v && !prev) { setBuildingOrder(nextOrder()); setNextOrder(n => n + 1); }
+  }));
+
+  createEffect(on(hasTransfer, (v, prev) => {
+    if (v && !prev) { setTransferOrder(nextOrder()); setNextOrder(n => n + 1); }
+  }));
+
+  return (
+    <div id="left-panels">
+      <BuildingPanel panelOrder={buildingOrder()} />
+      <TransferOverlayPanel panelOrder={transferOrder()} />
+    </div>
+  );
+}
+
 function GameUIRoot() {
   const [openModal, setOpenModal] = createSignal<string | null>(null);
 
@@ -39,8 +63,7 @@ function GameUIRoot() {
       <Toolbar onOpenModal={toggleModal} />
       <OverlayIndicator />
       <MiniMap />
-      <BuildingPanel />
-      <TransferOverlayPanel />
+      <LeftPanelStack />
       <TutorialOverlay />
 
       <OverviewModal open={openModal() === 'overview'} onClose={closeModal} />
