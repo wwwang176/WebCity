@@ -280,6 +280,7 @@
   display: none; min-width: 200px;
 }
 #building-panel.visible { display: block; }
+#citizen-detail-panel { min-width: 180px; }
 #building-panel .bp-title {
   font-size: 14px; font-weight: 600; color: #e4eaf4; margin-bottom: 6px;
 }

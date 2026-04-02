@@ -1,6 +1,5 @@
-import { Show, For, createSignal } from 'solid-js';
+import { Show, For } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
-import { CitizenDetail } from './CitizenDetail';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
 import { UI_COLORS } from '../constants';
@@ -228,7 +227,7 @@ function AbandonmentWarnings(props: { sel: SelectedZoneBuilding }) {
 }
 
 function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
-  const [selectedCitizen, setSelectedCitizen] = createSignal<number | null>(null);
+  const setSelectedCitizen = gameSignals.setSelectedCitizenId;
 
   const bt = () => props.sel.buildingType;
   const hasPower = () => props.sel.services.power >= 0;
@@ -320,9 +319,6 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
         </Show>
       </div>
 
-      <Show when={selectedCitizen() !== null}>
-        <CitizenDetail citizenId={selectedCitizen()} />
-      </Show>
     </>
   );
 }

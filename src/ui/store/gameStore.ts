@@ -26,6 +26,7 @@ const [powerDemand, setPowerDemand] = createSignal(0);
 const [placementMode, setPlacementMode] = createSignal<PlacementMode>('ground');
 const [elevationLevel, setElevationLevel] = createSignal(1);
 const [selectedTransferRoute, setSelectedTransferRoute] = createSignal<string | null>(null);
+const [selectedCitizenId, setSelectedCitizenId] = createSignal<number | null>(null);
 
 // --- Throttled tick signal for modal live-refresh (fixed ~6 updates/sec regardless of FPS) ---
 const [tick, setTick] = createSignal(0);
@@ -45,6 +46,7 @@ export const gameSignals = {
   selectedBuilding, notification, currentOverlay,
   currentRotation, rciDemand, chartHistory, econHistory,
   viewMode, tick, powerSupply, powerDemand, placementMode, elevationLevel, selectedTransferRoute,
+  selectedCitizenId, setSelectedCitizenId,
 };
 
 // --- Game instance reference ---
@@ -88,6 +90,7 @@ export function initGameStore(game: Game): void {
       if (selKey !== lastSelKey) {
         lastSelKey = selKey;
         setSelectedBuilding(game.getSelectedBuilding());
+        setSelectedCitizenId(null); // clear citizen when building changes
       }
       setNotification(game.getNotification());
       setCurrentOverlay(overlay);
