@@ -46,7 +46,7 @@ interface SystemRow {
   routeRows: RouteRow[];
 }
 
-export function TrafficPage() {
+export function TrafficPage(props: { onClose?: () => void }) {
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
   const [selectedTransfer, setSelectedTransfer] = createSignal<string | null>(null);
 
@@ -267,6 +267,7 @@ export function TrafficPage() {
                   const next = isSelected() ? null : row.label;
                   setSelectedTransfer(next);
                   getGame().selectTransferRoute(next);
+                  if (next && props.onClose) props.onClose();
                 };
                 return (
                 <tr

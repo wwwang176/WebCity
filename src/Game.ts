@@ -2532,7 +2532,15 @@ export class Game {
     this.highlightManager.clear();
 
     this.selectedTransferRoute = label;
-    if (!label) { this.onUIUpdate?.(); return; }
+    if (!label) {
+      // Restore normal view
+      if (this.viewMode === ViewMode.TRANSFER_FOCUS) this.applyViewMode(ViewMode.NORMAL);
+      this.onUIUpdate?.();
+      return;
+    }
+
+    // Set transfer focus view mode (buildings semi-transparent)
+    if (this.viewMode !== ViewMode.TRANSFER_FOCUS) this.applyViewMode(ViewMode.TRANSFER_FOCUS);
 
     // ── Highlight buildings ──
     const buildings = this.simLoop.getTransferBuildings(label);

@@ -12,6 +12,7 @@ import { OverlayIndicator } from './components/OverlayIndicator';
 import { MiniMap } from './components/MiniMap';
 import { BuildingPanel } from './components/BuildingPanel';
 import { TutorialOverlay } from './components/Tutorial';
+import { TransferOverlayPanel } from './components/TransferOverlayPanel';
 
 import { OverviewModal } from './modals/OverviewModal';
 import { LayersModal } from './modals/LayersModal';
@@ -39,6 +40,7 @@ function GameUIRoot() {
       <OverlayIndicator />
       <MiniMap />
       <BuildingPanel />
+      <TransferOverlayPanel />
       <TutorialOverlay />
 
       <OverviewModal open={openModal() === 'overview'} onClose={closeModal} />
