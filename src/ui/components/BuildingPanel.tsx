@@ -1,4 +1,4 @@
-import { Show, For } from 'solid-js';
+import { Show, Index } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
@@ -246,6 +246,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   const zoneName = () => ZONE_NAMES[props.sel.zoneType] ?? 'Unknown';
 
   const citizens = () => {
+    gameSignals.tick(); // refresh on tick so lifeStage/education stay current
     const key = `${props.sel.x},${props.sel.y}`;
     const cm = getGame().getState().citizens;
     return {
@@ -300,23 +301,23 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       <div id="bp-citizen-list">
         <Show when={citizens().residents.length > 0}>
           <div style={`font-size:11px;color:${UI_COLORS.STATUS_GOOD};margin-top:4px`}>Residents ({citizens().residents.length})</div>
-          <For each={citizens().residents}>
+          <Index each={citizens().residents}>
             {(c) => (
-              <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
-                Citizen #{c.id} - {STAGE_NAMES[c.lifeStage] ?? c.lifeStage}
+              <div class="bp-citizen" onClick={() => setSelectedCitizen(c().id)}>
+                Citizen #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
               </div>
             )}
-          </For>
+          </Index>
         </Show>
         <Show when={citizens().workers.length > 0}>
           <div style={`font-size:11px;color:${UI_COLORS.ACCENT};margin-top:4px`}>Workers ({citizens().workers.length})</div>
-          <For each={citizens().workers}>
+          <Index each={citizens().workers}>
             {(c) => (
-              <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
-                Citizen #{c.id} - {STAGE_NAMES[c.lifeStage] ?? c.lifeStage}
+              <div class="bp-citizen" onClick={() => setSelectedCitizen(c().id)}>
+                Citizen #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
               </div>
             )}
-          </For>
+          </Index>
         </Show>
       </div>
 
