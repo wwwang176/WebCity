@@ -311,6 +311,8 @@ export class Game {
   /** Currently selected transfer route label for map overlay (null = none). */
   private selectedTransferRoute: string | null = null;
   private transferOverlayLines: THREE.Line[] = [];
+  /** Cached transfer highlight cells (reapplied every frame like overlayHighlightCells). */
+  private transferHighlightCells: { x: number; y: number; color: number }[] = [];
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
   private elevatedRoadRenderer: ElevatedRoadRenderer;
@@ -1902,13 +1904,23 @@ export class Game {
 
   /** Re-apply cached overlay building highlight (cheap: no grid traversal). */
   private reapplyOverlayHighlight(): void {
-    if (this.overlayHighlightCells.length === 0) return;
-    this.highlightManager.hoverHighlightGradient(
-      this.overlayHighlightCells,
-      this.getAllHighlightMeshes(),
-      this.buildingRenderer.buildingInfraGroups,
-      0.6,
-    );
+    if (this.overlayHighlightCells.length > 0) {
+      this.highlightManager.hoverHighlightGradient(
+        this.overlayHighlightCells,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+        0.6,
+      );
+    }
+    // Re-apply transfer route highlight on top
+    if (this.transferHighlightCells.length > 0) {
+      this.highlightManager.hoverHighlightGradient(
+        this.transferHighlightCells,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+        1.0,
+      );
+    }
   }
 
   /** Highlight the drag-selected rectangular area with the given color (DRY). */
@@ -2532,9 +2544,8 @@ export class Game {
     this.highlightManager.clear();
 
     this.selectedTransferRoute = label;
+    this.transferHighlightCells = [];
     if (!label) {
-      // Restore normal view
-      if (this.viewMode === ViewMode.TRANSFER_FOCUS) this.applyViewMode(ViewMode.NORMAL);
       this.onUIUpdate?.();
       return;
     }
@@ -2543,33 +2554,24 @@ export class Game {
     // Dim all buildings via highlight, then make transfer buildings bright.
     if (this.viewMode !== ViewMode.NORMAL) this.applyViewMode(ViewMode.NORMAL);
 
-    // ── Highlight buildings: dim everything, bright transfer buildings ──
+    // ── Build transfer highlight cells (cached, reapplied every frame) ──
     const buildings = this.simLoop.getTransferBuildings(label);
     const homeSet = new Set(buildings.homes);
     const workSet = new Set(buildings.works);
 
-    const gradientCells: { x: number; y: number; color: number }[] = [];
-    // Dim all zone buildings (dark gray, low intensity)
+    this.transferHighlightCells = [];
     this.state.grid.forEachCell((cell, x, y) => {
       if (cell.buildingId && cell.buildingId > 0) {
         const key = `${x},${y}`;
         if (homeSet.has(key)) {
-          gradientCells.push({ x, y, color: 0x66bb6a }); // green - home
+          this.transferHighlightCells.push({ x, y, color: 0x66bb6a }); // green - home
         } else if (workSet.has(key)) {
-          gradientCells.push({ x, y, color: 0x42a5f5 }); // blue - work
+          this.transferHighlightCells.push({ x, y, color: 0x42a5f5 }); // blue - work
         } else {
-          gradientCells.push({ x, y, color: 0x222222 }); // dark gray - dim
+          this.transferHighlightCells.push({ x, y, color: 0x222222 }); // dark gray - dim
         }
       }
     });
-    if (gradientCells.length > 0) {
-      this.highlightManager.hoverHighlightGradient(
-        gradientCells,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-        1.0,
-      );
-    }
 
     // ── Draw route line ──
     const stops = this.simLoop.getTransferRouteStops(label);
