@@ -36,6 +36,7 @@ export function injectHighlightShader(material: THREE.MeshLambertMaterial): void
       if (vHighlight > 0.01) {
         gl_FragColor.rgb = mix(gl_FragColor.rgb, vHighlightColor, 0.22 * vHighlight);
         gl_FragColor.rgb += vHighlightColor * 0.12 * vHighlight;
+        gl_FragColor.a = max(gl_FragColor.a, vHighlight);
       }`,
     );
   };

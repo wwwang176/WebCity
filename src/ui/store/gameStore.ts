@@ -25,6 +25,7 @@ const [powerSupply, setPowerSupply] = createSignal(0);
 const [powerDemand, setPowerDemand] = createSignal(0);
 const [placementMode, setPlacementMode] = createSignal<PlacementMode>('ground');
 const [elevationLevel, setElevationLevel] = createSignal(1);
+const [selectedTransferRoute, setSelectedTransferRoute] = createSignal<string | null>(null);
 
 // --- Throttled tick signal for modal live-refresh (fixed ~6 updates/sec regardless of FPS) ---
 const [tick, setTick] = createSignal(0);
@@ -43,7 +44,7 @@ export const gameSignals = {
   currentTool, previewCost, paused, speed,
   selectedBuilding, notification, currentOverlay,
   currentRotation, rciDemand, chartHistory, econHistory,
-  viewMode, tick, powerSupply, powerDemand, placementMode, elevationLevel,
+  viewMode, tick, powerSupply, powerDemand, placementMode, elevationLevel, selectedTransferRoute,
 };
 
 // --- Game instance reference ---
@@ -96,6 +97,7 @@ export function initGameStore(game: Game): void {
       setPowerDemand(Math.round(state.power.getDemand()));
       setPlacementMode(game.getPlacementMode());
       setElevationLevel(game.getElevationLevel());
+      setSelectedTransferRoute(game.getSelectedTransferRoute());
       if (state.rciDemand) {
         setRciDemand({
           residential: state.rciDemand.residential,

@@ -46,8 +46,9 @@ interface SystemRow {
   routeRows: RouteRow[];
 }
 
-export function TrafficPage() {
+export function TrafficPage(props: { onClose?: () => void }) {
   const [expanded, setExpanded] = createSignal<Set<string>>(new Set());
+  const [selectedTransfer, setSelectedTransfer] = createSignal<string | null>(null);
 
   const toggle = (type: string) => {
     const next = new Set(expanded());
@@ -260,15 +261,27 @@ export function TrafficPage() {
           <thead><tr><th>Route</th><th style="text-align:right">Rides</th><th style="text-align:right">Variants</th><th style="text-align:right">Riders/Wk</th><th style="text-align:right">Avg Time</th></tr></thead>
           <tbody>
             <For each={transferStats().routeBreakdown.filter(r => r.rides >= 2)}>
-              {(row) => (
-                <tr>
+              {(row) => {
+                const isSelected = () => selectedTransfer() === row.label;
+                const onClick = () => {
+                  const next = isSelected() ? null : row.label;
+                  setSelectedTransfer(next);
+                  getGame().selectTransferRoute(next);
+                  if (next && props.onClose) props.onClose();
+                };
+                return (
+                <tr
+                  style={{ cursor: 'pointer', background: isSelected() ? 'rgba(66,165,245,0.15)' : undefined }}
+                  onClick={onClick}
+                >
                   <td class="td-label">{row.label}</td>
                   <td class="td-value" style="text-align:right">{row.rides}</td>
                   <td class="td-value" style="text-align:right">{row.count}</td>
                   <td class="td-value" style={`text-align:right;color:${row.weeklyUse > 0 ? UI_COLORS.STATUS_GOOD : '#667a90'}`}>{row.weeklyUse}</td>
                   <td class="td-value" style="text-align:right">{row.avgTime.toFixed(1)}</td>
                 </tr>
-              )}
+                );
+              }}
             </For>
           </tbody>
         </table>

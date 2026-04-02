@@ -15,7 +15,7 @@ import { GameClock, type GameSpeed } from './core/simulation/GameClock';
 import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
-import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKeyUnsafe, toPosKey, getDirectionFlag } from './core/grid/GridHelpers';
+import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKey, parsePosKeyUnsafe, toPosKey, getDirectionFlag } from './core/grid/GridHelpers';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -35,7 +35,7 @@ import { findLanePath } from './core/traffic/LaneGraphPathfinder';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
-import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
@@ -308,6 +308,11 @@ export class Game {
   /** Cached overlay building highlight cells (reapplied every frame). */
   private overlayHighlightCells: { x: number; y: number; color: number }[] = [];
   private transportRouteRenderer: TransportRouteRenderer;
+  /** Currently selected transfer route label for map overlay (null = none). */
+  private selectedTransferRoute: string | null = null;
+  private transferOverlayLines: THREE.Line[] = [];
+  /** Cached transfer highlight cells (reapplied every frame like overlayHighlightCells). */
+  private transferHighlightCells: { x: number; y: number; color: number }[] = [];
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
   private elevatedRoadRenderer: ElevatedRoadRenderer;
@@ -491,6 +496,11 @@ export class Game {
       this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned, abandoned);
     };
     // Sync light spots when facility operational status changes (power/water dependency)
+    this.simLoop.onTransferDataChanged = () => {
+      if (this.selectedTransferRoute) {
+        this.selectTransferRoute(this.selectedTransferRoute);
+      }
+    };
     this.simLoop.onFacilityOperationalChanged = (changes) => {
       for (const { x, y, operational } of changes) {
         if (operational) this.buildingRenderer.addLightSpot(x, y);
@@ -1895,6 +1905,20 @@ export class Game {
         this.applySelectAndHoverHighlight();
       }
     }
+
+    // Step 4: Transfer highlight — highest priority, overwrites hover on transfer buildings
+    this.reapplyTransferHighlight();
+  }
+
+  /** Re-apply cached transfer route highlight (highest priority layer). */
+  private reapplyTransferHighlight(): void {
+    if (this.transferHighlightCells.length === 0) return;
+    this.highlightManager.hoverHighlightGradient(
+      this.transferHighlightCells,
+      this.getAllHighlightMeshes(),
+      this.buildingRenderer.buildingInfraGroups,
+      1.0,
+    );
   }
 
   /** Re-apply cached overlay building highlight (cheap: no grid traversal). */
@@ -2512,6 +2536,121 @@ export class Game {
 
   getTransferStats() {
     return this.simLoop.getTransferStats();
+  }
+
+  /**
+   * Build highlight cells for the transfer overlay.
+   * Zone buildings: white if in highlightSet, dark gray otherwise.
+   * Infra buildings: white if main cell in highlightSet (all footprint cells included).
+   */
+  private buildTransferHighlightCells(
+    highlightSet: Set<string>,
+  ): { x: number; y: number; color: number }[] {
+    const cells: { x: number; y: number; color: number }[] = [];
+
+    this.state.grid.forEachCell((cell, x, y) => {
+      if (!cell.buildingId || cell.buildingId <= 0) return;
+      const key = `${x},${y}`;
+
+      if (isZoneBuilding(cell.buildingId)) {
+        if (highlightSet.has(key)) cells.push({ x, y, color: 0xffffff });
+      } else {
+        // Infrastructure: highlight if this cell OR its main cell is in the set.
+        // MULTI_CELL_OCCUPIED cells share the parent's buildingId area.
+        if (highlightSet.has(key)) {
+          // Main cell of infra — highlight it + expand footprint
+          const cfg = getInfraConfigById(cell.buildingId);
+          if (cfg) {
+            for (let dx = 0; dx < cfg.width; dx++) {
+              for (let dy = 0; dy < cfg.height; dy++) {
+                cells.push({ x: x + dx, y: y + dy, color: 0xffffff });
+              }
+            }
+          } else {
+            cells.push({ x, y, color: 0xffffff });
+          }
+        }
+        // Non-highlighted infra: leave untouched (no dim)
+      }
+    });
+
+    return cells;
+  }
+
+  getSelectedTransferRoute(): string | null {
+    return this.selectedTransferRoute;
+  }
+
+  selectTransferRoute(label: string | null): void {
+    // Clear previous overlay
+    for (const line of this.transferOverlayLines) {
+      this.sceneManager.scene.remove(line);
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    }
+    this.transferOverlayLines.length = 0;
+    this.highlightManager.clear();
+
+    this.selectedTransferRoute = label;
+    this.transferHighlightCells = [];
+    if (!label) {
+      this.onUIUpdate?.();
+      return;
+    }
+
+    // Use NORMAL ViewMode (keep original InstancedMesh) so per-instance highlight works.
+    // Dim all buildings via highlight, then make transfer buildings bright.
+    if (this.viewMode !== ViewMode.NORMAL) this.applyViewMode(ViewMode.NORMAL);
+
+    // ── Build transfer highlight cells (cached, reapplied every frame) ──
+    const buildings = this.simLoop.getTransferBuildings(label);
+    const highlightSet = new Set([...buildings.homes, ...buildings.works]);
+
+    // Collect transit stop positions + expand to full building footprint
+    const stops = this.simLoop.getTransferRouteStops(label);
+    for (const s of stops) highlightSet.add(`${s.x},${s.y}`);
+
+    this.transferHighlightCells = this.buildTransferHighlightCells(highlightSet);
+    this.reapplyTransferHighlight(); // apply immediately, don't wait for next frame
+
+    // ── Draw route line ──
+    if (stops.length >= 2) {
+      // Group consecutive same-type legs for coloring
+      const LINE_Y = 0.2;
+      const typeColors: Record<string, number> = {
+        ride: 0x42a5f5, walk: 0xffffff,
+      };
+      let segStart = 0;
+      for (let i = 1; i <= stops.length; i++) {
+        if (i < stops.length && stops[i]!.type === stops[segStart]!.type) continue;
+        // Draw segment from segStart to i-1
+        const points: THREE.Vector3[] = [];
+        for (let j = segStart; j < i; j++) {
+          points.push(new THREE.Vector3(stops[j]!.x, LINE_Y, stops[j]!.y));
+        }
+        if (points.length >= 2) {
+          const isWalk = stops[segStart]!.type === 'walk';
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          const material = new THREE.LineDashedMaterial({
+            color: isWalk ? 0xffffff : 0x42a5f5,
+            linewidth: 2,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+            dashSize: isWalk ? 0.2 : 1000,
+            gapSize: isWalk ? 0.15 : 0,
+          });
+          const line = new THREE.Line(geometry, material);
+          line.computeLineDistances();
+          line.renderOrder = 10;
+          this.sceneManager.scene.add(line);
+          this.transferOverlayLines.push(line);
+        }
+        segStart = i;
+      }
+    }
+
+    this.onUIUpdate?.();
   }
 
   /** Toggle pause state (DRY: used by keyboard + UI). */

@@ -267,9 +267,16 @@
   image-rendering: pixelated;
 }
 
+/* ===== Left Panel Stack ===== */
+#left-panels {
+  position: absolute; top: 56px; left: 12px;
+  display: flex; gap: 8px; align-items: flex-start;
+  pointer-events: none; z-index: 50;
+}
+#left-panels > * { pointer-events: auto; }
+
 /* ===== Building Panel ===== */
 #building-panel {
-  position: absolute; top: 56px; left: 12px;
   display: none; min-width: 200px;
 }
 #building-panel.visible { display: block; }

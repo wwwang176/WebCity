@@ -121,6 +121,10 @@ export class SimulationLoop {
   private lastTransferDay = -1;
   /** Snapshot of active transfer pedestrians (updated daily to avoid per-tick re-renders). */
   private transferPedsSnapshot = 0;
+  /** Recent buildings using each transfer route label → {homes, works} position sets. */
+  private transferBuildingsRecent = new Map<string, { homes: Set<string>; works: Set<string> }>();
+  /** Callback fired when transfer daily data rolls over. */
+  onTransferDataChanged: (() => void) | null = null;
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
@@ -1585,6 +1589,7 @@ export class SimulationLoop {
         if (a.tripType === 4) peds++;
       }
       this.transferPedsSnapshot = peds;
+      this.onTransferDataChanged?.();
     }
 
     // Rebuild transfer graph when transit network has changed
@@ -1597,6 +1602,7 @@ export class SimulationLoop {
         SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
       );
       this.transferGraphDirty = false;
+      this.transferBuildingsRecent.clear();
     }
 
     const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
@@ -1697,6 +1703,11 @@ export class SimulationLoop {
               return icons[l.transitType ?? ''] ?? '?';
             }).join('\u2192');
             this.transferToday.set(label, (this.transferToday.get(label) ?? 0) + 1);
+            // Track actual buildings using this transfer route
+            let bldgs = this.transferBuildingsRecent.get(label);
+            if (!bldgs) { bldgs = { homes: new Set(), works: new Set() }; this.transferBuildingsRecent.set(label, bldgs); }
+            bldgs.homes.add(citizen.homeId!);
+            bldgs.works.add(citizen.workplaceId!);
           }
         } else {
           const transitSystem = getSystemForMode(this.state, mode);
@@ -2116,6 +2127,34 @@ export class SimulationLoop {
     this.transferToday = data.today;
     this.transferPedsSnapshot = data.pedsSnapshot;
     if (data.lastDay !== undefined) this.lastTransferDay = data.lastDay;
+  }
+
+  /** Get buildings that recently used a specific transfer route label. */
+  getTransferBuildings(label: string): { homes: string[]; works: string[] } {
+    const bldgs = this.transferBuildingsRecent.get(label);
+    if (!bldgs) return { homes: [], works: [] };
+    return { homes: [...bldgs.homes], works: [...bldgs.works] };
+  }
+
+  /** Get stop coordinates for a specific transfer route label (for map overlay). */
+  getTransferRouteStops(label: string): Array<{ x: number; y: number; type: string }> {
+    const cache = this.transferGraph.stopRouteCache;
+    const stops: Array<{ x: number; y: number; type: string }> = [];
+    // Find first cached route matching this label
+    for (const route of cache.values()) {
+      const rideLegs = route.legs.filter(l => l.type === 'ride');
+      if (rideLegs.length < 2) continue;
+      const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
+      const routeLabel = rideLegs.map(l => icons[l.transitType ?? ''] ?? '?').join('\u2192');
+      if (routeLabel !== label) continue;
+      // Collect all stop positions from legs
+      for (const leg of route.legs) {
+        stops.push({ x: leg.fromX, y: leg.fromY, type: leg.type });
+        stops.push({ x: leg.toX, y: leg.toY, type: leg.type });
+      }
+      break; // one example is enough for the line
+    }
+    return stops;
   }
 
   /** Transfer stats for UI display. */

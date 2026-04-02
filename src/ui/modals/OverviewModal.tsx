@@ -46,7 +46,7 @@ export function OverviewModal(props: { open: boolean; onClose: () => void }) {
           <Show when={activePage() === 'services'}><ServicesPage /></Show>
           <Show when={activePage() === 'freight'}><FreightPage /></Show>
           <Show when={activePage() === 'environment'}><EnvironmentPage /></Show>
-          <Show when={activePage() === 'traffic'}><TrafficPage /></Show>
+          <Show when={activePage() === 'traffic'}><TrafficPage onClose={props.onClose} /></Show>
         </div>
       </div>
     </Modal>

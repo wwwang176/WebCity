@@ -15,6 +15,7 @@ const FOCUS_NAMES: Record<string, string> = {
   [ViewMode.RAIL_FOCUS]: '\u{1F686} Rail Focus',
   [ViewMode.FERRY_FOCUS]: '\u{26F4} Ferry Focus',
   [ViewMode.BUS_FOCUS]: '\u{1F68C} Bus Focus',
+  [ViewMode.TRANSFER_FOCUS]: '\u{1F504} Transfer Focus',
 };
 
 export function OverlayIndicator() {

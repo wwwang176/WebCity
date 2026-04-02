@@ -12,6 +12,8 @@ export enum ViewMode {
   FERRY_FOCUS = 'FERRY_FOCUS',
   /** 公車聚焦（道路/公車全彩，其餘白模） */
   BUS_FOCUS = 'BUS_FOCUS',
+  /** 轉乘路線聚焦（建築半透明，高亮轉乘相關建築） */
+  TRANSFER_FOCUS = 'TRANSFER_FOCUS',
 }
 
 /** Road-based transport focus: roads stay visible, everything else dimmed. */
@@ -80,6 +82,16 @@ export const VIEW_MODE_OPACITY: Record<ViewMode, {
     levelCrossing: 0.0,
   },
   [ViewMode.BUS_FOCUS]: { ...ROAD_TRANSPORT_OPACITY },
+  [ViewMode.TRANSFER_FOCUS]: {
+    building: 0.15,
+    road: 0.6,
+    terrain: 0.25,
+    surfaceVehicle: 0.1,
+    metroTunnel: 0.0,
+    metroTrain: 0.0,
+    track: 0.15,
+    levelCrossing: 0.15,
+  },
 };
 
 /** 地下模式隧道 Y 位置（負值 = 地面以下） */
@@ -133,6 +145,7 @@ export const VISIBLE_VEHICLE_TYPES: Record<ViewMode, ReadonlySet<string> | null>
   [ViewMode.RAIL_FOCUS]: new Set(['rail_train', 'rail_carriage']),
   [ViewMode.FERRY_FOCUS]: new Set(['ferry']),
   [ViewMode.BUS_FOCUS]: new Set(['bus', 'transport_bus']),
+  [ViewMode.TRANSFER_FOCUS]: new Set<string>(),
 };
 
 /** Determine whether a vehicle type is visible in a given ViewMode. */
