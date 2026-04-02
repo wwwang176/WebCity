@@ -28,13 +28,22 @@ export const CW_OFFSET = 0.35;
 /** Node offset within a cell — aligned with crosswalk rendering */
 const NODE_X_OFFSET = CW_OFFSET;
 
+/** Building wall distance from cell center */
+export const BUILDING_HALF_SIZE = 0.35;
+
+/** Walkway node offset outside building wall */
+export const WALKWAY_OFFSET = 0.06;
+
+/** Total distance from cell center to building corner/door nodes */
+const BUILDING_NODE_DIST = BUILDING_HALF_SIZE + WALKWAY_OFFSET;
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface SidewalkNode {
   id: string;
   position: { x: number; y: number };
   cellKey: string;
-  type: 'sidewalk' | 'crosswalk_wait' | 'building_entrance' | 'transit_stop';
+  type: 'sidewalk' | 'crosswalk_wait' | 'building_entrance' | 'building_corner' | 'transit_stop';
 }
 
 export interface SidewalkEdge {
@@ -42,7 +51,7 @@ export interface SidewalkEdge {
   from: SidewalkNode;
   to: SidewalkNode;
   length: number;
-  type: 'sidewalk' | 'crosswalk' | 'level_crossing' | 'building_access' | 'transit_access';
+  type: 'sidewalk' | 'crosswalk' | 'level_crossing' | 'building_access' | 'building_wall' | 'transit_access';
 }
 
 export type SidewalkNodeType = SidewalkNode['type'];
@@ -120,7 +129,7 @@ export class SidewalkGraph {
 
   // ── Build ──
 
-  buildFromGrid(grid: GridLookup, roadCellKeys: string[]): void {
+  buildFromGrid(grid: GridLookup, roadCellKeys: string[], buildingCellKeys: string[] = []): void {
     this.nodes.clear();
     this.adjacency.clear();
     this.cellNodes.clear();
@@ -130,9 +139,19 @@ export class SidewalkGraph {
       this.generateNodesForCell(grid, key);
     }
 
-    // Pass 2: generate edges
+    // Pass 2: generate road edges
     for (const key of roadCellKeys) {
       this.generateEdgesForCell(grid, key);
+    }
+
+    // Pass 3: generate building nodes
+    for (const key of buildingCellKeys) {
+      this.generateBuildingNodesForCell(grid, key);
+    }
+
+    // Pass 4: generate building edges (must be after road nodes exist)
+    for (const key of buildingCellKeys) {
+      this.generateBuildingEdgesForCell(grid, key);
     }
   }
 
@@ -152,7 +171,7 @@ export class SidewalkGraph {
       this.removeCellData(key);
     }
 
-    // Rebuild nodes
+    // Rebuild road nodes
     for (const key of toRebuild) {
       const { x, y } = parsePosKeyUnsafe(key);
       const cell = grid.getCell(x, y);
@@ -161,12 +180,30 @@ export class SidewalkGraph {
       }
     }
 
-    // Rebuild edges
+    // Rebuild road edges
     for (const key of toRebuild) {
       const { x, y } = parsePosKeyUnsafe(key);
       const cell = grid.getCell(x, y);
       if (cell && cell.roadType !== RoadType.NONE) {
         this.generateEdgesForCell(grid, key);
+      }
+    }
+
+    // Rebuild building nodes
+    for (const key of toRebuild) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      const cell = grid.getCell(x, y);
+      if (cell && cell.roadType === RoadType.NONE && cell.buildingId && cell.buildingId > 0) {
+        this.generateBuildingNodesForCell(grid, key);
+      }
+    }
+
+    // Rebuild building edges
+    for (const key of toRebuild) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      const cell = grid.getCell(x, y);
+      if (cell && cell.roadType === RoadType.NONE && cell.buildingId && cell.buildingId > 0) {
+        this.generateBuildingEdgesForCell(grid, key);
       }
     }
   }
@@ -211,7 +248,7 @@ export class SidewalkGraph {
     let best: SidewalkNode | null = null;
     let bestDist = Infinity;
     for (const node of this.nodes.values()) {
-      if (node.type === 'building_entrance' || node.type === 'transit_stop') continue;
+      if (node.type === 'transit_stop') continue;
       const d = euclideanDistance(bx, by, node.position.x, node.position.y);
       if (d < bestDist) {
         bestDist = d;
@@ -306,6 +343,117 @@ export class SidewalkGraph {
     }
 
     this.cellNodes.set(cellKey, nodeIds);
+  }
+
+  // ── Private: Building node generation ──
+
+  private generateBuildingNodesForCell(grid: GridLookup, cellKey: string): void {
+    const { x, y } = parsePosKeyUnsafe(cellKey);
+    const cell = grid.getCell(x, y);
+    if (!cell || cell.roadType !== RoadType.NONE || !cell.buildingId || cell.buildingId === 0) return;
+
+    const d = BUILDING_NODE_DIST;
+    const nodeIds: string[] = [];
+
+    // 4 corner nodes
+    const corners: Array<{ suffix: string; px: number; py: number }> = [
+      { suffix: 'bNW', px: x - d, py: y - d },
+      { suffix: 'bNE', px: x + d, py: y - d },
+      { suffix: 'bSW', px: x - d, py: y + d },
+      { suffix: 'bSE', px: x + d, py: y + d },
+    ];
+    for (const c of corners) {
+      const nodeId = `${cellKey}:${c.suffix}`;
+      this.nodes.set(nodeId, { id: nodeId, position: { x: c.px, y: c.py }, cellKey, type: 'building_corner' });
+      nodeIds.push(nodeId);
+    }
+
+    // 4 door nodes (centered on each face)
+    const doors: Array<{ suffix: string; px: number; py: number }> = [
+      { suffix: 'bN', px: x, py: y - d },
+      { suffix: 'bS', px: x, py: y + d },
+      { suffix: 'bW', px: x - d, py: y },
+      { suffix: 'bE', px: x + d, py: y },
+    ];
+    for (const door of doors) {
+      const nodeId = `${cellKey}:${door.suffix}`;
+      this.nodes.set(nodeId, { id: nodeId, position: { x: door.px, y: door.py }, cellKey, type: 'building_entrance' });
+      nodeIds.push(nodeId);
+    }
+
+    this.cellNodes.set(cellKey, nodeIds);
+  }
+
+  private generateBuildingEdgesForCell(grid: GridLookup, cellKey: string): void {
+    const { x, y } = parsePosKeyUnsafe(cellKey);
+    const cell = grid.getCell(x, y);
+    if (!cell || cell.roadType !== RoadType.NONE || !cell.buildingId || cell.buildingId === 0) return;
+
+    // Type 1: Building wall edges (corner↔door↔corner per face)
+    const wallFaces: Array<{ c1: string; door: string; c2: string }> = [
+      { c1: `${cellKey}:bNW`, door: `${cellKey}:bN`, c2: `${cellKey}:bNE` },
+      { c1: `${cellKey}:bSW`, door: `${cellKey}:bS`, c2: `${cellKey}:bSE` },
+      { c1: `${cellKey}:bNW`, door: `${cellKey}:bW`, c2: `${cellKey}:bSW` },
+      { c1: `${cellKey}:bNE`, door: `${cellKey}:bE`, c2: `${cellKey}:bSE` },
+    ];
+    for (const face of wallFaces) {
+      const c1 = this.nodes.get(face.c1);
+      const door = this.nodes.get(face.door);
+      const c2 = this.nodes.get(face.c2);
+      if (c1 && door) this.addBidirectionalEdge(c1, door, 'building_wall');
+      if (door && c2) this.addBidirectionalEdge(door, c2, 'building_wall');
+    }
+
+    // Type 2: Building access edges (door → road sidewalk nodes)
+    const accessDirs: Array<{
+      dx: number; dy: number;
+      doorSuffix: string;
+      // The road sidewalk node suffixes on the shared boundary
+      roadNodeSuffixes: [string, string];
+    }> = [
+      { dx: 0, dy: -1, doorSuffix: 'bN', roadNodeSuffixes: ['SW', 'SE'] }, // road to north
+      { dx: 0, dy: 1,  doorSuffix: 'bS', roadNodeSuffixes: ['NW', 'NE'] }, // road to south
+      { dx: -1, dy: 0, doorSuffix: 'bW', roadNodeSuffixes: ['EN', 'ES'] }, // road to west
+      { dx: 1,  dy: 0, doorSuffix: 'bE', roadNodeSuffixes: ['WN', 'WS'] }, // road to east
+    ];
+    for (const dir of accessDirs) {
+      const nx = x + dir.dx;
+      const ny = y + dir.dy;
+      const neighbor = grid.getCell(nx, ny);
+      if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
+
+      const doorNode = this.nodes.get(`${cellKey}:${dir.doorSuffix}`);
+      if (!doorNode) continue;
+
+      const neighborKey = toPosKey(nx, ny);
+      for (const suffix of dir.roadNodeSuffixes) {
+        const roadNode = this.nodes.get(`${neighborKey}:${suffix}`);
+        if (roadNode) this.addBidirectionalEdge(doorNode, roadNode, 'building_access');
+      }
+    }
+
+    // Type 3: Adjacent building connections (corner↔corner)
+    const adjDirs: Array<{
+      dx: number; dy: number;
+      myCorners: [string, string];
+      theirCorners: [string, string];
+    }> = [
+      { dx: 1, dy: 0,  myCorners: ['bNE', 'bSE'], theirCorners: ['bNW', 'bSW'] }, // east
+      { dx: 0, dy: 1,  myCorners: ['bSW', 'bSE'], theirCorners: ['bNW', 'bNE'] }, // south
+    ];
+    for (const dir of adjDirs) {
+      const nx = x + dir.dx;
+      const ny = y + dir.dy;
+      const neighbor = grid.getCell(nx, ny);
+      if (!neighbor || neighbor.roadType !== RoadType.NONE || !neighbor.buildingId || neighbor.buildingId === 0) continue;
+
+      const neighborKey = toPosKey(nx, ny);
+      for (let i = 0; i < 2; i++) {
+        const myNode = this.nodes.get(`${cellKey}:${dir.myCorners[i]}`);
+        const theirNode = this.nodes.get(`${neighborKey}:${dir.theirCorners[i]}`);
+        if (myNode && theirNode) this.addBidirectionalEdge(myNode, theirNode, 'building_wall');
+      }
+    }
   }
 
   private generateEdgesForCell(grid: GridLookup, cellKey: string): void {

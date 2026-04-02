@@ -416,6 +416,7 @@ export class SimulationLoop {
     };
 
     let changed = false;
+    const affectedBuildingCells: string[] = [];
 
     // Try growing on a sample of cells each tick (not all 60x60)
     const attempts = SIMULATION.GROWTH_ATTEMPTS;
@@ -430,6 +431,7 @@ export class SimulationLoop {
         if (Math.random() < SIMULATION.BURNED_CLEARANCE_CHANCE) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
           changed = true;
+          affectedBuildingCells.push(toPosKey(x, y));
           this.onBuildingRemoved?.(x, y);
         }
         continue;
@@ -455,6 +457,7 @@ export class SimulationLoop {
           }
         }
         changed = true;
+        affectedBuildingCells.push(toPosKey(x, y));
         continue;
       }
 
@@ -469,6 +472,7 @@ export class SimulationLoop {
         conditions.hasWater = this.state.water.isSupplied(x, y);
         if (growth.tryGrow(x, y, conditions)) {
           changed = true;
+          affectedBuildingCells.push(toPosKey(x, y));
           const grown = grid.getCell(x, y);
           if (grown) {
             const level = getBuildingType(grown.buildingId)?.level ?? 1;
@@ -477,7 +481,22 @@ export class SimulationLoop {
         }
       }
     }
-    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
+    if (changed) {
+      this.onBuildingsChanged?.();
+      this.wpDistCache?.invalidate();
+      // Incrementally update sidewalk graph for new/removed buildings
+      if (affectedBuildingCells.length > 0) {
+        const swGridLookup = {
+          getCell: (gx: number, gy: number) => {
+            const c = grid.getCell(gx, gy);
+            if (!c) return null;
+            return { roadType: c.roadType, roadFlags: c.roadFlags, railType: c.railType, buildingId: c.buildingId };
+          },
+        };
+        this.state.sidewalkGraph.updateCells(swGridLookup, affectedBuildingCells);
+        this.state.pedestrianManager.clearPathCache();
+      }
+    }
   }
 
   private runMigration(): void {
@@ -1491,7 +1510,8 @@ export class SimulationLoop {
 
   private rebuildSidewalkGraph(): void {
     const grid = this.state.grid;
-    const cellKeys: string[] = [];
+    const roadCellKeys: string[] = [];
+    const buildingCellKeys: string[] = [];
     const gridLookup = {
       getCell: (x: number, y: number) => {
         const cell = grid.getCell(x, y);
@@ -1500,17 +1520,20 @@ export class SimulationLoop {
           roadType: cell.roadType,
           roadFlags: cell.roadFlags,
           railType: cell.railType,
+          buildingId: cell.buildingId,
         };
       },
     };
 
     grid.forEachCell((cell, x, y) => {
       if (cell.roadType !== RoadType.NONE) {
-        cellKeys.push(toPosKey(x, y));
+        roadCellKeys.push(toPosKey(x, y));
+      } else if (cell.buildingId > 0) {
+        buildingCellKeys.push(toPosKey(x, y));
       }
     });
 
-    this.state.sidewalkGraph.buildFromGrid(gridLookup, cellKeys);
+    this.state.sidewalkGraph.buildFromGrid(gridLookup, roadCellKeys, buildingCellKeys);
     // Re-link pedestrianManager to the updated graph
     this.state.pedestrianManager = new PedestrianManager(
       this.state.sidewalkGraph,
