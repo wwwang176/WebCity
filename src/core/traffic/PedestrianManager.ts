@@ -218,28 +218,20 @@ export class PedestrianManager {
       const currentEdge = agent.edgePath[agent.edgeIndex];
       if (!currentEdge) continue; // no edge → skip
 
-      // Crosswalk signal check
-      if (currentEdge.type === 'crosswalk' && agent.edgeProgress === 0) {
+      // If waiting at a blocked edge, re-check before allowing movement
+      if (agent.state === PedestrianState.WAITING_SIGNAL) {
         if (this.trafficLights && !this.canPassCrosswalk(currentEdge)) {
-          agent.state = PedestrianState.WAITING_SIGNAL;
-          this.agents[writeIdx++] = agent; // keep alive, just waiting
+          this.agents[writeIdx++] = agent;
           continue;
         }
         agent.state = PedestrianState.WALKING;
       }
-
-      // Level crossing check
-      if (currentEdge.type === 'level_crossing' && agent.edgeProgress === 0) {
-        if (this.levelCrossings) {
-          const cellKey = currentEdge.from.cellKey;
-          const parts = cellKey.split(',');
-          const cx = Number(parts[0]);
-          const cy = Number(parts[1]);
-          if (this.levelCrossings.isCrossingBlocked(cx, cy)) {
-            agent.state = PedestrianState.WAITING_CROSSING;
-            this.agents[writeIdx++] = agent; // keep alive, just waiting
-            continue;
-          }
+      if (agent.state === PedestrianState.WAITING_CROSSING) {
+        const cellKey = currentEdge.from.cellKey;
+        const parts = cellKey.split(',');
+        if (this.levelCrossings?.isCrossingBlocked(Number(parts[0]), Number(parts[1]))) {
+          this.agents[writeIdx++] = agent;
+          continue;
         }
         agent.state = PedestrianState.WALKING;
       }
@@ -248,16 +240,41 @@ export class PedestrianManager {
       const moveDistance = PEDESTRIAN.SPEED * agent.speedMultiplier * dt;
       agent.edgeProgress += moveDistance;
 
-      // Advance through edges
+      // Advance through edges — check traffic lights / crossings BEFORE entering
       let edge = currentEdge;
       while (agent.edgeProgress >= edge.length) {
-        agent.edgeProgress -= edge.length;
-        agent.edgeIndex++;
-        if (agent.edgeIndex >= agent.edgePath.length) {
+        const overflow = agent.edgeProgress - edge.length;
+        const nextIdx = agent.edgeIndex + 1;
+        if (nextIdx >= agent.edgePath.length) {
+          agent.edgeProgress -= edge.length;
+          agent.edgeIndex = nextIdx;
           agent.state = PedestrianState.ARRIVED;
           break;
         }
-        edge = agent.edgePath[agent.edgeIndex]!;
+        const nextEdge = agent.edgePath[nextIdx]!;
+
+        // Block at crosswalk if red light
+        if (nextEdge.type === 'crosswalk' && this.trafficLights && !this.canPassCrosswalk(nextEdge)) {
+          agent.edgeProgress = edge.length; // stop at end of current edge
+          agent.state = PedestrianState.WAITING_SIGNAL;
+          break;
+        }
+
+        // Block at level crossing if train passing
+        if (nextEdge.type === 'level_crossing' && this.levelCrossings) {
+          const cellKey = nextEdge.from.cellKey;
+          const parts = cellKey.split(',');
+          if (this.levelCrossings.isCrossingBlocked(Number(parts[0]), Number(parts[1]))) {
+            agent.edgeProgress = edge.length;
+            agent.state = PedestrianState.WAITING_CROSSING;
+            break;
+          }
+        }
+
+        // Safe to enter next edge
+        agent.edgeProgress = overflow;
+        agent.edgeIndex = nextIdx;
+        edge = nextEdge;
       }
 
       if (agent.state === PedestrianState.ARRIVED) continue;
