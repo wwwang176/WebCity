@@ -18,9 +18,9 @@ export interface TrafficLight {
 /** Traffic light configuration */
 export const TRAFFIC_LIGHT = {
   /** Default seconds per phase (standard intersection) */
-  PHASE_DURATION: 2,
+  PHASE_DURATION: 4,
   /** Seconds per phase for large intersections (4-way + FOUR_LANE or above) */
-  PHASE_DURATION_LARGE: 4,
+  PHASE_DURATION_LARGE: 8,
 } as const;
 
 export class TrafficLightSystem {
