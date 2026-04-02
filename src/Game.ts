@@ -2559,14 +2559,21 @@ export class Game {
     const homeSet = new Set(buildings.homes);
     const workSet = new Set(buildings.works);
 
+    // Collect transit stop positions used by this route
+    const stops = this.simLoop.getTransferRouteStops(label);
+    const stopSet = new Set(stops.map(s => `${s.x},${s.y}`));
+
     this.transferHighlightCells = [];
     this.state.grid.forEachCell((cell, x, y) => {
-      if (cell.buildingId && isZoneBuilding(cell.buildingId)) {
-        const key = `${x},${y}`;
+      const key = `${x},${y}`;
+      if (stopSet.has(key)) {
+        // Transit stop on this route — highlight white
+        this.transferHighlightCells.push({ x, y, color: 0xffffff });
+      } else if (cell.buildingId && isZoneBuilding(cell.buildingId)) {
         if (homeSet.has(key) || workSet.has(key)) {
-          this.transferHighlightCells.push({ x, y, color: 0xffffff }); // white - transfer building
+          this.transferHighlightCells.push({ x, y, color: 0xffffff }); // transfer building
         } else {
-          this.transferHighlightCells.push({ x, y, color: 0x222222 }); // dark gray - dim
+          this.transferHighlightCells.push({ x, y, color: 0x222222 }); // dim
         }
       }
     });
