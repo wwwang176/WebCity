@@ -2539,30 +2539,35 @@ export class Game {
       return;
     }
 
-    // Set transfer focus view mode (buildings semi-transparent)
-    // Re-apply even if already in TRANSFER_FOCUS to rebuild model mesh with new highlights
-    if (this.viewMode === ViewMode.TRANSFER_FOCUS) {
-      this.viewMode = ViewMode.NORMAL; // force re-apply
-    }
-    this.applyViewMode(ViewMode.TRANSFER_FOCUS);
+    // Use NORMAL ViewMode (keep original InstancedMesh) so per-instance highlight works.
+    // Dim all buildings via highlight, then make transfer buildings bright.
+    if (this.viewMode !== ViewMode.NORMAL) this.applyViewMode(ViewMode.NORMAL);
 
-    // ── Highlight buildings ──
+    // ── Highlight buildings: dim everything, bright transfer buildings ──
     const buildings = this.simLoop.getTransferBuildings(label);
+    const homeSet = new Set(buildings.homes);
+    const workSet = new Set(buildings.works);
+
     const gradientCells: { x: number; y: number; color: number }[] = [];
-    for (const posKey of buildings.homes) {
-      const p = parsePosKey(posKey);
-      if (p) gradientCells.push({ x: p.x, y: p.y, color: 0x66bb6a }); // green
-    }
-    for (const posKey of buildings.works) {
-      const p = parsePosKey(posKey);
-      if (p) gradientCells.push({ x: p.x, y: p.y, color: 0x42a5f5 }); // blue
-    }
+    // Dim all zone buildings (dark gray, low intensity)
+    this.state.grid.forEachCell((cell, x, y) => {
+      if (cell.buildingId && cell.buildingId > 0) {
+        const key = `${x},${y}`;
+        if (homeSet.has(key)) {
+          gradientCells.push({ x, y, color: 0x66bb6a }); // green - home
+        } else if (workSet.has(key)) {
+          gradientCells.push({ x, y, color: 0x42a5f5 }); // blue - work
+        } else {
+          gradientCells.push({ x, y, color: 0x222222 }); // dark gray - dim
+        }
+      }
+    });
     if (gradientCells.length > 0) {
       this.highlightManager.hoverHighlightGradient(
         gradientCells,
         this.getAllHighlightMeshes(),
         this.buildingRenderer.buildingInfraGroups,
-        0.8,
+        1.0,
       );
     }
 
