@@ -10,7 +10,7 @@ export function TransferOverlayPanel(props: { panelOrder?: number }) {
     return getGame().getTransferStats();
   });
 
-  const routes = () => stats()?.routeBreakdown.filter(r => r.rides >= 2) ?? [];
+  const routes = () => stats()?.routeBreakdown.filter(r => r.rides >= 2 && r.weeklyUse > 0) ?? [];
 
   const select = (label: string) => {
     getGame().selectTransferRoute(label);
