@@ -29,11 +29,7 @@ export function OverlayIndicator() {
   };
 
   const closeFocus = () => {
-    if (vm() === ViewMode.TRANSFER_FOCUS) {
-      getGame().selectTransferRoute(null);
-    } else {
-      getGame().toggleViewMode(vm());
-    }
+    getGame().toggleViewMode(vm());
   };
 
   const anyVisible = () => overlayVisible() || focusVisible();

@@ -1,9 +1,7 @@
 import { Show, For, createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
-import { ViewMode } from '../../core/ViewMode';
-
 export function TransferOverlayPanel() {
-  const visible = () => gameSignals.viewMode() === ViewMode.TRANSFER_FOCUS;
+  const visible = () => gameSignals.selectedTransferRoute() !== null;
   const selected = () => gameSignals.selectedTransferRoute();
 
   const stats = createMemo(() => {
