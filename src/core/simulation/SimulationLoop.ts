@@ -123,6 +123,8 @@ export class SimulationLoop {
   private transferPedsSnapshot = 0;
   /** Recent buildings using each transfer route label → {homes, works} position sets. */
   private transferBuildingsRecent = new Map<string, { homes: Set<string>; works: Set<string> }>();
+  /** Callback fired when transfer daily data rolls over. */
+  onTransferDataChanged: (() => void) | null = null;
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
@@ -1587,6 +1589,7 @@ export class SimulationLoop {
         if (a.tripType === 4) peds++;
       }
       this.transferPedsSnapshot = peds;
+      this.onTransferDataChanged?.();
     }
 
     // Rebuild transfer graph when transit network has changed
