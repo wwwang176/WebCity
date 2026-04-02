@@ -593,12 +593,12 @@ export class SidewalkGraph {
 
   /**
    * At intersection cells with 3+ connections, the cell itself may have
-   * few or zero sidewalk nodes. Bridge boundary nodes of neighbor cells
-   * so pedestrians can cross through the intersection in all directions.
+   * few or zero sidewalk nodes. Corner bridges connect boundary nodes
+   * of adjacent neighbor cells at intersection corners, so pedestrians
+   * cross via: corner bridge → crosswalk → corner bridge.
    *
-   * Creates two types of crosswalk bridges:
-   * 1. Straight-through (N↔S, E↔W): parallel pairs of boundary nodes
-   * 2. Corner turns (N↔E, N↔W, S↔E, S↔W): diagonal through intersection
+   * Only corner turns (NW, NE, SW, SE) — no straight-through bridges,
+   * which would let pedestrians cut through the intersection center.
    */
   private generateIntersectionBridgeEdges(
     grid: GridLookup, x: number, y: number,
@@ -608,38 +608,21 @@ export class SidewalkGraph {
     if (dirCount < 3) return;
 
     const flags = cell.roadFlags;
-    const iKey = toPosKey(x, y); // intersection cell key for traffic light lookup
+    const iKey = toPosKey(x, y);
 
-    // Helper: resolve a boundary node from a neighbor cell
     const getNode = (dx: number, dy: number, suffix: string) => {
       const n = grid.getCell(x + dx, y + dy);
       if (!n || n.roadType === RoadType.NONE) return undefined;
       return this.nodes.get(`${toPosKey(x + dx, y + dy)}:${suffix}`);
     };
 
-    // Straight-through bridges (opposite directions)
-    // N↔S: connect north neighbor's south-facing nodes to south neighbor's north-facing nodes
-    if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.SOUTH)) {
-      this.bridgePair(getNode(0, -1, 'WS'), getNode(0, 1, 'WN'), iKey);
-      this.bridgePair(getNode(0, -1, 'ES'), getNode(0, 1, 'EN'), iKey);
-    }
-    // E↔W
-    if ((flags & RoadDirection.EAST) && (flags & RoadDirection.WEST)) {
-      this.bridgePair(getNode(-1, 0, 'NE'), getNode(1, 0, 'NW'), iKey);
-      this.bridgePair(getNode(-1, 0, 'SE'), getNode(1, 0, 'SW'), iKey);
-    }
-
-    // Corner bridges (perpendicular directions)
-    // NW corner: N neighbor's WS ↔ W neighbor's NE
+    // Corner bridges only (perpendicular directions)
     if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.WEST))
       this.bridgePair(getNode(0, -1, 'WS'), getNode(-1, 0, 'NE'), iKey);
-    // NE corner: N neighbor's ES ↔ E neighbor's NW
     if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.EAST))
       this.bridgePair(getNode(0, -1, 'ES'), getNode(1, 0, 'NW'), iKey);
-    // SW corner: S neighbor's WN ↔ W neighbor's SE
     if ((flags & RoadDirection.SOUTH) && (flags & RoadDirection.WEST))
       this.bridgePair(getNode(0, 1, 'WN'), getNode(-1, 0, 'SE'), iKey);
-    // SE corner: S neighbor's EN ↔ E neighbor's SW
     if ((flags & RoadDirection.SOUTH) && (flags & RoadDirection.EAST))
       this.bridgePair(getNode(0, 1, 'EN'), getNode(1, 0, 'SW'), iKey);
   }
