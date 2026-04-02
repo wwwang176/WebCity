@@ -308,6 +308,9 @@ export class Game {
   /** Cached overlay building highlight cells (reapplied every frame). */
   private overlayHighlightCells: { x: number; y: number; color: number }[] = [];
   private transportRouteRenderer: TransportRouteRenderer;
+  /** Currently selected transfer route label for map overlay (null = none). */
+  private selectedTransferRoute: string | null = null;
+  private transferOverlayLines: THREE.Line[] = [];
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
   private elevatedRoadRenderer: ElevatedRoadRenderer;
@@ -2512,6 +2515,84 @@ export class Game {
 
   getTransferStats() {
     return this.simLoop.getTransferStats();
+  }
+
+  getSelectedTransferRoute(): string | null {
+    return this.selectedTransferRoute;
+  }
+
+  selectTransferRoute(label: string | null): void {
+    // Clear previous overlay
+    for (const line of this.transferOverlayLines) {
+      this.sceneManager.scene.remove(line);
+      line.geometry.dispose();
+      (line.material as THREE.Material).dispose();
+    }
+    this.transferOverlayLines.length = 0;
+    this.highlightManager.clear();
+
+    this.selectedTransferRoute = label;
+    if (!label) { this.onUIUpdate?.(); return; }
+
+    // ── Highlight buildings ──
+    const buildings = this.simLoop.getTransferBuildings(label);
+    const gradientCells: { x: number; y: number; color: number }[] = [];
+    for (const posKey of buildings.homes) {
+      const p = parsePosKey(posKey);
+      if (p) gradientCells.push({ x: p.x, y: p.y, color: 0x66bb6a }); // green
+    }
+    for (const posKey of buildings.works) {
+      const p = parsePosKey(posKey);
+      if (p) gradientCells.push({ x: p.x, y: p.y, color: 0x42a5f5 }); // blue
+    }
+    if (gradientCells.length > 0) {
+      this.highlightManager.hoverHighlightGradient(
+        gradientCells,
+        this.getAllHighlightMeshes(),
+        this.buildingRenderer.buildingInfraGroups,
+        0.8,
+      );
+    }
+
+    // ── Draw route line ──
+    const stops = this.simLoop.getTransferRouteStops(label);
+    if (stops.length >= 2) {
+      // Group consecutive same-type legs for coloring
+      const LINE_Y = 0.2;
+      const typeColors: Record<string, number> = {
+        ride: 0x42a5f5, walk: 0xffffff,
+      };
+      let segStart = 0;
+      for (let i = 1; i <= stops.length; i++) {
+        if (i < stops.length && stops[i]!.type === stops[segStart]!.type) continue;
+        // Draw segment from segStart to i-1
+        const points: THREE.Vector3[] = [];
+        for (let j = segStart; j < i; j++) {
+          points.push(new THREE.Vector3(stops[j]!.x, LINE_Y, stops[j]!.y));
+        }
+        if (points.length >= 2) {
+          const isWalk = stops[segStart]!.type === 'walk';
+          const geometry = new THREE.BufferGeometry().setFromPoints(points);
+          const material = new THREE.LineDashedMaterial({
+            color: isWalk ? 0xffffff : 0x42a5f5,
+            linewidth: 2,
+            transparent: true,
+            opacity: 0.9,
+            depthWrite: false,
+            dashSize: isWalk ? 0.2 : 1000,
+            gapSize: isWalk ? 0.15 : 0,
+          });
+          const line = new THREE.Line(geometry, material);
+          line.computeLineDistances();
+          line.renderOrder = 10;
+          this.sceneManager.scene.add(line);
+          this.transferOverlayLines.push(line);
+        }
+        segStart = i;
+      }
+    }
+
+    this.onUIUpdate?.();
   }
 
   /** Toggle pause state (DRY: used by keyboard + UI). */
