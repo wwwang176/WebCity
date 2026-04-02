@@ -165,7 +165,8 @@ export class PedestrianManager {
       waitTimer: 0,
       colorIndex: id % PEDESTRIAN.COLOR_COUNT,
       age: 0,
-      lateralOffset: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+      offsetX: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+      offsetZ: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
       speedMultiplier: PEDESTRIAN.SPEED_MULTIPLIER_MIN + Math.random() * PEDESTRIAN.SPEED_MULTIPLIER_RANGE,
     };
     this.agents.push(agent);
@@ -328,6 +329,9 @@ export class PedestrianManager {
         waitTimer: 0,
         colorIndex: id % PEDESTRIAN.COLOR_COUNT,
         age: 0,
+        offsetX: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+        offsetZ: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+        speedMultiplier: PEDESTRIAN.SPEED_MULTIPLIER_MIN + Math.random() * PEDESTRIAN.SPEED_MULTIPLIER_RANGE,
       };
       this.agents.push(agent);
     }

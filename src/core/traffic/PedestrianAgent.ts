@@ -33,8 +33,10 @@ export interface PedestrianAgent {
   colorIndex: number;
   /** Elapsed time in seconds since spawn — despawned after DESPAWN_TIMEOUT */
   age: number;
-  /** Random lateral offset perpendicular to heading (visual only) */
-  lateralOffset: number;
+  /** Random visual offset in world X (fixed, does not rotate with heading) */
+  offsetX: number;
+  /** Random visual offset in world Z (fixed, does not rotate with heading) */
+  offsetZ: number;
   /** Individual speed multiplier (0.5–1.0) */
   speedMultiplier: number;
 }
