@@ -269,10 +269,13 @@ export class PedestrianManager {
       const t = edge.length > 0 ? agent.edgeProgress / edge.length : 0;
       agent.position.x = edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t;
       agent.position.y = edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t;
-      agent.heading = Math.atan2(
+      const targetHeading = Math.atan2(
         -(edge.to.position.y - edge.from.position.y),
         edge.to.position.x - edge.from.position.x,
       );
+      // Smooth heading transition to avoid visual snap
+      const diff = ((targetHeading - agent.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      agent.heading += diff * Math.min(1, dt * 8);
 
       this.agents[writeIdx++] = agent;
     }

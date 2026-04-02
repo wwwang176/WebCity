@@ -36,6 +36,7 @@ export class PedestrianRenderer {
   // Reusable per-frame objects
   private readonly _matrix = new THREE.Matrix4();
   private readonly _rotation = new THREE.Matrix4();
+  private readonly _offset = new THREE.Matrix4();
   private readonly _color = new THREE.Color();
   private mesh: THREE.InstancedMesh | null = null;
   private readonly maxCount = 2000;
@@ -58,17 +59,19 @@ export class PedestrianRenderer {
 
     const matrix = this._matrix;
     const rotation = this._rotation;
+    const offset = this._offset;
     const color = this._color;
 
     for (let i = 0; i < count; i++) {
       const p = pedestrians[i]!;
 
-      // Apply lateral offset perpendicular to heading
-      const ox = Math.sin(p.heading) * p.lateralOffset;
-      const oz = Math.cos(p.heading) * p.lateralOffset;
-      matrix.makeTranslation(p.x + ox, SIDEWALK_Y, p.y + oz);
+      // Translate to path position → rotate → offset in local space
+      // This keeps the rotation center on the path, lateral offset swings naturally
+      matrix.makeTranslation(p.x, SIDEWALK_Y, p.y);
       rotation.makeRotationY(p.heading + Math.PI / 2);
       matrix.multiply(rotation);
+      offset.makeTranslation(p.lateralOffset, 0, 0);
+      matrix.multiply(offset);
       this.mesh.setMatrixAt(i, matrix);
 
       color.setHex(PERSON_COLORS[p.colorIndex % PERSON_COLORS.length]!);
