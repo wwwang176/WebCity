@@ -2538,12 +2538,12 @@ export class Game {
     const buildings = this.simLoop.getTransferBuildings(label);
     const gradientCells: { x: number; y: number; color: number }[] = [];
     for (const posKey of buildings.homes) {
-      const p = parsePosKey(posKey);
-      if (p) gradientCells.push({ x: p.x, y: p.y, color: 0x66bb6a }); // green
+      const p = parsePosKeyUnsafe(posKey);
+      gradientCells.push({ x: p.x, y: p.y, color: 0x66bb6a }); // green
     }
     for (const posKey of buildings.works) {
-      const p = parsePosKey(posKey);
-      if (p) gradientCells.push({ x: p.x, y: p.y, color: 0x42a5f5 }); // blue
+      const p = parsePosKeyUnsafe(posKey);
+      gradientCells.push({ x: p.x, y: p.y, color: 0x42a5f5 }); // blue
     }
     if (gradientCells.length > 0) {
       this.highlightManager.hoverHighlightGradient(
