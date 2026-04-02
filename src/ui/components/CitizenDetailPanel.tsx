@@ -1,12 +1,7 @@
 import { Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 
-const STAGE_NAMES: Record<string, string> = {
-  BABY: 'Baby', CHILD: 'Child', TEEN: 'Teen', ADULT: 'Adult', SENIOR: 'Senior',
-};
-const EDU_NAMES: Record<string, string> = {
-  NONE: 'None', ELEMENTARY: 'Elementary', HIGH_SCHOOL: 'High School', UNIVERSITY: 'University',
-};
+import { STAGE_NAMES, EDU_NAMES } from './citizenLabels';
 
 export function CitizenDetailPanel(props: { panelOrder?: number }) {
   const citizenId = () => gameSignals.selectedCitizenId();

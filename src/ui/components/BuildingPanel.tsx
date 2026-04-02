@@ -3,6 +3,7 @@ import { gameSignals, getGame } from '../store/gameStore';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
 import { UI_COLORS } from '../constants';
+import { STAGE_NAMES } from './citizenLabels';
 
 const ZONE_NAMES: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
@@ -302,7 +303,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           <For each={citizens().residents}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
-                Citizen #{c.id} - {c.lifeStage}
+                Citizen #{c.id} - {STAGE_NAMES[c.lifeStage] ?? c.lifeStage}
               </div>
             )}
           </For>
@@ -312,7 +313,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           <For each={citizens().workers}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
-                Citizen #{c.id} - {c.lifeStage}
+                Citizen #{c.id} - {STAGE_NAMES[c.lifeStage] ?? c.lifeStage}
               </div>
             )}
           </For>
