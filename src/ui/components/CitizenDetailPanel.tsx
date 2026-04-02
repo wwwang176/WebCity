@@ -19,14 +19,12 @@ export function CitizenDetailPanel(props: { panelOrder?: number }) {
   return (
     <Show when={visible()}>
       <div id="citizen-detail-panel" class="g-panel visible" style={{ order: props.panelOrder ?? 0 }}>
-        <div style={{ display: 'flex', 'justify-content': 'space-between', 'align-items': 'center', 'margin-bottom': '6px' }}>
-          <span style={{ 'font-size': '13px', 'font-weight': '600', color: '#e0e8f0' }}>
-            Citizen #{citizenId()}
-          </span>
+        <div class="g-panel-header">
+          <span class="g-panel-title">Citizen #{citizenId()}</span>
           <button
             style={{
               background: 'none', border: 'none', color: '#667a90', cursor: 'pointer',
-              'font-size': '16px', padding: '0 2px', 'line-height': '1',
+              'font-size': '14px', padding: '0 2px', 'line-height': '1',
             }}
             onClick={close}
           >&times;</button>
