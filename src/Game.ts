@@ -2561,7 +2561,7 @@ export class Game {
 
     this.transferHighlightCells = [];
     this.state.grid.forEachCell((cell, x, y) => {
-      if (cell.buildingId && cell.buildingId > 0) {
+      if (cell.buildingId && isZoneBuilding(cell.buildingId)) {
         const key = `${x},${y}`;
         if (homeSet.has(key) || workSet.has(key)) {
           this.transferHighlightCells.push({ x, y, color: 0xffffff }); // white - transfer building
