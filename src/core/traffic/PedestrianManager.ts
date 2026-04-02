@@ -253,8 +253,10 @@ export class PedestrianManager {
         }
         const nextEdge = agent.edgePath[nextIdx]!;
 
-        // Block at crosswalk if red light
-        if (nextEdge.type === 'crosswalk' && this.trafficLights && !this.canPassCrosswalk(nextEdge)) {
+        // Block at crosswalk if red light — only when ENTERING the intersection
+        // (from non-crosswalk to crosswalk). Already inside → let them through.
+        if (nextEdge.type === 'crosswalk' && edge.type !== 'crosswalk'
+            && this.trafficLights && !this.canPassCrosswalk(nextEdge)) {
           agent.edgeProgress = edge.length; // stop at end of current edge
           agent.state = PedestrianState.WAITING_SIGNAL;
           break;
