@@ -734,7 +734,58 @@ describe('SidewalkGraph', () => {
     });
   });
 
-  describe('B5: findPath building → road → building', () => {
+  describe('B5: findPathMultiTarget', () => {
+    it('should find shortest path to nearest target among multiple', () => {
+      // Road from (0,1) to (4,1), buildings at (0,0) and (4,0)
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      cells.set('4,0', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      for (let x = 0; x <= 4; x++) {
+        let flags = 0;
+        if (x > 0) flags |= RoadDirection.WEST;
+        if (x < 4) flags |= RoadDirection.EAST;
+        cells.set(`${x},1`, { roadType: RoadType.TWO_LANE, roadFlags: flags });
+      }
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      const roadKeys = [0,1,2,3,4].map(x => `${x},1`);
+      graph.buildFromGrid(grid, roadKeys, ['0,0', '4,0']);
+
+      // Multi-target: from building A south door to ANY door of building B
+      const targetDoors = ['4,0:bN', '4,0:bS', '4,0:bW', '4,0:bE'];
+      const path = graph.findPathMultiTarget('0,0:bS', targetDoors);
+      expect(path).not.toBeNull();
+
+      // Should arrive at bS (the door facing the road, closest path)
+      const lastEdge = path![path!.length - 1]!;
+      expect(lastEdge.to.id).toBe('4,0:bS');
+    });
+
+    it('should return empty array when start is one of the targets', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['0,0']);
+
+      const path = graph.findPathMultiTarget('0,0:bN', ['0,0:bN', '0,0:bS']);
+      expect(path).toEqual([]);
+    });
+
+    it('should return null when no targets are reachable', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      cells.set('10,10', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['0,0', '10,10']);
+
+      const path = graph.findPathMultiTarget('0,0:bN', ['10,10:bN', '10,10:bS']);
+      expect(path).toBeNull();
+    });
+  });
+
+  describe('B5b: findPath building → road → building', () => {
     it('should find a path from building A door to road to building B door', () => {
       const cells = new Map<string, CellDef>();
       // A at (0,0), B at (2,0), road from (0,1) to (2,1)

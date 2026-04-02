@@ -263,19 +263,37 @@ export class SidewalkGraph {
   // ── A* Pathfinding ──
 
   findPath(fromNodeId: string, toNodeId: string): SidewalkEdge[] | null {
+    return this.findPathMultiTarget(fromNodeId, [toNodeId]);
+  }
+
+  /**
+   * Multi-target A*: finds shortest path from fromNodeId to ANY of toNodeIds.
+   * Heuristic uses min distance to all targets (admissible).
+   */
+  findPathMultiTarget(fromNodeId: string, toNodeIds: string[]): SidewalkEdge[] | null {
     const fromNode = this.nodes.get(fromNodeId);
-    const toNode = this.nodes.get(toNodeId);
-    if (!fromNode || !toNode) return null;
-    if (fromNodeId === toNodeId) return [];
+    if (!fromNode) return null;
+
+    // Resolve target nodes
+    const targetSet = new Set<string>();
+    const targetNodes: SidewalkNode[] = [];
+    for (const id of toNodeIds) {
+      const node = this.nodes.get(id);
+      if (node) {
+        targetSet.add(id);
+        targetNodes.push(node);
+      }
+    }
+    if (targetNodes.length === 0) return null;
+    if (targetSet.has(fromNodeId)) return [];
 
     const gScore = new Map<string, number>();
     const fScore = new Map<string, number>();
     const cameFrom = new Map<string, { nodeId: string; edge: SidewalkEdge }>();
 
     gScore.set(fromNodeId, 0);
-    fScore.set(fromNodeId, this.heuristic(fromNode, toNode));
+    fScore.set(fromNodeId, this.heuristicMulti(fromNode, targetNodes));
 
-    // Simple priority queue (array sorted by fScore)
     const openSet = new Set<string>([fromNodeId]);
 
     while (openSet.size > 0) {
@@ -290,8 +308,8 @@ export class SidewalkGraph {
         }
       }
 
-      if (currentId === toNodeId) {
-        return this.reconstructPath(cameFrom, toNodeId);
+      if (targetSet.has(currentId)) {
+        return this.reconstructPath(cameFrom, currentId);
       }
 
       openSet.delete(currentId);
@@ -304,13 +322,13 @@ export class SidewalkGraph {
         if (tentativeG < (gScore.get(neighborId) ?? Infinity)) {
           cameFrom.set(neighborId, { nodeId: currentId, edge });
           gScore.set(neighborId, tentativeG);
-          fScore.set(neighborId, tentativeG + this.heuristic(edge.to, toNode));
+          fScore.set(neighborId, tentativeG + this.heuristicMulti(edge.to, targetNodes));
           openSet.add(neighborId);
         }
       }
     }
 
-    return null; // No path found
+    return null;
   }
 
   // ── Private: Node generation ──
@@ -708,6 +726,15 @@ export class SidewalkGraph {
 
   private heuristic(a: SidewalkNode, b: SidewalkNode): number {
     return euclideanDistance(a.position.x, a.position.y, b.position.x, b.position.y);
+  }
+
+  private heuristicMulti(a: SidewalkNode, targets: SidewalkNode[]): number {
+    let min = Infinity;
+    for (const t of targets) {
+      const d = euclideanDistance(a.position.x, a.position.y, t.position.x, t.position.y);
+      if (d < min) min = d;
+    }
+    return min;
   }
 
   private reconstructPath(

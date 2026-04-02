@@ -405,14 +405,8 @@ export class PedestrianManager {
       this.clearPathCache();
     }
 
-    const fromNode = this.sidewalkGraph.findNearestNode(fromX, fromY);
-    const toNode = this.sidewalkGraph.findNearestNode(toX, toY);
-    if (!fromNode || !toNode) {
-      this.pathCache.set(key, null);
-      return null;
-    }
-
-    const path = this.sidewalkGraph.findPath(fromNode.id, toNode.id);
+    // Try building-aware pathfinding: origin = random door, dest = multi-target (all doors)
+    const path = this.findBuildingAwarePath(fromX, fromY, toX, toY);
     this.pathCache.set(key, path);
 
     // Build cell index
@@ -425,6 +419,54 @@ export class PedestrianManager {
     }
 
     return path;
+  }
+
+  /**
+   * Find path using building topology when available.
+   * Origin: random building_entrance node (or nearest sidewalk node).
+   * Destination: multi-target A* to all building_entrance nodes (or nearest sidewalk node).
+   */
+  private findBuildingAwarePath(
+    fromX: number, fromY: number, toX: number, toY: number,
+  ): SidewalkEdge[] | null {
+    // Resolve origin: building entrance (random) or nearest sidewalk node
+    const fromNodeId = this.resolveOriginNode(fromX, fromY);
+    if (!fromNodeId) return null;
+
+    // Resolve destination: all building entrances or single nearest node
+    const toNodeIds = this.resolveDestinationNodes(toX, toY);
+    if (toNodeIds.length === 0) return null;
+
+    return this.sidewalkGraph.findPathMultiTarget(fromNodeId, toNodeIds);
+  }
+
+  private resolveOriginNode(x: number, y: number): string | null {
+    const cellKey = `${x},${y}`;
+    const entrances = this.getBuildingEntrances(cellKey);
+    if (entrances.length > 0) {
+      return entrances[Math.floor(Math.random() * entrances.length)]!;
+    }
+    // Fallback: nearest sidewalk node (for non-building origins like transit stops)
+    const node = this.sidewalkGraph.findNearestNode(x, y);
+    return node?.id ?? null;
+  }
+
+  private resolveDestinationNodes(x: number, y: number): string[] {
+    const cellKey = `${x},${y}`;
+    const entrances = this.getBuildingEntrances(cellKey);
+    if (entrances.length > 0) return entrances;
+    // Fallback: single nearest node
+    const node = this.sidewalkGraph.findNearestNode(x, y);
+    return node ? [node.id] : [];
+  }
+
+  private getBuildingEntrances(cellKey: string): string[] {
+    const nodes = this.sidewalkGraph.getNodesInCell(cellKey);
+    const entrances: string[] = [];
+    for (const n of nodes) {
+      if (n.type === 'building_entrance') entrances.push(n.id);
+    }
+    return entrances;
   }
 
   private canPassCrosswalk(edge: SidewalkEdge): boolean {
