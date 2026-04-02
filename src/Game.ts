@@ -2540,7 +2540,11 @@ export class Game {
     }
 
     // Set transfer focus view mode (buildings semi-transparent)
-    if (this.viewMode !== ViewMode.TRANSFER_FOCUS) this.applyViewMode(ViewMode.TRANSFER_FOCUS);
+    // Re-apply even if already in TRANSFER_FOCUS to rebuild model mesh with new highlights
+    if (this.viewMode === ViewMode.TRANSFER_FOCUS) {
+      this.viewMode = ViewMode.NORMAL; // force re-apply
+    }
+    this.applyViewMode(ViewMode.TRANSFER_FOCUS);
 
     // ── Highlight buildings ──
     const buildings = this.simLoop.getTransferBuildings(label);
