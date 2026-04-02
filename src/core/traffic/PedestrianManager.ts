@@ -482,13 +482,17 @@ export class PedestrianManager {
   private canPassCrosswalk(edge: SidewalkEdge): boolean {
     if (!this.trafficLights) return true;
     if (!edge.intersectionCellKey) return true;
+    const iPos = edge.intersectionCellKey.split(',');
+    const ix = Number(iPos[0]), iy = Number(iPos[1]);
+    // All-red clearance: nobody passes
+    const light = this.trafficLights.getLight(ix, iy);
+    if (light?.clearing) return false;
     // Pedestrians cross PERPENDICULAR to traffic — they should cross when
     // traffic in the approach direction is STOPPED (opposite of vehicle canPass).
     const fromPos = edge.from.cellKey.split(',');
-    const iPos = edge.intersectionCellKey.split(',');
     return !this.trafficLights.canPass(
       Number(fromPos[0]), Number(fromPos[1]),
-      Number(iPos[0]), Number(iPos[1]),
+      ix, iy,
     );
   }
 }
