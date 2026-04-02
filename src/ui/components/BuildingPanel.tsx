@@ -523,11 +523,23 @@ export function BuildingPanel(props: { panelOrder?: number }) {
     return getGame().getSelectedBuilding();
   };
 
+  const close = () => {
+    getGame().deselectBuilding();
+  };
+
   return (
     <div id="building-panel" class="g-panel" classList={{ visible: hasSelection() }} style={{ order: props.panelOrder ?? 0 }}>
       <Show when={liveData()}>
         {(sel) => (
           <>
+            <button
+              style={{
+                position: 'absolute', top: '8px', right: '8px',
+                background: 'none', border: 'none', color: '#667a90', cursor: 'pointer',
+                'font-size': '14px', padding: '0 2px', 'line-height': '1', 'z-index': '1',
+              }}
+              onClick={close}
+            >&times;</button>
             <Show when={sel().kind === 'zone'}>
               <ZoneBuildingInfo sel={sel() as SelectedZoneBuilding} />
             </Show>

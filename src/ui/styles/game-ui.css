@@ -277,7 +277,7 @@
 
 /* ===== Building Panel ===== */
 #building-panel {
-  display: none; min-width: 200px;
+  display: none; min-width: 200px; position: relative;
 }
 #building-panel.visible { display: block; }
 #citizen-detail-panel { min-width: 180px; }

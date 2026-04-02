@@ -2525,6 +2525,11 @@ export class Game {
     });
   }
 
+  deselectBuilding(): void {
+    this.selectedBuilding = null;
+    this.onUIUpdate?.();
+  }
+
   getTrafficStats() {
     return computeTrafficStats({
       vehicleCount: this.state.traffic.getVehicleCount(),
