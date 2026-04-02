@@ -35,7 +35,7 @@ import { findLanePath } from './core/traffic/LaneGraphPathfinder';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
-import { getInfraConfig, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
@@ -2529,6 +2529,45 @@ export class Game {
     return this.simLoop.getTransferStats();
   }
 
+  /**
+   * Build highlight cells for the transfer overlay.
+   * Zone buildings: white if in highlightSet, dark gray otherwise.
+   * Infra buildings: white if main cell in highlightSet (all footprint cells included).
+   */
+  private buildTransferHighlightCells(
+    highlightSet: Set<string>,
+  ): { x: number; y: number; color: number }[] {
+    const cells: { x: number; y: number; color: number }[] = [];
+
+    this.state.grid.forEachCell((cell, x, y) => {
+      if (!cell.buildingId || cell.buildingId <= 0) return;
+      const key = `${x},${y}`;
+
+      if (isZoneBuilding(cell.buildingId)) {
+        cells.push({ x, y, color: highlightSet.has(key) ? 0xffffff : 0x222222 });
+      } else {
+        // Infrastructure: highlight if this cell OR its main cell is in the set.
+        // MULTI_CELL_OCCUPIED cells share the parent's buildingId area.
+        if (highlightSet.has(key)) {
+          // Main cell of infra — highlight it + expand footprint
+          const cfg = getInfraConfigById(cell.buildingId);
+          if (cfg) {
+            for (let dx = 0; dx < cfg.width; dx++) {
+              for (let dy = 0; dy < cfg.height; dy++) {
+                cells.push({ x: x + dx, y: y + dy, color: 0xffffff });
+              }
+            }
+          } else {
+            cells.push({ x, y, color: 0xffffff });
+          }
+        }
+        // Non-highlighted infra: leave untouched (no dim)
+      }
+    });
+
+    return cells;
+  }
+
   getSelectedTransferRoute(): string | null {
     return this.selectedTransferRoute;
   }
@@ -2556,30 +2595,15 @@ export class Game {
 
     // ── Build transfer highlight cells (cached, reapplied every frame) ──
     const buildings = this.simLoop.getTransferBuildings(label);
-    const homeSet = new Set(buildings.homes);
-    const workSet = new Set(buildings.works);
+    const highlightSet = new Set([...buildings.homes, ...buildings.works]);
 
-    // Collect transit stop positions used by this route
+    // Collect transit stop positions + expand to full building footprint
     const stops = this.simLoop.getTransferRouteStops(label);
-    const stopSet = new Set(stops.map(s => `${s.x},${s.y}`));
+    for (const s of stops) highlightSet.add(`${s.x},${s.y}`);
 
-    this.transferHighlightCells = [];
-    this.state.grid.forEachCell((cell, x, y) => {
-      const key = `${x},${y}`;
-      if (stopSet.has(key)) {
-        // Transit stop on this route — highlight white
-        this.transferHighlightCells.push({ x, y, color: 0xffffff });
-      } else if (cell.buildingId && isZoneBuilding(cell.buildingId)) {
-        if (homeSet.has(key) || workSet.has(key)) {
-          this.transferHighlightCells.push({ x, y, color: 0xffffff }); // transfer building
-        } else {
-          this.transferHighlightCells.push({ x, y, color: 0x222222 }); // dim
-        }
-      }
-    });
+    this.transferHighlightCells = this.buildTransferHighlightCells(highlightSet);
 
     // ── Draw route line ──
-    const stops = this.simLoop.getTransferRouteStops(label);
     if (stops.length >= 2) {
       // Group consecutive same-type legs for coloring
       const LINE_Y = 0.2;
