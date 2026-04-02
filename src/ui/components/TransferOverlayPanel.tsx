@@ -83,18 +83,6 @@ export function TransferOverlayPanel() {
           }}
         </For>
 
-        <Show when={selected()}>
-          <div style={{
-            'margin-top': '8px', 'padding-top': '8px',
-            'border-top': '1px solid rgba(255,255,255,0.08)',
-            'font-size': '11px',
-          }}>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <span><span style={{ color: '#66bb6a' }}>{'\u25A0'}</span> Homes</span>
-              <span><span style={{ color: '#42a5f5' }}>{'\u25A0'}</span> Workplaces</span>
-            </div>
-          </div>
-        </Show>
       </div>
     </Show>
   );
