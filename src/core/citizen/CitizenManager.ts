@@ -136,6 +136,7 @@ export class CitizenManager {
     if (citizen.emigrationTolerance === undefined || citizen.emigrationTolerance === null) {
       citizen.emigrationTolerance = EMIGRATION_TOLERANCE.FALLBACK;
     }
+    if (citizen.id >= this.nextId) this.nextId = citizen.id + 1;
     this.citizens.push(citizen);
     return citizen;
   }
