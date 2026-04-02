@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SidewalkGraph, ROAD_WIDTHS, GridLookup, SidewalkEdge, SIDEWALK_WIDTH, BUILDING_HALF_SIZE, WALKWAY_OFFSET } from '../SidewalkGraph';
+import { SidewalkGraph, ROAD_WIDTHS, GridLookup, SidewalkEdge, SIDEWALK_WIDTH, BUILDING_HALF_SIZE, WALKWAY_OFFSET, CW_OFFSET } from '../SidewalkGraph';
 import { RoadType, RoadDirection } from '../../road/types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
@@ -529,37 +529,37 @@ describe('SidewalkGraph', () => {
       expect(ids).toContain('1,0:bE');
     });
 
-    it('should position corner nodes at BUILDING_HALF_SIZE + WALKWAY_OFFSET from center', () => {
+    it('should position corner nodes further out than door nodes', () => {
       const cells = new Map<string, CellDef>();
       cells.set('3,2', { roadType: 0, roadFlags: 0, buildingId: 1 });
       const grid = makeGrid(cells);
       const graph = new SidewalkGraph();
       graph.buildFromGrid(grid, [], ['3,2']);
 
-      const dist = BUILDING_HALF_SIZE + WALKWAY_OFFSET;
+      const cornerDist = BUILDING_HALF_SIZE + WALKWAY_OFFSET + WALKWAY_OFFSET / 2;
       const nw = graph.getNode('3,2:bNW')!;
-      expect(nw.position.x).toBeCloseTo(3 - dist);
-      expect(nw.position.y).toBeCloseTo(2 - dist);
+      expect(nw.position.x).toBeCloseTo(3 - cornerDist);
+      expect(nw.position.y).toBeCloseTo(2 - cornerDist);
 
       const se = graph.getNode('3,2:bSE')!;
-      expect(se.position.x).toBeCloseTo(3 + dist);
-      expect(se.position.y).toBeCloseTo(2 + dist);
+      expect(se.position.x).toBeCloseTo(3 + cornerDist);
+      expect(se.position.y).toBeCloseTo(2 + cornerDist);
     });
 
-    it('should position door nodes centered on wall face', () => {
+    it('should position door nodes at BUILDING_HALF_SIZE + WALKWAY_OFFSET', () => {
       const cells = new Map<string, CellDef>();
       cells.set('3,2', { roadType: 0, roadFlags: 0, buildingId: 1 });
       const grid = makeGrid(cells);
       const graph = new SidewalkGraph();
       graph.buildFromGrid(grid, [], ['3,2']);
 
-      const dist = BUILDING_HALF_SIZE + WALKWAY_OFFSET;
+      const doorDist = BUILDING_HALF_SIZE + WALKWAY_OFFSET;
       const doorN = graph.getNode('3,2:bN')!;
       expect(doorN.position.x).toBeCloseTo(3); // centered
-      expect(doorN.position.y).toBeCloseTo(2 - dist);
+      expect(doorN.position.y).toBeCloseTo(2 - doorDist);
 
       const doorE = graph.getNode('3,2:bE')!;
-      expect(doorE.position.x).toBeCloseTo(3 + dist);
+      expect(doorE.position.x).toBeCloseTo(3 + doorDist);
       expect(doorE.position.y).toBeCloseTo(2); // centered
     });
 
@@ -598,7 +598,7 @@ describe('SidewalkGraph', () => {
   });
 
   describe('B2: building wall edges', () => {
-    it('should create wall edges along all 4 faces (corner↔door↔corner)', () => {
+    it('should create triangle wall edges per face (corner↔corner + corner↔door × 2)', () => {
       const cells = new Map<string, CellDef>();
       cells.set('2,2', { roadType: 0, roadFlags: 0, buildingId: 1 });
       const grid = makeGrid(cells);
@@ -606,14 +606,13 @@ describe('SidewalkGraph', () => {
       graph.buildFromGrid(grid, [], ['2,2']);
 
       const wallEdges = graph.getAllEdges().filter(e => e.type === 'building_wall');
-      // 4 faces × 2 segments × 2 directions = 16 directed wall edges
-      expect(wallEdges.length).toBe(16);
+      // 4 faces × 3 edges × 2 directions = 24 directed wall edges
+      expect(wallEdges.length).toBe(24);
 
-      // Check N face: bNW↔bN, bN↔bNE
-      const nwToN = wallEdges.find(e => e.from.id === '2,2:bNW' && e.to.id === '2,2:bN');
-      const nToNE = wallEdges.find(e => e.from.id === '2,2:bN' && e.to.id === '2,2:bNE');
-      expect(nwToN).toBeDefined();
-      expect(nToNE).toBeDefined();
+      // Check N face triangle: bNW↔bNE, bNW↔bN, bNE↔bN
+      expect(wallEdges.find(e => e.from.id === '2,2:bNW' && e.to.id === '2,2:bNE')).toBeDefined();
+      expect(wallEdges.find(e => e.from.id === '2,2:bNW' && e.to.id === '2,2:bN')).toBeDefined();
+      expect(wallEdges.find(e => e.from.id === '2,2:bNE' && e.to.id === '2,2:bN')).toBeDefined();
     });
   });
 

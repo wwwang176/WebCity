@@ -34,8 +34,11 @@ export const BUILDING_HALF_SIZE = 0.35;
 /** Walkway node offset outside building wall */
 export const WALKWAY_OFFSET = 0.06;
 
-/** Total distance from cell center to building corner/door nodes */
-const BUILDING_NODE_DIST = BUILDING_HALF_SIZE + WALKWAY_OFFSET;
+/** Distance from cell center to door nodes */
+const DOOR_NODE_DIST = BUILDING_HALF_SIZE + WALKWAY_OFFSET;
+
+/** Distance from cell center to corner nodes (pushed out so corners don't overlap doors) */
+const CORNER_NODE_DIST = DOOR_NODE_DIST + WALKWAY_OFFSET / 2;
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -370,15 +373,16 @@ export class SidewalkGraph {
     const cell = grid.getCell(x, y);
     if (!cell || cell.roadType !== RoadType.NONE || !cell.buildingId || cell.buildingId === 0) return;
 
-    const d = BUILDING_NODE_DIST;
+    const cd = CORNER_NODE_DIST;
+    const dd = DOOR_NODE_DIST;
     const nodeIds: string[] = [];
 
-    // 4 corner nodes
+    // 4 corner nodes (pushed out further than doors)
     const corners: Array<{ suffix: string; px: number; py: number }> = [
-      { suffix: 'bNW', px: x - d, py: y - d },
-      { suffix: 'bNE', px: x + d, py: y - d },
-      { suffix: 'bSW', px: x - d, py: y + d },
-      { suffix: 'bSE', px: x + d, py: y + d },
+      { suffix: 'bNW', px: x - cd, py: y - cd },
+      { suffix: 'bNE', px: x + cd, py: y - cd },
+      { suffix: 'bSW', px: x - cd, py: y + cd },
+      { suffix: 'bSE', px: x + cd, py: y + cd },
     ];
     for (const c of corners) {
       const nodeId = `${cellKey}:${c.suffix}`;
@@ -386,12 +390,12 @@ export class SidewalkGraph {
       nodeIds.push(nodeId);
     }
 
-    // 4 door nodes (centered on each face)
+    // 4 door nodes (centered on each face, at wall line)
     const doors: Array<{ suffix: string; px: number; py: number }> = [
-      { suffix: 'bN', px: x, py: y - d },
-      { suffix: 'bS', px: x, py: y + d },
-      { suffix: 'bW', px: x - d, py: y },
-      { suffix: 'bE', px: x + d, py: y },
+      { suffix: 'bN', px: x, py: y - dd },
+      { suffix: 'bS', px: x, py: y + dd },
+      { suffix: 'bW', px: x - dd, py: y },
+      { suffix: 'bE', px: x + dd, py: y },
     ];
     for (const door of doors) {
       const nodeId = `${cellKey}:${door.suffix}`;
@@ -407,7 +411,10 @@ export class SidewalkGraph {
     const cell = grid.getCell(x, y);
     if (!cell || cell.roadType !== RoadType.NONE || !cell.buildingId || cell.buildingId === 0) return;
 
-    // Type 1: Building wall edges (corner↔door↔corner per face)
+    // Type 1: Building wall edges — triangle per face:
+    //   corner1 ↔ corner2 (wall line, doesn't pass through door)
+    //   corner1 ↔ door    (diagonal approach)
+    //   corner2 ↔ door    (diagonal approach)
     const wallFaces: Array<{ c1: string; door: string; c2: string }> = [
       { c1: `${cellKey}:bNW`, door: `${cellKey}:bN`, c2: `${cellKey}:bNE` },
       { c1: `${cellKey}:bSW`, door: `${cellKey}:bS`, c2: `${cellKey}:bSE` },
@@ -418,8 +425,9 @@ export class SidewalkGraph {
       const c1 = this.nodes.get(face.c1);
       const door = this.nodes.get(face.door);
       const c2 = this.nodes.get(face.c2);
+      if (c1 && c2) this.addBidirectionalEdge(c1, c2, 'building_wall');
       if (c1 && door) this.addBidirectionalEdge(c1, door, 'building_wall');
-      if (door && c2) this.addBidirectionalEdge(door, c2, 'building_wall');
+      if (c2 && door) this.addBidirectionalEdge(c2, door, 'building_wall');
     }
 
     // Type 2: Building access edges (door → road sidewalk nodes)
