@@ -313,6 +313,8 @@ export class Game {
   private transferOverlayLines: THREE.Line[] = [];
   /** Cached transfer highlight cells (reapplied every frame like overlayHighlightCells). */
   private transferHighlightCells: { x: number; y: number; color: number }[] = [];
+  /** Day when transferHighlightCells was last computed (triggers daily refresh). */
+  private transferHighlightDay = -1;
   private metroTunnelRenderer: MetroTunnelRenderer;
   private trackRenderer: TrackRenderer;
   private elevatedRoadRenderer: ElevatedRoadRenderer;
@@ -1912,14 +1914,19 @@ export class Game {
         0.6,
       );
     }
-    // Re-apply transfer route highlight on top
-    if (this.transferHighlightCells.length > 0) {
-      this.highlightManager.hoverHighlightGradient(
-        this.transferHighlightCells,
-        this.getAllHighlightMeshes(),
-        this.buildingRenderer.buildingInfraGroups,
-        1.0,
-      );
+    // Re-apply transfer route highlight on top (refresh daily)
+    if (this.selectedTransferRoute) {
+      if (this.state.clock.getDay() !== this.transferHighlightDay) {
+        this.selectTransferRoute(this.selectedTransferRoute);
+      }
+      if (this.transferHighlightCells.length > 0) {
+        this.highlightManager.hoverHighlightGradient(
+          this.transferHighlightCells,
+          this.getAllHighlightMeshes(),
+          this.buildingRenderer.buildingInfraGroups,
+          1.0,
+        );
+      }
     }
   }
 
@@ -2602,6 +2609,7 @@ export class Game {
     for (const s of stops) highlightSet.add(`${s.x},${s.y}`);
 
     this.transferHighlightCells = this.buildTransferHighlightCells(highlightSet);
+    this.transferHighlightDay = this.state.clock.getDay();
 
     // ── Draw route line ──
     if (stops.length >= 2) {
