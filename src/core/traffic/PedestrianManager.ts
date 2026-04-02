@@ -142,27 +142,11 @@ export class PedestrianManager {
     const path = this.getCachedPath(originX, originY, destX, destY);
     if (!path || path.length === 0) return null;
 
-    // Calculate total path length for random start position
-    let totalLength = 0;
-    for (const edge of path) totalLength += edge.length;
-
-    // Random initial progress along the path — prevents synchronized cohorts
-    const startOffset = Math.random() * totalLength;
-    let edgeIndex = 0;
-    let edgeProgress = startOffset;
-    while (edgeIndex < path.length && edgeProgress >= path[edgeIndex]!.length) {
-      edgeProgress -= path[edgeIndex]!.length;
-      edgeIndex++;
-    }
-    if (edgeIndex >= path.length) {
-      // Random offset landed past the end — just skip this spawn
-      return null;
-    }
-
-    const edge = path[edgeIndex]!;
-    const t = edge.length > 0 ? edgeProgress / edge.length : 0;
-    const startX = edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t;
-    const startY = edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t;
+    // Start at door node (first edge, progress 0).
+    // Speed multiplier randomness desynchronizes cohorts.
+    const edge = path[0]!;
+    const startX = edge.from.position.x;
+    const startY = edge.from.position.y;
 
     const id = this.nextId++;
     const agent: PedestrianAgent = {
@@ -170,8 +154,8 @@ export class PedestrianManager {
       citizenId,
       tripType,
       edgePath: path,
-      edgeIndex,
-      edgeProgress,
+      edgeIndex: 0,
+      edgeProgress: 0,
       position: { x: startX, y: startY },
       heading: Math.atan2(
         -(edge.to.position.y - edge.from.position.y),
@@ -181,7 +165,8 @@ export class PedestrianManager {
       waitTimer: 0,
       colorIndex: id % PEDESTRIAN.COLOR_COUNT,
       age: 0,
-      lateralOffset: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+      offsetX: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+      offsetZ: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
       speedMultiplier: PEDESTRIAN.SPEED_MULTIPLIER_MIN + Math.random() * PEDESTRIAN.SPEED_MULTIPLIER_RANGE,
     };
     this.agents.push(agent);
@@ -218,28 +203,20 @@ export class PedestrianManager {
       const currentEdge = agent.edgePath[agent.edgeIndex];
       if (!currentEdge) continue; // no edge → skip
 
-      // Crosswalk signal check
-      if (currentEdge.type === 'crosswalk' && agent.edgeProgress === 0) {
+      // If waiting at a blocked edge, re-check before allowing movement
+      if (agent.state === PedestrianState.WAITING_SIGNAL) {
         if (this.trafficLights && !this.canPassCrosswalk(currentEdge)) {
-          agent.state = PedestrianState.WAITING_SIGNAL;
-          this.agents[writeIdx++] = agent; // keep alive, just waiting
+          this.agents[writeIdx++] = agent;
           continue;
         }
         agent.state = PedestrianState.WALKING;
       }
-
-      // Level crossing check
-      if (currentEdge.type === 'level_crossing' && agent.edgeProgress === 0) {
-        if (this.levelCrossings) {
-          const cellKey = currentEdge.from.cellKey;
-          const parts = cellKey.split(',');
-          const cx = Number(parts[0]);
-          const cy = Number(parts[1]);
-          if (this.levelCrossings.isCrossingBlocked(cx, cy)) {
-            agent.state = PedestrianState.WAITING_CROSSING;
-            this.agents[writeIdx++] = agent; // keep alive, just waiting
-            continue;
-          }
+      if (agent.state === PedestrianState.WAITING_CROSSING) {
+        const cellKey = currentEdge.from.cellKey;
+        const parts = cellKey.split(',');
+        if (this.levelCrossings?.isCrossingBlocked(Number(parts[0]), Number(parts[1]))) {
+          this.agents[writeIdx++] = agent;
+          continue;
         }
         agent.state = PedestrianState.WALKING;
       }
@@ -248,16 +225,43 @@ export class PedestrianManager {
       const moveDistance = PEDESTRIAN.SPEED * agent.speedMultiplier * dt;
       agent.edgeProgress += moveDistance;
 
-      // Advance through edges
+      // Advance through edges — check traffic lights / crossings BEFORE entering
       let edge = currentEdge;
       while (agent.edgeProgress >= edge.length) {
-        agent.edgeProgress -= edge.length;
-        agent.edgeIndex++;
-        if (agent.edgeIndex >= agent.edgePath.length) {
+        const overflow = agent.edgeProgress - edge.length;
+        const nextIdx = agent.edgeIndex + 1;
+        if (nextIdx >= agent.edgePath.length) {
+          agent.edgeProgress -= edge.length;
+          agent.edgeIndex = nextIdx;
           agent.state = PedestrianState.ARRIVED;
           break;
         }
-        edge = agent.edgePath[agent.edgeIndex]!;
+        const nextEdge = agent.edgePath[nextIdx]!;
+
+        // Block at crosswalk if red light — only when ENTERING the intersection
+        // (from non-crosswalk to crosswalk). Already inside → let them through.
+        if (nextEdge.type === 'crosswalk' && edge.type !== 'crosswalk'
+            && this.trafficLights && !this.canPassCrosswalk(nextEdge)) {
+          agent.edgeProgress = edge.length; // stop at end of current edge
+          agent.state = PedestrianState.WAITING_SIGNAL;
+          break;
+        }
+
+        // Block at level crossing if train passing
+        if (nextEdge.type === 'level_crossing' && this.levelCrossings) {
+          const cellKey = nextEdge.from.cellKey;
+          const parts = cellKey.split(',');
+          if (this.levelCrossings.isCrossingBlocked(Number(parts[0]), Number(parts[1]))) {
+            agent.edgeProgress = edge.length;
+            agent.state = PedestrianState.WAITING_CROSSING;
+            break;
+          }
+        }
+
+        // Safe to enter next edge
+        agent.edgeProgress = overflow;
+        agent.edgeIndex = nextIdx;
+        edge = nextEdge;
       }
 
       if (agent.state === PedestrianState.ARRIVED) continue;
@@ -266,10 +270,13 @@ export class PedestrianManager {
       const t = edge.length > 0 ? agent.edgeProgress / edge.length : 0;
       agent.position.x = edge.from.position.x + (edge.to.position.x - edge.from.position.x) * t;
       agent.position.y = edge.from.position.y + (edge.to.position.y - edge.from.position.y) * t;
-      agent.heading = Math.atan2(
+      const targetHeading = Math.atan2(
         -(edge.to.position.y - edge.from.position.y),
         edge.to.position.x - edge.from.position.x,
       );
+      // Smooth heading transition to avoid visual snap
+      const diff = ((targetHeading - agent.heading + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
+      agent.heading += diff * Math.min(1, dt * 8);
 
       this.agents[writeIdx++] = agent;
     }
@@ -322,6 +329,9 @@ export class PedestrianManager {
         waitTimer: 0,
         colorIndex: id % PEDESTRIAN.COLOR_COUNT,
         age: 0,
+        offsetX: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+        offsetZ: (Math.random() - 0.5) * PEDESTRIAN.LATERAL_OFFSET_RANGE,
+        speedMultiplier: PEDESTRIAN.SPEED_MULTIPLIER_MIN + Math.random() * PEDESTRIAN.SPEED_MULTIPLIER_RANGE,
       };
       this.agents.push(agent);
     }
@@ -405,14 +415,8 @@ export class PedestrianManager {
       this.clearPathCache();
     }
 
-    const fromNode = this.sidewalkGraph.findNearestNode(fromX, fromY);
-    const toNode = this.sidewalkGraph.findNearestNode(toX, toY);
-    if (!fromNode || !toNode) {
-      this.pathCache.set(key, null);
-      return null;
-    }
-
-    const path = this.sidewalkGraph.findPath(fromNode.id, toNode.id);
+    // Try building-aware pathfinding: origin = random door, dest = multi-target (all doors)
+    const path = this.findBuildingAwarePath(fromX, fromY, toX, toY);
     this.pathCache.set(key, path);
 
     // Build cell index
@@ -427,16 +431,69 @@ export class PedestrianManager {
     return path;
   }
 
+  /**
+   * Find path using building topology when available.
+   * Origin: random building_entrance node (or nearest sidewalk node).
+   * Destination: multi-target A* to all building_entrance nodes (or nearest sidewalk node).
+   */
+  private findBuildingAwarePath(
+    fromX: number, fromY: number, toX: number, toY: number,
+  ): SidewalkEdge[] | null {
+    // Resolve origin: building entrance (random) or nearest sidewalk node
+    const fromNodeId = this.resolveOriginNode(fromX, fromY);
+    if (!fromNodeId) return null;
+
+    // Resolve destination: all building entrances or single nearest node
+    const toNodeIds = this.resolveDestinationNodes(toX, toY);
+    if (toNodeIds.length === 0) return null;
+
+    return this.sidewalkGraph.findPathMultiTarget(fromNodeId, toNodeIds);
+  }
+
+  private resolveOriginNode(x: number, y: number): string | null {
+    const cellKey = `${x},${y}`;
+    const entrances = this.getBuildingEntrances(cellKey);
+    if (entrances.length > 0) {
+      return entrances[Math.floor(Math.random() * entrances.length)]!;
+    }
+    // Fallback: nearest sidewalk node (for non-building origins like transit stops)
+    const node = this.sidewalkGraph.findNearestNode(x, y);
+    return node?.id ?? null;
+  }
+
+  private resolveDestinationNodes(x: number, y: number): string[] {
+    const cellKey = `${x},${y}`;
+    const entrances = this.getBuildingEntrances(cellKey);
+    if (entrances.length > 0) return entrances;
+    // Fallback: single nearest node
+    const node = this.sidewalkGraph.findNearestNode(x, y);
+    return node ? [node.id] : [];
+  }
+
+  private getBuildingEntrances(cellKey: string): string[] {
+    const nodes = this.sidewalkGraph.getNodesInCell(cellKey);
+    const entrances: string[] = [];
+    for (const n of nodes) {
+      if (n.type === 'building_entrance') entrances.push(n.id);
+    }
+    return entrances;
+  }
+
   private canPassCrosswalk(edge: SidewalkEdge): boolean {
     if (!this.trafficLights) return true;
-    const from = edge.from;
-    const to = edge.to;
-    // Use cell positions for traffic light query
-    const fromPos = from.cellKey.split(',');
-    const toPos = to.cellKey.split(',');
-    return this.trafficLights.canPass(
-      Number(fromPos[0]), Number(fromPos[1]),
-      Number(toPos[0]), Number(toPos[1]),
-    );
+    if (!edge.intersectionCellKey) return true;
+    const iPos = edge.intersectionCellKey.split(',');
+    const light = this.trafficLights.getLight(Number(iPos[0]), Number(iPos[1]));
+    if (!light) return true;
+    if (light.clearing) return false;
+    // Pedestrians cross perpendicular to traffic.
+    // Determine approach direction: from cell → intersection cell
+    const fromPos = edge.from.cellKey.split(',');
+    const dx = Number(iPos[0]) - Number(fromPos[0]);
+    const dy = Number(iPos[1]) - Number(fromPos[1]);
+    const isNS = dy !== 0;
+    // N-S approach → crosswalk crosses N-S road → safe when N-S stopped (phase 1)
+    // E-W approach → crosswalk crosses E-W road → safe when E-W stopped (phase 0)
+    return isNS ? light.phase === 1 : light.phase === 0;
   }
 }

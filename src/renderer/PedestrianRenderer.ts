@@ -29,7 +29,8 @@ export interface PedestrianRenderData {
   heading: number;
   colorIndex: number;
   state: PedestrianState;
-  lateralOffset: number;
+  offsetX: number;
+  offsetZ: number;
 }
 
 export class PedestrianRenderer {
@@ -63,10 +64,9 @@ export class PedestrianRenderer {
     for (let i = 0; i < count; i++) {
       const p = pedestrians[i]!;
 
-      // Apply lateral offset perpendicular to heading
-      const ox = Math.sin(p.heading) * p.lateralOffset;
-      const oz = Math.cos(p.heading) * p.lateralOffset;
-      matrix.makeTranslation(p.x + ox, SIDEWALK_Y, p.y + oz);
+      // Rotate in place, then offset in fixed world direction
+      // No positional drift when heading changes
+      matrix.makeTranslation(p.x + p.offsetX, SIDEWALK_Y, p.y + p.offsetZ);
       rotation.makeRotationY(p.heading + Math.PI / 2);
       matrix.multiply(rotation);
       this.mesh.setMatrixAt(i, matrix);
@@ -95,7 +95,7 @@ export class PedestrianRenderer {
 
 /** Filter pedestrians to only those within CULL_RADIUS of the camera target. */
 export function cullPedestrians(
-  pedestrians: ReadonlyArray<{ id: number; position: { x: number; y: number }; heading: number; colorIndex: number; state: PedestrianState; lateralOffset: number }>,
+  pedestrians: ReadonlyArray<{ id: number; position: { x: number; y: number }; heading: number; colorIndex: number; state: PedestrianState; offsetX: number; offsetZ: number }>,
   cameraX: number,
   cameraZ: number,
 ): PedestrianRenderData[] {
@@ -115,7 +115,8 @@ export function cullPedestrians(
       heading: p.heading,
       colorIndex: p.colorIndex,
       state: p.state,
-      lateralOffset: p.lateralOffset,
+      offsetX: p.offsetX,
+      offsetZ: p.offsetZ,
     });
   }
   return result;

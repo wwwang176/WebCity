@@ -28,13 +28,25 @@ export const CW_OFFSET = 0.35;
 /** Node offset within a cell — aligned with crosswalk rendering */
 const NODE_X_OFFSET = CW_OFFSET;
 
+/** Building wall distance from cell center */
+export const BUILDING_HALF_SIZE = 0.35;
+
+/** Walkway node offset outside building wall */
+export const WALKWAY_OFFSET = 0.06;
+
+/** Distance from cell center to door nodes */
+const DOOR_NODE_DIST = BUILDING_HALF_SIZE + WALKWAY_OFFSET;
+
+/** Distance from cell center to corner nodes (pushed out so corners don't overlap doors) */
+const CORNER_NODE_DIST = DOOR_NODE_DIST + WALKWAY_OFFSET / 2;
+
 // ── Types ──────────────────────────────────────────────────────────────
 
 export interface SidewalkNode {
   id: string;
   position: { x: number; y: number };
   cellKey: string;
-  type: 'sidewalk' | 'crosswalk_wait' | 'building_entrance' | 'transit_stop';
+  type: 'sidewalk' | 'crosswalk_wait' | 'building_entrance' | 'building_corner' | 'transit_stop';
 }
 
 export interface SidewalkEdge {
@@ -42,7 +54,9 @@ export interface SidewalkEdge {
   from: SidewalkNode;
   to: SidewalkNode;
   length: number;
-  type: 'sidewalk' | 'crosswalk' | 'level_crossing' | 'building_access' | 'transit_access';
+  type: 'sidewalk' | 'crosswalk' | 'level_crossing' | 'building_access' | 'building_wall' | 'transit_access';
+  /** The intersection cell that controls this crosswalk/bridge (for traffic light query) */
+  intersectionCellKey?: string;
 }
 
 export type SidewalkNodeType = SidewalkNode['type'];
@@ -120,7 +134,7 @@ export class SidewalkGraph {
 
   // ── Build ──
 
-  buildFromGrid(grid: GridLookup, roadCellKeys: string[]): void {
+  buildFromGrid(grid: GridLookup, roadCellKeys: string[], buildingCellKeys: string[] = []): void {
     this.nodes.clear();
     this.adjacency.clear();
     this.cellNodes.clear();
@@ -130,9 +144,19 @@ export class SidewalkGraph {
       this.generateNodesForCell(grid, key);
     }
 
-    // Pass 2: generate edges
+    // Pass 2: generate road edges
     for (const key of roadCellKeys) {
       this.generateEdgesForCell(grid, key);
+    }
+
+    // Pass 3: generate building nodes
+    for (const key of buildingCellKeys) {
+      this.generateBuildingNodesForCell(grid, key);
+    }
+
+    // Pass 4: generate building edges (must be after road nodes exist)
+    for (const key of buildingCellKeys) {
+      this.generateBuildingEdgesForCell(grid, key);
     }
   }
 
@@ -152,7 +176,7 @@ export class SidewalkGraph {
       this.removeCellData(key);
     }
 
-    // Rebuild nodes
+    // Rebuild road nodes
     for (const key of toRebuild) {
       const { x, y } = parsePosKeyUnsafe(key);
       const cell = grid.getCell(x, y);
@@ -161,12 +185,30 @@ export class SidewalkGraph {
       }
     }
 
-    // Rebuild edges
+    // Rebuild road edges
     for (const key of toRebuild) {
       const { x, y } = parsePosKeyUnsafe(key);
       const cell = grid.getCell(x, y);
       if (cell && cell.roadType !== RoadType.NONE) {
         this.generateEdgesForCell(grid, key);
+      }
+    }
+
+    // Rebuild building nodes
+    for (const key of toRebuild) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      const cell = grid.getCell(x, y);
+      if (cell && cell.roadType === RoadType.NONE && cell.buildingId && cell.buildingId > 0) {
+        this.generateBuildingNodesForCell(grid, key);
+      }
+    }
+
+    // Rebuild building edges
+    for (const key of toRebuild) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      const cell = grid.getCell(x, y);
+      if (cell && cell.roadType === RoadType.NONE && cell.buildingId && cell.buildingId > 0) {
+        this.generateBuildingEdgesForCell(grid, key);
       }
     }
   }
@@ -211,7 +253,7 @@ export class SidewalkGraph {
     let best: SidewalkNode | null = null;
     let bestDist = Infinity;
     for (const node of this.nodes.values()) {
-      if (node.type === 'building_entrance' || node.type === 'transit_stop') continue;
+      if (node.type === 'transit_stop') continue;
       const d = euclideanDistance(bx, by, node.position.x, node.position.y);
       if (d < bestDist) {
         bestDist = d;
@@ -226,19 +268,37 @@ export class SidewalkGraph {
   // ── A* Pathfinding ──
 
   findPath(fromNodeId: string, toNodeId: string): SidewalkEdge[] | null {
+    return this.findPathMultiTarget(fromNodeId, [toNodeId]);
+  }
+
+  /**
+   * Multi-target A*: finds shortest path from fromNodeId to ANY of toNodeIds.
+   * Heuristic uses min distance to all targets (admissible).
+   */
+  findPathMultiTarget(fromNodeId: string, toNodeIds: string[]): SidewalkEdge[] | null {
     const fromNode = this.nodes.get(fromNodeId);
-    const toNode = this.nodes.get(toNodeId);
-    if (!fromNode || !toNode) return null;
-    if (fromNodeId === toNodeId) return [];
+    if (!fromNode) return null;
+
+    // Resolve target nodes
+    const targetSet = new Set<string>();
+    const targetNodes: SidewalkNode[] = [];
+    for (const id of toNodeIds) {
+      const node = this.nodes.get(id);
+      if (node) {
+        targetSet.add(id);
+        targetNodes.push(node);
+      }
+    }
+    if (targetNodes.length === 0) return null;
+    if (targetSet.has(fromNodeId)) return [];
 
     const gScore = new Map<string, number>();
     const fScore = new Map<string, number>();
     const cameFrom = new Map<string, { nodeId: string; edge: SidewalkEdge }>();
 
     gScore.set(fromNodeId, 0);
-    fScore.set(fromNodeId, this.heuristic(fromNode, toNode));
+    fScore.set(fromNodeId, this.heuristicMulti(fromNode, targetNodes));
 
-    // Simple priority queue (array sorted by fScore)
     const openSet = new Set<string>([fromNodeId]);
 
     while (openSet.size > 0) {
@@ -253,8 +313,8 @@ export class SidewalkGraph {
         }
       }
 
-      if (currentId === toNodeId) {
-        return this.reconstructPath(cameFrom, toNodeId);
+      if (targetSet.has(currentId)) {
+        return this.reconstructPath(cameFrom, currentId);
       }
 
       openSet.delete(currentId);
@@ -267,13 +327,13 @@ export class SidewalkGraph {
         if (tentativeG < (gScore.get(neighborId) ?? Infinity)) {
           cameFrom.set(neighborId, { nodeId: currentId, edge });
           gScore.set(neighborId, tentativeG);
-          fScore.set(neighborId, tentativeG + this.heuristic(edge.to, toNode));
+          fScore.set(neighborId, tentativeG + this.heuristicMulti(edge.to, targetNodes));
           openSet.add(neighborId);
         }
       }
     }
 
-    return null; // No path found
+    return null;
   }
 
   // ── Private: Node generation ──
@@ -306,6 +366,132 @@ export class SidewalkGraph {
     }
 
     this.cellNodes.set(cellKey, nodeIds);
+  }
+
+  // ── Private: Building node generation ──
+
+  private generateBuildingNodesForCell(grid: GridLookup, cellKey: string): void {
+    const { x, y } = parsePosKeyUnsafe(cellKey);
+    const cell = grid.getCell(x, y);
+    if (!cell || cell.roadType !== RoadType.NONE || !cell.buildingId || cell.buildingId === 0) return;
+
+    const cd = CORNER_NODE_DIST;
+    const dd = DOOR_NODE_DIST;
+    const nodeIds: string[] = [];
+
+    // 4 corner nodes (pushed out further than doors)
+    const corners: Array<{ suffix: string; px: number; py: number }> = [
+      { suffix: 'bNW', px: x - cd, py: y - cd },
+      { suffix: 'bNE', px: x + cd, py: y - cd },
+      { suffix: 'bSW', px: x - cd, py: y + cd },
+      { suffix: 'bSE', px: x + cd, py: y + cd },
+    ];
+    for (const c of corners) {
+      const nodeId = `${cellKey}:${c.suffix}`;
+      this.nodes.set(nodeId, { id: nodeId, position: { x: c.px, y: c.py }, cellKey, type: 'building_corner' });
+      nodeIds.push(nodeId);
+    }
+
+    // 4 door nodes (centered on each face, at wall line)
+    const doors: Array<{ suffix: string; px: number; py: number }> = [
+      { suffix: 'bN', px: x, py: y - dd },
+      { suffix: 'bS', px: x, py: y + dd },
+      { suffix: 'bW', px: x - dd, py: y },
+      { suffix: 'bE', px: x + dd, py: y },
+    ];
+    for (const door of doors) {
+      const nodeId = `${cellKey}:${door.suffix}`;
+      this.nodes.set(nodeId, { id: nodeId, position: { x: door.px, y: door.py }, cellKey, type: 'building_entrance' });
+      nodeIds.push(nodeId);
+    }
+
+    this.cellNodes.set(cellKey, nodeIds);
+  }
+
+  private generateBuildingEdgesForCell(grid: GridLookup, cellKey: string): void {
+    const { x, y } = parsePosKeyUnsafe(cellKey);
+    const cell = grid.getCell(x, y);
+    if (!cell || cell.roadType !== RoadType.NONE || !cell.buildingId || cell.buildingId === 0) return;
+
+    // Type 1: Building wall edges — triangle per face:
+    //   corner1 ↔ corner2 (wall line, doesn't pass through door)
+    //   corner1 ↔ door    (diagonal approach)
+    //   corner2 ↔ door    (diagonal approach)
+    const wallFaces: Array<{ c1: string; door: string; c2: string }> = [
+      { c1: `${cellKey}:bNW`, door: `${cellKey}:bN`, c2: `${cellKey}:bNE` },
+      { c1: `${cellKey}:bSW`, door: `${cellKey}:bS`, c2: `${cellKey}:bSE` },
+      { c1: `${cellKey}:bNW`, door: `${cellKey}:bW`, c2: `${cellKey}:bSW` },
+      { c1: `${cellKey}:bNE`, door: `${cellKey}:bE`, c2: `${cellKey}:bSE` },
+    ];
+    for (const face of wallFaces) {
+      const c1 = this.nodes.get(face.c1);
+      const door = this.nodes.get(face.door);
+      const c2 = this.nodes.get(face.c2);
+      if (c1 && c2) this.addBidirectionalEdge(c1, c2, 'building_wall');
+      if (c1 && door) this.addBidirectionalEdge(c1, door, 'building_wall');
+      if (c2 && door) this.addBidirectionalEdge(c2, door, 'building_wall');
+    }
+
+    // Type 2: Building access edges (door + corners → road sidewalk nodes)
+    const accessDirs: Array<{
+      dx: number; dy: number;
+      doorSuffix: string;
+      cornerSuffixes: [string, string];
+      // The road sidewalk node suffixes on the shared boundary
+      roadNodeSuffixes: [string, string];
+    }> = [
+      { dx: 0, dy: -1, doorSuffix: 'bN', cornerSuffixes: ['bNW', 'bNE'], roadNodeSuffixes: ['SW', 'SE'] },
+      { dx: 0, dy: 1,  doorSuffix: 'bS', cornerSuffixes: ['bSW', 'bSE'], roadNodeSuffixes: ['NW', 'NE'] },
+      { dx: -1, dy: 0, doorSuffix: 'bW', cornerSuffixes: ['bNW', 'bSW'], roadNodeSuffixes: ['EN', 'ES'] },
+      { dx: 1,  dy: 0, doorSuffix: 'bE', cornerSuffixes: ['bNE', 'bSE'], roadNodeSuffixes: ['WN', 'WS'] },
+    ];
+    for (const dir of accessDirs) {
+      const nx = x + dir.dx;
+      const ny = y + dir.dy;
+      const neighbor = grid.getCell(nx, ny);
+      if (!neighbor || neighbor.roadType === RoadType.NONE) continue;
+
+      const neighborKey = toPosKey(nx, ny);
+
+      // Door → both road nodes
+      const doorNode = this.nodes.get(`${cellKey}:${dir.doorSuffix}`);
+      if (doorNode) {
+        for (const suffix of dir.roadNodeSuffixes) {
+          const roadNode = this.nodes.get(`${neighborKey}:${suffix}`);
+          if (roadNode) this.addBidirectionalEdge(doorNode, roadNode, 'building_access');
+        }
+      }
+
+      // Corners → nearest road node (each corner connects to the closer road node)
+      for (let i = 0; i < 2; i++) {
+        const cornerNode = this.nodes.get(`${cellKey}:${dir.cornerSuffixes[i]}`);
+        const roadNode = this.nodes.get(`${neighborKey}:${dir.roadNodeSuffixes[i]}`);
+        if (cornerNode && roadNode) this.addBidirectionalEdge(cornerNode, roadNode, 'building_access');
+      }
+    }
+
+    // Type 3: Adjacent building connections (corner↔corner)
+    const adjDirs: Array<{
+      dx: number; dy: number;
+      myCorners: [string, string];
+      theirCorners: [string, string];
+    }> = [
+      { dx: 1, dy: 0,  myCorners: ['bNE', 'bSE'], theirCorners: ['bNW', 'bSW'] }, // east
+      { dx: 0, dy: 1,  myCorners: ['bSW', 'bSE'], theirCorners: ['bNW', 'bNE'] }, // south
+    ];
+    for (const dir of adjDirs) {
+      const nx = x + dir.dx;
+      const ny = y + dir.dy;
+      const neighbor = grid.getCell(nx, ny);
+      if (!neighbor || neighbor.roadType !== RoadType.NONE || !neighbor.buildingId || neighbor.buildingId === 0) continue;
+
+      const neighborKey = toPosKey(nx, ny);
+      for (let i = 0; i < 2; i++) {
+        const myNode = this.nodes.get(`${cellKey}:${dir.myCorners[i]}`);
+        const theirNode = this.nodes.get(`${neighborKey}:${dir.theirCorners[i]}`);
+        if (myNode && theirNode) this.addBidirectionalEdge(myNode, theirNode, 'building_wall');
+      }
+    }
   }
 
   private generateEdgesForCell(grid: GridLookup, cellKey: string): void {
@@ -410,19 +596,19 @@ export class SidewalkGraph {
       const fromNode = this.nodes.get(`${neighborKey}:${dir.fromSuffix}`);
       const toNode = this.nodes.get(`${neighborKey}:${dir.toSuffix}`);
       if (fromNode && toNode) {
-        this.addBidirectionalEdge(fromNode, toNode, 'crosswalk');
+        this.addBidirectionalEdge(fromNode, toNode, 'crosswalk', toPosKey(x, y));
       }
     }
   }
 
   /**
    * At intersection cells with 3+ connections, the cell itself may have
-   * few or zero sidewalk nodes. Bridge boundary nodes of neighbor cells
-   * so pedestrians can cross through the intersection in all directions.
+   * few or zero sidewalk nodes. Corner bridges connect boundary nodes
+   * of adjacent neighbor cells at intersection corners, so pedestrians
+   * cross via: corner bridge → crosswalk → corner bridge.
    *
-   * Creates two types of crosswalk bridges:
-   * 1. Straight-through (N↔S, E↔W): parallel pairs of boundary nodes
-   * 2. Corner turns (N↔E, N↔W, S↔E, S↔W): diagonal through intersection
+   * Only corner turns (NW, NE, SW, SE) — no straight-through bridges,
+   * which would let pedestrians cut through the intersection center.
    */
   private generateIntersectionBridgeEdges(
     grid: GridLookup, x: number, y: number,
@@ -432,43 +618,30 @@ export class SidewalkGraph {
     if (dirCount < 3) return;
 
     const flags = cell.roadFlags;
+    const iKey = toPosKey(x, y);
 
-    // Helper: resolve a boundary node from a neighbor cell
     const getNode = (dx: number, dy: number, suffix: string) => {
       const n = grid.getCell(x + dx, y + dy);
       if (!n || n.roadType === RoadType.NONE) return undefined;
       return this.nodes.get(`${toPosKey(x + dx, y + dy)}:${suffix}`);
     };
 
-    // Straight-through bridges (opposite directions)
-    // N↔S: connect north neighbor's south-facing nodes to south neighbor's north-facing nodes
-    if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.SOUTH)) {
-      this.bridgePair(getNode(0, -1, 'WS'), getNode(0, 1, 'WN'));
-      this.bridgePair(getNode(0, -1, 'ES'), getNode(0, 1, 'EN'));
-    }
-    // E↔W
-    if ((flags & RoadDirection.EAST) && (flags & RoadDirection.WEST)) {
-      this.bridgePair(getNode(-1, 0, 'NE'), getNode(1, 0, 'NW'));
-      this.bridgePair(getNode(-1, 0, 'SE'), getNode(1, 0, 'SW'));
-    }
-
-    // Corner bridges (perpendicular directions)
-    // NW corner: N neighbor's WS ↔ W neighbor's NE
+    // Corner bridges only (perpendicular directions)
     if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.WEST))
-      this.bridgePair(getNode(0, -1, 'WS'), getNode(-1, 0, 'NE'));
-    // NE corner: N neighbor's ES ↔ E neighbor's NW
+      this.bridgePair(getNode(0, -1, 'WS'), getNode(-1, 0, 'NE'), iKey);
     if ((flags & RoadDirection.NORTH) && (flags & RoadDirection.EAST))
-      this.bridgePair(getNode(0, -1, 'ES'), getNode(1, 0, 'NW'));
-    // SW corner: S neighbor's WN ↔ W neighbor's SE
+      this.bridgePair(getNode(0, -1, 'ES'), getNode(1, 0, 'NW'), iKey);
     if ((flags & RoadDirection.SOUTH) && (flags & RoadDirection.WEST))
-      this.bridgePair(getNode(0, 1, 'WN'), getNode(-1, 0, 'SE'));
-    // SE corner: S neighbor's EN ↔ E neighbor's SW
+      this.bridgePair(getNode(0, 1, 'WN'), getNode(-1, 0, 'SE'), iKey);
     if ((flags & RoadDirection.SOUTH) && (flags & RoadDirection.EAST))
-      this.bridgePair(getNode(0, 1, 'EN'), getNode(1, 0, 'SW'));
+      this.bridgePair(getNode(0, 1, 'EN'), getNode(1, 0, 'SW'), iKey);
   }
 
-  private bridgePair(a: SidewalkNode | undefined, b: SidewalkNode | undefined): void {
-    if (a && b) this.addBidirectionalEdge(a, b, 'crosswalk');
+  private bridgePair(a: SidewalkNode | undefined, b: SidewalkNode | undefined, _intersectionCellKey: string): void {
+    // Corner bridges are sidewalk type — they don't cross any road,
+    // just connect two sidewalk nodes at the intersection corner.
+    // Traffic light checks happen at the actual crosswalk edges.
+    if (a && b) this.addBidirectionalEdge(a, b, 'sidewalk');
   }
 
   private generateLevelCrossingEdges(
@@ -514,15 +687,15 @@ export class SidewalkGraph {
 
   // ── Private: Edge helpers ──
 
-  private addBidirectionalEdge(a: SidewalkNode, b: SidewalkNode, type: SidewalkEdge['type']): void {
+  private addBidirectionalEdge(a: SidewalkNode, b: SidewalkNode, type: SidewalkEdge['type'], intersectionCellKey?: string): void {
     const length = euclideanDistance(a.position.x, a.position.y, b.position.x, b.position.y);
     const edgeAB: SidewalkEdge = {
       id: `${a.id}→${b.id}`,
-      from: a, to: b, length, type,
+      from: a, to: b, length, type, intersectionCellKey,
     };
     const edgeBA: SidewalkEdge = {
       id: `${b.id}→${a.id}`,
-      from: b, to: a, length, type,
+      from: b, to: a, length, type, intersectionCellKey,
     };
 
     if (!this.adjacency.has(a.id)) this.adjacency.set(a.id, []);
@@ -560,6 +733,15 @@ export class SidewalkGraph {
 
   private heuristic(a: SidewalkNode, b: SidewalkNode): number {
     return euclideanDistance(a.position.x, a.position.y, b.position.x, b.position.y);
+  }
+
+  private heuristicMulti(a: SidewalkNode, targets: SidewalkNode[]): number {
+    let min = Infinity;
+    for (const t of targets) {
+      const d = euclideanDistance(a.position.x, a.position.y, t.position.x, t.position.y);
+      if (d < min) min = d;
+    }
+    return min;
   }
 
   private reconstructPath(

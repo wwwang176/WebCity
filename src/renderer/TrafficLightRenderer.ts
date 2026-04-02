@@ -90,8 +90,9 @@ export class TrafficLightRenderer {
     for (const light of lights) {
       if (idx + 4 > this.lightCount) break;
 
-      // phase 0 = NS green, EW red
-      const nsGreen = light.phase === 0;
+      // All red during clearance, otherwise phase-based
+      const nsGreen = !light.clearing && light.phase === 0;
+      const ewGreen = !light.clearing && light.phase === 1;
 
       // N approach — NS
       color.copy(nsGreen ? GREEN : RED);
@@ -99,7 +100,7 @@ export class TrafficLightRenderer {
       // S approach — NS
       this.lightMesh.setColorAt(idx++, color);
       // E approach — EW
-      color.copy(nsGreen ? RED : GREEN);
+      color.copy(ewGreen ? GREEN : RED);
       this.lightMesh.setColorAt(idx++, color);
       // W approach — EW
       this.lightMesh.setColorAt(idx++, color);

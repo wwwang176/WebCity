@@ -1,11 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { SidewalkGraph, ROAD_WIDTHS, GridLookup, SidewalkEdge, SIDEWALK_WIDTH } from '../SidewalkGraph';
+import { SidewalkGraph, ROAD_WIDTHS, GridLookup, SidewalkEdge, SIDEWALK_WIDTH, BUILDING_HALF_SIZE, WALKWAY_OFFSET, CW_OFFSET } from '../SidewalkGraph';
 import { RoadType, RoadDirection } from '../../road/types';
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
+type CellDef = { roadType: number; roadFlags: number; railType?: number; buildingId?: number; zoneType?: number };
+
 function makeGrid(
-  cells: Map<string, { roadType: number; roadFlags: number; railType?: number }>,
+  cells: Map<string, CellDef>,
 ): GridLookup {
   return {
     getCell: (x, y) => cells.get(`${x},${y}`) ?? null,
@@ -496,6 +498,382 @@ describe('SidewalkGraph', () => {
       // A bus stop at (1, 0) should find a nearby sidewalk node
       const nearest = graph.findNearestNode(1, 0);
       expect(nearest).not.toBeNull();
+    });
+  });
+
+  // ── Building perimeter walkway tests ──────────────────────────────────
+
+  describe('B1: building node generation', () => {
+    it('should generate 8 nodes (4 corners + 4 doors) for a building cell', () => {
+      // Road at (1,1) going east, building at (1,0)
+      const cells = new Map<string, CellDef>();
+      cells.set('1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST });
+      cells.set('1,0', { roadType: 0, roadFlags: 0, buildingId: 5 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['1,1'], ['1,0']);
+
+      const nodes = graph.getNodesInCell('1,0');
+      expect(nodes.length).toBe(8);
+
+      const ids = nodes.map(n => n.id).sort();
+      // 4 corners
+      expect(ids).toContain('1,0:bNW');
+      expect(ids).toContain('1,0:bNE');
+      expect(ids).toContain('1,0:bSW');
+      expect(ids).toContain('1,0:bSE');
+      // 4 doors
+      expect(ids).toContain('1,0:bN');
+      expect(ids).toContain('1,0:bS');
+      expect(ids).toContain('1,0:bW');
+      expect(ids).toContain('1,0:bE');
+    });
+
+    it('should position corner nodes further out than door nodes', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('3,2', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['3,2']);
+
+      const cornerDist = BUILDING_HALF_SIZE + WALKWAY_OFFSET + WALKWAY_OFFSET / 2;
+      const nw = graph.getNode('3,2:bNW')!;
+      expect(nw.position.x).toBeCloseTo(3 - cornerDist);
+      expect(nw.position.y).toBeCloseTo(2 - cornerDist);
+
+      const se = graph.getNode('3,2:bSE')!;
+      expect(se.position.x).toBeCloseTo(3 + cornerDist);
+      expect(se.position.y).toBeCloseTo(2 + cornerDist);
+    });
+
+    it('should position door nodes at BUILDING_HALF_SIZE + WALKWAY_OFFSET', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('3,2', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['3,2']);
+
+      const doorDist = BUILDING_HALF_SIZE + WALKWAY_OFFSET;
+      const doorN = graph.getNode('3,2:bN')!;
+      expect(doorN.position.x).toBeCloseTo(3); // centered
+      expect(doorN.position.y).toBeCloseTo(2 - doorDist);
+
+      const doorE = graph.getNode('3,2:bE')!;
+      expect(doorE.position.x).toBeCloseTo(3 + doorDist);
+      expect(doorE.position.y).toBeCloseTo(2); // centered
+    });
+
+    it('should NOT generate building nodes for road cells', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: RoadType.TWO_LANE, roadFlags: 0 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['0,0'], []);
+
+      // Road cell should have road nodes, not building nodes
+      const nodes = graph.getNodesInCell('0,0');
+      expect(nodes.every(n => !n.id.includes(':b'))).toBe(true);
+    });
+
+    it('should NOT generate building nodes for empty cells (buildingId=0)', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 0 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['0,0']);
+
+      expect(graph.getNodesInCell('0,0').length).toBe(0);
+    });
+
+    it('corner nodes should have type building_corner, doors should have type building_entrance', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('1,1', { roadType: 0, roadFlags: 0, buildingId: 3 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['1,1']);
+
+      expect(graph.getNode('1,1:bNW')!.type).toBe('building_corner');
+      expect(graph.getNode('1,1:bN')!.type).toBe('building_entrance');
+    });
+  });
+
+  describe('B2: building wall edges', () => {
+    it('should create triangle wall edges per face (corner↔corner + corner↔door × 2)', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('2,2', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['2,2']);
+
+      const wallEdges = graph.getAllEdges().filter(e => e.type === 'building_wall');
+      // 4 faces × 3 edges × 2 directions = 24 directed wall edges
+      expect(wallEdges.length).toBe(24);
+
+      // Check N face triangle: bNW↔bNE, bNW↔bN, bNE↔bN
+      expect(wallEdges.find(e => e.from.id === '2,2:bNW' && e.to.id === '2,2:bNE')).toBeDefined();
+      expect(wallEdges.find(e => e.from.id === '2,2:bNW' && e.to.id === '2,2:bN')).toBeDefined();
+      expect(wallEdges.find(e => e.from.id === '2,2:bNE' && e.to.id === '2,2:bN')).toBeDefined();
+    });
+  });
+
+  describe('B3: building_access edges (door → road sidewalk)', () => {
+    it('should connect south door to road N sidewalk (both NW + NE) when road is south', () => {
+      const cells = new Map<string, CellDef>();
+      // Building at (1,0), road at (1,1) going east
+      cells.set('1,0', { roadType: 0, roadFlags: 0, buildingId: 5 });
+      cells.set('1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['1,1'], ['1,0']);
+
+      const accessEdges = graph.getAllEdges().filter(e => e.type === 'building_access');
+      // South door → road's NW and NE = 2 connections × 2 directions = 4
+      const doorToRoad = accessEdges.filter(e => e.from.id === '1,0:bS');
+      expect(doorToRoad.length).toBe(2);
+      const targets = doorToRoad.map(e => e.to.id).sort();
+      expect(targets).toContain('1,1:NW');
+      expect(targets).toContain('1,1:NE');
+    });
+
+    it('should connect east door to road W sidewalk when road is east', () => {
+      const cells = new Map<string, CellDef>();
+      // Building at (0,0), road at (1,0) going south
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 3 });
+      cells.set('1,0', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['1,0'], ['0,0']);
+
+      const accessEdges = graph.getAllEdges().filter(e => e.type === 'building_access');
+      const doorToRoad = accessEdges.filter(e => e.from.id === '0,0:bE');
+      expect(doorToRoad.length).toBe(2);
+      const targets = doorToRoad.map(e => e.to.id).sort();
+      expect(targets).toContain('1,0:WN');
+      expect(targets).toContain('1,0:WS');
+    });
+
+    it('should NOT create building_access when neighbor is not a road', () => {
+      const cells = new Map<string, CellDef>();
+      // Isolated building, no roads around
+      cells.set('5,5', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['5,5']);
+
+      const accessEdges = graph.getAllEdges().filter(e => e.type === 'building_access');
+      expect(accessEdges.length).toBe(0);
+    });
+
+    it('should connect multiple doors when building has roads on multiple sides', () => {
+      const cells = new Map<string, CellDef>();
+      // Building at (1,1) with roads on south and east
+      cells.set('1,1', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      cells.set('1,2', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST }); // south road
+      cells.set('2,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.SOUTH }); // east road
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['1,2', '2,1'], ['1,1']);
+
+      const accessEdges = graph.getAllEdges().filter(e => e.type === 'building_access');
+      // Per road-facing side: door → 2 road nodes + 2 corners → 1 road node each = 4 connections × 2 directions = 8
+      // Two road-facing sides: 8 × 2 = 16
+      expect(accessEdges.length).toBe(16);
+    });
+  });
+
+  describe('B4: adjacent building connections', () => {
+    it('should connect corners of horizontally adjacent buildings', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      cells.set('1,0', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['0,0', '1,0']);
+
+      // East corners of A ↔ west corners of B
+      const edges = graph.getAllEdges();
+      const adjEdges = edges.filter(e =>
+        (e.from.id === '0,0:bNE' && e.to.id === '1,0:bNW') ||
+        (e.from.id === '0,0:bSE' && e.to.id === '1,0:bSW')
+      );
+      expect(adjEdges.length).toBe(2); // 2 pairs (top and bottom)
+    });
+
+    it('should connect corners of vertically adjacent buildings', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      cells.set('0,1', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['0,0', '0,1']);
+
+      const edges = graph.getAllEdges();
+      const adjEdges = edges.filter(e =>
+        (e.from.id === '0,0:bSW' && e.to.id === '0,1:bNW') ||
+        (e.from.id === '0,0:bSE' && e.to.id === '0,1:bNE')
+      );
+      expect(adjEdges.length).toBe(2);
+    });
+
+    it('should NOT connect buildings separated by a road', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      cells.set('1,0', { roadType: RoadType.TWO_LANE, roadFlags: 0 }); // road between
+      cells.set('2,0', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['1,0'], ['0,0', '2,0']);
+
+      // No direct building_wall edge between 0,0 and 2,0
+      const edges = graph.getAllEdges();
+      const cross = edges.filter(e =>
+        (e.from.cellKey === '0,0' && e.to.cellKey === '2,0') ||
+        (e.from.cellKey === '2,0' && e.to.cellKey === '0,0')
+      );
+      expect(cross.length).toBe(0);
+    });
+  });
+
+  describe('B5: findPathMultiTarget', () => {
+    it('should find shortest path to nearest target among multiple', () => {
+      // Road from (0,1) to (4,1), buildings at (0,0) and (4,0)
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      cells.set('4,0', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      for (let x = 0; x <= 4; x++) {
+        let flags = 0;
+        if (x > 0) flags |= RoadDirection.WEST;
+        if (x < 4) flags |= RoadDirection.EAST;
+        cells.set(`${x},1`, { roadType: RoadType.TWO_LANE, roadFlags: flags });
+      }
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      const roadKeys = [0,1,2,3,4].map(x => `${x},1`);
+      graph.buildFromGrid(grid, roadKeys, ['0,0', '4,0']);
+
+      // Multi-target: from building A south door to ANY door of building B
+      const targetDoors = ['4,0:bN', '4,0:bS', '4,0:bW', '4,0:bE'];
+      const path = graph.findPathMultiTarget('0,0:bS', targetDoors);
+      expect(path).not.toBeNull();
+
+      // Should arrive at bS (the door facing the road, closest path)
+      const lastEdge = path![path!.length - 1]!;
+      expect(lastEdge.to.id).toBe('4,0:bS');
+    });
+
+    it('should return empty array when start is one of the targets', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['0,0']);
+
+      const path = graph.findPathMultiTarget('0,0:bN', ['0,0:bN', '0,0:bS']);
+      expect(path).toEqual([]);
+    });
+
+    it('should return null when no targets are reachable', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      cells.set('10,10', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['0,0', '10,10']);
+
+      const path = graph.findPathMultiTarget('0,0:bN', ['10,10:bN', '10,10:bS']);
+      expect(path).toBeNull();
+    });
+  });
+
+  describe('B5b: findPath building → road → building', () => {
+    it('should find a path from building A door to road to building B door', () => {
+      const cells = new Map<string, CellDef>();
+      // A at (0,0), B at (2,0), road from (0,1) to (2,1)
+      // Both buildings face south toward the north sidewalk of the road
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 }); // A
+      cells.set('2,0', { roadType: 0, roadFlags: 0, buildingId: 2 }); // B
+      cells.set('0,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST });
+      cells.set('1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.WEST | RoadDirection.EAST });
+      cells.set('2,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.WEST });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['0,1', '1,1', '2,1'], ['0,0', '2,0']);
+
+      // A south door → north sidewalk → walk east → B south door
+      const path = graph.findPath('0,0:bS', '2,0:bS');
+      expect(path).not.toBeNull();
+      expect(path!.length).toBeGreaterThan(0);
+
+      // Path should include building_access edges
+      const types = path!.map(e => e.type);
+      expect(types).toContain('building_access');
+    });
+
+    it('should find path between adjacent buildings via wall edges', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('0,0', { roadType: 0, roadFlags: 0, buildingId: 1 });
+      cells.set('1,0', { roadType: 0, roadFlags: 0, buildingId: 2 });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, [], ['0,0', '1,0']);
+
+      // From A's north door to B's north door via shared corners
+      const path = graph.findPath('0,0:bN', '1,0:bN');
+      expect(path).not.toBeNull();
+      expect(path!.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe('B6: findNearestNode should find building entrance', () => {
+    it('should return building entrance node when closest', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('5,5', { roadType: 0, roadFlags: 0, buildingId: 3 });
+      cells.set('5,6', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['5,6'], ['5,5']);
+
+      // Position inside the building → should find one of its door nodes
+      const nearest = graph.findNearestNode(5, 5);
+      expect(nearest).not.toBeNull();
+      expect(nearest!.type).toBe('building_entrance');
+      expect(nearest!.cellKey).toBe('5,5');
+    });
+  });
+
+  describe('B7: updateCells with buildings', () => {
+    it('should add building nodes when a building is placed', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['1,1'], []);
+
+      const nodesBefore = graph.getAllNodes().length;
+
+      // Place building at (1,0)
+      cells.set('1,0', { roadType: 0, roadFlags: 0, buildingId: 5 });
+      graph.updateCells(grid, ['1,0']);
+
+      const nodesAfter = graph.getAllNodes().length;
+      expect(nodesAfter).toBe(nodesBefore + 8); // 4 corners + 4 doors
+    });
+
+    it('should remove building nodes when a building is demolished', () => {
+      const cells = new Map<string, CellDef>();
+      cells.set('1,0', { roadType: 0, roadFlags: 0, buildingId: 5 });
+      cells.set('1,1', { roadType: RoadType.TWO_LANE, roadFlags: RoadDirection.EAST });
+      const grid = makeGrid(cells);
+      const graph = new SidewalkGraph();
+      graph.buildFromGrid(grid, ['1,1'], ['1,0']);
+
+      expect(graph.getNodesInCell('1,0').length).toBe(8);
+
+      // Remove building
+      cells.set('1,0', { roadType: 0, roadFlags: 0, buildingId: 0 });
+      graph.updateCells(grid, ['1,0']);
+
+      expect(graph.getNodesInCell('1,0').length).toBe(0);
     });
   });
 
