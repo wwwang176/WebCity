@@ -34,6 +34,7 @@ export function TransferOverlayPanel() {
         color: '#b0c4de',
         'font-size': '12px',
         'z-index': '50',
+        'pointer-events': 'auto',
         'backdrop-filter': 'blur(8px)',
         border: '1px solid rgba(66,165,245,0.2)',
       }}>
