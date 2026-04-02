@@ -2563,10 +2563,8 @@ export class Game {
     this.state.grid.forEachCell((cell, x, y) => {
       if (cell.buildingId && cell.buildingId > 0) {
         const key = `${x},${y}`;
-        if (homeSet.has(key)) {
-          this.transferHighlightCells.push({ x, y, color: 0x66bb6a }); // green - home
-        } else if (workSet.has(key)) {
-          this.transferHighlightCells.push({ x, y, color: 0x42a5f5 }); // blue - work
+        if (homeSet.has(key) || workSet.has(key)) {
+          this.transferHighlightCells.push({ x, y, color: 0xffffff }); // white - transfer building
         } else {
           this.transferHighlightCells.push({ x, y, color: 0x222222 }); // dark gray - dim
         }
