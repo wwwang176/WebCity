@@ -13,6 +13,7 @@ import { MiniMap } from './components/MiniMap';
 import { BuildingPanel } from './components/BuildingPanel';
 import { TutorialOverlay } from './components/Tutorial';
 import { TransferOverlayPanel } from './components/TransferOverlayPanel';
+import { CitizenDetailPanel } from './components/CitizenDetailPanel';
 
 import { OverviewModal } from './modals/OverviewModal';
 import { LayersModal } from './modals/LayersModal';
@@ -26,9 +27,11 @@ function LeftPanelStack() {
   const [nextOrder, setNextOrder] = createSignal(0);
   const [buildingOrder, setBuildingOrder] = createSignal(0);
   const [transferOrder, setTransferOrder] = createSignal(0);
+  const [citizenOrder, setCitizenOrder] = createSignal(0);
 
   const hasBuilding = () => gameSignals.selectedBuilding() !== null;
   const hasTransfer = () => gameSignals.selectedTransferRoute() !== null;
+  const hasCitizen = () => gameSignals.selectedCitizenId() !== null;
 
   createEffect(on(hasBuilding, (v, prev) => {
     if (v && !prev) { setBuildingOrder(nextOrder()); setNextOrder(n => n + 1); }
@@ -38,10 +41,15 @@ function LeftPanelStack() {
     if (v && !prev) { setTransferOrder(nextOrder()); setNextOrder(n => n + 1); }
   }));
 
+  createEffect(on(hasCitizen, (v, prev) => {
+    if (v && !prev) { setCitizenOrder(nextOrder()); setNextOrder(n => n + 1); }
+  }));
+
   return (
     <div id="left-panels">
       <BuildingPanel panelOrder={buildingOrder()} />
       <TransferOverlayPanel panelOrder={transferOrder()} />
+      <CitizenDetailPanel panelOrder={citizenOrder()} />
     </div>
   );
 }

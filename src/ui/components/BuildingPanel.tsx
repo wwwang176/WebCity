@@ -1,9 +1,9 @@
-import { Show, For, createSignal } from 'solid-js';
+import { Show, Index } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
-import { CitizenDetail } from './CitizenDetail';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
 import { UI_COLORS } from '../constants';
+import { STAGE_NAMES } from './citizenLabels';
 
 const ZONE_NAMES: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
@@ -228,7 +228,7 @@ function AbandonmentWarnings(props: { sel: SelectedZoneBuilding }) {
 }
 
 function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
-  const [selectedCitizen, setSelectedCitizen] = createSignal<number | null>(null);
+  const setSelectedCitizen = gameSignals.setSelectedCitizenId;
 
   const bt = () => props.sel.buildingType;
   const hasPower = () => props.sel.services.power >= 0;
@@ -246,11 +246,12 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
   const zoneName = () => ZONE_NAMES[props.sel.zoneType] ?? 'Unknown';
 
   const citizens = () => {
+    gameSignals.tick(); // refresh on tick so lifeStage/education stay current
     const key = `${props.sel.x},${props.sel.y}`;
     const cm = getGame().getState().citizens;
     return {
-      residents: cm.getCitizensByHome(key),
-      workers: cm.getCitizensByWorkplace(key),
+      residents: cm.getCitizensByHome(key).map(c => ({ ...c })),
+      workers: cm.getCitizensByWorkplace(key).map(c => ({ ...c })),
     };
   };
 
@@ -300,29 +301,26 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
       <div id="bp-citizen-list">
         <Show when={citizens().residents.length > 0}>
           <div style={`font-size:11px;color:${UI_COLORS.STATUS_GOOD};margin-top:4px`}>Residents ({citizens().residents.length})</div>
-          <For each={citizens().residents}>
+          <Index each={citizens().residents}>
             {(c) => (
-              <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
-                Citizen #{c.id} - {c.lifeStage}
+              <div class="bp-citizen" onClick={() => setSelectedCitizen(c().id)}>
+                Citizen #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
               </div>
             )}
-          </For>
+          </Index>
         </Show>
         <Show when={citizens().workers.length > 0}>
           <div style={`font-size:11px;color:${UI_COLORS.ACCENT};margin-top:4px`}>Workers ({citizens().workers.length})</div>
-          <For each={citizens().workers}>
+          <Index each={citizens().workers}>
             {(c) => (
-              <div class="bp-citizen" onClick={() => setSelectedCitizen(c.id)}>
-                Citizen #{c.id} - {c.lifeStage}
+              <div class="bp-citizen" onClick={() => setSelectedCitizen(c().id)}>
+                Citizen #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
               </div>
             )}
-          </For>
+          </Index>
         </Show>
       </div>
 
-      <Show when={selectedCitizen() !== null}>
-        <CitizenDetail citizenId={selectedCitizen()} />
-      </Show>
     </>
   );
 }
