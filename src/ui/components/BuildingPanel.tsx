@@ -250,8 +250,8 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
     const key = `${props.sel.x},${props.sel.y}`;
     const cm = getGame().getState().citizens;
     return {
-      residents: cm.getCitizensByHome(key),
-      workers: cm.getCitizensByWorkplace(key),
+      residents: cm.getCitizensByHome(key).map(c => ({ ...c })),
+      workers: cm.getCitizensByWorkplace(key).map(c => ({ ...c })),
     };
   };
 
