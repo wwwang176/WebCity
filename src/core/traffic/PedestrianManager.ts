@@ -483,16 +483,17 @@ export class PedestrianManager {
     if (!this.trafficLights) return true;
     if (!edge.intersectionCellKey) return true;
     const iPos = edge.intersectionCellKey.split(',');
-    const ix = Number(iPos[0]), iy = Number(iPos[1]);
-    // All-red clearance: nobody passes
-    const light = this.trafficLights.getLight(ix, iy);
-    if (light?.clearing) return false;
-    // Pedestrians cross PERPENDICULAR to traffic — they should cross when
-    // traffic in the approach direction is STOPPED (opposite of vehicle canPass).
+    const light = this.trafficLights.getLight(Number(iPos[0]), Number(iPos[1]));
+    if (!light) return true;
+    if (light.clearing) return false;
+    // Pedestrians cross perpendicular to traffic.
+    // Determine approach direction: from cell → intersection cell
     const fromPos = edge.from.cellKey.split(',');
-    return !this.trafficLights.canPass(
-      Number(fromPos[0]), Number(fromPos[1]),
-      ix, iy,
-    );
+    const dx = Number(iPos[0]) - Number(fromPos[0]);
+    const dy = Number(iPos[1]) - Number(fromPos[1]);
+    const isNS = dy !== 0;
+    // N-S approach → crosswalk crosses N-S road → safe when N-S stopped (phase 1)
+    // E-W approach → crosswalk crosses E-W road → safe when E-W stopped (phase 0)
+    return isNS ? light.phase === 1 : light.phase === 0;
   }
 }
