@@ -33,7 +33,8 @@ import { jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG } from '../citizen/Job
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
 import type { SchoolType, EnrolledCitizen } from '../service/EducationService';
 import { EDUCATION_PROGRESSION, MIN_SCHOOL_AGE, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
-import { chooseMode, type AvailableTransport } from '../transport/ModeChoice';
+import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../transport/ModeChoice';
+import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenSystems, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
 import { TransportMode } from '../transport/types';
@@ -108,6 +109,18 @@ export class SimulationLoop {
   private tripPoolDirty = true;
   private tripAggMap = new Map<string, AggregatedTrip>();
   private pendingTrips: AggregatedTrip[] = [];
+
+  // Multi-modal transfer graph (rebuilt when transit network changes)
+  private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
+  private transferGraphDirty = true;
+  private flatRoutes: FlatRoute[] = [];
+  /** Rolling 7-day ring buffer of transfer usage per route label. */
+  private transferHistory: Map<string, number>[] = Array.from({ length: 7 }, () => new Map());
+  private transferHistoryIndex = 0;
+  private transferToday = new Map<string, number>();
+  private lastTransferDay = -1;
+  /** Snapshot of active transfer pedestrians (updated daily to avoid per-tick re-renders). */
+  private transferPedsSnapshot = 0;
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
@@ -1344,6 +1357,7 @@ export class SimulationLoop {
     this.laneGraphDirty = true;
     this.sidewalkGraphDirty = true;
     this.tripPoolDirty = true;
+    this.transferGraphDirty = true;
     this.commuteCache.bumpGeneration();
     this.wpDistCache?.invalidate();
     if (affectedCells) {
@@ -1557,6 +1571,34 @@ export class SimulationLoop {
     }
     if (eligible.length === 0) return;
 
+    // Daily rollover for transfer usage counts (7-day ring buffer)
+    const day = this.state.clock.getDay();
+    if (day !== this.lastTransferDay) {
+      this.lastTransferDay = day;
+      // Flush today's counts into ring buffer, overwriting the oldest day
+      this.transferHistory[this.transferHistoryIndex] = new Map(this.transferToday);
+      this.transferHistoryIndex = (this.transferHistoryIndex + 1) % 7;
+      this.transferToday.clear();
+      // Snapshot active transfer pedestrians
+      let peds = 0;
+      for (const a of this.state.pedestrianManager.agents) {
+        if (a.tripType === 4) peds++;
+      }
+      this.transferPedsSnapshot = peds;
+    }
+
+    // Rebuild transfer graph when transit network has changed
+    if (this.transferGraphDirty) {
+      const systems = this.getTransitSystemInfos();
+      this.flatRoutes = flattenSystems(systems);
+      this.transferGraph = buildTransferGraph(this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE);
+      buildStopRouteCache(
+        this.flatRoutes, this.transferGraph,
+        SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
+      );
+      this.transferGraphDirty = false;
+    }
+
     const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
     let spawned = 0;
 
@@ -1576,10 +1618,17 @@ export class SimulationLoop {
       if (!fromPos || !toPos) continue;
       if (fromPos.x === toPos.x && fromPos.y === toPos.y) continue;
 
-      // --- Transport mode choice ---
+      // --- Transport mode choice (with multi-modal transfer support) ---
       const availableTransport = this.getAvailableTransit(fromPos, toPos);
       const congestion = this.state.traffic.getCongestionLevel();
-      const mode = chooseMode(fromPos, toPos, availableTransport, congestion);
+      const multiModalRoutes = findMultiModalRoutes(
+        this.flatRoutes, fromPos, toPos,
+        SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED,
+        SIMULATION.AVERAGE_WAIT_FACTOR, this.transferGraph, SIMULATION.MAX_TRIP_LEGS,
+      );
+      const { mode, multiLeg } = chooseModeMultiModal(
+        fromPos, toPos, availableTransport, multiModalRoutes, congestion,
+      );
 
       if (mode !== TransportMode.DRIVE) {
         // Collect walking trips for pedestrian spawning (trip pool)
@@ -1590,7 +1639,23 @@ export class SimulationLoop {
               toX: toPos.x, toY: toPos.y,
               tripType: PedestrianTripType.FULL_WALK, count: 1,
             });
+          } else if (multiLeg) {
+            // Multi-modal: generate pedestrian trips for each walk leg
+            const legs = multiLeg.legs;
+            for (let li = 0; li < legs.length; li++) {
+              const leg = legs[li]!;
+              if (leg.type !== 'walk') continue;
+              this.pendingTrips.push({
+                fromX: leg.fromX, fromY: leg.fromY,
+                toX: leg.toX, toY: leg.toY,
+                tripType: li === 0 ? PedestrianTripType.FIRST_MILE
+                  : li === legs.length - 1 ? PedestrianTripType.LAST_MILE
+                  : PedestrianTripType.TRANSFER_WALK,
+                count: 1,
+              });
+            }
           } else {
+            // Single-transit: first-mile + last-mile
             const transitSystem2 = getSystemForMode(this.state, mode);
             if (transitSystem2) {
               const originStop = this.findNearestStop(transitSystem2.getStops(), fromPos);
@@ -1613,10 +1678,32 @@ export class SimulationLoop {
           }
         }
 
-        const transitSystem = getSystemForMode(this.state, mode);
-        if (transitSystem) {
-          const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
-          if (nearest) { nearest.dailyRiders++; }
+        // Increment dailyRiders on each boarding stop
+        if (multiLeg) {
+          const rideLegs = multiLeg.legs.filter(l => l.type === 'ride');
+          for (const leg of rideLegs) {
+            if (leg.routeIdx !== undefined && leg.boardStopIdx !== undefined) {
+              const route = this.flatRoutes[leg.routeIdx];
+              if (route) {
+                const stop = route.stops[leg.boardStopIdx] as { dailyRiders: number } | undefined;
+                if (stop) stop.dailyRiders++;
+              }
+            }
+          }
+          // Track transfer usage per route label
+          if (rideLegs.length >= 2) {
+            const label = rideLegs.map(l => {
+              const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
+              return icons[l.transitType ?? ''] ?? '?';
+            }).join('\u2192');
+            this.transferToday.set(label, (this.transferToday.get(label) ?? 0) + 1);
+          }
+        } else {
+          const transitSystem = getSystemForMode(this.state, mode);
+          if (transitSystem) {
+            const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
+            if (nearest) { nearest.dailyRiders++; }
+          }
         }
         continue;
       }
@@ -1682,6 +1769,16 @@ export class SimulationLoop {
   }
 
 
+  private getTransitSystemInfos() {
+    return getTransitSystems(this.state).map(({ type, system }) => ({
+      type,
+      speed: system.getSpeed(),
+      vehicleCapacity: system.getCapacity(),
+      routes: system.getRoutes(),
+      getSegmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
+    }));
+  }
+
   /**
    * Find available transit options that cover travel between origin and destination.
    * A transit route "covers" a trip if it has stops within walking distance (≤ 5 cells)
@@ -1691,14 +1788,7 @@ export class SimulationLoop {
     origin: { x: number; y: number },
     destination: { x: number; y: number },
   ): AvailableTransport[] {
-    const systems = getTransitSystems(this.state).map(({ type, system }) => ({
-      type,
-      speed: system.getSpeed(),
-      vehicleCapacity: system.getCapacity(),
-      routes: system.getRoutes(),
-      getSegmentDistances: (routeId: number) => system.getSegmentDistances(routeId),
-    }));
-    return findAvailableTransit(systems, origin, destination, SIMULATION.WALK_TO_STOP_RANGE);
+    return findAvailableTransit(this.getTransitSystemInfos(), origin, destination, SIMULATION.WALK_TO_STOP_RANGE);
   }
 
   /**
@@ -2008,6 +2098,89 @@ export class SimulationLoop {
 
     // Hand the pool to PedestrianManager for continuous per-frame spawning
     this.state.pedestrianManager.setTripPool(this.walkingTripPool, population);
+  }
+
+  getTransferHistory() {
+    return {
+      history: this.transferHistory,
+      index: this.transferHistoryIndex,
+      today: this.transferToday,
+      pedsSnapshot: this.transferPedsSnapshot,
+      lastDay: this.lastTransferDay,
+    };
+  }
+
+  setTransferHistory(data: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay?: number }) {
+    this.transferHistory = data.history;
+    this.transferHistoryIndex = data.index;
+    this.transferToday = data.today;
+    this.transferPedsSnapshot = data.pedsSnapshot;
+    if (data.lastDay !== undefined) this.lastTransferDay = data.lastDay;
+  }
+
+  /** Transfer stats for UI display. */
+  getTransferStats(): {
+    activeTransferPeds: number;
+    totalActivePeds: number;
+    transferTrips: number;
+    cachedRoutes: number;
+    multiRideRoutes: number;
+    transferEdges: number;
+    routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }>;
+  } {
+    const activeTransferPeds = this.transferPedsSnapshot;
+
+    const pool = this.walkingTripPool;
+    let transferTrips = 0;
+    for (const t of pool.trips) {
+      if (t.tripType === 4) transferTrips += t.count; // TRANSFER_WALK
+    }
+
+    const cache = this.transferGraph.stopRouteCache;
+    let multiRideRoutes = 0;
+    // Group by ride-count + transit type sequence
+    const groups = new Map<string, { count: number; totalTime: number }>();
+    cache.forEach(route => {
+      const rideLegs = route.legs.filter(l => l.type === 'ride');
+      const rides = rideLegs.length;
+      if (rides >= 2) multiRideRoutes++;
+      const label = rideLegs.map(l => {
+        const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
+        return icons[l.transitType ?? ''] ?? l.transitType ?? '?';
+      }).join('\u2192');
+      const g = groups.get(label);
+      if (g) { g.count++; g.totalTime += route.totalTime; }
+      else groups.set(label, { count: 1, totalTime: route.totalTime });
+    });
+
+    // Sum 7-day ring buffer + today for weekly totals
+    const weeklyTotals = new Map<string, number>();
+    for (const dayMap of this.transferHistory) {
+      for (const [label, count] of dayMap) {
+        weeklyTotals.set(label, (weeklyTotals.get(label) ?? 0) + count);
+      }
+    }
+    for (const [label, count] of this.transferToday) {
+      weeklyTotals.set(label, (weeklyTotals.get(label) ?? 0) + count);
+    }
+
+    const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number; weeklyUse: number }> = [];
+    groups.forEach((g, label) => {
+      const rides = (label.match(/\u2192/g) || []).length + 1;
+      const weeklyUse = weeklyTotals.get(label) ?? 0;
+      routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count, weeklyUse });
+    });
+    routeBreakdown.sort((a, b) => b.weeklyUse - a.weeklyUse);
+
+    return {
+      activeTransferPeds,
+      totalActivePeds: this.state.pedestrianManager.agents.length,
+      transferTrips,
+      cachedRoutes: cache.size,
+      multiRideRoutes,
+      transferEdges: this.transferGraph.byStop.size,
+      routeBreakdown,
+    };
   }
 
   private findNearestStop(

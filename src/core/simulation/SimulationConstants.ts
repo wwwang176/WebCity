@@ -65,6 +65,14 @@ export const SIMULATION = {
   SAMPLE_DIVISOR: 5,
   /** Walking distance to transit stop (cells) */
   WALK_TO_STOP_RANGE: 5,
+  /** Max Manhattan distance for transfer walks between stops of different routes */
+  TRANSFER_WALK_RANGE: 3,
+  /** Walk speed in cells/tick for mode-choice time estimation */
+  WALK_SPEED: 1,
+  /** Maximum legs per multi-modal trip (walk counts as a leg) */
+  MAX_TRIP_LEGS: 7,
+  /** Average wait = headway × this factor */
+  AVERAGE_WAIT_FACTOR: 0.5,
   /** Industrial zone pollution reduction factor */
   INDUSTRIAL_POLLUTION_FACTOR: 0.2,
   /** Export demand base value for RCI calculation */

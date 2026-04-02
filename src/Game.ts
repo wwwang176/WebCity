@@ -468,9 +468,12 @@ export class Game {
       // Worker not available (e.g. test environment) — falls back to sync Dijkstra
     }
     // Restore abandonment stress from loaded save
-    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number>; elevationData?: unknown } } | undefined)?._extra;
+    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number>; elevationData?: unknown; transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number } } } | undefined)?._extra;
     if (extra?.abandonmentStress) {
       this.simLoop.abandonmentStress = extra.abandonmentStress;
+    }
+    if (extra?.transferHistory) {
+      this.simLoop.setTransferHistory(extra.transferHistory);
     }
     // elevationData is restored after elevationManager is initialized (below)
     this.simLoop.onTerrainChanged = () => {
@@ -1279,7 +1282,7 @@ export class Game {
 
         // Auto-save (off main thread via SaveWorker)
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
-          const snapshot = snapshotGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
+          const snapshot = snapshotGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
           if (this.saveWorker) {
             this.saveWorker.postMessage({ type: 'SAVE', snapshot, slotId: 0, name: 'AutoSave', population: this.state.citizens.getPopulation() });
           } else {
@@ -2309,13 +2312,13 @@ export class Game {
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
-    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
     const population = this.state.citizens.getPopulation();
     await saveGame(slotId, name, data, population);
   }
 
   exportCurrentGame(): void {
-    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager });
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
     const population = this.state.citizens.getPopulation();
     exportSaveToFile({
       id: 0,
@@ -2505,6 +2508,10 @@ export class Game {
       avgPathLength: this.state.traffic.getAveragePathLength(),
       roadTileCount: countRoadTiles(this.state.grid),
     });
+  }
+
+  getTransferStats() {
+    return this.simLoop.getTransferStats();
   }
 
   /** Toggle pause state (DRY: used by keyboard + UI). */

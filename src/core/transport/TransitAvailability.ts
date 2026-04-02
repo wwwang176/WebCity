@@ -82,7 +82,7 @@ export function findAvailableTransit(
  * Compute ride distance along the route between two stop indices.
  * Picks the shorter direction around the circular route.
  */
-function computeRideDistance(
+export function computeRideDistance(
   stops: readonly TransportStop[],
   fromIdx: number,
   toIdx: number,
