@@ -346,6 +346,43 @@ level = clamp(ceil(serviceCoverage / 3), 1, 3)
 
 ---
 
+## 基礎設施面板（Per-Type Infra Panels）
+
+基礎設施的建築面板根據設施類型顯示不同資訊：
+
+| 面板類型 | 適用設施 | 顯示內容 |
+|---------|---------|---------|
+| NeedCapacityPanel | 警局、消防局、醫院、污水廠 | Need/Capacity/Radius/負載率，過載警告 |
+| SchoolPanel | 小學、高中、大學 | Type/Need/Students/Radius，超額警告 |
+| GarbagePanel | 垃圾場 | Load/Produced per wk/Burned per wk，溢出警告 |
+| CemeteryPanel | 墓園 | Bodies/Deaths per wk/Cremated per wk |
+| UtilityPlantPanel | 電廠、水廠、機場 | Output/Supply/Demand |
+| ParkPanel | 公園 | Radius |
+
+所有設施面板顯示電力/水力狀態指示器（紅色=無/綠色=有）。
+
+---
+
+## 玻璃鏡面反射 (Glass Specular Reflection)
+
+商業高密度和辦公建築的玻璃帷幕具有太陽鏡面反射效果：
+
+### 反射計算
+
+- **Phong 模型**: `pow(max(dot(normal, halfDir), 0.0), 24.0)`（指數 24，銳利高光）
+- **半向量**: `halfDir = normalize(sunDir + viewDir)`（僅水平面計算）
+- **朝陽判定**: `facingSun = max(dot(normal, sunDir), 0.0)` — 只有朝向太陽的表面反射
+- **強度**: `spec × sunColor × 0.8`（80% 太陽色強度）
+- **陰影感知**: 反射乘以 `rawShadow` — 陰影中無反射
+
+### 日夜轉換
+
+- **白天**: 藍白色玻璃反射 `(0.6, 0.72, 0.82)`，隨太陽強度淡入
+- **夜晚**: 暖黃色窗戶發光 `(0.95, 0.85, 0.5)`
+- **每棟建築隨機偏移**: 燈光不會同時開關，使用位置雜湊產生 0.3 的太陽強度偏移
+
+---
+
 ## 增量建築渲染（Incremental Building Renderer）
 
 傳統做法是每當玩家放置道路或建築時，重建整個場景的所有 mesh。增量渲染改為**逐格新增/移除**（per-cell add/remove），避免全場景重建的高成本操作。
