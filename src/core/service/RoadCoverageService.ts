@@ -41,10 +41,11 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     return `${this.idPrefix}${this.nextId++}`;
   }
 
-  /** Push a facility and mark it connected (placement requires road adjacency). */
+  /** Push a facility and mark it connected + operational (placement requires road adjacency). */
   protected pushFacility(f: F): void {
     this.facilities.push(f);
     this.connectedFacilityIds.add(f.id);
+    if (this.operationalIds) this.operationalIds.add(f.id);
   }
 
   /** Restore nextId from loaded facilities (for fromJSON). Also marks all loaded facilities as connected. */
