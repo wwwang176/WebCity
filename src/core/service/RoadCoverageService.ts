@@ -2,6 +2,7 @@ import { isFootprintAdjacentToRoad, type SizedGrid } from '../grid/GridHelpers';
 import { RoadCoverageMap } from './RoadCoverageFlood';
 import type { ServiceFacilityProvider } from '../traffic/ServiceVehicleManager';
 import { removeById } from '../utils/removeById';
+import { RESERVED_TO_ROTATION } from '../building/InfraPlacement';
 
 /** Minimum facility shape: must have id and position. */
 export interface Facility {
@@ -69,24 +70,33 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     return this.coverage.getCoveredCells();
   }
 
-  recalculateCoverage(
-    grid: SizedGrid,
-    facilityWidth = this.defaultFacilityWidth,
-    facilityHeight = this.defaultFacilityHeight,
-  ): void {
+  recalculateCoverage(grid: SizedGrid): void {
     const active = this.operationalIds
       ? this.facilities.filter(f => this.operationalIds!.has(f.id))
       : this.facilities;
-    this.coverage.recalculate(active, grid, this.coverageBudget, facilityWidth, facilityHeight);
+    const baseW = this.defaultFacilityWidth;
+    const baseH = this.defaultFacilityHeight;
+    const getSize = (f: { x: number; y: number }) => {
+      const cell = grid.getCell(f.x, f.y);
+      const rotation = cell ? (RESERVED_TO_ROTATION[cell.reserved] ?? 0) : 0;
+      const swapped = rotation === 90 || rotation === 270;
+      return { w: swapped ? baseH : baseW, h: swapped ? baseW : baseH };
+    };
+    this.coverage.recalculate(active, grid, this.coverageBudget, baseW, baseH, getSize);
     this.updateConnectedFacilities(grid);
   }
 
   /** Recompute which facilities are adjacent to at least one road cell. */
   protected updateConnectedFacilities(grid: SizedGrid): void {
     this.connectedFacilityIds.clear();
-    const w = this.defaultFacilityWidth;
-    const h = this.defaultFacilityHeight;
+    const baseW = this.defaultFacilityWidth;
+    const baseH = this.defaultFacilityHeight;
     for (const f of this.facilities) {
+      const cell = grid.getCell(f.x, f.y);
+      const rotation = cell ? (RESERVED_TO_ROTATION[cell.reserved] ?? 0) : 0;
+      const swapped = rotation === 90 || rotation === 270;
+      const w = swapped ? baseH : baseW;
+      const h = swapped ? baseW : baseH;
       if (isFootprintAdjacentToRoad(grid, f.x, f.y, w, h)) {
         this.connectedFacilityIds.add(f.id);
       }

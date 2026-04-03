@@ -253,20 +253,24 @@ export class RoadCoverageMap {
     }
   }
 
-  /** Recalculate coverage from all facilities. Call when facilities or roads change. */
+  /** Recalculate coverage from all facilities. Call when facilities or roads change.
+   *  @param getSize Optional per-facility size resolver (for rotation-aware footprints).
+   */
   recalculate(
     facilities: readonly { x: number; y: number }[],
     grid: SizedGrid,
     budget: number,
     facilityWidth = 1,
     facilityHeight = 1,
+    getSize?: (f: { x: number; y: number }) => { w: number; h: number },
   ): void {
     this.ensureArrays(grid.width, grid.height);
     this.main!.clear();
     this.lastBudget = budget;
 
     for (const f of facilities) {
-      const positions = expandFootprint(f.x, f.y, facilityWidth, facilityHeight);
+      const size = getSize ? getSize(f) : { w: facilityWidth, h: facilityHeight };
+      const positions = expandFootprint(f.x, f.y, size.w, size.h);
       const roadCov = roadFlood(grid, positions, budget);
       const fullCov = expandCoverageToBuildings(grid, roadCov);
       this.main!.applyFlood(fullCov, budget);
