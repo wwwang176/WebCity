@@ -5,10 +5,10 @@ import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
-let _roadLookup: UnifiedRoadLookup | null = null;
-
+/** @deprecated Use ShoppingAccess.setRoadLookup() instead. */
 export function setShoppingRoadLookup(lookup: UnifiedRoadLookup): void {
-  _roadLookup = lookup;
+  // Backward compat — callers should migrate to instance method.
+  // This no-ops since ShoppingAccess now holds its own reference.
 }
 
 export interface ResidentialShoppingStatus {
@@ -42,6 +42,13 @@ export class ShoppingAccess {
   /** Per commercial building: component-wide ratio. */
   private commercialStatus = new Map<string, { ratio: number; hasCustomers: boolean }>();
   private hasCalculated = false;
+  /** Level-aware road lookup (DIP: injected via setRoadLookup, not module-level state). */
+  private roadLookup: UnifiedRoadLookup | null = null;
+
+  /** Set the road lookup for level-aware BFS. Call after construction. */
+  setRoadLookup(lookup: UnifiedRoadLookup): void {
+    this.roadLookup = lookup;
+  }
 
   /**
    * Single-pass flood-fill to find connected components and compute ratios.
@@ -64,7 +71,7 @@ export class ShoppingAccess {
       if (globalVisitedPositions.has(posKey)) return;
       if (cell.roadType === RoadType.NONE && cell.buildingId === 0 && cell.zoneType === 0) {
         // Check if there's an elevated road at this position
-        if (!_roadLookup || _roadLookup.getAllKeysAtPosition(x, y).length === 0) return;
+        if (!this.roadLookup || this.roadLookup.getAllKeysAtPosition(x, y).length === 0) return;
       }
 
       // BFS to discover entire connected component (level-aware)
@@ -85,8 +92,8 @@ export class ShoppingAccess {
       }
 
       // Add elevated road seeds at this position
-      if (_roadLookup) {
-        const allKeys = _roadLookup.getAllKeysAtPosition(x, y);
+      if (this.roadLookup) {
+        const allKeys = this.roadLookup.getAllKeysAtPosition(x, y);
         for (const k of allKeys) {
           if (!globalVisited.has(k)) {
             globalVisited.add(k);
@@ -131,8 +138,8 @@ export class ShoppingAccess {
           const ny = cy + dy!;
 
           // Road neighbors via level-aware lookup
-          if (_roadLookup) {
-            const compatibleKeys = _roadLookup.getCompatibleNeighborKeys(curKey, nx, ny);
+          if (this.roadLookup) {
+            const compatibleKeys = this.roadLookup.getCompatibleNeighborKeys(curKey, nx, ny);
             for (const nk of compatibleKeys) {
               if (globalVisited.has(nk)) continue;
               globalVisited.add(nk);

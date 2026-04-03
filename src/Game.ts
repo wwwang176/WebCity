@@ -83,7 +83,6 @@ import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath, validateElevatedPath } from './core/elevation';
 import { setNetworkRoadLookup } from './core/service/NetworkCoverage';
 import { setRoadCoverageRoadLookup } from './core/service/RoadCoverageFlood';
-import { setShoppingRoadLookup } from './core/economy/ShoppingAccess';
 import { UnifiedRoadLookup } from './core/road/UnifiedRoadLookup';
 
 export type PlacementMode = 'ground' | 'elevated';
@@ -529,7 +528,7 @@ export class Game {
     this.simLoop.setRoadLookup(this.roadLookup);
     setNetworkRoadLookup(this.roadLookup);
     setRoadCoverageRoadLookup(this.roadLookup);
-    setShoppingRoadLookup(this.roadLookup);
+    this.state.shopping.setRoadLookup(this.roadLookup);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);
