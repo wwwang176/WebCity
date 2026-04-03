@@ -79,7 +79,7 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     const baseH = this.defaultFacilityHeight;
     const getSize = (f: { x: number; y: number }) => {
       const cell = grid.getCell(f.x, f.y);
-      const rotation = cell ? (RESERVED_TO_ROTATION[cell.reserved] ?? 0) : 0;
+      const rotation = cell?.reserved !== undefined ? (RESERVED_TO_ROTATION[cell.reserved] ?? 0) : 0;
       const swapped = rotation === 90 || rotation === 270;
       return { w: swapped ? baseH : baseW, h: swapped ? baseW : baseH };
     };
@@ -94,7 +94,7 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     const baseH = this.defaultFacilityHeight;
     for (const f of this.facilities) {
       const cell = grid.getCell(f.x, f.y);
-      const rotation = cell ? (RESERVED_TO_ROTATION[cell.reserved] ?? 0) : 0;
+      const rotation = cell?.reserved !== undefined ? (RESERVED_TO_ROTATION[cell.reserved] ?? 0) : 0;
       const swapped = rotation === 90 || rotation === 270;
       const w = swapped ? baseH : baseW;
       const h = swapped ? baseW : baseH;
