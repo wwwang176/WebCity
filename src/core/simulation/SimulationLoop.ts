@@ -22,7 +22,7 @@ import { forEachGridPollutionSource } from '../environment/GridPollutionSources'
 import { forEachServicePollutionSource } from '../environment/PollutionSourceRegistry';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
-import { isWorkingAge, EducationLevel, type Citizen } from '../citizen/types';
+import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
@@ -44,6 +44,7 @@ import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDist
 import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
+import { calculatePoliceLoads, calculateFireLoads } from '../service/PoliceFireLoadCalculator';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
 import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
 import { collectTradePositions, type TradePosition } from '../traffic/FreightTradeCollector';
@@ -61,6 +62,7 @@ import { TRADE, FreightRouteType } from '../traffic/FreightSystem';
 import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
 
 import { SIMULATION } from './SimulationConstants';
+import { TransferTracker } from '../transport/TransferTracker';
 
 
 /** Map CitizenManager schoolKey to EducationService SchoolType */
@@ -114,17 +116,8 @@ export class SimulationLoop {
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
   private flatRoutes: FlatRoute[] = [];
-  /** Rolling 7-day ring buffer of transfer usage per route label. */
-  private transferHistory: Map<string, number>[] = Array.from({ length: 7 }, () => new Map());
-  private transferHistoryIndex = 0;
-  private transferToday = new Map<string, number>();
-  private lastTransferDay = -1;
-  /** Snapshot of active transfer pedestrians (updated daily to avoid per-tick re-renders). */
-  private transferPedsSnapshot = 0;
-  /** Recent buildings using each transfer route label → {homes, works} position sets. */
-  private transferBuildingsRecent = new Map<string, { homes: Set<string>; works: Set<string> }>();
-  /** Callback fired when transfer daily data rolls over. */
-  onTransferDataChanged: (() => void) | null = null;
+  /** Transfer usage tracking (extracted — SRP). */
+  readonly transferTracker = new TransferTracker();
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
@@ -659,72 +652,13 @@ export class SimulationLoop {
     this.state.education.updateSchoolLoads(enrolled, eligible);
   }
 
-  /** Police demand weight by education level (avg = 1.0). */
-  private static readonly POLICE_EDUCATION_MULT: Record<string, number> = {
-    [EducationLevel.NONE]: 2.0,
-    [EducationLevel.ELEMENTARY]: 1.1,
-    [EducationLevel.HIGH_SCHOOL]: 0.6,
-    [EducationLevel.UNIVERSITY]: 0.3,
-  };
-  /** Police demand weight by workplace zone type. */
-  private static readonly POLICE_ZONE_MULT: Partial<Record<ZoneType, number>> = {
-    [ZoneType.INDUSTRIAL]: 1.5,
-    [ZoneType.COMMERCIAL_LOW]: 1.0, [ZoneType.COMMERCIAL_HIGH]: 1.0,
-    [ZoneType.OFFICE]: 0.5,
-  };
-  /** Fire demand weight by workplace zone type. */
-  private static readonly FIRE_ZONE_MULT: Partial<Record<ZoneType, number>> = {
-    [ZoneType.INDUSTRIAL]: 2.0,
-    [ZoneType.COMMERCIAL_LOW]: 1.2, [ZoneType.COMMERCIAL_HIGH]: 1.2,
-    [ZoneType.OFFICE]: 0.8,
-  };
-  private static readonly BASE_DEMAND = 0.3;
-
   private updatePoliceFireLoads(): void {
-    const policeDemands: Array<{ x: number; y: number; weight: number }> = [];
-    const fireDemands: Array<{ x: number; y: number; weight: number }> = [];
-    const BD = SimulationLoop.BASE_DEMAND;
+    const citizens = this.state.citizens.getCitizens();
+    const grid = this.state.grid;
+    const getResidents = (id: number) => getBuildingType(id)?.residents ?? 1;
 
-    // Pre-compute occupancy count per home for fire demand
-    const homePop = new Map<string, number>();
-    for (const c of this.state.citizens.getCitizens()) {
-      if (c.homeId) homePop.set(c.homeId, (homePop.get(c.homeId) ?? 0) + 1);
-    }
-
-    for (const c of this.state.citizens.getCitizens()) {
-      // Residential demand (by home)
-      if (c.homeId) {
-        const pos = parsePosKey(c.homeId);
-        if (pos) {
-          if (this.state.police.getCoverage(pos.x, pos.y)) {
-            const eMult = SimulationLoop.POLICE_EDUCATION_MULT[c.education] ?? 1.0;
-            policeDemands.push({ x: pos.x, y: pos.y, weight: BD * eMult });
-          }
-          if (this.state.fire.getCoverage(pos.x, pos.y)) {
-            const cell = this.state.grid.getCell(pos.x, pos.y);
-            const cap = Math.max(1, getBuildingType(cell?.buildingId ?? 0)?.residents ?? 1);
-            const occ = (homePop.get(c.homeId) ?? 0) / cap;
-            fireDemands.push({ x: pos.x, y: pos.y, weight: BD * (1 + occ) });
-          }
-        }
-      }
-      // Workplace demand (by job location)
-      if (c.workplaceId) {
-        const wpos = parsePosKey(c.workplaceId);
-        if (wpos) {
-          const wcell = this.state.grid.getCell(wpos.x, wpos.y);
-          const zt = wcell?.zoneType ?? ZoneType.NONE;
-          if (this.state.police.getCoverage(wpos.x, wpos.y)) {
-            const zMult = SimulationLoop.POLICE_ZONE_MULT[zt] ?? 1.0;
-            policeDemands.push({ x: wpos.x, y: wpos.y, weight: BD * zMult });
-          }
-          if (this.state.fire.getCoverage(wpos.x, wpos.y)) {
-            const zMult = SimulationLoop.FIRE_ZONE_MULT[zt] ?? 1.0;
-            fireDemands.push({ x: wpos.x, y: wpos.y, weight: BD * zMult });
-          }
-        }
-      }
-    }
+    const policeDemands = calculatePoliceLoads(citizens, this.state.police, grid);
+    const fireDemands = calculateFireLoads(citizens, this.state.fire, grid, getResidents);
 
     this.state.police.updateStationLoads(policeDemands);
     this.state.fire.updateStationLoads(fireDemands);
@@ -1600,19 +1534,13 @@ export class SimulationLoop {
 
     // Daily rollover for transfer usage counts (7-day ring buffer)
     const day = this.state.clock.getDay();
-    if (day !== this.lastTransferDay) {
-      this.lastTransferDay = day;
-      // Flush today's counts into ring buffer, overwriting the oldest day
-      this.transferHistory[this.transferHistoryIndex] = new Map(this.transferToday);
-      this.transferHistoryIndex = (this.transferHistoryIndex + 1) % 7;
-      this.transferToday.clear();
-      // Snapshot active transfer pedestrians
+    if (day !== this.transferTracker.getLastDay()) {
+      this.transferTracker.setLastDay(day);
       let peds = 0;
       for (const a of this.state.pedestrianManager.agents) {
         if (a.tripType === 4) peds++;
       }
-      this.transferPedsSnapshot = peds;
-      this.onTransferDataChanged?.();
+      this.transferTracker.rolloverDay(peds);
     }
 
     // Rebuild transfer graph when transit network has changed
@@ -1625,7 +1553,7 @@ export class SimulationLoop {
         SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
       );
       this.transferGraphDirty = false;
-      this.transferBuildingsRecent.clear();
+      this.transferTracker.clearBuildings();
     }
 
     const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
@@ -1725,12 +1653,8 @@ export class SimulationLoop {
               const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
               return icons[l.transitType ?? ''] ?? '?';
             }).join('\u2192');
-            this.transferToday.set(label, (this.transferToday.get(label) ?? 0) + 1);
-            // Track actual buildings using this transfer route
-            let bldgs = this.transferBuildingsRecent.get(label);
-            if (!bldgs) { bldgs = { homes: new Set(), works: new Set() }; this.transferBuildingsRecent.set(label, bldgs); }
-            bldgs.homes.add(citizen.homeId!);
-            bldgs.works.add(citizen.workplaceId!);
+            this.transferTracker.recordTransfer(label);
+            this.transferTracker.recordBuilding(label, citizen.homeId!, citizen.workplaceId!);
           }
         } else {
           const transitSystem = getSystemForMode(this.state, mode);
@@ -2135,28 +2059,16 @@ export class SimulationLoop {
   }
 
   getTransferHistory() {
-    return {
-      history: this.transferHistory,
-      index: this.transferHistoryIndex,
-      today: this.transferToday,
-      pedsSnapshot: this.transferPedsSnapshot,
-      lastDay: this.lastTransferDay,
-    };
+    return this.transferTracker.getHistory();
   }
 
   setTransferHistory(data: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay?: number }) {
-    this.transferHistory = data.history;
-    this.transferHistoryIndex = data.index;
-    this.transferToday = data.today;
-    this.transferPedsSnapshot = data.pedsSnapshot;
-    if (data.lastDay !== undefined) this.lastTransferDay = data.lastDay;
+    this.transferTracker.setHistory(data as any);
   }
 
   /** Get buildings that recently used a specific transfer route label. */
   getTransferBuildings(label: string): { homes: string[]; works: string[] } {
-    const bldgs = this.transferBuildingsRecent.get(label);
-    if (!bldgs) return { homes: [], works: [] };
-    return { homes: [...bldgs.homes], works: [...bldgs.works] };
+    return this.transferTracker.getBuildings(label);
   }
 
   /** Get stop coordinates for a specific transfer route label (for map overlay). */
@@ -2190,7 +2102,7 @@ export class SimulationLoop {
     transferEdges: number;
     routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }>;
   } {
-    const activeTransferPeds = this.transferPedsSnapshot;
+    const activeTransferPeds = this.transferTracker.getPedsSnapshot();
 
     const pool = this.walkingTripPool;
     let transferTrips = 0;
@@ -2200,7 +2112,6 @@ export class SimulationLoop {
 
     const cache = this.transferGraph.stopRouteCache;
     let multiRideRoutes = 0;
-    // Group by ride-count + transit type sequence
     const groups = new Map<string, { count: number; totalTime: number }>();
     cache.forEach(route => {
       const rideLegs = route.legs.filter(l => l.type === 'ride');
@@ -2215,16 +2126,7 @@ export class SimulationLoop {
       else groups.set(label, { count: 1, totalTime: route.totalTime });
     });
 
-    // Sum 7-day ring buffer + today for weekly totals
-    const weeklyTotals = new Map<string, number>();
-    for (const dayMap of this.transferHistory) {
-      for (const [label, count] of dayMap) {
-        weeklyTotals.set(label, (weeklyTotals.get(label) ?? 0) + count);
-      }
-    }
-    for (const [label, count] of this.transferToday) {
-      weeklyTotals.set(label, (weeklyTotals.get(label) ?? 0) + count);
-    }
+    const weeklyTotals = this.transferTracker.getAllWeeklyTotals();
 
     const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number; weeklyUse: number }> = [];
     groups.forEach((g, label) => {

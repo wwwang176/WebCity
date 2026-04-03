@@ -2,8 +2,9 @@ import { Grid } from '../grid/Grid';
 import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
-import { getInfraConfigById, getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, calculateZoneDemand } from './NetworkCoverage';
+import { getInfraBuildingId } from '../building/InfraConfig';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 
 export interface PowerPlant {
   x: number;
@@ -57,6 +58,14 @@ const INFRA_TYPE_TO_CONSUMPTION_KEY: Record<string, string> = {
 // Power plant buildingId — excluded from demand
 const POWER_PLANT_ID = getInfraBuildingId('power');
 
+/** Shared demand config for calculateUtilityCellDemand (DRY). */
+const POWER_DEMAND_CONFIG: UtilityCellDemandConfig = {
+  zoneConsumption: POWER_CONSUMPTION,
+  infraConsumption: INFRA_POWER_CONSUMPTION,
+  infraTypeToKey: INFRA_TYPE_TO_CONSUMPTION_KEY,
+  excludedBuildingId: POWER_PLANT_ID,
+};
+
 export class PowerGrid {
   private plants: PowerPlant[] = [];
   private powered = new Set<string>();
@@ -99,23 +108,11 @@ export class PowerGrid {
     let demand = 0;
     grid.forEachCell((cell) => {
       if (cell.buildingId <= 0) return;
-
-      // Check if it's a zone building
       const bt = getBuildingType(cell.buildingId);
-      if (bt) {
-        demand += this.getZoneDemand(cell.zoneType, bt.residents, bt.workers);
-        return;
-      }
-
-      // Check if it's an infrastructure building (not power plant)
-      if (cell.buildingId === POWER_PLANT_ID) return;
-      const infraCfg = getInfraConfigById(cell.buildingId);
-      if (infraCfg) {
-        const key = INFRA_TYPE_TO_CONSUMPTION_KEY[infraCfg.type];
-        if (key && INFRA_POWER_CONSUMPTION[key] !== undefined) {
-          demand += INFRA_POWER_CONSUMPTION[key];
-        }
-      }
+      demand += calculateUtilityCellDemand(
+        POWER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
+        bt?.residents ?? 0, bt?.workers ?? 0,
+      );
     });
     this.totalDemand = demand;
   }
@@ -159,20 +156,10 @@ export class PowerGrid {
     const cell = grid.getCell(x, y);
     if (!cell || cell.buildingId <= 0) return 0;
     const bt = getBuildingType(cell.buildingId);
-    if (bt) return this.getZoneDemand(cell.zoneType, bt.residents, bt.workers);
-    if (cell.buildingId === POWER_PLANT_ID) return 0;
-    const infraCfg = getInfraConfigById(cell.buildingId);
-    if (infraCfg) {
-      const key = INFRA_TYPE_TO_CONSUMPTION_KEY[infraCfg.type];
-      if (key && INFRA_POWER_CONSUMPTION[key] !== undefined) {
-        return INFRA_POWER_CONSUMPTION[key];
-      }
-    }
-    return 0;
-  }
-
-  private getZoneDemand(zoneType: ZoneType, residents: number, workers: number): number {
-    return calculateZoneDemand(POWER_CONSUMPTION, zoneType, residents, workers);
+    return calculateUtilityCellDemand(
+      POWER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
+      bt?.residents ?? 0, bt?.workers ?? 0,
+    );
   }
 
   // BFS methods extracted to NetworkCoverage.ts (bfsRoadNetworkFlood / bfsBudgetDrainFlood)

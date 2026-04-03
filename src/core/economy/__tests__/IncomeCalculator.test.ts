@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateZoneIncomes, type IncomeCalcDeps } from '../IncomeCalculator';
+import { calculateZoneIncomes, calculateBuildingIncome, type IncomeCalcDeps, type BuildingIncomeDeps } from '../IncomeCalculator';
 import { ZoneType } from '../../grid/types';
 import { EducationLevel } from '../../citizen/types';
 
@@ -153,5 +153,75 @@ describe('calculateZoneIncomes', () => {
     });
     const result = calculateZoneIncomes(deps);
     expect(result.commercial).toBeGreaterThan(0);
+  });
+});
+
+describe('calculateBuildingIncome (DRY extraction)', () => {
+  function makeBldDeps(overrides: Partial<BuildingIncomeDeps> = {}): BuildingIncomeDeps {
+    return {
+      taxRates: overrides.taxRates ?? { residential: 9, business: 9 },
+      getResidentEducations: overrides.getResidentEducations ?? (() => []),
+      isPowered: overrides.isPowered,
+      getRevenueMultiplier: overrides.getRevenueMultiplier,
+      getFreightSupply: overrides.getFreightSupply,
+      freightSurplusRatio: overrides.freightSurplusRatio,
+      isExporting: overrides.isExporting,
+      getWorkerCount: overrides.getWorkerCount,
+    };
+  }
+
+  it('returns 0 for unpowered building', () => {
+    const deps = makeBldDeps({ isPowered: () => false });
+    expect(calculateBuildingIncome(deps, 0, 0, 7)).toBe(0);
+  });
+
+  it('returns 0 for invalid buildingId', () => {
+    const deps = makeBldDeps();
+    expect(calculateBuildingIncome(deps, 0, 0, 99999)).toBe(0);
+  });
+
+  it('calculates residential income from education', () => {
+    const deps = makeBldDeps({
+      taxRates: { residential: 10, business: 9 },
+      getResidentEducations: () => [EducationLevel.NONE, EducationLevel.UNIVERSITY],
+    });
+    const income = calculateBuildingIncome(deps, 1, 1, 1);
+    expect(income).toBeGreaterThan(0);
+  });
+
+  it('calculates commercial income from companyIncome', () => {
+    const deps = makeBldDeps({
+      taxRates: { residential: 9, business: 10 },
+    });
+    // buildingId 7 = Small Shop, COMMERCIAL_LOW
+    const income = calculateBuildingIncome(deps, 2, 2, 7);
+    expect(income).toBeGreaterThan(0);
+  });
+
+  it('applies revenue multiplier', () => {
+    const base = makeBldDeps({ taxRates: { residential: 9, business: 10 } });
+    const boosted = makeBldDeps({
+      taxRates: { residential: 9, business: 10 },
+      getRevenueMultiplier: () => 2.0,
+    });
+    const baseInc = calculateBuildingIncome(base, 0, 0, 7);
+    const boostInc = calculateBuildingIncome(boosted, 0, 0, 7);
+    expect(boostInc).toBeCloseTo(baseInc * 2.0);
+  });
+
+  it('matches calculateZoneIncomes for a single building', () => {
+    // Verify DRY: single building income from shared function matches zone total
+    const deps = makeDeps({
+      forEachCell: (fn) => {
+        fn({ buildingId: 13, zoneType: ZoneType.INDUSTRIAL, reserved: 0 }, 3, 3);
+      },
+      taxRates: { residential: 9, business: 10 },
+    });
+    const zoneResult = calculateZoneIncomes(deps);
+    const singleResult = calculateBuildingIncome(
+      { taxRates: { residential: 9, business: 10 }, getResidentEducations: () => [] },
+      3, 3, 13,
+    );
+    expect(zoneResult.industrial).toBeCloseTo(singleResult);
   });
 });

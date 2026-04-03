@@ -32,11 +32,11 @@ interface CellLike {
 }
 
 /**
- * Dependencies for income calculation (DIP).
- * Both SimulationLoop and Game.ts provide these.
+ * Per-building income calculation dependencies (DIP).
+ * Shared between calculateBuildingIncome, calculateSingleBuildingIncome,
+ * and calculateZoneIncomes to eliminate duplication.
  */
-export interface IncomeCalcDeps {
-  forEachCell: (fn: (cell: CellLike, x: number, y: number) => void) => void;
+export interface BuildingIncomeDeps {
   taxRates: { residential: number; business: number };
   getResidentEducations: (posKey: string) => Iterable<EducationLevel>;
   /** Optional per-building revenue multiplier (e.g. district specialization). */
@@ -54,20 +54,31 @@ export interface IncomeCalcDeps {
 }
 
 /**
- * Calculate actual tax income for a single building.
- * Used by the building info panel to display accurate per-building income.
+ * Dependencies for income calculation (DIP).
+ * Both SimulationLoop and Game.ts provide these.
  */
-export function calculateSingleBuildingIncome(
-  deps: Omit<IncomeCalcDeps, 'forEachCell'>,
+export interface IncomeCalcDeps extends BuildingIncomeDeps {
+  forEachCell: (fn: (cell: CellLike, x: number, y: number) => void) => void;
+}
+
+/**
+ * Calculate income for a single building given its buildingId and position.
+ * Shared core logic — eliminates duplication between
+ * calculateSingleBuildingIncome and calculateZoneIncomes (DRY).
+ */
+export function calculateBuildingIncome(
+  deps: BuildingIncomeDeps,
   x: number, y: number, buildingId: number,
 ): number {
   if (deps.isPowered && !deps.isPowered(x, y)) return 0;
   const btype = getBuildingType(buildingId);
   if (!btype) return 0;
 
+  const posKey = `${x},${y}`;
+
   if (isResidentialZone(btype.zoneType)) {
     let salarySum = 0;
-    for (const edu of deps.getResidentEducations(`${x},${y}`)) {
+    for (const edu of deps.getResidentEducations(posKey)) {
       salarySum += ECONOMY.CITIZEN_BASE_INCOME * getEducationSalaryMultiplier(edu);
     }
     let income = salarySum * getResidentialLevelMultiplier(btype.level as 1 | 2 | 3) * ((deps.taxRates.residential ?? DEFAULT_TAX_RATE) / 100);
@@ -78,7 +89,7 @@ export function calculateSingleBuildingIncome(
   let income = (btype.companyIncome ?? 0) * getBuildingLevelMultiplier(btype.level) * ((deps.taxRates.business ?? DEFAULT_TAX_RATE) / 100);
   if (deps.getRevenueMultiplier) income *= deps.getRevenueMultiplier(x, y);
   if (deps.getWorkerCount && btype.workers > 0) {
-    income *= Math.min(1, deps.getWorkerCount(`${x},${y}`) / btype.workers);
+    income *= Math.min(1, deps.getWorkerCount(posKey) / btype.workers);
   }
   if (isCommercialZone(btype.zoneType) && deps.getFreightSupply) {
     const supply = deps.getFreightSupply(x, y);
@@ -97,16 +108,23 @@ export function calculateSingleBuildingIncome(
 }
 
 /**
+ * Calculate actual tax income for a single building.
+ * Used by the building info panel to display accurate per-building income.
+ * Delegates to calculateBuildingIncome (DRY).
+ */
+export function calculateSingleBuildingIncome(
+  deps: BuildingIncomeDeps,
+  x: number, y: number, buildingId: number,
+): number {
+  return calculateBuildingIncome(deps, x, y, buildingId);
+}
+
+/**
  * Calculate per-zone-type income breakdown from grid state.
  * Pure function — no side effects, no dependencies on specific classes.
- *
- * Residential tax = Σ(per resident: base × eduMultiplier) × buildingLevelMultiplier × taxRate
- * Business tax = companyIncome × buildingLevelMultiplier × taxRate
+ * Delegates per-building calculation to calculateBuildingIncome (DRY).
  */
 export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown {
-  const incomeTaxRate = deps.taxRates.residential ?? DEFAULT_TAX_RATE;
-  const businessTaxRate = deps.taxRates.business ?? DEFAULT_TAX_RATE;
-
   let residential = 0;
   let commercial = 0;
   let industrial = 0;
@@ -114,57 +132,21 @@ export function calculateZoneIncomes(deps: IncomeCalcDeps): ZoneIncomeBreakdown 
 
   deps.forEachCell((cell, x, y) => {
     if (!isZoneBuilding(cell.buildingId) || cell.reserved === BURNED || cell.reserved === ABANDONED || cell.reserved === MULTI_CELL_OCCUPIED) return;
-    // Unpowered buildings produce zero income
-    if (deps.isPowered && !deps.isPowered(x, y)) return;
+
+    const income = calculateBuildingIncome(deps, x, y, cell.buildingId);
+    if (income === 0) return;
 
     const btype = getBuildingType(cell.buildingId);
     if (!btype) return;
 
-    let buildingIncome = 0;
     if (isResidentialZone(btype.zoneType)) {
-      const posKey = `${x},${y}`;
-      // Sum per-resident education-based salary
-      let residentSalarySum = 0;
-      for (const edu of deps.getResidentEducations(posKey)) {
-        residentSalarySum += ECONOMY.CITIZEN_BASE_INCOME * getEducationSalaryMultiplier(edu);
-      }
-      buildingIncome = residentSalarySum * getResidentialLevelMultiplier(btype.level as 1 | 2 | 3) * (incomeTaxRate / 100);
-      // Apply per-building revenue multiplier (e.g. district specialization)
-      if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
-      residential += buildingIncome;
-    } else {
-      const ci = btype.companyIncome ?? 0;
-      buildingIncome = ci * getBuildingLevelMultiplier(btype.level) * (businessTaxRate / 100);
-      if (deps.getRevenueMultiplier) buildingIncome *= deps.getRevenueMultiplier(x, y);
-      // Worker ratio: income scales linearly with staffing level
-      if (deps.getWorkerCount && btype.workers > 0) {
-        const posKey = `${x},${y}`;
-        buildingIncome *= Math.min(1, deps.getWorkerCount(posKey) / btype.workers);
-      }
-      if (isCommercialZone(btype.zoneType)) {
-        // Freight supply ratio affects commercial income
-        if (deps.getFreightSupply) {
-          const supply = deps.getFreightSupply(x, y);
-          if (supply.source === 'imported') {
-            buildingIncome *= TRADE_IMPORT_MULTIPLIER * supply.ratio + FREIGHT_INCOME.NO_SUPPLY_RATIO * (1 - supply.ratio);
-          } else if (supply.source === 'none') {
-            buildingIncome *= FREIGHT_INCOME.NO_SUPPLY_RATIO;
-          } else {
-            // local: scale between full income and NO_SUPPLY_RATIO based on ratio
-            buildingIncome *= FREIGHT_INCOME.NO_SUPPLY_RATIO + FREIGHT_INCOME.NO_SUPPLY_RATIO * supply.ratio;
-          }
-        }
-        commercial += buildingIncome;
-      } else if (btype.zoneType === ZoneType.INDUSTRIAL) {
-        // Surplus reduces industrial income; export softens the penalty
-        if (deps.freightSurplusRatio != null && deps.freightSurplusRatio > 0) {
-          const penalty = deps.isExporting ? FREIGHT_INCOME.EXPORT_PENALTY : 1.0;
-          buildingIncome *= 1 - deps.freightSurplusRatio * penalty;
-        }
-        industrial += buildingIncome;
-      } else if (btype.zoneType === ZoneType.OFFICE) {
-        office += buildingIncome;
-      }
+      residential += income;
+    } else if (isCommercialZone(btype.zoneType)) {
+      commercial += income;
+    } else if (btype.zoneType === ZoneType.INDUSTRIAL) {
+      industrial += income;
+    } else if (btype.zoneType === ZoneType.OFFICE) {
+      office += income;
     }
   });
 

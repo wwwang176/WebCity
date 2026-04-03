@@ -496,7 +496,7 @@ export class Game {
       this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned, abandoned);
     };
     // Sync light spots when facility operational status changes (power/water dependency)
-    this.simLoop.onTransferDataChanged = () => {
+    this.simLoop.transferTracker.onDataChanged = () => {
       if (this.selectedTransferRoute) {
         this.selectTransferRoute(this.selectedTransferRoute);
       }

@@ -2,8 +2,9 @@ import { Grid } from '../grid/Grid';
 import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
-import { getInfraConfigById, getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, calculateZoneDemand } from './NetworkCoverage';
+import { getInfraBuildingId } from '../building/InfraConfig';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 export interface WaterPlant {
   x: number;
   y: number;
@@ -37,6 +38,28 @@ export const INFRA_WATER_CONSUMPTION: Record<string, number> = {
 };
 
 const WATER_PLANT_ID = getInfraBuildingId('water');
+
+const INFRA_TYPE_TO_KEY: Record<string, string> = {
+  police: 'police',
+  fire: 'fire',
+  hospital: 'health',
+  school: 'elementary',
+  school_high: 'highschool',
+  school_univ: 'university',
+  garbage: 'garbage',
+  power: 'police', // power plants don't consume water, excluded above
+  sewage: 'sewage',
+  park: 'park',
+  cemetery: 'cemetery',
+};
+
+/** Shared demand config for calculateUtilityCellDemand (DRY). */
+const WATER_DEMAND_CONFIG: UtilityCellDemandConfig = {
+  zoneConsumption: WATER_CONSUMPTION,
+  infraConsumption: INFRA_WATER_CONSUMPTION,
+  infraTypeToKey: INFRA_TYPE_TO_KEY,
+  excludedBuildingId: WATER_PLANT_ID,
+};
 
 export class WaterNetwork {
   private plants: WaterPlant[] = [];
@@ -74,7 +97,11 @@ export class WaterNetwork {
     let demand = 0;
     grid.forEachCell((cell) => {
       if (cell.buildingId <= 0) return;
-      demand += this.getCellDemand(grid, cell, cell.buildingId);
+      const bt = getBuildingType(cell.buildingId);
+      demand += calculateUtilityCellDemand(
+        WATER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
+        bt?.residents ?? 0, bt?.workers ?? 0,
+      );
     });
     this.totalDemand = demand;
   }
@@ -117,42 +144,12 @@ export class WaterNetwork {
   getCellDemandAt(grid: Grid, x: number, y: number): number {
     const cell = grid.getCell(x, y);
     if (!cell || cell.buildingId <= 0) return 0;
-    return this.getCellDemand(grid, cell, cell.buildingId);
-  }
-
-  private getCellDemand(_grid: Grid, cell: { zoneType: number; buildingId: number }, buildingId: number): number {
-    const bt = getBuildingType(buildingId);
-    if (bt) {
-      return this.getZoneDemand(cell.zoneType as ZoneType, bt.residents, bt.workers);
-    }
-    if (buildingId === WATER_PLANT_ID) return 0;
-    const infraCfg = getInfraConfigById(buildingId);
-    if (infraCfg) {
-      const key = INFRA_TYPE_TO_KEY[infraCfg.type];
-      if (key && INFRA_WATER_CONSUMPTION[key] !== undefined) {
-        return INFRA_WATER_CONSUMPTION[key];
-      }
-    }
-    return 0;
-  }
-
-  private getZoneDemand(zoneType: ZoneType, residents: number, workers: number): number {
-    return calculateZoneDemand(WATER_CONSUMPTION, zoneType, residents, workers);
+    const bt = getBuildingType(cell.buildingId);
+    return calculateUtilityCellDemand(
+      WATER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
+      bt?.residents ?? 0, bt?.workers ?? 0,
+    );
   }
 
   // BFS methods extracted to NetworkCoverage.ts (bfsRoadNetworkFlood / bfsBudgetDrainFlood)
 }
-
-const INFRA_TYPE_TO_KEY: Record<string, string> = {
-  police: 'police',
-  fire: 'fire',
-  hospital: 'health',
-  school: 'elementary',
-  school_high: 'highschool',
-  school_univ: 'university',
-  garbage: 'garbage',
-  power: 'police', // power plants don't consume water, excluded above
-  sewage: 'sewage',
-  park: 'park',
-  cemetery: 'cemetery',
-};
