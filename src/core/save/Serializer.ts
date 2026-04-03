@@ -111,8 +111,8 @@ export function snapshotGameState(
     },
     clock: {
       tick: state.clock.tick,
-      speed: state.clock.speed,
-      paused: state.clock.paused,
+      speed: 1,
+      paused: false,
     },
     budget: {
       funds: state.budget.funds,

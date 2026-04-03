@@ -455,6 +455,10 @@ export class Game {
 
     if (loadedState) {
       this.state = loadedState;
+      this.paused = false;
+      this.speed = 1;
+      this.state.clock.paused = false;
+      this.state.clock.speed = 1;
     } else {
       this.state = createGameState(mapSize, mapSize);
     }
