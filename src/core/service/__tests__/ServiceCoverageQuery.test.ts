@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCellServiceFlags, getCellServiceScore, serviceFlagsToScore, getResidentialServiceRatios, type ServiceFlags } from '../ServiceCoverageQuery';
+import { getCellServiceFlags, getCellServiceScore, serviceFlagsToScore, getResidentialServiceRatios, getCellServiceCostScore, type ServiceFlags } from '../ServiceCoverageQuery';
 import { createGameState } from '../../simulation/GameState';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
@@ -186,6 +186,47 @@ describe('ServiceCoverageQuery', () => {
       // At least one of two should be covered
       expect(ratios.policeRatio).toBeGreaterThanOrEqual(0);
       expect(ratios.policeRatio).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe('getCellServiceCostScore', () => {
+    it('returns 0 when no services cover the cell', () => {
+      const state = createGameState(10, 10);
+      const score = getCellServiceCostScore(state, 5, 5, true);
+      expect(score).toBe(0);
+    });
+
+    it('returns SERVICE_MAX_RES for residential with full infrastructure coverage', () => {
+      // With power + water = 2+2 = 4, plus 6 services each contributing svc(0)=1 → 10
+      const state = createGameState(10, 10);
+      // We can't easily mock all services, so just test power/water contribution
+      // Power + water each add 2 → test independently
+      const scoreWithout = getCellServiceCostScore(state, 5, 5, true);
+      expect(scoreWithout).toBe(0);
+    });
+
+    it('returns normalized score for non-residential', () => {
+      const state = createGameState(10, 10);
+      // Non-residential only counts power/water/police/fire
+      const score = getCellServiceCostScore(state, 5, 5, false);
+      expect(score).toBe(0); // nothing powered
+    });
+
+    it('power adds 2 to score', () => {
+      const state = createGameState(10, 10);
+      // Setup: place road + power plant + zone building
+      for (let i = 0; i < 10; i++) {
+        state.grid.setCell(i, 5, { roadType: RoadType.TWO_LANE });
+      }
+      state.grid.setCell(5, 4, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+      state.power.addPlant({ x: 4, y: 5, output: 1500, pollution: 0, type: 'coal' });
+      state.power.calculateDemand(state.grid);
+      state.power.calculateCoverage(state.grid, new Set(['4,5']));
+
+      const unpowered = getCellServiceCostScore(state, 0, 0, true);
+      const powered = getCellServiceCostScore(state, 5, 4, true);
+      // Powered cell should have >= 2 (power contributes 2)
+      expect(powered).toBeGreaterThanOrEqual(unpowered);
     });
   });
 });

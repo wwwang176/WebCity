@@ -43,7 +43,7 @@ import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOp
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findAdjacentRoad } from '../grid/GridHelpers';
 import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
-import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
+import { getCellServiceScore, getResidentialServiceRatios, getCellServiceCostScore } from '../service/ServiceCoverageQuery';
 import { calculatePoliceLoads, calculateFireLoads } from '../service/PoliceFireLoadCalculator';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
 import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
@@ -951,22 +951,9 @@ export class SimulationLoop {
       // Per-cell crime: base crime adjusted by local police coverage
       const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
 
-      // Continuous service score: each service contributes (1 - costRatio), power/water weight 2
-      // Non-residential zones only count infrastructure & safety (power/water/police/fire),
-      // normalized to 0–10 scale so full coverage gives equal offset regardless of zone type.
-      const svc = (ratio: number) => ratio < 0 ? 0 : 1 - ratio; // -1=uncovered→0, 0=nearest→1, 1=farthest→0
+      // Continuous service score (delegated to ServiceCoverageQuery — OCP)
       const isRes = isResidentialZone(cell.zoneType);
-      const rawScore =
-        (this.state.power.isPowered(x, y) ? 2 : 0) +
-        (this.state.water.isSupplied(x, y) ? 2 : 0) +
-        svc(this.state.police.getCostRatio(x, y)) +
-        svc(this.state.fire.getCostRatio(x, y)) +
-        (isRes ? svc(this.state.garbage.getCostRatio(x, y)) : 0) +
-        (isRes ? svc(this.state.health.getCostRatio(x, y)) : 0) +
-        (isRes ? svc(this.state.education.getCostRatio(x, y)) : 0) +
-        (isRes ? svc(this.state.deathCare.getCostRatio(x, y)) : 0);
-      // Residential max=SERVICE_MAX_RES, non-residential max=SERVICE_MAX_NON_RES → normalize
-      const serviceScore = isRes ? rawScore : rawScore * (SIMULATION.SERVICE_MAX_RES / SIMULATION.SERVICE_MAX_NON_RES);
+      const serviceScore = getCellServiceCostScore(this.state, x, y, isRes);
 
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
