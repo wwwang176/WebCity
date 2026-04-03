@@ -71,6 +71,12 @@ export class PowerGrid {
   private powered = new Set<string>();
   private fullCoverage = new Set<string>();
   private totalDemand = 0;
+  /** Injected road lookup for level-aware BFS (DIP). */
+  private roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
+
+  setRoadLookup(lookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup): void {
+    this.roadLookup = lookup;
+  }
 
   addPlant(plant: PowerPlant): void {
     this.plants.push(plant);
@@ -92,14 +98,14 @@ export class PowerGrid {
     // Phase 1: compute fullCoverage (no budget limit) — shows where the network reaches
     this.fullCoverage.clear();
     for (const plant of this.plants) {
-      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions);
+      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions, this.roadLookup);
     }
 
     // Phase 2: BFS budget-drain per plant to determine actual powered cells
     this.powered.clear();
     const getDemand = (x: number, y: number) => this.getCellDemand(grid, x, y);
     for (const plant of this.plants) {
-      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions);
+      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions, this.roadLookup);
     }
     return this.powered;
   }

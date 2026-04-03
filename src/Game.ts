@@ -526,9 +526,11 @@ export class Game {
     this.simLoop.setElevationManager(this.elevationManager);
     this.roadLookup = new UnifiedRoadLookup(this.state.grid, this.elevationManager);
     this.simLoop.setRoadLookup(this.roadLookup);
-    setNetworkRoadLookup(this.roadLookup);
+    setNetworkRoadLookup(this.roadLookup); // deprecated: backward compat
     setRoadCoverageRoadLookup(this.roadLookup);
     this.state.shopping.setRoadLookup(this.roadLookup);
+    this.state.power.setRoadLookup(this.roadLookup);
+    this.state.water.setRoadLookup(this.roadLookup);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);
