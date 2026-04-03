@@ -94,7 +94,7 @@ isCellDefault(cell) → 全部屬性與預設相同則跳過
 
 `migrations.ts` 處理舊版存檔的格式升級，確保向後相容。
 
-**目前版本**: `CURRENT_SAVE_VERSION = 3`
+**目前版本**: `CURRENT_SAVE_VERSION = 4`
 
 **遷移機制**:
 1. 載入存檔時檢查 `version` 欄位
@@ -104,7 +104,12 @@ isCellDefault(cell) → 全部屬性與預設相同則跳過
 
 **已有遷移**:
 - Version 2: `fix_intersection_roadtype` — 修正路口處低階道路覆蓋高階道路的問題
-- Version 3: 市民年齡系統從 float 改為 birthTick-based
+- Version 3: `convert_citizen_age_to_life_weeks` — 市民年齡系統從 float 改為 birthTick-based，分段線性映射保留生命階段邊界
+- Version 4: `update_facility_balance_constants` — 將所有設施（醫院、警局、消防局、學校、垃圾場、墓園、公園）的容量和半徑更新為程式碼中的最新常數值
+
+### 轉乘使用歷史持久化
+
+TransferTracker 的 7 天環形緩衝區和每日滾動狀態（`lastTransferDay`）會隨存檔持久化，載入時恢復完整的轉乘統計歷史。
 
 **新增遷移步驟**:
 1. 遞增 `CURRENT_SAVE_VERSION`

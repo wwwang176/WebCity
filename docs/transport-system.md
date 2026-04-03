@@ -238,6 +238,12 @@ approach → roll → roll_wait → taxi_in → dwell → pushback → taxi_out 
 
 ---
 
+## 多模式轉乘系統 (Multi-Modal Transfer)
+
+> 多模式轉乘系統已獨立為 [transfer-system.md](transfer-system.md) — 涵蓋 TransferGraph、站對站快取、多模式路線搜尋、TransferTracker、chooseModeMultiModal、轉乘覆蓋 UI。
+
+---
+
 ## 站點統計
 
 每個站點追蹤乘客數據：

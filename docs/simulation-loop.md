@@ -315,3 +315,99 @@ SimulationLoop.tick()
 ```
 
 此重構使 SimulationLoop 回歸純粹的**排程與編排**角色，各子系統的業務邏輯可獨立測試與演進。
+
+### TransferTracker
+
+```
+src/core/transport/TransferTracker.ts
+```
+
+**職責**：追蹤多模式轉乘的使用統計，從 SimulationLoop 抽取為獨立模組。
+
+- 7 天環形緩衝區追蹤每條轉乘路線（如「🚌→🚇」）的使用次數
+- 記錄使用各轉乘路線的住家和工作場所建築
+- 每日滾動時觸發 `onDataChanged` 回調更新 UI
+- 支援存檔持久化（`getHistory()` / `setHistory()`）
+
+SimulationLoop 在 `spawnCommuteVehicles()` 中呼叫 `transferTracker.recordTransfer()` 和 `recordBuilding()`。
+
+### PoliceFireLoadCalculator
+
+```
+src/core/service/PoliceFireLoadCalculator.ts
+```
+
+**職責**：計算警察和消防的加權需求。
+
+- 將住宅居民和工作場所工人的需求乘以加權乘數（教育程度、區域類型、入住率）
+- 分配需求到最近的設施（歐幾里得距離）
+- 提供每設施負載和全市負載率
+
+### GarbageSewageProduction
+
+```
+src/core/service/GarbageSewageProduction.ts
+```
+
+**職責**：計算分區制的垃圾和污水產量。
+
+- 共享 `calculateZoneDemand()` 函式按區域類型和人口計算需求
+- 垃圾產量：base + perCapita × 人口
+- 污水產量：用水量 × SEWAGE_RATE[區域類型]
+
+### UtilityCellDemand（DRY 重構）
+
+```
+src/core/service/UtilityCellDemand.ts
+```
+
+**職責**：PowerGrid 和 WaterNetwork 共用的單格需求計算。
+
+- 消除兩個系統中重複的 `getCellDemand` 邏輯
+- 統一處理三類建築：區域建築（依 zoneConsumption 表）、排除的工廠本身（產出不消耗）、基礎設施（依 infraConsumption 查找表）
+
+### calculateBuildingIncome（DRY 重構）
+
+```
+src/core/economy/IncomeCalculator.ts
+```
+
+**職責**：從 SimulationLoop 抽取的建築收入計算共用函式。
+
+- 處理住宅稅收（居民 × 教育倍率 × 等級倍率 × 稅率）
+- 處理營業稅收（companyIncome × 等級倍率 × 稅率 × 勞動力比率）
+- 統一無收入判定（焦黑、廢棄、無電力、多格次格）
+
+---
+
+## 遊戲載入暖機 (Game Load Warmup)
+
+載入存檔時，遊戲執行非同步暖機流程以預計算狀態並產生初始車輛：
+
+### 暖機流程
+
+`SimulationLoop.warmup(spawnRatio, onProgress)`:
+
+1. 遍歷所有有住所和工作場所的市民
+2. 計算早晨和傍晚的通勤路徑（使用 `findLanePathVariants`）
+3. 快取路徑到 CommuteCache
+4. 對 20% 的市民產生初始車輛（隨機選早晨或傍晚路徑）
+5. 每 100 位市民回報進度（0~1）並 yield 執行緒
+
+### 載入畫面 (Loading Screen)
+
+遊戲啟動和存檔載入時顯示分階段載入畫面：
+
+| 階段 | 標籤 | 內容 |
+|------|------|------|
+| 1 | Setting up roads... | 重建鐵路網路 |
+| 2 | Preparing city services... | 重算道路覆蓋 |
+| 3 | Connecting utilities... | 計算電力/水力覆蓋 |
+| 4 | Planning traffic routes... | 暖機（預計算路徑+產生車輛） |
+| 5 | Preparing graphics... | 初始化渲染器 |
+
+載入畫面顯示：
+- 百分比數字（0-100%）
+- 藍色進度條
+- 目前步驟標籤
+- 完成後停留 300ms 再移除
