@@ -62,6 +62,7 @@ import { TRADE, FreightRouteType } from '../traffic/FreightSystem';
 import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
 
 import { SIMULATION } from './SimulationConstants';
+import { TransferTracker } from '../transport/TransferTracker';
 
 
 /** Map CitizenManager schoolKey to EducationService SchoolType */
@@ -115,17 +116,8 @@ export class SimulationLoop {
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
   private flatRoutes: FlatRoute[] = [];
-  /** Rolling 7-day ring buffer of transfer usage per route label. */
-  private transferHistory: Map<string, number>[] = Array.from({ length: 7 }, () => new Map());
-  private transferHistoryIndex = 0;
-  private transferToday = new Map<string, number>();
-  private lastTransferDay = -1;
-  /** Snapshot of active transfer pedestrians (updated daily to avoid per-tick re-renders). */
-  private transferPedsSnapshot = 0;
-  /** Recent buildings using each transfer route label → {homes, works} position sets. */
-  private transferBuildingsRecent = new Map<string, { homes: Set<string>; works: Set<string> }>();
-  /** Callback fired when transfer daily data rolls over. */
-  onTransferDataChanged: (() => void) | null = null;
+  /** Transfer usage tracking (extracted — SRP). */
+  readonly transferTracker = new TransferTracker();
 
   /** Reusable Set for infrastructure positions (power/water plants). */
   private infraPositions = new Set<string>();
@@ -1542,19 +1534,13 @@ export class SimulationLoop {
 
     // Daily rollover for transfer usage counts (7-day ring buffer)
     const day = this.state.clock.getDay();
-    if (day !== this.lastTransferDay) {
-      this.lastTransferDay = day;
-      // Flush today's counts into ring buffer, overwriting the oldest day
-      this.transferHistory[this.transferHistoryIndex] = new Map(this.transferToday);
-      this.transferHistoryIndex = (this.transferHistoryIndex + 1) % 7;
-      this.transferToday.clear();
-      // Snapshot active transfer pedestrians
+    if (day !== this.transferTracker.getLastDay()) {
+      this.transferTracker.setLastDay(day);
       let peds = 0;
       for (const a of this.state.pedestrianManager.agents) {
         if (a.tripType === 4) peds++;
       }
-      this.transferPedsSnapshot = peds;
-      this.onTransferDataChanged?.();
+      this.transferTracker.rolloverDay(peds);
     }
 
     // Rebuild transfer graph when transit network has changed
@@ -1567,7 +1553,7 @@ export class SimulationLoop {
         SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
       );
       this.transferGraphDirty = false;
-      this.transferBuildingsRecent.clear();
+      this.transferTracker.clearBuildings();
     }
 
     const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
@@ -1667,12 +1653,8 @@ export class SimulationLoop {
               const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
               return icons[l.transitType ?? ''] ?? '?';
             }).join('\u2192');
-            this.transferToday.set(label, (this.transferToday.get(label) ?? 0) + 1);
-            // Track actual buildings using this transfer route
-            let bldgs = this.transferBuildingsRecent.get(label);
-            if (!bldgs) { bldgs = { homes: new Set(), works: new Set() }; this.transferBuildingsRecent.set(label, bldgs); }
-            bldgs.homes.add(citizen.homeId!);
-            bldgs.works.add(citizen.workplaceId!);
+            this.transferTracker.recordTransfer(label);
+            this.transferTracker.recordBuilding(label, citizen.homeId!, citizen.workplaceId!);
           }
         } else {
           const transitSystem = getSystemForMode(this.state, mode);
@@ -2077,28 +2059,16 @@ export class SimulationLoop {
   }
 
   getTransferHistory() {
-    return {
-      history: this.transferHistory,
-      index: this.transferHistoryIndex,
-      today: this.transferToday,
-      pedsSnapshot: this.transferPedsSnapshot,
-      lastDay: this.lastTransferDay,
-    };
+    return this.transferTracker.getHistory();
   }
 
   setTransferHistory(data: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay?: number }) {
-    this.transferHistory = data.history;
-    this.transferHistoryIndex = data.index;
-    this.transferToday = data.today;
-    this.transferPedsSnapshot = data.pedsSnapshot;
-    if (data.lastDay !== undefined) this.lastTransferDay = data.lastDay;
+    this.transferTracker.setHistory(data as any);
   }
 
   /** Get buildings that recently used a specific transfer route label. */
   getTransferBuildings(label: string): { homes: string[]; works: string[] } {
-    const bldgs = this.transferBuildingsRecent.get(label);
-    if (!bldgs) return { homes: [], works: [] };
-    return { homes: [...bldgs.homes], works: [...bldgs.works] };
+    return this.transferTracker.getBuildings(label);
   }
 
   /** Get stop coordinates for a specific transfer route label (for map overlay). */
@@ -2132,7 +2102,7 @@ export class SimulationLoop {
     transferEdges: number;
     routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }>;
   } {
-    const activeTransferPeds = this.transferPedsSnapshot;
+    const activeTransferPeds = this.transferTracker.getPedsSnapshot();
 
     const pool = this.walkingTripPool;
     let transferTrips = 0;
@@ -2142,7 +2112,6 @@ export class SimulationLoop {
 
     const cache = this.transferGraph.stopRouteCache;
     let multiRideRoutes = 0;
-    // Group by ride-count + transit type sequence
     const groups = new Map<string, { count: number; totalTime: number }>();
     cache.forEach(route => {
       const rideLegs = route.legs.filter(l => l.type === 'ride');
@@ -2157,16 +2126,7 @@ export class SimulationLoop {
       else groups.set(label, { count: 1, totalTime: route.totalTime });
     });
 
-    // Sum 7-day ring buffer + today for weekly totals
-    const weeklyTotals = new Map<string, number>();
-    for (const dayMap of this.transferHistory) {
-      for (const [label, count] of dayMap) {
-        weeklyTotals.set(label, (weeklyTotals.get(label) ?? 0) + count);
-      }
-    }
-    for (const [label, count] of this.transferToday) {
-      weeklyTotals.set(label, (weeklyTotals.get(label) ?? 0) + count);
-    }
+    const weeklyTotals = this.transferTracker.getAllWeeklyTotals();
 
     const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number; weeklyUse: number }> = [];
     groups.forEach((g, label) => {
