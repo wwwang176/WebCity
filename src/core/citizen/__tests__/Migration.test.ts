@@ -135,15 +135,17 @@ describe('getImmigrationCap — 移民動態縮放', () => {
     expect(highUnemployment).toBeLessThan(noUnemployment);
   });
 
-  it('full unemployment makes city unattractive (below threshold)', () => {
+  it('full unemployment reduces attractiveness but does not block migration', () => {
     const score = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 1.0 });
-    expect(score).toBeLessThanOrEqual(IMMIGRATION.ATTRACTIVENESS_THRESHOLD);
+    const baseline = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 0 });
+    expect(score).toBeLessThan(baseline);
+    expect(score).toBeGreaterThan(IMMIGRATION.ATTRACTIVENESS_THRESHOLD);
   });
 
-  it('no immigration when unemployment rate is high', () => {
+  it('unemployment penalty is moderate — city can still attract immigrants', () => {
     const mgr = new CitizenManager();
     const result = migrationTick(mgr, { ...attractiveCity, unemploymentRate: 0.8 });
-    expect(result.immigrated).toBe(0);
+    expect(result.immigrated).toBeGreaterThan(0);
   });
 
   it('ATTRACTIVENESS constants should have valid weights', () => {
