@@ -14,12 +14,17 @@ import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
 import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
-/** Module-level UnifiedRoadLookup reference for road coverage flood. */
+/** @deprecated Use roadLookup parameter injection instead. */
 let _roadLookup: UnifiedRoadLookup | null = null;
 
-/** Set the shared UnifiedRoadLookup for road coverage flood. */
+/** @deprecated Use roadLookup parameter on roadFlood/roadDistanceToTargets instead. */
 export function setRoadCoverageRoadLookup(lookup: UnifiedRoadLookup): void {
   _roadLookup = lookup;
+}
+
+/** Resolve roadLookup: prefer explicit parameter, fall back to module-level. */
+function resolveRL(explicit?: UnifiedRoadLookup | null): UnifiedRoadLookup | null {
+  return explicit !== undefined ? explicit : _roadLookup;
 }
 
 /** Service coverage budget constants */
@@ -104,7 +109,9 @@ export function roadFlood(
   grid: ReadableGrid,
   facilityPositions: { x: number; y: number }[],
   budget: number,
+  roadLookup?: UnifiedRoadLookup | null,
 ): Map<string, number> {
+  const rl = resolveRL(roadLookup);
   // Internal costs tracked by cell key (with level)
   const cellCosts = new Map<string, number>();
   // Output costs by position key (min cost across all levels)
@@ -118,8 +125,8 @@ export function roadFlood(
       seedPositions.push({ x: pos.x + dx!, y: pos.y + dy! });
     }
     for (const sp of seedPositions) {
-      if (_roadLookup) {
-        const keys = _roadLookup.getAllKeysAtPosition(sp.x, sp.y);
+      if (rl) {
+        const keys = rl.getAllKeysAtPosition(sp.x, sp.y);
         for (const k of keys) {
           if (!cellCosts.has(k)) {
             cellCosts.set(k, 0);
@@ -156,12 +163,12 @@ export function roadFlood(
       const nx = x + dx!;
       const ny = y + dy!;
 
-      const neighborKeys = _roadLookup
-        ? _roadLookup.getCompatibleNeighborKeys(cur.key, nx, ny)
+      const neighborKeys = rl
+        ? rl.getCompatibleNeighborKeys(cur.key, nx, ny)
         : [];
 
       // Fallback: ground-only when no lookup
-      if (!_roadLookup) {
+      if (!rl) {
         const cell = grid.getCell(nx, ny);
         if (cell && cell.roadType !== RoadType.NONE) {
           const nk = toPosKey(nx, ny);
@@ -181,7 +188,7 @@ export function roadFlood(
       }
 
       for (const nk of neighborKeys) {
-        const roadInfo = _roadLookup.getCellByKey(nk);
+        const roadInfo = rl.getCellByKey(nk);
         if (!roadInfo) continue;
         const newCost = cur.cost + roadTileCost(roadInfo.roadType);
         if (newCost > budget) continue;
@@ -244,6 +251,12 @@ export class RoadCoverageMap {
   private main: GridCoverageArray | null = null;
   private previewArr: GridCoverageArray | null = null;
   private lastBudget = 0;
+  /** Injected road lookup for level-aware Dijkstra (DIP). */
+  private roadLookup: UnifiedRoadLookup | null = null;
+
+  setRoadLookup(lookup: UnifiedRoadLookup): void {
+    this.roadLookup = lookup;
+  }
 
   /** Ensure arrays are allocated for the given grid dimensions. */
   private ensureArrays(width: number, height: number): void {
@@ -271,7 +284,7 @@ export class RoadCoverageMap {
     for (const f of facilities) {
       const size = getSize ? getSize(f) : { w: facilityWidth, h: facilityHeight };
       const positions = expandFootprint(f.x, f.y, size.w, size.h);
-      const roadCov = roadFlood(grid, positions, budget);
+      const roadCov = roadFlood(grid, positions, budget, this.roadLookup);
       const fullCov = expandCoverageToBuildings(grid, roadCov);
       this.main!.applyFlood(fullCov, budget);
     }
@@ -286,7 +299,7 @@ export class RoadCoverageMap {
     facilityHeight = 1,
   ): Map<string, number> {
     const positions = expandFootprint(position.x, position.y, facilityWidth, facilityHeight);
-    const roadCov = roadFlood(grid, positions, budget);
+    const roadCov = roadFlood(grid, positions, budget, this.roadLookup);
     return expandCoverageToBuildings(grid, roadCov);
   }
 
@@ -323,7 +336,7 @@ export class RoadCoverageMap {
   ): void {
     this.ensureArrays(grid.width, grid.height);
     const positions = expandFootprint(position.x, position.y, facilityWidth, facilityHeight);
-    const roadCov = roadFlood(grid, positions, budget);
+    const roadCov = roadFlood(grid, positions, budget, this.roadLookup);
     const fullCov = expandCoverageToBuildings(grid, roadCov);
     this.previewArr!.applyMerged(fullCov, this.main!, budget);
   }
@@ -396,7 +409,9 @@ export function roadDistanceToTargets(
   home: { x: number; y: number },
   targets: Set<string>,
   maxBudget: number,
+  roadLookup?: UnifiedRoadLookup | null,
 ): Map<string, number> {
+  const rl = resolveRL(roadLookup);
   const result = new Map<string, number>();
   if (targets.size === 0) return result;
 
@@ -425,8 +440,8 @@ export function roadDistanceToTargets(
   }
 
   for (const sp of seedPositions) {
-    if (_roadLookup) {
-      const keys = _roadLookup.getAllKeysAtPosition(sp.x, sp.y);
+    if (rl) {
+      const keys = rl.getAllKeysAtPosition(sp.x, sp.y);
       for (const k of keys) {
         if (!cellCosts.has(k)) {
           cellCosts.set(k, 0);
@@ -471,12 +486,12 @@ export function roadDistanceToTargets(
       const nx = x + dx!;
       const ny = y + dy!;
 
-      const neighborKeys = _roadLookup
-        ? _roadLookup.getCompatibleNeighborKeys(cur.key, nx, ny)
+      const neighborKeys = rl
+        ? rl.getCompatibleNeighborKeys(cur.key, nx, ny)
         : [];
 
       // Fallback: ground-only
-      if (!_roadLookup) {
+      if (!rl) {
         const cell = grid.getCell(nx, ny);
         if (!cell || cell.roadType === RoadType.NONE) continue;
         const nk = toPosKey(nx, ny);
@@ -498,7 +513,7 @@ export function roadDistanceToTargets(
       }
 
       for (const nk of neighborKeys) {
-        const roadInfo = _roadLookup.getCellByKey(nk);
+        const roadInfo = rl.getCellByKey(nk);
         if (!roadInfo) continue;
         const newCost = cur.cost + roadTileCost(roadInfo.roadType);
         if (newCost > maxBudget) continue;
