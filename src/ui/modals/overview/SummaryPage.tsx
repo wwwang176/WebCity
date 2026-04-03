@@ -2,7 +2,8 @@ import { For, createMemo } from 'solid-js';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { ZoneType } from '../../../core/grid/types';
 import { getBuildingType } from '../../../core/building/types';
-import { calculateAttractiveness } from '../../../core/citizen/Migration';
+import { calculateAttractiveness, ATTRACTIVENESS } from '../../../core/citizen/Migration';
+import { isWorkingAge } from '../../../core/citizen/types';
 import { DEFAULT_TAX_RATE } from '../../../core/economy/Tax';
 import { UI_COLORS } from '../../constants';
 
@@ -59,11 +60,35 @@ export function SummaryPage() {
       ? Math.round(state.citizens.getAverageHappiness())
       : 70;
     const taxRate = state.taxRates.residential ?? DEFAULT_TAX_RATE;
+    let workingAgeCount = 0, unemployedCount = 0;
+    for (const c of state.citizens.getCitizens()) {
+      if (isWorkingAge(c.age)) {
+        workingAgeCount++;
+        if (c.workplaceId === null) unemployedCount++;
+      }
+    }
+    const unemploymentRate = workingAgeCount > 0 ? unemployedCount / workingAgeCount : 0;
+    const crimeRate = Math.min(50, population * 0.02);
     const attractiveness = calculateAttractiveness({
       jobOpenings, vacantHomes, avgHappiness, taxRate,
-      pollution: avgPollution, crimeRate: Math.min(50, population * 0.02),
+      pollution: avgPollution, crimeRate,
+      unemploymentRate,
     });
     const canMigrate = attractiveness > 40 && vacantHomes > 0 && jobOpenings > 0;
+
+    // Find biggest drag on attractiveness for player hint
+    let appealStatus = 'Attractive';
+    if (attractiveness <= 40) {
+      const drags: { reason: string; penalty: number }[] = [
+        { reason: 'Low happiness', penalty: (70 - avgHappiness) * ATTRACTIVENESS.HAPPINESS_WEIGHT },
+        { reason: 'High taxes', penalty: taxRate * ATTRACTIVENESS.TAX_WEIGHT },
+        { reason: 'Too much pollution', penalty: avgPollution * ATTRACTIVENESS.POLLUTION_WEIGHT },
+        { reason: 'High crime', penalty: crimeRate * ATTRACTIVENESS.CRIME_WEIGHT },
+        { reason: 'High unemployment', penalty: unemploymentRate * ATTRACTIVENESS.UNEMPLOYMENT_WEIGHT },
+      ];
+      const worst = drags.reduce((a, b) => b.penalty > a.penalty ? b : a);
+      appealStatus = `Unappealing \u2014 ${worst.reason}`;
+    }
 
     const pwrRatio = state.power.getSupplyRatio();
     const wtrRatio = state.water.getSupplyRatio();
@@ -79,11 +104,12 @@ export function SummaryPage() {
     return {
       population, totalHomes, totalJobs, vacantHomes, jobOpenings,
       avgHappiness, zoneCounts, attractiveness, canMigrate,
-      pwrRatio, wtrRatio, freightSupplyRatio, rci,
+      pwrRatio, wtrRatio, freightSupplyRatio, rci, unemploymentRate,
       checks: [
-        { label: 'Attractiveness > 40', value: attractiveness.toFixed(1), ok: attractiveness > 40 },
-        { label: 'Vacant Homes > 0', value: String(vacantHomes), ok: vacantHomes > 0 },
-        { label: 'Job Openings > 0', value: String(jobOpenings), ok: jobOpenings > 0 },
+        { label: 'City Appeal', value: attractiveness.toFixed(1), ok: attractiveness > 40, status: appealStatus },
+        { label: 'Housing', value: String(vacantHomes), ok: vacantHomes > 0, status: vacantHomes > 0 ? `${vacantHomes} vacant` : 'No vacancy' },
+        { label: 'Jobs', value: String(jobOpenings), ok: jobOpenings > 0, status: jobOpenings > 0 ? `${jobOpenings} open` : 'No openings' },
+        { label: 'Unemployment', value: '', ok: unemploymentRate < 0.4, status: unemploymentRate < 0.01 ? 'Full employment' : unemploymentRate < 0.1 ? `${(unemploymentRate * 100).toFixed(0)}% unemployed` : unemploymentRate < 0.4 ? `${(unemploymentRate * 100).toFixed(0)}% unemployed` : `${(unemploymentRate * 100).toFixed(0)}% unemployed!` },
       ],
     };
   }, undefined, {
@@ -99,6 +125,7 @@ export function SummaryPage() {
         <div class="summary-card"><div class="sc-value">{data().avgHappiness}</div><div class="sc-label">Happiness</div></div>
         <div class="summary-card"><div class="sc-value">{data().vacantHomes}</div><div class="sc-label">Vacant Homes</div></div>
         <div class="summary-card"><div class="sc-value">{data().jobOpenings}</div><div class="sc-label">Job Openings</div></div>
+        <div class="summary-card"><div class="sc-value" style={{ color: data().unemploymentRate > 0.4 ? UI_COLORS.STATUS_BAD : data().unemploymentRate > 0.2 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD }}>{(data().unemploymentRate * 100).toFixed(0)}%</div><div class="sc-label">Unemployment</div></div>
       </div>
 
       <div class="section-title">RCI Demand</div>
@@ -188,14 +215,12 @@ export function SummaryPage() {
 
       <div class="section-title">Migration Status</div>
       <table class="data-table">
-        <thead><tr><th>Condition</th><th style="text-align:right">Value</th><th style="text-align:center">Status</th></tr></thead>
         <tbody>
           <For each={data().checks}>
             {(chk) => (
               <tr>
                 <td class="td-label">{chk.label}</td>
-                <td class="td-value" style="text-align:right">{chk.value}</td>
-                <td style={{ 'text-align': 'center', color: chk.ok ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD }}>{chk.ok ? '\u2713' : '\u2717'}</td>
+                <td class="td-value" style={{ 'text-align': 'right', color: chk.ok ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD }}>{chk.status}</td>
               </tr>
             )}
           </For>
@@ -207,7 +232,7 @@ export function SummaryPage() {
         background: data().canMigrate ? 'rgba(102,187,106,0.15)' : 'rgba(239,83,80,0.15)',
         color: data().canMigrate ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
       }}>
-        {data().canMigrate ? '\u2713 Citizens can migrate in' : '\u2717 Migration blocked \u2014 fix conditions marked \u2717 above'}
+        {data().canMigrate ? 'People are moving in' : 'Nobody is moving in'}
       </div>
     </>
   );
