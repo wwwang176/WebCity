@@ -1,6 +1,6 @@
 import type { CivicService } from './CivicService';
 import type { GameState } from '../simulation/GameState';
-import { type InfraType, getInfraConfig } from '../building/InfraConfig';
+import type { InfraType } from '../building/InfraConfig';
 import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
 import type { RoadCoverageService, Facility } from './RoadCoverageService';
 import type { SizedGrid } from '../grid/GridHelpers';
