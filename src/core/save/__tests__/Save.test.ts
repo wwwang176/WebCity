@@ -69,7 +69,7 @@ describe('Serializer', () => {
     const restored = deserializeGameState(json);
 
     expect(restored.clock.tick).toBe(100);
-    expect(restored.clock.paused).toBe(true);
+    expect(restored.clock.paused).toBe(false); // save always stores paused=false
     expect(restored.budget.funds).toBe(75000);
     expect(restored.budget.income).toBe(1200);
     expect(restored.budget.expenses).toBe(800);

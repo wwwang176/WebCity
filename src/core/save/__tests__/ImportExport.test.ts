@@ -182,7 +182,7 @@ describe('Round-trip export → import', () => {
     expect(result.name).toBe('Round Trip City');
     const parsed = JSON.parse(result.data);
     expect(parsed.clock.tick).toBe(500);
-    expect(parsed.clock.paused).toBe(true);
+    expect(parsed.clock.paused).toBe(false); // save always stores paused=false
     expect(parsed.budget.funds).toBe(75000);
     expect(parsed.taxRates.residential).toBe(11);
   });
