@@ -1,63 +1,20 @@
-import { removeById } from '../utils/removeById';
-import { recoverNextId } from '../utils/recoverNextId';
-import { RoadCoverageMap, ROAD_COVERAGE } from './RoadCoverageFlood';
+/**
+ * EducationService — facade over three SchoolService instances.
+ * Keeps the same external API so callers don't need to change.
+ */
 import type { SizedGrid } from '../grid/GridHelpers';
 import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
 import type { InfraType } from '../building/InfraConfig';
+import { SchoolService, EDUCATION, DEFAULT_CAPACITY, DEFAULT_RADIUS } from './SchoolService';
+import type { SchoolFacility } from './SchoolService';
 
 export type SchoolType = 'elementary' | 'highschool' | 'university';
 
-export interface School {
-  id: string;
-  x: number;
-  y: number;
-  type: SchoolType;
-  radius: number;
-  capacity: number;
-}
+export type { SchoolFacility as School } from './SchoolService';
+export { EDUCATION, DEFAULT_CAPACITY, DEFAULT_RADIUS };
 
-export const EDUCATION = {
-  MAINTENANCE_PER_SCHOOL: 5,
-} as const;
-
-export const DEFAULT_RADIUS: Record<SchoolType, number> = {
-  elementary: 10,
-  highschool: 12,
-  university: 15,
-};
-
-export const DEFAULT_CAPACITY: Record<SchoolType, number> = {
-  elementary: 400,
-  highschool: 500,
-  university: 800,
-};
-
-/** Road-coverage budget per school type. Higher level = wider coverage. */
-const SCHOOL_BUDGET: Record<SchoolType, number> = {
-  elementary: ROAD_COVERAGE.EDUCATION_ELEMENTARY_BUDGET,
-  highschool: ROAD_COVERAGE.EDUCATION_HIGHSCHOOL_BUDGET,
-  university: ROAD_COVERAGE.EDUCATION_UNIVERSITY_BUDGET,
-};
-
-/** Facility footprint per school type (from InfraConfig). */
-const SCHOOL_SIZE: Record<SchoolType, { width: number; height: number }> = {
-  elementary: { width: 2, height: 2 },
-  highschool: { width: 2, height: 3 },
-  university: { width: 3, height: 3 },
-};
-
-/** Education level ranking for comparison (higher = better). */
-const LEVEL_RANK: Record<SchoolType | 'none', number> = {
-  none: 0,
-  elementary: 1,
-  highschool: 2,
-  university: 3,
-};
-
-/** All school types in order (OCP: add new types here). */
+/** All school types in order. */
 const SCHOOL_TYPES: readonly SchoolType[] = ['elementary', 'highschool', 'university'];
-
-export type EducationLevelResult = 'none' | SchoolType;
 
 /** Map SchoolType → InfraType for operational checks. */
 const SCHOOL_INFRA_TYPE: Record<SchoolType, InfraType> = {
@@ -65,6 +22,8 @@ const SCHOOL_INFRA_TYPE: Record<SchoolType, InfraType> = {
   highschool: 'school_high',
   university: 'school_univ',
 };
+
+export type EducationLevelResult = 'none' | SchoolType;
 
 /** Enrolled citizen info for per-school assignment. */
 export interface EnrolledCitizen {
@@ -81,105 +40,86 @@ const SCHOOL_KEY_TO_TYPE: Record<EnrolledCitizen['schoolKey'], SchoolType> = {
 };
 
 export class EducationService {
-  private schools: School[] = [];
-  private nextId = 1;
-  private operationalSchoolIds: Set<string> | null = null;
-  private readonly schoolEnrollment = new Map<string, number>();
-  private readonly schoolDemand = new Map<string, number>();
-  /** One RoadCoverageMap per school type, each with its own budget. */
-  private coverageMaps: Record<SchoolType, RoadCoverageMap> = {
-    elementary: new RoadCoverageMap(),
-    highschool: new RoadCoverageMap(),
-    university: new RoadCoverageMap(),
-  };
+  readonly elementary = new SchoolService('elementary');
+  readonly highSchool = new SchoolService('highschool');
+  readonly university = new SchoolService('university');
 
-  addSchool(
-    x: number,
-    y: number,
-    type: SchoolType,
-    radius?: number,
-    capacity?: number,
-  ): string {
-    const id = `school-${this.nextId++}`;
-    this.schools.push({
-      id,
-      x,
-      y,
-      type,
-      radius: radius ?? DEFAULT_RADIUS[type],
-      capacity: capacity ?? DEFAULT_CAPACITY[type],
-    });
-    return id;
+  private serviceFor(type: SchoolType): SchoolService {
+    switch (type) {
+      case 'elementary': return this.elementary;
+      case 'highschool': return this.highSchool;
+      case 'university': return this.university;
+    }
+  }
+
+  addSchool(x: number, y: number, type: SchoolType, radius?: number, capacity?: number): string {
+    return this.serviceFor(type).addSchool(x, y, radius, capacity);
   }
 
   removeSchool(id: string): void {
-    removeById(this.schools, id);
+    // Try all three — only one will contain the ID
+    this.elementary.removeSchool(id);
+    this.highSchool.removeSchool(id);
+    this.university.removeSchool(id);
   }
 
   /** Update which schools are operational (have power + water). */
   updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): void {
-    this.operationalSchoolIds = new Set<string>();
-    for (const s of this.schools) {
-      if (isFacilityOperational(s.x, s.y, SCHOOL_INFRA_TYPE[s.type], isPowered, isWaterSupplied)) {
-        this.operationalSchoolIds.add(s.id);
-      }
-    }
-  }
-
-  private isSchoolOperational(id: string): boolean {
-    return this.operationalSchoolIds === null || this.operationalSchoolIds.has(id);
-  }
-
-  /** Recompute road-distance coverage for all school types (only operational schools). */
-  recalculateCoverage(grid: SizedGrid): void {
-    const types = SCHOOL_TYPES;
-    for (const type of types) {
-      const facilities = this.schools.filter(s => s.type === type && this.isSchoolOperational(s.id));
-      const size = SCHOOL_SIZE[type];
-      this.coverageMaps[type].recalculate(
-        facilities, grid, SCHOOL_BUDGET[type], size.width, size.height,
+    for (const type of SCHOOL_TYPES) {
+      const infraType = SCHOOL_INFRA_TYPE[type];
+      this.serviceFor(type).updateOperationalStatus(
+        (f) => isFacilityOperational(f.x, f.y, infraType, isPowered, isWaterSupplied),
       );
     }
   }
 
+  /** Recompute road-distance coverage for all school types. */
+  recalculateCoverage(grid: SizedGrid): void {
+    this.elementary.recalculateCoverage(grid);
+    this.highSchool.recalculateCoverage(grid);
+    this.university.recalculateCoverage(grid);
+  }
+
   /**
-   * Returns true if position (x, y) is within road-distance coverage of any
-   * school of the given type. If type is omitted, checks all school types.
+   * Returns true if position (x, y) is within coverage of any school of the given type.
+   * If type is omitted, checks all types.
    */
   getCoverage(x: number, y: number, type?: SchoolType): boolean {
-    if (type !== undefined) {
-      return this.coverageMaps[type].hasCoverage(x, y);
-    }
-    return SCHOOL_TYPES.some(t => this.coverageMaps[t].hasCoverage(x, y));
+    if (type !== undefined) return this.serviceFor(type).getCoverage(x, y);
+    return this.elementary.getCoverage(x, y) ||
+      this.highSchool.getCoverage(x, y) ||
+      this.university.getCoverage(x, y);
   }
 
   /** Cost ratio: best (minimum) across all school types. -1 if uncovered. */
   getCostRatio(x: number, y: number): number {
     let best = -1;
     for (const type of SCHOOL_TYPES) {
-      const r = this.coverageMaps[type].getCostRatio(x, y);
+      const r = this.serviceFor(type).getCostRatio(x, y);
       if (r >= 0 && (best < 0 || r < best)) best = r;
     }
     return best;
   }
 
-  /**
-   * Returns the highest education level available at position (x, y).
-   */
+  /** Returns the highest education level available at position (x, y). */
   getEducationLevel(x: number, y: number): EducationLevelResult {
-    if (this.coverageMaps.university.hasCoverage(x, y)) return 'university';
-    if (this.coverageMaps.highschool.hasCoverage(x, y)) return 'highschool';
-    if (this.coverageMaps.elementary.hasCoverage(x, y)) return 'elementary';
+    if (this.university.getCoverage(x, y)) return 'university';
+    if (this.highSchool.getCoverage(x, y)) return 'highschool';
+    if (this.elementary.getCoverage(x, y)) return 'elementary';
     return 'none';
   }
 
-  /** Total student capacity across all schools of a given type. */
+  /** Total student capacity for a given school type. */
   getTotalCapacity(type: SchoolType): number {
-    return this.schools.filter(s => s.type === type).reduce((sum, s) => sum + s.capacity, 0);
+    return this.serviceFor(type).getTotalCapacity();
   }
 
-  getSchools(): readonly School[] {
-    return this.schools;
+  getSchools(): readonly SchoolFacility[] {
+    return [
+      ...this.elementary.getSchools(),
+      ...this.highSchool.getSchools(),
+      ...this.university.getSchools(),
+    ];
   }
 
   /** Preview coverage for a potential school placement, merged with existing. */
@@ -190,19 +130,14 @@ export class EducationService {
     facilityWidth?: number,
     facilityHeight?: number,
   ): Map<string, number> {
-    const size = SCHOOL_SIZE[type];
-    return this.coverageMaps[type].previewMerged(
-      position, grid, SCHOOL_BUDGET[type],
-      facilityWidth ?? size.width, facilityHeight ?? size.height,
-    );
+    return this.serviceFor(type).previewCoverage(position, grid, facilityWidth, facilityHeight);
   }
 
   /** Get all covered cells across all school types (for overlay gradient). */
   getCoveredCellsWithCost(): ReadonlyMap<string, number> {
-    // Merge all three maps, taking min cost
     const merged = new Map<string, number>();
     for (const type of SCHOOL_TYPES) {
-      const cells = this.coverageMaps[type].getCoveredCells();
+      const cells = this.serviceFor(type).getCoveredCellsWithCost();
       for (const [key, cost] of cells) {
         const existing = merged.get(key);
         if (existing === undefined || cost < existing) {
@@ -213,51 +148,37 @@ export class EducationService {
     return merged;
   }
 
-  /** Assign enrolled citizens and eligible citizens to nearest school of their type (Euclidean). */
+  /** Assign enrolled/eligible citizens to nearest school of their type. */
   updateSchoolLoads(
     enrolled: ReadonlyArray<EnrolledCitizen>,
     eligible: ReadonlyArray<EnrolledCitizen>,
   ): void {
-    this.schoolEnrollment.clear();
-    this.schoolDemand.clear();
-    for (const s of this.schools) {
-      this.schoolEnrollment.set(s.id, 0);
-      this.schoolDemand.set(s.id, 0);
-    }
+    // Partition by type
+    const byType: Record<SchoolType, { enrolled: { x: number; y: number }[]; eligible: { x: number; y: number }[] }> = {
+      elementary: { enrolled: [], eligible: [] },
+      highschool: { enrolled: [], eligible: [] },
+      university: { enrolled: [], eligible: [] },
+    };
+    for (const c of enrolled) byType[SCHOOL_KEY_TO_TYPE[c.schoolKey]].enrolled.push(c);
+    for (const c of eligible) byType[SCHOOL_KEY_TO_TYPE[c.schoolKey]].eligible.push(c);
 
-    for (const c of enrolled) {
-      const id = this.findNearestSchool(c.x, c.y, SCHOOL_KEY_TO_TYPE[c.schoolKey]);
-      if (id) this.schoolEnrollment.set(id, (this.schoolEnrollment.get(id) ?? 0) + 1);
-    }
-
-    // Demand = enrolled + eligible (total who need this school)
-    for (const c of [...enrolled, ...eligible]) {
-      const id = this.findNearestSchool(c.x, c.y, SCHOOL_KEY_TO_TYPE[c.schoolKey]);
-      if (id) this.schoolDemand.set(id, (this.schoolDemand.get(id) ?? 0) + 1);
+    for (const type of SCHOOL_TYPES) {
+      this.serviceFor(type).updateLoads(byType[type].enrolled, byType[type].eligible);
     }
   }
 
-  private findNearestSchool(x: number, y: number, type: SchoolType): string | null {
-    let nearestId = '';
-    let nearestDist = Infinity;
-    for (const s of this.schools) {
-      if (s.type !== type) continue;
-      const dx = x - s.x;
-      const dy = y - s.y;
-      const dist = dx * dx + dy * dy;
-      if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
-    }
-    return nearestId || null;
-  }
-
-  /** Per-school enrolled student count (for UI display). */
+  /** Per-school enrolled student count. */
   getSchoolEnrollment(schoolId: string): number {
-    return this.schoolEnrollment.get(schoolId) ?? 0;
+    return this.elementary.getEnrollment(schoolId)
+      || this.highSchool.getEnrollment(schoolId)
+      || this.university.getEnrollment(schoolId);
   }
 
-  /** Per-school total demand: enrolled + waiting to enroll (for UI display). */
+  /** Per-school total demand. */
   getSchoolDemand(schoolId: string): number {
-    return this.schoolDemand.get(schoolId) ?? 0;
+    return this.elementary.getDemand(schoolId)
+      || this.highSchool.getDemand(schoolId)
+      || this.university.getDemand(schoolId);
   }
 
   tick(): void {
@@ -265,19 +186,34 @@ export class EducationService {
   }
 
   getMaintenanceCost(): number {
-    return this.schools.length * EDUCATION.MAINTENANCE_PER_SCHOOL;
+    return this.elementary.getMaintenanceCost()
+      + this.highSchool.getMaintenanceCost()
+      + this.university.getMaintenanceCost();
   }
 
-  toJSON(): { schools: School[] } {
-    return { schools: this.schools.map(s => ({ ...s })) };
+  toJSON(): { schools: SchoolFacility[] } {
+    return {
+      schools: [
+        ...this.elementary.toJSON(),
+        ...this.highSchool.toJSON(),
+        ...this.university.toJSON(),
+      ],
+    };
   }
 
-  static fromJSON(data: { schools: School[] }): EducationService {
+  static fromJSON(data: { schools: SchoolFacility[] }): EducationService {
     const service = new EducationService();
+    const byType: Record<SchoolType, SchoolFacility[]> = {
+      elementary: [],
+      highschool: [],
+      university: [],
+    };
     for (const s of data.schools) {
-      service.schools.push({ ...s });
+      if (byType[s.type]) byType[s.type].push(s);
     }
-    service.nextId = recoverNextId(service.schools, 'school-');
+    service.elementary.loadFromArray(byType.elementary);
+    service.highSchool.loadFromArray(byType.highschool);
+    service.university.loadFromArray(byType.university);
     return service;
   }
 }

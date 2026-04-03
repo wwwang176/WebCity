@@ -38,8 +38,8 @@ describe('Service ID isolation (instance-level counters)', () => {
     const b = new EducationService();
     const idA = a.addSchool(0, 0, 'elementary');
     const idB = b.addSchool(0, 0, 'elementary');
-    expect(idA).toBe('school-1');
-    expect(idB).toBe('school-1');
+    expect(idA).toBe('elem-1');
+    expect(idB).toBe('elem-1');
   });
 
   it('ParkService: new instances start with _1 IDs', () => {
