@@ -5,4 +5,4 @@ dist/
 *.log
 .claude/worktrees/
 .claude/solid-review-progress.md
-docs-m/
+docs-m/SOLID-REVIEW-CHECKLIST.md
