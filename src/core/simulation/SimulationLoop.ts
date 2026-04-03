@@ -58,7 +58,8 @@ import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicl
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
 import { PedestrianTripType } from '../traffic/PedestrianAgent';
-import { TRADE, FreightRouteType } from '../traffic/FreightSystem';
+import { TRADE } from '../traffic/FreightSystem';
+import { spawnFreightVehicles, rebuildActiveFreight, type FreightSpawnContext } from '../traffic/FreightVehicleSpawner';
 import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
 
 import { SIMULATION } from './SimulationConstants';
@@ -1801,14 +1802,11 @@ export class SimulationLoop {
     }
   }
 
+  /** Reusable map: building position → zone type (rebuilt with building index). */
+  private buildingZoneTypes = new Map<string, ZoneType>();
+
   /**
-   * Spawn freight trucks for three trade routes:
-   * 1. Local supply: industrial → commercial
-   * 2. Export: industrial → trade node (station/airport/highway edge)
-   * 3. Import: trade node → commercial
-   *
-   * A-limit: each industrial building has at most 1 truck; each trade node has at most N trucks.
-   * B-limit: total freight trucks on road ≤ freightCap.
+   * Spawn freight trucks (delegated to FreightVehicleSpawner — SRP).
    * Routes are cached in shared CommuteCache.routeIndex.
    */
   private spawnFreightTraffic(
@@ -1818,143 +1816,49 @@ export class SimulationLoop {
     const freight = this.state.freight;
     const lastTrade = freight.getLastTrade();
     const lastDemand = freight.getLastDemand();
-
-    const production = lastDemand.production;
-    const imported = lastTrade.imported;
-    const exported = lastTrade.exported;
-
-    if (production === 0 && imported === 0) return;
-
-    // B-limit: total freight trucks on road
     const freightCap = Math.floor(vehicleCap * SIMULATION.FREIGHT_CAP_RATIO);
 
     // Rebuild activeFreight from live vehicles
-    const af = this.activeFreight;
-    af.clear();
-    let freightOnRoad = 0;
-    for (const v of this.state.traffic.vehicles) {
-      if (v.sourceBuildingKey && !v.arrived) {
-        af.set(v.sourceBuildingKey, (af.get(v.sourceBuildingKey) ?? 0) + 1);
-        freightOnRoad++;
-      }
-    }
-    if (freightOnRoad >= freightCap) return;
+    rebuildActiveFreight(this.state.traffic.vehicles, this.activeFreight);
 
-    if (this.buildingPositions.length === 0) return;
-
-    // A-limit: collect available sources (industrial buildings with < 1 truck)
-    const availableIndustrials: { x: number; y: number; key: string }[] = [];
-    const commercials: { x: number; y: number }[] = [];
+    // Build zone type lookup from grid (reuse map, avoid per-call allocation)
+    this.buildingZoneTypes.clear();
     for (const bp of this.buildingPositions) {
       const cell = grid.getCell(bp.x, bp.y);
-      if (!cell) continue;
-      if (cell.zoneType === ZoneType.INDUSTRIAL) {
-        const key = toPosKey(bp.x, bp.y);
-        if ((af.get(key) ?? 0) < 1) availableIndustrials.push({ x: bp.x, y: bp.y, key });
-      } else if (isCommercialZone(cell.zoneType)) {
-        commercials.push(bp);
-      }
+      if (cell) this.buildingZoneTypes.set(bp.pos, cell.zoneType);
     }
 
-    // A-limit: collect available trade road cells (< N trucks per trade node, keyed by tradeKey)
-    const availableTrade: { x: number; y: number; key: string }[] = [];
-    for (const tp of this.cachedTradePositions) {
-      const maxTrucks = Math.ceil(tp.throughput / SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT);
-      if ((af.get(tp.tradeKey) ?? 0) < maxTrucks) availableTrade.push({ x: tp.x, y: tp.y, key: tp.tradeKey });
-    }
+    const roadLookup = this._roadLookup;
+    const laneGraph = this.laneGraph;
+    const commuteCache = this.commuteCache;
 
-    // Route weights from economic data
-    const localVolume = Math.max(0, production - exported);
-    const hasLocal = availableIndustrials.length > 0 && commercials.length > 0 && localVolume > 0;
-    const hasExport = availableIndustrials.length > 0 && availableTrade.length > 0 && exported > 0;
-    const hasImport = availableTrade.length > 0 && commercials.length > 0 && imported > 0;
-
-    if (!hasLocal && !hasExport && !hasImport) return;
-
-    const options: Array<{ type: FreightRouteType; weight: number }> = [];
-    if (hasLocal) options.push({ type: FreightRouteType.LOCAL, weight: localVolume });
-    if (hasExport) options.push({ type: FreightRouteType.EXPORT, weight: exported });
-    if (hasImport) options.push({ type: FreightRouteType.IMPORT, weight: imported });
-    const totalWeight = options.reduce((s, o) => s + o.weight, 0);
-    if (totalWeight === 0) return;
-
-    // Spawn up to (freightCap - freightOnRoad) trucks, max 5 per tick
-    const maxPerTick = Math.min(5, freightCap - freightOnRoad);
-
-    for (let i = 0; i < maxPerTick; i++) {
-      if (freightOnRoad >= freightCap) break;
-
-      // Weighted random route selection
-      let roll = Math.random() * totalWeight;
-      let routeType: FreightRouteType = FreightRouteType.LOCAL;
-      for (const o of options) {
-        roll -= o.weight;
-        if (roll <= 0) { routeType = o.type; break; }
-      }
-
-      let from: { x: number; y: number; key: string };
-      let to: { x: number; y: number };
-
-      switch (routeType) {
-        case FreightRouteType.LOCAL:
-          if (availableIndustrials.length === 0 || commercials.length === 0) continue;
-          from = availableIndustrials[randomInt(availableIndustrials.length)]!;
-          to = commercials[randomInt(commercials.length)]!;
-          break;
-        case FreightRouteType.EXPORT:
-          if (availableIndustrials.length === 0 || availableTrade.length === 0) continue;
-          from = availableIndustrials[randomInt(availableIndustrials.length)]!;
-          to = availableTrade[randomInt(availableTrade.length)]!;
-          break;
-        case FreightRouteType.IMPORT:
-          if (availableTrade.length === 0 || commercials.length === 0) continue;
-          from = availableTrade[randomInt(availableTrade.length)]!;
-          to = commercials[randomInt(commercials.length)]!;
-          break;
-      }
-
-      // Use shared CommuteCache.routeIndex for path caching
-      const fromRoad = findAdjacentRoad(grid, from.x, from.y);
-      const toRoad = findAdjacentRoad(grid, to.x, to.y);
-      if (!fromRoad || !toRoad || (fromRoad.x === toRoad.x && fromRoad.y === toRoad.y)) continue;
-      if (!this._roadLookup) continue;
-
-      const routeKey = `${toPosKey(from.x, from.y)}->${toPosKey(to.x, to.y)}`;
-      let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
-
-      if (!variants) {
-        variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromRoad, toRoad);
-        if (variants.length > 0) {
-          this.commuteCache.setRouteVariants(routeKey, variants);
+    spawnFreightVehicles({
+      grid,
+      production: lastDemand.production,
+      imported: lastTrade.imported,
+      exported: lastTrade.exported,
+      freightCap,
+      buildingPositions: this.buildingPositions,
+      buildingZoneTypes: this.buildingZoneTypes,
+      cachedTradePositions: this.cachedTradePositions,
+      activeFreight: this.activeFreight,
+      findPath: (fromRoad, toRoad) => {
+        if (!roadLookup) return null;
+        const routeKey = `${toPosKey(fromRoad.x, fromRoad.y)}->${toPosKey(toRoad.x, toRoad.y)}`;
+        let variants = commuteCache.getRouteVariants(routeKey) ?? null;
+        if (!variants) {
+          variants = findLanePathVariants(laneGraph, roadLookup, fromRoad, toRoad);
+          if (variants.length > 0) commuteCache.setRouteVariants(routeKey, variants);
         }
-      }
-
-      const edgePath = variants && variants.length > 0
-        ? variants[Math.floor(Math.random() * variants.length)]!
-        : null;
-
-      if (edgePath && edgePath.length > 0) {
-        this.state.traffic.addFreightVehicle(edgePath, from.key);
-        freightOnRoad++;
-        // Update activeFreight count for A-limit within this tick
-        const newCount = (af.get(from.key) ?? 0) + 1;
-        af.set(from.key, newCount);
-        if (routeType === FreightRouteType.IMPORT) {
-          // Remove all road cells of this trade node if it reached its limit
-          const tp = this.cachedTradePositions.find(t => t.tradeKey === from.key);
-          const maxTrucks = tp ? Math.ceil(tp.throughput / SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT) : 1;
-          if (newCount >= maxTrucks) {
-            for (let j = availableTrade.length - 1; j >= 0; j--) {
-              if (availableTrade[j]!.key === from.key) availableTrade.splice(j, 1);
-            }
-          }
-        } else {
-          // Industrial: max 1, remove from available list
-          const idx = availableIndustrials.indexOf(from as any);
-          if (idx >= 0) availableIndustrials.splice(idx, 1);
-        }
-      }
-    }
+        return variants && variants.length > 0
+          ? variants[Math.floor(Math.random() * variants.length)]!
+          : null;
+      },
+      addFreightVehicle: (edgePath, sourceKey) => {
+        this.state.traffic.addFreightVehicle(edgePath, sourceKey);
+      },
+      freightTrucksPerThroughput: SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT,
+    });
   }
 
   /** Roll over dailyRiders for all transit systems (EMA smooth + reset). */
