@@ -1980,10 +1980,10 @@ export class SimulationLoop {
   }
 
   private findNearestStop(
-    stops: readonly { x: number; y: number; passengers: number }[],
+    stops: readonly { x: number; y: number; passengers: number; dailyRiders: number }[],
     pos: { x: number; y: number },
-  ): { x: number; y: number; passengers: number } | null {
-    let best: { x: number; y: number; passengers: number } | null = null;
+  ): { x: number; y: number; passengers: number; dailyRiders: number } | null {
+    let best: { x: number; y: number; passengers: number; dailyRiders: number } | null = null;
     let bestDist = Infinity;
     for (const s of stops) {
       const dist = manhattanDistance(s.x, s.y, pos.x, pos.y);

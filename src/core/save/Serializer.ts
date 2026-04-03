@@ -91,7 +91,7 @@ export function snapshotGameState(
   extra?: {
     abandonmentStress?: Map<string, number>;
     elevationManager?: import('../elevation/ElevationManager').ElevationManager;
-    transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number };
+    transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay: number };
   },
 ): SerializedState {
   const cells: SerializedCell[] = [];
@@ -175,7 +175,7 @@ export function serializeGameState(
 export interface DeserializedExtra {
   abandonmentStress: Map<string, number>;
   elevationData?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
-  transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number };
+  transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay: number };
 }
 
 export function deserializeGameState(json: string): GameState & { _extra?: DeserializedExtra } {

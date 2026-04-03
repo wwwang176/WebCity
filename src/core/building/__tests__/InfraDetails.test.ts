@@ -187,7 +187,7 @@ describe('getInfraDetails', () => {
   });
 
   it('airport: returns static status', () => {
-    const d = getInfraDetails(makeCtx(), 'airport', 0, 0);
+    const d = getInfraDetails(makeCtx(), 'airport_s', 0, 0);
     expect(d).toEqual({ Status: 'Operational' });
   });
 
@@ -198,9 +198,9 @@ describe('getInfraDetails', () => {
 });
 
 describe('INFRA_DETAIL_EXTRACTORS', () => {
-  it('should have extractors for 13 infrastructure types', () => {
+  it('should have extractors for 15 infrastructure types', () => {
     const keys = Object.keys(INFRA_DETAIL_EXTRACTORS);
-    expect(keys.length).toBe(13);
+    expect(keys.length).toBe(15);
   });
 
   it('each extractor should be a function', () => {

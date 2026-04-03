@@ -154,7 +154,9 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
       'Supply Ratio': ratioStr,
     };
   },
-  airport: () => ({ Status: 'Operational' }),
+  airport_s: () => ({ Status: 'Operational' }),
+  airport_m: () => ({ Status: 'Operational' }),
+  airport_l: () => ({ Status: 'Operational' }),
 };
 
 /** Get infrastructure details for the info panel. Returns empty object for unknown types. */
