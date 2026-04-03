@@ -4,12 +4,7 @@ import { type InfraType, getInfraConfig } from '../building/InfraConfig';
 import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
 import type { RoadCoverageService, Facility } from './RoadCoverageService';
 import type { SizedGrid } from '../grid/GridHelpers';
-import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
-import { getBuildingType } from '../building/types';
-import { WATER_CONSUMPTION } from './WaterNetwork';
-import { calculateZoneDemand } from './NetworkCoverage';
-import { SEWAGE } from './SewageService';
-import { GARBAGE_PRODUCTION } from './GarbageService';
+import { calculateGarbageSewageProduction } from './GarbageSewageProduction';
 
 /** All civic-service keys on GameState that implement CivicService. */
 const CIVIC_SERVICE_KEYS: readonly (keyof GameState)[] = [
@@ -72,34 +67,13 @@ export function tickAllCivicServices(state: GameState): void {
   state.health.tick();
   state.education.tick();
   state.parks.tick();
-  // Calculate per-zone garbage and sewage production
-  let garbageProduced = 0;
-  let sewageProduced = 0;
-  state.grid.forEachCell((cell) => {
-    if (cell.buildingId <= 0) return;
-    const bt = getBuildingType(cell.buildingId);
-    if (!bt) return;
 
-    // Garbage: base + perCapita × people
-    const people = isResidentialZone(cell.zoneType) ? bt.residents : bt.workers;
-    const gRate = isResidentialZone(cell.zoneType) ? GARBAGE_PRODUCTION.RESIDENTIAL
-      : isCommercialZone(cell.zoneType) ? GARBAGE_PRODUCTION.COMMERCIAL
-      : cell.zoneType === ZoneType.INDUSTRIAL ? GARBAGE_PRODUCTION.INDUSTRIAL
-      : cell.zoneType === ZoneType.OFFICE ? GARBAGE_PRODUCTION.OFFICE
-      : null;
-    if (gRate) garbageProduced += gRate.base + gRate.perCapita * people;
-
-    // Sewage: water demand × sewage rate
-    const waterDemand = calculateZoneDemand(WATER_CONSUMPTION, cell.zoneType as ZoneType, bt.residents, bt.workers);
-    const sRate = isResidentialZone(cell.zoneType) ? SEWAGE.SEWAGE_RATE.RESIDENTIAL
-      : isCommercialZone(cell.zoneType) ? SEWAGE.SEWAGE_RATE.COMMERCIAL
-      : cell.zoneType === ZoneType.INDUSTRIAL ? SEWAGE.SEWAGE_RATE.INDUSTRIAL
-      : cell.zoneType === ZoneType.OFFICE ? SEWAGE.SEWAGE_RATE.OFFICE
-      : 0;
-    sewageProduced += waterDemand * sRate;
-  });
-  state.garbage.tick(Math.floor(garbageProduced));
-  state.sewage.tick(Math.floor(sewageProduced));
+  // Garbage + sewage production (delegated — OCP/DRY)
+  const production = calculateGarbageSewageProduction(
+    (fn) => state.grid.forEachCell(fn),
+  );
+  state.garbage.tick(production.garbage);
+  state.sewage.tick(production.sewage);
 
   state.deathCare.tick();
 }
