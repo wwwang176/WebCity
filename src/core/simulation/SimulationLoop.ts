@@ -64,6 +64,7 @@ import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
 
 import { SIMULATION } from './SimulationConstants';
 import { TransferTracker } from '../transport/TransferTracker';
+import { computeTransferStats, findTransferRouteStops, TRANSIT_ICONS } from '../transport/TransferStatsQuery';
 
 
 /** Map CitizenManager schoolKey to EducationService SchoolType */
@@ -1651,7 +1652,7 @@ export class SimulationLoop {
           // Track transfer usage per route label
           if (rideLegs.length >= 2) {
             const label = rideLegs.map(l => {
-              const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
+              const icons = TRANSIT_ICONS;
               return icons[l.transitType ?? ''] ?? '?';
             }).join('\u2192');
             this.transferTracker.recordTransfer(label);
@@ -1975,80 +1976,20 @@ export class SimulationLoop {
     return this.transferTracker.getBuildings(label);
   }
 
-  /** Get stop coordinates for a specific transfer route label (for map overlay). */
+  /** Get stop coordinates for a specific transfer route label (delegated — SRP). */
   getTransferRouteStops(label: string): Array<{ x: number; y: number; type: string }> {
-    const cache = this.transferGraph.stopRouteCache;
-    const stops: Array<{ x: number; y: number; type: string }> = [];
-    // Find first cached route matching this label
-    for (const route of cache.values()) {
-      const rideLegs = route.legs.filter(l => l.type === 'ride');
-      if (rideLegs.length < 2) continue;
-      const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
-      const routeLabel = rideLegs.map(l => icons[l.transitType ?? ''] ?? '?').join('\u2192');
-      if (routeLabel !== label) continue;
-      // Collect all stop positions from legs
-      for (const leg of route.legs) {
-        stops.push({ x: leg.fromX, y: leg.fromY, type: leg.type });
-        stops.push({ x: leg.toX, y: leg.toY, type: leg.type });
-      }
-      break; // one example is enough for the line
-    }
-    return stops;
+    return findTransferRouteStops(this.transferGraph.stopRouteCache, label);
   }
 
-  /** Transfer stats for UI display. */
-  getTransferStats(): {
-    activeTransferPeds: number;
-    totalActivePeds: number;
-    transferTrips: number;
-    cachedRoutes: number;
-    multiRideRoutes: number;
-    transferEdges: number;
-    routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }>;
-  } {
-    const activeTransferPeds = this.transferTracker.getPedsSnapshot();
-
-    const pool = this.walkingTripPool;
-    let transferTrips = 0;
-    for (const t of pool.trips) {
-      if (t.tripType === 4) transferTrips += t.count; // TRANSFER_WALK
-    }
-
-    const cache = this.transferGraph.stopRouteCache;
-    let multiRideRoutes = 0;
-    const groups = new Map<string, { count: number; totalTime: number }>();
-    cache.forEach(route => {
-      const rideLegs = route.legs.filter(l => l.type === 'ride');
-      const rides = rideLegs.length;
-      if (rides >= 2) multiRideRoutes++;
-      const label = rideLegs.map(l => {
-        const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
-        return icons[l.transitType ?? ''] ?? l.transitType ?? '?';
-      }).join('\u2192');
-      const g = groups.get(label);
-      if (g) { g.count++; g.totalTime += route.totalTime; }
-      else groups.set(label, { count: 1, totalTime: route.totalTime });
-    });
-
-    const weeklyTotals = this.transferTracker.getAllWeeklyTotals();
-
-    const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number; weeklyUse: number }> = [];
-    groups.forEach((g, label) => {
-      const rides = (label.match(/\u2192/g) || []).length + 1;
-      const weeklyUse = weeklyTotals.get(label) ?? 0;
-      routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count, weeklyUse });
-    });
-    routeBreakdown.sort((a, b) => b.weeklyUse - a.weeklyUse);
-
-    return {
-      activeTransferPeds,
+  /** Transfer stats for UI display (delegated to TransferStatsQuery — SRP). */
+  getTransferStats() {
+    return computeTransferStats({
+      transferTracker: this.transferTracker,
+      walkingTripPool: this.walkingTripPool,
+      stopRouteCache: this.transferGraph.stopRouteCache,
       totalActivePeds: this.state.pedestrianManager.agents.length,
-      transferTrips,
-      cachedRoutes: cache.size,
-      multiRideRoutes,
-      transferEdges: this.transferGraph.byStop.size,
-      routeBreakdown,
-    };
+      transferEdgeCount: this.transferGraph.byStop.size,
+    });
   }
 
   private findNearestStop(
