@@ -109,7 +109,7 @@ export function SummaryPage() {
         { label: 'City Appeal', value: attractiveness.toFixed(1), ok: attractiveness > 40, status: appealStatus },
         { label: 'Housing', value: String(vacantHomes), ok: vacantHomes > 0, status: vacantHomes > 0 ? `${vacantHomes} vacant` : 'No vacancy' },
         { label: 'Jobs', value: String(jobOpenings), ok: jobOpenings > 0, status: jobOpenings > 0 ? `${jobOpenings} open` : 'No openings' },
-        { label: 'Unemployment', value: '', ok: unemploymentRate < 0.4, status: unemploymentRate < 0.01 ? 'Full employment' : unemploymentRate < 0.1 ? `${(unemploymentRate * 100).toFixed(0)}% unemployed` : unemploymentRate < 0.4 ? `${(unemploymentRate * 100).toFixed(0)}% unemployed` : `${(unemploymentRate * 100).toFixed(0)}% unemployed!` },
+        { label: 'Unemployment', value: '', ok: unemploymentRate < 0.1, status: unemploymentRate < 0.01 ? 'Full employment' : `${(unemploymentRate * 100).toFixed(0)}% unemployed${unemploymentRate >= 0.4 ? '!' : ''}` },
       ],
     };
   }, undefined, {
@@ -125,7 +125,7 @@ export function SummaryPage() {
         <div class="summary-card"><div class="sc-value">{data().avgHappiness}</div><div class="sc-label">Happiness</div></div>
         <div class="summary-card"><div class="sc-value">{data().vacantHomes}</div><div class="sc-label">Vacant Homes</div></div>
         <div class="summary-card"><div class="sc-value">{data().jobOpenings}</div><div class="sc-label">Job Openings</div></div>
-        <div class="summary-card"><div class="sc-value" style={{ color: data().unemploymentRate > 0.4 ? UI_COLORS.STATUS_BAD : data().unemploymentRate > 0.2 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD }}>{(data().unemploymentRate * 100).toFixed(0)}%</div><div class="sc-label">Unemployment</div></div>
+        <div class="summary-card"><div class="sc-value" style={{ color: data().unemploymentRate > 0.2 ? UI_COLORS.STATUS_BAD : data().unemploymentRate > 0.1 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD }}>{(data().unemploymentRate * 100).toFixed(0)}%</div><div class="sc-label">Unemployment</div></div>
       </div>
 
       <div class="section-title">RCI Demand</div>
