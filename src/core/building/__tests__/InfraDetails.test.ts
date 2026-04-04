@@ -113,7 +113,7 @@ describe('getInfraDetails', () => {
   it('garbage: returns load, produced/wk, burned/wk', () => {
     const ctx = makeCtx({
       garbage: {
-        getFacilities: () => [{ x: 3, y: 3, capacity: 2000, currentLoad: 500, inTransit: 2 }],
+        getFacilities: () => [{ x: 3, y: 3, capacity: 2000, currentLoad: 500, inTransit: 2, bagsInTransit: 10 }],
         getProducedPerWeek: () => 35,
         getBurnedPerWeek: () => 30,
         getUncollected: () => 0,

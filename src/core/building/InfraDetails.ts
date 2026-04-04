@@ -35,7 +35,7 @@ export interface InfraDetailContext {
     getParks(): readonly { x: number; y: number; radius: number }[];
   };
   garbage: {
-    getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number; inTransit: number }[];
+    getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number; inTransit: number; bagsInTransit: number }[];
     getProducedPerWeek(): number;
     getBurnedPerWeek(): number;
     getUncollected(): number;

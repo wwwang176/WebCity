@@ -5,12 +5,19 @@ import type { SizedGrid } from '../grid/GridHelpers';
 import type { PollutionSource } from '../environment/Pollution';
 import { SIMULATION } from '../simulation/SimulationConstants';
 
+/** A garbage bag waiting at a building for truck pickup. */
 export interface PendingGarbage {
   x: number;
   y: number;
-  facilityId: string | null;   // null = unassigned
-  remainingTicks: number;      // countdown to arrival; -1 = unassigned
-  waitTicks: number;           // total tick() calls spent in queue
+  waitTicks: number;           // total tick() calls spent waiting
+}
+
+/** A truck trip collecting from multiple buildings and returning to facility. */
+export interface TruckTrip {
+  facilityId: string;
+  stops: { x: number; y: number; bagCount: number }[];
+  totalBags: number;
+  remainingTicks: number;      // countdown to arrival at facility
 }
 
 export interface GarbageFacility {
@@ -19,8 +26,10 @@ export interface GarbageFacility {
   y: number;
   capacity: number;
   currentLoad: number;
-  /** Trucks on the road heading to pick up garbage */
+  /** Trucks currently on the road */
   inTransit: number;
+  /** Total bags being transported by all trucks */
+  bagsInTransit: number;
   /** Garbage burned today (before advanceDay flush) */
   todayBurned: number;
   /** Rolling 7-day window of daily burn counts */
@@ -50,7 +59,7 @@ export const GARBAGE = {
   /** Default capacity per facility */
   DEFAULT_CAPACITY: 1000,
   /** Fixed burn rate: units incinerated per tick per facility */
-  BURN_RATE: 5,
+  BURN_RATE: 20,
   /** Maintenance cost per garbage facility per tick */
   MAINTENANCE_PER_FACILITY: 3,
   /** Max pollution penalty from uncollected garbage */
@@ -69,6 +78,8 @@ export const GARBAGE = {
   TRUCK_SPEED: 10,
   /** Total garbage trucks per facility */
   TRUCK_COUNT: 5,
+  /** Max bags a single truck can carry per trip */
+  TRUCK_CAPACITY: 20,
   /** Happiness penalty per garbage bag waiting in queue */
   HAPPINESS_PER_BAG: -3,
   /** After this many ticks, penalty per bag increases */
@@ -81,9 +92,12 @@ export const GARBAGE = {
 
 interface GarbageJSON {
   facilities: GarbageFacility[];
-  pendingGarbageQueue?: PendingGarbage[];
+  pendingBags?: PendingGarbage[];
+  truckTrips?: TruckTrip[];
   garbageAccumulators?: Record<string, number>;
-  /** @deprecated Legacy field — converted to queue on load */
+  /** @deprecated Legacy v1 queue format */
+  pendingGarbageQueue?: any[];
+  /** @deprecated Legacy field — converted to bags on load */
   overflow?: number;
 }
 
@@ -99,8 +113,10 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
   /** Merged min-distance map across all facilities */
   private mergedDistanceMap = new Map<string, number>();
 
-  /** Queue of garbage bags waiting for truck pickup */
-  private pendingGarbageQueue: PendingGarbage[] = [];
+  /** Bags waiting at buildings for truck pickup */
+  private pendingBags: PendingGarbage[] = [];
+  /** Active truck trips */
+  private truckTrips: TruckTrip[] = [];
 
   /** Per-building fractional garbage accumulator */
   private garbageAccumulators = new Map<string, number>();
@@ -119,6 +135,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
       capacity: capacity ?? GARBAGE.DEFAULT_CAPACITY,
       currentLoad: 0,
       inTransit: 0,
+      bagsInTransit: 0,
       todayBurned: 0,
       burnDaily: new Array(7).fill(0),
       burnDailyIndex: 0,
@@ -130,14 +147,16 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
   }
 
   removeFacility(id: string): void {
-    const fac = this.facilities.find(f => f.id === id);
-    if (fac) {
-      // Return in-transit garbage assigned to this facility back to unassigned
-      for (const g of this.pendingGarbageQueue) {
-        if (g.facilityId === id) {
-          g.facilityId = null;
-          g.remainingTicks = -1;
+    // Return bags from trips assigned to this facility back to pending
+    for (let i = this.truckTrips.length - 1; i >= 0; i--) {
+      const trip = this.truckTrips[i]!;
+      if (trip.facilityId === id) {
+        for (const stop of trip.stops) {
+          for (let j = 0; j < stop.bagCount; j++) {
+            this.pendingBags.push({ x: stop.x, y: stop.y, waitTicks: 0 });
+          }
         }
+        this.truckTrips.splice(i, 1);
       }
     }
     this.facilityDistanceMaps.delete(id);
@@ -150,7 +169,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
 
   // ── Per-building garbage reporting ─────────────────────────────────
 
-  /** Report garbage produced at a specific building. Accumulates fractionally; emits queue entry at ≥1. */
+  /** Report garbage produced at a specific building. Accumulates fractionally; emits bag at ≥1. */
   reportGarbage(x: number, y: number, amount: number): void {
     if (amount <= 0) return;
     this.todayProduced += amount;
@@ -160,7 +179,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
       const bags = Math.floor(acc);
       this.garbageAccumulators.set(key, acc - bags);
       for (let i = 0; i < bags; i++) {
-        this.pendingGarbageQueue.push({ x, y, facilityId: null, remainingTicks: -1, waitTicks: 0 });
+        this.pendingBags.push({ x, y, waitTicks: 0 });
       }
     } else {
       this.garbageAccumulators.set(key, acc);
@@ -226,64 +245,46 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
   // ── Tick logic ────────────────────────────────────────────────────
 
   tick(): void {
-    // Step 1: Increment wait counters + try to assign unassigned bags
-    for (const bag of this.pendingGarbageQueue) {
-      bag.waitTicks++;
-      if (bag.facilityId === null) {
-        this.tryAssignBag(bag);
+    // Step 1: Increment wait counters on pending bags; remove decomposed
+    for (let i = this.pendingBags.length - 1; i >= 0; i--) {
+      this.pendingBags[i]!.waitTicks++;
+      if (this.pendingBags[i]!.waitTicks >= GARBAGE.DECOMPOSE_TICKS) {
+        this.pendingBags.splice(i, 1);
       }
     }
 
-    // Step 2: Tick down assigned bags; collect arrivals + decomposed
-    const remove: number[] = [];
-    for (let i = 0; i < this.pendingGarbageQueue.length; i++) {
-      const bag = this.pendingGarbageQueue[i]!;
-
-      // Decompose: garbage has waited too long → remove (pollution already applied via penalty)
-      if (bag.waitTicks >= GARBAGE.DECOMPOSE_TICKS) {
-        if (bag.facilityId !== null) {
-          const fac = this.facilities.find(f => f.id === bag.facilityId);
-          if (fac) fac.inTransit = Math.max(0, fac.inTransit - 1);
-        }
-        remove.push(i);
-        continue;
-      }
-
-      if (bag.facilityId === null) continue;
-      bag.remainingTicks -= SIMULATION.SLOW_TICK_INTERVAL;
-      if (bag.remainingTicks <= 0) {
-        const fac = this.facilities.find(f => f.id === bag.facilityId);
+    // Step 2: Tick down active truck trips; handle arrivals
+    for (let i = this.truckTrips.length - 1; i >= 0; i--) {
+      const trip = this.truckTrips[i]!;
+      trip.remainingTicks -= SIMULATION.SLOW_TICK_INTERVAL;
+      if (trip.remainingTicks <= 0) {
+        const fac = this.facilities.find(f => f.id === trip.facilityId);
         if (fac) {
-          fac.currentLoad++;
-          fac.todayReceived++;
+          fac.currentLoad += trip.totalBags;
+          fac.todayReceived += trip.totalBags;
           fac.inTransit = Math.max(0, fac.inTransit - 1);
+          fac.bagsInTransit = Math.max(0, fac.bagsInTransit - trip.totalBags);
         }
-        remove.push(i);
+        this.truckTrips.splice(i, 1);
       }
     }
 
-    // Remove arrived + decomposed (reverse to preserve indices)
-    for (let i = remove.length - 1; i >= 0; i--) {
-      this.pendingGarbageQueue.splice(remove[i]!, 1);
-    }
+    // Step 3: Dispatch trucks from facilities with available trucks
+    this.dispatchTrucks();
 
-    // Step 3: Process at facilities (burn)
+    // Step 4: Process at facilities (burn)
     this.processFacilities();
   }
 
   /** Remove all pending garbage at a specific position (building demolished/cleared). */
   clearPendingAt(x: number, y: number): void {
-    for (let i = this.pendingGarbageQueue.length - 1; i >= 0; i--) {
-      const g = this.pendingGarbageQueue[i]!;
-      if (g.x === x && g.y === y) {
-        if (g.facilityId !== null) {
-          const fac = this.facilities.find(f => f.id === g.facilityId);
-          if (fac) fac.inTransit = Math.max(0, fac.inTransit - 1);
-        }
-        this.pendingGarbageQueue.splice(i, 1);
+    for (let i = this.pendingBags.length - 1; i >= 0; i--) {
+      if (this.pendingBags[i]!.x === x && this.pendingBags[i]!.y === y) {
+        this.pendingBags.splice(i, 1);
       }
     }
     this.garbageAccumulators.delete(toPosKey(x, y));
+    // Note: bags already on trucks (in truckTrips) are committed — they continue to the facility
   }
 
   private processFacilities(): void {
@@ -298,31 +299,84 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     }
   }
 
-  private tryAssignBag(bag: PendingGarbage): void {
-    const posKey = toPosKey(bag.x, bag.y);
-    let bestFac: GarbageFacility | null = null;
-    let bestCost = Infinity;
+  /** Dispatch trucks: each available truck picks up bags from multiple buildings. */
+  private dispatchTrucks(): void {
+    if (this.pendingBags.length === 0) return;
 
     for (const fac of this.facilities) {
       if (!this.connectedFacilityIds.has(fac.id) || !this.isFacilityOperationalById(fac.id)) continue;
-      if (fac.currentLoad + fac.inTransit >= fac.capacity) continue;
-      if (fac.inTransit >= GARBAGE.TRUCK_COUNT) continue;
 
-      const distMap = this.facilityDistanceMaps.get(fac.id);
-      if (!distMap) continue;
-      const cost = distMap.get(posKey);
-      if (cost === undefined) continue;
-      if (cost < bestCost) {
-        bestCost = cost;
-        bestFac = fac;
+      while (fac.inTransit < GARBAGE.TRUCK_COUNT) {
+        // Check remaining capacity at facility
+        const remainingCap = fac.capacity - fac.currentLoad - fac.bagsInTransit;
+        if (remainingCap <= 0) break;
+
+        const trip = this.planTrip(fac, Math.min(GARBAGE.TRUCK_CAPACITY, remainingCap));
+        if (!trip) break; // no reachable bags
+
+        fac.inTransit++;
+        fac.bagsInTransit += trip.totalBags;
+        this.truckTrips.push(trip);
+
+        if (this.pendingBags.length === 0) return;
+      }
+    }
+  }
+
+  /** Plan a trip for one truck: greedily collect nearest bags up to capacity. */
+  private planTrip(fac: GarbageFacility, maxBags: number): TruckTrip | null {
+    const distMap = this.facilityDistanceMaps.get(fac.id);
+    if (!distMap) return null;
+
+    // Group pending bags by position with their costs
+    const positionBags = new Map<string, { x: number; y: number; count: number; cost: number }>();
+    for (const bag of this.pendingBags) {
+      const key = toPosKey(bag.x, bag.y);
+      const cost = distMap.get(key);
+      if (cost === undefined) continue; // not reachable from this facility
+      const entry = positionBags.get(key);
+      if (entry) {
+        entry.count++;
+      } else {
+        positionBags.set(key, { x: bag.x, y: bag.y, count: 1, cost });
       }
     }
 
-    if (bestFac) {
-      bag.facilityId = bestFac.id;
-      bag.remainingTicks = Math.max(1, Math.ceil(bestCost * SIMULATION.SLOW_TICK_INTERVAL / GARBAGE.TRUCK_SPEED));
-      bestFac.inTransit++;
+    if (positionBags.size === 0) return null;
+
+    // Sort positions by distance (nearest first)
+    const sorted = [...positionBags.values()].sort((a, b) => a.cost - b.cost);
+
+    // Greedily fill truck
+    const stops: { x: number; y: number; bagCount: number }[] = [];
+    let totalBags = 0;
+    let farthestCost = 0;
+
+    for (const pos of sorted) {
+      if (totalBags >= maxBags) break;
+      const take = Math.min(pos.count, maxBags - totalBags);
+      stops.push({ x: pos.x, y: pos.y, bagCount: take });
+      totalBags += take;
+      farthestCost = pos.cost; // sorted ascending, so last one is farthest
     }
+
+    if (totalBags === 0) return null;
+
+    // Remove collected bags from pendingBags
+    for (const stop of stops) {
+      let remaining = stop.bagCount;
+      for (let i = this.pendingBags.length - 1; i >= 0 && remaining > 0; i--) {
+        if (this.pendingBags[i]!.x === stop.x && this.pendingBags[i]!.y === stop.y) {
+          this.pendingBags.splice(i, 1);
+          remaining--;
+        }
+      }
+    }
+
+    // Travel time based on farthest stop (truck collects along the way)
+    const remainingTicks = Math.max(1, Math.ceil(farthestCost * 2 * SIMULATION.SLOW_TICK_INTERVAL / GARBAGE.TRUCK_SPEED));
+
+    return { facilityId: fac.id, stops, totalBags, remainingTicks };
   }
 
   // ── Day / stats / happiness ───────────────────────────────────────
@@ -344,24 +398,24 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
   }
 
   getProducedPerWeek(): number {
-    return this.producedHistory.reduce((a, b) => a + b, 0);
+    return Math.round(this.producedHistory.reduce((a, b) => a + b, 0));
   }
 
   getBurnedPerWeek(): number {
-    return this.burnedHistory.reduce((a, b) => a + b, 0);
+    return Math.round(this.burnedHistory.reduce((a, b) => a + b, 0));
   }
 
-  /** Total uncollected garbage (queue + load at facilities). */
+  /** Total uncollected garbage bags waiting at buildings. */
   getUncollected(): number {
-    return this.pendingGarbageQueue.length;
+    return this.pendingBags.length;
   }
 
   /** Happiness penalty scaling with waiting bag count and wait duration. */
   getHappinessPenalty(): number {
-    const count = this.pendingGarbageQueue.length;
+    const count = this.pendingBags.length;
     if (count === 0) return 0;
     let penalty = 0;
-    for (const bag of this.pendingGarbageQueue) {
+    for (const bag of this.pendingBags) {
       penalty += bag.waitTicks >= GARBAGE.HEAVY_THRESHOLD
         ? GARBAGE.HEAVY_HAPPINESS_PER_BAG
         : GARBAGE.HAPPINESS_PER_BAG;
@@ -369,9 +423,9 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     return penalty;
   }
 
-  /** Pollution penalty from uncollected garbage in queue. */
+  /** Pollution penalty from uncollected garbage. */
   getPollutionPenalty(): number {
-    const uncollected = this.pendingGarbageQueue.length;
+    const uncollected = this.pendingBags.length;
     if (uncollected <= 0) return 0;
     return Math.min(GARBAGE.MAX_POLLUTION_PENALTY, uncollected * GARBAGE.UNCOLLECTED_POLLUTION_MULTIPLIER);
   }
@@ -384,9 +438,14 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     return this.facilities.reduce((sum, f) => sum + f.currentLoad, 0);
   }
 
-  /** Get the pending garbage queue (read-only, for UI/debugging). */
+  /** Get the pending garbage bags (read-only, for UI/happiness). */
   getPendingGarbageQueue(): readonly PendingGarbage[] {
-    return this.pendingGarbageQueue;
+    return this.pendingBags;
+  }
+
+  /** Get active truck trips (read-only, for UI/debugging). */
+  getTruckTrips(): readonly TruckTrip[] {
+    return this.truckTrips;
   }
 
   getFacilities(): readonly GarbageFacility[] {
@@ -405,13 +464,11 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     const sources: PollutionSource[] = [];
     const radius = GARBAGE.POLLUTION_RADIUS;
     const operational = this.getOperationalFacilities();
-    // Base pollution: every cell of every operational facility emits ground pollution
     for (const f of operational) {
       this.forEachFacilityCell(f, (cx, cy) => {
         sources.push({ x: cx, y: cy, amount: GARBAGE.BASE_POLLUTION, type: 'ground', radius });
       });
     }
-    // Overload pollution: extra when load exceeds threshold
     for (const f of operational) {
       const loadRatio = f.capacity > 0 ? f.currentLoad / f.capacity : 0;
       if (loadRatio > GARBAGE.POLLUTION_LOAD_THRESHOLD) {
@@ -421,7 +478,6 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
         });
       }
     }
-    // Uncollected pollution: distributed evenly across operational facilities
     const uncollectedPenalty = this.getPollutionPenalty();
     if (uncollectedPenalty > 0 && operational.length > 0) {
       const perFacility = Math.ceil(uncollectedPenalty / operational.length);
@@ -443,7 +499,8 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     }
     return {
       facilities: this.facilities.map(f => ({ ...f })),
-      pendingGarbageQueue: this.pendingGarbageQueue.map(g => ({ ...g })),
+      pendingBags: this.pendingBags.map(b => ({ ...b })),
+      truckTrips: this.truckTrips.map(t => ({ ...t, stops: t.stops.map(s => ({ ...s })) })),
       garbageAccumulators: accObj,
     };
   }
@@ -454,6 +511,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
       ...f,
       currentLoad: f.currentLoad ?? 0,
       inTransit: f.inTransit ?? 0,
+      bagsInTransit: f.bagsInTransit ?? 0,
       todayBurned: f.todayBurned ?? 0,
       burnDaily: f.burnDaily?.length === 7 ? f.burnDaily : new Array(7).fill(0),
       burnDailyIndex: f.burnDailyIndex ?? 0,
@@ -461,17 +519,24 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
       receivedDaily: f.receivedDaily?.length === 7 ? f.receivedDaily : new Array(7).fill(0),
       receivedDailyIndex: f.receivedDailyIndex ?? 0,
     }));
-    // New format
-    if (Array.isArray(data.pendingGarbageQueue)) {
-      gs.pendingGarbageQueue = data.pendingGarbageQueue.map(g => ({
-        ...g,
-        waitTicks: g.waitTicks ?? 0,
-      }));
-    } else if (typeof data.overflow === 'number' && data.overflow > 0) {
-      // Legacy migration: convert overflow to unassigned queue entries at (0,0)
+    // New format: separate bags + trips
+    if (Array.isArray(data.pendingBags)) {
+      gs.pendingBags = data.pendingBags.map(b => ({ ...b, waitTicks: b.waitTicks ?? 0 }));
+    }
+    if (Array.isArray(data.truckTrips)) {
+      gs.truckTrips = data.truckTrips.map(t => ({ ...t }));
+    }
+    // Legacy v1: pendingGarbageQueue (with facilityId/remainingTicks)
+    if (!data.pendingBags && Array.isArray(data.pendingGarbageQueue)) {
+      for (const g of data.pendingGarbageQueue) {
+        gs.pendingBags.push({ x: g.x ?? 0, y: g.y ?? 0, waitTicks: g.waitTicks ?? 0 });
+      }
+    }
+    // Legacy v0: overflow number
+    if (!data.pendingBags && !data.pendingGarbageQueue && typeof data.overflow === 'number' && data.overflow > 0) {
       const bags = Math.floor(data.overflow);
       for (let i = 0; i < bags; i++) {
-        gs.pendingGarbageQueue.push({ x: 0, y: 0, facilityId: null, remainingTicks: -1, waitTicks: 0 });
+        gs.pendingBags.push({ x: 0, y: 0, waitTicks: 0 });
       }
     }
     if (data.garbageAccumulators) {

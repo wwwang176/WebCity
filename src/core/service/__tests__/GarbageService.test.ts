@@ -5,12 +5,7 @@ import { RoadType } from '../../road/types';
 import type { SizedGrid } from '../../grid/GridHelpers';
 
 /**
- * Create a GarbageService with a 10×10 grid (short distances — bags may arrive same tick).
- *
- * Layout:
- *   Facility 2×2 at (0,0): cells (0,0) (1,0) (0,1) (1,1)
- *   Road strip at y=0: (2,0) (3,0) ... (9,0)
- *   Buildings adjacent to road at y=1: (2,1) (3,1) ... (9,1)
+ * Create a GarbageService with a 10×10 grid (short distances).
  */
 function createGSWithGrid(opts?: { capacity?: number }): {
   gs: GarbageService;
@@ -28,8 +23,9 @@ function createGSWithGrid(opts?: { capacity?: number }): {
 }
 
 /**
- * Create a GarbageService with a 30×10 grid (long distances — bags stay in transit).
- * TWO_LANE cost = 2 per tile. Position (20,1) → cost ≈ 36 → remainingTicks ≈ 22 > 6.
+ * Create a GarbageService with a 30×10 grid (long distances — trucks stay in transit).
+ * TWO_LANE cost = 2 per tile. Position (20,1) → cost ≈ 36.
+ * Round-trip remainingTicks = ceil(36 * 2 * 6 / 10) = ceil(43.2) = 44 > 6.
  */
 function createGSWithLongGrid(opts?: { capacity?: number }): {
   gs: GarbageService;
@@ -46,7 +42,6 @@ function createGSWithLongGrid(opts?: { capacity?: number }): {
   return { gs, grid, facId };
 }
 
-/** Create a grid with a road running from (1,y) to (width-1,y) at row y=center. */
 function makeRoadGrid(width: number, height: number, roadY?: number): SizedGrid {
   const ry = roadY ?? Math.floor(height / 2);
   return {
@@ -76,6 +71,7 @@ describe('GarbageService', () => {
     expect(gs.getTotalCapacity()).toBe(GARBAGE.DEFAULT_CAPACITY);
     const fac = gs.getFacilities()[0]!;
     expect(fac.inTransit).toBe(0);
+    expect(fac.bagsInTransit).toBe(0);
   });
 
   it('should addFacility with custom capacity', () => {
@@ -103,9 +99,9 @@ describe('GarbageService', () => {
 
   it('getCoverage returns true for cells reachable via road (global)', () => {
     const { gs } = createGSWithGrid();
-    expect(gs.getCoverage(3, 1)).toBe(true);   // adjacent to road
-    expect(gs.getCoverage(9, 0)).toBe(true);    // far end of road
-    expect(gs.getCoverage(9, 1)).toBe(true);    // adjacent to far road
+    expect(gs.getCoverage(3, 1)).toBe(true);
+    expect(gs.getCoverage(9, 0)).toBe(true);
+    expect(gs.getCoverage(9, 1)).toBe(true);
   });
 
   it('getCoverage returns false for disconnected areas', () => {
@@ -167,7 +163,7 @@ describe('GarbageService', () => {
     expect(gs.getCoverage(15, 0)).toBe(true);
   });
 
-  // ── Pending garbage queue + truck dispatch ──
+  // ── reportGarbage + accumulator ──
 
   it('reportGarbage accumulates fractional amounts', () => {
     const gs = new GarbageService();
@@ -185,50 +181,99 @@ describe('GarbageService', () => {
     expect(gs.getUncollected()).toBe(3);
   });
 
-  it('tick assigns bags to nearest facility (short distance: arrives same tick)', () => {
+  // ── TruckTrip dispatch (multi-stop collection) ──
+
+  it('tick dispatches a truck trip collecting bags from multiple positions', () => {
+    const { gs } = createGSWithLongGrid();
+    gs.reportGarbage(20, 1, 3);
+    gs.reportGarbage(15, 1, 2);
+    gs.tick();
+
+    const trips = gs.getTruckTrips();
+    expect(trips).toHaveLength(1);
+    expect(trips[0]!.totalBags).toBe(5);
+    expect(trips[0]!.stops.length).toBe(2);
+    // Bags removed from pending
+    expect(gs.getUncollected()).toBe(0);
+    // Facility tracks truck
+    const fac = gs.getFacilities()[0]!;
+    expect(fac.inTransit).toBe(1);
+    expect(fac.bagsInTransit).toBe(5);
+  });
+
+  it('truck trip collects up to TRUCK_CAPACITY bags', () => {
+    const { gs } = createGSWithLongGrid();
+    // Report more bags than TRUCK_CAPACITY
+    gs.reportGarbage(20, 1, GARBAGE.TRUCK_CAPACITY + 5);
+    gs.tick();
+
+    const trips = gs.getTruckTrips();
+    // First truck takes TRUCK_CAPACITY, second truck takes the rest
+    const totalCollected = trips.reduce((s, t) => s + t.totalBags, 0);
+    expect(totalCollected).toBe(GARBAGE.TRUCK_CAPACITY + 5);
+    expect(trips.length).toBe(2); // 2 trucks dispatched
+  });
+
+  it('truck count limits concurrent trips per facility', () => {
+    const { gs } = createGSWithLongGrid();
+    // Spread many bags so multiple trucks are needed
+    for (let i = 0; i < GARBAGE.TRUCK_COUNT + 2; i++) {
+      gs.reportGarbage(10 + i, 1, GARBAGE.TRUCK_CAPACITY);
+    }
+    gs.tick();
+
+    const fac = gs.getFacilities()[0]!;
+    expect(fac.inTransit).toBe(GARBAGE.TRUCK_COUNT);
+    // Some bags remain uncollected
+    expect(gs.getUncollected()).toBeGreaterThan(0);
+  });
+
+  it('trip arrives and delivers bags to facility', () => {
+    const { gs } = createGSWithGrid(); // short distance — arrives quickly
+    gs.reportGarbage(3, 1, 5);
+    // Tick multiple times to ensure arrival
+    for (let i = 0; i < 10; i++) gs.tick();
+
+    expect(gs.getTruckTrips()).toHaveLength(0);
+    const fac = gs.getFacilities()[0]!;
+    expect(fac.inTransit).toBe(0);
+    expect(fac.bagsInTransit).toBe(0);
+    // Bags were received (may have been burned already)
+    expect(fac.todayReceived).toBeGreaterThanOrEqual(5);
+  });
+
+  it('capacity limits bags assigned (currentLoad + bagsInTransit >= capacity)', () => {
+    const { gs } = createGSWithLongGrid({ capacity: 10 });
+    gs.reportGarbage(20, 1, 15);
+    gs.tick();
+
+    const fac = gs.getFacilities()[0]!;
+    // Only 10 bags should be in transit (capacity limit)
+    expect(fac.bagsInTransit).toBe(10);
+    // 5 bags remain uncollected
+    expect(gs.getUncollected()).toBe(5);
+  });
+
+  it('removing facility returns trip bags to pending', () => {
+    const { gs, facId } = createGSWithLongGrid();
+    gs.reportGarbage(20, 1, 3);
+    gs.tick();
+    expect(gs.getTruckTrips()).toHaveLength(1);
+    expect(gs.getUncollected()).toBe(0);
+
+    gs.removeFacility(facId);
+    // Bags returned to pending
+    expect(gs.getTruckTrips()).toHaveLength(0);
+    expect(gs.getUncollected()).toBe(3);
+  });
+
+  it('no bags in queue → no dispatch', () => {
     const { gs } = createGSWithGrid();
-    gs.reportGarbage(3, 1, 1);
-    expect(gs.getUncollected()).toBe(1);
-
     gs.tick();
-    // Short distance → bag arrives same tick, queue cleared
-    expect(gs.getPendingGarbageQueue()).toHaveLength(0);
-    // Bag arrived and may have been burned in same tick; check todayReceived
-    const fac = gs.getFacilities()[0]!;
-    expect(fac.todayReceived).toBeGreaterThanOrEqual(1);
+    expect(gs.getTruckTrips()).toHaveLength(0);
   });
 
-  it('tick assigns bags that stay in transit over long distance', () => {
-    const { gs } = createGSWithLongGrid();
-    gs.reportGarbage(20, 1, 1);
-    gs.tick();
-
-    // Long distance → bag still in transit
-    const queue = gs.getPendingGarbageQueue();
-    expect(queue).toHaveLength(1);
-    expect(queue[0]!.facilityId).not.toBeNull();
-    expect(queue[0]!.remainingTicks).toBeGreaterThan(0);
-  });
-
-  it('bag arrives at facility after enough ticks (long distance)', () => {
-    const { gs } = createGSWithLongGrid();
-    gs.reportGarbage(20, 1, 1);
-    gs.tick(); // assign + start countdown
-
-    const remaining = gs.getPendingGarbageQueue()[0]!.remainingTicks;
-    expect(remaining).toBeGreaterThan(0);
-
-    // Tick enough times for arrival
-    const maxTicks = Math.ceil(remaining / 6) + 2;
-    for (let i = 0; i < maxTicks; i++) gs.tick();
-
-    expect(gs.getPendingGarbageQueue()).toHaveLength(0);
-    // Bag arrived and may have been burned; check todayReceived
-    const fac = gs.getFacilities()[0]!;
-    expect(fac.todayReceived).toBeGreaterThanOrEqual(1);
-  });
-
-  it('unassigned bags stay in queue until facility available', () => {
+  it('bags at unreachable positions are not dispatched', () => {
     const noRoadGrid: SizedGrid = {
       width: 10, height: 10,
       getCell(x, y) {
@@ -241,62 +286,17 @@ describe('GarbageService', () => {
     gs.recalculateCoverage(noRoadGrid);
     gs.reportGarbage(5, 5, 1);
     gs.tick();
-    const queue = gs.getPendingGarbageQueue();
-    expect(queue).toHaveLength(1);
-    expect(queue[0]!.facilityId).toBeNull();
-  });
-
-  it('facility burns garbage each tick', () => {
-    const { gs } = createGSWithGrid();
-    const fac = gs.getFacilities()[0]! as any;
-    fac.currentLoad = 10;
-    gs.tick();
-    expect(fac.currentLoad).toBe(10 - GARBAGE.BURN_RATE);
-  });
-
-  it('truck count limits concurrent pickups per facility', () => {
-    const { gs } = createGSWithLongGrid();
-    for (let i = 0; i < GARBAGE.TRUCK_COUNT + 3; i++) {
-      gs.reportGarbage(20, 1, 1);
-    }
-    gs.tick();
-    const fac = gs.getFacilities()[0]!;
-    expect(fac.inTransit).toBe(GARBAGE.TRUCK_COUNT);
-    const unassigned = gs.getPendingGarbageQueue().filter(b => b.facilityId === null);
-    expect(unassigned.length).toBe(3);
-  });
-
-  it('capacity limits assignment (load + inTransit >= capacity)', () => {
-    const { gs } = createGSWithLongGrid({ capacity: 3 });
-    for (let i = 0; i < 5; i++) {
-      gs.reportGarbage(20, 1, 1);
-    }
-    gs.tick();
-    const fac = gs.getFacilities()[0]!;
-    expect(fac.inTransit).toBe(3);
-  });
-
-  it('removing facility returns in-transit bags to unassigned', () => {
-    const { gs, facId } = createGSWithLongGrid();
-    gs.reportGarbage(20, 1, 1);
-    gs.tick();
-    expect(gs.getPendingGarbageQueue()[0]!.facilityId).toBe(facId);
-
-    gs.removeFacility(facId);
-    const queue = gs.getPendingGarbageQueue();
-    expect(queue).toHaveLength(1);
-    expect(queue[0]!.facilityId).toBeNull();
-    expect(queue[0]!.remainingTicks).toBe(-1);
+    expect(gs.getTruckTrips()).toHaveLength(0);
+    expect(gs.getUncollected()).toBe(1);
   });
 
   // ── clearPendingAt ──
 
-  it('clearPendingAt removes all pending bags at position', () => {
-    const { gs } = createGSWithLongGrid();
-    gs.reportGarbage(20, 1, 3);
-    gs.tick();
-    gs.clearPendingAt(20, 1);
-    expect(gs.getPendingGarbageQueue().filter(b => b.x === 20 && b.y === 1)).toHaveLength(0);
+  it('clearPendingAt removes pending bags at position', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 3);
+    gs.clearPendingAt(3, 1);
+    expect(gs.getUncollected()).toBe(0);
   });
 
   it('clearPendingAt clears accumulator for that position', () => {
@@ -307,41 +307,27 @@ describe('GarbageService', () => {
     expect(gs.getUncollected()).toBe(0);
   });
 
-  it('clearPendingAt decrements inTransit for assigned bags', () => {
+  it('clearPendingAt does not affect bags already on trucks', () => {
     const { gs } = createGSWithLongGrid();
-    gs.reportGarbage(20, 1, 2);
-    gs.tick();
-    const fac = gs.getFacilities()[0]!;
-    expect(fac.inTransit).toBeGreaterThan(0);
+    gs.reportGarbage(20, 1, 3);
+    gs.tick(); // dispatch trip
+    expect(gs.getTruckTrips()).toHaveLength(1);
 
     gs.clearPendingAt(20, 1);
-    expect(fac.inTransit).toBe(0);
+    // Trip continues — bags are committed to the truck
+    expect(gs.getTruckTrips()).toHaveLength(1);
+    expect(gs.getTruckTrips()[0]!.totalBags).toBe(3);
   });
 
   // ── Decompose ──
 
   it('garbage decomposes after DECOMPOSE_TICKS', () => {
-    const { gs } = createGSWithLongGrid();
-    gs.reportGarbage(20, 1, 1);
-    gs.tick(); // assign
-    // Fast-forward waitTicks
-    const queue = gs.getPendingGarbageQueue() as any[];
-    queue[0].waitTicks = GARBAGE.DECOMPOSE_TICKS;
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 1);
+    const bags = gs.getPendingGarbageQueue() as any[];
+    bags[0].waitTicks = GARBAGE.DECOMPOSE_TICKS;
     gs.tick();
-    expect(gs.getPendingGarbageQueue()).toHaveLength(0);
-  });
-
-  it('decomposed bag decrements inTransit', () => {
-    const { gs } = createGSWithLongGrid();
-    gs.reportGarbage(20, 1, 1);
-    gs.tick(); // assign
-    const fac = gs.getFacilities()[0]!;
-    expect(fac.inTransit).toBe(1);
-
-    const queue = gs.getPendingGarbageQueue() as any[];
-    queue[0].waitTicks = GARBAGE.DECOMPOSE_TICKS;
-    gs.tick();
-    expect(fac.inTransit).toBe(0);
+    expect(gs.getUncollected()).toBe(0);
   });
 
   // ── Happiness penalty ──
@@ -360,8 +346,8 @@ describe('GarbageService', () => {
   it('getHappinessPenalty increases after HEAVY_THRESHOLD', () => {
     const gs = new GarbageService();
     gs.reportGarbage(3, 1, 1);
-    const queue = gs.getPendingGarbageQueue() as any[];
-    queue[0].waitTicks = GARBAGE.HEAVY_THRESHOLD;
+    const bags = gs.getPendingGarbageQueue() as any[];
+    bags[0].waitTicks = GARBAGE.HEAVY_THRESHOLD;
     expect(gs.getHappinessPenalty()).toBe(GARBAGE.HEAVY_HAPPINESS_PER_BAG);
   });
 
@@ -403,7 +389,7 @@ describe('GarbageService', () => {
     gs.addFacility(5, 5, 100);
     (gs.getFacilities()[0]! as any).currentLoad = 100;
     const sources = gs.getPollutionSources();
-    expect(sources.length).toBe(8); // 4 base + 4 overload
+    expect(sources.length).toBe(8);
   });
 
   // ── Day tracking ──
@@ -418,19 +404,30 @@ describe('GarbageService', () => {
     expect(gs.getProducedPerWeek()).toBe(5);
   });
 
+  // ── Facility burn ──
+
+  it('facility burns garbage each tick', () => {
+    const { gs } = createGSWithGrid();
+    const fac = gs.getFacilities()[0]! as any;
+    fac.currentLoad = 30;
+    gs.tick();
+    expect(fac.currentLoad).toBe(30 - GARBAGE.BURN_RATE);
+  });
+
   // ── Serialization ──
 
   it('toJSON / fromJSON round-trip preserves state', () => {
     const { gs } = createGSWithLongGrid();
-    gs.reportGarbage(20, 1, 2);
-    gs.tick();
+    gs.reportGarbage(20, 1, 5);
+    gs.tick(); // dispatch trip
 
     const json = gs.toJSON();
     const restored = GarbageService.fromJSON(json);
 
     expect(restored.getTotalCapacity()).toBe(gs.getTotalCapacity());
     expect(restored.getCurrentLoad()).toBe(gs.getCurrentLoad());
-    expect(restored.getPendingGarbageQueue().length).toBe(gs.getPendingGarbageQueue().length);
+    expect(restored.getUncollected()).toBe(gs.getUncollected());
+    expect(restored.getTruckTrips().length).toBe(gs.getTruckTrips().length);
   });
 
   it('fromJSON handles legacy overflow field', () => {
@@ -439,8 +436,20 @@ describe('GarbageService', () => {
       overflow: 5,
     };
     const restored = GarbageService.fromJSON(legacy as any);
-    expect(restored.getPendingGarbageQueue()).toHaveLength(5);
-    expect(restored.getPendingGarbageQueue()[0]!.facilityId).toBeNull();
+    expect(restored.getUncollected()).toBe(5);
+  });
+
+  it('fromJSON handles legacy pendingGarbageQueue format', () => {
+    const legacy = {
+      facilities: [{ id: 'garbage_1', x: 0, y: 0, capacity: 1000, currentLoad: 0 }],
+      pendingGarbageQueue: [
+        { x: 3, y: 1, facilityId: null, remainingTicks: -1, waitTicks: 5 },
+        { x: 5, y: 2, facilityId: 'garbage_1', remainingTicks: 10, waitTicks: 3 },
+      ],
+    };
+    const restored = GarbageService.fromJSON(legacy as any);
+    // Both entries become pendingBags (trips are not preserved from legacy)
+    expect(restored.getUncollected()).toBe(2);
   });
 
   it('fromJSON restores garbageAccumulators', () => {
@@ -471,6 +480,10 @@ describe('GARBAGE constants', () => {
 
   it('truck speed should be positive', () => {
     expect(GARBAGE.TRUCK_SPEED).toBeGreaterThan(0);
+  });
+
+  it('truck capacity should be positive', () => {
+    expect(GARBAGE.TRUCK_CAPACITY).toBeGreaterThan(0);
   });
 
   it('service budget should be positive', () => {
