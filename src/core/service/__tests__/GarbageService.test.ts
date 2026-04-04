@@ -176,9 +176,9 @@ describe('GarbageService', () => {
     expect(gs.getUncollected()).toBe(3); // still there
   });
 
-  it('collection limited by TRUCK_COUNT * BAGS_PER_TRUCK', () => {
+  it('collection limited by COLLECTION_RATE', () => {
     const { gs } = createGSWithGrid();
-    const budget = GARBAGE.TRUCK_COUNT * GARBAGE.BAGS_PER_TRUCK;
+    const budget = GARBAGE.COLLECTION_RATE;
     gs.reportGarbage(3, 1, budget + 20);
     gs.tick();
     // Should collect at most budget bags, rest stays
@@ -370,8 +370,7 @@ describe('GARBAGE constants', () => {
     expect(GARBAGE.POLLUTION_LOAD_THRESHOLD).toBeGreaterThan(0);
     expect(GARBAGE.POLLUTION_LOAD_THRESHOLD).toBeLessThanOrEqual(1);
   });
-  it('truck count positive', () => expect(GARBAGE.TRUCK_COUNT).toBeGreaterThan(0));
-  it('bags per truck positive', () => expect(GARBAGE.BAGS_PER_TRUCK).toBeGreaterThan(0));
+  it('collection rate positive', () => expect(GARBAGE.COLLECTION_RATE).toBeGreaterThan(0));
   it('burn rate positive', () => expect(GARBAGE.BURN_RATE).toBeGreaterThan(0));
   it('GARBAGE_PRODUCTION has rates', () => {
     expect(GARBAGE_PRODUCTION.RESIDENTIAL.base).toBeGreaterThan(0);

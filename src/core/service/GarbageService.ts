@@ -61,10 +61,8 @@ export const GARBAGE = {
   BASE_POLLUTION: 20,
   /** Pollution spread radius (Manhattan distance) for all garbage sources */
   POLLUTION_RADIUS: 5,
-  /** Total garbage trucks per facility */
-  TRUCK_COUNT: 8,
-  /** Bags each truck collects per service tick */
-  BAGS_PER_TRUCK: 10,
+  /** Max bags collected per facility per service tick */
+  COLLECTION_RATE: 80,
   /** Happiness penalty per garbage bag waiting in queue */
   HAPPINESS_PER_BAG: -3,
   /** After this many ticks, penalty per bag increases */
@@ -240,7 +238,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
       const distMap = this.facilityDistanceMaps.get(fac.id);
       if (!distMap) continue;
 
-      let budget = Math.min(GARBAGE.TRUCK_COUNT * GARBAGE.BAGS_PER_TRUCK, room);
+      let budget = Math.min(GARBAGE.COLLECTION_RATE, room);
 
       // Group pending bags by position with distance weights
       const positions = new Map<string, { x: number; y: number; count: number; weight: number }>();
