@@ -252,9 +252,8 @@ describe('DeathCareService', () => {
     dc.reportDeath(9, 1);
     dc.reportDeath(40, 1);
 
-    // Tick enough times for both to be assigned (dispatch limit = 1 per tick)
-    dc.tick(); // assigns first (closest)
-    dc.tick(); // assigns second
+    // Both can be assigned in one tick (HEARSE_COUNT >= 2)
+    dc.tick();
     const queue = dc.getPendingDeathQueue();
     const close = queue.find(d => d.x === 9)!;
     const far = queue.find(d => d.x === 40)!;
@@ -495,34 +494,31 @@ describe('DeathCareService', () => {
     expect(cem.todayReceived).toBeGreaterThanOrEqual(1);
   });
 
-  // ── Hearse dispatch limit ──
+  // ── Hearse count limit ──
 
-  it('should limit hearse dispatch to HEARSE_DISPATCH_LIMIT per cemetery per tick', () => {
+  it('should not dispatch more hearses than HEARSE_COUNT', () => {
     const { dc } = createDCWithGrid();
-    // Report more deaths than the dispatch limit
+    // Report more deaths than hearse count
     for (let i = 0; i < 10; i++) dc.reportDeath(9, 1);
 
-    dc.tick(); // first tick: assign up to HEARSE_DISPATCH_LIMIT
+    // Tick multiple times — all hearses should be dispatched then blocked
+    for (let i = 0; i < 5; i++) dc.tick();
 
     const cem = dc.getCemeteries()[0]!;
-    expect(cem.inTransit).toBe(DEATH_CARE.HEARSE_DISPATCH_LIMIT);
-    // Remaining deaths still unassigned
-    const unassigned = dc.getPendingDeathQueue().filter(d => d.cemeteryId === null).length;
-    expect(unassigned).toBe(10 - DEATH_CARE.HEARSE_DISPATCH_LIMIT);
+    // inTransit capped at HEARSE_COUNT (hearses still out, not yet returned)
+    expect(cem.inTransit).toBeLessThanOrEqual(DEATH_CARE.HEARSE_COUNT);
   });
 
-  it('should dispatch more hearses on subsequent ticks', () => {
+  it('should dispatch again after a hearse returns', () => {
     const { dc } = createDCWithGrid();
     for (let i = 0; i < 10; i++) dc.reportDeath(9, 1);
 
-    dc.tick(); // tick 1: assign 3
-    dc.tick(); // tick 2: assign 3 more
+    // Tick enough for all hearses to be dispatched and some to return
+    for (let i = 0; i < 30; i++) dc.tick();
 
     const cem = dc.getCemeteries()[0]!;
-    // 6 assigned total (some may have arrived if delay is short)
-    const assigned = dc.getPendingDeathQueue().filter(d => d.cemeteryId !== null).length;
-    const total = assigned + cem.inTransit + cem.pending;
-    expect(total).toBeGreaterThanOrEqual(DEATH_CARE.HEARSE_DISPATCH_LIMIT * 2);
+    // Some bodies should have been received (hearses returned and re-dispatched)
+    expect(cem.todayReceived).toBeGreaterThan(DEATH_CARE.HEARSE_COUNT);
   });
 
   // ── Decomposition ──
