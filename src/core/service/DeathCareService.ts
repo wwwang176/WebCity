@@ -2,6 +2,7 @@ import { ROAD_COVERAGE, roadFlood, expandCoverageToBuildings, expandFootprint } 
 import { RoadCoverageService } from './RoadCoverageService';
 import { toPosKey } from '../grid/GridHelpers';
 import type { SizedGrid } from '../grid/GridHelpers';
+import { SIMULATION } from '../simulation/SimulationConstants';
 
 export interface PendingDeath {
   x: number;
@@ -208,7 +209,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
       }
 
       if (death.cemeteryId === null) continue;
-      death.remainingTicks--;
+      death.remainingTicks -= SIMULATION.SLOW_TICK_INTERVAL;
       if (death.remainingTicks <= 0) {
         const cem = this.facilities.find(c => c.id === death.cemeteryId);
         if (cem) {
@@ -300,7 +301,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
 
     if (bestCem) {
       death.cemeteryId = bestCem.id;
-      death.remainingTicks = Math.max(1, Math.ceil(bestCost / DEATH_CARE.HEARSE_SPEED));
+      death.remainingTicks = Math.max(1, Math.ceil(bestCost * SIMULATION.SLOW_TICK_INTERVAL / DEATH_CARE.HEARSE_SPEED));
       bestCem.inTransit++;
       dispatchCount.set(bestCem.id, (dispatchCount.get(bestCem.id) ?? 0) + 1);
     }
