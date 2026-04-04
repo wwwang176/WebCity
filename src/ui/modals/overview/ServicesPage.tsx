@@ -61,11 +61,10 @@ export function ServicesPage() {
     if (powerPlants.length === 0) {
       pwrSummary = [{ text: 'No power plant' }];
     } else {
-      const surplus = pwrTotalSupply >= pwrTotalDemand;
-      pwrSummary = [
-        { text: `Power: ${Math.round(pwrTotalDemand)} / ${Math.round(pwrTotalSupply)} \u00B7 ` },
-        { text: surplus ? 'Surplus' : 'Shortage', color: surplus ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD },
-      ];
+      pwrSummary = [{ text: `Power: ${Math.round(pwrTotalDemand)} / ${Math.round(pwrTotalSupply)}` }];
+      if (pwrTotalDemand > pwrTotalSupply) {
+        pwrSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
+      }
     }
     entries.push({ group: 'Power', items: pwrItems, summary: pwrSummary });
 
@@ -92,9 +91,10 @@ export function ServicesPage() {
     if (pumpingStations.length === 0) {
       wtrSummary.push({ text: 'No water plant' });
     } else {
-      const wSurplus = wtrTotalSupply >= wtrTotalDemand;
-      wtrSummary.push({ text: `Water: ${Math.round(wtrTotalDemand)} / ${Math.round(wtrTotalSupply)} \u00B7 ` });
-      wtrSummary.push({ text: wSurplus ? 'Surplus' : 'Shortage', color: wSurplus ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD });
+      wtrSummary.push({ text: `Water: ${Math.round(wtrTotalDemand)} / ${Math.round(wtrTotalSupply)}` });
+      if (wtrTotalDemand > wtrTotalSupply) {
+        wtrSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
+      }
     }
     wtrSummary.push({ text: ' | ' });
     if (treatPlants.length === 0) {
