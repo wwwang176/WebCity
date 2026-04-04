@@ -145,11 +145,11 @@ export function ServicesPage() {
       const noSt = awaitingPickup > 0 ? { label: `${awaitingPickup} awaiting pickup`, color: UI_COLORS.STATUS_BAD } : { label: 'None', color: UI_COLORS.STATUS_BAD };
       const noSuffix = deathsWk > 0 ? ` \u00B7 Deaths ${deathsWk}/wk` : '';
       burialItems.push({ icon: '\u26B0', name: 'Death Care', coverage: r.deathCareRatio, detail: `No cemetery${noSuffix}`, loadPct: -1, status: noSt.label, statusColor: noSt.color });
-    } else if (awaitingPickup > 0 || deathsWk > 0 || crematedWk > 0) {
+    } else {
       const summaryParts: string[] = [];
-      if (awaitingPickup > 0) summaryParts.push(`Awaiting pickup ${awaitingPickup}`);
-      if (deathsWk > 0) summaryParts.push(`Deaths ${deathsWk}/wk`);
-      if (crematedWk > 0) summaryParts.push(`Cremated ${crematedWk}/wk`);
+      summaryParts.push(`Awaiting pickup ${awaitingPickup}`);
+      summaryParts.push(`Deaths ${deathsWk}/wk`);
+      summaryParts.push(`Cremated ${crematedWk}/wk`);
       const aSt = awaitingPickup > 0 ? { label: `${awaitingPickup} awaiting`, color: UI_COLORS.STATUS_BAD } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
       burialItems.push({ icon: '\u26B0', name: 'Death Care', coverage: -1, detail: summaryParts.join(' \u00B7 '), loadPct: -1, status: aSt.label, statusColor: aSt.color });
     }
