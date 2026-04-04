@@ -134,25 +134,19 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
   },
   power: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.power.getPlants(), cx, cy);
-    const ratio = ctx.power.getSupplyRatio();
-    const ratioStr = `${(ratio * 100).toFixed(1)}%${ratio < 1 ? ' ⚠️' : ''}`;
     return {
       Output: p?.output ?? 1500,
       Type: p?.type ?? 'coal',
       'City Supply': Math.round(ctx.power.getSupply()),
       'City Demand': Math.round(ctx.power.getDemand()),
-      'Supply Ratio': ratioStr,
     };
   },
   water: (ctx, cx, cy) => {
     const w = findAtPosition(ctx.water.getPlants(), cx, cy);
-    const ratio = ctx.water.getSupplyRatio();
-    const ratioStr = `${(ratio * 100).toFixed(1)}%${ratio < 1 ? ' ⚠️' : ''}`;
     return {
       Output: w?.output ?? 1500,
       'City Supply': Math.round(ctx.water.getSupply()),
       'City Demand': Math.round(ctx.water.getDemand()),
-      'Supply Ratio': ratioStr,
     };
   },
   airport_s: () => ({ Status: 'Operational' }),
