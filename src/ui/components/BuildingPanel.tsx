@@ -218,7 +218,7 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
   }
 
   // Garbage bags awaiting truck pickup
-  if (sel.pendingGarbage > 0) {
+  if (sel.pendingGarbage >= 3) {
     warnings.push({ level: sel.pendingGarbage >= 5 ? 'red' : 'yellow', text: `Garbage awaiting pickup (${sel.pendingGarbage})` });
   }
 

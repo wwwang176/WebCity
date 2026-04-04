@@ -374,7 +374,7 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     }
 
     // Travel time based on farthest stop (truck collects along the way)
-    const remainingTicks = Math.max(1, Math.ceil(farthestCost * 2 * SIMULATION.SLOW_TICK_INTERVAL / GARBAGE.TRUCK_SPEED));
+    const remainingTicks = Math.max(1, Math.ceil(farthestCost * SIMULATION.SLOW_TICK_INTERVAL / GARBAGE.TRUCK_SPEED));
 
     return { facilityId: fac.id, stops, totalBags, remainingTicks };
   }
