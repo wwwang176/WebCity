@@ -2,6 +2,7 @@ import { type GameState } from './GameState';
 import { tickBudget } from '../economy/Budget';
 import { calculateRCIDemand, applyBusinessTaxPenalty, BUSINESS_TAX } from '../economy/RCIDemand';
 import { buildingGrowthTick } from '../building/BuildingGrowthTick';
+import { abandonmentStressTick } from '../building/AbandonmentStressTick';
 import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
@@ -910,68 +911,33 @@ export class SimulationLoop {
    * position hash, so buildings abandon at different rates under same conditions.
    */
   private processAbandonmentStress(): void {
-    const grid = this.state.grid;
-    const businessTax = this.state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const resTax = this.state.taxRates.residential ?? DEFAULT_TAX_RATE;
-    const baseCrime = this.getAvgCrime();
-    let changed = false;
-
-    grid.forEachCell((cell, x, y) => {
-      if (!isZoneBuilding(cell.buildingId)) return;
-      if (cell.reserved === ABANDONED || cell.reserved === BURNED) return;
-
-      const pollution = this.state.pollution.getPollutionAt(x, y);
-      const building = getBuildingType(cell.buildingId);
-      if (!building) return;
-
-      const posKey = toPosKey(x, y);
-
-      // Per-cell crime: base crime adjusted by local police coverage
-      const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
-
-      // Continuous service score (delegated to ServiceCoverageQuery — OCP)
-      const isRes = isResidentialZone(cell.zoneType);
-      const serviceScore = getCellServiceCostScore(this.state, x, y, isRes);
-
-      const conditions: AbandonmentConditions = {
-        businessTaxRate: businessTax,
-        residentialTaxRate: resTax,
-        isPowered: this.state.power.isPowered(x, y),
-        isWatered: this.state.water.isSupplied(x, y),
-        crimeRate: localCrime,
-        pollution: pollution.ground + pollution.water,
-        buildingLevel: building.level,
-        serviceScore,
-        freightRatio: isCommercialZone(cell.zoneType) ? this.state.freight.getSupplyStatus(x, y).ratio : undefined,
-        freightSurplusRatio: cell.zoneType === ZoneType.INDUSTRIAL ? this.state.freight.getSurplusRatio() : undefined,
-      };
-
-      const { totalDelta } = calculateAbandonmentStress(cell.zoneType, conditions);
-
-      // Per-building resilience: deterministic hash → 0.5~1.5 multiplier
-      // Low resilience buildings break first, high resilience ones hold longer
-      const resilience = 0.5 + ((x * 7919 + y * 104729) % 1000) / 1000;
-      const adjustedDelta = totalDelta > 0 ? totalDelta / resilience : totalDelta;
-
-      const current = this.abandonmentStress.get(posKey) ?? 0;
-      const next = Math.max(0, Math.min(100, current + adjustedDelta));
-
-      if (next === 0) {
-        this.abandonmentStress.delete(posKey);
-      } else {
-        this.abandonmentStress.set(posKey, next);
-      }
-
-      // Stress ≥ 100: abandon
-      if (next >= ABANDONMENT.STRESS_ABANDON) {
-        grid.setCell(x, y, { reserved: ABANDONED });
-        this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
-        changed = true;
-        this.onBuildingUpdated?.(x, y, cell.zoneType, building.level, false, true);
-      }
+    // Delegated to AbandonmentStressTick (SRP — stress calculation separated from orchestration)
+    const result = abandonmentStressTick({
+      forEachCell: (fn) => this.state.grid.forEachCell(fn),
+      isZoneBuilding,
+      getBuildingLevel: (bid) => getBuildingType(bid)?.level ?? 0,
+      getPollution: (x, y) => this.state.pollution.getPollutionAt(x, y),
+      getCrimeReduction: (x, y) => this.state.police.getCrimeReduction(x, y),
+      getServiceScore: (x, y, isRes) => getCellServiceCostScore(this.state, x, y, isRes),
+      isPowered: (x, y) => this.state.power.isPowered(x, y),
+      isWatered: (x, y) => this.state.water.isSupplied(x, y),
+      getFreightSupplyRatio: (x, y) => this.state.freight.getSupplyStatus(x, y).ratio,
+      getFreightSurplusRatio: () => this.state.freight.getSurplusRatio(),
+      baseCrime: this.getAvgCrime(),
+      businessTax: this.state.taxRates.business ?? DEFAULT_TAX_RATE,
+      residentialTax: this.state.taxRates.residential ?? DEFAULT_TAX_RATE,
+      stressMap: this.abandonmentStress,
     });
 
-    if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
+    // Apply abandonment to grid + evict citizens (side effects stay in orchestrator)
+    for (const a of result.abandoned) {
+      const posKey = toPosKey(a.x, a.y);
+      this.state.grid.setCell(a.x, a.y, { reserved: ABANDONED });
+      this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
+      this.onBuildingUpdated?.(a.x, a.y, a.zoneType, a.level, false, true);
+    }
+
+    if (result.changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
   }
 
   /** Get the abandonment stress for a building at (x, y). */
