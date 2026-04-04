@@ -225,75 +225,95 @@ export class GarbageService extends RoadCoverageService<GarbageFacility> {
     this.processFacilities();
   }
 
-  /** Weighted-random collection: closer buildings are more likely to be collected. */
+  /** Weighted-random collection: per-position, find nearest facility with room (like cemetery). */
   private collectFromBuildings(): void {
     if (this.pendingBags.length === 0) return;
 
+    // Track budget and room per facility
+    const facState = new Map<string, { fac: GarbageFacility; budget: number; room: number }>();
     for (const fac of this.facilities) {
       if (!this.connectedFacilityIds.has(fac.id) || !this.isFacilityOperationalById(fac.id)) continue;
-
       const room = fac.capacity - fac.currentLoad;
       if (room <= 0) continue;
+      facState.set(fac.id, { fac, budget: GARBAGE.COLLECTION_RATE, room });
+    }
+    if (facState.size === 0) return;
 
-      const distMap = this.facilityDistanceMaps.get(fac.id);
-      if (!distMap) continue;
-
-      let budget = Math.min(GARBAGE.COLLECTION_RATE, room);
-
-      // Group pending bags by position with distance weights
-      const positions = new Map<string, { x: number; y: number; count: number; weight: number }>();
-      for (const bag of this.pendingBags) {
-        const key = toPosKey(bag.x, bag.y);
-        const cost = distMap.get(key);
+    // Group pending bags by position with weight from nearest facility distance
+    const positions = new Map<string, { x: number; y: number; count: number; weight: number }>();
+    for (const bag of this.pendingBags) {
+      const key = toPosKey(bag.x, bag.y);
+      const entry = positions.get(key);
+      if (entry) {
+        entry.count++;
+      } else {
+        const cost = this.mergedDistanceMap.get(key);
         if (cost === undefined) continue;
-        const entry = positions.get(key);
-        if (entry) {
-          entry.count++;
-        } else {
-          positions.set(key, { x: bag.x, y: bag.y, count: 1, weight: 1 / Math.max(1, cost) });
+        positions.set(key, { x: bag.x, y: bag.y, count: 1, weight: 1 / Math.max(1, cost) });
+      }
+    }
+    if (positions.size === 0) return;
+
+    // Total budget across all facilities
+    let totalBudget = 0;
+    for (const s of facState.values()) totalBudget += s.budget;
+
+    const entries = [...positions.values()];
+    while (totalBudget > 0 && entries.length > 0) {
+      let totalWeight = 0;
+      for (const e of entries) totalWeight += e.weight;
+      if (totalWeight <= 0) break;
+
+      // Weighted random: pick a position
+      let roll = Math.random() * totalWeight;
+      let picked = -1;
+      for (let i = 0; i < entries.length; i++) {
+        roll -= entries[i]!.weight;
+        if (roll <= 0) { picked = i; break; }
+      }
+      if (picked === -1) picked = entries.length - 1;
+      const pos = entries[picked]!;
+      const posKey = toPosKey(pos.x, pos.y);
+
+      // Find nearest facility with room + budget (like cemetery)
+      let bestId: string | null = null;
+      let bestCost = Infinity;
+      for (const [id, state] of facState) {
+        if (state.budget <= 0 || state.room <= 0) continue;
+        const distMap = this.facilityDistanceMaps.get(id);
+        if (!distMap) continue;
+        const cost = distMap.get(posKey);
+        if (cost !== undefined && cost < bestCost) {
+          bestCost = cost;
+          bestId = id;
         }
       }
 
-      if (positions.size === 0) continue;
+      if (!bestId) {
+        entries.splice(picked, 1);
+        continue;
+      }
 
-      // Weighted random selection until budget exhausted
-      const entries = [...positions.values()];
-      while (budget > 0 && entries.length > 0) {
-        // Calculate total weight
-        let totalWeight = 0;
-        for (const e of entries) totalWeight += e.weight;
-        if (totalWeight <= 0) break;
+      const state = facState.get(bestId)!;
+      const take = Math.min(pos.count, state.budget, state.room);
 
-        // Pick random entry by weight
-        let roll = Math.random() * totalWeight;
-        let picked = -1;
-        for (let i = 0; i < entries.length; i++) {
-          roll -= entries[i]!.weight;
-          if (roll <= 0) { picked = i; break; }
+      let removed = 0;
+      for (let i = this.pendingBags.length - 1; i >= 0 && removed < take; i--) {
+        if (this.pendingBags[i]!.x === pos.x && this.pendingBags[i]!.y === pos.y) {
+          this.pendingBags.splice(i, 1);
+          removed++;
         }
-        if (picked === -1) picked = entries.length - 1;
+      }
 
-        const pos = entries[picked]!;
-        const take = Math.min(pos.count, budget);
+      state.fac.currentLoad += removed;
+      state.fac.todayReceived += removed;
+      state.budget -= removed;
+      state.room -= removed;
+      totalBudget -= removed;
 
-        // Remove bags from pendingBags at this position
-        let removed = 0;
-        for (let i = this.pendingBags.length - 1; i >= 0 && removed < take; i--) {
-          if (this.pendingBags[i]!.x === pos.x && this.pendingBags[i]!.y === pos.y) {
-            this.pendingBags.splice(i, 1);
-            removed++;
-          }
-        }
-
-        fac.currentLoad += removed;
-        fac.todayReceived += removed;
-        budget -= removed;
-
-        // Update or remove this position entry
-        pos.count -= removed;
-        if (pos.count <= 0) {
-          entries.splice(picked, 1);
-        }
+      pos.count -= removed;
+      if (pos.count <= 0) {
+        entries.splice(picked, 1);
       }
     }
   }
