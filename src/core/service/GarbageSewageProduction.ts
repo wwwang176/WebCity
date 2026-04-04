@@ -13,6 +13,7 @@ import { GARBAGE_PRODUCTION } from './GarbageService';
 import { WATER_CONSUMPTION } from './WaterNetwork';
 import { SEWAGE } from './SewageService';
 import type { GarbageService } from './GarbageService';
+import type { SewageService } from './SewageService';
 
 /** Per-zone sewage rate lookup (OCP: add new zone type → add entry). */
 const SEWAGE_ZONE_RATE: Record<number, number> = {
@@ -40,10 +41,12 @@ export type OccupancyLookup = (x: number, y: number) => number;
 export function produceGarbageAndSewage(
   forEachCell: (fn: (cell: CellLike, x: number, y: number) => void) => void,
   garbageService: GarbageService,
+  sewageService: SewageService,
   getResidents: OccupancyLookup,
   getWorkers: OccupancyLookup,
 ): { sewage: number } {
   let sewage = 0;
+  sewageService.clearSewageCells();
 
   forEachCell((cell, x, y) => {
     if (cell.buildingId <= 0) return;
@@ -63,7 +66,11 @@ export function produceGarbageAndSewage(
     // Sewage: uses building capacity (pipe sizing based on spec)
     const waterDemand = calculateZoneDemand(WATER_CONSUMPTION, zt, bt.residents, bt.workers);
     const sewageRate = SEWAGE_ZONE_RATE[cell.zoneType] ?? 0;
-    sewage += waterDemand * sewageRate;
+    const sewageAmount = waterDemand * sewageRate;
+    if (sewageAmount > 0) {
+      sewageService.reportSewage(x, y, sewageAmount);
+    }
+    sewage += sewageAmount;
   });
 
   return { sewage: Math.floor(sewage) };

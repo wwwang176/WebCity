@@ -81,6 +81,7 @@ export function tickAllCivicServices(state: GameState): void {
   const production = produceGarbageAndSewage(
     (fn) => state.grid.forEachCell(fn),
     state.garbage,
+    state.sewage,
     (x, y) => residentsByPos.get(toPosKey(x, y)) ?? 0,
     (x, y) => workersByPos.get(toPosKey(x, y)) ?? 0,
   );

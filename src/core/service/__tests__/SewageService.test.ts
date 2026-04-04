@@ -9,13 +9,6 @@ describe('SewageService', () => {
     expect(sewage.getTreatmentCapacity()).toBe(0);
   });
 
-  it('should add an outlet and return an id', () => {
-    const sewage = new SewageService();
-    const id = sewage.addOutlet(5, 10);
-    expect(id).toBeTruthy();
-    expect(typeof id).toBe('string');
-  });
-
   it('should add a treatment plant with default capacity', () => {
     const sewage = new SewageService();
     const id = sewage.addTreatmentPlant(3, 4);
@@ -31,7 +24,6 @@ describe('SewageService', () => {
 
   it('should accumulate sewage from produceSewage', () => {
     const sewage = new SewageService();
-    sewage.addOutlet(0, 0);
     sewage.produceSewage(10);
     expect(sewage.getUntreated()).toBe(10);
   });
@@ -39,20 +31,18 @@ describe('SewageService', () => {
   it('should treat sewage when treatment plant exists', () => {
     const sewage = new SewageService();
     sewage.addTreatmentPlant(3, 4, 200);
-    sewage.tick(5); // 5 units produced, capacity 200 > 5
+    sewage.tick(5);
     expect(sewage.getUntreated()).toBe(0);
   });
 
   it('should have untreated sewage when no treatment plant', () => {
     const sewage = new SewageService();
-    sewage.addOutlet(0, 0);
-    sewage.tick(5); // 5 units, no treatment
+    sewage.tick(5);
     expect(sewage.getUntreated()).toBe(5);
   });
 
   it('should cause water pollution when sewage is untreated', () => {
     const sewage = new SewageService();
-    sewage.addOutlet(0, 0);
     sewage.tick(10);
     expect(sewage.getWaterPollution()).toBe(10 * SEWAGE.WATER_POLLUTION_MULTIPLIER);
   });
@@ -66,9 +56,8 @@ describe('SewageService', () => {
 
   it('should partially treat sewage when capacity is insufficient', () => {
     const sewage = new SewageService();
-    sewage.addTreatmentPlant(3, 4, 5); // capacity 5
-    sewage.addOutlet(0, 0);
-    sewage.tick(10); // 10 produced, only 5 treated
+    sewage.addTreatmentPlant(3, 4, 5);
+    sewage.tick(10);
     expect(sewage.getUntreated()).toBe(5);
     expect(sewage.getWaterPollution()).toBeGreaterThan(0);
   });
@@ -78,15 +67,8 @@ describe('SewageService', () => {
     sewage.addTreatmentPlant(0, 0, 100);
     sewage.addTreatmentPlant(5, 5, 100);
     expect(sewage.getTreatmentCapacity()).toBe(200);
-    sewage.tick(15); // 15 units, capacity 200 > 15
+    sewage.tick(15);
     expect(sewage.getUntreated()).toBe(0);
-  });
-
-  it('should remove an outlet by id', () => {
-    const sewage = new SewageService();
-    const id = sewage.addOutlet(5, 5);
-    expect(sewage.removeOutlet(id)).toBe(true);
-    expect(sewage.removeOutlet(id)).toBe(false);
   });
 
   it('should remove a treatment plant by id', () => {
@@ -100,14 +82,13 @@ describe('SewageService', () => {
   it('tick should process sewage against capacity', () => {
     const sewage = new SewageService();
     sewage.addTreatmentPlant(0, 0, 10);
-    sewage.tick(3); // 3 produced, capacity 10 > 3
+    sewage.tick(3);
     expect(sewage.getUntreated()).toBe(0);
     expect(sewage.getWaterPollution()).toBe(0);
   });
 
   it('should serialize and deserialize correctly', () => {
     const sewage = new SewageService();
-    sewage.addOutlet(1, 2);
     sewage.addTreatmentPlant(3, 4, 300);
     sewage.tick(5);
 
@@ -121,18 +102,17 @@ describe('SewageService', () => {
 
   it('should reset untreated sewage each tick', () => {
     const sewage = new SewageService();
-    sewage.addOutlet(0, 0);
-    sewage.tick(10); // 10 produced, no treatment
+    sewage.tick(10);
     expect(sewage.getUntreated()).toBe(10);
     sewage.addTreatmentPlant(0, 0, 200);
-    sewage.tick(10); // 10 produced, capacity 200 > 10
+    sewage.tick(10);
     expect(sewage.getUntreated()).toBe(0);
   });
 
-  it('should generate pollution sources from outlets', () => {
+  it('should generate pollution from unsupplied buildings', () => {
     const sewage = new SewageService();
-    sewage.addOutlet(5, 10);
-    sewage.tick(10); // untreated
+    sewage.reportSewage(5, 10, 10);
+    sewage.tick(10);
     const sources = sewage.getPollutionSources();
     expect(sources).toHaveLength(1);
     expect(sources[0]!.x).toBe(5);
@@ -143,19 +123,18 @@ describe('SewageService', () => {
 
   it('should generate no pollution sources when sewage is treated', () => {
     const sewage = new SewageService();
-    sewage.addOutlet(5, 10);
     sewage.addTreatmentPlant(3, 4, 200);
     sewage.tick(5);
     const sources = sewage.getPollutionSources();
     expect(sources).toHaveLength(0);
   });
 
-  it('should cap pollution per outlet', () => {
+  it('should cap pollution per cell', () => {
     const sewage = new SewageService();
-    sewage.addOutlet(0, 0);
-    sewage.tick(1000); // massive sewage
+    sewage.reportSewage(0, 0, 1000);
+    sewage.tick(1000);
     const sources = sewage.getPollutionSources();
-    expect(sources[0]!.amount).toBeLessThanOrEqual(SEWAGE.MAX_POLLUTION_PER_OUTLET);
+    expect(sources[0]!.amount).toBeLessThanOrEqual(SEWAGE.MAX_POLLUTION_PER_CELL);
   });
 
   it('SEWAGE_RATE constants should be between 0 and 1', () => {

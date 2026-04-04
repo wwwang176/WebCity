@@ -1,9 +1,3 @@
-export interface SewageOutlet {
-  id: string;
-  x: number;
-  y: number;
-}
-
 export interface TreatmentPlant {
   id: string;
   x: number;
@@ -11,8 +5,13 @@ export interface TreatmentPlant {
   capacity: number;
 }
 
+interface SewageCell {
+  x: number;
+  y: number;
+  amount: number;
+}
+
 interface SewageJSON {
-  outlets: SewageOutlet[];
   treatmentPlants: TreatmentPlant[];
   untreatedSewage: number;
   nextId: number;
@@ -36,8 +35,8 @@ export const SEWAGE = {
   DEFAULT_CAPACITY: 2250,
   /** Water pollution multiplier per untreated sewage unit */
   WATER_POLLUTION_MULTIPLIER: 5,
-  /** Maximum pollution emitted per outlet */
-  MAX_POLLUTION_PER_OUTLET: 80,
+  /** Maximum pollution emitted per building cell */
+  MAX_POLLUTION_PER_CELL: 80,
   /** Monthly maintenance cost per treatment plant */
   MAINTENANCE_PER_PLANT: 4,
   /** Sewage rate: fraction of water consumption that becomes sewage, per zone */
@@ -68,7 +67,6 @@ const SEWAGE_DEMAND_CONFIG: UtilityCellDemandConfig = {
 };
 
 export class SewageService {
-  private outlets: SewageOutlet[] = [];
   private treatmentPlants: TreatmentPlant[] = [];
   private connectedPlantIds = new Set<string>();
   private operationalPlantIds: Set<string> | null = null;
@@ -80,12 +78,8 @@ export class SewageService {
   private fullCoverage = new Set<string>();
   private totalDemand = 0;
   private roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
-
-  addOutlet(x: number, y: number): string {
-    const id = `outlet-${this.nextId++}`;
-    this.outlets.push({ id, x, y });
-    return id;
-  }
+  // Per-cell sewage tracking for building-based pollution
+  private sewageCells: SewageCell[] = [];
 
   addTreatmentPlant(x: number, y: number, capacity = SEWAGE.DEFAULT_CAPACITY): string {
     const id = `plant-${this.nextId++}`;
@@ -94,8 +88,17 @@ export class SewageService {
     return id;
   }
 
-  removeOutlet(id: string): boolean {
-    return removeById(this.outlets, id);
+  /** Report per-cell sewage production (called during civic services tick). */
+  reportSewage(x: number, y: number, amount: number): void {
+    this.sewageCells.push({ x, y, amount });
+  }
+
+  clearSewageCells(): void {
+    this.sewageCells.length = 0;
+  }
+
+  getSewageCells(): readonly SewageCell[] {
+    return this.sewageCells;
   }
 
   removeTreatmentPlant(id: string): boolean {
@@ -224,10 +227,6 @@ export class SewageService {
     return this.treatmentPlants.reduce((sum, p) => sum + p.capacity, 0);
   }
 
-  getOutlets(): readonly SewageOutlet[] {
-    return this.outlets;
-  }
-
   getTreatmentPlants(): readonly TreatmentPlant[] {
     return this.treatmentPlants;
   }
@@ -237,28 +236,26 @@ export class SewageService {
   }
 
   getPollutionSources(): PollutionSource[] {
-    const pollution = this.getWaterPollution();
-    if (pollution <= 0) return [];
-    return this.outlets.map(outlet => ({
-      x: outlet.x,
-      y: outlet.y,
-      amount: Math.min(SEWAGE.MAX_POLLUTION_PER_OUTLET, pollution),
-      type: 'water' as const,
-    }));
+    if (this.sewageCells.length === 0) return [];
+    const sources: PollutionSource[] = [];
+    for (const cell of this.sewageCells) {
+      if (this.isSupplied(cell.x, cell.y)) continue;
+      const amount = Math.min(SEWAGE.MAX_POLLUTION_PER_CELL, cell.amount * SEWAGE.WATER_POLLUTION_MULTIPLIER);
+      sources.push({ x: cell.x, y: cell.y, amount, type: 'water' });
+    }
+    return sources;
   }
 
   toJSON(): SewageJSON {
     return {
-      outlets: this.outlets.map(o => ({ ...o })),
       treatmentPlants: this.treatmentPlants.map(p => ({ ...p })),
       untreatedSewage: this.untreatedSewage,
       nextId: this.nextId,
     };
   }
 
-  static fromJSON(json: SewageJSON): SewageService {
+  static fromJSON(json: SewageJSON & { outlets?: unknown }): SewageService {
     const svc = new SewageService();
-    svc.outlets = json.outlets.map(o => ({ ...o }));
     svc.treatmentPlants = json.treatmentPlants.map(p => ({ ...p }));
     for (const p of svc.treatmentPlants) svc.connectedPlantIds.add(p.id);
     svc.untreatedSewage = json.untreatedSewage;
