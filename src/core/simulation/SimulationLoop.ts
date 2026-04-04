@@ -1,6 +1,7 @@
 import { type GameState } from './GameState';
 import { tickBudget } from '../economy/Budget';
 import { calculateRCIDemand, applyBusinessTaxPenalty, BUSINESS_TAX } from '../economy/RCIDemand';
+import { buildingGrowthTick } from '../building/BuildingGrowthTick';
 import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
@@ -406,88 +407,39 @@ export class SimulationLoop {
 
   private tryBuildingGrowth(): void {
     const grid = this.state.grid;
-    const growth = this.state.buildingGrowth;
-    const conditions = {
-      hasPower: true, // simplified - check per cell later
-      hasWater: true,
+
+    // Delegated to BuildingGrowthTick (SRP — building growth logic separated from orchestration)
+    const result = buildingGrowthTick({
+      grid,
+      tryGrow: (x, y, conditions) => this.state.buildingGrowth.tryGrow(x, y, conditions),
       rciDemand: this.state.rciDemand,
-    };
+      isPowered: (x, y) => this.state.power.isPowered(x, y),
+      isWatered: (x, y) => this.state.water.isSupplied(x, y),
+      getDistrictAt: (x, y) => this.state.districts.getDistrictAt(x, y),
+      canBuildInDistrict: (id, zt) => this.state.policies.canBuildInDistrict(id, zt),
+      clearPendingDeathAt: (x, y) => this.state.deathCare.clearPendingAt(x, y),
+      clearPendingGarbageAt: (x, y) => this.state.garbage.clearPendingAt(x, y),
+      growthAttempts: SIMULATION.GROWTH_ATTEMPTS,
+      burnedClearanceChance: SIMULATION.BURNED_CLEARANCE_CHANCE,
+      getBuildingLevel: (bid) => getBuildingType(bid)?.level ?? 1,
+      randomInt,
+      randomFloat: Math.random,
+    });
 
-    let changed = false;
-    const affectedBuildingCells: string[] = [];
-
-    // Try growing on a sample of cells each tick (not all 60x60)
-    const attempts = SIMULATION.GROWTH_ATTEMPTS;
-    for (let i = 0; i < attempts; i++) {
-      const x = randomInt(grid.width);
-      const y = randomInt(grid.height);
-      const cell = grid.getCell(x, y);
-      if (!cell || cell.zoneType === ZoneType.NONE) continue;
-
-      // Burned buildings: developer must demolish ruins first (extra cost/time)
-      if (cell.reserved === BURNED && isZoneBuilding(cell.buildingId)) {
-        if (Math.random() < SIMULATION.BURNED_CLEARANCE_CHANCE) {
-          grid.setCell(x, y, { buildingId: 0, reserved: 0 });
-          this.state.deathCare.clearPendingAt(x, y);
-          this.state.garbage.clearPendingAt(x, y);
-          changed = true;
-          affectedBuildingCells.push(toPosKey(x, y));
-          this.onBuildingRemoved?.(x, y);
-        }
-        continue;
-      }
-
-      // Abandoned: only demolish if growth conditions are met, then build
-      if (cell.reserved === ABANDONED && isZoneBuilding(cell.buildingId)) {
-        conditions.hasPower = this.state.power.isPowered(x, y);
-        conditions.hasWater = this.state.water.isSupplied(x, y);
-        const rciType = zoneToRCI(cell.zoneType);
-        if (!conditions.hasPower || !conditions.hasWater || !rciType || conditions.rciDemand[rciType] <= 0) continue;
-        const district = this.state.districts.getDistrictAt(x, y);
-        if (district && !this.state.policies.canBuildInDistrict(district.id, cell.zoneType)) continue;
-        // Conditions met: demolish abandoned building, then grow
-        grid.setCell(x, y, { buildingId: 0, reserved: 0 });
-        this.state.deathCare.clearPendingAt(x, y);
-        this.state.garbage.clearPendingAt(x, y);
-        this.abandonmentStress.delete(`${x},${y}`);
-        this.onBuildingRemoved?.(x, y);
-        if (growth.tryGrow(x, y, conditions)) {
-          const grown = grid.getCell(x, y);
-          if (grown) {
-            const level = getBuildingType(grown.buildingId)?.level ?? 1;
-            this.onBuildingAdded?.(x, y, cell.zoneType, level);
-          }
-        }
-        changed = true;
-        affectedBuildingCells.push(toPosKey(x, y));
-        continue;
-      }
-
-      if (cell.buildingId === 0) {
-        // Check district policy restrictions
-        const district = this.state.districts.getDistrictAt(x, y);
-        if (district && !this.state.policies.canBuildInDistrict(district.id, cell.zoneType)) {
-          continue;
-        }
-        // Check power/water for this specific cell
-        conditions.hasPower = this.state.power.isPowered(x, y);
-        conditions.hasWater = this.state.water.isSupplied(x, y);
-        if (growth.tryGrow(x, y, conditions)) {
-          changed = true;
-          affectedBuildingCells.push(toPosKey(x, y));
-          const grown = grid.getCell(x, y);
-          if (grown) {
-            const level = getBuildingType(grown.buildingId)?.level ?? 1;
-            this.onBuildingAdded?.(x, y, cell.zoneType, level);
-          }
-        }
-      }
+    // Fire fine-grained callbacks
+    for (const r of result.removed) {
+      this.abandonmentStress.delete(`${r.x},${r.y}`);
+      this.onBuildingRemoved?.(r.x, r.y);
     }
-    if (changed) {
+    for (const a of result.added) {
+      this.onBuildingAdded?.(a.x, a.y, a.zoneType, a.level);
+    }
+
+    if (result.changed) {
       this.onBuildingsChanged?.();
       this.wpDistCache?.invalidate();
       // Incrementally update sidewalk graph for new/removed buildings
-      if (affectedBuildingCells.length > 0) {
+      if (result.affectedCells.length > 0) {
         const swGridLookup = {
           getCell: (gx: number, gy: number) => {
             const c = grid.getCell(gx, gy);
@@ -495,7 +447,7 @@ export class SimulationLoop {
             return { roadType: c.roadType, roadFlags: c.roadFlags, railType: c.railType, buildingId: c.buildingId };
           },
         };
-        this.state.sidewalkGraph.updateCells(swGridLookup, affectedBuildingCells);
+        this.state.sidewalkGraph.updateCells(swGridLookup, result.affectedCells);
         this.state.pedestrianManager.clearPathCache();
       }
     }
