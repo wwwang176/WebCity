@@ -66,6 +66,12 @@ export class WaterNetwork {
   private supplied = new Set<string>();
   private fullCoverage = new Set<string>();
   private totalDemand = 0;
+  /** Injected road lookup for level-aware BFS (DIP). */
+  private roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
+
+  setRoadLookup(lookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup): void {
+    this.roadLookup = lookup;
+  }
 
   addPlant(plant: WaterPlant): void {
     this.plants.push(plant);
@@ -81,14 +87,14 @@ export class WaterNetwork {
     // Phase 1: compute fullCoverage (no budget limit)
     this.fullCoverage.clear();
     for (const plant of this.plants) {
-      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions);
+      bfsRoadNetworkFlood(grid, plant.x, plant.y, this.fullCoverage, infrastructurePositions, this.roadLookup);
     }
 
     // Phase 2: BFS budget-drain per plant
     this.supplied.clear();
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
     for (const plant of this.plants) {
-      bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, infrastructurePositions);
+      bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, infrastructurePositions, this.roadLookup);
     }
     return this.supplied;
   }

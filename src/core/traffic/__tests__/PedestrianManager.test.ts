@@ -138,6 +138,7 @@ describe('PedestrianManager', () => {
       const graph = buildTJunctionGraph();
       const blockedLight: TrafficLightQuery = {
         canPass: () => false,
+        getLight: () => ({ phase: 0, clearing: false }),
       };
       const mgr = new PedestrianManager(graph, blockedLight);
 
@@ -170,6 +171,7 @@ describe('PedestrianManager', () => {
       const graph = buildTJunctionGraph();
       const greenLight: TrafficLightQuery = {
         canPass: () => true,
+        getLight: () => ({ phase: 0, clearing: false }),
       };
       const mgr = new PedestrianManager(graph, greenLight);
 

@@ -100,6 +100,7 @@ export function sampleTrip(pool: WalkingTripPool, effectiveWeightOrRand?: number
 
 export interface TrafficLightQuery {
   canPass(fromX: number, fromY: number, toX: number, toY: number): boolean;
+  getLight(x: number, y: number): { phase: number; clearing: boolean } | undefined;
 }
 
 export interface LevelCrossingQuery {
@@ -112,7 +113,7 @@ export interface LevelCrossingQuery {
 const MAX_PATH_CACHE = 2000;
 
 export class PedestrianManager {
-  private agents: PedestrianAgent[] = [];
+  readonly agents: PedestrianAgent[] = [];
   private nextId = 1;
   private pathCache = new Map<string, SidewalkEdge[] | null>();
   private cellIndex = new Map<string, Set<string>>();
@@ -396,7 +397,8 @@ export class PedestrianManager {
   }
 
   fromJSON(data: { agents: PedestrianAgent[]; nextId: number }): void {
-    this.agents = data.agents;
+    this.agents.length = 0;
+    for (const a of data.agents) this.agents.push(a);
     this.nextId = data.nextId;
   }
 

@@ -56,7 +56,7 @@ export function parseLevelFromKey(key: string): number {
 
 /** Minimal grid interface for road lookups (DIP). */
 export interface ReadableGrid {
-  getCell(x: number, y: number): { roadType: number } | null;
+  getCell(x: number, y: number): { roadType: number; reserved?: number } | null;
 }
 
 /** ReadableGrid with known dimensions — needed for dense array coverage caches. */

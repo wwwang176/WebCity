@@ -182,4 +182,20 @@ describe('ShoppingAccess', () => {
     // 12 residents / 4 workers = 3.0 → capped at 1
     expect(com.ratio).toBe(1);
   });
+
+  it('setRoadLookup injects dependency (DIP) without module-level state', () => {
+    // Verify the instance method exists and can be called
+    const mockLookup = {
+      getAllKeysAtPosition: (_x: number, _y: number) => [] as string[],
+      getCompatibleNeighborKeys: (_src: string, _nx: number, _ny: number) => [] as string[],
+      getCellByKey: (_key: string) => null,
+      getAllCellKeys: () => [] as string[],
+    };
+    // Should not throw
+    shopping.setRoadLookup(mockLookup as any);
+    // calculate should work without module-level state
+    shopping.calculate(grid);
+    const res = shopping.getResidentialAccess(0, 0);
+    expect(res.ratio).toBeDefined();
+  });
 });

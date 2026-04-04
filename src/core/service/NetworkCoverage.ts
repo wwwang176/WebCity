@@ -4,12 +4,17 @@ import { RoadType } from '../road/types';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
-/** Module-level UnifiedRoadLookup reference, set once by Game.ts. */
+/** @deprecated Use roadLookup parameter injection instead. */
 let _roadLookup: UnifiedRoadLookup | null = null;
 
-/** Set the shared UnifiedRoadLookup for all coverage BFS systems. */
+/** @deprecated Use roadLookup parameter on individual functions instead. */
 export function setNetworkRoadLookup(lookup: UnifiedRoadLookup): void {
   _roadLookup = lookup;
+}
+
+/** Resolve roadLookup: prefer explicit parameter, fall back to module-level. */
+function resolveRL(explicit?: UnifiedRoadLookup | null): UnifiedRoadLookup | null {
+  return explicit !== undefined ? explicit : _roadLookup;
 }
 
 /**
@@ -40,7 +45,9 @@ export function calculateNetworkCoverage(
   relayRange: number,
   coverageSet: Set<string>,
   infra?: Set<string>,
+  roadLookup?: UnifiedRoadLookup | null,
 ): void {
+  const rl = resolveRL(roadLookup);
   const r = range;
   const r2 = r * r;
   // relaySeeds are cell keys (may include level) for level-aware BFS
@@ -64,8 +71,8 @@ export function calculateNetworkCoverage(
           relaySeeds.push(posKey);
         }
         // Elevated road relay seeds at this position
-        if (_roadLookup) {
-          const allKeys = _roadLookup.getAllKeysAtPosition(nx, ny);
+        if (rl) {
+          const allKeys = rl.getAllKeysAtPosition(nx, ny);
           for (const k of allKeys) {
             if (k !== posKey) relaySeeds.push(k);
           }
@@ -96,9 +103,9 @@ export function calculateNetworkCoverage(
 
       // Determine if neighbor is a relay (road/building/infra)
       let isRelay: boolean;
-      if (_roadLookup) {
+      if (rl) {
         // Level-aware: check compatible road neighbors
-        const compatKeys = _roadLookup.getCompatibleNeighborKeys(curKey, nx, ny);
+        const compatKeys = rl.getCompatibleNeighborKeys(curKey, nx, ny);
         const hasCompatRoad = compatKeys.length > 0;
         isRelay = hasCompatRoad || cell.buildingId !== 0 || (infra?.has(posKey) ?? false);
 
@@ -172,7 +179,9 @@ export function bfsRoadNetworkFlood(
   startY: number,
   coverage: Set<string>,
   infra?: Set<string>,
+  roadLookup?: UnifiedRoadLookup | null,
 ): void {
+  const rl = resolveRL(roadLookup);
   const startPosKey = toPosKey(startX, startY);
   if (coverage.has(startPosKey)) return;
 
@@ -185,8 +194,8 @@ export function bfsRoadNetworkFlood(
   coverage.add(startPosKey);
 
   // Also seed elevated road keys at start position (level-aware)
-  if (_roadLookup) {
-    const startKeys = _roadLookup.getAllKeysAtPosition(startX, startY);
+  if (rl) {
+    const startKeys = rl.getAllKeysAtPosition(startX, startY);
     for (const k of startKeys) {
       if (!visited.has(k)) {
         visited.add(k);
@@ -205,8 +214,8 @@ export function bfsRoadNetworkFlood(
       const posKey = toPosKey(nx, ny);
 
       // Level-aware: get compatible road neighbors
-      if (_roadLookup) {
-        const compatibleKeys = _roadLookup.getCompatibleNeighborKeys(curKey, nx, ny);
+      if (rl) {
+        const compatibleKeys = rl.getCompatibleNeighborKeys(curKey, nx, ny);
         for (const nk of compatibleKeys) {
           if (visited.has(nk)) continue;
           visited.add(nk);
@@ -252,7 +261,9 @@ export function bfsBudgetDrainFlood(
   supplied: Set<string>,
   getDemand: (x: number, y: number) => number,
   infra?: Set<string>,
+  roadLookup?: UnifiedRoadLookup | null,
 ): void {
+  const rl = resolveRL(roadLookup);
   let budget = plant.output;
   const startPosKey = toPosKey(plant.x, plant.y);
 
@@ -265,8 +276,8 @@ export function bfsBudgetDrainFlood(
   supplied.add(startPosKey);
 
   // Also seed elevated road keys at plant position (level-aware)
-  if (_roadLookup) {
-    const startKeys = _roadLookup.getAllKeysAtPosition(plant.x, plant.y);
+  if (rl) {
+    const startKeys = rl.getAllKeysAtPosition(plant.x, plant.y);
     for (const k of startKeys) {
       if (!visited.has(k)) {
         visited.add(k);
@@ -287,8 +298,8 @@ export function bfsBudgetDrainFlood(
 
       // Level-aware: get compatible road neighbors
       let processedAsRoad = false;
-      if (_roadLookup) {
-        const compatibleKeys = _roadLookup.getCompatibleNeighborKeys(curKey, nx, ny);
+      if (rl) {
+        const compatibleKeys = rl.getCompatibleNeighborKeys(curKey, nx, ny);
         for (const nk of compatibleKeys) {
           if (visited.has(nk)) continue;
           visited.add(nk);

@@ -43,7 +43,7 @@ import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOp
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findAdjacentRoad } from '../grid/GridHelpers';
 import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
-import { getCellServiceScore, getResidentialServiceRatios } from '../service/ServiceCoverageQuery';
+import { getCellServiceScore, getResidentialServiceRatios, getCellServiceCostScore } from '../service/ServiceCoverageQuery';
 import { calculatePoliceLoads, calculateFireLoads } from '../service/PoliceFireLoadCalculator';
 import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
 import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
@@ -58,11 +58,13 @@ import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicl
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
 import { PedestrianTripType } from '../traffic/PedestrianAgent';
-import { TRADE, FreightRouteType } from '../traffic/FreightSystem';
+import { TRADE } from '../traffic/FreightSystem';
+import { spawnFreightVehicles, rebuildActiveFreight, type FreightSpawnContext } from '../traffic/FreightVehicleSpawner';
 import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
 
 import { SIMULATION } from './SimulationConstants';
 import { TransferTracker } from '../transport/TransferTracker';
+import { computeTransferStats, findTransferRouteStops, TRANSIT_ICONS } from '../transport/TransferStatsQuery';
 
 
 /** Map CitizenManager schoolKey to EducationService SchoolType */
@@ -949,22 +951,9 @@ export class SimulationLoop {
       // Per-cell crime: base crime adjusted by local police coverage
       const localCrime = Math.max(0, baseCrime + this.state.police.getCrimeReduction(x, y));
 
-      // Continuous service score: each service contributes (1 - costRatio), power/water weight 2
-      // Non-residential zones only count infrastructure & safety (power/water/police/fire),
-      // normalized to 0–10 scale so full coverage gives equal offset regardless of zone type.
-      const svc = (ratio: number) => ratio < 0 ? 0 : 1 - ratio; // -1=uncovered→0, 0=nearest→1, 1=farthest→0
+      // Continuous service score (delegated to ServiceCoverageQuery — OCP)
       const isRes = isResidentialZone(cell.zoneType);
-      const rawScore =
-        (this.state.power.isPowered(x, y) ? 2 : 0) +
-        (this.state.water.isSupplied(x, y) ? 2 : 0) +
-        svc(this.state.police.getCostRatio(x, y)) +
-        svc(this.state.fire.getCostRatio(x, y)) +
-        (isRes ? svc(this.state.garbage.getCostRatio(x, y)) : 0) +
-        (isRes ? svc(this.state.health.getCostRatio(x, y)) : 0) +
-        (isRes ? svc(this.state.education.getCostRatio(x, y)) : 0) +
-        (isRes ? svc(this.state.deathCare.getCostRatio(x, y)) : 0);
-      // Residential max=SERVICE_MAX_RES, non-residential max=SERVICE_MAX_NON_RES → normalize
-      const serviceScore = isRes ? rawScore : rawScore * (SIMULATION.SERVICE_MAX_RES / SIMULATION.SERVICE_MAX_NON_RES);
+      const serviceScore = getCellServiceCostScore(this.state, x, y, isRes);
 
       const conditions: AbandonmentConditions = {
         businessTaxRate: businessTax,
@@ -1650,7 +1639,7 @@ export class SimulationLoop {
           // Track transfer usage per route label
           if (rideLegs.length >= 2) {
             const label = rideLegs.map(l => {
-              const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
+              const icons = TRANSIT_ICONS;
               return icons[l.transitType ?? ''] ?? '?';
             }).join('\u2192');
             this.transferTracker.recordTransfer(label);
@@ -1801,14 +1790,11 @@ export class SimulationLoop {
     }
   }
 
+  /** Reusable map: building position → zone type (rebuilt with building index). */
+  private buildingZoneTypes = new Map<string, ZoneType>();
+
   /**
-   * Spawn freight trucks for three trade routes:
-   * 1. Local supply: industrial → commercial
-   * 2. Export: industrial → trade node (station/airport/highway edge)
-   * 3. Import: trade node → commercial
-   *
-   * A-limit: each industrial building has at most 1 truck; each trade node has at most N trucks.
-   * B-limit: total freight trucks on road ≤ freightCap.
+   * Spawn freight trucks (delegated to FreightVehicleSpawner — SRP).
    * Routes are cached in shared CommuteCache.routeIndex.
    */
   private spawnFreightTraffic(
@@ -1818,143 +1804,49 @@ export class SimulationLoop {
     const freight = this.state.freight;
     const lastTrade = freight.getLastTrade();
     const lastDemand = freight.getLastDemand();
-
-    const production = lastDemand.production;
-    const imported = lastTrade.imported;
-    const exported = lastTrade.exported;
-
-    if (production === 0 && imported === 0) return;
-
-    // B-limit: total freight trucks on road
     const freightCap = Math.floor(vehicleCap * SIMULATION.FREIGHT_CAP_RATIO);
 
     // Rebuild activeFreight from live vehicles
-    const af = this.activeFreight;
-    af.clear();
-    let freightOnRoad = 0;
-    for (const v of this.state.traffic.vehicles) {
-      if (v.sourceBuildingKey && !v.arrived) {
-        af.set(v.sourceBuildingKey, (af.get(v.sourceBuildingKey) ?? 0) + 1);
-        freightOnRoad++;
-      }
-    }
-    if (freightOnRoad >= freightCap) return;
+    rebuildActiveFreight(this.state.traffic.vehicles, this.activeFreight);
 
-    if (this.buildingPositions.length === 0) return;
-
-    // A-limit: collect available sources (industrial buildings with < 1 truck)
-    const availableIndustrials: { x: number; y: number; key: string }[] = [];
-    const commercials: { x: number; y: number }[] = [];
+    // Build zone type lookup from grid (reuse map, avoid per-call allocation)
+    this.buildingZoneTypes.clear();
     for (const bp of this.buildingPositions) {
       const cell = grid.getCell(bp.x, bp.y);
-      if (!cell) continue;
-      if (cell.zoneType === ZoneType.INDUSTRIAL) {
-        const key = toPosKey(bp.x, bp.y);
-        if ((af.get(key) ?? 0) < 1) availableIndustrials.push({ x: bp.x, y: bp.y, key });
-      } else if (isCommercialZone(cell.zoneType)) {
-        commercials.push(bp);
-      }
+      if (cell) this.buildingZoneTypes.set(bp.pos, cell.zoneType);
     }
 
-    // A-limit: collect available trade road cells (< N trucks per trade node, keyed by tradeKey)
-    const availableTrade: { x: number; y: number; key: string }[] = [];
-    for (const tp of this.cachedTradePositions) {
-      const maxTrucks = Math.ceil(tp.throughput / SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT);
-      if ((af.get(tp.tradeKey) ?? 0) < maxTrucks) availableTrade.push({ x: tp.x, y: tp.y, key: tp.tradeKey });
-    }
+    const roadLookup = this._roadLookup;
+    const laneGraph = this.laneGraph;
+    const commuteCache = this.commuteCache;
 
-    // Route weights from economic data
-    const localVolume = Math.max(0, production - exported);
-    const hasLocal = availableIndustrials.length > 0 && commercials.length > 0 && localVolume > 0;
-    const hasExport = availableIndustrials.length > 0 && availableTrade.length > 0 && exported > 0;
-    const hasImport = availableTrade.length > 0 && commercials.length > 0 && imported > 0;
-
-    if (!hasLocal && !hasExport && !hasImport) return;
-
-    const options: Array<{ type: FreightRouteType; weight: number }> = [];
-    if (hasLocal) options.push({ type: FreightRouteType.LOCAL, weight: localVolume });
-    if (hasExport) options.push({ type: FreightRouteType.EXPORT, weight: exported });
-    if (hasImport) options.push({ type: FreightRouteType.IMPORT, weight: imported });
-    const totalWeight = options.reduce((s, o) => s + o.weight, 0);
-    if (totalWeight === 0) return;
-
-    // Spawn up to (freightCap - freightOnRoad) trucks, max 5 per tick
-    const maxPerTick = Math.min(5, freightCap - freightOnRoad);
-
-    for (let i = 0; i < maxPerTick; i++) {
-      if (freightOnRoad >= freightCap) break;
-
-      // Weighted random route selection
-      let roll = Math.random() * totalWeight;
-      let routeType: FreightRouteType = FreightRouteType.LOCAL;
-      for (const o of options) {
-        roll -= o.weight;
-        if (roll <= 0) { routeType = o.type; break; }
-      }
-
-      let from: { x: number; y: number; key: string };
-      let to: { x: number; y: number };
-
-      switch (routeType) {
-        case FreightRouteType.LOCAL:
-          if (availableIndustrials.length === 0 || commercials.length === 0) continue;
-          from = availableIndustrials[randomInt(availableIndustrials.length)]!;
-          to = commercials[randomInt(commercials.length)]!;
-          break;
-        case FreightRouteType.EXPORT:
-          if (availableIndustrials.length === 0 || availableTrade.length === 0) continue;
-          from = availableIndustrials[randomInt(availableIndustrials.length)]!;
-          to = availableTrade[randomInt(availableTrade.length)]!;
-          break;
-        case FreightRouteType.IMPORT:
-          if (availableTrade.length === 0 || commercials.length === 0) continue;
-          from = availableTrade[randomInt(availableTrade.length)]!;
-          to = commercials[randomInt(commercials.length)]!;
-          break;
-      }
-
-      // Use shared CommuteCache.routeIndex for path caching
-      const fromRoad = findAdjacentRoad(grid, from.x, from.y);
-      const toRoad = findAdjacentRoad(grid, to.x, to.y);
-      if (!fromRoad || !toRoad || (fromRoad.x === toRoad.x && fromRoad.y === toRoad.y)) continue;
-      if (!this._roadLookup) continue;
-
-      const routeKey = `${toPosKey(from.x, from.y)}->${toPosKey(to.x, to.y)}`;
-      let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
-
-      if (!variants) {
-        variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromRoad, toRoad);
-        if (variants.length > 0) {
-          this.commuteCache.setRouteVariants(routeKey, variants);
+    spawnFreightVehicles({
+      grid,
+      production: lastDemand.production,
+      imported: lastTrade.imported,
+      exported: lastTrade.exported,
+      freightCap,
+      buildingPositions: this.buildingPositions,
+      buildingZoneTypes: this.buildingZoneTypes,
+      cachedTradePositions: this.cachedTradePositions,
+      activeFreight: this.activeFreight,
+      findPath: (fromRoad, toRoad) => {
+        if (!roadLookup) return null;
+        const routeKey = `${toPosKey(fromRoad.x, fromRoad.y)}->${toPosKey(toRoad.x, toRoad.y)}`;
+        let variants = commuteCache.getRouteVariants(routeKey) ?? null;
+        if (!variants) {
+          variants = findLanePathVariants(laneGraph, roadLookup, fromRoad, toRoad);
+          if (variants.length > 0) commuteCache.setRouteVariants(routeKey, variants);
         }
-      }
-
-      const edgePath = variants && variants.length > 0
-        ? variants[Math.floor(Math.random() * variants.length)]!
-        : null;
-
-      if (edgePath && edgePath.length > 0) {
-        this.state.traffic.addFreightVehicle(edgePath, from.key);
-        freightOnRoad++;
-        // Update activeFreight count for A-limit within this tick
-        const newCount = (af.get(from.key) ?? 0) + 1;
-        af.set(from.key, newCount);
-        if (routeType === FreightRouteType.IMPORT) {
-          // Remove all road cells of this trade node if it reached its limit
-          const tp = this.cachedTradePositions.find(t => t.tradeKey === from.key);
-          const maxTrucks = tp ? Math.ceil(tp.throughput / SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT) : 1;
-          if (newCount >= maxTrucks) {
-            for (let j = availableTrade.length - 1; j >= 0; j--) {
-              if (availableTrade[j]!.key === from.key) availableTrade.splice(j, 1);
-            }
-          }
-        } else {
-          // Industrial: max 1, remove from available list
-          const idx = availableIndustrials.indexOf(from as any);
-          if (idx >= 0) availableIndustrials.splice(idx, 1);
-        }
-      }
-    }
+        return variants && variants.length > 0
+          ? variants[Math.floor(Math.random() * variants.length)]!
+          : null;
+      },
+      addFreightVehicle: (edgePath, sourceKey) => {
+        this.state.traffic.addFreightVehicle(edgePath, sourceKey);
+      },
+      freightTrucksPerThroughput: SIMULATION.FREIGHT_TRUCKS_PER_THROUGHPUT,
+    });
   }
 
   /** Roll over dailyRiders for all transit systems (EMA smooth + reset). */
@@ -2071,87 +1963,27 @@ export class SimulationLoop {
     return this.transferTracker.getBuildings(label);
   }
 
-  /** Get stop coordinates for a specific transfer route label (for map overlay). */
+  /** Get stop coordinates for a specific transfer route label (delegated — SRP). */
   getTransferRouteStops(label: string): Array<{ x: number; y: number; type: string }> {
-    const cache = this.transferGraph.stopRouteCache;
-    const stops: Array<{ x: number; y: number; type: string }> = [];
-    // Find first cached route matching this label
-    for (const route of cache.values()) {
-      const rideLegs = route.legs.filter(l => l.type === 'ride');
-      if (rideLegs.length < 2) continue;
-      const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
-      const routeLabel = rideLegs.map(l => icons[l.transitType ?? ''] ?? '?').join('\u2192');
-      if (routeLabel !== label) continue;
-      // Collect all stop positions from legs
-      for (const leg of route.legs) {
-        stops.push({ x: leg.fromX, y: leg.fromY, type: leg.type });
-        stops.push({ x: leg.toX, y: leg.toY, type: leg.type });
-      }
-      break; // one example is enough for the line
-    }
-    return stops;
+    return findTransferRouteStops(this.transferGraph.stopRouteCache, label);
   }
 
-  /** Transfer stats for UI display. */
-  getTransferStats(): {
-    activeTransferPeds: number;
-    totalActivePeds: number;
-    transferTrips: number;
-    cachedRoutes: number;
-    multiRideRoutes: number;
-    transferEdges: number;
-    routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number }>;
-  } {
-    const activeTransferPeds = this.transferTracker.getPedsSnapshot();
-
-    const pool = this.walkingTripPool;
-    let transferTrips = 0;
-    for (const t of pool.trips) {
-      if (t.tripType === 4) transferTrips += t.count; // TRANSFER_WALK
-    }
-
-    const cache = this.transferGraph.stopRouteCache;
-    let multiRideRoutes = 0;
-    const groups = new Map<string, { count: number; totalTime: number }>();
-    cache.forEach(route => {
-      const rideLegs = route.legs.filter(l => l.type === 'ride');
-      const rides = rideLegs.length;
-      if (rides >= 2) multiRideRoutes++;
-      const label = rideLegs.map(l => {
-        const icons: Record<string, string> = { BUS: '\uD83D\uDE8C', METRO: '\uD83D\uDE87', RAIL: '\uD83D\uDE82', FERRY: '\u26F4' };
-        return icons[l.transitType ?? ''] ?? l.transitType ?? '?';
-      }).join('\u2192');
-      const g = groups.get(label);
-      if (g) { g.count++; g.totalTime += route.totalTime; }
-      else groups.set(label, { count: 1, totalTime: route.totalTime });
-    });
-
-    const weeklyTotals = this.transferTracker.getAllWeeklyTotals();
-
-    const routeBreakdown: Array<{ label: string; rides: number; count: number; avgTime: number; weeklyUse: number }> = [];
-    groups.forEach((g, label) => {
-      const rides = (label.match(/\u2192/g) || []).length + 1;
-      const weeklyUse = weeklyTotals.get(label) ?? 0;
-      routeBreakdown.push({ label, rides, count: g.count, avgTime: g.totalTime / g.count, weeklyUse });
-    });
-    routeBreakdown.sort((a, b) => b.weeklyUse - a.weeklyUse);
-
-    return {
-      activeTransferPeds,
+  /** Transfer stats for UI display (delegated to TransferStatsQuery — SRP). */
+  getTransferStats() {
+    return computeTransferStats({
+      transferTracker: this.transferTracker,
+      walkingTripPool: this.walkingTripPool,
+      stopRouteCache: this.transferGraph.stopRouteCache,
       totalActivePeds: this.state.pedestrianManager.agents.length,
-      transferTrips,
-      cachedRoutes: cache.size,
-      multiRideRoutes,
-      transferEdges: this.transferGraph.byStop.size,
-      routeBreakdown,
-    };
+      transferEdgeCount: this.transferGraph.byStop.size,
+    });
   }
 
   private findNearestStop(
-    stops: readonly { x: number; y: number; passengers: number }[],
+    stops: readonly { x: number; y: number; passengers: number; dailyRiders: number }[],
     pos: { x: number; y: number },
-  ): { x: number; y: number; passengers: number } | null {
-    let best: { x: number; y: number; passengers: number } | null = null;
+  ): { x: number; y: number; passengers: number; dailyRiders: number } | null {
+    let best: { x: number; y: number; passengers: number; dailyRiders: number } | null = null;
     let bestDist = Infinity;
     for (const s of stops) {
       const dist = manhattanDistance(s.x, s.y, pos.x, pos.y);
