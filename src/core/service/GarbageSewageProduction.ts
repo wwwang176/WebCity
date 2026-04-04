@@ -29,14 +29,19 @@ interface CellLike {
   zoneType: number;
 }
 
+/** Occupancy lookup: returns actual residents or workers at a position. */
+export type OccupancyLookup = (x: number, y: number) => number;
+
 /**
  * Report per-cell garbage to GarbageService and calculate total sewage production.
- * Garbage is reported per-building via reportGarbage (queue-based).
- * Sewage is still returned as an aggregate total.
+ * Garbage uses actual occupancy (residents/workers living/working at the building).
+ * Sewage still uses building capacity (pipe sizing is based on building spec).
  */
 export function produceGarbageAndSewage(
   forEachCell: (fn: (cell: CellLike, x: number, y: number) => void) => void,
   garbageService: GarbageService,
+  getResidents: OccupancyLookup,
+  getWorkers: OccupancyLookup,
 ): { sewage: number } {
   let sewage = 0;
 
@@ -47,13 +52,15 @@ export function produceGarbageAndSewage(
 
     const zt = cell.zoneType as ZoneType;
 
-    // Garbage: per-cell reporting to queue-based service
-    const garbageAmount = calculateZoneDemand(GARBAGE_PRODUCTION, zt, bt.residents, bt.workers);
+    // Garbage: uses actual occupancy, not building capacity
+    const actualResidents = isResidentialZone(zt) ? getResidents(x, y) : 0;
+    const actualWorkers = !isResidentialZone(zt) ? getWorkers(x, y) : 0;
+    const garbageAmount = calculateZoneDemand(GARBAGE_PRODUCTION, zt, actualResidents, actualWorkers);
     if (garbageAmount > 0) {
       garbageService.reportGarbage(x, y, garbageAmount);
     }
 
-    // Sewage: water demand × per-zone sewage rate
+    // Sewage: uses building capacity (pipe sizing based on spec)
     const waterDemand = calculateZoneDemand(WATER_CONSUMPTION, zt, bt.residents, bt.workers);
     const sewageRate = SEWAGE_ZONE_RATE[cell.zoneType] ?? 0;
     sewage += waterDemand * sewageRate;

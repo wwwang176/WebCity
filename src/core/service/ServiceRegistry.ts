@@ -5,6 +5,7 @@ import { isFacilityOperational, type UtilityChecker } from './FacilityOperationa
 import type { RoadCoverageService, Facility } from './RoadCoverageService';
 import type { SizedGrid } from '../grid/GridHelpers';
 import { produceGarbageAndSewage } from './GarbageSewageProduction';
+import { toPosKey } from '../grid/GridHelpers';
 
 /** All civic-service keys on GameState that implement CivicService. */
 const CIVIC_SERVICE_KEYS: readonly (keyof GameState)[] = [
@@ -68,10 +69,20 @@ export function tickAllCivicServices(state: GameState): void {
   state.education.tick();
   state.parks.tick();
 
+  // Build occupancy maps for actual resident/worker counts
+  const residentsByPos = new Map<string, number>();
+  const workersByPos = new Map<string, number>();
+  for (const c of state.citizens.getCitizens()) {
+    if (c.homeId) residentsByPos.set(c.homeId, (residentsByPos.get(c.homeId) ?? 0) + 1);
+    if (c.workplaceId) workersByPos.set(c.workplaceId, (workersByPos.get(c.workplaceId) ?? 0) + 1);
+  }
+
   // Garbage + sewage production (delegated — OCP/DRY)
   const production = produceGarbageAndSewage(
     (fn) => state.grid.forEachCell(fn),
     state.garbage,
+    (x, y) => residentsByPos.get(toPosKey(x, y)) ?? 0,
+    (x, y) => workersByPos.get(toPosKey(x, y)) ?? 0,
   );
   state.garbage.tick();
   state.sewage.tick(production.sewage);
