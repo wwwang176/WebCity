@@ -102,7 +102,9 @@ WebCity 提供 10 種市政服務，每種服務由對應的建築提供覆蓋�
 
 ## 服務調度 (Service Dispatch)
 
-服務車輛（消防車、救護車、垃圾車、靈車）通過道路網路調度。巡邏車輛的渲染與交通規則詳見[交通系統 — 服務車輛](traffic-system.md#服務車輛-service-vehicle-manager)。
+服務車輛（消防車、救護車、靈車）通過道路網路調度。巡邏車輛的渲染與交通規則詳見[交通系統 — 服務車輛](traffic-system.md#服務車輛-service-vehicle-manager)。
+
+> **注意**：垃圾收集不使用服務車輛調度，而是使用加權隨機收集機制（詳見[垃圾處理](#垃圾處理-garbageservice)）。
 
 ### 服務車輛速度
 
@@ -110,7 +112,6 @@ WebCity 提供 10 種市政服務，每種服務由對應的建築提供覆蓋�
 |---------|-------------------|
 | 消防車 | 3 |
 | 救護車 | 3 |
-| 垃圾車 | 2 |
 | 靈車 | 2 |
 
 ### 行程估計
@@ -726,5 +727,5 @@ isFacilityOperational(x, y, infraType) =
 - 每個設施類型一列，包含 Count（數量）、Load%（負載百分比）、Detail（細節）欄位
 - 警察和消防顯示加權需求負載率
 - 學校顯示註冊/容量比
-- 垃圾顯示溢出量
+- 垃圾獨立群組：每座 Landfill 顯示 Load + Burned/wk，summary 行顯示 Awaiting/Produced/Burned
 - 使用 `createMemo` + JSON equality 避免不必要的重渲染

@@ -103,7 +103,7 @@ SimulationLoop 中以 0.2 的係數衰減工業污染。
 
 1. **基礎污染**：每個設施的每個格子始終發射 `BASE_POLLUTION = 20` 地面污染。
 2. **超載污染**：負載率 > 50% (`POLLUTION_LOAD_THRESHOLD`) 時，每格額外發射 `round(負載率 × POLLUTION_AMOUNT_SCALE)` 地面污染（`POLLUTION_AMOUNT_SCALE = 40`）。
-3. **溢出污染**：垃圾溢出時，`getPollutionPenalty()` 的值平均分配至各設施的每個格子。
+3. **未收集污染**：建築門口有未收集垃圾時，`getPollutionPenalty() = min(100, 未收集袋數 × 2)` 的值平均分配至各設施的每個格子。
 
 ### 污水排放
 
