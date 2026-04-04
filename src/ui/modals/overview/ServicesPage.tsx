@@ -108,39 +108,44 @@ export function ServicesPage() {
     }
     entries.push({ group: 'Education', items: eduItems });
 
-    // ── Waste ──
-    const wasteItems: ServiceEntry[] = [];
+    // ── Garbage ──
+    const garbageItems: ServiceEntry[] = [];
     const garbageFacilities = state.garbage.getFacilities();
     for (const f of garbageFacilities) {
+      const fBurnedWk = f.burnDaily ? Math.round(f.burnDaily.reduce((a: number, b: number) => a + b, 0)) : 0;
+      const burnSuffix = ` \u00B7 Burned ${fBurnedWk}/wk`;
       const fSt = statusOf(f.capacity > 0 ? f.currentLoad / f.capacity : 0);
-      wasteItems.push(mkEntry('\uD83D\uDDD1', 'Landfill', r.garbageRatio, 'Load', f.currentLoad, f.capacity, fSt));
+      garbageItems.push(mkEntry('\uD83D\uDDD1', 'Landfill', r.garbageRatio, 'Load', f.currentLoad, f.capacity, fSt, burnSuffix));
     }
     const awaitingGarbage = state.garbage.getUncollected();
-    const garbageLoad = state.garbage.getCurrentLoad();
-    const garbageCap = state.garbage.getTotalCapacity();
+    const producedWk = state.garbage.getProducedPerWeek();
+    const burnedWk = state.garbage.getBurnedPerWeek();
     if (garbageFacilities.length === 0) {
       const noSt = awaitingGarbage > 0 ? { label: `${awaitingGarbage} awaiting pickup`, color: UI_COLORS.STATUS_BAD } : { label: 'None', color: UI_COLORS.STATUS_BAD };
-      wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: r.garbageRatio, detail: 'No landfill', loadPct: -1, status: noSt.label, statusColor: noSt.color });
+      const noSuffix = producedWk > 0 ? ` \u00B7 Produced ${producedWk}/wk` : '';
+      garbageItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: r.garbageRatio, detail: `No landfill${noSuffix}`, loadPct: -1, status: noSt.label, statusColor: noSt.color });
     } else {
       const summaryParts: string[] = [];
       summaryParts.push(`Awaiting pickup ${awaitingGarbage}`);
-      summaryParts.push(`Produced ${state.garbage.getProducedPerWeek()}/wk`);
-      summaryParts.push(`Burned ${state.garbage.getBurnedPerWeek()}/wk`);
-      const aSt = awaitingGarbage > 0 ? { label: `${awaitingGarbage} awaiting`, color: UI_COLORS.STATUS_BAD } : statusOf(garbageCap > 0 ? garbageLoad / garbageCap : 0);
-      wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: -1, detail: summaryParts.join(' \u00B7 '), loadPct: -1, status: aSt.label, statusColor: aSt.color });
+      summaryParts.push(`Produced ${producedWk}/wk`);
+      summaryParts.push(`Burned ${burnedWk}/wk`);
+      const aSt = awaitingGarbage > 0 ? { label: `${awaitingGarbage} awaiting`, color: UI_COLORS.STATUS_BAD } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
+      garbageItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: -1, detail: summaryParts.join(' \u00B7 '), loadPct: -1, status: aSt.label, statusColor: aSt.color });
     }
+    entries.push({ group: 'Garbage', items: garbageItems });
 
+    // ── Sewage ──
+    const sewageItems: ServiceEntry[] = [];
     const sewageProduced = Math.round(state.sewage.getProduced());
     const sewageUntreated = state.sewage.getUntreated();
     const sewageCap = state.sewage.getTreatmentCapacity();
     const sSt = sewageUntreated > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
     if (sewageCap > 0) {
-      wasteItems.push(mkEntry('\uD83D\uDCA7', 'Sewage', -1, 'Produced', sewageProduced, sewageCap, sSt));
+      sewageItems.push(mkEntry('\uD83D\uDCA7', 'Sewage', -1, 'Produced', sewageProduced, sewageCap, sSt));
     } else {
-      wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: `${sewageProduced} sewage untreated — build a treatment plant`, loadPct: -1, status: sSt.label, statusColor: sSt.color });
+      sewageItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: `${sewageProduced} sewage untreated — build a treatment plant`, loadPct: -1, status: sSt.label, statusColor: sSt.color });
     }
-
-    entries.push({ group: 'Waste', items: wasteItems });
+    entries.push({ group: 'Sewage', items: sewageItems });
 
     // ── Death Care ──
     const burialItems: ServiceEntry[] = [];
