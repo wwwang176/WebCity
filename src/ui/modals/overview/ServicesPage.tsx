@@ -151,12 +151,12 @@ export function ServicesPage() {
     const burialItems: ServiceEntry[] = [];
     const cemeteries = state.deathCare.getCemeteries();
     for (const c of cemeteries) {
-      const bodies = c.used + c.pending;
-      const transitSuffix = c.inTransit > 0 ? ` \u00B7 InTransit ${c.inTransit}` : '';
-      const cSt = statusOf(c.capacity > 0 ? (bodies + c.inTransit) / c.capacity : 0);
-      burialItems.push(mkEntry('\u26B0', 'Cemetery', r.deathCareRatio, 'Bodies', bodies, c.capacity, cSt, transitSuffix));
+      const cCrematedWk = c.recentDaily ? Math.round(c.recentDaily.reduce((a: number, b: number) => a + b, 0)) : 0;
+      const cremSuffix = ` \u00B7 Cremated ${cCrematedWk}/wk`;
+      const cSt = statusOf(c.capacity > 0 ? c.currentLoad / c.capacity : 0);
+      burialItems.push(mkEntry('\u26B0', 'Cemetery', r.deathCareRatio, 'Bodies', c.currentLoad, c.capacity, cSt, cremSuffix));
     }
-    const awaitingPickup = state.deathCare.getPendingDeathQueue().filter(d => d.cemeteryId === null).length;
+    const awaitingPickup = state.deathCare.getPendingDeathQueue().length;
     const deathsWk = state.deathCare.getRecentDeaths();
     const crematedWk = state.deathCare.getRecentCremations();
     if (cemeteries.length === 0) {

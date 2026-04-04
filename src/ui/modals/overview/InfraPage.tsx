@@ -60,7 +60,7 @@ export function InfraPage() {
 
     const cemeteries = state.deathCare.getCemeteries();
     let cemUsed = 0, cemCap = 0;
-    for (const c of cemeteries) { cemUsed += c.used; cemCap += c.capacity; }
+    for (const c of cemeteries) { cemUsed += c.currentLoad; cemCap += c.capacity; }
     const unprocessed = state.deathCare.getUnprocessed();
 
     return {

@@ -147,7 +147,7 @@ describe('getInfraDetails', () => {
     const deathDaily = new Array(7).fill(0);
     deathDaily[0] = 8;
     const ctx = makeCtx({
-      deathCare: { getCemeteries: () => [{ x: 5, y: 5, capacity: 800, used: 120, pending: 3, recentDaily, recentIndex: 1, todayCremated: 0, deathDaily }] },
+      deathCare: { getCemeteries: () => [{ x: 5, y: 5, capacity: 800, currentLoad: 123, recentDaily, recentIndex: 1, todayCremated: 0, deathDaily }] },
     });
     const d = getInfraDetails(ctx, 'cemetery', 5, 5);
     expect(d).toEqual({ Bodies: '123 / 800', 'Deaths/wk': 8, 'Cremated/wk': 5 });
