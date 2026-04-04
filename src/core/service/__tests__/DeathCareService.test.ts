@@ -494,6 +494,36 @@ describe('DeathCareService', () => {
     expect(cem.todayReceived).toBeGreaterThanOrEqual(1);
   });
 
+  // ── Hearse dispatch limit ──
+
+  it('should limit hearse dispatch to HEARSE_DISPATCH_LIMIT per cemetery per tick', () => {
+    const { dc } = createDCWithGrid();
+    // Report more deaths than the dispatch limit
+    for (let i = 0; i < 10; i++) dc.reportDeath(9, 1);
+
+    dc.tick(); // first tick: assign up to HEARSE_DISPATCH_LIMIT
+
+    const cem = dc.getCemeteries()[0]!;
+    expect(cem.inTransit).toBe(DEATH_CARE.HEARSE_DISPATCH_LIMIT);
+    // Remaining deaths still unassigned
+    const unassigned = dc.getPendingDeathQueue().filter(d => d.cemeteryId === null).length;
+    expect(unassigned).toBe(10 - DEATH_CARE.HEARSE_DISPATCH_LIMIT);
+  });
+
+  it('should dispatch more hearses on subsequent ticks', () => {
+    const { dc } = createDCWithGrid();
+    for (let i = 0; i < 10; i++) dc.reportDeath(9, 1);
+
+    dc.tick(); // tick 1: assign 3
+    dc.tick(); // tick 2: assign 3 more
+
+    const cem = dc.getCemeteries()[0]!;
+    // 6 assigned total (some may have arrived if delay is short)
+    const assigned = dc.getPendingDeathQueue().filter(d => d.cemeteryId !== null).length;
+    const total = assigned + cem.inTransit + cem.pending;
+    expect(total).toBeGreaterThanOrEqual(DEATH_CARE.HEARSE_DISPATCH_LIMIT * 2);
+  });
+
   // ── Decomposition ──
 
   it('should decompose unassigned bodies after DECOMPOSE_TICKS', () => {

@@ -60,6 +60,8 @@ export const DEATH_CARE = {
   HEAVY_HAPPINESS_PER_BODY: -25,
   /** Ticks before a body decomposes and is removed (~12 game weeks) */
   DECOMPOSE_TICKS: 1800,
+  /** Max hearses a cemetery can dispatch per service tick */
+  HEARSE_DISPATCH_LIMIT: 3,
 } as const;
 
 export class DeathCareService extends RoadCoverageService<Cemetery> {
@@ -181,10 +183,12 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
 
   tick(): void {
     // Step 1: Increment wait counters + try to assign unassigned deaths
+    // Track per-cemetery dispatch count to enforce HEARSE_DISPATCH_LIMIT
+    const dispatchCount = new Map<string, number>();
     for (const death of this.pendingDeathQueue) {
       death.waitTicks++;
       if (death.cemeteryId === null) {
-        this.tryAssignDeath(death);
+        this.tryAssignDeath(death, dispatchCount);
       }
     }
 
@@ -272,8 +276,8 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     }
   }
 
-  /** Try to assign a pending death to the nearest cemetery with available capacity. */
-  private tryAssignDeath(death: PendingDeath): void {
+  /** Try to assign a pending death to the nearest cemetery with available capacity and dispatch slots. */
+  private tryAssignDeath(death: PendingDeath, dispatchCount: Map<string, number>): void {
     const posKey = toPosKey(death.x, death.y);
     let bestCem: Cemetery | null = null;
     let bestCost = Infinity;
@@ -281,6 +285,8 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
     for (const cem of this.facilities) {
       if (!this.connectedFacilityIds.has(cem.id) || !this.isFacilityOperationalById(cem.id)) continue;
       if (cem.used + cem.pending + cem.inTransit >= cem.capacity) continue;
+      // Enforce per-tick dispatch limit
+      if ((dispatchCount.get(cem.id) ?? 0) >= DEATH_CARE.HEARSE_DISPATCH_LIMIT) continue;
 
       const distMap = this.cemeteryDistanceMaps.get(cem.id);
       if (!distMap) continue;
@@ -296,6 +302,7 @@ export class DeathCareService extends RoadCoverageService<Cemetery> {
       death.cemeteryId = bestCem.id;
       death.remainingTicks = Math.max(1, Math.ceil(bestCost / DEATH_CARE.HEARSE_SPEED));
       bestCem.inTransit++;
+      dispatchCount.set(bestCem.id, (dispatchCount.get(bestCem.id) ?? 0) + 1);
     }
   }
 
