@@ -33,10 +33,10 @@ export interface GarbageFacility {
 
 /** Per-zone garbage production rates: base per building + perCapita per resident/worker */
 export const GARBAGE_PRODUCTION = {
-  RESIDENTIAL: { base: 0.025, perCapita: 0.0025 },
-  COMMERCIAL:  { base: 0.05,  perCapita: 0.0025 },
-  INDUSTRIAL:  { base: 0.1,   perCapita: 0.005  },
-  OFFICE:      { base: 0.01,  perCapita: 0.001  },
+  RESIDENTIAL: { base: 0.05, perCapita: 0.005 },
+  COMMERCIAL:  { base: 0.1,  perCapita: 0.005 },
+  INDUSTRIAL:  { base: 0.2,  perCapita: 0.01  },
+  OFFICE:      { base: 0.02, perCapita: 0.002 },
 } as const;
 
 /** Garbage service configuration constants */
@@ -44,9 +44,9 @@ export const GARBAGE = {
   /** Road-distance coverage budget (used for overlay gradient reference, not range limit) */
   SERVICE_BUDGET: ROAD_COVERAGE.GARBAGE_BUDGET,
   /** Default capacity per facility */
-  DEFAULT_CAPACITY: 1000,
+  DEFAULT_CAPACITY: 2000,
   /** Fixed burn rate: units incinerated per tick per facility */
-  BURN_RATE: 60,
+  BURN_RATE: 18,
   /** Maintenance cost per garbage facility per tick */
   MAINTENANCE_PER_FACILITY: 3,
   /** Max pollution penalty from uncollected garbage */
@@ -62,7 +62,7 @@ export const GARBAGE = {
   /** Pollution spread radius (Manhattan distance) for all garbage sources */
   POLLUTION_RADIUS: 5,
   /** Max bags collected per facility per service tick */
-  COLLECTION_RATE: 80,
+  COLLECTION_RATE: 25,
   /** Happiness penalty per garbage bag waiting in queue */
   HAPPINESS_PER_BAG: -3,
   /** After this many ticks, penalty per bag increases */
