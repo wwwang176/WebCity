@@ -258,6 +258,8 @@ export interface SelectedZoneBuilding {
   policeLoadRatio: number;
   /** City-wide fire load ratio (> 1 means overloaded). */
   fireLoadRatio: number;
+  /** Number of dead bodies at this building awaiting hearse pickup. */
+  pendingDeaths: number;
 }
 
 export interface SelectedInfraBuilding {
@@ -1022,6 +1024,7 @@ export class Game {
             this.state.grid.setCell(x, y, {
               zoneType: ZoneType.NONE, buildingId: 0, reserved: 0,
             });
+            this.state.deathCare.clearPendingAt(x, y);
             break;
         }
       }
@@ -1695,6 +1698,7 @@ export class Game {
             hospitalLoadRatio: this.state.health.getLoadRatio(),
             policeLoadRatio: this.state.police.getLoadRatio(),
             fireLoadRatio: this.state.fire.getLoadRatio(),
+            pendingDeaths: this.state.deathCare.getPendingDeathQueue().filter(d => d.x === x && d.y === y).length,
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -2334,6 +2338,7 @@ export class Game {
         hasCustomers: isCommercialZone(sel.zoneType) ? this.state.shopping.getCommercialCustomers(x, y).hasCustomers : undefined,
         garbageLoadRatio: this.getGarbageLoadRatio(),
         hospitalLoadRatio: this.state.health.getLoadRatio(),
+        pendingDeaths: this.state.deathCare.getPendingDeathQueue().filter(d => d.x === x && d.y === y).length,
       };
     }
 

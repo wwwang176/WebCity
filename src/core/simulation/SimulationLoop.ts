@@ -425,6 +425,7 @@ export class SimulationLoop {
       if (cell.reserved === BURNED && isZoneBuilding(cell.buildingId)) {
         if (Math.random() < SIMULATION.BURNED_CLEARANCE_CHANCE) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
+          this.state.deathCare.clearPendingAt(x, y);
           changed = true;
           affectedBuildingCells.push(toPosKey(x, y));
           this.onBuildingRemoved?.(x, y);
@@ -442,6 +443,7 @@ export class SimulationLoop {
         if (district && !this.state.policies.canBuildInDistrict(district.id, cell.zoneType)) continue;
         // Conditions met: demolish abandoned building, then grow
         grid.setCell(x, y, { buildingId: 0, reserved: 0 });
+        this.state.deathCare.clearPendingAt(x, y);
         this.abandonmentStress.delete(`${x},${y}`);
         this.onBuildingRemoved?.(x, y);
         if (growth.tryGrow(x, y, conditions)) {
@@ -575,6 +577,13 @@ export class SimulationLoop {
     // Shopping access: only penalise when population >= threshold (early game protection)
     const enableShopping = pop >= SIMULATION.SHOPPING_POP_THRESHOLD;
 
+    // Pre-build pending death counts per position for per-citizen happiness
+    const pendingDeathCounts = new Map<string, number>();
+    for (const d of this.state.deathCare.getPendingDeathQueue()) {
+      const key = toPosKey(d.x, d.y);
+      pendingDeathCounts.set(key, (pendingDeathCounts.get(key) ?? 0) + 1);
+    }
+
     // Reusable factors object — mutated per citizen, no allocation per iteration
     const factors: HappinessFactors = {
       commuteDistance: 0, hasPark: hasParkCoverage,
@@ -584,6 +593,7 @@ export class SimulationLoop {
       currentTick, homePowered: true, homeWatered: true,
       workplaceZoneType: undefined,
       shoppingAccess: undefined,
+      pendingDeathsAtHome: 0,
     };
 
     for (const citizen of citizens) {
@@ -594,6 +604,7 @@ export class SimulationLoop {
       factors.homePowered = true;
       factors.homeWatered = true;
       factors.shoppingAccess = undefined;
+      factors.pendingDeathsAtHome = 0;
       if (citizen.homeId) {
         const pos = parsePosKey(citizen.homeId);
         if (pos) {
@@ -602,6 +613,7 @@ export class SimulationLoop {
           if (enableShopping) {
             factors.shoppingAccess = this.state.shopping.getResidentialAccess(pos.x, pos.y).ratio;
           }
+          factors.pendingDeathsAtHome = pendingDeathCounts.get(citizen.homeId) ?? 0;
         }
       }
 

@@ -495,8 +495,12 @@ describe('DeathCare integration', () => {
 
   it('deathTick should kill citizens over MAX_AGE and report to DeathCare', () => {
     const state = createGameState(10, 10);
-    vi.spyOn(state.deathCare, 'getCoverage').mockReturnValue(true);
+    // Set up road adjacent to cemetery so BFS can reach death locations
+    state.grid.setCell(4, 5, { roadType: 2 }); // TWO_LANE adjacent to cemetery at (5,5)
+    state.grid.setCell(3, 5, { roadType: 2 });
     state.deathCare.addCemetery(5, 5);
+    state.deathCare.recalculateCoverage(state.grid);
+
     // Create citizens already over MAX_AGE (280) → guaranteed death in deathTick
     for (let i = 0; i < 3; i++) {
       state.citizens.createCitizen({ age: 281 });
@@ -506,9 +510,9 @@ describe('DeathCare integration', () => {
     expect(deadIds.length).toBe(3);
     expect(state.citizens.getPopulation()).toBe(0);
 
-    // Report deaths to deathCare
-    for (const d of deadIds) state.deathCare.reportDeath(0, 0);
-    // Run deathCare ticks to process cremation
+    // Report deaths at a road-reachable location
+    for (const d of deadIds) state.deathCare.reportDeath(3, 5);
+    // Run deathCare ticks to process cremation (includes transport delay)
     for (let i = 0; i < 100; i++) state.deathCare.tick();
     expect(state.deathCare.getUnprocessed()).toBe(0);
   });

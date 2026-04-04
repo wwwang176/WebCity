@@ -127,15 +127,14 @@ export function ServicesPage() {
       wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: `${sewageProduced} sewage untreated — build a treatment plant`, loadPct: -1, status: sSt.label, statusColor: sSt.color });
     }
 
-    const cemeteries = state.deathCare.getCemeteries();
-    let cemBodies = 0, cemCap = 0;
-    for (const c of cemeteries) { cemBodies += c.used + ((c as any).pending ?? 0); cemCap += c.capacity; }
-    const unassigned = (state.deathCare as any).unassignedDeaths ?? state.deathCare.getUnprocessed();
+    let cemCap = 0;
+    for (const c of state.deathCare.getCemeteries()) { cemCap += c.capacity; }
+    const totalUnprocessed = state.deathCare.getUnprocessed();
     const deathsWk = state.deathCare.getRecentDeaths();
     const crematedWk = state.deathCare.getRecentCremations();
-    const deathSuffix = deathsWk > 0 || crematedWk > 0 ? ` Deaths ${deathsWk} Cremated ${crematedWk}/wk` : '';
-    const dSt = unassigned > 0 ? { label: `${unassigned} unprocessed`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemBodies / cemCap : 0);
-    wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Bodies', cemBodies, cemCap, dSt, deathSuffix));
+    const deathSuffix = deathsWk > 0 || crematedWk > 0 ? ` \u00B7 Deaths ${deathsWk} \u00B7 Cremated ${crematedWk}/wk` : '';
+    const dSt = totalUnprocessed > 0 ? { label: `${totalUnprocessed} unprocessed`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? totalUnprocessed / cemCap : 0);
+    wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Bodies', totalUnprocessed, cemCap, dSt, deathSuffix));
 
     entries.push({ group: 'Waste & Burial', items: wasteItems });
 
