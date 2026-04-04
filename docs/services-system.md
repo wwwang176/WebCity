@@ -484,70 +484,54 @@ production ≈ collection > burn，使容量有意義：
 
 ### 覆蓋模式：全城道路可達
 
-殯葬服務使用**全城覆蓋**模式：墓園服務範圍涵蓋整個道路網絡，沒有距離限制。任何透過道路連接到墓園的位置都可被服務。覆蓋的意義是「靈車能不能到」而非「在不在範圍內」。
+殯葬服務使用**全城覆蓋**模式（繼承 `GlobalCoverageService`）：墓園服務範圍涵蓋整個道路網絡，沒有距離限制。任何透過道路連接到墓園的位置都可被服務。
 
-每座墓園獨立計算道路可達性（per-cemetery BFS, Dijkstra 無預算限制），距離影響的是**靈車回應時間**。
+每座墓園獨立計算道路可達性（per-cemetery BFS, Dijkstra 無預算限制），距離影響的是**收集優先度**（加權隨機，近的更可能被收集）。
 
-### 靈車系統
+### 收集模型：預算制（與 GarbageService 對齊）
 
-每座墓園配備 **5 台靈車**（`HEARSE_COUNT = 5`）。靈車出發後處於忙碌狀態，屍體到達墓園後才歸隊可再次派遣。
+每座墓園每 service tick 可收集 **3 具屍體**（`COLLECTION_RATE = 3`）。收集採用**加權隨機**演算法（`collectPending`，由 `GlobalCoverageService` 提供）：
 
-- 靈車忙碌 = `inTransit` 計數
-- 所有靈車忙碌 → 無法再派 → 屍體留在街上等待
-- 遠距離的屍體佔用靈車更久，自然降低處理速度
+- 權重 = `1 / max(1, roadCost)`：距離越近越可能被選中
+- 每次選中一個位置 → 找最近且有容量+預算的墓園
+- 立即收集（同 tick 內完成，無運送延遲）
 
-多座墓園**不會搶屍體**：每具屍體分配給距離最近且有空閒靈車及容量的墓園。近的墓園優先，忙了或滿了由遠的接手。
-
-### 死亡 → 收屍流程
+### 死亡 → 處理流程
 
 ```
-市民死亡 → reportDeath(x, y) → 加入 pendingDeathQueue
+市民死亡 → reportDeath(x, y) → 加入 pendingDeathQueue { x, y, waitTicks }
   ↓
-tick() Step 1: 遍歷未分配屍體，找最近且有靈車和容量的墓園
-  → 分配成功: 靈車出發，inTransit++
-  → 靈車全忙或容量滿: 留在佇列，下次 tick 重試
+tick() Step 1: waitTicks++ → 超過 1800 tick 自動分解移除
   ↓
-tick() Step 2: 倒數 remainingTicks（game tick 單位，每次減 6）
-  → 到期: 屍體移入墓園 pending，靈車歸隊 inTransit--
+tick() Step 2: collectPending() — 加權隨機收集，每墓園預算 3 具/tick
+  → 收集成功: currentLoad++ → 從佇列移除
+  → 無覆蓋/容量滿: 留在佇列，下次 tick 重試
   ↓
-tick() Step 3: 墓園三階段處理（火化 → 儲存 → 溢出）
+tick() Step 3: processCemeteries() — 每墓園火化 min(currentLoad, CREMATION_RATE)
 ```
-
-### 運送延遲
-
-```
-delay (game ticks) = ceil(roadCost × SLOW_TICK_INTERVAL / HEARSE_SPEED)
-HEARSE_SPEED = 10（道路成本單位/service tick）
-SLOW_TICK_INTERVAL = 6（game ticks/service tick）
-```
-
-道路成本由道路類型決定：高速公路成本低（快）、小路成本高（慢）。**不受實際車流量影響**。
 
 ### 墓園容量與 fallback
 
-分配時檢查 `used + pending + inTransit < capacity`（容量 50）。最近墓園滿了 → 自動分配到次近的有容量墓園。所有墓園都滿 → 停止派車 → 屍體留在街上持續扣幸福度 → 玩家必須擴建。
+收集時檢查 `capacity - currentLoad > 0`（容量 50）。最近墓園滿了 → 自動分配到次近的有容量墓園。所有墓園都滿 → 停止收集 → 屍體留在街上持續扣幸福度 → 玩家必須擴建。
 
-### 三階段處理
+### 火化處理
 
-每 service tick 每座運作中的墓園依序：
-1. **Phase 1**: 直接火化 pending 屍體（每墓園每 tick 處理 1 具）
-2. **Phase 2**: 火化已儲存的屍體（剩餘處理量）
-3. **Phase 3**: 儲存剩餘 pending（直到容量上限 50）
+每 service tick 每座運作中的墓園：`min(currentLoad, CREMATION_RATE)` 具屍體被火化（CREMATION_RATE = 1）。
 
 ### 吞吐量平衡
 
 | 項目 | 每 service tick | 每天（4 ticks） |
 |------|----------------|----------------|
-| 靈車送入（最大） | ~5（5 台靈車） | ~5-8 |
+| 收集（最大） | 3 | 12 |
 | 火化處理 | 1 | 4 |
 
-火化速度（4/天）低於靈車送入速度（5-8/天），屍體會在墓園內堆積。容量 50 在中型城市會產生擴建壓力。
+收集速度（12/天）高於火化速度（4/天），屍體會在墓園內堆積。容量 50 在中型城市會產生擴建壓力。
 
 ### 屍體清除機制
 
 | 觸發條件 | 說明 |
 |---------|------|
-| 靈車收走 | 正常流程：分配 → 運送 → 到達墓園處理 |
+| 收集車收走 | 正常流程：collectPending → currentLoad++ → 火化 |
 | 自然分解 | waitTicks ≥ 1800（~12 遊戲週）→ 自動移除 |
 | 玩家拆除建築 | demolish 工具拆除 → `clearPendingAt(x, y)` |
 | 建商清除焦黑建築 | BURNED 建築自動清除時觸發 |
@@ -557,10 +541,10 @@ SLOW_TICK_INTERVAL = 6（game ticks/service tick）
 
 **Per-citizen**：只有家門口有屍體的市民受影響。
 
-```
-每具屍體: 幸福度 -5
-上限: -20（每位市民最多扣 20）
-```
+| 等待時間 | 每具屍體懲罰 |
+|---------|------------|
+| < 30 ticks | -10 |
+| ≥ 30 ticks | -25 |
 
 ### 建築面板警告
 
@@ -572,9 +556,7 @@ SLOW_TICK_INTERVAL = 6（game ticks/service tick）
 ### 每墓園負載追蹤
 
 每座墓園獨立追蹤：
-- `used`: 目前儲存的屍體數
-- `pending`: 墓園內待處理的屍體數
-- `inTransit`: 靈車在路上的數量
+- `currentLoad`: 目前儲存的屍體數（等待火化）
 - `todayReceived` / `todayCremated`: 今日統計
 - `deathDaily` / `recentDaily`: 7 天環形緩衝區
 
@@ -583,11 +565,11 @@ SLOW_TICK_INTERVAL = 6（game ticks/service tick）
 Death Care 獨立群組，每座墓園一行 + 彙總行：
 
 ```
-⚰ Cemetery    Bodies 3 / 50 · InTransit 4         [Normal]
+⚰ Cemetery    Bodies 3 / 50                        [Normal]
 ⚰ Death Care  Awaiting pickup 12 · Deaths 5/wk · Cremated 4/wk  [12 awaiting]
 ```
 
-- 墓園行：`used+pending / capacity` + 靈車在路上數量
+- 墓園行：`currentLoad / capacity`
 - 彙總行：街上等待數 + 每週死亡/火化統計（永遠顯示，不隱藏）
 - 無墓園時顯示「No cemetery」+ 等待數
 

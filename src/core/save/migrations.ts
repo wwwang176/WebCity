@@ -161,7 +161,6 @@ export const MIGRATIONS: readonly SaveMigration[] = [
       // Update cemeteries (death care)
       for (const c of state.deathCare.getCemeteries() as any[]) {
         c.capacity = DEATH_CARE.DEFAULT_CAPACITY;
-        c.processRate = DEATH_CARE.DEFAULT_PROCESS_RATE;
         updated++;
       }
 

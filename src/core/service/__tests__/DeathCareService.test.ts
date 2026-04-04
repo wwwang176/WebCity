@@ -14,7 +14,7 @@ import { RoadType } from '../../road/types';
  * After recalculateCoverage, the BFS floods from cemetery footprint
  * along the road and expands to adjacent non-road cells.
  */
-function createDCWithGrid(opts?: { capacity?: number; processRate?: number }): {
+function createDCWithGrid(opts?: { capacity?: number }): {
   dc: DeathCareService;
   grid: Grid;
   cemId: string;
@@ -25,7 +25,7 @@ function createDCWithGrid(opts?: { capacity?: number; processRate?: number }): {
     grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
   }
   const dc = new DeathCareService();
-  const cemId = dc.addCemetery(0, 0, opts?.capacity ?? 500, opts?.processRate ?? 5);
+  const cemId = dc.addCemetery(0, 0, opts?.capacity ?? 500);
   dc.recalculateCoverage(grid);
   return { dc, grid, cemId };
 }
@@ -39,7 +39,7 @@ describe('DeathCareService', () => {
     expect(dc.getUnprocessed()).toBe(0);
   });
 
-  it('should add a cemetery with default capacity and processRate', () => {
+  it('should add a cemetery with default capacity', () => {
     const dc = new DeathCareService();
     const id = dc.addCemetery(5, 10);
     expect(id).toBeTruthy();
@@ -48,17 +48,14 @@ describe('DeathCareService', () => {
     expect(cemeteries[0]!.x).toBe(5);
     expect(cemeteries[0]!.y).toBe(10);
     expect(cemeteries[0]!.capacity).toBe(50);
-    expect(cemeteries[0]!.processRate).toBe(1);
-    expect(cemeteries[0]!.used).toBe(0);
-    expect(cemeteries[0]!.inTransit).toBe(0);
+    expect(cemeteries[0]!.currentLoad).toBe(0);
   });
 
-  it('should add a cemetery with custom capacity and processRate', () => {
+  it('should add a cemetery with custom capacity', () => {
     const dc = new DeathCareService();
-    dc.addCemetery(3, 7, 200, 10);
+    dc.addCemetery(3, 7, 200);
     const cem = dc.getCemeteries()[0]!;
     expect(cem.capacity).toBe(200);
-    expect(cem.processRate).toBe(10);
   });
 
   it('should remove a cemetery by id', () => {
@@ -86,127 +83,101 @@ describe('DeathCareService', () => {
     expect(dc.getUnprocessed()).toBe(3);
   });
 
-  it('should assign deaths to nearest cemetery on tick', () => {
+  it('should collect deaths at reachable locations on tick', () => {
     const { dc } = createDCWithGrid();
-    // Verify coverage computed correctly
     expect(dc.getCoverage(3, 1)).toBe(true);
 
-    // Check internal per-cemetery distance maps
-    const maps = (dc as any).cemeteryDistanceMaps as Map<string, Map<string, number>>;
-    expect(maps.size).toBe(1);
-    const cemMap = maps.get('cem-1')!;
-    expect(cemMap).toBeDefined();
-    expect(cemMap.has('3,1')).toBe(true);
-
-    // Check connected & operational
-    expect((dc as any).connectedFacilityIds.has('cem-1')).toBe(true);
-    expect(dc.getCemeteries()[0]!.capacity).toBe(500);
-
-    // Death at (3,1) — adjacent to road at (3,0), reachable from cemetery
     dc.reportDeath(3, 1);
     dc.tick();
-    const queue = dc.getPendingDeathQueue();
-    expect(queue.length).toBeGreaterThanOrEqual(0); // may have been delivered already if delay=1
-    if (queue.length > 0) {
-      expect(queue[0]!.cemeteryId).not.toBeNull();
-    } else {
-      // Body was assigned, delivered, and processed in 1 tick (very close)
-      expect(dc.getUnprocessed()).toBe(0);
-    }
+    // Body should be collected instantly (budget-based, same tick)
+    expect(dc.getPendingDeathQueue()).toHaveLength(0);
+    // Body is now at cemetery (currentLoad or already cremated)
+    const cem = dc.getCemeteries()[0]!;
+    expect(cem.todayReceived).toBe(1);
   });
 
-  it('should not assign deaths at unreachable locations', () => {
-    const { dc, grid } = createDCWithGrid();
+  it('should not collect deaths at unreachable locations', () => {
+    const { dc } = createDCWithGrid();
     // Death at (0,9) — no road connection
     dc.reportDeath(0, 9);
     dc.tick();
     const queue = dc.getPendingDeathQueue();
     expect(queue).toHaveLength(1);
-    expect(queue[0]!.cemeteryId).toBeNull();
   });
 
-  it('should deliver bodies after transport delay expires', () => {
-    const { dc } = createDCWithGrid({ processRate: 100 });
-    dc.reportDeath(3, 1);
-    // Tick until the hearse arrives and body is processed
-    for (let i = 0; i < 20; i++) dc.tick();
-    expect(dc.getPendingDeathQueue()).toHaveLength(0);
-    expect(dc.getUnprocessed()).toBe(0);
-  });
+  // ── Collection rate budget ──
 
-  // ── Cemetery processing (3-phase) ──
+  it('should collect up to COLLECTION_RATE bodies per cemetery per tick', () => {
+    const { dc } = createDCWithGrid();
+    // Report more deaths than COLLECTION_RATE
+    for (let i = 0; i < DEATH_CARE.COLLECTION_RATE + 5; i++) {
+      dc.reportDeath(3, 1);
+    }
 
-  it('should cremate deaths first up to processRate per tick', () => {
-    const { dc } = createDCWithGrid({ capacity: 500, processRate: 3 });
-    for (let i = 0; i < 8; i++) dc.reportDeath(3, 1);
-
-    // Tick enough times for all hearses to arrive
-    for (let i = 0; i < 20; i++) dc.tick();
-
-    // All 8 bodies should have arrived at cemetery
-    // After processing ticks: processRate=3 per tick
-    // With enough ticks, pending at cemetery → cremated → stored → cremated
-    const cem = dc.getCemeteries()[0]!;
-    // Bodies arrived → 3 cremated + 5 stored (first processing tick after arrival)
-    // Subsequent ticks cremate from stored
-    // After ~20 ticks, everything should be processed
-    expect(dc.getPendingDeathQueue()).toHaveLength(0);
-  });
-
-  it('should cremate stored bodies over time (used decreases)', () => {
-    const { dc } = createDCWithGrid({ capacity: 500, processRate: 3 });
-    for (let i = 0; i < 8; i++) dc.reportDeath(3, 1);
-
-    // Let all hearses arrive
-    for (let i = 0; i < 15; i++) dc.tick();
-
-    // Now all bodies at cemetery — check stored decreases over ticks
-    const cem = dc.getCemeteries()[0]!;
-    const usedBefore = cem.used;
     dc.tick();
-    // processRate=3 should cremate from stored
-    expect(cem.used).toBeLessThanOrEqual(usedBefore);
+    const cem = dc.getCemeteries()[0]!;
+    // CREMATION_RATE=1 so 1 cremated from collected
+    expect(cem.todayReceived).toBe(DEATH_CARE.COLLECTION_RATE);
+    expect(dc.getPendingDeathQueue()).toHaveLength(5);
   });
 
-  it('should overflow when cemetery storage is full', () => {
-    const { dc } = createDCWithGrid({ capacity: 3, processRate: 1 });
-    for (let i = 0; i < 6; i++) dc.reportDeath(3, 1);
+  it('should not collect when cemetery is at capacity', () => {
+    const { dc } = createDCWithGrid({ capacity: 2 });
+    for (let i = 0; i < 5; i++) dc.reportDeath(3, 1);
 
-    // Let hearses arrive and process
-    for (let i = 0; i < 20; i++) dc.tick();
+    dc.tick();
+    const cem = dc.getCemeteries()[0]!;
+    // capacity=2, CREMATION_RATE=1: collect 2, cremate 1 → currentLoad=1
+    expect(cem.todayReceived).toBe(2);
+    // Remaining 3 still in queue
+    expect(dc.getPendingDeathQueue()).toHaveLength(3);
+  });
+
+  // ── Cemetery processing ──
+
+  it('should cremate up to CREMATION_RATE per tick', () => {
+    const { dc } = createDCWithGrid();
+    for (let i = 0; i < 3; i++) dc.reportDeath(3, 1);
+
+    dc.tick(); // collect 3 (COLLECTION_RATE=3), cremate 1
+    const cem = dc.getCemeteries()[0]!;
+    expect(cem.todayCremated).toBe(DEATH_CARE.CREMATION_RATE);
+    expect(cem.currentLoad).toBe(2); // 3 collected - 1 cremated
+  });
+
+  it('should cremate stored bodies over time (currentLoad decreases)', () => {
+    const { dc } = createDCWithGrid();
+    for (let i = 0; i < 3; i++) dc.reportDeath(3, 1);
+
+    dc.tick(); // collect 3, cremate 1 → currentLoad=2
+    dc.tick(); // cremate 1 → currentLoad=1
+    dc.tick(); // cremate 1 → currentLoad=0
 
     const cem = dc.getCemeteries()[0]!;
-    // With capacity 3 and processRate 1, cemetery can only hold 3
-    // remaining bodies stay as pending at cemetery (overflow)
-    expect(cem.used).toBeLessThanOrEqual(3);
+    expect(cem.currentLoad).toBe(0);
+    expect(cem.todayCremated).toBe(3);
   });
 
   // ── Multiple cemeteries ──
 
   it('should assign deaths to nearest cemetery', () => {
     const grid = new Grid(20, 5);
-    // Road from x=2 to x=15 (avoid overlapping with cemetery footprints)
     for (let x = 2; x < 16; x++) {
       grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
     }
 
     const dc = new DeathCareService();
-    dc.addCemetery(0, 0);    // cem-1: left side, adjacent to road at (2,0)
-    dc.addCemetery(16, 0);   // cem-2: right side, adjacent to road at (15,0)
+    dc.addCemetery(0, 0, 500);
+    dc.addCemetery(16, 0, 500);
     dc.recalculateCoverage(grid);
 
-    // Death near left cemetery, far enough that delay > 1
-    dc.reportDeath(8, 1);
-    // Death near right cemetery, far enough that delay > 1
-    dc.reportDeath(13, 1);
+    dc.reportDeath(3, 1);  // closer to cem-1
+    dc.reportDeath(14, 1); // closer to cem-2
 
-    // Run enough ticks for delivery
-    for (let i = 0; i < 20; i++) dc.tick();
+    dc.tick();
 
     const cems = dc.getCemeteries();
-    // cem-1 should have received the death at (8,1) — closer to it
     expect(cems[0]!.todayReceived).toBeGreaterThanOrEqual(1);
-    // cem-2 should have received the death at (13,1) — closer to it
     expect(cems[1]!.todayReceived).toBeGreaterThanOrEqual(1);
   });
 
@@ -217,49 +188,19 @@ describe('DeathCareService', () => {
     }
 
     const dc = new DeathCareService();
-    dc.addCemetery(0, 0, 1, 1);     // cem-1: capacity 1
-    dc.addCemetery(16, 0, 500, 5);  // cem-2: large capacity
+    dc.addCemetery(0, 0, 1);     // cem-1: capacity 1
+    dc.addCemetery(16, 0, 500);  // cem-2: large capacity
     dc.recalculateCoverage(grid);
 
-    // Fill up cem-1 with a death
     dc.reportDeath(4, 1);
-    // Second death also near cem-1 — but cem-1 should be at capacity
     dc.reportDeath(4, 1);
 
-    // Run enough ticks for both to be assigned and delivered
-    for (let i = 0; i < 30; i++) dc.tick();
+    // Multiple ticks to allow collection + fallback
+    for (let i = 0; i < 5; i++) dc.tick();
 
     const cems = dc.getCemeteries();
-    // cem-2 should have received at least 1 death (fallback)
+    // cem-2 should have received at least 1 (fallback from full cem-1)
     expect(cems[1]!.todayReceived).toBeGreaterThanOrEqual(1);
-  });
-
-  // ── Transport delay ──
-
-  it('should calculate longer delay for farther deaths', () => {
-    const grid = new Grid(50, 5);
-    for (let x = 2; x < 50; x++) {
-      grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
-    }
-
-    const dc = new DeathCareService();
-    dc.addCemetery(0, 0);
-    dc.recalculateCoverage(grid);
-
-    // Use far-enough locations so both have delay > 1 after tick
-    // (9,1): road distance ~7 tiles, cost ~17.5, delay=ceil(17.5/5)=4
-    // (40,1): road distance ~38 tiles, cost ~95, delay=ceil(95/5)=19
-    dc.reportDeath(9, 1);
-    dc.reportDeath(40, 1);
-
-    // Both can be assigned in one tick (HEARSE_COUNT >= 2)
-    dc.tick();
-    const queue = dc.getPendingDeathQueue();
-    const close = queue.find(d => d.x === 9)!;
-    const far = queue.find(d => d.x === 40)!;
-    expect(close).toBeDefined();
-    expect(far).toBeDefined();
-    expect(far.remainingTicks).toBeGreaterThan(close.remainingTicks);
   });
 
   // ── Happiness penalty ──
@@ -280,17 +221,16 @@ describe('DeathCareService', () => {
 
   it('should increase penalty after heavy threshold', () => {
     const dc = new DeathCareService();
-    dc.reportDeath(5, 5); // no cemetery → stays unassigned
+    dc.reportDeath(5, 5); // no cemetery → stays uncollected
     // Tick past heavy threshold
     for (let i = 0; i < DEATH_CARE.HEAVY_THRESHOLD + 1; i++) dc.tick();
     expect(dc.getHappinessPenalty()).toBe(DEATH_CARE.HEAVY_HAPPINESS_PER_BODY);
   });
 
   it('should return 0 penalty when all deaths are processed', () => {
-    const { dc } = createDCWithGrid({ processRate: 100 });
+    const { dc } = createDCWithGrid();
     dc.reportDeath(3, 1);
-    // Tick enough for hearse to arrive and process
-    for (let i = 0; i < 20; i++) dc.tick();
+    for (let i = 0; i < 5; i++) dc.tick();
     expect(dc.getHappinessPenalty()).toBe(0);
   });
 
@@ -298,15 +238,12 @@ describe('DeathCareService', () => {
 
   it('should cover road-connected cells globally', () => {
     const { dc } = createDCWithGrid();
-    // Cell adjacent to road should be covered
     expect(dc.getCoverage(3, 1)).toBe(true);
-    // Far end of road should also be covered (global!)
     expect(dc.getCoverage(9, 1)).toBe(true);
   });
 
   it('should not cover cells without road connection', () => {
     const { dc } = createDCWithGrid();
-    // Isolated cell far from any road
     expect(dc.getCoverage(0, 9)).toBe(false);
   });
 
@@ -327,36 +264,32 @@ describe('DeathCareService', () => {
   // ── Ring buffer / advanceDay ──
 
   it('should track todayCremated during tick', () => {
-    const { dc } = createDCWithGrid({ processRate: 3 });
+    const { dc } = createDCWithGrid();
     for (let i = 0; i < 5; i++) dc.reportDeath(3, 1);
-
-    // Let hearses arrive
-    for (let i = 0; i < 15; i++) dc.tick();
+    for (let i = 0; i < 10; i++) dc.tick();
 
     const cem = dc.getCemeteries()[0]!;
     expect(cem.todayCremated).toBeGreaterThan(0);
   });
 
   it('advanceDay should rotate ring buffer and reset todayCremated', () => {
-    const { dc } = createDCWithGrid({ processRate: 10 });
+    const { dc } = createDCWithGrid();
     for (let i = 0; i < 3; i++) dc.reportDeath(3, 1);
-    // Let hearses arrive and process
-    for (let i = 0; i < 20; i++) dc.tick();
+    for (let i = 0; i < 10; i++) dc.tick();
 
     dc.advanceDay();
     const cem = dc.getCemeteries()[0]!;
     expect(cem.todayCremated).toBe(0);
-    // Ring buffer should have the cremation count
     expect(cem.recentDaily.some(v => v > 0)).toBe(true);
   });
 
   it('getRecentWeekly should sum last 7 days of cremations', () => {
-    const { dc } = createDCWithGrid({ processRate: 10 });
+    const { dc } = createDCWithGrid();
 
     for (let day = 0; day < 5; day++) {
       dc.reportDeath(3, 1);
       dc.reportDeath(3, 1);
-      for (let i = 0; i < 20; i++) dc.tick();
+      for (let i = 0; i < 10; i++) dc.tick();
       dc.advanceDay();
     }
 
@@ -366,11 +299,11 @@ describe('DeathCareService', () => {
   });
 
   it('ring buffer should roll over after 7 days', () => {
-    const { dc } = createDCWithGrid({ processRate: 10 });
+    const { dc } = createDCWithGrid();
 
     for (let day = 0; day < 7; day++) {
       dc.reportDeath(3, 1);
-      for (let i = 0; i < 20; i++) dc.tick();
+      for (let i = 0; i < 10; i++) dc.tick();
       dc.advanceDay();
     }
     const cem = dc.getCemeteries()[0]!;
@@ -378,7 +311,7 @@ describe('DeathCareService', () => {
 
     // Day 8: oldest overwritten
     dc.reportDeath(3, 1);
-    for (let i = 0; i < 20; i++) dc.tick();
+    for (let i = 0; i < 10; i++) dc.tick();
     dc.advanceDay();
     expect(cem.recentDaily.reduce((a, b) => a + b, 0)).toBe(7);
   });
@@ -387,10 +320,10 @@ describe('DeathCareService', () => {
 
   it('should not throw when tick with no deaths and no stored bodies', () => {
     const dc = new DeathCareService();
-    dc.addCemetery(0, 0, 500, 5);
+    dc.addCemetery(0, 0, 500);
     dc.tick();
     expect(dc.getUnprocessed()).toBe(0);
-    expect(dc.getCemeteries()[0]!.used).toBe(0);
+    expect(dc.getCemeteries()[0]!.currentLoad).toBe(0);
   });
 
   // ── Maintenance ──
@@ -407,11 +340,11 @@ describe('DeathCareService', () => {
   // ── Serialization ──
 
   it('should serialize to JSON and deserialize back', () => {
-    const { dc } = createDCWithGrid({ capacity: 300, processRate: 7 });
+    const { dc } = createDCWithGrid({ capacity: 300 });
     dc.reportDeath(3, 1);
     dc.reportDeath(3, 1);
     dc.reportDeath(3, 1);
-    for (let i = 0; i < 20; i++) dc.tick();
+    for (let i = 0; i < 10; i++) dc.tick();
     dc.advanceDay();
 
     const json = dc.toJSON();
@@ -419,7 +352,6 @@ describe('DeathCareService', () => {
 
     const cem = restored.getCemeteries()[0]!;
     expect(cem.capacity).toBe(300);
-    expect(cem.processRate).toBe(7);
     expect(cem.x).toBe(0);
     expect(cem.y).toBe(0);
     expect(cem.recentDaily).toHaveLength(7);
@@ -427,27 +359,33 @@ describe('DeathCareService', () => {
 
   it('fromJSON should handle legacy saves with pendingDeaths number', () => {
     const legacyJSON = {
-      cemeteries: [{ id: 'cem-1', x: 5, y: 5, capacity: 500, used: 3, processRate: 5 }],
+      cemeteries: [{ id: 'cem-1', x: 5, y: 5, capacity: 500, used: 3 }],
       pendingDeaths: 2,
     };
     const restored = DeathCareService.fromJSON(legacyJSON as any);
-    // Legacy pendingDeaths converted to queue entries
     expect(restored.getPendingDeathQueue()).toHaveLength(2);
-    expect(restored.getPendingDeathQueue()[0]!.cemeteryId).toBeNull();
-    // Should not throw on advanceDay
+    expect(restored.getCemeteries()[0]!.currentLoad).toBe(3);
     restored.advanceDay();
+  });
+
+  it('fromJSON should handle legacy saves with used+pending → currentLoad', () => {
+    const legacyJSON = {
+      cemeteries: [{ id: 'cem-1', x: 5, y: 5, capacity: 500, used: 10, pending: 5 }],
+      pendingDeathQueue: [],
+    };
+    const restored = DeathCareService.fromJSON(legacyJSON as any);
+    expect(restored.getCemeteries()[0]!.currentLoad).toBe(15);
   });
 
   it('fromJSON should handle legacy saves missing ring buffer fields', () => {
     const legacyJSON = {
-      cemeteries: [{ id: 'cem-1', x: 5, y: 5, capacity: 500, used: 3, processRate: 5 }],
+      cemeteries: [{ id: 'cem-1', x: 5, y: 5, capacity: 500, used: 3 }],
       pendingDeaths: 1,
     };
     const restored = DeathCareService.fromJSON(legacyJSON as any);
     const cem = restored.getCemeteries()[0]!;
     expect(cem.recentDaily).toHaveLength(7);
     expect(cem.recentDaily.every(v => v === 0)).toBe(true);
-    expect(cem.inTransit).toBe(0);
   });
 
   it('should recover nextId correctly after deserialization', () => {
@@ -460,106 +398,27 @@ describe('DeathCareService', () => {
     expect(newId).toBe('cem-3');
   });
 
-  // ── Cemetery removal with in-transit deaths ──
-
-  it('should unassign in-transit deaths when cemetery is removed', () => {
-    const { dc, cemId } = createDCWithGrid();
-    // Use a far death so it stays in transit for multiple ticks
-    dc.reportDeath(9, 1); // delay ~4 ticks
-    dc.tick(); // assigns to cemetery, still in transit
-
-    const queue = dc.getPendingDeathQueue();
-    expect(queue).toHaveLength(1);
-    expect(queue[0]!.cemeteryId).toBe(cemId);
-
-    dc.removeCemetery(cemId);
-    expect(queue[0]!.cemeteryId).toBeNull();
-    expect(queue[0]!.remainingTicks).toBe(-1);
-  });
-
-  // ── inTransit tracking ──
-
-  it('should increment inTransit on assignment and decrement on arrival', () => {
-    const { dc } = createDCWithGrid();
-    // Use a far death so it stays in transit
-    dc.reportDeath(9, 1); // delay ~4 ticks
-    dc.tick(); // assign → inTransit++
-
-    const cem = dc.getCemeteries()[0]!;
-    expect(cem.inTransit).toBe(1);
-
-    // Tick until arrival
-    for (let i = 0; i < 20; i++) dc.tick();
-    expect(cem.inTransit).toBe(0);
-    expect(cem.todayReceived).toBeGreaterThanOrEqual(1);
-  });
-
-  // ── Hearse count limit ──
-
-  it('should not dispatch more hearses than HEARSE_COUNT', () => {
-    const { dc } = createDCWithGrid();
-    // Report more deaths than hearse count
-    for (let i = 0; i < 10; i++) dc.reportDeath(9, 1);
-
-    // Tick multiple times — all hearses should be dispatched then blocked
-    for (let i = 0; i < 5; i++) dc.tick();
-
-    const cem = dc.getCemeteries()[0]!;
-    // inTransit capped at HEARSE_COUNT (hearses still out, not yet returned)
-    expect(cem.inTransit).toBeLessThanOrEqual(DEATH_CARE.HEARSE_COUNT);
-  });
-
-  it('should dispatch again after a hearse returns', () => {
-    const { dc } = createDCWithGrid();
-    for (let i = 0; i < 10; i++) dc.reportDeath(9, 1);
-
-    // Tick enough for all hearses to be dispatched and some to return
-    for (let i = 0; i < 30; i++) dc.tick();
-
-    const cem = dc.getCemeteries()[0]!;
-    // Some bodies should have been received (hearses returned and re-dispatched)
-    expect(cem.todayReceived).toBeGreaterThan(DEATH_CARE.HEARSE_COUNT);
-  });
-
   // ── Decomposition ──
 
-  it('should decompose unassigned bodies after DECOMPOSE_TICKS', () => {
+  it('should decompose uncollected bodies after DECOMPOSE_TICKS', () => {
     const dc = new DeathCareService();
-    dc.reportDeath(5, 5); // no cemetery → stays unassigned
-    // Tick up to just before decompose threshold
+    dc.reportDeath(5, 5); // no cemetery → stays uncollected
     for (let i = 0; i < DEATH_CARE.DECOMPOSE_TICKS - 1; i++) dc.tick();
     expect(dc.getPendingDeathQueue()).toHaveLength(1);
 
-    // One more tick → decomposed
     dc.tick();
     expect(dc.getPendingDeathQueue()).toHaveLength(0);
-  });
-
-  it('should decompose in-transit bodies after DECOMPOSE_TICKS and release inTransit', () => {
-    const { dc } = createDCWithGrid();
-    dc.reportDeath(9, 1);
-    dc.tick(); // assigned, inTransit=1
-
-    const cem = dc.getCemeteries()[0]!;
-    expect(cem.inTransit).toBe(1);
-
-    // Fast-forward to decompose (body decomposes even if assigned)
-    for (let i = 1; i < DEATH_CARE.DECOMPOSE_TICKS; i++) dc.tick();
-    expect(dc.getPendingDeathQueue()).toHaveLength(0);
-    expect(cem.inTransit).toBe(0);
   });
 
   it('should decompose bodies individually based on their own waitTicks', () => {
     const dc = new DeathCareService();
     dc.reportDeath(5, 5);
-    // Tick 100 times, then add another death
     for (let i = 0; i < 100; i++) dc.tick();
     dc.reportDeath(6, 6);
 
-    // At this point: first body has waitTicks=100, second has waitTicks=0
-    // Tick until first decomposes (needs 500 more ticks)
+    // First body decomposes at DECOMPOSE_TICKS, second remains
     for (let i = 0; i < DEATH_CARE.DECOMPOSE_TICKS - 100; i++) dc.tick();
-    expect(dc.getPendingDeathQueue()).toHaveLength(1); // only second remains
+    expect(dc.getPendingDeathQueue()).toHaveLength(1);
     expect(dc.getPendingDeathQueue()[0]!.x).toBe(6);
   });
 
@@ -577,30 +436,28 @@ describe('DeathCareService', () => {
     expect(dc.getPendingDeathQueue()[0]!.x).toBe(7);
   });
 
-  it('should release inTransit when clearing assigned deaths', () => {
-    const { dc } = createDCWithGrid();
-    dc.reportDeath(9, 1);
-    dc.tick(); // assigned, inTransit++
-
-    const cem = dc.getCemeteries()[0]!;
-    expect(cem.inTransit).toBe(1);
-
-    dc.clearPendingAt(9, 1);
-    expect(dc.getPendingDeathQueue()).toHaveLength(0);
-    expect(cem.inTransit).toBe(0);
-  });
-
   it('should not affect other positions when clearing', () => {
     const { dc } = createDCWithGrid();
     dc.reportDeath(9, 1);
     dc.reportDeath(5, 1);
-    dc.tick();
 
     dc.clearPendingAt(9, 1);
-    // (5,1) death should remain
     const remaining = dc.getPendingDeathQueue();
-    expect(remaining.length).toBeGreaterThanOrEqual(0); // may have been delivered
-    // At minimum, no deaths at (9,1) remain
     expect(remaining.filter(d => d.x === 9 && d.y === 1)).toHaveLength(0);
+    expect(remaining.filter(d => d.x === 5 && d.y === 1)).toHaveLength(1);
+  });
+
+  // ── DEATH_CARE constants ──
+
+  it('COLLECTION_RATE should be positive', () => {
+    expect(DEATH_CARE.COLLECTION_RATE).toBeGreaterThan(0);
+  });
+
+  it('CREMATION_RATE should be positive', () => {
+    expect(DEATH_CARE.CREMATION_RATE).toBeGreaterThan(0);
+  });
+
+  it('DECOMPOSE_TICKS should be positive', () => {
+    expect(DEATH_CARE.DECOMPOSE_TICKS).toBeGreaterThan(0);
   });
 });
