@@ -59,7 +59,7 @@ export const GARBAGE = {
   /** Default capacity per facility */
   DEFAULT_CAPACITY: 1000,
   /** Fixed burn rate: units incinerated per tick per facility */
-  BURN_RATE: 250,
+  BURN_RATE: 60,
   /** Maintenance cost per garbage facility per tick */
   MAINTENANCE_PER_FACILITY: 3,
   /** Max pollution penalty from uncollected garbage */
@@ -75,11 +75,11 @@ export const GARBAGE = {
   /** Pollution spread radius (Manhattan distance) for all garbage sources */
   POLLUTION_RADIUS: 5,
   /** Road-cost units a truck covers per service tick */
-  TRUCK_SPEED: 10,
+  TRUCK_SPEED: 20,
   /** Total garbage trucks per facility */
-  TRUCK_COUNT: 5,
+  TRUCK_COUNT: 8,
   /** Max bags a single truck can carry per trip */
-  TRUCK_CAPACITY: 20,
+  TRUCK_CAPACITY: 50,
   /** Happiness penalty per garbage bag waiting in queue */
   HAPPINESS_PER_BAG: -3,
   /** After this many ticks, penalty per bag increases */
