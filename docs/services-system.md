@@ -448,16 +448,27 @@ WebCity 提供 10 種市政服務，每種服務由對應的建築提供覆蓋�
 
 每座墓園獨立計算道路可達性（per-cemetery BFS, Dijkstra 無預算限制），距離影響的是**靈車回應時間**。
 
+### 靈車系統
+
+每座墓園配備 **5 台靈車**（`HEARSE_COUNT = 5`）。靈車出發後處於忙碌狀態，屍體到達墓園後才歸隊可再次派遣。
+
+- 靈車忙碌 = `inTransit` 計數
+- 所有靈車忙碌 → 無法再派 → 屍體留在街上等待
+- 遠距離的屍體佔用靈車更久，自然降低處理速度
+
+多座墓園**不會搶屍體**：每具屍體分配給距離最近且有空閒靈車及容量的墓園。近的墓園優先，忙了或滿了由遠的接手。
+
 ### 死亡 → 收屍流程
 
 ```
 市民死亡 → reportDeath(x, y) → 加入 pendingDeathQueue
   ↓
-tick() Step 1: 找最近且有容量的墓園（per-cemetery BFS 距離）
-  → 分配成功: 計算延遲 = ceil(roadCost / HEARSE_SPEED)
-  → 全滿或不可達: 留在佇列，下次 tick 重試
+tick() Step 1: 遍歷未分配屍體，找最近且有靈車和容量的墓園
+  → 分配成功: 靈車出發，inTransit++
+  → 靈車全忙或容量滿: 留在佇列，下次 tick 重試
   ↓
-tick() Step 2: 倒數 remainingTicks → 到期 → 屍體移入墓園 pending
+tick() Step 2: 倒數 remainingTicks（game tick 單位，每次減 6）
+  → 到期: 屍體移入墓園 pending，靈車歸隊 inTransit--
   ↓
 tick() Step 3: 墓園三階段處理（火化 → 儲存 → 溢出）
 ```
@@ -465,22 +476,32 @@ tick() Step 3: 墓園三階段處理（火化 → 儲存 → 溢出）
 ### 運送延遲
 
 ```
-delay = ceil(roadCost / HEARSE_SPEED)
-HEARSE_SPEED = 5（道路成本單位/tick）
+delay (game ticks) = ceil(roadCost × SLOW_TICK_INTERVAL / HEARSE_SPEED)
+HEARSE_SPEED = 10（道路成本單位/service tick）
+SLOW_TICK_INTERVAL = 6（game ticks/service tick）
 ```
 
 道路成本由道路類型決定：高速公路成本低（快）、小路成本高（慢）。**不受實際車流量影響**。
 
 ### 墓園容量與 fallback
 
-分配時檢查 `used + pending + inTransit < capacity`。最近墓園滿了 → 自動分配到次近的有容量墓園。所有墓園都滿 → 屍體留在佇列等待容量釋放。
+分配時檢查 `used + pending + inTransit < capacity`（容量 50）。最近墓園滿了 → 自動分配到次近的有容量墓園。所有墓園都滿 → 停止派車 → 屍體留在街上持續扣幸福度 → 玩家必須擴建。
 
 ### 三階段處理
 
-每 tick 每座運作中的墓園依序：
-1. **Phase 1**: 直接火化 pending 屍體（每墓園每 tick 處理 5 具）
+每 service tick 每座運作中的墓園依序：
+1. **Phase 1**: 直接火化 pending 屍體（每墓園每 tick 處理 1 具）
 2. **Phase 2**: 火化已儲存的屍體（剩餘處理量）
-3. **Phase 3**: 儲存剩餘 pending（直到容量上限 500）
+3. **Phase 3**: 儲存剩餘 pending（直到容量上限 50）
+
+### 吞吐量平衡
+
+| 項目 | 每 service tick | 每天（4 ticks） |
+|------|----------------|----------------|
+| 靈車送入（最大） | ~5（5 台靈車） | ~5-8 |
+| 火化處理 | 1 | 4 |
+
+火化速度（4/天）低於靈車送入速度（5-8/天），屍體會在墓園內堆積。容量 50 在中型城市會產生擴建壓力。
 
 ### 屍體清除機制
 
@@ -519,12 +540,16 @@ HEARSE_SPEED = 5（道路成本單位/tick）
 
 ### Overview 顯示
 
+Death Care 獨立群組，每座墓園一行 + 彙總行：
+
 ```
-Bodies X / Y · Deaths N · Cremated M/wk
+⚰ Cemetery    Bodies 3 / 50 · InTransit 4         [Normal]
+⚰ Death Care  Awaiting pickup 12 · Deaths 5/wk · Cremated 4/wk  [12 awaiting]
 ```
 
-- Bodies = `getUnprocessed()`（佇列 + 墓園 pending）/ 總容量
-- 有未處理屍體時顯示紅色「N unprocessed」狀態
+- 墓園行：`used+pending / capacity` + 靈車在路上數量
+- 彙總行：街上等待數 + 每週死亡/火化統計（永遠顯示，不隱藏）
+- 無墓園時顯示「No cemetery」+ 等待數
 
 ---
 
