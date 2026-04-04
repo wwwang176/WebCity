@@ -252,9 +252,10 @@ describe('DeathCareService', () => {
     dc.reportDeath(9, 1);
     dc.reportDeath(40, 1);
 
-    dc.tick();
+    // Tick enough times for both to be assigned (dispatch limit = 1 per tick)
+    dc.tick(); // assigns first (closest)
+    dc.tick(); // assigns second
     const queue = dc.getPendingDeathQueue();
-    // Both should still be in queue (delay > 1, minus 1 tick = still > 0)
     const close = queue.find(d => d.x === 9)!;
     const far = queue.find(d => d.x === 40)!;
     expect(close).toBeDefined();

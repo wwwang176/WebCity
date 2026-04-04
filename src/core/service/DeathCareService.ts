@@ -61,7 +61,7 @@ export const DEATH_CARE = {
   /** Ticks before a body decomposes and is removed (~12 game weeks) */
   DECOMPOSE_TICKS: 1800,
   /** Max hearses a cemetery can dispatch per service tick */
-  HEARSE_DISPATCH_LIMIT: 3,
+  HEARSE_DISPATCH_LIMIT: 1,
 } as const;
 
 export class DeathCareService extends RoadCoverageService<Cemetery> {
