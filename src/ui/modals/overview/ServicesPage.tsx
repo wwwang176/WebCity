@@ -110,12 +110,26 @@ export function ServicesPage() {
 
     // ── Waste ──
     const wasteItems: ServiceEntry[] = [];
+    const garbageFacilities = state.garbage.getFacilities();
+    for (const f of garbageFacilities) {
+      const transitSuffix = f.inTransit > 0 ? ` \u00B7 InTransit ${f.inTransit}` : '';
+      const fSt = statusOf(f.capacity > 0 ? (f.currentLoad + f.inTransit) / f.capacity : 0);
+      wasteItems.push(mkEntry('\uD83D\uDDD1', 'Landfill', r.garbageRatio, 'Load', f.currentLoad, f.capacity, fSt, transitSuffix));
+    }
+    const awaitingGarbage = state.garbage.getUncollected();
     const garbageLoad = state.garbage.getCurrentLoad();
     const garbageCap = state.garbage.getTotalCapacity();
-    const garbageOverflow = state.garbage.getOverflow();
-    const gOverflowSuffix = garbageOverflow > 0 ? ` Overflow ${Math.round(garbageOverflow)}` : '';
-    const gSt = garbageOverflow > 0 ? { label: 'Overflow', color: UI_COLORS.STATUS_BAD } : statusOf(garbageCap > 0 ? garbageLoad / garbageCap : 0);
-    wasteItems.push(mkEntry('\uD83D\uDDD1', 'Garbage', r.garbageRatio, 'Landfill', Math.round(garbageLoad), garbageCap, gSt, gOverflowSuffix));
+    if (garbageFacilities.length === 0) {
+      const noSt = awaitingGarbage > 0 ? { label: `${awaitingGarbage} awaiting pickup`, color: UI_COLORS.STATUS_BAD } : { label: 'None', color: UI_COLORS.STATUS_BAD };
+      wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: r.garbageRatio, detail: 'No landfill', loadPct: -1, status: noSt.label, statusColor: noSt.color });
+    } else {
+      const summaryParts: string[] = [];
+      summaryParts.push(`Awaiting pickup ${awaitingGarbage}`);
+      summaryParts.push(`Produced ${state.garbage.getProducedPerWeek()}/wk`);
+      summaryParts.push(`Burned ${state.garbage.getBurnedPerWeek()}/wk`);
+      const aSt = awaitingGarbage > 0 ? { label: `${awaitingGarbage} awaiting`, color: UI_COLORS.STATUS_BAD } : statusOf(garbageCap > 0 ? garbageLoad / garbageCap : 0);
+      wasteItems.push({ icon: '\uD83D\uDDD1', name: 'Garbage', coverage: -1, detail: summaryParts.join(' \u00B7 '), loadPct: -1, status: aSt.label, statusColor: aSt.color });
+    }
 
     const sewageProduced = Math.round(state.sewage.getProduced());
     const sewageUntreated = state.sewage.getUntreated();

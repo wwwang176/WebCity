@@ -53,7 +53,7 @@ export function InfraPage() {
 
     const garbageLoad = state.garbage.getCurrentLoad();
     const garbageCap = state.garbage.getTotalCapacity();
-    const garbageOverflow = state.garbage.getOverflow();
+    const garbageUncollected = state.garbage.getUncollected();
 
     const sewageUntreated = state.sewage.getUntreated();
     const sewageCap = state.sewage.getTreatmentCapacity();
@@ -68,7 +68,7 @@ export function InfraPage() {
       pwrDemand: state.power.getDemand(),
       wtrSupply: state.water.getSupply(),
       wtrDemand: state.water.getDemand(),
-      garbageLoad, garbageCap, garbageOverflow,
+      garbageLoad, garbageCap, garbageUncollected,
       sewageUntreated, sewageCap,
       cemUsed, cemCap, unprocessed,
       waterPollution: state.sewage.getWaterPollution(),
@@ -84,9 +84,9 @@ export function InfraPage() {
 
       <div class="section-title">Waste Management</div>
       <CapacityRow label="Landfill Usage" current={data().garbageLoad} max={data().garbageCap} color="#8d6e63" />
-      {data().garbageOverflow > 0 && (
+      {data().garbageUncollected > 0 && (
         <div style={`font-size:11px;color:${UI_COLORS.STATUS_BAD};margin-bottom:8px`}>
-          Overflow: {Math.round(data().garbageOverflow)} units (causing pollution)
+          Awaiting pickup: {data().garbageUncollected} bags (causing pollution)
         </div>
       )}
 

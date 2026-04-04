@@ -18,6 +18,8 @@ export interface HappinessFactors {
   shoppingAccess?: number;
   /** Number of dead bodies awaiting pickup at citizen's home. */
   pendingDeathsAtHome?: number;
+  /** Number of garbage bags awaiting pickup at citizen's home. */
+  pendingGarbageAtHome?: number;
 }
 
 /** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
@@ -109,6 +111,9 @@ export const HAPPINESS = {
   // Death care: bodies awaiting pickup at home
   DEATH_BODY_PENALTY_PER: -5,
   DEATH_BODY_PENALTY_CAP: -20,
+  // Garbage: bags awaiting pickup at home
+  GARBAGE_BAG_PENALTY_PER: -3,
+  GARBAGE_BAG_PENALTY_CAP: -15,
 } as const;
 
 /**
@@ -215,6 +220,11 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
   // Dead bodies at home
   if (factors.pendingDeathsAtHome && factors.pendingDeathsAtHome > 0) {
     happiness += Math.max(HAPPINESS.DEATH_BODY_PENALTY_CAP, factors.pendingDeathsAtHome * HAPPINESS.DEATH_BODY_PENALTY_PER);
+  }
+
+  // Garbage bags at home
+  if (factors.pendingGarbageAtHome && factors.pendingGarbageAtHome > 0) {
+    happiness += Math.max(HAPPINESS.GARBAGE_BAG_PENALTY_CAP, factors.pendingGarbageAtHome * HAPPINESS.GARBAGE_BAG_PENALTY_PER);
   }
 
   return Math.max(HAPPINESS.MIN, Math.min(HAPPINESS.MAX, happiness));

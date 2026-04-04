@@ -217,6 +217,11 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     warnings.push({ level: sel.pendingDeaths >= 3 ? 'red' : 'yellow', text: `Dead body awaiting pickup (${sel.pendingDeaths})` });
   }
 
+  // Garbage bags awaiting truck pickup
+  if (sel.pendingGarbage > 0) {
+    warnings.push({ level: sel.pendingGarbage >= 5 ? 'red' : 'yellow', text: `Garbage awaiting pickup (${sel.pendingGarbage})` });
+  }
+
   // Sort: red first, then yellow
   warnings.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
   return warnings;

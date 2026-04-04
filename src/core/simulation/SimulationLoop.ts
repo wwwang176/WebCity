@@ -426,6 +426,7 @@ export class SimulationLoop {
         if (Math.random() < SIMULATION.BURNED_CLEARANCE_CHANCE) {
           grid.setCell(x, y, { buildingId: 0, reserved: 0 });
           this.state.deathCare.clearPendingAt(x, y);
+          this.state.garbage.clearPendingAt(x, y);
           changed = true;
           affectedBuildingCells.push(toPosKey(x, y));
           this.onBuildingRemoved?.(x, y);
@@ -444,6 +445,7 @@ export class SimulationLoop {
         // Conditions met: demolish abandoned building, then grow
         grid.setCell(x, y, { buildingId: 0, reserved: 0 });
         this.state.deathCare.clearPendingAt(x, y);
+        this.state.garbage.clearPendingAt(x, y);
         this.abandonmentStress.delete(`${x},${y}`);
         this.onBuildingRemoved?.(x, y);
         if (growth.tryGrow(x, y, conditions)) {
@@ -583,6 +585,12 @@ export class SimulationLoop {
       const key = toPosKey(d.x, d.y);
       pendingDeathCounts.set(key, (pendingDeathCounts.get(key) ?? 0) + 1);
     }
+    // Pre-build pending garbage counts per position
+    const pendingGarbageCounts = new Map<string, number>();
+    for (const g of this.state.garbage.getPendingGarbageQueue()) {
+      const key = toPosKey(g.x, g.y);
+      pendingGarbageCounts.set(key, (pendingGarbageCounts.get(key) ?? 0) + 1);
+    }
 
     // Reusable factors object — mutated per citizen, no allocation per iteration
     const factors: HappinessFactors = {
@@ -594,6 +602,7 @@ export class SimulationLoop {
       workplaceZoneType: undefined,
       shoppingAccess: undefined,
       pendingDeathsAtHome: 0,
+      pendingGarbageAtHome: 0,
     };
 
     for (const citizen of citizens) {
@@ -605,6 +614,7 @@ export class SimulationLoop {
       factors.homeWatered = true;
       factors.shoppingAccess = undefined;
       factors.pendingDeathsAtHome = 0;
+      factors.pendingGarbageAtHome = 0;
       if (citizen.homeId) {
         const pos = parsePosKey(citizen.homeId);
         if (pos) {
@@ -614,6 +624,7 @@ export class SimulationLoop {
             factors.shoppingAccess = this.state.shopping.getResidentialAccess(pos.x, pos.y).ratio;
           }
           factors.pendingDeathsAtHome = pendingDeathCounts.get(citizen.homeId) ?? 0;
+          factors.pendingGarbageAtHome = pendingGarbageCounts.get(citizen.homeId) ?? 0;
         }
       }
 

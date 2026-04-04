@@ -4,7 +4,7 @@ import type { InfraType } from '../building/InfraConfig';
 import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
 import type { RoadCoverageService, Facility } from './RoadCoverageService';
 import type { SizedGrid } from '../grid/GridHelpers';
-import { calculateGarbageSewageProduction } from './GarbageSewageProduction';
+import { produceGarbageAndSewage } from './GarbageSewageProduction';
 
 /** All civic-service keys on GameState that implement CivicService. */
 const CIVIC_SERVICE_KEYS: readonly (keyof GameState)[] = [
@@ -69,10 +69,11 @@ export function tickAllCivicServices(state: GameState): void {
   state.parks.tick();
 
   // Garbage + sewage production (delegated — OCP/DRY)
-  const production = calculateGarbageSewageProduction(
+  const production = produceGarbageAndSewage(
     (fn) => state.grid.forEachCell(fn),
+    state.garbage,
   );
-  state.garbage.tick(production.garbage);
+  state.garbage.tick();
   state.sewage.tick(production.sewage);
 
   state.deathCare.tick();
