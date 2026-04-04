@@ -43,15 +43,15 @@ describe('ServiceRegistry', () => {
       expect(() => tickAllCivicServices(state)).not.toThrow();
     });
 
-    it('passes calculated garbage amount and sewage amount', () => {
+    it('ticks garbage (no args) and sewage with calculated amount', () => {
       const state = createGameState(10, 10);
       const garbageSpy = vi.spyOn(state.garbage, 'tick');
       const sewageSpy = vi.spyOn(state.sewage, 'tick');
 
       tickAllCivicServices(state);
 
-      // With no zone buildings on the grid, garbage and sewage produced are 0
-      expect(garbageSpy).toHaveBeenCalledWith(0);
+      // garbage.tick() now takes no args (production reported per-cell via reportGarbage)
+      expect(garbageSpy).toHaveBeenCalledWith();
       expect(sewageSpy).toHaveBeenCalledWith(expect.any(Number));
     });
 

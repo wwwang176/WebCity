@@ -35,10 +35,10 @@ export interface InfraDetailContext {
     getParks(): readonly { x: number; y: number; radius: number }[];
   };
   garbage: {
-    getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number }[];
+    getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number; burnDaily: number[] }[];
     getProducedPerWeek(): number;
     getBurnedPerWeek(): number;
-    getOverflow(): number;
+    getUncollected(): number;
   };
   deathCare: {
     getCemeteries(): readonly { x: number; y: number; capacity: number; used: number; pending: number; recentDaily: number[]; recentIndex: number; todayCremated: number; deathDaily: number[] }[];
@@ -115,8 +115,9 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
     const f = findAtPosition(ctx.garbage.getFacilities(), cx, cy);
     const load = f?.currentLoad ?? 0;
     const cap = f?.capacity ?? 1000;
-    const overflow = ctx.garbage.getOverflow();
-    return { Load: `${load} / ${cap}`, 'Produced/wk': ctx.garbage.getProducedPerWeek(), 'Burned/wk': ctx.garbage.getBurnedPerWeek(), ...(overflow > 0 ? { Overflow: Math.round(overflow) } : {}) };
+    const uncollected = ctx.garbage.getUncollected();
+    const burnedWk = f?.burnDaily ? f.burnDaily.reduce((a, b) => a + b, 0) : 0;
+    return { Load: `${load} / ${cap}`, 'Burned/wk': Math.round(burnedWk), 'Produced/wk': ctx.garbage.getProducedPerWeek(), ...(uncollected > 0 ? { 'Awaiting pickup': uncollected } : {}) };
   },
   sewage: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.sewage.getTreatmentPlants(), cx, cy);

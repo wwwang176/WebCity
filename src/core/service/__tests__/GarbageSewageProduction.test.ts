@@ -14,20 +14,18 @@ describe('calculateGarbageSewageProduction', () => {
   it('calculates garbage for residential buildings', () => {
     // Multiple buildings to exceed Math.floor threshold
     // buildingId=4 = Small Apartment (RESIDENTIAL_HIGH, residents=80)
-    // GARBAGE: base=0.05 + perCapita=0.005 * 80 = 0.45 per building, ×3 = 1.35 → floor=1
+    // GARBAGE: base=0.025 + perCapita=0.0025 * 80 = 0.225 per building, ×5 = 1.125 → floor=1
     const result = calculateGarbageSewageProduction((fn) => {
-      fn({ buildingId: 4, zoneType: ZoneType.RESIDENTIAL_HIGH }, 0, 0);
-      fn({ buildingId: 4, zoneType: ZoneType.RESIDENTIAL_HIGH }, 1, 0);
-      fn({ buildingId: 4, zoneType: ZoneType.RESIDENTIAL_HIGH }, 2, 0);
+      for (let i = 0; i < 5; i++) fn({ buildingId: 4, zoneType: ZoneType.RESIDENTIAL_HIGH }, i, 0);
     });
     expect(result.garbage).toBeGreaterThan(0);
   });
 
   it('calculates garbage for industrial building', () => {
     // buildingId=13 = Small Factory (INDUSTRIAL, workers=10)
-    // GARBAGE: base=0.2 + perCapita=0.01 * 10 = 0.3, ×4 = 1.2 → floor=1
+    // GARBAGE: base=0.1 + perCapita=0.005 * 10 = 0.15, ×7 = 1.05 → floor=1
     const result = calculateGarbageSewageProduction((fn) => {
-      for (let i = 0; i < 4; i++) fn({ buildingId: 13, zoneType: ZoneType.INDUSTRIAL }, i, 0);
+      for (let i = 0; i < 7; i++) fn({ buildingId: 13, zoneType: ZoneType.INDUSTRIAL }, i, 0);
     });
     expect(result.garbage).toBeGreaterThan(0);
   });

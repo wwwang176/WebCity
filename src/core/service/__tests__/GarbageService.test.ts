@@ -1,14 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import { GarbageService, GARBAGE, GARBAGE_PRODUCTION } from '../GarbageService';
+import { Grid } from '../../grid/Grid';
 import { RoadType } from '../../road/types';
 import type { SizedGrid } from '../../grid/GridHelpers';
 
-/** Create a grid with a road running from (1,y) to (width-1,y) at row y=center. */
+function createGSWithGrid(opts?: { capacity?: number }): {
+  gs: GarbageService;
+  grid: Grid;
+  facId: string;
+} {
+  const grid = new Grid(10, 10);
+  for (let x = 2; x < 10; x++) {
+    grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+  }
+  const gs = new GarbageService();
+  const facId = gs.addFacility(0, 0, opts?.capacity ?? 1000);
+  gs.recalculateCoverage(grid);
+  return { gs, grid, facId };
+}
+
 function makeRoadGrid(width: number, height: number, roadY?: number): SizedGrid {
   const ry = roadY ?? Math.floor(height / 2);
   return {
-    width,
-    height,
+    width, height,
     getCell(x: number, y: number) {
       if (x < 0 || y < 0 || x >= width || y >= height) return null;
       return { roadType: y === ry && x >= 1 ? RoadType.TWO_LANE : RoadType.NONE };
@@ -16,63 +30,58 @@ function makeRoadGrid(width: number, height: number, roadY?: number): SizedGrid 
   };
 }
 
-/** Helper: add facility and recalculate coverage. */
-function addAndRecalc(
-  gs: GarbageService, x: number, y: number,
-  grid: SizedGrid, capacity?: number,
-): string {
-  const id = gs.addFacility(x, y, capacity);
-  gs.recalculateCoverage(grid);
-  return id;
-}
-
 describe('GarbageService', () => {
-  it('should create a GarbageService instance', () => {
+  // ── Basic facility management ──
+
+  it('should create instance with no facilities', () => {
     const gs = new GarbageService();
-    expect(gs).toBeDefined();
     expect(gs.getTotalCapacity()).toBe(0);
     expect(gs.getCurrentLoad()).toBe(0);
-    expect(gs.getOverflow()).toBe(0);
+    expect(gs.getUncollected()).toBe(0);
   });
 
   it('should addFacility with default capacity', () => {
     const gs = new GarbageService();
-    const id = gs.addFacility(5, 5);
-    expect(id).toBeTruthy();
+    gs.addFacility(5, 5);
     expect(gs.getTotalCapacity()).toBe(GARBAGE.DEFAULT_CAPACITY);
   });
 
   it('should addFacility with custom capacity', () => {
     const gs = new GarbageService();
-    const id = gs.addFacility(10, 10, 500);
-    expect(id).toBeTruthy();
+    gs.addFacility(10, 10, 500);
     expect(gs.getTotalCapacity()).toBe(500);
   });
 
-  it('should getCoverage(x, y) return true for cells adjacent to road near facility', () => {
-    // Road at y=5, facility at (0,5) adjacent to road at (1,5)
-    const grid = makeRoadGrid(20, 10, 5);
+  it('should removeFacility by id', () => {
     const gs = new GarbageService();
-    addAndRecalc(gs, 0, 5, grid);
-    // Road cells near facility are covered
-    expect(gs.getCoverage(1, 5)).toBe(true);
-    expect(gs.getCoverage(3, 5)).toBe(true);
-    // Building cell adjacent to road
-    expect(gs.getCoverage(2, 4)).toBe(true);
+    const id = gs.addFacility(5, 5, 1000);
+    gs.removeFacility(id);
+    expect(gs.getTotalCapacity()).toBe(0);
   });
 
-  it('should getCoverage(x, y) return false for disconnected areas', () => {
-    const grid = makeRoadGrid(60, 10, 5);
+  it('should support multiple facilities', () => {
     const gs = new GarbageService();
-    addAndRecalc(gs, 0, 5, grid);
-    // Very far on the road — beyond budget
-    expect(gs.getCoverage(50, 5)).toBe(false);
+    gs.addFacility(5, 5, 1000);
+    gs.addFacility(15, 15, 500);
+    expect(gs.getTotalCapacity()).toBe(1500);
   });
 
-  it('should getCoverage return false when no roads', () => {
+  // ── Global coverage ──
+
+  it('getCoverage returns true for reachable cells', () => {
+    const { gs } = createGSWithGrid();
+    expect(gs.getCoverage(3, 1)).toBe(true);
+    expect(gs.getCoverage(9, 0)).toBe(true);
+  });
+
+  it('getCoverage returns false for disconnected areas', () => {
+    const { gs } = createGSWithGrid();
+    expect(gs.getCoverage(5, 5)).toBe(false);
+  });
+
+  it('getCoverage returns false when no roads', () => {
     const noRoadGrid: SizedGrid = {
-      width: 20,
-      height: 20,
+      width: 20, height: 20,
       getCell(x, y) {
         if (x < 0 || y < 0 || x >= 20 || y >= 20) return null;
         return { roadType: RoadType.NONE };
@@ -84,200 +93,287 @@ describe('GarbageService', () => {
     expect(gs.getCoverage(10, 10)).toBe(false);
   });
 
-  it('should collect pre-calculated garbage amount', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 1000);
-    gs.tick(5);
-    // load=0 → no burn, then collect 5 → load=5
-    expect(gs.getCurrentLoad()).toBe(5);
+  it('getCostRatio returns normalized distance', () => {
+    const { gs } = createGSWithGrid();
+    expect(gs.getCostRatio(3, 1)).toBeGreaterThanOrEqual(0);
+    expect(gs.getCostRatio(3, 1)).toBeLessThanOrEqual(1);
   });
 
-  it('should collectGarbage not exceeding capacity', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 10);
-    for (let i = 0; i < 300; i++) {
-      gs.tick(50);
-    }
-    // Facility burns each tick so load stays manageable, but overflow accumulates
-    expect(gs.getCurrentLoad()).toBeLessThanOrEqual(10);
+  it('getCostRatio returns -1 for uncovered', () => {
+    const { gs } = createGSWithGrid();
+    expect(gs.getCostRatio(5, 5)).toBe(-1);
   });
 
-  it('should return overflow > 0 when garbage exceeds capacity', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 5);
-    gs.tick(50);
-    expect(gs.getOverflow()).toBeGreaterThan(0);
+  it('getCoveredCellsWithCost returns map', () => {
+    const { gs } = createGSWithGrid();
+    expect(gs.getCoveredCellsWithCost().size).toBeGreaterThan(0);
   });
 
-  it('should return pollutionPenalty > 0 when overflow exists', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 5);
-    gs.tick(50);
-    expect(gs.getPollutionPenalty()).toBeGreaterThan(0);
-  });
-
-  it('should return pollutionPenalty 0 when no overflow', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 10000);
-    gs.tick(100);
-    expect(gs.getPollutionPenalty()).toBe(0);
-  });
-
-  it('should emit base pollution from all 4 cells of a 2x2 facility', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 1000);
-    // No tick — load is 0, still emits base pollution
-    const sources = gs.getPollutionSources();
-    expect(sources.length).toBe(4); // 2×2
-    const coords = sources.map(s => `${s.x},${s.y}`).sort();
-    expect(coords).toEqual(['5,5', '5,6', '6,5', '6,6']);
-    for (const s of sources) {
-      expect(s.amount).toBe(GARBAGE.BASE_POLLUTION);
-      expect(s.radius).toBe(GARBAGE.POLLUTION_RADIUS);
-      expect(s.type).toBe('ground');
-    }
-  });
-
-  it('should emit base + overload from all cells when load > threshold', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 100);
-    gs.tick(100); // load = 100 (full)
-    const sources = gs.getPollutionSources();
-    // 4 base + 4 overload = 8
-    expect(sources.length).toBe(8);
-    expect(sources.every(s => s.radius === GARBAGE.POLLUTION_RADIUS)).toBe(true);
-  });
-
-  it('all pollution sources should have radius and cover multi-cell footprint', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 5);
-    gs.addFacility(20, 20, 5);
-    gs.tick(50); // overflow
-    const sources = gs.getPollutionSources();
-    for (const s of sources) {
-      expect(s.radius).toBe(GARBAGE.POLLUTION_RADIUS);
-    }
-    // Each facility has 4 cells, so coordinates should include all cells
-    const coords = new Set(sources.map(s => `${s.x},${s.y}`));
-    expect(coords.has('5,5')).toBe(true);
-    expect(coords.has('6,6')).toBe(true);
-    expect(coords.has('20,20')).toBe(true);
-    expect(coords.has('21,21')).toBe(true);
-  });
-
-  it('should removeFacility by id', () => {
-    const gs = new GarbageService();
-    const id = gs.addFacility(5, 5, 1000);
-    expect(gs.getTotalCapacity()).toBe(1000);
-    gs.removeFacility(id);
-    expect(gs.getTotalCapacity()).toBe(0);
-  });
-
-  it('should handle tick(garbageProduced) to collect and burn', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 100);
-    gs.tick(2);
-    expect(gs.getCurrentLoad()).toBe(2);
-    gs.tick(3);
-    // After second tick: burn min(2, 80)=2, load=0, then add 3 → 3
-    expect(gs.getCurrentLoad()).toBe(3);
-  });
-
-  it('should burn garbage each tick (incineration)', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 500);
-    gs.tick(100); // load=0 → no burn, then collect 100 → load=100
-    const loadAfterProduce = gs.getCurrentLoad();
-    expect(loadAfterProduce).toBe(100);
-    // Next tick: burn min(100, 80)=80, load=20, then add 100 → 120
-    gs.tick(100);
-    expect(gs.getCurrentLoad()).toBe(120);
-  });
-
-  it('should serialize and deserialize (toJSON / fromJSON)', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 1000);
-    gs.addFacility(10, 10, 500);
-    gs.tick(3);
-
-    const json = gs.toJSON();
-    const restored = GarbageService.fromJSON(json);
-
-    // fromJSON preserves saved values (migration handles constant updates)
-    expect(restored.getTotalCapacity()).toBe(1500); // 1000 + 500
-    expect(restored.getCurrentLoad()).toBe(gs.getCurrentLoad());
-    expect(restored.getOverflow()).toBe(gs.getOverflow());
-  });
-
-  it('should support multiple facilities with combined capacity', () => {
-    const gs = new GarbageService();
-    gs.addFacility(5, 5, 1000);
-    gs.addFacility(15, 15, 500);
-    expect(gs.getTotalCapacity()).toBe(1500);
-  });
-
-  it('should have combined coverage from multiple facilities', () => {
-    const grid: SizedGrid = {
-      width: 50,
-      height: 50,
-      getCell(x, y) {
-        if (x < 0 || y < 0 || x >= 50 || y >= 50) return null;
-        const isRoad = (y === 5 && x >= 1 && x <= 20) || (y === 40 && x >= 38 && x <= 48);
-        return { roadType: isRoad ? RoadType.TWO_LANE : RoadType.NONE };
-      },
-    };
-    const gs = new GarbageService();
-    gs.addFacility(0, 5, 1000);
-    gs.addFacility(37, 40, 500);
-    gs.recalculateCoverage(grid);
-    expect(gs.getCoverage(5, 5)).toBe(true);
-    expect(gs.getCoverage(40, 40)).toBe(true);
-  });
-
-  it('previewCoverage returns coverage without affecting main state', () => {
+  it('previewCoverage does not affect main state', () => {
     const grid = makeRoadGrid(20, 10, 5);
     const gs = new GarbageService();
     const preview = gs.previewCoverage({ x: 0, y: 5 }, grid);
     expect(preview.size).toBeGreaterThan(0);
-    // Main coverage unaffected
     expect(gs.getCoverage(1, 5)).toBe(false);
   });
 
-  it('previewCoverage merges with existing facility coverage', () => {
-    const grid = makeRoadGrid(40, 10, 5);
+  it('combined coverage from multiple facilities', () => {
+    const grid = new Grid(20, 10);
+    for (let x = 2; x < 8; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    for (let x = 12; x < 18; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
     const gs = new GarbageService();
-    addAndRecalc(gs, 0, 5, grid);
-    expect(gs.getCoverage(3, 5)).toBe(true);
-    const preview = gs.previewCoverage({ x: 20, y: 5 }, grid);
-    expect(preview.has('3,5')).toBe(true);
+    gs.addFacility(0, 0);
+    gs.addFacility(10, 0);
+    gs.recalculateCoverage(grid);
+    expect(gs.getCoverage(5, 0)).toBe(true);
+    expect(gs.getCoverage(15, 0)).toBe(true);
+  });
+
+  // ── reportGarbage + accumulator ──
+
+  it('accumulates fractional amounts', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 0.3);
+    expect(gs.getUncollected()).toBe(0);
+    gs.reportGarbage(3, 1, 0.3);
+    expect(gs.getUncollected()).toBe(0);
+    gs.reportGarbage(3, 1, 0.5);
+    expect(gs.getUncollected()).toBe(1);
+  });
+
+  it('emits multiple bags when amount >= 2', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(5, 5, 3.5);
+    expect(gs.getUncollected()).toBe(3);
+  });
+
+  // ── Weighted-random collection ──
+
+  it('tick collects bags from covered buildings', () => {
+    const { gs } = createGSWithGrid();
+    gs.reportGarbage(3, 1, 5);
+    gs.tick();
+    // Bags should be collected (removed from pending, added to facility load)
+    expect(gs.getUncollected()).toBe(0);
+    const fac = gs.getFacilities()[0]!;
+    // Some may have been burned in same tick
+    expect(fac.todayReceived).toBe(5);
+  });
+
+  it('does not collect from unreachable positions', () => {
+    const noRoadGrid: SizedGrid = {
+      width: 10, height: 10,
+      getCell(x, y) {
+        if (x < 0 || y < 0 || x >= 10 || y >= 10) return null;
+        return { roadType: RoadType.NONE };
+      },
+    };
+    const gs = new GarbageService();
+    gs.addFacility(0, 0);
+    gs.recalculateCoverage(noRoadGrid);
+    gs.reportGarbage(5, 5, 3);
+    gs.tick();
+    expect(gs.getUncollected()).toBe(3); // still there
+  });
+
+  it('collection limited by COLLECTION_RATE', () => {
+    const { gs } = createGSWithGrid();
+    const budget = GARBAGE.COLLECTION_RATE;
+    gs.reportGarbage(3, 1, budget + 20);
+    gs.tick();
+    // Should collect at most budget bags, rest stays
+    expect(gs.getUncollected()).toBe(20);
+  });
+
+  it('collection limited by facility capacity', () => {
+    const { gs } = createGSWithGrid({ capacity: 10 });
+    gs.reportGarbage(3, 1, 30);
+    gs.tick();
+    const fac = gs.getFacilities()[0]!;
+    // Collected 10 (capacity), burned some, rest stays in pending
+    // todayReceived = 10 (capacity limit)
+    expect(fac.todayReceived).toBe(10);
+    expect(gs.getUncollected()).toBe(20);
+  });
+
+  it('closer buildings are more likely to be collected', () => {
+    const grid = new Grid(30, 10);
+    for (let x = 2; x < 30; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+    const gs = new GarbageService();
+    // Small capacity to limit budget so not everything gets collected
+    gs.addFacility(0, 0, 10000);
+    gs.recalculateCoverage(grid);
+
+    let nearCollected = 0;
+    let farCollected = 0;
+
+    // Each tick: produce equal bags at near and far, then tick
+    for (let t = 0; t < 200; t++) {
+      gs.reportGarbage(3, 1, 100);  // near
+      gs.reportGarbage(25, 1, 100); // far
+      const beforeNear = gs.getPendingGarbageQueue().filter(b => b.x === 3).length;
+      const beforeFar = gs.getPendingGarbageQueue().filter(b => b.x === 25).length;
+      gs.tick();
+      const afterNear = gs.getPendingGarbageQueue().filter(b => b.x === 3).length;
+      const afterFar = gs.getPendingGarbageQueue().filter(b => b.x === 25).length;
+      nearCollected += beforeNear - afterNear;
+      farCollected += beforeFar - afterFar;
+    }
+
+    // Near should be collected more than far (weighted random)
+    expect(nearCollected).toBeGreaterThan(farCollected);
+    // But far should also get some collection (not zero)
+    expect(farCollected).toBeGreaterThan(0);
+  });
+
+  it('facility burns garbage each tick', () => {
+    const { gs } = createGSWithGrid();
+    const fac = gs.getFacilities()[0]! as any;
+    fac.currentLoad = 500;
+    gs.tick();
+    expect(fac.currentLoad).toBe(500 - GARBAGE.BURN_RATE);
+  });
+
+  // ── clearPendingAt ──
+
+  it('removes pending bags at position', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 3);
+    gs.clearPendingAt(3, 1);
+    expect(gs.getUncollected()).toBe(0);
+  });
+
+  it('clears accumulator', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 0.5);
+    gs.clearPendingAt(3, 1);
+    gs.reportGarbage(3, 1, 0.4);
+    expect(gs.getUncollected()).toBe(0);
+  });
+
+  // ── Decompose ──
+
+  it('decomposes after DECOMPOSE_TICKS', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 1);
+    const bags = gs.getPendingGarbageQueue() as any[];
+    bags[0].waitTicks = GARBAGE.DECOMPOSE_TICKS;
+    gs.tick();
+    expect(gs.getUncollected()).toBe(0);
+  });
+
+  // ── Happiness penalty ──
+
+  it('returns 0 when no pending', () => {
+    const gs = new GarbageService();
+    expect(gs.getHappinessPenalty()).toBe(0);
+  });
+
+  it('scales with bag count', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 3);
+    expect(gs.getHappinessPenalty()).toBe(3 * GARBAGE.HAPPINESS_PER_BAG);
+  });
+
+  it('increases after HEAVY_THRESHOLD', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 1);
+    (gs.getPendingGarbageQueue() as any[])[0].waitTicks = GARBAGE.HEAVY_THRESHOLD;
+    expect(gs.getHappinessPenalty()).toBe(GARBAGE.HEAVY_HAPPINESS_PER_BAG);
+  });
+
+  // ── Pollution ──
+
+  it('getPollutionPenalty 0 when none', () => {
+    expect(new GarbageService().getPollutionPenalty()).toBe(0);
+  });
+
+  it('getPollutionPenalty scales', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 5);
+    expect(gs.getPollutionPenalty()).toBe(5 * GARBAGE.UNCOLLECTED_POLLUTION_MULTIPLIER);
+  });
+
+  it('getPollutionPenalty capped', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 200);
+    expect(gs.getPollutionPenalty()).toBe(GARBAGE.MAX_POLLUTION_PENALTY);
+  });
+
+  it('base pollution from 2x2 facility', () => {
+    const gs = new GarbageService();
+    gs.addFacility(5, 5, 1000);
+    const sources = gs.getPollutionSources();
+    expect(sources.length).toBe(4);
+    expect(sources.every(s => s.amount === GARBAGE.BASE_POLLUTION)).toBe(true);
+  });
+
+  it('overload pollution when load > threshold', () => {
+    const gs = new GarbageService();
+    gs.addFacility(5, 5, 100);
+    (gs.getFacilities()[0]! as any).currentLoad = 100;
+    expect(gs.getPollutionSources().length).toBe(8);
+  });
+
+  // ── Day tracking ──
+
+  it('advanceDay flushes stats', () => {
+    const gs = new GarbageService();
+    gs.addFacility(0, 0);
+    gs.reportGarbage(3, 1, 5);
+    gs.advanceDay();
+    expect(gs.getProducedPerWeek()).toBe(5);
+  });
+
+  // ── Serialization ──
+
+  it('toJSON/fromJSON round-trip', () => {
+    const { gs } = createGSWithGrid();
+    gs.reportGarbage(3, 1, 5);
+    const json = gs.toJSON();
+    const restored = GarbageService.fromJSON(json);
+    expect(restored.getTotalCapacity()).toBe(gs.getTotalCapacity());
+    expect(restored.getUncollected()).toBe(gs.getUncollected());
+  });
+
+  it('fromJSON handles legacy overflow', () => {
+    const legacy = {
+      facilities: [{ id: 'garbage_1', x: 0, y: 0, capacity: 1000, currentLoad: 50 }],
+      overflow: 5,
+    };
+    const restored = GarbageService.fromJSON(legacy as any);
+    expect(restored.getUncollected()).toBe(5);
+  });
+
+  it('fromJSON handles legacy truckTrips', () => {
+    const legacy = {
+      facilities: [{ id: 'garbage_1', x: 0, y: 0, capacity: 1000, currentLoad: 0 }],
+      truckTrips: [{ facilityId: 'garbage_1', stops: [{ x: 3, y: 1, bagCount: 5 }], totalBags: 5, remainingTicks: 10 }],
+    };
+    const restored = GarbageService.fromJSON(legacy as any);
+    expect(restored.getUncollected()).toBe(5);
+  });
+
+  it('fromJSON restores accumulators', () => {
+    const gs = new GarbageService();
+    gs.reportGarbage(3, 1, 0.7);
+    const json = gs.toJSON();
+    const restored = GarbageService.fromJSON(json);
+    restored.reportGarbage(3, 1, 0.4);
+    expect(restored.getUncollected()).toBe(1);
   });
 });
 
 describe('GARBAGE constants', () => {
-  it('maintenance per facility should be positive', () => {
-    expect(GARBAGE.MAINTENANCE_PER_FACILITY).toBeGreaterThan(0);
-  });
-
-  it('pollution load threshold should be between 0 and 1', () => {
+  it('maintenance positive', () => expect(GARBAGE.MAINTENANCE_PER_FACILITY).toBeGreaterThan(0));
+  it('pollution threshold 0-1', () => {
     expect(GARBAGE.POLLUTION_LOAD_THRESHOLD).toBeGreaterThan(0);
     expect(GARBAGE.POLLUTION_LOAD_THRESHOLD).toBeLessThanOrEqual(1);
   });
-
-  it('overflow pollution multiplier should be positive', () => {
-    expect(GARBAGE.OVERFLOW_POLLUTION_MULTIPLIER).toBeGreaterThan(0);
-  });
-
-  it('service budget should be positive', () => {
-    expect(GARBAGE.SERVICE_BUDGET).toBeGreaterThan(0);
-  });
-
-  it('burn rate should be a positive fixed amount', () => {
-    expect(GARBAGE.BURN_RATE).toBe(80);
-  });
-
-  it('GARBAGE_PRODUCTION has per-zone rates', () => {
+  it('collection rate positive', () => expect(GARBAGE.COLLECTION_RATE).toBeGreaterThan(0));
+  it('burn rate positive', () => expect(GARBAGE.BURN_RATE).toBeGreaterThan(0));
+  it('GARBAGE_PRODUCTION has rates', () => {
     expect(GARBAGE_PRODUCTION.RESIDENTIAL.base).toBeGreaterThan(0);
-    expect(GARBAGE_PRODUCTION.RESIDENTIAL.perCapita).toBeGreaterThan(0);
     expect(GARBAGE_PRODUCTION.COMMERCIAL.base).toBeGreaterThan(0);
     expect(GARBAGE_PRODUCTION.INDUSTRIAL.base).toBeGreaterThan(0);
     expect(GARBAGE_PRODUCTION.OFFICE.base).toBeGreaterThan(0);

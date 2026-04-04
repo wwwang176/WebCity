@@ -354,7 +354,7 @@ level = clamp(ceil(serviceCoverage / 3), 1, 3)
 |---------|---------|---------|
 | NeedCapacityPanel | 警局、消防局、醫院、污水廠 | Need/Capacity/Radius/負載率，過載警告 |
 | SchoolPanel | 小學、高中、大學 | Type/Need/Students/Radius，超額警告 |
-| GarbagePanel | 垃圾場 | Load/Produced per wk/Burned per wk，溢出警告 |
+| GarbagePanel | 垃圾場 | Load/Burned per wk/Produced per wk，等待收集警告 |
 | CemeteryPanel | 墓園 | Bodies/Deaths per wk/Cremated per wk |
 | UtilityPlantPanel | 電廠、水廠、機場 | Output/Supply/Demand |
 | ParkPanel | 公園 | Radius |

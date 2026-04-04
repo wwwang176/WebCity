@@ -260,6 +260,8 @@ export interface SelectedZoneBuilding {
   fireLoadRatio: number;
   /** Number of dead bodies at this building awaiting hearse pickup. */
   pendingDeaths: number;
+  /** Number of garbage bags at this building awaiting truck pickup. */
+  pendingGarbage: number;
 }
 
 export interface SelectedInfraBuilding {
@@ -1025,6 +1027,7 @@ export class Game {
               zoneType: ZoneType.NONE, buildingId: 0, reserved: 0,
             });
             this.state.deathCare.clearPendingAt(x, y);
+            this.state.garbage.clearPendingAt(x, y);
             break;
         }
       }
@@ -1699,6 +1702,7 @@ export class Game {
             policeLoadRatio: this.state.police.getLoadRatio(),
             fireLoadRatio: this.state.fire.getLoadRatio(),
             pendingDeaths: this.state.deathCare.getPendingDeathQueue().filter(d => d.x === x && d.y === y).length,
+            pendingGarbage: this.state.garbage.getPendingGarbageQueue().filter(g => g.x === x && g.y === y).length,
           };
           this.applyViewMode(ViewMode.NORMAL);
           break;
@@ -2277,8 +2281,9 @@ export class Game {
   private getGarbageLoadRatio(): number {
     const facs = this.state.garbage.getFacilities();
     const cap = facs.reduce((s, f) => s + f.capacity, 0);
-    if (cap <= 0) return this.state.garbage.getOverflow() > 0 ? Infinity : 0;
-    const load = facs.reduce((s, f) => s + f.currentLoad, 0) + this.state.garbage.getOverflow();
+    const uncollected = this.state.garbage.getUncollected();
+    if (cap <= 0) return uncollected > 0 ? Infinity : 0;
+    const load = facs.reduce((s, f) => s + f.currentLoad, 0) + uncollected;
     return load / cap;
   }
 
@@ -2339,6 +2344,7 @@ export class Game {
         garbageLoadRatio: this.getGarbageLoadRatio(),
         hospitalLoadRatio: this.state.health.getLoadRatio(),
         pendingDeaths: this.state.deathCare.getPendingDeathQueue().filter(d => d.x === x && d.y === y).length,
+        pendingGarbage: this.state.garbage.getPendingGarbageQueue().filter(g => g.x === x && g.y === y).length,
       };
     }
 

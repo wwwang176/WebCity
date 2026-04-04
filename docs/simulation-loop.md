@@ -353,9 +353,10 @@ src/core/service/GarbageSewageProduction.ts
 
 **職責**：計算分區制的垃圾和污水產量。
 
-- 共享 `calculateZoneDemand()` 函式按區域類型和人口計算需求
-- 垃圾產量：base + perCapita × 人口
-- 污水產量：用水量 × SEWAGE_RATE[區域類型]
+- 垃圾產量：`calculateZoneDemand(GARBAGE_PRODUCTION, zone, actualResidents, actualWorkers)` — 使用實際入住人口
+- 污水產量：`calculateZoneDemand(WATER_CONSUMPTION, zone, bt.residents, bt.workers)` × SEWAGE_RATE — 使用建築容量
+- 垃圾透過 `reportGarbage(x, y, amount)` 逐建築報告，累積到 ≥1 袋時進入 PendingGarbage 佇列
+- 實際入住人口由 `tickAllCivicServices` 從 CitizenManager 預建 occupancy map 提供
 
 ### UtilityCellDemand（DRY 重構）
 

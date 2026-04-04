@@ -23,8 +23,8 @@ describe('PollutionContributor', () => {
     it('should return base + overload pollution when facility is over 50% load', () => {
       const svc = new GarbageService();
       svc.addFacility(5, 5, 100);
-      // Tick with enough garbage to fill more than 50%
-      svc.tick(100); // 100 units of garbage into capacity=100
+      // Directly set load above 50% to test overload pollution
+      (svc.getFacilities()[0]! as any).currentLoad = 100;
       const sources = svc.getPollutionSources();
       // 4 base + 4 overload = 8
       expect(sources.length).toBe(8);
