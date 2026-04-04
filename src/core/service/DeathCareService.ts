@@ -52,7 +52,7 @@ export const DEATH_CARE = {
   DEFAULT_CAPACITY: 500,
   DEFAULT_PROCESS_RATE: 5,
   /** Road-cost units a hearse covers per service tick */
-  HEARSE_SPEED: 5,
+  HEARSE_SPEED: 10,
   /** Happiness penalty per body waiting in queue */
   HAPPINESS_PER_BODY: -10,
   /** After this many ticks, penalty per body increases */
