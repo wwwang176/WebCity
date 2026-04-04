@@ -63,7 +63,7 @@ export function ServicesPage() {
     } else {
       const surplus = pwrTotalSupply >= pwrTotalDemand;
       pwrSummary = [
-        { text: `Supply ${Math.round(pwrTotalSupply)} / Demand ${Math.round(pwrTotalDemand)} \u00B7 ` },
+        { text: `Power: ${Math.round(pwrTotalDemand)} / ${Math.round(pwrTotalSupply)} \u00B7 ` },
         { text: surplus ? 'Surplus' : 'Shortage', color: surplus ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD },
       ];
     }
@@ -93,12 +93,15 @@ export function ServicesPage() {
       wtrSummary.push({ text: 'No water plant' });
     } else {
       const wSurplus = wtrTotalSupply >= wtrTotalDemand;
-      wtrSummary.push({ text: `Water: Supply ${Math.round(wtrTotalSupply)} / Demand ${Math.round(wtrTotalDemand)} \u00B7 ` });
+      wtrSummary.push({ text: `Water: ${Math.round(wtrTotalDemand)} / ${Math.round(wtrTotalSupply)} \u00B7 ` });
       wtrSummary.push({ text: wSurplus ? 'Surplus' : 'Shortage', color: wSurplus ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD });
     }
     wtrSummary.push({ text: ' | ' });
     if (treatPlants.length === 0) {
-      wtrSummary.push({ text: sewageProduced > 0 ? `No sewage plant \u00B7 ${sewageProduced} sewage` : 'No sewage plant' });
+      wtrSummary.push({ text: 'No sewage plant' });
+      if (sewageProduced > 0) {
+        wtrSummary.push({ text: ` \u00B7 ${sewageProduced} sewage`, color: UI_COLORS.STATUS_BAD });
+      }
     } else {
       const untreated = sewageUntreated > 0;
       wtrSummary.push({ text: `Sewage: ${sewageProduced} / ${sewageTotalCap} \u00B7 ` });
