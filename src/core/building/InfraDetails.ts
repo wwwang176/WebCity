@@ -35,7 +35,7 @@ export interface InfraDetailContext {
     getParks(): readonly { x: number; y: number; radius: number }[];
   };
   garbage: {
-    getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number; inTransit: number; bagsInTransit: number }[];
+    getFacilities(): readonly { x: number; y: number; capacity: number; currentLoad: number }[];
     getProducedPerWeek(): number;
     getBurnedPerWeek(): number;
     getUncollected(): number;
@@ -116,8 +116,7 @@ export const INFRA_DETAIL_EXTRACTORS: Partial<Record<InfraType, DetailExtractor>
     const load = f?.currentLoad ?? 0;
     const cap = f?.capacity ?? 1000;
     const uncollected = ctx.garbage.getUncollected();
-    const inTransit = f?.inTransit ?? 0;
-    return { Load: `${load} / ${cap}`, InTransit: inTransit, 'Produced/wk': ctx.garbage.getProducedPerWeek(), 'Burned/wk': ctx.garbage.getBurnedPerWeek(), ...(uncollected > 0 ? { 'Awaiting pickup': uncollected } : {}) };
+    return { Load: `${load} / ${cap}`, 'Produced/wk': ctx.garbage.getProducedPerWeek(), 'Burned/wk': ctx.garbage.getBurnedPerWeek(), ...(uncollected > 0 ? { 'Awaiting pickup': uncollected } : {}) };
   },
   sewage: (ctx, cx, cy) => {
     const p = findAtPosition(ctx.sewage.getTreatmentPlants(), cx, cy);

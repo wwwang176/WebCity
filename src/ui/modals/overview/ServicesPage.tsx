@@ -112,9 +112,8 @@ export function ServicesPage() {
     const wasteItems: ServiceEntry[] = [];
     const garbageFacilities = state.garbage.getFacilities();
     for (const f of garbageFacilities) {
-      const transitSuffix = f.inTransit > 0 ? ` \u00B7 Trucks ${f.inTransit} (${f.bagsInTransit} bags)` : '';
-      const fSt = statusOf(f.capacity > 0 ? (f.currentLoad + f.bagsInTransit) / f.capacity : 0);
-      wasteItems.push(mkEntry('\uD83D\uDDD1', 'Landfill', r.garbageRatio, 'Load', f.currentLoad, f.capacity, fSt, transitSuffix));
+      const fSt = statusOf(f.capacity > 0 ? f.currentLoad / f.capacity : 0);
+      wasteItems.push(mkEntry('\uD83D\uDDD1', 'Landfill', r.garbageRatio, 'Load', f.currentLoad, f.capacity, fSt));
     }
     const awaitingGarbage = state.garbage.getUncollected();
     const garbageLoad = state.garbage.getCurrentLoad();

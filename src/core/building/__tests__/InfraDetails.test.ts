@@ -113,14 +113,14 @@ describe('getInfraDetails', () => {
   it('garbage: returns load, produced/wk, burned/wk', () => {
     const ctx = makeCtx({
       garbage: {
-        getFacilities: () => [{ x: 3, y: 3, capacity: 2000, currentLoad: 500, inTransit: 2, bagsInTransit: 10 }],
+        getFacilities: () => [{ x: 3, y: 3, capacity: 2000, currentLoad: 500 }],
         getProducedPerWeek: () => 35,
         getBurnedPerWeek: () => 30,
         getUncollected: () => 0,
       },
     });
     const d = getInfraDetails(ctx, 'garbage', 3, 3);
-    expect(d).toEqual({ Load: '500 / 2000', InTransit: 2, 'Produced/wk': 35, 'Burned/wk': 30 });
+    expect(d).toEqual({ Load: '500 / 2000', 'Produced/wk': 35, 'Burned/wk': 30 });
   });
 
   it('sewage: returns need and capacity', () => {
