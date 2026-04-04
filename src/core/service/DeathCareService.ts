@@ -58,8 +58,8 @@ export const DEATH_CARE = {
   HEAVY_THRESHOLD: 30,
   /** Heavier happiness penalty per body after threshold */
   HEAVY_HAPPINESS_PER_BODY: -25,
-  /** Ticks before a body decomposes and is removed (~4 game weeks) */
-  DECOMPOSE_TICKS: 600,
+  /** Ticks before a body decomposes and is removed (~12 game weeks) */
+  DECOMPOSE_TICKS: 1800,
 } as const;
 
 export class DeathCareService extends RoadCoverageService<Cemetery> {
