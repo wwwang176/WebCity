@@ -531,6 +531,57 @@ describe('DeathCare integration', () => {
 
     expect(state.citizens.getPopulation()).toBe(0);
   });
+
+  it('should clear pending deaths when burned building is auto-cleared', () => {
+    const state = createGameState(10, 10);
+    // Fill grid with burned buildings to guarantee random selection hits them
+    for (let x = 0; x < 10; x++) {
+      for (let y = 0; y < 10; y++) {
+        state.grid.setCell(x, y, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 3 }); // BURNED=3
+      }
+    }
+    state.deathCare.reportDeath(5, 5);
+    state.deathCare.reportDeath(5, 5);
+
+    const spy = vi.spyOn(state.deathCare, 'clearPendingAt');
+    state.rciDemand = { residential: 100, commercial: 100, industrial: 100 };
+    const loop = new SimulationLoop(state);
+
+    // Force high clearance rate
+    const origRandom = Math.random;
+    Math.random = () => 0.001; // always < BURNED_CLEARANCE_CHANCE (2%)
+    try {
+      for (let i = 0; i < 60; i++) loop.tick();
+    } finally {
+      Math.random = origRandom;
+    }
+
+    // clearPendingAt should have been called for cleared buildings
+    expect(spy).toHaveBeenCalled();
+  });
+
+  it('should clear pending deaths when abandoned building is auto-cleared', () => {
+    const state = createGameState(10, 10);
+    // Fill grid with abandoned buildings
+    for (let x = 0; x < 10; x++) {
+      for (let y = 0; y < 10; y++) {
+        state.grid.setCell(x, y, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 1 }); // ABANDONED=1
+      }
+    }
+    state.deathCare.reportDeath(3, 3);
+
+    const spy = vi.spyOn(state.deathCare, 'clearPendingAt');
+
+    // Abandoned clearance needs power + water + RCI demand
+    provideUtilities(state, 5, 5);
+    state.rciDemand = { residential: 100, commercial: 100, industrial: 100 };
+
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 120; i++) loop.tick();
+
+    // clearPendingAt should have been called for cleared abandoned buildings
+    expect(spy).toHaveBeenCalled();
+  });
 });
 
 describe('District integration', () => {
