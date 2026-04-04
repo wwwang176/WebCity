@@ -131,11 +131,11 @@ export function ServicesPage() {
       safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
     }
     const safetySummary: SummarySpan[] = [];
-    const policeOver = policeCap > 0 && policeLoad > policeCap;
-    safetySummary.push({ text: `Police: ${policeLoad} / ${policeCap}`, color: policeOver ? UI_COLORS.STATUS_WARN : undefined });
+    safetySummary.push({ text: `Police: ${policeLoad} / ${policeCap}` });
+    if (policeCap > 0 && policeLoad > policeCap) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     safetySummary.push({ text: ' \u00B7 ' });
-    const fireOver = fireCap > 0 && fireLoad > fireCap;
-    safetySummary.push({ text: `Fire: ${fireLoad} / ${fireCap}`, color: fireOver ? UI_COLORS.STATUS_WARN : undefined });
+    safetySummary.push({ text: `Fire: ${fireLoad} / ${fireCap}` });
+    if (fireCap > 0 && fireLoad > fireCap) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     if (activeFires > 0) {
       safetySummary.push({ text: ' \u00B7 ' });
       safetySummary.push({ text: `Active Fires ${activeFires}`, color: UI_COLORS.STATUS_BAD });
@@ -154,8 +154,8 @@ export function ServicesPage() {
     if (healthItems.length === 0) {
       healthSummary.push({ text: 'No hospital' });
     } else {
-      const over = healthCap > 0 && healthLoad > healthCap;
-      healthSummary.push({ text: `Hospital: ${healthLoad} / ${healthCap}`, color: over ? UI_COLORS.STATUS_WARN : undefined });
+      healthSummary.push({ text: `Hospital: ${healthLoad} / ${healthCap}` });
+      if (healthCap > 0 && healthLoad > healthCap) healthSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     }
     entries.push({ group: 'Health', items: healthItems, summary: healthSummary });
 
@@ -183,8 +183,8 @@ export function ServicesPage() {
       for (const [label, { demand, capacity }] of Object.entries(byType)) {
         if (!first) eduSummary.push({ text: ' \u00B7 ' });
         first = false;
-        const over = demand > capacity;
-        eduSummary.push({ text: `${label}: ${demand} / ${capacity}`, color: over ? UI_COLORS.STATUS_WARN : undefined });
+        eduSummary.push({ text: `${label}: ${demand} / ${capacity}` });
+        if (demand > capacity) eduSummary.push({ text: ' Shortage', color: UI_COLORS.STATUS_BAD });
       }
     }
     entries.push({ group: 'Education', items: eduItems, summary: eduSummary });
