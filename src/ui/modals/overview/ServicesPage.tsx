@@ -108,7 +108,7 @@ export function ServicesPage() {
     }
     entries.push({ group: 'Education', items: eduItems });
 
-    // ── Waste & Burial ──
+    // ── Waste ──
     const wasteItems: ServiceEntry[] = [];
     const garbageLoad = state.garbage.getCurrentLoad();
     const garbageCap = state.garbage.getTotalCapacity();
@@ -127,17 +127,34 @@ export function ServicesPage() {
       wasteItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: `${sewageProduced} sewage untreated — build a treatment plant`, loadPct: -1, status: sSt.label, statusColor: sSt.color });
     }
 
+    entries.push({ group: 'Waste', items: wasteItems });
+
+    // ── Death Care ──
+    const burialItems: ServiceEntry[] = [];
     const cemeteries = state.deathCare.getCemeteries();
-    let cemBodies = 0, cemCap = 0;
-    for (const c of cemeteries) { cemBodies += c.used + ((c as any).pending ?? 0); cemCap += c.capacity; }
-    const unassigned = (state.deathCare as any).unassignedDeaths ?? state.deathCare.getUnprocessed();
+    for (const c of cemeteries) {
+      const bodies = c.used + c.pending;
+      const transitSuffix = c.inTransit > 0 ? ` \u00B7 InTransit ${c.inTransit}` : '';
+      const cSt = statusOf(c.capacity > 0 ? (bodies + c.inTransit) / c.capacity : 0);
+      burialItems.push(mkEntry('\u26B0', 'Cemetery', r.deathCareRatio, 'Bodies', bodies, c.capacity, cSt, transitSuffix));
+    }
+    const awaitingPickup = state.deathCare.getPendingDeathQueue().filter(d => d.cemeteryId === null).length;
     const deathsWk = state.deathCare.getRecentDeaths();
     const crematedWk = state.deathCare.getRecentCremations();
-    const deathSuffix = deathsWk > 0 || crematedWk > 0 ? ` Deaths ${deathsWk} Cremated ${crematedWk}/wk` : '';
-    const dSt = unassigned > 0 ? { label: `${unassigned} unprocessed`, color: UI_COLORS.STATUS_BAD } : statusOf(cemCap > 0 ? cemBodies / cemCap : 0);
-    wasteItems.push(mkEntry('\u26B0', 'Death Care', r.deathCareRatio, 'Bodies', cemBodies, cemCap, dSt, deathSuffix));
+    if (cemeteries.length === 0) {
+      const noSt = awaitingPickup > 0 ? { label: `${awaitingPickup} awaiting pickup`, color: UI_COLORS.STATUS_BAD } : { label: 'None', color: UI_COLORS.STATUS_BAD };
+      const noSuffix = deathsWk > 0 ? ` \u00B7 Deaths ${deathsWk}/wk` : '';
+      burialItems.push({ icon: '\u26B0', name: 'Death Care', coverage: r.deathCareRatio, detail: `No cemetery${noSuffix}`, loadPct: -1, status: noSt.label, statusColor: noSt.color });
+    } else {
+      const summaryParts: string[] = [];
+      summaryParts.push(`Awaiting pickup ${awaitingPickup}`);
+      summaryParts.push(`Deaths ${deathsWk}/wk`);
+      summaryParts.push(`Cremated ${crematedWk}/wk`);
+      const aSt = awaitingPickup > 0 ? { label: `${awaitingPickup} awaiting`, color: UI_COLORS.STATUS_BAD } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
+      burialItems.push({ icon: '\u26B0', name: 'Death Care', coverage: -1, detail: summaryParts.join(' \u00B7 '), loadPct: -1, status: aSt.label, statusColor: aSt.color });
+    }
 
-    entries.push({ group: 'Waste & Burial', items: wasteItems });
+    entries.push({ group: 'Death Care', items: burialItems });
 
     // Summary stats
     const allCoverages = [r.poweredRatio, r.wateredRatio, r.policeRatio, r.fireRatio, r.healthRatio, r.educationRatio, r.garbageRatio, r.deathCareRatio];

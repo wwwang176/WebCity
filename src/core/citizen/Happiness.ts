@@ -16,6 +16,8 @@ export interface HappinessFactors {
   workplaceZoneType?: ZoneType;
   /** Shopping access ratio (0~1) for this citizen's home. undefined = skip. */
   shoppingAccess?: number;
+  /** Number of dead bodies awaiting pickup at citizen's home. */
+  pendingDeathsAtHome?: number;
 }
 
 /** Threshold entry for data-driven modifier evaluation (sorted descending by threshold). */
@@ -104,6 +106,9 @@ export const HAPPINESS = {
   SHOPPING_PARTIAL_BONUS: 3,
   SHOPPING_NONE_RATIO: 0.1,
   SHOPPING_NONE_PENALTY: -12,
+  // Death care: bodies awaiting pickup at home
+  DEATH_BODY_PENALTY_PER: -5,
+  DEATH_BODY_PENALTY_CAP: -20,
 } as const;
 
 /**
@@ -205,6 +210,11 @@ export function calculateHappiness(citizen: Citizen, factors: HappinessFactors):
     if (factors.shoppingAccess >= HAPPINESS.SHOPPING_GOOD_RATIO) happiness += HAPPINESS.SHOPPING_GOOD_BONUS;
     else if (factors.shoppingAccess >= HAPPINESS.SHOPPING_PARTIAL_RATIO) happiness += HAPPINESS.SHOPPING_PARTIAL_BONUS;
     else if (factors.shoppingAccess < HAPPINESS.SHOPPING_NONE_RATIO) happiness += HAPPINESS.SHOPPING_NONE_PENALTY;
+  }
+
+  // Dead bodies at home
+  if (factors.pendingDeathsAtHome && factors.pendingDeathsAtHome > 0) {
+    happiness += Math.max(HAPPINESS.DEATH_BODY_PENALTY_CAP, factors.pendingDeathsAtHome * HAPPINESS.DEATH_BODY_PENALTY_PER);
   }
 
   return Math.max(HAPPINESS.MIN, Math.min(HAPPINESS.MAX, happiness));

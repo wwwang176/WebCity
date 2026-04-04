@@ -543,7 +543,7 @@ export function roadDistanceToTargets(
 }
 
 /** Expand a facility's top-left (x, y) into all occupied cell positions. */
-function expandFootprint(
+export function expandFootprint(
   x: number, y: number, width: number, height: number,
 ): { x: number; y: number }[] {
   const positions: { x: number; y: number }[] = [];

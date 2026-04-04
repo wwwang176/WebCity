@@ -212,6 +212,11 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     warnings.push({ level: 'yellow', text: 'Fire dept over capacity' });
   }
 
+  // Dead bodies awaiting hearse pickup
+  if (sel.pendingDeaths > 0) {
+    warnings.push({ level: sel.pendingDeaths >= 3 ? 'red' : 'yellow', text: `Dead body awaiting pickup (${sel.pendingDeaths})` });
+  }
+
   // Sort: red first, then yellow
   warnings.sort((a, b) => (a.level === 'red' ? 0 : 1) - (b.level === 'red' ? 0 : 1));
   return warnings;
