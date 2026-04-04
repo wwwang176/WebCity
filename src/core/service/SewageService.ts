@@ -19,9 +19,16 @@ interface SewageJSON {
 }
 
 import type { PollutionSource } from '../environment/Pollution';
-import { isFootprintAdjacentToRoad, type ReadableGrid } from '../grid/GridHelpers';
+import { isFootprintAdjacentToRoad, toPosKey, type ReadableGrid } from '../grid/GridHelpers';
 import { removeById } from '../utils/removeById';
 import { isFacilityOperational, type UtilityChecker } from './FacilityOperational';
+import { Grid } from '../grid/Grid';
+import { ZoneType } from '../grid/types';
+import { getBuildingType } from '../building/types';
+import { getInfraBuildingId } from '../building/InfraConfig';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
+import { WATER_CONSUMPTION } from './WaterNetwork';
 
 /** Sewage system configuration constants */
 export const SEWAGE = {
@@ -42,6 +49,24 @@ export const SEWAGE = {
   },
 } as const;
 
+/** Sewage demand = water consumption × sewage rate per zone. */
+export const SEWAGE_CONSUMPTION = {
+  RESIDENTIAL: { base: WATER_CONSUMPTION.RESIDENTIAL.base * SEWAGE.SEWAGE_RATE.RESIDENTIAL, perCapita: WATER_CONSUMPTION.RESIDENTIAL.perCapita * SEWAGE.SEWAGE_RATE.RESIDENTIAL },
+  COMMERCIAL:  { base: WATER_CONSUMPTION.COMMERCIAL.base * SEWAGE.SEWAGE_RATE.COMMERCIAL,   perCapita: WATER_CONSUMPTION.COMMERCIAL.perCapita * SEWAGE.SEWAGE_RATE.COMMERCIAL },
+  INDUSTRIAL:  { base: WATER_CONSUMPTION.INDUSTRIAL.base * SEWAGE.SEWAGE_RATE.INDUSTRIAL,   perCapita: WATER_CONSUMPTION.INDUSTRIAL.perCapita * SEWAGE.SEWAGE_RATE.INDUSTRIAL },
+  OFFICE:      { base: WATER_CONSUMPTION.OFFICE.base * SEWAGE.SEWAGE_RATE.OFFICE,           perCapita: WATER_CONSUMPTION.OFFICE.perCapita * SEWAGE.SEWAGE_RATE.OFFICE },
+} as const;
+
+const SEWAGE_PLANT_ID = getInfraBuildingId('sewage');
+
+/** Infrastructure buildings don't produce sewage in the current model. */
+const SEWAGE_DEMAND_CONFIG: UtilityCellDemandConfig = {
+  zoneConsumption: SEWAGE_CONSUMPTION,
+  infraConsumption: {},
+  infraTypeToKey: {},
+  excludedBuildingId: SEWAGE_PLANT_ID,
+};
+
 export class SewageService {
   private outlets: SewageOutlet[] = [];
   private treatmentPlants: TreatmentPlant[] = [];
@@ -50,6 +75,11 @@ export class SewageService {
   private untreatedSewage = 0;
   private produced = 0;
   private nextId = 1;
+  // BFS coverage fields (mirrors WaterNetwork pattern)
+  private supplied = new Set<string>();
+  private fullCoverage = new Set<string>();
+  private totalDemand = 0;
+  private roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
 
   addOutlet(x: number, y: number): string {
     const id = `outlet-${this.nextId++}`;
@@ -71,6 +101,60 @@ export class SewageService {
   removeTreatmentPlant(id: string): boolean {
     this.connectedPlantIds.delete(id);
     return removeById(this.treatmentPlants, id);
+  }
+
+  setRoadLookup(lookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup): void {
+    this.roadLookup = lookup;
+  }
+
+  calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
+    // Phase 1: full coverage (no budget limit)
+    this.fullCoverage.clear();
+    for (const p of this.treatmentPlants) {
+      bfsRoadNetworkFlood(grid, p.x, p.y, this.fullCoverage, infrastructurePositions, this.roadLookup);
+    }
+    // Phase 2: budget-drain per plant (capacity as budget)
+    this.supplied.clear();
+    const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
+    for (const p of this.treatmentPlants) {
+      bfsBudgetDrainFlood(grid, { x: p.x, y: p.y, output: p.capacity }, this.supplied, getDemand, infrastructurePositions, this.roadLookup);
+    }
+    return this.supplied;
+  }
+
+  calculateDemand(grid: Grid): void {
+    let demand = 0;
+    grid.forEachCell((cell) => {
+      if (cell.buildingId <= 0) return;
+      const bt = getBuildingType(cell.buildingId);
+      demand += calculateUtilityCellDemand(
+        SEWAGE_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
+        bt?.residents ?? 0, bt?.workers ?? 0,
+      );
+    });
+    this.totalDemand = demand;
+  }
+
+  isSupplied(x: number, y: number): boolean {
+    return this.supplied.has(toPosKey(x, y));
+  }
+
+  isInCoverage(x: number, y: number): boolean {
+    return this.fullCoverage.has(toPosKey(x, y));
+  }
+
+  getDemand(): number {
+    return this.totalDemand;
+  }
+
+  getCellDemandAt(grid: Grid, x: number, y: number): number {
+    const cell = grid.getCell(x, y);
+    if (!cell || cell.buildingId <= 0) return 0;
+    const bt = getBuildingType(cell.buildingId);
+    return calculateUtilityCellDemand(
+      SEWAGE_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
+      bt?.residents ?? 0, bt?.workers ?? 0,
+    );
   }
 
   /** Produce sewage from water demand (manual step). */

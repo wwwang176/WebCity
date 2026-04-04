@@ -535,6 +535,7 @@ export class Game {
     this.state.shopping.setRoadLookup(this.roadLookup);
     this.state.power.setRoadLookup(this.roadLookup);
     this.state.water.setRoadLookup(this.roadLookup);
+    this.state.sewage.setRoadLookup(this.roadLookup);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);

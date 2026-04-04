@@ -206,15 +206,18 @@ export class SimulationLoop {
       this.state.globalMarket.tick();
     }
 
-    // ── Slot 1: Power / Water coverage ──
+    // ── Slot 1: Power / Water / Sewage coverage ──
     if (slowSlot === 1) {
       this.infraPositions.clear();
       for (const p of this.state.power.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
       for (const p of this.state.water.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
+      for (const p of this.state.sewage.getTreatmentPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
       this.state.power.calculateDemand(this.state.grid);
       this.state.power.calculateCoverage(this.state.grid, this.infraPositions);
       this.state.water.calculateDemand(this.state.grid);
       this.state.water.calculateCoverage(this.state.grid, this.infraPositions);
+      this.state.sewage.calculateDemand(this.state.grid);
+      this.state.sewage.calculateCoverage(this.state.grid, this.infraPositions);
     }
 
     // ── Slot 2: Civic services + fire + service vehicles ──

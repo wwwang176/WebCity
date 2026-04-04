@@ -40,29 +40,61 @@ export function ServicesPage() {
 
     const entries: { group: string; items: ServiceEntry[] }[] = [];
 
-    // ── Utilities ──
-    const pwrPct = state.power.getDemand() > 0 ? Math.round((state.power.getSupply() / state.power.getDemand()) * 100) : 0;
-    const wtrPct = state.water.getDemand() > 0 ? Math.round((state.water.getSupply() / state.water.getDemand()) * 100) : 0;
-    entries.push({ group: 'Utilities', items: [
-      {
-        icon: '\u26A1', name: 'Power', coverage: r.poweredRatio, loadPct: pwrPct,
-        detail: `Supply ${Math.round(state.power.getSupply())} / Demand ${Math.round(state.power.getDemand())}`,
-        status: pwrPct >= 100 ? 'Surplus' : 'Shortage',
-        statusColor: pwrPct >= 100 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
-      },
-      {
-        icon: '\uD83D\uDCA7', name: 'Water', coverage: r.wateredRatio, loadPct: wtrPct,
-        detail: `Supply ${Math.round(state.water.getSupply())} / Demand ${Math.round(state.water.getDemand())}`,
-        status: wtrPct >= 100 ? 'Surplus' : 'Shortage',
-        statusColor: wtrPct >= 100 ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD,
-      },
-    ]});
-
     // helper to build a service entry with loadDetail
     const mkEntry = (icon: string, name: string, coverage: number, label: string, load: number, cap: number, st: { label: string; color: string }, suffix = ''): ServiceEntry => {
       const ld = loadDetail(label, load, cap, suffix);
       return { icon, name, coverage, detail: ld.detail, loadPct: ld.pct, status: st.label, statusColor: st.color };
     };
+
+    // ── Power (個別設施 → 統計) ──
+    const pwrFacilities: ServiceEntry[] = [];
+    const pwrStats: ServiceEntry[] = [];
+    const powerPlants = state.power.getPlants();
+    for (const p of powerPlants) {
+      pwrFacilities.push({ icon: '\u26A1', name: 'Power Plant', coverage: r.poweredRatio, detail: `Output ${Math.round(p.output)}`, loadPct: -1, status: '', statusColor: '' });
+    }
+    if (powerPlants.length === 0) {
+      pwrStats.push({ icon: '\u26A1', name: 'Power', coverage: r.poweredRatio, detail: 'No power plant', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+    } else {
+      const pwrDemand = Math.round(state.power.getDemand());
+      const pwrSupply = Math.round(state.power.getSupply());
+      const pSt = pwrSupply >= pwrDemand ? { label: 'Surplus', color: UI_COLORS.STATUS_GOOD } : { label: 'Shortage', color: UI_COLORS.STATUS_BAD };
+      pwrStats.push(mkEntry('', '', -1, 'Load', pwrDemand, pwrSupply, pSt));
+    }
+    entries.push({ group: 'Power', items: [...pwrFacilities, ...pwrStats] });
+
+    // ── Water (個別設施 → 統計) ──
+    const wtrFacilities: ServiceEntry[] = [];
+    const wtrStats: ServiceEntry[] = [];
+    const pumpingStations = state.water.getPlants();
+    for (const wp of pumpingStations) {
+      wtrFacilities.push({ icon: '\uD83D\uDCA7', name: 'Water Plant', coverage: r.wateredRatio, detail: `Output ${Math.round(wp.output)}`, loadPct: -1, status: '', statusColor: '' });
+    }
+    const treatPlants = state.sewage.getTreatmentPlants();
+    const sewageProduced = Math.round(state.sewage.getProduced());
+    const sewageTotalCap = state.sewage.getTreatmentCapacity();
+    const sewageUntreated = state.sewage.getUntreated();
+    for (const tp of treatPlants) {
+      const tpLoad = sewageTotalCap > 0 ? Math.round(sewageProduced * tp.capacity / sewageTotalCap) : 0;
+      const tpSt = statusOf(tp.capacity > 0 ? tpLoad / tp.capacity : 0);
+      wtrFacilities.push(mkEntry('\uD83C\uDFED', 'Sewage Plant', r.sewageRatio, 'Load', tpLoad, tp.capacity, tpSt));
+    }
+    if (pumpingStations.length === 0) {
+      wtrStats.push({ icon: '\uD83D\uDCA7', name: 'Water', coverage: r.wateredRatio, detail: 'No water plant', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
+    } else {
+      const wtrDemand = Math.round(state.water.getDemand());
+      const wtrSupply = Math.round(state.water.getSupply());
+      const wSt = wtrSupply >= wtrDemand ? { label: 'Surplus', color: UI_COLORS.STATUS_GOOD } : { label: 'Shortage', color: UI_COLORS.STATUS_BAD };
+      wtrStats.push(mkEntry('', '', -1, 'Load', wtrDemand, wtrSupply, wSt));
+    }
+    if (treatPlants.length === 0) {
+      const noSt = sewageProduced > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'None', color: UI_COLORS.STATUS_BAD };
+      wtrStats.push({ icon: '\uD83C\uDFED', name: 'Sewage', coverage: -1, detail: sewageProduced > 0 ? `No sewage plant \u00B7 ${sewageProduced} sewage` : 'No sewage plant', loadPct: -1, status: noSt.label, statusColor: noSt.color });
+    } else {
+      const tSt = sewageUntreated > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
+      wtrStats.push(mkEntry('', '', -1, 'Load', sewageProduced, sewageTotalCap, tSt));
+    }
+    entries.push({ group: 'Water', items: [...wtrFacilities, ...wtrStats] });
 
     // ── Public Safety ──
     const safetyItems: ServiceEntry[] = [];
@@ -134,19 +166,6 @@ export function ServicesPage() {
     }
     entries.push({ group: 'Garbage', items: garbageItems });
 
-    // ── Sewage ──
-    const sewageItems: ServiceEntry[] = [];
-    const sewageProduced = Math.round(state.sewage.getProduced());
-    const sewageUntreated = state.sewage.getUntreated();
-    const sewageCap = state.sewage.getTreatmentCapacity();
-    const sSt = sewageUntreated > 0 ? { label: 'Untreated', color: UI_COLORS.STATUS_WARN } : { label: 'Normal', color: UI_COLORS.STATUS_GOOD };
-    if (sewageCap > 0) {
-      sewageItems.push(mkEntry('\uD83D\uDCA7', 'Sewage', -1, 'Produced', sewageProduced, sewageCap, sSt));
-    } else {
-      sewageItems.push({ icon: '\uD83D\uDCA7', name: 'Sewage', coverage: -1, detail: `${sewageProduced} sewage untreated — build a treatment plant`, loadPct: -1, status: sSt.label, statusColor: sSt.color });
-    }
-    entries.push({ group: 'Sewage', items: sewageItems });
-
     // ── Death Care ──
     const burialItems: ServiceEntry[] = [];
     const cemeteries = state.deathCare.getCemeteries();
@@ -175,7 +194,7 @@ export function ServicesPage() {
     entries.push({ group: 'Death Care', items: burialItems });
 
     // Summary stats
-    const allCoverages = [r.poweredRatio, r.wateredRatio, r.policeRatio, r.fireRatio, r.healthRatio, r.educationRatio, r.garbageRatio, r.deathCareRatio];
+    const allCoverages = [r.poweredRatio, r.wateredRatio, r.sewageRatio, r.policeRatio, r.fireRatio, r.healthRatio, r.educationRatio, r.garbageRatio, r.deathCareRatio];
     const avgCoverage = allCoverages.reduce((s, v) => s + v, 0) / allCoverages.length;
     const gaps = allCoverages.filter(v => v < 0.5).length;
 

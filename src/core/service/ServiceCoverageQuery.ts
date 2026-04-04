@@ -16,6 +16,7 @@ export interface ServiceFlags {
 export interface ServiceRatios {
   poweredRatio: number;
   wateredRatio: number;
+  sewageRatio: number;
   policeRatio: number;
   fireRatio: number;
   garbageRatio: number;
@@ -71,6 +72,7 @@ export function serviceFlagsToScore(f: ServiceFlags): number {
 export function getResidentialServiceRatios(state: GameState): ServiceRatios {
   let powered = 0;
   let watered = 0;
+  let sewage = 0;
   let police = 0;
   let fire = 0;
   let garbage = 0;
@@ -84,6 +86,7 @@ export function getResidentialServiceRatios(state: GameState): ServiceRatios {
       total++;
       if (state.power.isPowered(x, y)) powered++;
       if (state.water.isSupplied(x, y)) watered++;
+      if (state.sewage.isSupplied(x, y)) sewage++;
       if (state.police.getCoverage(x, y)) police++;
       if (state.fire.getCoverage(x, y)) fire++;
       if (state.garbage.getCoverage(x, y)) garbage++;
@@ -96,6 +99,7 @@ export function getResidentialServiceRatios(state: GameState): ServiceRatios {
   return {
     poweredRatio: total > 0 ? powered / total : 0,
     wateredRatio: total > 0 ? watered / total : 0,
+    sewageRatio: total > 0 ? sewage / total : 0,
     policeRatio: total > 0 ? police / total : 0,
     fireRatio: total > 0 ? fire / total : 0,
     garbageRatio: total > 0 ? garbage / total : 0,
