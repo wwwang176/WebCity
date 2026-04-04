@@ -409,9 +409,9 @@ describe('GarbageService', () => {
   it('facility burns garbage each tick', () => {
     const { gs } = createGSWithGrid();
     const fac = gs.getFacilities()[0]! as any;
-    fac.currentLoad = 30;
+    fac.currentLoad = 500;
     gs.tick();
-    expect(fac.currentLoad).toBe(30 - GARBAGE.BURN_RATE);
+    expect(fac.currentLoad).toBe(500 - GARBAGE.BURN_RATE);
   });
 
   // ── Serialization ──
