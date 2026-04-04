@@ -49,8 +49,8 @@ interface DeathCareJSON {
 
 export const DEATH_CARE = {
   MAINTENANCE_PER_FACILITY: 2,
-  DEFAULT_CAPACITY: 100,
-  DEFAULT_PROCESS_RATE: 2,
+  DEFAULT_CAPACITY: 50,
+  DEFAULT_PROCESS_RATE: 1,
   /** Road-cost units a hearse covers per service tick */
   HEARSE_SPEED: 10,
   /** Happiness penalty per body waiting in queue */

@@ -47,8 +47,8 @@ describe('DeathCareService', () => {
     expect(cemeteries).toHaveLength(1);
     expect(cemeteries[0]!.x).toBe(5);
     expect(cemeteries[0]!.y).toBe(10);
-    expect(cemeteries[0]!.capacity).toBe(100);
-    expect(cemeteries[0]!.processRate).toBe(2);
+    expect(cemeteries[0]!.capacity).toBe(50);
+    expect(cemeteries[0]!.processRate).toBe(1);
     expect(cemeteries[0]!.used).toBe(0);
     expect(cemeteries[0]!.inTransit).toBe(0);
   });
