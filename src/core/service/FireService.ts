@@ -3,6 +3,7 @@ import { isZoneBuilding } from '../building/InfraConfig';
 import type { SizedGrid } from '../grid/GridHelpers';
 import { ROAD_COVERAGE } from './RoadCoverageFlood';
 import { RoadCoverageService } from './RoadCoverageService';
+import { distributeLoadToNearest } from './StationLoadDistributor';
 
 export interface FireStation {
   id: string;
@@ -67,29 +68,10 @@ export class FireService extends RoadCoverageService<FireStation> {
     return id;
   }
 
-  /** Assign weighted demand to nearest station (Euclidean). */
+  /** Assign weighted demand to nearest station (Euclidean). Delegated to StationLoadDistributor (DRY). */
   updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
-    this.stationLoad.clear();
-    for (const s of this.facilities) this.stationLoad.set(s.id, 0);
-
-    let total = 0;
-    for (const d of demands) {
-      total += d.weight;
-      let nearestId = '';
-      let nearestDist = Infinity;
-      for (const s of this.facilities) {
-        const dx = d.x - s.x;
-        const dy = d.y - s.y;
-        const dist = dx * dx + dy * dy;
-        if (dist < nearestDist) { nearestDist = dist; nearestId = s.id; }
-      }
-      if (nearestId) {
-        this.stationLoad.set(nearestId, (this.stationLoad.get(nearestId) ?? 0) + d.weight);
-      }
-    }
-
-    const cap = this.facilities.reduce((s, f) => s + f.capacity, 0);
-    this.loadRatio = cap > 0 ? total / cap : (total > 0 ? Infinity : 0);
+    const result = distributeLoadToNearest(this.facilities, demands, this.stationLoad);
+    this.loadRatio = result.loadRatio;
   }
 
   getStationLoad(stationId: string): number {
