@@ -209,8 +209,8 @@ describe('GarbageService', () => {
 
     // Each tick: produce equal bags at near and far, then tick
     for (let t = 0; t < 200; t++) {
-      gs.reportGarbage(3, 1, 50);  // near
-      gs.reportGarbage(25, 1, 50); // far
+      gs.reportGarbage(3, 1, 100);  // near
+      gs.reportGarbage(25, 1, 100); // far
       const beforeNear = gs.getPendingGarbageQueue().filter(b => b.x === 3).length;
       const beforeFar = gs.getPendingGarbageQueue().filter(b => b.x === 25).length;
       gs.tick();
