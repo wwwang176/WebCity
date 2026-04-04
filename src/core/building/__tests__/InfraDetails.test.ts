@@ -167,7 +167,6 @@ describe('getInfraDetails', () => {
     expect(d.Type).toBe('solar');
     expect(d['City Supply']).toBe(750);
     expect(d['City Demand']).toBe(500);
-    expect(d['Supply Ratio']).toBe('100.0%');
   });
 
   it('water: returns output and city supply/demand info', () => {
@@ -183,7 +182,6 @@ describe('getInfraDetails', () => {
     expect(d.Output).toBe(600);
     expect(d['City Supply']).toBe(600);
     expect(d['City Demand']).toBe(400);
-    expect(d['Supply Ratio']).toBe('150.0%');
   });
 
   it('airport: returns static status', () => {

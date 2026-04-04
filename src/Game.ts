@@ -205,6 +205,7 @@ const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
 export interface ServiceStatus {
   power: number;
   water: number;
+  sewage: number;
   police: number;
   fire: number;
   garbage: number;
@@ -2325,6 +2326,7 @@ export class Game {
         services: {
           power: this.state.power.isPowered(x, y) ? 0 : -1,
           water: this.state.water.isSupplied(x, y) ? 0 : -1,
+          sewage: this.state.sewage.isSupplied(x, y) ? 0 : -1,
           police: this.state.police.getCostRatio(x, y),
           fire: this.state.fire.getCostRatio(x, y),
           garbage: this.state.garbage.getCostRatio(x, y),

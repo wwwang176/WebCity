@@ -42,6 +42,7 @@ const TRANSPORT_ICONS: Record<string, string> = {
 const SERVICE_LABELS_ALL: { key: keyof ServiceStatus; label: string }[] = [
   { key: 'power', label: 'Power' },
   { key: 'water', label: 'Water' },
+  { key: 'sewage', label: 'Sewage' },
   { key: 'police', label: 'Police' },
   { key: 'fire', label: 'Fire' },
   { key: 'health', label: 'Health' },
@@ -54,6 +55,7 @@ const SERVICE_LABELS_ALL: { key: keyof ServiceStatus; label: string }[] = [
 const SERVICE_LABELS_NON_RES: { key: keyof ServiceStatus; label: string }[] = [
   { key: 'power', label: 'Power' },
   { key: 'water', label: 'Water' },
+  { key: 'sewage', label: 'Sewage' },
   { key: 'police', label: 'Police' },
   { key: 'fire', label: 'Fire' },
 ];
@@ -182,6 +184,11 @@ function collectWarnings(sel: SelectedZoneBuilding): Warning[] {
     if (over >= 8) warnings.push({ level: 'red', text: 'Tax rate unbearable' });
     else if (over >= 4) warnings.push({ level: 'red', text: 'Tax rate too high' });
     else if (over > 0) warnings.push({ level: 'yellow', text: 'Tax rate slightly high' });
+  }
+
+  // Sewage — no treatment plant covering this building (always show)
+  if (sel.services.sewage < 0) {
+    warnings.push({ level: 'yellow', text: 'No sewage treatment' });
   }
 
   // Garbage load — covered but service overloaded (always show)
