@@ -29,7 +29,7 @@ describe('HealthService', () => {
     expect(id.length).toBeGreaterThan(0);
   });
 
-  it('should add a hospital with default radius=12 and capacity=1200', () => {
+  it('should add a hospital with default radius=12 and capacity=1750', () => {
     const health = new HealthService();
     health.addHospital(10, 10);
     const hospitals = health.getHospitals();
@@ -37,7 +37,7 @@ describe('HealthService', () => {
     expect(hospitals[0]!.x).toBe(10);
     expect(hospitals[0]!.y).toBe(10);
     expect(hospitals[0]!.radius).toBe(12);
-    expect(hospitals[0]!.capacity).toBe(1500);
+    expect(hospitals[0]!.capacity).toBe(1750);
   });
 
   it('should add a hospital with custom radius and capacity', () => {
