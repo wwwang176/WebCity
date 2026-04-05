@@ -33,7 +33,7 @@ export interface SaveMigration {
 }
 
 /** Current save version. Increment when adding a new migration. */
-export const CURRENT_SAVE_VERSION = 4;
+export const CURRENT_SAVE_VERSION = 5;
 
 /** Ordered list of migrations. Must be sorted by version ascending. */
 export const MIGRATIONS: readonly SaveMigration[] = [
@@ -172,6 +172,31 @@ export const MIGRATIONS: readonly SaveMigration[] = [
 
       if (updated > 0) {
         console.log(`[Migration] update_facility_balance_constants: updated ${updated} facility(ies)`);
+      }
+    },
+  },
+  {
+    version: 5,
+    name: 'rebalance_emergency_service_capacities',
+    migrate(state: GameState): void {
+      // Police: 1000 → 2000, Hospital: 1500 → 1750, Fire: 2000 → 2500
+      let updated = 0;
+
+      for (const s of state.police.getStations() as any[]) {
+        s.capacity = POLICE.DEFAULT_CAPACITY;
+        updated++;
+      }
+      for (const h of state.health.getHospitals() as any[]) {
+        h.capacity = HEALTH.DEFAULT_CAPACITY;
+        updated++;
+      }
+      for (const s of state.fire.getStations() as any[]) {
+        s.capacity = FIRE.DEFAULT_CAPACITY;
+        updated++;
+      }
+
+      if (updated > 0) {
+        console.log(`[Migration] rebalance_emergency_service_capacities: updated ${updated} facility(ies)`);
       }
     },
   },
