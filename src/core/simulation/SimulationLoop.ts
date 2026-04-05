@@ -38,7 +38,7 @@ import { EDUCATION_PROGRESSION, MIN_SCHOOL_AGE, type EducationRule, type DeathCo
 import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../transport/ModeChoice';
 import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenSystems, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
-import { citizenHospitalDemand, loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
+import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
