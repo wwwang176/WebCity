@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { CommuteCache, CachedRoute } from '../CommuteCache';
 import type { LaneEdge, ConnectionPoint } from '../LaneGraph';
 
+/** Test helper: store a single-variant route (wraps setRouteVariants for legibility). */
+function setSingleRoute(cache: CommuteCache, routeKey: string, path: LaneEdge[]): void {
+  cache.setRouteVariants(routeKey, [path]);
+}
+
 /** Helper: create a minimal LaneEdge passing through given cells */
 function makeEdge(fromCell: string, toCell: string): LaneEdge {
   const [fx, fy] = fromCell.split(',').map(Number);
@@ -123,7 +128,7 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     const path = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
     const routeKey = '0,0->2,0';
-    cache.setRoute(routeKey, path);
+    setSingleRoute(cache,routeKey, path);
     expect(cache.getByRoute(routeKey)).toEqual(path);
   });
 
@@ -136,7 +141,7 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     const path = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
     const routeKey = '0,0->2,0';
-    cache.setRoute(routeKey, path);
+    setSingleRoute(cache,routeKey, path);
 
     // Invalidate cell "1,0" which is on the route
     cache.invalidateCell('1,0');
@@ -147,7 +152,7 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     const path = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
     const routeKey = '0,0->2,0';
-    cache.setRoute(routeKey, path);
+    setSingleRoute(cache,routeKey, path);
 
     // Invalidate a cell NOT on the route
     cache.invalidateCell('5,5');
@@ -158,8 +163,8 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     const path1 = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
     const path2 = [makeEdge('1,0', '3,0')];
-    cache.setRoute('route1', path1);
-    cache.setRoute('route2', path2);
+    setSingleRoute(cache,'route1', path1);
+    setSingleRoute(cache,'route2', path2);
 
     // Both routes pass through "1,0"
     cache.invalidateCell('1,0');
@@ -168,7 +173,7 @@ describe('CommuteCache', () => {
 
     // Set a new route through "1,0" — should work fine after cleanup
     const path3 = [makeEdge('1,0', '2,0')];
-    cache.setRoute('route3', path3);
+    setSingleRoute(cache,'route3', path3);
     expect(cache.getByRoute('route3')).toEqual(path3);
   });
 
@@ -274,7 +279,7 @@ describe('CommuteCache', () => {
   it('bumpGeneration increments roadGeneration and clears routeIndex', () => {
     const cache = new CommuteCache();
     const path = [makeEdge('0,0', '1,0')];
-    cache.setRoute('0,0->1,0', path);
+    setSingleRoute(cache,'0,0->1,0', path);
     expect(cache.getByRoute('0,0->1,0')).toEqual(path);
     expect(cache.roadGeneration).toBe(0);
 
@@ -312,7 +317,7 @@ describe('CommuteCache', () => {
   it('should increment routeRefCount when setting a ready route', () => {
     const cache = new CommuteCache();
     const morningPath = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
-    cache.setRoute('0,0->2,0', morningPath);
+    setSingleRoute(cache,'0,0->2,0', morningPath);
 
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '2,0',
@@ -327,7 +332,7 @@ describe('CommuteCache', () => {
   it('should accumulate refCount for multiple citizens sharing the same route', () => {
     const cache = new CommuteCache();
     const morningPath = [makeEdge('0,0', '1,0'), makeEdge('1,0', '2,0')];
-    cache.setRoute('0,0->2,0', morningPath);
+    setSingleRoute(cache,'0,0->2,0', morningPath);
 
     for (let i = 1; i <= 5; i++) {
       cache.set(i, {
@@ -344,7 +349,7 @@ describe('CommuteCache', () => {
   it('should decrement routeRefCount when removing a citizen', () => {
     const cache = new CommuteCache();
     const morningPath = [makeEdge('0,0', '1,0')];
-    cache.setRoute('0,0->1,0', morningPath);
+    setSingleRoute(cache,'0,0->1,0', morningPath);
 
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '1,0',
@@ -365,7 +370,7 @@ describe('CommuteCache', () => {
   it('should delete routeRefCount entry when last citizen is removed', () => {
     const cache = new CommuteCache();
     const morningPath = [makeEdge('0,0', '1,0')];
-    cache.setRoute('0,0->1,0', morningPath);
+    setSingleRoute(cache,'0,0->1,0', morningPath);
 
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '1,0',
@@ -382,7 +387,7 @@ describe('CommuteCache', () => {
   it('should clear routeRefCount on bumpGeneration', () => {
     const cache = new CommuteCache();
     const morningPath = [makeEdge('0,0', '1,0')];
-    cache.setRoute('0,0->1,0', morningPath);
+    setSingleRoute(cache,'0,0->1,0', morningPath);
 
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '1,0',
@@ -400,8 +405,8 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     const path1 = [makeEdge('0,0', '1,0')];
     const path2 = [makeEdge('0,0', '3,0')];
-    cache.setRoute('0,0->1,0', path1);
-    cache.setRoute('0,0->3,0', path2);
+    setSingleRoute(cache,'0,0->1,0', path1);
+    setSingleRoute(cache,'0,0->3,0', path2);
 
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '1,0',
@@ -440,8 +445,8 @@ describe('CommuteCache', () => {
     const cache = new CommuteCache();
     const morningPath = [makeEdge('0,0', '1,0')];
     const eveningPath = [makeEdge('1,0', '0,0')];
-    cache.setRoute('0,0->1,0', morningPath);
-    cache.setRoute('1,0->0,0', eveningPath);
+    setSingleRoute(cache,'0,0->1,0', morningPath);
+    setSingleRoute(cache,'1,0->0,0', eveningPath);
 
     cache.set(1, {
       citizenId: 1, homeId: '0,0', workplaceId: '1,0',

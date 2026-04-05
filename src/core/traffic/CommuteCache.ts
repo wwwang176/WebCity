@@ -138,11 +138,6 @@ export class CommuteCache {
     return this.routeIndex.get(routeKey);
   }
 
-  /** @deprecated Use setRouteVariants instead. */
-  setRoute(routeKey: string, path: LaneEdge[]): void {
-    this.setRouteVariants(routeKey, [path]);
-  }
-
   /** Store lane path variants for a shared route. */
   setRouteVariants(routeKey: string, variants: LaneEdge[][]): void {
     this.routeIndex.set(routeKey, variants);
