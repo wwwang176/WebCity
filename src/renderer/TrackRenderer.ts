@@ -387,11 +387,6 @@ export class TrackRenderer {
     }
   }
 
-  /** @deprecated Use setViewMode instead. */
-  setUndergroundMode(enabled: boolean): void {
-    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
-  }
-
   /** All InstancedMeshes with highlight support (for HighlightManager). */
   private _highlightCache: THREE.InstancedMesh[] = [];
   private _highlightDirty = true;

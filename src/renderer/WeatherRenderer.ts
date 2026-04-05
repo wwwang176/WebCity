@@ -96,11 +96,6 @@ export class WeatherRenderer {
     if (this.seasonOverlay) this.seasonOverlay.visible = !hidden;
   }
 
-  /** @deprecated Use setViewMode instead. */
-  setUndergroundMode(enabled: boolean): void {
-    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
-  }
-
   // ── Day/Night Cycle ──────────────────────────────────────────
 
   private updateDayNightCycle(): void {

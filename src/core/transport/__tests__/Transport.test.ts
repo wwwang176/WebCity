@@ -966,12 +966,6 @@ describe('Airport consolidated config', () => {
 // T6.1 Rail FREIGHT connection to FreightSystem
 // ---------------------------------------------------------------------------
 describe('Rail FREIGHT → FreightSystem', () => {
-  it('should accept external cargo via addExternalCargo without error', () => {
-    const freight = new FreightSystem();
-    freight.addExternalCargo(100);
-    // External cargo is accumulated and consumed in next calculateSupply call
-  });
-
   it('FREIGHT rail line trains contribute cargo throughput', () => {
     const rail = new RailSystem();
     const st1 = rail.buildStation(0, 0);

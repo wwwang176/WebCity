@@ -276,9 +276,6 @@ export class FreightSystem {
     return Math.min(1, effectiveSurplus / consumption);
   }
 
-  /** @deprecated Use tradeCapacity parameter in calculateSupply instead. */
-  addExternalCargo(_amount: number): void {}
-
   getLastDemand(): FreightDemand { return this.lastDemand; }
   getLastTrade(): TradeResult { return this.lastTrade; }
 

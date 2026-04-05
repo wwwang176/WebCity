@@ -392,11 +392,6 @@ export class VehicleRenderer {
     if (this.taillightMesh) this.taillightMesh.visible = showLights;
   }
 
-  /** @deprecated Use setViewMode instead. */
-  setUndergroundMode(enabled: boolean): void {
-    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
-  }
-
   dispose(scene: THREE.Scene): void {
     for (const mesh of this.meshes.values()) {
       scene.remove(mesh);

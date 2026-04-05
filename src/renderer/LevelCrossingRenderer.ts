@@ -218,11 +218,6 @@ export class LevelCrossingRenderer {
     this.group.visible = VIEW_MODE_OPACITY[mode].levelCrossing > 0;
   }
 
-  /** @deprecated Use setViewMode instead. */
-  setUndergroundMode(enabled: boolean): void {
-    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
-  }
-
   dispose(scene: THREE.Scene): void {
     if (this.group) {
       scene.remove(this.group);

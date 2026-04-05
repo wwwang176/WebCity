@@ -175,11 +175,6 @@ export class TerrainRenderer {
     }
   }
 
-  /** @deprecated Use setViewMode instead. */
-  setUndergroundMode(enabled: boolean): void {
-    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
-  }
-
   dispose(scene: THREE.Scene): void {
     if (this.mesh) {
       scene.remove(this.mesh);

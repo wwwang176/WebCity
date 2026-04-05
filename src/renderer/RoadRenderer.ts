@@ -583,11 +583,6 @@ export class RoadRenderer {
     }
   }
 
-  /** @deprecated Use setViewMode instead. */
-  setUndergroundMode(enabled: boolean): void {
-    this.setViewMode(enabled ? ViewMode.UNDERGROUND : ViewMode.NORMAL);
-  }
-
   // ─── Highlight support ─────────────────────────────────────────
 
   private _highlightCache: THREE.InstancedMesh[] = [];

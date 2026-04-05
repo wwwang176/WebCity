@@ -5,12 +5,6 @@ import { RoadType } from '../road/types';
 import { getBuildingType } from '../building/types';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
-/** @deprecated Use ShoppingAccess.setRoadLookup() instead. */
-export function setShoppingRoadLookup(lookup: UnifiedRoadLookup): void {
-  // Backward compat — callers should migrate to instance method.
-  // This no-ops since ShoppingAccess now holds its own reference.
-}
-
 export interface ResidentialShoppingStatus {
   /** 0~1: ratio of commercial capacity vs residential population in the connected road network. */
   ratio: number;
