@@ -26,12 +26,17 @@ export interface Cemetery {
   deathDailyIndex: number;
 }
 
+/** Current save schema — what toJSON() produces. */
 interface DeathCareJSON {
   cemeteries: Cemetery[];
   pendingDeathQueue?: PendingDeath[];
-  /** @deprecated Legacy field — converted to pendingDeathQueue on load */
-  pendingDeaths?: number;
 }
+
+/** fromJSON() input: current schema plus any legacy fields from older save versions. */
+type DeathCareJSONInput = DeathCareJSON & {
+  /** v0/v1 legacy: scalar death count, migrated to pendingDeathQueue on load. */
+  pendingDeaths?: number;
+};
 
 export const DEATH_CARE = {
   MAINTENANCE_PER_FACILITY: 2,
@@ -193,7 +198,7 @@ export class DeathCareService extends GlobalCoverageService<Cemetery> {
     };
   }
 
-  static fromJSON(json: DeathCareJSON): DeathCareService {
+  static fromJSON(json: DeathCareJSONInput): DeathCareService {
     const service = new DeathCareService();
     service.facilities = (json.cemeteries || []).map((c: any) => ({
       ...c,

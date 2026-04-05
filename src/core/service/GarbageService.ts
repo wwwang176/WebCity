@@ -68,15 +68,22 @@ export const GARBAGE = {
   DECOMPOSE_TICKS: 600,
 } as const;
 
+/** Current save schema — what toJSON() produces. */
 interface GarbageJSON {
   facilities: GarbageFacility[];
   pendingBags?: PendingGarbage[];
   garbageAccumulators?: Record<string, number>;
-  /** @deprecated Legacy formats */
-  truckTrips?: any[];
-  pendingGarbageQueue?: any[];
-  overflow?: number;
 }
+
+/** fromJSON() input: current schema plus any legacy fields from older save versions. */
+type GarbageJSONInput = GarbageJSON & {
+  /** v2 legacy: bags held on trucks in transit, migrated to pendingBags on load. */
+  truckTrips?: any[];
+  /** v1 legacy: queue entries shape, migrated to pendingBags on load. */
+  pendingGarbageQueue?: any[];
+  /** v0 legacy: scalar overflow count, migrated to pendingBags on load. */
+  overflow?: number;
+};
 
 export class GarbageService extends GlobalCoverageService<GarbageFacility> {
   protected readonly coverageBudget = GARBAGE.SERVICE_BUDGET;
@@ -292,7 +299,7 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
     };
   }
 
-  static fromJSON(data: GarbageJSON): GarbageService {
+  static fromJSON(data: GarbageJSONInput): GarbageService {
     const gs = new GarbageService();
     gs.facilities = (data.facilities || []).map((f: any) => ({
       ...f,
