@@ -26,16 +26,7 @@ interface GridLike {
   forEachCell(callback: (cell: { buildingId: number; zoneType: number; roadType: number; trafficDensity: number }, x: number, y: number) => void): void;
 }
 
-/** Collect pollution sources from grid cells (industrial buildings + road traffic noise). */
-export function getGridPollutionSources(grid: GridLike): PollutionSource[] {
-  const sources: PollutionSource[] = [];
-  forEachGridPollutionSource(grid, (src) => {
-    sources.push(src);
-  });
-  return sources;
-}
-
-/** Visit grid pollution sources without allocating an intermediate array. */
+/** Visit grid pollution sources (industrial buildings + road traffic noise) without allocating an intermediate array. */
 export function forEachGridPollutionSource(
   grid: GridLike,
   emit: (source: PollutionSource) => void,
