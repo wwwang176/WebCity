@@ -76,28 +76,3 @@ export function produceGarbageAndSewage(
   return { sewage: Math.floor(sewage) };
 }
 
-/**
- * @deprecated Use produceGarbageAndSewage instead. Kept for backward compat with tests.
- */
-export function calculateGarbageSewageProduction(
-  forEachCell: (fn: (cell: CellLike, x: number, y: number) => void) => void,
-): { garbage: number; sewage: number } {
-  let garbage = 0;
-  let sewage = 0;
-
-  forEachCell((cell) => {
-    if (cell.buildingId <= 0) return;
-    const bt = getBuildingType(cell.buildingId);
-    if (!bt) return;
-
-    const zt = cell.zoneType as ZoneType;
-
-    garbage += calculateZoneDemand(GARBAGE_PRODUCTION, zt, bt.residents, bt.workers);
-
-    const waterDemand = calculateZoneDemand(WATER_CONSUMPTION, zt, bt.residents, bt.workers);
-    const sewageRate = SEWAGE_ZONE_RATE[cell.zoneType] ?? 0;
-    sewage += waterDemand * sewageRate;
-  });
-
-  return { garbage: Math.floor(garbage), sewage: Math.floor(sewage) };
-}
