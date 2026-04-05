@@ -42,7 +42,7 @@ import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../ser
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findAdjacentRoad } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findAdjacentRoad, type ReadableGrid } from '../grid/GridHelpers';
 import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios, getCellServiceCostScore } from '../service/ServiceCoverageQuery';
@@ -1086,6 +1086,7 @@ export class SimulationLoop {
       const distMap = roadDistanceToTargets(
         this.state.grid, homePos, targetSet,
         DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+        this._roadLookup,
       );
       reachable.set(homeId, new Set(distMap.keys()));
     }
@@ -1121,13 +1122,16 @@ export class SimulationLoop {
     const citizens = this.state.citizens.getCitizens();
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
 
-    // Use cache-based distance lookup when ready (O(1) per lookup, no Dijkstra)
+    // Use cache-based distance lookup when ready (O(1) per lookup, no Dijkstra).
+    // Otherwise provide a closure that captures this._roadLookup for level-aware Dijkstra.
+    const roadLookup = this._roadLookup;
     const distanceLookup = (this.wpDistCache?.isReady)
       ? (_grid: any, homePos: { x: number; y: number }, targets: Set<string>, _budget: number) => {
           const homeKey = toPosKey(homePos.x, homePos.y);
           return this.wpDistCache!.getDistancesFromHome(homeKey, targets);
         }
-      : undefined;
+      : (grid: ReadableGrid, homePos: { x: number; y: number }, targets: Set<string>, budget: number) =>
+          roadDistanceToTargets(grid, homePos, targets, budget, roadLookup);
 
     const { relocatedIds } = jobRelocationTick(
       citizens,
@@ -1303,6 +1307,7 @@ export class SimulationLoop {
         const distMap = roadDistanceToTargets(
           grid, home, new Set([citizen.workplaceId]),
           DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+          this._roadLookup,
         );
         reachable = distMap.has(citizen.workplaceId);
         reachCache.set(key, reachable);

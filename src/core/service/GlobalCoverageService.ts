@@ -14,6 +14,7 @@ import { roadFlood, expandCoverageToBuildings, expandFootprint } from './RoadCov
 import { RoadCoverageService, type Facility } from './RoadCoverageService';
 import { toPosKey } from '../grid/GridHelpers';
 import type { SizedGrid } from '../grid/GridHelpers';
+import type { UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
 /** Minimal pending item: location + age. */
 export interface PendingItem {
@@ -34,6 +35,13 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
   protected facilityDistanceMaps = new Map<string, Map<string, number>>();
   /** Merged min-distance map across all facilities */
   protected mergedDistanceMap = new Map<string, number>();
+  /** Injected road lookup for level-aware Dijkstra (DIP). */
+  protected roadLookup: UnifiedRoadLookup | null = null;
+
+  /** Set the road lookup for level-aware flood fill. Call after construction. */
+  setRoadLookup(lookup: UnifiedRoadLookup): void {
+    this.roadLookup = lookup;
+  }
 
   // ── Coverage (global, per-facility BFS) ───────────────────────────
 
@@ -53,7 +61,7 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
     for (const fac of active) {
       if (!this.connectedFacilityIds.has(fac.id)) continue;
       const positions = expandFootprint(fac.x, fac.y, this.defaultFacilityWidth, this.defaultFacilityHeight);
-      const roadCov = roadFlood(grid, positions, Infinity);
+      const roadCov = roadFlood(grid, positions, Infinity, this.roadLookup);
       const fullCov = expandCoverageToBuildings(grid, roadCov);
       this.facilityDistanceMaps.set(fac.id, fullCov);
 
@@ -87,7 +95,7 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
     facilityHeight = this.defaultFacilityHeight,
   ): Map<string, number> {
     const positions = expandFootprint(position.x, position.y, facilityWidth, facilityHeight);
-    const roadCov = roadFlood(grid, positions, Infinity);
+    const roadCov = roadFlood(grid, positions, Infinity, this.roadLookup);
     return expandCoverageToBuildings(grid, roadCov);
   }
 

@@ -82,7 +82,6 @@ import { TrainAnimator } from './renderer/TrainAnimator';
 import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath, validateElevatedPath } from './core/elevation';
 import { setNetworkRoadLookup } from './core/service/NetworkCoverage';
-import { setRoadCoverageRoadLookup } from './core/service/RoadCoverageFlood';
 import { UnifiedRoadLookup } from './core/road/UnifiedRoadLookup';
 
 export type PlacementMode = 'ground' | 'elevated';
@@ -532,11 +531,12 @@ export class Game {
     this.roadLookup = new UnifiedRoadLookup(this.state.grid, this.elevationManager);
     this.simLoop.setRoadLookup(this.roadLookup);
     setNetworkRoadLookup(this.roadLookup); // deprecated: backward compat
-    setRoadCoverageRoadLookup(this.roadLookup);
     this.state.shopping.setRoadLookup(this.roadLookup);
     this.state.power.setRoadLookup(this.roadLookup);
     this.state.water.setRoadLookup(this.roadLookup);
     this.state.sewage.setRoadLookup(this.roadLookup);
+    this.state.garbage.setRoadLookup(this.roadLookup);
+    this.state.deathCare.setRoadLookup(this.roadLookup);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
     this.zoneManager = new ZoneManager(this.state.grid);

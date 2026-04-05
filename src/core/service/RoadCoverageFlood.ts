@@ -14,19 +14,6 @@ import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
 import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
-/** @deprecated Use roadLookup parameter injection instead. */
-let _roadLookup: UnifiedRoadLookup | null = null;
-
-/** @deprecated Use roadLookup parameter on roadFlood/roadDistanceToTargets instead. */
-export function setRoadCoverageRoadLookup(lookup: UnifiedRoadLookup): void {
-  _roadLookup = lookup;
-}
-
-/** Resolve roadLookup: prefer explicit parameter, fall back to module-level. */
-function resolveRL(explicit?: UnifiedRoadLookup | null): UnifiedRoadLookup | null {
-  return explicit !== undefined ? explicit : _roadLookup;
-}
-
 /** Service coverage budget constants */
 export const ROAD_COVERAGE = {
   BASE_COST: 100,
@@ -111,7 +98,7 @@ export function roadFlood(
   budget: number,
   roadLookup?: UnifiedRoadLookup | null,
 ): Map<string, number> {
-  const rl = resolveRL(roadLookup);
+  const rl = roadLookup ?? null;
   // Internal costs tracked by cell key (with level)
   const cellCosts = new Map<string, number>();
   // Output costs by position key (min cost across all levels)
@@ -411,7 +398,7 @@ export function roadDistanceToTargets(
   maxBudget: number,
   roadLookup?: UnifiedRoadLookup | null,
 ): Map<string, number> {
-  const rl = resolveRL(roadLookup);
+  const rl = roadLookup ?? null;
   const result = new Map<string, number>();
   if (targets.size === 0) return result;
 
