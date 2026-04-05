@@ -213,6 +213,44 @@ describe('findLanePathVariants (A* single-phase) zigzag prevention', () => {
     }
   });
 
+  it('finds a driving path for an inner-ring home (2 tiles back from road)', () => {
+    // Straight east-west road at y=5, length 10. Home at (3, 3) sits 2 tiles
+    // north of the road (inner ring). Workplace at (8, 3) also inner-ring.
+    const cells = new Map<string, { roadType: RoadType; roadFlags: number }>();
+    const allKeys: string[] = [];
+    const length = 10;
+    for (let x = 0; x < length; x++) {
+      let flags = 0;
+      if (x > 0) flags |= RoadDirection.WEST;
+      if (x < length - 1) flags |= RoadDirection.EAST;
+      cells.set(`${x},5`, { roadType: RoadType.TWO_LANE, roadFlags: flags });
+      allKeys.push(`${x},5`);
+    }
+    const lookup = buildLookupFromCells(cells, length, 8);
+    const graph = new LaneGraph();
+    graph.buildFromGrid(lookup, allKeys);
+
+    // Adjacent-to-adjacent (baseline sanity check)
+    const adj = findLanePathVariants(graph, lookup, { x: 3, y: 4 }, { x: 8, y: 4 });
+    expect(adj.length).toBeGreaterThan(0);
+
+    // Inner-ring home → adjacent workplace
+    const innerToAdj = findLanePathVariants(graph, lookup, { x: 3, y: 3 }, { x: 8, y: 4 });
+    expect(innerToAdj.length).toBeGreaterThan(0);
+
+    // Adjacent home → inner-ring workplace
+    const adjToInner = findLanePathVariants(graph, lookup, { x: 3, y: 4 }, { x: 8, y: 3 });
+    expect(adjToInner.length).toBeGreaterThan(0);
+
+    // Inner-ring to inner-ring
+    const innerToInner = findLanePathVariants(graph, lookup, { x: 3, y: 3 }, { x: 8, y: 3 });
+    expect(innerToInner.length).toBeGreaterThan(0);
+
+    // But 3 tiles away from road (beyond ZONE_ROAD_REACH) must fail
+    const outOfReach = findLanePathVariants(graph, lookup, { x: 3, y: 2 }, { x: 8, y: 4 });
+    expect(outOfReach.length).toBe(0);
+  });
+
   it('should NOT zigzag on alternating straight-intersection pattern', () => {
     // Build: straight → cross → straight → cross → straight (4-lane)
     const cells = new Map<string, { roadType: RoadType; roadFlags: number }>();
