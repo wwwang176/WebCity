@@ -73,6 +73,42 @@ describe('InfraPlacement', () => {
       expect(result.ok).toBe(true);
     });
 
+    it('civic: police may sit one empty tile back from a road (roadReach=2)', () => {
+      const grid = makeGrid();
+      // 2x2 police at (5,5)-(6,6); road at (3,5) — one empty column at x=4
+      grid.setCell(3, 5, { roadType: 1 });
+      const result = canPlaceInfra(grid, 5, 5, 'police', 0);
+      expect(result.ok).toBe(true);
+    });
+
+    it('civic: hospital may sit one empty tile back from a road (roadReach=2)', () => {
+      const grid = makeGrid();
+      // 2x3 hospital at (5,5); road at (5,3) — one empty row at y=4
+      grid.setCell(5, 3, { roadType: 1 });
+      const result = canPlaceInfra(grid, 5, 5, 'hospital', 0);
+      expect(result.ok).toBe(true);
+    });
+
+    it('civic: rejects if the nearest road is 2+ empty tiles away', () => {
+      const grid = makeGrid();
+      // Road at (2,5); 2x2 police at (5,5) — 2 empty columns (x=3,4)
+      grid.setCell(2, 5, { roadType: 1 });
+      expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'NOT_ADJACENT_TO_ROAD');
+    });
+
+    it('utility: power plant rejects if only 1 tile gap (roadReach=1, strict adjacency)', () => {
+      const grid = makeGrid();
+      // Road at (3,5); 2x2 power at (5,5) — one empty column at x=4 — valid for civic, invalid for utility
+      grid.setCell(3, 5, { roadType: 1 });
+      expectFail(canPlaceInfra(grid, 5, 5, 'power', 0), 'NOT_ADJACENT_TO_ROAD');
+    });
+
+    it('utility: landfill rejects if only 1 tile gap (roadReach=1)', () => {
+      const grid = makeGrid();
+      grid.setCell(3, 5, { roadType: 1 });
+      expectFail(canPlaceInfra(grid, 5, 5, 'garbage', 0), 'NOT_ADJACENT_TO_ROAD');
+    });
+
     it('should reject if any tile is out of bounds', () => {
       const grid = makeGrid();
       expectFail(canPlaceInfra(grid, 19, 19, 'police', 0), 'OUT_OF_BOUNDS');

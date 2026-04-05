@@ -25,6 +25,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   protected readonly defaultFacilityHeight = 2;
   protected readonly idPrefix = 'police_';
   protected readonly maintenanceCostPerFacility = POLICE.MAINTENANCE_PER_STATION;
+  protected override readonly roadReach = 2 as const;
 
   private readonly stationLoad = new Map<string, number>();
   private loadRatio = 0;

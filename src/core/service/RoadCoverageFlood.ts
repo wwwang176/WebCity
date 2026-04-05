@@ -11,6 +11,7 @@
 import { ROAD_CONFIGS, RoadType } from '../road/types';
 import { FOUR_NEIGHBORS, toPosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
 import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
+import { ZONE_ROAD_REACH } from '../grid/constants';
 import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
@@ -97,6 +98,13 @@ export function roadFlood(
   facilityPositions: { x: number; y: number }[],
   budget: number,
   roadLookup?: UnifiedRoadLookup | null,
+  /**
+   * Chebyshev radius around each facility cell to scan for seed road tiles.
+   * 1 = 4-neighbor orthogonal ring (default, matches utility/strict adjacency).
+   * 2 = allows civic services sitting one empty tile back from a road to still
+   * seed the flood from nearby road cells.
+   */
+  seedReach: number = 1,
 ): Map<string, number> {
   const rl = roadLookup ?? null;
   // Internal costs tracked by cell key (with level)
@@ -105,11 +113,13 @@ export function roadFlood(
   const posCosts = new Map<string, number>();
   const pq = new MinHeap();
 
-  // Seed: find road cells at or adjacent to each facility cell (all levels)
+  // Seed: find road cells at or within seedReach of each facility cell (all levels).
   for (const pos of facilityPositions) {
-    const seedPositions = [{ x: pos.x, y: pos.y }];
-    for (const [dx, dy] of FOUR_NEIGHBORS) {
-      seedPositions.push({ x: pos.x + dx!, y: pos.y + dy! });
+    const seedPositions: { x: number; y: number }[] = [];
+    for (let dy = -seedReach; dy <= seedReach; dy++) {
+      for (let dx = -seedReach; dx <= seedReach; dx++) {
+        seedPositions.push({ x: pos.x + dx, y: pos.y + dy });
+      }
     }
     for (const sp of seedPositions) {
       if (rl) {
@@ -200,27 +210,38 @@ export function roadFlood(
 }
 
 /**
- * Expand road coverage to include non-road cells adjacent to covered road cells.
- * This makes buildings next to covered roads also "covered".
+ * Expand road coverage to include non-road cells within Chebyshev distance
+ * `reach` of any covered road cell. This makes buildings near covered roads
+ * also "covered", with each building inheriting the minimum cost among all
+ * in-range road cells (so the nearest/cheapest station wins).
+ *
+ * reach defaults to ZONE_ROAD_REACH (=2) so buildings in the one-tile inner
+ * ring — allowed by zone placement — are actually reachable by service coverage
+ * and citizen commute pathfinding. Passing 1 recovers the legacy 4-neighbor
+ * behaviour for edge cases / tests.
  */
 export function expandCoverageToBuildings(
   grid: ReadableGrid,
   roadCoverage: Map<string, number>,
+  reach: number = ZONE_ROAD_REACH,
 ): Map<string, number> {
   const result = new Map(roadCoverage);
 
   for (const [key, cost] of roadCoverage) {
     const { x, y } = parsePosKeyUnsafe(key);
-    for (const [dx, dy] of FOUR_NEIGHBORS) {
-      const nx = x + dx!;
-      const ny = y + dy!;
-      const cell = grid.getCell(nx, ny);
-      if (!cell) continue;
-      if (cell.roadType !== RoadType.NONE) continue; // already a road cell
-      const nk = toPosKey(nx, ny);
-      const existing = result.get(nk);
-      if (existing === undefined || cost < existing) {
-        result.set(nk, cost);
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        const cell = grid.getCell(nx, ny);
+        if (!cell) continue;
+        if (cell.roadType !== RoadType.NONE) continue; // skip other road cells
+        const nk = toPosKey(nx, ny);
+        const existing = result.get(nk);
+        if (existing === undefined || cost < existing) {
+          result.set(nk, cost);
+        }
       }
     }
   }
@@ -253,6 +274,17 @@ export class RoadCoverageMap {
     }
   }
 
+  /**
+   * Chebyshev seed reach around each facility cell when looking for road tiles
+   * to start the coverage flood from. Civic services with roadReach=2 set this
+   * to 2 so facilities placed one empty tile back from a road still seed the flood.
+   */
+  private seedReach = 1;
+
+  setSeedReach(reach: number): void {
+    this.seedReach = reach;
+  }
+
   /** Recalculate coverage from all facilities. Call when facilities or roads change.
    *  @param getSize Optional per-facility size resolver (for rotation-aware footprints).
    */
@@ -271,7 +303,7 @@ export class RoadCoverageMap {
     for (const f of facilities) {
       const size = getSize ? getSize(f) : { w: facilityWidth, h: facilityHeight };
       const positions = expandFootprint(f.x, f.y, size.w, size.h);
-      const roadCov = roadFlood(grid, positions, budget, this.roadLookup);
+      const roadCov = roadFlood(grid, positions, budget, this.roadLookup, this.seedReach);
       const fullCov = expandCoverageToBuildings(grid, roadCov);
       this.main!.applyFlood(fullCov, budget);
     }
@@ -286,7 +318,7 @@ export class RoadCoverageMap {
     facilityHeight = 1,
   ): Map<string, number> {
     const positions = expandFootprint(position.x, position.y, facilityWidth, facilityHeight);
-    const roadCov = roadFlood(grid, positions, budget, this.roadLookup);
+    const roadCov = roadFlood(grid, positions, budget, this.roadLookup, this.seedReach);
     return expandCoverageToBuildings(grid, roadCov);
   }
 
@@ -323,7 +355,7 @@ export class RoadCoverageMap {
   ): void {
     this.ensureArrays(grid.width, grid.height);
     const positions = expandFootprint(position.x, position.y, facilityWidth, facilityHeight);
-    const roadCov = roadFlood(grid, positions, budget, this.roadLookup);
+    const roadCov = roadFlood(grid, positions, budget, this.roadLookup, this.seedReach);
     const fullCov = expandCoverageToBuildings(grid, roadCov);
     this.previewArr!.applyMerged(fullCov, this.main!, budget);
   }
@@ -387,8 +419,12 @@ export class RoadCoverageMap {
  * Single-source Dijkstra from home along the road network.
  * Level-aware: uses UnifiedRoadLookup for compatible neighbor discovery.
  * Returns the road cost to reach each target position.
- * Targets (buildings) may not be on road cells — they are discovered
- * when a Dijkstra-expanded road cell has a target as a 4-neighbor.
+ *
+ * Targets (buildings) may not be on road cells — they are discovered when a
+ * Dijkstra-expanded road cell has the target within Chebyshev distance
+ * ZONE_ROAD_REACH (=2). This matches the zone placement reach so buildings in
+ * the inner ring are reachable as commute targets.
+ *
  * Stops when all targets are found or maxBudget is exceeded.
  */
 export function roadDistanceToTargets(
@@ -407,23 +443,31 @@ export function roadDistanceToTargets(
   const pq = new MinHeap();
   let foundCount = 0;
 
-  // Helper: check 4-neighbors of a road cell for targets (by position)
+  // Helper: check Chebyshev(ZONE_ROAD_REACH) neighbors of a road cell for
+  // target buildings (picks up both directly-adjacent and inner-ring targets).
   const checkNeighborsForTargets = (x: number, y: number, cost: number): void => {
-    for (const [dx, dy] of FOUR_NEIGHBORS) {
-      const nx = x + dx!;
-      const ny = y + dy!;
-      const nk = toPosKey(nx, ny);
-      if (targets.has(nk) && !result.has(nk)) {
-        result.set(nk, cost);
-        foundCount++;
+    for (let dy = -ZONE_ROAD_REACH; dy <= ZONE_ROAD_REACH; dy++) {
+      for (let dx = -ZONE_ROAD_REACH; dx <= ZONE_ROAD_REACH; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx;
+        const ny = y + dy;
+        const nk = toPosKey(nx, ny);
+        if (targets.has(nk) && !result.has(nk)) {
+          result.set(nk, cost);
+          foundCount++;
+        }
       }
     }
   };
 
-  // Seed: home itself + adjacent road cells (cost 0, all levels)
-  const seedPositions = [{ x: home.x, y: home.y }];
-  for (const [dx, dy] of FOUR_NEIGHBORS) {
-    seedPositions.push({ x: home.x + dx!, y: home.y + dy! });
+  // Seed: home itself + every cell within Chebyshev(ZONE_ROAD_REACH) of home.
+  // A home in the inner ring sits up to ZONE_ROAD_REACH tiles away from a road,
+  // so we must scan that far to find the seed road cells.
+  const seedPositions: { x: number; y: number }[] = [];
+  for (let dy = -ZONE_ROAD_REACH; dy <= ZONE_ROAD_REACH; dy++) {
+    for (let dx = -ZONE_ROAD_REACH; dx <= ZONE_ROAD_REACH; dx++) {
+      seedPositions.push({ x: home.x + dx, y: home.y + dy });
+    }
   }
 
   for (const sp of seedPositions) {

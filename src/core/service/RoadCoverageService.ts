@@ -1,4 +1,4 @@
-import { isFootprintAdjacentToRoad, type SizedGrid } from '../grid/GridHelpers';
+import { isFootprintAdjacentToRoad, isFootprintNearRoad, type SizedGrid } from '../grid/GridHelpers';
 import { RoadCoverageMap } from './RoadCoverageFlood';
 import type { ServiceFacilityProvider } from '../traffic/ServiceVehicleManager';
 import { removeById } from '../utils/removeById';
@@ -35,6 +35,13 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
   protected abstract readonly idPrefix: string;
   /** Maintenance cost per facility (used by default getMaintenanceCost). */
   protected abstract readonly maintenanceCostPerFacility: number;
+  /**
+   * Chebyshev distance within which a road must exist for a facility to count
+   * as connected. Default 1 = strictly orthogonally adjacent. Civic subclasses
+   * (police/fire/hospital/schools/cemetery) override to 2 so they may sit one
+   * empty tile away from a road — matching their InfraConfig.roadReach.
+   */
+  protected readonly roadReach: 1 | 2 = 1;
 
   /** Generate a unique ID for a new facility. */
   protected generateId(): string {
@@ -83,22 +90,29 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
       const swapped = rotation === 90 || rotation === 270;
       return { w: swapped ? baseH : baseW, h: swapped ? baseW : baseH };
     };
+    // Civic services (roadReach=2) need a wider seed ring so a facility sitting
+    // one empty tile back from a road can still start the coverage flood.
+    this.coverage.setSeedReach(this.roadReach);
     this.coverage.recalculate(active, grid, this.coverageBudget, baseW, baseH, getSize);
     this.updateConnectedFacilities(grid);
   }
 
-  /** Recompute which facilities are adjacent to at least one road cell. */
+  /** Recompute which facilities are within road reach of at least one road cell. */
   protected updateConnectedFacilities(grid: SizedGrid): void {
     this.connectedFacilityIds.clear();
     const baseW = this.defaultFacilityWidth;
     const baseH = this.defaultFacilityHeight;
+    const reach = this.roadReach;
     for (const f of this.facilities) {
       const cell = grid.getCell(f.x, f.y);
       const rotation = cell?.reserved !== undefined ? (RESERVED_TO_ROTATION[cell.reserved] ?? 0) : 0;
       const swapped = rotation === 90 || rotation === 270;
       const w = swapped ? baseH : baseW;
       const h = swapped ? baseW : baseH;
-      if (isFootprintAdjacentToRoad(grid, f.x, f.y, w, h)) {
+      const connected = reach >= 2
+        ? isFootprintNearRoad(grid, f.x, f.y, w, h, reach)
+        : isFootprintAdjacentToRoad(grid, f.x, f.y, w, h);
+      if (connected) {
         this.connectedFacilityIds.add(f.id);
       }
     }
@@ -115,6 +129,7 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     facilityWidth = this.defaultFacilityWidth,
     facilityHeight = this.defaultFacilityHeight,
   ): Map<string, number> {
+    this.coverage.setSeedReach(this.roadReach);
     return this.coverage.previewMerged(position, grid, this.coverageBudget, facilityWidth, facilityHeight);
   }
 

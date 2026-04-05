@@ -1,7 +1,8 @@
 import { Grid } from '../grid/Grid';
 import { ZoneType, zoneToRCI } from '../grid/types';
 import { RailType } from '../rail/types';
-import { isAdjacentToRoad } from '../grid/GridHelpers';
+import { isNearRoad } from '../grid/GridHelpers';
+import { ZONE_ROAD_REACH } from '../grid/constants';
 import { getMaxDensity } from '../zone/DensityRules';
 import { getBuildingsForZone } from './types';
 import { randomElement } from '../utils/random';
@@ -32,8 +33,8 @@ export class BuildingGrowth {
     if (cell.buildingId !== 0) return false;
     if (cell.railType !== RailType.NONE) return false;
 
-    // Must have road connection
-    if (!isAdjacentToRoad(this.grid, x, y)) return false;
+    // Must have road connection (Chebyshev reach matches ZoneManager)
+    if (!isNearRoad(this.grid, x, y, ZONE_ROAD_REACH)) return false;
 
     // Must have power and water
     if (!conditions.hasPower) return false;

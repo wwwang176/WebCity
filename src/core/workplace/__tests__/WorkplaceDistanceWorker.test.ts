@@ -91,6 +91,47 @@ describe('reverseFloodFromWorkplace', () => {
     expect(result['5,0']).toBeUndefined();
     expect(result['6,0']).toBeUndefined();
   });
+
+  it('workplace sitting 2 tiles from road (inner ring) still seeds the flood', () => {
+    // Road at y=5 from x=0..9. Workplace at (3, 3) — 2 tiles above the road.
+    const roads = new Map<string, RoadType>();
+    for (let x = 0; x < 10; x++) roads.set(`${x},5`, RoadType.TWO_LANE);
+    const buf = makeGridBuffer(10, 10, roads);
+    const view = new DataView(buf);
+
+    const result = reverseFloodFromWorkplace(view, 10, 10, { pos: '3,3', x: 3, y: 3 }, 1000);
+
+    // Seeding should reach road cells within Chebyshev 2 of (3,3).
+    // Road cells at y=5 with x in [1..5] are within Chebyshev 2.
+    expect(result['1,5']).toBeDefined();
+    expect(result['3,5']).toBeDefined();
+    expect(result['5,5']).toBeDefined();
+    // Flood should then propagate along the road to the other cells.
+    expect(result['9,5']).toBeDefined();
+  });
+
+  it('result expansion picks up non-road buildings in the inner ring', () => {
+    // Road at (5,5). A home building at (3,3) sits at Chebyshev 2 from the road
+    // (max(|3-5|, |3-5|) = 2). It must appear in the result.
+    const roads = new Map<string, RoadType>([['5,5', RoadType.TWO_LANE]]);
+    const buf = makeGridBuffer(10, 10, roads);
+    const view = new DataView(buf);
+
+    const result = reverseFloodFromWorkplace(view, 10, 10, { pos: '5,5', x: 5, y: 5 }, 60);
+
+    expect(result['5,5']).toBe(0);
+    // 4-neighbour (legacy reach=1) cells
+    expect(result['4,5']).toBeDefined();
+    expect(result['5,4']).toBeDefined();
+    // Diagonal (new — Chebyshev 1)
+    expect(result['4,4']).toBeDefined();
+    // Inner ring (Chebyshev 2)
+    expect(result['3,3']).toBeDefined();
+    expect(result['7,7']).toBeDefined();
+    // Outside reach (Chebyshev 3) — NOT included
+    expect(result['2,2']).toBeUndefined();
+    expect(result['8,8']).toBeUndefined();
+  });
 });
 
 describe('computeAllDistances', () => {

@@ -68,6 +68,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
   protected readonly defaultFacilityHeight = 3;
   protected readonly idPrefix = 'hospital_';
   protected readonly maintenanceCostPerFacility = HEALTH.MAINTENANCE_PER_HOSPITAL;
+  protected override readonly roadReach = 2 as const;
 
   private loadRatio = 0;
   private readonly hospitalDemand = new Map<string, number>();

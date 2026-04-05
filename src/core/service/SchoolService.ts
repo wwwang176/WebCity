@@ -55,6 +55,7 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
   protected readonly defaultFacilityHeight: number;
   protected readonly idPrefix: string;
   protected readonly maintenanceCostPerFacility = EDUCATION.MAINTENANCE_PER_SCHOOL;
+  protected override readonly roadReach = 2 as const;
 
   /** Per-school enrollment and demand tracking */
   private readonly enrollment = new Map<string, number>();

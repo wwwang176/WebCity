@@ -1,8 +1,9 @@
 import { Grid } from '../grid/Grid';
-import { isFootprintAdjacentToRoad } from '../grid/GridHelpers';
+import { isFootprintAdjacentToRoad, isFootprintNearRoad } from '../grid/GridHelpers';
 import { TerrainType } from '../grid/types';
 import { RoadType } from '../road/types';
 import {
+  DEFAULT_INFRA_ROAD_REACH,
   getInfraConfig,
   getInfraConfigById,
   getRotatedSize,
@@ -104,8 +105,14 @@ export function canPlaceInfra(
     if (!hasAdjacentWater(grid, x, y)) return { ok: false, reason: 'NEED_ADJACENT_WATER' };
   }
 
-  // All infrastructure must be adjacent to at least one road
-  if (!isFootprintAdjacentToRoad(grid, x, y, w, h)) {
+  // Civic services (roadReach: 2) may sit one empty tile away (Chebyshev box);
+  // utilities/transit (roadReach: 1) must be strictly orthogonally adjacent to
+  // preserve pre-existing behavior.
+  const reach = cfg.roadReach ?? DEFAULT_INFRA_ROAD_REACH;
+  const connected = reach >= 2
+    ? isFootprintNearRoad(grid, x, y, w, h, reach)
+    : isFootprintAdjacentToRoad(grid, x, y, w, h);
+  if (!connected) {
     return { ok: false, reason: 'NOT_ADJACENT_TO_ROAD' };
   }
 

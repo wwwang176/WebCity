@@ -6,6 +6,7 @@
  */
 
 import { ROAD_CONFIGS, RoadType } from '../core/road/types';
+import { ZONE_ROAD_REACH } from '../core/grid/constants';
 import type { WDWorkerRequest, WDWorkerResponse, WorkplaceDistanceEntry, WorkplacePosition } from '../core/workplace/WorkplaceDistanceTypes';
 
 const BYTES_PER_CELL = 12;
@@ -84,21 +85,17 @@ export function reverseFloodFromWorkplace(
     return view.getUint8(offset + 5);
   };
 
-  // Seed: workplace cell + its adjacent road cells at cost 0
+  // Seed: workplace cell + every road cell within Chebyshev(ZONE_ROAD_REACH)
+  // of it. Matches the inner-ring zone/civic model so a workplace in the inner
+  // ring still attaches to nearby roads.
   const seedCells: number[] = [];
-  // Check workplace cell itself
-  if (inBounds(wp.x, wp.y) && getRoadType(wp.x, wp.y) !== RoadType.NONE) {
-    const i = idx(wp.x, wp.y);
-    costArr[i] = 0;
-    pq.push(i, 0);
-    seedCells.push(i);
-  }
-  for (const [dx, dy] of FOUR_DIRS) {
-    const nx = wp.x + dx, ny = wp.y + dy;
-    if (!inBounds(nx, ny)) continue;
-    if (getRoadType(nx, ny) !== RoadType.NONE) {
+  for (let dy = -ZONE_ROAD_REACH; dy <= ZONE_ROAD_REACH; dy++) {
+    for (let dx = -ZONE_ROAD_REACH; dx <= ZONE_ROAD_REACH; dx++) {
+      const nx = wp.x + dx, ny = wp.y + dy;
+      if (!inBounds(nx, ny)) continue;
+      if (getRoadType(nx, ny) === RoadType.NONE) continue;
       const i = idx(nx, ny);
-      if (costArr[i] < 0) {
+      if (costArr[i]! < 0) {
         costArr[i] = 0;
         pq.push(i, 0);
         seedCells.push(i);
@@ -131,7 +128,9 @@ export function reverseFloodFromWorkplace(
     }
   }
 
-  // Build result: include covered road cells + adjacent non-road cells (buildings)
+  // Build result: include covered road cells + non-road cells within
+  // Chebyshev(ZONE_ROAD_REACH) of any covered road cell (buildings in the
+  // inner ring attach to the cheapest reachable road).
   const result: Record<string, number> = {};
 
   for (let i = 0; i < totalCells; i++) {
@@ -141,14 +140,16 @@ export function reverseFloodFromWorkplace(
     const y = (i - x) / width;
     result[`${x},${y}`] = cost;
 
-    // Expand to adjacent non-road cells
-    for (const [dx, dy] of FOUR_DIRS) {
-      const nx = x + dx, ny = y + dy;
-      if (!inBounds(nx, ny)) continue;
-      if (getRoadType(nx, ny) !== RoadType.NONE) continue; // skip road cells
-      const nk = `${nx},${ny}`;
-      if (!(nk in result) || cost < result[nk]!) {
-        result[nk] = cost;
+    for (let dy = -ZONE_ROAD_REACH; dy <= ZONE_ROAD_REACH; dy++) {
+      for (let dx = -ZONE_ROAD_REACH; dx <= ZONE_ROAD_REACH; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const nx = x + dx, ny = y + dy;
+        if (!inBounds(nx, ny)) continue;
+        if (getRoadType(nx, ny) !== RoadType.NONE) continue; // skip road cells
+        const nk = `${nx},${ny}`;
+        if (!(nk in result) || cost < result[nk]!) {
+          result[nk] = cost;
+        }
       }
     }
   }

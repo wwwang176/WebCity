@@ -89,4 +89,28 @@ describe('BuildingGrowth', () => {
     grid.setCell(5, 4, { railType: RailType.STANDARD, railFlags: 3 });
     expect(growth.canGrow(5, 4, fullConditions)).toBe(false);
   });
+
+  it('should grow one tile away from a road (extended reach)', () => {
+    // Road along y=5. Zone at (5, 3) sits one empty tile (y=4) from the road.
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 5, y: 5 }, { x: 15, y: 5 }, RoadType.TWO_LANE, 100000);
+    const zone = new ZoneManager(grid);
+    const zoneResult = zone.setZone(5, 3, ZoneType.RESIDENTIAL_LOW);
+    expect(zoneResult.success).toBe(true);
+    const growth = new BuildingGrowth(grid);
+    expect(growth.tryGrow(5, 3, fullConditions)).toBe(true);
+    expect(grid.getCell(5, 3)!.buildingId).toBeGreaterThan(0);
+  });
+
+  it('should not grow two tiles away from road (beyond reach)', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 5, y: 5 }, { x: 15, y: 5 }, RoadType.TWO_LANE, 100000);
+    // Force a zone onto (5, 2) bypassing ZoneManager's reach check, so we can
+    // isolate BuildingGrowth's own check.
+    grid.setCell(5, 2, { zoneType: ZoneType.RESIDENTIAL_LOW });
+    const growth = new BuildingGrowth(grid);
+    expect(growth.canGrow(5, 2, fullConditions)).toBe(false);
+  });
 });

@@ -1,6 +1,7 @@
 import { Grid } from '../grid/Grid';
 import { ZoneType, type Position } from '../grid/types';
-import { isAdjacentToRoad, isCellBuildable } from '../grid/GridHelpers';
+import { isNearRoad, isCellBuildable } from '../grid/GridHelpers';
+import { ZONE_ROAD_REACH } from '../grid/constants';
 import { isZoneBuilding } from '../building/InfraConfig';
 import { type ElevationManager } from '../elevation/ElevationManager';
 import { isBlockedByElevation } from '../elevation/ElevationZoneBlock';
@@ -34,7 +35,7 @@ export class ZoneManager {
       return { success: false, reason: 'BLOCKED_BY_ELEVATION' };
     }
 
-    if (!isAdjacentToRoad(this.grid, x, y)) {
+    if (!isNearRoad(this.grid, x, y, ZONE_ROAD_REACH)) {
       return { success: false, reason: 'NOT_ADJACENT_TO_ROAD' };
     }
 
