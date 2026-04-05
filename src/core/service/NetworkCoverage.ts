@@ -4,19 +4,6 @@ import { RoadType } from '../road/types';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
-/** @deprecated Use roadLookup parameter injection instead. */
-let _roadLookup: UnifiedRoadLookup | null = null;
-
-/** @deprecated Use roadLookup parameter on individual functions instead. */
-export function setNetworkRoadLookup(lookup: UnifiedRoadLookup): void {
-  _roadLookup = lookup;
-}
-
-/** Resolve roadLookup: prefer explicit parameter, fall back to module-level. */
-function resolveRL(explicit?: UnifiedRoadLookup | null): UnifiedRoadLookup | null {
-  return explicit !== undefined ? explicit : _roadLookup;
-}
-
 /**
  * Shared network coverage algorithm used by both PowerGrid and WaterNetwork.
  * Implements Euclidean radius coverage + BFS relay through roads/buildings.
@@ -47,7 +34,7 @@ export function calculateNetworkCoverage(
   infra?: Set<string>,
   roadLookup?: UnifiedRoadLookup | null,
 ): void {
-  const rl = resolveRL(roadLookup);
+  const rl = roadLookup ?? null;
   const r = range;
   const r2 = r * r;
   // relaySeeds are cell keys (may include level) for level-aware BFS
@@ -181,7 +168,7 @@ export function bfsRoadNetworkFlood(
   infra?: Set<string>,
   roadLookup?: UnifiedRoadLookup | null,
 ): void {
-  const rl = resolveRL(roadLookup);
+  const rl = roadLookup ?? null;
   const startPosKey = toPosKey(startX, startY);
   if (coverage.has(startPosKey)) return;
 
@@ -263,7 +250,7 @@ export function bfsBudgetDrainFlood(
   infra?: Set<string>,
   roadLookup?: UnifiedRoadLookup | null,
 ): void {
-  const rl = resolveRL(roadLookup);
+  const rl = roadLookup ?? null;
   let budget = plant.output;
   const startPosKey = toPosKey(plant.x, plant.y);
 
