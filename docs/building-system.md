@@ -85,7 +85,7 @@ BURNED            = 3   焦黑（火災後）
 
 1. **有區域規劃**: `zoneType` 不為 NONE
 2. **空地**: `buildingId` 為 0
-3. **道路連接**: 至少一個 4 方向鄰居有道路
+3. **道路連接**: 格子在道路的 Chebyshev `ZONE_ROAD_REACH`（=2）範圍內（與 [zone-system — 基本限制](zone-system.md#基本限制) 的可劃設條件一致）
 4. **有電力**: `hasPower = true`（分區空格只要鄰接有電的道路/建築即視為有電，見[服務系統 — BFS 中繼與終點](services-system.md#bfs-中繼與終點)）
 5. **有供水**: `hasWater = true`（同上）
 6. **RCI 需求**: 對應的住宅/商業/工業需求 > 0
@@ -281,13 +281,26 @@ resilience = 0.5 + ((x × 7919 + y × 104729) % 1000) / 1000
 2. 不可放在水域
 3. 不可放在有道路的格子
 4. 不可放在已有其他基礎設施的格子
-5. 佔地範圍必須至少有一邊鄰接道路
+5. 佔地範圍必須在道路的 `roadReach` 範圍內（詳見下方）
 6. 已存在的區域建築會被自動拆除
 
 特殊規則：
 - **Water Plant (水廠)**: 佔地範圍至少有一格有地下水（需靠近河流）
 - **Train Station (火車站)**: 必須建在有鐵軌的格子上
 - **Ferry Dock (碼頭)**: 必須緊鄰水域
+
+### 道路接觸距離 (`roadReach`)
+
+`InfraConfig` 的每個基礎設施類型有一個 `roadReach` 欄位（定義於 `src/core/building/InfraConfig.ts`），控制放置時可容忍的道路距離：
+
+| `roadReach` | 判定方式 | 適用設施 |
+|---|---|---|
+| `1`（預設） | 佔地邊緣必須**正交相鄰**道路（4 方向），`isFootprintAdjacentToRoad` | park, power, water, garbage, sewage, bus_stop, metro_station, train_station, ferry_dock, airport_* |
+| `2` | 佔地在道路的 Chebyshev 距離 ≤ 2 範圍內，`isFootprintNearRoad(..., 2)` | police, fire, hospital, school, school_high, school_univ, cemetery |
+
+**Civic 服務（公共服務）** 可後退一格放置，配合 [zone-system](zone-system.md#基本限制) 的內圈住宅，讓玩家在街區中間安排警局／消防局／醫院。**Utility／Transit** 仍然要求嚴格正交相鄰（確保管線／軌道連接正確）。
+
+`roadReach` 與 [grid-system — `ZONE_ROAD_REACH`](grid-system.md#共享常數-zone_road_reach) 對齊（=2），使 civic 放置範圍等同 zone 建築的可劃設範圍。
 
 ### 多格建築
 

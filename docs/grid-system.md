@@ -192,9 +192,30 @@ FOREST  = 4   森林資源
 
 ### 鄰接檢查
 
-- `isAdjacentToRoad(grid, x, y)` — 四方向是否有道路鄰居
-- `isFootprintAdjacentToRoad(grid, x, y, w, h)` — 多格建築是否鄰接道路
+- `isAdjacentToRoad(grid, x, y)` — 四方向是否有道路鄰居（嚴格正交相鄰，用於 utility/transit 放置）
+- `isNearRoad(grid, x, y, distance?)` — Chebyshev `distance` 範圍內是否有道路（`distance` 預設 1；`distance=2` 覆蓋整個「內圈」用於 zone 與 civic 放置）
+- `isFootprintAdjacentToRoad(grid, x, y, w, h)` — 多格建築是否 4 方向鄰接道路（嚴格）
+- `isFootprintNearRoad(grid, x, y, w, h, distance)` — 多格建築是否在道路的 Chebyshev `distance` 範圍內
 - `findAdjacentRoad(grid, x, y)` — 找到自身或鄰近的道路格
+
+### 共享常數 — `ZONE_ROAD_REACH`
+
+位於 `src/core/grid/constants.ts`（獨立的 dependency-free 模組，便於 worker bundle 引用）：
+
+```ts
+export const ZONE_ROAD_REACH = 2;
+```
+
+這是全系統共用的「Chebyshev 距離上限」，統一以下行為：
+
+1. **Zone 劃設**：住宅／商業／工業可劃在距離道路 ≤ 2 格的位置（內圈）
+2. **Zone 建築成長**：同上，`BuildingGrowth.canGrow` 與 `getMaxDensity` 掃描同一範圍
+3. **Civic 基礎設施放置**：警局／消防局／醫院／學校／墓園可後退 1 格（距離道路 ≤ 2）
+4. **服務覆蓋擴散**：`expandCoverageToBuildings` 將覆蓋路段的 Chebyshev 2 範圍內的建築納入服務
+5. **車輛通勤尋路**：`findNearbyExitPoints` / `findNearbyEntryPoints` 掃描 Chebyshev 2 找起終點
+6. **公民通勤可達性**：`roadDistanceToTargets` 與 `workplace-distance.worker` 的 seed 與 target pickup
+
+所有使用此常數的模組保持一致，內圈建築在任何管線中都能被正確處理。
 
 ### 距離計算
 
