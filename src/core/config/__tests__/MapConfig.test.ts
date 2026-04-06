@@ -50,10 +50,10 @@ describe('resolveTerrainConfig', () => {
     return { ...getDefaultMapConfig(), ...overrides };
   }
 
-  it('low water → narrow river, no feature', () => {
+  it('low water → no river, 1 lake', () => {
     const tc = resolveTerrainConfig(configWith({ waterAmount: 'low' }));
-    expect(tc.riverHalfWidth).toBe(1);
-    expect(tc.lakeCount).toBe(0);
+    expect(tc.riverHalfWidth).toBe(0);
+    expect(tc.lakeCount).toBe(1);
     expect(tc.coastalFeature).toBe(false);
   });
 

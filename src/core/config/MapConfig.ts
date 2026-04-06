@@ -38,7 +38,7 @@ export function getDefaultMapConfig(): MapConfig {
 }
 
 const WATER_MAP: Record<TerrainLevel, { riverHalfWidth: number; lakeCount: number; coastalFeature: boolean }> = {
-  low:       { riverHalfWidth: 1, lakeCount: 0, coastalFeature: false },
+  low:       { riverHalfWidth: 0, lakeCount: 1, coastalFeature: false },
   medium:    { riverHalfWidth: 1, lakeCount: 0, coastalFeature: false },
   high:      { riverHalfWidth: 2, lakeCount: 2, coastalFeature: false },
   very_high: { riverHalfWidth: 2, lakeCount: 1, coastalFeature: true },

@@ -36,11 +36,14 @@ export const TERRAIN_GEN = {
   /** Randomness jitter to break up uniform edges. */
   FOREST_JITTER: 0.15,
 
-  /** Lake radius range for water=high */
-  LAKE_RADIUS_MIN: 2,
-  LAKE_RADIUS_MAX: 3,
+  /** Lake radius range */
+  LAKE_RADIUS_MIN: 4,
+  LAKE_RADIUS_MAX: 7,
   /** Lake placement margin (fraction of map size) */
-  LAKE_MARGIN: 0.15,
+  LAKE_MARGIN: 0.2,
+  /** Lake ellipse stretch range (1.0 = circle, 2.0 = 2:1 ellipse) */
+  LAKE_STRETCH_MIN: 1.0,
+  LAKE_STRETCH_MAX: 1.8,
 
   /** Sea: how many rows/columns of water along the edge */
   SEA_DEPTH_MIN: 6,
@@ -48,11 +51,6 @@ export const TERRAIN_GEN = {
   /** Bay: radius of the concave water arc */
   BAY_RADIUS_MIN: 8,
   BAY_RADIUS_MAX: 14,
-  /** Peninsula: radius of the convex land arc pushed into the sea */
-  PENINSULA_RADIUS_MIN: 6,
-  PENINSULA_RADIUS_MAX: 10,
-  /** Peninsula: width of the land bridge connecting to mainland */
-  PENINSULA_BRIDGE_HALF_WIDTH: 3,
 } as const;
 
 /** Simple seeded pseudo-random number generator (LCG). */
@@ -83,13 +81,17 @@ export function generateTerrain(grid: Grid, seed?: number, config?: TerrainConfi
   const coastalFeature = config?.coastalFeature ?? false;
 
   if (coastalFeature) {
-    generateSeaCoast(grid, rng, size, T);
+    const isPeninsula = rng() < 0.5;
+    if (isPeninsula) {
+      generatePeninsula(grid, rng, size, T);
+    } else {
+      generateBay(grid, rng, size, T);
+    }
   } else {
-    generateRiver(grid, rng, size, T, riverHalfWidth);
+    if (riverHalfWidth > 0) generateRiver(grid, rng, size, T, riverHalfWidth);
     generateLakes(grid, rng, size, T, lakeCount);
   }
 
-  // --- Forest (edge-based per-cell) ---
   generateForest(grid, rng, size, T, forestDepth, forestWaterGap);
 }
 
@@ -119,7 +121,7 @@ function generateRiver(
   }
 }
 
-/** Generate random circular lakes. */
+/** Generate random elliptical lakes. */
 function generateLakes(
   grid: Grid, rng: () => number, size: number,
   T: typeof TERRAIN_GEN, lakeCount: number,
@@ -129,109 +131,129 @@ function generateLakes(
   for (let l = 0; l < lakeCount; l++) {
     const lx = lakeMargin + Math.floor(rng() * Math.max(lakePlaceable, 1));
     const ly = lakeMargin + Math.floor(rng() * Math.max(lakePlaceable, 1));
-    const lr = T.LAKE_RADIUS_MIN + Math.floor(rng() * (T.LAKE_RADIUS_MAX - T.LAKE_RADIUS_MIN + 1));
-    const lr2 = lr * lr;
-    for (let dy = -lr; dy <= lr; dy++) {
-      for (let dx = -lr; dx <= lr; dx++) {
-        if (dx * dx + dy * dy <= lr2) {
-          const x = lx + dx;
-          const y = ly + dy;
-          if (x >= 0 && x < size && y >= 0 && y < size) {
-            grid.setCell(x, y, { terrainType: TerrainType.WATER });
-          }
+    const ra = T.LAKE_RADIUS_MIN + Math.floor(rng() * (T.LAKE_RADIUS_MAX - T.LAKE_RADIUS_MIN + 1));
+    const stretch = T.LAKE_STRETCH_MIN + rng() * (T.LAKE_STRETCH_MAX - T.LAKE_STRETCH_MIN);
+    const rb = Math.max(2, Math.round(ra / stretch));
+    const angle = rng() * Math.PI; // random rotation
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const r = Math.max(ra, rb);
+
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        // Rotate (dx, dy) into ellipse-local coords
+        const lxr = dx * cosA + dy * sinA;
+        const lyr = -dx * sinA + dy * cosA;
+        if ((lxr * lxr) / (ra * ra) + (lyr * lyr) / (rb * rb) > 1) continue;
+        const x = lx + dx;
+        const y = ly + dy;
+        if (x >= 0 && x < size && y >= 0 && y < size) {
+          grid.setCell(x, y, { terrainType: TerrainType.WATER });
         }
       }
     }
   }
 }
 
+/** Generate 2 random sine wave parameters for a coastline edge. */
+function randomCoastWaves(rng: () => number) {
+  return {
+    freq1: 0.08 + rng() * 0.06,
+    freq2: 0.15 + rng() * 0.1,
+    amp1: 2 + rng() * 3,
+    amp2: 1 + rng() * 2,
+    phase1: rng() * Math.PI * 2,
+    phase2: rng() * Math.PI * 2,
+  };
+}
+
+/** Compute wave offset for a coastline at a given position. */
+function coastWaveOffset(along: number, w: ReturnType<typeof randomCoastWaves>): number {
+  return Math.sin(along * w.freq1 + w.phase1) * w.amp1
+       + Math.sin(along * w.freq2 + w.phase2) * w.amp2;
+}
+
 /**
- * Generate sea on one edge + either a bay (concave) or peninsula (convex).
- * Bay: sea edge + circular water arc pushed into land.
- * Peninsula: sea edge + circular land arc pushed into sea, with land bridge to mainland.
+ * Bay: sea on one edge with wavy coastline + a circular water arc pushed into land.
  */
-function generateSeaCoast(
+function generateBay(
   grid: Grid, rng: () => number, size: number, T: typeof TERRAIN_GEN,
 ): void {
-  // Pick a random edge: 0=top, 1=right, 2=bottom, 3=left
   const edge = Math.floor(rng() * 4);
   const seaDepth = T.SEA_DEPTH_MIN + Math.floor(rng() * (T.SEA_DEPTH_MAX - T.SEA_DEPTH_MIN + 1));
-  const isPeninsula = rng() < 0.5;
+  const waves = randomCoastWaves(rng);
 
-  // Fill sea with wavy coastline
-  const coastFreq1 = 0.08 + rng() * 0.06;
-  const coastFreq2 = 0.15 + rng() * 0.1;
-  const coastAmp1 = 2 + rng() * 3;
-  const coastAmp2 = 1 + rng() * 2;
-  const coastPhase1 = rng() * Math.PI * 2;
-  const coastPhase2 = rng() * Math.PI * 2;
-
+  // Wavy sea on one edge
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const along = (edge === 0 || edge === 2) ? x : y;
-      const waveOffset = Math.sin(along * coastFreq1 + coastPhase1) * coastAmp1
-                       + Math.sin(along * coastFreq2 + coastPhase2) * coastAmp2;
-      if (distFromEdge(x, y, size, edge) < seaDepth + waveOffset) {
+      if (distFromEdge(x, y, size, edge) < seaDepth + coastWaveOffset(along, waves)) {
         grid.setCell(x, y, { terrainType: TerrainType.WATER });
       }
     }
   }
 
-  // Feature center position along the edge (avoid corners)
-  const featurePos = 0.3 + rng() * 0.4; // 30%~70% along the edge
-  const alongCoord = Math.floor(size * featurePos);
+  // Circular bay arc pushed into land
+  const r = T.BAY_RADIUS_MIN + Math.floor(rng() * (T.BAY_RADIUS_MAX - T.BAY_RADIUS_MIN + 1));
+  const featurePos = 0.3 + rng() * 0.4;
+  const along = Math.floor(size * featurePos);
+  const cx = (edge === 0 || edge === 2) ? along : (edge === 1 ? size - seaDepth : seaDepth);
+  const cy = (edge === 0 || edge === 2) ? (edge === 0 ? seaDepth : size - seaDepth) : along;
+  const r2 = r * r;
 
-  if (isPeninsula) {
-    // Peninsula: push a circle of land from coastline into the sea
-    const r = T.PENINSULA_RADIUS_MIN + Math.floor(rng() * (T.PENINSULA_RADIUS_MAX - T.PENINSULA_RADIUS_MIN + 1));
-    // Center of the land circle: positioned so it overlaps into the sea
-    const cx = peninsulaCenterX(edge, size, seaDepth, r, alongCoord);
-    const cy = peninsulaCenterY(edge, size, seaDepth, r, alongCoord);
-    const r2 = r * r;
-
-    // Place land circle
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        if (dx * dx + dy * dy > r2) continue;
-        const px = cx + dx;
-        const py = cy + dy;
-        if (px >= 0 && px < size && py >= 0 && py < size) {
-          grid.setCell(px, py, { terrainType: TerrainType.PLAIN });
-        }
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      if (dx * dx + dy * dy > r2) continue;
+      const px = cx + dx;
+      const py = cy + dy;
+      if (px >= 0 && px < size && py >= 0 && py < size) {
+        grid.setCell(px, py, { terrainType: TerrainType.WATER });
       }
     }
+  }
+}
 
-    // Ensure land bridge connecting peninsula to mainland
-    const bw = T.PENINSULA_BRIDGE_HALF_WIDTH;
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        const px = cx + dx;
-        const py = cy + dy;
-        if (px < 0 || px >= size || py < 0 || py >= size) continue;
-        // Check if this cell is within the bridge strip (along-edge direction)
-        const alongDist = edgeAlongDist(px, py, edge, alongCoord);
-        const perpDist = distFromEdge(px, py, size, edge);
-        if (alongDist <= bw && perpDist >= seaDepth - 1) {
-          // Bridge: connect from coastline to peninsula
-          grid.setCell(px, py, { terrainType: TerrainType.PLAIN });
-        }
-      }
-    }
+/**
+ * Peninsula: sea on 2 or 3 edges, land connects on the rest.
+ * 50% → 3-side sea (1 mainland edge), 50% → 2-side sea (corner, 2 adjacent mainland edges).
+ * Each sea edge has its own wavy coastline.
+ */
+function generatePeninsula(
+  grid: Grid, rng: () => number, size: number, T: typeof TERRAIN_GEN,
+): void {
+  const threeEdges = rng() < 0.5;
+
+  // Determine which edges are mainland (no sea)
+  const mainlandEdges = new Set<number>();
+  if (threeEdges) {
+    // 3-side sea: 1 random mainland edge
+    mainlandEdges.add(Math.floor(rng() * 4));
   } else {
-    // Bay: push a circle of water from sea further into land
-    const r = T.BAY_RADIUS_MIN + Math.floor(rng() * (T.BAY_RADIUS_MAX - T.BAY_RADIUS_MIN + 1));
-    // Center of the water circle: at the coastline boundary, so it extends into land
-    const cx = bayCenterX(edge, size, seaDepth, alongCoord);
-    const cy = bayCenterY(edge, size, seaDepth, alongCoord);
-    const r2 = r * r;
+    // 2-side sea: pick a corner (2 adjacent edges are mainland)
+    // corners: top+left(0,3), top+right(0,1), bottom+left(2,3), bottom+right(1,2)
+    const corners = [[0, 3], [0, 1], [2, 3], [1, 2]];
+    const corner = corners[Math.floor(rng() * 4)]!;
+    mainlandEdges.add(corner[0]);
+    mainlandEdges.add(corner[1]);
+  }
 
-    for (let dy = -r; dy <= r; dy++) {
-      for (let dx = -r; dx <= r; dx++) {
-        if (dx * dx + dy * dy > r2) continue;
-        const px = cx + dx;
-        const py = cy + dy;
-        if (px >= 0 && px < size && py >= 0 && py < size) {
-          grid.setCell(px, py, { terrainType: TerrainType.WATER });
+  // Generate independent wave params for each edge
+  const edgeWaves: ReturnType<typeof randomCoastWaves>[] = [];
+  const edgeDepths: number[] = [];
+  for (let e = 0; e < 4; e++) {
+    edgeWaves.push(randomCoastWaves(rng));
+    edgeDepths.push(T.SEA_DEPTH_MIN + Math.floor(rng() * (T.SEA_DEPTH_MAX - T.SEA_DEPTH_MIN + 1)));
+  }
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      for (let e = 0; e < 4; e++) {
+        if (mainlandEdges.has(e)) continue;
+        const along = (e === 0 || e === 2) ? x : y;
+        const depth = edgeDepths[e] + coastWaveOffset(along, edgeWaves[e]);
+        if (distFromEdge(x, y, size, e) < depth) {
+          grid.setCell(x, y, { terrainType: TerrainType.WATER });
+          break;
         }
       }
     }
@@ -245,49 +267,6 @@ function distFromEdge(x: number, y: number, size: number, edge: number): number 
     case 1: return size - 1 - x;  // right
     case 2: return size - 1 - y;  // bottom
     default: return x;            // left
-  }
-}
-
-/** Distance along the edge axis from a reference point. */
-function edgeAlongDist(x: number, y: number, edge: number, ref: number): number {
-  // For top/bottom edges, "along" is X axis; for left/right, "along" is Y axis
-  const coord = (edge === 0 || edge === 2) ? x : y;
-  return Math.abs(coord - ref);
-}
-
-// --- Peninsula center calculation: place circle center so it overlaps into the sea ---
-function peninsulaCenterX(edge: number, size: number, seaDepth: number, r: number, along: number): number {
-  switch (edge) {
-    case 0: return along;                           // top: along X
-    case 1: return size - seaDepth + r * 0.7;      // right: push into sea
-    case 2: return along;                           // bottom: along X
-    default: return seaDepth - r * 0.7;             // left: push into sea
-  }
-}
-function peninsulaCenterY(edge: number, size: number, seaDepth: number, r: number, along: number): number {
-  switch (edge) {
-    case 0: return seaDepth - r * 0.7;              // top: push into sea
-    case 1: return along;                           // right: along Y
-    case 2: return size - seaDepth + r * 0.7;       // bottom: push into sea
-    default: return along;                          // left: along Y
-  }
-}
-
-// --- Bay center calculation: place circle center at coastline boundary ---
-function bayCenterX(edge: number, size: number, seaDepth: number, along: number): number {
-  switch (edge) {
-    case 0: return along;
-    case 1: return size - seaDepth;
-    case 2: return along;
-    default: return seaDepth;
-  }
-}
-function bayCenterY(edge: number, size: number, seaDepth: number, along: number): number {
-  switch (edge) {
-    case 0: return seaDepth;
-    case 1: return along;
-    case 2: return size - seaDepth;
-    default: return along;
   }
 }
 
