@@ -1687,20 +1687,22 @@ export class SimulationLoop {
       // --- Check commute cache first ---
       const cached = this.commuteCache.get(citizen.id);
       const currentTick = this.state.clock.tick;
+      const routeKey = `${fromStr}->${toStr}`;
 
       if (cached && cached.status === 'ready'
           && !this.commuteCache.isDirty(citizen.id)
           && !this.commuteCache.isExpired(cached, currentTick)) {
-        const cachedPath = toWork ? cached.morningPath : cached.eveningPath;
-        if (cachedPath && cachedPath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(cachedPath, citizen.id);
+        const variants = this.commuteCache.getRouteVariants(routeKey);
+        if (variants && variants.length > 0) {
+          const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
+          this.state.traffic.addVehicleOnEdges(edgePath, citizen.id);
           spawned++;
           continue;
         }
+        // Variants pool cleared (e.g. by invalidateCell) — fall through to recompute
       }
 
       // --- Compute path and populate cache ---
-      const routeKey = `${fromStr}->${toStr}`;
       let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
 
       if (!variants) {
