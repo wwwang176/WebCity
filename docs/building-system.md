@@ -289,18 +289,11 @@ resilience = 0.5 + ((x × 7919 + y × 104729) % 1000) / 1000
 - **Train Station (火車站)**: 必須建在有鐵軌的格子上
 - **Ferry Dock (碼頭)**: 必須緊鄰水域
 
-### 道路接觸距離 (`roadReach`)
+### 放置的道路接觸要求
 
-`InfraConfig` 的每個基礎設施類型有一個 `roadReach` 欄位（定義於 `src/core/building/InfraConfig.ts`），控制放置時可容忍的道路距離：
+所有基礎設施（civic + utility + transit）放置時皆需**嚴格正交相鄰**道路（`isFootprintAdjacentToRoad`，4 方向）。`InfraConfig` 保留 `roadReach` 欄位（預設 1），但目前所有類型均使用預設值。
 
-| `roadReach` | 判定方式 | 適用設施 |
-|---|---|---|
-| `1`（預設） | 佔地邊緣必須**正交相鄰**道路（4 方向），`isFootprintAdjacentToRoad` | park, power, water, garbage, sewage, bus_stop, metro_station, train_station, ferry_dock, airport_* |
-| `2` | 佔地在道路的 Chebyshev 距離 ≤ 2 範圍內，`isFootprintNearRoad(..., 2)` | police, fire, hospital, school, school_high, school_univ, cemetery |
-
-**Civic 服務（公共服務）** 可後退一格放置，配合 [zone-system](zone-system.md#基本限制) 的內圈住宅，讓玩家在街區中間安排警局／消防局／醫院。**Utility／Transit** 仍然要求嚴格正交相鄰（確保管線／軌道連接正確）。
-
-`roadReach` 與 [grid-system — `ZONE_ROAD_REACH`](grid-system.md#共享常數-zone_road_reach) 對齊（=2），使 civic 放置範圍等同 zone 建築的可劃設範圍。
+> **注意**：zone 建築可位於道路的 Chebyshev 2 內圈（參見 [zone-system](zone-system.md#基本限制)），但基礎設施不可。civic 服務的**覆蓋**仍然擴散到內圈 zone 建築（參見 [services-system — 覆蓋管線](services-system.md#道路距離覆蓋演算法-road-coverage-flood)）。
 
 ### 多格建築
 

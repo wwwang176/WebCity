@@ -1,5 +1,6 @@
 import type { ReadableGrid } from '../grid/GridHelpers';
-import { parsePosKeyUnsafe, findAdjacentRoad, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, findAdjacentRoad, findNearRoad, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { ZONE_ROAD_REACH } from '../grid/constants';
 import { RoadType } from '../road/types';
 
 /** Minimal traffic interface for congestion estimation (DIP). */
@@ -54,8 +55,10 @@ export class ServiceDispatch {
     origin: { x: number; y: number },
     destination: { x: number; y: number },
   ): DispatchResult | null {
+    // Origin is always a civic facility (placed adjacent to road) — strict lookup is fine.
     const startRoad = findAdjacentRoad(this.grid, origin.x, origin.y);
-    const endRoad = findAdjacentRoad(this.grid, destination.x, destination.y);
+    // Destination may be an inner-ring zone building (fire/medical incident) — use wider reach.
+    const endRoad = findNearRoad(this.grid, destination.x, destination.y, ZONE_ROAD_REACH);
     if (!startRoad || !endRoad) return null;
     if (startRoad.x === endRoad.x && startRoad.y === endRoad.y) {
       return { vehicleType, path: [startRoad], estimatedTicks: 1 };

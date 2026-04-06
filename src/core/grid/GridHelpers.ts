@@ -261,6 +261,32 @@ export function findAdjacentRoad(
   return null;
 }
 
+/**
+ * Find the nearest road cell within Chebyshev `distance` of (x, y).
+ * Scans outward from the center so the closest road (by Chebyshev distance)
+ * is returned first. Falls back to null if no road exists in range.
+ * Use this for zone buildings that may sit in the inner ring (distance=2).
+ */
+export function findNearRoad(
+  grid: ReadableGrid,
+  x: number,
+  y: number,
+  distance: number,
+): { x: number; y: number } | null {
+  const self = grid.getCell(x, y);
+  if (self && self.roadType !== RoadType.NONE) return { x, y };
+  for (let r = 1; r <= distance; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const cell = grid.getCell(x + dx, y + dy);
+        if (cell && cell.roadType !== RoadType.NONE) return { x: x + dx, y: y + dy };
+      }
+    }
+  }
+  return null;
+}
+
 /** Find the first item in an array that matches the given (x, y) coordinates. */
 export function findAtPosition<T extends { x: number; y: number }>(
   items: readonly T[],

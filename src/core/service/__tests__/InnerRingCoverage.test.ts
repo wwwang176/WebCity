@@ -112,21 +112,22 @@ describe('Inner-ring coverage — civic services reach buildings 2 tiles from ro
     expect(garbage.getCoverage(3, ROAD_Y - 3)).toBe(false);
   });
 
-  it('civic service placed one empty tile back from road still covers inner ring on opposite side', () => {
-    // Police station at (5, 8) with road at y=10. The facility itself has a
-    // gap row at y=9 between it and the road → relies on roadReach=2 seeding.
-    // We verify buildings on the OPPOSITE side of the road (y=11, y=12) are
-    // still covered via the Dijkstra flood.
+  it('civic service adjacent to road covers both sides including inner ring', () => {
+    // Police station at (5, 8), 2x2 footprint (5,8)-(6,9). Bottom row y=9 is
+    // adjacent to road y=10. Coverage should extend through the road to both sides.
     const grid = makeHorizontalRoadGrid(GRID_W, GRID_H, ROAD_Y);
     const police = new PoliceService();
-    police.addStation(5, 7); // 2x2 at (5,7)-(6,8) — bottom row at y=8 is 2 cells from road at y=10
+    police.addStation(5, 8);
     police.tick(grid);
     expect(police.isFacilityConnected('police_1')).toBe(true);
-    // Opposite side of the road: direct adjacency
+    // Same side (north) — directly adjacent and inner ring
+    expect(police.getCoverage(5, ROAD_Y - 1)).toBe(true);
+    expect(police.getCoverage(5, ROAD_Y - 2)).toBe(true);
+    // Opposite side (south) — directly adjacent and inner ring
     expect(police.getCoverage(5, ROAD_Y + 1)).toBe(true);
-    // Opposite side inner ring
     expect(police.getCoverage(5, ROAD_Y + 2)).toBe(true);
-    // 3 tiles beyond road on far side — outside reach
+    // 3 tiles beyond road on either side — outside reach
+    expect(police.getCoverage(5, ROAD_Y - 3)).toBe(false);
     expect(police.getCoverage(5, ROAD_Y + 3)).toBe(false);
   });
 });

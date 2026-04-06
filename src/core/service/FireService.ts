@@ -54,7 +54,6 @@ export class FireService extends RoadCoverageService<FireStation> {
   protected readonly defaultFacilityHeight = 2;
   protected readonly idPrefix = 'fire_';
   protected readonly maintenanceCostPerFacility = FIRE.MAINTENANCE_PER_STATION;
-  protected override readonly roadReach = 2 as const;
 
   private activeFires: ActiveFire[] = [];
   private recentDaily: number[] = new Array(30).fill(0);

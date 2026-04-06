@@ -42,7 +42,8 @@ import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../ser
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findAdjacentRoad, type ReadableGrid } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findNearRoad, type ReadableGrid } from '../grid/GridHelpers';
+import { ZONE_ROAD_REACH } from '../grid/constants';
 import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios, getCellServiceCostScore } from '../service/ServiceCoverageQuery';
@@ -1722,14 +1723,14 @@ export class SimulationLoop {
 
       if (!this._roadLookup) continue;
       if (isIncoming) {
-        const endRoad = findAdjacentRoad(grid, bp.x, bp.y);
+        const endRoad = findNearRoad(grid, bp.x, bp.y, ZONE_ROAD_REACH);
         if (!endRoad || (endRoad.x === edge.x && endRoad.y === edge.y)) continue;
         const edgePath = findLanePath(this.laneGraph, this._roadLookup, edge, endRoad);
         if (edgePath && edgePath.length > 0) {
           this.state.traffic.addVehicleOnEdges(edgePath);
         }
       } else {
-        const startRoad = findAdjacentRoad(grid, bp.x, bp.y);
+        const startRoad = findNearRoad(grid, bp.x, bp.y, ZONE_ROAD_REACH);
         if (!startRoad || (startRoad.x === edge.x && startRoad.y === edge.y)) continue;
         const edgePath = findLanePath(this.laneGraph, this._roadLookup, startRoad, edge);
         if (edgePath && edgePath.length > 0) {

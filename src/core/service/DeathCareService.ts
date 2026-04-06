@@ -61,7 +61,6 @@ export class DeathCareService extends GlobalCoverageService<Cemetery> {
   protected readonly defaultFacilityHeight = 2;
   protected readonly idPrefix = 'cem-';
   protected readonly maintenanceCostPerFacility = DEATH_CARE.MAINTENANCE_PER_FACILITY;
-  protected override readonly roadReach = 2 as const;
 
   /** Queue of deaths waiting for pickup */
   private pendingDeathQueue: PendingDeath[] = [];
