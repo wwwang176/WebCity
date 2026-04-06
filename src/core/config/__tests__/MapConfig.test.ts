@@ -18,7 +18,6 @@ describe('getDefaultMapConfig', () => {
     const cfg = getDefaultMapConfig();
     expect(cfg.waterAmount).toBe('medium');
     expect(cfg.forestDensity).toBe('normal');
-    expect(cfg.mountainAmount).toBe('medium');
     expect(cfg.startingFunds).toBe('normal');
     expect(cfg.disastersEnabled).toBe(true);
     expect(cfg.disasterFrequency).toBe('medium');
@@ -71,37 +70,29 @@ describe('resolveTerrainConfig', () => {
   });
 
   // Forest
-  it('sparse forest → patchCount 4, fillChance 0.4', () => {
+  it('sparse forest → small depth, large water gap', () => {
     const tc = resolveTerrainConfig(configWith({ forestDensity: 'sparse' }));
-    expect(tc.forestPatchCount).toBe(4);
-    expect(tc.forestFillChance).toBe(0.4);
+    expect(tc.forestDepth).toBe(0.15);
+    expect(tc.forestWaterGap).toBe(3);
   });
 
-  it('normal forest → patchCount 8, fillChance 0.7', () => {
+  it('normal forest → medium depth and water gap', () => {
     const tc = resolveTerrainConfig(configWith({ forestDensity: 'normal' }));
-    expect(tc.forestPatchCount).toBe(8);
-    expect(tc.forestFillChance).toBe(0.7);
+    expect(tc.forestDepth).toBe(0.5);
+    expect(tc.forestWaterGap).toBe(2);
   });
 
-  it('dense forest → patchCount 14, fillChance 0.9', () => {
+  it('dense forest → large depth, small water gap', () => {
     const tc = resolveTerrainConfig(configWith({ forestDensity: 'dense' }));
-    expect(tc.forestPatchCount).toBe(14);
-    expect(tc.forestFillChance).toBe(0.9);
+    expect(tc.forestDepth).toBe(0.85);
+    expect(tc.forestWaterGap).toBe(1);
   });
 
-  // Mountain
-  it('low mountain → count 0', () => {
-    const tc = resolveTerrainConfig(configWith({ mountainAmount: 'low' }));
-    expect(tc.mountainCount).toBe(0);
-  });
-
-  it('medium mountain → count 1', () => {
-    const tc = resolveTerrainConfig(configWith({ mountainAmount: 'medium' }));
-    expect(tc.mountainCount).toBe(1);
-  });
-
-  it('high mountain → count 3', () => {
-    const tc = resolveTerrainConfig(configWith({ mountainAmount: 'high' }));
-    expect(tc.mountainCount).toBe(3);
+  it('forest depth ascending: sparse < normal < dense', () => {
+    const sparse = resolveTerrainConfig(configWith({ forestDensity: 'sparse' }));
+    const normal = resolveTerrainConfig(configWith({ forestDensity: 'normal' }));
+    const dense = resolveTerrainConfig(configWith({ forestDensity: 'dense' }));
+    expect(sparse.forestDepth).toBeLessThan(normal.forestDepth);
+    expect(normal.forestDepth).toBeLessThan(dense.forestDepth);
   });
 });

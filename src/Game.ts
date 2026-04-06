@@ -883,6 +883,7 @@ export class Game {
             });
             this.dirty.crossings = true;
             this.dirty.trafficLights = true;
+            this.dirty.terrain = true;
           }
           break;
         }
@@ -912,6 +913,7 @@ export class Game {
             });
             this.dirty.tracks = true;
             this.dirty.crossings = true;
+            this.dirty.terrain = true;
           }
           break;
         }

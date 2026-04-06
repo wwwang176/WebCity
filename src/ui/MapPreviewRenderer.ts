@@ -5,11 +5,11 @@ import { resolveTerrainConfig, type MapConfig } from '../core/config/MapConfig';
 
 const TERRAIN_COLORS: Record<number, string> = {
   [TerrainType.WATER]: '#1a3a5c',
-  [TerrainType.MOUNTAIN]: '#5c5c4c',
-  [TerrainType.FOREST]: '#1c3a1c',
+  [TerrainType.MOUNTAIN]: '#2a4a2a',
+  [TerrainType.FOREST]: '#1a2a1a',
 };
 
-const BG_COLOR = '#1a2a1a';
+const BG_COLOR = '#1c3a1c';
 
 /**
  * Render a terrain preview to a canvas based on MapConfig.

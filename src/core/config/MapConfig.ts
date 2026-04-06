@@ -9,7 +9,6 @@ export interface MapConfig {
   seed: number;
   waterAmount: TerrainLevel;
   forestDensity: ForestDensity;
-  mountainAmount: TerrainLevel;
   startingFunds: DifficultyFunding;
   disastersEnabled: boolean;
   disasterFrequency: DisasterFrequency;
@@ -32,7 +31,6 @@ export function getDefaultMapConfig(): MapConfig {
     seed: Math.floor(Math.random() * 2147483646) + 1,
     waterAmount: 'medium',
     forestDensity: 'normal',
-    mountainAmount: 'medium',
     startingFunds: 'normal',
     disastersEnabled: true,
     disasterFrequency: 'medium',
@@ -45,16 +43,10 @@ const WATER_MAP: Record<TerrainLevel, { riverHalfWidth: number; lakeCount: numbe
   high:   { riverHalfWidth: 2, lakeCount: 2 },
 };
 
-const FOREST_MAP: Record<ForestDensity, { forestPatchCount: number; forestFillChance: number }> = {
-  sparse: { forestPatchCount: 4,  forestFillChance: 0.4 },
-  normal: { forestPatchCount: 8,  forestFillChance: 0.7 },
-  dense:  { forestPatchCount: 14, forestFillChance: 0.9 },
-};
-
-const MOUNTAIN_MAP: Record<TerrainLevel, number> = {
-  low: 0,
-  medium: 1,
-  high: 3,
+const FOREST_MAP: Record<ForestDensity, { forestDepth: number; forestWaterGap: number }> = {
+  sparse: { forestDepth: 0.15, forestWaterGap: 3 },
+  normal: { forestDepth: 0.5,  forestWaterGap: 2 },
+  dense:  { forestDepth: 0.85, forestWaterGap: 1 },
 };
 
 export function resolveTerrainConfig(config: MapConfig): TerrainConfig {
@@ -63,8 +55,7 @@ export function resolveTerrainConfig(config: MapConfig): TerrainConfig {
   return {
     riverHalfWidth: water.riverHalfWidth,
     lakeCount: water.lakeCount,
-    forestPatchCount: forest.forestPatchCount,
-    forestFillChance: forest.forestFillChance,
-    mountainCount: MOUNTAIN_MAP[config.mountainAmount],
+    forestDepth: forest.forestDepth,
+    forestWaterGap: forest.forestWaterGap,
   };
 }

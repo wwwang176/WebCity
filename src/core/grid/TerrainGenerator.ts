@@ -5,9 +5,10 @@ import { TerrainType } from './types';
 export interface TerrainConfig {
   riverHalfWidth: number;
   lakeCount: number;
-  forestPatchCount: number;
-  forestFillChance: number;
-  mountainCount: number;
+  /** Controls how far forest extends from edges toward center (0-1). Higher = deeper. */
+  forestDepth: number;
+  /** Manhattan distance from water within which forest probability drops to 0. */
+  forestWaterGap: number;
 }
 
 /** Terrain generation parameters for initial map setup. */
@@ -24,23 +25,14 @@ export const TERRAIN_GEN = {
   /** Half-width of the river (river extends ±RIVER_HALF_WIDTH from center) */
   RIVER_HALF_WIDTH: 1,
 
-  /** Number of random forest patches */
-  FOREST_PATCH_COUNT: 8,
-  /** Radius (cells) of each forest patch */
-  FOREST_PATCH_RADIUS: 3,
-  /** Probability a cell within a patch becomes forest */
-  FOREST_FILL_CHANCE: 0.7,
-
-  /** Number of mountain areas */
-  MOUNTAIN_COUNT: 1,
-  /** Radius (cells) of the mountain area */
-  MOUNTAIN_RADIUS: 4,
-  /** Base elevation at mountain center */
-  MOUNTAIN_PEAK_ELEVATION: 3,
-  /** Elevation decay rate per unit distance from center */
-  MOUNTAIN_ELEVATION_DECAY: 0.5,
-  /** Margin from edge (fraction of map size) for mountain placement */
-  MOUNTAIN_MARGIN: 0.1,
+  /** How far forest extends from edge toward center (fraction of half-size). 0.5 = halfway. */
+  FOREST_DEPTH: 0.5,
+  /** Manhattan distance from water within which forest is suppressed. */
+  FOREST_WATER_GAP: 2,
+  /** Base probability at the very edge of the map. */
+  FOREST_EDGE_PROB: 0.95,
+  /** Randomness jitter to break up uniform edges. */
+  FOREST_JITTER: 0.15,
 
   /** Lake radius range for water=high */
   LAKE_RADIUS_MIN: 2,
@@ -60,7 +52,7 @@ function seededRandom(seed: number): () => number {
 }
 
 /**
- * Generate terrain for a new map: river, lakes, forest patches, and mountains.
+ * Generate terrain for a new map: river, lakes, and edge-based forest.
  * Pass a numeric seed for deterministic results; omit for a random map.
  * Pass a TerrainConfig to override default generation parameters.
  */
@@ -72,9 +64,8 @@ export function generateTerrain(grid: Grid, seed?: number, config?: TerrainConfi
 
   const riverHalfWidth = config?.riverHalfWidth ?? T.RIVER_HALF_WIDTH;
   const lakeCount = config?.lakeCount ?? 0;
-  const forestPatchCount = config?.forestPatchCount ?? T.FOREST_PATCH_COUNT;
-  const forestFillChance = config?.forestFillChance ?? T.FOREST_FILL_CHANCE;
-  const mountainCount = config?.mountainCount ?? T.MOUNTAIN_COUNT;
+  const forestDepth = config?.forestDepth ?? T.FOREST_DEPTH;
+  const forestWaterGap = config?.forestWaterGap ?? T.FOREST_WATER_GAP;
 
   // --- River ---
   const riverPos = T.RIVER_POSITION_MIN + rng() * (T.RIVER_POSITION_MAX - T.RIVER_POSITION_MIN);
@@ -115,47 +106,42 @@ export function generateTerrain(grid: Grid, seed?: number, config?: TerrainConfi
     }
   }
 
-  // --- Forest patches ---
-  const fr = T.FOREST_PATCH_RADIUS;
-  for (let i = 0; i < forestPatchCount; i++) {
-    const cx = Math.floor(rng() * size);
-    const cy = Math.floor(rng() * size);
-    for (let dy = -fr; dy <= fr; dy++) {
-      for (let dx = -fr; dx <= fr; dx++) {
-        const x = cx + dx;
-        const y = cy + dy;
-        if (x >= 0 && x < size && y >= 0 && y < size) {
-          const cell = grid.getCell(x, y);
-          if (cell && cell.terrainType === TerrainType.PLAIN && rng() < forestFillChance) {
-            grid.setCell(x, y, { terrainType: TerrainType.FOREST });
+  // --- Forest (edge-based per-cell) ---
+  // Forest is dense at map edges and fades toward center.
+  // Suppressed near water bodies.
+  const halfSize = size / 2;
+  const maxForestDist = halfSize * forestDepth; // cells from edge where forest probability reaches 0
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const cell = grid.getCell(x, y);
+      if (!cell || cell.terrainType !== TerrainType.PLAIN) continue;
+
+      // Distance from nearest edge
+      const edgeDist = Math.min(x, y, size - 1 - x, size - 1 - y);
+      if (maxForestDist <= 0 || edgeDist >= maxForestDist) continue;
+
+      // Check water proximity — suppress forest near rivers/lakes
+      let nearWater = false;
+      for (let dy = -forestWaterGap; dy <= forestWaterGap && !nearWater; dy++) {
+        for (let dx = -forestWaterGap; dx <= forestWaterGap && !nearWater; dx++) {
+          if (Math.abs(dx) + Math.abs(dy) > forestWaterGap) continue;
+          const nx = x + dx, ny = y + dy;
+          if (nx >= 0 && nx < size && ny >= 0 && ny < size) {
+            const nc = grid.getCell(nx, ny);
+            if (nc && nc.terrainType === TerrainType.WATER) nearWater = true;
           }
         }
+      }
+      if (nearWater) continue;
+
+      // Probability: high at edge (edgeDist=0), fades to 0 at maxForestDist
+      const ratio = 1 - edgeDist / maxForestDist;
+      const prob = T.FOREST_EDGE_PROB * ratio * ratio + rng() * T.FOREST_JITTER;
+      if (rng() < prob) {
+        grid.setCell(x, y, { terrainType: TerrainType.FOREST });
       }
     }
   }
 
-  // --- Mountains ---
-  const margin = Math.floor(size * T.MOUNTAIN_MARGIN) + T.MOUNTAIN_RADIUS;
-  const placeable = size - 2 * margin;
-  const mr = T.MOUNTAIN_RADIUS;
-  const mr2 = mr * mr;
-
-  for (let m = 0; m < mountainCount; m++) {
-    const mx = margin + Math.floor(rng() * Math.max(placeable, 1));
-    const my = margin + Math.floor(rng() * Math.max(placeable, 1));
-    for (let dy = -mr; dy <= mr; dy++) {
-      for (let dx = -mr; dx <= mr; dx++) {
-        if (dx * dx + dy * dy <= mr2) {
-          const x = mx + dx;
-          const y = my + dy;
-          if (x >= 0 && x < size && y >= 0 && y < size) {
-            grid.setCell(x, y, {
-              terrainType: TerrainType.MOUNTAIN,
-              elevation: T.MOUNTAIN_PEAK_ELEVATION - Math.sqrt(dx * dx + dy * dy) * T.MOUNTAIN_ELEVATION_DECAY,
-            });
-          }
-        }
-      }
-    }
-  }
 }

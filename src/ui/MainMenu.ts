@@ -184,17 +184,17 @@ export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGam
   `;
 
   menu.querySelector('#btn-new-game')!.addEventListener('click', () => {
-    // Hide main buttons, show config screen
-    (menu.querySelector('#menu-main') as HTMLElement).style.display = 'none';
-    (menu.querySelector('#save-container') as HTMLElement).style.display = 'none';
+    menu.remove();
     const configScreen = createNewGameConfig(
-      (config) => { menu.remove(); onNewGame(config); },
+      (config) => { configScreen.remove(); onNewGame(config); },
       () => {
         configScreen.remove();
-        (menu.querySelector('#menu-main') as HTMLElement).style.display = 'flex';
+        // Re-create main menu
+        const newMenu = createMainMenu(onNewGame, onLoadGame);
+        document.body.appendChild(newMenu);
       },
     );
-    menu.appendChild(configScreen);
+    document.body.appendChild(configScreen);
   });
 
   menu.querySelector('#btn-back')!.addEventListener('click', () => {

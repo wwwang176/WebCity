@@ -4,19 +4,17 @@ import { TerrainType } from '../types';
 import { generateTerrain, TERRAIN_GEN, type TerrainConfig } from '../TerrainGenerator';
 
 function countTerrain(grid: Grid) {
-  let water = 0, forest = 0, mountain = 0;
+  let water = 0, forest = 0;
   grid.forEachCell((cell) => {
     if (cell.terrainType === TerrainType.WATER) water++;
     if (cell.terrainType === TerrainType.FOREST) forest++;
-    if (cell.terrainType === TerrainType.MOUNTAIN) mountain++;
   });
-  return { water, forest, mountain };
+  return { water, forest };
 }
 
 const DEFAULT_TC: TerrainConfig = {
   riverHalfWidth: 1, lakeCount: 0,
-  forestPatchCount: 8, forestFillChance: 0.7,
-  mountainCount: 1,
+  forestDepth: 0.5, forestWaterGap: 2,
 };
 
 describe('generateTerrain', () => {
@@ -24,12 +22,6 @@ describe('generateTerrain', () => {
     const grid = new Grid(60, 60);
     generateTerrain(grid);
     expect(countTerrain(grid).water).toBeGreaterThanOrEqual(60);
-  });
-
-  it('should create mountain cells', () => {
-    const grid = new Grid(60, 60);
-    generateTerrain(grid);
-    expect(countTerrain(grid).mountain).toBeGreaterThan(0);
   });
 
   it('should produce forest cells', () => {
@@ -56,7 +48,6 @@ describe('generateTerrain', () => {
         const a = gridA.getCell(x, y)!;
         const b = gridB.getCell(x, y)!;
         expect(a.terrainType).toBe(b.terrainType);
-        expect(a.elevation).toBe(b.elevation);
       }
     }
   });
@@ -82,7 +73,6 @@ describe('generateTerrain', () => {
     const c = countTerrain(grid);
     expect(c.water).toBeGreaterThan(0);
     expect(c.forest).toBeGreaterThan(0);
-    expect(c.mountain).toBeGreaterThan(0);
   });
 
   it('river stays within grid bounds for any seed', () => {
@@ -90,16 +80,6 @@ describe('generateTerrain', () => {
       const grid = new Grid(60, 60);
       generateTerrain(grid, seed);
     }
-  });
-
-  it('mountain has positive elevation at its center', () => {
-    const grid = new Grid(60, 60);
-    generateTerrain(grid, 42);
-    let hasElevation = false;
-    grid.forEachCell((cell) => {
-      if (cell.terrainType === TerrainType.MOUNTAIN && cell.elevation > 0) hasElevation = true;
-    });
-    expect(hasElevation).toBe(true);
   });
 
   // --- TerrainConfig overrides ---
@@ -122,32 +102,61 @@ describe('generateTerrain', () => {
     expect(countTerrain(gridLake).water).toBeGreaterThan(countTerrain(gridNoLake).water);
   });
 
-  it('more forest patches produce more forest cells', () => {
+  it('higher forestDepth produces more forest cells', () => {
     const seed = 42;
     const gridSparse = new Grid(60, 60);
     const gridDense = new Grid(60, 60);
-    generateTerrain(gridSparse, seed, { ...DEFAULT_TC, forestPatchCount: 4, forestFillChance: 0.4 });
-    generateTerrain(gridDense, seed, { ...DEFAULT_TC, forestPatchCount: 14, forestFillChance: 0.9 });
+    generateTerrain(gridSparse, seed, { ...DEFAULT_TC, forestDepth: 0.15, forestWaterGap: 2 });
+    generateTerrain(gridDense, seed, { ...DEFAULT_TC, forestDepth: 0.85, forestWaterGap: 2 });
     expect(countTerrain(gridDense).forest).toBeGreaterThan(countTerrain(gridSparse).forest);
   });
 
-  it('mountainCount 0 produces no mountains', () => {
+  it('forest concentrates at edges, not center', () => {
     const grid = new Grid(60, 60);
-    generateTerrain(grid, 42, { ...DEFAULT_TC, mountainCount: 0 });
-    expect(countTerrain(grid).mountain).toBe(0);
+    generateTerrain(grid, 42, { ...DEFAULT_TC, forestDepth: 0.5 });
+
+    let edgeForest = 0, centerForest = 0;
+    for (let y = 0; y < 60; y++) {
+      for (let x = 0; x < 60; x++) {
+        const cell = grid.getCell(x, y)!;
+        if (cell.terrainType !== TerrainType.FOREST) continue;
+        const edgeDist = Math.min(x, y, 59 - x, 59 - y);
+        if (edgeDist <= 5) edgeForest++;
+        else if (edgeDist >= 20) centerForest++;
+      }
+    }
+    expect(edgeForest).toBeGreaterThan(centerForest);
   });
 
-  it('mountainCount 3 produces more mountain cells than 1', () => {
-    const seed = 42;
-    const grid1 = new Grid(60, 60);
-    const grid3 = new Grid(60, 60);
-    generateTerrain(grid1, seed, { ...DEFAULT_TC, mountainCount: 1 });
-    generateTerrain(grid3, seed, { ...DEFAULT_TC, mountainCount: 3 });
-    expect(countTerrain(grid3).mountain).toBeGreaterThan(countTerrain(grid1).mountain);
+  it('forest avoids water cells', () => {
+    const grid = new Grid(60, 60);
+    generateTerrain(grid, 42, { ...DEFAULT_TC, forestDepth: 0.85, forestWaterGap: 2 });
+
+    let forestNearWater = 0;
+    for (let y = 0; y < 60; y++) {
+      for (let x = 0; x < 60; x++) {
+        const cell = grid.getCell(x, y)!;
+        if (cell.terrainType !== TerrainType.FOREST) continue;
+        for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+          const nc = grid.getCell(x + dx, y + dy);
+          if (nc && nc.terrainType === TerrainType.WATER) {
+            forestNearWater++;
+            break;
+          }
+        }
+      }
+    }
+    expect(forestNearWater).toBe(0);
+  });
+
+  it('forestDepth 0 produces no forest', () => {
+    const grid = new Grid(60, 60);
+    generateTerrain(grid, 42, { ...DEFAULT_TC, forestDepth: 0 });
+    expect(countTerrain(grid).forest).toBe(0);
   });
 
   it('same seed + same config = deterministic', () => {
-    const cfg: TerrainConfig = { riverHalfWidth: 2, lakeCount: 2, forestPatchCount: 14, forestFillChance: 0.9, mountainCount: 3 };
+    const cfg: TerrainConfig = { riverHalfWidth: 2, lakeCount: 2, forestDepth: 0.85, forestWaterGap: 1 };
     const gridA = new Grid(60, 60);
     const gridB = new Grid(60, 60);
     generateTerrain(gridA, 777, cfg);
@@ -165,6 +174,5 @@ describe('generateTerrain', () => {
     const c = countTerrain(grid);
     expect(c.water).toBeGreaterThan(0);
     expect(c.forest).toBeGreaterThan(0);
-    expect(c.mountain).toBeGreaterThan(0);
   });
 });
