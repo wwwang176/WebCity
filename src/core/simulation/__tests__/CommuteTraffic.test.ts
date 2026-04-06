@@ -4,6 +4,7 @@ import { SimulationLoop } from '../SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
+import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
 
 /**
  * Helper: set up a minimal city with residential + commercial buildings
@@ -67,14 +68,16 @@ describe('Commute Traffic System', () => {
 
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
-    loop.tick();
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick(); // enqueue + flush (Worker responds synchronously)
+    loop.tick(); // spawn using cached variants
 
     // Should have spawned at least 1 commute vehicle
     expect(state.traffic.getVehicleCount()).toBeGreaterThan(0);
   });
 
   it('should spawn work→home vehicles during evening rush (hours 17-21)', () => {
-    const citizen = state.citizens.createCitizen({
+    state.citizens.createCitizen({
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
@@ -85,6 +88,8 @@ describe('Commute Traffic System', () => {
 
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     expect(state.traffic.getVehicleCount()).toBeGreaterThan(0);
@@ -102,6 +107,8 @@ describe('Commute Traffic System', () => {
 
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     // Vehicles are cosmetic and spawn uniformly regardless of time-of-day
@@ -183,6 +190,8 @@ describe('Commute Traffic System', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     // With 10 working citizens, should spawn multiple vehicles
@@ -201,6 +210,8 @@ describe('Commute Traffic System', () => {
     advanceToHour(state, 12);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     // Vehicles spawn uniformly — midday should also have traffic
@@ -217,8 +228,10 @@ describe('Commute Traffic System', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
 
-    // Vehicles are cosmetic with random sampling — same citizen can be picked again
+    // Tick 1: enqueue + flush, tick 2+: spawn vehicles
+    loop.tick();
     loop.tick();
     loop.tick();
     loop.tick();
@@ -270,6 +283,8 @@ describe('Transport Mode Choice Integration', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     // No transit → citizen drives → car spawned

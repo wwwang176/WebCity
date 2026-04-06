@@ -1706,7 +1706,7 @@ export class SimulationLoop {
       let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
 
       if (!variants) {
-        // Async worker mode: enqueue request, skip this tick
+        // Enqueue to Worker, skip this tick — path will be available next tick
         if (this.pathBatcher && this.graphMapping) {
           if (!this.pathBatcher.isPending(routeKey)) {
             const starts = this.collectPointIndices(fromPos, 'exit');
@@ -1715,16 +1715,8 @@ export class SimulationLoop {
               this.pathBatcher.enqueue(routeKey, starts, ends, toPos);
             }
           }
-          continue; // skip this tick, path will be available next tick
         }
-
-        // Sync fallback (no worker)
-        if (this._roadLookup) {
-          variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromPos, toPos);
-          if (variants.length > 0) {
-            this.commuteCache.setRouteVariants(routeKey, variants);
-          }
-        }
+        continue;
       }
 
       const edgePath = variants && variants.length > 0
@@ -1864,9 +1856,6 @@ export class SimulationLoop {
             const starts = this.collectPointIndices(edge, 'exit');
             const ends = this.collectPointIndices(endRoad, 'entry');
             if (starts.length > 0 && ends.length > 0) this.pathBatcher.enqueue(routeKey, starts, ends, endRoad);
-          } else if (this._roadLookup) {
-            const edgePath = findLanePath(this.laneGraph, this._roadLookup, edge, endRoad);
-            if (edgePath && edgePath.length > 0) this.state.traffic.addVehicleOnEdges(edgePath);
           }
         } else {
           const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
@@ -1882,9 +1871,6 @@ export class SimulationLoop {
             const starts = this.collectPointIndices(startRoad, 'exit');
             const ends = this.collectPointIndices(edge, 'entry');
             if (starts.length > 0 && ends.length > 0) this.pathBatcher.enqueue(routeKey, starts, ends, edge);
-          } else if (this._roadLookup) {
-            const edgePath = findLanePath(this.laneGraph, this._roadLookup, startRoad, edge);
-            if (edgePath && edgePath.length > 0) this.state.traffic.addVehicleOnEdges(edgePath);
           }
         } else {
           const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
@@ -1939,18 +1925,15 @@ export class SimulationLoop {
         const routeKey = `${toPosKey(fromRoad.x, fromRoad.y)}->${toPosKey(toRoad.x, toRoad.y)}`;
         let variants = commuteCache.getRouteVariants(routeKey) ?? null;
         if (!variants) {
-          // Async worker mode: enqueue and return null (skip this tick)
+          // Enqueue to Worker, skip this tick
           if (this.pathBatcher && this.graphMapping && !this.pathBatcher.isPending(routeKey)) {
             const starts = this.collectPointIndices(fromRoad, 'exit');
             const ends = this.collectPointIndices(toRoad, 'entry');
             if (starts.length > 0 && ends.length > 0) {
               this.pathBatcher.enqueue(routeKey, starts, ends, toRoad);
             }
-            return null;
           }
-          // Sync fallback
-          variants = findLanePathVariants(laneGraph, roadLookup, fromRoad, toRoad);
-          if (variants.length > 0) commuteCache.setRouteVariants(routeKey, variants);
+          return null;
         }
         return variants && variants.length > 0
           ? variants[Math.floor(Math.random() * variants.length)]!
