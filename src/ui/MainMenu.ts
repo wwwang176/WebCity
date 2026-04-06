@@ -1,8 +1,10 @@
 import { listSaves, deleteSave, type SaveSlot } from '../core/save/SaveManager';
 import { exportSaveToFile, importSaveFromFile } from '../core/save/ImportExport';
 import { sanitizeSaveName } from '../core/save/SaveValidator';
+import { createNewGameConfig } from './NewGameConfig';
+import { type MapConfig } from '../core/config/MapConfig';
 
-export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: number) => void): HTMLElement {
+export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGame: (slotId: number) => void): HTMLElement {
   const menu = document.createElement('div');
   menu.id = 'main-menu';
   menu.innerHTML = `
@@ -183,7 +185,16 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
 
   menu.querySelector('#btn-new-game')!.addEventListener('click', () => {
     menu.remove();
-    onNewGame();
+    const configScreen = createNewGameConfig(
+      (config) => { configScreen.remove(); onNewGame(config); },
+      () => {
+        configScreen.remove();
+        // Re-create main menu
+        const newMenu = createMainMenu(onNewGame, onLoadGame);
+        document.body.appendChild(newMenu);
+      },
+    );
+    document.body.appendChild(configScreen);
   });
 
   menu.querySelector('#btn-back')!.addEventListener('click', () => {

@@ -125,29 +125,25 @@ describe('isShorePosition', () => {
 });
 
 describe('TERRAIN_GEN constants', () => {
-  it('river position ratio should be between 0 and 1', () => {
-    expect(TERRAIN_GEN.RIVER_POSITION_RATIO).toBeGreaterThan(0);
-    expect(TERRAIN_GEN.RIVER_POSITION_RATIO).toBeLessThan(1);
+  it('river position range should be between 0 and 1', () => {
+    expect(TERRAIN_GEN.RIVER_POSITION_MIN).toBeGreaterThan(0);
+    expect(TERRAIN_GEN.RIVER_POSITION_MIN).toBeLessThan(1);
+    expect(TERRAIN_GEN.RIVER_POSITION_MAX).toBeGreaterThan(TERRAIN_GEN.RIVER_POSITION_MIN);
+    expect(TERRAIN_GEN.RIVER_POSITION_MAX).toBeLessThan(1);
   });
 
-  it('forest fill chance should be between 0 and 1', () => {
-    expect(TERRAIN_GEN.FOREST_FILL_CHANCE).toBeGreaterThan(0);
-    expect(TERRAIN_GEN.FOREST_FILL_CHANCE).toBeLessThanOrEqual(1);
+  it('forest depth should be between 0 and 1', () => {
+    expect(TERRAIN_GEN.FOREST_DEPTH).toBeGreaterThan(0);
+    expect(TERRAIN_GEN.FOREST_DEPTH).toBeLessThanOrEqual(1);
   });
 
-  it('mountain ratios should be between 0 and 1', () => {
-    expect(TERRAIN_GEN.MOUNTAIN_X_RATIO).toBeGreaterThan(0);
-    expect(TERRAIN_GEN.MOUNTAIN_X_RATIO).toBeLessThan(1);
-    expect(TERRAIN_GEN.MOUNTAIN_Y_RATIO).toBeGreaterThan(0);
-    expect(TERRAIN_GEN.MOUNTAIN_Y_RATIO).toBeLessThan(1);
+  it('forest edge probability should be between 0 and 1', () => {
+    expect(TERRAIN_GEN.FOREST_EDGE_PROB).toBeGreaterThan(0);
+    expect(TERRAIN_GEN.FOREST_EDGE_PROB).toBeLessThanOrEqual(1);
   });
 
-  it('mountain peak elevation should be positive', () => {
-    expect(TERRAIN_GEN.MOUNTAIN_PEAK_ELEVATION).toBeGreaterThan(0);
-  });
 
-  it('forest patch count and radius should be positive', () => {
-    expect(TERRAIN_GEN.FOREST_PATCH_COUNT).toBeGreaterThan(0);
-    expect(TERRAIN_GEN.FOREST_PATCH_RADIUS).toBeGreaterThan(0);
+  it('forest water gap should be positive', () => {
+    expect(TERRAIN_GEN.FOREST_WATER_GAP).toBeGreaterThan(0);
   });
 });

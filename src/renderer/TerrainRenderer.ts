@@ -7,11 +7,30 @@ import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 const TERRAIN_COLORS: Record<number, number> = {
   [TerrainType.PLAIN]: 0x4caf50,
   [TerrainType.WATER]: 0x2196f3,
-  [TerrainType.MOUNTAIN]: 0x795548,
-  [TerrainType.FOREST]: 0x2e7d32,
+  [TerrainType.MOUNTAIN]: 0x4caf50,
+  [TerrainType.FOREST]: 0x4caf50,
 };
 
 const STONE_COLOR = 0x9e9e9e;
+
+// Tree constants
+const TREE = {
+  TRUNK_RADIUS: 0.04,
+  TRUNK_HEIGHT: 0.35,
+  CROWN_RADIUS: 0.28,
+  CROWN_HEIGHT: 0.6,
+  TRUNK_COLOR: 0x5d4037,
+  CROWN_COLOR: 0x1b5e20,
+  MAX_TREES: 8000,
+  TREES_PER_CELL: 2,
+} as const;
+
+/** Simple hash for deterministic per-cell tree placement. */
+function cellHash(x: number, y: number, i: number): number {
+  let h = (x * 374761393 + y * 668265263 + i * 1274126177) | 0;
+  h = ((h ^ (h >> 13)) * 1274126177) | 0;
+  return (h ^ (h >> 16)) >>> 0;
+}
 
 export class TerrainRenderer {
   private mesh: THREE.Mesh | null = null;
@@ -19,10 +38,14 @@ export class TerrainRenderer {
   private waterTime = 0;
   private grid: Grid | null = null;
   private groundTexture: THREE.DataTexture | null = null;
+  private treeTrunkMesh: THREE.InstancedMesh | null = null;
+  private treeCrownMesh: THREE.InstancedMesh | null = null;
+  private scene: THREE.Scene | null = null;
 
   build(scene: THREE.Scene, grid: Grid): void {
     this.dispose(scene);
     this.grid = grid;
+    this.scene = scene;
 
     const w = grid.width;
     const h = grid.height;
@@ -56,18 +79,23 @@ export class TerrainRenderer {
     });
 
     this.mesh = new THREE.Mesh(geometry, material);
+    this.mesh.castShadow = true;
     this.mesh.receiveShadow = true;
     this.mesh.position.set(w / 2 - 0.5, 0, h / 2 - 0.5);
     scene.add(this.mesh);
 
     // Water plane (semi-transparent overlay)
     this.buildWater(scene, grid);
+
+    // Forest trees
+    this.buildTrees(scene, grid);
   }
 
-  /** Refresh ground texture (call when buildings/roads change) */
+  /** Refresh ground texture and trees (call when buildings/roads change) */
   refreshColors(): void {
     if (!this.groundTexture || !this.grid) return;
     this.updateGroundTexture(this.groundTexture, this.grid);
+    if (this.scene) this.rebuildTrees(this.grid);
   }
 
   private createGroundTexture(grid: Grid): THREE.DataTexture {
@@ -130,6 +158,87 @@ export class TerrainRenderer {
     scene.add(this.waterMesh);
   }
 
+  private buildTrees(scene: THREE.Scene, grid: Grid): void {
+    // Shared geometries
+    const trunkGeo = new THREE.CylinderGeometry(TREE.TRUNK_RADIUS, TREE.TRUNK_RADIUS, TREE.TRUNK_HEIGHT, 5);
+    const crownGeo = new THREE.ConeGeometry(TREE.CROWN_RADIUS, TREE.CROWN_HEIGHT, 6);
+
+    const trunkMat = new THREE.MeshLambertMaterial({ color: TREE.TRUNK_COLOR });
+    const crownMat = new THREE.MeshLambertMaterial({ color: TREE.CROWN_COLOR });
+
+    this.treeTrunkMesh = new THREE.InstancedMesh(trunkGeo, trunkMat, TREE.MAX_TREES);
+    this.treeCrownMesh = new THREE.InstancedMesh(crownGeo, crownMat, TREE.MAX_TREES);
+    this.treeTrunkMesh.castShadow = true;
+    this.treeCrownMesh.castShadow = true;
+    this.treeTrunkMesh.receiveShadow = true;
+    this.treeCrownMesh.receiveShadow = true;
+
+    this.populateTreeInstances(grid);
+
+    scene.add(this.treeTrunkMesh);
+    scene.add(this.treeCrownMesh);
+  }
+
+  private rebuildTrees(grid: Grid): void {
+    if (!this.treeTrunkMesh || !this.treeCrownMesh) return;
+    this.populateTreeInstances(grid);
+  }
+
+  private populateTreeInstances(grid: Grid): void {
+    if (!this.treeTrunkMesh || !this.treeCrownMesh) return;
+
+    const dummy = new THREE.Object3D();
+    let count = 0;
+    const w = grid.width;
+    const h = grid.height;
+
+    for (let y = 0; y < h && count < TREE.MAX_TREES; y++) {
+      for (let x = 0; x < w && count < TREE.MAX_TREES; x++) {
+        const cell = grid.getCell(x, y);
+        if (!cell) continue;
+        if (cell.terrainType !== TerrainType.FOREST) continue;
+        if (cell.buildingId > 0 || cell.roadType !== 0 || cell.railType !== 0) continue;
+
+        for (let i = 0; i < TREE.TREES_PER_CELL && count < TREE.MAX_TREES; i++) {
+          const hash = cellHash(x, y, i);
+          // Deterministic position within cell (±0.35 from center)
+          const ox = ((hash & 0xff) / 255 - 0.5) * 0.7;
+          const oz = (((hash >> 8) & 0xff) / 255 - 0.5) * 0.7;
+          // Slight scale variation
+          const scale = 0.8 + ((hash >> 16) & 0xff) / 255 * 0.4;
+
+          const px = x + ox;
+          const pz = y + oz;
+
+          // Trunk
+          dummy.position.set(px, TREE.TRUNK_HEIGHT * scale * 0.5, pz);
+          dummy.scale.set(scale, scale, scale);
+          dummy.updateMatrix();
+          this.treeTrunkMesh.setMatrixAt(count, dummy.matrix);
+
+          // Crown (sits on top of trunk)
+          dummy.position.set(px, TREE.TRUNK_HEIGHT * scale + TREE.CROWN_HEIGHT * scale * 0.4, pz);
+          dummy.updateMatrix();
+          this.treeCrownMesh.setMatrixAt(count, dummy.matrix);
+
+          count++;
+        }
+      }
+    }
+
+    // Hide unused instances by zeroing their scale
+    const zeroMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = count; i < TREE.MAX_TREES; i++) {
+      this.treeTrunkMesh.setMatrixAt(i, zeroMatrix);
+      this.treeCrownMesh.setMatrixAt(i, zeroMatrix);
+    }
+
+    this.treeTrunkMesh.count = count;
+    this.treeCrownMesh.count = count;
+    this.treeTrunkMesh.instanceMatrix.needsUpdate = true;
+    this.treeCrownMesh.instanceMatrix.needsUpdate = true;
+  }
+
   update(dt: number): void {
     if (this.waterMesh) {
       this.waterTime += dt;
@@ -173,6 +282,8 @@ export class TerrainRenderer {
       }
       this.waterMesh.renderOrder = dimmed ? 20 : 0;
     }
+    if (this.treeTrunkMesh) this.treeTrunkMesh.visible = !dimmed;
+    if (this.treeCrownMesh) this.treeCrownMesh.visible = !dimmed;
   }
 
   dispose(scene: THREE.Scene): void {
@@ -191,6 +302,18 @@ export class TerrainRenderer {
       this.waterMesh.geometry.dispose();
       (this.waterMesh.material as THREE.Material).dispose();
       this.waterMesh = null;
+    }
+    if (this.treeTrunkMesh) {
+      scene.remove(this.treeTrunkMesh);
+      this.treeTrunkMesh.geometry.dispose();
+      (this.treeTrunkMesh.material as THREE.Material).dispose();
+      this.treeTrunkMesh = null;
+    }
+    if (this.treeCrownMesh) {
+      scene.remove(this.treeCrownMesh);
+      this.treeCrownMesh.geometry.dispose();
+      (this.treeCrownMesh.material as THREE.Material).dispose();
+      this.treeCrownMesh = null;
     }
   }
 }

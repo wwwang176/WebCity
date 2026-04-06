@@ -30,7 +30,7 @@ export function MiniMap() {
       const sx = cw / w;
       const sy = ch / h;
 
-      ctx.fillStyle = '#1a2a1a';
+      ctx.fillStyle = '#1c3a1c';
       ctx.fillRect(0, 0, cw, ch);
 
       for (let y = 0; y < h; y++) {
@@ -41,8 +41,8 @@ export function MiniMap() {
           let color: string | null = null;
 
           if (cell.terrainType === TerrainType.WATER) color = '#1a3a5c';
-          else if (cell.terrainType === TerrainType.MOUNTAIN) color = '#5c5c4c';
-          else if (cell.terrainType === TerrainType.FOREST) color = '#1c3a1c';
+          else if (cell.terrainType === TerrainType.MOUNTAIN) color = '#2a4a2a';
+          else if (cell.terrainType === TerrainType.FOREST) color = '#1a2a1a';
 
           if (cell.roadType > 0) color = '#555';
 

@@ -2,13 +2,14 @@ import { createMainMenu, createLoadingScreen, updateLoadingProgress, removeLoadi
 import { loadGame } from './core/save/SaveManager';
 import { deserializeGameState } from './core/save/Serializer';
 import { type GameState } from './core/simulation/GameState';
+import { type MapConfig } from './core/config/MapConfig';
 
 interface SaveInfo {
   slotId: number;
   name: string;
 }
 
-async function startGame(loadedState?: GameState, saveInfo?: SaveInfo): Promise<void> {
+async function startGame(loadedState?: GameState, saveInfo?: SaveInfo, mapConfig?: MapConfig): Promise<void> {
   const app = document.getElementById('app');
   if (!app) return;
 
@@ -27,7 +28,7 @@ async function startGame(loadedState?: GameState, saveInfo?: SaveInfo): Promise<
 
   app.innerHTML = '';
   app.style.display = 'block';
-  const game = new Game(app, loadedState);
+  const game = new Game(app, loadedState, mapConfig);
   if (saveInfo) {
     game.loadedSlotId = saveInfo.slotId;
     game.loadedSaveName = saveInfo.name;
@@ -68,7 +69,7 @@ const app = document.getElementById('app');
 if (app) {
   app.innerHTML = '';
   const menu = createMainMenu(
-    () => startGame(),
+    (config) => startGame(undefined, undefined, config),
     (slotId) => handleLoadGame(slotId),
   );
   document.body.appendChild(menu);
