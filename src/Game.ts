@@ -69,6 +69,7 @@ import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverla
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
 import { canPlaceTransportStop, findAdjacentRoadCell, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
+import { type MapConfig, STARTING_FUNDS_MAP, DISASTER_CHANCE_MAP, resolveTerrainConfig } from './core/config/MapConfig';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
 import { FerryAnimator } from './renderer/FerryAnimator';
 import { TrackRenderer } from './renderer/TrackRenderer';
@@ -440,8 +441,9 @@ export class Game {
   loadedSlotId: number | null = null;
   /** Name of the save slot this game was loaded from */
   loadedSaveName: string | null = null;
+  mapConfig: MapConfig | null = null;
 
-  constructor(container: HTMLElement, loadedState?: GameState) {
+  constructor(container: HTMLElement, loadedState?: GameState, mapConfig?: MapConfig) {
     const mapSize = loadedState ? loadedState.grid.width : 60;
 
     // Audio
@@ -463,6 +465,10 @@ export class Game {
       this.state.clock.speed = 1;
     } else {
       this.state = createGameState(mapSize, mapSize);
+      if (mapConfig) {
+        this.mapConfig = mapConfig;
+        this.state.budget.funds = STARTING_FUNDS_MAP[mapConfig.startingFunds];
+      }
     }
     this.simLoop = new SimulationLoop(this.state);
 
@@ -598,7 +604,11 @@ export class Game {
       }});
     } else {
       steps.push({ label: 'Creating landscape...', run: () => {
-        generateTerrain(this.state.grid);
+        generateTerrain(
+          this.state.grid,
+          this.mapConfig?.seed,
+          this.mapConfig ? resolveTerrainConfig(this.mapConfig) : undefined,
+        );
       }});
     }
 
@@ -2518,8 +2528,12 @@ export class Game {
   }
 
   private checkRandomDisaster(): void {
+    if (this.mapConfig && !this.mapConfig.disastersEnabled) return;
     const pop = this.state.citizens.getPopulation();
-    const result = tryRandomDisaster(this.state.grid.width, this.state.grid.height, pop);
+    const chance = this.mapConfig
+      ? DISASTER_CHANCE_MAP[this.mapConfig.disasterFrequency]
+      : undefined;
+    const result = tryRandomDisaster(this.state.grid.width, this.state.grid.height, pop, chance);
     if (!result) return;
 
     applyDisasterDamage(this.state.grid, result.damagedCells);

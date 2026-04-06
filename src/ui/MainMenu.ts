@@ -1,8 +1,10 @@
 import { listSaves, deleteSave, type SaveSlot } from '../core/save/SaveManager';
 import { exportSaveToFile, importSaveFromFile } from '../core/save/ImportExport';
 import { sanitizeSaveName } from '../core/save/SaveValidator';
+import { createNewGameConfig } from './NewGameConfig';
+import { type MapConfig } from '../core/config/MapConfig';
 
-export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: number) => void): HTMLElement {
+export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGame: (slotId: number) => void): HTMLElement {
   const menu = document.createElement('div');
   menu.id = 'main-menu';
   menu.innerHTML = `
@@ -182,8 +184,17 @@ export function createMainMenu(onNewGame: () => void, onLoadGame: (slotId: numbe
   `;
 
   menu.querySelector('#btn-new-game')!.addEventListener('click', () => {
-    menu.remove();
-    onNewGame();
+    // Hide main buttons, show config screen
+    (menu.querySelector('#menu-main') as HTMLElement).style.display = 'none';
+    (menu.querySelector('#save-container') as HTMLElement).style.display = 'none';
+    const configScreen = createNewGameConfig(
+      (config) => { menu.remove(); onNewGame(config); },
+      () => {
+        configScreen.remove();
+        (menu.querySelector('#menu-main') as HTMLElement).style.display = 'flex';
+      },
+    );
+    menu.appendChild(configScreen);
   });
 
   menu.querySelector('#btn-back')!.addEventListener('click', () => {
