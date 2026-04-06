@@ -10,9 +10,12 @@ import { calculateLandValue, checkParkProximity } from '../economy/LandValue';
 import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI } from '../grid/types';
 import { RoadType } from '../road/types';
 import { getLaneCount } from '../road/types';
-import { LaneGraph } from '../traffic/LaneGraph';
+import { LaneGraph, type LaneEdge } from '../traffic/LaneGraph';
 import { findLanePath, findLanePathVariants } from '../traffic/LaneGraphPathfinder';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
+import { LaneGraphBuffer, type GraphMapping } from '../traffic/LaneGraphBuffer';
+import { PathRequestBatcher } from '../traffic/PathRequestBatcher';
+import type { WorkerRequest } from '../traffic/PathfindingWorkerHandler';
 import { computeCongestionFlow, computeCongestionFlowMonteCarlo, type CongestionFlowDeps } from '../traffic/CongestionFlowPredictor';
 import { getBuildingType } from '../building/types';
 import { avgEducationScore } from '../building/BuildingUpgrade';
@@ -105,6 +108,12 @@ export class SimulationLoop {
   // Commute path cache: stores computed LaneEdge paths for citizen commutes
   commuteCache: CommuteCache = new CommuteCache();
 
+  // ── Pathfinding Worker (optional — async off-main-thread pathfinding) ──
+  private graphBuffer: LaneGraphBuffer | null = null;
+  private graphMapping: GraphMapping | null = null;
+  private pathBatcher: PathRequestBatcher | null = null;
+  private pathWorker: Worker | null = null;
+
   // Service vehicle manager: spawns patrol vehicles within service coverage
   private serviceVehicleManager = new ServiceVehicleManager();
 
@@ -168,6 +177,44 @@ export class SimulationLoop {
 
   setRoadLookup(lookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup): void {
     this._roadLookup = lookup;
+  }
+
+  /**
+   * Enable async off-main-thread pathfinding via a Web Worker.
+   * When set, pathfinding requests are batched and sent to the worker each tick.
+   * Results arrive 1-2 ticks later and are written into the CommuteCache routeIndex.
+   */
+  setPathfindingWorker(worker: Worker, maxPoints = 131072, maxEdges = 262144): void {
+    this.pathWorker = worker;
+    this.graphBuffer = new LaneGraphBuffer(maxPoints, maxEdges);
+    this.pathBatcher = new PathRequestBatcher(worker, { pointIdToIndex: new Map(), edgeOriginals: [] });
+
+    // Wire up result callback: convert edge indices → LaneEdge[] and store in routeIndex
+    this.pathBatcher.onResult = (routeKey: string, variants: number[][]) => {
+      if (!this.graphMapping || variants.length === 0) return;
+      const edgeOriginals = this.graphMapping.edgeOriginals;
+      const laneEdgeVariants: LaneEdge[][] = [];
+      for (const v of variants) {
+        const edges: LaneEdge[] = [];
+        for (const idx of v) {
+          const original = edgeOriginals[idx];
+          if (original) edges.push(original);
+        }
+        if (edges.length > 0) laneEdgeVariants.push(edges);
+      }
+      if (laneEdgeVariants.length > 0) {
+        this.commuteCache.setRouteVariants(routeKey, laneEdgeVariants);
+      }
+    };
+
+    // Send INIT_GRAPH to worker
+    const msg: WorkerRequest = {
+      type: 'INIT_GRAPH',
+      graphSAB: this.graphBuffer.getBuffer(),
+      maxPoints,
+      maxEdges,
+    };
+    worker.postMessage(msg);
   }
 
   constructor(state: GameState) {
@@ -1379,6 +1426,38 @@ export class SimulationLoop {
     // Invalidate all service vehicles — their edgePaths reference stale LaneEdges.
     // They will be re-spawned on next tickServiceVehicles().
     this.serviceVehicleManager.removeAll(this.state.traffic);
+
+    // Sync graph to SharedArrayBuffer for Worker pathfinding
+    this.syncGraphToWorker();
+  }
+
+  /** Write the current LaneGraph into the SharedArrayBuffer and notify the Worker. */
+  private syncGraphToWorker(): void {
+    if (!this.graphBuffer || !this.pathWorker) return;
+    const lookup = this._roadLookup;
+    if (lookup) {
+      this.graphMapping = this.graphBuffer.writeFromGraphWithLookup(
+        this.laneGraph,
+        (cellKey) => {
+          const info = lookup.getCellByKey(cellKey);
+          return info ? info.roadType : RoadType.NONE;
+        },
+      );
+    } else {
+      this.graphMapping = this.graphBuffer.writeFromGraph(this.laneGraph);
+    }
+    if (this.pathBatcher) {
+      this.pathBatcher.updateMapping(this.graphMapping);
+      this.pathBatcher.clearPending();
+    }
+    // Re-init worker with updated SAB (GraphReader re-reads header with new counts)
+    const msg: WorkerRequest = {
+      type: 'INIT_GRAPH',
+      graphSAB: this.graphBuffer.getBuffer(),
+      maxPoints: this.graphBuffer.getMaxPoints(),
+      maxEdges: this.graphBuffer.getMaxEdges(),
+    };
+    this.pathWorker.postMessage(msg);
   }
 
   private rebuildSidewalkGraph(): void {
@@ -1608,27 +1687,36 @@ export class SimulationLoop {
       // --- Check commute cache first ---
       const cached = this.commuteCache.get(citizen.id);
       const currentTick = this.state.clock.tick;
+      const routeKey = `${fromStr}->${toStr}`;
 
       if (cached && cached.status === 'ready'
           && !this.commuteCache.isDirty(citizen.id)
           && !this.commuteCache.isExpired(cached, currentTick)) {
-        const cachedPath = toWork ? cached.morningPath : cached.eveningPath;
-        if (cachedPath && cachedPath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(cachedPath, citizen.id);
+        const variants = this.commuteCache.getRouteVariants(routeKey);
+        if (variants && variants.length > 0) {
+          const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
+          this.state.traffic.addVehicleOnEdges(edgePath, citizen.id);
           spawned++;
           continue;
         }
+        // Variants pool cleared (e.g. by invalidateCell) — fall through to recompute
       }
 
       // --- Compute path and populate cache ---
-      const routeKey = `${fromStr}->${toStr}`;
       let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
 
-      if (!variants && this._roadLookup) {
-        variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromPos, toPos);
-        if (variants.length > 0) {
-          this.commuteCache.setRouteVariants(routeKey, variants);
+      if (!variants) {
+        // Enqueue to Worker, skip this tick — path will be available next tick
+        if (this.pathBatcher && this.graphMapping) {
+          if (!this.pathBatcher.isPending(routeKey)) {
+            const starts = this.collectPointIndices(fromPos, 'exit');
+            const ends = this.collectPointIndices(toPos, 'entry');
+            if (starts.length > 0 && ends.length > 0) {
+              this.pathBatcher.enqueue(routeKey, starts, ends, toPos);
+            }
+          }
         }
+        continue;
       }
 
       const edgePath = variants && variants.length > 0
@@ -1663,6 +1751,42 @@ export class SimulationLoop {
         });
       }
     }
+
+    // Flush batched pathfinding requests to worker
+    if (this.pathBatcher) this.pathBatcher.flush(100);
+  }
+
+  /**
+   * Collect LaneGraph connection point indices for a building position.
+   * Used by async worker pathfinding to map building → graph entry/exit points.
+   */
+  private collectPointIndices(
+    pos: { x: number; y: number },
+    pointType: 'entry' | 'exit',
+  ): number[] {
+    if (!this.graphMapping || !this._roadLookup) return [];
+    const mapping = this.graphMapping;
+    const lookup = this._roadLookup;
+    const reach = ZONE_ROAD_REACH;
+    const results: number[] = [];
+    const suffix = pointType;
+
+    for (let dy = -reach; dy <= reach; dy++) {
+      for (let dx = -reach; dx <= reach; dx++) {
+        const keys = lookup.getAllKeysAtPosition(pos.x + dx, pos.y + dy);
+        for (const key of keys) {
+          // Check all points in this cell that match the desired type
+          const pts = this.laneGraph.getConnectionPoints(key);
+          for (const pt of pts) {
+            if (pt.type === suffix) {
+              const idx = mapping.pointIdToIndex.get(pt.id);
+              if (idx !== undefined) results.push(idx);
+            }
+          }
+        }
+      }
+    }
+    return results;
   }
 
 
@@ -1725,16 +1849,32 @@ export class SimulationLoop {
       if (isIncoming) {
         const endRoad = findNearRoad(grid, bp.x, bp.y, ZONE_ROAD_REACH);
         if (!endRoad || (endRoad.x === edge.x && endRoad.y === edge.y)) continue;
-        const edgePath = findLanePath(this.laneGraph, this._roadLookup, edge, endRoad);
-        if (edgePath && edgePath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(edgePath);
+        const routeKey = `${toPosKey(edge.x, edge.y)}->${toPosKey(endRoad.x, endRoad.y)}`;
+        let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
+        if (!variants) {
+          if (this.pathBatcher && this.graphMapping && !this.pathBatcher.isPending(routeKey)) {
+            const starts = this.collectPointIndices(edge, 'exit');
+            const ends = this.collectPointIndices(endRoad, 'entry');
+            if (starts.length > 0 && ends.length > 0) this.pathBatcher.enqueue(routeKey, starts, ends, endRoad);
+          }
+        } else {
+          const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
+          if (edgePath && edgePath.length > 0) this.state.traffic.addVehicleOnEdges(edgePath);
         }
       } else {
         const startRoad = findNearRoad(grid, bp.x, bp.y, ZONE_ROAD_REACH);
         if (!startRoad || (startRoad.x === edge.x && startRoad.y === edge.y)) continue;
-        const edgePath = findLanePath(this.laneGraph, this._roadLookup, startRoad, edge);
-        if (edgePath && edgePath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(edgePath);
+        const routeKey = `${toPosKey(startRoad.x, startRoad.y)}->${toPosKey(edge.x, edge.y)}`;
+        let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
+        if (!variants) {
+          if (this.pathBatcher && this.graphMapping && !this.pathBatcher.isPending(routeKey)) {
+            const starts = this.collectPointIndices(startRoad, 'exit');
+            const ends = this.collectPointIndices(edge, 'entry');
+            if (starts.length > 0 && ends.length > 0) this.pathBatcher.enqueue(routeKey, starts, ends, edge);
+          }
+        } else {
+          const edgePath = variants[Math.floor(Math.random() * variants.length)]!;
+          if (edgePath && edgePath.length > 0) this.state.traffic.addVehicleOnEdges(edgePath);
         }
       }
     }
@@ -1785,8 +1925,15 @@ export class SimulationLoop {
         const routeKey = `${toPosKey(fromRoad.x, fromRoad.y)}->${toPosKey(toRoad.x, toRoad.y)}`;
         let variants = commuteCache.getRouteVariants(routeKey) ?? null;
         if (!variants) {
-          variants = findLanePathVariants(laneGraph, roadLookup, fromRoad, toRoad);
-          if (variants.length > 0) commuteCache.setRouteVariants(routeKey, variants);
+          // Enqueue to Worker, skip this tick
+          if (this.pathBatcher && this.graphMapping && !this.pathBatcher.isPending(routeKey)) {
+            const starts = this.collectPointIndices(fromRoad, 'exit');
+            const ends = this.collectPointIndices(toRoad, 'entry');
+            if (starts.length > 0 && ends.length > 0) {
+              this.pathBatcher.enqueue(routeKey, starts, ends, toRoad);
+            }
+          }
+          return null;
         }
         return variants && variants.length > 0
           ? variants[Math.floor(Math.random() * variants.length)]!

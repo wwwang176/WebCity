@@ -142,9 +142,13 @@ export class CommuteCache {
   setRouteVariants(routeKey: string, variants: LaneEdge[][]): void {
     this.routeIndex.set(routeKey, variants);
 
-    // Build routeCellIndex using first variant (all variants share the same cells)
+    // Build routeCellIndex from ALL variants (different variants may use different cells)
     if (variants.length > 0) {
-      const cells = collectEdgeCells(variants[0]!);
+      const cells = this.reusableCellSet;
+      cells.clear();
+      for (const variant of variants) {
+        collectEdgeCells(variant, cells);
+      }
       for (const cellKey of cells) {
         let routeKeys = this.routeCellIndex.get(cellKey);
         if (!routeKeys) {

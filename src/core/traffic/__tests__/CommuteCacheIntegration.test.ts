@@ -4,6 +4,7 @@ import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
+import { createSyncFakeWorker } from './SyncFakeWorker';
 
 /**
  * Helper: set up a minimal city with residential + commercial buildings
@@ -61,9 +62,11 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
-    loop.tick();
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick(); // enqueue + flush
+    loop.tick(); // spawn using cached variants
 
-    // After a tick during morning rush, the commute cache should have at least 1 entry
+    // After two ticks, the commute cache should have at least 1 entry
     expect(loop.commuteCache.size).toBeGreaterThanOrEqual(1);
   });
 
@@ -77,13 +80,13 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
-    loop.tick();
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick(); // enqueue + flush
+    loop.tick(); // spawn + cache personal route
 
     const cachedRoute = loop.commuteCache.get(state.citizens.getCitizens()[0]!.id);
     expect(cachedRoute).toBeDefined();
     expect(cachedRoute!.status).toBe('ready');
-    // The morning path should be non-null since a vehicle was spawned
-    expect(cachedRoute!.morningPath).not.toBeNull();
   });
 
   it('should invalidate cache when lane graph is marked dirty', () => {
@@ -96,13 +99,14 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     const cacheSize = loop.commuteCache.size;
     expect(cacheSize).toBeGreaterThan(0);
 
     // Mark lane graph as dirty with affected road cells (simulates road demolition)
-    // The road runs from x=2..14 at y=1; invalidate a cell on the route
     loop.markLaneGraphDirty(['8,1']);
 
     // Cached routes through that cell should be marked dirty
@@ -125,6 +129,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     // Both citizens should have the same route key cached
@@ -150,6 +156,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     expect(loop.commuteCache.size).toBeGreaterThan(0);
@@ -169,7 +177,9 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
-    loop.tick();
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick(); // enqueue + flush
+    loop.tick(); // spawn + cache
 
     const citizenId = citizen.id;
     const cachedBefore = loop.commuteCache.get(citizenId);
@@ -182,7 +192,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
 
     // Remove vehicle so activeCommuters allows re-sampling, then tick to recompute
     for (const v of state.traffic.vehicles) v.arrived = true;
-    loop.tick();
+    loop.tick(); // enqueue dirty path
+    loop.tick(); // spawn with recomputed path
 
     // After recomputation, dirty flag should be cleared
     expect(loop.commuteCache.isDirty(citizenId)).toBe(false);
@@ -198,6 +209,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     // Verify citizen has a cached route
@@ -248,6 +261,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     // Invalidate a cell that doesn't break connectivity (road still exists)
@@ -267,6 +282,8 @@ describe('CommuteCache Integration with SimulationLoop', () => {
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
+    loop.setPathfindingWorker(createSyncFakeWorker());
+    loop.tick();
     loop.tick();
 
     const citizenId = state.citizens.getCitizens()[0]!.id;

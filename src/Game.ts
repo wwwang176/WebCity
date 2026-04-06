@@ -466,6 +466,17 @@ export class Game {
     }
     this.simLoop = new SimulationLoop(this.state);
 
+    // Pathfinding worker: zero-GC A* off the main thread via SharedArrayBuffer
+    try {
+      const pfWorker = new Worker(
+        new URL('./workers/pathfinding.worker.ts', import.meta.url),
+        { type: 'module' },
+      );
+      this.simLoop.setPathfindingWorker(pfWorker);
+    } catch {
+      // Worker not available — pathfinding requests will be skipped until next tick
+    }
+
     // Workplace distance cache: off-thread reverse Dijkstra for O(1) relocation lookups
     try {
       const wdWorker = new Worker(

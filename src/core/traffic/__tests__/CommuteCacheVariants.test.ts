@@ -82,4 +82,17 @@ describe('CommuteCache route variants', () => {
     const result = cache.getByRoute('A->B');
     expect(result).toBe(v1);
   });
+
+  it('invalidateCell should remove route when cell only appears in a non-first variant', () => {
+    const cache = new CommuteCache();
+    // variant1: 0,0 → 1,0 → 2,0 (through cell 1,0)
+    const variant1 = [fakeEdge('0,0', '1,0', 0), fakeEdge('1,0', '2,0', 0)];
+    // variant2: 0,0 → 1,1 → 2,0 (through cell 1,1 — different cell!)
+    const variant2 = [fakeEdge('0,0', '1,1', 1), fakeEdge('1,1', '2,0', 1)];
+    cache.setRouteVariants('A->B', [variant1, variant2]);
+
+    // Invalidate cell only in variant2 — should still remove the route
+    cache.invalidateCell('1,1');
+    expect(cache.getRouteVariants('A->B')).toBeUndefined();
+  });
 });
