@@ -22,6 +22,24 @@ export function isAdjacentToRoad(grid: Grid, x: number, y: number): boolean {
   return grid.getNeighbors(x, y).some(cell => cell.roadType !== RoadType.NONE);
 }
 
+/**
+ * Check if any road cell exists within Chebyshev distance `distance` of (x, y).
+ * Chebyshev distance = max(|dx|, |dy|), so this scans a (2*distance+1)×(2*distance+1) square.
+ * distance=1 is equivalent to 8-neighbor adjacency (includes diagonals);
+ * distance=2 allows zones/services to sit one empty tile away from a road.
+ * The cell (x, y) itself is not counted.
+ */
+export function isNearRoad(grid: Grid, x: number, y: number, distance: number = 1): boolean {
+  for (let dy = -distance; dy <= distance; dy++) {
+    for (let dx = -distance; dx <= distance; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const cell = grid.getCell(x + dx, y + dy);
+      if (cell && cell.roadType !== RoadType.NONE) return true;
+    }
+  }
+  return false;
+}
+
 /** Create a "x,y" position key string */
 export function toPosKey(x: number, y: number): string {
   return `${x},${y}`;
@@ -196,6 +214,36 @@ export function isFootprintAdjacentToRoad(
   return false;
 }
 
+/**
+ * Check if a footprint (w×h starting at x,y) has any road within Chebyshev distance
+ * `distance` of its outer edge. distance=1 allows orthogonal and diagonal neighbors
+ * (slightly more permissive than isFootprintAdjacentToRoad, which is 4-neighbor only);
+ * distance=2 permits one empty tile between the footprint and a road.
+ * Cells inside the footprint are skipped.
+ */
+export function isFootprintNearRoad(
+  grid: ReadableGrid,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  distance: number,
+): boolean {
+  const minX = x - distance;
+  const maxX = x + w - 1 + distance;
+  const minY = y - distance;
+  const maxY = y + h - 1 + distance;
+  for (let cy = minY; cy <= maxY; cy++) {
+    for (let cx = minX; cx <= maxX; cx++) {
+      // Skip cells inside the footprint itself
+      if (cx >= x && cx < x + w && cy >= y && cy < y + h) continue;
+      const cell = grid.getCell(cx, cy);
+      if (cell && cell.roadType !== 0) return true;
+    }
+  }
+  return false;
+}
+
 /** Find the cell itself or an adjacent road cell. Returns null if none found. */
 export function findAdjacentRoad(
   grid: ReadableGrid,
@@ -209,6 +257,32 @@ export function findAdjacentRoad(
     const ny = y + dy!;
     const cell = grid.getCell(nx, ny);
     if (cell && cell.roadType !== RoadType.NONE) return { x: nx, y: ny };
+  }
+  return null;
+}
+
+/**
+ * Find the nearest road cell within Chebyshev `distance` of (x, y).
+ * Scans outward from the center so the closest road (by Chebyshev distance)
+ * is returned first. Falls back to null if no road exists in range.
+ * Use this for zone buildings that may sit in the inner ring (distance=2).
+ */
+export function findNearRoad(
+  grid: ReadableGrid,
+  x: number,
+  y: number,
+  distance: number,
+): { x: number; y: number } | null {
+  const self = grid.getCell(x, y);
+  if (self && self.roadType !== RoadType.NONE) return { x, y };
+  for (let r = 1; r <= distance; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const cell = grid.getCell(x + dx, y + dy);
+        if (cell && cell.roadType !== RoadType.NONE) return { x: x + dx, y: y + dy };
+      }
+    }
   }
   return null;
 }

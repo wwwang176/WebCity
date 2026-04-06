@@ -21,9 +21,25 @@ describe('ZoneManager', () => {
     expect(grid.getCell(5, 4)!.zoneType).toBe(ZoneType.RESIDENTIAL_LOW);
   });
 
-  it('should fail to zone a cell not adjacent to a road', () => {
+  it('should fail to zone a cell not within road reach', () => {
     const { zone } = setupGridWithRoad();
     const result = zone.setZone(0, 0, ZoneType.RESIDENTIAL_LOW);
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('NOT_ADJACENT_TO_ROAD');
+  });
+
+  it('should allow zoning a cell one tile away from a road (Chebyshev reach=2)', () => {
+    // Road along y=5 from x=5..15. Cell at (5, 3) sits one empty tile (y=4) from the road.
+    const { grid, zone } = setupGridWithRoad();
+    const result = zone.setZone(5, 3, ZoneType.RESIDENTIAL_LOW);
+    expect(result.success).toBe(true);
+    expect(grid.getCell(5, 3)!.zoneType).toBe(ZoneType.RESIDENTIAL_LOW);
+  });
+
+  it('should reject zoning a cell two tiles away from road (beyond reach)', () => {
+    // Road along y=5. Cell at (5, 2) is two empty tiles (y=3, y=4) from the road — Chebyshev 3.
+    const { zone } = setupGridWithRoad();
+    const result = zone.setZone(5, 2, ZoneType.RESIDENTIAL_LOW);
     expect(result.success).toBe(false);
     expect(result.reason).toBe('NOT_ADJACENT_TO_ROAD');
   });

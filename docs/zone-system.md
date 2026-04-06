@@ -24,10 +24,12 @@
 
 ### 基本限制
 
-1. **必須緊鄰道路**: 區域只能規劃在有道路鄰居（4 方向）的格子上
+1. **必須在道路的內圈範圍內**: 區域只能規劃在距離道路 Chebyshev 距離 ≤ `ZONE_ROAD_REACH`（=2）的格子上。這包含直接相鄰（1 格）和後退一格的「內圈」（2 格）。超過 2 格則拒絕並回傳 `NOT_ADJACENT_TO_ROAD`。
 2. **不可建在水域或山地**: 地形限制
 3. **不可建在道路上**: 道路格子不能被規劃
 4. **不可建在基礎設施上**: 已有電廠、水廠、警局等設施的格子不能規劃
+
+> `ZONE_ROAD_REACH` 定義於 `src/core/grid/constants.ts`，是全系統共用的「可容忍距離」。詳見 [grid-system.md — 共享常數](grid-system.md#共享常數-zone_road_reach)。
 
 ### 改變規劃
 
@@ -55,11 +57,13 @@
 
 ### 密度判定邏輯
 
-`getMaxDensity(grid, x, y)` 檢查格子的 4 個鄰居中最高等級的道路：
+`getMaxDensity(grid, x, y)` 掃描 Chebyshev `ZONE_ROAD_REACH`（5×5 方框）內所有道路 cell，取最高密度等級：
 
-- 只要有一個鄰居是 HIGH 級道路（四車道以上）→ 返回 `'HIGH'`
+- 範圍內任一道路是 HIGH 級（四車道以上）→ 返回 `'HIGH'`
 - 否則有 LOW 級道路 → 返回 `'LOW'`
-- 沒有鄰接道路 → 返回 `'NONE'`
+- 範圍內沒有道路 → 返回 `'NONE'`
+
+掃描範圍與 `ZoneManager.setZone` / `BuildingGrowth.canGrow` 的可劃設範圍一致，確保內圈的 zone 格子也能繼承鄰近道路的密度等級而順利成長。
 
 ### 對建築成長的影響
 

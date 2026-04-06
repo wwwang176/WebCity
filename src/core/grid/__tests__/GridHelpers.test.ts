@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../Grid';
 import {
-  isAdjacentToRoad, toPosKey, parsePosKey, parsePosKeyUnsafe, findAdjacentRoad,
-  euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius, CARDINAL_DIRECTIONS,
-  hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS, getLShapedPath,
-  getDirectionFlag, manhattanDistance, findAtPosition, countRoadTiles, isCellBuildable,
+  isAdjacentToRoad, isNearRoad, isFootprintNearRoad, toPosKey, parsePosKey, parsePosKeyUnsafe,
+  findAdjacentRoad, euclideanDistance, isWithinEuclideanRadius, forEachCellInRadius,
+  CARDINAL_DIRECTIONS, hasVerticalFlag, hasHorizontalFlag, normalizeRect, FOUR_NEIGHBORS,
+  getLShapedPath, getDirectionFlag, manhattanDistance, findAtPosition, countRoadTiles,
+  isCellBuildable,
 } from '../GridHelpers';
 import { RoadType } from '../../road/types';
 import { RailType } from '../../rail/types';
@@ -50,6 +51,90 @@ describe('isAdjacentToRoad', () => {
     const grid = new Grid(5, 5);
     grid.setCell(1, 0, { roadType: RoadType.TWO_LANE });
     expect(isAdjacentToRoad(grid, 0, 0)).toBe(true);
+  });
+});
+
+describe('isNearRoad', () => {
+  it('returns false when the grid has no roads', () => {
+    const grid = new Grid(10, 10);
+    expect(isNearRoad(grid, 5, 5, 2)).toBe(false);
+  });
+
+  it('distance=1 includes diagonal neighbors (Chebyshev, unlike isAdjacentToRoad)', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(4, 4, { roadType: RoadType.TWO_LANE });
+    expect(isNearRoad(grid, 5, 5, 1)).toBe(true);
+    expect(isAdjacentToRoad(grid, 5, 5)).toBe(false);
+  });
+
+  it('distance=2 allows a one-tile gap to road (orthogonal)', () => {
+    const grid = new Grid(10, 10);
+    // Road two tiles north of target
+    grid.setCell(5, 3, { roadType: RoadType.TWO_LANE });
+    expect(isNearRoad(grid, 5, 5, 2)).toBe(true);
+  });
+
+  it('distance=2 allows a one-tile gap to road (diagonal)', () => {
+    const grid = new Grid(10, 10);
+    // Road at (3, 3), target at (5, 5) → Chebyshev distance = 2
+    grid.setCell(3, 3, { roadType: RoadType.TWO_LANE });
+    expect(isNearRoad(grid, 5, 5, 2)).toBe(true);
+  });
+
+  it('distance=2 rejects roads that are 3+ tiles away', () => {
+    const grid = new Grid(10, 10);
+    // Road at (5, 2), target at (5, 5) → Chebyshev distance = 3
+    grid.setCell(5, 2, { roadType: RoadType.TWO_LANE });
+    expect(isNearRoad(grid, 5, 5, 2)).toBe(false);
+  });
+
+  it('ignores the cell (x, y) itself even if it contains a road', () => {
+    const grid = new Grid(10, 10);
+    grid.setCell(5, 5, { roadType: RoadType.TWO_LANE });
+    expect(isNearRoad(grid, 5, 5, 2)).toBe(false);
+  });
+
+  it('defaults distance to 1 when omitted', () => {
+    const grid = new Grid(10, 10);
+    // Diagonal neighbor — distance=1 Chebyshev should see it
+    grid.setCell(4, 4, { roadType: RoadType.TWO_LANE });
+    expect(isNearRoad(grid, 5, 5)).toBe(true);
+  });
+});
+
+describe('isFootprintNearRoad', () => {
+  it('returns false when the grid has no roads', () => {
+    const grid = new Grid(10, 10);
+    expect(isFootprintNearRoad(grid, 3, 3, 2, 2, 1)).toBe(false);
+  });
+
+  it('distance=1 detects a road orthogonally adjacent to footprint edge', () => {
+    const grid = new Grid(10, 10);
+    // 2×2 footprint at (5, 5); road at (4, 5) (directly west of footprint)
+    grid.setCell(4, 5, { roadType: RoadType.TWO_LANE });
+    expect(isFootprintNearRoad(grid, 5, 5, 2, 2, 1)).toBe(true);
+  });
+
+  it('distance=2 allows one empty tile between footprint and road', () => {
+    const grid = new Grid(10, 10);
+    // 2×2 footprint at (5, 5); road at (3, 5) — one empty column at x=4
+    grid.setCell(3, 5, { roadType: RoadType.TWO_LANE });
+    expect(isFootprintNearRoad(grid, 5, 5, 2, 2, 1)).toBe(false);
+    expect(isFootprintNearRoad(grid, 5, 5, 2, 2, 2)).toBe(true);
+  });
+
+  it('distance=2 rejects roads 3+ tiles from footprint edge', () => {
+    const grid = new Grid(10, 10);
+    // 2×2 footprint at (5, 5); road at (2, 5) — two empty columns between
+    grid.setCell(2, 5, { roadType: RoadType.TWO_LANE });
+    expect(isFootprintNearRoad(grid, 5, 5, 2, 2, 2)).toBe(false);
+  });
+
+  it('does not count road cells inside the footprint', () => {
+    const grid = new Grid(10, 10);
+    // Put a road inside a 2×2 footprint — should still return false (no external road)
+    grid.setCell(5, 5, { roadType: RoadType.TWO_LANE });
+    expect(isFootprintNearRoad(grid, 5, 5, 2, 2, 2)).toBe(false);
   });
 });
 

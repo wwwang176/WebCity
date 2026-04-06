@@ -13,6 +13,14 @@ export interface InfraConfig {
   width: number;
   height: number;
   cost: number;
+  /**
+   * Chebyshev distance within which a road must exist for placement and for the
+   * facility to count as "connected" in coverage services. Civic services
+   * (police/fire/hospital/schools/cemetery) use 2 so they can sit one tile back
+   * from a road; utilities and transit use 1 (strictly adjacent).
+   * Defaults to 1 when omitted.
+   */
+  roadReach?: 1 | 2;
 }
 
 export const INFRA_CONFIGS: readonly InfraConfig[] = [
@@ -37,6 +45,9 @@ export const INFRA_CONFIGS: readonly InfraConfig[] = [
   { type: 'ferry_dock',  buildingId: 238, name: 'Ferry Dock',        width: 1, height: 1, cost: 1500 },
 ];
 
+/** Default road reach when a config doesn't specify one. */
+export const DEFAULT_INFRA_ROAD_REACH = 1;
+
 const byType = new Map<InfraType, InfraConfig>();
 const byId = new Map<number, InfraConfig>();
 const infraBuildingIds = new Set<number>();
@@ -44,6 +55,16 @@ for (const cfg of INFRA_CONFIGS) {
   byType.set(cfg.type, cfg);
   byId.set(cfg.buildingId, cfg);
   infraBuildingIds.add(cfg.buildingId);
+}
+
+/** Look up the Chebyshev road reach for a given infra type. */
+export function getInfraRoadReach(type: InfraType): 1 | 2 {
+  return byType.get(type)?.roadReach ?? DEFAULT_INFRA_ROAD_REACH;
+}
+
+/** Look up the Chebyshev road reach by buildingId (returns default if unknown). */
+export function getInfraRoadReachById(buildingId: number): 1 | 2 {
+  return byId.get(buildingId)?.roadReach ?? DEFAULT_INFRA_ROAD_REACH;
 }
 
 /** Returns true if the buildingId belongs to an infrastructure building (not a zone building). */

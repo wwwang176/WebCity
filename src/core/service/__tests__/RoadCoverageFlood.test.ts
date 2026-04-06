@@ -255,6 +255,61 @@ describe('expandCoverageToBuildings', () => {
     // Only the road cell itself should be present (neighbors are out of bounds)
     expect(result.size).toBe(1);
   });
+
+  it('covers the inner ring (2 tiles from a road) by default', () => {
+    // Road at (2,2) in a 5x5 grid. Default reach=ZONE_ROAD_REACH (=2) covers
+    // every non-road cell within the 5×5 Chebyshev box around the road tile.
+    const grid = makeGrid([
+      [_, _, _, _, _],
+      [_, _, _, _, _],
+      [_, _, R, _, _],
+      [_, _, _, _, _],
+      [_, _, _, _, _],
+    ]);
+    const roadCov = new Map([[toPosKey(2, 2), 0]]);
+    const result = expandCoverageToBuildings(grid, roadCov);
+    // Chebyshev 2 includes the outer corners of the 5x5 box
+    expect(result.has(toPosKey(0, 0))).toBe(true);
+    expect(result.has(toPosKey(4, 4))).toBe(true);
+    // And the orthogonally-adjacent cells (reach 1)
+    expect(result.has(toPosKey(2, 3))).toBe(true);
+    expect(result.has(toPosKey(3, 2))).toBe(true);
+    // Total = 5×5 = 25 cells (1 road + 24 buildings)
+    expect(result.size).toBe(25);
+  });
+
+  it('reach=1 override recovers legacy Chebyshev-1 behaviour', () => {
+    // Same road tile, but with reach=1 we only pick up the 3×3 box.
+    const grid = makeGrid([
+      [_, _, _, _, _],
+      [_, _, _, _, _],
+      [_, _, R, _, _],
+      [_, _, _, _, _],
+      [_, _, _, _, _],
+    ]);
+    const roadCov = new Map([[toPosKey(2, 2), 0]]);
+    const result = expandCoverageToBuildings(grid, roadCov, 1);
+    expect(result.has(toPosKey(1, 1))).toBe(true); // diagonal at reach 1
+    expect(result.has(toPosKey(0, 0))).toBe(false); // reach 2 — excluded
+    expect(result.size).toBe(9); // 3×3 box: 1 road + 8 buildings
+  });
+
+  it('inner-ring cells inherit the minimum cost across all reaching road tiles', () => {
+    // Two road tiles 2 cells apart. The building between them at Chebyshev 1
+    // from each should take the lower of the two costs.
+    const grid = makeGrid([
+      [_, _, _, _, _],
+      [_, R, _, R, _],
+      [_, _, _, _, _],
+    ]);
+    const roadCov = new Map([
+      [toPosKey(1, 1), 10],
+      [toPosKey(3, 1), 3],
+    ]);
+    const result = expandCoverageToBuildings(grid, roadCov);
+    expect(result.get(toPosKey(2, 1))).toBe(3); // min of 10 and 3
+    expect(result.get(toPosKey(2, 0))).toBe(3); // both reach via Chebyshev 2
+  });
 });
 
 // ── RoadCoverageMap ─────────────────────────────────────────────────
@@ -436,17 +491,30 @@ describe('RoadCoverageMap', () => {
 // ── roadDistanceToTargets ─────────────────────────────────────────
 
 describe('roadDistanceToTargets', () => {
-  it('returns correct cost for straight road connecting home and target', () => {
-    // Home at (0,0), target at (3,0), road: (1,0) (2,0)
-    // Home neighbors road at (1,0), target neighbors road at (2,0)
+  it('home and target sharing a road segment within reach have cost 0 (inner-ring model)', () => {
+    // Home at (0,0), target at (3,0), road: (1,0) (2,0).
+    // Under the Chebyshev-2 inner-ring model both endpoints attach directly to
+    // the same road segment, so no traversal is needed and cost = 0.
     const grid = makeGrid([
       [_, R, R, _],
     ]);
     const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['3,0']), 100);
     expect(result.has('3,0')).toBe(true);
-    const cost = result.get('3,0')!;
-    // Cost = seed at 0 + 1 step from (1,0) to (2,0) = roadTileCost(TWO_LANE)
-    expect(cost).toBeCloseTo(roadTileCost(R), 5);
+    expect(result.get('3,0')!).toBe(0);
+  });
+
+  it('returns Dijkstra traversal cost when home and target attach to different road segments', () => {
+    // Home at (1,1), road along y=1 from x=3 to x=4, target building at (6,1).
+    // Home's Chebyshev-2 seed reaches (3,1); Dijkstra walks one hop to (4,1);
+    // checkNeighbors at (4,1) picks up target (6,1) via Chebyshev 2 ⇒ 1 road hop.
+    const grid = makeGrid([
+      [_, _, _, _, _, _, _],
+      [_, _, _, R, R, _, _],
+      [_, _, _, _, _, _, _],
+    ]);
+    const result = roadDistanceToTargets(grid, { x: 1, y: 1 }, new Set(['6,1']), 100);
+    expect(result.has('6,1')).toBe(true);
+    expect(result.get('6,1')!).toBeCloseTo(roadTileCost(R), 5);
   });
 
   it('returns empty for unreachable target (road gap)', () => {
@@ -474,13 +542,19 @@ describe('roadDistanceToTargets', () => {
     expect(result.has(toPosKey(21, 0))).toBe(false);
   });
 
-  it('highway costs less than rural for same distance', () => {
-    const ruralGrid = makeGrid([[_, RU, RU, RU, _]]);
-    const hwGrid = makeGrid([[_, H, H, H, _]]);
-    const target = new Set(['4,0']);
-    const ruralResult = roadDistanceToTargets(ruralGrid, { x: 0, y: 0 }, target, 100);
-    const hwResult = roadDistanceToTargets(hwGrid, { x: 0, y: 0 }, target, 100);
-    expect(hwResult.get('4,0')!).toBeLessThan(ruralResult.get('4,0')!);
+  it('highway costs less than rural for a long traversal', () => {
+    // Long road so seed-pickup can't collapse to 0 — home seeds x≤2, target
+    // picks up from road cells near x=10, forcing Dijkstra across the whole span.
+    const mkRow = (rt: number) =>
+      [_, rt, rt, rt, rt, rt, rt, rt, rt, rt, rt, _] as number[];
+    const ruralGrid = makeGrid([mkRow(RU)]);
+    const hwGrid = makeGrid([mkRow(H)]);
+    const target = new Set(['11,0']);
+    const ruralResult = roadDistanceToTargets(ruralGrid, { x: 0, y: 0 }, target, 1000);
+    const hwResult = roadDistanceToTargets(hwGrid, { x: 0, y: 0 }, target, 1000);
+    expect(ruralResult.get('11,0')!).toBeGreaterThan(0);
+    expect(hwResult.get('11,0')!).toBeGreaterThan(0);
+    expect(hwResult.get('11,0')!).toBeLessThan(ruralResult.get('11,0')!);
   });
 
   it('home not on road — seeds from adjacent road cells', () => {

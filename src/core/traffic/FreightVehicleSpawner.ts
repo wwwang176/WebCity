@@ -7,7 +7,8 @@
  */
 
 import { ZoneType, isCommercialZone } from '../grid/types';
-import { toPosKey, findAdjacentRoad } from '../grid/GridHelpers';
+import { toPosKey, findNearRoad } from '../grid/GridHelpers';
+import { ZONE_ROAD_REACH } from '../grid/constants';
 import { FreightRouteType } from './FreightSystem';
 import { randomInt } from '../utils/random';
 import type { LaneEdge } from './LaneGraph';
@@ -201,8 +202,8 @@ export function spawnFreightVehicles(ctx: FreightSpawnContext): FreightSpawnResu
         break;
     }
 
-    const fromRoad = findAdjacentRoad(grid, from.x, from.y);
-    const toRoad = findAdjacentRoad(grid, to.x, to.y);
+    const fromRoad = findNearRoad(grid, from.x, from.y, ZONE_ROAD_REACH);
+    const toRoad = findNearRoad(grid, to.x, to.y, ZONE_ROAD_REACH);
     if (!fromRoad || !toRoad || (fromRoad.x === toRoad.x && fromRoad.y === toRoad.y)) continue;
 
     const edgePath = findPath(fromRoad, toRoad);

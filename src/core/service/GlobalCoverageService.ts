@@ -58,10 +58,11 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
       ? this.facilities.filter(f => this.operationalIds!.has(f.id))
       : this.facilities;
 
+    const seedReach = this.roadReach;
     for (const fac of active) {
       if (!this.connectedFacilityIds.has(fac.id)) continue;
       const positions = expandFootprint(fac.x, fac.y, this.defaultFacilityWidth, this.defaultFacilityHeight);
-      const roadCov = roadFlood(grid, positions, Infinity, this.roadLookup);
+      const roadCov = roadFlood(grid, positions, Infinity, this.roadLookup, seedReach);
       const fullCov = expandCoverageToBuildings(grid, roadCov);
       this.facilityDistanceMaps.set(fac.id, fullCov);
 
@@ -95,7 +96,7 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
     facilityHeight = this.defaultFacilityHeight,
   ): Map<string, number> {
     const positions = expandFootprint(position.x, position.y, facilityWidth, facilityHeight);
-    const roadCov = roadFlood(grid, positions, Infinity, this.roadLookup);
+    const roadCov = roadFlood(grid, positions, Infinity, this.roadLookup, this.roadReach);
     return expandCoverageToBuildings(grid, roadCov);
   }
 

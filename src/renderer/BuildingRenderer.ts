@@ -906,6 +906,7 @@ export class BuildingRenderer {
 
   // --- Non-persistent meshes (zone overlays, rebuilt each build) ---
   private overlayMeshes: THREE.InstancedMesh[] = [];
+  private overlayIndex = new Map<string, { mesh: THREE.InstancedMesh; idx: number }>();
 
   // --- Infrastructure groups (now with index for lookup) ---
   private infraGroups: THREE.Group[] = [];
@@ -1194,6 +1195,7 @@ export class BuildingRenderer {
       else (mat as THREE.Material).dispose();
     }
     this.overlayMeshes = [];
+    this.overlayIndex.clear();
 
     const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
     grid.forEachCell((cell, x, y) => {
@@ -1205,6 +1207,33 @@ export class BuildingRenderer {
     });
 
     this.buildZoneOverlays(scene, emptyZonesByType);
+  }
+
+  /** Remove a single zone overlay at (x, y) — swap-with-last, O(1). */
+  removeZoneOverlay(x: number, y: number): void {
+    const key = `${x},${y}`;
+    const entry = this.overlayIndex.get(key);
+    if (!entry) return;
+
+    const { mesh, idx } = entry;
+    const lastIdx = mesh.count - 1;
+
+    if (idx !== lastIdx) {
+      // Swap last instance into the removed slot
+      mesh.getMatrixAt(lastIdx, this._matrix);
+      mesh.setMatrixAt(idx, this._matrix);
+
+      // Update index for the moved instance
+      const lastX = this._matrix.elements[12];
+      const lastZ = this._matrix.elements[14];
+      const lastKey = `${lastX},${lastZ}`;
+      const lastEntry = this.overlayIndex.get(lastKey);
+      if (lastEntry) lastEntry.idx = idx;
+    }
+
+    mesh.count = lastIdx;
+    mesh.instanceMatrix.needsUpdate = true;
+    this.overlayIndex.delete(key);
   }
 
   // ─── Full rebuild (init / save load) ───────────────────────────
@@ -1289,6 +1318,7 @@ export class BuildingRenderer {
         const c = cells[i]!;
         matrix.setPosition(c.x, 0.02, c.y);
         mesh.setMatrixAt(i, matrix);
+        this.overlayIndex.set(`${c.x},${c.y}`, { mesh, idx: i });
       }
       mesh.instanceMatrix.needsUpdate = true;
       scene.add(mesh);
@@ -3376,6 +3406,7 @@ export class BuildingRenderer {
       else (mat as THREE.Material).dispose();
     }
     this.overlayMeshes = [];
+    this.overlayIndex.clear();
     this._buildingMeshesDirty = true;
 
     for (const group of this.infraGroups) {

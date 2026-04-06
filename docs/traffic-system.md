@@ -496,9 +496,11 @@ maxPerTick = max(5, ceil(合格通勤者數 / 4))
 
 `laneAStar` 支援多個起點（multi-source）和多個目標（multi-target）：
 
-- **起點**: 呼叫 `findNearbyExitPoints` 收集出發建築及其四鄰的所有 exit ConnectionPoint，全部以 g=0 加入 open list
-- **終點**: 呼叫 `findNearbyEntryPoints` 收集目標建築及其四鄰的所有 entry ConnectionPoint，任一被到達即結束
+- **起點**: 呼叫 `findNearbyExitPoints` 收集出發建築及其 Chebyshev `ZONE_ROAD_REACH`（5×5 方框）內所有道路 cell 的 exit ConnectionPoint，全部以 g=0 加入 open list
+- **終點**: 呼叫 `findNearbyEntryPoints` 收集目標建築同樣範圍內所有 entry ConnectionPoint，任一被到達即結束
 - 透過 `UnifiedRoadLookup.getAllKeysAtPosition()` 支援高架道路（elevation）
+
+> 掃描範圍與 [zone-system](zone-system.md#基本限制) 的內圈放置規則一致：住宅／工作場所可能位於距離道路 2 格的內圈，只掃 4 鄰居會找不到起終點 → A* 沒有 seed → 通勤失敗。Chebyshev 2 保證所有合法放置的建築都能產生車道路徑。詳見 [grid-system — `ZONE_ROAD_REACH`](grid-system.md#共享常數-zone_road_reach)。
 
 ### 成本函式
 

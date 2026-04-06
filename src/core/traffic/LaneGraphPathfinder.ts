@@ -10,7 +10,8 @@
 
 import { type LaneGraph, type LaneEdge, type ConnectionPoint } from './LaneGraph';
 import { ROAD_CONFIGS, RoadType } from '../road/types';
-import { parsePosKeyUnsafe, parseLevelFromKey, FOUR_NEIGHBORS, toPosKey } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, parseLevelFromKey, toPosKey } from '../grid/GridHelpers';
+import { ZONE_ROAD_REACH } from '../grid/constants';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 import { getLaneSpeedMultiplier } from './Pathfinding';
 
@@ -24,57 +25,52 @@ const REFERENCE_SPEED_LIMIT = 50;
 const VARIANT_COUNT = 3;
 
 /**
- * Find the nearest LaneGraph exit points for a building position.
- * Checks the building cell and its 4 neighbors for road cells with exit points.
+ * Collect LaneGraph connection points of a specific type (entry/exit) for any
+ * road cell within Chebyshev `ZONE_ROAD_REACH` of the building position (bx, by).
+ *
+ * Buildings may sit one empty tile back from a road (the inner ring — see
+ * `src/core/grid/constants.ts`), so scanning only 4 orthogonal neighbours would
+ * miss inner-ring homes/workplaces and make their commute path generation fail.
+ * We instead scan a (2·reach+1)² box around the building cell.
  */
-function findNearbyExitPoints(
+function collectNearbyConnectionPoints(
   graph: LaneGraph,
   bx: number, by: number,
   lookup: UnifiedRoadLookup,
+  pointType: 'entry' | 'exit',
 ): ConnectionPoint[] {
   const results: ConnectionPoint[] = [];
-  const positions = [{ x: bx, y: by }];
-  for (const [dx, dy] of FOUR_NEIGHBORS) {
-    positions.push({ x: bx + dx!, y: by + dy! });
-  }
-
-  for (const pos of positions) {
-    // Check all levels at this position
-    const keys = lookup.getAllKeysAtPosition(pos.x, pos.y);
-    for (const key of keys) {
-      const pts = graph.getConnectionPoints(key);
-      for (const pt of pts) {
-        if (pt.type === 'exit') results.push(pt);
+  for (let dy = -ZONE_ROAD_REACH; dy <= ZONE_ROAD_REACH; dy++) {
+    for (let dx = -ZONE_ROAD_REACH; dx <= ZONE_ROAD_REACH; dx++) {
+      // Check every level at this position (ground + elevated roads).
+      const keys = lookup.getAllKeysAtPosition(bx + dx, by + dy);
+      for (const key of keys) {
+        const pts = graph.getConnectionPoints(key);
+        for (const pt of pts) {
+          if (pt.type === pointType) results.push(pt);
+        }
       }
     }
   }
   return results;
 }
 
-/**
- * Find the nearest LaneGraph entry points for a building position.
- */
+/** Find LaneGraph exit points near a building (scans Chebyshev ZONE_ROAD_REACH). */
+function findNearbyExitPoints(
+  graph: LaneGraph,
+  bx: number, by: number,
+  lookup: UnifiedRoadLookup,
+): ConnectionPoint[] {
+  return collectNearbyConnectionPoints(graph, bx, by, lookup, 'exit');
+}
+
+/** Find LaneGraph entry points near a building (scans Chebyshev ZONE_ROAD_REACH). */
 function findNearbyEntryPoints(
   graph: LaneGraph,
   bx: number, by: number,
   lookup: UnifiedRoadLookup,
 ): ConnectionPoint[] {
-  const results: ConnectionPoint[] = [];
-  const positions = [{ x: bx, y: by }];
-  for (const [dx, dy] of FOUR_NEIGHBORS) {
-    positions.push({ x: bx + dx!, y: by + dy! });
-  }
-
-  for (const pos of positions) {
-    const keys = lookup.getAllKeysAtPosition(pos.x, pos.y);
-    for (const key of keys) {
-      const pts = graph.getConnectionPoints(key);
-      for (const pt of pts) {
-        if (pt.type === 'entry') results.push(pt);
-      }
-    }
-  }
-  return results;
+  return collectNearbyConnectionPoints(graph, bx, by, lookup, 'entry');
 }
 
 function manhattanDist(a: { x: number; y: number }, b: { x: number; y: number }): number {

@@ -85,7 +85,7 @@ BURNED            = 3   焦黑（火災後）
 
 1. **有區域規劃**: `zoneType` 不為 NONE
 2. **空地**: `buildingId` 為 0
-3. **道路連接**: 至少一個 4 方向鄰居有道路
+3. **道路連接**: 格子在道路的 Chebyshev `ZONE_ROAD_REACH`（=2）範圍內（與 [zone-system — 基本限制](zone-system.md#基本限制) 的可劃設條件一致）
 4. **有電力**: `hasPower = true`（分區空格只要鄰接有電的道路/建築即視為有電，見[服務系統 — BFS 中繼與終點](services-system.md#bfs-中繼與終點)）
 5. **有供水**: `hasWater = true`（同上）
 6. **RCI 需求**: 對應的住宅/商業/工業需求 > 0
@@ -281,13 +281,19 @@ resilience = 0.5 + ((x × 7919 + y × 104729) % 1000) / 1000
 2. 不可放在水域
 3. 不可放在有道路的格子
 4. 不可放在已有其他基礎設施的格子
-5. 佔地範圍必須至少有一邊鄰接道路
+5. 佔地範圍必須在道路的 `roadReach` 範圍內（詳見下方）
 6. 已存在的區域建築會被自動拆除
 
 特殊規則：
 - **Water Plant (水廠)**: 佔地範圍至少有一格有地下水（需靠近河流）
 - **Train Station (火車站)**: 必須建在有鐵軌的格子上
 - **Ferry Dock (碼頭)**: 必須緊鄰水域
+
+### 放置的道路接觸要求
+
+所有基礎設施（civic + utility + transit）放置時皆需**嚴格正交相鄰**道路（`isFootprintAdjacentToRoad`，4 方向）。`InfraConfig` 保留 `roadReach` 欄位（預設 1），但目前所有類型均使用預設值。
+
+> **注意**：zone 建築可位於道路的 Chebyshev 2 內圈（參見 [zone-system](zone-system.md#基本限制)），但基礎設施不可。civic 服務的**覆蓋**仍然擴散到內圈 zone 建築（參見 [services-system — 覆蓋管線](services-system.md#道路距離覆蓋演算法-road-coverage-flood)）。
 
 ### 多格建築
 

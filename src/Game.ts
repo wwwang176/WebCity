@@ -494,6 +494,8 @@ export class Game {
     // no need to set dirty.buildings (avoids redundant full rebuild)
     this.simLoop.onBuildingAdded = (x, y, zoneType, level) => {
       this.buildingRenderer.addBuilding(x, y, zoneType, level, false);
+      this.buildingRenderer.removeZoneOverlay(x, y);
+      this.dirty.terrain = true;
     };
     this.simLoop.onBuildingRemoved = (x, y) => {
       this.buildingRenderer.removeBuilding(x, y);

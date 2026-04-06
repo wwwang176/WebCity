@@ -73,6 +73,19 @@ describe('InfraPlacement', () => {
       expect(result.ok).toBe(true);
     });
 
+    it('all infra (civic + utility) rejects placement with 1 tile gap from road', () => {
+      const grid = makeGrid();
+      // Road at (3,5); 2x2 at (5,5) — one empty column at x=4
+      grid.setCell(3, 5, { roadType: 1 });
+      // Civic — must also be strictly adjacent
+      expectFail(canPlaceInfra(grid, 5, 5, 'police', 0), 'NOT_ADJACENT_TO_ROAD');
+      expectFail(canPlaceInfra(grid, 5, 5, 'hospital', 0), 'NOT_ADJACENT_TO_ROAD');
+      expectFail(canPlaceInfra(grid, 5, 5, 'cemetery', 0), 'NOT_ADJACENT_TO_ROAD');
+      // Utility — same
+      expectFail(canPlaceInfra(grid, 5, 5, 'power', 0), 'NOT_ADJACENT_TO_ROAD');
+      expectFail(canPlaceInfra(grid, 5, 5, 'garbage', 0), 'NOT_ADJACENT_TO_ROAD');
+    });
+
     it('should reject if any tile is out of bounds', () => {
       const grid = makeGrid();
       expectFail(canPlaceInfra(grid, 19, 19, 'police', 0), 'OUT_OF_BOUNDS');

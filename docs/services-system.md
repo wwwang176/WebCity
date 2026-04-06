@@ -643,6 +643,12 @@ isFacilityOperational(x, y, infraType) =
 
 大多數市政服務使用 Dijkstra 道路距離覆蓋，而非簡單的歐幾里得半徑。
 
+### 覆蓋管線三階段
+
+1. **Seeding**：從設施的各佔地 cell 往外掃 Chebyshev `seedReach` 範圍，找到可以啟動 Dijkstra 的道路 cell。`seedReach` 由 `RoadCoverageService.roadReach` 決定 — civic 類為 2（警／消／醫／校／墓），utility 類為 1（垃圾場等）。讓 civic 設施後退一格放置時仍能從附近道路啟動覆蓋 flood。
+2. **Dijkstra flood**：沿道路網擴散，累計成本 ≤ 設施預算者視為「道路已覆蓋」。詳見下方各服務預算。
+3. **Building expansion**：`expandCoverageToBuildings` 把每個覆蓋到的道路 cell 外擴 Chebyshev `ZONE_ROAD_REACH`（=2）範圍，將該範圍內的非道路 cell 一併標記為覆蓋。這確保 [zone-system](zone-system.md#基本限制) 的內圈 zone 建築（距離道路 ≤ 2）能被所有使用 `RoadCoverageService` / `GlobalCoverageService` 的服務（警／消／醫／校／墓／垃圾）服務到。每個建築 cell 繼承在其 Chebyshev 2 範圍內所有覆蓋道路中**成本最低**的那條路的成本。
+
 ### 道路格通過成本
 
 ```
