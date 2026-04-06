@@ -100,7 +100,7 @@ export class PathRequestBatcher {
         startPointIndices: req.startPointIndices,
         endPointIndices: req.endPointIndices,
         endPos: req.endPos,
-        variantCount: 3,
+        variantCount: 4,
       });
     }
 
