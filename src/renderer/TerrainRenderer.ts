@@ -8,7 +8,7 @@ const TERRAIN_COLORS: Record<number, number> = {
   [TerrainType.PLAIN]: 0x4caf50,
   [TerrainType.WATER]: 0x2196f3,
   [TerrainType.MOUNTAIN]: 0x4caf50,
-  [TerrainType.FOREST]: 0x2e7d32,
+  [TerrainType.FOREST]: 0x4caf50,
 };
 
 const STONE_COLOR = 0x9e9e9e;

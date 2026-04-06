@@ -13,7 +13,7 @@ function countTerrain(grid: Grid) {
 }
 
 const DEFAULT_TC: TerrainConfig = {
-  riverHalfWidth: 1, lakeCount: 0,
+  riverHalfWidth: 1, lakeCount: 0, coastalFeature: false,
   forestDepth: 0.5, forestWaterGap: 2,
 };
 
@@ -45,9 +45,7 @@ describe('generateTerrain', () => {
 
     for (let y = 0; y < 60; y++) {
       for (let x = 0; x < 60; x++) {
-        const a = gridA.getCell(x, y)!;
-        const b = gridB.getCell(x, y)!;
-        expect(a.terrainType).toBe(b.terrainType);
+        expect(gridA.getCell(x, y)!.terrainType).toBe(gridB.getCell(x, y)!.terrainType);
       }
     }
   });
@@ -155,8 +153,32 @@ describe('generateTerrain', () => {
     expect(countTerrain(grid).forest).toBe(0);
   });
 
+  // --- Coastal feature ---
+
+  it('coastalFeature generates more water than plain river', () => {
+    const seed = 42;
+    const gridPlain = new Grid(60, 60);
+    const gridFeature = new Grid(60, 60);
+    generateTerrain(gridPlain, seed, { ...DEFAULT_TC, riverHalfWidth: 2 });
+    generateTerrain(gridFeature, seed, { ...DEFAULT_TC, riverHalfWidth: 2, coastalFeature: true });
+    expect(countTerrain(gridFeature).water).toBeGreaterThan(countTerrain(gridPlain).water);
+  });
+
+  it('coastalFeature is deterministic with same seed', () => {
+    const cfg: TerrainConfig = { ...DEFAULT_TC, riverHalfWidth: 2, coastalFeature: true };
+    const gridA = new Grid(60, 60);
+    const gridB = new Grid(60, 60);
+    generateTerrain(gridA, 777, cfg);
+    generateTerrain(gridB, 777, cfg);
+    for (let y = 0; y < 60; y++) {
+      for (let x = 0; x < 60; x++) {
+        expect(gridA.getCell(x, y)!.terrainType).toBe(gridB.getCell(x, y)!.terrainType);
+      }
+    }
+  });
+
   it('same seed + same config = deterministic', () => {
-    const cfg: TerrainConfig = { riverHalfWidth: 2, lakeCount: 2, forestDepth: 0.85, forestWaterGap: 1 };
+    const cfg: TerrainConfig = { riverHalfWidth: 2, lakeCount: 2, coastalFeature: false, forestDepth: 0.85, forestWaterGap: 1 };
     const gridA = new Grid(60, 60);
     const gridB = new Grid(60, 60);
     generateTerrain(gridA, 777, cfg);

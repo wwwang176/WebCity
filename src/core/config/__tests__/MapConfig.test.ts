@@ -50,26 +50,32 @@ describe('resolveTerrainConfig', () => {
     return { ...getDefaultMapConfig(), ...overrides };
   }
 
-  // Water
-  it('low water → riverHalfWidth 1, lakeCount 0', () => {
+  it('low water → narrow river, no feature', () => {
     const tc = resolveTerrainConfig(configWith({ waterAmount: 'low' }));
     expect(tc.riverHalfWidth).toBe(1);
     expect(tc.lakeCount).toBe(0);
+    expect(tc.coastalFeature).toBe(false);
   });
 
-  it('medium water → riverHalfWidth 1, lakeCount 0', () => {
+  it('medium water → narrow river, no feature', () => {
     const tc = resolveTerrainConfig(configWith({ waterAmount: 'medium' }));
     expect(tc.riverHalfWidth).toBe(1);
-    expect(tc.lakeCount).toBe(0);
+    expect(tc.coastalFeature).toBe(false);
   });
 
-  it('high water → riverHalfWidth 2, lakeCount 2', () => {
+  it('high water → wider river + lakes, no feature', () => {
     const tc = resolveTerrainConfig(configWith({ waterAmount: 'high' }));
     expect(tc.riverHalfWidth).toBe(2);
     expect(tc.lakeCount).toBe(2);
+    expect(tc.coastalFeature).toBe(false);
   });
 
-  // Forest
+  it('very_high water → river + coastal feature', () => {
+    const tc = resolveTerrainConfig(configWith({ waterAmount: 'very_high' }));
+    expect(tc.riverHalfWidth).toBe(2);
+    expect(tc.coastalFeature).toBe(true);
+  });
+
   it('sparse forest → small depth, large water gap', () => {
     const tc = resolveTerrainConfig(configWith({ forestDensity: 'sparse' }));
     expect(tc.forestDepth).toBe(0.15);

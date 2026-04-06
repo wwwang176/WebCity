@@ -204,7 +204,7 @@ export function createNewGameConfig(
         <div class="ngc-row">
           <div class="ngc-label">Water</div>
           <div class="ngc-row-body">
-            <input type="range" class="ngc-slider" id="ngc-water" min="0" max="2" step="1" value="1">
+            <input type="range" class="ngc-slider" id="ngc-water" min="0" max="3" step="1" value="1">
             <span class="ngc-slider-val" id="ngc-water-val">Medium</span>
           </div>
         </div>
@@ -269,8 +269,8 @@ export function createNewGameConfig(
   const seedDisplay = el.querySelector('#ngc-seed-display') as HTMLDivElement;
 
   // --- Label maps ---
-  const WATER_LABELS = ['Low', 'Medium', 'High'] as const;
-  const WATER_VALUES = ['low', 'medium', 'high'] as const;
+  const WATER_LABELS = ['Low', 'Medium', 'High', 'Very High'] as const;
+  const WATER_VALUES = ['low', 'medium', 'high', 'very_high'] as const;
   const FOREST_LABELS = ['Sparse', 'Normal', 'Dense'] as const;
   const FOREST_VALUES = ['sparse', 'normal', 'dense'] as const;
   const FREQ_LABELS = ['Low', 'Medium', 'High'] as const;

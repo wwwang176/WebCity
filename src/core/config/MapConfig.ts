@@ -1,6 +1,6 @@
 import type { TerrainConfig } from '../grid/TerrainGenerator';
 
-export type TerrainLevel = 'low' | 'medium' | 'high';
+export type TerrainLevel = 'low' | 'medium' | 'high' | 'very_high';
 export type ForestDensity = 'sparse' | 'normal' | 'dense';
 export type DifficultyFunding = 'easy' | 'normal' | 'hard';
 export type DisasterFrequency = 'low' | 'medium' | 'high';
@@ -37,10 +37,11 @@ export function getDefaultMapConfig(): MapConfig {
   };
 }
 
-const WATER_MAP: Record<TerrainLevel, { riverHalfWidth: number; lakeCount: number }> = {
-  low:    { riverHalfWidth: 1, lakeCount: 0 },
-  medium: { riverHalfWidth: 1, lakeCount: 0 },
-  high:   { riverHalfWidth: 2, lakeCount: 2 },
+const WATER_MAP: Record<TerrainLevel, { riverHalfWidth: number; lakeCount: number; coastalFeature: boolean }> = {
+  low:       { riverHalfWidth: 1, lakeCount: 0, coastalFeature: false },
+  medium:    { riverHalfWidth: 1, lakeCount: 0, coastalFeature: false },
+  high:      { riverHalfWidth: 2, lakeCount: 2, coastalFeature: false },
+  very_high: { riverHalfWidth: 2, lakeCount: 1, coastalFeature: true },
 };
 
 const FOREST_MAP: Record<ForestDensity, { forestDepth: number; forestWaterGap: number }> = {
@@ -55,6 +56,7 @@ export function resolveTerrainConfig(config: MapConfig): TerrainConfig {
   return {
     riverHalfWidth: water.riverHalfWidth,
     lakeCount: water.lakeCount,
+    coastalFeature: water.coastalFeature,
     forestDepth: forest.forestDepth,
     forestWaterGap: forest.forestWaterGap,
   };
