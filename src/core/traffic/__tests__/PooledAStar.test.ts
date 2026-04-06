@@ -200,4 +200,115 @@ describe('PooledAStar', () => {
       expect(v1[0]!.length).toBe(v2[0]!.length);
     });
   });
+
+  describe('findPathVariants with cell-level route diversity', () => {
+    /**
+     * Build a road network with two clearly separated alternative routes.
+     * The bottom route goes 3 rows below to avoid cross-connections with the top.
+     *
+     *   (0,0)─(1,0)─(2,0)─(3,0)─(4,0)─(5,0)─(6,0)─(7,0)   top route
+     *               |                             |
+     *             (2,1)                         (6,1)          vertical links
+     *               |                             |
+     *             (2,2)                         (6,2)
+     *               |                             |
+     *             (2,3)─(3,3)─(4,3)─(5,3)─(6,3)             bottom route
+     */
+    function buildDiamondRoad() {
+      const cells = new Map<string, { roadType: number; roadFlags: number }>();
+      const E = RoadDirection.EAST, W = RoadDirection.WEST;
+      const N = RoadDirection.NORTH, S = RoadDirection.SOUTH;
+
+      // Top horizontal: (0,0) to (7,0)
+      cells.set(toPosKey(0, 0), { roadType: RoadType.TWO_LANE, roadFlags: E });
+      for (let x = 1; x <= 6; x++) {
+        let flags = E | W;
+        if (x === 2) flags |= S; // fork south
+        if (x === 6) flags |= S; // merge south
+        cells.set(toPosKey(x, 0), { roadType: RoadType.TWO_LANE, roadFlags: flags });
+      }
+      cells.set(toPosKey(7, 0), { roadType: RoadType.TWO_LANE, roadFlags: W });
+
+      // Left vertical link: (2,1), (2,2)
+      cells.set(toPosKey(2, 1), { roadType: RoadType.TWO_LANE, roadFlags: N | S });
+      cells.set(toPosKey(2, 2), { roadType: RoadType.TWO_LANE, roadFlags: N | S });
+
+      // Right vertical link: (6,1), (6,2)
+      cells.set(toPosKey(6, 1), { roadType: RoadType.TWO_LANE, roadFlags: N | S });
+      cells.set(toPosKey(6, 2), { roadType: RoadType.TWO_LANE, roadFlags: N | S });
+
+      // Bottom horizontal: (2,3) to (6,3)
+      cells.set(toPosKey(2, 3), { roadType: RoadType.TWO_LANE, roadFlags: N | E });
+      cells.set(toPosKey(3, 3), { roadType: RoadType.TWO_LANE, roadFlags: E | W });
+      cells.set(toPosKey(4, 3), { roadType: RoadType.TWO_LANE, roadFlags: E | W });
+      cells.set(toPosKey(5, 3), { roadType: RoadType.TWO_LANE, roadFlags: E | W });
+      cells.set(toPosKey(6, 3), { roadType: RoadType.TWO_LANE, roadFlags: W | N });
+
+      const graph = new LaneGraph();
+      graph.buildFromGrid(makeGridLookup(cells), [...cells.keys()]);
+      return { graph, cells };
+    }
+
+    /** Collect unique cells (as "x,y" strings) from a variant's edge indices. */
+    function collectVariantCells(reader: ReturnType<LaneGraphBuffer['createReader']>, variant: number[]): Set<string> {
+      const cells = new Set<string>();
+      for (const edgeIdx of variant) {
+        const fromIdx = reader.getEdgeFromIdx(edgeIdx);
+        const toIdx = reader.getEdgeToIdx(edgeIdx);
+        const fp = reader.getPoint(fromIdx);
+        const tp = reader.getPoint(toIdx);
+        cells.add(`${fp.cellX},${fp.cellY}`);
+        cells.add(`${tp.cellX},${tp.cellY}`);
+      }
+      return cells;
+    }
+
+    it('produces variants that use different cells when alternative routes exist', () => {
+      const { graph } = buildDiamondRoad();
+      const { mapping, reader, astar } = buildBufferAndAStar(graph, 2048, 4096);
+
+      const startKey = toPosKey(0, 0);
+      const endKey = toPosKey(7, 0);
+      const starts: number[] = [];
+      const ends: number[] = [];
+      for (const [pointId, idx] of mapping.pointIdToIndex) {
+        if (pointId.startsWith(startKey + ':') && pointId.endsWith(':exit')) starts.push(idx);
+        if (pointId.startsWith(endKey + ':') && pointId.endsWith(':entry')) ends.push(idx);
+      }
+
+      const variants = astar.findPathVariants(reader, starts, ends, { x: 7, y: 0 }, 4);
+      expect(variants.length).toBe(4);
+
+      // Collect cells for each variant
+      const cellSets = variants.map(v => collectVariantCells(reader, v));
+
+      // At least two variants should use different intermediate cells:
+      // Top route goes through y=0 middle (3,0)(4,0)(5,0), bottom goes through y=3 (3,3)(4,3)(5,3)
+      const hasTopRoute = cellSets.some(cs => cs.has('4,0') && !cs.has('4,3'));
+      const hasBottomRoute = cellSets.some(cs => cs.has('4,3') && !cs.has('4,0'));
+      expect(hasTopRoute).toBe(true);
+      expect(hasBottomRoute).toBe(true);
+    });
+
+    it('degrades gracefully to lane variants when only one route exists', () => {
+      const { graph } = buildStraightRoad(5);
+      const { mapping, reader, astar } = buildBufferAndAStar(graph);
+
+      const startKey = toPosKey(0, 0);
+      const endKey = toPosKey(4, 0);
+      const starts: number[] = [];
+      const ends: number[] = [];
+      for (const [pointId, idx] of mapping.pointIdToIndex) {
+        if (pointId.startsWith(startKey + ':') && pointId.endsWith(':exit')) starts.push(idx);
+        if (pointId.startsWith(endKey + ':') && pointId.endsWith(':entry')) ends.push(idx);
+      }
+
+      // Even with only one route, should still produce variants (lane-level)
+      const variants = astar.findPathVariants(reader, starts, ends, { x: 4, y: 0 }, 4);
+      expect(variants.length).toBeGreaterThanOrEqual(2);
+      for (const v of variants) {
+        expect(v.length).toBeGreaterThan(0);
+      }
+    });
+  });
 });

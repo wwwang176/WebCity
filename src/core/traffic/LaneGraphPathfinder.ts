@@ -15,14 +15,17 @@ import { ZONE_ROAD_REACH } from '../grid/constants';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 import { getLaneSpeedMultiplier } from './Pathfinding';
 
-/** Cost multiplier applied per cell+lane used in previous variants (penalty method). */
+/** Cost multiplier applied per cell+lane used in previous variants (point-level penalty). */
 const VARIANT_PENALTY = 3;
+
+/** Cost multiplier applied to all points in a cell used by a previous route (cell-level penalty). */
+const CELL_ROUTE_PENALTY = 8;
 
 /** Reference speed limit (km/h) used as the baseline for A* cost normalization. */
 const REFERENCE_SPEED_LIMIT = 50;
 
-/** Number of lane path variants to generate per route. */
-const VARIANT_COUNT = 3;
+/** Number of variants to generate: 2 routes × 2 lane variants each. */
+const VARIANT_COUNT = 4;
 
 /**
  * Collect LaneGraph connection points of a specific type (entry/exit) for any
@@ -189,8 +192,14 @@ export function findLanePath(
 }
 
 /**
- * Generate multiple lane path variants for vehicle distribution across lanes.
- * Uses penalty method: edges used in previous variants get higher cost.
+ * Generate lane path variants: 2 route-level (different cells) × 2 lane-level each.
+ *
+ * 1. Route A: normal A*
+ * 2. Route B: cell-level penalty on A's cells → A* finds different route
+ * 3. Lane A2: point-level penalty on A's points → same cells, different lane
+ * 4. Lane B2: point-level penalty on B's points → same cells, different lane
+ *
+ * Degrades gracefully: if only one route exists, all variants differ by lane only.
  */
 export function findLanePathVariants(
   graph: LaneGraph,
@@ -204,25 +213,64 @@ export function findLanePathVariants(
   if (startPoints.length === 0 || endPoints.length === 0) return [];
 
   const variants: LaneEdge[][] = [];
-  const penalty = new Map<string, number>();
 
-  // Determine start/end cells to exclude from penalties (shared by all variants)
+  // Determine start/end cells to exclude from penalties
   const startCells = new Set(startPoints.map(p => p.cellKey));
   const endCells = new Set(endPoints.map(p => p.cellKey));
 
-  for (let i = 0; i < count; i++) {
-    const path = laneAStar(graph, startPoints, endPoints, to, 8000, i > 0 ? penalty : undefined, lookup);
+  // ── Phase 1: find route-level variants (cell penalty) ──
+  const routeCount = Math.min(2, count);
+  const routes: LaneEdge[][] = [];
+  const cellPenalty = new Map<string, number>(); // cellKey → penalty multiplier
+
+  for (let r = 0; r < routeCount; r++) {
+    // Build combined penalty: cell-level for route diversity
+    const combinedPenalty = cellPenalty.size > 0 ? cellPenalty : undefined;
+    const path = laneAStar(graph, startPoints, endPoints, to, 8000, combinedPenalty, lookup);
     if (!path || path.length === 0) break;
+    routes.push(path);
     variants.push(path);
 
-    // Apply penalty per cell+lane: each cell's lane used by this variant gets penalized,
-    // so the next variant avoids the same cell+lane combinations and stays in a different lane.
-    // Start and end cells are excluded (all variants may share the same lane there).
+    // Apply cell-level penalty: penalize all cell+lane combos in this route's cells.
+    // Exclude start/end cells AND fork/merge cells (first/last edge cells).
+    const forkCells = new Set<string>();
+    if (path.length > 0) {
+      forkCells.add(path[0]!.from.cellKey);
+      forkCells.add(path[0]!.to.cellKey);
+      forkCells.add(path[path.length - 1]!.from.cellKey);
+      forkCells.add(path[path.length - 1]!.to.cellKey);
+    }
+    const routeCells = new Set<string>();
     for (const edge of path) {
+      const cell = edge.to.cellKey;
+      if (!startCells.has(cell) && !endCells.has(cell) && !forkCells.has(cell)) {
+        routeCells.add(cell);
+      }
+    }
+    // Apply to all lanes of penalized cells
+    for (const cell of routeCells) {
+      for (let lane = 0; lane < 4; lane++) {
+        const key = `${cell}:${lane}`;
+        cellPenalty.set(key, (cellPenalty.get(key) ?? 1) * CELL_ROUTE_PENALTY);
+      }
+    }
+  }
+
+  // ── Phase 2: find lane-level variants for each route (point penalty) ──
+  for (const route of routes) {
+    if (variants.length >= count) break;
+
+    const pointPenalty = new Map<string, number>();
+    for (const edge of route) {
       const cell = edge.to.cellKey;
       if (startCells.has(cell) || endCells.has(cell)) continue;
       const key = `${cell}:${edge.to.lane}`;
-      penalty.set(key, (penalty.get(key) ?? 1) * VARIANT_PENALTY);
+      pointPenalty.set(key, (pointPenalty.get(key) ?? 1) * VARIANT_PENALTY);
+    }
+
+    const laneVariant = laneAStar(graph, startPoints, endPoints, to, 8000, pointPenalty, lookup);
+    if (laneVariant && laneVariant.length > 0) {
+      variants.push(laneVariant);
     }
   }
 
