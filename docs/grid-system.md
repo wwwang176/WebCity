@@ -239,7 +239,11 @@ EAST  = 0b1000 (8)
 
 ### 路徑工具
 
-- `getLShapedPath(from, to)` — 產生 L 形路徑（先水平再垂直）
+- `getLShapedPath(from, to)` — 產生 L 形路徑，轉折方向依拖曳主軸自動選擇：
+  - `|dx| >= |dy|` → 先水平再垂直
+  - `|dx| < |dy|` → 先垂直再水平
+
+  也就是「較長的那一段先走」，符合玩家拖曳時的預期方向。`|dx| == |dy|` 時採水平優先。
 - `countRoadTiles(grid)` — 計算地圖上的道路格數
 - `normalizeRect(x1, y1, x2, y2)` — 正規化矩形座標
 
