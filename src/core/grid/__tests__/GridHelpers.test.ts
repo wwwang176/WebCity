@@ -421,7 +421,7 @@ describe('getLShapedPath', () => {
     ]);
   });
 
-  it('returns L-shaped path (horizontal first, then vertical)', () => {
+  it('returns L-shaped path (horizontal first when |dx| == |dy|)', () => {
     const path = getLShapedPath({ x: 0, y: 0 }, { x: 2, y: 2 });
     expect(path).toEqual([
       { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 },
@@ -441,6 +441,47 @@ describe('getLShapedPath', () => {
     const path = getLShapedPath({ x: 0, y: 0 }, { x: 1, y: 1 });
     const keys = path.map(p => `${p.x},${p.y}`);
     expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  // Auto-pick: longer leg leads
+  it('goes horizontal first when |dx| > |dy|', () => {
+    // (0,0) → (4,1): 4 wide, 1 tall → horizontal leg first
+    const path = getLShapedPath({ x: 0, y: 0 }, { x: 4, y: 1 });
+    expect(path).toEqual([
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }, { x: 4, y: 0 },
+      { x: 4, y: 1 },
+    ]);
+  });
+
+  it('goes vertical first when |dy| > |dx|', () => {
+    // (0,0) → (1,4): 1 wide, 4 tall → vertical leg first
+    const path = getLShapedPath({ x: 0, y: 0 }, { x: 1, y: 4 });
+    expect(path).toEqual([
+      { x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 0, y: 3 }, { x: 0, y: 4 },
+      { x: 1, y: 4 },
+    ]);
+  });
+
+  it('goes vertical first when |dy| > |dx| with negative direction', () => {
+    // (5,5) → (4,1): |dx|=1, |dy|=4 → vertical first
+    const path = getLShapedPath({ x: 5, y: 5 }, { x: 4, y: 1 });
+    expect(path).toEqual([
+      { x: 5, y: 5 }, { x: 5, y: 4 }, { x: 5, y: 3 }, { x: 5, y: 2 }, { x: 5, y: 1 },
+      { x: 4, y: 1 },
+    ]);
+  });
+
+  it('path always starts at from and ends at to', () => {
+    const cases: Array<[{ x: number; y: number }, { x: number; y: number }]> = [
+      [{ x: 0, y: 0 }, { x: 10, y: 3 }],
+      [{ x: 0, y: 0 }, { x: 3, y: 10 }],
+      [{ x: 7, y: 2 }, { x: 1, y: 9 }],
+    ];
+    for (const [from, to] of cases) {
+      const path = getLShapedPath(from, to);
+      expect(path[0]).toEqual(from);
+      expect(path[path.length - 1]).toEqual(to);
+    }
   });
 });
 

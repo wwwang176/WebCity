@@ -164,25 +164,28 @@ export const FOUR_NEIGHBORS: ReadonlyArray<readonly [number, number]> = [
 
 /**
  * Returns an L-shaped path of grid cells from `from` to `to`.
- * Moves horizontally first, then vertically.
+ * Bend direction auto-picks the dominant drag axis:
+ *   - |dx| >= |dy| → horizontal first, then vertical
+ *   - |dx|  < |dy| → vertical first, then horizontal
+ * This matches the user's intent when dragging: the longer leg leads.
  */
 export function getLShapedPath(from: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number }[] {
   const cells: { x: number; y: number }[] = [];
-  const dx = Math.sign(to.x - from.x);
-  const dy = Math.sign(to.y - from.y);
+  const sx = Math.sign(to.x - from.x);
+  const sy = Math.sign(to.y - from.y);
+  const adx = Math.abs(to.x - from.x);
+  const ady = Math.abs(to.y - from.y);
+  const horizontalFirst = adx >= ady;
 
   let x = from.x;
   let y = from.y;
 
-  // Horizontal leg
-  while (x !== to.x) {
-    cells.push({ x, y });
-    x += dx;
-  }
-  // Vertical leg
-  while (y !== to.y) {
-    cells.push({ x, y });
-    y += dy;
+  if (horizontalFirst) {
+    while (x !== to.x) { cells.push({ x, y }); x += sx; }
+    while (y !== to.y) { cells.push({ x, y }); y += sy; }
+  } else {
+    while (y !== to.y) { cells.push({ x, y }); y += sy; }
+    while (x !== to.x) { cells.push({ x, y }); x += sx; }
   }
   cells.push({ x: to.x, y: to.y });
 
