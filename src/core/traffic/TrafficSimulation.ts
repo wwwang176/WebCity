@@ -249,6 +249,13 @@ export class TrafficSimulation {
     let count = 0;
     for (const v of this.vehicles) {
       if (v.arrived || v.edgePath.length === 0) continue;
+      // Buses and service vehicles are owned by their managers, which already
+      // handle road changes (BusSystem.onRoadChanged recomputes segments and
+      // writes fresh edgePaths; service vehicles are cleared wholesale). Killing
+      // a bus here is unrecoverable: busVehicleIds and route.vehicles still
+      // count it and nothing ever reconciles them against traffic.vehicles, so
+      // the route is left permanently without a vehicle (BUG-115).
+      if (v.busState !== undefined || v.serviceType !== undefined) continue;
       for (let i = v.edgeIndex; i < v.edgePath.length; i++) {
         const e = v.edgePath[i]!;
         if (cellKeys.has(e.from.cellKey) || cellKeys.has(e.to.cellKey)

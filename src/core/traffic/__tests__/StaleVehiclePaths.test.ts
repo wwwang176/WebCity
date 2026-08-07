@@ -52,6 +52,27 @@ describe('vehicles are retired when the road under them changes', () => {
     expect(v.arrived).toBe(false);
   });
 
+  it('should never retire a bus', () => {
+    // BusSystem.onRoadChanged owns bus vehicles and rewrites their edgePaths.
+    // Retiring one here is unrecoverable: busVehicleIds and route.vehicles still
+    // count it, and nothing reconciles them against traffic.vehicles, so the
+    // route is left permanently without a vehicle (BUG-115).
+    const sim = new TrafficSimulation();
+    const path = [edge('1,0', '2,0'), edge('2,0', '3,0')];
+    const bus = sim.addBusVehicle([path], 1);
+
+    expect(sim.markVehiclesArrivedOnCells(new Set(['2,0']))).toBe(0);
+    expect(bus.arrived).toBe(false);
+  });
+
+  it('should never retire a service vehicle', () => {
+    const sim = new TrafficSimulation();
+    const v = sim.addServiceVehicle([edge('1,0', '2,0')], 'police');
+
+    expect(sim.markVehiclesArrivedOnCells(new Set(['2,0']))).toBe(0);
+    expect(v.arrived).toBe(false);
+  });
+
   it('should ignore cells the vehicle has already driven past', () => {
     const sim = new TrafficSimulation();
     const v = sim.addVehicleOnEdges([edge('1,0', '2,0'), edge('2,0', '3,0'), edge('3,0', '4,0')], 1);

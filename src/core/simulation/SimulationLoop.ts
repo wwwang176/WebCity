@@ -1564,11 +1564,21 @@ export class SimulationLoop {
     // only accrues when a vehicle is blocked, and a ghost road blocks nothing, so
     // they ran the full path to "arrival" in plain sight (BUG-108).
     //
-    // Scoped to dirtyRoadCells rather than clearing every vehicle: BUG-054 made
-    // updateCells preserve edge identity outside the affected cells, so untouched
-    // routes are still valid and wiping them would be a visible, pointless cull.
+    // Scoped to cells where the road is GONE, not merely rebuilt.
+    //
+    // affectedCells is every cell the edit touched, and RoadBuilder reports the
+    // whole L-path — including existing cells whose roadType did not change. A
+    // vehicle whose route crosses those is fine: updateCells replaces the edge
+    // objects, but the geometry is identical and nothing downstream depends on
+    // edge identity (signals key on cellKey, car-following on edge.id). Retiring
+    // on dirtiness alone made every road extension or upgrade visibly delete the
+    // traffic already driving on that stretch (BUG-116).
     if (affectedCells && affectedCells.size > 0) {
-      this.state.traffic.markVehiclesArrivedOnCells(affectedCells);
+      const removed = new Set<string>();
+      for (const key of affectedCells) {
+        if (!lookup || lookup.getCellByKey(key) === null) removed.add(key);
+      }
+      if (removed.size > 0) this.state.traffic.markVehiclesArrivedOnCells(removed);
     }
 
     // Sync graph to SharedArrayBuffer for Worker pathfinding
