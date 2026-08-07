@@ -41,7 +41,14 @@ export class ZoneManager {
 
     // If rezoning to a different type and a building exists, demolish it first
     if (isZoneBuilding(cell.buildingId) && cell.zoneType !== zoneType) {
-      this.grid.setCell(x, y, { zoneType, buildingId: 0 });
+      // `reserved` must be cleared alongside buildingId. setCell is a partial
+      // patch, so a BURNED/ABANDONED marker left behind survives onto whatever
+      // grows here next: every ruin guard in BuildingGrowthTick requires
+      // isZoneBuilding(cell.buildingId), which is false for 0, so the cell falls
+      // through to regrowth and the new building is permanently a ruin — untaxed,
+      // zero capacity, nobody assigned — while the renderer lights it up as
+      // normal. Same defect class as BUG-068 in applyDisasterDamage (BUG-072).
+      this.grid.setCell(x, y, { zoneType, buildingId: 0, reserved: 0 });
     } else {
       this.grid.setCell(x, y, { zoneType });
     }

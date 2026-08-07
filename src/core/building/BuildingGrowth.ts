@@ -63,7 +63,11 @@ export class BuildingGrowth {
     if (buildings.length === 0) return false;
 
     const building = randomElement(buildings);
-    this.grid.setCell(x, y, { buildingId: building.id });
+    // Defence in depth: a freshly grown building is always in a clean state.
+    // Writing reserved: 0 here makes that an invariant, so no future call site
+    // that clears buildingId without clearing reserved can resurrect a ruin
+    // marker onto a brand-new building (BUG-072).
+    this.grid.setCell(x, y, { buildingId: building.id, reserved: 0 });
     return true;
   }
 
