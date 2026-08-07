@@ -84,9 +84,16 @@ export class SimulationLoop {
   private state: GameState;
   private _elevationManager: import('../elevation/ElevationManager').ElevationManager | null = null;
   private _roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
-  private lastDeathDay = -1;
-  private lastBirthMonth = -1;
-  private lastRiderDay = -1;
+  // Per-day / per-month phase markers. Seeded from the clock in the constructor
+  // rather than starting at -1: they are not serialized, so after loading a save
+  // taken mid-day the first tick re-ran the whole daily block (an extra
+  // independent death roll per citizen, plus advanceDay() rotating the 7-day
+  // ring buffers a slot early and discarding a day of statistics) and the whole
+  // monthly block (a second fertility roll for every fertile adult). Neither is
+  // idempotent, which made save-and-load a population lever (BUG-088).
+  private lastDeathDay: number;
+  private lastBirthMonth: number;
+  private lastRiderDay: number;
 
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
@@ -219,10 +226,26 @@ export class SimulationLoop {
 
   constructor(state: GameState) {
     this.state = state;
+    // The current day/month have already had their blocks run — either by the
+    // session that produced this save, or (for a new game at tick 0) because no
+    // time has elapsed yet. Both blocks belong to day/month *transitions*.
+    this.lastDeathDay = state.clock.getDay();
+    this.lastRiderDay = state.clock.getDay();
+    this.lastBirthMonth = state.clock.getMonth();
     // Auto-clear commute cache when citizens are evicted from any building
     this.state.citizens.onEvicted = (ids) => {
       for (const id of ids) this.commuteCache.remove(id);
     };
+  }
+
+  /** Test seam: has the per-day block already run for `day`? */
+  hasRunDayBlockFor(day: number): boolean {
+    return this.lastDeathDay === day;
+  }
+
+  /** Test seam: has the per-month block already run for `month`? */
+  hasRunMonthBlockFor(month: number): boolean {
+    return this.lastBirthMonth === month;
   }
 
   tick(): void {
