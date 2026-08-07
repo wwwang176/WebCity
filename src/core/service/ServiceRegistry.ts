@@ -23,6 +23,28 @@ export function getTotalServiceMaintenanceCost(state: GameState): number {
   return getCivicServices(state).reduce((sum, svc) => sum + svc.getMaintenanceCost(), 0);
 }
 
+/** Utility keys — billed inside the civic total, but itemised separately in the economy panel. */
+const UTILITY_SERVICE_KEYS = ['power', 'water'] as const;
+
+/** Power and water plant upkeep, itemised. */
+export function getUtilityMaintenanceCost(state: GameState): { power: number; water: number } {
+  return {
+    power: state.power.getMaintenanceCost(),
+    water: state.water.getMaintenanceCost(),
+  };
+}
+
+/**
+ * Civic maintenance excluding the utility plants. The economy panel shows Power
+ * Plants and Water Plants as their own rows, so adding the full civic total on
+ * top of them charged those two twice.
+ */
+export function getCivicMaintenanceCostExcludingUtilities(state: GameState): number {
+  return CIVIC_SERVICE_KEYS
+    .filter(key => !(UTILITY_SERVICE_KEYS as readonly string[]).includes(key as string))
+    .reduce((sum, key) => sum + (state[key] as unknown as CivicService).getMaintenanceCost(), 0);
+}
+
 /** Helper: update operational status for a RoadCoverageService subclass. */
 function updateRoadServiceOps<F extends Facility>(
   service: RoadCoverageService<F>,

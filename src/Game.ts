@@ -52,6 +52,7 @@ import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } fr
 import { classifyBuilding } from './core/building/BuildingClassifier';
 import { classifyDemolishCell } from './core/building/DemolishClassifier';
 import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
+import { buildEconomyBreakdownContext } from './core/economy/EconomyBreakdownContext';
 import { buildIncomeCalcDeps } from './core/economy/IncomeCalcAdapter';
 import { calculateSingleBuildingIncome } from './core/economy/IncomeCalculator';
 
@@ -2551,22 +2552,9 @@ export class Game {
   }
 
   getEconomyBreakdown() {
-    return computeEconomyBreakdown({
-      ...buildIncomeCalcDeps(this.state),
-      roadTileCount: countRoadTiles(this.state.grid),
-      loans: this.state.budget.loans,
-      loanInterestRate: this.state.budget.loanInterestRate,
-      powerMaintenanceCost: this.state.power.getMaintenanceCost(),
-      waterMaintenanceCost: this.state.water.getMaintenanceCost(),
-      transportOperatingCost: getTotalTransportOperatingCost(this.state),
-      // These three are charged by SimulationLoop.calculateIncome but used to be
-      // absent from the panel entirely, so it showed a positive balance while the
-      // treasury fell (BUG-062).
-      serviceCost: getTotalServiceMaintenanceCost(this.state),
-      policyCost: calculateDistrictPolicyCost(this.state.districts.getAllDistricts()),
-      elevatedMaintenance: calculateElevatedMaintenance(this.elevationManager),
-      revenueMultiplier: this.state.citySpec.getBonus().revenueMultiplier,
-    });
+    // Assembly lives in core so the "panel total === budget.expenses" invariant
+    // can be tested; Game.ts imports Three.js and cannot be (BUG-077).
+    return computeEconomyBreakdown(buildEconomyBreakdownContext(this.state, this.elevationManager));
   }
 
   deselectBuilding(): void {

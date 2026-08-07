@@ -29,13 +29,20 @@ export function EconomyPage(props: EconomyPageProps) {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
 
-  const state = createMemo(() => {
+  // NOT a memo with a JSON equality check. getState() returns the *same* mutated
+  // object every call, so `equals` compared that object with itself and was
+  // always true — Treasury and Outstanding loans froze at whatever they were
+  // when the page opened, and adjusting tax or borrowing never updated them.
+  // It also stringified the whole GameState — four Uint8Array(40000) in Grid
+  // plus three Float64Array(40000) in PollutionManager, none with a toJSON —
+  // twice per throttled tick, roughly 0.4 s/s of main-thread work and 33 MB/s of
+  // garbage while the page was open (BUG-079). A plain accessor tracking the
+  // same two signals is correct and free.
+  const state = () => {
     version();
     gameSignals.tick();
     return getGame().getState();
-  }, undefined, {
-    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
-  });
+  };
 
   const totalIncome = () => {
     const b = breakdown();

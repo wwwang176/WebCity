@@ -33,9 +33,15 @@ export function getTransitSystems(systems: TransitSystems): { type: TransportTyp
   return TRANSIT_MAP.map(e => ({ type: e.type, system: systems[e.key] }));
 }
 
-/** All transport system keys that have getOperatingCost(). Includes airport. */
+/**
+ * All transport system keys that have getOperatingCost(). Includes airport.
+ *
+ * `airport` is typed by the one method this actually uses rather than as a
+ * BaseTransportSystem: AirportSystem does not extend that class, so requiring it
+ * made every call site pass GameState against an unsatisfiable constraint.
+ */
 export interface AllTransportSystems extends TransitSystems {
-  airport: BaseTransportSystem;
+  airport: { getOperatingCost(): number };
 }
 
 const ALL_TRANSPORT_KEYS: readonly (keyof AllTransportSystems)[] = [
