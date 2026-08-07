@@ -1645,7 +1645,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 3 個（共用路線重算後計數不塌陷／移除市民後仍歸零／市民換路線時計數正確搬移），
   修復前第 1 個失敗（3 → 1）
 
-### BUG-062: 經濟面板漏掉市政服務／政策／高架維護支出與城市特化收入加成 🟡 Medium
+### BUG-062: 經濟面板漏掉市政服務／政策／高架維護支出與城市特化收入加成 🟡 Medium ✅ 已修復
 - **位置**: `src/core/economy/EconomyBreakdown.ts:39`
 - **問題**: `getEconomyBreakdown()` 是 Economy 頁面唯一資料來源，但 `EconomyBreakdownResult` 只帶
   roadMaintenance / loanInterest / powerCost / waterCost / transportCost
@@ -1662,7 +1662,16 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **修復方向**: 在 `EconomyBreakdownContext`/`Result` 加 `serviceCost`、`policyCost`、`elevatedMaintenance`，
   於 `Game.ts:2562-2572` 填值，並對 zone incomes 套用 `revenueMultiplier`，EconomyPage 加對應列。
   順手刪掉死碼 `ui/modals/EconomyModal.tsx`（無人 import）以免繼續漂移
-- **測試（先寫）**: 斷言 breakdown 各項加總 === `state.budget.expenses` —— 這正是現有逐欄位 pass-through 測試缺的交叉檢查
+- **修復內容**:
+  - `EconomyBreakdownContext`/`Result` 新增 `serviceCost` / `policyCost` / `elevatedMaintenance`
+    與 `revenueMultiplier`（皆為選填，預設 0 / 1，舊呼叫端不受影響）
+  - zone incomes 套用 `revenueMultiplier`，與 `SimulationLoop.calculateIncome` 一致
+  - `Game.getEconomyBreakdown` 填入 `getTotalServiceMaintenanceCost` / `calculateDistrictPolicyCost` /
+    `calculateElevatedMaintenance` / `citySpec.getBonus().revenueMultiplier`
+  - `EconomyPage` 新增三列（Civic Services / District Policies / Elevated Maintenance）並修正 `totalExpenses`
+  - 刪除死碼 `ui/modals/EconomyModal.tsx`（全 codebase 無 import）
+- **測試**: 新增 4 個，含報告指定的交叉檢查
+  「breakdown 顯示的支出加總 === `calculateTotalExpenses` 實際收取的金額」，修復前 3 個失敗
 
 ### BUG-063: Lane graph SharedArrayBuffer 在 worker 批次執行中被原地覆寫 🟡 Medium
 - **位置**: `src/core/simulation/SimulationLoop.ts:1439`

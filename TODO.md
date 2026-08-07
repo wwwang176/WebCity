@@ -1000,8 +1000,8 @@
 - [x] **BUG-059** `ElevatedPathValidation.ts:82` — 改以 `storeLevel` 為碰撞檢查條件 ✅
 - [x] **BUG-060** `RoadBuilder.ts:128` — `removeRoad` 只更新 flag，不碰 `roadType`；刪除 `getMaxNeighborRoadType` ✅
 - [x] **BUG-061** `CommuteCache.ts:51` — `bumpGeneration` 不再清 `routeRefCount`；空過的測試已改名並修正 ✅
-- [ ] **BUG-062** `EconomyBreakdown.ts:39` — 補 `serviceCost` / `policyCost` / `elevatedMaintenance`
-      與 citySpec 收入加成；刪除死碼 `ui/modals/EconomyModal.tsx`
+- [x] **BUG-062** `EconomyBreakdown.ts:39` — 補三項支出 + citySpec 收入加成，UI 新增三列；
+      刪除死碼 `ui/modals/EconomyModal.tsx` ✅
 - [ ] **BUG-063** `SimulationLoop.ts:1439` — lane graph SAB 加 seqlock（用既有 version 欄位 + Atomics）或雙緩衝；
       並給 `PooledAStar.reconstructPath` 加步數上限
 - [ ] **BUG-064** `BusSystem.ts:295` — 覆寫 `onRouteStopRemoved`；`sumDirection` 斷言 segDists 長度相符
@@ -1018,7 +1018,7 @@
 - [ ] 讓 LaneGraph / SidewalkGraph 的跨格邊發出**對稱**（每格發四方向並去重），使任何格的邊都不依賴鄰居被重建
 - [ ] 加不變式測試：`updateCells(...)` 產出的圖必須等同同一 grid 全新 `buildFromGrid`（可同時抓 BUG-054 + BUG-067）
 - [ ] 加測試列舉 GameState 欄位，當某欄位既未序列化也未標記 transient 時失敗（可抓 BUG-053 這類）
-- [ ] 加測試斷言經濟 breakdown 加總 === `state.budget.expenses` / `income`（可抓 BUG-062 這類）
+- [x] 加測試斷言經濟 breakdown 加總 === `calculateTotalExpenses` 實收金額 ✅（BUG-062 一併完成）
 - [ ] 抽出 `clearBuildingCell(grid,x,y)` 與具旋轉感知／主格驗證的 `forEachOwnedCell` 單一權威 helper
 - [ ] 載入時（及 debug panel）跑一次調和 pass：每個註冊設施在 grid 上是否仍存在？每個 homeId/workplaceId 是否仍指向活建築？
 - [x] 把 `Game._canAdvance` 抽成純粹可測的 core 模組 `core/traffic/CanAdvance.ts` ✅（BUG-058 一併完成）

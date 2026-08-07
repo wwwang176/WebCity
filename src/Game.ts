@@ -84,6 +84,9 @@ import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath, validateElevatedPath } from './core/elevation';
 import { UnifiedRoadLookup } from './core/road/UnifiedRoadLookup';
 import { canAdvanceThrough } from './core/traffic/CanAdvance';
+import { getTotalServiceMaintenanceCost } from './core/service/ServiceRegistry';
+import { calculateDistrictPolicyCost } from './core/economy/ExpenseCalculator';
+import { calculateElevatedMaintenance } from './core/elevation/ElevationMaintenance';
 
 export type PlacementMode = 'ground' | 'elevated';
 
@@ -2551,6 +2554,13 @@ export class Game {
       powerMaintenanceCost: this.state.power.getMaintenanceCost(),
       waterMaintenanceCost: this.state.water.getMaintenanceCost(),
       transportOperatingCost: getTotalTransportOperatingCost(this.state),
+      // These three are charged by SimulationLoop.calculateIncome but used to be
+      // absent from the panel entirely, so it showed a positive balance while the
+      // treasury fell (BUG-062).
+      serviceCost: getTotalServiceMaintenanceCost(this.state),
+      policyCost: calculateDistrictPolicyCost(this.state.districts.getAllDistricts()),
+      elevatedMaintenance: calculateElevatedMaintenance(this.elevationManager),
+      revenueMultiplier: this.state.citySpec.getBonus().revenueMultiplier,
     });
   }
 

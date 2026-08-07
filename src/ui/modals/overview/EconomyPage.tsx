@@ -43,7 +43,8 @@ export function EconomyPage(props: EconomyPageProps) {
   };
   const totalExpenses = () => {
     const b = breakdown();
-    return b.roadMaintenance + b.loanInterest + b.powerCost + b.waterCost + b.transportCost;
+    return b.roadMaintenance + b.loanInterest + b.powerCost + b.waterCost + b.transportCost
+      + b.serviceCost + b.policyCost + b.elevatedMaintenance;
   };
   const balance = () => totalIncome() - totalExpenses();
 
@@ -115,6 +116,9 @@ export function EconomyPage(props: EconomyPageProps) {
           <tr><td class="td-label">Power Plants</td><td class="td-expense" style="text-align:right">-${breakdown().powerCost}</td></tr>
           <tr><td class="td-label">Water Plants</td><td class="td-expense" style="text-align:right">-${breakdown().waterCost}</td></tr>
           <tr><td class="td-label">Transport Operations</td><td class="td-expense" style="text-align:right">-${breakdown().transportCost}</td></tr>
+          <tr><td class="td-label">Civic Services</td><td class="td-expense" style="text-align:right">-${breakdown().serviceCost.toFixed(1)}</td></tr>
+          <tr><td class="td-label">District Policies</td><td class="td-expense" style="text-align:right">-${breakdown().policyCost.toFixed(1)}</td></tr>
+          <tr><td class="td-label">Elevated Maintenance</td><td class="td-expense" style="text-align:right">-${breakdown().elevatedMaintenance.toFixed(1)}</td></tr>
           <tr><td class="td-label">Loan Interest ({(state().budget.loanInterestRate * 100).toFixed(0)}%)</td><td class="td-expense" style="text-align:right">-${breakdown().loanInterest.toFixed(1)}</td></tr>
         </tbody>
       </table>
