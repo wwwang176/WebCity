@@ -1007,8 +1007,7 @@
 - [x] **BUG-064** `BusSystem.ts:295` — 實作 `onRouteStopRemoved` 覆寫；`computeRideDistance` 加長度守衛 ✅
 - [x] **BUG-065** `Game.ts:533` — 建構時傳入 `railNetwork`；新增 `rebuildElevatedRailNetwork()` 並接上載入流程 ✅
 - [ ] `ElevatedRailBuilder.removeElevated` 仍是死碼（拆除一律走 `elevatedRoadBuilder.removeElevated`）— BUG-065 遺留
-- [ ] **BUG-066** `IncomeCalcAdapter.ts:14` — 比照 `ServiceRegistry` 單趟 O(N) 建 map，
-      取代每建築一次的 citizen filter（30k 市民時單幀 265ms）
+- [x] **BUG-066** `IncomeCalcAdapter.ts:14` — 單趟 O(N) 建 map，取代每建築一次的 citizen filter ✅
 - [ ] **BUG-067** `SidewalkGraph.ts:176` — 補上 border-neighbour 修補 pass（比照 `LaneGraph.ts:140-157`）
 
 ### 🔵 Low

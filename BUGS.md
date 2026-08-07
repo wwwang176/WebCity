@@ -1770,7 +1770,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **仍未做**: `ElevatedRailBuilder.removeElevated` 仍是死碼（拆除一律走 `elevatedRoadBuilder.removeElevated`），
   已列入 TODO 但不在本 bug 範圍
 
-### BUG-066: 收入計算為 O(區域建築 × 市民) 且每棟建築配置新陣列 🟡 Medium
+### BUG-066: 收入計算為 O(區域建築 × 市民) 且每棟建築配置新陣列 🟡 Medium ✅ 已修復
 - **位置**: `src/core/economy/IncomeCalcAdapter.ts:14`
 - **問題**: `buildIncomeCalcDeps` 把 `getResidentEducations` 接到 `CitizenManager.getCitizensByHome(key)`、
   `getWorkerCount` 接到 `getCitizensByWorkplace(key)`。兩者都是對**整個市民陣列**的裸
@@ -1787,6 +1787,17 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   `state.citizens.getCitizens()` 單趟掃成 `Map<posKey, Education[]>` 與 `Map<posKey, number>`，
   兩個 dep 改讀 map。行為不變，回傳收入必須逐位元相同
 - **註**: `countOccupancy` 已在 5 個 SimulationLoop 位置做同樣的聚合，`calculateZoneIncomes` 是唯一的例外
+- **修復內容**: `buildIncomeCalcDeps` 改為對 `state.citizens.getCitizens()` 做**單趟 O(N) 掃描**，
+  建出 `Map<posKey, EducationLevel[]>` 與 `Map<posKey, number>`，兩個 dep 改讀 map。
+  完全比照 `ServiceRegistry.tickAllCivicServices` 已有的正確慣例。行為不變（有等價性測試釘住）
+- **測試撰寫時的兩個陷阱**（都值得記錄）:
+  1. 初版用 `vi.spyOn(citizens, 'getCitizens')` 計數 —— 抓不到，因為
+     `getCitizensByHome` 直接走私有欄位 `this.citizens.filter(...)`，不經過 getter。改為 spy 那兩個 filter 方法
+  2. 改完仍空過 —— 因為測試城市**沒有電力**，`calculateZoneIncomes` 在 `isPowered` 就提早退出，
+     per-building 查詢根本不可達。必須注入 `isPowered: () => true` 才讓路徑可達。
+     這又是主題 6(b) 的變體：**測試 fixture 沒有讓待測路徑可達**
+- **測試**: 新增 4 個（掃描次數不隨建築數成長／與 per-call 實作結果完全相同／
+  空建築回傳零／同棟多名佔用者正確計數）。修復前第 1 個失敗（40 棟 → 40 次全陣列掃描）
 
 ### BUG-067: SidewalkGraph.updateCells 切斷重建區域外圈一格的人行道邊 🟡 Medium
 - **位置**: `src/core/traffic/SidewalkGraph.ts:176`（合併 :193 同根因）
