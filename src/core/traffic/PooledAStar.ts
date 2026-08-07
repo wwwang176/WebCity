@@ -160,11 +160,13 @@ export class PooledAStar {
           routeCells.add(cellEncoded);
         }
       }
-      // Scan all points and apply cell penalty to those in routeCells
+      // Scan all points and apply cell penalty to those in routeCells.
+      // getPointCellEncoded avoids allocating a PointData per point and does two
+      // DataView reads instead of eight — this loop runs once per route per
+      // request, over every point in the graph (BUG-112).
       const pointCount = reader.getPointCount();
       for (let i = 0; i < pointCount; i++) {
-        const p = reader.getPoint(i);
-        if (routeCells.has(p.cellX * 65536 + p.cellY)) {
+        if (routeCells.has(reader.getPointCellEncoded(i))) {
           if (this.cellPenalty[i] === 1) {
             this.cellPenaltyDirty[this.cellPenaltyDirtyCount++] = i;
           }

@@ -111,6 +111,19 @@ export class GraphReader {
     return this.view.getUint32(8, true);
   }
 
+  /**
+   * Encoded cell of a point (cellX * 65536 + cellY) without allocating.
+   *
+   * getPoint builds a fresh 8-field object and performs eight DataView reads;
+   * callers that only need the cell paid for all of it. findPathVariants swept
+   * every point in the graph twice per request that way — 24k-48k points on a
+   * 3000-tile road network, 100 requests per flush (BUG-112).
+   */
+  getPointCellEncoded(idx: number): number {
+    const off = this.pointsOffset + idx * POINT_STRIDE;
+    return this.view.getUint16(off + 8, true) * 65536 + this.view.getUint16(off + 10, true);
+  }
+
   getPoint(idx: number): PointData {
     const off = this.pointsOffset + idx * POINT_STRIDE;
     return {
