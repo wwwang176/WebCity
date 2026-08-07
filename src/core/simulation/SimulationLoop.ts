@@ -836,9 +836,26 @@ export class SimulationLoop {
     const { changed, updates } = applyFireDamage(this.state.grid, resolved);
 
     for (const u of updates) {
+      // A burned building is out of service, so its occupants must be released
+      // exactly like abandonment/demolish/disaster do. Without this they are
+      // stranded permanently: rebuildBuildingIndex drops BURNED cells from the
+      // housing/workplace candidates while the citizens still hold the posKey,
+      // and neither assignWithPreference (skips a non-null homeId) nor
+      // relocationTick (bails without a current candidate) can ever recover
+      // them (BUG-056).
+      if (u.burned) this.takeBuildingOutOfService(u.x, u.y);
       this.onBuildingUpdated?.(u.x, u.y, u.zoneType, u.level, u.burned);
     }
     if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
+  }
+
+  /**
+   * Release the occupants of a building that has just stopped functioning.
+   * Every path that takes a zone building out of service must go through here
+   * so a newly added state cannot silently skip eviction (BUG-056).
+   */
+  private takeBuildingOutOfService(x: number, y: number): void {
+    this.state.citizens.evictBuilding(toPosKey(x, y), this.state.clock.tick);
   }
 
   private updatePollution(): void {
@@ -979,9 +996,8 @@ export class SimulationLoop {
 
     // Apply abandonment to grid + evict citizens (side effects stay in orchestrator)
     for (const a of result.abandoned) {
-      const posKey = toPosKey(a.x, a.y);
       this.state.grid.setCell(a.x, a.y, { reserved: ABANDONED });
-      this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
+      this.takeBuildingOutOfService(a.x, a.y);
       this.onBuildingUpdated?.(a.x, a.y, a.zoneType, a.level, false, true);
     }
 

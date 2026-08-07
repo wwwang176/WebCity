@@ -991,8 +991,7 @@
       borderNeighbors 修補 pass 整段移除 ✅
 - [x] **BUG-055** `migrations.ts:94` — 抽出 `migrateSavedCitizens()` 對原始 payload 執行；
       v3 GameState migration 改為留空並註明原因；`restoreCitizen` 傳入真實 tick ✅
-- [ ] **BUG-056** `SimulationLoop.ts:836` — `processFireEvents` 於 `applyFireDamage` 後呼叫 `evictBuilding`；
-      建議抽出共用 `takeBuildingOutOfService(x,y,reservedState)` 讓全部 5 個呼叫點共用
+- [x] **BUG-056** `SimulationLoop.ts:836` — 抽出 `takeBuildingOutOfService(x,y)`，火災與廢棄路徑共用 ✅
 - [ ] **BUG-057** `SimulationLoop.ts:645` — `factors.isEmployed` 改讀 `citizen.workplaceId !== null`（一行）
 - [ ] **BUG-058** `VehicleLookahead.ts:85` — `canAdvance` 簽章加 `viaCell?` 並傳入 `edge.viaCellKey`；
       刪除 `Game._canAdvance` 中已死的中點分支

@@ -1482,7 +1482,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
     孩童轉換後仍為 CHILD／現代存檔不受影響），修復前 3 個失敗
 - **註**: 使用者已確認舊存檔不需搶救，此修復為邏輯正確性而非資料救援
 
-### BUG-056: 火災燒毀的建築從不驅離住戶／員工，市民永久滯留 🟠 High
+### BUG-056: 火災燒毀的建築從不驅離住戶／員工，市民永久滯留 🟠 High ✅ 已修復
 - **位置**: `src/core/simulation/SimulationLoop.ts:836`
 - **問題**: 其他所有讓區域建築退出服務的路徑都會呼叫 `CitizenManager.evictBuilding()` —— 廢棄（:984）、
   玩家拆除（`Game.ts:987/1063`）、基礎設施覆蓋（`Game.ts:2544`）、道路/鐵軌覆蓋（`Game.ts:878/907`）、
@@ -1502,6 +1502,14 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   helper，讓全部 5 個呼叫點共用，未來新增狀態不可能漏掉驅離
 - **註**: finder 另外聲稱的兩項後果經驗證為**錯誤**，不要帶進修復：驅離並不會移除市民（人口/容量帳目
   有無驅離都相同）；超容量佔用是 `BuildingUpgrade.tryDowngrade` 更常造成的既有容忍狀態
+- **修復內容**: 抽出 `SimulationLoop.takeBuildingOutOfService(x, y)`，`processFireEvents` 對每個
+  `u.burned` 的 update 呼叫之，`processAbandonmentStress` 也改走同一 helper。
+  未來新增「建築停止運作」的狀態時，不會再有靜默漏掉驅離的路徑
+- **測試撰寫時的陷阱**（值得記錄）: 初版測試「驅離住戶」竟然**通過**——因為測試建築沒有電水，
+  多跑幾個 tick 後 slot 3 的**廢棄**路徑把住戶驅離了，掩蓋了火災路徑的缺陷。
+  改成「偵測到 reserved === BURNED 就立即停止 tick」才真正隔離出火災路徑。
+  這正是主題 6 說的測試盲點的另一種型態：**間接路徑意外滿足了斷言**
+- **測試**: 新增 4 個（驅離住戶／驅離員工／記錄 homelessSince／不波及未受損鄰居），修復前 3 個失敗
 
 ### BUG-057: 幸福度用全市 employmentRate 擲骰決定 isEmployed，而非讀 citizen.workplaceId 🟠 High
 - **位置**: `src/core/simulation/SimulationLoop.ts:645`

@@ -11,6 +11,7 @@ import { PolicyType, Specialization } from '../../district/types';
 import { setSpecialization } from '../../district/Specialization';
 import { CitySpecType } from '../../district/CitySpecialization';
 import { DEFAULT_TAX_RATE } from '../../economy/Tax';
+import { BURNED } from '../../building/InfraPlacement';
 
 /** Add power+water plants adjacent to a position so buildings there get utilities. */
 function provideUtilities(state: GameState, x: number, y: number): void {
@@ -806,5 +807,84 @@ describe('Transport integration', () => {
 
     // Expenses should include transport operating costs
     expect(state.budget.expenses).toBeGreaterThan(0);
+  });
+});
+
+// BUG-056: every other path that takes a zone building out of service calls
+// evictBuilding — abandonment, player demolish, infra/road overbuild, disasters.
+// The fire path did not, so residents of a burned building were stranded
+// forever: never re-housed (assignWithPreference skips citizens with a homeId),
+// never counted homeless, yet still generating service demand at a charred tile.
+describe('Fire eviction', () => {
+  function burningCity() {
+    const state = createGameState(20, 20);
+    // A residential building with occupants at (10,10).
+    state.grid.setCell(10, 10, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    for (let i = 0; i < 8; i++) {
+      state.citizens.restoreCitizen({ age: 100, homeId: '10,10' });
+    }
+    // A workplace with staff at (12,10).
+    state.grid.setCell(12, 10, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    for (let i = 0; i < 4; i++) {
+      state.citizens.restoreCitizen({ age: 100, workplaceId: '12,10' });
+    }
+    return state;
+  }
+
+  /**
+   * Force both cells to resolve as fully-damaged fires and stop the moment the
+   * fire slot has run. Ticking further would let slot 3 abandon these
+   * (unpowered) buildings and evict via that path instead, masking the bug.
+   */
+  function burn(state: ReturnType<typeof burningCity>) {
+    const loop = new SimulationLoop(state);
+    vi.spyOn(state.fire, 'resolveCompletedFires').mockReturnValue([
+      { x: 10, y: 10, damage: 0.9 },
+      { x: 12, y: 10, damage: 0.9 },
+    ] as never);
+    vi.spyOn(state.fire, 'tryRandomFire').mockReturnValue(undefined as never);
+
+    for (let i = 0; i < SIMULATION.SLOW_TICK_INTERVAL * 2; i++) {
+      loop.tick();
+      if (state.grid.getCell(10, 10)!.reserved === BURNED) break;
+    }
+    expect(state.grid.getCell(10, 10)!.reserved).toBe(BURNED);
+    return loop;
+  }
+
+  it('should evict residents of a burned building', () => {
+    const state = burningCity();
+    expect(state.citizens.getCitizens().filter(c => c.homeId === '10,10')).toHaveLength(8);
+
+    burn(state);
+
+    expect(state.citizens.getCitizens().filter(c => c.homeId === '10,10')).toHaveLength(0);
+  });
+
+  it('should evict workers of a burned workplace', () => {
+    const state = burningCity();
+    expect(state.citizens.getCitizens().filter(c => c.workplaceId === '12,10')).toHaveLength(4);
+
+    burn(state);
+
+    expect(state.citizens.getCitizens().filter(c => c.workplaceId === '12,10')).toHaveLength(0);
+  });
+
+  it('should record homelessSince so the happiness penalty can apply', () => {
+    const state = burningCity();
+    burn(state);
+
+    const evicted = state.citizens.getCitizens().filter(c => c.homelessSince !== null);
+    expect(evicted.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('should not evict citizens of an undamaged neighbour', () => {
+    const state = burningCity();
+    state.grid.setCell(11, 10, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    state.citizens.restoreCitizen({ age: 100, homeId: '11,10' });
+
+    burn(state);
+
+    expect(state.citizens.getCitizens().filter(c => c.homeId === '11,10')).toHaveLength(1);
   });
 });
