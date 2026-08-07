@@ -1005,8 +1005,8 @@
 - [x] **BUG-063** `reconstructPath` 加步數上限（防 worker 永久卡死）；批次迴圈抽成 `runBatch()`
       並接上原本沒人讀的 `version` 守衛。依對抗驗證結論不做 Atomics seqlock ✅
 - [x] **BUG-064** `BusSystem.ts:295` — 實作 `onRouteStopRemoved` 覆寫；`computeRideDistance` 加長度守衛 ✅
-- [ ] **BUG-065** `Game.ts:547` — `ElevatedRailBuilder` 建構時傳入 `railNetwork`；
-      擴充 `rebuildRailNetworkFromGrid` 涵蓋高架軌；接上死碼 `removeElevated`
+- [x] **BUG-065** `Game.ts:533` — 建構時傳入 `railNetwork`；新增 `rebuildElevatedRailNetwork()` 並接上載入流程 ✅
+- [ ] `ElevatedRailBuilder.removeElevated` 仍是死碼（拆除一律走 `elevatedRoadBuilder.removeElevated`）— BUG-065 遺留
 - [ ] **BUG-066** `IncomeCalcAdapter.ts:14` — 比照 `ServiceRegistry` 單趟 O(N) 建 map，
       取代每建築一次的 citizen filter（30k 市民時單幀 265ms）
 - [ ] **BUG-067** `SidewalkGraph.ts:176` — 補上 border-neighbour 修補 pass（比照 `LaneGraph.ts:140-157`）

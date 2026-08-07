@@ -1740,7 +1740,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 2 個 BusSystem（中途站移除後重算／segDists 長度不超過站數）
   + 3 個 computeRideDistance 守衛測試。修復前 2 個失敗，且精確重現報告的 `[10, 10, 20]` 情境
 
-### BUG-065: 高架鐵軌從未註冊進 RailNetwork，鐵路線無法跨橋 🟡 Medium
+### BUG-065: 高架鐵軌從未註冊進 RailNetwork，鐵路線無法跨橋 🟡 Medium ✅ 已修復
 - **位置**: `src/Game.ts:547`
 - **問題**: `ElevatedRailBuilder` 接受選用的 `RailNetwork`（預設 null）且只在 `if (this.network)` 下加圖的邊。
   Game.ts 建構它時**沒有傳網路** —— `new ElevatedRailBuilder(this.state.grid, this.elevationManager)` ——
@@ -1758,6 +1758,17 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   走訪 ElevationManager 的 rail segment 並以同樣的 `nodeId(x,y,level)` 重新加入節點與邊。
   另外接上目前是死碼的 `ElevatedRailBuilder.removeElevated`（拆除永遠走 `elevatedRoadBuilder.removeElevated`）
 - **註**: 現有測試**永遠**帶著 RailNetwork 建構 builder，所以這條 production 路徑從未被測到
+- **修復內容**:
+  - `Game.ts:533` 建構時傳入 `this.railNetwork`（一行）
+  - 新增 `rebuildElevatedRailNetwork(elevationManager, network)` 並在載入流程的
+    「Setting up roads...」步驟接上（緊接 `rebuildRailNetworkFromGrid` 之後）。
+    **關鍵細節**：origin 格（level 0 且非匝道）根本不會被存進 ElevationManager，
+    所以地面節點要靠匝道的 `rampAscendDirection` 反推 —— 匝道是唯一兩側層級不同的格子：
+    上升方向側在其儲存層級，反向側低一層（地面匝道即 level 0）
+- **測試**: 新增 2 個（帶網路建構時有註冊／重新載入後從 elevation 資料還原連通性）。
+  第 2 個修復前以 TypeError 失敗（函式不存在）
+- **仍未做**: `ElevatedRailBuilder.removeElevated` 仍是死碼（拆除一律走 `elevatedRoadBuilder.removeElevated`），
+  已列入 TODO 但不在本 bug 範圍
 
 ### BUG-066: 收入計算為 O(區域建築 × 市民) 且每棟建築配置新陣列 🟡 Medium
 - **位置**: `src/core/economy/IncomeCalcAdapter.ts:14`

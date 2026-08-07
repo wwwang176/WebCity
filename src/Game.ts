@@ -82,6 +82,7 @@ import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath, validateElevatedPath } from './core/elevation';
+import { rebuildElevatedRailNetwork } from './core/elevation/ElevatedRailBuilder';
 import { UnifiedRoadLookup } from './core/road/UnifiedRoadLookup';
 import { canAdvanceThrough } from './core/traffic/CanAdvance';
 import { getTotalServiceMaintenanceCost } from './core/service/ServiceRegistry';
@@ -530,7 +531,7 @@ export class Game {
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork, this.elevationManager);
     this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
-    this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
+    this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager, this.railNetwork);
     this.simLoop.setElevationManager(this.elevationManager);
     this.roadLookup = new UnifiedRoadLookup(this.state.grid, this.elevationManager);
     this.simLoop.setRoadLookup(this.roadLookup);
@@ -575,6 +576,10 @@ export class Game {
     if (loadedState) {
       steps.push({ label: 'Setting up roads...', run: () => {
         rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
+        // Elevated track is never written to the grid, so the grid scan above
+        // cannot see it — without this a bridge vanishes from the routing graph
+        // on every load, and rail cannot cross water at all (BUG-065).
+        rebuildElevatedRailNetwork(this.elevationManager, this.railNetwork);
       }});
       steps.push({ label: 'Preparing city services...', run: () => {
         this.recalculateAllRoadCoverage();
