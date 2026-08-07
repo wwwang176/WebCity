@@ -977,7 +977,15 @@ export class SimulationLoop {
         const updated = grid.getCell(x, y);
         if (updated) {
           const newLevel = getBuildingType(updated.buildingId)?.level ?? 1;
-          this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === BURNED);
+          // The 6th argument (`abandoned`) is not optional in practice: the
+          // renderer defaults it to false and re-adds the light spot, so an
+          // omitted value visually resurrects a ruin. The abandonment path a few
+          // hundred lines below passes it correctly; this one did not (BUG-086).
+          this.onBuildingUpdated?.(
+            x, y, updated.zoneType, newLevel,
+            updated.reserved === BURNED,
+            updated.reserved === ABANDONED,
+          );
         }
       }
     }

@@ -978,6 +978,12 @@ export class Game {
           const posKey = `${x},${y}`;
           evictedIds.push(...this.state.citizens.evictBuilding(posKey, this.state.clock.tick));
           this.buildingRenderer.removeBuilding(x, y);
+          // Abandonment stress is keyed by position, not by building identity, so
+          // a replacement building inherits the pressure that killed the last
+          // one. demolish() clears it here; rezoning did not, so a district the
+          // player rezoned to escape blight produced buildings that started at
+          // near-maximum stress and were abandoned almost immediately (BUG-087).
+          this.simLoop.clearBuildingState(x, y);
           buildingCells.push(posKey);
         }
       }

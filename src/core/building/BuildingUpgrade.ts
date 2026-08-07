@@ -2,6 +2,7 @@ import { Grid } from '../grid/Grid';
 import { isResidentialZone, isCommercialZone } from '../grid/types';
 import { getBuildingType, getBuildingsForZone } from './types';
 import { EducationLevel } from '../citizen/types';
+import { ABANDONED, BURNED } from './InfraPlacement';
 
 /** Education score mapping (NONE=0, ELEMENTARY=1, HIGH_SCHOOL=2, UNIVERSITY=3). */
 export const EDUCATION_SCORE: Record<EducationLevel, number> = {
@@ -79,6 +80,13 @@ export class BuildingUpgrade {
   canUpgrade(x: number, y: number, conditions: UpgradeConditions): boolean {
     const cell = this.grid.getCell(x, y);
     if (!cell || cell.buildingId === 0) return false;
+    // Ruins are not buildings that can move up or down a level. Beyond the
+    // wasted sampling budget, letting one through is the only way SimulationLoop
+    // reaches its onBuildingUpdated callback for an abandoned building — and
+    // that callback omits the `abandoned` argument, so the renderer re-lights it
+    // and the player sees a normal house that pays no tax and houses nobody
+    // (BUG-086).
+    if (cell.reserved === ABANDONED || cell.reserved === BURNED) return false;
 
     const building = getBuildingType(cell.buildingId);
     if (!building) return false;
@@ -109,6 +117,8 @@ export class BuildingUpgrade {
   shouldDowngrade(x: number, y: number, conditions: UpgradeConditions): boolean {
     const cell = this.grid.getCell(x, y);
     if (!cell || cell.buildingId === 0) return false;
+    // Same exclusion as canUpgrade — see the comment there.
+    if (cell.reserved === ABANDONED || cell.reserved === BURNED) return false;
 
     const building = getBuildingType(cell.buildingId);
     if (!building || building.level <= 1) return false;
