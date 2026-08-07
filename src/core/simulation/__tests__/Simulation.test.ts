@@ -380,11 +380,23 @@ describe('countWorkplaceJobs', () => {
 });
 
 describe('Education integration in SimulationLoop', () => {
-  /** Place a horizontal road at row y from x=0..endX and recalculate education coverage. */
+  /**
+   * Place a horizontal road at row y from x=0..endX, supply utilities, and
+   * recalculate education coverage.
+   *
+   * The power and water plants are not optional set dressing: a school needs
+   * both to be operational, exactly like a police or fire station. These tests
+   * used to omit them and still pass only because EducationService discarded its
+   * operational-change flag and so never recalculated coverage (BUG-080).
+   */
   function setupRoadAndCoverage(state: GameState, roadY: number, endX: number): void {
     for (let x = 0; x <= endX; x++) {
       state.grid.setCell(x, roadY, { roadType: RoadType.TWO_LANE, roadFlags: 1 });
     }
+    state.power.addPlant({ x: 2, y: roadY + 1, output: 1000, pollution: 0, type: 'solar' });
+    state.water.addPlant({ x: 4, y: roadY + 1, output: 1000 });
+    state.power.calculateCoverage(state.grid);
+    state.water.calculateCoverage(state.grid);
     state.education.recalculateCoverage(state.grid);
   }
 
