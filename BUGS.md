@@ -1419,7 +1419,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   - 新增 8 個測試（cells 成員資格／政策可執行性／區域特化／城市特化倍率／市場價格／
     district id 不碰撞／policy id 不碰撞／舊存檔載入為預設值），修復前 6 個失敗
 
-### BUG-054: LaneGraph.updateCells 刪掉自己剛建好的跨路口轉彎邊，永久截斷分支 🟠 High
+### BUG-054: LaneGraph.updateCells 刪掉自己剛建好的跨路口轉彎邊，永久截斷分支 🟠 High ✅ 已修復
 - **位置**: `src/core/traffic/LaneGraph.ts:155`
 - **問題**: `generateCrossIntersectionTurns` 產生的 `xt:` 邊，其 `from`/`to` 位於**進入格與離開格**，
   只有 `viaCellKey` 記錄路口。`updateCells` 先為 `affected` 內每格重建邊（產生這些 xt 邊），
@@ -1439,6 +1439,18 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   讓跨路口邊只由 affected pass 擁有；或 (b) 以 via cell 為刪除依據並在重建前把被刪 xt 邊的 via cell 併入 affected
 - **測試（先寫）**: `LaneGraph.test.ts` — 斷言 `updateCells(...)` 後的圖與同一 grid 全新 `buildFromGrid` 相同。
   現有 updateCells 測試用共線直路，根本不產生 xt 邊
+- **修復內容**: 採用比報告建議更根本的解法 —— **讓邊的所有權明確**。
+  `generateEdgesForCell(O)` 恰好產生兩種邊：從 O 出發的直行邊、以及**經過** O 的轉彎邊
+  （其 from/to 位於 O 的鄰居，只有 `viaCellKey` 記錄 O）。因此 `owner(e) = e.viaCellKey ?? e.from.cellKey`，
+  且兩種 owner 都最多在被重建點位的外一環。
+  - `owners` = affected ∪ neighbours(affected)
+  - 點位依所屬格子刪除（`removeCellData` 改名為 `removeCellPoints`，不再碰邊）
+  - 邊一律依 owner 刪除：`edges.filter(e => !owners.has(e.viaCellKey ?? e.from.cellKey))`
+  - 對每個 owner 呼叫 `generateEdgesForCell`
+  這樣**不可能**出現「A pass 刪掉、B pass 無法重建」的情況，原本的 borderNeighbors 修補 pass 整段移除
+- **附帶發現**: 原 `removeCellData` 只比對 `from`/`to`，**不比對 `viaCellKey`**，
+  所以 xt 邊的所有權本來就是模糊的——這才是根因，borderNeighbors pass 只是讓症狀顯現的地方
+- **測試**: 新增 4 個（xt 邊集合不變／整張圖等同 buildFromGrid／分支未被孤立／四叉路口版本），修復前 3 個失敗
 
 ### BUG-055: Migration v3（市民年齡 年→life-weeks）從未轉換任何人 🟠 High
 - **位置**: `src/core/save/migrations.ts:94`

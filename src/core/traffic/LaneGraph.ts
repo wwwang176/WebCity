@@ -122,38 +122,37 @@ export class LaneGraph {
       }
     }
 
-    // Remove old points + edges for affected cells
-    for (const key of affected) {
-      this.removeCellData(key);
-    }
-
-    // Regenerate points
-    for (const key of affected) {
-      this.generatePointsForCell(grid, key);
-    }
-
-    // Regenerate edges
-    for (const key of affected) {
-      this.generateEdgesForCell(grid, key);
-    }
-
-    // Rebuild edges for border neighbors: non-affected cells adjacent to affected cells.
-    // removeCellData deletes edges in BOTH directions, but generateEdgesForCell only
-    // recreates outgoing edges. Border neighbors lose their outgoing edges toward
-    // affected cells — rebuild them here (points are unchanged, only edges).
-    const borderNeighbors = new Set<string>();
+    // Every cell that OWNS an edge which may have changed. generateEdgesForCell(O)
+    // emits exactly two kinds of edge: straight edges leaving O, and turn edges
+    // passing THROUGH O (whose from/to live in O's neighbours and which record O
+    // only in viaCellKey). So an edge's owner is `viaCellKey ?? from.cellKey`, and
+    // both kinds of owner sit at most one ring outside the points being rebuilt.
+    //
+    // The previous implementation deleted every edge leaving a border cell and
+    // then called generateEdgesForCell on it — which can never recreate a turn
+    // that merely originates there, permanently stranding the branch (BUG-054).
+    const owners = new Set<string>(affected);
     for (const key of affected) {
       const { x, y } = parseCellKey(key);
       for (const d of DIR_FLAGS) {
         for (const nk of grid.getCompatibleNeighborKeys(key, x + d.dx, y + d.dy)) {
-          if (!affected.has(nk)) borderNeighbors.add(nk);
+          owners.add(nk);
         }
       }
     }
-    for (const nk of borderNeighbors) {
-      // Remove only outgoing edges (points are untouched)
-      this.edges = this.edges.filter(e => e.from.cellKey !== nk);
-      this.generateEdgesForCell(grid, nk);
+
+    // Points belong to their own cell; edges are dropped by ownership, so an
+    // edge is never deleted by one pass and left for another to recreate.
+    for (const key of affected) {
+      this.removeCellPoints(key);
+    }
+    this.edges = this.edges.filter(e => !owners.has(e.viaCellKey ?? e.from.cellKey));
+
+    for (const key of affected) {
+      this.generatePointsForCell(grid, key);
+    }
+    for (const key of owners) {
+      this.generateEdgesForCell(grid, key);
     }
 
     this.rebuildEdgeIndices();
@@ -201,16 +200,17 @@ export class LaneGraph {
     this.edgeToIdx.clear();
   }
 
-  private removeCellData(cellKey: string): void {
+  /**
+   * Drop a cell's connection points. Edges are NOT touched here — updateCells
+   * removes them by ownership so that no edge can be deleted by one pass and
+   * left unrecreated by another (BUG-054).
+   */
+  private removeCellPoints(cellKey: string): void {
     const ids = this.cellPoints.get(cellKey);
     if (ids) {
       for (const id of ids) this.points.delete(id);
     }
     this.cellPoints.delete(cellKey);
-    // Remove edges involving this cell
-    this.edges = this.edges.filter(
-      e => e.from.cellKey !== cellKey && e.to.cellKey !== cellKey
-    );
   }
 
   private generatePointsForCell(grid: GridLookup, cellKey: string): void {

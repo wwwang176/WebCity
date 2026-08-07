@@ -478,3 +478,94 @@ describe('LANE_GEOMETRY constants', () => {
     expect(Number.isInteger(LANE_GEOMETRY.BEZIER_SAMPLES)).toBe(true);
   });
 });
+
+// BUG-054: updateCells' border-neighbour repair pass deleted every edge leaving
+// a border cell, including the cross-intersection turn edges the affected-cell
+// pass had just created — and generateEdgesForCell(border) cannot recreate a
+// turn that merely *originates* there and passes through a neighbouring cell.
+describe('LaneGraph.updateCells — cross-intersection turn preservation', () => {
+  /** L bend: (0,0)..(3,0) east-west, then (3,0)..(3,3) north-south. */
+  function lBendCells() {
+    const E = RoadDirection.EAST, W = RoadDirection.WEST;
+    const N = RoadDirection.NORTH, S = RoadDirection.SOUTH;
+    return new Map<string, { roadType: RoadType; roadFlags: number }>([
+      ['0,0', { roadType: RoadType.FOUR_LANE, roadFlags: E }],
+      ['1,0', { roadType: RoadType.FOUR_LANE, roadFlags: E | W }],
+      ['2,0', { roadType: RoadType.FOUR_LANE, roadFlags: E | W }],
+      ['3,0', { roadType: RoadType.FOUR_LANE, roadFlags: W | S }],
+      ['3,1', { roadType: RoadType.FOUR_LANE, roadFlags: N | S }],
+      ['3,2', { roadType: RoadType.FOUR_LANE, roadFlags: N | S }],
+      ['3,3', { roadType: RoadType.FOUR_LANE, roadFlags: N }],
+    ]);
+  }
+
+  const KEYS = ['0,0', '1,0', '2,0', '3,0', '3,1', '3,2', '3,3'];
+
+  function edgeIds(graph: LaneGraph): string[] {
+    return graph.getAllEdges().map(e => e.id).sort();
+  }
+
+  it('should keep cross-intersection turn edges when a border cell is rebuilt', () => {
+    const cells = lBendCells();
+    const graph = new LaneGraph();
+    graph.buildFromGrid(makeGridLookup(cells), KEYS);
+
+    const xtBefore = graph.getAllEdges().filter(e => e.id.startsWith('xt:')).map(e => e.id).sort();
+    expect(xtBefore.length).toBeGreaterThan(0);
+
+    graph.updateCells(makeGridLookup(cells), ['0,0', '1,0', '2,0']);
+
+    const xtAfter = graph.getAllEdges().filter(e => e.id.startsWith('xt:')).map(e => e.id).sort();
+    expect(xtAfter).toEqual(xtBefore);
+  });
+
+  it('should leave the whole graph identical to a fresh buildFromGrid', () => {
+    const cells = lBendCells();
+
+    const incremental = new LaneGraph();
+    incremental.buildFromGrid(makeGridLookup(cells), KEYS);
+    incremental.updateCells(makeGridLookup(cells), ['0,0', '1,0', '2,0']);
+
+    const fresh = new LaneGraph();
+    fresh.buildFromGrid(makeGridLookup(cells), KEYS);
+
+    expect(edgeIds(incremental)).toEqual(edgeIds(fresh));
+  });
+
+  it('should not strand the branch beyond the bend', () => {
+    const cells = lBendCells();
+    const graph = new LaneGraph();
+    graph.buildFromGrid(makeGridLookup(cells), KEYS);
+    graph.updateCells(makeGridLookup(cells), ['0,0', '1,0', '2,0']);
+
+    // Every point in the south arm must still have a way out.
+    const southExits = graph.getConnectionPoints('3,1').filter(p => p.type === 'entry');
+    expect(southExits.length).toBeGreaterThan(0);
+    const reachable = southExits.some(p => graph.getEdgesFrom(p.id).length > 0);
+    expect(reachable).toBe(true);
+  });
+
+  it('should stay identical to buildFromGrid for a 4-way intersection rebuild', () => {
+    const E = RoadDirection.EAST, W = RoadDirection.WEST;
+    const N = RoadDirection.NORTH, S = RoadDirection.SOUTH;
+    const cells = new Map<string, { roadType: RoadType; roadFlags: number }>([
+      ['1,3', { roadType: RoadType.FOUR_LANE, roadFlags: E }],
+      ['2,3', { roadType: RoadType.FOUR_LANE, roadFlags: E | W }],
+      ['3,3', { roadType: RoadType.FOUR_LANE, roadFlags: E | W | N | S }],
+      ['4,3', { roadType: RoadType.FOUR_LANE, roadFlags: W }],
+      ['3,1', { roadType: RoadType.FOUR_LANE, roadFlags: S }],
+      ['3,2', { roadType: RoadType.FOUR_LANE, roadFlags: N | S }],
+      ['3,4', { roadType: RoadType.FOUR_LANE, roadFlags: N }],
+    ]);
+    const keys = [...cells.keys()];
+
+    const incremental = new LaneGraph();
+    incremental.buildFromGrid(makeGridLookup(cells), keys);
+    incremental.updateCells(makeGridLookup(cells), ['1,3', '2,3']);
+
+    const fresh = new LaneGraph();
+    fresh.buildFromGrid(makeGridLookup(cells), keys);
+
+    expect(edgeIds(incremental)).toEqual(edgeIds(fresh));
+  });
+});
