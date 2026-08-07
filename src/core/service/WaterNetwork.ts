@@ -47,7 +47,10 @@ const INFRA_TYPE_TO_KEY: Record<string, string> = {
   school_high: 'highschool',
   school_univ: 'university',
   garbage: 'garbage',
-  power: 'police', // power plants don't consume water, excluded above
+  // No `power` entry: power plants consume no water. This used to map to
+  // 'police', with a comment claiming power plants were "excluded above" — but
+  // excludedBuildingId is the WATER plant (253), not the power plant (254), so
+  // every power plant silently drew the police station's water rate (BUG-071).
   sewage: 'sewage',
   park: 'park',
   cemetery: 'cemetery',
@@ -106,7 +109,7 @@ export class WaterNetwork {
       const bt = getBuildingType(cell.buildingId);
       demand += calculateUtilityCellDemand(
         WATER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-        bt?.residents ?? 0, bt?.workers ?? 0,
+        bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
       );
     });
     this.totalDemand = demand;
@@ -153,7 +156,7 @@ export class WaterNetwork {
     const bt = getBuildingType(cell.buildingId);
     return calculateUtilityCellDemand(
       WATER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-      bt?.residents ?? 0, bt?.workers ?? 0,
+      bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
     );
   }
 

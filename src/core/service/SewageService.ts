@@ -132,7 +132,7 @@ export class SewageService {
       const bt = getBuildingType(cell.buildingId);
       demand += calculateUtilityCellDemand(
         SEWAGE_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-        bt?.residents ?? 0, bt?.workers ?? 0,
+        bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
       );
     });
     this.totalDemand = demand;
@@ -156,7 +156,7 @@ export class SewageService {
     const bt = getBuildingType(cell.buildingId);
     return calculateUtilityCellDemand(
       SEWAGE_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-      bt?.residents ?? 0, bt?.workers ?? 0,
+      bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
     );
   }
 

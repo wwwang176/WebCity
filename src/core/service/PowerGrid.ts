@@ -117,7 +117,7 @@ export class PowerGrid {
       const bt = getBuildingType(cell.buildingId);
       demand += calculateUtilityCellDemand(
         POWER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-        bt?.residents ?? 0, bt?.workers ?? 0,
+        bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
       );
     });
     this.totalDemand = demand;
@@ -164,7 +164,7 @@ export class PowerGrid {
     const bt = getBuildingType(cell.buildingId);
     return calculateUtilityCellDemand(
       POWER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-      bt?.residents ?? 0, bt?.workers ?? 0,
+      bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
     );
   }
 
