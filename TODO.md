@@ -971,3 +971,61 @@
     - 706 tests all passing
     - 新增舊存檔相容測試
 - [x] 放置物件半透明預覽 — 基礎設施放置時顯示半透明 3D 模型預覽（綠色=可放置/紅色=不可放置），道路拖曳預覽改為面，區域拖曳顯示範圍預覽，拆除工具多格高亮
+
+---
+
+## 第六十八輪深度掃描待修 Bug（BUG-052 ~ BUG-068）
+
+多 Agent 靜態掃描 + 對抗驗證產出，詳細根因/重現/修復方向見 `BUGS.md`。
+**全部遵循 TDD：先寫失敗測試再修。** 每條的建議測試已寫在 BUGS.md 對應條目。
+
+### 🔴 Critical
+- [ ] **BUG-052** `InfraPlacement.ts:214` — `forEachMultiCell` 改用主格 rotation 解碼真實 W×H 矩形，
+      並要求 `findPrimaryCell` 解析回同一主格；同時檢查 `DemolishClassifier` 不讓孤兒從格落入 `regular` 分支
+      （否則相鄰同型建築被拆時會留下拆不掉的幽靈設施 + 永久計費）
+- [ ] **BUG-053** `Serializer.ts:141` — 為 DistrictManager / PolicyManager / CitySpecialization / GlobalMarket
+      加 `toJSON`/`fromJSON`，納入 `snapshotGameState` 與 `deserializeGameState`，bump SAVE_VERSION + no-op migration
+      （目前每次存讀檔都靜默清空行政區/政策/城市特化）
+
+### 🟠 High
+- [ ] **BUG-054** `LaneGraph.ts:155` — border-neighbour 修補 pass 不可刪除自己無法重建的跨路口 `xt:` 邊
+- [ ] **BUG-055** `migrations.ts:94` — v3 需在 `restoreCitizen` **之前**對原始 JSON 執行；
+      並把 `restoreCitizen(c, saved.clock.tick)` 傳入真實 tick
+- [ ] **BUG-056** `SimulationLoop.ts:836` — `processFireEvents` 於 `applyFireDamage` 後呼叫 `evictBuilding`；
+      建議抽出共用 `takeBuildingOutOfService(x,y,reservedState)` 讓全部 5 個呼叫點共用
+- [ ] **BUG-057** `SimulationLoop.ts:645` — `factors.isEmployed` 改讀 `citizen.workplaceId !== null`（一行）
+- [ ] **BUG-058** `VehicleLookahead.ts:85` — `canAdvance` 簽章加 `viaCell?` 並傳入 `edge.viaCellKey`；
+      刪除 `Game._canAdvance` 中已死的中點分支
+
+### 🟡 Medium
+- [ ] **BUG-059** `ElevatedPathValidation.ts:82` — 先算 `storeLevel` 再以它為碰撞檢查條件
+- [ ] **BUG-060** `RoadBuilder.ts:128` — `removeRoad` 不再改寫倖存鄰居的 `roadType`
+- [ ] **BUG-061** `CommuteCache.ts:51` — `bumpGeneration` 不清 `routeRefCount`（或同時丟棄 cache）；
+      並修正 :387 那條空過的測試
+- [ ] **BUG-062** `EconomyBreakdown.ts:39` — 補 `serviceCost` / `policyCost` / `elevatedMaintenance`
+      與 citySpec 收入加成；刪除死碼 `ui/modals/EconomyModal.tsx`
+- [ ] **BUG-063** `SimulationLoop.ts:1439` — lane graph SAB 加 seqlock（用既有 version 欄位 + Atomics）或雙緩衝；
+      並給 `PooledAStar.reconstructPath` 加步數上限
+- [ ] **BUG-064** `BusSystem.ts:295` — 覆寫 `onRouteStopRemoved`；`sumDirection` 斷言 segDists 長度相符
+- [ ] **BUG-065** `Game.ts:547` — `ElevatedRailBuilder` 建構時傳入 `railNetwork`；
+      擴充 `rebuildRailNetworkFromGrid` 涵蓋高架軌；接上死碼 `removeElevated`
+- [ ] **BUG-066** `IncomeCalcAdapter.ts:14` — 比照 `ServiceRegistry` 單趟 O(N) 建 map，
+      取代每建築一次的 citizen filter（30k 市民時單幀 265ms）
+- [ ] **BUG-067** `SidewalkGraph.ts:176` — 補上 border-neighbour 修補 pass（比照 `LaneGraph.ts:140-157`）
+
+### 🔵 Low
+- [ ] **BUG-068** `Disaster.ts:159` — `setCell` 一併清 `reserved`；考慮抽 `clearBuildingCell(grid,x,y)` helper
+
+### 系統性改善（治本，優先於逐條修）
+- [ ] 讓 LaneGraph / SidewalkGraph 的跨格邊發出**對稱**（每格發四方向並去重），使任何格的邊都不依賴鄰居被重建
+- [ ] 加不變式測試：`updateCells(...)` 產出的圖必須等同同一 grid 全新 `buildFromGrid`（可同時抓 BUG-054 + BUG-067）
+- [ ] 加測試列舉 GameState 欄位，當某欄位既未序列化也未標記 transient 時失敗（可抓 BUG-053 這類）
+- [ ] 加測試斷言經濟 breakdown 加總 === `state.budget.expenses` / `income`（可抓 BUG-062 這類）
+- [ ] 抽出 `clearBuildingCell(grid,x,y)` 與具旋轉感知／主格驗證的 `forEachOwnedCell` 單一權威 helper
+- [ ] 載入時（及 debug panel）跑一次調和 pass：每個註冊設施在 grid 上是否仍存在？每個 homeId/workplaceId 是否仍指向活建築？
+- [ ] 把 `Game._canAdvance` 與 Game 的 builder 接線抽成純粹可測的 core 模組（Game.ts 因 import Three.js 而完全未測）
+- [ ] 為放置與圖的測試套件加入「相鄰／雙實例」fixture（現有測試全部只在空 grid 上放單一實例）
+
+### 既有測試套件問題（非本輪掃描產出，但阻礙驗證）
+- [ ] `Integration.test.ts` 200x200 效能測試在平行負載下逾時（單獨跑 3752ms / 上限 5000ms），餘裕僅 25%
+- [ ] `tsc --noEmit` 有 329 個錯誤（約 70 個在 production code），`pnpm build` 目前在 main 上就失敗
