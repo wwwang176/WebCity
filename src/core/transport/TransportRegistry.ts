@@ -41,7 +41,7 @@ export function getTransitSystems(systems: TransitSystems): { type: TransportTyp
  * made every call site pass GameState against an unsatisfiable constraint.
  */
 export interface AllTransportSystems extends TransitSystems {
-  airport: { getOperatingCost(): number };
+  airport: { getOperatingCost(): number; tick(): void };
 }
 
 const ALL_TRANSPORT_KEYS: readonly (keyof AllTransportSystems)[] = [
