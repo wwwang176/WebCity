@@ -51,4 +51,18 @@ export class CitySpecialization {
   static getBonusForType(type: CitySpecType): CitySpecBonus {
     return CITY_SPEC_BONUSES[type];
   }
+
+  toJSON(): { current: CitySpecType } {
+    return { current: this.current };
+  }
+
+  static fromJSON(data: { current?: CitySpecType } | undefined): CitySpecialization {
+    const spec = new CitySpecialization();
+    // Restore directly rather than via choose() — the population gate was already
+    // satisfied when the player picked it, and population is not known here.
+    if (data?.current && data.current in CITY_SPEC_BONUSES) {
+      spec.current = data.current;
+    }
+    return spec;
+  }
 }

@@ -1384,7 +1384,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
     使其至少會嘗試 `removeInfraService` 並讓玩家能回收該格
   - 新增 5 個測試（並排醫院／並排高中／90° 垂直堆疊／錯位鄰居／孤兒格分類），修復前全部失敗
 
-### BUG-053: 行政區/政策/城市特化完全未序列化 — 每次存讀檔靜默清空 🔴 Critical
+### BUG-053: 行政區/政策/城市特化完全未序列化 — 每次存讀檔靜默清空 🔴 Critical ✅ 已修復
 - **位置**: `src/core/save/Serializer.ts:141`
 - **問題**: `snapshotGameState()` 序列化了 grid/clock/budget/taxRates/電水/citizens/8 種市政服務/
   6 種運輸系統/elevation，但**完全沒有** `state.districts`、`state.policies`、`state.citySpec`、`state.globalMarket`
@@ -1404,6 +1404,20 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   並 bump `CURRENT_SAVE_VERSION` 加一個 no-op migration 讓舊存檔載入為空而非驗證失敗
 - **測試（先寫）**: `Save.test.ts` — 「round-trips districts, policies and city specialization」，
   目前會在第一個 assertion 就失敗
+- **修復內容**:
+  - `DistrictManager.toJSON()/fromJSON()` — 持久化 districts 含 cell 成員資格與 nextId；
+    `cellToDistrict` 反向索引為純衍生狀態，載入時重建而非存檔
+  - `PolicyManager.toJSON()/restore()` — policy 物件本身掛在 District 上，此處只需持久化 `nextPolicyId`，
+    否則載入後新建的 policy 會重用既有 id
+  - `CitySpecialization.toJSON()/fromJSON()` — 直接還原 current，不經 `choose()`
+    （人口門檻在玩家當初選擇時已滿足，載入時也拿不到人口數）
+  - `GlobalMarket` 本來就有 toJSON/fromJSON，只是 Serializer 沒呼叫 —— 補上
+  - Serializer 四個 key 皆已接上。**關鍵細節**：`PolicyManager` 持有 `DistrictManager` 參照，
+    替換後者時**必須**一併重建前者，否則政策查詢會打到被丟棄的空 manager
+  - `CURRENT_SAVE_VERSION` 5 → 6，加 no-op migration（v5 以前根本沒寫過這些資料，無物可轉換；
+    版本號存在是為了讓 SaveValidator 與未來 migration 能分辨兩個世代）
+  - 新增 8 個測試（cells 成員資格／政策可執行性／區域特化／城市特化倍率／市場價格／
+    district id 不碰撞／policy id 不碰撞／舊存檔載入為預設值），修復前 6 個失敗
 
 ### BUG-054: LaneGraph.updateCells 刪掉自己剛建好的跨路口轉彎邊，永久截斷分支 🟠 High
 - **位置**: `src/core/traffic/LaneGraph.ts:155`

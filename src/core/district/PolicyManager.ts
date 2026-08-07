@@ -74,6 +74,19 @@ export class PolicyManager {
     return POLICY_CONFIG[policyType].cost;
   }
 
+  /**
+   * Policy objects themselves live on their District, so only the id counter
+   * needs persisting here — without it, policies created after a load would
+   * reuse ids already present on restored districts (BUG-053).
+   */
+  toJSON(): { nextPolicyId: number } {
+    return { nextPolicyId: this.nextPolicyId };
+  }
+
+  restore(data: { nextPolicyId?: number } | undefined): void {
+    if (data?.nextPolicyId != null) this.nextPolicyId = data.nextPolicyId;
+  }
+
   canBuildInDistrict(districtId: string, buildingZoneType: ZoneType): boolean {
     const district = this.districtLookup.getDistrict(districtId);
     if (!district) return true;

@@ -1,5 +1,22 @@
 import { toPosKey } from '../grid/GridHelpers';
-import { District, Specialization } from './types';
+import { recoverNextId } from '../utils/recoverNextId';
+import { District, Policy, Specialization } from './types';
+import type { TaxRates } from '../economy/Tax';
+
+/** Wire format for a single district. `cells` is a Set at runtime. */
+export interface SerializedDistrict {
+  id: string;
+  name: string;
+  cells: string[];
+  taxRateOverride?: TaxRates;
+  policies: Policy[];
+  specialization: Specialization;
+}
+
+export interface SerializedDistrictManager {
+  nextId: number;
+  districts: SerializedDistrict[];
+}
 
 export class DistrictManager {
   private districts: Map<string, District> = new Map();
@@ -100,5 +117,48 @@ export class DistrictManager {
 
     this.districts.set(newDistrict.id, newDistrict);
     return newDistrict;
+  }
+
+  /**
+   * Serialize districts including their cell membership. The grid carries no
+   * districtId, so this is the only place the membership can be recovered from
+   * — without it a save silently loses every district (BUG-053).
+   */
+  toJSON(): SerializedDistrictManager {
+    return {
+      nextId: this.nextId,
+      districts: this.getAllDistricts().map((d) => ({
+        id: d.id,
+        name: d.name,
+        cells: [...d.cells],
+        taxRateOverride: d.taxRateOverride,
+        policies: d.policies.map((p) => ({ ...p })),
+        specialization: d.specialization,
+      })),
+    };
+  }
+
+  static fromJSON(data: SerializedDistrictManager | undefined): DistrictManager {
+    const mgr = new DistrictManager();
+    if (!data) return mgr;
+
+    for (const sd of data.districts ?? []) {
+      const district: District = {
+        id: sd.id,
+        name: sd.name,
+        cells: new Set(sd.cells ?? []),
+        taxRateOverride: sd.taxRateOverride,
+        policies: (sd.policies ?? []).map((p) => ({ ...p })),
+        specialization: sd.specialization ?? Specialization.NONE,
+      };
+      mgr.districts.set(district.id, district);
+      // Rebuild the reverse index rather than persisting it — it is pure derived state.
+      for (const cell of district.cells) {
+        mgr.cellToDistrict.set(cell, district.id);
+      }
+    }
+
+    mgr.nextId = data.nextId ?? recoverNextId(mgr.getAllDistricts(), 'district_');
+    return mgr;
   }
 }

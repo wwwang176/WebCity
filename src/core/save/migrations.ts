@@ -33,7 +33,7 @@ export interface SaveMigration {
 }
 
 /** Current save version. Increment when adding a new migration. */
-export const CURRENT_SAVE_VERSION = 5;
+export const CURRENT_SAVE_VERSION = 6;
 
 /** Ordered list of migrations. Must be sorted by version ascending. */
 export const MIGRATIONS: readonly SaveMigration[] = [
@@ -199,6 +199,16 @@ export const MIGRATIONS: readonly SaveMigration[] = [
         console.log(`[Migration] rebalance_emergency_service_capacities: updated ${updated} facility(ies)`);
       }
     },
+  },
+  {
+    version: 6,
+    name: 'serialize_districts_policies_cityspec',
+    // No-op by design. Districts, policies, city specialization and the global
+    // market were never written by saves <= v5 (BUG-053), so there is nothing to
+    // convert — pre-v6 saves correctly load with these at their defaults. The
+    // version bump exists so SaveValidator and future migrations can tell the
+    // two eras apart.
+    migrate() {},
   },
 ];
 

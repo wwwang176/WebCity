@@ -22,6 +22,10 @@ import { RailSystem } from '../transport/RailSystem';
 import { FerrySystem } from '../transport/FerrySystem';
 import { AirportSystem } from '../transport/AirportSystem';
 import { HighwayConnection } from '../traffic/HighwayConnection';
+import { DistrictManager } from '../district/DistrictManager';
+import { PolicyManager } from '../district/PolicyManager';
+import { CitySpecialization } from '../district/CitySpecialization';
+import { GlobalMarket } from '../economy/GlobalMarket';
 import { CURRENT_SAVE_VERSION, runMigrations } from './migrations';
 
 interface SerializedCell {
@@ -73,6 +77,10 @@ interface SerializedState {
   ferry?: ReturnType<FerrySystem['toJSON']>;
   airport?: ReturnType<AirportSystem['toJSON']>;
   highwayConnection?: ReturnType<HighwayConnection['toJSON']>;
+  districts?: ReturnType<DistrictManager['toJSON']>;
+  policies?: ReturnType<PolicyManager['toJSON']>;
+  citySpec?: ReturnType<CitySpecialization['toJSON']>;
+  globalMarket?: ReturnType<GlobalMarket['toJSON']>;
   elevation?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
   abandonmentStress?: Record<string, number>;
   /** Rolling 7-day transfer usage history + current day + ring index */
@@ -145,6 +153,10 @@ export function snapshotGameState(
     ferry: state.ferry.toJSON(),
     airport: state.airport.toJSON(),
     highwayConnection: state.highwayConnection.toJSON(),
+    districts: state.districts.toJSON(),
+    policies: state.policies.toJSON(),
+    citySpec: state.citySpec.toJSON(),
+    globalMarket: state.globalMarket.toJSON(),
     elevation: extra?.elevationManager?.toJSON(),
     abandonmentStress: extra?.abandonmentStress
       ? Object.fromEntries(extra.abandonmentStress)
@@ -252,6 +264,22 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
   }
   if (saved.highwayConnection) {
     state.highwayConnection = HighwayConnection.fromJSON(saved.highwayConnection);
+  }
+
+  // Restore districts / policies / city specialization / market.
+  // PolicyManager holds a reference to the DistrictManager, so replacing the
+  // latter *must* rebuild the former or policies would query the discarded
+  // (empty) manager. Old saves simply have no data here and keep the defaults.
+  if (saved.districts) {
+    state.districts = DistrictManager.fromJSON(saved.districts);
+    state.policies = new PolicyManager(state.districts);
+  }
+  state.policies.restore(saved.policies);
+  if (saved.citySpec) {
+    state.citySpec = CitySpecialization.fromJSON(saved.citySpec);
+  }
+  if (saved.globalMarket) {
+    state.globalMarket = GlobalMarket.fromJSON(saved.globalMarket);
   }
 
   // Fallback: rebuild transit stops from grid for old saves without transport data
