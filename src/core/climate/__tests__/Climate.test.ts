@@ -18,6 +18,9 @@ import {
   createWarningSystem,
   WARNING,
 } from '../WarningSystem';
+import { Grid } from '../../grid/Grid';
+import { ZoneType } from '../../grid/types';
+import { BURNED, ABANDONED } from '../../building/InfraPlacement';
 import {
   applyDamage,
   repairBuilding,
@@ -418,5 +421,53 @@ describe('applyDisasterDamage', () => {
     expect(count).toBe(1);
     expect(grid.cells.get('0,0')!.buildingId).toBe(5); // road cell untouched
     expect(grid.cells.get('1,0')!.buildingId).toBe(0);
+  });
+});
+
+// BUG-068: applyDisasterDamage is the only site in the codebase that clears
+// buildingId without also resetting `reserved`. Grid.setCell is a partial patch,
+// so a BURNED (3) or ABANDONED (1) marker survived onto an empty cell — and
+// since BuildingGrowthTick's zone-building guards no longer match, the cell fell
+// through to regrowth and the brand-new building inherited the stale flag.
+describe('applyDisasterDamage — reserved flag', () => {
+  it('should clear the reserved flag along with buildingId', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: BURNED });
+
+    applyDisasterDamage(grid, [{ x: 5, y: 5 }]);
+
+    const cell = grid.getCell(5, 5)!;
+    expect(cell.buildingId).toBe(0);
+    expect(cell.reserved).toBe(0);
+  });
+
+  it('should clear an ABANDONED marker too', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(6, 6, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7, reserved: ABANDONED });
+
+    applyDisasterDamage(grid, [{ x: 6, y: 6 }]);
+
+    expect(grid.getCell(6, 6)!.reserved).toBe(0);
+  });
+
+  it('should leave a regrown building unmarked', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(7, 7, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: BURNED });
+    applyDisasterDamage(grid, [{ x: 7, y: 7 }]);
+
+    // Whatever grows back here must not be treated as a charred ruin.
+    grid.setCell(7, 7, { buildingId: 1 });
+    expect(grid.getCell(7, 7)!.reserved).toBe(0);
+  });
+
+  it('should still skip infrastructure and roads', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(8, 8, { buildingId: 252, reserved: 0 }); // police station
+    grid.setCell(9, 9, { roadType: 2, buildingId: 1 });
+
+    const destroyed = applyDisasterDamage(grid, [{ x: 8, y: 8 }, { x: 9, y: 9 }]);
+
+    expect(destroyed).toBe(0);
+    expect(grid.getCell(8, 8)!.buildingId).toBe(252);
   });
 });

@@ -1830,7 +1830,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 3 個（西側跨格連結雙向保留／建築生長後道路仍可從頭走到尾／
   整張圖等同 fresh buildFromGrid）。修復前 3 個全部失敗
 
-### BUG-068: applyDisasterDamage 清除 buildingId 卻留下 reserved（BURNED/ABANDONED）🔵 Low
+### BUG-068: applyDisasterDamage 清除 buildingId 卻留下 reserved（BURNED/ABANDONED）🔵 Low ✅ 已修復
 - **位置**: `src/core/climate/Disaster.ts:159`
 - **問題**: `applyDisasterDamage` 做 `grid.setCell(x, y, { buildingId: 0 })` ——
   這是全 codebase **唯一**清除 buildingId 卻不一併重設 `reserved` 的地方。
@@ -1850,6 +1850,10 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **修復方向**: 一行 —— `grid.setCell(x, y, { buildingId: 0, reserved: 0 })`。
   順帶考慮抽出共用的 `clearBuildingCell(grid, x, y)` 並加上 dev-only 不變式斷言
   「非基礎設施格 buildingId === 0 蘊含 reserved === 0」
+- **修復內容**: 如上，一行（並放寬 inline setCell 的參數型別）。
+  共用 `clearBuildingCell` helper 未抽出 —— 留在 TODO 的系統性改善項目
+- **測試**: 新增 4 個（清除 BURNED／清除 ABANDONED／重生的建築不帶標記／
+  基礎設施與道路仍免疫的對照組），修復前 3 個失敗
 
 ---
 

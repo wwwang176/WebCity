@@ -1011,7 +1011,7 @@
 - [x] **BUG-067** `SidewalkGraph.ts:176` — 邊的重建集合擴大一環（`edgeOwners`），利用既有的 edge id 去重 ✅
 
 ### 🔵 Low
-- [ ] **BUG-068** `Disaster.ts:159` — `setCell` 一併清 `reserved`；考慮抽 `clearBuildingCell(grid,x,y)` helper
+- [x] **BUG-068** `Disaster.ts:159` — `setCell` 一併清 `reserved` ✅（`clearBuildingCell` helper 仍列在系統性改善）
 
 ### 系統性改善（治本，優先於逐條修）
 - [ ] 讓 LaneGraph / SidewalkGraph 的跨格邊發出**對稱**（每格發四方向並去重），使任何格的邊都不依賴鄰居被重建

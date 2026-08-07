@@ -146,7 +146,7 @@ export function formatDisasterMessage(d: Disaster): string {
  * Returns the number of buildings destroyed. Pure domain logic (SRP: extracted from Game.ts).
  */
 export function applyDisasterDamage(
-  grid: { getCell(x: number, y: number): { buildingId: number; roadType: number } | null; setCell(x: number, y: number, data: { buildingId: number }): void },
+  grid: { getCell(x: number, y: number): { buildingId: number; roadType: number } | null; setCell(x: number, y: number, data: { buildingId: number; reserved: number }): void },
   damagedCells: { x: number; y: number }[],
 ): number {
   let count = 0;
@@ -156,7 +156,13 @@ export function applyDisasterDamage(
     // Infrastructure buildings and roads are immune to disasters
     if (isInfrastructureBuilding(cell.buildingId)) continue;
     if (cell.roadType !== 0) continue;
-    grid.setCell(x, y, { buildingId: 0 });
+    // `reserved` must be cleared alongside buildingId. setCell is a partial
+    // patch, so leaving it behind stranded a BURNED/ABANDONED marker on an empty
+    // cell; the zone-building guards in BuildingGrowthTick then no longer match,
+    // the cell falls through to regrowth, and the new building is permanently
+    // treated as a charred ruin — untaxed, excluded from RCI supply and housing
+    // capacity, never re-evaluated for abandonment (BUG-068).
+    grid.setCell(x, y, { buildingId: 0, reserved: 0 });
     count++;
   }
   return count;
