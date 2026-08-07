@@ -115,6 +115,8 @@ export class TrafficSimulation {
   private activeVehicleScratch: Vehicle[] = [];
   /** Reusable edge index map (cleared each frame instead of re-allocated). */
   private edgeIndexMap = new Map<string, EdgeEntry[]>();
+  /** Reusable per-frame sort key store (see advanceEdgeVehicles). */
+  private sortProgress = new Map<number, number>();
   /** Reusable spatial hash for cross-edge collision detection. */
   private spatialHash = new SpatialHash(CROSS_EDGE.CELL_SIZE);
   /** Reusable array for spatial entries (object pool — grows to high-water mark). */
@@ -291,9 +293,19 @@ export class TrafficSimulation {
 
     // Sort front-to-back: higher total progress = further ahead.
     // Tiebreaker: lower ID first (older vehicle has priority when overlapping).
+    //
+    // Progress is computed ONCE per vehicle, not inside the comparator.
+    // edgeTotalProgress is an O(edgeIndex) prefix sum, and calling it from the
+    // comparator made the sort O(N log N x L): at the 2000-vehicle cap with
+    // paths tens of edges long that is millions of iterations — every render
+    // frame, since advanceEdgeVehicles is driven by the frame loop rather than
+    // the simulation tick (BUG-106).
+    const progressById = this.sortProgress;
+    progressById.clear();
+    for (const v of edgeVehicles) progressById.set(v.id, this.edgeTotalProgress(v));
     edgeVehicles.sort((a, b) => {
-      const aTotal = this.edgeTotalProgress(a);
-      const bTotal = this.edgeTotalProgress(b);
+      const aTotal = progressById.get(a.id)!;
+      const bTotal = progressById.get(b.id)!;
       if (bTotal !== aTotal) return bTotal - aTotal;
       return a.id - b.id; // lower ID = ahead = processed first
     });
