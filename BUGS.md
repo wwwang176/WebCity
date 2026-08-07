@@ -1570,7 +1570,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 3 個 VehicleLookahead 測試（viaCellKey 有被傳遞／via 格紅燈會停車／直行邊不受影響）
   + 7 個 CanAdvance 測試（含平交道、目的地仍會檢查、負座標）。修復前 2 個失敗
 
-### BUG-059: 地面→level 1 匝道繞過 LEVEL_OCCUPIED 檢查，靜默覆寫既有高架 🟡 Medium
+### BUG-059: 地面→level 1 匝道繞過 LEVEL_OCCUPIED 檢查，靜默覆寫既有高架 🟡 Medium ✅ 已修復
 - **位置**: `src/core/elevation/ElevatedPathValidation.ts:82`
 - **問題**: 層級碰撞檢查以 `pos.level > 0` 為條件，但實際寫入的層級是
   `storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level` —— **守衛檢查了錯誤的值**
@@ -1588,6 +1588,10 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **修復方向**: 先算 storeLevel 再用它當條件：
   `const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level; if (storeLevel > 0 && ...)`。
   `ElevatedRailBuilder` 共用同一 validator，一次修好兩邊
+- **修復內容**: 如上，把 `storeLevel` 提到條件之前並改用它當守衛。`hasRampAtLevel` 的子檢查
+  仍以 `pos.level` 為鍵（平面格語意），未動。`ElevatedRailBuilder` 共用同一 validator，一併修好
+- **測試**: 新增 4 個（匝道落在既有平面高架／匝道落在既有匝道／body cell 仍被拒絕的對照組／
+  淨空路徑仍允許的對照組），修復前 2 個目標測試失敗、2 個對照組通過
 
 ### BUG-060: removeRoad 靜默改寫倖存鄰居的 roadType 🟡 Medium
 - **位置**: `src/core/road/RoadBuilder.ts:128`

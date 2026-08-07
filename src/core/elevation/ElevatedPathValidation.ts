@@ -78,9 +78,12 @@ export function validateElevatedPath(
       if (pos.isRamp) return 'RAMP_ON_WATER';
     }
 
-    // Check level collision with existing elevated segments
-    if (pos.level > 0 && !excludeCollisionIndices?.has(i)) {
-      const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level;
+    // Check level collision with existing elevated segments.
+    // Gate on the level actually WRITTEN, not on pos.level: an ascending ramp has
+    // level 0 / targetLevel 1 but is stored at level 1, so `pos.level > 0` let it
+    // skip this whole block and silently overwrite an existing viaduct (BUG-059).
+    const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level;
+    if (storeLevel > 0 && !excludeCollisionIndices?.has(i)) {
       const existing = elevationManager.get(pos.x, pos.y, storeLevel);
       // Flat-on-flat is allowed (merge flags, like ground roads); any ramp involvement blocks
       if (existing && (existing.isRamp || pos.isRamp)) return 'LEVEL_OCCUPIED';
