@@ -41,9 +41,15 @@ export async function saveGame(slotId: number, name: string, data: string, popul
     };
     if (population !== undefined) slot.population = population;
     const request = store.put(slot);
-    request.onsuccess = () => resolve();
+    // Resolve on COMMIT, not on the request callback. IndexedDB fires
+    // `request.onsuccess` once the write is applied in memory — the transaction
+    // has not committed yet and can still abort (quota exceeded at commit time,
+    // disk error, forced abort, page teardown). Resolving there reported success
+    // for saves that were never persisted, and an abort could never reject an
+    // already-settled promise. save.worker.ts already does this correctly.
     request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
   });
 }
 
@@ -77,8 +83,9 @@ export async function deleteSave(slotId: number): Promise<void> {
     const tx = db.transaction(SAVE_CONFIG.STORE_NAME, 'readwrite');
     const store = tx.objectStore(SAVE_CONFIG.STORE_NAME);
     const request = store.delete(slotId);
-    request.onsuccess = () => resolve();
+    // Same commit-vs-request ordering as saveGame above.
     request.onerror = () => reject(request.error);
-    tx.oncomplete = () => db.close();
+    tx.oncomplete = () => { db.close(); resolve(); };
+    tx.onabort = () => { db.close(); reject(tx.error); };
   });
 }
