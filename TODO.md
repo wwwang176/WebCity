@@ -989,8 +989,8 @@
 ### 🟠 High
 - [x] **BUG-054** `LaneGraph.ts:155` — 改為依 `owner(e) = viaCellKey ?? from.cellKey` 刪除／重建邊，
       borderNeighbors 修補 pass 整段移除 ✅
-- [ ] **BUG-055** `migrations.ts:94` — v3 需在 `restoreCitizen` **之前**對原始 JSON 執行；
-      並把 `restoreCitizen(c, saved.clock.tick)` 傳入真實 tick
+- [x] **BUG-055** `migrations.ts:94` — 抽出 `migrateSavedCitizens()` 對原始 payload 執行；
+      v3 GameState migration 改為留空並註明原因；`restoreCitizen` 傳入真實 tick ✅
 - [ ] **BUG-056** `SimulationLoop.ts:836` — `processFireEvents` 於 `applyFireDamage` 後呼叫 `evictBuilding`；
       建議抽出共用 `takeBuildingOutOfService(x,y,reservedState)` 讓全部 5 個呼叫點共用
 - [ ] **BUG-057** `SimulationLoop.ts:645` — `factors.isEmployed` 改讀 `citizen.workplaceId !== null`（一行）

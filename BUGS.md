@@ -1452,7 +1452,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   所以 xt 邊的所有權本來就是模糊的——這才是根因，borderNeighbors pass 只是讓症狀顯現的地方
 - **測試**: 新增 4 個（xt 邊集合不變／整張圖等同 buildFromGrid／分支未被孤立／四叉路口版本），修復前 3 個失敗
 
-### BUG-055: Migration v3（市民年齡 年→life-weeks）從未轉換任何人 🟠 High
+### BUG-055: Migration v3（市民年齡 年→life-weeks）從未轉換任何人 🟠 High ✅ 已修復
 - **位置**: `src/core/save/migrations.ts:94`
 - **問題**: v3 以 `if (c.birthTick !== undefined && c.birthTick !== null) continue;` 偵測舊格式市民，
   但 `deserializeGameState` 在 `Serializer.ts:221` 就先 `restoreCitizen(c)`，而 `CitizenManager._addCitizen`
@@ -1472,6 +1472,15 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **修復方向**: 兩個獨立修正都需要。(1) 讓舊格式訊號存活：在 `restoreCitizen` **之前**對 `saved.citizens`
   原始 JSON 跑 v3 轉換。(2) 傳入真實 tick：`restoreCitizen(c, saved.clock.tick)`
 - **測試（先寫）**: `migrations.test.ts` — 該檔目前對 v3 **零覆蓋**
+- **修復內容**:
+  - 新增 `migrateSavedCitizens(citizens, saveVersion, tick)` —— 對**原始 JSON payload** 執行轉換，
+    由 `deserializeGameState` 在 `restoreCitizen` **之前**呼叫
+  - v3 的 GameState migration 改為刻意留空並註明原因（此轉換在 GameState 層級**結構上不可能**正確執行）
+  - `restoreCitizen(c, saved.clock.tick)` 傳入真實 tick。對現代存檔無行為變化
+    （`overrides.birthTick` 存在時本就不會用到 currentTick），純粹修正舊存檔路徑
+  - 新增 4 個測試（老人年齡轉換＋educationProgress 重新縮放／birthTick 錨定存檔時鐘／
+    孩童轉換後仍為 CHILD／現代存檔不受影響），修復前 3 個失敗
+- **註**: 使用者已確認舊存檔不需搶救，此修復為邏輯正確性而非資料救援
 
 ### BUG-056: 火災燒毀的建築從不驅離住戶／員工，市民永久滯留 🟠 High
 - **位置**: `src/core/simulation/SimulationLoop.ts:836`

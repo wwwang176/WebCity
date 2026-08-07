@@ -26,7 +26,7 @@ import { DistrictManager } from '../district/DistrictManager';
 import { PolicyManager } from '../district/PolicyManager';
 import { CitySpecialization } from '../district/CitySpecialization';
 import { GlobalMarket } from '../economy/GlobalMarket';
-import { CURRENT_SAVE_VERSION, runMigrations } from './migrations';
+import { CURRENT_SAVE_VERSION, runMigrations, migrateSavedCitizens } from './migrations';
 
 interface SerializedCell {
   x: number;
@@ -228,9 +228,13 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
     for (const p of saved.waterPlants) state.water.addPlant(p);
   }
 
-  // Restore citizens
+  // Restore citizens. The legacy age conversion has to happen on the raw payload
+  // first — restoreCitizen fabricates a birthTick, which destroys the only signal
+  // that identifies a legacy citizen (BUG-055). Passing the saved tick also means
+  // any fabricated birthTick encodes the age at save time rather than at tick 0.
+  migrateSavedCitizens(saved.citizens, saved.version ?? 0, saved.clock.tick);
   if (saved.citizens) {
-    for (const c of saved.citizens) state.citizens.restoreCitizen(c);
+    for (const c of saved.citizens) state.citizens.restoreCitizen(c, saved.clock.tick);
   }
 
   // Restore civic services

@@ -84,38 +84,15 @@ export const MIGRATIONS: readonly SaveMigration[] = [
   {
     version: 3,
     name: 'convert_citizen_age_to_life_weeks',
-    migrate(state: GameState): void {
-      // Old saves stored age in years (0-100). New system uses life-weeks (0-280).
-      // Piecewise linear mapping preserving life-stage boundaries.
-      const tick = state.clock.tick;
-      const citizens = state.citizens.getCitizens() as any[];
-      let converted = 0;
-      for (const c of citizens) {
-        if (c.birthTick !== undefined && c.birthTick !== null) continue; // already new format
-        const oldAge: number = c.age;
-        let newAge: number;
-        if (oldAge <= 5)       newAge = oldAge * (8 / 5);                      // 0-5y → 0-8wk
-        else if (oldAge <= 12) newAge = 8 + (oldAge - 5) * (24 / 7);          // 5-12y → 8-32wk
-        else if (oldAge <= 18) newAge = 32 + (oldAge - 12) * (20 / 6);        // 12-18y → 32-52wk
-        else if (oldAge <= 65) newAge = 52 + (oldAge - 18) * (148 / 47);      // 18-65y → 52-200wk
-        else                   newAge = 200 + (oldAge - 65) * (80 / 35);      // 65-100y → 200-280wk
-        c.age = newAge;
-        c.birthTick = Math.round(tick - newAge / AGE_PER_TICK);
-        c.lifeStage = getLifeStage(newAge);
-        // Scale education progress proportionally (old thresholds → new thresholds)
-        if (c.educationProgress > 0) {
-          const OLD_THRESHOLDS: Record<string, number> = { NONE: 240000, ELEMENTARY: 200000, HIGH_SCHOOL: 160000 };
-          const NEW_THRESHOLDS: Record<string, number> = { NONE: 15000, ELEMENTARY: 12000, HIGH_SCHOOL: 10000 };
-          const oldT = OLD_THRESHOLDS[c.education] ?? 240000;
-          const newT = NEW_THRESHOLDS[c.education] ?? 15000;
-          c.educationProgress = Math.round(c.educationProgress * (newT / oldT));
-        }
-        converted++;
-      }
-      if (converted > 0) {
-        console.log(`[Migration] convert_citizen_age_to_life_weeks: converted ${converted} citizen(s)`);
-      }
-    },
+    // Intentionally empty. This conversion CANNOT run against a live GameState:
+    // deserializeGameState restores citizens before migrations, and
+    // CitizenManager._addCitizen materialises `birthTick` ahead of the
+    // ...overrides spread — so by the time a GameState migration sees them, the
+    // "no birthTick" signal that identifies legacy citizens is already gone and
+    // the guard skips everyone (BUG-055).
+    // The real conversion runs pre-restore, on the raw payload:
+    // see migrateSavedCitizens() below, called from deserializeGameState.
+    migrate() {},
   },
   {
     version: 4,
@@ -211,6 +188,58 @@ export const MIGRATIONS: readonly SaveMigration[] = [
     migrate() {},
   },
 ];
+
+/**
+ * Pre-restore migration: convert legacy citizen ages from years (0-100) to
+ * life-weeks (0-280), using a piecewise linear mapping that preserves the
+ * life-stage boundaries.
+ *
+ * This MUST run on the raw saved payload, before CitizenManager restores the
+ * citizens — restoring fabricates a birthTick, which erases the only signal
+ * distinguishing a legacy citizen from a modern one (BUG-055).
+ *
+ * @param citizens The raw `citizens` array from the save (mutated in place).
+ * @param saveVersion The version stored in the save file (0 if missing).
+ * @param tick The saved clock tick, so birthTick encodes the age at save time.
+ */
+export function migrateSavedCitizens(
+  citizens: Array<Record<string, any>> | undefined,
+  saveVersion: number,
+  tick: number,
+): number {
+  if (!citizens || saveVersion >= 3) return 0;
+
+  let converted = 0;
+  for (const c of citizens) {
+    if (c.birthTick !== undefined && c.birthTick !== null) continue; // already new format
+    const oldAge: number = c.age;
+    let newAge: number;
+    if (oldAge <= 5)       newAge = oldAge * (8 / 5);                     // 0-5y → 0-8wk
+    else if (oldAge <= 12) newAge = 8 + (oldAge - 5) * (24 / 7);         // 5-12y → 8-32wk
+    else if (oldAge <= 18) newAge = 32 + (oldAge - 12) * (20 / 6);       // 12-18y → 32-52wk
+    else if (oldAge <= 65) newAge = 52 + (oldAge - 18) * (148 / 47);     // 18-65y → 52-200wk
+    else                   newAge = 200 + (oldAge - 65) * (80 / 35);     // 65-100y → 200-280wk
+
+    c.age = newAge;
+    c.birthTick = Math.round(tick - newAge / AGE_PER_TICK);
+    c.lifeStage = getLifeStage(newAge);
+
+    // Scale education progress proportionally (old thresholds → new thresholds)
+    if (c.educationProgress > 0) {
+      const OLD_THRESHOLDS: Record<string, number> = { NONE: 240000, ELEMENTARY: 200000, HIGH_SCHOOL: 160000 };
+      const NEW_THRESHOLDS: Record<string, number> = { NONE: 15000, ELEMENTARY: 12000, HIGH_SCHOOL: 10000 };
+      const oldT = OLD_THRESHOLDS[c.education] ?? 240000;
+      const newT = NEW_THRESHOLDS[c.education] ?? 15000;
+      c.educationProgress = Math.round(c.educationProgress * (newT / oldT));
+    }
+    converted++;
+  }
+
+  if (converted > 0) {
+    console.log(`[Migration] convert_citizen_age_to_life_weeks: converted ${converted} citizen(s)`);
+  }
+  return converted;
+}
 
 /**
  * Run all pending migrations on a loaded GameState.
