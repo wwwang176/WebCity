@@ -144,6 +144,13 @@ export function placeInfraOnGrid(
       grid.setCell(cx, cy, {
         buildingId: cfg.buildingId,
         reserved: isPrimary ? ROTATION_RESERVED[rotation] : MULTI_CELL_OCCUPIED,
+        // Clearing zoneType is what removeInfraFromGrid already does; placement
+        // did not, so a facility dropped on zoned-but-empty land kept its zone.
+        // Game.ts only clears zoneType where a zone *building* stood, which
+        // misses exactly this case. The consequence: every footprint cell of a
+        // facility on industrial land emitted factory-grade ground pollution and
+        // noise, and counted toward zone supply (BUG-074).
+        zoneType: 0,
       });
     }
   }
