@@ -1588,12 +1588,16 @@ export class SimulationLoop {
     });
 
     this.state.sidewalkGraph.buildFromGrid(gridLookup, roadCellKeys, buildingCellKeys);
-    // Re-link pedestrianManager to the updated graph
-    this.state.pedestrianManager = new PedestrianManager(
-      this.state.sidewalkGraph,
-      this.state.trafficLights,
-      null, // levelCrossings — connected via Game.ts
-    );
+    // Re-link the EXISTING pedestrianManager to the rebuilt graph.
+    //
+    // This used to construct a new one, discarding every walking pedestrian and
+    // the whole path cache. markLaneGraphDirty always sets sidewalkGraphDirty,
+    // and it fires on road build, road demolish, any other demolish and on
+    // rezoning over existing buildings — so every one of those edits made the
+    // pedestrians on screen vanish and forced an immediate storm of multi-target
+    // A* to refill. It also reset levelCrossings to null, which would have
+    // silently un-wired BUG-105 on the first edit (BUG-104).
+    this.state.pedestrianManager.setSidewalkGraph(this.state.sidewalkGraph);
   }
 
   private spawnVehicles(): void {

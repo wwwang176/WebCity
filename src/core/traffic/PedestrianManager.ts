@@ -8,7 +8,7 @@
 
 import { SidewalkGraph, SidewalkEdge } from './SidewalkGraph';
 import { PedestrianAgent, PedestrianState, PedestrianTripType } from './PedestrianAgent';
-import { euclideanDistance } from '../grid/GridHelpers';
+import { euclideanDistance, toPosKey } from '../grid/GridHelpers';
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -374,6 +374,26 @@ export class PedestrianManager {
 
   // ── Path cache ──
 
+  /**
+   * Point the manager at a rebuilt sidewalk graph without discarding its agents.
+   * The path cache is graph-derived and must go; the pedestrians themselves are
+   * simulation state (BUG-104).
+   */
+  setSidewalkGraph(graph: SidewalkGraph): void {
+    this.sidewalkGraph = graph;
+    this.clearPathCache();
+  }
+
+  /**
+   * Wire up level-crossing queries. The blocking logic was fully implemented and
+   * unit-tested, but nothing ever supplied a lookup, so pedestrians walked
+   * through closed railway barriers and PedestrianState.WAITING_CROSSING was
+   * unreachable (BUG-105).
+   */
+  setLevelCrossings(crossings: LevelCrossingQuery | null): void {
+    this.levelCrossings = crossings;
+  }
+
   invalidateCells(affectedCells: Iterable<string>): void {
     for (const cellKey of affectedCells) {
       const pathKeys = this.cellIndex.get(cellKey);
@@ -421,10 +441,21 @@ export class PedestrianManager {
     const path = this.findBuildingAwarePath(fromX, fromY, toX, toY);
     this.pathCache.set(key, path);
 
-    // Build cell index
+    // Build cell index.
+    //
+    // A failed lookup caches `null`, and a null entry has no edges to index —
+    // so invalidateCells could never reach it and the "no route" answer outlived
+    // the road that would have created one. That was masked while every graph
+    // change threw the whole manager away; now that the instance survives
+    // (BUG-104), the endpoints must be indexed explicitly (BUG-103).
     if (path) {
       for (const edge of path) {
         const cellKey = edge.from.cellKey;
+        if (!this.cellIndex.has(cellKey)) this.cellIndex.set(cellKey, new Set());
+        this.cellIndex.get(cellKey)!.add(key);
+      }
+    } else {
+      for (const cellKey of [toPosKey(fromX, fromY), toPosKey(toX, toY)]) {
         if (!this.cellIndex.has(cellKey)) this.cellIndex.set(cellKey, new Set());
         this.cellIndex.get(cellKey)!.add(key);
       }

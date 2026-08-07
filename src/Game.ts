@@ -546,6 +546,13 @@ export class Game {
     this.state.deathCare.setRoadLookup(this.roadLookup);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
+    // Pedestrians must respect closed barriers too. PedestrianManager's blocking
+    // logic and PedestrianState.WAITING_CROSSING were fully implemented and unit
+    // tested, but nothing ever supplied a lookup — the constructor call in
+    // SimulationLoop passed a literal null with a comment saying Game.ts would
+    // connect it, and Game.ts never did. Pedestrians walked straight through
+    // closed level crossings in front of oncoming trains (BUG-105).
+    this.state.pedestrianManager.setLevelCrossings(this.levelCrossingSystem);
     this.zoneManager = new ZoneManager(this.state.grid);
     this.zoneManager.setElevationManager(this.elevationManager);
 
