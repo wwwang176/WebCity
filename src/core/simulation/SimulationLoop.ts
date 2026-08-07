@@ -1403,6 +1403,17 @@ export class SimulationLoop {
     this.tripPoolDirty = true;
     this.transferGraphDirty = true;
     this.commuteCache.bumpGeneration();
+    // Drop in-flight worker results NOW, not on the next tick's graph sync.
+    //
+    // markLaneGraphDirty runs synchronously from the input event and clears
+    // routeIndex; the worker's BATCH_RESULT is a message task, so it lands
+    // before rebuildLaneGraph runs. onResult then wrote pre-demolition routes
+    // straight back into the cache, and spawnCommuteVehicles stamped them with
+    // the NEW roadGeneration — so isExpired() was permanently false and cars
+    // kept spawning onto road that no longer exists until the next edit.
+    // clearPending drops inflightBatches, so handleMessage ignores the reply;
+    // it was simply being called one tick too late (BUG-107).
+    this.pathBatcher?.clearPending();
     this.wpDistCache?.invalidate();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
@@ -1473,6 +1484,8 @@ export class SimulationLoop {
 
   private rebuildLaneGraph(): void {
     const grid = this.state.grid;
+    // Captured before the bus-revalidation block nulls the field.
+    const affectedCells = this.dirtyRoadCells;
 
     // Use UnifiedRoadLookup for all road cells (ground + elevated)
     const lookup = this._roadLookup;
@@ -1528,6 +1541,21 @@ export class SimulationLoop {
     // Invalidate all service vehicles — their edgePaths reference stale LaneEdges.
     // They will be re-spawned on next tickServiceVehicles().
     this.serviceVehicleManager.removeAll(this.state.traffic);
+
+    // Commute and freight vehicles need the same treatment, but only the ones
+    // actually affected. The reasoning in the line above applies to them too and
+    // they were simply never handled: buses have their own onRoadChanged path,
+    // service vehicles are wiped wholesale, and everything else kept driving
+    // along edges belonging to demolished cells. Nothing rescued them — stallTime
+    // only accrues when a vehicle is blocked, and a ghost road blocks nothing, so
+    // they ran the full path to "arrival" in plain sight (BUG-108).
+    //
+    // Scoped to dirtyRoadCells rather than clearing every vehicle: BUG-054 made
+    // updateCells preserve edge identity outside the affected cells, so untouched
+    // routes are still valid and wiping them would be a visible, pointless cull.
+    if (affectedCells && affectedCells.size > 0) {
+      this.state.traffic.markVehiclesArrivedOnCells(affectedCells);
+    }
 
     // Sync graph to SharedArrayBuffer for Worker pathfinding
     this.syncGraphToWorker();

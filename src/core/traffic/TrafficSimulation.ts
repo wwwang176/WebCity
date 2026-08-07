@@ -232,6 +232,36 @@ export class TrafficSimulation {
     this.vehicles.length = write;
   }
 
+  /**
+   * Retire vehicles whose remaining route touches any of the given cells.
+   *
+   * Called after an incremental lane-graph rebuild: edges belonging to changed
+   * cells are replaced, so a vehicle still holding one is driving on a road that
+   * no longer exists. Nothing else catches this — stallTime only accrues when a
+   * vehicle is blocked, and a ghost road blocks nothing (BUG-108).
+   *
+   * Only the remaining path matters; edges already behind the vehicle cannot
+   * affect where it goes next.
+   *
+   * @returns how many vehicles were retired
+   */
+  markVehiclesArrivedOnCells(cellKeys: ReadonlySet<string>): number {
+    let count = 0;
+    for (const v of this.vehicles) {
+      if (v.arrived || v.edgePath.length === 0) continue;
+      for (let i = v.edgeIndex; i < v.edgePath.length; i++) {
+        const e = v.edgePath[i]!;
+        if (cellKeys.has(e.from.cellKey) || cellKeys.has(e.to.cellKey)
+          || (e.viaCellKey !== undefined && cellKeys.has(e.viaCellKey))) {
+          v.arrived = true;
+          count++;
+          break;
+        }
+      }
+    }
+    return count;
+  }
+
   /** Get IDs of all currently active vehicles. */
   /** Reusable Set for getActiveVehicleIds — caller must not hold reference across frames. */
   private _activeIdSet = new Set<number>();
