@@ -1357,6 +1357,27 @@ export class SimulationLoop {
     this.serviceVehicleManager.removeAllOfType(this.state.traffic, serviceType);
   }
 
+  /**
+   * Invalidate only the multi-modal transfer graph.
+   *
+   * Deliberately NOT markLaneGraphDirty: transit edits do not change the road
+   * network, so dragging the lane graph, commute cache and workplace-distance
+   * cache along would be a far more expensive invalidation than needed.
+   */
+  markTransitNetworkDirty(): void {
+    this.transferGraphDirty = true;
+  }
+
+  /** Is the transfer graph awaiting a rebuild? */
+  isTransferGraphDirty(): boolean {
+    return this.transferGraphDirty;
+  }
+
+  /** Test seam: clear the flag so a test can observe what sets it. */
+  clearTransferGraphDirty(): void {
+    this.transferGraphDirty = false;
+  }
+
   markLaneGraphDirty(affectedCells?: string[], skipUnreachableCheck = false): void {
     this.laneGraphDirty = true;
     this.sidewalkGraphDirty = true;

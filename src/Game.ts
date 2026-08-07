@@ -1253,6 +1253,7 @@ export class Game {
     });
     const infraType = airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!;
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
+    this.markTransitNetworkDirty();
     this.audioManager.playSfx(SoundType.BUILD);
   }
 
@@ -2265,32 +2266,50 @@ export class Game {
     return this.simLoop.getAbandonmentStress(x, y);
   }
 
+  /**
+   * Invalidate the multi-modal transfer graph after a transit-network edit.
+   *
+   * Every transit mutation must call this. Only markLaneGraphDirty used to set
+   * the flag, so creating or deleting a line, changing its vehicles, or placing
+   * a stop left the transfer graph stale until the player next touched a road
+   * (BUG-090). It deliberately does not invalidate the lane graph: transit edits
+   * do not change the road network.
+   */
+  markTransitNetworkDirty(): void {
+    this.simLoop.markTransitNetworkDirty();
+  }
+
   /** Create a bus route with traffic pathfinding. Returns the route or null if no path. */
   createBusRoute(stops: readonly TransportStop[], vehicleCount = 1): TransportRoute | null {
     this.simLoop.ensureLaneGraph();
     const lg = this.simLoop.laneGraph;
     const lookup = this.roadLookup;
-    return this.state.bus.createRouteWithTraffic(
+    const route = this.state.bus.createRouteWithTraffic(
       [...stops],
       vehicleCount,
       (fx, fy, tx, ty) => findLanePath(lg, lookup, { x: fx, y: fy }, { x: tx, y: ty }),
       this.state.traffic,
     );
+    this.markTransitNetworkDirty();
+    return route;
   }
 
   /** Delete a bus route and remove its vehicles from TrafficSimulation. */
   deleteBusRoute(routeId: number): void {
     this.state.bus.deleteRouteWithTraffic(routeId, this.state.traffic);
+    this.markTransitNetworkDirty();
   }
 
   /** Add one bus vehicle to a route in TrafficSimulation. */
   addBusVehicle(routeId: number): void {
     this.state.bus.addVehicleWithTraffic(routeId, this.state.traffic);
+    this.markTransitNetworkDirty();
   }
 
   /** Remove one bus vehicle from a route in TrafficSimulation. */
   removeBusVehicle(routeId: number): void {
     this.state.bus.removeVehicleWithTraffic(routeId, this.state.traffic);
+    this.markTransitNetworkDirty();
   }
 
   getToolType(): ToolType {

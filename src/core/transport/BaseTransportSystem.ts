@@ -94,11 +94,17 @@ export abstract class BaseTransportSystem {
       }
       return true;
     });
-    this.vehicles = this.vehicles.filter(v => !dissolvedIds.includes(v.routeId));
+    // Notify BEFORE removing the vehicles: a subclass cleaning up per-vehicle
+    // state needs to know which vehicles belonged to the route. FerrySystem's
+    // override walks this.vehicles to find vesselPaths entries to drop, and with
+    // the filter first it always found none, leaking one water path per dissolve
+    // (BUG-089). RailSystem and BusSystem key by routeId and are unaffected
+    // either way.
     for (const id of dissolvedIds) {
       this.onRouteDissolved(id);
       this.onRouteDissolvedHook?.(id);
     }
+    this.vehicles = this.vehicles.filter(v => !dissolvedIds.includes(v.routeId));
 
     // Revalidate modified routes (subclasses may recompute paths / dissolve)
     const lateDissolved: number[] = [];
@@ -111,11 +117,12 @@ export abstract class BaseTransportSystem {
     }
     if (lateDissolved.length > 0) {
       this.routes = this.routes.filter(r => !lateDissolved.includes(r.id));
-      this.vehicles = this.vehicles.filter(v => !lateDissolved.includes(v.routeId));
+      // Same ordering as above — notify while the vehicles still exist.
       for (const id of lateDissolved) {
         this.onRouteDissolved(id);
         this.onRouteDissolvedHook?.(id);
       }
+      this.vehicles = this.vehicles.filter(v => !lateDissolved.includes(v.routeId));
     }
 
     // Reset vehicles on surviving modified routes back to first stop

@@ -69,6 +69,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
         state.ferry.createRoute(docks, 1);
       }
     }
+    getGame().markTransitNetworkDirty();
     setVersion(v => v + 1);
   };
 
@@ -118,6 +119,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     }
 
     setRouteBuilder(null);
+    getGame().markTransitNetworkDirty();
     setVersion(v => v + 1);
   };
 
@@ -127,6 +129,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     else if (type === 'metro') state.metro.addVehicleToRoute(routeId);
     else if (type === 'rail') state.rail.addVehicleToRoute(routeId);
     else if (type === 'ferry') state.ferry.addVehicleToRoute(routeId);
+    getGame().markTransitNetworkDirty();
     setVersion(v => v + 1);
   };
 
@@ -136,6 +139,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     else if (type === 'metro') state.metro.removeVehicleFromRoute(routeId);
     else if (type === 'rail') state.rail.removeVehicleFromRoute(routeId);
     else if (type === 'ferry') state.ferry.removeVehicleFromRoute(routeId);
+    getGame().markTransitNetworkDirty();
     setVersion(v => v + 1);
   };
 
@@ -145,6 +149,7 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
     else if (type === 'metro') state.metro.deleteLine(routeId);
     else if (type === 'rail') state.rail.deleteLine(routeId);
     else if (type === 'ferry') state.ferry.deleteRoute(routeId);
+    getGame().markTransitNetworkDirty();
     setVersion(v => v + 1);
   };
 
