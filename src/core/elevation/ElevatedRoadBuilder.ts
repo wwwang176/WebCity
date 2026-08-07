@@ -52,7 +52,8 @@ export class ElevatedRoadBuilder {
 
     // Determine start level
     const startOnGround = this.isGroundRoad(from.x, from.y);
-    const startOnElevated = this.elevationManager.get(from.x, from.y, targetLevel) !== null
+    const segAtTargetLevel = this.elevationManager.get(from.x, from.y, targetLevel) !== null;
+    const startOnElevated = segAtTargetLevel
       || this.elevationManager.hasElevatedSegment(from.x, from.y);
 
     if (!startOnGround && !startOnElevated) {
@@ -63,8 +64,23 @@ export class ElevatedRoadBuilder {
     const endOnGround = this.isGroundRoad(to.x, to.y);
     const endLevel = endOnGround ? 0 : undefined;
 
-    // Use ground level (0) when starting from ground, otherwise respect user's targetLevel
-    const actualStartLevel = startOnGround && !startOnElevated ? 0 : targetLevel;
+    // Start from the level the existing structure is ACTUALLY on, not the level
+    // currently selected in the toolbar.
+    //
+    // hasElevatedSegment is true for a segment at any level, so extending a
+    // level-1 viaduct with level 2 selected used to start the path at level 2:
+    // getElevatedPath derives its ramp count from the level difference, saw
+    // none, and emitted a completely flat level-2 run. UnifiedRoadLookup needs
+    // one side of a one-level gap to be a ramp, so that run had no lane edge to
+    // the viaduct below it — a paid, maintained, rendered road no vehicle could
+    // reach. Validation missed it because it only checks same-level occupancy.
+    // Feeding the real level in makes getElevatedPath generate the ramps, which
+    // also makes 1 -> 2 ramps buildable from an existing viaduct at all
+    // (BUG-097).
+    const existingStartLevel = segAtTargetLevel
+      ? targetLevel
+      : this.elevationManager.getHighestLevel(from.x, from.y);
+    const actualStartLevel = startOnGround && !startOnElevated ? 0 : existingStartLevel;
 
     // Generate path with elevation
     const path = getElevatedPath(from, to, actualStartLevel, targetLevel, endLevel);
@@ -244,22 +260,22 @@ export class ElevatedRoadBuilder {
       this.network.removeNode(nodeId);
     }
 
-    // Update neighboring elevated segments' flags and restore roadType
+    // Update neighboring elevated segments' connection flags only.
+    //
+    // Deliberately does NOT touch a neighbour's roadType — the elevated twin of
+    // BUG-060, which removed the identical heuristic from RoadBuilder. A road's
+    // tier is player-paid state, so re-deriving it from "the highest tier still
+    // connected" destroyed paid capacity in one direction and granted free
+    // upgrades in the other, with no charge, refund or notification. Up here it
+    // is worse than on the ground: an elevated segment's roadType also drives
+    // its per-tick maintenance, so the player's bill was rewritten too
+    // (BUG-096).
     for (const dir of CARDINAL_DIRECTIONS) {
       const neighbor = this.elevationManager.get(x + dir.dx, y + dir.dy, highest);
       if (neighbor && neighbor.roadFlags & dir.opposite) {
-        const newFlags = neighbor.roadFlags & ~dir.opposite;
-        // Restore roadType from remaining connected elevated neighbors
-        let maxType = 0;
-        for (const d of CARDINAL_DIRECTIONS) {
-          if (!(newFlags & d.flag)) continue;
-          const nn = this.elevationManager.get(x + dir.dx + d.dx, y + dir.dy + d.dy, highest);
-          if (nn && nn.roadType > maxType) maxType = nn.roadType;
-        }
         this.elevationManager.set(x + dir.dx, y + dir.dy, highest, {
           ...neighbor,
-          roadFlags: newFlags,
-          roadType: maxType > 0 ? maxType : neighbor.roadType,
+          roadFlags: neighbor.roadFlags & ~dir.opposite,
         });
       }
     }
