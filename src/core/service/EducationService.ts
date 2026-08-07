@@ -63,14 +63,24 @@ export class EducationService {
     this.university.removeSchool(id);
   }
 
-  /** Update which schools are operational (have power + water). */
-  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): void {
+  /**
+   * Update which schools are operational (have power + water).
+   * Returns true if any school's status changed, so the caller can recalculate
+   * coverage. This used to return void, throwing the flag away: SchoolService
+   * answers getCoverage from the array built at recalc time and never consults
+   * operationalIds, so an unpowered school kept full coverage until the player
+   * happened to edit a road (BUG-080).
+   */
+  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): boolean {
+    let changed = false;
     for (const type of SCHOOL_TYPES) {
       const infraType = SCHOOL_INFRA_TYPE[type];
-      this.serviceFor(type).updateOperationalStatus(
+      const typeChanged = this.serviceFor(type).updateOperationalStatus(
         (f) => isFacilityOperational(f.x, f.y, infraType, isPowered, isWaterSupplied),
       );
+      changed = changed || typeChanged;
     }
+    return changed;
   }
 
   /** Recompute road-distance coverage for all school types. */

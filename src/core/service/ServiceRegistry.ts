@@ -81,7 +81,11 @@ export function tickAllCivicServices(state: GameState): void {
   updateRoadServiceOps(state.deathCare, 'cemetery', isPow, isWat, grid);
 
   // Update non-RoadCoverageService services
-  state.education.updateOperationalStatus(isPow, isWat);
+  // Mirror updateRoadServiceOps: a status change must trigger a coverage recalc,
+  // otherwise an unpowered school keeps serving the whole neighbourhood.
+  if (state.education.updateOperationalStatus(isPow, isWat)) {
+    state.education.recalculateCoverage(grid);
+  }
   state.parks.updateOperationalStatus(isPow, isWat);
   state.sewage.updateOperationalStatus(isPow, isWat);
 

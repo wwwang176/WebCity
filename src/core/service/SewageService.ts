@@ -111,15 +111,26 @@ export class SewageService {
   }
 
   calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
+    // Only plants that are both road-connected and powered can treat anything.
+    // Both sets were already maintained, and getConnectedTreatmentCapacity
+    // already applied them — but the coverage flood ignored both, so an
+    // unpowered plant kept "supplying" its whole catchment. Since
+    // getPollutionSources skips supplied cells, a city whose sewage plants had
+    // all lost power emitted zero water pollution: the totals showed untreated
+    // sewage climbing while the map showed no penalty at all (BUG-081).
+    const active = this.treatmentPlants.filter(
+      p => this.connectedPlantIds.has(p.id) && this.isPlantOperational(p.id),
+    );
+
     // Phase 1: full coverage (no budget limit)
     this.fullCoverage.clear();
-    for (const p of this.treatmentPlants) {
+    for (const p of active) {
       bfsRoadNetworkFlood(grid, p.x, p.y, this.fullCoverage, infrastructurePositions, this.roadLookup);
     }
     // Phase 2: budget-drain per plant (capacity as budget)
     this.supplied.clear();
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
-    for (const p of this.treatmentPlants) {
+    for (const p of active) {
       bfsBudgetDrainFlood(grid, { x: p.x, y: p.y, output: p.capacity }, this.supplied, getDemand, infrastructurePositions, this.roadLookup);
     }
     return this.supplied;
