@@ -30,14 +30,31 @@ interface GridLike {
 export function forEachGridPollutionSource(
   grid: GridLike,
   emit: (source: PollutionSource) => void,
+  /**
+   * Road tier of the highest elevated segment at (x, y), or NONE.
+   *
+   * syncTrafficDensityToGrid deliberately projects elevated flow down onto the
+   * ground cell's trafficDensity "for noise pollution calculation" — and this is
+   * its only consumer — but the guard below tested the GROUND roadType. Wherever
+   * a viaduct crossed undeveloped land or water, the ground tier was NONE and
+   * every bit of that projected noise was dropped, so an elevated motorway was
+   * silently pollution-free and the land under it kept an inflated land value
+   * (BUG-099). Widening the guard to `trafficDensity > 0` alone is not enough:
+   * ROAD_SPEED_FACTOR[NONE] is 0, so the amount would come out 0 anyway.
+   */
+  getElevatedRoadType?: (x: number, y: number) => number,
 ): void {
   grid.forEachCell((cell, x, y) => {
     if (cell.buildingId > 0 && cell.zoneType === ZoneType.INDUSTRIAL) {
       emit({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_GROUND, type: 'ground', radius: GRID_POLLUTION.INDUSTRIAL_GROUND_RADIUS });
       emit({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_NOISE, type: 'noise', radius: GRID_POLLUTION.INDUSTRIAL_NOISE_RADIUS });
     }
-    if (cell.roadType !== RoadType.NONE && cell.trafficDensity > 0) {
-      const speedFactor = GRID_POLLUTION.ROAD_SPEED_FACTOR[cell.roadType] ?? 1;
+    if (cell.trafficDensity > 0) {
+      const roadType = cell.roadType !== RoadType.NONE
+        ? cell.roadType
+        : (getElevatedRoadType?.(x, y) ?? RoadType.NONE);
+      if (roadType === RoadType.NONE) return;
+      const speedFactor = GRID_POLLUTION.ROAD_SPEED_FACTOR[roadType] ?? 1;
       const amount = Math.round(cell.trafficDensity * GRID_POLLUTION.TRAFFIC_NOISE_MULTIPLIER * speedFactor);
       if (amount > 0) {
         emit({ x, y, amount, type: 'noise', radius: GRID_POLLUTION.TRAFFIC_NOISE_RADIUS });

@@ -920,7 +920,12 @@ export class SimulationLoop {
     pm.clearSources();
 
     // Add pollution sources directly (no intermediate arrays)
-    forEachGridPollutionSource(grid, (src) => pm.addPollutionSource(src));
+    forEachGridPollutionSource(grid, (src) => pm.addPollutionSource(src), (x, y) => {
+      const em = this._elevationManager;
+      if (!em) return 0;
+      const level = em.getHighestLevel(x, y);
+      return level > 0 ? (em.get(x, y, level)?.roadType ?? 0) : 0;
+    });
     // OCP: service-based pollution sources via registry — adding new sources only needs registry update
     forEachServicePollutionSource(this.state, (src) => pm.addPollutionSource(src));
 
