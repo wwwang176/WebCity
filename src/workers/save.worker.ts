@@ -44,7 +44,15 @@ self.onmessage = async (e: MessageEvent) => {
         population,
       });
       tx.oncomplete = () => { db.close(); resolve(); };
-      tx.onerror = () => { db.close(); reject(tx.error); };
+      // `abort`, not `error`. A transaction's error event only ever receives a
+      // bubbled REQUEST error; a COMMIT-time failure — quota exceeded at commit,
+      // disk error, forced abort, page teardown — dispatches abort alone. With
+      // only onerror wired, exactly the failure this guard exists for left the
+      // promise unsettled forever and SAVE_COMPLETE was never posted. This is
+      // the path autosave uses; BUG-069 fixed the manual-save one and its
+      // message wrongly described this file as already correct (BUG-114).
+      tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Save transaction aborted')); };
+      tx.onerror = () => { db.close(); reject(tx.error ?? new Error('Save request failed')); };
     });
     (self as unknown as Worker).postMessage({ type: 'SAVE_COMPLETE', ok: true });
   } catch (err) {

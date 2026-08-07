@@ -24,12 +24,12 @@ const ABORT_ERROR = new Error('QuotaExceededError');
  * @param outcome 'abort' aborts the transaction after the request succeeds;
  *                'commit' completes normally.
  */
-function installFakeIDB(outcome: 'abort' | 'commit'): void {
+function installFakeIDB(outcome: 'abort' | 'commit' | 'abort-before-success'): void {
   const tx = {
     oncomplete: null as Handler,
     onerror: null as Handler,
     onabort: null as Handler,
-    error: outcome === 'abort' ? ABORT_ERROR : null,
+    error: outcome === 'commit' ? null : ABORT_ERROR,
     objectStore: () => ({ put: makeRequest, delete: makeRequest, get: makeRequest }),
   };
 
@@ -37,9 +37,17 @@ function installFakeIDB(outcome: 'abort' | 'commit'): void {
   function makeRequest(): FakeRequest {
     const req: FakeRequest = { onsuccess: null, onerror: null, result: undefined };
     queueMicrotask(() => {
+      // A transaction can abort before its request ever succeeds — the case
+      // where an unwired onabort strands the promise forever.
+      if (outcome === 'abort-before-success') { tx.onabort?.(); return; }
       req.onsuccess?.();
       queueMicrotask(() => {
-        if (outcome === 'abort') { tx.onabort?.(); tx.onerror?.(); }
+        // Real IndexedDB dispatches ONLY `abort` for a commit-time failure; the
+        // transaction's error event exists solely to receive a bubbled request
+        // error. Firing both made this fake unable to tell a correct onabort
+        // handler from an onerror one — it would have passed the bug that was
+        // still live in save.worker.ts (BUG-114).
+        if (outcome === 'abort') tx.onabort?.();
         else tx.oncomplete?.();
       });
     });
@@ -80,5 +88,17 @@ describe('SaveManager durability', () => {
   it('should still resolve reads when the transaction commits', async () => {
     installFakeIDB('commit');
     await expect(loadGame(1)).resolves.toBeNull();
+  });
+
+  it('should reject a read whose transaction aborts before it returns', async () => {
+    // Unwired, this promise never settles and the loading screen hangs silently.
+    // (An abort AFTER onsuccess is harmless — the data already arrived.)
+    installFakeIDB('abort-before-success');
+    await expect(loadGame(1)).rejects.toThrow('QuotaExceededError');
+  });
+
+  it('should reject a save whose transaction aborts before the put returns', async () => {
+    installFakeIDB('abort-before-success');
+    await expect(saveGame(1, 'slot', '{}')).rejects.toThrow('QuotaExceededError');
   });
 });

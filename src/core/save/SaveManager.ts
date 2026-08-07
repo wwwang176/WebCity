@@ -49,7 +49,7 @@ export async function saveGame(slotId: number, name: string, data: string, popul
     // already-settled promise. save.worker.ts already does this correctly.
     request.onerror = () => reject(request.error);
     tx.oncomplete = () => { db.close(); resolve(); };
-    tx.onabort = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Save transaction aborted')); };
   });
 }
 
@@ -62,6 +62,11 @@ export async function loadGame(slotId: number): Promise<SaveSlot | null> {
     request.onsuccess = () => resolve((request.result as SaveSlot | undefined) ?? null);
     request.onerror = () => reject(request.error);
     tx.oncomplete = () => db.close();
+    // A read transaction can abort with no request error at all — a
+    // versionchange from another tab, deleteDatabase closing the connection, an
+    // I/O fault. Unwired, main.ts's `await loadGame(...)` never settles and the
+    // loading screen hangs with no message (BUG-114).
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Load transaction aborted')); };
   });
 }
 
@@ -74,6 +79,7 @@ export async function listSaves(): Promise<SaveSlot[]> {
     request.onsuccess = () => resolve(request.result as SaveSlot[]);
     request.onerror = () => reject(request.error);
     tx.oncomplete = () => db.close();
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('List transaction aborted')); };
   });
 }
 
@@ -86,6 +92,6 @@ export async function deleteSave(slotId: number): Promise<void> {
     // Same commit-vs-request ordering as saveGame above.
     request.onerror = () => reject(request.error);
     tx.oncomplete = () => { db.close(); resolve(); };
-    tx.onabort = () => { db.close(); reject(tx.error); };
+    tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Save transaction aborted')); };
   });
 }
