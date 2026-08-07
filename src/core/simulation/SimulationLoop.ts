@@ -51,7 +51,7 @@ import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios, getCellServiceCostScore } from '../service/ServiceCoverageQuery';
 import { calculatePoliceLoads, calculateFireLoads } from '../service/PoliceFireLoadCalculator';
-import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
+import { getAvgResidentialPollution, getAvgResidentialNoise, avgResidentialAt, calculateCrimeRate } from '../environment/CityMetrics';
 import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
 import { collectTradePositions, type TradePosition } from '../traffic/FreightTradeCollector';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
@@ -601,7 +601,13 @@ export class SimulationLoop {
     const ctx = calculateCityHappinessContext({
       totalJobs: this.countTotalJobs(),
       adultCount,
-      avgPollution: this.getAvgPollution(),
+      // Noise-free pollution here: `cell.pollution` is ground + water + noise,
+      // and Happiness applies a threshold penalty to avgPollution AND another to
+      // avgNoise, so a purely traffic-noisy district was penalised twice — -18
+      // where -8 was intended. updateLandValue already keeps the two separate;
+      // only this path conflated them (BUG-093). The grid field stays as the
+      // total, which is what the pollution overlay should show.
+      avgPollution: this.getAvgPollutionExcludingNoise(),
       avgNoise: this.getAvgNoise(),
       avgCrime: this.getAvgCrime(),
       residentialBuildingCount: countZoneBuildings(this.state.grid, isResidentialZone),
@@ -789,6 +795,14 @@ export class SimulationLoop {
 
   private getAvgNoise(): number {
     return getAvgResidentialNoise(this.state.grid);
+  }
+
+  /** Residential pollution excluding the noise component — see the happiness call site. */
+  private getAvgPollutionExcludingNoise(): number {
+    return avgResidentialAt(this.state.grid, (x, y) => {
+      const p = this.state.pollution.getPollutionAt(x, y);
+      return p.ground + p.water;
+    });
   }
 
   private getAvgCrime(): number {

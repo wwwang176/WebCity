@@ -13,16 +13,16 @@ describe('CityMetrics', () => {
 
     it('returns average pollution across residential cells only', () => {
       const grid = new Grid(5, 5);
-      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, pollution: 20 });
-      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_HIGH, pollution: 40 });
-      grid.setCell(2, 0, { zoneType: ZoneType.INDUSTRIAL, pollution: 100 });
+      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, pollution: 20 });
+      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 1, pollution: 40 });
+      grid.setCell(2, 0, { zoneType: ZoneType.INDUSTRIAL, buildingId: 1, pollution: 100 });
       // Average of 20 and 40 = 30, ignoring industrial
       expect(getAvgResidentialPollution(grid)).toBe(30);
     });
 
     it('ignores non-residential cells', () => {
       const grid = new Grid(5, 5);
-      grid.setCell(0, 0, { zoneType: ZoneType.COMMERCIAL_LOW, pollution: 50 });
+      grid.setCell(0, 0, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 1, pollution: 50 });
       expect(getAvgResidentialPollution(grid)).toBe(0);
     });
   });
@@ -33,10 +33,21 @@ describe('CityMetrics', () => {
       expect(getAvgResidentialNoise(grid)).toBe(0);
     });
 
+    it('ignores zoned cells with no building', () => {
+      // noiseLevel is only ever written by updateLandValue, which returns early
+      // on buildingId === 0 — an empty zoned cell reports a permanent 0 and used
+      // to drag the average down by the unbuilt fraction of the district.
+      const grid = new Grid(5, 5);
+      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, noiseLevel: 60 });
+      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW });
+      grid.setCell(2, 0, { zoneType: ZoneType.RESIDENTIAL_LOW });
+      expect(getAvgResidentialNoise(grid)).toBe(60);
+    });
+
     it('returns average noise across residential cells only', () => {
       const grid = new Grid(5, 5);
-      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, noiseLevel: 10 });
-      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, noiseLevel: 30 });
+      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, noiseLevel: 10 });
+      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, noiseLevel: 30 });
       expect(getAvgResidentialNoise(grid)).toBe(20);
     });
   });
@@ -44,9 +55,9 @@ describe('CityMetrics', () => {
   describe('avgResidentialMetric (shared helper)', () => {
     it('works with arbitrary cell accessor', () => {
       const grid = new Grid(5, 5);
-      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, landValue: 50 });
-      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_HIGH, landValue: 100 });
-      grid.setCell(2, 0, { zoneType: ZoneType.INDUSTRIAL, landValue: 200 });
+      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, landValue: 50 });
+      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_HIGH, buildingId: 1, landValue: 100 });
+      grid.setCell(2, 0, { zoneType: ZoneType.INDUSTRIAL, buildingId: 1, landValue: 200 });
       // Average of 50 and 100 = 75, ignoring industrial
       expect(avgResidentialMetric(grid, cell => cell.landValue)).toBe(75);
     });

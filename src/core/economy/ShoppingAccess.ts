@@ -73,6 +73,8 @@ export class ShoppingAccess {
       const componentCommercials: string[] = [];
       let totalPopulation = 0;
       let totalCapacity = 0;
+      /** Positions already counted into this component — see the classify block. */
+      const countedPositions = new Set<string>();
 
       // Seed with all keys at this position
       const queue: string[] = [];
@@ -108,8 +110,20 @@ export class ShoppingAccess {
         // Track position as visited
         globalVisitedPositions.add(toPosKey(cx, cy));
 
-        // Classify buildings in this component (buildings are always at ground level)
-        if (cc && cc.buildingId > 0) {
+        // Classify buildings in this component (buildings are always at ground level).
+        //
+        // The queue holds cell KEYS, and UnifiedRoadLookup gives ground cells the
+        // key "x,y" but elevated ones "x,y,level" — so a position crossed by an
+        // elevated road entered the queue twice (three times with two levels) and
+        // its residents/workers were counted once per key. Nothing forbids
+        // building an elevated road over an existing building: ElevatedPathValidation
+        // checks terrain and same-level occupancy only. Deduplicate by POSITION.
+        //
+        // Not by testing `level === 0` instead: globalVisitedPositions.add above
+        // makes the seed loop skip positions first reached via an elevated key,
+        // which would under-count instead (BUG-095).
+        if (cc && cc.buildingId > 0 && !countedPositions.has(toPosKey(cx, cy))) {
+          countedPositions.add(toPosKey(cx, cy));
           const ckey = toPosKey(cx, cy);
           if (isResidentialZone(cc.zoneType as ZoneType)) {
             const bt = getBuildingType(cc.buildingId);

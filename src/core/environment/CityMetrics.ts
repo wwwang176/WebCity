@@ -10,8 +10,32 @@ export function avgResidentialMetric(grid: Grid, accessor: (cell: CellData) => n
   let total = 0;
   let count = 0;
   grid.forEachCell((cell) => {
-    if (isResidentialZone(cell.zoneType)) {
+    // Built cells only. noiseLevel is written exclusively by updateLandValue,
+    // which returns early on `buildingId === 0`, so an empty zoned cell reports
+    // a permanent 0 (or a stale value from a demolished building). Including
+    // them diluted the average by the fraction of the district not yet built:
+    // paint a large residential zone and getAvgNoise returns roughly 0.3x the
+    // real figure while it fills in, so the NOISE_MODIFIERS threshold of 50
+    // essentially never trips and highway-side noise stops mattering (BUG-092).
+    if (cell.buildingId > 0 && isResidentialZone(cell.zoneType)) {
       total += accessor(cell);
+      count++;
+    }
+  });
+  return count > 0 ? total / count : 0;
+}
+
+/**
+ * Average of a per-position value across BUILT residential cells.
+ * Same selection as avgResidentialMetric, but reads from a lookup rather than
+ * the grid cache — used where the cached field conflates several quantities.
+ */
+export function avgResidentialAt(grid: Grid, valueAt: (x: number, y: number) => number): number {
+  let total = 0;
+  let count = 0;
+  grid.forEachCell((cell, x, y) => {
+    if (cell.buildingId > 0 && isResidentialZone(cell.zoneType)) {
+      total += valueAt(x, y);
       count++;
     }
   });

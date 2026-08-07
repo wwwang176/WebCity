@@ -400,6 +400,8 @@ export class Game {
   private onUIUpdate: (() => void) | null = null;
   private previewLine: THREE.Line | null = null;
   private lastMilestoneId: string | null = null;
+  /** Highest milestone population ever reached — milestones never un-unlock. */
+  private highestMilestonePop = 0;
   private notificationTimer = 0;
   private vehicleTypes = new Map<number, VehicleData['type']>();
   /** Reusable per-frame vehicle data array (avoids .map().filter() allocation). */
@@ -641,7 +643,9 @@ export class Game {
 
     steps.push({ label: 'Almost ready...', run: () => {
       this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
-      this.lastMilestoneId = getMilestone(this.state.citizens.getPopulation())?.id ?? null;
+      const loadedMilestone = getMilestone(this.state.citizens.getPopulation());
+      this.lastMilestoneId = loadedMilestone?.id ?? null;
+      this.highestMilestonePop = loadedMilestone?.populationRequired ?? 0;
       this.setupInput(container);
       this.sceneManager.onUpdate((dt) => this.update(dt));
       this.sceneManager.start();
@@ -2538,7 +2542,13 @@ export class Game {
   private checkMilestone(): void {
     const pop = this.state.citizens.getPopulation();
     const milestone = getMilestone(pop);
-    if (milestone && milestone.id !== this.lastMilestoneId) {
+    // Milestones only go up. Comparing ids alone meant a population DROP past a
+    // threshold re-announced the lower milestone as newly unlocked, complete
+    // with the fanfare — and near a threshold, where immigration, deaths,
+    // disasters and abandonment evictions all push the count back and forth,
+    // it fired again every tick (BUG-094).
+    if (milestone && milestone.populationRequired > this.highestMilestonePop) {
+      this.highestMilestonePop = milestone.populationRequired;
       this.lastMilestoneId = milestone.id;
       this.showNotification(`Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`, 8);
       this.audioManager.playSfx(SoundType.MILESTONE);
