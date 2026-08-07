@@ -1540,7 +1540,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **附帶確認**: `-100` 的 UNEMPLOYMENT_FORCED_PENALTY 確實有生效，只是 happiness 被 clamp 到 0
   （有工作者 15、失業者 0），這正是觸發強制外移的狀態
 
-### BUG-058: 轉彎車輛看不到紅綠燈與平交道柵欄 — viaCellKey 被丟棄、中點守衛是死碼 🟠 High
+### BUG-058: 轉彎車輛看不到紅綠燈與平交道柵欄 — viaCellKey 被丟棄、中點守衛是死碼 🟠 High ✅ 已修復
 - **位置**: `src/core/traffic/VehicleLookahead.ts:85`（合併 `Game.ts:418` 同根因）
 - **問題**: `xt:` 邊從進入格直接跳到離開格，被略過的路口只記在 `edge.viaCellKey`。
   `findRedLightDistance` 呼叫 `canAdvance(edge.from.cellKey, edge.to.cellKey)`，**從不轉發 viaCellKey**
@@ -1559,7 +1559,16 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **修復方向**: 把路口帶過去而非重建 —— `canAdvance` 簽章擴充為 `(fromCell, toCell, viaCell?)` 並傳入
   `edge.viaCellKey`；`Game._canAdvance` 在有 viaCell 時檢查 `trafficLights.canPass(cx,cy,viaX,viaY)` 與
   `levelCrossingSystem.isCrossingBlocked(viaX,viaY)`，並**刪除**已死的中點分支
-- **測試（先寫）**: 現有測試用抽象 'A'/'B'/'C' key 搭配手寫 canAdvance stub，永遠不可能抓到這個 bug
+- **修復內容**:
+  - `canAdvance` 簽章擴充為 `(current, next, via?)`，`findRedLightDistance` 傳入 `edge.viaCellKey`；
+    `TrafficSimulation` 的回呼型別同步
+  - **把 `Game._canAdvance` 的邏輯抽成純函式** `src/core/traffic/CanAdvance.ts` 的 `canAdvanceThrough()`，
+    以 `SignalLookup`/`CrossingLookup` 兩個最小介面注入依賴（DIP）。
+    這正是主題 6 建議的結構性補救 —— Game.ts 因 import Three.js 而完全無法測試，
+    抽出後這段邏輯有了 7 個直接單元測試
+  - 已死的 `dx + dy === 2` 中點分支整段刪除
+- **測試**: 新增 3 個 VehicleLookahead 測試（viaCellKey 有被傳遞／via 格紅燈會停車／直行邊不受影響）
+  + 7 個 CanAdvance 測試（含平交道、目的地仍會檢查、負座標）。修復前 2 個失敗
 
 ### BUG-059: 地面→level 1 匝道繞過 LEVEL_OCCUPIED 檢查，靜默覆寫既有高架 🟡 Medium
 - **位置**: `src/core/elevation/ElevatedPathValidation.ts:82`

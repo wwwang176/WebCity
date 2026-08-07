@@ -69,7 +69,7 @@ export function findGapAhead(
 export function findRedLightDistance(
   v: LookaheadVehicle,
   edgePath: readonly LaneEdge[],
-  canAdvance: (current: string, next: string) => boolean,
+  canAdvance: (current: string, next: string, via?: string) => boolean,
 ): number {
   let distAhead = 0;
 
@@ -82,7 +82,9 @@ export function findRedLightDistance(
       // If vehicle is already partway through this crossing, let it complete
       // (it entered the intersection when the light was green)
       const alreadyCrossing = ei === v.edgeIndex && v.edgeProgress > 0;
-      if (!alreadyCrossing && !canAdvance(edge.from.cellKey, edge.to.cellKey)) {
+      // Forward viaCellKey so a turn edge is judged on the intersection it
+      // skips over, not on the plain road tile it lands in (BUG-058).
+      if (!alreadyCrossing && !canAdvance(edge.from.cellKey, edge.to.cellKey, edge.viaCellKey)) {
         const stopDist = distAhead - (ei === v.edgeIndex ? 0 : startDist);
         return Math.max(0, stopDist - v.length / 2 - STOP_LINE_OFFSET);
       }

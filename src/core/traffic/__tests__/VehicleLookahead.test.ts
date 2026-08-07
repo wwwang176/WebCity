@@ -168,3 +168,53 @@ describe('findRedLightDistance', () => {
     expect(findRedLightDistance(v, edges, canAdvance)).toBeCloseTo(0.14, 5);
   });
 });
+
+// BUG-058: cross-intersection turn edges jump from the approach cell straight to
+// the departure cell and record the skipped intersection only in viaCellKey.
+// findRedLightDistance never forwarded it, so canAdvance was asked about two
+// plain road tiles and turning vehicles sailed through red lights and closed
+// level crossings.
+describe('findRedLightDistance — cross-intersection turn edges', () => {
+  function makeTurnEdge(id: string, fromCell: string, toCell: string, via: string, length: number): LaneEdge {
+    return { ...makeEdge(id, fromCell, toCell, length), viaCellKey: via, type: 'turn' };
+  }
+
+  it('should pass viaCellKey to canAdvance for a turn edge', () => {
+    const edges = [makeTurnEdge('xt:1', '2,3', '3,4', '3,3', 2.0)];
+    const v = makeVehicle({ id: 1 });
+    const seen: Array<[string, string, string | undefined]> = [];
+    const canAdvance = (cur: string, next: string, via?: string) => {
+      seen.push([cur, next, via]);
+      return true;
+    };
+
+    findRedLightDistance(v, edges, canAdvance);
+
+    expect(seen).toContainEqual(['2,3', '3,4', '3,3']);
+  });
+
+  it('should stop for a red light held at the via cell', () => {
+    const edges = [makeTurnEdge('xt:1', '2,3', '3,4', '3,3', 2.0)];
+    const v = makeVehicle({ id: 1 });
+    // Only the intersection (3,3) is red; the departure tile is a plain road.
+    const canAdvance = (_cur: string, _next: string, via?: string) => via !== '3,3';
+
+    const dist = findRedLightDistance(v, edges, canAdvance);
+
+    expect(dist).not.toBe(Infinity);
+    expect(dist).toBeGreaterThanOrEqual(0);
+  });
+
+  it('should leave straight edges unaffected (no via cell)', () => {
+    const edges = [makeEdge('e1', '2,3', '3,3', 2.0)];
+    const v = makeVehicle({ id: 1 });
+    const seen: Array<string | undefined> = [];
+    const canAdvance = (_cur: string, _next: string, via?: string) => {
+      seen.push(via);
+      return true;
+    };
+
+    findRedLightDistance(v, edges, canAdvance);
+    expect(seen).toEqual([undefined]);
+  });
+});

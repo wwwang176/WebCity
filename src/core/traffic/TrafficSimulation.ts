@@ -272,7 +272,7 @@ export class TrafficSimulation {
    */
   advanceEdgeVehicles(
     dtSeconds: number,
-    canAdvance?: (current: string, next: string) => boolean,
+    canAdvance?: (current: string, next: string, via?: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
     const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT, BRAKE_DISTANCE, ACCEL, DECEL } = TRAFFIC;

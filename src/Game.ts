@@ -83,6 +83,7 @@ import { TrainAnimator } from './renderer/TrainAnimator';
 import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath, validateElevatedPath } from './core/elevation';
 import { UnifiedRoadLookup } from './core/road/UnifiedRoadLookup';
+import { canAdvanceThrough } from './core/traffic/CanAdvance';
 
 export type PlacementMode = 'ground' | 'elevated';
 
@@ -404,26 +405,8 @@ export class Game {
   private trainPosScratch: { x: number; y: number }[] = [];
 
   /** Bound canAdvance callback (avoids per-frame closure creation). */
-  private readonly _canAdvance = (cur: string, next: string): boolean => {
-    const ci = cur.indexOf(',');
-    const cx = Number(cur.slice(0, ci));
-    const cy = Number(cur.slice(ci + 1));
-    const ni = next.indexOf(',');
-    const nx = Number(next.slice(0, ni));
-    const ny = Number(next.slice(ni + 1));
-    const dx = Math.abs(nx - cx), dy = Math.abs(ny - cy);
-    if (dx + dy === 2) {
-      const ix = (cx + nx) / 2;
-      const iy = (cy + ny) / 2;
-      if (Number.isInteger(ix) && Number.isInteger(iy)) {
-        if (!this.state.trafficLights.canPass(cx, cy, ix, iy)) return false;
-        if (this.levelCrossingSystem.isCrossingBlocked(ix, iy)) return false;
-      }
-    }
-    if (!this.state.trafficLights.canPass(cx, cy, nx, ny)) return false;
-    if (this.levelCrossingSystem.isCrossingBlocked(nx, ny)) return false;
-    return true;
-  };
+  private readonly _canAdvance = (cur: string, next: string, via?: string): boolean =>
+    canAdvanceThrough(this.state.trafficLights, this.levelCrossingSystem, cur, next, via);
   /** Bound speed limit callback (avoids per-frame closure creation). */
   private readonly _getSpeedLimit = (key: string): number => getSpeedLimitForCell(this.roadLookup ?? this.state.grid, key);
   /** 渡輪渲染端動畫（純 LERP，不靠 tick） */

@@ -993,8 +993,8 @@
       v3 GameState migration 改為留空並註明原因；`restoreCitizen` 傳入真實 tick ✅
 - [x] **BUG-056** `SimulationLoop.ts:836` — 抽出 `takeBuildingOutOfService(x,y)`，火災與廢棄路徑共用 ✅
 - [x] **BUG-057** `SimulationLoop.ts:645` — `factors.isEmployed` 改讀 `citizen.workplaceId !== null` ✅
-- [ ] **BUG-058** `VehicleLookahead.ts:85` — `canAdvance` 簽章加 `viaCell?` 並傳入 `edge.viaCellKey`；
-      刪除 `Game._canAdvance` 中已死的中點分支
+- [x] **BUG-058** `VehicleLookahead.ts:85` — `canAdvance(cur, next, via?)` 並傳入 `edge.viaCellKey`；
+      邏輯抽成純模組 `core/traffic/CanAdvance.ts`；刪除已死的中點分支 ✅
 
 ### 🟡 Medium
 - [ ] **BUG-059** `ElevatedPathValidation.ts:82` — 先算 `storeLevel` 再以它為碰撞檢查條件
@@ -1022,7 +1022,8 @@
 - [ ] 加測試斷言經濟 breakdown 加總 === `state.budget.expenses` / `income`（可抓 BUG-062 這類）
 - [ ] 抽出 `clearBuildingCell(grid,x,y)` 與具旋轉感知／主格驗證的 `forEachOwnedCell` 單一權威 helper
 - [ ] 載入時（及 debug panel）跑一次調和 pass：每個註冊設施在 grid 上是否仍存在？每個 homeId/workplaceId 是否仍指向活建築？
-- [ ] 把 `Game._canAdvance` 與 Game 的 builder 接線抽成純粹可測的 core 模組（Game.ts 因 import Three.js 而完全未測）
+- [x] 把 `Game._canAdvance` 抽成純粹可測的 core 模組 `core/traffic/CanAdvance.ts` ✅（BUG-058 一併完成）
+- [ ] 把 Game 的 builder 接線也抽成可測模組（Game.ts 因 import Three.js 而完全未測）
 - [ ] 為放置與圖的測試套件加入「相鄰／雙實例」fixture（現有測試全部只在空 grid 上放單一實例）
 
 ### 既有測試套件問題（非本輪掃描產出，但阻礙驗證）
