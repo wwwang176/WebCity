@@ -1,5 +1,5 @@
 import { RoadType, RoadDirection, getLaneCount } from '../road/types';
-import { parsePosKeyUnsafe, toPosKey, euclideanDistance } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, euclideanDistance } from '../grid/GridHelpers';
 import { computeTurnControlPoint as computeTurnCP, approximateQuadraticBezierLength } from './BezierPath';
 
 // ── Types ──

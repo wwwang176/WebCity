@@ -160,7 +160,7 @@ describe('validateElevatedPath — ramp landing on an occupied level', () => {
 
   it('rejects an ascending ramp that lands on an occupied level-1 cell', () => {
     // An existing flat viaduct deck at (1,0) level 1.
-    em.set(1, 0, 1, { roadType: RoadType.FOUR_LANE, roadFlags: 5, isRamp: false });
+    em.set(1, 0, 1, { roadType: RoadType.FOUR_LANE, roadFlags: 5, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
     // Ground road at the ramp's foot so the path is otherwise legal.
     grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
 
@@ -169,7 +169,7 @@ describe('validateElevatedPath — ramp landing on an occupied level', () => {
   });
 
   it('rejects a ramp landing on another ramp at the same stored level', () => {
-    em.set(1, 0, 1, { roadType: RoadType.TWO_LANE, roadFlags: 5, isRamp: true });
+    em.set(1, 0, 1, { roadType: RoadType.TWO_LANE, roadFlags: 5, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0 });
     grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
 
     const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
@@ -178,7 +178,7 @@ describe('validateElevatedPath — ramp landing on an occupied level', () => {
 
   it('still rejects the same conflict one tile further along (body cell)', () => {
     // Contrast case: guards against an over-broad fix that stops rejecting here.
-    em.set(2, 0, 1, { roadType: RoadType.FOUR_LANE, roadFlags: 5, isRamp: true });
+    em.set(2, 0, 1, { roadType: RoadType.FOUR_LANE, roadFlags: 5, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0 });
     grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
 
     const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);

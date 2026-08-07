@@ -105,8 +105,8 @@ describe('buildIncomeCalcDeps — per-building citizen lookups', () => {
   it('should report zero residents and workers for an unoccupied building', () => {
     const state = makeCity(4, 0);
     const deps = buildIncomeCalcDeps(state);
-    expect(deps.getResidentEducations('2,2')).toEqual([]);
-    expect(deps.getWorkerCount('3,2')).toBe(0);
+    expect(deps.getResidentEducations!('2,2')).toEqual([]);
+    expect(deps.getWorkerCount!('3,2')).toBe(0);
   });
 
   it('should count multiple occupants of the same building', () => {
@@ -115,7 +115,7 @@ describe('buildIncomeCalcDeps — per-building citizen lookups', () => {
       state.citizens.restoreCitizen({ age: 100, homeId: '5,5', workplaceId: '6,6' });
     }
     const deps = buildIncomeCalcDeps(state);
-    expect(deps.getResidentEducations('5,5')).toHaveLength(5);
-    expect(deps.getWorkerCount('6,6')).toBe(5);
+    expect(deps.getResidentEducations!('5,5')).toHaveLength(5);
+    expect(deps.getWorkerCount!('6,6')).toBe(5);
   });
 });

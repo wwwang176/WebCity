@@ -939,7 +939,7 @@ describe('SidewalkGraph.updateCells — connectivity at the rebuild border', () 
     expect(linked()).toBe(true);
 
     // A house grows at (3,1) — the argument shape SimulationLoop actually passes.
-    cells.set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
+    (cells as Map<string, CellDef>).set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
     graph.updateCells(makeGrid(cells), ['3,1']);
 
     expect(linked()).toBe(true);
@@ -954,7 +954,7 @@ describe('SidewalkGraph.updateCells — connectivity at the rebuild border', () 
     graph.buildFromGrid(grid, keys);
     expect(graph.findPath('0,0:NE', '7,0:NW')).not.toBeNull();
 
-    cells.set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
+    (cells as Map<string, CellDef>).set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
     graph.updateCells(makeGrid(cells), ['3,1']);
 
     expect(graph.findPath('0,0:NE', '7,0:NW')).not.toBeNull();
@@ -962,7 +962,7 @@ describe('SidewalkGraph.updateCells — connectivity at the rebuild border', () 
 
   it('should leave the graph identical to a fresh buildFromGrid', () => {
     const { cells, keys } = buildHorizontalRoad(6);
-    cells.set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
+    (cells as Map<string, CellDef>).set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
 
     const incremental = new SidewalkGraph();
     incremental.buildFromGrid(makeGrid(cells), keys);
