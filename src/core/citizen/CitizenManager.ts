@@ -232,6 +232,7 @@ export class CitizenManager {
   /** Called once per game day: recompute all citizen ages from birthTick.
    *  Using birthTick avoids float accumulation errors. */
   updateAges(currentTick: number): void {
+    const retired: number[] = [];
     for (const c of this.citizens) {
       c.age = (currentTick - c.birthTick) * AGE_PER_TICK;
       c.lifeStage = getLifeStage(c.age);
@@ -249,8 +250,17 @@ export class CitizenManager {
       // age as shorthand. Retirement is the upper boundary only.
       if (c.workplaceId !== null && c.age > LIFE_STAGE_AGE.ADULT_MAX) {
         c.workplaceId = null;
+        retired.push(c.id);
       }
     }
+    // Every other path that clears workplaceId also drops the commute cache
+    // entry — eviction via onEvicted, death, emigration, moving house, changing
+    // job, unreachable workplace. Retirement did not, so the retiree's route
+    // kept its routeRefCount and went on feeding the congestion predictor,
+    // which writes trafficDensity and therefore noise pollution, happiness and
+    // land value. The seat it vacated was refilled and counted a second time,
+    // and the ghost survived until the citizen died (BUG-119).
+    if (retired.length > 0) this.onEvicted?.(retired);
   }
 
   /** Called once per game day: bathtub-curve death check.

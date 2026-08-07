@@ -51,7 +51,7 @@ import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios, getCellServiceCostScore } from '../service/ServiceCoverageQuery';
 import { calculatePoliceLoads, calculateFireLoads } from '../service/PoliceFireLoadCalculator';
-import { getAvgResidentialPollution, getAvgResidentialNoise, avgResidentialAt, calculateCrimeRate } from '../environment/CityMetrics';
+import { getAvgResidentialPollution, avgResidentialAt, calculateCrimeRate } from '../environment/CityMetrics';
 import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
 import { collectTradePositions, type TradePosition } from '../traffic/FreightTradeCollector';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
@@ -794,7 +794,14 @@ export class SimulationLoop {
   }
 
   private getAvgNoise(): number {
-    return getAvgResidentialNoise(this.state.grid);
+    // Read live noise, not cell.noiseLevel. That field is written only by
+    // updateLandValue, which runs every MEDIUM_TICK_INTERVAL (60 ticks), while
+    // growth and happiness run every 6 — so every residential building grown in
+    // the last 10 slow ticks passes the `buildingId > 0` filter carrying a
+    // noiseLevel of 0. BUG-092 removed the empty-zoned-cell half of the
+    // dilution and left this half in place (BUG-121).
+    return avgResidentialAt(this.state.grid, (x, y) =>
+      this.state.pollution.getPollutionAt(x, y).noise);
   }
 
   /** Residential pollution excluding the noise component — see the happiness call site. */

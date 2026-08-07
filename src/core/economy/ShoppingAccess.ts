@@ -58,6 +58,19 @@ export class ShoppingAccess {
     const globalVisited = new Set<string>();
     // Track visited positions to avoid re-seeding
     const globalVisitedPositions = new Set<string>();
+    /**
+     * Positions already counted, ACROSS components.
+     *
+     * Per-component was not enough: a building reached by the ground component
+     * is later reached again through an elevated key from a separate elevated
+     * component, because getCompatibleNeighborKeys never returns a level-1
+     * neighbour for a flat level-0 source, so that key is unvisited. It was
+     * counted twice, and worse, residentialStatus.set overwrote the correct
+     * entry with the elevated component's — a house with shops next door
+     * reported no commercial access at all and took the -12 happiness penalty
+     * (BUG-120).
+     */
+    const countedPositions = new Set<string>();
 
     grid.forEachCell((cell, x, y) => {
       // Start flood-fill from any unvisited cell that is part of the road network
@@ -73,9 +86,6 @@ export class ShoppingAccess {
       const componentCommercials: string[] = [];
       let totalPopulation = 0;
       let totalCapacity = 0;
-      /** Positions already counted into this component — see the classify block. */
-      const countedPositions = new Set<string>();
-
       // Seed with all keys at this position
       const queue: string[] = [];
 
