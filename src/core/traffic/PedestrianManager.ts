@@ -385,6 +385,33 @@ export class PedestrianManager {
   }
 
   /**
+   * Retire pedestrians whose remaining route crosses any of the given cells.
+   *
+   * The mirror of TrafficSimulation.markVehiclesArrivedOnCells. Keeping agents
+   * across a rebuild (BUG-104) stopped them vanishing, but buildFromGrid
+   * replaces every node and edge — an agent's edgePath then points at objects
+   * that no longer describe anything, and tick() never re-queries the graph. So
+   * they walked demolished pavement, across grass, into doorways of razed
+   * buildings, for up to DESPAWN_TIMEOUT. Pedestrians have no stallTime to save
+   * them either (BUG-124).
+   */
+  markAgentsArrivedOnCells(cellKeys: ReadonlySet<string>): number {
+    let count = 0;
+    for (const agent of this.agents) {
+      if (agent.edgePath.length === 0) continue;
+      for (let i = agent.edgeIndex; i < agent.edgePath.length; i++) {
+        const e = agent.edgePath[i]!;
+        if (cellKeys.has(e.from.cellKey) || cellKeys.has(e.to.cellKey)) {
+          agent.state = PedestrianState.ARRIVED;
+          count++;
+          break;
+        }
+      }
+    }
+    return count;
+  }
+
+  /**
    * Wire up level-crossing queries. The blocking logic was fully implemented and
    * unit-tested, but nothing ever supplied a lookup, so pedestrians walked
    * through closed railway barriers and PedestrianState.WAITING_CROSSING was

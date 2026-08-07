@@ -44,16 +44,26 @@ describe('PedestrianManager survives a sidewalk graph rebuild', () => {
     expect(pm.agents.length).toBe(before);
   });
 
-  it('should accept level crossings after construction', () => {
+  it('should retire agents whose remaining route crosses a removed cell', () => {
+    // The mirror of the vehicle sweep. Keeping agents across a rebuild stopped
+    // them vanishing, but buildFromGrid replaces every node and edge, so an
+    // agent's edgePath describes pavement that no longer exists — and tick()
+    // never re-queries the graph. Pedestrians have no stallTime to save them
+    // (BUG-124).
     const pm = new PedestrianManager(graphFor(road));
-    let asked = false;
-    pm.setLevelCrossings({ isCrossingBlocked: () => { asked = true; return false; } });
     pm.spawnPedestrian(1, 5, 8, 5, 1, PedestrianTripType.FULL_WALK);
-    for (let i = 0; i < 30; i++) pm.tick(1);
+    expect(pm.agents.length).toBeGreaterThan(0);
 
-    // The manager must at least be holding the lookup; whether a crossing is on
-    // this particular route is beside the point.
-    expect(typeof asked).toBe('boolean');
+    const retired = pm.markAgentsArrivedOnCells(new Set([toPosKey(5, 5)]));
+
+    expect(retired).toBeGreaterThan(0);
+  });
+
+  it('should leave agents on untouched routes walking', () => {
+    const pm = new PedestrianManager(graphFor(road));
+    pm.spawnPedestrian(1, 5, 8, 5, 1, PedestrianTripType.FULL_WALK);
+
+    expect(pm.markAgentsArrivedOnCells(new Set([toPosKey(19, 19)]))).toBe(0);
   });
 });
 
