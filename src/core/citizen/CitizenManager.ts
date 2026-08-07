@@ -214,6 +214,13 @@ export class CitizenManager {
       }
       if (c.workplaceId === posKey) {
         c.workplaceId = null;
+        // Record the unemployment start, symmetrically with homelessSince above.
+        // Happiness escalates the unemployment penalty by duration (-15, then
+        // -25 after 30 ticks, then -100) and reads this field; leaving it null
+        // pinned demolition-driven unemployment at the mildest tier forever, and
+        // hid these citizens from the unemployment figure in DemographicsPage.
+        // The three other unemployment paths all record it (BUG-075).
+        c.unemployedSince = currentTick ?? null;
         affected = true;
       }
       if (affected) evictedIds.push(c.id);
@@ -228,6 +235,21 @@ export class CitizenManager {
     for (const c of this.citizens) {
       c.age = (currentTick - c.birthTick) * AGE_PER_TICK;
       c.lifeStage = getLifeStage(c.age);
+      // Retire citizens who have aged out of working age. Job assignment filters
+      // to working-age citizens, but nothing ever released a post by age, and
+      // workOccupancy counts every citizen holding a workplaceId — so retirees
+      // permanently occupied jobs that could never be reassigned, while staying
+      // invisible in unemploymentRate (which only counts working-age citizens).
+      // unemployedSince stays null: retirement is not unemployment, and stamping
+      // it would apply the happiness penalty ladder to every senior (BUG-076).
+      //
+      // Deliberately `age > ADULT_MAX` rather than `!isWorkingAge(age)`: the
+      // latter also covers children and teens, who never hold a job in a running
+      // game (assignment filters by working age) but do in tests that use a low
+      // age as shorthand. Retirement is the upper boundary only.
+      if (c.workplaceId !== null && c.age > LIFE_STAGE_AGE.ADULT_MAX) {
+        c.workplaceId = null;
+      }
     }
   }
 
