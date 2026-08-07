@@ -56,6 +56,8 @@ export const GARBAGE = {
   BASE_POLLUTION: 20,
   /** Pollution spread radius (Manhattan distance) for all garbage sources */
   POLLUTION_RADIUS: 5,
+  /** Radius for rubbish left in the street — tight, it is a local nuisance. */
+  UNCOLLECTED_POLLUTION_RADIUS: 2,
   /** Max bags collected per facility per service tick */
   COLLECTION_RATE: 140,
   /** Happiness penalty per garbage bag waiting in queue */
@@ -274,12 +276,41 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
       }
     }
     const uncollectedPenalty = this.getPollutionPenalty();
-    if (uncollectedPenalty > 0 && operational.length > 0) {
-      const perFacility = Math.ceil(uncollectedPenalty / operational.length);
-      for (const f of operational) {
-        this.forEachFacilityCell(f, (cx, cy) => {
-          sources.push({ x: cx, y: cy, amount: perFacility, type: 'ground', radius });
-        });
+    if (uncollectedPenalty > 0) {
+      if (operational.length > 0) {
+        const perFacility = Math.ceil(uncollectedPenalty / operational.length);
+        for (const f of operational) {
+          this.forEachFacilityCell(f, (cx, cy) => {
+            sources.push({ x: cx, y: cy, amount: perFacility, type: 'ground', radius });
+          });
+        }
+      } else {
+        // No working landfill: emit at the rubbish itself.
+        //
+        // This branch used to be skipped entirely, so a city with no landfill
+        // accumulated garbage forever at exactly zero pollution cost — "do
+        // nothing" strictly beat "start handling waste", which immediately
+        // added BASE_POLLUTION per landfill cell. getPollutionSources is the
+        // only route garbage has into the pollution grid, so nothing else
+        // compensated (BUG-101). Emitting at the pending bags also fixes the
+        // modelling inversion where uncollected rubbish polluted the landfill
+        // rather than the street it was sitting on.
+        const byPos = new Map<string, { x: number; y: number; count: number }>();
+        for (const bag of this.pendingBags) {
+          const key = `${bag.x},${bag.y}`;
+          const e = byPos.get(key);
+          if (e) e.count++;
+          else byPos.set(key, { x: bag.x, y: bag.y, count: 1 });
+        }
+        if (byPos.size > 0) {
+          const perBag = uncollectedPenalty / this.pendingBags.length;
+          for (const e of byPos.values()) {
+            const amount = Math.ceil(perBag * e.count);
+            if (amount > 0) {
+              sources.push({ x: e.x, y: e.y, amount, type: 'ground', radius: GARBAGE.UNCOLLECTED_POLLUTION_RADIUS });
+            }
+          }
+        }
       }
     }
     return sources;

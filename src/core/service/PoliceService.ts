@@ -37,7 +37,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
 
   /** Assign weighted demand to nearest station (Euclidean). Delegated to StationLoadDistributor (DRY). */
   updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
-    const result = distributeLoadToNearest(this.facilities, demands, this.stationLoad);
+    const result = distributeLoadToNearest(this.getOperationalFacilities(), demands, this.stationLoad);
     this.loadRatio = result.loadRatio;
   }
 
