@@ -1616,7 +1616,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 3 個（付費升級的鄰居不被降級／不免費升級鄰居／被拆格仍清空且鄰居 flag 正確剝除），
   修復前 2 個失敗（3→2 降級、2→5 免費升級皆重現）
 
-### BUG-061: CommuteCache.bumpGeneration 在 ready 路線仍持有參照時清空 routeRefCount 🟡 Medium
+### BUG-061: CommuteCache.bumpGeneration 在 ready 路線仍持有參照時清空 routeRefCount 🟡 Medium ✅ 已修復
 - **位置**: `src/core/traffic/CommuteCache.ts:51`
 - **問題**: `bumpGeneration()` 抹除 `routeRefCount`（及 routeIndex/routeCellIndex），
   卻留下 `this.cache` 中一堆 `status:'ready'` 且邏輯上仍持有參照的路線
@@ -1635,8 +1635,15 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **修復方向**: 要嘛 `bumpGeneration()` 不清 `routeRefCount`（清 routeIndex/routeCellIndex 已達成退休共用路線池的目的），
   要嘛清的同時把每條快取路線標成 `status:'pending'` / 丟棄 `this.cache`。若保留該 map，
   讓 `applyRefDelta` 拒絕低於 0 並記錄，把不變式變成強制而非靜默吸收
-- **註**: 現有 :387 的測試是**空過**的 —— `forEachRouteWithRefCount` 迭代 `routeIndex`，
-  而 bumpGeneration 連它一起清了，所以就算刪掉 `routeRefCount.clear()` 該測試仍會通過。這條 assertion 也要一併修
+- **修復內容**: `bumpGeneration()` 不再清 `routeRefCount`。清 `routeIndex`/`routeCellIndex`
+  已達成「退休共用路線池」的目的；不在 routeIndex 中的路線其計數根本不會被迭代到。
+  快取中的 per-citizen 路線在 bump 後仍存活且仍持有參照，所以計數本來就該保留
+- **同時修正該空過的測試**: 原名「should clear routeRefCount on bumpGeneration」——
+  它把 bug 行為當成契約，而且**無論如何都會通過**（`forEachRouteWithRefCount` 迭代 `routeIndex`，
+  bumpGeneration 連它一起清了）。已改名為「should report no routes after bumpGeneration retires
+  the shared pool」並註明原委
+- **測試**: 新增 3 個（共用路線重算後計數不塌陷／移除市民後仍歸零／市民換路線時計數正確搬移），
+  修復前第 1 個失敗（3 → 1）
 
 ### BUG-062: 經濟面板漏掉市政服務／政策／高架維護支出與城市特化收入加成 🟡 Medium
 - **位置**: `src/core/economy/EconomyBreakdown.ts:39`

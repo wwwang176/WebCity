@@ -384,7 +384,11 @@ describe('CommuteCache', () => {
     expect(routeCount).toBe(0);
   });
 
-  it('should clear routeRefCount on bumpGeneration', () => {
+  // Renamed from 'should clear routeRefCount on bumpGeneration', which encoded
+  // the BUG-061 behaviour as intended AND passed vacuously: forEachRouteWithRefCount
+  // iterates routeIndex, which bumpGeneration also clears, so the assertion held
+  // whether or not routeRefCount was touched.
+  it('should report no routes after bumpGeneration retires the shared pool', () => {
     const cache = new CommuteCache();
     const morningPath = [makeEdge('0,0', '1,0')];
     setSingleRoute(cache,'0,0->1,0', morningPath);
@@ -477,5 +481,73 @@ describe('CommuteCache', () => {
 
     expect(cache.isExpired(newRoute, 100)).toBe(false);
     expect(newRoute.recalcAtTick).toBeUndefined();
+  });
+});
+
+// BUG-061: bumpGeneration wiped routeRefCount while status:'ready' routes still
+// logically held references. When each citizen was later recomputed, set() ran
+// adjustRefCounts(old, -1) against the zeroed map, driving the counter to -1;
+// applyRefDelta deletes on <= 0, and the following +1 restored it to exactly 1.
+// N citizens sharing a route therefore ended at 1 instead of N, permanently.
+describe('CommuteCache — refCount survives bumpGeneration', () => {
+  function totalRefCount(cache: CommuteCache): number {
+    let total = 0;
+    cache.forEachRouteWithRefCount((_path, refCount) => { total += refCount; });
+    return total;
+  }
+
+  function setCitizen(cache: CommuteCache, id: number, path: LaneEdge[], generation: number): void {
+    cache.set(id, {
+      citizenId: id, homeId: '0,0', workplaceId: '1,0',
+      morningPath: path, eveningPath: null, status: 'ready', generation,
+    });
+  }
+
+  it('should keep the full count when shared routes are recomputed after a bump', () => {
+    const cache = new CommuteCache();
+    const path = [makeEdge('0,0', '1,0')];
+    setSingleRoute(cache, '0,0->1,0', path);
+    for (const id of [1, 2, 3]) setCitizen(cache, id, path, 0);
+    expect(totalRefCount(cache)).toBe(3);
+
+    cache.bumpGeneration();
+    // Every citizen re-computes and lands on the same route, as isExpired()
+    // guarantees within RECALC_SPREAD_TICKS.
+    setSingleRoute(cache, '0,0->1,0', path);
+    for (const id of [1, 2, 3]) setCitizen(cache, id, path, cache.roadGeneration);
+
+    expect(totalRefCount(cache)).toBe(3);
+  });
+
+  it('should still drop to zero when the citizens are removed after a bump', () => {
+    const cache = new CommuteCache();
+    const path = [makeEdge('0,0', '1,0')];
+    setSingleRoute(cache, '0,0->1,0', path);
+    for (const id of [1, 2]) setCitizen(cache, id, path, 0);
+
+    cache.bumpGeneration();
+    setSingleRoute(cache, '0,0->1,0', path);
+    for (const id of [1, 2]) setCitizen(cache, id, path, cache.roadGeneration);
+    for (const id of [1, 2]) cache.remove(id);
+
+    expect(totalRefCount(cache)).toBe(0);
+  });
+
+  it('should move the count when a citizen switches to a different route', () => {
+    const cache = new CommuteCache();
+    const pathA = [makeEdge('0,0', '1,0')];
+    const pathB = [makeEdge('0,0', '0,1')];
+    setSingleRoute(cache, '0,0->1,0', pathA);
+    setSingleRoute(cache, '0,0->0,1', pathB);
+    setCitizen(cache, 1, pathA, 0);
+
+    cache.bumpGeneration();
+    setSingleRoute(cache, '0,0->0,1', pathB);
+    cache.set(1, {
+      citizenId: 1, homeId: '0,0', workplaceId: '0,1',
+      morningPath: pathB, eveningPath: null, status: 'ready', generation: cache.roadGeneration,
+    });
+
+    expect(totalRefCount(cache)).toBe(1);
   });
 });

@@ -999,8 +999,7 @@
 ### 🟡 Medium
 - [x] **BUG-059** `ElevatedPathValidation.ts:82` — 改以 `storeLevel` 為碰撞檢查條件 ✅
 - [x] **BUG-060** `RoadBuilder.ts:128` — `removeRoad` 只更新 flag，不碰 `roadType`；刪除 `getMaxNeighborRoadType` ✅
-- [ ] **BUG-061** `CommuteCache.ts:51` — `bumpGeneration` 不清 `routeRefCount`（或同時丟棄 cache）；
-      並修正 :387 那條空過的測試
+- [x] **BUG-061** `CommuteCache.ts:51` — `bumpGeneration` 不再清 `routeRefCount`；空過的測試已改名並修正 ✅
 - [ ] **BUG-062** `EconomyBreakdown.ts:39` — 補 `serviceCost` / `policyCost` / `elevatedMaintenance`
       與 citySpec 收入加成；刪除死碼 `ui/modals/EconomyModal.tsx`
 - [ ] **BUG-063** `SimulationLoop.ts:1439` — lane graph SAB 加 seqlock（用既有 version 欄位 + Atomics）或雙緩衝；
