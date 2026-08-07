@@ -4,6 +4,9 @@ import { findAdjacentRoadCell, type PlacementGrid } from './TransportPlacement';
 import type { LaneEdge } from '../traffic/LaneGraph';
 import type { TrafficSimulation, Vehicle } from '../traffic/TrafficSimulation';
 
+/** Finds a lane-edge path between two road cells. */
+type EdgePathFn = (fromX: number, fromY: number, toX: number, toY: number) => LaneEdge[] | null;
+
 const BUS_CONFIG: TransportSystemConfig = {
   type: TransportType.BUS,
   speed: 2,
@@ -18,6 +21,13 @@ export class BusSystem extends BaseTransportSystem {
   private routeSegments = new Map<number, LaneEdge[][]>();
   /** Per-route TrafficSimulation vehicle IDs. */
   private busVehicleIds = new Map<number, number[]>();
+  /**
+   * Most recent edge-path finder. BaseTransportSystem calls onRouteStopRemoved
+   * with no arguments, and unlike Rail/Ferry (which retain their networks)
+   * BusSystem has nothing to path with — which is why the hook was skipped and
+   * stale segments survived a stop removal (BUG-064).
+   */
+  private lastFindEdgePath: EdgePathFn | null = null;
 
   constructor() {
     super(BUS_CONFIG);
@@ -33,6 +43,7 @@ export class BusSystem extends BaseTransportSystem {
     route: TransportRoute,
     findEdgePath: (fromX: number, fromY: number, toX: number, toY: number) => LaneEdge[] | null,
   ): LaneEdge[][] | null {
+    this.lastFindEdgePath = findEdgePath;
     const stops = route.stops;
     if (stops.length < 2) return null;
     const segments: LaneEdge[][] = [];
@@ -129,6 +140,20 @@ export class BusSystem extends BaseTransportSystem {
   }
 
   /** Return precomputed segment distances from LaneEdge paths. */
+  /**
+   * Recompute this route's cached segments after a stop was removed.
+   * Mirrors RailSystem/FerrySystem: a route that can no longer be pathed is
+   * reported as undeliverable so the base class dissolves it.
+   */
+  protected override onRouteStopRemoved(route: TransportRoute): boolean {
+    this.routeSegments.delete(route.id);
+    // Fewer than two stops cannot form a loop; the base class dissolves it.
+    if (route.stops.length < 2) return false;
+    // No path finder seen yet (segments were never computed) — nothing to stale.
+    if (!this.lastFindEdgePath) return true;
+    return this.computeRouteSegments(route, this.lastFindEdgePath) !== null;
+  }
+
   override getSegmentDistances(routeId: number): number[] | null {
     const segments = this.routeSegments.get(routeId);
     if (!segments) return null;

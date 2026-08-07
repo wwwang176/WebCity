@@ -1004,7 +1004,7 @@
       刪除死碼 `ui/modals/EconomyModal.tsx` ✅
 - [x] **BUG-063** `reconstructPath` 加步數上限（防 worker 永久卡死）；批次迴圈抽成 `runBatch()`
       並接上原本沒人讀的 `version` 守衛。依對抗驗證結論不做 Atomics seqlock ✅
-- [ ] **BUG-064** `BusSystem.ts:295` — 覆寫 `onRouteStopRemoved`；`sumDirection` 斷言 segDists 長度相符
+- [x] **BUG-064** `BusSystem.ts:295` — 實作 `onRouteStopRemoved` 覆寫；`computeRideDistance` 加長度守衛 ✅
 - [ ] **BUG-065** `Game.ts:547` — `ElevatedRailBuilder` 建構時傳入 `railNetwork`；
       擴充 `rebuildRailNetworkFromGrid` 涵蓋高架軌；接上死碼 `removeElevated`
 - [ ] **BUG-066** `IncomeCalcAdapter.ts:14` — 比照 `ServiceRegistry` 單趟 O(N) 建 map，

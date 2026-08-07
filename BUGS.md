@@ -1705,7 +1705,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 3 個 PooledAStar（cyclic chain 會終止／不溢位 resultBuf／正常鏈仍正確重建）
   + 4 個 runBatch（版本穩定時回傳結果／中途變動則丟棄／空清單／中止後不再呼叫 compute）
 
-### BUG-064: BusSystem 在中途站被拆除時從不重算 routeSegments 🟡 Medium
+### BUG-064: BusSystem 在中途站被拆除時從不重算 routeSegments 🟡 Medium ✅ 已修復
 - **位置**: `src/core/transport/BusSystem.ts:295`
 - **問題**: `BaseTransportSystem.removeStop()` 原地改動 `route.stops` 後呼叫可覆寫的
   `onRouteStopRemoved(route)` hook 讓子類重算快取的逐段路徑。`RailSystem.ts:128` 與
@@ -1728,6 +1728,17 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   另外讓 `sumDirection` 斷言 `segDists.length === stops.length`，不符時退回歐氏距離，使陳舊快取降級而非說謊
 - **測試（先寫）**: `StopRemovalPathRecompute.test.ts` 已經為 RailSystem 與 FerrySystem 覆蓋了這條契約，
   **BusSystem 零案例** —— 補上即可
+- **修復內容**:
+  - BusSystem 新增 `lastFindEdgePath` 欄位（在 `computeRouteSegments` 時記下），
+    因為 base class 呼叫 `onRouteStopRemoved(route)` 時不帶參數，而 BusSystem 不像 Rail/Ferry 持有網路
+    —— 這正是當初略過該 hook 的原因
+  - 實作 `onRouteStopRemoved` 覆寫：清掉舊 segments 後重算，無法路徑則回傳 false 讓 base class 解散路線
+    （與 Rail/Ferry 契約一致）
+  - **防禦深度**：`computeRideDistance` 加上 `segDists.length === stops.length` 檢查，
+    不符時退回歐氏距離。原本 `sumDirection` 只守 `i < segDists.length`、從不比對長度與站數，
+    所以過長的陣列會被用**新的**站索引取值而靜默回報別段的距離
+- **測試**: 新增 2 個 BusSystem（中途站移除後重算／segDists 長度不超過站數）
+  + 3 個 computeRideDistance 守衛測試。修復前 2 個失敗，且精確重現報告的 `[10, 10, 20]` 情境
 
 ### BUG-065: 高架鐵軌從未註冊進 RailNetwork，鐵路線無法跨橋 🟡 Medium
 - **位置**: `src/Game.ts:547`
