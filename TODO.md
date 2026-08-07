@@ -992,7 +992,7 @@
 - [x] **BUG-055** `migrations.ts:94` — 抽出 `migrateSavedCitizens()` 對原始 payload 執行；
       v3 GameState migration 改為留空並註明原因；`restoreCitizen` 傳入真實 tick ✅
 - [x] **BUG-056** `SimulationLoop.ts:836` — 抽出 `takeBuildingOutOfService(x,y)`，火災與廢棄路徑共用 ✅
-- [ ] **BUG-057** `SimulationLoop.ts:645` — `factors.isEmployed` 改讀 `citizen.workplaceId !== null`（一行）
+- [x] **BUG-057** `SimulationLoop.ts:645` — `factors.isEmployed` 改讀 `citizen.workplaceId !== null` ✅
 - [ ] **BUG-058** `VehicleLookahead.ts:85` — `canAdvance` 簽章加 `viaCell?` 並傳入 `edge.viaCellKey`；
       刪除 `Game._canAdvance` 中已死的中點分支
 

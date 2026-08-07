@@ -642,7 +642,13 @@ export class SimulationLoop {
         }
       }
 
-      factors.isEmployed = !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate;
+      // Read the authoritative per-citizen field. The old statistical model
+      // (Math.random() < ctx.employmentRate, where employmentRate is
+      // totalJobs/adultCount over raw grid capacity) made the whole unemployment
+      // ladder unreachable: any city with more job slots than adults has
+      // employmentRate === 1, so every citizen was flagged employed regardless of
+      // whether they actually held a job (BUG-057).
+      factors.isEmployed = !isWorkingAge(citizen.age) || citizen.workplaceId !== null;
       citizen.happiness = calculateHappiness(citizen, factors);
     }
   }

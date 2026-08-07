@@ -1511,7 +1511,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   這正是主題 6 說的測試盲點的另一種型態：**間接路徑意外滿足了斷言**
 - **測試**: 新增 4 個（驅離住戶／驅離員工／記錄 homelessSince／不波及未受損鄰居），修復前 3 個失敗
 
-### BUG-057: 幸福度用全市 employmentRate 擲骰決定 isEmployed，而非讀 citizen.workplaceId 🟠 High
+### BUG-057: 幸福度用全市 employmentRate 擲骰決定 isEmployed，而非讀 citizen.workplaceId 🟠 High ✅ 已修復
 - **位置**: `src/core/simulation/SimulationLoop.ts:645`
 - **問題**: `updateCitizenHappiness` 寫的是
   `factors.isEmployed = !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate`
@@ -1530,7 +1530,15 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   得到平均幸福度 13.0 vs 有工作者 14.0：-100 的強制外移懲罰**可證明是失效的**
 - **修復方向**: 一行 —— `factors.isEmployed = !isWorkingAge(citizen.age) || citizen.workplaceId !== null;`。
   `workplaceId` 本來就是忠實訊號。若無他處使用，順手把 `employmentRate` 從 CityHappinessContext 移除
-- **測試（先寫）**: 把 `Math.random` stub 成 0 以證明結果與擲骰無關
+- **修復內容**: 一行 —— `factors.isEmployed = !isWorkingAge(citizen.age) || citizen.workplaceId !== null;`
+- **測試撰寫時的教訓**: 初版測試用 mocked `Math.random` 驅動整個 SimulationLoop，結果完全不可靠 ——
+  random 同時驅動火災、生長、廢棄等十幾個子系統，彼此汙染（同一段程式碼 draw=0 得 happiness 50、
+  draw=0.999 得 5）。改為**把時鐘停在 slot 4 前一格、只跑那一個 tick**，測試才變得確定性。
+  這個技巧對後續測試模擬層的 bug 都適用
+- **驗證**: 暫時還原舊那行確認 3 個測試中有 2 個會失敗、修復後全過。
+  第 3 條（孩童不受罰）在新舊實作下都通過 —— 它不針對本 bug，但能擋住「修過頭去罰未成年」的錯誤修法，保留為守衛
+- **附帶確認**: `-100` 的 UNEMPLOYMENT_FORCED_PENALTY 確實有生效，只是 happiness 被 clamp 到 0
+  （有工作者 15、失業者 0），這正是觸發強制外移的狀態
 
 ### BUG-058: 轉彎車輛看不到紅綠燈與平交道柵欄 — viaCellKey 被丟棄、中點守衛是死碼 🟠 High
 - **位置**: `src/core/traffic/VehicleLookahead.ts:85`（合併 `Game.ts:418` 同根因）

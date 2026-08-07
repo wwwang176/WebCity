@@ -888,3 +888,88 @@ describe('Fire eviction', () => {
     expect(state.citizens.getCitizens().filter(c => c.homeId === '11,10')).toHaveLength(1);
   });
 });
+
+// BUG-057: updateCitizenHappiness derived isEmployed from a coin flip on the
+// city-wide employmentRate (totalJobs / adultCount, raw grid capacity) instead
+// of the citizen's own workplaceId. Any city with more job slots than adults
+// has employmentRate === 1, so Math.random() < 1 is always true and the entire
+// unemployment penalty ladder — including the -100 forced-emigration trigger —
+// was unreachable.
+const HAPPINESS_SLOT = 4;
+
+describe('Unemployment happiness penalty', () => {
+  /**
+   * Grid with far more job slots than adults, so employmentRate === 1.
+   * The clock is parked one tick before the happiness slot so a single tick()
+   * runs slot 4 and nothing else — driving the whole loop would let fire,
+   * growth and abandonment (all Math.random-driven) perturb the result.
+   */
+  function jobRichCity() {
+    const state = createGameState(30, 30);
+    for (let x = 2; x < 20; x++) {
+      state.grid.setCell(x, 4, { roadFlags: 1, roadType: RoadType.TWO_LANE });
+    }
+    for (let x = 2; x < 20; x++) {
+      state.grid.setCell(x, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    }
+    for (let x = 2; x < 6; x++) {
+      state.grid.setCell(x, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    }
+    // tick() advances first, so park the clock one short of the happiness slot.
+    state.clock.tick = 1000 * SIMULATION.SLOW_TICK_INTERVAL + HAPPINESS_SLOT - 1;
+    return state;
+  }
+
+  function runHappinessSlot(state: GameState): void {
+    const before = state.clock.tick;
+    new SimulationLoop(state).tick();
+    expect(state.clock.tick % SIMULATION.SLOW_TICK_INTERVAL).toBe(HAPPINESS_SLOT);
+    expect(state.clock.tick).toBe(before + 1);
+  }
+
+  it('should penalise jobless citizens even when totalJobs exceeds adultCount', () => {
+    const state = jobRichCity();
+    const employed = [];
+    const jobless = [];
+    for (let i = 0; i < 10; i++) {
+      employed.push(state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: '5,5' }));
+    }
+    for (let i = 0; i < 10; i++) {
+      jobless.push(state.citizens.restoreCitizen({ age: 100, homeId: '3,3', workplaceId: null, unemployedSince: 0 }));
+    }
+
+    runHappinessSlot(state);
+
+    const avg = (cs: { happiness: number }[]) => cs.reduce((s, c) => s + c.happiness, 0) / cs.length;
+    expect(avg(jobless)).toBeLessThan(avg(employed));
+  });
+
+  it('should separate employed and jobless housemates by the full penalty', () => {
+    const state = jobRichCity();
+    // Same home, same age — workplaceId is the only difference between them.
+    const employed = state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: '5,5' });
+    const jobless = state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: null, unemployedSince: 0 });
+
+    // Pin the commute jitter (the only legitimate use of randomness here) so the
+    // gap can only come from the employment factor.
+    const rand = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    runHappinessSlot(state);
+    rand.mockRestore();
+
+    // unemployedSince=0 against a clock far past the tolerance means the forced
+    // -100 tier, which drives happiness to the clamp floor — the state that
+    // triggers emigration, and which was unreachable before the fix.
+    expect(jobless.happiness).toBe(0);
+    expect(employed.happiness).toBeGreaterThan(0);
+  });
+
+  it('should not penalise citizens below working age', () => {
+    const state = jobRichCity();
+    const child = state.citizens.restoreCitizen({ age: 20, homeId: '2,3', workplaceId: null });
+    const adult = state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: null, unemployedSince: 0 });
+
+    runHappinessSlot(state);
+
+    expect(child.happiness).toBeGreaterThan(adult.happiness);
+  });
+});
