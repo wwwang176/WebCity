@@ -116,33 +116,23 @@ export class RoadBuilder {
     // Clear road data
     this.grid.setCell(x, y, { roadType: RoadType.NONE, roadFlags: 0 });
 
-    // Update neighboring cells' flags and restore roadType from remaining connections
+    // Update neighboring cells' connection flags only.
+    //
+    // Deliberately does NOT touch a neighbour's roadType. A road's tier is
+    // player-paid state — calculateRoadCost charges the differential when a
+    // higher tier is re-drawn over existing road (BUG-025) — so re-deriving it
+    // from whatever connections happen to remain destroyed paid capacity in one
+    // direction and granted free upgrades in the other, with no charge, refund
+    // or notification (BUG-060).
     for (const dir of CARDINAL_DIRECTIONS) {
       const nx = x + dir.dx;
       const ny = y + dir.dy;
       const neighbor = this.grid.getCell(nx, ny);
       if (neighbor && neighbor.roadType !== RoadType.NONE) {
-        const newFlags = neighbor.roadFlags & ~dir.opposite;
-        this.grid.setCell(nx, ny, { roadFlags: newFlags });
-        // Restore roadType from remaining connected neighbors
-        const maxType = this.getMaxNeighborRoadType(nx, ny, newFlags);
-        if (maxType > 0) {
-          this.grid.setCell(nx, ny, { roadType: maxType });
-        }
+        this.grid.setCell(nx, ny, { roadFlags: neighbor.roadFlags & ~dir.opposite });
         affected.push(toPosKey(nx, ny));
       }
     }
     return affected;
-  }
-
-  /** Find the max roadType among connected neighbors based on flags. */
-  private getMaxNeighborRoadType(x: number, y: number, flags: number): number {
-    let max = 0;
-    for (const dir of CARDINAL_DIRECTIONS) {
-      if (!(flags & dir.flag)) continue;
-      const neighbor = this.grid.getCell(x + dir.dx, y + dir.dy);
-      if (neighbor && neighbor.roadType > max) max = neighbor.roadType;
-    }
-    return max;
   }
 }

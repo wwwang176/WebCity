@@ -998,7 +998,7 @@
 
 ### 🟡 Medium
 - [x] **BUG-059** `ElevatedPathValidation.ts:82` — 改以 `storeLevel` 為碰撞檢查條件 ✅
-- [ ] **BUG-060** `RoadBuilder.ts:128` — `removeRoad` 不再改寫倖存鄰居的 `roadType`
+- [x] **BUG-060** `RoadBuilder.ts:128` — `removeRoad` 只更新 flag，不碰 `roadType`；刪除 `getMaxNeighborRoadType` ✅
 - [ ] **BUG-061** `CommuteCache.ts:51` — `bumpGeneration` 不清 `routeRefCount`（或同時丟棄 cache）；
       並修正 :387 那條空過的測試
 - [ ] **BUG-062** `EconomyBreakdown.ts:39` — 補 `serviceCost` / `policyCost` / `elevatedMaintenance`

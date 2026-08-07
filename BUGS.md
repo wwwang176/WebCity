@@ -1593,7 +1593,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 4 個（匝道落在既有平面高架／匝道落在既有匝道／body cell 仍被拒絕的對照組／
   淨空路徑仍允許的對照組），修復前 2 個目標測試失敗、2 個對照組通過
 
-### BUG-060: removeRoad 靜默改寫倖存鄰居的 roadType 🟡 Medium
+### BUG-060: removeRoad 靜默改寫倖存鄰居的 roadType 🟡 Medium ✅ 已修復
 - **位置**: `src/core/road/RoadBuilder.ts:128`
 - **問題**: 清除被拆格後，`removeRoad` 走訪 4 個正交鄰居、剝除反向 flag（正確），
   然後**無條件**以 `getMaxNeighborRoadType(nx, ny, newFlags)`（該鄰居剩餘連線中的最高等級）覆寫其 `roadType`
@@ -1610,6 +1610,11 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   路口渲染問題仍在，應在渲染層解決，或限制為僅對本身是路口（dirCount ≥ 3）的格子且**只升不降**，
   與 migration v2 已編碼的規則一致
 - **註**: finder 的頭號重現用 `RoadUpgrade`，但該模組是死碼（無非測試呼叫端）；活路徑是 `buildRoad` 重畫高等級
+- **修復內容**: `removeRoad` 只更新鄰居的連線 flag，**完全不碰** `roadType`；
+  已無呼叫端的 private `getMaxNeighborRoadType` 一併刪除。
+  移除後全套道路測試 113 個仍全過 —— 確認沒有其他行為依賴這個啟發式
+- **測試**: 新增 3 個（付費升級的鄰居不被降級／不免費升級鄰居／被拆格仍清空且鄰居 flag 正確剝除），
+  修復前 2 個失敗（3→2 降級、2→5 免費升級皆重現）
 
 ### BUG-061: CommuteCache.bumpGeneration 在 ready 路線仍持有參照時清空 routeRefCount 🟡 Medium
 - **位置**: `src/core/traffic/CommuteCache.ts:51`

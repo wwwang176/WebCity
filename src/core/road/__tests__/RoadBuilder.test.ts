@@ -514,3 +514,51 @@ describe('RoadBuilder', () => {
     expect(result.reason).toBe('OUT_OF_BOUNDS');
   });
 });
+
+// BUG-060: removeRoad overwrote each surviving neighbour's roadType with the max
+// tier among its REMAINING connections. A road's tier is player-paid state
+// (calculateRoadCost charges the differential when re-drawing a higher tier over
+// existing road — the fix for BUG-025), so demolishing an unrelated adjacent
+// tile silently destroyed or granted paid capacity, in both directions.
+describe('removeRoad — neighbour roadType is authored state', () => {
+  it('should not downgrade a neighbour that the player paid to upgrade', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 0, y: 5 }, { x: 9, y: 5 }, RoadType.TWO_LANE, 100000);
+    // Player re-drags a higher tier over the middle, paying the differential.
+    builder.buildRoad({ x: 3, y: 5 }, { x: 6, y: 5 }, RoadType.FOUR_LANE, 100000);
+    expect(grid.getCell(3, 5)!.roadType).toBe(RoadType.FOUR_LANE);
+
+    // Demolishing an unrelated adjacent tile must not touch (3,5)'s tier.
+    builder.removeRoad(4, 5);
+
+    expect(grid.getCell(3, 5)!.roadType).toBe(RoadType.FOUR_LANE);
+  });
+
+  it('should not promote a neighbour for free', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 0, y: 5 }, { x: 9, y: 5 }, RoadType.HIGHWAY, 100000);
+    // A cheaper tile overbuilt in the middle of a highway row.
+    builder.buildRoad({ x: 4, y: 5 }, { x: 4, y: 5 }, RoadType.TWO_LANE, 100000);
+    expect(grid.getCell(4, 5)!.roadType).toBe(RoadType.TWO_LANE);
+
+    builder.removeRoad(3, 5);
+
+    expect(grid.getCell(4, 5)!.roadType).toBe(RoadType.TWO_LANE);
+  });
+
+  it('should still clear the removed cell and strip the neighbour flag', () => {
+    const grid = new Grid(20, 20);
+    const builder = new RoadBuilder(grid);
+    builder.buildRoad({ x: 0, y: 5 }, { x: 9, y: 5 }, RoadType.TWO_LANE, 100000);
+
+    builder.removeRoad(4, 5);
+
+    expect(grid.getCell(4, 5)!.roadType).toBe(RoadType.NONE);
+    expect(grid.getCell(4, 5)!.roadFlags).toBe(0);
+    // (3,5) loses its EAST link to the removed cell but keeps WEST.
+    expect(grid.getCell(3, 5)!.roadFlags & RoadDirection.EAST).toBe(0);
+    expect(grid.getCell(3, 5)!.roadFlags & RoadDirection.WEST).not.toBe(0);
+  });
+});
