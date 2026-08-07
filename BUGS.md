@@ -2027,3 +2027,78 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - `Game.ts:2524` — 里程碑通知在人口**下降**時觸發，把較低的里程碑宣告為新達成
 - `simulation/SimulationLoop.ts:1490` — 重建人行道圖會替換 state.pedestrianManager，丟棄所有活動行人
 - `district/PolicyManager.ts:30` — HIGH_DENSITY_BAN 無法封鎖高密度辦公樓（OFFICE 沒有 HIGH 區型變體）
+
+---
+
+## 第六十九輪 - 逐條驗證未驗證候選 + 每個 commit 對抗審查
+
+上一輪列出的 60 個「未驗證候選」全部經 8 個平行 agent 對抗驗證，確認為真的逐一以
+TDD 修復；隨後每個修復 commit 再由一個獨立 agent 反向審查，專門尋找「修復不完整 /
+引入回歸 / 測試造假」。BUG-113 以後全部來自那輪審查，也就是**我自己在這條分支上
+製造出來的缺陷**。
+
+### 已驗證並修復 (BUG-069 ~ BUG-112)
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-069 | save/SaveManager.ts | saveGame/deleteSave 在 request 回呼就 resolve，commit 階段中止無法 reject | Low |
+| BUG-070 | service/UtilityCellDemand.ts | 多格基礎設施電/水需求逐格計費，2x2 收 4 倍、3x3 收 9 倍 | High |
+| BUG-071 | service/WaterNetwork.ts | power 誤映到警局耗水率，電廠白吃 2.5x4 單位水 | Medium |
+| BUG-072 | zone/ZoneManager.ts | 重劃區清 buildingId 不清 reserved，新建築永久帶廢墟標記 | High |
+| BUG-073 | building/BuildingQueries.ts | countZoneBuildings 把廢墟與基礎設施計入 RCI 供給 | Medium |
+| BUG-074 | building/InfraPlacement.ts | placeInfraOnGrid 不清 zoneType，工業地上的設施排放工廠級污染 | Medium |
+| BUG-075 | citizen/CitizenManager.ts | evictBuilding 不記 unemployedSince，失業懲罰階梯永不啟動 | Medium |
+| BUG-076 | citizen/CitizenManager.ts | 市民永不退休，約 1/5 職位被永久佔用且不計入失業率 | Medium |
+| BUG-077 | economy/EconomyBreakdown | 面板把 power/water 維護費算兩次 (BUG-062 修復的副作用) | Medium |
+| BUG-078 | ui/store/gameStore.ts | 頂列餘額漏計貸款利息 | High |
+| BUG-079 | ui/modals/overview/EconomyPage.tsx | state memo 拿同一物件與自己比較永不更新；每 tick 兩次 stringify 全 GameState | High |
+| BUG-080 | service/EducationService.ts | updateOperationalStatus 丟棄 changed，斷電學校保有完整覆蓋 | Medium |
+| BUG-081 | service/SewageService.ts | 覆蓋計算忽略未連線/無電廠，全城污水癱瘓時零水污染 | Medium |
+| BUG-082 | citizen/Birth.ts | 生育只檢查幼兒上限，住宅可永久超載 50% | Medium |
+| BUG-083 | citizen/CitizenHealth.ts | 污染懲罰除以 100 而非 255，MAX_PENALTY 變成比例而非上限 | Low |
+| BUG-084 | citizen/Migration.ts | AVG_LAND_VALUE=150 超過 calculateLandValue 最大值 125，權重是死碼 | Low |
+| BUG-085 | simulation/SimulationLoop.ts | office/industrial 比例用建築數除以職缺數，兩個門檻都不可達 | Medium |
+| BUG-086 | building/BuildingUpgrade.ts | 廢墟可升降級，且 callback 漏傳 abandoned 導致視覺復活 | Medium |
+| BUG-087 | Game.ts applyZone | 重劃不清廢棄壓力，替代建築繼承前一棟的壓力 | Medium |
+| BUG-088 | simulation/SimulationLoop.ts | 日/月相位未播種，載檔重跑當日死亡與當月出生 | Medium |
+| BUG-089 | transport/BaseTransportSystem.ts | onRouteDissolved 在車輛已刪除後才呼叫，Ferry 水路快取洩漏 | Low |
+| BUG-090 | simulation/SimulationLoop.ts | 運輸路線 CRUD 從不使多模式轉乘圖失效 | Medium |
+| BUG-091 | district/PolicyManager.ts | 三條政策每預算週期共收 380 元但模擬端零讀取 | Medium |
+| BUG-092 | environment/CityMetrics.ts | 噪音平均被沒有建築的空劃區格稀釋 | Medium |
+| BUG-093 | simulation/SimulationLoop.ts | 噪音併入 cell.pollution 後又以 noiseLevel 再扣一次 | Low |
+| BUG-094 | Game.ts checkMilestone | 人口下降時重新宣告較低里程碑 | Low |
+| BUG-095 | economy/ShoppingAccess.ts | 高架下的建築人口/容量被重複計算 | Low |
+| BUG-096 | elevation/ElevatedRoadBuilder.ts | removeElevated 從剩餘連線重推鄰居 roadType (BUG-060 高架孿生體) | Medium |
+| BUG-097 | elevation/ElevatedRoadBuilder.ts | 跨層延伸不產生匝道，建出付費但無法到達的孤兒路 | Medium |
+| BUG-098 | grid/EdgeUtils.ts | 只截斷最後一格，斜向拖到邊界環必失敗且 outwardFlag 算錯 | Low |
+| BUG-099 | environment/GridPollutionSources.ts | 高架車流噪音投影到地面後因地面 roadType 為 NONE 而丟棄 | Medium |
+| BUG-100 | service/HealthService.ts 等 | 負載分母含非運作設施，斷電醫院持續壓低死亡率 | Medium |
+| BUG-101 | service/GarbageService.ts | 無掩埋場時未收垃圾的污染完全消失 | Low |
+| BUG-102 | service/RoadCoverageFlood.ts | 目標成本在 relax 時鎖定，記錄第一條而非最便宜的路線 | Low |
+| BUG-103 | traffic/PedestrianManager.ts | 失敗路徑快取為 null 但無索引，invalidateCells 觸及不到 | Low |
+| BUG-104 | simulation/SimulationLoop.ts | 重建人行道圖替換整個 PedestrianManager，丟棄所有行人 | Medium |
+| BUG-105 | Game.ts | 行人平交道阻擋邏輯實作完整卻從未接線 | Medium |
+| BUG-106 | traffic/TrafficSimulation.ts | 排序比較器每次比較重算完整前綴和，每 render frame | Medium |
+| BUG-107 | simulation/SimulationLoop.ts | clearPending 晚一 tick，飛行中 worker 結果把拆除前路線寫回 | Medium |
+| BUG-108 | traffic/TrafficSimulation.ts | 通勤/貨運車輛保留已拆除路段的 LaneEdge | Low |
+| BUG-109 | workplace/WorkplaceDistanceCache.ts | worker 看不到高架，快取與同步 fallback 對可達性矛盾 | Medium |
+| BUG-110 | service/GlobalCoverageService.ts | collectPending 每輪全掃 pending，O(rounds x pending) | Medium |
+| BUG-111 | Game.ts | 建路清空劃區格的 zone 卻不移除 overlay instance | Low |
+| BUG-112 | traffic/LaneGraphBuffer.ts | findPathVariants 每點配置 PointData 只為讀 cell | Medium |
+
+### 對抗審查揪出、由我自己引入的缺陷 (BUG-113 ~ BUG-124)
+
+| ID | 來源 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-113 | BUG-104 | 就地換圖刪掉唯一傳入 trafficLights 的建構點，行人闖所有紅燈 | Critical |
+| BUG-114 | BUG-069 | save.worker.ts (autosave 主路徑) 只接 onerror，commit 失敗只發 abort 導致 promise 永不 settle；loadGame/listSaves 同樣可永久卡死；fake IDB 同時觸發兩種事件因而無法鑑別 | High |
+| BUG-115 | BUG-108 | 陳舊路徑清掃誤殺公車，busVehicleIds 不對帳導致路線永久無車 | High |
+| BUG-116 | BUG-108 | 清掃以「格子 dirty」為準，蓋路/升級會刪光該路段所有車流 | High |
+| BUG-117 | BUG-097 | 跨層延伸改寫起點格 roadType 並清空 railType，免費降級付費高架、刪除鐵路橋一格 | High |
+| BUG-118 | BUG-097 | removeElevated 只掃自身層，跨層匝道拆除後低層鄰居留下懸空 flag | Medium |
+| BUG-119 | BUG-076 | 退休清 workplaceId 卻不清 CommuteCache，幽靈路線持續餵擁塞預測 | Medium |
+| BUG-120 | BUG-095 | 去重只在 component 內，跨 component 仍重複計算且覆寫掉正確結果 | Medium |
+| BUG-121 | BUG-092 | getAvgNoise 仍讀每 60 tick 才更新的 cell.noiseLevel，稀釋只修一半 | Medium |
+| BUG-122 | BUG-101 | Math.ceil 讓排放量隨垃圾位置數成長，達宣稱上限 2 倍且與垃圾量脫鉤 | Medium |
+| BUG-123 | BUG-094 | 里程碑高水位未持久化，人口回落後存檔會重播全部里程碑 | Medium |
+| BUG-124 | BUG-104 | 保留行人卻不驗證路徑，行人走在已拆除的人行道上 | Medium |
