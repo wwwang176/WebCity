@@ -170,7 +170,10 @@ export function findPrimaryCell(
     return { x, y };
   }
 
-  // Search for the primary cell in the maximum possible range
+  // Search for the primary cell in the maximum possible range. A candidate only
+  // counts when its own rotated WxH footprint actually contains (x, y) — a plain
+  // maxSize box can otherwise claim a *different* instance of the same type that
+  // happens to sit up-left of this cell (BUG-052).
   const maxSize = Math.max(cfg.width, cfg.height);
   for (let dy = 0; dy < maxSize; dy++) {
     for (let dx = 0; dx < maxSize; dx++) {
@@ -182,7 +185,12 @@ export function findPrimaryCell(
         candidate.buildingId === cell.buildingId &&
         isPrimaryCellReserved(candidate.reserved)
       ) {
-        if (x - px < maxSize && y - py < maxSize) {
+        const { w, h } = getRotatedSize(
+          cfg.width,
+          cfg.height,
+          RESERVED_TO_ROTATION[candidate.reserved] ?? 0,
+        );
+        if (dx < w && dy < h) {
           return { x: px, y: py };
         }
       }
@@ -211,9 +219,19 @@ export function forEachMultiCell(
   const primary = findPrimaryCell(grid, x, y);
   if (!primary) return;
 
-  const maxDim = Math.max(cfg.width, cfg.height);
-  for (let dy = 0; dy < maxDim; dy++) {
-    for (let dx = 0; dx < maxDim; dx++) {
+  // Decode the rotation stored on the primary cell and walk exactly that WxH
+  // rectangle. Scanning a max(width, height) square instead would overreach for
+  // every non-square config (hospital/high school 2x3, airports up to 9x6) and
+  // clear a neighbouring instance of the same type (BUG-052).
+  const primaryCell = grid.getCell(primary.x, primary.y)!;
+  const { w, h } = getRotatedSize(
+    cfg.width,
+    cfg.height,
+    RESERVED_TO_ROTATION[primaryCell.reserved] ?? 0,
+  );
+
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
       const cx = primary.x + dx;
       const cy = primary.y + dy;
       const c = grid.getCell(cx, cy);

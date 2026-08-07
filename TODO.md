@@ -980,9 +980,9 @@
 **全部遵循 TDD：先寫失敗測試再修。** 每條的建議測試已寫在 BUGS.md 對應條目。
 
 ### 🔴 Critical
-- [ ] **BUG-052** `InfraPlacement.ts:214` — `forEachMultiCell` 改用主格 rotation 解碼真實 W×H 矩形，
-      並要求 `findPrimaryCell` 解析回同一主格；同時檢查 `DemolishClassifier` 不讓孤兒從格落入 `regular` 分支
-      （否則相鄰同型建築被拆時會留下拆不掉的幽靈設施 + 永久計費）
+- [x] **BUG-052** `InfraPlacement.ts:214` — `forEachMultiCell` 改用主格 rotation 解碼真實 W×H 矩形；
+      `findPrimaryCell` 驗證候選 footprint 確實包含該格（修復中發現的同根因附加缺陷）；
+      `DemolishClassifier` 孤兒格改判 `single_cell_infra` 而非 `regular` ✅
 - [ ] **BUG-053** `Serializer.ts:141` — 為 DistrictManager / PolicyManager / CitySpecialization / GlobalMarket
       加 `toJSON`/`fromJSON`，納入 `snapshotGameState` 與 `deserializeGameState`，bump SAVE_VERSION + no-op migration
       （目前每次存讀檔都靜默清空行政區/政策/城市特化）

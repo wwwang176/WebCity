@@ -1355,7 +1355,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 **結果**: 84 個候選 → 驗證 24 個 → **20 個確認 / 4 個推翻** → 合併同根因後 **17 個 bug（BUG-052 ~ BUG-068）**。
 **狀態**: 全部尚未修復。以下依嚴重度排序。
 
-### BUG-052: forEachMultiCell 用 maxDim 正方形掃描，拆除時連帶清除相鄰同型建築 🔴 Critical
+### BUG-052: forEachMultiCell 用 maxDim 正方形掃描，拆除時連帶清除相鄰同型建築 🔴 Critical ✅ 已修復
 - **位置**: `src/core/building/InfraPlacement.ts:214`
 - **問題**: `forEachMultiCell`（`removeInfraFromGrid` 的底層，即所有基礎設施拆除的必經路徑）沒有使用
   config 的真實 W×H，而是 `const maxDim = Math.max(cfg.width, cfg.height)` 掃一個 maxDim×maxDim **正方形**，
@@ -1375,6 +1375,14 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   另需檢查 `DemolishClassifier`，確保孤兒從格不會落入 `regular` 分支
 - **測試（先寫）**: `InfraPlacement.test.ts` — 「兩間並排醫院時 removeInfraFromGrid 只清除目標那間」。
   現有拆除測試全部只放**一棟**建築，同 buildingId 的判斷因此被無聲吸收
+- **修復內容**（commit 見 git log）:
+  - `forEachMultiCell` 改為從主格 `reserved` 解碼 rotation → `getRotatedSize` 取得真實 (w,h)，精確迭代該矩形
+  - `findPrimaryCell` 額外驗證候選主格「自己的旋轉後 footprint 確實包含 (x,y)」——
+    修復期間發現的**同根因附加缺陷**：原本的 maxSize 方框會認領錯位擺放的另一棟同型建築
+    （A 在 (5,6)、B 在 (7,5) 時，查詢 B 的 (7,7) 會回傳 A 的主格）
+  - `DemolishClassifier` 無法解析主格的基礎設施格改判為 `single_cell_infra` 而非 `regular`，
+    使其至少會嘗試 `removeInfraService` 並讓玩家能回收該格
+  - 新增 5 個測試（並排醫院／並排高中／90° 垂直堆疊／錯位鄰居／孤兒格分類），修復前全部失敗
 
 ### BUG-053: 行政區/政策/城市特化完全未序列化 — 每次存讀檔靜默清空 🔴 Critical
 - **位置**: `src/core/save/Serializer.ts:141`
