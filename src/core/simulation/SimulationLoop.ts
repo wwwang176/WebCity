@@ -1127,8 +1127,22 @@ export class SimulationLoop {
       if (isWorkingAge(c.age)) workingAgeCitizens.push(c);
     }
 
+    // The workplace-distance worker only receives the grid buffer, whose
+    // roadType byte is the GROUND layer. Elevated segments live in
+    // ElevationManager and are invisible to it, so in a city where a viaduct
+    // provides the only link between a district and its jobs the cache reported
+    // "unreachable" while the synchronous fallback — which is handed
+    // _roadLookup and IS level-aware — reported the opposite. Residents lost
+    // their jobs whenever the cache happened to be ready and got them back when
+    // it went stale, oscillating between the two answers.
+    //
+    // Correctness wins over speed: the cache is simply not used while any
+    // elevated road exists. Serialising the elevated layers into the worker
+    // buffer is the real fix and is recorded in TODO.md (BUG-109).
+    const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnySegment();
+
     // Trigger async cache update if stale
-    if (this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
+    if (canUseWpCache && this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
       const wpPositions = workplaceCandidates.map(c => {
         const p = parsePosKeyUnsafe(c.pos);
         return { pos: c.pos, x: p.x, y: p.y };
@@ -1144,7 +1158,7 @@ export class SimulationLoop {
     }
 
     // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback
-    const reachable = (this.wpDistCache?.isReady)
+    const reachable = (canUseWpCache && this.wpDistCache?.isReady)
       ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
       : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
     assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable);

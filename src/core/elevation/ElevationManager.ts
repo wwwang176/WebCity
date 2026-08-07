@@ -33,6 +33,11 @@ export class ElevationManager {
     this.layers.delete(ElevationManager.key(x, y, level));
   }
 
+  /** Does the city contain any elevated segment at all? O(1). */
+  hasAnySegment(): boolean {
+    return this.layers.size > 0;
+  }
+
   /** Returns all elevated segments at (x, y), sorted by level ascending. */
   getAllLevels(x: number, y: number): { level: number; data: ElevatedSegment }[] {
     const result: { level: number; data: ElevatedSegment }[] = [];
