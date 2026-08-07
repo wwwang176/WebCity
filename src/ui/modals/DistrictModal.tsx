@@ -4,12 +4,17 @@ import { Modal } from './Modal';
 
 const POLICY_LABELS: Record<string, string> = {
   NO_HEAVY_INDUSTRY: 'No Heavy Industry ($150)',
-  ENCOURAGE_RECYCLING: 'Encourage Recycling ($100)',
   HIGH_DENSITY_BAN: 'High Density Ban ($120)',
-  ORGANIC_FOOD: 'Organic Food ($80)',
-  TOURISM: 'Tourism Promotion ($200)',
 };
-const POLICY_TYPES = ['NO_HEAVY_INDUSTRY', 'ENCOURAGE_RECYCLING', 'HIGH_DENSITY_BAN', 'ORGANIC_FOOD', 'TOURISM'];
+/**
+ * Only the policies the simulation reads are offered.
+ *
+ * ENCOURAGE_RECYCLING, ORGANIC_FOOD and TOURISM appear nowhere in the
+ * simulation; listing them with a price tag charged the player $380 per budget
+ * cycle for no effect at all (BUG-091). They remain in PolicyType and load
+ * correctly from existing saves — see IMPLEMENTED_POLICY_TYPES and TODO.md.
+ */
+const POLICY_TYPES = ['NO_HEAVY_INDUSTRY', 'HIGH_DENSITY_BAN'];
 
 export function DistrictModal(props: { open: boolean; onClose: () => void }) {
   const [version, setVersion] = createSignal(0);

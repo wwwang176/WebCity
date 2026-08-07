@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../ExpenseCalculator';
+import { PolicyType } from '../../district/types';
 
 describe('ExpenseCalculator', () => {
   describe('calculateDistrictPolicyCost', () => {
@@ -19,18 +20,20 @@ describe('ExpenseCalculator', () => {
     });
 
     it('sums costs of active policies across districts', () => {
+      // Real PolicyType values: only implemented policies are billable, so a
+      // placeholder type would now (correctly) cost nothing.
       const districts = [
         {
           id: 'd1',
           policies: [
-            { type: 'a', active: true, cost: 50 },
-            { type: 'b', active: false, cost: 100 },
+            { type: PolicyType.NO_HEAVY_INDUSTRY, active: true, cost: 50 },
+            { type: PolicyType.HIGH_DENSITY_BAN, active: false, cost: 100 },
           ],
         },
         {
           id: 'd2',
           policies: [
-            { type: 'c', active: true, cost: 30 },
+            { type: PolicyType.HIGH_DENSITY_BAN, active: true, cost: 30 },
           ],
         },
       ] as any[];

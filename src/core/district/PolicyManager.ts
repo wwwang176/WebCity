@@ -22,6 +22,29 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
 };
 
 /**
+ * Policies the simulation actually reads.
+ *
+ * A repo-wide search for the other three enum members (ENCOURAGE_RECYCLING,
+ * ORGANIC_FOOD, TOURISM) finds only this file and its tests — nothing in
+ * GarbageService, Pollution, LandValue, Happiness or the income path consults
+ * them. They were still billed every budget cycle, $380 for nothing, while the
+ * district modal advertised their prices as though they did something (BUG-091).
+ *
+ * Rather than invent balance numbers for three unspecified mechanics, the charge
+ * and the UI now follow what is real. Implementing one is a matter of adding its
+ * effect and then adding it to this set — see TODO.md.
+ */
+export const IMPLEMENTED_POLICY_TYPES: ReadonlySet<PolicyType> = new Set([
+  PolicyType.NO_HEAVY_INDUSTRY,
+  PolicyType.HIGH_DENSITY_BAN,
+]);
+
+/** Does this policy have an effect on the simulation? */
+export function isPolicyImplemented(type: PolicyType): boolean {
+  return IMPLEMENTED_POLICY_TYPES.has(type);
+}
+
+/**
  * Data-driven zone restrictions per policy type (OCP).
  * Adding a new zone-restricting policy only requires a new entry here.
  */
