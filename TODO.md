@@ -1008,14 +1008,14 @@
 - [x] **BUG-065** `Game.ts:533` — 建構時傳入 `railNetwork`；新增 `rebuildElevatedRailNetwork()` 並接上載入流程 ✅
 - [ ] `ElevatedRailBuilder.removeElevated` 仍是死碼（拆除一律走 `elevatedRoadBuilder.removeElevated`）— BUG-065 遺留
 - [x] **BUG-066** `IncomeCalcAdapter.ts:14` — 單趟 O(N) 建 map，取代每建築一次的 citizen filter ✅
-- [ ] **BUG-067** `SidewalkGraph.ts:176` — 補上 border-neighbour 修補 pass（比照 `LaneGraph.ts:140-157`）
+- [x] **BUG-067** `SidewalkGraph.ts:176` — 邊的重建集合擴大一環（`edgeOwners`），利用既有的 edge id 去重 ✅
 
 ### 🔵 Low
 - [ ] **BUG-068** `Disaster.ts:159` — `setCell` 一併清 `reserved`；考慮抽 `clearBuildingCell(grid,x,y)` helper
 
 ### 系統性改善（治本，優先於逐條修）
 - [ ] 讓 LaneGraph / SidewalkGraph 的跨格邊發出**對稱**（每格發四方向並去重），使任何格的邊都不依賴鄰居被重建
-- [ ] 加不變式測試：`updateCells(...)` 產出的圖必須等同同一 grid 全新 `buildFromGrid`（可同時抓 BUG-054 + BUG-067）
+- [x] 加不變式測試：`updateCells(...)` 產出的圖必須等同同一 grid 全新 `buildFromGrid` ✅（LaneGraph + SidewalkGraph 皆已加）
 - [ ] 加測試列舉 GameState 欄位，當某欄位既未序列化也未標記 transient 時失敗（可抓 BUG-053 這類）
 - [x] 加測試斷言經濟 breakdown 加總 === `calculateTotalExpenses` 實收金額 ✅（BUG-062 一併完成）
 - [ ] 抽出 `clearBuildingCell(grid,x,y)` 與具旋轉感知／主格驗證的 `forEachOwnedCell` 單一權威 helper

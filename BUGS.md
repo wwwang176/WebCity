@@ -1799,7 +1799,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 4 個（掃描次數不隨建築數成長／與 per-call 實作結果完全相同／
   空建築回傳零／同棟多名佔用者正確計數）。修復前第 1 個失敗（40 棟 → 40 次全陣列掃描）
 
-### BUG-067: SidewalkGraph.updateCells 切斷重建區域外圈一格的人行道邊 🟡 Medium
+### BUG-067: SidewalkGraph.updateCells 切斷重建區域外圈一格的人行道邊 🟡 Medium ✅ 已修復
 - **位置**: `src/core/traffic/SidewalkGraph.ts:176`（合併 :193 同根因）
 - **問題**: `updateCells` 組出 `toRebuild` = affected 格 + 其 4 個正交鄰居，對每格呼叫 `removeCellData`，
   然後**只**為 `toRebuild` 內的格子重新產生節點與邊
@@ -1822,6 +1822,13 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   更好的長期解法是讓跨格邊的發出對稱（每格發出四個方向並去重），使任何格的邊都不依賴鄰居被重建
 - **測試（先寫）**: 現有 updateCells 測試只斷言 `getAllNodes().length` / `getNodesInCell().length`
   —— 在此情境下這些數字是**正確的**，該斷言的是連通性
+- **修復內容**: 節點仍只重建 `toRebuild`，但**邊**的重建集合擴大一環（`edgeOwners`）。
+  關鍵觀察：`addBidirectionalEdge` 已經以 edge id 去重，所以對「邊還在」的 owner 重跑是 no-op 而非產生重複
+  —— 這讓修法可以很小，不需要像 LaneGraph 那樣做精確的 owner 刪除
+- **與 BUG-054 的關係**: 同一個根因家族（單向邊所有權 + 對稱刪除），但兩者的最小正確修法不同：
+  LaneGraph 的 `xt:` 邊沒有去重機制，必須做精確的 owner 刪除；SidewalkGraph 有去重，擴大重建集合即可
+- **測試**: 新增 3 個（西側跨格連結雙向保留／建築生長後道路仍可從頭走到尾／
+  整張圖等同 fresh buildFromGrid）。修復前 3 個全部失敗
 
 ### BUG-068: applyDisasterDamage 清除 buildingId 卻留下 reserved（BURNED/ABANDONED）🔵 Low
 - **位置**: `src/core/climate/Disaster.ts:159`

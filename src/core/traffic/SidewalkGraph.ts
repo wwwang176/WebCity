@@ -171,6 +171,26 @@ export class SidewalkGraph {
       }
     }
 
+    // Cells whose EDGES must be regenerated: one ring wider than the nodes.
+    //
+    // removeCellData deletes both directions of every edge touching a cell, but
+    // generateCrossCellEdges emits links only for EAST and SOUTH — so the
+    // WEST/NORTH link between a rebuilt cell and the cell beyond it is owned
+    // exclusively by that outside cell. Crosswalk and intersection-bridge edges
+    // have the same one-way ownership (they are emitted by the intersection but
+    // connect a neighbour's nodes). Without regenerating the outer ring those
+    // links are destroyed and never recreated (BUG-067).
+    //
+    // addBidirectionalEdge dedupes by id, so re-running an owner whose edges
+    // survived is a no-op rather than a duplicate.
+    const edgeOwners = new Set<string>(toRebuild);
+    for (const key of toRebuild) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      for (const dir of CARDINAL_DIRECTIONS) {
+        edgeOwners.add(toPosKey(x + dir.dx, y + dir.dy));
+      }
+    }
+
     // Remove old nodes and edges for affected cells
     for (const key of toRebuild) {
       this.removeCellData(key);
@@ -186,7 +206,7 @@ export class SidewalkGraph {
     }
 
     // Rebuild road edges
-    for (const key of toRebuild) {
+    for (const key of edgeOwners) {
       const { x, y } = parsePosKeyUnsafe(key);
       const cell = grid.getCell(x, y);
       if (cell && cell.roadType !== RoadType.NONE) {
@@ -204,7 +224,7 @@ export class SidewalkGraph {
     }
 
     // Rebuild building edges
-    for (const key of toRebuild) {
+    for (const key of edgeOwners) {
       const { x, y } = parsePosKeyUnsafe(key);
       const cell = grid.getCell(x, y);
       if (cell && cell.roadType === RoadType.NONE && cell.buildingId && cell.buildingId > 0) {
