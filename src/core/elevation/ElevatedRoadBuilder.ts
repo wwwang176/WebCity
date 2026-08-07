@@ -109,7 +109,12 @@ export class ElevatedRoadBuilder {
     // Calculate cost
     const baseCost = ROAD_CONFIGS[roadType].cost;
     let totalCost = 0;
-    for (const pos of path) {
+    const crossLevelStart = startOnElevated && !segAtTargetLevel;
+    for (let ci = 0; ci < path.length; ci++) {
+      const pos = path[ci]!;
+      // The cross-level start cell already exists and is left untouched below —
+      // charging for it would bill the player twice for the same segment.
+      if (ci === 0 && crossLevelStart) continue;
       if (pos.level === 0 && !pos.isRamp) {
         // Ground level cell — skip cost (already has road, or is landing)
         continue;
@@ -134,6 +139,20 @@ export class ElevatedRoadBuilder {
 
       const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level;
       if (storeLevel === 0) continue; // Don't store in ElevationManager at level 0
+
+      // Never rewrite an existing segment's paid state. Starting the path at the
+      // level the structure is actually on (BUG-097) put path[0] on an EXISTING
+      // elevated cell for the first time, and this loop then stamped it with the
+      // new roadType and cleared railType/railFlags — a free downgrade of a paid
+      // HIGHWAY, or the silent deletion of one cell of an elevated railway
+      // bridge. That is exactly the rule BUG-096 established two hunks above
+      // (BUG-117).
+      // Only for a CROSS-LEVEL start. Redrawing a wider road along an existing
+      // viaduct at the same level is a legitimate, paid upgrade and must still
+      // apply to the first cell.
+      const existingAtStart = i === 0 && startOnElevated && !segAtTargetLevel
+        ? this.elevationManager.get(pos.x, pos.y, storeLevel)
+        : null;
 
       let flags = 0;
       if (i > 0) {
@@ -167,12 +186,13 @@ export class ElevatedRoadBuilder {
       }
 
       this.elevationManager.set(pos.x, pos.y, storeLevel, {
-        roadType,
+        roadType: existingAtStart ? existingAtStart.roadType : roadType,
         roadFlags: flags,
-        railType: 0,
-        railFlags: 0,
-        isRamp: pos.isRamp,
-        rampAscendDirection: rampAscendDir,
+        railType: existingAtStart?.railType ?? 0,
+        railFlags: existingAtStart?.railFlags ?? 0,
+        isRamp: existingAtStart ? existingAtStart.isRamp : pos.isRamp,
+        rampAscendDirection: existingAtStart
+          ? existingAtStart.rampAscendDirection : rampAscendDir,
       });
 
       affectedCells.push(storeLevel > 0 ? `${pos.x},${pos.y},${storeLevel}` : toPosKey(pos.x, pos.y));
@@ -270,13 +290,22 @@ export class ElevatedRoadBuilder {
     // is worse than on the ground: an elevated segment's roadType also drives
     // its per-tick maintenance, so the player's bill was rewritten too
     // (BUG-096).
-    for (const dir of CARDINAL_DIRECTIONS) {
-      const neighbor = this.elevationManager.get(x + dir.dx, y + dir.dy, highest);
-      if (neighbor && neighbor.roadFlags & dir.opposite) {
-        this.elevationManager.set(x + dir.dx, y + dir.dy, highest, {
-          ...neighbor,
-          roadFlags: neighbor.roadFlags & ~dir.opposite,
-        });
+    // Scan the removed segment's own level AND the one below it. A ramp joins two
+    // levels, so its neighbours can sit either side; checking only `highest` left
+    // the lower neighbour pointing at a segment that no longer exists, and the
+    // renderer drew a stub of road into empty air. Cross-level ramps could not be
+    // built at all before BUG-097, so this only became reachable with it
+    // (BUG-118).
+    for (const level of [highest, highest - 1]) {
+      if (level < 1) continue;
+      for (const dir of CARDINAL_DIRECTIONS) {
+        const neighbor = this.elevationManager.get(x + dir.dx, y + dir.dy, level);
+        if (neighbor && neighbor.roadFlags & dir.opposite) {
+          this.elevationManager.set(x + dir.dx, y + dir.dy, level, {
+            ...neighbor,
+            roadFlags: neighbor.roadFlags & ~dir.opposite,
+          });
+        }
       }
     }
 

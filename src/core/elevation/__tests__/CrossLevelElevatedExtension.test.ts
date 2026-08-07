@@ -44,13 +44,61 @@ describe('extending an existing viaduct to a different level', () => {
 
     const result = builder.buildElevatedRoad({ x: 8, y: 5 }, { x: 16, y: 5 }, RoadType.TWO_LANE, 1e6, 2);
 
-    if (result.success) {
-      expect(hasRampBetweenLevels(em, [8, 9, 10, 11, 12], 5)).toBe(true);
-    } else {
-      // Refusing outright is also acceptable — what is not acceptable is
-      // charging for an unreachable road.
-      expect(result.reason).toBeTruthy();
-    }
+    // Asserted unconditionally: an if/else here would let the whole feature be
+    // disabled again without any test going red.
+    expect(result.success).toBe(true);
+    expect(hasRampBetweenLevels(em, [8, 9, 10, 11, 12], 5)).toBe(true);
+  });
+
+  it('should not rewrite the tier of the segment it starts from', () => {
+    // Starting the path on the existing structure (the BUG-097 fix) put path[0]
+    // on a cell that was already paid for. The placement loop then stamped it
+    // with the new roadType — a free downgrade of a HIGHWAY viaduct, breaking
+    // the very rule BUG-096 established (BUG-117).
+    const grid = new Grid(30, 30);
+    new RoadBuilder(grid).buildRoad({ x: 0, y: 5 }, { x: 0, y: 5 }, RoadType.TWO_LANE, 1e6);
+    const em = new ElevationManager();
+    const builder = new ElevatedRoadBuilder(grid, em);
+    builder.buildElevatedRoad({ x: 0, y: 5 }, { x: 8, y: 5 }, RoadType.HIGHWAY, 1e6, 1);
+    const before = em.get(8, 5, 1)!.roadType;
+    expect(before).toBe(RoadType.HIGHWAY);
+
+    builder.buildElevatedRoad({ x: 8, y: 5 }, { x: 16, y: 5 }, RoadType.TWO_LANE, 1e6, 2);
+
+    expect(em.get(8, 5, 1)!.roadType).toBe(RoadType.HIGHWAY);
+  });
+
+  it('should not erase rail data on the segment it starts from', () => {
+    // Same cell, other field: the placement loop hard-wrote railType/railFlags
+    // to 0, deleting one span of an elevated railway bridge outright.
+    const grid = new Grid(30, 30);
+    new RoadBuilder(grid).buildRoad({ x: 0, y: 5 }, { x: 0, y: 5 }, RoadType.TWO_LANE, 1e6);
+    const em = new ElevationManager();
+    em.set(8, 5, 1, {
+      roadType: 0, roadFlags: 4, railType: 1, railFlags: 4,
+      isRamp: false, rampAscendDirection: 0,
+    });
+    const builder = new ElevatedRoadBuilder(grid, em);
+
+    builder.buildElevatedRoad({ x: 8, y: 5 }, { x: 16, y: 5 }, RoadType.TWO_LANE, 1e6, 2);
+
+    const seg = em.get(8, 5, 1)!;
+    expect(seg.railType).toBe(1);
+    expect(seg.railFlags).toBe(4);
+  });
+
+  it('should still apply a same-level upgrade to the first cell', () => {
+    // The cross-level guard must not block a legitimate paid upgrade drawn along
+    // an existing viaduct at the same level.
+    const grid = new Grid(30, 30);
+    new RoadBuilder(grid).buildRoad({ x: 0, y: 5 }, { x: 0, y: 5 }, RoadType.TWO_LANE, 1e6);
+    const em = new ElevationManager();
+    const builder = new ElevatedRoadBuilder(grid, em);
+    builder.buildElevatedRoad({ x: 0, y: 5 }, { x: 8, y: 5 }, RoadType.TWO_LANE, 1e6, 1);
+
+    builder.buildElevatedRoad({ x: 5, y: 5 }, { x: 8, y: 5 }, RoadType.FOUR_LANE, 1e6, 1);
+
+    expect(em.get(5, 5, 1)!.roadType).toBe(RoadType.FOUR_LANE);
   });
 
   it('should still extend at the same level without inventing a ramp', () => {
