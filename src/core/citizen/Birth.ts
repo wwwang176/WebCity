@@ -53,10 +53,18 @@ export function birthTick(
   const ctx: BirthContext = { ...DEFAULT_CONTEXT, ...context };
   let births = 0;
 
-  // 先統計每個 homeId 已有的 BABY+CHILD 數量
+  // 先統計每個 homeId 已有的 BABY+CHILD 數量，以及總入住人數。
+  //
+  // 只看幼兒上限是不夠的：createCitizen 唯一的容量閘門是**全城**住宅總量，
+  // 所以只要城裡別處還有空屋，一棟已住滿 4 人的 4 人房仍可再生 2 個小孩，
+  // 永久超載 50%（computeOccupancyRatios 把比例夾在 1.0，UI 也看不出來）。
+  // 需要逐棟比對實際入住數與容量（BUG-082）。
   const childrenCount = new Map<string, number>();
+  const occupancyCount = new Map<string, number>();
   for (const c of manager.getCitizens()) {
-    if (c.homeId !== null && (c.lifeStage === LifeStage.BABY || c.lifeStage === LifeStage.CHILD)) {
+    if (c.homeId === null) continue;
+    occupancyCount.set(c.homeId, (occupancyCount.get(c.homeId) ?? 0) + 1);
+    if (c.lifeStage === LifeStage.BABY || c.lifeStage === LifeStage.CHILD) {
       childrenCount.set(c.homeId, (childrenCount.get(c.homeId) ?? 0) + 1);
     }
   }
@@ -70,10 +78,11 @@ export function birthTick(
     if (c.age > BIRTH.MAX_FERTILITY_AGE) continue;
     if (c.homeId === null) continue;
 
-    // 檢查該棟建築的幼兒上限（按容量比例）
+    // 檢查該棟建築的幼兒上限（按容量比例）與剩餘空位
     const currentChildren = (childrenCount.get(c.homeId) ?? 0);
     const residents = ctx.getResidents ? ctx.getResidents(c.homeId) : 8;
     if (currentChildren >= getMaxChildren(residents)) continue;
+    if ((occupancyCount.get(c.homeId) ?? 0) >= residents) continue;
 
     // 計算生育機率（按教育等級調整）
     const fertility = FERTILITY_BY_EDUCATION[c.education] ?? FERTILITY_BY_EDUCATION[EducationLevel.NONE];
@@ -91,6 +100,7 @@ export function birthTick(
       newborns.push({ homeId: c.homeId });
       // 更新計數，避免同一 homeId 本 tick 超生
       childrenCount.set(c.homeId, currentChildren + 1);
+      occupancyCount.set(c.homeId, (occupancyCount.get(c.homeId) ?? 0) + 1);
     }
   }
 

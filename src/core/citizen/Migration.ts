@@ -147,7 +147,11 @@ export function generateFamily(city?: CityAttractiveness): FamilyMember[] {
 export const EDUCATION_THRESHOLDS = {
   OFFICE_RATIO: 0.3,
   INDUSTRIAL_RATIO: 0.5,
-  AVG_LAND_VALUE: 150,
+  // Must stay below what calculateLandValue can actually produce: every positive
+  // term at maximum is BASE 50 + serviceCoverage 10 x 4 + PARK 15 + WATERFRONT 20
+  // = 125. At 150 the HIGH_LAND_VALUE immigration weighting was dead code, so a
+  // wealthy city never attracted better-educated immigrants (BUG-084).
+  AVG_LAND_VALUE: 100,
   LOW_TAX: 7,
   HIGH_TAX: 12,
 } as const;

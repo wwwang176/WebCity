@@ -22,7 +22,7 @@ import { avgEducationScore } from '../building/BuildingUpgrade';
 import { ECONOMY } from '../economy/TaxMultipliers';
 import { DEFAULT_TAX_RATE } from '../economy/Tax';
 import { getInfraBuildingId, getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
-import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
+import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs, sumBuildingCapacity } from '../building/BuildingQueries';
 import { forEachGridPollutionSource } from '../environment/GridPollutionSources';
 import { forEachServicePollutionSource } from '../environment/PollutionSourceRegistry';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
@@ -520,10 +520,19 @@ export class SimulationLoop {
     }
     const unemploymentRate = workingAgeCount > 0 ? unemployedCount / workingAgeCount : 0;
 
-    // Calculate workplace zone ratios for education-weighted immigration
+    // Calculate workplace zone ratios for education-weighted immigration.
+    //
+    // Numerator and denominator must be the same unit. These used to be a
+    // building COUNT over a JOB count: the smallest office has 15 workers, so an
+    // all-office city topped out at a ratio of 0.067 against a 0.3 threshold,
+    // and the smallest factory has 10, capping industrial at 0.1 against 0.5 —
+    // both HIGH_OFFICE and HIGH_INDUSTRIAL weightings were unreachable. Using
+    // sumBuildingCapacity on both sides also inherits its ruin/multi-cell
+    // exclusions, so a heavily abandoned city can no longer push the ratio above
+    // 1 and trip the thresholds at exactly the wrong moment (BUG-085).
     const totalWorkplaces = countWorkplaceJobs(this.state.grid) || 1;
-    const officeJobs = countZoneBuildings(this.state.grid, t => t === ZoneType.OFFICE);
-    const industrialJobs = countZoneBuildings(this.state.grid, t => t === ZoneType.INDUSTRIAL);
+    const officeJobs = sumBuildingCapacity(this.state.grid, t => t === ZoneType.OFFICE, bt => bt.workers);
+    const industrialJobs = sumBuildingCapacity(this.state.grid, t => t === ZoneType.INDUSTRIAL, bt => bt.workers);
 
     const city = {
       jobOpenings: this.countJobOpenings(),

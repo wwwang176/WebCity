@@ -295,7 +295,9 @@ describe('Migration constants', () => {
   it('EDUCATION_THRESHOLDS should have correct values', () => {
     expect(EDUCATION_THRESHOLDS.OFFICE_RATIO).toBe(0.3);
     expect(EDUCATION_THRESHOLDS.INDUSTRIAL_RATIO).toBe(0.5);
-    expect(EDUCATION_THRESHOLDS.AVG_LAND_VALUE).toBe(150);
+    // Must stay under 125, the most calculateLandValue can produce
+    // (BASE 50 + serviceCoverage 10x4 + PARK 15 + WATERFRONT 20).
+    expect(EDUCATION_THRESHOLDS.AVG_LAND_VALUE).toBe(100);
     expect(EDUCATION_THRESHOLDS.LOW_TAX).toBe(7);
     expect(EDUCATION_THRESHOLDS.HIGH_TAX).toBe(12);
   });
