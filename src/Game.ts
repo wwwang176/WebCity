@@ -883,6 +883,18 @@ export class Game {
                   this.buildingRenderer.removeBuilding(px!, py!);
                 }
               }
+              // buildRoad also clears zoneType on zoned-but-EMPTY cells, and those
+              // are deliberately not reported in demolishedCells (no building was
+              // destroyed). Nothing then removed their overlay instance: the road
+              // surface is only 0.5-0.95 wide against a 0.9 overlay quad, so a
+              // coloured fringe stayed visible along the new road until the next
+              // rezone or demolish happened to call rebuildZoneOverlays.
+              // removeZoneOverlay is O(1) and a no-op for cells without one
+              // (BUG-111).
+              for (const pos of result.affectedCells ?? []) {
+                const [px, py] = pos.split(',').map(Number);
+                this.buildingRenderer.removeZoneOverlay(px!, py!);
+              }
             });
             this.dirty.crossings = true;
             this.dirty.trafficLights = true;

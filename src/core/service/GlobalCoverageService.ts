@@ -122,20 +122,36 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
     }
     if (facState.size === 0) return;
 
-    // Group pending items by position with weight from nearest facility distance
+    // Group pending items by position with weight from nearest facility distance,
+    // and bucket their INDICES in the same pass.
+    //
+    // Collection used to remove items with a full backwards scan of `pending`
+    // per round: O(rounds x pending). With COLLECTION_RATE 140 across a few
+    // landfills and DECOMPOSE_TICKS 600 letting the queue grow into the tens of
+    // thousands when service is short, that is hundreds of millions of
+    // comparisons on the main thread every service tick — precisely when the
+    // city is already struggling. Buckets make removal O(take) (BUG-110).
     const positions = new Map<string, { x: number; y: number; count: number; weight: number }>();
-    for (const item of pending) {
+    const indicesByPos = new Map<string, number[]>();
+    for (let i = 0; i < pending.length; i++) {
+      const item = pending[i]!;
       const key = toPosKey(item.x, item.y);
       const entry = positions.get(key);
       if (entry) {
         entry.count++;
+        indicesByPos.get(key)!.push(i);
       } else {
         const cost = this.mergedDistanceMap.get(key);
         if (cost === undefined) continue;
         positions.set(key, { x: item.x, y: item.y, count: 1, weight: 1 / Math.max(1, cost) });
+        indicesByPos.set(key, [i]);
       }
     }
     if (positions.size === 0) return;
+
+    // Deferred removal: mark indices, compact once at the end. Splicing inside
+    // the loop also invalidated every bucket index after the removal point.
+    const collected = new Uint8Array(pending.length);
 
     // Total budget across all facilities
     let totalBudget = 0;
@@ -180,12 +196,11 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
       const state = facState.get(bestId)!;
       const take = Math.min(pos.count, state.budget, state.room);
 
+      const bucket = indicesByPos.get(posKey)!;
       let removed = 0;
-      for (let i = pending.length - 1; i >= 0 && removed < take; i--) {
-        if (pending[i]!.x === pos.x && pending[i]!.y === pos.y) {
-          pending.splice(i, 1);
-          removed++;
-        }
+      while (removed < take && bucket.length > 0) {
+        collected[bucket.pop()!] = 1;
+        removed++;
       }
 
       state.fac.currentLoad += removed;
@@ -199,6 +214,13 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
         entries.splice(picked, 1);
       }
     }
+
+    // Single in-place compaction — `pending` is the caller's array.
+    let write = 0;
+    for (let read = 0; read < pending.length; read++) {
+      if (!collected[read]) pending[write++] = pending[read]!;
+    }
+    pending.length = write;
   }
 
   /** Remove distance map entry for a facility (call on removal). */
