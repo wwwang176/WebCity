@@ -312,3 +312,60 @@ describe('PooledAStar', () => {
     });
   });
 });
+
+// BUG-063: syncGraphToWorker rewrites the pathfinding SharedArrayBuffer in place
+// while the worker may be mid-batch, and the reserved `version` field is written
+// but never checked by any reader. A torn read can therefore produce a
+// parentEdge chain containing a cycle, and reconstructPath walked it in an
+// unbounded loop — wedging the worker permanently, with no watchdog and no
+// synchronous fallback for spawnCommuteVehicles.
+describe('PooledAStar.reconstructPath — bounded walk', () => {
+  /** Build an astar whose parentEdge chain forms a 2-node cycle. */
+  function withCyclicChain(maxPoints: number) {
+    const astar = new PooledAStar(maxPoints) as unknown as {
+      parentEdge: Int32Array;
+      cachedReader: { getEdgeFromIdx(edgeIdx: number): number };
+      reconstructPath(endIdx: number): number[];
+    };
+    // node 1 --edge 10--> node 2 --edge 20--> node 1 ...
+    astar.parentEdge[1] = 10;
+    astar.parentEdge[2] = 20;
+    astar.cachedReader = {
+      getEdgeFromIdx: (edgeIdx: number) => (edgeIdx === 10 ? 2 : 1),
+    };
+    return astar;
+  }
+
+  it('should terminate on a cyclic parentEdge chain instead of looping forever', () => {
+    const astar = withCyclicChain(64);
+    const started = 1;
+
+    // If the walk is unbounded this never returns and the test times out.
+    const result = astar.reconstructPath(started);
+
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBeLessThanOrEqual(64);
+  });
+
+  it('should not overflow the result buffer', () => {
+    const astar = withCyclicChain(8);
+    const result = astar.reconstructPath(1);
+    expect(result.length).toBeLessThanOrEqual(8);
+  });
+
+  it('should still reconstruct a normal acyclic chain correctly', () => {
+    const astar = new PooledAStar(64) as unknown as {
+      parentEdge: Int32Array;
+      cachedReader: { getEdgeFromIdx(edgeIdx: number): number };
+      reconstructPath(endIdx: number): number[];
+    };
+    // node 3 <-edge 30- node 2 <-edge 20- node 1 (root, parentEdge -1)
+    astar.parentEdge[3] = 30;
+    astar.parentEdge[2] = 20;
+    astar.cachedReader = {
+      getEdgeFromIdx: (edgeIdx: number) => (edgeIdx === 30 ? 2 : 1),
+    };
+
+    expect(astar.reconstructPath(3)).toEqual([20, 30]);
+  });
+});

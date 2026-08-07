@@ -1002,8 +1002,8 @@
 - [x] **BUG-061** `CommuteCache.ts:51` — `bumpGeneration` 不再清 `routeRefCount`；空過的測試已改名並修正 ✅
 - [x] **BUG-062** `EconomyBreakdown.ts:39` — 補三項支出 + citySpec 收入加成，UI 新增三列；
       刪除死碼 `ui/modals/EconomyModal.tsx` ✅
-- [ ] **BUG-063** `SimulationLoop.ts:1439` — lane graph SAB 加 seqlock（用既有 version 欄位 + Atomics）或雙緩衝；
-      並給 `PooledAStar.reconstructPath` 加步數上限
+- [x] **BUG-063** `reconstructPath` 加步數上限（防 worker 永久卡死）；批次迴圈抽成 `runBatch()`
+      並接上原本沒人讀的 `version` 守衛。依對抗驗證結論不做 Atomics seqlock ✅
 - [ ] **BUG-064** `BusSystem.ts:295` — 覆寫 `onRouteStopRemoved`；`sumDirection` 斷言 segDists 長度相符
 - [ ] **BUG-065** `Game.ts:547` — `ElevatedRailBuilder` 建構時傳入 `railNetwork`；
       擴充 `rebuildRailNetworkFromGrid` 涵蓋高架軌；接上死碼 `removeElevated`

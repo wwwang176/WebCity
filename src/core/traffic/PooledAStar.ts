@@ -290,7 +290,16 @@ export class PooledAStar {
   private reconstructPath(endIdx: number): number[] {
     let count = 0;
     let cur = endIdx;
+    // Bounded by the buffer size. A self-consistent graph can never cycle here —
+    // `closed` stops a node being re-parented, so parent pointers strictly
+    // descend by closure time. But syncGraphToWorker rewrites the shared buffer
+    // in place while this worker may be mid-batch, and nothing validates the
+    // graph version, so a torn read can yield a cyclic chain. Without a cap that
+    // wedges the worker forever: no BATCH_RESULT is ever posted again, there is
+    // no synchronous fallback for commute spawning, and no watchdog (BUG-063).
+    const maxSteps = this.resultBuf.length;
     while (this.parentEdge[cur] !== -1) {
+      if (count >= maxSteps) return [];
       this.resultBuf[count++] = this.parentEdge[cur]!;
       // Walk back: find the fromIdx of this edge
       cur = this.getEdgeFromIdxCached(this.parentEdge[cur]!);

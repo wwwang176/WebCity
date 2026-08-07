@@ -1673,7 +1673,7 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
 - **測試**: 新增 4 個，含報告指定的交叉檢查
   「breakdown 顯示的支出加總 === `calculateTotalExpenses` 實際收取的金額」，修復前 3 個失敗
 
-### BUG-063: Lane graph SharedArrayBuffer 在 worker 批次執行中被原地覆寫 🟡 Medium
+### BUG-063: Lane graph SharedArrayBuffer 在 worker 批次執行中被原地覆寫 🟡 Medium ✅ 已修復
 - **位置**: `src/core/simulation/SimulationLoop.ts:1439`
 - **問題**: `syncGraphToWorker()` 在主執行緒把 pathfinding graph 直接寫回活的 SAB，
   而 pathfinding Worker 正持有該 SAB 的 `GraphReader` 且可能正在批次中
@@ -1694,6 +1694,16 @@ service+environment+climate / save+simulation / grid+road+zone+building / TypeSc
   讓撕裂讀取永遠不可能卡死 worker
 - **註**: 對抗驗證指出「錯誤路線」這個後果其實已被 `clearPending()` 中和（跨界批次結果會被整批丟棄），
   所以真正值得修的是**卡死**與未接上的 version 守衛，而非路線正確性
+- **修復內容**（依對抗驗證的結論，不做 Atomics seqlock 那種過度設計）:
+  - `PooledAStar.reconstructPath` 加上以 `resultBuf.length` 為界的步數上限，超過即回傳 `[]`。
+    **撰寫測試時實測**：未加上限前，那條 cyclic parentEdge 測試會讓整個 vitest worker 卡死並被 timeout 殺掉
+    —— 這就是「worker 永久卡死」後果的直接實證
+  - 把批次迴圈抽成可測的純函式 `runBatch(reader, requests, compute)`，
+    在批次開始時記下 `getVersion()`、每個請求後複查，變動就整批丟棄回傳 null。
+    這讓那個**寫了卻從未被任何 reader 讀取**的 `version` 欄位真正接上 ——
+    它原本是留給下一個維護者的陷阱（看起來像守衛，實際上不是）
+- **測試**: 新增 3 個 PooledAStar（cyclic chain 會終止／不溢位 resultBuf／正常鏈仍正確重建）
+  + 4 個 runBatch（版本穩定時回傳結果／中途變動則丟棄／空清單／中止後不再呼叫 compute）
 
 ### BUG-064: BusSystem 在中途站被拆除時從不重算 routeSegments 🟡 Medium
 - **位置**: `src/core/transport/BusSystem.ts:295`
