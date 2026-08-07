@@ -486,7 +486,7 @@ export class Game {
       // Worker not available (e.g. test environment) — falls back to sync Dijkstra
     }
     // Restore abandonment stress from loaded save
-    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number>; elevationData?: unknown; transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number } } } | undefined)?._extra;
+    const extra = (loadedState as unknown as { _extra?: import('./core/save/Serializer').DeserializedExtra } | undefined)?._extra;
     if (extra?.abandonmentStress) {
       this.simLoop.abandonmentStress = extra.abandonmentStress;
     }
@@ -652,7 +652,17 @@ export class Game {
       this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
       const loadedMilestone = getMilestone(this.state.citizens.getPopulation());
       this.lastMilestoneId = loadedMilestone?.id ?? null;
-      this.highestMilestonePop = loadedMilestone?.populationRequired ?? 0;
+      // Deriving this from the CURRENT population alone means a save taken after
+      // a population dip replays every milestone on the way back up — the same
+      // defect BUG-094 fixed within a session, surviving across the save
+      // boundary. The high-water mark is persisted, so take the greater of the
+      // two and stay correct for saves written before this field existed
+      // (BUG-123).
+      this.highestMilestonePop = Math.max(
+        loadedMilestone?.populationRequired ?? 0,
+        (loadedState as unknown as { _extra?: { highestMilestonePop?: number } } | undefined)
+          ?._extra?.highestMilestonePop ?? 0,
+      );
       this.setupInput(container);
       this.sceneManager.onUpdate((dt) => this.update(dt));
       this.sceneManager.start();
@@ -1350,7 +1360,7 @@ export class Game {
 
         // Auto-save (off main thread via SaveWorker)
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
-          const snapshot = snapshotGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
+          const snapshot = snapshotGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory(), highestMilestonePop: this.highestMilestonePop });
           if (this.saveWorker) {
             this.saveWorker.postMessage({ type: 'SAVE', snapshot, slotId: 0, name: 'AutoSave', population: this.state.citizens.getPopulation() });
           } else {
@@ -2418,13 +2428,13 @@ export class Game {
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
-    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory(), highestMilestonePop: this.highestMilestonePop });
     const population = this.state.citizens.getPopulation();
     await saveGame(slotId, name, data, population);
   }
 
   exportCurrentGame(): void {
-    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory(), highestMilestonePop: this.highestMilestonePop });
     const population = this.state.citizens.getPopulation();
     exportSaveToFile({
       id: 0,

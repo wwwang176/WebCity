@@ -84,6 +84,7 @@ interface SerializedState {
   elevation?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
   abandonmentStress?: Record<string, number>;
   /** Rolling 7-day transfer usage history + current day + ring index */
+  highestMilestonePop?: number;
   transferHistory?: {
     history: Array<Record<string, number>>;
     index: number;
@@ -100,6 +101,8 @@ export function snapshotGameState(
     abandonmentStress?: Map<string, number>;
     elevationManager?: import('../elevation/ElevationManager').ElevationManager;
     transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay: number };
+    /** Highest milestone population ever reached — see Game.checkMilestone. */
+    highestMilestonePop?: number;
   },
 ): SerializedState {
   const cells: SerializedCell[] = [];
@@ -161,6 +164,7 @@ export function snapshotGameState(
     abandonmentStress: extra?.abandonmentStress
       ? Object.fromEntries(extra.abandonmentStress)
       : undefined,
+    highestMilestonePop: extra?.highestMilestonePop,
     transferHistory: extra?.transferHistory
       ? {
           history: extra.transferHistory.history.map(m => Object.fromEntries(m)),
@@ -186,6 +190,8 @@ export function serializeGameState(
 
 export interface DeserializedExtra {
   abandonmentStress: Map<string, number>;
+  /** Highest milestone population ever reached — see Game.checkMilestone. */
+  highestMilestonePop?: number;
   elevationData?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
   transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay: number };
 }
@@ -308,6 +314,7 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
       ? new Map(Object.entries(saved.abandonmentStress).map(([k, v]) => [k, Number(v)]))
       : new Map(),
     elevationData: saved.elevation,
+    highestMilestonePop: saved.highestMilestonePop,
     transferHistory: saved.transferHistory
       ? {
           history: saved.transferHistory.history.map(obj => new Map(Object.entries(obj).map(([k, v]) => [k, Number(v)]))),

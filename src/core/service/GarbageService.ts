@@ -58,6 +58,8 @@ export const GARBAGE = {
   POLLUTION_RADIUS: 5,
   /** Radius for rubbish left in the street — tight, it is a local nuisance. */
   UNCOLLECTED_POLLUTION_RADIUS: 2,
+  /** How many worst-affected positions share the uncollected penalty. */
+  UNCOLLECTED_POLLUTION_SITES: 12,
   /** Max bags collected per facility per service tick */
   COLLECTION_RATE: 140,
   /** Happiness penalty per garbage bag waiting in queue */
@@ -297,15 +299,28 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
         // rather than the street it was sitting on.
         const byPos = new Map<string, { x: number; y: number; count: number }>();
         for (const bag of this.pendingBags) {
-          const key = `${bag.x},${bag.y}`;
+          const key = toPosKey(bag.x, bag.y);
           const e = byPos.get(key);
           if (e) e.count++;
           else byPos.set(key, { x: bag.x, y: bag.y, count: 1 });
         }
-        if (byPos.size > 0) {
-          const perBag = uncollectedPenalty / this.pendingBags.length;
-          for (const e of byPos.values()) {
-            const amount = Math.ceil(perBag * e.count);
+        // Concentrate the penalty on the worst piles rather than rounding every
+        // position up to at least 1.
+        //
+        // Math.ceil made the total Sigma ceil(perBag * count) >= byPos.size, and
+        // byPos.size is the number of distinct rubbish-bearing cells — easily a
+        // thousand in a mid-size city. That put actual emission 10-20x above
+        // MAX_POLLUTION_PENALTY and made it grow with city size, while
+        // quantisation meant 200 buildings with 1 bag each polluted exactly as
+        // much as 200 with 100 bags each. The landfill branch conserves the
+        // penalty; this one has to as well or the two are incomparable
+        // (BUG-122).
+        const worst = [...byPos.values()].sort((a, b) => b.count - a.count)
+          .slice(0, GARBAGE.UNCOLLECTED_POLLUTION_SITES);
+        const totalCount = worst.reduce((sum, e) => sum + e.count, 0);
+        if (totalCount > 0) {
+          for (const e of worst) {
+            const amount = uncollectedPenalty * (e.count / totalCount);
             if (amount > 0) {
               sources.push({ x: e.x, y: e.y, amount, type: 'ground', radius: GARBAGE.UNCOLLECTED_POLLUTION_RADIUS });
             }

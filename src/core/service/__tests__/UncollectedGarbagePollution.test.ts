@@ -41,6 +41,36 @@ describe('uncollected garbage pollutes even with no landfill', () => {
     }
   });
 
+  it('should conserve the penalty instead of scaling with the number of piles', () => {
+    // Math.ceil rounded every rubbish-bearing cell up to at least 1, so the total
+    // was >= the number of distinct cells — easily 10-20x MAX_POLLUTION_PENALTY
+    // in a mid-size city, and growing with city size. It also quantised away the
+    // difference between one bag and a hundred (BUG-122).
+    // Many positions holding ONE bag each is the shape that exposes it: with
+    // perBag < 1, ceil rounds every single position up to a full point.
+    const garbage = new GarbageService();
+    for (let i = 0; i < 200; i++) garbage.reportGarbage(i % 50, Math.floor(i / 50), 1);
+    garbage.tick();
+
+    const total = garbage.getPollutionSources().reduce((s, x) => s + x.amount, 0);
+
+    expect(total).toBeGreaterThan(0);
+    expect(total).toBeCloseTo(garbage.getPollutionPenalty(), 5);
+  });
+
+  it('should put more pollution on a bigger pile', () => {
+    const garbage = new GarbageService();
+    for (let i = 0; i < 40; i++) garbage.reportGarbage(5, 5, 4);
+    for (let i = 0; i < 4; i++) garbage.reportGarbage(9, 5, 4);
+    garbage.tick();
+
+    const sources = garbage.getPollutionSources();
+    const big = sources.find(s => s.x === 5 && s.y === 5)!;
+    const small = sources.find(s => s.x === 9 && s.y === 5)!;
+
+    expect(big.amount).toBeGreaterThan(small.amount);
+  });
+
   it('should emit nothing when there is no garbage and no landfill', () => {
     const garbage = new GarbageService();
     garbage.tick();
