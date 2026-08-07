@@ -513,6 +513,23 @@ export function roadDistanceToTargets(
 
     const { x, y } = parsePosKeyUnsafe(cur.key);
 
+    // Targets are recorded when their road cell is SETTLED (popped), not when
+    // it is relaxed. Tentative relax-time costs meant whichever road cell
+    // happened to touch a target first won permanently, and road tiers differ by
+    // up to 6.7x (RURAL 3.33 vs HIGHWAY 0.5) — a rural lane at the door beat a
+    // motorway two cells away, and JobRelocation scored the commute on the wrong
+    // figure. Popping in increasing-cost order makes the first settled road cell
+    // adjacent to a target the cheapest one, so this is both correct and still
+    // compatible with the early exit (BUG-102). Reachability was never affected:
+    // an over-priced target was still in the map.
+    const curPk = toPosKey(x, y);
+    if (targets.has(curPk) && !result.has(curPk)) {
+      result.set(curPk, cur.cost);
+      foundCount++;
+    }
+    checkNeighborsForTargets(x, y, cur.cost);
+    if (foundCount >= targets.size) return result;
+
     for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = x + dx!;
       const ny = y + dy!;
@@ -532,13 +549,6 @@ export function roadDistanceToTargets(
         if (prev === undefined || newCost < prev) {
           cellCosts.set(nk, newCost);
           pq.push(nk, newCost);
-          if (targets.has(nk) && !result.has(nk)) {
-            result.set(nk, newCost);
-            foundCount++;
-            if (foundCount >= targets.size) return result;
-          }
-          checkNeighborsForTargets(nx, ny, newCost);
-          if (foundCount >= targets.size) return result;
         }
         continue;
       }
@@ -553,18 +563,6 @@ export function roadDistanceToTargets(
         if (prev === undefined || newCost < prev) {
           cellCosts.set(nk, newCost);
           pq.push(nk, newCost);
-
-          // Check position-level targets
-          const pk = toPosKey(nx, ny);
-          if (targets.has(pk) && !result.has(pk)) {
-            result.set(pk, newCost);
-            foundCount++;
-            if (foundCount >= targets.size) return result;
-          }
-
-          // Check 4-neighbors for non-road targets
-          checkNeighborsForTargets(nx, ny, newCost);
-          if (foundCount >= targets.size) return result;
         }
       }
     }
