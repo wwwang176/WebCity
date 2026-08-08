@@ -159,17 +159,31 @@ describe('stuck vehicle despawn', () => {
     follower.edgeIndex = 0;
     follower.edgeProgress = 0.0;
 
-    // Stall for a bit (not enough to despawn): block cross-cell movement
-    for (let i = 0; i < 50; i++) {
+    // Stall it, but provably not enough to despawn.
+    //
+    // stallTime starts at -(random * STALL_JITTER), i.e. anywhere in [-5, 0],
+    // and despawn is at DESPAWN_STALL_TIME (10). 50 frames x 0.25s accumulated
+    // 12.5s, so the final value landed in [7.5, 12.5] and the vehicle was
+    // despawned outright whenever the jitter came out above -2.5 — half the
+    // time. 32 frames accumulate 8s, so the final value is in [3, 8]: always
+    // positive, never at the threshold, for every possible draw.
+    for (let i = 0; i < 32; i++) {
       sim.advanceEdgeVehicles(0.25, () => false);
     }
     expect(sim.vehicles.some(v => v.id === follower.id)).toBe(true);
     expect(follower.stallTime).toBeGreaterThan(0);
 
-    // Unblock — allow cross-cell movement
-    sim.advanceEdgeVehicles(0.25, () => true);
+    // Unblock — allow cross-cell movement.
+    //
+    // Several frames, not one: each vehicle carries a random speed multiplier,
+    // so whether the follower cleared enough distance in a single 0.25s frame
+    // to count as movement depended on the draw. Asserting after a handful of
+    // frames tests the invariant — stallTime resets once it moves again —
+    // rather than the size of one step.
+    const progressBefore = follower.edgeProgress;
+    for (let i = 0; i < 5; i++) sim.advanceEdgeVehicles(0.25, () => true);
 
-    // Follower should have moved and stallTime reset
+    expect(follower.edgeProgress).toBeGreaterThan(progressBefore);
     expect(follower.stallTime).toBe(0);
   });
 

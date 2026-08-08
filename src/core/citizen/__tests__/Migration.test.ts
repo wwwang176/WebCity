@@ -5,6 +5,7 @@ import { EMIGRATION_TOLERANCE, calculateEmigrationTolerance, EducationLevel } fr
 import { calculateLandValue } from '../../economy/LandValue';
 import { MAX_SERVICE_SCORE } from '../../service/ServiceCoverageQuery';
 import { MAX_ORDINARY_LAND_VALUE } from '../Migration';
+import { useSeededRandom } from '../../__tests__/helpers/seededRandom';
 
 const attractiveCity: CityAttractiveness = {
   jobOpenings: 10,
@@ -16,6 +17,9 @@ const attractiveCity: CityAttractiveness = {
 };
 
 describe('Migration', () => {
+  // Deterministic ticks: see useSeededRandom.
+  useSeededRandom();
+
   it('should immigrate when city is attractive', () => {
     const mgr = new CitizenManager();
     const result = migrationTick(mgr, attractiveCity);
@@ -82,6 +86,9 @@ describe('Migration', () => {
 
 /* ── Phase A: 移民動態縮放 ── */
 describe('getImmigrationCap — 移民動態縮放', () => {
+  // Deterministic ticks: see useSeededRandom.
+  useSeededRandom();
+
   it('小城市上限：population=100 → tier=2, cap=3（popCap 瓶頸）', () => {
     // popCap = max(3, floor(100*0.01)) = 3
     // baseDemand = ceil((80-50)/10) = 3, tier = floor(log10(100)) = 2, demandCap = 6

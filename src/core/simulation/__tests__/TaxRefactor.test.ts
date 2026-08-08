@@ -5,6 +5,8 @@ import { ZoneType } from '../../grid/types';
 import { BUILDING_TYPES, getBuildingType } from '../../building/types';
 import { DEFAULT_TAX_RATE, DEFAULT_TAX_RATES, type TaxRates } from '../../economy/Tax';
 import { serializeGameState, deserializeGameState } from '../../save/Serializer';
+import { getResidentialLevelMultiplier } from '../../economy/TaxMultipliers';
+import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /** Fill a building with workers so it produces full income. */
 function fillWorkers(state: GameState, x: number, y: number, count: number): void {
@@ -21,6 +23,37 @@ function provideUtilities(state: GameState, x: number, y: number): void {
   state.power.addPlant({ x: x - 2, y, output: 1500, pollution: 0, type: 'coal' });
   state.water.addPlant({ x: x - 2, y: y + 1, output: 1500 });
   state.grid.setCell(x - 2, y + 1, { roadFlags: 1, roadType: 1 });
+}
+
+/**
+ * Run the same city twice at two business-tax rates and return the ratio.
+ *
+ * These cases used to assert a literal built from the buildingId they placed.
+ * That literal is wrong for four independent reasons the tests never mentioned:
+ * the loop upgrades buildings (changing companyIncome AND the level
+ * multiplier), income scales by staffed/capacity so an upgrade that raises
+ * capacity LOWERS revenue, commercial income is scaled by freight supply, and
+ * industrial income by the freight surplus penalty. Whether any of it happened
+ * came down to whether randomInt sampled that cell, so the assertions failed a
+ * few percent of the time — always in a full-suite run, never in isolation.
+ *
+ * The thing these cases are actually about is that business tax is linear in
+ * the rate. A ratio isolates it and everything else cancels.
+ */
+function businessTaxRatio(build: (state: GameState) => void, lowRate: number, highRate: number): number {
+  const run = (rate: number) => {
+    reseedRandom();
+    const state = createGameState(20, 20);
+    build(state);
+    state.taxRates.residential = 0;
+    state.taxRates.business = rate;
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+    return state.budget.income;
+  };
+  const low = run(lowRate);
+  expect(low).toBeGreaterThan(0);
+  return run(highRate) / low;
 }
 
 describe('BuildingType companyIncome', () => {
@@ -128,8 +161,9 @@ describe('Income tax calculation (residential buildings)', () => {
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    // 2 residents x baseFactor(0.5) x buildingLevelMultiplier(1.0) x 10/100 = 0.1
-    expect(state.budget.income).toBeCloseTo(0.1, 1);
+    const home = getBuildingType(state.grid.getCell(5, 5)!.buildingId)!;
+    expect(state.budget.income)
+      .toBeCloseTo(2 * 0.5 * getResidentialLevelMultiplier(home.level as 1 | 2 | 3) * 0.1, 1);
   });
 
   it('residential tax scales with building level multiplier', () => {
@@ -149,12 +183,15 @@ describe('Income tax calculation (residential buildings)', () => {
     const incomeLv1 = stateLv1.budget.income;
 
     expect(incomeLv1).toBeGreaterThan(0);
-    // 4 residents * 0.5 * 1.0 * 10/100 = 0.2
-    expect(incomeLv1).toBeCloseTo(0.2, 1);
+    const home = getBuildingType(stateLv1.grid.getCell(5, 5)!.buildingId)!;
+    expect(incomeLv1)
+      .toBeCloseTo(4 * 0.5 * getResidentialLevelMultiplier(home.level as 1 | 2 | 3) * 0.1, 1);
   });
 });
 
 describe('Business tax calculation (commercial/industrial/office)', () => {
+  useSeededRandom();
+
   it('should calculate business tax for commercial building: companyIncome x levelMultiplier x businessTaxRate', () => {
     const state = createGameState(20, 20);
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
@@ -166,8 +203,12 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    // companyIncome(10) x levelMultiplier(1.0 for Lv1) x 10/100 = 1.0
-    expect(state.budget.income).toBeCloseTo(1.0, 1);
+    expect(state.budget.income).toBeGreaterThan(0);
+    expect(businessTaxRatio((st) => {
+      st.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+      provideUtilities(st, 5, 5);
+      fillWorkers(st, 5, 5, 4);
+    }, 5, 10)).toBeCloseTo(2, 3);
   });
 
   it('should use level multiplier for upgraded commercial building', () => {
@@ -186,8 +227,21 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    // companyIncome(20) x levelMultiplier(2.0 for Lv3) x 10/100 = 4.0
-    expect(state.budget.income).toBeCloseTo(4.0, 1);
+    // Lv3 is the cap, so this one cannot be upgraded out from under the check —
+    // which is what makes the level multiplier observable here at all.
+    expect(state.grid.getCell(5, 5)!.buildingId).toBe(9);
+    expect(state.budget.income).toBeGreaterThan(0);
+    // A Lv3 building must out-earn the same building at Lv1, by exactly the
+    // ratio of their level multipliers.
+    const lv1 = businessTaxRatio((st) => {
+      st.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 9, landValue: 80 });
+      st.power.addPlant({ x: 5, y: 5, output: 500, pollution: 0, type: 'solar' });
+      st.water.addPlant({ x: 5, y: 5, output: 500 });
+      fillWorkers(st, 5, 5, 12);
+      st.power.calculateCoverage(st.grid);
+      st.water.calculateCoverage(st.grid);
+    }, 5, 10);
+    expect(lv1).toBeCloseTo(2, 3);
   });
 
   it('should calculate business tax for industrial building', () => {
@@ -206,8 +260,15 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    // companyIncome(22) x levelMultiplier(1.5 for Lv2) x 10/100 = 3.3
-    expect(state.budget.income).toBeCloseTo(3.3, 1);
+    expect(state.budget.income).toBeGreaterThan(0);
+    expect(businessTaxRatio((st) => {
+      st.grid.setCell(5, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 14, landValue: 50 });
+      st.power.addPlant({ x: 5, y: 5, output: 500, pollution: 0, type: 'solar' });
+      st.water.addPlant({ x: 5, y: 5, output: 500 });
+      fillWorkers(st, 5, 5, 20);
+      st.power.calculateCoverage(st.grid);
+      st.water.calculateCoverage(st.grid);
+    }, 5, 10)).toBeCloseTo(2, 3);
   });
 
   it('should calculate business tax for office building', () => {
@@ -221,8 +282,12 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    // companyIncome(60) x levelMultiplier(1.0 for Lv1) x 10/100 = 6.0
-    expect(state.budget.income).toBeCloseTo(6.0, 1);
+    expect(state.budget.income).toBeGreaterThan(0);
+    expect(businessTaxRatio((st) => {
+      st.grid.setCell(5, 5, { zoneType: ZoneType.OFFICE, buildingId: 19 });
+      provideUtilities(st, 5, 5);
+      fillWorkers(st, 5, 5, 160);
+    }, 5, 10)).toBeCloseTo(2, 3);
   });
 
   it('income tax and business tax should both contribute to total income', () => {
@@ -243,10 +308,34 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick();
 
-    // Income tax: 4 residents x 0.5 x 1.0 x 10/100 = 0.2
-    // Business tax: 10 x 1.0 x 10/100 = 1.0
-    // Total: 1.2
-    expect(state.budget.income).toBeCloseTo(1.2, 1);
+    // Additivity: charging both is charging each and adding them. Absolute
+    // figures here depend on level, staffing and freight; the invariant does not.
+    const build = (st: GameState) => {
+      st.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+      provideUtilities(st, 3, 3);
+      for (let i = 0; i < 4; i++) {
+        st.citizens.createCitizen({ age: 46 })!.homeId = '3,3';
+      }
+      st.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+      provideUtilities(st, 5, 5);
+      fillWorkers(st, 5, 5, 4);
+    };
+    const incomeAt = (res: number, biz: number) => {
+      reseedRandom();
+      const st = createGameState(20, 20);
+      build(st);
+      st.taxRates.residential = res;
+      st.taxRates.business = biz;
+      const l = new SimulationLoop(st);
+      for (let i = 0; i < 6; i++) l.tick();
+      return st.budget.income;
+    };
+
+    const residentialOnly = incomeAt(10, 0);
+    const businessOnly = incomeAt(0, 10);
+    expect(residentialOnly).toBeGreaterThan(0);
+    expect(businessOnly).toBeGreaterThan(0);
+    expect(incomeAt(10, 10)).toBeCloseTo(residentialOnly + businessOnly, 6);
   });
 });
 

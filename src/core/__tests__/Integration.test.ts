@@ -89,7 +89,12 @@ describe('Integration Tests', () => {
     expect(state.clock.getTickInterval()).toBe(83);
   });
 
-  it('large map performance: 200x200 with 100 ticks', () => {
+  it('large map smoke test: 200x200 with 100 ticks', () => {
+    // Not a performance assertion despite the old name — it only checks that a
+    // full-size map ticks without throwing. It took ~4.6s against vitest's 5s
+    // default, so it passed alone and timed out under full-suite load, which
+    // made it the single noisiest test in the repo. Given an explicit budget it
+    // reports a real slowdown instead of machine load.
     const state = createGameState(200, 200);
     const loop = new SimulationLoop(state);
 
@@ -98,7 +103,7 @@ describe('Integration Tests', () => {
     }
 
     expect(state.clock.tick).toBe(100);
-  });
+  }, 30000);
 
   it('city without services has high crime, low health, no building upgrades', () => {
     const state = createGameState(30, 30);

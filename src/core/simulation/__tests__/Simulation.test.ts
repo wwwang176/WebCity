@@ -12,6 +12,9 @@ import { setSpecialization } from '../../district/Specialization';
 import { CitySpecType } from '../../district/CitySpecialization';
 import { DEFAULT_TAX_RATE } from '../../economy/Tax';
 import { BURNED } from '../../building/InfraPlacement';
+import { getBuildingLevelMultiplier } from '../../economy/TaxMultipliers';
+import { getBuildingType } from '../../building/types';
+import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /** Add power+water plants adjacent to a position so buildings there get utilities. */
 function provideUtilities(state: GameState, x: number, y: number): void {
@@ -660,7 +663,46 @@ describe('District integration', () => {
   });
 });
 
+/**
+ * Run the same city twice — once with the modification, once without — and
+ * return the revenue ratio.
+ *
+ * These cases used to assert a literal built from the buildingId they placed.
+ * That literal is wrong for three independent reasons the test never mentioned:
+ * the loop upgrades buildings (changing companyIncome AND the level
+ * multiplier), income scales by staffed/capacity so an upgrade that raises
+ * capacity LOWERS revenue, and commercial income is further scaled by freight
+ * supply. Whether any of it happened came down to whether randomInt sampled
+ * that cell, so the assertions failed a few percent of the time — always in a
+ * full-suite run, never in isolation.
+ *
+ * A ratio isolates the one thing these cases are actually about: the
+ * specialization multiplier. Everything else cancels, because the seeded run
+ * makes both cities evolve identically.
+ */
+function revenueRatio(build: (state: GameState) => void, modify: (state: GameState) => void): number {
+  const run = (withMod: boolean) => {
+    // Restart the stream so both cities see the same draws — otherwise the
+    // second run continues where the first stopped and they diverge.
+    reseedRandom();
+    const state = createGameState(20, 20);
+    if (withMod) modify(state);
+    build(state);
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+    return state.budget.income;
+  };
+  const base = run(false);
+  expect(base).toBeGreaterThan(0);
+  return run(true) / base;
+}
+
 describe('Specialization integration', () => {
+  // Job relocation reshuffles workers, which moves occupancy and therefore
+  // revenue. Seeded so the fixture's staffing is stable; the assertions below
+  // still read the building's ACTUAL level, so they are not fitted to the seed.
+  useSeededRandom();
+
   it('MINING specialization should increase revenue for industrial buildings in district', () => {
     const state = createGameState(20, 20);
     // Create district with MINING specialization
@@ -686,49 +728,47 @@ describe('Specialization integration', () => {
   });
 
   it('TOURISM specialization should boost revenue by 1.5x for buildings in district', () => {
-    const state = createGameState(20, 20);
-    const d = state.districts.createDistrict('TourismDistrict');
-    setSpecialization(state.districts, d.id, Specialization.TOURISM);
-
-    for (let x = 3; x <= 5; x++) {
-      state.districts.addCellToDistrict(d.id, x, 5);
-      state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-      fillWorkers(state, x, 5, 4);
-    }
-    provideUtilities(state, 3, 5);
-
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < 6; i++) loop.tick();
-
-    // 3 buildings × companyIncome(10) × levelMult(1.0) × 1.5 (tourism bonus) × businessTaxRate/100
-    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const expectedWithBonus = 3 * 10 * 1.0 * 1.5 * (businessTax / 100);
-    expect(state.budget.income).toBeCloseTo(expectedWithBonus, 1);
+    const ratio = revenueRatio(
+      (state) => {
+        for (let x = 3; x <= 5; x++) {
+          state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+          fillWorkers(state, x, 5, 4);
+        }
+        provideUtilities(state, 3, 5);
+      },
+      (state) => {
+        const d = state.districts.createDistrict('TourismDistrict');
+        setSpecialization(state.districts, d.id, Specialization.TOURISM);
+        for (let x = 3; x <= 5; x++) state.districts.addCellToDistrict(d.id, x, 5);
+      },
+    );
+    expect(ratio).toBeCloseTo(1.5, 3);
   });
 
   it('NONE specialization should not modify revenue', () => {
-    const state = createGameState(20, 20);
-    const d = state.districts.createDistrict('NormalDistrict');
-    state.districts.addCellToDistrict(d.id, 5, 5);
-    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    provideUtilities(state, 5, 5);
-    fillWorkers(state, 5, 5, 4);
-    state.grid.setCell(10, 10, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    provideUtilities(state, 10, 10);
-    fillWorkers(state, 10, 10, 4);
-
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < 6; i++) loop.tick();
-
-    // Both buildings should generate same revenue (no bonus)
-    // Small Shop: companyIncome=10, Lv1, levelMult=1.0
-    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const expected = 2 * 10 * 1.0 * (businessTax / 100); // 2 buildings × companyIncome × businessTax
-    expect(state.budget.income).toBeCloseTo(expected, 1);
+    const ratio = revenueRatio(
+      (state) => {
+        for (const [x, y] of [[5, 5], [10, 10]] as const) {
+          state.grid.setCell(x, y, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+          provideUtilities(state, x, y);
+          fillWorkers(state, x, y, 4);
+        }
+      },
+      (state) => {
+        const d = state.districts.createDistrict('NormalDistrict');
+        state.districts.addCellToDistrict(d.id, 5, 5);
+      },
+    );
+    expect(ratio).toBeCloseTo(1.0, 3);
   });
 });
 
 describe('CitySpecialization integration', () => {
+  // Job relocation reshuffles workers, which moves occupancy and therefore
+  // revenue. Seeded so the fixture's staffing is stable; the assertions below
+  // still read the building's ACTUAL level, so they are not fitted to the seed.
+  useSeededRandom();
+
   it('GameState should include citySpec', () => {
     const state = createGameState(20, 20);
     expect(state.citySpec).toBeDefined();
@@ -736,37 +776,27 @@ describe('CitySpecialization integration', () => {
   });
 
   it('GAMBLING_CITY should increase all building revenue by 1.4x', () => {
-    const state = createGameState(20, 20);
-    state.citySpec.choose(CitySpecType.GAMBLING_CITY, 5000);
-
-    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    provideUtilities(state, 5, 5);
-    fillWorkers(state, 5, 5, 4);
-
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < 6; i++) loop.tick();
-
-    // companyIncome(10) × levelMult(1.0) × businessTax/100 × gambling(1.4)
-    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const expected = 10 * 1.0 * (businessTax / 100) * 1.4;
-    expect(state.budget.income).toBeCloseTo(expected, 1);
+    const ratio = revenueRatio(
+      (state) => {
+        state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+        provideUtilities(state, 5, 5);
+        fillWorkers(state, 5, 5, 4);
+      },
+      (state) => state.citySpec.choose(CitySpecType.GAMBLING_CITY, 5000),
+    );
+    expect(ratio).toBeCloseTo(1.4, 3);
   });
 
   it('TECH_CITY should increase revenue by 1.25x', () => {
-    const state = createGameState(20, 20);
-    state.citySpec.choose(CitySpecType.TECH_CITY, 5000);
-
-    state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
-    provideUtilities(state, 3, 3);
-    fillWorkers(state, 3, 3, 15);
-
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < 6; i++) loop.tick();
-
-    // companyIncome(20) × levelMult(1.0) × businessTax/100 × tech(1.25)
-    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const expected = 20 * 1.0 * (businessTax / 100) * 1.25;
-    expect(state.budget.income).toBeCloseTo(expected, 1);
+    const ratio = revenueRatio(
+      (state) => {
+        state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
+        provideUtilities(state, 3, 3);
+        fillWorkers(state, 3, 3, 15);
+      },
+      (state) => state.citySpec.choose(CitySpecType.TECH_CITY, 5000),
+    );
+    expect(ratio).toBeCloseTo(1.25, 3);
   });
 });
 
