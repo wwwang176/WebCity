@@ -2151,3 +2151,41 @@ TDD 修復；隨後每個修復 commit 再由一個獨立 agent 反向審查，�
 | MultiCellUtilityDemand | 只走 calculateDemand，bfsBudgetDrainFlood 零覆蓋 | 補上 all-or-nothing 案例，含「從次格進入」這條唯一需要 footprint 計費鍵的路徑 |
 | ShoppingAccessElevated | 只斷言 hasAccess 布林，重複計數不會被發現 | 釘住 ratio，並新增「匝道把兩個地面網路接起來」的正向案例與無匝道對照 |
 | Simulation / TaxRefactor / TrafficSimulation / Integration / Migration / CommuteCache | 六條測試隨機失敗（約數個百分點），全出現在整包執行、單獨跑必過 | 收益類改為比值與加法性不變量；stall 測試的 50 幀在半數抽樣下會直接 despawn，改為算術上安全的 32 幀；200x200「效能」測試其實只斷言時鐘前進，4.6s 對上 5s 預設逾時 → 給定 30s 預算。以 6 組不同種子驗證斷言不是套在單一種子上 |
+
+---
+
+## 第七十一輪：逐一對抗審查全部 commit (BUG-147 ~ BUG-166)
+
+分兩批共 14 個 read-only 審查代理，逐 commit 對抗審查。核心要求一致：
+**把修復 revert 掉重跑測試，證明測試會轉紅**。這一輪抓到的多數不是新寫的程式碼有錯，
+而是「測試根本沒鑑別力」與「修復只做了一半」。
+
+### 已修（本輪）
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-147 | building/BuildingGrowth.ts, zone/DensityRules.ts | tryGrow 把 getMaxDensity 回傳的「道路允許密度」直接當成要蓋的建築等級，四種區劃/道路組合永遠蓋不出來：低密度住商在 4/6 線道旁、高密度住商在 2 線道或鄉道旁。canGrow 全數回 true，canZone 無密度閘門，玩家一次拖曳就會踩到 | **Critical** |
+| BUG-148 | Game.ts | rebuildDirtySubsystems 的 d.buildings 分支呼叫 buildingRenderer.build() 沒帶 blocker 查詢：遊戲開始、載入存檔、災害後所有 overlay 都無色；且該分支在 zoneOverlaysDirty 之後執行，同一幀兩者都髒時會覆蓋掉正確色調 | High |
+| BUG-149 | Game.ts | 只有重劃與拆除會讓 blocker 色調失效。鋪路、蓋電廠、切換行政區政策——overlay 自己要求玩家去做的三件事——都不會。靠每 60 tick 的 onTerrainChanged 自癒，暫停時完全不會 | Medium |
+| BUG-150 | Game.ts | summariseZoneBlockers 每次面板輪詢（約 6 Hz）都做全圖掃描，每個空劃區格再跑兩次 (2r+1)² 鄰域掃描，只為更新一個數字 | High |
+| BUG-151 | Game.ts | 「Also affected N cells」把選取的格子自己也算進去 | Low |
+| BUG-152 | Game.ts | getSelectedBuilding 結尾的 `return sel` 宣稱是窮舉檢查，實際不是：新增 kind 可賦值給回傳型別，會靜默編譯成它要防的那個永不更新的淺拷貝 | Low |
+
+### 尚未處理（已排入 TODO）
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-153 | ui/modals/overview/ServicesPage.tsx | 污水廠列用「已過濾的分母」除「未過濾的分子」：兩座 2250 廠停一座、產量 3000 時，兩列都顯示 3000/2250 133%，連停機那座也算；全部停機時 cap=0 觸發 `>0` 保護，每列顯示 0/2250「Normal」綠字——正是城市完全不處理污水的當下 | High |
+| BUG-154 | ui/modals/overview/ServicesPage.tsx | 警消醫短缺警告的 `cap > 0 &&` 前置條件，在 BUG-138 過濾容量後變成「全部停機時反而不警告」。教育那列沒有這個前置條件，同一檔案內行為不一致 | High |
+| BUG-155 | ui/modals/overview/InfraPage.tsx | 掩埋場列同樣是未過濾 getCurrentLoad 配過濾後的 getTotalCapacity，顯示「1800 / 0」且進度條回到 0% 的健康色 | Medium |
+| BUG-156 | service/GarbageSewageProduction.ts | 污水/垃圾產量仍計入廢墟（不看 reserved），而 BUG-131 之後 getCellDemandAt 對同一格回傳 0：同一個 p.capacity 被拿去對照兩種不同的 demand 定義，且廢墟污水被免費供應後不再排放水污染 | Medium |
+| BUG-157 | Game.ts | BUG-111（設施覆蓋劃區 overlay 未清）還有兩條路徑沒修：placeAirport 直接呼叫 placeInfraOnGrid 完全沒清 54 格；placeTransportStop 非機場分支保留 zoneType，重新製造 v7 migration 要清的狀態 | Medium |
+| BUG-158 | transport/BusSystem.ts | rebuildAllSegments 對「永久無法規劃路徑」的路線每次 lane graph 重建都 bumpTopologyVersion（該路線沒有 routeSegments 條目，永遠不會被 continue 跳過）：城市任何一處鋪路都會清空 transfer 面板的建築歸屬，正是 version 機制要防的事 | Medium |
+| BUG-159 | traffic/SidewalkGraph.ts | SidewalkEdge.id 不決定幾何：節點位置取自 ROAD_WIDTHS[roadType]，id 不含 roadType。道路升級後 edge id 不變 → retireAgentsOnDeadEdges 不退場 → 行人依舊照舊節點位置內插，走在拓寬後的車道裡最長 120 秒 | Medium |
+| BUG-160 | traffic/SidewalkGraph.ts | SidewalkEdge.id 不含 type 也不含 intersectionCellKey：crosswalk 與 level_crossing 可產生同 id，addBidirectionalEdge 以先到者為準。號誌路口正北格若有平交道，該處行人直接繞過剛接好的紅綠燈 | Medium |
+| BUG-161 | simulation/SimulationLoop.ts | buildingGrowthTick 直接 updateCells 改人行道圖，不設 sidewalkGraphDirty，所以 retireAgentsOnDeadEdges 永遠看不到它。建築拆除是 building_entrance edge 消失的最高頻來源，正是 84a4713 宣稱修好的那個案例 | Medium |
+| BUG-162 | elevation/ElevationManager.ts | chooseStartLevel 不問該層有沒有道路，重蹈 getHighestRoadType 要修的錯：road 在 level 3、rail 在 level 1、目標 level 2 時距離同為 1，取小者選中鐵路層 → 起點寫入 roadType 0，蓋出無人能到的高架 | Medium |
+| BUG-163 | elevation/ElevatedRoadBuilder.ts | existingAtStart 保護只在 !segAtTargetLevel 時生效：目標層剛好是純鐵路層時，直接寫 railType:0 抹掉一段高架鐵路，不收費也不提示 | Medium |
+| BUG-164 | simulation/SimulationLoop.ts | 住宅容量回呼對「有 homeId 但沒有建築」的地址回傳 FALLBACK_RESIDENTS=8，而 countResidentialCapacity 對同一格回傳 0。BUG-140 拿掉 createCitizen 的總量閘門後，這是生育的唯一上限 | Medium |
+| BUG-165 | citizen/Migration.ts | BUG-140 只修了每月一次的生育路徑，每 6 tick 的移民路徑仍走 createCitizen；兩條路徑對「客滿」定義不一致，移民會在家庭中途中斷而 slots 已先行遞增 | Medium |
+| BUG-166 | citizen/Migration.ts, ui SummaryPage.tsx | countJobOpenings 改為 totalJobs - employed 後，attractiveness 的 JOB_SCORE(+20) 與失業罰則上限(−15)不再平衡：一個永遠填不滿的職缺在 100% 失業下淨值 +5，供給側煞車消失。SummaryPage 仍用舊定義 totalJobs - population，面板與模擬互相矛盾 | Medium |

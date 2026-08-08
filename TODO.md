@@ -1108,8 +1108,55 @@
 - [ ] `highestMilestonePop` 沒有 round-trip 測試；非有限值會讓 `Math.max` 回傳 NaN 並永久停用里程碑
 - [ ] `dirtyRoadCells` 跨編輯累積，同一 tick 內拆除再改向重鋪會逃過清掃（已由 edge-identity 改法解決，待確認）
 
-### 尚未送審的 commit
-- [ ] 第三批 6 個：0367f65 之後的 docs commit 與本輪修復 commit 尚未逐一對抗
+### 第三批對抗審查（92a4d03 / 84a4713 / 45e2901 / 77bcef5 / 6c2f042 / 6ac7d9e / 43a145d）
+
+**已修**：BUG-147 ~ BUG-152（見 BUGS.md 第七十一輪）。BUG-147 是這一輪最重的一條，
+且不是本輪 commit 引入的——四種區劃/道路組合永遠蓋不出建築，是既有缺陷。
+
+**待修 — 缺陷**（BUG-153 ~ BUG-166，細節見 BUGS.md）
+- [ ] BUG-153 ServicesPage 污水廠列：過濾分母 / 未過濾分子，全部停機時顯示綠色「Normal」
+- [ ] BUG-154 警消醫短缺警告在容量歸零時反而不觸發
+- [ ] BUG-155 InfraPage 掩埋場列顯示「1800 / 0」且進度條回到健康色
+- [ ] BUG-156 污水/垃圾產量仍計入廢墟，與 getCellDemandAt 對同格的答案矛盾
+- [ ] BUG-157 BUG-111 還有 placeAirport / placeTransportStop 兩條路徑沒修
+- [ ] BUG-158 永久停駛的公車路線讓城市任一處鋪路都清空 transfer 面板
+- [ ] BUG-159 SidewalkEdge.id 不含 roadType，道路拓寬後行人走在車道裡
+- [ ] BUG-160 SidewalkEdge.id 不含 type，crosswalk 與 level_crossing 撞 id，行人繞過紅綠燈
+- [ ] BUG-161 buildingGrowthTick 改人行道圖但不設 dirty，退場掃描永遠看不到
+- [ ] BUG-162 chooseStartLevel 不問該層有沒有道路，平手時會選中純鐵路層
+- [ ] BUG-163 目標層為純鐵路層時，高架道路直接抹掉一段高架鐵路
+- [ ] BUG-164 住宅容量回呼對無建築地址回傳 8，與 countResidentialCapacity 不一致
+- [ ] BUG-165 BUG-140 只修生育路徑，移民路徑仍走舊閘門
+- [ ] BUG-166 JOB_SCORE 與失業罰則失衡；SummaryPage 仍用舊的職缺定義
+
+**待修 — 測試品質**（審查代理實際 revert 修復後仍為綠）
+- [ ] `TransitNetworkInvalidation` 的「should still drop the departing ferry vessel path」：
+      從未 tick，vesselPaths 恆空，getVesselPath 無條件回 null。把 onVehicleRemoved 清空仍綠
+- [ ] `MultiCellUtilityDemand` 的「should not let a ruin starve a live house of power」：
+      電廠容量由 `pg.getDemand()` 決定，未修版本下那本來就是兩戶份，兩邊都會供上電
+- [ ] `CollectPendingScaling` 的「should collect each surviving bag at most once」：
+      12 個袋子全在單 tick 收完，`after` 是空陣列，斷言是恆真式
+- [ ] `ShoppingAccessElevated` 商業側斷言仍卡在 `Math.min(1, ...)` 上限，重複計算也測不出來
+- [ ] `BirthAndJobOpenings` 4 個生育案例有 3 個在還原修復後仍綠；
+      「should not count children and retirees as employed」與年齡完全無關（那些人只是沒有 workplaceId）
+- [ ] `ElevatedLevelChoice` 10 個案例有 7 個對「取最高層 vs 取最大值」沒有鑑別力
+      （HIGHWAY 放 level 2 時兩種語意答案相同，要倒過來放才測得出）
+- [ ] `FerryPathCacheEviction` 的負向對照：在 x=7 築壩不會切斷 (2,2)↔(2,10)，
+      該斷言在「完全不清快取」與「整個 clear()」下都會過
+- [ ] `PedestrianSignalWiring` 用與產品碼相同的算式重算 approachIsNS，
+      把相位對應反過來仍會綠
+
+**待修 — 低優先**
+- [ ] `getAllEdges()` 內部已建好一份 id Set 卻丟棄，呼叫端重建第二份
+- [ ] `SimulationLoop.rebuildLaneGraph` 的 `affectedCells` 區域變數已無人使用
+- [ ] `PedestrianManager` 的 WAITING_SIGNAL 重檢分支永遠不會擋人（currentEdge 恆為接近邊）
+- [ ] `getHighestRoadType` 取的是 enum 最大值而非最吵：ONE_WAY(6) > HIGHWAY(5) 但噪音係數 1.2 < 2.0
+- [ ] `SchoolService.getTotalCapacity` 用 getOperationalFacilities（只看電）而非 getActiveFacilities（電+路）
+- [ ] `DistrictModal` 區域列的 `{d.name}` / `{d.cells.size}` 仍不具反應性
+- [ ] `PolicyManager.applyPolicy` 以 type 去重，存為 `active:false` 的已實作政策仍永久卡死
+- [ ] `GridPollutionSources` 的 `reserved` 必填不具強制力（method shorthand 在 strictFunctionTypes 下仍是雙變）
+- [ ] `birthTick` 移到 per-day 區塊之前，新生兒當天即暴露於 deathTick、且讀到前一天的 age
+- [ ] `Migration` 的 AVG_LAND_VALUE `× 0.75` 是包裝成推導的魔術數字，實測門檻仍偏低
 
 ## E2E 實際遊玩觀察（Playwright 有頭，60x60 地圖）
 
