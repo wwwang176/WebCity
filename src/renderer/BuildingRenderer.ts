@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
 import { getBuildingMaterial } from './BuildingMaterial';
+import { appearanceOf } from './BuildingAppearance';
 import { getVariants, ZONE_TYPES } from './geometry/buildings/registry';
 import { stampZoneCategory, ZONE_CAT, tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
@@ -13,14 +14,6 @@ import { disposeGroup } from './disposeGroup';
 import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
 import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '../core/building/BuildingUtilityWarning';
-
-// ===== Deterministic pseudo-random based on position =====
-// 下一個 commit 會把這裡整個換成 BuildingAppearance.appearanceOf。
-function hash(x: number, y: number): number {
-  let h = (x * 374761393 + y * 668265263 + 1013904223) | 0;
-  h = ((h ^ (h >> 13)) * 1274126177) | 0;
-  return ((h ^ (h >> 16)) >>> 0) / 4294967296;
-}
 
 // ===== Color Palettes (realistic, zone-distinguishable) =====
 const ZONE_PALETTES: Record<number, number[]> = {
@@ -204,8 +197,12 @@ export class BuildingRenderer {
     const variants = getVariants(zoneType, level);
     if (variants.length === 0) return;
 
-    const vi = Math.floor(hash(x, y) * variants.length) % variants.length;
-    const key = `${zoneType}_${vi}`;
+    const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
+    const app = appearanceOf({
+      x, y, zoneType, level, seedByte: 0,
+      variantCount: variants.length, paletteSize: palette.length,
+    });
+    const key = `${zoneType}_${app.variantIndex}`;
     const mesh = this.variantMeshes.get(key);
     if (!mesh) return;
 
@@ -301,38 +298,34 @@ export class BuildingRenderer {
     x: number, y: number, zoneType: number,
     level: number, burned: boolean, abandoned = false,
   ): void {
-    const h = hash(x, y);
-    const h2 = hash(x + 100, y + 100);
-    const h3 = hash(x + 200, y + 200);
+    const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
+    const app = appearanceOf({
+      x, y, zoneType, level, seedByte: 0,
+      variantCount: getVariants(zoneType, level).length,
+      paletteSize: palette.length,
+    });
 
     const heightRange = ZONE_HEIGHTS[zoneType] ?? { min: 0.3, max: 1.0 };
     const levelFactor = level / 3;
     const baseHeight = heightRange.min + (heightRange.max - heightRange.min) * levelFactor;
-    const heightVar = 1.0 + (h2 - 0.5) * 0.35;
-    const finalHeight = baseHeight * heightVar;
+    const finalHeight = baseHeight * app.heightScale;
 
-    const widthVar = 0.85 + h3 * 0.3;
-    const depthVar = 0.85 + hash(x + 300, y + 300) * 0.3;
-
-    const rotIndex = Math.floor(hash(x + 400, y + 400) * 4);
-    this._rotation.makeRotationY((rotIndex * Math.PI) / 2);
-    this._scale.makeScale(widthVar, finalHeight, depthVar);
+    this._rotation.makeRotationY((app.rotationQuarter * Math.PI) / 2);
+    this._scale.makeScale(app.widthScale, finalHeight, app.depthScale);
     this._matrix.multiplyMatrices(this._scale, this._rotation);
     this._matrix.setPosition(x, 0.05, y);
     mesh.setMatrixAt(idx, this._matrix);
 
     if (burned) {
-      const burnLightness = 0.08 + h * 0.07;
+      const burnLightness = 0.08 + app.facadeSeed[0] * 0.07;
       this._color.setHSL(0.05, 0.1, burnLightness);
     } else {
-      const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
-      const baseColor = palette[Math.floor(h * palette.length) % palette.length]!;
-      this._color.set(baseColor);
+      this._color.set(palette[app.paletteIndex]!);
       const hsl = { h: 0, s: 0, l: 0 };
       this._color.getHSL(hsl);
-      hsl.h += (h2 - 0.5) * 0.03;
-      hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + (h3 - 0.5) * 0.1));
-      hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + (h - 0.5) * 0.1));
+      hsl.h += app.hueShift;
+      hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + app.satShift));
+      hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + app.lightShift));
       this._color.setHSL(hsl.h, hsl.s, hsl.l);
     }
     mesh.setColorAt(idx, this._color);
