@@ -246,52 +246,52 @@ export class TrafficSimulation {
    * @returns how many vehicles were retired
    */
   /**
-   * Retire every commute/freight vehicle, whatever it is driving on.
+   * Retire any commute/freight vehicle whose remaining path contains an edge
+   * the graph no longer owns.
    *
-   * For a FULL lane-graph rebuild, where every LaneEdge object is replaced and
-   * there is no dirty-cell set to scope the sweep by. That branch retired
-   * nothing at all, so after a save load, the initial build, or any edit that
-   * reported no affected cells, live vehicles kept walking edgePath arrays of
-   * orphaned LaneEdges — the same defect BUG-108 fixed for the incremental
-   * branch, on the path nobody looked at.
+   * This is the exact question. The cell-key heuristics it replaces were each
+   * an approximation of it, and each got a case wrong:
    *
-   * Same exclusions as markVehiclesArrivedOnCells: buses and service vehicles
-   * are owned by managers that handle the rebuild themselves.
+   *  - "retire on any dirty cell" deleted the traffic already driving on a road
+   *    that was merely extended or upgraded (BUG-116);
+   *  - "retire where the road is gone" missed a DOWNGRADE. RoadBuilder writes
+   *    the new tier unconditionally and clamps the cost at 0, so drawing
+   *    TWO_LANE over SIX_LANE is free and deletes the lane-1 and lane-2 points
+   *    with every edge on them, leaving those vehicles driving off the road
+   *    surface and sharing no edge id with the lookahead index, so they pass
+   *    through oncoming traffic. It also missed demolish-then-relay-in-another
+   *    -direction inside one tick, where the cell still has a road but none of
+   *    its old edges survive;
+   *  - and the wholesale full-rebuild sweep contradicted the first rule
+   *    outright, deleting all traffic whenever the affected set was unknown —
+   *    or merely EMPTY, which is a statement that nothing changed.
+   *
+   * Edge ids are deterministic, so a rebuild that changes nothing produces the
+   * same ids and retires nobody. That removes the need to distinguish a full
+   * rebuild from an incremental one at all.
+   *
+   * Buses and service vehicles are owned by their managers, which handle road
+   * changes themselves. Killing a bus here is unrecoverable: busVehicleIds and
+   * route.vehicles still count it and nothing reconciles them against
+   * traffic.vehicles, so the route is left permanently without a vehicle
+   * (BUG-115).
+   *
+   * @returns how many vehicles were retired
    */
-  markCommuteVehiclesArrived(): number {
+  retireVehiclesOnDeadEdges(liveEdgeIds: ReadonlySet<string>): number {
     let count = 0;
     for (const v of this.vehicles) {
       if (v.arrived || v.edgePath.length === 0) continue;
-      if (v.busState !== undefined || v.serviceType !== undefined) continue;
-      v.arrived = true;
-      count++;
-    }
-    return count;
-  }
-
-  markVehiclesArrivedOnCells(cellKeys: ReadonlySet<string>): number {
-    let count = 0;
-    for (const v of this.vehicles) {
-      if (v.arrived || v.edgePath.length === 0) continue;
-      // Buses and service vehicles are owned by their managers, which already
-      // handle road changes (BusSystem.onRoadChanged recomputes segments and
-      // writes fresh edgePaths; service vehicles are cleared wholesale). Killing
-      // a bus here is unrecoverable: busVehicleIds and route.vehicles still
-      // count it and nothing ever reconciles them against traffic.vehicles, so
-      // the route is left permanently without a vehicle (BUG-115).
       if (v.busState !== undefined || v.serviceType !== undefined) continue;
       for (let i = v.edgeIndex; i < v.edgePath.length; i++) {
-        const e = v.edgePath[i]!;
-        if (cellKeys.has(e.from.cellKey) || cellKeys.has(e.to.cellKey)
-          || (e.viaCellKey !== undefined && cellKeys.has(e.viaCellKey))) {
-          v.arrived = true;
-          count++;
-          break;
-        }
+        if (!liveEdgeIds.has(v.edgePath[i]!.id)) { v.arrived = true; count++; break; }
       }
     }
     return count;
   }
+
+  // markVehiclesArrivedOnCells and markCommuteVehiclesArrived were removed —
+  // both were cell-key approximations of retireVehiclesOnDeadEdges above.
 
   /** Get IDs of all currently active vehicles. */
   /** Reusable Set for getActiveVehicleIds — caller must not hold reference across frames. */

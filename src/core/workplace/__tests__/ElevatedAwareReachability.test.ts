@@ -167,10 +167,20 @@ describe('workplace reachability is elevation-aware', () => {
 
     state.citizens.createCitizen({ age: 100 })!.homeId = HOME;
 
-    for (let i = 0; i < 24; i++) loop.tick();
+    // The jobless citizen is emigrated and replaced repeatedly — that is the
+    // point of the case — so the FINAL population is not a useful witness.
+    // Record whether anyone was ever there to be assigned, and whether anyone
+    // ever got the job.
+    let everHadCitizens = false;
+    let everEmployed = false;
+    for (let i = 0; i < 24; i++) {
+      loop.tick();
+      if (state.citizens.getPopulation() > 0) everHadCitizens = true;
+      if (state.citizens.getCitizens().some(c => c.workplaceId === WORK)) everEmployed = true;
+    }
 
-    expect(state.citizens.getPopulation()).toBeGreaterThan(0);
-    expect(state.citizens.getCitizens().some(c => c.workplaceId === WORK)).toBe(false);
+    expect(everHadCitizens).toBe(true);
+    expect(everEmployed).toBe(false);
   });
 
   it('should not disable the cache for an elevated RAIL line', () => {

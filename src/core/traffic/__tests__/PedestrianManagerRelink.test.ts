@@ -44,26 +44,33 @@ describe('PedestrianManager survives a sidewalk graph rebuild', () => {
     expect(pm.agents.length).toBe(before);
   });
 
-  it('should retire agents whose remaining route crosses a removed cell', () => {
-    // The mirror of the vehicle sweep. Keeping agents across a rebuild stopped
-    // them vanishing, but buildFromGrid replaces every node and edge, so an
-    // agent's edgePath describes pavement that no longer exists — and tick()
-    // never re-queries the graph. Pedestrians have no stallTime to save them
-    // (BUG-124).
+  it('should retire agents whose route contains an edge the graph dropped', () => {
+    // Keeping agents across a rebuild stopped them vanishing, but buildFromGrid
+    // replaces every node and edge, so an agent's edgePath describes pavement
+    // that no longer exists — and tick() never re-queries the graph.
+    // Pedestrians have no stallTime to save them (BUG-124).
+    //
+    // Asked by EDGE IDENTITY rather than by cell key: a cell that flipped from
+    // building to road still has a road, so a cell-key sweep never saw it,
+    // while every building_entrance edge on it was destroyed.
     const pm = new PedestrianManager(graphFor(road));
     pm.spawnPedestrian(1, 5, 8, 5, 1, PedestrianTripType.FULL_WALK);
     expect(pm.agents.length).toBeGreaterThan(0);
 
-    const retired = pm.markAgentsArrivedOnCells(new Set([toPosKey(5, 5)]));
+    const shortened = graphFor(road.filter(k => k !== toPosKey(5, 5)));
+    const live = new Set(shortened.getAllEdges().map(e => e.id));
 
-    expect(retired).toBeGreaterThan(0);
+    expect(pm.retireAgentsOnDeadEdges(live)).toBeGreaterThan(0);
   });
 
   it('should leave agents on untouched routes walking', () => {
+    // Same graph in, same edge ids out — nobody is retired.
     const pm = new PedestrianManager(graphFor(road));
     pm.spawnPedestrian(1, 5, 8, 5, 1, PedestrianTripType.FULL_WALK);
 
-    expect(pm.markAgentsArrivedOnCells(new Set([toPosKey(19, 19)]))).toBe(0);
+    const live = new Set(graphFor(road).getAllEdges().map(e => e.id));
+
+    expect(pm.retireAgentsOnDeadEdges(live)).toBe(0);
   });
 });
 

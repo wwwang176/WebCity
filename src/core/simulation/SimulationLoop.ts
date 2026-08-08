@@ -91,8 +91,6 @@ export class SimulationLoop {
   // ring buffers a slot early and discarding a day of statistics) and the whole
   // monthly block (a second fertility roll for every fertile adult). Neither is
   // idempotent, which made save-and-load a population lever (BUG-088).
-  /** Road cells removed by the most recent lane-graph rebuild — see rebuildSidewalkGraph. */
-  private lastRemovedRoadCells: Set<string> | null = null;
   private lastDeathDay: number;
   private lastBirthMonth: number;
   private lastRiderDay: number;
@@ -140,8 +138,6 @@ export class SimulationLoop {
   private transferGraphDirty = true;
   /** Transit structural version at the last transfer-graph rebuild. */
   private lastTransitVersion = -1;
-  /** Set when the last lane-graph rebuild was a full one, so the sidewalk pass matches. */
-  private fullSidewalkRebuild = false;
   /** Transit stop/route topology version at the last transfer-tracker reset. */
   private lastTransitTopologyVersion = -1;
   private flatRoutes: FlatRoute[] = [];
@@ -454,14 +450,7 @@ export class SimulationLoop {
     }
     // Rebuild sidewalk graph if roads changed
     if (this.sidewalkGraphDirty) {
-      this.rebuildSidewalkGraph(this.lastRemovedRoadCells);
-      if (this.fullSidewalkRebuild) {
-        // A full lane-graph rebuild replaced every sidewalk edge too, so no
-        // agent's edgePath points at anything the graph still owns.
-        this.state.pedestrianManager.markAllAgentsArrived();
-        this.fullSidewalkRebuild = false;
-      }
-      this.lastRemovedRoadCells = null;
+      this.rebuildSidewalkGraph();
       this.sidewalkGraphDirty = false;
     }
 
@@ -1682,24 +1671,22 @@ export class SimulationLoop {
     // edge identity (signals key on cellKey, car-following on edge.id). Retiring
     // on dirtiness alone made every road extension or upgrade visibly delete the
     // traffic already driving on that stretch (BUG-116).
-    if (affectedCells && affectedCells.size > 0) {
-      const removed = new Set<string>();
-      for (const key of affectedCells) {
-        if (!lookup || lookup.getCellByKey(key) === null) removed.add(key);
-      }
-      if (removed.size > 0) this.state.traffic.markVehiclesArrivedOnCells(removed);
-      // Handed to the sidewalk rebuild, which runs later in the same tick and
-      // needs the same set (dirtyRoadCells has been nulled by then).
-      this.lastRemovedRoadCells = removed;
-    } else {
-      // FULL rebuild: buildFromGrid replaced every LaneEdge object, so no
-      // vehicle's edgePath points at anything the graph still owns. There is no
-      // cell set to scope by, and this branch retired nothing at all — the same
-      // defect BUG-108 fixed for the incremental branch, on the path nobody
-      // looked at.
-      this.state.traffic.markCommuteVehiclesArrived();
-      this.fullSidewalkRebuild = true;
-    }
+    //
+    // Ask the exact question — "does the graph still own every edge on this
+    // vehicle's remaining path?" — instead of approximating it from cell keys.
+    //
+    // Both previous approximations were wrong in a different direction, and the
+    // full-vs-incremental branch they needed contradicted itself: the
+    // incremental side argued that identical geometry makes an object swap
+    // harmless, while the full side deleted all traffic on exactly that
+    // reasoning's opposite. It also could not tell a NULL affected-set ("we
+    // don't know") from an EMPTY one ("we know, and nothing changed"), so
+    // dragging the demolish tool over bare grass wiped every car in the city.
+    // Edge ids are deterministic, so a rebuild that changes nothing retires
+    // nobody and the distinction disappears.
+    const liveEdgeIds = new Set<string>();
+    for (const e of this.laneGraph.getAllEdges()) liveEdgeIds.add(e.id);
+    this.state.traffic.retireVehiclesOnDeadEdges(liveEdgeIds);
 
     // Sync graph to SharedArrayBuffer for Worker pathfinding
     this.syncGraphToWorker();
@@ -1734,7 +1721,7 @@ export class SimulationLoop {
     this.pathWorker.postMessage(msg);
   }
 
-  private rebuildSidewalkGraph(removedSidewalkCells?: ReadonlySet<string> | null): void {
+  private rebuildSidewalkGraph(): void {
     const grid = this.state.grid;
     const roadCellKeys: string[] = [];
     const buildingCellKeys: string[] = [];
@@ -1770,13 +1757,15 @@ export class SimulationLoop {
     // A* to refill. It also reset levelCrossings to null, which would have
     // silently un-wired BUG-105 on the first edit (BUG-104).
     this.state.pedestrianManager.setSidewalkGraph(this.state.sidewalkGraph);
-    // Retire pedestrians whose remaining route crossed a removed cell — the
-    // mirror of the vehicle sweep in rebuildLaneGraph. Keeping agents across a
-    // rebuild stopped them vanishing, but it also let them keep walking edges
-    // that buildFromGrid had just replaced (BUG-124).
-    if (removedSidewalkCells && removedSidewalkCells.size > 0) {
-      this.state.pedestrianManager.markAgentsArrivedOnCells(removedSidewalkCells);
-    }
+
+    // Retire agents whose remaining route contains an edge the rebuilt graph no
+    // longer owns — the pedestrian mirror of retireVehiclesOnDeadEdges, and for
+    // the same reason: a cell-key sweep could not see a cell that flipped from
+    // BUILDING to road, which still has a road but lost every building_entrance
+    // node it had, so an agent kept walking to the door of a razed house.
+    const liveSidewalkEdgeIds = new Set<string>();
+    for (const e of this.state.sidewalkGraph.getAllEdges()) liveSidewalkEdgeIds.add(e.id);
+    this.state.pedestrianManager.retireAgentsOnDeadEdges(liveSidewalkEdgeIds);
   }
 
   private spawnVehicles(): void {

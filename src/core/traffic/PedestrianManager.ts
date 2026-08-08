@@ -385,40 +385,29 @@ export class PedestrianManager {
   }
 
   /**
-   * Retire pedestrians whose remaining route crosses any of the given cells.
+   * Retire any agent whose remaining route contains an edge the sidewalk graph
+   * no longer owns.
    *
-   * The mirror of TrafficSimulation.markVehiclesArrivedOnCells. Keeping agents
-   * across a rebuild (BUG-104) stopped them vanishing, but buildFromGrid
-   * replaces every node and edge — an agent's edgePath then points at objects
-   * that no longer describe anything, and tick() never re-queries the graph. So
-   * they walked demolished pavement, across grass, into doorways of razed
-   * buildings, for up to DESPAWN_TIMEOUT. Pedestrians have no stallTime to save
-   * them either (BUG-124).
-   */
-  /**
-   * Retire every walking agent, whatever pavement it is on.
+   * Keeping agents across a rebuild (BUG-104) stopped them vanishing, but
+   * buildFromGrid replaces every node and edge — an agent's edgePath then points
+   * at objects that no longer describe anything, and tick() never re-queries the
+   * graph. So they walked demolished pavement, across grass, into doorways of
+   * razed buildings, for up to DESPAWN_TIMEOUT. Pedestrians have no stallTime to
+   * save them either (BUG-124).
    *
-   * The counterpart of TrafficSimulation.markCommuteVehiclesArrived, for a FULL
-   * sidewalk-graph rebuild where every edge object is replaced and there is no
-   * removed-cell set to scope by.
+   * The pedestrian counterpart of TrafficSimulation.retireVehiclesOnDeadEdges,
+   * and asked the same way for the same reason — see the reasoning there. The
+   * cell-key version this replaces could not see a cell that flipped from
+   * BUILDING to road: it still has a road, so it never entered the removed set,
+   * yet every building_entrance node and building_access edge it had was
+   * destroyed and the agent kept walking to the door of a razed house.
    */
-  markAllAgentsArrived(): number {
+  retireAgentsOnDeadEdges(liveEdgeIds: ReadonlySet<string>): number {
     let count = 0;
     for (const agent of this.agents) {
-      if (agent.edgePath.length === 0) continue;
-      agent.state = PedestrianState.ARRIVED;
-      count++;
-    }
-    return count;
-  }
-
-  markAgentsArrivedOnCells(cellKeys: ReadonlySet<string>): number {
-    let count = 0;
-    for (const agent of this.agents) {
-      if (agent.edgePath.length === 0) continue;
+      if (agent.state === PedestrianState.ARRIVED || agent.edgePath.length === 0) continue;
       for (let i = agent.edgeIndex; i < agent.edgePath.length; i++) {
-        const e = agent.edgePath[i]!;
-        if (cellKeys.has(e.from.cellKey) || cellKeys.has(e.to.cellKey)) {
+        if (!liveEdgeIds.has(agent.edgePath[i]!.id)) {
           agent.state = PedestrianState.ARRIVED;
           count++;
           break;
