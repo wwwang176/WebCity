@@ -32,18 +32,28 @@ describe('roadDistanceToTargets reports the cheapest route', () => {
   const costTo = (grid: Grid) =>
     roadDistanceToTargets(grid, { x: 1, y: 5 }, new Set([TARGET]), 1000, null).get(TARGET);
 
-  it('should get cheaper when a cheaper road is added within reach', () => {
+  it('should report the exact cheapest cost, not merely a smaller one', () => {
     // Adding a second, cheaper way to reach the same target must lower its cost.
     // Because the target was recorded at RELAX time and locked with
     // `!result.has(...)`, the expensive rural stub — relaxed first, since pops
     // follow cost order and its predecessor is nearer — won permanently, and the
     // extra highway made no difference at all.
+    //
+    // Asserting only "smaller" would pass for any implementation that shaved a
+    // fraction off the wrong route. roadTileCost is deterministic, so both
+    // figures are exact: highway costs 0.5 per cell, rural 10/3 — the 6.7x tier
+    // spread that made the relax-time bug visible in the first place.
+    const HIGHWAY_TILE = roadTileCost(RoadType.HIGHWAY);
+    const RURAL_TILE = roadTileCost(RoadType.RURAL);
+    expect(HIGHWAY_TILE).toBeCloseTo(0.5, 9);
+    expect(RURAL_TILE / HIGHWAY_TILE).toBeCloseTo(20 / 3, 9);
+
     const withoutStub = costTo(gridWith(false));
     const withStub = costTo(gridWith(true));
 
-    expect(withoutStub).toBeDefined();
-    expect(withStub).toBeDefined();
-    expect(withStub!).toBeLessThan(withoutStub!);
+    // Forced through the rural stub: 29/6. Free to use the highway stub: 4.
+    expect(withoutStub).toBeCloseTo(29 / 6, 9);
+    expect(withStub).toBeCloseTo(4, 9);
   });
 
   it('should still find targets reachable only by an expensive road', () => {

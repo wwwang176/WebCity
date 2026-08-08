@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TrafficSimulation } from '../TrafficSimulation';
+import { TrafficSimulation, type Vehicle } from '../TrafficSimulation';
 import type { LaneEdge } from '../LaneGraph';
 
 /**
@@ -10,12 +10,13 @@ import type { LaneEdge } from '../LaneGraph';
  * RENDER FRAME, since advanceEdgeVehicles runs off the frame loop rather than
  * the simulation tick (BUG-106).
  *
- * Counting `length` reads is a direct, machine-checkable proxy for that: with
- * the prefix sum hoisted it is linear in the path length, with it inside the
- * comparator it grows with log N on top.
+ * This counts calls to edgeTotalProgress itself. The first version of the test
+ * counted `length` property reads and allowed twice the expected total, which
+ * left a discrimination margin of about 4% — well inside the noise of the other
+ * length reads advanceEdgeVehicles makes. Hoisted, the call count is exactly
+ * one per vehicle; from the comparator it is Theta(N log N) and unbounded above.
  */
 function edge(id: string, from: string, to: string, length: number): LaneEdge {
-  let reads = 0;
   const point = (cellKey: string, x: number, type: 'entry' | 'exit') => ({
     id: `${cellKey}:${type}`,
     position: { x, y: 0 },
@@ -25,25 +26,19 @@ function edge(id: string, from: string, to: string, length: number): LaneEdge {
     direction: 'east' as const,
     type,
   });
-  const e = {
+  return {
     id, length,
     from: point(from, 0, 'exit'),
     to: point(to, 1, 'entry'),
     type: 'straight' as const,
   } as unknown as LaneEdge;
-  Object.defineProperty(e, 'length', {
-    get() { reads++; return length; },
-    configurable: true,
-  });
-  (e as unknown as { reads: () => number }).reads = () => reads;
-  return e;
 }
 
 describe('vehicle sorting does not recompute prefix sums per comparison', () => {
-  it('should read each edge length a bounded number of times', () => {
+  it('should compute each vehicle progress exactly once per frame', () => {
     const sim = new TrafficSimulation();
     const PATH_LEN = 12;
-    const VEHICLES = 24;
+    const VEHICLES = 64;
 
     const edges: LaneEdge[] = [];
     for (let i = 0; i < PATH_LEN; i++) {
@@ -53,19 +48,41 @@ describe('vehicle sorting does not recompute prefix sums per comparison', () => 
     for (let v = 0; v < VEHICLES; v++) {
       // addVehicleOnEdges returns the Vehicle itself, not an id.
       const vehicle = sim.addVehicleOnEdges(edges, v);
-      // Park each vehicle near the end of its path so the prefix sum is long.
-      vehicle.edgeIndex = PATH_LEN - 1;
+      // Spread the vehicles along the path so the comparator sees distinct
+      // totals and cannot short-circuit on equality.
+      vehicle.edgeIndex = v % PATH_LEN;
     }
+
+    let calls = 0;
+    const priv = sim as unknown as { edgeTotalProgress(v: Vehicle): number };
+    const orig = priv.edgeTotalProgress.bind(sim);
+    priv.edgeTotalProgress = (v: Vehicle) => { calls++; return orig(v); };
 
     sim.advanceEdgeVehicles(0.01, () => false);
 
-    const totalReads = edges.reduce(
-      (sum, e) => sum + (e as unknown as { reads: () => number }).reads(), 0,
-    );
+    expect(calls).toBe(VEHICLES);
+  });
 
-    // One prefix-sum pass per vehicle is ~VEHICLES * PATH_LEN reads. Doing it
-    // inside the comparator multiplies that by log2(VEHICLES) ~ 4.6.
-    const oncePerVehicle = VEHICLES * PATH_LEN;
-    expect(totalReads).toBeLessThan(oncePerVehicle * 2);
+  it('should cache the same progress the comparator used to compute inline', () => {
+    // The risk of hoisting a value out of a comparator is caching the wrong
+    // one. The sort itself runs on a local array and is not observable from
+    // outside, but the map it sorts by is — and it is the only thing the
+    // ordering depends on.
+    const sim = new TrafficSimulation();
+    const edges = [edge('e0', '0,0', '1,0', 1), edge('e1', '1,0', '2,0', 1), edge('e2', '2,0', '3,0', 1)];
+
+    const back = sim.addVehicleOnEdges(edges, 1);
+    const front = sim.addVehicleOnEdges(edges, 2);
+    back.edgeIndex = 0;
+    back.edgeProgress = 0.25;
+    front.edgeIndex = 2;
+    front.edgeProgress = 0.5;
+
+    sim.advanceEdgeVehicles(0.01, () => false);
+
+    const progress = (sim as unknown as { sortProgress: Map<number, number> }).sortProgress;
+    // back: no completed edges + 0.25. front: two 1-length edges + 0.5.
+    expect(progress.get(back.id)).toBeCloseTo(0.25, 5);
+    expect(progress.get(front.id)).toBeCloseTo(2.5, 5);
   });
 });
