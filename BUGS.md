@@ -2350,3 +2350,61 @@ A\* 事前在圖上規劃完成的，因此回傳的路徑依定義就是換道�
 另外，換道邊的終點 `cellKey:outDir:(lane±1):exit` 與目標車道直行邊的終點是**同一個點**，
 `toId` 相同，所以「目標車道有車」本來就已經被 `findCrossEdgeGap` 當成匯入衝突處理，
 車輛會讓行而不是穿越。
+
+---
+
+## 第七十六輪：BUG-214 修復（含工人執行緒），並抓到 BUG-215
+
+### 修復內容
+
+| ID | 位置 | 修法 | 狀態 |
+|---|---|---|---|
+| BUG-214 | traffic/TurnLane.ts（新增）、LaneGraph.ts、LaneGraphPathfinder.ts、PooledAStar.ts | 轉向邊依「起始車道離應走車道多遠」加成本 `TURN_LANE_PENALTY = 0.5` / 每偏一車道。右轉應從最外側（`laneCount-1`），左轉從最內側（0）；判定用行進方向向量外積，y 向南為正故外積 > 0 為右轉 | ✅ 已修 |
+| BUG-215 | traffic/PooledAStar.ts | 工人執行緒的 A\* **完全沒有計算 `LANE_CHANGE_COST`**，換道是免費的。主執行緒 `laneEdgeCost` 自校準以來一直在收 0.15。實測同一趟路，工人會為了內側車道快 5% 而免費切進切出——正是當初引入 `LANE_CHANGE_COST` 要消除的「潛進快車道再爬回來」 | ✅ 已修 |
+
+### 為什麼一定要動到工人執行緒
+
+遊戲實際跑的是**第二套 A\***。`Game.ts:513` 建立 pathfinding worker，
+`SimulationLoop` 把通勤與車輛路徑排進 `PathRequestBatcher` 丟給它，
+由 `PooledAStar` 在 SharedArrayBuffer 上走圖；`LaneGraphPathfinder.laneAStar`
+只服務同步呼叫者。只教會其中一套的規則，玩家看不到。
+
+兩套引擎的成本邏輯現在共用 `TurnLane.ts`：算術以整數形式（工人 buffer 已儲存的形式）
+為準，物件形式（LaneEdge）映射過去，因此不會再各自漂移。
+
+工人要收這筆錢需要「該點所在道路每方向幾車道」，buffer 原本沒有。
+寫進 point stride 中**原本就保留的 pad byte（offset 15）**，
+stride 與所有既有 offset 完全不動。
+
+### 校準
+
+門檻不是一次換道而是**兩次**：車輛為了轉彎切出去之後會切回來（每往外一車道慢 5%，
+長程留在外側不划算），所以要打敗的是 `2 x LANE_CHANGE_COST = 0.30`
+再加上離位那一兩格的速度損失。先試 0.35，結果只要轉彎後道路還有得走，
+第二個轉彎仍然從錯誤車道發生；改為 0.5 後成立。兩邊都是每車道線性，
+所以在任何寬度都成立。
+
+### 測試（17 支新測試，全部做過「還原修正確認轉紅」）
+
+`TurnLanePreference.test.ts`（10 支）與 `WorkerTurnLaneParity.test.ts`（7 支）。
+
+- 主執行緒：右轉必須從最外側車道、左轉從最內側；左轉接右轉的 Z 型路線兩個轉彎
+  各自從正確車道；轉彎弧與**旁邊直行車道**的最近距離必須大於車身寬 0.09
+  （修正前 0.0048）；六車道且路口就在起點旁邊時仍必須有路（軟性偏好，不是硬性限制）；
+  單向單車道道路完全不受影響。
+- 工人：buffer 帶得出 laneCount；右轉／左轉從正確車道；單車道不受影響；
+  三格路從外側車道出發不得潛進內側；十二格路必須換。
+
+還原確認：關掉主執行緒的 penalty → 3 支轉紅；關掉工人的 penalty → 1 支轉紅；
+關掉工人的換道成本 → 1 支轉紅。
+
+### 已知且刻意未擴大處理
+
+四岔路口上，A\* 常把轉彎走在**同時轉彎又換道**的 `lane_change` 邊上
+（例：外側車道右轉後切進新路的內側車道）。起始車道正確，penalty 為 0，
+本輪的判定（`turnsOn` / `idealTurnLane`）也把這種邊算作轉彎。
+它與新路上直行車的幾何關係是另一個題目，不屬於 BUG-214（從錯誤車道起轉），未一併處理。
+
+`writeFromGraph`（無 lookup 的那條路徑）仍把 roadType 寫死成 TWO_LANE，
+所以 laneCount 為 1、penalty 為 0。這是它原本就有的 speedLimit placeholder 行為；
+實際遊戲走 `writeFromGraphWithLookup`。

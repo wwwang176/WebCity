@@ -8,7 +8,8 @@
  */
 
 import type { GraphReader } from './LaneGraphBuffer';
-import { LANE_SPEED_DECAY } from './Pathfinding';
+import { LANE_SPEED_DECAY, LANE_CHANGE_COST } from './Pathfinding';
+import { turnLanePenaltyInt } from './TurnLane';
 
 /** Reference speed limit used as baseline for cost normalization. */
 const REFERENCE_SPEED_LIMIT = 50;
@@ -252,6 +253,10 @@ export class PooledAStar {
 
       const currentG = this.gScore[current]!;
 
+      // Read once per expansion, not once per neighbour: the turn-lane penalty
+      // is charged against the lane the manoeuvre STARTS in, which is this point.
+      const currentPoint = reader.getPoint(current);
+
       // Expand neighbors
       const edgeIndices = reader.getEdgesFrom(current);
       for (const edgeIdx of edgeIndices) {
@@ -263,6 +268,23 @@ export class PooledAStar {
         const speedLimit = neighborPoint.speedLimit || REFERENCE_SPEED_LIMIT;
         const laneSpeed = Math.pow(LANE_SPEED_DECAY, neighborPoint.lane);
         let cost = reader.getEdgeLength(edgeIdx) / (laneSpeed * (speedLimit / REFERENCE_SPEED_LIMIT));
+
+        // Changing lane costs the same here as it does on the main thread. It
+        // was free in this engine, so the worker still dived into the faster
+        // inner lane and climbed back out for a saving it could not keep — the
+        // very behaviour LANE_CHANGE_COST was calibrated to stop, applied to
+        // the engine the running game actually routes with (BUG-215).
+        // EDGE_TYPE_TO_INT: 2 = lane_change.
+        if (reader.getEdgeType(edgeIdx) === 2) cost += LANE_CHANGE_COST;
+
+        // A turn taken from the wrong lane cuts across the through traffic
+        // beside it, and nothing downstream stops it — findCrossEdgeGap only
+        // compares vehicles that share a destination point (BUG-214). The main
+        // thread's laneAStar charges the same, from the same module.
+        cost += turnLanePenaltyInt(
+          currentPoint.dir, currentPoint.type, currentPoint.lane,
+          neighborPoint.dir, neighborPoint.type, currentPoint.laneCount,
+        );
 
         if (usePenalty) {
           cost *= this.penalty[neighborIdx]!;

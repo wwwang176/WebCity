@@ -1,6 +1,10 @@
 import { RoadType, RoadDirection, getLaneCount } from '../road/types';
 import { parsePosKeyUnsafe, euclideanDistance } from '../grid/GridHelpers';
 import { computeTurnControlPoint as computeTurnCP, approximateQuadraticBezierLength } from './BezierPath';
+import {
+  DIR_NORTH, DIR_SOUTH, DIR_EAST, DIR_WEST, POINT_ENTRY, POINT_EXIT,
+  NO_PREFERRED_LANE, idealTurnLaneInt, turnLanePenaltyInt,
+} from './TurnLane';
 
 // ── Types ──
 
@@ -59,6 +63,43 @@ function dirVec(d: Direction): { dx: number; dy: number } {
 }
 
 const parseCellKey = parsePosKeyUnsafe;
+
+/**
+ * Direction and point-type codes for the shared turn-lane arithmetic, which
+ * works in the integer form the worker's buffer already stores.
+ */
+const DIR_CODES: Record<Direction, number> = {
+  north: DIR_NORTH, south: DIR_SOUTH, east: DIR_EAST, west: DIR_WEST,
+};
+
+function pointCode(p: ConnectionPoint): number {
+  return p.type === 'exit' ? POINT_EXIT : POINT_ENTRY;
+}
+
+/**
+ * The lane a turn should be taken from, or null when the edge carries straight
+ * on (or reverses) and no lane is preferred. See `TurnLane.ts`.
+ */
+export function idealTurnLane(edge: LaneEdge, laneCount: number): number | null {
+  const ideal = idealTurnLaneInt(
+    DIR_CODES[edge.from.direction], pointCode(edge.from),
+    DIR_CODES[edge.to.direction], pointCode(edge.to),
+    laneCount,
+  );
+  return ideal === NO_PREFERRED_LANE ? null : ideal;
+}
+
+/**
+ * Cost added to a turn taken from the wrong lane (BUG-214). See `TurnLane.ts`
+ * for the measurements this is calibrated against.
+ */
+export function turnLanePenalty(edge: LaneEdge, laneCount: number): number {
+  return turnLanePenaltyInt(
+    DIR_CODES[edge.from.direction], pointCode(edge.from), edge.from.lane,
+    DIR_CODES[edge.to.direction], pointCode(edge.to),
+    laneCount,
+  );
+}
 
 /** Check whether a road cell is an intersection (>=3 active directions). */
 export function isIntersectionCell(roadFlags: number): boolean {

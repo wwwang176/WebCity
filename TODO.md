@@ -322,9 +322,8 @@
 
 - [x] **TEST**: Phase 1 cell-level A* 回傳 cell 路線後，Phase 2 在 LaneEdge 子圖上細化
 - [x] **TEST**: 細化結果為 LaneEdge 序列，涵蓋每個 cell 的具體車道選擇
-- [ ] **TEST**: 目標車道偏好：右轉提前靠右、左轉提前靠左
-      → 已查證為真實缺陷 **BUG-214**，但只在每方向 ≥2 車道時發生
-        (FOUR_LANE / SIX_LANE / HIGHWAY / ONE_WAY)。TWO_LANE 與 RURAL 完全不適用
+- [x] **TEST**: 目標車道偏好：右轉提前靠右、左轉提前靠左 ✅ **BUG-214**
+      主執行緒與工人執行緒兩套 A* 都已套用（共用 `traffic/TurnLane.ts`），17 支測試
 - [x] **TEST**: 換道代價 > 直行代價（避免不必要換道）— `LANE_CHANGE_COST = 0.15`，加法而非乘法
 - [ ] ~~**TEST**: 無法在指定距離內完成換道 → 選擇替代路線~~
       → 建議關閉：換道邊是格內單階、整條車道路徑由 A* 事前規劃，
@@ -1299,6 +1298,18 @@
 ## 第七十五輪：車道級交通剩餘項的查證
 
 「車輛看起來很順暢，真的有必要做嗎？」的查證結果，量測數字見 BUGS.md 第七十五輪。
+
+### 第七十六輪已修
+
+- **BUG-214** 已修：轉向邊依偏離應走車道的距離加成本（`TURN_LANE_PENALTY = 0.5` / 車道），
+  主執行緒 `LaneGraphPathfinder` 與工人 `PooledAStar` 共用 `traffic/TurnLane.ts`。
+- **BUG-215**（修 214 過程中發現並一併修）：工人執行緒的 A* 從來沒有計算
+  `LANE_CHANGE_COST`，換道是免費的，主執行緒卻一直在收 0.15。
+  `LaneGraphBuffer` 的 point stride 用原本保留的 pad byte 帶上 laneCount，stride 不變。
+- 仍未做：四岔路口上「同時轉彎又換道」那類邊與新路直行車的幾何關係（起始車道正確，
+  不屬於 BUG-214）。
+
+---
 
 - 轉向車道偏好 → 確認是真缺陷 **BUG-214**（錯誤車道轉彎與直行車路徑最近距離 0.0048，
   車身寬 0.09，且 `findCrossEdgeGap` 只比對同 `toId` 故兩車互不可見 → 直接穿過彼此），
