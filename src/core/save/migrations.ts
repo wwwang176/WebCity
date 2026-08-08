@@ -12,6 +12,7 @@
 
 import type { GameState } from '../simulation/GameState';
 import { RoadType } from '../road/types';
+import { isInfrastructureBuilding } from '../building/InfraConfig';
 import { CARDINAL_DIRECTIONS } from '../grid/GridHelpers';
 import { getLifeStage, AGE_PER_TICK } from '../citizen/types';
 import { HEALTH } from '../service/HealthService';
@@ -33,7 +34,7 @@ export interface SaveMigration {
 }
 
 /** Current save version. Increment when adding a new migration. */
-export const CURRENT_SAVE_VERSION = 6;
+export const CURRENT_SAVE_VERSION = 7;
 
 /** Ordered list of migrations. Must be sorted by version ascending. */
 export const MIGRATIONS: readonly SaveMigration[] = [
@@ -186,6 +187,28 @@ export const MIGRATIONS: readonly SaveMigration[] = [
     // version bump exists so SaveValidator and future migrations can tell the
     // two eras apart.
     migrate() {},
+  },
+  {
+    version: 7,
+    name: 'clear_infrastructure_zonetype',
+    migrate(state: GameState): void {
+      // BUG-074 stopped placeInfraOnGrid leaving a zoneType behind, because a
+      // facility on zoned land emitted factory-grade ground pollution and noise
+      // and counted toward zone supply. That covered new placements only —
+      // every city saved before it still carries the condition on disk, and
+      // nothing on load removed it.
+      let cleared = 0;
+      state.grid.forEachCell((cell, x, y) => {
+        if (cell.zoneType === 0) return;
+        if (!isInfrastructureBuilding(cell.buildingId)) return;
+        state.grid.setCell(x, y, { zoneType: 0 });
+        cleared++;
+      });
+
+      if (cleared > 0) {
+        console.log(`[Migration] clear_infrastructure_zonetype: cleared ${cleared} cell(s)`);
+      }
+    },
   },
 ];
 

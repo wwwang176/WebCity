@@ -376,6 +376,10 @@ function migrateOldInfra(grid: Grid): void {
         grid.setCell(x + dx, y + dy, {
           buildingId: cfg.buildingId,
           reserved: MULTI_CELL_OCCUPIED,
+          // setCell is a partial patch: without this the zoneType the cell had
+          // before the facility claimed it survives, and the v7 migration
+          // would be undone on the very next load (BUG-074).
+          zoneType: 0,
         });
       }
     }
