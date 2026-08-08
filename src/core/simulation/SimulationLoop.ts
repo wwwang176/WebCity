@@ -531,15 +531,7 @@ export class SimulationLoop {
       this.wpDistCache?.invalidate();
       // Incrementally update sidewalk graph for new/removed buildings
       if (result.affectedCells.length > 0) {
-        const swGridLookup = {
-          getCell: (gx: number, gy: number) => {
-            const c = grid.getCell(gx, gy);
-            if (!c) return null;
-            return { roadType: c.roadType, roadFlags: c.roadFlags, railType: c.railType, buildingId: c.buildingId };
-          },
-        };
-        this.state.sidewalkGraph.updateCells(swGridLookup, result.affectedCells);
-        this.state.pedestrianManager.clearPathCache();
+        this.applyBuildingRemoval(result.affectedCells);
       }
     }
   }
@@ -1763,9 +1755,48 @@ export class SimulationLoop {
     // the same reason: a cell-key sweep could not see a cell that flipped from
     // BUILDING to road, which still has a road but lost every building_entrance
     // node it had, so an agent kept walking to the door of a razed house.
-    const liveSidewalkEdgeIds = new Set<string>();
-    for (const e of this.state.sidewalkGraph.getAllEdges()) liveSidewalkEdgeIds.add(e.id);
-    this.state.pedestrianManager.retireAgentsOnDeadEdges(liveSidewalkEdgeIds);
+    this.retireStrandedPedestrians();
+  }
+
+  /**
+   * Retire every agent whose remaining route contains an edge the graph no
+   * longer owns.
+   *
+   * This lived inside rebuildSidewalkGraph, which meant it only ran on the
+   * road-edit path. buildingGrowthTick mutates the same graph directly through
+   * updateCells and never sets sidewalkGraphDirty, so the sweep never saw it —
+   * and building demolition is by far the highest-frequency source of destroyed
+   * building_entrance edges. An agent walking to the door of a house that had
+   * just been razed carried on walking there for up to DESPAWN_TIMEOUT, which
+   * is the precise symptom the sweep was written to remove (BUG-161).
+   */
+  private retireStrandedPedestrians(): void {
+    this.state.pedestrianManager.retireAgentsOnDeadEdges(this.state.sidewalkGraph.getEdgeIds());
+  }
+
+  /**
+   * Fold a set of cells whose BUILDINGS changed into the sidewalk graph.
+   *
+   * updateCells deletes the four door and four corner nodes of every cell it
+   * touches, along with every building_access edge on them — so this is a
+   * second, independent way for a pedestrian's route to be destroyed, and it
+   * runs far more often than road editing does. It set no dirty flag, so
+   * rebuildSidewalkGraph never ran for it and the retirement sweep never saw
+   * it: an agent walking to the door of a house the growth tick had just razed
+   * carried on walking there for up to DESPAWN_TIMEOUT (BUG-161).
+   */
+  applyBuildingRemoval(affectedCells: string[]): void {
+    if (affectedCells.length === 0) return;
+    const grid = this.state.grid;
+    this.state.sidewalkGraph.updateCells({
+      getCell: (gx: number, gy: number) => {
+        const c = grid.getCell(gx, gy);
+        if (!c) return null;
+        return { roadType: c.roadType, roadFlags: c.roadFlags, railType: c.railType, buildingId: c.buildingId };
+      },
+    }, affectedCells);
+    this.state.pedestrianManager.clearPathCache();
+    this.retireStrandedPedestrians();
   }
 
   private spawnVehicles(): void {

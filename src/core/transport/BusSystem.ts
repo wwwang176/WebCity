@@ -269,14 +269,25 @@ export class BusSystem extends BaseTransportSystem {
       }
 
       const segments = this.computeRouteSegments(route, findEdgePath);
+      // Only a TRANSITION is worth announcing. A route that cannot be pathed
+      // keeps no routeSegments entry, so the guard at the top of this loop
+      // never skips it and it is reprocessed on every rebuild — which is once
+      // per road edit. Bumping unconditionally meant one stranded route made
+      // every road edit anywhere in the city wipe the transfer panel's
+      // per-building attribution, which is the exact thing the topology counter
+      // was introduced to stop (BUG-158).
       if (!segments) {
-        route.suspended = true;
-        this.bumpTopologyVersion();
+        if (!route.suspended) {
+          route.suspended = true;
+          this.bumpTopologyVersion();
+        }
         continue;
       }
 
-      route.suspended = false;
-      this.bumpTopologyVersion();
+      if (route.suspended) {
+        route.suspended = false;
+        this.bumpTopologyVersion();
+      }
       // Spawn bus vehicles
       const count = Math.max(1, route.vehicles);
       for (let i = 0; i < count; i++) {

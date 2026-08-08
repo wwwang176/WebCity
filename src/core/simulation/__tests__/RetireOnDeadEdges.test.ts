@@ -154,4 +154,49 @@ describe('vehicles are retired exactly when their edges die', () => {
 
     expect(agent!.state).toBe(PedestrianState.ARRIVED);
   });
+
+  it('should retire a pedestrian whose destination building is demolished', () => {
+    // The sweep used to live inside rebuildSidewalkGraph, which only runs on
+    // the road-edit path. buildingGrowthTick mutates the SAME graph through
+    // updateCells and never sets sidewalkGraphDirty — and building removal is
+    // by far the commonest way a building_entrance edge dies. So the one case
+    // the sweep exists for was the one case it never saw (BUG-161).
+    const { state, loop } = cityWithTraffic();
+    state.grid.setCell(3, 4, { zoneType: 1, buildingId: 1 });
+    state.grid.setCell(20, 4, { zoneType: 3, buildingId: 7 });
+    loop.markLaneGraphDirty();
+    loop.tick();
+
+    const id = state.pedestrianManager.spawnPedestrian(3, 4, 20, 4, -1, 4);
+    const agent = state.pedestrianManager.agents.find(a => a.id === id);
+    expect(agent).toBeDefined();
+    expect(agent!.state).not.toBe(PedestrianState.ARRIVED);
+
+    // Raze the destination the way the growth tick does: clear the cell, then
+    // hand the same incremental update to the graph.
+    state.grid.setCell(20, 4, { zoneType: 0, buildingId: 0, reserved: 0 });
+    loop.applyBuildingRemoval(['20,4']);
+
+    expect(agent!.state).toBe(PedestrianState.ARRIVED);
+  });
+
+  it('should keep a pedestrian when the razed building is not on its route', () => {
+    // Retiring on any building edit at all would be the BUG-116 mistake in a
+    // second guise: every growth tick would empty the pavements.
+    const { state, loop } = cityWithTraffic();
+    state.grid.setCell(3, 4, { zoneType: 1, buildingId: 1 });
+    state.grid.setCell(20, 4, { zoneType: 3, buildingId: 7 });
+    state.grid.setCell(24, 6, { zoneType: 1, buildingId: 1 });
+    loop.markLaneGraphDirty();
+    loop.tick();
+
+    const id = state.pedestrianManager.spawnPedestrian(3, 4, 20, 4, -1, 4);
+    const agent = state.pedestrianManager.agents.find(a => a.id === id);
+    expect(agent).toBeDefined();
+
+    state.grid.setCell(24, 6, { zoneType: 0, buildingId: 0, reserved: 0 });
+    loop.applyBuildingRemoval(['24,6']);
+
+    expect(agent!.state).not.toBe(PedestrianState.ARRIVED);
+  });
 });

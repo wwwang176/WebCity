@@ -1,4 +1,5 @@
 import { type ElevatedSegment, MAX_ELEVATION_LEVEL, MIN_ELEVATION_LEVEL } from './types';
+import { RoadType } from '../road/types';
 
 /**
  * Sparse storage for elevated road/rail segments (levels 1-3).
@@ -114,7 +115,15 @@ export class ElevationManager {
   chooseStartLevel(x: number, y: number, targetLevel: number, hasGroundRoad: boolean): number {
     let best = hasGroundRoad ? 0 : -1;
     for (let level = MIN_ELEVATION_LEVEL; level <= MAX_ELEVATION_LEVEL; level++) {
-      if (!this.layers.has(ElevationManager.key(x, y, level))) continue;
+      // A ROAD has to be there, not merely a segment. Elevated rail lives in
+      // this same map with roadType 0 — the premise getHighestRoadType exists
+      // for, twelve lines above. Asking only whether the level is occupied let
+      // a rail deck win a tie against a road deck, and the placement loop then
+      // wrote `roadType: existingAtStart.roadType`, i.e. 0: a paid, rendered,
+      // maintained viaduct whose origin is not a road and which therefore has
+      // no lane edge to anything (BUG-162, the BUG-097 symptom returning).
+      const seg = this.layers.get(ElevationManager.key(x, y, level));
+      if (!seg || seg.roadType === RoadType.NONE) continue;
       if (best < 0) { best = level; continue; }
       const d = Math.abs(level - targetLevel);
       const bd = Math.abs(best - targetLevel);

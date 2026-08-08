@@ -47,6 +47,15 @@ export interface SidewalkNode {
   position: { x: number; y: number };
   cellKey: string;
   type: 'sidewalk' | 'crosswalk_wait' | 'building_entrance' | 'building_corner' | 'transit_stop';
+  /**
+   * The road tier whose width put this node where it is, or 0 for nodes not
+   * placed off a carriageway (doors, corners, transit stops).
+   *
+   * Node ids are `cellKey:side` and say nothing about position, but position
+   * comes from ROAD_WIDTHS[roadType] — so this is carried here and folded into
+   * the EDGE id, which is what retirement compares (BUG-159).
+   */
+  roadType: number;
 }
 
 export interface SidewalkEdge {
@@ -266,6 +275,22 @@ export class SidewalkGraph {
     return result;
   }
 
+  /**
+   * Every live edge id.
+   *
+   * Retirement only wants the id set, and getAllEdges already builds one
+   * internally on the way to producing the array — so asking it for the array
+   * and then rebuilding the same set meant three full-size allocations where
+   * one does.
+   */
+  getEdgeIds(): Set<string> {
+    const ids = new Set<string>();
+    for (const edges of this.adjacency.values()) {
+      for (const e of edges) ids.add(e.id);
+    }
+    return ids;
+  }
+
   /** Max search radius for findNearestNode (cells). Beyond this, return null. */
   static readonly MAX_NEAREST_DISTANCE = 2;
 
@@ -379,6 +404,7 @@ export class SidewalkGraph {
           position: positions[i]!,
           cellKey,
           type: 'sidewalk',
+          roadType: cell.roadType,
         };
         this.nodes.set(nodeId, node);
         nodeIds.push(nodeId);
@@ -408,7 +434,7 @@ export class SidewalkGraph {
     ];
     for (const c of corners) {
       const nodeId = `${cellKey}:${c.suffix}`;
-      this.nodes.set(nodeId, { id: nodeId, position: { x: c.px, y: c.py }, cellKey, type: 'building_corner' });
+      this.nodes.set(nodeId, { id: nodeId, position: { x: c.px, y: c.py }, cellKey, type: 'building_corner', roadType: 0 });
       nodeIds.push(nodeId);
     }
 
@@ -421,7 +447,7 @@ export class SidewalkGraph {
     ];
     for (const door of doors) {
       const nodeId = `${cellKey}:${door.suffix}`;
-      this.nodes.set(nodeId, { id: nodeId, position: { x: door.px, y: door.py }, cellKey, type: 'building_entrance' });
+      this.nodes.set(nodeId, { id: nodeId, position: { x: door.px, y: door.py }, cellKey, type: 'building_entrance', roadType: 0 });
       nodeIds.push(nodeId);
     }
 
@@ -709,12 +735,25 @@ export class SidewalkGraph {
 
   private addBidirectionalEdge(a: SidewalkNode, b: SidewalkNode, type: SidewalkEdge['type'], intersectionCellKey?: string): void {
     const length = euclideanDistance(a.position.x, a.position.y, b.position.x, b.position.y);
+    // `type` and `intersectionCellKey` are part of the identity, not decoration.
+    // The same node pair is emitted as a crosswalk by generateCrosswalkEdges
+    // and as a level_crossing by generateLevelCrossingEdges; with the id built
+    // from the endpoints alone they collided and the dedupe below kept
+    // whichever generator happened to run first — decided by cell processing
+    // order. PedestrianManager gates on `nextEdge.type === 'crosswalk'`, so
+    // pedestrians at such a junction walked straight through the traffic light
+    // that had just been wired up (BUG-160).
+    // Everything that decides what this edge IS goes into its id: the kind of
+    // edge, the junction that governs it, and the road widths that placed its
+    // endpoints. Retirement-by-edge-identity assumes same id implies same edge.
+    const kind = intersectionCellKey ? `${type}@${intersectionCellKey}` : type;
+    const geom = `${a.roadType}/${b.roadType}`;
     const edgeAB: SidewalkEdge = {
-      id: `${a.id}→${b.id}`,
+      id: `${kind}|${geom}:${a.id}→${b.id}`,
       from: a, to: b, length, type, intersectionCellKey,
     };
     const edgeBA: SidewalkEdge = {
-      id: `${b.id}→${a.id}`,
+      id: `${kind}|${geom}:${b.id}→${a.id}`,
       from: b, to: a, length, type, intersectionCellKey,
     };
 
