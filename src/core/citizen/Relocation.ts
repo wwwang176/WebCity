@@ -21,7 +21,8 @@ export const DEFAULT_RELOCATION_CONFIG: RelocationConfig = {
  * Mutates citizens (homeId) and occupancy map in-place.
  */
 export function relocationTick(
-  citizens: Citizen[],
+  // Read-only: the pass rewrites `homeId` on the citizens, never the array.
+  citizens: readonly Citizen[],
   candidates: readonly HousingCandidate[],
   occupancy: Map<string, number>,
   config?: Partial<RelocationConfig>,

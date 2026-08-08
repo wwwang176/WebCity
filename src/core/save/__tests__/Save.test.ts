@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { serializeGameState, deserializeGameState } from '../Serializer';
 import { createGameState } from '../../simulation/GameState';
 import { AutoSaver } from '../AutoSave';
@@ -6,6 +6,9 @@ import { SAVE_CONFIG } from '../SaveManager';
 import { TerrainType, ZoneType } from '../../grid/types';
 import { MULTI_CELL_OCCUPIED } from '../../building/InfraPlacement';
 import { getInfraConfig } from '../../building/InfraConfig';
+import { PolicyType, Specialization } from '../../district/types';
+import { CitySpecType } from '../../district/CitySpecialization';
+import { ResourceType } from '../../economy/GlobalMarket';
 
 describe('Serializer', () => {
   it('should produce valid JSON string', () => {
@@ -320,5 +323,117 @@ describe('AutoSaver', () => {
   it('should not trigger save at tick 0', () => {
     const saver = new AutoSaver(100);
     expect(saver.shouldSave(0)).toBe(false);
+  });
+});
+
+// BUG-053: districts / policies / city specialization / global market were
+// simulated and player-editable but never serialized, so every save/load
+// silently reset them to defaults.
+describe('Serializer — districts, policies, specialization, market', () => {
+  it('should round-trip districts and their cell membership', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('Downtown');
+    state.districts.addCellToDistrict(d.id, 3, 4);
+    state.districts.addCellToDistrict(d.id, 3, 5);
+    state.districts.addCellToDistrict(d.id, 4, 4);
+
+    const restored = deserializeGameState(serializeGameState(state));
+
+    expect(restored.districts.getAllDistricts()).toHaveLength(1);
+    const rd = restored.districts.getAllDistricts()[0]!;
+    expect(rd.name).toBe('Downtown');
+    expect([...rd.cells].sort()).toEqual(['3,4', '3,5', '4,4']);
+    expect(restored.districts.getDistrictAt(3, 5)?.id).toBe(rd.id);
+    expect(restored.districts.getDistrictAt(9, 9)).toBeNull();
+  });
+
+  it('should round-trip district policies and keep them enforceable', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('NoFactories');
+    state.districts.addCellToDistrict(d.id, 5, 5);
+    state.policies.applyPolicy(d.id, PolicyType.NO_HEAVY_INDUSTRY);
+    expect(state.policies.canBuildInDistrict(d.id, ZoneType.INDUSTRIAL)).toBe(false);
+
+    const restored = deserializeGameState(serializeGameState(state));
+    const rd = restored.districts.getAllDistricts()[0]!;
+
+    expect(restored.policies.isPolicyActive(rd.id, PolicyType.NO_HEAVY_INDUSTRY)).toBe(true);
+    expect(restored.policies.canBuildInDistrict(rd.id, ZoneType.INDUSTRIAL)).toBe(false);
+    expect(restored.policies.canBuildInDistrict(rd.id, ZoneType.RESIDENTIAL_LOW)).toBe(true);
+  });
+
+  it('should round-trip district specialization', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('Farmland');
+    d.specialization = Specialization.FARMING;
+
+    const restored = deserializeGameState(serializeGameState(state));
+    expect(restored.districts.getAllDistricts()[0]!.specialization).toBe(Specialization.FARMING);
+  });
+
+  it('should round-trip city specialization and its revenue multiplier', () => {
+    const state = createGameState(20, 20);
+    expect(state.citySpec.choose(CitySpecType.TECH_CITY, 5000)).toBe(true);
+    expect(state.citySpec.getBonus().revenueMultiplier).toBeCloseTo(1.25);
+
+    const restored = deserializeGameState(serializeGameState(state));
+    expect(restored.citySpec.getCurrent()).toBe(CitySpecType.TECH_CITY);
+    expect(restored.citySpec.getBonus().revenueMultiplier).toBeCloseTo(1.25);
+  });
+
+  it('should round-trip global market prices', () => {
+    const state = createGameState(20, 20);
+    // Drive the price away from its base so the assertion has discriminating
+    // power — exportResource alone only moves supplyPressure, not price.
+    const rand = vi.spyOn(Math, 'random').mockReturnValue(0.9);
+    state.globalMarket.exportResource(ResourceType.OIL, 25);
+    state.globalMarket.tick();
+    rand.mockRestore();
+
+    const priceBefore = state.globalMarket.getPrice(ResourceType.OIL);
+    expect(priceBefore).not.toBeCloseTo(100);
+
+    const restored = deserializeGameState(serializeGameState(state));
+    expect(restored.globalMarket.getPrice(ResourceType.OIL)).toBeCloseTo(priceBefore);
+  });
+
+  it('should not collide district ids created after a load', () => {
+    const state = createGameState(20, 20);
+    const a = state.districts.createDistrict('A');
+    const b = state.districts.createDistrict('B');
+
+    const restored = deserializeGameState(serializeGameState(state));
+    const c = restored.districts.createDistrict('C');
+
+    expect(c.id).not.toBe(a.id);
+    expect(c.id).not.toBe(b.id);
+    expect(restored.districts.getAllDistricts()).toHaveLength(3);
+  });
+
+  it('should not collide policy ids created after a load', () => {
+    const state = createGameState(20, 20);
+    const d = state.districts.createDistrict('D');
+    state.policies.applyPolicy(d.id, PolicyType.NO_HEAVY_INDUSTRY);
+    const firstId = d.policies[0]!.id;
+
+    const restored = deserializeGameState(serializeGameState(state));
+    const rd = restored.districts.getAllDistricts()[0]!;
+    restored.policies.applyPolicy(rd.id, PolicyType.TOURISM);
+
+    const newPolicy = rd.policies.find(p => p.type === PolicyType.TOURISM)!;
+    expect(newPolicy.id).not.toBe(firstId);
+  });
+
+  it('should load an old save with no district data as empty defaults', () => {
+    const state = createGameState(20, 20);
+    const raw = JSON.parse(serializeGameState(state)) as Record<string, unknown>;
+    delete raw.districts;
+    delete raw.citySpec;
+    delete raw.globalMarket;
+
+    const restored = deserializeGameState(JSON.stringify(raw));
+    expect(restored.districts.getAllDistricts()).toEqual([]);
+    expect(restored.citySpec.getCurrent()).toBe(CitySpecType.NONE);
+    expect(restored.globalMarket.getPrice(ResourceType.OIL)).toBeCloseTo(100);
   });
 });

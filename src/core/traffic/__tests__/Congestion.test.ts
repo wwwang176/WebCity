@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { getCongestionRate, getSpeedMultiplier, CONGESTION } from '../Congestion';
 import { TrafficSimulation } from '../TrafficSimulation';
-import { LaneEdge, LaneNode } from '../LaneGraph';
+import { makeCellEdge } from '../../../../tests/helpers/makeLaneEdge';
 
 describe('Congestion', () => {
   it('should calculate congestion rate', () => {
@@ -50,9 +50,7 @@ describe('TrafficSimulation.getCongestionLevel', () => {
   it('returns a value between 0 and 1 with vehicles', () => {
     const ts = new TrafficSimulation();
     // Add some fake vehicles by adding edge paths
-    const nodeA: LaneNode = { cellKey: '0,0', lane: 0 };
-    const nodeB: LaneNode = { cellKey: '1,0', lane: 0 };
-    const edge: LaneEdge = { from: nodeA, to: nodeB, length: 1 };
+    const edge = makeCellEdge('0,0', '1,0', 0, { length: 1 });
     for (let i = 0; i < 5; i++) {
       ts.addVehicleOnEdges([edge]);
     }
@@ -63,9 +61,7 @@ describe('TrafficSimulation.getCongestionLevel', () => {
 
   it('increases with more vehicles', () => {
     const ts = new TrafficSimulation();
-    const nodeA: LaneNode = { cellKey: '0,0', lane: 0 };
-    const nodeB: LaneNode = { cellKey: '1,0', lane: 0 };
-    const edge: LaneEdge = { from: nodeA, to: nodeB, length: 1 };
+    const edge = makeCellEdge('0,0', '1,0', 0, { length: 1 });
 
     for (let i = 0; i < 3; i++) ts.addVehicleOnEdges([edge]);
     const low = ts.getCongestionLevel();

@@ -34,6 +34,9 @@ export const GARBAGE_PRODUCTION = {
   OFFICE:      { base: 0.02, perCapita: 0.002 },
 } as const;
 
+/** Spread radius for rubbish left in the street; the block size derives from it. */
+const UNCOLLECTED_RADIUS = 2;
+
 /** Garbage service configuration constants */
 export const GARBAGE = {
   /** Road-distance coverage budget (used for overlay gradient reference, not range limit) */
@@ -56,6 +59,24 @@ export const GARBAGE = {
   BASE_POLLUTION: 20,
   /** Pollution spread radius (Manhattan distance) for all garbage sources */
   POLLUTION_RADIUS: 5,
+  /** Radius for rubbish left in the street — tight, it is a local nuisance. */
+  UNCOLLECTED_POLLUTION_RADIUS: UNCOLLECTED_RADIUS,
+  /**
+   * Rubbish is grouped into blocks this many cells across before emitting.
+   *
+   * Sized so that merging can never move pollution off the rubbish that caused
+   * it: the greatest MANHATTAN distance between two cells of a k-wide block is
+   * 2(k-1), and the emitting position always lies inside the block, so every
+   * bag stays within `radius` of its own source exactly when 2(k-1) <= radius.
+   * A wider block looks fine on a diagram and silently leaves its corners
+   * outside the spread — a 5-wide block puts them 4 away from a radius of 2.
+   */
+  UNCOLLECTED_BLOCK_SIZE: Math.floor(UNCOLLECTED_RADIUS / 2) + 1,
+  /**
+   * Hard cap on uncollected sources per rebuild, for the pathological city.
+   * Pollution.spreadFromSource walks (2r+1)^2 cells for each one.
+   */
+  UNCOLLECTED_POLLUTION_BLOCKS: 512,
   /** Max bags collected per facility per service tick */
   COLLECTION_RATE: 140,
   /** Happiness penalty per garbage bag waiting in queue */
@@ -231,12 +252,38 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
     return Math.min(GARBAGE.MAX_POLLUTION_PENALTY, uncollected * GARBAGE.UNCOLLECTED_POLLUTION_MULTIPLIER);
   }
 
+  /**
+   * Capacity the city can actually use — same filter as collectPending.
+   *
+   * Summing every facility advertised room in a landfill nothing can reach and
+   * nothing can power, exactly the situation where the player needs the panel
+   * to tell them the truth. Same shape as the hospital capacity fixed in
+   * BUG-100.
+   */
   getTotalCapacity(): number {
-    return this.facilities.reduce((sum, f) => sum + f.capacity, 0);
+    return this.getActiveFacilities().reduce((sum, f) => sum + f.capacity, 0);
   }
 
   getCurrentLoad(): number {
     return this.facilities.reduce((sum, f) => sum + f.currentLoad, 0);
+  }
+
+  /**
+   * Garbage sitting in landfills the city can actually reach.
+   *
+   * getTotalCapacity counts only active facilities; the infrastructure panel
+   * divided the unfiltered getCurrentLoad into it and printed "1800 / 0" with
+   * the bar back at a healthy 0% the moment the only landfill lost its road
+   * (BUG-155). Whatever the panel shows, both halves have to describe the same
+   * set of landfills.
+   */
+  getActiveLoad(): number {
+    return this.getActiveFacilities().reduce((sum, f) => sum + f.currentLoad, 0);
+  }
+
+  /** Landfill space the city has paid for and cannot currently use. */
+  getStrandedCapacity(): number {
+    return this.facilities.reduce((sum, f) => sum + f.capacity, 0) - this.getTotalCapacity();
   }
 
   getPendingGarbageQueue(): readonly PendingGarbage[] {
@@ -258,7 +305,13 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
   getPollutionSources(): PollutionSource[] {
     const sources: PollutionSource[] = [];
     const radius = GARBAGE.POLLUTION_RADIUS;
-    const operational = this.getOperationalFacilities();
+    // getActiveFacilities, not getOperationalFacilities: a landfill with power
+    // but no road connection collects nothing and burns nothing, yet it used to
+    // emit BASE_POLLUTION per cell and take a share of the uncollected-garbage
+    // penalty — and because that share only lands on the rubbish itself when NO
+    // facility works, its mere existence hid the street-level pollution the
+    // player was meant to see.
+    const operational = this.getActiveFacilities();
     for (const f of operational) {
       this.forEachFacilityCell(f, (cx, cy) => {
         sources.push({ x: cx, y: cy, amount: GARBAGE.BASE_POLLUTION, type: 'ground', radius });
@@ -274,12 +327,89 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
       }
     }
     const uncollectedPenalty = this.getPollutionPenalty();
-    if (uncollectedPenalty > 0 && operational.length > 0) {
-      const perFacility = Math.ceil(uncollectedPenalty / operational.length);
-      for (const f of operational) {
-        this.forEachFacilityCell(f, (cx, cy) => {
-          sources.push({ x: cx, y: cy, amount: perFacility, type: 'ground', radius });
-        });
+    if (uncollectedPenalty > 0) {
+      if (operational.length > 0) {
+        // Divide by the CELLS, not just the facilities.
+        //
+        // `ceil(penalty / facilityCount)` was then emitted at every cell of
+        // every facility, so a 2x2 landfill emitted the whole penalty four
+        // times over — measured at 400 against a penalty of 100. The other
+        // branch conserves the penalty exactly, so a city that built a landfill
+        // was punished about 4x harder for the rubbish it had not yet collected
+        // than an identical city that built nothing. That is BUG-101's
+        // incentive inversion in a lighter form, and it survived because the
+        // two branches were only ever tested apart.
+        const cellsPerFacility = this.defaultFacilityWidth * this.defaultFacilityHeight;
+        const perCell = uncollectedPenalty / (operational.length * cellsPerFacility);
+        for (const f of operational) {
+          this.forEachFacilityCell(f, (cx, cy) => {
+            sources.push({ x: cx, y: cy, amount: perCell, type: 'ground', radius });
+          });
+        }
+      } else {
+        // No working landfill: emit at the rubbish itself.
+        //
+        // This branch used to be skipped entirely, so a city with no landfill
+        // accumulated garbage forever at exactly zero pollution cost — "do
+        // nothing" strictly beat "start handling waste", which immediately
+        // added BASE_POLLUTION per landfill cell. getPollutionSources is the
+        // only route garbage has into the pollution grid, so nothing else
+        // compensated (BUG-101). Emitting at the pending bags also fixes the
+        // modelling inversion where uncollected rubbish polluted the landfill
+        // rather than the street it was sitting on.
+        // Group the rubbish into blocks one pollution footprint wide, and emit
+        // at each block's weighted centre.
+        //
+        // The previous version took "the twelve worst piles". Rubbish is
+        // normally spread thin — a bag or two per house — so every pile has the
+        // same count, the sort is stable, and "worst twelve" degenerates into
+        // "the first twelve the map happened to enumerate". In a city with 200
+        // rubbish-bearing cells, 188 emitted nothing at all, every source
+        // landed in one corner, and splicing collected bags out of pendingBags
+        // reshuffled which twelve for no reason the player could see.
+        //
+        // A block is BLOCK_SIZE cells across, which is the diameter of an
+        // uncollected source's own spread — so merging within a block loses no
+        // spatial detail the pollution grid could have shown anyway, while
+        // bounding the source count by area rather than by rubbish count.
+        const size = GARBAGE.UNCOLLECTED_BLOCK_SIZE;
+        const blocks = new Map<string, { sx: number; sy: number; count: number }>();
+        for (const bag of this.pendingBags) {
+          const key = toPosKey(Math.floor(bag.x / size), Math.floor(bag.y / size));
+          const e = blocks.get(key);
+          if (e) { e.sx += bag.x; e.sy += bag.y; e.count++; }
+          else blocks.set(key, { sx: bag.x, sy: bag.y, count: 1 });
+        }
+
+        // Still capped, for the pathological city: Pollution.spreadFromSource
+        // walks (2r+1)^2 cells per source. Ties now break on position rather
+        // than on enumeration order, so the cut is at least stable across ticks.
+        // The emitting position is the bag-weighted centre of the block,
+        // rounded. Both coordinates lie between the block's own bounds, so the
+        // rounded point is still a cell of the block and the coverage argument
+        // above holds.
+        const ranked = [...blocks.values()]
+          .map(e => ({ x: Math.round(e.sx / e.count), y: Math.round(e.sy / e.count), count: e.count }))
+          .sort((a, b) => b.count - a.count || a.y - b.y || a.x - b.x)
+          .slice(0, GARBAGE.UNCOLLECTED_POLLUTION_BLOCKS);
+
+        // Share of the penalty is proportional to the bags actually represented,
+        // so the total is the penalty whatever the cut removed. (BUG-122: an
+        // earlier version used Math.ceil per position, which floored the total
+        // at the number of rubbish-bearing cells — 10-20x MAX_POLLUTION_PENALTY
+        // in a mid-size city, and growing with city size.)
+        const totalCount = ranked.reduce((sum, e) => sum + e.count, 0);
+        if (totalCount > 0) {
+          for (const e of ranked) {
+            const amount = uncollectedPenalty * (e.count / totalCount);
+            if (amount > 0) {
+              sources.push({
+                x: e.x, y: e.y,
+                amount, type: 'ground', radius: GARBAGE.UNCOLLECTED_POLLUTION_RADIUS,
+              });
+            }
+          }
+        }
       }
     }
     return sources;

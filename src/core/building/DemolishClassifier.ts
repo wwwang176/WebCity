@@ -37,9 +37,14 @@ export function classifyDemolishCell(
     }
   }
 
-  // 1×1 infrastructure (transport stops)
+  // 1×1 infrastructure (transport stops), and — as a recovery path — any
+  // infrastructure cell whose primary cannot be resolved. Falling through to
+  // 'regular' would zero the cell WITHOUT calling removeInfraService, leaving a
+  // registered facility that is invisible, unselectable and undemolishable
+  // forever (BUG-052). Clearing it as a single infra cell at least attempts the
+  // service removal and lets the player recover the tile.
   const infraCfg = getInfraConfigById(cell.buildingId);
-  if (infraCfg && infraCfg.width === 1 && infraCfg.height === 1) {
+  if (infraCfg) {
     return { action: 'single_cell_infra', infraType: infraCfg.type };
   }
 

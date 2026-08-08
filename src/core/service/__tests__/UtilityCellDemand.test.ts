@@ -22,29 +22,29 @@ describe('calculateUtilityCellDemand', () => {
   };
 
   it('returns 0 for empty cell', () => {
-    expect(calculateUtilityCellDemand(config, 0, ZoneType.NONE, 0, 0)).toBe(0);
+    expect(calculateUtilityCellDemand(config, 0, ZoneType.NONE, 0, 0, 0)).toBe(0);
   });
 
   it('calculates zone demand for residential building', () => {
     // buildingId=1 is a zone building (Tiny House: residents=2, workers=0)
-    const demand = calculateUtilityCellDemand(config, 1, ZoneType.RESIDENTIAL_LOW, 2, 0);
+    const demand = calculateUtilityCellDemand(config, 1, ZoneType.RESIDENTIAL_LOW, 2, 0, 0);
     // base + perCapita * residents = 1 + 0.1 * 2 = 1.2
     expect(demand).toBeCloseTo(1.2);
   });
 
   it('calculates zone demand for industrial building', () => {
-    const demand = calculateUtilityCellDemand(config, 13, ZoneType.INDUSTRIAL, 0, 5);
+    const demand = calculateUtilityCellDemand(config, 13, ZoneType.INDUSTRIAL, 0, 5, 0);
     // base + perCapita * workers = 3 + 0.3 * 5 = 4.5
     expect(demand).toBeCloseTo(4.5);
   });
 
   it('returns 0 for excluded building (e.g. power plant)', () => {
-    expect(calculateUtilityCellDemand(config, 254, ZoneType.NONE, 0, 0)).toBe(0);
+    expect(calculateUtilityCellDemand(config, 254, ZoneType.NONE, 0, 0, 0)).toBe(0);
   });
 
   it('returns infra consumption for infrastructure building', () => {
     // buildingId 252 is police station, infraType='police'
-    const demand = calculateUtilityCellDemand(config, 252, ZoneType.NONE, 0, 0);
+    const demand = calculateUtilityCellDemand(config, 252, ZoneType.NONE, 0, 0, 0);
     expect(demand).toBe(5);
   });
 
@@ -55,6 +55,6 @@ describe('calculateUtilityCellDemand', () => {
       infraConsumption: {},
       infraTypeToKey: {},
     };
-    expect(calculateUtilityCellDemand(configNoKeys, 252, ZoneType.NONE, 0, 0)).toBe(0);
+    expect(calculateUtilityCellDemand(configNoKeys, 252, ZoneType.NONE, 0, 0, 0)).toBe(0);
   });
 });

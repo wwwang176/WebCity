@@ -108,6 +108,25 @@ export class CitizenManager {
     return this._addCitizen(overrides, currentTick);
   }
 
+  /**
+   * Add a citizen whose home has ALREADY been shown to have room.
+   *
+   * The gate in createCitizen compares the whole citizen list against total
+   * residential capacity, and that list includes citizens with homeId === null
+   * — the homeless, and everyone waiting for assignCitizenHousing. So a city
+   * carrying any homeless population reported itself full while individual
+   * houses still had free rooms, and birthTick — which runs once a MONTH,
+   * against migration's once every 6 ticks — was the one that lost the race.
+   * Natural birth degenerated into a residual mechanism.
+   *
+   * Only for callers that have verified per-building occupancy against the
+   * building's own capacity, which is the stronger check: if such a room
+   * exists, the city is not actually full.
+   */
+  createCitizenInKnownVacancy(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen {
+    return this._addCitizen(overrides, currentTick);
+  }
+
   /** Unconditionally restore a citizen (save-loading). Bypasses capacity check. */
   restoreCitizen(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen {
     return this._addCitizen(overrides, currentTick);
@@ -166,6 +185,20 @@ export class CitizenManager {
     return this.citizens.length;
   }
 
+  /**
+   * Citizens currently holding a job.
+   *
+   * The city's job VACANCIES are totalJobs minus this — not totalJobs minus
+   * the population. Using the population treated every baby, schoolchild and
+   * retiree as if it filled a post, so a city with a normal age pyramid
+   * reported no openings while a large share of its offices stood empty.
+   */
+  getEmployedCount(): number {
+    let n = 0;
+    for (const c of this.citizens) if (c.workplaceId !== null) n++;
+    return n;
+  }
+
   getCitizens(): readonly Citizen[] {
     return this.citizens;
   }
@@ -214,6 +247,13 @@ export class CitizenManager {
       }
       if (c.workplaceId === posKey) {
         c.workplaceId = null;
+        // Record the unemployment start, symmetrically with homelessSince above.
+        // Happiness escalates the unemployment penalty by duration (-15, then
+        // -25 after 30 ticks, then -100) and reads this field; leaving it null
+        // pinned demolition-driven unemployment at the mildest tier forever, and
+        // hid these citizens from the unemployment figure in DemographicsPage.
+        // The three other unemployment paths all record it (BUG-075).
+        c.unemployedSince = currentTick ?? null;
         affected = true;
       }
       if (affected) evictedIds.push(c.id);
@@ -225,10 +265,35 @@ export class CitizenManager {
   /** Called once per game day: recompute all citizen ages from birthTick.
    *  Using birthTick avoids float accumulation errors. */
   updateAges(currentTick: number): void {
+    const retired: number[] = [];
     for (const c of this.citizens) {
       c.age = (currentTick - c.birthTick) * AGE_PER_TICK;
       c.lifeStage = getLifeStage(c.age);
+      // Retire citizens who have aged out of working age. Job assignment filters
+      // to working-age citizens, but nothing ever released a post by age, and
+      // workOccupancy counts every citizen holding a workplaceId — so retirees
+      // permanently occupied jobs that could never be reassigned, while staying
+      // invisible in unemploymentRate (which only counts working-age citizens).
+      // unemployedSince stays null: retirement is not unemployment, and stamping
+      // it would apply the happiness penalty ladder to every senior (BUG-076).
+      //
+      // Deliberately `age > ADULT_MAX` rather than `!isWorkingAge(age)`: the
+      // latter also covers children and teens, who never hold a job in a running
+      // game (assignment filters by working age) but do in tests that use a low
+      // age as shorthand. Retirement is the upper boundary only.
+      if (c.workplaceId !== null && c.age > LIFE_STAGE_AGE.ADULT_MAX) {
+        c.workplaceId = null;
+        retired.push(c.id);
+      }
     }
+    // Every other path that clears workplaceId also drops the commute cache
+    // entry — eviction via onEvicted, death, emigration, moving house, changing
+    // job, unreachable workplace. Retirement did not, so the retiree's route
+    // kept its routeRefCount and went on feeding the congestion predictor,
+    // which writes trafficDensity and therefore noise pollution, happiness and
+    // land value. The seat it vacated was refilled and counted a second time,
+    // and the ghost survived until the citizen died (BUG-119).
+    if (retired.length > 0) this.onEvicted?.(retired);
   }
 
   /** Called once per game day: bathtub-curve death check.

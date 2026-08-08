@@ -3,9 +3,9 @@ import { Grid } from '../../grid/Grid';
 import { TerrainType } from '../../grid/types';
 import { RoadType } from '../../road/types';
 import { RailType, RAIL } from '../../rail/types';
-import { RailNetwork } from '../../rail/RailNetwork';
+import { RailNetwork, rebuildRailNetworkFromGrid } from '../../rail/RailNetwork';
 import { ElevationManager } from '../ElevationManager';
-import { ElevatedRailBuilder } from '../ElevatedRailBuilder';
+import { ElevatedRailBuilder, rebuildElevatedRailNetwork } from '../ElevatedRailBuilder';
 import { ELEVATION_COST } from '../types';
 
 function makeGrid(size: number): Grid {
@@ -107,5 +107,60 @@ describe('ElevatedRailBuilder', () => {
     builder.removeElevated(5, 5);
     expect(em.get(5, 5, 2)).toBeNull();
     expect(em.get(5, 5, 1)).not.toBeNull();
+  });
+});
+
+// BUG-065: Game.ts constructed ElevatedRailBuilder WITHOUT the RailNetwork
+// (the ground RailBuilder on the previous line does get it), so elevated track
+// existed in ElevationManager — rendered and billed maintenance every tick —
+// while contributing zero nodes/edges to the graph RailSystem.computeRoutePaths
+// searches. rebuildRailNetworkFromGrid could not recover it either, because
+// buildElevatedTrack never writes the grid. Since ground track cannot cross
+// water, an elevated bridge is the only way over, so a rail line spanning water
+// silently failed to be created.
+describe('ElevatedRailBuilder — network registration', () => {
+  it('should register elevated track in the network it was constructed with', () => {
+    const grid = makeGrid(40);
+    const em = new ElevationManager();
+    const net = new RailNetwork();
+    for (let x = 16; x <= 20; x++) setWaterColumn(grid, x);
+    for (let x = 5; x <= 14; x++) placeGroundRail(grid, x, 10);
+    for (let x = 22; x <= 30; x++) placeGroundRail(grid, x, 10);
+    for (let x = 5; x <= 30; x++) net.addNode(`${x},10`);
+    for (let x = 5; x < 14; x++) net.addEdge(`${x},10`, `${x + 1},10`);
+    for (let x = 22; x < 30; x++) net.addEdge(`${x},10`, `${x + 1},10`);
+    expect(net.findPath('5,10', '30,10')).toBeNull();
+
+    const builder = new ElevatedRailBuilder(grid, em, net);
+    const result = builder.buildElevatedTrack({ x: 14, y: 10 }, { x: 22, y: 10 }, 1_000_000, 1);
+
+    expect(result.success).toBe(true);
+    expect(net.findPath('5,10', '30,10')).not.toBeNull();
+  });
+
+  // The load path: buildElevatedTrack never writes the grid, so the grid scan in
+  // rebuildRailNetworkFromGrid sees nothing and the bridge vanishes from the
+  // graph after every save/load.
+  it('should restore elevated track into a fresh network after a reload', () => {
+    const grid = makeGrid(40);
+    const em = new ElevationManager();
+    for (let x = 16; x <= 20; x++) setWaterColumn(grid, x);
+    for (let x = 5; x <= 14; x++) placeGroundRail(grid, x, 10);
+    for (let x = 22; x <= 30; x++) placeGroundRail(grid, x, 10);
+
+    const buildNet = new RailNetwork();
+    new ElevatedRailBuilder(grid, em, buildNet)
+      .buildElevatedTrack({ x: 14, y: 10 }, { x: 22, y: 10 }, 1_000_000, 1);
+
+    // Simulate a reload: fresh network, elevation restored from its own JSON.
+    const reloadedEm = new ElevationManager();
+    reloadedEm.fromJSON(em.toJSON());
+    const net = new RailNetwork();
+    rebuildRailNetworkFromGrid(grid, net);
+    expect(net.findPath('5,10', '30,10')).toBeNull(); // grid scan alone cannot bridge water
+
+    rebuildElevatedRailNetwork(reloadedEm, net);
+
+    expect(net.findPath('5,10', '30,10')).not.toBeNull();
   });
 });

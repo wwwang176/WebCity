@@ -2,7 +2,7 @@ import { Grid } from '../grid/Grid';
 import { TerrainType, type Position } from '../grid/types';
 import { toPosKey, getDirectionFlag } from '../grid/GridHelpers';
 import { RoadType } from '../road/types';
-import { RailType, RAIL, type BuildTrackResult } from '../rail/types';
+import { RailType, RAIL, TrackDirection, type BuildTrackResult } from '../rail/types';
 import { RailNetwork } from '../rail/RailNetwork';
 import { ElevationManager } from './ElevationManager';
 import { getElevatedPath } from './ElevatedPath';
@@ -134,5 +134,50 @@ export class ElevatedRailBuilder {
 
   private nodeId(x: number, y: number, level: number): string {
     return level === 0 ? toPosKey(x, y) : `${x},${y},${level}`;
+  }
+}
+
+/** Cardinal direction bits paired with their offsets and opposites. */
+const RAIL_DIRS = [
+  { flag: TrackDirection.NORTH, dx: 0, dy: -1, opposite: TrackDirection.SOUTH },
+  { flag: TrackDirection.SOUTH, dx: 0, dy: 1, opposite: TrackDirection.NORTH },
+  { flag: TrackDirection.WEST, dx: -1, dy: 0, opposite: TrackDirection.EAST },
+  { flag: TrackDirection.EAST, dx: 1, dy: 0, opposite: TrackDirection.WEST },
+] as const;
+
+/** Same node-id scheme buildElevatedTrack uses: ground cells keep the plain key. */
+function elevatedNodeId(x: number, y: number, level: number): string {
+  return level === 0 ? toPosKey(x, y) : `${x},${y},${level}`;
+}
+
+/**
+ * Re-register elevated rail track into a RailNetwork.
+ *
+ * buildElevatedTrack never writes the grid, so rebuildRailNetworkFromGrid — a
+ * pure grid scan — cannot see elevated track and every bridge disappeared from
+ * the routing graph after a save/load (BUG-065). Since ground track cannot
+ * cross water, that made rail lines spanning water impossible to create.
+ *
+ * Ramps are the only cells whose two neighbours sit at different levels: the
+ * side the ramp ascends toward is at its stored level, the opposite side one
+ * level below (level 0 for a ground ramp, whose origin cell has no elevation
+ * entry at all).
+ */
+export function rebuildElevatedRailNetwork(
+  elevationManager: ElevationManager,
+  network: RailNetwork,
+): void {
+  for (const { x, y, level, data } of elevationManager.toJSON()) {
+    if (data.railType === RailType.NONE) continue;
+
+    const id = elevatedNodeId(x, y, level);
+    network.addNode(id);
+
+    for (const dir of RAIL_DIRS) {
+      if ((data.railFlags & dir.flag) === 0) continue;
+      const descending = data.isRamp && data.rampAscendDirection === dir.opposite;
+      const neighborLevel = descending ? level - 1 : level;
+      network.addEdge(id, elevatedNodeId(x + dir.dx, y + dir.dy, neighborLevel));
+    }
   }
 }

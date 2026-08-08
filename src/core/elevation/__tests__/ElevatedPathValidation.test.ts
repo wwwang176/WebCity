@@ -142,3 +142,52 @@ describe('validateElevatedPath', () => {
     expect(error).toBeNull();
   });
 });
+
+// BUG-059: the level-collision block was gated on `pos.level > 0`, but the level
+// actually written is `storeLevel = isRamp ? max(level, targetLevel) : level`.
+// An ascending ramp at path index 1 has level 0 and targetLevel 1, so the whole
+// block — including the LEVEL_OCCUPIED rejection whose own comment states the
+// invariant — was skipped, and the builder then wrote that cell at level 1 on
+// top of an existing viaduct.
+describe('validateElevatedPath — ramp landing on an occupied level', () => {
+  let grid: Grid;
+  let em: ElevationManager;
+
+  beforeEach(() => {
+    grid = makeGrid(20);
+    em = new ElevationManager();
+  });
+
+  it('rejects an ascending ramp that lands on an occupied level-1 cell', () => {
+    // An existing flat viaduct deck at (1,0) level 1.
+    em.set(1, 0, 1, { roadType: RoadType.FOUR_LANE, roadFlags: 5, railType: 0, railFlags: 0, isRamp: false, rampAscendDirection: 0 });
+    // Ground road at the ramp's foot so the path is otherwise legal.
+    grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
+
+    const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
+    expect(validateElevatedPath(grid, em, path!)).toBe('LEVEL_OCCUPIED');
+  });
+
+  it('rejects a ramp landing on another ramp at the same stored level', () => {
+    em.set(1, 0, 1, { roadType: RoadType.TWO_LANE, roadFlags: 5, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0 });
+    grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
+
+    const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
+    expect(validateElevatedPath(grid, em, path!)).toBe('LEVEL_OCCUPIED');
+  });
+
+  it('still rejects the same conflict one tile further along (body cell)', () => {
+    // Contrast case: guards against an over-broad fix that stops rejecting here.
+    em.set(2, 0, 1, { roadType: RoadType.FOUR_LANE, roadFlags: 5, railType: 0, railFlags: 0, isRamp: true, rampAscendDirection: 0 });
+    grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
+
+    const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
+    expect(validateElevatedPath(grid, em, path!)).toBe('LEVEL_OCCUPIED');
+  });
+
+  it('still allows a clear elevated path', () => {
+    grid.setCell(0, 0, { roadType: RoadType.TWO_LANE });
+    const path = getElevatedPath({ x: 0, y: 0 }, { x: 5, y: 0 }, 0, 1);
+    expect(validateElevatedPath(grid, em, path!)).toBeNull();
+  });
+});

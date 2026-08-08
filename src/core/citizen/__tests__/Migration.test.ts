@@ -2,6 +2,10 @@ import { describe, it, expect } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
 import { migrationTick, calculateAttractiveness, getImmigrationCap, ATTRACTIVENESS, IMMIGRATION, EDUCATION_THRESHOLDS, CHILD_EDUCATION, ATTRITION, type CityAttractiveness } from '../Migration';
 import { EMIGRATION_TOLERANCE, calculateEmigrationTolerance, EducationLevel } from '../types';
+import { calculateLandValue } from '../../economy/LandValue';
+import { MAX_SERVICE_SCORE } from '../../service/ServiceCoverageQuery';
+import { MAX_ORDINARY_LAND_VALUE } from '../Migration';
+import { useSeededRandom } from '../../__tests__/helpers/seededRandom';
 
 const attractiveCity: CityAttractiveness = {
   jobOpenings: 10,
@@ -13,6 +17,9 @@ const attractiveCity: CityAttractiveness = {
 };
 
 describe('Migration', () => {
+  // Deterministic ticks: see useSeededRandom.
+  useSeededRandom();
+
   it('should immigrate when city is attractive', () => {
     const mgr = new CitizenManager();
     const result = migrationTick(mgr, attractiveCity);
@@ -34,7 +41,7 @@ describe('Migration', () => {
 
   it('should emigrate unhappy citizens (capped at 1-3% of population) plus natural attrition', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 100; i++) mgr.createCitizen({ happiness: 10 });
+    for (let i = 0; i < 100; i++) mgr.createCitizen({ happiness: 10 })!;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 10, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 100);
     // Unhappy emigration: base(0-10) + 1-3%(1-3) = 0-13
@@ -46,7 +53,7 @@ describe('Migration', () => {
 
   it('should eventually emigrate all unhappy citizens over many ticks', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 20; i++) mgr.createCitizen({ happiness: 10 });
+    for (let i = 0; i < 20; i++) mgr.createCitizen({ happiness: 10 })!;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 10, taxRate: 20, pollution: 50, crimeRate: 50 };
     let totalEmigrated = 0;
     for (let tick = 0; tick < 500; tick++) {
@@ -79,6 +86,9 @@ describe('Migration', () => {
 
 /* ── Phase A: 移民動態縮放 ── */
 describe('getImmigrationCap — 移民動態縮放', () => {
+  // Deterministic ticks: see useSeededRandom.
+  useSeededRandom();
+
   it('小城市上限：population=100 → tier=2, cap=3（popCap 瓶頸）', () => {
     // popCap = max(3, floor(100*0.01)) = 3
     // baseDemand = ceil((80-50)/10) = 3, tier = floor(log10(100)) = 2, demandCap = 6
@@ -119,7 +129,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   it('emigration 不受 getImmigrationCap 影響', () => {
     const mgr = new CitizenManager();
     // Use 200 unhappy citizens; emigration cap = base(0-10) + 1-3%(2-6) ≥ 2 reliably
-    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 20 });
+    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 20 })!;
     const result = migrationTick(mgr, {
       ...attractiveCity,
       avgHappiness: 10,
@@ -135,17 +145,39 @@ describe('getImmigrationCap — 移民動態縮放', () => {
     expect(highUnemployment).toBeLessThan(noUnemployment);
   });
 
-  it('full unemployment reduces attractiveness but does not block migration', () => {
-    const score = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 1.0 });
-    const baseline = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 0 });
-    expect(score).toBeLessThan(baseline);
-    expect(score).toBeGreaterThan(IMMIGRATION.ATTRACTIVENESS_THRESHOLD);
+  /**
+   * These two cases used to assert that total unemployment still left a city
+   * above the immigration threshold, on the stated ground that the penalty
+   * should be "moderate". Their premise no longer holds.
+   *
+   * They were written when jobOpenings meant `totalJobs - population`, under
+   * which `jobOpenings > 0` implied jobs outnumbered people and unemployment
+   * was therefore structurally low — the two could not diverge far. Once
+   * countJobOpenings became `totalJobs - employed`, they became independent,
+   * and a flat +20 job bonus against a penalty capped at 15 made a city with
+   * jobs nobody can reach NET MORE attractive than one with neither. That is
+   * the runaway loop BUG-166 describes: an industrial park across an unbuilt
+   * link keeps inviting people who cannot get to it.
+   *
+   * The penalty is still moderate at moderate unemployment. What changed is
+   * that jobs no longer attract anyone once nobody can take them.
+   */
+  it('should make unemployment cost more the higher it climbs', () => {
+    const at = (rate: number) => calculateAttractiveness({ ...attractiveCity, unemploymentRate: rate });
+    expect(at(1.0)).toBeLessThan(at(0.5));
+    expect(at(0.5)).toBeLessThan(at(0));
   });
 
-  it('unemployment penalty is moderate — city can still attract immigrants', () => {
+  it('should still attract immigrants at ordinary unemployment', () => {
     const mgr = new CitizenManager();
-    const result = migrationTick(mgr, { ...attractiveCity, unemploymentRate: 0.8 });
+    const result = migrationTick(mgr, { ...attractiveCity, unemploymentRate: 0.1 });
     expect(result.immigrated).toBeGreaterThan(0);
+  });
+
+  it('should stop attracting them when the jobs are unreachable', () => {
+    const mgr = new CitizenManager();
+    const result = migrationTick(mgr, { ...attractiveCity, unemploymentRate: 1.0 });
+    expect(result.immigrated).toBe(0);
   });
 
   it('ATTRACTIVENESS constants should have valid weights', () => {
@@ -164,7 +196,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   it('natural attrition removes citizens even when all are happy', () => {
     const mgr = new CitizenManager();
     // 1000 happy citizens → attrition = floor(1000 * 0.002) = 2
-    for (let i = 0; i < 1000; i++) mgr.createCitizen({ happiness: 80 });
+    for (let i = 0; i < 1000; i++) mgr.createCitizen({ happiness: 80 })!;
     const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
     const result = migrationTick(mgr, stableCity, 1000);
     // No unhappy emigration, but natural attrition should remove some
@@ -175,7 +207,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   it('natural attrition is 0 for very small populations', () => {
     const mgr = new CitizenManager();
     // 50 citizens → min(5, floor(50 * 0.002)) = min(5, 0) = 0
-    for (let i = 0; i < 50; i++) mgr.createCitizen({ happiness: 80 });
+    for (let i = 0; i < 50; i++) mgr.createCitizen({ happiness: 80 })!;
     const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
     const result = migrationTick(mgr, stableCity, 50);
     expect(result.emigrated).toBe(0);
@@ -184,7 +216,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   it('natural attrition is capped at 5 for large populations', () => {
     const mgr = new CitizenManager();
     // 20000 citizens → min(5, floor(20000 * 0.002)) = min(5, 40) = 5
-    for (let i = 0; i < 20000; i++) mgr.createCitizen({ happiness: 80 });
+    for (let i = 0; i < 20000; i++) mgr.createCitizen({ happiness: 80 })!;
     const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
     const result = migrationTick(mgr, stableCity, 20000);
     expect(result.emigrated).toBe(5);
@@ -211,7 +243,7 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
 
   it('citizens get emigrationTolerance on creation', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ education: EducationLevel.HIGH_SCHOOL });
+    const c = mgr.createCitizen({ education: EducationLevel.HIGH_SCHOOL })!;
     // HS(26) ± 5 = 21~31
     expect(c.emigrationTolerance).toBeGreaterThanOrEqual(21);
     expect(c.emigrationTolerance).toBeLessThanOrEqual(31);
@@ -225,14 +257,14 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
         happiness: 25,
         education: EducationLevel.UNIVERSITY,
         emigrationTolerance: 35, // fixed for determinism
-      });
+      })!;
     }
     for (let i = 0; i < 100; i++) {
       mgr.createCitizen({
         happiness: 25,
         education: EducationLevel.NONE,
         emigrationTolerance: 18, // fixed for determinism
-      });
+      })!;
     }
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 25, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 200);
@@ -248,7 +280,7 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
   it('legacy citizens without emigrationTolerance use fallback', () => {
     const mgr = new CitizenManager();
     // Simulate legacy save: create citizen then strip tolerance
-    const c = mgr.createCitizen({ happiness: 20 });
+    const c = mgr.createCitizen({ happiness: 20 })!;
     (c as any).emigrationTolerance = undefined;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 20, taxRate: 20, pollution: 50, crimeRate: 50 };
     // happiness 20 < fallback 25 → should emigrate (if within cap)
@@ -261,7 +293,7 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
 describe('migrationTick — emigration+attrition no duplicate removal', () => {
   it('emigratedIds should contain no duplicates', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 500; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+    for (let i = 0; i < 500; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 })!;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 500);
     const unique = new Set(result.emigratedIds);
@@ -270,7 +302,7 @@ describe('migrationTick — emigration+attrition no duplicate removal', () => {
 
   it('population after emigration matches emigrated count', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 })!;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 200);
     expect(mgr.getPopulation()).toBe(200 - result.emigrated);
@@ -280,7 +312,7 @@ describe('migrationTick — emigration+attrition no duplicate removal', () => {
     const mgr = new CitizenManager();
     const ids: number[] = [];
     for (let i = 0; i < 100; i++) {
-      const c = mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+      const c = mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 })!;
       ids.push(c.id);
     }
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };
@@ -295,9 +327,57 @@ describe('Migration constants', () => {
   it('EDUCATION_THRESHOLDS should have correct values', () => {
     expect(EDUCATION_THRESHOLDS.OFFICE_RATIO).toBe(0.3);
     expect(EDUCATION_THRESHOLDS.INDUSTRIAL_RATIO).toBe(0.5);
-    expect(EDUCATION_THRESHOLDS.AVG_LAND_VALUE).toBe(150);
+    // AVG_LAND_VALUE is asserted separately, against what a city can reach
+    // rather than against a literal — see the block below.
     expect(EDUCATION_THRESHOLDS.LOW_TAX).toBe(7);
     expect(EDUCATION_THRESHOLDS.HIGH_TAX).toBe(12);
+  });
+
+  /**
+   * The old assertion pinned AVG_LAND_VALUE to the literal 100 and justified it
+   * against the per-cell MAXIMUM of 125 — which needs a waterfront cell, while
+   * the value compared against it is getAvgLandValue(), an average over every
+   * building in the city. An ordinary inland cell tops out at 105 and
+   * updateLandValue always deducts crimeRate x 0.4, so even a perfect city
+   * averaged about 97 and the HIGH_LAND_VALUE weighting stayed dead code.
+   *
+   * Pin the property instead: a city that has done everything right must clear
+   * the threshold, and a mediocre one must not.
+   */
+  describe('AVG_LAND_VALUE is a target a city can actually reach', () => {
+    /** Perfect services, a park, no pollution or noise, crime as a mature city has it. */
+    const MATURE_CRIME = 20;
+    const perfectInlandCell = () => calculateLandValue({
+      serviceCoverage: MAX_SERVICE_SCORE,
+      parkProximity: true,
+      waterfront: false,
+      pollution: 0,
+      noise: 0,
+      crimeRate: MATURE_CRIME,
+    });
+
+    it('should be reachable by a city where every cell is perfect', () => {
+      expect(perfectInlandCell()).toBeGreaterThan(EDUCATION_THRESHOLDS.AVG_LAND_VALUE);
+    });
+
+    it('should leave headroom, not sit right on the ceiling', () => {
+      // A threshold one point under the perfect-city average would still be
+      // unreachable in practice: no real city is uniformly perfect.
+      expect(EDUCATION_THRESHOLDS.AVG_LAND_VALUE)
+        .toBeLessThan(perfectInlandCell() * 0.95);
+    });
+
+    it('should not be cleared by a city with no services', () => {
+      const bare = calculateLandValue({
+        serviceCoverage: 0, parkProximity: false, waterfront: false,
+        pollution: 0, noise: 0, crimeRate: MATURE_CRIME,
+      });
+      expect(bare).toBeLessThan(EDUCATION_THRESHOLDS.AVG_LAND_VALUE);
+    });
+
+    it('should not need a waterfront cell to be beaten', () => {
+      expect(MAX_ORDINARY_LAND_VALUE).toBeGreaterThan(EDUCATION_THRESHOLDS.AVG_LAND_VALUE);
+    });
   });
 
   it('CHILD_EDUCATION should have correct values', () => {

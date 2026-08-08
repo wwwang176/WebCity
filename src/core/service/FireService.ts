@@ -62,7 +62,7 @@ export class FireService extends RoadCoverageService<FireStation> {
   private readonly stationLoad = new Map<string, number>();
   private loadRatio = 0;
 
-  addStation(x: number, y: number, radius = FIRE.DEFAULT_RADIUS, capacity = FIRE.DEFAULT_CAPACITY): string {
+  addStation(x: number, y: number, radius: number = FIRE.DEFAULT_RADIUS, capacity: number = FIRE.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;
@@ -70,7 +70,7 @@ export class FireService extends RoadCoverageService<FireStation> {
 
   /** Assign weighted demand to nearest station (Euclidean). Delegated to StationLoadDistributor (DRY). */
   updateStationLoads(demands: ReadonlyArray<{ x: number; y: number; weight: number }>): void {
-    const result = distributeLoadToNearest(this.facilities, demands, this.stationLoad);
+    const result = distributeLoadToNearest(this.getOperationalFacilities(), demands, this.stationLoad);
     this.loadRatio = result.loadRatio;
   }
 

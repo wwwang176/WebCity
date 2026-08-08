@@ -8,7 +8,7 @@ import { BURNED } from '../../building/InfraPlacement';
 describe('applyFireDamage', () => {
   it('marks a single-cell zone building as BURNED when damage >= threshold', () => {
     const grid = new Grid(5, 5);
-    grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL, buildingId: 1, serviceCoverage: 3 });
+    grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, serviceCoverage: 3 });
 
     const fires: ResolvedFire[] = [{ x: 2, y: 2, damage: FIRE.BURN_DAMAGE_THRESHOLD }];
     const result = applyFireDamage(grid, fires);
@@ -23,7 +23,7 @@ describe('applyFireDamage', () => {
 
   it('does nothing when damage is below threshold', () => {
     const grid = new Grid(5, 5);
-    grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL, buildingId: 1 });
+    grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
 
     const fires: ResolvedFire[] = [{ x: 2, y: 2, damage: FIRE.BURN_DAMAGE_THRESHOLD - 0.01 }];
     const result = applyFireDamage(grid, fires);
@@ -56,7 +56,7 @@ describe('applyFireDamage', () => {
 
   it('handles multiple resolved fires', () => {
     const grid = new Grid(5, 5);
-    grid.setCell(0, 0, { zoneType: ZoneType.COMMERCIAL, buildingId: 2, serviceCoverage: 6 });
+    grid.setCell(0, 0, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 2, serviceCoverage: 6 });
     grid.setCell(3, 3, { zoneType: ZoneType.INDUSTRIAL, buildingId: 3, serviceCoverage: 0 });
 
     const fires: ResolvedFire[] = [
@@ -74,7 +74,7 @@ describe('applyFireDamage', () => {
   it('returns building level in update based on buildingId type level', () => {
     const grid = new Grid(5, 5);
     // buildingId 3 = Large House (Residential LOW, Level 3)
-    grid.setCell(1, 1, { zoneType: ZoneType.RESIDENTIAL, buildingId: 3 });
+    grid.setCell(1, 1, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 3 });
 
     const fires: ResolvedFire[] = [{ x: 1, y: 1, damage: 1.0 }];
     const result = applyFireDamage(grid, fires);

@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { runMigrations, CURRENT_SAVE_VERSION, MIGRATIONS } from '../migrations';
 import { createGameState } from '../../simulation/GameState';
 import { RoadType, RoadDirection } from '../../road/types';
+import { serializeGameState, deserializeGameState } from '../Serializer';
+import { LifeStage, AGE_PER_TICK } from '../../citizen/types';
 
 describe('Save migrations', () => {
   it('CURRENT_SAVE_VERSION should match the highest migration version', () => {
@@ -97,5 +99,87 @@ describe('migration v2: fix_intersection_roadtype', () => {
 
     // Should still be FOUR_LANE (no change needed)
     expect(grid.getCell(5, 5)!.roadType).toBe(RoadType.FOUR_LANE);
+  });
+});
+
+// BUG-055: migration v3 detected legacy citizens by "birthTick is absent", but
+// deserializeGameState restores citizens BEFORE running migrations and
+// CitizenManager._addCitizen fabricates a birthTick ahead of the ...overrides
+// spread — so the guard skipped every citizen and v3 never converted anyone.
+describe('v3 citizen age migration (years -> life-weeks)', () => {
+  /** A minimal but structurally complete version-2 save. */
+  function legacySave(citizens: Record<string, unknown>[], tick = 5000): string {
+    const base = JSON.parse(serializeGameState(createGameState(10, 10))) as Record<string, unknown>;
+    base.version = 2;
+    (base.clock as { tick: number }).tick = tick;
+    base.citizens = citizens;
+    return JSON.stringify(base);
+  }
+
+  it('should convert a legacy senior age from years to life-weeks', () => {
+    const json = legacySave([
+      {
+        id: 1,
+        age: 70,
+        lifeStage: 'SENIOR',
+        education: 'HIGH_SCHOOL',
+        educationProgress: 80000,
+        happiness: 50,
+        health: 80,
+        homeId: null,
+        workplaceId: null,
+      },
+    ]);
+
+    const restored = deserializeGameState(json);
+    const c = restored.citizens.getCitizens()[0]!;
+
+    // 70y -> 200 + (70-65) * (80/35) = 211.43 life-weeks
+    expect(c.age).toBeCloseTo(211.43, 1);
+    expect(c.lifeStage).toBe(LifeStage.SENIOR);
+    // educationProgress rescaled 160000 -> 10000 thresholds
+    expect(c.educationProgress).toBe(5000);
+  });
+
+  it('should anchor birthTick to the save clock, not tick 0', () => {
+    const json = legacySave([
+      { id: 1, age: 70, lifeStage: 'SENIOR', education: 'NONE', educationProgress: 0,
+        happiness: 50, health: 80, homeId: null, workplaceId: null },
+    ], 5000);
+
+    const restored = deserializeGameState(json);
+    const c = restored.citizens.getCitizens()[0]!;
+
+    // birthTick must reproduce the age at the SAVED tick, not at tick 0.
+    expect(5000 - c.birthTick).toBeCloseTo(c.age / AGE_PER_TICK, 0);
+    expect(c.birthTick).toBeGreaterThan(-40000);
+  });
+
+  it('should convert a legacy child so schooling still applies', () => {
+    const json = legacySave([
+      { id: 1, age: 10, lifeStage: 'CHILD', education: 'NONE', educationProgress: 0,
+        happiness: 50, health: 80, homeId: null, workplaceId: null },
+    ]);
+
+    const restored = deserializeGameState(json);
+    const c = restored.citizens.getCitizens()[0]!;
+
+    // 10y -> 8 + (10-5) * (24/7) = 25.14 life-weeks, still a CHILD
+    expect(c.age).toBeCloseTo(25.14, 1);
+    expect(c.lifeStage).toBe(LifeStage.CHILD);
+  });
+
+  it('should leave modern saves untouched', () => {
+    const base = JSON.parse(serializeGameState(createGameState(10, 10))) as Record<string, unknown>;
+    (base.clock as { tick: number }).tick = 5000;
+    base.citizens = [
+      { id: 1, birthTick: 1000, age: 24, lifeStage: 'CHILD', education: 'NONE',
+        educationProgress: 0, happiness: 50, health: 80, homeId: null, workplaceId: null },
+    ];
+
+    const restored = deserializeGameState(JSON.stringify(base));
+    const c = restored.citizens.getCitizens()[0]!;
+    expect(c.age).toBe(24);
+    expect(c.birthTick).toBe(1000);
   });
 });

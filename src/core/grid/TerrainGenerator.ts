@@ -231,8 +231,8 @@ function generatePeninsula(
   } else {
     // 2-side sea: pick a corner (2 adjacent edges are mainland)
     // corners: top+left(0,3), top+right(0,1), bottom+left(2,3), bottom+right(1,2)
-    const corners = [[0, 3], [0, 1], [2, 3], [1, 2]];
-    const corner = corners[Math.floor(rng() * 4)]!;
+    const corners = [[0, 3], [0, 1], [2, 3], [1, 2]] as const;
+    const corner = corners[Math.floor(rng() * 4)] ?? corners[0];
     mainlandEdges.add(corner[0]);
     mainlandEdges.add(corner[1]);
   }
@@ -250,7 +250,7 @@ function generatePeninsula(
       for (let e = 0; e < 4; e++) {
         if (mainlandEdges.has(e)) continue;
         const along = (e === 0 || e === 2) ? x : y;
-        const depth = edgeDepths[e] + coastWaveOffset(along, edgeWaves[e]);
+        const depth = edgeDepths[e]! + coastWaveOffset(along, edgeWaves[e]!);
         if (distFromEdge(x, y, size, e) < depth) {
           grid.setCell(x, y, { terrainType: TerrainType.WATER });
           break;

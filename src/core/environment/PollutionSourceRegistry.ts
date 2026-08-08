@@ -22,20 +22,27 @@ export function collectAllPollutionSources(
  * All service keys on GameState that implement PollutionSourceProvider.
  * Adding a new pollution source only requires appending to this array (OCP).
  */
-const POLLUTION_PROVIDER_KEYS: readonly string[] = [
-  'garbage', 'sewage', 'airport',
-];
+const POLLUTION_PROVIDER_KEYS = ['garbage', 'sewage', 'airport'] as const;
+
+/**
+ * The shape this function needs — named rather than `Record<string, unknown>`,
+ * which no class ever satisfies structurally and so forced the one caller
+ * (GameState) to be cast at the call site.
+ */
+export type PollutionProviderHost = Partial<
+  Record<(typeof POLLUTION_PROVIDER_KEYS)[number], PollutionSourceProvider>
+>;
 
 /**
  * Visit all service-based pollution sources without intermediate arrays (GC-friendly).
  * OCP: adding a new pollution source service only requires updating POLLUTION_PROVIDER_KEYS.
  */
 export function forEachServicePollutionSource(
-  state: Record<string, unknown>,
+  state: PollutionProviderHost,
   emit: (source: PollutionSource) => void,
 ): void {
   for (const key of POLLUTION_PROVIDER_KEYS) {
-    const provider = state[key] as PollutionSourceProvider | undefined;
+    const provider = state[key];
     if (!provider) continue;
     for (const src of provider.getPollutionSources()) {
       emit(src);

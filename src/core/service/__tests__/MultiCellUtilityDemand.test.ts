@@ -1,0 +1,304 @@
+import { describe, it, expect } from 'vitest';
+import { Grid } from '../../grid/Grid';
+import { placeInfraOnGrid, BURNED, ABANDONED } from '../../building/InfraPlacement';
+import { PowerGrid, INFRA_POWER_CONSUMPTION } from '../PowerGrid';
+import { WaterNetwork, INFRA_WATER_CONSUMPTION } from '../WaterNetwork';
+import { RoadType } from '../../road/types';
+import { ZoneType } from '../../grid/types';
+
+/**
+ * INFRA_POWER_CONSUMPTION / INFRA_WATER_CONSUMPTION are per-BUILDING rates, but
+ * placeInfraOnGrid stamps the same buildingId onto every cell of the footprint,
+ * and the demand sweeps visit every cell. A 2x2 police station was billed 4x,
+ * a 3x3 university 9x.
+ */
+describe('multi-cell infrastructure utility demand', () => {
+  it('should bill a 2x2 police station once, not once per footprint cell', () => {
+    const grid = new Grid(10, 10);
+    placeInfraOnGrid(grid, 2, 2, 'police', 0);
+    const pg = new PowerGrid();
+    pg.calculateDemand(grid);
+    expect(pg.getDemand()).toBe(INFRA_POWER_CONSUMPTION.police);
+  });
+
+  it('should bill a 3x3 university once, not nine times', () => {
+    const grid = new Grid(10, 10);
+    placeInfraOnGrid(grid, 1, 1, 'school_univ', 0);
+    const pg = new PowerGrid();
+    pg.calculateDemand(grid);
+    expect(pg.getDemand()).toBe(INFRA_POWER_CONSUMPTION.university);
+  });
+
+  it('should bill a rotated 2x3 hospital once', () => {
+    const grid = new Grid(10, 10);
+    placeInfraOnGrid(grid, 1, 1, 'hospital', 90);
+    const pg = new PowerGrid();
+    pg.calculateDemand(grid);
+    expect(pg.getDemand()).toBe(INFRA_POWER_CONSUMPTION.health);
+  });
+
+  it('should bill water for a 2x2 police station once', () => {
+    const grid = new Grid(10, 10);
+    placeInfraOnGrid(grid, 2, 2, 'police', 0);
+    const wn = new WaterNetwork();
+    wn.calculateDemand(grid);
+    expect(wn.getDemand()).toBe(INFRA_WATER_CONSUMPTION.police);
+  });
+
+  it('should charge a power plant no water at all', () => {
+    // INFRA_TYPE_TO_KEY mapped `power` to the POLICE water rate with a comment
+    // claiming power plants were "excluded above" — but the exclusion covers the
+    // WATER plant (253), not the power plant (254).
+    const grid = new Grid(10, 10);
+    placeInfraOnGrid(grid, 2, 2, 'power', 0);
+    const wn = new WaterNetwork();
+    wn.calculateDemand(grid);
+    expect(wn.getDemand()).toBe(0);
+  });
+
+  it('should still bill a 1x1 park exactly once', () => {
+    const grid = new Grid(10, 10);
+    placeInfraOnGrid(grid, 3, 3, 'park', 0);
+    const pg = new PowerGrid();
+    pg.calculateDemand(grid);
+    expect(pg.getDemand()).toBe(INFRA_POWER_CONSUMPTION.park);
+  });
+});
+
+/**
+ * calculateDemand is only the city-wide total. The other consumer of the same
+ * per-cell figure is bfsBudgetDrainFlood, which settles the budget cell by cell
+ * as it floods — and there, charging the whole building to its primary cell and
+ * nothing to the rest is actively wrong.
+ *
+ * A plant that cannot afford a 2x2 police station skips the primary cell, but
+ * the three secondary cells each report demand 0, so they were supplied for
+ * free AND relayed onward. The station showed 3 of its 4 cells powered and
+ * passed power through to whatever lay beyond it.
+ */
+describe('multi-cell infrastructure is supplied all-or-nothing', () => {
+  /**
+   * The station is the ONLY bridge between the road and the house — anything
+   * that reaches (6,1) had to be conducted through the footprint.
+   *
+   *   (1,1)(2,1)(3,1)   road, from the plant
+   *   (4,1)(5,1)        police station, top row  \ 2x2 footprint
+   *   (4,2)(5,2)        police station, bottom   /
+   *   (6,1)             house, reachable only through the station
+   *   (1,2)-(2,3)       power plant, 2x2
+   */
+  function cityWithStation(output: number): PowerGrid {
+    const grid = new Grid(12, 12);
+    for (let x = 1; x <= 3; x++) grid.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    placeInfraOnGrid(grid, 1, 2, 'power', 0);
+    placeInfraOnGrid(grid, 4, 1, 'police', 0);
+    grid.setCell(6, 1, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+
+    const pg = new PowerGrid();
+    pg.addPlant({ x: 1, y: 2, output, pollution: 0, type: 'coal' });
+    pg.calculateDemand(grid);
+    pg.calculateCoverage(grid);
+    return pg;
+  }
+
+  const POLICE = INFRA_POWER_CONSUMPTION.police!;
+  const STATION_CELLS = [[4, 1], [5, 1], [4, 2], [5, 2]] as const;
+
+  it('should power every cell of the station when the plant can afford it', () => {
+    const pg = cityWithStation(POLICE + 50);
+    for (const [x, y] of STATION_CELLS) {
+      expect(pg.isPowered(x, y), `(${x},${y}) should be powered`).toBe(true);
+    }
+  });
+
+  it('should power no cell of the station when the plant cannot', () => {
+    // Enough to reach the station, not enough to run it. The three secondary
+    // cells report demand 0, so they used to come out powered for free.
+    const pg = cityWithStation(POLICE - 1);
+    for (const [x, y] of STATION_CELLS) {
+      expect(pg.isPowered(x, y), `(${x},${y}) must not be powered`).toBe(false);
+    }
+  });
+
+  it('should not let an unaffordable station relay power past itself', () => {
+    const pg = cityWithStation(POLICE - 1);
+    expect(pg.isPowered(6, 1)).toBe(false);
+  });
+
+  it('should still conduct past a station it can afford', () => {
+    // Positive control for the relay: refusing to conduct must be a consequence
+    // of the budget, not a blanket block on facility footprints.
+    const pg = cityWithStation(POLICE + 50);
+    expect(pg.isPowered(6, 1)).toBe(true);
+  });
+
+  /**
+   * The case above is settled by refusing to relay through an unaffordable
+   * cell alone, because the flood happens to arrive at the PRIMARY first.
+   * Approach the same station from below and it arrives at a SECONDARY, whose
+   * own demand is 0 — free to supply, free to relay, and the primary is then
+   * refused on its own. That is the literal 3-of-4-cells-powered symptom, and
+   * only the per-footprint charge key rules it out.
+   *
+   *   (1,3)…(5,3)  road, from the plant
+   *   (4,1)(5,1)   police station, top row
+   *   (4,2)(5,2)   police station, bottom row — (5,2) is what the road touches
+   */
+  function stationApproachedFromASecondaryCell(output: number): PowerGrid {
+    const grid = new Grid(12, 12);
+    for (let x = 1; x <= 5; x++) grid.setCell(x, 3, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    placeInfraOnGrid(grid, 1, 4, 'power', 0);
+    placeInfraOnGrid(grid, 4, 1, 'police', 0);
+
+    const pg = new PowerGrid();
+    pg.addPlant({ x: 1, y: 4, output, pollution: 0, type: 'coal' });
+    pg.calculateDemand(grid);
+    pg.calculateCoverage(grid);
+    return pg;
+  }
+
+  it('should refuse the whole station even when reached via a secondary cell', () => {
+    const pg = stationApproachedFromASecondaryCell(POLICE - 1);
+    for (const [x, y] of STATION_CELLS) {
+      expect(pg.isPowered(x, y), `(${x},${y}) must not be powered`).toBe(false);
+    }
+  });
+
+  it('should power the whole station when reached via a secondary cell', () => {
+    const pg = stationApproachedFromASecondaryCell(POLICE + 50);
+    for (const [x, y] of STATION_CELLS) {
+      expect(pg.isPowered(x, y), `(${x},${y}) should be powered`).toBe(true);
+    }
+  });
+});
+
+/**
+ * `supplied` is shared across the plants of one coverage pass, so the
+ * paid-footprint set has to be too.
+ *
+ * Per-plant, a footprint left PARTIALLY supplied by plant A was charged again
+ * in full by plant B: A pays at the primary, its budget lands on exactly 0, the
+ * `budget <= 0` break fires before the primary is dequeued, and the other three
+ * cells are never supplied. B then reaches a secondary, sees neither that cell
+ * in `supplied` nor the group in its own fresh set, and pays for the whole
+ * facility a second time — the city drains twice what getDemand() reports.
+ */
+describe('two plants do not pay for the same facility twice', () => {
+  const POLICE = INFRA_POWER_CONSUMPTION.police!;
+
+  /**
+   *   (1,1)…(9,1)  road spine
+   *   (2,2)        plant A, output exactly enough to reach and pay the station
+   *   (8,2)        plant B, approaching the station from the other side
+   *   (4,2)-(5,3)  police station, 2x2
+   *   (6,2)        a house past the station on B's side
+   */
+  function twoPlantCity(outputA: number, outputB: number): PowerGrid {
+    const grid = new Grid(14, 14);
+    for (let x = 1; x <= 9; x++) grid.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    placeInfraOnGrid(grid, 4, 2, 'police', 0);
+
+    const pg = new PowerGrid();
+    pg.addPlant({ x: 2, y: 2, output: outputA, pollution: 0, type: 'coal' });
+    pg.addPlant({ x: 8, y: 2, output: outputB, pollution: 0, type: 'coal' });
+    pg.calculateDemand(grid);
+    pg.calculateCoverage(grid);
+    return pg;
+  }
+
+  it('should power the station when the two plants together can afford it once', () => {
+    const pg = twoPlantCity(POLICE, POLICE);
+    expect(pg.isPowered(4, 2)).toBe(true);
+  });
+
+  it('should not need a second full payment from the other plant', () => {
+    // B carries only a fraction of the station's cost. If the footprint is
+    // charged per plant, B cannot afford it and the cells it reaches stay dark.
+    const pg = twoPlantCity(POLICE, 1);
+    for (const [x, y] of [[4, 2], [5, 2], [4, 3], [5, 3]] as const) {
+      expect(pg.isPowered(x, y), `(${x},${y})`).toBe(true);
+    }
+  });
+
+  it('should still refuse a station neither plant can afford', () => {
+    // Negative control: sharing the paid set must not make facilities free.
+    const pg = twoPlantCity(POLICE - 1, POLICE - 1);
+    for (const [x, y] of [[4, 2], [5, 2], [4, 3], [5, 3]] as const) {
+      expect(pg.isPowered(x, y), `(${x},${y})`).toBe(false);
+    }
+  });
+});
+
+/**
+ * A ruin consumes nothing.
+ *
+ * calculateUtilityCellDemand tested only isZoneBuilding, so a burnt-out or
+ * abandoned house drew full power and water. That is not merely a wrong total:
+ * bfsBudgetDrainFlood settles against it, so ruins consumed plant budget and
+ * could starve LIVE houses further along the flood — while the service panel on
+ * the same screen counted only working buildings and reported 100% coverage.
+ */
+describe('ruins draw no power or water', () => {
+  function cityWithHouses(secondReserved: number): Grid {
+    const grid = new Grid(12, 12);
+    for (let x = 1; x <= 4; x++) grid.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 0 });
+    grid.setCell(3, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: secondReserved });
+    return grid;
+  }
+
+  const demandOf = (grid: Grid) => {
+    const pg = new PowerGrid();
+    pg.calculateDemand(grid);
+    return pg.getDemand();
+  };
+
+  it('should bill two live houses twice', () => {
+    expect(demandOf(cityWithHouses(0))).toBeCloseTo(2 * demandOf(cityWithHouses(BURNED)), 9);
+  });
+
+  it('should bill nothing for a burned house', () => {
+    const live = demandOf(cityWithHouses(BURNED));
+    expect(live).toBeGreaterThan(0);
+    const both = demandOf(cityWithHouses(0));
+    expect(both - live).toBeCloseTo(live, 9);
+  });
+
+  it('should bill nothing for an abandoned house', () => {
+    expect(demandOf(cityWithHouses(ABANDONED))).toBeCloseTo(demandOf(cityWithHouses(BURNED)), 9);
+  });
+
+  it('should not let a ruin starve a live house of power', () => {
+    // Two things have to be true for this to test anything.
+    //
+    // The budget must be a FIXED one-house figure. Sizing the plant from
+    // pg.getDemand() of this very grid is circular: under the un-fixed code
+    // that figure is TWO houses' worth, so the budget covers both and the
+    // assertion holds either way.
+    //
+    // And the RUIN has to be reached first. With the live house first, the
+    // un-fixed code still powers it — it simply spends the budget there and
+    // refuses the ruin afterwards. Only when the ruin stands between the plant
+    // and the live house does billing it actually take the lights out.
+    const oneHouse = (() => {
+      const solo = new Grid(12, 12);
+      for (let x = 1; x <= 4; x++) solo.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+      solo.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 0 });
+      const pg = new PowerGrid();
+      pg.calculateDemand(solo);
+      return pg.getDemand();
+    })();
+    expect(oneHouse).toBeGreaterThan(0);
+
+    const grid = new Grid(12, 12);
+    for (let x = 1; x <= 5; x++) grid.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: BURNED });
+    grid.setCell(3, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 0 });
+
+    const pg = new PowerGrid();
+    pg.addPlant({ x: 1, y: 2, output: oneHouse, pollution: 0, type: 'coal' });
+    pg.calculateCoverage(grid);
+
+    expect(pg.isPowered(3, 2), 'the live house behind the ruin went dark').toBe(true);
+  });
+});

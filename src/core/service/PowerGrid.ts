@@ -3,7 +3,7 @@ import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 
 export interface PowerPlant {
@@ -39,6 +39,22 @@ export const INFRA_POWER_CONSUMPTION: Record<string, number> = {
   sewage: 8,
   park: 1.5,
   cemetery: 1.5,
+  // Transport. The whole family was missing: a Large Airport costing 40000 drew
+  // exactly 0 power, and every transit stop drew 0 while BaseTransportSystem
+  // already refused to run one that had none — so a stop could stop working for
+  // a reason the player had no way to see coming, and never appeared in the
+  // demand that sizes the power plant.
+  //
+  // Scaled against the existing table (university 8 at cost 3000, water plant
+  // 10) and against footprint: a shelter is near-free, a station is comparable
+  // to a school, an airport is the largest single draw in the game.
+  bus_stop: 0.5,
+  ferry_dock: 2,
+  train_station: 5,
+  metro_station: 6,
+  airport_s: 12,
+  airport_m: 24,
+  airport_l: 45,
 };
 
 const INFRA_TYPE_TO_CONSUMPTION_KEY: Record<string, string> = {
@@ -53,6 +69,13 @@ const INFRA_TYPE_TO_CONSUMPTION_KEY: Record<string, string> = {
   sewage: 'sewage',
   park: 'park',
   cemetery: 'cemetery',
+  bus_stop: 'bus_stop',
+  metro_station: 'metro_station',
+  train_station: 'train_station',
+  ferry_dock: 'ferry_dock',
+  airport_s: 'airport_s',
+  airport_m: 'airport_m',
+  airport_l: 'airport_l',
 };
 
 // Power plant buildingId — excluded from demand
@@ -104,8 +127,13 @@ export class PowerGrid {
     // Phase 2: BFS budget-drain per plant to determine actual powered cells
     this.powered.clear();
     const getDemand = (x: number, y: number) => this.getCellDemand(grid, x, y);
+    // Shared across plants: `powered` already is, so the paid-footprint set and
+    // the charge memo must be too — otherwise a facility half-supplied by one
+    // plant is charged again in full by the next.
+    const paidGroups = new Set<string>();
+    const chargeCache = new Map<string, CellCharge>();
     for (const plant of this.plants) {
-      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions, this.roadLookup);
+      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
     }
     return this.powered;
   }
@@ -117,7 +145,7 @@ export class PowerGrid {
       const bt = getBuildingType(cell.buildingId);
       demand += calculateUtilityCellDemand(
         POWER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-        bt?.residents ?? 0, bt?.workers ?? 0,
+        bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
       );
     });
     this.totalDemand = demand;
@@ -164,7 +192,7 @@ export class PowerGrid {
     const bt = getBuildingType(cell.buildingId);
     return calculateUtilityCellDemand(
       POWER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-      bt?.residents ?? 0, bt?.workers ?? 0,
+      bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
     );
   }
 

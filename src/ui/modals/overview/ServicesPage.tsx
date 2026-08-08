@@ -1,4 +1,5 @@
 import { For, createMemo } from 'solid-js';
+import { shareFacilityLoad, hasShortage } from './facilityLoad';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { getResidentialServiceRatios } from '../../../core/service/ServiceCoverageQuery';
 import { UI_COLORS } from '../../constants';
@@ -31,6 +32,13 @@ function coverageColor(pct: number): string {
   if (pct >= 50) return UI_COLORS.STATUS_WARN;
   return UI_COLORS.STATUS_BAD;
 }
+
+/**
+ * A facility with no power or water. Still listed — the player needs to see it
+ * — but excluded from the group totals, which are meant to describe capacity
+ * the city can actually use.
+ */
+const OFFLINE = { label: 'Offline', color: UI_COLORS.STATUS_BAD };
 
 export function ServicesPage() {
   const data = createMemo(() => {
@@ -80,12 +88,18 @@ export function ServicesPage() {
     }
     const treatPlants = state.sewage.getTreatmentPlants();
     const sewageProduced = Math.round(state.sewage.getProduced());
-    const sewageTotalCap = state.sewage.getTreatmentCapacity();
     const sewageUntreated = state.sewage.getUntreated();
-    for (const tp of treatPlants) {
-      const tpLoad = sewageTotalCap > 0 ? Math.round(sewageProduced * tp.capacity / sewageTotalCap) : 0;
-      const tpSt = statusOf(tp.capacity > 0 ? tpLoad / tp.capacity : 0);
-      wtrItems.push(mkEntry('\uD83D\uDCA7', 'Sewage Plant', r.sewageRatio, 'Load', tpLoad, tp.capacity, tpSt));
+    // Only a plant that is road-connected AND powered treats anything, so only
+    // those take a share. Dividing the whole city's sewage by the filtered
+    // capacity gave every plant the full figure \u2014 including the dead ones \u2014
+    // and gave every plant zero, in green, when they were all dead (BUG-153).
+    const sewageSplit = shareFacilityLoad(
+      sewageProduced, treatPlants, tp => tp.capacity, tp => state.sewage.isPlantActive(tp.id),
+    );
+    const sewageTotalCap = sewageSplit.activeCapacity;
+    for (const s of sewageSplit.shares) {
+      wtrItems.push(mkEntry('\uD83D\uDCA7', 'Sewage Plant', r.sewageRatio, 'Load', s.load, s.capacity,
+        s.active ? statusOf(s.ratio) : OFFLINE));
     }
     const wtrSummary: SummarySpan[] = [];
     if (pumpingStations.length === 0) {
@@ -114,8 +128,13 @@ export function ServicesPage() {
     let policeLoad = 0, policeCap = 0;
     for (const s of state.police.getStations()) {
       const load = state.police.getStationLoad(s.id);
-      policeLoad += load; policeCap += s.capacity;
-      safetyItems.push(mkEntry('\uD83D\uDE94', 'Police', r.policeRatio, 'Load', load, s.capacity, statusOf(s.capacity > 0 ? load / s.capacity : 0)));
+      // Only a working station adds to the city total. Summing every facility
+      // advertised capacity the city could not use \u2014 the same defect the
+      // hospital death-rate divisor had (BUG-100), on the panel instead.
+      const live = state.police.isFacilityOperationalById(s.id);
+      policeLoad += load; if (live) policeCap += s.capacity;
+      safetyItems.push(mkEntry('\uD83D\uDE94', 'Police', r.policeRatio, 'Load', load, s.capacity,
+        live ? statusOf(s.capacity > 0 ? load / s.capacity : 0) : OFFLINE));
     }
     if (safetyItems.length === 0) {
       safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
@@ -124,18 +143,20 @@ export function ServicesPage() {
     const activeFires = state.fire.getActiveFires().length;
     for (const s of state.fire.getStations()) {
       const load = state.fire.getStationLoad(s.id);
-      fireLoad += load; fireCap += s.capacity;
-      safetyItems.push(mkEntry('\uD83D\uDE92', 'Fire', r.fireRatio, 'Load', load, s.capacity, statusOf(s.capacity > 0 ? load / s.capacity : 0)));
+      const live = state.fire.isFacilityOperationalById(s.id);
+      fireLoad += load; if (live) fireCap += s.capacity;
+      safetyItems.push(mkEntry('\uD83D\uDE92', 'Fire', r.fireRatio, 'Load', load, s.capacity,
+        live ? statusOf(s.capacity > 0 ? load / s.capacity : 0) : OFFLINE));
     }
     if (!state.fire.getStations().length) {
       safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
     }
     const safetySummary: SummarySpan[] = [];
     safetySummary.push({ text: `Police: ${policeLoad} / ${policeCap}` });
-    if (policeCap > 0 && policeLoad > policeCap) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
+    if (hasShortage(policeLoad, policeCap)) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     safetySummary.push({ text: ' \u00B7 ' });
     safetySummary.push({ text: `Fire: ${fireLoad} / ${fireCap}` });
-    if (fireCap > 0 && fireLoad > fireCap) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
+    if (hasShortage(fireLoad, fireCap)) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     if (activeFires > 0) {
       safetySummary.push({ text: ' \u00B7 ' });
       safetySummary.push({ text: `Active Fires ${activeFires}`, color: UI_COLORS.STATUS_BAD });
@@ -147,15 +168,17 @@ export function ServicesPage() {
     let healthLoad = 0, healthCap = 0;
     for (const h of state.health.getHospitals()) {
       const load = state.health.getHospitalLoad(h.id);
-      healthLoad += load; healthCap += h.capacity;
-      healthItems.push(mkEntry('\uD83C\uDFE5', 'Hospital', r.healthRatio, 'Load', load, h.capacity, statusOf(h.capacity > 0 ? load / h.capacity : 0)));
+      const live = state.health.isFacilityOperationalById(h.id);
+      healthLoad += load; if (live) healthCap += h.capacity;
+      healthItems.push(mkEntry('\uD83C\uDFE5', 'Hospital', r.healthRatio, 'Load', load, h.capacity,
+        live ? statusOf(h.capacity > 0 ? load / h.capacity : 0) : OFFLINE));
     }
     const healthSummary: SummarySpan[] = [];
     if (healthItems.length === 0) {
       healthSummary.push({ text: 'No hospital' });
     } else {
       healthSummary.push({ text: `Hospital: ${healthLoad} / ${healthCap}` });
-      if (healthCap > 0 && healthLoad > healthCap) healthSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
+      if (hasShortage(healthLoad, healthCap)) healthSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     }
     entries.push({ group: 'Health', items: healthItems, summary: healthSummary });
 
@@ -165,7 +188,10 @@ export function ServicesPage() {
     for (const s of state.education.getSchools()) {
       const enrolled = state.education.getSchoolEnrollment(s.id);
       const demand = state.education.getSchoolDemand(s.id);
-      const st = demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN } : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
+      const live = state.education.isSchoolOperational(s.id);
+      const st = !live ? OFFLINE
+        : demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN }
+        : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
       eduItems.push(mkEntry('\uD83C\uDFEB', schoolLabels[s.type] ?? s.type, r.educationRatio, 'Students', enrolled, s.capacity, st, ` \u00B7 Need ${demand}`));
     }
     const eduSummary: SummarySpan[] = [];
@@ -177,7 +203,7 @@ export function ServicesPage() {
         const label = schoolLabels[s.type] ?? s.type;
         if (!byType[label]) byType[label] = { demand: 0, capacity: 0 };
         byType[label]!.demand += state.education.getSchoolDemand(s.id);
-        byType[label]!.capacity += s.capacity;
+        if (state.education.isSchoolOperational(s.id)) byType[label]!.capacity += s.capacity;
       }
       let first = true;
       for (const [label, { demand, capacity }] of Object.entries(byType)) {

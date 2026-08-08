@@ -17,8 +17,18 @@ export interface TransportSystemConfig {
   affectedByCongestion: boolean;
 }
 
+/**
+ * The rider counters were added after the save format shipped, so a stop read
+ * back from an older save legitimately has none of them. Declaring them
+ * required made `{ dailyRiders: 0, ...s }` look like dead defaults to the
+ * compiler (TS2783) when they are the entire reason that line exists.
+ */
+export type StoredTransportStop =
+  Omit<TransportStop, 'dailyRiders' | 'lastDayRiders' | 'smoothedDailyRiders'>
+  & Partial<Pick<TransportStop, 'dailyRiders' | 'lastDayRiders' | 'smoothedDailyRiders'>>;
+
 export interface BaseTransportJSON {
-  stops: TransportStop[];
+  stops: StoredTransportStop[];
   routes: Array<Omit<TransportRoute, 'stops'> & { stops: number[] }>;
   vehicles: TransportVehicle[];
   nextStopId: number;
@@ -40,6 +50,51 @@ export abstract class BaseTransportSystem {
   protected nextVehicleId = 1;
   /** null = no filter (all operational); Set = only listed stop IDs are operational. */
   protected operationalStopIds: Set<number> | null = null;
+
+  /**
+   * Monotonic counter bumped by every structural change to stops, routes or
+   * vehicles.
+   *
+   * The transfer graph used to be invalidated by an explicit
+   * markTransitNetworkDirty() call that every mutation site had to remember —
+   * a rule maintained only by a comment, and one that markLaneGraphDirty had
+   * already broken once for the entire transit UI (BUG-090). Consumers now
+   * compare this counter instead, so a new mutation site cannot silently skip
+   * the invalidation.
+   */
+  private networkVersion = 0;
+
+  /**
+   * Bumped only when the set of stops or routes changes — not when a route's
+   * vehicle count does.
+   *
+   * A rebuild has to happen for both (FlatRoute.isFull reads route.vehicles),
+   * but the transfer tracker's per-building panel data is keyed by route label
+   * and stays valid across a vehicle-count change. Wiping it on every
+   * add/remove-vehicle click emptied the transfer panel for no reason.
+   */
+  private topologyVersion = 0;
+
+  /** Bump after a vehicle-count change. */
+  protected bumpNetworkVersion(): void {
+    this.networkVersion++;
+  }
+
+  /** Bump after a stop/route change (also bumps the network version). */
+  protected bumpTopologyVersion(): void {
+    this.topologyVersion++;
+    this.networkVersion++;
+  }
+
+  /** Structural revision of this system's stops/routes/vehicles. */
+  getNetworkVersion(): number {
+    return this.networkVersion;
+  }
+
+  /** Revision of this system's stop/route topology alone. */
+  getTopologyVersion(): number {
+    return this.topologyVersion;
+  }
 
   /** Current road congestion level (0 = free-flow, 1 = gridlock). */
   congestionLevel = 0;
@@ -75,10 +130,12 @@ export abstract class BaseTransportSystem {
       smoothedDailyRiders: 0,
     };
     this.stops.push(stop);
+    this.bumpTopologyVersion();
     return stop;
   }
 
   removeStop(stopId: number): void {
+    this.bumpTopologyVersion();
     this.stops = this.stops.filter(s => s.id !== stopId);
     const dissolvedIds: number[] = [];
     const modifiedRouteIds: number[] = [];
@@ -94,11 +151,17 @@ export abstract class BaseTransportSystem {
       }
       return true;
     });
-    this.vehicles = this.vehicles.filter(v => !dissolvedIds.includes(v.routeId));
+    // Notify BEFORE removing the vehicles: a subclass cleaning up per-vehicle
+    // state needs to know which vehicles belonged to the route. FerrySystem's
+    // override walks this.vehicles to find vesselPaths entries to drop, and with
+    // the filter first it always found none, leaking one water path per dissolve
+    // (BUG-089). RailSystem and BusSystem key by routeId and are unaffected
+    // either way.
     for (const id of dissolvedIds) {
       this.onRouteDissolved(id);
       this.onRouteDissolvedHook?.(id);
     }
+    this.vehicles = this.vehicles.filter(v => !dissolvedIds.includes(v.routeId));
 
     // Revalidate modified routes (subclasses may recompute paths / dissolve)
     const lateDissolved: number[] = [];
@@ -111,11 +174,12 @@ export abstract class BaseTransportSystem {
     }
     if (lateDissolved.length > 0) {
       this.routes = this.routes.filter(r => !lateDissolved.includes(r.id));
-      this.vehicles = this.vehicles.filter(v => !lateDissolved.includes(v.routeId));
+      // Same ordering as above — notify while the vehicles still exist.
       for (const id of lateDissolved) {
         this.onRouteDissolved(id);
         this.onRouteDissolvedHook?.(id);
       }
+      this.vehicles = this.vehicles.filter(v => !lateDissolved.includes(v.routeId));
     }
 
     // Reset vehicles on surviving modified routes back to first stop
@@ -149,6 +213,7 @@ export abstract class BaseTransportSystem {
       operatingCost: vehicleCount * this.config.operatingCostPerVehicle,
     };
     this.routes.push(route);
+    this.bumpTopologyVersion();
 
     for (let i = 0; i < vehicleCount; i++) {
       this.spawnVehicle(route.id, stops[0]!);
@@ -158,6 +223,7 @@ export abstract class BaseTransportSystem {
   }
 
   deleteRoute(routeId: number): void {
+    this.bumpTopologyVersion();
     this.routes = this.routes.filter(r => r.id !== routeId);
     this.vehicles = this.vehicles.filter(v => v.routeId !== routeId);
   }
@@ -165,6 +231,7 @@ export abstract class BaseTransportSystem {
   addVehicleToRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
     if (!route || route.stops.length === 0) return;
+    this.bumpNetworkVersion();
     this.spawnVehicle(routeId, route.stops[0]!);
     route.vehicles++;
     route.operatingCost = route.vehicles * this.config.operatingCostPerVehicle;
@@ -173,14 +240,27 @@ export abstract class BaseTransportSystem {
   removeVehicleFromRoute(routeId: number): void {
     const route = this.routes.find(r => r.id === routeId);
     if (!route || route.vehicles <= 1) return;
+    this.bumpNetworkVersion();
     let idx = -1;
     for (let i = this.vehicles.length - 1; i >= 0; i--) {
       if (this.vehicles[i]!.routeId === routeId) { idx = i; break; }
     }
-    if (idx >= 0) this.vehicles.splice(idx, 1);
+    if (idx >= 0) {
+      // Hook, so a subclass with per-vehicle state does not have to REPLACE
+      // this method to clean it up. FerrySystem did exactly that and its copy
+      // omitted the version bump, so removing a vessel left the transfer graph
+      // believing the route still had its old vehicle count — and once the
+      // explicit markTransitNetworkDirty call sites were deleted, nothing else
+      // invalidated it either.
+      this.onVehicleRemoved(this.vehicles[idx]!.id);
+      this.vehicles.splice(idx, 1);
+    }
     route.vehicles--;
     route.operatingCost = route.vehicles * this.config.operatingCostPerVehicle;
   }
+
+  /** Called just before a vehicle is dropped from a route. */
+  protected onVehicleRemoved(_vehicleId: number): void {}
 
   // ── Accessors ────────────────────────────────────────────────────
 
@@ -373,7 +453,9 @@ export abstract class BaseTransportSystem {
     Ctor: { new (...args: any[]): T },
   ): T {
     const sys = new Ctor();
-    sys.stops = data.stops.map((s: TransportStop) => ({ dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0, ...s }));
+    sys.stops = data.stops.map((s: StoredTransportStop) => ({
+      dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0, ...s,
+    }));
     sys.routes = data.routes.map((r: any) => ({
       ...r,
       stops: (r.stops as number[]).map((id: number) => sys.stops.find(s => s.id === id)!),
@@ -382,6 +464,9 @@ export abstract class BaseTransportSystem {
     sys.nextStopId = data.nextStopId;
     sys.nextRouteId = data.nextRouteId;
     sys.nextVehicleId = data.nextVehicleId;
+    // A restored system is structurally different from the empty one the
+    // constructor produced, even though no mutator ran.
+    sys.bumpTopologyVersion();
     return sys;
   }
 }

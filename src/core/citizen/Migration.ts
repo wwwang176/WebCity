@@ -1,6 +1,9 @@
 import { CitizenManager, GRADUATION_TICKS } from './CitizenManager';
 import { EducationLevel, LIFE_STAGE_AGE } from './types';
 import { randomElement, randomInt, pickWeighted } from '../utils/random';
+import { LAND_VALUE, calculateLandValue } from '../economy/LandValue';
+import { MAX_SERVICE_SCORE } from '../service/ServiceCoverageQuery';
+import { SIMULATION } from '../simulation/SimulationConstants';
 
 export interface CityAttractiveness {
   jobOpenings: number;
@@ -144,10 +147,61 @@ export function generateFamily(city?: CityAttractiveness): FamilyMember[] {
 }
 
 /** Thresholds for education weight adjustments in pickImmigrantEducation */
+/**
+ * Highest land value an ORDINARY (inland) cell can reach: perfect services and
+ * a park, before any pollution / noise / crime deduction. The waterfront bonus
+ * is excluded deliberately — it applies to a thin fringe of the map and cannot
+ * lift a city-wide average.
+ */
+export const MAX_ORDINARY_LAND_VALUE =
+  LAND_VALUE.BASE + MAX_SERVICE_SCORE * LAND_VALUE.SERVICE_MULTIPLIER + LAND_VALUE.PARK_BONUS;
+
+/**
+ * The crime a fully-policed city still carries once its population passes the
+ * cap. Derived: baseCrime saturates at CRIME_BASE_MAX, and enough stations to
+ * reach full coverage remove CRIME_MAX_REDUCTION of it and no more.
+ */
+const POLICED_CRIME_RATE = SIMULATION.CRIME_BASE_MAX * (1 - SIMULATION.CRIME_MAX_REDUCTION);
+
+/**
+ * Pollution and noise a CITY-WIDE AVERAGE still carries, even when run well.
+ *
+ * This one is a judgement and is written as one rather than dressed up: the
+ * average includes industrial and commercial cells, which have pollution by
+ * design, so it cannot be zero however good the player is. Everything else in
+ * the threshold below is derived; if this figure is wrong, the threshold moves
+ * with it and the reason is visible.
+ */
+const CITYWIDE_POLLUTION_ALLOWANCE = 10;
+
 export const EDUCATION_THRESHOLDS = {
   OFFICE_RATIO: 0.3,
   INDUSTRIAL_RATIO: 0.5,
-  AVG_LAND_VALUE: 150,
+  /**
+   * The average land value a well-run city reaches.
+   *
+   * BUG-084 lowered this from 150 to 100 by comparing it against the per-cell
+   * MAXIMUM of 125 — but that maximum needs a WATERFRONT cell, and the figure
+   * being compared is getAvgLandValue(), an average over every building in the
+   * city. 100 was unreachable and the weighting was dead code.
+   *
+   * The replacement was `MAX_ORDINARY_LAND_VALUE * 0.75`, which is a magic
+   * number with a derivation-shaped comment: nothing produces the 0.75, and the
+   * result (79) sits so far under what an ordinary city reaches that the
+   * weighting fired almost always — dead code in the other direction.
+   *
+   * Computed instead by asking the land-value function what a well-served,
+   * parked, fully-policed neighbourhood is worth, with the pollution an average
+   * over the whole city carries. Every input is named above.
+   */
+  AVG_LAND_VALUE: calculateLandValue({
+    serviceCoverage: MAX_SERVICE_SCORE,
+    parkProximity: true,
+    waterfront: false,
+    pollution: CITYWIDE_POLLUTION_ALLOWANCE,
+    noise: CITYWIDE_POLLUTION_ALLOWANCE,
+    crimeRate: POLICED_CRIME_RATE,
+  }),
   LOW_TAX: 7,
   HIGH_TAX: 12,
 } as const;
@@ -202,7 +256,21 @@ export function pickImmigrantEducation(city: CityAttractiveness): EducationLevel
 
 export function calculateAttractiveness(city: CityAttractiveness): number {
   let score = 0;
-  if (city.jobOpenings > 0) score += ATTRACTIVENESS.JOB_SCORE;
+  // Openings only attract people who could actually take them.
+  //
+  // countJobOpenings became `totalJobs - employed` rather than
+  // `totalJobs - population`, which is the right number for RCI demand but
+  // decoupled two things this formula assumed moved together. Under the old
+  // definition `jobOpenings > 0` implied totalJobs > population, hence low
+  // unemployment; the population term was the only supply-side brake there was.
+  // Once they came apart, a flat +20 against a penalty capped at 15 made one
+  // permanently unfillable desk worth net +5 at total unemployment — so an
+  // industrial park reachable only across an unbuilt link kept inviting people
+  // who could not get to it (BUG-166).
+  if (city.jobOpenings > 0) {
+    const attainable = 1 - Math.min(1, Math.max(0, city.unemploymentRate ?? 0));
+    score += ATTRACTIVENESS.JOB_SCORE * attainable;
+  }
   if (city.vacantHomes > 0) score += ATTRACTIVENESS.VACANT_SCORE;
   score += city.avgHappiness * ATTRACTIVENESS.HAPPINESS_WEIGHT;
   score -= city.taxRate * ATTRACTIVENESS.TAX_WEIGHT;
@@ -285,12 +353,23 @@ export function migrationTick(
 
       let familySettled = true;
       for (const m of family) {
-        const citizen = manager.createCitizen({
+        const spec = {
           age: m.age,
           education: m.education,
           educationProgress: m.educationProgress,
           homeId: assignedPos,
-        }, currentTick);
+        };
+        // When a slot was found, its own occupancy has already been checked and
+        // advanced — the same reasoning BUG-140 applied to births, and for the
+        // same reason: createCitizen's aggregate gate counts citizens with no
+        // home at all, so any homeless population made the city refuse arrivals
+        // into rooms that were provably empty. Leaving immigration on the old
+        // gate also left the two paths disagreeing about what "full" means, and
+        // a refusal here breaks mid-family AFTER slots[idx].occupied has been
+        // advanced by the whole family (BUG-165).
+        const citizen = assignedPos !== null
+          ? manager.createCitizenInKnownVacancy(spec, currentTick)
+          : manager.createCitizen(spec, currentTick);
         if (!citizen) { familySettled = false; break; }
         immigrated++;
       }

@@ -14,7 +14,7 @@
  */
 
 import type { LaneGraph, LaneEdge, ConnectionPoint } from './LaneGraph';
-import { ROAD_CONFIGS, RoadType } from '../road/types';
+import { ROAD_CONFIGS, RoadType, getLaneCount } from '../road/types';
 import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 // ── Layout constants ──
@@ -30,7 +30,8 @@ export const GRAPH_HEADER_BYTES = 32;
  *   lane: Uint8 (12)
  *   dir: Uint8 (13)     — 0=north,1=south,2=east,3=west
  *   type: Uint8 (14)    — 0=entry,1=exit
- *   pad: Uint8 (15)
+ *   laneCount: Uint8 (15) — lanes per direction on this point's road,
+ *                           which the turn-lane preference needs (BUG-214)
  *   speedLimit: Float32 (16)
  */
 export const POINT_STRIDE = 20;
@@ -66,6 +67,8 @@ export interface PointData {
   cellX: number;
   cellY: number;
   lane: number;
+  /** Lanes per direction on this point's road. */
+  laneCount: number;
   dir: number;
   type: number;
   speedLimit: number;
@@ -111,6 +114,19 @@ export class GraphReader {
     return this.view.getUint32(8, true);
   }
 
+  /**
+   * Encoded cell of a point (cellX * 65536 + cellY) without allocating.
+   *
+   * getPoint builds a fresh 8-field object and performs eight DataView reads;
+   * callers that only need the cell paid for all of it. findPathVariants swept
+   * every point in the graph twice per request that way — 24k-48k points on a
+   * 3000-tile road network, 100 requests per flush (BUG-112).
+   */
+  getPointCellEncoded(idx: number): number {
+    const off = this.pointsOffset + idx * POINT_STRIDE;
+    return this.view.getUint16(off + 8, true) * 65536 + this.view.getUint16(off + 10, true);
+  }
+
   getPoint(idx: number): PointData {
     const off = this.pointsOffset + idx * POINT_STRIDE;
     return {
@@ -121,6 +137,7 @@ export class GraphReader {
       lane: this.view.getUint8(off + 12),
       dir: this.view.getUint8(off + 13),
       type: this.view.getUint8(off + 14),
+      laneCount: this.view.getUint8(off + 15),
       speedLimit: this.view.getFloat32(off + 16, true),
     };
   }
@@ -276,6 +293,7 @@ export class LaneGraphBuffer {
       // Pre-fill speedLimit from RoadConfig
       const roadType = this.lookupRoadType(cellX, cellY, point.cellKey);
       const config = ROAD_CONFIGS[roadType as RoadType];
+      this.view.setUint8(off + 15, getLaneCount(roadType));
       this.view.setFloat32(off + 16, config ? config.speedLimit : 50, true);
 
       idx++;
@@ -378,6 +396,7 @@ export class LaneGraphBuffer {
 
       const roadType = getRoadType(point.cellKey);
       const config = ROAD_CONFIGS[roadType as RoadType];
+      this.view.setUint8(off + 15, getLaneCount(roadType));
       this.view.setFloat32(off + 16, config ? config.speedLimit : 50, true);
 
       idx++;

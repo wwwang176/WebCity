@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { getEconomyBreakdown, type EconomyBreakdownContext } from '../EconomyBreakdown';
+import { calculateTotalExpenses } from '../ExpenseCalculator';
+import { ECONOMY } from '../TaxMultipliers';
 
 /** Helper to create a mock context with sensible defaults. */
 function makeCtx(overrides: Partial<EconomyBreakdownContext> = {}): EconomyBreakdownContext {
@@ -13,6 +15,8 @@ function makeCtx(overrides: Partial<EconomyBreakdownContext> = {}): EconomyBreak
     powerMaintenanceCost: overrides.powerMaintenanceCost ?? 0,
     waterMaintenanceCost: overrides.waterMaintenanceCost ?? 0,
     transportOperatingCost: overrides.transportOperatingCost ?? 0,
+    // Spread last so newly added optional fields pass through automatically.
+    ...overrides,
   };
 }
 
@@ -77,5 +81,68 @@ describe('getEconomyBreakdown', () => {
     expect(result).toHaveProperty('commercial');
     expect(result).toHaveProperty('industrial');
     expect(result).toHaveProperty('office');
+  });
+});
+
+// BUG-062: getEconomyBreakdown is the sole data source for the live Economy page,
+// but carried only roadMaintenance/loanInterest/powerCost/waterCost/transportCost.
+// The expenses tickBudget actually subtracts also include every civic service,
+// district policy upkeep and elevated-road maintenance, and income is scaled by
+// the city specialization multiplier. The page therefore contradicted the chart
+// directly beneath it, which plots the real budget figures.
+describe('getEconomyBreakdown — parity with the simulated budget', () => {
+  it('should surface civic service, policy and elevated maintenance', () => {
+    const result = getEconomyBreakdown(makeCtx({
+      serviceCost: 61,
+      policyCost: 150,
+      elevatedMaintenance: 320,
+    }));
+
+    expect(result.serviceCost).toBe(61);
+    expect(result.policyCost).toBe(150);
+    expect(result.elevatedMaintenance).toBe(320);
+  });
+
+  it('should sum to exactly what calculateTotalExpenses charges', () => {
+    const inputs = {
+      roadMaintenance: 12,
+      serviceCost: 61,
+      policyCost: 150,
+      transportCost: 40,
+      elevatedMaintenance: 320,
+    };
+    const result = getEconomyBreakdown(makeCtx({
+      roadTileCount: inputs.roadMaintenance / ECONOMY.ROAD_MAINTENANCE_PER_TILE,
+      serviceCost: inputs.serviceCost,
+      policyCost: inputs.policyCost,
+      transportOperatingCost: inputs.transportCost,
+      elevatedMaintenance: inputs.elevatedMaintenance,
+    }));
+
+    const shown = result.roadMaintenance + result.serviceCost + result.policyCost
+      + result.transportCost + result.elevatedMaintenance;
+    expect(shown).toBeCloseTo(calculateTotalExpenses(inputs), 5);
+  });
+
+  it('should apply the city specialization revenue multiplier to zone incomes', () => {
+    const cells: Array<[number, number, { zoneType: number; buildingId: number }]> = [];
+    const forEachCell = (cb: (cell: any, x: number, y: number) => void) => {
+      for (const [x, y, c] of cells) cb(c, x, y);
+    };
+
+    const plain = getEconomyBreakdown(makeCtx({ forEachCell, revenueMultiplier: 1 }));
+    const boosted = getEconomyBreakdown(makeCtx({ forEachCell, revenueMultiplier: 1.25 }));
+
+    const total = (r: { residential: number; commercial: number; industrial: number; office: number }) =>
+      r.residential + r.commercial + r.industrial + r.office;
+    expect(total(boosted)).toBeCloseTo(total(plain) * 1.25, 5);
+  });
+
+  it('should default the multiplier to 1 when not supplied', () => {
+    const result = getEconomyBreakdown(makeCtx());
+    expect(result.residential).toBe(0);
+    expect(result.serviceCost).toBe(0);
+    expect(result.policyCost).toBe(0);
+    expect(result.elevatedMaintenance).toBe(0);
   });
 });

@@ -8,7 +8,7 @@
 
 import { SidewalkGraph, SidewalkEdge } from './SidewalkGraph';
 import { PedestrianAgent, PedestrianState, PedestrianTripType } from './PedestrianAgent';
-import { euclideanDistance } from '../grid/GridHelpers';
+import { euclideanDistance, toPosKey } from '../grid/GridHelpers';
 
 // ── Constants ──────────────────────────────────────────────────────────
 
@@ -204,9 +204,19 @@ export class PedestrianManager {
       const currentEdge = agent.edgePath[agent.edgeIndex];
       if (!currentEdge) continue; // no edge → skip
 
-      // If waiting at a blocked edge, re-check before allowing movement
+      // If waiting at a blocked edge, re-check before allowing movement.
+      //
+      // The edge to ask about is the one the agent is waiting to ENTER, not the
+      // one it is standing on: `edgeIndex` still points at the approach edge,
+      // and `canPassCrosswalk` returns early at `if (!edge.intersectionCellKey)
+      // return true` for anything that is not a crosswalk. Asking about the
+      // approach edge therefore released every waiting pedestrian on every
+      // tick, in every phase. It was mostly hidden because the advance loop
+      // below re-blocks them at the edge boundary — but an agent still short of
+      // that boundary was released and walked forward on red.
       if (agent.state === PedestrianState.WAITING_SIGNAL) {
-        if (this.trafficLights && !this.canPassCrosswalk(currentEdge)) {
+        const blockedEdge = agent.edgePath[agent.edgeIndex + 1] ?? currentEdge;
+        if (this.trafficLights && !this.canPassCrosswalk(blockedEdge)) {
           this.agents[writeIdx++] = agent;
           continue;
         }
@@ -374,6 +384,59 @@ export class PedestrianManager {
 
   // ── Path cache ──
 
+  /**
+   * Point the manager at a rebuilt sidewalk graph without discarding its agents.
+   * The path cache is graph-derived and must go; the pedestrians themselves are
+   * simulation state (BUG-104).
+   */
+  setSidewalkGraph(graph: SidewalkGraph): void {
+    this.sidewalkGraph = graph;
+    this.clearPathCache();
+  }
+
+  /**
+   * Retire any agent whose remaining route contains an edge the sidewalk graph
+   * no longer owns.
+   *
+   * Keeping agents across a rebuild (BUG-104) stopped them vanishing, but
+   * buildFromGrid replaces every node and edge — an agent's edgePath then points
+   * at objects that no longer describe anything, and tick() never re-queries the
+   * graph. So they walked demolished pavement, across grass, into doorways of
+   * razed buildings, for up to DESPAWN_TIMEOUT. Pedestrians have no stallTime to
+   * save them either (BUG-124).
+   *
+   * The pedestrian counterpart of TrafficSimulation.retireVehiclesOnDeadEdges,
+   * and asked the same way for the same reason — see the reasoning there. The
+   * cell-key version this replaces could not see a cell that flipped from
+   * BUILDING to road: it still has a road, so it never entered the removed set,
+   * yet every building_entrance node and building_access edge it had was
+   * destroyed and the agent kept walking to the door of a razed house.
+   */
+  retireAgentsOnDeadEdges(liveEdgeIds: ReadonlySet<string>): number {
+    let count = 0;
+    for (const agent of this.agents) {
+      if (agent.state === PedestrianState.ARRIVED || agent.edgePath.length === 0) continue;
+      for (let i = agent.edgeIndex; i < agent.edgePath.length; i++) {
+        if (!liveEdgeIds.has(agent.edgePath[i]!.id)) {
+          agent.state = PedestrianState.ARRIVED;
+          count++;
+          break;
+        }
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Wire up level-crossing queries. The blocking logic was fully implemented and
+   * unit-tested, but nothing ever supplied a lookup, so pedestrians walked
+   * through closed railway barriers and PedestrianState.WAITING_CROSSING was
+   * unreachable (BUG-105).
+   */
+  setLevelCrossings(crossings: LevelCrossingQuery | null): void {
+    this.levelCrossings = crossings;
+  }
+
   invalidateCells(affectedCells: Iterable<string>): void {
     for (const cellKey of affectedCells) {
       const pathKeys = this.cellIndex.get(cellKey);
@@ -421,10 +484,21 @@ export class PedestrianManager {
     const path = this.findBuildingAwarePath(fromX, fromY, toX, toY);
     this.pathCache.set(key, path);
 
-    // Build cell index
+    // Build cell index.
+    //
+    // A failed lookup caches `null`, and a null entry has no edges to index —
+    // so invalidateCells could never reach it and the "no route" answer outlived
+    // the road that would have created one. That was masked while every graph
+    // change threw the whole manager away; now that the instance survives
+    // (BUG-104), the endpoints must be indexed explicitly (BUG-103).
     if (path) {
       for (const edge of path) {
         const cellKey = edge.from.cellKey;
+        if (!this.cellIndex.has(cellKey)) this.cellIndex.set(cellKey, new Set());
+        this.cellIndex.get(cellKey)!.add(key);
+      }
+    } else {
+      for (const cellKey of [toPosKey(fromX, fromY), toPosKey(toX, toY)]) {
         if (!this.cellIndex.has(cellKey)) this.cellIndex.set(cellKey, new Set());
         this.cellIndex.get(cellKey)!.add(key);
       }

@@ -114,6 +114,30 @@ export class FerrySystem extends BaseTransportSystem {
     this.removeStop(dockId);
   }
 
+  /**
+   * Drop every cached A* result that starts or ends at a departed dock.
+   *
+   * waterPathCache is keyed by COORDINATES, so nothing tied its entries to the
+   * dock's lifetime. BUG-089 fixed the vesselPaths leak on the route-dissolve
+   * path, but this is a separate map: every dock the player ever built and
+   * demolished left its results behind for good. The staleness is the worse
+   * half — demolish a dock, reshape the water, rebuild on the same tile, and
+   * connectivity was answered from the old map.
+   *
+   * Scoped to the removed dock deliberately: clearing the whole cache would
+   * throw away every other route's paths on each demolition.
+   */
+  override removeStop(stopId: number): void {
+    const dock = this.stops.find(s => s.id === stopId);
+    super.removeStop(stopId);
+    if (!dock) return;
+    const from = `${dock.x},${dock.y}>`;
+    const to = `>${dock.x},${dock.y}`;
+    for (const key of this.waterPathCache.keys()) {
+      if (key.startsWith(from) || key.endsWith(to)) this.waterPathCache.delete(key);
+    }
+  }
+
   protected override onRouteDissolved(routeId: number): void {
     for (const v of this.vehicles) {
       if (v.routeId === routeId) this.vesselPaths.delete(v.id);
@@ -171,19 +195,15 @@ export class FerrySystem extends BaseTransportSystem {
   }
 
 
-  override removeVehicleFromRoute(routeId: number): void {
-    const route = this.routes.find(r => r.id === routeId);
-    if (!route || route.vehicles <= 1) return;
-    let idx = -1;
-    for (let i = this.vehicles.length - 1; i >= 0; i--) {
-      if (this.vehicles[i]!.routeId === routeId) { idx = i; break; }
-    }
-    if (idx >= 0) {
-      this.vesselPaths.delete(this.vehicles[idx]!.id);
-      this.vehicles.splice(idx, 1);
-    }
-    route.vehicles--;
-    route.operatingCost = route.vehicles * this.config.operatingCostPerVehicle;
+  /**
+   * Drop the departing vessel's cached A* path.
+   *
+   * This used to be a full override of removeVehicleFromRoute that duplicated
+   * the base body just to reach this one line — and the copy predated the
+   * version counter, so it never bumped it. The base class now offers a hook.
+   */
+  protected override onVehicleRemoved(vehicleId: number): void {
+    this.vesselPaths.delete(vehicleId);
   }
 
   override deleteRoute(routeId: number): void {

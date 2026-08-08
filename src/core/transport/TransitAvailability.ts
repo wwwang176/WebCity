@@ -89,8 +89,12 @@ export function computeRideDistance(
   segDists: number[] | null,
 ): number {
   const n = stops.length;
-  const forward = sumDirection(stops, fromIdx, toIdx, n, segDists);
-  const backward = sumDirection(stops, toIdx, fromIdx, n, segDists);
+  // A cached segment list must line up 1:1 with the stops, otherwise it is stale
+  // and indexing it by the CURRENT stop index silently returns another leg's
+  // distance. Degrade to the euclidean fallback instead of lying (BUG-064).
+  const safeDists = segDists && segDists.length === n ? segDists : null;
+  const forward = sumDirection(stops, fromIdx, toIdx, n, safeDists);
+  const backward = sumDirection(stops, toIdx, fromIdx, n, safeDists);
   return Math.min(forward, backward);
 }
 

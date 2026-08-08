@@ -135,7 +135,7 @@ describe('generateTerrain', () => {
       for (let x = 0; x < 60; x++) {
         const cell = grid.getCell(x, y)!;
         if (cell.terrainType !== TerrainType.FOREST) continue;
-        for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0]]) {
+        for (const [dx, dy] of [[0,1],[0,-1],[1,0],[-1,0]] as const) {
           const nc = grid.getCell(x + dx, y + dy);
           if (nc && nc.terrainType === TerrainType.WATER) {
             forestNearWater++;

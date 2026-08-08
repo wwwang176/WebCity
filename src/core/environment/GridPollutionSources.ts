@@ -1,6 +1,7 @@
 import type { PollutionSource } from './Pollution';
 import { ZoneType } from '../grid/types';
 import { RoadType } from '../road/types';
+import { isActiveZoneCell } from '../building/BuildingQueries';
 
 /** Grid-based pollution emission constants (OCP-friendly). */
 export const GRID_POLLUTION = {
@@ -23,21 +24,63 @@ export const GRID_POLLUTION = {
 } as const;
 
 interface GridLike {
-  forEachCell(callback: (cell: { buildingId: number; zoneType: number; roadType: number; trafficDensity: number }, x: number, y: number) => void): void;
+  // `reserved` is REQUIRED: isActiveZoneCell coerces undefined to 0, i.e.
+  // "active", so an optional field would let a future caller silently restore
+  // the old behaviour instead of failing to compile.
+  //
+  // Declared as a PROPERTY, not with method shorthand. TypeScript checks method
+  // parameters bivariantly even under strictFunctionTypes, so the shorthand
+  // form accepted a grid whose cells had no `reserved` at all — the requirement
+  // above was a comment, not a rule. A function-typed property is checked
+  // contravariantly and actually enforces it.
+  forEachCell: (
+    callback: (
+      cell: { buildingId: number; zoneType: number; roadType: number; trafficDensity: number; reserved: number },
+      x: number, y: number,
+    ) => void,
+  ) => void;
 }
 
 /** Visit grid pollution sources (industrial buildings + road traffic noise) without allocating an intermediate array. */
 export function forEachGridPollutionSource(
   grid: GridLike,
   emit: (source: PollutionSource) => void,
+  /**
+   * Road tier of the highest elevated segment at (x, y), or NONE.
+   *
+   * syncTrafficDensityToGrid deliberately projects elevated flow down onto the
+   * ground cell's trafficDensity "for noise pollution calculation" — and this is
+   * its only consumer — but the guard below tested the GROUND roadType. Wherever
+   * a viaduct crossed undeveloped land or water, the ground tier was NONE and
+   * every bit of that projected noise was dropped, so an elevated motorway was
+   * silently pollution-free and the land under it kept an inflated land value
+   * (BUG-099). Widening the guard to `trafficDensity > 0` alone is not enough:
+   * ROAD_SPEED_FACTOR[NONE] is 0, so the amount would come out 0 anyway.
+   */
+  getElevatedRoadType?: (x: number, y: number) => number,
 ): void {
   grid.forEachCell((cell, x, y) => {
-    if (cell.buildingId > 0 && cell.zoneType === ZoneType.INDUSTRIAL) {
+    // isActiveZoneCell, not `buildingId > 0`: a factory that has burned down
+    // has no production and no machinery, but it kept emitting the full 60
+    // ground pollution and 40 noise for as long as the ruin stood — which is
+    // until a developer happens to roll the 2%-per-tick clearance. The
+    // predicate also excludes infrastructure footprints, which is what an old
+    // save restored before BUG-074 still looks like.
+    //
+    // (updatePollution does recompute cell.pollution from scratch each medium
+    // tick, so the damage ends when the source does. An earlier version of this
+    // comment claimed the pollution was never cleared and the ruin poisoned the
+    // land permanently; both halves were wrong.)
+    if (isActiveZoneCell(cell) && cell.zoneType === ZoneType.INDUSTRIAL) {
       emit({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_GROUND, type: 'ground', radius: GRID_POLLUTION.INDUSTRIAL_GROUND_RADIUS });
       emit({ x, y, amount: GRID_POLLUTION.INDUSTRIAL_NOISE, type: 'noise', radius: GRID_POLLUTION.INDUSTRIAL_NOISE_RADIUS });
     }
-    if (cell.roadType !== RoadType.NONE && cell.trafficDensity > 0) {
-      const speedFactor = GRID_POLLUTION.ROAD_SPEED_FACTOR[cell.roadType] ?? 1;
+    if (cell.trafficDensity > 0) {
+      const roadType = cell.roadType !== RoadType.NONE
+        ? cell.roadType
+        : (getElevatedRoadType?.(x, y) ?? RoadType.NONE);
+      if (roadType === RoadType.NONE) return;
+      const speedFactor = GRID_POLLUTION.ROAD_SPEED_FACTOR[roadType] ?? 1;
       const amount = Math.round(cell.trafficDensity * GRID_POLLUTION.TRAFFIC_NOISE_MULTIPLIER * speedFactor);
       if (amount > 0) {
         emit({ x, y, amount, type: 'noise', radius: GRID_POLLUTION.TRAFFIC_NOISE_RADIUS });

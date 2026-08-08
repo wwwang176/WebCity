@@ -148,7 +148,7 @@ describe('Facility Operational Integration', () => {
     it('sewage plant without power → no treatment → untreated increases', () => {
       const state = setupState();
       state.sewage.addTreatmentPlant(0, 0, 500);
-      state.citizens.createCitizen({ age: 30 });
+      state.citizens.createCitizen({ age: 30 })!;
       stubUtilities(state, false, true); // no power
       tickAllCivicServices(state);
       // Sewage plant is water-exempt but needs power
@@ -177,7 +177,7 @@ describe('Facility Operational Integration', () => {
     it('sewage plant without water still works (water-exempt)', () => {
       const state = setupState();
       state.sewage.addTreatmentPlant(0, 0, 500);
-      for (let i = 0; i < 200; i++) state.citizens.createCitizen({ age: 30 });
+      for (let i = 0; i < 200; i++) state.citizens.createCitizen({ age: 30 })!;
       stubUtilities(state, true, false); // has power, no water
       tickAllCivicServices(state);
       expect(state.sewage.getUntreated()).toBe(0); // still treats (water-exempt)

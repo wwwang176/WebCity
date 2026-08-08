@@ -5,6 +5,7 @@ import { buildingGrowthTick } from '../building/BuildingGrowthTick';
 import { abandonmentStressTick } from '../building/AbandonmentStressTick';
 import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
+import { residentsAtHome } from '../citizen/HomeCapacity';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue, checkParkProximity } from '../economy/LandValue';
 import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI } from '../grid/types';
@@ -22,8 +23,8 @@ import { avgEducationScore } from '../building/BuildingUpgrade';
 import { ECONOMY } from '../economy/TaxMultipliers';
 import { DEFAULT_TAX_RATE } from '../economy/Tax';
 import { getInfraBuildingId, getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
-import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs } from '../building/BuildingQueries';
-import { forEachGridPollutionSource } from '../environment/GridPollutionSources';
+import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs, sumBuildingCapacity } from '../building/BuildingQueries';
+import { forEachGridPollutionSource, GRID_POLLUTION } from '../environment/GridPollutionSources';
 import { forEachServicePollutionSource } from '../environment/PollutionSourceRegistry';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
@@ -43,7 +44,7 @@ import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenS
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
 import { TransportMode } from '../transport/types';
-import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
+import { getSystemForMode, getTransitSystems, getTransitNetworkVersion, getTransitTopologyVersion, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findNearRoad, type ReadableGrid } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
@@ -51,7 +52,7 @@ import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
 import { getCellServiceScore, getResidentialServiceRatios, getCellServiceCostScore } from '../service/ServiceCoverageQuery';
 import { calculatePoliceLoads, calculateFireLoads } from '../service/PoliceFireLoadCalculator';
-import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate } from '../environment/CityMetrics';
+import { getAvgResidentialPollution, avgResidentialAt, calculateCrimeRate } from '../environment/CityMetrics';
 import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
 import { collectTradePositions, type TradePosition } from '../traffic/FreightTradeCollector';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
@@ -84,9 +85,16 @@ export class SimulationLoop {
   private state: GameState;
   private _elevationManager: import('../elevation/ElevationManager').ElevationManager | null = null;
   private _roadLookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null = null;
-  private lastDeathDay = -1;
-  private lastBirthMonth = -1;
-  private lastRiderDay = -1;
+  // Per-day / per-month phase markers. Seeded from the clock in the constructor
+  // rather than starting at -1: they are not serialized, so after loading a save
+  // taken mid-day the first tick re-ran the whole daily block (an extra
+  // independent death roll per citizen, plus advanceDay() rotating the 7-day
+  // ring buffers a slot early and discarding a day of statistics) and the whole
+  // monthly block (a second fertility roll for every fertile adult). Neither is
+  // idempotent, which made save-and-load a population lever (BUG-088).
+  private lastDeathDay: number;
+  private lastBirthMonth: number;
+  private lastRiderDay: number;
 
   // Lane-level connection graph for edge-based vehicle movement
   laneGraph: LaneGraph = new LaneGraph();
@@ -129,6 +137,10 @@ export class SimulationLoop {
   // Multi-modal transfer graph (rebuilt when transit network changes)
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
+  /** Transit structural version at the last transfer-graph rebuild. */
+  private lastTransitVersion = -1;
+  /** Transit stop/route topology version at the last transfer-tracker reset. */
+  private lastTransitTopologyVersion = -1;
   private flatRoutes: FlatRoute[] = [];
   /** Transfer usage tracking (extracted — SRP). */
   readonly transferTracker = new TransferTracker();
@@ -219,11 +231,23 @@ export class SimulationLoop {
 
   constructor(state: GameState) {
     this.state = state;
+    // The current day/month have already had their blocks run — either by the
+    // session that produced this save, or (for a new game at tick 0) because no
+    // time has elapsed yet. Both blocks belong to day/month *transitions*.
+    this.lastDeathDay = state.clock.getDay();
+    this.lastRiderDay = state.clock.getDay();
+    this.lastBirthMonth = state.clock.getMonth();
     // Auto-clear commute cache when citizens are evicted from any building
     this.state.citizens.onEvicted = (ids) => {
       for (const id of ids) this.commuteCache.remove(id);
     };
   }
+
+  // hasRunDayBlockFor / hasRunMonthBlockFor were removed: they simply re-read
+  // the field the constructor had just assigned from the clock, so every test
+  // built on them asserted `getDay() === getDay()` and stayed green with the
+  // whole fix reverted. LoadDoesNotRerunDailyBlocks now observes the blocks'
+  // effects (ring-buffer rotation, rider rollover, newborn count) instead.
 
   tick(): void {
     if (!this.state.clock.advance()) return;
@@ -236,6 +260,16 @@ export class SimulationLoop {
     // Mark building index dirty each tick so the first caller gets a fresh scan.
     // Subsequent rebuildBuildingIndex() calls within the same tick are no-ops.
     this.buildingIndexDirty = true;
+
+    // The capacity gate stays here — every path that adds a citizen this tick
+    // reads it, births included.
+    //
+    // A month boundary is always tick % 720 === 0, hence always slow-slot 0, so
+    // births and runMigration (slot 5) never fall on the same tick — ordering
+    // them relative to each other changes nothing. What did matter is that the
+    // aggregate capacity gate in createCitizen counts citizens who have no home
+    // at all; see the bypass in runBirths.
+    this.state.citizens.updateResidentialCapacity(countResidentialCapacity(this.state.grid));
 
     // ── Slot 0: Economy (RCI demand + budget) ──
     if (slowSlot === 0) {
@@ -352,6 +386,13 @@ export class SimulationLoop {
     }
 
     // ── Per-day operations ──
+    //
+    // Births come AFTER this block, not before it. A month boundary is
+    // floor(day/30) changing and a day boundary is floor(tick/24) changing, so
+    // the month boundary at tick 720 is also a day boundary — and running
+    // births first meant birthTick picked parents from ages last recomputed a
+    // day earlier, and every newborn was in the list deathTick then walked,
+    // facing a death roll before it was a tick old.
 
     // 5a. Daily: update citizen ages from birthTick + death check
     const currentDay = this.state.clock.getDay();
@@ -392,24 +433,11 @@ export class SimulationLoop {
       this.rolloverTransitRiders();
     }
 
+    // 5b. Monthly: births, now that today's ages are current and today's deaths
+    // have been taken.
+    this.runBirths();
+
     // ── Per-tick operations ──
-
-    // Sync residential capacity gate (before births + migration)
-    this.state.citizens.updateResidentialCapacity(countResidentialCapacity(this.state.grid));
-
-    // Monthly: natural births
-    const currentMonth = this.state.clock.getMonth();
-    if (currentMonth !== this.lastBirthMonth) {
-      this.lastBirthMonth = currentMonth;
-      birthTick(this.state.citizens, {
-        getResidents: (homeId) => {
-          const [x, y] = homeId.split(',').map(Number);
-          const cell = this.state.grid.getCell(x, y);
-          if (!cell || !cell.buildingId) return SIMULATION.FALLBACK_RESIDENTS;
-          return getBuildingType(cell.buildingId)?.residents ?? SIMULATION.FALLBACK_RESIDENTS;
-        },
-      }, this.state.clock.tick);
-    }
 
     // Job relocation (every 120 ticks, offset to slot 4)
     if (tick >= 4 && (tick - 4) % SIMULATION.JOB_RELOCATION_INTERVAL === 0) {
@@ -426,6 +454,11 @@ export class SimulationLoop {
       this.rebuildSidewalkGraph();
       this.sidewalkGraphDirty = false;
     }
+
+    // Transfer graph must be refreshed BEFORE spawning, and independently of
+    // whether spawning happens at all — spawnVehicles bails out on an empty or
+    // capped city, which used to strand the rebuild (see the method's comment).
+    this.rebuildTransferGraphIfDirty();
 
     // Traffic - spawn commute vehicles (every tick)
     this.spawnVehicles();
@@ -449,9 +482,19 @@ export class SimulationLoop {
   }
 
 
+  /**
+   * Posts nobody is filling.
+   *
+   * This used to subtract the whole POPULATION from total jobs, treating every
+   * baby, schoolchild and retiree as an occupied desk. Roughly 43% of a city's
+   * citizens are outside working age once retirement is in play, so a city with
+   * a normal age pyramid reported zero openings while that share of its offices
+   * and factories stood permanently empty — suppressing the residential demand
+   * that would have brought in the workers to fill them.
+   */
   private countJobOpenings(): number {
     const totalJobs = this.countTotalJobs();
-    return Math.max(0, totalJobs - this.state.citizens.getPopulation());
+    return Math.max(0, totalJobs - this.state.citizens.getEmployedCount());
   }
 
   private tryBuildingGrowth(): void {
@@ -489,15 +532,7 @@ export class SimulationLoop {
       this.wpDistCache?.invalidate();
       // Incrementally update sidewalk graph for new/removed buildings
       if (result.affectedCells.length > 0) {
-        const swGridLookup = {
-          getCell: (gx: number, gy: number) => {
-            const c = grid.getCell(gx, gy);
-            if (!c) return null;
-            return { roadType: c.roadType, roadFlags: c.roadFlags, railType: c.railType, buildingId: c.buildingId };
-          },
-        };
-        this.state.sidewalkGraph.updateCells(swGridLookup, result.affectedCells);
-        this.state.pedestrianManager.clearPathCache();
+        this.applyBuildingRemoval(result.affectedCells);
       }
     }
   }
@@ -520,10 +555,19 @@ export class SimulationLoop {
     }
     const unemploymentRate = workingAgeCount > 0 ? unemployedCount / workingAgeCount : 0;
 
-    // Calculate workplace zone ratios for education-weighted immigration
+    // Calculate workplace zone ratios for education-weighted immigration.
+    //
+    // Numerator and denominator must be the same unit. These used to be a
+    // building COUNT over a JOB count: the smallest office has 15 workers, so an
+    // all-office city topped out at a ratio of 0.067 against a 0.3 threshold,
+    // and the smallest factory has 10, capping industrial at 0.1 against 0.5 —
+    // both HIGH_OFFICE and HIGH_INDUSTRIAL weightings were unreachable. Using
+    // sumBuildingCapacity on both sides also inherits its ruin/multi-cell
+    // exclusions, so a heavily abandoned city can no longer push the ratio above
+    // 1 and trip the thresholds at exactly the wrong moment (BUG-085).
     const totalWorkplaces = countWorkplaceJobs(this.state.grid) || 1;
-    const officeJobs = countZoneBuildings(this.state.grid, t => t === ZoneType.OFFICE);
-    const industrialJobs = countZoneBuildings(this.state.grid, t => t === ZoneType.INDUSTRIAL);
+    const officeJobs = sumBuildingCapacity(this.state.grid, t => t === ZoneType.OFFICE, bt => bt.workers);
+    const industrialJobs = sumBuildingCapacity(this.state.grid, t => t === ZoneType.INDUSTRIAL, bt => bt.workers);
 
     const city = {
       jobOpenings: this.countJobOpenings(),
@@ -569,7 +613,13 @@ export class SimulationLoop {
     const ctx = calculateCityHappinessContext({
       totalJobs: this.countTotalJobs(),
       adultCount,
-      avgPollution: this.getAvgPollution(),
+      // Noise-free pollution here: `cell.pollution` is ground + water + noise,
+      // and Happiness applies a threshold penalty to avgPollution AND another to
+      // avgNoise, so a purely traffic-noisy district was penalised twice — -18
+      // where -8 was intended. updateLandValue already keeps the two separate;
+      // only this path conflated them (BUG-093). The grid field stays as the
+      // total, which is what the pollution overlay should show.
+      avgPollution: this.getAvgPollutionExcludingNoise(),
       avgNoise: this.getAvgNoise(),
       avgCrime: this.getAvgCrime(),
       residentialBuildingCount: countZoneBuildings(this.state.grid, isResidentialZone),
@@ -642,7 +692,13 @@ export class SimulationLoop {
         }
       }
 
-      factors.isEmployed = !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate;
+      // Read the authoritative per-citizen field. The old statistical model
+      // (Math.random() < ctx.employmentRate, where employmentRate is
+      // totalJobs/adultCount over raw grid capacity) made the whole unemployment
+      // ladder unreachable: any city with more job slots than adults has
+      // employmentRate === 1, so every citizen was flagged employed regardless of
+      // whether they actually held a job (BUG-057).
+      factors.isEmployed = !isWorkingAge(citizen.age) || citizen.workplaceId !== null;
       citizen.happiness = calculateHappiness(citizen, factors);
     }
   }
@@ -750,7 +806,22 @@ export class SimulationLoop {
   }
 
   private getAvgNoise(): number {
-    return getAvgResidentialNoise(this.state.grid);
+    // Read live noise, not cell.noiseLevel. That field is written only by
+    // updateLandValue, which runs every MEDIUM_TICK_INTERVAL (60 ticks), while
+    // growth and happiness run every 6 — so every residential building grown in
+    // the last 10 slow ticks passes the `buildingId > 0` filter carrying a
+    // noiseLevel of 0. BUG-092 removed the empty-zoned-cell half of the
+    // dilution and left this half in place (BUG-121).
+    return avgResidentialAt(this.state.grid, (x, y) =>
+      this.state.pollution.getPollutionAt(x, y).noise);
+  }
+
+  /** Residential pollution excluding the noise component — see the happiness call site. */
+  private getAvgPollutionExcludingNoise(): number {
+    return avgResidentialAt(this.state.grid, (x, y) => {
+      const p = this.state.pollution.getPollutionAt(x, y);
+      return p.ground + p.water;
+    });
   }
 
   private getAvgCrime(): number {
@@ -836,9 +907,26 @@ export class SimulationLoop {
     const { changed, updates } = applyFireDamage(this.state.grid, resolved);
 
     for (const u of updates) {
+      // A burned building is out of service, so its occupants must be released
+      // exactly like abandonment/demolish/disaster do. Without this they are
+      // stranded permanently: rebuildBuildingIndex drops BURNED cells from the
+      // housing/workplace candidates while the citizens still hold the posKey,
+      // and neither assignWithPreference (skips a non-null homeId) nor
+      // relocationTick (bails without a current candidate) can ever recover
+      // them (BUG-056).
+      if (u.burned) this.takeBuildingOutOfService(u.x, u.y);
       this.onBuildingUpdated?.(u.x, u.y, u.zoneType, u.level, u.burned);
     }
     if (changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
+  }
+
+  /**
+   * Release the occupants of a building that has just stopped functioning.
+   * Every path that takes a zone building out of service must go through here
+   * so a newly added state cannot silently skip eviction (BUG-056).
+   */
+  private takeBuildingOutOfService(x: number, y: number): void {
+    this.state.citizens.evictBuilding(toPosKey(x, y), this.state.clock.tick);
   }
 
   private updatePollution(): void {
@@ -851,7 +939,16 @@ export class SimulationLoop {
     pm.clearSources();
 
     // Add pollution sources directly (no intermediate arrays)
-    forEachGridPollutionSource(grid, (src) => pm.addPollutionSource(src));
+    forEachGridPollutionSource(grid, (src) => pm.addPollutionSource(src), (x, y) => {
+      const em = this._elevationManager;
+      if (!em) return 0;
+      // The noisiest elevated ROAD tier, across all levels. Reading the highest
+      // LEVEL's roadType reported 0 whenever an elevated rail deck sat over an
+      // elevated motorway — the BUG-099 symptom, one layer up.
+      // Loudest by NOISE, not by enum ordinal: ONE_WAY sorts above HIGHWAY
+      // numerically while being far quieter.
+      return em.getHighestRoadType(x, y, t => GRID_POLLUTION.ROAD_SPEED_FACTOR[t] ?? 0);
+    });
     // OCP: service-based pollution sources via registry — adding new sources only needs registry update
     forEachServicePollutionSource(this.state, (src) => pm.addPollutionSource(src));
 
@@ -907,6 +1004,9 @@ export class SimulationLoop {
         pollution: (pollution.ground + pollution.water) * pollutionFactor,
         noise: pollution.noise * pollutionFactor,
         crimeRate: this.getAvgCrime(),
+        policyBonus: this.state.policies.getLandValueBonus(
+          this.state.districts.getDistrictAt(x, y)?.id ?? null,
+        ),
       });
 
       // Write land value, service coverage, and noise to grid (avoid temp object)
@@ -945,7 +1045,15 @@ export class SimulationLoop {
         const updated = grid.getCell(x, y);
         if (updated) {
           const newLevel = getBuildingType(updated.buildingId)?.level ?? 1;
-          this.onBuildingUpdated?.(x, y, updated.zoneType, newLevel, updated.reserved === BURNED);
+          // The 6th argument (`abandoned`) is not optional in practice: the
+          // renderer defaults it to false and re-adds the light spot, so an
+          // omitted value visually resurrects a ruin. The abandonment path a few
+          // hundred lines below passes it correctly; this one did not (BUG-086).
+          this.onBuildingUpdated?.(
+            x, y, updated.zoneType, newLevel,
+            updated.reserved === BURNED,
+            updated.reserved === ABANDONED,
+          );
         }
       }
     }
@@ -962,6 +1070,7 @@ export class SimulationLoop {
     // Delegated to AbandonmentStressTick (SRP — stress calculation separated from orchestration)
     const result = abandonmentStressTick({
       forEachCell: (fn) => this.state.grid.forEachCell(fn),
+      getCell: (x, y) => this.state.grid.getCell(x, y),
       isZoneBuilding,
       getBuildingLevel: (bid) => getBuildingType(bid)?.level ?? 0,
       getPollution: (x, y) => this.state.pollution.getPollutionAt(x, y),
@@ -979,13 +1088,32 @@ export class SimulationLoop {
 
     // Apply abandonment to grid + evict citizens (side effects stay in orchestrator)
     for (const a of result.abandoned) {
-      const posKey = toPosKey(a.x, a.y);
       this.state.grid.setCell(a.x, a.y, { reserved: ABANDONED });
-      this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
+      this.takeBuildingOutOfService(a.x, a.y);
       this.onBuildingUpdated?.(a.x, a.y, a.zoneType, a.level, false, true);
     }
 
     if (result.changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
+  }
+
+  /**
+   * Monthly births.
+   *
+   * Its own method so the tick can place it explicitly — it used to sit near
+   * the top, ahead of the per-day ageing and death pass it shares a tick with.
+   */
+  private runBirths(): void {
+    const currentMonth = this.state.clock.getMonth();
+    if (currentMonth === this.lastBirthMonth) return;
+    this.lastBirthMonth = currentMonth;
+    birthTick(this.state.citizens, {
+      // Since BUG-140 took the aggregate gate off this path, this lookup is
+      // the ONLY bound on birth-driven growth — so it has to agree with
+      // countResidentialCapacity cell for cell. It used to answer
+      // FALLBACK_RESIDENTS (8) for an address with no building at all, which
+      // that figure counts as 0 (BUG-164).
+      getResidents: (homeId) => residentsAtHome(this.state.grid, homeId),
+    }, this.state.clock.tick);
   }
 
   /** Get the abandonment stress for a building at (x, y). */
@@ -1046,8 +1174,28 @@ export class SimulationLoop {
       if (isWorkingAge(c.age)) workingAgeCitizens.push(c);
     }
 
+    // The workplace-distance worker only receives the grid buffer, whose
+    // roadType byte is the GROUND layer. Elevated segments live in
+    // ElevationManager and are invisible to it, so in a city where a viaduct
+    // provides the only link between a district and its jobs the cache reported
+    // "unreachable" while the synchronous fallback — which is handed
+    // _roadLookup and IS level-aware — reported the opposite. Residents lost
+    // their jobs whenever the cache happened to be ready and got them back when
+    // it went stale, oscillating between the two answers.
+    //
+    // Correctness wins over speed: the cache is simply not used while any
+    // elevated ROAD exists. Serialising the elevated layers into the worker
+    // buffer is the real fix and is recorded in TODO.md (BUG-109).
+    //
+    // hasAnyElevatedRoad, not hasAnySegment: elevated RAIL shares the same
+    // layers map with roadType NONE and contributes nothing to road
+    // reachability, so the broader question let one elevated metro tile
+    // permanently disable the cache for an otherwise entirely flat city —
+    // a budgeted Dijkstra per unemployed home, every slow cycle, forever.
+    const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnyElevatedRoad();
+
     // Trigger async cache update if stale
-    if (this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
+    if (canUseWpCache && this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
       const wpPositions = workplaceCandidates.map(c => {
         const p = parsePosKeyUnsafe(c.pos);
         return { pos: c.pos, x: p.x, y: p.y };
@@ -1063,7 +1211,7 @@ export class SimulationLoop {
     }
 
     // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback
-    const reachable = (this.wpDistCache?.isReady)
+    const reachable = (canUseWpCache && this.wpDistCache?.isReady)
       ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
       : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
     assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable);
@@ -1172,8 +1320,18 @@ export class SimulationLoop {
 
     // Use cache-based distance lookup when ready (O(1) per lookup, no Dijkstra).
     // Otherwise provide a closure that captures this._roadLookup for level-aware Dijkstra.
+    //
+    // The same elevation guard as assignCitizenHousing. This is the second
+    // consumer of the cache and BUG-109's fix only guarded the first: the
+    // worker sees the ground roadType byte and cannot see a viaduct, so a
+    // ready cache would relocate workers as though the viaduct were not there.
+    // It is currently unreachable — requestUpdate is blocked upstream, so the
+    // cache can never reach READY while an elevated road exists — but that is
+    // correctness by coupling, and it evaporates the day the cache is warmed
+    // by any other route.
     const roadLookup = this._roadLookup;
-    const distanceLookup = (this.wpDistCache?.isReady)
+    const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnyElevatedRoad();
+    const distanceLookup = (canUseWpCache && this.wpDistCache?.isReady)
       ? (_grid: any, homePos: { x: number; y: number }, targets: Set<string>, _budget: number) => {
           const homeKey = toPosKey(homePos.x, homePos.y);
           return this.wpDistCache!.getDistancesFromHome(homeKey, targets);
@@ -1295,12 +1453,97 @@ export class SimulationLoop {
     this.serviceVehicleManager.removeAllOfType(this.state.traffic, serviceType);
   }
 
+  /**
+   * Invalidate only the multi-modal transfer graph.
+   *
+   * Deliberately NOT markLaneGraphDirty: transit edits do not change the road
+   * network, so dragging the lane graph, commute cache and workplace-distance
+   * cache along would be a far more expensive invalidation than needed.
+   *
+   * Transit MUTATIONS no longer need to call this — BaseTransportSystem bumps
+   * its own version counter and isTransferGraphDirty() compares it. The method
+   * remains for callers that change something the counter cannot see.
+   */
+  /**
+   * Is the transfer graph awaiting a rebuild?
+   *
+   * True when a road edit set the flag, OR when any transit system's structural
+   * version has moved since the last rebuild. The version check is what makes
+   * this robust: the flag alone depended on every mutation site remembering to
+   * call markTransitNetworkDirty, which markLaneGraphDirty had already silently
+   * broken for the whole transit UI once (BUG-090).
+   */
+  isTransferGraphDirty(): boolean {
+    return this.transferGraphDirty || getTransitNetworkVersion(this.state) !== this.lastTransitVersion;
+  }
+
+  /** Number of transit routes currently flattened into the transfer graph. */
+  getTransitRouteCount(): number {
+    return this.flatRoutes.length;
+  }
+
+  /**
+   * Rebuild the multi-modal transfer graph if the transit network changed.
+   *
+   * Runs unconditionally from tick(). It used to live inside
+   * spawnCommuteVehicles, behind three early returns — no population, commute
+   * vehicles at the cap, and no eligible (not-already-driving) citizens. A city
+   * large enough to sit permanently at the vehicle cap therefore never rebuilt:
+   * new lines were invisible to trip planning and deleted lines stayed in
+   * flatRoutes, still collecting dailyRiders.
+   */
+  private rebuildTransferGraphIfDirty(): void {
+    // Daily rollover for transfer usage counts (7-day ring buffer). Same
+    // stranding problem as the rebuild: a capped city stopped ageing the ring.
+    const day = this.state.clock.getDay();
+    if (day !== this.transferTracker.getLastDay()) {
+      this.transferTracker.setLastDay(day);
+      let peds = 0;
+      for (const a of this.state.pedestrianManager.agents) {
+        if (a.tripType === 4) peds++;
+      }
+      this.transferTracker.rolloverDay(peds);
+    }
+
+    if (!this.isTransferGraphDirty()) return;
+    const systems = this.getTransitSystemInfos();
+    this.flatRoutes = flattenSystems(systems);
+    this.transferGraph = buildTransferGraph(this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE);
+    buildStopRouteCache(
+      this.flatRoutes, this.transferGraph,
+      SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
+    );
+    this.transferGraphDirty = false;
+    this.lastTransitVersion = getTransitNetworkVersion(this.state);
+
+    // Only wipe the panel's per-building attribution when the stop/route
+    // topology actually moved. Route labels survive a vehicle-count change, so
+    // clearing on every rebuild blanked the transfer panel each time the player
+    // clicked +/- on a line.
+    const topology = getTransitTopologyVersion(this.state);
+    if (topology !== this.lastTransitTopologyVersion) {
+      this.lastTransitTopologyVersion = topology;
+      this.transferTracker.clearBuildings();
+    }
+  }
+
   markLaneGraphDirty(affectedCells?: string[], skipUnreachableCheck = false): void {
     this.laneGraphDirty = true;
     this.sidewalkGraphDirty = true;
     this.tripPoolDirty = true;
     this.transferGraphDirty = true;
     this.commuteCache.bumpGeneration();
+    // Drop in-flight worker results NOW, not on the next tick's graph sync.
+    //
+    // markLaneGraphDirty runs synchronously from the input event and clears
+    // routeIndex; the worker's BATCH_RESULT is a message task, so it lands
+    // before rebuildLaneGraph runs. onResult then wrote pre-demolition routes
+    // straight back into the cache, and spawnCommuteVehicles stamped them with
+    // the NEW roadGeneration — so isExpired() was permanently false and cars
+    // kept spawning onto road that no longer exists until the next edit.
+    // clearPending drops inflightBatches, so handleMessage ignores the reply;
+    // it was simply being called one tick too late (BUG-107).
+    this.pathBatcher?.clearPending();
     this.wpDistCache?.invalidate();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
@@ -1427,6 +1670,40 @@ export class SimulationLoop {
     // They will be re-spawned on next tickServiceVehicles().
     this.serviceVehicleManager.removeAll(this.state.traffic);
 
+    // Commute and freight vehicles need the same treatment, but only the ones
+    // actually affected. The reasoning in the line above applies to them too and
+    // they were simply never handled: buses have their own onRoadChanged path,
+    // service vehicles are wiped wholesale, and everything else kept driving
+    // along edges belonging to demolished cells. Nothing rescued them — stallTime
+    // only accrues when a vehicle is blocked, and a ghost road blocks nothing, so
+    // they ran the full path to "arrival" in plain sight (BUG-108).
+    //
+    // Scoped to cells where the road is GONE, not merely rebuilt.
+    //
+    // The dirty set is every cell the edit touched, and RoadBuilder reports the
+    // whole L-path — including existing cells whose roadType did not change. A
+    // vehicle whose route crosses those is fine: updateCells replaces the edge
+    // objects, but the geometry is identical and nothing downstream depends on
+    // edge identity (signals key on cellKey, car-following on edge.id). Retiring
+    // on dirtiness alone made every road extension or upgrade visibly delete the
+    // traffic already driving on that stretch (BUG-116).
+    //
+    // Ask the exact question — "does the graph still own every edge on this
+    // vehicle's remaining path?" — instead of approximating it from cell keys.
+    //
+    // Both previous approximations were wrong in a different direction, and the
+    // full-vs-incremental branch they needed contradicted itself: the
+    // incremental side argued that identical geometry makes an object swap
+    // harmless, while the full side deleted all traffic on exactly that
+    // reasoning's opposite. It also could not tell a NULL affected-set ("we
+    // don't know") from an EMPTY one ("we know, and nothing changed"), so
+    // dragging the demolish tool over bare grass wiped every car in the city.
+    // Edge ids are deterministic, so a rebuild that changes nothing retires
+    // nobody and the distinction disappears.
+    const liveEdgeIds = new Set<string>();
+    for (const e of this.laneGraph.getAllEdges()) liveEdgeIds.add(e.id);
+    this.state.traffic.retireVehiclesOnDeadEdges(liveEdgeIds);
+
     // Sync graph to SharedArrayBuffer for Worker pathfinding
     this.syncGraphToWorker();
   }
@@ -1486,12 +1763,64 @@ export class SimulationLoop {
     });
 
     this.state.sidewalkGraph.buildFromGrid(gridLookup, roadCellKeys, buildingCellKeys);
-    // Re-link pedestrianManager to the updated graph
-    this.state.pedestrianManager = new PedestrianManager(
-      this.state.sidewalkGraph,
-      this.state.trafficLights,
-      null, // levelCrossings — connected via Game.ts
-    );
+    // Re-link the EXISTING pedestrianManager to the rebuilt graph.
+    //
+    // This used to construct a new one, discarding every walking pedestrian and
+    // the whole path cache. markLaneGraphDirty always sets sidewalkGraphDirty,
+    // and it fires on road build, road demolish, any other demolish and on
+    // rezoning over existing buildings — so every one of those edits made the
+    // pedestrians on screen vanish and forced an immediate storm of multi-target
+    // A* to refill. It also reset levelCrossings to null, which would have
+    // silently un-wired BUG-105 on the first edit (BUG-104).
+    this.state.pedestrianManager.setSidewalkGraph(this.state.sidewalkGraph);
+
+    // Retire agents whose remaining route contains an edge the rebuilt graph no
+    // longer owns — the pedestrian mirror of retireVehiclesOnDeadEdges, and for
+    // the same reason: a cell-key sweep could not see a cell that flipped from
+    // BUILDING to road, which still has a road but lost every building_entrance
+    // node it had, so an agent kept walking to the door of a razed house.
+    this.retireStrandedPedestrians();
+  }
+
+  /**
+   * Retire every agent whose remaining route contains an edge the graph no
+   * longer owns.
+   *
+   * This lived inside rebuildSidewalkGraph, which meant it only ran on the
+   * road-edit path. buildingGrowthTick mutates the same graph directly through
+   * updateCells and never sets sidewalkGraphDirty, so the sweep never saw it —
+   * and building demolition is by far the highest-frequency source of destroyed
+   * building_entrance edges. An agent walking to the door of a house that had
+   * just been razed carried on walking there for up to DESPAWN_TIMEOUT, which
+   * is the precise symptom the sweep was written to remove (BUG-161).
+   */
+  private retireStrandedPedestrians(): void {
+    this.state.pedestrianManager.retireAgentsOnDeadEdges(this.state.sidewalkGraph.getEdgeIds());
+  }
+
+  /**
+   * Fold a set of cells whose BUILDINGS changed into the sidewalk graph.
+   *
+   * updateCells deletes the four door and four corner nodes of every cell it
+   * touches, along with every building_access edge on them — so this is a
+   * second, independent way for a pedestrian's route to be destroyed, and it
+   * runs far more often than road editing does. It set no dirty flag, so
+   * rebuildSidewalkGraph never ran for it and the retirement sweep never saw
+   * it: an agent walking to the door of a house the growth tick had just razed
+   * carried on walking there for up to DESPAWN_TIMEOUT (BUG-161).
+   */
+  applyBuildingRemoval(affectedCells: string[]): void {
+    if (affectedCells.length === 0) return;
+    const grid = this.state.grid;
+    this.state.sidewalkGraph.updateCells({
+      getCell: (gx: number, gy: number) => {
+        const c = grid.getCell(gx, gy);
+        if (!c) return null;
+        return { roadType: c.roadType, roadFlags: c.roadFlags, railType: c.railType, buildingId: c.buildingId };
+      },
+    }, affectedCells);
+    this.state.pedestrianManager.clearPathCache();
+    this.retireStrandedPedestrians();
   }
 
   private spawnVehicles(): void {
@@ -1550,29 +1879,9 @@ export class SimulationLoop {
     }
     if (eligible.length === 0) return;
 
-    // Daily rollover for transfer usage counts (7-day ring buffer)
-    const day = this.state.clock.getDay();
-    if (day !== this.transferTracker.getLastDay()) {
-      this.transferTracker.setLastDay(day);
-      let peds = 0;
-      for (const a of this.state.pedestrianManager.agents) {
-        if (a.tripType === 4) peds++;
-      }
-      this.transferTracker.rolloverDay(peds);
-    }
-
-    // Rebuild transfer graph when transit network has changed
-    if (this.transferGraphDirty) {
-      const systems = this.getTransitSystemInfos();
-      this.flatRoutes = flattenSystems(systems);
-      this.transferGraph = buildTransferGraph(this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE);
-      buildStopRouteCache(
-        this.flatRoutes, this.transferGraph,
-        SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
-      );
-      this.transferGraphDirty = false;
-      this.transferTracker.clearBuildings();
-    }
+    // The daily transfer-usage rollover and the transfer-graph rebuild used to
+    // live here, behind this and two earlier early returns — see
+    // rebuildTransferGraphIfDirty(). Both now run from tick().
 
     const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
     let spawned = 0;

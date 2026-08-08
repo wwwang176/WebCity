@@ -55,6 +55,30 @@ export function canPlaceTransportStop(
   return { ok: true };
 }
 
+/** Grid interface for writing a stop onto a cell. */
+export interface WritableGrid {
+  setCell(x: number, y: number, patch: Record<string, number>): unknown;
+}
+
+/**
+ * Write a single-cell transport stop onto the grid.
+ *
+ * BUG-074 fixed infrastructure placement leaving `zoneType` behind on the cells
+ * it takes over, and a v7 save migration (BUG-135) cleaned up the saves that
+ * already had it. Transport stops were routed through neither — Game.ts set
+ * buildingId and reserved with a bare setCell and left the zone in place,
+ * manufacturing the exact state the migration exists to remove. And since
+ * canPlaceTransportStop only rejects `roadType !== 0 || buildingId !== 0`, a
+ * bus stop on zoned-but-empty land is one click away (BUG-157).
+ *
+ * grid.setCell is a partial patch, so a field left out is a field left alone.
+ */
+export function placeTransportStopOnGrid(
+  grid: WritableGrid, x: number, y: number, buildingId: number, reserved: number,
+): void {
+  grid.setCell(x, y, { buildingId, reserved, zoneType: 0 });
+}
+
 /**
  * Find the first adjacent road cell (N/S/E/W) for a bus stop.
  * Returns { roadX, roadY } or null.

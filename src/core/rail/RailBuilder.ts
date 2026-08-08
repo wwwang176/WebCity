@@ -120,6 +120,7 @@ export class RailBuilder {
     return {
       success: true, cost: totalCost,
       demolishedCells: demolished.length > 0 ? demolished : undefined,
+      affectedCells: cells.map(c => toPosKey(c.x, c.y)),
     };
   }
 

@@ -11,6 +11,10 @@ import { PolicyType, Specialization } from '../../district/types';
 import { setSpecialization } from '../../district/Specialization';
 import { CitySpecType } from '../../district/CitySpecialization';
 import { DEFAULT_TAX_RATE } from '../../economy/Tax';
+import { BURNED } from '../../building/InfraPlacement';
+import { getBuildingLevelMultiplier } from '../../economy/TaxMultipliers';
+import { getBuildingType } from '../../building/types';
+import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /** Add power+water plants adjacent to a position so buildings there get utilities. */
 function provideUtilities(state: GameState, x: number, y: number): void {
@@ -23,7 +27,7 @@ function provideUtilities(state: GameState, x: number, y: number): void {
 /** Fill a building with workers so it produces full income. */
 function fillWorkers(state: GameState, x: number, y: number, count: number): void {
   for (let i = 0; i < count; i++) {
-    const c = state.citizens.createCitizen({ age: 30 });
+    const c = state.citizens.createCitizen({ age: 30 })!;
     c.workplaceId = `${x},${y}`;
     c.homeId = 'none';
   }
@@ -379,11 +383,23 @@ describe('countWorkplaceJobs', () => {
 });
 
 describe('Education integration in SimulationLoop', () => {
-  /** Place a horizontal road at row y from x=0..endX and recalculate education coverage. */
+  /**
+   * Place a horizontal road at row y from x=0..endX, supply utilities, and
+   * recalculate education coverage.
+   *
+   * The power and water plants are not optional set dressing: a school needs
+   * both to be operational, exactly like a police or fire station. These tests
+   * used to omit them and still pass only because EducationService discarded its
+   * operational-change flag and so never recalculated coverage (BUG-080).
+   */
   function setupRoadAndCoverage(state: GameState, roadY: number, endX: number): void {
     for (let x = 0; x <= endX; x++) {
       state.grid.setCell(x, roadY, { roadType: RoadType.TWO_LANE, roadFlags: 1 });
     }
+    state.power.addPlant({ x: 2, y: roadY + 1, output: 1000, pollution: 0, type: 'solar' });
+    state.water.addPlant({ x: 4, y: roadY + 1, output: 1000 });
+    state.power.calculateCoverage(state.grid);
+    state.water.calculateCoverage(state.grid);
     state.education.recalculateCoverage(state.grid);
   }
 
@@ -391,7 +407,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'elementary');
     setupRoadAndCoverage(state, 10, 20);
-    const child = state.citizens.createCitizen({ age: 20, homeId: '5,10' });
+    const child = state.citizens.createCitizen({ age: 20, homeId: '5,10' })!;
     expect(child.education).toBe('NONE');
 
     const loop = new SimulationLoop(state);
@@ -403,7 +419,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'elementary');
     setupRoadAndCoverage(state, 10, 5);
-    const child = state.citizens.createCitizen({ age: 20, homeId: '25,25' });
+    const child = state.citizens.createCitizen({ age: 20, homeId: '25,25' })!;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick();
@@ -415,7 +431,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'highschool');
     setupRoadAndCoverage(state, 10, 20);
-    const teen = state.citizens.createCitizen({ age: 40, education: 'ELEMENTARY' as any, homeId: '5,10' });
+    const teen = state.citizens.createCitizen({ age: 40, education: 'ELEMENTARY' as any, homeId: '5,10' })!;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
@@ -426,7 +442,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'university');
     setupRoadAndCoverage(state, 10, 20);
-    const adult = state.citizens.createCitizen({ age: 60, education: 'HIGH_SCHOOL' as any, homeId: '5,10' });
+    const adult = state.citizens.createCitizen({ age: 60, education: 'HIGH_SCHOOL' as any, homeId: '5,10' })!;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
@@ -437,7 +453,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'university');
     setupRoadAndCoverage(state, 10, 20);
-    const adult = state.citizens.createCitizen({ age: 100, education: 'HIGH_SCHOOL' as any, homeId: '5,10' });
+    const adult = state.citizens.createCitizen({ age: 100, education: 'HIGH_SCHOOL' as any, homeId: '5,10' })!;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick(); // 2 slow ticks
@@ -448,7 +464,7 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'elementary');
     setupRoadAndCoverage(state, 10, 20);
-    const child = state.citizens.createCitizen({ age: 20, homeId: null });
+    const child = state.citizens.createCitizen({ age: 20, homeId: null })!;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick();
@@ -460,8 +476,8 @@ describe('Education integration in SimulationLoop', () => {
     const state = createGameState(30, 30);
     state.education.addSchool(0, 10, 'elementary', undefined, 1);
     setupRoadAndCoverage(state, 10, 20);
-    const c1 = state.citizens.createCitizen({ age: 20, homeId: '5,10' });
-    const c2 = state.citizens.createCitizen({ age: 21, homeId: '5,10' });
+    const c1 = state.citizens.createCitizen({ age: 20, homeId: '5,10' })!;
+    const c2 = state.citizens.createCitizen({ age: 21, homeId: '5,10' })!;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 6; i++) loop.tick(); // 1 slow tick
@@ -471,7 +487,7 @@ describe('Education integration in SimulationLoop', () => {
 
   it('no school → no enrollment progress', () => {
     const state = createGameState(30, 30);
-    const child = state.citizens.createCitizen({ age: 20, homeId: '5,10' });
+    const child = state.citizens.createCitizen({ age: 20, homeId: '5,10' })!;
 
     const loop = new SimulationLoop(state);
     for (let i = 0; i < 12; i++) loop.tick();
@@ -484,7 +500,7 @@ describe('DeathCare integration', () => {
   it('updateAges should only age without killing', () => {
     const state = createGameState(10, 10);
     for (let i = 0; i < 3; i++) {
-      state.citizens.createCitizen({ age: 281 });
+      state.citizens.createCitizen({ age: 281 })!;
     }
     expect(state.citizens.getPopulation()).toBe(3);
 
@@ -503,7 +519,7 @@ describe('DeathCare integration', () => {
 
     // Create citizens already over MAX_AGE (280) → guaranteed death in deathTick
     for (let i = 0; i < 3; i++) {
-      state.citizens.createCitizen({ age: 281 });
+      state.citizens.createCitizen({ age: 281 })!;
     }
 
     const deadIds = state.citizens.deathTick(() => ({ hospitalMult: 1.0, pollutionMult: 1.0 }));
@@ -522,7 +538,7 @@ describe('DeathCare integration', () => {
     state.deathCare.addCemetery(5, 5);
     // Create citizens at age 281 (> MAX_AGE 280) — will die on first deathTick (daily check)
     for (let i = 0; i < 3; i++) {
-      state.citizens.createCitizen({ age: 281 });
+      state.citizens.createCitizen({ age: 281 })!;
     }
 
     const loop = new SimulationLoop(state);
@@ -647,7 +663,46 @@ describe('District integration', () => {
   });
 });
 
+/**
+ * Run the same city twice — once with the modification, once without — and
+ * return the revenue ratio.
+ *
+ * These cases used to assert a literal built from the buildingId they placed.
+ * That literal is wrong for three independent reasons the test never mentioned:
+ * the loop upgrades buildings (changing companyIncome AND the level
+ * multiplier), income scales by staffed/capacity so an upgrade that raises
+ * capacity LOWERS revenue, and commercial income is further scaled by freight
+ * supply. Whether any of it happened came down to whether randomInt sampled
+ * that cell, so the assertions failed a few percent of the time — always in a
+ * full-suite run, never in isolation.
+ *
+ * A ratio isolates the one thing these cases are actually about: the
+ * specialization multiplier. Everything else cancels, because the seeded run
+ * makes both cities evolve identically.
+ */
+function revenueRatio(build: (state: GameState) => void, modify: (state: GameState) => void): number {
+  const run = (withMod: boolean) => {
+    // Restart the stream so both cities see the same draws — otherwise the
+    // second run continues where the first stopped and they diverge.
+    reseedRandom();
+    const state = createGameState(20, 20);
+    if (withMod) modify(state);
+    build(state);
+    const loop = new SimulationLoop(state);
+    for (let i = 0; i < 6; i++) loop.tick();
+    return state.budget.income;
+  };
+  const base = run(false);
+  expect(base).toBeGreaterThan(0);
+  return run(true) / base;
+}
+
 describe('Specialization integration', () => {
+  // Job relocation reshuffles workers, which moves occupancy and therefore
+  // revenue. Seeded so the fixture's staffing is stable; the assertions below
+  // still read the building's ACTUAL level, so they are not fitted to the seed.
+  useSeededRandom();
+
   it('MINING specialization should increase revenue for industrial buildings in district', () => {
     const state = createGameState(20, 20);
     // Create district with MINING specialization
@@ -673,49 +728,47 @@ describe('Specialization integration', () => {
   });
 
   it('TOURISM specialization should boost revenue by 1.5x for buildings in district', () => {
-    const state = createGameState(20, 20);
-    const d = state.districts.createDistrict('TourismDistrict');
-    setSpecialization(state.districts, d.id, Specialization.TOURISM);
-
-    for (let x = 3; x <= 5; x++) {
-      state.districts.addCellToDistrict(d.id, x, 5);
-      state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-      fillWorkers(state, x, 5, 4);
-    }
-    provideUtilities(state, 3, 5);
-
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < 6; i++) loop.tick();
-
-    // 3 buildings × companyIncome(10) × levelMult(1.0) × 1.5 (tourism bonus) × businessTaxRate/100
-    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const expectedWithBonus = 3 * 10 * 1.0 * 1.5 * (businessTax / 100);
-    expect(state.budget.income).toBeCloseTo(expectedWithBonus, 1);
+    const ratio = revenueRatio(
+      (state) => {
+        for (let x = 3; x <= 5; x++) {
+          state.grid.setCell(x, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+          fillWorkers(state, x, 5, 4);
+        }
+        provideUtilities(state, 3, 5);
+      },
+      (state) => {
+        const d = state.districts.createDistrict('TourismDistrict');
+        setSpecialization(state.districts, d.id, Specialization.TOURISM);
+        for (let x = 3; x <= 5; x++) state.districts.addCellToDistrict(d.id, x, 5);
+      },
+    );
+    expect(ratio).toBeCloseTo(1.5, 3);
   });
 
   it('NONE specialization should not modify revenue', () => {
-    const state = createGameState(20, 20);
-    const d = state.districts.createDistrict('NormalDistrict');
-    state.districts.addCellToDistrict(d.id, 5, 5);
-    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    provideUtilities(state, 5, 5);
-    fillWorkers(state, 5, 5, 4);
-    state.grid.setCell(10, 10, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    provideUtilities(state, 10, 10);
-    fillWorkers(state, 10, 10, 4);
-
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < 6; i++) loop.tick();
-
-    // Both buildings should generate same revenue (no bonus)
-    // Small Shop: companyIncome=10, Lv1, levelMult=1.0
-    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const expected = 2 * 10 * 1.0 * (businessTax / 100); // 2 buildings × companyIncome × businessTax
-    expect(state.budget.income).toBeCloseTo(expected, 1);
+    const ratio = revenueRatio(
+      (state) => {
+        for (const [x, y] of [[5, 5], [10, 10]] as const) {
+          state.grid.setCell(x, y, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+          provideUtilities(state, x, y);
+          fillWorkers(state, x, y, 4);
+        }
+      },
+      (state) => {
+        const d = state.districts.createDistrict('NormalDistrict');
+        state.districts.addCellToDistrict(d.id, 5, 5);
+      },
+    );
+    expect(ratio).toBeCloseTo(1.0, 3);
   });
 });
 
 describe('CitySpecialization integration', () => {
+  // Job relocation reshuffles workers, which moves occupancy and therefore
+  // revenue. Seeded so the fixture's staffing is stable; the assertions below
+  // still read the building's ACTUAL level, so they are not fitted to the seed.
+  useSeededRandom();
+
   it('GameState should include citySpec', () => {
     const state = createGameState(20, 20);
     expect(state.citySpec).toBeDefined();
@@ -723,37 +776,27 @@ describe('CitySpecialization integration', () => {
   });
 
   it('GAMBLING_CITY should increase all building revenue by 1.4x', () => {
-    const state = createGameState(20, 20);
-    state.citySpec.choose(CitySpecType.GAMBLING_CITY, 5000);
-
-    state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
-    provideUtilities(state, 5, 5);
-    fillWorkers(state, 5, 5, 4);
-
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < 6; i++) loop.tick();
-
-    // companyIncome(10) × levelMult(1.0) × businessTax/100 × gambling(1.4)
-    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const expected = 10 * 1.0 * (businessTax / 100) * 1.4;
-    expect(state.budget.income).toBeCloseTo(expected, 1);
+    const ratio = revenueRatio(
+      (state) => {
+        state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+        provideUtilities(state, 5, 5);
+        fillWorkers(state, 5, 5, 4);
+      },
+      (state) => state.citySpec.choose(CitySpecType.GAMBLING_CITY, 5000),
+    );
+    expect(ratio).toBeCloseTo(1.4, 3);
   });
 
   it('TECH_CITY should increase revenue by 1.25x', () => {
-    const state = createGameState(20, 20);
-    state.citySpec.choose(CitySpecType.TECH_CITY, 5000);
-
-    state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
-    provideUtilities(state, 3, 3);
-    fillWorkers(state, 3, 3, 15);
-
-    const loop = new SimulationLoop(state);
-    for (let i = 0; i < 6; i++) loop.tick();
-
-    // companyIncome(20) × levelMult(1.0) × businessTax/100 × tech(1.25)
-    const businessTax = state.taxRates.business ?? DEFAULT_TAX_RATE;
-    const expected = 20 * 1.0 * (businessTax / 100) * 1.25;
-    expect(state.budget.income).toBeCloseTo(expected, 1);
+    const ratio = revenueRatio(
+      (state) => {
+        state.grid.setCell(3, 3, { zoneType: ZoneType.OFFICE, buildingId: 16 });
+        provideUtilities(state, 3, 3);
+        fillWorkers(state, 3, 3, 15);
+      },
+      (state) => state.citySpec.choose(CitySpecType.TECH_CITY, 5000),
+    );
+    expect(ratio).toBeCloseTo(1.25, 3);
   });
 });
 
@@ -806,5 +849,169 @@ describe('Transport integration', () => {
 
     // Expenses should include transport operating costs
     expect(state.budget.expenses).toBeGreaterThan(0);
+  });
+});
+
+// BUG-056: every other path that takes a zone building out of service calls
+// evictBuilding — abandonment, player demolish, infra/road overbuild, disasters.
+// The fire path did not, so residents of a burned building were stranded
+// forever: never re-housed (assignWithPreference skips citizens with a homeId),
+// never counted homeless, yet still generating service demand at a charred tile.
+describe('Fire eviction', () => {
+  function burningCity() {
+    const state = createGameState(20, 20);
+    // A residential building with occupants at (10,10).
+    state.grid.setCell(10, 10, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    for (let i = 0; i < 8; i++) {
+      state.citizens.restoreCitizen({ age: 100, homeId: '10,10' });
+    }
+    // A workplace with staff at (12,10).
+    state.grid.setCell(12, 10, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    for (let i = 0; i < 4; i++) {
+      state.citizens.restoreCitizen({ age: 100, workplaceId: '12,10' });
+    }
+    return state;
+  }
+
+  /**
+   * Force both cells to resolve as fully-damaged fires and stop the moment the
+   * fire slot has run. Ticking further would let slot 3 abandon these
+   * (unpowered) buildings and evict via that path instead, masking the bug.
+   */
+  function burn(state: ReturnType<typeof burningCity>) {
+    const loop = new SimulationLoop(state);
+    vi.spyOn(state.fire, 'resolveCompletedFires').mockReturnValue([
+      { x: 10, y: 10, damage: 0.9 },
+      { x: 12, y: 10, damage: 0.9 },
+    ] as never);
+    vi.spyOn(state.fire, 'tryRandomFire').mockReturnValue(undefined as never);
+
+    for (let i = 0; i < SIMULATION.SLOW_TICK_INTERVAL * 2; i++) {
+      loop.tick();
+      if (state.grid.getCell(10, 10)!.reserved === BURNED) break;
+    }
+    expect(state.grid.getCell(10, 10)!.reserved).toBe(BURNED);
+    return loop;
+  }
+
+  it('should evict residents of a burned building', () => {
+    const state = burningCity();
+    expect(state.citizens.getCitizens().filter(c => c.homeId === '10,10')).toHaveLength(8);
+
+    burn(state);
+
+    expect(state.citizens.getCitizens().filter(c => c.homeId === '10,10')).toHaveLength(0);
+  });
+
+  it('should evict workers of a burned workplace', () => {
+    const state = burningCity();
+    expect(state.citizens.getCitizens().filter(c => c.workplaceId === '12,10')).toHaveLength(4);
+
+    burn(state);
+
+    expect(state.citizens.getCitizens().filter(c => c.workplaceId === '12,10')).toHaveLength(0);
+  });
+
+  it('should record homelessSince so the happiness penalty can apply', () => {
+    const state = burningCity();
+    burn(state);
+
+    const evicted = state.citizens.getCitizens().filter(c => c.homelessSince !== null);
+    expect(evicted.length).toBeGreaterThanOrEqual(8);
+  });
+
+  it('should not evict citizens of an undamaged neighbour', () => {
+    const state = burningCity();
+    state.grid.setCell(11, 10, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    state.citizens.restoreCitizen({ age: 100, homeId: '11,10' });
+
+    burn(state);
+
+    expect(state.citizens.getCitizens().filter(c => c.homeId === '11,10')).toHaveLength(1);
+  });
+});
+
+// BUG-057: updateCitizenHappiness derived isEmployed from a coin flip on the
+// city-wide employmentRate (totalJobs / adultCount, raw grid capacity) instead
+// of the citizen's own workplaceId. Any city with more job slots than adults
+// has employmentRate === 1, so Math.random() < 1 is always true and the entire
+// unemployment penalty ladder — including the -100 forced-emigration trigger —
+// was unreachable.
+const HAPPINESS_SLOT = 4;
+
+describe('Unemployment happiness penalty', () => {
+  /**
+   * Grid with far more job slots than adults, so employmentRate === 1.
+   * The clock is parked one tick before the happiness slot so a single tick()
+   * runs slot 4 and nothing else — driving the whole loop would let fire,
+   * growth and abandonment (all Math.random-driven) perturb the result.
+   */
+  function jobRichCity() {
+    const state = createGameState(30, 30);
+    for (let x = 2; x < 20; x++) {
+      state.grid.setCell(x, 4, { roadFlags: 1, roadType: RoadType.TWO_LANE });
+    }
+    for (let x = 2; x < 20; x++) {
+      state.grid.setCell(x, 5, { zoneType: ZoneType.INDUSTRIAL, buildingId: 13 });
+    }
+    for (let x = 2; x < 6; x++) {
+      state.grid.setCell(x, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+    }
+    // tick() advances first, so park the clock one short of the happiness slot.
+    state.clock.tick = 1000 * SIMULATION.SLOW_TICK_INTERVAL + HAPPINESS_SLOT - 1;
+    return state;
+  }
+
+  function runHappinessSlot(state: GameState): void {
+    const before = state.clock.tick;
+    new SimulationLoop(state).tick();
+    expect(state.clock.tick % SIMULATION.SLOW_TICK_INTERVAL).toBe(HAPPINESS_SLOT);
+    expect(state.clock.tick).toBe(before + 1);
+  }
+
+  it('should penalise jobless citizens even when totalJobs exceeds adultCount', () => {
+    const state = jobRichCity();
+    const employed = [];
+    const jobless = [];
+    for (let i = 0; i < 10; i++) {
+      employed.push(state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: '5,5' }));
+    }
+    for (let i = 0; i < 10; i++) {
+      jobless.push(state.citizens.restoreCitizen({ age: 100, homeId: '3,3', workplaceId: null, unemployedSince: 0 }));
+    }
+
+    runHappinessSlot(state);
+
+    const avg = (cs: { happiness: number }[]) => cs.reduce((s, c) => s + c.happiness, 0) / cs.length;
+    expect(avg(jobless)).toBeLessThan(avg(employed));
+  });
+
+  it('should separate employed and jobless housemates by the full penalty', () => {
+    const state = jobRichCity();
+    // Same home, same age — workplaceId is the only difference between them.
+    const employed = state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: '5,5' });
+    const jobless = state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: null, unemployedSince: 0 });
+
+    // Pin the commute jitter (the only legitimate use of randomness here) so the
+    // gap can only come from the employment factor.
+    const rand = vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    runHappinessSlot(state);
+    rand.mockRestore();
+
+    // unemployedSince=0 against a clock far past the tolerance means the forced
+    // -100 tier, which drives happiness to the clamp floor — the state that
+    // triggers emigration, and which was unreachable before the fix.
+    expect(jobless.happiness).toBe(0);
+    expect(employed.happiness).toBeGreaterThan(0);
+  });
+
+  it('should not penalise citizens below working age', () => {
+    const state = jobRichCity();
+    const child = state.citizens.restoreCitizen({ age: 20, homeId: '2,3', workplaceId: null });
+    const adult = state.citizens.restoreCitizen({ age: 100, homeId: '2,3', workplaceId: null, unemployedSince: 0 });
+
+    runHappinessSlot(state);
+
+    expect(child.happiness).toBeGreaterThan(adult.happiness);
   });
 });

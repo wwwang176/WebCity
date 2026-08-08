@@ -276,6 +276,24 @@ export function createNewGameConfig(
   const FREQ_LABELS = ['Low', 'Medium', 'High'] as const;
   const FREQ_VALUES = ['low', 'medium', 'high'] as const;
 
+  /**
+   * Read a slider position out of one of the tables above.
+   *
+   * The sliders carry min/max attributes, so in practice `i` is in range — but
+   * an out-of-range or NaN index silently wrote `undefined` into the config,
+   * and a config with `waterAmount: undefined` reaches the terrain generator
+   * rather than being rejected.
+   */
+  function pick<T extends readonly string[]>(table: T, i: number): T[number] {
+    // Floor as well as clamp. Clamping alone left `pick(1.5)` returning
+    // undefined — the exact failure this guard is here to prevent, still
+    // reachable through the one input the range check does not cover.
+    const clamped = Number.isFinite(i)
+      ? Math.min(table.length - 1, Math.max(0, Math.floor(i)))
+      : 0;
+    return table[clamped] as T[number];
+  }
+
   // --- Helpers ---
   function updatePreview() {
     seedDisplay.textContent = `Seed: ${config.seed}`;
@@ -307,15 +325,15 @@ export function createNewGameConfig(
 
   waterSlider.addEventListener('input', () => {
     const i = parseInt(waterSlider.value, 10);
-    waterVal.textContent = WATER_LABELS[i];
-    config.waterAmount = WATER_VALUES[i];
+    waterVal.textContent = pick(WATER_LABELS, i);
+    config.waterAmount = pick(WATER_VALUES, i);
     updatePreview();
   });
 
   forestSlider.addEventListener('input', () => {
     const i = parseInt(forestSlider.value, 10);
-    forestVal.textContent = FOREST_LABELS[i];
-    config.forestDensity = FOREST_VALUES[i];
+    forestVal.textContent = pick(FOREST_LABELS, i);
+    config.forestDensity = pick(FOREST_VALUES, i);
     updatePreview();
   });
 
@@ -337,8 +355,8 @@ export function createNewGameConfig(
 
   freqSlider.addEventListener('input', () => {
     const i = parseInt(freqSlider.value, 10);
-    freqVal.textContent = FREQ_LABELS[i];
-    config.disasterFrequency = FREQ_VALUES[i];
+    freqVal.textContent = pick(FREQ_LABELS, i);
+    config.disasterFrequency = pick(FREQ_VALUES, i);
   });
 
   el.querySelector('#ngc-back')!.addEventListener('click', onBack);

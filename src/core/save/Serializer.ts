@@ -22,7 +22,11 @@ import { RailSystem } from '../transport/RailSystem';
 import { FerrySystem } from '../transport/FerrySystem';
 import { AirportSystem } from '../transport/AirportSystem';
 import { HighwayConnection } from '../traffic/HighwayConnection';
-import { CURRENT_SAVE_VERSION, runMigrations } from './migrations';
+import { DistrictManager } from '../district/DistrictManager';
+import { PolicyManager } from '../district/PolicyManager';
+import { CitySpecialization } from '../district/CitySpecialization';
+import { GlobalMarket } from '../economy/GlobalMarket';
+import { CURRENT_SAVE_VERSION, runMigrations, migrateSavedCitizens } from './migrations';
 
 interface SerializedCell {
   x: number;
@@ -73,9 +77,14 @@ interface SerializedState {
   ferry?: ReturnType<FerrySystem['toJSON']>;
   airport?: ReturnType<AirportSystem['toJSON']>;
   highwayConnection?: ReturnType<HighwayConnection['toJSON']>;
+  districts?: ReturnType<DistrictManager['toJSON']>;
+  policies?: ReturnType<PolicyManager['toJSON']>;
+  citySpec?: ReturnType<CitySpecialization['toJSON']>;
+  globalMarket?: ReturnType<GlobalMarket['toJSON']>;
   elevation?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
   abandonmentStress?: Record<string, number>;
   /** Rolling 7-day transfer usage history + current day + ring index */
+  highestMilestonePop?: number;
   transferHistory?: {
     history: Array<Record<string, number>>;
     index: number;
@@ -92,6 +101,8 @@ export function snapshotGameState(
     abandonmentStress?: Map<string, number>;
     elevationManager?: import('../elevation/ElevationManager').ElevationManager;
     transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay: number };
+    /** Highest milestone population ever reached — see Game.checkMilestone. */
+    highestMilestonePop?: number;
   },
 ): SerializedState {
   const cells: SerializedCell[] = [];
@@ -145,10 +156,15 @@ export function snapshotGameState(
     ferry: state.ferry.toJSON(),
     airport: state.airport.toJSON(),
     highwayConnection: state.highwayConnection.toJSON(),
+    districts: state.districts.toJSON(),
+    policies: state.policies.toJSON(),
+    citySpec: state.citySpec.toJSON(),
+    globalMarket: state.globalMarket.toJSON(),
     elevation: extra?.elevationManager?.toJSON(),
     abandonmentStress: extra?.abandonmentStress
       ? Object.fromEntries(extra.abandonmentStress)
       : undefined,
+    highestMilestonePop: extra?.highestMilestonePop,
     transferHistory: extra?.transferHistory
       ? {
           history: extra.transferHistory.history.map(m => Object.fromEntries(m)),
@@ -164,16 +180,18 @@ export function snapshotGameState(
 /** Serialize game state to JSON string (snapshot + stringify). */
 export function serializeGameState(
   state: GameState,
-  extra?: {
-    abandonmentStress?: Map<string, number>;
-    elevationManager?: import('../elevation/ElevationManager').ElevationManager;
-  },
+  // Taken from snapshotGameState rather than restated: this wrapper's own copy
+  // went stale and rejected `transferHistory` / `highestMilestonePop`, which
+  // snapshotGameState has handled since they were added.
+  extra?: Parameters<typeof snapshotGameState>[1],
 ): string {
   return JSON.stringify(snapshotGameState(state, extra));
 }
 
 export interface DeserializedExtra {
   abandonmentStress: Map<string, number>;
+  /** Highest milestone population ever reached — see Game.checkMilestone. */
+  highestMilestonePop?: number;
   elevationData?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
   transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number; lastDay: number };
 }
@@ -216,9 +234,13 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
     for (const p of saved.waterPlants) state.water.addPlant(p);
   }
 
-  // Restore citizens
+  // Restore citizens. The legacy age conversion has to happen on the raw payload
+  // first — restoreCitizen fabricates a birthTick, which destroys the only signal
+  // that identifies a legacy citizen (BUG-055). Passing the saved tick also means
+  // any fabricated birthTick encodes the age at save time rather than at tick 0.
+  migrateSavedCitizens(saved.citizens, saved.version ?? 0, saved.clock.tick);
   if (saved.citizens) {
-    for (const c of saved.citizens) state.citizens.restoreCitizen(c);
+    for (const c of saved.citizens) state.citizens.restoreCitizen(c, saved.clock.tick);
   }
 
   // Restore civic services
@@ -254,6 +276,22 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
     state.highwayConnection = HighwayConnection.fromJSON(saved.highwayConnection);
   }
 
+  // Restore districts / policies / city specialization / market.
+  // PolicyManager holds a reference to the DistrictManager, so replacing the
+  // latter *must* rebuild the former or policies would query the discarded
+  // (empty) manager. Old saves simply have no data here and keep the defaults.
+  if (saved.districts) {
+    state.districts = DistrictManager.fromJSON(saved.districts);
+    state.policies = new PolicyManager(state.districts);
+  }
+  state.policies.restore(saved.policies);
+  if (saved.citySpec) {
+    state.citySpec = CitySpecialization.fromJSON(saved.citySpec);
+  }
+  if (saved.globalMarket) {
+    state.globalMarket = GlobalMarket.fromJSON(saved.globalMarket);
+  }
+
   // Fallback: rebuild transit stops from grid for old saves without transport data
   if (!saved.bus && !saved.metro && !saved.rail && !saved.ferry) {
     state.grid.forEachCell((cell, x, y) => {
@@ -276,6 +314,16 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
       ? new Map(Object.entries(saved.abandonmentStress).map(([k, v]) => [k, Number(v)]))
       : new Map(),
     elevationData: saved.elevation,
+    // Guarded, because Game.ts restores it through
+    // `Math.max(loadedMilestone.populationRequired, highestMilestonePop ?? 0)`
+    // and Math.max returns NaN if either side is not a number. NaN compares
+    // false against everything, so one bad value disables every milestone for
+    // the rest of that city's life — and it is written straight back out on the
+    // next save, so the damage is permanent. JSON cannot express NaN, but an
+    // imported or hand-edited file can carry a string, and `Math.max(5000,
+    // "abc")` is NaN.
+    highestMilestonePop: Number.isFinite(saved.highestMilestonePop)
+      ? saved.highestMilestonePop : undefined,
     transferHistory: saved.transferHistory
       ? {
           history: saved.transferHistory.history.map(obj => new Map(Object.entries(obj).map(([k, v]) => [k, Number(v)]))),
@@ -337,6 +385,10 @@ function migrateOldInfra(grid: Grid): void {
         grid.setCell(x + dx, y + dy, {
           buildingId: cfg.buildingId,
           reserved: MULTI_CELL_OCCUPIED,
+          // setCell is a partial patch: without this the zoneType the cell had
+          // before the facility claimed it survives, and the v7 migration
+          // would be undone on the very next load (BUG-074).
+          zoneType: 0,
         });
       }
     }

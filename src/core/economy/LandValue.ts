@@ -7,6 +7,8 @@ export interface LandValueFactors {
   pollution: number;
   noise: number;
   crimeRate: number;
+  /** Flat bonus from district policy, applied before the clamp. */
+  policyBonus?: number;
 }
 
 export const LAND_VALUE = {
@@ -64,5 +66,9 @@ export function calculateLandValue(factors: LandValueFactors): number {
   value -= factors.pollution * LAND_VALUE.POLLUTION_PENALTY;
   value -= factors.noise * LAND_VALUE.NOISE_PENALTY;
   value -= factors.crimeRate * LAND_VALUE.CRIME_PENALTY;
+  // District policy (Organic Food). Added before the clamp, so a policy can
+  // lift an ordinary neighbourhood but never break the ceiling the migration
+  // weighting is calibrated against.
+  value += factors.policyBonus ?? 0;
   return Math.max(LAND_VALUE.MIN, Math.min(LAND_VALUE.MAX, Math.round(value)));
 }

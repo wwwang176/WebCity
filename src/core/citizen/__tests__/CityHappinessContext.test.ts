@@ -24,7 +24,7 @@ describe('CityHappinessContext', () => {
     it('returns 0 when no services are active', () => {
       const ratios = {
         poweredRatio: 0, wateredRatio: 0,
-        policeRatio: 0, fireRatio: 0, garbageRatio: 0,
+        sewageRatio: 0, policeRatio: 0, fireRatio: 0, garbageRatio: 0,
         healthRatio: 0, educationRatio: 0, deathCareRatio: 0,
       };
       expect(calculateCityServiceCoverage(ratios, 50)).toBe(0);
@@ -33,7 +33,7 @@ describe('CityHappinessContext', () => {
     it('adds low pollution bonus when pollution is below threshold', () => {
       const ratios = {
         poweredRatio: 0, wateredRatio: 0,
-        policeRatio: 0, fireRatio: 0, garbageRatio: 0,
+        sewageRatio: 0, policeRatio: 0, fireRatio: 0, garbageRatio: 0,
         healthRatio: 0, educationRatio: 0, deathCareRatio: 0,
       };
       const low = calculateCityServiceCoverage(ratios, 5);
@@ -44,10 +44,36 @@ describe('CityHappinessContext', () => {
     it('weights power and water at 2x', () => {
       const ratios = {
         poweredRatio: 1, wateredRatio: 1,
-        policeRatio: 0, fireRatio: 0, garbageRatio: 0,
+        sewageRatio: 0, policeRatio: 0, fireRatio: 0, garbageRatio: 0,
         healthRatio: 0, educationRatio: 0, deathCareRatio: 0,
       };
       expect(calculateCityServiceCoverage(ratios, 50)).toBe(4);
+    });
+
+    it('should count sewage like every other service', () => {
+      // `sewageRatio` was declared on ServiceRatios and computed by
+      // ServiceCoverageQuery, and then read by nobody — the weighted sum here
+      // listed the other eight and skipped it. Building treatment plants did
+      // nothing at all for city happiness, and the omission was invisible
+      // because the fixtures below did not supply the field either.
+      const none = {
+        poweredRatio: 0, wateredRatio: 0, sewageRatio: 0,
+        policeRatio: 0, fireRatio: 0, garbageRatio: 0,
+        healthRatio: 0, educationRatio: 0, deathCareRatio: 0,
+      };
+      expect(calculateCityServiceCoverage({ ...none, sewageRatio: 1 }, 50))
+        .toBeGreaterThan(calculateCityServiceCoverage(none, 50));
+    });
+
+    it('should weight sewage the same as the other ordinary services', () => {
+      // Power and water are the deliberate 2x exceptions; sewage is not one.
+      const none = {
+        poweredRatio: 0, wateredRatio: 0, sewageRatio: 0,
+        policeRatio: 0, fireRatio: 0, garbageRatio: 0,
+        healthRatio: 0, educationRatio: 0, deathCareRatio: 0,
+      };
+      expect(calculateCityServiceCoverage({ ...none, sewageRatio: 1 }, 50))
+        .toBe(calculateCityServiceCoverage({ ...none, policeRatio: 1 }, 50));
     });
   });
 
@@ -62,7 +88,7 @@ describe('CityHappinessContext', () => {
         residentialBuildingCount: 10,
         serviceRatios: {
           poweredRatio: 0, wateredRatio: 0,
-          policeRatio: 0, fireRatio: 0, garbageRatio: 0,
+          sewageRatio: 0, policeRatio: 0, fireRatio: 0, garbageRatio: 0,
           healthRatio: 0, educationRatio: 0, deathCareRatio: 0,
         },
       });
@@ -79,7 +105,7 @@ describe('CityHappinessContext', () => {
         residentialBuildingCount: 10,
         serviceRatios: {
           poweredRatio: 0, wateredRatio: 0,
-          policeRatio: 0, fireRatio: 0, garbageRatio: 0,
+          sewageRatio: 0, policeRatio: 0, fireRatio: 0, garbageRatio: 0,
           healthRatio: 0, educationRatio: 0, deathCareRatio: 0,
         },
       });
@@ -96,7 +122,7 @@ describe('CityHappinessContext', () => {
         residentialBuildingCount: 0,
         serviceRatios: {
           poweredRatio: 0, wateredRatio: 0,
-          policeRatio: 0, fireRatio: 0, garbageRatio: 0,
+          sewageRatio: 0, policeRatio: 0, fireRatio: 0, garbageRatio: 0,
           healthRatio: 0, educationRatio: 0, deathCareRatio: 0,
         },
       });

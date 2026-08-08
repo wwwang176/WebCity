@@ -4,6 +4,7 @@ import { ViewMode } from '../../core/ViewMode';
 import { CHART_HISTORY_LENGTH } from '../constants';
 import { Season } from '../../core/climate/Climate';
 import { OverlayType } from '../../renderer/OverlayRenderer';
+import { calculateBalance } from '../../core/economy/Budget';
 
 // --- High-frequency signals (updated every updateUI call) ---
 const [date, setDate] = createSignal('Day 1');
@@ -70,7 +71,10 @@ export function initGameStore(game: Game): void {
     const avgHappy = pop > 0
       ? Math.round(citizens.getAverageHappiness())
       : 0;
-    const bal = Math.floor(state.budget.income - state.budget.expenses);
+    // Must use the same formula tickBudget applies to funds. `income - expenses`
+    // omits loan interest, so after borrowing the top bar could show a green
+    // positive balance while the treasury drained every tick (BUG-078).
+    const bal = Math.floor(calculateBalance(state.budget));
     const overlay = (game as any).overlayRenderer?.getOverlay?.() ?? OverlayType.NONE;
 
     batch(() => {

@@ -53,10 +53,18 @@ export function birthTick(
   const ctx: BirthContext = { ...DEFAULT_CONTEXT, ...context };
   let births = 0;
 
-  // 先統計每個 homeId 已有的 BABY+CHILD 數量
+  // 先統計每個 homeId 已有的 BABY+CHILD 數量，以及總入住人數。
+  //
+  // 只看幼兒上限是不夠的：createCitizen 唯一的容量閘門是**全城**住宅總量，
+  // 所以只要城裡別處還有空屋，一棟已住滿 4 人的 4 人房仍可再生 2 個小孩，
+  // 永久超載 50%（computeOccupancyRatios 把比例夾在 1.0，UI 也看不出來）。
+  // 需要逐棟比對實際入住數與容量（BUG-082）。
   const childrenCount = new Map<string, number>();
+  const occupancyCount = new Map<string, number>();
   for (const c of manager.getCitizens()) {
-    if (c.homeId !== null && (c.lifeStage === LifeStage.BABY || c.lifeStage === LifeStage.CHILD)) {
+    if (c.homeId === null) continue;
+    occupancyCount.set(c.homeId, (occupancyCount.get(c.homeId) ?? 0) + 1);
+    if (c.lifeStage === LifeStage.BABY || c.lifeStage === LifeStage.CHILD) {
       childrenCount.set(c.homeId, (childrenCount.get(c.homeId) ?? 0) + 1);
     }
   }
@@ -70,10 +78,11 @@ export function birthTick(
     if (c.age > BIRTH.MAX_FERTILITY_AGE) continue;
     if (c.homeId === null) continue;
 
-    // 檢查該棟建築的幼兒上限（按容量比例）
+    // 檢查該棟建築的幼兒上限（按容量比例）與剩餘空位
     const currentChildren = (childrenCount.get(c.homeId) ?? 0);
     const residents = ctx.getResidents ? ctx.getResidents(c.homeId) : 8;
     if (currentChildren >= getMaxChildren(residents)) continue;
+    if ((occupancyCount.get(c.homeId) ?? 0) >= residents) continue;
 
     // 計算生育機率（按教育等級調整）
     const fertility = FERTILITY_BY_EDUCATION[c.education] ?? FERTILITY_BY_EDUCATION[EducationLevel.NONE];
@@ -91,18 +100,29 @@ export function birthTick(
       newborns.push({ homeId: c.homeId });
       // 更新計數，避免同一 homeId 本 tick 超生
       childrenCount.set(c.homeId, currentChildren + 1);
+      occupancyCount.set(c.homeId, (occupancyCount.get(c.homeId) ?? 0) + 1);
     }
   }
 
-  // 產生新生兒（capacity 滿時 createCitizen 回傳 null，停止生育）
+  // 產生新生兒。
+  //
+  // Every newborn here has already passed a per-building check: its home's
+  // occupancy is strictly below that building's own `residents` capacity, and
+  // occupancyCount was incremented as each newborn was queued so one house
+  // cannot over-fill within a single tick.
+  //
+  // Deliberately NOT createCitizen: that gate compares the whole citizen list
+  // against total residential capacity, and the list includes citizens with no
+  // home at all. Any homeless population made the city report itself full while
+  // real rooms stood empty — and since births run once a MONTH against
+  // migration's once every 6 ticks, births were always the ones turned away.
   for (const nb of newborns) {
-    const citizen = manager.createCitizen({
+    manager.createCitizenInKnownVacancy({
       age: 0,
       education: EducationLevel.NONE,
       homeId: nb.homeId,
       workplaceId: null,
     }, currentTick);
-    if (!citizen) break;
     births++;
   }
 

@@ -24,7 +24,7 @@ const alwaysBirth: Partial<BirthContext> = {
 describe('birthTick — 自然出生機制', () => {
   it('基本出生：有符合條件的 ADULT → 應能產生新生兒', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, homeId: '1,1', happiness: 60 });
+    mgr.createCitizen({ age: 100, homeId: '1,1', happiness: 60 })!;
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(1);
     // 新生兒應被加入 manager
@@ -33,7 +33,7 @@ describe('birthTick — 自然出生機制', () => {
 
   it('年齡限制：age > 130 的 ADULT 不生育', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 150, homeId: '1,1', happiness: 60 });
+    mgr.createCitizen({ age: 150, homeId: '1,1', happiness: 60 })!;
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(0);
     expect(mgr.getPopulation()).toBe(1);
@@ -41,14 +41,14 @@ describe('birthTick — 自然出生機制', () => {
 
   it('SENIOR 不生育', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 220, homeId: '1,1', happiness: 60 });
+    mgr.createCitizen({ age: 220, homeId: '1,1', happiness: 60 })!;
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(0);
   });
 
   it('無家者不生育：homeId=null 不生育', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, homeId: null, happiness: 60 });
+    mgr.createCitizen({ age: 100, homeId: null, happiness: 60 })!;
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(0);
   });
@@ -56,10 +56,10 @@ describe('birthTick — 自然出生機制', () => {
   it('戶內上限：同一 homeId 已有 2 個 BABY/CHILD → 不再生育', () => {
     const mgr = new CitizenManager();
     // 父母
-    mgr.createCitizen({ age: 100, homeId: '2,2', happiness: 60 });
+    mgr.createCitizen({ age: 100, homeId: '2,2', happiness: 60 })!;
     // 已有 2 個小孩
-    mgr.createCitizen({ age: 3, homeId: '2,2', happiness: 50 }); // BABY
-    mgr.createCitizen({ age: 20, homeId: '2,2', happiness: 50 }); // CHILD
+    mgr.createCitizen({ age: 3, homeId: '2,2', happiness: 50 })!; // BABY
+    mgr.createCitizen({ age: 20, homeId: '2,2', happiness: 50 })!; // CHILD
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(0);
   });
@@ -71,8 +71,8 @@ describe('birthTick — 自然出生機制', () => {
     const mgr2 = new CitizenManager();
     // 每組 100 位合資格成人
     for (let i = 0; i < 100; i++) {
-      mgr1.createCitizen({ age: 100, homeId: `${i},0`, happiness: 80 });
-      mgr2.createCitizen({ age: 100, homeId: `${i},1`, happiness: 50 });
+      mgr1.createCitizen({ age: 100, homeId: `${i},0`, happiness: 80 })!;
+      mgr2.createCitizen({ age: 100, homeId: `${i},1`, happiness: 50 })!;
     }
     // 用較高但非 100% 的基礎率來觀察差異
     const ctx: Partial<BirthContext> = { baseFertilityRate: 0.5, happinessBonus: 0.3 };
@@ -98,7 +98,7 @@ describe('birthTick — 自然出生機制', () => {
       homeId: '5,5',
       happiness: 60,
       education: EducationLevel.UNIVERSITY,
-    });
+    })!;
     birthTick(mgr, alwaysBirth);
     expect(mgr.getPopulation()).toBe(2);
     // 找到新生兒（非原本的 adult）
@@ -118,14 +118,14 @@ describe('birthTick — 自然出生機制', () => {
 
   it('TEEN 不生育', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 40, homeId: '1,1', happiness: 60 });
+    mgr.createCitizen({ age: 40, homeId: '1,1', happiness: 60 })!;
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(0);
   });
 
   it('CHILD 不生育', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 20, homeId: '1,1', happiness: 60 });
+    mgr.createCitizen({ age: 20, homeId: '1,1', happiness: 60 })!;
     const births = birthTick(mgr, alwaysBirth);
     expect(births).toBe(0);
   });
@@ -170,11 +170,11 @@ describe('birthTick — 自然出生機制', () => {
     const mgr = new CitizenManager();
     // 4 位可生育成人住在大樓
     for (let i = 0; i < 4; i++) {
-      mgr.createCitizen({ age: 100, homeId: '3,3', happiness: 60 });
+      mgr.createCitizen({ age: 100, homeId: '3,3', happiness: 60 })!;
     }
     // 已有 2 個幼兒
-    mgr.createCitizen({ age: 3, homeId: '3,3', happiness: 50 });
-    mgr.createCitizen({ age: 20, homeId: '3,3', happiness: 50 });
+    mgr.createCitizen({ age: 3, homeId: '3,3', happiness: 50 })!;
+    mgr.createCitizen({ age: 20, homeId: '3,3', happiness: 50 })!;
 
     // residents=8 → max 2 幼兒 → 不能再生
     const births8 = birthTick(mgr, { baseFertilityRate: 1.0, happinessBonus: 0, getResidents: () => 8 });

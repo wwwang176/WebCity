@@ -4,6 +4,9 @@ import { findAdjacentRoadCell, type PlacementGrid } from './TransportPlacement';
 import type { LaneEdge } from '../traffic/LaneGraph';
 import type { TrafficSimulation, Vehicle } from '../traffic/TrafficSimulation';
 
+/** Finds a lane-edge path between two road cells. */
+type EdgePathFn = (fromX: number, fromY: number, toX: number, toY: number) => LaneEdge[] | null;
+
 const BUS_CONFIG: TransportSystemConfig = {
   type: TransportType.BUS,
   speed: 2,
@@ -18,6 +21,13 @@ export class BusSystem extends BaseTransportSystem {
   private routeSegments = new Map<number, LaneEdge[][]>();
   /** Per-route TrafficSimulation vehicle IDs. */
   private busVehicleIds = new Map<number, number[]>();
+  /**
+   * Most recent edge-path finder. BaseTransportSystem calls onRouteStopRemoved
+   * with no arguments, and unlike Rail/Ferry (which retain their networks)
+   * BusSystem has nothing to path with — which is why the hook was skipped and
+   * stale segments survived a stop removal (BUG-064).
+   */
+  private lastFindEdgePath: EdgePathFn | null = null;
 
   constructor() {
     super(BUS_CONFIG);
@@ -33,6 +43,7 @@ export class BusSystem extends BaseTransportSystem {
     route: TransportRoute,
     findEdgePath: (fromX: number, fromY: number, toX: number, toY: number) => LaneEdge[] | null,
   ): LaneEdge[][] | null {
+    this.lastFindEdgePath = findEdgePath;
     const stops = route.stops;
     if (stops.length < 2) return null;
     const segments: LaneEdge[][] = [];
@@ -129,6 +140,20 @@ export class BusSystem extends BaseTransportSystem {
   }
 
   /** Return precomputed segment distances from LaneEdge paths. */
+  /**
+   * Recompute this route's cached segments after a stop was removed.
+   * Mirrors RailSystem/FerrySystem: a route that can no longer be pathed is
+   * reported as undeliverable so the base class dissolves it.
+   */
+  protected override onRouteStopRemoved(route: TransportRoute): boolean {
+    this.routeSegments.delete(route.id);
+    // Fewer than two stops cannot form a loop; the base class dissolves it.
+    if (route.stops.length < 2) return false;
+    // No path finder seen yet (segments were never computed) — nothing to stale.
+    if (!this.lastFindEdgePath) return true;
+    return this.computeRouteSegments(route, this.lastFindEdgePath) !== null;
+  }
+
   override getSegmentDistances(routeId: number): number[] | null {
     const segments = this.routeSegments.get(routeId);
     if (!segments) return null;
@@ -168,6 +193,7 @@ export class BusSystem extends BaseTransportSystem {
         const newSegments = this.computeRouteSegments(route, findEdgePath);
         if (newSegments) {
           route.suspended = false;
+          this.bumpTopologyVersion();
           // Re-spawn bus vehicles
           const count = Math.max(1, route.vehicles);
           for (let i = 0; i < count; i++) {
@@ -180,11 +206,20 @@ export class BusSystem extends BaseTransportSystem {
       const segments = this.routeSegments.get(route.id);
       if (!segments) continue;
 
-      // Check if any segment passes through affected cells
+      // Check if any segment passes through affected cells.
+      //
+      // `viaCellKey` counts. A cross-intersection turn edge runs from the cell
+      // BEFORE the intersection to the cell AFTER it and records the cell it
+      // skipped there, so comparing only from/to meant demolishing the
+      // intersection a route turns through never marked that route as affected:
+      // its segments were never recomputed and the buses kept driving an edge
+      // whose middle no longer existed.
       let affected = false;
       for (const seg of segments) {
         for (const edge of seg) {
-          if (affectedCells.has(edge.from.cellKey) || affectedCells.has(edge.to.cellKey)) {
+          if (affectedCells.has(edge.from.cellKey)
+            || affectedCells.has(edge.to.cellKey)
+            || (edge.viaCellKey !== undefined && affectedCells.has(edge.viaCellKey))) {
             affected = true;
             break;
           }
@@ -199,6 +234,7 @@ export class BusSystem extends BaseTransportSystem {
       if (!newSegments) {
         // Suspend route instead of dissolving
         route.suspended = true;
+        this.bumpTopologyVersion();
         traffic.removeBusVehicles(route.id);
         this.routeSegments.delete(route.id);
         this.busVehicleIds.delete(route.id);
@@ -242,12 +278,25 @@ export class BusSystem extends BaseTransportSystem {
       }
 
       const segments = this.computeRouteSegments(route, findEdgePath);
+      // Only a TRANSITION is worth announcing. A route that cannot be pathed
+      // keeps no routeSegments entry, so the guard at the top of this loop
+      // never skips it and it is reprocessed on every rebuild — which is once
+      // per road edit. Bumping unconditionally meant one stranded route made
+      // every road edit anywhere in the city wipe the transfer panel's
+      // per-building attribution, which is the exact thing the topology counter
+      // was introduced to stop (BUG-158).
       if (!segments) {
-        route.suspended = true;
+        if (!route.suspended) {
+          route.suspended = true;
+          this.bumpTopologyVersion();
+        }
         continue;
       }
 
-      route.suspended = false;
+      if (route.suspended) {
+        route.suspended = false;
+        this.bumpTopologyVersion();
+      }
       // Spawn bus vehicles
       const count = Math.max(1, route.vehicles);
       for (let i = 0; i < count; i++) {
@@ -275,12 +324,10 @@ export class BusSystem extends BaseTransportSystem {
   }
 
   /** Remove a route and its associated data. */
-  private dissolveRoute(routeId: number): void {
-    this.routes = this.routes.filter(r => r.id !== routeId);
-    this.vehicles = this.vehicles.filter(v => v.routeId !== routeId);
-    this.routeSegments.delete(routeId);
-    this.busVehicleIds.delete(routeId);
-  }
+  // dissolveRoute was removed: it had zero callers. A route dissolved by a
+  // demolished stop goes through BaseTransportSystem.removeStop, which already
+  // bumps and already fires onRouteDissolved — the comment that used to sit
+  // here described a path this method never participated in.
 
   // ── Overrides ───────────────────────────────────────────────────
 

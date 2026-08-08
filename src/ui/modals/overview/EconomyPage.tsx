@@ -29,13 +29,20 @@ export function EconomyPage(props: EconomyPageProps) {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
 
-  const state = createMemo(() => {
+  // NOT a memo with a JSON equality check. getState() returns the *same* mutated
+  // object every call, so `equals` compared that object with itself and was
+  // always true — Treasury and Outstanding loans froze at whatever they were
+  // when the page opened, and adjusting tax or borrowing never updated them.
+  // It also stringified the whole GameState — four Uint8Array(40000) in Grid
+  // plus three Float64Array(40000) in PollutionManager, none with a toJSON —
+  // twice per throttled tick, roughly 0.4 s/s of main-thread work and 33 MB/s of
+  // garbage while the page was open (BUG-079). A plain accessor tracking the
+  // same two signals is correct and free.
+  const state = () => {
     version();
     gameSignals.tick();
     return getGame().getState();
-  }, undefined, {
-    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
-  });
+  };
 
   const totalIncome = () => {
     const b = breakdown();
@@ -43,7 +50,8 @@ export function EconomyPage(props: EconomyPageProps) {
   };
   const totalExpenses = () => {
     const b = breakdown();
-    return b.roadMaintenance + b.loanInterest + b.powerCost + b.waterCost + b.transportCost;
+    return b.roadMaintenance + b.loanInterest + b.powerCost + b.waterCost + b.transportCost
+      + b.serviceCost + b.policyCost + b.elevatedMaintenance;
   };
   const balance = () => totalIncome() - totalExpenses();
 
@@ -115,6 +123,9 @@ export function EconomyPage(props: EconomyPageProps) {
           <tr><td class="td-label">Power Plants</td><td class="td-expense" style="text-align:right">-${breakdown().powerCost}</td></tr>
           <tr><td class="td-label">Water Plants</td><td class="td-expense" style="text-align:right">-${breakdown().waterCost}</td></tr>
           <tr><td class="td-label">Transport Operations</td><td class="td-expense" style="text-align:right">-${breakdown().transportCost}</td></tr>
+          <tr><td class="td-label">Civic Services</td><td class="td-expense" style="text-align:right">-${breakdown().serviceCost.toFixed(1)}</td></tr>
+          <tr><td class="td-label">District Policies</td><td class="td-expense" style="text-align:right">-${breakdown().policyCost.toFixed(1)}</td></tr>
+          <tr><td class="td-label">Elevated Maintenance</td><td class="td-expense" style="text-align:right">-${breakdown().elevatedMaintenance.toFixed(1)}</td></tr>
           <tr><td class="td-label">Loan Interest ({(state().budget.loanInterestRate * 100).toFixed(0)}%)</td><td class="td-expense" style="text-align:right">-${breakdown().loanInterest.toFixed(1)}</td></tr>
         </tbody>
       </table>

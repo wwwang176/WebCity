@@ -50,15 +50,23 @@ describe('calculateCitizenHealth', () => {
   });
 
   it('pollution reduces health proportionally', () => {
-    const h = calculateCitizenHealth(defaultFactors({ pollution: 100 }));
+    // POLLUTION_SCALE, not 100: `pollution` is the 0-255 grid cell value.
+    const h = calculateCitizenHealth(defaultFactors({ pollution: HEALTH.POLLUTION_SCALE }));
     // base 50 + home 10 - pollution 15 = 45
     expect(h).toBe(HEALTH.BASE + HEALTH.HOME_BONUS - HEALTH.POLLUTION_MAX_PENALTY);
   });
 
   it('partial pollution gives partial penalty', () => {
-    const h = calculateCitizenHealth(defaultFactors({ pollution: 50 }));
+    const h = calculateCitizenHealth(defaultFactors({ pollution: HEALTH.POLLUTION_SCALE / 2 }));
     // base 50 + home 10 - 7.5 = 52.5 → 53 (rounded)
     expect(h).toBe(Math.round(HEALTH.BASE + HEALTH.HOME_BONUS - HEALTH.POLLUTION_MAX_PENALTY * 0.5));
+  });
+
+  it('caps the pollution penalty at POLLUTION_MAX_PENALTY', () => {
+    // Dividing by 100 made the "max" a rate: 255 pollution cost 38.25 points.
+    const clean = calculateCitizenHealth(defaultFactors({ pollution: 0 }));
+    const filthy = calculateCitizenHealth(defaultFactors({ pollution: 255 }));
+    expect(clean - filthy).toBeLessThanOrEqual(HEALTH.POLLUTION_MAX_PENALTY);
   });
 
   it('senior age 201 gets minimal penalty', () => {
@@ -90,7 +98,7 @@ describe('calculateCitizenHealth', () => {
     const h = calculateCitizenHealth(defaultFactors({
       hospitalCostRatio: 0,
       hasParkCoverage: true,
-      pollution: 100,
+      pollution: HEALTH.POLLUTION_SCALE,
       age: 260,
     }));
     // base 50 + home 10 + hospital 30 + park 5 - pollution 15 - age 10 = 70

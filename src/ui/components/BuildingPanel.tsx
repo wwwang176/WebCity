@@ -1,7 +1,8 @@
-import { Show, Index } from 'solid-js';
+import { Show, Index, For } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
-import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, ServiceStatus } from '../../Game';
+import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, SelectedEmptyZone, ServiceStatus } from '../../Game';
+import { ZONE_BLOCKER_COLORS } from '../../core/zone/ZoneBlocker';
 import { UI_COLORS } from '../constants';
 import { STAGE_NAMES } from './citizenLabels';
 
@@ -529,6 +530,54 @@ function TransportStopInfo(props: { sel: SelectedTransportStop }) {
   );
 }
 
+/**
+ * Why an empty zoned cell is not developing.
+ *
+ * Before this, clicking one selected nothing at all: handleSelectClick required
+ * buildingId > 0. A block that would never develop looked exactly like one
+ * waiting its turn, and the only way to find out which was to read
+ * isPowered(x, y) from a console.
+ */
+function EmptyZoneInfo(props: { sel: SelectedEmptyZone }) {
+  const blocked = () => props.sel.blocker !== null;
+  const colour = () => {
+    const b = props.sel.blocker;
+    return b ? `#${(ZONE_BLOCKER_COLORS[b] ?? 0xff6d00).toString(16).padStart(6, '0')}` : UI_COLORS.STATUS_GOOD;
+  };
+  const hint = () => {
+    switch (props.sel.blocker) {
+      case 'NO_POWER': return 'Run a road from this block to your power grid, or build a plant nearer.';
+      case 'NO_WATER': return 'Water travels along connected roads. Check the pipe network reaches here.';
+      case 'NO_ROAD': return 'Zoned land needs an ordinary road within 2 tiles. Highways have no frontage.';
+      case 'ROAD_TOO_SMALL': return 'High-density zones need a 4- or 6-lane road. Widen the street, or rezone to low density.';
+      case 'DISTRICT_POLICY': return 'A district policy here forbids this zone type.';
+      case 'RAIL_IN_THE_WAY': return 'Remove the track, or zone elsewhere.';
+      case 'NO_DEMAND': return 'Nothing is wrong — the city does not want more of this zone yet.';
+      default: return 'A building will appear here shortly.';
+    }
+  };
+  return (
+    <>
+      <div class="bp-title">{ZONE_NAMES[props.sel.zoneType] ?? 'Zoned land'} — empty</div>
+      <div class="bp-row" style={{ color: colour() }}>
+        Status <span style={{ color: colour() }}>{props.sel.reason}</span>
+      </div>
+      <Show when={blocked() && props.sel.sameBlockerCount > 1}>
+        <div class="bp-row">
+          Also affected <span>{props.sel.sameBlockerCount} cells</span>
+        </div>
+      </Show>
+      <div class="bp-row">Power <span style={{ color: props.sel.hasPower ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD }}>
+        {props.sel.hasPower ? 'Connected' : 'Not connected'}</span></div>
+      <div class="bp-row">Water <span style={{ color: props.sel.hasWater ? UI_COLORS.STATUS_GOOD : UI_COLORS.STATUS_BAD }}>
+        {props.sel.hasWater ? 'Connected' : 'Not connected'}</span></div>
+      <div style={{ 'margin-top': '6px', 'font-size': '11px', color: '#9fb0c4', 'line-height': '1.4' }}>
+        {hint()}
+      </div>
+    </>
+  );
+}
+
 export function BuildingPanel(props: { panelOrder?: number }) {
   // Identity: only changes on selection change (instant)
   const hasSelection = () => gameSignals.selectedBuilding() !== null;
@@ -565,6 +614,9 @@ export function BuildingPanel(props: { panelOrder?: number }) {
             </Show>
             <Show when={sel().kind === 'transport'}>
               <TransportStopInfo sel={sel() as SelectedTransportStop} />
+            </Show>
+            <Show when={sel().kind === 'emptyZone'}>
+              <EmptyZoneInfo sel={sel() as SelectedEmptyZone} />
             </Show>
           </>
         )}

@@ -8,7 +8,8 @@
  */
 
 import type { GraphReader } from './LaneGraphBuffer';
-import { LANE_SPEED_DECAY } from './Pathfinding';
+import { LANE_SPEED_DECAY, LANE_CHANGE_COST } from './Pathfinding';
+import { turnLanePenaltyInt } from './TurnLane';
 
 /** Reference speed limit used as baseline for cost normalization. */
 const REFERENCE_SPEED_LIMIT = 50;
@@ -160,11 +161,13 @@ export class PooledAStar {
           routeCells.add(cellEncoded);
         }
       }
-      // Scan all points and apply cell penalty to those in routeCells
+      // Scan all points and apply cell penalty to those in routeCells.
+      // getPointCellEncoded avoids allocating a PointData per point and does two
+      // DataView reads instead of eight — this loop runs once per route per
+      // request, over every point in the graph (BUG-112).
       const pointCount = reader.getPointCount();
       for (let i = 0; i < pointCount; i++) {
-        const p = reader.getPoint(i);
-        if (routeCells.has(p.cellX * 65536 + p.cellY)) {
+        if (routeCells.has(reader.getPointCellEncoded(i))) {
           if (this.cellPenalty[i] === 1) {
             this.cellPenaltyDirty[this.cellPenaltyDirtyCount++] = i;
           }
@@ -250,6 +253,10 @@ export class PooledAStar {
 
       const currentG = this.gScore[current]!;
 
+      // Read once per expansion, not once per neighbour: the turn-lane penalty
+      // is charged against the lane the manoeuvre STARTS in, which is this point.
+      const currentPoint = reader.getPoint(current);
+
       // Expand neighbors
       const edgeIndices = reader.getEdgesFrom(current);
       for (const edgeIdx of edgeIndices) {
@@ -261,6 +268,23 @@ export class PooledAStar {
         const speedLimit = neighborPoint.speedLimit || REFERENCE_SPEED_LIMIT;
         const laneSpeed = Math.pow(LANE_SPEED_DECAY, neighborPoint.lane);
         let cost = reader.getEdgeLength(edgeIdx) / (laneSpeed * (speedLimit / REFERENCE_SPEED_LIMIT));
+
+        // Changing lane costs the same here as it does on the main thread. It
+        // was free in this engine, so the worker still dived into the faster
+        // inner lane and climbed back out for a saving it could not keep — the
+        // very behaviour LANE_CHANGE_COST was calibrated to stop, applied to
+        // the engine the running game actually routes with (BUG-215).
+        // EDGE_TYPE_TO_INT: 2 = lane_change.
+        if (reader.getEdgeType(edgeIdx) === 2) cost += LANE_CHANGE_COST;
+
+        // A turn taken from the wrong lane cuts across the through traffic
+        // beside it, and nothing downstream stops it — findCrossEdgeGap only
+        // compares vehicles that share a destination point (BUG-214). The main
+        // thread's laneAStar charges the same, from the same module.
+        cost += turnLanePenaltyInt(
+          currentPoint.dir, currentPoint.type, currentPoint.lane,
+          neighborPoint.dir, neighborPoint.type, currentPoint.laneCount,
+        );
 
         if (usePenalty) {
           cost *= this.penalty[neighborIdx]!;
@@ -290,7 +314,16 @@ export class PooledAStar {
   private reconstructPath(endIdx: number): number[] {
     let count = 0;
     let cur = endIdx;
+    // Bounded by the buffer size. A self-consistent graph can never cycle here —
+    // `closed` stops a node being re-parented, so parent pointers strictly
+    // descend by closure time. But syncGraphToWorker rewrites the shared buffer
+    // in place while this worker may be mid-batch, and nothing validates the
+    // graph version, so a torn read can yield a cyclic chain. Without a cap that
+    // wedges the worker forever: no BATCH_RESULT is ever posted again, there is
+    // no synchronous fallback for commute spawning, and no watchdog (BUG-063).
+    const maxSteps = this.resultBuf.length;
     while (this.parentEdge[cur] !== -1) {
+      if (count >= maxSteps) return [];
       this.resultBuf[count++] = this.parentEdge[cur]!;
       // Walk back: find the fromIdx of this edge
       cur = this.getEdgeFromIdxCached(this.parentEdge[cur]!);

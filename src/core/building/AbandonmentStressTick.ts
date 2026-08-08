@@ -17,6 +17,9 @@ export interface AbandonmentStressTickDeps {
   /** Grid cell iterator. */
   forEachCell(fn: (cell: { buildingId: number; zoneType: number; reserved: number }, x: number, y: number) => void): void;
 
+  /** Single-cell lookup, used to prune stress recorded for cells that no longer hold a building. */
+  getCell(x: number, y: number): { buildingId: number; reserved: number } | null;
+
   /** Building type checks. */
   isZoneBuilding(buildingId: number): boolean;
   getBuildingLevel(buildingId: number): number;
@@ -56,7 +59,7 @@ export interface AbandonmentStressTickResult {
 
 export function abandonmentStressTick(deps: AbandonmentStressTickDeps): AbandonmentStressTickResult {
   const {
-    forEachCell, isZoneBuilding, getBuildingLevel,
+    forEachCell, getCell, isZoneBuilding, getBuildingLevel,
     getPollution, getCrimeReduction, getServiceScore,
     isPowered, isWatered,
     getFreightSupplyRatio, getFreightSurplusRatio,
@@ -68,6 +71,22 @@ export function abandonmentStressTick(deps: AbandonmentStressTickDeps): Abandonm
     changed: false,
     abandoned: [],
   };
+
+  // Prune first: stress is keyed by position, and this sweep only visits live
+  // zone buildings, so an entry for a cell that no longer holds one is never
+  // revisited and is inherited by whatever grows there next. demolish() and
+  // rezone clear it explicitly; applyDisasterDamage, the auto-demolition under
+  // a facility footprint, and a building burning down never did. Pruning here
+  // covers all five paths, and any future one, without another call site to
+  // remember. Iterating the stress map costs O(stressed buildings), not O(grid).
+  for (const key of [...stressMap.keys()]) {
+    const comma = key.indexOf(',');
+    const cell = getCell(Number(key.slice(0, comma)), Number(key.slice(comma + 1)));
+    if (!cell || !isZoneBuilding(cell.buildingId)
+      || cell.reserved === ABANDONED || cell.reserved === BURNED) {
+      stressMap.delete(key);
+    }
+  }
 
   forEachCell((cell, x, y) => {
     if (!isZoneBuilding(cell.buildingId)) return;

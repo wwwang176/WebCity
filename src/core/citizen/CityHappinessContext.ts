@@ -51,6 +51,7 @@ export function calculateCityServiceCoverage(ratios: ServiceRatios, avgPollution
   return Math.round(
     ratios.poweredRatio * SIMULATION.SERVICE_POWER_WEIGHT +
     ratios.wateredRatio * SIMULATION.SERVICE_WATER_WEIGHT +
+    ratios.sewageRatio +
     ratios.policeRatio + ratios.fireRatio + ratios.garbageRatio +
     ratios.healthRatio + ratios.educationRatio + ratios.deathCareRatio +
     (avgPollution < SIMULATION.LOW_POLLUTION_THRESHOLD ? 1 : 0),

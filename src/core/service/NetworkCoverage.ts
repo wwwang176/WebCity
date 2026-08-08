@@ -3,6 +3,7 @@ import { toPosKey, parsePosKeyUnsafe, FOUR_NEIGHBORS } from '../grid/GridHelpers
 import { RoadType } from '../road/types';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
+import { MULTI_CELL_OCCUPIED, isPrimaryCellReserved, findPrimaryCell } from '../building/InfraPlacement';
 
 /**
  * Shared network coverage algorithm used by both PowerGrid and WaterNetwork.
@@ -228,6 +229,12 @@ export function bfsRoadNetworkFlood(
   }
 }
 
+/** What reaching one cell costs: its footprint group (null = settles alone) and demand. */
+export interface CellCharge {
+  group: string | null;
+  demand: number;
+}
+
 /** Minimal plant shape needed by bfsBudgetDrainFlood. */
 export interface UtilityPlant {
   x: number;
@@ -241,6 +248,14 @@ export interface UtilityPlant {
  * Level-aware when UnifiedRoadLookup is set; falls back to ground-only otherwise.
  * `getDemand(x, y)` returns the demand for the cell at (x, y).
  * Shared between PowerGrid and WaterNetwork.
+ *
+ * Multi-cell facilities settle as ONE unit. Their whole consumption sits on the
+ * primary cell and the secondaries report 0 (that is what keeps the city-wide
+ * total honest — see calculateUtilityCellDemand). Draining cell by cell then
+ * made those zero-demand secondaries free: a plant that could not afford a 2x2
+ * police station skipped the primary but supplied — and RELAYED THROUGH — the
+ * other three, so the station showed 3/4 powered and passed power to whatever
+ * lay beyond it. Charging is keyed by footprint instead: paid once, all or none.
  */
 export function bfsBudgetDrainFlood(
   grid: Grid,
@@ -249,10 +264,78 @@ export function bfsBudgetDrainFlood(
   getDemand: (x: number, y: number) => number,
   infra?: Set<string>,
   roadLookup?: UnifiedRoadLookup | null,
+  /** Shared across the plants of one pass — see the comment on `paid` below. */
+  paidGroups?: Set<string>,
+  /** Shared per-position charge memo for one pass. */
+  chargeCache?: Map<string, CellCharge>,
 ): void {
   const rl = roadLookup ?? null;
   let budget = plant.output;
   const startPosKey = toPosKey(plant.x, plant.y);
+
+  /**
+   * Footprints already paid for, keyed by primary-cell position.
+   *
+   * SHARED across the plants of one coverage pass, because `supplied` is too.
+   * Per-plant, a footprint left partially supplied by plant A was charged again
+   * in full by plant B: A pays at the primary, its budget lands on exactly 0,
+   * the `budget <= 0` break fires before the primary is dequeued, and the other
+   * three cells are never supplied. B then reaches a secondary, sees neither
+   * that cell in `supplied` nor the group in its own fresh set, and pays the
+   * whole facility a second time — draining 10 for something getDemand() counts
+   * as 5. That is the double-count BUG-070 removed, reintroduced across plants.
+   */
+  const paid = paidGroups ?? new Set<string>();
+
+  /**
+   * Resolve what reaching (x, y) actually costs.
+   *
+   * `group` is null for ordinary cells (each settles on its own) and the
+   * primary cell's key for any cell of a multi-cell facility.
+   *
+   * Memoised: findPrimaryCell scans an O(max(w,h)^2) box — 81 lookups per
+   * secondary cell of a Large Airport — and Grid.getCell allocates. Without the
+   * cache that ran per cell, per plant, and again for power, water and sewage
+   * on the same slow slot. The grid cannot change during a coverage pass, so
+   * one entry per position is safe for the whole pass.
+   */
+  const chargeFor = (x: number, y: number, posKey: string): CellCharge => {
+    const hit = chargeCache?.get(posKey);
+    if (hit) return hit;
+    const cell = grid.getCell(x, y);
+    let result: CellCharge;
+    if (!cell || cell.buildingId === 0
+      || (cell.reserved !== MULTI_CELL_OCCUPIED && !isPrimaryCellReserved(cell.reserved))) {
+      result = { group: null, demand: getDemand(x, y) };
+    } else {
+      const primary = findPrimaryCell(grid, x, y);
+      result = primary
+        ? { group: toPosKey(primary.x, primary.y), demand: getDemand(primary.x, primary.y) }
+        : { group: null, demand: getDemand(x, y) };
+    }
+    chargeCache?.set(posKey, result);
+    return result;
+  };
+
+  /**
+   * Charge for a cell and record it as supplied. Returns false when the budget
+   * cannot cover it — the caller must then neither supply nor relay through it.
+   */
+  const trySupply = (x: number, y: number, posKey: string): boolean => {
+    if (supplied.has(posKey)) return true;
+    const { group, demand } = chargeFor(x, y, posKey);
+    if (group !== null && paid.has(group)) {
+      supplied.add(posKey);
+      return true;
+    }
+    if (demand > 0) {
+      if (budget < demand) return false;
+      budget -= demand;
+    }
+    if (group !== null) paid.add(group);
+    supplied.add(posKey);
+    return true;
+  };
 
   const visited = new Set<string>();
   const queue: string[] = [];
@@ -292,14 +375,7 @@ export function bfsBudgetDrainFlood(
           visited.add(nk);
           processedAsRoad = true;
 
-          if (!supplied.has(posKey)) {
-            const demand = getDemand(nx, ny);
-            if (demand > 0) {
-              if (budget < demand) continue;
-              budget -= demand;
-            }
-            supplied.add(posKey);
-          }
+          if (!trySupply(nx, ny, posKey)) continue;
 
           queue.push(nk);
         }
@@ -311,26 +387,14 @@ export function bfsBudgetDrainFlood(
         if (!cell) continue;
         if (canRelay(cell, posKey, infra)) {
           visited.add(posKey);
-          if (!supplied.has(posKey)) {
-            const demand = getDemand(nx, ny);
-            if (demand > 0) {
-              if (budget < demand) continue;
-              budget -= demand;
-            }
-            supplied.add(posKey);
-          }
+          // An unaffordable cell is not supplied AND must not relay: that is
+          // how an unpaid facility footprint used to conduct power onward.
+          if (!trySupply(nx, ny, posKey)) continue;
           queue.push(posKey);
         } else if (cell.zoneType !== 0) {
           // Zoned cells receive supply from adjacent relay cells but don't relay
           visited.add(posKey);
-          if (!supplied.has(posKey)) {
-            const demand = getDemand(nx, ny);
-            if (demand > 0) {
-              if (budget < demand) continue;
-              budget -= demand;
-            }
-            supplied.add(posKey);
-          }
+          trySupply(nx, ny, posKey);
         }
       }
     }

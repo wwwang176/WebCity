@@ -16,6 +16,7 @@ import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
 import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKey, parsePosKeyUnsafe, toPosKey, getDirectionFlag } from './core/grid/GridHelpers';
+import { planRezone } from './core/zone/RezonePlan';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -52,6 +53,7 @@ import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } fr
 import { classifyBuilding } from './core/building/BuildingClassifier';
 import { classifyDemolishCell } from './core/building/DemolishClassifier';
 import { getEconomyBreakdown as computeEconomyBreakdown } from './core/economy/EconomyBreakdown';
+import { buildEconomyBreakdownContext } from './core/economy/EconomyBreakdownContext';
 import { buildIncomeCalcDeps } from './core/economy/IncomeCalcAdapter';
 import { calculateSingleBuildingIncome } from './core/economy/IncomeCalculator';
 
@@ -63,11 +65,13 @@ import {
   type TransportStopKind,
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
-import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
+import { getBuildReasonMessage, formatBuildFailure } from './core/grid/BuildReasonMessages';
+import { getZoneBlocker, summariseZoneBlockers, ZONE_BLOCKER_MESSAGES, type ZoneBlocker, type ZoneBlockerDeps } from './core/zone/ZoneBlocker';
+import { collectBuildingUtilityWarnings } from './core/building/BuildingUtilityWarning';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
-import { canPlaceTransportStop, findAdjacentRoadCell, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
+import { canPlaceTransportStop, findAdjacentRoadCell, placeTransportStopOnGrid, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
 import { type MapConfig, STARTING_FUNDS_MAP, DISASTER_CHANCE_MAP, resolveTerrainConfig } from './core/config/MapConfig';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
@@ -82,7 +86,12 @@ import { LevelCrossingRenderer } from './renderer/LevelCrossingRenderer';
 import { TrainAnimator } from './renderer/TrainAnimator';
 import { AirplaneAnimator } from './renderer/AirplaneAnimator';
 import { ElevationManager, ElevatedRoadBuilder, ElevatedRailBuilder, ELEVATION_COST, type ElevatedPosition, getElevatedPath, validateElevatedPath } from './core/elevation';
+import { rebuildElevatedRailNetwork } from './core/elevation/ElevatedRailBuilder';
 import { UnifiedRoadLookup } from './core/road/UnifiedRoadLookup';
+import { canAdvanceThrough } from './core/traffic/CanAdvance';
+import { getTotalServiceMaintenanceCost } from './core/service/ServiceRegistry';
+import { calculateDistrictPolicyCost } from './core/economy/ExpenseCalculator';
+import { calculateElevatedMaintenance } from './core/elevation/ElevationMaintenance';
 
 export type PlacementMode = 'ground' | 'elevated';
 
@@ -185,7 +194,10 @@ const TOOL_CURSOR_COLORS: Record<ToolType, number> = {
   sewage: PALETTE.INFRA.SEWAGE, cemetery: PALETTE.INFRA.CEMETERY,
   district: PALETTE.TOOL.DISTRICT,
   bus_stop: PALETTE.TRANSPORT.BUS, metro_station: PALETTE.TRANSPORT.METRO, train_station: PALETTE.INFRA.SCHOOL,
-  ferry_dock: PALETTE.TRANSPORT.FERRY_DOCK, airport: PALETTE.TOOL.AIRPORT,
+  ferry_dock: PALETTE.TRANSPORT.FERRY_DOCK,
+  // Three airport sizes are separate tools; the single `airport` key here was
+  // a tool that does not exist, so all three fell through to the default.
+  airport_s: PALETTE.TOOL.AIRPORT, airport_m: PALETTE.TOOL.AIRPORT, airport_l: PALETTE.TOOL.AIRPORT,
 };
 
 /** Map of tool types to auto-activated overlay (OCP: add new overlay mappings here). */
@@ -199,19 +211,18 @@ const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
 /**
  * Per-service coverage ratio for the selected building.
  * -1 = no coverage, 0.0 = nearest (best), 1.0 = farthest (worst).
- * Power/water use 0 (covered) or -1 (not covered).
+ * Power/water/sewage use 0 (covered) or -1 (not covered).
+ *
+ * Defined in core so it can be built and tested without Three.js; re-exported
+ * here because the UI has always imported it from Game.
  */
-export interface ServiceStatus {
-  power: number;
-  water: number;
-  sewage: number;
-  police: number;
-  fire: number;
-  garbage: number;
-  health: number;
-  education: number;
-  deathCare: number;
-}
+export type { ServiceStatus } from './core/service/ServiceStatusView';
+import { buildServiceStatus, type ServiceStatus } from './core/service/ServiceStatusView';
+import type { SaveCompleteMessage } from './core/save/SaveWorkerHandler';
+import { classifySaveError } from './core/save/SaveFailure';
+import { findWaterPlantSites } from './core/building/WaterPlantSites';
+import { reconcileGameState, isClean } from './core/simulation/Reconcile';
+import { GROUNDWATER_SEARCH_RANGE } from './core/grid/Terrain';
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -293,33 +304,59 @@ export interface SelectedTransportStop {
   hasWater: boolean;
 }
 
-export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop;
+/**
+ * An EMPTY zoned cell the player clicked to ask "why is nothing being built
+ * here?".
+ *
+ * Selecting one used to do nothing at all — handleSelectClick required
+ * `buildingId > 0` — which left the question with no way to be asked, let alone
+ * answered.
+ */
+export interface SelectedEmptyZone {
+  kind: 'emptyZone';
+  x: number;
+  y: number;
+  zoneType: number;
+  /** null when the cell is fine and simply has not been picked for growth yet. */
+  blocker: ZoneBlocker | null;
+  reason: string;
+  hasPower: boolean;
+  hasWater: boolean;
+  /** How many other empty zoned cells across the city share this blocker. */
+  sameBlockerCount: number;
+}
+
+export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop | SelectedEmptyZone;
 
 export class Game {
-  private sceneManager: SceneManager;
-  private terrainRenderer: TerrainRenderer;
-  private roadRenderer: RoadRenderer;
-  private buildingRenderer: BuildingRenderer;
-  private vehicleRenderer: VehicleRenderer;
-  private pedestrianRenderer: PedestrianRenderer;
-  private trafficLightRenderer: TrafficLightRenderer;
-  private overlayRenderer: OverlayRenderer;
-  private weatherRenderer: WeatherRenderer;
-  private gridCursor: GridCursor;
-  private placementPreview: PlacementPreview;
-  private highlightManager: HighlightManager;
+  // The renderers below are built in the 'Preparing graphics...' step of
+  // buildInitSteps(), which the async initPhases() runs after construction so
+  // the loading bar can report real progress. TypeScript cannot follow that,
+  // so `!` records that they are set before any method that reads them runs.
+  private sceneManager!: SceneManager;
+  private terrainRenderer!: TerrainRenderer;
+  private roadRenderer!: RoadRenderer;
+  private buildingRenderer!: BuildingRenderer;
+  private vehicleRenderer!: VehicleRenderer;
+  private pedestrianRenderer!: PedestrianRenderer;
+  private trafficLightRenderer!: TrafficLightRenderer;
+  private overlayRenderer!: OverlayRenderer;
+  private weatherRenderer!: WeatherRenderer;
+  private gridCursor!: GridCursor;
+  private placementPreview!: PlacementPreview;
+  private highlightManager!: HighlightManager;
   /** Cached overlay building highlight cells (reapplied every frame). */
   private overlayHighlightCells: { x: number; y: number; color: number }[] = [];
-  private transportRouteRenderer: TransportRouteRenderer;
+  private transportRouteRenderer!: TransportRouteRenderer;
   /** Currently selected transfer route label for map overlay (null = none). */
   private selectedTransferRoute: string | null = null;
   private transferOverlayLines: THREE.Line[] = [];
   /** Cached transfer highlight cells (reapplied every frame like overlayHighlightCells). */
   private transferHighlightCells: { x: number; y: number; color: number }[] = [];
-  private metroTunnelRenderer: MetroTunnelRenderer;
-  private trackRenderer: TrackRenderer;
-  private elevatedRoadRenderer: ElevatedRoadRenderer;
-  private levelCrossingRenderer: LevelCrossingRenderer;
+  private metroTunnelRenderer!: MetroTunnelRenderer;
+  private trackRenderer!: TrackRenderer;
+  private elevatedRoadRenderer!: ElevatedRoadRenderer;
+  private levelCrossingRenderer!: LevelCrossingRenderer;
   private levelCrossingSystem: LevelCrossingSystem;
   private state: GameState;
   private simLoop: SimulationLoop;
@@ -394,6 +431,8 @@ export class Game {
   private onUIUpdate: (() => void) | null = null;
   private previewLine: THREE.Line | null = null;
   private lastMilestoneId: string | null = null;
+  /** Highest milestone population ever reached — milestones never un-unlock. */
+  private highestMilestonePop = 0;
   private notificationTimer = 0;
   private vehicleTypes = new Map<number, VehicleData['type']>();
   /** Reusable per-frame vehicle data array (avoids .map().filter() allocation). */
@@ -404,26 +443,8 @@ export class Game {
   private trainPosScratch: { x: number; y: number }[] = [];
 
   /** Bound canAdvance callback (avoids per-frame closure creation). */
-  private readonly _canAdvance = (cur: string, next: string): boolean => {
-    const ci = cur.indexOf(',');
-    const cx = Number(cur.slice(0, ci));
-    const cy = Number(cur.slice(ci + 1));
-    const ni = next.indexOf(',');
-    const nx = Number(next.slice(0, ni));
-    const ny = Number(next.slice(ni + 1));
-    const dx = Math.abs(nx - cx), dy = Math.abs(ny - cy);
-    if (dx + dy === 2) {
-      const ix = (cx + nx) / 2;
-      const iy = (cy + ny) / 2;
-      if (Number.isInteger(ix) && Number.isInteger(iy)) {
-        if (!this.state.trafficLights.canPass(cx, cy, ix, iy)) return false;
-        if (this.levelCrossingSystem.isCrossingBlocked(ix, iy)) return false;
-      }
-    }
-    if (!this.state.trafficLights.canPass(cx, cy, nx, ny)) return false;
-    if (this.levelCrossingSystem.isCrossingBlocked(nx, ny)) return false;
-    return true;
-  };
+  private readonly _canAdvance = (cur: string, next: string, via?: string): boolean =>
+    canAdvanceThrough(this.state.trafficLights, this.levelCrossingSystem, cur, next, via);
   /** Bound speed limit callback (avoids per-frame closure creation). */
   private readonly _getSpeedLimit = (key: string): number => getSpeedLimitForCell(this.roadLookup ?? this.state.grid, key);
   /** 渡輪渲染端動畫（純 LERP，不靠 tick） */
@@ -455,6 +476,20 @@ export class Game {
     this.autoSaver = new AutoSaver(100);
     try {
       this.saveWorker = new Worker(new URL('./workers/save.worker.ts', import.meta.url), { type: 'module' });
+      // Every SAVE_COMPLETE — success AND failure — used to be discarded,
+      // because nothing was ever listening. A player whose storage filled up
+      // kept building for as long as they liked on a city that had silently
+      // stopped being written to disk.
+      this.saveWorker.onmessage = (e: MessageEvent) => {
+        this.handleSaveComplete(e.data as SaveCompleteMessage);
+      };
+      // A worker that dies takes autosave with it, just as silently.
+      this.saveWorker.onerror = () => {
+        this.saveWorker = null;
+        this.showNotification(
+          'Autosave stopped working. Use Save in the menu, or export the city to a file.', 10,
+        );
+      };
     } catch { this.saveWorker = null; }
 
     if (loadedState) {
@@ -496,7 +531,7 @@ export class Game {
       // Worker not available (e.g. test environment) — falls back to sync Dijkstra
     }
     // Restore abandonment stress from loaded save
-    const extra = (loadedState as unknown as { _extra?: { abandonmentStress?: Map<string, number>; elevationData?: unknown; transferHistory?: { history: Map<string, number>[]; index: number; today: Map<string, number>; pedsSnapshot: number } } } | undefined)?._extra;
+    const extra = (loadedState as unknown as { _extra?: import('./core/save/Serializer').DeserializedExtra } | undefined)?._extra;
     if (extra?.abandonmentStress) {
       this.simLoop.abandonmentStress = extra.abandonmentStress;
     }
@@ -506,6 +541,12 @@ export class Game {
     // elevationData is restored after elevationManager is initialized (below)
     this.simLoop.onTerrainChanged = () => {
       this.dirty.terrain = true;
+      // Power and water coverage is recomputed on the slow cycle, and a change
+      // there is exactly what makes a zoned cell start or stop being able to
+      // develop — so the diagnosis tint has to follow it. This is the case that
+      // went unseen: connect a road to the grid and the cells that were dark
+      // yellow have to stop being dark yellow.
+      this.invalidateZoneBlockers();
     };
     // Fine-grained building callbacks — incremental O(1) updates,
     // no need to set dirty.buildings (avoids redundant full rebuild)
@@ -516,6 +557,9 @@ export class Game {
     };
     this.simLoop.onBuildingRemoved = (x, y) => {
       this.buildingRenderer.removeBuilding(x, y);
+      // Otherwise a badge for a building that no longer exists keeps blinking
+      // over bare ground until the next slow-cycle refresh.
+      this.utilityWarningsDirty = true;
     };
     this.simLoop.onBuildingUpdated = (x, y, zoneType, level, burned, abandoned) => {
       this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned, abandoned);
@@ -543,8 +587,12 @@ export class Game {
     this.roadBuilder = new RoadBuilder(this.state.grid, undefined, this.elevationManager);
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork, this.elevationManager);
-    this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
-    this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager);
+    // The rail network goes in because demolition sends every elevated cell
+    // here, elevated railways included.
+    this.elevatedRoadBuilder = new ElevatedRoadBuilder(
+      this.state.grid, this.elevationManager, null, this.railNetwork,
+    );
+    this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager, this.railNetwork);
     this.simLoop.setElevationManager(this.elevationManager);
     this.roadLookup = new UnifiedRoadLookup(this.state.grid, this.elevationManager);
     this.simLoop.setRoadLookup(this.roadLookup);
@@ -556,6 +604,13 @@ export class Game {
     this.state.deathCare.setRoadLookup(this.roadLookup);
     this.state.rail.setRailNetwork(this.railNetwork);
     this.levelCrossingSystem = new LevelCrossingSystem();
+    // Pedestrians must respect closed barriers too. PedestrianManager's blocking
+    // logic and PedestrianState.WAITING_CROSSING were fully implemented and unit
+    // tested, but nothing ever supplied a lookup — the constructor call in
+    // SimulationLoop passed a literal null with a comment saying Game.ts would
+    // connect it, and Game.ts never did. Pedestrians walked straight through
+    // closed level crossings in front of oncoming trains (BUG-105).
+    this.state.pedestrianManager.setLevelCrossings(this.levelCrossingSystem);
     this.zoneManager = new ZoneManager(this.state.grid);
     this.zoneManager.setElevationManager(this.elevationManager);
 
@@ -589,6 +644,10 @@ export class Game {
     if (loadedState) {
       steps.push({ label: 'Setting up roads...', run: () => {
         rebuildRailNetworkFromGrid(this.state.grid, this.railNetwork);
+        // Elevated track is never written to the grid, so the grid scan above
+        // cannot see it — without this a bridge vanishes from the routing graph
+        // on every load, and rail cannot cross water at all (BUG-065).
+        rebuildElevatedRailNetwork(this.elevationManager, this.railNetwork);
       }});
       steps.push({ label: 'Preparing city services...', run: () => {
         this.recalculateAllRoadCoverage();
@@ -599,8 +658,9 @@ export class Game {
         this.state.water.calculateDemand(this.state.grid);
         this.state.water.calculateCoverage(this.state.grid);
       }});
-      steps.push({ label: 'Planning traffic routes...', run: (onSub) => {
-        return this.simLoop.warmup(0.2, onSub);
+      steps.push({ label: 'Planning traffic routes...', run: async (onSub) => {
+        // Discard warmup's counters — the step runner only awaits completion.
+        await this.simLoop.warmup(0.2, onSub);
       }});
     } else {
       steps.push({ label: 'Creating landscape...', run: () => {
@@ -647,9 +707,34 @@ export class Game {
       );
     }});
 
+    if (loadedState) {
+      steps.push({ label: 'Checking the city over...', run: () => {
+        // Ask the question rather than trusting that every removal path
+        // cleaned up after itself. Each of BUG-056, BUG-086, BUG-119 and
+        // BUG-164 was one path that did not, and a save carries the damage
+        // forward for ever. Only ever removes; never invents a building.
+        const report = reconcileGameState(this.state);
+        if (!isClean(report)) {
+          console.warn('[load] reconciled a save with dangling references:', report);
+        }
+      }});
+    }
+
     steps.push({ label: 'Almost ready...', run: () => {
       this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
-      this.lastMilestoneId = getMilestone(this.state.citizens.getPopulation())?.id ?? null;
+      const loadedMilestone = getMilestone(this.state.citizens.getPopulation());
+      this.lastMilestoneId = loadedMilestone?.id ?? null;
+      // Deriving this from the CURRENT population alone means a save taken after
+      // a population dip replays every milestone on the way back up — the same
+      // defect BUG-094 fixed within a session, surviving across the save
+      // boundary. The high-water mark is persisted, so take the greater of the
+      // two and stay correct for saves written before this field existed
+      // (BUG-123).
+      this.highestMilestonePop = Math.max(
+        loadedMilestone?.populationRequired ?? 0,
+        (loadedState as unknown as { _extra?: { highestMilestonePop?: number } } | undefined)
+          ?._extra?.highestMilestonePop ?? 0,
+      );
       this.setupInput(container);
       this.sceneManager.onUpdate((dt) => this.update(dt));
       this.sceneManager.start();
@@ -869,7 +954,7 @@ export class Game {
               this.state.budget.funds,
             );
             this.handleBuildResult(result, 'road', () => {
-              const allAffected = [...result.affectedCells, ...(result.demolishedCells ?? [])];
+              const allAffected = [...(result.affectedCells ?? []), ...(result.demolishedCells ?? [])];
               this.simLoop.markLaneGraphDirty(allAffected, true);
               this.roadCoverageDirty = true;
               this.dirty.markRoadCellsDirty(allAffected);
@@ -880,10 +965,26 @@ export class Game {
                   this.buildingRenderer.removeBuilding(px!, py!);
                 }
               }
+              // buildRoad also clears zoneType on zoned-but-EMPTY cells, and those
+              // are deliberately not reported in demolishedCells (no building was
+              // destroyed). Nothing then removed their overlay instance: the road
+              // surface is only 0.5-0.95 wide against a 0.9 overlay quad, so a
+              // coloured fringe stayed visible along the new road until the next
+              // rezone or demolish happened to call rebuildZoneOverlays.
+              // removeZoneOverlay is O(1) and a no-op for cells without one
+              // (BUG-111).
+              for (const pos of result.affectedCells ?? []) {
+                const [px, py] = pos.split(',').map(Number);
+                this.buildingRenderer.removeZoneOverlay(px!, py!);
+              }
             });
             this.dirty.crossings = true;
             this.dirty.trafficLights = true;
             this.dirty.terrain = true;
+            // A new road changes NO_ROAD and ROAD_TOO_SMALL for everything
+            // within reach of it — including the block that sent the player
+            // here to build it.
+            this.invalidateZoneBlockers();
           }
           break;
         }
@@ -910,10 +1011,19 @@ export class Game {
                 }
                 this.simLoop.markLaneGraphDirty(result.demolishedCells, true);
               }
+              // Same as the road path: buildTrack clears zoneType on
+              // zoned-but-EMPTY cells too, and those are not in
+              // demolishedCells, so their overlay quad outlived the zone
+              // (BUG-111). removeZoneOverlay is O(1) and a no-op without one.
+              for (const pos of result.affectedCells ?? []) {
+                const [px, py] = pos.split(',').map(Number);
+                this.buildingRenderer.removeZoneOverlay(px!, py!);
+              }
             });
             this.dirty.tracks = true;
             this.dirty.crossings = true;
             this.dirty.terrain = true;
+            this.invalidateZoneBlockers();
           }
           break;
         }
@@ -974,28 +1084,142 @@ export class Game {
     }
   }
 
+  /**
+   * Everything that must be forgotten when a building leaves a cell.
+   *
+   * Shared by demolish() and applyZone(). They used to do slightly different
+   * things: rezoning never cleared the deathcare and garbage per-position
+   * queues, so a body or a rubbish pile stayed pending at an address that no
+   * longer had a building, permanently occupying a hearse/truck slot and
+   * counting toward the uncollected-garbage pollution penalty.
+   */
+  private forgetBuildingAt(x: number, y: number, posKey: string): number[] {
+    const evicted = this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
+    this.buildingRenderer.removeBuilding(x, y);
+    // Abandonment stress is keyed by position, not by building identity, so a
+    // replacement building inherits the pressure that killed the last one
+    // (BUG-087).
+    this.simLoop.clearBuildingState(x, y);
+    this.state.deathCare.clearPendingAt(x, y);
+    this.state.garbage.clearPendingAt(x, y);
+    return evicted;
+  }
+
   private applyZone(x1: number, y1: number, x2: number, y2: number, zoneType: ZoneType): void {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
-    // Pre-scan: collect cells where rezoning will demolish an existing building
+    // Which cells the rezone will ACTUALLY clear. Deciding that here with a
+    // local copy of the condition ignored setZone's three placement guards, so
+    // rezoning a block whose road had been pulled up evicted and un-rendered
+    // every building while leaving them on the grid — see RezonePlan.
     const evictedIds: number[] = [];
-    const buildingCells: string[] = [];
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && isZoneBuilding(cell.buildingId) && cell.zoneType !== zoneType) {
-          const posKey = `${x},${y}`;
-          evictedIds.push(...this.state.citizens.evictBuilding(posKey, this.state.clock.tick));
-          this.buildingRenderer.removeBuilding(x, y);
-          buildingCells.push(posKey);
-        }
-      }
+    const buildingCells = planRezone(
+      this.state.grid, this.zoneManager, { minX, minY, maxX, maxY }, zoneType,
+    );
+    for (const posKey of buildingCells) {
+      const [px, py] = posKey.split(',').map(Number);
+      evictedIds.push(...this.forgetBuildingAt(px!, py!, posKey));
     }
-    if (evictedIds.length > 0) {
+    if (buildingCells.length > 0) {
       this.simLoop.markLaneGraphDirty(buildingCells, true);
     }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
-    this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
+    this.refreshZoneOverlays();
     this.dirty.terrain = true;
+  }
+
+  /**
+   * Why an empty zoned cell is not developing, for the overlay tint and the
+   * selection panel.
+   *
+   * A cell that can never develop used to be drawn exactly like one waiting its
+   * turn. The information — isPowered / isWatered / road reach / demand — all
+   * existed; nothing carried it to the screen.
+   */
+  private zoneBlockerDeps = (): ZoneBlockerDeps => ({
+    isPowered: (cx: number, cy: number) => this.state.power.isPowered(cx, cy),
+    isWatered: (cx: number, cy: number) => this.state.water.isSupplied(cx, cy),
+    rciDemand: this.state.rciDemand,
+    canBuildHere: (cx: number, cy: number, zoneType: ZoneType) => {
+      const d = this.state.districts.getDistrictAt(cx, cy);
+      return !d || this.state.policies.canBuildInDistrict(d.id, zoneType);
+    },
+  });
+
+  private zoneBlockerAt = (x: number, y: number) =>
+    getZoneBlocker(this.state.grid, x, y, this.zoneBlockerDeps());
+
+  /**
+   * City-wide blocker counts, cached until something can change them.
+   *
+   * summariseZoneBlockers walks every cell and runs two (2r+1)² neighbourhood
+   * scans per empty zoned cell. The selection panel polls at ~6 Hz, so calling
+   * it per poll put a full-grid sweep on the main thread six times a second for
+   * as long as the panel was open — on a large city, hundreds of thousands of
+   * allocations per second to redraw a number that only moves when the map or
+   * the utility networks do.
+   */
+  private zoneBlockerSummary: Record<ZoneBlocker, number> | null = null;
+
+  private getZoneBlockerSummary(): Record<ZoneBlocker, number> {
+    if (!this.zoneBlockerSummary) {
+      this.zoneBlockerSummary = summariseZoneBlockers(this.state.grid, this.zoneBlockerDeps());
+    }
+    return this.zoneBlockerSummary;
+  }
+
+  /**
+   * How many OTHER empty zoned cells share this blocker. The summary counts
+   * the selected cell itself, and the panel labels the number "Also affected".
+   */
+  private countOtherCellsBlockedBy(blocker: ZoneBlocker | null): number {
+    if (!blocker) return 0;
+    return Math.max(0, this.getZoneBlockerSummary()[blocker] - 1);
+  }
+
+  /**
+   * Mark the zone diagnosis stale. Every edit that can change any blocker's
+   * answer has to call this — not just the ones that add or remove a zone.
+   * Laying the road, building the power plant and switching a district policy
+   * are precisely the actions the overlay just told the player to take, so a
+   * tint that survives them is worse than no tint at all.
+   */
+  private invalidateZoneBlockers(): void {
+    this.zoneOverlaysDirty = true;
+    this.zoneBlockerSummary = null;
+    // Outage badges answer the same question one step later in a building's
+    // life, and move on exactly the same events.
+    this.utilityWarningsDirty = true;
+  }
+
+  /** Set when a building's power or water supply may have changed. */
+  private utilityWarningsDirty = false;
+
+  private utilityWarningDeps() {
+    return {
+      isPowered: (x: number, y: number) => this.state.power.isPowered(x, y),
+      isWatered: (x: number, y: number) => this.state.water.isSupplied(x, y),
+    };
+  }
+
+  private refreshUtilityWarnings(): void {
+    this.buildingRenderer.setUtilityWarnings(
+      this.sceneManager.scene,
+      collectBuildingUtilityWarnings(this.state.grid, this.utilityWarningDeps()),
+    );
+  }
+
+
+  /** The district modal writes straight to PolicyManager; nothing else sees it. */
+  notifyDistrictPolicyChanged(): void {
+    this.invalidateZoneBlockers();
+  }
+
+  /** Rebuild the zone overlays with a fresh blocker diagnosis. */
+  private refreshZoneOverlays(): void {
+    this.zoneBlockerSummary = null;
+    this.buildingRenderer.rebuildZoneOverlays(
+      this.sceneManager.scene, this.state.grid, this.zoneBlockerAt,
+    );
   }
 
   private collectRoadCells(x1: number, y1: number, x2: number, y2: number): string[] {
@@ -1060,10 +1284,8 @@ export class Game {
     // Evict citizens from demolished zone buildings and clear abandonment stress
     const evictedCitizenIds: number[] = [];
     for (const pos of evictCells) {
-      evictedCitizenIds.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
       const [px, py] = pos.split(',').map(Number);
-      this.buildingRenderer.removeBuilding(px!, py!);
-      this.simLoop.clearBuildingState(px!, py!);
+      evictedCitizenIds.push(...this.forgetBuildingAt(px!, py!, pos));
     }
     if (affectedRoadCells.length > 0) {
       this.roadCoverageDirty = true;
@@ -1075,7 +1297,7 @@ export class Game {
       this.dirty.roads = false;
       this.dirty.markRoadCellsDirty(affectedRoadCells);
     }
-    this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
+    this.refreshZoneOverlays();
 
     // Refresh overlay cache after demolish
     const activeOverlay = this.overlayRenderer.getOverlay();
@@ -1118,6 +1340,8 @@ export class Game {
       }
     }
     this.dirty.terrain = true;
+    // Painting a district brings its build policies to bear on these cells.
+    this.invalidateZoneBlockers();
   }
 
   createNewDistrict(name?: string): string {
@@ -1135,7 +1359,10 @@ export class Game {
     const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
     const check = canPlaceInfra(this.state.grid, x, y, type, this.currentRotation, groundwaterFn);
     if (!check.ok) {
-      this.showNotification(getBuildReasonMessage(check.reason), 3);
+      // Name what was refused. Road failures already read "Cannot build road:
+      // ..."; the placement paths printed the bare reason, so a water plant
+      // rejected inland just said "No groundwater here" with no subject.
+      this.showNotification(formatBuildFailure(cfg.name, check.reason), 3);
       return;
     }
 
@@ -1153,6 +1380,11 @@ export class Game {
           this.buildingRenderer.removeBuilding(cx, cy);
           this.state.grid.setCell(cx, cy, { buildingId: 0, reserved: 0, zoneType: 0 });
         }
+        // placeInfraOnGrid clears zoneType on EVERY footprint cell, not only
+        // the ones that held a building — so a facility dropped on zoned-but-
+        // empty land left its overlay quads drawn over the footprint until
+        // some later edit rebuilt them (BUG-111, in a third path).
+        this.buildingRenderer.removeZoneOverlay(cx, cy);
       }
     }
 
@@ -1167,6 +1399,8 @@ export class Game {
 
     // Immediately recalculate coverage for road-based services so overlay updates
     this.recalculateServiceCoverage(type);
+    // The power plant or water tower the overlay just asked for.
+    this.invalidateZoneBlockers();
 
     this.audioManager.playSfx(SoundType.BUILD);
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, type, ROTATION_RESERVED[this.currentRotation]);
@@ -1210,13 +1444,13 @@ export class Game {
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
     const cell = this.state.grid.getCell(x, y);
-    const check = canPlaceTransportStop(type, cell, this.state.grid, x, y);
-    if (!check.ok) {
-      this.showNotification(getBuildReasonMessage(check.reason), 3);
-      return;
-    }
     const airportInfra = AIRPORT_TOOL_INFRA[this.currentTool];
     const infraCfg = getInfraConfig(airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!);
+    const check = canPlaceTransportStop(type, cell, this.state.grid, x, y);
+    if (!check.ok) {
+      this.showNotification(formatBuildFailure(infraCfg?.name ?? type, check.reason), 3);
+      return;
+    }
     const cost = infraCfg?.cost ?? 500;
     if (!this.tryDeductFunds(cost)) return;
 
@@ -1249,10 +1483,16 @@ export class Game {
       if (!this.placeAirport(x, y, cost)) return;
       return; // skip the default single-cell setCell below
     }
-    this.state.grid.setCell(x, y, {
-      buildingId: infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
-      reserved: ROTATION_RESERVED[this.currentRotation],
-    });
+    placeTransportStopOnGrid(
+      this.state.grid, x, y,
+      infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
+      ROTATION_RESERVED[this.currentRotation]!,
+    );
+    // The bare setCell this replaced left zoneType in place and never told the
+    // renderer, so a stop dropped on zoned-but-empty land kept its overlay quad
+    // drawn underneath it — BUG-111, in a fourth path.
+    this.buildingRenderer.removeZoneOverlay(x, y);
+    this.invalidateZoneBlockers();
     const infraType = airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!;
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
     this.audioManager.playSfx(SoundType.BUILD);
@@ -1267,7 +1507,7 @@ export class Game {
     const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation);
     if (!check.ok) {
       this.state.budget.funds += cost;
-      this.showNotification(getBuildReasonMessage(check.reason));
+      this.showNotification(formatBuildFailure(getInfraConfig(infraType)?.name ?? 'Airport', check.reason));
       return false;
     }
 
@@ -1282,6 +1522,17 @@ export class Game {
 
     // Place on grid — standard placeInfraOnGrid (correct dimensions from InfraConfig)
     placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
+    // placeInfraOnGrid clears zoneType on every footprint cell; nothing told
+    // the renderer, so up to 54 overlay quads stayed drawn under the airport
+    // until some later edit happened to rebuild them (BUG-111, third path).
+    const { w: aw, h: ah } = getRotatedSize(
+      getInfraConfig(infraType)?.width ?? 1, getInfraConfig(infraType)?.height ?? 1,
+      this.currentRotation,
+    );
+    for (let dy = 0; dy < ah; dy++) {
+      for (let dx = 0; dx < aw; dx++) this.buildingRenderer.removeZoneOverlay(x + dx, y + dy);
+    }
+    this.invalidateZoneBlockers();
     this.audioManager.playSfx(SoundType.BUILD);
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
     return true;
@@ -1328,12 +1579,24 @@ export class Game {
 
         // Auto-save (off main thread via SaveWorker)
         if (this.autoSaver.shouldSave(this.state.clock.tick)) {
-          const snapshot = snapshotGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
+          const snapshot = snapshotGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory(), highestMilestonePop: this.highestMilestonePop });
           if (this.saveWorker) {
             this.saveWorker.postMessage({ type: 'SAVE', snapshot, slotId: 0, name: 'AutoSave', population: this.state.citizens.getPopulation() });
           } else {
-            // Fallback: synchronous save if worker unavailable
-            saveGame(0, 'AutoSave', JSON.stringify(snapshot), this.state.citizens.getPopulation()).catch(() => {});
+            // Fallback: synchronous save if worker unavailable. The empty
+            // `.catch(() => {})` this replaces was the same silence as the
+            // missing worker listener, one layer down.
+            saveGame(0, 'AutoSave', JSON.stringify(snapshot), this.state.citizens.getPopulation())
+              .then(() => { this.lastSaveFailure = null; })
+              .catch((err: unknown) => {
+                const failure = classifySaveError(err);
+                this.lastSaveFailure = {
+                  type: 'SAVE_COMPLETE', ok: false, slotId: 0,
+                  kind: failure.kind, error: failure.message, detail: failure.detail,
+                };
+                console.error('[save] autosave fallback failed:', failure.detail);
+                this.showNotification(failure.message, 12);
+              });
           }
         }
 
@@ -1378,13 +1641,25 @@ export class Game {
     // Update night glow (building light spots + street lamps)
     const sunI = this.weatherRenderer.sunIntensity;
     this.buildingRenderer.update(sunI, dt);
+    this.buildingRenderer.updateUtilityWarnings(this.sceneManager.camera.quaternion);
     this.roadRenderer.update(sunI);
     this.elevatedRoadRenderer.update(sunI);
   }
 
   /** Rebuild renderer meshes for each dirty subsystem, then clear dirty flags. */
+  /** Set when utility coverage moved, so the zone-blocker tint can follow it. */
+  private zoneOverlaysDirty = false;
+
   private rebuildDirtySubsystems(): void {
     const d = this.dirty;
+    if (this.zoneOverlaysDirty) {
+      this.zoneOverlaysDirty = false;
+      this.refreshZoneOverlays();
+    }
+    if (this.utilityWarningsDirty) {
+      this.utilityWarningsDirty = false;
+      this.refreshUtilityWarnings();
+    }
     const anyDirty = d.hasRoadChanges || d.hasElevatedChanges || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
     if (!anyDirty) return;
 
@@ -1421,7 +1696,12 @@ export class Game {
       d.crossings = false;
     }
     if (d.buildings) {
-      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
+      // build() redraws the zone overlays too, so it needs the diagnosis as
+      // much as rebuildZoneOverlays does. Omitting it here meant every overlay
+      // came back untinted on game start, after a save load and after a
+      // disaster — and, because this branch runs after the zoneOverlaysDirty
+      // one above, it overwrote a correct tint in any frame where both fired.
+      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid, this.zoneBlockerAt);
       if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
       d.buildings = false;
     }
@@ -1707,16 +1987,7 @@ export class Game {
             pollutionWater: pLevel.water,
             pollutionNoise: pLevel.noise,
             serviceCoverage: cell.serviceCoverage,
-            services: {
-              power: this.state.power.isPowered(x, y) ? 0 : -1,
-              water: this.state.water.isSupplied(x, y) ? 0 : -1,
-              police: this.state.police.getCostRatio(x, y),
-              fire: this.state.fire.getCostRatio(x, y),
-              garbage: this.state.garbage.getCostRatio(x, y),
-              health: this.state.health.getCostRatio(x, y),
-              education: this.state.education.getCostRatio(x, y),
-              deathCare: this.state.deathCare.getCostRatio(x, y),
-            },
+            services: buildServiceStatus(this.state, x, y),
             abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
             isAbandoned: cell.reserved === ABANDONED,
             workerCount: this.state.citizens.getCitizensByWorkplace(`${x},${y}`).length,
@@ -1751,6 +2022,20 @@ export class Game {
           break;
         }
       }
+    } else if (cell && cell.zoneType !== ZoneType.NONE) {
+      // An empty zoned cell. This is the click a player makes when a block
+      // refuses to develop, and it used to select nothing.
+      const blocker = this.zoneBlockerAt(x, y);
+      this.selectedBuilding = {
+        kind: 'emptyZone', x, y,
+        zoneType: cell.zoneType,
+        blocker,
+        reason: blocker ? ZONE_BLOCKER_MESSAGES[blocker] : 'Ready to develop',
+        hasPower: this.state.power.isPowered(x, y),
+        hasWater: this.state.water.isSupplied(x, y),
+        sameBlockerCount: this.countOtherCellsBlockedBy(blocker),
+      };
+      this.applyViewMode(ViewMode.NORMAL);
     } else {
       this.selectedBuilding = null;
       this.applyViewMode(ViewMode.NORMAL);
@@ -2217,6 +2502,27 @@ export class Game {
     if (overlayType === 'water') {
       const water = this.state.water;
       const ratio = water.getSupplyRatio();
+
+      // A city with no plant yet has nothing to colour — and that is exactly
+      // the city that needs help. A water plant needs groundwater, i.e. a cell
+      // within GROUNDWATER_SEARCH_RANGE of water, and nothing grows at all
+      // without water, so an inland start is unwinnable. The only feedback used
+      // to be a toast on the click that failed, which says what is wrong but
+      // not where to go instead. Selecting the water tool opens this overlay
+      // (TOOL_TO_OVERLAY), so this is where the answer belongs.
+      if (water.getPlants().length === 0) {
+        const sites = findWaterPlantSites(this.state.grid);
+        for (const s of sites) {
+          this.overlayHighlightCells.push({ x: s.x, y: s.y, color: 0x00e5ff });
+        }
+        if (sites.length === 0) {
+          this.showNotification(
+            'Nowhere on this map has groundwater. A water plant must be within '
+            + `${GROUNDWATER_SEARCH_RANGE} tiles of a river, lake or coast.`, 8,
+          );
+        }
+        return;
+      }
       this.state.grid.forEachCell((cell, x, y) => {
         if (cell.buildingId === 0) return;
         if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) return;
@@ -2267,17 +2573,24 @@ export class Game {
     return this.simLoop.getAbandonmentStress(x, y);
   }
 
+  // markTransitNetworkDirty() was removed from Game and from all ten of its
+  // call sites. Requiring every transit mutation to remember an invalidation
+  // call is exactly how the transfer graph went stale for the whole transit UI
+  // (BUG-090); BaseTransportSystem now bumps its own version counter and
+  // SimulationLoop compares it, so a new mutation site cannot forget.
+
   /** Create a bus route with traffic pathfinding. Returns the route or null if no path. */
   createBusRoute(stops: readonly TransportStop[], vehicleCount = 1): TransportRoute | null {
     this.simLoop.ensureLaneGraph();
     const lg = this.simLoop.laneGraph;
     const lookup = this.roadLookup;
-    return this.state.bus.createRouteWithTraffic(
+    const route = this.state.bus.createRouteWithTraffic(
       [...stops],
       vehicleCount,
       (fx, fy, tx, ty) => findLanePath(lg, lookup, { x: fx, y: fy }, { x: tx, y: ty }),
       this.state.traffic,
     );
+    return route;
   }
 
   /** Delete a bus route and remove its vehicles from TrafficSimulation. */
@@ -2338,6 +2651,28 @@ export class Game {
       };
     }
 
+    if (sel.kind === 'emptyZone') {
+      // Recomputed on every poll like the other kinds. A stale diagnosis is
+      // worse than none: connect the road and the panel would still insist the
+      // block has no electricity.
+      const { x, y } = sel;
+      const cell = this.state.grid.getCell(x, y);
+      if (!cell || cell.zoneType === ZoneType.NONE || cell.buildingId !== 0) {
+        // It developed, or was rezoned away — the panel has nothing to say.
+        this.selectedBuilding = null;
+        return null;
+      }
+      const blocker = this.zoneBlockerAt(x, y);
+      return {
+        ...sel,
+        blocker,
+        reason: blocker ? ZONE_BLOCKER_MESSAGES[blocker] : 'Ready to develop',
+        hasPower: this.state.power.isPowered(x, y),
+        hasWater: this.state.water.isSupplied(x, y),
+        sameBlockerCount: this.countOtherCellsBlockedBy(blocker),
+      };
+    }
+
     if (sel.kind === 'zone') {
       const { x, y } = sel;
       const cell = this.state.grid.getCell(x, y);
@@ -2346,17 +2681,7 @@ export class Game {
         landValue: cell?.landValue ?? sel.landValue,
         pollution: cell?.pollution ?? sel.pollution,
         serviceCoverage: cell?.serviceCoverage ?? sel.serviceCoverage,
-        services: {
-          power: this.state.power.isPowered(x, y) ? 0 : -1,
-          water: this.state.water.isSupplied(x, y) ? 0 : -1,
-          sewage: this.state.sewage.isSupplied(x, y) ? 0 : -1,
-          police: this.state.police.getCostRatio(x, y),
-          fire: this.state.fire.getCostRatio(x, y),
-          garbage: this.state.garbage.getCostRatio(x, y),
-          health: this.state.health.getCostRatio(x, y),
-          education: this.state.education.getCostRatio(x, y),
-          deathCare: this.state.deathCare.getCostRatio(x, y),
-        },
+        services: buildServiceStatus(this.state, x, y),
         abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
         isAbandoned: cell?.reserved === ABANDONED,
         freightRatio: isCommercialZone(sel.zoneType) ? this.state.freight.getSupplyStatus(x, y).ratio : undefined,
@@ -2374,17 +2699,23 @@ export class Game {
       };
     }
 
-    return { ...sel };
+    // Every kind is handled above, so `sel` is `never` here. Assigning it to a
+    // `never` is what actually makes a new kind a compile error — `return sel`
+    // alone does not, since the new member is assignable to the return type and
+    // would compile straight into the silent never-refreshing shallow copy this
+    // is meant to prevent.
+    const unhandled: never = sel;
+    return unhandled;
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {
-    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory(), highestMilestonePop: this.highestMilestonePop });
     const population = this.state.citizens.getPopulation();
     await saveGame(slotId, name, data, population);
   }
 
   exportCurrentGame(): void {
-    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory() });
+    const data = serializeGameState(this.state, { abandonmentStress: this.simLoop.abandonmentStress, elevationManager: this.elevationManager, transferHistory: this.simLoop.getTransferHistory(), highestMilestonePop: this.highestMilestonePop });
     const population = this.state.citizens.getPopulation();
     exportSaveToFile({
       id: 0,
@@ -2521,7 +2852,13 @@ export class Game {
   private checkMilestone(): void {
     const pop = this.state.citizens.getPopulation();
     const milestone = getMilestone(pop);
-    if (milestone && milestone.id !== this.lastMilestoneId) {
+    // Milestones only go up. Comparing ids alone meant a population DROP past a
+    // threshold re-announced the lower milestone as newly unlocked, complete
+    // with the fanfare — and near a threshold, where immigration, deaths,
+    // disasters and abandonment evictions all push the count back and forth,
+    // it fired again every tick (BUG-094).
+    if (milestone && milestone.populationRequired > this.highestMilestonePop) {
+      this.highestMilestonePop = milestone.populationRequired;
       this.lastMilestoneId = milestone.id;
       this.showNotification(`Milestone: ${milestone.name}! (Pop ${milestone.populationRequired}) — Unlocked: ${milestone.unlocks.join(', ')}`, 8);
       this.audioManager.playSfx(SoundType.MILESTONE);
@@ -2559,16 +2896,30 @@ export class Game {
     this.notificationTimer = duration;
   }
 
+  /**
+   * Report the outcome of an off-thread save.
+   *
+   * Held long (12s) and worded as a call to action, because the alternative to
+   * noticing this is losing everything built since the last successful write.
+   */
+  private handleSaveComplete(msg: SaveCompleteMessage): void {
+    if (!msg || msg.type !== 'SAVE_COMPLETE') return;
+    if (msg.ok) {
+      this.lastSaveFailure = null;
+      return;
+    }
+    this.lastSaveFailure = msg;
+    console.error('[save] slot', msg.slotId, 'failed:', msg.detail);
+    this.showNotification(msg.error ?? 'Save failed.', 12);
+  }
+
+  /** The most recent unresolved save failure, for the UI to keep showing. */
+  lastSaveFailure: SaveCompleteMessage | null = null;
+
   getEconomyBreakdown() {
-    return computeEconomyBreakdown({
-      ...buildIncomeCalcDeps(this.state),
-      roadTileCount: countRoadTiles(this.state.grid),
-      loans: this.state.budget.loans,
-      loanInterestRate: this.state.budget.loanInterestRate,
-      powerMaintenanceCost: this.state.power.getMaintenanceCost(),
-      waterMaintenanceCost: this.state.water.getMaintenanceCost(),
-      transportOperatingCost: getTotalTransportOperatingCost(this.state),
-    });
+    // Assembly lives in core so the "panel total === budget.expenses" invariant
+    // can be tested; Game.ts imports Three.js and cannot be (BUG-077).
+    return computeEconomyBreakdown(buildEconomyBreakdownContext(this.state, this.elevationManager));
   }
 
   deselectBuilding(): void {

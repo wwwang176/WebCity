@@ -58,6 +58,19 @@ export class ShoppingAccess {
     const globalVisited = new Set<string>();
     // Track visited positions to avoid re-seeding
     const globalVisitedPositions = new Set<string>();
+    /**
+     * Positions already counted, ACROSS components.
+     *
+     * Per-component was not enough: a building reached by the ground component
+     * is later reached again through an elevated key from a separate elevated
+     * component, because getCompatibleNeighborKeys never returns a level-1
+     * neighbour for a flat level-0 source, so that key is unvisited. It was
+     * counted twice, and worse, residentialStatus.set overwrote the correct
+     * entry with the elevated component's — a house with shops next door
+     * reported no commercial access at all and took the -12 happiness penalty
+     * (BUG-120).
+     */
+    const countedPositions = new Set<string>();
 
     grid.forEachCell((cell, x, y) => {
       // Start flood-fill from any unvisited cell that is part of the road network
@@ -73,7 +86,6 @@ export class ShoppingAccess {
       const componentCommercials: string[] = [];
       let totalPopulation = 0;
       let totalCapacity = 0;
-
       // Seed with all keys at this position
       const queue: string[] = [];
 
@@ -100,6 +112,9 @@ export class ShoppingAccess {
 
       while (queue.length > 0) {
         const curKey = queue.shift()!;
+        // Ground keys are "x,y"; an elevated cell carries its level as a third
+        // component. The ground-neighbour expansion below depends on this.
+        const curIsGround = curKey.indexOf(',') === curKey.lastIndexOf(',');
         const curPos = parsePosKeyUnsafe(curKey);
         const cx = curPos.x;
         const cy = curPos.y;
@@ -108,8 +123,20 @@ export class ShoppingAccess {
         // Track position as visited
         globalVisitedPositions.add(toPosKey(cx, cy));
 
-        // Classify buildings in this component (buildings are always at ground level)
-        if (cc && cc.buildingId > 0) {
+        // Classify buildings in this component (buildings are always at ground level).
+        //
+        // The queue holds cell KEYS, and UnifiedRoadLookup gives ground cells the
+        // key "x,y" but elevated ones "x,y,level" — so a position crossed by an
+        // elevated road entered the queue twice (three times with two levels) and
+        // its residents/workers were counted once per key. Nothing forbids
+        // building an elevated road over an existing building: ElevatedPathValidation
+        // checks terrain and same-level occupancy only. Deduplicate by POSITION.
+        //
+        // Not by testing `level === 0` instead: globalVisitedPositions.add above
+        // makes the seed loop skip positions first reached via an elevated key,
+        // which would under-count instead (BUG-095).
+        if (cc && cc.buildingId > 0 && !countedPositions.has(toPosKey(cx, cy))) {
+          countedPositions.add(toPosKey(cx, cy));
           const ckey = toPosKey(cx, cy);
           if (isResidentialZone(cc.zoneType as ZoneType)) {
             const bt = getBuildingType(cc.buildingId);
@@ -141,7 +168,20 @@ export class ShoppingAccess {
             }
           }
 
-          // Ground-level non-road cells (buildings, zones)
+          // Ground-level non-road cells (buildings, zones) — but only when we
+          // are STANDING on the ground.
+          //
+          // This expansion ran from every cell in the queue, elevated ones
+          // included, so a viaduct absorbed whatever sat beside the ground
+          // under it: a rampless deck spanning a gap joined the two networks it
+          // flew over, and houses gained access to shops they could not reach.
+          // It looked correct only because grid.forEachCell is row-major and
+          // usually visited the ground before the deck; move the ground one row
+          // BELOW the deck and the order reverses, and so does the answer.
+          //
+          // Level changes are the road lookup's job, immediately above, and it
+          // requires a ramp.
+          if (!curIsGround) continue;
           const nPosKey = toPosKey(nx, ny);
           if (!globalVisited.has(nPosKey)) {
             const ncell = grid.getCell(nx, ny);

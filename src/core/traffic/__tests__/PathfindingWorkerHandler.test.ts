@@ -14,6 +14,22 @@ import { LaneGraph } from '../LaneGraph';
 import { RoadType, RoadDirection } from '../../road/types';
 import { toPosKey } from '../../grid/GridHelpers';
 
+/**
+ * Narrow a response to BATCH_RESULT.
+ *
+ * `WorkerResponse` is a union of READY and BATCH_RESULT, so `r.results` does
+ * not exist on the union. The cases reached through it anyway and papered over
+ * the gap with `!`, which meant a handler that returned READY where a batch was
+ * expected produced "Cannot read properties of undefined" instead of a
+ * legible failure.
+ */
+function batchResult(r: WorkerResponse): Extract<WorkerResponse, { type: 'BATCH_RESULT' }> {
+  expect(r.type).toBe('BATCH_RESULT');
+  if (r.type !== 'BATCH_RESULT') throw new Error('not a batch result');
+  return r;
+}
+
+
 // ── Helpers ──
 
 function makeGridLookup(cells: Map<string, { roadType: number; roadFlags: number }>) {
@@ -94,14 +110,13 @@ describe('PathfindingWorkerHandler', () => {
 
     // responses[0] = READY, responses[1] = BATCH_RESULT
     expect(responses).toHaveLength(2);
-    const result = responses[1]!;
-    expect(result.type).toBe('BATCH_RESULT');
+    const result = batchResult(responses[1]!);
     expect(result.batchId).toBe(1);
     expect(result.results).toHaveLength(1);
-    expect(result.results![0]!.id).toBe(42);
-    expect(result.results![0]!.variants!.length).toBeGreaterThanOrEqual(1);
+    expect(result.results[0]!.id).toBe(42);
+    expect(result.results[0]!.variants!.length).toBeGreaterThanOrEqual(1);
     // Each variant is an array of edge indices
-    for (const v of result.results![0]!.variants!) {
+    for (const v of result.results[0]!.variants!) {
       expect(v.length).toBeGreaterThan(0);
       for (const edgeIdx of v) {
         expect(typeof edgeIdx).toBe('number');
@@ -157,8 +172,8 @@ describe('PathfindingWorkerHandler', () => {
       postMessage,
     );
 
-    const result = responses[1]!;
-    expect(result.results![0]!.variants).toHaveLength(0);
+    const result = batchResult(responses[1]!);
+    expect(result.results[0]!.variants).toHaveLength(0);
   });
 
   it('handles multiple requests in one batch', () => {
@@ -185,12 +200,12 @@ describe('PathfindingWorkerHandler', () => {
       postMessage,
     );
 
-    const result = responses[1]!;
+    const result = batchResult(responses[1]!);
     expect(result.results).toHaveLength(2);
-    expect(result.results![0]!.id).toBe(1);
-    expect(result.results![1]!.id).toBe(2);
-    expect(result.results![0]!.variants!.length).toBeGreaterThanOrEqual(1);
-    expect(result.results![1]!.variants!.length).toBeGreaterThanOrEqual(1);
+    expect(result.results[0]!.id).toBe(1);
+    expect(result.results[1]!.id).toBe(2);
+    expect(result.results[0]!.variants!.length).toBeGreaterThanOrEqual(1);
+    expect(result.results[1]!.variants!.length).toBeGreaterThanOrEqual(1);
   });
 
   it('INIT_GRAPH can be called again to update the graph', () => {

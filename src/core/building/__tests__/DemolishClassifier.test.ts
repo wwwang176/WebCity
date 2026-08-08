@@ -49,6 +49,20 @@ describe('classifyDemolishCell', () => {
     }
   });
 
+  // BUG-052: an orphaned secondary cell of a multi-cell building must never fall
+  // into 'regular' — that branch zeroes the cell WITHOUT unregistering the
+  // service, producing a facility that is invisible and impossible to remove.
+  it('should not classify an orphaned multi-cell infra cell as regular', () => {
+    const hospitalBid = getInfraBuildingId('hospital');
+    const cell = { buildingId: hospitalBid, railType: 0 };
+    const result = classifyDemolishCell(cell, null); // primary unresolvable
+    expect(result.action).not.toBe('regular');
+    expect(result.action).toBe('single_cell_infra');
+    if (result.action === 'single_cell_infra') {
+      expect(result.infraType).toBe('hospital');
+    }
+  });
+
   it('should classify regular cell with road', () => {
     const cell = { buildingId: 0, railType: 0 };
     const result = classifyDemolishCell(cell, null);

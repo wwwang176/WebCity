@@ -1,14 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { collectEdgeCells } from '../CommuteCacheHelpers';
 import type { LaneEdge } from '../LaneGraph';
+import { makeCellEdge } from '../../../../tests/helpers/makeLaneEdge';
 
 function makeEdge(fromCell: string, toCell: string): LaneEdge {
-  return {
-    from: { cellKey: fromCell } as any,
-    to: { cellKey: toCell } as any,
-    laneIndex: 0,
-    direction: 0,
-  } as LaneEdge;
+  return makeCellEdge(fromCell, toCell);
 }
 
 describe('collectEdgeCells', () => {

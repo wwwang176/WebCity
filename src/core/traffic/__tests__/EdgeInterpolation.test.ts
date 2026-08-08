@@ -1,18 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { interpolateEdgePosition, interpolateEdgeTangent } from '../EdgeInterpolation';
 import type { LaneEdge } from '../LaneGraph';
+import { makeStraightEdge } from '../../../../tests/helpers/makeLaneEdge';
 
 /** Helper: create a minimal straight edge from (x1,y1) to (x2,y2). */
 function straightEdge(x1: number, y1: number, x2: number, y2: number): LaneEdge {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  return {
-    id: 'test',
-    from: { nodeId: 'a', position: { x: x1, y: y1 }, direction: 'north', lane: 0 },
-    to: { nodeId: 'b', position: { x: x2, y: y2 }, direction: 'south', lane: 0 },
-    length: Math.sqrt(dx * dx + dy * dy),
-    type: 'straight',
-  };
+  return makeStraightEdge({ x: x1, y: y1 }, { x: x2, y: y2 }, { id: 'test' });
 }
 
 /** Helper: create a curved edge with a single quadratic bezier control point. */
@@ -20,16 +13,9 @@ function curvedEdge(
   x1: number, y1: number, x2: number, y2: number,
   cp: { x: number; y: number },
 ): LaneEdge {
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  return {
-    id: 'test-curve',
-    from: { nodeId: 'a', position: { x: x1, y: y1 }, direction: 'north', lane: 0 },
-    to: { nodeId: 'b', position: { x: x2, y: y2 }, direction: 'south', lane: 0 },
-    bezierControl: [cp],
-    length: Math.sqrt(dx * dx + dy * dy),
-    type: 'turn',
-  };
+  return makeStraightEdge({ x: x1, y: y1 }, { x: x2, y: y2 }, {
+    id: 'test-curve', type: 'turn', bezierControl: [cp],
+  });
 }
 
 describe('interpolateEdgePosition', () => {

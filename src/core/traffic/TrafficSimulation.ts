@@ -83,14 +83,39 @@ export const TRAFFIC = {
 
 /** Get the number of directional lanes for a road type (lanes going one way). */
 /** Get speed limit for a grid cell identified by "x,y" key. Returns default 50 for non-road cells. */
+type RoadTypeCell = { roadType: number } | null;
+
+/**
+ * Either lookup will do, but one of them must be there.
+ *
+ * Declaring `getCell` mandatory made `UnifiedRoadLookup` — which is key-based
+ * precisely because an elevated cell key carries a level — fail to typecheck at
+ * the one call site that matters, even though the `getCell` branch is
+ * unreachable for it.
+ */
+export type SpeedLimitLookup =
+  | { getCellByKey(key: string): RoadTypeCell; getCell?: (x: number, y: number) => RoadTypeCell }
+  | { getCell(x: number, y: number): RoadTypeCell; getCellByKey?: undefined };
+
 export function getSpeedLimitForCell(
-  grid: { getCell(x: number, y: number): { roadType: number } | null; getCellByKey?: (key: string) => { roadType: number } | null },
+  grid: SpeedLimitLookup,
   cellKey: string,
 ): number {
   // Use key-based lookup (supports "x,y,level" for elevated roads)
-  const cell = grid.getCellByKey
-    ? grid.getCellByKey(cellKey)
-    : (() => { const [gx, gy] = cellKey.split(',').map(Number); return grid.getCell(gx!, gy!); })();
+  let cell: RoadTypeCell;
+  if (grid.getCellByKey) {
+    cell = grid.getCellByKey(cellKey);
+  } else if (grid.getCell) {
+    const [gx, gy] = cellKey.split(',').map(Number);
+    cell = grid.getCell(gx!, gy!);
+  } else {
+    // The union below says one of the two is present, but a value can satisfy
+    // it statically and still arrive with the method undefined — a class field
+    // declared and not assigned, for one. Falling through to the default speed
+    // would make every road in the city 50 km/h with nothing to show for it, so
+    // fail where the wiring is wrong instead.
+    throw new TypeError('getSpeedLimitForCell: lookup has neither getCellByKey nor getCell');
+  }
   if (!cell || cell.roadType <= 0) return 50;
   const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
   return cfg?.speedLimit ?? 50;
@@ -115,6 +140,8 @@ export class TrafficSimulation {
   private activeVehicleScratch: Vehicle[] = [];
   /** Reusable edge index map (cleared each frame instead of re-allocated). */
   private edgeIndexMap = new Map<string, EdgeEntry[]>();
+  /** Reusable per-frame sort key store (see advanceEdgeVehicles). */
+  private sortProgress = new Map<number, number>();
   /** Reusable spatial hash for cross-edge collision detection. */
   private spatialHash = new SpatialHash(CROSS_EDGE.CELL_SIZE);
   /** Reusable array for spatial entries (object pool — grows to high-water mark). */
@@ -230,6 +257,67 @@ export class TrafficSimulation {
     this.vehicles.length = write;
   }
 
+  /**
+   * Retire vehicles whose remaining route touches any of the given cells.
+   *
+   * Called after an incremental lane-graph rebuild: edges belonging to changed
+   * cells are replaced, so a vehicle still holding one is driving on a road that
+   * no longer exists. Nothing else catches this — stallTime only accrues when a
+   * vehicle is blocked, and a ghost road blocks nothing (BUG-108).
+   *
+   * Only the remaining path matters; edges already behind the vehicle cannot
+   * affect where it goes next.
+   *
+   * @returns how many vehicles were retired
+   */
+  /**
+   * Retire any commute/freight vehicle whose remaining path contains an edge
+   * the graph no longer owns.
+   *
+   * This is the exact question. The cell-key heuristics it replaces were each
+   * an approximation of it, and each got a case wrong:
+   *
+   *  - "retire on any dirty cell" deleted the traffic already driving on a road
+   *    that was merely extended or upgraded (BUG-116);
+   *  - "retire where the road is gone" missed a DOWNGRADE. RoadBuilder writes
+   *    the new tier unconditionally and clamps the cost at 0, so drawing
+   *    TWO_LANE over SIX_LANE is free and deletes the lane-1 and lane-2 points
+   *    with every edge on them, leaving those vehicles driving off the road
+   *    surface and sharing no edge id with the lookahead index, so they pass
+   *    through oncoming traffic. It also missed demolish-then-relay-in-another
+   *    -direction inside one tick, where the cell still has a road but none of
+   *    its old edges survive;
+   *  - and the wholesale full-rebuild sweep contradicted the first rule
+   *    outright, deleting all traffic whenever the affected set was unknown —
+   *    or merely EMPTY, which is a statement that nothing changed.
+   *
+   * Edge ids are deterministic, so a rebuild that changes nothing produces the
+   * same ids and retires nobody. That removes the need to distinguish a full
+   * rebuild from an incremental one at all.
+   *
+   * Buses and service vehicles are owned by their managers, which handle road
+   * changes themselves. Killing a bus here is unrecoverable: busVehicleIds and
+   * route.vehicles still count it and nothing reconciles them against
+   * traffic.vehicles, so the route is left permanently without a vehicle
+   * (BUG-115).
+   *
+   * @returns how many vehicles were retired
+   */
+  retireVehiclesOnDeadEdges(liveEdgeIds: ReadonlySet<string>): number {
+    let count = 0;
+    for (const v of this.vehicles) {
+      if (v.arrived || v.edgePath.length === 0) continue;
+      if (v.busState !== undefined || v.serviceType !== undefined) continue;
+      for (let i = v.edgeIndex; i < v.edgePath.length; i++) {
+        if (!liveEdgeIds.has(v.edgePath[i]!.id)) { v.arrived = true; count++; break; }
+      }
+    }
+    return count;
+  }
+
+  // markVehiclesArrivedOnCells and markCommuteVehiclesArrived were removed —
+  // both were cell-key approximations of retireVehiclesOnDeadEdges above.
+
   /** Get IDs of all currently active vehicles. */
   /** Reusable Set for getActiveVehicleIds — caller must not hold reference across frames. */
   private _activeIdSet = new Set<number>();
@@ -272,7 +360,7 @@ export class TrafficSimulation {
    */
   advanceEdgeVehicles(
     dtSeconds: number,
-    canAdvance?: (current: string, next: string) => boolean,
+    canAdvance?: (current: string, next: string, via?: string) => boolean,
     getSpeedLimit?: (cellKey: string) => number,
   ): void {
     const { MIN_GAP, EDGE_SPEED, REFERENCE_LIMIT, BRAKE_DISTANCE, ACCEL, DECEL } = TRAFFIC;
@@ -291,9 +379,19 @@ export class TrafficSimulation {
 
     // Sort front-to-back: higher total progress = further ahead.
     // Tiebreaker: lower ID first (older vehicle has priority when overlapping).
+    //
+    // Progress is computed ONCE per vehicle, not inside the comparator.
+    // edgeTotalProgress is an O(edgeIndex) prefix sum, and calling it from the
+    // comparator made the sort O(N log N x L): at the 2000-vehicle cap with
+    // paths tens of edges long that is millions of iterations — every render
+    // frame, since advanceEdgeVehicles is driven by the frame loop rather than
+    // the simulation tick (BUG-106).
+    const progressById = this.sortProgress;
+    progressById.clear();
+    for (const v of edgeVehicles) progressById.set(v.id, this.edgeTotalProgress(v));
     edgeVehicles.sort((a, b) => {
-      const aTotal = this.edgeTotalProgress(a);
-      const bTotal = this.edgeTotalProgress(b);
+      const aTotal = progressById.get(a.id)!;
+      const bTotal = progressById.get(b.id)!;
       if (bTotal !== aTotal) return bTotal - aTotal;
       return a.id - b.id; // lower ID = ahead = processed first
     });

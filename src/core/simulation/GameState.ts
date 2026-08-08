@@ -83,12 +83,31 @@ export const INITIAL_RCI_DEMAND = 50;
 export function createGameState(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID_SIZE): GameState {
   const grid = new Grid(width, height);
   const dm = new DistrictManager();
+
+  // Built before the literal so the pedestrian manager can be handed BOTH of
+  // its collaborators.
+  //
+  // It used to be constructed with `new SidewalkGraph()` — a second, throwaway
+  // graph that was never state.sidewalkGraph — and with no lights at all, and
+  // no setter existed. canPassCrosswalk's `if (!this.trafficLights) return true`
+  // therefore made PedestrianState.WAITING_SIGNAL unreachable in the shipped
+  // game: every pedestrian crossed on red, in every phase. That is exactly the
+  // defect BUG-105 fixed for level crossings, one layer over (BUG-113).
+  //
+  // Wired HERE rather than in Game.ts because both objects are created here,
+  // so new game, save load and map regeneration are covered by construction
+  // instead of by three call sites remembering — the failure mode that caused
+  // this in the first place.
+  const sidewalkGraph = new SidewalkGraph();
+  const trafficLights = new TrafficLightSystem();
+  const pedestrianManager = new PedestrianManager(sidewalkGraph, trafficLights);
+
   return {
     grid,
     roadNetwork: new RoadNetwork(),
     citizens: new CitizenManager(),
     traffic: new TrafficSimulation(),
-    trafficLights: new TrafficLightSystem(),
+    trafficLights,
     power: new PowerGrid(),
     water: new WaterNetwork(),
     clock: new GameClock(),
@@ -123,8 +142,8 @@ export function createGameState(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID
     airport: new AirportSystem(),
     freight: new FreightSystem(),
     shopping: new ShoppingAccess(),
-    sidewalkGraph: new SidewalkGraph(),
-    pedestrianManager: new PedestrianManager(new SidewalkGraph()),
+    sidewalkGraph,
+    pedestrianManager,
     highwayConnection: new HighwayConnection(),
   };
 }

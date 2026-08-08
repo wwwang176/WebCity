@@ -43,8 +43,18 @@ export function isShorePosition(grid: Grid, x: number, y: number): boolean {
 /** Maximum Manhattan distance for groundwater detection */
 export const GROUNDWATER_SEARCH_RANGE = 3;
 
+/**
+ * The only thing groundwater needs from a grid.
+ *
+ * Declaring the full `Grid` forced every caller to hold one — the overlay
+ * builders deliberately take a minimal read-only view, and had to be cast.
+ */
+export interface TerrainLookup {
+  getCell(x: number, y: number): { terrainType: number } | null;
+}
+
 /** Returns groundwater level 0-100 based on Manhattan distance to nearest water. */
-export function getGroundwaterLevel(grid: Grid, x: number, y: number): number {
+export function getGroundwaterLevel(grid: TerrainLookup, x: number, y: number): number {
   const range = GROUNDWATER_SEARCH_RANGE;
   let minDist = range + 1;
   for (let dy = -range; dy <= range; dy++) {

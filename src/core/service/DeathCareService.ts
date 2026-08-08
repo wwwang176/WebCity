@@ -70,7 +70,7 @@ export class DeathCareService extends GlobalCoverageService<Cemetery> {
   private deathHistory: number[] = new Array(7).fill(0);
   private deathHistoryIndex = 0;
 
-  addCemetery(x: number, y: number, capacity = DEATH_CARE.DEFAULT_CAPACITY): string {
+  addCemetery(x: number, y: number, capacity: number = DEATH_CARE.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({
       id, x, y, capacity, currentLoad: 0,

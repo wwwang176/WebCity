@@ -10,6 +10,8 @@ export const HEALTH = {
   HOSPITAL_MAX_BONUS: 30,
   PARK_BONUS: 5,
   POLLUTION_MAX_PENALTY: 15,
+  /** Full-scale value of the `pollution` factor — the grid cell range, not 100. */
+  POLLUTION_SCALE: 255,
   AGE_THRESHOLD: 200,
   AGE_RANGE: 60,
   AGE_MAX_PENALTY: 10,
@@ -47,8 +49,14 @@ export function calculateCitizenHealth(factors: HealthFactors): number {
       health += HEALTH.PARK_BONUS;
     }
 
-    // Pollution penalty: 0–15
-    health -= (factors.pollution / 100) * HEALTH.POLLUTION_MAX_PENALTY;
+    // Pollution penalty: 0–15.
+    // The divisor must match the field's range. `pollution` is the 0-255 grid
+    // value (SimulationLoop writes min(CELL_VALUE_MAX, ground + water + noise)),
+    // so dividing by 100 turned POLLUTION_MAX_PENALTY into a rate rather than a
+    // maximum: 255 pollution cost 38.25 points, 2.5x the stated cap, and
+    // industrial neighbourhoods routinely exceed 100 (BUG-083).
+    health -= (Math.min(factors.pollution, HEALTH.POLLUTION_SCALE) / HEALTH.POLLUTION_SCALE)
+      * HEALTH.POLLUTION_MAX_PENALTY;
 
     // Has home: +10
     health += HEALTH.HOME_BONUS;

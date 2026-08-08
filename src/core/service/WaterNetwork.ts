@@ -3,7 +3,7 @@ import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 export interface WaterPlant {
   x: number;
@@ -35,6 +35,16 @@ export const INFRA_WATER_CONSUMPTION: Record<string, number> = {
   sewage: 4,
   park: 0.75,
   cemetery: 0.75,
+  // See INFRA_POWER_CONSUMPTION: the transport family drew nothing at all.
+  // Water tracks passenger throughput rather than footprint — an airport
+  // terminal has restrooms and catering, a bus shelter has neither.
+  bus_stop: 0.1,
+  ferry_dock: 0.75,
+  train_station: 2,
+  metro_station: 2,
+  airport_s: 5,
+  airport_m: 10,
+  airport_l: 20,
 };
 
 const WATER_PLANT_ID = getInfraBuildingId('water');
@@ -47,10 +57,20 @@ const INFRA_TYPE_TO_KEY: Record<string, string> = {
   school_high: 'highschool',
   school_univ: 'university',
   garbage: 'garbage',
-  power: 'police', // power plants don't consume water, excluded above
+  // No `power` entry: power plants consume no water. This used to map to
+  // 'police', with a comment claiming power plants were "excluded above" — but
+  // excludedBuildingId is the WATER plant (253), not the power plant (254), so
+  // every power plant silently drew the police station's water rate (BUG-071).
   sewage: 'sewage',
   park: 'park',
   cemetery: 'cemetery',
+  bus_stop: 'bus_stop',
+  metro_station: 'metro_station',
+  train_station: 'train_station',
+  ferry_dock: 'ferry_dock',
+  airport_s: 'airport_s',
+  airport_m: 'airport_m',
+  airport_l: 'airport_l',
 };
 
 /** Shared demand config for calculateUtilityCellDemand (DRY). */
@@ -93,8 +113,10 @@ export class WaterNetwork {
     // Phase 2: BFS budget-drain per plant
     this.supplied.clear();
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
+    const paidGroups = new Set<string>();
+    const chargeCache = new Map<string, CellCharge>();
     for (const plant of this.plants) {
-      bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, infrastructurePositions, this.roadLookup);
+      bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
     }
     return this.supplied;
   }
@@ -106,7 +128,7 @@ export class WaterNetwork {
       const bt = getBuildingType(cell.buildingId);
       demand += calculateUtilityCellDemand(
         WATER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-        bt?.residents ?? 0, bt?.workers ?? 0,
+        bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
       );
     });
     this.totalDemand = demand;
@@ -153,7 +175,7 @@ export class WaterNetwork {
     const bt = getBuildingType(cell.buildingId);
     return calculateUtilityCellDemand(
       WATER_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-      bt?.residents ?? 0, bt?.workers ?? 0,
+      bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
     );
   }
 

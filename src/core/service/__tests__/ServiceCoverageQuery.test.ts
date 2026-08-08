@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getCellServiceFlags, getCellServiceScore, serviceFlagsToScore, getResidentialServiceRatios, getCellServiceCostScore, type ServiceFlags } from '../ServiceCoverageQuery';
+import { getCellServiceFlags, getCellServiceScore, serviceFlagsToScore, getResidentialServiceRatios, getCellServiceCostScore, MAX_SERVICE_SCORE, type ServiceFlags } from '../ServiceCoverageQuery';
 import { createGameState } from '../../simulation/GameState';
 import { ZoneType } from '../../grid/types';
 import { RoadType } from '../../road/types';
@@ -38,7 +38,7 @@ describe('ServiceCoverageQuery', () => {
   describe('serviceFlagsToScore', () => {
     it('returns 0 when all flags are false', () => {
       const flags: ServiceFlags = {
-        isPowered: false, isWatered: false,
+        isPowered: false, isWatered: false, hasSewage: false,
         hasPolice: false, hasFire: false, hasGarbage: false,
         hasHealth: false, hasEducation: false, hasDeathCare: false,
       };
@@ -47,7 +47,7 @@ describe('ServiceCoverageQuery', () => {
 
     it('returns 2 for power only', () => {
       const flags: ServiceFlags = {
-        isPowered: true, isWatered: false,
+        isPowered: true, isWatered: false, hasSewage: false,
         hasPolice: false, hasFire: false, hasGarbage: false,
         hasHealth: false, hasEducation: false, hasDeathCare: false,
       };
@@ -56,7 +56,7 @@ describe('ServiceCoverageQuery', () => {
 
     it('returns 4 for power + water', () => {
       const flags: ServiceFlags = {
-        isPowered: true, isWatered: true,
+        isPowered: true, isWatered: true, hasSewage: false,
         hasPolice: false, hasFire: false, hasGarbage: false,
         hasHealth: false, hasEducation: false, hasDeathCare: false,
       };
@@ -65,17 +65,18 @@ describe('ServiceCoverageQuery', () => {
 
     it('returns 10 when all services are active', () => {
       const flags: ServiceFlags = {
-        isPowered: true, isWatered: true,
+        isPowered: true, isWatered: true, hasSewage: true,
         hasPolice: true, hasFire: true, hasGarbage: true,
         hasHealth: true, hasEducation: true, hasDeathCare: true,
       };
-      // 2+2+1+1+1+1+1+1 = 10
-      expect(serviceFlagsToScore(flags)).toBe(10);
+      // 2+2+1+1+1+1+1+1+1 = 11
+      expect(serviceFlagsToScore(flags)).toBe(MAX_SERVICE_SCORE);
+      expect(MAX_SERVICE_SCORE).toBe(11);
     });
 
     it('each civic service adds 1 to score', () => {
       const base: ServiceFlags = {
-        isPowered: false, isWatered: false,
+        isPowered: false, isWatered: false, hasSewage: false,
         hasPolice: false, hasFire: false, hasGarbage: false,
         hasHealth: false, hasEducation: false, hasDeathCare: false,
       };
@@ -228,5 +229,47 @@ describe('ServiceCoverageQuery', () => {
       // Powered cell should have >= 2 (power contributes 2)
       expect(powered).toBeGreaterThanOrEqual(unpowered);
     });
+  });
+});
+
+/**
+ * Sewage was computed here and consumed by nobody. The city-wide sum skipped
+ * it and the per-cell score did not list it, so a treatment plant contributed
+ * nothing to happiness, land value, building level or abandonment stress —
+ * while the building panel showed Sewage as a first-class service.
+ */
+describe('sewage is a service like the others', () => {
+  it('should appear in the per-cell flags', () => {
+    const base: ServiceFlags = {
+      isPowered: false, isWatered: false, hasSewage: false,
+      hasPolice: false, hasFire: false, hasGarbage: false,
+      hasHealth: false, hasEducation: false, hasDeathCare: false,
+    };
+    expect(serviceFlagsToScore({ ...base, hasSewage: true })).toBe(1);
+  });
+
+  it('should weigh the same as the other ordinary services', () => {
+    const base: ServiceFlags = {
+      isPowered: false, isWatered: false, hasSewage: false,
+      hasPolice: false, hasFire: false, hasGarbage: false,
+      hasHealth: false, hasEducation: false, hasDeathCare: false,
+    };
+    expect(serviceFlagsToScore({ ...base, hasSewage: true }))
+      .toBe(serviceFlagsToScore({ ...base, hasPolice: true }));
+    // ...and less than the two deliberate 2x exceptions.
+    expect(serviceFlagsToScore({ ...base, hasSewage: true }))
+      .toBeLessThan(serviceFlagsToScore({ ...base, isPowered: true }));
+  });
+
+  it('should be counted by the maximum every consumer derives its bounds from', () => {
+    // MAX_SERVICE_SCORE feeds MAX_ORDINARY_LAND_VALUE in Migration; leaving it
+    // at 10 while the score can reach 11 would put an attainable land value
+    // above the ceiling the migration threshold is calibrated against.
+    const all: ServiceFlags = {
+      isPowered: true, isWatered: true, hasSewage: true,
+      hasPolice: true, hasFire: true, hasGarbage: true,
+      hasHealth: true, hasEducation: true, hasDeathCare: true,
+    };
+    expect(serviceFlagsToScore(all)).toBe(MAX_SERVICE_SCORE);
   });
 });

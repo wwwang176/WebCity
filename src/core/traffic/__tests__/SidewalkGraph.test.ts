@@ -914,3 +914,66 @@ describe('SidewalkGraph', () => {
     });
   });
 });
+
+// BUG-067: updateCells rebuilt nodes AND edges only for `toRebuild` (affected +
+// their 4 neighbours), but removeCellData deletes BOTH directions of every edge
+// touching a cell while generateCrossCellEdges emits links only for EAST and
+// SOUTH. The WEST/NORTH link between a rebuilt cell and the untouched cell
+// beyond it is owned exclusively by that outside cell, whose generateEdgesForCell
+// never ran — so the link was destroyed and never recreated. LaneGraph has an
+// explicit repair for exactly this; SidewalkGraph copied the comment but not the
+// repair. The live trigger is building growth, which calls updateCells without
+// setting the dirty flag that would force a full rebuild.
+describe('SidewalkGraph.updateCells — connectivity at the rebuild border', () => {
+  function edgeIds(graph: SidewalkGraph): string[] {
+    return graph.getAllEdges().map(e => e.id).sort();
+  }
+
+  it('should preserve the cross-cell link on the west side of the rebuilt set', () => {
+    const { cells, keys } = buildHorizontalRoad(6);
+    const grid = makeGrid(cells);
+    const graph = new SidewalkGraph();
+    graph.buildFromGrid(grid, keys);
+
+    const linked = () => graph.getEdgesFrom('2,0:NE').some(e => e.to.id === '3,0:NW');
+    expect(linked()).toBe(true);
+
+    // A house grows at (3,1) — the argument shape SimulationLoop actually passes.
+    (cells as Map<string, CellDef>).set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
+    graph.updateCells(makeGrid(cells), ['3,1']);
+
+    expect(linked()).toBe(true);
+    // ...and in the reverse direction too.
+    expect(graph.getEdgesFrom('3,0:NW').some(e => e.to.id === '2,0:NE')).toBe(true);
+  });
+
+  it('should keep the road walkable end to end after a building grows beside it', () => {
+    const { cells, keys } = buildHorizontalRoad(8);
+    const grid = makeGrid(cells);
+    const graph = new SidewalkGraph();
+    graph.buildFromGrid(grid, keys);
+    expect(graph.findPath('0,0:NE', '7,0:NW')).not.toBeNull();
+
+    (cells as Map<string, CellDef>).set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
+    graph.updateCells(makeGrid(cells), ['3,1']);
+
+    expect(graph.findPath('0,0:NE', '7,0:NW')).not.toBeNull();
+  });
+
+  it('should leave the graph identical to a fresh buildFromGrid', () => {
+    const { cells, keys } = buildHorizontalRoad(6);
+    (cells as Map<string, CellDef>).set('3,1', { roadType: RoadType.NONE, roadFlags: 0, buildingId: 1 });
+
+    const incremental = new SidewalkGraph();
+    incremental.buildFromGrid(makeGrid(cells), keys);
+    incremental.updateCells(makeGrid(cells), ['3,1']);
+
+
+    const fresh = new SidewalkGraph();
+    // Same cell set — the incremental graph has seen the building, so the
+    // reference build must too, or this compares different graphs.
+    fresh.buildFromGrid(makeGrid(cells), keys, ['3,1']);
+
+    expect(edgeIds(incremental)).toEqual(edgeIds(fresh));
+  });
+});

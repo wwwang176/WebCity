@@ -14,7 +14,7 @@ import {
 
 /** Check if any of the 4 cardinal neighbors is a water tile. */
 function hasAdjacentWater(grid: Grid, x: number, y: number): boolean {
-  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
     const cell = grid.getCell(x + dx, y + dy);
     if (cell && cell.terrainType === TerrainType.WATER) return true;
   }
@@ -144,6 +144,13 @@ export function placeInfraOnGrid(
       grid.setCell(cx, cy, {
         buildingId: cfg.buildingId,
         reserved: isPrimary ? ROTATION_RESERVED[rotation] : MULTI_CELL_OCCUPIED,
+        // Clearing zoneType is what removeInfraFromGrid already does; placement
+        // did not, so a facility dropped on zoned-but-empty land kept its zone.
+        // Game.ts only clears zoneType where a zone *building* stood, which
+        // misses exactly this case. The consequence: every footprint cell of a
+        // facility on industrial land emitted factory-grade ground pollution and
+        // noise, and counted toward zone supply (BUG-074).
+        zoneType: 0,
       });
     }
   }
@@ -170,7 +177,10 @@ export function findPrimaryCell(
     return { x, y };
   }
 
-  // Search for the primary cell in the maximum possible range
+  // Search for the primary cell in the maximum possible range. A candidate only
+  // counts when its own rotated WxH footprint actually contains (x, y) — a plain
+  // maxSize box can otherwise claim a *different* instance of the same type that
+  // happens to sit up-left of this cell (BUG-052).
   const maxSize = Math.max(cfg.width, cfg.height);
   for (let dy = 0; dy < maxSize; dy++) {
     for (let dx = 0; dx < maxSize; dx++) {
@@ -182,7 +192,12 @@ export function findPrimaryCell(
         candidate.buildingId === cell.buildingId &&
         isPrimaryCellReserved(candidate.reserved)
       ) {
-        if (x - px < maxSize && y - py < maxSize) {
+        const { w, h } = getRotatedSize(
+          cfg.width,
+          cfg.height,
+          RESERVED_TO_ROTATION[candidate.reserved] ?? 0,
+        );
+        if (dx < w && dy < h) {
           return { x: px, y: py };
         }
       }
@@ -211,9 +226,19 @@ export function forEachMultiCell(
   const primary = findPrimaryCell(grid, x, y);
   if (!primary) return;
 
-  const maxDim = Math.max(cfg.width, cfg.height);
-  for (let dy = 0; dy < maxDim; dy++) {
-    for (let dx = 0; dx < maxDim; dx++) {
+  // Decode the rotation stored on the primary cell and walk exactly that WxH
+  // rectangle. Scanning a max(width, height) square instead would overreach for
+  // every non-square config (hospital/high school 2x3, airports up to 9x6) and
+  // clear a neighbouring instance of the same type (BUG-052).
+  const primaryCell = grid.getCell(primary.x, primary.y)!;
+  const { w, h } = getRotatedSize(
+    cfg.width,
+    cfg.height,
+    RESERVED_TO_ROTATION[primaryCell.reserved] ?? 0,
+  );
+
+  for (let dy = 0; dy < h; dy++) {
+    for (let dx = 0; dx < w; dx++) {
       const cx = primary.x + dx;
       const cy = primary.y + dy;
       const c = grid.getCell(cx, cy);

@@ -35,6 +35,40 @@ export type WorkerResponse =
   | { type: 'READY' }
   | { type: 'BATCH_RESULT'; batchId: number; results: BatchResultItem[] };
 
+
+/** Minimal reader surface needed to detect a mid-batch graph rewrite. */
+export interface VersionedGraph {
+  getVersion(): number;
+}
+
+/**
+ * Run one batch of path requests, aborting if the shared graph is rewritten
+ * underneath us.
+ *
+ * syncGraphToWorker writes the SharedArrayBuffer in place (header first, then
+ * points/edges/adjacency) while this worker may be mid-batch. The format has
+ * always reserved a `version` word and both writers bump it, but no reader ever
+ * checked it — the designed guard was simply never wired up (BUG-063). Results
+ * computed across a rewrite can mix old and new topology, so they are discarded.
+ *
+ * @returns the batch results, or null if the graph changed mid-batch.
+ */
+export function runBatch(
+  reader: VersionedGraph,
+  requests: readonly BatchRequestItem[],
+  compute: (req: BatchRequestItem) => number[][],
+): BatchResultItem[] | null {
+  const startVersion = reader.getVersion();
+  const results: BatchResultItem[] = [];
+
+  for (const req of requests) {
+    results.push({ id: req.id, variants: compute(req) });
+    if (reader.getVersion() !== startVersion) return null;
+  }
+
+  return results;
+}
+
 // ── Handler factory ──
 
 export function createWorkerHandler() {
@@ -59,19 +93,21 @@ export function createWorkerHandler() {
           break;
         }
 
-        const results: BatchResultItem[] = [];
-        for (const req of msg.requests) {
-          const variants = astar.findPathVariants(
-            reader,
+        const boundReader = reader;
+        const boundAstar = astar;
+        const results = runBatch(reader, msg.requests, (req) =>
+          boundAstar.findPathVariants(
+            boundReader,
             req.startPointIndices,
             req.endPointIndices,
             req.endPos,
             req.variantCount,
-          );
-          results.push({ id: req.id, variants });
-        }
+          ),
+        );
 
-        postMessage({ type: 'BATCH_RESULT', batchId: msg.batchId, results });
+        // A null result means the main thread rewrote the shared graph while this
+        // batch was running, so the answers may mix old and new topology.
+        postMessage({ type: 'BATCH_RESULT', batchId: msg.batchId, results: results ?? [] });
         break;
       }
     }

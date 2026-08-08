@@ -325,6 +325,78 @@ describe('InfraPlacement', () => {
       const result = removeInfraFromGrid(grid, 5, 5);
       expect(result).toBeNull();
     });
+
+    // BUG-052: forEachMultiCell scanned a maxDim x maxDim square instead of the
+    // real WxH footprint, so removing one building wiped a same-type neighbour.
+    it('should only clear the targeted instance when two hospitals are side by side', () => {
+      const grid = makeGrid(32, 32);
+      for (let x = 0; x < 32; x++) grid.setCell(x, 4, { roadType: 1 });
+
+      // Pin that this layout is legal for the player in the first place.
+      expect(canPlaceInfra(grid, 5, 5, 'hospital', 0).ok).toBe(true);
+      expect(canPlaceInfra(grid, 7, 5, 'hospital', 0).ok).toBe(true);
+
+      placeInfraOnGrid(grid, 5, 5, 'hospital', 0); // occupies x5-6, y5-7
+      placeInfraOnGrid(grid, 7, 5, 'hospital', 0); // occupies x7-8, y5-7
+
+      removeInfraFromGrid(grid, 5, 5);
+
+      // Hospital A is gone.
+      for (let dy = 0; dy < 3; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          expect(grid.getCell(5 + dx, 5 + dy)!.buildingId).toBe(0);
+        }
+      }
+      // Hospital B is untouched and still resolvable.
+      for (let dy = 0; dy < 3; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          expect(grid.getCell(7 + dx, 5 + dy)!.buildingId).toBe(250);
+        }
+      }
+      expect(findPrimaryCell(grid, 8, 5)).toEqual({ x: 7, y: 5 });
+      expect(findPrimaryCell(grid, 7, 7)).toEqual({ x: 7, y: 5 });
+    });
+
+    it('should only clear the targeted instance for two adjacent high schools', () => {
+      const grid = makeGrid(32, 32);
+      for (let x = 0; x < 32; x++) grid.setCell(x, 4, { roadType: 1 });
+
+      expect(canPlaceInfra(grid, 5, 5, 'school_high', 0).ok).toBe(true);
+      expect(canPlaceInfra(grid, 7, 5, 'school_high', 0).ok).toBe(true);
+
+      placeInfraOnGrid(grid, 5, 5, 'school_high', 0);
+      placeInfraOnGrid(grid, 7, 5, 'school_high', 0);
+
+      removeInfraFromGrid(grid, 6, 6); // click a secondary cell of A
+
+      for (let dy = 0; dy < 3; dy++) {
+        for (let dx = 0; dx < 2; dx++) {
+          expect(grid.getCell(7 + dx, 5 + dy)!.buildingId).toBe(244);
+        }
+      }
+      expect(findPrimaryCell(grid, 8, 7)).toEqual({ x: 7, y: 5 });
+    });
+
+    it('should only clear the targeted instance for two 90-rotated hospitals stacked vertically', () => {
+      const grid = makeGrid(32, 32);
+      for (let y = 0; y < 32; y++) grid.setCell(4, y, { roadType: 1 });
+
+      // 90 deg -> 3 wide x 2 tall
+      expect(canPlaceInfra(grid, 5, 5, 'hospital', 90).ok).toBe(true);
+      expect(canPlaceInfra(grid, 5, 7, 'hospital', 90).ok).toBe(true);
+
+      placeInfraOnGrid(grid, 5, 5, 'hospital', 90); // occupies x5-7, y5-6
+      placeInfraOnGrid(grid, 5, 7, 'hospital', 90); // occupies x5-7, y7-8
+
+      removeInfraFromGrid(grid, 5, 5);
+
+      for (let dy = 0; dy < 2; dy++) {
+        for (let dx = 0; dx < 3; dx++) {
+          expect(grid.getCell(5 + dx, 7 + dy)!.buildingId).toBe(250);
+        }
+      }
+      expect(findPrimaryCell(grid, 7, 8)).toEqual({ x: 5, y: 7 });
+    });
   });
 
   describe('findPrimaryCell', () => {
@@ -356,6 +428,19 @@ describe('InfraPlacement', () => {
           expect(findPrimaryCell(grid, 3 + dx, 3 + dy)).toEqual({ x: 3, y: 3 });
         }
       }
+    });
+
+    // BUG-052: a plain maxSize box could claim a *different* instance of the same
+    // type sitting up-left, because the candidate's real footprint was never checked.
+    it('should not claim a diagonally offset neighbour of the same type', () => {
+      const grid = makeGrid(32, 32);
+      placeInfraOnGrid(grid, 5, 6, 'hospital', 0); // A: x5-6, y6-8
+      placeInfraOnGrid(grid, 7, 5, 'hospital', 0); // B: x7-8, y5-7
+
+      // (7,7) belongs to B, but A's primary (5,6) sits inside the 3x3 search box.
+      expect(findPrimaryCell(grid, 7, 7)).toEqual({ x: 7, y: 5 });
+      expect(findPrimaryCell(grid, 8, 7)).toEqual({ x: 7, y: 5 });
+      expect(findPrimaryCell(grid, 6, 8)).toEqual({ x: 5, y: 6 });
     });
   });
 

@@ -23,6 +23,28 @@ export function getTotalServiceMaintenanceCost(state: GameState): number {
   return getCivicServices(state).reduce((sum, svc) => sum + svc.getMaintenanceCost(), 0);
 }
 
+/** Utility keys — billed inside the civic total, but itemised separately in the economy panel. */
+const UTILITY_SERVICE_KEYS = ['power', 'water'] as const;
+
+/** Power and water plant upkeep, itemised. */
+export function getUtilityMaintenanceCost(state: GameState): { power: number; water: number } {
+  return {
+    power: state.power.getMaintenanceCost(),
+    water: state.water.getMaintenanceCost(),
+  };
+}
+
+/**
+ * Civic maintenance excluding the utility plants. The economy panel shows Power
+ * Plants and Water Plants as their own rows, so adding the full civic total on
+ * top of them charged those two twice.
+ */
+export function getCivicMaintenanceCostExcludingUtilities(state: GameState): number {
+  return CIVIC_SERVICE_KEYS
+    .filter(key => !(UTILITY_SERVICE_KEYS as readonly string[]).includes(key as string))
+    .reduce((sum, key) => sum + (state[key] as unknown as CivicService).getMaintenanceCost(), 0);
+}
+
 /** Helper: update operational status for a RoadCoverageService subclass. */
 function updateRoadServiceOps<F extends Facility>(
   service: RoadCoverageService<F>,
@@ -59,9 +81,20 @@ export function tickAllCivicServices(state: GameState): void {
   updateRoadServiceOps(state.deathCare, 'cemetery', isPow, isWat, grid);
 
   // Update non-RoadCoverageService services
-  state.education.updateOperationalStatus(isPow, isWat);
+  // Mirror updateRoadServiceOps: a status change must trigger a coverage recalc,
+  // otherwise an unpowered school keeps serving the whole neighbourhood.
+  if (state.education.updateOperationalStatus(isPow, isWat)) {
+    state.education.recalculateCoverage(grid);
+  }
   state.parks.updateOperationalStatus(isPow, isWat);
-  state.sewage.updateOperationalStatus(isPow, isWat);
+  // Parks resolve coverage lazily in getCoverage, so they need no recalc.
+  // Sewage precomputes a coverage Set at slow-slot 1 while this runs at slot 2,
+  // so without an immediate recalc an unpowered plant kept supplying its whole
+  // catchment for the rest of the cycle — and getPollutionSources skips
+  // supplied cells, so the water-pollution penalty stayed suppressed with it.
+  if (state.sewage.updateOperationalStatus(isPow, isWat)) {
+    state.sewage.recalculateCoverage(grid as unknown as import('../grid/Grid').Grid);
+  }
 
   state.police.tick();
   state.fire.tick();
@@ -84,6 +117,7 @@ export function tickAllCivicServices(state: GameState): void {
     state.sewage,
     (x, y) => residentsByPos.get(toPosKey(x, y)) ?? 0,
     (x, y) => workersByPos.get(toPosKey(x, y)) ?? 0,
+    (x, y) => state.policies.getGarbageMultiplier(state.districts.getDistrictAt(x, y)?.id ?? null),
   );
   state.garbage.tick();
   state.sewage.tick(production.sewage);

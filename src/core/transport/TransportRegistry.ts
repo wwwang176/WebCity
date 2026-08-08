@@ -33,14 +33,44 @@ export function getTransitSystems(systems: TransitSystems): { type: TransportTyp
   return TRANSIT_MAP.map(e => ({ type: e.type, system: systems[e.key] }));
 }
 
-/** All transport system keys that have getOperatingCost(). Includes airport. */
+/**
+ * All transport system keys that have getOperatingCost(). Includes airport.
+ *
+ * `airport` is typed by the one method this actually uses rather than as a
+ * BaseTransportSystem: AirportSystem does not extend that class, so requiring it
+ * made every call site pass GameState against an unsatisfiable constraint.
+ */
 export interface AllTransportSystems extends TransitSystems {
-  airport: BaseTransportSystem;
+  airport: { getOperatingCost(): number; tick(): void };
 }
 
 const ALL_TRANSPORT_KEYS: readonly (keyof AllTransportSystems)[] = [
   'bus', 'metro', 'rail', 'ferry', 'airport',
 ];
+
+/**
+ * Combined structural revision of every transit system.
+ *
+ * Consumers that cache anything derived from the transit network (the
+ * multi-modal transfer graph) compare this instead of relying on each mutation
+ * site remembering to call an invalidation hook.
+ */
+export function getTransitNetworkVersion(systems: TransitSystems): number {
+  // Iterates TRANSIT_MAP directly rather than going through getTransitSystems,
+  // which allocates an array plus four objects. This is read every tick — up to
+  // three times on a rebuild tick — where it replaced a single boolean field
+  // read.
+  let sum = 0;
+  for (const e of TRANSIT_MAP) sum += systems[e.key].getNetworkVersion();
+  return sum;
+}
+
+/** Combined stop/route topology revision, ignoring vehicle-count changes. */
+export function getTransitTopologyVersion(systems: TransitSystems): number {
+  let sum = 0;
+  for (const e of TRANSIT_MAP) sum += systems[e.key].getTopologyVersion();
+  return sum;
+}
 
 /** Sum getOperatingCost() across all transport systems. */
 export function getTotalTransportOperatingCost(systems: AllTransportSystems): number {

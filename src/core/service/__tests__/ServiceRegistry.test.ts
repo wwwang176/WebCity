@@ -77,8 +77,8 @@ describe('ServiceRegistry', () => {
   describe('getTotalServiceMaintenanceCost (detail)', () => {
     it('matches the manual sum of all individual getMaintenanceCost() calls', () => {
       const state = createGameState(10, 10);
-      state.power.addPlant({ x: 0, y: 0, capacity: 100, fuelType: 'coal' });
-      state.water.addPlant(1, 1);
+      state.power.addPlant({ x: 0, y: 0, output: 100, pollution: 0, type: 'coal' });
+      state.water.addPlant({ x: 1, y: 1, output: 100 });
       state.police.addStation(2, 2);
       state.fire.addStation(3, 3);
       state.health.addHospital(4, 4);

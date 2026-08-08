@@ -22,7 +22,8 @@ interface TradeGridLookup {
 }
 
 /** Infrastructure config lookup — returns width/height for multi-cell buildings. */
-type InfraConfigLookup = (buildingId: number) => { width: number; height: number } | null;
+type InfraConfigLookup =
+  (buildingId: number) => { width: number; height: number } | null | undefined;
 
 export interface TradeInfrastructure {
   railStations: ReadonlyArray<{ x: number; y: number; throughput: number }>;

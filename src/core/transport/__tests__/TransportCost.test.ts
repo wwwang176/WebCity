@@ -20,10 +20,11 @@ describe('getTotalTransportOperatingCost', () => {
 
   it('sums operating costs from systems that have routes', () => {
     const bus = new BusSystem();
-    // Add 2 stops and create a route with a vehicle to generate operating cost
-    bus.addStop(0, 0);
-    bus.addStop(5, 5);
-    bus.createRoute([1, 2]);
+    // Add 2 stops and create a route with a vehicle to generate operating cost.
+    // The stops themselves must be handed to createRoute — passing their ids
+    // spawned a vehicle whose stop was the number 1, i.e. at (undefined,
+    // undefined).
+    bus.createRoute([bus.addStop(0, 0), bus.addStop(5, 5)]);
 
     const systems = {
       bus,
@@ -39,14 +40,10 @@ describe('getTotalTransportOperatingCost', () => {
 
   it('matches manual sum of all getOperatingCost() calls', () => {
     const bus = new BusSystem();
-    bus.addStop(0, 0);
-    bus.addStop(5, 5);
-    bus.createRoute([1, 2]);
+    bus.createRoute([bus.addStop(0, 0), bus.addStop(5, 5)]);
 
     const metro = new MetroSystem();
-    metro.addStop(10, 10);
-    metro.addStop(15, 15);
-    metro.createRoute([1, 2]);
+    metro.createRoute([metro.addStop(10, 10), metro.addStop(15, 15)]);
 
     const rail = new RailSystem();
     const ferry = new FerrySystem();

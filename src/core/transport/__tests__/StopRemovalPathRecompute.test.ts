@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { RailSystem, RailServiceType } from '../RailSystem';
+import { BusSystem } from '../BusSystem';
+import { computeRideDistance } from '../TransitAvailability';
 import { FerrySystem, type WaterChecker } from '../FerrySystem';
 import { RailNetwork } from '../../rail/RailNetwork';
 import type { WaterGrid } from '../../pathfinding/WaterPathfinder';
@@ -274,5 +276,84 @@ describe('FerrySystem — removeDock recomputes paths', () => {
     for (const v of ferry.getVessels()) {
       expect(ferry.getVesselPath(v.id)).toBeNull();
     }
+  });
+});
+
+// BUG-064: BaseTransportSystem.removeStop mutates route.stops then calls the
+// overridable onRouteStopRemoved hook so subclasses can recompute cached
+// per-segment paths. RailSystem and FerrySystem override it; BusSystem did not,
+// so a route that survived losing a stop kept the LaneEdge[][] computed for the
+// OLD stop list. Nothing else recomputed it: rebuildAllSegments short-circuits
+// on routes that already have segments, and a bus stop sits on a non-road cell
+// so demolishing it contributes nothing to the road-change path.
+describe('BusSystem — routeSegments after a stop is removed', () => {
+  /** Straight-line edge path stub: one edge whose length is the manhattan distance. */
+  function findEdgePath(fromX: number, fromY: number, toX: number, toY: number) {
+    const len = Math.abs(toX - fromX) + Math.abs(toY - fromY);
+    if (len === 0) return null;
+    const mk = (cellKey: string) => ({
+      id: `${cellKey}:p`, position: { x: 0, y: 0 }, tangent: { tx: 1, ty: 0 },
+      cellKey, lane: 0, direction: 'east' as const, type: 'exit' as const,
+    });
+    return [{
+      id: `${fromX},${fromY}->${toX},${toY}`,
+      from: mk(`${fromX},${fromY}`),
+      to: mk(`${toX},${toY}`),
+      length: len,
+      type: 'straight' as const,
+    }];
+  }
+
+  function threeStopRoute() {
+    const bus = new BusSystem();
+    const a = bus.addStop(0, 1)!;
+    const b = bus.addStop(10, 1)!;
+    const c = bus.addStop(10, 11)!;
+    const route = bus.createRoute([a, b, c], 1)!;
+    bus.computeRouteSegments(route, findEdgePath);
+    return { bus, route, b };
+  }
+
+  it('should recompute segments when a mid-route stop is removed', () => {
+    const { bus, route, b } = threeStopRoute();
+    expect(bus.getSegmentDistances(route.id)).toHaveLength(3);
+
+    bus.removeStop(b.id);
+
+    expect(bus.getRoutes().find(r => r.id === route.id)!.stops).toHaveLength(2);
+    const segDists = bus.getSegmentDistances(route.id);
+    expect(segDists).toHaveLength(2);
+    // A(0,1) -> C(10,11) is 20, not the stale 10 to the removed B.
+    expect(segDists![0]).toBe(20);
+  });
+
+  it('should not leave segment distances longer than the stop list', () => {
+    const { bus, route, b } = threeStopRoute();
+    bus.removeStop(b.id);
+
+    const stops = bus.getRoutes().find(r => r.id === route.id)!.stops.length;
+    expect(bus.getSegmentDistances(route.id)!.length).toBe(stops);
+  });
+});
+
+// BUG-064 (defence in depth): a stale segment list must never be indexed by the
+// current stop index — sumDirection only guarded `i < segDists.length`, never
+// length-vs-stops, so an over-long array silently reported another leg's distance.
+describe('computeRideDistance — stale segment guard', () => {
+  const stops = [
+    { id: 1, x: 0, y: 0 }, { id: 2, x: 3, y: 0 },
+  ] as unknown as Parameters<typeof computeRideDistance>[0];
+
+  it('uses segment distances when they match the stop count', () => {
+    expect(computeRideDistance(stops, 0, 1, [7, 7])).toBe(7);
+  });
+
+  it('falls back to euclidean when the segment list is stale', () => {
+    // Three entries for two stops — left over from a removed stop.
+    expect(computeRideDistance(stops, 0, 1, [7, 7, 7])).toBe(3);
+  });
+
+  it('falls back when there are no cached distances', () => {
+    expect(computeRideDistance(stops, 0, 1, null)).toBe(3);
   });
 });

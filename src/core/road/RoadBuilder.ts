@@ -6,6 +6,7 @@ import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, type BuildRoadResult, type Position } from './types';
 import { validateRoadPath, calculateRoadCost } from './RoadValidation';
+import { firstBlockedIndex } from '../grid/PathValidation';
 import { type ElevationManager } from '../elevation/ElevationManager';
 
 const nodeId = toPosKey;
@@ -28,9 +29,31 @@ export class RoadBuilder {
     // Only HIGHWAY can create external connections; other road types ignore the out-of-bounds cell.
     const rawOob = extractOutOfBoundsEdge(fullPath, this.grid.width, this.grid.height);
     const oob = rawOob && roadType === RoadType.HIGHWAY ? rawOob : null;
-    const cells = rawOob ? fullPath.slice(0, rawOob.truncatedLength) : fullPath;
+    const inBounds = rawOob ? fullPath.slice(0, rawOob.truncatedLength) : fullPath;
 
-    if (cells.length === 0) return { success: false, reason: 'EMPTY_PATH' };
+    if (inBounds.length === 0) return { success: false, reason: 'EMPTY_PATH' };
+
+    // Stop at TERRAIN instead of cancelling the drag.
+    //
+    // Dragging into the sea used to reject the whole path with "Cannot build on
+    // water", so a perfectly good road up to the shore produced nothing and the
+    // only way to find the shoreline was to shorten the drag and try again.
+    //
+    // Only terrain. A mountain or a coastline is a fact about the map that the
+    // player cannot argue with, so stopping short is the obvious reading of the
+    // drag. A building in the way is something they put there, and quietly
+    // stopping in front of it would hide the fact that the road they asked for
+    // cannot exist — those still fail, loudly, in validateRoadPath below.
+    //
+    // A drag that STARTS on terrain still fails too: there is nothing to build,
+    // and silence would leave the player with no idea why.
+    const blocked = firstBlockedIndex(this.grid, inBounds, this.elevationManager ?? undefined);
+    const stopAtTerrain = blocked !== null
+      && (blocked.reason === 'WATER_TILE' || blocked.reason === 'MOUNTAIN_TILE');
+    const cells = stopAtTerrain ? inBounds.slice(0, blocked!.index) : inBounds;
+    if (cells.length === 0) {
+      return { success: false, reason: blocked?.reason ?? 'EMPTY_PATH' };
+    }
 
     // Validate path (terrain, infrastructure, rail conflicts) — delegated to pure function (SRP)
     const validationError = validateRoadPath(this.grid, cells, this.elevationManager ?? undefined);
@@ -116,33 +139,23 @@ export class RoadBuilder {
     // Clear road data
     this.grid.setCell(x, y, { roadType: RoadType.NONE, roadFlags: 0 });
 
-    // Update neighboring cells' flags and restore roadType from remaining connections
+    // Update neighboring cells' connection flags only.
+    //
+    // Deliberately does NOT touch a neighbour's roadType. A road's tier is
+    // player-paid state — calculateRoadCost charges the differential when a
+    // higher tier is re-drawn over existing road (BUG-025) — so re-deriving it
+    // from whatever connections happen to remain destroyed paid capacity in one
+    // direction and granted free upgrades in the other, with no charge, refund
+    // or notification (BUG-060).
     for (const dir of CARDINAL_DIRECTIONS) {
       const nx = x + dir.dx;
       const ny = y + dir.dy;
       const neighbor = this.grid.getCell(nx, ny);
       if (neighbor && neighbor.roadType !== RoadType.NONE) {
-        const newFlags = neighbor.roadFlags & ~dir.opposite;
-        this.grid.setCell(nx, ny, { roadFlags: newFlags });
-        // Restore roadType from remaining connected neighbors
-        const maxType = this.getMaxNeighborRoadType(nx, ny, newFlags);
-        if (maxType > 0) {
-          this.grid.setCell(nx, ny, { roadType: maxType });
-        }
+        this.grid.setCell(nx, ny, { roadFlags: neighbor.roadFlags & ~dir.opposite });
         affected.push(toPosKey(nx, ny));
       }
     }
     return affected;
-  }
-
-  /** Find the max roadType among connected neighbors based on flags. */
-  private getMaxNeighborRoadType(x: number, y: number, flags: number): number {
-    let max = 0;
-    for (const dir of CARDINAL_DIRECTIONS) {
-      if (!(flags & dir.flag)) continue;
-      const neighbor = this.grid.getCell(x + dir.dx, y + dir.dy);
-      if (neighbor && neighbor.roadType > max) max = neighbor.roadType;
-    }
-    return max;
   }
 }

@@ -54,9 +54,9 @@ export const AUDIO = {
 
 export class AudioManager {
   private audioContext: AudioContext | null = null;
-  private masterVolume = AUDIO.VOLUME.MASTER;
-  private musicVolume = AUDIO.VOLUME.MUSIC;
-  private sfxVolume = AUDIO.VOLUME.SFX;
+  private masterVolume: number = AUDIO.VOLUME.MASTER;
+  private musicVolume: number = AUDIO.VOLUME.MUSIC;
+  private sfxVolume: number = AUDIO.VOLUME.SFX;
   private muted = false;
   private sfxMuted = false;
   private musicMuted = false;

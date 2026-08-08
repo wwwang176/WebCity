@@ -1,4 +1,5 @@
 import { type ElevatedSegment, MAX_ELEVATION_LEVEL, MIN_ELEVATION_LEVEL } from './types';
+import { RoadType } from '../road/types';
 
 /**
  * Sparse storage for elevated road/rail segments (levels 1-3).
@@ -33,6 +34,11 @@ export class ElevationManager {
     this.layers.delete(ElevationManager.key(x, y, level));
   }
 
+  /** Does the city contain any elevated segment at all? O(1). */
+  hasAnySegment(): boolean {
+    return this.layers.size > 0;
+  }
+
   /** Returns all elevated segments at (x, y), sorted by level ascending. */
   getAllLevels(x: number, y: number): { level: number; data: ElevatedSegment }[] {
     const result: { level: number; data: ElevatedSegment }[] = [];
@@ -57,6 +63,95 @@ export class ElevationManager {
       if (this.layers.has(ElevationManager.key(x, y, level))) return level;
     }
     return 0;
+  }
+
+  /**
+   * Does the city contain any elevated ROAD anywhere?
+   *
+   * Not hasAnySegment(): elevated RAIL lives in the same `layers` map with
+   * roadType NONE, so asking the broader question let a single elevated metro
+   * tile — which contributes nothing to road reachability — permanently
+   * disable the workplace-distance cache for the whole city.
+   */
+  hasAnyElevatedRoad(): boolean {
+    for (const seg of this.layers.values()) {
+      if (seg.roadType !== 0) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The loudest elevated ROAD tier at (x, y), or RoadType.NONE.
+   *
+   * `rank` decides what "loudest" means and defaults to the enum ordinal —
+   * which is NOT a noise ordering: ONE_WAY is 6 and HIGHWAY is 5, while their
+   * noise factors are 1.2 and 2.0. The pollution caller passes its own table so
+   * a one-way street stacked over a motorway cannot silence it.
+   *
+   * Not `get(x, y, getHighestLevel(x, y)).roadType`: an elevated RAIL deck has
+   * roadType NONE, so stacking one over an elevated motorway made the whole
+   * position report "no road" — the motorway went silent and the land under it
+   * kept an inflated value. That is precisely the BUG-099 symptom the elevated
+   * tier lookup exists to prevent, reintroduced one layer up.
+   */
+  getHighestRoadType(x: number, y: number, rank: (roadType: number) => number = t => t): number {
+    let best = 0;
+    let bestRank = 0;
+    for (let level = MIN_ELEVATION_LEVEL; level <= MAX_ELEVATION_LEVEL; level++) {
+      const seg = this.layers.get(ElevationManager.key(x, y, level));
+      if (!seg || seg.roadType === RoadType.NONE) continue;
+      const r = rank(seg.roadType);
+      if (best === 0 || r > bestRank) { best = seg.roadType; bestRank = r; }
+    }
+    return best;
+  }
+
+  /**
+   * Which level a new elevated run should start from at (x, y).
+   *
+   * The level NEAREST the one being built, counting the ground (0) only when a
+   * ground road is there; ties go to the lower level, which needs the cheaper
+   * structure and is the likelier intent.
+   *
+   * getHighestLevel was wrong for this in both directions. With a ground road
+   * under a level-3 deck and level 1 selected, it started at 3 and descended
+   * instead of ramping up off the ground. And picking the top of a stack meant
+   * an existing level-1 viaduct under a level-3 one could not be extended at
+   * all. A segment already at the target level still wins, since its distance
+   * is 0 — the previous special case is subsumed.
+   */
+  chooseStartLevel(x: number, y: number, targetLevel: number, hasGroundRoad: boolean): number {
+    let best = hasGroundRoad ? 0 : -1;
+    for (let level = MIN_ELEVATION_LEVEL; level <= MAX_ELEVATION_LEVEL; level++) {
+      // A ROAD has to be there, not merely a segment. Elevated rail lives in
+      // this same map with roadType 0 — the premise getHighestRoadType exists
+      // for, twelve lines above. Asking only whether the level is occupied let
+      // a rail deck win a tie against a road deck, and the placement loop then
+      // wrote `roadType: existingAtStart.roadType`, i.e. 0: a paid, rendered,
+      // maintained viaduct whose origin is not a road and which therefore has
+      // no lane edge to anything (BUG-162, the BUG-097 symptom returning).
+      const seg = this.layers.get(ElevationManager.key(x, y, level));
+      if (!seg || seg.roadType === RoadType.NONE) continue;
+      if (best < 0) { best = level; continue; }
+      const d = Math.abs(level - targetLevel);
+      const bd = Math.abs(best - targetLevel);
+      if (d < bd || (d === bd && level < best)) best = level;
+    }
+    return best < 0 ? 0 : best;
+  }
+
+  /**
+   * Is there an elevated ROAD at (x, y), at any level?
+   *
+   * Distinct from hasElevatedSegment, which is true for an elevated railway
+   * too — the same conflation chooseStartLevel above exists to avoid.
+   */
+  hasElevatedRoadAt(x: number, y: number): boolean {
+    for (let level = MIN_ELEVATION_LEVEL; level <= MAX_ELEVATION_LEVEL; level++) {
+      const seg = this.layers.get(ElevationManager.key(x, y, level));
+      if (seg && seg.roadType !== RoadType.NONE) return true;
+    }
+    return false;
   }
 
   /** Check if any ramp occupies level `level` at (x, y) — either as low side or high side. */

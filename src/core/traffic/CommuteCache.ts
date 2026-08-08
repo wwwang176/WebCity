@@ -43,12 +43,23 @@ export class CommuteCache {
   /** Current road network generation — incremented on every road build/demolish. */
   roadGeneration = 0;
 
-  /** Increment road generation and clear shared route pool so stale routes are recalculated. */
+  /**
+   * Increment road generation and retire the shared route pool so stale routes
+   * are recalculated.
+   *
+   * routeRefCount is deliberately NOT cleared. The cached per-citizen routes
+   * survive this call and still logically hold their references; zeroing the
+   * map made each citizen's next set() run adjustRefCounts(old, -1) against it,
+   * driving the counter negative, deleting the key, and then restoring it to
+   * exactly 1 — so N citizens sharing a route collapsed to 1 permanently and
+   * every downstream flow/density figure was undercounted (BUG-061).
+   * Clearing routeIndex/routeCellIndex already achieves the retirement goal;
+   * counts for routes absent from routeIndex are simply not iterated.
+   */
   bumpGeneration(): void {
     this.roadGeneration++;
     this.routeIndex.clear();
     this.routeCellIndex.clear();
-    this.routeRefCount.clear();
   }
 
   get(citizenId: number): CachedRoute | undefined {

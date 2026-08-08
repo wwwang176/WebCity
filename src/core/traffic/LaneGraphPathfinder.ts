@@ -8,12 +8,12 @@
  * Returns LaneEdge[] directly usable by TrafficSimulation.
  */
 
-import { type LaneGraph, type LaneEdge, type ConnectionPoint } from './LaneGraph';
-import { ROAD_CONFIGS, RoadType } from '../road/types';
+import { type LaneGraph, type LaneEdge, type ConnectionPoint, turnLanePenalty } from './LaneGraph';
+import { ROAD_CONFIGS, RoadType, getLaneCount } from '../road/types';
 import { parsePosKeyUnsafe, parseLevelFromKey, toPosKey } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
-import { getLaneSpeedMultiplier } from './Pathfinding';
+import { laneEdgeCost } from './Pathfinding';
 
 /** Cost multiplier applied per cell+lane used in previous variants (point-level penalty). */
 const VARIANT_PENALTY = 3;
@@ -156,7 +156,15 @@ function laneAStar(
       // Higher speed limit → lower cost → A* prefers faster roads.
       const cell = lookup ? lookup.getCellByKey(edge.to.cellKey) : null;
       const speedLimit = cell ? (ROAD_CONFIGS[cell.roadType as RoadType]?.speedLimit ?? REFERENCE_SPEED_LIMIT) : REFERENCE_SPEED_LIMIT;
-      let cost = edge.length / (getLaneSpeedMultiplier(edge.to.lane) * (speedLimit / REFERENCE_SPEED_LIMIT));
+      let cost = laneEdgeCost(edge, speedLimit / REFERENCE_SPEED_LIMIT);
+      // A turn taken from the wrong lane cuts across the through traffic beside
+      // it, and nothing downstream stops it: findCrossEdgeGap only compares
+      // vehicles that share a destination point (BUG-214). Charged against the
+      // APPROACH road's width, since that is the lane the arc starts in.
+      if (lookup) {
+        const fromCell = lookup.getCellByKey(edge.from.cellKey);
+        if (fromCell) cost += turnLanePenalty(edge, getLaneCount(fromCell.roadType));
+      }
       if (penalty) {
         const p = penalty.get(`${edge.to.cellKey}:${edge.to.lane}`);
         if (p) cost *= p;

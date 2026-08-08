@@ -1342,3 +1342,1142 @@
 - **修復 2**: 堆疊時允許慢速蠕動 `gapRoom = gap < MIN_GAP ? effectiveSpeed * 0.15 : gap - MIN_GAP`
 - **影響**: 全部 edge 車輛恢復移動 (moved=8/8)
 - **測試**: 811 tests passed
+
+---
+
+## 第六十八輪 — 多 Agent 深度靜態掃描（2026-08-07）
+
+**方法**: 8 個 finder 平行掃描各子系統（traffic / transport+rail+elevation / citizen / economy+district /
+service+environment+climate / save+simulation / grid+road+zone+building / TypeScript 型別錯誤+renderer+ui+workers），
+3 輪 loop-until-dry，每輪把已找到的餵回去要求往更深處挖。
+**驗證**: 兩段對抗式 — 先 1 個懷疑者嘗試推翻（不確定即判定推翻），存活者再受 2 個不同視角 refuter
+（「執行期真的到得了嗎」／「是否已在別處處理或本來就是刻意行為」）檢驗，任一推翻即淘汰。
+**結果**: 84 個候選 → 驗證 24 個 → **20 個確認 / 4 個推翻** → 合併同根因後 **17 個 bug（BUG-052 ~ BUG-068）**。
+**狀態**: 全部尚未修復。以下依嚴重度排序。
+
+### BUG-052: forEachMultiCell 用 maxDim 正方形掃描，拆除時連帶清除相鄰同型建築 🔴 Critical ✅ 已修復
+- **位置**: `src/core/building/InfraPlacement.ts:214`
+- **問題**: `forEachMultiCell`（`removeInfraFromGrid` 的底層，即所有基礎設施拆除的必經路徑）沒有使用
+  config 的真實 W×H，而是 `const maxDim = Math.max(cfg.width, cfg.height)` 掃一個 maxDim×maxDim **正方形**，
+  對任何 buildingId 相符的格子觸發 callback
+- **根因**: 所有非正方形配置（hospital 2×3、school_high 2×3、airport_s 5×4、airport_m 7×4、airport_l 9×6）
+  的正方形都嚴格大於真實佔地，旁邊**另一棟同型建築**會一起被清掉。`canPlaceInfra` 只擋重疊格，
+  允許這種相鄰；`PlacementPreview` 也顯示綠色，所以這是完全正常的玩家佈局
+- **重現**: y=4 一列道路，(5,5) 放醫院 A（佔 x5-6, y5-7），(7,5) 放醫院 B（佔 x7-8, y5-7），兩者
+  `canPlaceInfra` 皆回傳 ok。拆除 A 後，(5..7, 5..7) 全部 buildingId=0，只剩 x=8 那一行殘留 250/4，
+  `findPrimaryCell(grid,8,5)` 回傳 null
+- **影響**: 受害建築的格子被清空，但 `Game.demolish` 只反註冊它分類到的主格，所以 `HealthService.facilities`
+  （以 x,y 為 key）的條目存活下來 → 持續提供覆蓋、持續每 tick 收 $8、`toJSON` 還會存進存檔。
+  且**永遠無法移除**：主格已是 buildingId 0（skip），孤兒格 `findPrimaryCell` 回傳 null 而落入 `regular`
+  拆除分支，該分支不呼叫 `removeInfraService`。結果是一間看不見、選不到、拆不掉的幽靈醫院
+- **修復方向**: 改用主格 `RESERVED_TO_ROTATION[cell.reserved]` 解碼真實 (w,h) 並精確迭代該矩形；
+  額外要求 `findPrimaryCell(grid,cx,cy)` 必須解析回同一個主格才觸發 callback（使掃描具備 instance 感知）。
+  另需檢查 `DemolishClassifier`，確保孤兒從格不會落入 `regular` 分支
+- **測試（先寫）**: `InfraPlacement.test.ts` — 「兩間並排醫院時 removeInfraFromGrid 只清除目標那間」。
+  現有拆除測試全部只放**一棟**建築，同 buildingId 的判斷因此被無聲吸收
+- **修復內容**（commit 見 git log）:
+  - `forEachMultiCell` 改為從主格 `reserved` 解碼 rotation → `getRotatedSize` 取得真實 (w,h)，精確迭代該矩形
+  - `findPrimaryCell` 額外驗證候選主格「自己的旋轉後 footprint 確實包含 (x,y)」——
+    修復期間發現的**同根因附加缺陷**：原本的 maxSize 方框會認領錯位擺放的另一棟同型建築
+    （A 在 (5,6)、B 在 (7,5) 時，查詢 B 的 (7,7) 會回傳 A 的主格）
+  - `DemolishClassifier` 無法解析主格的基礎設施格改判為 `single_cell_infra` 而非 `regular`，
+    使其至少會嘗試 `removeInfraService` 並讓玩家能回收該格
+  - 新增 5 個測試（並排醫院／並排高中／90° 垂直堆疊／錯位鄰居／孤兒格分類），修復前全部失敗
+
+### BUG-053: 行政區/政策/城市特化完全未序列化 — 每次存讀檔靜默清空 🔴 Critical ✅ 已修復
+- **位置**: `src/core/save/Serializer.ts:141`
+- **問題**: `snapshotGameState()` 序列化了 grid/clock/budget/taxRates/電水/citizens/8 種市政服務/
+  6 種運輸系統/elevation，但**完全沒有** `state.districts`、`state.policies`、`state.citySpec`、`state.globalMarket`
+- **根因**: `deserializeGameState()` 先呼叫 `createGameState(...)`，這四者回到全新預設值。且沒有任何側管道：
+  DistrictManager/PolicyManager/CitySpecialization 都沒有 `toJSON`/`fromJSON`，grid cell 不帶 `districtId`，
+  Game.ts 的 `extra` 只涵蓋 abandonmentStress/elevation/transferHistory。
+  Serializer.ts:257-265 的 transit「從 grid 重建」fallback 沒有 district 版本，也不可能有
+- **影響**: 四者都是玩家可操作的（Toolbar district Paint、DistrictModal、CitySpecModal）且都餵給經濟：
+  `SimulationLoop.ts:774` `totalIncome *= citySpec.getBonus().revenueMultiplier`、
+  :782 `calculateDistrictPolicyCost(...)`、:467-468 建築生長受 `getDistrictAt`/`canBuildInDistrict` 管制、
+  `IncomeCalcAdapter.ts:16` 逐建築行政區收入。選了 TECH_CITY（1.25×）存檔重載後收入直接掉 20%，
+  玩家禁止重工業的行政區立刻長出重工業，**遊戲內完全沒有任何提示**
+- **註**: `BUGS.md:1323` 第六十六輪已以「ℹ️ 已知限制: Districts/GlobalMarket/Policies 未序列化」記錄過，
+  當時列為可接受限制，從未修復也從未有測試。屬於既有未解缺陷，非本輪新發現
+- **修復方向**: 為四個 manager 加上 `toJSON`/`fromJSON`（districts 必須存 cell 成員資格，grid 無法還原），
+  在 `snapshotGameState` 加四個 key，`deserializeGameState` 以 `saved.districts ?? undefined` 保護還原，
+  並 bump `CURRENT_SAVE_VERSION` 加一個 no-op migration 讓舊存檔載入為空而非驗證失敗
+- **測試（先寫）**: `Save.test.ts` — 「round-trips districts, policies and city specialization」，
+  目前會在第一個 assertion 就失敗
+- **修復內容**:
+  - `DistrictManager.toJSON()/fromJSON()` — 持久化 districts 含 cell 成員資格與 nextId；
+    `cellToDistrict` 反向索引為純衍生狀態，載入時重建而非存檔
+  - `PolicyManager.toJSON()/restore()` — policy 物件本身掛在 District 上，此處只需持久化 `nextPolicyId`，
+    否則載入後新建的 policy 會重用既有 id
+  - `CitySpecialization.toJSON()/fromJSON()` — 直接還原 current，不經 `choose()`
+    （人口門檻在玩家當初選擇時已滿足，載入時也拿不到人口數）
+  - `GlobalMarket` 本來就有 toJSON/fromJSON，只是 Serializer 沒呼叫 —— 補上
+  - Serializer 四個 key 皆已接上。**關鍵細節**：`PolicyManager` 持有 `DistrictManager` 參照，
+    替換後者時**必須**一併重建前者，否則政策查詢會打到被丟棄的空 manager
+  - `CURRENT_SAVE_VERSION` 5 → 6，加 no-op migration（v5 以前根本沒寫過這些資料，無物可轉換；
+    版本號存在是為了讓 SaveValidator 與未來 migration 能分辨兩個世代）
+  - 新增 8 個測試（cells 成員資格／政策可執行性／區域特化／城市特化倍率／市場價格／
+    district id 不碰撞／policy id 不碰撞／舊存檔載入為預設值），修復前 6 個失敗
+
+### BUG-054: LaneGraph.updateCells 刪掉自己剛建好的跨路口轉彎邊，永久截斷分支 🟠 High ✅ 已修復
+- **位置**: `src/core/traffic/LaneGraph.ts:155`
+- **問題**: `generateCrossIntersectionTurns` 產生的 `xt:` 邊，其 `from`/`to` 位於**進入格與離開格**，
+  只有 `viaCellKey` 記錄路口。`updateCells` 先為 `affected` 內每格重建邊（產生這些 xt 邊），
+  接著對「相鄰但在 affected 之外」的每格跑修補пass：
+  `this.edges = this.edges.filter(e => e.from.cellKey !== nk); this.generateEdgesForCell(grid, nk);`
+  ——而那正是剛建好的 xt 邊的起點，於是被刪掉
+- **根因**: `generateEdgesForCell(nk)` 只能重建**穿過** nk 的轉彎，無法重建**起於** nk 而穿過鄰近路口的轉彎。
+  更糟的是 `generateStraightEdges` 已透過 `handledTurns`（:301/:421）被告知跳過等效的格內轉彎，因此沒有 fallback 邊。
+  所有 `markLaneGraphDirty` 的呼叫端都傳非空 `affectedCells`（`RoadBuilder.ts:99` 回傳拖曳格且無外圈 padding），
+  所以 `rebuildLaneGraph` 永遠走增量分支，`buildFromGrid` 只在初始化/讀檔時跑 → **該 session 內損壞永久存在**
+- **重現**: 建 (0,0)→(3,0) 再 (3,0)→(3,3) 的 L 彎，`buildFromGrid` 產生兩條轉角 xt 邊。
+  玩家重拖 (0,0)→(2,0) 為 FOUR_LANE，`updateCells` 後只剩一條，`getEdgesFrom('3,0:south:0:entry')` 為 `[]`
+- **影響**: 南向分支變成 lane 層級的單向死路：通勤 A*（`LaneGraphPathfinder.ts:151`）失敗、
+  公車路段重驗（`SimulationLoop.ts:1416-1422`）丟棄路段、`ServiceVehicleManager` 的消防/警察/救護派遣
+  再也無法駛出該分支
+- **修復方向**: 修補 pass 不可刪除自己無法重建的邊。(a) 改為 `e.from.cellKey === nk && !e.viaCellKey`，
+  讓跨路口邊只由 affected pass 擁有；或 (b) 以 via cell 為刪除依據並在重建前把被刪 xt 邊的 via cell 併入 affected
+- **測試（先寫）**: `LaneGraph.test.ts` — 斷言 `updateCells(...)` 後的圖與同一 grid 全新 `buildFromGrid` 相同。
+  現有 updateCells 測試用共線直路，根本不產生 xt 邊
+- **修復內容**: 採用比報告建議更根本的解法 —— **讓邊的所有權明確**。
+  `generateEdgesForCell(O)` 恰好產生兩種邊：從 O 出發的直行邊、以及**經過** O 的轉彎邊
+  （其 from/to 位於 O 的鄰居，只有 `viaCellKey` 記錄 O）。因此 `owner(e) = e.viaCellKey ?? e.from.cellKey`，
+  且兩種 owner 都最多在被重建點位的外一環。
+  - `owners` = affected ∪ neighbours(affected)
+  - 點位依所屬格子刪除（`removeCellData` 改名為 `removeCellPoints`，不再碰邊）
+  - 邊一律依 owner 刪除：`edges.filter(e => !owners.has(e.viaCellKey ?? e.from.cellKey))`
+  - 對每個 owner 呼叫 `generateEdgesForCell`
+  這樣**不可能**出現「A pass 刪掉、B pass 無法重建」的情況，原本的 borderNeighbors 修補 pass 整段移除
+- **附帶發現**: 原 `removeCellData` 只比對 `from`/`to`，**不比對 `viaCellKey`**，
+  所以 xt 邊的所有權本來就是模糊的——這才是根因，borderNeighbors pass 只是讓症狀顯現的地方
+- **測試**: 新增 4 個（xt 邊集合不變／整張圖等同 buildFromGrid／分支未被孤立／四叉路口版本），修復前 3 個失敗
+
+### BUG-055: Migration v3（市民年齡 年→life-weeks）從未轉換任何人 🟠 High ✅ 已修復
+- **位置**: `src/core/save/migrations.ts:94`
+- **問題**: v3 以 `if (c.birthTick !== undefined && c.birthTick !== null) continue;` 偵測舊格式市民，
+  但 `deserializeGameState` 在 `Serializer.ts:221` 就先 `restoreCitizen(c)`，而 `CitizenManager._addCitizen`
+  會在 `...overrides` 展開**之前**先算好 `birthTick: overrides.birthTick ?? Math.round(currentTick - age / AGE_PER_TICK)`
+- **根因**: migration 在 :270 才跑，此時每個市民都已有數值 birthTick，guard 對所有人 `continue`。
+  自引入該 migration 的 commit（668de04，其 --stat 未觸及 Serializer.ts）以來**一個市民都沒轉換過**，
+  巢狀的 educationProgress 重新縮放（240000 → 15000）也同樣被跳過
+- **雪上加霜**: `restoreCitizen` 用預設 `currentTick = 0` 而非 `saved.clock.tick`，
+  捏造的 birthTick 編碼的是「tick 0 時的年齡（年）」，下一次 `updateAges(tick)` 得到 `age = age_years + tick * AGE_PER_TICK`
+- **重現**: 對 version:2、clock.tick=5000、`{age:70, lifeStage:'SENIOR', educationProgress:80000}` 的存檔跑
+  deserializeGameState：console 印出 `[Migration] Running v3` 但從未印出轉換數；age 停在 70、birthTick -11667，
+  `updateAges(5000)` 後變成 100.0 且 lifeStage 退回 ADULT（正確值應為 211/SENIOR）
+- **影響**: 老人不再老死並重新進入勞動人口池（`isWorkingAge` 為 52 < age ≤ 200）；
+  存檔中的 10 歲孩童變成 40 歲 TEEN 而被踢出小學；educationProgress 留在舊刻度使每個學生瞬間畢業；
+  舊存檔 tick 數夠高時 age 超過 MAX_AGE(280)，`getElderlyMultiplier` 回傳 Infinity，
+  **第一次每日死亡檢查就抹除整個載入的人口**
+- **修復方向**: 兩個獨立修正都需要。(1) 讓舊格式訊號存活：在 `restoreCitizen` **之前**對 `saved.citizens`
+  原始 JSON 跑 v3 轉換。(2) 傳入真實 tick：`restoreCitizen(c, saved.clock.tick)`
+- **測試（先寫）**: `migrations.test.ts` — 該檔目前對 v3 **零覆蓋**
+- **修復內容**:
+  - 新增 `migrateSavedCitizens(citizens, saveVersion, tick)` —— 對**原始 JSON payload** 執行轉換，
+    由 `deserializeGameState` 在 `restoreCitizen` **之前**呼叫
+  - v3 的 GameState migration 改為刻意留空並註明原因（此轉換在 GameState 層級**結構上不可能**正確執行）
+  - `restoreCitizen(c, saved.clock.tick)` 傳入真實 tick。對現代存檔無行為變化
+    （`overrides.birthTick` 存在時本就不會用到 currentTick），純粹修正舊存檔路徑
+  - 新增 4 個測試（老人年齡轉換＋educationProgress 重新縮放／birthTick 錨定存檔時鐘／
+    孩童轉換後仍為 CHILD／現代存檔不受影響），修復前 3 個失敗
+- **註**: 使用者已確認舊存檔不需搶救，此修復為邏輯正確性而非資料救援
+
+### BUG-056: 火災燒毀的建築從不驅離住戶／員工，市民永久滯留 🟠 High ✅ 已修復
+- **位置**: `src/core/simulation/SimulationLoop.ts:836`
+- **問題**: 其他所有讓區域建築退出服務的路徑都會呼叫 `CitizenManager.evictBuilding()` —— 廢棄（:984）、
+  玩家拆除（`Game.ts:987/1063`）、基礎設施覆蓋（`Game.ts:2544`）、道路/鐵軌覆蓋（`Game.ts:878/907`）、
+  災害（`Game.ts:1152`）—— **唯獨火災路徑沒有**
+- **根因**: `processFireEvents` 呼叫 `applyFireDamage`（只做 `grid.setCell(x,y,{ reserved: BURNED })`），
+  然後觸發 `onBuildingUpdated`/`onBuildingsChanged` 並使 workplace-distance 快取失效，完全沒碰任何市民。
+  同時 `rebuildBuildingIndex`（:1017）會把 `reserved === BURNED` 的格子踢出 `buildingPositions`，
+  於是該位置離開 housing/workplace candidates，但市民的 `homeId`/`workplaceId` 仍指著它
+- **無法自癒**: `assignWithPreference` 跳過 `homeId !== null` 的市民（`OccupancyAssignment.ts:102`）、
+  `relocationTick` 在 `if (!currentCandidate) continue` 就放棄（`Relocation.ts:57`）、
+  廢棄掃描在 `AbandonmentStressTick.ts:74` 對 BURNED 提早返回
+- **影響**: 未覆蓋消防的城市火災傷害固定 0.80（必然 ≥ 0.5），一棟 8 人的住宅燒毀後，這 8 人從此
+  永不重新安置（即使他處有空屋）、不被計為無家可歸（`calculateHappiness` 永不套用 HOMELESS_PENALTY）、
+  持續從焦黑格讀取電力/水/污染，並在該格持續產生警消/醫療/學校需求
+- **修復方向**: `processFireEvents` 在 `applyFireDamage` 後迭代回傳的 `updates` 並對每個新燒毀格呼叫
+  `evictBuilding(toPosKey(u.x,u.y), tick)`。更好的做法是抽出單一 `takeBuildingOutOfService(x,y,reservedState)`
+  helper，讓全部 5 個呼叫點共用，未來新增狀態不可能漏掉驅離
+- **註**: finder 另外聲稱的兩項後果經驗證為**錯誤**，不要帶進修復：驅離並不會移除市民（人口/容量帳目
+  有無驅離都相同）；超容量佔用是 `BuildingUpgrade.tryDowngrade` 更常造成的既有容忍狀態
+- **修復內容**: 抽出 `SimulationLoop.takeBuildingOutOfService(x, y)`，`processFireEvents` 對每個
+  `u.burned` 的 update 呼叫之，`processAbandonmentStress` 也改走同一 helper。
+  未來新增「建築停止運作」的狀態時，不會再有靜默漏掉驅離的路徑
+- **測試撰寫時的陷阱**（值得記錄）: 初版測試「驅離住戶」竟然**通過**——因為測試建築沒有電水，
+  多跑幾個 tick 後 slot 3 的**廢棄**路徑把住戶驅離了，掩蓋了火災路徑的缺陷。
+  改成「偵測到 reserved === BURNED 就立即停止 tick」才真正隔離出火災路徑。
+  這正是主題 6 說的測試盲點的另一種型態：**間接路徑意外滿足了斷言**
+- **測試**: 新增 4 個（驅離住戶／驅離員工／記錄 homelessSince／不波及未受損鄰居），修復前 3 個失敗
+
+### BUG-057: 幸福度用全市 employmentRate 擲骰決定 isEmployed，而非讀 citizen.workplaceId 🟠 High ✅ 已修復
+- **位置**: `src/core/simulation/SimulationLoop.ts:645`
+- **問題**: `updateCitizenHappiness` 寫的是
+  `factors.isEmployed = !isWorkingAge(citizen.age) || Math.random() < ctx.employmentRate`
+- **根因**: `employmentRate = Math.min(1, totalJobs / adultCount)`，而 `totalJobs` 是
+  `countWorkplaceJobs(grid)` —— 純 grid 容量，不含可達性或佔用概念。任何職缺多於成人的城市
+  employmentRate 恆為 1，`Math.random() < 1` 永遠為真
+- **影響**: `Happiness.ts:176` 的 `if (!factors.isEmployed && isWorkingAge(...))` 整段永不執行，
+  使 `unemployedSince`、`getUnemploymentPenalty`、UNEMPLOYMENT_MEDIUM_PENALTY(-25)、
+  UNEMPLOYMENT_FORCED_PENALTY(-100，強制外移觸發器) 全部無法到達。反過來當 employmentRate < 1 時，
+  擲骰落在**確實有工作**、`unemployedSince` 為 null 的市民身上，只吃到 -15 平頭懲罰，階梯同樣不啟動。
+  同一個 tick 內自相矛盾：`runMigration`（:512-520）從 `c.workplaceId === null` 算失業率，
+  130 行後的幸福度 pass 卻假設全民就業
+- **實測**: 40×40 活體模擬得到 `pop 50 adults 47 unemployed 23 jobs 80 empRate 1` ——
+  47 個工作年齡市民中有 23 個 `workplaceId === null`，卻全部拿到 `isEmployed = true`、零失業懲罰。
+  另一組直接探測（10 人 `unemployedSince = 0`、clock.tick = 1000，遠超 ~90-120 tick 的強制容忍）
+  得到平均幸福度 13.0 vs 有工作者 14.0：-100 的強制外移懲罰**可證明是失效的**
+- **修復方向**: 一行 —— `factors.isEmployed = !isWorkingAge(citizen.age) || citizen.workplaceId !== null;`。
+  `workplaceId` 本來就是忠實訊號。若無他處使用，順手把 `employmentRate` 從 CityHappinessContext 移除
+- **修復內容**: 一行 —— `factors.isEmployed = !isWorkingAge(citizen.age) || citizen.workplaceId !== null;`
+- **測試撰寫時的教訓**: 初版測試用 mocked `Math.random` 驅動整個 SimulationLoop，結果完全不可靠 ——
+  random 同時驅動火災、生長、廢棄等十幾個子系統，彼此汙染（同一段程式碼 draw=0 得 happiness 50、
+  draw=0.999 得 5）。改為**把時鐘停在 slot 4 前一格、只跑那一個 tick**，測試才變得確定性。
+  這個技巧對後續測試模擬層的 bug 都適用
+- **驗證**: 暫時還原舊那行確認 3 個測試中有 2 個會失敗、修復後全過。
+  第 3 條（孩童不受罰）在新舊實作下都通過 —— 它不針對本 bug，但能擋住「修過頭去罰未成年」的錯誤修法，保留為守衛
+- **附帶確認**: `-100` 的 UNEMPLOYMENT_FORCED_PENALTY 確實有生效，只是 happiness 被 clamp 到 0
+  （有工作者 15、失業者 0），這正是觸發強制外移的狀態
+
+### BUG-058: 轉彎車輛看不到紅綠燈與平交道柵欄 — viaCellKey 被丟棄、中點守衛是死碼 🟠 High ✅ 已修復
+- **位置**: `src/core/traffic/VehicleLookahead.ts:85`（合併 `Game.ts:418` 同根因）
+- **問題**: `xt:` 邊從進入格直接跳到離開格，被略過的路口只記在 `edge.viaCellKey`。
+  `findRedLightDistance` 呼叫 `canAdvance(edge.from.cellKey, edge.to.cellKey)`，**從不轉發 viaCellKey**
+- **根因**: `Game._canAdvance` 試圖用 `dx + dy === 2` → 中點來還原被略過的格子，並以
+  `Number.isInteger(ix) && Number.isInteger(iy)` 守衛。但產生器拒絕 `entryD.dir === exitD.dir` 與
+  `=== oppositeDir(exitD.dir)`，所以**每個轉彎都是垂直的**：|dx| = |dy| = 1，中點恆為 I±(0.5,0.5)，
+  守衛對它所針對的 100% 邊都為 false。該程式碼源自 12ed86d，當時 skip edge 還是直線 2 格跨距、中點為整數
+- **影響**: 執行落到 `canPass(cx,cy,nx,ny)` 與 `isCrossingBlocked(nx,ny)`，查詢的是**離開格** ——
+  一個沒有號誌也沒有平交道的普通路面格。且沒有安全替代路徑：`LaneGraph.ts:421` 會刪除任何被 xt 邊
+  涵蓋的格內轉彎邊
+- **實測**: FOUR_LANE(y=3) × FOUR_LANE(x=3) 產生 (3,3) 號誌。西來南往通勤者的 A* 首段是
+  `xt:2,3:east:0:exit>3,4:north:0:entry [via 3,3]`。號誌在 phase 0（東西向紅燈）時，轉彎車
+  `findRedLightDistance` 回傳 Infinity 並停在 y=3.63（已過路口），而同一紅燈下的直行對照車回傳 1.6 並停在停止線。
+  通過 (3,3) 的 16 條 xt 邊中，中點為整數者為 0 條。同一死分支也繞過 `isCrossingBlocked`，
+  所以轉彎車會**直接開過放下的鐵路柵欄**
+- **修復方向**: 把路口帶過去而非重建 —— `canAdvance` 簽章擴充為 `(fromCell, toCell, viaCell?)` 並傳入
+  `edge.viaCellKey`；`Game._canAdvance` 在有 viaCell 時檢查 `trafficLights.canPass(cx,cy,viaX,viaY)` 與
+  `levelCrossingSystem.isCrossingBlocked(viaX,viaY)`，並**刪除**已死的中點分支
+- **修復內容**:
+  - `canAdvance` 簽章擴充為 `(current, next, via?)`，`findRedLightDistance` 傳入 `edge.viaCellKey`；
+    `TrafficSimulation` 的回呼型別同步
+  - **把 `Game._canAdvance` 的邏輯抽成純函式** `src/core/traffic/CanAdvance.ts` 的 `canAdvanceThrough()`，
+    以 `SignalLookup`/`CrossingLookup` 兩個最小介面注入依賴（DIP）。
+    這正是主題 6 建議的結構性補救 —— Game.ts 因 import Three.js 而完全無法測試，
+    抽出後這段邏輯有了 7 個直接單元測試
+  - 已死的 `dx + dy === 2` 中點分支整段刪除
+- **測試**: 新增 3 個 VehicleLookahead 測試（viaCellKey 有被傳遞／via 格紅燈會停車／直行邊不受影響）
+  + 7 個 CanAdvance 測試（含平交道、目的地仍會檢查、負座標）。修復前 2 個失敗
+
+### BUG-059: 地面→level 1 匝道繞過 LEVEL_OCCUPIED 檢查，靜默覆寫既有高架 🟡 Medium ✅ 已修復
+- **位置**: `src/core/elevation/ElevatedPathValidation.ts:82`
+- **問題**: 層級碰撞檢查以 `pos.level > 0` 為條件，但實際寫入的層級是
+  `storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level` —— **守衛檢查了錯誤的值**
+- **根因**: 上升匝道在 path index 1 時 `level = 0, targetLevel = 1`，整個區塊被跳過
+  （包含 `existing.isRamp || pos.isRamp → LEVEL_OCCUPIED` 這條註解本身就寫明不變式的拒絕，
+  以及 `hasRampAtLevel` 拒絕），但 `ElevatedRoadBuilder.ts:153` 卻把該格寫在 level 1
+- **重現**: 地面道路 x=1,y=4..8，`buildElevatedRoad({1,4}→{1,0}, FOUR_LANE, level 1)` 成功，
+  `em.get(1,0,1) = {roadType:3, roadFlags:2, isRamp:false}`。再於 (0,0) 加地面路並
+  `buildElevatedRoad({0,0}→{5,0}, TWO_LANE, level 1)` → `{success:true, cost:1900}`，
+  之後 `em.get(1,0,1)` 變成 `{roadType:2, roadFlags:14, isRamp:true, rampAscendDirection:8}`
+- **影響**: 玩家的 FOUR_LANE 高架被降級為 TWO_LANE、變成斜坡、被加上假的路口 flag，南北向高架路線斷裂。
+  同樣衝突移出一格（body cell，index ≥2）則會被正確拒絕。`ElevationManager.set` 無佔用守衛、
+  `ElevatedRoadBuilder` 還主動 merge `existing.roadFlags`、沒有任何每 tick pass 會正規化、
+  拖曳預覽（`Game.ts:2478`）用同一個 validator 所以**把非法放置畫成綠色**、且損壞會經 toJSON 進入存檔
+- **修復方向**: 先算 storeLevel 再用它當條件：
+  `const storeLevel = pos.isRamp ? Math.max(pos.level, pos.targetLevel) : pos.level; if (storeLevel > 0 && ...)`。
+  `ElevatedRailBuilder` 共用同一 validator，一次修好兩邊
+- **修復內容**: 如上，把 `storeLevel` 提到條件之前並改用它當守衛。`hasRampAtLevel` 的子檢查
+  仍以 `pos.level` 為鍵（平面格語意），未動。`ElevatedRailBuilder` 共用同一 validator，一併修好
+- **測試**: 新增 4 個（匝道落在既有平面高架／匝道落在既有匝道／body cell 仍被拒絕的對照組／
+  淨空路徑仍允許的對照組），修復前 2 個目標測試失敗、2 個對照組通過
+
+### BUG-060: removeRoad 靜默改寫倖存鄰居的 roadType 🟡 Medium ✅ 已修復
+- **位置**: `src/core/road/RoadBuilder.ts:128`
+- **問題**: 清除被拆格後，`removeRoad` 走訪 4 個正交鄰居、剝除反向 flag（正確），
+  然後**無條件**以 `getMaxNeighborRoadType(nx, ny, newFlags)`（該鄰居剩餘連線中的最高等級）覆寫其 `roadType`
+- **根因**: 道路等級是玩家付費的 authored state（`calculateRoadCost` 在重畫更高等級時收
+  `Math.max(0, config.cost - existingCost)` 差額，正是 BUG-025 的既定修法），卻因拆除**無關的**相鄰格
+  而被雙向改寫，既不收費也不退費。不對稱性證明這是過度延伸的路口修補啟發式而非刻意語意：
+  `newFlags === 0` 時 `maxType > 0` 守衛會放過它，所以孤立的 FOUR_LANE 殘段保住等級 3，
+  但仍接觸 TWO_LANE 的那個就被改寫
+- **重現**: 建 TWO_LANE (0,5)→(9,5)，重拖 FOUR_LANE (3,5)→(6,5) 付了 $800 差額，(3,5).roadType === 3。
+  玩家改道 `removeRoad(4,5)` 後 (3,5).roadType 掉回 2 —— 容量 200→100、maxDensity HIGH→LOW、
+  $200 已付容量蒸發且無退費無通知。反向亦可重現：HIGHWAY 列中 (4,5) 有 TWO_LANE 覆蓋，
+  `removeRoad(3,5)` 讓 (4,5) 從 2 免費升到 5
+- **修復方向**: 拆除時**完全不要動**倖存鄰居的 `roadType`。若當初驅動 `getMaxNeighborRoadType` 的
+  路口渲染問題仍在，應在渲染層解決，或限制為僅對本身是路口（dirCount ≥ 3）的格子且**只升不降**，
+  與 migration v2 已編碼的規則一致
+- **註**: finder 的頭號重現用 `RoadUpgrade`，但該模組是死碼（無非測試呼叫端）；活路徑是 `buildRoad` 重畫高等級
+- **修復內容**: `removeRoad` 只更新鄰居的連線 flag，**完全不碰** `roadType`；
+  已無呼叫端的 private `getMaxNeighborRoadType` 一併刪除。
+  移除後全套道路測試 113 個仍全過 —— 確認沒有其他行為依賴這個啟發式
+- **測試**: 新增 3 個（付費升級的鄰居不被降級／不免費升級鄰居／被拆格仍清空且鄰居 flag 正確剝除），
+  修復前 2 個失敗（3→2 降級、2→5 免費升級皆重現）
+
+### BUG-061: CommuteCache.bumpGeneration 在 ready 路線仍持有參照時清空 routeRefCount 🟡 Medium ✅ 已修復
+- **位置**: `src/core/traffic/CommuteCache.ts:51`
+- **問題**: `bumpGeneration()` 抹除 `routeRefCount`（及 routeIndex/routeCellIndex），
+  卻留下 `this.cache` 中一堆 `status:'ready'` 且邏輯上仍持有參照的路線
+- **根因**: 這些市民之後重算時，`set()` 對同一 routeKey 先跑 `adjustRefCounts(old, -1)` 再
+  `adjustRefCounts(route, +1)`。對已歸零的 map 而言，遞減把計數推到 -1，
+  `applyRefDelta` 在 `count <= 0` 時刪除該 key，遞增再把它還原成 **1**。
+  N 個共用同一路線的市民因此永久停在 refCount 1 而非 N —— `isExpired()` 保證所有人都會在
+  RECALC_SPREAD_TICKS 內經過 `set()`，之後就走 `continue` 快路徑再也不呼叫 `set()`
+- **觸發頻率**: `bumpGeneration()` 由 `markLaneGraphDirty`（`SimulationLoop.ts:1303`）無條件呼叫，
+  而 Game.ts 在每次建路、升級、拆除、建鐵軌、造成驅離的重劃區時都會呼叫
+- **重現**: 3 市民 × 2 方向，bump 前總計 6；bump 後跑完早晚兩班 pass 總計 4，且永遠停在 4
+- **影響**: `computeCongestionFlow` 產出每格流量 ≈ N+1 而非 2N（約 2× 低估），
+  `traffic.updatePredictedFlow` 餵給 `getSegmentDensity`，`syncTrafficDensityToGrid` 再把
+  `Math.round(Math.log2(1+flow))` 低一級寫進 `cell.trafficDensity` ——
+  交通 overlay 與噪音污染從玩家**第一次建路**起就帶著永久性的全市偏誤
+- **修復方向**: 要嘛 `bumpGeneration()` 不清 `routeRefCount`（清 routeIndex/routeCellIndex 已達成退休共用路線池的目的），
+  要嘛清的同時把每條快取路線標成 `status:'pending'` / 丟棄 `this.cache`。若保留該 map，
+  讓 `applyRefDelta` 拒絕低於 0 並記錄，把不變式變成強制而非靜默吸收
+- **修復內容**: `bumpGeneration()` 不再清 `routeRefCount`。清 `routeIndex`/`routeCellIndex`
+  已達成「退休共用路線池」的目的；不在 routeIndex 中的路線其計數根本不會被迭代到。
+  快取中的 per-citizen 路線在 bump 後仍存活且仍持有參照，所以計數本來就該保留
+- **同時修正該空過的測試**: 原名「should clear routeRefCount on bumpGeneration」——
+  它把 bug 行為當成契約，而且**無論如何都會通過**（`forEachRouteWithRefCount` 迭代 `routeIndex`，
+  bumpGeneration 連它一起清了）。已改名為「should report no routes after bumpGeneration retires
+  the shared pool」並註明原委
+- **測試**: 新增 3 個（共用路線重算後計數不塌陷／移除市民後仍歸零／市民換路線時計數正確搬移），
+  修復前第 1 個失敗（3 → 1）
+
+### BUG-062: 經濟面板漏掉市政服務／政策／高架維護支出與城市特化收入加成 🟡 Medium ✅ 已修復
+- **位置**: `src/core/economy/EconomyBreakdown.ts:39`
+- **問題**: `getEconomyBreakdown()` 是 Economy 頁面唯一資料來源，但 `EconomyBreakdownResult` 只帶
+  roadMaintenance / loanInterest / powerCost / waterCost / transportCost
+- **根因**: `tickBudget()` 實際扣除的支出在 `SimulationLoop.calculateIncome()` 組成，為
+  `roadMaintenance + serviceCost + policyCost + transportCost + elevatedMaintenance`，
+  其中 `serviceCost = getTotalServiceMaintenanceCost(state)` 加總全部十種市政服務。
+  於是警察/消防/醫療/教育/公園/垃圾/污水/殯葬維護、行政區政策費、高架道路維護**在 UI 完全看不到**。
+  收入側 SimulationLoop 套用 `citySpec.getBonus().revenueMultiplier`，breakdown 則沒有
+- **影響**: `overview/EconomyPage.tsx:44-47` 把五個欄位加總成「Expenses/tick」與「Net Balance」，
+  而正下方的 EconChart 畫的是真實 `state.budget.expenses`、HUD 顯示真實餘額 ——
+  **同一個畫面自相矛盾**。範例：2 警 + 2 消 + 1 醫 + 3 校 + 4 園 + 2 垃 + 1 墓 + 1 污 = $61/tick，
+  加 20 格高架 $320/tick 與 1 條政策 $150，真實支出約 $531/tick，面板卻只顯示約 $18/tick
+  並報告正的 Net Balance，同時國庫每個預算 tick 掉約 $490。從**第一座警察局**（$4/tick）就開始偏離
+- **修復方向**: 在 `EconomyBreakdownContext`/`Result` 加 `serviceCost`、`policyCost`、`elevatedMaintenance`，
+  於 `Game.ts:2562-2572` 填值，並對 zone incomes 套用 `revenueMultiplier`，EconomyPage 加對應列。
+  順手刪掉死碼 `ui/modals/EconomyModal.tsx`（無人 import）以免繼續漂移
+- **修復內容**:
+  - `EconomyBreakdownContext`/`Result` 新增 `serviceCost` / `policyCost` / `elevatedMaintenance`
+    與 `revenueMultiplier`（皆為選填，預設 0 / 1，舊呼叫端不受影響）
+  - zone incomes 套用 `revenueMultiplier`，與 `SimulationLoop.calculateIncome` 一致
+  - `Game.getEconomyBreakdown` 填入 `getTotalServiceMaintenanceCost` / `calculateDistrictPolicyCost` /
+    `calculateElevatedMaintenance` / `citySpec.getBonus().revenueMultiplier`
+  - `EconomyPage` 新增三列（Civic Services / District Policies / Elevated Maintenance）並修正 `totalExpenses`
+  - 刪除死碼 `ui/modals/EconomyModal.tsx`（全 codebase 無 import）
+- **測試**: 新增 4 個，含報告指定的交叉檢查
+  「breakdown 顯示的支出加總 === `calculateTotalExpenses` 實際收取的金額」，修復前 3 個失敗
+
+### BUG-063: Lane graph SharedArrayBuffer 在 worker 批次執行中被原地覆寫 🟡 Medium ✅ 已修復
+- **位置**: `src/core/simulation/SimulationLoop.ts:1439`
+- **問題**: `syncGraphToWorker()` 在主執行緒把 pathfinding graph 直接寫回活的 SAB，
+  而 pathfinding Worker 正持有該 SAB 的 `GraphReader` 且可能正在批次中
+  （`createWorkerHandler` 對整個 BATCH_REQUEST 同步迴圈跑 `astar.findPathVariants`）
+- **根因**: `LaneGraphBuffer.writeFromGraph` **先寫 header**（pointCount@0, edgeCount@4, version@8）
+  用的是普通 DataView store，再寫 points/edges/adjacency。格式保留了 `version` 欄位、
+  `LaneGraphBuffer.getVersion()` 與 `GraphReader.getVersion()` 都有暴露，但 grep 顯示唯一的非測試呼叫端
+  是兩個 writer 自己遞增它 —— **設計好的守衛從未接上**。`grep -rn Atomics src` 零命中。
+  後續的 INIT_GRAPH post 也救不了：它要等當前批次跑完才會被取出
+- **影響**: 執行中的 A* 會用**新的** header 計數去讀**寫到一半**的 point/edge/adjacency 區域，
+  `getEdgeToIdx`/`getEdgesFrom` 混合新舊拓撲，parentEdge 鏈可能成環。
+  `PooledAStar.reconstructPath`(:290-304) 以無步數上限的 `while` 走該鏈 → **worker 永久卡死**：
+  再也不會有 BATCH_RESULT，`spawnCommuteVehicles` 沒有同步 fallback，該 session 通勤車輛停止生成，
+  且程式中沒有任何 watchdog 或 `terminate()`
+- **修復方向**: 兩層。(1) 正確性：用既有 version 欄位做 seqlock —— writer 以 Atomics 在寫入前 bump 成奇數、
+  寫完成偶數，`GraphReader` 在每次搜尋前後複查，變動就中止該請求；或雙緩衝兩個 SAB 並以 INIT_GRAPH 切換。
+  (2) 無論如何都要的圍堵：給 `reconstructPath` 加上以 pointCount 為界的步數上限，超過就回傳 null，
+  讓撕裂讀取永遠不可能卡死 worker
+- **註**: 對抗驗證指出「錯誤路線」這個後果其實已被 `clearPending()` 中和（跨界批次結果會被整批丟棄），
+  所以真正值得修的是**卡死**與未接上的 version 守衛，而非路線正確性
+- **修復內容**（依對抗驗證的結論，不做 Atomics seqlock 那種過度設計）:
+  - `PooledAStar.reconstructPath` 加上以 `resultBuf.length` 為界的步數上限，超過即回傳 `[]`。
+    **撰寫測試時實測**：未加上限前，那條 cyclic parentEdge 測試會讓整個 vitest worker 卡死並被 timeout 殺掉
+    —— 這就是「worker 永久卡死」後果的直接實證
+  - 把批次迴圈抽成可測的純函式 `runBatch(reader, requests, compute)`，
+    在批次開始時記下 `getVersion()`、每個請求後複查，變動就整批丟棄回傳 null。
+    這讓那個**寫了卻從未被任何 reader 讀取**的 `version` 欄位真正接上 ——
+    它原本是留給下一個維護者的陷阱（看起來像守衛，實際上不是）
+- **測試**: 新增 3 個 PooledAStar（cyclic chain 會終止／不溢位 resultBuf／正常鏈仍正確重建）
+  + 4 個 runBatch（版本穩定時回傳結果／中途變動則丟棄／空清單／中止後不再呼叫 compute）
+
+### BUG-064: BusSystem 在中途站被拆除時從不重算 routeSegments 🟡 Medium ✅ 已修復
+- **位置**: `src/core/transport/BusSystem.ts:295`
+- **問題**: `BaseTransportSystem.removeStop()` 原地改動 `route.stops` 後呼叫可覆寫的
+  `onRouteStopRemoved(route)` hook 讓子類重算快取的逐段路徑。`RailSystem.ts:128` 與
+  `FerrySystem.ts:123` 都有覆寫，**BusSystem 沒有**（它只覆寫了 `onRouteDissolved`）
+- **根因**: 路線在少一站後仍存活，卻保留著為**舊站列表**算出的 `LaneEdge[][]`。沒有任何東西會重算：
+  `rebuildAllSegments()` 在 `if (this.routeSegments.has(route.id)) continue` 短路；
+  `onRoadChanged()` 也到不了 —— 公車站位於非道路格（`canPlaceTransportStop` 要求 `cell.roadType === 0`），
+  所以拆站不會貢獻任何 `demolishedRoadCells`，`markLaneGraphDirty([])` 產生**空的** dirtyRoadCells，
+  反而讓 `rebuildLaneGraph` 走完整 `buildFromGrid` 分支並整段跳過 `bus.onRoadChanged`。
+  而那次全量重建會換掉每一個 LaneEdge 物件，於是陳舊 segment 還額外指向孤兒 edge
+- **重現**: 站 A(0,1)、B(10,1)、C(10,11)，`getSegmentDistances` = [10, 10, 20]。拆掉 B 後路線剩 [A, C]，
+  實測 `stops after removal 2` 但 `AFTER segDists [10,10,20]` —— 仍是 3 筆，
+  且 TrafficSimulation 中的公車仍跑著經過已拆除站點的 3 段迴圈
+- **影響**: `computeRideDistance([A,C], 0, 1, segDists)` 讀到 segDists[0]=10 與 [1]=10 而非真實的 20，
+  `findAvailableTransit` 回報 estimatedTime 5 而非 10；`chooseMode` 比較
+  `bestTransit.time < driveTime * 1.5` 後把通勤者從 DRIVE 轉到一條實際上慢一倍的公車線。
+  只有存讀檔（routeSegments 未序列化）或之後某次動到該路徑的道路編輯才會自癒
+- **修復方向**: 在 BusSystem 覆寫 `onRouteStopRemoved(route)`。BusSystem 未保留 `findEdgePath`
+  （這正是當初略過該 hook 的原因），需比照 Rail/Ferry 保存網路，或讓 `removeStop` 接受重算 callback。
+  另外讓 `sumDirection` 斷言 `segDists.length === stops.length`，不符時退回歐氏距離，使陳舊快取降級而非說謊
+- **測試（先寫）**: `StopRemovalPathRecompute.test.ts` 已經為 RailSystem 與 FerrySystem 覆蓋了這條契約，
+  **BusSystem 零案例** —— 補上即可
+- **修復內容**:
+  - BusSystem 新增 `lastFindEdgePath` 欄位（在 `computeRouteSegments` 時記下），
+    因為 base class 呼叫 `onRouteStopRemoved(route)` 時不帶參數，而 BusSystem 不像 Rail/Ferry 持有網路
+    —— 這正是當初略過該 hook 的原因
+  - 實作 `onRouteStopRemoved` 覆寫：清掉舊 segments 後重算，無法路徑則回傳 false 讓 base class 解散路線
+    （與 Rail/Ferry 契約一致）
+  - **防禦深度**：`computeRideDistance` 加上 `segDists.length === stops.length` 檢查，
+    不符時退回歐氏距離。原本 `sumDirection` 只守 `i < segDists.length`、從不比對長度與站數，
+    所以過長的陣列會被用**新的**站索引取值而靜默回報別段的距離
+- **測試**: 新增 2 個 BusSystem（中途站移除後重算／segDists 長度不超過站數）
+  + 3 個 computeRideDistance 守衛測試。修復前 2 個失敗，且精確重現報告的 `[10, 10, 20]` 情境
+
+### BUG-065: 高架鐵軌從未註冊進 RailNetwork，鐵路線無法跨橋 🟡 Medium ✅ 已修復
+- **位置**: `src/Game.ts:547`
+- **問題**: `ElevatedRailBuilder` 接受選用的 `RailNetwork`（預設 null）且只在 `if (this.network)` 下加圖的邊。
+  Game.ts 建構它時**沒有傳網路** —— `new ElevatedRailBuilder(this.state.grid, this.elevationManager)` ——
+  而上一行的地面 `RailBuilder` 有拿到 `this.railNetwork`
+- **根因**: 高架軌因此存在於 ElevationManager（由 ElevatedRoadRenderer 繪製、被
+  `calculateElevatedMaintenance` 每 tick 收費），卻對 `RailSystem.computeRoutePaths` → `RailNetwork.findPath`
+  搜尋的圖貢獻零節點零邊。`rebuildRailNetworkFromGrid` 也救不回來：
+  `buildElevatedTrack` 從不寫 grid（`if (pos.level === 0 && !pos.isRamp) continue`），載入時的 grid 掃描什麼都看不到
+- **影響**: 由於 `PathValidation.ts:26` 對地面軌拒絕 WATER，**高架橋是鐵路跨水的唯一手段**。
+  實測 40×40、水域在 16-20 欄：地面軌 5,10→14,10 與 22,10→30,10 皆成功，高架跨距 14,10→22,10 level 1
+  成功（cost 2700）。軌道看起來連續且照常收維護費，但 `railNetwork.findPath('5,10','30,10')` 回傳 null，
+  於是 `rail.createLine(...)` 在 `RailSystem.ts:176` 回傳 null —— 而 `TransitModal.tsx:61/:111`
+  丟棄回傳值，所以**路線靜默地不存在，玩家看不到任何錯誤**
+- **修復方向**: 建構時傳入網路。但跨存讀檔仍不夠 —— 需擴充 `rebuildRailNetworkFromGrid`（或加伴隨 pass）
+  走訪 ElevationManager 的 rail segment 並以同樣的 `nodeId(x,y,level)` 重新加入節點與邊。
+  另外接上目前是死碼的 `ElevatedRailBuilder.removeElevated`（拆除永遠走 `elevatedRoadBuilder.removeElevated`）
+- **註**: 現有測試**永遠**帶著 RailNetwork 建構 builder，所以這條 production 路徑從未被測到
+- **修復內容**:
+  - `Game.ts:533` 建構時傳入 `this.railNetwork`（一行）
+  - 新增 `rebuildElevatedRailNetwork(elevationManager, network)` 並在載入流程的
+    「Setting up roads...」步驟接上（緊接 `rebuildRailNetworkFromGrid` 之後）。
+    **關鍵細節**：origin 格（level 0 且非匝道）根本不會被存進 ElevationManager，
+    所以地面節點要靠匝道的 `rampAscendDirection` 反推 —— 匝道是唯一兩側層級不同的格子：
+    上升方向側在其儲存層級，反向側低一層（地面匝道即 level 0）
+- **測試**: 新增 2 個（帶網路建構時有註冊／重新載入後從 elevation 資料還原連通性）。
+  第 2 個修復前以 TypeError 失敗（函式不存在）
+- **仍未做**: `ElevatedRailBuilder.removeElevated` 仍是死碼（拆除一律走 `elevatedRoadBuilder.removeElevated`），
+  已列入 TODO 但不在本 bug 範圍
+
+### BUG-066: 收入計算為 O(區域建築 × 市民) 且每棟建築配置新陣列 🟡 Medium ✅ 已修復
+- **位置**: `src/core/economy/IncomeCalcAdapter.ts:14`
+- **問題**: `buildIncomeCalcDeps` 把 `getResidentEducations` 接到 `CitizenManager.getCitizensByHome(key)`、
+  `getWorkerCount` 接到 `getCitizensByWorkplace(key)`。兩者都是對**整個市民陣列**的裸
+  `Array.prototype.filter`，每次呼叫都配置一個新陣列 —— CitizenManager 沒有 home/workplace 索引也沒有 memo
+- **根因**: `calculateZoneIncomes` 透過 `forEachCell` 對每棟區域建築呼叫一次 `calculateBuildingIncome`，
+  每次都命中其中一個 filter（唯一提早退出是 `isPowered` 檢查，且所有非住宅區型的 workers 都 > 0）。
+  成本為主執行緒上的 O(#區域建築 × #市民) —— SimulationLoop 由 Game.ts 建構與 tick，**不在 worker**
+- **實測**: 5,000 市民 / 1,000 建築 = 40 ms；10,000 / 1,400 = 68 ms；20,000 / 1,700 = 143 ms；
+  30,000 / 2,000 = **265 ms**。Game.ts 每幀最多跑一個 sim tick，整個成本落在每 6 tick 的**單一幀**內 ——
+  隨城市規模成長的可見卡頓（專案自己的「megalopolis」里程碑就是 25,000 人口）。
+  Economy 頁面開著時，約 11 個呼叫點會以節流 UI tick（約 6/秒）重跑，5,000 市民的城市直接凍結
+- **修復方向**: 每個 pass 建一次 map，完全比照 `ServiceRegistry.tickAllCivicServices` 已有的正確慣例
+  （它一次 O(N) 掃出 `residentsByPos`/`workersByPos`）：在 `buildIncomeCalcDeps` 對
+  `state.citizens.getCitizens()` 單趟掃成 `Map<posKey, Education[]>` 與 `Map<posKey, number>`，
+  兩個 dep 改讀 map。行為不變，回傳收入必須逐位元相同
+- **註**: `countOccupancy` 已在 5 個 SimulationLoop 位置做同樣的聚合，`calculateZoneIncomes` 是唯一的例外
+- **修復內容**: `buildIncomeCalcDeps` 改為對 `state.citizens.getCitizens()` 做**單趟 O(N) 掃描**，
+  建出 `Map<posKey, EducationLevel[]>` 與 `Map<posKey, number>`，兩個 dep 改讀 map。
+  完全比照 `ServiceRegistry.tickAllCivicServices` 已有的正確慣例。行為不變（有等價性測試釘住）
+- **測試撰寫時的兩個陷阱**（都值得記錄）:
+  1. 初版用 `vi.spyOn(citizens, 'getCitizens')` 計數 —— 抓不到，因為
+     `getCitizensByHome` 直接走私有欄位 `this.citizens.filter(...)`，不經過 getter。改為 spy 那兩個 filter 方法
+  2. 改完仍空過 —— 因為測試城市**沒有電力**，`calculateZoneIncomes` 在 `isPowered` 就提早退出，
+     per-building 查詢根本不可達。必須注入 `isPowered: () => true` 才讓路徑可達。
+     這又是主題 6(b) 的變體：**測試 fixture 沒有讓待測路徑可達**
+- **測試**: 新增 4 個（掃描次數不隨建築數成長／與 per-call 實作結果完全相同／
+  空建築回傳零／同棟多名佔用者正確計數）。修復前第 1 個失敗（40 棟 → 40 次全陣列掃描）
+
+### BUG-067: SidewalkGraph.updateCells 切斷重建區域外圈一格的人行道邊 🟡 Medium ✅ 已修復
+- **位置**: `src/core/traffic/SidewalkGraph.ts:176`（合併 :193 同根因）
+- **問題**: `updateCells` 組出 `toRebuild` = affected 格 + 其 4 個正交鄰居，對每格呼叫 `removeCellData`，
+  然後**只**為 `toRebuild` 內的格子重新產生節點與邊
+- **根因**: `removeCellData` 會刪除接觸該格的**雙向**邊（它明確地把反向邊從另一個節點的 adjacency list 中 splice 掉），
+  而 `generateCrossCellEdges` 只發出 `RoadDirection.EAST` 與 `SOUTH` 的連結。
+  重建格與其外側未受影響格之間的 WEST/NORTH 連結，其所有權**專屬於那個外側格**，
+  而該格的 `generateEdgesForCell` 從未執行。斑馬線邊、路口橋接邊有同樣的單向所有權問題，
+  街道對側的建築門邊也被剝除。`LaneGraph.updateCells` 明確有 `borderNeighbors` 修補 pass 處理這件事
+  （還附了描述該失效的註解），SidewalkGraph 抄了鄰居收集的註解（'same as LaneGraph pattern'）**卻沒抄修補**
+- **真正觸發源**: 不是道路編輯（那會設 `sidewalkGraphDirty` 而強制全量重建），
+  而是**建築生長** —— `SimulationLoop.ts:499` 在每次區域生長/移除 tick 呼叫 `updateCells`，
+  而生長從不設 dirty flag，所以切斷會持續到玩家下次編輯道路為止
+- **重現**: 直線東西向道路 (0,0)..(5,0) 經 `buildFromGrid`；(3,1) 長出房子使 SimulationLoop 呼叫
+  `updateCells(grid, ['3,1'])`。`getEdgesFrom('2,0:NE').some(e => e.to.id === '3,0:NW')` 前為 true、後為 false，
+  雙向皆然，而 `3,0:NE → 4,0:NW` 存活；**節點數不變**（這正是現有測試仍通過的原因）。
+  `findPath('0,0:SW','7,0:SE')` 從 15 條邊變成 null
+- **影響**: 行人 A*（`findPathMultiTarget`）回傳 null → `PedestrianManager.spawnPedestrian` 回傳 null →
+  整個街區的行人消失。且非單調 —— 之後在切口西側的生長會修復該連結但同時切斷下一個
+- **修復方向**: 補上缺的 border-neighbour pass，比照 `LaneGraph.ts:140-157`。
+  更好的長期解法是讓跨格邊的發出對稱（每格發出四個方向並去重），使任何格的邊都不依賴鄰居被重建
+- **測試（先寫）**: 現有 updateCells 測試只斷言 `getAllNodes().length` / `getNodesInCell().length`
+  —— 在此情境下這些數字是**正確的**，該斷言的是連通性
+- **修復內容**: 節點仍只重建 `toRebuild`，但**邊**的重建集合擴大一環（`edgeOwners`）。
+  關鍵觀察：`addBidirectionalEdge` 已經以 edge id 去重，所以對「邊還在」的 owner 重跑是 no-op 而非產生重複
+  —— 這讓修法可以很小，不需要像 LaneGraph 那樣做精確的 owner 刪除
+- **與 BUG-054 的關係**: 同一個根因家族（單向邊所有權 + 對稱刪除），但兩者的最小正確修法不同：
+  LaneGraph 的 `xt:` 邊沒有去重機制，必須做精確的 owner 刪除；SidewalkGraph 有去重，擴大重建集合即可
+- **測試**: 新增 3 個（西側跨格連結雙向保留／建築生長後道路仍可從頭走到尾／
+  整張圖等同 fresh buildFromGrid）。修復前 3 個全部失敗
+
+### BUG-068: applyDisasterDamage 清除 buildingId 卻留下 reserved（BURNED/ABANDONED）🔵 Low ✅ 已修復
+- **位置**: `src/core/climate/Disaster.ts:159`
+- **問題**: `applyDisasterDamage` 做 `grid.setCell(x, y, { buildingId: 0 })` ——
+  這是全 codebase **唯一**清除 buildingId 卻不一併重設 `reserved` 的地方。
+  其他所有拆除路徑都成對處理（`BuildingGrowthTick.ts:107/129`、`Game.ts:1042/1052/1154`、
+  `RoadBuilder.ts:53`、`RailBuilder.ts:78` 全都寫 `{ buildingId: 0, reserved: 0 }`）
+- **根因**: 它的守衛只檢查 `buildingId === 0`、`isInfrastructureBuilding`、`roadType !== 0`，
+  所以已標記 BURNED(3) 或 ABANDONED(1) 的格子會通過並被留成 `buildingId=0, reserved=3`。
+  `Grid.setCell` 是真正的 partial patch，`reserved` 因此存活
+- **影響**: BuildingGrowthTick 的 Case 1 與 Case 2 都額外要求 `isZoneBuilding(cell.buildingId)`（現已為 false），
+  該格落入 Case 3 而由 `BuildingGrowth.tryGrow` 以 `setCell(x, y, { buildingId: building.id })` 重新生長，
+  `reserved` 仍停在 3。全新建築從此被永久當成焦黑廢墟：`IncomeCalculator.ts:134` 不收稅、
+  `BuildingQueries.ts:39` 不計入 RCI 供給與住房容量、`AbandonmentStressTick.ts:74` 從不評估它、
+  BuildingRenderer 畫成焦黑。載入時也無修補（`migrateOldInfra` 對 buildingId 0 提早返回、
+  SaveValidator 白名單放行 reserved 3）。只有 2% 的 BURNED_CLEARANCE_CHANCE 能自癒
+- **嚴重度說明**: 需要災害開啟（預設 true）、人口 ≥ 50、0.001/tick 的擲骰，且爆炸範圍要重疊在
+  已燒毀/已廢棄的格子上 —— 因此列為 low 而非 high
+- **修復方向**: 一行 —— `grid.setCell(x, y, { buildingId: 0, reserved: 0 })`。
+  順帶考慮抽出共用的 `clearBuildingCell(grid, x, y)` 並加上 dev-only 不變式斷言
+  「非基礎設施格 buildingId === 0 蘊含 reserved === 0」
+- **修復內容**: 如上，一行（並放寬 inline setCell 的參數型別）。
+  共用 `clearBuildingCell` helper 未抽出 —— 留在 TODO 的系統性改善項目
+- **測試**: 新增 4 個（清除 BURNED／清除 ABANDONED／重生的建築不帶標記／
+  基礎設施與道路仍免疫的對照組），修復前 3 個失敗
+
+---
+
+### 本輪跨切面主題（值得系統性處理，而非逐條修）
+
+1. **增量圖修補系統性不完整，而增量是唯一路徑**
+   LaneGraph 與 SidewalkGraph 的邊由**單一**端點格擁有，但移除（`removeCellData`）是對稱的 ——
+   它刪掉重建迴圈無法重建的邊，因為那些邊的擁有者在重建集合之外。
+   LaneGraph 有 borderNeighbors 修補 pass，但它自己刪掉剛建的 `xt:` 邊（BUG-054）；
+   SidewalkGraph 抄了註解卻沒抄修補（BUG-067）。
+   由於所有呼叫端都傳非空 affectedCells，完整 `buildFromGrid` fallback 只在初始化/讀檔跑，損壞在該 session 內永久存在。
+   **系統性解法**: 讓跨格邊的發出對稱（每格發四方向並去重），並加一條不變式測試斷言
+   `updateCells(...)` 產出的圖與同一 grid 全新 `buildFromGrid` 相同 —— 這一條 property test 可同時抓到兩個 bug，也能抓到下一個。
+
+2. **守衛檢查代理值而非權威值**
+   `ElevatedPathValidation` 以 `pos.level` 為條件但寫入用 `storeLevel`（BUG-059）；
+   `Game._canAdvance` 用中點重建路口而不讀邊上已帶的 `viaCellKey`，產生對其目標邊 100% 為死的分支（BUG-058）；
+   `migrations.ts` 在 `restoreCitizen` 已無條件捏造 birthTick 之後才檢查 `birthTick !== undefined`（BUG-055）；
+   幸福度用全市 `totalJobs/adultCount` 比率而 `citizen.workplaceId` 就在旁邊（BUG-057）。
+   每一例中權威資料都存在於呼叫點卻被忽略。
+   **應採規則**: 當一個檢查與其對應的寫入計算相關的值時，算一次共用變數，絕不為守衛重算一個較弱的近似。
+
+3. **衍生／快取狀態沒有失效契約**
+   BusSystem 的 routeSegments（無 `onRouteStopRemoved` 覆寫，不像 Rail 與 Ferry，BUG-064）、
+   CommuteCache 的 routeRefCount（在其參照者仍存活時被清空，BUG-061）、
+   lane graph SAB（在活的 reader 下被覆寫，且 `version` 欄位從未接上，BUG-063）、
+   ElevatedRailBuilder 從未註冊的 RailNetwork 邊（BUG-065）—— 全是同一形狀：
+   快取被填充一次，其來源經由不通知它的路徑變動，然後沒有任何東西去調和。
+   **系統性解法**: 共用的「衍生資料」基礎契約，每種變動有明確的 invalidate hook，
+   加上「每次變動後斷言 cache ≡ recompute」的測試 —— `StopRemovalPathRecompute.test.ts` 已對三個子類中的兩個做到了。
+
+4. **新子系統被加進 GameState 與 tick 迴圈，卻沒被加進存檔層或報告層**
+   Districts/policies/citySpec/globalMarket 有模擬也可編輯卻不在 Serializer（BUG-053）；
+   市政服務、政策、高架維護由 SimulationLoop 收費卻不在 EconomyBreakdown（BUG-062）；
+   高架鐵軌會建、會畫、會收費卻不在 RailNetwork（BUG-065）。
+   **系統性守衛**: 一條測試列舉 GameState 的欄位，當某欄位既未被序列化也未被明確標記為 transient 時失敗；
+   另一條斷言經濟 breakdown 加總等於 `state.budget.expenses`/`income`。
+
+5. **格子變動點只清多欄位格的其中一欄，並錯誤推導多格建築的佔地**
+   `applyDisasterDamage` 清 buildingId 不清 reserved（BUG-068）；
+   `forEachMultiCell` 把佔地重建成 maxDim 正方形而波及鄰近實例（BUG-052）；
+   `removeRoad` 從剩餘連線重新推導倖存鄰居已付費的 roadType（BUG-060）。
+   格子是複合記錄、建築是複合佔地 —— 兩者都需要單一權威 helper
+   （`clearBuildingCell(grid,x,y)`、具旋轉感知／主格驗證的 `forEachOwnedCell`），而非每個呼叫點各自推導。
+
+6. **3,426 個測試在三個特定且可重複的面向上是盲的**（這解釋了為何上述每個 bug 都能存活）
+   - (a) 斷言**數量與形狀**而非**不變式與連通性** —— updateCells 後的節點數、EconomyBreakdown 的逐欄位 pass-through、
+     removeRoad 後的 roadFlags 位元
+   - (b) 在**空 grid 上只演練單一實例** —— 每個 InfraPlacement 拆除測試都只放一棟建築，
+     同 buildingId 的守衛因此無聲吸收了越界；每個 LaneGraph updateCells 測試都用共線道路，根本不產生轉彎邊
+   - (c) 在**真實接線就是 bug 本身**的地方注入 stub —— VehicleLookahead 用抽象 'A'/'B'/'C' key 搭配手寫
+     canAdvance 述詞；IncomeCalcAdapter 用 `getResidentEducations: () => []`；
+     ElevatedRailBuilder 測試永遠傳入 Game.ts 省略的 RailNetwork；而 Game.ts 本身因為 import Three.js 而完全未測
+   **兩項值得投資的結構性補救**: 把 `Game._canAdvance` 與 Game 的 builder 接線抽成純粹、可測的 core 模組；
+   為放置與圖的測試套件加入「相鄰／雙實例」fixture。
+
+7. **沒有任何東西調和 grid 與服務／市民註冊表**
+   幽靈醫院（BUG-052）、燒毀建築的鬼住戶（BUG-056）、孤兒公車路段（BUG-064）之所以能無限期存在
+   （有些還穿過存讀檔），是因為沒有任何定期或載入時的 pass 去問
+   「每個已註冊的設施在 grid 上還存在嗎？每個 homeId/workplaceId 還指向活的建築嗎？」
+   鐵路子系統有 `rebuildRailNetworkFromGrid`、平交道有 `rebuildFromGrid`，市政服務與市民沒有對應物。
+   **一個在載入時（以及 debug panel 後面）跑的驗證 pass 就能浮現這整類問題。**
+
+---
+
+### 已被對抗驗證推翻的候選（勿重複追查）
+
+以下 4 項由 finder 提出但經驗證確認**不是 bug**，記錄理由以免下次掃描重蹈：
+
+1. **`JobRelocation.ts:189` 解僱仍可達的工作** — 觸發狀態在執行中的遊戲**不可達**。
+   `getTriggerReason` 只在 CachedRoute 為 `status:'failed'` 時回傳 'failed'，
+   而全 src 唯一的 production writer（`SimulationLoop.ts:1743`）位於一個永遠不會為 false 的條件的 else 分支；
+   所有寫入 routeIndex 的地方都禁止空陣列。CommuteCache 也沒有序列化，'failed' 不可能來自存檔。
+   finder 是用手工 duck-typed cache 塞入 `status:'failed'` 才「驗證」出來的。
+   *殘留價值*: `!hasAlternatives` 路徑與 `reason === 'failed'` fallback 之間的不對稱是真實的潛在不一致，
+   若哪天復活 'failed' 狀態才會有影響。
+
+2. **`PooledAStar.ts:293` 無界迴圈會永久卡死 worker** — 把防禦性編碼缺口誇大成高嚴重度卡死。
+   正常情況終止有保證（`if (this.closed[neighborIdx]) continue` 使 parent 指標形成依關閉時間排序的森林）；
+   SAB race 的可觀察輸出已被 `clearPending()` → `inflightBatches.clear()` 整批丟棄；
+   且 `resetDirty()` 把每個觸及索引的 parentEdge 設為 -1，任何未被本次搜尋觸及的節點下一輪就終止。
+   *殘留價值*: version 守衛未接上與缺少步數上限是真實但低嚴重度的健壯性缺口 —— **已併入 BUG-063 的修復方向**。
+
+3. **`RailBuilder.ts:30` extractOutOfBoundsEdge 只截斷一格** — 前提為假。
+   端點在來源處就已被夾限：`GridCursor.update`（`renderer/GridCursor.ts:56-58`）做了
+   `Math.max(-1, Math.min(this.gridWidth, this.gridX))`，註解明寫「Allow 1 cell beyond edge」。
+   Game.ts 對道路/鐵軌刻意跳過夾限正是因為游標已限制在 ±1 邊界環，
+   所以「從 (5,5) 拖到 (5,-3)」透過 UI 不可達。實測 `buildTrack({5,5}→{5,-1})` 回傳 success。
+   *殘留價值*: 若 L 彎本身落在地圖外（如 (5,5)→(-1,3)），slice 會留下額外的界外格導致整段建設被拒，
+   且 outwardFlag 算成 NORTH 而非 WEST —— 這是可達的斜向拖曳小瑕疵，無狀態損壞，
+   已列入下方未驗證清單（`EdgeUtils.ts:47`）。
+
+4. **Office 從不回饋工業 RCI 需求** — 程式碼閱讀正確但詮釋為缺陷是錯的；這是**規格中的模型**。
+   工業需求項明確是**貨物**平衡而非**工作場所**平衡（`RCIDemand.ts:73-75`，
+   `PLANNING.md:570` 逐字寫明「工業需求 = f(商業需要的貨物, 出口需求) - 目前工業供給」），
+   而 `FreightSystem.ts:117,196` 確認只有 INDUSTRIAL 產生貨運，office 不產不耗。
+   且 finder 提議的修法會製造**更嚴重**的 bug：若 office 計入 industrialSupply，
+   約 63 棟 office 就把 industrial 需求打到 0，`canGrow` 會連帶封鎖所有工業區
+   （共用同一 RCI 類別），商業建築永久貨運飢餓且玩家無從表達「我需要工廠」——
+   一個無法復原的經濟死亡螺旋。
+   *殘留價值*: office 區沒有自己的專屬需求訊號，屬設計缺口，至多值得一條 TODO。
+
+---
+
+### 未驗證的候選（60 項，因驗證上限 24 而未進入對抗驗證）
+
+以下由 finder 提出但**未經對抗驗證**，可信度未知，需逐項自行確認後才可視為 bug。
+依 finder 自評嚴重度排列，僅列位置與宣稱內容。
+
+**High（15）**
+- `ui/store/gameStore.ts:72` — 頂列餘額漏計貸款利息，UI 顯示正餘額但資金持續流失
+- `ui/modals/overview/EconomyPage.tsx:37` — Economy 頁 memo 每秒 12 次 `JSON.stringify` 整個 GameState
+- `service/ServiceRegistry.ts:62` — 學校失去電/水後仍保有完整覆蓋（未觸發 recalc）
+- `save/Serializer.ts:221` — `deserializeGameState` 以 currentTick=0 還原市民，捏造的 birthTick 可滅掉整個人口（與 BUG-055 同源，該處已涵蓋修復方向）
+- `road/RoadBuilder.ts:60` — buildRoad 從不把路徑端點連上既有相鄰道路，永久截斷路網
+- `simulation/SimulationLoop.ts:194` — 飛行中的 worker 路徑結果用拆除前的路線回填 CommuteCache 且永不過期
+- `elevation/ElevatedRoadBuilder.ts:67` — 從既有高架延伸時跳過匝道，建出無法到達的孤兒路
+- `transport/BusSystem.ts:18` — 公車站被拆時不重算路段（與 BUG-064 同根因）
+- `service/FireDamageProcessor.ts:63` — 火災不驅離住戶（與 BUG-056 同根因）
+- `workplace/WorkplaceDistanceCache.ts:56` — workplace distance worker 看不到高架道路，快取可達性與同步 fallback 矛盾
+- `simulation/SimulationLoop.ts:537` — 移民教育權重把建築**數量**除以**職缺數**，分支不可達
+- `service/UtilityCellDemand.ts:57` — 基礎設施電/水需求被乘上建築佔地面積
+- `service/RoadCoverageFlood.ts:455` — `roadDistanceToTargets` 記錄第一個看到目標的道路格，而非最便宜的
+- `save/Serializer.ts:105` — districts/policies/citySpec 未序列化（與 BUG-053 同源）
+- `building/BuildingGrowthTick.ts:129` — 廢棄建築在確認可重生前就被拆除
+
+**Medium（42）**
+`traffic/PedestrianManager.ts:422` 失敗行人路徑被快取為 null 且 invalidateCells 觸及不到 ·
+`elevation/ElevatedRoadBuilder.ts:262` removeElevated 改寫鄰居高架的 roadType ·
+`transport/FerrySystem.ts:118` `onRouteDissolved` 是死碼，vesselPaths 洩漏 ·
+`citizen/CitizenManager.ts:227` 退休市民（age > 200）永久佔著職位 ·
+`citizen/Birth.ts:76` birthTick 讓住宅超出 residents 容量 ·
+`economy/ShoppingAccess.ts:112` 高架下的建築在人口/容量被算兩次 ·
+`save/Serializer.ts:147` districts 未序列化（同 BUG-053） ·
+`service/WaterNetwork.ts:50` 電廠被對應到警察的耗水率 ·
+`service/StationLoadDistributor.ts:72` 總容量計入非運作與未連道路的站點 ·
+`simulation/SimulationLoop.ts:863` 噪音併入 cell.pollution 後又被當噪音再算一次 ·
+`simulation/SimulationLoop.ts:87` 載入存檔會重跑當日死亡與當月出生區塊 ·
+`building/BuildingQueries.ts:20` countZoneBuildings 把基礎設施格與廢墟計為 RCI 供給 ·
+`zone/ZoneManager.ts:44` 重劃區時留下 reserved=BURNED/ABANDONED，產生幽靈建築 ·
+`service/GlobalCoverageService.ts:184` 垃圾/殯葬收集為 O(pending × positions) 且迴圈內 splice ·
+`traffic/PedestrianManager.ts:252` levelCrossings 未接線，行人穿越關閉的平交道 ·
+`traffic/PooledAStar.ts:165` findPathVariants 每請求掃兩遍全圖並每次配置 PointData ·
+`simulation/SimulationLoop.ts:1565` 建立/刪除運輸路線從不使多模式轉乘圖失效 ·
+`citizen/CitizenManager.ts:216` evictBuilding 記錄 homelessSince 卻不記 unemployedSince，失業階梯不啟動 ·
+`simulation/SimulationLoop.ts:1069` 市民從不退休，老人永久佔用職位 ·
+`economy/IncomeCalculator.ts:115` 對燒毀/廢棄建築回報模擬實際收 $0 的稅 ·
+`service/SewageService.ts:122` 污水覆蓋 BFS 忽略未連線/無電的處理廠 ·
+`service/GarbageService.ts:277` 城市無掩埋場時未收垃圾的污染憑空消失 ·
+`environment/GridPollutionSources.ts:39` 高架道路的交通噪音被 grid 污染掃描靜默丟棄 ·
+`simulation/SimulationLoop.ts:402` 每月出生相位未持久化，每次載入多送一整個月的出生 ·
+`save/SaveValidator.ts:337` validateExportFile 忽略所有 service/transport 區段 ·
+`building/BuildingUpgrade.ts:79` 升級 ABANDONED/BURNED 建築，視覺復活但功能未復活 ·
+`grid/TerrainGenerator.ts:74` generateTerrain 輸出隨 grid 大小而異，New Game 預覽永遠對不上實際地圖 ·
+`Game.ts:871` 在空的已劃區格上建路留下陳舊 zone overlay instance ·
+`simulation/SimulationLoop.ts:948` 升級/火災 tick 掉了 `abandoned` flag，廢棄建築被重新點亮 ·
+`simulation/SimulationLoop.ts:1428` lane graph 重建只使服務車輛失效，通勤與貨運車輛保留陳舊 LaneEdge 路徑 ·
+`traffic/TrafficSimulation.ts:294` 車輛排序比較器每次比較都重算完整路徑前綴和（每 render frame）·
+`transport/AirportSystem.ts:168` 機場觀光客無限累積且無任何系統消耗 ·
+`citizen/CitizenHealth.ts:51` 健康污染懲罰未設上限，POLLUTION_MAX_PENALTY 是比例因子而非最大值 ·
+`citizen/CitizenManager.ts:279` educateTick 暫停的學生釋放學位後又收回，學校永久超收 ·
+`citizen/Migration.ts:150` EDUCATION_THRESHOLDS.AVG_LAND_VALUE=150 超過 calculateLandValue 可能產生的最大值 125 ·
+`district/PolicyManager.ts:28` 五條行政區政策中有三條每預算 tick 收費但對模擬零效果 ·
+`environment/GridPollutionSources.ts:35` 放在空的工業劃區地上的任何基礎設施都排放工廠級污染 ·
+`environment/CityMetrics.ts:33` 城市噪音平均被從未取得 noiseLevel 的空劃區格稀釋 ·
+`save/SaveManager.ts:44` saveGame() 在 IndexedDB transaction commit 前就 resolve，中止的存檔回報成功 ·
+`grid/EdgeUtils.ts:47` extractOutOfBoundsEdge 假設只有最後一格在界外，界外 L 彎會使邊緣拖曳失敗 ·
+`Game.ts:987` 重劃區拆除建築但不清除其廢棄壓力，替代建築繼承之
+
+**Low（3）**
+- `Game.ts:2524` — 里程碑通知在人口**下降**時觸發，把較低的里程碑宣告為新達成
+- `simulation/SimulationLoop.ts:1490` — 重建人行道圖會替換 state.pedestrianManager，丟棄所有活動行人
+- `district/PolicyManager.ts:30` — HIGH_DENSITY_BAN 無法封鎖高密度辦公樓（OFFICE 沒有 HIGH 區型變體）
+
+---
+
+## 第六十九輪 - 逐條驗證未驗證候選 + 每個 commit 對抗審查
+
+上一輪列出的 60 個「未驗證候選」全部經 8 個平行 agent 對抗驗證，確認為真的逐一以
+TDD 修復；隨後每個修復 commit 再由一個獨立 agent 反向審查，專門尋找「修復不完整 /
+引入回歸 / 測試造假」。BUG-113 以後全部來自那輪審查，也就是**我自己在這條分支上
+製造出來的缺陷**。
+
+### 已驗證並修復 (BUG-069 ~ BUG-112)
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-069 | save/SaveManager.ts | saveGame/deleteSave 在 request 回呼就 resolve，commit 階段中止無法 reject | Low |
+| BUG-070 | service/UtilityCellDemand.ts | 多格基礎設施電/水需求逐格計費，2x2 收 4 倍、3x3 收 9 倍 | High |
+| BUG-071 | service/WaterNetwork.ts | power 誤映到警局耗水率，電廠白吃 2.5x4 單位水 | Medium |
+| BUG-072 | zone/ZoneManager.ts | 重劃區清 buildingId 不清 reserved，新建築永久帶廢墟標記 | High |
+| BUG-073 | building/BuildingQueries.ts | countZoneBuildings 把廢墟與基礎設施計入 RCI 供給 | Medium |
+| BUG-074 | building/InfraPlacement.ts | placeInfraOnGrid 不清 zoneType，工業地上的設施排放工廠級污染 | Medium |
+| BUG-075 | citizen/CitizenManager.ts | evictBuilding 不記 unemployedSince，失業懲罰階梯永不啟動 | Medium |
+| BUG-076 | citizen/CitizenManager.ts | 市民永不退休，約 1/5 職位被永久佔用且不計入失業率 | Medium |
+| BUG-077 | economy/EconomyBreakdown | 面板把 power/water 維護費算兩次 (BUG-062 修復的副作用) | Medium |
+| BUG-078 | ui/store/gameStore.ts | 頂列餘額漏計貸款利息 | High |
+| BUG-079 | ui/modals/overview/EconomyPage.tsx | state memo 拿同一物件與自己比較永不更新；每 tick 兩次 stringify 全 GameState | High |
+| BUG-080 | service/EducationService.ts | updateOperationalStatus 丟棄 changed，斷電學校保有完整覆蓋 | Medium |
+| BUG-081 | service/SewageService.ts | 覆蓋計算忽略未連線/無電廠，全城污水癱瘓時零水污染 | Medium |
+| BUG-082 | citizen/Birth.ts | 生育只檢查幼兒上限，住宅可永久超載 50% | Medium |
+| BUG-083 | citizen/CitizenHealth.ts | 污染懲罰除以 100 而非 255，MAX_PENALTY 變成比例而非上限 | Low |
+| BUG-084 | citizen/Migration.ts | AVG_LAND_VALUE=150 超過 calculateLandValue 最大值 125，權重是死碼 | Low |
+| BUG-085 | simulation/SimulationLoop.ts | office/industrial 比例用建築數除以職缺數，兩個門檻都不可達 | Medium |
+| BUG-086 | building/BuildingUpgrade.ts | 廢墟可升降級，且 callback 漏傳 abandoned 導致視覺復活 | Medium |
+| BUG-087 | Game.ts applyZone | 重劃不清廢棄壓力，替代建築繼承前一棟的壓力 | Medium |
+| BUG-088 | simulation/SimulationLoop.ts | 日/月相位未播種，載檔重跑當日死亡與當月出生 | Medium |
+| BUG-089 | transport/BaseTransportSystem.ts | onRouteDissolved 在車輛已刪除後才呼叫，Ferry 水路快取洩漏 | Low |
+| BUG-090 | simulation/SimulationLoop.ts | 運輸路線 CRUD 從不使多模式轉乘圖失效 | Medium |
+| BUG-091 | district/PolicyManager.ts | 三條政策每預算週期共收 380 元但模擬端零讀取 | Medium |
+| BUG-092 | environment/CityMetrics.ts | 噪音平均被沒有建築的空劃區格稀釋 | Medium |
+| BUG-093 | simulation/SimulationLoop.ts | 噪音併入 cell.pollution 後又以 noiseLevel 再扣一次 | Low |
+| BUG-094 | Game.ts checkMilestone | 人口下降時重新宣告較低里程碑 | Low |
+| BUG-095 | economy/ShoppingAccess.ts | 高架下的建築人口/容量被重複計算 | Low |
+| BUG-096 | elevation/ElevatedRoadBuilder.ts | removeElevated 從剩餘連線重推鄰居 roadType (BUG-060 高架孿生體) | Medium |
+| BUG-097 | elevation/ElevatedRoadBuilder.ts | 跨層延伸不產生匝道，建出付費但無法到達的孤兒路 | Medium |
+| BUG-098 | grid/EdgeUtils.ts | 只截斷最後一格，斜向拖到邊界環必失敗且 outwardFlag 算錯 | Low |
+| BUG-099 | environment/GridPollutionSources.ts | 高架車流噪音投影到地面後因地面 roadType 為 NONE 而丟棄 | Medium |
+| BUG-100 | service/HealthService.ts 等 | 負載分母含非運作設施，斷電醫院持續壓低死亡率 | Medium |
+| BUG-101 | service/GarbageService.ts | 無掩埋場時未收垃圾的污染完全消失 | Low |
+| BUG-102 | service/RoadCoverageFlood.ts | 目標成本在 relax 時鎖定，記錄第一條而非最便宜的路線 | Low |
+| BUG-103 | traffic/PedestrianManager.ts | 失敗路徑快取為 null 但無索引，invalidateCells 觸及不到 | Low |
+| BUG-104 | simulation/SimulationLoop.ts | 重建人行道圖替換整個 PedestrianManager，丟棄所有行人 | Medium |
+| BUG-105 | Game.ts | 行人平交道阻擋邏輯實作完整卻從未接線 | Medium |
+| BUG-106 | traffic/TrafficSimulation.ts | 排序比較器每次比較重算完整前綴和，每 render frame | Medium |
+| BUG-107 | simulation/SimulationLoop.ts | clearPending 晚一 tick，飛行中 worker 結果把拆除前路線寫回 | Medium |
+| BUG-108 | traffic/TrafficSimulation.ts | 通勤/貨運車輛保留已拆除路段的 LaneEdge | Low |
+| BUG-109 | workplace/WorkplaceDistanceCache.ts | worker 看不到高架，快取與同步 fallback 對可達性矛盾 | Medium |
+| BUG-110 | service/GlobalCoverageService.ts | collectPending 每輪全掃 pending，O(rounds x pending) | Medium |
+| BUG-111 | Game.ts | 建路清空劃區格的 zone 卻不移除 overlay instance | Low |
+| BUG-112 | traffic/LaneGraphBuffer.ts | findPathVariants 每點配置 PointData 只為讀 cell | Medium |
+
+### 對抗審查揪出、由我自己引入的缺陷 (BUG-113 ~ BUG-124)
+
+| ID | 來源 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-113 | BUG-104 | 就地換圖刪掉唯一傳入 trafficLights 的建構點，行人闖所有紅燈 | Critical |
+| BUG-114 | BUG-069 | save.worker.ts (autosave 主路徑) 只接 onerror，commit 失敗只發 abort 導致 promise 永不 settle；loadGame/listSaves 同樣可永久卡死；fake IDB 同時觸發兩種事件因而無法鑑別 | High |
+| BUG-115 | BUG-108 | 陳舊路徑清掃誤殺公車，busVehicleIds 不對帳導致路線永久無車 | High |
+| BUG-116 | BUG-108 | 清掃以「格子 dirty」為準，蓋路/升級會刪光該路段所有車流 | High |
+| BUG-117 | BUG-097 | 跨層延伸改寫起點格 roadType 並清空 railType，免費降級付費高架、刪除鐵路橋一格 | High |
+| BUG-118 | BUG-097 | removeElevated 只掃自身層，跨層匝道拆除後低層鄰居留下懸空 flag | Medium |
+| BUG-119 | BUG-076 | 退休清 workplaceId 卻不清 CommuteCache，幽靈路線持續餵擁塞預測 | Medium |
+| BUG-120 | BUG-095 | 去重只在 component 內，跨 component 仍重複計算且覆寫掉正確結果 | Medium |
+| BUG-121 | BUG-092 | getAvgNoise 仍讀每 60 tick 才更新的 cell.noiseLevel，稀釋只修一半 | Medium |
+| BUG-122 | BUG-101 | Math.ceil 讓排放量隨垃圾位置數成長，達宣稱上限 2 倍且與垃圾量脫鉤 | Medium |
+| BUG-123 | BUG-094 | 里程碑高水位未持久化，人口回落後存檔會重播全部里程碑 | Medium |
+| BUG-124 | BUG-104 | 保留行人卻不驗證路徑，行人走在已拆除的人行道上 | Medium |
+
+---
+
+## 第七十輪：清空第六十九輪待辦 (BUG-125 ~ BUG-146)
+
+前一輪對抗審查列出 33 項待辦——10 項測試品質、23 項既有缺陷——全部處理完畢。
+每一項都先寫失敗測試再修，並用「把修復 revert 掉重跑」確認測試真的有鑑別力。
+
+### 既有缺陷
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-125 | transport/BaseTransportSystem.ts | transfer graph 失效靠十個呼叫點各自記得 markTransitNetworkDirty，規則只由註解維繫（BUG-090 就是這樣發生的）→ 改為系統自帶 version 計數器 | High |
+| BUG-126 | simulation/SimulationLoop.ts | transfer graph 重建埋在 spawnCommuteVehicles 三道 early return 之後，車流達上限的城市永遠不重建：新路線對行程規劃隱形、已刪路線持續累計 dailyRiders | High |
+| BUG-127 | simulation/SimulationLoop.ts | 每次重建都清空 transferTracker 的建築歸屬，玩家按一次 +/- 面板就整片空白 | Low |
+| BUG-128 | district/PolicyManager.ts | IMPLEMENTED_POLICY_TYPES 是 POLICY_ZONE_RESTRICTIONS 鍵集合的手抄本（第三份清單）→ 改為推導 | Medium |
+| BUG-129 | ui/modals/DistrictModal.tsx | 停用政策從 UI 移除後，舊存檔的政策物件玩家看不到也關不掉，日後實作時會無聲生效 | Medium |
+| BUG-130 | service/NetworkCoverage.ts | 多格設施逐格結算：次格 demand=0 成為免費中繼，付不起的警局顯示 3/4 供電並把電導向後方 | High |
+| BUG-131 | environment/GridPollutionSources.ts, environment/CityMetrics.ts, service/ServiceCoverageQuery.ts | 裸的 buildingId > 0：燒毀工廠永久排放滿額工業污染（無人清除 cell.pollution）、廢墟被算進城市污染/噪音均值、廢墟佔住服務覆蓋率分母 | High |
+| BUG-132 | Game.ts | applyZone 用自己那份重劃條件先驅離、拆 mesh、清 stress，才呼叫會拒絕的 setZoneRect：拆路後重劃整區變成「已驅離但仍在格子上」的殭屍建築，仍算供給仍收稅 | High |
+| BUG-133 | Game.ts | 重劃不清 deathCare / garbage 的 per-position 佇列，屍體與垃圾永遠掛在沒有建築的地址上 | Medium |
+| BUG-134 | building/AbandonmentStressTick.ts | stress 以位置為鍵而 tick 只走活建築，applyDisasterDamage / 設施覆蓋拆除 / 建築燒毀三條路徑留下的項目被下一棟繼承 → 改為剪枝，一次覆蓋全部路徑 | Medium |
+| BUG-135 | save/migrations.ts, save/Serializer.ts | BUG-074 只修放置當下；舊存檔的設施格仍帶 zoneType，且 migrateOldInfra 每次載入還會重新製造 → 新增 v7 migration | Medium |
+| BUG-136 | service/GarbageService.ts | getPollutionSources 用 getOperationalFacilities（不看道路連通），無路可達的掩埋場照樣排放、分攤未收垃圾罰則，還因此讓罰則不落在街上、掩蓋真正的污染 | Medium |
+| BUG-137 | service/SewageService.ts | 覆蓋在 slot 1 預算，operational 在 slot 2 更新：停電的污水廠整個 cycle 繼續供應，而 getPollutionSources 跳過已供應格，水污染罰則一併被壓住 | Medium |
+| BUG-138 | service/SchoolService.ts, GarbageService.ts, SewageService.ts, ui ServicesPage | 容量統計含非運作設施（BUG-100 已在醫院修過同一形狀）：停電學校仍提供學額，面板宣稱城市沒有的處理量 | Medium |
+| BUG-139 | simulation/SimulationLoop.ts | countJobOpenings 用總人口當已就業，退休實作後約 43% 崗位永久顯示為已滿，壓抑了會補人的住宅需求 | High |
+| BUG-140 | citizen/Birth.ts | createCitizen 的容量閘門把無家可歸者也算進人口，城市一有遊民就宣稱客滿；生育每月一次對移民每 6 tick 一次，永遠是生育被擋掉 | High |
+| BUG-141 | citizen/Migration.ts | AVG_LAND_VALUE=100 對照的是水岸單格上限 125，實際比較對象是全城均值；內陸上限 105 再扣 crime 約 8 分 → 高地價移民權重仍是死碼 | Medium |
+| BUG-142 | transport/FerrySystem.ts | waterPathCache 以座標為鍵、無人隨碼頭生命週期清除：每拆一個碼頭洩漏一次，重建同格時用舊地圖回答連通性 | Medium |
+| BUG-143 | elevation/ElevationManager.ts | 高架污染 tier 取最高「層」的 roadType，高架鐵路疊在高架公路上時回報 0，BUG-099 症狀原地復發 | Medium |
+| BUG-144 | elevation/ElevatedRoadBuilder.ts | 起始層取「最高層」：地面道路配 level-3 高架而選 level 1 時會從 3 往下蓋；level-1 高架被 level-3 壓住時完全無法延伸 | Medium |
+| BUG-145 | simulation/SimulationLoop.ts | lane graph 全量重建分支（存檔載入、初次建立、無 affected cells 的編輯）換掉所有 LaneEdge 卻完全不清車，正是 BUG-108 修過的狀況、換一條沒人看的路徑 | Medium |
+| BUG-146 | service/PowerGrid.ts, service/WaterNetwork.ts | 機場與所有運輸站點在消耗表中無條目：40000 造價的大型機場用電用水皆為 0，而 BaseTransportSystem 早就會因缺電讓站點停擺——玩家無從得知要蓋什麼 | Medium |
+
+### 測試品質
+
+| 測試 | 問題 | 處理 |
+|---|---|---|
+| LoadDoesNotRerunDailyBlocks | 前兩條斷言 hasRunDayBlockFor(clock.getDay())，而建構子剛把該欄位設成該值 → getDay() === getDay()，整份修復 revert 後仍全綠；lastRiderDay 是存活 mutant | 改為觀察區塊效果（ring buffer 旋轉、rider rollover、新生兒數），刪掉兩個只為此存在的 accessor |
+| TransitNetworkInvalidation | 自己呼叫 markTransitNetworkDirty，等於只測 setter | 改為完全不呼叫，靠 version 計數器；忘記呼叫的變更點現在會紅 |
+| PolicyEffectiveness | 走訪 PolicyType 集合檢查每個鍵存在於 Record<PolicyType, _>，型別上恆真、空集合也通過 | 改為行為斷言：已實作政策必須真的擋建，未實作政策必須完全不影響 |
+| ExpenseCalculator | "returns 0 when no policies are active" 用 'heavy_traffic_ban'（根本不是 PolicyType），該列被當未實作濾掉，active 欄位從未被讀 | 改用真實已實作型別，並配一條正向對照 |
+| EconomyPanelMatchesBudget | fixture 讓 transportCost / policyCost / elevatedMaintenance 恆為 0，八項中三項可任意不一致 | fixture 填滿八項，並新增一條「任一項為 0 就紅」的守門測試 |
+| VehicleSortCost | 數 length 讀取次數並容許 2 倍，鑑別邊際僅約 4% | 改為直接數 edgeTotalProgress 呼叫次數：修好 64、放回比較器 628 |
+| RoadDistanceMinCost | 只斷言「有變小」 | 精算並釘住 29/6 與 4.0 |
+| MultiCellUtilityDemand | 只走 calculateDemand，bfsBudgetDrainFlood 零覆蓋 | 補上 all-or-nothing 案例，含「從次格進入」這條唯一需要 footprint 計費鍵的路徑 |
+| ShoppingAccessElevated | 只斷言 hasAccess 布林，重複計數不會被發現 | 釘住 ratio，並新增「匝道把兩個地面網路接起來」的正向案例與無匝道對照 |
+| Simulation / TaxRefactor / TrafficSimulation / Integration / Migration / CommuteCache | 六條測試隨機失敗（約數個百分點），全出現在整包執行、單獨跑必過 | 收益類改為比值與加法性不變量；stall 測試的 50 幀在半數抽樣下會直接 despawn，改為算術上安全的 32 幀；200x200「效能」測試其實只斷言時鐘前進，4.6s 對上 5s 預設逾時 → 給定 30s 預算。以 6 組不同種子驗證斷言不是套在單一種子上 |
+
+---
+
+## 第七十一輪：逐一對抗審查全部 commit (BUG-147 ~ BUG-166)
+
+分兩批共 14 個 read-only 審查代理，逐 commit 對抗審查。核心要求一致：
+**把修復 revert 掉重跑測試，證明測試會轉紅**。這一輪抓到的多數不是新寫的程式碼有錯，
+而是「測試根本沒鑑別力」與「修復只做了一半」。
+
+### 已修（本輪）
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-147 | building/BuildingGrowth.ts, zone/DensityRules.ts | tryGrow 把 getMaxDensity 回傳的「道路允許密度」直接當成要蓋的建築等級，四種區劃/道路組合永遠蓋不出來：低密度住商在 4/6 線道旁、高密度住商在 2 線道或鄉道旁。canGrow 全數回 true，canZone 無密度閘門，玩家一次拖曳就會踩到 | **Critical** |
+| BUG-148 | Game.ts | rebuildDirtySubsystems 的 d.buildings 分支呼叫 buildingRenderer.build() 沒帶 blocker 查詢：遊戲開始、載入存檔、災害後所有 overlay 都無色；且該分支在 zoneOverlaysDirty 之後執行，同一幀兩者都髒時會覆蓋掉正確色調 | High |
+| BUG-149 | Game.ts | 只有重劃與拆除會讓 blocker 色調失效。鋪路、蓋電廠、切換行政區政策——overlay 自己要求玩家去做的三件事——都不會。靠每 60 tick 的 onTerrainChanged 自癒，暫停時完全不會 | Medium |
+| BUG-150 | Game.ts | summariseZoneBlockers 每次面板輪詢（約 6 Hz）都做全圖掃描，每個空劃區格再跑兩次 (2r+1)² 鄰域掃描，只為更新一個數字 | High |
+| BUG-151 | Game.ts | 「Also affected N cells」把選取的格子自己也算進去 | Low |
+| BUG-152 | Game.ts | getSelectedBuilding 結尾的 `return sel` 宣稱是窮舉檢查，實際不是：新增 kind 可賦值給回傳型別，會靜默編譯成它要防的那個永不更新的淺拷貝 | Low |
+
+### 已修（第七十二輪，BUG-153 ~ BUG-166 全數清空）
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-153 | ui/modals/overview/ServicesPage.tsx | 污水廠列用「已過濾的分母」除「未過濾的分子」：兩座 2250 廠停一座、產量 3000 時，兩列都顯示 3000/2250 133%，連停機那座也算；全部停機時 cap=0 觸發 `>0` 保護，每列顯示 0/2250「Normal」綠字——正是城市完全不處理污水的當下 | High |
+| BUG-154 | ui/modals/overview/ServicesPage.tsx | 警消醫短缺警告的 `cap > 0 &&` 前置條件，在 BUG-138 過濾容量後變成「全部停機時反而不警告」。教育那列沒有這個前置條件，同一檔案內行為不一致 | High |
+| BUG-155 | ui/modals/overview/InfraPage.tsx | 掩埋場列同樣是未過濾 getCurrentLoad 配過濾後的 getTotalCapacity，顯示「1800 / 0」且進度條回到 0% 的健康色 | Medium |
+| BUG-156 | service/GarbageSewageProduction.ts | 污水/垃圾產量仍計入廢墟（不看 reserved），而 BUG-131 之後 getCellDemandAt 對同一格回傳 0：同一個 p.capacity 被拿去對照兩種不同的 demand 定義，且廢墟污水被免費供應後不再排放水污染 | Medium |
+| BUG-157 | Game.ts | BUG-111（設施覆蓋劃區 overlay 未清）還有兩條路徑沒修：placeAirport 直接呼叫 placeInfraOnGrid 完全沒清 54 格；placeTransportStop 非機場分支保留 zoneType，重新製造 v7 migration 要清的狀態 | Medium |
+| BUG-158 | transport/BusSystem.ts | rebuildAllSegments 對「永久無法規劃路徑」的路線每次 lane graph 重建都 bumpTopologyVersion（該路線沒有 routeSegments 條目，永遠不會被 continue 跳過）：城市任何一處鋪路都會清空 transfer 面板的建築歸屬，正是 version 機制要防的事 | Medium |
+| BUG-159 | traffic/SidewalkGraph.ts | SidewalkEdge.id 不決定幾何：節點位置取自 ROAD_WIDTHS[roadType]，id 不含 roadType。道路升級後 edge id 不變 → retireAgentsOnDeadEdges 不退場 → 行人依舊照舊節點位置內插，走在拓寬後的車道裡最長 120 秒 | Medium |
+| BUG-160 | traffic/SidewalkGraph.ts | SidewalkEdge.id 不含 type 也不含 intersectionCellKey：crosswalk 與 level_crossing 可產生同 id，addBidirectionalEdge 以先到者為準。號誌路口正北格若有平交道，該處行人直接繞過剛接好的紅綠燈 | Medium |
+| BUG-161 | simulation/SimulationLoop.ts | buildingGrowthTick 直接 updateCells 改人行道圖，不設 sidewalkGraphDirty，所以 retireAgentsOnDeadEdges 永遠看不到它。建築拆除是 building_entrance edge 消失的最高頻來源，正是 84a4713 宣稱修好的那個案例 | Medium |
+| BUG-162 | elevation/ElevationManager.ts | chooseStartLevel 不問該層有沒有道路，重蹈 getHighestRoadType 要修的錯：road 在 level 3、rail 在 level 1、目標 level 2 時距離同為 1，取小者選中鐵路層 → 起點寫入 roadType 0，蓋出無人能到的高架 | Medium |
+| BUG-163 | elevation/ElevatedRoadBuilder.ts | existingAtStart 保護只在 !segAtTargetLevel 時生效：目標層剛好是純鐵路層時，直接寫 railType:0 抹掉一段高架鐵路，不收費也不提示 | Medium |
+| BUG-164 | simulation/SimulationLoop.ts | 住宅容量回呼對「有 homeId 但沒有建築」的地址回傳 FALLBACK_RESIDENTS=8，而 countResidentialCapacity 對同一格回傳 0。BUG-140 拿掉 createCitizen 的總量閘門後，這是生育的唯一上限 | Medium |
+| BUG-165 | citizen/Migration.ts | BUG-140 只修了每月一次的生育路徑，每 6 tick 的移民路徑仍走 createCitizen；兩條路徑對「客滿」定義不一致，移民會在家庭中途中斷而 slots 已先行遞增 | Medium |
+| BUG-166 | citizen/Migration.ts, ui SummaryPage.tsx | countJobOpenings 改為 totalJobs - employed 後，attractiveness 的 JOB_SCORE(+20) 與失業罰則上限(−15)不再平衡：一個永遠填不滿的職缺在 100% 失業下淨值 +5，供給側煞車消失。SummaryPage 仍用舊定義 totalJobs - population，面板與模擬互相矛盾 | Medium |
+
+### 第七十二輪補充
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-167 | renderer/* | 已蓋好的建築失去電力或水源時畫面上毫無提示，渲染層完全不讀供電狀態；玩家只會在數週後看到建築自行廢棄，屆時原因早已離開畫面 | High |
+| BUG-168 | elevation/ElevationManager.ts | getHighestRoadType 以 enum 序數排序「最吵」，但 ONE_WAY(6) > HIGHWAY(5) 而噪音係數 1.2 < 2.0：單行道疊在高速公路上會讓後者靜音 | Low |
+
+BUG-162 與 BUG-163 實測為同一根因：`chooseStartLevel` 回傳純鐵路層。
+審查員推測的 `existingAtStart` 閘門機制不成立——`path[0]` 在該情境下根本不會被寫入。
+
+---
+
+## 第七十四輪：清空全部待辦（BUG-169 ~ BUG-213）
+
+一次處理完 TODO.md 上所有未修項目。每條都先寫紅燈測試、修好、再把修正還原確認測試轉紅。
+
+### 建置與型別（pnpm build 從失敗到通過，tsc 321 → 0）
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-169 | ui/components/BuildingPanel.tsx | 用了 `<For>` 三次卻只 import `Show, Index`。Solid 把 JSX 編成對該識別字的呼叫，所以**點選任何建築都會 ReferenceError**，資訊面板整片空白 | **Critical** |
+| BUG-170 | Game.ts | `handleSelectClick` 手寫的 services 物件漏掉 `sewage`，而 700 行外幾乎相同的區塊有。面板照樣畫出 Sewage 列，顏色算出 `rgb(255,NaN,50)`，瀏覽器直接丟棄該宣告 | High |
+| BUG-171 | renderer/vehicleGeometry.ts | 零 importer 的相容轉發層，re-export 一個整個 repo 不存在的 `buildTaxiGeometry`，且漏掉一半真實存在的匯出 | Low |
+| BUG-172 | Game.ts | `TOOL_COLORS` 有一個不存在的 `airport` 鍵，且缺了真正的 `airport_s/m/l` 三個 | Low |
+| BUG-173 | save/Serializer.ts | `serializeGameState` 自行複述 `snapshotGameState` 的 extra 型別並過期，拒絕 `transferHistory` / `highestMilestonePop`（runtime 有轉發，純型別問題） | Low |
+| BUG-174 | service/*.ts | 六個 `addXxx(..., capacity = CONST.DEFAULT)` 因 `as const` 預設值把參數收窄成字面量，任何呼叫者都不能傳別的數字 | Low |
+| BUG-175 | traffic/TrafficSimulation.ts | `SpeedLimitLookup` 的聯集讓 `getCell` 變成選用，值可以靜態滿足型別卻在 `grid.getCell!` 撞上 undefined | Low |
+
+### 服務一致性
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-176 | citizen/CityHappinessContext.ts | `calculateCityServiceCoverage` 加總九項 ServiceRatios 中的八項，跳過 `sewageRatio`——該欄位由 ServiceCoverageQuery 算出後**無人讀取**。蓋汙水廠對市民幸福度毫無貢獻 | High |
+| BUG-177 | service/ServiceCoverageQuery.ts | 修好 BUG-176 後半套系統仍不認得 sewage：`ServiceFlags`、`getCellServiceScore`、`serviceFlagsToScore` 都沒有它，所以汙水廠仍不影響地價、建築等級、廢棄壓力 | Medium |
+| BUG-178 | service/SchoolService.ts, HealthService.ts | 總容量用 `getOperationalFacilities`（只看電）。覆蓋沿道路擴散，所以沒有道路的學校/醫院覆蓋為零卻照算容量。醫院尤其嚴重：SimulationLoop 用 `getLoadRatio()` 乘死亡率，到不了的病床會壓低全城死亡 | High |
+| BUG-179 | district/PolicyManager.ts | `applyPolicy` 以 type 去重就 return，存為 `active:false` 的政策永遠開不回來：面板畫成關閉，按下去沒有任何事發生 | Medium |
+| BUG-180 | ui/modals/DistrictModal.tsx | `{d.name}` 與 `{d.cells.size}` 只在建立那一次讀取。`<For>` 依物件識別重用列，改名或繼續塗區域畫面完全不動，而格數是塗抹工具唯一的回饋 | Medium |
+| BUG-181 | environment/GridPollutionSources.ts | `GridLike.forEachCell` 用 method shorthand，TypeScript 即使開 strictFunctionTypes 仍雙變——「`reserved` 必填」是註解不是規則 | Low |
+
+### 垃圾污染
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-182 | service/GarbageService.ts | 有掩埋場的分支算 `ceil(penalty / n)` 後在**每一格**設施上排放。掩埋場 2x2，所以整個 penalty 排了四次：實測 400 對 penalty 100。蓋了廢棄物處理，未收垃圾反而痛四倍——BUG-101 誘因反轉的較輕版本 | High |
+| BUG-183 | service/GarbageService.ts | `UNCOLLECTED_POLLUTION_SITES = 12` 取「最嚴重的十二堆」。垃圾平均分佈時每堆數量相同、排序穩定，於是退化成「地圖最先列舉到的十二格」：200 格垃圾有 188 格完全不排放，且 pendingBags splice 會讓這十二格無故漂移 | Medium |
+
+### 高架與鐵路
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-184 | elevation/ElevatedRoadBuilder.ts | 保護既有 segment 的 `existingAtStart` 依定義是 `i === 0`，所以第二格起放置迴圈無條件寫 `railType: 0`：**高架道路橫跨高架鐵路會刪掉交會處的鐵路** | High |
+| BUG-185 | elevation/ElevatedRoadBuilder.ts | 起點閘門用 `hasElevatedSegment`，它對高架**鐵路**也成立。chooseStartLevel 正確地拒絕回傳純鐵路層而回答 0，於是整條路從一格沒有道路的地面出發，匝道的腳指向空無一物——BUG-097 的懸空旗標換個門進來 | Medium |
+| BUG-186 | elevation/ElevatedRoadBuilder.ts | `removeElevated` 掃描 `highest` 與 `highest-1`（匝道跨兩層，BUG-118），但清除下層鄰居旗標前不確認該層是否還有東西：兩座高架疊放時，拆上層會切斷完好的下層 | Medium |
+| BUG-187 | Game.ts, elevation/ElevatedRoadBuilder.ts | 拆除把每一格高架都送進 road builder（Game.ts 問的是 `hasElevatedSegment`），而它只認得 RoadNetwork。RailNetwork 的節點與邊在橋消失後仍在，列車繼續在空中行駛。`ElevatedRailBuilder.removeElevated` 做對了事卻從未被呼叫——那段死碼正是這個 bug 缺的另一半 | High |
+
+### 交通與圖
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-188 | transport/BusSystem.ts | `onRoadChanged` 只比對 `from/to.cellKey`。跨路口轉彎邊是從路口**前**一格連到**後**一格，把跳過的格子記在 `viaCellKey`，所以拆掉公車轉彎的那個路口從不標記該路線受影響：路段不重算，公車繼續開在中段已不存在的邊上 | Medium |
+| BUG-189 | traffic/PedestrianManager.ts | WAITING_SIGNAL 的重檢問 `canPassCrosswalk(currentEdge)`，但等待中的 `edgeIndex` 仍指著**接近邊**，而該函式對非穿越道會在 `!edge.intersectionCellKey` 就回 true。每 tick 放行每一個等待中的行人；多數時候被下游迴圈重新擋住，但尚未走到邊界的行人會被放行並在紅燈下前進 | Medium |
+| BUG-190 | economy/ShoppingAccess.ts | BFS 從佇列中**每一格**展開地面鄰居，包含高架格，於是沒有匝道的高架橋會吸收底下的地面並把它飛越的兩個路網接成一個。既有的反例測試只因 `forEachCell` 是列優先、先走到地面而通過 | Medium |
+| BUG-191 | simulation/SimulationLoop.ts | `rebuildLaneGraph` 的 `affectedCells` 區域變數只在註解裡被提到 | Low |
+
+### 人口
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-192 | simulation/SimulationLoop.ts | 生育在 slow-slot 0 靠近 tick 頂端執行，而 per-day 的 updateAges + deathTick 在同一 tick 尾端。月界是 `floor(day/30)` 變動、日界是 `floor(tick/24)` 變動，所以 tick 720 兩者同時成立：生育挑父母時讀的是前一天的年齡，而每個新生兒都在 deathTick 走訪的名單裡，出生不到一 tick 就要擲一次死亡 | Medium |
+| BUG-193 | citizen/Migration.ts | `EDUCATION_THRESHOLDS.AVG_LAND_VALUE` 是 `MAX_ORDINARY_LAND_VALUE * 0.75`，外面包著推導形狀的註解，但沒有任何東西產生那個 0.75。BUG-084 已經在另一個方向犯過一次（100 達不到，權重是死碼），79 則低到幾乎永遠成立，還是死碼 | Low |
+| BUG-194 | save/Serializer.ts | `highestMilestonePop` 在 Game.ts 經 `Math.max` 還原，而 JSON 雖然表達不了 NaN 卻表達得了字串——`Math.max(5000, "abc")` 是 NaN，與任何值比較皆為 false。匯入或手改的存檔只要一個壞值，該城市**所有里程碑永久失效**，而且下次存檔會原樣寫回去 | Medium |
+
+### 存檔與資料遺失
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-195 | main.ts | 載入失敗 `catch { await startGame(); }`：靜默在**同一個 slot** 上開新城市，100 tick 後的自動存檔覆蓋掉剛剛打不開的存檔。失敗當下位元組仍完好，是「復原」把它毀了 | **Critical** |
+| BUG-196 | Game.ts | 完全沒有 `saveWorker.onmessage`，每一個 SAVE_COMPLETE（成功與失敗）都被丟棄。空間用完的玩家可以繼續蓋任意久，而城市早已停止寫入 | **Critical** |
+| BUG-197 | workers/save.worker.ts | 自帶一份 openDB 與交易接線且已經走樣：`tx.onerror` 用 `tx.error ?? new Error(...)` reject，但 request 錯誤觸發時交易尚未 abort、`tx.error` 仍是 null——真正的 QuotaExceededError 在最需要說實話的自動存檔路徑上被換成佔位字串 | High |
+| BUG-198 | save/SaveManager.ts, workers/save.worker.ts | 兩份 `openDB` 都沒接 `onblocked`。它是**取代** success/error 派發的，之後不會再有任何事件，所以未處理的 blocked 讓每個存檔、載入、列表在整個頁面生命週期內永遠 pending。DB_VERSION 還是 1 所以不會發生——這正是它會撐到第一次改 schema 才爆的原因 | High |
+| BUG-199 | ui/MainMenu.ts, ui/modals/SettingsModal.tsx | `listSaves` 的 rejection 讓「Loading saves...」永遠留在畫面上；`deleteSave` 完全沒有 catch；SettingsModal 的 `await listSaves()` 在 try 之外 | Medium |
+| BUG-200 | Game.ts | 自動存檔寫死 slot 0，而 slot 0 就是 AutoSave——最可能壞掉的那一格。所以 slot 0 載入失敗後按 New Game 仍會在 100 tick 後蓋掉它：復原只是慢了一次點擊，並沒有被保住 | High |
+| BUG-201 | main.ts | `startGame` 全程沒有 catch，且是 floating promise。存檔讀出後任何一步拋出——dynamic import、建構子、initPhases、createGameUI——都留下載入畫面、消失的選單和一個 unhandled rejection | High |
+| BUG-202 | save/LoadSave.ts, SaveFailure.ts | 算出了正確的壞欄位卻只給 console；且新版本存檔從「可載入」變成被拒絕**並被說成損毀**。另外 `/JSON/` 也會命中 V8 的 "Converting circular structure to JSON"，讓一次從未發生的寫入被報成「檔案損毀但仍可匯出」 | Medium |
+| BUG-203 | save/SaveFailure.ts | 所有訊息都以存檔失敗的口吻書寫，載入路徑也用同一批：載入中斷會顯示「Save failed and the city is NOT being saved」，MainMenu 還把同一句畫進存檔清單 | Medium |
+
+### 玩家體驗
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-204 | Game.ts, building/WaterPlantSites.ts | 內陸開局無法取勝也從不說明。沒水什麼都長不出來，水廠要地下水，唯一的回饋是失敗那一下的 toast；水的 overlay 也幫不上忙，因為它上色的是**建築**，而卡住的城市一棟都沒有 | High |
+| BUG-205 | road/RoadBuilder.ts | 道路拖曳碰到水就整條取消。玩家已經畫好到岸邊的好路卻什麼也沒得到，只能靠縮短拖曳反覆試探岸線在哪 | Medium |
+| BUG-206 | ui/components/Toolbar.tsx | 群組按鈕是 toggle，所以同一群組挑兩個工具的自然操作（群組、工具、群組、工具）會在第三下把面板關掉。鍵盤與自動化流程每次都經過群組按鈕，必中 | Medium |
+
+### 測試品質
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-207 | simulation/__tests__/RenderDirtyCallbacks.test.ts | 六個案例中三個**完全沒有斷言**（賦值後未使用、空的 if 區塊）。城市也不可能有電：`addPlant(4, 4, 'coal')` 把 `4` 當成 PowerPlant 物件 | High |
+| BUG-208 | renderer/__tests__/BuildingRendererIncremental.test.ts | 五個案例中三個把所有斷言包在 `if (cb.mock.calls.length > 0)` 裡——正是它所檢查的東西壞掉時最容易通過的寫法。同樣的 addPlant 誤用 | High |
+| BUG-209 | renderer/__tests__/MetroTunnelRendererCache.test.ts | fixture 造 `{ start, end }`，而 TunnelSegment 是 `{ from, to }`：它一直在快取用 undefined 造出來的幾何 | Medium |
+| BUG-210 | citizen/CitizenManager.ts (onEvicted) | 遷離時清除通勤快取的接線完全沒有測試——刪掉那三行，全套測試仍綠 | Medium |
+| BUG-211 | simulation/SimulationLoop.ts (getAvgNoise) | 改讀 live pollution 沒有任何測試，而舊語意的 `getAvgResidentialNoise` 留著沒有呼叫者 | Medium |
+| BUG-212 | 多處 | 四份 fixture 已與其宣稱的型別脫節（LaneEdge 的 `nodeId`、Citizen 的 `id: 'test_1'`、PedestrianRenderer 的 `lateralOffset`、TransportStop 傳 id）。已抽出 `tests/helpers/makeLaneEdge.ts` 與 `makeCitizen.ts` | Medium |
+| BUG-213 | save/Serializer.ts | 沒有任何東西檢查 GameState 的欄位有沒有被序列化。新增欄位卻忘了存是完全無聲的——BUG-053 就是這樣來的。新測試首跑就抓到 `rciDemand` 與 `freight` 兩欄無人負責（查證後確為衍生狀態） | Medium |
+
+### 對抗審查（兩個 subagent，針對前三個 commit）
+
+審查在我自己的修正裡找到 12 個缺陷，全部已修（含 BUG-175、BUG-177、BUG-200 ~ BUG-203、BUG-208 的斷言不可能失敗、JSX lint 的三個漏接與兩個誤判、`pick()` 未取整）。
+審查同時確認為乾淨的：選單/橫幅無洩漏、無任何合法存檔被拒（60x60 全類型城市、20000 tick、版本 1~7）、worker bundle 無 window/document/Three、SaveBlockedError 在壓縮後仍存活。
+
+---
+
+## 第七十五輪：車道級交通剩餘項的查證（未修，僅查證）
+
+起因是「車輛看起來很順暢，這兩項真的有必要做嗎？」。用臨時測試量測實際圖與幾何，
+結論如下（臨時測試已刪除，量測數字記錄在此）。
+
+### 量測結果
+
+**每方向車道數**：RURAL 1、TWO_LANE 1、FOUR_LANE 2、SIX_LANE 3、HIGHWAY 2、ONE_WAY 2。
+
+十字路口（四臂，同型道路）產生的邊：
+
+| 道路型別 | turn 邊 | lane_change 邊 | 各轉向可用車道與成本 |
+|---|---|---|---|
+| TWO_LANE | 40 | **0** | 只有 L0 |
+| FOUR_LANE | 80 | 120 | L0(1.039) L1(1.039) — **完全相同** |
+| SIX_LANE | 120 | 240 | L0/L1/L2 皆 1.039 — **完全相同** |
+| HIGHWAY | 80 | 120 | L0(1.039) L1(1.039) — **完全相同** |
+
+所以在單向單車道的道路上（RURAL / TWO_LANE，也就是預設道路），
+兩項待辦**在結構上不適用**：沒有 lane_change 邊可走，轉向也只有一個車道可選。
+
+### BUG-214（真實缺陷，尚未修）
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-214 | traffic/LaneGraph.ts (generateCrossIntersectionTurns / generateStraightEdges) | 每個車道都有轉向邊且成本**完全相同**，所以 A\* 只會從車輛當下所在車道轉彎（換道另需 +0.15）。從內側車道右轉的貝茲弧與外側車道直行路徑最近距離 **0.0048**（正確車道為 0.1908）；從外側車道左轉對內側直行為 **0.0103**（正確車道 0.1845）。車身寬 0.09，等於完全重疊。而 `findCrossEdgeGap` 只比對 `toId` 相同（同一匯入點）的車輛，這種交叉路徑的 `toId` 不同會被直接 skip，兩車互相看不見 → **直接穿過彼此**。且兩者來自同一進入方向，同一個綠燈，號誌不會把它們分開 | Medium |
+
+僅在每方向 ≥2 車道時發生：FOUR_LANE / SIX_LANE / HIGHWAY / ONE_WAY。
+通勤車流走 `findLanePathVariants`（4 個變體），實測 4 個變體確實會分散到兩個車道，
+其中約一半從錯誤車道轉彎。
+
+### 建議修法（軟性偏好，非硬性限制）
+
+在建圖時對「與轉向不相稱的車道」之 turn 邊加一個小成本，讓 A\* 傾向先換到正確車道，
+但仍允許在必要時從錯誤車道轉。**不要**直接刪掉錯誤車道的轉向邊：
+六車道要換兩次，而換道邊是每格一階，若路口離出發點只有一格就會完全無路可走——
+那正好會製造出下一項待辦所描述的情境。
+
+### 「無法在指定距離內完成換道 → 選擇替代路線」建議關閉（不適用）
+
+換道邊是**格內** entry(lane i) → exit(lane i±1)，一格一階；而整條車道路徑是
+A\* 事前在圖上規劃完成的，因此回傳的路徑依定義就是換道可行的。
+這個待辦描述的是「車輛在行進中才決定車道、來不及切入」的架構，本專案不是那樣運作。
+
+另外，換道邊的終點 `cellKey:outDir:(lane±1):exit` 與目標車道直行邊的終點是**同一個點**，
+`toId` 相同，所以「目標車道有車」本來就已經被 `findCrossEdgeGap` 當成匯入衝突處理，
+車輛會讓行而不是穿越。
+
+---
+
+## 第七十六輪：BUG-214 修復（含工人執行緒），並抓到 BUG-215
+
+### 修復內容
+
+| ID | 位置 | 修法 | 狀態 |
+|---|---|---|---|
+| BUG-214 | traffic/TurnLane.ts（新增）、LaneGraph.ts、LaneGraphPathfinder.ts、PooledAStar.ts | 轉向邊依「起始車道離應走車道多遠」加成本 `TURN_LANE_PENALTY = 0.5` / 每偏一車道。右轉應從最外側（`laneCount-1`），左轉從最內側（0）；判定用行進方向向量外積，y 向南為正故外積 > 0 為右轉 | ✅ 已修 |
+| BUG-215 | traffic/PooledAStar.ts | 工人執行緒的 A\* **完全沒有計算 `LANE_CHANGE_COST`**，換道是免費的。主執行緒 `laneEdgeCost` 自校準以來一直在收 0.15。實測同一趟路，工人會為了內側車道快 5% 而免費切進切出——正是當初引入 `LANE_CHANGE_COST` 要消除的「潛進快車道再爬回來」 | ✅ 已修 |
+
+### 為什麼一定要動到工人執行緒
+
+遊戲實際跑的是**第二套 A\***。`Game.ts:513` 建立 pathfinding worker，
+`SimulationLoop` 把通勤與車輛路徑排進 `PathRequestBatcher` 丟給它，
+由 `PooledAStar` 在 SharedArrayBuffer 上走圖；`LaneGraphPathfinder.laneAStar`
+只服務同步呼叫者。只教會其中一套的規則，玩家看不到。
+
+兩套引擎的成本邏輯現在共用 `TurnLane.ts`：算術以整數形式（工人 buffer 已儲存的形式）
+為準，物件形式（LaneEdge）映射過去，因此不會再各自漂移。
+
+工人要收這筆錢需要「該點所在道路每方向幾車道」，buffer 原本沒有。
+寫進 point stride 中**原本就保留的 pad byte（offset 15）**，
+stride 與所有既有 offset 完全不動。
+
+### 校準
+
+門檻不是一次換道而是**兩次**：車輛為了轉彎切出去之後會切回來（每往外一車道慢 5%，
+長程留在外側不划算），所以要打敗的是 `2 x LANE_CHANGE_COST = 0.30`
+再加上離位那一兩格的速度損失。先試 0.35，結果只要轉彎後道路還有得走，
+第二個轉彎仍然從錯誤車道發生；改為 0.5 後成立。兩邊都是每車道線性，
+所以在任何寬度都成立。
+
+### 測試（17 支新測試，全部做過「還原修正確認轉紅」）
+
+`TurnLanePreference.test.ts`（10 支）與 `WorkerTurnLaneParity.test.ts`（7 支）。
+
+- 主執行緒：右轉必須從最外側車道、左轉從最內側；左轉接右轉的 Z 型路線兩個轉彎
+  各自從正確車道；轉彎弧與**旁邊直行車道**的最近距離必須大於車身寬 0.09
+  （修正前 0.0048）；六車道且路口就在起點旁邊時仍必須有路（軟性偏好，不是硬性限制）；
+  單向單車道道路完全不受影響。
+- 工人：buffer 帶得出 laneCount；右轉／左轉從正確車道；單車道不受影響；
+  三格路從外側車道出發不得潛進內側；十二格路必須換。
+
+還原確認：關掉主執行緒的 penalty → 3 支轉紅；關掉工人的 penalty → 1 支轉紅；
+關掉工人的換道成本 → 1 支轉紅。
+
+### 已知且刻意未擴大處理
+
+四岔路口上，A\* 常把轉彎走在**同時轉彎又換道**的 `lane_change` 邊上
+（例：外側車道右轉後切進新路的內側車道）。起始車道正確，penalty 為 0，
+本輪的判定（`turnsOn` / `idealTurnLane`）也把這種邊算作轉彎。
+它與新路上直行車的幾何關係是另一個題目，不屬於 BUG-214（從錯誤車道起轉），未一併處理。
+
+`writeFromGraph`（無 lookup 的那條路徑）仍把 roadType 寫死成 TWO_LANE，
+所以 laneCount 為 1、penalty 為 0。這是它原本就有的 speedLimit placeholder 行為；
+實際遊戲走 `writeFromGraphWithLookup`。
+
+---
+
+## BUG-216：路線變體機制蓋掉轉向車道規則（BUG-214 的修正只覆蓋一半車流）
+
+**發現於**「多車道大家都要右轉會不會擠成一團」的查證。
+
+通勤與車輛路徑不是單一路線，而是 4 個變體，車輛以
+`variants[Math.floor(Math.random() * variants.length)]` 均勻隨機挑一個
+（`SimulationLoop.ts:1414-1415, 2006, 2032, 2170, 2185, 2248`）。
+變體 3、4 的做法是對前一條路線用過的**每個點**乘上 `VARIANT_PENALTY = 3`，
+把路線推到別的車道去。
+
+這個 ×3 是乘法，套在整段成本上（一個點 ~0.75），遠大於 `TURN_LANE_PENALTY = 0.5` 的加法。
+四車道十字路口右轉實測（兩套引擎一致）：
+
+| 變體 | 行經車道 | 從哪個車道轉 |
+|---|---|---|
+| 0 | 全程 L1 | **L1（正確）** |
+| 1 | L1 → L0 | **L1（正確）** |
+| 2 | 全程 L0 | L0（錯誤） |
+| 3 | L0 → L1 | L0（錯誤） |
+
+車輛均勻隨機選 → **約一半的右轉車仍然從內側車道起轉**，
+也就是 BUG-214 量到的「轉彎弧與旁邊直行車路徑相距 0.0048、車身 0.09、
+`findCrossEdgeGap` 因 `toId` 不同而看不到彼此」在這一半身上原封不動。
+
+順帶的答案：**不會全部擠進右轉車道**——但原因是變體機制在對抗這條規則，
+不是設計上有意的分流。
+
+### 補充：車道級 A\* 沒有壅塞回饋
+
+`PooledAStar` 與 `LaneGraphPathfinder.laneAStar` 的成本裡都沒有壅塞項
+（只有舊的 cell-level `Pathfinding.ts` 有 `CONGESTION_WEIGHT`）。
+所以任何車道的堆積都不會靠重新規劃自行紓解，分流完全靠變體機制。
+
+### 建議修法（未實作，需要決定）
+
+變體機制的用途是把車流沿著道路分散，不是替它挑轉彎車道。
+把「有轉向出邊的點」（也就是路口前的 exit 點）與轉向邊本身排除在變體 ×3 之外，
+變體就會沿路仍走不同車道、只在路口前一格換進正確車道再轉。
+效果接近真實世界的左右轉待轉區：長段分流，路口收斂。
+
+代價：所有轉向車都排進同一條車道，而車道級路徑沒有壅塞回饋，堆積不會自行紓解。
+
+替代選項是維持現狀（一半正確、一半重疊），或把 penalty 改成乘法讓它與 ×3 同量級
+（脆弱，不建議）。
+
+### BUG-216 決議：不用「收斂」的方式修（2026-08-09）
+
+**決定：維持現狀，不強制所有轉向車走同一條車道。**
+
+理由不是「怕塞」，而是收斂修法治錯了病：
+
+- 兩條轉向邊（L0→L0、L1→L1）終點不同，`findGapAhead` 逐邊排隊、
+  `findCrossEdgeGap` 只比對同 `toId`，所以它們是兩條互不干擾的平行佇列。
+  強制收斂會把路口轉向吞吐量直接砍一半，而且**不管旁邊有沒有車都砍**。
+- 但現狀多出來的吞吐量也是假的：從內側車道右轉的弧線橫越外側直行路徑
+  （最近距離 0.0048，車身 0.09），兩車因 `toId` 不同而互相看不到，直接穿過去。
+
+BUG-214 的真正傷害是**未偵測到的交叉路徑衝突**，正解是 BUG-217，不是趕車進同一條車道。
+已上線的 `TURN_LANE_PENALTY` 仍有價值：它讓約一半的轉向車自動走對車道，
+等於先減少一半的衝突機會。
+
+### BUG-217（新開，未修）
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-217 | traffic/CrossEdgeCollision.ts (`findCrossEdgeGap`) | 只把「終點 ConnectionPoint 相同」的車輛視為衝突（`other.toId !== me.toId` 直接 skip），所以路口裡**路徑交叉但終點不同**的兩台車完全看不到彼此，直接穿過去。從內側車道右轉 vs 外側車道直行的最近距離 0.0048、車身寬 0.09，兩者又來自同一進入方向、同一個綠燈，號誌不會分開它們 | Medium |
+
+修法方向：改用行進方向與橫向距離判斷交叉，而不是只比 `toId`。
+比強制收斂嚴格更好——只有旁邊真的有車時才禮讓，沒車時兩條轉向路徑照樣並行。
+影響所有路口的車流，需要獨立一輪並先寫紅燈測試。

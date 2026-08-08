@@ -1,16 +1,25 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { MetroTunnelRenderer, type MetroLineData } from '../MetroTunnelRenderer';
+import { computeTunnelSegments } from '../../core/transport/MetroTunnelPath';
+import { TransportType, type TransportStop } from '../../core/transport/types';
 
+/**
+ * Segments come from the same function Game.ts calls. The hand-rolled version
+ * this replaces emitted `{ start, end }` against a TunnelSegment of
+ * `{ from, to }`, so every segment the renderer read was `{ from: undefined,
+ * to: undefined }` — it was caching geometry built from nothing.
+ */
 function makeLineData(lineId: number, stops: { x: number; y: number }[], trainCount = 1): MetroLineData {
-  const segments = stops.length >= 2
-    ? stops.slice(0, -1).map((s, i) => ({
-        start: s,
-        end: stops[i + 1]!,
-        controlPoints: [s, stops[i + 1]!],
-      }))
-    : [];
-  return { lineId, stops, segments, trainCount };
+  return { lineId, stops, segments: computeTunnelSegments(stops), trainCount };
+}
+
+/** Metro stations as the renderer receives them. */
+function makeStations(points: { x: number; y: number }[]): TransportStop[] {
+  return points.map((p, i) => ({
+    id: i + 1, x: p.x, y: p.y, type: TransportType.METRO,
+    passengers: 0, dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0,
+  }));
 }
 
 /** Collect UUIDs of all meshes in the tunnelGroup (excluding carriageMesh). */
@@ -28,7 +37,7 @@ describe('MetroTunnelRenderer caching', () => {
     renderer.build(scene);
 
     const line = makeLineData(1, [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }]);
-    const stations = [{ x: 0, y: 0, id: 1 }, { x: 5, y: 0, id: 2 }, { x: 10, y: 0, id: 3 }];
+    const stations = makeStations([{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }]);
 
     // First update — build tunnels
     renderer.update([line], stations, 0.6, 0.016);
@@ -56,7 +65,7 @@ describe('MetroTunnelRenderer caching', () => {
     renderer.build(scene);
 
     const line = makeLineData(1, [{ x: 0, y: 0 }, { x: 5, y: 0 }]);
-    const stations = [{ x: 0, y: 0, id: 1 }, { x: 5, y: 0, id: 2 }];
+    const stations = makeStations([{ x: 0, y: 0 }, { x: 5, y: 0 }]);
 
     renderer.update([line], stations, 0.6, 0.016);
 
@@ -86,13 +95,13 @@ describe('MetroTunnelRenderer caching', () => {
     renderer.build(scene);
 
     const line1 = makeLineData(1, [{ x: 0, y: 0 }, { x: 5, y: 0 }]);
-    const stations1 = [{ x: 0, y: 0, id: 1 }, { x: 5, y: 0, id: 2 }];
+    const stations1 = makeStations([{ x: 0, y: 0 }, { x: 5, y: 0 }]);
     renderer.update([line1], stations1, 0.6, 0.016);
     const count1 = renderer.getMeshCount();
 
     // Add station — topology changes
     const line2 = makeLineData(1, [{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }]);
-    const stations2 = [{ x: 0, y: 0, id: 1 }, { x: 5, y: 0, id: 2 }, { x: 10, y: 0, id: 3 }];
+    const stations2 = makeStations([{ x: 0, y: 0 }, { x: 5, y: 0 }, { x: 10, y: 0 }]);
     renderer.update([line2], stations2, 0.6, 0.016);
     const count2 = renderer.getMeshCount();
 
@@ -106,7 +115,7 @@ describe('MetroTunnelRenderer caching', () => {
     renderer.build(scene);
 
     const line = makeLineData(1, [{ x: 0, y: 0 }, { x: 5, y: 0 }]);
-    const stations = [{ x: 0, y: 0, id: 1 }, { x: 5, y: 0, id: 2 }];
+    const stations = makeStations([{ x: 0, y: 0 }, { x: 5, y: 0 }]);
     renderer.update([line], stations, 0.6, 0.016);
     const count = renderer.getMeshCount();
     expect(count).toBeGreaterThan(0);

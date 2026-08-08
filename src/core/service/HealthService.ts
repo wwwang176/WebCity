@@ -78,15 +78,17 @@ export class HealthService extends RoadCoverageService<Hospital> {
     this.hospitalDemand.clear();
     for (const h of this.facilities) this.hospitalDemand.set(h.id, 0);
 
+    const operational = this.getOperationalFacilities();
     let totalDemand = 0;
     for (const c of coveredCitizens) {
       const demand = citizenHospitalDemand(c.pollution);
       totalDemand += demand;
 
-      // Assign to nearest hospital by Euclidean distance
+      // Assign to nearest OPERATIONAL hospital. An unpowered one could be the
+      // closest and absorb demand nothing was actually serving (BUG-100).
       let nearestId = '';
       let nearestDist = Infinity;
-      for (const h of this.facilities) {
+      for (const h of operational) {
         const dx = c.x - h.x;
         const dy = c.y - h.y;
         const dist = dx * dx + dy * dy;
@@ -110,13 +112,25 @@ export class HealthService extends RoadCoverageService<Hospital> {
     return this.loadRatio;
   }
 
+  /**
+   * Capacity of hospitals that can actually treat anyone.
+   *
+   * Coverage already excludes non-operational facilities, so the demand side of
+   * loadRatio was filtered while the capacity side summed every hospital,
+   * including unpowered ones. That understated load exactly when the city was
+   * failing — and SimulationLoop multiplies the death rate by getLoadRatio(),
+   * so blacked-out hospitals kept suppressing deaths (BUG-100).
+   */
   getTotalCapacity(): number {
+    // Road connectivity too, not just power: an unreachable hospital covers
+    // nobody, and SimulationLoop multiplies the death rate by getLoadRatio(),
+    // so its unusable beds suppressed deaths across the whole city.
     let sum = 0;
-    for (const h of this.facilities) sum += h.capacity;
+    for (const h of this.getActiveFacilities()) sum += h.capacity;
     return sum;
   }
 
-  addHospital(x: number, y: number, radius = HEALTH.DEFAULT_RADIUS, capacity = HEALTH.DEFAULT_CAPACITY): string {
+  addHospital(x: number, y: number, radius: number = HEALTH.DEFAULT_RADIUS, capacity: number = HEALTH.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;

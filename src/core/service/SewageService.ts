@@ -25,7 +25,7 @@ import { Grid } from '../grid/Grid';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 import { WATER_CONSUMPTION } from './WaterNetwork';
 
@@ -69,6 +69,8 @@ const SEWAGE_DEMAND_CONFIG: UtilityCellDemandConfig = {
 export class SewageService {
   private treatmentPlants: TreatmentPlant[] = [];
   private connectedPlantIds = new Set<string>();
+  /** Infrastructure positions from the last calculateCoverage, for recalculateCoverage. */
+  private lastInfraPositions: Set<string> | undefined;
   private operationalPlantIds: Set<string> | null = null;
   private untreatedSewage = 0;
   private produced = 0;
@@ -81,7 +83,7 @@ export class SewageService {
   // Per-cell sewage tracking for building-based pollution
   private sewageCells: SewageCell[] = [];
 
-  addTreatmentPlant(x: number, y: number, capacity = SEWAGE.DEFAULT_CAPACITY): string {
+  addTreatmentPlant(x: number, y: number, capacity: number = SEWAGE.DEFAULT_CAPACITY): string {
     const id = `plant-${this.nextId++}`;
     this.treatmentPlants.push({ id, x, y, capacity });
     this.connectedPlantIds.add(id);
@@ -111,16 +113,30 @@ export class SewageService {
   }
 
   calculateCoverage(grid: Grid, infrastructurePositions?: Set<string>): Set<string> {
+    this.lastInfraPositions = infrastructurePositions;
+    // Only plants that are both road-connected and powered can treat anything.
+    // Both sets were already maintained, and getConnectedTreatmentCapacity
+    // already applied them — but the coverage flood ignored both, so an
+    // unpowered plant kept "supplying" its whole catchment. Since
+    // getPollutionSources skips supplied cells, a city whose sewage plants had
+    // all lost power emitted zero water pollution: the totals showed untreated
+    // sewage climbing while the map showed no penalty at all (BUG-081).
+    const active = this.treatmentPlants.filter(
+      p => this.connectedPlantIds.has(p.id) && this.isPlantOperational(p.id),
+    );
+
     // Phase 1: full coverage (no budget limit)
     this.fullCoverage.clear();
-    for (const p of this.treatmentPlants) {
+    for (const p of active) {
       bfsRoadNetworkFlood(grid, p.x, p.y, this.fullCoverage, infrastructurePositions, this.roadLookup);
     }
     // Phase 2: budget-drain per plant (capacity as budget)
     this.supplied.clear();
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
-    for (const p of this.treatmentPlants) {
-      bfsBudgetDrainFlood(grid, { x: p.x, y: p.y, output: p.capacity }, this.supplied, getDemand, infrastructurePositions, this.roadLookup);
+    const paidGroups = new Set<string>();
+    const chargeCache = new Map<string, CellCharge>();
+    for (const p of active) {
+      bfsBudgetDrainFlood(grid, { x: p.x, y: p.y, output: p.capacity }, this.supplied, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
     }
     return this.supplied;
   }
@@ -132,7 +148,7 @@ export class SewageService {
       const bt = getBuildingType(cell.buildingId);
       demand += calculateUtilityCellDemand(
         SEWAGE_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-        bt?.residents ?? 0, bt?.workers ?? 0,
+        bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
       );
     });
     this.totalDemand = demand;
@@ -156,7 +172,7 @@ export class SewageService {
     const bt = getBuildingType(cell.buildingId);
     return calculateUtilityCellDemand(
       SEWAGE_DEMAND_CONFIG, cell.buildingId, cell.zoneType as ZoneType,
-      bt?.residents ?? 0, bt?.workers ?? 0,
+      bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
     );
   }
 
@@ -175,18 +191,55 @@ export class SewageService {
     }
   }
 
-  /** Update which treatment plants are operational (have power; sewage is water-exempt). */
-  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): void {
-    this.operationalPlantIds = new Set<string>();
+  /**
+   * Update which treatment plants are operational (have power; sewage is
+   * water-exempt). Returns true if the set changed.
+   *
+   * The return value is what lets the caller recalculate coverage at once.
+   * Coverage is a precomputed Set built at slow-slot 1, while this runs at
+   * slot 2 — so a plant that lost power kept "supplying" its whole catchment
+   * until the next cycle came round, and since getPollutionSources skips
+   * supplied cells, the water-pollution penalty was suppressed for that whole
+   * window. Education already recalculates immediately; sewage did not.
+   */
+  updateOperationalStatus(isPowered: UtilityChecker, isWaterSupplied: UtilityChecker): boolean {
+    const next = new Set<string>();
     for (const p of this.treatmentPlants) {
       if (isFacilityOperational(p.x, p.y, 'sewage', isPowered, isWaterSupplied)) {
-        this.operationalPlantIds.add(p.id);
+        next.add(p.id);
       }
     }
+    const prev = this.operationalPlantIds;
+    const changed = prev === null || prev.size !== next.size
+      || [...next].some(id => !prev.has(id));
+    this.operationalPlantIds = next;
+    return changed;
+  }
+
+  /**
+   * Repeat the last coverage calculation with the same inputs.
+   *
+   * calculateCoverage needs the infrastructure position set, which only
+   * SimulationLoop assembles; remembering it here lets tickAllCivicServices
+   * refresh coverage without reaching for it.
+   */
+  recalculateCoverage(grid: Grid): void {
+    this.calculateCoverage(grid, this.lastInfraPositions);
   }
 
   private isPlantOperational(id: string): boolean {
     return this.operationalPlantIds === null || this.operationalPlantIds.has(id);
+  }
+
+  /**
+   * Whether this plant is actually treating anything — road-connected AND
+   * powered, the same pair getConnectedTreatmentCapacity settles against.
+   *
+   * The infrastructure panel needs it to stop attributing a share of the city's
+   * sewage to a plant that is not treating any of it (BUG-153).
+   */
+  isPlantActive(id: string): boolean {
+    return this.connectedPlantIds.has(id) && this.isPlantOperational(id);
   }
 
   /**
@@ -223,8 +276,16 @@ export class SewageService {
     return this.untreatedSewage * SEWAGE.WATER_POLLUTION_MULTIPLIER;
   }
 
+  /**
+   * Treatment capacity the city can actually use.
+   *
+   * tick() has always settled against getConnectedTreatmentCapacity, but the
+   * infrastructure panel read this unfiltered total — so untreated sewage could
+   * be climbing while the panel showed ample capacity, and the two numbers
+   * shown side by side contradicted each other.
+   */
   getTreatmentCapacity(): number {
-    return this.treatmentPlants.reduce((sum, p) => sum + p.capacity, 0);
+    return this.getConnectedTreatmentCapacity();
   }
 
   getTreatmentPlants(): readonly TreatmentPlant[] {
