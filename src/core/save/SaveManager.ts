@@ -1,3 +1,5 @@
+import { SaveBlockedError } from './SaveFailure';
+
 export interface SaveSlot {
   id: number;
   name: string;
@@ -25,6 +27,14 @@ export function openDB(): Promise<IDBDatabase> {
 
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
+    // `blocked` is dispatched INSTEAD of success or error, when another
+    // connection still holds an older DB version open. Nothing else follows it,
+    // so an unhandled `blocked` leaves this promise pending for the lifetime of
+    // the page: every save, load and list behind it waits forever, and the
+    // player sees a loading screen that never advances and never errors.
+    // It cannot fire while DB_VERSION stays at 1, which is exactly why it would
+    // have gone unnoticed until the first schema change.
+    request.onblocked = () => reject(new SaveBlockedError());
   });
 }
 
@@ -46,7 +56,13 @@ export async function saveGame(slotId: number, name: string, data: string, popul
     // has not committed yet and can still abort (quota exceeded at commit time,
     // disk error, forced abort, page teardown). Resolving there reported success
     // for saves that were never persisted, and an abort could never reject an
-    // already-settled promise. save.worker.ts already does this correctly.
+    // already-settled promise.
+    //
+    // The request handler comes first and rejects with the REQUEST's error,
+    // which is where a QuotaExceededError actually lives — `tx.error` is still
+    // null at this instant. save.worker.ts used to carry its own copy of this
+    // block, got that detail backwards, and reported every quota failure as a
+    // generic "Save request failed"; it now calls this function instead.
     request.onerror = () => reject(request.error);
     tx.oncomplete = () => { db.close(); resolve(); };
     tx.onabort = () => { db.close(); reject(tx.error ?? new Error('Save transaction aborted')); };

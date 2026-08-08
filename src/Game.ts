@@ -218,6 +218,8 @@ const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
  */
 export type { ServiceStatus } from './core/service/ServiceStatusView';
 import { buildServiceStatus, type ServiceStatus } from './core/service/ServiceStatusView';
+import type { SaveCompleteMessage } from './core/save/SaveWorkerHandler';
+import { classifySaveError } from './core/save/SaveFailure';
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -471,6 +473,20 @@ export class Game {
     this.autoSaver = new AutoSaver(100);
     try {
       this.saveWorker = new Worker(new URL('./workers/save.worker.ts', import.meta.url), { type: 'module' });
+      // Every SAVE_COMPLETE — success AND failure — used to be discarded,
+      // because nothing was ever listening. A player whose storage filled up
+      // kept building for as long as they liked on a city that had silently
+      // stopped being written to disk.
+      this.saveWorker.onmessage = (e: MessageEvent) => {
+        this.handleSaveComplete(e.data as SaveCompleteMessage);
+      };
+      // A worker that dies takes autosave with it, just as silently.
+      this.saveWorker.onerror = () => {
+        this.saveWorker = null;
+        this.showNotification(
+          'Autosave stopped working. Use Save in the menu, or export the city to a file.', 10,
+        );
+      };
     } catch { this.saveWorker = null; }
 
     if (loadedState) {
@@ -1547,8 +1563,20 @@ export class Game {
           if (this.saveWorker) {
             this.saveWorker.postMessage({ type: 'SAVE', snapshot, slotId: 0, name: 'AutoSave', population: this.state.citizens.getPopulation() });
           } else {
-            // Fallback: synchronous save if worker unavailable
-            saveGame(0, 'AutoSave', JSON.stringify(snapshot), this.state.citizens.getPopulation()).catch(() => {});
+            // Fallback: synchronous save if worker unavailable. The empty
+            // `.catch(() => {})` this replaces was the same silence as the
+            // missing worker listener, one layer down.
+            saveGame(0, 'AutoSave', JSON.stringify(snapshot), this.state.citizens.getPopulation())
+              .then(() => { this.lastSaveFailure = null; })
+              .catch((err: unknown) => {
+                const failure = classifySaveError(err);
+                this.lastSaveFailure = {
+                  type: 'SAVE_COMPLETE', ok: false, slotId: 0,
+                  kind: failure.kind, error: failure.message, detail: failure.detail,
+                };
+                console.error('[save] autosave fallback failed:', failure.detail);
+                this.showNotification(failure.message, 12);
+              });
           }
         }
 
@@ -2826,6 +2854,26 @@ export class Game {
     this.notification = message;
     this.notificationTimer = duration;
   }
+
+  /**
+   * Report the outcome of an off-thread save.
+   *
+   * Held long (12s) and worded as a call to action, because the alternative to
+   * noticing this is losing everything built since the last successful write.
+   */
+  private handleSaveComplete(msg: SaveCompleteMessage): void {
+    if (!msg || msg.type !== 'SAVE_COMPLETE') return;
+    if (msg.ok) {
+      this.lastSaveFailure = null;
+      return;
+    }
+    this.lastSaveFailure = msg;
+    console.error('[save] slot', msg.slotId, 'failed:', msg.detail);
+    this.showNotification(msg.error ?? 'Save failed.', 12);
+  }
+
+  /** The most recent unresolved save failure, for the UI to keep showing. */
+  lastSaveFailure: SaveCompleteMessage | null = null;
 
   getEconomyBreakdown() {
     // Assembly lives in core so the "panel total === budget.expenses" invariant

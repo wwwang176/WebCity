@@ -1,4 +1,5 @@
 import { listSaves, deleteSave, type SaveSlot } from '../core/save/SaveManager';
+import { classifySaveError } from '../core/save/SaveFailure';
 import { exportSaveToFile, importSaveFromFile } from '../core/save/ImportExport';
 import { sanitizeSaveName } from '../core/save/SaveValidator';
 import { createNewGameConfig } from './NewGameConfig';
@@ -255,7 +256,20 @@ export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGam
 
   function renderSaveList(saveList: HTMLElement) {
     saveList.innerHTML = '<div class="save-empty">Loading saves...</div>';
-    listSaves().then(saves => {
+    // Unhandled, a rejection here left "Loading saves..." on screen forever with
+    // no error anywhere the player could see it — indistinguishable from a slow
+    // disk. `.catch` is what turns a blocked or faulted database into a message.
+    listSaves().catch((err: unknown) => {
+      const failure = classifySaveError(err);
+      console.error('[save] listSaves failed:', failure.detail);
+      saveList.innerHTML = '';
+      const msg = document.createElement('div');
+      msg.className = 'save-empty';
+      msg.textContent = failure.message;
+      saveList.appendChild(msg);
+      return null;
+    }).then(saves => {
+      if (!saves) return;
       saves.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
       if (saves.length === 0) {
         saveList.innerHTML = '<div class="save-empty">No saves found</div>';
@@ -308,7 +322,16 @@ export function createMainMenu(onNewGame: (config: MapConfig) => void, onLoadGam
           const slotEl = btn.closest('.save-slot') as HTMLElement;
           const name = slotEl.querySelector('.save-name')!.textContent || 'Unnamed';
           showDeleteModal(name, () => {
-            deleteSave(slotId).then(() => renderSaveList(saveList));
+            deleteSave(slotId)
+              .then(() => renderSaveList(saveList))
+              .catch((err: unknown) => {
+                const failure = classifySaveError(err);
+                console.error('[save] deleteSave failed:', failure.detail);
+                // Re-render regardless: the slot is still there, and leaving the
+                // list showing it is the honest outcome of a failed delete.
+                renderSaveList(saveList);
+                alert(failure.message);
+              });
           });
         });
       });

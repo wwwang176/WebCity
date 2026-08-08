@@ -2,6 +2,7 @@ import { createSignal } from 'solid-js';
 import { getGame } from '../store/gameStore';
 import { settingsOpen, closeSettings } from '../components/SettingsMenu';
 import { listSaves } from '../../core/save/SaveManager';
+import { classifySaveError } from '../../core/save/SaveFailure';
 import { Modal } from './Modal';
 import { importSaveFromFile } from '../../core/save/ImportExport';
 
@@ -45,8 +46,17 @@ export function SettingsModal(props: { onOpenDebug?: () => void }) {
   const handleSaveConfirm = async () => {
     const name = saveName().trim();
     if (!name || saving()) return;
-    // Find next available slot id (skip 0 = AutoSave)
-    const saves = await listSaves();
+    // Find next available slot id (skip 0 = AutoSave). This `await` used to sit
+    // outside any try: a rejection from listSaves became an unhandled promise
+    // rejection, the dialog stayed open, and the player got no indication that
+    // pressing Save had done nothing.
+    let saves;
+    try {
+      saves = await listSaves();
+    } catch (err) {
+      getGame().showNotification(classifySaveError(err).message, 10);
+      return;
+    }
     const usedIds = saves.map(s => s.id);
     let slotId = 1;
     while (usedIds.includes(slotId)) slotId++;
@@ -61,8 +71,10 @@ export function SettingsModal(props: { onOpenDebug?: () => void }) {
       getGame().loadedSlotId = slotId;
       getGame().loadedSaveName = name;
       getGame().showNotification('Game saved!');
-    } catch {
-      getGame().showNotification('Save failed');
+    } catch (err) {
+      // "Save failed" told the player nothing they could act on. Out of disk
+      // and locked-by-another-tab need completely different responses.
+      getGame().showNotification(classifySaveError(err).message, 10);
     }
     setSaving(false);
     close();
