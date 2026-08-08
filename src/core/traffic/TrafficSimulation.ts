@@ -245,6 +245,30 @@ export class TrafficSimulation {
    *
    * @returns how many vehicles were retired
    */
+  /**
+   * Retire every commute/freight vehicle, whatever it is driving on.
+   *
+   * For a FULL lane-graph rebuild, where every LaneEdge object is replaced and
+   * there is no dirty-cell set to scope the sweep by. That branch retired
+   * nothing at all, so after a save load, the initial build, or any edit that
+   * reported no affected cells, live vehicles kept walking edgePath arrays of
+   * orphaned LaneEdges — the same defect BUG-108 fixed for the incremental
+   * branch, on the path nobody looked at.
+   *
+   * Same exclusions as markVehiclesArrivedOnCells: buses and service vehicles
+   * are owned by managers that handle the rebuild themselves.
+   */
+  markCommuteVehiclesArrived(): number {
+    let count = 0;
+    for (const v of this.vehicles) {
+      if (v.arrived || v.edgePath.length === 0) continue;
+      if (v.busState !== undefined || v.serviceType !== undefined) continue;
+      v.arrived = true;
+      count++;
+    }
+    return count;
+  }
+
   markVehiclesArrivedOnCells(cellKeys: ReadonlySet<string>): number {
     let count = 0;
     for (const v of this.vehicles) {

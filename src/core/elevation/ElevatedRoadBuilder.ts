@@ -77,10 +77,15 @@ export class ElevatedRoadBuilder {
     // Feeding the real level in makes getElevatedPath generate the ramps, which
     // also makes 1 -> 2 ramps buildable from an existing viaduct at all
     // (BUG-097).
-    const existingStartLevel = segAtTargetLevel
-      ? targetLevel
-      : this.elevationManager.getHighestLevel(from.x, from.y);
-    const actualStartLevel = startOnGround && !startOnElevated ? 0 : existingStartLevel;
+    // chooseStartLevel picks the level NEAREST the target rather than the
+    // highest one present, which also subsumes the segAtTargetLevel case
+    // (distance 0 always wins). getHighestLevel was wrong in both directions:
+    // with a ground road under a level-3 deck and level 1 selected it started
+    // at 3 and descended instead of ramping up off the ground, and a level-1
+    // viaduct under a level-3 one could not be extended at all.
+    const actualStartLevel = this.elevationManager.chooseStartLevel(
+      from.x, from.y, targetLevel, startOnGround,
+    );
 
     // Generate path with elevation
     const path = getElevatedPath(from, to, actualStartLevel, targetLevel, endLevel);

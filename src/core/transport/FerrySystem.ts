@@ -114,6 +114,30 @@ export class FerrySystem extends BaseTransportSystem {
     this.removeStop(dockId);
   }
 
+  /**
+   * Drop every cached A* result that starts or ends at a departed dock.
+   *
+   * waterPathCache is keyed by COORDINATES, so nothing tied its entries to the
+   * dock's lifetime. BUG-089 fixed the vesselPaths leak on the route-dissolve
+   * path, but this is a separate map: every dock the player ever built and
+   * demolished left its results behind for good. The staleness is the worse
+   * half — demolish a dock, reshape the water, rebuild on the same tile, and
+   * connectivity was answered from the old map.
+   *
+   * Scoped to the removed dock deliberately: clearing the whole cache would
+   * throw away every other route's paths on each demolition.
+   */
+  override removeStop(stopId: number): void {
+    const dock = this.stops.find(s => s.id === stopId);
+    super.removeStop(stopId);
+    if (!dock) return;
+    const from = `${dock.x},${dock.y}>`;
+    const to = `>${dock.x},${dock.y}`;
+    for (const key of this.waterPathCache.keys()) {
+      if (key.startsWith(from) || key.endsWith(to)) this.waterPathCache.delete(key);
+    }
+  }
+
   protected override onRouteDissolved(routeId: number): void {
     for (const v of this.vehicles) {
       if (v.routeId === routeId) this.vesselPaths.delete(v.id);

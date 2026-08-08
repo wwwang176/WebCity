@@ -395,6 +395,23 @@ export class PedestrianManager {
    * buildings, for up to DESPAWN_TIMEOUT. Pedestrians have no stallTime to save
    * them either (BUG-124).
    */
+  /**
+   * Retire every walking agent, whatever pavement it is on.
+   *
+   * The counterpart of TrafficSimulation.markCommuteVehiclesArrived, for a FULL
+   * sidewalk-graph rebuild where every edge object is replaced and there is no
+   * removed-cell set to scope by.
+   */
+  markAllAgentsArrived(): number {
+    let count = 0;
+    for (const agent of this.agents) {
+      if (agent.edgePath.length === 0) continue;
+      agent.state = PedestrianState.ARRIVED;
+      count++;
+    }
+    return count;
+  }
+
   markAgentsArrivedOnCells(cellKeys: ReadonlySet<string>): number {
     let count = 0;
     for (const agent of this.agents) {

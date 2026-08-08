@@ -64,6 +64,50 @@ export class ElevationManager {
     return 0;
   }
 
+  /**
+   * The noisiest elevated ROAD tier at (x, y), or RoadType.NONE.
+   *
+   * Not `get(x, y, getHighestLevel(x, y)).roadType`: an elevated RAIL deck has
+   * roadType NONE, so stacking one over an elevated motorway made the whole
+   * position report "no road" — the motorway went silent and the land under it
+   * kept an inflated value. That is precisely the BUG-099 symptom the elevated
+   * tier lookup exists to prevent, reintroduced one layer up.
+   */
+  getHighestRoadType(x: number, y: number): number {
+    let best = 0;
+    for (let level = MIN_ELEVATION_LEVEL; level <= MAX_ELEVATION_LEVEL; level++) {
+      const seg = this.layers.get(ElevationManager.key(x, y, level));
+      if (seg && seg.roadType > best) best = seg.roadType;
+    }
+    return best;
+  }
+
+  /**
+   * Which level a new elevated run should start from at (x, y).
+   *
+   * The level NEAREST the one being built, counting the ground (0) only when a
+   * ground road is there; ties go to the lower level, which needs the cheaper
+   * structure and is the likelier intent.
+   *
+   * getHighestLevel was wrong for this in both directions. With a ground road
+   * under a level-3 deck and level 1 selected, it started at 3 and descended
+   * instead of ramping up off the ground. And picking the top of a stack meant
+   * an existing level-1 viaduct under a level-3 one could not be extended at
+   * all. A segment already at the target level still wins, since its distance
+   * is 0 — the previous special case is subsumed.
+   */
+  chooseStartLevel(x: number, y: number, targetLevel: number, hasGroundRoad: boolean): number {
+    let best = hasGroundRoad ? 0 : -1;
+    for (let level = MIN_ELEVATION_LEVEL; level <= MAX_ELEVATION_LEVEL; level++) {
+      if (!this.layers.has(ElevationManager.key(x, y, level))) continue;
+      if (best < 0) { best = level; continue; }
+      const d = Math.abs(level - targetLevel);
+      const bd = Math.abs(best - targetLevel);
+      if (d < bd || (d === bd && level < best)) best = level;
+    }
+    return best < 0 ? 0 : best;
+  }
+
   /** Check if any ramp occupies level `level` at (x, y) — either as low side or high side. */
   hasRampAtLevel(x: number, y: number, level: number): boolean {
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {

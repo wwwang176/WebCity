@@ -140,6 +140,8 @@ export class SimulationLoop {
   private transferGraphDirty = true;
   /** Transit structural version at the last transfer-graph rebuild. */
   private lastTransitVersion = -1;
+  /** Set when the last lane-graph rebuild was a full one, so the sidewalk pass matches. */
+  private fullSidewalkRebuild = false;
   /** Transit stop/route topology version at the last transfer-tracker reset. */
   private lastTransitTopologyVersion = -1;
   private flatRoutes: FlatRoute[] = [];
@@ -453,6 +455,12 @@ export class SimulationLoop {
     // Rebuild sidewalk graph if roads changed
     if (this.sidewalkGraphDirty) {
       this.rebuildSidewalkGraph(this.lastRemovedRoadCells);
+      if (this.fullSidewalkRebuild) {
+        // A full lane-graph rebuild replaced every sidewalk edge too, so no
+        // agent's edgePath points at anything the graph still owns.
+        this.state.pedestrianManager.markAllAgentsArrived();
+        this.fullSidewalkRebuild = false;
+      }
       this.lastRemovedRoadCells = null;
       this.sidewalkGraphDirty = false;
     }
@@ -952,8 +960,10 @@ export class SimulationLoop {
     forEachGridPollutionSource(grid, (src) => pm.addPollutionSource(src), (x, y) => {
       const em = this._elevationManager;
       if (!em) return 0;
-      const level = em.getHighestLevel(x, y);
-      return level > 0 ? (em.get(x, y, level)?.roadType ?? 0) : 0;
+      // The noisiest elevated ROAD tier, across all levels. Reading the highest
+      // LEVEL's roadType reported 0 whenever an elevated rail deck sat over an
+      // elevated motorway — the BUG-099 symptom, one layer up.
+      return em.getHighestRoadType(x, y);
     });
     // OCP: service-based pollution sources via registry — adding new sources only needs registry update
     forEachServicePollutionSource(this.state, (src) => pm.addPollutionSource(src));
@@ -1675,6 +1685,14 @@ export class SimulationLoop {
       // Handed to the sidewalk rebuild, which runs later in the same tick and
       // needs the same set (dirtyRoadCells has been nulled by then).
       this.lastRemovedRoadCells = removed;
+    } else {
+      // FULL rebuild: buildFromGrid replaced every LaneEdge object, so no
+      // vehicle's edgePath points at anything the graph still owns. There is no
+      // cell set to scope by, and this branch retired nothing at all — the same
+      // defect BUG-108 fixed for the incremental branch, on the path nobody
+      // looked at.
+      this.state.traffic.markCommuteVehiclesArrived();
+      this.fullSidewalkRebuild = true;
     }
 
     // Sync graph to SharedArrayBuffer for Worker pathfinding
