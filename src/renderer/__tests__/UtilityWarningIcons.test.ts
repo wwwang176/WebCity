@@ -15,10 +15,13 @@ describe('outage badges reach the screen', () => {
   let scene: THREE.Scene;
   let renderer: BuildingRenderer;
 
+  const at = (x: number, y: number, warning: WarnedCell['warning']): WarnedCell =>
+    ({ x, y, drawX: x, drawY: y, warning, slot: 0, slotCount: 1 });
+
   const warned: WarnedCell[] = [
-    { x: 3, y: 4, warning: 'NO_POWER' },
-    { x: 5, y: 4, warning: 'NO_POWER' },
-    { x: 9, y: 2, warning: 'NO_WATER' },
+    at(3, 4, 'NO_POWER'),
+    at(5, 4, 'NO_POWER'),
+    at(9, 2, 'NO_WATER'),
   ];
 
   /** The badge meshes currently in the scene. */
@@ -179,6 +182,59 @@ describe('outage badges reach the screen', () => {
     expect(Math.max(...samples) - Math.min(...samples)).toBeGreaterThan(0.5);
     // ...and never vanish between beats, or the player can miss it entirely.
     expect(Math.min(...samples)).toBeGreaterThan(0.05);
+  });
+
+  it('should put a building’s two badges side by side, not on top of each other', () => {
+    // A building can be missing both. Drawing them at the same point makes one
+    // invisible and the other a lie.
+    const both: WarnedCell[] = [
+      { x: 4, y: 4, drawX: 4, drawY: 4, warning: 'NO_POWER', slot: 0, slotCount: 2 },
+      { x: 4, y: 4, drawX: 4, drawY: 4, warning: 'NO_WATER', slot: 1, slotCount: 2 },
+    ];
+    renderer.setUtilityWarnings(scene, both);
+    renderer.updateUtilityWarnings(new THREE.Quaternion());
+
+    const centres: THREE.Vector3[] = [];
+    const m = new THREE.Matrix4();
+    for (const mesh of icons()) {
+      mesh.getMatrixAt(0, m);
+      centres.push(new THREE.Vector3().setFromMatrixPosition(m));
+    }
+    expect(centres).toHaveLength(2);
+    expect(centres[0]!.distanceTo(centres[1]!)).toBeGreaterThan(0.3);
+
+    // ...and the PAIR stays centred on the building, not shunted to one side.
+    const mid = centres[0]!.clone().add(centres[1]!).multiplyScalar(0.5);
+    // 1 decimal place: the icon is deliberately lifted 0.01 toward the
+    // camera so it draws in front of its own plate.
+    expect(mid.x).toBeCloseTo(4, 1);
+    expect(mid.z).toBeCloseTo(4, 1);
+  });
+
+  it('should keep a lone badge dead centre', () => {
+    renderer.setUtilityWarnings(scene, [at(6, 6, 'NO_POWER')]);
+    renderer.updateUtilityWarnings(new THREE.Quaternion());
+    const m = new THREE.Matrix4();
+    icons()[0]!.getMatrixAt(0, m);
+    const p = new THREE.Vector3().setFromMatrixPosition(m);
+    expect(p.x).toBeCloseTo(6, 1);
+    expect(p.z).toBeCloseTo(6, 1);
+  });
+
+  it('should hang a multi-cell facility’s badge over the middle of its site', () => {
+    // A facility is recorded at its top-left cell. A 3x3 university badged at
+    // (8,8) put the marker on the corner of the site rather than over it.
+    const uni: WarnedCell[] = [
+      { x: 8, y: 8, drawX: 9, drawY: 9, warning: 'NO_POWER', slot: 0, slotCount: 1 },
+    ];
+    renderer.setUtilityWarnings(scene, uni);
+    renderer.updateUtilityWarnings(new THREE.Quaternion());
+
+    const m = new THREE.Matrix4();
+    icons()[0]!.getMatrixAt(0, m);
+    const p = new THREE.Vector3().setFromMatrixPosition(m);
+    expect(p.x).toBeCloseTo(9, 1);
+    expect(p.z).toBeCloseTo(9, 1);
   });
 
   it('should clear every badge when the outage ends', () => {

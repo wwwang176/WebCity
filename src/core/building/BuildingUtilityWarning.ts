@@ -1,6 +1,6 @@
 import type { Grid } from '../grid/Grid';
-import { getInfraConfigById, isZoneBuilding } from './InfraConfig';
-import { MULTI_CELL_OCCUPIED } from './InfraPlacement';
+import { getInfraConfigById, getRotatedSize, isZoneBuilding } from './InfraConfig';
+import { MULTI_CELL_OCCUPIED, RESERVED_TO_ROTATION } from './InfraPlacement';
 import { isActiveZoneCell } from './BuildingQueries';
 import { isPowerExempt, isWaterExempt } from '../service/FacilityOperational';
 
@@ -65,28 +65,98 @@ export function getBuildingUtilityWarning(
     needsWater = !isWaterExempt(infra.type);
   }
 
-  // Power first when both are out: it is one icon per building, and power is
-  // also what stops the pump that would restore the water.
   if (needsPower && !deps.isPowered(x, y)) return 'NO_POWER';
   if (needsWater && !deps.isWatered(x, y)) return 'NO_WATER';
   return null;
 }
 
-export interface WarnedCell {
-  x: number;
-  y: number;
-  warning: UtilityWarning;
+/**
+ * EVERY utility this building needs and is not getting, power first.
+ *
+ * Showing only the first one meant a player who restored the power was then
+ * handed a second problem they were never told about — they fixed what the
+ * badge asked for and a new badge appeared. Power still leads, because a water
+ * plant needs power and restoring it often clears both.
+ */
+export function getBuildingUtilityWarnings(
+  grid: Grid, x: number, y: number, deps: UtilityWarningDeps,
+): UtilityWarning[] {
+  const cell = grid.getCell(x, y);
+  if (!cell || cell.buildingId === 0) return [];
+  if (cell.reserved === MULTI_CELL_OCCUPIED) return [];
+
+  let needsPower: boolean;
+  let needsWater: boolean;
+  if (isZoneBuilding(cell.buildingId)) {
+    if (!isActiveZoneCell(cell)) return [];
+    needsPower = true;
+    needsWater = true;
+  } else {
+    const infra = getInfraConfigById(cell.buildingId);
+    if (!infra) return [];
+    needsPower = !isPowerExempt(infra.type);
+    needsWater = !isWaterExempt(infra.type);
+  }
+
+  const out: UtilityWarning[] = [];
+  if (needsPower && !deps.isPowered(x, y)) out.push('NO_POWER');
+  if (needsWater && !deps.isWatered(x, y)) out.push('NO_WATER');
+  return out;
 }
 
-/** Every building currently missing a utility it needs. */
+export interface WarnedCell {
+  /** The building's primary (top-left) cell. */
+  x: number;
+  y: number;
+  /**
+   * Where to DRAW, in grid units.
+   *
+   * A facility is recorded at its top-left cell, so a 3x3 university hung its
+   * badge off the corner of the site rather than over it. This is the centre
+   * of the whole rotated footprint — the same figure buildInfrastructure uses
+   * to position the model itself.
+   */
+  drawX: number;
+  drawY: number;
+  warning: UtilityWarning;
+  /** Which of this building's badges this is, left to right. */
+  slot?: number;
+  /** How many badges this building has, so they can be centred as a group. */
+  slotCount?: number;
+}
+
+/** The centre of a building's footprint, for anything drawn over it. */
+export function buildingCentre(
+  cell: { buildingId: number; reserved: number }, x: number, y: number,
+): { drawX: number; drawY: number } {
+  if (isZoneBuilding(cell.buildingId)) return { drawX: x, drawY: y };
+  const cfg = getInfraConfigById(cell.buildingId);
+  if (!cfg) return { drawX: x, drawY: y };
+  const { w, h } = getRotatedSize(cfg.width, cfg.height, RESERVED_TO_ROTATION[cell.reserved] ?? 0);
+  return { drawX: x + (w - 1) / 2, drawY: y + (h - 1) / 2 };
+}
+
+/**
+ * Every badge to draw: one entry per building per missing utility.
+ *
+ * A building can be missing both, so `slot` and `slotCount` let the renderer
+ * lay them out side by side and centred rather than stacked on one another.
+ */
 export function collectBuildingUtilityWarnings(
   grid: Grid, deps: UtilityWarningDeps,
 ): WarnedCell[] {
   const out: WarnedCell[] = [];
   grid.forEachCell((cell, x, y) => {
     if (cell.buildingId === 0) return;
-    const warning = getBuildingUtilityWarning(grid, x, y, deps);
-    if (warning) out.push({ x, y, warning });
+    const warnings = getBuildingUtilityWarnings(grid, x, y, deps);
+    if (warnings.length === 0) return;
+    const { drawX, drawY } = buildingCentre(cell, x, y);
+    for (let i = 0; i < warnings.length; i++) {
+      out.push({
+        x, y, drawX, drawY,
+        warning: warnings[i]!, slot: i, slotCount: warnings.length,
+      });
+    }
   });
   return out;
 }

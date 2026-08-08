@@ -1390,6 +1390,15 @@ export class BuildingRenderer {
    * push it back outside the ring.
    */
   private static readonly WARN_ICON_INSET = 0.66;
+  /**
+   * Centre-to-centre distance between a building's badges, in grid units.
+   *
+   * A rendered plate is 2 x WARN_PLATE_RADIUS x WARN_SCALE = 0.34 across, so
+   * this leaves a small gap. Badges are laid out along the camera's right
+   * vector and centred on the building, so a lone badge sits dead centre and a
+   * pair straddles it.
+   */
+  private static readonly WARN_SPACING = 0.4;
 
   /** The icon shape, scaled to sit wholly inside the plate. */
   private static warningIconGeometry(warning: UtilityWarning): THREE.ShapeGeometry {
@@ -1494,6 +1503,7 @@ export class BuildingRenderer {
 
     const s = BuildingRenderer.WARN_SCALE;
     const scale = new THREE.Vector3(s, s, s);
+    const right = new THREE.Vector3(1, 0, 0).applyQuaternion(q);
     const position = new THREE.Vector3();
     for (const mesh of this.warnMeshes) {
       const cells = mesh.userData['warnCells'] as WarnedCell[];
@@ -1502,7 +1512,16 @@ export class BuildingRenderer {
       const forward = new THREE.Vector3(0, 0, lift).applyQuaternion(q);
       for (let i = 0; i < cells.length; i++) {
         const c = cells[i]!;
-        position.set(c.x + forward.x, BuildingRenderer.WARN_HEIGHT + forward.y, c.y + forward.z);
+        // Centred on the building: one badge sits dead centre, two straddle it.
+        const slots = c.slotCount ?? 1;
+        const nudge = ((c.slot ?? 0) - (slots - 1) / 2) * BuildingRenderer.WARN_SPACING;
+        const bx = c.drawX ?? c.x;
+        const by = c.drawY ?? c.y;
+        position.set(
+          bx + forward.x + right.x * nudge,
+          BuildingRenderer.WARN_HEIGHT + forward.y + right.y * nudge,
+          by + forward.z + right.z * nudge,
+        );
         this._matrix.compose(position, q, scale);
         mesh.setMatrixAt(i, this._matrix);
       }

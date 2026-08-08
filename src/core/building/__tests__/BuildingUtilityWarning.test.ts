@@ -6,8 +6,8 @@ import { getInfraBuildingId } from '../InfraConfig';
 import { ABANDONED, BURNED, MULTI_CELL_OCCUPIED } from '../InfraPlacement';
 import { isFacilityOperational } from '../../service/FacilityOperational';
 import {
-  getBuildingUtilityWarning, collectBuildingUtilityWarnings,
-  UTILITY_WARNING_MESSAGES, type UtilityWarningDeps,
+  getBuildingUtilityWarning, getBuildingUtilityWarnings, buildingCentre,
+  collectBuildingUtilityWarnings, UTILITY_WARNING_MESSAGES, type UtilityWarningDeps,
 } from '../BuildingUtilityWarning';
 
 /**
@@ -144,6 +144,67 @@ describe('a building says when it has lost a utility it needs', () => {
     expect(warned.every(w => w.warning === 'NO_POWER')).toBe(true);
 
     expect(collectBuildingUtilityWarnings(grid, ON)).toHaveLength(0);
+  });
+
+  it('should report BOTH when both are out, power first', () => {
+    // Showing only the first one handed the player a second problem they were
+    // never told about: they restored the power, and a water badge appeared as
+    // if it had just happened.
+    expect(getBuildingUtilityWarnings(city(), 5, 5, NEITHER)).toEqual(['NO_POWER', 'NO_WATER']);
+    expect(getBuildingUtilityWarnings(city(), 5, 5, NO_POWER)).toEqual(['NO_POWER']);
+    expect(getBuildingUtilityWarnings(city(), 5, 5, NO_WATER)).toEqual(['NO_WATER']);
+    expect(getBuildingUtilityWarnings(city(), 5, 5, ON)).toEqual([]);
+  });
+
+  it('should agree with the single-warning answer about the leading one', () => {
+    for (const deps of [ON, NO_POWER, NO_WATER, NEITHER]) {
+      const all = getBuildingUtilityWarnings(city(), 5, 5, deps);
+      expect(getBuildingUtilityWarning(city(), 5, 5, deps)).toBe(all[0] ?? null);
+    }
+  });
+
+  it('should emit one badge per missing utility, told apart by slot', () => {
+    const grid = city();
+    const warned = collectBuildingUtilityWarnings(grid, NEITHER);
+    expect(warned).toHaveLength(2);
+    expect(warned.map(w => w.warning)).toEqual(['NO_POWER', 'NO_WATER']);
+    expect(warned.map(w => w.slot)).toEqual([0, 1]);
+    expect(warned.every(w => w.slotCount === 2)).toBe(true);
+  });
+
+  it('should draw a single-cell building at its own cell', () => {
+    const grid = city();
+    const [w] = collectBuildingUtilityWarnings(grid, NO_POWER);
+    expect([w!.drawX, w!.drawY]).toEqual([5, 5]);
+  });
+
+  it('should draw a multi-cell facility over the middle of its footprint', () => {
+    // A facility is recorded at its top-left cell, so a 3x3 university badged
+    // at (8,8) hung the marker off the corner of the site instead of over it.
+    const grid = city();
+    const uni = getInfraBuildingId('school_univ');
+    for (let dy = 0; dy < 3; dy++) {
+      for (let dx = 0; dx < 3; dx++) {
+        grid.setCell(8 + dx, 8 + dy, {
+          buildingId: uni,
+          reserved: (dx === 0 && dy === 0) ? 0 : MULTI_CELL_OCCUPIED,
+        });
+      }
+    }
+    const warned = collectBuildingUtilityWarnings(grid, NO_POWER)
+      .filter(w => w.x === 8 && w.y === 8);
+    expect(warned).toHaveLength(1);
+    expect([warned[0]!.drawX, warned[0]!.drawY]).toEqual([9, 9]);
+  });
+
+  it('should follow the footprint when the facility is rotated', () => {
+    // A 2x3 hospital turned 90 degrees is 3x2, and its centre moves with it.
+    const grid = city();
+    const hospital = getInfraBuildingId('hospital');
+    const upright = buildingCentre({ buildingId: hospital, reserved: 0 }, 4, 8);
+    const turned = buildingCentre({ buildingId: hospital, reserved: 5 }, 4, 8);
+    expect(upright).toEqual({ drawX: 4.5, drawY: 9 });
+    expect(turned).toEqual({ drawX: 5, drawY: 8.5 });
   });
 
   it('should have player-facing text for both warnings', () => {
