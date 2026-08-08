@@ -65,6 +65,21 @@ export class ElevationManager {
   }
 
   /**
+   * Does the city contain any elevated ROAD anywhere?
+   *
+   * Not hasAnySegment(): elevated RAIL lives in the same `layers` map with
+   * roadType NONE, so asking the broader question let a single elevated metro
+   * tile — which contributes nothing to road reachability — permanently
+   * disable the workplace-distance cache for the whole city.
+   */
+  hasAnyElevatedRoad(): boolean {
+    for (const seg of this.layers.values()) {
+      if (seg.roadType !== 0) return true;
+    }
+    return false;
+  }
+
+  /**
    * The noisiest elevated ROAD tier at (x, y), or RoadType.NONE.
    *
    * Not `get(x, y, getHighestLevel(x, y)).roadType`: an elevated RAIL deck has

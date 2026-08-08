@@ -1081,3 +1081,9 @@
 - `src/core/__tests__/helpers/seededRandom.ts` 提供 `useSeededRandom()` / `reseedRandom()`。
   用途是**排除干擾**，不是讓斷言只在某個種子下成立——結果本身會變動時，
   請斷言不變量（比值、上下界），不要斷言抽樣結果。
+
+## 對抗審查回饋 (第七十一輪) — 待辦
+
+- [ ] BUG-109 真正的修法：把高架層序列化進 workplace-distance worker 的緩衝區，
+      讓快取在有高架的城市也能用。目前是「有任何高架道路就不用快取」，
+      正確但每個 slow cycle 要對每個失業家戶跑一次預算 Dijkstra。

@@ -1177,9 +1177,15 @@ export class SimulationLoop {
     // it went stale, oscillating between the two answers.
     //
     // Correctness wins over speed: the cache is simply not used while any
-    // elevated road exists. Serialising the elevated layers into the worker
+    // elevated ROAD exists. Serialising the elevated layers into the worker
     // buffer is the real fix and is recorded in TODO.md (BUG-109).
-    const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnySegment();
+    //
+    // hasAnyElevatedRoad, not hasAnySegment: elevated RAIL shares the same
+    // layers map with roadType NONE and contributes nothing to road
+    // reachability, so the broader question let one elevated metro tile
+    // permanently disable the cache for an otherwise entirely flat city —
+    // a budgeted Dijkstra per unemployed home, every slow cycle, forever.
+    const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnyElevatedRoad();
 
     // Trigger async cache update if stale
     if (canUseWpCache && this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
@@ -1307,8 +1313,18 @@ export class SimulationLoop {
 
     // Use cache-based distance lookup when ready (O(1) per lookup, no Dijkstra).
     // Otherwise provide a closure that captures this._roadLookup for level-aware Dijkstra.
+    //
+    // The same elevation guard as assignCitizenHousing. This is the second
+    // consumer of the cache and BUG-109's fix only guarded the first: the
+    // worker sees the ground roadType byte and cannot see a viaduct, so a
+    // ready cache would relocate workers as though the viaduct were not there.
+    // It is currently unreachable — requestUpdate is blocked upstream, so the
+    // cache can never reach READY while an elevated road exists — but that is
+    // correctness by coupling, and it evaporates the day the cache is warmed
+    // by any other route.
     const roadLookup = this._roadLookup;
-    const distanceLookup = (this.wpDistCache?.isReady)
+    const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnyElevatedRoad();
+    const distanceLookup = (canUseWpCache && this.wpDistCache?.isReady)
       ? (_grid: any, homePos: { x: number; y: number }, targets: Set<string>, _budget: number) => {
           const homeKey = toPosKey(homePos.x, homePos.y);
           return this.wpDistCache!.getDistancesFromHome(homeKey, targets);
