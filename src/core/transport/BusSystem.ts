@@ -301,6 +301,9 @@ export class BusSystem extends BaseTransportSystem {
 
   /** Remove a route and its associated data. */
   private dissolveRoute(routeId: number): void {
+    // Bypasses deleteRoute, so the version bump has to be explicit — otherwise
+    // a route dissolved by a demolished stop stays in the transfer graph.
+    this.bumpTopologyVersion();
     this.routes = this.routes.filter(r => r.id !== routeId);
     this.vehicles = this.vehicles.filter(v => v.routeId !== routeId);
     this.routeSegments.delete(routeId);

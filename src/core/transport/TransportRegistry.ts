@@ -48,6 +48,26 @@ const ALL_TRANSPORT_KEYS: readonly (keyof AllTransportSystems)[] = [
   'bus', 'metro', 'rail', 'ferry', 'airport',
 ];
 
+/**
+ * Combined structural revision of every transit system.
+ *
+ * Consumers that cache anything derived from the transit network (the
+ * multi-modal transfer graph) compare this instead of relying on each mutation
+ * site remembering to call an invalidation hook.
+ */
+export function getTransitNetworkVersion(systems: TransitSystems): number {
+  let sum = 0;
+  for (const { system } of getTransitSystems(systems)) sum += system.getNetworkVersion();
+  return sum;
+}
+
+/** Combined stop/route topology revision, ignoring vehicle-count changes. */
+export function getTransitTopologyVersion(systems: TransitSystems): number {
+  let sum = 0;
+  for (const { system } of getTransitSystems(systems)) sum += system.getTopologyVersion();
+  return sum;
+}
+
 /** Sum getOperatingCost() across all transport systems. */
 export function getTotalTransportOperatingCost(systems: AllTransportSystems): number {
   return ALL_TRANSPORT_KEYS.reduce((sum, key) => sum + systems[key].getOperatingCost(), 0);

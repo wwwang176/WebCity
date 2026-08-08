@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { createGameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
 import { serializeGameState, deserializeGameState } from '../../save/Serializer';
@@ -16,66 +16,135 @@ import { ZoneType } from '../../grid/types';
  * repeat it to farm births, and eat an extra death roll each time.
  * advanceDay() on the deathcare/fire/garbage 7-day ring buffers also rotated a
  * slot early, discarding a day of statistics.
+ *
+ * These tests observe the BLOCKS' EFFECTS, not the bookkeeping fields. Asserting
+ * `hasRunDayBlockFor(clock.getDay())` was a tautology: the constructor assigns
+ * `lastDeathDay = clock.getDay()`, so the assertion reduced to
+ * `getDay() === getDay()` and stayed green with the entire fix reverted.
  */
-function cityAtMidDay() {
+
+/** ticksPerDay = 24, 30 days per month → month boundary at tick 720. */
+const TICKS_PER_DAY = 24;
+
+/**
+ * A city whose clock sits at `tickAt`, with one fertile adult per house so
+ * every house keeps spare capacity (birthTick skips a home that is already
+ * full, so the old 40-citizens-in-one-house fixture could never produce a
+ * birth and could not have observed the month block at all).
+ */
+function cityAt(tickAt: number) {
   const state = createGameState(20, 20);
   for (let x = 2; x < 12; x++) {
     state.grid.setCell(x, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
   }
-  for (let i = 0; i < 40; i++) {
-    const c = state.citizens.createCitizen({ age: 100, birthTick: 0 })!;
-    c.homeId = '5,5';
+  state.clock.tick = tickAt;
+  for (let x = 2; x < 12; x++) {
+    // birthTick must be derived from the CURRENT tick: updateAges recomputes
+    // age as (tick - birthTick) * AGE_PER_TICK, so a citizen created with
+    // birthTick 0 is far past MAX_FERTILITY_AGE by tick 720 and birthTick
+    // skips it — the block would look like it never ran.
+    const c = state.citizens.createCitizen({ age: 100 }, tickAt)!;
+    c.homeId = `${x},5`;
+    c.happiness = 80;
   }
-  // Advance to a tick that is NOT on a day boundary.
-  const loop = new SimulationLoop(state);
-  for (let i = 0; i < 7; i++) loop.tick();
   return state;
 }
 
+/** Counts calls to the daily ring-buffer rotation, which only the day block makes. */
+function countDayBlocks(state: ReturnType<typeof cityAt>): () => number {
+  let calls = 0;
+  const orig = state.deathCare.advanceDay.bind(state.deathCare);
+  state.deathCare.advanceDay = () => { calls++; orig(); };
+  return () => calls;
+}
+
+/** Counts calls to the daily rider rollover, which only the rider block makes. */
+function countRiderRollovers(state: ReturnType<typeof cityAt>): () => number {
+  let calls = 0;
+  const orig = state.bus.rolloverDailyRiders.bind(state.bus);
+  state.bus.rolloverDailyRiders = () => { calls++; orig(); };
+  return () => calls;
+}
+
 describe('loading a save does not replay the current day or month', () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
   it('should not re-run the day block on the first tick after load', () => {
-    const state = cityAtMidDay();
-    const savedDay = state.clock.getDay();
-
-    const restored = deserializeGameState(serializeGameState(state));
+    // Mid-day: tick 710 is day 29, and 711 is still day 29.
+    const restored = deserializeGameState(serializeGameState(cityAt(710)));
     const loop = new SimulationLoop(restored);
+    const dayBlocks = countDayBlocks(restored);
 
-    // Same day as the save: the daily block must not fire again.
-    expect(restored.clock.getDay()).toBe(savedDay);
-    expect(loop.hasRunDayBlockFor(savedDay)).toBe(true);
+    loop.tick();
+
+    expect(restored.clock.getDay()).toBe(29);
+    expect(dayBlocks()).toBe(0);
+  });
+
+  it('should not re-run the rider rollover on the first tick after load', () => {
+    // lastRiderDay is a separate field with its own constructor assignment;
+    // deleting that one line left every other test green.
+    const restored = deserializeGameState(serializeGameState(cityAt(710)));
+    const loop = new SimulationLoop(restored);
+    const rollovers = countRiderRollovers(restored);
+
+    loop.tick();
+
+    expect(rollovers()).toBe(0);
   });
 
   it('should not re-run the month block on the first tick after load', () => {
-    const state = cityAtMidDay();
-    const savedMonth = state.clock.getMonth();
-
-    const restored = deserializeGameState(serializeGameState(state));
+    // Math.random() === 0 makes every fertile adult give birth, so a replayed
+    // month block is guaranteed to show up as new citizens.
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const restored = deserializeGameState(serializeGameState(cityAt(710)));
     const loop = new SimulationLoop(restored);
+    const before = restored.citizens.getCitizens().length;
 
-    expect(loop.hasRunMonthBlockFor(savedMonth)).toBe(true);
+    loop.tick();
+
+    expect(restored.clock.getMonth()).toBe(0);
+    expect(restored.citizens.getCitizens().length).toBe(before);
   });
 
-  it('should still run the day block when the day actually turns', () => {
-    const state = cityAtMidDay();
-    const restored = deserializeGameState(serializeGameState(state));
+  it('should still run the day block and rider rollover when the day turns', () => {
+    // Positive control: the guard must not suppress the block forever.
+    const restored = deserializeGameState(serializeGameState(cityAt(TICKS_PER_DAY * 30 - 1)));
     const loop = new SimulationLoop(restored);
+    const dayBlocks = countDayBlocks(restored);
+    const rollovers = countRiderRollovers(restored);
 
-    const startDay = restored.clock.getDay();
-    let ticks = 0;
-    while (restored.clock.getDay() === startDay && ticks < 200) { loop.tick(); ticks++; }
+    loop.tick();
 
-    expect(restored.clock.getDay()).not.toBe(startDay);
-    expect(loop.hasRunDayBlockFor(restored.clock.getDay())).toBe(true);
+    expect(restored.clock.getDay()).toBe(30);
+    expect(dayBlocks()).toBe(1);
+    expect(rollovers()).toBe(1);
+  });
+
+  it('should still run the month block when the month turns', () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0);
+    const restored = deserializeGameState(serializeGameState(cityAt(TICKS_PER_DAY * 30 - 1)));
+    const loop = new SimulationLoop(restored);
+    // A month boundary is also a day boundary, so the death block runs first —
+    // and with Math.random() === 0 every citizen dies, leaving nobody fertile.
+    // Neutralise the unrelated stochastic block so the birth block is observable.
+    restored.citizens.deathTick = () => [];
+    const before = restored.citizens.getCitizens().length;
+
+    loop.tick();
+
+    expect(restored.clock.getMonth()).toBe(1);
+    expect(restored.citizens.getCitizens().length).toBeGreaterThan(before);
   });
 
   it('should run the day block on a brand new game as the first day turns', () => {
     const state = createGameState(20, 20);
     const loop = new SimulationLoop(state);
-    const startDay = state.clock.getDay();
+    const dayBlocks = countDayBlocks(state);
 
-    let ticks = 0;
-    while (state.clock.getDay() === startDay && ticks < 200) { loop.tick(); ticks++; }
+    for (let i = 0; i < TICKS_PER_DAY; i++) loop.tick();
 
-    expect(loop.hasRunDayBlockFor(state.clock.getDay())).toBe(true);
+    expect(state.clock.getDay()).toBe(1);
+    expect(dayBlocks()).toBe(1);
   });
 });

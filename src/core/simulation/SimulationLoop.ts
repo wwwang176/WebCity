@@ -43,7 +43,7 @@ import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenS
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
 import { TransportMode } from '../transport/types';
-import { getSystemForMode, getTransitSystems, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
+import { getSystemForMode, getTransitSystems, getTransitNetworkVersion, getTransitTopologyVersion, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findNearRoad, type ReadableGrid } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
@@ -138,6 +138,10 @@ export class SimulationLoop {
   // Multi-modal transfer graph (rebuilt when transit network changes)
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
+  /** Transit structural version at the last transfer-graph rebuild. */
+  private lastTransitVersion = -1;
+  /** Transit stop/route topology version at the last transfer-tracker reset. */
+  private lastTransitTopologyVersion = -1;
   private flatRoutes: FlatRoute[] = [];
   /** Transfer usage tracking (extracted — SRP). */
   readonly transferTracker = new TransferTracker();
@@ -240,15 +244,11 @@ export class SimulationLoop {
     };
   }
 
-  /** Test seam: has the per-day block already run for `day`? */
-  hasRunDayBlockFor(day: number): boolean {
-    return this.lastDeathDay === day;
-  }
-
-  /** Test seam: has the per-month block already run for `month`? */
-  hasRunMonthBlockFor(month: number): boolean {
-    return this.lastBirthMonth === month;
-  }
+  // hasRunDayBlockFor / hasRunMonthBlockFor were removed: they simply re-read
+  // the field the constructor had just assigned from the clock, so every test
+  // built on them asserted `getDay() === getDay()` and stayed green with the
+  // whole fix reverted. LoadDoesNotRerunDailyBlocks now observes the blocks'
+  // effects (ring-buffer rotation, rider rollover, newborn count) instead.
 
   tick(): void {
     if (!this.state.clock.advance()) return;
@@ -452,6 +452,11 @@ export class SimulationLoop {
       this.lastRemovedRoadCells = null;
       this.sidewalkGraphDirty = false;
     }
+
+    // Transfer graph must be refreshed BEFORE spawning, and independently of
+    // whether spawning happens at all — spawnVehicles bails out on an empty or
+    // capped city, which used to strand the rebuild (see the method's comment).
+    this.rebuildTransferGraphIfDirty();
 
     // Traffic - spawn commute vehicles (every tick)
     this.spawnVehicles();
@@ -1406,19 +1411,82 @@ export class SimulationLoop {
    * Deliberately NOT markLaneGraphDirty: transit edits do not change the road
    * network, so dragging the lane graph, commute cache and workplace-distance
    * cache along would be a far more expensive invalidation than needed.
+   *
+   * Transit MUTATIONS no longer need to call this — BaseTransportSystem bumps
+   * its own version counter and isTransferGraphDirty() compares it. The method
+   * remains for callers that change something the counter cannot see.
    */
   markTransitNetworkDirty(): void {
     this.transferGraphDirty = true;
   }
 
-  /** Is the transfer graph awaiting a rebuild? */
+  /**
+   * Is the transfer graph awaiting a rebuild?
+   *
+   * True when a road edit set the flag, OR when any transit system's structural
+   * version has moved since the last rebuild. The version check is what makes
+   * this robust: the flag alone depended on every mutation site remembering to
+   * call markTransitNetworkDirty, which markLaneGraphDirty had already silently
+   * broken for the whole transit UI once (BUG-090).
+   */
   isTransferGraphDirty(): boolean {
-    return this.transferGraphDirty;
+    return this.transferGraphDirty || getTransitNetworkVersion(this.state) !== this.lastTransitVersion;
   }
 
   /** Test seam: clear the flag so a test can observe what sets it. */
   clearTransferGraphDirty(): void {
     this.transferGraphDirty = false;
+    this.lastTransitVersion = getTransitNetworkVersion(this.state);
+  }
+
+  /** Number of transit routes currently flattened into the transfer graph. */
+  getTransitRouteCount(): number {
+    return this.flatRoutes.length;
+  }
+
+  /**
+   * Rebuild the multi-modal transfer graph if the transit network changed.
+   *
+   * Runs unconditionally from tick(). It used to live inside
+   * spawnCommuteVehicles, behind three early returns — no population, commute
+   * vehicles at the cap, and no eligible (not-already-driving) citizens. A city
+   * large enough to sit permanently at the vehicle cap therefore never rebuilt:
+   * new lines were invisible to trip planning and deleted lines stayed in
+   * flatRoutes, still collecting dailyRiders.
+   */
+  private rebuildTransferGraphIfDirty(): void {
+    // Daily rollover for transfer usage counts (7-day ring buffer). Same
+    // stranding problem as the rebuild: a capped city stopped ageing the ring.
+    const day = this.state.clock.getDay();
+    if (day !== this.transferTracker.getLastDay()) {
+      this.transferTracker.setLastDay(day);
+      let peds = 0;
+      for (const a of this.state.pedestrianManager.agents) {
+        if (a.tripType === 4) peds++;
+      }
+      this.transferTracker.rolloverDay(peds);
+    }
+
+    if (!this.isTransferGraphDirty()) return;
+    const systems = this.getTransitSystemInfos();
+    this.flatRoutes = flattenSystems(systems);
+    this.transferGraph = buildTransferGraph(this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE);
+    buildStopRouteCache(
+      this.flatRoutes, this.transferGraph,
+      SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
+    );
+    this.transferGraphDirty = false;
+    this.lastTransitVersion = getTransitNetworkVersion(this.state);
+
+    // Only wipe the panel's per-building attribution when the stop/route
+    // topology actually moved. Route labels survive a vehicle-count change, so
+    // clearing on every rebuild blanked the transfer panel each time the player
+    // clicked +/- on a line.
+    const topology = getTransitTopologyVersion(this.state);
+    if (topology !== this.lastTransitTopologyVersion) {
+      this.lastTransitTopologyVersion = topology;
+      this.transferTracker.clearBuildings();
+    }
   }
 
   markLaneGraphDirty(affectedCells?: string[], skipUnreachableCheck = false): void {
@@ -1728,29 +1796,9 @@ export class SimulationLoop {
     }
     if (eligible.length === 0) return;
 
-    // Daily rollover for transfer usage counts (7-day ring buffer)
-    const day = this.state.clock.getDay();
-    if (day !== this.transferTracker.getLastDay()) {
-      this.transferTracker.setLastDay(day);
-      let peds = 0;
-      for (const a of this.state.pedestrianManager.agents) {
-        if (a.tripType === 4) peds++;
-      }
-      this.transferTracker.rolloverDay(peds);
-    }
-
-    // Rebuild transfer graph when transit network has changed
-    if (this.transferGraphDirty) {
-      const systems = this.getTransitSystemInfos();
-      this.flatRoutes = flattenSystems(systems);
-      this.transferGraph = buildTransferGraph(this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE);
-      buildStopRouteCache(
-        this.flatRoutes, this.transferGraph,
-        SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
-      );
-      this.transferGraphDirty = false;
-      this.transferTracker.clearBuildings();
-    }
+    // The daily transfer-usage rollover and the transfer-graph rebuild used to
+    // live here, behind this and two earlier early returns — see
+    // rebuildTransferGraphIfDirty(). Both now run from tick().
 
     const maxPerTick = Math.max(SIMULATION.MIN_SPAWN_PER_TICK, Math.ceil(eligible.length / SIMULATION.SPAWN_SPREAD_TICKS));
     let spawned = 0;
