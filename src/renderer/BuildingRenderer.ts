@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { Grid } from '../core/grid/Grid';
 import { getBuildingMaterial } from './BuildingMaterial';
 import { appearanceOf } from './BuildingAppearance';
-import { getVariants, ZONE_TYPES } from './geometry/buildings/registry';
+import { getVariants, ZONE_TYPES, ZONE_HEIGHTS } from './geometry/buildings/registry';
 import { stampZoneCategory, ZONE_CAT, tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
@@ -81,16 +81,6 @@ const ZONE_PALETTES: Record<number, number[]> = {
     0x98a8b0, // cool gray
     0x70a0b8, // teal
   ],
-};
-
-// ===== Height ranges per zone =====
-const ZONE_HEIGHTS: Record<number, { min: number; max: number }> = {
-  [ZoneType.RESIDENTIAL_LOW]:  { min: 0.25, max: 0.7 },
-  [ZoneType.RESIDENTIAL_HIGH]: { min: 1.0, max: 3.0 },
-  [ZoneType.COMMERCIAL_LOW]:   { min: 0.4, max: 1.0 },
-  [ZoneType.COMMERCIAL_HIGH]:  { min: 1.2, max: 2.8 },
-  [ZoneType.INDUSTRIAL]:       { min: 0.4, max: 1.0 },
-  [ZoneType.OFFICE]:           { min: 1.5, max: 4.5 },
 };
 
 interface BuildingData { x: number; y: number; level: number; burned?: boolean }

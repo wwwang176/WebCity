@@ -13,6 +13,8 @@ import { getVariants, TRIANGLE_BUDGET } from '../renderer/geometry/buildings/reg
 import { stampZoneCategory, ZONE_CAT } from '../renderer/geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
+import { appearanceOf } from '../renderer/BuildingAppearance';
+import { ZONE_HEIGHTS } from '../renderer/geometry/buildings/registry';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
 
@@ -43,17 +45,32 @@ function clear(): void {
   shown.length = 0;
 }
 
-/** 放一棟建築在 (x, z)。回傳它的三角形數。 */
-function place(zoneType: number, level: number, variantIndex: number, x: number, z: number): number {
-  const variants = getVariants(zoneType, level);
+/**
+ * 放一棟建築在 (x, z)，套用與遊戲完全相同的變換。回傳三角形數。
+ *
+ * 縮放與旋轉必須在這裡重現：BuildingRenderer 的高度不是幾何本身的高度，
+ * 而是乘在幾何上的縮放係數。少了它，展示區顯示的比例與遊戲不同，
+ * 而「展示區看到的就是出貨的東西」正是它唯一的價值。
+ */
+function place(cell: PlacedCell, seedByte: number): number {
+  const variants = getVariants(cell.zoneType, cell.level);
   if (variants.length === 0) return 0;
-  const geo = variants[variantIndex % variants.length]!();
-  stampZoneCategory(geo, ZONE_CAT[zoneType] ?? 0);
+  const geo = variants[cell.variantIndex % variants.length]!();
+  stampZoneCategory(geo, ZONE_CAT[cell.zoneType] ?? 0);
+
+  const app = appearanceOf({
+    x: cell.x, y: cell.z, zoneType: cell.zoneType, level: cell.level, seedByte,
+    variantCount: variants.length, paletteSize: 8,
+  });
+  const range = ZONE_HEIGHTS[cell.zoneType] ?? { min: 0.3, max: 1.0 };
+  const baseHeight = range.min + (range.max - range.min) * (cell.level / 3);
 
   const mesh = new THREE.Mesh(geo, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
-  mesh.position.set(x, 0.05, z);
+  mesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
+  mesh.scale.set(app.widthScale, baseHeight * app.heightScale, app.depthScale);
+  mesh.position.set(cell.x, 0.05, cell.z);
   sceneManager.scene.add(mesh);
   shown.push(mesh);
   return geo.getAttribute('position').count / 3;
@@ -82,7 +99,7 @@ function render(): void {
 
   let triangles = 0;
   for (const c of cells) {
-    triangles += place(c.zoneType, c.level, c.variantIndex, c.x, c.z);
+    triangles += place(c, state.seedByte);
   }
 
   // 依內容置中：矩陣模式的內容全在正象限，預設鏡頭對著原點會看不到。

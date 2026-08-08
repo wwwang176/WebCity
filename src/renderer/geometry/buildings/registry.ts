@@ -299,3 +299,18 @@ export function getVariants(zoneType: number, level: number): GeoBuilder[] {
   void level;
   return VARIANTS[zoneType] ?? [];
 }
+
+// ===== Height ranges per zone =====
+/**
+ * 每個分區的高度區間。這是**乘在幾何上的縮放係數**，不是公尺數：
+ * 實際高度 = 幾何本身的高度 x 這個係數，而 1 格 = 12 公尺。
+ */
+export const ZONE_HEIGHTS: Record<number, { min: number; max: number }> = {
+  [ZoneType.RESIDENTIAL_LOW]:  { min: 0.25, max: 0.7 },
+  [ZoneType.RESIDENTIAL_HIGH]: { min: 1.0, max: 3.0 },
+  [ZoneType.COMMERCIAL_LOW]:   { min: 0.4, max: 1.0 },
+  [ZoneType.COMMERCIAL_HIGH]:  { min: 1.2, max: 2.8 },
+  [ZoneType.INDUSTRIAL]:       { min: 0.4, max: 1.0 },
+  [ZoneType.OFFICE]:           { min: 1.5, max: 4.5 },
+};
+
