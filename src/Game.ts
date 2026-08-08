@@ -67,6 +67,7 @@ import {
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage, formatBuildFailure } from './core/grid/BuildReasonMessages';
 import { getZoneBlocker, summariseZoneBlockers, ZONE_BLOCKER_MESSAGES, type ZoneBlocker, type ZoneBlockerDeps } from './core/zone/ZoneBlocker';
+import { collectBuildingUtilityWarnings } from './core/building/BuildingUtilityWarning';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
@@ -536,6 +537,9 @@ export class Game {
     };
     this.simLoop.onBuildingRemoved = (x, y) => {
       this.buildingRenderer.removeBuilding(x, y);
+      // Otherwise a badge for a building that no longer exists keeps blinking
+      // over bare ground until the next slow-cycle refresh.
+      this.utilityWarningsDirty = true;
     };
     this.simLoop.onBuildingUpdated = (x, y, zoneType, level, burned, abandoned) => {
       this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned, abandoned);
@@ -1144,7 +1148,28 @@ export class Game {
   private invalidateZoneBlockers(): void {
     this.zoneOverlaysDirty = true;
     this.zoneBlockerSummary = null;
+    // Outage badges answer the same question one step later in a building's
+    // life, and move on exactly the same events.
+    this.utilityWarningsDirty = true;
   }
+
+  /** Set when a building's power or water supply may have changed. */
+  private utilityWarningsDirty = false;
+
+  private utilityWarningDeps() {
+    return {
+      isPowered: (x: number, y: number) => this.state.power.isPowered(x, y),
+      isWatered: (x: number, y: number) => this.state.water.isSupplied(x, y),
+    };
+  }
+
+  private refreshUtilityWarnings(): void {
+    this.buildingRenderer.setUtilityWarnings(
+      this.sceneManager.scene,
+      collectBuildingUtilityWarnings(this.state.grid, this.utilityWarningDeps()),
+    );
+  }
+
 
   /** The district modal writes straight to PolicyManager; nothing else sees it. */
   notifyDistrictPolicyChanged(): void {
@@ -1549,6 +1574,7 @@ export class Game {
     // Update night glow (building light spots + street lamps)
     const sunI = this.weatherRenderer.sunIntensity;
     this.buildingRenderer.update(sunI, dt);
+    this.buildingRenderer.updateUtilityWarnings(this.sceneManager.camera.quaternion);
     this.roadRenderer.update(sunI);
     this.elevatedRoadRenderer.update(sunI);
   }
@@ -1562,6 +1588,10 @@ export class Game {
     if (this.zoneOverlaysDirty) {
       this.zoneOverlaysDirty = false;
       this.refreshZoneOverlays();
+    }
+    if (this.utilityWarningsDirty) {
+      this.utilityWarningsDirty = false;
+      this.refreshUtilityWarnings();
     }
     const anyDirty = d.hasRoadChanges || d.hasElevatedChanges || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
     if (!anyDirty) return;

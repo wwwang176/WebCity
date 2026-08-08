@@ -9,6 +9,7 @@ import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '..
 import { disposeGroup } from './disposeGroup';
 import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
+import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '../core/building/BuildingUtilityWarning';
 
 // ===== Deterministic pseudo-random based on position =====
 function hash(x: number, y: number): number {
@@ -1351,6 +1352,146 @@ export class BuildingRenderer {
       scene.add(mesh);
       this.overlayMeshes.push(mesh);
     }
+  }
+
+  // ─── Utility outage icons ──────────────────────────────────────
+  //
+  // A zoned cell that will not develop can say why. A building that WAS built
+  // and then lost its power said nothing at all, and the first thing the player
+  // saw was it abandoning itself weeks later, long after the blackout scrolled
+  // off screen. These are the missing half: one blinking badge per stopped
+  // building, at the cell it stands on.
+  //
+  // The camera rotates (Q/E) and is orthographic, so every badge shares one
+  // orientation — the matrices only need rewriting when that orientation moves,
+  // not per frame.
+
+  private warnMeshes: THREE.InstancedMesh[] = [];
+  private warnCells: WarnedCell[] = [];
+  private warnQuatKey = '';
+  private static readonly WARN_HEIGHT = 1.15;
+
+  /** Icon outlines, drawn as geometry so there is no canvas dependency. */
+  private static warningShape(warning: UtilityWarning): THREE.Shape {
+    const s = new THREE.Shape();
+    if (warning === 'NO_POWER') {
+      // A lightning bolt.
+      s.moveTo(0.10, 0.45);
+      s.lineTo(-0.32, 0.02);
+      s.lineTo(-0.04, 0.02);
+      s.lineTo(-0.12, -0.45);
+      s.lineTo(0.32, 0.04);
+      s.lineTo(0.04, 0.04);
+    } else {
+      // A water drop.
+      s.moveTo(0, 0.45);
+      s.bezierCurveTo(0.30, 0.05, 0.28, -0.12, 0.18, -0.28);
+      s.bezierCurveTo(0.08, -0.44, -0.08, -0.44, -0.18, -0.28);
+      s.bezierCurveTo(-0.28, -0.12, -0.30, 0.05, 0, 0.45);
+    }
+    s.closePath();
+    return s;
+  }
+
+  /**
+   * Replace the set of buildings shown as stopped. Cheap enough to call on the
+   * slow cycle: the whole point is that it tracks the utility networks, which
+   * only move there.
+   */
+  setUtilityWarnings(scene: THREE.Scene, warned: WarnedCell[]): void {
+    for (const mesh of this.warnMeshes) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      (mesh.material as THREE.Material).dispose();
+    }
+    this.warnMeshes = [];
+    this.warnCells = warned;
+    this.warnQuatKey = '';
+    if (warned.length === 0) return;
+
+    const byWarning = new Map<UtilityWarning, WarnedCell[]>();
+    for (const w of warned) {
+      const arr = byWarning.get(w.warning);
+      if (arr) arr.push(w);
+      else byWarning.set(w.warning, [w]);
+    }
+
+    for (const [warning, cells] of byWarning) {
+      const count = Math.min(cells.length, this.maxPerVariant);
+
+      // A dark plate behind the icon, so a yellow bolt still reads against a
+      // pale roof at midday.
+      const plate = new THREE.InstancedMesh(
+        new THREE.CircleGeometry(0.34, 16),
+        new THREE.MeshBasicMaterial({
+          color: 0x101418, transparent: true, opacity: 0.72, depthWrite: false,
+        }),
+        count,
+      );
+      const icon = new THREE.InstancedMesh(
+        new THREE.ShapeGeometry(BuildingRenderer.warningShape(warning)),
+        new THREE.MeshBasicMaterial({
+          color: UTILITY_WARNING_COLORS[warning], transparent: true,
+          opacity: 1, depthWrite: false, side: THREE.DoubleSide,
+        }),
+        count,
+      );
+      for (const mesh of [plate, icon]) {
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 10;
+        mesh.userData['warnCells'] = cells.slice(0, count);
+        mesh.userData['isIcon'] = mesh === icon;
+        scene.add(mesh);
+        this.warnMeshes.push(mesh);
+      }
+    }
+  }
+
+  /** Face the badges at the camera. Only does work when the camera has moved. */
+  private layoutUtilityWarnings(cameraQuaternion: THREE.Quaternion): void {
+    const q = cameraQuaternion;
+    const key = `${q.x.toFixed(4)},${q.y.toFixed(4)},${q.z.toFixed(4)},${q.w.toFixed(4)}`;
+    if (key === this.warnQuatKey) return;
+    this.warnQuatKey = key;
+
+    const scale = new THREE.Vector3(1, 1, 1);
+    const position = new THREE.Vector3();
+    for (const mesh of this.warnMeshes) {
+      const cells = mesh.userData['warnCells'] as WarnedCell[];
+      // The icon sits a hair in front of its plate along the view direction.
+      const lift = mesh.userData['isIcon'] ? 0.01 : 0;
+      const forward = new THREE.Vector3(0, 0, lift).applyQuaternion(q);
+      for (let i = 0; i < cells.length; i++) {
+        const c = cells[i]!;
+        position.set(c.x + forward.x, BuildingRenderer.WARN_HEIGHT + forward.y, c.y + forward.z);
+        this._matrix.compose(position, q, scale);
+        mesh.setMatrixAt(i, this._matrix);
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  /**
+   * Blink the badges and keep them facing the camera. Called from the render
+   * loop, so `dt` is real seconds and the pulse does not change with game speed
+   * — a paused city still has to show its blackout.
+   */
+  updateUtilityWarnings(cameraQuaternion: THREE.Quaternion): void {
+    if (this.warnMeshes.length === 0) return;
+    this.layoutUtilityWarnings(cameraQuaternion);
+
+    // Roughly one pulse per second, never fading to nothing: a badge that
+    // vanishes between beats is one the player can miss entirely.
+    const pulse = 0.55 + 0.45 * Math.sin(this._elapsedTime * Math.PI * 2);
+    for (const mesh of this.warnMeshes) {
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      mat.opacity = mesh.userData['isIcon'] ? pulse : 0.72 * pulse;
+    }
+  }
+
+  /** The buildings currently drawn as stopped — for tests and the debug panel. */
+  getUtilityWarnings(): readonly WarnedCell[] {
+    return this.warnCells;
   }
 
   private buildInfrastructure(scene: THREE.Scene, cells: { x: number; y: number; type: InfraType; reserved: number }[]): void {
