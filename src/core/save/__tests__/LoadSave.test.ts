@@ -72,7 +72,6 @@ describe('a damaged save comes back as a reason, never as a throw', () => {
     ['a non-finite fund balance', damaged(o => {
       (o.budget as Record<string, unknown>).funds = null;
     })],
-    ['a save from a future version', damaged(o => { o.version = 9999; })],
     // Injected into the JSON text, not via an object literal: assigning
     // `o.__proto__` sets the prototype and JSON.stringify emits nothing, so the
     // obvious way to write this case produces a perfectly clean save. A real
@@ -106,5 +105,30 @@ describe('a damaged save comes back as a reason, never as a throw', () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.failure.detail.toLowerCase()).toContain('clock');
+  });
+});
+
+describe('a save from a newer build is refused as such, not as damage', () => {
+  it('should be VERSION_TOO_NEW, and say to update', () => {
+    // The first version reported this as CORRUPT — "the file is damaged" — and
+    // that was also a regression: the old path ran the save through the
+    // migrations (which no-op forwards) and usually loaded it.
+    const result = loadSaveData(damaged(o => { o.version = 9999; }));
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.failure.kind).toBe('VERSION_TOO_NEW');
+    expect(result.failure.message).toMatch(/update/i);
+    expect(result.failure.message).not.toMatch(/damaged/i);
+    expect(result.failure.detail).toContain('9999');
+  });
+
+  it('should still call a nonsense version damaged', () => {
+    // The control: only "newer than current" is a version problem.
+    for (const bad of [0, -1, 'seven', null]) {
+      const result = loadSaveData(damaged(o => { o.version = bad; }));
+      expect(result.ok, String(bad)).toBe(false);
+      if (result.ok) continue;
+      expect(result.failure.kind, String(bad)).toBe('CORRUPT');
+    }
   });
 });

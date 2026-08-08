@@ -4,7 +4,7 @@ import {
 } from './SaveValidator';
 import { deserializeGameState, type DeserializedExtra } from './Serializer';
 import type { GameState } from '../simulation/GameState';
-import { classifySaveError, type SaveFailure } from './SaveFailure';
+import { classifySaveError, versionTooNewFailure, type SaveFailure } from './SaveFailure';
 
 export type LoadResult =
   | { ok: true; state: GameState & { _extra?: DeserializedExtra } }
@@ -29,7 +29,7 @@ export function loadSaveData(json: string): LoadResult {
   try {
     parsed = JSON.parse(json);
   } catch (err) {
-    return { ok: false, failure: classifySaveError(err) };
+    return { ok: false, failure: classifySaveError(err, 'load') };
   }
 
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
@@ -40,8 +40,24 @@ export function loadSaveData(json: string): LoadResult {
   }
 
   const state = parsed as Record<string, unknown>;
+
+  // A save from a LATER build is not damage, and saying so was a regression:
+  // the old path ran it through the migrations (which no-op forwards) and
+  // usually loaded it. Refusing is still right — this build cannot know what
+  // the newer format means — but it has to be refused as its own thing, so the
+  // player is told to update rather than told their save is broken.
+  const version = validateVersion(state.version);
+  if (!version.valid) {
+    const detail = version.errors[0] ?? 'invalid save version';
+    return {
+      ok: false,
+      failure: /newer than current/i.test(detail)
+        ? versionTooNewFailure(detail)
+        : corrupt(detail),
+    };
+  }
+
   for (const result of [
-    validateVersion(state.version),
     validateGrid(state.grid),
     validateClock(state.clock),
     validateBudget(state.budget),
@@ -57,12 +73,15 @@ export function loadSaveData(json: string): LoadResult {
     return { ok: true, state: deserializeGameState(json) };
   } catch (err) {
     // Validation passed and the deserializer still threw: that is a bug in this
-    // build, not damage on disk. It still must not take the save with it.
-    return { ok: false, failure: classifySaveError(err) };
+    // build, or damage in a section no validator covers. It still must not take
+    // the save with it, and it is still a LOAD failure — reporting it with the
+    // save-side wording told the player "the city is NOT being saved" about a
+    // city that was never loaded.
+    return { ok: false, failure: classifySaveError(err, 'load') };
   }
 }
 
 function corrupt(detail: string): SaveFailure {
-  const base = classifySaveError(new SyntaxError('corrupt'));
+  const base = classifySaveError(new SyntaxError('corrupt'), 'load');
   return { ...base, detail };
 }

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   classifySaveError, missingSaveFailure, loadFailureAction,
-  errorDetail, SaveBlockedError,
+  errorDetail, SaveBlockedError, versionTooNewFailure,
 } from '../SaveFailure';
 
 /**
@@ -106,5 +106,67 @@ describe('a failed load must not become a new city', () => {
     const f = missingSaveFailure(2);
     expect(f.kind).toBe('MISSING');
     expect(f.detail).toContain('2');
+  });
+});
+
+/**
+ * Every case below is a misstatement an adversarial review caught the first
+ * version making — the failure was classified or worded as something it was
+ * not, and the player was told to do the wrong thing.
+ */
+describe('a failure is worded for the side of the door it happened on', () => {
+  it('should not tell a player whose LOAD failed that the city is not being saved', () => {
+    // 'Save failed and the city is NOT being saved' was shown for a load that
+    // aborted, for a save section no validator covers, and in the save list.
+    for (const err of [new Error('Load transaction aborted'), new Error('whatever')]) {
+      expect(classifySaveError(err, 'load').message).not.toMatch(/NOT being saved/);
+    }
+  });
+
+  it('should still say it when a SAVE failed', () => {
+    // The control: the warning that matters most must not have been softened.
+    expect(classifySaveError(new Error('whatever'), 'save').message).toMatch(/NOT being saved/);
+  });
+
+  it('should default to the save wording, as every existing caller expects', () => {
+    expect(classifySaveError(new Error('x')).message)
+      .toBe(classifySaveError(new Error('x'), 'save').message);
+  });
+
+  it('should not call a failed WRITE a damaged file', () => {
+    // V8 throws 'Converting circular structure to JSON' for a snapshot with a
+    // cycle. It matches the same /JSON/ a truncated save does, so a write that
+    // never happened was reported as CORRUPT — telling the player their save
+    // was damaged but still exportable, when nothing had been written at all.
+    let thrown: unknown;
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    try { JSON.stringify(cyclic); } catch (e) { thrown = e; }
+
+    const failure = classifySaveError(thrown, 'save');
+    expect(failure.kind).not.toBe('CORRUPT');
+    expect(failure.message).toMatch(/NOT being saved/);
+    expect(failure.message).not.toMatch(/export it/);
+  });
+
+  it('should still call a truncated file damaged', () => {
+    let thrown: unknown;
+    try { JSON.parse('{"grid":'); } catch (e) { thrown = e; }
+    expect(classifySaveError(thrown, 'load').kind).toBe('CORRUPT');
+  });
+});
+
+describe('a save from a newer build is not a damaged save', () => {
+  it('should be its own kind, with its own instruction', () => {
+    const f = versionTooNewFailure('Save version 8 is newer than current (7)');
+    expect(f.kind).toBe('VERSION_TOO_NEW');
+    expect(f.message).toMatch(/newer version/i);
+    expect(f.message).toMatch(/update/i);
+    expect(f.message).not.toMatch(/damaged/i);
+  });
+
+  it('should carry the versions in the detail', () => {
+    expect(versionTooNewFailure('Save version 8 is newer than current (7)').detail)
+      .toContain('8');
   });
 });

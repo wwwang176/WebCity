@@ -99,6 +99,46 @@ export async function listSaves(): Promise<SaveSlot[]> {
   });
 }
 
+/**
+ * Copy a save that could not be read into a fresh slot, so a later write cannot
+ * take it with it.
+ *
+ * "The damaged save is left untouched" was only true until the player pressed
+ * the other button on the menu. Autosave writes slot 0 unconditionally
+ * (Game.ts), and slot 0 is the AutoSave slot — the one most likely to be the
+ * broken one — so starting a new game after a failed load overwrote the bytes
+ * 100 ticks later. Recovery was one click slower than before, not preserved.
+ *
+ * Returns the slot the copy landed in, or null if it could not be made. Never
+ * throws: this runs on a path that is already failing, and losing the copy must
+ * not also lose the error the player was about to be shown.
+ */
+export async function quarantineSave(slotId: number): Promise<number | null> {
+  try {
+    const slot = await loadGame(slotId);
+    if (!slot || !slot.data) return null;
+
+    const existing = await listSaves();
+    const used = new Set(existing.map(s => s.id));
+    // Already quarantined this one — a second failed load of the same slot must
+    // not fill the list with copies.
+    const marker = `${QUARANTINE_PREFIX}${slot.name}`;
+    const already = existing.find(s => s.name === marker && s.data === slot.data);
+    if (already) return already.id;
+
+    let target = 1;
+    while (used.has(target)) target++;
+
+    await saveGame(target, marker, slot.data, slot.population);
+    return target;
+  } catch {
+    return null;
+  }
+}
+
+/** Prefix that marks a slot as an unreadable save kept for export. */
+export const QUARANTINE_PREFIX = '[unreadable] ';
+
 export async function deleteSave(slotId: number): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
