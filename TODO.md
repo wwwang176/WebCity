@@ -1087,3 +1087,26 @@
 - [ ] BUG-109 真正的修法：把高架層序列化進 workplace-distance worker 的緩衝區，
       讓快取在有高架的城市也能用。目前是「有任何高架道路就不用快取」，
       正確但每個 slow cycle 要對每個失業家戶跑一次預算 Dijkstra。
+
+## 第七十一輪對抗審查 — 尚未處理的 findings
+
+### 已確認、待修
+- [ ] 垃圾污染兩個分支不對等：landfill 分支 `perFacility = ceil(penalty/n)` 再乘 `forEachFacilityCell`（2x2=4 格），實測一座垃圾場排放 400 vs 無垃圾場 100。等於「有廢棄物設施」污染反而重 4 倍，是 BUG-101 誘因的較輕版本
+- [ ] `UNCOLLECTED_POLLUTION_SITES = 12` 在平均分佈時只是「最早回報的 12 格」（sort 穩定、count 全部相同），200 格垃圾中 188 格排放 0；且 pendingBags splice 會讓這 12 格在無遊戲原因下漂移
+- [ ] `save.worker.ts` 的 `tx.onerror` 搶在 `tx.onabort` 前 reject，`tx.error` 當下仍是 null → 真正的 QuotaExceededError 被換成佔位字串
+- [ ] `Game.ts` 沒有 `saveWorker.onmessage`，SAVE_COMPLETE（成功與失敗）全部被丟棄 → autosave 配額滿時玩家完全不知情
+- [ ] `openDB` 沒接 `onblocked`（SaveManager 與 save.worker 皆是）；DB_VERSION 一旦調升且有第二個分頁開著，promise 永不 settle
+- [ ] `listSaves` / `deleteSave` 的 rejection 在 MainMenu 無 `.catch`，SettingsModal 的 `await listSaves()` 在 try 之外
+- [ ] `main.ts` 載入失敗會 catch 後直接開新遊戲，覆蓋玩家存檔且無提示
+- [ ] `BusSystem.onRoadChanged` 只比對 `from/to.cellKey`，不看 `viaCellKey` → 拆掉公車轉彎的交叉口格子時該路線不會重算，公車永遠開在已刪除的邊上
+- [ ] `removeElevated` 的 `highest-1` 掃描沒有確認該層是否還有 segment → 堆疊高架時會切斷下層還存在的連線
+- [ ] 高架道路寫入時 `railType/railFlags` 對 `i > 0` 全部歸零 → 高架道路橫跨高架鐵路會刪掉鐵路那一格
+- [ ] 起點格 `roadType` 保留邏輯在「純鐵路高架」上會產生 roadFlags 指向不存在道路的孤島（BUG-097 症狀復現）
+- [ ] `ShoppingAccess` 的地面鄰居展開完全不看 level，高架橋經過地面道路旁就會與之合併（無匝道）
+- [ ] `CitizenManager` 退休釋放 commuteCache 的 `onEvicted` 完全沒有測試（刪掉三行呼叫，全套測試仍綠）
+- [ ] `getAvgNoise` 改讀 live pollution 沒有測試；`getAvgResidentialNoise` 現在是死碼
+- [ ] `highestMilestonePop` 沒有 round-trip 測試；非有限值會讓 `Math.max` 回傳 NaN 並永久停用里程碑
+- [ ] `dirtyRoadCells` 跨編輯累積，同一 tick 內拆除再改向重鋪會逃過清掃（已由 edge-identity 改法解決，待確認）
+
+### 尚未送審的 commit
+- [ ] 第三批 6 個：0367f65 之後的 docs commit 與本輪修復 commit 尚未逐一對抗
