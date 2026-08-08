@@ -60,11 +60,28 @@ describe('RoadBuilder', () => {
     expect(config.speedLimit).toBe(60);
   });
 
-  it('should fail to build road on water', () => {
+  it('should stop at water rather than cancelling the drag', () => {
+    // Changed deliberately. This used to assert the whole drag failed with
+    // WATER_TILE, which meant a good road up to the shore produced nothing and
+    // the player had to shorten the drag and retry to find the shoreline.
+    // RoadStopsAtTheShore.test.ts carries the full rule; these two keep the
+    // part that has not changed — no road ends up ON the water.
     const grid = new Grid(20, 20);
     grid.setCell(4, 5, { terrainType: TerrainType.WATER });
     const builder = new RoadBuilder(grid);
     const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+
+    expect(result.success).toBe(true);
+    expect(grid.getCell(4, 5)!.roadType).toBe(RoadType.NONE);
+    expect(grid.getCell(3, 5)!.roadType).toBe(RoadType.TWO_LANE);
+    expect(grid.getCell(5, 5)!.roadType, 'built past the water').toBe(RoadType.NONE);
+  });
+
+  it('should still fail when the drag starts on water', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(2, 5, { terrainType: TerrainType.WATER });
+    const result = new RoadBuilder(grid)
+      .buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
 
     expect(result.success).toBe(false);
     expect(result.reason).toBe('WATER_TILE');
@@ -219,11 +236,22 @@ describe('RoadBuilder', () => {
 
   // --- Terrain blocking ---
 
-  it('should fail to build road on mountain', () => {
+  it('should stop at a mountain rather than cancelling the drag', () => {
     const grid = new Grid(20, 20);
     grid.setCell(4, 5, { terrainType: TerrainType.MOUNTAIN });
     const builder = new RoadBuilder(grid);
     const result = builder.buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
+
+    expect(result.success).toBe(true);
+    expect(grid.getCell(4, 5)!.roadType).toBe(RoadType.NONE);
+    expect(grid.getCell(3, 5)!.roadType).toBe(RoadType.TWO_LANE);
+  });
+
+  it('should still fail when the drag starts on a mountain', () => {
+    const grid = new Grid(20, 20);
+    grid.setCell(2, 5, { terrainType: TerrainType.MOUNTAIN });
+    const result = new RoadBuilder(grid)
+      .buildRoad({ x: 2, y: 5 }, { x: 6, y: 5 }, RoadType.TWO_LANE, 10000);
 
     expect(result.success).toBe(false);
     expect(result.reason).toBe('MOUNTAIN_TILE');

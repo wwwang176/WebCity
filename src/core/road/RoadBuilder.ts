@@ -6,6 +6,7 @@ import { getInfraConfigById } from '../building/InfraConfig';
 import { RoadNetwork } from './RoadNetwork';
 import { RoadType, type BuildRoadResult, type Position } from './types';
 import { validateRoadPath, calculateRoadCost } from './RoadValidation';
+import { firstBlockedIndex } from '../grid/PathValidation';
 import { type ElevationManager } from '../elevation/ElevationManager';
 
 const nodeId = toPosKey;
@@ -28,9 +29,31 @@ export class RoadBuilder {
     // Only HIGHWAY can create external connections; other road types ignore the out-of-bounds cell.
     const rawOob = extractOutOfBoundsEdge(fullPath, this.grid.width, this.grid.height);
     const oob = rawOob && roadType === RoadType.HIGHWAY ? rawOob : null;
-    const cells = rawOob ? fullPath.slice(0, rawOob.truncatedLength) : fullPath;
+    const inBounds = rawOob ? fullPath.slice(0, rawOob.truncatedLength) : fullPath;
 
-    if (cells.length === 0) return { success: false, reason: 'EMPTY_PATH' };
+    if (inBounds.length === 0) return { success: false, reason: 'EMPTY_PATH' };
+
+    // Stop at TERRAIN instead of cancelling the drag.
+    //
+    // Dragging into the sea used to reject the whole path with "Cannot build on
+    // water", so a perfectly good road up to the shore produced nothing and the
+    // only way to find the shoreline was to shorten the drag and try again.
+    //
+    // Only terrain. A mountain or a coastline is a fact about the map that the
+    // player cannot argue with, so stopping short is the obvious reading of the
+    // drag. A building in the way is something they put there, and quietly
+    // stopping in front of it would hide the fact that the road they asked for
+    // cannot exist — those still fail, loudly, in validateRoadPath below.
+    //
+    // A drag that STARTS on terrain still fails too: there is nothing to build,
+    // and silence would leave the player with no idea why.
+    const blocked = firstBlockedIndex(this.grid, inBounds, this.elevationManager ?? undefined);
+    const stopAtTerrain = blocked !== null
+      && (blocked.reason === 'WATER_TILE' || blocked.reason === 'MOUNTAIN_TILE');
+    const cells = stopAtTerrain ? inBounds.slice(0, blocked!.index) : inBounds;
+    if (cells.length === 0) {
+      return { success: false, reason: blocked?.reason ?? 'EMPTY_PATH' };
+    }
 
     // Validate path (terrain, infrastructure, rail conflicts) — delegated to pure function (SRP)
     const validationError = validateRoadPath(this.grid, cells, this.elevationManager ?? undefined);

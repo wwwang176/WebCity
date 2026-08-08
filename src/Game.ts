@@ -220,6 +220,8 @@ export type { ServiceStatus } from './core/service/ServiceStatusView';
 import { buildServiceStatus, type ServiceStatus } from './core/service/ServiceStatusView';
 import type { SaveCompleteMessage } from './core/save/SaveWorkerHandler';
 import { classifySaveError } from './core/save/SaveFailure';
+import { findWaterPlantSites } from './core/building/WaterPlantSites';
+import { GROUNDWATER_SEARCH_RANGE } from './core/grid/Terrain';
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -2486,6 +2488,27 @@ export class Game {
     if (overlayType === 'water') {
       const water = this.state.water;
       const ratio = water.getSupplyRatio();
+
+      // A city with no plant yet has nothing to colour — and that is exactly
+      // the city that needs help. A water plant needs groundwater, i.e. a cell
+      // within GROUNDWATER_SEARCH_RANGE of water, and nothing grows at all
+      // without water, so an inland start is unwinnable. The only feedback used
+      // to be a toast on the click that failed, which says what is wrong but
+      // not where to go instead. Selecting the water tool opens this overlay
+      // (TOOL_TO_OVERLAY), so this is where the answer belongs.
+      if (water.getPlants().length === 0) {
+        const sites = findWaterPlantSites(this.state.grid);
+        for (const s of sites) {
+          this.overlayHighlightCells.push({ x: s.x, y: s.y, color: 0x00e5ff });
+        }
+        if (sites.length === 0) {
+          this.showNotification(
+            'Nowhere on this map has groundwater. A water plant must be within '
+            + `${GROUNDWATER_SEARCH_RANGE} tiles of a river, lake or coast.`, 8,
+          );
+        }
+        return;
+      }
       this.state.grid.forEachCell((cell, x, y) => {
         if (cell.buildingId === 0) return;
         if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) return;

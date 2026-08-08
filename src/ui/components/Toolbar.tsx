@@ -1,4 +1,4 @@
-import { createSignal, For, Show } from 'solid-js';
+import { createSignal, onCleanup, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
 import type { ToolType, PlacementMode } from '../../Game';
@@ -186,9 +186,25 @@ function ToolGroupComponent(props: {
 export function Toolbar(props: { onOpenModal: (id: string) => void }) {
   const [openGroup, setOpenGroup] = createSignal<string | null>(null);
 
-  const toggleGroup = (groupId: string) => {
-    setOpenGroup(prev => prev === groupId ? null : groupId);
+  // A group button SELECTS its group; it does not toggle.
+  //
+  // Toggling made the second click a close, and the natural way to pick two
+  // tools from one group — press the group, press a tool, press the group,
+  // press the next tool — therefore shut the panel on the third press.
+  // Keyboard and automated flows always go through the group button and hit it
+  // every time; a mouse user usually leaves the panel open and does not.
+  //
+  // The panel closes by opening another group, choosing a standalone tool, or
+  // clicking away from the toolbar (below).
+  const openGroupById = (groupId: string) => setOpenGroup(groupId);
+
+  const closeOnOutsideClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('#toolbar')) return;
+    setOpenGroup(null);
   };
+  document.addEventListener('click', closeOnOutsideClick);
+  onCleanup(() => document.removeEventListener('click', closeOnOutsideClick));
 
   const selectTool = (tool: ToolType) => {
     getGame().setTool(tool);
@@ -211,7 +227,7 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
           <ToolGroupComponent
             group={group}
             openGroup={openGroup()}
-            onToggleGroup={toggleGroup}
+            onToggleGroup={openGroupById}
             onSelectTool={selectTool}
             onOpenModal={props.onOpenModal}
           />
