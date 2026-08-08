@@ -21,6 +21,16 @@ export default defineConfig({
       'Cross-Origin-Embedder-Policy': 'require-corp',
     },
   },
+  build: {
+    rollupOptions: {
+      // 第二個入口是建築展示區（showcase.html）。它不載入遊戲，
+      // 但使用正式的材質與變體註冊表，所以在那裡調的東西就是出貨的東西。
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        showcase: path.resolve(__dirname, 'showcase.html'),
+      },
+    },
+  },
   worker: {
     format: 'es',
   },
