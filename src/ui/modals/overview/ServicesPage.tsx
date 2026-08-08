@@ -32,6 +32,13 @@ function coverageColor(pct: number): string {
   return UI_COLORS.STATUS_BAD;
 }
 
+/**
+ * A facility with no power or water. Still listed — the player needs to see it
+ * — but excluded from the group totals, which are meant to describe capacity
+ * the city can actually use.
+ */
+const OFFLINE = { label: 'Offline', color: UI_COLORS.STATUS_BAD };
+
 export function ServicesPage() {
   const data = createMemo(() => {
     gameSignals.tick();
@@ -114,8 +121,13 @@ export function ServicesPage() {
     let policeLoad = 0, policeCap = 0;
     for (const s of state.police.getStations()) {
       const load = state.police.getStationLoad(s.id);
-      policeLoad += load; policeCap += s.capacity;
-      safetyItems.push(mkEntry('\uD83D\uDE94', 'Police', r.policeRatio, 'Load', load, s.capacity, statusOf(s.capacity > 0 ? load / s.capacity : 0)));
+      // Only a working station adds to the city total. Summing every facility
+      // advertised capacity the city could not use \u2014 the same defect the
+      // hospital death-rate divisor had (BUG-100), on the panel instead.
+      const live = state.police.isFacilityOperationalById(s.id);
+      policeLoad += load; if (live) policeCap += s.capacity;
+      safetyItems.push(mkEntry('\uD83D\uDE94', 'Police', r.policeRatio, 'Load', load, s.capacity,
+        live ? statusOf(s.capacity > 0 ? load / s.capacity : 0) : OFFLINE));
     }
     if (safetyItems.length === 0) {
       safetyItems.push({ icon: '\uD83D\uDE94', name: 'Police', coverage: r.policeRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
@@ -124,8 +136,10 @@ export function ServicesPage() {
     const activeFires = state.fire.getActiveFires().length;
     for (const s of state.fire.getStations()) {
       const load = state.fire.getStationLoad(s.id);
-      fireLoad += load; fireCap += s.capacity;
-      safetyItems.push(mkEntry('\uD83D\uDE92', 'Fire', r.fireRatio, 'Load', load, s.capacity, statusOf(s.capacity > 0 ? load / s.capacity : 0)));
+      const live = state.fire.isFacilityOperationalById(s.id);
+      fireLoad += load; if (live) fireCap += s.capacity;
+      safetyItems.push(mkEntry('\uD83D\uDE92', 'Fire', r.fireRatio, 'Load', load, s.capacity,
+        live ? statusOf(s.capacity > 0 ? load / s.capacity : 0) : OFFLINE));
     }
     if (!state.fire.getStations().length) {
       safetyItems.push({ icon: '\uD83D\uDE92', name: 'Fire', coverage: r.fireRatio, detail: 'No station', loadPct: -1, status: 'None', statusColor: UI_COLORS.STATUS_BAD });
@@ -147,8 +161,10 @@ export function ServicesPage() {
     let healthLoad = 0, healthCap = 0;
     for (const h of state.health.getHospitals()) {
       const load = state.health.getHospitalLoad(h.id);
-      healthLoad += load; healthCap += h.capacity;
-      healthItems.push(mkEntry('\uD83C\uDFE5', 'Hospital', r.healthRatio, 'Load', load, h.capacity, statusOf(h.capacity > 0 ? load / h.capacity : 0)));
+      const live = state.health.isFacilityOperationalById(h.id);
+      healthLoad += load; if (live) healthCap += h.capacity;
+      healthItems.push(mkEntry('\uD83C\uDFE5', 'Hospital', r.healthRatio, 'Load', load, h.capacity,
+        live ? statusOf(h.capacity > 0 ? load / h.capacity : 0) : OFFLINE));
     }
     const healthSummary: SummarySpan[] = [];
     if (healthItems.length === 0) {
@@ -165,7 +181,10 @@ export function ServicesPage() {
     for (const s of state.education.getSchools()) {
       const enrolled = state.education.getSchoolEnrollment(s.id);
       const demand = state.education.getSchoolDemand(s.id);
-      const st = demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN } : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
+      const live = state.education.isSchoolOperational(s.id);
+      const st = !live ? OFFLINE
+        : demand > s.capacity ? { label: 'Over capacity', color: UI_COLORS.STATUS_WARN }
+        : statusOf(s.capacity > 0 ? enrolled / s.capacity : 0);
       eduItems.push(mkEntry('\uD83C\uDFEB', schoolLabels[s.type] ?? s.type, r.educationRatio, 'Students', enrolled, s.capacity, st, ` \u00B7 Need ${demand}`));
     }
     const eduSummary: SummarySpan[] = [];
@@ -177,7 +196,7 @@ export function ServicesPage() {
         const label = schoolLabels[s.type] ?? s.type;
         if (!byType[label]) byType[label] = { demand: 0, capacity: 0 };
         byType[label]!.demand += state.education.getSchoolDemand(s.id);
-        byType[label]!.capacity += s.capacity;
+        if (state.education.isSchoolOperational(s.id)) byType[label]!.capacity += s.capacity;
       }
       let first = true;
       for (const [label, { demand, capacity }] of Object.entries(byType)) {

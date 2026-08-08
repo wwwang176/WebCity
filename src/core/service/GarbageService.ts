@@ -235,8 +235,16 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
     return Math.min(GARBAGE.MAX_POLLUTION_PENALTY, uncollected * GARBAGE.UNCOLLECTED_POLLUTION_MULTIPLIER);
   }
 
+  /**
+   * Capacity the city can actually use — same filter as collectPending.
+   *
+   * Summing every facility advertised room in a landfill nothing can reach and
+   * nothing can power, exactly the situation where the player needs the panel
+   * to tell them the truth. Same shape as the hospital capacity fixed in
+   * BUG-100.
+   */
   getTotalCapacity(): number {
-    return this.facilities.reduce((sum, f) => sum + f.capacity, 0);
+    return this.getActiveFacilities().reduce((sum, f) => sum + f.capacity, 0);
   }
 
   getCurrentLoad(): number {
@@ -262,7 +270,13 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
   getPollutionSources(): PollutionSource[] {
     const sources: PollutionSource[] = [];
     const radius = GARBAGE.POLLUTION_RADIUS;
-    const operational = this.getOperationalFacilities();
+    // getActiveFacilities, not getOperationalFacilities: a landfill with power
+    // but no road connection collects nothing and burns nothing, yet it used to
+    // emit BASE_POLLUTION per cell and take a share of the uncollected-garbage
+    // penalty — and because that share only lands on the rubbish itself when NO
+    // facility works, its mere existence hid the street-level pollution the
+    // player was meant to see.
+    const operational = this.getActiveFacilities();
     for (const f of operational) {
       this.forEachFacilityCell(f, (cx, cy) => {
         sources.push({ x: cx, y: cy, amount: GARBAGE.BASE_POLLUTION, type: 'ground', radius });

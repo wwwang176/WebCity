@@ -109,6 +109,20 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
    *
    * Mutates `pending` in-place (removes collected items).
    */
+  /**
+   * Facilities that actually work: road-connected AND powered/watered.
+   *
+   * getOperationalFacilities() from the base class only asks the second half.
+   * collectPending and processFacilities require both, so any caller using the
+   * looser test disagreed with what the service actually does — see
+   * GarbageService.getPollutionSources.
+   */
+  getActiveFacilities(): F[] {
+    return this.facilities.filter(
+      f => this.connectedFacilityIds.has(f.id) && this.isFacilityOperationalById(f.id),
+    );
+  }
+
   protected collectPending(pending: PendingItem[], collectionRate: number): void {
     if (pending.length === 0) return;
 

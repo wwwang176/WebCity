@@ -132,6 +132,14 @@ export class EducationService {
     ];
   }
 
+  /** Is this school powered and watered? Ids are unique across the three types. */
+  isSchoolOperational(id: string): boolean {
+    for (const svc of [this.elementary, this.highSchool, this.university]) {
+      if (svc.getSchools().some(s => s.id === id)) return svc.isFacilityOperationalById(id);
+    }
+    return false;
+  }
+
   /** Preview coverage for a potential school placement, merged with existing. */
   previewCoverage(
     position: { x: number; y: number },

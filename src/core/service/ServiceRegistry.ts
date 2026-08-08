@@ -87,7 +87,14 @@ export function tickAllCivicServices(state: GameState): void {
     state.education.recalculateCoverage(grid);
   }
   state.parks.updateOperationalStatus(isPow, isWat);
-  state.sewage.updateOperationalStatus(isPow, isWat);
+  // Parks resolve coverage lazily in getCoverage, so they need no recalc.
+  // Sewage precomputes a coverage Set at slow-slot 1 while this runs at slot 2,
+  // so without an immediate recalc an unpowered plant kept supplying its whole
+  // catchment for the rest of the cycle — and getPollutionSources skips
+  // supplied cells, so the water-pollution penalty stayed suppressed with it.
+  if (state.sewage.updateOperationalStatus(isPow, isWat)) {
+    state.sewage.recalculateCoverage(grid as unknown as import('../grid/Grid').Grid);
+  }
 
   state.police.tick();
   state.fire.tick();
