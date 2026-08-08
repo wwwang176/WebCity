@@ -261,26 +261,15 @@ export class SimulationLoop {
     // Subsequent rebuildBuildingIndex() calls within the same tick are no-ops.
     this.buildingIndexDirty = true;
 
-    // Residential capacity gate, then monthly births.
+    // The capacity gate stays here — every path that adds a citizen this tick
+    // reads it, births included.
     //
     // A month boundary is always tick % 720 === 0, hence always slow-slot 0, so
     // births and runMigration (slot 5) never fall on the same tick — ordering
     // them relative to each other changes nothing. What did matter is that the
     // aggregate capacity gate in createCitizen counts citizens who have no home
-    // at all; see the bypass below.
+    // at all; see the bypass in runBirths.
     this.state.citizens.updateResidentialCapacity(countResidentialCapacity(this.state.grid));
-    const currentMonth = this.state.clock.getMonth();
-    if (currentMonth !== this.lastBirthMonth) {
-      this.lastBirthMonth = currentMonth;
-      birthTick(this.state.citizens, {
-        // Since BUG-140 took the aggregate gate off this path, this lookup is
-        // the ONLY bound on birth-driven growth — so it has to agree with
-        // countResidentialCapacity cell for cell. It used to answer
-        // FALLBACK_RESIDENTS (8) for an address with no building at all, which
-        // that figure counts as 0 (BUG-164).
-        getResidents: (homeId) => residentsAtHome(this.state.grid, homeId),
-      }, this.state.clock.tick);
-    }
 
     // ── Slot 0: Economy (RCI demand + budget) ──
     if (slowSlot === 0) {
@@ -397,6 +386,13 @@ export class SimulationLoop {
     }
 
     // ── Per-day operations ──
+    //
+    // Births come AFTER this block, not before it. A month boundary is
+    // floor(day/30) changing and a day boundary is floor(tick/24) changing, so
+    // the month boundary at tick 720 is also a day boundary — and running
+    // births first meant birthTick picked parents from ages last recomputed a
+    // day earlier, and every newborn was in the list deathTick then walked,
+    // facing a death roll before it was a tick old.
 
     // 5a. Daily: update citizen ages from birthTick + death check
     const currentDay = this.state.clock.getDay();
@@ -436,6 +432,10 @@ export class SimulationLoop {
       this.lastRiderDay = currentDay;
       this.rolloverTransitRiders();
     }
+
+    // 5b. Monthly: births, now that today's ages are current and today's deaths
+    // have been taken.
+    this.runBirths();
 
     // ── Per-tick operations ──
 
@@ -1094,6 +1094,26 @@ export class SimulationLoop {
     }
 
     if (result.changed) { this.onBuildingsChanged?.(); this.wpDistCache?.invalidate(); }
+  }
+
+  /**
+   * Monthly births.
+   *
+   * Its own method so the tick can place it explicitly — it used to sit near
+   * the top, ahead of the per-day ageing and death pass it shares a tick with.
+   */
+  private runBirths(): void {
+    const currentMonth = this.state.clock.getMonth();
+    if (currentMonth === this.lastBirthMonth) return;
+    this.lastBirthMonth = currentMonth;
+    birthTick(this.state.citizens, {
+      // Since BUG-140 took the aggregate gate off this path, this lookup is
+      // the ONLY bound on birth-driven growth — so it has to agree with
+      // countResidentialCapacity cell for cell. It used to answer
+      // FALLBACK_RESIDENTS (8) for an address with no building at all, which
+      // that figure counts as 0 (BUG-164).
+      getResidents: (homeId) => residentsAtHome(this.state.grid, homeId),
+    }, this.state.clock.tick);
   }
 
   /** Get the abandonment stress for a building at (x, y). */

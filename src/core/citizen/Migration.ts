@@ -1,8 +1,9 @@
 import { CitizenManager, GRADUATION_TICKS } from './CitizenManager';
 import { EducationLevel, LIFE_STAGE_AGE } from './types';
 import { randomElement, randomInt, pickWeighted } from '../utils/random';
-import { LAND_VALUE } from '../economy/LandValue';
+import { LAND_VALUE, calculateLandValue } from '../economy/LandValue';
 import { MAX_SERVICE_SCORE } from '../service/ServiceCoverageQuery';
+import { SIMULATION } from '../simulation/SimulationConstants';
 
 export interface CityAttractiveness {
   jobOpenings: number;
@@ -155,22 +156,52 @@ export function generateFamily(city?: CityAttractiveness): FamilyMember[] {
 export const MAX_ORDINARY_LAND_VALUE =
   LAND_VALUE.BASE + MAX_SERVICE_SCORE * LAND_VALUE.SERVICE_MULTIPLIER + LAND_VALUE.PARK_BONUS;
 
+/**
+ * The crime a fully-policed city still carries once its population passes the
+ * cap. Derived: baseCrime saturates at CRIME_BASE_MAX, and enough stations to
+ * reach full coverage remove CRIME_MAX_REDUCTION of it and no more.
+ */
+const POLICED_CRIME_RATE = SIMULATION.CRIME_BASE_MAX * (1 - SIMULATION.CRIME_MAX_REDUCTION);
+
+/**
+ * Pollution and noise a CITY-WIDE AVERAGE still carries, even when run well.
+ *
+ * This one is a judgement and is written as one rather than dressed up: the
+ * average includes industrial and commercial cells, which have pollution by
+ * design, so it cannot be zero however good the player is. Everything else in
+ * the threshold below is derived; if this figure is wrong, the threshold moves
+ * with it and the reason is visible.
+ */
+const CITYWIDE_POLLUTION_ALLOWANCE = 10;
+
 export const EDUCATION_THRESHOLDS = {
   OFFICE_RATIO: 0.3,
   INDUSTRIAL_RATIO: 0.5,
-  // Derived, not chosen. BUG-084 lowered this from 150 to 100 by comparing it
-  // against the per-cell MAXIMUM of 125 — but that maximum needs a WATERFRONT
-  // cell, and the figure being compared is getAvgLandValue(), an average over
-  // every building in the city.
-  //
-  // An ordinary inland cell tops out at MAX_ORDINARY_LAND_VALUE (105), and
-  // updateLandValue always deducts crimeRate x 0.4 — around 8 points once the
-  // population passes the crime cap. So even a city where every single
-  // building has perfect services and a park averages about 97, and 100
-  // remained unreachable: the weighting was still dead code.
-  //
-  // 75% of the ordinary maximum is a target a well-run city can actually hit.
-  AVG_LAND_VALUE: Math.round(MAX_ORDINARY_LAND_VALUE * 0.75),
+  /**
+   * The average land value a well-run city reaches.
+   *
+   * BUG-084 lowered this from 150 to 100 by comparing it against the per-cell
+   * MAXIMUM of 125 — but that maximum needs a WATERFRONT cell, and the figure
+   * being compared is getAvgLandValue(), an average over every building in the
+   * city. 100 was unreachable and the weighting was dead code.
+   *
+   * The replacement was `MAX_ORDINARY_LAND_VALUE * 0.75`, which is a magic
+   * number with a derivation-shaped comment: nothing produces the 0.75, and the
+   * result (79) sits so far under what an ordinary city reaches that the
+   * weighting fired almost always — dead code in the other direction.
+   *
+   * Computed instead by asking the land-value function what a well-served,
+   * parked, fully-policed neighbourhood is worth, with the pollution an average
+   * over the whole city carries. Every input is named above.
+   */
+  AVG_LAND_VALUE: calculateLandValue({
+    serviceCoverage: MAX_SERVICE_SCORE,
+    parkProximity: true,
+    waterfront: false,
+    pollution: CITYWIDE_POLLUTION_ALLOWANCE,
+    noise: CITYWIDE_POLLUTION_ALLOWANCE,
+    crimeRate: POLICED_CRIME_RATE,
+  }),
   LOW_TAX: 7,
   HIGH_TAX: 12,
 } as const;
