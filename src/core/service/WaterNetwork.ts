@@ -35,6 +35,16 @@ export const INFRA_WATER_CONSUMPTION: Record<string, number> = {
   sewage: 4,
   park: 0.75,
   cemetery: 0.75,
+  // See INFRA_POWER_CONSUMPTION: the transport family drew nothing at all.
+  // Water tracks passenger throughput rather than footprint — an airport
+  // terminal has restrooms and catering, a bus shelter has neither.
+  bus_stop: 0.1,
+  ferry_dock: 0.75,
+  train_station: 2,
+  metro_station: 2,
+  airport_s: 5,
+  airport_m: 10,
+  airport_l: 20,
 };
 
 const WATER_PLANT_ID = getInfraBuildingId('water');
@@ -54,6 +64,13 @@ const INFRA_TYPE_TO_KEY: Record<string, string> = {
   sewage: 'sewage',
   park: 'park',
   cemetery: 'cemetery',
+  bus_stop: 'bus_stop',
+  metro_station: 'metro_station',
+  train_station: 'train_station',
+  ferry_dock: 'ferry_dock',
+  airport_s: 'airport_s',
+  airport_m: 'airport_m',
+  airport_l: 'airport_l',
 };
 
 /** Shared demand config for calculateUtilityCellDemand (DRY). */
