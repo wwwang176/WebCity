@@ -6,7 +6,7 @@ import { isZoneBuilding } from '../building/InfraConfig';
 import { type ElevationManager } from '../elevation/ElevationManager';
 import { isBlockedByElevation } from '../elevation/ElevationZoneBlock';
 
-interface ZoneResult {
+export interface ZoneResult {
   success: boolean;
   reason?: string;
 }
@@ -23,7 +23,18 @@ export class ZoneManager {
     this.elevationManager = em;
   }
 
-  setZone(x: number, y: number, zoneType: ZoneType): ZoneResult {
+  /**
+   * The placement guards, independent of the target zone type.
+   *
+   * Exposed so callers can ask BEFORE acting on the assumption that a rezone
+   * will land. Game.applyZone pre-scans the rectangle, evicts the residents and
+   * removes the mesh of every building it expects to replace, and only then
+   * calls setZoneRect — which refuses any cell that fails these three checks.
+   * Rezone a block after pulling up its road and every building in it became a
+   * zombie: gone from the scene and emptied of citizens, but still on the grid
+   * with its buildingId, so it counted toward zone supply and kept earning tax.
+   */
+  canZone(x: number, y: number): ZoneResult {
     const cell = this.grid.getCell(x, y);
     if (!cell) return { success: false, reason: 'OUT_OF_BOUNDS' };
 
@@ -38,6 +49,14 @@ export class ZoneManager {
     if (!isNearRoad(this.grid, x, y, ZONE_ROAD_REACH)) {
       return { success: false, reason: 'NOT_ADJACENT_TO_ROAD' };
     }
+
+    return { success: true };
+  }
+
+  setZone(x: number, y: number, zoneType: ZoneType): ZoneResult {
+    const guard = this.canZone(x, y);
+    if (!guard.success) return guard;
+    const cell = this.grid.getCell(x, y)!;
 
     // If rezoning to a different type and a building exists, demolish it first
     if (isZoneBuilding(cell.buildingId) && cell.zoneType !== zoneType) {

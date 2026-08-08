@@ -18,6 +18,9 @@ function makeCell(overrides: Record<string, unknown> = {}) {
 function makeDeps(overrides: Partial<AbandonmentStressTickDeps> = {}): AbandonmentStressTickDeps {
   return {
     forEachCell: vi.fn(),
+    // Default: every position still holds a live zone building, so the pruning
+    // pass added for stale stress entries is a no-op for these stub fixtures.
+    getCell: () => makeCell(),
     isZoneBuilding: () => true,
     getBuildingLevel: () => 1,
     getPollution: () => ({ ground: 0, water: 0 }),

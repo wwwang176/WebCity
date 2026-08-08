@@ -16,6 +16,7 @@ import { RoadBuilder } from './core/road/RoadBuilder';
 import { RoadType, ROAD_CONFIGS } from './core/road/types';
 import { ZoneType, isCommercialZone } from './core/grid/types';
 import { normalizeRect, countRoadTiles, getLShapedPath, parseLevelFromKey, parsePosKey, parsePosKeyUnsafe, toPosKey, getDirectionFlag } from './core/grid/GridHelpers';
+import { planRezone } from './core/zone/RezonePlan';
 import { ZoneManager } from './core/zone/ZoneManager';
 import { OverlayType } from './renderer/OverlayRenderer';
 import { PALETTE } from './ColorPalette';
@@ -999,29 +1000,42 @@ export class Game {
     }
   }
 
+  /**
+   * Everything that must be forgotten when a building leaves a cell.
+   *
+   * Shared by demolish() and applyZone(). They used to do slightly different
+   * things: rezoning never cleared the deathcare and garbage per-position
+   * queues, so a body or a rubbish pile stayed pending at an address that no
+   * longer had a building, permanently occupying a hearse/truck slot and
+   * counting toward the uncollected-garbage pollution penalty.
+   */
+  private forgetBuildingAt(x: number, y: number, posKey: string): number[] {
+    const evicted = this.state.citizens.evictBuilding(posKey, this.state.clock.tick);
+    this.buildingRenderer.removeBuilding(x, y);
+    // Abandonment stress is keyed by position, not by building identity, so a
+    // replacement building inherits the pressure that killed the last one
+    // (BUG-087).
+    this.simLoop.clearBuildingState(x, y);
+    this.state.deathCare.clearPendingAt(x, y);
+    this.state.garbage.clearPendingAt(x, y);
+    return evicted;
+  }
+
   private applyZone(x1: number, y1: number, x2: number, y2: number, zoneType: ZoneType): void {
     const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
-    // Pre-scan: collect cells where rezoning will demolish an existing building
+    // Which cells the rezone will ACTUALLY clear. Deciding that here with a
+    // local copy of the condition ignored setZone's three placement guards, so
+    // rezoning a block whose road had been pulled up evicted and un-rendered
+    // every building while leaving them on the grid — see RezonePlan.
     const evictedIds: number[] = [];
-    const buildingCells: string[] = [];
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        const cell = this.state.grid.getCell(x, y);
-        if (cell && isZoneBuilding(cell.buildingId) && cell.zoneType !== zoneType) {
-          const posKey = `${x},${y}`;
-          evictedIds.push(...this.state.citizens.evictBuilding(posKey, this.state.clock.tick));
-          this.buildingRenderer.removeBuilding(x, y);
-          // Abandonment stress is keyed by position, not by building identity, so
-          // a replacement building inherits the pressure that killed the last
-          // one. demolish() clears it here; rezoning did not, so a district the
-          // player rezoned to escape blight produced buildings that started at
-          // near-maximum stress and were abandoned almost immediately (BUG-087).
-          this.simLoop.clearBuildingState(x, y);
-          buildingCells.push(posKey);
-        }
-      }
+    const buildingCells = planRezone(
+      this.state.grid, this.zoneManager, { minX, minY, maxX, maxY }, zoneType,
+    );
+    for (const posKey of buildingCells) {
+      const [px, py] = posKey.split(',').map(Number);
+      evictedIds.push(...this.forgetBuildingAt(px!, py!, posKey));
     }
-    if (evictedIds.length > 0) {
+    if (buildingCells.length > 0) {
       this.simLoop.markLaneGraphDirty(buildingCells, true);
     }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
@@ -1091,10 +1105,8 @@ export class Game {
     // Evict citizens from demolished zone buildings and clear abandonment stress
     const evictedCitizenIds: number[] = [];
     for (const pos of evictCells) {
-      evictedCitizenIds.push(...this.state.citizens.evictBuilding(pos, this.state.clock.tick));
       const [px, py] = pos.split(',').map(Number);
-      this.buildingRenderer.removeBuilding(px!, py!);
-      this.simLoop.clearBuildingState(px!, py!);
+      evictedCitizenIds.push(...this.forgetBuildingAt(px!, py!, pos));
     }
     if (affectedRoadCells.length > 0) {
       this.roadCoverageDirty = true;

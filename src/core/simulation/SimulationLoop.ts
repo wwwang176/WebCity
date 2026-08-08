@@ -1059,6 +1059,7 @@ export class SimulationLoop {
     // Delegated to AbandonmentStressTick (SRP — stress calculation separated from orchestration)
     const result = abandonmentStressTick({
       forEachCell: (fn) => this.state.grid.forEachCell(fn),
+      getCell: (x, y) => this.state.grid.getCell(x, y),
       isZoneBuilding,
       getBuildingLevel: (bid) => getBuildingType(bid)?.level ?? 0,
       getPollution: (x, y) => this.state.pollution.getPollutionAt(x, y),
