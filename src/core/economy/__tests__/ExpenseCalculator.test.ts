@@ -9,14 +9,31 @@ describe('ExpenseCalculator', () => {
     });
 
     it('returns 0 when no policies are active', () => {
+      // Must use a REAL, implemented PolicyType. The fixture used to say
+      // 'heavy_traffic_ban', which is not a PolicyType at all — so it was
+      // filtered out as unimplemented and this case would have passed with
+      // `active` ignored entirely, guarding nothing.
       const districts = [{
         id: 'd1',
         name: 'Test',
         policies: [
-          { type: 'heavy_traffic_ban', active: false, cost: 100 },
+          { type: PolicyType.NO_HEAVY_INDUSTRY, active: false, cost: 150 },
         ],
       }] as any[];
       expect(calculateDistrictPolicyCost(districts)).toBe(0);
+    });
+
+    it('bills the same policy once it is switched on', () => {
+      // Paired positive control: without it, "returns 0" is satisfiable by a
+      // calculator that returns 0 for everything.
+      const districts = [{
+        id: 'd1',
+        name: 'Test',
+        policies: [
+          { type: PolicyType.NO_HEAVY_INDUSTRY, active: true, cost: 150 },
+        ],
+      }] as any[];
+      expect(calculateDistrictPolicyCost(districts)).toBe(150);
     });
 
     it('sums costs of active policies across districts', () => {

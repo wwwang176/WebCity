@@ -22,29 +22,6 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
 };
 
 /**
- * Policies the simulation actually reads.
- *
- * A repo-wide search for the other three enum members (ENCOURAGE_RECYCLING,
- * ORGANIC_FOOD, TOURISM) finds only this file and its tests — nothing in
- * GarbageService, Pollution, LandValue, Happiness or the income path consults
- * them. They were still billed every budget cycle, $380 for nothing, while the
- * district modal advertised their prices as though they did something (BUG-091).
- *
- * Rather than invent balance numbers for three unspecified mechanics, the charge
- * and the UI now follow what is real. Implementing one is a matter of adding its
- * effect and then adding it to this set — see TODO.md.
- */
-export const IMPLEMENTED_POLICY_TYPES: ReadonlySet<PolicyType> = new Set([
-  PolicyType.NO_HEAVY_INDUSTRY,
-  PolicyType.HIGH_DENSITY_BAN,
-]);
-
-/** Does this policy have an effect on the simulation? */
-export function isPolicyImplemented(type: PolicyType): boolean {
-  return IMPLEMENTED_POLICY_TYPES.has(type);
-}
-
-/**
  * Data-driven zone restrictions per policy type (OCP).
  * Adding a new zone-restricting policy only requires a new entry here.
  */
@@ -52,6 +29,39 @@ export const POLICY_ZONE_RESTRICTIONS: Partial<Record<PolicyType, ReadonlySet<Zo
   [PolicyType.NO_HEAVY_INDUSTRY]: new Set([ZoneType.INDUSTRIAL]),
   [PolicyType.HIGH_DENSITY_BAN]: new Set([ZoneType.RESIDENTIAL_HIGH, ZoneType.COMMERCIAL_HIGH]),
 };
+
+/**
+ * Policies implemented by something other than a zone restriction.
+ *
+ * Empty today. A policy that changes pollution, income or happiness rather than
+ * blocking construction belongs here, next to the code that reads it.
+ */
+const NON_ZONE_IMPLEMENTED_POLICY_TYPES: readonly PolicyType[] = [];
+
+/**
+ * Policies the simulation actually reads — DERIVED, not a hand-kept list.
+ *
+ * A repo-wide search for the other three enum members (ENCOURAGE_RECYCLING,
+ * ORGANIC_FOOD, TOURISM) finds only this file and its tests — nothing in
+ * GarbageService, Pollution, LandValue, Happiness or the income path consults
+ * them. They were still billed every budget cycle, $380 for nothing, while the
+ * district modal advertised their prices as though they did something (BUG-091).
+ *
+ * The first fix wrote the two real policies out by hand, which made this the
+ * third list needing manual sync (POLICY_CONFIG and DistrictModal being the
+ * others) and made the test that "checked" it a tautology — a subset assertion
+ * over a set literally built from those members. Deriving it from the
+ * restriction table removes the sync obligation entirely.
+ */
+export const IMPLEMENTED_POLICY_TYPES: ReadonlySet<PolicyType> = new Set<PolicyType>([
+  ...(Object.keys(POLICY_ZONE_RESTRICTIONS) as PolicyType[]),
+  ...NON_ZONE_IMPLEMENTED_POLICY_TYPES,
+]);
+
+/** Does this policy have an effect on the simulation? */
+export function isPolicyImplemented(type: PolicyType): boolean {
+  return IMPLEMENTED_POLICY_TYPES.has(type);
+}
 
 export class PolicyManager {
   private districtLookup: DistrictLookup;
