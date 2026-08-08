@@ -269,21 +269,36 @@ describe('ruins draw no power or water', () => {
   });
 
   it('should not let a ruin starve a live house of power', () => {
-    // A plant with exactly enough for ONE house. With the ruin billed, the
-    // flood spends the budget on whichever it reaches first and one of them
-    // goes dark.
-    const grid = cityWithHouses(BURNED);
-    const wn = new WaterNetwork();
-    wn.calculateDemand(grid);
-    const oneHouse = wn.getDemand();
+    // Two things have to be true for this to test anything.
+    //
+    // The budget must be a FIXED one-house figure. Sizing the plant from
+    // pg.getDemand() of this very grid is circular: under the un-fixed code
+    // that figure is TWO houses' worth, so the budget covers both and the
+    // assertion holds either way.
+    //
+    // And the RUIN has to be reached first. With the live house first, the
+    // un-fixed code still powers it — it simply spends the budget there and
+    // refuses the ruin afterwards. Only when the ruin stands between the plant
+    // and the live house does billing it actually take the lights out.
+    const oneHouse = (() => {
+      const solo = new Grid(12, 12);
+      for (let x = 1; x <= 4; x++) solo.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+      solo.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 0 });
+      const pg = new PowerGrid();
+      pg.calculateDemand(solo);
+      return pg.getDemand();
+    })();
+    expect(oneHouse).toBeGreaterThan(0);
+
+    const grid = new Grid(12, 12);
+    for (let x = 1; x <= 5; x++) grid.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: BURNED });
+    grid.setCell(3, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 0 });
 
     const pg = new PowerGrid();
-    const pgDemandGrid = cityWithHouses(BURNED);
-    pg.calculateDemand(pgDemandGrid);
-    pg.addPlant({ x: 1, y: 2, output: pg.getDemand(), pollution: 0, type: 'coal' });
-    pg.calculateCoverage(pgDemandGrid);
+    pg.addPlant({ x: 1, y: 2, output: oneHouse, pollution: 0, type: 'coal' });
+    pg.calculateCoverage(grid);
 
-    expect(oneHouse).toBeGreaterThan(0);
-    expect(pg.isPowered(2, 2)).toBe(true);
+    expect(pg.isPowered(3, 2), 'the live house behind the ruin went dark').toBe(true);
   });
 });

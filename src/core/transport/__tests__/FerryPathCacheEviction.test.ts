@@ -58,6 +58,12 @@ describe('the ferry water-path cache forgets a demolished dock', () => {
   it('should keep answering for docks that were never removed', () => {
     // Negative control: eviction must be scoped to the dock that went away, not
     // a blanket cache clear on every demolition.
+    //
+    // The dam has to actually CUT a<->b for this to prove anything. The first
+    // version dammed x=7, which the (2,2)<->(2,10) path never approached — so
+    // the answer was true whether the cache was scoped, untouched, or wiped
+    // wholesale, and the case constrained nothing at all. Cutting the channel
+    // means only a RETAINED entry can still answer `true`.
     const water = new MutableWater();
     const ferry = new FerrySystem();
     ferry.setWaterGrid(water);
@@ -66,11 +72,12 @@ describe('the ferry water-path cache forgets a demolished dock', () => {
     const c = ferry.addDock(10, 2)!;
     expect(ferry.validateRouteConnectivity([a, b])).toBe(true);
 
+    // Remove an unrelated dock, then cut the water between the two that stayed.
     ferry.removeDock(c.id);
-    // Dam a channel that only ever mattered to the removed dock.
-    for (let y = 0; y < water.height; y++) water.land.add(`7,${y}`);
+    for (let x = 0; x < water.width; x++) water.land.add(`${x},6`);
 
-    // a<->b never crossed x=7, and its cached answer is still valid.
+    // Neither a nor b went anywhere, so their entry must not have been evicted
+    // — a blanket clear would recompute here and answer false.
     expect(ferry.validateRouteConnectivity([a, b])).toBe(true);
   });
 

@@ -74,20 +74,25 @@ describe('births use the room their own house has', () => {
   });
 
   it('should never push a house past its own capacity in one tick', () => {
-    // Two adults in a 4-person house: room for exactly 2 more, and the babies
-    // must not exceed that even though both parents roll a birth.
+    // Three fertile adults in a 4-person house: room for exactly ONE more.
+    //
+    // Two adults in a 4-person house cannot overfill it however the code
+    // behaves — there is room for two and at most two can be born — so that
+    // version passed with the running occupancy increment deleted. The number
+    // of would-be parents has to EXCEED the free rooms for the increment to be
+    // the thing under test.
     vi.spyOn(Math, 'random').mockReturnValue(0);
     const mgr = new CitizenManager();
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < HOUSE_CAPACITY - 1; i++) {
       const c = mgr.createCitizenInKnownVacancy({ age: 100 });
       c.homeId = '0,0';
     }
     mgr.updateResidentialCapacity(1000);
 
-    birthTick(mgr, ctx);
+    expect(birthTick(mgr, ctx), 'exactly one room, so exactly one baby').toBe(1);
 
     const inHouse = mgr.getCitizens().filter(c => c.homeId === '0,0').length;
-    expect(inHouse).toBeLessThanOrEqual(HOUSE_CAPACITY);
+    expect(inHouse).toBe(HOUSE_CAPACITY);
   });
 });
 
@@ -102,15 +107,32 @@ describe('employment is counted by held jobs, not by headcount', () => {
     expect(mgr.getEmployedCount()).toBe(4);
   });
 
-  it('should not count children and retirees as employed', () => {
+  it('should count a citizen who holds a job regardless of age', () => {
+    // The old version of this case was called "should not count children and
+    // retirees as employed" and created three citizens with no workplaceId at
+    // all. getEmployedCount has no age logic whatsoever, so it asserted nothing
+    // about age — it would have passed for an implementation that counted
+    // retirees, which is the claim it was named for. The
+    // `.map(c => c.lifeStage)).not.toContain(undefined)` line was likewise
+    // unfalsifiable: getLifeStage is total.
+    //
+    // What getEmployedCount actually promises is "holds a workplaceId", and
+    // that is what is pinned. Whether a child can hold one is
+    // assignWorkWithPreference's business, and EvictionAndRetirement covers
+    // retirement releasing the field.
     const mgr = new CitizenManager();
     mgr.updateResidentialCapacity(1000);
-    mgr.createCitizen({ age: 4 });    // BABY
-    mgr.createCitizen({ age: 20 });   // CHILD
-    mgr.createCitizen({ age: 260 });  // past ADULT_MAX
-    expect(mgr.getCitizens().map(c => c.lifeStage)).not.toContain(undefined);
-
+    const baby = mgr.createCitizen({ age: 4 })!;
+    const child = mgr.createCitizen({ age: 20 })!;
+    const retiree = mgr.createCitizen({ age: 260 })!;
     expect(mgr.getEmployedCount()).toBe(0);
+
+    retiree.workplaceId = '1,1';
+    expect(mgr.getEmployedCount(), 'a held job is a held job').toBe(1);
+
+    baby.workplaceId = '1,1';
+    child.workplaceId = '1,1';
+    expect(mgr.getEmployedCount()).toBe(3);
   });
 
   it('should drop back to zero when everyone is laid off', () => {

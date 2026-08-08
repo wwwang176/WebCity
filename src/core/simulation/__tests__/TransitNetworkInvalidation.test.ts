@@ -181,13 +181,30 @@ describe('transit network edits invalidate the transfer graph', () => {
   it('should still drop the departing ferry vessel path', () => {
     // The override existed for a reason; replacing it with a hook must keep
     // doing that job.
+    //
+    // The first version of this test asserted getVesselPath(doomed) === null
+    // without ever ticking. vesselPaths is written only in onDepart, reachable
+    // only from tickAtStop, so the map was empty and the assertion held for any
+    // implementation at all — including onVehicleRemoved reduced to {}. It has
+    // to see a path exist before it can mean anything by its disappearance.
     const state = createGameState(20, 20);
+    // Open water for the docks to path across.
+    state.ferry.setWaterGrid({
+      width: 20, height: 20,
+      isWater: (_x: number, y: number) => y >= 1 && y <= 4,
+    });
     const a = state.ferry.addDock(2, 2)!;
     const b = state.ferry.addDock(8, 2)!;
     const route = state.ferry.createRoute([a, b], 3);
     const vessels = state.ferry.getVessels().filter(v => v.routeId === route.id);
     expect(vessels.length).toBe(3);
     const doomed = vessels[vessels.length - 1]!.id;
+
+    // Tick until that vessel has actually departed and holds a water path.
+    for (let i = 0; i < 200 && state.ferry.getVesselPath(doomed) === null; i++) {
+      state.ferry.tick();
+    }
+    expect(state.ferry.getVesselPath(doomed), 'vessel never departed').not.toBeNull();
 
     state.ferry.removeVehicleFromRoute(route.id);
 

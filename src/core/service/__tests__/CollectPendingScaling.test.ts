@@ -75,15 +75,33 @@ describe('collectPending scales and stays correct', () => {
   it('should collect each surviving bag at most once', () => {
     // Identity, not just count: a bucketing slip can remove the right NUMBER
     // of bags while removing the wrong ones.
+    //
+    // The first version reported twelve 1-unit bags. COLLECTION_RATE is 140, so
+    // every one was collected in the single tick, `after` was empty, and both
+    // assertions were tautologies over an empty array — `new Set([]).size === 0
+    // === [].length`, and a for-loop that never ran. There has to be MORE
+    // rubbish than one tick can lift for survivors to exist at all.
     const { garbage } = cityWithLandfill();
-    for (let x = 6; x < 18; x++) garbage.reportGarbage(x, 9, 1);
+    for (let x = 6; x < 18; x++) garbage.reportGarbage(x, 9, 40);
+
     const before = garbage.getPendingGarbageQueue().map(b => `${b.x},${b.y}`);
+    const beforeCounts = new Map<string, number>();
+    for (const k of before) beforeCounts.set(k, (beforeCounts.get(k) ?? 0) + 1);
 
     garbage.tick();
 
     const after = garbage.getPendingGarbageQueue().map(b => `${b.x},${b.y}`);
-    expect(new Set(after).size).toBe(after.length);
-    for (const key of after) expect(before).toContain(key);
+    expect(after.length, 'fixture must leave survivors, or this proves nothing')
+      .toBeGreaterThan(0);
+    expect(after.length).toBeLessThan(before.length);
+
+    // No survivor may appear more times than it did before — that is what
+    // "collected at most once" means when bags are not individually identified.
+    const afterCounts = new Map<string, number>();
+    for (const k of after) afterCounts.set(k, (afterCounts.get(k) ?? 0) + 1);
+    for (const [key, n] of afterCounts) {
+      expect(beforeCounts.get(key) ?? 0, `bag ${key} multiplied`).toBeGreaterThanOrEqual(n);
+    }
   });
 
   it('should never collect bags at positions with no coverage', () => {

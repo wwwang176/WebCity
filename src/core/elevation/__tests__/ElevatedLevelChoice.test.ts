@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { GRID_POLLUTION } from '../../environment/GridPollutionSources';
 import { ElevationManager } from '../ElevationManager';
 import { RoadType } from '../../road/types';
 import { RailType } from '../../rail/types';
@@ -38,10 +39,27 @@ describe('the elevated road tier at a position', () => {
   });
 
   it('should report the noisiest tier when two road decks stack', () => {
+    // HIGHWAY has to be on the LOWER deck. With it on top it is both the
+    // noisiest AND the highest, so `get(x, y, getHighestLevel(x, y)).roadType`
+    // — the implementation this test replaced — answers correctly too, and the
+    // case cannot tell the two apart.
     const em = new ElevationManager();
-    em.set(3, 3, 1, seg(RoadType.TWO_LANE));
-    em.set(3, 3, 2, seg(RoadType.HIGHWAY));
+    em.set(3, 3, 1, seg(RoadType.HIGHWAY));
+    em.set(3, 3, 2, seg(RoadType.TWO_LANE));
     expect(em.getHighestRoadType(3, 3)).toBe(RoadType.HIGHWAY);
+  });
+
+  it('should rank by the caller notion of loud, not by the enum ordinal', () => {
+    // RoadType.ONE_WAY is 6 and RoadType.HIGHWAY is 5, while their noise
+    // factors are 1.2 and 2.0. Sorting by the raw enum value silences a
+    // motorway the moment a one-way street is stacked over it.
+    const em = new ElevationManager();
+    em.set(3, 3, 1, seg(RoadType.HIGHWAY));
+    em.set(3, 3, 2, seg(RoadType.ONE_WAY));
+
+    expect(em.getHighestRoadType(3, 3)).toBe(RoadType.ONE_WAY);
+    expect(em.getHighestRoadType(3, 3, t => GRID_POLLUTION.ROAD_SPEED_FACTOR[t] ?? 0))
+      .toBe(RoadType.HIGHWAY);
   });
 
   it('should report NONE where there is no elevated road at all', () => {

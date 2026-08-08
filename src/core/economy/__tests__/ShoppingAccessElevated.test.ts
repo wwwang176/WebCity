@@ -51,10 +51,10 @@ function cityWithViaductOverHouse() {
  * Math.min(1, ...) clamp, so the assertion pins a real number rather than the
  * ceiling — and a double count of either side moves it.
  */
-function cityWithTwoHousesUnderViaduct() {
+function cityWithTwoHousesUnderViaduct(shopBuildingId = 7) {
   const grid = new Grid(12, 12);
   for (let x = 0; x <= 4; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
-  grid.setCell(1, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+  grid.setCell(1, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: shopBuildingId });
   grid.setCell(4, 1, { roadType: RoadType.TWO_LANE, roadFlags: 3 });
   grid.setCell(4, 2, { roadType: RoadType.TWO_LANE, roadFlags: 3 });
   grid.setCell(5, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
@@ -127,6 +127,11 @@ describe('a building under a viaduct is counted once', () => {
     // where a stub returning 1 unconditionally would also pass. The second
     // house takes the residential side off the clamp (4 workers / 8 residents
     // = 0.5) so the pin has something to hold.
+    // The COMMERCIAL side needs its own fixture. With a Small Shop (4 workers)
+    // and two houses (8 residents) the customer ratio is min(1, 8/4) = 1 — on
+    // the clamp, where a double count (min(1, 16/4)) is also 1 and the pin
+    // holds for the very defect it is named after. A Large Shop (12 workers)
+    // puts it at 8/12 and gives the assertion something to catch.
     const shopping = cityWithTwoHousesUnderViaduct();
     const home = getBuildingType(1)!;
     const shop = getBuildingType(7)!;
@@ -135,8 +140,13 @@ describe('a building under a viaduct is counted once', () => {
     expect(shopping.getResidentialAccess(5, 2).ratio)
       .toBeCloseTo(Math.min(1, shop.workers / pop), 9);
     expect(shopping.getResidentialAccess(5, 2).ratio).toBeLessThan(1);
-    expect(shopping.getCommercialCustomers(1, 1).ratio)
-      .toBeCloseTo(Math.min(1, pop / shop.workers), 9);
+
+    const bigShopCity = cityWithTwoHousesUnderViaduct(9);
+    const bigShop = getBuildingType(9)!;
+    expect(bigShop.workers).toBeGreaterThan(pop);
+    expect(bigShopCity.getCommercialCustomers(1, 1).ratio)
+      .toBeCloseTo(pop / bigShop.workers, 9);
+    expect(bigShopCity.getCommercialCustomers(1, 1).ratio).toBeLessThan(1);
   });
 });
 

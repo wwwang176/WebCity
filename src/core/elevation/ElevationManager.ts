@@ -81,7 +81,12 @@ export class ElevationManager {
   }
 
   /**
-   * The noisiest elevated ROAD tier at (x, y), or RoadType.NONE.
+   * The loudest elevated ROAD tier at (x, y), or RoadType.NONE.
+   *
+   * `rank` decides what "loudest" means and defaults to the enum ordinal —
+   * which is NOT a noise ordering: ONE_WAY is 6 and HIGHWAY is 5, while their
+   * noise factors are 1.2 and 2.0. The pollution caller passes its own table so
+   * a one-way street stacked over a motorway cannot silence it.
    *
    * Not `get(x, y, getHighestLevel(x, y)).roadType`: an elevated RAIL deck has
    * roadType NONE, so stacking one over an elevated motorway made the whole
@@ -89,11 +94,14 @@ export class ElevationManager {
    * kept an inflated value. That is precisely the BUG-099 symptom the elevated
    * tier lookup exists to prevent, reintroduced one layer up.
    */
-  getHighestRoadType(x: number, y: number): number {
+  getHighestRoadType(x: number, y: number, rank: (roadType: number) => number = t => t): number {
     let best = 0;
+    let bestRank = 0;
     for (let level = MIN_ELEVATION_LEVEL; level <= MAX_ELEVATION_LEVEL; level++) {
       const seg = this.layers.get(ElevationManager.key(x, y, level));
-      if (seg && seg.roadType > best) best = seg.roadType;
+      if (!seg || seg.roadType === RoadType.NONE) continue;
+      const r = rank(seg.roadType);
+      if (best === 0 || r > bestRank) { best = seg.roadType; bestRank = r; }
     }
     return best;
   }

@@ -75,26 +75,44 @@ describe('pedestrians obey traffic lights in a real game state', () => {
     expect(crosswalksAt(state, '10,10').length).toBeGreaterThan(0);
   });
 
-  it('should hold a pedestrian at a red crosswalk', () => {
+  it('should never give a pedestrian and a car the same right of way', () => {
+    // The invariant, rather than the arithmetic.
+    //
+    // The first version recomputed `approachIsNS` with the same expression
+    // production uses and derived the expected phase from it, so inverting the
+    // mapping in PedestrianManager left the test green — it agreed with
+    // whatever the code did. The physical fact is that a pedestrian crosses a
+    // road exactly when the traffic ON that road is stopped, and the vehicle
+    // side already answers that question independently: TrafficLightSystem.
+    // canPass, whose phase semantics are documented on the TrafficLight type
+    // (0 = NS green). If the two ever agree, someone gets run over.
     const state = signalisedCity();
     const light = state.trafficLights.getLight(10, 10)!;
-
-    // For each crosswalk, work out which phase stops it and check both.
-    const crosswalk = crosswalksAt(state, '10,10')[0]!;
-    const fromPos = crosswalk.from.cellKey.split(',').map(Number);
-    const approachIsNS = (10 - fromPos[1]!) !== 0;
-    const safePhase = approachIsNS ? 1 : 0;
+    light.clearing = false;
 
     const priv = state.pedestrianManager as unknown as {
-      canPassCrosswalk(e: typeof crosswalk): boolean;
+      canPassCrosswalk(e: unknown): boolean;
     };
 
-    light.clearing = false;
-    light.phase = safePhase;
-    expect(priv.canPassCrosswalk(crosswalk)).toBe(true);
+    const crosswalks = crosswalksAt(state, '10,10');
+    expect(crosswalks.length).toBeGreaterThan(0);
 
-    light.phase = safePhase === 0 ? 1 : 0;
-    expect(priv.canPassCrosswalk(crosswalk)).toBe(false);
+    let sawGreen = false;
+    let sawRed = false;
+    for (const phase of [0, 1]) {
+      light.phase = phase;
+      for (const cw of crosswalks) {
+        const [fx, fy] = cw.from.cellKey.split(',').map(Number);
+        // A car travelling the approach this crosswalk spans.
+        const carMayGo = state.trafficLights.canPass(fx!, fy!, 10, 10);
+        const walkerMayGo = priv.canPassCrosswalk(cw);
+        expect(walkerMayGo, `phase ${phase} at ${cw.from.cellKey}`).toBe(!carMayGo);
+        if (walkerMayGo) sawGreen = true; else sawRed = true;
+      }
+    }
+    // Both outcomes must actually occur, or the invariant is satisfied by a
+    // constant.
+    expect(sawGreen && sawRed, 'fixture never exercised both phases').toBe(true);
   });
 
   it('should hold everyone during the all-red clearance', () => {

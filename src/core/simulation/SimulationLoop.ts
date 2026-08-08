@@ -24,7 +24,7 @@ import { ECONOMY } from '../economy/TaxMultipliers';
 import { DEFAULT_TAX_RATE } from '../economy/Tax';
 import { getInfraBuildingId, getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
 import { countZoneBuildings, countResidentialCapacity, countWorkplaceJobs, sumBuildingCapacity } from '../building/BuildingQueries';
-import { forEachGridPollutionSource } from '../environment/GridPollutionSources';
+import { forEachGridPollutionSource, GRID_POLLUTION } from '../environment/GridPollutionSources';
 import { forEachServicePollutionSource } from '../environment/PollutionSourceRegistry';
 import { MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../building/InfraPlacement';
 import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } from '../building/BuildingAbandonment';
@@ -945,7 +945,9 @@ export class SimulationLoop {
       // The noisiest elevated ROAD tier, across all levels. Reading the highest
       // LEVEL's roadType reported 0 whenever an elevated rail deck sat over an
       // elevated motorway — the BUG-099 symptom, one layer up.
-      return em.getHighestRoadType(x, y);
+      // Loudest by NOISE, not by enum ordinal: ONE_WAY sorts above HIGHWAY
+      // numerically while being far quieter.
+      return em.getHighestRoadType(x, y, t => GRID_POLLUTION.ROAD_SPEED_FACTOR[t] ?? 0);
     });
     // OCP: service-based pollution sources via registry — adding new sources only needs registry update
     forEachServicePollutionSource(this.state, (src) => pm.addPollutionSource(src));
