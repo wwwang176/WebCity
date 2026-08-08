@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZoneType } from '../../../core/grid/types';
 import { tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './parts';
-import { METRES_PER_CELL } from '../../../core/grid/constants';
+import { METRES_PER_CELL, MAX_BUILDING_WIDTH_M } from '../../../core/grid/constants';
 
 // ===== Geometry Builders =====
 
@@ -335,28 +335,94 @@ export const TARGET_HEIGHTS_M: Record<string, [number, number, number]> = {
   [heightKey(ZoneType.OFFICE, 'HIGH')]:           [24, 36, 48],
 };
 
-/** 未縮放幾何的高度快取，避免每次放建築都重算包圍盒。 */
-const heightCache = new Map<string, number>();
+/** 未縮放幾何的量測快取，避免每次放建築都重算包圍盒。 */
+const measureCache = new Map<string, { height: number; width: number }>();
+
+function measure(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): { height: number; width: number } {
+  const key = `${zoneType}:${density}:${level}:${variantIndex}`;
+  const cached = measureCache.get(key);
+  if (cached) return cached;
+
+  const variants = getVariants(zoneType, level);
+  if (variants.length === 0) {
+    const zero = { height: 0, width: 0 };
+    measureCache.set(key, zero);
+    return zero;
+  }
+  const geo = variants[variantIndex % variants.length]!();
+  geo.computeBoundingBox();
+  const b = geo.boundingBox!;
+  // 用兩軸中較大的一個：等比縮放才不會把長方形壓成別的比例，
+  // 而且較大的那一軸才是會不會撞出格子的那一軸。
+  const out = {
+    height: b.max.y,
+    width: Math.max(b.max.x - b.min.x, b.max.z - b.min.z),
+  };
+  geo.dispose();
+  measureCache.set(key, out);
+  return out;
+}
 
 /** 這個變體未經縮放時有多高（world unit）。 */
 export function variantHeightUnits(
   zoneType: number, density: Density, level: number, variantIndex: number,
 ): number {
-  const key = `${zoneType}:${density}:${level}:${variantIndex}`;
-  const cached = heightCache.get(key);
-  if (cached !== undefined) return cached;
+  return measure(zoneType, density, level, variantIndex).height;
+}
 
-  const variants = getVariants(zoneType, level);
-  if (variants.length === 0) {
-    heightCache.set(key, 0);
-    return 0;
-  }
-  const geo = variants[variantIndex % variants.length]!();
-  geo.computeBoundingBox();
-  const h = geo.boundingBox!.max.y;
-  geo.dispose();
-  heightCache.set(key, h);
-  return h;
+/** 這個變體未經縮放時最寬的那一軸有多寬（world unit）。 */
+export function variantWidthUnits(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): number {
+  return measure(zoneType, density, level, variantIndex).width;
+}
+
+/**
+ * 每個 (分區, 密度) 的目標基地寬度，單位是**公尺**（格子寬 12 m）。
+ *
+ * 上限是 `MAX_BUILDING_WIDTH_M` —— 行人的門與走道節點放在建築牆面外側，
+ * 超過就會讓行人走進建築裡面。那個常數與 SidewalkGraph 共用。
+ *
+ * 建築原本一律 7-8 m 寬、只佔格子 60%，所以 42 m 的高層住宅是 5.5:1 的
+ * 細針 —— 看起來「太高」有一半是因為太瘦。真實的高層幾乎鋪滿基地。
+ *
+ * 低密度維持 60%：那些留白是院子、車道與樹的位置，填滿反而失真。
+ */
+export const TARGET_WIDTHS_M: Record<string, number> = {
+  [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   7.2,
+  [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: MAX_BUILDING_WIDTH_M,
+  [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    8.4,
+  [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  MAX_BUILDING_WIDTH_M,
+  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        9.6,
+  [heightKey(ZoneType.OFFICE, 'LOW')]:            8.4,
+  [heightKey(ZoneType.OFFICE, 'HIGH')]:           MAX_BUILDING_WIDTH_M,
+};
+
+/**
+ * 逐實例寬深抖動的上限（見 BuildingAppearance.widthScale）。基地縮放必須
+ * 把它算進去，否則抖到最寬的那些會越過格子邊界吃進鄰居。
+ */
+const MAX_WIDTH_JITTER = 1.15;
+
+/**
+ * 要把這個變體的基地縮放到目標寬度該乘多少。
+ *
+ * 上限是「最寬的抖動之後仍在格子內」—— 越界就會壓到鄰居或馬路，
+ * 而那在畫面上不明顯、在測試裡很好抓（BUG-218 就是這樣抓到的）。
+ */
+export function footprintScaleFor(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): number {
+  const target = TARGET_WIDTHS_M[heightKey(zoneType, density)];
+  if (!target) return 1;
+  const units = variantWidthUnits(zoneType, density, level, variantIndex);
+  if (units <= 0) return 1;
+
+  const wanted = target / (units * METRES_PER_CELL);
+  const ceiling = 1 / (units * MAX_WIDTH_JITTER);
+  return Math.min(wanted, ceiling);
 }
 
 /**

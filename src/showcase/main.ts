@@ -14,7 +14,7 @@ import { stampZoneCategory, ZONE_CAT } from '../renderer/geometry/buildings/part
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { appearanceOf } from '../renderer/BuildingAppearance';
-import { heightScaleFor, type Density } from '../renderer/geometry/buildings/registry';
+import { heightScaleFor, footprintScaleFor } from '../renderer/geometry/buildings/registry';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
 
@@ -67,9 +67,12 @@ function place(cell: PlacedCell, seedByte: number): number {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
-  mesh.scale.set(app.widthScale,
+  const footprint = footprintScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex);
+  mesh.scale.set(
+    app.widthScale * footprint,
     heightScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex) * app.heightScale,
-    app.depthScale);
+    app.depthScale * footprint,
+  );
   mesh.position.set(cell.x, 0.05, cell.z);
   sceneManager.scene.add(mesh);
   shown.push(mesh);

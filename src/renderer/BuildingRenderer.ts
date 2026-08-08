@@ -6,7 +6,7 @@ import { paletteFor } from './ColorPalettes';
 import { appearanceOf } from './BuildingAppearance';
 import {
   getVariants, ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, heightScaleFor,
-  bucketKey, type Density,
+  footprintScaleFor, bucketKey, type Density,
 } from './geometry/buildings/registry';
 import { stampZoneCategory, ZONE_CAT, tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
@@ -324,12 +324,15 @@ export class BuildingRenderer {
       paletteSize: palette.length,
     });
 
-    // 高度來自公尺表，由這個變體自己的未縮放高度反推係數。
+    // 高度與基地寬度都來自公尺表，由這個變體自己的未縮放尺寸反推係數。
     const finalHeight = heightScaleFor(zoneType, density, level, app.variantIndex)
       * app.heightScale;
+    const footprint = footprintScaleFor(zoneType, density, level, app.variantIndex);
 
     this._rotation.makeRotationY((app.rotationQuarter * Math.PI) / 2);
-    this._scale.makeScale(app.widthScale, finalHeight, app.depthScale);
+    this._scale.makeScale(
+      app.widthScale * footprint, finalHeight, app.depthScale * footprint,
+    );
     this._matrix.multiplyMatrices(this._scale, this._rotation);
     this._matrix.setPosition(x, 0.05, y);
     mesh.setMatrixAt(idx, this._matrix);
