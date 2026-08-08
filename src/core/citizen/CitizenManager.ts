@@ -108,6 +108,25 @@ export class CitizenManager {
     return this._addCitizen(overrides, currentTick);
   }
 
+  /**
+   * Add a citizen whose home has ALREADY been shown to have room.
+   *
+   * The gate in createCitizen compares the whole citizen list against total
+   * residential capacity, and that list includes citizens with homeId === null
+   * — the homeless, and everyone waiting for assignCitizenHousing. So a city
+   * carrying any homeless population reported itself full while individual
+   * houses still had free rooms, and birthTick — which runs once a MONTH,
+   * against migration's once every 6 ticks — was the one that lost the race.
+   * Natural birth degenerated into a residual mechanism.
+   *
+   * Only for callers that have verified per-building occupancy against the
+   * building's own capacity, which is the stronger check: if such a room
+   * exists, the city is not actually full.
+   */
+  createCitizenInKnownVacancy(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen {
+    return this._addCitizen(overrides, currentTick);
+  }
+
   /** Unconditionally restore a citizen (save-loading). Bypasses capacity check. */
   restoreCitizen(overrides: Partial<Citizen> = {}, currentTick = 0): Citizen {
     return this._addCitizen(overrides, currentTick);
@@ -164,6 +183,20 @@ export class CitizenManager {
 
   getPopulation(): number {
     return this.citizens.length;
+  }
+
+  /**
+   * Citizens currently holding a job.
+   *
+   * The city's job VACANCIES are totalJobs minus this — not totalJobs minus
+   * the population. Using the population treated every baby, schoolchild and
+   * retiree as if it filled a post, so a city with a normal age pyramid
+   * reported no openings while a large share of its offices stood empty.
+   */
+  getEmployedCount(): number {
+    let n = 0;
+    for (const c of this.citizens) if (c.workplaceId !== null) n++;
+    return n;
   }
 
   getCitizens(): readonly Citizen[] {

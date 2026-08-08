@@ -1,6 +1,8 @@
 import { CitizenManager, GRADUATION_TICKS } from './CitizenManager';
 import { EducationLevel, LIFE_STAGE_AGE } from './types';
 import { randomElement, randomInt, pickWeighted } from '../utils/random';
+import { LAND_VALUE } from '../economy/LandValue';
+import { MAX_SERVICE_SCORE } from '../service/ServiceCoverageQuery';
 
 export interface CityAttractiveness {
   jobOpenings: number;
@@ -144,14 +146,31 @@ export function generateFamily(city?: CityAttractiveness): FamilyMember[] {
 }
 
 /** Thresholds for education weight adjustments in pickImmigrantEducation */
+/**
+ * Highest land value an ORDINARY (inland) cell can reach: perfect services and
+ * a park, before any pollution / noise / crime deduction. The waterfront bonus
+ * is excluded deliberately — it applies to a thin fringe of the map and cannot
+ * lift a city-wide average.
+ */
+export const MAX_ORDINARY_LAND_VALUE =
+  LAND_VALUE.BASE + MAX_SERVICE_SCORE * LAND_VALUE.SERVICE_MULTIPLIER + LAND_VALUE.PARK_BONUS;
+
 export const EDUCATION_THRESHOLDS = {
   OFFICE_RATIO: 0.3,
   INDUSTRIAL_RATIO: 0.5,
-  // Must stay below what calculateLandValue can actually produce: every positive
-  // term at maximum is BASE 50 + serviceCoverage 10 x 4 + PARK 15 + WATERFRONT 20
-  // = 125. At 150 the HIGH_LAND_VALUE immigration weighting was dead code, so a
-  // wealthy city never attracted better-educated immigrants (BUG-084).
-  AVG_LAND_VALUE: 100,
+  // Derived, not chosen. BUG-084 lowered this from 150 to 100 by comparing it
+  // against the per-cell MAXIMUM of 125 — but that maximum needs a WATERFRONT
+  // cell, and the figure being compared is getAvgLandValue(), an average over
+  // every building in the city.
+  //
+  // An ordinary inland cell tops out at MAX_ORDINARY_LAND_VALUE (105), and
+  // updateLandValue always deducts crimeRate x 0.4 — around 8 points once the
+  // population passes the crime cap. So even a city where every single
+  // building has perfect services and a park averages about 97, and 100
+  // remained unreachable: the weighting was still dead code.
+  //
+  // 75% of the ordinary maximum is a target a well-run city can actually hit.
+  AVG_LAND_VALUE: Math.round(MAX_ORDINARY_LAND_VALUE * 0.75),
   LOW_TAX: 7,
   HIGH_TAX: 12,
 } as const;

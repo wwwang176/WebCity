@@ -104,15 +104,25 @@ export function birthTick(
     }
   }
 
-  // 產生新生兒（capacity 滿時 createCitizen 回傳 null，停止生育）
+  // 產生新生兒。
+  //
+  // Every newborn here has already passed a per-building check: its home's
+  // occupancy is strictly below that building's own `residents` capacity, and
+  // occupancyCount was incremented as each newborn was queued so one house
+  // cannot over-fill within a single tick.
+  //
+  // Deliberately NOT createCitizen: that gate compares the whole citizen list
+  // against total residential capacity, and the list includes citizens with no
+  // home at all. Any homeless population made the city report itself full while
+  // real rooms stood empty — and since births run once a MONTH against
+  // migration's once every 6 ticks, births were always the ones turned away.
   for (const nb of newborns) {
-    const citizen = manager.createCitizen({
+    manager.createCitizenInKnownVacancy({
       age: 0,
       education: EducationLevel.NONE,
       homeId: nb.homeId,
       workplaceId: null,
     }, currentTick);
-    if (!citizen) break;
     births++;
   }
 

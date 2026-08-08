@@ -55,6 +55,13 @@ export function getCellServiceScore(state: GameState, x: number, y: number): num
     + (state.deathCare.getCoverage(x, y) ? 1 : 0);
 }
 
+/**
+ * Highest possible service score: power 2 + water 2 + six services at 1 each.
+ * Exported so anything reasoning about attainable land value can derive its
+ * bounds instead of hard-coding a number that drifts.
+ */
+export const MAX_SERVICE_SCORE = 10;
+
 /** Convert service flags to the weighted numeric score. */
 export function serviceFlagsToScore(f: ServiceFlags): number {
   return (f.isPowered ? 2 : 0)

@@ -262,6 +262,27 @@ export class SimulationLoop {
     // Subsequent rebuildBuildingIndex() calls within the same tick are no-ops.
     this.buildingIndexDirty = true;
 
+    // Residential capacity gate, then monthly births.
+    //
+    // A month boundary is always tick % 720 === 0, hence always slow-slot 0, so
+    // births and runMigration (slot 5) never fall on the same tick — ordering
+    // them relative to each other changes nothing. What did matter is that the
+    // aggregate capacity gate in createCitizen counts citizens who have no home
+    // at all; see the bypass below.
+    this.state.citizens.updateResidentialCapacity(countResidentialCapacity(this.state.grid));
+    const currentMonth = this.state.clock.getMonth();
+    if (currentMonth !== this.lastBirthMonth) {
+      this.lastBirthMonth = currentMonth;
+      birthTick(this.state.citizens, {
+        getResidents: (homeId) => {
+          const [x, y] = homeId.split(',').map(Number);
+          const cell = this.state.grid.getCell(x, y);
+          if (!cell || !cell.buildingId) return SIMULATION.FALLBACK_RESIDENTS;
+          return getBuildingType(cell.buildingId)?.residents ?? SIMULATION.FALLBACK_RESIDENTS;
+        },
+      }, this.state.clock.tick);
+    }
+
     // ── Slot 0: Economy (RCI demand + budget) ──
     if (slowSlot === 0) {
       const rci = calculateRCIDemand({
@@ -419,23 +440,6 @@ export class SimulationLoop {
 
     // ── Per-tick operations ──
 
-    // Sync residential capacity gate (before births + migration)
-    this.state.citizens.updateResidentialCapacity(countResidentialCapacity(this.state.grid));
-
-    // Monthly: natural births
-    const currentMonth = this.state.clock.getMonth();
-    if (currentMonth !== this.lastBirthMonth) {
-      this.lastBirthMonth = currentMonth;
-      birthTick(this.state.citizens, {
-        getResidents: (homeId) => {
-          const [x, y] = homeId.split(',').map(Number);
-          const cell = this.state.grid.getCell(x, y);
-          if (!cell || !cell.buildingId) return SIMULATION.FALLBACK_RESIDENTS;
-          return getBuildingType(cell.buildingId)?.residents ?? SIMULATION.FALLBACK_RESIDENTS;
-        },
-      }, this.state.clock.tick);
-    }
-
     // Job relocation (every 120 ticks, offset to slot 4)
     if (tick >= 4 && (tick - 4) % SIMULATION.JOB_RELOCATION_INTERVAL === 0) {
       this.runJobRelocation();
@@ -480,9 +484,19 @@ export class SimulationLoop {
   }
 
 
+  /**
+   * Posts nobody is filling.
+   *
+   * This used to subtract the whole POPULATION from total jobs, treating every
+   * baby, schoolchild and retiree as an occupied desk. Roughly 43% of a city's
+   * citizens are outside working age once retirement is in play, so a city with
+   * a normal age pyramid reported zero openings while that share of its offices
+   * and factories stood permanently empty — suppressing the residential demand
+   * that would have brought in the workers to fill them.
+   */
   private countJobOpenings(): number {
     const totalJobs = this.countTotalJobs();
-    return Math.max(0, totalJobs - this.state.citizens.getPopulation());
+    return Math.max(0, totalJobs - this.state.citizens.getEmployedCount());
   }
 
   private tryBuildingGrowth(): void {

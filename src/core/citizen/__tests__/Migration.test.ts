@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest';
 import { CitizenManager } from '../CitizenManager';
 import { migrationTick, calculateAttractiveness, getImmigrationCap, ATTRACTIVENESS, IMMIGRATION, EDUCATION_THRESHOLDS, CHILD_EDUCATION, ATTRITION, type CityAttractiveness } from '../Migration';
 import { EMIGRATION_TOLERANCE, calculateEmigrationTolerance, EducationLevel } from '../types';
+import { calculateLandValue } from '../../economy/LandValue';
+import { MAX_SERVICE_SCORE } from '../../service/ServiceCoverageQuery';
+import { MAX_ORDINARY_LAND_VALUE } from '../Migration';
 
 const attractiveCity: CityAttractiveness = {
   jobOpenings: 10,
@@ -295,11 +298,57 @@ describe('Migration constants', () => {
   it('EDUCATION_THRESHOLDS should have correct values', () => {
     expect(EDUCATION_THRESHOLDS.OFFICE_RATIO).toBe(0.3);
     expect(EDUCATION_THRESHOLDS.INDUSTRIAL_RATIO).toBe(0.5);
-    // Must stay under 125, the most calculateLandValue can produce
-    // (BASE 50 + serviceCoverage 10x4 + PARK 15 + WATERFRONT 20).
-    expect(EDUCATION_THRESHOLDS.AVG_LAND_VALUE).toBe(100);
+    // AVG_LAND_VALUE is asserted separately, against what a city can reach
+    // rather than against a literal — see the block below.
     expect(EDUCATION_THRESHOLDS.LOW_TAX).toBe(7);
     expect(EDUCATION_THRESHOLDS.HIGH_TAX).toBe(12);
+  });
+
+  /**
+   * The old assertion pinned AVG_LAND_VALUE to the literal 100 and justified it
+   * against the per-cell MAXIMUM of 125 — which needs a waterfront cell, while
+   * the value compared against it is getAvgLandValue(), an average over every
+   * building in the city. An ordinary inland cell tops out at 105 and
+   * updateLandValue always deducts crimeRate x 0.4, so even a perfect city
+   * averaged about 97 and the HIGH_LAND_VALUE weighting stayed dead code.
+   *
+   * Pin the property instead: a city that has done everything right must clear
+   * the threshold, and a mediocre one must not.
+   */
+  describe('AVG_LAND_VALUE is a target a city can actually reach', () => {
+    /** Perfect services, a park, no pollution or noise, crime as a mature city has it. */
+    const MATURE_CRIME = 20;
+    const perfectInlandCell = () => calculateLandValue({
+      serviceCoverage: MAX_SERVICE_SCORE,
+      parkProximity: true,
+      waterfront: false,
+      pollution: 0,
+      noise: 0,
+      crimeRate: MATURE_CRIME,
+    });
+
+    it('should be reachable by a city where every cell is perfect', () => {
+      expect(perfectInlandCell()).toBeGreaterThan(EDUCATION_THRESHOLDS.AVG_LAND_VALUE);
+    });
+
+    it('should leave headroom, not sit right on the ceiling', () => {
+      // A threshold one point under the perfect-city average would still be
+      // unreachable in practice: no real city is uniformly perfect.
+      expect(EDUCATION_THRESHOLDS.AVG_LAND_VALUE)
+        .toBeLessThan(perfectInlandCell() * 0.95);
+    });
+
+    it('should not be cleared by a city with no services', () => {
+      const bare = calculateLandValue({
+        serviceCoverage: 0, parkProximity: false, waterfront: false,
+        pollution: 0, noise: 0, crimeRate: MATURE_CRIME,
+      });
+      expect(bare).toBeLessThan(EDUCATION_THRESHOLDS.AVG_LAND_VALUE);
+    });
+
+    it('should not need a waterfront cell to be beaten', () => {
+      expect(MAX_ORDINARY_LAND_VALUE).toBeGreaterThan(EDUCATION_THRESHOLDS.AVG_LAND_VALUE);
+    });
   });
 
   it('CHILD_EDUCATION should have correct values', () => {
