@@ -54,7 +54,12 @@ export function SummaryPage() {
       (zoneCounts[ZoneType.INDUSTRIAL]?.capacity ?? 0) +
       (zoneCounts[ZoneType.OFFICE]?.capacity ?? 0);
     const vacantHomes = Math.max(0, totalHomes - population);
-    const jobOpenings = Math.max(0, totalJobs - population);
+    // The same definition the simulation uses. countJobOpenings became
+    // `totalJobs - employed`; this panel exists to mirror the migration gate,
+    // and keeping the old `totalJobs - population` made it read
+    // "0 · No openings · cannot migrate" in exactly the mature city where the
+    // sim reports hundreds of openings and immigrates anyway (BUG-166).
+    const jobOpenings = Math.max(0, totalJobs - state.citizens.getEmployedCount());
 
     const avgHappiness = population > 0
       ? Math.round(state.citizens.getAverageHappiness())

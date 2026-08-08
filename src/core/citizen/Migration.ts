@@ -225,7 +225,21 @@ export function pickImmigrantEducation(city: CityAttractiveness): EducationLevel
 
 export function calculateAttractiveness(city: CityAttractiveness): number {
   let score = 0;
-  if (city.jobOpenings > 0) score += ATTRACTIVENESS.JOB_SCORE;
+  // Openings only attract people who could actually take them.
+  //
+  // countJobOpenings became `totalJobs - employed` rather than
+  // `totalJobs - population`, which is the right number for RCI demand but
+  // decoupled two things this formula assumed moved together. Under the old
+  // definition `jobOpenings > 0` implied totalJobs > population, hence low
+  // unemployment; the population term was the only supply-side brake there was.
+  // Once they came apart, a flat +20 against a penalty capped at 15 made one
+  // permanently unfillable desk worth net +5 at total unemployment — so an
+  // industrial park reachable only across an unbuilt link kept inviting people
+  // who could not get to it (BUG-166).
+  if (city.jobOpenings > 0) {
+    const attainable = 1 - Math.min(1, Math.max(0, city.unemploymentRate ?? 0));
+    score += ATTRACTIVENESS.JOB_SCORE * attainable;
+  }
   if (city.vacantHomes > 0) score += ATTRACTIVENESS.VACANT_SCORE;
   score += city.avgHappiness * ATTRACTIVENESS.HAPPINESS_WEIGHT;
   score -= city.taxRate * ATTRACTIVENESS.TAX_WEIGHT;
@@ -308,12 +322,23 @@ export function migrationTick(
 
       let familySettled = true;
       for (const m of family) {
-        const citizen = manager.createCitizen({
+        const spec = {
           age: m.age,
           education: m.education,
           educationProgress: m.educationProgress,
           homeId: assignedPos,
-        }, currentTick);
+        };
+        // When a slot was found, its own occupancy has already been checked and
+        // advanced — the same reasoning BUG-140 applied to births, and for the
+        // same reason: createCitizen's aggregate gate counts citizens with no
+        // home at all, so any homeless population made the city refuse arrivals
+        // into rooms that were provably empty. Leaving immigration on the old
+        // gate also left the two paths disagreeing about what "full" means, and
+        // a refusal here breaks mid-family AFTER slots[idx].occupied has been
+        // advanced by the whole family (BUG-165).
+        const citizen = assignedPos !== null
+          ? manager.createCitizenInKnownVacancy(spec, currentTick)
+          : manager.createCitizen(spec, currentTick);
         if (!citizen) { familySettled = false; break; }
         immigrated++;
       }

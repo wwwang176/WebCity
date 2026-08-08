@@ -145,17 +145,39 @@ describe('getImmigrationCap — 移民動態縮放', () => {
     expect(highUnemployment).toBeLessThan(noUnemployment);
   });
 
-  it('full unemployment reduces attractiveness but does not block migration', () => {
-    const score = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 1.0 });
-    const baseline = calculateAttractiveness({ ...attractiveCity, unemploymentRate: 0 });
-    expect(score).toBeLessThan(baseline);
-    expect(score).toBeGreaterThan(IMMIGRATION.ATTRACTIVENESS_THRESHOLD);
+  /**
+   * These two cases used to assert that total unemployment still left a city
+   * above the immigration threshold, on the stated ground that the penalty
+   * should be "moderate". Their premise no longer holds.
+   *
+   * They were written when jobOpenings meant `totalJobs - population`, under
+   * which `jobOpenings > 0` implied jobs outnumbered people and unemployment
+   * was therefore structurally low — the two could not diverge far. Once
+   * countJobOpenings became `totalJobs - employed`, they became independent,
+   * and a flat +20 job bonus against a penalty capped at 15 made a city with
+   * jobs nobody can reach NET MORE attractive than one with neither. That is
+   * the runaway loop BUG-166 describes: an industrial park across an unbuilt
+   * link keeps inviting people who cannot get to it.
+   *
+   * The penalty is still moderate at moderate unemployment. What changed is
+   * that jobs no longer attract anyone once nobody can take them.
+   */
+  it('should make unemployment cost more the higher it climbs', () => {
+    const at = (rate: number) => calculateAttractiveness({ ...attractiveCity, unemploymentRate: rate });
+    expect(at(1.0)).toBeLessThan(at(0.5));
+    expect(at(0.5)).toBeLessThan(at(0));
   });
 
-  it('unemployment penalty is moderate — city can still attract immigrants', () => {
+  it('should still attract immigrants at ordinary unemployment', () => {
     const mgr = new CitizenManager();
-    const result = migrationTick(mgr, { ...attractiveCity, unemploymentRate: 0.8 });
+    const result = migrationTick(mgr, { ...attractiveCity, unemploymentRate: 0.1 });
     expect(result.immigrated).toBeGreaterThan(0);
+  });
+
+  it('should stop attracting them when the jobs are unreachable', () => {
+    const mgr = new CitizenManager();
+    const result = migrationTick(mgr, { ...attractiveCity, unemploymentRate: 1.0 });
+    expect(result.immigrated).toBe(0);
   });
 
   it('ATTRACTIVENESS constants should have valid weights', () => {

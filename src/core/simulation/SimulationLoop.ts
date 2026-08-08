@@ -5,6 +5,7 @@ import { buildingGrowthTick } from '../building/BuildingGrowthTick';
 import { abandonmentStressTick } from '../building/AbandonmentStressTick';
 import { migrationTick } from '../citizen/Migration';
 import { birthTick } from '../citizen/Birth';
+import { residentsAtHome } from '../citizen/HomeCapacity';
 import { calculateHappiness, type HappinessFactors } from '../citizen/Happiness';
 import { calculateLandValue, checkParkProximity } from '../economy/LandValue';
 import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI } from '../grid/types';
@@ -272,12 +273,12 @@ export class SimulationLoop {
     if (currentMonth !== this.lastBirthMonth) {
       this.lastBirthMonth = currentMonth;
       birthTick(this.state.citizens, {
-        getResidents: (homeId) => {
-          const [x, y] = homeId.split(',').map(Number);
-          const cell = this.state.grid.getCell(x, y);
-          if (!cell || !cell.buildingId) return SIMULATION.FALLBACK_RESIDENTS;
-          return getBuildingType(cell.buildingId)?.residents ?? SIMULATION.FALLBACK_RESIDENTS;
-        },
+        // Since BUG-140 took the aggregate gate off this path, this lookup is
+        // the ONLY bound on birth-driven growth — so it has to agree with
+        // countResidentialCapacity cell for cell. It used to answer
+        // FALLBACK_RESIDENTS (8) for an address with no building at all, which
+        // that figure counts as 0 (BUG-164).
+        getResidents: (homeId) => residentsAtHome(this.state.grid, homeId),
       }, this.state.clock.tick);
     }
 
