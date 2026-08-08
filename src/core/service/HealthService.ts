@@ -122,8 +122,11 @@ export class HealthService extends RoadCoverageService<Hospital> {
    * so blacked-out hospitals kept suppressing deaths (BUG-100).
    */
   getTotalCapacity(): number {
+    // Road connectivity too, not just power: an unreachable hospital covers
+    // nobody, and SimulationLoop multiplies the death rate by getLoadRatio(),
+    // so its unusable beds suppressed deaths across the whole city.
     let sum = 0;
-    for (const h of this.getOperationalFacilities()) sum += h.capacity;
+    for (const h of this.getActiveFacilities()) sum += h.capacity;
     return sum;
   }
 

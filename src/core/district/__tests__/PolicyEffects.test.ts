@@ -137,3 +137,52 @@ describe('policies stack per district, not city-wide', () => {
     expect(policies.getLandValueBonus(id)).toBeGreaterThan(0);
   });
 });
+
+describe('a dormant policy can be switched back on', () => {
+  /**
+   * `applyPolicy` deduplicated by type and returned, so a policy stored with
+   * `active: false` was unreachable: isPolicyActive reported false because of
+   * the flag, the modal drew the switch as off, and pressing it did nothing at
+   * all. removePolicy deletes the entry outright, so the state only arrives
+   * from a save — which is exactly where it would be permanent.
+   */
+  function districtWithDormantPolicy() {
+    const districts = new DistrictManager();
+    const d = districts.createDistrict('Test');
+    const mgr = new PolicyManager(districts);
+    mgr.applyPolicy(d.id, PolicyType.ENCOURAGE_RECYCLING);
+    // What a save carrying a disabled policy restores.
+    d.policies[0]!.active = false;
+    return { districts, mgr, id: d.id, district: d };
+  }
+
+  it('should be inactive to begin with', () => {
+    const { mgr, id } = districtWithDormantPolicy();
+    expect(mgr.isPolicyActive(id, PolicyType.ENCOURAGE_RECYCLING)).toBe(false);
+    expect(mgr.getGarbageMultiplier(id)).toBe(1);
+  });
+
+  it('should become active when applied again', () => {
+    const { mgr, id } = districtWithDormantPolicy();
+    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    expect(mgr.isPolicyActive(id, PolicyType.ENCOURAGE_RECYCLING)).toBe(true);
+    expect(mgr.getGarbageMultiplier(id)).toBeLessThan(1);
+  });
+
+  it('should not add a second copy', () => {
+    // The dedup this replaces was there for a reason: two entries would be
+    // billed twice and their effects compounded.
+    const { mgr, id, district } = districtWithDormantPolicy();
+    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    expect(district.policies.filter(p => p.type === PolicyType.ENCOURAGE_RECYCLING)).toHaveLength(1);
+  });
+
+  it('should leave an already-active policy exactly as it was', () => {
+    const { mgr, id, district } = districtWithDormantPolicy();
+    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    const before = { ...district.policies[0]! };
+    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    expect(district.policies[0]).toEqual(before);
+  });
+});

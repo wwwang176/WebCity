@@ -101,8 +101,19 @@ export class PolicyManager {
     const district = this.districtLookup.getDistrict(districtId);
     if (!district) return;
 
-    // Don't add duplicate policies
-    if (district.policies.some((p) => p.type === policyType)) return;
+    // Don't add duplicate policies — but DO re-enable a dormant one.
+    //
+    // Deduplicating by type alone meant a policy stored with `active: false`
+    // could never be turned back on: applyPolicy saw the type and returned,
+    // isPolicyActive reported false because of the flag, and the modal drew the
+    // switch as off. The player could press it for ever. (removePolicy deletes
+    // the entry outright, so this only arises from a save — but a save is
+    // exactly where it would be permanent.)
+    const existing = district.policies.find((p) => p.type === policyType);
+    if (existing) {
+      existing.active = true;
+      return;
+    }
 
     const cfg = POLICY_CONFIG[policyType];
     const policy: Policy = {

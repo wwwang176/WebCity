@@ -97,9 +97,13 @@ export class SchoolService extends RoadCoverageService<SchoolFacility> {
    * educateTick's capacity gate unfiltered — so a blacked-out school kept
    * providing places nobody could reach, and the ServicesPage advertised them.
    * Same shape as the hospital capacity fixed in BUG-100.
+   *
+   * Road connectivity is the other half of the same condition, and was missing:
+   * coverage spreads along roads, so a school marooned with no road covers
+   * nobody at all while its places were still counted.
    */
   getTotalCapacity(): number {
-    return this.getOperationalFacilities().reduce((sum, s) => sum + s.capacity, 0);
+    return this.getActiveFacilities().reduce((sum, s) => sum + s.capacity, 0);
   }
 
   /** Assign enrollment and demand counts to nearest school (Euclidean). */

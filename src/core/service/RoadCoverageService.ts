@@ -157,6 +157,19 @@ export abstract class RoadCoverageService<F extends Facility> implements Service
     return this.facilities.filter(f => this.operationalIds!.has(f.id));
   }
 
+  /**
+   * Facilities that actually work: powered AND reachable by road.
+   *
+   * getOperationalFacilities asks only the first half. Coverage spreads along
+   * roads, so a facility with no road covers nobody — but the capacity sums
+   * were built from the looser test and kept counting its places. Same name and
+   * meaning as GlobalCoverageService.getActiveFacilities, which has asked both
+   * questions since BUG-101.
+   */
+  getActiveFacilities(): readonly F[] {
+    return this.getOperationalFacilities().filter(f => this.connectedFacilityIds.has(f.id));
+  }
+
   /** Default maintenance cost: count × per-facility cost. Override for custom logic. */
   getMaintenanceCost(): number {
     return this.facilities.length * this.maintenanceCostPerFacility;

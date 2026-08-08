@@ -6,6 +6,7 @@ import { SIMULATION } from '../simulation/SimulationConstants';
 export interface ServiceFlags {
   isPowered: boolean;
   isWatered: boolean;
+  hasSewage: boolean;
   hasPolice: boolean;
   hasFire: boolean;
   hasGarbage: boolean;
@@ -31,6 +32,7 @@ export function getCellServiceFlags(state: GameState, x: number, y: number): Ser
   return {
     isPowered: state.power.isPowered(x, y),
     isWatered: state.water.isSupplied(x, y),
+    hasSewage: state.sewage.isSupplied(x, y),
     hasPolice: state.police.getCoverage(x, y),
     hasFire: state.fire.getCoverage(x, y),
     hasGarbage: state.garbage.getCoverage(x, y),
@@ -47,6 +49,7 @@ export function getCellServiceFlags(state: GameState, x: number, y: number): Ser
 export function getCellServiceScore(state: GameState, x: number, y: number): number {
   return (state.power.isPowered(x, y) ? 2 : 0)
     + (state.water.isSupplied(x, y) ? 2 : 0)
+    + (state.sewage.isSupplied(x, y) ? 1 : 0)
     + (state.police.getCoverage(x, y) ? 1 : 0)
     + (state.fire.getCoverage(x, y) ? 1 : 0)
     + (state.garbage.getCoverage(x, y) ? 1 : 0)
@@ -56,16 +59,23 @@ export function getCellServiceScore(state: GameState, x: number, y: number): num
 }
 
 /**
- * Highest possible service score: power 2 + water 2 + six services at 1 each.
+ * Highest possible service score: power 2 + water 2 + seven services at 1 each.
  * Exported so anything reasoning about attainable land value can derive its
  * bounds instead of hard-coding a number that drifts.
+ *
+ * Sewage is one of the seven. It was computed by this module and consumed by
+ * nobody — the city-wide sum skipped it and the per-cell score did not list it
+ * at all — so a treatment plant contributed nothing to happiness, land value,
+ * building level or abandonment stress, while the building panel showed Sewage
+ * as a first-class service.
  */
-export const MAX_SERVICE_SCORE = 10;
+export const MAX_SERVICE_SCORE = 11;
 
 /** Convert service flags to the weighted numeric score. */
 export function serviceFlagsToScore(f: ServiceFlags): number {
   return (f.isPowered ? 2 : 0)
     + (f.isWatered ? 2 : 0)
+    + (f.hasSewage ? 1 : 0)
     + (f.hasPolice ? 1 : 0)
     + (f.hasFire ? 1 : 0)
     + (f.hasGarbage ? 1 : 0)

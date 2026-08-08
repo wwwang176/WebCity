@@ -27,7 +27,18 @@ interface GridLike {
   // `reserved` is REQUIRED: isActiveZoneCell coerces undefined to 0, i.e.
   // "active", so an optional field would let a future caller silently restore
   // the old behaviour instead of failing to compile.
-  forEachCell(callback: (cell: { buildingId: number; zoneType: number; roadType: number; trafficDensity: number; reserved: number }, x: number, y: number) => void): void;
+  //
+  // Declared as a PROPERTY, not with method shorthand. TypeScript checks method
+  // parameters bivariantly even under strictFunctionTypes, so the shorthand
+  // form accepted a grid whose cells had no `reserved` at all — the requirement
+  // above was a comment, not a rule. A function-typed property is checked
+  // contravariantly and actually enforces it.
+  forEachCell: (
+    callback: (
+      cell: { buildingId: number; zoneType: number; roadType: number; trafficDensity: number; reserved: number },
+      x: number, y: number,
+    ) => void,
+  ) => void;
 }
 
 /** Visit grid pollution sources (industrial buildings + road traffic noise) without allocating an intermediate array. */

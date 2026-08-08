@@ -91,11 +91,19 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
               for (const p of d.policies as { type: PolicyType }[]) seen.add(p.type);
               return [...seen];
             };
+            // The header needs the same treatment for the same reason: the row
+            // body never re-runs, so `{d.name}` and `{d.cells.size}` were read
+            // once and frozen. Renaming a district, or painting more cells into
+            // it, changed nothing on screen until the modal was closed and
+            // reopened — and the cell count is the only feedback the paint tool
+            // gives.
+            const name = () => { version(); return d.name; };
+            const cellCount = () => { version(); return d.cells.size; };
             return (
               <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-                  <strong style="color:#e0e0e0">{d.name}</strong>
-                  <span style="color:#888;font-size:11px">{d.cells.size} cells</span>
+                  <strong style="color:#e0e0e0">{name()}</strong>
+                  <span style="color:#888;font-size:11px">{cellCount()} cells</span>
                 </div>
                 <div style="font-size:12px;color:#aaa;margin-bottom:4px">Policies:</div>
                 <div style="display:flex;flex-wrap:wrap;gap:4px">
