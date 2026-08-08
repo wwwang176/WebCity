@@ -2199,3 +2199,104 @@ TDD 修復；隨後每個修復 commit 再由一個獨立 agent 反向審查，�
 
 BUG-162 與 BUG-163 實測為同一根因：`chooseStartLevel` 回傳純鐵路層。
 審查員推測的 `existingAtStart` 閘門機制不成立——`path[0]` 在該情境下根本不會被寫入。
+
+---
+
+## 第七十四輪：清空全部待辦（BUG-169 ~ BUG-213）
+
+一次處理完 TODO.md 上所有未修項目。每條都先寫紅燈測試、修好、再把修正還原確認測試轉紅。
+
+### 建置與型別（pnpm build 從失敗到通過，tsc 321 → 0）
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-169 | ui/components/BuildingPanel.tsx | 用了 `<For>` 三次卻只 import `Show, Index`。Solid 把 JSX 編成對該識別字的呼叫，所以**點選任何建築都會 ReferenceError**，資訊面板整片空白 | **Critical** |
+| BUG-170 | Game.ts | `handleSelectClick` 手寫的 services 物件漏掉 `sewage`，而 700 行外幾乎相同的區塊有。面板照樣畫出 Sewage 列，顏色算出 `rgb(255,NaN,50)`，瀏覽器直接丟棄該宣告 | High |
+| BUG-171 | renderer/vehicleGeometry.ts | 零 importer 的相容轉發層，re-export 一個整個 repo 不存在的 `buildTaxiGeometry`，且漏掉一半真實存在的匯出 | Low |
+| BUG-172 | Game.ts | `TOOL_COLORS` 有一個不存在的 `airport` 鍵，且缺了真正的 `airport_s/m/l` 三個 | Low |
+| BUG-173 | save/Serializer.ts | `serializeGameState` 自行複述 `snapshotGameState` 的 extra 型別並過期，拒絕 `transferHistory` / `highestMilestonePop`（runtime 有轉發，純型別問題） | Low |
+| BUG-174 | service/*.ts | 六個 `addXxx(..., capacity = CONST.DEFAULT)` 因 `as const` 預設值把參數收窄成字面量，任何呼叫者都不能傳別的數字 | Low |
+| BUG-175 | traffic/TrafficSimulation.ts | `SpeedLimitLookup` 的聯集讓 `getCell` 變成選用，值可以靜態滿足型別卻在 `grid.getCell!` 撞上 undefined | Low |
+
+### 服務一致性
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-176 | citizen/CityHappinessContext.ts | `calculateCityServiceCoverage` 加總九項 ServiceRatios 中的八項，跳過 `sewageRatio`——該欄位由 ServiceCoverageQuery 算出後**無人讀取**。蓋汙水廠對市民幸福度毫無貢獻 | High |
+| BUG-177 | service/ServiceCoverageQuery.ts | 修好 BUG-176 後半套系統仍不認得 sewage：`ServiceFlags`、`getCellServiceScore`、`serviceFlagsToScore` 都沒有它，所以汙水廠仍不影響地價、建築等級、廢棄壓力 | Medium |
+| BUG-178 | service/SchoolService.ts, HealthService.ts | 總容量用 `getOperationalFacilities`（只看電）。覆蓋沿道路擴散，所以沒有道路的學校/醫院覆蓋為零卻照算容量。醫院尤其嚴重：SimulationLoop 用 `getLoadRatio()` 乘死亡率，到不了的病床會壓低全城死亡 | High |
+| BUG-179 | district/PolicyManager.ts | `applyPolicy` 以 type 去重就 return，存為 `active:false` 的政策永遠開不回來：面板畫成關閉，按下去沒有任何事發生 | Medium |
+| BUG-180 | ui/modals/DistrictModal.tsx | `{d.name}` 與 `{d.cells.size}` 只在建立那一次讀取。`<For>` 依物件識別重用列，改名或繼續塗區域畫面完全不動，而格數是塗抹工具唯一的回饋 | Medium |
+| BUG-181 | environment/GridPollutionSources.ts | `GridLike.forEachCell` 用 method shorthand，TypeScript 即使開 strictFunctionTypes 仍雙變——「`reserved` 必填」是註解不是規則 | Low |
+
+### 垃圾污染
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-182 | service/GarbageService.ts | 有掩埋場的分支算 `ceil(penalty / n)` 後在**每一格**設施上排放。掩埋場 2x2，所以整個 penalty 排了四次：實測 400 對 penalty 100。蓋了廢棄物處理，未收垃圾反而痛四倍——BUG-101 誘因反轉的較輕版本 | High |
+| BUG-183 | service/GarbageService.ts | `UNCOLLECTED_POLLUTION_SITES = 12` 取「最嚴重的十二堆」。垃圾平均分佈時每堆數量相同、排序穩定，於是退化成「地圖最先列舉到的十二格」：200 格垃圾有 188 格完全不排放，且 pendingBags splice 會讓這十二格無故漂移 | Medium |
+
+### 高架與鐵路
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-184 | elevation/ElevatedRoadBuilder.ts | 保護既有 segment 的 `existingAtStart` 依定義是 `i === 0`，所以第二格起放置迴圈無條件寫 `railType: 0`：**高架道路橫跨高架鐵路會刪掉交會處的鐵路** | High |
+| BUG-185 | elevation/ElevatedRoadBuilder.ts | 起點閘門用 `hasElevatedSegment`，它對高架**鐵路**也成立。chooseStartLevel 正確地拒絕回傳純鐵路層而回答 0，於是整條路從一格沒有道路的地面出發，匝道的腳指向空無一物——BUG-097 的懸空旗標換個門進來 | Medium |
+| BUG-186 | elevation/ElevatedRoadBuilder.ts | `removeElevated` 掃描 `highest` 與 `highest-1`（匝道跨兩層，BUG-118），但清除下層鄰居旗標前不確認該層是否還有東西：兩座高架疊放時，拆上層會切斷完好的下層 | Medium |
+| BUG-187 | Game.ts, elevation/ElevatedRoadBuilder.ts | 拆除把每一格高架都送進 road builder（Game.ts 問的是 `hasElevatedSegment`），而它只認得 RoadNetwork。RailNetwork 的節點與邊在橋消失後仍在，列車繼續在空中行駛。`ElevatedRailBuilder.removeElevated` 做對了事卻從未被呼叫——那段死碼正是這個 bug 缺的另一半 | High |
+
+### 交通與圖
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-188 | transport/BusSystem.ts | `onRoadChanged` 只比對 `from/to.cellKey`。跨路口轉彎邊是從路口**前**一格連到**後**一格，把跳過的格子記在 `viaCellKey`，所以拆掉公車轉彎的那個路口從不標記該路線受影響：路段不重算，公車繼續開在中段已不存在的邊上 | Medium |
+| BUG-189 | traffic/PedestrianManager.ts | WAITING_SIGNAL 的重檢問 `canPassCrosswalk(currentEdge)`，但等待中的 `edgeIndex` 仍指著**接近邊**，而該函式對非穿越道會在 `!edge.intersectionCellKey` 就回 true。每 tick 放行每一個等待中的行人；多數時候被下游迴圈重新擋住，但尚未走到邊界的行人會被放行並在紅燈下前進 | Medium |
+| BUG-190 | economy/ShoppingAccess.ts | BFS 從佇列中**每一格**展開地面鄰居，包含高架格，於是沒有匝道的高架橋會吸收底下的地面並把它飛越的兩個路網接成一個。既有的反例測試只因 `forEachCell` 是列優先、先走到地面而通過 | Medium |
+| BUG-191 | simulation/SimulationLoop.ts | `rebuildLaneGraph` 的 `affectedCells` 區域變數只在註解裡被提到 | Low |
+
+### 人口
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-192 | simulation/SimulationLoop.ts | 生育在 slow-slot 0 靠近 tick 頂端執行，而 per-day 的 updateAges + deathTick 在同一 tick 尾端。月界是 `floor(day/30)` 變動、日界是 `floor(tick/24)` 變動，所以 tick 720 兩者同時成立：生育挑父母時讀的是前一天的年齡，而每個新生兒都在 deathTick 走訪的名單裡，出生不到一 tick 就要擲一次死亡 | Medium |
+| BUG-193 | citizen/Migration.ts | `EDUCATION_THRESHOLDS.AVG_LAND_VALUE` 是 `MAX_ORDINARY_LAND_VALUE * 0.75`，外面包著推導形狀的註解，但沒有任何東西產生那個 0.75。BUG-084 已經在另一個方向犯過一次（100 達不到，權重是死碼），79 則低到幾乎永遠成立，還是死碼 | Low |
+| BUG-194 | save/Serializer.ts | `highestMilestonePop` 在 Game.ts 經 `Math.max` 還原，而 JSON 雖然表達不了 NaN 卻表達得了字串——`Math.max(5000, "abc")` 是 NaN，與任何值比較皆為 false。匯入或手改的存檔只要一個壞值，該城市**所有里程碑永久失效**，而且下次存檔會原樣寫回去 | Medium |
+
+### 存檔與資料遺失
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-195 | main.ts | 載入失敗 `catch { await startGame(); }`：靜默在**同一個 slot** 上開新城市，100 tick 後的自動存檔覆蓋掉剛剛打不開的存檔。失敗當下位元組仍完好，是「復原」把它毀了 | **Critical** |
+| BUG-196 | Game.ts | 完全沒有 `saveWorker.onmessage`，每一個 SAVE_COMPLETE（成功與失敗）都被丟棄。空間用完的玩家可以繼續蓋任意久，而城市早已停止寫入 | **Critical** |
+| BUG-197 | workers/save.worker.ts | 自帶一份 openDB 與交易接線且已經走樣：`tx.onerror` 用 `tx.error ?? new Error(...)` reject，但 request 錯誤觸發時交易尚未 abort、`tx.error` 仍是 null——真正的 QuotaExceededError 在最需要說實話的自動存檔路徑上被換成佔位字串 | High |
+| BUG-198 | save/SaveManager.ts, workers/save.worker.ts | 兩份 `openDB` 都沒接 `onblocked`。它是**取代** success/error 派發的，之後不會再有任何事件，所以未處理的 blocked 讓每個存檔、載入、列表在整個頁面生命週期內永遠 pending。DB_VERSION 還是 1 所以不會發生——這正是它會撐到第一次改 schema 才爆的原因 | High |
+| BUG-199 | ui/MainMenu.ts, ui/modals/SettingsModal.tsx | `listSaves` 的 rejection 讓「Loading saves...」永遠留在畫面上；`deleteSave` 完全沒有 catch；SettingsModal 的 `await listSaves()` 在 try 之外 | Medium |
+| BUG-200 | Game.ts | 自動存檔寫死 slot 0，而 slot 0 就是 AutoSave——最可能壞掉的那一格。所以 slot 0 載入失敗後按 New Game 仍會在 100 tick 後蓋掉它：復原只是慢了一次點擊，並沒有被保住 | High |
+| BUG-201 | main.ts | `startGame` 全程沒有 catch，且是 floating promise。存檔讀出後任何一步拋出——dynamic import、建構子、initPhases、createGameUI——都留下載入畫面、消失的選單和一個 unhandled rejection | High |
+| BUG-202 | save/LoadSave.ts, SaveFailure.ts | 算出了正確的壞欄位卻只給 console；且新版本存檔從「可載入」變成被拒絕**並被說成損毀**。另外 `/JSON/` 也會命中 V8 的 "Converting circular structure to JSON"，讓一次從未發生的寫入被報成「檔案損毀但仍可匯出」 | Medium |
+| BUG-203 | save/SaveFailure.ts | 所有訊息都以存檔失敗的口吻書寫，載入路徑也用同一批：載入中斷會顯示「Save failed and the city is NOT being saved」，MainMenu 還把同一句畫進存檔清單 | Medium |
+
+### 玩家體驗
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-204 | Game.ts, building/WaterPlantSites.ts | 內陸開局無法取勝也從不說明。沒水什麼都長不出來，水廠要地下水，唯一的回饋是失敗那一下的 toast；水的 overlay 也幫不上忙，因為它上色的是**建築**，而卡住的城市一棟都沒有 | High |
+| BUG-205 | road/RoadBuilder.ts | 道路拖曳碰到水就整條取消。玩家已經畫好到岸邊的好路卻什麼也沒得到，只能靠縮短拖曳反覆試探岸線在哪 | Medium |
+| BUG-206 | ui/components/Toolbar.tsx | 群組按鈕是 toggle，所以同一群組挑兩個工具的自然操作（群組、工具、群組、工具）會在第三下把面板關掉。鍵盤與自動化流程每次都經過群組按鈕，必中 | Medium |
+
+### 測試品質
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-207 | simulation/__tests__/RenderDirtyCallbacks.test.ts | 六個案例中三個**完全沒有斷言**（賦值後未使用、空的 if 區塊）。城市也不可能有電：`addPlant(4, 4, 'coal')` 把 `4` 當成 PowerPlant 物件 | High |
+| BUG-208 | renderer/__tests__/BuildingRendererIncremental.test.ts | 五個案例中三個把所有斷言包在 `if (cb.mock.calls.length > 0)` 裡——正是它所檢查的東西壞掉時最容易通過的寫法。同樣的 addPlant 誤用 | High |
+| BUG-209 | renderer/__tests__/MetroTunnelRendererCache.test.ts | fixture 造 `{ start, end }`，而 TunnelSegment 是 `{ from, to }`：它一直在快取用 undefined 造出來的幾何 | Medium |
+| BUG-210 | citizen/CitizenManager.ts (onEvicted) | 遷離時清除通勤快取的接線完全沒有測試——刪掉那三行，全套測試仍綠 | Medium |
+| BUG-211 | simulation/SimulationLoop.ts (getAvgNoise) | 改讀 live pollution 沒有任何測試，而舊語意的 `getAvgResidentialNoise` 留著沒有呼叫者 | Medium |
+| BUG-212 | 多處 | 四份 fixture 已與其宣稱的型別脫節（LaneEdge 的 `nodeId`、Citizen 的 `id: 'test_1'`、PedestrianRenderer 的 `lateralOffset`、TransportStop 傳 id）。已抽出 `tests/helpers/makeLaneEdge.ts` 與 `makeCitizen.ts` | Medium |
+| BUG-213 | save/Serializer.ts | 沒有任何東西檢查 GameState 的欄位有沒有被序列化。新增欄位卻忘了存是完全無聲的——BUG-053 就是這樣來的。新測試首跑就抓到 `rciDemand` 與 `freight` 兩欄無人負責（查證後確為衍生狀態） | Medium |
+
+### 對抗審查（兩個 subagent，針對前三個 commit）
+
+審查在我自己的修正裡找到 12 個缺陷，全部已修（含 BUG-175、BUG-177、BUG-200 ~ BUG-203、BUG-208 的斷言不可能失敗、JSX lint 的三個漏接與兩個誤判、`pick()` 未取整）。
+審查同時確認為乾淨的：選單/橫幅無洩漏、無任何合法存檔被拒（60x60 全類型城市、20000 tick、版本 1~7）、worker bundle 無 window/document/Three、SaveBlockedError 在壓縮後仍存活。
