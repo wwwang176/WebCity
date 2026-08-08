@@ -53,6 +53,36 @@ describe('outage badges reach the screen', () => {
     );
   });
 
+  it('should draw over whatever is in front of it', () => {
+    // The badge is a HUD marker, not a thing in the world. Drawn with depth
+    // testing on, the building it belongs to — and every taller neighbour —
+    // hid it, so the one building that had actually stopped was the hardest to
+    // see. renderOrder alone does not fix that; depth testing has to be off.
+    renderer.setUtilityWarnings(scene, warned);
+    for (const mesh of badges()) {
+      const mat = mesh.material as THREE.MeshBasicMaterial;
+      expect(mat.depthTest, 'badges must not be occluded by geometry').toBe(false);
+      expect(mat.depthWrite).toBe(false);
+      expect(mesh.renderOrder).toBeGreaterThan(0);
+    }
+  });
+
+  it('should be small enough not to swallow its own cell', () => {
+    // A full-size badge covered most of the tile, so a street of blacked-out
+    // houses turned into a row of overlapping icons with no way to tell which
+    // building each belonged to.
+    renderer.setUtilityWarnings(scene, warned);
+    const m = new THREE.Matrix4();
+    const scale = new THREE.Vector3();
+    for (const mesh of badges()) {
+      renderer.updateUtilityWarnings(new THREE.Quaternion());
+      mesh.getMatrixAt(0, m);
+      m.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+      expect(scale.x).toBeLessThan(0.8);
+      expect(scale.x).toBeGreaterThan(0.1);
+    }
+  });
+
   it('should put each badge over its own cell, above the rooftops', () => {
     renderer.setUtilityWarnings(scene, warned);
     renderer.updateUtilityWarnings(new THREE.Quaternion());

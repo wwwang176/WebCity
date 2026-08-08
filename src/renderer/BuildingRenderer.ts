@@ -1370,6 +1370,14 @@ export class BuildingRenderer {
   private warnCells: WarnedCell[] = [];
   private warnQuatKey = '';
   private static readonly WARN_HEIGHT = 1.15;
+  /**
+   * Badge size, as a fraction of the shape geometry.
+   *
+   * At full size a badge covered most of the cell it belonged to, which made a
+   * street of blacked-out houses unreadable — the badges overlapped each other
+   * before you could tell which building each one belonged to.
+   */
+  private static readonly WARN_SCALE = 0.5;
 
   /** Icon outlines, drawn as geometry so there is no canvas dependency. */
   private static warningShape(warning: UtilityWarning): THREE.Shape {
@@ -1424,7 +1432,12 @@ export class BuildingRenderer {
       const plate = new THREE.InstancedMesh(
         new THREE.CircleGeometry(0.34, 16),
         new THREE.MeshBasicMaterial({
-          color: 0x101418, transparent: true, opacity: 0.72, depthWrite: false,
+          color: 0x101418, transparent: true, opacity: 0.72,
+          // A HUD marker, not a thing in the world: it has to be legible from
+          // any camera angle, and the building it belongs to is exactly what
+          // was hiding it. Tall neighbours occluded the badge on the building
+          // that had actually stopped.
+          depthWrite: false, depthTest: false,
         }),
         count,
       );
@@ -1432,13 +1445,13 @@ export class BuildingRenderer {
         new THREE.ShapeGeometry(BuildingRenderer.warningShape(warning)),
         new THREE.MeshBasicMaterial({
           color: UTILITY_WARNING_COLORS[warning], transparent: true,
-          opacity: 1, depthWrite: false, side: THREE.DoubleSide,
+          opacity: 1, depthWrite: false, depthTest: false, side: THREE.DoubleSide,
         }),
         count,
       );
       for (const mesh of [plate, icon]) {
         mesh.frustumCulled = false;
-        mesh.renderOrder = 10;
+        mesh.renderOrder = 999;
         mesh.userData['warnCells'] = cells.slice(0, count);
         mesh.userData['isIcon'] = mesh === icon;
         scene.add(mesh);
@@ -1454,7 +1467,8 @@ export class BuildingRenderer {
     if (key === this.warnQuatKey) return;
     this.warnQuatKey = key;
 
-    const scale = new THREE.Vector3(1, 1, 1);
+    const s = BuildingRenderer.WARN_SCALE;
+    const scale = new THREE.Vector3(s, s, s);
     const position = new THREE.Vector3();
     for (const mesh of this.warnMeshes) {
       const cells = mesh.userData['warnCells'] as WarnedCell[];
