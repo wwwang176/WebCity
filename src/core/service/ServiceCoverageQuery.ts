@@ -1,4 +1,5 @@
 import { type GameState } from '../simulation/GameState';
+import { isActiveZoneCell } from '../building/BuildingQueries';
 import { isResidentialZone } from '../grid/types';
 import { SIMULATION } from '../simulation/SimulationConstants';
 
@@ -67,7 +68,12 @@ export function serviceFlagsToScore(f: ServiceFlags): number {
 }
 
 /** Calculate service coverage ratios across all residential buildings.
- *  Only counts cells that have a building (buildingId > 0) in a residential zone.
+ *
+ *  Counts working residential buildings only. Testing `buildingId > 0` put
+ *  burnt-out and abandoned shells in the denominator of every ratio, so the
+ *  coverage panel dropped after a fire even though every inhabited house was
+ *  still fully covered — and the number could never recover until a developer
+ *  happened to clear the ruin.
  */
 export function getResidentialServiceRatios(state: GameState): ServiceRatios {
   let powered = 0;
@@ -82,7 +88,7 @@ export function getResidentialServiceRatios(state: GameState): ServiceRatios {
   let total = 0;
 
   state.grid.forEachCell((cell, x, y) => {
-    if (cell.buildingId > 0 && isResidentialZone(cell.zoneType)) {
+    if (isActiveZoneCell(cell) && isResidentialZone(cell.zoneType)) {
       total++;
       if (state.power.isPowered(x, y)) powered++;
       if (state.water.isSupplied(x, y)) watered++;

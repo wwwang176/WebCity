@@ -1,6 +1,7 @@
 import { isResidentialZone, type CellData } from '../grid/types';
 import { SIMULATION } from '../simulation/SimulationConstants';
 import type { Grid } from '../grid/Grid';
+import { isActiveZoneCell } from '../building/BuildingQueries';
 
 /**
  * Compute the average of a numeric cell property across residential cells (DRY).
@@ -17,7 +18,11 @@ export function avgResidentialMetric(grid: Grid, accessor: (cell: CellData) => n
     // paint a large residential zone and getAvgNoise returns roughly 0.3x the
     // real figure while it fills in, so the NOISE_MODIFIERS threshold of 50
     // essentially never trips and highway-side noise stops mattering (BUG-092).
-    if (cell.buildingId > 0 && isResidentialZone(cell.zoneType)) {
+    //
+    // isActiveZoneCell rather than `buildingId > 0`: burnt and abandoned houses
+    // are precisely the cells whose cached readings are stale, since
+    // updateLandValue skips them too.
+    if (isActiveZoneCell(cell) && isResidentialZone(cell.zoneType)) {
       total += accessor(cell);
       count++;
     }
@@ -34,7 +39,7 @@ export function avgResidentialAt(grid: Grid, valueAt: (x: number, y: number) => 
   let total = 0;
   let count = 0;
   grid.forEachCell((cell, x, y) => {
-    if (cell.buildingId > 0 && isResidentialZone(cell.zoneType)) {
+    if (isActiveZoneCell(cell) && isResidentialZone(cell.zoneType)) {
       total += valueAt(x, y);
       count++;
     }
