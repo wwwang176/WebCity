@@ -321,17 +321,18 @@ export function heightKey(zoneType: number, density: Density): string {
  * 壓縮之後高密度建築的視覺密度低於它實際容納的人口 —— 這是刻意接受的取捨，
  * 要讓兩者一致該改的是遊戲的人口數值，不是渲染（規格修訂 1）。
  *
- * 第一版的高密度（30/51/75、24/42/66、36/60/90）在展示區看起來仍然過高，
- * 依回饋再下修約三成。低密度不動 —— 它本來就是照實算的。
+ * 高密度下修過兩輪：30/51/75 -> 22/36/52 -> 22/32/42（住宅高，其餘同步）。
+ * 第二輪只壓 L2 與 L3，L1 維持不動，因為過高的觀感集中在頂端等級。
+ * 低密度三輪都不動 —— 它本來就是照實算的。
  */
 export const TARGET_HEIGHTS_M: Record<string, [number, number, number]> = {
   [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   [5, 7, 10],
-  [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: [22, 36, 52],
+  [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: [22, 32, 42],
   [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    [5, 8, 12],
-  [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  [18, 30, 45],
+  [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  [18, 27, 36],
   [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        [7, 10, 13],
   [heightKey(ZoneType.OFFICE, 'LOW')]:            [9, 15, 24],
-  [heightKey(ZoneType.OFFICE, 'HIGH')]:           [26, 42, 60],
+  [heightKey(ZoneType.OFFICE, 'HIGH')]:           [24, 36, 48],
 };
 
 /** 未縮放幾何的高度快取，避免每次放建築都重算包圍盒。 */
