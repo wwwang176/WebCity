@@ -1378,6 +1378,31 @@ export class BuildingRenderer {
    * before you could tell which building each one belonged to.
    */
   private static readonly WARN_SCALE = 0.5;
+  /** Radius of the dark plate the icon sits on. */
+  private static readonly WARN_PLATE_RADIUS = 0.34;
+  /**
+   * How much of the plate the icon is allowed to fill.
+   *
+   * The bolt's tips reach a radius of about 0.46 as drawn, against a plate of
+   * 0.34, so it stuck out top and bottom and read as a shape with a disc
+   * behind it rather than a badge. Fitting is done by measuring the geometry
+   * rather than by hand-tuning the path, so editing the shape cannot quietly
+   * push it back outside the ring.
+   */
+  private static readonly WARN_ICON_INSET = 0.66;
+
+  /** The icon shape, scaled to sit wholly inside the plate. */
+  private static warningIconGeometry(warning: UtilityWarning): THREE.ShapeGeometry {
+    const geometry = new THREE.ShapeGeometry(BuildingRenderer.warningShape(warning));
+    geometry.computeBoundingSphere();
+    const drawn = geometry.boundingSphere?.radius ?? 0;
+    if (drawn > 0) {
+      const target = BuildingRenderer.WARN_PLATE_RADIUS * BuildingRenderer.WARN_ICON_INSET;
+      geometry.scale(target / drawn, target / drawn, 1);
+      geometry.computeBoundingSphere();
+    }
+    return geometry;
+  }
 
   /** Icon outlines, drawn as geometry so there is no canvas dependency. */
   private static warningShape(warning: UtilityWarning): THREE.Shape {
@@ -1430,7 +1455,7 @@ export class BuildingRenderer {
       // A dark plate behind the icon, so a yellow bolt still reads against a
       // pale roof at midday.
       const plate = new THREE.InstancedMesh(
-        new THREE.CircleGeometry(0.34, 16),
+        new THREE.CircleGeometry(BuildingRenderer.WARN_PLATE_RADIUS, 24),
         new THREE.MeshBasicMaterial({
           color: 0x101418, transparent: true, opacity: 0.72,
           // A HUD marker, not a thing in the world: it has to be legible from
@@ -1442,7 +1467,7 @@ export class BuildingRenderer {
         count,
       );
       const icon = new THREE.InstancedMesh(
-        new THREE.ShapeGeometry(BuildingRenderer.warningShape(warning)),
+        BuildingRenderer.warningIconGeometry(warning),
         new THREE.MeshBasicMaterial({
           color: UTILITY_WARNING_COLORS[warning], transparent: true,
           opacity: 1, depthWrite: false, depthTest: false, side: THREE.DoubleSide,

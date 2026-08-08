@@ -67,6 +67,27 @@ describe('outage badges reach the screen', () => {
     }
   });
 
+  it('should keep the icon inside its plate', () => {
+    // The bolt as drawn reaches a radius of ~0.46 against a plate of 0.34, so
+    // its tips hung outside the disc top and bottom and it read as a shape with
+    // something behind it rather than as a badge. The fit is measured from the
+    // geometry, so this also catches a future edit to the path.
+    renderer.setUtilityWarnings(scene, warned);
+
+    const radiusOf = (m: THREE.InstancedMesh) => {
+      m.geometry.computeBoundingSphere();
+      return m.geometry.boundingSphere!.radius;
+    };
+    const plateRadius = radiusOf(badges().find(m => m.userData['isIcon'] === false)!);
+
+    for (const icon of icons()) {
+      const r = radiusOf(icon);
+      expect(r, 'icon spills outside the plate').toBeLessThan(plateRadius);
+      // ...but still fills it enough to be recognisable.
+      expect(r).toBeGreaterThan(plateRadius * 0.4);
+    }
+  });
+
   it('should be small enough not to swallow its own cell', () => {
     // A full-size badge covered most of the tile, so a street of blacked-out
     // houses turned into a row of overlapping icons with no way to tell which
