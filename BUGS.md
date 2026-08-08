@@ -2171,7 +2171,7 @@ TDD 修復；隨後每個修復 commit 再由一個獨立 agent 反向審查，�
 | BUG-151 | Game.ts | 「Also affected N cells」把選取的格子自己也算進去 | Low |
 | BUG-152 | Game.ts | getSelectedBuilding 結尾的 `return sel` 宣稱是窮舉檢查，實際不是：新增 kind 可賦值給回傳型別，會靜默編譯成它要防的那個永不更新的淺拷貝 | Low |
 
-### 尚未處理（已排入 TODO）
+### 已修（第七十二輪，BUG-153 ~ BUG-166 全數清空）
 
 | ID | 位置 | 問題 | 嚴重度 |
 |---|---|---|---|
@@ -2189,3 +2189,13 @@ TDD 修復；隨後每個修復 commit 再由一個獨立 agent 反向審查，�
 | BUG-164 | simulation/SimulationLoop.ts | 住宅容量回呼對「有 homeId 但沒有建築」的地址回傳 FALLBACK_RESIDENTS=8，而 countResidentialCapacity 對同一格回傳 0。BUG-140 拿掉 createCitizen 的總量閘門後，這是生育的唯一上限 | Medium |
 | BUG-165 | citizen/Migration.ts | BUG-140 只修了每月一次的生育路徑，每 6 tick 的移民路徑仍走 createCitizen；兩條路徑對「客滿」定義不一致，移民會在家庭中途中斷而 slots 已先行遞增 | Medium |
 | BUG-166 | citizen/Migration.ts, ui SummaryPage.tsx | countJobOpenings 改為 totalJobs - employed 後，attractiveness 的 JOB_SCORE(+20) 與失業罰則上限(−15)不再平衡：一個永遠填不滿的職缺在 100% 失業下淨值 +5，供給側煞車消失。SummaryPage 仍用舊定義 totalJobs - population，面板與模擬互相矛盾 | Medium |
+
+### 第七十二輪補充
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-167 | renderer/* | 已蓋好的建築失去電力或水源時畫面上毫無提示，渲染層完全不讀供電狀態；玩家只會在數週後看到建築自行廢棄，屆時原因早已離開畫面 | High |
+| BUG-168 | elevation/ElevationManager.ts | getHighestRoadType 以 enum 序數排序「最吵」，但 ONE_WAY(6) > HIGHWAY(5) 而噪音係數 1.2 < 2.0：單行道疊在高速公路上會讓後者靜音 | Low |
+
+BUG-162 與 BUG-163 實測為同一根因：`chooseStartLevel` 回傳純鐵路層。
+審查員推測的 `existingAtStart` 閘門機制不成立——`path[0]` 在該情境下根本不會被寫入。
