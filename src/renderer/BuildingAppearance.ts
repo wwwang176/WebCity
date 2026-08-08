@@ -73,10 +73,12 @@ export interface Appearance {
   /** 0.85 ~ 1.15 */
   depthScale: number;
   /**
-   * 0.95 ~ 1.05，套在目標高度上的自然差異。
+   * 0.9 ~ 1.1，套在目標高度上的自然差異。
    *
    * 原本是 +-17.5%，跨度整整一層樓，所以同一等級的兩棟房子會被讀成不同
-   * 等級。目標高度表接手之後，這裡只該是「同一種建築之間的差異」。
+   * 等級。目標高度表接手之後，這裡只該是「同一種建築之間的差異」——
+   * +-10% 在 5 m 的房子上是半公尺，在 50 m 的塔樓上是五公尺，都還讀得出
+   * 是同一種建築。
    */
   heightScale: number;
   /** 0 ~ 3，四分之一圈 */
@@ -104,7 +106,7 @@ export function appearanceOf(input: AppearanceInput): Appearance {
     variantIndex: variantIndexOf(x, y, seedByte, variantCount),
     widthScale: 0.85 + at(STREAM.WIDTH) * 0.3,
     depthScale: 0.85 + at(STREAM.DEPTH) * 0.3,
-    heightScale: 1.0 + (at(STREAM.HEIGHT) - 0.5) * 0.1,
+    heightScale: 1.0 + (at(STREAM.HEIGHT) - 0.5) * 0.2,
     rotationQuarter: Math.floor(at(STREAM.ROTATION) * 4) % 4,
     paletteIndex: paletteSize > 0
       ? Math.floor(at(STREAM.PALETTE) * paletteSize) % paletteSize
