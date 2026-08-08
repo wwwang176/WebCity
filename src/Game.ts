@@ -936,6 +936,14 @@ export class Game {
                 }
                 this.simLoop.markLaneGraphDirty(result.demolishedCells, true);
               }
+              // Same as the road path: buildTrack clears zoneType on
+              // zoned-but-EMPTY cells too, and those are not in
+              // demolishedCells, so their overlay quad outlived the zone
+              // (BUG-111). removeZoneOverlay is O(1) and a no-op without one.
+              for (const pos of result.affectedCells ?? []) {
+                const [px, py] = pos.split(',').map(Number);
+                this.buildingRenderer.removeZoneOverlay(px!, py!);
+              }
             });
             this.dirty.tracks = true;
             this.dirty.crossings = true;
@@ -1196,6 +1204,11 @@ export class Game {
           this.buildingRenderer.removeBuilding(cx, cy);
           this.state.grid.setCell(cx, cy, { buildingId: 0, reserved: 0, zoneType: 0 });
         }
+        // placeInfraOnGrid clears zoneType on EVERY footprint cell, not only
+        // the ones that held a building — so a facility dropped on zoned-but-
+        // empty land left its overlay quads drawn over the footprint until
+        // some later edit rebuilt them (BUG-111, in a third path).
+        this.buildingRenderer.removeZoneOverlay(cx, cy);
       }
     }
 

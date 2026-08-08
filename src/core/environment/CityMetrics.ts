@@ -19,9 +19,13 @@ export function avgResidentialMetric(grid: Grid, accessor: (cell: CellData) => n
     // real figure while it fills in, so the NOISE_MODIFIERS threshold of 50
     // essentially never trips and highway-side noise stops mattering (BUG-092).
     //
-    // isActiveZoneCell rather than `buildingId > 0`: burnt and abandoned houses
-    // are precisely the cells whose cached readings are stale, since
-    // updateLandValue skips them too.
+    // isActiveZoneCell rather than `buildingId > 0`: a ruin houses nobody, so
+    // it should not weight an average that feeds citizen happiness.
+    //
+    // (Not, as an earlier version of this comment claimed, because their
+    // readings are stale — updateLandValue returns early only on
+    // `buildingId === 0`, so a burnt house is refreshed exactly like a live
+    // one.)
     if (isActiveZoneCell(cell) && isResidentialZone(cell.zoneType)) {
       total += accessor(cell);
       count++;

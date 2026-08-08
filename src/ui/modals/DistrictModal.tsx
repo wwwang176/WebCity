@@ -42,12 +42,18 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
     return getGame().getState().districts.getAllDistricts();
   };
 
-  const togglePolicy = (districtId: string, policyType: string) => {
+  const togglePolicy = (districtId: string, policyType: PolicyType) => {
     const state = getGame().getState();
-    if (state.policies.isPolicyActive(districtId, policyType as any)) {
-      state.policies.removePolicy(districtId, policyType as any);
+    // A retired policy can only ever be REMOVED. Routing it through the normal
+    // toggle would re-apply one stored as `active: false` — which is how a
+    // legacy save could end up with a policy the player could see but never
+    // get rid of.
+    if (!isPolicyImplemented(policyType)) {
+      state.policies.removePolicy(districtId, policyType);
+    } else if (state.policies.isPolicyActive(districtId, policyType)) {
+      state.policies.removePolicy(districtId, policyType);
     } else {
-      state.policies.applyPolicy(districtId, policyType as any);
+      state.policies.applyPolicy(districtId, policyType);
     }
     setVersion(v => v + 1);
   };
@@ -59,10 +65,23 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
       }>
         <For each={districts()}>
           {(d) => {
-            const activePolicies = () => new Set(d.policies.filter((p: any) => p.active).map((p: any) => p.type));
+            // version() is read FIRST in both, deliberately.
+            //
+            // <For each={districts()}> hands back fresh arrays of the SAME
+            // District object references, so Solid's mapArray reuses each row
+            // and this body never re-runs. d.policies is a plain mutable array
+            // and reading it tracks nothing, so these memos had no dependencies
+            // at all: removing a retired policy updated the state and the
+            // billing, while the button kept its tick, its colour and its
+            // enabled state until the modal was closed and reopened.
+            const activePolicies = () => {
+              version();
+              return new Set(d.policies.filter((p: any) => p.active).map((p: any) => p.type));
+            };
             // Offered ∪ whatever this district already carries — the union is
             // what lets a retired policy from an old save be switched off.
             const listedPolicies = () => {
+              version();
               const seen = new Set<PolicyType>(OFFERED_POLICY_TYPES);
               for (const p of d.policies as { type: PolicyType }[]) seen.add(p.type);
               return [...seen];
@@ -79,21 +98,24 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
                     {(pt) => {
                       const isActive = () => activePolicies().has(pt as any);
                       const retired = () => !isPolicyImplemented(pt);
-                      // A retired policy can only be turned OFF, never back on.
-                      const disabled = () => retired() && !isActive();
+                      // A retired policy is only listed at all because this
+                      // district carries it, so it is always removable — even
+                      // one stored as `active: false`, which the previous
+                      // `retired && !isActive` rule left permanently stuck.
                       return (
                         <button
-                          onClick={() => { if (!disabled()) togglePolicy(d.id, pt); }}
-                          disabled={disabled()}
-                          title={retired() ? 'This policy has no effect and is no longer charged.' : undefined}
+                          onClick={() => togglePolicy(d.id, pt)}
+                          title={retired()
+                            ? 'This policy has no effect and is no longer charged. Click to remove it.'
+                            : undefined}
                           aria-label={policyLabel(pt)}
                           style={{
                             'font-size': '11px', padding: '3px 8px', 'border-radius': '4px',
                             border: `1px solid ${isActive() ? (retired() ? '#a1887f' : '#ab47bc') : '#444'}`,
                             background: isActive() ? (retired() ? '#a1887f33' : '#ab47bc33') : '#222',
                             color: isActive() ? (retired() ? '#bcaaa4' : '#ce93d8') : '#777',
-                            cursor: disabled() ? 'default' : 'pointer',
-                            opacity: disabled() ? '0.5' : '1',
+                            cursor: 'pointer',
+                            opacity: retired() ? '0.6' : '1',
                           }}
                         >
                           {isActive() ? '\u2713 ' : ''}{policyLabel(pt)}

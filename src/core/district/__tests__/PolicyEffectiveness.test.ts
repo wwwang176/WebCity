@@ -16,8 +16,10 @@ import { calculateDistrictPolicyCost } from '../../economy/ExpenseCalculator';
  * advertised their prices as if they did something (BUG-091).
  *
  * These tests pin the honest contract: a policy is charged if and only if the
- * simulation reads it. When one of the three is implemented, add it to
- * IMPLEMENTED_POLICY_TYPES and its cost starts applying.
+ * simulation reads it. IMPLEMENTED_POLICY_TYPES is DERIVED — to implement one
+ * of the three, add its effect and then register it in POLICY_ZONE_RESTRICTIONS
+ * (if it restricts construction) or NON_ZONE_IMPLEMENTED_POLICY_TYPES (if it
+ * works some other way). Its cost starts applying from that point.
  */
 /** ZoneType is a numeric enum, so Object.values yields the names too. */
 function numericZones(): ZoneType[] {
@@ -92,15 +94,26 @@ describe('policies are charged only when they do something', () => {
     }
   });
 
-  it('should actually block construction for every implemented policy', () => {
+  it('should actually block construction for every zone-restricting policy', () => {
     // Ties "implemented" to observable behaviour rather than to set membership:
-    // each implemented policy must reject at least one zone type it is applied
-    // to, and leave the others alone.
-    for (const type of IMPLEMENTED_POLICY_TYPES) {
+    // each restricting policy must reject the zone types it names, and leave
+    // the others alone.
+    //
+    // Iterates POLICY_ZONE_RESTRICTIONS, not IMPLEMENTED_POLICY_TYPES. The
+    // first version iterated the latter and did `POLICY_ZONE_RESTRICTIONS[type]!`
+    // — which booby-traps the NON_ZONE_IMPLEMENTED_POLICY_TYPES extension point
+    // the same commit introduced: registering a policy implemented via
+    // pollution or income would make `blocked` undefined and crash the suite
+    // with "not iterable" on a perfectly correct change.
+    const restricting = Object.keys(POLICY_ZONE_RESTRICTIONS) as PolicyType[];
+    expect(restricting.length).toBeGreaterThan(0);
+
+    for (const type of restricting) {
       const district = { id: 'd1', policies: [] as { type: PolicyType; active: boolean }[] };
       const mgr = new PolicyManager({ getDistrict: () => district as never });
       mgr.applyPolicy('d1', type);
 
+      expect(isPolicyImplemented(type)).toBe(true);
       const blocked = POLICY_ZONE_RESTRICTIONS[type]!;
       for (const zone of blocked) {
         expect(mgr.canBuildInDistrict('d1', zone)).toBe(false);

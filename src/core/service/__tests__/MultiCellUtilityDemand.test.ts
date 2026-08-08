@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Grid } from '../../grid/Grid';
-import { placeInfraOnGrid } from '../../building/InfraPlacement';
+import { placeInfraOnGrid, BURNED, ABANDONED } from '../../building/InfraPlacement';
 import { PowerGrid, INFRA_POWER_CONSUMPTION } from '../PowerGrid';
 import { WaterNetwork, INFRA_WATER_CONSUMPTION } from '../WaterNetwork';
 import { RoadType } from '../../road/types';
@@ -226,5 +226,64 @@ describe('two plants do not pay for the same facility twice', () => {
     for (const [x, y] of [[4, 2], [5, 2], [4, 3], [5, 3]] as const) {
       expect(pg.isPowered(x, y), `(${x},${y})`).toBe(false);
     }
+  });
+});
+
+/**
+ * A ruin consumes nothing.
+ *
+ * calculateUtilityCellDemand tested only isZoneBuilding, so a burnt-out or
+ * abandoned house drew full power and water. That is not merely a wrong total:
+ * bfsBudgetDrainFlood settles against it, so ruins consumed plant budget and
+ * could starve LIVE houses further along the flood — while the service panel on
+ * the same screen counted only working buildings and reported 100% coverage.
+ */
+describe('ruins draw no power or water', () => {
+  function cityWithHouses(secondReserved: number): Grid {
+    const grid = new Grid(12, 12);
+    for (let x = 1; x <= 4; x++) grid.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(2, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: 0 });
+    grid.setCell(3, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, reserved: secondReserved });
+    return grid;
+  }
+
+  const demandOf = (grid: Grid) => {
+    const pg = new PowerGrid();
+    pg.calculateDemand(grid);
+    return pg.getDemand();
+  };
+
+  it('should bill two live houses twice', () => {
+    expect(demandOf(cityWithHouses(0))).toBeCloseTo(2 * demandOf(cityWithHouses(BURNED)), 9);
+  });
+
+  it('should bill nothing for a burned house', () => {
+    const live = demandOf(cityWithHouses(BURNED));
+    expect(live).toBeGreaterThan(0);
+    const both = demandOf(cityWithHouses(0));
+    expect(both - live).toBeCloseTo(live, 9);
+  });
+
+  it('should bill nothing for an abandoned house', () => {
+    expect(demandOf(cityWithHouses(ABANDONED))).toBeCloseTo(demandOf(cityWithHouses(BURNED)), 9);
+  });
+
+  it('should not let a ruin starve a live house of power', () => {
+    // A plant with exactly enough for ONE house. With the ruin billed, the
+    // flood spends the budget on whichever it reaches first and one of them
+    // goes dark.
+    const grid = cityWithHouses(BURNED);
+    const wn = new WaterNetwork();
+    wn.calculateDemand(grid);
+    const oneHouse = wn.getDemand();
+
+    const pg = new PowerGrid();
+    const pgDemandGrid = cityWithHouses(BURNED);
+    pg.calculateDemand(pgDemandGrid);
+    pg.addPlant({ x: 1, y: 2, output: pg.getDemand(), pollution: 0, type: 'coal' });
+    pg.calculateCoverage(pgDemandGrid);
+
+    expect(oneHouse).toBeGreaterThan(0);
+    expect(pg.isPowered(2, 2)).toBe(true);
   });
 });

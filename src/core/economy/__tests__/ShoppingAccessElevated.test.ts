@@ -45,6 +45,37 @@ function cityWithViaductOverHouse() {
 }
 
 /**
+ * As above, plus a SECOND house under the same viaduct.
+ *
+ * Two houses against one shop takes the residential ratio off the
+ * Math.min(1, ...) clamp, so the assertion pins a real number rather than the
+ * ceiling — and a double count of either side moves it.
+ */
+function cityWithTwoHousesUnderViaduct() {
+  const grid = new Grid(12, 12);
+  for (let x = 0; x <= 4; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+  grid.setCell(1, 1, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+  grid.setCell(4, 1, { roadType: RoadType.TWO_LANE, roadFlags: 3 });
+  grid.setCell(4, 2, { roadType: RoadType.TWO_LANE, roadFlags: 3 });
+  grid.setCell(5, 2, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+  grid.setCell(4, 3, { roadType: RoadType.TWO_LANE, roadFlags: 3 });
+  grid.setCell(5, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+
+  const em = new ElevationManager();
+  for (const y of [1, 2, 3]) {
+    em.set(5, y, 1, {
+      roadType: RoadType.TWO_LANE, roadFlags: 3, railType: 0, railFlags: 0,
+      isRamp: false, rampAscendDirection: 0,
+    });
+  }
+
+  const shopping = new ShoppingAccess();
+  shopping.setRoadLookup(new UnifiedRoadLookup(grid, em));
+  shopping.calculate(grid);
+  return shopping;
+}
+
+/**
  * Two ground networks that share no ground cell, bridged only by a viaduct with
  * a ramp at each end. Exercises the level-aware relay in the direction that
  * makes a component BIGGER, which the viaduct case above cannot: there, the
@@ -90,16 +121,22 @@ describe('a building under a viaduct is counted once', () => {
 
   it('should not inflate the ratio by counting the house twice', () => {
     // hasAccess is a boolean and survives a double count; the ratio does not.
-    // One 1-resident house against one shop's worker capacity, so the numbers
-    // are exact and a second count of either side moves them.
-    const shopping = cityWithViaductOverHouse();
+    //
+    // getBuildingType(1).residents and getBuildingType(7).workers are both 4,
+    // so a one-of-each fixture puts BOTH ratios at the Math.min(1, ...) clamp —
+    // where a stub returning 1 unconditionally would also pass. The second
+    // house takes the residential side off the clamp (4 workers / 8 residents
+    // = 0.5) so the pin has something to hold.
+    const shopping = cityWithTwoHousesUnderViaduct();
     const home = getBuildingType(1)!;
     const shop = getBuildingType(7)!;
+    const pop = 2 * home.residents;
 
     expect(shopping.getResidentialAccess(5, 2).ratio)
-      .toBeCloseTo(Math.min(1, shop.workers / home.residents), 9);
+      .toBeCloseTo(Math.min(1, shop.workers / pop), 9);
+    expect(shopping.getResidentialAccess(5, 2).ratio).toBeLessThan(1);
     expect(shopping.getCommercialCustomers(1, 1).ratio)
-      .toBeCloseTo(Math.min(1, home.residents / shop.workers), 9);
+      .toBeCloseTo(Math.min(1, pop / shop.workers), 9);
   });
 });
 

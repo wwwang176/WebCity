@@ -7,6 +7,7 @@
 
 import { getInfraConfigById, isZoneBuilding } from '../building/InfraConfig';
 import { MULTI_CELL_OCCUPIED } from '../building/InfraPlacement';
+import { isActiveZoneCell } from '../building/BuildingQueries';
 import type { ZoneConsumptionConfig } from './NetworkCoverage';
 import { calculateZoneDemand } from './NetworkCoverage';
 import type { ZoneType } from '../grid/types';
@@ -44,8 +45,16 @@ export function calculateUtilityCellDemand(
 ): number {
   if (buildingId <= 0) return 0;
 
-  // Zone building: use zone consumption table
+  // Zone building: use zone consumption table.
+  //
+  // A ruin consumes nothing. Testing only isZoneBuilding left a burnt-out or
+  // abandoned house drawing full power and water — and that phantom demand is
+  // not merely a wrong total on the panel: bfsBudgetDrainFlood settles against
+  // it, so ruins consumed plant budget and could starve LIVE houses further
+  // along the flood. It also contradicted the service panel on the same screen,
+  // which counts only working buildings (BUG-131).
   if (isZoneBuilding(buildingId)) {
+    if (!isActiveZoneCell({ buildingId, reserved })) return 0;
     return calculateZoneDemand(config.zoneConsumption, zoneType, residents, workers);
   }
 

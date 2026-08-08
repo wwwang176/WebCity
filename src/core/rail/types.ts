@@ -21,4 +21,15 @@ export interface BuildTrackResult {
   cost?: number;
   /** Position keys of zone buildings demolished during this operation. */
   demolishedCells?: string[];
+  /**
+   * Every cell the track was laid on.
+   *
+   * buildTrack also clears zoneType on zoned-but-EMPTY cells, which are
+   * deliberately absent from demolishedCells because no building was
+   * destroyed — so nothing removed their overlay instance and a coloured
+   * fringe stayed along the new track until some later edit happened to call
+   * rebuildZoneOverlays. Same defect as BUG-111 on roads, in the path that
+   * fix did not reach.
+   */
+  affectedCells?: string[];
 }
