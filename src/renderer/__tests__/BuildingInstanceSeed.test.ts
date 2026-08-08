@@ -80,3 +80,52 @@ describe('instance bookkeeping', () => {
     }
   });
 });
+
+describe('aSeed', () => {
+  it('should exist on every variant mesh with three components per instance', () => {
+    const { internals } = freshRenderer();
+    expect(internals.variantMeshes.size).toBeGreaterThan(0);
+    for (const [key, mesh] of internals.variantMeshes) {
+      const attr = mesh.geometry.getAttribute('aSeed');
+      expect(attr, `${key} has no aSeed`).toBeDefined();
+      expect(attr.itemSize, `${key} aSeed itemSize`).toBe(3);
+    }
+  });
+
+  it('should carry the facade seed appearanceOf gives that cell', () => {
+    const { renderer, internals } = freshRenderer();
+    renderer.addBuilding(6, 2, ZONE, 1, false);
+
+    const entry = internals.positionToInstance.get('6,2')!;
+    const attr = internals.variantMeshes.get(entry.key)!.geometry.getAttribute('aSeed');
+    const expected = expectedAppearance(6, 2).facadeSeed;
+
+    expect(attr.getX(entry.idx)).toBeCloseTo(expected[0], 6);
+    expect(attr.getY(entry.idx)).toBeCloseTo(expected[1], 6);
+    expect(attr.getZ(entry.idx)).toBeCloseTo(expected[2], 6);
+  });
+
+  it('should follow the building when swap-with-last moves it', () => {
+    // aOccupancy 已經有搬移邏輯，aSeed 漏搬的話，被搬動的那棟樓會戴上
+    // 另一棟樓的立面 —— 而且只在玩家拆除建築之後才發生。
+    const { renderer, internals } = freshRenderer();
+
+    const cells: Array<[number, number]> = [];
+    for (let x = 0; x < 10; x++) for (let y = 0; y < 10; y++) cells.push([x, y]);
+    for (const [x, y] of cells) renderer.addBuilding(x, y, ZONE, 1, false);
+    for (let i = 0; i < cells.length; i += 2) {
+      const [x, y] = cells[i]!;
+      renderer.removeBuilding(x, y);
+    }
+
+    for (let i = 1; i < cells.length; i += 2) {
+      const [x, y] = cells[i]!;
+      const entry = internals.positionToInstance.get(`${x},${y}`)!;
+      const attr = internals.variantMeshes.get(entry.key)!.geometry.getAttribute('aSeed');
+      const expected = expectedAppearance(x, y).facadeSeed;
+      expect(attr.getX(entry.idx), `aSeed.x wrong at ${x},${y}`).toBeCloseTo(expected[0], 6);
+      expect(attr.getY(entry.idx), `aSeed.y wrong at ${x},${y}`).toBeCloseTo(expected[1], 6);
+      expect(attr.getZ(entry.idx), `aSeed.z wrong at ${x},${y}`).toBeCloseTo(expected[2], 6);
+    }
+  });
+});

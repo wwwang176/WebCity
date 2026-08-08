@@ -172,6 +172,12 @@ export class BuildingRenderer {
         mesh.geometry.setAttribute('aOccupancy',
           new THREE.InstancedBufferAttribute(occupancyData, 1));
 
+        // 逐實例立面種子：節奏、相位、材質偏好。shader 用它取代寫死的
+        // floorH / winW，讓同一份幾何的兩個實例立面不同。
+        const seedData = new Float32Array(this.maxPerVariant * 3);
+        mesh.geometry.setAttribute('aSeed',
+          new THREE.InstancedBufferAttribute(seedData, 3));
+
         scene.add(mesh);
         this.variantMeshes.set(key, mesh);
         this.variantCounts.set(key, 0);
@@ -249,6 +255,17 @@ export class BuildingRenderer {
       (occAttr.array as Float32Array)[entry.idx] = (occAttr.array as Float32Array)[lastIdx]!;
       occAttr.needsUpdate = true;
 
+      // Swap aSeed（與 aOccupancy 相同的理由：不搬的話，被搬動的那棟樓會
+      // 戴上被移除那棟的立面，而且只在玩家拆除建築之後才發生）
+      const seedAttr = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute | undefined;
+      if (seedAttr) {
+        const arr = seedAttr.array as Float32Array;
+        arr[entry.idx * 3] = arr[lastIdx * 3]!;
+        arr[entry.idx * 3 + 1] = arr[lastIdx * 3 + 1]!;
+        arr[entry.idx * 3 + 2] = arr[lastIdx * 3 + 2]!;
+        seedAttr.needsUpdate = true;
+      }
+
       // Update the moved instance's mappings
       const movedPosKey = i2p.get(lastIdx)!;
       this.positionToInstance.set(movedPosKey, { key: entry.key, idx: entry.idx });
@@ -319,6 +336,15 @@ export class BuildingRenderer {
       this._color.setHSL(hsl.h, hsl.s, hsl.l);
     }
     mesh.setColorAt(idx, this._color);
+
+    const seedAttr = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute | undefined;
+    if (seedAttr) {
+      const arr = seedAttr.array as Float32Array;
+      arr[idx * 3] = app.facadeSeed[0];
+      arr[idx * 3 + 1] = app.facadeSeed[1];
+      arr[idx * 3 + 2] = app.facadeSeed[2];
+      seedAttr.needsUpdate = true;
+    }
 
     // Force occupancy to 0 for burned/abandoned buildings (all windows dark)
     if (burned || abandoned) {
