@@ -6,12 +6,15 @@
  */
 import * as THREE from 'three';
 import { SceneManager } from '../renderer/SceneManager';
+import { WeatherRenderer } from '../renderer/WeatherRenderer';
+import { Season } from '../core/climate/Climate';
 import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { getVariants, TRIANGLE_BUDGET } from '../renderer/geometry/buildings/registry';
 import { stampZoneCategory, ZONE_CAT } from '../renderer/geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { mountControls, type ControlState } from './controls';
+import { attachCameraInput } from './cameraInput';
 
 const container = document.getElementById('scene')!;
 const sceneManager = new SceneManager(container);
@@ -24,6 +27,10 @@ const ground = new THREE.Mesh(
 ground.rotation.x = -Math.PI / 2;
 ground.receiveShadow = true;
 sceneManager.scene.add(ground);
+
+// 日夜由正式的 WeatherRenderer 驅動 —— shader 讀的是場景燈光
+// (directionalLights[0])，不是 uTime，所以少了它時間滑桿等於沒接。
+const weather = new WeatherRenderer(sceneManager, 60);
 
 const material = getBuildingMaterial();
 const shown: THREE.Mesh[] = [];
@@ -54,7 +61,7 @@ function place(zoneType: number, level: number, variantIndex: number, x: number,
 
 const state: ControlState = {
   mode: 'block', zoneType: ZoneType.RESIDENTIAL_LOW, level: 1,
-  seedByte: 0, timeOverride: null, wireframe: false, blockSize: 8,
+  seedByte: 0, timeOverride: 0.3, wireframe: false, blockSize: 8,
 };
 
 function render(): void {
@@ -78,6 +85,13 @@ function render(): void {
     triangles += place(c.zoneType, c.level, c.variantIndex, c.x, c.z);
   }
 
+  // 依內容置中：矩陣模式的內容全在正象限，預設鏡頭對著原點會看不到。
+  if (cells.length > 0) {
+    const cx = (Math.min(...cells.map(c => c.x)) + Math.max(...cells.map(c => c.x))) / 2;
+    const cz = (Math.min(...cells.map(c => c.z)) + Math.max(...cells.map(c => c.z))) / 2;
+    sceneManager.setCameraTarget(cx, cz);
+  }
+
   const ratio = state.mode === 'block' ? neighbourSameRatio(cells) : 0;
   const budget = state.level === 3 ? TRIANGLE_BUDGET.TOWER : TRIANGLE_BUDGET.HOUSE;
   const perBuilding = cells.length > 0 ? Math.round(triangles / cells.length) : 0;
@@ -94,6 +108,7 @@ function render(): void {
   }
 }
 
+attachCameraInput(sceneManager.getCanvas(), sceneManager);
 mountControls(document.getElementById('panel')!, state, render);
 render();
 
@@ -102,7 +117,14 @@ let frames = 0;
 let fpsClock = 0;
 sceneManager.onUpdate((dt) => {
   elapsed += dt;
-  material.uniforms.uTime!.value = state.timeOverride ?? elapsed;
+  // uTime 只驅動窗戶亮燈的隨機週期，一律照實時走。
+  material.uniforms.uTime!.value = elapsed;
+
+  if (state.timeOverride === null) {
+    weather.update(dt, 1, Season.SUMMER);
+  } else if (Math.abs(weather.dayFraction - state.timeOverride) > 1e-6) {
+    weather.setDayFraction(state.timeOverride);
+  }
 
   frames++;
   fpsClock += dt;

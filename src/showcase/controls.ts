@@ -5,12 +5,20 @@
 import type { ViewMode } from './views';
 import { ZONE_TYPES, LEVELS } from '../renderer/geometry/buildings/registry';
 
+/** 0..1 的一天位置轉成 24 小時字面，滑桿才知道自己拖到幾點。 */
+function clockText(t: number): string {
+  const minutes = Math.round(t * 24 * 60);
+  const h = Math.floor(minutes / 60) % 24;
+  const m = minutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 export interface ControlState {
   mode: ViewMode;
   zoneType: number;
   level: number;
   seedByte: number;
-  /** 手動覆寫的時間；null 表示跟著實時流動。 */
+  /** 手動指定的一天位置 0..1；null 表示自動循環。 */
   timeOverride: number | null;
   wireframe: boolean;
   /** 街廓邊長。量效能基準時調大。 */
@@ -82,18 +90,28 @@ export function mountControls(
   sizeSel.onchange = () => { state.blockSize = Number(sizeSel.value); onChange(); };
   row('街廓大小（量效能用）', sizeSel);
 
+  const timeLabel = document.createElement('label');
+  timeLabel.textContent = '時刻（拖動即接管日夜）';
+  host.appendChild(timeLabel);
+
   const time = document.createElement('input');
   time.type = 'range';
   time.min = '0';
-  time.max = '600';
-  time.step = '1';
-  time.value = '0';
-  time.oninput = () => { state.timeOverride = Number(time.value); };
-  row('時間（拖動即接管日夜）', time);
+  time.max = '1';
+  time.step = '0.005';
+  time.value = '0.3';
+  time.oninput = () => {
+    state.timeOverride = Number(time.value);
+    timeLabel.textContent = `時刻 ${clockText(state.timeOverride)}`;
+  };
+  host.appendChild(time);
 
   const live = document.createElement('button');
-  live.textContent = '回到實時';
-  live.onclick = () => { state.timeOverride = null; };
+  live.textContent = '回到自動循環';
+  live.onclick = () => {
+    state.timeOverride = null;
+    timeLabel.textContent = '時刻（自動循環中）';
+  };
   host.appendChild(live);
 
   const reroll = document.createElement('button');

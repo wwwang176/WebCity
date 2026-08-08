@@ -87,6 +87,24 @@ export class WeatherRenderer {
     return this._sunIntensity;
   }
 
+  /** 一天之中的位置，0..1（0 = 午夜、0.25 = 日出、0.5 = 正午、0.75 = 日落）。 */
+  get dayFraction(): number {
+    return this.timeOfDay;
+  }
+
+  /**
+   * 直接跳到一天之中的某個時刻。
+   *
+   * `update()` 只能讓時間往前走，所以「拉一條滑桿看不同時段的樣子」原本
+   * 做不到。展示區需要它；debug 面板要做「跳到夜晚」也會需要。
+   * 超出 0..1 的值會取小數部分，負數也一樣。
+   */
+  setDayFraction(t: number): void {
+    const wrapped = t % 1;
+    this.timeOfDay = wrapped < 0 ? wrapped + 1 : wrapped;
+    this.updateDayNightCycle();
+  }
+
   /** Switch to underground visual mode (fixed white lighting, no weather). */
   setViewMode(mode: ViewMode): void {
     const hidden = mode !== ViewMode.NORMAL;
