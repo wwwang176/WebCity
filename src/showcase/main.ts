@@ -14,7 +14,7 @@ import { stampZoneCategory, ZONE_CAT } from '../renderer/geometry/buildings/part
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { appearanceOf } from '../renderer/BuildingAppearance';
-import { ZONE_HEIGHTS } from '../renderer/geometry/buildings/registry';
+import { heightScaleFor, type Density } from '../renderer/geometry/buildings/registry';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
 
@@ -62,14 +62,14 @@ function place(cell: PlacedCell, seedByte: number): number {
     x: cell.x, y: cell.z, zoneType: cell.zoneType, level: cell.level, seedByte,
     variantCount: variants.length, paletteSize: 8,
   });
-  const range = ZONE_HEIGHTS[cell.zoneType] ?? { min: 0.3, max: 1.0 };
-  const baseHeight = range.min + (range.max - range.min) * (cell.level / 3);
 
   const mesh = new THREE.Mesh(geo, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
-  mesh.scale.set(app.widthScale, baseHeight * app.heightScale, app.depthScale);
+  mesh.scale.set(app.widthScale,
+    heightScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex) * app.heightScale,
+    app.depthScale);
   mesh.position.set(cell.x, 0.05, cell.z);
   sceneManager.scene.add(mesh);
   shown.push(mesh);
@@ -78,7 +78,7 @@ function place(cell: PlacedCell, seedByte: number): number {
 
 const state: ControlState = {
   mode: 'block', zoneType: ZoneType.RESIDENTIAL_LOW, level: 1,
-  seedByte: 0, timeOverride: 0.3, wireframe: false, blockSize: 8,
+  density: 'LOW', seedByte: 0, timeOverride: 0.3, wireframe: false, blockSize: 8,
 };
 
 function render(): void {
@@ -88,11 +88,11 @@ function render(): void {
   let cells: PlacedCell[];
   if (state.mode === 'single') {
     cells = [{
-      x: 0, z: 0, zoneType: state.zoneType, level: state.level,
+      x: 0, z: 0, zoneType: state.zoneType, density: state.density, level: state.level,
       variantIndex: 0, facadeSeed: [0.5, 0.5, 0.5],
     }];
   } else if (state.mode === 'block') {
-    cells = blockCells(state.zoneType, state.level, state.blockSize, state.seedByte);
+    cells = blockCells(state.zoneType, state.density, state.level, state.blockSize, state.seedByte);
   } else {
     cells = matrixCells();
   }

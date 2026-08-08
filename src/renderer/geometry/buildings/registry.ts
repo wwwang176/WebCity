@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZoneType } from '../../../core/grid/types';
 import { tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './parts';
+import { METRES_PER_CELL } from '../../../core/grid/constants';
 
 // ===== Geometry Builders =====
 
@@ -301,16 +302,83 @@ export function getVariants(zoneType: number, level: number): GeoBuilder[] {
 }
 
 // ===== Height ranges per zone =====
+
+export type Density = 'LOW' | 'HIGH';
+
+/** 高度表的 key：分區加密度。辦公區兩種密度差 11 倍人口（BUG-220）。 */
+export function heightKey(zoneType: number, density: Density): string {
+  return `${zoneType}:${density}`;
+}
+
 /**
- * 每個分區的高度區間。這是**乘在幾何上的縮放係數**，不是公尺數：
- * 實際高度 = 幾何本身的高度 x 這個係數，而 1 格 = 12 公尺。
+ * 每個 (分區, 密度) 三個等級的目標高度，單位是**公尺**。
+ *
+ * 由容納人口推導（樓層 3 m、工業 6 m；佔地率 低密度 60% / 高密度 85% /
+ * 工業 70%；每人樓地板 住宅低 35、住宅高 28、商業 30、工業 40、辦公 15 m2）。
+ *
+ * 低密度照實算。高密度壓縮：320 人塞進 144 m2 的一格是現實的三倍密度，
+ * 照實算 L3 高層住宅要 220 m、比基地寬 18 倍，一整區會像針床。
+ * 壓縮之後高密度建築的視覺密度低於它實際容納的人口 —— 這是刻意接受的取捨，
+ * 要讓兩者一致該改的是遊戲的人口數值，不是渲染（規格修訂 1）。
  */
-export const ZONE_HEIGHTS: Record<number, { min: number; max: number }> = {
-  [ZoneType.RESIDENTIAL_LOW]:  { min: 0.25, max: 0.7 },
-  [ZoneType.RESIDENTIAL_HIGH]: { min: 1.0, max: 3.0 },
-  [ZoneType.COMMERCIAL_LOW]:   { min: 0.4, max: 1.0 },
-  [ZoneType.COMMERCIAL_HIGH]:  { min: 1.2, max: 2.8 },
-  [ZoneType.INDUSTRIAL]:       { min: 0.4, max: 1.0 },
-  [ZoneType.OFFICE]:           { min: 1.5, max: 4.5 },
+export const TARGET_HEIGHTS_M: Record<string, [number, number, number]> = {
+  [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   [5, 7, 10],
+  [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: [30, 51, 75],
+  [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    [5, 8, 12],
+  [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  [24, 42, 66],
+  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        [8, 12, 16],
+  [heightKey(ZoneType.OFFICE, 'LOW')]:            [9, 15, 24],
+  [heightKey(ZoneType.OFFICE, 'HIGH')]:           [36, 60, 90],
 };
 
+/** 未縮放幾何的高度快取，避免每次放建築都重算包圍盒。 */
+const heightCache = new Map<string, number>();
+
+/** 這個變體未經縮放時有多高（world unit）。 */
+export function variantHeightUnits(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): number {
+  const key = `${zoneType}:${density}:${level}:${variantIndex}`;
+  const cached = heightCache.get(key);
+  if (cached !== undefined) return cached;
+
+  const variants = getVariants(zoneType, level);
+  if (variants.length === 0) {
+    heightCache.set(key, 0);
+    return 0;
+  }
+  const geo = variants[variantIndex % variants.length]!();
+  geo.computeBoundingBox();
+  const h = geo.boundingBox!.max.y;
+  geo.dispose();
+  heightCache.set(key, h);
+  return h;
+}
+
+/**
+ * 要把這個變體縮放到目標高度該乘多少。
+ *
+ * 兩個高度不同的幾何要縮放到同一個目標，係數必須不同 —— 這正是「目標高度」
+ * 與舊的「縮放係數」的差別。
+ */
+export function heightScaleFor(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): number {
+  const target = TARGET_HEIGHTS_M[heightKey(zoneType, density)];
+  if (!target) return 1;
+  const units = variantHeightUnits(zoneType, density, level, variantIndex);
+  if (units <= 0) return 1;
+  const lv = Math.max(1, Math.min(3, level));
+  return target[lv - 1]! / (units * METRES_PER_CELL);
+}
+
+/**
+ * 變體桶的完整識別。分區、密度、等級、變體序號四個維度缺一不可：
+ * 少了密度，辦公區 15 人與 160 人的建築同桶（BUG-220）；
+ * 少了等級，升級只能靠縮放。
+ */
+export function bucketKey(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): string {
+  return `${zoneType}_${density}_${level}_${variantIndex}`;
+}

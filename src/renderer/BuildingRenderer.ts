@@ -2,8 +2,12 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
 import { getBuildingMaterial } from './BuildingMaterial';
+import { paletteFor } from './ColorPalettes';
 import { appearanceOf } from './BuildingAppearance';
-import { getVariants, ZONE_TYPES, ZONE_HEIGHTS } from './geometry/buildings/registry';
+import {
+  getVariants, ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, heightScaleFor,
+  bucketKey, type Density,
+} from './geometry/buildings/registry';
 import { stampZoneCategory, ZONE_CAT, tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
@@ -14,74 +18,6 @@ import { disposeGroup } from './disposeGroup';
 import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
 import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '../core/building/BuildingUtilityWarning';
-
-// ===== Color Palettes (realistic, zone-distinguishable) =====
-const ZONE_PALETTES: Record<number, number[]> = {
-  [ZoneType.RESIDENTIAL_LOW]:  [
-    0xf0ece4, // white render
-    0xe8e0d0, // warm cream
-    0xc47050, // red brick
-    0xd4a870, // buff/sandstone
-    0xe0d8c8, // pale ivory
-    0xb85838, // dark red brick
-    0xd8c8a0, // honey stone
-    0xe8dcd0, // off-white
-    0xc8906c, // salmon brick
-    0xd0c4a8, // pale yellow stone
-    0xf0e8dc, // bright cream
-    0xa86040, // terracotta brick
-  ],
-  [ZoneType.RESIDENTIAL_HIGH]: [
-    0xe0d4b8, // Paris cream stone
-    0xc8c0b0, // warm gray
-    0xd8ccac, // pale yellow stone
-    0xb87858, // Amsterdam brick
-    0xe4dcd0, // off-white plaster
-    0xd0c4a0, // honey limestone
-    0xc4a880, // sandstone
-    0xd8d0c0, // light cream
-  ],
-  [ZoneType.COMMERCIAL_LOW]:   [
-    0xd8c888, // warm yellow
-    0xe8e0d0, // white plaster
-    0xc87050, // brick red
-    0xb8c8d8, // pale blue
-    0xd4c4a0, // warm cream
-    0xd0b870, // golden
-    0xe0d0b8, // light sand
-    0xc0a878, // tan
-  ],
-  [ZoneType.COMMERCIAL_HIGH]:  [
-    0x78a8c0, // blue-green glass
-    0xc8b890, // warm limestone
-    0x88b0a0, // green glass
-    0xa0a8b0, // steel gray
-    0xd8d4d0, // white modern
-    0x90a8b8, // light blue glass
-    0xb8a880, // sandstone classic
-    0x80a0b8, // teal glass
-  ],
-  [ZoneType.INDUSTRIAL]:       [
-    0xb0b4b8, // silver metal
-    0xa86048, // red brick factory
-    0xd0ccc8, // white panel
-    0xa07050, // rust/corten steel
-    0x808480, // dark gray
-    0xc0b8b0, // light concrete
-    0x907060, // weathered brick
-    0xb8b0a0, // beige concrete
-  ],
-  [ZoneType.OFFICE]:           [
-    0x88b0c8, // light blue glass
-    0x607890, // deep blue glass
-    0xc8ccd0, // white modern
-    0xb8a890, // warm stone base
-    0x80a8a0, // green glass
-    0xa0b4c0, // steel blue
-    0x98a8b0, // cool gray
-    0x70a0b8, // teal
-  ],
-};
 
 interface BuildingData { x: number; y: number; level: number; burned?: boolean }
 
@@ -145,11 +81,15 @@ export class BuildingRenderer {
     const material = getBuildingMaterial();
 
     for (const zoneType of ZONE_TYPES) {
-      const variants = getVariants(zoneType, 1);
       const zoneCat = ZONE_CAT[zoneType] ?? 0;
+      for (const density of ['LOW', 'HIGH'] as Density[]) {
+        // 只有辦公區兩種密度都有建築；其餘分區各只有一種。
+        if (!TARGET_HEIGHTS_M[heightKey(zoneType, density)]) continue;
+        for (const level of LEVELS) {
+      const variants = getVariants(zoneType, level);
 
       for (let vi = 0; vi < variants.length; vi++) {
-        const key = `${zoneType}_${vi}`;
+        const key = bucketKey(zoneType, density, level, vi);
         const geo = variants[vi]!();
         stampZoneCategory(geo, zoneCat);
 
@@ -183,29 +123,34 @@ export class BuildingRenderer {
         this.variantCounts.set(key, 0);
         this.instanceToPosition.set(key, new Map());
       }
+        }
+      }
     }
   }
 
   // ─── Incremental building operations ───────────────────────────
 
   /** Add a single zone building instance. */
-  addBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned = false): void {
+  addBuilding(
+    x: number, y: number, zoneType: number, density: Density,
+    level: number, burned: boolean, abandoned = false,
+  ): void {
     const variants = getVariants(zoneType, level);
     if (variants.length === 0) return;
 
-    const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
+    const palette = paletteFor(zoneType, level);
     const app = appearanceOf({
       x, y, zoneType, level, seedByte: 0,
       variantCount: variants.length, paletteSize: palette.length,
     });
-    const key = `${zoneType}_${app.variantIndex}`;
+    const key = bucketKey(zoneType, density, level, app.variantIndex);
     const mesh = this.variantMeshes.get(key);
     if (!mesh) return;
 
     const idx = this.variantCounts.get(key)!;
     if (idx >= this.maxPerVariant) return;
 
-    this.setInstanceData(mesh, idx, x, y, zoneType, level, burned, abandoned);
+    this.setInstanceData(mesh, idx, x, y, zoneType, density, level, burned, abandoned);
 
     this.variantCounts.set(key, idx + 1);
     mesh.count = idx + 1;
@@ -284,13 +229,16 @@ export class BuildingRenderer {
   }
 
   /** Update an existing building's level or burned/abandoned state in-place. */
-  updateBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned = false): void {
+  updateBuilding(
+    x: number, y: number, zoneType: number, density: Density,
+    level: number, burned: boolean, abandoned = false,
+  ): void {
     const posKey = `${x},${y}`;
     const entry = this.positionToInstance.get(posKey);
     if (!entry) return;
 
     const mesh = this.variantMeshes.get(entry.key)!;
-    this.setInstanceData(mesh, entry.idx, x, y, zoneType, level, burned, abandoned);
+    this.setInstanceData(mesh, entry.idx, x, y, zoneType, density, level, burned, abandoned);
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
@@ -302,20 +250,19 @@ export class BuildingRenderer {
   /** Set matrix + color for a single instance. */
   private setInstanceData(
     mesh: THREE.InstancedMesh, idx: number,
-    x: number, y: number, zoneType: number,
+    x: number, y: number, zoneType: number, density: Density,
     level: number, burned: boolean, abandoned = false,
   ): void {
-    const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
+    const palette = paletteFor(zoneType, level);
     const app = appearanceOf({
       x, y, zoneType, level, seedByte: 0,
       variantCount: getVariants(zoneType, level).length,
       paletteSize: palette.length,
     });
 
-    const heightRange = ZONE_HEIGHTS[zoneType] ?? { min: 0.3, max: 1.0 };
-    const levelFactor = level / 3;
-    const baseHeight = heightRange.min + (heightRange.max - heightRange.min) * levelFactor;
-    const finalHeight = baseHeight * app.heightScale;
+    // 高度來自公尺表，由這個變體自己的未縮放高度反推係數。
+    const finalHeight = heightScaleFor(zoneType, density, level, app.variantIndex)
+      * app.heightScale;
 
     this._rotation.makeRotationY((app.rotationQuarter * Math.PI) / 2);
     this._scale.makeScale(app.widthScale, finalHeight, app.depthScale);
@@ -484,10 +431,12 @@ export class BuildingRenderer {
 
         if (cell.zoneType !== ZoneType.NONE) {
           if (isZoneBuilding(cell.buildingId)) {
-            const level = getBuildingType(cell.buildingId)?.level ?? 1;
+            const type = getBuildingType(cell.buildingId);
+            const level = type?.level ?? 1;
+            const density = type?.density ?? 'LOW';
             const burned = cell.reserved === BURNED;
             const abandoned = cell.reserved === ABANDONED;
-            this.addBuilding(x, y, cell.zoneType, level, burned, abandoned);
+            this.addBuilding(x, y, cell.zoneType, density, level, burned, abandoned);
             if (!burned && !abandoned) lightPositions.push({ x, y });
           } else if (cell.buildingId === 0) {
             const key = BuildingRenderer.overlayGroupKey(cell.zoneType, blockerOf?.(x, y) ?? null);

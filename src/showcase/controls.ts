@@ -3,7 +3,9 @@
  * 相依帶進來，它要能在遊戲壞掉的時候仍然打得開。
  */
 import type { ViewMode } from './views';
-import { ZONE_TYPES, LEVELS } from '../renderer/geometry/buildings/registry';
+import {
+  ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, type Density,
+} from '../renderer/geometry/buildings/registry';
 
 /** 0..1 的一天位置轉成 24 小時字面，滑桿才知道自己拖到幾點。 */
 function clockText(t: number): string {
@@ -16,6 +18,7 @@ function clockText(t: number): string {
 export interface ControlState {
   mode: ViewMode;
   zoneType: number;
+  density: Density;
   level: number;
   seedByte: number;
   /** 手動指定的一天位置 0..1；null 表示自動循環。 */
@@ -67,6 +70,27 @@ export function mountControls(
   zoneSel.value = String(state.zoneType);
   zoneSel.onchange = () => { state.zoneType = Number(zoneSel.value); onChange(); };
   row('分區', zoneSel);
+
+  // 只有辦公區兩種密度都有建築；其他分區選了也沒有對應的高度表。
+  const densitySel = document.createElement('select');
+  for (const d of ['LOW', 'HIGH'] as Density[]) {
+    const o = document.createElement('option');
+    o.value = d;
+    o.textContent = d === 'LOW' ? '低密度' : '高密度';
+    densitySel.appendChild(o);
+  }
+  densitySel.value = state.density;
+  densitySel.onchange = () => { state.density = densitySel.value as Density; onChange(); };
+  row('密度（僅辦公區兩者皆有）', densitySel);
+
+  const syncDensity = () => {
+    if (!TARGET_HEIGHTS_M[heightKey(state.zoneType, state.density)]) {
+      state.density = TARGET_HEIGHTS_M[heightKey(state.zoneType, 'LOW')] ? 'LOW' : 'HIGH';
+      densitySel.value = state.density;
+    }
+  };
+  zoneSel.addEventListener('change', syncDensity);
+  syncDensity();
 
   const levelSel = document.createElement('select');
   for (const lv of LEVELS) {

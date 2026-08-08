@@ -3,7 +3,10 @@
  * 單看一棟房子，三個變體也覺得夠用。
  */
 import { appearanceOf } from '../renderer/BuildingAppearance';
-import { getVariants, ZONE_TYPES, LEVELS } from '../renderer/geometry/buildings/registry';
+import {
+  getVariants, LEVELS, TARGET_HEIGHTS_M, heightKey, type Density,
+} from '../renderer/geometry/buildings/registry';
+import { ZoneType } from '../core/grid/types';
 
 export type ViewMode = 'single' | 'block' | 'matrix';
 
@@ -11,29 +14,32 @@ export interface PlacedCell {
   x: number;
   z: number;
   zoneType: number;
+  density: Density;
   level: number;
   variantIndex: number;
   facadeSeed: readonly [number, number, number];
 }
 
-function cellAt(zoneType: number, level: number, x: number, z: number, seedByte = 0): PlacedCell {
+function cellAt(
+  zoneType: number, density: Density, level: number, x: number, z: number, seedByte = 0,
+): PlacedCell {
   const app = appearanceOf({
     x, y: z, zoneType, level, seedByte,
     variantCount: getVariants(zoneType, level).length,
     paletteSize: 8,
   });
-  return { x, z, zoneType, level, variantIndex: app.variantIndex, facadeSeed: app.facadeSeed };
+  return { x, z, zoneType, density, level, variantIndex: app.variantIndex, facadeSeed: app.facadeSeed };
 }
 
 /** size x size 的同分區同等級街廓，原點置中。 */
 export function blockCells(
-  zoneType: number, level: number, size: number, seedByte = 0,
+  zoneType: number, density: Density, level: number, size: number, seedByte = 0,
 ): PlacedCell[] {
   const half = Math.floor(size / 2);
   const out: PlacedCell[] = [];
   for (let z = -half; z < size - half; z++) {
     for (let x = -half; x < size - half; x++) {
-      out.push(cellAt(zoneType, level, x, z, seedByte));
+      out.push(cellAt(zoneType, density, level, x, z, seedByte));
     }
   }
   return out;
@@ -43,18 +49,24 @@ export function blockCells(
 export function matrixCells(): PlacedCell[] {
   const out: PlacedCell[] = [];
   let row = 0;
-  for (const zoneType of ZONE_TYPES) {
+  // 走訪高度表的每個 (分區, 密度)，辦公區的兩種密度才都會出現。
+  for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+    const [zoneStr, densityStr] = key.split(':');
+    const zoneType = Number(zoneStr);
+    const density = densityStr as Density;
+    if (zoneType === ZoneType.NONE) continue;
     for (const level of LEVELS) {
       const variants = getVariants(zoneType, level);
       for (let i = 0; i < variants.length; i++) {
         out.push({
-          x: i * 2, z: row * 2, zoneType, level,
+          x: i * 2, z: row * 2, zoneType, density, level,
           variantIndex: i, facadeSeed: [0.5, 0.5, 0.5],
         });
       }
       row++;
     }
   }
+  void heightKey;
   return out;
 }
 

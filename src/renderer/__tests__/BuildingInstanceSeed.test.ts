@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { BuildingRenderer } from '../BuildingRenderer';
 import { appearanceOf } from '../BuildingAppearance';
-import { getVariants } from '../geometry/buildings/registry';
+import { getVariants, bucketKey } from '../geometry/buildings/registry';
 import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
 
@@ -39,7 +39,7 @@ describe('instance bookkeeping', () => {
     // 的機會讓舊雜湊與新雜湊剛好選到同一個，單格斷言會巧合通過。
     const { renderer, internals } = freshRenderer();
     for (let x = 0; x < 10; x++) {
-      for (let y = 0; y < 10; y++) renderer.addBuilding(x, y, ZONE, 1, false);
+      for (let y = 0; y < 10; y++) renderer.addBuilding(x, y, ZONE, 'LOW', 1, false);
     }
 
     for (let x = 0; x < 10; x++) {
@@ -47,7 +47,7 @@ describe('instance bookkeeping', () => {
         const entry = internals.positionToInstance.get(`${x},${y}`);
         expect(entry, `no instance for ${x},${y}`).toBeDefined();
         expect(entry!.key, `wrong bucket at ${x},${y}`)
-          .toBe(`${ZONE}_${expectedAppearance(x, y).variantIndex}`);
+          .toBe(bucketKey(ZONE, 'LOW', 1, expectedAppearance(x, y).variantIndex));
       }
     }
   });
@@ -58,7 +58,7 @@ describe('instance bookkeeping', () => {
     const alive: Array<[number, number]> = [];
     for (let x = 0; x < 12; x++) {
       for (let y = 0; y < 12; y++) {
-        renderer.addBuilding(x, y, ZONE, 1, false);
+        renderer.addBuilding(x, y, ZONE, 'LOW', 1, false);
         alive.push([x, y]);
       }
     }
@@ -94,7 +94,7 @@ describe('aSeed', () => {
 
   it('should carry the facade seed appearanceOf gives that cell', () => {
     const { renderer, internals } = freshRenderer();
-    renderer.addBuilding(6, 2, ZONE, 1, false);
+    renderer.addBuilding(6, 2, ZONE, 'LOW', 1, false);
 
     const entry = internals.positionToInstance.get('6,2')!;
     const attr = internals.variantMeshes.get(entry.key)!.geometry.getAttribute('aSeed');
@@ -112,7 +112,7 @@ describe('aSeed', () => {
 
     const cells: Array<[number, number]> = [];
     for (let x = 0; x < 10; x++) for (let y = 0; y < 10; y++) cells.push([x, y]);
-    for (const [x, y] of cells) renderer.addBuilding(x, y, ZONE, 1, false);
+    for (const [x, y] of cells) renderer.addBuilding(x, y, ZONE, 'LOW', 1, false);
     for (let i = 0; i < cells.length; i += 2) {
       const [x, y] = cells[i]!;
       renderer.removeBuilding(x, y);

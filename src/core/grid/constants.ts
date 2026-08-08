@@ -16,3 +16,11 @@
  * familiar Cities: Skylines style of zoning and service coverage.
  */
 export const ZONE_ROAD_REACH = 2;
+
+/**
+ * 一格的邊長（公尺）。定義在 `PLANNING.md`：1 格 = 12 m x 12 m。
+ *
+ * 放在 core 而不是 renderer，是因為它是遊戲世界的事實、不是渲染選擇 ——
+ * 建築高度、車輛尺寸、道路寬度都應該以它為準。
+ */
+export const METRES_PER_CELL = 12;
