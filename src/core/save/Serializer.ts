@@ -314,7 +314,16 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
       ? new Map(Object.entries(saved.abandonmentStress).map(([k, v]) => [k, Number(v)]))
       : new Map(),
     elevationData: saved.elevation,
-    highestMilestonePop: saved.highestMilestonePop,
+    // Guarded, because Game.ts restores it through
+    // `Math.max(loadedMilestone.populationRequired, highestMilestonePop ?? 0)`
+    // and Math.max returns NaN if either side is not a number. NaN compares
+    // false against everything, so one bad value disables every milestone for
+    // the rest of that city's life — and it is written straight back out on the
+    // next save, so the damage is permanent. JSON cannot express NaN, but an
+    // imported or hand-edited file can carry a string, and `Math.max(5000,
+    // "abc")` is NaN.
+    highestMilestonePop: Number.isFinite(saved.highestMilestonePop)
+      ? saved.highestMilestonePop : undefined,
     transferHistory: saved.transferHistory
       ? {
           history: saved.transferHistory.history.map(obj => new Map(Object.entries(obj).map(([k, v]) => [k, Number(v)]))),

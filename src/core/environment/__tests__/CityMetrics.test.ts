@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getAvgResidentialPollution, getAvgResidentialNoise, calculateCrimeRate, avgResidentialMetric } from '../CityMetrics';
+import { getAvgResidentialPollution, calculateCrimeRate, avgResidentialMetric } from '../CityMetrics';
 import { Grid } from '../../grid/Grid';
 import { ZoneType } from '../../grid/types';
 import { SIMULATION } from '../../simulation/SimulationConstants';
@@ -27,30 +27,16 @@ describe('CityMetrics', () => {
     });
   });
 
-  describe('getAvgResidentialNoise', () => {
-    it('returns 0 when no residential cells exist', () => {
-      const grid = new Grid(5, 5);
-      expect(getAvgResidentialNoise(grid)).toBe(0);
-    });
-
-    it('ignores zoned cells with no building', () => {
-      // noiseLevel is only ever written by updateLandValue, which returns early
-      // on buildingId === 0 — an empty zoned cell reports a permanent 0 and used
-      // to drag the average down by the unbuilt fraction of the district.
-      const grid = new Grid(5, 5);
-      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, noiseLevel: 60 });
-      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW });
-      grid.setCell(2, 0, { zoneType: ZoneType.RESIDENTIAL_LOW });
-      expect(getAvgResidentialNoise(grid)).toBe(60);
-    });
-
-    it('returns average noise across residential cells only', () => {
-      const grid = new Grid(5, 5);
-      grid.setCell(0, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, noiseLevel: 10 });
-      grid.setCell(1, 0, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, noiseLevel: 30 });
-      expect(getAvgResidentialNoise(grid)).toBe(20);
-    });
-  });
+  // getAvgResidentialNoise was removed rather than tested.
+  //
+  // It read `cell.noiseLevel`, which only updateLandValue writes — every 60
+  // ticks — while happiness and growth run every 6, so every building grown in
+  // the last ten slow ticks reported a noise of 0. SimulationLoop.getAvgNoise
+  // was rewritten to read the live pollution grid instead (BUG-121) and this
+  // function was left behind with the old semantics and no caller. Keeping a
+  // tested copy of the wrong answer is an invitation to call it.
+  //
+  // The behaviour that replaced it is covered by AvgNoiseIsLive.test.ts.
 
   describe('avgResidentialMetric (shared helper)', () => {
     it('works with arbitrary cell accessor', () => {

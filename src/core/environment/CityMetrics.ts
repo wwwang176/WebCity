@@ -5,7 +5,7 @@ import { isActiveZoneCell } from '../building/BuildingQueries';
 
 /**
  * Compute the average of a numeric cell property across residential cells (DRY).
- * Used by getAvgResidentialPollution and getAvgResidentialNoise.
+ * Used by getAvgResidentialPollution.
  */
 export function avgResidentialMetric(grid: Grid, accessor: (cell: CellData) => number): number {
   let total = 0;
@@ -57,13 +57,6 @@ export function avgResidentialAt(grid: Grid, valueAt: (x: number, y: number) => 
  */
 export function getAvgResidentialPollution(grid: Grid): number {
   return avgResidentialMetric(grid, cell => cell.pollution);
-}
-
-/**
- * Average noise over residential cells only (same rationale as pollution).
- */
-export function getAvgResidentialNoise(grid: Grid): number {
-  return avgResidentialMetric(grid, cell => cell.noiseLevel);
 }
 
 /**
