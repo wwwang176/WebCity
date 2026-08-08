@@ -37,7 +37,14 @@ export class BuildingRenderer {
   private infraGroups: THREE.Group[] = [];
   private infraIndex = new Map<string, THREE.Group>();
 
-  private readonly maxPerVariant = 6000;
+  /** 桶的初始容量。滿了就倍增（見 growBucket）。 */
+  private static readonly INITIAL_BUCKET_CAPACITY = 256;
+
+  /** 每個桶目前的容量。 */
+  private bucketCapacity = new Map<string, number>();
+
+  /** initVariantMeshes 收到的場景，重配時要用。 */
+  private scene: THREE.Scene | null = null;
 
   // Light spot system (fake ground glow near buildings at night)
   private lightSpotMesh: THREE.InstancedMesh | null = null;
@@ -75,6 +82,7 @@ export class BuildingRenderer {
 
   /** Pre-allocate all variant InstancedMeshes (called once). */
   private initVariantMeshes(scene: THREE.Scene): void {
+    this.scene = scene;
     if (this.variantInitialized) return;
     this.variantInitialized = true;
 
@@ -93,34 +101,35 @@ export class BuildingRenderer {
         const geo = variants[vi]!();
         stampZoneCategory(geo, zoneCat);
 
-        const mesh = new THREE.InstancedMesh(geo, material, this.maxPerVariant);
+        const mesh = new THREE.InstancedMesh(geo, material, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
         mesh.count = 0;
         mesh.castShadow = true;
         mesh.receiveShadow = true;
         mesh.frustumCulled = false;
 
         // Pre-allocate aHighlight + aHighlightColor attributes
-        const highlightData = new Float32Array(this.maxPerVariant);
+        const highlightData = new Float32Array(BuildingRenderer.INITIAL_BUCKET_CAPACITY);
         mesh.geometry.setAttribute('aHighlight',
           new THREE.InstancedBufferAttribute(highlightData, 1));
-        const highlightColorData = new Float32Array(this.maxPerVariant * 3);
+        const highlightColorData = new Float32Array(BuildingRenderer.INITIAL_BUCKET_CAPACITY * 3);
         mesh.geometry.setAttribute('aHighlightColor',
           new THREE.InstancedBufferAttribute(highlightColorData, 3));
 
         // Pre-allocate aOccupancy attribute (0.0 = empty, 1.0 = full)
-        const occupancyData = new Float32Array(this.maxPerVariant);
+        const occupancyData = new Float32Array(BuildingRenderer.INITIAL_BUCKET_CAPACITY);
         mesh.geometry.setAttribute('aOccupancy',
           new THREE.InstancedBufferAttribute(occupancyData, 1));
 
         // 逐實例立面種子：節奏、相位、材質偏好。shader 用它取代寫死的
         // floorH / winW，讓同一份幾何的兩個實例立面不同。
-        const seedData = new Float32Array(this.maxPerVariant * 3);
+        const seedData = new Float32Array(BuildingRenderer.INITIAL_BUCKET_CAPACITY * 3);
         mesh.geometry.setAttribute('aSeed',
           new THREE.InstancedBufferAttribute(seedData, 3));
 
         scene.add(mesh);
         this.variantMeshes.set(key, mesh);
         this.variantCounts.set(key, 0);
+        this.bucketCapacity.set(key, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
         this.instanceToPosition.set(key, new Map());
       }
         }
@@ -144,11 +153,14 @@ export class BuildingRenderer {
       variantCount: variants.length, paletteSize: palette.length,
     });
     const key = bucketKey(zoneType, density, level, app.variantIndex);
-    const mesh = this.variantMeshes.get(key);
+    let mesh = this.variantMeshes.get(key);
     if (!mesh) return;
 
     const idx = this.variantCounts.get(key)!;
-    if (idx >= this.maxPerVariant) return;
+    if (idx >= (this.bucketCapacity.get(key) ?? 0)) {
+      if (!this.scene) return; // 尚未 build，無處可加
+      mesh = this.growBucket(this.scene, key);
+    }
 
     this.setInstanceData(mesh, idx, x, y, zoneType, density, level, burned, abandoned);
 
@@ -163,6 +175,58 @@ export class BuildingRenderer {
 
     // Sync lightSpot (non-burned, non-abandoned buildings emit light)
     if (!burned && !abandoned) this.addLightSpot(x, y);
+  }
+
+  /**
+   * 把一個桶的容量加倍。
+   *
+   * InstancedMesh 的容量在建構時固定，所以只能換一個新的並把資料整批搬過去。
+   * 矩陣、顏色與四個自訂屬性都要搬 —— 漏搬任何一個，超過初始容量之後的
+   * 建築就會戴上別人的資料。
+   */
+  private growBucket(scene: THREE.Scene, key: string): THREE.InstancedMesh {
+    const old = this.variantMeshes.get(key)!;
+    const capacity = (this.bucketCapacity.get(key) ?? BuildingRenderer.INITIAL_BUCKET_CAPACITY) * 2;
+
+    // 幾何要自己一份：屬性緩衝長度跟著容量走，共用會讓舊的那份長度不夠。
+    const geometry = old.geometry.clone();
+    const grown = new THREE.InstancedMesh(geometry, old.material, capacity);
+    grown.count = old.count;
+    grown.castShadow = true;
+    grown.receiveShadow = true;
+    grown.frustumCulled = false;
+
+    const m = new THREE.Matrix4();
+    for (let i = 0; i < old.count; i++) {
+      old.getMatrixAt(i, m);
+      grown.setMatrixAt(i, m);
+    }
+    grown.instanceMatrix.needsUpdate = true;
+
+    if (old.instanceColor) {
+      const col = new THREE.Color();
+      for (let i = 0; i < old.count; i++) {
+        old.getColorAt(i, col);
+        grown.setColorAt(i, col);
+      }
+      if (grown.instanceColor) grown.instanceColor.needsUpdate = true;
+    }
+
+    for (const [name, itemSize] of [
+      ['aHighlight', 1], ['aHighlightColor', 3], ['aOccupancy', 1], ['aSeed', 3],
+    ] as const) {
+      const src = old.geometry.getAttribute(name) as THREE.InstancedBufferAttribute | undefined;
+      const data = new Float32Array(capacity * itemSize);
+      if (src) data.set((src.array as Float32Array).subarray(0, old.count * itemSize));
+      geometry.setAttribute(name, new THREE.InstancedBufferAttribute(data, itemSize));
+    }
+
+    scene.remove(old);
+    scene.add(grown);
+    this.variantMeshes.set(key, grown);
+    this.bucketCapacity.set(key, capacity);
+    this._buildingMeshesDirty = true;
+    return grown;
   }
 
   /** Remove a single zone building instance (swap-with-last). */
@@ -495,7 +559,7 @@ export class BuildingRenderer {
     const matrix = new THREE.Matrix4();
     for (const [groupKey, cells] of emptyZonesByType) {
       const { color: baseColor, opacity } = BuildingRenderer.overlayGroupStyle(groupKey);
-      const count = Math.min(cells.length, this.maxPerVariant);
+      const count = Math.min(cells.length, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
       const geometry = new THREE.PlaneGeometry(0.9, 0.9);
       geometry.rotateX(-Math.PI / 2);
       const material = new THREE.MeshBasicMaterial({
@@ -620,7 +684,7 @@ export class BuildingRenderer {
     }
 
     for (const [warning, cells] of byWarning) {
-      const count = Math.min(cells.length, this.maxPerVariant);
+      const count = Math.min(cells.length, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
 
       // A dark plate behind the icon, so a yellow bolt still reads against a
       // pale roof at midday.
@@ -2553,7 +2617,7 @@ export class BuildingRenderer {
       depthWrite: false,
     });
 
-    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, this.maxPerVariant);
+    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
     this.lightSpotMesh.count = 0;
     this.lightSpotMesh.frustumCulled = false;
     this.lightSpotMesh.renderOrder = 2;
@@ -2573,7 +2637,7 @@ export class BuildingRenderer {
 
   /** Add a single lightSpot at (x, y). O(1). */
   addLightSpot(x: number, y: number): void {
-    if (!this.lightSpotMesh || this.lightSpotCount >= this.maxPerVariant) return;
+    if (!this.lightSpotMesh || this.lightSpotCount >= BuildingRenderer.INITIAL_BUCKET_CAPACITY) return;
     const posKey = `${x},${y}`;
     if (this.lightSpotPosToIdx.has(posKey)) return; // already exists
 

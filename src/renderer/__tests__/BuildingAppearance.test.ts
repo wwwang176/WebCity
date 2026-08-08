@@ -96,13 +96,28 @@ describe('appearanceOf', () => {
         expect(a.widthScale).toBeLessThanOrEqual(1.15);
         expect(a.depthScale).toBeGreaterThanOrEqual(0.85);
         expect(a.depthScale).toBeLessThanOrEqual(1.15);
-        expect(a.heightScale).toBeGreaterThanOrEqual(0.825);
-        expect(a.heightScale).toBeLessThanOrEqual(1.175);
+        expect(a.heightScale).toBeGreaterThanOrEqual(0.95);
+        expect(a.heightScale).toBeLessThanOrEqual(1.05);
         expect([0, 1, 2, 3]).toContain(a.rotationQuarter);
         expect(a.paletteIndex).toBeGreaterThanOrEqual(0);
         expect(a.paletteIndex).toBeLessThan(8);
       }
     }
+  });
+
+  it('should keep height jitter well under one storey', () => {
+    // ±17.5% 讓同一等級的房子高矮差一層樓，看起來像等級不同。
+    // 目標高度表落實之後，抖動只該是同一種建築的自然差異。
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (let x = 0; x < 60; x++) {
+      for (let y = 0; y < 60; y++) {
+        const h = appearanceOf({ ...input, x, y }).heightScale;
+        lo = Math.min(lo, h);
+        hi = Math.max(hi, h);
+      }
+    }
+    expect(hi / lo).toBeLessThan(1.12);
   });
 
   it('should produce three facade seed components, each in [0, 1)', () => {
