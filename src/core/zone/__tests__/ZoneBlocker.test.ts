@@ -108,29 +108,35 @@ describe('an empty zoned cell can say why it is empty', () => {
 });
 
 describe('the diagnosis agrees with the growth gate it describes', () => {
-  it('should say "nothing wrong" exactly when the cell can actually grow', () => {
-    // The whole point: a cell reported as fine must be one that grows, and a
-    // cell reported as blocked must be one that does not. Drive both over the
-    // same matrix.
+  it('should say "nothing wrong" exactly when a building actually appears', () => {
+    // The oracle here has to be tryGrow, not canGrow. canGrow is only the first
+    // half of the gate — it knows nothing about whether BUILDING_TYPES holds a
+    // building for this zone at the density the road permits, which is the half
+    // that silently killed four zone/road pairings. A matrix anchored on
+    // canGrow agrees with a diagnosis that is wrong in exactly the same way.
     for (const hasPower of [true, false]) {
       for (const hasWater of [true, false]) {
         for (const demand of [50, 0]) {
           for (const withRoad of [true, false]) {
-            const grid = new Grid(12, 12);
-            if (withRoad) {
-              for (let x = 1; x <= 9; x++) grid.setCell(x, 5, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
-            }
-            grid.setCell(5, 6, { zoneType: ZoneType.RESIDENTIAL_LOW });
-
+            const label = `power=${hasPower} water=${hasWater} demand=${demand} road=${withRoad}`;
             const rciDemand = { residential: demand, commercial: demand, industrial: demand };
-            const blocker = getZoneBlocker(grid, 5, 6, {
+            const build = () => {
+              const g = new Grid(12, 12);
+              if (withRoad) {
+                for (let x = 1; x <= 9; x++) g.setCell(x, 5, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+              }
+              g.setCell(5, 6, { zoneType: ZoneType.RESIDENTIAL_LOW });
+              return g;
+            };
+
+            const blocker = getZoneBlocker(build(), 5, 6, {
               isPowered: () => hasPower, isWatered: () => hasWater, rciDemand,
             });
-            const canGrow = new BuildingGrowth(grid)
-              .canGrow(5, 6, { hasPower, hasWater, rciDemand });
+            // tryGrow writes to the grid, so it gets its own copy.
+            const grew = new BuildingGrowth(build())
+              .tryGrow(5, 6, { hasPower, hasWater, rciDemand });
 
-            expect(blocker === null, `power=${hasPower} water=${hasWater} demand=${demand} road=${withRoad}`)
-              .toBe(canGrow);
+            expect(blocker === null, label).toBe(grew);
           }
         }
       }

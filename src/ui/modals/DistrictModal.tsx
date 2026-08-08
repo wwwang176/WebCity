@@ -43,7 +43,8 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
   };
 
   const togglePolicy = (districtId: string, policyType: PolicyType) => {
-    const state = getGame().getState();
+    const game = getGame();
+    const state = game.getState();
     // A retired policy can only ever be REMOVED. Routing it through the normal
     // toggle would re-apply one stored as `active: false` — which is how a
     // legacy save could end up with a policy the player could see but never
@@ -55,6 +56,10 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
     } else {
       state.policies.applyPolicy(districtId, policyType);
     }
+    // A build policy decides whether zoned cells in this district can develop
+    // at all, and the overlay says so. Nothing else here can see that change,
+    // and a paused game is exactly when a player sits in this modal.
+    game.notifyDistrictPolicyChanged();
     setVersion(v => v + 1);
   };
 

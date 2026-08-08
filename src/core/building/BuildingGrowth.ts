@@ -3,7 +3,7 @@ import { ZoneType, zoneToRCI } from '../grid/types';
 import { RailType } from '../rail/types';
 import { isNearRoad } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
-import { getMaxDensity } from '../zone/DensityRules';
+import { getGrowthDensity, getMaxDensity } from '../zone/DensityRules';
 import { getBuildingsForZone } from './types';
 import { randomElement } from '../utils/random';
 
@@ -54,11 +54,14 @@ export class BuildingGrowth {
     const cell = this.grid.getCell(x, y);
     if (!cell) return false;
 
-    const density = getMaxDensity(this.grid, x, y);
-    if (density === 'NONE') return false;
+    // The zone picks its own tier; the road only has to be big enough to carry
+    // it. Feeding the road's tier in directly used to ask BUILDING_TYPES for
+    // pairs it does not contain — (RESIDENTIAL_LOW, 'HIGH') beside a four-lane
+    // road, (RESIDENTIAL_HIGH, 'LOW') beside a street — and four zone/road
+    // combinations were silently unbuildable forever as a result.
+    const lookupDensity = getGrowthDensity(cell.zoneType, getMaxDensity(this.grid, x, y));
+    if (!lookupDensity) return false;
 
-    // Industrial has no density tiers — any road is fine
-    const lookupDensity = cell.zoneType === ZoneType.INDUSTRIAL ? 'LOW' : density;
     const buildings = getBuildingsForZone(cell.zoneType, lookupDensity, 1);
     if (buildings.length === 0) return false;
 

@@ -548,7 +548,8 @@ function EmptyZoneInfo(props: { sel: SelectedEmptyZone }) {
     switch (props.sel.blocker) {
       case 'NO_POWER': return 'Run a road from this block to your power grid, or build a plant nearer.';
       case 'NO_WATER': return 'Water travels along connected roads. Check the pipe network reaches here.';
-      case 'NO_ROAD': return 'Zoned land needs a road within 2 tiles that allows this density.';
+      case 'NO_ROAD': return 'Zoned land needs an ordinary road within 2 tiles. Highways have no frontage.';
+      case 'ROAD_TOO_SMALL': return 'High-density zones need a 4- or 6-lane road. Widen the street, or rezone to low density.';
       case 'DISTRICT_POLICY': return 'A district policy here forbids this zone type.';
       case 'RAIL_IN_THE_WAY': return 'Remove the track, or zone elsewhere.';
       case 'NO_DEMAND': return 'Nothing is wrong — the city does not want more of this zone yet.';

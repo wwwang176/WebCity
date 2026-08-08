@@ -3,7 +3,7 @@ import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 import { RailType } from '../rail/types';
 import { isNearRoad } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
-import { getMaxDensity } from './DensityRules';
+import { getGrowthDensity, getMaxDensity } from './DensityRules';
 import { zoneToRCI } from '../grid/types';
 
 /**
@@ -15,6 +15,7 @@ import { zoneToRCI } from '../grid/types';
  */
 export type ZoneBlocker =
   | 'NO_ROAD'
+  | 'ROAD_TOO_SMALL'
   | 'NO_POWER'
   | 'NO_WATER'
   | 'DISTRICT_POLICY'
@@ -53,13 +54,17 @@ export function getZoneBlocker(
 
   if (cell.railType !== RailType.NONE) return 'RAIL_IN_THE_WAY';
 
-  // Two separate road questions, and a cell can pass the first and fail the
-  // second: isNearRoad accepts any road within the Chebyshev reach, while
-  // getMaxDensity additionally requires that road to permit this zone's
-  // density. Both report as NO_ROAD because the fix is the same — put a
-  // suitable road next to it.
+  // Three separate road questions, and they call for three different actions.
+  // isNearRoad accepts any road within the Chebyshev reach; getMaxDensity
+  // additionally rejects a road with no frontage at all (a highway); and
+  // getGrowthDensity rejects a road too small to carry this zone's density.
+  // The last one is its own blocker because "no road access" beside a
+  // perfectly visible two-lane street reads as a bug, and sends the player
+  // building a second road instead of widening the one already there.
   if (!isNearRoad(grid, x, y, ZONE_ROAD_REACH)) return 'NO_ROAD';
-  if (getMaxDensity(grid, x, y) === 'NONE') return 'NO_ROAD';
+  const roadDensity = getMaxDensity(grid, x, y);
+  if (roadDensity === 'NONE') return 'NO_ROAD';
+  if (!getGrowthDensity(cell.zoneType as ZoneType, roadDensity)) return 'ROAD_TOO_SMALL';
 
   if (!deps.isPowered(x, y)) return 'NO_POWER';
   if (!deps.isWatered(x, y)) return 'NO_WATER';
@@ -77,6 +82,7 @@ export function getZoneBlocker(
 /** Player-facing text for each blocker. */
 export const ZONE_BLOCKER_MESSAGES: Record<ZoneBlocker, string> = {
   NO_ROAD: 'No road access',
+  ROAD_TOO_SMALL: 'Road too small for this density',
   NO_POWER: 'No electricity',
   NO_WATER: 'No water',
   DISTRICT_POLICY: 'Blocked by district policy',
@@ -95,6 +101,7 @@ export const ZONE_BLOCKER_MESSAGES: Record<ZoneBlocker, string> = {
  */
 export const ZONE_BLOCKER_COLORS: Record<ZoneBlocker, number> = {
   NO_ROAD: 0xff6d00,
+  ROAD_TOO_SMALL: 0xe040fb,
   NO_POWER: 0xffd400,
   NO_WATER: 0x29b6f6,
   DISTRICT_POLICY: 0xab47bc,
@@ -104,7 +111,8 @@ export const ZONE_BLOCKER_COLORS: Record<ZoneBlocker, number> = {
 
 /** Blockers worth drawing an icon for — a player can act on each of these. */
 export const ACTIONABLE_BLOCKERS: ReadonlySet<ZoneBlocker> = new Set<ZoneBlocker>([
-  'NO_ROAD', 'NO_POWER', 'NO_WATER', 'DISTRICT_POLICY', 'RAIL_IN_THE_WAY',
+  'NO_ROAD', 'ROAD_TOO_SMALL', 'NO_POWER', 'NO_WATER', 'DISTRICT_POLICY',
+  'RAIL_IN_THE_WAY',
 ]);
 
 /** Count each blocker across the map — for a city-wide "12 cells have no power" line. */
@@ -112,7 +120,7 @@ export function summariseZoneBlockers(
   grid: Grid, deps: ZoneBlockerDeps,
 ): Record<ZoneBlocker, number> {
   const out: Record<ZoneBlocker, number> = {
-    NO_ROAD: 0, NO_POWER: 0, NO_WATER: 0,
+    NO_ROAD: 0, ROAD_TOO_SMALL: 0, NO_POWER: 0, NO_WATER: 0,
     DISTRICT_POLICY: 0, NO_DEMAND: 0, RAIL_IN_THE_WAY: 0,
   };
   grid.forEachCell((cell, x, y) => {

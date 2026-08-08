@@ -66,7 +66,7 @@ import {
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage, formatBuildFailure } from './core/grid/BuildReasonMessages';
-import { getZoneBlocker, summariseZoneBlockers, ZONE_BLOCKER_MESSAGES, type ZoneBlocker } from './core/zone/ZoneBlocker';
+import { getZoneBlocker, summariseZoneBlockers, ZONE_BLOCKER_MESSAGES, type ZoneBlocker, type ZoneBlockerDeps } from './core/zone/ZoneBlocker';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
@@ -525,7 +525,7 @@ export class Game {
       // develop — so the diagnosis tint has to follow it. This is the case that
       // went unseen: connect a road to the grid and the cells that were dark
       // yellow have to stop being dark yellow.
-      this.zoneOverlaysDirty = true;
+      this.invalidateZoneBlockers();
     };
     // Fine-grained building callbacks — incremental O(1) updates,
     // no need to set dirty.buildings (avoids redundant full rebuild)
@@ -939,6 +939,10 @@ export class Game {
             this.dirty.crossings = true;
             this.dirty.trafficLights = true;
             this.dirty.terrain = true;
+            // A new road changes NO_ROAD and ROAD_TOO_SMALL for everything
+            // within reach of it — including the block that sent the player
+            // here to build it.
+            this.invalidateZoneBlockers();
           }
           break;
         }
@@ -977,6 +981,7 @@ export class Game {
             this.dirty.tracks = true;
             this.dirty.crossings = true;
             this.dirty.terrain = true;
+            this.invalidateZoneBlockers();
           }
           break;
         }
@@ -1088,7 +1093,7 @@ export class Game {
    * turn. The information — isPowered / isWatered / road reach / demand — all
    * existed; nothing carried it to the screen.
    */
-  private zoneBlockerAt = (x: number, y: number) => getZoneBlocker(this.state.grid, x, y, {
+  private zoneBlockerDeps = (): ZoneBlockerDeps => ({
     isPowered: (cx: number, cy: number) => this.state.power.isPowered(cx, cy),
     isWatered: (cx: number, cy: number) => this.state.water.isSupplied(cx, cy),
     rciDemand: this.state.rciDemand,
@@ -1098,8 +1103,57 @@ export class Game {
     },
   });
 
+  private zoneBlockerAt = (x: number, y: number) =>
+    getZoneBlocker(this.state.grid, x, y, this.zoneBlockerDeps());
+
+  /**
+   * City-wide blocker counts, cached until something can change them.
+   *
+   * summariseZoneBlockers walks every cell and runs two (2r+1)² neighbourhood
+   * scans per empty zoned cell. The selection panel polls at ~6 Hz, so calling
+   * it per poll put a full-grid sweep on the main thread six times a second for
+   * as long as the panel was open — on a large city, hundreds of thousands of
+   * allocations per second to redraw a number that only moves when the map or
+   * the utility networks do.
+   */
+  private zoneBlockerSummary: Record<ZoneBlocker, number> | null = null;
+
+  private getZoneBlockerSummary(): Record<ZoneBlocker, number> {
+    if (!this.zoneBlockerSummary) {
+      this.zoneBlockerSummary = summariseZoneBlockers(this.state.grid, this.zoneBlockerDeps());
+    }
+    return this.zoneBlockerSummary;
+  }
+
+  /**
+   * How many OTHER empty zoned cells share this blocker. The summary counts
+   * the selected cell itself, and the panel labels the number "Also affected".
+   */
+  private countOtherCellsBlockedBy(blocker: ZoneBlocker | null): number {
+    if (!blocker) return 0;
+    return Math.max(0, this.getZoneBlockerSummary()[blocker] - 1);
+  }
+
+  /**
+   * Mark the zone diagnosis stale. Every edit that can change any blocker's
+   * answer has to call this — not just the ones that add or remove a zone.
+   * Laying the road, building the power plant and switching a district policy
+   * are precisely the actions the overlay just told the player to take, so a
+   * tint that survives them is worse than no tint at all.
+   */
+  private invalidateZoneBlockers(): void {
+    this.zoneOverlaysDirty = true;
+    this.zoneBlockerSummary = null;
+  }
+
+  /** The district modal writes straight to PolicyManager; nothing else sees it. */
+  notifyDistrictPolicyChanged(): void {
+    this.invalidateZoneBlockers();
+  }
+
   /** Rebuild the zone overlays with a fresh blocker diagnosis. */
   private refreshZoneOverlays(): void {
+    this.zoneBlockerSummary = null;
     this.buildingRenderer.rebuildZoneOverlays(
       this.sceneManager.scene, this.state.grid, this.zoneBlockerAt,
     );
@@ -1223,6 +1277,8 @@ export class Game {
       }
     }
     this.dirty.terrain = true;
+    // Painting a district brings its build policies to bear on these cells.
+    this.invalidateZoneBlockers();
   }
 
   createNewDistrict(name?: string): string {
@@ -1280,6 +1336,8 @@ export class Game {
 
     // Immediately recalculate coverage for road-based services so overlay updates
     this.recalculateServiceCoverage(type);
+    // The power plant or water tower the overlay just asked for.
+    this.invalidateZoneBlockers();
 
     this.audioManager.playSfx(SoundType.BUILD);
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, type, ROTATION_RESERVED[this.currentRotation]);
@@ -1541,7 +1599,12 @@ export class Game {
       d.crossings = false;
     }
     if (d.buildings) {
-      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid);
+      // build() redraws the zone overlays too, so it needs the diagnosis as
+      // much as rebuildZoneOverlays does. Omitting it here meant every overlay
+      // came back untinted on game start, after a save load and after a
+      // disaster — and, because this branch runs after the zoneOverlaysDirty
+      // one above, it overwrote a correct tint in any frame where both fired.
+      this.buildingRenderer.build(this.sceneManager.scene, this.state.grid, this.zoneBlockerAt);
       if (this.viewMode !== ViewMode.NORMAL) this.buildingRenderer.setViewMode(this.viewMode, this.sceneManager.scene);
       d.buildings = false;
     }
@@ -1875,15 +1938,6 @@ export class Game {
       // An empty zoned cell. This is the click a player makes when a block
       // refuses to develop, and it used to select nothing.
       const blocker = this.zoneBlockerAt(x, y);
-      const summary = summariseZoneBlockers(this.state.grid, {
-        isPowered: (cx: number, cy: number) => this.state.power.isPowered(cx, cy),
-        isWatered: (cx: number, cy: number) => this.state.water.isSupplied(cx, cy),
-        rciDemand: this.state.rciDemand,
-        canBuildHere: (cx: number, cy: number, zt: ZoneType) => {
-          const d = this.state.districts.getDistrictAt(cx, cy);
-          return !d || this.state.policies.canBuildInDistrict(d.id, zt);
-        },
-      });
       this.selectedBuilding = {
         kind: 'emptyZone', x, y,
         zoneType: cell.zoneType,
@@ -1891,7 +1945,7 @@ export class Game {
         reason: blocker ? ZONE_BLOCKER_MESSAGES[blocker] : 'Ready to develop',
         hasPower: this.state.power.isPowered(x, y),
         hasWater: this.state.water.isSupplied(x, y),
-        sameBlockerCount: blocker ? summary[blocker] : 0,
+        sameBlockerCount: this.countOtherCellsBlockedBy(blocker),
       };
       this.applyViewMode(ViewMode.NORMAL);
     } else {
@@ -2500,22 +2554,13 @@ export class Game {
         return null;
       }
       const blocker = this.zoneBlockerAt(x, y);
-      const summary = summariseZoneBlockers(this.state.grid, {
-        isPowered: (cx: number, cy: number) => this.state.power.isPowered(cx, cy),
-        isWatered: (cx: number, cy: number) => this.state.water.isSupplied(cx, cy),
-        rciDemand: this.state.rciDemand,
-        canBuildHere: (cx: number, cy: number, zt: ZoneType) => {
-          const d = this.state.districts.getDistrictAt(cx, cy);
-          return !d || this.state.policies.canBuildInDistrict(d.id, zt);
-        },
-      });
       return {
         ...sel,
         blocker,
         reason: blocker ? ZONE_BLOCKER_MESSAGES[blocker] : 'Ready to develop',
         hasPower: this.state.power.isPowered(x, y),
         hasWater: this.state.water.isSupplied(x, y),
-        sameBlockerCount: blocker ? summary[blocker] : 0,
+        sameBlockerCount: this.countOtherCellsBlockedBy(blocker),
       };
     }
 
@@ -2555,10 +2600,13 @@ export class Game {
       };
     }
 
-    // Every kind is handled above, so `sel` is `never` here. Kept so adding a
-    // new kind without a branch is a compile error rather than a silent
-    // shallow copy that never refreshes.
-    return sel;
+    // Every kind is handled above, so `sel` is `never` here. Assigning it to a
+    // `never` is what actually makes a new kind a compile error — `return sel`
+    // alone does not, since the new member is assignable to the return type and
+    // would compile straight into the silent never-refreshing shallow copy this
+    // is meant to prevent.
+    const unhandled: never = sel;
+    return unhandled;
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {

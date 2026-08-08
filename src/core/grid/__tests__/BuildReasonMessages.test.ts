@@ -59,3 +59,49 @@ describe('build failure messages name their subject', () => {
     }
   });
 });
+
+/**
+ * Every one of these strings is the entire explanation a player gets for a
+ * refused build, so each is pinned exactly. Asserting instead that
+ * formatBuildFailure agrees with getBuildReasonMessage is true by construction
+ * and would hold for any text at all, including a typo or an empty string.
+ */
+describe('the reason text itself', () => {
+  const PINNED: Array<[string, string]> = [
+    ['WATER_TILE', 'Cannot build on water'],
+    ['MOUNTAIN_TILE', 'Mountain in the way'],
+    ['OUT_OF_BOUNDS', 'Out of bounds'],
+    ['INSUFFICIENT_FUNDS', 'Insufficient funds'],
+    ['BUILDING_EXISTS', 'Building in the way'],
+    ['INFRASTRUCTURE_EXISTS', 'Infrastructure in the way'],
+    ['PARALLEL_RAIL', 'Cannot run parallel to rail'],
+    ['PARALLEL_ROAD', 'Cannot run parallel to road'],
+    ['TILE_OCCUPIED', 'Tile is occupied'],
+    ['NO_GROUNDWATER', 'No groundwater here — build near rivers'],
+    ['UNKNOWN_TYPE', 'Unknown building type'],
+    ['NEED_RAIL_TRACK', 'Train station must be built on rail track'],
+    ['AIRPORT_OUT_OF_BOUNDS', 'Airport area is out of bounds'],
+    ['AIRPORT_AREA_OCCUPIED', 'Airport area is not fully clear'],
+    ['START_NOT_ON_ROAD', 'Must start on an existing road'],
+    ['PATH_TOO_SHORT', 'Not enough space for ramp'],
+    ['LEVEL_OCCUPIED', 'Elevation level already occupied'],
+    ['RAMP_OCCUPIED', 'Cannot build over existing ramp'],
+    ['RAMP_ON_WATER', 'Cannot build ramp on water'],
+    ['RAMP_OVER_ROAD', 'Road underneath — no room for ramp'],
+    ['RAMP_ABOVE', 'Ramp above — cannot build here'],
+    ['WATER_CROSSING_NO_TURN', 'Bridge over water must be straight'],
+  ];
+
+  for (const [reason, text] of PINNED) {
+    it(`should read "${text}" for ${reason}`, () => {
+      expect(BUILD_REASON_MESSAGES[reason]).toBe(text);
+      expect(getBuildReasonMessage(reason)).toBe(text);
+      expect(formatBuildFailure('Fire Station', reason))
+        .toBe(`Cannot place Fire Station: ${text}`);
+    });
+  }
+
+  it('should return the raw code for an unmapped reason', () => {
+    expect(getBuildReasonMessage('UNKNOWN_REASON')).toBe('UNKNOWN_REASON');
+  });
+});
