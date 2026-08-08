@@ -235,10 +235,22 @@ export abstract class BaseTransportSystem {
     for (let i = this.vehicles.length - 1; i >= 0; i--) {
       if (this.vehicles[i]!.routeId === routeId) { idx = i; break; }
     }
-    if (idx >= 0) this.vehicles.splice(idx, 1);
+    if (idx >= 0) {
+      // Hook, so a subclass with per-vehicle state does not have to REPLACE
+      // this method to clean it up. FerrySystem did exactly that and its copy
+      // omitted the version bump, so removing a vessel left the transfer graph
+      // believing the route still had its old vehicle count — and once the
+      // explicit markTransitNetworkDirty call sites were deleted, nothing else
+      // invalidated it either.
+      this.onVehicleRemoved(this.vehicles[idx]!.id);
+      this.vehicles.splice(idx, 1);
+    }
     route.vehicles--;
     route.operatingCost = route.vehicles * this.config.operatingCostPerVehicle;
   }
+
+  /** Called just before a vehicle is dropped from a route. */
+  protected onVehicleRemoved(_vehicleId: number): void {}
 
   // ── Accessors ────────────────────────────────────────────────────
 

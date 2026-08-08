@@ -195,19 +195,15 @@ export class FerrySystem extends BaseTransportSystem {
   }
 
 
-  override removeVehicleFromRoute(routeId: number): void {
-    const route = this.routes.find(r => r.id === routeId);
-    if (!route || route.vehicles <= 1) return;
-    let idx = -1;
-    for (let i = this.vehicles.length - 1; i >= 0; i--) {
-      if (this.vehicles[i]!.routeId === routeId) { idx = i; break; }
-    }
-    if (idx >= 0) {
-      this.vesselPaths.delete(this.vehicles[idx]!.id);
-      this.vehicles.splice(idx, 1);
-    }
-    route.vehicles--;
-    route.operatingCost = route.vehicles * this.config.operatingCostPerVehicle;
+  /**
+   * Drop the departing vessel's cached A* path.
+   *
+   * This used to be a full override of removeVehicleFromRoute that duplicated
+   * the base body just to reach this one line — and the copy predated the
+   * version counter, so it never bumped it. The base class now offers a hook.
+   */
+  protected override onVehicleRemoved(vehicleId: number): void {
+    this.vesselPaths.delete(vehicleId);
   }
 
   override deleteRoute(routeId: number): void {

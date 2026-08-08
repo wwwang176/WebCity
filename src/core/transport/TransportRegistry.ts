@@ -56,15 +56,19 @@ const ALL_TRANSPORT_KEYS: readonly (keyof AllTransportSystems)[] = [
  * site remembering to call an invalidation hook.
  */
 export function getTransitNetworkVersion(systems: TransitSystems): number {
+  // Iterates TRANSIT_MAP directly rather than going through getTransitSystems,
+  // which allocates an array plus four objects. This is read every tick — up to
+  // three times on a rebuild tick — where it replaced a single boolean field
+  // read.
   let sum = 0;
-  for (const { system } of getTransitSystems(systems)) sum += system.getNetworkVersion();
+  for (const e of TRANSIT_MAP) sum += systems[e.key].getNetworkVersion();
   return sum;
 }
 
 /** Combined stop/route topology revision, ignoring vehicle-count changes. */
 export function getTransitTopologyVersion(systems: TransitSystems): number {
   let sum = 0;
-  for (const { system } of getTransitSystems(systems)) sum += system.getTopologyVersion();
+  for (const e of TRANSIT_MAP) sum += systems[e.key].getTopologyVersion();
   return sum;
 }
 

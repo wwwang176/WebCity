@@ -3,7 +3,7 @@ import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 
 export interface PowerPlant {
@@ -127,8 +127,13 @@ export class PowerGrid {
     // Phase 2: BFS budget-drain per plant to determine actual powered cells
     this.powered.clear();
     const getDemand = (x: number, y: number) => this.getCellDemand(grid, x, y);
+    // Shared across plants: `powered` already is, so the paid-footprint set and
+    // the charge memo must be too — otherwise a facility half-supplied by one
+    // plant is charged again in full by the next.
+    const paidGroups = new Set<string>();
+    const chargeCache = new Map<string, CellCharge>();
     for (const plant of this.plants) {
-      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions, this.roadLookup);
+      bfsBudgetDrainFlood(grid, plant, this.powered, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
     }
     return this.powered;
   }

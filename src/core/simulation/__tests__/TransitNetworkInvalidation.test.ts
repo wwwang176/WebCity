@@ -119,6 +119,81 @@ describe('transit network edits invalidate the transfer graph', () => {
     expect(loop.getTransferBuildings('METRO-1').homes).toContain('3,3');
   });
 
+  /**
+   * bumpNetworkVersion — the vehicle-count half — had NO coverage at all.
+   *
+   * Every case above exercises bumpTopologyVersion; the one that changes a
+   * vehicle count asserts that panel data SURVIVES, which is exactly what
+   * happens when nothing is invalidated. So the network counter was a live
+   * mutant, and that is why FerrySystem.removeVehicleFromRoute — which
+   * overrode the base method and omitted the bump — went unnoticed.
+   *
+   * getTransitRouteCount cannot see a vehicle-count change, so these assert on
+   * isTransferGraphDirty directly.
+   */
+  it('should notice a vehicle added to an existing route', () => {
+    const state = createGameState(20, 20);
+    const loop = new SimulationLoop(state);
+    const a = state.metro.addStation(2, 2);
+    const b = state.metro.addStation(8, 2);
+    const route = state.metro.createLine([a, b], 2);
+    loop.tick();
+    expect(loop.isTransferGraphDirty()).toBe(false);
+
+    state.metro.addVehicleToRoute(route.id);
+
+    expect(loop.isTransferGraphDirty()).toBe(true);
+  });
+
+  it('should notice a vehicle removed from an existing route', () => {
+    const state = createGameState(20, 20);
+    const loop = new SimulationLoop(state);
+    const a = state.metro.addStation(2, 2);
+    const b = state.metro.addStation(8, 2);
+    const route = state.metro.createLine([a, b], 3);
+    loop.tick();
+    expect(loop.isTransferGraphDirty()).toBe(false);
+
+    state.metro.removeVehicleFromRoute(route.id);
+
+    expect(loop.isTransferGraphDirty()).toBe(true);
+  });
+
+  it('should notice a FERRY vessel removed, which overrode the base method', () => {
+    // FerrySystem replaced removeVehicleFromRoute wholesale to clean up
+    // vesselPaths, and the copy predated the counter. flattenSystems derives
+    // isFull from route.vehicles, so a route kept absorbing multi-leg trips at
+    // triple its real capacity until some unrelated edit happened to
+    // invalidate.
+    const state = createGameState(20, 20);
+    const loop = new SimulationLoop(state);
+    const a = state.ferry.addDock(2, 2)!;
+    const b = state.ferry.addDock(8, 2)!;
+    const route = state.ferry.createRoute([a, b], 3);
+    loop.tick();
+    expect(loop.isTransferGraphDirty()).toBe(false);
+
+    state.ferry.removeVehicleFromRoute(route.id);
+
+    expect(loop.isTransferGraphDirty()).toBe(true);
+  });
+
+  it('should still drop the departing ferry vessel path', () => {
+    // The override existed for a reason; replacing it with a hook must keep
+    // doing that job.
+    const state = createGameState(20, 20);
+    const a = state.ferry.addDock(2, 2)!;
+    const b = state.ferry.addDock(8, 2)!;
+    const route = state.ferry.createRoute([a, b], 3);
+    const vessels = state.ferry.getVessels().filter(v => v.routeId === route.id);
+    expect(vessels.length).toBe(3);
+    const doomed = vessels[vessels.length - 1]!.id;
+
+    state.ferry.removeVehicleFromRoute(route.id);
+
+    expect(state.ferry.getVesselPath(doomed)).toBeNull();
+  });
+
   it('should wipe the transfer panel data when the topology changes', () => {
     const state = createGameState(20, 20);
     const loop = new SimulationLoop(state);

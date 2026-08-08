@@ -193,6 +193,7 @@ export class BusSystem extends BaseTransportSystem {
         const newSegments = this.computeRouteSegments(route, findEdgePath);
         if (newSegments) {
           route.suspended = false;
+          this.bumpTopologyVersion();
           // Re-spawn bus vehicles
           const count = Math.max(1, route.vehicles);
           for (let i = 0; i < count; i++) {
@@ -224,6 +225,7 @@ export class BusSystem extends BaseTransportSystem {
       if (!newSegments) {
         // Suspend route instead of dissolving
         route.suspended = true;
+        this.bumpTopologyVersion();
         traffic.removeBusVehicles(route.id);
         this.routeSegments.delete(route.id);
         this.busVehicleIds.delete(route.id);
@@ -269,10 +271,12 @@ export class BusSystem extends BaseTransportSystem {
       const segments = this.computeRouteSegments(route, findEdgePath);
       if (!segments) {
         route.suspended = true;
+        this.bumpTopologyVersion();
         continue;
       }
 
       route.suspended = false;
+      this.bumpTopologyVersion();
       // Spawn bus vehicles
       const count = Math.max(1, route.vehicles);
       for (let i = 0; i < count; i++) {
@@ -300,15 +304,10 @@ export class BusSystem extends BaseTransportSystem {
   }
 
   /** Remove a route and its associated data. */
-  private dissolveRoute(routeId: number): void {
-    // Bypasses deleteRoute, so the version bump has to be explicit — otherwise
-    // a route dissolved by a demolished stop stays in the transfer graph.
-    this.bumpTopologyVersion();
-    this.routes = this.routes.filter(r => r.id !== routeId);
-    this.vehicles = this.vehicles.filter(v => v.routeId !== routeId);
-    this.routeSegments.delete(routeId);
-    this.busVehicleIds.delete(routeId);
-  }
+  // dissolveRoute was removed: it had zero callers. A route dissolved by a
+  // demolished stop goes through BaseTransportSystem.removeStop, which already
+  // bumps and already fires onRouteDissolved — the comment that used to sit
+  // here described a path this method never participated in.
 
   // ── Overrides ───────────────────────────────────────────────────
 

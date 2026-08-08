@@ -171,3 +171,60 @@ describe('multi-cell infrastructure is supplied all-or-nothing', () => {
     }
   });
 });
+
+/**
+ * `supplied` is shared across the plants of one coverage pass, so the
+ * paid-footprint set has to be too.
+ *
+ * Per-plant, a footprint left PARTIALLY supplied by plant A was charged again
+ * in full by plant B: A pays at the primary, its budget lands on exactly 0, the
+ * `budget <= 0` break fires before the primary is dequeued, and the other three
+ * cells are never supplied. B then reaches a secondary, sees neither that cell
+ * in `supplied` nor the group in its own fresh set, and pays for the whole
+ * facility a second time — the city drains twice what getDemand() reports.
+ */
+describe('two plants do not pay for the same facility twice', () => {
+  const POLICE = INFRA_POWER_CONSUMPTION.police!;
+
+  /**
+   *   (1,1)…(9,1)  road spine
+   *   (2,2)        plant A, output exactly enough to reach and pay the station
+   *   (8,2)        plant B, approaching the station from the other side
+   *   (4,2)-(5,3)  police station, 2x2
+   *   (6,2)        a house past the station on B's side
+   */
+  function twoPlantCity(outputA: number, outputB: number): PowerGrid {
+    const grid = new Grid(14, 14);
+    for (let x = 1; x <= 9; x++) grid.setCell(x, 1, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    placeInfraOnGrid(grid, 4, 2, 'police', 0);
+
+    const pg = new PowerGrid();
+    pg.addPlant({ x: 2, y: 2, output: outputA, pollution: 0, type: 'coal' });
+    pg.addPlant({ x: 8, y: 2, output: outputB, pollution: 0, type: 'coal' });
+    pg.calculateDemand(grid);
+    pg.calculateCoverage(grid);
+    return pg;
+  }
+
+  it('should power the station when the two plants together can afford it once', () => {
+    const pg = twoPlantCity(POLICE, POLICE);
+    expect(pg.isPowered(4, 2)).toBe(true);
+  });
+
+  it('should not need a second full payment from the other plant', () => {
+    // B carries only a fraction of the station's cost. If the footprint is
+    // charged per plant, B cannot afford it and the cells it reaches stay dark.
+    const pg = twoPlantCity(POLICE, 1);
+    for (const [x, y] of [[4, 2], [5, 2], [4, 3], [5, 3]] as const) {
+      expect(pg.isPowered(x, y), `(${x},${y})`).toBe(true);
+    }
+  });
+
+  it('should still refuse a station neither plant can afford', () => {
+    // Negative control: sharing the paid set must not make facilities free.
+    const pg = twoPlantCity(POLICE - 1, POLICE - 1);
+    for (const [x, y] of [[4, 2], [5, 2], [4, 3], [5, 3]] as const) {
+      expect(pg.isPowered(x, y), `(${x},${y})`).toBe(false);
+    }
+  });
+});

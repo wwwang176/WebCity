@@ -25,7 +25,7 @@ import { Grid } from '../grid/Grid';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 import { WATER_CONSUMPTION } from './WaterNetwork';
 
@@ -133,8 +133,10 @@ export class SewageService {
     // Phase 2: budget-drain per plant (capacity as budget)
     this.supplied.clear();
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
+    const paidGroups = new Set<string>();
+    const chargeCache = new Map<string, CellCharge>();
     for (const p of active) {
-      bfsBudgetDrainFlood(grid, { x: p.x, y: p.y, output: p.capacity }, this.supplied, getDemand, infrastructurePositions, this.roadLookup);
+      bfsBudgetDrainFlood(grid, { x: p.x, y: p.y, output: p.capacity }, this.supplied, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
     }
     return this.supplied;
   }

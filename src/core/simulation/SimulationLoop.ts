@@ -1457,10 +1457,6 @@ export class SimulationLoop {
    * its own version counter and isTransferGraphDirty() compares it. The method
    * remains for callers that change something the counter cannot see.
    */
-  markTransitNetworkDirty(): void {
-    this.transferGraphDirty = true;
-  }
-
   /**
    * Is the transfer graph awaiting a rebuild?
    *
@@ -1472,12 +1468,6 @@ export class SimulationLoop {
    */
   isTransferGraphDirty(): boolean {
     return this.transferGraphDirty || getTransitNetworkVersion(this.state) !== this.lastTransitVersion;
-  }
-
-  /** Test seam: clear the flag so a test can observe what sets it. */
-  clearTransferGraphDirty(): void {
-    this.transferGraphDirty = false;
-    this.lastTransitVersion = getTransitNetworkVersion(this.state);
   }
 
   /** Number of transit routes currently flattened into the transfer graph. */

@@ -229,6 +229,12 @@ export function bfsRoadNetworkFlood(
   }
 }
 
+/** What reaching one cell costs: its footprint group (null = settles alone) and demand. */
+export interface CellCharge {
+  group: string | null;
+  demand: number;
+}
+
 /** Minimal plant shape needed by bfsBudgetDrainFlood. */
 export interface UtilityPlant {
   x: number;
@@ -258,29 +264,57 @@ export function bfsBudgetDrainFlood(
   getDemand: (x: number, y: number) => number,
   infra?: Set<string>,
   roadLookup?: UnifiedRoadLookup | null,
+  /** Shared across the plants of one pass — see the comment on `paid` below. */
+  paidGroups?: Set<string>,
+  /** Shared per-position charge memo for one pass. */
+  chargeCache?: Map<string, CellCharge>,
 ): void {
   const rl = roadLookup ?? null;
   let budget = plant.output;
   const startPosKey = toPosKey(plant.x, plant.y);
 
-  /** Footprints already paid for, keyed by primary-cell position. */
-  const paidGroups = new Set<string>();
+  /**
+   * Footprints already paid for, keyed by primary-cell position.
+   *
+   * SHARED across the plants of one coverage pass, because `supplied` is too.
+   * Per-plant, a footprint left partially supplied by plant A was charged again
+   * in full by plant B: A pays at the primary, its budget lands on exactly 0,
+   * the `budget <= 0` break fires before the primary is dequeued, and the other
+   * three cells are never supplied. B then reaches a secondary, sees neither
+   * that cell in `supplied` nor the group in its own fresh set, and pays the
+   * whole facility a second time — draining 10 for something getDemand() counts
+   * as 5. That is the double-count BUG-070 removed, reintroduced across plants.
+   */
+  const paid = paidGroups ?? new Set<string>();
 
   /**
    * Resolve what reaching (x, y) actually costs.
    *
    * `group` is null for ordinary cells (each settles on its own) and the
    * primary cell's key for any cell of a multi-cell facility.
+   *
+   * Memoised: findPrimaryCell scans an O(max(w,h)^2) box — 81 lookups per
+   * secondary cell of a Large Airport — and Grid.getCell allocates. Without the
+   * cache that ran per cell, per plant, and again for power, water and sewage
+   * on the same slow slot. The grid cannot change during a coverage pass, so
+   * one entry per position is safe for the whole pass.
    */
-  const chargeFor = (x: number, y: number): { group: string | null; demand: number } => {
+  const chargeFor = (x: number, y: number, posKey: string): CellCharge => {
+    const hit = chargeCache?.get(posKey);
+    if (hit) return hit;
     const cell = grid.getCell(x, y);
-    if (!cell || cell.buildingId === 0) return { group: null, demand: getDemand(x, y) };
-    if (cell.reserved !== MULTI_CELL_OCCUPIED && !isPrimaryCellReserved(cell.reserved)) {
-      return { group: null, demand: getDemand(x, y) };
+    let result: CellCharge;
+    if (!cell || cell.buildingId === 0
+      || (cell.reserved !== MULTI_CELL_OCCUPIED && !isPrimaryCellReserved(cell.reserved))) {
+      result = { group: null, demand: getDemand(x, y) };
+    } else {
+      const primary = findPrimaryCell(grid, x, y);
+      result = primary
+        ? { group: toPosKey(primary.x, primary.y), demand: getDemand(primary.x, primary.y) }
+        : { group: null, demand: getDemand(x, y) };
     }
-    const primary = findPrimaryCell(grid, x, y);
-    if (!primary) return { group: null, demand: getDemand(x, y) };
-    return { group: toPosKey(primary.x, primary.y), demand: getDemand(primary.x, primary.y) };
+    chargeCache?.set(posKey, result);
+    return result;
   };
 
   /**
@@ -289,8 +323,8 @@ export function bfsBudgetDrainFlood(
    */
   const trySupply = (x: number, y: number, posKey: string): boolean => {
     if (supplied.has(posKey)) return true;
-    const { group, demand } = chargeFor(x, y);
-    if (group !== null && paidGroups.has(group)) {
+    const { group, demand } = chargeFor(x, y, posKey);
+    if (group !== null && paid.has(group)) {
       supplied.add(posKey);
       return true;
     }
@@ -298,7 +332,7 @@ export function bfsBudgetDrainFlood(
       if (budget < demand) return false;
       budget -= demand;
     }
-    if (group !== null) paidGroups.add(group);
+    if (group !== null) paid.add(group);
     supplied.add(posKey);
     return true;
   };

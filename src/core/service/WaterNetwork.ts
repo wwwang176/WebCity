@@ -3,7 +3,7 @@ import { toPosKey } from '../grid/GridHelpers';
 import { ZoneType } from '../grid/types';
 import { getBuildingType } from '../building/types';
 import { getInfraBuildingId } from '../building/InfraConfig';
-import { bfsRoadNetworkFlood, bfsBudgetDrainFlood } from './NetworkCoverage';
+import { bfsRoadNetworkFlood, bfsBudgetDrainFlood, type CellCharge } from './NetworkCoverage';
 import { calculateUtilityCellDemand, type UtilityCellDemandConfig } from './UtilityCellDemand';
 export interface WaterPlant {
   x: number;
@@ -113,8 +113,10 @@ export class WaterNetwork {
     // Phase 2: BFS budget-drain per plant
     this.supplied.clear();
     const getDemand = (x: number, y: number) => this.getCellDemandAt(grid, x, y);
+    const paidGroups = new Set<string>();
+    const chargeCache = new Map<string, CellCharge>();
     for (const plant of this.plants) {
-      bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, infrastructurePositions, this.roadLookup);
+      bfsBudgetDrainFlood(grid, plant, this.supplied, getDemand, infrastructurePositions, this.roadLookup, paidGroups, chargeCache);
     }
     return this.supplied;
   }
