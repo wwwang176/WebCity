@@ -2513,3 +2513,14 @@ BUG-214 的真正傷害是**未偵測到的交叉路徑衝突**，正解是 BUG-
 
 原計畫把裝飾物層排在階段 3；因為這條，**地面物件必須在階段 2 就從建築幾何裡分離出來**，
 否則階段 2 換完變體，樹還是會跟著長高。
+
+---
+
+## BUG-220：辦公區的建築密度渲染層看不到
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-220 | renderer/BuildingRenderer.ts (`addBuilding` / `updateBuilding`) | `ZoneType.OFFICE` 底下有六種建築：低密度 15／30／50 人，高密度 160／320／600 人。但 `addBuilding` 的簽章只帶 (x, y, zoneType, level)，沒有密度，所以 15 人的 Small Office 與 160 人的 Office Building 用同一個高度與同一組變體渲染 —— 人口差 11 倍，外觀完全一樣 | Medium |
+
+**修法：** 簽章多帶 `density`（`Game.ts` 已經在讀 `getBuildingType(cell.buildingId)`，
+density 就在同一個物件上），變體桶 key 改成 (分區, 密度, 等級)。屬於階段 2。
