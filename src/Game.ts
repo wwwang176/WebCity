@@ -65,7 +65,8 @@ import {
   type TransportStopKind,
 } from './core/ViewMode';
 import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
-import { getBuildReasonMessage } from './core/grid/BuildReasonMessages';
+import { getBuildReasonMessage, formatBuildFailure } from './core/grid/BuildReasonMessages';
+import { getZoneBlocker, summariseZoneBlockers, ZONE_BLOCKER_MESSAGES, type ZoneBlocker } from './core/zone/ZoneBlocker';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
@@ -300,7 +301,29 @@ export interface SelectedTransportStop {
   hasWater: boolean;
 }
 
-export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop;
+/**
+ * An EMPTY zoned cell the player clicked to ask "why is nothing being built
+ * here?".
+ *
+ * Selecting one used to do nothing at all — handleSelectClick required
+ * `buildingId > 0` — which left the question with no way to be asked, let alone
+ * answered.
+ */
+export interface SelectedEmptyZone {
+  kind: 'emptyZone';
+  x: number;
+  y: number;
+  zoneType: number;
+  /** null when the cell is fine and simply has not been picked for growth yet. */
+  blocker: ZoneBlocker | null;
+  reason: string;
+  hasPower: boolean;
+  hasWater: boolean;
+  /** How many other empty zoned cells across the city share this blocker. */
+  sameBlockerCount: number;
+}
+
+export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop | SelectedEmptyZone;
 
 export class Game {
   private sceneManager: SceneManager;
@@ -497,6 +520,12 @@ export class Game {
     // elevationData is restored after elevationManager is initialized (below)
     this.simLoop.onTerrainChanged = () => {
       this.dirty.terrain = true;
+      // Power and water coverage is recomputed on the slow cycle, and a change
+      // there is exactly what makes a zoned cell start or stop being able to
+      // develop — so the diagnosis tint has to follow it. This is the case that
+      // went unseen: connect a road to the grid and the cells that were dark
+      // yellow have to stop being dark yellow.
+      this.zoneOverlaysDirty = true;
     };
     // Fine-grained building callbacks — incremental O(1) updates,
     // no need to set dirty.buildings (avoids redundant full rebuild)
@@ -1047,8 +1076,33 @@ export class Game {
       this.simLoop.markLaneGraphDirty(buildingCells, true);
     }
     this.zoneManager.setZoneRect({ x: minX, y: minY }, { x: maxX, y: maxY }, zoneType);
-    this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
+    this.refreshZoneOverlays();
     this.dirty.terrain = true;
+  }
+
+  /**
+   * Why an empty zoned cell is not developing, for the overlay tint and the
+   * selection panel.
+   *
+   * A cell that can never develop used to be drawn exactly like one waiting its
+   * turn. The information — isPowered / isWatered / road reach / demand — all
+   * existed; nothing carried it to the screen.
+   */
+  private zoneBlockerAt = (x: number, y: number) => getZoneBlocker(this.state.grid, x, y, {
+    isPowered: (cx: number, cy: number) => this.state.power.isPowered(cx, cy),
+    isWatered: (cx: number, cy: number) => this.state.water.isSupplied(cx, cy),
+    rciDemand: this.state.rciDemand,
+    canBuildHere: (cx: number, cy: number, zoneType: ZoneType) => {
+      const d = this.state.districts.getDistrictAt(cx, cy);
+      return !d || this.state.policies.canBuildInDistrict(d.id, zoneType);
+    },
+  });
+
+  /** Rebuild the zone overlays with a fresh blocker diagnosis. */
+  private refreshZoneOverlays(): void {
+    this.buildingRenderer.rebuildZoneOverlays(
+      this.sceneManager.scene, this.state.grid, this.zoneBlockerAt,
+    );
   }
 
   private collectRoadCells(x1: number, y1: number, x2: number, y2: number): string[] {
@@ -1126,7 +1180,7 @@ export class Game {
       this.dirty.roads = false;
       this.dirty.markRoadCellsDirty(affectedRoadCells);
     }
-    this.buildingRenderer.rebuildZoneOverlays(this.sceneManager.scene, this.state.grid);
+    this.refreshZoneOverlays();
 
     // Refresh overlay cache after demolish
     const activeOverlay = this.overlayRenderer.getOverlay();
@@ -1186,7 +1240,10 @@ export class Game {
     const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
     const check = canPlaceInfra(this.state.grid, x, y, type, this.currentRotation, groundwaterFn);
     if (!check.ok) {
-      this.showNotification(getBuildReasonMessage(check.reason), 3);
+      // Name what was refused. Road failures already read "Cannot build road:
+      // ..."; the placement paths printed the bare reason, so a water plant
+      // rejected inland just said "No groundwater here" with no subject.
+      this.showNotification(formatBuildFailure(cfg.name, check.reason), 3);
       return;
     }
 
@@ -1266,13 +1323,13 @@ export class Game {
 
   private placeTransportStop(x: number, y: number, type: 'bus' | 'metro' | 'rail' | 'ferry' | 'airport'): void {
     const cell = this.state.grid.getCell(x, y);
-    const check = canPlaceTransportStop(type, cell, this.state.grid, x, y);
-    if (!check.ok) {
-      this.showNotification(getBuildReasonMessage(check.reason), 3);
-      return;
-    }
     const airportInfra = AIRPORT_TOOL_INFRA[this.currentTool];
     const infraCfg = getInfraConfig(airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!);
+    const check = canPlaceTransportStop(type, cell, this.state.grid, x, y);
+    if (!check.ok) {
+      this.showNotification(formatBuildFailure(infraCfg?.name ?? type, check.reason), 3);
+      return;
+    }
     const cost = infraCfg?.cost ?? 500;
     if (!this.tryDeductFunds(cost)) return;
 
@@ -1323,7 +1380,7 @@ export class Game {
     const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation);
     if (!check.ok) {
       this.state.budget.funds += cost;
-      this.showNotification(getBuildReasonMessage(check.reason));
+      this.showNotification(formatBuildFailure(getInfraConfig(infraType)?.name ?? 'Airport', check.reason));
       return false;
     }
 
@@ -1439,8 +1496,15 @@ export class Game {
   }
 
   /** Rebuild renderer meshes for each dirty subsystem, then clear dirty flags. */
+  /** Set when utility coverage moved, so the zone-blocker tint can follow it. */
+  private zoneOverlaysDirty = false;
+
   private rebuildDirtySubsystems(): void {
     const d = this.dirty;
+    if (this.zoneOverlaysDirty) {
+      this.zoneOverlaysDirty = false;
+      this.refreshZoneOverlays();
+    }
     const anyDirty = d.hasRoadChanges || d.hasElevatedChanges || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
     if (!anyDirty) return;
 
@@ -1807,6 +1871,29 @@ export class Game {
           break;
         }
       }
+    } else if (cell && cell.zoneType !== ZoneType.NONE) {
+      // An empty zoned cell. This is the click a player makes when a block
+      // refuses to develop, and it used to select nothing.
+      const blocker = this.zoneBlockerAt(x, y);
+      const summary = summariseZoneBlockers(this.state.grid, {
+        isPowered: (cx: number, cy: number) => this.state.power.isPowered(cx, cy),
+        isWatered: (cx: number, cy: number) => this.state.water.isSupplied(cx, cy),
+        rciDemand: this.state.rciDemand,
+        canBuildHere: (cx: number, cy: number, zt: ZoneType) => {
+          const d = this.state.districts.getDistrictAt(cx, cy);
+          return !d || this.state.policies.canBuildInDistrict(d.id, zt);
+        },
+      });
+      this.selectedBuilding = {
+        kind: 'emptyZone', x, y,
+        zoneType: cell.zoneType,
+        blocker,
+        reason: blocker ? ZONE_BLOCKER_MESSAGES[blocker] : 'Ready to develop',
+        hasPower: this.state.power.isPowered(x, y),
+        hasWater: this.state.water.isSupplied(x, y),
+        sameBlockerCount: blocker ? summary[blocker] : 0,
+      };
+      this.applyViewMode(ViewMode.NORMAL);
     } else {
       this.selectedBuilding = null;
       this.applyViewMode(ViewMode.NORMAL);
@@ -2401,6 +2488,37 @@ export class Game {
       };
     }
 
+    if (sel.kind === 'emptyZone') {
+      // Recomputed on every poll like the other kinds. A stale diagnosis is
+      // worse than none: connect the road and the panel would still insist the
+      // block has no electricity.
+      const { x, y } = sel;
+      const cell = this.state.grid.getCell(x, y);
+      if (!cell || cell.zoneType === ZoneType.NONE || cell.buildingId !== 0) {
+        // It developed, or was rezoned away — the panel has nothing to say.
+        this.selectedBuilding = null;
+        return null;
+      }
+      const blocker = this.zoneBlockerAt(x, y);
+      const summary = summariseZoneBlockers(this.state.grid, {
+        isPowered: (cx: number, cy: number) => this.state.power.isPowered(cx, cy),
+        isWatered: (cx: number, cy: number) => this.state.water.isSupplied(cx, cy),
+        rciDemand: this.state.rciDemand,
+        canBuildHere: (cx: number, cy: number, zt: ZoneType) => {
+          const d = this.state.districts.getDistrictAt(cx, cy);
+          return !d || this.state.policies.canBuildInDistrict(d.id, zt);
+        },
+      });
+      return {
+        ...sel,
+        blocker,
+        reason: blocker ? ZONE_BLOCKER_MESSAGES[blocker] : 'Ready to develop',
+        hasPower: this.state.power.isPowered(x, y),
+        hasWater: this.state.water.isSupplied(x, y),
+        sameBlockerCount: blocker ? summary[blocker] : 0,
+      };
+    }
+
     if (sel.kind === 'zone') {
       const { x, y } = sel;
       const cell = this.state.grid.getCell(x, y);
@@ -2437,7 +2555,10 @@ export class Game {
       };
     }
 
-    return { ...sel };
+    // Every kind is handled above, so `sel` is `never` here. Kept so adding a
+    // new kind without a branch is a compile error rather than a silent
+    // shallow copy that never refreshes.
+    return sel;
   }
 
   async saveCurrentGame(slotId: number, name: string): Promise<void> {

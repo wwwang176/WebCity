@@ -37,3 +37,19 @@ export const BUILD_REASON_MESSAGES: Record<string, string> = {
 export function getBuildReasonMessage(reason: string): string {
   return BUILD_REASON_MESSAGES[reason] ?? reason;
 }
+
+/**
+ * A build failure that says WHAT failed, not only why.
+ *
+ * Road and rail failures already read "Cannot build road: ...". The three
+ * placement paths — civic/utility infrastructure, transit stops, airports —
+ * passed the bare reason, so dropping a water plant inland produced "No
+ * groundwater here — build near rivers" floating on its own with no indication
+ * of what had been refused. Several reasons are ambiguous without a subject:
+ * "Tile is occupied", "Must be built adjacent to a road" and "Out of bounds"
+ * say nothing about which of twenty tools just rejected the click.
+ */
+export function formatBuildFailure(subject: string, reason: string): string {
+  const why = getBuildReasonMessage(reason);
+  return subject ? `Cannot place ${subject}: ${why}` : why;
+}

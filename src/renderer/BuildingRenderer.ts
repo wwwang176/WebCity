@@ -8,6 +8,7 @@ import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
 import { disposeGroup } from './disposeGroup';
 import { PALETTE } from '../ColorPalette';
+import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
 
 // ===== Deterministic pseudo-random based on position =====
 function hash(x: number, y: number): number {
@@ -1186,7 +1187,7 @@ export class BuildingRenderer {
   }
 
   /** Rebuild only zone overlay meshes (cheap grid scan + InstancedMesh creation). */
-  rebuildZoneOverlays(scene: THREE.Scene, grid: Grid): void {
+  rebuildZoneOverlays(scene: THREE.Scene, grid: Grid, blockerOf?: (x: number, y: number) => ZoneBlocker | null): void {
     for (const mesh of this.overlayMeshes) {
       scene.remove(mesh);
       mesh.geometry.dispose();
@@ -1197,12 +1198,13 @@ export class BuildingRenderer {
     this.overlayMeshes = [];
     this.overlayIndex.clear();
 
-    const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
+    const emptyZonesByType = new Map<string, { x: number; y: number }[]>();
     grid.forEachCell((cell, x, y) => {
       if (cell.zoneType !== ZoneType.NONE && cell.buildingId === 0) {
-        const arr = emptyZonesByType.get(cell.zoneType);
+        const key = BuildingRenderer.overlayGroupKey(cell.zoneType, blockerOf?.(x, y) ?? null);
+        const arr = emptyZonesByType.get(key);
         if (arr) arr.push({ x, y });
-        else emptyZonesByType.set(cell.zoneType, [{ x, y }]);
+        else emptyZonesByType.set(key, [{ x, y }]);
       }
     });
 
@@ -1238,7 +1240,7 @@ export class BuildingRenderer {
 
   // ─── Full rebuild (init / save load) ───────────────────────────
 
-  build(scene: THREE.Scene, grid: Grid): void {
+  build(scene: THREE.Scene, grid: Grid, blockerOf?: (x: number, y: number) => ZoneBlocker | null): void {
     this.initVariantMeshes(scene);
     this.disposeNonPersistent(scene);
 
@@ -1250,7 +1252,7 @@ export class BuildingRenderer {
     }
     this.positionToInstance.clear();
 
-    const emptyZonesByType = new Map<number, { x: number; y: number }[]>();
+    const emptyZonesByType = new Map<string, { x: number; y: number }[]>();
     const infraCells: { x: number; y: number; type: InfraType; reserved: number }[] = [];
     const lightPositions: { x: number; y: number }[] = [];
 
@@ -1275,8 +1277,9 @@ export class BuildingRenderer {
             this.addBuilding(x, y, cell.zoneType, level, burned, abandoned);
             if (!burned && !abandoned) lightPositions.push({ x, y });
           } else if (cell.buildingId === 0) {
-            if (!emptyZonesByType.has(cell.zoneType)) emptyZonesByType.set(cell.zoneType, []);
-            emptyZonesByType.get(cell.zoneType)!.push({ x, y });
+            const key = BuildingRenderer.overlayGroupKey(cell.zoneType, blockerOf?.(x, y) ?? null);
+            if (!emptyZonesByType.has(key)) emptyZonesByType.set(key, []);
+            emptyZonesByType.get(key)!.push({ x, y });
           }
         }
       }
@@ -1302,15 +1305,39 @@ export class BuildingRenderer {
     [ZoneType.OFFICE]: PALETTE.ZONE.OFFICE,
   };
 
-  private buildZoneOverlays(scene: THREE.Scene, emptyZonesByType: Map<number, { x: number; y: number }[]>): void {
+  /**
+   * Group key for an empty zoned cell's overlay.
+   *
+   * A blocked cell is grouped by its BLOCKER rather than its zone, so it gets
+   * the blocker's colour instead of the zone's. Without this an empty cell that
+   * can never develop is drawn identically to one that is simply waiting its
+   * turn — which is how twelve residential cells sat empty through a whole play
+   * session with nothing on screen saying their road was on a separate network
+   * from the power plant.
+   */
+  private static overlayGroupKey(zoneType: number, blocker: ZoneBlocker | null): string {
+    return blocker && ACTIONABLE_BLOCKERS.has(blocker) ? `b:${blocker}` : `z:${zoneType}`;
+  }
+
+  private static overlayGroupStyle(key: string): { color: number; opacity: number } {
+    if (key.startsWith('b:')) {
+      const blocker = key.slice(2) as ZoneBlocker;
+      // Louder than a plain zone tint: this is a call to action, not decoration.
+      return { color: ZONE_BLOCKER_COLORS[blocker] ?? 0xff6d00, opacity: 0.6 };
+    }
+    const zoneType = Number(key.slice(2));
+    return { color: BuildingRenderer.ZONE_GROUND_COLORS[zoneType] ?? 0x888888, opacity: 0.35 };
+  }
+
+  private buildZoneOverlays(scene: THREE.Scene, emptyZonesByType: Map<string, { x: number; y: number }[]>): void {
     const matrix = new THREE.Matrix4();
-    for (const [zoneType, cells] of emptyZonesByType) {
-      const baseColor = BuildingRenderer.ZONE_GROUND_COLORS[zoneType] ?? 0x888888;
+    for (const [groupKey, cells] of emptyZonesByType) {
+      const { color: baseColor, opacity } = BuildingRenderer.overlayGroupStyle(groupKey);
       const count = Math.min(cells.length, this.maxPerVariant);
       const geometry = new THREE.PlaneGeometry(0.9, 0.9);
       geometry.rotateX(-Math.PI / 2);
       const material = new THREE.MeshBasicMaterial({
-        color: baseColor, transparent: true, opacity: 0.35, depthWrite: false,
+        color: baseColor, transparent: true, opacity, depthWrite: false,
       });
       const mesh = new THREE.InstancedMesh(geometry, material, count);
       mesh.frustumCulled = false;
