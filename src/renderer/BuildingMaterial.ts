@@ -17,6 +17,7 @@ export const BUILDING_VERT = /* glsl */ `
 attribute float aHighlight;
 attribute vec3 aHighlightColor;
 attribute float aOccupancy;
+attribute vec3 aSeed;
 
 varying vec3 vNormal;
 varying vec3 vLocalPos;
@@ -27,12 +28,14 @@ varying float vZoneCat;
 varying float vHighlight;
 varying vec3 vHighlightColor;
 varying float vOccupancy;
+varying vec3 vSeed;
 
 void main() {
   vLocalPos = position;
   vHighlight = aHighlight;
   vHighlightColor = aHighlightColor;
   vOccupancy = aOccupancy;
+  vSeed = aSeed;
 
   #ifdef USE_COLOR
     vPartType = color.r;
@@ -87,6 +90,7 @@ varying float vZoneCat;
 varying float vHighlight;
 varying vec3 vHighlightColor;
 varying float vOccupancy;
+varying vec3 vSeed;
 
 float hash21(vec2 p) {
   p = fract(p * vec2(233.34, 851.73));
@@ -166,6 +170,10 @@ void main() {
   float directRatio = length(direct) / max(length(lighting), 0.001);
 
   bool isFoliage = vPartType > ${glslFloat(PART_THRESHOLDS.FOLIAGE_MIN)} && vPartType < ${glslFloat(PART_THRESHOLDS.FOLIAGE_MAX)};
+  // 金屬／深色細節：水塔、冷氣機、天線、管架。不畫窗戶，也不吃分區的
+  // 立面規則 —— 否則屋頂上的設備會長出一格一格的窗。
+  bool isDetail = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)}
+    && vPartType < ${glslFloat(PART_THRESHOLDS.FOLIAGE_MIN)};
   bool isRoof = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_MIN)} || (n.y > 0.85 && vPartType < ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)});
   bool isFloor = n.y < -0.85;
 
@@ -179,6 +187,10 @@ void main() {
     float topFade = smoothstep(0.0, 0.25, vWorldPos.y);
     color = baseGreen * (0.7 + 0.3 * topFade);
     color *= lighting;
+  } else if (isDetail) {
+    // 略帶藍的中灰金屬，靠種子微調明度，避免整片設備同一個顏色
+    float m = 0.42 + vSeed.z * 0.16;
+    color = vec3(m, m * 1.02, m * 1.06) * lighting;
   } else if (isFloor) {
     color = vBldgColor * 0.3;
   } else if (isRoof) {
@@ -187,6 +199,14 @@ void main() {
     color *= lighting;
   } else {
     // === WALL — zone-specific patterns ===
+    // 每棟樓自己的立面節奏。以前這些是常數，所以整座城市的塔樓共用同一個
+    // 窗戶格；量體再怎麼變，立面看起來還是同一棟。
+    float seedRhythm = vSeed.x;
+    // 相位偏移只改起算點，不改尺度 —— 窗戶仍是真實世界尺寸，但相鄰建築的
+    // 窗戶不再橫向對齊成一條線。
+    float phase = vSeed.y * 10.0;
+    float floorHeight = mix(0.22, 0.30, seedRhythm);
+    float windowWidth = mix(0.16, 0.24, seedRhythm);
     float y = vWorldPos.y;
     float wallU;
     if (abs(n.x) > abs(n.z)) {
@@ -203,10 +223,51 @@ void main() {
     if (vZoneCat < 0.1) {
       color = vBldgColor * 0.9;
       if (onWall) {
-        // Subtle horizontal siding lines
+        // 水平壁板（保留原本的質感）
         float board = fract(y / 0.06);
         float line = smoothstep(0.0, 0.06, board) * smoothstep(0.12, 0.06, board);
-        color = vBldgColor * (0.88 - line * 0.06);
+        vec3 wallColor = vBldgColor * (0.88 - line * 0.06);
+
+        // 住宅的窗比公寓大而稀疏，一層一排
+        float houseFloor = floorHeight * 0.72;
+        float houseWin = windowWidth * 1.35;
+        float fy = y / houseFloor;
+        float fx = (wallU + phase) / houseWin;
+        float fracY = fract(fy);
+        float fracX = fract(fx);
+        float fwX = fwidth(fx);
+        float fwY = fwidth(fy);
+        float winMask =
+            smoothstep(0.30 - fwX, 0.30 + fwX, fracX) * smoothstep(0.70 + fwX, 0.70 - fwX, fracX)
+          * smoothstep(0.30 - fwY, 0.30 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY);
+
+        // 一樓正中央開一道門，取代那一格窗
+        bool doorRow = y < houseFloor;
+        float doorX = abs(fract(fx) - 0.5);
+        float doorMask = (doorRow && doorX < 0.18 && y < houseFloor * 0.78) ? 1.0 : 0.0;
+        winMask = doorRow ? 0.0 : winMask;
+
+        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 4.7;
+        float period = 150.0 + hash21(wid + 99.0) * 150.0;
+        float phaseT = hash21(wid * 2.71 + 47.0) * period;
+        float epoch = floor((uTime + phaseT) / period);
+        float lit = hash21(wid + epoch * 13.7);
+        float litThresh = mix(0.95, 0.45, occ);
+
+        vec3 winColor;
+        if (lit > litThresh) {
+          float w = hash21(wid + 77.7);
+          winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+          winBrightness = 0.6 + hash21(wid + 21.3) * 0.4;
+          isLitWindow = winMask > 0.5;
+        } else {
+          winColor = vBldgColor * 0.24 + vec3(0.03, 0.05, 0.08);
+        }
+
+        vec3 doorColor = vBldgColor * 0.35 + vec3(0.06, 0.03, 0.02);
+        color = mix(wallColor, winColor, winMask);
+        color = mix(color, doorColor, doorMask);
+        windowMask = winMask;
       }
       color *= lighting;
       float ao = smoothstep(0.0, 0.1, y);
@@ -215,10 +276,8 @@ void main() {
 
     // ---- RESIDENTIAL HIGH: medium-spaced windows ----
     else if (vZoneCat < 0.3) {
-      float floorH = 0.25;
-      float winW = 0.2;
-      float fy = y / floorH;
-      float fx = wallU / winW;
+      float fy = y / floorHeight;
+      float fx = (wallU + phase) / windowWidth;
       float fracY = fract(fy);
       float fracX = fract(fx);
       float fwX = fwidth(fx);
@@ -271,10 +330,8 @@ void main() {
         }
       } else if (onWall) {
         // Upper wall — sparse small windows
-        float floorH = 0.3;
-        float winW = 0.22;
-        float fy = y / floorH;
-        float fx = wallU / winW;
+        float fy = y / (floorHeight * 1.2);
+        float fx = (wallU + phase) / (windowWidth * 1.1);
         float fracY = fract(fy);
         float fracX = fract(fx);
         float fwX = fwidth(fracX);
@@ -312,10 +369,8 @@ void main() {
 
     // ---- COMMERCIAL HIGH: dense glass curtain wall ----
     else if (vZoneCat < 0.7) {
-      float floorH = 0.22;
-      float winW = 0.1;
-      float fy = y / floorH;
-      float fx = wallU / winW;
+      float fy = y / (floorHeight * 0.88);
+      float fx = (wallU + phase) / (windowWidth * 0.5);
       float fracY = fract(fy);
       float fracX = fract(fx);
       float fwX = fwidth(fx);
@@ -377,10 +432,8 @@ void main() {
 
     // ---- OFFICE: dense window grid ----
     else {
-      float floorH = 0.25;
-      float winW = 0.125;
-      float fy = y / floorH;
-      float fx = wallU / winW;
+      float fy = y / floorHeight;
+      float fx = (wallU + phase) / (windowWidth * 0.625);
       float fracY = fract(fy);
       float fracX = fract(fx);
       float fwX = fwidth(fx);

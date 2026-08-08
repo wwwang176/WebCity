@@ -15,6 +15,40 @@ describe('the shader uses the thresholds the parts module defines', () => {
     }
   });
 
+  it('should declare and forward the per-instance facade seed', () => {
+    expect(BUILDING_VERT).toContain('attribute vec3 aSeed;');
+    expect(BUILDING_VERT).toContain('varying vec3 vSeed;');
+    expect(BUILDING_VERT).toContain('vSeed = aSeed;');
+    expect(BUILDING_FRAG).toContain('varying vec3 vSeed;');
+  });
+
+  it('should no longer hardcode the floor height and window width', () => {
+    // 這兩個常數是「高樓重複性太高」的隱藏主因：不論量體怎麼變，
+    // 所有塔樓的窗戶格都一樣。
+    expect(BUILDING_FRAG).not.toContain('float floorH =');
+    expect(BUILDING_FRAG).not.toContain('float winW =');
+  });
+
+  it('should branch on the detail tag before it reaches the wall branch', () => {
+    // 沒有這個分支，第三階段的水塔與冷氣機會被畫上窗戶。
+    const detailAt = BUILDING_FRAG.indexOf('isDetail');
+    const wallAt = BUILDING_FRAG.indexOf('=== WALL');
+    expect(detailAt).toBeGreaterThan(-1);
+    expect(wallAt).toBeGreaterThan(-1);
+    expect(detailAt).toBeLessThan(wallAt);
+  });
+
+  it('should give low-density residential a window grid, not just siding lines', () => {
+    // 這個分支原本只有水平壁板線，所以近看沒有任何細節可看。
+    const branch = BUILDING_FRAG.slice(
+      BUILDING_FRAG.indexOf('RESIDENTIAL LOW'),
+      BUILDING_FRAG.indexOf('RESIDENTIAL HIGH'),
+    );
+    expect(branch.length).toBeGreaterThan(0);
+    expect(branch).toContain('winMask');
+    expect(branch).toContain('floorHeight');
+  });
+
   it('should declare the attributes the renderer writes', () => {
     expect(BUILDING_VERT).toContain('attribute float aHighlight;');
     expect(BUILDING_VERT).toContain('attribute vec3 aHighlightColor;');
