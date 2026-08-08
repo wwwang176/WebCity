@@ -102,9 +102,20 @@ export function getSpeedLimitForCell(
   cellKey: string,
 ): number {
   // Use key-based lookup (supports "x,y,level" for elevated roads)
-  const cell = grid.getCellByKey
-    ? grid.getCellByKey(cellKey)
-    : (() => { const [gx, gy] = cellKey.split(',').map(Number); return grid.getCell!(gx!, gy!); })();
+  let cell: RoadTypeCell;
+  if (grid.getCellByKey) {
+    cell = grid.getCellByKey(cellKey);
+  } else if (grid.getCell) {
+    const [gx, gy] = cellKey.split(',').map(Number);
+    cell = grid.getCell(gx!, gy!);
+  } else {
+    // The union below says one of the two is present, but a value can satisfy
+    // it statically and still arrive with the method undefined — a class field
+    // declared and not assigned, for one. Falling through to the default speed
+    // would make every road in the city 50 km/h with nothing to show for it, so
+    // fail where the wiring is wrong instead.
+    throw new TypeError('getSpeedLimitForCell: lookup has neither getCellByKey nor getCell');
+  }
   if (!cell || cell.roadType <= 0) return 50;
   const cfg = ROAD_CONFIGS[cell.roadType as RoadType];
   return cfg?.speedLimit ?? 50;

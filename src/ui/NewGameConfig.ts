@@ -285,7 +285,12 @@ export function createNewGameConfig(
    * rather than being rejected.
    */
   function pick<T extends readonly string[]>(table: T, i: number): T[number] {
-    const clamped = Number.isFinite(i) ? Math.min(table.length - 1, Math.max(0, i)) : 0;
+    // Floor as well as clamp. Clamping alone left `pick(1.5)` returning
+    // undefined — the exact failure this guard is here to prevent, still
+    // reachable through the one input the range check does not cover.
+    const clamped = Number.isFinite(i)
+      ? Math.min(table.length - 1, Math.max(0, Math.floor(i)))
+      : 0;
     return table[clamped] as T[number];
   }
 

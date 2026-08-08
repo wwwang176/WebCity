@@ -170,3 +170,85 @@ describe('pedestrians obey traffic lights in a real game state', () => {
     expect(sawWaiting).toBe(true);
   });
 });
+
+/**
+ * The re-check at the top of the tick asks `canPassCrosswalk(currentEdge)` —
+ * but a waiting agent's `edgeIndex` still points at the APPROACH edge, and it
+ * is the crosswalk after it that the light governs. `canPassCrosswalk` returns
+ * early at `if (!edge.intersectionCellKey) return true` for an approach edge,
+ * so the branch released every waiting pedestrian, every tick, on every phase.
+ *
+ * It usually did not show, because the while loop below re-blocks the agent
+ * when it reaches the end of the edge. It shows when the agent is still short
+ * of that boundary: released to WALKING, it advances on red.
+ */
+describe('a waiting pedestrian re-checks the light it is waiting for', () => {
+  function waitingAgent() {
+    const state = signalisedCity();
+    const light = state.trafficLights.getLight(10, 10)!;
+    light.clearing = false;
+
+    // Walk one in until it stops at the crosswalk.
+    let found = null;
+    for (const phase of [0, 1]) {
+      light.phase = phase;
+      for (let attempt = 0; attempt < 40 && !found; attempt++) {
+        if (state.pedestrianManager.spawnPedestrian(5, 9, 15, 9, -1, 4) === null) break;
+        for (let i = 0; i < 200 && !found; i++) {
+          state.pedestrianManager.tick(0.5);
+          found = state.pedestrianManager.agents
+            .find(a => a.state === PedestrianState.WAITING_SIGNAL) ?? null;
+        }
+      }
+    }
+    expect(found, 'no agent ever reached WAITING_SIGNAL').not.toBeNull();
+
+    // The agent found may have been stopped several ticks and phases ago, so
+    // derive the phases from ITS crosswalk rather than assuming the light is
+    // still showing the one that stopped it. (Reading `light.phase` here was
+    // the first version of this fixture, and it produced two cases that failed
+    // in exactly opposite directions.)
+    const priv = state.pedestrianManager as unknown as {
+      canPassCrosswalk(e: unknown): boolean;
+    };
+    const crosswalk = found!.edgePath[found!.edgeIndex + 1]!;
+    let redPhase = -1;
+    let greenPhase = -1;
+    for (const phase of [0, 1]) {
+      light.phase = phase;
+      if (priv.canPassCrosswalk(crosswalk)) greenPhase = phase; else redPhase = phase;
+    }
+    expect(redPhase, 'no phase stops this crosswalk').toBeGreaterThanOrEqual(0);
+    expect(greenPhase, 'no phase lets it through').toBeGreaterThanOrEqual(0);
+
+    // Short of the boundary, which is where the advance loop cannot re-block.
+    const edge = found!.edgePath[found!.edgeIndex]!;
+    found!.edgeProgress = edge.length * 0.5;
+
+    return { state, light, agent: found!, edge, redPhase, greenPhase };
+  }
+
+  it('should not advance a waiting pedestrian while the light is still red', () => {
+    const { state, light, agent, redPhase } = waitingAgent();
+    light.phase = redPhase;
+    const before = agent.edgeProgress;
+
+    state.pedestrianManager.tick(0.1);
+
+    expect(agent.state, 'released while the light is still red')
+      .toBe(PedestrianState.WAITING_SIGNAL);
+    expect(agent.edgeProgress, 'walked forward on red').toBe(before);
+  });
+
+  it('should release it once the light changes', () => {
+    // The control: without it, "never release" satisfies the case above and
+    // pedestrians would stand at the kerb for ever.
+    const { state, light, agent, edge, greenPhase } = waitingAgent();
+    light.phase = greenPhase;
+
+    state.pedestrianManager.tick(0.1);
+
+    expect(agent.state).not.toBe(PedestrianState.WAITING_SIGNAL);
+    expect(agent.edgeProgress).toBeGreaterThan(edge.length * 0.5);
+  });
+});

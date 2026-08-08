@@ -206,11 +206,20 @@ export class BusSystem extends BaseTransportSystem {
       const segments = this.routeSegments.get(route.id);
       if (!segments) continue;
 
-      // Check if any segment passes through affected cells
+      // Check if any segment passes through affected cells.
+      //
+      // `viaCellKey` counts. A cross-intersection turn edge runs from the cell
+      // BEFORE the intersection to the cell AFTER it and records the cell it
+      // skipped there, so comparing only from/to meant demolishing the
+      // intersection a route turns through never marked that route as affected:
+      // its segments were never recomputed and the buses kept driving an edge
+      // whose middle no longer existed.
       let affected = false;
       for (const seg of segments) {
         for (const edge of seg) {
-          if (affectedCells.has(edge.from.cellKey) || affectedCells.has(edge.to.cellKey)) {
+          if (affectedCells.has(edge.from.cellKey)
+            || affectedCells.has(edge.to.cellKey)
+            || (edge.viaCellKey !== undefined && affectedCells.has(edge.viaCellKey))) {
             affected = true;
             break;
           }

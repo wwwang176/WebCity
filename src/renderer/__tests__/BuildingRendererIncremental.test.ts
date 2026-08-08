@@ -18,9 +18,11 @@ import { useSeededRandom } from '../../core/__tests__/helpers/seededRandom';
  * PowerPlant object is expected, so the city had neither power nor water and
  * nothing could grow or upgrade.
  *
- * The RNG is seeded and every assertion is unconditional. Each case first
- * asserts the world actually changed, so "callback fired" can never be
- * satisfied by a city that did nothing.
+ * The RNG is seeded and every assertion is unconditional. Where the fixture
+ * makes it possible, each case also checks the world actually changed at the
+ * cell the callback named — but only where that check can fail: an earlier
+ * version asserted `buildingId > 0` in the upgrade case on a fixture that
+ * pre-sets `buildingId: 1` everywhere, which is a check that cannot fail.
  */
 function makeTestState(size = 10) {
   return createGameState(size, size);
@@ -102,9 +104,13 @@ describe('SimulationLoop fine-grained building callbacks', () => {
     expect(updatedCb).toHaveBeenCalled();
     const [x, y, zoneType, level, burned] = updatedCb.mock.calls[0]!;
     expect(zoneType).toBe(ZoneType.RESIDENTIAL_LOW);
-    expect(typeof level).toBe('number');
     expect(typeof burned).toBe('boolean');
-    expect(state.grid.getCell(x as number, y as number)!.buildingId).toBeGreaterThan(0);
+    // The cell must actually have moved off the level-1 building the fixture
+    // seeded, and the level reported must be the one it moved to. `buildingId
+    // > 0` was the previous check and could not fail — every cell starts at 1.
+    const cell = state.grid.getCell(x as number, y as number)!;
+    expect(cell.buildingId, 'the reported cell did not change').not.toBe(1);
+    expect(level).toBeGreaterThan(1);
   });
 
   it('callbacks are optional and do not throw when unset', () => {

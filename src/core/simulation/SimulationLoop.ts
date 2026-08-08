@@ -1594,8 +1594,6 @@ export class SimulationLoop {
 
   private rebuildLaneGraph(): void {
     const grid = this.state.grid;
-    // Captured before the bus-revalidation block nulls the field.
-    const affectedCells = this.dirtyRoadCells;
 
     // Use UnifiedRoadLookup for all road cells (ground + elevated)
     const lookup = this._roadLookup;
@@ -1662,7 +1660,7 @@ export class SimulationLoop {
     //
     // Scoped to cells where the road is GONE, not merely rebuilt.
     //
-    // affectedCells is every cell the edit touched, and RoadBuilder reports the
+    // The dirty set is every cell the edit touched, and RoadBuilder reports the
     // whole L-path — including existing cells whose roadType did not change. A
     // vehicle whose route crosses those is fine: updateCells replaces the edge
     // objects, but the geometry is identical and nothing downstream depends on

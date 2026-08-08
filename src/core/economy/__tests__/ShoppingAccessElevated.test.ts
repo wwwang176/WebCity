@@ -184,4 +184,72 @@ describe('a viaduct with ramps joins two ground networks', () => {
     expect(shopping.getResidentialAccess(9, 1).hasAccess).toBe(false);
     expect(shopping.getCommercialCustomers(1, 1).hasCustomers).toBe(false);
   });
+
+  it('should keep them apart when the deck is enumerated first', () => {
+    // The same city as above, moved one row down.
+    //
+    // The BFS expands to ground-level neighbours from EVERY cell it stands on,
+    // including cells on the deck — so a viaduct absorbs the ground beneath it
+    // whether or not a ramp connects them. The case above only passes because
+    // `grid.forEachCell` is row-major and reaches both ground networks before
+    // the deck, leaving their cells already visited by the time the deck is
+    // seeded. Put the ground BELOW the deck and the order reverses: the deck is
+    // seeded first, swallows both stubs, and two networks that share no
+    // connection at all become one.
+    const grid = new Grid(14, 14);
+    // West stub: shop at (1,4), road at (2,4)-(3,4).
+    grid.setCell(1, 4, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    grid.setCell(2, 4, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(3, 4, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    // East stub: road at (7,4)-(8,4), house at (9,4). The gap at x=4..6 is what
+    // keeps them apart on the ground.
+    grid.setCell(7, 4, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(8, 4, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(9, 4, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+
+    // A rampless deck one row above, spanning the gap.
+    const em = new ElevationManager();
+    for (let x = 2; x <= 8; x++) {
+      em.set(x, 3, 1, {
+        roadType: RoadType.TWO_LANE, roadFlags: 12, railType: 0, railFlags: 0,
+        isRamp: false, rampAscendDirection: 0,
+      });
+    }
+
+    const shopping = new ShoppingAccess();
+    shopping.setRoadLookup(new UnifiedRoadLookup(grid, em));
+    shopping.calculate(grid);
+
+    expect(shopping.getResidentialAccess(9, 4).hasAccess,
+      'the house reached a shop through a viaduct it cannot get onto').toBe(false);
+    expect(shopping.getCommercialCustomers(1, 4).hasCustomers).toBe(false);
+  });
+
+  it('should still connect them when the deck has ramps, whatever the order', () => {
+    // The control for the case above: the fix must not cut off a viaduct that
+    // really is reachable, only one that is not.
+    const grid = new Grid(14, 14);
+    grid.setCell(1, 4, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+    grid.setCell(2, 4, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(3, 4, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(7, 4, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(8, 4, { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+    grid.setCell(9, 4, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
+
+    const em = new ElevationManager();
+    const seg = (isRamp: boolean, ascend: number) => ({
+      roadType: RoadType.TWO_LANE, roadFlags: 12, railType: 0, railFlags: 0,
+      isRamp, rampAscendDirection: ascend,
+    });
+    // Ramps land on the stubs themselves, so the deck really is reachable.
+    em.set(3, 4, 1, seg(true, EAST));
+    for (let x = 4; x <= 6; x++) em.set(x, 4, 1, seg(false, 0));
+    em.set(7, 4, 1, seg(true, WEST));
+
+    const shopping = new ShoppingAccess();
+    shopping.setRoadLookup(new UnifiedRoadLookup(grid, em));
+    shopping.calculate(grid);
+
+    expect(shopping.getResidentialAccess(9, 4).hasAccess).toBe(true);
+  });
 });

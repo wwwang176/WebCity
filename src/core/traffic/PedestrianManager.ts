@@ -204,9 +204,19 @@ export class PedestrianManager {
       const currentEdge = agent.edgePath[agent.edgeIndex];
       if (!currentEdge) continue; // no edge → skip
 
-      // If waiting at a blocked edge, re-check before allowing movement
+      // If waiting at a blocked edge, re-check before allowing movement.
+      //
+      // The edge to ask about is the one the agent is waiting to ENTER, not the
+      // one it is standing on: `edgeIndex` still points at the approach edge,
+      // and `canPassCrosswalk` returns early at `if (!edge.intersectionCellKey)
+      // return true` for anything that is not a crosswalk. Asking about the
+      // approach edge therefore released every waiting pedestrian on every
+      // tick, in every phase. It was mostly hidden because the advance loop
+      // below re-blocks them at the edge boundary — but an agent still short of
+      // that boundary was released and walked forward on red.
       if (agent.state === PedestrianState.WAITING_SIGNAL) {
-        if (this.trafficLights && !this.canPassCrosswalk(currentEdge)) {
+        const blockedEdge = agent.edgePath[agent.edgeIndex + 1] ?? currentEdge;
+        if (this.trafficLights && !this.canPassCrosswalk(blockedEdge)) {
           this.agents[writeIdx++] = agent;
           continue;
         }

@@ -32,36 +32,60 @@ function tsxFiles(dir: string, out: string[] = []): string[] {
 }
 
 /**
- * Capitalised opening tags — `<For`, `<Show`, `<MyPanel`. Lowercase tags are
- * host elements.
+ * Comments and string/template literals, blanked out.
  *
- * The leading-character class is what separates a tag from a type argument:
- * `createSignal<PageId>('summary')` has an identifier immediately before the
- * `<`, whereas a JSX tag always follows whitespace, a bracket or an operator.
+ * Without this the check reads its own prose: a comment saying `const For` was
+ * enough to convince the first version that `For` was bound, which silences the
+ * check for exactly the name being discussed.
  */
+function stripCommentsAndStrings(src: string): string {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/\/\/[^\n]*/g, ' ')
+    .replace(/`(?:\\.|[^`\\])*`/g, '``')
+    .replace(/'(?:\\.|[^'\\\n])*'/g, "''")
+    .replace(/"(?:\\.|[^"\\\n])*"/g, '""');
+}
+
+/**
+ * The ROOT identifier of every capitalised JSX tag: `For`, `Show`, and `Tabs`
+ * from `<Tabs.Panel>`. Lowercase tags are host elements.
+ *
+ * The member form matters more than it looks. `<Dialog.Title>` is idiomatic
+ * Solid, and an unimported `Dialog` throws the same ReferenceError as the
+ * `<For>` this file was written for — but the first version required
+ * `[\s/>]` straight after the name, so `<Tabs.` matched nothing at all and the
+ * tag was invisible.
+ *
+ * The leading-character class separates a tag from a type argument:
+ * `createSignal<PageId>('summary')` has an identifier immediately before the
+ * `<`, whereas a JSX tag follows whitespace, a bracket or an operator — `&&`
+ * and `;` among them, which the first version's class omitted.
+ */
+const TAG_RE = /(?:^|[\s(\[{=>,?:;&|!])<\/?([A-Z][A-Za-z0-9_]*)(?:\.[A-Za-z0-9_]+)*[\s/>]/gm;
+
 function jsxComponentTags(src: string): Set<string> {
   const found = new Set<string>();
-  for (const m of src.matchAll(/(?:^|[\s(\[{=>,?:])<([A-Z][A-Za-z0-9_]*)[\s/>]/gm)) found.add(m[1]!);
+  for (const m of src.matchAll(TAG_RE)) found.add(m[1]!);
   return found;
 }
 
 /**
- * Every name the module can resolve: imports, and anything declared at any
- * depth in the file. Over-approximating is the right direction — this test
- * must never fail on a name that does resolve.
+ * Does `name` appear anywhere in the file OTHER than as a JSX tag?
+ *
+ * This replaces an enumeration of binding forms, which could only ever be
+ * incomplete: the first version knew about `import`, `function`, `const` and
+ * friends, and so falsely rejected `function D(Comp: Component) { return <Comp/> }`
+ * and `const { Panel } = CONSTS`, because a parameter and a destructured
+ * binding match none of those patterns.
+ *
+ * An identifier that is genuinely missing — the case this file exists for —
+ * occurs in tag position and nowhere else. Anything that binds it, by any
+ * syntax present or future, leaves an occurrence behind.
  */
-function boundNames(src: string): Set<string> {
-  const names = new Set<string>();
-  for (const m of src.matchAll(/^import\s+(?:type\s+)?([^;]+?)\s+from\s+['"]/gm)) {
-    for (const part of m[1]!.replace(/[{}]/g, ',').split(',')) {
-      const name = part.trim().split(/\s+as\s+/).pop()?.trim();
-      if (name) names.add(name.replace(/^\*\s*/, ''));
-    }
-  }
-  for (const m of src.matchAll(/\b(?:function|class|const|let|var|type|interface)\s+([A-Z][A-Za-z0-9_]*)/g)) {
-    names.add(m[1]!);
-  }
-  return names;
+function usedOutsideJsxTags(src: string, name: string): boolean {
+  const withoutTags = src.replace(new RegExp(`</?${name}\\b`, 'g'), ' ');
+  return new RegExp(`\\b${name}\\b`).test(withoutTags);
 }
 
 describe('every JSX component tag resolves to something', () => {
@@ -75,10 +99,46 @@ describe('every JSX component tag resolves to something', () => {
   it.each(files.map(f => [f.slice(process.cwd().length + 1), f]))(
     '%s',
     (_label, file) => {
-      const src = readFileSync(file, 'utf8');
-      const bound = boundNames(src);
-      const unresolved = [...jsxComponentTags(src)].filter(tag => !bound.has(tag));
+      const src = stripCommentsAndStrings(readFileSync(file, 'utf8'));
+      const unresolved = [...jsxComponentTags(src)].filter(tag => !usedOutsideJsxTags(src, tag));
       expect(unresolved, `used in JSX but never imported or declared`).toEqual([]);
     },
   );
+});
+
+/**
+ * The lint checking itself. Each case below is a way the first version either
+ * missed the bug it exists for or rejected valid code; all five were found by
+ * an adversarial review, not by writing this file.
+ */
+describe('the check catches what it claims to', () => {
+  const unresolvedIn = (src: string): string[] => {
+    const stripped = stripCommentsAndStrings(src);
+    return [...jsxComponentTags(stripped)].filter(t => !usedOutsideJsxTags(stripped, t));
+  };
+
+  it.each([
+    ['the original bug', 'function P() {\n  return <For each={xs}>{x => x}</For>;\n}', ['For']],
+    ['a member tag', 'function P() {\n  return <Tabs.Panel>hi</Tabs.Panel>;\n}', ['Tabs']],
+    ['after &&', 'function P() {\n  return <div>{ok&&<Missing/>}</div>;\n}', ['Missing']],
+    ['after ;', 'function P() {\n  let a;<Gone/>;\n}', ['Gone']],
+  ])('should flag %s', (_label, src, expected) => {
+    expect(unresolvedIn(src)).toEqual(expected);
+  });
+
+  it('should not be talked out of it by a comment', () => {
+    // `// a stray mention: const For` used to bind the name.
+    const src = 'function P() {\n  // a stray mention: const For\n  return <For each={xs}>{x => x}</For>;\n}';
+    expect(unresolvedIn(src)).toEqual(['For']);
+  });
+
+  it.each([
+    ['an import', "import { For } from 'solid-js';\nfunction P() { return <For each={xs}>{x => x}</For>; }"],
+    ['a local declaration', 'function Panel() { return null; }\nfunction P() { return <Panel />; }'],
+    ['a parameter', 'function D(Comp: Component) {\n  return <Comp />;\n}'],
+    ['a destructured binding', 'const { Panel } = CONSTS;\nfunction P() { return <Panel />; }'],
+    ['a type argument, which is not a tag', "const [p] = createSignal<PageId>('summary');"],
+  ])('should accept %s', (_label, src) => {
+    expect(unresolvedIn(src)).toEqual([]);
+  });
 });

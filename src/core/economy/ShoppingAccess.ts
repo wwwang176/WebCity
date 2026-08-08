@@ -112,6 +112,9 @@ export class ShoppingAccess {
 
       while (queue.length > 0) {
         const curKey = queue.shift()!;
+        // Ground keys are "x,y"; an elevated cell carries its level as a third
+        // component. The ground-neighbour expansion below depends on this.
+        const curIsGround = curKey.indexOf(',') === curKey.lastIndexOf(',');
         const curPos = parsePosKeyUnsafe(curKey);
         const cx = curPos.x;
         const cy = curPos.y;
@@ -165,7 +168,20 @@ export class ShoppingAccess {
             }
           }
 
-          // Ground-level non-road cells (buildings, zones)
+          // Ground-level non-road cells (buildings, zones) — but only when we
+          // are STANDING on the ground.
+          //
+          // This expansion ran from every cell in the queue, elevated ones
+          // included, so a viaduct absorbed whatever sat beside the ground
+          // under it: a rampless deck spanning a gap joined the two networks it
+          // flew over, and houses gained access to shops they could not reach.
+          // It looked correct only because grid.forEachCell is row-major and
+          // usually visited the ground before the deck; move the ground one row
+          // BELOW the deck and the order reverses, and so does the answer.
+          //
+          // Level changes are the road lookup's job, immediately above, and it
+          // requires a ramp.
+          if (!curIsGround) continue;
           const nPosKey = toPosKey(nx, ny);
           if (!globalVisited.has(nPosKey)) {
             const ncell = grid.getCell(nx, ny);

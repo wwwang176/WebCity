@@ -103,7 +103,12 @@ describe('SimulationLoop render-dirty callbacks', () => {
       const state = makeTestState();
       const loop = new SimulationLoop(state);
       const cb = vi.fn();
+      const updated = vi.fn();
       loop.onBuildingsChanged = cb;
+      // The fine-grained one too: an adversarial review found that removing the
+      // `onBuildingUpdated` raise on the fire path left the whole suite green,
+      // because only the coarse callback was ever asserted here.
+      loop.onBuildingUpdated = updated;
 
       state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
       // No fire station anywhere, so the fire is uncovered and burns to the
@@ -117,13 +122,17 @@ describe('SimulationLoop render-dirty callbacks', () => {
 
       expect(state.grid.getCell(3, 3)!.reserved).toBe(BURNED);
       expect(cb).toHaveBeenCalled();
+      // ...and the renderer is told WHICH building, and that it burned.
+      expect(updated.mock.calls.some(c => c[0] === 3 && c[1] === 3 && c[4] === true)).toBe(true);
     });
 
     it('fires when a building is abandoned', () => {
       const state = makeTestState();
       const loop = new SimulationLoop(state);
       const cb = vi.fn();
+      const updated = vi.fn();
       loop.onBuildingsChanged = cb;
+      loop.onBuildingUpdated = updated;
 
       // A building with no road, no power and no water accumulates abandonment
       // stress every cycle until it is given up.
@@ -136,6 +145,42 @@ describe('SimulationLoop render-dirty callbacks', () => {
       }
 
       expect(state.grid.getCell(5, 5)!.reserved).toBe(ABANDONED);
+      expect(cb).toHaveBeenCalled();
+      // The 6th argument is `abandoned`; without it the renderer re-adds the
+      // building's light spot and the ruin looks inhabited (BUG-086).
+      expect(updated.mock.calls.some(c => c[0] === 5 && c[1] === 5 && c[5] === true)).toBe(true);
+    });
+
+    it('fires when a building upgrades, with nothing else changing', () => {
+      // Isolated deliberately: every other case here also grows or removes a
+      // building, so the coarse raise on the UPGRADE path was the one of the
+      // four this file names that no test covered — deleting it left the whole
+      // suite green. There are no empty zoned cells, so nothing can grow.
+      const state = makeTestState();
+      const loop = new SimulationLoop(state);
+      const cb = vi.fn();
+      loop.onBuildingsChanged = cb;
+
+      for (let x = 0; x < 10; x++) {
+        for (let y = 0; y < 10; y++) {
+          state.grid.setCell(x, y, y % 2 === 0
+            ? { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1, serviceCoverage: 6, landValue: 90 }
+            : { roadType: RoadType.TWO_LANE, roadFlags: 12 });
+        }
+      }
+      provideUtilities(state, 5, 5);
+
+      const levels = () => {
+        let sum = 0;
+        state.grid.forEachCell(c => { sum += c.buildingId; });
+        return sum;
+      };
+      const before = levels();
+
+      for (let i = 0; i < 600 && levels() === before; i++) loop.tick();
+
+      expect(levels(), 'nothing upgraded, so the case proves nothing')
+        .not.toBe(before);
       expect(cb).toHaveBeenCalled();
     });
   });
