@@ -221,6 +221,7 @@ import { buildServiceStatus, type ServiceStatus } from './core/service/ServiceSt
 import type { SaveCompleteMessage } from './core/save/SaveWorkerHandler';
 import { classifySaveError } from './core/save/SaveFailure';
 import { findWaterPlantSites } from './core/building/WaterPlantSites';
+import { reconcileGameState, isClean } from './core/simulation/Reconcile';
 import { GROUNDWATER_SEARCH_RANGE } from './core/grid/Terrain';
 
 export interface SelectedZoneBuilding {
@@ -705,6 +706,19 @@ export class Game {
         (x, y) => this.state.grid.getCell(x, y)?.elevation ?? 0,
       );
     }});
+
+    if (loadedState) {
+      steps.push({ label: 'Checking the city over...', run: () => {
+        // Ask the question rather than trusting that every removal path
+        // cleaned up after itself. Each of BUG-056, BUG-086, BUG-119 and
+        // BUG-164 was one path that did not, and a save carries the damage
+        // forward for ever. Only ever removes; never invents a building.
+        const report = reconcileGameState(this.state);
+        if (!isClean(report)) {
+          console.warn('[load] reconciled a save with dangling references:', report);
+        }
+      }});
+    }
 
     steps.push({ label: 'Almost ready...', run: () => {
       this.sceneManager.setCameraTarget(mapSize / 2, mapSize / 2);
