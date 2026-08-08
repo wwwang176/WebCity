@@ -47,6 +47,11 @@ export function produceGarbageAndSewage(
   sewageService: SewageService,
   getResidents: OccupancyLookup,
   getWorkers: OccupancyLookup,
+  /**
+   * Multiplier on garbage produced at this cell — the Encourage Recycling
+   * district policy. Defaults to 1 so callers with no districts are unaffected.
+   */
+  getGarbageMultiplier: OccupancyLookup = () => 1,
 ): { sewage: number } {
   let sewage = 0;
   sewageService.clearSewageCells();
@@ -70,7 +75,8 @@ export function produceGarbageAndSewage(
     // Garbage: uses actual occupancy, not building capacity
     const actualResidents = isResidentialZone(zt) ? getResidents(x, y) : 0;
     const actualWorkers = !isResidentialZone(zt) ? getWorkers(x, y) : 0;
-    const garbageAmount = calculateZoneDemand(GARBAGE_PRODUCTION, zt, actualResidents, actualWorkers);
+    const garbageAmount = calculateZoneDemand(GARBAGE_PRODUCTION, zt, actualResidents, actualWorkers)
+      * getGarbageMultiplier(x, y);
     if (garbageAmount > 0) {
       garbageService.reportGarbage(x, y, garbageAmount);
     }

@@ -1004,6 +1004,9 @@ export class SimulationLoop {
         pollution: (pollution.ground + pollution.water) * pollutionFactor,
         noise: pollution.noise * pollutionFactor,
         crimeRate: this.getAvgCrime(),
+        policyBonus: this.state.policies.getLandValueBonus(
+          this.state.districts.getDistrictAt(x, y)?.id ?? null,
+        ),
       });
 
       // Write land value, service coverage, and noise to grid (avoid temp object)

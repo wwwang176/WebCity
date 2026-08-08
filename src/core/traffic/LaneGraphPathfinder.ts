@@ -13,7 +13,7 @@ import { ROAD_CONFIGS, RoadType } from '../road/types';
 import { parsePosKeyUnsafe, parseLevelFromKey, toPosKey } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
-import { getLaneSpeedMultiplier } from './Pathfinding';
+import { laneEdgeCost } from './Pathfinding';
 
 /** Cost multiplier applied per cell+lane used in previous variants (point-level penalty). */
 const VARIANT_PENALTY = 3;
@@ -156,7 +156,7 @@ function laneAStar(
       // Higher speed limit → lower cost → A* prefers faster roads.
       const cell = lookup ? lookup.getCellByKey(edge.to.cellKey) : null;
       const speedLimit = cell ? (ROAD_CONFIGS[cell.roadType as RoadType]?.speedLimit ?? REFERENCE_SPEED_LIMIT) : REFERENCE_SPEED_LIMIT;
-      let cost = edge.length / (getLaneSpeedMultiplier(edge.to.lane) * (speedLimit / REFERENCE_SPEED_LIMIT));
+      let cost = laneEdgeCost(edge, speedLimit / REFERENCE_SPEED_LIMIT);
       if (penalty) {
         const p = penalty.get(`${edge.to.cellKey}:${edge.to.lane}`);
         if (p) cost *= p;

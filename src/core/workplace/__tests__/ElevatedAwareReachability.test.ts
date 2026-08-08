@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { useSeededRandom } from '../../__tests__/helpers/seededRandom';
 import { createGameState } from '../../simulation/GameState';
 import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { ElevationManager } from '../../elevation/ElevationManager';
@@ -120,6 +121,14 @@ function anyoneEmployedAtShop(state: ReturnType<typeof bridgedCity>['state']): b
 }
 
 describe('workplace reachability is elevation-aware', () => {
+  // These cases run real ticks and lean on migration to keep supplying
+  // candidates for the job across the bridge — see anyoneEmployedAtShop. That
+  // makes them a draw on Math.random, and they failed roughly one full-suite
+  // run in five once the attractiveness weighting stopped rewarding jobs
+  // nobody can reach (BUG-166): this fixture starts at 100% unemployment by
+  // construction, which is exactly the state that change damps.
+  useSeededRandom();
+
   it('should employ someone whose only route to work is a viaduct', () => {
     // The cache says unreachable; the level-aware fallback says reachable. The
     // guard is what makes the fallback win.

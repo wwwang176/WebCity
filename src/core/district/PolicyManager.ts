@@ -31,12 +31,38 @@ export const POLICY_ZONE_RESTRICTIONS: Partial<Record<PolicyType, ReadonlySet<Zo
 };
 
 /**
- * Policies implemented by something other than a zone restriction.
+ * What each non-zoning policy does, in the units the consumer uses.
  *
- * Empty today. A policy that changes pollution, income or happiness rather than
- * blocking construction belongs here, next to the code that reads it.
+ * Three of the five policies did nothing at all: a repo-wide search for
+ * ENCOURAGE_RECYCLING, ORGANIC_FOOD and TOURISM found only this file and its
+ * tests. They were billed every budget cycle regardless — $380 for nothing,
+ * with the district modal advertising the prices as though they bought
+ * something (BUG-091). Hiding them from the UI was the stopgap; this table is
+ * the implementation.
+ *
+ * Each is deliberately a small effect on a number the player can already read
+ * off a panel, so "did that policy do anything?" is answerable by looking.
  */
-const NON_ZONE_IMPLEMENTED_POLICY_TYPES: readonly PolicyType[] = [];
+export const POLICY_EFFECTS: Partial<Record<PolicyType, {
+  /** Multiplier on garbage produced in the district. */
+  garbage?: number;
+  /** Multiplier on tax revenue from buildings in the district. */
+  revenue?: number;
+  /** Flat addition to land value before the usual clamp. */
+  landValue?: number;
+}>> = {
+  [PolicyType.ENCOURAGE_RECYCLING]: { garbage: 0.65 },
+  [PolicyType.TOURISM]: { revenue: 1.2 },
+  [PolicyType.ORGANIC_FOOD]: { landValue: 6 },
+};
+
+/**
+ * Policies implemented by something other than a zone restriction — derived
+ * from the effect table, so adding an effect is all it takes to make a policy
+ * real, and a policy with no effect can never be offered.
+ */
+const NON_ZONE_IMPLEMENTED_POLICY_TYPES: readonly PolicyType[] =
+  Object.keys(POLICY_EFFECTS) as PolicyType[];
 
 /**
  * Policies the simulation actually reads — DERIVED, not a hand-kept list.
@@ -105,6 +131,47 @@ export class PolicyManager {
 
   getPolicyCost(policyType: PolicyType): number {
     return POLICY_CONFIG[policyType].cost;
+  }
+
+  /**
+   * Combined effect of a district's active policies on one quantity.
+   *
+   * `districtId` is nullable because most callers ask about a CELL, and most
+   * cells are in no district at all — those get the identity value rather than
+   * a special case at every call site.
+   */
+  private effect(
+    districtId: string | null,
+    pick: (e: NonNullable<(typeof POLICY_EFFECTS)[PolicyType]>) => number | undefined,
+    identity: number,
+    combine: (a: number, b: number) => number,
+  ): number {
+    if (!districtId) return identity;
+    const district = this.districtLookup.getDistrict(districtId);
+    if (!district) return identity;
+
+    let out = identity;
+    for (const policy of district.policies) {
+      if (!policy.active) continue;
+      const value = pick(POLICY_EFFECTS[policy.type] ?? {});
+      if (value !== undefined) out = combine(out, value);
+    }
+    return out;
+  }
+
+  /** Multiplier on garbage produced by buildings in this district. */
+  getGarbageMultiplier(districtId: string | null): number {
+    return this.effect(districtId, e => e.garbage, 1, (a, b) => a * b);
+  }
+
+  /** Multiplier on tax revenue from buildings in this district. */
+  getRevenueMultiplier(districtId: string | null): number {
+    return this.effect(districtId, e => e.revenue, 1, (a, b) => a * b);
+  }
+
+  /** Flat land-value bonus for cells in this district. */
+  getLandValueBonus(districtId: string | null): number {
+    return this.effect(districtId, e => e.landValue, 0, (a, b) => a + b);
   }
 
   /**

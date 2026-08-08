@@ -1,25 +1,22 @@
 import { describe, it, expect } from 'vitest';
 import { PolicyType } from '../types';
-import { POLICY_CONFIG, IMPLEMENTED_POLICY_TYPES, POLICY_ZONE_RESTRICTIONS, isPolicyImplemented, PolicyManager } from '../PolicyManager';
+import { POLICY_CONFIG, POLICY_EFFECTS, IMPLEMENTED_POLICY_TYPES, POLICY_ZONE_RESTRICTIONS, isPolicyImplemented, PolicyManager } from '../PolicyManager';
 import { ZoneType } from '../../grid/types';
 import { calculateDistrictPolicyCost } from '../../economy/ExpenseCalculator';
 
 /**
  * Three of the five district policies — ENCOURAGE_RECYCLING, ORGANIC_FOOD and
- * TOURISM — appear in no simulation code at all: a repo-wide search for their
- * enum members finds only PolicyManager itself and its tests. Only
- * NO_HEAVY_INDUSTRY and HIGH_DENSITY_BAN reach canBuildInDistrict and actually
- * restrict growth.
+ * TOURISM — appeared in no simulation code at all, while
+ * calculateDistrictPolicyCost billed every active policy: $380 per cycle for
+ * nothing, with the modal advertising the prices as if they bought something
+ * (BUG-091). They are implemented now, via POLICY_EFFECTS.
  *
- * calculateDistrictPolicyCost nonetheless summed every active policy's cost, so
- * the three no-ops billed $380 per budget cycle for nothing while the modal
- * advertised their prices as if they did something (BUG-091).
- *
- * These tests pin the honest contract: a policy is charged if and only if the
- * simulation reads it. IMPLEMENTED_POLICY_TYPES is DERIVED — to implement one
- * of the three, add its effect and then register it in POLICY_ZONE_RESTRICTIONS
- * (if it restricts construction) or NON_ZONE_IMPLEMENTED_POLICY_TYPES (if it
- * works some other way). Its cost starts applying from that point.
+ * What these tests pin is the contract that made that fixable rather than the
+ * momentary fact that all five work: a policy is charged if and only if the
+ * simulation reads it, and both lists are DERIVED — from
+ * POLICY_ZONE_RESTRICTIONS for policies that block construction and from
+ * POLICY_EFFECTS for policies that change a number. Adding an entry is all it
+ * takes to make a policy real; there is no third list to forget.
  */
 /** ZoneType is a numeric enum, so Object.values yields the names too. */
 function numericZones(): ZoneType[] {
@@ -27,23 +24,36 @@ function numericZones(): ZoneType[] {
 }
 
 describe('policies are charged only when they do something', () => {
-  it('should mark exactly the policies the simulation reads as implemented', () => {
-    expect(isPolicyImplemented(PolicyType.NO_HEAVY_INDUSTRY)).toBe(true);
-    expect(isPolicyImplemented(PolicyType.HIGH_DENSITY_BAN)).toBe(true);
-    expect(isPolicyImplemented(PolicyType.ENCOURAGE_RECYCLING)).toBe(false);
-    expect(isPolicyImplemented(PolicyType.ORGANIC_FOOD)).toBe(false);
-    expect(isPolicyImplemented(PolicyType.TOURISM)).toBe(false);
+  it('should offer nothing it cannot deliver', () => {
+    // Every policy the modal lists and charges for must be one the simulation
+    // reads. All five are now, which is the point — but the assertion is the
+    // rule, not the count, so a policy added to POLICY_CONFIG alone fails here.
+    for (const type of Object.keys(POLICY_CONFIG) as PolicyType[]) {
+      expect(isPolicyImplemented(type), type).toBe(true);
+    }
   });
 
-  it('should not bill an active but unimplemented policy', () => {
+  it('should derive the implemented set from the two effect tables', () => {
+    const derived = new Set<PolicyType>([
+      ...(Object.keys(POLICY_ZONE_RESTRICTIONS) as PolicyType[]),
+      ...(Object.keys(POLICY_EFFECTS) as PolicyType[]),
+    ]);
+    expect([...IMPLEMENTED_POLICY_TYPES].sort()).toEqual([...derived].sort());
+  });
+
+  it('should not bill a policy the simulation does not read', () => {
+    // No policy is unimplemented today, so the guard is exercised with one that
+    // is not in either effect table. Deleting the guard makes this fail; a real
+    // policy losing its effect would then start billing for nothing again.
     const districts = [{
       policies: [
+        { active: true, cost: 999, type: 'NOT_A_REAL_POLICY' as PolicyType },
         { active: true, cost: POLICY_CONFIG[PolicyType.TOURISM].cost, type: PolicyType.TOURISM },
-        { active: true, cost: POLICY_CONFIG[PolicyType.ORGANIC_FOOD].cost, type: PolicyType.ORGANIC_FOOD },
       ],
     }];
 
-    expect(calculateDistrictPolicyCost(districts)).toBe(0);
+    expect(calculateDistrictPolicyCost(districts))
+      .toBe(POLICY_CONFIG[PolicyType.TOURISM].cost);
   });
 
   it('should still bill implemented policies', () => {
@@ -65,22 +75,20 @@ describe('policies are charged only when they do something', () => {
     expect(calculateDistrictPolicyCost(districts)).toBe(0);
   });
 
-  it('should leave construction untouched for every unimplemented policy', () => {
-    // The old assertion walked IMPLEMENTED_POLICY_TYPES and checked each member
-    // existed in POLICY_CONFIG — true by the enum's type, and true of ANY set
-    // of PolicyType values including the empty one. It could not fail.
-    //
-    // The honest invariant runs the other way: a policy is excluded from
-    // billing precisely because applying it changes nothing. Assert that.
-    const unimplemented = Object.values(PolicyType).filter(t => !isPolicyImplemented(t));
-    expect(unimplemented.length).toBeGreaterThan(0);
+  it('should leave construction untouched for every non-zoning policy', () => {
+    // Recycling, Tourism and Organic Food change numbers, not build rights. A
+    // policy that quietly blocked construction as a side effect would be
+    // indistinguishable, to the player, from the zone tool being broken.
+    const nonZoning = (Object.keys(POLICY_EFFECTS) as PolicyType[])
+      .filter(t => !(t in POLICY_ZONE_RESTRICTIONS));
+    expect(nonZoning.length).toBeGreaterThan(0);
 
-    for (const type of unimplemented) {
+    for (const type of nonZoning) {
       const district = { id: 'd1', policies: [] as { type: PolicyType; active: boolean }[] };
       const mgr = new PolicyManager({ getDistrict: () => district as never });
       mgr.applyPolicy('d1', type);
       for (const zone of numericZones()) {
-        expect(mgr.canBuildInDistrict('d1', zone)).toBe(true);
+        expect(mgr.canBuildInDistrict('d1', zone), `${type} blocked zone ${zone}`).toBe(true);
       }
     }
   });

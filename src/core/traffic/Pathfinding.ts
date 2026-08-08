@@ -187,6 +187,41 @@ export function getLaneSpeedMultiplier(lane: number): number {
   return Math.pow(LANE_SPEED_DECAY, lane);
 }
 
+/**
+ * Fixed cost of changing lane, in the same units as edge travel time.
+ *
+ * Lane-change edges were already slightly longer than going straight — 0.9178
+ * against 0.9000 on a six-lane road — and the generator deliberately equalises
+ * them at turns so geometry alone cannot favour crossing lanes. But the cost
+ * also divides by getLaneSpeedMultiplier(lane) = 0.95^lane, so every lane
+ * inward is 5% cheaper, and two percent of geometry does not hold against five
+ * percent of speed:
+ *
+ *     stay in lane 1   0.9000 / 0.95 = 0.9474
+ *     dive to lane 0   0.9178 / 1.00 = 0.9178   <- cheaper
+ *
+ * On a perfectly straight ten-cell road the optimum was therefore to dive to
+ * lane 0, cruise, and climb back — four lane changes, nothing gained.
+ *
+ * Additive rather than a multiplier, because a manoeuvre takes about as long
+ * whatever road it happens on, and because that gives the behaviour the design
+ * already asked for: the cost is repaid only by a long enough run in the faster
+ * lane, so short hops stay put and long hauls still move over.
+ *
+ * 0.15 is calibrated against the two cases that were already pinned — a
+ * three-cell four-lane road must not change lane, a ten-cell one must — while
+ * cutting a straight ten-cell SIX-lane road from four manoeuvres to two. The
+ * extra pair was the vehicle carrying on past the second lane into the first
+ * for a saving it could not keep.
+ */
+export const LANE_CHANGE_COST = 0.15;
+
+/** Travel cost of one lane edge. `speedRatio` scales for the road's speed limit. */
+export function laneEdgeCost(edge: LaneEdge, speedRatio = 1): number {
+  const base = edge.length / (getLaneSpeedMultiplier(edge.to.lane) * speedRatio);
+  return edge.type === 'lane_change' ? base + LANE_CHANGE_COST : base;
+}
+
 const OPPOSITE_DIR: Record<string, string> = {
   north: 'south', south: 'north', east: 'west', west: 'east',
 };
@@ -321,8 +356,7 @@ function buildLaneAdjacency(
           || validCrossPairs.has(`${fromCell}->${toCell}`);
         if (!valid) continue;
 
-        const speed = getLaneSpeedMultiplier(edge.to.lane);
-        const cost = edge.length / speed;
+        const cost = laneEdgeCost(edge);
         let list = adjacency.get(edge.from.id);
         if (!list) { list = []; adjacency.set(edge.from.id, list); }
         list.push({ edge, cost });

@@ -117,6 +117,7 @@ export function tickAllCivicServices(state: GameState): void {
     state.sewage,
     (x, y) => residentsByPos.get(toPosKey(x, y)) ?? 0,
     (x, y) => workersByPos.get(toPosKey(x, y)) ?? 0,
+    (x, y) => state.policies.getGarbageMultiplier(state.districts.getDistrictAt(x, y)?.id ?? null),
   );
   state.garbage.tick();
   state.sewage.tick(production.sewage);
