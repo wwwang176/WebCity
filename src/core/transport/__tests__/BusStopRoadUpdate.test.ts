@@ -1,7 +1,17 @@
 import { describe, it, expect } from 'vitest';
 import { BusSystem } from '../BusSystem';
-import type { TransportStop } from '../types';
+import { TransportType, type TransportStop } from '../types';
 import type { LaneEdge } from '../../traffic/LaneGraph';
+import { makeCellEdge } from '../../../../tests/helpers/makeLaneEdge';
+
+/** A bus stop with every field the system reads, not just the ones a case sets. */
+function makeBusStop(overrides: Partial<TransportStop> & Pick<TransportStop, 'id' | 'x' | 'y'>): TransportStop {
+  return {
+    type: TransportType.BUS, passengers: 0,
+    dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0,
+    ...overrides,
+  };
+}
 import type { TrafficSimulation, Vehicle } from '../../traffic/TrafficSimulation';
 
 /** Minimal grid stub for findAdjacentRoadCell. */
@@ -17,11 +27,7 @@ function makeGrid(roads: Set<string>) {
 }
 
 function makeFakeLaneEdge(fromX: number, fromY: number, toX: number, toY: number): LaneEdge {
-  return {
-    from: { cellKey: `${fromX},${fromY}`, x: fromX, y: fromY, lane: 0, direction: 'E' as any },
-    to: { cellKey: `${toX},${toY}`, x: toX, y: toY, lane: 0, direction: 'E' as any },
-    weight: 1,
-  };
+  return makeCellEdge(`${fromX},${fromY}`, `${toX},${toY}`);
 }
 
 function fakeTraffic(): TrafficSimulation {
@@ -37,8 +43,8 @@ describe('BusSystem.onRoadChanged updates stop roadX/roadY', () => {
     const bus = new BusSystem();
 
     // Stop at (3,5), originally adjacent road at (4,5)
-    const stop: TransportStop = { id: 1, x: 3, y: 5, roadX: 4, roadY: 5, passengers: 0 };
-    const stop2: TransportStop = { id: 2, x: 7, y: 5, roadX: 7, roadY: 6, passengers: 0 };
+    const stop = makeBusStop({ id: 1, x: 3, y: 5, roadX: 4, roadY: 5 });
+    const stop2 = makeBusStop({ id: 2, x: 7, y: 5, roadX: 7, roadY: 6 });
 
     // Create route manually
     const route = bus.createRoute([stop, stop2], 1);

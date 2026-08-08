@@ -1,20 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import { calculateLandValue } from '../../economy/LandValue';
 import { calculateHappiness, HAPPINESS } from '../../citizen/Happiness';
-import type { Citizen } from '../../citizen/types';
+import { makeCitizen } from '../../../../tests/helpers/makeCitizen';
 
 describe('serviceCoverage integration with road-based services', () => {
-  const baseCitizen: Citizen = {
-    id: 'test_1',
-    age: 30,
-    happiness: 50,
-    educationLevel: 'none',
-    homeId: 'home_1',
-    workplaceId: 'work_1',
-    income: 100,
-    x: 5,
-    y: 5,
-  };
+  const baseCitizen = makeCitizen({ homeId: 'home_1', workplaceId: 'work_1' });
 
   describe('Happiness thresholds with extended serviceCoverage', () => {
     it('serviceCoverage=7 (power+water+police+fire+garbage) gives +10 happiness', () => {

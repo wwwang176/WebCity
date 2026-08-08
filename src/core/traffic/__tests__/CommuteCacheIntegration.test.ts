@@ -61,7 +61,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -79,7 +79,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -98,7 +98,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -123,12 +123,12 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
     state.citizens.createCitizen({
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -155,7 +155,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -177,7 +177,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
@@ -208,7 +208,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -238,7 +238,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     const loop = new SimulationLoop(state);
     loop.setRoadLookup(UnifiedRoadLookup.fromGrid(state.grid));
@@ -260,7 +260,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -281,7 +281,7 @@ describe('CommuteCache Integration with SimulationLoop', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);

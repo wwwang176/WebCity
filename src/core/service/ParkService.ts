@@ -27,7 +27,7 @@ export class ParkService {
   private operationalParkIds: Set<string> | null = null;
   private nextId = 1;
 
-  addPark(x: number, y: number, radius = PARK.DEFAULT_RADIUS): string {
+  addPark(x: number, y: number, radius: number = PARK.DEFAULT_RADIUS): string {
     const id = `park-${this.nextId++}`;
     this.parks.push({ id, x, y, radius });
     this.connectedParkIds.add(id);

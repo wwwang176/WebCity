@@ -153,10 +153,13 @@ export function TransitModal(props: { open: boolean; onClose: () => void }) {
   const stopToggleStyle = (selected: boolean) => `font-size:10px;padding:2px 6px;margin:1px;border-radius:3px;border:1px solid ${selected ? '#4caf50' : '#555'};background:${selected ? '#4caf5033' : 'transparent'};color:${selected ? '#81c784' : '#888'};cursor:pointer`;
 
   const RouteBuilderPanel = (p: { type: string; color: string }) => {
+    // `when` carries the builder itself rather than a boolean, so the child
+    // receives it already narrowed — the previous form passed a boolean, for
+    // which Solid's typing has no callback-child overload, and reached back
+    // through `routeBuilder()!` to undo its own null check.
     return (
-      <Show when={routeBuilder()?.type === p.type}>
-        {() => {
-          const rb = () => routeBuilder()!;
+      <Show when={routeBuilder()?.type === p.type ? routeBuilder() : undefined}>
+        {(rb) => {
           const stops = () => getStopsForType(p.type);
           return (
             <div style="margin-top:6px;padding:6px;background:#0d1520;border-radius:4px;border:1px solid #333">

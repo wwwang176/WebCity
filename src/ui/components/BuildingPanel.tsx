@@ -1,4 +1,4 @@
-import { Show, Index } from 'solid-js';
+import { Show, Index, For } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { ZoneType, isResidentialZone, isCommercialZone } from '../../core/grid/types';
 import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop, SelectedEmptyZone, ServiceStatus } from '../../Game';

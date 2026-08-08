@@ -29,7 +29,7 @@ export const TRAFFIC_LIGHT = {
 export class TrafficLightSystem {
   private lights = new Map<string, TrafficLight>();
 
-  addLight(x: number, y: number, phaseDuration = TRAFFIC_LIGHT.PHASE_DURATION): void {
+  addLight(x: number, y: number, phaseDuration: number = TRAFFIC_LIGHT.PHASE_DURATION): void {
     const key = toPosKey(x, y);
     if (this.lights.has(key)) return;
     // Stagger phase start by position hash to avoid all lights syncing

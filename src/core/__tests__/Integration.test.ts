@@ -128,7 +128,7 @@ describe('Integration Tests', () => {
 
     // Add citizens
     for (let i = 0; i < 20; i++) {
-      state.citizens.createCitizen({ age: 30, homeId: `${(i % 10) + 1},9` });
+      state.citizens.createCitizen({ age: 30, homeId: `${(i % 10) + 1},9` })!;
     }
 
     state.budget.funds = 100000;
@@ -169,7 +169,7 @@ describe('Integration Tests', () => {
     state.water.addPlant({ x: 1, y: 0, output: 500 });
 
     for (let i = 0; i < 20; i++) {
-      state.citizens.createCitizen({ age: 30, homeId: `${(i % 10) + 1},9`, happiness: 50 });
+      state.citizens.createCitizen({ age: 30, homeId: `${(i % 10) + 1},9`, happiness: 50 })!;
     }
 
     state.budget.funds = 100000;

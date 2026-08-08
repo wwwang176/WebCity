@@ -68,9 +68,11 @@ export class PollutionManager {
   private spreadFromSource(source: PollutionSource): void {
     const grid = this.getGrid(source.type);
     const w = this.width;
-    const hasRadius = source.radius !== undefined && source.radius > 0;
-    const maxRange = hasRadius ? source.radius : Math.ceil(source.amount / POLLUTION.DECAY_PER_CELL);
-    const decayPerCell = hasRadius ? source.amount / source.radius : POLLUTION.DECAY_PER_CELL;
+    // Bound to a local so the narrowing survives — a boolean flag does not
+    // narrow `source.radius` at its use sites.
+    const radius = source.radius !== undefined && source.radius > 0 ? source.radius : null;
+    const maxRange = radius ?? Math.ceil(source.amount / POLLUTION.DECAY_PER_CELL);
+    const decayPerCell = radius !== null ? source.amount / radius : POLLUTION.DECAY_PER_CELL;
 
     for (let dx = -maxRange; dx <= maxRange; dx++) {
       for (let dy = -maxRange; dy <= maxRange; dy++) {

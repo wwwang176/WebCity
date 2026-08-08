@@ -62,7 +62,7 @@ export class FireService extends RoadCoverageService<FireStation> {
   private readonly stationLoad = new Map<string, number>();
   private loadRatio = 0;
 
-  addStation(x: number, y: number, radius = FIRE.DEFAULT_RADIUS, capacity = FIRE.DEFAULT_CAPACITY): string {
+  addStation(x: number, y: number, radius: number = FIRE.DEFAULT_RADIUS, capacity: number = FIRE.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;

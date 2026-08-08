@@ -8,14 +8,14 @@ const UNLIMITED_CAPACITY = { elementary: 9999, highSchool: 9999, university: 999
 describe('CitizenManager', () => {
   it('should create a citizen with unique id', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen();
-    const c2 = mgr.createCitizen();
+    const c1 = mgr.createCitizen()!;
+    const c2 = mgr.createCitizen()!;
     expect(c1.id).not.toBe(c2.id);
   });
 
   it('should have all required properties', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 100 });
+    const c = mgr.createCitizen({ age: 100 })!;
     expect(c.age).toBe(100);
     expect(c.lifeStage).toBe(LifeStage.ADULT);
     expect(c.education).toBeDefined();
@@ -27,18 +27,18 @@ describe('CitizenManager', () => {
 
   it('should assign correct life stage by age', () => {
     const mgr = new CitizenManager();
-    expect(mgr.createCitizen({ age: 3 }).lifeStage).toBe(LifeStage.BABY);      // 0-8
-    expect(mgr.createCitizen({ age: 20 }).lifeStage).toBe(LifeStage.CHILD);    // 9-32
-    expect(mgr.createCitizen({ age: 40 }).lifeStage).toBe(LifeStage.TEEN);     // 33-52
-    expect(mgr.createCitizen({ age: 100 }).lifeStage).toBe(LifeStage.ADULT);   // 53-200
-    expect(mgr.createCitizen({ age: 220 }).lifeStage).toBe(LifeStage.SENIOR);  // 201+
+    expect(mgr.createCitizen({ age: 3 })!.lifeStage).toBe(LifeStage.BABY);      // 0-8
+    expect(mgr.createCitizen({ age: 20 })!.lifeStage).toBe(LifeStage.CHILD);    // 9-32
+    expect(mgr.createCitizen({ age: 40 })!.lifeStage).toBe(LifeStage.TEEN);     // 33-52
+    expect(mgr.createCitizen({ age: 100 })!.lifeStage).toBe(LifeStage.ADULT);   // 53-200
+    expect(mgr.createCitizen({ age: 220 })!.lifeStage).toBe(LifeStage.SENIOR);  // 201+
   });
 
   it('should age citizens via updateAges', () => {
     const mgr = new CitizenManager();
     // Create citizen at age 8 (BABY_MAX boundary) at currentTick=0
     // birthTick = Math.round(0 - 8/0.006) = -1333
-    const c = mgr.createCitizen({ age: 8 }, 0);
+    const c = mgr.createCitizen({ age: 8 }, 0)!;
     expect(c.birthTick).toBe(Math.round(0 - 8 / AGE_PER_TICK)); // -1333
     // After 167 ticks: age = (167 - (-1333)) * 0.006 = 1500 * 0.006 = 9.0 → CHILD
     mgr.updateAges(167);
@@ -48,7 +48,7 @@ describe('CitizenManager', () => {
 
   it('should transition BABY to CHILD at BABY_MAX boundary', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 8 }, 0);
+    const c = mgr.createCitizen({ age: 8 }, 0)!;
     expect(c.lifeStage).toBe(LifeStage.BABY);
     // Advance enough ticks to cross into CHILD (age > 8)
     mgr.updateAges(167);
@@ -58,7 +58,7 @@ describe('CitizenManager', () => {
 
   it('should enroll CHILD with elementary coverage (progress > 0 after first tick)', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const c = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     mgr.educateTick((_x, _y, key) => key === 'elementary', UNLIMITED_CAPACITY);
     expect(c.educationProgress).toBeGreaterThan(0);
     expect(c.education).toBe(EducationLevel.NONE); // not yet graduated
@@ -67,7 +67,7 @@ describe('CitizenManager', () => {
   it('should graduate CHILD after enough ticks (speed-based, no jitter)', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter = 1.0
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const c = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     const speed = getLearningSpeed(20); // 100
     const ticksNeeded = Math.ceil(GRADUATION_TICKS.elementary / speed);
     for (let i = 0; i < ticksNeeded; i++) {
@@ -80,7 +80,7 @@ describe('CitizenManager', () => {
 
   it('should NOT enroll citizen with ELEMENTARY when only elementary coverage (needs highSchool)', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 40, education: EducationLevel.ELEMENTARY, homeId: '5,5' });
+    mgr.createCitizen({ age: 40, education: EducationLevel.ELEMENTARY, homeId: '5,5' })!;
     mgr.educateTick((_x, _y, key) => key === 'elementary', UNLIMITED_CAPACITY);
     expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.ELEMENTARY);
     expect(mgr.getCitizens()[0]!.educationProgress).toBe(0);
@@ -88,7 +88,7 @@ describe('CitizenManager', () => {
 
   it('should NOT educate homeless citizen (no homeId)', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 20, homeId: null });
+    mgr.createCitizen({ age: 20, homeId: null })!;
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.NONE);
     expect(mgr.getCitizens()[0]!.educationProgress).toBe(0);
@@ -96,7 +96,7 @@ describe('CitizenManager', () => {
 
   it('should NOT educate citizen outside school coverage', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 20, homeId: '50,50' });
+    mgr.createCitizen({ age: 20, homeId: '50,50' })!;
     mgr.educateTick((x, y) => x === 5 && y === 5, UNLIMITED_CAPACITY);
     expect(mgr.getCitizens()[0]!.education).toBe(EducationLevel.NONE);
     expect(mgr.getCitizens()[0]!.educationProgress).toBe(0);
@@ -104,8 +104,8 @@ describe('CitizenManager', () => {
 
   it('should enroll citizen inside school coverage but not outside', () => {
     const mgr = new CitizenManager();
-    const covered = mgr.createCitizen({ age: 20, homeId: '5,5' });
-    const uncovered = mgr.createCitizen({ age: 20, homeId: '50,50' });
+    const covered = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
+    const uncovered = mgr.createCitizen({ age: 20, homeId: '50,50' })!;
     mgr.educateTick((x, y) => x === 5 && y === 5, UNLIMITED_CAPACITY);
     expect(covered.educationProgress).toBeGreaterThan(0);
     expect(uncovered.educationProgress).toBe(0);
@@ -114,7 +114,7 @@ describe('CitizenManager', () => {
   it('updateAges should only age citizens without killing them', () => {
     const mgr = new CitizenManager();
     // Create citizen with age > MAX_AGE (281 > 280)
-    mgr.createCitizen({ age: 281 });
+    mgr.createCitizen({ age: 281 })!;
     // updateAges doesn't kill — citizen should still be alive
     mgr.updateAges(1000);
     expect(mgr.getPopulation()).toBe(1);
@@ -167,9 +167,9 @@ describe('CitizenManager', () => {
 
   it('should get citizens by home building position', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, homeId: '5,10' });
-    mgr.createCitizen({ age: 100, homeId: '5,10' });
-    mgr.createCitizen({ age: 100, homeId: '8,8' });
+    mgr.createCitizen({ age: 100, homeId: '5,10' })!;
+    mgr.createCitizen({ age: 100, homeId: '5,10' })!;
+    mgr.createCitizen({ age: 100, homeId: '8,8' })!;
     const residents = mgr.getCitizensByHome('5,10');
     expect(residents.length).toBe(2);
     expect(residents.every(c => c.homeId === '5,10')).toBe(true);
@@ -177,9 +177,9 @@ describe('CitizenManager', () => {
 
   it('should get citizens by workplace building position', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, workplaceId: '3,7' });
-    mgr.createCitizen({ age: 100, workplaceId: '3,7' });
-    mgr.createCitizen({ age: 100, workplaceId: '9,2' });
+    mgr.createCitizen({ age: 100, workplaceId: '3,7' })!;
+    mgr.createCitizen({ age: 100, workplaceId: '3,7' })!;
+    mgr.createCitizen({ age: 100, workplaceId: '9,2' })!;
     const workers = mgr.getCitizensByWorkplace('3,7');
     expect(workers.length).toBe(2);
     expect(workers.every(c => c.workplaceId === '3,7')).toBe(true);
@@ -187,7 +187,7 @@ describe('CitizenManager', () => {
 
   it('should return empty array when no citizens at position', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, homeId: '5,10' });
+    mgr.createCitizen({ age: 100, homeId: '5,10' })!;
     expect(mgr.getCitizensByHome('99,99')).toEqual([]);
     expect(mgr.getCitizensByWorkplace('99,99')).toEqual([]);
   });
@@ -195,8 +195,8 @@ describe('CitizenManager', () => {
   describe('getCitizens', () => {
     it('should return readonly array of all citizens', () => {
       const mgr = new CitizenManager();
-      mgr.createCitizen({ age: 100 });
-      mgr.createCitizen({ age: 100 });
+      mgr.createCitizen({ age: 100 })!;
+      mgr.createCitizen({ age: 100 })!;
       const citizens = mgr.getCitizens();
       expect(citizens).toHaveLength(2);
     });
@@ -210,8 +210,8 @@ describe('CitizenManager', () => {
   describe('getAverageHappiness', () => {
     it('should return average happiness of all citizens', () => {
       const mgr = new CitizenManager();
-      mgr.createCitizen({ age: 100, happiness: 60 });
-      mgr.createCitizen({ age: 100, happiness: 80 });
+      mgr.createCitizen({ age: 100, happiness: 60 })!;
+      mgr.createCitizen({ age: 100, happiness: 80 })!;
       expect(mgr.getAverageHappiness()).toBe(70);
     });
 
@@ -225,9 +225,9 @@ describe('CitizenManager', () => {
 describe('removeCitizen in-place', () => {
   it('should remove citizen without creating a new array reference', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100 });
-    const c2 = mgr.createCitizen({ age: 100 });
-    mgr.createCitizen({ age: 100 });
+    mgr.createCitizen({ age: 100 })!;
+    const c2 = mgr.createCitizen({ age: 100 })!;
+    mgr.createCitizen({ age: 100 })!;
     const arrBefore = mgr.getCitizens();
     mgr.removeCitizen(c2.id);
     // After removal, getCitizens() should still return the same backing array
@@ -238,14 +238,14 @@ describe('removeCitizen in-place', () => {
 
   it('should handle removing last citizen', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 100 });
+    const c = mgr.createCitizen({ age: 100 })!;
     mgr.removeCitizen(c.id);
     expect(mgr.getPopulation()).toBe(0);
   });
 
   it('should handle removing non-existent id gracefully', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100 });
+    mgr.createCitizen({ age: 100 })!;
     mgr.removeCitizen(9999);
     expect(mgr.getPopulation()).toBe(1);
   });
@@ -254,10 +254,10 @@ describe('removeCitizen in-place', () => {
 describe('removeCitizens batch', () => {
   it('should remove multiple citizens in a single pass', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 100 });
-    const c2 = mgr.createCitizen({ age: 100 });
-    const c3 = mgr.createCitizen({ age: 100 });
-    const c4 = mgr.createCitizen({ age: 100 });
+    const c1 = mgr.createCitizen({ age: 100 })!;
+    const c2 = mgr.createCitizen({ age: 100 })!;
+    const c3 = mgr.createCitizen({ age: 100 })!;
+    const c4 = mgr.createCitizen({ age: 100 })!;
     mgr.removeCitizens(new Set([c1.id, c3.id]));
     expect(mgr.getPopulation()).toBe(2);
     expect(mgr.getCitizen(c1.id)).toBeUndefined();
@@ -268,8 +268,8 @@ describe('removeCitizens batch', () => {
 
   it('should not create a new array reference', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 100 });
-    mgr.createCitizen({ age: 100 });
+    const c1 = mgr.createCitizen({ age: 100 })!;
+    mgr.createCitizen({ age: 100 })!;
     const arrBefore = mgr.getCitizens();
     mgr.removeCitizens(new Set([c1.id]));
     expect(mgr.getCitizens()).toBe(arrBefore);
@@ -277,15 +277,15 @@ describe('removeCitizens batch', () => {
 
   it('should handle empty set', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100 });
+    mgr.createCitizen({ age: 100 })!;
     mgr.removeCitizens(new Set());
     expect(mgr.getPopulation()).toBe(1);
   });
 
   it('should handle removing all citizens', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 100 });
-    const c2 = mgr.createCitizen({ age: 100 });
+    const c1 = mgr.createCitizen({ age: 100 })!;
+    const c2 = mgr.createCitizen({ age: 100 })!;
     mgr.removeCitizens(new Set([c1.id, c2.id]));
     expect(mgr.getPopulation()).toBe(0);
   });
@@ -294,9 +294,9 @@ describe('removeCitizens batch', () => {
 describe('evictBuilding', () => {
   it('should nullify homeId for citizens living at demolished position', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 100, homeId: '5,10' });
-    const c2 = mgr.createCitizen({ age: 100, homeId: '5,10' });
-    const c3 = mgr.createCitizen({ age: 100, homeId: '8,8' });
+    const c1 = mgr.createCitizen({ age: 100, homeId: '5,10' })!;
+    const c2 = mgr.createCitizen({ age: 100, homeId: '5,10' })!;
+    const c3 = mgr.createCitizen({ age: 100, homeId: '8,8' })!;
 
     mgr.evictBuilding('5,10');
 
@@ -307,9 +307,9 @@ describe('evictBuilding', () => {
 
   it('should nullify workplaceId for citizens working at demolished position', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 100, workplaceId: '3,7' });
-    const c2 = mgr.createCitizen({ age: 100, workplaceId: '3,7' });
-    const c3 = mgr.createCitizen({ age: 100, workplaceId: '9,2' });
+    const c1 = mgr.createCitizen({ age: 100, workplaceId: '3,7' })!;
+    const c2 = mgr.createCitizen({ age: 100, workplaceId: '3,7' })!;
+    const c3 = mgr.createCitizen({ age: 100, workplaceId: '9,2' })!;
 
     mgr.evictBuilding('3,7');
 
@@ -320,7 +320,7 @@ describe('evictBuilding', () => {
 
   it('should handle citizens who both live and work at demolished position', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 100, homeId: '5,5', workplaceId: '5,5' });
+    const c = mgr.createCitizen({ age: 100, homeId: '5,5', workplaceId: '5,5' })!;
 
     mgr.evictBuilding('5,5');
 
@@ -330,7 +330,7 @@ describe('evictBuilding', () => {
 
   it('should do nothing when no citizens at position', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, homeId: '1,1' });
+    mgr.createCitizen({ age: 100, homeId: '1,1' })!;
 
     mgr.evictBuilding('99,99');
 
@@ -340,8 +340,8 @@ describe('evictBuilding', () => {
 
   it('should not remove citizens from population', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, homeId: '5,10' });
-    mgr.createCitizen({ age: 100, homeId: '5,10' });
+    mgr.createCitizen({ age: 100, homeId: '5,10' })!;
+    mgr.createCitizen({ age: 100, homeId: '5,10' })!;
 
     mgr.evictBuilding('5,10');
 
@@ -350,8 +350,8 @@ describe('evictBuilding', () => {
 
   it('should record homelessSince when currentTick is provided', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 100, homeId: '5,10' });
-    const c2 = mgr.createCitizen({ age: 100, homeId: '8,8' });
+    const c1 = mgr.createCitizen({ age: 100, homeId: '5,10' })!;
+    const c2 = mgr.createCitizen({ age: 100, homeId: '8,8' })!;
 
     mgr.evictBuilding('5,10', 42);
 
@@ -361,7 +361,7 @@ describe('evictBuilding', () => {
 
   it('should not set homelessSince for workplace-only evictions', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 100, homeId: '1,1', workplaceId: '5,10' });
+    const c = mgr.createCitizen({ age: 100, homeId: '1,1', workplaceId: '5,10' })!;
 
     mgr.evictBuilding('5,10', 100);
 
@@ -371,9 +371,9 @@ describe('evictBuilding', () => {
 
   it('should return evicted citizen IDs', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 100, homeId: '5,10' });
-    const c2 = mgr.createCitizen({ age: 100, homeId: '5,10' });
-    const c3 = mgr.createCitizen({ age: 100, homeId: '8,8' });
+    const c1 = mgr.createCitizen({ age: 100, homeId: '5,10' })!;
+    const c2 = mgr.createCitizen({ age: 100, homeId: '5,10' })!;
+    const c3 = mgr.createCitizen({ age: 100, homeId: '8,8' })!;
 
     const ids = mgr.evictBuilding('5,10');
 
@@ -383,7 +383,7 @@ describe('evictBuilding', () => {
 
   it('should return empty array when no citizens at position', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 100, homeId: '1,1' });
+    mgr.createCitizen({ age: 100, homeId: '1,1' })!;
 
     const ids = mgr.evictBuilding('99,99');
 
@@ -392,7 +392,7 @@ describe('evictBuilding', () => {
 
   it('should include citizen only once when both home and workplace match', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 100, homeId: '5,5', workplaceId: '5,5' });
+    const c = mgr.createCitizen({ age: 100, homeId: '5,5', workplaceId: '5,5' })!;
 
     const ids = mgr.evictBuilding('5,5');
 
@@ -433,7 +433,7 @@ const COVERED = () => ({ hospitalMult: HEALTH_MULTIPLIER.COVERED, pollutionMult:
 describe('deathTick', () => {
   it('should kill citizens over age 280', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 281 });
+    mgr.createCitizen({ age: 281 })!;
     const deaths = mgr.deathTick(UNCOVERED);
     expect(deaths.length).toBe(1);
     expect(mgr.getPopulation()).toBe(0);
@@ -441,7 +441,7 @@ describe('deathTick', () => {
 
   it('should not kill young adults deterministically (low probability)', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 100; i++) mgr.createCitizen({ age: 100 });
+    for (let i = 0; i < 100; i++) mgr.createCitizen({ age: 100 })!;
 
     vi.spyOn(Math, 'random').mockReturnValue(1.0);
     const deaths = mgr.deathTick(UNCOVERED);
@@ -452,7 +452,7 @@ describe('deathTick', () => {
 
   it('should kill when random < death rate', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 220 }); // SENIOR, rate=0.006
+    mgr.createCitizen({ age: 220 })!; // SENIOR, rate=0.006
     vi.spyOn(Math, 'random').mockReturnValue(0);
     const deaths = mgr.deathTick(UNCOVERED);
     expect(deaths.length).toBe(1);
@@ -464,7 +464,7 @@ describe('deathTick', () => {
     // With coverage: 0.006 * 0.3 = 0.0018
     // random = 0.002 → above 0.0018 → survives with coverage
     const mgr1 = new CitizenManager();
-    mgr1.createCitizen({ age: 220 }); // SENIOR, base=0.006
+    mgr1.createCitizen({ age: 220 })!; // SENIOR, base=0.006
     vi.spyOn(Math, 'random').mockReturnValue(0.002);
     const deaths1 = mgr1.deathTick(COVERED);
     expect(deaths1.length).toBe(0);
@@ -473,7 +473,7 @@ describe('deathTick', () => {
     // Without coverage: 0.006 * 1.0 = 0.006
     // random = 0.002 → below 0.006 → dies without coverage
     const mgr2 = new CitizenManager();
-    mgr2.createCitizen({ age: 220 });
+    mgr2.createCitizen({ age: 220 })!;
     vi.spyOn(Math, 'random').mockReturnValue(0.002);
     const deaths2 = mgr2.deathTick(UNCOVERED);
     expect(deaths2.length).toBe(1);
@@ -482,7 +482,7 @@ describe('deathTick', () => {
 
   it('callback receives citizen object', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 220, homeId: null });
+    const c = mgr.createCitizen({ age: 220, homeId: null })!;
     const ctxFn = vi.fn().mockReturnValue({ hospitalMult: 0.3, pollutionMult: 1.0 });
     vi.spyOn(Math, 'random').mockReturnValue(1.0);
     mgr.deathTick(ctxFn);
@@ -492,7 +492,7 @@ describe('deathTick', () => {
 
   it('elderly multiplier increases death rate above 240', () => {
     const mgr = new CitizenManager();
-    mgr.createCitizen({ age: 260 }); // SENIOR, rate=0.006*6=0.036
+    mgr.createCitizen({ age: 260 })!; // SENIOR, rate=0.006*6=0.036
     vi.spyOn(Math, 'random').mockReturnValue(0.01);
     const deaths = mgr.deathTick(UNCOVERED);
     expect(deaths.length).toBe(1);
@@ -501,8 +501,8 @@ describe('deathTick', () => {
 
   it('returns correct death count', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 5; i++) mgr.createCitizen({ age: 281 });
-    mgr.createCitizen({ age: 100 });
+    for (let i = 0; i < 5; i++) mgr.createCitizen({ age: 281 })!;
+    mgr.createCitizen({ age: 100 })!;
     vi.spyOn(Math, 'random').mockReturnValue(1.0);
     const deaths = mgr.deathTick(UNCOVERED);
     expect(deaths.length).toBe(5);
@@ -515,7 +515,7 @@ describe('deathTick', () => {
     // finalRate = 0.006 * 1.0 * 1.5 = 0.009
     // random = 0.007 → below 0.009 → dies
     const mgr1 = new CitizenManager();
-    mgr1.createCitizen({ age: 220 });
+    mgr1.createCitizen({ age: 220 })!;
     vi.spyOn(Math, 'random').mockReturnValue(0.007);
     const deaths1 = mgr1.deathTick(() => ({ hospitalMult: 1.0, pollutionMult: 1.5 }));
     expect(deaths1.length).toBe(1);
@@ -524,7 +524,7 @@ describe('deathTick', () => {
     // Same random without pollution: 0.006 * 1.0 * 1.0 = 0.006
     // random = 0.007 → above 0.006 → survives
     const mgr2 = new CitizenManager();
-    mgr2.createCitizen({ age: 220 });
+    mgr2.createCitizen({ age: 220 })!;
     vi.spyOn(Math, 'random').mockReturnValue(0.007);
     const deaths2 = mgr2.deathTick(UNCOVERED);
     expect(deaths2.length).toBe(0);
@@ -536,14 +536,14 @@ describe('deathTick', () => {
     // Overloaded (150%): hospitalMult = 0.65, rate = 0.006 * 0.65 = 0.0039
     // random = 0.003 → survives with normal, dies with overloaded
     const mgr1 = new CitizenManager();
-    mgr1.createCitizen({ age: 220 });
+    mgr1.createCitizen({ age: 220 })!;
     vi.spyOn(Math, 'random').mockReturnValue(0.003);
     const deaths1 = mgr1.deathTick(COVERED);
     expect(deaths1.length).toBe(0); // 0.003 > 0.0018
     vi.restoreAllMocks();
 
     const mgr2 = new CitizenManager();
-    mgr2.createCitizen({ age: 220 });
+    mgr2.createCitizen({ age: 220 })!;
     vi.spyOn(Math, 'random').mockReturnValue(0.003);
     const deaths2 = mgr2.deathTick(() => ({ hospitalMult: 0.65, pollutionMult: 1.0 }));
     expect(deaths2.length).toBe(1); // 0.003 < 0.0039
@@ -557,14 +557,14 @@ describe('deathTick', () => {
 
     for (let i = 0; i < RUNS; i++) {
       const mgr = new CitizenManager();
-      mgr.createCitizen({ age: 220 });
+      mgr.createCitizen({ age: 220 })!;
       const d = mgr.deathTick(UNCOVERED);
       seniorDeaths += d.length;
     }
 
     for (let i = 0; i < RUNS; i++) {
       const mgr = new CitizenManager();
-      mgr.createCitizen({ age: 100 });
+      mgr.createCitizen({ age: 100 })!;
       const d = mgr.deathTick(UNCOVERED);
       adultDeaths += d.length;
     }
@@ -597,7 +597,7 @@ describe('EDUCATION_PROGRESSION', () => {
   it('educateTick promotes child through full chain', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter = 1.0
     const mgr = new CitizenManager();
-    const child = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const child = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     const speed = getLearningSpeed(20);
     const elemTicks = Math.ceil(GRADUATION_TICKS.elementary / speed);
     for (let i = 0; i < elemTicks; i++) mgr.educateTick(() => true, UNLIMITED_CAPACITY);
@@ -616,7 +616,7 @@ describe('EDUCATION_PROGRESSION', () => {
   it('adult graduates elementary in ~3x more ticks than child', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
-    const adult = mgr.createCitizen({ age: 100, homeId: '5,5' });
+    const adult = mgr.createCitizen({ age: 100, homeId: '5,5' })!;
     const adultSpeed = getLearningSpeed(100);
     const childSpeed = getLearningSpeed(20);
     const adultTicks = Math.ceil(GRADUATION_TICKS.elementary / adultSpeed);
@@ -632,7 +632,7 @@ describe('EDUCATION_PROGRESSION', () => {
   it('senior takes 5x more ticks than child', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
-    const senior = mgr.createCitizen({ age: 220, homeId: '5,5' });
+    const senior = mgr.createCitizen({ age: 220, homeId: '5,5' })!;
     const seniorSpeed = getLearningSpeed(220);
     const childSpeed = getLearningSpeed(20);
     const seniorTicks = Math.ceil(GRADUATION_TICKS.elementary / seniorSpeed);
@@ -646,7 +646,7 @@ describe('EDUCATION_PROGRESSION', () => {
   it('teen→adult mid-enrollment: progress preserved, only speed changes', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 52, homeId: '5,5' }); // TEEN (33-52)
+    const c = mgr.createCitizen({ age: 52, homeId: '5,5' })!; // TEEN (33-52)
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     expect(c.educationProgress).toBe(100);
     c.age = 53;
@@ -658,7 +658,7 @@ describe('EDUCATION_PROGRESSION', () => {
 
   it('baby (age < MIN_SCHOOL_AGE) cannot enroll', () => {
     const mgr = new CitizenManager();
-    const baby = mgr.createCitizen({ age: 3, homeId: '5,5' });
+    const baby = mgr.createCitizen({ age: 3, homeId: '5,5' })!;
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     expect(baby.educationProgress).toBe(0);
   });
@@ -706,7 +706,7 @@ describe('jitteredSpeed', () => {
 
   it('students enrolled together graduate at different times', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 20; i++) mgr.createCitizen({ age: 20, homeId: '5,5' });
+    for (let i = 0; i < 20; i++) mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     // Run many ticks — with jitter, not all should graduate at the exact same tick
     const speed = getLearningSpeed(20);
     const baseTicks = Math.ceil(GRADUATION_TICKS.elementary / speed);
@@ -725,7 +725,7 @@ describe('educateTick enrollment & capacity', () => {
   it('enrolled student progress increments by speed each tick (with jitter)', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5); // jitter = 1.0
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const c = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     const speed = getLearningSpeed(20);
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     expect(c.educationProgress).toBe(speed);
@@ -739,7 +739,7 @@ describe('educateTick enrollment & capacity', () => {
   it('does not graduate before reaching threshold', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const c = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     const speed = getLearningSpeed(20);
     const ticksNeeded = Math.ceil(GRADUATION_TICKS.elementary / speed);
     for (let i = 0; i < ticksNeeded - 1; i++) {
@@ -752,8 +752,8 @@ describe('educateTick enrollment & capacity', () => {
 
   it('capacity full prevents new enrollment', () => {
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 20, homeId: '5,5' });
-    const c2 = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const c1 = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
+    const c2 = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     const cap = { elementary: 1, highSchool: 9999, university: 9999 };
     mgr.educateTick(() => true, cap);
     // Only one should be enrolled
@@ -766,8 +766,8 @@ describe('educateTick enrollment & capacity', () => {
   it('graduation frees a slot for the next student', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
-    const c1 = mgr.createCitizen({ age: 20, homeId: '5,5' });
-    const c2 = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const c1 = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
+    const c2 = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     const cap = { elementary: 1, highSchool: 9999, university: 9999 };
     const speed = getLearningSpeed(20);
     const ticksNeeded = Math.ceil(GRADUATION_TICKS.elementary / speed);
@@ -781,7 +781,7 @@ describe('educateTick enrollment & capacity', () => {
 
   it('homeless citizen cannot enroll', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 20, homeId: null });
+    const c = mgr.createCitizen({ age: 20, homeId: null })!;
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     expect(c.educationProgress).toBe(0);
     expect(c.education).toBe(EducationLevel.NONE);
@@ -789,15 +789,15 @@ describe('educateTick enrollment & capacity', () => {
 
   it('citizen outside coverage cannot enroll', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 20, homeId: '50,50' });
+    const c = mgr.createCitizen({ age: 20, homeId: '50,50' })!;
     mgr.educateTick((x, y) => x === 5 && y === 5, UNLIMITED_CAPACITY);
     expect(c.educationProgress).toBe(0);
   });
 
   it('different school types have independent capacities', () => {
     const mgr = new CitizenManager();
-    const child = mgr.createCitizen({ age: 20, homeId: '5,5' });
-    const teen = mgr.createCitizen({ age: 40, education: EducationLevel.ELEMENTARY, homeId: '5,5' });
+    const child = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
+    const teen = mgr.createCitizen({ age: 40, education: EducationLevel.ELEMENTARY, homeId: '5,5' })!;
     const cap = { elementary: 1, highSchool: 1, university: 0 };
     mgr.educateTick(() => true, cap);
     expect(child.educationProgress).toBeGreaterThan(0); // elementary slot taken
@@ -807,7 +807,7 @@ describe('educateTick enrollment & capacity', () => {
   it('enrolled student loses coverage → paused (progress preserved)', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const c = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     const saved = c.educationProgress;
     expect(saved).toBeGreaterThan(0);
@@ -820,7 +820,7 @@ describe('educateTick enrollment & capacity', () => {
   it('homeless student paused, resumes when re-housed in coverage', () => {
     vi.spyOn(Math, 'random').mockReturnValue(0.5);
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ age: 20, homeId: '5,5' });
+    const c = mgr.createCitizen({ age: 20, homeId: '5,5' })!;
     mgr.educateTick(() => true, UNLIMITED_CAPACITY);
     const saved = c.educationProgress;
     // Become homeless — paused

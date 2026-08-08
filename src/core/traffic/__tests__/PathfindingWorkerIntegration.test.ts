@@ -16,6 +16,22 @@ import { createWorkerHandler, type WorkerRequest, type WorkerResponse } from '..
 import { RoadType, RoadDirection } from '../../road/types';
 import { toPosKey } from '../../grid/GridHelpers';
 
+/**
+ * Narrow a response to BATCH_RESULT.
+ *
+ * `WorkerResponse` is a union of READY and BATCH_RESULT, so `r.results` does
+ * not exist on the union. The cases reached through it anyway and papered over
+ * the gap with `!`, which meant a handler that returned READY where a batch was
+ * expected produced "Cannot read properties of undefined" instead of a
+ * legible failure.
+ */
+function batchResult(r: WorkerResponse): Extract<WorkerResponse, { type: 'BATCH_RESULT' }> {
+  expect(r.type).toBe('BATCH_RESULT');
+  if (r.type !== 'BATCH_RESULT') throw new Error('not a batch result');
+  return r;
+}
+
+
 function makeGridLookup(cells: Map<string, { roadType: number; roadFlags: number }>) {
   return {
     getCellByKey(key: string) { return cells.get(key) ?? null; },
@@ -79,9 +95,8 @@ describe('Pathfinding Worker Integration', () => {
       r => responses.push(r),
     );
 
-    const batchResult = responses[1]!;
-    expect(batchResult.type).toBe('BATCH_RESULT');
-    const variants = batchResult.results![0]!.variants;
+    const batch = batchResult(responses[1]!);
+    const variants = batch.results[0]!.variants;
     expect(variants.length).toBeGreaterThanOrEqual(1);
 
     // 5. Convert edge indices back to original LaneEdge objects
@@ -151,8 +166,7 @@ describe('Pathfinding Worker Integration', () => {
       r => responses.push(r),
     );
 
-    const lastResult = responses[responses.length - 1]!;
-    expect(lastResult.type).toBe('BATCH_RESULT');
-    expect(lastResult.results![0]!.variants.length).toBeGreaterThanOrEqual(1);
+    const lastResult = batchResult(responses[responses.length - 1]!);
+    expect(lastResult.results[0]!.variants.length).toBeGreaterThanOrEqual(1);
   });
 });

@@ -11,7 +11,7 @@ import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRan
 /** Fill a building with workers so it produces full income. */
 function fillWorkers(state: GameState, x: number, y: number, count: number): void {
   for (let i = 0; i < count; i++) {
-    const c = state.citizens.createCitizen({ age: 30 });
+    const c = state.citizens.createCitizen({ age: 30 })!;
     c.workplaceId = `${x},${y}`;
     c.homeId = 'none'; // prevent auto-assignment to residential buildings
   }
@@ -150,9 +150,9 @@ describe('Income tax calculation (residential buildings)', () => {
     const state = createGameState(20, 20);
     state.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     provideUtilities(state, 5, 5);
-    const c1 = state.citizens.createCitizen({ age: 46 });
+    const c1 = state.citizens.createCitizen({ age: 46 })!;
     c1.homeId = '5,5';
-    const c2 = state.citizens.createCitizen({ age: 46 });
+    const c2 = state.citizens.createCitizen({ age: 46 })!;
     c2.homeId = '5,5';
 
     state.taxRates.residential = 10;
@@ -172,7 +172,7 @@ describe('Income tax calculation (residential buildings)', () => {
     stateLv1.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     provideUtilities(stateLv1, 5, 5);
     for (let i = 0; i < 4; i++) {
-      const c = stateLv1.citizens.createCitizen({ age: 46 });
+      const c = stateLv1.citizens.createCitizen({ age: 46 })!;
       c.homeId = '5,5';
     }
     stateLv1.taxRates.residential = 10;
@@ -295,7 +295,7 @@ describe('Business tax calculation (commercial/industrial/office)', () => {
     state.grid.setCell(3, 3, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
     provideUtilities(state, 3, 3);
     for (let i = 0; i < 4; i++) {
-      const c = state.citizens.createCitizen({ age: 46 });
+      const c = state.citizens.createCitizen({ age: 46 })!;
       c.homeId = '3,3';
     }
     state.grid.setCell(5, 5, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
@@ -344,7 +344,7 @@ describe('Tax rate effects on happiness and demand', () => {
     // Low tax
     const stateLow = createGameState(20, 20);
     stateLow.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
-    const c1 = stateLow.citizens.createCitizen({ age: 30 });
+    const c1 = stateLow.citizens.createCitizen({ age: 30 })!;
     c1.homeId = '5,5';
     stateLow.taxRates.residential = 5; // low income tax
     const loopLow = new SimulationLoop(stateLow);
@@ -354,7 +354,7 @@ describe('Tax rate effects on happiness and demand', () => {
     // High tax
     const stateHigh = createGameState(20, 20);
     stateHigh.grid.setCell(5, 5, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: 1 });
-    const c2 = stateHigh.citizens.createCitizen({ age: 30 });
+    const c2 = stateHigh.citizens.createCitizen({ age: 30 })!;
     c2.homeId = '5,5';
     stateHigh.taxRates.residential = 18; // high income tax
     const loopHigh = new SimulationLoop(stateHigh);

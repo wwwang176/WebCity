@@ -61,7 +61,7 @@ describe('Commute Traffic System', () => {
       age: 100,
       homeId: '1,1',     // residential building at (1,1)
       workplaceId: '15,1', // commercial building at (15,1)
-    });
+    })!;
 
     // Advance to hour 7 (morning rush)
     advanceToHour(state, 7);
@@ -81,7 +81,7 @@ describe('Commute Traffic System', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     // Advance to hour 18 (evening rush)
     advanceToHour(state, 18);
@@ -100,7 +100,7 @@ describe('Commute Traffic System', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     // Advance to hour 2 (previously "night" — now should still spawn)
     advanceToHour(state, 2);
@@ -121,7 +121,7 @@ describe('Commute Traffic System', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: null,
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -137,7 +137,7 @@ describe('Commute Traffic System', () => {
       age: 100,
       homeId: null,
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -152,7 +152,7 @@ describe('Commute Traffic System', () => {
       age: 10,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -167,7 +167,7 @@ describe('Commute Traffic System', () => {
       age: 210,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -184,7 +184,7 @@ describe('Commute Traffic System', () => {
         age: 100,
         homeId: '1,1',
         workplaceId: '15,1',
-      });
+      })!;
     }
 
     advanceToHour(state, 7);
@@ -204,7 +204,7 @@ describe('Commute Traffic System', () => {
         age: 100,
         homeId: '1,1',
         workplaceId: '15,1',
-      });
+      })!;
     }
 
     advanceToHour(state, 12);
@@ -223,7 +223,7 @@ describe('Commute Traffic System', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -259,7 +259,7 @@ describe('Transport Mode Choice Integration', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -278,7 +278,7 @@ describe('Transport Mode Choice Integration', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -301,7 +301,7 @@ describe('Transport Mode Choice Integration', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '3,1', // Manhattan distance = 2
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);
@@ -322,7 +322,7 @@ describe('Transport Mode Choice Integration', () => {
       age: 100,
       homeId: '1,1',
       workplaceId: '15,1',
-    });
+    })!;
 
     advanceToHour(state, 7);
     const loop = new SimulationLoop(state);

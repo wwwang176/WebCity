@@ -5,20 +5,11 @@ import {
   type CongestionFlowDeps,
 } from '../CongestionFlowPredictor';
 import { CommuteCache } from '../CommuteCache';
-import type { LaneEdge, LaneNode } from '../LaneGraph';
-
-function makeNode(cellKey: string, lane = 0): LaneNode {
-  return { cellKey, lane };
-}
+import type { LaneEdge } from '../LaneGraph';
+import { makeCellEdge } from '../../../../tests/helpers/makeLaneEdge';
 
 function makeEdge(fromKey: string, toKey: string, via?: string): LaneEdge {
-  const edge: LaneEdge = {
-    from: makeNode(fromKey),
-    to: makeNode(toKey),
-    length: 1,
-  };
-  if (via) (edge as any).viaCellKey = via;
-  return edge;
+  return makeCellEdge(fromKey, toKey, 0, { length: 1, ...(via ? { viaCellKey: via } : {}) });
 }
 
 describe('CongestionFlowPredictor', () => {

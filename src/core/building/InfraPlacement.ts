@@ -14,7 +14,7 @@ import {
 
 /** Check if any of the 4 cardinal neighbors is a water tile. */
 function hasAdjacentWater(grid: Grid, x: number, y: number): boolean {
-  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]]) {
+  for (const [dx, dy] of [[0, -1], [0, 1], [-1, 0], [1, 0]] as const) {
     const cell = grid.getCell(x + dx, y + dy);
     if (cell && cell.terrainType === TerrainType.WATER) return true;
   }

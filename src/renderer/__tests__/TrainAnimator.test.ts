@@ -13,6 +13,9 @@ function makeFakeRailSystem(
   return {
     getTrains: () => trains,
     getRoutePathPoints: (routeId: number) => routeSegments.get(routeId) ?? null,
+    // No external line in these fixtures — the animator must not reach for one.
+    hasExternalConnection: false,
+    getExternalTrainPath: () => null,
   };
 }
 

@@ -108,12 +108,12 @@ describe('canPlaceInfra for airport (via overrideSize)', () => {
     // Place rail if specified
     if (opts?.railAt) {
       const [rx, ry] = opts.railAt.split(',').map(Number);
-      grid.setCell(rx, ry, { railType: 1 });
+      grid.setCell(rx!, ry!, { railType: 1 });
     }
     // Place building if specified
     if (opts?.buildingAt) {
       const [bx, by] = opts.buildingAt.split(',').map(Number);
-      grid.setCell(bx, by, { buildingId: 5 });
+      grid.setCell(bx!, by!, { buildingId: 5 });
     }
     return grid;
   }

@@ -83,7 +83,7 @@ export class SewageService {
   // Per-cell sewage tracking for building-based pollution
   private sewageCells: SewageCell[] = [];
 
-  addTreatmentPlant(x: number, y: number, capacity = SEWAGE.DEFAULT_CAPACITY): string {
+  addTreatmentPlant(x: number, y: number, capacity: number = SEWAGE.DEFAULT_CAPACITY): string {
     const id = `plant-${this.nextId++}`;
     this.treatmentPlants.push({ id, x, y, capacity });
     this.connectedPlantIds.add(id);

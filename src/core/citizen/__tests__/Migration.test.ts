@@ -41,7 +41,7 @@ describe('Migration', () => {
 
   it('should emigrate unhappy citizens (capped at 1-3% of population) plus natural attrition', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 100; i++) mgr.createCitizen({ happiness: 10 });
+    for (let i = 0; i < 100; i++) mgr.createCitizen({ happiness: 10 })!;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 10, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 100);
     // Unhappy emigration: base(0-10) + 1-3%(1-3) = 0-13
@@ -53,7 +53,7 @@ describe('Migration', () => {
 
   it('should eventually emigrate all unhappy citizens over many ticks', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 20; i++) mgr.createCitizen({ happiness: 10 });
+    for (let i = 0; i < 20; i++) mgr.createCitizen({ happiness: 10 })!;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 10, taxRate: 20, pollution: 50, crimeRate: 50 };
     let totalEmigrated = 0;
     for (let tick = 0; tick < 500; tick++) {
@@ -129,7 +129,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   it('emigration 不受 getImmigrationCap 影響', () => {
     const mgr = new CitizenManager();
     // Use 200 unhappy citizens; emigration cap = base(0-10) + 1-3%(2-6) ≥ 2 reliably
-    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 20 });
+    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 20 })!;
     const result = migrationTick(mgr, {
       ...attractiveCity,
       avgHappiness: 10,
@@ -196,7 +196,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   it('natural attrition removes citizens even when all are happy', () => {
     const mgr = new CitizenManager();
     // 1000 happy citizens → attrition = floor(1000 * 0.002) = 2
-    for (let i = 0; i < 1000; i++) mgr.createCitizen({ happiness: 80 });
+    for (let i = 0; i < 1000; i++) mgr.createCitizen({ happiness: 80 })!;
     const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
     const result = migrationTick(mgr, stableCity, 1000);
     // No unhappy emigration, but natural attrition should remove some
@@ -207,7 +207,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   it('natural attrition is 0 for very small populations', () => {
     const mgr = new CitizenManager();
     // 50 citizens → min(5, floor(50 * 0.002)) = min(5, 0) = 0
-    for (let i = 0; i < 50; i++) mgr.createCitizen({ happiness: 80 });
+    for (let i = 0; i < 50; i++) mgr.createCitizen({ happiness: 80 })!;
     const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
     const result = migrationTick(mgr, stableCity, 50);
     expect(result.emigrated).toBe(0);
@@ -216,7 +216,7 @@ describe('getImmigrationCap — 移民動態縮放', () => {
   it('natural attrition is capped at 5 for large populations', () => {
     const mgr = new CitizenManager();
     // 20000 citizens → min(5, floor(20000 * 0.002)) = min(5, 40) = 5
-    for (let i = 0; i < 20000; i++) mgr.createCitizen({ happiness: 80 });
+    for (let i = 0; i < 20000; i++) mgr.createCitizen({ happiness: 80 })!;
     const stableCity = { ...attractiveCity, jobOpenings: 0, vacantHomes: 0 };
     const result = migrationTick(mgr, stableCity, 20000);
     expect(result.emigrated).toBe(5);
@@ -243,7 +243,7 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
 
   it('citizens get emigrationTolerance on creation', () => {
     const mgr = new CitizenManager();
-    const c = mgr.createCitizen({ education: EducationLevel.HIGH_SCHOOL });
+    const c = mgr.createCitizen({ education: EducationLevel.HIGH_SCHOOL })!;
     // HS(26) ± 5 = 21~31
     expect(c.emigrationTolerance).toBeGreaterThanOrEqual(21);
     expect(c.emigrationTolerance).toBeLessThanOrEqual(31);
@@ -257,14 +257,14 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
         happiness: 25,
         education: EducationLevel.UNIVERSITY,
         emigrationTolerance: 35, // fixed for determinism
-      });
+      })!;
     }
     for (let i = 0; i < 100; i++) {
       mgr.createCitizen({
         happiness: 25,
         education: EducationLevel.NONE,
         emigrationTolerance: 18, // fixed for determinism
-      });
+      })!;
     }
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 25, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 200);
@@ -280,7 +280,7 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
   it('legacy citizens without emigrationTolerance use fallback', () => {
     const mgr = new CitizenManager();
     // Simulate legacy save: create citizen then strip tolerance
-    const c = mgr.createCitizen({ happiness: 20 });
+    const c = mgr.createCitizen({ happiness: 20 })!;
     (c as any).emigrationTolerance = undefined;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 20, taxRate: 20, pollution: 50, crimeRate: 50 };
     // happiness 20 < fallback 25 → should emigrate (if within cap)
@@ -293,7 +293,7 @@ describe('emigrationTolerance — 個人化遷出門檻', () => {
 describe('migrationTick — emigration+attrition no duplicate removal', () => {
   it('emigratedIds should contain no duplicates', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 500; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+    for (let i = 0; i < 500; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 })!;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 500);
     const unique = new Set(result.emigratedIds);
@@ -302,7 +302,7 @@ describe('migrationTick — emigration+attrition no duplicate removal', () => {
 
   it('population after emigration matches emigrated count', () => {
     const mgr = new CitizenManager();
-    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+    for (let i = 0; i < 200; i++) mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 })!;
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };
     const result = migrationTick(mgr, badCity, 200);
     expect(mgr.getPopulation()).toBe(200 - result.emigrated);
@@ -312,7 +312,7 @@ describe('migrationTick — emigration+attrition no duplicate removal', () => {
     const mgr = new CitizenManager();
     const ids: number[] = [];
     for (let i = 0; i < 100; i++) {
-      const c = mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 });
+      const c = mgr.createCitizen({ happiness: 5, emigrationTolerance: 50 })!;
       ids.push(c.id);
     }
     const badCity = { jobOpenings: 0, vacantHomes: 0, avgHappiness: 5, taxRate: 20, pollution: 50, crimeRate: 50 };

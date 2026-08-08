@@ -75,7 +75,7 @@ describe('CommuteCache', () => {
     for (let i = 1; i <= 5; i++) {
       cache.set(i, {
         citizenId: i, homeId: `${i},0`, workplaceId: `${i},1`,
-        morningPath: null, eveningPath: null, status: 'pending',
+        morningPath: null, eveningPath: null, status: 'pending', generation: 0,
       });
       cache.markDirty(i);
     }

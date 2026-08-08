@@ -100,7 +100,7 @@ describe('employment is counted by held jobs, not by headcount', () => {
   it('should count only citizens holding a workplace', () => {
     const mgr = new CitizenManager();
     mgr.updateResidentialCapacity(1000);
-    for (let i = 0; i < 10; i++) mgr.createCitizen({ age: 100 });
+    for (let i = 0; i < 10; i++) mgr.createCitizen({ age: 100 })!;
     for (const c of mgr.getCitizens().slice(0, 4)) c.workplaceId = '1,1';
 
     expect(mgr.getPopulation()).toBe(10);
@@ -138,7 +138,7 @@ describe('employment is counted by held jobs, not by headcount', () => {
   it('should drop back to zero when everyone is laid off', () => {
     const mgr = new CitizenManager();
     mgr.updateResidentialCapacity(1000);
-    for (let i = 0; i < 5; i++) mgr.createCitizen({ age: 100, workplaceId: '2,2' });
+    for (let i = 0; i < 5; i++) mgr.createCitizen({ age: 100, workplaceId: '2,2' })!;
     expect(mgr.getEmployedCount()).toBe(5);
 
     for (const c of mgr.getCitizens()) c.workplaceId = null;

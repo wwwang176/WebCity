@@ -17,8 +17,18 @@ export interface TransportSystemConfig {
   affectedByCongestion: boolean;
 }
 
+/**
+ * The rider counters were added after the save format shipped, so a stop read
+ * back from an older save legitimately has none of them. Declaring them
+ * required made `{ dailyRiders: 0, ...s }` look like dead defaults to the
+ * compiler (TS2783) when they are the entire reason that line exists.
+ */
+export type StoredTransportStop =
+  Omit<TransportStop, 'dailyRiders' | 'lastDayRiders' | 'smoothedDailyRiders'>
+  & Partial<Pick<TransportStop, 'dailyRiders' | 'lastDayRiders' | 'smoothedDailyRiders'>>;
+
 export interface BaseTransportJSON {
-  stops: TransportStop[];
+  stops: StoredTransportStop[];
   routes: Array<Omit<TransportRoute, 'stops'> & { stops: number[] }>;
   vehicles: TransportVehicle[];
   nextStopId: number;
@@ -443,7 +453,9 @@ export abstract class BaseTransportSystem {
     Ctor: { new (...args: any[]): T },
   ): T {
     const sys = new Ctor();
-    sys.stops = data.stops.map((s: TransportStop) => ({ dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0, ...s }));
+    sys.stops = data.stops.map((s: StoredTransportStop) => ({
+      dailyRiders: 0, lastDayRiders: 0, smoothedDailyRiders: 0, ...s,
+    }));
     sys.routes = data.routes.map((r: any) => ({
       ...r,
       stops: (r.stops as number[]).map((id: number) => sys.stops.find(s => s.id === id)!),

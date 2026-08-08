@@ -127,7 +127,7 @@ export class HealthService extends RoadCoverageService<Hospital> {
     return sum;
   }
 
-  addHospital(x: number, y: number, radius = HEALTH.DEFAULT_RADIUS, capacity = HEALTH.DEFAULT_CAPACITY): string {
+  addHospital(x: number, y: number, radius: number = HEALTH.DEFAULT_RADIUS, capacity: number = HEALTH.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;

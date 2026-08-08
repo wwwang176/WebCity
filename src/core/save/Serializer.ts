@@ -180,10 +180,10 @@ export function snapshotGameState(
 /** Serialize game state to JSON string (snapshot + stringify). */
 export function serializeGameState(
   state: GameState,
-  extra?: {
-    abandonmentStress?: Map<string, number>;
-    elevationManager?: import('../elevation/ElevationManager').ElevationManager;
-  },
+  // Taken from snapshotGameState rather than restated: this wrapper's own copy
+  // went stale and rejected `transferHistory` / `highestMilestonePop`, which
+  // snapshotGameState has handled since they were added.
+  extra?: Parameters<typeof snapshotGameState>[1],
 ): string {
   return JSON.stringify(snapshotGameState(state, extra));
 }

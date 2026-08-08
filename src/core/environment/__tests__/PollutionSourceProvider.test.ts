@@ -42,7 +42,7 @@ describe('forEachGridPollutionSource', () => {
 
     const noise = sources.filter(s => s.x === 1 && s.y === 1 && s.type === 'noise');
     expect(noise.length).toBe(1);
-    expect(noise[0]!.amount).toBe(5 * GRID_POLLUTION.TRAFFIC_NOISE_MULTIPLIER * GRID_POLLUTION.ROAD_SPEED_FACTOR[RoadType.TWO_LANE]);
+    expect(noise[0]!.amount).toBe(5 * GRID_POLLUTION.TRAFFIC_NOISE_MULTIPLIER * GRID_POLLUTION.ROAD_SPEED_FACTOR[RoadType.TWO_LANE]!);
   });
 
   it('highway should produce more noise than two-lane at same density', () => {

@@ -194,7 +194,10 @@ const TOOL_CURSOR_COLORS: Record<ToolType, number> = {
   sewage: PALETTE.INFRA.SEWAGE, cemetery: PALETTE.INFRA.CEMETERY,
   district: PALETTE.TOOL.DISTRICT,
   bus_stop: PALETTE.TRANSPORT.BUS, metro_station: PALETTE.TRANSPORT.METRO, train_station: PALETTE.INFRA.SCHOOL,
-  ferry_dock: PALETTE.TRANSPORT.FERRY_DOCK, airport: PALETTE.TOOL.AIRPORT,
+  ferry_dock: PALETTE.TRANSPORT.FERRY_DOCK,
+  // Three airport sizes are separate tools; the single `airport` key here was
+  // a tool that does not exist, so all three fell through to the default.
+  airport_s: PALETTE.TOOL.AIRPORT, airport_m: PALETTE.TOOL.AIRPORT, airport_l: PALETTE.TOOL.AIRPORT,
 };
 
 /** Map of tool types to auto-activated overlay (OCP: add new overlay mappings here). */
@@ -208,19 +211,13 @@ const TOOL_TO_OVERLAY: Partial<Record<ToolType, OverlayType>> = {
 /**
  * Per-service coverage ratio for the selected building.
  * -1 = no coverage, 0.0 = nearest (best), 1.0 = farthest (worst).
- * Power/water use 0 (covered) or -1 (not covered).
+ * Power/water/sewage use 0 (covered) or -1 (not covered).
+ *
+ * Defined in core so it can be built and tested without Three.js; re-exported
+ * here because the UI has always imported it from Game.
  */
-export interface ServiceStatus {
-  power: number;
-  water: number;
-  sewage: number;
-  police: number;
-  fire: number;
-  garbage: number;
-  health: number;
-  education: number;
-  deathCare: number;
-}
+export type { ServiceStatus } from './core/service/ServiceStatusView';
+import { buildServiceStatus, type ServiceStatus } from './core/service/ServiceStatusView';
 
 export interface SelectedZoneBuilding {
   kind: 'zone';
@@ -327,30 +324,34 @@ export interface SelectedEmptyZone {
 export type SelectedBuilding = SelectedZoneBuilding | SelectedInfraBuilding | SelectedTransportStop | SelectedEmptyZone;
 
 export class Game {
-  private sceneManager: SceneManager;
-  private terrainRenderer: TerrainRenderer;
-  private roadRenderer: RoadRenderer;
-  private buildingRenderer: BuildingRenderer;
-  private vehicleRenderer: VehicleRenderer;
-  private pedestrianRenderer: PedestrianRenderer;
-  private trafficLightRenderer: TrafficLightRenderer;
-  private overlayRenderer: OverlayRenderer;
-  private weatherRenderer: WeatherRenderer;
-  private gridCursor: GridCursor;
-  private placementPreview: PlacementPreview;
-  private highlightManager: HighlightManager;
+  // The renderers below are built in the 'Preparing graphics...' step of
+  // buildInitSteps(), which the async initPhases() runs after construction so
+  // the loading bar can report real progress. TypeScript cannot follow that,
+  // so `!` records that they are set before any method that reads them runs.
+  private sceneManager!: SceneManager;
+  private terrainRenderer!: TerrainRenderer;
+  private roadRenderer!: RoadRenderer;
+  private buildingRenderer!: BuildingRenderer;
+  private vehicleRenderer!: VehicleRenderer;
+  private pedestrianRenderer!: PedestrianRenderer;
+  private trafficLightRenderer!: TrafficLightRenderer;
+  private overlayRenderer!: OverlayRenderer;
+  private weatherRenderer!: WeatherRenderer;
+  private gridCursor!: GridCursor;
+  private placementPreview!: PlacementPreview;
+  private highlightManager!: HighlightManager;
   /** Cached overlay building highlight cells (reapplied every frame). */
   private overlayHighlightCells: { x: number; y: number; color: number }[] = [];
-  private transportRouteRenderer: TransportRouteRenderer;
+  private transportRouteRenderer!: TransportRouteRenderer;
   /** Currently selected transfer route label for map overlay (null = none). */
   private selectedTransferRoute: string | null = null;
   private transferOverlayLines: THREE.Line[] = [];
   /** Cached transfer highlight cells (reapplied every frame like overlayHighlightCells). */
   private transferHighlightCells: { x: number; y: number; color: number }[] = [];
-  private metroTunnelRenderer: MetroTunnelRenderer;
-  private trackRenderer: TrackRenderer;
-  private elevatedRoadRenderer: ElevatedRoadRenderer;
-  private levelCrossingRenderer: LevelCrossingRenderer;
+  private metroTunnelRenderer!: MetroTunnelRenderer;
+  private trackRenderer!: TrackRenderer;
+  private elevatedRoadRenderer!: ElevatedRoadRenderer;
+  private levelCrossingRenderer!: LevelCrossingRenderer;
   private levelCrossingSystem: LevelCrossingSystem;
   private state: GameState;
   private simLoop: SimulationLoop;
@@ -634,8 +635,9 @@ export class Game {
         this.state.water.calculateDemand(this.state.grid);
         this.state.water.calculateCoverage(this.state.grid);
       }});
-      steps.push({ label: 'Planning traffic routes...', run: (onSub) => {
-        return this.simLoop.warmup(0.2, onSub);
+      steps.push({ label: 'Planning traffic routes...', run: async (onSub) => {
+        // Discard warmup's counters — the step runner only awaits completion.
+        await this.simLoop.warmup(0.2, onSub);
       }});
     } else {
       steps.push({ label: 'Creating landscape...', run: () => {
@@ -916,7 +918,7 @@ export class Game {
               this.state.budget.funds,
             );
             this.handleBuildResult(result, 'road', () => {
-              const allAffected = [...result.affectedCells, ...(result.demolishedCells ?? [])];
+              const allAffected = [...(result.affectedCells ?? []), ...(result.demolishedCells ?? [])];
               this.simLoop.markLaneGraphDirty(allAffected, true);
               this.roadCoverageDirty = true;
               this.dirty.markRoadCellsDirty(allAffected);
@@ -1937,16 +1939,7 @@ export class Game {
             pollutionWater: pLevel.water,
             pollutionNoise: pLevel.noise,
             serviceCoverage: cell.serviceCoverage,
-            services: {
-              power: this.state.power.isPowered(x, y) ? 0 : -1,
-              water: this.state.water.isSupplied(x, y) ? 0 : -1,
-              police: this.state.police.getCostRatio(x, y),
-              fire: this.state.fire.getCostRatio(x, y),
-              garbage: this.state.garbage.getCostRatio(x, y),
-              health: this.state.health.getCostRatio(x, y),
-              education: this.state.education.getCostRatio(x, y),
-              deathCare: this.state.deathCare.getCostRatio(x, y),
-            },
+            services: buildServiceStatus(this.state, x, y),
             abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
             isAbandoned: cell.reserved === ABANDONED,
             workerCount: this.state.citizens.getCitizensByWorkplace(`${x},${y}`).length,
@@ -2619,17 +2612,7 @@ export class Game {
         landValue: cell?.landValue ?? sel.landValue,
         pollution: cell?.pollution ?? sel.pollution,
         serviceCoverage: cell?.serviceCoverage ?? sel.serviceCoverage,
-        services: {
-          power: this.state.power.isPowered(x, y) ? 0 : -1,
-          water: this.state.water.isSupplied(x, y) ? 0 : -1,
-          sewage: this.state.sewage.isSupplied(x, y) ? 0 : -1,
-          police: this.state.police.getCostRatio(x, y),
-          fire: this.state.fire.getCostRatio(x, y),
-          garbage: this.state.garbage.getCostRatio(x, y),
-          health: this.state.health.getCostRatio(x, y),
-          education: this.state.education.getCostRatio(x, y),
-          deathCare: this.state.deathCare.getCostRatio(x, y),
-        },
+        services: buildServiceStatus(this.state, x, y),
         abandonmentStress: this.simLoop.getAbandonmentStress(x, y),
         isAbandoned: cell?.reserved === ABANDONED,
         freightRatio: isCommercialZone(sel.zoneType) ? this.state.freight.getSupplyStatus(x, y).ratio : undefined,

@@ -29,7 +29,7 @@ export class PoliceService extends RoadCoverageService<PoliceStation> {
   private readonly stationLoad = new Map<string, number>();
   private loadRatio = 0;
 
-  addStation(x: number, y: number, radius = POLICE.DEFAULT_RADIUS, capacity = POLICE.DEFAULT_CAPACITY): string {
+  addStation(x: number, y: number, radius: number = POLICE.DEFAULT_RADIUS, capacity: number = POLICE.DEFAULT_CAPACITY): string {
     const id = this.generateId();
     this.pushFacility({ id, x, y, radius, capacity });
     return id;

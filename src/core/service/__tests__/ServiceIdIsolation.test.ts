@@ -81,8 +81,8 @@ describe('Service ID isolation (instance-level counters)', () => {
   it('CitizenManager: new instances start with ID 1', () => {
     const a = new CitizenManager();
     const b = new CitizenManager();
-    const cA = a.createCitizen();
-    const cB = b.createCitizen();
+    const cA = a.createCitizen()!;
+    const cB = b.createCitizen()!;
     expect(cA.id).toBe(1);
     expect(cB.id).toBe(1);
   });
