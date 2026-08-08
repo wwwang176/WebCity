@@ -2102,3 +2102,52 @@ TDD 修復；隨後每個修復 commit 再由一個獨立 agent 反向審查，�
 | BUG-122 | BUG-101 | Math.ceil 讓排放量隨垃圾位置數成長，達宣稱上限 2 倍且與垃圾量脫鉤 | Medium |
 | BUG-123 | BUG-094 | 里程碑高水位未持久化，人口回落後存檔會重播全部里程碑 | Medium |
 | BUG-124 | BUG-104 | 保留行人卻不驗證路徑，行人走在已拆除的人行道上 | Medium |
+
+---
+
+## 第七十輪：清空第六十九輪待辦 (BUG-125 ~ BUG-146)
+
+前一輪對抗審查列出 33 項待辦——10 項測試品質、23 項既有缺陷——全部處理完畢。
+每一項都先寫失敗測試再修，並用「把修復 revert 掉重跑」確認測試真的有鑑別力。
+
+### 既有缺陷
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-125 | transport/BaseTransportSystem.ts | transfer graph 失效靠十個呼叫點各自記得 markTransitNetworkDirty，規則只由註解維繫（BUG-090 就是這樣發生的）→ 改為系統自帶 version 計數器 | High |
+| BUG-126 | simulation/SimulationLoop.ts | transfer graph 重建埋在 spawnCommuteVehicles 三道 early return 之後，車流達上限的城市永遠不重建：新路線對行程規劃隱形、已刪路線持續累計 dailyRiders | High |
+| BUG-127 | simulation/SimulationLoop.ts | 每次重建都清空 transferTracker 的建築歸屬，玩家按一次 +/- 面板就整片空白 | Low |
+| BUG-128 | district/PolicyManager.ts | IMPLEMENTED_POLICY_TYPES 是 POLICY_ZONE_RESTRICTIONS 鍵集合的手抄本（第三份清單）→ 改為推導 | Medium |
+| BUG-129 | ui/modals/DistrictModal.tsx | 停用政策從 UI 移除後，舊存檔的政策物件玩家看不到也關不掉，日後實作時會無聲生效 | Medium |
+| BUG-130 | service/NetworkCoverage.ts | 多格設施逐格結算：次格 demand=0 成為免費中繼，付不起的警局顯示 3/4 供電並把電導向後方 | High |
+| BUG-131 | environment/GridPollutionSources.ts, environment/CityMetrics.ts, service/ServiceCoverageQuery.ts | 裸的 buildingId > 0：燒毀工廠永久排放滿額工業污染（無人清除 cell.pollution）、廢墟被算進城市污染/噪音均值、廢墟佔住服務覆蓋率分母 | High |
+| BUG-132 | Game.ts | applyZone 用自己那份重劃條件先驅離、拆 mesh、清 stress，才呼叫會拒絕的 setZoneRect：拆路後重劃整區變成「已驅離但仍在格子上」的殭屍建築，仍算供給仍收稅 | High |
+| BUG-133 | Game.ts | 重劃不清 deathCare / garbage 的 per-position 佇列，屍體與垃圾永遠掛在沒有建築的地址上 | Medium |
+| BUG-134 | building/AbandonmentStressTick.ts | stress 以位置為鍵而 tick 只走活建築，applyDisasterDamage / 設施覆蓋拆除 / 建築燒毀三條路徑留下的項目被下一棟繼承 → 改為剪枝，一次覆蓋全部路徑 | Medium |
+| BUG-135 | save/migrations.ts, save/Serializer.ts | BUG-074 只修放置當下；舊存檔的設施格仍帶 zoneType，且 migrateOldInfra 每次載入還會重新製造 → 新增 v7 migration | Medium |
+| BUG-136 | service/GarbageService.ts | getPollutionSources 用 getOperationalFacilities（不看道路連通），無路可達的掩埋場照樣排放、分攤未收垃圾罰則，還因此讓罰則不落在街上、掩蓋真正的污染 | Medium |
+| BUG-137 | service/SewageService.ts | 覆蓋在 slot 1 預算，operational 在 slot 2 更新：停電的污水廠整個 cycle 繼續供應，而 getPollutionSources 跳過已供應格，水污染罰則一併被壓住 | Medium |
+| BUG-138 | service/SchoolService.ts, GarbageService.ts, SewageService.ts, ui ServicesPage | 容量統計含非運作設施（BUG-100 已在醫院修過同一形狀）：停電學校仍提供學額，面板宣稱城市沒有的處理量 | Medium |
+| BUG-139 | simulation/SimulationLoop.ts | countJobOpenings 用總人口當已就業，退休實作後約 43% 崗位永久顯示為已滿，壓抑了會補人的住宅需求 | High |
+| BUG-140 | citizen/Birth.ts | createCitizen 的容量閘門把無家可歸者也算進人口，城市一有遊民就宣稱客滿；生育每月一次對移民每 6 tick 一次，永遠是生育被擋掉 | High |
+| BUG-141 | citizen/Migration.ts | AVG_LAND_VALUE=100 對照的是水岸單格上限 125，實際比較對象是全城均值；內陸上限 105 再扣 crime 約 8 分 → 高地價移民權重仍是死碼 | Medium |
+| BUG-142 | transport/FerrySystem.ts | waterPathCache 以座標為鍵、無人隨碼頭生命週期清除：每拆一個碼頭洩漏一次，重建同格時用舊地圖回答連通性 | Medium |
+| BUG-143 | elevation/ElevationManager.ts | 高架污染 tier 取最高「層」的 roadType，高架鐵路疊在高架公路上時回報 0，BUG-099 症狀原地復發 | Medium |
+| BUG-144 | elevation/ElevatedRoadBuilder.ts | 起始層取「最高層」：地面道路配 level-3 高架而選 level 1 時會從 3 往下蓋；level-1 高架被 level-3 壓住時完全無法延伸 | Medium |
+| BUG-145 | simulation/SimulationLoop.ts | lane graph 全量重建分支（存檔載入、初次建立、無 affected cells 的編輯）換掉所有 LaneEdge 卻完全不清車，正是 BUG-108 修過的狀況、換一條沒人看的路徑 | Medium |
+| BUG-146 | service/PowerGrid.ts, service/WaterNetwork.ts | 機場與所有運輸站點在消耗表中無條目：40000 造價的大型機場用電用水皆為 0，而 BaseTransportSystem 早就會因缺電讓站點停擺——玩家無從得知要蓋什麼 | Medium |
+
+### 測試品質
+
+| 測試 | 問題 | 處理 |
+|---|---|---|
+| LoadDoesNotRerunDailyBlocks | 前兩條斷言 hasRunDayBlockFor(clock.getDay())，而建構子剛把該欄位設成該值 → getDay() === getDay()，整份修復 revert 後仍全綠；lastRiderDay 是存活 mutant | 改為觀察區塊效果（ring buffer 旋轉、rider rollover、新生兒數），刪掉兩個只為此存在的 accessor |
+| TransitNetworkInvalidation | 自己呼叫 markTransitNetworkDirty，等於只測 setter | 改為完全不呼叫，靠 version 計數器；忘記呼叫的變更點現在會紅 |
+| PolicyEffectiveness | 走訪 PolicyType 集合檢查每個鍵存在於 Record<PolicyType, _>，型別上恆真、空集合也通過 | 改為行為斷言：已實作政策必須真的擋建，未實作政策必須完全不影響 |
+| ExpenseCalculator | "returns 0 when no policies are active" 用 'heavy_traffic_ban'（根本不是 PolicyType），該列被當未實作濾掉，active 欄位從未被讀 | 改用真實已實作型別，並配一條正向對照 |
+| EconomyPanelMatchesBudget | fixture 讓 transportCost / policyCost / elevatedMaintenance 恆為 0，八項中三項可任意不一致 | fixture 填滿八項，並新增一條「任一項為 0 就紅」的守門測試 |
+| VehicleSortCost | 數 length 讀取次數並容許 2 倍，鑑別邊際僅約 4% | 改為直接數 edgeTotalProgress 呼叫次數：修好 64、放回比較器 628 |
+| RoadDistanceMinCost | 只斷言「有變小」 | 精算並釘住 29/6 與 4.0 |
+| MultiCellUtilityDemand | 只走 calculateDemand，bfsBudgetDrainFlood 零覆蓋 | 補上 all-or-nothing 案例，含「從次格進入」這條唯一需要 footprint 計費鍵的路徑 |
+| ShoppingAccessElevated | 只斷言 hasAccess 布林，重複計數不會被發現 | 釘住 ratio，並新增「匝道把兩個地面網路接起來」的正向案例與無匝道對照 |
+| Simulation / TaxRefactor / TrafficSimulation / Integration / Migration / CommuteCache | 六條測試隨機失敗（約數個百分點），全出現在整包執行、單獨跑必過 | 收益類改為比值與加法性不變量；stall 測試的 50 幀在半數抽樣下會直接 despawn，改為算術上安全的 32 幀；200x200「效能」測試其實只斷言時鐘前進，4.6s 對上 5s 預設逾時 → 給定 30s 預算。以 6 組不同種子驗證斷言不是套在單一種子上 |

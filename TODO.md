@@ -1029,41 +1029,55 @@
 - [ ] `tsc --noEmit` 有 329 個錯誤（約 70 個在 production code），`pnpm build` 目前在 main 上就失敗
 
 
-## 第六十九輪待辦 (對抗審查指出、尚未處理)
+## 第六十九輪待辦 — 全數完成 (第七十輪處理，BUG-125 ~ BUG-146)
+
+33 項全部修復並附測試，細節見 BUGS.md「第七十輪」。
+每一項都先寫失敗測試，再用「把修復 revert 掉重跑」確認測試有鑑別力。
 
 ### 測試品質 (審查明確指出為 vacuous 或無鑑別力)
-- [ ] LoadDoesNotRerunDailyBlocks 前兩條是套套邏輯 (斷言 getDay() === getDay())；改為觀察行為
-- [ ] lastRiderDay 是存活的 mutant - 刪掉建構子那行賦值，測試全綠
-- [ ] TransitNetworkInvalidation 自己呼叫 markTransitNetworkDirty，等於只測 setter；真正的接線 (Game.ts / TransitModal.tsx) 零覆蓋
-- [ ] PolicyEffectiveness 的 IMPLEMENTED_POLICY_TYPES 子集斷言型別上恆真；應改為與 POLICY_ZONE_RESTRICTIONS 鍵集合相等
-- [ ] ExpenseCalculator 的 "returns 0 when no policies are active" 用假 type，已不再守護 active 過濾
-- [ ] EconomyPanelMatchesBudget 的 fixture 讓 transportCost / policyCost / elevatedMaintenance 恆為 0
-- [ ] VehicleSortCost 鑑別邊際僅 4.3%；改為直接計數 edgeTotalProgress 呼叫次數
-- [ ] RoadDistanceMinCost 只斷言「有變小」；期望值可精算 (4.0 vs 29/6)
-- [ ] MultiCellUtilityDemand 只走 calculateDemand，bfsBudgetDrainFlood 路徑零覆蓋
-- [ ] ShoppingAccess.test.ts 全檔無高架案例，level-aware 分支從未被執行
+- [x] LoadDoesNotRerunDailyBlocks 前兩條是套套邏輯 (斷言 getDay() === getDay())；改為觀察行為
+- [x] lastRiderDay 是存活的 mutant - 刪掉建構子那行賦值，測試全綠
+- [x] TransitNetworkInvalidation 自己呼叫 markTransitNetworkDirty，等於只測 setter；真正的接線 (Game.ts / TransitModal.tsx) 零覆蓋
+- [x] PolicyEffectiveness 的 IMPLEMENTED_POLICY_TYPES 子集斷言型別上恆真；應改為與 POLICY_ZONE_RESTRICTIONS 鍵集合相等
+- [x] ExpenseCalculator 的 "returns 0 when no policies are active" 用假 type，已不再守護 active 過濾
+- [x] EconomyPanelMatchesBudget 的 fixture 讓 transportCost / policyCost / elevatedMaintenance 恆為 0
+- [x] VehicleSortCost 鑑別邊際僅 4.3%；改為直接計數 edgeTotalProgress 呼叫次數
+- [x] RoadDistanceMinCost 只斷言「有變小」；期望值可精算 (4.0 vs 29/6)
+- [x] MultiCellUtilityDemand 只走 calculateDemand，bfsBudgetDrainFlood 路徑零覆蓋
+- [x] ShoppingAccess.test.ts 全檔無高架案例，level-aware 分支從未被執行
 
 ### 未修的既有缺陷 (審查過程中發現，非本輪引入)
-- [ ] Game.applyZone 的 pre-scan 沒複製 setZone 的三道守衛，拆路後重劃會產生「已驅離但未重劃」的殭屍建築
-- [ ] applyZone 未清 deathCare / garbage 的 per-position 待處理佇列 (demolish 有清)
-- [ ] applyDisasterDamage 與基礎設施覆蓋拆除都不清 abandonmentStress；建議在 AbandonmentStressTick 改為剪枝，一次覆蓋 5 條路徑
-- [ ] 既有存檔的基礎設施格仍保留 zoneType (BUG-074 只修放置當下)；migrateOldInfra 還會在載入時重新製造。需要 version 7 migration
-- [ ] bfsBudgetDrainFlood 對多格設施逐格結算，BUG-070 後次格 demand=0 成為免費中繼，付不起的設施會顯示 3/4 供電
-- [ ] IncomeCalculator / CityMetrics / ServiceCoverageQuery / GridPollutionSources 仍是裸的 buildingId > 0，未收斂到 isActiveZoneCell
-- [ ] 燒毀的工廠仍排放滿額工業污染 (GridPollutionSources 不看 reserved)
-- [ ] SewageService 的覆蓋比 operational 狀態慢一個 slow cycle (education 是即時的)
-- [ ] getPollutionSources 與 collectPending 對「哪些掩埋場算數」判準不同 (前者不看 connected)
-- [ ] ServicesPage / InfraDetails 的容量顯示仍含非運作設施，UI 與 core 模型不一致
-- [ ] EDUCATION_THRESHOLDS.AVG_LAND_VALUE = 100 實務上仍不可達：getAvgLandValue 對全部建築取平均，全城 crime 常數在 pop >= 2500 時恆扣 8 分，非水岸單格上限僅 97
-- [ ] countJobOpenings 用總人口當勞動力代理，退休實作後約 43% 崗位永久空著，商業/工業/辦公稅收約降 29%
-- [ ] birthTick 排在 runMigration 之後，移民 (頻率 6 倍) 先吃光空位，自然生育退化為殘餘機制
-- [ ] DistrictModal 的 POLICY_TYPES / POLICY_LABELS 是第三、四份需手動同步的清單
-- [ ] 已啟用未實作政策的舊存檔：政策物件仍在但 UI 不再列出，玩家無法關閉；日後實作時會無聲生效
-- [ ] markTransitNetworkDirty 靠註解維繫「每個變更點都要呼叫」；建議改為 BaseTransportSystem 內部 version 計數器
-- [ ] transferGraphDirty 的消費點埋在 spawnCommuteVehicles 內，車流達上限的大城市永遠不會重建
-- [ ] FerrySystem 的 waterPathCache 在拆站路徑上仍洩漏 (hook 拿不到 route 物件)
-- [ ] placeTransportStop / addBusVehicle 觸發完整 transfer graph 重建並清空 transferTracker 面板資料，過度失效
-- [ ] GridPollutionSources 的高架 tier 用 getHighestLevel，高架鐵路疊在高架公路上時 roadType 為 0，BUG-099 症狀復發
-- [ ] 高架起始層啟發式取「最高層」，同格多層或地面+高架並存時會選錯，且無法從 level 1 延伸到 level 2
-- [ ] rebuildLaneGraph 全量重建分支 (dirtyRoadCells 為 null) 完全不清車
-- [ ] 機場與所有運輸站點在電/水消耗表中無條目，40000 造價的大型機場用電用水皆為 0
+- [x] Game.applyZone 的 pre-scan 沒複製 setZone 的三道守衛，拆路後重劃會產生「已驅離但未重劃」的殭屍建築
+- [x] applyZone 未清 deathCare / garbage 的 per-position 待處理佇列 (demolish 有清)
+- [x] applyDisasterDamage 與基礎設施覆蓋拆除都不清 abandonmentStress；建議在 AbandonmentStressTick 改為剪枝，一次覆蓋 5 條路徑
+- [x] 既有存檔的基礎設施格仍保留 zoneType (BUG-074 只修放置當下)；migrateOldInfra 還會在載入時重新製造。需要 version 7 migration
+- [x] bfsBudgetDrainFlood 對多格設施逐格結算，BUG-070 後次格 demand=0 成為免費中繼，付不起的設施會顯示 3/4 供電
+- [x] IncomeCalculator / CityMetrics / ServiceCoverageQuery / GridPollutionSources 仍是裸的 buildingId > 0，未收斂到 isActiveZoneCell
+- [x] 燒毀的工廠仍排放滿額工業污染 (GridPollutionSources 不看 reserved)
+- [x] SewageService 的覆蓋比 operational 狀態慢一個 slow cycle (education 是即時的)
+- [x] getPollutionSources 與 collectPending 對「哪些掩埋場算數」判準不同 (前者不看 connected)
+- [x] ServicesPage / InfraDetails 的容量顯示仍含非運作設施，UI 與 core 模型不一致
+- [x] EDUCATION_THRESHOLDS.AVG_LAND_VALUE = 100 實務上仍不可達：getAvgLandValue 對全部建築取平均，全城 crime 常數在 pop >= 2500 時恆扣 8 分，非水岸單格上限僅 97
+- [x] countJobOpenings 用總人口當勞動力代理，退休實作後約 43% 崗位永久空著，商業/工業/辦公稅收約降 29%
+- [x] birthTick 排在 runMigration 之後，移民 (頻率 6 倍) 先吃光空位，自然生育退化為殘餘機制
+- [x] DistrictModal 的 POLICY_TYPES / POLICY_LABELS 是第三、四份需手動同步的清單
+- [x] 已啟用未實作政策的舊存檔：政策物件仍在但 UI 不再列出，玩家無法關閉；日後實作時會無聲生效
+- [x] markTransitNetworkDirty 靠註解維繫「每個變更點都要呼叫」；建議改為 BaseTransportSystem 內部 version 計數器
+- [x] transferGraphDirty 的消費點埋在 spawnCommuteVehicles 內，車流達上限的大城市永遠不會重建
+- [x] FerrySystem 的 waterPathCache 在拆站路徑上仍洩漏 (hook 拿不到 route 物件)
+- [x] placeTransportStop / addBusVehicle 觸發完整 transfer graph 重建並清空 transferTracker 面板資料，過度失效
+- [x] GridPollutionSources 的高架 tier 用 getHighestLevel，高架鐵路疊在高架公路上時 roadType 為 0，BUG-099 症狀復發
+- [x] 高架起始層啟發式取「最高層」，同格多層或地面+高架並存時會選錯，且無法從 level 1 延伸到 level 2
+- [x] rebuildLaneGraph 全量重建分支 (dirtyRoadCells 為 null) 完全不清車
+- [x] 機場與所有運輸站點在電/水消耗表中無條目，40000 造價的大型機場用電用水皆為 0
+
+
+## 第七十輪備註
+
+- 全套測試 3746 條，連續四次整包執行全綠——這是本分支第一次做到。
+- 核心測試在 6 組不同亂數種子 (1 / 7 / 12345 / 999983 / 424242 / 31337) 下皆通過，
+  確認斷言測的是不變量而非某一組抽樣。
+- tsc 錯誤數 323，與分支起點 329 相比淨減 6，且無新增。
+- `src/core/__tests__/helpers/seededRandom.ts` 提供 `useSeededRandom()` / `reseedRandom()`。
+  用途是**排除干擾**，不是讓斷言只在某個種子下成立——結果本身會變動時，
+  請斷言不變量（比值、上下界），不要斷言抽樣結果。
