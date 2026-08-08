@@ -51,8 +51,12 @@ export function InfraPage() {
     gameSignals.tick();
     const state = getGame().getState();
 
-    const garbageLoad = state.garbage.getCurrentLoad();
+    // Both halves have to describe the same landfills. getTotalCapacity counts
+    // only the reachable, powered ones; pairing it with the unfiltered stored
+    // total printed "1800 / 0" at a healthy 0% (BUG-155).
+    const garbageLoad = state.garbage.getActiveLoad();
     const garbageCap = state.garbage.getTotalCapacity();
+    const garbageStranded = state.garbage.getStrandedCapacity();
     const garbageUncollected = state.garbage.getUncollected();
 
     const sewageUntreated = state.sewage.getUntreated();
@@ -68,7 +72,7 @@ export function InfraPage() {
       pwrDemand: state.power.getDemand(),
       wtrSupply: state.water.getSupply(),
       wtrDemand: state.water.getDemand(),
-      garbageLoad, garbageCap, garbageUncollected,
+      garbageLoad, garbageCap, garbageStranded, garbageUncollected,
       sewageUntreated, sewageCap,
       cemUsed, cemCap, unprocessed,
       waterPollution: state.sewage.getWaterPollution(),
@@ -84,6 +88,11 @@ export function InfraPage() {
 
       <div class="section-title">Waste Management</div>
       <CapacityRow label="Landfill Usage" current={data().garbageLoad} max={data().garbageCap} color="#8d6e63" />
+      {data().garbageStranded > 0 && (
+        <div style={`font-size:11px;color:${UI_COLORS.STATUS_BAD};margin-bottom:8px`}>
+          {data().garbageStranded} landfill capacity offline (no road or no power)
+        </div>
+      )}
       {data().garbageUncollected > 0 && (
         <div style={`font-size:11px;color:${UI_COLORS.STATUS_BAD};margin-bottom:8px`}>
           Awaiting pickup: {data().garbageUncollected} bags (causing pollution)

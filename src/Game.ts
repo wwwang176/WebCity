@@ -71,7 +71,7 @@ import { collectBuildingUtilityWarnings } from './core/building/BuildingUtilityW
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
-import { canPlaceTransportStop, findAdjacentRoadCell, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
+import { canPlaceTransportStop, findAdjacentRoadCell, placeTransportStopOnGrid, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
 import { type MapConfig, STARTING_FUNDS_MAP, DISASTER_CHANCE_MAP, resolveTerrainConfig } from './core/config/MapConfig';
 import { isWater, getGroundwaterLevel, isShorePosition } from './core/grid/Terrain';
@@ -1445,10 +1445,16 @@ export class Game {
       if (!this.placeAirport(x, y, cost)) return;
       return; // skip the default single-cell setCell below
     }
-    this.state.grid.setCell(x, y, {
-      buildingId: infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
-      reserved: ROTATION_RESERVED[this.currentRotation],
-    });
+    placeTransportStopOnGrid(
+      this.state.grid, x, y,
+      infraCfg?.buildingId ?? getInfraBuildingId('bus_stop'),
+      ROTATION_RESERVED[this.currentRotation]!,
+    );
+    // The bare setCell this replaced left zoneType in place and never told the
+    // renderer, so a stop dropped on zoned-but-empty land kept its overlay quad
+    // drawn underneath it — BUG-111, in a fourth path.
+    this.buildingRenderer.removeZoneOverlay(x, y);
+    this.invalidateZoneBlockers();
     const infraType = airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!;
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
     this.audioManager.playSfx(SoundType.BUILD);
@@ -1478,6 +1484,17 @@ export class Game {
 
     // Place on grid — standard placeInfraOnGrid (correct dimensions from InfraConfig)
     placeInfraOnGrid(this.state.grid, x, y, infraType, this.currentRotation);
+    // placeInfraOnGrid clears zoneType on every footprint cell; nothing told
+    // the renderer, so up to 54 overlay quads stayed drawn under the airport
+    // until some later edit happened to rebuild them (BUG-111, third path).
+    const { w: aw, h: ah } = getRotatedSize(
+      getInfraConfig(infraType)?.width ?? 1, getInfraConfig(infraType)?.height ?? 1,
+      this.currentRotation,
+    );
+    for (let dy = 0; dy < ah; dy++) {
+      for (let dx = 0; dx < aw; dx++) this.buildingRenderer.removeZoneOverlay(x + dx, y + dy);
+    }
+    this.invalidateZoneBlockers();
     this.audioManager.playSfx(SoundType.BUILD);
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
     return true;

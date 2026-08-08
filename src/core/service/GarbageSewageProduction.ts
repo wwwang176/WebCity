@@ -8,6 +8,7 @@
 
 import { ZoneType, isResidentialZone, isCommercialZone } from '../grid/types';
 import { getBuildingType } from '../building/types';
+import { isActiveZoneCell } from '../building/BuildingQueries';
 import { calculateZoneDemand } from './NetworkCoverage';
 import { GARBAGE_PRODUCTION } from './GarbageService';
 import { WATER_CONSUMPTION } from './WaterNetwork';
@@ -28,6 +29,8 @@ const SEWAGE_ZONE_RATE: Record<number, number> = {
 interface CellLike {
   buildingId: number;
   zoneType: number;
+  /** Required: a ruin produces nothing, and this is how one is recognised. */
+  reserved: number;
 }
 
 /** Occupancy lookup: returns actual residents or workers at a position. */
@@ -50,6 +53,15 @@ export function produceGarbageAndSewage(
 
   forEachCell((cell, x, y) => {
     if (cell.buildingId <= 0) return;
+    // A ruin produces nothing, for the same reason it consumes nothing
+    // (BUG-131). Sewage is derived from the building TYPE's resident count
+    // rather than from occupancy, so without this a burnt-out house kept
+    // reporting its full pre-fire sewage — and the same plant capacity was
+    // being spent against two different definitions of demand: ruins in for
+    // getConnectedTreatmentCapacity, ruins out for the coverage flood. The
+    // ruin's sewage cell was then supplied for free, so getPollutionSources
+    // skipped it and its sewage emitted no water pollution at all (BUG-156).
+    if (!isActiveZoneCell(cell)) return;
     const bt = getBuildingType(cell.buildingId);
     if (!bt) return;
 

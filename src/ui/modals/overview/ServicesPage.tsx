@@ -1,4 +1,5 @@
 import { For, createMemo } from 'solid-js';
+import { shareFacilityLoad, hasShortage } from './facilityLoad';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { getResidentialServiceRatios } from '../../../core/service/ServiceCoverageQuery';
 import { UI_COLORS } from '../../constants';
@@ -87,12 +88,18 @@ export function ServicesPage() {
     }
     const treatPlants = state.sewage.getTreatmentPlants();
     const sewageProduced = Math.round(state.sewage.getProduced());
-    const sewageTotalCap = state.sewage.getTreatmentCapacity();
     const sewageUntreated = state.sewage.getUntreated();
-    for (const tp of treatPlants) {
-      const tpLoad = sewageTotalCap > 0 ? Math.round(sewageProduced * tp.capacity / sewageTotalCap) : 0;
-      const tpSt = statusOf(tp.capacity > 0 ? tpLoad / tp.capacity : 0);
-      wtrItems.push(mkEntry('\uD83D\uDCA7', 'Sewage Plant', r.sewageRatio, 'Load', tpLoad, tp.capacity, tpSt));
+    // Only a plant that is road-connected AND powered treats anything, so only
+    // those take a share. Dividing the whole city's sewage by the filtered
+    // capacity gave every plant the full figure \u2014 including the dead ones \u2014
+    // and gave every plant zero, in green, when they were all dead (BUG-153).
+    const sewageSplit = shareFacilityLoad(
+      sewageProduced, treatPlants, tp => tp.capacity, tp => state.sewage.isPlantActive(tp.id),
+    );
+    const sewageTotalCap = sewageSplit.activeCapacity;
+    for (const s of sewageSplit.shares) {
+      wtrItems.push(mkEntry('\uD83D\uDCA7', 'Sewage Plant', r.sewageRatio, 'Load', s.load, s.capacity,
+        s.active ? statusOf(s.ratio) : OFFLINE));
     }
     const wtrSummary: SummarySpan[] = [];
     if (pumpingStations.length === 0) {
@@ -146,10 +153,10 @@ export function ServicesPage() {
     }
     const safetySummary: SummarySpan[] = [];
     safetySummary.push({ text: `Police: ${policeLoad} / ${policeCap}` });
-    if (policeCap > 0 && policeLoad > policeCap) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
+    if (hasShortage(policeLoad, policeCap)) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     safetySummary.push({ text: ' \u00B7 ' });
     safetySummary.push({ text: `Fire: ${fireLoad} / ${fireCap}` });
-    if (fireCap > 0 && fireLoad > fireCap) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
+    if (hasShortage(fireLoad, fireCap)) safetySummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     if (activeFires > 0) {
       safetySummary.push({ text: ' \u00B7 ' });
       safetySummary.push({ text: `Active Fires ${activeFires}`, color: UI_COLORS.STATUS_BAD });
@@ -171,7 +178,7 @@ export function ServicesPage() {
       healthSummary.push({ text: 'No hospital' });
     } else {
       healthSummary.push({ text: `Hospital: ${healthLoad} / ${healthCap}` });
-      if (healthCap > 0 && healthLoad > healthCap) healthSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
+      if (hasShortage(healthLoad, healthCap)) healthSummary.push({ text: ' \u00B7 Shortage', color: UI_COLORS.STATUS_BAD });
     }
     entries.push({ group: 'Health', items: healthItems, summary: healthSummary });
 

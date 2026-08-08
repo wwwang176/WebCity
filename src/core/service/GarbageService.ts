@@ -251,6 +251,24 @@ export class GarbageService extends GlobalCoverageService<GarbageFacility> {
     return this.facilities.reduce((sum, f) => sum + f.currentLoad, 0);
   }
 
+  /**
+   * Garbage sitting in landfills the city can actually reach.
+   *
+   * getTotalCapacity counts only active facilities; the infrastructure panel
+   * divided the unfiltered getCurrentLoad into it and printed "1800 / 0" with
+   * the bar back at a healthy 0% the moment the only landfill lost its road
+   * (BUG-155). Whatever the panel shows, both halves have to describe the same
+   * set of landfills.
+   */
+  getActiveLoad(): number {
+    return this.getActiveFacilities().reduce((sum, f) => sum + f.currentLoad, 0);
+  }
+
+  /** Landfill space the city has paid for and cannot currently use. */
+  getStrandedCapacity(): number {
+    return this.facilities.reduce((sum, f) => sum + f.capacity, 0) - this.getTotalCapacity();
+  }
+
   getPendingGarbageQueue(): readonly PendingGarbage[] {
     return this.pendingBags;
   }

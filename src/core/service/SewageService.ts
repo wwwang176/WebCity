@@ -232,6 +232,17 @@ export class SewageService {
   }
 
   /**
+   * Whether this plant is actually treating anything — road-connected AND
+   * powered, the same pair getConnectedTreatmentCapacity settles against.
+   *
+   * The infrastructure panel needs it to stop attributing a share of the city's
+   * sewage to a plant that is not treating any of it (BUG-153).
+   */
+  isPlantActive(id: string): boolean {
+    return this.connectedPlantIds.has(id) && this.isPlantOperational(id);
+  }
+
+  /**
    * Full tick: produce sewage from water demand, then treat as much as connected capacity allows.
    * @param sewageProduced Total sewage produced this tick (water demand × sewage rates).
    */
