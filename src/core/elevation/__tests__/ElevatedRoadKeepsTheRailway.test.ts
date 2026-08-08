@@ -30,23 +30,37 @@ function railViaductAt(level: number): { grid: Grid; em: ElevationManager } {
   return { grid, em };
 }
 
-describe('an elevated road does not eat the railway it starts on', () => {
+describe('a road cannot start on a railway viaduct', () => {
+  // These three used to assert the build SUCCEEDED and left the railway alone.
+  // That premise turned out to be the defect rather than the fix: the start gate
+  // accepted a rail-only deck because `hasElevatedSegment` does not distinguish
+  // road from rail, chooseStartLevel then correctly refused to hand back a
+  // rail-only level and answered 0, and the run set off from a ground cell with
+  // no road on it — leaving the ramp's foot pointing into nothing. The comment
+  // on that chooseStartLevel case already said "the caller's own guard handles
+  // that"; it did not, and now it does.
+  //
+  // The property these cases were really after — an elevated road must not eat
+  // an elevated railway — is now covered by ElevatedCrossingAndStacking, which
+  // reaches the mid-run crossing these could not: `existingAtStart` is
+  // `i === 0` by construction, so a railway crossed anywhere but at the first
+  // cell was deleted outright and no case here could see it.
   for (const level of [1, 2, 3]) {
-    it(`should keep a rail-only deck at level ${level} when building at that level`, () => {
+    it(`should refuse to start a road on a rail-only deck at level ${level}`, () => {
       const { grid, em } = railViaductAt(level);
       const builder = new ElevatedRoadBuilder(grid, em);
 
       const result = builder.buildElevatedRoad(
         { x: 8, y: 5 }, { x: 16, y: 5 }, RoadType.TWO_LANE, 1e6, level,
       );
-      // Without this the whole case is vacuous: a build that never happened
-      // cannot delete anything.
-      expect(result.success, `build failed: ${JSON.stringify(result)}`).toBe(true);
+      expect(result.success).toBe(false);
+      expect(result.reason).toBe('START_NOT_ON_ROAD');
 
       const seg = em.get(8, 5, level);
       expect(seg, `level ${level} segment must survive`).not.toBeNull();
       expect(seg!.railType, `railway at level ${level} was deleted`).toBe(1);
       expect(seg!.railFlags).toBe(3);
+      expect(seg!.roadType, 'nothing was paid for, so nothing may appear').toBe(RoadType.NONE);
     });
   }
 

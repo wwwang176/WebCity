@@ -140,6 +140,20 @@ export class ElevationManager {
     return best < 0 ? 0 : best;
   }
 
+  /**
+   * Is there an elevated ROAD at (x, y), at any level?
+   *
+   * Distinct from hasElevatedSegment, which is true for an elevated railway
+   * too — the same conflation chooseStartLevel above exists to avoid.
+   */
+  hasElevatedRoadAt(x: number, y: number): boolean {
+    for (let level = MIN_ELEVATION_LEVEL; level <= MAX_ELEVATION_LEVEL; level++) {
+      const seg = this.layers.get(ElevationManager.key(x, y, level));
+      if (seg && seg.roadType !== RoadType.NONE) return true;
+    }
+    return false;
+  }
+
   /** Check if any ramp occupies level `level` at (x, y) — either as low side or high side. */
   hasRampAtLevel(x: number, y: number, level: number): boolean {
     for (let lv = MIN_ELEVATION_LEVEL; lv <= MAX_ELEVATION_LEVEL; lv++) {

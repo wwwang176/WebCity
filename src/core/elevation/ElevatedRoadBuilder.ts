@@ -4,6 +4,7 @@ import { toPosKey, getDirectionFlag, getLShapedPath, CARDINAL_DIRECTIONS } from 
 import { extractOutOfBoundsEdge } from '../grid/EdgeUtils';
 import { RoadType, ROAD_CONFIGS, type BuildRoadResult } from '../road/types';
 import { RoadNetwork } from '../road/RoadNetwork';
+import { RailType } from '../rail/types';
 import { ElevationManager } from './ElevationManager';
 import { getElevatedPath } from './ElevatedPath';
 import { validateElevatedPath } from './ElevatedPathValidation';
@@ -20,6 +21,14 @@ export class ElevatedRoadBuilder {
     private grid: Grid,
     private elevationManager: ElevationManager,
     private network: RoadNetwork | null = null,
+    /**
+     * Demolition routes EVERY elevated cell through this class — Game.ts asks
+     * `hasElevatedSegment`, which is true for an elevated railway too — so
+     * removal has to be able to take a span out of the rail graph as well.
+     * Without it the node and its edges survived the bridge and trains kept
+     * routing over open air.
+     */
+    private railNetwork: { removeNode(id: string): void } | null = null,
   ) {}
 
   /**
@@ -56,7 +65,19 @@ export class ElevatedRoadBuilder {
     const startOnElevated = segAtTargetLevel
       || this.elevationManager.hasElevatedSegment(from.x, from.y);
 
-    if (!startOnGround && !startOnElevated) {
+    // A road has to start from a road. `hasElevatedSegment` is also true for an
+    // elevated RAILWAY, so dragging the road tool off a rail viaduct passed this
+    // gate; chooseStartLevel then correctly refused to return a rail-only level
+    // and answered 0, and the run set off from a ground cell with no road on it.
+    // The ramp's foot ended up pointing into a cell with nothing in it — the
+    // BUG-097 dangling-flag symptom, reached through a different door. The
+    // comment on that chooseStartLevel case already assumed "the caller's own
+    // guard handles that"; it did not.
+    //
+    // The legitimate way to put a road on a rail deck is to build across it from
+    // a road, which is a mid-run crossing and still works.
+    const startOnElevatedRoad = this.elevationManager.hasElevatedRoadAt(from.x, from.y);
+    if (!startOnGround && !startOnElevatedRoad) {
       return { success: false, reason: 'START_NOT_ON_ROAD' };
     }
 
@@ -159,6 +180,15 @@ export class ElevatedRoadBuilder {
         ? this.elevationManager.get(pos.x, pos.y, storeLevel)
         : null;
 
+      // Whatever is already on this cell at this level, at ANY point of the run.
+      // `existingAtStart` is `i === 0` by construction, so from the second cell
+      // onward the write below cleared railType/railFlags unconditionally: an
+      // elevated road crossing an elevated railway deleted the railway at the
+      // crossing. BUG-117 and BUG-163 both happened to be start-cell cases, so
+      // the rule they established — never rewrite an existing segment's paid
+      // state — was only ever enforced there.
+      const existingHere = this.elevationManager.get(pos.x, pos.y, storeLevel);
+
       let flags = 0;
       if (i > 0) {
         const prev = path[i - 1]!;
@@ -175,9 +205,8 @@ export class ElevatedRoadBuilder {
       }
 
       // Merge with existing flags at same level
-      const existing = this.elevationManager.get(pos.x, pos.y, storeLevel);
-      if (existing) {
-        flags |= existing.roadFlags;
+      if (existingHere) {
+        flags |= existingHere.roadFlags;
       }
 
       // Compute ramp ascend direction: the cardinal direction toward the HIGHER end
@@ -191,10 +220,16 @@ export class ElevatedRoadBuilder {
       }
 
       this.elevationManager.set(pos.x, pos.y, storeLevel, {
-        roadType: existingAtStart ? existingAtStart.roadType : roadType,
+        // Preserve a paid ROAD, not the absence of one. On a rail-only deck
+        // `existingAtStart.roadType` is NONE, so the cell came out carrying
+        // roadFlags that point at the next span with no road under them — an
+        // island the renderer draws and the routing graph cannot use. There is
+        // no paid road state to protect in that case.
+        roadType: existingAtStart && existingAtStart.roadType !== RoadType.NONE
+          ? existingAtStart.roadType : roadType,
         roadFlags: flags,
-        railType: existingAtStart?.railType ?? 0,
-        railFlags: existingAtStart?.railFlags ?? 0,
+        railType: existingHere?.railType ?? 0,
+        railFlags: existingHere?.railFlags ?? 0,
         isRamp: existingAtStart ? existingAtStart.isRamp : pos.isRamp,
         rampAscendDirection: existingAtStart
           ? existingAtStart.rampAscendDirection : rampAscendDir,
@@ -279,10 +314,13 @@ export class ElevatedRoadBuilder {
     const seg = this.elevationManager.get(x, y, highest);
     this.elevationManager.delete(x, y, highest);
 
-    // Remove from network
-    if (this.network) {
-      const nodeId = this.elevatedNodeId(x, y, highest);
-      this.network.removeNode(nodeId);
+    // Remove from network. Both networks use the same `x,y,level` id scheme, and
+    // a deck can carry road, rail or both, so the removed node has to go from
+    // whichever graphs hold it.
+    const nodeId = this.elevatedNodeId(x, y, highest);
+    this.network?.removeNode(nodeId);
+    if (seg && seg.railType !== RailType.NONE) {
+      this.railNetwork?.removeNode(nodeId);
     }
 
     // Update neighboring elevated segments' connection flags only.
@@ -303,6 +341,12 @@ export class ElevatedRoadBuilder {
     // (BUG-118).
     for (const level of [highest, highest - 1]) {
       if (level < 1) continue;
+      // ...but only where nothing is left. The scan below strips a neighbour's
+      // flag pointing at (x,y,level); at `highest` that is right, because the
+      // segment was just deleted. At `highest - 1` it is only right if that
+      // level is empty here too — with two viaducts stacked, the lower one is
+      // untouched and removing the upper deck severed it.
+      if (this.elevationManager.get(x, y, level)) continue;
       for (const dir of CARDINAL_DIRECTIONS) {
         const neighbor = this.elevationManager.get(x + dir.dx, y + dir.dy, level);
         if (neighbor && neighbor.roadFlags & dir.opposite) {

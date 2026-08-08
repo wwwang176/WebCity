@@ -584,7 +584,11 @@ export class Game {
     this.roadBuilder = new RoadBuilder(this.state.grid, undefined, this.elevationManager);
     this.railNetwork = new RailNetwork();
     this.railBuilder = new RailBuilder(this.state.grid, this.railNetwork, this.elevationManager);
-    this.elevatedRoadBuilder = new ElevatedRoadBuilder(this.state.grid, this.elevationManager);
+    // The rail network goes in because demolition sends every elevated cell
+    // here, elevated railways included.
+    this.elevatedRoadBuilder = new ElevatedRoadBuilder(
+      this.state.grid, this.elevationManager, null, this.railNetwork,
+    );
     this.elevatedRailBuilder = new ElevatedRailBuilder(this.state.grid, this.elevationManager, this.railNetwork);
     this.simLoop.setElevationManager(this.elevationManager);
     this.roadLookup = new UnifiedRoadLookup(this.state.grid, this.elevationManager);
