@@ -105,6 +105,49 @@ describe('the shader uses the thresholds the parts module defines', () => {
     expect(thresholds.length).toBe(ZONE_TYPES.length - 1);
   });
 
+  it('should let the shopfront glass take part in day and night', () => {
+    // 落地窗原本算好了顏色卻沒有設 windowMask —— 白天沒有反射、夜晚不會亮，
+    // 而一條商店街的夜景主角就是它。
+    const storefront = BUILDING_FRAG.slice(
+      BUILDING_FRAG.indexOf('COMMERCIAL LOW'),
+      BUILDING_FRAG.indexOf('Upper wall'),
+    );
+    expect(storefront.length).toBeGreaterThan(0);
+    expect(storefront, '落地窗沒有進 windowMask').toContain('windowMask =');
+    expect(storefront, '落地窗夜晚不會亮').toContain('isLitWindow');
+    expect(storefront, '落地窗不看住戶在不在').toContain('occ');
+  });
+
+  it('should keep the shopfront floor-to-ceiling, not a window grid', () => {
+    // 落地窗與樓上的小窗長得不一樣正是它的重點。它只有豎向窗框，所以
+    // 分割式只吃 wallU；一旦出現對 y 取 fract 的分割，它就變成一般窗格了。
+    const storefront = BUILDING_FRAG.slice(
+      BUILDING_FRAG.indexOf('COMMERCIAL LOW'),
+      BUILDING_FRAG.indexOf('Upper wall'),
+    );
+    expect(storefront, '落地窗被切出樓層橫線').not.toMatch(/fract\s*\(\s*y/);
+    expect(storefront).toContain('fract(bay)');
+  });
+
+  it('should let a branch opt out of the daytime sky reflection', () => {
+    // 「會透光」與「是玻璃」是兩件事：工業的捲門夜裡會透出暖光，但它白天
+    // 不該變成一片藍。少了這個分離，唯一的做法是讓捲門完全不亮。
+    expect(BUILDING_FRAG).toContain('float glassiness = 1.0;');
+    expect(BUILDING_FRAG, '天空反射沒有吃 glassiness')
+      .toContain('dayFactor * windowMask * glassiness');
+    expect(BUILDING_FRAG, '陽光鏡面沒有吃 glassiness')
+      .toContain('windowMask * glassiness * facingSun');
+  });
+
+  it('should compute the day/night factors outside the window block', () => {
+    // 招牌與燈頭沒有窗戶，但它們一樣要知道現在是不是晚上。
+    const nightAt = BUILDING_FRAG.indexOf('float nightFactor');
+    const windowAt = BUILDING_FRAG.indexOf('if (windowMask > 0.01)');
+    expect(nightAt).toBeGreaterThan(-1);
+    expect(windowAt).toBeGreaterThan(-1);
+    expect(nightAt, '日夜係數還關在窗戶的判斷裡').toBeLessThan(windowAt);
+  });
+
   it('should declare the attributes the renderer writes', () => {
     expect(BUILDING_VERT).toContain('attribute float aHighlight;');
     expect(BUILDING_VERT).toContain('attribute vec3 aHighlightColor;');

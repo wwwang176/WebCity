@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { PART_THRESHOLDS, ZONE_CAT } from './geometry/buildings/parts';
-import { FLOOR_HEIGHT_UNITS } from './geometry/buildings/propBands';
+import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from './geometry/buildings/propBands';
 import { roofPaletteFor, type RoofColor } from './ColorPalettes';
 
 /**
@@ -185,6 +185,13 @@ void main() {
 
   vec3 color;
 
+  // 這一塊白天是不是玻璃。1 = 整片換成天空反射並吃陽光鏡面（一般窗戶）；
+  // 0 = 完全不反射（工業的捲門夜裡會透光，但它不是玻璃）。落地窗取中間值 ——
+  // 它白天已經有自己的玻璃色與逐扇變化，整片換成統一的反射色會把那個變化抹掉。
+  float glassiness = 1.0;
+  // 自發光。夜晚才加，而且加在陰影之後 —— 招牌與燈頭不會被自己的建築遮住。
+  vec3 emissive = vec3(0.0);
+
   if (isFoliage) {
     // Green foliage with variation based on position
     float fh = hash21(vWorldPos.xz * 3.7);
@@ -334,16 +341,37 @@ void main() {
 
     // ---- COMMERCIAL LOW: storefront glass bottom, simple wall above ----
     else if (vZoneCat < 0.5) {
-      if (onWall && y < 0.22) {
-        // Large storefront glass
-        float glassU = fract(wallU / 0.25);
-        bool inGlass = glassU > 0.06 && glassU < 0.94;
-        if (inGlass) {
-          float r = hash21(floor(vec2(wallU / 0.25, 0.0)) + floor(vWorldPos.xz + 0.5) * 3.7);
-          color = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
-        } else {
-          color = vBldgColor * 0.6; // mullion
+      if (onWall && y < ${glslFloat(SHOPFRONT_CEILING)}) {
+        // 落地窗：一整層樓高的玻璃，中間只有豎向窗框，**不切樓層橫線** ——
+        // 這正是它與樓上那些小窗長得不一樣的原因，要保留。
+        //
+        // 上緣用 SHOPFRONT_CEILING 而不是自己寫一個 0.22：雨遮就掛在這條線上，
+        // 兩邊各寫一份的話，雨遮會壓在落地窗中間。
+        float bay = wallU / 0.25;
+        float bayU = fract(bay);
+        float fwB = fwidth(bay);
+        float glass = smoothstep(0.06 - fwB, 0.06 + fwB, bayU)
+                    * smoothstep(0.94 + fwB, 0.94 - fwB, bayU);
+        vec2 wid = floor(vec2(bay, 0.0)) + floor(vWorldPos.xz + 0.5) * 3.7;
+        float r = hash21(wid);
+        vec3 glassColor = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
+        color = mix(vBldgColor * 0.6, glassColor, glass); // 窗框 -> 玻璃
+
+        // 這一扇的店今晚有沒有開。逐扇而不是逐棟 —— 一排店面全暗或全亮都不對。
+        float sPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
+        float sPhase = hash21(wid * 2.71 + 47.0) * sPeriod;
+        float sEpoch = floor((uTime + sPhase) / sPeriod);
+        float sLit = hash21(wid + sEpoch * 13.7);
+        // 店面比樓上的辦公室更常亮著 —— 一條商店街的夜景主角就是它。
+        float litThreshSF = mix(0.95, 0.25, occ);
+        if (sLit > litThreshSF) {
+          winBrightness = 0.7 + hash21(wid + 21.3) * 0.5;
+          isLitWindow = glass > 0.5;
         }
+        windowMask = glass;
+        // 落地窗白天已經有自己的玻璃色與逐扇變化。整片換成統一的天空反射色
+        // 會把那個變化抹掉，所以只取一部分。
+        glassiness = 0.45;
       } else if (onWall) {
         // Upper wall — sparse small windows
         float fy = y / (floorHeight * 1.2);
@@ -507,29 +535,35 @@ void main() {
     color *= shadowVal;
   #endif
 
+  // 日夜係數算在 windowMask 的判斷**之外** —— 招牌與燈頭沒有窗戶，
+  // 但它們一樣要知道現在是不是晚上。
+  // Per-building random offset so lights turn on gradually during dusk
+  float bldgRand = fract(sin(dot(floor(vWorldPos.xz), vec2(12.9898, 78.233))) * 43758.5453);
+  float onOffset = bldgRand * 0.3; // stagger over 0.3 sunIntensity range
+  float dayFactor = smoothstep(0.25 + onOffset, 0.55 + onOffset, sunIntensity);
+  float nightFactor = 1.0 - smoothstep(0.15 + onOffset, 0.5 + onOffset, sunIntensity);
+
   // Window day/night appearance
   if (windowMask > 0.01) {
-    // Per-building random offset so lights turn on gradually during dusk
-    float bldgRand = fract(sin(dot(floor(vWorldPos.xz), vec2(12.9898, 78.233))) * 43758.5453);
-    float onOffset = bldgRand * 0.3; // stagger over 0.3 sunIntensity range
-    float dayFactor = smoothstep(0.25 + onOffset, 0.55 + onOffset, sunIntensity);
-    float nightFactor = 1.0 - smoothstep(0.15 + onOffset, 0.5 + onOffset, sunIntensity);
     // Daytime: all windows show blue-white glass reflection
     vec3 dayGlass = vec3(0.6, 0.72, 0.82);
-    color = mix(color, dayGlass * lighting * shadowVal, dayFactor * windowMask);
+    color = mix(color, dayGlass * lighting * shadowVal, dayFactor * windowMask * glassiness);
     // Specular sun reflection on sun-facing glass only
     vec3 viewDirH = normalize(vec3(cameraPosition.x - vWorldPos.x, 0.0, cameraPosition.z - vWorldPos.z));
     vec3 sunDirH = normalize(vec3(sunDir.x, 0.0, sunDir.z));
     float facingSun = max(dot(n, sunDirH), 0.0);
     vec3 halfDirH = normalize(sunDirH + viewDirH);
     float spec = pow(max(dot(n, halfDirH), 0.0), 24.0);
-    color += spec * sunColor * 0.8 * dayFactor * windowMask * facingSun * rawShadow;
+    color += spec * sunColor * 0.8 * dayFactor * windowMask * glassiness * facingSun * rawShadow;
     // Nighttime: only lit windows show warm yellow glow
     if (isLitWindow) {
       vec3 warmGlow = vec3(0.95, 0.85, 0.5);
       color = mix(color, warmGlow * 1.35 * winBrightness, nightFactor * 0.7);
     }
   }
+
+  // 自發光加在陰影之後：燈與招牌自己就是光源，被自己的建築遮住沒有道理。
+  color += emissive * nightFactor;
 
   // Underground mode: white model effect (fade to near-white)
   if (uDesaturate > 0.0) {
