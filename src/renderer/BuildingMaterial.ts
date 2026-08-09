@@ -25,6 +25,7 @@ varying vec3 vWorldPos;
 varying vec3 vBldgColor;
 varying float vPartType;
 varying float vZoneCat;
+varying float vGroundShade;
 varying float vHighlight;
 varying vec3 vHighlightColor;
 varying float vOccupancy;
@@ -40,9 +41,11 @@ void main() {
   #ifdef USE_COLOR
     vPartType = color.r;
     vZoneCat = color.g;
+    vGroundShade = color.b;
   #else
     vPartType = 0.0;
     vZoneCat = 0.0;
+    vGroundShade = 0.0;
   #endif
 
   #ifdef USE_INSTANCING_COLOR
@@ -87,6 +90,7 @@ varying vec3 vWorldPos;
 varying vec3 vBldgColor;
 varying float vPartType;
 varying float vZoneCat;
+varying float vGroundShade;
 varying float vHighlight;
 varying vec3 vHighlightColor;
 varying float vOccupancy;
@@ -174,6 +178,10 @@ void main() {
   // 立面規則 —— 否則屋頂上的設備會長出一格一格的窗。
   bool isDetail = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.FOLIAGE_MIN)};
+  // 地面貼片：柏油、鋪面、標線。自己一個分支，否則會落到牆的分支 ——
+  // 柏油地面上長出一格一格的窗。
+  bool isGround = vPartType > ${glslFloat(PART_THRESHOLDS.GROUND_MIN)}
+    && vPartType < ${glslFloat(PART_THRESHOLDS.GROUND_MAX)};
   bool isRoof = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_MIN)} || (n.y > 0.85 && vPartType < ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)});
   bool isFloor = n.y < -0.85;
 
@@ -191,6 +199,13 @@ void main() {
     // 略帶藍的中灰金屬，靠種子微調明度，避免整片設備同一個顏色
     float m = 0.42 + vSeed.z * 0.16;
     color = vec3(m, m * 1.02, m * 1.06) * lighting;
+  } else if (isGround) {
+    // 柏油 -> 混凝土 -> 磚鋪，由頂點的 B 通道決定。加一點世界座標雜訊，
+    // 否則一整片鋪面是死板的單一色塊。
+    vec3 tarmac = vec3(0.20, 0.20, 0.21);
+    vec3 paving = vec3(0.60, 0.58, 0.55);
+    float grain = hash21(floor(vWorldPos.xz * 26.0)) * 0.07 - 0.035;
+    color = (mix(tarmac, paving, vGroundShade) + grain) * lighting;
   } else if (isFloor) {
     color = vBldgColor * 0.3;
   } else if (isRoof) {

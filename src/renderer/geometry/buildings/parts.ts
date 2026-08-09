@@ -11,14 +11,18 @@ export const PART_WALL = 0.0;
 /** 金屬／深色細節：水塔、冷氣機、天線、管架。不畫窗戶。 */
 export const PART_DETAIL = 0.2;
 export const PART_FOLIAGE = 0.5;
+/** 地面貼片：柏油、鋪面、標線。完全平，行人走在上面。 */
+export const PART_GROUND = 0.7;
 export const PART_ROOF = 1.0;
 
-/** shader 用來把 R 通道切成四段的門檻。 */
+/** shader 用來把 R 通道切段的門檻。 */
 export const PART_THRESHOLDS = {
   /** 低於此值且法線朝上者視為屋頂（讓平頂不必特別標記）。 */
   ROOF_BY_NORMAL: 0.1,
   FOLIAGE_MIN: 0.35,
   FOLIAGE_MAX: 0.65,
+  GROUND_MIN: 0.65,
+  GROUND_MAX: 0.8,
   ROOF_MIN: 0.8,
 } as const;
 
@@ -61,5 +65,19 @@ export function stampZoneCategory(geo: THREE.BufferGeometry, cat: number): void 
   const arr = attr.array as Float32Array;
   for (let i = 0; i < attr.count; i++) {
     arr[i * 3 + 1] = cat;
+  }
+}
+
+/**
+ * 地面明度寫進頂點色的 B 通道（原本保留未用）。0 = 柏油，1 = 磚鋪。
+ *
+ * 用頂點而不用 `aSeed`：同一份貼片幾何裡要同時有深色柏油車道與淺色人行道，
+ * 而 `aSeed` 是逐實例的 —— 它分不出同一個 mesh 內的兩塊地面。
+ */
+export function setGroundShade(geo: THREE.BufferGeometry, shade01: number): void {
+  const attr = geo.getAttribute('color') as THREE.BufferAttribute;
+  const arr = attr.array as Float32Array;
+  for (let i = 0; i < attr.count; i++) {
+    arr[i * 3 + 2] = shade01;
   }
 }

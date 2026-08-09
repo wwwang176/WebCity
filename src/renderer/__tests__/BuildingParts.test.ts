@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import {
-  PART_WALL, PART_DETAIL, PART_FOLIAGE, PART_ROOF, PART_THRESHOLDS,
-  tagPart, ZONE_CAT, stampZoneCategory, triangleCount,
+  PART_WALL, PART_DETAIL, PART_FOLIAGE, PART_GROUND, PART_ROOF, PART_THRESHOLDS,
+  tagPart, ZONE_CAT, stampZoneCategory, setGroundShade, triangleCount,
 } from '../geometry/buildings/parts';
 import { ZoneType } from '../../core/grid/types';
 
@@ -105,5 +105,44 @@ describe('stampZoneCategory', () => {
   it('should give every zone type a distinct category', () => {
     const cats = Object.values(ZONE_CAT);
     expect(new Set(cats).size).toBe(cats.length);
+  });
+});
+
+/**
+ * 地面貼片需要自己的標籤：標成 PART_WALL 會長出窗戶，標成 PART_ROOF 會拿到
+ * 屋瓦顏色。0.7 落在 shader 留在樹葉與屋頂之間的空號段。
+ */
+describe('PART_GROUND', () => {
+  it('should sit in the gap the shader leaves between foliage and roof', () => {
+    expect(PART_GROUND).toBeGreaterThan(PART_THRESHOLDS.FOLIAGE_MAX);
+    expect(PART_GROUND).toBeLessThan(PART_THRESHOLDS.ROOF_MIN);
+  });
+
+  it('should not collide with any existing tag', () => {
+    const tags = [PART_WALL, PART_DETAIL, PART_FOLIAGE, PART_GROUND, PART_ROOF];
+    expect(new Set(tags).size).toBe(tags.length);
+  });
+
+  it('should keep the shade in the blue channel, leaving tag and zone intact', () => {
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    tagPart(geo, PART_GROUND);
+    stampZoneCategory(geo, ZONE_CAT[ZoneType.INDUSTRIAL]!);
+    setGroundShade(geo, 0.25);
+    const col = geo.getAttribute('color');
+    for (let i = 0; i < col.count; i++) {
+      expect(col.getX(i), `頂點 ${i} 標籤被蓋掉`).toBeCloseTo(PART_GROUND, 6);
+      expect(col.getY(i), `頂點 ${i} 分區被蓋掉`).toBeCloseTo(ZONE_CAT[ZoneType.INDUSTRIAL]!, 6);
+      expect(col.getZ(i), `頂點 ${i} 明度沒寫進去`).toBeCloseTo(0.25, 6);
+    }
+  });
+
+  it('should survive stampZoneCategory running after it', () => {
+    // 兩個函式都在改同一個屬性，呼叫順序不該影響結果。
+    const geo = new THREE.BoxGeometry(1, 1, 1);
+    tagPart(geo, PART_GROUND);
+    setGroundShade(geo, 0.8);
+    stampZoneCategory(geo, ZONE_CAT[ZoneType.COMMERCIAL_LOW]!);
+    const col = geo.getAttribute('color');
+    expect(col.getZ(0)).toBeCloseTo(0.8, 6);
   });
 });

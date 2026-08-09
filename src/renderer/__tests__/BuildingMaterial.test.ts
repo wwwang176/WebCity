@@ -49,6 +49,22 @@ describe('the shader uses the thresholds the parts module defines', () => {
     expect(branch).toContain('floorHeight');
   });
 
+  it('should carry the ground shade from the blue channel into the fragment', () => {
+    // 同一份貼片幾何裡要同時有深色柏油與淺色鋪面，而 aSeed 是逐實例的 ——
+    // 它分不出同一個 mesh 內的兩塊地面。所以明度走頂點色的 B 通道。
+    expect(BUILDING_VERT).toContain('varying float vGroundShade;');
+    expect(BUILDING_VERT).toContain('vGroundShade = color.b;');
+    expect(BUILDING_FRAG).toContain('varying float vGroundShade;');
+  });
+
+  it('should branch on the ground tag before it reaches the wall branch', () => {
+    // 落到牆的分支就會長出窗戶 —— 柏油地面上一格一格的窗。
+    const groundAt = BUILDING_FRAG.indexOf('isGround');
+    const wallAt = BUILDING_FRAG.indexOf('=== WALL');
+    expect(groundAt).toBeGreaterThan(-1);
+    expect(groundAt).toBeLessThan(wallAt);
+  });
+
   it('should declare the attributes the renderer writes', () => {
     expect(BUILDING_VERT).toContain('attribute float aHighlight;');
     expect(BUILDING_VERT).toContain('attribute vec3 aHighlightColor;');
