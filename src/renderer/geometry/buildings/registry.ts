@@ -323,15 +323,24 @@ export function heightKey(zoneType: number, density: Density): string {
  *
  * 高密度下修過兩輪：30/51/75 -> 22/36/52 -> 22/32/42（住宅高，其餘同步）。
  * 第二輪只壓 L2 與 L3，L1 維持不動，因為過高的觀感集中在頂端等級。
- * 低密度三輪都不動 —— 它本來就是照實算的。
+ * 住宅低與商業低三輪都不動 —— 它們本來就是照實算的。
+ *
+ * 低密度辦公上修 9/15/24 -> 12/18/24：9 m 的辦公樓在高密度旁邊顯得發育不良。
+ * L3 停在 24 m 是有意的 —— 辦公低 L3 是 50 人、辦公高 L1 是 160 人，
+ * 讓前者更高會把階梯倒過來。
+ *
+ * 工業三個等級一起下修（8/12/16 -> 7/10/13 -> 6/7.5/9）並把基地拉到上限。
+ * 現代廠房幾乎都是單層挑高、鋪滿基地，多層工廠很少見，所以工業的等級階梯
+ * 不該表現在高度上 —— 它應該表現在煙囪、筒倉、管架、貨櫃這些設備上，
+ * 那是階段 2C 屋頂與地面物件的工作。
  */
 export const TARGET_HEIGHTS_M: Record<string, [number, number, number]> = {
   [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   [5, 7, 10],
   [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: [22, 32, 42],
   [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    [5, 8, 12],
   [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  [18, 27, 36],
-  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        [7, 10, 13],
-  [heightKey(ZoneType.OFFICE, 'LOW')]:            [9, 15, 24],
+  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        [6, 7.5, 9],
+  [heightKey(ZoneType.OFFICE, 'LOW')]:            [12, 18, 24],
   [heightKey(ZoneType.OFFICE, 'HIGH')]:           [24, 36, 48],
 };
 
@@ -395,7 +404,7 @@ export const TARGET_WIDTHS_M: Record<string, number> = {
   [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: MAX_BUILDING_WIDTH_M,
   [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    8.4,
   [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  MAX_BUILDING_WIDTH_M,
-  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        9.6,
+  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        MAX_BUILDING_WIDTH_M,
   [heightKey(ZoneType.OFFICE, 'LOW')]:            8.4,
   [heightKey(ZoneType.OFFICE, 'HIGH')]:           MAX_BUILDING_WIDTH_M,
 };
