@@ -2037,3 +2037,611 @@ export function buildRoof(
 git add -A
 git commit -m "feat(render): roof forms, picked independently of the prototype"
 ```
+
+---
+
+## Task 7：`assemble.ts` 與 `index.ts` —— 從量體到幾何
+
+這是 `massing/` 裡**唯一**可以 import Three.js 的地方。
+
+所有形狀（盒子、山牆、四坡、單斜、鋸齒）都用**同一個** `frustum` 函式產生 ——
+差別只在頂面的尺寸與偏移：
+
+| 形狀 | 頂面 | 效果 |
+|---|---|---|
+| `box` | 與底面同大 | 方盒 |
+| `gable` | 一條線（深度趨近 0） | 兩坡屋頂，屋脊在中央 |
+| `hip` | 一小塊 | 四坡屋頂 |
+| `shed` | 一條線推到一側 | 單斜屋頂 |
+| `sawtooth` | N 個並排的 `shed` | 鋸齒天窗 |
+
+五個形狀寫成五份幾何是五份幾乎一樣的頂點算術，而算錯只表現為「某個變體的
+屋頂怪怪的」。
+
+**Files:**
+- Create: `src/renderer/geometry/buildings/massing/assemble.ts`
+- Create: `src/renderer/geometry/buildings/massing/index.ts`
+- Test: `src/renderer/__tests__/MassingGeometry.test.ts`（新）
+
+**Interfaces:**
+- Consumes：`volume.ts`、`prototypes.ts`、`roofForms.ts`、`dimensions.ts`、
+  `metrics.ts` 的 `HALF_ENVELOPE`；`parts.ts` 的 `tagPart`、`PART_WALL`、`PART_ROOF`、
+  `triangleCount`；`registry.ts` 的 `centreFootprint`、`GeoBuilder`、`Density`。
+- Produces：
+  ```ts
+  // assemble.ts
+  export function assemble(volumes: readonly Volume[]): THREE.BufferGeometry;  // 越界時 throw
+
+  // index.ts
+  export function volumesFor(
+    zoneType: number, density: Density, level: number, variantIndex: number,
+  ): Volume[];                                    // 沒有建築時回傳 []
+  export function getMassingVariants(
+    zoneType: number, density: Density, level: number,
+  ): GeoBuilder[];                                // 長度 = VARIANT_COUNT，或 0
+  export { VARIANT_COUNT } from './dimensions';
+  ```
+
+- [ ] **Step 1：寫失敗測試**
+
+`src/renderer/__tests__/MassingGeometry.test.ts`：
+
+```ts
+import { describe, it, expect } from 'vitest';
+import * as THREE from 'three';
+import { getMassingVariants, volumesFor } from '../geometry/buildings/massing';
+import { VARIANT_COUNT } from '../geometry/buildings/massing/dimensions';
+import { HALF_ENVELOPE } from '../geometry/buildings/massing/metrics';
+import { rasterise, differenceRatio, centroidOffset, rotate90 }
+  from '../geometry/buildings/massing/volume';
+import { triangleCount, PART_THRESHOLDS } from '../geometry/buildings/parts';
+import { TARGET_HEIGHTS_M, TRIANGLE_BUDGET, type Density }
+  from '../geometry/buildings/registry';
+import { METRES_PER_CELL } from '../../core/grid/constants';
+
+const LEVELS = [1, 2, 3] as const;
+function eachBucket(fn: (z: number, d: Density, key: string) => void) {
+  for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+    const [zs, ds] = key.split(':');
+    fn(Number(zs), ds as Density, key);
+  }
+}
+function eachVariant(fn: (geo: THREE.BufferGeometry, label: string) => void) {
+  eachBucket((z, d, key) => {
+    for (const lv of LEVELS) {
+      const vs = getMassingVariants(z, d, lv);
+      vs.forEach((build, i) => {
+        const g = build();
+        fn(g, `${key} L${lv} v${i}`);
+        g.dispose();
+      });
+    }
+  });
+}
+
+describe('massing geometry', () => {
+  it('should give every bucket exactly eight variants', () => {
+    eachBucket((z, d, key) => {
+      for (const lv of LEVELS) {
+        expect(getMassingVariants(z, d, lv).length, `${key} L${lv}`).toBe(VARIANT_COUNT);
+      }
+    });
+  });
+
+  it('should return nothing for a bucket with no buildings', () => {
+    expect(getMassingVariants(1, 'HIGH', 1)).toEqual([]);   // 住宅低沒有高密度
+    expect(getMassingVariants(999, 'LOW', 1)).toEqual([]);
+  });
+
+  it('should build the same geometry every time', () => {
+    // 幾何在遊戲啟動時生成。亂數一旦洩漏，讀檔之後整座城市會換一批形狀，
+    // 而那在畫面上只是「怎麼跟剛才不一樣」。
+    const a = getMassingVariants(4, 'HIGH', 3)[2]!();
+    const b = getMassingVariants(4, 'HIGH', 3)[2]!();
+    const pa = a.getAttribute('position').array as Float32Array;
+    const pb = b.getAttribute('position').array as Float32Array;
+    expect(pa.length).toBe(pb.length);
+    for (let i = 0; i < pa.length; i++) expect(pa[i]).toBe(pb[i]);
+  });
+
+  it('should stand on the ground and be centred in the cell', () => {
+    eachVariant((geo, label) => {
+      geo.computeBoundingBox();
+      const b = geo.boundingBox!;
+      expect(b.min.y, `${label} 沒有落地`).toBeCloseTo(0, 6);
+      expect((b.min.x + b.max.x) / 2, `${label} 沒有置中`).toBeCloseTo(0, 6);
+      expect((b.min.z + b.max.z) / 2, `${label} 沒有置中`).toBeCloseTo(0, 6);
+    });
+  });
+
+  it('should never cross the pedestrian envelope', () => {
+    // BUG-221/222：門節點在 HALF_ENVELOPE 外側，越過就是行人穿牆。
+    // 現在直接量幾何，不再透過縮放公式 —— 公式算對但幾何沒置中，
+    // 就是 BUG-222 發生的方式。
+    eachVariant((geo, label) => {
+      geo.computeBoundingBox();
+      const b = geo.boundingBox!;
+      const maxAbs = Math.max(
+        Math.abs(b.min.x), Math.abs(b.max.x), Math.abs(b.min.z), Math.abs(b.max.z),
+      );
+      expect(maxAbs, `${label} 越過包絡線 ${((maxAbs - HALF_ENVELOPE) * METRES_PER_CELL).toFixed(2)} m`)
+        .toBeLessThanOrEqual(HALF_ENVELOPE + 1e-6);
+    });
+  });
+
+  it('should reach the height the table asks for', () => {
+    eachBucket((z, d, key) => {
+      for (const lv of LEVELS) {
+        const target = TARGET_HEIGHTS_M[key]![lv - 1]! / METRES_PER_CELL;
+        const tolerance = Math.max(0.1 * target, 0.26) + 0.26 * 0.5;  // 容差 + 屋頂
+        getMassingVariants(z, d, lv).forEach((build, i) => {
+          const g = build();
+          g.computeBoundingBox();
+          expect(Math.abs(g.boundingBox!.max.y - target), `${key} L${lv} v${i}`)
+            .toBeLessThanOrEqual(tolerance);
+          g.dispose();
+        });
+      }
+    });
+  });
+
+  it('should tag every vertex with a known part', () => {
+    eachVariant((geo, label) => {
+      const col = geo.getAttribute('color');
+      for (let i = 0; i < col.count; i++) {
+        const p = col.getX(i);
+        const known = p === 0
+          || (p > PART_THRESHOLDS.ROOF_BY_NORMAL && p < PART_THRESHOLDS.FOLIAGE_MIN)
+          || p > PART_THRESHOLDS.ROOF_MIN;
+        expect(known, `${label} 頂點 ${i} 標籤 ${p}`).toBe(true);
+      }
+    });
+  });
+
+  it('should contain no foliage and no ground paving', () => {
+    // 綠化住在地面物件層，鋪面住在貼片層。量體長出這兩種顏色就是層搞錯了。
+    eachVariant((geo, label) => {
+      const col = geo.getAttribute('color');
+      for (let i = 0; i < col.count; i++) {
+        const p = col.getX(i);
+        expect(p > PART_THRESHOLDS.FOLIAGE_MIN && p < PART_THRESHOLDS.FOLIAGE_MAX,
+          `${label} 有樹葉標籤`).toBe(false);
+        expect(p > PART_THRESHOLDS.GROUND_MIN && p < PART_THRESHOLDS.GROUND_MAX,
+          `${label} 有鋪面標籤`).toBe(false);
+      }
+    });
+  });
+
+  it('should stay inside the triangle budget', () => {
+    eachBucket((z, d, key) => {
+      for (const lv of LEVELS) {
+        const budget = lv === 3 ? TRIANGLE_BUDGET.TOWER : TRIANGLE_BUDGET.HOUSE;
+        getMassingVariants(z, d, lv).forEach((build, i) => {
+          const g = build();
+          expect(triangleCount(g), `${key} L${lv} v${i}`).toBeLessThanOrEqual(budget);
+          g.dispose();
+        });
+      }
+    });
+  });
+
+  it('should make level 3 richer than level 1', () => {
+    // 規格修訂 4：等級要看得出更高級。L3 開放更多原型，所以平均零件數該更多。
+    eachBucket((z, d, key) => {
+      const mean = (lv: number) => {
+        let n = 0;
+        for (let vi = 0; vi < VARIANT_COUNT; vi++) n += volumesFor(z, d, lv, vi).length;
+        return n / VARIANT_COUNT;
+      };
+      expect(mean(3), `${key} L3 沒有比 L1 豐富`).toBeGreaterThan(mean(1));
+    });
+  });
+});
+
+describe('massing variety', () => {
+  it('should give every bucket eight distinct silhouettes', () => {
+    // 這是本階段的主要條件。兩個變體長一樣就等於少一個變體。
+    eachBucket((z, d, key) => {
+      for (const lv of LEVELS) {
+        const grids: Float32Array[] = [];
+        for (let vi = 0; vi < VARIANT_COUNT; vi++) grids.push(rasterise(volumesFor(z, d, lv, vi)));
+        for (let i = 0; i < grids.length; i++) {
+          for (let j = i + 1; j < grids.length; j++) {
+            expect(differenceRatio(grids[i]!, grids[j]!, 0.13),
+              `${key} L${lv} 的 v${i} 與 v${j} 輪廓相同`).toBeGreaterThanOrEqual(0.10);
+          }
+        }
+      }
+    });
+  });
+
+  it('should make rotation worth something for at least half the variants', () => {
+    // 規格寫 6/8，但高樓做不到 —— 板樓與裙樓塔本質上是對稱的，而它們是高密度
+    // 分區在 L1 僅有的原型。4/8 是從原型表倒推的可達值。
+    eachBucket((z, d, key) => {
+      for (const lv of LEVELS) {
+        let asym = 0;
+        for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+          if (centroidOffset(volumesFor(z, d, lv, vi)) > 0.04) asym++;
+        }
+        expect(asym, `${key} L${lv} 只有 ${asym}/8 個不對稱`).toBeGreaterThanOrEqual(4);
+      }
+    });
+  });
+
+  it('should actually change the silhouette when an asymmetric variant rotates', () => {
+    // 上一條看重心，這一條看轉過去之後的樣子 —— 兩條一起才擋得住
+    // 「重心偏了但轉過去看起來一樣」。
+    eachBucket((z, d, key) => {
+      for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+        const vs = volumesFor(z, d, 3, vi);
+        if (centroidOffset(vs) <= 0.04) continue;
+        const g = rasterise(vs);
+        expect(differenceRatio(g, rotate90(g), 0.13),
+          `${key} L3 v${vi} 轉了等於沒轉`).toBeGreaterThanOrEqual(0.10);
+      }
+    });
+  });
+});
+```
+
+- [ ] **Step 2：跑紅** ｜ `pnpm vitest run src/renderer/__tests__/MassingGeometry.test.ts`
+
+- [ ] **Step 3：實作 `assemble.ts`**
+
+```ts
+import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { tagPart, PART_WALL } from '../parts';
+import { HALF_ENVELOPE } from './metrics';
+import { maxAbsOf, partOf, type Volume } from './volume';
+import { METRES_PER_CELL } from '../../../../core/grid/constants';
+
+/**
+ * `massing/` 裡唯一碰 Three.js 的地方。
+ *
+ * 所有形狀都用同一個 `frustum` 產生，差別只在頂面的尺寸與偏移：盒子的頂面與底面
+ * 同大、山牆的頂面是一條線、四坡的頂面是一小塊、單斜的頂面是推到一側的線。
+ * 五個形狀寫成五份幾何是五份幾乎一樣的頂點算術，而算錯只表現為
+ * 「某個變體的屋頂怪怪的」。
+ */
+
+/**
+ * 一個底面 w×d、頂面 topW×topD（可偏移）的稜台。
+ *
+ * `y0 === 0` 時省略底面：那兩個三角形永遠貼在地上，看不到。
+ */
+function frustum(
+  v: Volume, topW: number, topD: number, offX: number, offZ: number,
+): THREE.BufferGeometry {
+  const hw = v.w / 2;
+  const hd = v.d / 2;
+  const tw = topW / 2;
+  const td = topD / 2;
+  // 底面四角（逆時針）與對應的頂面四角
+  const b: Array<[number, number]> = [[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]];
+  const t: Array<[number, number]> = [
+    [offX - tw, offZ - td], [offX + tw, offZ - td],
+    [offX + tw, offZ + td], [offX - tw, offZ + td],
+  ];
+
+  const pos: number[] = [];
+  const quad = (
+    p0: [number, number, number], p1: [number, number, number],
+    p2: [number, number, number], p3: [number, number, number],
+  ) => { pos.push(...p0, ...p1, ...p2, ...p0, ...p2, ...p3); };
+
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    quad(
+      [b[i]![0], v.y0, b[i]![1]], [b[j]![0], v.y0, b[j]![1]],
+      [t[j]![0], v.y1, t[j]![1]], [t[i]![0], v.y1, t[i]![1]],
+    );
+  }
+  // 頂面
+  quad(
+    [t[0]![0], v.y1, t[0]![1]], [t[1]![0], v.y1, t[1]![1]],
+    [t[2]![0], v.y1, t[2]![1]], [t[3]![0], v.y1, t[3]![1]],
+  );
+  // 底面只有離地時才需要 —— 貼在地上的那兩個三角形永遠看不到。
+  if (v.y0 > 1e-6) {
+    quad(
+      [b[3]![0], v.y0, b[3]![1]], [b[2]![0], v.y0, b[2]![1]],
+      [b[1]![0], v.y0, b[1]![1]], [b[0]![0], v.y0, b[0]![1]],
+    );
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  geo.computeVertexNormals();
+  geo.translate(v.x, 0, v.z);
+  return geo;
+}
+
+/** 一片鋸齒天窗的寬度：大約 6 m 一道，與真實廠房的跨距接近。 */
+const SAWTOOTH_SPAN = 6 / METRES_PER_CELL;
+
+function shapeOf(v: Volume): THREE.BufferGeometry[] {
+  const alongZ = (v.facing ?? 0) % 2 === 0;
+  const sign = (v.facing ?? 0) < 2 ? 1 : -1;
+  const ridge = 0.04;
+
+  switch (v.shape ?? 'box') {
+    case 'box':
+      return [frustum(v, v.w, v.d, 0, 0)];
+    case 'gable':
+      return alongZ
+        ? [frustum(v, v.w, v.d * ridge, 0, 0)]
+        : [frustum(v, v.w * ridge, v.d, 0, 0)];
+    case 'hip':
+      return [frustum(v, v.w * 0.2, v.d * 0.2, 0, 0)];
+    case 'shed':
+      return alongZ
+        ? [frustum(v, v.w, v.d * ridge, 0, sign * (v.d / 2) * (1 - ridge))]
+        : [frustum(v, v.w * ridge, v.d, sign * (v.w / 2) * (1 - ridge), 0)];
+    case 'sawtooth': {
+      const n = Math.max(2, Math.round(v.d / SAWTOOTH_SPAN));
+      const teethD = v.d / n;
+      const out: THREE.BufferGeometry[] = [];
+      for (let i = 0; i < n; i++) {
+        const z = v.z - v.d / 2 + teethD * (i + 0.5);
+        const tooth: Volume = { ...v, z, d: teethD };
+        out.push(frustum(tooth, v.w, teethD * ridge, 0, sign * (teethD / 2) * (1 - ridge)));
+      }
+      return out;
+    }
+  }
+}
+
+/**
+ * 量體轉幾何。越過行人包絡線時**丟例外**。
+ *
+ * 例外在遊戲執行時不該發生：生成器是確定性的、變體集合固定，所以測試跑過就
+ * 表示永遠不會丟。那個 throw 是給未來改原型的人的護欄，不是執行期的錯誤處理 ——
+ * 靜靜地讓行人穿牆比當場炸掉難追一百倍。
+ */
+export function assemble(volumes: readonly Volume[]): THREE.BufferGeometry {
+  const over = maxAbsOf(volumes) - HALF_ENVELOPE;
+  if (over > 1e-6) {
+    throw new Error(
+      `量體越過行人包絡線 ${(over * METRES_PER_CELL).toFixed(3)} m —— 行人會穿牆（BUG-221）`,
+    );
+  }
+
+  const parts: THREE.BufferGeometry[] = [];
+  for (const v of volumes) {
+    for (const g of shapeOf(v)) {
+      tagPart(g, partOf(v));
+      parts.push(g);
+    }
+  }
+  if (parts.length === 0) {
+    const empty = new THREE.BufferGeometry();
+    empty.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+    tagPart(empty, PART_WALL);
+    return empty;
+  }
+  return mergeGeometries(parts)!;
+}
+```
+
+- [ ] **Step 4：實作 `index.ts`**
+
+```ts
+import type { GeoBuilder, Density } from '../registry';
+import { VARIANT_COUNT, dimensionsFor } from './dimensions';
+import { variantRng } from './rng';
+import { prototypeFor } from './prototypes';
+import { roofFor, buildRoof } from './roofForms';
+import { assemble } from './assemble';
+import { topOf, type Volume } from './volume';
+
+export { VARIANT_COUNT };
+
+/**
+ * 這個變體的量體（不含幾何）。
+ *
+ * `propBands` 與測試都吃這一個 —— 「建築牆面在哪」「輪廓對不對稱」是算術問題，
+ * 不必先把八個變體的幾何都建出來。
+ */
+export function volumesFor(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): Volume[] {
+  const dims = dimensionsFor(zoneType, density, level, variantIndex);
+  if (!dims) return [];
+
+  // 量體與屋頂各用一條亂數流：共用的話「原型抽到 A」會鎖死「屋頂抽到 X」，
+  // 兩個維度就只剩一個。
+  const bodyRng = variantRng(zoneType, density, level, variantIndex);
+  const roofRng = variantRng(zoneType, density, level, variantIndex + VARIANT_COUNT);
+
+  const body = prototypeFor(zoneType, level, variantIndex).compose(dims, bodyRng);
+  const top = body.reduce((a, b) => (b.y1 > a.y1 ? b : a), body[0]!);
+  const roof = buildRoof(roofFor(zoneType, level, variantIndex), top, dims, roofRng);
+  return [...body, ...roof];
+}
+
+/**
+ * 這個 (分區, 密度, 等級) 的八個量體變體。沒有建築時回傳空陣列。
+ *
+ * 幾何直接產出**最終尺寸** —— 沒有高度縮放也沒有基地縮放。那正是取消實例縮放的
+ * 前提：BUG-219（樹跟著房子長高）與 BUG-226（雨遮貼假想牆）都是縮放的產物。
+ */
+export function getMassingVariants(
+  zoneType: number, density: Density, level: number,
+): GeoBuilder[] {
+  if (!dimensionsFor(zoneType, density, level, 0)) return [];
+  const out: GeoBuilder[] = [];
+  for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+    out.push(() => assemble(volumesFor(zoneType, density, level, vi)));
+  }
+  return out;
+}
+
+/** 這個變體的高度（格）。屋頂物件（2C-2）與立面樓層節奏要用。 */
+export function heightOf(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): number {
+  return topOf(volumesFor(zoneType, density, level, variantIndex));
+}
+```
+
+- [ ] **Step 5：跑綠**
+
+若 `should give every bucket eight distinct silhouettes` 紅了，多半是某個桶的
+可用原型太少（例如工業 L1 只有兩個），八個變體靠尺寸撐不出 0.10 的差異。
+**補原型或補屋頂形式，不要放寬門檻。**
+
+- [ ] **Step 6：回退驗證（三項）**
+
+1. 把 `assemble` 的包絡線檢查改成 `over > 1`（等於關掉），並把
+   `prototypes` 的某個 `lShape(0.55)` 改成 `lShape(1.4)`（撐出基地）——
+   `should never cross the pedestrian envelope` 應轉紅。兩者都改回來。
+2. 把 `volumesFor` 的 `roofRng` 改成與 `bodyRng` 同一條 ——
+   `should give every bucket eight distinct silhouettes` 應轉紅（原型與屋頂鎖死）。
+3. 把 `frustum` 的 `geo.translate(v.x, 0, v.z)` 拿掉（所有量體疊在格心）——
+   `should stand on the ground and be centred` 或輪廓相異那條應轉紅。
+
+- [ ] **Step 7：Commit**
+
+```bash
+git add -A
+git commit -m "feat(render): assemble volumes into geometry, eight variants per bucket"
+```
+
+---
+
+## Task 8：`propBands` 改成量真正的牆面
+
+`narrowest/widestBuildingEdge` 現在是「目標寬乘抖動係數」—— 推出來的。改成
+**量這一桶八個變體的實際最小／最大值**，而且加上 `level` 參數（等級真的不同了，
+可以貼更緊）。
+
+**Files:**
+- Modify: `src/renderer/geometry/buildings/propBands.ts`
+- Modify: `src/renderer/geometry/buildings/decals.ts`、`groundProps.ts`、
+  `overheadProps.ts`（band 呼叫加 `level`）
+- Modify: `src/renderer/__tests__/PropBands.test.ts`、`Decals.test.ts`、
+  `GroundProps.test.ts`、`OverheadProps.test.ts`（呼叫加 `level`）
+
+**Interfaces:**
+- Consumes：`massing/index.ts` 的 `volumesFor`、`VARIANT_COUNT`；`volume.ts` 的 `maxAbsOf`。
+- Produces（簽章改變）：
+  ```ts
+  export function narrowestBuildingEdge(z: number, d: Density, level: number): number | null;
+  export function widestBuildingEdge(z: number, d: Density, level: number): number | null;
+  export function decalBand(z: number, d: Density, level: number): Band | null;
+  export function lowPropBand(z: number, d: Density, level: number): Band | null;
+  export function overheadBand(z: number, d: Density, level: number): Band | null;
+  ```
+
+- [ ] **Step 1：寫失敗測試**（加進 `PropBands.test.ts`）
+
+```ts
+it('should measure the edges from the variants, not from a jitter formula', () => {
+  // 以前是「目標寬 × (1 ± 抖動)」—— 那是推出來的，而推導與幾何各走各的
+  // 正是 BUG-226 發生的方式。現在量八個變體的實際值。
+  eachBucket((z, d, key) => {
+    for (const lv of [1, 2, 3]) {
+      let lo = Infinity;
+      let hi = 0;
+      for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+        const m = maxAbsOf(volumesFor(z, d, lv, vi));
+        lo = Math.min(lo, m);
+        hi = Math.max(hi, m);
+      }
+      expect(narrowestBuildingEdge(z, d, lv)!, `${key} L${lv} 最窄`).toBeCloseTo(lo, 12);
+      expect(widestBuildingEdge(z, d, lv)!, `${key} L${lv} 最寬`).toBeCloseTo(hi, 12);
+    }
+  });
+});
+
+it('should tell the levels apart', () => {
+  // 加了 level 參數卻回傳同一個值的話，這個參數等於沒加。
+  const differs = ['1:LOW', '2:HIGH', '3:LOW', '4:HIGH', '5:LOW', '6:LOW', '6:HIGH']
+    .filter((key) => {
+      const [zs, ds] = key.split(':');
+      const w = (lv: number) => widestBuildingEdge(Number(zs), ds as Density, lv)!;
+      return Math.abs(w(1) - w(3)) > 1e-9;
+    });
+  expect(differs.length, '沒有任何分區的牆面隨等級改變').toBeGreaterThan(0);
+});
+```
+
+- [ ] **Step 2：跑紅**
+
+- [ ] **Step 3：實作**
+
+```ts
+import { volumesFor, VARIANT_COUNT } from './massing';
+import { maxAbsOf } from './massing/volume';
+
+/** 量測快取。八個變體的量體每次都重算的話，每放一棟建築就算一次。 */
+const edgeCache = new Map<string, { lo: number; hi: number } | null>();
+
+function edgesOf(zoneType: number, density: Density, level: number) {
+  const key = `${zoneType}:${density}:${level}`;
+  const hit = edgeCache.get(key);
+  if (hit !== undefined) return hit;
+
+  let lo = Infinity;
+  let hi = 0;
+  for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+    const vs = volumesFor(zoneType, density, level, vi);
+    if (vs.length === 0) continue;
+    const m = maxAbsOf(vs);
+    lo = Math.min(lo, m);
+    hi = Math.max(hi, m);
+  }
+  const out = hi > 0 ? { lo, hi } : null;
+  edgeCache.set(key, out);
+  return out;
+}
+
+/**
+ * 抖到最寬時的牆面。自立物件（樹、垃圾桶）的內緣 —— 它們要在**所有**建築之外，
+ * 否則最寬的那一棟會把它們吃進牆裡。
+ */
+export function widestBuildingEdge(
+  zoneType: number, density: Density, level: number,
+): number | null {
+  return edgesOf(zoneType, density, level)?.hi ?? null;
+}
+
+/**
+ * 最窄的那一棟的牆面。貼牆物件（雨遮、鋪面）的內緣 —— 它們要碰到**所有**建築，
+ * 多出來的部分埋在較寬的那些牆裡、被擋住，看不見。
+ *
+ * 用最寬值就是 BUG-226：只有剛好最寬的那一棟碰得到牆，其餘每一棟上都浮空。
+ */
+export function narrowestBuildingEdge(
+  zoneType: number, density: Density, level: number,
+): number | null {
+  return edgesOf(zoneType, density, level)?.lo ?? null;
+}
+```
+
+三個 band 各加 `level` 參數轉給上面兩個函式。
+
+- [ ] **Step 4：更新呼叫端**
+
+`decals.ts`、`groundProps.ts`、`overheadProps.ts` 的 `getXxxVariants` 已經收
+`level`，把它轉進 band 呼叫即可。`groundProps.yardRing(z, d)` 一併加 `level`。
+
+- [ ] **Step 5：跑全量測試**
+
+`Decals.test.ts` / `GroundProps.test.ts` / `OverheadProps.test.ts` 裡呼叫
+`narrowestBuildingEdge(z, d)` 的地方全部要補 `level`。
+
+- [ ] **Step 6：回退驗證**
+
+把 `edgesOf` 的 `lo` 改成也回傳 `hi` —— `OverheadProps.test.ts` 的
+`should stay attached to the narrowest building in its bucket` 應轉紅
+（那正是 BUG-226 的測試）。改回來。
+
+- [ ] **Step 7：Commit**
+
+```bash
+git add -A
+git commit -m "refactor(render): measure building edges from the variants, not a jitter formula"
+```
