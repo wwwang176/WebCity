@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  buildingEdge, decalBand, lowPropBand, overheadBand, OVERHEAD_CLEARANCE,
+  widestBuildingEdge, narrowestBuildingEdge, decalBand, lowPropBand, overheadBand,
+  OVERHEAD_CLEARANCE, SHOPFRONT_CEILING, FLOOR_HEIGHT_UNITS,
 } from '../geometry/buildings/propBands';
 import { TARGET_HEIGHTS_M, TARGET_WIDTHS_M, widthJitterFor, type Density }
   from '../geometry/buildings/registry';
@@ -38,10 +39,12 @@ describe('decalBand', () => {
     });
   });
 
-  it('should start outside the widest the building can jitter to', () => {
+  it('should reach in far enough to meet the narrowest building', () => {
+    // BUG-226：鋪面原本從**最寬**的牆面起算，所以窄的那些建築腳下露出一圈
+    // 0.68–1.17 m 的裸地。伸進建築底下的部分被建築本身擋住，看不見。
     eachBucket((z, d, key) => {
       expect(decalBand(z, d)!.inner, key)
-        .toBeGreaterThanOrEqual(buildingEdge(z, d)! - 1e-9);
+        .toBeLessThanOrEqual(narrowestBuildingEdge(z, d)! + 1e-9);
     });
   });
 
@@ -106,7 +109,7 @@ describe('overheadBand', () => {
   });
 });
 
-describe('buildingEdge', () => {
+describe('building edges', () => {
   it('should account for the jitter, not just the target width', () => {
     // 只用目標寬度的話，抖到最寬的房子會長進自己的院子裡。
     //
@@ -114,8 +117,9 @@ describe('buildingEdge', () => {
     // 剛好取等號，空過。
     eachBucket((z, d, key) => {
       const targetHalf = TARGET_WIDTHS_M[key]! / METRES_PER_CELL / 2;
-      const { up } = widthJitterFor(z, d);
-      expect(buildingEdge(z, d)!, key).toBeCloseTo(targetHalf * (1 + up), 9);
+      const { up, down } = widthJitterFor(z, d);
+      expect(widestBuildingEdge(z, d)!, key).toBeCloseTo(targetHalf * (1 + up), 9);
+      expect(narrowestBuildingEdge(z, d)!, key).toBeCloseTo(targetHalf * (1 - down), 9);
     });
   });
 
@@ -125,12 +129,38 @@ describe('buildingEdge', () => {
     const widened = Object.keys(TARGET_HEIGHTS_M).filter((key) => {
       const [zs, ds] = key.split(':');
       const targetHalf = TARGET_WIDTHS_M[key]! / METRES_PER_CELL / 2;
-      return buildingEdge(Number(zs), ds as Density)! > targetHalf + 1e-9;
+      return widestBuildingEdge(Number(zs), ds as Density)! > targetHalf + 1e-9;
     });
     expect(widened.length, '沒有任何分區的外緣被抖動撐開').toBeGreaterThan(0);
   });
 
+  it('should leave a real gap between the narrowest and the widest', () => {
+    // 兩者若相等，BUG-226 的整個分辨就沒有意義 —— 也表示抖動沒生效。
+    // 每一格的寬度是逐實例抖的，附掛層看不到，所以這個差距就是
+    // 「貼牆的東西要往內埋多少」。
+    eachBucket((z, d, key) => {
+      const gap = (widestBuildingEdge(z, d)! - narrowestBuildingEdge(z, d)!) * METRES_PER_CELL;
+      expect(gap, `${key} 最窄與最寬同寬`).toBeGreaterThan(0.5);
+    });
+  });
+
   it('should return null for a zone with no buildings', () => {
-    expect(buildingEdge(999, 'LOW')).toBeNull();
+    expect(widestBuildingEdge(999, 'LOW')).toBeNull();
+    expect(narrowestBuildingEdge(999, 'LOW')).toBeNull();
+  });
+});
+
+describe('SHOPFRONT_CEILING', () => {
+  it('should be the lowest floor the facade shader can draw', () => {
+    // 樓高是逐實例亂數，懸挑物的幾何是整個桶共用的一份 —— 取最低值才保證
+    // 永遠不會越過一樓。取平均或最高值都會在矮的那些樓上掛到二樓去。
+    expect(SHOPFRONT_CEILING).toBe(FLOOR_HEIGHT_UNITS.MIN);
+    expect(FLOOR_HEIGHT_UNITS.MIN).toBeLessThan(FLOOR_HEIGHT_UNITS.MAX);
+  });
+
+  it('should leave room above a walking person', () => {
+    // 雨遮要塞進 [行人淨空, 一樓樓板線] 這條帶子裡。帶子歸零就無解。
+    expect((SHOPFRONT_CEILING - OVERHEAD_CLEARANCE) * METRES_PER_CELL)
+      .toBeGreaterThan(0.3);
   });
 });

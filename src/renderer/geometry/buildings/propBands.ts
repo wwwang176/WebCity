@@ -59,15 +59,48 @@ export interface Band {
 }
 
 /**
- * 建築抖到最寬時的外緣。三類的內緣都是它。
+ * 立面 shader 的樓層高度範圍（格）。2.64 m 到 3.6 m。
  *
- * 用目標寬度乘最大向上抖動，而不是某個變體的實際寬度：物件是整個
- * (分區, 密度) 桶共用的，不能依賴這一格配到哪一個量體變體。
+ * 實體在這裡而不是 GLSL 裡：`SHOPFRONT_CEILING` 要用它，而幾何與 shader
+ * 對不上的話，雨遮會掛在窗戶中間 —— 那種錯不會有任何東西報錯。
  */
-export function buildingEdge(zoneType: number, density: Density): number | null {
+export const FLOOR_HEIGHT_UNITS = { MIN: 0.22, MAX: 0.30 } as const;
+
+/**
+ * 一樓樓板線 —— 掛在店面上的東西不得高過它。
+ *
+ * 取**最低**的樓高：每一棟的樓高是逐實例亂數（`aSeed.x`），懸挑物的幾何是
+ * 整個桶共用的一份，不知道自己掛在哪一棟上。取最低值才保證永遠不會越過一樓。
+ */
+export const SHOPFRONT_CEILING = FLOOR_HEIGHT_UNITS.MIN;
+
+/**
+ * 建築牆面的位置 —— 但每一棟的寬度是逐實例抖動的（±15%），所以「牆面在哪」
+ * 有兩個答案，用哪一個取決於這個物件**要不要碰到牆**：
+ *
+ *   最寬（`widest`）    自立的東西用它。樹、垃圾桶要放在**所有**建築之外，
+ *                       否則最寬的那一棟會把它們吃進牆裡。
+ *   最窄（`narrowest`）  要貼牆的東西用它。雨遮、鋪面要碰到**所有**建築，
+ *                       多出來的部分埋在牆內、被擋住，看不見。
+ *
+ * 貼牆的東西用最寬值就是 BUG-226：只有剛好抖到最寬的那一棟碰得到牆，
+ * 其餘每一棟上都浮空 0.68–1.17 m。
+ */
+function halfTarget(zoneType: number, density: Density): number | null {
   const target = TARGET_WIDTHS_M[heightKey(zoneType, density)];
-  if (!target) return null;
-  return (target / METRES_PER_CELL / 2) * (1 + widthJitterFor(zoneType, density).up);
+  return target ? target / METRES_PER_CELL / 2 : null;
+}
+
+/** 抖到最寬時的牆面。自立物件的內緣。 */
+export function widestBuildingEdge(zoneType: number, density: Density): number | null {
+  const half = halfTarget(zoneType, density);
+  return half === null ? null : half * (1 + widthJitterFor(zoneType, density).up);
+}
+
+/** 抖到最窄時的牆面。貼牆物件的內緣。 */
+export function narrowestBuildingEdge(zoneType: number, density: Density): number | null {
+  const half = halfTarget(zoneType, density);
+  return half === null ? null : half * (1 - widthJitterFor(zoneType, density).down);
 }
 
 function band(inner: number | null, outer: number, min: number): Band | null {
@@ -75,17 +108,22 @@ function band(inner: number | null, outer: number, min: number): Band | null {
   return { inner, outer };
 }
 
-/** 貼片：建築外緣到格子邊界。行人走在上面，所以可以蓋過走道。 */
+/**
+ * 貼片：建築牆面到格子邊界。行人走在上面，所以可以蓋過走道。
+ *
+ * 內緣用最窄的牆面 —— 鋪面要碰得到每一棟的牆腳，伸進建築底下的部分被
+ * 建築本身擋住。用最寬值的話，窄的那些建築腳下會露出一圈裸地。
+ */
 export function decalBand(zoneType: number, density: Density): Band | null {
-  return band(buildingEdge(zoneType, density), CELL_EDGE, MIN_WIDE_BAND);
+  return band(narrowestBuildingEdge(zoneType, density), CELL_EDGE, MIN_WIDE_BAND);
 }
 
-/** 矮物件：建築外緣到行人包絡線。窄於 0.4 m 回傳 null。 */
+/** 矮物件：建築牆面到行人包絡線。自立，所以內緣用最寬的牆面。窄於 0.4 m 回傳 null。 */
 export function lowPropBand(zoneType: number, density: Density): Band | null {
-  return band(buildingEdge(zoneType, density), HALF_ENVELOPE, MIN_LOW_BAND);
+  return band(widestBuildingEdge(zoneType, density), HALF_ENVELOPE, MIN_LOW_BAND);
 }
 
-/** 懸挑：與貼片同寬，但物件的最低點必須高於 `OVERHEAD_CLEARANCE`。 */
+/** 懸挑：與貼片同寬同理由，但物件的最低點必須高於 `OVERHEAD_CLEARANCE`。 */
 export function overheadBand(zoneType: number, density: Density): Band | null {
-  return band(buildingEdge(zoneType, density), CELL_EDGE, MIN_WIDE_BAND);
+  return band(narrowestBuildingEdge(zoneType, density), CELL_EDGE, MIN_WIDE_BAND);
 }

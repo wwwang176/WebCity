@@ -3,7 +3,9 @@ import * as THREE from 'three';
 import {
   getOverheadVariants, OVERHEAD_TRIANGLE_BUDGET,
 } from '../geometry/buildings/overheadProps';
-import { OVERHEAD_CLEARANCE, buildingEdge } from '../geometry/buildings/propBands';
+import {
+  OVERHEAD_CLEARANCE, SHOPFRONT_CEILING, narrowestBuildingEdge,
+} from '../geometry/buildings/propBands';
 import { TARGET_HEIGHTS_M, LEVELS, type Density } from '../geometry/buildings/registry';
 import { triangleCount } from '../geometry/buildings/parts';
 import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../../core/grid/constants';
@@ -30,6 +32,54 @@ function eachOverhead(fn: (geo: THREE.BufferGeometry, label: string) => void) {
       }
     }
   });
+}
+
+interface Rect { x0: number; x1: number; z0: number; z1: number }
+
+/**
+ * 拆回一個個零件的平面輪廓。
+ *
+ * 懸挑物全部是 `BoxGeometry`（24 個頂點），`mergeGeometries` 依序串接，
+ * 所以 24 個一組就是一個零件。只看 XZ：建築在這些高度上都是實心的，
+ * 「貼不貼得到牆」是平面問題。
+ */
+function pieceRects(geo: THREE.BufferGeometry): Rect[] {
+  const pos = geo.getAttribute('position');
+  expect(pos.count % 24, '懸挑零件不是 BoxGeometry，24 頂點分組失效').toBe(0);
+  const out: Rect[] = [];
+  for (let p = 0; p < pos.count; p += 24) {
+    const xs: number[] = [];
+    const zs: number[] = [];
+    for (let k = 0; k < 24; k++) { xs.push(pos.getX(p + k)); zs.push(pos.getZ(p + k)); }
+    out.push({
+      x0: Math.min(...xs), x1: Math.max(...xs),
+      z0: Math.min(...zs), z1: Math.max(...zs),
+    });
+  }
+  return out;
+}
+
+const touches = (a: Rect, b: Rect) =>
+  a.x0 <= b.x1 + 1e-6 && b.x0 <= a.x1 + 1e-6
+  && a.z0 <= b.z1 + 1e-6 && b.z0 <= a.z1 + 1e-6;
+
+/** 沒有連到建築（直接或透過其他零件）的零件索引。 */
+function floatingPieces(geo: THREE.BufferGeometry, narrow: number): number[] {
+  const rects = pieceRects(geo);
+  const building: Rect = { x0: -narrow, x1: narrow, z0: -narrow, z1: narrow };
+  const attached = rects.map(r => touches(r, building));
+  for (let pass = 0; pass < rects.length; pass++) {
+    let changed = false;
+    rects.forEach((r, i) => {
+      if (attached[i]) return;
+      if (rects.some((o, j) => attached[j] && touches(r, o))) {
+        attached[i] = true;
+        changed = true;
+      }
+    });
+    if (!changed) break;
+  }
+  return attached.flatMap((ok, i) => (ok ? [] : [i]));
 }
 
 describe('overhead props', () => {
@@ -68,23 +118,59 @@ describe('overhead props', () => {
     });
   });
 
-  it('should stay attached to the building, not float in mid-air', () => {
-    // 內緣要碰到建築牆面，否則雨遮浮在半空。
+  it('should stay attached to the narrowest building in its bucket', () => {
+    // BUG-226：這一條原本量的是 `widestBuildingEdge` —— 每一棟的寬度是逐實例
+    // 抖動的（±15%），但雨遮的幾何是整個 (分區, 密度, 等級) 桶共用的一份，
+    // 它不可能知道自己掛在多寬的房子上。貼著**最寬**的那一棟，就等於在其餘
+    // 每一棟上浮空 0.68–1.17 m。測試驗證的是一棟沒人看得到的房子。
     //
-    // 判定用「有頂點正好落在建築外緣上」而不是包圍盒的最近距離：橫跨整個
-    // 立面的雨遮，四個角在另一軸上都遠離中心，包圍盒量不到它其實貼著牆。
+    // 唯一能永遠貼牆的做法是往內埋進最窄的那一棟裡：多出來的部分被牆擋住，
+    // 看不見。所以內緣量的是 `narrowestBuildingEdge`。
     eachBucket((z, d, key) => {
-      const edge = buildingEdge(z, d)!;
+      const narrow = narrowestBuildingEdge(z, d)!;
       for (const level of LEVELS) {
         for (const build of getOverheadVariants(z, d, level)) {
           const geo = build();
-          const pos = geo.getAttribute('position');
-          let touches = false;
-          for (let i = 0; i < pos.count && !touches; i++) {
-            touches = Math.abs(Math.abs(pos.getX(i)) - edge) < 1e-6
-              || Math.abs(Math.abs(pos.getZ(i)) - edge) < 1e-6;
-          }
-          expect(touches, `${key} L${level} 沒有貼到牆`).toBe(true);
+          // 判定是**連通性**而不是「有頂點碰到牆」：雨簷板掛在雨遮外緣，
+          // 本來就碰不到牆，但它靠著雨遮所以不算浮空。逐零件檢查「碰到建築、
+          // 或碰到已經確定沒浮空的零件」，遞移到收斂為止。
+          //
+          // 只看合併後的包圍盒會放行：南側與東側兩片雨遮同時浮空時，
+          // 合起來的包圍盒仍然罩住建築。
+          const floating = floatingPieces(geo, narrow);
+          expect(floating, `${key} L${level} 有 ${floating.length} 個零件浮空`)
+            .toHaveLength(0);
+          geo.dispose();
+        }
+      }
+    });
+  });
+
+  it('should hang at shopfront height, not halfway up the facade', () => {
+    // 雨遮該在一樓的位置。立面 shader 的樓層高度是 2.64–3.6 m，所以「一樓
+    // 樓板線」取最低的那個 —— 樓高同樣是逐實例亂數，幾何不知道自己掛在
+    // 哪一棟上，取最低值才保證永遠不會越過一樓。
+    //
+    // 原本的高度是手挑的公尺數（3.0–3.8 m），在 5 m 高的商業低 L1 上等於
+    // 掛在建築的六成高處。
+    eachOverhead((geo, label) => {
+      geo.computeBoundingBox();
+      const bottom = geo.boundingBox!.min.y;
+      expect(bottom, `${label} 掛在 ${(bottom * METRES_PER_CELL).toFixed(2)} m，超過一樓`)
+        .toBeLessThanOrEqual(SHOPFRONT_CEILING + 1e-6);
+    });
+  });
+
+  it('should keep signs below the roofline of the shortest building it can sit on', () => {
+    // 招牌掛在雨遮上方是對的，掛到屋頂邊緣就變成別的東西了。
+    eachBucket((z, d, key) => {
+      for (const level of LEVELS) {
+        const shortest = TARGET_HEIGHTS_M[key]![level - 1]! / METRES_PER_CELL;
+        for (const build of getOverheadVariants(z, d, level)) {
+          const geo = build();
+          geo.computeBoundingBox();
+          expect(geo.boundingBox!.max.y, `${key} L${level} 的招牌爬到屋頂`)
+            .toBeLessThanOrEqual(shortest * 0.6);
           geo.dispose();
         }
       }

@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZoneType } from '../../../core/grid/types';
 import { METRES_PER_CELL } from '../../../core/grid/constants';
-import { overheadBand, OVERHEAD_CLEARANCE, type Band } from './propBands';
+import {
+  overheadBand, OVERHEAD_CLEARANCE, SHOPFRONT_CEILING, type Band,
+} from './propBands';
 import { tagPart, PART_DETAIL, PART_ROOF } from './parts';
 import { heightKey, type Density, type GeoBuilder } from './registry';
 
@@ -39,77 +41,99 @@ function place(axis: Axis, sign: Sign, t: number, d: number): [number, number] {
   return axis === 'z' ? [t, sign * d] : [sign * d, t];
 }
 
+/** 雨遮板厚與雨簷板的下垂量。兩者相加要塞進 [淨空, 一樓樓板線] 那條帶子。 */
+const SLAB_THICKNESS = M(0.10);
+const FASCIA_DROP = M(0.26);
+
 /**
- * 雨遮／遮陽棚：一片斜板加兩根斜撐。
+ * 從牆面往外挑出的一塊板。
  *
- * 內緣貼著建築牆面（`band.inner`），外緣挑到 `band.outer`。這個「內緣要碰到
- * 牆」不是美觀問題 —— 少了它雨遮會浮在半空。
+ * 內緣是 `band.inner` —— 也就是**抖到最窄**的那一棟的牆面（見 propBands）。
+ * 多出來的部分埋在較寬的那些建築的牆裡、被擋住，看不見。這是唯一能讓一份
+ * 共用幾何在每一棟上都貼牆的做法（BUG-226）。
+ *
+ * `inset` 讓招牌之類的小零件只挑出一部分，但起點仍在牆上。
+ */
+function slabFromWall(
+  b: Band, side: Side, len: number, thickness: number, y: number,
+  part: number, inset = 0,
+): THREE.BufferGeometry {
+  const { axis, sign } = AXIS[side];
+  const reach = (b.outer - b.inner) * (1 - inset);
+  const mid = b.inner + reach / 2;
+  const geo = axis === 'z'
+    ? new THREE.BoxGeometry(len, thickness, reach)
+    : new THREE.BoxGeometry(reach, thickness, len);
+  const [x, z] = place(axis, sign, 0, mid);
+  geo.translate(x, y, z);
+  tagPart(geo, part);
+  return geo;
+}
+
+/**
+ * 雨遮／遮陽棚：一片平板加外緣的雨簷板。
+ *
+ * 頂面貼齊 `topUnits`（店面用一樓樓板線）。原本的斜撐改成雨簷板：斜撐是
+ * 三根懸在板子下方的橫桿，遠看只是三條浮空的線；雨簷板貼著板子的外緣往下，
+ * 那才是遠看認得出「這是雨遮」的那個輪廓，而且少一個零件。
  */
 function awning(
-  b: Band, side: Side, lengthFrac: number, heightM: number,
+  b: Band, side: Side, lengthFrac: number, topUnits: number,
 ): THREE.BufferGeometry[] {
   const { axis, sign } = AXIS[side];
-  const reach = b.outer - b.inner;
-  const mid = (b.inner + b.outer) / 2;
   const len = b.outer * 2 * lengthFrac;
-  const y = M(heightM);
-  const out: THREE.BufferGeometry[] = [];
+  const slabY = topUnits - SLAB_THICKNESS / 2;
 
-  const slab = axis === 'z'
-    ? new THREE.BoxGeometry(len, M(0.12), reach)
-    : new THREE.BoxGeometry(reach, M(0.12), len);
-  const [sx, sz] = place(axis, sign, 0, mid);
-  slab.translate(sx, y, sz);
-  tagPart(slab, PART_ROOF);
-  out.push(slab);
+  const slab = slabFromWall(b, side, len, SLAB_THICKNESS, slabY, PART_ROOF);
 
-  // 斜撐：從牆面下方拉到雨遮外緣下方。放在雨遮正下方而不是真的傾斜 ——
-  // 旋轉之後包圍盒會外擴，那會讓「不越過格子邊界」變成算不準的事。
-  for (const t of [-len / 2 + M(0.3), len / 2 - M(0.3)]) {
-    const strut = axis === 'z'
-      ? new THREE.BoxGeometry(M(0.09), M(0.09), reach)
-      : new THREE.BoxGeometry(reach, M(0.09), M(0.09));
-    const [x, z] = place(axis, sign, t, mid);
-    strut.translate(x, y - M(0.3), z);
-    tagPart(strut, PART_DETAIL);
-    out.push(strut);
-  }
-  return out;
+  // 雨簷板：貼著外緣往下垂。掛在雨遮上而不是牆上，所以它自己碰不到牆 ——
+  // 靠雨遮連著。
+  const lip = M(0.10);
+  const fascia = axis === 'z'
+    ? new THREE.BoxGeometry(len, FASCIA_DROP, lip)
+    : new THREE.BoxGeometry(lip, FASCIA_DROP, len);
+  const [fx, fz] = place(axis, sign, 0, b.outer - lip / 2);
+  fascia.translate(fx, slabY - SLAB_THICKNESS / 2 - FASCIA_DROP / 2, fz);
+  tagPart(fascia, PART_DETAIL);
+
+  return [slab, fascia];
 }
 
-/** 立體招牌：垂直掛在牆外的板子。 */
-function blade(b: Band, side: Side, t: number, heightM: number, sizeM: number) {
-  const { axis, sign } = AXIS[side];
-  const mid = (b.inner + b.outer) / 2;
-  const [x, z] = place(axis, sign, t, mid);
-  const board = axis === 'z'
-    ? new THREE.BoxGeometry(M(sizeM), M(sizeM * 0.75), M(0.1))
-    : new THREE.BoxGeometry(M(0.1), M(sizeM * 0.75), M(sizeM));
-  board.translate(x, M(heightM), z);
-  tagPart(board, PART_DETAIL);
-  return board;
+/**
+ * 立體招牌：從牆面垂直挑出的小板子，掛在雨遮上方。
+ *
+ * 起點在牆上而不是懸挑帶的中線 —— 招牌是鎖在牆上的，中線那個位置沒有東西
+ * 撐得住它。
+ */
+function blade(b: Band, side: Side, yUnits: number, sizeM: number) {
+  return slabFromWall(
+    b, side, M(sizeM * 0.75), M(sizeM), yUnits, PART_DETAIL, 0.25,
+  );
 }
 
-/** 看板：貼著建築頂部一整條的長板。 */
-function billboard(b: Band, side: Side, lengthFrac: number, heightM: number) {
-  const { axis, sign } = AXIS[side];
-  const mid = (b.inner + b.outer) / 2;
-  const len = b.outer * 2 * lengthFrac;
-  const [x, z] = place(axis, sign, 0, mid);
-  const board = axis === 'z'
-    ? new THREE.BoxGeometry(len, M(1.1), M(0.14))
-    : new THREE.BoxGeometry(M(0.14), M(1.1), len);
-  board.translate(x, M(heightM), z);
-  tagPart(board, PART_DETAIL);
-  return board;
+/** 看板：貼著立面一整條的長板，只稍微離開牆面。 */
+function billboard(b: Band, side: Side, lengthFrac: number, yUnits: number) {
+  return slabFromWall(
+    b, side, b.outer * 2 * lengthFrac, M(1.1), yUnits, PART_DETAIL, 0.75,
+  );
 }
 
-/** 卸貨雨棚：比一般雨遮長、比較低，工業用。 */
+/** 卸貨雨棚：比一般雨遮長，工業用。高度與店面雨遮相同，理由見 `SHOPFRONT_CEILING`。 */
 function loadingCanopy(b: Band, side: Side) {
-  return awning(b, side, 0.85, 3.4);
+  return awning(b, side, 0.85, SHOPFRONT_CEILING);
 }
 
 type Recipe = (b: Band) => THREE.BufferGeometry[];
+
+/**
+ * 招牌的高度。
+ *
+ * 以一樓樓板線為單位而不是手挑公尺數：手挑的話會出現「3.9 m 的招牌掛在
+ * 5 m 高的商業低 L1 上」這種事 —— 那是建築的八成高，看起來像屋頂裝飾
+ * 而不是店招。
+ */
+const SIGN_Y = SHOPFRONT_CEILING * 1.5;
+const BILLBOARD_Y = SHOPFRONT_CEILING * 1.9;
 
 /**
  * 各分區的懸挑物。
@@ -118,31 +142,31 @@ type Recipe = (b: Band) => THREE.BufferGeometry[];
  */
 const COMMERCIAL_LOW: [Recipe[], Recipe[], Recipe[]] = [
   [],
-  [b => awning(b, 's', 0.8, 3.0)],
+  [b => awning(b, 's', 0.8, SHOPFRONT_CEILING)],
   [
-    b => [...awning(b, 's', 0.95, 3.2), blade(b, 's', 0.28, 3.9, 0.8)],
-    b => [...awning(b, 's', 0.95, 3.0), ...awning(b, 'e', 0.7, 3.0),
-          blade(b, 's', -0.3, 3.8, 0.7)],
+    b => [...awning(b, 's', 0.95, SHOPFRONT_CEILING), blade(b, 's', SIGN_Y, 0.8)],
+    b => [...awning(b, 's', 0.95, SHOPFRONT_CEILING), ...awning(b, 'e', 0.7, SHOPFRONT_CEILING),
+          blade(b, 's', SIGN_Y, 0.7)],
   ],
 ];
 
 const COMMERCIAL_HIGH: [Recipe[], Recipe[], Recipe[]] = [
-  [b => awning(b, 's', 0.5, 3.6)],
-  [b => [...awning(b, 's', 0.7, 3.6), blade(b, 'e', 0.1, 4.2, 0.9)]],
+  [b => awning(b, 's', 0.5, SHOPFRONT_CEILING)],
+  [b => [...awning(b, 's', 0.7, SHOPFRONT_CEILING), blade(b, 'e', SIGN_Y, 0.9)]],
   [
-    b => [...awning(b, 's', 0.95, 3.8), ...awning(b, 'e', 0.9, 3.8),
-          billboard(b, 'n', 0.9, 5.2)],
-    b => [...awning(b, 's', 0.95, 3.6), ...awning(b, 'w', 0.9, 3.6),
-          blade(b, 's', 0.3, 4.6, 1.0)],
+    b => [...awning(b, 's', 0.95, SHOPFRONT_CEILING), ...awning(b, 'e', 0.9, SHOPFRONT_CEILING),
+          billboard(b, 'n', 0.9, BILLBOARD_Y)],
+    b => [...awning(b, 's', 0.95, SHOPFRONT_CEILING), ...awning(b, 'w', 0.9, SHOPFRONT_CEILING),
+          blade(b, 's', SIGN_Y, 1.0)],
   ],
 ];
 
 const OFFICE: [Recipe[], Recipe[], Recipe[]] = [
   [],
-  [b => awning(b, 's', 0.5, 3.4)],
+  [b => awning(b, 's', 0.5, SHOPFRONT_CEILING)],
   [
-    b => [...awning(b, 's', 0.7, 3.6), blade(b, 's', 0.3, 4.2, 0.7)],
-    b => [...awning(b, 's', 0.65, 3.4), ...awning(b, 'e', 0.5, 3.4)],
+    b => [...awning(b, 's', 0.7, SHOPFRONT_CEILING), blade(b, 's', SIGN_Y, 0.7)],
+    b => [...awning(b, 's', 0.65, SHOPFRONT_CEILING), ...awning(b, 'e', 0.5, SHOPFRONT_CEILING)],
   ],
 ];
 
@@ -151,14 +175,14 @@ const INDUSTRIAL: [Recipe[], Recipe[], Recipe[]] = [
   [b => loadingCanopy(b, 's')],
   [
     b => [...loadingCanopy(b, 's'), ...loadingCanopy(b, 'w')],
-    b => [...loadingCanopy(b, 's'), blade(b, 'n', 0, 4.4, 0.9)],
+    b => [...loadingCanopy(b, 's'), blade(b, 'n', SIGN_Y, 0.9)],
   ],
 ];
 
 const RES_HIGH: [Recipe[], Recipe[], Recipe[]] = [
   [],
-  [b => awning(b, 's', 0.4, 3.0)],
-  [b => [...awning(b, 's', 0.55, 3.2), ...awning(b, 'n', 0.4, 3.2)]],
+  [b => awning(b, 's', 0.4, SHOPFRONT_CEILING)],
+  [b => [...awning(b, 's', 0.55, SHOPFRONT_CEILING), ...awning(b, 'n', 0.4, SHOPFRONT_CEILING)]],
 ];
 
 const RECIPES: Record<string, [Recipe[], Recipe[], Recipe[]]> = {

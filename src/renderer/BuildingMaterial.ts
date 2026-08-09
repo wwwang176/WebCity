@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PART_THRESHOLDS } from './geometry/buildings/parts';
+import { FLOOR_HEIGHT_UNITS } from './geometry/buildings/propBands';
 
 /**
  * 把 TS 數字寫成 GLSL 一定會當作 float 的形式 —— 整數在 GLSL 裡不是 float，
@@ -220,7 +221,10 @@ void main() {
     // 相位偏移只改起算點，不改尺度 —— 窗戶仍是真實世界尺寸，但相鄰建築的
     // 窗戶不再橫向對齊成一條線。
     float phase = vSeed.y * 10.0;
-    float floorHeight = mix(0.22, 0.30, seedRhythm);
+    // 樓層高度的實體在 propBands.FLOOR_HEIGHT_UNITS —— 幾何（雨遮掛在哪）
+    // 與 shader（窗戶畫在哪）對不上的話，雨遮會壓在窗戶中間，而那不會有
+    // 任何東西報錯。
+    float floorHeight = mix(${glslFloat(FLOOR_HEIGHT_UNITS.MIN)}, ${glslFloat(FLOOR_HEIGHT_UNITS.MAX)}, seedRhythm);
     float windowWidth = mix(0.16, 0.24, seedRhythm);
     float y = vWorldPos.y;
     float wallU;

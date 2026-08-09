@@ -3,6 +3,7 @@ import {
   BUILDING_VERT, BUILDING_FRAG, getBuildingMaterial, resetBuildingMaterial,
 } from '../BuildingMaterial';
 import { PART_THRESHOLDS } from '../geometry/buildings/parts';
+import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from '../geometry/buildings/propBands';
 
 /**
  * GLSL 本身測不了，但「TS 常數有沒有真的進到 GLSL 裡」測得了 —— 而那正是
@@ -13,6 +14,14 @@ describe('the shader uses the thresholds the parts module defines', () => {
     for (const v of Object.values(PART_THRESHOLDS)) {
       expect(BUILDING_FRAG).toContain(String(v));
     }
+  });
+
+  it('should carry the floor height the geometry hangs awnings from', () => {
+    // 雨遮掛在「一樓樓板線」上，而樓板線是 shader 畫窗戶用的樓層高度。
+    // 兩邊各寫一份的話，雨遮會壓在窗戶中間 —— 沒有任何東西會報錯。
+    expect(BUILDING_FRAG).toContain(String(FLOOR_HEIGHT_UNITS.MIN));
+    expect(BUILDING_FRAG).toContain(String(FLOOR_HEIGHT_UNITS.MAX));
+    expect(SHOPFRONT_CEILING).toBe(FLOOR_HEIGHT_UNITS.MIN);
   });
 
   it('should declare and forward the per-instance facade seed', () => {

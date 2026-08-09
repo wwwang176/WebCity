@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { getDecalVariants, DECAL_Y, MARK_Y } from '../geometry/buildings/decals';
-import { buildingEdge } from '../geometry/buildings/propBands';
+import { narrowestBuildingEdge } from '../geometry/buildings/propBands';
 import { TARGET_HEIGHTS_M, TRIANGLE_BUDGET, LEVELS, type Density }
   from '../geometry/buildings/registry';
 import { triangleCount } from '../geometry/buildings/parts';
@@ -154,7 +154,7 @@ describe('decal geometry', () => {
 
   it('should never overlap the building footprint or reach the neighbour', () => {
     eachBucket((z, d, key) => {
-      const inner = buildingEdge(z, d)!;
+      const inner = narrowestBuildingEdge(z, d)!;
       for (const level of LEVELS) {
         for (const build of getDecalVariants(z, d, level)) {
           const geo = build();
