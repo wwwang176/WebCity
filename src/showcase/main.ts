@@ -5,7 +5,7 @@
  * 在這裡調到滿意的東西，進遊戲必須長得一模一樣，否則展示區沒有價值。
  */
 import * as THREE from 'three';
-import { SceneManager, SCENE } from '../renderer/SceneManager';
+import { SceneManager } from '../renderer/SceneManager';
 import { WeatherRenderer } from '../renderer/WeatherRenderer';
 import { Season } from '../core/climate/Climate';
 import { getBuildingMaterial } from '../renderer/BuildingMaterial';
@@ -160,7 +160,6 @@ function place(cell: PlacedCell, seedByte: number): Tris {
 const state: ControlState = {
   mode: 'block', zoneType: ZoneType.RESIDENTIAL_LOW, level: 1,
   density: 'LOW', seedByte: 0, timeOverride: 0.3, occupancy: 0.85,
-  shadowNormalBias: SCENE.SHADOW_NORMAL_BIAS, shadowBias: SCENE.SHADOW_BIAS,
   wireframe: false, blockSize: 8,
   showDecals: true, showLowProps: true, showOverhead: true,
   variantOverride: null,
@@ -242,12 +241,6 @@ sceneManager.onUpdate((dt) => {
   material.uniforms.uTime!.value = elapsed;
 
   detailLOD.update(sceneManager.camera.top - sceneManager.camera.bottom);
-
-  // 兩根 bias 滑桿。每幀寫回去而不是在 onChange 裡設一次 —— WeatherRenderer
-  // 每幀都會動光源，而 shadow.needsUpdate 的時機不歸展示區管。
-  const shadow = sceneManager.directionalLight.shadow;
-  shadow.normalBias = state.shadowNormalBias;
-  shadow.bias = state.shadowBias;
 
   if (state.timeOverride === null) {
     weather.update(dt, 1, Season.SUMMER);
