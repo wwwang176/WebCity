@@ -3,6 +3,7 @@
  * 相依帶進來，它要能在遊戲壞掉的時候仍然打得開。
  */
 import type { ViewMode } from './views';
+import { VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
 import {
   ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, type Density,
 } from '../renderer/geometry/buildings/registry';
@@ -36,6 +37,13 @@ export interface ControlState {
   showDecals: boolean;
   showLowProps: boolean;
   showOverhead: boolean;
+  /**
+   * 單體模式要看哪一個變體；null = 照雜湊。
+   *
+   * 逐一檢查八個變體是驗收的主要動作（「兩兩不得長一樣」），靠重擲種子撞出
+   * 全部八個太慢。
+   */
+  variantOverride: number | null;
 }
 
 const ZONE_NAMES: Record<number, string> = {
@@ -112,6 +120,22 @@ export function mountControls(
   levelSel.value = String(state.level);
   levelSel.onchange = () => { state.level = Number(levelSel.value); onChange(); };
   row('等級', levelSel);
+
+  const variantSel = document.createElement('select');
+  const variantOptions: Array<number | null> = [null];
+  for (let v = 0; v < VARIANT_COUNT; v++) variantOptions.push(v);
+  for (const v of variantOptions) {
+    const o = document.createElement('option');
+    o.value = v === null ? 'auto' : String(v);
+    o.textContent = v === null ? '自動（依座標）' : `變體 ${v}`;
+    variantSel.appendChild(o);
+  }
+  variantSel.value = state.variantOverride === null ? 'auto' : String(state.variantOverride);
+  variantSel.onchange = () => {
+    state.variantOverride = variantSel.value === 'auto' ? null : Number(variantSel.value);
+    onChange();
+  };
+  row('變體（單體模式）', variantSel);
 
   const sizeSel = document.createElement('select');
   for (const n of [8, 16, 24, 40]) {

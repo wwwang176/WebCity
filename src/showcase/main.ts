@@ -134,6 +134,7 @@ const state: ControlState = {
   mode: 'block', zoneType: ZoneType.RESIDENTIAL_LOW, level: 1,
   density: 'LOW', seedByte: 0, timeOverride: 0.3, wireframe: false, blockSize: 8,
   showDecals: true, showLowProps: true, showOverhead: true,
+  variantOverride: null,
 };
 
 function render(): void {
@@ -144,7 +145,7 @@ function render(): void {
   if (state.mode === 'single') {
     cells = [{
       x: 0, z: 0, zoneType: state.zoneType, density: state.density, level: state.level,
-      variantIndex: 0, facadeSeed: [0.5, 0.5, 0.5],
+      variantIndex: state.variantOverride ?? 0, facadeSeed: [0.5, 0.5, 0.5],
     }];
   } else if (state.mode === 'block') {
     cells = blockCells(state.zoneType, state.density, state.level, state.blockSize, state.seedByte);
@@ -192,7 +193,9 @@ function render(): void {
         return `<span class="${over ? 'over' : ''}">${label} ${per} 三角形／棟${cap}</span>`;
       }).join('<br>')
       + `<br>總計 ${sum} 三角形<br>`
-      + `相鄰相同 ${(ratio * 100).toFixed(1)}%<br>`
+      + `變體 ${VARIANT_COUNT} 種｜相鄰同變體 `
+      + `<span class="${ratio > 0.05 ? 'over' : ''}">${(ratio * 100).toFixed(1)}%</span>`
+      + `（改造前 33.4%）<br>`
       + `<span id="fps">—</span>`;
   }
 }
