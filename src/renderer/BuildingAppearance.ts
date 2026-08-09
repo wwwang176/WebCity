@@ -26,6 +26,8 @@ export const STREAM = {
   FACADE_MATERIAL: 11,
   /** 庭院組合。與量體變體分開，同一種房子才不會必定配同一個院子。 */
   GROUND_PROP: 12,
+  /** 變體撞到鄰居時的改選。見 `variantIndexOf`。 */
+  VARIANT_RETRY: 13,
 } as const;
 
 export type StreamId = (typeof STREAM)[keyof typeof STREAM];
@@ -47,12 +49,38 @@ export function hashCell(x: number, y: number, seedByte: number, stream: number)
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** 這一格該用哪一個變體。variantCount 為 0 時回傳 0，不回傳 NaN。 */
+/**
+ * 這一格該用哪一個變體。`variantCount` 為 0 時回傳 0，不回傳 NaN。
+ *
+ * 純逐格雜湊的相鄰重複率就是 `1/variantCount` —— 八個變體是 12.5%，而一條街上
+ * 每八棟就有一棟跟隔壁一樣是看得出來的。要靠變體數壓到 5% 以下得寫二十個變體，
+ * 那會把 draw call 也推上去。
+ *
+ * 改成挑一個「西鄰與北鄰的**原始**雜湊值都沒用到」的值。比對原始值而不是最終值
+ * ——最終值要看它自己的鄰居，會遞迴下去。所以這是**降低**而不是消除：鄰居自己
+ * 也可能被換過，換完之後仍可能撞上。
+ */
 export function variantIndexOf(
   x: number, y: number, seedByte: number, variantCount: number,
 ): number {
   if (variantCount <= 0) return 0;
-  return Math.floor(hashCell(x, y, seedByte, STREAM.VARIANT) * variantCount) % variantCount;
+  const raw = (px: number, py: number) =>
+    Math.floor(hashCell(px, py, seedByte, STREAM.VARIANT) * variantCount) % variantCount;
+
+  const v = raw(x, y);
+  if (variantCount < 3) return v;   // 兩個變體時避無可避
+
+  const west = raw(x - 1, y);
+  const north = raw(x, y - 1);
+  if (v !== west && v !== north) return v;
+
+  // 從「兩個鄰居都沒用到」的值裡挑，而不是 +1 位移 —— 位移過去有可能正好
+  // 撞上另一個鄰居。
+  const allowed: number[] = [];
+  for (let k = 0; k < variantCount; k++) if (k !== west && k !== north) allowed.push(k);
+  if (allowed.length === 0) return v;
+  const r = hashCell(x, y, seedByte, STREAM.VARIANT_RETRY);
+  return allowed[Math.floor(r * allowed.length) % allowed.length]!;
 }
 
 export interface AppearanceInput {
