@@ -4,14 +4,9 @@ import { TerrainType } from '../core/grid/types';
 import { isStoneGround } from '../core/grid/GroundType';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 
-const TERRAIN_COLORS: Record<number, number> = {
-  [TerrainType.PLAIN]: 0x4caf50,
-  [TerrainType.WATER]: 0x2196f3,
-  [TerrainType.MOUNTAIN]: 0x4caf50,
-  [TerrainType.FOREST]: 0x4caf50,
-};
-
-const STONE_COLOR = 0x9e9e9e;
+// 實體在 terrainColors —— 展示區的地板要與這裡同色，而它不能把 Grid 與
+// ViewMode 一起拖進相依圖（見那個檔案的說明）。
+import { TERRAIN_COLORS, STONE_COLOR } from './terrainColors';
 
 // Tree constants
 const TREE = {

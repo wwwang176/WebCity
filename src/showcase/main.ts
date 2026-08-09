@@ -22,6 +22,7 @@ import type { GeoBuilder, Density } from '../renderer/geometry/buildings/registr
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { stampInstanceValues, floorRhythm01, type InstanceValues } from './instanceAttrs';
+import { createShowcaseGround } from './ground';
 import { appearanceOf } from '../renderer/BuildingAppearance';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
@@ -29,14 +30,8 @@ import { attachCameraInput } from './cameraInput';
 const container = document.getElementById('scene')!;
 const sceneManager = new SceneManager(container);
 
-/** 展示用地面，讓建築不是浮在虛空中。 */
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(120, 120),
-  new THREE.MeshLambertMaterial({ color: 0x3a4a3a }),
-);
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-sceneManager.scene.add(ground);
+/** 展示用地面。顏色與受光模型都跟著遊戲的地形走 —— 見 `createShowcaseGround`。 */
+sceneManager.scene.add(createShowcaseGround(120));
 
 // 日夜由正式的 WeatherRenderer 驅動 —— shader 讀的是場景燈光
 // (directionalLights[0])，不是 uTime，所以少了它時間滑桿等於沒接。
