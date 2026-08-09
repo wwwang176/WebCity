@@ -1,5 +1,7 @@
 import { METRES_PER_CELL } from '../../../core/grid/constants';
-import { TARGET_WIDTHS_M, heightKey, widthJitterFor, type Density } from './registry';
+import type { Density } from './registry';
+import { volumesFor, VARIANT_COUNT } from './massing';
+import { maxAbsOf } from './massing/volume';
 import {
   HALF_ENVELOPE, CELL_EDGE, OVERHEAD_CLEARANCE, FLOOR_HEIGHT_UNITS,
   SHOPFRONT_CEILING, GROUND_LAYERS,
@@ -34,32 +36,57 @@ export interface Band {
 }
 
 /**
- * 建築牆面的位置 —— 但每一棟的寬度是逐實例抖動的（±15%），所以「牆面在哪」
- * 有兩個答案，用哪一個取決於這個物件**要不要碰到牆**：
+ * 建築牆面的位置 —— 但同一桶的八個變體寬度各不相同，所以「牆面在哪」有兩個
+ * 答案，用哪一個取決於這個物件**要不要碰到牆**：
  *
  *   最寬（`widest`）    自立的東西用它。樹、垃圾桶要放在**所有**建築之外，
  *                       否則最寬的那一棟會把它們吃進牆裡。
  *   最窄（`narrowest`）  要貼牆的東西用它。雨遮、鋪面要碰到**所有**建築，
  *                       多出來的部分埋在牆內、被擋住，看不見。
  *
- * 貼牆的東西用最寬值就是 BUG-226：只有剛好抖到最寬的那一棟碰得到牆，
- * 其餘每一棟上都浮空 0.68–1.17 m。
+ * 貼牆的東西用最寬值就是 BUG-226：只有最寬的那一棟碰得到牆，其餘每一棟上
+ * 都浮空 0.68–1.17 m。
+ *
+ * 兩個值現在是**量**出來的（跑一遍八個變體的量體），不再是「目標寬乘抖動
+ * 係數」。推導與幾何各走各的正是 BUG-226 發生的方式；而量量體不必建幾何，
+ * 所以這件事很便宜。
  */
-function halfTarget(zoneType: number, density: Density): number | null {
-  const target = TARGET_WIDTHS_M[heightKey(zoneType, density)];
-  return target ? target / METRES_PER_CELL / 2 : null;
+function edgesOf(
+  zoneType: number, density: Density, level: number,
+): { lo: number; hi: number } | null {
+  const key = `${zoneType}:${density}:${level}`;
+  const hit = edgeCache.get(key);
+  if (hit !== undefined) return hit;
+
+  let lo = Infinity;
+  let hi = 0;
+  for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+    const vs = volumesFor(zoneType, density, level, vi);
+    if (vs.length === 0) continue;
+    const m = maxAbsOf(vs);
+    lo = Math.min(lo, m);
+    hi = Math.max(hi, m);
+  }
+  const out = hi > 0 ? { lo, hi } : null;
+  edgeCache.set(key, out);
+  return out;
 }
 
-/** 抖到最寬時的牆面。自立物件的內緣。 */
-export function widestBuildingEdge(zoneType: number, density: Density): number | null {
-  const half = halfTarget(zoneType, density);
-  return half === null ? null : half * (1 + widthJitterFor(zoneType, density).up);
+/** 量測快取。每放一棟建築都跑一遍八個變體的話，開局會很慢。 */
+const edgeCache = new Map<string, { lo: number; hi: number } | null>();
+
+/** 最寬的那一個變體的牆面。自立物件的內緣。 */
+export function widestBuildingEdge(
+  zoneType: number, density: Density, level: number,
+): number | null {
+  return edgesOf(zoneType, density, level)?.hi ?? null;
 }
 
-/** 抖到最窄時的牆面。貼牆物件的內緣。 */
-export function narrowestBuildingEdge(zoneType: number, density: Density): number | null {
-  const half = halfTarget(zoneType, density);
-  return half === null ? null : half * (1 - widthJitterFor(zoneType, density).down);
+/** 最窄的那一個變體的牆面。貼牆物件的內緣。 */
+export function narrowestBuildingEdge(
+  zoneType: number, density: Density, level: number,
+): number | null {
+  return edgesOf(zoneType, density, level)?.lo ?? null;
 }
 
 function band(inner: number | null, outer: number, min: number): Band | null {
@@ -73,16 +100,22 @@ function band(inner: number | null, outer: number, min: number): Band | null {
  * 內緣用最窄的牆面 —— 鋪面要碰得到每一棟的牆腳，伸進建築底下的部分被
  * 建築本身擋住。用最寬值的話，窄的那些建築腳下會露出一圈裸地。
  */
-export function decalBand(zoneType: number, density: Density): Band | null {
-  return band(narrowestBuildingEdge(zoneType, density), CELL_EDGE, MIN_WIDE_BAND);
+export function decalBand(
+  zoneType: number, density: Density, level: number,
+): Band | null {
+  return band(narrowestBuildingEdge(zoneType, density, level), CELL_EDGE, MIN_WIDE_BAND);
 }
 
 /** 矮物件：建築牆面到行人包絡線。自立，所以內緣用最寬的牆面。窄於 0.4 m 回傳 null。 */
-export function lowPropBand(zoneType: number, density: Density): Band | null {
-  return band(widestBuildingEdge(zoneType, density), HALF_ENVELOPE, MIN_LOW_BAND);
+export function lowPropBand(
+  zoneType: number, density: Density, level: number,
+): Band | null {
+  return band(widestBuildingEdge(zoneType, density, level), HALF_ENVELOPE, MIN_LOW_BAND);
 }
 
 /** 懸挑：與貼片同寬同理由，但物件的最低點必須高於 `OVERHEAD_CLEARANCE`。 */
-export function overheadBand(zoneType: number, density: Density): Band | null {
-  return band(narrowestBuildingEdge(zoneType, density), CELL_EDGE, MIN_WIDE_BAND);
+export function overheadBand(
+  zoneType: number, density: Density, level: number,
+): Band | null {
+  return band(narrowestBuildingEdge(zoneType, density, level), CELL_EDGE, MIN_WIDE_BAND);
 }

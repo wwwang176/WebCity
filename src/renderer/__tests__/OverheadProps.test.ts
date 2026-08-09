@@ -3,9 +3,26 @@ import * as THREE from 'three';
 import {
   getOverheadVariants, OVERHEAD_TRIANGLE_BUDGET,
 } from '../geometry/buildings/overheadProps';
-import {
-  OVERHEAD_CLEARANCE, SHOPFRONT_CEILING, narrowestBuildingEdge,
-} from '../geometry/buildings/propBands';
+import { OVERHEAD_CLEARANCE, SHOPFRONT_CEILING }
+  from '../geometry/buildings/propBands';
+import { volumesFor, VARIANT_COUNT } from '../geometry/buildings/massing';
+import { maxAbsOf } from '../geometry/buildings/massing/volume';
+
+/**
+ * 這一桶最窄的那一個變體的牆面。
+ *
+ * **刻意不呼叫 `narrowestBuildingEdge`** —— 雨遮的幾何就是用那個函式建的，
+ * 拿它當基準等於「用實作驗證實作」，那正是 BUG-226 躲過測試的方式：
+ * 那條測試量的是 `buildingEdge()`，而幾何也是照它長的，所以永遠相符。
+ */
+function narrowestOf(z: number, d: Density, level: number): number {
+  let lo = Infinity;
+  for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+    const vs = volumesFor(z, d, level, vi);
+    if (vs.length > 0) lo = Math.min(lo, maxAbsOf(vs));
+  }
+  return lo;
+}
 import { TARGET_HEIGHTS_M, LEVELS, type Density } from '../geometry/buildings/registry';
 import { triangleCount } from '../geometry/buildings/parts';
 import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../../core/grid/constants';
@@ -140,8 +157,8 @@ describe('overhead props', () => {
     // 唯一能永遠貼牆的做法是往內埋進最窄的那一棟裡：多出來的部分被牆擋住，
     // 看不見。所以內緣量的是 `narrowestBuildingEdge`。
     eachBucket((z, d, key) => {
-      const narrow = narrowestBuildingEdge(z, d)!;
       for (const level of LEVELS) {
+        const narrow = narrowestOf(z, d, level);
         for (const build of getOverheadVariants(z, d, level)) {
           const geo = build();
           // 判定是**連通性**而不是「有頂點碰到牆」：雨簷板掛在雨遮外緣，

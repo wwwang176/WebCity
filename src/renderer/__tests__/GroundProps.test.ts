@@ -13,7 +13,7 @@ const HALF_ENVELOPE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
 
 describe('yardRing', () => {
   it('should give the low-density house a yard worth looking at', () => {
-    const ring = yardRing(ZoneType.RESIDENTIAL_LOW, 'LOW');
+    const ring = yardRing(ZoneType.RESIDENTIAL_LOW, 'LOW', 1);
     expect(ring).not.toBeNull();
     // 1 m 以上才放得下看得見的樹籬與樹。
     expect((ring!.outer - ring!.inner) * METRES_PER_CELL).toBeGreaterThan(1.0);
@@ -25,16 +25,20 @@ describe('yardRing', () => {
     // 寬度一改就一個也選不中，測試從此空轉。
     for (const key of Object.keys(TARGET_WIDTHS_M)) {
       const [zs, ds] = key.split(':');
-      expect(yardRing(Number(zs), ds as Density), key).not.toBeNull();
+      for (const level of LEVELS) {
+        expect(yardRing(Number(zs), ds as Density, level), `${key} L${level}`).not.toBeNull();
+      }
     }
   });
 
   it('should never let the yard reach past the pedestrian envelope', () => {
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
-      const ring = yardRing(Number(zs), ds as Density);
-      if (!ring) continue;
-      expect(ring.outer, key).toBeLessThanOrEqual(HALF_ENVELOPE + 1e-9);
+      for (const level of LEVELS) {
+        const ring = yardRing(Number(zs), ds as Density, level);
+        if (!ring) continue;
+        expect(ring.outer, `${key} L${level}`).toBeLessThanOrEqual(HALF_ENVELOPE + 1e-9);
+      }
     }
   });
 
@@ -42,10 +46,14 @@ describe('yardRing', () => {
     // 內緣若只用目標寬度而不含抖動，抖到最寬的那些房子會長進樹籬裡。
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
-      const ring = yardRing(Number(zs), ds as Density);
-      if (!ring) continue;
-      const targetHalf = TARGET_WIDTHS_M[key]! / METRES_PER_CELL / 2;
-      expect(ring.inner, key).toBeGreaterThanOrEqual(targetHalf);
+      // 內緣現在是量出來的（八個變體裡最寬的那一個），不再是目標寬乘抖動
+      // 係數。基地在 85%–100% 之間取，所以最寬的那個仍不低於目標的 85%。
+      for (const level of LEVELS) {
+        const ring = yardRing(Number(zs), ds as Density, level);
+        if (!ring) continue;
+        const targetHalf = TARGET_WIDTHS_M[key]! / METRES_PER_CELL / 2;
+        expect(ring.inner, `${key} L${level}`).toBeGreaterThanOrEqual(targetHalf * 0.85);
+      }
     }
   });
 });
@@ -82,8 +90,8 @@ describe('ground prop geometry', () => {
   it('should not put anything inside the house footprint', () => {
     // 每個頂點都必須滿足 max(|x|,|z|) >= inner —— 只看包圍盒會漏掉
     // 「一棵樹橫跨房子」這種情形。
-    const ring = yardRing(ZoneType.RESIDENTIAL_LOW, 'LOW')!;
     for (const level of LEVELS) {
+      const ring = yardRing(ZoneType.RESIDENTIAL_LOW, 'LOW', level)!;
       for (const build of getGroundPropVariants(ZoneType.RESIDENTIAL_LOW, 'LOW', level)) {
         const geo = build();
         const pos = geo.getAttribute('position');
@@ -198,8 +206,8 @@ describe('ground prop geometry', () => {
     // 尺寸會直接穿牆。
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');
-      const ring = yardRing(Number(zs), ds as Density)!;
       for (const level of LEVELS) {
+        const ring = yardRing(Number(zs), ds as Density, level)!;
         for (const build of getGroundPropVariants(Number(zs), ds as Density, level)) {
           const geo = build();
           const pos = geo.getAttribute('position');

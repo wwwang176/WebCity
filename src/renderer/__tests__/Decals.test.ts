@@ -1,7 +1,21 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { getDecalVariants, DECAL_Y, MARK_Y } from '../geometry/buildings/decals';
-import { narrowestBuildingEdge } from '../geometry/buildings/propBands';
+import { volumesFor, VARIANT_COUNT } from '../geometry/buildings/massing';
+import { maxAbsOf } from '../geometry/buildings/massing/volume';
+
+/**
+ * 這一桶最窄的那一個變體的牆面 —— 自己算，不呼叫 `narrowestBuildingEdge`。
+ * 鋪面的幾何就是用那個函式建的，拿它當基準等於用實作驗證實作（BUG-226）。
+ */
+function narrowestOf(z: number, d: Density, level: number): number {
+  let lo = Infinity;
+  for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+    const vs = volumesFor(z, d, level, vi);
+    if (vs.length > 0) lo = Math.min(lo, maxAbsOf(vs));
+  }
+  return lo;
+}
 import { TARGET_HEIGHTS_M, TRIANGLE_BUDGET, LEVELS, type Density }
   from '../geometry/buildings/registry';
 import { triangleCount } from '../geometry/buildings/parts';
@@ -154,8 +168,8 @@ describe('decal geometry', () => {
 
   it('should never overlap the building footprint or reach the neighbour', () => {
     eachBucket((z, d, key) => {
-      const inner = narrowestBuildingEdge(z, d)!;
       for (const level of LEVELS) {
+        const inner = narrowestOf(z, d, level);
         for (const build of getDecalVariants(z, d, level)) {
           const geo = build();
           const pos = geo.getAttribute('position');

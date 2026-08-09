@@ -237,7 +237,7 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
 export function getDecalVariants(
   zoneType: number, density: Density, level: number,
 ): GeoBuilder[] {
-  const band = decalBand(zoneType, density);
+  const band = decalBand(zoneType, density, level);
   if (!band) return [];
   const recipes = RECIPES[heightKey(zoneType, density)];
   if (!recipes) return [];

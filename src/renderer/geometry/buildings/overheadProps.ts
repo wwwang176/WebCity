@@ -229,7 +229,7 @@ const RECIPES: Record<string, [Recipe[], Recipe[], Recipe[]]> = {
 export function getOverheadVariants(
   zoneType: number, density: Density, level: number,
 ): GeoBuilder[] {
-  const band = overheadBand(zoneType, density);
+  const band = overheadBand(zoneType, density, level);
   if (!band) return [];
   const byLevel = RECIPES[heightKey(zoneType, density)];
   if (!byLevel) return [];

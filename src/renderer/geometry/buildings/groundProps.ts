@@ -33,8 +33,10 @@ export type YardRing = Band;
  * 推導本身住在 `propBands`：貼片、矮物件、懸挑三類共用同一個內緣（建築抖到
  * 最寬時的外緣），只有外緣不同。把它留在這裡會變成第二份會漂移的推導。
  */
-export function yardRing(zoneType: number, density: Density): YardRing | null {
-  return lowPropBand(zoneType, density);
+export function yardRing(
+  zoneType: number, density: Density, level: number,
+): YardRing | null {
+  return lowPropBand(zoneType, density, level);
 }
 
 export function hasGroundProps(zoneType: number, density: Density, level: number): boolean {
@@ -462,7 +464,7 @@ const RECIPES: Record<string, [Recipe[], Recipe[], Recipe[]]> = {
 export function getGroundPropVariants(
   zoneType: number, density: Density, level: number,
 ): GeoBuilder[] {
-  const band = lowPropBand(zoneType, density);
+  const band = lowPropBand(zoneType, density, level);
   if (!band) return [];
   const byLevel = RECIPES[heightKey(zoneType, density)];
   if (!byLevel) return [];
