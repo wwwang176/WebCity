@@ -31,9 +31,12 @@ export function mainPlusWing(wingFrac: number, wingHeightFrac: number): Composer
     const wingW = dims.w * wingFrac;
     const mainW = dims.w - wingW;
     const wingD = dims.d * (0.55 + 0.25 * rng());
+    // 下限是**半層樓**而不是一層樓：建築本身只有一層時，「至少一層樓」會讓
+    // 偏屋與主屋等高 —— 整個組合器退化成一個方盒，輪廓與 single 完全相同。
+    // 1.6 m 高的側棟是儲藏間，完全合理。
     const wingH = Math.min(
       dims.height - 1e-6,
-      Math.max(dims.floorHeight, dims.height * wingHeightFrac),
+      Math.max(dims.floorHeight * 0.5, dims.height * wingHeightFrac),
     );
     return [
       { x: -dims.w / 2 + mainW / 2, z: 0, w: mainW, d: dims.d, y0: 0, y1: dims.height },
@@ -166,7 +169,9 @@ export function splitSpan(tallFrac: number): Composer {
       { x: -dims.w / 2 + tallW / 2, z: 0, w: tallW, d: dims.d, y0: 0, y1: dims.height },
       {
         x: dims.w / 2 - lowW / 2, z: 0, w: lowW, d: dims.d,
-        y0: 0, y1: Math.min(dims.height - 1e-6, Math.max(dims.floorHeight, dims.height * 0.62)),
+        // 下限半層樓，理由同 mainPlusWing。
+        y0: 0,
+        y1: Math.min(dims.height - 1e-6, Math.max(dims.floorHeight * 0.5, dims.height * 0.62)),
       },
     ];
   };

@@ -29,46 +29,54 @@ const PODIUM = podiumTower(2, 0.66, 0);
  */
 const OFFSET_TOWER = podiumTower(2, 0.6, 0.9);
 
+/**
+ * 各分區的原型。**不對稱的排前面** —— 這不是風格，是算術：
+ *
+ * `prototypeFor` 用 `variantIndex % 可用原型數` 輪流取，而變體數 8 通常不是
+ * 原型數的倍數。繞回來的那幾個一定落在清單**開頭**，所以開頭放什麼決定了
+ * 不對稱變體的實際比例。對稱的排前面時，住宅高 L2（六個原型）只湊得出 3/8，
+ * 低於 4/8 的驗收線。
+ */
 const TABLE: Record<number, Prototype[]> = {
   [ZoneType.RESIDENTIAL_LOW]: [
-    p('gable', 1, d => single(d)),
     p('house+garage', 1, mainPlusWing(0.4, 0.5)),
+    p('gable', 1, d => single(d)),
     p('L-house', 2, lShape(0.55)),
     p('porch', 2, mainPlusWing(0.28, 0.32)),
   ],
   [ZoneType.RESIDENTIAL_HIGH]: [
-    p('slab', 1, d => single(d)),
-    p('podium', 1, PODIUM),
     p('offsetTower', 1, OFFSET_TOWER),
     p('L-tower', 1, lShape(0.6)),
-    p('setback', 2, setback(3)),
+    p('slab', 1, d => single(d)),
+    p('podium', 1, PODIUM),
     p('twin', 2, twin(0.24)),
+    p('setback', 2, setback(3)),
   ],
   [ZoneType.COMMERCIAL_LOW]: [
-    p('box', 1, d => single(d)),
     p('shopfront', 1, splitSpan(0.55)),
+    p('box', 1, d => single(d)),
     p('L-shop', 2, lShape(0.58)),
     p('shop+annex', 2, mainPlusWing(0.35, 0.6)),
     p('courtyard', 3, notch(0.34)),
   ],
   [ZoneType.COMMERCIAL_HIGH]: [
-    p('podium', 1, PODIUM),
     p('offsetTower', 1, OFFSET_TOWER),
-    p('setback', 2, setback(3)),
+    p('podium', 1, PODIUM),
     p('L-tower', 2, lShape(0.6)),
+    p('setback', 2, setback(3)),
     p('twin', 3, twin(0.22)),
   ],
   [ZoneType.INDUSTRIAL]: [
-    p('shed', 1, d => single(d)),
     p('shed+office', 1, mainPlusWing(0.32, 0.75)),
+    p('shed', 1, d => single(d)),
     p('twoSpan', 2, splitSpan(0.6)),
     p('L-shed', 3, lShape(0.6)),
   ],
   [ZoneType.OFFICE]: [
-    p('slab', 1, d => single(d)),
     p('offsetTower', 1, OFFSET_TOWER),
-    p('podium', 2, PODIUM),
+    p('slab', 1, d => single(d)),
     p('L-tower', 2, lShape(0.6)),
+    p('podium', 2, PODIUM),
     p('twin', 3, twin(0.24)),
     p('courtyard', 3, notch(0.3)),
   ],
