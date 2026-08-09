@@ -78,12 +78,21 @@ describe('ground prop layer', () => {
     expect(internals.propLayer.size).toBe(36);
   });
 
-  it('should give a plot-filling zone none', () => {
+  it('should give every zone props, not just residential', () => {
+    // 階段 2B 時這一條是「鋪滿基地的分區沒有物件」—— 那是當時的幾何事實。
+    // 2B-2 把建築縮窄 7-8% 讓出 0.4 m 的帶子之後，事實反過來了。
     const { renderer, internals } = fresh();
-    renderer.addBuilding(0, 0, ZoneType.RESIDENTIAL_HIGH, 'HIGH', 3, false);
-    renderer.addBuilding(1, 0, ZoneType.INDUSTRIAL, 'LOW', 2, false);
-    expect(internals.propLayer.entryFor('0,0')).toBeUndefined();
-    expect(internals.propLayer.entryFor('1,0')).toBeUndefined();
+    const cells: Array<[number, number, number, 'LOW' | 'HIGH']> = [
+      [0, 0, ZoneType.RESIDENTIAL_HIGH, 'HIGH'],
+      [1, 0, ZoneType.INDUSTRIAL, 'LOW'],
+      [2, 0, ZoneType.COMMERCIAL_HIGH, 'HIGH'],
+      [3, 0, ZoneType.OFFICE, 'HIGH'],
+      [4, 0, ZoneType.COMMERCIAL_LOW, 'LOW'],
+    ];
+    for (const [x, y, zone, density] of cells) {
+      renderer.addBuilding(x, y, zone, density, 3, false);
+      expect(internals.propLayer.entryFor(`${x},${y}`), `zone ${zone} 沒有物件`).toBeDefined();
+    }
   });
 
   it('should take the garden away with the building', () => {

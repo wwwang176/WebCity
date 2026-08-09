@@ -120,21 +120,99 @@ describe('ground prop geometry', () => {
     });
   });
 
-  it('should make the garden better with every level', () => {
+  it('should make the residential garden greener with every level', () => {
     // 規格修訂 4：等級要看得出更高級。素土院子 -> 樹籬 -> 修剪庭園。
-    const tri = (level: number) =>
+    //
+    // 量綠化而不是量三角形總數：L1 的四道木柵柱子多但便宜，L2 換成樹之後
+    // 總數反而更低 —— 三角形數不是「豪華」的代理，綠化面積才是。
+    const foliage = (level: number) =>
       getGroundPropVariants(ZoneType.RESIDENTIAL_LOW, 'LOW', level)
-        .map(b => { const g = b(); const n = triangleCount(g); g.dispose(); return n; })
+        .map((b) => {
+          const g = b();
+          const col = g.getAttribute('color');
+          let n = 0;
+          for (let i = 0; i < col.count; i++) {
+            if (col.getX(i) > 0.35 && col.getX(i) < 0.65) n++;
+          }
+          g.dispose();
+          return n;
+        })
         .reduce((a, b) => a + b, 0);
-    expect(tri(2)).toBeGreaterThan(tri(1));
-    expect(tri(3)).toBeGreaterThan(tri(2));
+    expect(foliage(2), 'L2 沒有比 L1 綠').toBeGreaterThan(foliage(1));
+    expect(foliage(3), 'L3 沒有比 L2 綠').toBeGreaterThan(foliage(2));
   });
 
-  it('should offer more than one yard per level', () => {
-    // 只有一種庭院的話，整條街的院子會一模一樣 —— 換一個地方重複而已。
+  it('should make every zone richer with every level', () => {
+    // 非住宅分區的「更高級」不是更綠，是更多街道家具。用同一等級裡最豐富的
+    // 那個組合來比 —— 用總和會被「零件多但便宜」的組合帶偏。
+    for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+      const [zs, ds] = key.split(':');
+      const richest = (level: number) => Math.max(
+        ...getGroundPropVariants(Number(zs), ds as Density, level)
+          .map(b => { const g = b(); const n = triangleCount(g); g.dispose(); return n; }),
+      );
+      expect(richest(3), `${key} L3 沒有比 L1 豐富`).toBeGreaterThan(richest(1));
+      expect(richest(2), `${key} L2 沒有比 L1 豐富`).toBeGreaterThan(richest(1));
+    }
+  });
+
+  it('should offer at least four yards per level', () => {
+    // 兩個變體配四向旋轉是 8 種面貌，一個 8x8 街廓看得出重複。
     for (const level of LEVELS) {
-      expect(getGroundPropVariants(ZoneType.RESIDENTIAL_LOW, 'LOW', level).length)
-        .toBeGreaterThanOrEqual(2);
+      expect(getGroundPropVariants(ZoneType.RESIDENTIAL_LOW, 'LOW', level).length,
+        `L${level}`).toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it('should give every zone something standing on the ground', () => {
+    // 階段 2B-2 縮寬的目的：不再只有住宅區有立體小物。
+    for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+      const [zs, ds] = key.split(':');
+      for (const level of LEVELS) {
+        expect(getGroundPropVariants(Number(zs), ds as Density, level).length,
+          `${key} L${level}`).toBeGreaterThanOrEqual(1);
+      }
+    }
+  });
+
+  it('should use a vocabulary wider than a handful of shapes', () => {
+    // 「類型太少」的機器可檢查形式。不同零件的三角形數不同，所以把所有
+    // 變體的三角形數集合起來，集合大小是詞彙量的下界。
+    const sizes = new Set<number>();
+    for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+      const [zs, ds] = key.split(':');
+      for (const level of LEVELS) {
+        for (const b of getGroundPropVariants(Number(zs), ds as Density, level)) {
+          const g = b();
+          sizes.add(triangleCount(g));
+          g.dispose();
+        }
+      }
+    }
+    expect(sizes.size, '所有庭院組合只有 ' + sizes.size + ' 種三角形數')
+      .toBeGreaterThanOrEqual(8);
+  });
+
+  it('should keep every zone inside its own band, not just residential', () => {
+    // 其他分區的帶子只有 0.4 m，比住宅低的 1.45 m 窄得多 —— 沿用住宅的
+    // 尺寸會直接穿牆。
+    for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+      const [zs, ds] = key.split(':');
+      const ring = yardRing(Number(zs), ds as Density)!;
+      for (const level of LEVELS) {
+        for (const build of getGroundPropVariants(Number(zs), ds as Density, level)) {
+          const geo = build();
+          const pos = geo.getAttribute('position');
+          for (let i = 0; i < pos.count; i++) {
+            const m = Math.max(Math.abs(pos.getX(i)), Math.abs(pos.getZ(i)));
+            expect(m, `${key} L${level} 頂點 ${i} 落在建築裡`)
+              .toBeGreaterThanOrEqual(ring.inner - 1e-6);
+            expect(m, `${key} L${level} 頂點 ${i} 擋住行人`)
+              .toBeLessThanOrEqual(ring.outer + 1e-6);
+          }
+          geo.dispose();
+        }
+      }
     }
   });
 
