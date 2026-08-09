@@ -8,6 +8,7 @@ import {
   getVariants, ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, heightScaleFor,
   footprintScaleFor, bucketKey, type Density,
 } from './geometry/buildings/registry';
+import { getGroundPropVariants } from './geometry/buildings/groundProps';
 import { stampZoneCategory, ZONE_CAT, tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
@@ -28,6 +29,11 @@ const INITIAL_BUCKET_CAPACITY = 256;
 export class BuildingRenderer {
   // --- Persistent variant meshes (pre-allocated, never disposed until game exit) ---
   private zoneLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
+  /**
+   * 地面物件層。與量體層平行，但**矩陣只含旋轉與位置** —— 沒有高度縮放
+   * 也沒有基地縮放，所以樹在每個等級都是同一個真實尺寸（BUG-219）。
+   */
+  private propLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
   private variantInitialized = false;
 
   /** 既有測試與內部程式碼從這兩個名字讀狀態。實體在 zoneLayer 裡。 */
@@ -101,9 +107,46 @@ export class BuildingRenderer {
             stampZoneCategory(geo, zoneCat);
             this.zoneLayer.createBucket(scene, bucketKey(zoneType, density, level, vi), geo);
           }
+          const yards = getGroundPropVariants(zoneType, density, level);
+          for (let pi = 0; pi < yards.length; pi++) {
+            const geo = yards[pi]!();
+            stampZoneCategory(geo, zoneCat);
+            this.propLayer.createBucket(scene, bucketKey(zoneType, density, level, pi), geo);
+          }
         }
       }
     }
+  }
+
+  /**
+   * 地面物件的實例矩陣：只有旋轉與位置。
+   *
+   * 沒有高度縮放也沒有基地縮放 —— 那正是 BUG-219 的修法。庭院跟著房子的
+   * 朝向轉，所以樹籬永遠在同一面，但尺寸是真實的公尺，與等級無關。
+   */
+  private syncGroundProps(
+    x: number, y: number, zoneType: number, density: Density, level: number,
+  ): void {
+    if (!this.scene) return;
+    const yards = getGroundPropVariants(zoneType, density, level);
+    if (yards.length === 0) return;
+
+    const app = appearanceOf({
+      x, y, zoneType, level, seedByte: 0,
+      variantCount: getVariants(zoneType, level).length,
+      paletteSize: paletteFor(zoneType, level).length,
+    });
+    const pi = Math.floor(app.propVariant01 * yards.length) % yards.length;
+    const slot = this.propLayer.acquire(
+      this.scene, bucketKey(zoneType, density, level, pi), `${x},${y}`,
+    );
+    if (!slot) return;
+
+    this._matrix.makeRotationY((app.rotationQuarter * Math.PI) / 2);
+    this._matrix.setPosition(x, 0.05, y);
+    slot.mesh.setMatrixAt(slot.idx, this._matrix);
+    slot.mesh.instanceMatrix.needsUpdate = true;
+    if (slot.grew) this._buildingMeshesDirty = true;
   }
 
   // ─── Incremental building operations ───────────────────────────
@@ -132,6 +175,8 @@ export class BuildingRenderer {
     // 倍增會換掉 mesh 物件，highlight 的快取才需要重建。
     if (slot.grew) this._buildingMeshesDirty = true;
 
+    this.syncGroundProps(x, y, zoneType, density, level);
+
     // Sync lightSpot (non-burned, non-abandoned buildings emit light)
     if (!burned && !abandoned) this.addLightSpot(x, y);
   }
@@ -139,6 +184,7 @@ export class BuildingRenderer {
   /** Remove a single zone building instance (swap-with-last). */
   removeBuilding(x: number, y: number): void {
     this.zoneLayer.release(`${x},${y}`);
+    this.propLayer.release(`${x},${y}`);
     this.removeLightSpot(x, y);
   }
 
@@ -155,6 +201,11 @@ export class BuildingRenderer {
     this.setInstanceData(mesh, entry.idx, x, y, zoneType, density, level, burned, abandoned);
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    // 庭院組合依等級而不同，所以升級必須換桶 —— 只改矩陣的話，L3 的房子
+    // 會配著 L1 的素土院子。一律先退再取，比較等級反而多一份要維護的狀態。
+    this.propLayer.release(posKey);
+    this.syncGroundProps(x, y, zoneType, density, level);
 
     // Sync lightSpot: burned/abandoned → remove, normal → add
     if (burned || abandoned) this.removeLightSpot(x, y);
@@ -323,6 +374,7 @@ export class BuildingRenderer {
 
     // Reset all variant instance counts (keep GPU buffers alive)
     this.zoneLayer.reset();
+    this.propLayer.reset();
 
     const emptyZonesByType = new Map<string, { x: number; y: number }[]>();
     const infraCells: { x: number; y: number; type: InfraType; reserved: number }[] = [];
@@ -361,6 +413,7 @@ export class BuildingRenderer {
 
     // Batch needsUpdate for all variant meshes
     this.zoneLayer.flush();
+    this.propLayer.flush();
 
     this.buildInfrastructure(scene, infraCells);
     this.buildZoneOverlays(scene, emptyZonesByType);
@@ -2727,6 +2780,7 @@ export class BuildingRenderer {
 
     // Dispose persistent variant meshes
     this.zoneLayer.dispose(scene);
+    this.propLayer.dispose(scene);
     this.variantInitialized = false;
   }
 }

@@ -24,6 +24,8 @@ export const STREAM = {
   FACADE_RHYTHM: 9,
   FACADE_PHASE: 10,
   FACADE_MATERIAL: 11,
+  /** 庭院組合。與量體變體分開，同一種房子才不會必定配同一個院子。 */
+  GROUND_PROP: 12,
 } as const;
 
 export type StreamId = (typeof STREAM)[keyof typeof STREAM];
@@ -97,6 +99,8 @@ export interface Appearance {
   lightShift: number;
   /** 交給 shader 的 aSeed：節奏、相位、材質偏好。 */
   facadeSeed: readonly [number, number, number];
+  /** [0, 1)，庭院組合的選擇。桶數由呼叫端決定。 */
+  propVariant01: number;
 }
 
 /**
@@ -124,5 +128,6 @@ export function appearanceOf(input: AppearanceInput): Appearance {
       at(STREAM.FACADE_PHASE),
       at(STREAM.FACADE_MATERIAL),
     ],
+    propVariant01: at(STREAM.GROUND_PROP),
   };
 }
