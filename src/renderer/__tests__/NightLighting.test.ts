@@ -100,6 +100,31 @@ describe('what glows at night', () => {
   });
 });
 
+describe('no zone is left dark', () => {
+  /** 立面 shader 裡各分區分支的起點標記，照原始碼的順序。 */
+  const MARKERS = [
+    'RESIDENTIAL LOW', 'RESIDENTIAL HIGH', 'COMMERCIAL LOW',
+    'COMMERCIAL HIGH', 'INDUSTRIAL', 'OFFICE',
+  ];
+
+  it('should let every zone put something behind glass', () => {
+    // 工業原本完全沒有設 windowMask —— 沒有窗格、捲門只是一塊暗色，所以
+    // 整個工業區在夜裡是全黑的。這一條是那件事的機器可檢查形式：分區分支
+    // 一旦漏掉夜間的處理，它就轉紅。
+    const idx = MARKERS.map((m) => {
+      const at = BUILDING_FRAG.indexOf(m);
+      expect(at, `找不到 ${m} 分支`).toBeGreaterThan(-1);
+      return at;
+    });
+    for (let i = 0; i < MARKERS.length; i++) {
+      const end = i + 1 < idx.length ? idx[i + 1]! : BUILDING_FRAG.indexOf('Apply shadow');
+      const branch = BUILDING_FRAG.slice(idx[i]!, end);
+      expect(branch, `${MARKERS[i]} 分支在夜裡是全黑的`).toContain('windowMask =');
+      expect(branch, `${MARKERS[i]} 分支沒有看住戶`).toContain('occ');
+    }
+  });
+});
+
 describe('occupancy reaches the layers that need it', () => {
   interface Internals {
     attachments: ReadonlyArray<{ layer: {

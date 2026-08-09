@@ -148,6 +148,23 @@ describe('the shader uses the thresholds the parts module defines', () => {
     expect(nightAt, '日夜係數還關在窗戶的判斷裡').toBeLessThan(windowAt);
   });
 
+  it('should at least be bracket-balanced', () => {
+    // GLSL 在這裡編不了，所以編譯錯誤只會表現成**整片畫面空白**。括號平衡
+    // 抓不到型別錯誤，但抓得到「編輯時切掉半個區塊」—— 而那是這個檔案最
+    // 常見的失手方式：它是一段沒有任何工具檢查的字串。
+    for (const [open, close] of [['{', '}'], ['(', ')']] as const) {
+      for (const src of [BUILDING_VERT, BUILDING_FRAG]) {
+        let depth = 0;
+        for (const ch of src) {
+          if (ch === open) depth++;
+          else if (ch === close) depth--;
+          expect(depth, `${open}${close} 在中途變成負的`).toBeGreaterThanOrEqual(0);
+        }
+        expect(depth, `${open}${close} 沒有收齊`).toBe(0);
+      }
+    }
+  });
+
   it('should declare the attributes the renderer writes', () => {
     expect(BUILDING_VERT).toContain('attribute float aHighlight;');
     expect(BUILDING_VERT).toContain('attribute vec3 aHighlightColor;');

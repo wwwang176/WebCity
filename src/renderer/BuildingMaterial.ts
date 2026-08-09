@@ -469,13 +469,60 @@ void main() {
         float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
         color = vBldgColor * (0.72 + shade * 0.18);
 
+        // 高窗帶。廠房的窗開得高 —— 下面那一段牆要靠著放料架與機具，所以
+        // 它不是一格一格的小窗，是一條沿著樓板線下方的長條窗。
+        // 靠既有的樓層節奏定位，所以一層樓的廠房與三層樓的都對得上。
+        float fy = y / floorHeight;
+        float fx = (wallU + phase) / (windowWidth * 2.2);
+        float fracY = fract(fy);
+        float fracX = fract(fx);
+        float fwX = fwidth(fx);
+        float fwY = fwidth(fy);
+        float bandMask =
+            smoothstep(0.62 - fwY, 0.62 + fwY, fracY) * smoothstep(0.86 + fwY, 0.86 - fwY, fracY)
+          * smoothstep(0.12 - fwX, 0.12 + fwX, fracX) * smoothstep(0.88 + fwX, 0.88 - fwX, fracX);
+
+        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 6.7;
+        float wPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
+        float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
+        float wEpoch = floor((uTime + wPhase) / wPeriod);
+        float wLit = hash21(wid + wEpoch * 13.7);
+        // 廠房夜裡亮的窗比住宅少 —— 只有值夜班的那幾跨。
+        float litThreshIN = mix(0.98, 0.6, occ);
+        vec3 winColor;
+        if (wLit > litThreshIN) {
+          // 偏冷白：廠房用的是金屬鹵素／LED，不是住家的黃光。
+          winColor = mix(vec3(0.90, 0.92, 0.80), vec3(0.78, 0.84, 0.72), wLit) * 0.85;
+          winBrightness = 0.6 + hash21(wid + 21.3) * 0.4;
+          isLitWindow = bandMask > 0.5;
+        } else {
+          winColor = vBldgColor * 0.22 + vec3(0.04, 0.05, 0.07);
+        }
+        color = mix(color, winColor, bandMask);
+        windowMask = bandMask;
+
         // Large loading door at ground level
+        // **畫在高窗之後**，所以它蓋掉落在同一段高度的高窗 —— 矮樓層的廠房
+        // 高窗帶會落進捲門的高度範圍，兩者疊在一起就是一扇長了窗戶的捲門。
         float doorU = fract(wallU / 0.35);
         if (y < 0.18 && doorU > 0.12 && doorU < 0.88) {
           color = vBldgColor * 0.4 + vec3(0.02, 0.02, 0.01);
           // Horizontal door slats
           float slat = fract(y / 0.03);
           color *= 0.9 + 0.1 * step(0.5, slat);
+
+          // 有些捲門是開著的，裡面的燈光整片透出來。
+          // glassiness = 0：捲門會透光，但它不是玻璃 —— 白天不該變成一片藍，
+          // 也不該有陽光鏡面。
+          vec2 did = vec2(floor(wallU / 0.35), 0.0) + floor(vWorldPos.xz + 0.5) * 9.1;
+          float dPeriod = 200.0 + hash21(did + 5.0) * 200.0;
+          float dPhase = hash21(did * 1.7 + 13.0) * dPeriod;
+          float dEpoch = floor((uTime + dPhase) / dPeriod);
+          float dOpen = hash21(did + dEpoch * 3.3);
+          windowMask = 1.0;
+          glassiness = 0.0;
+          isLitWindow = dOpen > mix(0.99, 0.68, occ);
+          winBrightness = 0.8 + hash21(did + 4.4) * 0.4;
         }
       } else {
         color = vBldgColor * 0.78;
