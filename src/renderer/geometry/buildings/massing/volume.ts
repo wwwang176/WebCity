@@ -140,14 +140,22 @@ export function rotate90(grid: Float32Array): Float32Array {
 }
 
 /**
- * 兩個高度圖的差異率：高度差超過 `tolerance` 的格子佔全部的比例。
+ * 兩個高度圖的差異率：高度差超過 `tolerance` 的格子，佔**兩者聯集**的比例。
+ *
+ * 分母是聯集而不是整張圖 —— 用整張圖的話，形狀愈小愈容易被判定成相同：
+ * L 形的缺口是建築本身的 20%，但建築只佔格子的一半，所以稀釋成 10%，
+ * 剛好卡在門檻上。聯集當分母讓這個指標與尺度無關。
  *
  * `tolerance` 通常取半層樓 —— 矮了十公分不算「不一樣的形狀」。
  */
 export function differenceRatio(
   a: Float32Array, b: Float32Array, tolerance: number,
 ): number {
-  let n = 0;
-  for (let i = 0; i < a.length; i++) if (Math.abs(a[i]! - b[i]!) > tolerance) n++;
-  return n / a.length;
+  let diff = 0;
+  let union = 0;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i]! > 0 || b[i]! > 0) union++;
+    if (Math.abs(a[i]! - b[i]!) > tolerance) diff++;
+  }
+  return union === 0 ? 0 : diff / union;
 }
