@@ -78,7 +78,8 @@ describe('bucket capacity', () => {
         variantCount: variants.length, paletteSize: 1,
       }).facadeSeed;
       const seed = mesh.geometry.getAttribute('aSeed');
-      expect(seed.getX(entry.idx), `aSeed lost for ${x},${y}`).toBeCloseTo(expected[0], 6);
+      // aSeed.x 由變體決定，不是逐格亂數（階段 2C-1），所以這裡只驗
+      // 相位與材質這兩個逐格的分量有沒有在倍增時被搬丟。
       expect(seed.getY(entry.idx)).toBeCloseTo(expected[1], 6);
       expect(seed.getZ(entry.idx)).toBeCloseTo(expected[2], 6);
     }

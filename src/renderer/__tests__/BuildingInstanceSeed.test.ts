@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { BuildingRenderer } from '../BuildingRenderer';
 import { appearanceOf } from '../BuildingAppearance';
 import { bucketKey } from '../geometry/buildings/registry';
+import { floorHeightOf } from '../geometry/buildings/massing';
+import { FLOOR_HEIGHT_UNITS } from '../geometry/buildings/massing/metrics';
 import { getMassingVariants } from '../geometry/buildings/massing';
 import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
@@ -101,7 +103,8 @@ describe('aSeed', () => {
     const attr = internals.variantMeshes.get(entry.key)!.geometry.getAttribute('aSeed');
     const expected = expectedAppearance(6, 2).facadeSeed;
 
-    expect(attr.getX(entry.idx)).toBeCloseTo(expected[0], 6);
+    // aSeed.x 不再是 facadeSeed[0]：樓層節奏由變體決定，好讓窗戶橫列對齊
+    // 真正的樓板線（階段 2C-1）。相位與材質偏好仍然逐格。
     expect(attr.getY(entry.idx)).toBeCloseTo(expected[1], 6);
     expect(attr.getZ(entry.idx)).toBeCloseTo(expected[2], 6);
   });
@@ -124,9 +127,34 @@ describe('aSeed', () => {
       const entry = internals.positionToInstance.get(`${x},${y}`)!;
       const attr = internals.variantMeshes.get(entry.key)!.geometry.getAttribute('aSeed');
       const expected = expectedAppearance(x, y).facadeSeed;
-      expect(attr.getX(entry.idx), `aSeed.x wrong at ${x},${y}`).toBeCloseTo(expected[0], 6);
+      // aSeed.x 不再是 facadeSeed[0]：樓層節奏由變體決定，好讓窗戶橫列對齊
+      // 真正的樓板線（階段 2C-1）。相位與材質偏好仍然逐格。
       expect(attr.getY(entry.idx), `aSeed.y wrong at ${x},${y}`).toBeCloseTo(expected[1], 6);
       expect(attr.getZ(entry.idx), `aSeed.z wrong at ${x},${y}`).toBeCloseTo(expected[2], 6);
     }
+  });
+
+  it('should hand the shader the floor height its variant was built with', () => {
+    // aSeed.x 以前是逐格雜湊 —— 窗戶橫列與樓板各畫各的，最上面那一排窗會被
+    // 屋頂切掉一半，而那不會有任何東西報錯。
+    const scene = new THREE.Scene();
+    const renderer = new BuildingRenderer();
+    renderer.build(scene, new Grid(1, 1));
+    renderer.addBuilding(0, 0, ZoneType.OFFICE, 'HIGH', 3, false);
+
+    const internals = renderer as unknown as {
+      positionToInstance: Map<string, { key: string; idx: number }>;
+      variantMeshes: Map<string, THREE.InstancedMesh>;
+    };
+    const entry = internals.positionToInstance.get('0,0')!;
+    const mesh = internals.variantMeshes.get(entry.key)!;
+    const seed = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute;
+    const rhythm = (seed.array as Float32Array)[entry.idx * 3]!;
+
+    // shader 的 floorHeight = mix(MIN, MAX, aSeed.x)
+    const shaderFloor = FLOOR_HEIGHT_UNITS.MIN
+      + (FLOOR_HEIGHT_UNITS.MAX - FLOOR_HEIGHT_UNITS.MIN) * rhythm;
+    const vi = Number(entry.key.split('_')[3]);
+    expect(shaderFloor).toBeCloseTo(floorHeightOf(ZoneType.OFFICE, 'HIGH', 3, vi), 6);
   });
 });

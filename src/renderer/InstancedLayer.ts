@@ -69,6 +69,10 @@ export class InstancedLayer {
 
     const mesh = new THREE.InstancedMesh(geometry, this.material, this.initialCapacity);
     mesh.count = 0;
+    // three.js 對 count === 0 的 InstancedMesh 仍會走完整條 render list。桶數
+    // 從 60 漲到 168（階段 2C-1）之後，空桶的成本從「無所謂」變「有感」——
+    // 開局與稀疏城市大部分的桶都是空的。
+    mesh.visible = false;
     mesh.castShadow = opts.castShadow ?? true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
@@ -104,6 +108,7 @@ export class InstancedLayer {
 
     this.counts.set(key, idx + 1);
     mesh.count = idx + 1;
+    mesh.visible = true;
     this.entries.set(posKey, { key, idx });
     this.reverse.get(key)!.set(idx, posKey);
     return { mesh, idx, grew };
@@ -197,6 +202,7 @@ export class InstancedLayer {
     this.entries.delete(posKey);
     this.counts.set(entry.key, lastIdx);
     mesh.count = lastIdx;
+    mesh.visible = lastIdx > 0;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }
@@ -205,6 +211,7 @@ export class InstancedLayer {
   reset(): void {
     for (const [key, mesh] of this.buckets) {
       mesh.count = 0;
+      mesh.visible = false;
       this.counts.set(key, 0);
       this.reverse.get(key)!.clear();
     }

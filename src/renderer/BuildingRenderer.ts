@@ -8,7 +8,8 @@ import {
   ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, bucketKey,
   type Density, type GeoBuilder,
 } from './geometry/buildings/registry';
-import { getMassingVariants, VARIANT_COUNT } from './geometry/buildings/massing';
+import { getMassingVariants, VARIANT_COUNT, floorHeightOf } from './geometry/buildings/massing';
+import { FLOOR_HEIGHT_UNITS } from './geometry/buildings/massing/metrics';
 import { getGroundPropVariants } from './geometry/buildings/groundProps';
 import { getDecalVariants } from './geometry/buildings/decals';
 import { getOverheadVariants } from './geometry/buildings/overheadProps';
@@ -298,9 +299,17 @@ export class BuildingRenderer {
     const seedAttr = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute | undefined;
     if (seedAttr) {
       const arr = seedAttr.array as Float32Array;
-      arr[idx * 3] = app.facadeSeed[0];
-      arr[idx * 3 + 1] = app.facadeSeed[1];
-      arr[idx * 3 + 2] = app.facadeSeed[2];
+      // 樓層節奏由**變體**決定，不是逐格亂數：立面 shader 用它算窗戶橫列的
+      // 間距，而量體的高度是「樓層數 × 樓高」。兩邊各自取值的話，最上面那一排
+      // 窗會被屋頂切掉一半，而那不會有任何東西報錯。
+      //
+      // 副作用是有意的：同一變體的所有實例共用窗戶節奏與窗寬。同一個設計的
+      // 建築本來就長一樣，變化該來自變體本身。
+      const fh = floorHeightOf(zoneType, density, level, app.variantIndex);
+      arr[idx * 3] = (fh - FLOOR_HEIGHT_UNITS.MIN)
+        / (FLOOR_HEIGHT_UNITS.MAX - FLOOR_HEIGHT_UNITS.MIN);
+      arr[idx * 3 + 1] = app.facadeSeed[1];   // 相位仍然逐格
+      arr[idx * 3 + 2] = app.facadeSeed[2];   // 材質偏好仍然逐格
       seedAttr.needsUpdate = true;
     }
 

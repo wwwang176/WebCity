@@ -223,6 +223,42 @@ describe('the massing layer is never scaled either', () => {
   });
 });
 
+describe('empty buckets cost nothing', () => {
+  it('should not draw buckets that hold nothing', () => {
+    // 量體桶從 60 變 168。three.js 對 count === 0 的 InstancedMesh 仍會走完
+    // 整條 render list，所以桶數三倍之後這件事從「無所謂」變「有感」。
+    const { renderer, internals } = fresh();
+    const layer = internals.zoneLayer;
+    for (const [key, mesh] of layer.bucketMap) {
+      expect(mesh.visible, `${key} 空桶仍然可見`).toBe(false);
+    }
+    renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 2, false);
+    let visible = 0;
+    for (const [key, mesh] of layer.bucketMap) {
+      expect(mesh.visible, `${key} 的可見性與實例數不一致`).toBe(layer.countOf(key) > 0);
+      if (mesh.visible) visible++;
+    }
+    expect(visible, '應該只有一個桶被畫').toBe(1);
+  });
+
+  it('should hide the bucket again when its last building goes', () => {
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 2, false);
+    const key = internals.zoneLayer.entryFor('0,0')!.key;
+    renderer.removeBuilding(0, 0);
+    expect(internals.zoneLayer.meshFor(key)!.visible).toBe(false);
+  });
+
+  it('should hide every bucket again when the map is rebuilt', () => {
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 2, false);
+    renderer.build(new THREE.Scene(), new Grid(1, 1));
+    for (const [key, mesh] of internals.zoneLayer.bucketMap) {
+      expect(mesh.visible, `${key} 重建後仍然可見`).toBe(false);
+    }
+  });
+});
+
 describe('decal and overhead layers', () => {
   /** 三層都有東西的組合：商業低 L2 起貼片、庭院、雨遮俱全。 */
   const SHOP = { zone: ZoneType.COMMERCIAL_LOW, density: 'LOW' as const };
