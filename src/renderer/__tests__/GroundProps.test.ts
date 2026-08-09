@@ -6,10 +6,63 @@ import {
 import { TARGET_HEIGHTS_M, TARGET_WIDTHS_M, LEVELS, type Density }
   from '../geometry/buildings/registry';
 import { triangleCount } from '../geometry/buildings/parts';
+import { lawnSidesFor, type Side } from '../geometry/buildings/decals';
 import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../../core/grid/constants';
 import { ZoneType } from '../../core/grid/types';
 
 const HALF_ENVELOPE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
+
+/** 高過這個高度的綠化才算「樹」。樹籬 1 m、修剪灌木球 1.5 m 都不算。 */
+const TREE_MIN_Y = 2.0 / METRES_PER_CELL;
+
+/** 一個點靠哪一邊。與 decals 的 `SIDE_AXIS` 同一套約定。 */
+function sideOf(x: number, z: number): Side {
+  return Math.abs(z) >= Math.abs(x) ? (z < 0 ? 'n' : 's') : (x > 0 ? 'e' : 'w');
+}
+
+/**
+ * 高處綠化的分群中心 —— 一叢就是一棵樹。
+ *
+ * 逐頂點判斷靠哪一邊會誤判：一棵放在 t = 0.3、離心 0.329 的樹，樹冠最外側的
+ * 頂點是 (0.358, 0.271)，|x| 比 |z| 大 —— 那個頂點會被算成隔壁那一邊的。
+ * 群心不會，因為它就是樹幹的位置。
+ *
+ * 單一連結分群，門檻取樹冠直徑的兩倍：樹與樹之間至少隔 0.4 格，樹冠半徑
+ * 最大 0.06 格，兩者差一個量級。
+ */
+function treeClusters(geo: THREE.BufferGeometry): Array<{ x: number; z: number }> {
+  const pos = geo.getAttribute('position');
+  const col = geo.getAttribute('color');
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i < pos.count; i++) {
+    const p = col.getX(i);
+    if (p <= 0.35 || p >= 0.65) continue;          // 不是綠化
+    if (pos.getY(i) < TREE_MIN_Y) continue;         // 不夠高
+    pts.push([pos.getX(i), pos.getZ(i)]);
+  }
+
+  const parent = pts.map((_, i) => i);
+  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i]!)));
+  const LINK = 0.25;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      if (Math.hypot(pts[i]![0] - pts[j]![0], pts[i]![1] - pts[j]![1]) <= LINK) {
+        parent[find(i)] = find(j);
+      }
+    }
+  }
+
+  const groups = new Map<number, { x: number; z: number; n: number }>();
+  for (let i = 0; i < pts.length; i++) {
+    const r = find(i);
+    const g = groups.get(r) ?? { x: 0, z: 0, n: 0 };
+    g.x += pts[i]![0];
+    g.z += pts[i]![1];
+    g.n++;
+    groups.set(r, g);
+  }
+  return [...groups.values()].map(g => ({ x: g.x / g.n, z: g.z / g.n }));
+}
 
 describe('yardRing', () => {
   it('should give the low-density house a yard worth looking at', () => {
@@ -234,6 +287,47 @@ describe('ground prop geometry', () => {
       expect(ga.boundingBox!.equals(gb.boundingBox!), `L${level} 兩個變體外形相同`).toBe(false);
       ga.dispose();
       gb.dispose();
+    }
+  });
+
+  it('should stand every tree on a lawn, never on tarmac', () => {
+    // 樹長在草地上。前庭那一層已經標好哪幾邊是綠地了 —— 樹站在別的邊上，
+    // 畫面上就是一棵從柏油裡長出來的樹。
+    for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+      const [zs, ds] = key.split(':');
+      for (const level of LEVELS) {
+        const lawn = lawnSidesFor(Number(zs), ds as Density, level);
+        getGroundPropVariants(Number(zs), ds as Density, level).forEach((build, i) => {
+          const geo = build();
+          for (const c of treeClusters(geo)) {
+            const side = sideOf(c.x, c.z);
+            expect(lawn, `${key} L${level} v${i} 的樹站在 ${side}，那邊沒有草皮`)
+              .toContain(side);
+          }
+          geo.dispose();
+        });
+      }
+    }
+  });
+
+  it('should put a tree on the lawn wherever the forecourt lays one', () => {
+    // 上一條的反向。少了它，「一棵樹都不種」也會過 —— 而使用者看到的正是
+    // 高密度與辦公區腳下那一塊空蕩蕩的草皮。
+    for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+      const [zs, ds] = key.split(':');
+      for (const level of LEVELS) {
+        const lawn = lawnSidesFor(Number(zs), ds as Density, level);
+        if (lawn.length === 0) continue;
+        const planted = getGroundPropVariants(Number(zs), ds as Density, level)
+          .filter((build) => {
+            const geo = build();
+            const has = treeClusters(geo).some(c => lawn.includes(sideOf(c.x, c.z)));
+            geo.dispose();
+            return has;
+          });
+        expect(planted.length, `${key} L${level} 有草皮（${lawn.join(',')}）卻一棵樹都沒有`)
+          .toBeGreaterThan(0);
+      }
     }
   });
 

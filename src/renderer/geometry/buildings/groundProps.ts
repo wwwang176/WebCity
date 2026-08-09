@@ -4,6 +4,7 @@ import { ZoneType } from '../../../core/grid/types';
 import { METRES_PER_CELL } from '../../../core/grid/constants';
 import { TRIANGLE_BUDGET, heightKey, type Density, type GeoBuilder } from './registry';
 import { lowPropBand, type Band } from './propBands';
+import { SIDE_AXIS, type Side } from './decals';
 import { tagPart, PART_FOLIAGE, PART_DETAIL } from './parts';
 
 /**
@@ -112,6 +113,18 @@ function columnarTree(
   crown.translate(x, trunkH + crownH / 2, z);
   tagPart(crown, PART_FOLIAGE);
   return [trunk, crown];
+}
+
+/**
+ * 種在某一邊的樹。
+ *
+ * 吃**邊名**而不是軸與方向：樹要站在草皮上，而哪幾邊是草皮寫在前庭那一層
+ * （`lawnSidesFor`）。用 (軸, 方向) 寫的話，這邊寫 `('x', -1)`、那邊寫 `'w'`，
+ * 對不對得上只能自己回想 —— 對不上就是一棵從柏油裡長出來的樹。
+ */
+function treeOn(b: Band, side: Side, t: number, heightM: number) {
+  const { axis, sign } = SIDE_AXIS[side];
+  return columnarTree(b, axis, sign, t, heightM);
 }
 
 /** 矮灌木叢。 */
@@ -328,48 +341,54 @@ type Recipe = (b: Band) => THREE.BufferGeometry[];
 /**
  * 住宅低密度的庭院階梯（規格修訂 4 的「周邊」欄）。
  *
- *   L1 素土院子：木柵、灌木、信箱、垃圾桶
+ *   L1 素土院子：木柵、灌木、信箱、垃圾桶，四戶裡有一戶前院種了樹
+ *      （四戶都種的話 L1 的零件量會超過 L2，等級階梯就倒過來了）
  *   L2 樹籬與一棵樹：樹籬、柱狀樹、花圃、單車架、曬衣桿
  *   L3 修剪庭園：三面樹籬、兩棵樹、修剪灌木球、花台、庭園燈
  *
  * 每個等級四個組合 —— 兩個配四向旋轉只有 8 種面貌，一個 8x8 街廓看得出
  * 重複。四個就是 16 種。
+ *
+ * 前庭的草皮：L1 只有北側，L2 北與東，L3 北東西。**樹只種在這幾邊** ——
+ * 其餘的邊是車道與步道。
  */
 const RES_LOW: [Recipe[], Recipe[], Recipe[]] = [
   [
-    b => [...picketFence(b, 'z', 1, 5), shrub(b, 'x', 1, -0.1, 0.55), ...mailbox(b, 'z', 1, -0.28)],
+    b => [...picketFence(b, 'z', 1, 5), shrub(b, 'x', 1, -0.1, 0.55),
+          ...mailbox(b, 'z', 1, -0.28)],
     b => [...picketFence(b, 'x', -1, 4), shrub(b, 'z', 1, 0.15, 0.6), ...bin(b, 'z', 1, -0.3)],
-    b => [shrub(b, 'x', 1, 0.1, 0.6), shrub(b, 'x', -1, -0.15, 0.45), ...mailbox(b, 'z', 1, 0.3)],
+    b => [shrub(b, 'x', 1, 0.1, 0.6), shrub(b, 'x', -1, -0.15, 0.45),
+          ...treeOn(b, 'n', -0.14, 3.2), ...mailbox(b, 'z', 1, 0.3)],
     b => [...picketFence(b, 'z', -1, 5), ...bin(b, 'x', -1, 0.2), shrub(b, 'z', -1, -0.2, 0.5)],
   ],
   // L2 保留 L1 的信箱與垃圾桶：房子升級不會把信箱弄丟。少了這一條，
   // 「L2 比 L1 豐富」在幾何上不成立 —— L1 的四道木柵反而零件更多。
   [
-    b => [hedge(b, 'z', 1, 0.9, 0.9), ...columnarTree(b, 'x', -1, -0.2, 4.0),
+    b => [hedge(b, 'z', 1, 0.9, 0.9), ...treeOn(b, 'e', -0.2, 4.0),
           ...flowerBed(b, 'z', 1, 0.28), ...bikeRack(b, 'z', 1, -0.25),
           ...mailbox(b, 'x', 1, 0.3)],
     b => [hedge(b, 'z', -1, 0.9, 0.8), hedge(b, 'x', -1, 0.6, 0.9),
-          ...columnarTree(b, 'x', 1, 0.2, 3.6), ...dryingRack(b, 'z', -1),
+          ...treeOn(b, 'e', 0.2, 3.6), ...dryingRack(b, 'z', -1),
           ...bin(b, 'z', 1, 0.3)],
-    b => [hedge(b, 'x', 1, 0.8, 0.85), ...columnarTree(b, 'z', -1, -0.25, 4.2),
+    b => [hedge(b, 'x', 1, 0.8, 0.85), ...treeOn(b, 'n', -0.25, 4.2),
           ...flowerBed(b, 'x', -1, 0.1), ...mailbox(b, 'z', 1, 0.3),
           ...bin(b, 'z', 1, -0.3)],
-    b => [hedge(b, 'z', 1, 0.85, 0.9), ...columnarTree(b, 'z', -1, 0.25, 3.8),
+    b => [hedge(b, 'z', 1, 0.85, 0.9), ...treeOn(b, 'n', 0.25, 3.8),
           ...bin(b, 'x', 1, -0.2), shrub(b, 'x', -1, 0.2, 0.5),
           ...mailbox(b, 'z', 1, 0.3)],
   ],
   [
     b => [hedge(b, 'z', 1, 0.95, 1.0), hedge(b, 'x', 1, 0.9, 1.0), hedge(b, 'x', -1, 0.9, 1.0),
-          ...columnarTree(b, 'z', -1, -0.24, 4.8), ...columnarTree(b, 'z', -1, 0.24, 4.2),
+          ...treeOn(b, 'n', -0.24, 4.8), ...treeOn(b, 'n', 0.24, 4.2),
           ...topiary(b, 'z', 1, 0.28)],
     b => [hedge(b, 'z', -1, 0.95, 1.0), hedge(b, 'z', 1, 0.95, 0.9), hedge(b, 'x', 1, 0.85, 1.0),
-          ...columnarTree(b, 'x', -1, 0.22, 5.0), ...columnarTree(b, 'x', -1, -0.22, 4.4),
+          ...treeOn(b, 'w', 0.22, 5.0), ...treeOn(b, 'w', -0.22, 4.4),
           ...lamp(b, 'z', 1, 0.3, 2.4)],
     b => [hedge(b, 'x', 1, 0.95, 1.0), hedge(b, 'x', -1, 0.95, 1.0), planter(b, 'z', 1, 0.8),
-          ...columnarTree(b, 'z', -1, -0.2, 4.6), ...topiary(b, 'z', 1, -0.3),
+          ...treeOn(b, 'n', -0.2, 4.6), ...topiary(b, 'z', 1, -0.3),
           ...topiary(b, 'z', 1, 0.3)],
     b => [hedge(b, 'z', 1, 0.95, 1.0), hedge(b, 'x', -1, 0.9, 1.0), planter(b, 'z', -1, 0.7),
-          ...columnarTree(b, 'x', 1, 0.2, 4.8), ...flowerBed(b, 'x', 1, -0.22),
+          ...treeOn(b, 'e', 0.2, 4.8), ...flowerBed(b, 'x', 1, -0.22),
           ...lamp(b, 'z', 1, -0.3, 2.2)],
   ],
 ];
@@ -414,7 +433,11 @@ const INDUSTRIAL: [Recipe[], Recipe[], Recipe[]] = [
   ],
 ];
 
-/** 辦公：旗桿、花圃、單車架。 */
+/**
+ * 辦公：旗桿、花圃、單車架。L3 的前庭西側是綠地，所以那一邊種樹。
+ *
+ * 兩種密度共用這一份 —— 它們的前庭配方在 L3 都是「三面磚鋪 + 西側綠地」。
+ */
 const OFFICE: [Recipe[], Recipe[], Recipe[]] = [
   [
     b => [...bollards(b, 'z', 1, 4), ...bin(b, 'x', 1, 0.2)],
@@ -426,26 +449,31 @@ const OFFICE: [Recipe[], Recipe[], Recipe[]] = [
   ],
   [
     b => [...bollards(b, 'z', 1, 6), ...flagpole(b, 'z', 1, -0.3), ...flowerBed(b, 'z', 1, 0.3),
-          ...lamp(b, 'x', 1, 0.15, 3.4), ...bikeRack(b, 'x', -1, 0)],
-    b => [...bollards(b, 'z', 1, 6), ...flagpole(b, 'x', 1, 0.2), ...flowerBed(b, 'x', -1, -0.15),
+          ...treeOn(b, 'w', 0.16, 4.0), ...bikeRack(b, 'x', -1, 0)],
+    b => [...bollards(b, 'z', 1, 6), ...flagpole(b, 'x', 1, 0.2), ...treeOn(b, 'w', -0.2, 3.6),
           ...lamp(b, 'z', 1, 0.3, 3.6), ...topiary(b, 'z', 1, -0.3)],
   ],
 ];
 
-/** 住宅高：入口綠化，介於住宅低與商業之間。 */
+/**
+ * 住宅高：入口綠化，介於住宅低與商業之間。
+ *
+ * 前庭的草皮 L1 沒有、L2 北側、L3 北與西 —— 樹跟著走。帶寬只有 0.4 m，
+ * 所以是細瘦的行道樹（0.36 m 寬、3 m 高），不是住宅低那種 5 m 的庭園樹。
+ */
 const RES_HIGH: [Recipe[], Recipe[], Recipe[]] = [
   [
     b => [...bin(b, 'z', 1, 0.28), ...bollards(b, 'z', 1, 4)],
     b => [...bin(b, 'x', 1, -0.2), ...bikeRack(b, 'z', 1, 0.1)],
   ],
   [
-    b => [...bollards(b, 'z', 1, 5), ...flowerBed(b, 'z', 1, -0.3), ...bin(b, 'x', -1, 0.2)],
-    b => [...bikeRack(b, 'z', 1, 0.15), ...flowerBed(b, 'x', 1, -0.1), ...bin(b, 'z', 1, -0.3)],
+    b => [...bollards(b, 'z', 1, 5), ...treeOn(b, 'n', -0.2, 3.0), ...bin(b, 'x', -1, 0.2)],
+    b => [...bikeRack(b, 'z', 1, 0.15), ...treeOn(b, 'n', 0.22, 3.2), ...bin(b, 'z', 1, -0.3)],
   ],
   [
-    b => [...bollards(b, 'z', 1, 6), ...flowerBed(b, 'z', 1, 0.3), ...topiary(b, 'z', 1, -0.3),
+    b => [...bollards(b, 'z', 1, 6), ...treeOn(b, 'n', 0.24, 3.4), ...topiary(b, 'z', 1, -0.3),
           ...lamp(b, 'x', 1, 0.15, 3.0), ...bikeRack(b, 'x', -1, 0)],
-    b => [...bollards(b, 'z', 1, 5), ...topiary(b, 'x', 1, 0.2), ...topiary(b, 'x', 1, -0.2),
+    b => [...bollards(b, 'z', 1, 5), ...treeOn(b, 'w', 0.2, 3.2), ...treeOn(b, 'w', -0.2, 2.8),
           ...lamp(b, 'z', 1, -0.3, 3.2), ...flowerBed(b, 'z', 1, 0.3)],
   ],
 ];

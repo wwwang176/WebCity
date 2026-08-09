@@ -69,7 +69,11 @@ interface Forecourt {
   marks?: Partial<Record<Side, Mark>>;
 }
 
-const AXIS: Record<Side, { axis: 'x' | 'z'; sign: 1 | -1 }> = {
+/**
+ * 邊 → 軸與方向。矮物件層也吃這一張表 —— 樹要站在草皮那一邊，而兩邊各寫
+ * 一份約定的話，樹會種到對面去。
+ */
+export const SIDE_AXIS: Record<Side, { axis: 'x' | 'z'; sign: 1 | -1 }> = {
   n: { axis: 'z', sign: -1 },
   s: { axis: 'z', sign: 1 },
   e: { axis: 'x', sign: 1 },
@@ -100,12 +104,12 @@ function quad(
  * 標線與踏板也吃這個長度，所以它們不會伸出自己那條邊。
  */
 function sideLength(band: Band, side: Side): number {
-  return AXIS[side].axis === 'z' ? band.outer * 2 : band.inner * 2;
+  return SIDE_AXIS[side].axis === 'z' ? band.outer * 2 : band.inner * 2;
 }
 
 /** 沿著一整條邊的鋪面帶。 */
 function sideQuad(band: Band, side: Side, surface: Surface): THREE.BufferGeometry {
-  const { axis, sign } = AXIS[side];
+  const { axis, sign } = SIDE_AXIS[side];
   const mid = (band.inner + band.outer) / 2;
   const depth = band.outer - band.inner;
   const len = sideLength(band, side);
@@ -118,7 +122,7 @@ function sideQuad(band: Band, side: Side, surface: Surface): THREE.BufferGeometr
 
 /** 停車格／卸貨標線：沿著一條邊等距的短白線。 */
 function bays(band: Band, side: Side, count: number): THREE.BufferGeometry[] {
-  const { axis, sign } = AXIS[side];
+  const { axis, sign } = SIDE_AXIS[side];
   const mid = (band.inner + band.outer) / 2;
   const depth = (band.outer - band.inner) * 0.85;
   const span = sideLength(band, side) * 0.85;
@@ -134,7 +138,7 @@ function bays(band: Band, side: Side, count: number): THREE.BufferGeometry[] {
 
 /** 入口踏板／落客區：貼著一邊中段的一小塊。 */
 function pad(band: Band, side: Side, shade: number): THREE.BufferGeometry {
-  const { axis, sign } = AXIS[side];
+  const { axis, sign } = SIDE_AXIS[side];
   const mid = (band.inner + band.outer) / 2;
   const depth = (band.outer - band.inner) * 0.9;
   const len = sideLength(band, side) * 0.4;
@@ -232,6 +236,24 @@ const RECIPES: Record<string, [Forecourt, Forecourt, Forecourt]> = {
     },
   ],
 };
+
+/**
+ * 這個 (分區, 密度, 等級) 的前庭有哪幾邊是草皮。
+ *
+ * 矮物件層靠它決定樹種在哪一邊 —— 兩層各自寫一份「哪邊是綠地」的話，樹會
+ * 從柏油裡長出來，而那不會有任何東西報錯。
+ */
+export function lawnSidesFor(
+  zoneType: number, density: Density, level: number,
+): Side[] {
+  if (!decalBand(zoneType, density, level)) return [];
+  const recipes = RECIPES[heightKey(zoneType, density)];
+  if (!recipes) return [];
+  const forecourt = recipes[Math.max(1, Math.min(3, level)) - 1]!;
+  return (Object.entries(forecourt.sides) as Array<[Side, Surface]>)
+    .filter(([, s]) => s.kind === 'lawn')
+    .map(([side]) => side);
+}
 
 /** 這個 (分區, 密度, 等級) 的前庭。沒有貼片帶就沒有前庭。 */
 export function getDecalVariants(
