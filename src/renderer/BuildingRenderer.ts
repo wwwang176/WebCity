@@ -21,6 +21,7 @@ import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
 import { disposeGroup } from './disposeGroup';
+import { detailHidden } from './detailLOD';
 import { InstancedLayer } from './InstancedLayer';
 import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
@@ -29,26 +30,6 @@ import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '..
 /** 桶的初始容量。滿了就倍增（見 InstancedLayer）。 */
 const INITIAL_BUCKET_CAPACITY = 256;
 
-/**
- * 縮到多遠就把矮物件與懸挑整層關掉。單位是**格**（正交鏡頭的視錐高度，
- * 也就是 `camera.top - camera.bottom`；`zoomCamera` 的範圍是 3–200）。
- *
- * 鏡頭是正交的，所以沒有「遠處的建築」—— 全畫面同一個距離，逐棟算距離
- * 沒有意義。整件事因此只是一個全域布林翻兩層的 `visible`：零逐實例成本，
- * 不需要簡化幾何，也不需要每幀掃格子。
- *
- * 90：一格 12 m，視錐 90 格 = 1080 m。1080p 的畫面上 1 公尺剛好約一像素，
- * 而矮物件多半是 1–4 m 的東西 —— 過了這條線它們本來就只是雜訊，但仍然
- * 吃滿三角形（單棟上限 320，量體才 400/800）而且每一個都要投影。
- *
- * 兩條線之間留 15 格的遲滯。只有一條的話，滾輪停在門檻上會讓整層每幀
- * 開關一次 —— 那比不做還糟，因為畫面在閃。預設視錐是 60，落在 SHOW_BELOW
- * 以下，所以正常遊玩看得到全部細節，要主動縮出去才會掉。
- */
-export const DETAIL_LOD = {
-  HIDE_ABOVE: 90,
-  SHOW_BELOW: 75,
-} as const;
 
 export class BuildingRenderer {
   // --- Persistent variant meshes (pre-allocated, never disposed until game exit) ---
@@ -2776,9 +2757,7 @@ export class BuildingRenderer {
    * 整片地變空，工業區那塊柏油也會跟著消失。
    */
   updateDetailLOD(frustumHeight: number): void {
-    const hidden = this._detailHidden
-      ? frustumHeight >= DETAIL_LOD.SHOW_BELOW
-      : frustumHeight > DETAIL_LOD.HIDE_ABOVE;
+    const hidden = detailHidden(frustumHeight, this._detailHidden);
     if (hidden === this._detailHidden) return;
     this._detailHidden = hidden;
     this.applyLayerVisibility();

@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
-import { BuildingRenderer, DETAIL_LOD } from '../BuildingRenderer';
+import { BuildingRenderer } from '../BuildingRenderer';
+import { DETAIL_LOD } from '../detailLOD';
 import { InstancedLayer } from '../InstancedLayer';
 import type { InstancedLayer as Layer } from '../InstancedLayer';
 import { Grid } from '../../core/grid/Grid';
