@@ -15,19 +15,28 @@ import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
 import { disposeGroup } from './disposeGroup';
+import { InstancedLayer } from './InstancedLayer';
 import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
 import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '../core/building/BuildingUtilityWarning';
 
 interface BuildingData { x: number; y: number; level: number; burned?: boolean }
 
+/** 桶的初始容量。滿了就倍增（見 InstancedLayer）。 */
+const INITIAL_BUCKET_CAPACITY = 256;
+
 export class BuildingRenderer {
   // --- Persistent variant meshes (pre-allocated, never disposed until game exit) ---
-  private variantMeshes = new Map<string, THREE.InstancedMesh>();
-  private variantCounts = new Map<string, number>();
-  private positionToInstance = new Map<string, { key: string; idx: number }>();
-  private instanceToPosition = new Map<string, Map<number, string>>();
+  private zoneLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
   private variantInitialized = false;
+
+  /** 既有測試與內部程式碼從這兩個名字讀狀態。實體在 zoneLayer 裡。 */
+  private get variantMeshes(): ReadonlyMap<string, THREE.InstancedMesh> {
+    return this.zoneLayer.bucketMap;
+  }
+  private get positionToInstance(): ReadonlyMap<string, { key: string; idx: number }> {
+    return this.zoneLayer.entryMap;
+  }
 
   // --- Non-persistent meshes (zone overlays, rebuilt each build) ---
   private overlayMeshes: THREE.InstancedMesh[] = [];
@@ -36,12 +45,6 @@ export class BuildingRenderer {
   // --- Infrastructure groups (now with index for lookup) ---
   private infraGroups: THREE.Group[] = [];
   private infraIndex = new Map<string, THREE.Group>();
-
-  /** 桶的初始容量。滿了就倍增（見 growBucket）。 */
-  private static readonly INITIAL_BUCKET_CAPACITY = 256;
-
-  /** 每個桶目前的容量。 */
-  private bucketCapacity = new Map<string, number>();
 
   /** initVariantMeshes 收到的場景，重配時要用。 */
   private scene: THREE.Scene | null = null;
@@ -86,52 +89,18 @@ export class BuildingRenderer {
     if (this.variantInitialized) return;
     this.variantInitialized = true;
 
-    const material = getBuildingMaterial();
-
     for (const zoneType of ZONE_TYPES) {
       const zoneCat = ZONE_CAT[zoneType] ?? 0;
       for (const density of ['LOW', 'HIGH'] as Density[]) {
         // 只有辦公區兩種密度都有建築；其餘分區各只有一種。
         if (!TARGET_HEIGHTS_M[heightKey(zoneType, density)]) continue;
         for (const level of LEVELS) {
-      const variants = getVariants(zoneType, level);
-
-      for (let vi = 0; vi < variants.length; vi++) {
-        const key = bucketKey(zoneType, density, level, vi);
-        const geo = variants[vi]!();
-        stampZoneCategory(geo, zoneCat);
-
-        const mesh = new THREE.InstancedMesh(geo, material, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
-        mesh.count = 0;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.frustumCulled = false;
-
-        // Pre-allocate aHighlight + aHighlightColor attributes
-        const highlightData = new Float32Array(BuildingRenderer.INITIAL_BUCKET_CAPACITY);
-        mesh.geometry.setAttribute('aHighlight',
-          new THREE.InstancedBufferAttribute(highlightData, 1));
-        const highlightColorData = new Float32Array(BuildingRenderer.INITIAL_BUCKET_CAPACITY * 3);
-        mesh.geometry.setAttribute('aHighlightColor',
-          new THREE.InstancedBufferAttribute(highlightColorData, 3));
-
-        // Pre-allocate aOccupancy attribute (0.0 = empty, 1.0 = full)
-        const occupancyData = new Float32Array(BuildingRenderer.INITIAL_BUCKET_CAPACITY);
-        mesh.geometry.setAttribute('aOccupancy',
-          new THREE.InstancedBufferAttribute(occupancyData, 1));
-
-        // 逐實例立面種子：節奏、相位、材質偏好。shader 用它取代寫死的
-        // floorH / winW，讓同一份幾何的兩個實例立面不同。
-        const seedData = new Float32Array(BuildingRenderer.INITIAL_BUCKET_CAPACITY * 3);
-        mesh.geometry.setAttribute('aSeed',
-          new THREE.InstancedBufferAttribute(seedData, 3));
-
-        scene.add(mesh);
-        this.variantMeshes.set(key, mesh);
-        this.variantCounts.set(key, 0);
-        this.bucketCapacity.set(key, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
-        this.instanceToPosition.set(key, new Map());
-      }
+          const variants = getVariants(zoneType, level);
+          for (let vi = 0; vi < variants.length; vi++) {
+            const geo = variants[vi]!();
+            stampZoneCategory(geo, zoneCat);
+            this.zoneLayer.createBucket(scene, bucketKey(zoneType, density, level, vi), geo);
+          }
         }
       }
     }
@@ -152,143 +121,24 @@ export class BuildingRenderer {
       x, y, zoneType, level, seedByte: 0,
       variantCount: variants.length, paletteSize: palette.length,
     });
+    if (!this.scene) return; // 尚未 build，無處可加
     const key = bucketKey(zoneType, density, level, app.variantIndex);
-    let mesh = this.variantMeshes.get(key);
-    if (!mesh) return;
+    const slot = this.zoneLayer.acquire(this.scene, key, `${x},${y}`);
+    if (!slot) return;
 
-    const idx = this.variantCounts.get(key)!;
-    if (idx >= (this.bucketCapacity.get(key) ?? 0)) {
-      if (!this.scene) return; // 尚未 build，無處可加
-      mesh = this.growBucket(this.scene, key);
-    }
-
-    this.setInstanceData(mesh, idx, x, y, zoneType, density, level, burned, abandoned);
-
-    this.variantCounts.set(key, idx + 1);
-    mesh.count = idx + 1;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-
-    const posKey = `${x},${y}`;
-    this.positionToInstance.set(posKey, { key, idx });
-    this.instanceToPosition.get(key)!.set(idx, posKey);
+    this.setInstanceData(slot.mesh, slot.idx, x, y, zoneType, density, level, burned, abandoned);
+    slot.mesh.instanceMatrix.needsUpdate = true;
+    if (slot.mesh.instanceColor) slot.mesh.instanceColor.needsUpdate = true;
+    // 倍增會換掉 mesh 物件，highlight 的快取才需要重建。
+    if (slot.grew) this._buildingMeshesDirty = true;
 
     // Sync lightSpot (non-burned, non-abandoned buildings emit light)
     if (!burned && !abandoned) this.addLightSpot(x, y);
   }
 
-  /**
-   * 把一個桶的容量加倍。
-   *
-   * InstancedMesh 的容量在建構時固定，所以只能換一個新的並把資料整批搬過去。
-   * 矩陣、顏色與四個自訂屬性都要搬 —— 漏搬任何一個，超過初始容量之後的
-   * 建築就會戴上別人的資料。
-   */
-  private growBucket(scene: THREE.Scene, key: string): THREE.InstancedMesh {
-    const old = this.variantMeshes.get(key)!;
-    const capacity = (this.bucketCapacity.get(key) ?? BuildingRenderer.INITIAL_BUCKET_CAPACITY) * 2;
-
-    // 幾何要自己一份：屬性緩衝長度跟著容量走，共用會讓舊的那份長度不夠。
-    const geometry = old.geometry.clone();
-    const grown = new THREE.InstancedMesh(geometry, old.material, capacity);
-    grown.count = old.count;
-    grown.castShadow = true;
-    grown.receiveShadow = true;
-    grown.frustumCulled = false;
-
-    const m = new THREE.Matrix4();
-    for (let i = 0; i < old.count; i++) {
-      old.getMatrixAt(i, m);
-      grown.setMatrixAt(i, m);
-    }
-    grown.instanceMatrix.needsUpdate = true;
-
-    if (old.instanceColor) {
-      const col = new THREE.Color();
-      for (let i = 0; i < old.count; i++) {
-        old.getColorAt(i, col);
-        grown.setColorAt(i, col);
-      }
-      if (grown.instanceColor) grown.instanceColor.needsUpdate = true;
-    }
-
-    for (const [name, itemSize] of [
-      ['aHighlight', 1], ['aHighlightColor', 3], ['aOccupancy', 1], ['aSeed', 3],
-    ] as const) {
-      const src = old.geometry.getAttribute(name) as THREE.InstancedBufferAttribute | undefined;
-      const data = new Float32Array(capacity * itemSize);
-      if (src) data.set((src.array as Float32Array).subarray(0, old.count * itemSize));
-      geometry.setAttribute(name, new THREE.InstancedBufferAttribute(data, itemSize));
-    }
-
-    scene.remove(old);
-    scene.add(grown);
-    this.variantMeshes.set(key, grown);
-    this.bucketCapacity.set(key, capacity);
-    this._buildingMeshesDirty = true;
-    return grown;
-  }
-
   /** Remove a single zone building instance (swap-with-last). */
   removeBuilding(x: number, y: number): void {
-    const posKey = `${x},${y}`;
-    const entry = this.positionToInstance.get(posKey);
-    if (!entry) return;
-
-    const mesh = this.variantMeshes.get(entry.key)!;
-    const lastIdx = this.variantCounts.get(entry.key)! - 1;
-    const i2p = this.instanceToPosition.get(entry.key)!;
-
-    if (entry.idx !== lastIdx) {
-      // Swap the last instance into the removed slot
-      mesh.getMatrixAt(lastIdx, this._matrix);
-      mesh.setMatrixAt(entry.idx, this._matrix);
-      mesh.getColorAt(lastIdx, this._color);
-      mesh.setColorAt(entry.idx, this._color);
-
-      // Swap aHighlight
-      const hlAttr = mesh.geometry.getAttribute('aHighlight') as THREE.InstancedBufferAttribute;
-      (hlAttr.array as Float32Array)[entry.idx] = (hlAttr.array as Float32Array)[lastIdx]!;
-      hlAttr.needsUpdate = true;
-
-      // Swap aHighlightColor (vec3 = 3 floats)
-      const hlcAttr = mesh.geometry.getAttribute('aHighlightColor') as THREE.InstancedBufferAttribute;
-      const hlcArr = hlcAttr.array as Float32Array;
-      hlcArr[entry.idx * 3] = hlcArr[lastIdx * 3]!;
-      hlcArr[entry.idx * 3 + 1] = hlcArr[lastIdx * 3 + 1]!;
-      hlcArr[entry.idx * 3 + 2] = hlcArr[lastIdx * 3 + 2]!;
-      hlcAttr.needsUpdate = true;
-
-      // Swap aOccupancy
-      const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
-      (occAttr.array as Float32Array)[entry.idx] = (occAttr.array as Float32Array)[lastIdx]!;
-      occAttr.needsUpdate = true;
-
-      // Swap aSeed（與 aOccupancy 相同的理由：不搬的話，被搬動的那棟樓會
-      // 戴上被移除那棟的立面，而且只在玩家拆除建築之後才發生）
-      const seedAttr = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute | undefined;
-      if (seedAttr) {
-        const arr = seedAttr.array as Float32Array;
-        arr[entry.idx * 3] = arr[lastIdx * 3]!;
-        arr[entry.idx * 3 + 1] = arr[lastIdx * 3 + 1]!;
-        arr[entry.idx * 3 + 2] = arr[lastIdx * 3 + 2]!;
-        seedAttr.needsUpdate = true;
-      }
-
-      // Update the moved instance's mappings
-      const movedPosKey = i2p.get(lastIdx)!;
-      this.positionToInstance.set(movedPosKey, { key: entry.key, idx: entry.idx });
-      i2p.set(entry.idx, movedPosKey);
-    }
-
-    i2p.delete(lastIdx);
-    this.positionToInstance.delete(posKey);
-    this.variantCounts.set(entry.key, lastIdx);
-    mesh.count = lastIdx;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-
-    // Sync lightSpot removal
+    this.zoneLayer.release(`${x},${y}`);
     this.removeLightSpot(x, y);
   }
 
@@ -472,12 +322,7 @@ export class BuildingRenderer {
     this.disposeNonPersistent(scene);
 
     // Reset all variant instance counts (keep GPU buffers alive)
-    for (const [key, mesh] of this.variantMeshes) {
-      mesh.count = 0;
-      this.variantCounts.set(key, 0);
-      this.instanceToPosition.get(key)!.clear();
-    }
-    this.positionToInstance.clear();
+    this.zoneLayer.reset();
 
     const emptyZonesByType = new Map<string, { x: number; y: number }[]>();
     const infraCells: { x: number; y: number; type: InfraType; reserved: number }[] = [];
@@ -515,10 +360,7 @@ export class BuildingRenderer {
     }
 
     // Batch needsUpdate for all variant meshes
-    for (const mesh of this.variantMeshes.values()) {
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    }
+    this.zoneLayer.flush();
 
     this.buildInfrastructure(scene, infraCells);
     this.buildZoneOverlays(scene, emptyZonesByType);
@@ -562,7 +404,7 @@ export class BuildingRenderer {
     const matrix = new THREE.Matrix4();
     for (const [groupKey, cells] of emptyZonesByType) {
       const { color: baseColor, opacity } = BuildingRenderer.overlayGroupStyle(groupKey);
-      const count = Math.min(cells.length, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
+      const count = Math.min(cells.length, INITIAL_BUCKET_CAPACITY);
       const geometry = new THREE.PlaneGeometry(0.9, 0.9);
       geometry.rotateX(-Math.PI / 2);
       const material = new THREE.MeshBasicMaterial({
@@ -687,7 +529,7 @@ export class BuildingRenderer {
     }
 
     for (const [warning, cells] of byWarning) {
-      const count = Math.min(cells.length, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
+      const count = Math.min(cells.length, INITIAL_BUCKET_CAPACITY);
 
       // A dark plate behind the icon, so a yellow bolt still reads against a
       // pale roof at midday.
@@ -2620,7 +2462,7 @@ export class BuildingRenderer {
       depthWrite: false,
     });
 
-    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, BuildingRenderer.INITIAL_BUCKET_CAPACITY);
+    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, INITIAL_BUCKET_CAPACITY);
     this.lightSpotMesh.count = 0;
     this.lightSpotMesh.frustumCulled = false;
     this.lightSpotMesh.renderOrder = 2;
@@ -2640,7 +2482,7 @@ export class BuildingRenderer {
 
   /** Add a single lightSpot at (x, y). O(1). */
   addLightSpot(x: number, y: number): void {
-    if (!this.lightSpotMesh || this.lightSpotCount >= BuildingRenderer.INITIAL_BUCKET_CAPACITY) return;
+    if (!this.lightSpotMesh || this.lightSpotCount >= INITIAL_BUCKET_CAPACITY) return;
     const posKey = `${x},${y}`;
     if (this.lightSpotPosToIdx.has(posKey)) return; // already exists
 
@@ -2681,13 +2523,12 @@ export class BuildingRenderer {
   /** Update per-instance occupancy attribute from occupancy ratio map. */
   updateOccupancy(ratios: Map<string, number>): void {
     for (const [key, mesh] of this.variantMeshes) {
-      const i2p = this.instanceToPosition.get(key)!;
       const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
       if (!occAttr) continue;
       const arr = occAttr.array as Float32Array;
-      const count = this.variantCounts.get(key) ?? 0;
+      const count = this.zoneLayer.countOf(key);
       for (let i = 0; i < count; i++) {
-        const posKey = i2p.get(i);
+        const posKey = this.zoneLayer.posKeyAt(key, i);
         arr[i] = posKey ? (ratios.get(posKey) ?? 0) : 0;
       }
       occAttr.needsUpdate = true;
@@ -2885,14 +2726,7 @@ export class BuildingRenderer {
     this.disposeNonPersistent(scene);
 
     // Dispose persistent variant meshes
-    for (const mesh of this.variantMeshes.values()) {
-      scene.remove(mesh);
-      mesh.geometry.dispose();
-    }
-    this.variantMeshes.clear();
-    this.variantCounts.clear();
-    this.positionToInstance.clear();
-    this.instanceToPosition.clear();
+    this.zoneLayer.dispose(scene);
     this.variantInitialized = false;
   }
 }
