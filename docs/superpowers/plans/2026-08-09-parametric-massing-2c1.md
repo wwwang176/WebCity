@@ -1132,3 +1132,425 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_013CaAT8jcajKrRTLsVvFoop
 MSG
 ```
+
+---
+
+## Task 4：`composers.ts` —— 八個量體組合器
+
+原型不是每個都手寫一份幾何，而是「組合器 + 參數」。八個組合器涵蓋所有分區，
+原型表只是一張參數表（Task 5）。
+
+**設計時丟掉的一個組合器：** 原本規劃了「一樓凹進（騎樓）」，但**它在俯視高度圖
+裡看不出來** —— `rasterise` 取的是最高點，凹進去的一樓被上面的樓層蓋住，所以它會
+與「單一量體」判定成同一個輪廓，讓「八個變體兩兩相異」那條測試失效。騎樓的視覺
+效果本來就由懸挑層的雨遮負責，所以拿掉，不補。
+
+**Files:**
+- Create: `src/renderer/geometry/buildings/massing/composers.ts`
+- Test: `src/renderer/__tests__/MassingComposers.test.ts`（新）
+
+**Interfaces:**
+- Consumes：`volume.ts` 的 `Volume`；`dimensions.ts` 的 `Dimensions`；`rng.ts` 的 `Rng`。
+- Produces：
+  ```ts
+  export type Composer = (dims: Dimensions, rng: Rng) => Volume[];
+  export function single(dims: Dimensions): Volume[];
+  export function mainPlusWing(wingFrac: number, wingHeightFrac: number): Composer;
+  export function lShape(armFrac: number): Composer;
+  export function podiumTower(podiumFloors: number, towerFrac: number, offsetFrac: number): Composer;
+  export function setback(steps: number): Composer;
+  export function notch(notchFrac: number): Composer;
+  export function twin(gapFrac: number): Composer;
+  export function splitSpan(tallFrac: number): Composer;
+  ```
+
+**每個組合器都必須守住的三條不變式**（測試逐條檢查，不靠自律）：
+
+1. 所有量體落在 `[-w/2, w/2] × [-d/2, d/2]` 之內 —— 基地是 `dimensions` 決定的，
+   組合器不得自己撐開
+2. 兩兩不重疊（接觸可以）—— 重疊會產生看不見的內部面
+3. 最高點正好等於 `dims.height` —— 高度是 `dimensions` 決定的
+
+- [ ] **Step 1：寫失敗測試**
+
+`src/renderer/__tests__/MassingComposers.test.ts`：
+
+```ts
+import { describe, it, expect } from 'vitest';
+import {
+  single, mainPlusWing, lShape, podiumTower, setback, notch, twin, splitSpan,
+  type Composer,
+} from '../geometry/buildings/massing/composers';
+import {
+  maxAbsOf, topOf, overlapOf, centroidOffset, rasterise, differenceRatio,
+  type Volume,
+} from '../geometry/buildings/massing/volume';
+import type { Dimensions } from '../geometry/buildings/massing/dimensions';
+import { variantRng } from '../geometry/buildings/massing/rng';
+
+/** 一組有代表性的尺寸：矮寬的房子、高瘦的塔。 */
+const HOUSE: Dimensions = { w: 0.62, d: 0.58, floors: 2, floorHeight: 0.26, height: 0.52 };
+const TOWER: Dimensions = { w: 0.74, d: 0.70, floors: 13, floorHeight: 0.26, height: 3.38 };
+
+const ALL: Array<[string, Composer]> = [
+  ['single', (d) => single(d)],
+  ['mainPlusWing', mainPlusWing(0.4, 0.5)],
+  ['lShape', lShape(0.55)],
+  ['podiumTower', podiumTower(2, 0.66, 0)],
+  ['offsetTower', podiumTower(2, 0.6, 0.9)],
+  ['setback', setback(3)],
+  ['notch', notch(0.34)],
+  ['twin', twin(0.24)],
+  ['splitSpan', splitSpan(0.55)],
+];
+
+/** 同一組輸入跑八次，涵蓋 rng 的不同分支。 */
+function samples(c: Composer, dims: Dimensions): Volume[][] {
+  const out: Volume[][] = [];
+  for (let vi = 0; vi < 8; vi++) out.push(c(dims, variantRng(1, 'LOW', 1, vi)));
+  return out;
+}
+
+describe('composers keep the invariants', () => {
+  it('should stay inside the footprint dimensions gave them', () => {
+    // 基地是 dimensions 決定的（它已經確認過不越過行人包絡線）。組合器把量體
+    // 推出去的話，那個檢查就白做了 —— BUG-221/222 會從這裡漏回來。
+    for (const [name, c] of ALL) {
+      for (const dims of [HOUSE, TOWER]) {
+        for (const vs of samples(c, dims)) {
+          expect(maxAbsOf(vs), `${name} 撐開了基地`)
+            .toBeLessThanOrEqual(Math.max(dims.w, dims.d) / 2 + 1e-9);
+        }
+      }
+    }
+  });
+
+  it('should never overlap its own volumes', () => {
+    // 重疊會產生看不見的內部面：白吃三角形，畫面上完全看不出來。
+    for (const [name, c] of ALL) {
+      for (const dims of [HOUSE, TOWER]) {
+        for (const vs of samples(c, dims)) {
+          for (let i = 0; i < vs.length; i++) {
+            for (let j = i + 1; j < vs.length; j++) {
+              expect(overlapOf(vs[i]!, vs[j]!), `${name} 的第 ${i}、${j} 塊重疊`)
+                .toBeCloseTo(0, 12);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('should reach exactly the height dimensions asked for', () => {
+    // 高度是 dimensions 決定的。組合器自己加減會讓等級階梯漂掉。
+    for (const [name, c] of ALL) {
+      for (const dims of [HOUSE, TOWER]) {
+        for (const vs of samples(c, dims)) {
+          expect(topOf(vs), `${name} 沒有蓋到目標高度`).toBeCloseTo(dims.height, 9);
+        }
+      }
+    }
+  });
+
+  it('should stand on the ground', () => {
+    for (const [name, c] of ALL) {
+      for (const vs of samples(c, TOWER)) {
+        expect(Math.min(...vs.map(v => v.y0)), `${name} 沒有落地`).toBe(0);
+      }
+    }
+  });
+
+  it('should never emit a zero-volume block', () => {
+    // 高度或寬度為 0 的量體會產生退化三角形，而且不會有任何東西報錯。
+    for (const [name, c] of ALL) {
+      for (const dims of [HOUSE, TOWER]) {
+        for (const vs of samples(c, dims)) {
+          for (const v of vs) {
+            expect(v.w * v.d * (v.y1 - v.y0), `${name} 有一塊是空的`).toBeGreaterThan(1e-9);
+          }
+        }
+      }
+    }
+  });
+});
+
+describe('composers earn their keep', () => {
+  it('should give the asymmetric ones a real centroid offset', () => {
+    // 旋轉是四倍的免費變化，但只有在形狀不對稱時才拿得到。
+    const asym = ['mainPlusWing', 'lShape', 'offsetTower', 'twin', 'splitSpan'];
+    for (const [name, c] of ALL) {
+      if (!asym.includes(name)) continue;
+      const offs = samples(c, TOWER).map(centroidOffset);
+      expect(Math.max(...offs), `${name} 其實是對稱的`).toBeGreaterThan(0.04);
+    }
+  });
+
+  it('should leave the symmetric ones symmetric', () => {
+    // 這一條是上一條的對照。少了它，「不對稱」的門檻可能被一個回傳
+    // 常數 0.05 的實作矇混過去。
+    for (const name of ['single', 'setback']) {
+      const c = ALL.find(e => e[0] === name)![1];
+      for (const vs of samples(c, TOWER)) {
+        expect(centroidOffset(vs), `${name} 不該偏心`).toBeCloseTo(0, 9);
+      }
+    }
+  });
+
+  it('should give every composer a silhouette of its own', () => {
+    // 兩個組合器產出同一個輪廓，就等於少了一個組合器。
+    const half = TOWER.floorHeight / 2;
+    const grids = ALL.map(([name, c]) => [name, rasterise(c(TOWER, variantRng(1, 'LOW', 1, 0)))] as const);
+    for (let i = 0; i < grids.length; i++) {
+      for (let j = i + 1; j < grids.length; j++) {
+        expect(
+          differenceRatio(grids[i]![1], grids[j]![1], half),
+          `${grids[i]![0]} 與 ${grids[j]![0]} 輪廓相同`,
+        ).toBeGreaterThanOrEqual(0.10);
+      }
+    }
+  });
+
+  it('should fall back to a single block when there are not enough floors', () => {
+    // 一層樓的裙樓塔會讓塔身高度歸零。矮建築配到高樓原型是遲早的事。
+    const oneFloor: Dimensions = { w: 0.6, d: 0.6, floors: 1, floorHeight: 0.26, height: 0.26 };
+    for (const [name, c] of ALL) {
+      const vs = c(oneFloor, variantRng(1, 'LOW', 1, 0));
+      expect(topOf(vs), `${name} 一層樓時高度不對`).toBeCloseTo(0.26, 9);
+      for (const v of vs) {
+        expect(v.y1 - v.y0, `${name} 一層樓時有一塊是零高`).toBeGreaterThan(1e-9);
+      }
+    }
+  });
+});
+```
+
+- [ ] **Step 2：跑紅**
+
+```
+pnpm vitest run src/renderer/__tests__/MassingComposers.test.ts
+```
+預期：`Failed to resolve import ".../massing/composers"`。
+
+- [ ] **Step 3：實作**
+
+`src/renderer/geometry/buildings/massing/composers.ts`：
+
+```ts
+import type { Volume } from './volume';
+import type { Dimensions } from './dimensions';
+import type { Rng } from './rng';
+
+/**
+ * 量體組合器 —— 把一組尺寸攤成一串盒子。
+ *
+ * 原型不是每個都手寫一份幾何，而是「組合器 + 參數」。二十幾個原型手寫會是
+ * 二十幾份幾乎一樣的座標算術，而其中任何一份算錯都只表現為「某個變體看起來
+ * 怪怪的」。
+ *
+ * 每個組合器守三條不變式（`MassingComposers.test.ts` 逐條檢查）：
+ *   1. 所有量體落在 `dims` 給的基地內 —— 基地已經確認過不越過行人包絡線
+ *   2. 兩兩不重疊 —— 重疊會產生看不見的內部面
+ *   3. 最高點正好等於 `dims.height` —— 高度由 `dimensions` 決定
+ */
+export type Composer = (dims: Dimensions, rng: Rng) => Volume[];
+
+/** 單一量體。最簡單的那一個，也是所有退化情形的退路。 */
+export function single(dims: Dimensions): Volume[] {
+  return [{ x: 0, z: 0, w: dims.w, d: dims.d, y0: 0, y1: dims.height }];
+}
+
+/**
+ * 主屋 + 偏屋。車庫、工具間、廠區的辦公角都是這個形狀。
+ *
+ * 偏屋靠 +x 且靠前（+z）—— 車庫開在前院那一側才合理。
+ */
+export function mainPlusWing(wingFrac: number, wingHeightFrac: number): Composer {
+  return (dims, rng) => {
+    const wingW = dims.w * wingFrac;
+    const mainW = dims.w - wingW;
+    const wingD = dims.d * (0.55 + 0.25 * rng());
+    const wingH = Math.min(
+      dims.height - 1e-6,
+      Math.max(dims.floorHeight, dims.height * wingHeightFrac),
+    );
+    return [
+      { x: -dims.w / 2 + mainW / 2, z: 0, w: mainW, d: dims.d, y0: 0, y1: dims.height },
+      {
+        x: dims.w / 2 - wingW / 2, z: dims.d / 2 - wingD / 2,
+        w: wingW, d: wingD, y0: 0, y1: wingH,
+      },
+    ];
+  };
+}
+
+/**
+ * L 形平面。長翼沿北緣、短翼沿西緣，兩者在西北角相接。
+ *
+ * 這是最強的不對稱形狀：重心明顯偏離包圍盒中心，所以四向旋轉真的是四種面貌。
+ */
+export function lShape(armFrac: number): Composer {
+  return (dims) => {
+    const armD = dims.d * armFrac;
+    const armW = dims.w * armFrac;
+    const restD = dims.d - armD;
+    return [
+      { x: 0, z: -dims.d / 2 + armD / 2, w: dims.w, d: armD, y0: 0, y1: dims.height },
+      {
+        x: -dims.w / 2 + armW / 2, z: -dims.d / 2 + armD + restD / 2,
+        w: armW, d: restD, y0: 0, y1: dims.height,
+      },
+    ];
+  };
+}
+
+/**
+ * 裙樓 + 塔身。`offsetFrac` 為 0 時塔身置中（對稱），接近 1 時塔身推到裙樓
+ * 邊緣（不對稱）—— 同一個組合器因此涵蓋兩種面貌。
+ *
+ * 樓層不足兩層時退回單一量體：一層樓的裙樓會把塔身壓成零高。
+ */
+export function podiumTower(
+  podiumFloors: number, towerFrac: number, offsetFrac: number,
+): Composer {
+  return (dims, rng) => {
+    if (dims.floors < 2) return single(dims);
+    const podiumH = Math.min(podiumFloors, dims.floors - 1) * dims.floorHeight;
+    const tw = dims.w * towerFrac;
+    const td = dims.d * towerFrac;
+    const ox = ((dims.w - tw) / 2) * offsetFrac * (rng() < 0.5 ? -1 : 1);
+    const oz = ((dims.d - td) / 2) * offsetFrac * (rng() < 0.5 ? -1 : 1);
+    return [
+      { x: 0, z: 0, w: dims.w, d: dims.d, y0: 0, y1: podiumH },
+      { x: ox, z: oz, w: tw, d: td, y0: podiumH, y1: dims.height },
+    ];
+  };
+}
+
+/** 逐層退縮。對稱，但輪廓與單一量體明顯不同。 */
+export function setback(steps: number): Composer {
+  return (dims) => {
+    const n = Math.max(2, Math.min(steps, dims.floors));
+    if (dims.floors < 2) return single(dims);
+    const out: Volume[] = [];
+    const per = dims.height / n;
+    for (let i = 0; i < n; i++) {
+      const frac = 1 - (i / n) * 0.4;
+      out.push({
+        x: 0, z: 0,
+        w: dims.w * frac, d: dims.d * frac,
+        y0: i * per, y1: (i + 1) * per,
+      });
+    }
+    out[out.length - 1]!.y1 = dims.height;
+    return out;
+  };
+}
+
+/**
+ * U 形：兩翼加一道背牆，中央留槽。
+ *
+ * 重心對稱，但中央的槽在俯視高度圖裡是實心的 0 —— 輪廓與其他組合器都不同。
+ */
+export function notch(notchFrac: number): Composer {
+  return (dims) => {
+    const armW = dims.w * (1 - notchFrac) / 2;
+    const backD = dims.d * 0.38;
+    const restD = dims.d - backD;
+    return [
+      { x: 0, z: -dims.d / 2 + backD / 2, w: dims.w, d: backD, y0: 0, y1: dims.height },
+      {
+        x: -dims.w / 2 + armW / 2, z: -dims.d / 2 + backD + restD / 2,
+        w: armW, d: restD, y0: 0, y1: dims.height,
+      },
+      {
+        x: dims.w / 2 - armW / 2, z: -dims.d / 2 + backD + restD / 2,
+        w: armW, d: restD, y0: 0, y1: dims.height,
+      },
+    ];
+  };
+}
+
+/**
+ * 雙塔加低矮連接體。兩座塔**刻意不等高** —— 等高的雙塔是對稱的，
+ * 旋轉又變回無操作。
+ */
+export function twin(gapFrac: number): Composer {
+  return (dims) => {
+    if (dims.floors < 3) return single(dims);
+    const towerW = dims.w * (1 - gapFrac) / 2;
+    const linkH = Math.max(2, Math.floor(dims.floors * 0.3)) * dims.floorHeight;
+    const linkD = dims.d * 0.6;
+    return [
+      { x: -dims.w / 2 + towerW / 2, z: 0, w: towerW, d: dims.d, y0: 0, y1: dims.height },
+      {
+        x: dims.w / 2 - towerW / 2, z: 0, w: towerW, d: dims.d,
+        y0: 0, y1: dims.height * 0.78,
+      },
+      {
+        x: 0, z: 0, w: dims.w * gapFrac, d: linkD,
+        y0: 0, y1: Math.min(linkH, dims.height * 0.5),
+      },
+    ];
+  };
+}
+
+/** 高低兩跨。工業的廠房與商業的前店後棟都是這個形狀。 */
+export function splitSpan(tallFrac: number): Composer {
+  return (dims) => {
+    const tallW = dims.w * tallFrac;
+    const lowW = dims.w - tallW;
+    return [
+      { x: -dims.w / 2 + tallW / 2, z: 0, w: tallW, d: dims.d, y0: 0, y1: dims.height },
+      {
+        x: dims.w / 2 - lowW / 2, z: 0, w: lowW, d: dims.d,
+        y0: 0, y1: Math.max(dims.floorHeight, dims.height * 0.62),
+      },
+    ];
+  };
+}
+```
+
+- [ ] **Step 4：跑綠**
+
+```
+pnpm vitest run src/renderer/__tests__/MassingComposers.test.ts
+```
+
+若 `should give every composer a silhouette of its own` 紅了，看訊息裡是哪一對 ——
+最可能的是 `podiumTower(offsetFrac 0)` 與 `setback`（兩者都是同心收縮）。
+調 `towerFrac` 或 `setback` 的收縮比例讓它們分開，**不要放寬門檻**。
+
+- [ ] **Step 5：回退驗證（三項）**
+
+1. 把 `twin` 的第二座塔改成 `dims.height`（等高）——
+   `should give the asymmetric ones a real centroid offset` 應轉紅。
+2. 把 `mainPlusWing` 的偏屋 x 改成 `0`（疊在主屋上）——
+   `should never overlap its own volumes` 應轉紅。
+3. 拿掉 `podiumTower` 的 `if (dims.floors < 2) return single(dims)` ——
+   `should fall back to a single block when there are not enough floors` 應轉紅。
+
+- [ ] **Step 6：Commit**
+
+```bash
+git add -A
+git commit -F- <<'MSG'
+feat(render): eight massing composers
+
+原型不是每個都手寫一份幾何，而是「組合器 + 參數」。二十幾個原型手寫會是
+二十幾份幾乎一樣的座標算術，而其中任何一份算錯都只表現為「某個變體看起來
+怪怪的」。
+
+三條不變式逐條測：不撐開 dimensions 給的基地（撐開的話行人包絡線那個檢查
+就白做了）、兩兩不重疊（重疊產生看不見的內部面）、最高點正好等於目標高度。
+
+podiumTower 的 offsetFrac 讓同一個組合器涵蓋對稱與不對稱兩種面貌 ——
+高密度分區在 L1 只有裙樓塔與板樓可用，兩個都對稱的話旋轉就白給了。
+twin 的兩座塔刻意不等高，理由相同。
+
+規劃時丟掉「一樓凹進（騎樓）」：它在俯視高度圖裡看不出來（光柵取最高點），
+會與單一量體判定成同一個輪廓。騎樓的視覺效果本來就由懸挑層的雨遮負責。
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013CaAT8jcajKrRTLsVvFoop
+MSG
+```
