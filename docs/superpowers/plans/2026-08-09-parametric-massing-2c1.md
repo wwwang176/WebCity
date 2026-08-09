@@ -3024,3 +3024,266 @@ export function variantIndexOf(
 git add -A
 git commit -m "feat(render): pick a variant the neighbours are not using"
 ```
+
+---
+
+## Task 11：空桶不送 draw call，窗戶對齊真正的樓板線
+
+兩件小事，但都要等切換完成才做得了。
+
+**Files:**
+- Modify: `src/renderer/InstancedLayer.ts`
+- Modify: `src/renderer/BuildingRenderer.ts`
+- Modify: `src/renderer/geometry/buildings/massing/index.ts`（加 `floorHeightOf`）
+- Test: `src/renderer/__tests__/GroundPropLayer.test.ts`（擴充）、
+  `src/renderer/__tests__/MassingGeometry.test.ts`（擴充）
+
+**Interfaces:**
+- Produces：
+  ```ts
+  // massing/index.ts
+  export function floorHeightOf(
+    zoneType: number, density: Density, level: number, variantIndex: number,
+  ): number;      // 格；沒有建築時回傳範圍中點
+  ```
+
+- [ ] **Step 1：寫失敗測試**
+
+`GroundPropLayer.test.ts` 加：
+
+```ts
+it('should not draw buckets that hold nothing', () => {
+  // 量體桶從 60 變 168。three.js 對 count === 0 的 InstancedMesh 仍會送出
+  // draw call，所以桶數三倍之後這件事從「無所謂」變「有感」。
+  const { renderer, internals } = fresh();
+  const layer = (internals as unknown as { zoneLayer: InstancedLayer }).zoneLayer;
+  for (const mesh of layer.bucketMap.values()) {
+    expect(mesh.visible, '空桶仍然可見').toBe(false);
+  }
+  renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 2, false);
+  const used = layer.entryFor('0,0')!.key;
+  let visible = 0;
+  for (const [key, mesh] of layer.bucketMap) {
+    expect(mesh.visible, `${key} 的可見性與實例數不一致`).toBe(layer.countOf(key) > 0);
+    if (mesh.visible) visible++;
+  }
+  expect(visible).toBe(1);
+  expect(layer.meshFor(used)!.visible).toBe(true);
+});
+
+it('should hide the bucket again when its last building goes', () => {
+  const { renderer, internals } = fresh();
+  const layer = (internals as unknown as { zoneLayer: InstancedLayer }).zoneLayer;
+  renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 2, false);
+  const key = layer.entryFor('0,0')!.key;
+  renderer.removeBuilding(0, 0);
+  expect(layer.meshFor(key)!.visible).toBe(false);
+});
+```
+
+`MassingGeometry.test.ts` 加：
+
+```ts
+it('should make every building a whole number of storeys tall', () => {
+  // 立面 shader 用 floorHeight 畫窗戶橫列。幾何的高度不是它的整數倍時，
+  // 最上面那一排窗會被屋頂切掉一半 —— 而那不會有任何東西報錯。
+  eachBucket((z, d, key) => {
+    for (const lv of LEVELS) {
+      for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+        const fh = floorHeightOf(z, d, lv, vi);
+        const body = volumesFor(z, d, lv, vi)
+          .filter(v => (v.shape ?? 'box') === 'box' && v.part !== PART_ROOF);
+        const h = Math.max(...body.map(v => v.y1));
+        expect(h / fh, `${key} L${lv} v${vi} 高 ${h.toFixed(4)}，樓高 ${fh.toFixed(4)}`)
+          .toBeCloseTo(Math.round(h / fh), 6);
+      }
+    }
+  });
+});
+```
+
+`BuildingInstanceSeed.test.ts` 加：
+
+```ts
+it('should hand the shader the floor height its variant was built with', () => {
+  // aSeed.x 以前是逐格雜湊 —— 窗戶橫列與樓板各畫各的。
+  const scene = new THREE.Scene();
+  const renderer = new BuildingRenderer();
+  renderer.build(scene, new Grid(1, 1));
+  renderer.addBuilding(0, 0, ZoneType.OFFICE, 'HIGH', 3, false);
+  const layer = (renderer as unknown as { zoneLayer: InstancedLayer }).zoneLayer;
+  const entry = layer.entryFor('0,0')!;
+  const mesh = layer.meshFor(entry.key)!;
+  const seed = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute;
+  const rhythm = (seed.array as Float32Array)[entry.idx * 3]!;
+  const shaderFloor = FLOOR_HEIGHT_UNITS.MIN
+    + (FLOOR_HEIGHT_UNITS.MAX - FLOOR_HEIGHT_UNITS.MIN) * rhythm;
+  const vi = Number(entry.key.split('_')[3]);
+  expect(shaderFloor).toBeCloseTo(floorHeightOf(ZoneType.OFFICE, 'HIGH', 3, vi), 6);
+});
+```
+
+- [ ] **Step 2：跑紅**
+
+- [ ] **Step 3：實作 `InstancedLayer`**
+
+在 `createBucket`（`mesh.visible = false`）、`acquire`（`mesh.visible = true`）、
+`release`（`mesh.visible = lastIdx > 0`）、`reset`（`mesh.visible = false`）四處
+同步。加註解：
+
+```ts
+// three.js 對 count === 0 的 InstancedMesh 仍會走完整條 render list ——
+// 量體桶從 60 變 168 之後，空桶的成本從「無所謂」變「有感」。
+```
+
+- [ ] **Step 4：實作 `floorHeightOf` 與 `aSeed.x`**
+
+```ts
+// massing/index.ts
+import { FLOOR_HEIGHT_UNITS } from './metrics';
+
+/** 這個變體的樓高（格）。立面 shader 的窗戶橫列要對齊它。 */
+export function floorHeightOf(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): number {
+  return dimensionsFor(zoneType, density, level, variantIndex)?.floorHeight
+    ?? (FLOOR_HEIGHT_UNITS.MIN + FLOOR_HEIGHT_UNITS.MAX) / 2;
+}
+```
+
+```ts
+// BuildingRenderer.setInstanceData —— aSeed 的第一個分量改成由變體決定
+const fh = floorHeightOf(zoneType, density, level, app.variantIndex);
+const rhythm = (fh - FLOOR_HEIGHT_UNITS.MIN)
+  / (FLOOR_HEIGHT_UNITS.MAX - FLOOR_HEIGHT_UNITS.MIN);
+arr[idx * 3] = rhythm;                    // 樓層節奏：對齊真正的樓板線
+arr[idx * 3 + 1] = app.facadeSeed[1];     // 相位仍然逐格
+arr[idx * 3 + 2] = app.facadeSeed[2];     // 材質偏好仍然逐格
+```
+
+**副作用（有意的）**：`floorHeight` 在 shader 裡同時驅動窗寬，所以同一變體的所有
+實例共用窗戶節奏。那是對的 —— 同一個設計的建築本來就長一樣，變化該來自變體。
+
+- [ ] **Step 5：跑綠 + 全量**
+
+若「整數層」那一條紅了，看是哪個組合器：`setback` 的 `dims.height / n` 不會落在
+整數層上。修法是讓 `setback` 的分段落在樓板線上
+（`Math.round(dims.floors / n) * dims.floorHeight`），**不是放寬容差**。
+
+- [ ] **Step 6：回退驗證（兩項）**
+
+1. 把 `createBucket` 的 `visible = false` 拿掉 ——
+   `should not draw buckets that hold nothing` 應轉紅。
+2. 把 `aSeed[0]` 改回 `app.facadeSeed[0]` ——
+   `should hand the shader the floor height its variant was built with` 應轉紅。
+
+- [ ] **Step 7：Commit**
+
+```bash
+git add -A
+git commit -m "perf(render): skip empty buckets; align window rows with real floors"
+```
+
+---
+
+## Task 12：展示區、文件與驗收
+
+**Files:**
+- Modify: `src/showcase/main.ts`、`src/showcase/controls.ts`
+- Modify: `TODO.md`、`BUGS.md`、
+  `docs/superpowers/specs/2026-08-09-parametric-massing-design.md`
+
+- [ ] **Step 1：展示區加「變體」欄位**
+
+`controls.ts` 的 `ControlState` 加 `variantOverride: number | null`（null = 照雜湊），
+面板加一個下拉選單「變體：自動／0…7」。單體模式下逐一檢查八個變體是驗收的
+主要動作，靠重擲種子撞出來太慢。
+
+`main.ts` 的統計加一列：
+
+```ts
++ `<br>變體 ${VARIANT_COUNT} 種｜相鄰同變體 ${(ratio * 100).toFixed(1)}%`
+```
+
+`neighbourSameRatio` 比對的正是 `variantIndex`，所以這個數字直接顯示本階段的
+主要驗收條件。
+
+- [ ] **Step 2：手動驗收（人工）**
+
+`pnpm dev` → `/showcase.html`
+
+1. **街廓 24×24，住宅低 L1** —— 應該看到一層與兩三層的房子混雜，而不是一排同高
+2. **街廓，住宅高 L3** —— 板樓、裙樓塔、偏置塔、L 形塔、退縮、雙塔六種都該看得到
+3. **單體模式，變體 0–7 逐一切換** —— 每個分區每個等級都不該有兩個長一樣
+4. **統計列的「相鄰同變體」** —— 應低於 5%（切換分區與等級各看一次）
+5. **工業** —— 鋸齒天窗看得出來
+6. **貼片與矮物件仍然貼著牆腳** —— 牆面改成量出來的之後，這一點要重新確認
+
+- [ ] **Step 3：量測並記錄**
+
+跑一份與規格第一節同格式的對照表（改前／改後），寫進 `TODO.md`：
+
+- 相鄰同變體率（每分區每等級）
+- 每個桶的變體數與輪廓相異對數
+- 量體三角形數（最大值）
+- draw call 總數（四層的桶數合計）
+
+- [ ] **Step 4：文件**
+
+`TODO.md` 加「階段 2C-1 已完成」小節，格式照 2B-2；`BUGS.md` 記下實作途中發現的
+任何缺陷（**若有，必須寫**）；規格檔加一節「實作後的修正」，記錄計畫裡定下的
+兩處與規格不同的決定：
+
+1. **高度容差改成 `max(10% × 目標, 一層樓)`**，不是固定 ±10% —— 固定百分比在
+   矮建築上會讓可行組合塌成一個。等級階梯因此改成看平均值，矮建築的區間會重疊。
+2. **不對稱配額從 6/8 降到 4/8** —— 板樓與裙樓塔本質上對稱，而它們是高密度分區
+   在 L1 僅有的原型。主要條件改成「八個變體的輪廓兩兩相異」。
+
+- [ ] **Step 5：全量驗收**
+
+```
+pnpm vitest run && pnpm tsc --noEmit && pnpm build
+```
+
+逐條核對驗收標準：
+
+1. 相鄰同變體率 < 5%（64×64，每分區每等級）
+2. 每桶 8 個變體，兩兩輪廓相異（差異率 ≥ 0.10）
+3. ≥ 4/8 的變體不對稱，且旋轉後輪廓確實改變
+4. 量體層的實例矩陣不含任何縮放
+5. 每棟高度在 `目標 ± max(10%, 一層樓)` 內；每桶用滿所有可行組合；
+   平均高度隨等級遞增；高層桶的等級區間互不重疊
+6. 沒有變體越過行人包絡線
+7. L3 的量體比 L1 豐富，且都在三角形預算內
+8. 每一棟的高度都是樓高的整數倍
+9. 空桶不可見
+10. 全量測試綠、`tsc` 0 錯、`pnpm build` 成功
+11. 使用者在展示區確認
+
+- [ ] **Step 6：Commit**
+
+```bash
+git add -A
+git commit -m "docs: record phase 2C-1 — parametric massing generator"
+```
+
+---
+
+## 自我複查
+
+**規格涵蓋率**：規格十三節逐節對應到 task —— 第三節 `Volume` → Task 3；第四節
+模組 → Task 1–7；第五節尺寸 → Task 2；第六節原型 → Task 5；第七節屋頂 → Task 6；
+第八節窗戶對齊 → Task 11；第九節鄰居迴避 → Task 10；第十節效能 → Task 11；
+第十一節連鎖清單 → Task 8、9；第十二節測試策略 → 散在各 task 的 Step 1；
+第十三節驗收 → Task 12。**沒有落空的節。**
+
+**與規格不同的兩處**，已在 Task 2 與 Task 3 的開頭標明，並由 Task 12 Step 4
+寫回規格：高度容差改成 `max(10%, 一層樓)`；不對稱配額 6/8 降為 4/8。
+
+**型別一致性**：`Density`、`GeoBuilder` 沿用 `registry.ts` 既有定義；
+`variantIndexOf` 沿用既有名稱（規格草稿誤寫成 `variantIndexFor`）；
+`Dimensions`、`Volume`、`Rng`、`Composer`、`Prototype`、`RoofForm`、`HeightOption`
+七個新型別各只在一處定義，跨 task 引用的簽章逐字相同。
+
+**風險最高的一步是 Task 9**（唯一會讓畫面壞掉的），所以它前面的八個 task 全部
+只新增檔案 —— 任何一步做不下去，`git reset` 到上一個 commit 畫面仍然是好的。
