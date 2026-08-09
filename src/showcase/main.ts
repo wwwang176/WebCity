@@ -10,7 +10,8 @@ import { WeatherRenderer } from '../renderer/WeatherRenderer';
 import { Season } from '../core/climate/Climate';
 import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { getVariants, TRIANGLE_BUDGET } from '../renderer/geometry/buildings/registry';
-import { stampZoneCategory, ZONE_CAT } from '../renderer/geometry/buildings/parts';
+import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
+import { getGroundPropVariants } from '../renderer/geometry/buildings/groundProps';
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { appearanceOf } from '../renderer/BuildingAppearance';
@@ -46,15 +47,16 @@ function clear(): void {
 }
 
 /**
- * 放一棟建築在 (x, z)，套用與遊戲完全相同的變換。回傳三角形數。
+ * 放一棟建築在 (x, z)，套用與遊戲完全相同的變換。回傳量體與地面物件的
+ * 三角形數。
  *
  * 縮放與旋轉必須在這裡重現：BuildingRenderer 的高度不是幾何本身的高度，
  * 而是乘在幾何上的縮放係數。少了它，展示區顯示的比例與遊戲不同，
  * 而「展示區看到的就是出貨的東西」正是它唯一的價值。
  */
-function place(cell: PlacedCell, seedByte: number): number {
+function place(cell: PlacedCell, seedByte: number): { massing: number; props: number } {
   const variants = getVariants(cell.zoneType, cell.level);
-  if (variants.length === 0) return 0;
+  if (variants.length === 0) return { massing: 0, props: 0 };
   const geo = variants[cell.variantIndex % variants.length]!();
   stampZoneCategory(geo, ZONE_CAT[cell.zoneType] ?? 0);
 
@@ -77,12 +79,31 @@ function place(cell: PlacedCell, seedByte: number): number {
   mesh.position.set(cell.x, 0.05, cell.z);
   sceneManager.scene.add(mesh);
   shown.push(mesh);
-  return geo.getAttribute('position').count / 3;
+
+  let props = 0;
+  const yards = getGroundPropVariants(cell.zoneType, cell.density, cell.level);
+  if (state.showProps && yards.length > 0) {
+    const pi = Math.floor(app.propVariant01 * yards.length) % yards.length;
+    const pgeo = yards[pi]!();
+    stampZoneCategory(pgeo, ZONE_CAT[cell.zoneType] ?? 0);
+    const pmesh = new THREE.Mesh(pgeo, material);
+    pmesh.castShadow = true;
+    pmesh.receiveShadow = true;
+    // 不套用任何縮放 —— 這正是這一層存在的理由（BUG-219）。
+    pmesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
+    pmesh.position.set(cell.x, 0.05, cell.z);
+    sceneManager.scene.add(pmesh);
+    shown.push(pmesh);
+    props = triangleCount(pgeo);
+  }
+
+  return { massing: triangleCount(geo), props };
 }
 
 const state: ControlState = {
   mode: 'block', zoneType: ZoneType.RESIDENTIAL_LOW, level: 1,
   density: 'LOW', seedByte: 0, timeOverride: 0.3, wireframe: false, blockSize: 8,
+  showProps: true,
 };
 
 function render(): void {
@@ -101,9 +122,12 @@ function render(): void {
     cells = matrixCells();
   }
 
-  let triangles = 0;
+  let massingTris = 0;
+  let propTris = 0;
   for (const c of cells) {
-    triangles += place(c, state.seedByte);
+    const t = place(c, state.seedByte);
+    massingTris += t.massing;
+    propTris += t.props;
   }
 
   // 依內容置中：矩陣模式的內容全在正象限，預設鏡頭對著原點會看不到。
@@ -115,15 +139,19 @@ function render(): void {
 
   const ratio = state.mode === 'block' ? neighbourSameRatio(cells) : 0;
   const budget = state.level === 3 ? TRIANGLE_BUDGET.TOWER : TRIANGLE_BUDGET.HOUSE;
-  const perBuilding = cells.length > 0 ? Math.round(triangles / cells.length) : 0;
+  const n = Math.max(1, cells.length);
+  const perMassing = Math.round(massingTris / n);
+  const perProps = Math.round(propTris / n);
 
   const stats = document.getElementById('stats');
   if (stats) {
     stats.innerHTML =
       `${cells.length} 棟<br>`
-      + `<span class="${perBuilding > budget ? 'over' : ''}">`
-      + `${perBuilding} 三角形／棟（上限 ${budget}）</span><br>`
-      + `總計 ${triangles} 三角形<br>`
+      + `<span class="${perMassing > budget ? 'over' : ''}">`
+      + `量體 ${perMassing} 三角形／棟（上限 ${budget}）</span><br>`
+      + `<span class="${perProps > TRIANGLE_BUDGET.PROP ? 'over' : ''}">`
+      + `地面物件 ${perProps} 三角形／棟（上限 ${TRIANGLE_BUDGET.PROP}）</span><br>`
+      + `總計 ${massingTris + propTris} 三角形<br>`
       + `相鄰相同 ${(ratio * 100).toFixed(1)}%<br>`
       + `<span id="fps">—</span>`;
   }

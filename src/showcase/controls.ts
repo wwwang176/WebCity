@@ -26,6 +26,8 @@ export interface ControlState {
   wireframe: boolean;
   /** 街廓邊長。量效能基準時調大。 */
   blockSize: number;
+  /** 地面物件層開關。驗收「樹不跟著房子長高」時要能一鍵比對。 */
+  showProps: boolean;
 }
 
 const ZONE_NAMES: Record<number, string> = {
@@ -150,6 +152,16 @@ export function mountControls(
   wire.textContent = '線框';
   wire.onclick = () => { state.wireframe = !state.wireframe; onChange(); };
   host.appendChild(wire);
+
+  const props = document.createElement('button');
+  const propsText = () => `地面物件：${state.showProps ? '開' : '關'}`;
+  props.textContent = propsText();
+  props.onclick = () => {
+    state.showProps = !state.showProps;
+    props.textContent = propsText();
+    onChange();
+  };
+  host.appendChild(props);
 
   const stats = document.createElement('div');
   stats.id = 'stats';
