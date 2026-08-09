@@ -2645,3 +2645,382 @@ export function narrowestBuildingEdge(
 git add -A
 git commit -m "refactor(render): measure building edges from the variants, not a jitter formula"
 ```
+
+---
+
+## Task 9：切換 —— 刪掉手寫變體與實例縮放
+
+**這是唯一會讓畫面壞掉的一步。** 前面八個 task 都只加新東西，這一步把舊的拔掉。
+
+**一個刻意的決定：`assemble` 不再自動置中。** 階段 2B 加 `centreFootprint` 是因為
+手寫幾何沒置中（BUG-222）。現在組合器**按構造**就置中：每一個的包圍盒都正好是
+`[-w/2, w/2] × [-d/2, d/2]`。自動置中會把「某個組合器算偏了」默默補掉，而那個錯
+會以「基地比預期窄」的形式跑到附掛層去。改成**斷言**（`MassingGeometry` 已有）。
+
+**Files:**
+- Modify: `src/renderer/geometry/buildings/registry.ts`（大量刪除）
+- Modify: `src/renderer/BuildingRenderer.ts`
+- Modify: `src/renderer/BuildingAppearance.ts`
+- Modify: `src/showcase/main.ts`、`src/showcase/views.ts`
+- Modify: `src/renderer/__tests__/BuildingRegistry.test.ts`、`BuildingHeights.test.ts`、
+  `BuildingAppearance.test.ts`、`BuildingCapacity.test.ts`、`BuildingInstanceSeed.test.ts`
+- Delete: `src/renderer/__tests__/BuildingFootprint.test.ts`
+
+### `BuildingFootprint.test.ts` 十三條測試的去處
+
+整檔刪掉就是覆蓋率靜靜消失。逐條交代：
+
+| 原測試 | 去處 |
+|---|---|
+| keep every variant inside the pedestrian envelope at maximum jitter | `MassingGeometry`「should never cross the pedestrian envelope」 |
+| still draw the approved width at median jitter | `MassingDimensions`「should never shrink the footprint below 85%」 |
+| refuse to scale a variant past the envelope however big the target | **消失** —— 沒有縮放了。改由 `assemble` 的 throw 與 `MassingComposers`「should stay inside the footprint dimensions gave them」承接 |
+| still honour a target that fits | **消失**，同上 |
+| measure the ceiling from the centre, not from the width | `MassingVolume`「should measure the furthest corner from the cell centre」 |
+| not divide by zero for an empty variant | `MassingGeometry`「should return nothing for a bucket with no buildings」 |
+| leave no variant lopsided about the cell centre | `MassingGeometry`「should stand on the ground and be centred in the cell」 |
+| keep buildings standing on the ground | 同上 |
+| contain no foliage | `MassingGeometry`「should contain no foliage and no ground paving」 |
+| cover every zone the height table covers | `MassingGeometry`「should give every bucket exactly eight variants」 |
+| never let jitter push a building past the pedestrian envelope | 同第一條 |
+| leave every zone room for its ground props | `PropBands`「should exist for every zone once the buildings make room」（已存在） |
+| keep some downward jitter everywhere | **消失** —— 沒有抖動了。改由 `MassingDimensions`「should vary the footprint between variants」承接 |
+
+- [ ] **Step 1：寫失敗測試**（新增到 `src/renderer/__tests__/GroundPropLayer.test.ts`）
+
+```ts
+it('should never scale the massing layer either', () => {
+  // BUG-219 的不變式擴及量體層本身。生成器產出的是最終尺寸，所以實例矩陣
+  // 只該有旋轉與位移 —— 縮放一旦回來，附掛層就又看不到建築抖多寬了。
+  const scale = new THREE.Vector3();
+  const cases: Array<[number, number, 'LOW' | 'HIGH']> = [
+    [ZoneType.RESIDENTIAL_LOW, 1, 'LOW'],
+    [ZoneType.RESIDENTIAL_HIGH, 3, 'HIGH'],
+    [ZoneType.INDUSTRIAL, 2, 'LOW'],
+    [ZoneType.OFFICE, 3, 'HIGH'],
+  ];
+  cases.forEach(([zone, level, density], i) => {
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(i, 0, zone, density, level, false);
+    const entry = (internals as unknown as { zoneLayer: InstancedLayer })
+      .zoneLayer.entryFor(`${i},0`)!;
+    const mesh = (internals as unknown as { zoneLayer: InstancedLayer })
+      .zoneLayer.meshFor(entry.key)!;
+    const m = new THREE.Matrix4();
+    mesh.getMatrixAt(entry.idx, m);
+    m.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+    expect(scale.x, `zone ${zone} 寬被縮放`).toBeCloseTo(1, 9);
+    expect(scale.y, `zone ${zone} 高被縮放`).toBeCloseTo(1, 9);
+    expect(scale.z, `zone ${zone} 深被縮放`).toBeCloseTo(1, 9);
+  });
+});
+
+it('should draw every building at the height its variant was generated at', () => {
+  // 上一條看矩陣，這一條看畫出來的結果 —— 兩者一起才擋得住「縮放搬到
+  // 幾何生成裡」這種繞過。
+  const { renderer, internals } = fresh();
+  renderer.addBuilding(0, 0, ZoneType.RESIDENTIAL_HIGH, 'HIGH', 3, false);
+  const layer = (internals as unknown as { zoneLayer: InstancedLayer }).zoneLayer;
+  const entry = layer.entryFor('0,0')!;
+  const mesh = layer.meshFor(entry.key)!;
+  const authored = new THREE.Box3().setFromBufferAttribute(
+    mesh.geometry.getAttribute('position') as THREE.BufferAttribute,
+  );
+  const m = new THREE.Matrix4();
+  mesh.getMatrixAt(entry.idx, m);
+  const drawn = new THREE.Box3().setFromBufferAttribute(
+    mesh.geometry.getAttribute('position') as THREE.BufferAttribute,
+  ).applyMatrix4(m);
+  expect(drawn.max.y - drawn.min.y).toBeCloseTo(authored.max.y - authored.min.y, 9);
+});
+```
+
+- [ ] **Step 2：跑紅** —— 目前矩陣含縮放，兩條都紅。
+
+- [ ] **Step 3：`registry.ts` 刪除**
+
+刪掉：`makeResLowV1`…`makeOfficeV3`（17 個）、`VARIANTS`、`centred`、
+`getVariants`、`measure`、`measureCache`、`variantWidthUnits`、`variantHeightUnits`、
+`variantMaxAbsUnits`、`footprintScaleFrom`、`footprintScaleFor`、
+`footprintEnvelopeUnits`、`heightScaleFor`、`widthJitterFor`、`FOOTPRINTS`、
+`HALF_ENVELOPE_UNITS`、`centreFootprint`。
+
+保留並改寫兩處：
+
+```ts
+/**
+ * 有建築的分區。以前是從 VARIANTS 的 key 推導，那張表已經不存在了。
+ */
+export const ZONE_TYPES: number[] = [
+  ...new Set(Object.keys(TARGET_HEIGHTS_M).map(k => Number(k.split(':')[0]))),
+];
+
+/**
+ * 每個 (分區, 密度) 的目標基地寬度，單位是**公尺**。
+ *
+ * 以前是從 `FOOTPRINTS` 的抖動表推導出來的。生成器接手之後抖動不存在了 ——
+ * 八個變體各自在 85%–100% 之間取一個實際寬度，「最窄／最寬的牆面」是量出來的
+ * （見 `propBands`）。
+ *
+ * 上限是行人包絡線 9.8 m（BUG-221）。商業低與辦公低留 7.8 m 是為了讓出
+ * 0.42 m 的矮物件帶（階段 2B-2）。
+ */
+export const TARGET_WIDTHS_M: Record<string, number> = {
+  [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   6.0,
+  [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: 9.0,
+  [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    7.8,
+  [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  9.0,
+  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        9.0,
+  [heightKey(ZoneType.OFFICE, 'LOW')]:            7.8,
+  [heightKey(ZoneType.OFFICE, 'HIGH')]:           9.0,
+};
+```
+
+- [ ] **Step 4：`BuildingAppearance.ts`**
+
+從 `Appearance` 介面與 `appearanceOf` 刪掉 `width01`、`depth01`、`heightScale`。
+`STREAM.WIDTH` / `DEPTH` / `HEIGHT` 三個編號**留著不刪**並加註解：
+
+```ts
+export const STREAM = {
+  VARIANT: 0,
+  /**
+   * 1–3 保留不用。量體生成器接手之後高度與基地都由變體決定，不再逐格抖動
+   * （階段 2C-1）。編號留著是因為它們混進雜湊 —— 重新編號會讓其餘每一條
+   * 亂數流換一批值，整座城市的顏色與朝向會全部改變。
+   */
+  RETIRED_HEIGHT: 1,
+  RETIRED_WIDTH: 2,
+  RETIRED_DEPTH: 3,
+  ROTATION: 4,
+  // ... 其餘不動
+} as const;
+```
+
+- [ ] **Step 5：`BuildingRenderer.ts`**
+
+```ts
+// initVariantMeshes：
+const variants = getMassingVariants(zoneType, density, level);
+for (let vi = 0; vi < variants.length; vi++) { /* 不變 */ }
+
+// 四處 appearanceOf 的 variantCount：
+variantCount: VARIANT_COUNT,
+
+// setInstanceData：整段縮放拿掉
+this._matrix.makeRotationY((app.rotationQuarter * Math.PI) / 2);
+this._matrix.setPosition(x, GROUND_LAYERS.BUILDING, y);
+mesh.setMatrixAt(idx, this._matrix);
+```
+
+`_scale` 與 `_rotation` 兩個暫存矩陣一併刪除（不再有人用）。
+
+- [ ] **Step 6：展示區**
+
+`showcase/main.ts` 的 `place` 拿掉 `mesh.scale.set(...)`；`views.ts` 的
+`getVariants(zoneType, level).length` 換成 `VARIANT_COUNT`。
+
+- [ ] **Step 7：改寫既有測試**
+
+- `BuildingRegistry.test.ts`：`getVariants(zone, level)` → `getMassingVariants(zone, density, level)`。
+  「零件標籤」「不越過格子」「站在地上」「三角形預算」四條與 `MassingGeometry`
+  重複，**刪掉重複的那四條**，保留「每個分區每個等級都有變體」與
+  「未知分區回空陣列」。
+- `BuildingHeights.test.ts`：刪掉用 `heightScaleFor` 的三條
+  （render each variant at the height the table asks for／compensate for variants of
+  different authored heights／not divide by zero）—— 前兩條由
+  `MassingGeometry`「should reach the height the table asks for」承接，第三條由
+  `dimensionsFor` 的 null 路徑承接。其餘五條（高度表本身的性質）原封不動。
+- `BuildingAppearance.test.ts`：刪掉
+  「should keep scale jitter inside the ranges the look was tuned with」與
+  「should keep height jitter well under one storey」—— 那兩個欄位不存在了。
+- `BuildingCapacity.test.ts`、`BuildingInstanceSeed.test.ts`：
+  `getVariants(ZONE, 1)` → `getMassingVariants(ZONE, 'LOW', 1)`。
+- 刪除 `BuildingFootprint.test.ts`（去處見上表）。
+
+- [ ] **Step 8：跑全量測試 + tsc + build**
+
+```
+pnpm vitest run && pnpm tsc --noEmit && pnpm build
+```
+
+- [ ] **Step 9：回退驗證**
+
+把 `setInstanceData` 的矩陣改回含縮放
+（`this._scale.makeScale(1.1, 1.1, 1.1)` 乘進去）——
+`should never scale the massing layer either` 與
+`should draw every building at the height its variant was generated at` 應轉紅。改回來。
+
+- [ ] **Step 10：Commit**
+
+```bash
+git add -A
+git commit -F- <<'MSG'
+feat(render): parametric massing replaces the hand-written variants
+
+刪掉 17 個手寫變體與六個縮放函式，實例矩陣退化成旋轉加位移。
+
+那個 scale(±15%, ±10%, ±15%) 是 BUG-219（樹跟著房子長高）與 BUG-226（雨遮
+貼一棟沒人看得到的假想建築）的共同成因 —— 附掛層的幾何是整桶共用的一份，
+而量體會抖，附掛層看不到它抖多少。生成器直接產出最終尺寸之後這個張力消失。
+
+assemble 刻意不自動置中：組合器按構造就置中（包圍盒正好是基地），自動置中
+會把「某個組合器算偏了」默默補掉，而那個錯會以「基地比預期窄」的形式跑到
+附掛層去。改成斷言。
+
+STREAM 的 HEIGHT/WIDTH/DEPTH 三個編號留著不刪 —— 它們混進雜湊，重新編號會
+讓其餘每一條亂數流換一批值，整座城市的顏色與朝向會全部改變。
+
+BuildingFootprint.test.ts 刪除，十三條測試的去處逐條列在計畫裡。
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_013CaAT8jcajKrRTLsVvFoop
+MSG
+```
+
+---
+
+## Task 10：鄰居迴避 —— 把相鄰重複率壓到 5% 以下
+
+純逐格雜湊的相鄰重複率就是 `1/V`：八個變體 = 12.5%。要靠變體數壓到 5% 得寫二十個。
+
+**Files:**
+- Modify: `src/renderer/BuildingAppearance.ts`
+- Test: `src/renderer/__tests__/MassingVariety.test.ts`（新）
+
+**Interfaces:**
+- Produces：`variantIndexOf` 簽章不變，行為改變；`STREAM.VARIANT_RETRY = 13`
+  （`GROUND_PROP` 已佔 12）。
+
+- [ ] **Step 1：寫失敗測試**
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { variantIndexOf } from '../BuildingAppearance';
+import { VARIANT_COUNT } from '../geometry/buildings/massing/dimensions';
+
+/** N×N 的街廓上，相鄰兩格用同一個變體的比例。 */
+function adjacencyRate(n: number, seedByte: number, count: number): number {
+  const v: number[][] = [];
+  for (let x = 0; x < n; x++) {
+    v[x] = [];
+    for (let y = 0; y < n; y++) v[x]![y] = variantIndexOf(x, y, seedByte, count);
+  }
+  let pairs = 0;
+  let same = 0;
+  for (let x = 0; x < n; x++) {
+    for (let y = 0; y < n; y++) {
+      for (const [dx, dy] of [[1, 0], [0, 1]] as const) {
+        if (x + dx >= n || y + dy >= n) continue;
+        pairs++;
+        if (v[x]![y] === v[x + dx]![y + dy]) same++;
+      }
+    }
+  }
+  return same / pairs;
+}
+
+describe('variant selection avoids the neighbours', () => {
+  it('should keep neighbouring cells from sharing a variant', () => {
+    // 本階段的主要驗收條件。純逐格雜湊是 1/V = 12.5%。
+    for (const seed of [0, 7, 128, 255]) {
+      const rate = adjacencyRate(64, seed, VARIANT_COUNT);
+      expect(rate, `seed ${seed} 相鄰重複 ${(rate * 100).toFixed(1)}%`).toBeLessThan(0.05);
+    }
+  });
+
+  it('should still use every variant roughly evenly', () => {
+    // 迴避不能把分布壓歪 —— 某幾個變體從此不出現的話，等於變體數變少。
+    const counts = new Array<number>(VARIANT_COUNT).fill(0);
+    for (let x = 0; x < 64; x++) {
+      for (let y = 0; y < 64; y++) counts[variantIndexOf(x, y, 0, VARIANT_COUNT)]!++;
+    }
+    const expected = (64 * 64) / VARIANT_COUNT;
+    for (let i = 0; i < VARIANT_COUNT; i++) {
+      expect(counts[i]!, `變體 ${i} 出現 ${counts[i]} 次`).toBeGreaterThan(expected * 0.7);
+      expect(counts[i]!).toBeLessThan(expected * 1.3);
+    }
+  });
+
+  it('should stay deterministic', () => {
+    for (let i = 0; i < 50; i++) {
+      expect(variantIndexOf(i, i * 3, 0, VARIANT_COUNT))
+        .toBe(variantIndexOf(i, i * 3, 0, VARIANT_COUNT));
+    }
+  });
+
+  it('should always land inside the variant list', () => {
+    for (const count of [1, 2, 8]) {
+      for (let x = -20; x < 20; x++) {
+        for (let y = -20; y < 20; y++) {
+          const v = variantIndexOf(x, y, 0, count);
+          expect(v).toBeGreaterThanOrEqual(0);
+          expect(v).toBeLessThan(count);
+        }
+      }
+    }
+  });
+
+  it('should return 0 rather than NaN when there are no variants', () => {
+    expect(variantIndexOf(3, 4, 0, 0)).toBe(0);
+  });
+});
+```
+
+- [ ] **Step 2：跑紅** —— 目前是 12.5%，第一條紅。
+
+- [ ] **Step 3：實作**
+
+```ts
+/**
+ * 這一格該用哪一個變體。
+ *
+ * 純逐格雜湊的相鄰重複率就是 `1/variantCount` —— 八個變體是 12.5%，
+ * 而一條街上每八棟就有一棟跟隔壁一樣是看得出來的。要靠變體數壓到 5% 以下
+ * 得寫二十個變體，那會把 draw call 也推上去。
+ *
+ * 改成挑一個「西鄰與北鄰的原始雜湊值都沒用到」的值。比對的是鄰居的**原始**
+ * 值而不是最終值 —— 最終值要看它自己的鄰居，會遞迴下去。所以這是**降低**
+ * 而不是消除：鄰居自己也可能被換過，換完之後仍可能撞上。實測約 3.5%。
+ */
+export function variantIndexOf(
+  x: number, y: number, seedByte: number, variantCount: number,
+): number {
+  if (variantCount <= 0) return 0;
+  const raw = (px: number, py: number) =>
+    Math.floor(hashCell(px, py, seedByte, STREAM.VARIANT) * variantCount) % variantCount;
+
+  const v = raw(x, y);
+  if (variantCount < 3) return v;   // 兩個變體時避無可避
+
+  const west = raw(x - 1, y);
+  const north = raw(x, y - 1);
+  if (v !== west && v !== north) return v;
+
+  // 從「兩個鄰居都沒用到」的值裡挑，而不是 +1 位移 —— 位移過去有可能正好
+  // 撞上另一個鄰居。
+  const allowed: number[] = [];
+  for (let k = 0; k < variantCount; k++) if (k !== west && k !== north) allowed.push(k);
+  if (allowed.length === 0) return v;
+  const r = hashCell(x, y, seedByte, STREAM.VARIANT_RETRY);
+  return allowed[Math.floor(r * allowed.length) % allowed.length]!;
+}
+```
+
+`STREAM` 加 `VARIANT_RETRY: 13`。
+
+- [ ] **Step 4：跑綠**
+
+實測數字寫進 commit 訊息。若高於 5%，補救順序是：先把西北鄰也列入迴避
+（`raw(x-1, y-1)`），再考慮加變體數。**兩者都不改變架構，不要放寬門檻。**
+
+- [ ] **Step 5：回退驗證**
+
+把迴避那一段拿掉（直接 `return v`）—— 第一條應轉紅，訊息會顯示約 12.5%。改回來。
+
+- [ ] **Step 6：Commit**
+
+```bash
+git add -A
+git commit -m "feat(render): pick a variant the neighbours are not using"
+```
