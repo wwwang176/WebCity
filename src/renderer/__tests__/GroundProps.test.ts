@@ -19,12 +19,13 @@ describe('yardRing', () => {
     expect((ring!.outer - ring!.inner) * METRES_PER_CELL).toBeGreaterThan(1.0);
   });
 
-  it('should give a plot-filling zone no yard at all', () => {
-    // 目標寬度就是包絡線的分區沒有留白，這是幾何事實不是遺漏。
+  it('should give every zone a yard now that the buildings made room', () => {
+    // 階段 2B 時只有住宅低過關；階段 2B-2 縮寬之後每個分區都有 0.4 m 以上。
+    // 這一條以前是「鋪滿基地的分區沒有院子」，用「寬度 == 9.8」當篩選條件 ——
+    // 寬度一改就一個也選不中，測試從此空轉。
     for (const key of Object.keys(TARGET_WIDTHS_M)) {
-      if (TARGET_WIDTHS_M[key] !== MAX_BUILDING_WIDTH_M) continue;
       const [zs, ds] = key.split(':');
-      expect(yardRing(Number(zs), ds as Density), key).toBeNull();
+      expect(yardRing(Number(zs), ds as Density), key).not.toBeNull();
     }
   });
 

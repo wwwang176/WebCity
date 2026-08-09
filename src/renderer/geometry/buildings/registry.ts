@@ -402,57 +402,65 @@ export function variantWidthUnits(
   return measure(zoneType, density, level, variantIndex).width;
 }
 
+/** 建築（含所有外掛零件）離格心的最大距離。行人的門節點就在它外側。 */
+const HALF_ENVELOPE_UNITS = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
+
+export interface FootprintSpec {
+  /** 目標基地寬度（公尺）。抖動取中位數時畫出來的就是這個數字。 */
+  widthM: number;
+  /** 逐實例寬深抖動的範圍。 */
+  jitter: { down: number; up: number };
+}
+
 /**
- * 每個 (分區, 密度) 的目標基地寬度，單位是**公尺**（格子寬 12 m）。
+ * 每個 (分區, 密度) 的基地規格。
+ *
+ * **目標寬度與抖動必須寫在同一筆**。它們曾經是兩張表，抖動由「目標寬度是不是
+ * 等於 `MAX_BUILDING_WIDTH_M`」推導 —— 結果階段 2B-2 把 9.8 調成 9.0 的那一刻，
+ * 每個鋪滿基地的分區突然拿到 ±15% 的抖動，把剛讓出來的物件帶全部吃回去，
+ * 而且沒有任何東西指向真正的原因。
+ *
+ * 「這個分區的建築有多寬」與「它容不容得下隨機胖瘦」是同一個設計決定。
  *
  * 上限是 `MAX_BUILDING_WIDTH_M` —— 行人的門與走道節點放在建築牆面外側，
- * 超過就會讓行人走進建築裡面。那個常數與 SidewalkGraph 共用。
+ * 超過就會讓行人走進建築裡面。那個常數與 SidewalkGraph 共用。**寬度乘上
+ * 最大向上抖動之後**才是實際外緣，這一點是 BUG-222 的成因。
  *
  * 建築原本一律 7-8 m 寬、只佔格子 60%，所以 42 m 的高層住宅是 5.5:1 的
  * 細針 —— 看起來「太高」有一半是因為太瘦。真實的高層幾乎鋪滿基地。
  *
- * 低密度維持 60%：那些留白是院子、車道與樹的位置，填滿反而失真。
+ * 住宅低 7.2 → 6.0（階段 2B）：7.2 量的是「房子 + 車庫 + 樹」的包圍盒，
+ * 房子本體只佔 4.3 m。庭院物件搬進獨立圖層之後若仍以 7.2 為目標，房子本體
+ * 會被放大到 7.2 m、庭院只剩 0.76 m —— 觀感會反過來變成房子變大院子變小。
  *
- * 住宅低 7.2 -> 6.0：7.2 量的是「房子 + 車庫 + 樹」的包圍盒，房子本體只佔
- * 4.3 m。庭院物件搬進獨立圖層之後若仍以 7.2 為目標，房子本體會被放大到
- * 7.2 m、庭院只剩 0.76 m —— 觀感會反過來變成房子變大院子變小。6.0 讓房子
- * 維持接近原本的視覺量體，庭院帶則有 1.45 m（見 groundProps.yardRing）。
+ * 階段 2B-2 縮寬：商業低／辦公低 8.4 → 7.8（−7%），鋪滿基地者 9.8 → 9.0（−8%）。
+ * 為的是讓每個分區都有 0.4 m 以上的矮物件帶 —— 那個寬度放得下矮柱、垃圾桶、
+ * 單車架、消防栓。原本這些分區的帶寬是 0.07 m 或 0，什麼都放不下。
+ * 沒有選 0.7 m（放得下長椅）是因為那要縮到 7.2／8.4 m，−14% 看得出來。
+ *
+ * 鋪滿基地的分區向上抖動為 0：它們的外緣正好抵著物件帶，向上抖就把帶子吃掉。
+ * 這不是把變化拿掉 —— 向下保留 15%，仍會有偏瘦的個體，只是沒有偏胖的。
+ * 真正的變化來源是量體變體，不是隨機拉寬。
  */
-export const TARGET_WIDTHS_M: Record<string, number> = {
-  [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   6.0,
-  [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: MAX_BUILDING_WIDTH_M,
-  [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    8.4,
-  [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  MAX_BUILDING_WIDTH_M,
-  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        MAX_BUILDING_WIDTH_M,
-  [heightKey(ZoneType.OFFICE, 'LOW')]:            8.4,
-  [heightKey(ZoneType.OFFICE, 'HIGH')]:           MAX_BUILDING_WIDTH_M,
+export const FOOTPRINTS: Record<string, FootprintSpec> = {
+  [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   { widthM: 6.0, jitter: { down: 0.15, up: 0.15 } },
+  [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: { widthM: 9.0, jitter: { down: 0.15, up: 0 } },
+  [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    { widthM: 7.8, jitter: { down: 0.15, up: 0.15 } },
+  [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  { widthM: 9.0, jitter: { down: 0.15, up: 0 } },
+  [heightKey(ZoneType.INDUSTRIAL, 'LOW')]:        { widthM: 9.0, jitter: { down: 0.15, up: 0 } },
+  [heightKey(ZoneType.OFFICE, 'LOW')]:            { widthM: 7.8, jitter: { down: 0.15, up: 0.15 } },
+  [heightKey(ZoneType.OFFICE, 'HIGH')]:           { widthM: 9.0, jitter: { down: 0.15, up: 0 } },
 };
 
-/** 建築（含所有外掛零件）離格心的最大距離。行人的門節點就在它外側。 */
-const HALF_ENVELOPE_UNITS = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
-
-/**
- * 逐實例寬深抖動的範圍，分「向下」與「向上」。
- *
- * 向上抖動會把建築推出行人包絡線，所以**目標寬度已經等於上限的分區向上為 0**。
- * 這不是把變化拿掉：向下保留 15%，鋪滿基地的分區仍會有偏瘦的個體，只是沒有
- * 偏胖的。真正的變化來源是量體變體，不是隨機拉寬。
- *
- * 另一種寫法是保留 ±15% 並讓上限去咬，但那會把高密度的平均寬度從 9.8 壓到
- * 9.33 m —— 等於偷偷改掉已經確認過的比例。取消向上抖動之後，`wanted` 與
- * `ceiling` 剛好相等，上限退化成安全網，每個尺寸都原封不動。
- */
-export const WIDTH_JITTER: Record<string, { down: number; up: number }> = {};
-for (const [key, target] of Object.entries(TARGET_WIDTHS_M)) {
-  WIDTH_JITTER[key] = target >= MAX_BUILDING_WIDTH_M
-    ? { down: 0.15, up: 0 }
-    : { down: 0.15, up: 0.15 };
-}
+/** 目標基地寬度。`FOOTPRINTS` 的投影，給只關心寬度的呼叫端。 */
+export const TARGET_WIDTHS_M: Record<string, number> = Object.fromEntries(
+  Object.entries(FOOTPRINTS).map(([key, spec]) => [key, spec.widthM]),
+);
 
 export function widthJitterFor(
   zoneType: number, density: Density,
 ): { down: number; up: number } {
-  return WIDTH_JITTER[heightKey(zoneType, density)] ?? { down: 0, up: 0 };
+  return FOOTPRINTS[heightKey(zoneType, density)]?.jitter ?? { down: 0, up: 0 };
 }
 
 /**

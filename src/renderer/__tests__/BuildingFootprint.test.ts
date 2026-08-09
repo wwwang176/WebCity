@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TARGET_HEIGHTS_M, TARGET_WIDTHS_M, getVariants, LEVELS, variantWidthUnits,
+  TARGET_HEIGHTS_M, TARGET_WIDTHS_M, FOOTPRINTS, getVariants, LEVELS, variantWidthUnits,
   footprintEnvelopeUnits, footprintScaleFor, footprintScaleFrom, widthJitterFor,
   type Density,
 } from '../geometry/buildings/registry';
@@ -124,22 +124,39 @@ describe('building massing', () => {
   });
 });
 
-describe('widthJitterFor', () => {
-  it('should give a plot-filling zone no room to grow wider', () => {
-    // 目標寬度已經等於上限的分區，向上抖動必然越線。
-    for (const key of Object.keys(TARGET_WIDTHS_M)) {
-      if (TARGET_WIDTHS_M[key] !== MAX_BUILDING_WIDTH_M) continue;
-      const [zs, ds] = key.split(':');
-      expect(widthJitterFor(Number(zs), ds as Density).up, `${key} up`).toBe(0);
+describe('FOOTPRINTS', () => {
+  // 這一組以前用「目標寬度 == MAX_BUILDING_WIDTH_M」來識別鋪滿基地的分區。
+  // 階段 2B-2 把 9.8 調成 9.0 的那一刻，篩選條件一個也選不中，兩支測試
+  // 從此空轉 —— 用資料值當哨兵，資料一動測試就悄悄失效。
+  // 改成對每一筆都斷言不變式，沒有篩選就沒有空轉的餘地。
+
+  it('should cover every zone the height table covers', () => {
+    for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+      expect(FOOTPRINTS[key], `${key} 沒有基地規格`).toBeDefined();
     }
   });
 
-  it('should still let plot-filling buildings be thinner than the plot', () => {
+  it('should never let jitter push a building past the pedestrian envelope', () => {
+    // BUG-222 的不變式。抖動是**乘在**目標寬度之後的，兩者必須一起看。
+    for (const [key, spec] of Object.entries(FOOTPRINTS)) {
+      const maxHalf = (spec.widthM / METRES_PER_CELL / 2) * (1 + spec.jitter.up);
+      expect(maxHalf, `${key} 抖到最寬時越線`).toBeLessThanOrEqual(HALF_ENVELOPE + 1e-9);
+    }
+  });
+
+  it('should leave every zone room for its ground props', () => {
+    // 階段 2B-2 縮寬的目的。0.4 m 是矮柱、垃圾桶、單車架的下限。
+    for (const [key, spec] of Object.entries(FOOTPRINTS)) {
+      const maxHalf = (spec.widthM / METRES_PER_CELL / 2) * (1 + spec.jitter.up);
+      expect((HALF_ENVELOPE - maxHalf) * METRES_PER_CELL, `${key} 沒有物件帶`)
+        .toBeGreaterThanOrEqual(0.4 - 1e-6);
+    }
+  });
+
+  it('should keep some downward jitter everywhere', () => {
     // 完全取消抖動會讓一整排塔樓寬度一模一樣。
-    for (const key of Object.keys(TARGET_WIDTHS_M)) {
-      if (TARGET_WIDTHS_M[key] !== MAX_BUILDING_WIDTH_M) continue;
-      const [zs, ds] = key.split(':');
-      expect(widthJitterFor(Number(zs), ds as Density).down).toBeGreaterThan(0.05);
+    for (const [key, spec] of Object.entries(FOOTPRINTS)) {
+      expect(spec.jitter.down, `${key} down`).toBeGreaterThan(0.05);
     }
   });
 });

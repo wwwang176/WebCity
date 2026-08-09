@@ -1,11 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZoneType } from '../../../core/grid/types';
-import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../../../core/grid/constants';
-import {
-  TARGET_WIDTHS_M, TRIANGLE_BUDGET, heightKey, widthJitterFor,
-  type Density, type GeoBuilder,
-} from './registry';
+import { METRES_PER_CELL } from '../../../core/grid/constants';
+import { TRIANGLE_BUDGET, type Density, type GeoBuilder } from './registry';
+import { lowPropBand, type Band } from './propBands';
 import { tagPart, PART_FOLIAGE, PART_DETAIL } from './parts';
 
 /**
@@ -19,40 +17,21 @@ import { tagPart, PART_FOLIAGE, PART_DETAIL } from './parts';
  * 幾何一律以**真實尺寸**撰寫（1 格 = 12 m），不再是「會被縮放的相對比例」。
  */
 
-/** 建築（含所有外掛零件）離格心的最大距離。行人的門節點就在它外側。 */
-const HALF_ENVELOPE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
-
-/** 庭院帶窄於這個寬度就不放東西 —— 塞不下看得見的物件。 */
-const MIN_RING_UNITS = 0.05;
-
 export const PROP_TRIANGLE_BUDGET = TRIANGLE_BUDGET.PROP;
 
 /** 公尺換算成格。 */
 const M = (metres: number) => metres / METRES_PER_CELL;
 
-export interface YardRing {
-  /** 建築抖到最寬時的半寬。庭院物件必須在這之外。 */
-  inner: number;
-  /** 行人包絡線。庭院物件必須在這之內。 */
-  outer: number;
-}
+export type YardRing = Band;
 
 /**
- * 建築讓出來的環帶。沒讓出空間的分區回傳 null。
+ * 建築讓出來的環帶 —— 矮物件帶的別名。
  *
- * 內緣用「目標寬度 × 最大向上抖動」而不是某個變體的實際寬度：庭院物件是整個
- * (分區, 等級) 桶共用的，不能依賴這一格配到哪一個量體變體。
- *
- * 現況只有住宅低密度過得了這一關（1.45 m）；商業低與辦公低各只剩 0.07 m，
- * 高密度與工業是 0。這不是遺漏而是幾何事實 —— 鋪滿基地的建築沒有院子，
- * 它們的等級階梯要靠量體與屋頂物件表現。日後把商業低調窄，它會自動長出庭院。
+ * 推導本身住在 `propBands`：貼片、矮物件、懸挑三類共用同一個內緣（建築抖到
+ * 最寬時的外緣），只有外緣不同。把它留在這裡會變成第二份會漂移的推導。
  */
 export function yardRing(zoneType: number, density: Density): YardRing | null {
-  const target = TARGET_WIDTHS_M[heightKey(zoneType, density)];
-  if (!target) return null;
-  const inner = (target / METRES_PER_CELL / 2) * (1 + widthJitterFor(zoneType, density).up);
-  if (HALF_ENVELOPE - inner < MIN_RING_UNITS) return null;
-  return { inner, outer: HALF_ENVELOPE };
+  return lowPropBand(zoneType, density);
 }
 
 export function hasGroundProps(zoneType: number, density: Density, level: number): boolean {
