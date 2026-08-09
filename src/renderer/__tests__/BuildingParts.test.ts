@@ -2,9 +2,41 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import {
   PART_WALL, PART_DETAIL, PART_FOLIAGE, PART_ROOF, PART_THRESHOLDS,
-  tagPart, ZONE_CAT, stampZoneCategory,
+  tagPart, ZONE_CAT, stampZoneCategory, triangleCount,
 } from '../geometry/buildings/parts';
 import { ZoneType } from '../../core/grid/types';
+
+/**
+ * BUG-223：`position.count / 3` 數的是頂點不是三角形。所有建築幾何都是索引
+ * 幾何，頂點被多個面共用，所以那個算法少報三到五成 —— 展示區的預算計數器
+ * 因此一直在低報。
+ */
+describe('triangleCount', () => {
+  it('should count faces, not vertices, on an indexed geometry', () => {
+    const box = new THREE.BoxGeometry(1, 1, 1);
+    expect(box.index).not.toBeNull();
+    expect(box.getAttribute('position').count).toBe(24); // 每個角被三個面各用一次
+    expect(triangleCount(box)).toBe(12);                 // 六個面 x 兩個三角形
+  });
+
+  it('should still be right when a geometry has no index', () => {
+    const plain = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+    expect(plain.index).toBeNull();
+    expect(triangleCount(plain)).toBe(12);
+  });
+
+  it('should never return a fraction', () => {
+    // 小數就是在數頂點 —— 那是這個 bug 現形的方式。
+    for (const geo of [
+      new THREE.BoxGeometry(1, 1, 1),
+      new THREE.SphereGeometry(1, 5, 4),
+      new THREE.CylinderGeometry(1, 1, 1, 5),
+      new THREE.ConeGeometry(1, 1, 6),
+    ]) {
+      expect(Number.isInteger(triangleCount(geo))).toBe(true);
+    }
+  });
+});
 
 /**
  * 零件標籤是頂點色的 R 通道，shader 用門檻把它切成四段。標籤與門檻分屬

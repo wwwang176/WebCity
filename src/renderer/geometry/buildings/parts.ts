@@ -43,6 +43,19 @@ export const ZONE_CAT: Record<number, number> = {
   [ZoneType.OFFICE]:           1.0,
 };
 
+/**
+ * 這份幾何有幾個三角形。
+ *
+ * `position.count / 3` 只有在非索引幾何上才對。所有建築幾何都經過
+ * `mergeGeometries`，輸入是 Box / Sphere / Cylinder / Cone —— 全部索引，
+ * 頂點會被多個面共用，所以那個算法少報三到五成（BUG-223）。
+ */
+export function triangleCount(geo: THREE.BufferGeometry): number {
+  return geo.index
+    ? geo.index.count / 3
+    : geo.getAttribute('position').count / 3;
+}
+
 export function stampZoneCategory(geo: THREE.BufferGeometry, cat: number): void {
   const attr = geo.getAttribute('color') as THREE.BufferAttribute;
   const arr = attr.array as Float32Array;

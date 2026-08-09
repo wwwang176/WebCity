@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getVariants, ZONE_TYPES, LEVELS, TRIANGLE_BUDGET } from '../geometry/buildings/registry';
-import { PART_THRESHOLDS } from '../geometry/buildings/parts';
+import { PART_THRESHOLDS, triangleCount } from '../geometry/buildings/parts';
 import { ZoneType } from '../../core/grid/types';
 
 /**
@@ -64,7 +64,7 @@ describe('every variant geometry', () => {
 
   it('should stay inside the triangle budget', () => {
     for (const { zone, i, geo } of all) {
-      const tris = geo.getAttribute('position').count / 3;
+      const tris = triangleCount(geo);
       expect(tris, `zone ${zone} variant ${i} is ${tris} triangles`)
         .toBeLessThanOrEqual(TRIANGLE_BUDGET.TOWER);
     }

@@ -317,6 +317,8 @@ export const LEVELS = [1, 2, 3] as const;
 export const TRIANGLE_BUDGET = {
   HOUSE: 400,
   TOWER: 800,
+  /** 地面物件另外計算：它是獨立圖層，不佔量體的預算。 */
+  PROP: 240,
 } as const;
 
 /**
@@ -447,9 +449,14 @@ export function variantWidthUnits(
  * 細針 —— 看起來「太高」有一半是因為太瘦。真實的高層幾乎鋪滿基地。
  *
  * 低密度維持 60%：那些留白是院子、車道與樹的位置，填滿反而失真。
+ *
+ * 住宅低 7.2 -> 6.0：7.2 量的是「房子 + 車庫 + 樹」的包圍盒，房子本體只佔
+ * 4.3 m。庭院物件搬進獨立圖層之後若仍以 7.2 為目標，房子本體會被放大到
+ * 7.2 m、庭院只剩 0.76 m —— 觀感會反過來變成房子變大院子變小。6.0 讓房子
+ * 維持接近原本的視覺量體，庭院帶則有 1.45 m（見 groundProps.yardRing）。
  */
 export const TARGET_WIDTHS_M: Record<string, number> = {
-  [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   7.2,
+  [heightKey(ZoneType.RESIDENTIAL_LOW, 'LOW')]:   6.0,
   [heightKey(ZoneType.RESIDENTIAL_HIGH, 'HIGH')]: MAX_BUILDING_WIDTH_M,
   [heightKey(ZoneType.COMMERCIAL_LOW, 'LOW')]:    8.4,
   [heightKey(ZoneType.COMMERCIAL_HIGH, 'HIGH')]:  MAX_BUILDING_WIDTH_M,
