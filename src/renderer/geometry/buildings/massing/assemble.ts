@@ -36,10 +36,16 @@ function frustum(
   ];
 
   const pos: number[] = [];
+  /**
+   * 一個四邊形，四個角**逆時針排列（從該面的外側看）**。
+   *
+   * 纏繞方向決定 `computeVertexNormals` 算出來的法線指向哪一側，而建築材質是
+   * `FrontSide` —— 反了就會看到建築的內壁，而且不會有任何東西報錯（BUG-227）。
+   */
   const quad = (
     p0: [number, number, number], p1: [number, number, number],
     p2: [number, number, number], p3: [number, number, number],
-  ) => { pos.push(...p0, ...p1, ...p2, ...p0, ...p2, ...p3); };
+  ) => { pos.push(...p0, ...p2, ...p1, ...p0, ...p3, ...p2); };
 
   for (let i = 0; i < 4; i++) {
     const j = (i + 1) % 4;

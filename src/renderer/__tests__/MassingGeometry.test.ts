@@ -146,6 +146,46 @@ describe('massing geometry', () => {
     });
   });
 
+  it('should wind every face outward', () => {
+    // BUG-227：整個 frustum 的纏繞方向反了，所以每一面的法線都朝內 ——
+    // FrontSide culling 之下看到的是建築的內壁。
+    //
+    // 帶號體積（三角形對原點的有向錐體體積和）是這件事唯一的整體判準：
+    // 逐面看法線要知道「哪一側是外面」，而帶號體積不必知道。外向為正。
+    eachVariant((geo, label) => {
+      const p = geo.getAttribute('position').array as Float32Array;
+      let v = 0;
+      for (let i = 0; i < p.length; i += 9) {
+        const ax = p[i]!, ay = p[i + 1]!, az = p[i + 2]!;
+        const bx = p[i + 3]!, by = p[i + 4]!, bz = p[i + 5]!;
+        const cx = p[i + 6]!, cy = p[i + 7]!, cz = p[i + 8]!;
+        v += (ax * (by * cz - bz * cy)
+            - ay * (bx * cz - bz * cx)
+            + az * (bx * cy - by * cx)) / 6;
+      }
+      expect(v, `${label} 帶號體積 ${v.toFixed(4)} —— 面朝內`).toBeGreaterThan(0);
+    });
+  });
+
+  it('should point the roof normal up', () => {
+    // 帶號體積抓得到「整體翻面」，抓不到「只有頂面翻了」。屋頂在等角視角下
+    // 是最常看到的那一面。
+    eachVariant((geo, label) => {
+      const pos = geo.getAttribute('position');
+      const n = geo.getAttribute('normal');
+      geo.computeBoundingBox();
+      const top = geo.boundingBox!.max.y;
+      let checked = 0;
+      for (let i = 0; i < pos.count; i++) {
+        if (Math.abs(pos.getY(i) - top) > 1e-6) continue;
+        if (Math.abs(n.getY(i)) < 0.9) continue;   // 側面的頂邊，跳過
+        expect(n.getY(i), `${label} 頂面法線朝下`).toBeGreaterThan(0);
+        checked++;
+      }
+      expect(checked, `${label} 沒有找到任何頂面`).toBeGreaterThan(0);
+    });
+  });
+
   it('should tag every vertex with a known part', () => {
     eachVariant((geo, label) => {
       const col = geo.getAttribute('color');

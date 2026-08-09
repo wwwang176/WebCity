@@ -11,6 +11,18 @@ import { ZoneType } from '../core/grid/types';
 
 export type ViewMode = 'single' | 'block' | 'matrix';
 
+/**
+ * 這個分區該用哪一個密度。
+ *
+ * 只有辦公區兩種密度都有建築。其餘分區配錯密度會拿到**零個變體** —— 畫面上
+ * 什麼都沒有，而且不會有任何東西報錯（BUG-227）。階段 2C-1 之前 `getVariants`
+ * 根本不看密度，所以配錯只是高度不對，看得出來但不會整片消失。
+ */
+export function densityFor(zoneType: number, preferred: Density): Density {
+  if (TARGET_HEIGHTS_M[heightKey(zoneType, preferred)]) return preferred;
+  return TARGET_HEIGHTS_M[heightKey(zoneType, 'LOW')] ? 'LOW' : 'HIGH';
+}
+
 export interface PlacedCell {
   x: number;
   z: number;
@@ -67,7 +79,6 @@ export function matrixCells(): PlacedCell[] {
       row++;
     }
   }
-  void heightKey;
   return out;
 }
 

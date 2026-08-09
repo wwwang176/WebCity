@@ -1433,8 +1433,10 @@ BUG-223（三角形計數器數頂點，少報三到五成）。
 - [x] 鄰居迴避：相鄰重複率 33.4% → 3.1%
 - [x] 空桶 `visible = false`；`aSeed.x` 改由變體的樓高決定，窗戶橫列對齊樓板
 - [x] 展示區加變體選擇器與相鄰重複率顯示
+- [x] BUG-227：量體的面全部朝內（帶號體積 −0.80）；展示區切分區時用上一個
+      分區的密度重繪，配錯就是零個變體、整片空白
 
-**測試**：4430 → 4494。新增 `MassingMetrics`、`MassingDimensions`、`MassingVolume`、
+**測試**：4430 → 4498。新增 `MassingMetrics`、`MassingDimensions`、`MassingVolume`、
 `MassingComposers`、`MassingPrototypes`、`MassingRoofs`、`MassingGeometry`、
 `MassingVariety`、`InstancedLayerVisibility` 九支；刪除 `BuildingFootprint`
 （十三條測試的去處逐條列在計畫裡）。

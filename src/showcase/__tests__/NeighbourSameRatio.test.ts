@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { blockCells, matrixCells, neighbourSameRatio } from '../views';
+import { blockCells, matrixCells, neighbourSameRatio, densityFor } from '../views';
+import { getMassingVariants } from '../../renderer/geometry/buildings/massing';
+import type { Density } from '../../renderer/geometry/buildings/registry';
 import { ZoneType } from '../../core/grid/types';
 import { ZONE_TYPES, LEVELS } from '../../renderer/geometry/buildings/registry';
 
@@ -83,5 +85,30 @@ describe('matrixCells', () => {
           `matrix is missing zone ${zone} level ${level}`).toBe(true);
       }
     }
+  });
+});
+
+describe('densityFor', () => {
+  it('should never leave a zone with nothing to draw', () => {
+    // BUG-227：展示區切分區時是用**上一個**分區的密度重繪的（syncDensity 掛在
+    // 第二個 change 監聽器上，第一個已經先呼叫過 onChange）。住宅高只有 HIGH、
+    // 商業低只有 LOW —— 配錯就是零個變體，畫面整片空白。
+    //
+    // 階段 2C-1 之前 getVariants 根本不看密度，所以這個順序錯誤看不出來。
+    for (const zone of ZONE_TYPES) {
+      for (const preferred of ['LOW', 'HIGH'] as Density[]) {
+        const d = densityFor(zone, preferred);
+        for (const level of LEVELS) {
+          expect(getMassingVariants(zone, d, level).length,
+            `zone ${zone} 偏好 ${preferred} -> ${d} L${level}`).toBeGreaterThan(0);
+        }
+      }
+    }
+  });
+
+  it('should keep the preferred density when the zone has it', () => {
+    // 辦公區兩種都有，不該被無故換掉 —— 否則使用者選了高密度卻看到低密度。
+    expect(densityFor(ZoneType.OFFICE, 'LOW')).toBe('LOW');
+    expect(densityFor(ZoneType.OFFICE, 'HIGH')).toBe('HIGH');
   });
 });

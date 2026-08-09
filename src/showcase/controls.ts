@@ -2,11 +2,10 @@
  * 展示區的控制面板。刻意用原生 DOM 而不是 Solid：展示區不該把遊戲的 UI
  * 相依帶進來，它要能在遊戲壞掉的時候仍然打得開。
  */
-import type { ViewMode } from './views';
+import { densityFor, type ViewMode } from './views';
 import { VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
-import {
-  ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, type Density,
-} from '../renderer/geometry/buildings/registry';
+import { ZONE_TYPES, LEVELS, type Density }
+  from '../renderer/geometry/buildings/registry';
 
 /** 0..1 的一天位置轉成 24 小時字面，滑桿才知道自己拖到幾點。 */
 function clockText(t: number): string {
@@ -86,7 +85,6 @@ export function mountControls(
     zoneSel.appendChild(o);
   }
   zoneSel.value = String(state.zoneType);
-  zoneSel.onchange = () => { state.zoneType = Number(zoneSel.value); onChange(); };
   row('分區', zoneSel);
 
   // 只有辦公區兩種密度都有建築；其他分區選了也沒有對應的高度表。
@@ -101,13 +99,25 @@ export function mountControls(
   densitySel.onchange = () => { state.density = densitySel.value as Density; onChange(); };
   row('密度（僅辦公區兩者皆有）', densitySel);
 
+  /**
+   * 這個分區沒有的密度要換掉。
+   *
+   * **必須在重繪之前跑。** 以前它是掛在 `zoneSel` 上的第二個 change 監聽器，
+   * 而第一個（`onchange` 屬性）已經先呼叫過 `onChange()` —— 所以切到住宅高
+   * 的那一次是用上一個分區的密度重繪的，而 `getMassingVariants(2, 'LOW', …)`
+   * 回傳空陣列，畫面上什麼都沒有（BUG-227）。
+   *
+   * 階段 2C-1 之前 `getVariants` 根本不看密度，所以這個順序錯誤看不出來。
+   */
   const syncDensity = () => {
-    if (!TARGET_HEIGHTS_M[heightKey(state.zoneType, state.density)]) {
-      state.density = TARGET_HEIGHTS_M[heightKey(state.zoneType, 'LOW')] ? 'LOW' : 'HIGH';
-      densitySel.value = state.density;
-    }
+    state.density = densityFor(state.zoneType, state.density);
+    densitySel.value = state.density;
   };
-  zoneSel.addEventListener('change', syncDensity);
+  zoneSel.onchange = () => {
+    state.zoneType = Number(zoneSel.value);
+    syncDensity();
+    onChange();
+  };
   syncDensity();
 
   const levelSel = document.createElement('select');
