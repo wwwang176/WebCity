@@ -28,6 +28,41 @@ function eachDecal(fn: (geo: THREE.BufferGeometry, label: string) => void) {
   });
 }
 
+interface Rect { x0: number; x1: number; z0: number; z1: number }
+
+/**
+ * 依高度分組的四邊形。
+ *
+ * 每塊 `PlaneGeometry` 是連續的四個頂點，`mergeGeometries` 依序串接，所以
+ * 四個一組就是一塊。不同高度的兩塊本來就該疊（標線疊在鋪面上），同高度的
+ * 不該。
+ */
+function quadsByHeight(geo: THREE.BufferGeometry): Map<number, Rect[]> {
+  const pos = geo.getAttribute('position');
+  const out = new Map<number, Rect[]>();
+  for (let q = 0; q + 3 < pos.count; q += 4) {
+    const xs: number[] = [];
+    const zs: number[] = [];
+    for (let k = 0; k < 4; k++) { xs.push(pos.getX(q + k)); zs.push(pos.getZ(q + k)); }
+    const y = Math.round(pos.getY(q) * 1e6) / 1e6;
+    const rect = {
+      x0: Math.min(...xs), x1: Math.max(...xs),
+      z0: Math.min(...zs), z1: Math.max(...zs),
+    };
+    const arr = out.get(y);
+    if (arr) arr.push(rect);
+    else out.set(y, [rect]);
+  }
+  return out;
+}
+
+/** 兩個矩形的重疊面積。共邊（面積 0）不算重疊。 */
+function overlapArea(a: Rect, b: Rect): number {
+  const w = Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0);
+  const d = Math.min(a.z1, b.z1) - Math.max(a.z0, b.z0);
+  return w > 0 && d > 0 ? w * d : 0;
+}
+
 describe('decal geometry', () => {
   it('should exist for every zone at every level', () => {
     // 本階段的驗收條件：沒有哪個分區是光禿的。
@@ -62,6 +97,27 @@ describe('decal geometry', () => {
         const v = y / 1e6;
         expect(v === DECAL_Y || Math.abs(v - MARK_Y) < 1e-9, `${label} 高度 ${v} 不是這兩層`)
           .toBe(true);
+      }
+    });
+  });
+
+  it('should never lay two quads on top of each other', () => {
+    // 「一個邊只能有一種鋪面」擋得住同一邊疊兩層，擋不住相鄰兩邊在**角落**
+    // 互疊：四邊都鋪滿時，北側與東側各自跨滿整條邊，交出四塊 1.5 m 見方的
+    // 重疊角。兩塊同高同位的四邊形會 z-fighting —— 靜態截圖看不出來，
+    // 一移動鏡頭就整片閃爍，而這一層鋪在每一棟建築腳下。
+    //
+    // 上一版的計數式檢查（底層不超過四塊）看的是數量，看不到位置。
+    eachDecal((geo, label) => {
+      for (const [y, rects] of quadsByHeight(geo)) {
+        for (let i = 0; i < rects.length; i++) {
+          for (let j = i + 1; j < rects.length; j++) {
+            expect(
+              overlapArea(rects[i]!, rects[j]!),
+              `${label} 高度 ${y} 的第 ${i}、${j} 塊重疊`,
+            ).toBeLessThan(1e-9);
+          }
+        }
       }
     });
   });
