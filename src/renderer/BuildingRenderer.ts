@@ -29,6 +29,27 @@ import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '..
 /** 桶的初始容量。滿了就倍增（見 InstancedLayer）。 */
 const INITIAL_BUCKET_CAPACITY = 256;
 
+/**
+ * 縮到多遠就把矮物件與懸挑整層關掉。單位是**格**（正交鏡頭的視錐高度，
+ * 也就是 `camera.top - camera.bottom`；`zoomCamera` 的範圍是 3–200）。
+ *
+ * 鏡頭是正交的，所以沒有「遠處的建築」—— 全畫面同一個距離，逐棟算距離
+ * 沒有意義。整件事因此只是一個全域布林翻兩層的 `visible`：零逐實例成本，
+ * 不需要簡化幾何，也不需要每幀掃格子。
+ *
+ * 90：一格 12 m，視錐 90 格 = 1080 m。1080p 的畫面上 1 公尺剛好約一像素，
+ * 而矮物件多半是 1–4 m 的東西 —— 過了這條線它們本來就只是雜訊，但仍然
+ * 吃滿三角形（單棟上限 320，量體才 400/800）而且每一個都要投影。
+ *
+ * 兩條線之間留 15 格的遲滯。只有一條的話，滾輪停在門檻上會讓整層每幀
+ * 開關一次 —— 那比不做還糟，因為畫面在閃。預設視錐是 60，落在 SHOW_BELOW
+ * 以下，所以正常遊玩看得到全部細節，要主動縮出去才會掉。
+ */
+export const DETAIL_LOD = {
+  HIDE_ABOVE: 90,
+  SHOW_BELOW: 75,
+} as const;
+
 export class BuildingRenderer {
   // --- Persistent variant meshes (pre-allocated, never disposed until game exit) ---
   private zoneLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
@@ -2701,6 +2722,8 @@ export class BuildingRenderer {
   }
 
   private _focusMode = false;
+  /** 縮到 DETAIL_LOD.HIDE_ABOVE 之外。與 `_focusMode` 各自獨立（見 applyLayerVisibility）。 */
+  private _detailHidden = false;
   private _whiteModelMesh: THREE.Mesh | null = null;
   private static _whiteModelMat: THREE.ShaderMaterial | null = null;
 
@@ -2743,10 +2766,45 @@ export class BuildingRenderer {
     return BuildingRenderer._whiteModelMat;
   }
 
+  /**
+   * 依鏡頭的縮放決定要不要畫矮物件與懸挑。每幀呼叫，成本是兩個比較。
+   *
+   * `frustumHeight` 是正交鏡頭的視錐高度（`camera.top - camera.bottom`），
+   * 單位是格。門檻與遲滯的理由見 `DETAIL_LOD`。
+   *
+   * 地面貼片不在內：它是平的鋪面，撐住「地面有東西」的觀感，關掉會讓遠景
+   * 整片地變空，工業區那塊柏油也會跟著消失。
+   */
+  updateDetailLOD(frustumHeight: number): void {
+    const hidden = this._detailHidden
+      ? frustumHeight >= DETAIL_LOD.SHOW_BELOW
+      : frustumHeight > DETAIL_LOD.HIDE_ABOVE;
+    if (hidden === this._detailHidden) return;
+    this._detailHidden = hidden;
+    this.applyLayerVisibility();
+  }
+
+  /**
+   * 把兩個獨立的閘門解析成三個附掛層的顯示狀態。
+   *
+   * 檢視模式與縮放是兩件事，任一方直接設 `visible` 都會踩到對方 ——
+   * 離開白模檢視時把三層設回 true，縮在遠景的鏡頭就會突然長回矮物件，
+   * 而使用者從頭到尾沒有動過滾輪。
+   */
+  private applyLayerVisibility(): void {
+    this.decalLayer.setVisible(!this._focusMode);
+    const detail = !this._focusMode && !this._detailHidden;
+    this.propLayer.setVisible(detail);
+    this.overheadLayer.setVisible(detail);
+  }
+
   /** Switch view mode — any non-NORMAL mode shows white model. */
   setViewMode(mode: ViewMode, scene?: THREE.Scene): void {
     const enabled = mode !== ViewMode.NORMAL;
     this._focusMode = enabled;
+    // 三個附掛層以前完全沒被 setViewMode 碰過，也沒有烘進白模，所以貼片、
+    // 樹與招牌會維持原色浮在白模上面（BUG-232）。
+    this.applyLayerVisibility();
 
     if (enabled && scene) {
       // Hide originals

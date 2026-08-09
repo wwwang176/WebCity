@@ -36,6 +36,16 @@ export class InstancedLayer {
   private readonly _matrix = new THREE.Matrix4();
   private readonly _color = new THREE.Color();
 
+  /**
+   * 整層的顯示閘門。關著時每個桶都不畫，開著時**只有非空的桶**回來 ——
+   * 空桶的 `visible = false` 是既有的優化（three.js 對 count === 0 的
+   * InstancedMesh 仍會走完整條 render list），閘門不能把它覆蓋掉。
+   *
+   * 存成狀態而不是讓呼叫端逐桶設：`acquire` 與 `release` 也會動 `visible`，
+   * 少了這個閘門，關著的時候蓋一棟新房子就會讓那一桶單獨冒出來。
+   */
+  private gate = true;
+
   constructor(
     private readonly material: THREE.Material,
     private readonly initialCapacity = 256,
@@ -48,6 +58,17 @@ export class InstancedLayer {
   get size(): number { return this.entries.size; }
 
   meshFor(key: string): THREE.InstancedMesh | undefined { return this.buckets.get(key); }
+  get visible(): boolean { return this.gate; }
+
+  /** 開關整層。非空的桶跟著閘門走，空桶維持關閉。 */
+  setVisible(visible: boolean): void {
+    if (this.gate === visible) return;
+    this.gate = visible;
+    for (const [key, mesh] of this.buckets) {
+      mesh.visible = visible && (this.counts.get(key) ?? 0) > 0;
+    }
+  }
+
   entryFor(posKey: string): LayerEntry | undefined { return this.entries.get(posKey); }
   countOf(key: string): number { return this.counts.get(key) ?? 0; }
   /** 這個桶的第 idx 個實例屬於哪一格。 */
@@ -108,7 +129,7 @@ export class InstancedLayer {
 
     this.counts.set(key, idx + 1);
     mesh.count = idx + 1;
-    mesh.visible = true;
+    mesh.visible = this.gate;
     this.entries.set(posKey, { key, idx });
     this.reverse.get(key)!.set(idx, posKey);
     return { mesh, idx, grew };
@@ -202,7 +223,7 @@ export class InstancedLayer {
     this.entries.delete(posKey);
     this.counts.set(entry.key, lastIdx);
     mesh.count = lastIdx;
-    mesh.visible = lastIdx > 0;
+    mesh.visible = this.gate && lastIdx > 0;
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   }

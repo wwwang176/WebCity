@@ -3099,3 +3099,44 @@ framebuffer 的數字直接被當成已編碼的顯示值。要先把地板轉�
 1.97 m 深（建築佔了 12 m 格子裡的 9 m），而標線是 1.6 m 寬 × 1.67 m 深，
 真實停車格是 2.5 × 5 m。那個深度現實中畫的是卸貨區分隔線或危險區斜紋，
 不是停車格。已記入 TODO。
+
+---
+
+## BUG-232 已修：`setViewMode` 沒有藏三個附掛層，貼片與樹會浮在白模上
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-232 | BuildingRenderer.setViewMode | 切到任何非 NORMAL 檢視時，`decalLayer` / `propLayer` / `overheadLayer` 維持原色顯示 —— 它們既沒有被藏起來，也沒有烘進白模 | Medium |
+
+**發現方式：** 使用者問「建築目前有 LOD 了嗎」。盤點顯示 `visible` 只有兩處會
+動：`InstancedLayer` 的空桶優化，以及 `setViewMode`。讀 `setViewMode` 時看到
+它藏的是 `variantMeshes`、`overlayMeshes`、`infraGroups` —— 三個附掛層一個
+都沒有。`buildWhiteModelMesh` 也只烘量體與基礎設施。
+
+這是階段 2B 把貼片、矮物件、懸挑從量體幾何拆成獨立圖層時漏掉的：在那之前
+它們是量體的一部分，藏量體就等於藏它們。拆開之後沒有人補上這一段。
+
+結果是切到污染、地價、鐵路聚焦那類檢視時，白模上會浮著全彩的鋪面、樹、
+招牌與雨遮 —— 而白模的用意正是把無關的東西壓成單色背景。
+
+**修法：** 檢視模式與縮放是兩個獨立的閘門，任一方直接設 `visible` 都會踩到
+對方，所以兩者都收斂到 `applyLayerVisibility()`：
+
+```
+decalLayer          = !focusMode
+prop / overheadLayer = !focusMode && !detailHidden
+```
+
+閘門本身放在 `InstancedLayer.setVisible()`，因為 `acquire()` 與 `release()`
+也會動 `visible` —— 閘門若只是呼叫端逐桶設一次，關著的時候蓋一棟新房子就會
+讓那一桶單獨冒出來。
+
+**回退驗證：** 拿掉 `setViewMode` 裡的 `applyLayerVisibility()` →
+「should hide decals, low props and overheads behind the white model」轉紅
+（`expected 'all' to be 'none'`）。
+
+**測試自己的漏洞（回退驗證抓到的）：** 判斷用的 helper 原本是布林
+「每個非空桶都畫嗎」。拿掉 `acquire` 的閘門時它**沒有轉紅** —— 漏閘門只讓
+新蓋的那一桶亮回來，其餘仍是關的，於是「不是全開」照樣成立。改成三態
+（`all` / `none` / `some`）之後才紅，訊息是 `expected 'some' to be 'none'`。
+布林的判斷在這裡是不夠的。

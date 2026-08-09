@@ -1554,6 +1554,12 @@ export class Game {
     if (this.keys.has('a') || this.keys.has('arrowleft')) this.sceneManager.panCamera(-panSpeed, 0);
     if (this.keys.has('d') || this.keys.has('arrowright')) this.sceneManager.panCamera(panSpeed, 0);
 
+    // 縮到遠景就把矮物件與懸挑整層關掉（見 DETAIL_LOD）。每幀的成本是兩個
+    // 比較，狀態沒變時直接返回。
+    this.buildingRenderer.updateDetailLOD(
+      this.sceneManager.camera.top - this.sceneManager.camera.bottom,
+    );
+
     // Simulation tick
     if (!this.paused) {
       const tickInterval = this.state.clock.getTickInterval() / 1000;
