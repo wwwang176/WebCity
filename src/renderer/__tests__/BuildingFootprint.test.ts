@@ -1,98 +1,129 @@
 import { describe, it, expect } from 'vitest';
 import {
-  TARGET_WIDTHS_M, variantWidthUnits, footprintScaleFor, getVariants, LEVELS,
+  TARGET_HEIGHTS_M, TARGET_WIDTHS_M, getVariants, LEVELS, variantWidthUnits,
+  footprintEnvelopeUnits, footprintScaleFor, footprintScaleFrom, widthJitterFor,
   type Density,
 } from '../geometry/buildings/registry';
-import { METRES_PER_CELL, MAX_BUILDING_WIDTH_M } from '../../core/grid/constants';
-import {
-  BUILDING_HALF_SIZE, WALKWAY_OFFSET,
-} from '../../core/traffic/SidewalkGraph';
-import { ZoneType } from '../../core/grid/types';
+import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../../core/grid/constants';
 
-/**
- * 建築原本一律 7-8 m 寬、只佔 12 m 格子的 60%，所以 42 m 的高層住宅是
- * 5.5:1 的細針 —— 「太高」的觀感有一半來自太瘦。
- *
- * 放寬基地的風險是越界壓到鄰居或馬路，而那在畫面上不明顯 ——
- * BUG-218 就是這樣被包圍盒測試抓到的。
- */
-const CASES: Array<[number, Density]> = [
-  [ZoneType.RESIDENTIAL_LOW, 'LOW'],
-  [ZoneType.RESIDENTIAL_HIGH, 'HIGH'],
-  [ZoneType.COMMERCIAL_LOW, 'LOW'],
-  [ZoneType.COMMERCIAL_HIGH, 'HIGH'],
-  [ZoneType.INDUSTRIAL, 'LOW'],
-  [ZoneType.OFFICE, 'LOW'],
-  [ZoneType.OFFICE, 'HIGH'],
-];
+const HALF_ENVELOPE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
 
-describe('TARGET_WIDTHS_M', () => {
-  it('should never ask for more than the cell can hold', () => {
-    for (const width of Object.values(TARGET_WIDTHS_M)) {
-      expect(width).toBeLessThanOrEqual(METRES_PER_CELL);
+function eachBucket(fn: (zoneType: number, density: Density, level: number, vi: number) => void) {
+  for (const key of Object.keys(TARGET_HEIGHTS_M)) {
+    const [zs, ds] = key.split(':');
+    const zoneType = Number(zs);
+    const density = ds as Density;
+    for (const level of LEVELS) {
+      const variants = getVariants(zoneType, level);
+      for (let vi = 0; vi < variants.length; vi++) fn(zoneType, density, level, vi);
     }
+  }
+}
+
+describe('footprint envelope', () => {
+  it('should keep every variant inside the pedestrian envelope at maximum jitter', () => {
+    // BUG-222：20 個變體有 14 個越線，其中 4 個吃進鄰居的格子。舊的上限
+    // 只保證「寬度 <= 1 格」，而行人的門節點在 0.4083 外側。
+    eachBucket((zoneType, density, level, vi) => {
+      const half = footprintEnvelopeUnits(zoneType, density, level, vi);
+      expect(half, `zone ${zoneType}/${density} L${level} v${vi}`)
+        .toBeLessThanOrEqual(HALF_ENVELOPE + 1e-9);
+    });
   });
 
-  it('should never push a building through the pedestrian walkway', () => {
-    // 行人的門與走道節點放在建築牆面外側 WALKWAY_OFFSET 處。建築比
-    // SidewalkGraph 假設的還寬，行人就會走進建築裡面 —— 而那在畫面上
-    // 不明顯，只有走近看才會發現有人穿牆。
-    for (const [key, width] of Object.entries(TARGET_WIDTHS_M)) {
-      expect(width, `${key} is wider than the walkway allows`)
-        .toBeLessThanOrEqual(MAX_BUILDING_WIDTH_M);
-      expect(width / METRES_PER_CELL / 2, `${key} reaches the door nodes`)
-        .toBeLessThanOrEqual(BUILDING_HALF_SIZE);
-    }
-  });
-
-  it('should leave the walkway itself inside the cell', () => {
-    // 角節點是最外側的那一個：門節點再往外半個 WALKWAY_OFFSET。
-    const cornerNodeDist = BUILDING_HALF_SIZE + WALKWAY_OFFSET * 1.5;
-    expect(cornerNodeDist).toBeLessThanOrEqual(0.5);
-  });
-
-  it('should keep low density loose and high density close to full', () => {
-    // 低密度的留白是院子、車道與樹的位置。
-    expect(TARGET_WIDTHS_M['1:LOW']! / METRES_PER_CELL).toBeLessThan(0.7);
-    expect(TARGET_WIDTHS_M['2:HIGH']! / METRES_PER_CELL).toBeGreaterThan(0.8);
+  it('should still draw the approved width at median jitter', () => {
+    // 修法不得偷偷把已確認的尺寸改小。若上限咬到了，畫出來的寬度會小於
+    // 尺寸表 x 抖動中位數 —— 這一條就是在盯「上限退化成安全網」。
+    eachBucket((zoneType, density, level, vi) => {
+      const target = TARGET_WIDTHS_M[`${zoneType}:${density}`]!;
+      const { down, up } = widthJitterFor(zoneType, density);
+      const median = 1 - down + 0.5 * (down + up);
+      const drawnM = variantWidthUnits(zoneType, density, level, vi)
+        * footprintScaleFor(zoneType, density, level, vi, 0.5) * METRES_PER_CELL;
+      expect(drawnM, `zone ${zoneType}/${density} L${level} v${vi}`)
+        .toBeCloseTo(target * median, 6);
+    });
   });
 });
 
-describe('footprintScaleFor', () => {
-  it('should never let a building cross into its neighbour, even at max jitter', () => {
-    // 逐實例寬深抖動最大 1.15，未縮放幾何置中，所以縮放後的半寬乘上抖動
-    // 必須留在半格（0.5 world unit）之內。
-    for (const [zone, density] of CASES) {
-      for (const level of LEVELS) {
-        const variants = getVariants(zone, level);
-        for (let i = 0; i < variants.length; i++) {
-          const halfWidth = variantWidthUnits(zone, density, level, i) / 2;
-          const scaled = halfWidth * footprintScaleFor(zone, density, level, i) * 1.15;
-          expect(scaled, `zone ${zone} ${density} L${level} v${i} overflows`)
-            .toBeLessThanOrEqual(0.5);
-        }
+describe('footprintScaleFrom', () => {
+  const JITTER = { down: 0.15, up: 0.15 };
+
+  it('should refuse to scale a variant past the envelope however big the target', () => {
+    // 現行尺寸表裡「想要的寬度」永遠先咬，所以上限是護欄而不是常態路徑。
+    // 護欄要能擋住的是「有人把目標寬度調過頭」—— 那正是 BUG-222 的發生方式。
+    for (const targetM of [9.8, 12, 14, 30]) {
+      for (const units of [0.4, 0.5, 0.68, 1.0]) {
+        const maxAbs = units / 2;
+        const scale = footprintScaleFrom(targetM, units, maxAbs, JITTER, 1);
+        expect(maxAbs * scale, `target ${targetM}m units ${units}`)
+          .toBeLessThanOrEqual(HALF_ENVELOPE + 1e-9);
       }
     }
   });
 
-  it('should widen a high-density tower well past its authored width', () => {
-    const zone = ZoneType.RESIDENTIAL_HIGH;
-    for (const level of LEVELS) {
-      expect(footprintScaleFor(zone, 'HIGH', level, 0),
-        `res-high L${level} was not widened`).toBeGreaterThan(1.2);
+  it('should still honour a target that fits', () => {
+    // 護欄不得在合法範圍內動手腳。
+    const scale = footprintScaleFrom(6.0, 0.5, 0.25, JITTER, 0.5);
+    expect(0.5 * scale * METRES_PER_CELL).toBeCloseTo(6.0, 9);
+  });
+
+  it('should measure the ceiling from the centre, not from the width', () => {
+    // 單邊外凸的幾何：寬 0.68 但最大半距 0.43。用寬度算上限會放它過去。
+    const scale = footprintScaleFrom(9.8, 0.68, 0.43, { down: 0.15, up: 0 }, 1);
+    expect(0.43 * scale).toBeLessThanOrEqual(HALF_ENVELOPE + 1e-9);
+  });
+
+  it('should not divide by zero for an empty variant', () => {
+    expect(footprintScaleFrom(6.0, 0, 0, JITTER, 0.5)).toBe(1);
+    expect(Number.isFinite(footprintScaleFrom(6.0, 0.5, 0, JITTER, 0.5))).toBe(true);
+  });
+});
+
+describe('centreFootprint', () => {
+  it('should leave no variant lopsided about the cell centre', () => {
+    // 單邊外凸會浪費另一側的餘裕：makeResHighV3 的 z 是 -0.25 ~ +0.43，
+    // 等比縮放到「寬度 0.68 格」之後那一側仍在 0.43。
+    eachBucket((zoneType, _d, level, vi) => {
+      const geo = getVariants(zoneType, level)[vi]!();
+      geo.computeBoundingBox();
+      const b = geo.boundingBox!;
+      expect(Math.abs(b.max.x + b.min.x), `zone ${zoneType} L${level} v${vi} x`)
+        .toBeLessThan(1e-6);
+      expect(Math.abs(b.max.z + b.min.z), `zone ${zoneType} L${level} v${vi} z`)
+        .toBeLessThan(1e-6);
+      geo.dispose();
+    });
+  });
+
+  it('should keep buildings standing on the ground', () => {
+    // 置中只能動 x/z。連 y 一起置中的話建築會有一半埋進地面。
+    eachBucket((zoneType, _d, level, vi) => {
+      const geo = getVariants(zoneType, level)[vi]!();
+      geo.computeBoundingBox();
+      expect(geo.boundingBox!.min.y, `zone ${zoneType} L${level} v${vi}`)
+        .toBeGreaterThanOrEqual(-1e-6);
+      geo.dispose();
+    });
+  });
+});
+
+describe('widthJitterFor', () => {
+  it('should give a plot-filling zone no room to grow wider', () => {
+    // 目標寬度已經等於上限的分區，向上抖動必然越線。
+    for (const key of Object.keys(TARGET_WIDTHS_M)) {
+      if (TARGET_WIDTHS_M[key] !== MAX_BUILDING_WIDTH_M) continue;
+      const [zs, ds] = key.split(':');
+      expect(widthJitterFor(Number(zs), ds as Density).up, `${key} up`).toBe(0);
     }
   });
 
-  it('should leave low-density houses roughly as authored', () => {
-    // 院子要留著，所以這裡不該有大幅放寬。
-    for (const level of LEVELS) {
-      const scale = footprintScaleFor(ZoneType.RESIDENTIAL_LOW, 'LOW', level, 0);
-      expect(scale).toBeGreaterThan(0.8);
-      expect(scale).toBeLessThan(1.3);
+  it('should still let plot-filling buildings be thinner than the plot', () => {
+    // 完全取消抖動會讓一整排塔樓寬度一模一樣。
+    for (const key of Object.keys(TARGET_WIDTHS_M)) {
+      if (TARGET_WIDTHS_M[key] !== MAX_BUILDING_WIDTH_M) continue;
+      const [zs, ds] = key.split(':');
+      expect(widthJitterFor(Number(zs), ds as Density).down).toBeGreaterThan(0.05);
     }
-  });
-
-  it('should not divide by zero for a zone with no buildings', () => {
-    expect(Number.isFinite(footprintScaleFor(ZoneType.NONE, 'LOW', 1, 0))).toBe(true);
   });
 });

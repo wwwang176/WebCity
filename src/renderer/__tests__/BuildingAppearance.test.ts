@@ -92,10 +92,11 @@ describe('appearanceOf', () => {
     for (let x = 0; x < 50; x++) {
       for (let y = 0; y < 50; y++) {
         const a = appearanceOf({ ...input, x, y });
-        expect(a.widthScale).toBeGreaterThanOrEqual(0.85);
-        expect(a.widthScale).toBeLessThanOrEqual(1.15);
-        expect(a.depthScale).toBeGreaterThanOrEqual(0.85);
-        expect(a.depthScale).toBeLessThanOrEqual(1.15);
+        // 寬深現在是原始亂數，範圍由註冊表依分區展開（BUG-222）。
+        expect(a.width01).toBeGreaterThanOrEqual(0);
+        expect(a.width01).toBeLessThan(1);
+        expect(a.depth01).toBeGreaterThanOrEqual(0);
+        expect(a.depth01).toBeLessThan(1);
         expect(a.heightScale).toBeGreaterThanOrEqual(0.9);
         expect(a.heightScale).toBeLessThanOrEqual(1.1);
         expect([0, 1, 2, 3]).toContain(a.rotationQuarter);

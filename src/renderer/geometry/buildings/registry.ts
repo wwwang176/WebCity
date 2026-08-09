@@ -268,6 +268,32 @@ function makeOfficeV3(): THREE.BufferGeometry {
 // ===== Variant Registry =====
 type GeoBuilder = () => THREE.BufferGeometry;
 
+/**
+ * 就地把幾何的 x/z 包圍盒置中。y 不動 —— 建築要站在地面上。
+ *
+ * 單邊外凸的幾何會浪費另一側的餘裕：makeResHighV3 的 z 是 −0.25 ~ +0.43，
+ * 寬度 0.68 但最大半距 0.43，等比縮放到「寬度 0.68 格」之後那一側仍在
+ * 0.43，再乘抖動就是 0.594 —— 越過格子邊界吃進鄰居（BUG-222）。
+ */
+export function centreFootprint(geo: THREE.BufferGeometry): void {
+  geo.computeBoundingBox();
+  const b = geo.boundingBox!;
+  geo.translate(-(b.max.x + b.min.x) / 2, 0, -(b.max.z + b.min.z) / 2);
+  geo.computeBoundingBox();
+}
+
+/**
+ * 所有變體都經過置中。包在註冊表這一層而不是每個 builder 各自呼叫，
+ * 新增變體時才不會漏掉。
+ */
+function centred(build: GeoBuilder): GeoBuilder {
+  return () => {
+    const geo = build();
+    centreFootprint(geo);
+    return geo;
+  };
+}
+
 const VARIANTS: Record<number, GeoBuilder[]> = {
   [ZoneType.RESIDENTIAL_LOW]:  [makeResLowV1, makeResLowV2, makeResLowV3],
   [ZoneType.RESIDENTIAL_HIGH]: [makeResHighV1, makeResHighV2, makeResHighV3],
@@ -276,6 +302,9 @@ const VARIANTS: Record<number, GeoBuilder[]> = {
   [ZoneType.INDUSTRIAL]:       [makeIndV1, makeIndV2, makeIndV3],
   [ZoneType.OFFICE]:           [makeOfficeV1, makeOfficeV2, makeOfficeV3],
 };
+for (const key of Object.keys(VARIANTS)) {
+  VARIANTS[Number(key)] = VARIANTS[Number(key)]!.map(centred);
+}
 
 export type { GeoBuilder };
 
@@ -344,19 +373,26 @@ export const TARGET_HEIGHTS_M: Record<string, [number, number, number]> = {
   [heightKey(ZoneType.OFFICE, 'HIGH')]:           [24, 36, 48],
 };
 
+interface Measured {
+  height: number;
+  width: number;
+  /** 離格心的最大距離。置中的幾何等於 width/2，沒置中的會更大。 */
+  maxAbs: number;
+}
+
 /** 未縮放幾何的量測快取，避免每次放建築都重算包圍盒。 */
-const measureCache = new Map<string, { height: number; width: number }>();
+const measureCache = new Map<string, Measured>();
 
 function measure(
   zoneType: number, density: Density, level: number, variantIndex: number,
-): { height: number; width: number } {
+): Measured {
   const key = `${zoneType}:${density}:${level}:${variantIndex}`;
   const cached = measureCache.get(key);
   if (cached) return cached;
 
   const variants = getVariants(zoneType, level);
   if (variants.length === 0) {
-    const zero = { height: 0, width: 0 };
+    const zero = { height: 0, width: 0, maxAbs: 0 };
     measureCache.set(key, zero);
     return zero;
   }
@@ -365,13 +401,26 @@ function measure(
   const b = geo.boundingBox!;
   // 用兩軸中較大的一個：等比縮放才不會把長方形壓成別的比例，
   // 而且較大的那一軸才是會不會撞出格子的那一軸。
+  //
+  // maxAbs 與 width/2 分開量：兩者只有在幾何置中時才相等，而「假設已置中」
+  // 正是 BUG-222 的第二個根因。量真的距離，上限就不會依賴另一個檔案的行為。
   const out = {
     height: b.max.y,
     width: Math.max(b.max.x - b.min.x, b.max.z - b.min.z),
+    maxAbs: Math.max(
+      Math.abs(b.min.x), Math.abs(b.max.x), Math.abs(b.min.z), Math.abs(b.max.z),
+    ),
   };
   geo.dispose();
   measureCache.set(key, out);
   return out;
+}
+
+/** 這個變體未經縮放時，離格心的最大距離（world unit）。 */
+export function variantMaxAbsUnits(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): number {
+  return measure(zoneType, density, level, variantIndex).maxAbs;
 }
 
 /** 這個變體未經縮放時有多高（world unit）。 */
@@ -409,29 +458,96 @@ export const TARGET_WIDTHS_M: Record<string, number> = {
   [heightKey(ZoneType.OFFICE, 'HIGH')]:           MAX_BUILDING_WIDTH_M,
 };
 
-/**
- * 逐實例寬深抖動的上限（見 BuildingAppearance.widthScale）。基地縮放必須
- * 把它算進去，否則抖到最寬的那些會越過格子邊界吃進鄰居。
- */
-const MAX_WIDTH_JITTER = 1.15;
+/** 建築（含所有外掛零件）離格心的最大距離。行人的門節點就在它外側。 */
+const HALF_ENVELOPE_UNITS = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
 
 /**
- * 要把這個變體的基地縮放到目標寬度該乘多少。
+ * 逐實例寬深抖動的範圍，分「向下」與「向上」。
  *
- * 上限是「最寬的抖動之後仍在格子內」—— 越界就會壓到鄰居或馬路，
- * 而那在畫面上不明顯、在測試裡很好抓（BUG-218 就是這樣抓到的）。
+ * 向上抖動會把建築推出行人包絡線，所以**目標寬度已經等於上限的分區向上為 0**。
+ * 這不是把變化拿掉：向下保留 15%，鋪滿基地的分區仍會有偏瘦的個體，只是沒有
+ * 偏胖的。真正的變化來源是量體變體，不是隨機拉寬。
+ *
+ * 另一種寫法是保留 ±15% 並讓上限去咬，但那會把高密度的平均寬度從 9.8 壓到
+ * 9.33 m —— 等於偷偷改掉已經確認過的比例。取消向上抖動之後，`wanted` 與
+ * `ceiling` 剛好相等，上限退化成安全網，每個尺寸都原封不動。
+ */
+export const WIDTH_JITTER: Record<string, { down: number; up: number }> = {};
+for (const [key, target] of Object.entries(TARGET_WIDTHS_M)) {
+  WIDTH_JITTER[key] = target >= MAX_BUILDING_WIDTH_M
+    ? { down: 0.15, up: 0 }
+    : { down: 0.15, up: 0.15 };
+}
+
+export function widthJitterFor(
+  zoneType: number, density: Density,
+): { down: number; up: number } {
+  return WIDTH_JITTER[heightKey(zoneType, density)] ?? { down: 0, up: 0 };
+}
+
+/**
+ * 基地縮放的全部算術，與尺寸表和幾何量測解耦。
+ *
+ * 抽成純函式是為了讓上限本身能被測到：現行的尺寸表裡 `wanted` 永遠先咬，
+ * 上限退化成護欄 —— 護欄只有在有人日後把目標寬度調過頭時才作用，
+ * 而那正是 BUG-222 發生的方式。沒有這個入口，就沒有辦法測它。
+ *
+ * @param targetM     目標寬度（公尺）
+ * @param unitsWide   未縮放幾何的包圍盒寬度（格）
+ * @param maxAbsUnits 未縮放幾何離格心的最大距離（格）。置中者等於寬度的一半
+ * @param jitter01    [0, 1) 的原始亂數
+ */
+export function footprintScaleFrom(
+  targetM: number, unitsWide: number, maxAbsUnits: number,
+  jitter: { down: number; up: number }, jitter01: number,
+): number {
+  if (unitsWide <= 0) return 1;
+  const wanted = targetM / (unitsWide * METRES_PER_CELL);
+  // 上限用「離格心的最大距離」而不是包圍盒寬度 —— 用寬度只保證「不超過
+  // 一格」（半寬 0.5），而行人的門節點在 0.4083 外側；非置中的幾何還會
+  // 單邊外凸。兩者合起來就是 BUG-222。
+  const ceiling = maxAbsUnits > 0
+    ? HALF_ENVELOPE_UNITS / (maxAbsUnits * (1 + jitter.up))
+    : Infinity;
+  const base = Math.min(wanted, ceiling);
+  return base * (1 - jitter.down + jitter01 * (jitter.down + jitter.up));
+}
+
+/**
+ * 要把這個變體的基地縮放到目標寬度該乘多少。`jitter01` 是 [0, 1) 的原始
+ * 亂數，省略時取正中間。
+ *
+ * 抖動範圍在這裡展開而不是在 BuildingAppearance 裡：容不容得下抖動是分區
+ * 與包絡線的問題，不是亂數的問題。兩件事分開放，改了一邊不會有東西報錯
+ * —— BUG-222 就是這樣發生的。
  */
 export function footprintScaleFor(
   zoneType: number, density: Density, level: number, variantIndex: number,
+  jitter01 = 0.5,
 ): number {
   const target = TARGET_WIDTHS_M[heightKey(zoneType, density)];
   if (!target) return 1;
-  const units = variantWidthUnits(zoneType, density, level, variantIndex);
-  if (units <= 0) return 1;
+  return footprintScaleFrom(
+    target,
+    variantWidthUnits(zoneType, density, level, variantIndex),
+    variantMaxAbsUnits(zoneType, density, level, variantIndex),
+    widthJitterFor(zoneType, density),
+    jitter01,
+  );
+}
 
-  const wanted = target / (units * METRES_PER_CELL);
-  const ceiling = 1 / (units * MAX_WIDTH_JITTER);
-  return Math.min(wanted, ceiling);
+/**
+ * 這個變體抖到最寬時，離格心的最大距離（格）。
+ *
+ * 測試與庭院帶都靠它 —— 「建築讓出了多少空間」正是這個數字的補數。
+ * 用實際量到的 maxAbs 而不是 width/2：後者等於預設幾何已經置中，
+ * 那樣這個函式就無法察覺「忘了置中」這個情形。
+ */
+export function footprintEnvelopeUnits(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): number {
+  return variantMaxAbsUnits(zoneType, density, level, variantIndex)
+    * footprintScaleFor(zoneType, density, level, variantIndex, 1);
 }
 
 /**

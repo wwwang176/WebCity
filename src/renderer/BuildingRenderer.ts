@@ -327,12 +327,12 @@ export class BuildingRenderer {
     // 高度與基地寬度都來自公尺表，由這個變體自己的未縮放尺寸反推係數。
     const finalHeight = heightScaleFor(zoneType, density, level, app.variantIndex)
       * app.heightScale;
-    const footprint = footprintScaleFor(zoneType, density, level, app.variantIndex);
+    // 寬與深各抖各的，所以要各算一次。
+    const footprint = (jitter01: number) =>
+      footprintScaleFor(zoneType, density, level, app.variantIndex, jitter01);
 
     this._rotation.makeRotationY((app.rotationQuarter * Math.PI) / 2);
-    this._scale.makeScale(
-      app.widthScale * footprint, finalHeight, app.depthScale * footprint,
-    );
+    this._scale.makeScale(footprint(app.width01), finalHeight, footprint(app.depth01));
     this._matrix.multiplyMatrices(this._scale, this._rotation);
     this._matrix.setPosition(x, 0.05, y);
     mesh.setMatrixAt(idx, this._matrix);

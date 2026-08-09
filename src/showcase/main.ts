@@ -67,11 +67,12 @@ function place(cell: PlacedCell, seedByte: number): number {
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
-  const footprint = footprintScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex);
+  const footprint = (jitter01: number) =>
+    footprintScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex, jitter01);
   mesh.scale.set(
-    app.widthScale * footprint,
+    footprint(app.width01),
     heightScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex) * app.heightScale,
-    app.depthScale * footprint,
+    footprint(app.depth01),
   );
   mesh.position.set(cell.x, 0.05, cell.z);
   sceneManager.scene.add(mesh);

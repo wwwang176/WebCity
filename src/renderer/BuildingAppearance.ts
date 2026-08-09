@@ -68,10 +68,15 @@ export interface AppearanceInput {
 
 export interface Appearance {
   variantIndex: number;
-  /** 0.85 ~ 1.15 */
-  widthScale: number;
-  /** 0.85 ~ 1.15 */
-  depthScale: number;
+  /**
+   * [0, 1) 的原始亂數，交給 `footprintScaleFor` 換算成縮放。
+   *
+   * 範圍以前寫在這裡（0.85 ~ 1.15），與「基地寬度上限」分屬兩個檔案，
+   * 所以放寬目標寬度時沒人記得抖動是再乘上去的 —— 一半以上的建築因此
+   * 越過行人包絡線（BUG-222）。現在容不容得下抖動由註冊表一處決定。
+   */
+  width01: number;
+  depth01: number;
   /**
    * 0.9 ~ 1.1，套在目標高度上的自然差異。
    *
@@ -104,8 +109,8 @@ export function appearanceOf(input: AppearanceInput): Appearance {
 
   return {
     variantIndex: variantIndexOf(x, y, seedByte, variantCount),
-    widthScale: 0.85 + at(STREAM.WIDTH) * 0.3,
-    depthScale: 0.85 + at(STREAM.DEPTH) * 0.3,
+    width01: at(STREAM.WIDTH),
+    depth01: at(STREAM.DEPTH),
     heightScale: 1.0 + (at(STREAM.HEIGHT) - 0.5) * 0.2,
     rotationQuarter: Math.floor(at(STREAM.ROTATION) * 4) % 4,
     paletteIndex: paletteSize > 0
