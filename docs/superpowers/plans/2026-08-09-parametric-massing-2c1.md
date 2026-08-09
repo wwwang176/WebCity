@@ -1554,3 +1554,486 @@ Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
 Claude-Session: https://claude.ai/code/session_013CaAT8jcajKrRTLsVvFoop
 MSG
 ```
+
+---
+
+## Task 5：`prototypes.ts` —— 各分區的原型表
+
+組合器就緒之後，原型只是一張參數表。每個原型宣告 `minLevel`，所以 L1 只拿得到
+簡單的、L3 全開 —— **等級的外型差異因此順便就有了**，不必另外做一套。
+
+**排表的約束**：每個等級**可用的原型裡至少一半是不對稱的**。這是倒推來的：
+`prototypeFor` 用 `variantIndex % 可用數` 輪流取，所以不對稱變體的比例約等於
+不對稱原型的比例，而驗收要 4/8。高密度分區在 L1 只有板樓與裙樓塔，兩個都對稱，
+所以 `offsetTower`（塔身偏置）必須在 L1 就開放 —— 那是這張表最不直覺的一格。
+
+| 分區 | L1 可用 | L2 追加 | L3 追加 |
+|---|---|---|---|
+| 住宅低 | 山牆單體、**主屋+車庫** | **L 形**、**兩層+前廊** | — |
+| 住宅高 | 板樓、裙樓塔、**偏置塔**、**L 形塔** | 逐層退縮、**雙塔** | — |
+| 商業低 | 方盒、**前店高後棟矮** | **L 形**、**主棟+側棟** | U 形凹槽 |
+| 商業高 | 裙樓塔、**偏置塔** | 逐層退縮、**L 形塔** | **雙塔** |
+| 工業 | 大跨廠房、**廠房+辦公角** | **高低兩跨** | **L 形廠房** |
+| 辦公 | 板樓、**偏置塔** | 裙樓塔、**L 形塔** | **雙塔**、U 形凹槽 |
+
+（粗體 = 不對稱）
+
+**Files:**
+- Create: `src/renderer/geometry/buildings/massing/prototypes.ts`
+- Test: `src/renderer/__tests__/MassingPrototypes.test.ts`（新）
+
+**Interfaces:**
+- Consumes：`composers.ts` 全部八個；`volume.ts` 的 `centroidOffset`（測試用）。
+- Produces：
+  ```ts
+  export interface Prototype { name: string; minLevel: number; compose: Composer }
+  export function prototypesFor(zoneType: number, level: number): Prototype[];
+  export function prototypeFor(zoneType: number, level: number, variantIndex: number): Prototype;
+  ```
+
+- [ ] **Step 1：寫失敗測試**
+
+`src/renderer/__tests__/MassingPrototypes.test.ts`：
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { prototypesFor, prototypeFor } from '../geometry/buildings/massing/prototypes';
+import { centroidOffset } from '../geometry/buildings/massing/volume';
+import { VARIANT_COUNT, type Dimensions } from '../geometry/buildings/massing/dimensions';
+import { variantRng } from '../geometry/buildings/massing/rng';
+import { ZONE_TYPES } from '../geometry/buildings/registry';
+
+const LEVELS = [1, 2, 3] as const;
+const DIMS: Dimensions = { w: 0.72, d: 0.68, floors: 8, floorHeight: 0.26, height: 2.08 };
+
+describe('prototype table', () => {
+  it('should give every zone at least two prototypes at every level', () => {
+    // 一個原型的話八個變體只剩尺寸可以變。
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        expect(prototypesFor(z, lv).length, `zone ${z} L${lv}`).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it('should only ever add prototypes as the level climbs', () => {
+    // 等級的外型差異就靠這個。L3 少掉 L1 有的東西是筆誤。
+    for (const z of ZONE_TYPES) {
+      const names = (lv: number) => new Set(prototypesFor(z, lv).map(p => p.name));
+      for (const lower of [1, 2]) {
+        for (const n of names(lower)) {
+          expect(names(lower + 1).has(n), `zone ${z} L${lower + 1} 少了 ${n}`).toBe(true);
+        }
+      }
+      expect(names(3).size, `zone ${z} 的 L3 沒有比 L1 多`).toBeGreaterThan(names(1).size);
+    }
+  });
+
+  it('should keep at least half the available prototypes asymmetric', () => {
+    // prototypeFor 用 variantIndex % 可用數輪流取，所以不對稱變體的比例約等於
+    // 不對稱原型的比例 —— 而驗收要 4/8。高密度分區在 L1 只有板樓與裙樓塔，
+    // 兩個都對稱，所以偏置塔必須在 L1 就開放。
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        const ps = prototypesFor(z, lv);
+        const asym = ps.filter(p => centroidOffset(p.compose(DIMS, variantRng(z, 'LOW', lv, 0))) > 0.04);
+        expect(asym.length * 2, `zone ${z} L${lv} 只有 ${asym.length}/${ps.length} 個不對稱`)
+          .toBeGreaterThanOrEqual(ps.length);
+      }
+    }
+  });
+
+  it('should use every available prototype across the eight variants', () => {
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        const used = new Set<string>();
+        for (let vi = 0; vi < VARIANT_COUNT; vi++) used.add(prototypeFor(z, lv, vi).name);
+        expect(used.size, `zone ${z} L${lv}`).toBe(prototypesFor(z, lv).length);
+      }
+    }
+  });
+
+  it('should give the same prototype for the same variant every time', () => {
+    for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+      expect(prototypeFor(3, 2, vi).name).toBe(prototypeFor(3, 2, vi).name);
+    }
+  });
+
+  it('should fall back rather than crash for an unknown zone', () => {
+    expect(prototypesFor(999, 1).length).toBe(0);
+    expect(prototypeFor(999, 1, 0).name).toBe('single');
+  });
+});
+```
+
+- [ ] **Step 2：跑紅** ｜ `pnpm vitest run src/renderer/__tests__/MassingPrototypes.test.ts`
+
+- [ ] **Step 3：實作**
+
+```ts
+import { ZoneType } from '../../../../core/grid/types';
+import {
+  single, mainPlusWing, lShape, podiumTower, setback, notch, twin, splitSpan,
+  type Composer,
+} from './composers';
+
+/**
+ * 一個量體原型 = 組合器 + 參數 + 最低等級。
+ *
+ * `minLevel` 是等級外型差異的全部機制：L1 只拿得到簡單的，L3 全開。不必另外
+ * 為每個等級寫一套形狀。
+ */
+export interface Prototype {
+  name: string;
+  minLevel: number;
+  compose: Composer;
+}
+
+const p = (name: string, minLevel: number, compose: Composer): Prototype =>
+  ({ name, minLevel, compose });
+
+/** 塔身置中的裙樓塔（對稱）。 */
+const PODIUM = podiumTower(2, 0.66, 0);
+/** 塔身推到裙樓邊緣（不對稱）。高密度分區在 L1 唯一的不對稱來源。 */
+const OFFSET_TOWER = podiumTower(2, 0.6, 0.9);
+
+const TABLE: Record<number, Prototype[]> = {
+  [ZoneType.RESIDENTIAL_LOW]: [
+    p('gable', 1, d => single(d)),
+    p('house+garage', 1, mainPlusWing(0.4, 0.5)),
+    p('L-house', 2, lShape(0.55)),
+    p('porch', 2, mainPlusWing(0.28, 0.32)),
+  ],
+  [ZoneType.RESIDENTIAL_HIGH]: [
+    p('slab', 1, d => single(d)),
+    p('podium', 1, PODIUM),
+    p('offsetTower', 1, OFFSET_TOWER),
+    p('L-tower', 1, lShape(0.6)),
+    p('setback', 2, setback(3)),
+    p('twin', 2, twin(0.24)),
+  ],
+  [ZoneType.COMMERCIAL_LOW]: [
+    p('box', 1, d => single(d)),
+    p('shopfront', 1, splitSpan(0.55)),
+    p('L-shop', 2, lShape(0.58)),
+    p('shop+annex', 2, mainPlusWing(0.35, 0.6)),
+    p('courtyard', 3, notch(0.34)),
+  ],
+  [ZoneType.COMMERCIAL_HIGH]: [
+    p('podium', 1, PODIUM),
+    p('offsetTower', 1, OFFSET_TOWER),
+    p('setback', 2, setback(3)),
+    p('L-tower', 2, lShape(0.6)),
+    p('twin', 3, twin(0.22)),
+  ],
+  [ZoneType.INDUSTRIAL]: [
+    p('shed', 1, d => single(d)),
+    p('shed+office', 1, mainPlusWing(0.32, 0.75)),
+    p('twoSpan', 2, splitSpan(0.6)),
+    p('L-shed', 3, lShape(0.6)),
+  ],
+  [ZoneType.OFFICE]: [
+    p('slab', 1, d => single(d)),
+    p('offsetTower', 1, OFFSET_TOWER),
+    p('podium', 2, PODIUM),
+    p('L-tower', 2, lShape(0.6)),
+    p('twin', 3, twin(0.24)),
+    p('courtyard', 3, notch(0.3)),
+  ],
+};
+
+const FALLBACK: Prototype = p('single', 1, d => single(d));
+
+/** 這個 (分區, 等級) 可用的原型。 */
+export function prototypesFor(zoneType: number, level: number): Prototype[] {
+  const lv = Math.max(1, Math.min(3, level));
+  return (TABLE[zoneType] ?? []).filter(x => x.minLevel <= lv);
+}
+
+/**
+ * 這個變體用哪一個原型。依序輪流取，所以每個可用原型至少出現一次 ——
+ * 隨機取會讓某些原型在某些桶裡從來不出現。
+ */
+export function prototypeFor(
+  zoneType: number, level: number, variantIndex: number,
+): Prototype {
+  const ps = prototypesFor(zoneType, level);
+  return ps.length === 0 ? FALLBACK : ps[variantIndex % ps.length]!;
+}
+```
+
+- [ ] **Step 4：跑綠** ｜ 若「至少一半不對稱」紅了，**加一個不對稱原型到那一格，
+不要放寬門檻** —— 門檻是從 4/8 的驗收條件倒推的。
+
+- [ ] **Step 5：回退驗證**
+
+把 `RESIDENTIAL_HIGH` 的 `offsetTower` 的 `minLevel` 改成 2 ——
+`should keep at least half the available prototypes asymmetric` 應在 L1 轉紅。改回來。
+
+- [ ] **Step 6：Commit**
+
+```bash
+git add -A
+git commit -m "feat(render): prototype table — level decides which shapes are available"
+```
+
+---
+
+## Task 6：`roofForms.ts` —— 屋頂形式
+
+屋頂形式與原型**分開挑**，所以「L 形 + 山牆」與「L 形 + 平頂女兒牆」是兩個不同的
+變體 —— 這是在不增加原型數的前提下多一倍面貌的最便宜做法。
+
+`roofForms` 只回傳 `Volume[]`，**不放任何設備**（水塔、空調、煙囪是 2C-2 的詞彙）。
+
+**Files:**
+- Create: `src/renderer/geometry/buildings/massing/roofForms.ts`
+- Test: `src/renderer/__tests__/MassingRoofs.test.ts`（新）
+
+**Interfaces:**
+- Produces：
+  ```ts
+  export type RoofForm = 'flat' | 'parapet' | 'gable' | 'hip' | 'shed' | 'sawtooth' | 'crown';
+  export function roofFormsFor(zoneType: number, level: number): RoofForm[];
+  export function roofFor(zoneType: number, level: number, variantIndex: number): RoofForm;
+  export function buildRoof(form: RoofForm, top: Volume, dims: Dimensions, rng: Rng): Volume[];
+  ```
+
+各分區可用的形式：
+
+| 分區 | 形式 |
+|---|---|
+| 住宅低 | 山牆、四坡 |
+| 住宅高 | 平頂、女兒牆 |
+| 商業低 | 女兒牆、單斜 |
+| 商業高 | 女兒牆、頂部收分（L3 才有） |
+| 工業 | 鋸齒、單斜 |
+| 辦公 | 女兒牆、頂部收分（L3 才有） |
+
+- [ ] **Step 1：寫失敗測試**
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { roofFormsFor, roofFor, buildRoof } from '../geometry/buildings/massing/roofForms';
+import { topOf, maxAbsOf, overlapOf, type Volume } from '../geometry/buildings/massing/volume';
+import { VARIANT_COUNT, type Dimensions } from '../geometry/buildings/massing/dimensions';
+import { variantRng } from '../geometry/buildings/massing/rng';
+import { ZONE_TYPES } from '../geometry/buildings/registry';
+import { PART_ROOF } from '../geometry/buildings/parts';
+
+const LEVELS = [1, 2, 3] as const;
+const DIMS: Dimensions = { w: 0.7, d: 0.66, floors: 6, floorHeight: 0.26, height: 1.56 };
+const TOP: Volume = { x: 0, z: 0, w: 0.7, d: 0.66, y0: 1.3, y1: 1.56 };
+
+describe('roof forms', () => {
+  it('should give every zone at least two forms at every level', () => {
+    // 屋頂形式是在不增加原型數的前提下多一倍面貌最便宜的做法。只有一種就沒了。
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        expect(roofFormsFor(z, lv).length, `zone ${z} L${lv}`).toBeGreaterThanOrEqual(2);
+      }
+    }
+  });
+
+  it('should sit on top of the volume it is given', () => {
+    // 屋頂浮在半空或陷進樓層裡都不會有東西報錯。
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        for (const form of roofFormsFor(z, lv)) {
+          const vs = buildRoof(form, TOP, DIMS, variantRng(z, 'LOW', lv, 0));
+          for (const v of vs) {
+            expect(v.y0, `${form} 沒有貼著頂面`).toBeGreaterThanOrEqual(TOP.y1 - 1e-9);
+          }
+        }
+      }
+    }
+  });
+
+  it('should never grow beyond the footprint it sits on', () => {
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        for (const form of roofFormsFor(z, lv)) {
+          const vs = buildRoof(form, TOP, DIMS, variantRng(z, 'LOW', lv, 0));
+          if (vs.length === 0) continue;
+          expect(maxAbsOf(vs), `${form} 比它站的量體還寬`)
+            .toBeLessThanOrEqual(maxAbsOf([TOP]) + 1e-9);
+        }
+      }
+    }
+  });
+
+  it('should never overlap its own pieces', () => {
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        for (const form of roofFormsFor(z, lv)) {
+          const vs = buildRoof(form, TOP, DIMS, variantRng(z, 'LOW', lv, 0));
+          for (let i = 0; i < vs.length; i++) {
+            for (let j = i + 1; j < vs.length; j++) {
+              expect(overlapOf(vs[i]!, vs[j]!), `${form} 第 ${i}、${j} 塊重疊`)
+                .toBeCloseTo(0, 12);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('should tag every roof piece as roof', () => {
+    // 標成 PART_WALL 的屋頂會長出窗戶。
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        for (const form of roofFormsFor(z, lv)) {
+          for (const v of buildRoof(form, TOP, DIMS, variantRng(z, 'LOW', lv, 0))) {
+            expect(v.part, `${form} 沒標成屋頂`).toBe(PART_ROOF);
+          }
+        }
+      }
+    }
+  });
+
+  it('should keep a pitched roof under half a storey tall', () => {
+    // 屋頂高過半層樓時，建築的總高度就不是樓層數乘樓高了 —— 等級階梯會漂掉。
+    for (const form of ['gable', 'hip', 'shed', 'sawtooth'] as const) {
+      const vs = buildRoof(form, TOP, DIMS, variantRng(1, 'LOW', 1, 0));
+      expect(topOf(vs) - TOP.y1, `${form} 太高`).toBeLessThanOrEqual(DIMS.floorHeight * 0.5 + 1e-9);
+    }
+  });
+
+  it('should use every available form across the eight variants', () => {
+    for (const z of ZONE_TYPES) {
+      for (const lv of LEVELS) {
+        const used = new Set<string>();
+        for (let vi = 0; vi < VARIANT_COUNT; vi++) used.add(roofFor(z, lv, vi));
+        expect(used.size, `zone ${z} L${lv}`).toBe(roofFormsFor(z, lv).length);
+      }
+    }
+  });
+
+  it('should give a flat roof nothing to build', () => {
+    expect(buildRoof('flat', TOP, DIMS, variantRng(1, 'LOW', 1, 0))).toEqual([]);
+  });
+});
+```
+
+- [ ] **Step 2：跑紅**
+
+- [ ] **Step 3：實作**
+
+```ts
+import { ZoneType } from '../../../../core/grid/types';
+import { PART_ROOF } from '../parts';
+import type { Volume } from './volume';
+import type { Dimensions } from './dimensions';
+import type { Rng } from './rng';
+
+/**
+ * 屋頂形式。與原型分開挑 —— 「L 形 + 山牆」與「L 形 + 平頂女兒牆」是兩個不同的
+ * 變體，這是在不增加原型數的前提下多一倍面貌最便宜的做法。
+ *
+ * 這裡只有形式，**沒有設備** —— 水塔、空調、煙囪是 2C-2 的詞彙。
+ */
+export type RoofForm =
+  | 'flat' | 'parapet' | 'gable' | 'hip' | 'shed' | 'sawtooth' | 'crown';
+
+const FORMS: Record<number, Array<{ form: RoofForm; minLevel: number }>> = {
+  [ZoneType.RESIDENTIAL_LOW]:  [{ form: 'gable', minLevel: 1 }, { form: 'hip', minLevel: 1 }],
+  [ZoneType.RESIDENTIAL_HIGH]: [{ form: 'flat', minLevel: 1 }, { form: 'parapet', minLevel: 1 }],
+  [ZoneType.COMMERCIAL_LOW]:   [{ form: 'parapet', minLevel: 1 }, { form: 'shed', minLevel: 1 }],
+  [ZoneType.COMMERCIAL_HIGH]:  [
+    { form: 'parapet', minLevel: 1 }, { form: 'flat', minLevel: 1 },
+    { form: 'crown', minLevel: 3 },
+  ],
+  [ZoneType.INDUSTRIAL]:       [{ form: 'sawtooth', minLevel: 1 }, { form: 'shed', minLevel: 1 }],
+  [ZoneType.OFFICE]:           [
+    { form: 'parapet', minLevel: 1 }, { form: 'flat', minLevel: 1 },
+    { form: 'crown', minLevel: 3 },
+  ],
+};
+
+export function roofFormsFor(zoneType: number, level: number): RoofForm[] {
+  const lv = Math.max(1, Math.min(3, level));
+  const list = (FORMS[zoneType] ?? []).filter(f => f.minLevel <= lv).map(f => f.form);
+  return list.length > 0 ? list : ['flat', 'parapet'];
+}
+
+/**
+ * 這個變體的屋頂形式。
+ *
+ * 用 `variantIndex` 的**商**而不是餘數：原型用的是餘數，兩者共用餘數的話，
+ * 「原型 A 永遠配屋頂 X」—— 那等於兩個維度只剩一個。
+ */
+export function roofFor(zoneType: number, level: number, variantIndex: number): RoofForm {
+  const forms = roofFormsFor(zoneType, level);
+  const ps = Math.max(1, forms.length);
+  return forms[Math.floor(variantIndex / ps + variantIndex) % forms.length]!;
+}
+
+const roof = (v: Omit<Volume, 'part'>): Volume => ({ ...v, part: PART_ROOF });
+
+/**
+ * 屋頂的量體。
+ *
+ * 斜屋頂一律壓在**半層樓**以內：高過半層樓的話建築的總高度就不是「樓層數 ×
+ * 樓高」了，等級階梯會跟著漂掉。
+ */
+export function buildRoof(
+  form: RoofForm, top: Volume, dims: Dimensions, rng: Rng,
+): Volume[] {
+  const pitch = dims.floorHeight * 0.45;
+  const base = { x: top.x, z: top.z, y0: top.y1 };
+
+  switch (form) {
+    case 'flat':
+      return [];
+
+    case 'parapet': {
+      // 女兒牆：沿著頂面四周一圈矮牆。用四塊而不是「大盒減小盒」——
+      // 中間那一塊會與樓層頂面重疊。
+      const t = Math.min(top.w, top.d) * 0.06;
+      const h = dims.floorHeight * 0.22;
+      const innerD = top.d - 2 * t;
+      return [
+        roof({ ...base, z: top.z - top.d / 2 + t / 2, w: top.w, d: t, y1: top.y1 + h }),
+        roof({ ...base, z: top.z + top.d / 2 - t / 2, w: top.w, d: t, y1: top.y1 + h }),
+        roof({ ...base, x: top.x - top.w / 2 + t / 2, w: t, d: innerD, y1: top.y1 + h }),
+        roof({ ...base, x: top.x + top.w / 2 - t / 2, w: t, d: innerD, y1: top.y1 + h }),
+      ];
+    }
+
+    case 'crown':
+      // 頂部收分：再收一段細的。
+      return [roof({ ...base, w: top.w * 0.62, d: top.d * 0.62, y1: top.y1 + dims.floorHeight * 0.5 })];
+
+    case 'gable':
+      return [roof({ ...base, w: top.w, d: top.d, y1: top.y1 + pitch, shape: 'gable',
+        facing: rng() < 0.5 ? 0 : 1 })];
+
+    case 'hip':
+      return [roof({ ...base, w: top.w, d: top.d, y1: top.y1 + pitch, shape: 'hip' })];
+
+    case 'shed':
+      return [roof({ ...base, w: top.w, d: top.d, y1: top.y1 + pitch, shape: 'shed',
+        facing: (Math.floor(rng() * 4) % 4) as 0 | 1 | 2 | 3 })];
+
+    case 'sawtooth':
+      return [roof({ ...base, w: top.w, d: top.d, y1: top.y1 + pitch, shape: 'sawtooth',
+        facing: rng() < 0.5 ? 0 : 2 })];
+  }
+}
+```
+
+- [ ] **Step 4：跑綠**
+
+- [ ] **Step 5：回退驗證（兩項）**
+
+1. 把 `parapet` 改成「一塊蓋滿頂面」（`w: top.w, d: top.d`）加一塊內縮的 ——
+   `should never overlap its own pieces` 應轉紅。
+2. 把 `pitch` 改成 `dims.floorHeight * 1.2` ——
+   `should keep a pitched roof under half a storey tall` 應轉紅。
+
+- [ ] **Step 6：Commit**
+
+```bash
+git add -A
+git commit -m "feat(render): roof forms, picked independently of the prototype"
+```
