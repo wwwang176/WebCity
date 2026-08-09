@@ -5,9 +5,10 @@ import { getBuildingMaterial } from './BuildingMaterial';
 import { paletteFor } from './ColorPalettes';
 import { appearanceOf } from './BuildingAppearance';
 import {
-  getVariants, ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, heightScaleFor,
-  footprintScaleFor, bucketKey, type Density, type GeoBuilder,
+  ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, bucketKey,
+  type Density, type GeoBuilder,
 } from './geometry/buildings/registry';
+import { getMassingVariants, VARIANT_COUNT } from './geometry/buildings/massing';
 import { getGroundPropVariants } from './geometry/buildings/groundProps';
 import { getDecalVariants } from './geometry/buildings/decals';
 import { getOverheadVariants } from './geometry/buildings/overheadProps';
@@ -99,8 +100,6 @@ export class BuildingRenderer {
 
   // Pre-allocated temp objects (avoid per-call allocation)
   private _matrix = new THREE.Matrix4();
-  private _scale = new THREE.Matrix4();
-  private _rotation = new THREE.Matrix4();
   private _color = new THREE.Color();
 
   /** Cached building meshes array (invalidated on build/dispose). */
@@ -136,7 +135,7 @@ export class BuildingRenderer {
         // 只有辦公區兩種密度都有建築；其餘分區各只有一種。
         if (!TARGET_HEIGHTS_M[heightKey(zoneType, density)]) continue;
         for (const level of LEVELS) {
-          const variants = getVariants(zoneType, level);
+          const variants = getMassingVariants(zoneType, density, level);
           for (let vi = 0; vi < variants.length; vi++) {
             const geo = variants[vi]!();
             stampZoneCategory(geo, zoneCat);
@@ -172,7 +171,7 @@ export class BuildingRenderer {
 
     const app = appearanceOf({
       x, y, zoneType, level, seedByte: 0,
-      variantCount: getVariants(zoneType, level).length,
+      variantCount: VARIANT_COUNT,
       paletteSize: paletteFor(zoneType, level).length,
     });
     const rotation = (app.rotationQuarter * Math.PI) / 2;
@@ -206,7 +205,7 @@ export class BuildingRenderer {
     x: number, y: number, zoneType: number, density: Density,
     level: number, burned: boolean, abandoned = false,
   ): void {
-    const variants = getVariants(zoneType, level);
+    const variants = getMassingVariants(zoneType, density, level);
     if (variants.length === 0) return;
 
     const palette = paletteFor(zoneType, level);
@@ -271,20 +270,14 @@ export class BuildingRenderer {
     const palette = paletteFor(zoneType, level);
     const app = appearanceOf({
       x, y, zoneType, level, seedByte: 0,
-      variantCount: getVariants(zoneType, level).length,
+      variantCount: VARIANT_COUNT,
       paletteSize: palette.length,
     });
 
-    // 高度與基地寬度都來自公尺表，由這個變體自己的未縮放尺寸反推係數。
-    const finalHeight = heightScaleFor(zoneType, density, level, app.variantIndex)
-      * app.heightScale;
-    // 寬與深各抖各的，所以要各算一次。
-    const footprint = (jitter01: number) =>
-      footprintScaleFor(zoneType, density, level, app.variantIndex, jitter01);
-
-    this._rotation.makeRotationY((app.rotationQuarter * Math.PI) / 2);
-    this._scale.makeScale(footprint(app.width01), finalHeight, footprint(app.depth01));
-    this._matrix.multiplyMatrices(this._scale, this._rotation);
+    // 矩陣只有旋轉與位移。生成器產出的是最終尺寸，所以量體層與三個附掛層
+    // 的矩陣完全一致 —— 那個 scale(±15%, ±10%, ±15%) 是 BUG-219 與 BUG-226
+    // 的共同成因：附掛層的幾何是整桶共用的一份，看不到量體抖了多少。
+    this._matrix.makeRotationY((app.rotationQuarter * Math.PI) / 2);
     this._matrix.setPosition(x, GROUND_LAYERS.BUILDING, y);
     mesh.setMatrixAt(idx, this._matrix);
 

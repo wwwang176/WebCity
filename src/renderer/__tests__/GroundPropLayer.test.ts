@@ -8,10 +8,11 @@ import { GROUND_LAYERS } from '../geometry/buildings/propBands';
 
 const ZONE = ZoneType.RESIDENTIAL_LOW;
 
-type Internals = Record<LayerName, InstancedLayer>;
+type Internals = Record<LayerName, InstancedLayer> & { zoneLayer: InstancedLayer };
 
 /** 掛在建築上的三層。同一組不變式對三層都成立，所以測試也逐層跑。 */
 const ATTACHMENT_LAYERS = ['decalLayer', 'propLayer', 'overheadLayer'] as const;
+type AnyLayer = LayerName | 'zoneLayer';
 type LayerName = (typeof ATTACHMENT_LAYERS)[number];
 
 function fresh() {
@@ -22,7 +23,7 @@ function fresh() {
 
 /** 這一格某一層實例的矩陣。 */
 function layerMatrix(
-  internals: Internals, layer: LayerName, x: number, y: number,
+  internals: Internals, layer: AnyLayer, x: number, y: number,
 ): THREE.Matrix4 {
   const entry = internals[layer].entryFor(`${x},${y}`)!;
   const mesh = internals[layer].meshFor(entry.key)!;
@@ -33,7 +34,7 @@ function layerMatrix(
 
 /** 這一格某一層在世界座標中的包圍盒。 */
 function layerBox(
-  internals: Internals, layer: LayerName, x: number, y: number,
+  internals: Internals, layer: AnyLayer, x: number, y: number,
 ): THREE.Box3 {
   const entry = internals[layer].entryFor(`${x},${y}`)!;
   const mesh = internals[layer].meshFor(entry.key)!;
@@ -177,6 +178,51 @@ describe('ground prop layer', () => {
  * 差別只在幾何來源與是否投影 —— 所以不變式也要三層都測，否則新加的兩層會
  * 各自漂移。
  */
+describe('the massing layer is never scaled either', () => {
+  it('should keep the instance matrix free of scale', () => {
+    // BUG-219 的不變式擴及量體層本身。生成器產出的是最終尺寸，所以實例矩陣
+    // 只該有旋轉與位移 —— 縮放一旦回來，附掛層就又看不到建築有多寬了。
+    const scale = new THREE.Vector3();
+    const cases: Array<[number, number, 'LOW' | 'HIGH']> = [
+      [ZoneType.RESIDENTIAL_LOW, 1, 'LOW'],
+      [ZoneType.RESIDENTIAL_HIGH, 3, 'HIGH'],
+      [ZoneType.INDUSTRIAL, 2, 'LOW'],
+      [ZoneType.OFFICE, 3, 'HIGH'],
+    ];
+    cases.forEach(([zone, level, density], i) => {
+      const { renderer, internals } = fresh();
+      renderer.addBuilding(i, 0, zone, density, level, false);
+      layerMatrix(internals, 'zoneLayer', i, 0).decompose(
+        new THREE.Vector3(), new THREE.Quaternion(), scale,
+      );
+      expect(scale.x, `zone ${zone} 寬被縮放`).toBeCloseTo(1, 9);
+      expect(scale.y, `zone ${zone} 高被縮放`).toBeCloseTo(1, 9);
+      expect(scale.z, `zone ${zone} 深被縮放`).toBeCloseTo(1, 9);
+    });
+  });
+
+  it('should draw every building at the size its variant was generated at', () => {
+    // 上一條看矩陣，這一條看畫出來的結果 —— 兩者一起才擋得住「縮放搬到
+    // 幾何生成裡」這種繞過。
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(0, 0, ZoneType.RESIDENTIAL_HIGH, 'HIGH', 3, false);
+    const entry = internals.zoneLayer.entryFor('0,0')!;
+    const mesh = internals.zoneLayer.meshFor(entry.key)!;
+    const authored = new THREE.Box3().setFromBufferAttribute(
+      mesh.geometry.getAttribute('position') as THREE.BufferAttribute,
+    );
+    const drawn = layerBox(internals, 'zoneLayer', 0, 0);
+    expect(drawn.max.y - drawn.min.y).toBeCloseTo(authored.max.y - authored.min.y, 9);
+    // 平面上比對「兩軸範圍的集合」而不是逐軸：四分之一圈的旋轉會交換 x 與 z。
+    const span = (b: THREE.Box3) =>
+      [b.max.x - b.min.x, b.max.z - b.min.z].sort((p, q) => p - q);
+    const [a0, a1] = span(authored);
+    const [d0, d1] = span(drawn);
+    expect(d0).toBeCloseTo(a0!, 9);
+    expect(d1).toBeCloseTo(a1!, 9);
+  });
+});
+
 describe('decal and overhead layers', () => {
   /** 三層都有東西的組合：商業低 L2 起貼片、庭院、雨遮俱全。 */
   const SHOP = { zone: ZoneType.COMMERCIAL_LOW, density: 'LOW' as const };

@@ -39,11 +39,13 @@ describe('density reaches the renderer', () => {
     renderer.addBuilding(1, 1, ZoneType.OFFICE, 'LOW', 1, false);
     renderer.addBuilding(2, 1, ZoneType.OFFICE, 'HIGH', 1, false);
 
+    // 量幾何本身的高度，不是矩陣的縮放 —— 生成器產出的就是最終尺寸，
+    // 矩陣只剩旋轉與位移（階段 2C-1）。
     const heightAt = (posKey: string) => {
       const e = internals.positionToInstance.get(posKey)!;
-      const m = new THREE.Matrix4();
-      internals.variantMeshes.get(e.key)!.getMatrixAt(e.idx, m);
-      return new THREE.Vector3().setFromMatrixScale(m).y;
+      const geo = internals.variantMeshes.get(e.key)!.geometry;
+      geo.computeBoundingBox();
+      return geo.boundingBox!.max.y;
     };
     expect(heightAt('2,1')).toBeGreaterThan(heightAt('1,1'));
   });

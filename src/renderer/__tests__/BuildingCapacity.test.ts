@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { BuildingRenderer } from '../BuildingRenderer';
 import { appearanceOf } from '../BuildingAppearance';
-import { getVariants } from '../geometry/buildings/registry';
+import { getMassingVariants } from '../geometry/buildings/massing';
 import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
 
@@ -25,8 +25,14 @@ function freshRenderer(scene = new THREE.Scene()) {
   return { renderer, internals: renderer as unknown as Internals, scene };
 }
 
-/** 填滿一片一定會撐破初始容量的建築。回傳所有座標。 */
-function fillPast(renderer: BuildingRenderer, w = 40, h = 30): Array<[number, number]> {
+/**
+ * 填滿一片一定會撐破初始容量的建築。回傳所有座標。
+ *
+ * 尺寸要蓋過 `初始容量 × 變體數`：變體從三個變成八個之後（階段 2C-1），
+ * 原本的 40×30 = 1200 棟分到八個桶只有 150 棟，一個都撐不破 256，
+ * 整組倍增測試會靜靜地什麼都沒驗到。
+ */
+function fillPast(renderer: BuildingRenderer, w = 64, h = 40): Array<[number, number]> {
   const cells: Array<[number, number]> = [];
   for (let x = 0; x < w; x++) {
     for (let y = 0; y < h; y++) {
@@ -57,7 +63,7 @@ describe('bucket capacity', () => {
     const cells = fillPast(renderer);
 
     const m = new THREE.Matrix4();
-    const variants = getVariants(ZONE, 1);
+    const variants = getMassingVariants(ZONE, 'LOW', 1);
     for (const [x, y] of cells) {
       const entry = internals.positionToInstance.get(`${x},${y}`)!;
       const mesh = internals.variantMeshes.get(entry.key)!;

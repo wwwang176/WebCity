@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { BuildingRenderer } from '../BuildingRenderer';
 import { appearanceOf } from '../BuildingAppearance';
-import { getVariants, bucketKey } from '../geometry/buildings/registry';
+import { bucketKey } from '../geometry/buildings/registry';
+import { getMassingVariants } from '../geometry/buildings/massing';
 import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
 
@@ -26,7 +27,7 @@ function freshRenderer(): { renderer: BuildingRenderer; internals: Internals } {
 }
 
 function expectedAppearance(x: number, y: number) {
-  const variants = getVariants(ZONE, 1);
+  const variants = getMassingVariants(ZONE, 'LOW', 1);
   return appearanceOf({
     x, y, zoneType: ZONE, level: 1, seedByte: 0,
     variantCount: variants.length, paletteSize: 1,

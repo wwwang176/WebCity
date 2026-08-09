@@ -4,8 +4,9 @@
  */
 import { appearanceOf } from '../renderer/BuildingAppearance';
 import {
-  getVariants, LEVELS, TARGET_HEIGHTS_M, heightKey, type Density,
+  LEVELS, TARGET_HEIGHTS_M, heightKey, type Density,
 } from '../renderer/geometry/buildings/registry';
+import { getMassingVariants, VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
 import { ZoneType } from '../core/grid/types';
 
 export type ViewMode = 'single' | 'block' | 'matrix';
@@ -25,7 +26,7 @@ function cellAt(
 ): PlacedCell {
   const app = appearanceOf({
     x, y: z, zoneType, level, seedByte,
-    variantCount: getVariants(zoneType, level).length,
+    variantCount: VARIANT_COUNT,
     paletteSize: 8,
   });
   return { x, z, zoneType, density, level, variantIndex: app.variantIndex, facadeSeed: app.facadeSeed };
@@ -56,7 +57,7 @@ export function matrixCells(): PlacedCell[] {
     const density = densityStr as Density;
     if (zoneType === ZoneType.NONE) continue;
     for (const level of LEVELS) {
-      const variants = getVariants(zoneType, level);
+      const variants = getMassingVariants(zoneType, density, level);
       for (let i = 0; i < variants.length; i++) {
         out.push({
           x: i * 2, z: row * 2, zoneType, density, level,

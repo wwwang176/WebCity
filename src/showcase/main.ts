@@ -9,7 +9,8 @@ import { SceneManager } from '../renderer/SceneManager';
 import { WeatherRenderer } from '../renderer/WeatherRenderer';
 import { Season } from '../core/climate/Climate';
 import { getBuildingMaterial } from '../renderer/BuildingMaterial';
-import { getVariants, TRIANGLE_BUDGET } from '../renderer/geometry/buildings/registry';
+import { TRIANGLE_BUDGET } from '../renderer/geometry/buildings/registry';
+import { getMassingVariants, VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { getGroundPropVariants } from '../renderer/geometry/buildings/groundProps';
 import { getDecalVariants } from '../renderer/geometry/buildings/decals';
@@ -21,7 +22,6 @@ import type { GeoBuilder, Density } from '../renderer/geometry/buildings/registr
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { appearanceOf } from '../renderer/BuildingAppearance';
-import { heightScaleFor, footprintScaleFor } from '../renderer/geometry/buildings/registry';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
 
@@ -84,33 +84,26 @@ const ATTACHMENTS: ReadonlyArray<{
 /**
  * 放一棟建築在 (x, z)，套用與遊戲完全相同的變換。回傳各層的三角形數。
  *
- * 縮放與旋轉必須在這裡重現：BuildingRenderer 的高度不是幾何本身的高度，
- * 而是乘在幾何上的縮放係數。少了它，展示區顯示的比例與遊戲不同，
- * 而「展示區看到的就是出貨的東西」正是它唯一的價值。
+ * 旋轉必須在這裡重現，縮放則已經不存在 —— 生成器直接產出最終尺寸（2C-1）。
+ * 「展示區看到的就是出貨的東西」是它唯一的價值，所以變換必須與遊戲一致。
  */
 function place(cell: PlacedCell, seedByte: number): Tris {
   const tris: Tris = { massing: 0, decal: 0, prop: 0, overhead: 0 };
-  const variants = getVariants(cell.zoneType, cell.level);
+  const variants = getMassingVariants(cell.zoneType, cell.density, cell.level);
   if (variants.length === 0) return tris;
   const geo = variants[cell.variantIndex % variants.length]!();
   stampZoneCategory(geo, ZONE_CAT[cell.zoneType] ?? 0);
 
   const app = appearanceOf({
     x: cell.x, y: cell.z, zoneType: cell.zoneType, level: cell.level, seedByte,
-    variantCount: variants.length, paletteSize: 8,
+    variantCount: VARIANT_COUNT, paletteSize: 8,
   });
 
   const mesh = new THREE.Mesh(geo, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
+  // 不套用任何縮放 —— 生成器產出的就是最終尺寸（階段 2C-1）。
   mesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
-  const footprint = (jitter01: number) =>
-    footprintScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex, jitter01);
-  mesh.scale.set(
-    footprint(app.width01),
-    heightScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex) * app.heightScale,
-    footprint(app.depth01),
-  );
   mesh.position.set(cell.x, GROUND_LAYERS.BUILDING, cell.z);
   sceneManager.scene.add(mesh);
   shown.push(mesh);

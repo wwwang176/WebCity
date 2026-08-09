@@ -1,7 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import {
-  TARGET_HEIGHTS_M, variantHeightUnits, heightScaleFor, getVariants, LEVELS,
-} from '../geometry/buildings/registry';
+import { TARGET_HEIGHTS_M } from '../geometry/buildings/registry';
 import { METRES_PER_CELL } from '../../core/grid/constants';
 import { ZoneType } from '../../core/grid/types';
 
@@ -45,31 +43,8 @@ describe('TARGET_HEIGHTS_M', () => {
   });
 });
 
-describe('heightScaleFor', () => {
-  it('should render each variant at the height the table asks for', () => {
-    for (const level of LEVELS) {
-      const variants = getVariants(ZoneType.RESIDENTIAL_LOW, level);
-      for (let i = 0; i < variants.length; i++) {
-        const scale = heightScaleFor(ZoneType.RESIDENTIAL_LOW, 'LOW', level, i);
-        const metres = variantHeightUnits(ZoneType.RESIDENTIAL_LOW, 'LOW', level, i)
-          * scale * METRES_PER_CELL;
-        expect(metres, `res-low L${level} v${i}`)
-          .toBeCloseTo(TARGET_HEIGHTS_M['1:LOW']![level - 1]!, 3);
-      }
-    }
-  });
-
-  it('should compensate for variants of different authored heights', () => {
-    // 兩個高度不同的幾何要縮放到同一個目標高度，係數必須不同 ——
-    // 否則「目標高度」只是換個名字的縮放係數。
-    const a = variantHeightUnits(ZoneType.RESIDENTIAL_HIGH, 'HIGH', 3, 0);
-    const b = variantHeightUnits(ZoneType.RESIDENTIAL_HIGH, 'HIGH', 3, 1);
-    expect(a).not.toBeCloseTo(b, 3);
-    expect(heightScaleFor(ZoneType.RESIDENTIAL_HIGH, 'HIGH', 3, 0))
-      .not.toBeCloseTo(heightScaleFor(ZoneType.RESIDENTIAL_HIGH, 'HIGH', 3, 1), 3);
-  });
-
-  it('should not divide by zero when a variant has no height', () => {
-    expect(Number.isFinite(heightScaleFor(ZoneType.NONE, 'LOW', 1, 0))).toBe(true);
-  });
-});
+// heightScaleFor 已不存在：生成器直接產出最終高度（階段 2C-1）。
+// 「畫出來真的是那個高度」由 MassingGeometry 的
+// `should reach the height the table asks for` 承接，
+// 「每個變體高度不同」由 MassingDimensions 的
+// `should use every height option across the eight variants` 承接。
