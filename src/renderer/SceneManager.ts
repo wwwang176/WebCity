@@ -16,7 +16,18 @@ export const SCENE = {
   HEMISPHERE_GROUND: 0x556633,
   SHADOW_MAP_SIZE: 2048,
   SHADOW_BIAS: -0.0005,
-  SHADOW_NORMAL_BIAS: 0.02,
+  /**
+   * 接收面沿法線推出去的距離，單位是**世界單位**（1 單位 = 12 公尺）。
+   *
+   * 原本是 0.02 —— three.js 範例的常見值，但那些場景是 1 單位 = 1 公尺，
+   * 在那裡它等於 2 公分。搬到這裡就是 **24 公分**，而地面法線朝上，陰影
+   * 因此沿地面平移 `0.24 / tan(48.5°) ≈ 21 公分`：比路燈柱子本身
+   * （直徑 14–18 公分）還粗，所以陰影看起來與燈桿底部分家（BUG-234）。
+   *
+   * 0.005 = 6 公分，地面位移約 5 公分。不能歸零 —— 那會讓平坦地面長出
+   * 自我遮蔽的條紋（shadow acne）。
+   */
+  SHADOW_NORMAL_BIAS: 0.005,
   SHADOW_NEAR: 1,
   SHADOW_FAR: 200,
   SHADOW_EXTENT: 60,
