@@ -36,21 +36,26 @@ function eachOverhead(fn: (geo: THREE.BufferGeometry, label: string) => void) {
 
 interface Rect { x0: number; x1: number; z0: number; z1: number }
 
+/** 一個零件的頂點數：正反兩面各四個角。 */
+const VERTS_PER_PIECE = 8;
+
 /**
  * 拆回一個個零件的平面輪廓。
  *
- * 懸挑物全部是 `BoxGeometry`（24 個頂點），`mergeGeometries` 依序串接，
- * 所以 24 個一組就是一個零件。只看 XZ：建築在這些高度上都是實心的，
+ * 懸挑物全部是雙面 quad（正反各四個角 = 8 個頂點），`mergeGeometries` 依序
+ * 串接，所以 8 個一組就是一個零件。只看 XZ：建築在這些高度上都是實心的，
  * 「貼不貼得到牆」是平面問題。
  */
 function pieceRects(geo: THREE.BufferGeometry): Rect[] {
   const pos = geo.getAttribute('position');
-  expect(pos.count % 24, '懸挑零件不是 BoxGeometry，24 頂點分組失效').toBe(0);
+  expect(pos.count % VERTS_PER_PIECE, '懸挑零件不是雙面 quad，分組失效').toBe(0);
   const out: Rect[] = [];
-  for (let p = 0; p < pos.count; p += 24) {
+  for (let p = 0; p < pos.count; p += VERTS_PER_PIECE) {
     const xs: number[] = [];
     const zs: number[] = [];
-    for (let k = 0; k < 24; k++) { xs.push(pos.getX(p + k)); zs.push(pos.getZ(p + k)); }
+    for (let k = 0; k < VERTS_PER_PIECE; k++) {
+      xs.push(pos.getX(p + k)); zs.push(pos.getZ(p + k));
+    }
     out.push({
       x0: Math.min(...xs), x1: Math.max(...xs),
       z0: Math.min(...zs), z1: Math.max(...zs),
@@ -59,9 +64,17 @@ function pieceRects(geo: THREE.BufferGeometry): Rect[] {
   return out;
 }
 
+/**
+ * 「鎖在上面」的容差。
+ *
+ * 招牌離牆 20 cm 仍然是鎖在牆上的，強求貼平反而會與牆共面而 z-fighting。
+ * 0.25 m 遠小於 BUG-226 的 0.68–1.17 m，所以這個容差不會讓那個缺陷溜過去。
+ */
+const MOUNT_TOLERANCE = 0.25 / METRES_PER_CELL;
+
 const touches = (a: Rect, b: Rect) =>
-  a.x0 <= b.x1 + 1e-6 && b.x0 <= a.x1 + 1e-6
-  && a.z0 <= b.z1 + 1e-6 && b.z0 <= a.z1 + 1e-6;
+  a.x0 <= b.x1 + MOUNT_TOLERANCE && b.x0 <= a.x1 + MOUNT_TOLERANCE
+  && a.z0 <= b.z1 + MOUNT_TOLERANCE && b.z0 <= a.z1 + MOUNT_TOLERANCE;
 
 /** 沒有連到建築（直接或透過其他零件）的零件索引。 */
 function floatingPieces(geo: THREE.BufferGeometry, narrow: number): number[] {
@@ -183,6 +196,41 @@ describe('overhead props', () => {
       const col = geo.getAttribute('color');
       for (let i = 0; i < col.count; i++) {
         expect(col.getX(i), `${label} 頂點 ${i} 標成 PART_WALL`).toBeGreaterThan(0.1);
+      }
+    });
+  });
+
+  it('should be built from flat panels, not boxes', () => {
+    // 雨遮 10 cm 厚，在 1 格 = 12 m 的尺度下永遠不到一個像素 —— 那六個面裡
+    // 有五個是看不見的。用平面省下五分之四的三角形。
+    //
+    // 但平面是單面的（材質沒設 side，預設 FrontSide），而鏡頭的方位角可以
+    // 自由轉，所以每一片都要正反兩面 —— 4 個三角形，仍然只有 BoxGeometry
+    // 的三分之一。
+    eachOverhead((geo, label) => {
+      const pos = geo.getAttribute('position');
+      expect(pos.count % VERTS_PER_PIECE, `${label} 不是雙面 quad`).toBe(0);
+      expect(triangleCount(geo), `${label} 每片超過 4 個三角形`)
+        .toBe((pos.count / VERTS_PER_PIECE) * 4);
+    });
+  });
+
+  it('should be visible from every camera angle', () => {
+    // 單面平面從背後看會消失。鏡頭仰角夾在 10°–80°、方位角自由，所以
+    // 「朝上的面」永遠看得到，垂直的面不一定 —— 兩面都畫才是安全的做法。
+    //
+    // 判定：每一片的法線都必須成對出現（n 與 −n），否則就有一面沒畫。
+    eachOverhead((geo, label) => {
+      const n = geo.getAttribute('normal');
+      const key = (i: number) =>
+        `${n.getX(i).toFixed(4)},${n.getY(i).toFixed(4)},${n.getZ(i).toFixed(4)}`;
+      const seen = new Set<string>();
+      for (let i = 0; i < n.count; i++) seen.add(key(i));
+      for (let i = 0; i < n.count; i++) {
+        const flipped = `${(-n.getX(i)).toFixed(4)},${(-n.getY(i)).toFixed(4)},`
+          + `${(-n.getZ(i)).toFixed(4)}`;
+        expect(seen.has(flipped.replace(/-0\.0000/g, '0.0000')), `${label} 有一面沒畫`)
+          .toBe(true);
       }
     });
   });

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZoneType } from '../../../core/grid/types';
 import { METRES_PER_CELL } from '../../../core/grid/constants';
 import {
@@ -21,7 +21,13 @@ import { heightKey, type Density, type GeoBuilder } from './registry';
  * 幾何以真實尺寸撰寫（1 格 = 12 m），與矮物件層一樣不吃任何縮放。
  */
 
-export const OVERHEAD_TRIANGLE_BUDGET = 160;
+/**
+ * 每個懸挑組合的三角形上限。
+ *
+ * 改用雙面平面之後實際最大值是 12（兩片雨遮加一面招牌），所以 160 那個
+ * 上限等於沒有上限 —— 預算要貼著現實才擋得住下一次退化。
+ */
+export const OVERHEAD_TRIANGLE_BUDGET = 24;
 
 const M = (metres: number) => metres / METRES_PER_CELL;
 
@@ -41,80 +47,105 @@ function place(axis: Axis, sign: Sign, t: number, d: number): [number, number] {
   return axis === 'z' ? [t, sign * d] : [sign * d, t];
 }
 
-/** 雨遮板厚與雨簷板的下垂量。兩者相加要塞進 [淨空, 一樓樓板線] 那條帶子。 */
-const SLAB_THICKNESS = M(0.10);
-const FASCIA_DROP = M(0.26);
+/**
+ * 雨遮從牆到外緣的下垂量。
+ *
+ * 上緣貼一樓樓板線 2.64 m，所以外緣落在 2.64 − 0.36 = 2.28 m，仍高過行人
+ * 淨空 2.2 m。斜面不只是好看：它讓法線帶著向上的分量，而鏡頭的仰角永遠
+ * 大於 0，所以正面永遠朝著鏡頭那一側。
+ */
+const AWNING_DROP = M(0.36);
+
+type Vec3 = [number, number, number];
 
 /**
- * 從牆面往外挑出的一塊板。
+ * 一片雙面的四邊形。
  *
- * 內緣是 `band.inner` —— 也就是**抖到最窄**的那一棟的牆面（見 propBands）。
- * 多出來的部分埋在較寬的那些建築的牆裡、被擋住，看不見。這是唯一能讓一份
- * 共用幾何在每一棟上都貼牆的做法（BUG-226）。
+ * 懸挑物原本用 `BoxGeometry`，但雨遮只有 10 cm 厚 —— 在 1 格 = 12 m 的
+ * 尺度下永遠不到一個像素，六個面裡有五個是白給的。改用平面之後每片從
+ * 12 個三角形降到 4 個。
  *
- * `inset` 讓招牌之類的小零件只挑出一部分，但起點仍在牆上。
+ * 為什麼是「雙面」而不是單面：建築材質沒有設 `side`，也就是預設的
+ * `FrontSide`，而鏡頭的方位角可以自由轉 —— 單面的招牌轉到背面就整片消失。
+ * 兩面各給一組頂點（法線相反，不能共用頂點），culling 會自動只畫朝著鏡頭
+ * 的那一面。
  */
-function slabFromWall(
-  b: Band, side: Side, len: number, thickness: number, y: number,
-  part: number, inset = 0,
+function panel(corners: [Vec3, Vec3, Vec3, Vec3], part: number): THREE.BufferGeometry {
+  const geo = new THREE.BufferGeometry();
+  const [a, b, c, d] = corners;
+  const front = [a, b, c, a, c, d];
+  const back = [a, c, b, a, d, c];
+  const pos = new Float32Array(36);
+  [...front, ...back].forEach((v, i) => pos.set(v, i * 3));
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.computeVertexNormals();
+  // 六個角落 → 兩組四頂點：測試靠「每個零件 8 個頂點」拆回零件。
+  const merged = mergeVertices(geo, 1e-6);
+  tagPart(merged, part);
+  return merged;
+}
+
+/** 沿著一條邊，從牆面 `inner` 到 `outer` 的一片斜板／立板。 */
+function spanFromWall(
+  b: Band, side: Side, len: number, innerY: number, outerY: number,
+  reachFrac: number, part: number,
 ): THREE.BufferGeometry {
   const { axis, sign } = AXIS[side];
-  const reach = (b.outer - b.inner) * (1 - inset);
-  const mid = b.inner + reach / 2;
-  const geo = axis === 'z'
-    ? new THREE.BoxGeometry(len, thickness, reach)
-    : new THREE.BoxGeometry(reach, thickness, len);
-  const [x, z] = place(axis, sign, 0, mid);
-  geo.translate(x, y, z);
-  tagPart(geo, part);
-  return geo;
+  const near = b.inner;
+  const far = b.inner + (b.outer - b.inner) * reachFrac;
+  const at = (d: number, t: number, y: number): Vec3 => {
+    const [x, z] = place(axis, sign, t, d);
+    return [x, y, z];
+  };
+  return panel([
+    at(near, -len / 2, innerY), at(near, len / 2, innerY),
+    at(far, len / 2, outerY), at(far, -len / 2, outerY),
+  ], part);
 }
 
 /**
- * 雨遮／遮陽棚：一片平板加外緣的雨簷板。
+ * 雨遮／遮陽棚：一片從牆往外下斜的板。
  *
- * 頂面貼齊 `topUnits`（店面用一樓樓板線）。原本的斜撐改成雨簷板：斜撐是
- * 三根懸在板子下方的橫桿，遠看只是三條浮空的線；雨簷板貼著板子的外緣往下，
- * 那才是遠看認得出「這是雨遮」的那個輪廓，而且少一個零件。
+ * 原本是「平板 + 兩根斜撐」三個零件。斜撐是懸在板子下方的橫桿，遠看只是
+ * 兩條浮空的線；斜面本身就給出了遠看認得出「這是雨遮」的輪廓，而且只要
+ * 一個零件。
  */
 function awning(
   b: Band, side: Side, lengthFrac: number, topUnits: number,
 ): THREE.BufferGeometry[] {
-  const { axis, sign } = AXIS[side];
-  const len = b.outer * 2 * lengthFrac;
-  const slabY = topUnits - SLAB_THICKNESS / 2;
-
-  const slab = slabFromWall(b, side, len, SLAB_THICKNESS, slabY, PART_ROOF);
-
-  // 雨簷板：貼著外緣往下垂。掛在雨遮上而不是牆上，所以它自己碰不到牆 ——
-  // 靠雨遮連著。
-  const lip = M(0.10);
-  const fascia = axis === 'z'
-    ? new THREE.BoxGeometry(len, FASCIA_DROP, lip)
-    : new THREE.BoxGeometry(lip, FASCIA_DROP, len);
-  const [fx, fz] = place(axis, sign, 0, b.outer - lip / 2);
-  fascia.translate(fx, slabY - SLAB_THICKNESS / 2 - FASCIA_DROP / 2, fz);
-  tagPart(fascia, PART_DETAIL);
-
-  return [slab, fascia];
+  return [spanFromWall(
+    b, side, b.outer * 2 * lengthFrac,
+    topUnits, topUnits - AWNING_DROP, 1, PART_ROOF,
+  )];
 }
 
 /**
  * 立體招牌：從牆面垂直挑出的小板子，掛在雨遮上方。
  *
  * 起點在牆上而不是懸挑帶的中線 —— 招牌是鎖在牆上的，中線那個位置沒有東西
- * 撐得住它。
+ * 撐得住它。板面與牆垂直，所以它是這一層裡最需要雙面的零件。
  */
 function blade(b: Band, side: Side, yUnits: number, sizeM: number) {
-  return slabFromWall(
-    b, side, M(sizeM * 0.75), M(sizeM), yUnits, PART_DETAIL, 0.25,
-  );
+  const { axis, sign } = AXIS[side];
+  const half = M(sizeM) / 2;
+  const near = b.inner;
+  const far = b.inner + (b.outer - b.inner) * 0.75;
+  const at = (d: number, y: number): Vec3 => {
+    const [x, z] = place(axis, sign, 0, d);
+    return [x, y, z];
+  };
+  return panel([
+    at(near, yUnits - half), at(far, yUnits - half),
+    at(far, yUnits + half), at(near, yUnits + half),
+  ], PART_DETAIL);
 }
 
-/** 看板：貼著立面一整條的長板，只稍微離開牆面。 */
+/** 看板：貼著立面一整條的長板，離牆一點點免得與牆共面。 */
 function billboard(b: Band, side: Side, lengthFrac: number, yUnits: number) {
-  return slabFromWall(
-    b, side, b.outer * 2 * lengthFrac, M(1.1), yUnits, PART_DETAIL, 0.75,
+  const half = M(1.1) / 2;
+  return spanFromWall(
+    b, side, b.outer * 2 * lengthFrac,
+    yUnits + half, yUnits - half, 0.08, PART_DETAIL,
   );
 }
 
