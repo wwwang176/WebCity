@@ -60,11 +60,17 @@ describe('blockCells', () => {
     expect(a).not.toEqual(b);
   });
 
-  it('should report the repetition the current three variants actually give', () => {
-    // 階段 1 之前，住宅低密度只有 3 個變體，所以這個比例會遠高於 5%。
-    // 這一條是基準紀錄，不是門檻 —— 第二階段完成後改成 toBeLessThan(0.05)。
-    const ratio = neighbourSameRatio(blockCells(ZoneType.RESIDENTIAL_LOW, 'LOW', 1, 8));
-    expect(ratio).toBeGreaterThan(0.05);
+  it('should keep the street below the repetition threshold', () => {
+    // 這一條原本是基準紀錄（「會遠高於 5%」），註解寫著「第二階段完成後改成
+    // toBeLessThan(0.05)」。階段 2C-1 就是那一刻：八個生成變體加上鄰居迴避，
+    // 實測 3.37%，改造前是 33.4%。
+    //
+    // 用 24x24 而不是 8x8：小街廓的樣本數只有 112 對，一兩對就會晃動 1%。
+    for (const zone of [ZoneType.RESIDENTIAL_LOW, ZoneType.COMMERCIAL_HIGH]) {
+      const density = zone === ZoneType.COMMERCIAL_HIGH ? 'HIGH' : 'LOW';
+      const ratio = neighbourSameRatio(blockCells(zone, density, 1, 24));
+      expect(ratio, `zone ${zone} 相鄰重複 ${(ratio * 100).toFixed(1)}%`).toBeLessThan(0.05);
+    }
   });
 });
 
