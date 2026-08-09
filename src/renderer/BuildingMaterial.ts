@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { PART_THRESHOLDS } from './geometry/buildings/parts';
+import { PART_THRESHOLDS, ZONE_CAT } from './geometry/buildings/parts';
 import { FLOOR_HEIGHT_UNITS } from './geometry/buildings/propBands';
+import { roofPaletteFor, type RoofColor } from './ColorPalettes';
 
 /**
  * 把 TS 數字寫成 GLSL 一定會當作 float 的形式 —— 整數在 GLSL 裡不是 float，
@@ -8,6 +9,38 @@ import { FLOOR_HEIGHT_UNITS } from './geometry/buildings/propBands';
  */
 function glslFloat(v: number): string {
   return Number.isInteger(v) ? `${v}.0` : String(v);
+}
+
+const vec3 = ([r, g, b]: RoofColor) =>
+  `vec3(${glslFloat(r)}, ${glslFloat(g)}, ${glslFloat(b)})`;
+
+/** 一個分區的色票鏈：把 [0, 1) 等分給 n 個顏色。 */
+function pickChain(palette: readonly RoofColor[]): string {
+  const n = palette.length;
+  const head = palette.slice(0, n - 1)
+    .map((c, i) => `h < ${glslFloat((i + 1) / n)} ? ${vec3(c)}\n      : `)
+    .join('');
+  return head + vec3(palette[n - 1]!);
+}
+
+/**
+ * `getRoofColor` 的函式體，由 `ROOF_PALETTE_TABLE` 產生。
+ *
+ * 分區門檻取相鄰兩個 `ZONE_CAT` 的中點 —— 手寫的話門檻與分區常數是兩份資料，
+ * 而改了一邊只會讓某個分區默默拿到別人的屋頂，不會有任何東西報錯。
+ * 陣列索引在 WebGL1 的 GLSL ES 1.00 需要常數索引，所以仍然展開成 if 鏈。
+ */
+function roofColorGlsl(): string {
+  const zones = Object.entries(ZONE_CAT)
+    .map(([z, cat]) => ({ zone: Number(z), cat }))
+    .sort((a, b) => a.cat - b.cat);
+
+  return zones.map(({ zone }, i) => {
+    const body = `\n    c = ${pickChain(roofPaletteFor(zone))};\n  `;
+    if (i === zones.length - 1) return `else {${body}}`;
+    const threshold = (zones[i]!.cat + zones[i + 1]!.cat) / 2;
+    return `${i === 0 ? 'if' : 'else if'} (zoneCat < ${glslFloat(threshold)}) {${body}} `;
+  }).join('');
 }
 
 // ===== Building Shader =====
@@ -104,46 +137,10 @@ float hash21(vec2 p) {
 }
 
 // === Independent roof color palettes per zone ===
+// 函式體由 ColorPalettes.ROOF_PALETTE_TABLE 產生 —— 顏色寫在那裡才測得到。
 vec3 getRoofColor(float zoneCat, float h) {
-  vec3 c = vec3(0.35, 0.35, 0.38); // default (Office: medium gray)
-  // Residential Low: clay tiles, slate
-  if (zoneCat < 0.1) {
-    c = h < 0.17 ? vec3(0.35, 0.22, 0.14) // dark brown tiles
-      : h < 0.33 ? vec3(0.58, 0.30, 0.18) // terracotta red
-      : h < 0.50 ? vec3(0.40, 0.38, 0.36) // slate gray
-      : h < 0.67 ? vec3(0.45, 0.28, 0.16) // warm brown
-      : h < 0.83 ? vec3(0.52, 0.34, 0.22) // cedar brown
-      :             vec3(0.32, 0.30, 0.28);// dark slate
-  } else if (zoneCat < 0.3) {
-    // Residential High: Paris zinc, dark slate
-    c = h < 0.25 ? vec3(0.45, 0.45, 0.48) // zinc gray
-      : h < 0.50 ? vec3(0.30, 0.30, 0.32) // dark slate
-      : h < 0.75 ? vec3(0.38, 0.36, 0.34) // warm dark gray
-      :             vec3(0.35, 0.38, 0.42);// blue-gray slate
-  } else if (zoneCat < 0.5) {
-    // Commercial Low: European shop roofs
-    c = h < 0.20 ? vec3(0.55, 0.28, 0.16) // terracotta
-      : h < 0.40 ? vec3(0.35, 0.22, 0.14) // dark brown
-      : h < 0.60 ? vec3(0.38, 0.36, 0.34) // dark gray
-      : h < 0.80 ? vec3(0.42, 0.25, 0.15) // warm brown tile
-      :             vec3(0.30, 0.30, 0.28);// charcoal
-  } else if (zoneCat < 0.7) {
-    // Commercial High: flat modern roofs
-    c = h < 0.33 ? vec3(0.32, 0.34, 0.36) // dark flat gray
-      : h < 0.66 ? vec3(0.38, 0.42, 0.40) // green-gray (copper patina)
-      :             vec3(0.28, 0.30, 0.32);// charcoal
-  } else if (zoneCat < 0.9) {
-    // Industrial: metal roofing
-    c = h < 0.25 ? vec3(0.55, 0.56, 0.58) // light silver metal
-      : h < 0.50 ? vec3(0.40, 0.40, 0.42) // medium gray metal
-      : h < 0.75 ? vec3(0.50, 0.35, 0.25) // rusted metal
-      :             vec3(0.35, 0.36, 0.38);// dark metal
-  } else {
-    // Office: modern flat roofs
-    c = h < 0.33 ? vec3(0.30, 0.32, 0.35) // dark gray flat
-      : h < 0.66 ? vec3(0.25, 0.28, 0.30) // very dark
-      :             vec3(0.35, 0.35, 0.38);// medium gray
-  }
+  vec3 c = vec3(0.35, 0.35, 0.38);
+  ${roofColorGlsl()}
   return c;
 }
 

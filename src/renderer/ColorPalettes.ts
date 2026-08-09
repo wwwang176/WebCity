@@ -27,15 +27,17 @@ const BASE_PALETTES: Record<number, number[]> = {
     0xc4a880, // sandstone
     0xd8d0c0, // light cream
   ],
+  // 商業低密度是**藍色**的分區。原本是暖黃／磚紅／金／褐，整條商店街讀起來
+  // 是橘的，而橘色在這張地圖上已經被住宅低密度的赤陶瓦佔走了。
   [ZoneType.COMMERCIAL_LOW]:   [
-    0xd8c888, // warm yellow
-    0xe8e0d0, // white plaster
-    0xc87050, // brick red
-    0xb8c8d8, // pale blue
-    0xd4c4a0, // warm cream
-    0xd0b870, // golden
-    0xe0d0b8, // light sand
-    0xc0a878, // tan
+    0x8fb0cc, // 鋼藍
+    0xdde6ee, // 藍白
+    0x5f89b0, // 中藍
+    0x3f5f85, // 深靛藍
+    0xa8c0d4, // 霧藍
+    0x7799b8, // 藍灰
+    0x4d7ba6, // 海藍
+    0xc3d2de, // 近白偏藍
   ],
   [ZoneType.COMMERCIAL_HIGH]:  [
     0x78a8c0, // blue-green glass
@@ -68,6 +70,71 @@ const BASE_PALETTES: Record<number, number[]> = {
     0x70a0b8, // teal
   ],
 };
+
+/**
+ * 屋頂色盤，`vec3` 的 0..1 三元組 —— shader 直接拿去用，不經 sRGB 轉換。
+ *
+ * 這張表以前寫死在 `BuildingMaterial` 的 GLSL `getRoofColor` 裡。那裡沒有任何
+ * 東西測得到，所以「商業低密度整條街是橘的」只能靠眼睛發現：牆色改了藍，
+ * 屋頂還是赤陶瓦 —— 而等角視角下屋頂佔的面積不比牆少。
+ *
+ * 每個分區的色票**等分** [0, 1)：第 i 個涵蓋 [i/n, (i+1)/n)，由建築位置的
+ * 雜湊值挑。所以加減一個色票不必動任何門檻。
+ */
+export type RoofColor = readonly [number, number, number];
+
+const ROOF_PALETTE_TABLE: Record<number, readonly RoofColor[]> = {
+  // 住宅低：陶瓦與板岩
+  [ZoneType.RESIDENTIAL_LOW]: [
+    [0.35, 0.22, 0.14], // 深褐瓦
+    [0.58, 0.30, 0.18], // 赤陶紅
+    [0.40, 0.38, 0.36], // 板岩灰
+    [0.45, 0.28, 0.16], // 暖褐
+    [0.52, 0.34, 0.22], // 杉木褐
+    [0.32, 0.30, 0.28], // 深板岩
+  ],
+  // 住宅高：巴黎鋅板與深板岩
+  [ZoneType.RESIDENTIAL_HIGH]: [
+    [0.45, 0.45, 0.48], // 鋅灰
+    [0.30, 0.30, 0.32], // 深板岩
+    [0.38, 0.36, 0.34], // 暖深灰
+    [0.35, 0.38, 0.42], // 藍灰板岩
+  ],
+  // 商業低：藍色分區的屋頂也必須是藍的
+  [ZoneType.COMMERCIAL_LOW]: [
+    [0.24, 0.29, 0.35], // 深板岩藍
+    [0.30, 0.36, 0.43], // 鋅藍
+    [0.19, 0.23, 0.29], // 近黑藍
+    [0.36, 0.42, 0.49], // 中藍灰
+    [0.27, 0.34, 0.42], // 暗鋼藍
+  ],
+  // 商業高：現代平頂
+  [ZoneType.COMMERCIAL_HIGH]: [
+    [0.32, 0.34, 0.36], // 深平灰
+    [0.38, 0.42, 0.40], // 銅綠
+    [0.28, 0.30, 0.32], // 炭灰
+  ],
+  // 工業：金屬浪板
+  [ZoneType.INDUSTRIAL]: [
+    [0.55, 0.56, 0.58], // 亮銀
+    [0.40, 0.40, 0.42], // 中灰金屬
+    [0.50, 0.35, 0.25], // 鏽蝕
+    [0.35, 0.36, 0.38], // 暗金屬
+  ],
+  // 辦公：現代平頂
+  [ZoneType.OFFICE]: [
+    [0.30, 0.32, 0.35],
+    [0.25, 0.28, 0.30],
+    [0.35, 0.35, 0.38],
+  ],
+};
+
+const FALLBACK_ROOF: readonly RoofColor[] = [[0.35, 0.35, 0.38]];
+
+/** 這個分區的屋頂色盤。未知分區回傳中灰，不回傳空陣列。 */
+export function roofPaletteFor(zoneType: number): readonly RoofColor[] {
+  return ROOF_PALETTE_TABLE[zoneType] ?? FALLBACK_ROOF;
+}
 
 /**
  * 依等級調整色盤。

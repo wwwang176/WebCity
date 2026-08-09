@@ -4,6 +4,11 @@ import {
 } from '../BuildingMaterial';
 import { PART_THRESHOLDS } from '../geometry/buildings/parts';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from '../geometry/buildings/propBands';
+import { roofPaletteFor } from '../ColorPalettes';
+import { ZONE_TYPES } from '../geometry/buildings/registry';
+
+/** GLSL 一定要看得出是 float —— 整數字面值在 GLSL 裡不是 float。 */
+const glslNum = (v: number) => (Number.isInteger(v) ? `${v}.0` : String(v));
 
 /**
  * GLSL 本身測不了，但「TS 常數有沒有真的進到 GLSL 裡」測得了 —— 而那正是
@@ -72,6 +77,32 @@ describe('the shader uses the thresholds the parts module defines', () => {
     const wallAt = BUILDING_FRAG.indexOf('=== WALL');
     expect(groundAt).toBeGreaterThan(-1);
     expect(groundAt).toBeLessThan(wallAt);
+  });
+
+  it('should carry every roof colour from the palette table into the fragment', () => {
+    // 屋頂色以前是寫死在 GLSL 的 `getRoofColor` 裡。那裡沒有任何東西測得到，
+    // 所以「商業低密度整條街是橘的」只能靠眼睛發現。
+    for (const zone of ZONE_TYPES) {
+      for (const [r, g, b] of roofPaletteFor(zone)) {
+        expect(BUILDING_FRAG, `zone ${zone} 的 ${r},${g},${b} 沒有進到 shader`)
+          .toContain(`vec3(${glslNum(r)}, ${glslNum(g)}, ${glslNum(b)})`);
+      }
+    }
+  });
+
+  it('should branch on zone in the order the category constants define', () => {
+    // 門檻寫錯順序不會有任何東西報錯 —— 只會讓某個分區永遠拿到別人的屋頂。
+    const branch = BUILDING_FRAG.slice(
+      BUILDING_FRAG.indexOf('vec3 getRoofColor'),
+      BUILDING_FRAG.indexOf('void main'),
+    );
+    const thresholds = [...branch.matchAll(/zoneCat < ([\d.]+)/g)].map(m => Number(m[1]));
+    expect(thresholds.length, '沒有找到任何分區門檻').toBeGreaterThan(0);
+    for (let i = 1; i < thresholds.length; i++) {
+      expect(thresholds[i]!, `第 ${i} 個門檻沒有遞增`).toBeGreaterThan(thresholds[i - 1]!);
+    }
+    // 最後一個分區走 else，所以門檻數比分區數少一個。
+    expect(thresholds.length).toBe(ZONE_TYPES.length - 1);
   });
 
   it('should declare the attributes the renderer writes', () => {
