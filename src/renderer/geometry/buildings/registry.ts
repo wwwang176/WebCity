@@ -1,12 +1,15 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZoneType } from '../../../core/grid/types';
-import { tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './parts';
+import { tagPart, PART_WALL, PART_ROOF } from './parts';
 import { METRES_PER_CELL, MAX_BUILDING_WIDTH_M } from '../../../core/grid/constants';
 
 // ===== Geometry Builders =====
 
-// -- Residential Low: houses with yards/garages --
+// -- Residential Low: houses with garages/porches --
+//
+// 樹、樹籬、灌木、圍籬已搬到 groundProps.ts —— 它們吃不得建築的 Y 縮放
+// （BUG-219）。車庫、門廊、工具間留在這裡：它們是建築，跟著等級變大是對的。
 
 function makeResLowV1(): THREE.BufferGeometry {
   // House with pitched roof + detached garage
@@ -24,18 +27,7 @@ function makeResLowV1(): THREE.BufferGeometry {
   const gRoof = new THREE.BoxGeometry(0.22, 0.03, 0.24);
   gRoof.translate(0.22, 0.195, 0.18);
   tagPart(gRoof, PART_ROOF);
-  // Front hedge
-  const hedge = new THREE.BoxGeometry(0.3, 0.08, 0.06);
-  hedge.translate(-0.08, 0.04, 0.25);
-  tagPart(hedge, PART_FOLIAGE);
-  // Garden tree
-  const trunk = new THREE.CylinderGeometry(0.015, 0.02, 0.15, 5);
-  trunk.translate(0.28, 0.075, -0.22);
-  tagPart(trunk, PART_WALL);
-  const canopy = new THREE.SphereGeometry(0.1, 5, 4);
-  canopy.translate(0.28, 0.2, -0.22);
-  tagPart(canopy, PART_FOLIAGE);
-  return mergeGeometries([body, roof, garage, gRoof, hedge, trunk, canopy])!;
+  return mergeGeometries([body, roof, garage, gRoof])!;
 }
 
 function makeResLowV2(): THREE.BufferGeometry {
@@ -52,25 +44,11 @@ function makeResLowV2(): THREE.BufferGeometry {
   const shedRoof = new THREE.BoxGeometry(0.16, 0.02, 0.16);
   shedRoof.translate(-0.22, 0.17, 0.22);
   tagPart(shedRoof, PART_ROOF);
-  // Side bushes
-  const bush1 = new THREE.SphereGeometry(0.06, 5, 4);
-  bush1.translate(0.32, 0.06, -0.28);
-  tagPart(bush1, PART_FOLIAGE);
-  const bush2 = new THREE.SphereGeometry(0.05, 5, 4);
-  bush2.translate(0.32, 0.05, -0.16);
-  tagPart(bush2, PART_FOLIAGE);
-  // Back garden tree
-  const trunk = new THREE.CylinderGeometry(0.015, 0.02, 0.18, 5);
-  trunk.translate(-0.08, 0.09, -0.32);
-  tagPart(trunk, PART_WALL);
-  const canopy = new THREE.SphereGeometry(0.12, 5, 4);
-  canopy.translate(-0.08, 0.24, -0.32);
-  tagPart(canopy, PART_FOLIAGE);
-  return mergeGeometries([body, porch, shed, shedRoof, bush1, bush2, trunk, canopy])!;
+  return mergeGeometries([body, porch, shed, shedRoof])!;
 }
 
 function makeResLowV3(): THREE.BufferGeometry {
-  // Narrow townhouse with steep roof + small yard wall
+  // Narrow townhouse with steep roof
   const body = new THREE.BoxGeometry(0.32, 0.4, 0.4);
   body.translate(0, 0.2, -0.04);
   tagPart(body, PART_WALL);
@@ -78,22 +56,7 @@ function makeResLowV3(): THREE.BufferGeometry {
   roof.rotateY(Math.PI / 4);
   roof.translate(0, 0.51, -0.04);
   tagPart(roof, PART_ROOF);
-  // Low yard wall / fence
-  const fence = new THREE.BoxGeometry(0.4, 0.06, 0.03);
-  fence.translate(0.05, 0.03, 0.22);
-  tagPart(fence, PART_WALL);
-  // Front hedge row
-  const hedge1 = new THREE.BoxGeometry(0.14, 0.07, 0.05);
-  hedge1.translate(-0.12, 0.035, 0.22);
-  tagPart(hedge1, PART_FOLIAGE);
-  const hedge2 = new THREE.BoxGeometry(0.14, 0.07, 0.05);
-  hedge2.translate(0.22, 0.035, 0.22);
-  tagPart(hedge2, PART_FOLIAGE);
-  // Corner bush
-  const bush = new THREE.SphereGeometry(0.07, 5, 4);
-  bush.translate(-0.25, 0.07, 0.28);
-  tagPart(bush, PART_FOLIAGE);
-  return mergeGeometries([body, roof, fence, hedge1, hedge2, bush])!;
+  return mergeGeometries([body, roof])!;
 }
 
 // -- Residential High --

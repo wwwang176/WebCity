@@ -9,7 +9,7 @@ import {
   footprintScaleFor, bucketKey, type Density,
 } from './geometry/buildings/registry';
 import { getGroundPropVariants } from './geometry/buildings/groundProps';
-import { stampZoneCategory, ZONE_CAT, tagPart, PART_WALL, PART_FOLIAGE, PART_ROOF } from './geometry/buildings/parts';
+import { stampZoneCategory, ZONE_CAT } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { getBuildingType } from '../core/building/types';
@@ -20,8 +20,6 @@ import { InstancedLayer } from './InstancedLayer';
 import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
 import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '../core/building/BuildingUtilityWarning';
-
-interface BuildingData { x: number; y: number; level: number; burned?: boolean }
 
 /** 桶的初始容量。滿了就倍增（見 InstancedLayer）。 */
 const INITIAL_BUCKET_CAPACITY = 256;

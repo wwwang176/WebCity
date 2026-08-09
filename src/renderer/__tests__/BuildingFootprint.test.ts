@@ -108,6 +108,22 @@ describe('centreFootprint', () => {
   });
 });
 
+describe('building massing', () => {
+  it('should contain no foliage — greenery lives in the ground prop layer', () => {
+    // BUG-219 的機器可檢查形式：只要量體裡還有樹葉，它就會跟著等級被拉高。
+    eachBucket((zoneType, _d, level, vi) => {
+      const geo = getVariants(zoneType, level)[vi]!();
+      const col = geo.getAttribute('color');
+      for (let i = 0; i < col.count; i++) {
+        const part = col.getX(i);
+        expect(part > 0.35 && part < 0.65, `zone ${zoneType} L${level} v${vi} 頂點 ${i} 是樹葉`)
+          .toBe(false);
+      }
+      geo.dispose();
+    });
+  });
+});
+
 describe('widthJitterFor', () => {
   it('should give a plot-filling zone no room to grow wider', () => {
     // 目標寬度已經等於上限的分區，向上抖動必然越線。
