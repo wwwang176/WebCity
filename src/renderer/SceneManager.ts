@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { shadowDepthRange } from './shadowFit';
 
 /** Scene setup constants */
 export const SCENE = {
@@ -15,7 +16,17 @@ export const SCENE = {
   HEMISPHERE_INTENSITY: 0.3,
   HEMISPHERE_GROUND: 0x556633,
   SHADOW_MAP_SIZE: 2048,
-  SHADOW_BIAS: -0.0005,
+  /**
+   * 深度空間的偏移。**世界距離要乘上 (far - near)** —— 這是它最容易被低估
+   * 的地方：原本的 -0.0005 配上寫死的 near 1 / far 200，等於沿光軸推
+   * `0.0005 × 199 = 0.1 格 = 1.2 公尺`，而陰影因此在地面上退開 2 公尺以上
+   * （BUG-234 第一次只修了 normalBias，那一項其實只佔不到一成）。
+   *
+   * 現在 near/far 每幀跟著陰影相機收（見 `shadowFit.shadowDepthRange`），
+   * 而這個值本身也降到 three.js 文件建議的量級以下。防 acne 的工作交給
+   * `normalBias` —— 那是比較新、也比較不會造成 peter-panning 的做法。
+   */
+  SHADOW_BIAS: -0.00002,
   /**
    * 接收面沿法線推出去的距離，單位是**世界單位**（1 單位 = 12 公尺）。
    *
@@ -229,6 +240,13 @@ export class SceneManager {
     sc.right = padded;
     sc.top = padded;
     sc.bottom = -padded;
+
+    // 深度範圍也要跟著收。`shadow.bias` 是 [0, 1] 深度空間的值，世界距離是
+    // bias × (far - near) —— 範圍開得越寬，陰影被推得離物體越遠。寫死的
+    // 1 / 200 給了 199 格 = 2388 公尺，而光源距焦點只有約 107 格。
+    const { near, far } = shadowDepthRange(this.sunOffset.length(), padded);
+    sc.near = near;
+    sc.far = far;
     sc.updateProjectionMatrix();
   }
 

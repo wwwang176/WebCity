@@ -30,6 +30,10 @@ export interface ControlState {
    * 由這根滑桿頂替。0 就是空屋（燒毀與廢棄的建築也是這個值）。
    */
   occupancy: number;
+  /** 陰影：接收面沿法線推出去的距離（世界單位）。 */
+  shadowNormalBias: number;
+  /** 陰影：深度空間的偏移。負值。 */
+  shadowBias: number;
   wireframe: boolean;
   /** 街廓邊長。量效能基準時調大。 */
   blockSize: number;
@@ -60,6 +64,18 @@ const ZONE_NAMES: Record<number, string> = {
 const MODE_NAMES: Record<ViewMode, string> = {
   single: '單體', block: '街廓', matrix: '矩陣',
 };
+
+/**
+ * 兩根 bias 滑桿的刻度。
+ *
+ * 滑桿只吃整數，而這兩個值一個是 1e-3、一個是 1e-5 的量級 —— 所以用「格數
+ * × 單位」而不是直接餵浮點數，否則 step 會被瀏覽器的浮點誤差咬到。
+ * `shadowBias` 是負的，單位就取負值。
+ */
+const SHADOW_KNOBS = [
+  { key: 'shadowNormalBias' as const, label: '陰影 normalBias', unit: 0.001, steps: 30 },
+  { key: 'shadowBias' as const, label: '陰影 bias', unit: -0.00002, steps: 30 },
+];
 
 export function mountControls(
   host: HTMLElement, state: ControlState, onChange: () => void,
@@ -199,6 +215,30 @@ export function mountControls(
     onChange();
   };
   host.appendChild(occ);
+
+  // 陰影的兩個 bias。這兩個值只能用眼睛決定：調小陰影會貼回物體底部，
+  // 調大則地面不會長出自我遮蔽的條紋（acne），而兩者的交界點沒有公式 ——
+  // 它取決於陰影貼圖一個 texel 有多大，而那又隨縮放變。放在這裡是因為
+  // 展示區可以一邊拖一邊看（BUG-234）。
+  for (const knob of SHADOW_KNOBS) {
+    const label = document.createElement('label');
+    const text = () => `${knob.label} ${state[knob.key].toExponential(1)}`;
+    label.textContent = text();
+    host.appendChild(label);
+
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = '0';
+    input.max = String(knob.steps);
+    input.step = '1';
+    input.value = String(Math.round(state[knob.key] / knob.unit));
+    input.oninput = () => {
+      state[knob.key] = Number(input.value) * knob.unit;
+      label.textContent = text();
+      onChange();
+    };
+    host.appendChild(input);
+  }
 
   const live = document.createElement('button');
   live.textContent = '回到自動循環';
