@@ -1,6 +1,7 @@
 import { ZoneType } from '../../../../core/grid/types';
 import {
   single, mainPlusWing, lShape, podiumTower, setback, notch, twin, splitSpan,
+  shedWithStack, siloRow,
   type Composer,
 } from './composers';
 
@@ -66,11 +67,23 @@ const TABLE: Record<number, Prototype[]> = {
     p('setback', 2, setback(3)),
     p('twin', 3, twin(0.22)),
   ],
+  /**
+   * 工業的等級階梯不表現在高度上（現代廠房都是單層挑高、鋪滿基地，見
+   * `TARGET_HEIGHTS_M`），所以少了設備，工業就只是一個比較矮的商業盒子。
+   *
+   * 帶設備的三個排最前面 —— 理由與「不對稱排前面」相同，但這裡的門檻更緊：
+   * 驗收要 4/8 個變體看得見煙囪或筒倉，而 8 除以原型數的餘數一律落在
+   * 清單開頭。L3 有七個原型，只有第一個拿得到兩個變體，所以帶設備的
+   * 三個必須是前三個。
+   */
   [ZoneType.INDUSTRIAL]: [
+    p('stack', 1, shedWithStack(0.18, 0.62, 'cylinder')),
+    p('silos', 1, siloRow(3, 0.24, 0.5)),
+    p('tank', 2, shedWithStack(0.34, 0.5, 'cylinder')),
     p('shed+office', 1, mainPlusWing(0.32, 0.75)),
-    p('shed', 1, d => single(d)),
     p('twoSpan', 2, splitSpan(0.6)),
     p('L-shed', 3, lShape(0.6)),
+    p('shed', 1, d => single(d)),
   ],
   [ZoneType.OFFICE]: [
     p('offsetTower', 1, OFFSET_TOWER),

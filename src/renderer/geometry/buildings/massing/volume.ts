@@ -10,7 +10,12 @@ import { PART_WALL } from '../parts';
  * 座標單位是格（1 格 = 12 m），y0 = 0 是地面，格心是 (0, 0)。
  */
 
-export type VolumeShape = 'box' | 'gable' | 'hip' | 'shed' | 'sawtooth';
+/**
+ * `cylinder` 是唯一不由 `frustum` 產生的形狀 —— 煙囪與筒倉是圓的，而八邊形
+ * 在等角視角下就已經讀得出圓。它仍然填滿宣告的 w × d 盒子（八邊形有頂點落在
+ * ±x 與 ±z 上），所以 `maxAbsOf`、`overlapOf`、`rasterise` 不必知道它是圓的。
+ */
+export type VolumeShape = 'box' | 'gable' | 'hip' | 'shed' | 'sawtooth' | 'cylinder';
 
 export interface Volume {
   /** 中心 */

@@ -2,6 +2,7 @@ import { ZoneType } from '../../../../core/grid/types';
 import { PART_ROOF } from '../parts';
 import type { Volume } from './volume';
 import { VARIANT_COUNT, type Dimensions } from './dimensions';
+import { ROOF_PITCH_FRAC } from './metrics';
 import type { Rng } from './rng';
 
 /**
@@ -58,7 +59,7 @@ const roof = (v: Omit<Volume, 'part'>): Volume => ({ ...v, part: PART_ROOF });
 export function buildRoof(
   form: RoofForm, top: Volume, dims: Dimensions, rng: Rng,
 ): Volume[] {
-  const pitch = dims.floorHeight * 0.45;
+  const pitch = dims.floorHeight * ROOF_PITCH_FRAC;
   const base = { x: top.x, z: top.z, y0: top.y1 };
 
   switch (form) {

@@ -250,8 +250,10 @@ describe('ground prop geometry', () => {
         }
       }
     }
+    // 8 是階段 2B-2 訂的。工業補上管架、氣瓶、棧板之後實測 24 —— 16 把這一輪
+    // 的擴充鎖住，同時留下合併掉幾種尺寸的餘裕。
     expect(sizes.size, '所有庭院組合只有 ' + sizes.size + ' 種三角形數')
-      .toBeGreaterThanOrEqual(8);
+      .toBeGreaterThanOrEqual(16);
   });
 
   it('should keep every zone inside its own band, not just residential', () => {
@@ -328,6 +330,21 @@ describe('ground prop geometry', () => {
         expect(planted.length, `${key} L${level} 有草皮（${lawn.join(',')}）卻一棵樹都沒有`)
           .toBeGreaterThan(0);
       }
+    }
+  });
+
+  it('should give the industrial yard more kit than a commercial pavement', () => {
+    // 「工業不像工業」的機器可檢查形式。工業的等級階梯不表現在高度上
+    // （現代廠房都是單層挑高），所以它全靠設備：管架、氣瓶、棧板、油桶。
+    // 而在這一版之前，工業 L1 的零件量比商業還少 —— 一個矮盒子配兩個油桶，
+    // 讀起來就是一棟比較樸素的商業建築。
+    const richest = (z: number, level: number) => Math.max(
+      ...getGroundPropVariants(z, 'LOW', level)
+        .map(b => { const g = b(); const n = triangleCount(g); g.dispose(); return n; }),
+    );
+    for (const level of LEVELS) {
+      expect(richest(ZoneType.INDUSTRIAL, level), `L${level} 工業的廠區比商業人行道還空`)
+        .toBeGreaterThan(richest(ZoneType.COMMERCIAL_LOW, level));
     }
   });
 

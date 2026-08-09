@@ -45,6 +45,17 @@ export const FLOOR_HEIGHT_UNITS = { MIN: 0.22, MAX: 0.30 } as const;
 export const SHOPFRONT_CEILING = FLOOR_HEIGHT_UNITS.MIN;
 
 /**
+ * 斜屋頂的高度佔一層樓的比例。
+ *
+ * 壓在半層樓以內，否則建築的總高度就不是「樓層數 × 樓高」，等級階梯會漂掉。
+ *
+ * 住在這裡而不是 `roofForms`：組合器要靠它替屋脊留位置 —— 工業的煙囪必須
+ * 露在屋脊之上，而組合器算高度時屋頂還不存在。兩邊各寫一份 0.45 的話，
+ * 改了屋頂之後煙囪會被埋掉，而那不會有任何東西報錯。
+ */
+export const ROOF_PITCH_FRAC = 0.45;
+
+/**
  * 貼著地面的東西該放多高（格）。
  *
  * 這張表存在的理由是 BUG-224：分區建築原本放在 y = 0.05，那是**路面**的高度，

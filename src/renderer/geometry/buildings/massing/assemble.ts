@@ -77,6 +77,33 @@ function frustum(
 /** 一片鋸齒天窗的跨距：大約 6 m 一道，與真實廠房接近。 */
 const SAWTOOTH_SPAN = 6 / METRES_PER_CELL;
 
+/**
+ * 圓柱的邊數。8 在等角視角下已經讀得出圓，而且**有頂點落在 ±x 與 ±z 上** ——
+ * 所以縮放之後它剛好填滿宣告的盒子，量體算出來的牆面位置仍然對得上幾何。
+ */
+const CYLINDER_SIDES = 8;
+
+/**
+ * 圓柱：煙囪、筒倉、儲槽。
+ *
+ * 這是唯一不走 `frustum` 的形狀。用 `THREE.CylinderGeometry` 而不是自己疊三角形，
+ * 因為它的纏繞方向本來就是外向的（BUG-227 的教訓）；但它是索引幾何又帶 uv，
+ * 跟 `frustum` 的產物合併不起來，所以要先去掉 uv 再攤平。
+ *
+ * 攤平之後重算法線是刻意的：拿到的是平面著色，與其他形狀的低多邊形觀感一致。
+ * 順序不能換 —— 非等比縮放會扭曲既有的法線。
+ */
+function cylinder(v: Volume): THREE.BufferGeometry {
+  const src = new THREE.CylinderGeometry(0.5, 0.5, v.y1 - v.y0, CYLINDER_SIDES);
+  src.deleteAttribute('uv');
+  const geo = src.toNonIndexed();
+  src.dispose();
+  geo.scale(v.w, 1, v.d);
+  geo.computeVertexNormals();
+  geo.translate(v.x, (v.y0 + v.y1) / 2, v.z);
+  return geo;
+}
+
 function shapeOf(v: Volume): THREE.BufferGeometry[] {
   const alongZ = (v.facing ?? 0) % 2 === 0;
   const sign = (v.facing ?? 0) < 2 ? 1 : -1;
@@ -84,6 +111,8 @@ function shapeOf(v: Volume): THREE.BufferGeometry[] {
   switch (v.shape ?? 'box') {
     case 'box':
       return [frustum(v, v.w, v.d, 0, 0)];
+    case 'cylinder':
+      return [cylinder(v)];
     case 'gable':
       return alongZ
         ? [frustum(v, v.w, v.d * RIDGE, 0, 0)]

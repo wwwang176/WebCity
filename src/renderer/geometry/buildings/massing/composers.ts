@@ -1,3 +1,5 @@
+import { PART_DETAIL } from '../parts';
+import { ROOF_PITCH_FRAC } from './metrics';
 import type { Volume } from './volume';
 import type { Dimensions } from './dimensions';
 import type { Rng } from './rng';
@@ -157,6 +159,89 @@ export function twin(gapFrac: number): Composer {
         y0: 0, y1: Math.min(linkH, dims.height * 0.5),
       },
     ];
+  };
+}
+
+/** 立管露在屋脊之上的最小高度，一層樓的 15%。低於這個就只是「屋頂上有個包」。 */
+const STACK_REVEAL = 0.15;
+
+/**
+ * 廠房頂面的高度。
+ *
+ * 三個限制夾出來的：
+ *   下限 0.35 層樓 —— 再低就不是廠房了
+ *   上限 `height − 屋脊 − 露出量` —— 立管必須看得見地高過屋脊。一層樓的
+ *          建築配 0.62 的比例會讓屋脊爬到 1.07 × 高度，把煙囪整根埋掉，
+ *          而工業的高度表裡一層樓的變體很常見（容差是 ±3.1 m）
+ *   目標 `height × frac`
+ */
+function shedTop(dims: Dimensions, frac: number): number {
+  const cap = dims.height - dims.floorHeight * (ROOF_PITCH_FRAC + STACK_REVEAL);
+  return Math.min(
+    dims.height - 1e-6,
+    Math.max(dims.floorHeight * 0.35, Math.min(cap, dims.height * frac)),
+  );
+}
+
+/**
+ * 廠房 + 落地立管（煙囪、筒倉、水塔）。
+ *
+ * 工業的等級階梯**不**表現在高度上 —— 現代廠房幾乎都是單層挑高、鋪滿基地，
+ * 多層工廠很少見（見 `TARGET_HEIGHTS_M` 的註解）。所以目標高度由立管去達成，
+ * 廠房本體只佔其中一部分：一個 9 m 高的煙囪配 5.6 m 的廠房，遠比一個 9 m 的
+ * 方盒像工廠。
+ *
+ * 立管標 `PART_DETAIL` 而不是 `PART_WALL`：工業的立面 shader 會在牆上畫浪板
+ * 與一整排大捲門，而煙囪上不該有捲門。
+ */
+export function shedWithStack(
+  bayFrac: number, shedFrac: number, shape: 'box' | 'cylinder',
+): Composer {
+  return (dims, rng) => {
+    const bayW = dims.w * bayFrac;
+    const shedW = dims.w - bayW;
+    const stackD = Math.min(bayW, dims.d * 0.5);
+    return [
+      { x: -dims.w / 2 + shedW / 2, z: 0, w: shedW, d: dims.d, y0: 0, y1: shedTop(dims, shedFrac) },
+      {
+        // 立管靠基地的一端而不是正中央 —— 正中央的話整個組合器又對稱了，
+        // 四向旋轉的四倍變化就白給。
+        x: dims.w / 2 - bayW / 2,
+        z: (dims.d / 2 - stackD / 2) * (rng() < 0.5 ? 0.85 : -0.85),
+        w: bayW, d: stackD, y0: 0, y1: dims.height,
+        shape, part: PART_DETAIL,
+      },
+    ];
+  };
+}
+
+/**
+ * 廠房 + 一排筒倉。
+ *
+ * 這一個是對稱的，而且刻意如此 —— 工業的不對稱來源已經有偏屋、兩跨、L 形與
+ * 立管四個，再多一個只是重複；一整排等高的筒倉本來就是對稱的東西。
+ */
+export function siloRow(count: number, bayFrac: number, shedFrac: number): Composer {
+  return (dims) => {
+    const bayD = dims.d * bayFrac;
+    const shedD = dims.d - bayD;
+    const pitch = dims.w / count;
+    // 0.82 而不是 1：筒倉之間要有縫，貼在一起在俯視輪廓上就是一道實心的牆。
+    const dia = Math.min(bayD, pitch * 0.82);
+    const out: Volume[] = [{
+      x: 0, z: -dims.d / 2 + shedD / 2,
+      w: dims.w, d: shedD, y0: 0, y1: shedTop(dims, shedFrac),
+    }];
+    for (let i = 0; i < count; i++) {
+      out.push({
+        x: -dims.w / 2 + pitch * (i + 0.5), z: dims.d / 2 - bayD / 2,
+        w: dia, d: dia, y0: 0,
+        // 至少一支達到目標高度，其餘矮一截 —— 一排等高的筒倉像一道柵欄。
+        y1: i % 2 === 0 ? dims.height : dims.height * 0.78,
+        shape: 'cylinder', part: PART_DETAIL,
+      });
+    }
+    return out;
   };
 }
 

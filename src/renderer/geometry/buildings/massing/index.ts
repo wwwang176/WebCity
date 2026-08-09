@@ -1,3 +1,4 @@
+import { PART_WALL } from '../parts';
 import type { GeoBuilder, Density } from '../registry';
 import { VARIANT_COUNT, dimensionsFor } from './dimensions';
 import { FLOOR_HEIGHT_UNITS } from './metrics';
@@ -28,7 +29,10 @@ export function volumesFor(
   const roofRng = variantRng(zoneType, density, level, variantIndex + VARIANT_COUNT);
 
   const body = prototypeFor(zoneType, level, variantIndex).compose(dims, bodyRng);
-  const top = body.reduce((a, b) => (b.y1 > a.y1 ? b : a), body[0]!);
+  // 屋頂蓋在最高的**牆**上，不是最高的量體上 —— 工業的煙囪比廠房高，
+  // 而一頂鋸齒天窗蓋在煙囪上既荒謬又會把煙囪本身埋掉。
+  const walls = body.filter(v => (v.part ?? PART_WALL) === PART_WALL);
+  const top = (walls.length > 0 ? walls : body).reduce((a, b) => (b.y1 > a.y1 ? b : a));
   const roof = buildRoof(roofFor(zoneType, level, variantIndex), top, dims, roofRng);
   return [...body, ...roof];
 }

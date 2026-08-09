@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   single, mainPlusWing, lShape, podiumTower, setback, notch, twin, splitSpan,
+  shedWithStack, siloRow,
   type Composer,
 } from '../geometry/buildings/massing/composers';
 import {
@@ -24,6 +25,8 @@ const ALL: Array<[string, Composer]> = [
   ['notch', notch(0.34)],
   ['twin', twin(0.24)],
   ['splitSpan', splitSpan(0.55)],
+  ['shedWithStack', shedWithStack(0.18, 0.62, 'cylinder')],
+  ['siloRow', siloRow(3, 0.24, 0.5)],
 ];
 
 /** 同一組輸入跑八次，涵蓋 rng 的不同分支。 */
@@ -99,7 +102,9 @@ describe('composers keep the invariants', () => {
 describe('composers earn their keep', () => {
   it('should give the asymmetric ones a real centroid offset', () => {
     // 旋轉是四倍的免費變化，但只有在形狀不對稱時才拿得到。
-    const asym = ['mainPlusWing', 'lShape', 'offsetTower', 'twin', 'splitSpan'];
+    const asym = [
+      'mainPlusWing', 'lShape', 'offsetTower', 'twin', 'splitSpan', 'shedWithStack',
+    ];
     for (const [name, c] of ALL) {
       if (!asym.includes(name)) continue;
       const offs = samples(c, TOWER).map(centroidOffset);

@@ -304,6 +304,80 @@ function drum(b: Band, axis: Axis, sign: Sign, t: number) {
   return body;
 }
 
+/**
+ * 管架：兩根立柱撐著兩條橫管（工業）。
+ *
+ * 廠區最好認的東西之一，而且它是**水平**的 —— 這一層原本清一色是站著的
+ * 柱狀物，加一個橫的立刻讀得出「這裡有製程」。
+ *
+ * 高度壓在 2 m 以下：再高就侵入懸挑層的淨空（`OVERHEAD_CLEARANCE`）。
+ */
+function pipeRack(b: Band, axis: Axis, sign: Sign, lengthFrac: number) {
+  const out: THREE.BufferGeometry[] = [];
+  const span = b.outer * 2 * lengthFrac;
+  for (const t of [-span / 2, span / 2]) {
+    const [x, z] = place(axis, sign, t, mid(b));
+    const post = new THREE.BoxGeometry(M(0.16), M(2.0), M(0.16));
+    post.translate(x, M(1.0), z);
+    tagPart(post, PART_DETAIL);
+    out.push(post);
+  }
+  const [px, pz] = place(axis, sign, 0, mid(b));
+  for (const [h, r] of [[1.35, 0.13], [1.75, 0.1]] as const) {
+    const pipe = new THREE.CylinderGeometry(M(r), M(r), span, 4);
+    // CylinderGeometry 的軸是 y。沿邊擺就得先轉倒 —— z 軸的邊沿 x 展開，
+    // x 軸的邊沿 z 展開（與 `strip` 同一套約定）。
+    if (axis === 'z') pipe.rotateZ(Math.PI / 2);
+    else pipe.rotateX(Math.PI / 2);
+    pipe.translate(px, M(h), pz);
+    tagPart(pipe, PART_DETAIL);
+    out.push(pipe);
+  }
+  return out;
+}
+
+/** 氣瓶架：三支高壓氣瓶靠著一道矮框（工業）。 */
+function gasBottles(b: Band, axis: Axis, sign: Sign, t: number) {
+  const out: THREE.BufferGeometry[] = [];
+  const r = fit(b, 0.16, 0.9);
+  for (let i = -1; i <= 1; i++) {
+    const [x, z] = place(axis, sign, t + i * M(0.42), mid(b));
+    const body = new THREE.CylinderGeometry(r, r, M(1.3), 4);
+    body.translate(x, M(0.65), z);
+    tagPart(body, PART_DETAIL);
+    out.push(body);
+  }
+  const [fx, fz] = place(axis, sign, t, mid(b));
+  const frame = axis === 'z'
+    ? new THREE.BoxGeometry(M(1.5), M(0.1), M(0.08))
+    : new THREE.BoxGeometry(M(0.08), M(0.1), M(1.5));
+  frame.translate(fx, M(1.05), fz);
+  tagPart(frame, PART_DETAIL);
+  out.push(frame);
+  return out;
+}
+
+/**
+ * 棧板堆：三層木棧板疊著（工業）。
+ *
+ * 沿邊的長度不受帶寬限制 —— 帶子只有 0.4 m 深，但沿著牆可以擺 1.2 m 長。
+ * 所以這是窄帶裡少數還放得下的「有體積的貨」。
+ */
+function palletStack(b: Band, axis: Axis, sign: Sign, t: number) {
+  const out: THREE.BufferGeometry[] = [];
+  const depth = (b.outer - b.inner) * 0.8;
+  const [x, z] = place(axis, sign, t, mid(b));
+  for (let i = 0; i < 3; i++) {
+    const slab = axis === 'z'
+      ? new THREE.BoxGeometry(M(1.2), M(0.16), depth)
+      : new THREE.BoxGeometry(depth, M(0.16), M(1.2));
+    slab.translate(x, M(0.16) * (i + 0.5) + M(0.06) * i, z);
+    tagPart(slab, PART_DETAIL);
+    out.push(slab);
+  }
+  return out;
+}
+
 /** 消防栓（工業／商業）。 */
 function hydrant(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
@@ -411,25 +485,33 @@ const COMMERCIAL: [Recipe[], Recipe[], Recipe[]] = [
   ],
 ];
 
-/** 工業：油桶、矮柱、消防栓。廠區沒有綠化。 */
+/**
+ * 工業：管架、氣瓶、棧板、油桶、矮柱、消防栓。廠區沒有綠化。
+ *
+ * 工業的等級階梯不表現在高度上（現代廠房都是單層挑高、鋪滿基地），所以
+ * 它全靠設備 —— 這一層與煙囪、筒倉一起，是「這是工廠不是商店」的全部證據。
+ * 改版之前這裡只有油桶與消防栓，零件量比商業人行道還少。
+ */
 const INDUSTRIAL: [Recipe[], Recipe[], Recipe[]] = [
   [
-    b => [drum(b, 'x', 1, 0.1), drum(b, 'x', 1, -0.15), ...hydrant(b, 'z', 1, 0.3)],
-    b => [drum(b, 'z', -1, 0.2), ...hydrant(b, 'x', -1, -0.1)],
-  ],
-  [
-    b => [drum(b, 'x', 1, 0.12), drum(b, 'x', 1, -0.12), drum(b, 'x', 1, 0.36),
-          ...bollards(b, 'z', 1, 4), ...hydrant(b, 'z', 1, -0.32)],
-    b => [drum(b, 'z', -1, 0.18), drum(b, 'z', -1, -0.18), ...bollards(b, 'x', -1, 4),
+    b => [drum(b, 'x', 1, 0.1), drum(b, 'x', 1, -0.15), ...palletStack(b, 'z', -1, 0.16),
           ...hydrant(b, 'z', 1, 0.3)],
+    b => [drum(b, 'z', -1, 0.2), ...pipeRack(b, 'x', 1, 0.7), ...hydrant(b, 'x', -1, -0.1)],
   ],
   [
     b => [drum(b, 'x', 1, 0.12), drum(b, 'x', 1, -0.12), drum(b, 'x', 1, 0.36),
-          ...bollards(b, 'z', 1, 6), ...lamp(b, 'x', -1, 0.2, 4.0),
-          ...hydrant(b, 'z', 1, -0.32), ...signPost(b, 'z', 1, 0.3)],
-    b => [drum(b, 'z', -1, 0.2), drum(b, 'z', -1, -0.2), ...bollards(b, 'x', -1, 5),
-          ...lamp(b, 'z', 1, 0.3, 4.2), ...signPost(b, 'x', 1, -0.15),
-          ...hydrant(b, 'x', 1, 0.25)],
+          ...pipeRack(b, 'z', -1, 0.75), ...bollards(b, 'z', 1, 4),
+          ...hydrant(b, 'z', 1, -0.32)],
+    b => [drum(b, 'z', -1, 0.18), drum(b, 'z', -1, -0.18), ...gasBottles(b, 'x', 1, 0.1),
+          ...bollards(b, 'x', -1, 4), ...hydrant(b, 'z', 1, 0.3)],
+  ],
+  [
+    b => [drum(b, 'x', 1, 0.12), drum(b, 'x', 1, -0.12), ...pipeRack(b, 'z', -1, 0.8),
+          ...palletStack(b, 'x', -1, 0.2), ...bollards(b, 'z', 1, 5),
+          ...lamp(b, 'x', 1, 0.3, 4.0), ...hydrant(b, 'z', 1, -0.32)],
+    b => [drum(b, 'z', -1, 0.2), ...gasBottles(b, 'x', 1, 0.12),
+          ...palletStack(b, 'z', 1, -0.2), ...bollards(b, 'x', -1, 5),
+          ...lamp(b, 'z', 1, 0.3, 4.2), ...signPost(b, 'x', 1, -0.15)],
   ],
 ];
 

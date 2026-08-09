@@ -5,11 +5,13 @@ import { VARIANT_COUNT } from '../geometry/buildings/massing/dimensions';
 import { HALF_ENVELOPE, FLOOR_HEIGHT_UNITS } from '../geometry/buildings/massing/metrics';
 
 const MID_FLOOR = (FLOOR_HEIGHT_UNITS.MIN + FLOOR_HEIGHT_UNITS.MAX) / 2;
-import { rasterise, differenceRatio, centroidOffset, rotate90 }
+import { rasterise, differenceRatio, centroidOffset, rotate90, type Volume }
   from '../geometry/buildings/massing/volume';
+import { assemble } from '../geometry/buildings/massing/assemble';
 import { triangleCount, PART_THRESHOLDS } from '../geometry/buildings/parts';
 import { TARGET_HEIGHTS_M, TRIANGLE_BUDGET, type Density }
   from '../geometry/buildings/registry';
+import { ZoneType } from '../../core/grid/types';
 import { METRES_PER_CELL } from '../../core/grid/constants';
 
 /**
@@ -231,6 +233,70 @@ describe('massing geometry', () => {
   // 零件數當代理量到的是屋頂形式，不是等級。真正的階梯由
   // MassingPrototypes 的 `should only ever add prototypes as the level climbs`
   // 直接測。
+});
+
+const isEquipment = (v: Volume) => {
+  const p = v.part ?? 0;
+  return p > PART_THRESHOLDS.ROOF_BY_NORMAL && p < PART_THRESHOLDS.FOLIAGE_MIN;
+};
+
+/**
+ * 露在建築本體之上的設備量體 —— 煙囪、筒倉、水塔。
+ *
+ * 基準是牆**加屋頂**的最高點，不是牆的最高點。只比牆的話有兩種埋掉煙囪的
+ * 方式仍然算過：屋頂蓋在煙囪本身上（`volumesFor` 挑錯 `top`），以及一層樓
+ * 的變體屋脊爬到煙囪之上（組合器沒替屋脊留位置）。兩者畫面上都是
+ * 「煙囪不見了」。
+ */
+function stacksIn(vs: readonly Volume[]): number {
+  const buildingTop = Math.max(...vs.filter(v => !isEquipment(v)).map(v => v.y1), 0);
+  return vs.filter(v => isEquipment(v) && v.y1 > buildingTop + 1e-9).length;
+}
+
+describe('industrial reads as industrial', () => {
+  it('should raise a stack or silo above the roof on at least half the variants', () => {
+    // 工業的等級階梯**不**表現在高度上（現代廠房都是單層挑高、鋪滿基地），
+    // 所以少了設備，工業就只是一個比較矮的商業盒子 —— 而那正是使用者看到的。
+    for (const lv of LEVELS) {
+      let withStack = 0;
+      for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+        if (stacksIn(volumesFor(ZoneType.INDUSTRIAL, 'LOW', lv, vi)) > 0) withStack++;
+      }
+      expect(withStack, `工業 L${lv} 只有 ${withStack}/8 個變體有立管`)
+        .toBeGreaterThanOrEqual(4);
+    }
+  });
+
+  it('should keep stacks out of every other zone', () => {
+    // 上一條的對照。少了它，「每個分區都插一根煙囪」也會過。
+    eachBucket((z, d, key) => {
+      if (z === ZoneType.INDUSTRIAL) return;
+      for (const lv of LEVELS) {
+        for (let vi = 0; vi < VARIANT_COUNT; vi++) {
+          expect(stacksIn(volumesFor(z, d, lv, vi)), `${key} L${lv} v${vi} 長了煙囪`).toBe(0);
+        }
+      }
+    });
+  });
+});
+
+describe('cylinder volumes', () => {
+  it('should build a round column that still fills the box it declared', () => {
+    // 圓柱的佔地若小於量體宣告的大小，propBands 量到的牆面就會偏 ——
+    // 那一層是用量體算的，不是用幾何。
+    const box: Volume = { x: 0.1, z: -0.05, w: 0.2, d: 0.16, y0: 0, y1: 1 };
+    const round = assemble([{ ...box, shape: 'cylinder' }]);
+    const square = assemble([box]);
+    expect(triangleCount(round), '圓柱的面數不比方柱多').toBeGreaterThan(triangleCount(square));
+
+    round.computeBoundingBox();
+    const b = round.boundingBox!;
+    expect(b.min.x).toBeCloseTo(0, 6);
+    expect(b.max.x).toBeCloseTo(0.2, 6);
+    expect(b.min.z).toBeCloseTo(-0.13, 6);
+    expect(b.max.z).toBeCloseTo(0.03, 6);
+    expect(b.max.y).toBeCloseTo(1, 6);
+  });
 });
 
 describe('massing variety', () => {
