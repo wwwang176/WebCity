@@ -12,6 +12,7 @@ import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { getVariants, TRIANGLE_BUDGET } from '../renderer/geometry/buildings/registry';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { getGroundPropVariants } from '../renderer/geometry/buildings/groundProps';
+import { GROUND_LAYERS } from '../renderer/geometry/buildings/propBands';
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { appearanceOf } from '../renderer/BuildingAppearance';
@@ -76,7 +77,7 @@ function place(cell: PlacedCell, seedByte: number): { massing: number; props: nu
     heightScaleFor(cell.zoneType, cell.density, cell.level, app.variantIndex) * app.heightScale,
     footprint(app.depth01),
   );
-  mesh.position.set(cell.x, 0.05, cell.z);
+  mesh.position.set(cell.x, GROUND_LAYERS.BUILDING, cell.z);
   sceneManager.scene.add(mesh);
   shown.push(mesh);
 
@@ -91,7 +92,7 @@ function place(cell: PlacedCell, seedByte: number): { massing: number; props: nu
     pmesh.receiveShadow = true;
     // 不套用任何縮放 —— 這正是這一層存在的理由（BUG-219）。
     pmesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
-    pmesh.position.set(cell.x, 0.05, cell.z);
+    pmesh.position.set(cell.x, GROUND_LAYERS.BUILDING, cell.z);
     sceneManager.scene.add(pmesh);
     shown.push(pmesh);
     props = triangleCount(pgeo);

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { ZoneType } from '../../../core/grid/types';
 import { METRES_PER_CELL } from '../../../core/grid/constants';
-import { decalBand, type Band } from './propBands';
+import { decalBand, GROUND_LAYERS, type Band } from './propBands';
 import { tagPart, setGroundShade, PART_GROUND, PART_FOLIAGE } from './parts';
 import { heightKey, type Density, type GeoBuilder } from './registry';
 
@@ -16,11 +16,13 @@ import { heightKey, type Density, type GeoBuilder } from './registry';
  * 有厚度的話側面會長出牆，而牆會長出窗戶。所以一律用 `PlaneGeometry`。
  *
  * 地面固定在 y = 0（`cell.elevation` 從未被 TerrainGenerator 寫入），
- * 所以 0.01 的抬升足以避開 z-fighting，又不會看出浮空。
+ * 離地高度統一由 `GROUND_LAYERS` 決定 —— 貼片與建築必須一樣高，
+ * 否則前庭鋪面與牆腳對不上（BUG-224）。
  */
 
-/** 底層鋪面的高度。 */
-export const DECAL_Y = 0.01;
+/** 底層鋪面的高度。實體在 `GROUND_LAYERS` —— 貼片與建築的離地高度必須一致，
+ * 否則前庭鋪面與牆腳對不上（BUG-224）。 */
+export const DECAL_Y = GROUND_LAYERS.DECAL;
 
 /**
  * 標線與踏板的高度。
@@ -30,7 +32,7 @@ export const DECAL_Y = 0.01;
  * 一移動鏡頭就整片閃爍。所以底層用「四個邊各自一種鋪面」的結構表達，
  * 疊放只能發生在標線層。
  */
-export const MARK_Y = DECAL_Y + 0.002;
+export const MARK_Y = GROUND_LAYERS.MARKING;
 
 const M = (metres: number) => metres / METRES_PER_CELL;
 

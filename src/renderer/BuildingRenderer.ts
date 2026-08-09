@@ -9,6 +9,7 @@ import {
   footprintScaleFor, bucketKey, type Density,
 } from './geometry/buildings/registry';
 import { getGroundPropVariants } from './geometry/buildings/groundProps';
+import { GROUND_LAYERS } from './geometry/buildings/propBands';
 import { stampZoneCategory, ZONE_CAT } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
@@ -141,7 +142,7 @@ export class BuildingRenderer {
     if (!slot) return;
 
     this._matrix.makeRotationY((app.rotationQuarter * Math.PI) / 2);
-    this._matrix.setPosition(x, 0.05, y);
+    this._matrix.setPosition(x, GROUND_LAYERS.BUILDING, y);
     slot.mesh.setMatrixAt(slot.idx, this._matrix);
     slot.mesh.instanceMatrix.needsUpdate = true;
     if (slot.grew) this._buildingMeshesDirty = true;
@@ -233,7 +234,7 @@ export class BuildingRenderer {
     this._rotation.makeRotationY((app.rotationQuarter * Math.PI) / 2);
     this._scale.makeScale(footprint(app.width01), finalHeight, footprint(app.depth01));
     this._matrix.multiplyMatrices(this._scale, this._rotation);
-    this._matrix.setPosition(x, 0.05, y);
+    this._matrix.setPosition(x, GROUND_LAYERS.BUILDING, y);
     mesh.setMatrixAt(idx, this._matrix);
 
     if (burned) {
@@ -271,6 +272,29 @@ export class BuildingRenderer {
 
   // ─── Incremental infrastructure operations ─────────────────────
 
+  /**
+   * 刻意伸到地面以下的基礎設施。
+   *
+   * 渡輪碼頭要伸進水裡（水面在 −0.2），把它壓到地面上等於讓碼頭浮在水面。
+   * 這是唯一的例外，所以列舉而不是加旗標欄位。
+   */
+  private static readonly BELOW_GROUND_INFRA = new Set<InfraType>(['ferry_dock']);
+
+  /**
+   * 把整組模型垂直對齊地面。
+   *
+   * 十九種基礎設施裡有十七種的幾何底部寫在 0.05 —— 那是**路面**的高度，
+   * 不是地面的高度，所以它們全部浮空 0.6 m（BUG-224，與分區建築同一個成因）。
+   * 捷運站則寫在 0.01。與其去改十九個模型建構函式（而且下一個新增的還是會
+   * 寫錯），不如在這裡量一次包圍盒直接對齊 —— 模型作者把底部放在哪都無所謂。
+   */
+  private snapToGround(group: THREE.Group, type: InfraType): void {
+    if (BuildingRenderer.BELOW_GROUND_INFRA.has(type)) return;
+    const box = new THREE.Box3().setFromObject(group);
+    if (!Number.isFinite(box.min.y)) return;
+    group.position.y += GROUND_LAYERS.BUILDING - box.min.y;
+  }
+
   /** Add a single infrastructure building to the scene (O(1), no full rebuild). */
   addInfrastructure(scene: THREE.Scene, x: number, y: number, type: InfraType, reserved: number): void {
     const cfg = getInfraConfig(type);
@@ -288,6 +312,7 @@ export class BuildingRenderer {
     }
 
     this.buildModel(type, group);
+    this.snapToGround(group, type);
 
     scene.add(group);
     this.infraGroups.push(group);
@@ -692,6 +717,7 @@ export class BuildingRenderer {
       }
 
       this.buildModel(inf.type, group);
+      this.snapToGround(group, inf.type);
 
       scene.add(group);
       this.infraGroups.push(group);
@@ -2539,7 +2565,7 @@ export class BuildingRenderer {
 
     const idx = this.lightSpotCount;
     this._matrix.identity();
-    this._matrix.setPosition(x, 0.03, y);
+    this._matrix.setPosition(x, GROUND_LAYERS.LIGHT_SPOT, y);
     this.lightSpotMesh.setMatrixAt(idx, this._matrix);
     this.lightSpotPosToIdx.set(posKey, idx);
     this.lightSpotIdxToPos[idx] = posKey;
