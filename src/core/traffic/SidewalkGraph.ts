@@ -7,6 +7,7 @@
  */
 
 import { RoadType, RoadDirection, countRoadDirections } from '../road/types';
+import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../grid/constants';
 import { toPosKey, parsePosKeyUnsafe, CARDINAL_DIRECTIONS, euclideanDistance } from '../grid/GridHelpers';
 
 // ── Constants ──────────────────────────────────────────────────────────
@@ -28,8 +29,13 @@ export const CW_OFFSET = 0.35;
 /** Node offset within a cell — aligned with crosswalk rendering */
 const NODE_X_OFFSET = CW_OFFSET;
 
-/** Building wall distance from cell center */
-export const BUILDING_HALF_SIZE = 0.35;
+/**
+ * Building wall distance from cell center.
+ *
+ * 由 MAX_BUILDING_WIDTH_M 推導，而不是自己寫一個數字：渲染層的基地寬度表
+ * 用的是同一個上限，兩邊各自寫死會在建築變寬時讓行人走進牆裡。
+ */
+export const BUILDING_HALF_SIZE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
 
 /** Walkway node offset outside building wall */
 export const WALKWAY_OFFSET = 0.06;

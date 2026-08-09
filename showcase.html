@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebCity — 建築展示區</title>
+    <style>
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #1a1d21; }
+      #scene { position: absolute; inset: 0; }
+      #panel {
+        position: absolute; top: 12px; left: 12px; z-index: 10;
+        background: rgba(20, 22, 26, 0.88); color: #e8e8e8;
+        font: 13px/1.5 system-ui, sans-serif; padding: 12px 14px;
+        border-radius: 8px; min-width: 240px;
+      }
+      #panel label { display: block; margin: 6px 0 2px; opacity: 0.75; }
+      #panel select, #panel input { width: 100%; }
+      #panel button { margin: 6px 6px 0 0; }
+      #stats { margin-top: 10px; font-variant-numeric: tabular-nums; opacity: 0.9; }
+      #stats .over { color: #ff8080; }
+    </style>
+  </head>
+  <body>
+    <div id="scene"></div>
+    <div id="panel"></div>
+    <script type="module" src="/src/showcase/main.ts"></script>
+  </body>
+</html>

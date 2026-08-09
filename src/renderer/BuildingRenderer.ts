@@ -1,910 +1,85 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { Grid } from '../core/grid/Grid';
+import { getBuildingMaterial } from './BuildingMaterial';
+import { paletteFor } from './ColorPalettes';
+import { appearanceOf } from './BuildingAppearance';
+import {
+  ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, bucketKey,
+  type Density, type GeoBuilder,
+} from './geometry/buildings/registry';
+import { getMassingVariants, VARIANT_COUNT, floorHeightOf } from './geometry/buildings/massing';
+import { FLOOR_HEIGHT_UNITS } from './geometry/buildings/massing/metrics';
+import { getGroundPropVariants } from './geometry/buildings/groundProps';
+import { getDecalVariants } from './geometry/buildings/decals';
+import { getOverheadVariants } from './geometry/buildings/overheadProps';
+import { GROUND_LAYERS } from './geometry/buildings/propBands';
+import { stampZoneCategory, ZONE_CAT } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
 import { disposeGroup } from './disposeGroup';
+import { InstancedLayer } from './InstancedLayer';
 import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
 import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '../core/building/BuildingUtilityWarning';
 
-// ===== Deterministic pseudo-random based on position =====
-function hash(x: number, y: number): number {
-  let h = (x * 374761393 + y * 668265263 + 1013904223) | 0;
-  h = ((h ^ (h >> 13)) * 1274126177) | 0;
-  return ((h ^ (h >> 16)) >>> 0) / 4294967296;
-}
-
-// ===== Part tagging via vertex colors =====
-// R = part type (0=wall, 1=roof), G = zone category, B = reserved
-const PART_WALL = 0.0;
-const PART_FOLIAGE = 0.5;
-const PART_ROOF = 1.0;
-
-function tagPart(geo: THREE.BufferGeometry, part: number): void {
-  const count = geo.getAttribute('position').count;
-  const arr = new Float32Array(count * 3);
-  for (let i = 0; i < count; i++) {
-    arr[i * 3] = part;
-    arr[i * 3 + 1] = 0; // zone set later
-    arr[i * 3 + 2] = 0;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-}
-
-// Zone category constants (encoded in vertex color G channel)
-const ZONE_CAT: Record<number, number> = {
-  [ZoneType.RESIDENTIAL_LOW]:  0.0,
-  [ZoneType.RESIDENTIAL_HIGH]: 0.2,
-  [ZoneType.COMMERCIAL_LOW]:   0.4,
-  [ZoneType.COMMERCIAL_HIGH]:  0.6,
-  [ZoneType.INDUSTRIAL]:       0.8,
-  [ZoneType.OFFICE]:           1.0,
-};
-
-function stampZoneCategory(geo: THREE.BufferGeometry, cat: number): void {
-  const attr = geo.getAttribute('color') as THREE.BufferAttribute;
-  const arr = attr.array as Float32Array;
-  for (let i = 0; i < attr.count; i++) {
-    arr[i * 3 + 1] = cat;
-  }
-}
-
-// ===== Color Palettes (realistic, zone-distinguishable) =====
-const ZONE_PALETTES: Record<number, number[]> = {
-  [ZoneType.RESIDENTIAL_LOW]:  [
-    0xf0ece4, // white render
-    0xe8e0d0, // warm cream
-    0xc47050, // red brick
-    0xd4a870, // buff/sandstone
-    0xe0d8c8, // pale ivory
-    0xb85838, // dark red brick
-    0xd8c8a0, // honey stone
-    0xe8dcd0, // off-white
-    0xc8906c, // salmon brick
-    0xd0c4a8, // pale yellow stone
-    0xf0e8dc, // bright cream
-    0xa86040, // terracotta brick
-  ],
-  [ZoneType.RESIDENTIAL_HIGH]: [
-    0xe0d4b8, // Paris cream stone
-    0xc8c0b0, // warm gray
-    0xd8ccac, // pale yellow stone
-    0xb87858, // Amsterdam brick
-    0xe4dcd0, // off-white plaster
-    0xd0c4a0, // honey limestone
-    0xc4a880, // sandstone
-    0xd8d0c0, // light cream
-  ],
-  [ZoneType.COMMERCIAL_LOW]:   [
-    0xd8c888, // warm yellow
-    0xe8e0d0, // white plaster
-    0xc87050, // brick red
-    0xb8c8d8, // pale blue
-    0xd4c4a0, // warm cream
-    0xd0b870, // golden
-    0xe0d0b8, // light sand
-    0xc0a878, // tan
-  ],
-  [ZoneType.COMMERCIAL_HIGH]:  [
-    0x78a8c0, // blue-green glass
-    0xc8b890, // warm limestone
-    0x88b0a0, // green glass
-    0xa0a8b0, // steel gray
-    0xd8d4d0, // white modern
-    0x90a8b8, // light blue glass
-    0xb8a880, // sandstone classic
-    0x80a0b8, // teal glass
-  ],
-  [ZoneType.INDUSTRIAL]:       [
-    0xb0b4b8, // silver metal
-    0xa86048, // red brick factory
-    0xd0ccc8, // white panel
-    0xa07050, // rust/corten steel
-    0x808480, // dark gray
-    0xc0b8b0, // light concrete
-    0x907060, // weathered brick
-    0xb8b0a0, // beige concrete
-  ],
-  [ZoneType.OFFICE]:           [
-    0x88b0c8, // light blue glass
-    0x607890, // deep blue glass
-    0xc8ccd0, // white modern
-    0xb8a890, // warm stone base
-    0x80a8a0, // green glass
-    0xa0b4c0, // steel blue
-    0x98a8b0, // cool gray
-    0x70a0b8, // teal
-  ],
-};
-
-// ===== Height ranges per zone =====
-const ZONE_HEIGHTS: Record<number, { min: number; max: number }> = {
-  [ZoneType.RESIDENTIAL_LOW]:  { min: 0.25, max: 0.7 },
-  [ZoneType.RESIDENTIAL_HIGH]: { min: 1.0, max: 3.0 },
-  [ZoneType.COMMERCIAL_LOW]:   { min: 0.4, max: 1.0 },
-  [ZoneType.COMMERCIAL_HIGH]:  { min: 1.2, max: 2.8 },
-  [ZoneType.INDUSTRIAL]:       { min: 0.4, max: 1.0 },
-  [ZoneType.OFFICE]:           { min: 1.5, max: 4.5 },
-};
-
-// ===== Building Shader =====
-const BUILDING_VERT = /* glsl */ `
-#include <common>
-#include <shadowmap_pars_vertex>
-
-attribute float aHighlight;
-attribute vec3 aHighlightColor;
-attribute float aOccupancy;
-
-varying vec3 vNormal;
-varying vec3 vLocalPos;
-varying vec3 vWorldPos;
-varying vec3 vBldgColor;
-varying float vPartType;
-varying float vZoneCat;
-varying float vHighlight;
-varying vec3 vHighlightColor;
-varying float vOccupancy;
-
-void main() {
-  vLocalPos = position;
-  vHighlight = aHighlight;
-  vHighlightColor = aHighlightColor;
-  vOccupancy = aOccupancy;
-
-  #ifdef USE_COLOR
-    vPartType = color.r;
-    vZoneCat = color.g;
-  #else
-    vPartType = 0.0;
-    vZoneCat = 0.0;
-  #endif
-
-  #ifdef USE_INSTANCING_COLOR
-    vBldgColor = instanceColor;
-  #else
-    vBldgColor = vec3(0.7);
-  #endif
-
-  #ifdef USE_INSTANCING
-    mat4 world = modelMatrix * instanceMatrix;
-  #else
-    mat4 world = modelMatrix;
-  #endif
-
-  vec4 wPos = world * vec4(position, 1.0);
-  vWorldPos = wPos.xyz;
-  vNormal = normalize(mat3(world) * normal);
-  gl_Position = projectionMatrix * viewMatrix * wPos;
-
-  // Shadow map: transformedNormal required by shadowmap_vertex
-  vec3 transformedNormal = vNormal;
-  vec4 worldPosition = wPos;
-  #include <shadowmap_vertex>
-}
-`;
-
-const BUILDING_FRAG = /* glsl */ `
-precision highp float;
-
-#include <common>
-#include <packing>
-#include <lights_pars_begin>
-#include <shadowmap_pars_fragment>
-
-uniform float uGlobalOpacity;
-uniform float uDesaturate;
-uniform float uTime;
-
-varying vec3 vNormal;
-varying vec3 vLocalPos;
-varying vec3 vWorldPos;
-varying vec3 vBldgColor;
-varying float vPartType;
-varying float vZoneCat;
-varying float vHighlight;
-varying vec3 vHighlightColor;
-varying float vOccupancy;
-
-float hash21(vec2 p) {
-  p = fract(p * vec2(233.34, 851.73));
-  p += dot(p, p + 23.45);
-  return fract(p.x * p.y);
-}
-
-// === Independent roof color palettes per zone ===
-vec3 getRoofColor(float zoneCat, float h) {
-  vec3 c = vec3(0.35, 0.35, 0.38); // default (Office: medium gray)
-  // Residential Low: clay tiles, slate
-  if (zoneCat < 0.1) {
-    c = h < 0.17 ? vec3(0.35, 0.22, 0.14) // dark brown tiles
-      : h < 0.33 ? vec3(0.58, 0.30, 0.18) // terracotta red
-      : h < 0.50 ? vec3(0.40, 0.38, 0.36) // slate gray
-      : h < 0.67 ? vec3(0.45, 0.28, 0.16) // warm brown
-      : h < 0.83 ? vec3(0.52, 0.34, 0.22) // cedar brown
-      :             vec3(0.32, 0.30, 0.28);// dark slate
-  } else if (zoneCat < 0.3) {
-    // Residential High: Paris zinc, dark slate
-    c = h < 0.25 ? vec3(0.45, 0.45, 0.48) // zinc gray
-      : h < 0.50 ? vec3(0.30, 0.30, 0.32) // dark slate
-      : h < 0.75 ? vec3(0.38, 0.36, 0.34) // warm dark gray
-      :             vec3(0.35, 0.38, 0.42);// blue-gray slate
-  } else if (zoneCat < 0.5) {
-    // Commercial Low: European shop roofs
-    c = h < 0.20 ? vec3(0.55, 0.28, 0.16) // terracotta
-      : h < 0.40 ? vec3(0.35, 0.22, 0.14) // dark brown
-      : h < 0.60 ? vec3(0.38, 0.36, 0.34) // dark gray
-      : h < 0.80 ? vec3(0.42, 0.25, 0.15) // warm brown tile
-      :             vec3(0.30, 0.30, 0.28);// charcoal
-  } else if (zoneCat < 0.7) {
-    // Commercial High: flat modern roofs
-    c = h < 0.33 ? vec3(0.32, 0.34, 0.36) // dark flat gray
-      : h < 0.66 ? vec3(0.38, 0.42, 0.40) // green-gray (copper patina)
-      :             vec3(0.28, 0.30, 0.32);// charcoal
-  } else if (zoneCat < 0.9) {
-    // Industrial: metal roofing
-    c = h < 0.25 ? vec3(0.55, 0.56, 0.58) // light silver metal
-      : h < 0.50 ? vec3(0.40, 0.40, 0.42) // medium gray metal
-      : h < 0.75 ? vec3(0.50, 0.35, 0.25) // rusted metal
-      :             vec3(0.35, 0.36, 0.38);// dark metal
-  } else {
-    // Office: modern flat roofs
-    c = h < 0.33 ? vec3(0.30, 0.32, 0.35) // dark gray flat
-      : h < 0.66 ? vec3(0.25, 0.28, 0.30) // very dark
-      :             vec3(0.35, 0.35, 0.38);// medium gray
-  }
-  return c;
-}
-
-void main() {
-  vec3 n = normalize(vNormal);
-  bool isLitWindow = false;
-  float windowMask = 0.0;
-  float winBrightness = 1.0;
-
-  // Read real lights from Three.js uniforms (set by lights_pars_begin)
-  #if NUM_DIR_LIGHTS > 0
-    // directionalLights[].direction is view-space; convert to world-space
-    vec3 sd = directionalLights[0].direction;
-    mat3 vm = mat3(viewMatrix);
-    vec3 sunDir = normalize(vec3(dot(vm[0], sd), dot(vm[1], sd), dot(vm[2], sd)));
-    vec3 sunColor = directionalLights[0].color;
-    float sunIntensity = length(sunColor);
-  #else
-    vec3 sunDir = normalize(vec3(0.5, 0.8, 0.3));
-    vec3 sunColor = vec3(1.0);
-    float sunIntensity = 1.0;
-  #endif
-  float sunDiff = max(dot(n, sunDir), 0.0);
-  vec3 fillDir = normalize(vec3(-0.6, 0.3, -0.4));
-  float fillDiff = max(dot(n, fillDir), 0.0);
-  vec3 indirect = max(vec3(0.08), ambientLightColor * 0.7) + 0.13 * fillDiff * sunColor;
-  vec3 direct = 0.45 * sunDiff * sunColor;
-  vec3 lighting = indirect + direct;
-  float directRatio = length(direct) / max(length(lighting), 0.001);
-
-  bool isFoliage = vPartType > 0.35 && vPartType < 0.65;
-  bool isRoof = vPartType > 0.8 || (n.y > 0.85 && vPartType < 0.1);
-  bool isFloor = n.y < -0.85;
-
-  vec3 color;
-
-  if (isFoliage) {
-    // Green foliage with variation based on position
-    float fh = hash21(vWorldPos.xz * 3.7);
-    vec3 baseGreen = mix(vec3(0.18, 0.35, 0.12), vec3(0.25, 0.45, 0.15), fh);
-    // Darker at bottom, lighter at top
-    float topFade = smoothstep(0.0, 0.25, vWorldPos.y);
-    color = baseGreen * (0.7 + 0.3 * topFade);
-    color *= lighting;
-  } else if (isFloor) {
-    color = vBldgColor * 0.3;
-  } else if (isRoof) {
-    float rh = hash21(floor(vWorldPos.xz * 1.01));
-    color = getRoofColor(vZoneCat, rh);
-    color *= lighting;
-  } else {
-    // === WALL — zone-specific patterns ===
-    float y = vWorldPos.y;
-    float wallU;
-    if (abs(n.x) > abs(n.z)) {
-      wallU = vWorldPos.z;
-    } else {
-      wallU = vWorldPos.x;
-    }
-    bool onWall = abs(n.y) < 0.3 && y > 0.06;
-    // Occupancy-adjusted lit threshold: fewer lit windows when building is less occupied
-    // occ=0 → no windows lit at all (abandoned/burned/empty buildings)
-    float occ = vOccupancy < 0.01 ? -1.0 : clamp(vOccupancy, 0.0, 1.0);
-
-    // ---- RESIDENTIAL LOW: painted siding, no window grid ----
-    if (vZoneCat < 0.1) {
-      color = vBldgColor * 0.9;
-      if (onWall) {
-        // Subtle horizontal siding lines
-        float board = fract(y / 0.06);
-        float line = smoothstep(0.0, 0.06, board) * smoothstep(0.12, 0.06, board);
-        color = vBldgColor * (0.88 - line * 0.06);
-      }
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.65 + 0.35 * ao;
-    }
-
-    // ---- RESIDENTIAL HIGH: medium-spaced windows ----
-    else if (vZoneCat < 0.3) {
-      float floorH = 0.25;
-      float winW = 0.2;
-      float fy = y / floorH;
-      float fx = wallU / winW;
-      float fracY = fract(fy);
-      float fracX = fract(fx);
-      float fwX = fwidth(fx);
-      float fwY = fwidth(fy);
-      float winMask = onWall
-        ? smoothstep(0.2 - fwX, 0.2 + fwX, fracX) * smoothstep(0.8 + fwX, 0.8 - fwX, fracX)
-        * smoothstep(0.25 - fwY, 0.25 + fwY, fracY) * smoothstep(0.68 + fwY, 0.68 - fwY, fracY)
-        : 0.0;
-      vec3 wallColor = vBldgColor * 0.88;
-      if (onWall && (fracY > 0.92 || fracY < 0.08)) {
-        wallColor = vBldgColor * 0.72;
-      }
-      vec3 winColor;
-      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phase = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phase) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
-      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
-      float bEpoch = floor((uTime + bPhase) / bPeriod);
-      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      float litThreshRH = mix(0.95, 0.4, occ);
-      if (lit > litThreshRH) {
-        float w = hash21(wid + 77.7);
-        winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
-        winBrightness = brightness;
-        isLitWindow = winMask > 0.5;
-      } else {
-        winColor = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
-      }
-      color = mix(wallColor, winColor, winMask);
-      windowMask = winMask;
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.6 + 0.4 * ao;
-    }
-
-    // ---- COMMERCIAL LOW: storefront glass bottom, simple wall above ----
-    else if (vZoneCat < 0.5) {
-      if (onWall && y < 0.22) {
-        // Large storefront glass
-        float glassU = fract(wallU / 0.25);
-        bool inGlass = glassU > 0.06 && glassU < 0.94;
-        if (inGlass) {
-          float r = hash21(floor(vec2(wallU / 0.25, 0.0)) + floor(vWorldPos.xz + 0.5) * 3.7);
-          color = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
-        } else {
-          color = vBldgColor * 0.6; // mullion
-        }
-      } else if (onWall) {
-        // Upper wall — sparse small windows
-        float floorH = 0.3;
-        float winW = 0.22;
-        float fy = y / floorH;
-        float fx = wallU / winW;
-        float fracY = fract(fy);
-        float fracX = fract(fx);
-        float fwX = fwidth(fracX);
-        float fwY = fwidth(fracY);
-        float winMask = smoothstep(0.3 - fwX, 0.3 + fwX, fracX) * smoothstep(0.7 + fwX, 0.7 - fwX, fracX)
-                      * smoothstep(0.3 - fwY, 0.3 + fwY, fracY) * smoothstep(0.65 + fwY, 0.65 - fwY, fracY);
-        vec3 wallColor = vBldgColor * 0.85;
-        vec3 winColor;
-        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.3;
-        float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phase = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phase) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
-      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
-      float bEpoch = floor((uTime + bPhase) / bPeriod);
-      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-        float litThreshCL = mix(0.95, 0.5, occ);
-        if (lit > litThreshCL) {
-          winColor = mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8;
-          winBrightness = brightness;
-          isLitWindow = winMask > 0.5;
-        } else {
-          winColor = vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
-        }
-        color = mix(wallColor, winColor, winMask);
-      windowMask = winMask;
-      } else {
-        color = vBldgColor * 0.85;
-      }
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.6 + 0.4 * ao;
-    }
-
-    // ---- COMMERCIAL HIGH: dense glass curtain wall ----
-    else if (vZoneCat < 0.7) {
-      float floorH = 0.22;
-      float winW = 0.1;
-      float fy = y / floorH;
-      float fx = wallU / winW;
-      float fracY = fract(fy);
-      float fracX = fract(fx);
-      float fwX = fwidth(fx);
-      float fwY = fwidth(fy);
-      float winMask = onWall
-        ? smoothstep(0.08 - fwX, 0.08 + fwX, fracX) * smoothstep(0.92 + fwX, 0.92 - fwX, fracX)
-        * smoothstep(0.12 - fwY, 0.12 + fwY, fracY) * smoothstep(0.82 + fwY, 0.82 - fwY, fracY)
-        : 0.0;
-      vec3 wallColor = vBldgColor * 0.5; // narrow mullions
-      vec3 winColor;
-      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phase = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phase) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
-      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
-      float bEpoch = floor((uTime + bPhase) / bPeriod);
-      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      float litThreshCH = mix(0.95, 0.3, occ);
-      if (lit > litThreshCH) {
-        float w = hash21(wid + 77.7);
-        winColor = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
-        winBrightness = brightness;
-        isLitWindow = winMask > 0.5;
-      } else {
-        winColor = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
-      }
-      color = mix(wallColor, winColor, winMask);
-      windowMask = winMask;
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.6 + 0.4 * ao;
-    }
-
-    // ---- INDUSTRIAL: corrugated metal, large doors ----
-    else if (vZoneCat < 0.9) {
-      if (onWall) {
-        // Horizontal corrugation ridges
-        float ridge = fract(y / 0.08);
-        float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
-        color = vBldgColor * (0.72 + shade * 0.18);
-
-        // Large loading door at ground level
-        float doorU = fract(wallU / 0.35);
-        if (y < 0.18 && doorU > 0.12 && doorU < 0.88) {
-          color = vBldgColor * 0.4 + vec3(0.02, 0.02, 0.01);
-          // Horizontal door slats
-          float slat = fract(y / 0.03);
-          color *= 0.9 + 0.1 * step(0.5, slat);
-        }
-      } else {
-        color = vBldgColor * 0.78;
-      }
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.65 + 0.35 * ao;
-    }
-
-    // ---- OFFICE: dense window grid ----
-    else {
-      float floorH = 0.25;
-      float winW = 0.125;
-      float fy = y / floorH;
-      float fx = wallU / winW;
-      float fracY = fract(fy);
-      float fracX = fract(fx);
-      float fwX = fwidth(fx);
-      float fwY = fwidth(fy);
-      float winMask = onWall
-        ? smoothstep(0.15 - fwX, 0.15 + fwX, fracX) * smoothstep(0.85 + fwX, 0.85 - fwX, fracX)
-        * smoothstep(0.2 - fwY, 0.2 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY)
-        : 0.0;
-      vec3 wallColor = vBldgColor * 0.88;
-      if (onWall && (fracY > 0.92 || fracY < 0.08)) {
-        wallColor = vBldgColor * 0.7;
-      }
-      vec3 winColor;
-      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phase = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phase) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
-      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
-      float bEpoch = floor((uTime + bPhase) / bPeriod);
-      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      float litThreshOF = mix(0.95, 0.35, occ);
-      if (lit > litThreshOF) {
-        float w = hash21(wid + 77.7);
-        winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
-        winBrightness = brightness;
-        isLitWindow = winMask > 0.5;
-      } else {
-        winColor = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
-      }
-      color = mix(wallColor, winColor, winMask);
-      windowMask = winMask;
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.6 + 0.4 * ao;
-    }
-  }
-
-  // Apply shadow from directional light
-  float shadowVal = 1.0;
-  float rawShadow = 1.0;
-  #if NUM_DIR_LIGHT_SHADOWS > 0
-    rawShadow = getShadow(
-      directionalShadowMap[0],
-      directionalLightShadows[0].shadowMapSize,
-      directionalLightShadows[0].shadowIntensity,
-      directionalLightShadows[0].shadowBias,
-      directionalLightShadows[0].shadowRadius,
-      vDirectionalShadowCoord[0]
-    );
-    // Shadow only attenuates direct light (like built-in PBR materials)
-    float shadowFactor = 0.45 + 0.55 * rawShadow;
-    shadowVal = mix(1.0, shadowFactor, directRatio);
-    color *= shadowVal;
-  #endif
-
-  // Window day/night appearance
-  if (windowMask > 0.01) {
-    // Per-building random offset so lights turn on gradually during dusk
-    float bldgRand = fract(sin(dot(floor(vWorldPos.xz), vec2(12.9898, 78.233))) * 43758.5453);
-    float onOffset = bldgRand * 0.3; // stagger over 0.3 sunIntensity range
-    float dayFactor = smoothstep(0.25 + onOffset, 0.55 + onOffset, sunIntensity);
-    float nightFactor = 1.0 - smoothstep(0.15 + onOffset, 0.5 + onOffset, sunIntensity);
-    // Daytime: all windows show blue-white glass reflection
-    vec3 dayGlass = vec3(0.6, 0.72, 0.82);
-    color = mix(color, dayGlass * lighting * shadowVal, dayFactor * windowMask);
-    // Specular sun reflection on sun-facing glass only
-    vec3 viewDirH = normalize(vec3(cameraPosition.x - vWorldPos.x, 0.0, cameraPosition.z - vWorldPos.z));
-    vec3 sunDirH = normalize(vec3(sunDir.x, 0.0, sunDir.z));
-    float facingSun = max(dot(n, sunDirH), 0.0);
-    vec3 halfDirH = normalize(sunDirH + viewDirH);
-    float spec = pow(max(dot(n, halfDirH), 0.0), 24.0);
-    color += spec * sunColor * 0.8 * dayFactor * windowMask * facingSun * rawShadow;
-    // Nighttime: only lit windows show warm yellow glow
-    if (isLitWindow) {
-      vec3 warmGlow = vec3(0.95, 0.85, 0.5);
-      color = mix(color, warmGlow * 1.35 * winBrightness, nightFactor * 0.7);
-    }
-  }
-
-  // Underground mode: white model effect (fade to near-white)
-  if (uDesaturate > 0.0) {
-    color = mix(color, vec3(0.88), uDesaturate);
-  }
-
-  // Highlight tint (demolish / zone selection / hover / coverage gradient)
-  if (vHighlight > 0.01) {
-    color = mix(color, vHighlightColor, 0.28 * vHighlight);
-    // Add emissive glow so it's visible at night too
-    color += vHighlightColor * 0.15 * vHighlight;
-  }
-
-  gl_FragColor = vec4(color, 1.0);
-}
-`;
-
-function createBuildingMaterial(): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
-    uniforms: {
-      ...THREE.UniformsUtils.merge([
-        THREE.UniformsLib.lights,
-      ]),
-      uGlobalOpacity: { value: 1.0 },
-      uDesaturate: { value: 0.0 },
-      uTime: { value: 0.0 },
-    },
-    vertexShader: BUILDING_VERT,
-    fragmentShader: BUILDING_FRAG,
-    vertexColors: true,
-    lights: true,
-    transparent: true,
-  });
-}
-
-let _buildingMaterial: THREE.ShaderMaterial | null = null;
-function getBuildingMaterial(): THREE.ShaderMaterial {
-  if (!_buildingMaterial) _buildingMaterial = createBuildingMaterial();
-  return _buildingMaterial;
-}
-
-// ===== Geometry Builders =====
-
-// -- Residential Low: houses with yards/garages --
-
-function makeResLowV1(): THREE.BufferGeometry {
-  // House with pitched roof + detached garage
-  const body = new THREE.BoxGeometry(0.36, 0.32, 0.34);
-  body.translate(-0.08, 0.16, -0.06);
-  tagPart(body, PART_WALL);
-  const roof = new THREE.ConeGeometry(0.32, 0.18, 4);
-  roof.rotateY(Math.PI / 4);
-  roof.translate(-0.08, 0.41, -0.06);
-  tagPart(roof, PART_ROOF);
-  // Garage
-  const garage = new THREE.BoxGeometry(0.2, 0.18, 0.22);
-  garage.translate(0.22, 0.09, 0.18);
-  tagPart(garage, PART_WALL);
-  const gRoof = new THREE.BoxGeometry(0.22, 0.03, 0.24);
-  gRoof.translate(0.22, 0.195, 0.18);
-  tagPart(gRoof, PART_ROOF);
-  // Front hedge
-  const hedge = new THREE.BoxGeometry(0.3, 0.08, 0.06);
-  hedge.translate(-0.08, 0.04, 0.25);
-  tagPart(hedge, PART_FOLIAGE);
-  // Garden tree
-  const trunk = new THREE.CylinderGeometry(0.015, 0.02, 0.15, 5);
-  trunk.translate(0.28, 0.075, -0.22);
-  tagPart(trunk, PART_WALL);
-  const canopy = new THREE.SphereGeometry(0.1, 5, 4);
-  canopy.translate(0.28, 0.2, -0.22);
-  tagPart(canopy, PART_FOLIAGE);
-  return mergeGeometries([body, roof, garage, gRoof, hedge, trunk, canopy])!;
-}
-
-function makeResLowV2(): THREE.BufferGeometry {
-  // Wide bungalow + garden shed
-  const body = new THREE.BoxGeometry(0.5, 0.26, 0.36);
-  body.translate(0, 0.13, -0.06);
-  tagPart(body, PART_WALL);
-  const porch = new THREE.BoxGeometry(0.18, 0.14, 0.1);
-  porch.translate(0.18, 0.07, 0.15);
-  tagPart(porch, PART_WALL);
-  const shed = new THREE.BoxGeometry(0.14, 0.16, 0.14);
-  shed.translate(-0.22, 0.08, 0.22);
-  tagPart(shed, PART_WALL);
-  const shedRoof = new THREE.BoxGeometry(0.16, 0.02, 0.16);
-  shedRoof.translate(-0.22, 0.17, 0.22);
-  tagPart(shedRoof, PART_ROOF);
-  // Side bushes
-  const bush1 = new THREE.SphereGeometry(0.06, 5, 4);
-  bush1.translate(0.32, 0.06, -0.28);
-  tagPart(bush1, PART_FOLIAGE);
-  const bush2 = new THREE.SphereGeometry(0.05, 5, 4);
-  bush2.translate(0.32, 0.05, -0.16);
-  tagPart(bush2, PART_FOLIAGE);
-  // Back garden tree
-  const trunk = new THREE.CylinderGeometry(0.015, 0.02, 0.18, 5);
-  trunk.translate(-0.08, 0.09, -0.32);
-  tagPart(trunk, PART_WALL);
-  const canopy = new THREE.SphereGeometry(0.12, 5, 4);
-  canopy.translate(-0.08, 0.24, -0.32);
-  tagPart(canopy, PART_FOLIAGE);
-  return mergeGeometries([body, porch, shed, shedRoof, bush1, bush2, trunk, canopy])!;
-}
-
-function makeResLowV3(): THREE.BufferGeometry {
-  // Narrow townhouse with steep roof + small yard wall
-  const body = new THREE.BoxGeometry(0.32, 0.4, 0.4);
-  body.translate(0, 0.2, -0.04);
-  tagPart(body, PART_WALL);
-  const roof = new THREE.ConeGeometry(0.3, 0.22, 4);
-  roof.rotateY(Math.PI / 4);
-  roof.translate(0, 0.51, -0.04);
-  tagPart(roof, PART_ROOF);
-  // Low yard wall / fence
-  const fence = new THREE.BoxGeometry(0.4, 0.06, 0.03);
-  fence.translate(0.05, 0.03, 0.22);
-  tagPart(fence, PART_WALL);
-  // Front hedge row
-  const hedge1 = new THREE.BoxGeometry(0.14, 0.07, 0.05);
-  hedge1.translate(-0.12, 0.035, 0.22);
-  tagPart(hedge1, PART_FOLIAGE);
-  const hedge2 = new THREE.BoxGeometry(0.14, 0.07, 0.05);
-  hedge2.translate(0.22, 0.035, 0.22);
-  tagPart(hedge2, PART_FOLIAGE);
-  // Corner bush
-  const bush = new THREE.SphereGeometry(0.07, 5, 4);
-  bush.translate(-0.25, 0.07, 0.28);
-  tagPart(bush, PART_FOLIAGE);
-  return mergeGeometries([body, roof, fence, hedge1, hedge2, bush])!;
-}
-
-// -- Residential High --
-
-function makeResHighV1(): THREE.BufferGeometry {
-  const main = new THREE.BoxGeometry(0.6, 0.8, 0.55);
-  main.translate(0, 0.4, 0);
-  tagPart(main, PART_WALL);
-  const top = new THREE.BoxGeometry(0.4, 0.25, 0.35);
-  top.translate(0, 0.925, 0);
-  tagPart(top, PART_ROOF);
-  return mergeGeometries([main, top])!;
-}
-
-function makeResHighV2(): THREE.BufferGeometry {
-  const body = new THREE.BoxGeometry(0.45, 1.0, 0.45);
-  body.translate(0, 0.5, 0);
-  tagPart(body, PART_WALL);
-  const cap = new THREE.BoxGeometry(0.5, 0.06, 0.5);
-  cap.translate(0, 1.03, 0);
-  tagPart(cap, PART_ROOF);
-  return mergeGeometries([body, cap])!;
-}
-
-function makeResHighV3(): THREE.BufferGeometry {
-  const wing1 = new THREE.BoxGeometry(0.6, 0.7, 0.3);
-  wing1.translate(0, 0.35, -0.1);
-  tagPart(wing1, PART_WALL);
-  const wing2 = new THREE.BoxGeometry(0.3, 0.7, 0.6);
-  wing2.translate(-0.15, 0.35, 0.15);
-  tagPart(wing2, PART_WALL);
-  return mergeGeometries([wing1, wing2])!;
-}
-
-// -- Commercial Low --
-
-function makeComLowV1(): THREE.BufferGeometry {
-  const body = new THREE.BoxGeometry(0.6, 0.4, 0.55);
-  body.translate(0, 0.2, 0);
-  tagPart(body, PART_WALL);
-  const awning = new THREE.BoxGeometry(0.65, 0.03, 0.15);
-  awning.translate(0, 0.35, 0.32);
-  tagPart(awning, PART_ROOF);
-  return mergeGeometries([body, awning])!;
-}
-
-function makeComLowV2(): THREE.BufferGeometry {
-  const body = new THREE.BoxGeometry(0.7, 0.35, 0.5);
-  body.translate(0, 0.175, 0);
-  tagPart(body, PART_WALL);
-  const sign = new THREE.BoxGeometry(0.55, 0.06, 0.02);
-  sign.translate(0, 0.38, 0.26);
-  tagPart(sign, PART_ROOF);
-  return mergeGeometries([body, sign])!;
-}
-
-function makeComLowV3(): THREE.BufferGeometry {
-  const body = new THREE.BoxGeometry(0.5, 0.4, 0.5);
-  body.translate(0, 0.2, 0);
-  tagPart(body, PART_WALL);
-  const entry = new THREE.BoxGeometry(0.15, 0.3, 0.08);
-  entry.translate(0, 0.15, 0.29);
-  tagPart(entry, PART_WALL);
-  return mergeGeometries([body, entry])!;
-}
-
-// -- Commercial High --
-
-function makeComHighV1(): THREE.BufferGeometry {
-  const base = new THREE.BoxGeometry(0.6, 0.4, 0.6);
-  base.translate(0, 0.2, 0);
-  tagPart(base, PART_WALL);
-  const tower = new THREE.BoxGeometry(0.45, 0.8, 0.45);
-  tower.translate(0, 0.8, 0);
-  tagPart(tower, PART_WALL);
-  return mergeGeometries([base, tower])!;
-}
-
-function makeComHighV2(): THREE.BufferGeometry {
-  const body = new THREE.CylinderGeometry(0.28, 0.3, 1.0, 8);
-  body.translate(0, 0.5, 0);
-  tagPart(body, PART_WALL);
-  const cap = new THREE.CylinderGeometry(0.32, 0.32, 0.05, 8);
-  cap.translate(0, 1.025, 0);
-  tagPart(cap, PART_ROOF);
-  return mergeGeometries([body, cap])!;
-}
-
-// -- Industrial: factories with yards --
-
-function makeIndV1(): THREE.BufferGeometry {
-  // Factory + small utility shed
-  const body = new THREE.BoxGeometry(0.5, 0.38, 0.45);
-  body.translate(-0.04, 0.19, -0.04);
-  tagPart(body, PART_WALL);
-  const chimney = new THREE.CylinderGeometry(0.06, 0.08, 0.4, 6);
-  chimney.translate(0.15, 0.58, -0.15);
-  tagPart(chimney, PART_WALL);
-  // Utility shed
-  const shed = new THREE.BoxGeometry(0.18, 0.16, 0.2);
-  shed.translate(0.26, 0.08, 0.2);
-  tagPart(shed, PART_WALL);
-  return mergeGeometries([body, chimney, shed])!;
-}
-
-function makeIndV2(): THREE.BufferGeometry {
-  // Warehouse + loading dock area
-  const body = new THREE.BoxGeometry(0.55, 0.28, 0.5);
-  body.translate(0, 0.14, -0.05);
-  tagPart(body, PART_WALL);
-  const dock = new THREE.BoxGeometry(0.3, 0.06, 0.15);
-  dock.translate(0, 0.03, 0.28);
-  tagPart(dock, PART_WALL);
-  return mergeGeometries([body, dock])!;
-}
-
-function makeIndV3(): THREE.BufferGeometry {
-  // Double chimney factory + yard wall
-  const body = new THREE.BoxGeometry(0.48, 0.32, 0.42);
-  body.translate(0, 0.16, 0);
-  tagPart(body, PART_WALL);
-  const ch1 = new THREE.CylinderGeometry(0.05, 0.07, 0.35, 6);
-  ch1.translate(-0.12, 0.495, -0.12);
-  tagPart(ch1, PART_WALL);
-  const ch2 = new THREE.CylinderGeometry(0.05, 0.07, 0.3, 6);
-  ch2.translate(0.12, 0.47, -0.12);
-  tagPart(ch2, PART_WALL);
-  // Compound wall
-  const wall = new THREE.BoxGeometry(0.5, 0.1, 0.03);
-  wall.translate(0, 0.05, 0.26);
-  tagPart(wall, PART_WALL);
-  return mergeGeometries([body, ch1, ch2, wall])!;
-}
-
-// -- Office --
-
-function makeOfficeV1(): THREE.BufferGeometry {
-  const body = new THREE.BoxGeometry(0.5, 1.0, 0.5);
-  body.translate(0, 0.5, 0);
-  tagPart(body, PART_WALL);
-  const antenna = new THREE.CylinderGeometry(0.015, 0.015, 0.2, 4);
-  antenna.translate(0, 1.1, 0);
-  tagPart(antenna, PART_ROOF);
-  return mergeGeometries([body, antenna])!;
-}
-
-function makeOfficeV2(): THREE.BufferGeometry {
-  const b1 = new THREE.BoxGeometry(0.6, 0.5, 0.6);
-  b1.translate(0, 0.25, 0);
-  tagPart(b1, PART_WALL);
-  const b2 = new THREE.BoxGeometry(0.45, 0.4, 0.45);
-  b2.translate(0, 0.7, 0);
-  tagPart(b2, PART_WALL);
-  const b3 = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-  b3.translate(0, 1.05, 0);
-  tagPart(b3, PART_ROOF);
-  return mergeGeometries([b1, b2, b3])!;
-}
-
-function makeOfficeV3(): THREE.BufferGeometry {
-  const body = new THREE.BoxGeometry(0.65, 0.8, 0.5);
-  body.translate(0, 0.4, 0);
-  tagPart(body, PART_WALL);
-  const equip = new THREE.BoxGeometry(0.2, 0.1, 0.15);
-  equip.translate(0.15, 0.85, 0.1);
-  tagPart(equip, PART_ROOF);
-  return mergeGeometries([body, equip])!;
-}
-
-// ===== Variant Registry =====
-type GeoBuilder = () => THREE.BufferGeometry;
-
-const VARIANTS: Record<number, GeoBuilder[]> = {
-  [ZoneType.RESIDENTIAL_LOW]:  [makeResLowV1, makeResLowV2, makeResLowV3],
-  [ZoneType.RESIDENTIAL_HIGH]: [makeResHighV1, makeResHighV2, makeResHighV3],
-  [ZoneType.COMMERCIAL_LOW]:   [makeComLowV1, makeComLowV2, makeComLowV3],
-  [ZoneType.COMMERCIAL_HIGH]:  [makeComHighV1, makeComHighV2],
-  [ZoneType.INDUSTRIAL]:       [makeIndV1, makeIndV2, makeIndV3],
-  [ZoneType.OFFICE]:           [makeOfficeV1, makeOfficeV2, makeOfficeV3],
-};
-
-
-interface BuildingData { x: number; y: number; level: number; burned?: boolean }
+/** 桶的初始容量。滿了就倍增（見 InstancedLayer）。 */
+const INITIAL_BUCKET_CAPACITY = 256;
 
 export class BuildingRenderer {
   // --- Persistent variant meshes (pre-allocated, never disposed until game exit) ---
-  private variantMeshes = new Map<string, THREE.InstancedMesh>();
-  private variantCounts = new Map<string, number>();
-  private positionToInstance = new Map<string, { key: string; idx: number }>();
-  private instanceToPosition = new Map<string, Map<number, string>>();
+  private zoneLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
+  /**
+   * 地面物件層。與量體層平行，但**矩陣只含旋轉與位置** —— 沒有高度縮放
+   * 也沒有基地縮放，所以樹在每個等級都是同一個真實尺寸（BUG-219）。
+   */
+  private propLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
+  /** 地面貼片層：建築腳下的鋪面。完全平，不投影。 */
+  private decalLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
+  /** 懸挑層：雨遮、招牌、卸貨棚。挑到人行道上方，行人從下面走過。 */
+  private overheadLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
+
+  /**
+   * 掛在建築上的三層。
+   *
+   * 三者的實例矩陣完全相同（旋轉 + 位置，不吃任何縮放 —— 那是 BUG-219 的
+   * 修法），差別只有幾何來源、基準高度與是否投影。列成表而不是寫三段幾乎
+   * 一樣的程式碼：加桶、取位、退位、重置、釋放五個地方都要一致，漏掉任何
+   * 一處就會留下孤兒實例，而畫面上只是「某一格的鋪面怪怪的」。
+   */
+  private readonly attachments: ReadonlyArray<{
+    layer: InstancedLayer;
+    variants: (zoneType: number, density: Density, level: number) => GeoBuilder[];
+    castShadow: boolean;
+    /**
+     * 實例的基準高度。貼片是 0：它的幾何自己帶著絕對高度（鋪面與標線的
+     * 層序必須留在幾何裡），再加一次就會把標線推離鋪面。
+     */
+    baseY: number;
+  }> = [
+    { layer: this.decalLayer, variants: getDecalVariants, castShadow: false, baseY: 0 },
+    {
+      layer: this.propLayer, variants: getGroundPropVariants,
+      castShadow: true, baseY: GROUND_LAYERS.BUILDING,
+    },
+    {
+      layer: this.overheadLayer, variants: getOverheadVariants,
+      castShadow: true, baseY: GROUND_LAYERS.BUILDING,
+    },
+  ];
+
   private variantInitialized = false;
+
+  /** 既有測試與內部程式碼從這兩個名字讀狀態。實體在 zoneLayer 裡。 */
+  private get variantMeshes(): ReadonlyMap<string, THREE.InstancedMesh> {
+    return this.zoneLayer.bucketMap;
+  }
+  private get positionToInstance(): ReadonlyMap<string, { key: string; idx: number }> {
+    return this.zoneLayer.entryMap;
+  }
 
   // --- Non-persistent meshes (zone overlays, rebuilt each build) ---
   private overlayMeshes: THREE.InstancedMesh[] = [];
@@ -914,7 +89,8 @@ export class BuildingRenderer {
   private infraGroups: THREE.Group[] = [];
   private infraIndex = new Map<string, THREE.Group>();
 
-  private readonly maxPerVariant = 6000;
+  /** initVariantMeshes 收到的場景，重配時要用。 */
+  private scene: THREE.Scene | null = null;
 
   // Light spot system (fake ground glow near buildings at night)
   private lightSpotMesh: THREE.InstancedMesh | null = null;
@@ -925,8 +101,6 @@ export class BuildingRenderer {
 
   // Pre-allocated temp objects (avoid per-call allocation)
   private _matrix = new THREE.Matrix4();
-  private _scale = new THREE.Matrix4();
-  private _rotation = new THREE.Matrix4();
   private _color = new THREE.Color();
 
   /** Cached building meshes array (invalidated on build/dispose). */
@@ -952,73 +126,116 @@ export class BuildingRenderer {
 
   /** Pre-allocate all variant InstancedMeshes (called once). */
   private initVariantMeshes(scene: THREE.Scene): void {
+    this.scene = scene;
     if (this.variantInitialized) return;
     this.variantInitialized = true;
 
-    const material = getBuildingMaterial();
-
-    for (const zoneTypeStr of Object.keys(VARIANTS)) {
-      const zoneType = Number(zoneTypeStr);
-      const variants = VARIANTS[zoneType]!;
+    for (const zoneType of ZONE_TYPES) {
       const zoneCat = ZONE_CAT[zoneType] ?? 0;
-
-      for (let vi = 0; vi < variants.length; vi++) {
-        const key = `${zoneType}_${vi}`;
-        const geo = variants[vi]!();
-        stampZoneCategory(geo, zoneCat);
-
-        const mesh = new THREE.InstancedMesh(geo, material, this.maxPerVariant);
-        mesh.count = 0;
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.frustumCulled = false;
-
-        // Pre-allocate aHighlight + aHighlightColor attributes
-        const highlightData = new Float32Array(this.maxPerVariant);
-        mesh.geometry.setAttribute('aHighlight',
-          new THREE.InstancedBufferAttribute(highlightData, 1));
-        const highlightColorData = new Float32Array(this.maxPerVariant * 3);
-        mesh.geometry.setAttribute('aHighlightColor',
-          new THREE.InstancedBufferAttribute(highlightColorData, 3));
-
-        // Pre-allocate aOccupancy attribute (0.0 = empty, 1.0 = full)
-        const occupancyData = new Float32Array(this.maxPerVariant);
-        mesh.geometry.setAttribute('aOccupancy',
-          new THREE.InstancedBufferAttribute(occupancyData, 1));
-
-        scene.add(mesh);
-        this.variantMeshes.set(key, mesh);
-        this.variantCounts.set(key, 0);
-        this.instanceToPosition.set(key, new Map());
+      for (const density of ['LOW', 'HIGH'] as Density[]) {
+        // 只有辦公區兩種密度都有建築；其餘分區各只有一種。
+        if (!TARGET_HEIGHTS_M[heightKey(zoneType, density)]) continue;
+        for (const level of LEVELS) {
+          const variants = getMassingVariants(zoneType, density, level);
+          for (let vi = 0; vi < variants.length; vi++) {
+            const geo = variants[vi]!();
+            stampZoneCategory(geo, zoneCat);
+            this.zoneLayer.createBucket(scene, bucketKey(zoneType, density, level, vi), geo);
+          }
+          for (const a of this.attachments) {
+            const builders = a.variants(zoneType, density, level);
+            for (let pi = 0; pi < builders.length; pi++) {
+              const geo = builders[pi]!();
+              stampZoneCategory(geo, zoneCat);
+              a.layer.createBucket(
+                scene, bucketKey(zoneType, density, level, pi), geo,
+                { castShadow: a.castShadow },
+              );
+            }
+          }
+        }
       }
     }
+  }
+
+  /**
+   * 三個附掛層的實例矩陣：只有旋轉與位置。
+   *
+   * 沒有高度縮放也沒有基地縮放 —— 那正是 BUG-219 的修法。庭院跟著房子的
+   * 朝向轉，所以樹籬永遠在同一面，但尺寸是真實的公尺，與等級無關；同一件事
+   * 對鋪面與雨遮也成立（鋪面不會因為基地抖窄而縮水）。
+   */
+  private syncAttachments(
+    x: number, y: number, zoneType: number, density: Density, level: number,
+  ): void {
+    if (!this.scene) return;
+
+    const app = appearanceOf({
+      x, y, zoneType, level, seedByte: 0,
+      variantCount: VARIANT_COUNT,
+      paletteSize: paletteFor(zoneType, level).length,
+    });
+    const rotation = (app.rotationQuarter * Math.PI) / 2;
+
+    for (const a of this.attachments) {
+      const builders = a.variants(zoneType, density, level);
+      if (builders.length === 0) continue;
+      const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;
+      const slot = a.layer.acquire(
+        this.scene, bucketKey(zoneType, density, level, pi), `${x},${y}`,
+      );
+      if (!slot) continue;
+
+      this._matrix.makeRotationY(rotation);
+      this._matrix.setPosition(x, a.baseY, y);
+      slot.mesh.setMatrixAt(slot.idx, this._matrix);
+      slot.mesh.instanceMatrix.needsUpdate = true;
+      if (slot.grew) this._buildingMeshesDirty = true;
+
+      // 新取到的位置可能留著上一個佔用者的值（swap-with-last 會搬資料），
+      // 而招牌的亮暗吃這個值 —— 不清掉的話，剛蓋好的空屋會頂著前一戶的招牌
+      // 亮著。實際比例由 updateOccupancy 在下一次補上。
+      const occAttr = slot.mesh.geometry
+        .getAttribute('aOccupancy') as THREE.InstancedBufferAttribute | undefined;
+      if (occAttr) {
+        (occAttr.array as Float32Array)[slot.idx] = 0;
+        occAttr.needsUpdate = true;
+      }
+    }
+  }
+
+  /** 三個附掛層一起退位。建築消失時它們沒有理由留下。 */
+  private releaseAttachments(posKey: string): void {
+    for (const a of this.attachments) a.layer.release(posKey);
   }
 
   // ─── Incremental building operations ───────────────────────────
 
   /** Add a single zone building instance. */
-  addBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned = false): void {
-    const variants = VARIANTS[zoneType];
-    if (!variants || variants.length === 0) return;
+  addBuilding(
+    x: number, y: number, zoneType: number, density: Density,
+    level: number, burned: boolean, abandoned = false,
+  ): void {
+    const variants = getMassingVariants(zoneType, density, level);
+    if (variants.length === 0) return;
 
-    const vi = Math.floor(hash(x, y) * variants.length) % variants.length;
-    const key = `${zoneType}_${vi}`;
-    const mesh = this.variantMeshes.get(key);
-    if (!mesh) return;
+    const palette = paletteFor(zoneType, level);
+    const app = appearanceOf({
+      x, y, zoneType, level, seedByte: 0,
+      variantCount: variants.length, paletteSize: palette.length,
+    });
+    if (!this.scene) return; // 尚未 build，無處可加
+    const key = bucketKey(zoneType, density, level, app.variantIndex);
+    const slot = this.zoneLayer.acquire(this.scene, key, `${x},${y}`);
+    if (!slot) return;
 
-    const idx = this.variantCounts.get(key)!;
-    if (idx >= this.maxPerVariant) return;
+    this.setInstanceData(slot.mesh, slot.idx, x, y, zoneType, density, level, burned, abandoned);
+    slot.mesh.instanceMatrix.needsUpdate = true;
+    if (slot.mesh.instanceColor) slot.mesh.instanceColor.needsUpdate = true;
+    // 倍增會換掉 mesh 物件，highlight 的快取才需要重建。
+    if (slot.grew) this._buildingMeshesDirty = true;
 
-    this.setInstanceData(mesh, idx, x, y, zoneType, level, burned, abandoned);
-
-    this.variantCounts.set(key, idx + 1);
-    mesh.count = idx + 1;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-
-    const posKey = `${x},${y}`;
-    this.positionToInstance.set(posKey, { key, idx });
-    this.instanceToPosition.get(key)!.set(idx, posKey);
+    this.syncAttachments(x, y, zoneType, density, level);
 
     // Sync lightSpot (non-burned, non-abandoned buildings emit light)
     if (!burned && !abandoned) this.addLightSpot(x, y);
@@ -1026,66 +243,29 @@ export class BuildingRenderer {
 
   /** Remove a single zone building instance (swap-with-last). */
   removeBuilding(x: number, y: number): void {
-    const posKey = `${x},${y}`;
-    const entry = this.positionToInstance.get(posKey);
-    if (!entry) return;
-
-    const mesh = this.variantMeshes.get(entry.key)!;
-    const lastIdx = this.variantCounts.get(entry.key)! - 1;
-    const i2p = this.instanceToPosition.get(entry.key)!;
-
-    if (entry.idx !== lastIdx) {
-      // Swap the last instance into the removed slot
-      mesh.getMatrixAt(lastIdx, this._matrix);
-      mesh.setMatrixAt(entry.idx, this._matrix);
-      mesh.getColorAt(lastIdx, this._color);
-      mesh.setColorAt(entry.idx, this._color);
-
-      // Swap aHighlight
-      const hlAttr = mesh.geometry.getAttribute('aHighlight') as THREE.InstancedBufferAttribute;
-      (hlAttr.array as Float32Array)[entry.idx] = (hlAttr.array as Float32Array)[lastIdx]!;
-      hlAttr.needsUpdate = true;
-
-      // Swap aHighlightColor (vec3 = 3 floats)
-      const hlcAttr = mesh.geometry.getAttribute('aHighlightColor') as THREE.InstancedBufferAttribute;
-      const hlcArr = hlcAttr.array as Float32Array;
-      hlcArr[entry.idx * 3] = hlcArr[lastIdx * 3]!;
-      hlcArr[entry.idx * 3 + 1] = hlcArr[lastIdx * 3 + 1]!;
-      hlcArr[entry.idx * 3 + 2] = hlcArr[lastIdx * 3 + 2]!;
-      hlcAttr.needsUpdate = true;
-
-      // Swap aOccupancy
-      const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
-      (occAttr.array as Float32Array)[entry.idx] = (occAttr.array as Float32Array)[lastIdx]!;
-      occAttr.needsUpdate = true;
-
-      // Update the moved instance's mappings
-      const movedPosKey = i2p.get(lastIdx)!;
-      this.positionToInstance.set(movedPosKey, { key: entry.key, idx: entry.idx });
-      i2p.set(entry.idx, movedPosKey);
-    }
-
-    i2p.delete(lastIdx);
-    this.positionToInstance.delete(posKey);
-    this.variantCounts.set(entry.key, lastIdx);
-    mesh.count = lastIdx;
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-
-    // Sync lightSpot removal
+    this.zoneLayer.release(`${x},${y}`);
+    this.releaseAttachments(`${x},${y}`);
     this.removeLightSpot(x, y);
   }
 
   /** Update an existing building's level or burned/abandoned state in-place. */
-  updateBuilding(x: number, y: number, zoneType: number, level: number, burned: boolean, abandoned = false): void {
+  updateBuilding(
+    x: number, y: number, zoneType: number, density: Density,
+    level: number, burned: boolean, abandoned = false,
+  ): void {
     const posKey = `${x},${y}`;
     const entry = this.positionToInstance.get(posKey);
     if (!entry) return;
 
     const mesh = this.variantMeshes.get(entry.key)!;
-    this.setInstanceData(mesh, entry.idx, x, y, zoneType, level, burned, abandoned);
+    this.setInstanceData(mesh, entry.idx, x, y, zoneType, density, level, burned, abandoned);
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    // 三層的組合都依等級而不同，所以升級必須換桶 —— 只改矩陣的話，L3 的
+    // 房子會配著 L1 的素土院子。一律先退再取，比較等級反而多一份要維護的狀態。
+    this.releaseAttachments(posKey);
+    this.syncAttachments(x, y, zoneType, density, level);
 
     // Sync lightSpot: burned/abandoned → remove, normal → add
     if (burned || abandoned) this.removeLightSpot(x, y);
@@ -1095,44 +275,53 @@ export class BuildingRenderer {
   /** Set matrix + color for a single instance. */
   private setInstanceData(
     mesh: THREE.InstancedMesh, idx: number,
-    x: number, y: number, zoneType: number,
+    x: number, y: number, zoneType: number, density: Density,
     level: number, burned: boolean, abandoned = false,
   ): void {
-    const h = hash(x, y);
-    const h2 = hash(x + 100, y + 100);
-    const h3 = hash(x + 200, y + 200);
+    const palette = paletteFor(zoneType, level);
+    const app = appearanceOf({
+      x, y, zoneType, level, seedByte: 0,
+      variantCount: VARIANT_COUNT,
+      paletteSize: palette.length,
+    });
 
-    const heightRange = ZONE_HEIGHTS[zoneType] ?? { min: 0.3, max: 1.0 };
-    const levelFactor = level / 3;
-    const baseHeight = heightRange.min + (heightRange.max - heightRange.min) * levelFactor;
-    const heightVar = 1.0 + (h2 - 0.5) * 0.35;
-    const finalHeight = baseHeight * heightVar;
-
-    const widthVar = 0.85 + h3 * 0.3;
-    const depthVar = 0.85 + hash(x + 300, y + 300) * 0.3;
-
-    const rotIndex = Math.floor(hash(x + 400, y + 400) * 4);
-    this._rotation.makeRotationY((rotIndex * Math.PI) / 2);
-    this._scale.makeScale(widthVar, finalHeight, depthVar);
-    this._matrix.multiplyMatrices(this._scale, this._rotation);
-    this._matrix.setPosition(x, 0.05, y);
+    // 矩陣只有旋轉與位移。生成器產出的是最終尺寸，所以量體層與三個附掛層
+    // 的矩陣完全一致 —— 那個 scale(±15%, ±10%, ±15%) 是 BUG-219 與 BUG-226
+    // 的共同成因：附掛層的幾何是整桶共用的一份，看不到量體抖了多少。
+    this._matrix.makeRotationY((app.rotationQuarter * Math.PI) / 2);
+    this._matrix.setPosition(x, GROUND_LAYERS.BUILDING, y);
     mesh.setMatrixAt(idx, this._matrix);
 
     if (burned) {
-      const burnLightness = 0.08 + h * 0.07;
+      const burnLightness = 0.08 + app.facadeSeed[0] * 0.07;
       this._color.setHSL(0.05, 0.1, burnLightness);
     } else {
-      const palette = ZONE_PALETTES[zoneType] ?? [0x888888];
-      const baseColor = palette[Math.floor(h * palette.length) % palette.length]!;
-      this._color.set(baseColor);
+      this._color.set(palette[app.paletteIndex]!);
       const hsl = { h: 0, s: 0, l: 0 };
       this._color.getHSL(hsl);
-      hsl.h += (h2 - 0.5) * 0.03;
-      hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + (h3 - 0.5) * 0.1));
-      hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + (h - 0.5) * 0.1));
+      hsl.h += app.hueShift;
+      hsl.s = Math.max(0.05, Math.min(0.6, hsl.s + app.satShift));
+      hsl.l = Math.max(0.3, Math.min(0.85, hsl.l + app.lightShift));
       this._color.setHSL(hsl.h, hsl.s, hsl.l);
     }
     mesh.setColorAt(idx, this._color);
+
+    const seedAttr = mesh.geometry.getAttribute('aSeed') as THREE.InstancedBufferAttribute | undefined;
+    if (seedAttr) {
+      const arr = seedAttr.array as Float32Array;
+      // 樓層節奏由**變體**決定，不是逐格亂數：立面 shader 用它算窗戶橫列的
+      // 間距，而量體的高度是「樓層數 × 樓高」。兩邊各自取值的話，最上面那一排
+      // 窗會被屋頂切掉一半，而那不會有任何東西報錯。
+      //
+      // 副作用是有意的：同一變體的所有實例共用窗戶節奏與窗寬。同一個設計的
+      // 建築本來就長一樣，變化該來自變體本身。
+      const fh = floorHeightOf(zoneType, density, level, app.variantIndex);
+      arr[idx * 3] = (fh - FLOOR_HEIGHT_UNITS.MIN)
+        / (FLOOR_HEIGHT_UNITS.MAX - FLOOR_HEIGHT_UNITS.MIN);
+      arr[idx * 3 + 1] = app.facadeSeed[1];   // 相位仍然逐格
+      arr[idx * 3 + 2] = app.facadeSeed[2];   // 材質偏好仍然逐格
+      seedAttr.needsUpdate = true;
+    }
 
     // Force occupancy to 0 for burned/abandoned buildings (all windows dark)
     if (burned || abandoned) {
@@ -1145,6 +334,29 @@ export class BuildingRenderer {
   }
 
   // ─── Incremental infrastructure operations ─────────────────────
+
+  /**
+   * 刻意伸到地面以下的基礎設施。
+   *
+   * 渡輪碼頭要伸進水裡（水面在 −0.2），把它壓到地面上等於讓碼頭浮在水面。
+   * 這是唯一的例外，所以列舉而不是加旗標欄位。
+   */
+  private static readonly BELOW_GROUND_INFRA = new Set<InfraType>(['ferry_dock']);
+
+  /**
+   * 把整組模型垂直對齊地面。
+   *
+   * 十九種基礎設施裡有十七種的幾何底部寫在 0.05 —— 那是**路面**的高度，
+   * 不是地面的高度，所以它們全部浮空 0.6 m（BUG-224，與分區建築同一個成因）。
+   * 捷運站則寫在 0.01。與其去改十九個模型建構函式（而且下一個新增的還是會
+   * 寫錯），不如在這裡量一次包圍盒直接對齊 —— 模型作者把底部放在哪都無所謂。
+   */
+  private snapToGround(group: THREE.Group, type: InfraType): void {
+    if (BuildingRenderer.BELOW_GROUND_INFRA.has(type)) return;
+    const box = new THREE.Box3().setFromObject(group);
+    if (!Number.isFinite(box.min.y)) return;
+    group.position.y += GROUND_LAYERS.BUILDING - box.min.y;
+  }
 
   /** Add a single infrastructure building to the scene (O(1), no full rebuild). */
   addInfrastructure(scene: THREE.Scene, x: number, y: number, type: InfraType, reserved: number): void {
@@ -1163,6 +375,7 @@ export class BuildingRenderer {
     }
 
     this.buildModel(type, group);
+    this.snapToGround(group, type);
 
     scene.add(group);
     this.infraGroups.push(group);
@@ -1246,12 +459,8 @@ export class BuildingRenderer {
     this.disposeNonPersistent(scene);
 
     // Reset all variant instance counts (keep GPU buffers alive)
-    for (const [key, mesh] of this.variantMeshes) {
-      mesh.count = 0;
-      this.variantCounts.set(key, 0);
-      this.instanceToPosition.get(key)!.clear();
-    }
-    this.positionToInstance.clear();
+    this.zoneLayer.reset();
+    for (const a of this.attachments) a.layer.reset();
 
     const emptyZonesByType = new Map<string, { x: number; y: number }[]>();
     const infraCells: { x: number; y: number; type: InfraType; reserved: number }[] = [];
@@ -1272,10 +481,12 @@ export class BuildingRenderer {
 
         if (cell.zoneType !== ZoneType.NONE) {
           if (isZoneBuilding(cell.buildingId)) {
-            const level = getBuildingType(cell.buildingId)?.level ?? 1;
+            const type = getBuildingType(cell.buildingId);
+            const level = type?.level ?? 1;
+            const density = type?.density ?? 'LOW';
             const burned = cell.reserved === BURNED;
             const abandoned = cell.reserved === ABANDONED;
-            this.addBuilding(x, y, cell.zoneType, level, burned, abandoned);
+            this.addBuilding(x, y, cell.zoneType, density, level, burned, abandoned);
             if (!burned && !abandoned) lightPositions.push({ x, y });
           } else if (cell.buildingId === 0) {
             const key = BuildingRenderer.overlayGroupKey(cell.zoneType, blockerOf?.(x, y) ?? null);
@@ -1287,10 +498,8 @@ export class BuildingRenderer {
     }
 
     // Batch needsUpdate for all variant meshes
-    for (const mesh of this.variantMeshes.values()) {
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    }
+    this.zoneLayer.flush();
+    for (const a of this.attachments) a.layer.flush();
 
     this.buildInfrastructure(scene, infraCells);
     this.buildZoneOverlays(scene, emptyZonesByType);
@@ -1334,7 +543,7 @@ export class BuildingRenderer {
     const matrix = new THREE.Matrix4();
     for (const [groupKey, cells] of emptyZonesByType) {
       const { color: baseColor, opacity } = BuildingRenderer.overlayGroupStyle(groupKey);
-      const count = Math.min(cells.length, this.maxPerVariant);
+      const count = Math.min(cells.length, INITIAL_BUCKET_CAPACITY);
       const geometry = new THREE.PlaneGeometry(0.9, 0.9);
       geometry.rotateX(-Math.PI / 2);
       const material = new THREE.MeshBasicMaterial({
@@ -1459,7 +668,7 @@ export class BuildingRenderer {
     }
 
     for (const [warning, cells] of byWarning) {
-      const count = Math.min(cells.length, this.maxPerVariant);
+      const count = Math.min(cells.length, INITIAL_BUCKET_CAPACITY);
 
       // A dark plate behind the icon, so a yellow bolt still reads against a
       // pale roof at midday.
@@ -1571,6 +780,7 @@ export class BuildingRenderer {
       }
 
       this.buildModel(inf.type, group);
+      this.snapToGround(group, inf.type);
 
       scene.add(group);
       this.infraGroups.push(group);
@@ -3392,7 +2602,7 @@ export class BuildingRenderer {
       depthWrite: false,
     });
 
-    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, this.maxPerVariant);
+    this.lightSpotMesh = new THREE.InstancedMesh(geometry, this.lightSpotMaterial, INITIAL_BUCKET_CAPACITY);
     this.lightSpotMesh.count = 0;
     this.lightSpotMesh.frustumCulled = false;
     this.lightSpotMesh.renderOrder = 2;
@@ -3412,13 +2622,13 @@ export class BuildingRenderer {
 
   /** Add a single lightSpot at (x, y). O(1). */
   addLightSpot(x: number, y: number): void {
-    if (!this.lightSpotMesh || this.lightSpotCount >= this.maxPerVariant) return;
+    if (!this.lightSpotMesh || this.lightSpotCount >= INITIAL_BUCKET_CAPACITY) return;
     const posKey = `${x},${y}`;
     if (this.lightSpotPosToIdx.has(posKey)) return; // already exists
 
     const idx = this.lightSpotCount;
     this._matrix.identity();
-    this._matrix.setPosition(x, 0.03, y);
+    this._matrix.setPosition(x, GROUND_LAYERS.LIGHT_SPOT, y);
     this.lightSpotMesh.setMatrixAt(idx, this._matrix);
     this.lightSpotPosToIdx.set(posKey, idx);
     this.lightSpotIdxToPos[idx] = posKey;
@@ -3450,19 +2660,27 @@ export class BuildingRenderer {
     this.lightSpotMesh.instanceMatrix.needsUpdate = true;
   }
 
-  /** Update per-instance occupancy attribute from occupancy ratio map. */
+  /**
+   * Update per-instance occupancy attribute from occupancy ratio map.
+   *
+   * **四層都要寫**，不只量體層。招牌與燈頭住在懸挑層與矮物件層，而它們的
+   * 亮不亮吃的是同一個 `aOccupancy`（`PART_LAMP`）—— 只寫量體層的話，
+   * 那兩層的值永遠停在 0，招牌與路燈整座城市都是暗的。
+   */
   updateOccupancy(ratios: Map<string, number>): void {
-    for (const [key, mesh] of this.variantMeshes) {
-      const i2p = this.instanceToPosition.get(key)!;
-      const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
-      if (!occAttr) continue;
-      const arr = occAttr.array as Float32Array;
-      const count = this.variantCounts.get(key) ?? 0;
-      for (let i = 0; i < count; i++) {
-        const posKey = i2p.get(i);
-        arr[i] = posKey ? (ratios.get(posKey) ?? 0) : 0;
+    const layers = [this.zoneLayer, ...this.attachments.map(a => a.layer)];
+    for (const layer of layers) {
+      for (const [key, mesh] of layer.bucketMap) {
+        const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
+        if (!occAttr) continue;
+        const arr = occAttr.array as Float32Array;
+        const count = layer.countOf(key);
+        for (let i = 0; i < count; i++) {
+          const posKey = layer.posKeyAt(key, i);
+          arr[i] = posKey ? (ratios.get(posKey) ?? 0) : 0;
+        }
+        occAttr.needsUpdate = true;
       }
-      occAttr.needsUpdate = true;
     }
   }
 
@@ -3657,14 +2875,8 @@ export class BuildingRenderer {
     this.disposeNonPersistent(scene);
 
     // Dispose persistent variant meshes
-    for (const mesh of this.variantMeshes.values()) {
-      scene.remove(mesh);
-      mesh.geometry.dispose();
-    }
-    this.variantMeshes.clear();
-    this.variantCounts.clear();
-    this.positionToInstance.clear();
-    this.instanceToPosition.clear();
+    this.zoneLayer.dispose(scene);
+    for (const a of this.attachments) a.layer.dispose(scene);
     this.variantInitialized = false;
   }
 }

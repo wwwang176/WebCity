@@ -33,6 +33,7 @@ import { getTotalTransportOperatingCost } from './core/transport/TransportRegist
 import { tryRandomDisaster, formatDisasterMessage, applyDisasterDamage } from './core/climate/Disaster';
 import { getSpeedLimitForCell } from './core/traffic/TrafficSimulation';
 import { findLanePath } from './core/traffic/LaneGraphPathfinder';
+import { getBuildingType } from './core/building/types';
 import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
@@ -551,7 +552,11 @@ export class Game {
     // Fine-grained building callbacks — incremental O(1) updates,
     // no need to set dirty.buildings (avoids redundant full rebuild)
     this.simLoop.onBuildingAdded = (x, y, zoneType, level) => {
-      this.buildingRenderer.addBuilding(x, y, zoneType, level, false);
+      // 密度不在回呼裡，但格子上的 buildingId 知道 —— 同一個物件同時帶著
+      // level 與 density（core/building/types.ts）。少了它，辦公區 15 人與
+      // 160 人的建築會用同一個高度渲染（BUG-220）。
+      const density = getBuildingType(this.state.grid.getCell(x, y)?.buildingId ?? 0)?.density ?? 'LOW';
+      this.buildingRenderer.addBuilding(x, y, zoneType, density, level, false);
       this.buildingRenderer.removeZoneOverlay(x, y);
       this.dirty.terrain = true;
     };
@@ -562,7 +567,8 @@ export class Game {
       this.utilityWarningsDirty = true;
     };
     this.simLoop.onBuildingUpdated = (x, y, zoneType, level, burned, abandoned) => {
-      this.buildingRenderer.updateBuilding(x, y, zoneType, level, burned, abandoned);
+      const density = getBuildingType(this.state.grid.getCell(x, y)?.buildingId ?? 0)?.density ?? 'LOW';
+      this.buildingRenderer.updateBuilding(x, y, zoneType, density, level, burned, abandoned);
     };
     // Sync light spots when facility operational status changes (power/water dependency)
     this.simLoop.transferTracker.onDataChanged = () => {
