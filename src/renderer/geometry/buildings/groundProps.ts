@@ -5,7 +5,7 @@ import { METRES_PER_CELL } from '../../../core/grid/constants';
 import { TRIANGLE_BUDGET, heightKey, type Density, type GeoBuilder } from './registry';
 import { lowPropBand, type Band } from './propBands';
 import { SIDE_AXIS, type Side } from './decals';
-import { tagPart, PART_FOLIAGE, PART_DETAIL } from './parts';
+import { tagPart, PART_FOLIAGE, PART_DETAIL, PART_LAMP } from './parts';
 
 /**
  * 矮物件層 —— 站在地上、行人會撞到的東西。
@@ -245,7 +245,12 @@ function bikeRack(b: Band, axis: Axis, sign: Sign, t: number) {
   return out;
 }
 
-/** 庭園燈／路燈。 */
+/**
+ * 庭園燈／路燈。
+ *
+ * 燈桿是冷的金屬（`PART_DETAIL`），只有**燈頭**發光（`PART_LAMP`）——
+ * 整支都標成發光的話，夜裡會看到一根從地上亮到頂的柱子。
+ */
 function lamp(b: Band, axis: Axis, sign: Sign, t: number, heightM: number) {
   const [x, z] = place(axis, sign, t, mid(b));
   const pole = new THREE.CylinderGeometry(M(0.07), M(0.09), M(heightM), 4);
@@ -253,7 +258,7 @@ function lamp(b: Band, axis: Axis, sign: Sign, t: number, heightM: number) {
   tagPart(pole, PART_DETAIL);
   const head = new THREE.SphereGeometry(M(0.18), 4, 3);
   head.translate(x, M(heightM) + M(0.14), z);
-  tagPart(head, PART_DETAIL);
+  tagPart(head, PART_LAMP);
   return [pole, head];
 }
 

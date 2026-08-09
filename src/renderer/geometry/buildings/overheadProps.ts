@@ -5,7 +5,7 @@ import { METRES_PER_CELL } from '../../../core/grid/constants';
 import {
   overheadBand, OVERHEAD_CLEARANCE, SHOPFRONT_CEILING, type Band,
 } from './propBands';
-import { tagPart, PART_DETAIL, PART_ROOF } from './parts';
+import { tagPart, PART_DETAIL, PART_LAMP, PART_ROOF } from './parts';
 import { heightKey, type Density, type GeoBuilder } from './registry';
 
 /**
@@ -134,18 +134,19 @@ function blade(b: Band, side: Side, yUnits: number, sizeM: number) {
     const [x, z] = place(axis, sign, 0, d);
     return [x, y, z];
   };
+  // PART_LAMP：側招是燈箱，晚上自己會亮（而且只在店裡有人時亮）。
   return panel([
     at(near, yUnits - half), at(far, yUnits - half),
     at(far, yUnits + half), at(near, yUnits + half),
-  ], PART_DETAIL);
+  ], PART_LAMP);
 }
 
-/** 看板：貼著立面一整條的長板，離牆一點點免得與牆共面。 */
+/** 看板：貼著立面一整條的長板，離牆一點點免得與牆共面。夜間打燈。 */
 function billboard(b: Band, side: Side, lengthFrac: number, yUnits: number) {
   const half = M(1.1) / 2;
   return spanFromWall(
     b, side, b.outer * 2 * lengthFrac,
-    yUnits + half, yUnits - half, 0.08, PART_DETAIL,
+    yUnits + half, yUnits - half, 0.08, PART_LAMP,
   );
 }
 

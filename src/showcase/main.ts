@@ -21,6 +21,7 @@ import { GROUND_LAYERS } from '../renderer/geometry/buildings/propBands';
 import type { GeoBuilder, Density } from '../renderer/geometry/buildings/registry';
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
+import { stampInstanceValues, floorRhythm01, type InstanceValues } from './instanceAttrs';
 import { appearanceOf } from '../renderer/BuildingAppearance';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
@@ -99,6 +100,19 @@ function place(cell: PlacedCell, seedByte: number): Tris {
     variantCount: VARIANT_COUNT, paletteSize: 8,
   });
 
+  // 逐實例屬性。遊戲把它們放在 InstancedBufferAttribute 上，展示區畫的是普通
+  // Mesh —— 不補的話 WebGL 一律餵 0，於是立面用最小樓高、窗戶相位全對齊，
+  // 而且 occupancy = 0 讓 shader 判定「沒有人」，一扇燈都不會亮。
+  const values: InstanceValues = {
+    occupancy: state.occupancy,
+    seed: [
+      floorRhythm01(cell.zoneType, cell.density, cell.level, cell.variantIndex),
+      app.facadeSeed[1],
+      app.facadeSeed[2],
+    ],
+  };
+  stampInstanceValues(geo, values);
+
   const mesh = new THREE.Mesh(geo, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
@@ -115,6 +129,8 @@ function place(cell: PlacedCell, seedByte: number): Tris {
     const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;
     const pgeo = builders[pi]!();
     stampZoneCategory(pgeo, ZONE_CAT[cell.zoneType] ?? 0);
+    // 招牌與燈頭（PART_LAMP）的亮暗吃 aOccupancy，所以附掛層也要餵。
+    stampInstanceValues(pgeo, values);
     const pmesh = new THREE.Mesh(pgeo, material);
     pmesh.castShadow = a.castShadow;
     pmesh.receiveShadow = true;
@@ -132,7 +148,8 @@ function place(cell: PlacedCell, seedByte: number): Tris {
 
 const state: ControlState = {
   mode: 'block', zoneType: ZoneType.RESIDENTIAL_LOW, level: 1,
-  density: 'LOW', seedByte: 0, timeOverride: 0.3, wireframe: false, blockSize: 8,
+  density: 'LOW', seedByte: 0, timeOverride: 0.3, occupancy: 0.85,
+  wireframe: false, blockSize: 8,
   showDecals: true, showLowProps: true, showOverhead: true,
   variantOverride: null,
 };

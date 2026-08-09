@@ -191,6 +191,16 @@ export class BuildingRenderer {
       slot.mesh.setMatrixAt(slot.idx, this._matrix);
       slot.mesh.instanceMatrix.needsUpdate = true;
       if (slot.grew) this._buildingMeshesDirty = true;
+
+      // 新取到的位置可能留著上一個佔用者的值（swap-with-last 會搬資料），
+      // 而招牌的亮暗吃這個值 —— 不清掉的話，剛蓋好的空屋會頂著前一戶的招牌
+      // 亮著。實際比例由 updateOccupancy 在下一次補上。
+      const occAttr = slot.mesh.geometry
+        .getAttribute('aOccupancy') as THREE.InstancedBufferAttribute | undefined;
+      if (occAttr) {
+        (occAttr.array as Float32Array)[slot.idx] = 0;
+        occAttr.needsUpdate = true;
+      }
     }
   }
 
@@ -2650,18 +2660,27 @@ export class BuildingRenderer {
     this.lightSpotMesh.instanceMatrix.needsUpdate = true;
   }
 
-  /** Update per-instance occupancy attribute from occupancy ratio map. */
+  /**
+   * Update per-instance occupancy attribute from occupancy ratio map.
+   *
+   * **四層都要寫**，不只量體層。招牌與燈頭住在懸挑層與矮物件層，而它們的
+   * 亮不亮吃的是同一個 `aOccupancy`（`PART_LAMP`）—— 只寫量體層的話，
+   * 那兩層的值永遠停在 0，招牌與路燈整座城市都是暗的。
+   */
   updateOccupancy(ratios: Map<string, number>): void {
-    for (const [key, mesh] of this.variantMeshes) {
-      const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
-      if (!occAttr) continue;
-      const arr = occAttr.array as Float32Array;
-      const count = this.zoneLayer.countOf(key);
-      for (let i = 0; i < count; i++) {
-        const posKey = this.zoneLayer.posKeyAt(key, i);
-        arr[i] = posKey ? (ratios.get(posKey) ?? 0) : 0;
+    const layers = [this.zoneLayer, ...this.attachments.map(a => a.layer)];
+    for (const layer of layers) {
+      for (const [key, mesh] of layer.bucketMap) {
+        const occAttr = mesh.geometry.getAttribute('aOccupancy') as THREE.InstancedBufferAttribute;
+        if (!occAttr) continue;
+        const arr = occAttr.array as Float32Array;
+        const count = layer.countOf(key);
+        for (let i = 0; i < count; i++) {
+          const posKey = layer.posKeyAt(key, i);
+          arr[i] = posKey ? (ratios.get(posKey) ?? 0) : 0;
+        }
+        occAttr.needsUpdate = true;
       }
-      occAttr.needsUpdate = true;
     }
   }
 

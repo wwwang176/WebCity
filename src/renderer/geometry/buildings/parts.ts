@@ -8,8 +8,17 @@ import { ZoneType } from '../../../core/grid/types';
  * （見 BuildingMaterial.ts）。分開放的話，改了一邊不會有任何東西報錯。
  */
 export const PART_WALL = 0.0;
-/** 金屬／深色細節：水塔、冷氣機、天線、管架。不畫窗戶。 */
+/** 金屬／深色細節：水塔、冷氣機、天線、管架、煙囪。不畫窗戶，也不發光。 */
 export const PART_DETAIL = 0.2;
+/**
+ * 自己會發光的東西：路燈與庭園燈的燈頭、店家的側招、廣告看板。
+ *
+ * 與 `PART_DETAIL` 分開是必要的 —— 這兩者原本共用一個標籤，而水塔與管架
+ * 不該在晚上亮起來。標籤只有一個的話，唯一的選擇是兩者都不亮。
+ *
+ * 它吃 `aOccupancy`：沒有人的建築，招牌與門口的燈都是暗的。
+ */
+export const PART_LAMP = 0.3;
 export const PART_FOLIAGE = 0.5;
 /** 地面貼片：柏油、鋪面、標線。完全平，行人走在上面。 */
 export const PART_GROUND = 0.7;
@@ -19,6 +28,8 @@ export const PART_ROOF = 1.0;
 export const PART_THRESHOLDS = {
   /** 低於此值且法線朝上者視為屋頂（讓平頂不必特別標記）。 */
   ROOF_BY_NORMAL: 0.1,
+  /** 細節與燈具的分界。低於它是冷的金屬，高於它會發光。 */
+  LAMP_MIN: 0.25,
   FOLIAGE_MIN: 0.35,
   FOLIAGE_MAX: 0.65,
   GROUND_MIN: 0.65,

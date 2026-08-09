@@ -23,6 +23,13 @@ export interface ControlState {
   seedByte: number;
   /** 手動指定的一天位置 0..1；null 表示自動循環。 */
   timeOverride: number | null;
+  /**
+   * 住戶／使用率 0..1 —— 夜裡有多少比例的窗戶與招牌會亮。
+   *
+   * 遊戲裡這個值來自 `SimulationLoop` 的實際住戶數；展示區沒有模擬，所以
+   * 由這根滑桿頂替。0 就是空屋（燒毀與廢棄的建築也是這個值）。
+   */
+  occupancy: number;
   wireframe: boolean;
   /** 街廓邊長。量效能基準時調大。 */
   blockSize: number;
@@ -173,6 +180,25 @@ export function mountControls(
     timeLabel.textContent = `時刻 ${clockText(state.timeOverride)}`;
   };
   host.appendChild(time);
+
+  // 住戶比例。夜景要調的就是它 —— 白天完全看不出差別，所以標籤寫清楚。
+  const occLabel = document.createElement('label');
+  const occText = () => `住戶比例 ${Math.round(state.occupancy * 100)}%（夜間亮燈）`;
+  occLabel.textContent = occText();
+  host.appendChild(occLabel);
+
+  const occ = document.createElement('input');
+  occ.type = 'range';
+  occ.min = '0';
+  occ.max = '1';
+  occ.step = '0.05';
+  occ.value = String(state.occupancy);
+  occ.oninput = () => {
+    state.occupancy = Number(occ.value);
+    occLabel.textContent = occText();
+    onChange();
+  };
+  host.appendChild(occ);
 
   const live = document.createElement('button');
   live.textContent = '回到自動循環';

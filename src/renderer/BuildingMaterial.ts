@@ -175,6 +175,10 @@ void main() {
   // 金屬／深色細節：水塔、冷氣機、天線、管架。不畫窗戶，也不吃分區的
   // 立面規則 —— 否則屋頂上的設備會長出一格一格的窗。
   bool isDetail = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)}
+    && vPartType < ${glslFloat(PART_THRESHOLDS.LAMP_MIN)};
+  // 自己會發光的東西：燈頭、側招、廣告看板。與 isDetail 分開是必要的 ——
+  // 水塔與管架不該在晚上亮起來，而標籤只有一個的話唯一的選擇是兩者都不亮。
+  bool isLamp = vPartType > ${glslFloat(PART_THRESHOLDS.LAMP_MIN)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.FOLIAGE_MIN)};
   // 地面貼片：柏油、鋪面、標線。自己一個分支，否則會落到牆的分支 ——
   // 柏油地面上長出一格一格的窗。
@@ -200,6 +204,13 @@ void main() {
     float topFade = smoothstep(0.0, 0.25, vWorldPos.y);
     color = baseGreen * (0.7 + 0.3 * topFade);
     color *= lighting;
+  } else if (isLamp) {
+    // 燈罩／招牌面板。白天是灰白的板子，晚上自己發光。
+    float g = 0.62 + vSeed.z * 0.12;
+    color = vec3(g, g * 0.98, g * 0.94) * lighting;
+    // **沒有人的建築不該亮。** 燒毀與空置的建築 occupancy 是 0，招牌就跟著暗。
+    // 用 smoothstep 而不是 step：半空的樓不必整排招牌一起熄。
+    emissive = vec3(1.0, 0.86, 0.58) * 0.95 * smoothstep(0.0, 0.15, vOccupancy);
   } else if (isDetail) {
     // 略帶藍的中灰金屬，靠種子微調明度，避免整片設備同一個顏色
     float m = 0.42 + vSeed.z * 0.16;
