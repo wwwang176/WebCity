@@ -1,5 +1,13 @@
-import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../../../core/grid/constants';
+import { METRES_PER_CELL } from '../../../core/grid/constants';
 import { TARGET_WIDTHS_M, heightKey, widthJitterFor, type Density } from './registry';
+import {
+  HALF_ENVELOPE, CELL_EDGE, OVERHEAD_CLEARANCE, FLOOR_HEIGHT_UNITS,
+  SHOPFRONT_CEILING, GROUND_LAYERS,
+} from './massing/metrics';
+
+// 既有呼叫端從 propBands 取這些常數。實體在 massing/metrics —— 這裡只轉出，
+// 不再定義：propBands 之後要量 massing 產出的量體，常數留在這裡就是循環。
+export { OVERHEAD_CLEARANCE, FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING, GROUND_LAYERS };
 
 /**
  * 地面物件的三類放置帶。
@@ -14,65 +22,16 @@ import { TARGET_WIDTHS_M, heightKey, widthJitterFor, type Density } from './regi
  * 兩者對每個分區都有一公尺以上的空間，而且不必動任何建築尺寸。
  */
 
-/** 行人的門節點在這裡外側。矮物件的外緣。 */
-const HALF_ENVELOPE = MAX_BUILDING_WIDTH_M / METRES_PER_CELL / 2;
-
-/** 格子邊界。再過去就是鄰居家或馬路。 */
-const CELL_EDGE = 0.5;
-
-/** 行人頭頂淨空 2.2 m。低於它的懸挑物會打到人。 */
-export const OVERHEAD_CLEARANCE = 2.2 / METRES_PER_CELL;
-
 /** 矮物件帶窄於 0.4 m 就不給 —— 那個寬度塞不下任何看得見的東西。 */
 const MIN_LOW_BAND = 0.4 / METRES_PER_CELL;
 
 /** 貼片與懸挑帶窄於 1 m 就不給。 */
 const MIN_WIDE_BAND = 1.0 / METRES_PER_CELL;
 
-/**
- * 貼著地面的東西該放多高（格）。
- *
- * 這張表存在的理由是 BUG-224：分區建築原本放在 y = 0.05，那是**路面**的高度
- * （`ROAD_Y` 0.025 加板厚 0.05 的一半），不是地面的高度。地形表面是 y = 0，
- * 所以每一棟建築都浮空 0.6 m —— 影子投在地上、建築從 0.6 m 才開始，太陽斜射
- * 時兩者分家。基礎設施建築用的是 0，兩者不一致本身就是筆誤的證據。
- *
- * 分區建築永遠不會蓋在馬路格上，所以對齊路面高度沒有任何理由。
- *
- * 全部收成一張表而不是各寫各的：這些數字彼此有順序關係（標線要疊在鋪面上），
- * 散在四個檔案裡改一個就會壓到另一個。
- */
-export const GROUND_LAYERS = {
-  /** 建築與地面物件的底面。2.4 cm 足以避開與地形共面的 z-fighting。 */
-  BUILDING: 0.002,
-  /** 鋪面貼片。與建築同高，兩者在平面上不重疊。 */
-  DECAL: 0.002,
-  /** 停車格線與入口踏板，疊在鋪面上。 */
-  MARKING: 0.003,
-  /** 夜間的地面光暈，疊在標線上。 */
-  LIGHT_SPOT: 0.004,
-} as const;
-
 export interface Band {
   inner: number;
   outer: number;
 }
-
-/**
- * 立面 shader 的樓層高度範圍（格）。2.64 m 到 3.6 m。
- *
- * 實體在這裡而不是 GLSL 裡：`SHOPFRONT_CEILING` 要用它，而幾何與 shader
- * 對不上的話，雨遮會掛在窗戶中間 —— 那種錯不會有任何東西報錯。
- */
-export const FLOOR_HEIGHT_UNITS = { MIN: 0.22, MAX: 0.30 } as const;
-
-/**
- * 一樓樓板線 —— 掛在店面上的東西不得高過它。
- *
- * 取**最低**的樓高：每一棟的樓高是逐實例亂數（`aSeed.x`），懸挑物的幾何是
- * 整個桶共用的一份，不知道自己掛在哪一棟上。取最低值才保證永遠不會越過一樓。
- */
-export const SHOPFRONT_CEILING = FLOOR_HEIGHT_UNITS.MIN;
 
 /**
  * 建築牆面的位置 —— 但每一棟的寬度是逐實例抖動的（±15%），所以「牆面在哪」
