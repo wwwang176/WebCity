@@ -26,8 +26,16 @@ export interface ControlState {
   wireframe: boolean;
   /** 街廓邊長。量效能基準時調大。 */
   blockSize: number;
-  /** 地面物件層開關。驗收「樹不跟著房子長高」時要能一鍵比對。 */
-  showProps: boolean;
+  /**
+   * 三個附掛層各自的開關。
+   *
+   * 分開而不是一個「地面物件」總開關：三層的放置限制完全不同（貼片可以鋪到
+   * 格子邊界、矮物件不能越過行人包絡線、懸挑要高過人頭），驗收時要能單獨
+   * 看出每一層的貢獻，否則「哪一層的東西跑錯位置」只能用猜的。
+   */
+  showDecals: boolean;
+  showLowProps: boolean;
+  showOverhead: boolean;
 }
 
 const ZONE_NAMES: Record<number, string> = {
@@ -153,15 +161,22 @@ export function mountControls(
   wire.onclick = () => { state.wireframe = !state.wireframe; onChange(); };
   host.appendChild(wire);
 
-  const props = document.createElement('button');
-  const propsText = () => `地面物件：${state.showProps ? '開' : '關'}`;
-  props.textContent = propsText();
-  props.onclick = () => {
-    state.showProps = !state.showProps;
-    props.textContent = propsText();
-    onChange();
-  };
-  host.appendChild(props);
+  const toggles: Array<[string, 'showDecals' | 'showLowProps' | 'showOverhead']> = [
+    ['貼片（鋪面）', 'showDecals'],
+    ['矮物件（庭院）', 'showLowProps'],
+    ['懸挑（雨遮）', 'showOverhead'],
+  ];
+  for (const [label, key] of toggles) {
+    const btn = document.createElement('button');
+    const text = () => `${label}：${state[key] ? '開' : '關'}`;
+    btn.textContent = text();
+    btn.onclick = () => {
+      state[key] = !state[key];
+      btn.textContent = text();
+      onChange();
+    };
+    host.appendChild(btn);
+  }
 
   const stats = document.createElement('div');
   stats.id = 'stats';

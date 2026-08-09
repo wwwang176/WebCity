@@ -55,13 +55,21 @@ export class InstancedLayer {
     return this.reverse.get(key)?.get(idx);
   }
 
-  /** 建一個空桶。`geometry` 的所有權轉移給這個圖層。 */
-  createBucket(scene: THREE.Scene, key: string, geometry: THREE.BufferGeometry): void {
+  /**
+   * 建一個空桶。`geometry` 的所有權轉移給這個圖層。
+   *
+   * `castShadow` 預設開，但地面貼片必須關掉：一片沒有厚度的四邊形投出來的
+   * 影子是一條線，而且陰影貼圖每一棟都要算一次。
+   */
+  createBucket(
+    scene: THREE.Scene, key: string, geometry: THREE.BufferGeometry,
+    opts: { castShadow?: boolean } = {},
+  ): void {
     if (this.buckets.has(key)) return;
 
     const mesh = new THREE.InstancedMesh(geometry, this.material, this.initialCapacity);
     mesh.count = 0;
-    mesh.castShadow = true;
+    mesh.castShadow = opts.castShadow ?? true;
     mesh.receiveShadow = true;
     mesh.frustumCulled = false;
 

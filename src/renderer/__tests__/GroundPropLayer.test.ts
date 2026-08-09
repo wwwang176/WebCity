@@ -4,10 +4,15 @@ import { BuildingRenderer } from '../BuildingRenderer';
 import type { InstancedLayer } from '../InstancedLayer';
 import { Grid } from '../../core/grid/Grid';
 import { ZoneType } from '../../core/grid/types';
+import { GROUND_LAYERS } from '../geometry/buildings/propBands';
 
 const ZONE = ZoneType.RESIDENTIAL_LOW;
 
-interface Internals { propLayer: InstancedLayer }
+type Internals = Record<LayerName, InstancedLayer>;
+
+/** 掛在建築上的三層。同一組不變式對三層都成立，所以測試也逐層跑。 */
+const ATTACHMENT_LAYERS = ['decalLayer', 'propLayer', 'overheadLayer'] as const;
+type LayerName = (typeof ATTACHMENT_LAYERS)[number];
 
 function fresh() {
   const renderer = new BuildingRenderer();
@@ -15,24 +20,31 @@ function fresh() {
   return { renderer, internals: renderer as unknown as Internals };
 }
 
-/** 這一格地面物件實例的矩陣。 */
-function propMatrix(internals: Internals, x: number, y: number): THREE.Matrix4 {
-  const entry = internals.propLayer.entryFor(`${x},${y}`)!;
-  const mesh = internals.propLayer.meshFor(entry.key)!;
+/** 這一格某一層實例的矩陣。 */
+function layerMatrix(
+  internals: Internals, layer: LayerName, x: number, y: number,
+): THREE.Matrix4 {
+  const entry = internals[layer].entryFor(`${x},${y}`)!;
+  const mesh = internals[layer].meshFor(entry.key)!;
   const m = new THREE.Matrix4();
   mesh.getMatrixAt(entry.idx, m);
   return m;
 }
 
-/** 這一格的地面物件在世界座標中的包圍盒。 */
-function propBox(internals: Internals, x: number, y: number): THREE.Box3 {
-  const entry = internals.propLayer.entryFor(`${x},${y}`)!;
-  const mesh = internals.propLayer.meshFor(entry.key)!;
+/** 這一格某一層在世界座標中的包圍盒。 */
+function layerBox(
+  internals: Internals, layer: LayerName, x: number, y: number,
+): THREE.Box3 {
+  const entry = internals[layer].entryFor(`${x},${y}`)!;
+  const mesh = internals[layer].meshFor(entry.key)!;
   const box = new THREE.Box3().setFromBufferAttribute(
     mesh.geometry.getAttribute('position') as THREE.BufferAttribute,
   );
-  return box.applyMatrix4(propMatrix(internals, x, y));
+  return box.applyMatrix4(layerMatrix(internals, layer, x, y));
 }
+
+const propMatrix = (i: Internals, x: number, y: number) => layerMatrix(i, 'propLayer', x, y);
+const propBox = (i: Internals, x: number, y: number) => layerBox(i, 'propLayer', x, y);
 
 describe('ground prop layer', () => {
   it('should never scale a garden, at any level', () => {
@@ -157,5 +169,137 @@ describe('ground prop layer', () => {
       }
     }
     expect(keys.size).toBeGreaterThan(1);
+  });
+});
+
+/**
+ * 貼片與懸挑是另外兩層。三層的實例管理一模一樣（同一個矩陣、跟著建築進退），
+ * 差別只在幾何來源與是否投影 —— 所以不變式也要三層都測，否則新加的兩層會
+ * 各自漂移。
+ */
+describe('decal and overhead layers', () => {
+  /** 三層都有東西的組合：商業低 L2 起貼片、庭院、雨遮俱全。 */
+  const SHOP = { zone: ZoneType.COMMERCIAL_LOW, density: 'LOW' as const };
+
+  it('should not let flat decals cast shadows', () => {
+    // 一片沒有厚度的四邊形投出來的影子是一條線，而且每一棟都要算一次。
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 1, false);
+    const entry = internals.decalLayer.entryFor('0,0')!;
+    expect(internals.decalLayer.meshFor(entry.key)!.castShadow).toBe(false);
+  });
+
+  it('should still let overhead props cast shadows', () => {
+    // 反過來的那一半：雨遮是立體的，它在人行道上投下的影子正是騎樓的樣子。
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(0, 0, SHOP.zone, SHOP.density, 3, false);
+    const entry = internals.overheadLayer.entryFor('0,0')!;
+    expect(internals.overheadLayer.meshFor(entry.key)!.castShadow).toBe(true);
+  });
+
+  it('should give every zone a forecourt', () => {
+    const { renderer, internals } = fresh();
+    const cells: Array<[number, number, 'LOW' | 'HIGH']> = [
+      [0, ZoneType.RESIDENTIAL_LOW, 'LOW'],
+      [1, ZoneType.RESIDENTIAL_HIGH, 'HIGH'],
+      [2, ZoneType.COMMERCIAL_LOW, 'LOW'],
+      [3, ZoneType.COMMERCIAL_HIGH, 'HIGH'],
+      [4, ZoneType.INDUSTRIAL, 'LOW'],
+      [5, ZoneType.OFFICE, 'LOW'],
+      [6, ZoneType.OFFICE, 'HIGH'],
+    ];
+    for (const [x, zone, density] of cells) {
+      renderer.addBuilding(x, 0, zone, density, 3, false);
+      expect(internals.decalLayer.entryFor(`${x},0`), `zone ${zone} 沒有前庭`).toBeDefined();
+    }
+  });
+
+  it('should lay the forecourt at exactly the paving height', () => {
+    // 貼片的幾何自己帶著絕對高度（鋪面與標線的層序留在幾何裡），所以實例
+    // 不能再加一次基準高 —— 加了會把標線推到 5 mm，也把鋪面推離牆腳。
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(0, 0, ZoneType.INDUSTRIAL, 'LOW', 1, false);
+    expect(layerBox(internals, 'decalLayer', 0, 0).min.y)
+      .toBeCloseTo(GROUND_LAYERS.DECAL, 9);
+  });
+
+  it('should never scale any of the three layers', () => {
+    // BUG-219 的不變式擴及新的兩層：雨遮不會因為樓變高而變大，
+    // 鋪面不會因為基地抖窄而縮水。
+    const scale = new THREE.Vector3();
+    for (const level of [2, 3]) {
+      const { renderer, internals } = fresh();
+      renderer.addBuilding(0, 0, SHOP.zone, SHOP.density, level, false);
+      for (const layer of ATTACHMENT_LAYERS) {
+        layerMatrix(internals, layer, 0, 0).decompose(
+          new THREE.Vector3(), new THREE.Quaternion(), scale,
+        );
+        expect(scale.x, `${layer} L${level} 寬被縮放`).toBeCloseTo(1, 9);
+        expect(scale.y, `${layer} L${level} 高被縮放`).toBeCloseTo(1, 9);
+        expect(scale.z, `${layer} L${level} 深被縮放`).toBeCloseTo(1, 9);
+      }
+    }
+  });
+
+  it('should take all three layers away with the building', () => {
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(0, 0, SHOP.zone, SHOP.density, 3, false);
+    renderer.addBuilding(1, 0, SHOP.zone, SHOP.density, 3, false);
+    renderer.removeBuilding(0, 0);
+    for (const layer of ATTACHMENT_LAYERS) {
+      expect(internals[layer].entryFor('0,0'), `${layer} 留下孤兒`).toBeUndefined();
+      expect(internals[layer].entryFor('1,0'), `${layer} 誤刪鄰居`).toBeDefined();
+    }
+  });
+
+  it('should swap all three layers when the shop upgrades', () => {
+    // 三層的組合都依等級而不同，所以升級必須換桶 —— 只改矩陣的話，
+    // L3 的店會配著 L2 的鋪面與雨遮。
+    const { renderer, internals } = fresh();
+    renderer.addBuilding(0, 0, SHOP.zone, SHOP.density, 2, false);
+    const before = ATTACHMENT_LAYERS.map(l => internals[l].entryFor('0,0')!.key);
+    renderer.updateBuilding(0, 0, SHOP.zone, SHOP.density, 3, false);
+    ATTACHMENT_LAYERS.forEach((layer, i) => {
+      expect(internals[layer].entryFor('0,0')!.key, `${layer} 沒跟著升級`)
+        .not.toBe(before[i]);
+      // 換桶前必須先退位，否則舊桶留下一個沒有主人的實例 —— 索引表指向新桶，
+      // 舊的那一份永遠不會被移除，畫面上是 L2 的鋪面疊在 L3 的鋪面下。
+      // 看的是舊桶的實例數：索引表以格子為 key，孤兒不會讓 size 變大。
+      expect(internals[layer].countOf(before[i]!), `${layer} 舊桶留下孤兒`).toBe(0);
+    });
+  });
+
+  it('should clear all three layers when the map is rebuilt', () => {
+    const { renderer, internals } = fresh();
+    for (let x = 0; x < 4; x++) renderer.addBuilding(x, 0, SHOP.zone, SHOP.density, 3, false);
+    renderer.build(new THREE.Scene(), new Grid(1, 1));
+    for (const layer of ATTACHMENT_LAYERS) {
+      expect(internals[layer].size, `${layer} 沒清乾淨`).toBe(0);
+    }
+  });
+
+  it('should keep every remaining forecourt on its own building after removals', () => {
+    // swap-with-last 的索引 bug 只在移除之後才現形，而且畫面上看不出來。
+    const { renderer, internals } = fresh();
+    const cells: Array<[number, number]> = [];
+    for (let x = 0; x < 6; x++) {
+      for (let y = 0; y < 6; y++) {
+        renderer.addBuilding(x, y, SHOP.zone, SHOP.density, 3, false);
+        cells.push([x, y]);
+      }
+    }
+    for (let i = 0; i < cells.length; i += 3) {
+      renderer.removeBuilding(cells[i]![0], cells[i]![1]);
+    }
+    const pos = new THREE.Vector3();
+    for (let i = 0; i < cells.length; i++) {
+      if (i % 3 === 0) continue;
+      const [x, y] = cells[i]!;
+      for (const layer of ATTACHMENT_LAYERS) {
+        pos.setFromMatrixPosition(layerMatrix(internals, layer, x, y));
+        expect(pos.x, `${layer} ${x},${y} 跑到別人家`).toBeCloseTo(x, 6);
+        expect(pos.z, `${layer} ${x},${y} 跑到別人家`).toBeCloseTo(y, 6);
+      }
+    }
   });
 });

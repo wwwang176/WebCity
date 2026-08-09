@@ -6,9 +6,11 @@ import { paletteFor } from './ColorPalettes';
 import { appearanceOf } from './BuildingAppearance';
 import {
   getVariants, ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, heightScaleFor,
-  footprintScaleFor, bucketKey, type Density,
+  footprintScaleFor, bucketKey, type Density, type GeoBuilder,
 } from './geometry/buildings/registry';
 import { getGroundPropVariants } from './geometry/buildings/groundProps';
+import { getDecalVariants } from './geometry/buildings/decals';
+import { getOverheadVariants } from './geometry/buildings/overheadProps';
 import { GROUND_LAYERS } from './geometry/buildings/propBands';
 import { stampZoneCategory, ZONE_CAT } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
@@ -33,6 +35,40 @@ export class BuildingRenderer {
    * 也沒有基地縮放，所以樹在每個等級都是同一個真實尺寸（BUG-219）。
    */
   private propLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
+  /** 地面貼片層：建築腳下的鋪面。完全平，不投影。 */
+  private decalLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
+  /** 懸挑層：雨遮、招牌、卸貨棚。挑到人行道上方，行人從下面走過。 */
+  private overheadLayer = new InstancedLayer(getBuildingMaterial(), INITIAL_BUCKET_CAPACITY);
+
+  /**
+   * 掛在建築上的三層。
+   *
+   * 三者的實例矩陣完全相同（旋轉 + 位置，不吃任何縮放 —— 那是 BUG-219 的
+   * 修法），差別只有幾何來源、基準高度與是否投影。列成表而不是寫三段幾乎
+   * 一樣的程式碼：加桶、取位、退位、重置、釋放五個地方都要一致，漏掉任何
+   * 一處就會留下孤兒實例，而畫面上只是「某一格的鋪面怪怪的」。
+   */
+  private readonly attachments: ReadonlyArray<{
+    layer: InstancedLayer;
+    variants: (zoneType: number, density: Density, level: number) => GeoBuilder[];
+    castShadow: boolean;
+    /**
+     * 實例的基準高度。貼片是 0：它的幾何自己帶著絕對高度（鋪面與標線的
+     * 層序必須留在幾何裡），再加一次就會把標線推離鋪面。
+     */
+    baseY: number;
+  }> = [
+    { layer: this.decalLayer, variants: getDecalVariants, castShadow: false, baseY: 0 },
+    {
+      layer: this.propLayer, variants: getGroundPropVariants,
+      castShadow: true, baseY: GROUND_LAYERS.BUILDING,
+    },
+    {
+      layer: this.overheadLayer, variants: getOverheadVariants,
+      castShadow: true, baseY: GROUND_LAYERS.BUILDING,
+    },
+  ];
+
   private variantInitialized = false;
 
   /** 既有測試與內部程式碼從這兩個名字讀狀態。實體在 zoneLayer 裡。 */
@@ -106,11 +142,16 @@ export class BuildingRenderer {
             stampZoneCategory(geo, zoneCat);
             this.zoneLayer.createBucket(scene, bucketKey(zoneType, density, level, vi), geo);
           }
-          const yards = getGroundPropVariants(zoneType, density, level);
-          for (let pi = 0; pi < yards.length; pi++) {
-            const geo = yards[pi]!();
-            stampZoneCategory(geo, zoneCat);
-            this.propLayer.createBucket(scene, bucketKey(zoneType, density, level, pi), geo);
+          for (const a of this.attachments) {
+            const builders = a.variants(zoneType, density, level);
+            for (let pi = 0; pi < builders.length; pi++) {
+              const geo = builders[pi]!();
+              stampZoneCategory(geo, zoneCat);
+              a.layer.createBucket(
+                scene, bucketKey(zoneType, density, level, pi), geo,
+                { castShadow: a.castShadow },
+              );
+            }
           }
         }
       }
@@ -118,34 +159,44 @@ export class BuildingRenderer {
   }
 
   /**
-   * 地面物件的實例矩陣：只有旋轉與位置。
+   * 三個附掛層的實例矩陣：只有旋轉與位置。
    *
    * 沒有高度縮放也沒有基地縮放 —— 那正是 BUG-219 的修法。庭院跟著房子的
-   * 朝向轉，所以樹籬永遠在同一面，但尺寸是真實的公尺，與等級無關。
+   * 朝向轉，所以樹籬永遠在同一面，但尺寸是真實的公尺，與等級無關；同一件事
+   * 對鋪面與雨遮也成立（鋪面不會因為基地抖窄而縮水）。
    */
-  private syncGroundProps(
+  private syncAttachments(
     x: number, y: number, zoneType: number, density: Density, level: number,
   ): void {
     if (!this.scene) return;
-    const yards = getGroundPropVariants(zoneType, density, level);
-    if (yards.length === 0) return;
 
     const app = appearanceOf({
       x, y, zoneType, level, seedByte: 0,
       variantCount: getVariants(zoneType, level).length,
       paletteSize: paletteFor(zoneType, level).length,
     });
-    const pi = Math.floor(app.propVariant01 * yards.length) % yards.length;
-    const slot = this.propLayer.acquire(
-      this.scene, bucketKey(zoneType, density, level, pi), `${x},${y}`,
-    );
-    if (!slot) return;
+    const rotation = (app.rotationQuarter * Math.PI) / 2;
 
-    this._matrix.makeRotationY((app.rotationQuarter * Math.PI) / 2);
-    this._matrix.setPosition(x, GROUND_LAYERS.BUILDING, y);
-    slot.mesh.setMatrixAt(slot.idx, this._matrix);
-    slot.mesh.instanceMatrix.needsUpdate = true;
-    if (slot.grew) this._buildingMeshesDirty = true;
+    for (const a of this.attachments) {
+      const builders = a.variants(zoneType, density, level);
+      if (builders.length === 0) continue;
+      const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;
+      const slot = a.layer.acquire(
+        this.scene, bucketKey(zoneType, density, level, pi), `${x},${y}`,
+      );
+      if (!slot) continue;
+
+      this._matrix.makeRotationY(rotation);
+      this._matrix.setPosition(x, a.baseY, y);
+      slot.mesh.setMatrixAt(slot.idx, this._matrix);
+      slot.mesh.instanceMatrix.needsUpdate = true;
+      if (slot.grew) this._buildingMeshesDirty = true;
+    }
+  }
+
+  /** 三個附掛層一起退位。建築消失時它們沒有理由留下。 */
+  private releaseAttachments(posKey: string): void {
+    for (const a of this.attachments) a.layer.release(posKey);
   }
 
   // ─── Incremental building operations ───────────────────────────
@@ -174,7 +225,7 @@ export class BuildingRenderer {
     // 倍增會換掉 mesh 物件，highlight 的快取才需要重建。
     if (slot.grew) this._buildingMeshesDirty = true;
 
-    this.syncGroundProps(x, y, zoneType, density, level);
+    this.syncAttachments(x, y, zoneType, density, level);
 
     // Sync lightSpot (non-burned, non-abandoned buildings emit light)
     if (!burned && !abandoned) this.addLightSpot(x, y);
@@ -183,7 +234,7 @@ export class BuildingRenderer {
   /** Remove a single zone building instance (swap-with-last). */
   removeBuilding(x: number, y: number): void {
     this.zoneLayer.release(`${x},${y}`);
-    this.propLayer.release(`${x},${y}`);
+    this.releaseAttachments(`${x},${y}`);
     this.removeLightSpot(x, y);
   }
 
@@ -201,10 +252,10 @@ export class BuildingRenderer {
     mesh.instanceMatrix.needsUpdate = true;
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
 
-    // 庭院組合依等級而不同，所以升級必須換桶 —— 只改矩陣的話，L3 的房子
-    // 會配著 L1 的素土院子。一律先退再取，比較等級反而多一份要維護的狀態。
-    this.propLayer.release(posKey);
-    this.syncGroundProps(x, y, zoneType, density, level);
+    // 三層的組合都依等級而不同，所以升級必須換桶 —— 只改矩陣的話，L3 的
+    // 房子會配著 L1 的素土院子。一律先退再取，比較等級反而多一份要維護的狀態。
+    this.releaseAttachments(posKey);
+    this.syncAttachments(x, y, zoneType, density, level);
 
     // Sync lightSpot: burned/abandoned → remove, normal → add
     if (burned || abandoned) this.removeLightSpot(x, y);
@@ -397,7 +448,7 @@ export class BuildingRenderer {
 
     // Reset all variant instance counts (keep GPU buffers alive)
     this.zoneLayer.reset();
-    this.propLayer.reset();
+    for (const a of this.attachments) a.layer.reset();
 
     const emptyZonesByType = new Map<string, { x: number; y: number }[]>();
     const infraCells: { x: number; y: number; type: InfraType; reserved: number }[] = [];
@@ -436,7 +487,7 @@ export class BuildingRenderer {
 
     // Batch needsUpdate for all variant meshes
     this.zoneLayer.flush();
-    this.propLayer.flush();
+    for (const a of this.attachments) a.layer.flush();
 
     this.buildInfrastructure(scene, infraCells);
     this.buildZoneOverlays(scene, emptyZonesByType);
@@ -2804,7 +2855,7 @@ export class BuildingRenderer {
 
     // Dispose persistent variant meshes
     this.zoneLayer.dispose(scene);
-    this.propLayer.dispose(scene);
+    for (const a of this.attachments) a.layer.dispose(scene);
     this.variantInitialized = false;
   }
 }

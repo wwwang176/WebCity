@@ -12,7 +12,12 @@ import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { getVariants, TRIANGLE_BUDGET } from '../renderer/geometry/buildings/registry';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { getGroundPropVariants } from '../renderer/geometry/buildings/groundProps';
+import { getDecalVariants } from '../renderer/geometry/buildings/decals';
+import {
+  getOverheadVariants, OVERHEAD_TRIANGLE_BUDGET,
+} from '../renderer/geometry/buildings/overheadProps';
 import { GROUND_LAYERS } from '../renderer/geometry/buildings/propBands';
+import type { GeoBuilder, Density } from '../renderer/geometry/buildings/registry';
 import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { appearanceOf } from '../renderer/BuildingAppearance';
@@ -47,17 +52,46 @@ function clear(): void {
   shown.length = 0;
 }
 
+/** 一次繪製的三角形統計。四層各自一格，因為它們各有各的預算與問題。 */
+interface Tris { massing: number; decal: number; prop: number; overhead: number }
+
 /**
- * 放一棟建築在 (x, z)，套用與遊戲完全相同的變換。回傳量體與地面物件的
- * 三角形數。
+ * 掛在建築上的三層 —— 與 BuildingRenderer.attachments 逐項對應。
+ *
+ * `baseY` 為 0 的那一層（貼片）幾何自己帶著絕對高度；另外兩層從建築底面起算。
+ */
+const ATTACHMENTS: ReadonlyArray<{
+  variants: (zoneType: number, density: Density, level: number) => GeoBuilder[];
+  enabled: () => boolean;
+  castShadow: boolean;
+  baseY: number;
+  into: keyof Omit<Tris, 'massing'>;
+}> = [
+  {
+    variants: getDecalVariants, enabled: () => state.showDecals,
+    castShadow: false, baseY: 0, into: 'decal',
+  },
+  {
+    variants: getGroundPropVariants, enabled: () => state.showLowProps,
+    castShadow: true, baseY: GROUND_LAYERS.BUILDING, into: 'prop',
+  },
+  {
+    variants: getOverheadVariants, enabled: () => state.showOverhead,
+    castShadow: true, baseY: GROUND_LAYERS.BUILDING, into: 'overhead',
+  },
+];
+
+/**
+ * 放一棟建築在 (x, z)，套用與遊戲完全相同的變換。回傳各層的三角形數。
  *
  * 縮放與旋轉必須在這裡重現：BuildingRenderer 的高度不是幾何本身的高度，
  * 而是乘在幾何上的縮放係數。少了它，展示區顯示的比例與遊戲不同，
  * 而「展示區看到的就是出貨的東西」正是它唯一的價值。
  */
-function place(cell: PlacedCell, seedByte: number): { massing: number; props: number } {
+function place(cell: PlacedCell, seedByte: number): Tris {
+  const tris: Tris = { massing: 0, decal: 0, prop: 0, overhead: 0 };
   const variants = getVariants(cell.zoneType, cell.level);
-  if (variants.length === 0) return { massing: 0, props: 0 };
+  if (variants.length === 0) return tris;
   const geo = variants[cell.variantIndex % variants.length]!();
   stampZoneCategory(geo, ZONE_CAT[cell.zoneType] ?? 0);
 
@@ -81,30 +115,32 @@ function place(cell: PlacedCell, seedByte: number): { massing: number; props: nu
   sceneManager.scene.add(mesh);
   shown.push(mesh);
 
-  let props = 0;
-  const yards = getGroundPropVariants(cell.zoneType, cell.density, cell.level);
-  if (state.showProps && yards.length > 0) {
-    const pi = Math.floor(app.propVariant01 * yards.length) % yards.length;
-    const pgeo = yards[pi]!();
+  for (const a of ATTACHMENTS) {
+    if (!a.enabled()) continue;
+    const builders = a.variants(cell.zoneType, cell.density, cell.level);
+    if (builders.length === 0) continue;
+    const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;
+    const pgeo = builders[pi]!();
     stampZoneCategory(pgeo, ZONE_CAT[cell.zoneType] ?? 0);
     const pmesh = new THREE.Mesh(pgeo, material);
-    pmesh.castShadow = true;
+    pmesh.castShadow = a.castShadow;
     pmesh.receiveShadow = true;
-    // 不套用任何縮放 —— 這正是這一層存在的理由（BUG-219）。
+    // 不套用任何縮放 —— 這正是這三層存在的理由（BUG-219）。
     pmesh.rotation.y = (app.rotationQuarter * Math.PI) / 2;
-    pmesh.position.set(cell.x, GROUND_LAYERS.BUILDING, cell.z);
+    pmesh.position.set(cell.x, a.baseY, cell.z);
     sceneManager.scene.add(pmesh);
     shown.push(pmesh);
-    props = triangleCount(pgeo);
+    tris[a.into] = triangleCount(pgeo);
   }
 
-  return { massing: triangleCount(geo), props };
+  tris.massing = triangleCount(geo);
+  return tris;
 }
 
 const state: ControlState = {
   mode: 'block', zoneType: ZoneType.RESIDENTIAL_LOW, level: 1,
   density: 'LOW', seedByte: 0, timeOverride: 0.3, wireframe: false, blockSize: 8,
-  showProps: true,
+  showDecals: true, showLowProps: true, showOverhead: true,
 };
 
 function render(): void {
@@ -123,12 +159,13 @@ function render(): void {
     cells = matrixCells();
   }
 
-  let massingTris = 0;
-  let propTris = 0;
+  const total: Tris = { massing: 0, decal: 0, prop: 0, overhead: 0 };
   for (const c of cells) {
     const t = place(c, state.seedByte);
-    massingTris += t.massing;
-    propTris += t.props;
+    total.massing += t.massing;
+    total.decal += t.decal;
+    total.prop += t.prop;
+    total.overhead += t.overhead;
   }
 
   // 依內容置中：矩陣模式的內容全在正象限，預設鏡頭對著原點會看不到。
@@ -139,20 +176,29 @@ function render(): void {
   }
 
   const ratio = state.mode === 'block' ? neighbourSameRatio(cells) : 0;
-  const budget = state.level === 3 ? TRIANGLE_BUDGET.TOWER : TRIANGLE_BUDGET.HOUSE;
   const n = Math.max(1, cells.length);
-  const perMassing = Math.round(massingTris / n);
-  const perProps = Math.round(propTris / n);
+  const sum = total.massing + total.decal + total.prop + total.overhead;
+
+  // 四層各自的預算：量體與矮物件有明訂上限，貼片與懸挑各自的上限寫在自己的
+  // 模組裡。沒有上限的欄位就不上色，而不是拿別人的上限硬套。
+  const rows: Array<[string, number, number | null]> = [
+    ['量體', total.massing, state.level === 3 ? TRIANGLE_BUDGET.TOWER : TRIANGLE_BUDGET.HOUSE],
+    ['貼片', total.decal, null],
+    ['矮物件', total.prop, TRIANGLE_BUDGET.PROP],
+    ['懸挑', total.overhead, OVERHEAD_TRIANGLE_BUDGET],
+  ];
 
   const stats = document.getElementById('stats');
   if (stats) {
     stats.innerHTML =
       `${cells.length} 棟<br>`
-      + `<span class="${perMassing > budget ? 'over' : ''}">`
-      + `量體 ${perMassing} 三角形／棟（上限 ${budget}）</span><br>`
-      + `<span class="${perProps > TRIANGLE_BUDGET.PROP ? 'over' : ''}">`
-      + `地面物件 ${perProps} 三角形／棟（上限 ${TRIANGLE_BUDGET.PROP}）</span><br>`
-      + `總計 ${massingTris + propTris} 三角形<br>`
+      + rows.map(([label, tris, budget]) => {
+        const per = Math.round(tris / n);
+        const over = budget !== null && per > budget;
+        const cap = budget === null ? '' : `（上限 ${budget}）`;
+        return `<span class="${over ? 'over' : ''}">${label} ${per} 三角形／棟${cap}</span>`;
+      }).join('<br>')
+      + `<br>總計 ${sum} 三角形<br>`
       + `相鄰相同 ${(ratio * 100).toFixed(1)}%<br>`
       + `<span id="fps">—</span>`;
   }
