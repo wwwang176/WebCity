@@ -9,7 +9,7 @@ import {
 import { METRES_PER_CELL } from '../../../core/grid/constants';
 import { CIVIC_INSET, type CivicDecal, type CivicVolume, type Footprint } from './types';
 import { CIVIC_DEFAULT_COLOR, type CivicColor } from './colors';
-import { plantGeometry, plantRadius, type Plant } from '../plants';
+import { propGeometry, propExtent, type PropSpec } from '../props';
 
 /**
  * 公共建築的量體與貼片組裝。
@@ -159,29 +159,28 @@ export function assembleDecals(
 }
 
 /**
- * 植栽轉幾何。
+ * 共用矮物件轉幾何。
  *
- * 自己一層，不與 `assembleCivic` 的產物合併 —— 樹冠與灌木是 `THREE` 的圓錐
- * 與球（索引、帶 uv），量體是 `shapeOf` 的稜台（非索引、無 uv），
+ * 自己一層，不與 `assembleCivic` 的產物合併 —— 這些圖元用 `THREE` 的圓錐、
+ * 球、環（索引、帶 uv），量體是 `shapeOf` 的稜台（非索引、無 uv），
  * `mergeGeometries` 要求屬性集合一致，兩者併不起來。
  *
- * 護欄與量體同一條：越出佔地就丟例外。半徑取自 `plantRadius` —— 樹冠的
- * 水平半徑，少報的話樹會伸出去壓到鄰格。
+ * 護欄與量體同一條：越出佔地就丟例外。範圍取自 `propExtent`，它逐軸回報
+ * 半寬 —— 少報的話東西會伸出去壓到鄰格。
  */
-export function assemblePlants(
-  plants: readonly Plant[], footprint: Footprint,
+export function assembleFixtures(
+  fixtures: readonly PropSpec[], footprint: Footprint,
 ): THREE.BufferGeometry {
   assertInside(
-    plants.map(p => ({
-      x: p.x, z: p.z,
-      w: plantRadius(p) * 2, d: plantRadius(p) * 2,
-      y0: 0, y1: 0,
-    })),
+    fixtures.map((p) => {
+      const e = propExtent(p);
+      return { x: p.x, z: p.z, w: e.x * 2, d: e.z * 2, y0: 0, y1: 0 };
+    }),
     footprint,
     CIVIC_INSET,
   );
 
-  const parts = plants.flatMap(plantGeometry);
+  const parts = fixtures.flatMap(propGeometry);
   if (parts.length === 0) return emptyTagged(PART_FOLIAGE);
   return mergeGeometries(parts)!;
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { getCivicPlan, civicTypesDone } from '../registry';
-import { assembleCivic, assembleDecals } from '../assemble';
+import { assembleCivic, assembleDecals, assembleFixtures } from '../assemble';
 import { CIVIC_TRIANGLE_BUDGET } from '../types';
 import { getInfraConfig } from '../../../../core/building/InfraConfig';
 import { PART_THRESHOLDS, triangleCount, ZONE_CAT } from '../../buildings/parts';
@@ -51,12 +51,17 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
     expect(() => assembleCivic(plan.props, plan.footprint, plan.color)).not.toThrow();
     expect(() => assembleCivic(plan.overhead, plan.footprint, plan.color)).not.toThrow();
     expect(() => assembleDecals(plan.decals, plan.footprint)).not.toThrow();
+    expect(() => assembleFixtures(plan.fixtures, plan.footprint)).not.toThrow();
   });
 
   /** 這一條就是 BUG-238 本身 —— 做完了夜裡還是全黑的話它要轉紅。 */
   it('should light something at night', () => {
-    const lamps = all.filter(v => isLamp(partOf(v)));
-    expect(lamps.length, `${type} 一盞燈都沒有 —— 夜裡它會是一塊黑`)
+    // 兩個來源都要看：自訂量體標 PART_LAMP 的，以及共用圖元裡的路燈
+    // （`geometry/props` 的 `lamp`，它的燈頭本來就是 PART_LAMP）。
+    // 只看其中一邊的話，一棟全部改用共用路燈的建築會被誤判成「沒有燈」。
+    const custom = all.filter(v => isLamp(partOf(v))).length;
+    const shared = plan.fixtures.filter(f => f.kind === 'lamp').length;
+    expect(custom + shared, `${type} 一盞燈都沒有 —— 夜裡它會是一塊黑`)
       .toBeGreaterThan(0);
   });
 
@@ -83,7 +88,8 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
         CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL * cells],
       ['貼片', triangleCount(assembleDecals(plan.decals, plan.footprint)),
         CIVIC_TRIANGLE_BUDGET.DECAL_PER_CELL * cells],
-      ['矮物件', triangleCount(assembleCivic(plan.props, plan.footprint, plan.color)),
+      ['矮物件', triangleCount(assembleCivic(plan.props, plan.footprint, plan.color))
+        + triangleCount(assembleFixtures(plan.fixtures, plan.footprint)),
         CIVIC_TRIANGLE_BUDGET.PROP_PER_CELL * cells],
       ['懸挑', triangleCount(assembleCivic(plan.overhead, plan.footprint, plan.color)),
         CIVIC_TRIANGLE_BUDGET.OVERHEAD_PER_CELL * cells],

@@ -1,9 +1,9 @@
 import {
-  FACADE_CIVIC, PART_ROOF, PART_DETAIL, PART_LAMP, PART_FOLIAGE,
+  FACADE_CIVIC, PART_ROOF, PART_DETAIL, PART_LAMP,
 } from '../../buildings/parts';
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
-import type { Plant } from '../../plants';
+import type { PropSpec } from '../../props';
 import type { CivicPlan, CivicVolume, CivicDecal } from '../types';
 
 /**
@@ -115,28 +115,16 @@ for (let i = 0; i < 6; i++) {
   });
 }
 
-/** 一支路燈：燈桿（不發光）加燈頭（發光）。 */
-function streetLamp(xm: number, zm: number): CivicVolume[] {
-  return [
-    // 整支標成發光的話，夜裡會看到一根從地上亮到頂的柱子（BUG-230 的教訓）。
-    {
-      tag: 'post', part: PART_DETAIL,
-      x: M(xm), z: M(zm), w: M(0.25), d: M(0.25), y0: 0, y1: M(4.5),
-    },
-    {
-      tag: 'lampHead', part: PART_LAMP,
-      x: M(xm), z: M(zm), w: M(0.7), d: M(0.5), y0: M(4.5), y1: M(5.0),
-    },
-  ];
-}
-
+/**
+ * 這一棟自己的方塊量體。
+ *
+ * **只放共用圖元裡沒有的東西。** 路燈、旗桿、垃圾桶、花圃那些都在
+ * `geometry/props`，用那邊的 —— 自己再畫一份的下場是同一座城市裡兩支長得
+ * 不一樣的路燈，而且改一邊不會連動另一邊。
+ */
 const props: CivicVolume[] = [
-  // 停車場的路燈。只照門口的話，夜裡整片停車場是黑的 —— 而它佔了基地一半。
-  ...streetLamp(-7.0, 5.0),
-  ...streetLamp(1.0, 5.0),
-  ...streetLamp(-7.0, 10.5),
-
-  // 門廊燈：掛在雨棚兩端下方。
+  // 門廊燈。共用圖元的 `lamp` 是站在地上的燈桿，這個是**掛在雨棚下**的，
+  // 沒有桿子 —— 那是共用圖元裡沒有的東西，所以留在這裡。
   {
     tag: 'porchLamp', part: PART_LAMP,
     x: M(-5.6), z: M(-1.5), w: M(0.4), d: M(0.4), y0: M(3.4), y1: M(3.75),
@@ -144,12 +132,6 @@ const props: CivicVolume[] = [
   {
     tag: 'porchLamp', part: PART_LAMP,
     x: M(1.6), z: M(-1.5), w: M(0.4), d: M(0.4), y0: M(3.4), y1: M(3.75),
-  },
-
-  // 旗桿。公家建築門口的旗桿是它最便宜的辨識訊號。
-  {
-    tag: 'flagpole', part: PART_DETAIL,
-    x: M(-10.0), z: M(-0.5), w: M(0.2), d: M(0.2), y0: 0, y1: M(8.0),
   },
 
   // 停在格子裡的兩台巡邏車。PART_DETAIL —— 標成 PART_WALL 的話車身會長出窗格。
@@ -162,17 +144,7 @@ const props: CivicVolume[] = [
     x: M(-4.0), z: M(6.5), w: M(1.9), d: M(4.6), y0: 0, y1: M(1.5),
   },
 
-  // 入口兩側的花台。矮、貼著牆，是「有人在維護」的訊號。
-  {
-    tag: 'planter', part: PART_FOLIAGE, shape: 'hip',
-    x: M(-6.6), z: M(-0.4), w: M(1.4), d: M(1.4), y0: 0, y1: M(0.8),
-  },
-  {
-    tag: 'planter', part: PART_FOLIAGE, shape: 'hip',
-    x: M(2.6), z: M(-0.4), w: M(1.4), d: M(1.4), y0: 0, y1: M(0.8),
-  },
-
-  // 前庭的兩張長椅。
+  // 前庭的兩張長椅。共用圖元裡沒有長椅，所以它留在這裡。
   {
     tag: 'bench', part: PART_DETAIL,
     x: M(-8.6), z: M(2.4), w: M(1.8), d: M(0.6), y0: M(0.35), y1: M(0.5),
@@ -193,12 +165,13 @@ const overhead: CivicVolume[] = [
 ];
 
 /**
- * 綠化。
+ * 共用矮物件。
  *
- * 樹與灌木**與住宅的庭院共用同一份圖元**（`geometry/plants`）—— 一座城市裡
- * 的樹該是同一種樹，而且改一邊要連動另一邊。這裡只給位置與尺寸。
+ * **全部來自 `geometry/props`**，與住宅的庭院是同一份圖元 —— 一座城市裡的
+ * 樹該是同一種樹、路燈該是同一支路燈，而且改一邊要連動另一邊。這裡只給
+ * 位置與尺寸。
  *
- * 它們自己一層，不與 `props` 合併：樹冠是圓錐、灌木是球（索引、帶 uv），
+ * 它們自己一層，不與 `props` 合併：那些圖元是圓錐、球、環（索引、帶 uv），
  * `props` 走 `shapeOf`（非索引、無 uv），`mergeGeometries` 併不起來。
  *
  * 公共建築一座城市裡也就幾十棟，所以單棟多花的三角形幾乎量不到 —— 同樣的
@@ -207,7 +180,8 @@ const overhead: CivicVolume[] = [
  * 樹種在草地那一側，不種在停車場上 —— 車位上長一棵樹是最容易被看出來的
  * 那種錯。
  */
-const plants: Plant[] = [
+const fixtures: PropSpec[] = [
+  // ── 綠化 ──
   { kind: 'tree', x: M(7.0), z: M(5.5), heightM: 6.5, crownRadius: M(1.5) },
   { kind: 'tree', x: M(9.6), z: M(8.5), heightM: 5.5, crownRadius: M(1.3) },
   { kind: 'tree', x: M(7.0), z: M(9.8), heightM: 6.0, crownRadius: M(1.4) },
@@ -219,6 +193,29 @@ const plants: Plant[] = [
   { kind: 'shrub', x: M(5.8), z: M(4.4), radius: M(0.8) },
   { kind: 'shrub', x: M(5.8), z: M(7.2), radius: M(0.8) },
   { kind: 'shrub', x: M(5.8), z: M(10.0), radius: M(0.8) },
+
+  // 入口兩側的花圃。矮、貼著牆，是「有人在維護」的訊號。
+  { kind: 'flowerBed', x: M(-6.6), z: M(-0.4), radius: M(0.7) },
+  { kind: 'flowerBed', x: M(2.6), z: M(-0.4), radius: M(0.7) },
+
+  // ── 街道家具 ──
+  // 停車場的路燈。只照門口的話，夜裡整片停車場是黑的 —— 而它佔了基地一半。
+  { kind: 'lamp', x: M(-7.0), z: M(5.0), heightM: 4.5 },
+  { kind: 'lamp', x: M(1.0), z: M(5.0), heightM: 4.5 },
+  { kind: 'lamp', x: M(-7.0), z: M(10.5), heightM: 4.5 },
+
+  // 旗桿。公家建築門口的旗桿是它最便宜的辨識訊號。
+  { kind: 'flagpole', x: M(-10.0), z: M(-0.5), axis: 'z' },
+
+  // 入口的垃圾桶與單車架，還有擋住車開上人行道的矮柱。
+  { kind: 'bin', x: M(-8.0), z: M(-0.6), radius: M(0.28) },
+  { kind: 'bikeRack', x: M(4.0), z: M(0.6), axis: 'z' },
+  { kind: 'bollard', x: M(-3.0), z: M(3.2), radius: M(0.11) },
+  { kind: 'bollard', x: M(-1.0), z: M(3.2), radius: M(0.11) },
+  { kind: 'bollard', x: M(1.0), z: M(3.2), radius: M(0.11) },
+
+  // 消防栓 —— 警消單位門口本來就有。
+  { kind: 'hydrant', x: M(-11.0), z: M(-0.6) },
 ];
 
 /**
@@ -247,5 +244,5 @@ export const policePlan: CivicPlan = {
   decals,
   props,
   overhead,
-  plants,
+  fixtures,
 };

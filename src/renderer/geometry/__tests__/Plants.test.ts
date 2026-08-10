@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import type * as THREE from 'three';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +13,30 @@ import { METRES_PER_CELL } from '../../../core/grid/constants';
 
 const M = (m: number) => m / METRES_PER_CELL;
 
-const BASELINE: Record<string, number[]> = JSON.parse(readFileSync(
+interface PropFingerprint { tris: number; fp: string }
+
+/**
+ * 穩定的指紋：所有頂點座標與標籤，量化到 1e-6 之後累加。
+ *
+ * 只比三角形數不夠 —— 把一棵樹搬到別的位置、換個半徑、標錯零件，三角形數
+ * 都不會變。這次是 20 個函式的機械搬移，需要比得出「一模一樣」的東西。
+ */
+function fingerprint(g: THREE.BufferGeometry): string {
+  let h = 2166136261;
+  for (const name of ['position', 'color'] as const) {
+    const a = g.getAttribute(name);
+    if (!a) continue;
+    const arr = a.array as ArrayLike<number>;
+    for (let i = 0; i < arr.length; i++) {
+      const q = Math.round(arr[i]! * 1e6);
+      h = Math.imul(h ^ (q & 0xffff), 16777619);
+      h = Math.imul(h ^ ((q >>> 16) & 0xffff), 16777619);
+    }
+  }
+  return (h >>> 0).toString(16);
+}
+
+const BASELINE: Record<string, PropFingerprint[]> = JSON.parse(readFileSync(
   join(dirname(fileURLToPath(import.meta.url)), '..', '..', '__tests__', 'fixtures',
     'ground-prop-triangles.json'),
   'utf8',
@@ -107,8 +131,11 @@ describe('灌木球', () => {
 /**
  * 住宅的樹**一個三角形都不能變**。
  *
- * 這一輪只是把樹的做法搬到共用模組，住宅那一側改成先算座標再呼叫它。
+ * 這一輪只是把矮物件的做法搬到共用模組，住宅那一側改成先算座標再呼叫它。
  * 基準是在動任何程式碼**之前**存下來的 —— 重構之後才存的基準等於沒有基準。
+ *
+ * 比的是**頂點指紋**而不只是三角形數：搬錯位置、半徑算錯、標錯零件，
+ * 三角形數都不會變。
  */
 describe('住宅的庭院沒有被這次重構動到', () => {
   it('should keep every ground prop variant at its original triangle count', () => {
@@ -117,11 +144,11 @@ describe('住宅的庭院沒有被這次重構動到', () => {
       for (const lv of LEVELS) {
         const got = getGroundPropVariants(Number(z), d as Density, lv).map((b) => {
           const g = b();
-          const n = triangleCount(g);
+          const r = { tris: triangleCount(g), fp: fingerprint(g) };
           g.dispose();
-          return n;
+          return r;
         });
-        expect(got, `${key}:${lv} 的庭院三角形數變了`).toEqual(BASELINE[`${key}:${lv}`]);
+        expect(got, `${key}:${lv} 的庭院變了`).toEqual(BASELINE[`${key}:${lv}`]);
       }
     }
   });

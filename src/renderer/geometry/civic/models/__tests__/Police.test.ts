@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { policePlan } from '../police';
-import { FACADE_CIVIC, PART_ROOF, PART_LAMP, PART_DETAIL } from '../../../buildings/parts';
+import { FACADE_CIVIC, PART_ROOF, PART_LAMP } from '../../../buildings/parts';
 import { centroidOffset, overlapOf, topOf } from '../../../buildings/massing/volume';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
 
@@ -117,18 +117,42 @@ describe('警局', () => {
 
   it('should light both the entrance and the car park', () => {
     // 只有門口有燈的話，夜裡整片停車場是黑的 —— 而停車場佔了基地的一半。
-    const lamps = plan.props.filter(v => v.part === PART_LAMP);
-    expect(lamps.length, '燈太少').toBeGreaterThanOrEqual(3);
-    const zs = lamps.map(v => v.z);
+    const street = plan.fixtures.filter(f => f.kind === 'lamp');
+    const porch = plan.props.filter(v => v.part === PART_LAMP);
+    expect(street.length, '停車場的路燈太少').toBeGreaterThanOrEqual(3);
+    expect(porch.length, '門口沒有燈').toBeGreaterThan(0);
+    const zs = [...street, ...porch].map(v => v.z);
     expect(Math.max(...zs) - Math.min(...zs), '所有的燈擠在同一條線上')
       .toBeGreaterThan(0.3);
   });
 
+  /**
+   * 使用者的要求：「花盆什麼的所有矮物件都可以做成共用?」
+   *
+   * 自己再畫一份的下場是同一座城市裡兩支長得不一樣的路燈，而且改一邊不會
+   * 連動另一邊。所以凡是 `geometry/props` 有的東西，這裡不准用自訂量體重寫。
+   */
+  it('should use the shared primitives instead of re-drawing them', () => {
+    for (const kind of ['tree', 'shrub', 'flowerBed', 'lamp', 'flagpole'] as const) {
+      expect(plan.fixtures.some(f => f.kind === kind), `${kind} 沒有走共用圖元`)
+        .toBe(true);
+    }
+    // 自訂量體只剩下共用圖元裡真的沒有的東西。
+    const custom = new Set(plan.props.map(v => v.tag));
+    expect(custom, '自訂量體裡混進了共用圖元有的東西')
+      .toEqual(new Set(['porchLamp', 'car', 'bench']));
+  });
+
   it('should not tag the lamp posts as glowing', () => {
     // 整支標成發光的話，夜裡會看到一根從地上亮到頂的柱子（BUG-230 的教訓）。
-    const posts = plan.props.filter(v => v.tag === 'post');
-    expect(posts.length, '路燈沒有桿子').toBeGreaterThan(0);
-    for (const p of posts) expect(p.part).toBe(PART_DETAIL);
+    // 走共用的 `lamp` 之後這條由圖元本身保證 —— 這裡守的是「真的走了共用的」。
+    expect(plan.fixtures.some(f => f.kind === 'lamp'), '路燈不是共用圖元')
+      .toBe(true);
+    for (const v of plan.props.filter(x => x.part === PART_LAMP)) {
+      const h = (v.y1 - v.y0) * METRES_PER_CELL;
+      expect(h, `自訂的發光體有 ${h.toFixed(1)} m 高 —— 那是燈桿不是燈頭`)
+        .toBeLessThan(1.5);
+    }
   });
 
   it('should pave the forecourt and the car park without overlapping them', () => {

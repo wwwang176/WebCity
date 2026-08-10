@@ -5,10 +5,20 @@ import { METRES_PER_CELL } from '../../../core/grid/constants';
 import { TRIANGLE_BUDGET, heightKey, type Density, type GeoBuilder } from './registry';
 import { lowPropBand, type Band } from './propBands';
 import { SIDE_AXIS, type Side } from './decals';
-import { tagPart, PART_FOLIAGE, PART_DETAIL, PART_LAMP } from './parts';
+import { PART_FOLIAGE, PART_DETAIL } from './parts';
 import {
   columnarTree as plantColumnarTree, shrubBall as plantShrubBall,
+  topiary as plantTopiary, flowerBed as plantFlowerBed,
 } from '../plants';
+import {
+  strip as propStrip, mailbox as propMailbox, bin as propBin,
+  bollard as propBollard, fencePost as propFencePost, fenceRail as propFenceRail,
+  bikeRack as propBikeRack, lamp as propLamp,
+  dryingPost as propDryingPost, dryingLine as propDryingLine,
+  signPost as propSignPost, drum as propDrum, pipeRack as propPipeRack,
+  gasBottles as propGasBottles, palletStack as propPalletStack,
+  hydrant as propHydrant, flagpole as propFlagpole,
+} from '../props';
 
 /**
  * 矮物件層 —— 站在地上、行人會撞到的東西。
@@ -70,20 +80,15 @@ function place(axis: Axis, sign: Sign, t: number, d: number): [number, number] {
 
 // ===== 零件 =====
 
+/** 帶的深度：留兩成餘裕，物件不貼齊帶的內外緣。 */
+const bandDepth = (b: Band) => (b.outer - b.inner) * 0.8;
+
 /** 沿著某一邊的連續帶狀物（樹籬、花台、矮牆）。 */
 function strip(
   b: Band, axis: Axis, sign: Sign, lengthFrac: number, heightM: number, part: number,
 ): THREE.BufferGeometry {
-  const depth = (b.outer - b.inner) * 0.8;
-  const len = b.outer * 2 * lengthFrac;
-  const h = M(heightM);
-  const geo = axis === 'z'
-    ? new THREE.BoxGeometry(len, h, depth)
-    : new THREE.BoxGeometry(depth, h, len);
   const [x, z] = place(axis, sign, 0, mid(b));
-  geo.translate(x, h / 2, z);
-  tagPart(geo, part);
-  return geo;
+  return propStrip(x, z, axis, b.outer * 2 * lengthFrac, bandDepth(b), heightM, part);
 }
 
 /** 樹籬。 */
@@ -131,57 +136,26 @@ function shrub(b: Band, axis: Axis, sign: Sign, t: number, radiusM: number) {
 
 /** 修剪灌木球：兩顆球疊在一根短柱上。 */
 function topiary(b: Band, axis: Axis, sign: Sign, t: number) {
-  const r = fit(b, 0.35, 0.85);
   const [x, z] = place(axis, sign, t, mid(b));
-  const stem = new THREE.CylinderGeometry(M(0.06), M(0.08), M(0.5), 5);
-  stem.translate(x, M(0.25), z);
-  tagPart(stem, PART_DETAIL);
-  const lower = new THREE.SphereGeometry(r, 5, 3);
-  lower.translate(x, M(0.5) + r, z);
-  tagPart(lower, PART_FOLIAGE);
-  const upper = new THREE.SphereGeometry(r * 0.7, 5, 3);
-  upper.translate(x, M(0.5) + r * 2.4, z);
-  tagPart(upper, PART_FOLIAGE);
-  return [stem, lower, upper];
+  return plantTopiary(x, z, fit(b, 0.35, 0.85));
 }
 
 /** 圓花圃：一圈矮牆加中間的花。 */
 function flowerBed(b: Band, axis: Axis, sign: Sign, t: number) {
-  const r = fit(b, 0.45, 0.9);
   const [x, z] = place(axis, sign, t, mid(b));
-  const rim = new THREE.CylinderGeometry(r, r, M(0.28), 6);
-  rim.translate(x, M(0.14), z);
-  tagPart(rim, PART_DETAIL);
-  const bloom = new THREE.SphereGeometry(r * 0.85, 6, 2);
-  bloom.scale(1, 0.5, 1);
-  bloom.translate(x, M(0.28) + r * 0.2, z);
-  tagPart(bloom, PART_FOLIAGE);
-  return [rim, bloom];
+  return plantFlowerBed(x, z, fit(b, 0.45, 0.9));
 }
 
 /** 信箱：一根柱加一個箱。 */
 function mailbox(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
-  const post = new THREE.BoxGeometry(M(0.12), M(1.0), M(0.12));
-  post.translate(x, M(0.5), z);
-  tagPart(post, PART_DETAIL);
-  const box = new THREE.BoxGeometry(M(0.34), M(0.24), M(0.22));
-  box.translate(x, M(1.12), z);
-  tagPart(box, PART_DETAIL);
-  return [post, box];
+  return propMailbox(x, z);
 }
 
 /** 垃圾桶。 */
 function bin(b: Band, axis: Axis, sign: Sign, t: number) {
-  const r = fit(b, 0.28, 0.9);
   const [x, z] = place(axis, sign, t, mid(b));
-  const body = new THREE.CylinderGeometry(r, r * 0.85, M(0.9), 5);
-  body.translate(x, M(0.45), z);
-  tagPart(body, PART_DETAIL);
-  const lid = new THREE.CylinderGeometry(r * 1.1, r * 1.1, M(0.08), 5);
-  lid.translate(x, M(0.94), z);
-  tagPart(lid, PART_DETAIL);
-  return [body, lid];
+  return propBin(x, z, fit(b, 0.28, 0.9));
 }
 
 /** 矮柱列：沿著一條邊等距的短柱，擋車用。 */
@@ -190,13 +164,8 @@ function bollards(b: Band, axis: Axis, sign: Sign, count: number) {
   const span = b.outer * 1.5;
   const r = fit(b, 0.11, 0.5);
   for (let i = 0; i <= count; i++) {
-    const t = -span / 2 + (span / count) * i;
-    const [x, z] = place(axis, sign, t, mid(b));
-    // 方柱而不是圓柱：0.11 m 的柱子在等角視角下看不出圓方，圓柱貴八成。
-    const post = new THREE.BoxGeometry(r * 1.7, M(0.85), r * 1.7);
-    post.translate(x, M(0.425), z);
-    tagPart(post, PART_DETAIL);
-    out.push(post);
+    const [x, z] = place(axis, sign, -span / 2 + (span / count) * i, mid(b));
+    out.push(propBollard(x, z, r));
   }
   return out;
 }
@@ -206,35 +175,18 @@ function picketFence(b: Band, axis: Axis, sign: Sign, count: number) {
   const out: THREE.BufferGeometry[] = [];
   const span = b.outer * 1.7;
   for (let i = 0; i <= count; i++) {
-    const t = -span / 2 + (span / count) * i;
-    const [x, z] = place(axis, sign, t, mid(b));
-    const post = new THREE.BoxGeometry(M(0.1), M(1.0), M(0.1));
-    post.translate(x, M(0.5), z);
-    tagPart(post, PART_DETAIL);
-    out.push(post);
+    const [x, z] = place(axis, sign, -span / 2 + (span / count) * i, mid(b));
+    out.push(propFencePost(x, z));
   }
-  const rail = axis === 'z'
-    ? new THREE.BoxGeometry(span, M(0.1), M(0.06))
-    : new THREE.BoxGeometry(M(0.06), M(0.1), span);
   const [rx, rz] = place(axis, sign, 0, mid(b));
-  rail.translate(rx, M(0.72), rz);
-  tagPart(rail, PART_DETAIL);
-  out.push(rail);
+  out.push(propFenceRail(rx, rz, axis, span));
   return out;
 }
 
 /** 單車架：兩個環。 */
 function bikeRack(b: Band, axis: Axis, sign: Sign, t: number) {
-  const out: THREE.BufferGeometry[] = [];
-  for (const off of [-M(0.35), M(0.35)]) {
-    const [x, z] = place(axis, sign, t + off, mid(b));
-    const hoop = new THREE.TorusGeometry(M(0.32), M(0.045), 3, 5, Math.PI);
-    hoop.rotateY(axis === 'z' ? 0 : Math.PI / 2);
-    hoop.translate(x, 0, z);
-    tagPart(hoop, PART_DETAIL);
-    out.push(hoop);
-  }
-  return out;
+  const [x, z] = place(axis, sign, t, mid(b));
+  return propBikeRack(x, z, axis);
 }
 
 /**
@@ -245,13 +197,7 @@ function bikeRack(b: Band, axis: Axis, sign: Sign, t: number) {
  */
 function lamp(b: Band, axis: Axis, sign: Sign, t: number, heightM: number) {
   const [x, z] = place(axis, sign, t, mid(b));
-  const pole = new THREE.CylinderGeometry(M(0.07), M(0.09), M(heightM), 4);
-  pole.translate(x, M(heightM) / 2, z);
-  tagPart(pole, PART_DETAIL);
-  const head = new THREE.SphereGeometry(M(0.18), 4, 3);
-  head.translate(x, M(heightM) + M(0.14), z);
-  tagPart(head, PART_LAMP);
-  return [pole, head];
+  return propLamp(x, z, heightM);
 }
 
 /** 曬衣桿：兩根柱加兩條橫線。 */
@@ -260,45 +206,23 @@ function dryingRack(b: Band, axis: Axis, sign: Sign) {
   const span = b.outer * 0.9;
   for (const t of [-span / 2, span / 2]) {
     const [x, z] = place(axis, sign, t, mid(b));
-    const post = new THREE.BoxGeometry(M(0.09), M(1.7), M(0.09));
-    post.translate(x, M(0.85), z);
-    tagPart(post, PART_DETAIL);
-    out.push(post);
+    out.push(propDryingPost(x, z));
   }
-  for (const h of [1.4, 1.6]) {
-    const line = axis === 'z'
-      ? new THREE.BoxGeometry(span, M(0.04), M(0.04))
-      : new THREE.BoxGeometry(M(0.04), M(0.04), span);
-    const [x, z] = place(axis, sign, 0, mid(b));
-    line.translate(x, M(h), z);
-    tagPart(line, PART_DETAIL);
-    out.push(line);
-  }
+  const [cx, cz] = place(axis, sign, 0, mid(b));
+  for (const h of [1.4, 1.6]) out.push(propDryingLine(cx, cz, axis, span, h));
   return out;
 }
 
 /** 告示牌／招牌立柱。 */
 function signPost(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
-  const post = new THREE.CylinderGeometry(M(0.06), M(0.06), M(1.6), 5);
-  post.translate(x, M(0.8), z);
-  tagPart(post, PART_DETAIL);
-  const board = axis === 'z'
-    ? new THREE.BoxGeometry(M(0.7), M(0.5), M(0.05))
-    : new THREE.BoxGeometry(M(0.05), M(0.5), M(0.7));
-  board.translate(x, M(1.5), z);
-  tagPart(board, PART_DETAIL);
-  return [post, board];
+  return propSignPost(x, z, axis);
 }
 
 /** 油桶（工業）。 */
 function drum(b: Band, axis: Axis, sign: Sign, t: number) {
-  const r = fit(b, 0.29, 0.9);
   const [x, z] = place(axis, sign, t, mid(b));
-  const body = new THREE.CylinderGeometry(r, r, M(0.88), 6);
-  body.translate(x, M(0.44), z);
-  tagPart(body, PART_DETAIL);
-  return body;
+  return propDrum(x, z, fit(b, 0.29, 0.9));
 }
 
 /**
@@ -310,48 +234,14 @@ function drum(b: Band, axis: Axis, sign: Sign, t: number) {
  * 高度壓在 2 m 以下：再高就侵入懸挑層的淨空（`OVERHEAD_CLEARANCE`）。
  */
 function pipeRack(b: Band, axis: Axis, sign: Sign, lengthFrac: number) {
-  const out: THREE.BufferGeometry[] = [];
-  const span = b.outer * 2 * lengthFrac;
-  for (const t of [-span / 2, span / 2]) {
-    const [x, z] = place(axis, sign, t, mid(b));
-    const post = new THREE.BoxGeometry(M(0.16), M(2.0), M(0.16));
-    post.translate(x, M(1.0), z);
-    tagPart(post, PART_DETAIL);
-    out.push(post);
-  }
-  const [px, pz] = place(axis, sign, 0, mid(b));
-  for (const [h, r] of [[1.35, 0.13], [1.75, 0.1]] as const) {
-    const pipe = new THREE.CylinderGeometry(M(r), M(r), span, 4);
-    // CylinderGeometry 的軸是 y。沿邊擺就得先轉倒 —— z 軸的邊沿 x 展開，
-    // x 軸的邊沿 z 展開（與 `strip` 同一套約定）。
-    if (axis === 'z') pipe.rotateZ(Math.PI / 2);
-    else pipe.rotateX(Math.PI / 2);
-    pipe.translate(px, M(h), pz);
-    tagPart(pipe, PART_DETAIL);
-    out.push(pipe);
-  }
-  return out;
+  const [x, z] = place(axis, sign, 0, mid(b));
+  return propPipeRack(x, z, axis, b.outer * 2 * lengthFrac);
 }
 
 /** 氣瓶架：三支高壓氣瓶靠著一道矮框（工業）。 */
 function gasBottles(b: Band, axis: Axis, sign: Sign, t: number) {
-  const out: THREE.BufferGeometry[] = [];
-  const r = fit(b, 0.16, 0.9);
-  for (let i = -1; i <= 1; i++) {
-    const [x, z] = place(axis, sign, t + i * M(0.42), mid(b));
-    const body = new THREE.CylinderGeometry(r, r, M(1.3), 4);
-    body.translate(x, M(0.65), z);
-    tagPart(body, PART_DETAIL);
-    out.push(body);
-  }
-  const [fx, fz] = place(axis, sign, t, mid(b));
-  const frame = axis === 'z'
-    ? new THREE.BoxGeometry(M(1.5), M(0.1), M(0.08))
-    : new THREE.BoxGeometry(M(0.08), M(0.1), M(1.5));
-  frame.translate(fx, M(1.05), fz);
-  tagPart(frame, PART_DETAIL);
-  out.push(frame);
-  return out;
+  const [x, z] = place(axis, sign, t, mid(b));
+  return propGasBottles(x, z, axis, fit(b, 0.16, 0.9));
 }
 
 /**
@@ -361,48 +251,20 @@ function gasBottles(b: Band, axis: Axis, sign: Sign, t: number) {
  * 所以這是窄帶裡少數還放得下的「有體積的貨」。
  */
 function palletStack(b: Band, axis: Axis, sign: Sign, t: number) {
-  const out: THREE.BufferGeometry[] = [];
-  const depth = (b.outer - b.inner) * 0.8;
   const [x, z] = place(axis, sign, t, mid(b));
-  for (let i = 0; i < 3; i++) {
-    const slab = axis === 'z'
-      ? new THREE.BoxGeometry(M(1.2), M(0.16), depth)
-      : new THREE.BoxGeometry(depth, M(0.16), M(1.2));
-    slab.translate(x, M(0.16) * (i + 0.5) + M(0.06) * i, z);
-    tagPart(slab, PART_DETAIL);
-    out.push(slab);
-  }
-  return out;
+  return propPalletStack(x, z, axis, bandDepth(b));
 }
 
 /** 消防栓（工業／商業）。 */
 function hydrant(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
-  const body = new THREE.CylinderGeometry(M(0.11), M(0.14), M(0.7), 5);
-  body.translate(x, M(0.35), z);
-  tagPart(body, PART_DETAIL);
-  const cap = new THREE.SphereGeometry(M(0.12), 4, 2);
-  cap.translate(x, M(0.72), z);
-  tagPart(cap, PART_DETAIL);
-  return [body, cap];
+  return propHydrant(x, z);
 }
 
 /** 旗桿（辦公）。 */
 function flagpole(b: Band, axis: Axis, sign: Sign, t: number) {
   const [x, z] = place(axis, sign, t, mid(b));
-  const pole = new THREE.CylinderGeometry(M(0.06), M(0.08), M(1.9), 5);
-  pole.translate(x, M(0.95), z);
-  tagPart(pole, PART_DETAIL);
-  const flag = axis === 'z'
-    ? new THREE.BoxGeometry(M(0.6), M(0.36), M(0.03))
-    : new THREE.BoxGeometry(M(0.03), M(0.36), M(0.6));
-  flag.translate(
-    axis === 'z' ? x + M(0.32) : x,
-    M(1.62),
-    axis === 'z' ? z : z + M(0.32),
-  );
-  tagPart(flag, PART_DETAIL);
-  return [flag, pole];
+  return propFlagpole(x, z, axis);
 }
 
 // ===== 各分區的組合 =====

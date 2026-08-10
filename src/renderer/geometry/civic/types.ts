@@ -1,6 +1,6 @@
 import type { Volume } from '../buildings/massing/volume';
 import type { CivicColor } from './colors';
-import type { Plant } from '../plants';
+import type { PropSpec } from '../props';
 
 /**
  * 公共建築的宣告式描述。
@@ -105,17 +105,20 @@ export interface CivicPlan {
   /** 懸挑：雨棚、招牌、月台頂。castShadow，遠景整層關掉。 */
   overhead: CivicVolume[];
   /**
-   * 植栽 —— 樹與灌木。
+   * 共用的矮物件：樹、灌木、花圃、路燈、垃圾桶、單車架、旗桿、消防栓、
+   * 油桶、管架……（`geometry/props` 的 `PropSpec`）。
    *
-   * 與 `props` 分開是**必要的**，不是分類上的潔癖：樹冠是圓錐、灌木是球，
-   * 兩者用 `THREE` 的圖元產生，帶著 uv 而且是索引幾何；`props` 走
-   * `shapeOf`，產出的是非索引、沒有 uv 的稜台。`mergeGeometries` 要求
-   * 屬性集合一致，所以這兩種東西**合併不起來**，只能各自一層。
+   * 與上面的 `props` 差在**誰畫的**：這裡是與住宅庭院共用的圖元，那裡是
+   * 這一棟自己的方塊量體（車輛、長椅這種一次性的東西）。優先用這裡的 ——
+   * 自己畫一顆樹的下場是同一座城市裡兩棵長得不一樣的樹。
    *
-   * 樹本身與住宅的庭院共用（`geometry/plants`）—— 一座城市裡的樹該是同一種樹。
-   * 三角形預算算在 `prop` 那一格，因為它們就是矮物件。
+   * 分成兩層是**必要的**，不是分類上的潔癖：這些圖元用 `THREE` 的圓錐、
+   * 球、環，帶著 uv 而且是索引幾何；`props` 走 `shapeOf`，產出的是非索引、
+   * 沒有 uv 的稜台。`mergeGeometries` 要求屬性集合一致，兩者合併不起來。
+   *
+   * 三角形預算仍算在 `prop` 那一格 —— 它們就是矮物件。
    */
-  plants: Plant[];
+  fixtures: PropSpec[];
 }
 
 /**

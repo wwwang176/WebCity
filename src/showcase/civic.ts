@@ -3,7 +3,7 @@ import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { GROUND_LAYERS } from '../renderer/geometry/buildings/propBands';
 import {
-  assembleCivic, assembleDecals, assemblePlants,
+  assembleCivic, assembleDecals, assembleFixtures,
 } from '../renderer/geometry/civic/assemble';
 import { civicTypesDone } from '../renderer/geometry/civic/registry';
 import { CIVIC_TRIANGLE_BUDGET, type CivicPlan, type Footprint }
@@ -87,9 +87,9 @@ export function civicOptions(): CivicOption[] {
 /**
  * 每一層各自的擺放規則。與 `main.ts` 的 `ATTACHMENTS` 逐項對應。
  *
- * 植栽自己一個 mesh 但算在 `prop` 的預算裡：樹冠是圓錐、灌木是球（索引、
- * 帶 uv），量體走 `shapeOf`（非索引、無 uv），`mergeGeometries` 併不起來 ——
- * 所以是兩個 mesh。但它們就是矮物件，沒有理由有第二個預算。
+ * 共用矮物件自己一個 mesh 但算在 `prop` 的預算裡：那些圖元是圓錐、球、環
+ * （索引、帶 uv），量體走 `shapeOf`（非索引、無 uv），`mergeGeometries`
+ * 併不起來 —— 所以是兩個 mesh。但它們就是矮物件，沒有理由有第二個預算。
  */
 const LAYERS: ReadonlyArray<{
   /** 這一層的三角形算進哪一格預算。 */
@@ -115,7 +115,7 @@ const LAYERS: ReadonlyArray<{
   },
   {
     key: 'prop', castShadow: true, culled: true, baseY: GROUND_LAYERS.BUILDING,
-    build: p => assemblePlants(p.plants, p.footprint),
+    build: p => assembleFixtures(p.fixtures, p.footprint),
   },
   {
     key: 'overhead', castShadow: true, culled: true, baseY: GROUND_LAYERS.BUILDING,

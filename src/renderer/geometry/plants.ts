@@ -65,3 +65,52 @@ export function plantGeometry(p: Plant): THREE.BufferGeometry[] {
     ? columnarTree(p.x, p.z, p.heightM, p.crownRadius)
     : [shrubBall(p.x, p.z, p.radius)];
 }
+
+/**
+ * 修剪灌木球：兩顆球疊在一根短柱上。
+ *
+ * `radius` 是下面那顆球的半徑；上面那顆是它的 0.7 倍。
+ */
+export function topiary(x: number, z: number, radius: number): THREE.BufferGeometry[] {
+  const stem = new THREE.CylinderGeometry(M(0.06), M(0.08), M(0.5), 5);
+  stem.translate(x, M(0.25), z);
+  tagPart(stem, PART_DETAIL);
+  const lower = new THREE.SphereGeometry(radius, 5, 3);
+  lower.translate(x, M(0.5) + radius, z);
+  tagPart(lower, PART_FOLIAGE);
+  const upper = new THREE.SphereGeometry(radius * 0.7, 5, 3);
+  upper.translate(x, M(0.5) + radius * 2.4, z);
+  tagPart(upper, PART_FOLIAGE);
+  return [stem, lower, upper];
+}
+
+/** 圓花圃：一圈矮牆加中間的花。 */
+export function flowerBed(x: number, z: number, radius: number): THREE.BufferGeometry[] {
+  const rim = new THREE.CylinderGeometry(radius, radius, M(0.28), 6);
+  rim.translate(x, M(0.14), z);
+  tagPart(rim, PART_DETAIL);
+  const bloom = new THREE.SphereGeometry(radius * 0.85, 6, 2);
+  bloom.scale(1, 0.5, 1);
+  bloom.translate(x, M(0.28) + radius * 0.2, z);
+  tagPart(bloom, PART_FOLIAGE);
+  return [rim, bloom];
+}
+
+/**
+ * 樹籬（連續的綠帶）。
+ *
+ * `axis` 是它**延伸的方向**：`'z'` 表示沿世界 x 展開（與 `strip` 同一套約定，
+ * 那個約定來自「沿著格子哪一條邊」）。
+ */
+export function hedge(
+  x: number, z: number, axis: 'x' | 'z',
+  length: number, depth: number, heightM: number,
+): THREE.BufferGeometry {
+  const h = M(heightM);
+  const geo = axis === 'z'
+    ? new THREE.BoxGeometry(length, h, depth)
+    : new THREE.BoxGeometry(depth, h, length);
+  geo.translate(x, h / 2, z);
+  tagPart(geo, PART_FOLIAGE);
+  return geo;
+}

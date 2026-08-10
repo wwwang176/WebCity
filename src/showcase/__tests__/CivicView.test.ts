@@ -88,7 +88,7 @@ describe('placeCivic 的四層', () => {
     decals: [{ x: 0, z: 0, w: 1.8, d: 1.8, shade: 0.4 }],
     props: [{ x: 0.6, z: 0.6, w: 0.2, d: 0.2, y0: 0, y1: 0.3, part: PART_LAMP }],
     overhead: [{ x: 0, z: 0.6, w: 0.8, d: 0.3, y0: 0.4, y1: 0.45 }],
-    plants: [{ kind: 'tree', x: -0.6, z: 0.6, heightM: 5, crownRadius: 0.1 }],
+    fixtures: [{ kind: 'tree', x: -0.6, z: 0.6, heightM: 5, crownRadius: 0.1 }],
   });
 
   it('should build every layer', () => {
@@ -101,10 +101,10 @@ describe('placeCivic 的四層', () => {
     }
   });
 
-  it('should count plants into the prop budget, not a fifth one', () => {
+  it('should count shared fixtures into the prop budget, not a fifth one', () => {
     const withPlants = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    const noPlants = placeCivic({ ...fullPlan(), plants: [] }, new THREE.Scene(), 0.8)!;
-    expect(withPlants.tris.prop, '植栽沒有算進 prop 的三角形數')
+    const noPlants = placeCivic({ ...fullPlan(), fixtures: [] }, new THREE.Scene(), 0.8)!;
+    expect(withPlants.tris.prop, '共用矮物件沒有算進 prop 的三角形數')
       .toBeGreaterThan(noPlants.tris.prop);
   });
 
@@ -139,7 +139,7 @@ describe('placeCivic 的四層', () => {
   it('should carry the building colour into every layer', () => {
     // 少了的話 shader 讀到 aBldgColor = 0 —— 整棟是黑的。
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    const massing = placed.meshes[1]!;   // LAYERS 的順序：貼片、量體、矮物件、植栽、懸挑
+    const massing = placed.meshes[1]!;   // 順序：貼片、量體、自訂矮物件、共用矮物件、懸挑
     const a = massing.geometry.getAttribute('aBldgColor');
     expect(a, '量體層沒有 aBldgColor').toBeTruthy();
     // Float32 存不下 0.2 —— 逐位比對會在一個與顏色無關的理由上失敗。
@@ -182,7 +182,7 @@ describe('placeCivic 的四層', () => {
   it('should skip a layer that has nothing in it', () => {
     // 公園沒有懸挑。空幾何仍然建出 mesh 的話是白吃一次 draw call。
     const placed = placeCivic(
-      { ...fullPlan(), overhead: [], props: [], plants: [] }, new THREE.Scene(), 0.8,
+      { ...fullPlan(), overhead: [], props: [], fixtures: [] }, new THREE.Scene(), 0.8,
     )!;
     expect(placed.meshes.length).toBe(2);
     expect(placed.culled.length).toBe(0);
