@@ -8,7 +8,7 @@ import {
   ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, bucketKey,
   type Density, type GeoBuilder,
 } from './geometry/buildings/registry';
-import { getMassingVariants, VARIANT_COUNT, floorHeightOf } from './geometry/buildings/massing';
+import { getMassingVariants, VARIANT_COUNT, floorHeightOf, isRoundBodied } from './geometry/buildings/massing';
 import { FLOOR_HEIGHT_UNITS } from './geometry/buildings/massing/metrics';
 import { getGroundPropVariants } from './geometry/buildings/groundProps';
 import { getDecalVariants } from './geometry/buildings/decals';
@@ -61,6 +61,14 @@ export class BuildingRenderer {
      * 層序必須留在幾何裡），再加一次就會把標線推離鋪面。
      */
     baseY: number;
+    /**
+     * 牆體是圓的就跳過這一層。
+     *
+     * 只有懸挑要跳：雨遮與招牌都是平板，貼在圓弧牆上會穿出去或懸空 ——
+     * 與 BUG-226（雨遮貼在假想牆上）同一類，只是這次牆是彎的。矮物件站在
+     * 地上，牆彎不彎與它無關；鋪面更是完全在地面上。
+     */
+    skipWhenRound?: boolean;
   }> = [
     { layer: this.decalLayer, variants: getDecalVariants, castShadow: false, baseY: 0 },
     {
@@ -69,7 +77,7 @@ export class BuildingRenderer {
     },
     {
       layer: this.overheadLayer, variants: getOverheadVariants,
-      castShadow: true, baseY: GROUND_LAYERS.BUILDING,
+      castShadow: true, baseY: GROUND_LAYERS.BUILDING, skipWhenRound: true,
     },
   ];
 
@@ -178,8 +186,10 @@ export class BuildingRenderer {
       paletteSize: paletteFor(zoneType, level).length,
     });
     const rotation = (app.rotationQuarter * Math.PI) / 2;
+    const round = isRoundBodied(zoneType, density, level, app.variantIndex);
 
     for (const a of this.attachments) {
+      if (a.skipWhenRound && round) continue;
       const builders = a.variants(zoneType, density, level);
       if (builders.length === 0) continue;
       const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;

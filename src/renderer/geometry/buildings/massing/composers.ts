@@ -1,4 +1,4 @@
-import { PART_DETAIL } from '../parts';
+import { PART_DETAIL, PART_ROOF } from '../parts';
 import { ROOF_PITCH_FRAC } from './metrics';
 import type { Volume } from './volume';
 import type { Dimensions } from './dimensions';
@@ -89,6 +89,37 @@ export function podiumTower(
     return [
       { x: 0, z: 0, w: dims.w, d: dims.d, y0: 0, y1: podiumH },
       { x: ox, z: oz, w: tw, d: td, y0: podiumH, y1: dims.height },
+    ];
+  };
+}
+
+/**
+ * 圓塔。整棟一根圓柱，沒有裙樓。
+ *
+ * 這是階段 2C-1 弄丟的 `makeComHighV2`（八角柱身 + 圓盤簷）。`assemble` 的
+ * 圓柱是 8 段，所以它實際上是八角柱 —— 與原本那一版一樣。
+ *
+ * **寬深取短邊而不是各自吃 `dims.w` / `dims.d`**：兩者是分別抖動的，直接用
+ * 會得到橢圓柱，而圓形之所以是特色正因為它是圓的。取短邊也順便保證它不會
+ * 越過行人包絡線。
+ *
+ * 它是完全旋轉對稱的 —— 四向旋轉在它身上生不出任何變化，所以在原型表裡
+ * 必須排在最後，不能占掉不對稱變體的配額（見 `prototypes.ts` 的表頭）。
+ */
+export function roundTower(diameterFrac: number): Composer {
+  return (dims) => {
+    const t = Math.min(dims.w, dims.d) * diameterFrac;
+    const capH = dims.floorHeight * 0.12;
+    return [
+      { x: 0, z: 0, w: t, d: t, y0: 0, y1: dims.height - capH, shape: 'cylinder' },
+      // 略微外挑的圓盤簷。放在量體裡而不是交給屋頂形式 —— `roofFor` 是按
+      // variantIndex 分層的，圓塔目前落在 `flat`（不產生任何屋頂量體），
+      // 靠屋頂那條路它永遠拿不到簷板。這片簷是原本 makeComHighV2 的 cap。
+      {
+        x: 0, z: 0, w: t * 1.06, d: t * 1.06,
+        y0: dims.height - capH, y1: dims.height,
+        shape: 'cylinder', part: PART_ROOF,
+      },
     ];
   };
 }

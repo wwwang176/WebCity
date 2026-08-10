@@ -10,7 +10,7 @@ import { WeatherRenderer } from '../renderer/WeatherRenderer';
 import { Season } from '../core/climate/Climate';
 import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { TRIANGLE_BUDGET } from '../renderer/geometry/buildings/registry';
-import { getMassingVariants, VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
+import { getMassingVariants, VARIANT_COUNT, isRoundBodied } from '../renderer/geometry/buildings/massing';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { getGroundPropVariants } from '../renderer/geometry/buildings/groundProps';
 import { getDecalVariants } from '../renderer/geometry/buildings/decals';
@@ -75,6 +75,8 @@ const ATTACHMENTS: ReadonlyArray<{
   into: keyof Omit<Tris, 'massing'>;
   /** 遠景時整層關掉。貼片不關 —— 它是平的鋪面，關掉會讓遠景整片地變空。 */
   culled: boolean;
+  /** 牆體是圓的就跳過 —— 與 BuildingRenderer.attachments 的同名欄位對應。 */
+  skipWhenRound?: boolean;
 }> = [
   {
     variants: getDecalVariants, enabled: () => state.showDecals,
@@ -87,6 +89,7 @@ const ATTACHMENTS: ReadonlyArray<{
   {
     variants: getOverheadVariants, enabled: () => state.showOverhead,
     castShadow: true, baseY: GROUND_LAYERS.BUILDING, into: 'overhead', culled: true,
+    skipWhenRound: true,
   },
 ];
 
@@ -130,8 +133,12 @@ function place(cell: PlacedCell, seedByte: number): Tris {
   sceneManager.scene.add(mesh);
   shown.push(mesh);
 
+  // 圓塔不掛雨遮與招牌（平板貼不上圓弧牆）。遊戲那側同一條規則。
+  const round = isRoundBodied(cell.zoneType, cell.density, cell.level, cell.variantIndex);
+
   for (const a of ATTACHMENTS) {
     if (!a.enabled()) continue;
+    if (a.skipWhenRound && round) continue;
     const builders = a.variants(cell.zoneType, cell.density, cell.level);
     if (builders.length === 0) continue;
     const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;

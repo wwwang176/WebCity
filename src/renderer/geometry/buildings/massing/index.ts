@@ -68,3 +68,19 @@ export function floorHeightOf(
   return dimensionsFor(zoneType, density, level, variantIndex)?.floorHeight
     ?? (FLOOR_HEIGHT_UNITS.MIN + FLOOR_HEIGHT_UNITS.MAX) / 2;
 }
+
+/**
+ * 這個變體的**牆體本身**是圓的嗎。
+ *
+ * 判斷的是零件標籤而不是「有沒有圓柱」—— 工業的煙囪與筒倉也是圓柱，但它們
+ * 是 `PART_DETAIL`，廠房本體仍然是方的。少了這個區分，整個工業區都會被當成
+ * 圓形建築。
+ *
+ * 懸挑層吃這一個：雨遮與招牌都是平板，貼在圓弧牆上會穿出去或懸空。
+ */
+export function isRoundBodied(
+  zoneType: number, density: Density, level: number, variantIndex: number,
+): boolean {
+  return volumesFor(zoneType, density, level, variantIndex)
+    .some(v => v.shape === 'cylinder' && (v.part ?? PART_WALL) === PART_WALL);
+}
