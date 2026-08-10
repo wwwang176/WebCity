@@ -21,6 +21,9 @@ import { roadTileCost, ROAD_COVERAGE } from '../RoadCoverageFlood';
 import { scoreCommuteByCost, COMMUTE_SCORE } from '../../citizen/WorkplaceScore';
 import { DEFAULT_JOB_RELOCATION_CONFIG } from '../../citizen/JobRelocation';
 import { FIRE } from '../FireService';
+import { distanceWeight } from '../GlobalCoverageService';
+import { GarbageService } from '../GarbageService';
+import { Grid } from '../../grid/Grid';
 
 /** 整數化的放大倍率：新成本 = 舊浮點成本 × 18。 */
 const SCALE = 18;
@@ -186,6 +189,94 @@ describe('道路成本整數化', () => {
       const oldTime = (OLD_TILE[t]! * tiles) / OLD_RESPONSE_SPEED;
       expect(newTime, RoadType[t]).toBeCloseTo(oldTime, 9);
     }
+  });
+
+  it('垃圾車／靈車的距離加權分布沒變', () => {
+    // `collectPending` 用 1/max(下限, 成本) 做加權隨機挑選，而那個下限與
+    // 成本同尺度。整數化時漏掉它的話，設施附近那塊「等權重平台」會縮成
+    // 只剩成本 0 的格子，挑選分布就變了 —— 這正是第一版整數化漏掉的地方。
+    //
+    // 比的是**相對**分布：所有權重同乘一個常數不影響加權隨機的結果，
+    // 所以正規化之後逐項比對。
+    const oldWeight = (oldCost: number): number => 1 / Math.max(1, oldCost);
+    const oldCosts = [0, 0.5, 1, 2, 100 / 30, 5, 10, 20, 40, 80];
+
+    const normalise = (ws: number[]): number[] => {
+      const total = ws.reduce((a, b) => a + b, 0);
+      return ws.map(w => w / total);
+    };
+
+    const oldDist = normalise(oldCosts.map(oldWeight));
+    const newDist = normalise(oldCosts.map(c => distanceWeight(c * SCALE)));
+
+    for (let i = 0; i < oldCosts.length; i++) {
+      expect(newDist[i], `舊成本 ${oldCosts[i]} 的挑選機率變了`)
+        .toBeCloseTo(oldDist[i]!, 12);
+    }
+  });
+
+  it('距離加權的下限恰好是一格四線道（整數化前後同一個意思）', () => {
+    // 舊制的下限寫死 1，而舊制的四線道每格正好是 1。用 roadTileCost 表達，
+    // 尺度再變一次也不會鬆掉。
+    const floor = roadTileCost(RoadType.FOUR_LANE);
+    expect(distanceWeight(0), '成本 0 應該被下限夾住').toBe(1 / floor);
+    expect(distanceWeight(floor), '剛好等於下限時仍是平台').toBe(1 / floor);
+    expect(distanceWeight(roadTileCost(RoadType.RURAL)), '超過下限後才開始遞減')
+      .toBeLessThan(1 / floor);
+  });
+
+  it('collectPending 真的用了 distanceWeight —— 接線也要測', () => {
+    // 上面兩條只測純函式：把呼叫端改回寫死的 `1 / Math.max(1, cost)`，
+    // 它們照樣全綠。所以這一條從**實際的挑選結果**驗接線。
+    //
+    // 加權隨機是 roll = r × (w近 + w遠)，r ≤ w近/(w近+w遠) 時挑到近的那個。
+    // 正確與錯誤的下限給出兩個不同的門檻；把擲點固定在兩者中間，一次挑選
+    // 就分得出來：正確會挑遠的，錯誤會挑近的。
+    const grid = new Grid(10, 10);
+    for (let x = 1; x < 10; x++) grid.setCell(x, 0, { roadType: RoadType.TWO_LANE });
+
+    const gs = new GarbageService();
+    gs.addFacility(0, 0, 1);          // 容量 1 → 這一 tick 只收得走一袋
+    gs.recalculateCoverage(grid);
+
+    // 從**實際的**成本圖裡挑一對跨過權重下限的格子。不手算座標 —— 設施佔地
+    // 與 seed reach 一起決定哪些格子是 0，心算會錯。
+    const floor = roadTileCost(RoadType.FOUR_LANE);
+    const costs = [...gs.getCoveredCellsWithCost()].sort((a, b) => a[1] - b[1]);
+    const nearEntry = costs.find(([, c]) => c < floor);
+    const farEntry = [...costs].reverse().find(([, c]) => c > floor);
+
+    expect(nearEntry, '涵蓋圖裡沒有低於權重下限的格子').toBeDefined();
+    expect(farEntry, '涵蓋圖裡沒有高於權重下限的格子').toBeDefined();
+
+    const [NEAR, cNear] = nearEntry!;
+    const [FAR, cFar] = farEntry!;
+    const [nx, ny] = NEAR.split(',').map(Number);
+    const [fx, fy] = FAR.split(',').map(Number);
+
+    const thresholdFor = (f: number): number => {
+      const wn = 1 / Math.max(f, cNear), wf = 1 / Math.max(f, cFar);
+      return wn / (wn + wf);
+    };
+    const good = thresholdFor(floor);   // 正確：下限與成本同尺度
+    const bad = thresholdFor(1);        // 錯誤：下限寫死 1（舊尺度）
+
+    // 擲點取兩個門檻的正中間 —— 不手挑數字。
+    expect(bad - good, '兩個門檻之間沒有間隙，這條測試分辨不出東西')
+      .toBeGreaterThan(0.01);
+    const roll = (good + bad) / 2;
+
+    gs.reportGarbage(nx!, ny!, 1);   // 先報近的 → 它是 entries[0]
+    gs.reportGarbage(fx!, fy!, 1);
+
+    const origRandom = Math.random;
+    Math.random = () => roll;
+    try { gs.tick(); } finally { Math.random = origRandom; }
+
+    const left = gs.toJSON().pendingBags ?? [];
+    expect(left.length, '應該只收走一袋').toBe(1);
+    expect(`${left[0]!.x},${left[0]!.y}`, '收走的是近的那袋 —— 呼叫端沒有用 distanceWeight')
+      .toBe(NEAR);
   });
 
   it('成本仍然由 speedLimit × 車道數推導（沒有寫死成查表）', () => {
