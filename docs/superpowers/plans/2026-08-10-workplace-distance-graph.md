@@ -1,4 +1,4 @@
-# Workplace 距離改走路網圖 —— 實作計畫（第 3 版）
+# Workplace 距離改走路網圖 —— 實作計畫（第 4 版）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -16,7 +16,55 @@ flood 核心,消除「有高架就停用快取」的限制（BUG-109 治本）�
 
 ---
 
-## 第 3 版改了什麼
+## 第 4 版改了什麼
+
+第 3 版送了第三輪審核。這一輪 Codex 是**實際動手**的：49 次唯讀命令、跑完整
+測試套件（330 檔 4600 測試）、`tsc`、以及照計畫的 fixture 與規則寫 Node 探針
+把 20 條回退驗證全部實算一遍。結論仍是「不建議直接照計畫實作」。
+
+以下每一項我都親自驗證過才採納。
+
+### 已先行落地（不在本計畫範圍內）
+
+**成本整數化漏掉一個消費端**（已修，commit `7cf346e`）。
+`GlobalCoverageService.collectPending` 的 `1 / Math.max(1, cost)` 下限留在舊
+尺度，×18 之後設施門口那塊等權重平台塌掉，垃圾車與靈車的挑選分布變了。
+改成 `roadTileCost(RoadType.FOUR_LANE)`（＝舊制的 `1`，語意相同）。
+順帶修掉 `docs/citizen-system.md` 過時的 `dijkstraMaxBudget = 60`。
+
+Codex 同時確認**沒有第二處遺漏**，而且存檔不需要 migration。
+
+### 本計畫的修正
+
+| 發現 | 我的驗證 | 處置 |
+|---|---|---|
+| Task 3 的「道路格應附掛自己」斷言會讓**正確實作紅燈** | 屬實，而且是我推理錯。附掛取的是「reach 內最便宜的路格」，自己當然可能被鄰居擊敗 —— fixture 裡 26 個道路格有 19 個是反例（例如 `1,1` 構得到種子 `0,1`，拿到 0 而不是自己的 36） | **刪掉那條斷言**，並刪掉我那段錯誤的論證註解 |
+| 回退 2a（不再 relax 成更便宜的值）**空轉** | 屬實，而且有結構性原因：成本加在**目的地**，所以進入節點 j 的每條邊權重都相同，`dist[j] = w_j + min(已 settle 的前驅)`。Dijkstra 依成本遞增 settle，第一次 relax 就已經最佳 —— 重新 relax 的分支在路網圖上**永遠走不到** | 加一組**合成 CSR 圖**測試（入邊權重不同），讓該分支真的被執行 |
+| 回退 2d（拿掉 stale 過濾）空轉 | 同一個結構原因：永遠不會產生 stale 堆項 | 同上，合成圖會製造 stale 項 |
+| 回退 2b 只有一半有效 | 屬實：settle 順序那條會紅（6 次下降），「每節點只 settle 一次」不會 | 表格只承諾會紅的那一半 |
+| 回退 8b（傳正向圖）空轉 | 屬實：`bridgedCity` 全是 `TWO_LANE`，權重全 36 且邊集對稱，forward 與 transpose **完全相同** | fixture 混入不同路型 |
+| Task 8 的驗收測試**在正確程式碼上會失敗**，而且測不到快取 | 屬實。`postMessage` 裡同步呼叫 `onmessage` 不會掉訊息（client 先登記 pending），但 `.then(applyResult)` 在 microtask。24 次 `tick()` 全發生在 READY 之前，就業結果來自**同步 fallback** | 補 microtask 等待 + spy `getDistancesFromHome`，明確證明命中快取 |
+| Task 7 說既有 worker fixture 有完整 Grid 可餵 `fromGrid()` | 不實。讀 `WorkplaceDistanceWorker.test.ts`：只有 `Map<string, RoadType>` 與手捏的 `ArrayBuffer` | 明列 `GridLike` adapter 的建法；預算也要 ×18（fixture 寫死 `60`） |
+| Task 8 的 cache 測試片段引用未建立的 `lookup` | 屬實 | 補上 grid 與 lookup 的建構 |
+| `state.commuteCache.roadGeneration` 不存在 | 屬實，正確是 `this.commuteCache.roadGeneration`（`commuteCache` 是 `SimulationLoop` 欄位） | 改正 |
+| `loop.getRoadLookup` 不存在 | 屬實。只有 `setRoadLookup` 與私有 `_roadLookup` | Task 8 新增對稱的 getter |
+| `ElevatedAwareReachability.test.ts` 是 **5** 個案例不是 4 個 | 屬實，第 5 個是「should disable the cache for an elevated road」 | 表格補上第 5 個並交代處置 |
+| `ElevationManager` 自身沒有 generation/event，直接 `set/delete` 不連動 | 屬實。目前正式路徑 `Game → markLaneGraphDirty → commuteCache.bumpGeneration` 是對的，但那是**呼叫紀律不是不變量** | 新增一條整合回歸測試釘住它 |
+| spec 與 plan 有 11 處矛盾 | 屬實 | Task 0 一次修完 |
+| 自評文字「18 次」與表格「20 條」打架 | 屬實 | 逐條重數 |
+
+### Codex 確認正確、不再改動的部分
+
+整數化確實解決 parity（它自己跑探針：新權重正反向都是 344 且 `Object.is` 為
+true）、存檔不需 migration、legacy 永久保留必要（AST 數出 16 個呼叫點、13 個
+沒有 lookup）、圖按 generation 建一次的方向正確、高架 build/demolish 確實會
+bump generation、transpose 設計正確、Bellman-Ford 與 `cheapestNearby` 都是
+合格的獨立參考、其餘 15 條回退驗證都有實際辨識力（7a 有 181 組 pair 不同、
+7b 有 560 組）。
+
+---
+
+## 第 3 版改了什麼（保留，作為背景）
 
 第 2 版送 Codex 複審，結論是「仍不可直接執行；有數個會讓正確實作本身紅燈的
 阻斷問題」。以下每一項我都親自驗證過才採納。
@@ -114,7 +162,12 @@ v2 的 Task 5 在 `roadDistanceToTargets` 裡直接 `buildRoadCellGraph(roadLook
   `roadTileCost = 1800 / (speedLimit × lanes/2)` → 9 ~ 60。
   權重存 `Uint16Array`，累積成本存 `Int32Array`（−1 = 未到達）。
   **不得引入任何浮點成本** —— 順序無關性是整份設計的地基。
-- 期望值一律從獨立參考推導，**不手算**（見上面第二節）。
+- 期望值一律從獨立參考推導，**不手算**。這條在第 3 版加入，第 4 版又抓到一次
+  違反（Task 3 的「道路格附掛自己」）—— 只要你發現自己在心算「那一格應該是
+  多少」，就是該改成推導的訊號。
+- **計畫裡引用的每一個外部名稱都要先 `grep` 確認存在**，不要照抄。前三版
+  分別出現過 `fakeClient()`（不存在）、`state.commuteCache.roadGeneration`
+  （位置錯）、`loop.getRoadLookup`（不存在）。
 - `ZONE_ROAD_REACH = 2`（`src/core/grid/constants.ts`）。
 - `DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget = 1080`。
 - 格子 key:地面 `"x,y"`，高架 `"x,y,level"`（level 1–3）。
@@ -134,7 +187,9 @@ v2 的 Task 5 在 `roadDistanceToTargets` 裡直接 `buildRoadCellGraph(roadLook
 | `src/core/workplace/WorkplaceDistanceTypes.ts`（改） | 請求加 `graphBuffer` |
 | `src/core/workplace/WorkplaceDistanceClient.ts`（改） | `compute()` 加 `graphBuffer` |
 | `src/core/workplace/WorkplaceDistanceCache.ts`（改） | `requestUpdate()` 加 `graphBuffer`；空圖回 false |
-| `src/core/simulation/SimulationLoop.ts`（改） | 刪 `hasAnyElevatedRoad()` 閘門；每個道路世代建一次圖，正向給同步、轉置給 worker |
+| `src/core/simulation/SimulationLoop.ts`（改） | 刪 `hasAnyElevatedRoad()` 閘門；每個道路世代建一次圖，正向給同步、轉置給 worker；新增 `getRoadLookup()` |
+| `src/core/workplace/__tests__/ElevatedAwareReachability.test.ts`（**重寫**） | BUG-109 的驗收測試。從「閘門讓 fallback 獲勝」改成「快取本身是樓層感知的」 |
+| `src/core/simulation/__tests__/ElevatedRoadInvalidatesGraph.test.ts`（新） | 釘住「高架 build/demolish 會 bump 道路世代」—— 圖以它為鍵，那條連動目前只是呼叫紀律 |
 
 ---
 
@@ -204,6 +259,45 @@ function buildingCells(grid: { width: number; height: number; getCell(x: number,
   }
   return out;
 }
+```
+
+---
+
+## Task 0: 先把 spec 與 plan 對齊
+
+**Files:**
+- Modify: `docs/superpowers/specs/2026-08-10-workplace-distance-graph-design.md`
+
+計畫改了四版，spec 沒有跟上。**開工前先修，不要留著兩個版本的真相** ——
+實作者讀到哪一份都不該被誤導。
+
+- [ ] **Step 1: 逐條修正**
+
+| # | spec 現況 | 應改為 |
+|---|---|---|
+| 1 | 每次 request 現建圖 | 按道路 generation 建一次，由 `SimulationLoop` 持有 |
+| 2 | legacy 是暫時的、最終刪除 | 永久保留 `roadDistanceToTargetsOnGrid`（`ReadableGrid` 只有 `getCell`） |
+| 3 | flood 回傳 `FloodResult { cost: Int32Array }` | 直接回傳 `Int32Array` |
+| 4 | `RoadCellGraph` 介面缺 `nodeLevel` | 補上（wire layout 與 `seedNodesFor` 都需要） |
+| 5 | 附掛函式叫 `attachBuildingCells` | 統一為 `attachAtSettledNode` |
+| 6 | 「4 個直接 `roadDistanceToTargets` 呼叫點」 | `SimulationLoop` 實際是 3 個 |
+| 7 | 承諾獨立的 ramp-axis 測試 | 說明改由「全域鄰接比對 + fixture 健全性檢查」涵蓋，並在 Task 1 補 CSR 去重斷言 |
+| 8 | 資料流圖仍寫 request 時建圖 | 同 #1 |
+| 9 | §2 非目標仍隱含成本模型不變 | 已加整數化修訂註記（第 3 版已做，複查即可） |
+
+- [ ] **Step 2: 檢查沒有殘留**
+
+```bash
+grep -n "Float32\|Float64\|FloodResult\|attachBuildingCells\|每次 request" \
+  docs/superpowers/specs/2026-08-10-workplace-distance-graph-design.md
+```
+Expected: 只剩下解釋「為什麼不用浮點」的敘述性文字。
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add docs/superpowers/specs/2026-08-10-workplace-distance-graph-design.md
+git commit -m "docs(spec): 與計畫第 4 版對齊 —— 圖的快取策略、legacy 去留、命名"
 ```
 
 ---
@@ -327,7 +421,7 @@ describe('buildRoadCellGraph', () => {
       .toBeGreaterThanOrEqual(3);
   });
 
-  it('should keep CSR structurally consistent', () => {
+  it('should keep CSR structurally consistent, with no duplicate edges', () => {
     const { lookup } = testCity();
     const g = buildRoadCellGraph(lookup);
     expect(g.indexOf.size).toBe(g.nodeKeys.length);
@@ -337,6 +431,16 @@ describe('buildRoadCellGraph', () => {
     expect(g.offsets.length).toBe(g.nodeKeys.length + 1);
     expect(g.offsets[g.nodeKeys.length]).toBe(g.targets.length);
     expect(g.weights.length).toBe(g.targets.length);
+
+    // 去重：上面「edges the lookup permits」用 Set 比對，重複的邊會被它藏起來。
+    // 重複邊不影響最短路徑結果，但會讓 flood 白做工，而且是建圖邏輯出錯的訊號。
+    for (let i = 0; i < g.nodeKeys.length; i++) {
+      const seen = new Set<number>();
+      for (let k = g.offsets[i]!; k < g.offsets[i + 1]!; k++) {
+        expect(seen.has(g.targets[k]!), `${g.nodeKeys[i]} 有重複的出邊`).toBe(false);
+        seen.add(g.targets[k]!);
+      }
+    }
   });
 });
 ```
@@ -443,7 +547,11 @@ export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph {
 Run: `npx vitest run src/core/road/__tests__/RoadCellGraph.test.ts`
 Expected: PASS（7 條）
 
-- [ ] **Step 5: 回退驗證（三次）**
+- [ ] **Step 5: 回退驗證（四次）**
+
+**(d)** 在 `targetList.push(j)` / `weightList.push(w)` 之前不做任何去重，
+把整個 `for (const nk of ...)` 迴圈跑兩次（模擬重複加邊）。
+Expected:「should keep CSR structurally consistent, with no duplicate edges」轉紅。改回。
 
 **(a)** 把 `roadTileCost(info.roadType)` 改成
 `roadTileCost(lookup.getCellByKey(key)!.roadType)`（改算來源那格）。
@@ -518,6 +626,72 @@ function bellmanFord(g: RoadCellGraph, seeds: readonly number[], maxBudget: numb
 }
 
 const BIG = 1_000_000;
+
+/**
+ * 手工 CSR 圖，**入邊權重不同**。
+ *
+ * 為什麼需要它：路網圖的成本加在**目的地**那一格，所以進入節點 j 的每一條邊
+ * 權重都相同，於是 `dist[j] = w_j + min(已 settle 的前驅)`。Dijkstra 依成本
+ * 遞增 settle，第一個 settle 的前驅就是最小的那個 —— **第一次 relax 就已經
+ * 最佳**。結果是「重新 relax 成更便宜的值」與「過期堆項」這兩條分支在路網圖
+ * 上永遠走不到，用 testCity 去驗它們是空轉的（第三輪審核實算 26 個種子，
+ * 零差異）。
+ *
+ * 這張圖讓那兩條分支真的被執行：
+ *
+ *   S ──1──▶ A ──100──▶ T
+ *   └──10──▶ B ───1───▶ T
+ *
+ * settle S(0) → relax A=1, B=10；settle A(1) → relax T=101；
+ * settle B(10) → **T 改寫成 11**，而堆裡那個 101 變成過期項。
+ *
+ * `floodRoadCellGraph` 是通用的加權圖 Dijkstra，契約本來就該對任何圖成立 ——
+ * 而且哪天成本模型加上轉彎懲罰，入邊權重就不再一致了。
+ */
+function skewedGraph(): RoadCellGraph {
+  const nodeKeys = ['S', 'A', 'B', 'T'];
+  const indexOf = new Map(nodeKeys.map((k, i) => [k, i]));
+  return {
+    nodeKeys, indexOf,
+    //        S:0..2   A:2..3   B:3..4   T:4..4
+    offsets: Uint32Array.from([0, 2, 3, 4, 4]),
+    targets: Uint32Array.from([1, 2, 3, 3]),   // S→A, S→B, A→T, B→T
+    weights: Uint16Array.from([1, 10, 100, 1]),
+    nodeX: Uint16Array.from([0, 1, 2, 3]),
+    nodeY: new Uint16Array(4),
+    nodeLevel: new Uint8Array(4),
+  };
+}
+
+describe('floodRoadCellGraph on a graph with uneven incoming weights', () => {
+  it('should improve a node when a cheaper route settles later', () => {
+    const g = skewedGraph();
+    const cost = floodRoadCellGraph(g, [0], BIG);
+    expect([...cost], 'S/A/B/T 的最短成本').toEqual([0, 1, 10, 11]);
+    expect([...cost]).toEqual([...bellmanFord(g, [0], BIG)]);
+  });
+
+  it('should settle each node exactly once despite the stale heap entry', () => {
+    // T 先以 101 入堆、再以 11 入堆。少了過期過濾，T 會被 settle 兩次。
+    const g = skewedGraph();
+    const settled: number[] = [];
+    floodRoadCellGraph(g, [0], BIG, (n) => { settled.push(n); return false; });
+    expect(new Set(settled).size, '有節點被 settle 了兩次').toBe(settled.length);
+    expect(settled.length).toBe(4);
+  });
+
+  it('fixture sanity: this graph really has uneven incoming weights', () => {
+    // 若入邊權重一致，上面兩條就退化成空轉 —— 那正是 testCity 的情況。
+    const g = skewedGraph();
+    const intoT = new Set<number>();
+    for (let i = 0; i < g.nodeKeys.length; i++) {
+      for (let k = g.offsets[i]!; k < g.offsets[i + 1]!; k++) {
+        if (g.targets[k] === 3) intoT.add(g.weights[k]!);
+      }
+    }
+    expect(intoT.size, 'T 的入邊權重全部相同，測不出重新 relax').toBeGreaterThan(1);
+  });
+});
 
 describe('floodRoadCellGraph', () => {
   it('should match an independent shortest-path implementation, node for node', () => {
@@ -699,24 +873,33 @@ export function floodRoadCellGraph(
 - [ ] **Step 4: 跑測試確認轉綠**
 
 Run: `npx vitest run src/core/road/__tests__/RoadCellGraphFlood.test.ts`
-Expected: PASS（7 條）
+Expected: PASS（10 條）
 
 - [ ] **Step 5: 回退驗證（四次）**
 
 **(a)** 把 `if (prev < 0 || nc < prev)` 改成 `if (prev < 0)`（不再改寫成更便宜的值）。
-Expected:「should match an independent shortest-path implementation」轉紅。改回。
+Expected:「should improve a node when a cheaper route settles later」轉紅
+（T 會停在 101 而不是 11）。改回。
+
+> **在 `testCity` 上這一條不會轉紅** —— 成本加在目的地，入邊權重一致，
+> 第一次 relax 就已經最佳。這就是合成圖存在的理由。
 
 **(b)** 把 `if (onSettle && onSettle(...)) return cost;` 從 pop 之後搬到 relax
 迴圈裡（`cost[next] = nc;` 之後呼叫 `onSettle(next, nc)`）。
-Expected:「should settle in non-decreasing cost order」與
-「should settle each node exactly once」都轉紅。改回。
+Expected:「should settle in non-decreasing cost order」轉紅（實算有 6 次下降）。改回。
+
+> 「should settle each node exactly once」（testCity 那條）**不會**因為這個
+> 變異轉紅 —— 同上，路網圖不產生重複 settle。合成圖那條會。
 
 **(c)** 把 `if (nc > maxBudget) continue;` 拿掉。
 Expected:「should match the reference at every budget」與
 「should return integers only, with -1 for unreached nodes」都轉紅。改回。
 
 **(d)** 把 `if (cost[cur.node]! < cur.cost) continue;` 拿掉（不濾過期堆項）。
-Expected:「should settle each node exactly once」轉紅。改回。
+Expected:「should settle each node exactly once despite the stale heap entry」
+（合成圖那條）轉紅。改回。
+
+> 同樣地，`testCity` 上的版本不會轉紅。
 
 - [ ] **Step 6: Commit**
 
@@ -840,15 +1023,36 @@ describe('attachAtSettledNode', () => {
       .toBeGreaterThan(0);
   });
 
-  it('should attach a road cell to itself when accepted', () => {
+  it('should cover road cells too, not just buildings', () => {
     // 舊實作有一段「道路格本身也可能是目標」。dx/dy 包含 (0,0) 就涵蓋了，
-    // 但那是實作細節 —— 這一條把它釘成契約。
+    // 但那是實作細節 —— 這一條把「路格也會被收」釘成契約。
+    //
+    // **只斷言有被收，不斷言收到自己的成本。** 附掛取的是 reach 內最便宜的
+    // 路格，而一個路格的鄰居可能更便宜（fixture 裡 26 個路格有 19 個如此，
+    // 例如 1,1 構得到成本 0 的種子 0,1）。實際成本由上面那條全域比對負責。
     const { g, out, cost } = floodAndAttach('0,1', () => true);
+    let checked = 0;
     for (let i = 0; i < g.nodeKeys.length; i++) {
       if (cost[i]! < 0 || levelOfKey(g.nodeKeys[i]!) !== 0) continue;
       const key = `${g.nodeX[i]},${g.nodeY[i]}`;
-      expect(out.get(key), `道路格 ${key} 自己沒有被收`).toBe(cost[i]!);
+      expect(out.has(key), `道路格 ${key} 沒有被收`).toBe(true);
+      checked++;
     }
+    expect(checked, '一個地面路格都沒檢查到').toBeGreaterThan(5);
+  });
+
+  it('fixture sanity: some road cell is cheaper via a neighbour than on its own', () => {
+    // 這一條把上面那段註解釘成可驗證的事實。若為 0，代表「只斷言有被收」是
+    // 多餘的謹慎；若 > 0，代表當初那條「收到自己的成本」的斷言確實是錯的。
+    const { g, out, cost } = floodAndAttach('0,1', () => true);
+    let cheaperViaNeighbour = 0;
+    for (let i = 0; i < g.nodeKeys.length; i++) {
+      if (cost[i]! < 0 || levelOfKey(g.nodeKeys[i]!) !== 0) continue;
+      const key = `${g.nodeX[i]},${g.nodeY[i]}`;
+      if (out.get(key)! < cost[i]!) cheaperViaNeighbour++;
+    }
+    expect(cheaperViaNeighbour, '沒有任何路格靠鄰居拿到更便宜的成本')
+      .toBeGreaterThan(0);
   });
 
   it('should ignore cells the accept predicate rejects', () => {
@@ -856,11 +1060,6 @@ describe('attachAtSettledNode', () => {
   });
 });
 ```
-
-> **注意**「should attach a road cell to itself」與「cheapest reachable」在道路格
-> 上的期望值可能衝突：一個路格自己的成本必然 ≤ 它 reach 內任何路格的成本嗎？
-> **是的** —— 它自己就在自己的 reach 內（距離 0），所以最小值必然 ≤ 自己的成本；
-> 而 flood 給它的就是它自己的最短成本，不可能有更便宜的路格。兩條一致。
 
 - [ ] **Step 2: 跑測試確認轉紅**
 
@@ -931,7 +1130,7 @@ export function attachAtSettledNode(
 - [ ] **Step 4: 跑測試確認轉綠**
 
 Run: `npx vitest run src/core/road/__tests__/RoadCellGraphAttach.test.ts`
-Expected: PASS（6 條）
+Expected: PASS（7 條）
 
 - [ ] **Step 5: 回退驗證（兩次）**
 
@@ -1832,15 +2031,59 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function') {
 import { reverseFloodFromWorkplace, computeAllDistances } from '../../../workers/workplace-distance.worker';
 ```
 
-改成 `reverseFloodFromGraph`。每個
-`reverseFloodFromWorkplace(view, w, h, wp, budget)` 的呼叫改成：先用該測試的
-grid 建 `UnifiedRoadLookup.fromGrid(...)`（那些 fixture 是完整的 Grid，有
-`forEachCell`）、建圖、轉置、序列化，再呼叫
-`reverseFloodFromGraph(buffer, wp, budget, isBuilding)`。
+**這個 fixture 沒有 Grid。** 它只有 `Map<string, RoadType>` 與手工組出來的
+`ArrayBuffer`（`makeGridBuffer`），所以**不能**直接餵給
+`UnifiedRoadLookup.fromGrid()` —— 那需要 `width` / `height` / `getCell` /
+`forEachCell`。（第 3 版寫成「fixture 是完整的 Grid」，那是錯的。）
+
+先在該檔加一個 adapter，把既有的 `roads` map 轉成 `fromGrid()` 收得下的形狀：
+
+```ts
+import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
+import { buildRoadCellGraph, transposeRoadCellGraph } from '../../road/RoadCellGraph';
+import { serializeRoadCellGraph } from '../../road/RoadCellGraphBuffer';
+
+/**
+ * 把既有測試的 `roads` map 包成 `UnifiedRoadLookup` 收得下的 grid。
+ *
+ * 這些 fixture 從來沒有真的 `Grid` —— 只有一個 map 與手捏的 buffer。
+ * `fromGrid()` 需要 width/height/getCell/forEachCell，所以在這裡補齊。
+ */
+function gridFromRoads(width: number, height: number, roads: Map<string, RoadType>) {
+  return {
+    width, height,
+    getCell(x: number, y: number) {
+      if (x < 0 || y < 0 || x >= width || y >= height) return null;
+      return { roadType: roads.get(`${x},${y}`) ?? RoadType.NONE, roadFlags: 0 };
+    },
+    forEachCell(fn: (c: { roadType: number }, x: number, y: number) => void) {
+      for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) fn(this.getCell(x, y)!, x, y);
+    },
+  };
+}
+
+/** 轉置並序列化 —— worker 要的就是這個。 */
+function transposedBuffer(width: number, height: number, roads: Map<string, RoadType>): ArrayBuffer {
+  const lookup = UnifiedRoadLookup.fromGrid(gridFromRoads(width, height, roads));
+  return serializeRoadCellGraph(transposeRoadCellGraph(buildRoadCellGraph(lookup)));
+}
+```
+
+然後每個
+`reverseFloodFromWorkplace(view, w, h, wp, budget)` 改成：
+
+```ts
+const isBuilding = (x: number, y: number): boolean => {
+  if (x < 0 || y < 0 || x >= w || y >= h) return false;
+  return view.getUint8((y * w + x) * BYTES_PER_CELL + 5) === 0;
+};
+reverseFloodFromGraph(transposedBuffer(w, h, roads), wp, budget, isBuilding);
+```
+
 `computeAllDistances` 的測試改成逐個工作地點呼叫 `reverseFloodFromGraph`。
 
-**預算數字要一起換算** —— 這些測試若寫死了舊尺度的預算（例如 60），
-成本整數化後同樣的涵蓋範圍是 ×18。逐一檢查，別讓「涵蓋不到」被誤讀成迴歸。
+**預算數字要一起換算。** 這個檔案把預算寫死成 `60`（舊尺度），成本整數化後
+同樣的涵蓋範圍是 **1080**。逐一檢查每個 `, 60)`，別讓「涵蓋不到」被誤讀成迴歸。
 
 **注意:這些測試原本只用單一路型,所以它們測不出 BUG-237。** 遷移時保持原樣
 即可 —— 硬約束由 `WorkerGraphParity.test.ts` 守。
@@ -1876,9 +2119,10 @@ git commit -m "refactor(worker): workplace 距離改走轉置圖，與同步查�
 **Files:**
 - Modify: `src/core/workplace/WorkplaceDistanceClient.ts`
 - Modify: `src/core/workplace/WorkplaceDistanceCache.ts`
-- Modify: `src/core/simulation/SimulationLoop.ts`
+- Modify: `src/core/simulation/SimulationLoop.ts`（刪閘門、圖快取、新增 `getRoadLookup()`）
 - Rewrite: `src/core/workplace/__tests__/ElevatedAwareReachability.test.ts`
 - Modify: `src/core/workplace/__tests__/WorkplaceDistanceCache.test.ts`
+- Create: `src/core/simulation/__tests__/ElevatedRoadInvalidatesGraph.test.ts`
 - Modify: `BUGS.md`、`TODO.md`
 
 **Interfaces:**
@@ -1887,19 +2131,23 @@ git commit -m "refactor(worker): workplace 距離改走轉置圖，與同步查�
 
 ### 為什麼 `ElevatedAwareReachability.test.ts` 必須重寫
 
-那個檔案的四個案例裡有三個是**閘門的**測試，不是行為的測試：
+那個檔案有**五個**案例（第 3 版寫成四個，漏了最後一個），其中四個測的是
+**閘門**，不是行為：
 
-| 案例 | 現在靠什麼通過 | 閘門刪掉後 |
-|---|---|---|
-| employ someone whose only route is a viaduct | 灌一份**謊報的** ground-only 快取（`distances: {}`），閘門讓 fallback 獲勝 | 謊報的快取會被採信 → **轉紅** |
-| leave the ready cache untouched | 閘門「拒用但不清除」 | 閘門不存在，語意消失 |
-| still use the cache in a city with no elevated road | 沒有高架 → 閘門放行 → 採信謊報快取 → 沒人就業 | 仍然有效（快取一律採信） |
-| not disable the cache for an elevated RAIL line | 閘門的過度攔截 | 閘門不存在，語意消失 |
+| 案例 | 現在靠什麼通過 | 閘門刪掉後 | 處置 |
+|---|---|---|---|
+| employ someone whose only route is a viaduct | 灌一份**謊報的** ground-only 快取（`distances: {}`），閘門讓 fallback 獲勝 | 謊報的快取會被採信 → **轉紅** | 重寫成用真管線暖機 |
+| leave the ready cache untouched | 閘門「拒用但不清除」 | 閘門不存在，語意消失 | 刪除 |
+| still use the cache in a city with no elevated road | 沒有高架 → 閘門放行 → 採信謊報快取 → 沒人就業 | 仍然有效（快取一律採信） | **保留**，它是負向控制 |
+| not disable the cache for an elevated RAIL line | 閘門的過度攔截（`hasAnySegment` 是裸的 `Map.size`） | 閘門不存在，語意消失 | 刪除 |
+| **disable the cache for an elevated road** | 閘門的正向行為 | 閘門不存在，語意反轉 | 刪除，由新的驗收案例取代 |
 
 重寫的方向：不再灌謊報的快取，而是**用真正的管線暖機** —— 建圖、轉置、
 序列化，在 FakeWorker 裡同步跑 `reverseFloodFromGraph` 回填。然後斷言
 高架另一端的工作真的有人做。**那才是 BUG-109 的驗收條件：快取本身變成
 樓層感知的。**
+
+刪掉的三條要在檔頭註解裡寫明理由，別讓後人以為是漏掉的。
 
 - [ ] **Step 1: 先遷移 `WorkplaceDistanceCache.test.ts`（否則後面每一步都紅）**
 
@@ -1909,15 +2157,31 @@ git commit -m "refactor(worker): workplace 距離改走轉置圖，與同步查�
 const result = cache.requestUpdate(10, 10, new ArrayBuffer(10), [], 60);
 ```
 
-改成（用真的序列化 buffer，不要手捏長度）：
+**這個檔案目前沒有 grid 也沒有 lookup**，所以要先建。在檔頭加：
 
 ```ts
+import { Grid } from '../../grid/Grid';
+import { RoadType } from '../../road/types';
+import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { buildRoadCellGraph } from '../../road/RoadCellGraph';
 import { serializeRoadCellGraph } from '../../road/RoadCellGraphBuffer';
-// …
-const graphBuffer = serializeRoadCellGraph(buildRoadCellGraph(lookup));
-const result = cache.requestUpdate(10, 10, new ArrayBuffer(10), graphBuffer, [], 1080);
+
+/** 一條直路就夠 —— 這個檔案測的是 cache 的狀態機，不是路網。 */
+function roadGraphBuffer(): ArrayBuffer {
+  const grid = new Grid(10, 10);
+  for (let x = 0; x < 10; x++) grid.setCell(x, 5, { roadType: RoadType.TWO_LANE });
+  return serializeRoadCellGraph(buildRoadCellGraph(UnifiedRoadLookup.fromGrid(grid)));
+}
 ```
+
+然後把呼叫改成：
+
+```ts
+const result = cache.requestUpdate(10, 10, new ArrayBuffer(10), roadGraphBuffer(), [], 1080);
+```
+
+**「沒有 client」那類測試也要傳有效的非空圖** —— 否則它可能只是因為空圖
+提前 return false 而綠燈，根本沒驗到 no-client 的路徑（審核發現）。
 
 並新增一條（空圖要回 false）：
 
@@ -1992,18 +2256,30 @@ const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnyE
   private getCellGraph(): RoadCellGraph | null {
     const lookup = this._roadLookup;
     if (!lookup) return null;
-    const gen = this.state.commuteCache.roadGeneration;
+    const gen = this.commuteCache.roadGeneration;
     if (this._cellGraph === null || this._cellGraphGeneration !== gen) {
       this._cellGraph = buildRoadCellGraph(lookup);
       this._cellGraphGeneration = gen;
     }
     return this._cellGraph;
   }
+
+  /**
+   * 對稱於 `setRoadLookup`。BUG-109 的驗收測試需要拿同一份 lookup 自己建圖
+   * 來比對快取的答案 —— 沒有 getter 的話它只能另外組一份，兩份不一致時
+   * 測試會說謊。
+   */
+  getRoadLookup(): UnifiedRoadLookup | null {
+    return this._roadLookup;
+  }
 ```
 
-> 實作時確認 `roadGeneration` 的實際來源與命名（`CommuteCache` 有這個欄位，
-> `JobRelocation.ts:46` 用到它）。若 `SimulationLoop` 取用路徑不同，
-> **以實際存在的欄位為準，不要照抄這裡的寫法。**
+> **`this.commuteCache.roadGeneration`，不是 `this.state.commuteCache`** ——
+> `commuteCache` 是 `SimulationLoop` 自己的欄位（`SimulationLoop.ts:1451`
+> 等處這樣用）。第 3 版寫錯了。
+>
+> `getRoadLookup()` 目前**不存在**，只有 `setRoadLookup` 與私有 `_roadLookup`
+> （`SimulationLoop.ts:88, 191`）。這一步要新增它。
 
 三處 `roadDistanceToTargets` 的呼叫（`SimulationLoop.ts` 約 1285、1369、1623 行）
 都多傳一個 `this.getCellGraph() ?? undefined`。
@@ -2030,7 +2306,28 @@ const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnyE
 
 1. **刪掉** `cache.populateSync([{ workplacePos: WORK, distances: {} }])` 那一行 ——
    不再灌謊報的快取。
-2. `FakeWorker` 改成**真的算**：收到 `COMPUTE` 就同步跑 `reverseFloodFromGraph`
+2. **`bridgedCity` 混入不同路型。** 目前它全部是 `TWO_LANE`（15 節點 28 邊、
+   權重全 36），邊集**完全對稱**，於是正向圖與轉置圖一模一樣 —— Step 7(b) 的
+   回退驗證會空轉（審核實算確認）。把高架那一段改成 `RoadType.HIGHWAY`：
+   既讓路型混合，也更符合「高架快速道路」的語意。
+
+   ```ts
+   // 高架段改用 HIGHWAY（每格 9），地面維持 TWO_LANE（每格 36）。
+   // 路型必須混合，否則正向圖與轉置圖相同，BUG-237 那一類的錯誤就測不出來。
+   ```
+
+   改完後在同一檔加一條 fixture 健全性檢查，把這件事釘住：
+
+   ```ts
+   it('fixture sanity: bridgedCity really mixes road tiers', () => {
+     const { loop } = bridgedCity();
+     const g = buildRoadCellGraph(loop.getRoadLookup()!);
+     expect(new Set(g.weights).size, 'bridgedCity 只有一種路型 —— 正反向圖無法區分')
+       .toBeGreaterThan(1);
+   });
+   ```
+
+3. `FakeWorker` 改成**真的算**：收到 `COMPUTE` 就同步跑 `reverseFloodFromGraph`
    並回呼 `onmessage`：
 
 ```ts
@@ -2055,61 +2352,148 @@ class ComputingFakeWorker {
 }
 ```
 
-3. 案例改成：
+4. **測試必須是 `async`，而且要等一個 microtask。**
+
+   `ComputingFakeWorker` 在 `postMessage()` 裡同步回呼，回覆不會遺失
+   （`WorkplaceDistanceClient` 先登記 pending 再 `postMessage`），但
+   `.then(applyResult)` 仍排在 **microtask**。審核用探針實測：
+
+   ```
+   postMessage 返回後立即：computing
+   下一個 microtask     ：ready
+   ```
+
+   所以「連續 24 次 `tick()` 然後斷言 `isReady`」**在正確程式碼上會失敗**，
+   而且那 24 次 tick 全發生在 READY 之前 —— 就業結果其實來自同步 fallback，
+   什麼也沒證明。第 3 版就是這樣寫的。
+
+5. 案例改成：
 
 ```ts
-it('should employ someone whose only route to work is a viaduct, from the cache', () => {
+/** 讓已排入的 microtask 跑完。 */
+const flush = () => new Promise<void>(r => setTimeout(r, 0));
+
+it('should employ someone whose only route to work is a viaduct, from the cache', async () => {
   // BUG-109 的驗收條件。以前這裡靠「有高架就別用快取」的閘門；現在快取
-  // 本身就是樓層感知的，所以要斷言的是**快取真的變成 READY 而且答案正確**。
+  // 本身就是樓層感知的，所以要斷言的是**快取真的 READY、真的被讀、答案正確**。
   const { state, loop, cache } = bridgedCity();
 
-  for (let i = 0; i < 24; i++) loop.tick();
-
+  loop.tick();                 // 觸發 requestUpdate
+  await flush();               // 讓 worker 回覆的 .then 跑完
   expect(cache.isReady, '快取沒有變成 READY —— 高架城市仍然沒在用快取').toBe(true);
+
+  // READY 之後才開始觀察就業，否則看到的是同步 fallback 的結果。
+  const spy = vi.spyOn(cache, 'getDistancesFromHome');
+  for (let i = 0; i < 24; i++) { loop.tick(); await flush(); }
+
+  expect(spy, '快取 READY 了卻沒有被讀 —— 這條測的是 fallback').toHaveBeenCalled();
   expect(state.citizens.getPopulation()).toBeGreaterThan(0);
   expect(anyoneEmployedAtShop(state), '高架另一端的工作沒有人做').toBe(true);
 });
 
-it('should give the cache the same answer as the synchronous query', () => {
+it('should give the cache the same answer as the synchronous query', async () => {
   // 兩條路一致才是治本。挑高架兩端的一對家與工作直接比。
   const { loop, cache, state } = bridgedCity();
-  for (let i = 0; i < 24; i++) loop.tick();
+  loop.tick();
+  await flush();
+  expect(cache.isReady).toBe(true);
 
-  const graph = buildRoadCellGraph(loop.getRoadLookup()!);   // 依實際 accessor 調整
+  const lookup = loop.getRoadLookup()!;          // Step 4 新增的 getter
+  const [hx, hy] = HOME.split(',').map(Number);
   const sync = roadDistanceToTargets(
-    state.grid, { x: 2, y: 2 }, new Set([WORK]),
-    DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget, loop.getRoadLookup()!, graph,
+    state.grid, { x: hx!, y: hy! }, new Set([WORK]),
+    DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget, lookup, buildRoadCellGraph(lookup),
   );
+  expect(sync.get(WORK), '同步查詢自己就到不了，這條測不出東西').toBeDefined();
   expect(cache.getDistance(HOME, WORK), '快取與同步查詢不一致')
     .toBe(sync.get(WORK));
 });
 ```
 
-> `cache.getDistance` / `loop.getRoadLookup` 的實際名稱**以現有程式碼為準**；
-> 若沒有 accessor，改用測試已持有的 `em` / `state.grid` 自己建 lookup。
+> `cache.getDistance`、`cache.getDistancesFromHome`、`cache.isReady`、
+> `cache.populateSync` 都**確認存在**（`WorkplaceDistanceCache.ts:96/110/119/84`）。
+> `loop.getRoadLookup` 由 Step 4 新增。
 
-4. **刪掉**「leave the ready cache untouched」與「not disable the cache for an
-   elevated RAIL line」—— 這兩條測的是閘門，閘門不存在了。在檔頭註解裡寫明
-   刪除的理由，別讓後人以為是漏掉的。
-5. **保留**「still use the cache in a city with no elevated road」—— 它現在的
-   意思是「快取一律被採信」，仍然是有效的負向控制。
+6. **刪掉三條閘門測試**：「leave the ready cache untouched」、「not disable the
+   cache for an elevated RAIL line」、「disable the cache for an elevated road」。
+   閘門不存在了，前兩條語意消失，第三條語意反轉。在檔頭註解裡寫明刪除的
+   理由，別讓後人以為是漏掉的。
+7. **保留**「still use the cache in a city with no elevated road」—— 它現在的
+   意思是「快取一律被採信」，仍然是有效的負向控制。**但它也要改成 async +
+   flush**，理由同上。
 
-- [ ] **Step 6: 跑完整測試套件**
+- [ ] **Step 6: 釘住「高架變更會讓圖失效」**
+
+圖以 `commuteCache.roadGeneration` 為鍵快取，所以**高架道路變更必須讓那個
+世代遞增**，否則圖會陳舊 —— 玩家蓋了橋，市民卻還在用沒有橋的圖。
+
+審核追過現行路徑，目前是對的：
+
+```
+Game 蓋/拆高架道路 → markLaneGraphDirty(...) → commuteCache.bumpGeneration()
+                                            → workplaceDistanceCache.invalidate()
+```
+
+**但那是呼叫紀律，不是不變量** —— `ElevationManager` 自身沒有 generation 或
+事件，直接呼叫 `set` / `delete` / `fromJSON` 不會連動。加一條整合回歸測試把
+現行路徑釘住：
+
+```ts
+// src/core/simulation/__tests__/ElevatedRoadInvalidatesGraph.test.ts
+it('should bump the road generation when an elevated road is built or demolished', () => {
+  // 圖以 roadGeneration 為鍵。高架若不 bump，玩家蓋了橋而市民還在用舊圖。
+  // ElevationManager 沒有事件機制，這條連動完全靠 Game 的呼叫順序 ——
+  // 所以要測。
+  const { game, loop } = gameWithRoads();          // 依實際 helper 調整
+  const before = loop.commuteCache.roadGeneration;
+
+  game.buildElevatedRoad(/* … */);
+  expect(loop.commuteCache.roadGeneration, '蓋高架沒有讓道路世代遞增')
+    .toBeGreaterThan(before);
+
+  const afterBuild = loop.commuteCache.roadGeneration;
+  game.demolishElevatedRoad(/* … */);
+  expect(loop.commuteCache.roadGeneration, '拆高架沒有讓道路世代遞增')
+    .toBeGreaterThan(afterBuild);
+});
+```
+
+> `game.buildElevatedRoad` / `demolishElevatedRoad` 的實際名稱與簽章要先
+> `grep` 確認（`ElevatedRoadBuilder.ts`、`Game.ts`）。`commuteCache` 若不是
+> 公開欄位，改用既有的 accessor 或把斷言改成觀察
+> `wpDistCache.getStatus()` 從 READY 變回 EMPTY。
+
+- [ ] **Step 7: 跑完整測試套件**
 
 Run: `npx tsc --noEmit && npx vitest run`
 Expected: 全綠。
 
-- [ ] **Step 7: 回退驗證（兩次）**
+- [ ] **Step 8: 回退驗證（三次）**
 
 **(a)** 把 `SimulationLoop` 裡剛刪掉的閘門加回去（`canUseWpCache`）。
 Expected:「should employ someone whose only route to work is a viaduct,
-from the cache」轉紅（`cache.isReady` 仍為 true，但快取不被使用；若這條
-沒轉紅，代表斷言只看了 `isReady` —— 要補上「快取的答案被真的用到」的斷言）。改回。
+from the cache」轉紅 —— 具體是 `expect(spy).toHaveBeenCalled()` 那一行，
+因為快取雖然 READY 卻不被讀。
+
+> 第 3 版預期的是「`cache.isReady` 仍為 true 但轉紅」，那個推理是錯的：
+> 只看 `isReady` 的話閘門加回去它還是 true，測試不會紅。**spy 才是會紅的
+> 那一項。** 改回。
 
 **(b)** 把 `requestUpdate` 傳的 buffer 從轉置圖改成正向圖。
-Expected:「should give the cache the same answer as the synchronous query」轉紅。改回。
+Expected:「should give the cache the same answer as the synchronous query」轉紅。
 
-- [ ] **Step 8: 實機驗收**
+> 這一條**只有在 `bridgedCity` 混了路型之後才會紅**。全 `TWO_LANE` 時正向圖
+> 與轉置圖完全相同（審核實算：15 節點 28 邊、權重全 36、邊集對稱）。
+> Step 5 的 fixture 健全性檢查會先告訴你路型夠不夠混。改回。
+
+**(c)** 把 `getCellGraph()` 的世代比對拿掉（`if (this._cellGraph === null)` 就好，
+不再檢查 `_cellGraphGeneration !== gen`）。
+Expected:「should bump the road generation when an elevated road is built or
+demolished」不會紅（它測的是 generation 本身），但**高架蓋好後快取的答案會
+停留在舊圖** —— 若 Step 6 的測試無法涵蓋這點，改成在該檔加一條「蓋橋之後
+快取的距離要跟著改變」的案例。改回。
+
+- [ ] **Step 9: 實機驗收**
 
 ```bash
 npx vite --host 127.0.0.1 --port 5180 --strictPort
@@ -2141,7 +2525,7 @@ max
 Expected: 最慢的 tick 明顯低於切片化之後的 49 ms（查表是 O(1)）。
 **把實測數字寫進 BUGS.md，不要只寫「變快了」。**
 
-- [ ] **Step 9: 更新文件並 Commit**
+- [ ] **Step 10: 更新文件並 Commit**
 
 `BUGS.md`：把 BUG-109 標記為已治本，附實機數字。
 `TODO.md`：勾掉「BUG-109 治本」。
@@ -2172,22 +2556,20 @@ git commit -m "perf(sim): workplace 距離改走路網圖，高架不再停用�
 | §7 座標超過 Uint16 | 1 Step 3 的 `RangeError` |
 | §7 空圖回 false | 8 Step 1 與 Step 3 |
 | §9 測試策略 | 1–8 分散覆蓋 |
+| spec 與 plan 的 9 處矛盾 | 0 |
 
-**spec 待同步的一處：** §260 的 wire format 仍寫 `weights Float32[edges]`，
-與 §147 矛盾，且本版改成 `Uint16`。開工前先修 spec，**不要留著兩個版本的
-真相**。
+**回退驗證清單（共 22 次，逐列數過）:**
 
-**回退驗證清單（共 18 次）:**
-
-| Task | 破壞什麼 | 預期轉紅 |
+| # | 破壞什麼 | 預期轉紅 |
 |---|---|---|
 | 1a | 權重改算來源那格 | charge the cost of the destination cell |
 | 1b | 忽略樓層/匝道規則 | edges the lookup permits ＋ ground reaches the viaduct only at ramps |
 | 1c | 權重改 Float32Array | integral weights that fit the Uint16 range |
-| 2a | 不再 relax 成更便宜的值 | match an independent shortest-path implementation |
-| 2b | onSettle 搬到 relax | non-decreasing cost order ＋ settle each node exactly once |
+| 1d | 重複加邊 | CSR structurally consistent, with no duplicate edges |
+| 2a | 不再 relax 成更便宜的值 | **improve a node when a cheaper route settles later（合成圖）** |
+| 2b | onSettle 搬到 relax | settle in non-decreasing cost order |
 | 2c | 拿掉 budget 截斷 | match the reference at every budget ＋ -1 for unreached nodes |
-| 2d | 拿掉 stale 過濾 | settle each node exactly once |
+| 2d | 拿掉 stale 過濾 | **settle each node exactly once despite the stale heap entry（合成圖）** |
 | 3a | seedNodesFor 只看地面 | road nodes within Chebyshev reach ＋ probe picks up an elevated cell |
 | 3b | 拿掉 `out.has(key)` 早退 | cheapest reachable road cost |
 | 4a | 轉置時權重取端點 | edge set with every arrow reversed ＋ same cost as forward flood |
@@ -2199,27 +2581,50 @@ git commit -m "perf(sim): workplace 距離改走路網圖，高架不再停用�
 | 6b | 無 lookup 時回空 Map | fall back to the ground-only path |
 | 7a | 傳正向圖而非轉置 | agree on every home → workplace cost |
 | 7b | worker 的 reach 改成 1 | agree on every home → workplace cost |
-| 8a | 把閘門加回去 | employ someone whose only route is a viaduct |
-| 8b | requestUpdate 傳正向圖 | cache 與同步查詢一致 |
+| 8a | 把閘門加回去 | employ someone… **的 `expect(spy).toHaveBeenCalled()` 那一行** |
+| 8b | requestUpdate 傳正向圖 | cache 與同步查詢一致（**需要 bridgedCity 混路型**） |
+| 8c | getCellGraph 不比對世代 | 蓋橋後快取的距離沒跟著改變 |
 
-（表列 20 列 —— 第 2 版寫「11 次」但實際列了 12 列，這一版逐列數過。）
+**第 3 版有三條是空轉的，這一版換掉了：**
 
-**明講一個不會轉紅的：** Task 6 拿掉早退（`return result.size >= targets.size`
-改成 `return false`）**不會轉紅**。早退只影響效能，正確性由結果相等保證。
-不寫計時測試 —— 那會是脆弱的。
+| 原本 | 為什麼空轉 | 現在 |
+|---|---|---|
+| 2a | 成本加在目的地 → 入邊權重一致 → 第一次 relax 就最佳，重新 relax 的分支在路網圖上走不到 | 加合成 CSR 圖（入邊 100 vs 1） |
+| 2d | 同上，永遠不產生 stale 堆項 | 同上，合成圖會產生 |
+| 8b | `bridgedCity` 全 `TWO_LANE`，邊集對稱，正向圖 ≡ 轉置圖 | 高架段改 `HIGHWAY`，並加 fixture 健全性檢查 |
+
+另外 2b 原本宣稱會讓兩條轉紅，實際只有 settle 順序那條會（審核實算：6 次
+下降，但沒有重複 settle）。表格已改成只承諾會紅的那一項。
+
+**明講兩個不會轉紅的：**
+
+1. Task 6 拿掉早退（`return result.size >= targets.size` → `return false`）。
+   早退只影響效能，正確性由結果相等保證。不寫計時測試 —— 那會是脆弱的。
+2. 上表 2a / 2b / 2d 的變異在 **`testCity` 上不會轉紅**，只有合成圖那幾條會。
+   這是結構性的，不是 fixture 沒調好 —— 見 Task 2 的 `skewedGraph` 註解。
 
 **已知風險與處置:**
 
 1. **Task 3(b) 的回退驗證可能空轉** —— 若 fixture 裡沒有格子被多個成本不同的
    路格競爭，「拿掉 `out.has` 早退」不會改變任何結果。
-   *處置：* 同一個 describe 裡有一條 fixture 健全性測試會先告訴你 contested
-   的格子數；為 0 就先修 fixture。
+   *處置：* 同一個 describe 裡有 fixture 健全性測試會先告訴你 contested 的
+   格子數；為 0 就先修 fixture。
 
-2. **Task 8 的 accessor 名稱是猜的** —— `cache.getDistance`、
-   `loop.getRoadLookup`、`state.commuteCache.roadGeneration` 都需要對照實際
-   程式碼。
-   *處置：* 計畫已在該處標注「以現有程式碼為準」。實作者第一步應該是
-   `grep`，不是照抄。
+2. **Task 8 的三個外部名稱已逐一驗證過，但 Step 6 的還沒。**
+   已驗證：`cache.getDistance` / `getDistancesFromHome` / `isReady` /
+   `populateSync` 存在；`this.commuteCache.roadGeneration` 正確（**不是**
+   `this.state.commuteCache`）；`loop.getRoadLookup` **不存在**，由 Step 4 新增。
+   *未驗證：* Step 6 的 `game.buildElevatedRoad` / `demolishElevatedRoad` 與
+   `gameWithRoads()` helper —— 實作者第一步要 `grep`，不是照抄。
 
-3. **`WorkplaceDistanceWorker.test.ts` 的預算數字** 可能寫死了整數化前的尺度。
-   *處置：* Task 7 Step 4 明確要求逐一換算，別把「涵蓋不到」誤讀成迴歸。
+3. **`bridgedCity` 改路型可能動到其他案例的結果。** 它是就業行為的 fixture，
+   把高架段從 `TWO_LANE` 換成 `HIGHWAY` 會讓通勤成本變便宜。
+   *處置：* 改完先跑該檔全部案例；若「no elevated road」那條負向控制受影響，
+   那是它本來就與高架無關，應該不受影響 —— 若受影響，代表 fixture 之間有
+   意料外的耦合，要先查清楚再繼續。
+
+4. **Task 8 的 `flush()` 用 `setTimeout(0)` 而不是 `await Promise.resolve()`。**
+   前者跨 macrotask，能同時排空 microtask 佇列與任何 `queueMicrotask` 鏈；
+   後者只讓出一層。若 client 內部有多層 `.then`，只讓一層會不夠。
+   *處置：* 若測試仍在 `COMPUTING`，先確認 `flush` 的層數，不要直接把斷言
+   改寬。

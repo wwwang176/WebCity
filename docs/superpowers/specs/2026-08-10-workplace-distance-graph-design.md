@@ -170,6 +170,13 @@ export interface RoadCellGraph {
   /** 節點 i 的格子座標（附掛建築時要用）。 */
   readonly nodeX: Uint16Array;
   readonly nodeY: Uint16Array;
+  /**
+   * 0 = 地面，1–3 = 高架。
+   *
+   * `seedNodesFor` 要靠它組回帶樓層的 key，序列化端也要靠它重建 `nodeKeys`
+   * （key 字串本身不進 buffer）。
+   */
+  readonly nodeLevel: Uint8Array;
 }
 
 export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph;
@@ -183,29 +190,27 @@ export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph;
 兩條路共用的核心。
 
 ```ts
-export interface FloodResult {
-  /** 每個節點的成本；未到達為 -1。**整數** —— 見 `weights` 的說明。 */
-  readonly cost: Int32Array;
-}
-
 export function floodRoadCellGraph(
   graph: RoadCellGraph,
   seedNodes: readonly number[],
   maxBudget: number,
   /** 每 settle 一個節點呼叫一次。回傳 true 表示提早結束。 */
   onSettle?: (node: number, cost: number) => boolean,
-): FloodResult;
+): Int32Array;   // 每個節點的成本；未到達為 -1
 ```
+
+（原本包了一層 `FloodResult { cost }`。裡面只有一個欄位，包裝沒有換到任何
+東西，直接回傳陣列。）
 
 **必須保住的三個不變式**(都是踩過坑才有的):
 
 1. **成本加在目的地那一格** —— `newCost = cur + weights[j]`。
 2. **`onSettle` 在 pop 時呼叫,不是 relax 時。** BUG-102:路型差到 6.7 倍
-   (鄉道 3.33 vs 高速 0.5),relax 時記錄會讓「門口一條鄉道」贏過「兩格外的
+   (鄉道 60 vs 高速 9),relax 時記錄會讓「門口一條鄉道」贏過「兩格外的
    高速公路」,JobRelocation 就用錯誤的數字評分。
 3. **超過 `maxBudget` 的鄰居不入堆。**
 
-### 5.3 `attachBuildingCells`（新，同檔）
+### 5.3 `attachAtSettledNode`（新，同檔）
 
 家與工作都不是路格,要附掛到附近的路。
 
@@ -306,12 +311,13 @@ CSR      offsets Uint32[n+1], targets Uint32[edges], weights Uint16[edges]
 
 | 檔案 | 改什麼 |
 |---|---|
-| `src/workers/workplace-distance.worker.ts` | 刪掉自己的 MinHeap 與 `reverseFloodFromWorkplace`,改用 `floodRoadCellGraph` + `attachBuildingCells` |
+| `src/workers/workplace-distance.worker.ts` | 刪掉自己的 MinHeap 與 `reverseFloodFromWorkplace`,改用 `floodRoadCellGraph` + `attachAtSettledNode` |
 | `src/core/workplace/WorkplaceDistanceTypes.ts` | `WDWorkerRequest` **加上**圖的緩衝。`gridBuffer` / `gridWidth` / `gridHeight` **保留** —— worker 仍需要它判斷「哪些格子是建築」（見 §5.3）。圖取代的是**走訪**，不是格子的中繼資料 |
 | `src/core/service/RoadCoverageFlood.ts` | `roadDistanceToTargets` 改用同一個核心 |
 | `src/core/simulation/SimulationLoop.ts` | 刪掉兩處 `canUseWpCache` 的 `hasAnyElevatedRoad()` 判斷;`requestUpdate` 改傳圖 |
 
-`roadDistanceToTargets` 有 4 個呼叫點,全都是「家 → 工作／住宅」這一族,沒有
+`SimulationLoop` 裡 `roadDistanceToTargets` 有 3 個直接呼叫點,全都是
+「家 → 工作／住宅」這一族,沒有
 外溢到服務覆蓋。`RoadCoverageFlood.ts` 裡其他的 flood(`roadFlood`、
 `recalculate`、`preview`)**不動** —— 它們服務的是設施覆蓋,不是通勤。
 
@@ -354,13 +360,26 @@ CSR      offsets Uint32[n+1], targets Uint32[edges], weights Uint16[edges]
 ## 8. 效能預期
 
 ```
-建圖          O(路格數) = 344，每次 requestUpdate 一次
+建圖          O(路格數) = 344，**每個道路世代一次**
 序列化        圖約 8 KB，外加既有的 43 KB 格子緩衝（總量略增，仍可忽略）
 worker flood  344 節點 × 101 次（現行是 3600 格 × 101 次）
 ```
 
-現行重建 173 ms,節點數少一個數量級,預期會更快。**不預期需要把圖快取住** ——
-344 次迴圈遠小於一次 flood。若實測顯示建圖有感,再加快取,不要預先做。
+現行重建 173 ms,節點數少一個數量級,預期會更快。
+
+> **已修訂。** 本節原本寫「不預期需要把圖快取住 —— 344 次迴圈遠小於一次
+> flood，若實測顯示建圖有感再加快取」。那個推理漏了一件事：
+> `roadDistanceToTargets` **每個市民呼叫一次**（`JobRelocation.ts` 的
+> 換工作迴圈），2436 人的城市一輪就是 2436 次建圖 —— 建圖確實遠小於一次
+> flood，但它被乘上了市民數。
+>
+> 所以圖由 `SimulationLoop` 以 `commuteCache.roadGeneration` 為鍵持有，
+> 每個道路世代建一次：正向給同步查詢，轉置後序列化給 worker。
+>
+> 這也帶來一個新的正確性條件：**道路世代必須在高架變更時遞增**，否則圖
+> 會陳舊。現行路徑（`Game → markLaneGraphDirty → commuteCache.bumpGeneration`）
+> 是對的，但 `ElevationManager` 自身沒有事件機制，那條連動只是呼叫紀律 ——
+> 計畫 Task 8 會補一條整合回歸測試釘住它。
 
 同步 fallback 的每次呼叫也會變快(圖小十倍),但它的主要保護仍是切片。
 
@@ -395,8 +414,8 @@ true 並維持;`runJobRelocation` 的每 tick 成本應降到接近 0(查表是 
 |---|---|
 | 同步與非同步兩條路仍可能漂移 | 共用 `floodRoadCellGraph`,差異測試逐格比對。這是本設計的核心決定 |
 | BUG-102 的 settle 語意被重構掉 | 寫成 `floodRoadCellGraph` 的明確不變式 + 專門的回歸測試 |
-| 建圖本身有 bug → 兩條路一起錯 | 節點集合與 `getAllCellKeys()` 比對;匝道規則獨立測試 |
-| 高架資料在 worker 與主執行緒不同步 | 圖在 `requestUpdate` 當下從 live lookup 建,不快取跨幀 |
+| 建圖本身有 bug → 兩條路一起錯 | 對**每一個節點**比對圖的鄰接與 `getCompatibleNeighborKeys()` 直接問出來的結果（全域，不抽樣）;外加「地面→高架的邊，高架端必須是匝道」與 CSR 去重兩條 |
+| 高架資料在 worker 與主執行緒不同步 | 圖以 `commuteCache.roadGeneration` 為鍵快取;高架 build/demolish 會 bump 該世代,並有整合回歸測試釘住（該連動靠 `Game` 的呼叫順序，不是 `ElevationManager` 的不變量） |
 
 ---
 
@@ -404,9 +423,20 @@ true 並維持;`runJobRelocation` 的每 tick 成本應降到接近 0(查表是 
 
 | 階段 | 內容 | 可獨立出貨 |
 |---|---|---|
-| 1 | `RoadCellGraph` + `floodRoadCellGraph` + `attachBuildingCells`（純邏輯，含全部測試） | 是（尚未接線） |
+| 1 | `RoadCellGraph` + `floodRoadCellGraph` + `attachAtSettledNode`（純邏輯，含全部測試） | 是（尚未接線） |
 | 2 | `roadDistanceToTargets` 改用核心，差異測試對照舊實作 | 是（同步路徑先受益） |
 | 3 | 序列化 + worker 改寫 + 刪掉 `hasAnyElevatedRoad` 閘門 | 是（本設計的目標） |
 
-階段 2 的差異測試對照的是**改動前的舊實作**(暫時保留成 `roadDistanceToTargetsLegacy`,
-階段 3 結束後刪除)—— 那是唯一能證明重構沒有改變行為的方式。
+階段 2 的差異測試對照的是**改動前的舊實作** —— 那是唯一能證明重構沒有改變
+行為的方式。
+
+> **已修訂。** 本節原本說舊實作「暫時保留，階段 3 結束後刪除」。**它不能刪。**
+>
+> `roadDistanceToTargets` 的 `grid` 型別是 `ReadableGrid`，而那個介面
+> **只有 `getCell`** —— 沒有 `width` / `height` / `forEachCell`
+> （`GridHelpers.ts:76-78`），建不出 `UnifiedRoadLookup`，也就建不出圖。
+> 全 repo 有 13 個呼叫端不傳 lookup。
+>
+> 所以「沒有 lookup」不是遷移殘骸，是這個 API 的另一半契約。舊實作改名為
+> `roadDistanceToTargetsOnGrid` **永久保留**，差異測試也永久保留 —— 它是
+> 唯一能持續證明兩條路徑一致的東西。
