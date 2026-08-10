@@ -77,13 +77,27 @@ wpDistCache.isStale  true
 | 節點數 | 344 | 約 2700+（每格多個進出點 × 車道 × 方向） |
 | 成本模型 | 現行 `roadTileCost`，與同步 fallback 相同 | 幾何長度 + 速限，**不同數量級** |
 | 常數 | 不變 | `dijkstraMaxBudget` 等一整套要重調 |
+| **拓撲** | 四鄰位 + 樓層相容，**忽略 `roadFlags`** | 依 `roadFlags` 建**有向**車道邊 |
 | 精度 | 剛好夠（排序用） | 貝茲轉彎、換道懲罰 —— 付了錢又丟掉 |
 
-決定性的是第三列:換圖看起來只是換一個資料來源,實際上是**重調一整套通勤
-數值**。那不是這次要解的問題。
+**決定性的是拓撲那一列,不是成本。**（審核修正:原本只寫「成本尺度不同」，
+那個理由不完整 —— `LaneGraphBuffer` 其實有存 `speedLimit` 與 `laneCount`
+（`LaneGraphBuffer.ts:24-36`），理論上可以另算成本。）真正的阻礙有兩個:
 
-LaneGraph 唯一真正買到的是「找工作的距離」與「實際開車的距離」一致。那是真的
-優點,但現在不需要。
+1. **可達性會變。** 通勤的 flood 只看四鄰位與樓層相容，完全忽略 `roadFlags`
+   （`RoadCoverageFlood.ts:533-567`）；LaneGraph 依 `roadFlags` 建有向邊
+   （`LaneGraph.ts:257-350`）。直接換過去，單行道會讓一批市民突然「走不到」
+   原本的工作。
+2. **buffer 缺少 cell metadata。** LaneGraph 有跨路口、跳過中間 intersection
+   cell 的邊，原物件用 `viaCellKey` 記錄（`LaneGraph.ts:352-430`），但
+   `LaneGraphBuffer` 的 edge 只存 from / to / length / type
+   （`LaneGraphBuffer.ts:39-47`）—— 沒有 `viaCellKey`，也沒有那一格的 roadType。
+   所以**收不到被跳過那格的 `roadTileCost`**。
+
+若要擴充 buffer 補上 cell / via / roadType，再另建 cell-level adjacency，
+那實質上就是在建一張 `RoadCellGraph`，並不更簡單。
+
+換成本模型仍然是次要但真實的代價:`dijkstraMaxBudget: 60` 等調過的常數要重算。
 
 ---
 
@@ -104,7 +118,7 @@ UnifiedRoadLookup ──getAllCellKeys()───────────┐
                               │                                  │
                               ▼                                  ▼
               workplace-distance worker             roadDistanceToTargets
-                （反向 flood × 101）                  （同步 fallback）
+            （**轉置圖**上 flood × 101）              （正向圖上 flood）
                               │                                  │
                               └────── 同一個 flood 核心 ──────────┘
 ```
@@ -130,8 +144,15 @@ export interface RoadCellGraph {
   readonly offsets: Uint32Array;
   /** 鄰接的節點索引。 */
   readonly targets: Uint32Array;
-  /** 走到 targets[j] 那一格要付的成本。 */
-  readonly weights: Float32Array;
+  /**
+   * 走到 targets[j] 那一格要付的成本。
+   *
+   * **Float64,不是 Float32。** 舊實作用的是 JS number（double），而硬約束是
+   * 「逐格精確相等」—— 用 Float32 會讓每一步都與舊版差約 8×10⁻⁸，而且更糟的是
+   * 成本存進 Float32Array、heap 卻拿著未捨入的 double 時，`cost[n] < cur.cost`
+   * 會誤判成過期，flood 就地靜默停止（審核發現）。多出來的 4 KB 不值得換這個。
+   */
+  readonly weights: Float64Array;
   /** 節點 i 的格子座標（附掛建築時要用）。 */
   readonly nodeX: Uint16Array;
   readonly nodeY: Uint16Array;
@@ -149,8 +170,8 @@ export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph;
 
 ```ts
 export interface FloodResult {
-  /** 每個節點的成本；未到達為 -1。 */
-  readonly cost: Float32Array;
+  /** 每個節點的成本；未到達為 -1。**Float64** —— 見 `weights` 的說明。 */
+  readonly cost: Float64Array;
 }
 
 export function floodRoadCellGraph(
@@ -175,9 +196,11 @@ export function floodRoadCellGraph(
 家與工作都不是路格,要附掛到附近的路。
 
 ```ts
-export function attachBuildingCells(
+/** 一個節點 settle 時附掛它周圍的建築格。回傳目前為止收了幾格。 */
+export function attachAtSettledNode(
   graph: RoadCellGraph,
-  settledOrder: readonly { node: number; cost: number }[],
+  node: number,
+  cost: number,
   reach: number,
   /** 這一格要不要收。同步路徑問「在不在目標集合裡」，worker 問「是不是非道路格」。 */
   accept: (x: number, y: number) => boolean,
@@ -185,10 +208,15 @@ export function attachBuildingCells(
 ): void;
 ```
 
-掃**依 settle 順序**排好的節點,把 Chebyshev(`reach`) 內、`accept` 回 true 的
+**在 settle 當下逐節點附掛**，不是先收集整串再處理。這樣同步路徑才能在找齊
+目標時提早結束 —— 舊實作有這個早退（`RoadCoverageFlood.ts:506-531`），
+先收集再附掛就等於永遠跑滿預算，同步路徑的效能會變差（審核發現）。
+
+語意上仍是依,把 Chebyshev(`reach`) 內、`accept` 回 true 的
 格子以該節點的成本記入 `out`,只記第一次 —— settle 順序即成本遞增順序,所以
 第一次就是最便宜的那一條路(這正是 BUG-102 的語意)。`reach` 傳
-`ZONE_ROAD_REACH`。
+`ZONE_ROAD_REACH`。`dx`/`dy` 包含 `(0, 0)`，所以道路格自身也會被檢查 ——
+舊實作那段「道路格本身也可能是目標」因此被涵蓋。
 
 **兩個呼叫端的 `accept` 不同**,這是它成為參數而不是寫死的理由:
 
@@ -207,6 +235,27 @@ export function seedNodesFor(
 
 回傳 Chebyshev(`reach`) 內**所有樓層**的路格節點。對應現行的
 `getAllKeysAtPosition()` 迴圈。
+
+### 5.4b `transposeRoadCellGraph`（新，同檔）—— 反向查詢的正解
+
+```ts
+export function transposeRoadCellGraph(graph: RoadCellGraph): RoadCellGraph;
+```
+
+worker 是**從工作地點往外**擴散，一次算出「所有家 → 這個工作」。但成本是加在
+**目的地那一格**的，所以正向邊 `A→B` 的價格是 `cost(B)` —— 直接拿正向圖從 B
+往外走，會付成 `cost(A)`，答案就不是同一件事。
+
+轉置的定義很簡單:原本每條邊 `(i → j, w)` 產生一條 `(j → i, w)`。**權重跟著邊
+走，不跟著端點走**，所以從工作地點在轉置圖上跑 Dijkstra，得到的正是每個家
+沿正向走到該工作的成本。
+
+**這同時修掉一個既有 bug（BUG-237）。** 現行的
+`reverseFloodFromWorkplace`（`workplace-distance.worker.ts:88-129`）就是直接
+反向擴散並付 `roadTileCost(鄰居)`，也就是付了來源那格的價格。現有測試沒抓到，
+因為它們**只用單一路型**（`WorkplaceDistanceWorker.test.ts:32-72`）—— 所有格子
+一樣貴時，正反向剛好相等。路型混合的城市就會不一致，而這正是本設計的硬約束
+要守的東西。
 
 ### 5.5 序列化（新，`src/core/road/RoadCellGraphBuffer.ts`）
 
