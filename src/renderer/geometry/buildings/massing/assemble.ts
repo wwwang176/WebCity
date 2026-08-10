@@ -104,7 +104,14 @@ function cylinder(v: Volume): THREE.BufferGeometry {
   return geo;
 }
 
-function shapeOf(v: Volume): THREE.BufferGeometry[] {
+/**
+ * 一個量體的幾何。一份量體可能產出多份幾何（鋸齒天窗是一排）。
+ *
+ * 匯出是給 `geometry/civic/` 用的 —— 公共建築用同一組圖元，但護欄不同
+ * （擋佔地邊界而不是行人包絡線）。圖元各寫一份的下場這個專案已經示範過
+ * （BUG-231 的地板顏色）。
+ */
+export function shapeOf(v: Volume): THREE.BufferGeometry[] {
   const alongZ = (v.facing ?? 0) % 2 === 0;
   const sign = (v.facing ?? 0) < 2 ? 1 : -1;
 
