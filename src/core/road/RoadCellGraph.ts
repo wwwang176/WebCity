@@ -94,3 +94,101 @@ export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph {
     nodeX, nodeY, nodeLevel,
   };
 }
+
+// ── flood 核心 ──────────────────────────────────────────────────────
+
+/** 二元堆。節點是整數索引，成本是整數。 */
+class NodeHeap {
+  private idx: number[] = [];
+  private cost: number[] = [];
+  get size(): number { return this.idx.length; }
+
+  push(i: number, c: number): void {
+    this.idx.push(i); this.cost.push(c);
+    let k = this.idx.length - 1;
+    while (k > 0) {
+      const p = (k - 1) >> 1;
+      if (this.cost[k]! >= this.cost[p]!) break;
+      this.swap(k, p); k = p;
+    }
+  }
+
+  pop(): { node: number; cost: number } | undefined {
+    if (this.idx.length === 0) return undefined;
+    const top = { node: this.idx[0]!, cost: this.cost[0]! };
+    const li = this.idx.pop()!, lc = this.cost.pop()!;
+    if (this.idx.length > 0) {
+      this.idx[0] = li; this.cost[0] = lc;
+      let k = 0;
+      for (;;) {
+        const l = 2 * k + 1, r = l + 1;
+        let m = k;
+        if (l < this.idx.length && this.cost[l]! < this.cost[m]!) m = l;
+        if (r < this.idx.length && this.cost[r]! < this.cost[m]!) m = r;
+        if (m === k) break;
+        this.swap(k, m); k = m;
+      }
+    }
+    return top;
+  }
+
+  private swap(a: number, b: number): void {
+    [this.idx[a], this.idx[b]] = [this.idx[b]!, this.idx[a]!];
+    [this.cost[a], this.cost[b]] = [this.cost[b]!, this.cost[a]!];
+  }
+}
+
+/**
+ * 從 `seedNodes` 出發的加權 flood。回傳每個節點的成本，未到達為 -1。
+ *
+ * 四個不變式 —— 同步查詢與 worker 都靠它們：
+ *
+ * 1. **成本加在目的地那一格**（`weights[j]` 是走進 `targets[j]` 的價格）。
+ * 2. **`onSettle` 在 pop 時呼叫，不是 relax 時。** pop 順序就是成本遞增順序，
+ *    所以第一次 settle 一定是最便宜的那條路。在 relax 時記錄會讓「先碰到的」
+ *    永久獲勝 —— 門口一條鄉道贏過兩格外的高速公路（BUG-102）。
+ * 3. **超過 `maxBudget` 的鄰居不入堆。**
+ * 4. **成本全程整數。** `cost` 是 `Int32Array`，權重是 `Uint16Array`，兩者都
+ *    精確；stale 判斷不可能因捨入而誤判。這也是「worker 與同步逐格相等」能
+ *    成立的唯一理由 —— 浮點加法沒有結合律，反向走同一組邊會算出不同的位元。
+ *
+ * `onSettle` 回傳 true 表示提早結束（同步查詢找齊目標之後就不必再走）。
+ *
+ * 這是**通用**的加權圖 Dijkstra，不假設權重來自路網。路網圖恰好讓每個節點的
+ * 入邊權重一致（成本加在目的地），於是「重新 relax 成更便宜的值」與「過期
+ * 堆項」兩條分支走不到 —— 但契約對任何圖都成立，測試用一張合成圖守著它們。
+ */
+export function floodRoadCellGraph(
+  graph: RoadCellGraph,
+  seedNodes: readonly number[],
+  maxBudget: number,
+  onSettle?: (node: number, cost: number) => boolean,
+): Int32Array {
+  const n = graph.nodeKeys.length;
+  const cost = new Int32Array(n).fill(-1);
+  const heap = new NodeHeap();
+
+  for (const s of seedNodes) {
+    if (s < 0 || s >= n || cost[s]! >= 0) continue;
+    cost[s] = 0;
+    heap.push(s, 0);
+  }
+
+  while (heap.size > 0) {
+    const cur = heap.pop()!;
+    if (cost[cur.node]! < cur.cost) continue; // 過期的堆項
+    if (onSettle && onSettle(cur.node, cur.cost)) return cost;
+
+    for (let j = graph.offsets[cur.node]!; j < graph.offsets[cur.node + 1]!; j++) {
+      const next = graph.targets[j]!;
+      const nc = cur.cost + graph.weights[j]!;
+      if (nc > maxBudget) continue;
+      const prev = cost[next]!;
+      if (prev < 0 || nc < prev) {
+        cost[next] = nc;
+        heap.push(next, nc);
+      }
+    }
+  }
+  return cost;
+}
