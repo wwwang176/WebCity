@@ -2435,33 +2435,64 @@ Game 蓋/拆高架道路 → markLaneGraphDirty(...) → commuteCache.bumpGenera
 ```
 
 **但那是呼叫紀律，不是不變量** —— `ElevationManager` 自身沒有 generation 或
-事件，直接呼叫 `set` / `delete` / `fromJSON` 不會連動。加一條整合回歸測試把
-現行路徑釘住：
+事件，直接呼叫 `set` / `delete` / `fromJSON` 不會連動。
+
+實際的接線（**已 grep 確認**）：
+
+| 環節 | 位置 | 能不能在 core 測試裡驅動 |
+|---|---|---|
+| `markLaneGraphDirty` → `commuteCache.bumpGeneration()` | `SimulationLoop.ts:1560` | **可以** |
+| `markLaneGraphDirty` → `wpDistCache.invalidate()` | `SimulationLoop.ts:1572` | 可以 |
+| 蓋高架 → `markLaneGraphDirty` | `Game.ts:952` | **不行**，`Game.ts` import Three.js |
+| 拆高架 → `markLaneGraphDirty` | `Game.ts:926` | 不行，同上 |
+| `ElevatedRoadBuilder.buildElevatedRoad` / `.removeElevated` | `ElevatedRoadBuilder.ts:43 / 310` | 可以（但它們自己不 bump） |
+
+所以測**可以測的那一半**：世代一 bump，圖就必須重建。
 
 ```ts
 // src/core/simulation/__tests__/ElevatedRoadInvalidatesGraph.test.ts
-it('should bump the road generation when an elevated road is built or demolished', () => {
-  // 圖以 roadGeneration 為鍵。高架若不 bump，玩家蓋了橋而市民還在用舊圖。
-  // ElevationManager 沒有事件機制，這條連動完全靠 Game 的呼叫順序 ——
-  // 所以要測。
-  const { game, loop } = gameWithRoads();          // 依實際 helper 調整
+it('should rebuild the cell graph when the road generation bumps', () => {
+  // 圖以 commuteCache.roadGeneration 為鍵。世代若不遞增，玩家蓋了橋而市民
+  // 還在用沒有橋的圖 —— 那比舊的「有高架就停用快取」更糟，因為它是靜默的。
+  const { loop, em } = loopWithRoads();          // 依實際 helper 調整
+  const first = loop.getCellGraph();             // private → 用 @ts-expect-error 或改成 internal
+  expect(first).not.toBeNull();
+  expect(loop.getCellGraph(), '同一個世代內應該重用同一個物件').toBe(first);
+
+  // 高架直接寫進 ElevationManager 不會 bump —— 這正是「紀律不是不變量」。
+  em.set(5, 5, 1, { /* … */ });
+  expect(loop.getCellGraph(), 'ElevationManager 自己不 bump，圖理應還是舊的')
+    .toBe(first);
+
+  // 走正式路徑（Game 蓋高架後會呼叫這個）才會失效。
+  loop.markLaneGraphDirty(['5,5'], true);
+  expect(loop.getCellGraph(), '世代 bump 之後圖沒有重建 —— 快取會用到舊路網')
+    .not.toBe(first);
+});
+
+it('should bump the generation and invalidate the workplace cache together', () => {
+  const { loop } = loopWithRoads();
   const before = loop.commuteCache.roadGeneration;
-
-  game.buildElevatedRoad(/* … */);
-  expect(loop.commuteCache.roadGeneration, '蓋高架沒有讓道路世代遞增')
-    .toBeGreaterThan(before);
-
-  const afterBuild = loop.commuteCache.roadGeneration;
-  game.demolishElevatedRoad(/* … */);
-  expect(loop.commuteCache.roadGeneration, '拆高架沒有讓道路世代遞增')
-    .toBeGreaterThan(afterBuild);
+  loop.markLaneGraphDirty(['5,5'], true);
+  expect(loop.commuteCache.roadGeneration).toBeGreaterThan(before);
 });
 ```
 
-> `game.buildElevatedRoad` / `demolishElevatedRoad` 的實際名稱與簽章要先
-> `grep` 確認（`ElevatedRoadBuilder.ts`、`Game.ts`）。`commuteCache` 若不是
-> 公開欄位，改用既有的 accessor 或把斷言改成觀察
-> `wpDistCache.getStatus()` 從 READY 變回 EMPTY。
+> `commuteCache` 是**公開欄位**（`SimulationLoop.ts:118`），測試拿得到。
+> `getCellGraph()` 是 private —— 測試要嘛把它改成 internal，要嘛用
+> `loop['getCellGraph']()`。**不要為了測試把它改成 public** ——
+> 它不是給外部用的。
+
+**`Game.ts` 那一半測不到，改用註解防守。** 在 `Game.ts:926` 與 `:952` 的
+`markLaneGraphDirty` 呼叫上方加一行說明：
+
+```ts
+// 必須呼叫：workplace 距離的路網圖以 commuteCache.roadGeneration 為鍵
+// （SimulationLoop.getCellGraph）。少了這一行，蓋好的橋不會出現在圖裡，
+// 而且是靜默的 —— 市民只是「莫名其妙找不到工作」。
+```
+
+這是誠實的做法：測得到的就測，測不到的就在現場留下為什麼不能刪的理由。
 
 - [ ] **Step 7: 跑完整測試套件**
 
@@ -2614,8 +2645,11 @@ git commit -m "perf(sim): workplace 距離改走路網圖，高架不再停用�
    已驗證：`cache.getDistance` / `getDistancesFromHome` / `isReady` /
    `populateSync` 存在；`this.commuteCache.roadGeneration` 正確（**不是**
    `this.state.commuteCache`）；`loop.getRoadLookup` **不存在**，由 Step 4 新增。
-   *未驗證：* Step 6 的 `game.buildElevatedRoad` / `demolishElevatedRoad` 與
-   `gameWithRoads()` helper —— 實作者第一步要 `grep`，不是照抄。
+   Step 6 也已驗證：`markLaneGraphDirty` 自己就 bump（`SimulationLoop.ts:1560`）
+   並 `wpDistCache.invalidate()`（`:1572`）；`commuteCache` 是公開欄位（`:118`）；
+   高架的建/拆在 `Game.ts:926 / 952` 呼叫它；`ElevatedRoadBuilder` 的方法是
+   `buildElevatedRoad` / `removeElevated`（`:43 / :310`）。
+   *仍未驗證：* `loopWithRoads()` 這個 helper 要自己寫（repo 裡沒有現成的）。
 
 3. **`bridgedCity` 改路型可能動到其他案例的結果。** 它是就業行為的 fixture，
    把高架段從 `TWO_LANE` 換成 `HIGHWAY` 會讓通勤成本變便宜。
