@@ -45,7 +45,10 @@ export function civicTriangleReport(footprint: Footprint, tris: CivicTris): Civi
   const budget: CivicTris = {
     massing: CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL * cells,
     decal: CIVIC_TRIANGLE_BUDGET.DECAL_PER_CELL * cells,
-    prop: CIVIC_TRIANGLE_BUDGET.PROP_PER_CELL * cells,
+    // 矮物件是**基礎 + 斜率**，其餘三層是純逐格 —— 一格的公園整塊基地
+    // 就是矮物件，逐格的線在那裡不成立（見 `CIVIC_TRIANGLE_BUDGET`）。
+    prop: CIVIC_TRIANGLE_BUDGET.PROP_BASE
+      + CIVIC_TRIANGLE_BUDGET.PROP_PER_CELL * cells,
     overhead: CIVIC_TRIANGLE_BUDGET.OVERHEAD_PER_CELL * cells,
   };
   return {

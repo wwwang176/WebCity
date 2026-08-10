@@ -37,7 +37,7 @@ describe('civic 檢視的三角形統計', () => {
     expect(r.budget).toEqual({
       massing: CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL,
       decal: CIVIC_TRIANGLE_BUDGET.DECAL_PER_CELL,
-      prop: CIVIC_TRIANGLE_BUDGET.PROP_PER_CELL,
+      prop: CIVIC_TRIANGLE_BUDGET.PROP_BASE + CIVIC_TRIANGLE_BUDGET.PROP_PER_CELL,
       overhead: CIVIC_TRIANGLE_BUDGET.OVERHEAD_PER_CELL,
     });
   });

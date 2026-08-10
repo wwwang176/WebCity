@@ -158,7 +158,7 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
         CIVIC_TRIANGLE_BUDGET.DECAL_PER_CELL * cells],
       ['矮物件', triangleCount(assembleCivic(plan.props, plan.footprint, plan.color))
         + triangleCount(assembleFixtures(plan.fixtures, plan.footprint)),
-        CIVIC_TRIANGLE_BUDGET.PROP_PER_CELL * cells],
+        CIVIC_TRIANGLE_BUDGET.PROP_BASE + CIVIC_TRIANGLE_BUDGET.PROP_PER_CELL * cells],
       ['懸挑', triangleCount(assembleCivic(plan.overhead, plan.footprint, plan.color)),
         CIVIC_TRIANGLE_BUDGET.OVERHEAD_PER_CELL * cells],
     ];
