@@ -1,3 +1,5 @@
+import { dragToPan } from '../renderer/cameraPan';
+
 /**
  * 展示區的滑鼠操作。
  *
@@ -27,16 +29,10 @@ export function dragToOrbit(dx: number, dy: number): { angle: number; elevation:
   };
 }
 
-/**
- * 拖曳位移換成 panCamera 的兩個參數。
- *
- * 與視野大小成正比：拉遠之後同樣的拖曳距離要走更多世界單位，否則遠看時
- * 平移會慢到像卡住。
- */
-export function dragToPan(dx: number, dy: number, viewSize: number): { x: number; z: number } {
-  const scale = viewSize / 600;
-  return { x: -dx * scale, z: -dy * scale };
-}
+// 平移的換算搬到 renderer/cameraPan —— 遊戲的右鍵拖曳與這裡是同一個手勢，
+// 而這一版的分母寫死 600，等於假設畫布永遠 600 px 高。轉出去給既有的
+// 呼叫端與測試用。
+export { dragToPan };
 
 /** 滾輪 deltaY 換成 zoomCamera 的參數。 */
 export function wheelToZoom(deltaY: number): number {
@@ -78,7 +74,7 @@ export function attachCameraInput(dom: HTMLElement, scene: CameraTarget): void {
       scene.orbitCamera(o.angle, o.elevation);
     } else {
       const viewSize = scene.camera.top - scene.camera.bottom;
-      const p = dragToPan(dx, dy, viewSize);
+      const p = dragToPan(dx, dy, viewSize, dom.clientHeight);
       scene.panCamera(p.x, p.z);
     }
   });

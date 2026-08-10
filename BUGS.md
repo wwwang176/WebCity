@@ -3317,3 +3317,46 @@ function makeComHighV2(): THREE.BufferGeometry {
 
 三處回退各自轉紅：懸挑跳過、圓形屋頂、圓形（非橢圓）足跡。
 
+---
+
+## BUG-236 已修：右鍵拖曳平移只存在於註解裡
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-236 | Game.setupInput | `mousedown` 裡有一個空的 `if (e.button === 2)`，註解寫「handled in mousemove」，而 `mousemove` 從來沒有處理過右鍵 | Low |
+
+**發現方式：** 使用者說「主遊戲也跟展示區一樣，補上右鍵拖曳移動」。
+
+```js
+canvas.addEventListener('mousedown', (e) => {
+  ...
+  if (e.button === 2) {
+    // Right-click camera pan handled in mousemove
+  }
+});
+```
+
+`mousemove` 裡只有兩條平移路徑：中鍵 (`e.buttons & 4`，其實是 orbit) 與
+space + 左鍵 (`e.buttons & 1`)。**右鍵一次都沒有被接上。** 註解不是過期的
+描述，是一個從來沒有兌現的意圖 —— 空的 `if` 也不會被任何 linter 抓到，
+因為它「看起來像有意為之」。
+
+**修法：** `mousemove` 的平移條件改成 `(e.buttons & 2) || (spacePanning &&
+(e.buttons & 1))`，並刪掉那個空的 `if`。
+
+**順帶合併了兩份平移算式。** 遊戲用的是 `視錐高度 / canvas.clientHeight`，
+展示區的 `dragToPan` 分母寫死 **600** —— 等於假設畫布永遠 600 px 高，在其他
+高度下拖曳速度與游標對不上。同一個手勢兩份算式，而且只有在 600 px 高的視窗
+裡才會一致。兩者現在都吃 `renderer/cameraPan.ts`。
+
+判準只有一條：**游標按住的那一點要黏在游標下面** —— 拖 N 像素，世界就走
+「N 像素在目前縮放下代表的距離」。測試直接量這個（視錐 60 格、畫布 600 px
+→ 拖 100 px 必須剛好走 10 格）。
+
+**順手補的守衛：** 畫布還沒佈局完時 `clientHeight` 是 0。除以零會讓
+`cameraTarget` 變成 NaN，而 NaN 一旦進去就再也回不來 —— 畫面整個消失，
+而且沒有任何東西會報錯。
+
+**回退驗證：** 拿掉 `e.buttons & 2` → 接線測試轉紅；拿掉除零守衛 →
+「should survive a zero-height canvas」轉紅。
+
