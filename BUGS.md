@@ -3526,7 +3526,7 @@ runJobRelocation  改前：1474 ms／輪
 
 ---
 
-## BUG-238 未修：公共建築完全沒有夜間燈光，也幾乎沒有窗
+## BUG-238 幾何已重建（待整合）：公共建築完全沒有夜間燈光，也幾乎沒有窗
 
 **現象：** 入夜後住宅、商業、工業、辦公的窗戶會一格一格亮起來，招牌與燈頭
 會發光；而警局、消防局、醫院、學校、公園、電廠、水廠、垃圾場、汙水廠、
@@ -3571,4 +3571,29 @@ runJobRelocation  改前：1474 ms／輪
    `aSeed`。這條同時解掉色彩空間。
 3. **折衷：新寫一個公共建築專用的 shader 材質**，共用 `BUILDING_FRAG` 的
    夜間與色彩空間邏輯，但立面規則自己一套。
+
+**採用了第 2 條。** 分支 `feat/civic-building-facelift`，十九種全部重建完成，
+目前只在 `showcase.html` 的「公共建築」檢視裡看得到 —— 遊戲裡仍走舊路徑。
+
+做法與結果：
+
+- `ZONE_CAT` 擴充四個公共立面類別（`FACADE_CIVIC` / `UTILITY` / `TRANSIT` /
+  `GREEN`，key 從 101 起跳避開 `ZoneType` 0–6），共用 `BUILDING_FRAG`。
+  辦公那個無條件的 `else` 換成 `else if` —— 沒換的話公共建築會靜靜地長出
+  辦公的玻璃帷幕窗格。
+- 幾何改成**宣告式**的 `CivicPlan`（量體／貼片／矮物件／懸挑／共用圖元／
+  車輛六層），量體借分區建築的 `Volume` 與 `shapeOf`，只換護欄。
+- 公共建築是普通 `Mesh`，沒有 `instanceColor`，所以新增了逐幾何的
+  `aBldgColor` 屬性 —— 少了它十九種會**全部變成同一片灰**。
+- 夜燈：`aOccupancy` 在公共建築上載的是「有沒有電」而不是使用率。有電時的
+  亮窗門檻取住宅那條規則在住戶比例 85% 時的值（≈ 0.48，約一半亮），哪幾扇亮
+  隨 `uTime` 的 epoch 換。沒有窗的立面（`FACADE_GREEN`）靠 `PART_LAMP`
+  —— 涼亭的燈籠、禮拜堂的十字。
+
+**還沒修完的部分（批 6，見 TODO.md）：** 遊戲整合。`BuildingRenderer` 的 220
+個手寫 `MeshLambertMaterial` 還在，所以**遊戲裡的夜景仍然是這條 bug 描述的
+樣子**。整合時的已知迴歸：`HighlightManager.applyTintToGroup` 只處理
+`MeshLambertMaterial` 與 `MeshBasicMaterial`，`ShaderMaterial` 兩個分支都不中
+—— 高亮會靜默失效，而且 clone 出來的材質收不到 `uTime`，被高亮過的建築窗戶
+會凍結在某個亮燈狀態。
 

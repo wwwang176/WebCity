@@ -10,9 +10,12 @@ const NO_TRIS = { massing: 0, decal: 0, prop: 0, overhead: 0 };
 describe('civic 檢視的三角形統計', () => {
   it('should scale the budget by footprint, not per building', () => {
     // 2x2 的醫院不能套逐棟的 HOUSE: 400 —— 那條線是給「一格一棟」訂的。
-    const r = civicTriangleReport({ w: 2, h: 2 }, { ...NO_TRIS, massing: 900 });
+    // 用「三格份」當樣本而不是寫死一個數字：寫死的話，校準預算之後這條
+    // 測試會在一個與它想測的事完全無關的理由上轉紅（實際發生過）。
+    const threeCells = CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL * 3;
+    const r = civicTriangleReport({ w: 2, h: 2 }, { ...NO_TRIS, massing: threeCells });
     expect(r.budget.massing).toBe(CIVIC_TRIANGLE_BUDGET.MASSING_PER_CELL * 4);
-    expect(r.over.massing).toBe(false);
+    expect(r.over.massing, '四格的預算容不下三格的量').toBe(false);
   });
 
   it('should flag a plan that blows the budget', () => {
