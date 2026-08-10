@@ -1,0 +1,238 @@
+import { describe, it, expect } from 'vitest';
+import {
+  busStopPlan, metroStationPlan, trainStationPlan, ferryDockPlan,
+} from '../transit';
+import { FACADE_TRANSIT, PART_GROUND, PART_LAMP } from '../../../buildings/parts';
+import { topOf } from '../../../buildings/massing/volume';
+import { civicColorOf } from '../../colors';
+import { CIVIC_INSET } from '../../types';
+import { propExtent } from '../../../props';
+import { METRES_PER_CELL } from '../../../../../core/grid/constants';
+import type { CivicPlan } from '../../types';
+
+const m = (cells: number) => cells * METRES_PER_CELL;
+const tagged = (p: CivicPlan, tag: string) => p.massing.filter(v => v.tag === tag);
+
+const PLANS = [
+  ['公車站', busStopPlan, 'bus_stop'],
+  ['捷運站', metroStationPlan, 'metro_station'],
+  ['火車站', trainStationPlan, 'train_station'],
+  ['渡輪碼頭', ferryDockPlan, 'ferry_dock'],
+] as const;
+
+/**
+ * 四座交通站點。共通的驗收在 `CivicPlans.test.ts` 的資料表裡。
+ *
+ * 它們全部是 1×1 —— 全專案最緊的尺度（可用範圍只有 ±5.76 m）。所以這裡多了
+ * 一組別的批次不需要的驗收：**東西真的塞得下嗎**。
+ */
+describe.each(PLANS)('%s', (_label, plan, type) => {
+  it('should use the transit facade and its own colour', () => {
+    expect(plan.facade).toBe(FACADE_TRANSIT);
+    expect(plan.color).toEqual(civicColorOf(type));
+    expect(plan.footprint).toEqual({ w: 1, h: 1 });
+  });
+
+  /**
+   * 1×1 上 `CIVIC_INSET` 吃掉的比例是別人的好幾倍。
+   *
+   * 2×2 的基地扣掉 0.02 格只少了 2%，1×1 少了 4% —— 而 12 m 的地上那 0.48 m
+   * 是真的會讓一座候車亭放不下。這條測試量的是「還剩多少」：緊到只剩幾公分
+   * 的話，之後任何一次微調都會撞牆，而錯誤訊息只會說「超出佔地」。
+   */
+  it('should leave some slack inside the tightest footprint in the game', () => {
+    const limit = 0.5 - CIVIC_INSET;
+    let used = 0;
+    for (const v of [...plan.massing, ...plan.props, ...plan.overhead]) {
+      used = Math.max(used,
+        Math.abs(v.x) + v.w / 2, Math.abs(v.z) + v.d / 2);
+    }
+    for (const f of plan.fixtures) {
+      const e = propExtent(f);
+      used = Math.max(used, Math.abs(f.x) + e.x, Math.abs(f.z) + e.z);
+    }
+    expect(used, `${type} 已經頂到佔地邊界`).toBeLessThanOrEqual(limit);
+    expect(m(limit - used), `${type} 只剩 ${m(limit - used).toFixed(2)} m 餘裕`)
+      .toBeGreaterThan(0.05);
+  });
+
+  /**
+   * 發光的識別柱。
+   *
+   * 這是四座共用的夜間語彙 —— 12 m 的基地上唯一放得下的「亮」。少了它，
+   * 一座車站在夜景裡與一塊空地沒有分別。
+   */
+  it('should carry a lit totem', () => {
+    const panel = tagged(plan, 'totem');
+    const post = plan.props.filter(v => v.tag === 'totemPost');
+    expect(panel.length, '沒有識別柱').toBe(1);
+    expect(post.length, '識別柱沒有柱身').toBe(1);
+    expect(panel[0]!.part, '識別柱不會亮').toBe(PART_LAMP);
+    expect(post[0]!.part, '柱身也在發光 —— 那是一根從地上亮到頂的柱子')
+      .not.toBe(PART_LAMP);
+    expect(post[0]!.y1, '燈箱沒有接在柱身上').toBeCloseTo(panel[0]!.y0, 9);
+    expect(post[0]!.x, '燈箱與柱身不在同一個位置').toBeCloseTo(panel[0]!.x, 9);
+  });
+
+  it('should keep the totem panel in the massing layer', () => {
+    // 放在 `props` 的話遠景整層關掉，而那正是最需要看到它的距離。
+    expect(plan.massing.some(v => v.tag === 'totem'), '識別柱會被遠景關掉')
+      .toBe(true);
+  });
+
+  it('should give every raised paving an actual shade', () => {
+    // 月台、棧橋、階梯口都走 `PART_GROUND`。沒有 `shade` 的話 B 通道是 0，
+    // 那是柏油黑而不是想要的顏色，而這個錯完全不會報。
+    for (const v of plan.massing.filter(v => v.part === PART_GROUND)) {
+      expect(v.shade, `${v.tag} 是 PART_GROUND 卻沒有明度`).toBeDefined();
+    }
+  });
+
+  it('should stay low enough not to overshadow a 12 m plot', () => {
+    // 12 m 的地上蓋 15 m 的東西，等角視角下它會遮住後面兩排房子。
+    const top = m(topOf(plan.massing));
+    expect(top, `${type} 蓋到 ${top.toFixed(1)} m`).toBeLessThan(12);
+  });
+});
+
+describe('公車站', () => {
+  it('should shelter the bench under a roof on posts', () => {
+    // 四面牆的候車亭看不到公車來了。背板一面 + 兩根前柱 + 一片頂。
+    const posts = busStopPlan.props.filter(v => v.tag === 'post');
+    const roof = busStopPlan.overhead.find(v => v.tag === 'shelterRoof')!;
+    const back = tagged(busStopPlan, 'backPanel')[0]!;
+    expect(posts.length, '候車亭沒有前柱').toBe(2);
+    expect(roof, '候車亭沒有頂').toBeTruthy();
+    expect(back, '候車亭沒有背板').toBeTruthy();
+    for (const p of posts) expect(p.y1, '柱子沒有頂到頂棚').toBeCloseTo(roof.y0, 9);
+    expect(back.y1, '背板沒有接到頂棚').toBeCloseTo(roof.y0, 9);
+    // 長椅要在頂棚底下。
+    const bench = busStopPlan.props.find(v => v.tag === 'bench')!;
+    expect(Math.abs(bench.z - roof.z), '長椅淋得到雨')
+      .toBeLessThanOrEqual(roof.d / 2);
+  });
+
+  it('should pull a real bus into the bay', () => {
+    // 7.2 m 的公車橫著停的話它有一半在人行道上。
+    const bus = busStopPlan.vehicles.find(v => v.kind === 'bus')!;
+    expect(bus, '站牌前沒有公車').toBeTruthy();
+    expect(bus.rotationY ?? 0, '公車橫著停').toBeCloseTo(0, 6);
+  });
+});
+
+describe('捷運站', () => {
+  it('should show that there is a hole in the ground', () => {
+    // 深色的階梯口是「這裡有洞」的唯一訊號 —— 少了它，出入口就只是一個
+    // 小盒子，與變電箱分不出來。
+    const mouth = tagged(metroStationPlan, 'stairMouth')[0]!;
+    expect(mouth, '沒有階梯口').toBeTruthy();
+    expect(mouth.part).toBe(PART_GROUND);
+    expect(mouth.shade!, '階梯口不夠暗，看起來像鋪面').toBeLessThan(0.15);
+  });
+
+  it('should raise the lift shaft above the entrance', () => {
+    // 一樣高的話兩者併成一個方盒。
+    const lift = tagged(metroStationPlan, 'lift')[0]!;
+    const entrance = tagged(metroStationPlan, 'entrance')[0]!;
+    expect(lift.y1, '電梯井沒有比出入口高').toBeGreaterThan(entrance.y1 * 1.2);
+  });
+
+  it('should rail off the stairs', () => {
+    expect(metroStationPlan.props.filter(v => v.tag === 'rail').length, '階梯口沒有欄杆')
+      .toBe(2);
+  });
+});
+
+describe('火車站', () => {
+  it('should be the tallest of the four', () => {
+    // 四座裡唯一有「站體」的一座。
+    const top = topOf(trainStationPlan.massing);
+    for (const [, other] of PLANS.filter(([, p]) => p !== trainStationPlan)) {
+      expect(top, '火車站不是最高的').toBeGreaterThan(topOf(other.massing));
+    }
+  });
+
+  it('should lay two parallel rails on ballast', () => {
+    // 一條軌道不是鐵路。兩條平行的亮線才是。
+    const rails = trainStationPlan.props.filter(v => v.tag === 'rail');
+    expect(rails.length, '軌道不是兩條').toBe(2);
+    expect(rails[0]!.z).not.toBeCloseTo(rails[1]!.z, 3);
+    expect(rails[0]!.w).toBeCloseTo(rails[1]!.w, 9);
+    // 軌距要像軌距。1.5 m 以下讀起來是兩條貼在一起的線。
+    const gauge = m(Math.abs(rails[0]!.z - rails[1]!.z));
+    expect(gauge, `軌距 ${gauge.toFixed(1)} m`).toBeGreaterThan(0.6);
+    expect(gauge).toBeLessThan(2.0);
+  });
+
+  it('should raise the platform beside the track', () => {
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    const rails = trainStationPlan.props.filter(v => v.tag === 'rail');
+    expect(platform.part).toBe(PART_GROUND);
+    const h = m(platform.y1 - platform.y0);
+    expect(h, `月台只有 ${h.toFixed(2)} m 高 —— 那是一塊鋪面`).toBeGreaterThan(0.5);
+    // 月台要在軌道**旁邊**，不是壓在軌道上。
+    for (const r of rails) {
+      expect(Math.abs(r.z - platform.z), '月台蓋在軌道上')
+        .toBeGreaterThan(platform.d / 2);
+    }
+  });
+
+  it('should hang a lit clock on the front', () => {
+    const clock = tagged(trainStationPlan, 'clock')[0]!;
+    const hall = tagged(trainStationPlan, 'hall')[0]!;
+    expect(clock.part, '大鐘不會亮').toBe(PART_LAMP);
+    expect(clock.z - clock.d / 2, '大鐘埋在牆裡')
+      .toBeGreaterThanOrEqual(hall.z + hall.d / 2 - 1e-9);
+  });
+
+  it('should carry the platform canopy on posts standing on the platform', () => {
+    const posts = trainStationPlan.props.filter(v => v.tag === 'canopyPost');
+    const canopy = trainStationPlan.overhead.find(v => v.tag === 'platformCanopy')!;
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    expect(posts.length, '月台雨棚沒有柱子').toBeGreaterThanOrEqual(4);
+    for (const p of posts) {
+      expect(p.y0, '柱子沒有站在月台上').toBeCloseTo(platform.y1, 9);
+      expect(p.y1, '柱子沒有頂到雨棚').toBeCloseTo(canopy.y0, 9);
+    }
+  });
+});
+
+describe('渡輪碼頭', () => {
+  it('should make half the plot water', () => {
+    // 少了水，候船室就只是一間小房子。深色水面與棧橋的明度差是它的全部。
+    const base = ferryDockPlan.decals.filter(d => (d.layer ?? 'base') === 'base');
+    const water = base.find(d => d.shade < 0.1)!;
+    expect(water, '碼頭沒有水').toBeTruthy();
+    const total = base.reduce((s, d) => s + d.w * d.d, 0);
+    expect((water.w * water.d) / total, '水面太小').toBeGreaterThan(0.4);
+  });
+
+  it('should build the jetty out over the water', () => {
+    const jetty = tagged(ferryDockPlan, 'jetty')[0]!;
+    const water = ferryDockPlan.decals.find(d =>
+      (d.layer ?? 'base') === 'base' && d.shade < 0.1)!;
+    expect(jetty.part, '棧橋會長出窗戶').toBe(PART_GROUND);
+    expect(jetty.shade!, '棧橋與水一樣暗 —— 看不出有橋')
+      .toBeGreaterThan(water.shade + 0.2);
+    // 棧橋要伸進水裡，不是停在岸上。
+    expect(jetty.z + jetty.d / 2, '棧橋沒有伸進水裡')
+      .toBeGreaterThan(water.z);
+  });
+
+  it('should light the end of the jetty', () => {
+    // 棧橋盡頭那一點光是碼頭夜裡唯一的東西。
+    const light = tagged(ferryDockPlan, 'navLight')[0]!;
+    const jetty = tagged(ferryDockPlan, 'jetty')[0]!;
+    expect(light.part).toBe(PART_LAMP);
+    expect(light.z, '標誌燈不在棧橋盡頭').toBeGreaterThan(jetty.z);
+  });
+
+  it('should give the ferry something to tie up to', () => {
+    const moorings = ferryDockPlan.props.filter(v => v.tag === 'mooring');
+    const jetty = tagged(ferryDockPlan, 'jetty')[0]!;
+    expect(moorings.length, '沒有繫纜樁').toBeGreaterThanOrEqual(2);
+    for (const v of moorings) {
+      expect(v.y0, '繫纜樁沉在棧橋裡').toBeCloseTo(jetty.y1, 9);
+    }
+  });
+});

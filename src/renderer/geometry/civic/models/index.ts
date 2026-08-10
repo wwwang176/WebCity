@@ -12,6 +12,9 @@ import { powerPlan } from './power';
 import { waterPlan } from './water';
 import { garbagePlan } from './garbage';
 import { sewagePlan } from './sewage';
+import {
+  busStopPlan, metroStationPlan, trainStationPlan, ferryDockPlan,
+} from './transit';
 
 /**
  * 已經改造完成的公共建築。
@@ -44,5 +47,9 @@ export const CIVIC_MODELS: Partial<Record<InfraType, CivicPlan>> = {
   garbage: garbagePlan,
   sewage: sewagePlan,
   // 批 4：交通站點（公車站／捷運站／火車站／渡輪碼頭）
+  bus_stop: busStopPlan,
+  metro_station: metroStationPlan,
+  train_station: trainStationPlan,
+  ferry_dock: ferryDockPlan,
   // 批 5：機場（小／中／大）
 };
