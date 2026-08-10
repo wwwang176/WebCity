@@ -8,7 +8,7 @@
  * （BUG-109 的成因正是 worker 有一份看不到高架的平面緩衝）。
  */
 
-import { parsePosKeyUnsafe, parseLevelFromKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
+import { parsePosKeyUnsafe, parseLevelFromKey, toPosKey, FOUR_NEIGHBORS } from '../grid/GridHelpers';
 import { roadTileCost } from './roadCost';
 import type { UnifiedRoadLookup } from './UnifiedRoadLookup';
 
@@ -191,4 +191,64 @@ export function floodRoadCellGraph(
     }
   }
   return cost;
+}
+
+// ── 種子與附掛 ──────────────────────────────────────────────────────
+
+/**
+ * 建築格附近的道路節點（所有樓層）。
+ *
+ * 家與工作都不是道路格，它們要「附掛」到 Chebyshev(reach) 內的路上 ——
+ * 與 zone/civic 的內圈模型一致（`ZONE_ROAD_REACH`）。
+ */
+export function seedNodesFor(
+  graph: RoadCellGraph, x: number, y: number, reach: number,
+): number[] {
+  const out: number[] = [];
+  for (let dy = -reach; dy <= reach; dy++) {
+    for (let dx = -reach; dx <= reach; dx++) {
+      const nx = x + dx, ny = y + dy;
+      if (nx < 0 || ny < 0) continue;
+      // 同一個 (x, y) 可能有多層，全部都要 —— 高架也是路。
+      for (let lv = 0; lv <= 3; lv++) {
+        const key = lv === 0 ? toPosKey(nx, ny) : `${nx},${ny},${lv}`;
+        const i = graph.indexOf.get(key);
+        if (i !== undefined) out.push(i);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * 一個節點 settle 時，附掛它周圍 Chebyshev(reach) 內、`accept` 接受的格子。
+ *
+ * **在 settle 當下呼叫，不是先收集整串再處理。** 這樣同步查詢才能在找齊目標
+ * 時提早結束（舊實作有這個早退）；先收集再附掛等於永遠跑滿預算。
+ *
+ * 只記第一次 —— settle 順序即成本遞增順序，所以第一次就是最便宜的那條路
+ * （BUG-102 的語意）。`dx`/`dy` 包含 `(0, 0)`，所以道路格自身也會被檢查。
+ *
+ * 注意這代表**一個路格拿到的不一定是它自己的成本** —— 它 reach 內若有更便宜
+ * 的路格，就記那個。這是「附掛到最近的路」的正確語意，不是 bug。
+ */
+export function attachAtSettledNode(
+  graph: RoadCellGraph,
+  node: number,
+  cost: number,
+  reach: number,
+  accept: (x: number, y: number) => boolean,
+  out: Map<string, number>,
+): void {
+  const cx = graph.nodeX[node]!, cy = graph.nodeY[node]!;
+  for (let dy = -reach; dy <= reach; dy++) {
+    for (let dx = -reach; dx <= reach; dx++) {
+      const nx = cx + dx, ny = cy + dy;
+      if (nx < 0 || ny < 0) continue;
+      const key = toPosKey(nx, ny);
+      if (out.has(key)) continue;
+      if (!accept(nx, ny)) continue;
+      out.set(key, cost);
+    }
+  }
 }
