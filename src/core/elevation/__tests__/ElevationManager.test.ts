@@ -133,6 +133,32 @@ describe('ElevationManager', () => {
     });
   });
 
+  // --- hasAnySegment / hasAnyElevatedRoad ---
+
+  describe('hasAnyElevatedRoad', () => {
+    // 這兩條原本在 ElevatedAwareReachability.test.ts，名字叫「會不會停用快取」。
+    // 那道閘門已經隨 BUG-109 治本移除（快取現在也是樓層感知的），所以它們
+    // 測的其實只是這兩個 predicate 本身 —— 搬回它們該在的地方。
+    it('should not count an elevated RAIL line as an elevated road', () => {
+      // 高架捷運與地面共用同一個 layers map，但 roadType 是 NONE，
+      // 對道路可達性沒有貢獻。
+      em.set(5, 6, 1, {
+        roadType: 0, roadFlags: 0, railType: 1, railFlags: 12,
+        isRamp: false, rampAscendDirection: 0,
+      });
+      expect(em.hasAnySegment()).toBe(true);
+      expect(em.hasAnyElevatedRoad()).toBe(false);
+    });
+
+    it('should count an elevated road', () => {
+      em.set(5, 6, 1, {
+        roadType: 2, roadFlags: 12, railType: 0, railFlags: 0,
+        isRamp: false, rampAscendDirection: 0,
+      });
+      expect(em.hasAnyElevatedRoad()).toBe(true);
+    });
+  });
+
   // --- clear ---
 
   describe('clear', () => {

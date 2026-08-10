@@ -8,33 +8,22 @@
  * Faster/wider roads extend coverage further.
  */
 
-import { ROAD_CONFIGS, RoadType } from '../road/types';
+import { RoadType } from '../road/types';
 import { FOUR_NEIGHBORS, toPosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
 import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
 import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
+import {
+  buildRoadCellGraph, floodRoadCellGraph, seedNodesFor, attachAtSettledNode,
+  type RoadCellGraph,
+} from '../road/RoadCellGraph';
 
-/** Service coverage budget constants */
-export const ROAD_COVERAGE = {
-  BASE_COST: 100,
-  GARBAGE_BUDGET: 80,
-  POLICE_BUDGET: 30,
-  FIRE_BUDGET: 30,
-  HEALTH_BUDGET: 40,
-  DEATHCARE_BUDGET: 35,
-  EDUCATION_ELEMENTARY_BUDGET: 20,
-  EDUCATION_HIGHSCHOOL_BUDGET: 30,
-  EDUCATION_UNIVERSITY_BUDGET: 45,
-} as const;
-
-/** Calculate traversal cost of a single road tile based on its type. */
-export function roadTileCost(roadType: number): number {
-  const config = ROAD_CONFIGS[roadType as RoadType];
-  if (!config || config.speedLimit === 0) return Infinity;
-  const laneFactor = config.lanes / 2; // 2-lane = 1×
-  return ROAD_COVERAGE.BASE_COST / (config.speedLimit * laneFactor);
-}
+// 成本與預算的唯一來源在 `core/road/roadCost.ts`（worker 也引用同一份）。
+// 這裡轉出去只是為了不動到既有的 import 路徑。
+export { ROAD_COVERAGE } from '../road/roadCost';
+import { roadTileCost } from '../road/roadCost';
+export { roadTileCost };
 
 // ── MinHeap (internal) ──────────────────────────────────────────────
 
@@ -147,7 +136,7 @@ export function roadFlood(
     }
   }
 
-  // Dijkstra expansion (level-aware)
+  // Dijkstra expansion (ground only)
   while (pq.size > 0) {
     const cur = pq.pop()!;
     const best = cellCosts.get(cur.key);
@@ -416,25 +405,27 @@ export class RoadCoverageMap {
 }
 
 /**
- * Single-source Dijkstra from home along the road network.
- * Level-aware: uses UnifiedRoadLookup for compatible neighbor discovery.
- * Returns the road cost to reach each target position.
+ * 家 → 一組目標的道路距離，**只看地面**。
  *
- * Targets (buildings) may not be on road cells — they are discovered when a
- * Dijkstra-expanded road cell has the target within Chebyshev distance
- * ZONE_ROAD_REACH (=2). This matches the zone placement reach so buildings in
- * the inner ring are reachable as commute targets.
+ * 給只有 `ReadableGrid` 的呼叫端 —— 那個介面只有 `getCell`（`GridHelpers.ts`），
+ * 沒有 width/height/forEachCell，建不出 `UnifiedRoadLookup`，也就建不出
+ * `RoadCellGraph`。全 repo 有十幾個這樣的呼叫端，所以這不是遷移殘骸，
+ * 是這個 API 的另一半契約。
  *
- * Stops when all targets are found or maxBudget is exceeded.
+ * 有 lookup 時請用 `roadDistanceToTargets` —— 它走圖，而且是樓層感知的。
+ * 兩者在沒有高架的世界裡必須逐格相等，由 `RoadDistanceParity.test.ts` 持續守著。
+ *
+ * 目標（建築）不一定在路格上 —— 當某個展開到的路格與目標的 Chebyshev 距離
+ * ≤ ZONE_ROAD_REACH (=2) 時才被發現。這與 zone 放置的 reach 一致。
+ *
+ * 找齊目標或超過 maxBudget 就停。
  */
-export function roadDistanceToTargets(
+export function roadDistanceToTargetsOnGrid(
   grid: ReadableGrid,
   home: { x: number; y: number },
   targets: Set<string>,
   maxBudget: number,
-  roadLookup?: UnifiedRoadLookup | null,
 ): Map<string, number> {
-  const rl = roadLookup ?? null;
   const result = new Map<string, number>();
   if (targets.size === 0) return result;
 
@@ -471,23 +462,12 @@ export function roadDistanceToTargets(
   }
 
   for (const sp of seedPositions) {
-    if (rl) {
-      const keys = rl.getAllKeysAtPosition(sp.x, sp.y);
-      for (const k of keys) {
-        if (!cellCosts.has(k)) {
-          cellCosts.set(k, 0);
-          pq.push(k, 0);
-        }
-      }
-    } else {
-      // Fallback: ground-only
-      const cell = grid.getCell(sp.x, sp.y);
-      if (cell && cell.roadType !== RoadType.NONE) {
-        const k = toPosKey(sp.x, sp.y);
-        if (!cellCosts.has(k)) {
-          cellCosts.set(k, 0);
-          pq.push(k, 0);
-        }
+    const cell = grid.getCell(sp.x, sp.y);
+    if (cell && cell.roadType !== RoadType.NONE) {
+      const k = toPosKey(sp.x, sp.y);
+      if (!cellCosts.has(k)) {
+        cellCosts.set(k, 0);
+        pq.push(k, 0);
       }
     }
   }
@@ -505,7 +485,7 @@ export function roadDistanceToTargets(
   }
   if (foundCount >= targets.size) return result;
 
-  // Dijkstra expansion (level-aware)
+  // Dijkstra expansion (ground only)
   while (pq.size > 0) {
     const cur = pq.pop()!;
     const best = cellCosts.get(cur.key);
@@ -516,7 +496,7 @@ export function roadDistanceToTargets(
     // Targets are recorded when their road cell is SETTLED (popped), not when
     // it is relaxed. Tentative relax-time costs meant whichever road cell
     // happened to touch a target first won permanently, and road tiers differ by
-    // up to 6.7x (RURAL 3.33 vs HIGHWAY 0.5) — a rural lane at the door beat a
+    // up to 6.7x (RURAL 60 vs HIGHWAY 9) — a rural lane at the door beat a
     // motorway two cells away, and JobRelocation scored the commute on the wrong
     // figure. Popping in increasing-cost order makes the first settled road cell
     // adjacent to a target the cheapest one, so this is both correct and still
@@ -533,37 +513,15 @@ export function roadDistanceToTargets(
     for (const [dx, dy] of FOUR_NEIGHBORS) {
       const nx = x + dx!;
       const ny = y + dy!;
-
-      const neighborKeys = rl
-        ? rl.getCompatibleNeighborKeys(cur.key, nx, ny)
-        : [];
-
-      // Fallback: ground-only
-      if (!rl) {
-        const cell = grid.getCell(nx, ny);
-        if (!cell || cell.roadType === RoadType.NONE) continue;
-        const nk = toPosKey(nx, ny);
-        const newCost = cur.cost + roadTileCost(cell.roadType);
-        if (newCost > maxBudget) continue;
-        const prev = cellCosts.get(nk);
-        if (prev === undefined || newCost < prev) {
-          cellCosts.set(nk, newCost);
-          pq.push(nk, newCost);
-        }
-        continue;
-      }
-
-      for (const nk of neighborKeys) {
-        const roadInfo = rl.getCellByKey(nk);
-        if (!roadInfo) continue;
-        const newCost = cur.cost + roadTileCost(roadInfo.roadType);
-        if (newCost > maxBudget) continue;
-
-        const prev = cellCosts.get(nk);
-        if (prev === undefined || newCost < prev) {
-          cellCosts.set(nk, newCost);
-          pq.push(nk, newCost);
-        }
+      const cell = grid.getCell(nx, ny);
+      if (!cell || cell.roadType === RoadType.NONE) continue;
+      const nk = toPosKey(nx, ny);
+      const newCost = cur.cost + roadTileCost(cell.roadType);
+      if (newCost > maxBudget) continue;
+      const prev = cellCosts.get(nk);
+      if (prev === undefined || newCost < prev) {
+        cellCosts.set(nk, newCost);
+        pq.push(nk, newCost);
       }
     }
   }
@@ -582,4 +540,45 @@ export function expandFootprint(
     }
   }
   return positions;
+}
+
+/**
+ * 家 → 一組目標的道路距離。
+ *
+ * 走 `RoadCellGraph`，與 workplace-distance worker **同一個 flood 核心** ——
+ * 兩條路不可能給出不同的決策（BUG-109 的成因正是它們是兩份實作）。
+ *
+ * `graph` 傳進來時直接用。**應該要傳** —— 這個函式每個市民呼叫一次
+ * （`JobRelocation` 的換工作迴圈），而建圖是 O(路格數 × 4)；圖只在路網改變時
+ * 才變，由呼叫端（`SimulationLoop`，以 `commuteCache.roadGeneration` 為鍵）
+ * 持有才不會被乘上市民數。不傳時自己建一張，正確但慢。
+ *
+ * 沒有 `roadLookup` 就沒有樓層資訊，退回只看地面的
+ * `roadDistanceToTargetsOnGrid` —— `ReadableGrid` 只有 `getCell`，建不出 lookup。
+ *
+ * 找齊目標就提早結束。少了它同步路徑會永遠跑滿預算。
+ */
+export function roadDistanceToTargets(
+  grid: ReadableGrid,
+  home: { x: number; y: number },
+  targets: Set<string>,
+  maxBudget: number,
+  roadLookup?: UnifiedRoadLookup | null,
+  graph?: RoadCellGraph,
+): Map<string, number> {
+  if (!roadLookup) return roadDistanceToTargetsOnGrid(grid, home, targets, maxBudget);
+
+  const result = new Map<string, number>();
+  if (targets.size === 0) return result;
+
+  const g = graph ?? buildRoadCellGraph(roadLookup);
+  const seeds = seedNodesFor(g, home.x, home.y, ZONE_ROAD_REACH);
+  if (seeds.length === 0) return result;
+
+  floodRoadCellGraph(g, seeds, maxBudget, (node, cost) => {
+    attachAtSettledNode(g, node, cost, ZONE_ROAD_REACH,
+      (x, y) => targets.has(toPosKey(x, y)), result);
+    return result.size >= targets.size;   // 找齊就停
+  });
+  return result;
 }

@@ -15,6 +15,23 @@ import { RoadCoverageService, type Facility } from './RoadCoverageService';
 import { toPosKey } from '../grid/GridHelpers';
 import type { SizedGrid } from '../grid/GridHelpers';
 import type { UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
+import { roadTileCost } from '../road/roadCost';
+import { RoadType } from '../road/types';
+
+/**
+ * 加權隨機挑選時，一個地點依道路距離得到的權重。越近權重越高。
+ *
+ * 下限是**一格四線道的成本**，讓設施門口附近成為一塊等權重的平台 ——
+ * 沒有下限的話成本 0 會是無限大權重，隔壁那格就永遠搶不到車。
+ *
+ * 下限必須與 `cost` 同尺度，所以用 `roadTileCost` 表達而不是寫死數字。
+ * 成本整數化（`core/road/roadCost.ts`）時這裡漏掉了：舊制寫死的 `1` 恰好
+ * 就是舊制一格四線道的成本，成本 ×18 之後那個 `1` 變成只夾得住成本 0，
+ * 平台塌掉，垃圾車與靈車的挑選分布跟著變。
+ */
+export function distanceWeight(cost: number): number {
+  return 1 / Math.max(roadTileCost(RoadType.FOUR_LANE), cost);
+}
 
 /** Minimal pending item: location + age. */
 export interface PendingItem {
@@ -157,7 +174,7 @@ export abstract class GlobalCoverageService<F extends LoadFacility> extends Road
       } else {
         const cost = this.mergedDistanceMap.get(key);
         if (cost === undefined) continue;
-        positions.set(key, { x: item.x, y: item.y, count: 1, weight: 1 / Math.max(1, cost) });
+        positions.set(key, { x: item.x, y: item.y, count: 1, weight: distanceWeight(cost) });
         indicesByPos.set(key, [i]);
       }
     }

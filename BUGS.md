@@ -3443,3 +3443,83 @@ wpDistCache.isStale: true
 `findGapAhead` ≈ 主執行緒 12%。它是每幀均攤的穩態成本，不造成卡頓，但
 BUG-109 治本之後它就是最大的那一項。
 
+
+---
+
+## BUG-237 已修：反向 flood 付錯端點的成本
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-237 | workplace-distance.worker.ts | 從工作地點反向擴散時付 `roadTileCost(鄰居)`，也就是**來源**那格的價格，而正向付的是**目的地**那格 | Medium |
+
+**發現方式：** 送 Codex 審核 BUG-109 的實作計畫時，它比對了同步與非同步兩條
+路徑，指出現行 worker 的反向擴散與同步版本不一致。
+
+成本加在**目的地**那一格。正向邊 A→B 的價格是 `cost(B)`；反向 Dijkstra 從 B
+走回 A 應該仍用 `cost(B)`，但現行 worker 用的是 `cost(A)`：
+
+```ts
+const rt = getRoadType(nx, ny);            // 鄰居 = 反向的下一格 = 正向的來源
+const newCost = cur.cost + roadTileCost(rt);
+```
+
+**既有測試為什麼沒抓到：** 它們只用單一路型（`WorkplaceDistanceWorker.test.ts`）。
+所有格子一樣貴時，正向與反向剛好相等。路型混合的城市（高速 9、鄉道 60，
+差 6.7 倍）就會給出不同的通勤成本，而那個成本直接餵進 `scoreWorkplaceWithCost`。
+
+**修法：** 引入 `transposeRoadCellGraph` —— 每條邊 `(i→j, w)` 變成 `(j→i, w)`，
+權重跟著邊走。worker 在轉置圖上跑，得到的正是每個家沿正向走到該工作的成本。
+測試對每一對 (家, 工作) 比對正向 flood 與轉置圖上的反向 flood，逐格精確相等。
+
+---
+
+## BUG-109 已治本：workplace 距離改走路網圖
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-109 | SimulationLoop / workplace-distance.worker | 有任何一格高架道路就停用 workplace 距離快取，退回逐戶 Dijkstra | High |
+
+**成因**（不是「快取還沒算好」，是**不會去算**）：worker 拿到的是一張
+`width × height`、每格 12 bytes 的平面緩衝，只讀 `roadType`，四方向擴散，
+**完全沒有樓層概念**。讓它算，它會以為橋不存在。當初的選擇是「寧可慢也不要
+錯」—— 一道 `hasAnyElevatedRoad()` 閘門把整座城市的快取關掉。
+
+**修法：** 建一張格子層的 `RoadCellGraph`。節點是道路格（含高架），邊是
+`UnifiedRoadLookup` 判定的合法鄰接 —— **樓層與匝道規則在建圖時就消化掉了**，
+worker 拿到的圖裡沒有樓層概念。同步查詢在正向圖上跑，worker 在**轉置圖**上跑
+（成本加在目的地那一格，用正向圖反向擴散會付錯價 —— BUG-237），兩者呼叫同一個
+`floodRoadCellGraph`。圖以 `commuteCache.roadGeneration` 為鍵，每個道路世代
+建一次。
+
+前置條件：**道路成本整數化**（`core/road/roadCost.ts`）。硬約束是「worker 與
+同步逐格精確相等」，而浮點加法沒有結合律 —— 反向 Dijkstra 走同一組邊的相反
+順序，總和必然差到 1e-15，換 Float64 也一樣。分子從 100 改成 1800
+（＝所有分母的最小公倍數）後每格成本都是整數（9 ~ 60），加法可交換。
+
+### 實機驗收（2026-08-10，同一份 2146 人的存檔，60 格高架道路）
+
+```
+快取狀態        改前：永遠 empty（連 requestUpdate 都被擋）
+                改後：ready ⇄ computing 循環，穩定到得了 READY
+
+runJobRelocation  改前：1474 ms／輪
+                  改後：15 秒內 5 輪，合計 0 ms（查表 O(1)）
+換工作切片        301 次呼叫合計 26 ms（每次約 0.09 ms）
+
+圖的成本          getCellGraph 15 秒內 3 次呼叫合計 0 ms（世代快取生效）
+                  requestUpdate（含轉置＋序列化）2 次合計 1 ms
+
+正確性            在這座城市裡抽 120 對（家 → 目前的工作），比對快取與同步
+                  查詢：**0 筆不一致、0 筆兩邊都不可達**
+```
+
+**逐 tick 成本：最慢 67.4 ms、平均 12.8 ms（2392 人，速度 5）。**
+
+比切片化當時量到的 49.2 ms 高，但**原因不是這次的改動**：慢 tick 現在由
+`computeCongestionFlow` 主宰（20 秒內 7 次、合計 236 ms、單次最高 47.4 ms），
+而 `roadDistanceToTargets` 連前 12 名都排不進去。人口也從 2146 長到 2392 ——
+市民找得到工作了，通勤車流跟著變多，壅塞計算的輸入就變大。
+
+**下一個瓶頸換人了：** `computeCongestionFlow`。它是每隔數十 tick 一次的批次
+計算，單次 47 ms 直接就是一個掉幀。（先前記錄的 `advanceEdgeVehicles` 那一串
+仍在，但它是每幀均攤的穩態成本，不造成卡頓。）

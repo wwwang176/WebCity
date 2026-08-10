@@ -27,12 +27,18 @@ export function scoreEducationMatch(education: EducationLevel, zoneType: ZoneTyp
 
 // scoreWorkplaceCommute removed — shared scoreCommute from HousingScore.ts (DRY)
 
-/** Commute scoring constants for job relocation */
+/**
+ * Commute scoring constants for job relocation.
+ *
+ * `SHORT_DISTANCE` / `LONG_DISTANCE` 的單位是道路通行成本（見
+ * `core/road/roadCost.ts`），與 `roadTileCost` 同尺度 —— 舊制的 10 / 40
+ * 在成本整數化後變成 180 / 720。獎懲分數本身不是距離，維持原值。
+ */
 export const COMMUTE_SCORE = {
   NO_PATH_PENALTY: -20,
-  SHORT_DISTANCE: 10,
+  SHORT_DISTANCE: 180,
   SHORT_BONUS: 15,
-  LONG_DISTANCE: 40,
+  LONG_DISTANCE: 720,
   LONG_PENALTY: -15,
 } as const;
 

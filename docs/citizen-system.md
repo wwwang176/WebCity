@@ -497,7 +497,7 @@ max(2, floor(住宅容量 / 4))
 | `manhattanFallback` | 15 | 曼哈頓距離回退閾值 |
 | `scoreGap` | 15 | 新工作分數差距門檻 |
 | `maxRelocateRatio` | 5% | 非緊急搬遷比例上限 |
-| `dijkstraMaxBudget` | 60 | Dijkstra 搜尋預算 |
+| `dijkstraMaxBudget` | 1080 | Dijkstra 搜尋預算 |
 
 ### 處理流程
 

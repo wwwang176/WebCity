@@ -33,6 +33,15 @@ const _ = RoadType.NONE;
 const RU = RoadType.RURAL;
 const F4 = RoadType.FOUR_LANE;
 
+/**
+ * 「一定夠用」的預算，給那些不是在測預算上限的案例。
+ *
+ * 這些測試原本寫死 100（舊浮點成本制下約 50 格二線道）。成本整數化後
+ * （見 core/road/roadCost.ts）同樣的涵蓋範圍是 100 × 18 —— 尺度換算，
+ * 每一條測試的語意都沒變。
+ */
+const AMPLE_BUDGET = 1800;
+
 // ── roadTileCost ────────────────────────────────────────────────────
 
 describe('roadTileCost', () => {
@@ -74,7 +83,7 @@ describe('roadFlood', () => {
       [_, _, _],
       [_, _, _],
     ]);
-    const result = roadFlood(grid, [{ x: 1, y: 1 }], 100);
+    const result = roadFlood(grid, [{ x: 1, y: 1 }], AMPLE_BUDGET);
     expect(result.size).toBe(0);
   });
 
@@ -85,7 +94,7 @@ describe('roadFlood', () => {
       [_, _, R],
       [_, _, _],
     ]);
-    const result = roadFlood(grid, [{ x: 1, y: 1 }], 100);
+    const result = roadFlood(grid, [{ x: 1, y: 1 }], AMPLE_BUDGET);
     expect(result.get(toPosKey(2, 1))).toBe(0);
   });
 
@@ -94,7 +103,7 @@ describe('roadFlood', () => {
     const grid = makeGrid([
       [_, R, R, R, R],
     ]);
-    const result = roadFlood(grid, [{ x: 0, y: 0 }], 100);
+    const result = roadFlood(grid, [{ x: 0, y: 0 }], AMPLE_BUDGET);
     expect(result.has(toPosKey(1, 0))).toBe(true);
     expect(result.has(toPosKey(4, 0))).toBe(true);
     // Cost increases with distance
@@ -119,7 +128,7 @@ describe('roadFlood', () => {
     const len = 30;
     const ruralRow = [_, ...Array(len).fill(RU)] as number[];
     const hwRow = [_, ...Array(len).fill(H)] as number[];
-    const budget = 10;
+    const budget = 180; // 舊制 10 × 18
 
     const ruralResult = roadFlood(makeGrid([ruralRow]), [{ x: 0, y: 0 }], budget);
     const hwResult = roadFlood(makeGrid([hwRow]), [{ x: 0, y: 0 }], budget);
@@ -132,7 +141,7 @@ describe('roadFlood', () => {
     const grid = makeGrid([
       [_, R, R, _, R, R],
     ]);
-    const result = roadFlood(grid, [{ x: 0, y: 0 }], 100);
+    const result = roadFlood(grid, [{ x: 0, y: 0 }], AMPLE_BUDGET);
     expect(result.has(toPosKey(1, 0))).toBe(true);
     expect(result.has(toPosKey(2, 0))).toBe(true);
     // Disconnected segment not reachable
@@ -146,7 +155,7 @@ describe('roadFlood', () => {
       [_, _, _, R],
       [_, _, _, R],
     ]);
-    const result = roadFlood(grid, [{ x: 0, y: 0 }], 100);
+    const result = roadFlood(grid, [{ x: 0, y: 0 }], AMPLE_BUDGET);
     expect(result.has(toPosKey(3, 2))).toBe(true);
   });
 
@@ -162,7 +171,7 @@ describe('roadFlood', () => {
       { x: 1, y: 1 }, { x: 2, y: 1 },
       { x: 1, y: 2 }, { x: 2, y: 2 },
     ];
-    const result = roadFlood(grid, positions, 100);
+    const result = roadFlood(grid, positions, AMPLE_BUDGET);
     expect(result.has(toPosKey(3, 1))).toBe(true);
     expect(result.has(toPosKey(3, 2))).toBe(true);
   });
@@ -189,7 +198,7 @@ describe('roadFlood', () => {
       [_, R,  _,  R,  _],
       [_, H,  H,  H,  _],
     ]);
-    const result = roadFlood(grid2, [{ x: 0, y: 1 }], 100);
+    const result = roadFlood(grid2, [{ x: 0, y: 1 }], AMPLE_BUDGET);
     // (3,0) reached via rural: cost = 0 + tileCost(R) + tileCost(RU)*2
     // (3,2) reached via highway: cost = 0 + tileCost(R) + tileCost(H)*2
     // highway should be cheaper
@@ -328,7 +337,7 @@ describe('RoadCoverageMap', () => {
       [_, _, _, _],
     ]);
     const map = new RoadCoverageMap();
-    map.recalculate([{ x: 0, y: 1 }], grid, 100);
+    map.recalculate([{ x: 0, y: 1 }], grid, AMPLE_BUDGET);
     // Road cells covered
     expect(map.hasCoverage(1, 1)).toBe(true);
     expect(map.hasCoverage(3, 1)).toBe(true);
@@ -344,7 +353,7 @@ describe('RoadCoverageMap', () => {
       [_, R, R],
     ]);
     const map = new RoadCoverageMap();
-    map.recalculate([{ x: 0, y: 0 }], grid, 100);
+    map.recalculate([{ x: 0, y: 0 }], grid, AMPLE_BUDGET);
     expect(map.getCost(1, 0)).toBe(0); // seed
     expect(map.getCost(2, 0)).toBeGreaterThan(0); // 1 step
     expect(map.getCost(99, 99)).toBe(Infinity);
@@ -358,7 +367,7 @@ describe('RoadCoverageMap', () => {
     const map = new RoadCoverageMap();
     map.recalculate(
       [{ x: 0, y: 0 }, { x: 4, y: 0 }],
-      grid, 100,
+      grid, AMPLE_BUDGET,
     );
     expect(map.getCoverageCount(2, 0)).toBe(2);
   });
@@ -371,7 +380,7 @@ describe('RoadCoverageMap', () => {
       [_, _, R],
     ]);
     const map = new RoadCoverageMap();
-    map.recalculate([{ x: 0, y: 0 }], grid, 100, 2, 2);
+    map.recalculate([{ x: 0, y: 0 }], grid, AMPLE_BUDGET, 2, 2);
     // (2,0) is adjacent to facility cell (1,0) → covered
     expect(map.hasCoverage(2, 0)).toBe(true);
     expect(map.hasCoverage(2, 2)).toBe(true);
@@ -384,7 +393,7 @@ describe('RoadCoverageMap', () => {
       [_, _, R],
     ]);
     const map = new RoadCoverageMap();
-    map.recalculate([{ x: 0, y: 0 }], grid, 100);
+    map.recalculate([{ x: 0, y: 0 }], grid, AMPLE_BUDGET);
     // Road exists but not adjacent to facility
     expect(map.hasCoverage(2, 2)).toBe(false);
   });
@@ -394,7 +403,7 @@ describe('RoadCoverageMap', () => {
       [_, R, R, R],
     ]);
     const map = new RoadCoverageMap();
-    const preview = map.preview({ x: 0, y: 0 }, grid, 100);
+    const preview = map.preview({ x: 0, y: 0 }, grid, AMPLE_BUDGET);
     expect(preview.has(toPosKey(1, 0))).toBe(true);
     expect(preview.has(toPosKey(3, 0))).toBe(true);
     // Main map untouched
@@ -408,11 +417,11 @@ describe('RoadCoverageMap', () => {
     ]);
     const map = new RoadCoverageMap();
     // Existing facility at (0,0) covers left part of road
-    map.recalculate([{ x: 0, y: 0 }], grid, 100);
+    map.recalculate([{ x: 0, y: 0 }], grid, AMPLE_BUDGET);
     expect(map.hasCoverage(1, 0)).toBe(true);
 
     // Preview new facility at (6,0) — covers right part of road
-    const merged = map.previewMerged({ x: 6, y: 0 }, grid, 100);
+    const merged = map.previewMerged({ x: 6, y: 0 }, grid, AMPLE_BUDGET);
     // Should include existing coverage
     expect(merged.has(toPosKey(1, 0))).toBe(true);
     // Should include new preview coverage
@@ -429,10 +438,10 @@ describe('RoadCoverageMap', () => {
       [_, R, R],
     ]);
     const map = new RoadCoverageMap();
-    map.recalculate([{ x: 0, y: 0 }], grid, 100);
+    map.recalculate([{ x: 0, y: 0 }], grid, AMPLE_BUDGET);
     expect(map.hasCoverage(1, 0)).toBe(true);
     // Recalculate with no facilities
-    map.recalculate([], grid, 100);
+    map.recalculate([], grid, AMPLE_BUDGET);
     expect(map.hasCoverage(1, 0)).toBe(false);
   });
 
@@ -498,7 +507,7 @@ describe('roadDistanceToTargets', () => {
     const grid = makeGrid([
       [_, R, R, _],
     ]);
-    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['3,0']), 100);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['3,0']), AMPLE_BUDGET);
     expect(result.has('3,0')).toBe(true);
     expect(result.get('3,0')!).toBe(0);
   });
@@ -512,7 +521,7 @@ describe('roadDistanceToTargets', () => {
       [_, _, _, R, R, _, _],
       [_, _, _, _, _, _, _],
     ]);
-    const result = roadDistanceToTargets(grid, { x: 1, y: 1 }, new Set(['6,1']), 100);
+    const result = roadDistanceToTargets(grid, { x: 1, y: 1 }, new Set(['6,1']), AMPLE_BUDGET);
     expect(result.has('6,1')).toBe(true);
     expect(result.get('6,1')!).toBeCloseTo(roadTileCost(R), 5);
   });
@@ -522,7 +531,7 @@ describe('roadDistanceToTargets', () => {
     const grid = makeGrid([
       [_, R, _, R, _],
     ]);
-    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['4,0']), 100);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['4,0']), AMPLE_BUDGET);
     expect(result.has('4,0')).toBe(false);
   });
 
@@ -564,7 +573,7 @@ describe('roadDistanceToTargets', () => {
       [R, _, R],
       [_, R, _],
     ]);
-    const result = roadDistanceToTargets(grid, { x: 1, y: 1 }, new Set(['0,0']), 100);
+    const result = roadDistanceToTargets(grid, { x: 1, y: 1 }, new Set(['0,0']), AMPLE_BUDGET);
     // (0,0) is not a road and not adjacent to a covered road... let's use a reachable target
     // Actually (0,0) is _ and adjacent to (1,0)=R and (0,1)=R, so it IS reachable as a building neighbor
     expect(result.has('0,0')).toBe(true);
@@ -575,7 +584,7 @@ describe('roadDistanceToTargets', () => {
     const grid = makeGrid([
       [_, R, R, R, _],
     ]);
-    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['4,0']), 100);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(['4,0']), AMPLE_BUDGET);
     expect(result.has('4,0')).toBe(true);
   });
 
@@ -593,7 +602,7 @@ describe('roadDistanceToTargets', () => {
 
   it('returns empty map for empty targets', () => {
     const grid = makeGrid([[_, R, R]]);
-    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(), 100);
+    const result = roadDistanceToTargets(grid, { x: 0, y: 0 }, new Set(), AMPLE_BUDGET);
     expect(result.size).toBe(0);
   });
 });

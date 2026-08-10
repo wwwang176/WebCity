@@ -38,6 +38,8 @@ import { relocationTick } from '../citizen/Relocation';
 import { beginJobRelocation, jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG,
   type JobRelocationSlicer } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
+import { buildRoadCellGraph, transposeRoadCellGraph } from '../road/RoadCellGraph';
+import { serializeRoadCellGraph } from '../road/RoadCellGraphBuffer';
 import type { SchoolType, EnrolledCitizen } from '../service/EducationService';
 import { EDUCATION_PROGRESSION, MIN_SCHOOL_AGE, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
 import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../transport/ModeChoice';
@@ -186,6 +188,41 @@ export class SimulationLoop {
   setElevationManager(em: import('../elevation/ElevationManager').ElevationManager): void {
     this._elevationManager = em;
     this.state.highwayConnection.setElevationManager(em);
+  }
+
+  /**
+   * 對稱於 `setRoadLookup`。BUG-109 的驗收測試要用同一份 lookup 自己建圖來
+   * 比對快取的答案 —— 沒有 getter 的話它只能另外組一份，兩份不一致時測試
+   * 會說謊。
+   */
+  getRoadLookup(): import('../road/UnifiedRoadLookup').UnifiedRoadLookup | null {
+    return this._roadLookup;
+  }
+
+  /**
+   * 路網圖，**每個道路世代重建一次**。
+   *
+   * 同步查詢每個市民呼叫一次 `roadDistanceToTargets`，而建圖是
+   * O(路格數 × 4) —— 每次重建會比它省下的還多。圖只在路網改變時才變，
+   * 所以在這裡持有：正向給同步查詢，轉置後序列化給 worker。
+   *
+   * 世代來自 `commuteCache.roadGeneration`，而 `markLaneGraphDirty` 會 bump
+   * 它。**高架道路的建與拆也必須經過那條路**（`Game.ts` 會呼叫），否則圖會
+   * 陳舊 —— `ElevationManager` 自己沒有事件機制。見
+   * `__tests__/ElevatedRoadInvalidatesGraph.test.ts`。
+   */
+  private _cellGraph: import('../road/RoadCellGraph').RoadCellGraph | null = null;
+  private _cellGraphGeneration = -1;
+
+  private getCellGraph(): import('../road/RoadCellGraph').RoadCellGraph | null {
+    const lookup = this._roadLookup;
+    if (!lookup) return null;
+    const gen = this.commuteCache.roadGeneration;
+    if (this._cellGraph === null || this._cellGraphGeneration !== gen) {
+      this._cellGraph = buildRoadCellGraph(lookup);
+      this._cellGraphGeneration = gen;
+    }
+    return this._cellGraph;
   }
 
   setRoadLookup(lookup: import('../road/UnifiedRoadLookup').UnifiedRoadLookup): void {
@@ -1177,28 +1214,13 @@ export class SimulationLoop {
       if (isWorkingAge(c.age)) workingAgeCitizens.push(c);
     }
 
-    // The workplace-distance worker only receives the grid buffer, whose
-    // roadType byte is the GROUND layer. Elevated segments live in
-    // ElevationManager and are invisible to it, so in a city where a viaduct
-    // provides the only link between a district and its jobs the cache reported
-    // "unreachable" while the synchronous fallback — which is handed
-    // _roadLookup and IS level-aware — reported the opposite. Residents lost
-    // their jobs whenever the cache happened to be ready and got them back when
-    // it went stale, oscillating between the two answers.
+    // Trigger async cache update if stale.
     //
-    // Correctness wins over speed: the cache is simply not used while any
-    // elevated ROAD exists. Serialising the elevated layers into the worker
-    // buffer is the real fix and is recorded in TODO.md (BUG-109).
-    //
-    // hasAnyElevatedRoad, not hasAnySegment: elevated RAIL shares the same
-    // layers map with roadType NONE and contributes nothing to road
-    // reachability, so the broader question let one elevated metro tile
-    // permanently disable the cache for an otherwise entirely flat city —
-    // a budgeted Dijkstra per unemployed home, every slow cycle, forever.
-    const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnyElevatedRoad();
-
-    // Trigger async cache update if stale
-    if (canUseWpCache && this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
+    // 這裡以前有一道閘門：只要有任何一格高架道路就完全不用快取（BUG-109）。
+    // 那是因為 worker 拿到的是平面格子緩衝，看不到高架，答案會錯。現在它拿
+    // 到的是 RoadCellGraph —— 樓層與匝道在建圖時就消化掉了，兩條路共用同一
+    // 個 flood 核心，閘門沒有存在的理由了。
+    if (this.wpDistCache && this.wpDistCache.isStale && workplaceCandidates.length > 0) {
       const wpPositions = workplaceCandidates.map(c => {
         const p = parsePosKeyUnsafe(c.pos);
         return { pos: c.pos, x: p.x, y: p.y };
@@ -1207,14 +1229,22 @@ export class SimulationLoop {
       const srcBuf = this.state.grid.getBuffer();
       const copy = new ArrayBuffer(srcBuf.byteLength);
       new Uint8Array(copy).set(new Uint8Array(srcBuf));
-      this.wpDistCache.requestUpdate(
-        this.state.grid.width, this.state.grid.height,
-        copy, wpPositions, DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
-      );
+      // 圖是 worker 的走訪規則來源 —— 樓層與匝道在建圖時就消化掉了。
+      // 傳的是**轉置**圖：成本加在目的地那一格，用正向圖跑反向 flood 會付成
+      // 來源那格的價格（BUG-237）。
+      const graph = this.getCellGraph();
+      if (graph) {
+        const graphBuffer = serializeRoadCellGraph(transposeRoadCellGraph(graph));
+        this.wpDistCache.requestUpdate(
+          this.state.grid.width, this.state.grid.height,
+          copy, graphBuffer, wpPositions, DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+        );
+      }
+      // 沒有 lookup 就建不出圖，這一輪不請求更新，照常走同步指派。
     }
 
     // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback
-    const reachable = (canUseWpCache && this.wpDistCache?.isReady)
+    const reachable = this.wpDistCache?.isReady
       ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
       : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
     assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable);
@@ -1348,25 +1378,22 @@ export class SimulationLoop {
     const workOccupancy = countOccupancy(citizens, (c) => c.workplaceId);
 
     // Use cache-based distance lookup when ready (O(1) per lookup, no Dijkstra).
-    // Otherwise provide a closure that captures this._roadLookup for level-aware Dijkstra.
+    // Otherwise fall back to the synchronous graph walk.
     //
-    // The same elevation guard as assignCitizenHousing. This is the second
-    // consumer of the cache and BUG-109's fix only guarded the first: the
-    // worker sees the ground roadType byte and cannot see a viaduct, so a
-    // ready cache would relocate workers as though the viaduct were not there.
-    // It is currently unreachable — requestUpdate is blocked upstream, so the
-    // cache can never reach READY while an elevated road exists — but that is
-    // correctness by coupling, and it evaporates the day the cache is warmed
-    // by any other route.
+    // 高架閘門已移除（BUG-109 治本）—— 快取現在也是樓層感知的，兩條路共用
+    // 同一個 flood 核心，不可能給出不同的答案。
+    //
+    // fallback 一定要傳圖：這個 closure **每個市民呼叫一次**，而建圖是
+    // O(路格數 × 4)。圖以道路世代為鍵快取，整輪只建一次。
     const roadLookup = this._roadLookup;
-    const canUseWpCache = !this._elevationManager || !this._elevationManager.hasAnyElevatedRoad();
-    const distanceLookup = (canUseWpCache && this.wpDistCache?.isReady)
+    const cellGraph = this.getCellGraph() ?? undefined;
+    const distanceLookup = this.wpDistCache?.isReady
       ? (_grid: any, homePos: { x: number; y: number }, targets: Set<string>, _budget: number) => {
           const homeKey = toPosKey(homePos.x, homePos.y);
           return this.wpDistCache!.getDistancesFromHome(homeKey, targets);
         }
       : (grid: ReadableGrid, homePos: { x: number; y: number }, targets: Set<string>, budget: number) =>
-          roadDistanceToTargets(grid, homePos, targets, budget, roadLookup);
+          roadDistanceToTargets(grid, homePos, targets, budget, roadLookup, cellGraph);
 
     // 開一輪，交給 advanceJobRelocation 逐 tick 推進。
     this.jobRelocationSlicer = beginJobRelocation(

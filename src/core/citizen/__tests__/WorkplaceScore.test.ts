@@ -75,20 +75,23 @@ describe('scoreCommuteByCost', () => {
     expect(scoreCommuteByCost(null)).toBe(-20);
   });
 
-  it('very close (cost <= 10) returns +15', () => {
+  // 成本的單位是道路通行成本（見 core/road/roadCost.ts）。這裡一律用
+  // COMMUTE_SCORE 的門檻表達，不寫死數字 —— 尺度再變一次也不會鬆掉。
+  it('very close (cost <= SHORT_DISTANCE) returns +15', () => {
     expect(scoreCommuteByCost(0)).toBe(15);
-    expect(scoreCommuteByCost(5)).toBe(15);
-    expect(scoreCommuteByCost(10)).toBe(15);
+    expect(scoreCommuteByCost(COMMUTE_SCORE.SHORT_DISTANCE / 2)).toBe(15);
+    expect(scoreCommuteByCost(COMMUTE_SCORE.SHORT_DISTANCE)).toBe(15);
   });
 
-  it('very far (cost > 40) returns -15', () => {
-    expect(scoreCommuteByCost(41)).toBe(-15);
-    expect(scoreCommuteByCost(100)).toBe(-15);
+  it('very far (cost > LONG_DISTANCE) returns -15', () => {
+    expect(scoreCommuteByCost(COMMUTE_SCORE.LONG_DISTANCE + 1)).toBe(-15);
+    expect(scoreCommuteByCost(COMMUTE_SCORE.LONG_DISTANCE * 2)).toBe(-15);
   });
 
   it('mid-range linearly interpolates', () => {
-    // cost=25 → 15 - (25-10) * (30/30) = 15 - 15 = 0
-    expect(scoreCommuteByCost(25)).toBe(0);
+    // 正中間的成本 → 獎勵與懲罰的中點 (15 + -15)/2 = 0
+    const mid = (COMMUTE_SCORE.SHORT_DISTANCE + COMMUTE_SCORE.LONG_DISTANCE) / 2;
+    expect(scoreCommuteByCost(mid)).toBe(0);
   });
 });
 
@@ -141,9 +144,10 @@ describe('scoreEducationMatch', () => {
 
   it('COMMUTE_SCORE constants should have correct values', () => {
     expect(COMMUTE_SCORE.NO_PATH_PENALTY).toBe(-20);
-    expect(COMMUTE_SCORE.SHORT_DISTANCE).toBe(10);
+    // 距離門檻與 roadTileCost 同尺度（舊浮點制 10 / 40 × 18）
+    expect(COMMUTE_SCORE.SHORT_DISTANCE).toBe(180);
     expect(COMMUTE_SCORE.SHORT_BONUS).toBe(15);
-    expect(COMMUTE_SCORE.LONG_DISTANCE).toBe(40);
+    expect(COMMUTE_SCORE.LONG_DISTANCE).toBe(720);
     expect(COMMUTE_SCORE.LONG_PENALTY).toBe(-15);
   });
 });

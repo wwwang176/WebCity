@@ -30,7 +30,8 @@ export const DEFAULT_JOB_RELOCATION_CONFIG: JobRelocationConfig = {
   scoreGap: 15,
   maxRelocateRatio: 0.05,
   tickInterval: 120,
-  dijkstraMaxBudget: 60,
+  /** 道路通行成本上限（見 `core/road/roadCost.ts`）。舊制 60，整數化後 ×18。 */
+  dijkstraMaxBudget: 1080,
 };
 
 /** Extract actual commute path length from a CachedRoute. */
