@@ -3443,3 +3443,30 @@ wpDistCache.isStale: true
 `findGapAhead` ≈ 主執行緒 12%。它是每幀均攤的穩態成本，不造成卡頓，但
 BUG-109 治本之後它就是最大的那一項。
 
+
+---
+
+## BUG-237 已修：反向 flood 付錯端點的成本
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-237 | workplace-distance.worker.ts | 從工作地點反向擴散時付 `roadTileCost(鄰居)`，也就是**來源**那格的價格，而正向付的是**目的地**那格 | Medium |
+
+**發現方式：** 送 Codex 審核 BUG-109 的實作計畫時，它比對了同步與非同步兩條
+路徑，指出現行 worker 的反向擴散與同步版本不一致。
+
+成本加在**目的地**那一格。正向邊 A→B 的價格是 `cost(B)`；反向 Dijkstra 從 B
+走回 A 應該仍用 `cost(B)`，但現行 worker 用的是 `cost(A)`：
+
+```ts
+const rt = getRoadType(nx, ny);            // 鄰居 = 反向的下一格 = 正向的來源
+const newCost = cur.cost + roadTileCost(rt);
+```
+
+**既有測試為什麼沒抓到：** 它們只用單一路型（`WorkplaceDistanceWorker.test.ts`）。
+所有格子一樣貴時，正向與反向剛好相等。路型混合的城市（高速 9、鄉道 60，
+差 6.7 倍）就會給出不同的通勤成本，而那個成本直接餵進 `scoreWorkplaceWithCost`。
+
+**修法：** 引入 `transposeRoadCellGraph` —— 每條邊 `(i→j, w)` 變成 `(j→i, w)`，
+權重跟著邊走。worker 在轉置圖上跑，得到的正是每個家沿正向走到該工作的成本。
+測試對每一對 (家, 工作) 比對正向 flood 與轉置圖上的反向 flood，逐格精確相等。

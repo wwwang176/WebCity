@@ -252,3 +252,46 @@ export function attachAtSettledNode(
     }
   }
 }
+
+// ── 轉置 ────────────────────────────────────────────────────────────
+
+/**
+ * 轉置：每條邊 `(i → j, w)` 變成 `(j → i, w)`。節點不變。
+ *
+ * **權重跟著邊走，不跟著端點走** —— 這是它存在的全部理由。成本加在目的地
+ * 那一格，所以正向邊 A→B 的價格是 cost(B)；在轉置圖上從 B 往外跑 Dijkstra，
+ * 得到的正是每個 A 沿正向走到 B 的成本。
+ *
+ * 直接在正向圖上從 B 反向擴散會付成 cost(A) —— 那是現行
+ * `reverseFloodFromWorkplace` 的做法，也是 BUG-237。
+ */
+export function transposeRoadCellGraph(graph: RoadCellGraph): RoadCellGraph {
+  const n = graph.nodeKeys.length;
+  const e = graph.targets.length;
+
+  // 先數每個節點的入度
+  const counts = new Uint32Array(n);
+  for (let j = 0; j < e; j++) counts[graph.targets[j]!]!++;
+
+  const offsets = new Uint32Array(n + 1);
+  for (let i = 0; i < n; i++) offsets[i + 1] = offsets[i]! + counts[i]!;
+
+  const cursor = Uint32Array.from(offsets.subarray(0, n));
+  const targets = new Uint32Array(e);
+  const weights = new Uint16Array(e);
+
+  for (let i = 0; i < n; i++) {
+    for (let j = graph.offsets[i]!; j < graph.offsets[i + 1]!; j++) {
+      const dst = graph.targets[j]!;
+      const at = cursor[dst]!++;
+      targets[at] = i;
+      weights[at] = graph.weights[j]!;
+    }
+  }
+
+  return {
+    nodeKeys: graph.nodeKeys, indexOf: graph.indexOf,
+    offsets, targets, weights,
+    nodeX: graph.nodeX, nodeY: graph.nodeY, nodeLevel: graph.nodeLevel,
+  };
+}
