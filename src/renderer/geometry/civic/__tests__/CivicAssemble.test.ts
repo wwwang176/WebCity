@@ -98,6 +98,66 @@ describe('assembleCivic 的護欄', () => {
  * 明度住在頂點色的 B 通道（`setGroundShade`），與貼片同一個通道、同一個
  * shader 分支 —— 各走一套的話，屋頂上的混凝土與地上的混凝土會是兩個顏色。
  */
+/**
+ * 轉向的標線。
+ *
+ * 跑道是橢圓的，斜的停機線是斜的 —— 兩者都做不成軸對齊的矩形。轉向讓一條
+ * 曲線可以用一串短直線逼近，而那正是低多邊形本來的做法。
+ *
+ * **只有標線層准轉。** 底層貼片的重疊檢查是軸對齊矩形的交集，轉過的底層會
+ * 讓那個檢查靜靜地算錯 —— 兩塊其實重疊的鋪面會被放行，然後在畫面上閃爍。
+ */
+describe('轉向的貼片', () => {
+  const bar = (o: Partial<CivicDecal> = {}): CivicDecal =>
+    ({ x: 0, z: 0, w: 0.8, d: 0.05, shade: 1, layer: 'mark', ...o });
+
+  it('should turn the marking about its own centre', () => {
+    const geo = assembleDecals([bar({ rotationY: Math.PI / 2 })], FOOT);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    // 轉 90 度之後長邊換到 z。
+    expect(b.max.x - b.min.x).toBeCloseTo(0.05, 6);
+    expect(b.max.z - b.min.z).toBeCloseTo(0.8, 6);
+    // 中心不動 —— 動了的話一整圈跑道會慢慢漂走。
+    expect((b.min.x + b.max.x) / 2).toBeCloseTo(0, 6);
+    expect((b.min.z + b.max.z) / 2).toBeCloseTo(0, 6);
+  });
+
+  it('should turn a marking that is not at the origin about its own centre', () => {
+    // **必須離開原點測。** 放在 (0, 0) 的話「繞自己轉」與「繞原點轉」是
+    // 同一件事 —— 而跑道的每一段都離原點很遠，繞原點轉會把整條跑道甩開。
+    const geo = assembleDecals([bar({ x: 0.5, z: 0.3, rotationY: Math.PI / 2 })], FOOT);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect((b.min.x + b.max.x) / 2, '標線繞原點轉了').toBeCloseTo(0.5, 6);
+    expect((b.min.z + b.max.z) / 2, '標線繞原點轉了').toBeCloseTo(0.3, 6);
+  });
+
+  it('should measure the footprint after the marking is turned', () => {
+    // 一條沿 x 剛好放得下的線，轉 90 度之後沿 z 就放不下了。用轉向前的
+    // 長寬檢查的話它會被放行，而畫面上它伸進隔壁的格子。
+    const long = bar({ w: 1.9, z: 0.9 });
+    expect(() => assembleDecals([long], FOOT), '沒轉的時候該放得下').not.toThrow();
+    expect(() => assembleDecals([{ ...long, rotationY: Math.PI / 2 }], FOOT))
+      .toThrow(/超出佔地/);
+  });
+
+  it('should reject a turned base decal', () => {
+    // 靜靜地算錯不如大聲地擋下來。
+    expect(() => assembleDecals([bar({ layer: 'base', rotationY: 0.3 })], FOOT))
+      .toThrow(/只有標線/);
+  });
+
+  it('should leave an unturned marking exactly where it was', () => {
+    const plain = assembleDecals([bar()], FOOT);
+    const zero = assembleDecals([bar({ rotationY: 0 })], FOOT);
+    plain.computeBoundingBox();
+    zero.computeBoundingBox();
+    expect(zero.boundingBox!.min.x).toBeCloseTo(plain.boundingBox!.min.x, 9);
+    expect(zero.boundingBox!.min.z).toBeCloseTo(plain.boundingBox!.min.z, 9);
+  });
+});
+
 describe('量體上的鋪面明度', () => {
   it('should write the shade into the blue channel', () => {
     const geo = assembleCivic([box({ part: PART_GROUND, shade: 0.8 })], FOOT, GREY);

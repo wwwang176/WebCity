@@ -116,6 +116,23 @@ export function assembleCivic(
 const layerY = (d: CivicDecal) =>
   (d.layer === 'mark' ? GROUND_LAYERS.MARKING : GROUND_LAYERS.DECAL);
 
+/**
+ * 貼片轉向之後的軸對齊包絡線，寫成零高度的量體給 `assertInside` 吃。
+ *
+ * 一個 w × d 的矩形轉 θ 之後的包絡線是
+ * （w|cosθ| + d|sinθ|）×（w|sinθ| + d|cosθ|）—— 中心不變。
+ */
+function turnedBounds(d: CivicDecal): Volume {
+  const c = Math.abs(Math.cos(d.rotationY ?? 0));
+  const s = Math.abs(Math.sin(d.rotationY ?? 0));
+  return {
+    x: d.x, z: d.z,
+    w: d.w * c + d.d * s,
+    d: d.w * s + d.d * c,
+    y0: 0, y1: 0,
+  };
+}
+
 /** 兩塊貼片的水平交集面積。共邊（接觸）回傳 0。 */
 function overlapArea(a: CivicDecal, b: CivicDecal): number {
   const ox = Math.min(a.x + a.w / 2, b.x + b.w / 2) - Math.max(a.x - a.w / 2, b.x - b.w / 2);
@@ -132,12 +149,19 @@ function overlapArea(a: CivicDecal, b: CivicDecal): number {
 export function assembleDecals(
   decals: readonly CivicDecal[], footprint: Footprint,
 ): THREE.BufferGeometry {
+  for (const d of decals) {
+    if (d.rotationY && (d.layer ?? 'base') === 'base') {
+      throw new Error(
+        '只有標線層可以轉向 —— 底層的重疊檢查是軸對齊矩形的交集，'
+        + '轉過的底層會讓它靜靜地算錯，兩塊其實重疊的鋪面會被放行',
+      );
+    }
+  }
+
   // 借量體的護欄：把貼片當成零高度的量體，護欄的算術完全一樣。
-  assertInside(
-    decals.map(d => ({ x: d.x, z: d.z, w: d.w, d: d.d, y0: 0, y1: 0 })),
-    footprint,
-    0,
-  );
+  // 轉過的標線要用**轉向之後**的包絡線 —— 用原本的長寬檢查的話，一條沿 x
+  // 剛好放得下的線轉 90 度之後會伸進隔壁的格子而沒有人擋。
+  assertInside(decals.map(turnedBounds), footprint, 0);
 
   // 底層彼此不得重疊。標線層可以疊在鋪面上，也可以彼此疊（停車格線畫在
   // 入口踏板上）—— 因為它們高度不同，或本來就是設計成疊的。
@@ -157,6 +181,8 @@ export function assembleDecals(
   const parts = decals.map((d) => {
     const geo = new THREE.PlaneGeometry(d.w, d.d);
     geo.rotateX(-Math.PI / 2);   // 朝上。材質是 FrontSide，朝下就完全看不到。
+    // **轉在平移之前** —— 反過來的話它會繞原點轉，整條跑道會甩到別的地方去。
+    if (d.rotationY) geo.rotateY(d.rotationY);
     geo.translate(d.x, layerY(d), d.z);
     tagPart(geo, d.lawn ? PART_FOLIAGE : PART_GROUND);
     setGroundShade(geo, d.shade);

@@ -4,6 +4,7 @@ import { policePlan } from './police';
 import { firePlan } from './fire';
 import { hospitalPlan } from './hospital';
 import { schoolPlan } from './school';
+import { highSchoolPlan } from './schoolHigh';
 
 /**
  * 已經改造完成的公共建築。
@@ -25,6 +26,7 @@ export const CIVIC_MODELS: Partial<Record<InfraType, CivicPlan>> = {
   fire: firePlan,
   hospital: hospitalPlan,
   school: schoolPlan,
+  school_high: highSchoolPlan,
   // 批 2：綠地（公園／墓園）
   // 批 3：公用設施（電廠／水廠／垃圾場／汙水廠）
   // 批 4：交通站點（公車站／捷運站／火車站／渡輪碼頭）
