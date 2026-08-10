@@ -54,10 +54,19 @@ wpDistCache.isStale  true
 
 ## 2. 非目標
 
-- **不改成本模型。** `roadTileCost = 100 / (speedLimit × lanes/2)` 維持不變。
-  `dijkstraMaxBudget: 60` 是調過的數字（雙線道每格 2.0,預算 60 ≈ 30 格;
-  鄉道每格 3.33 ≈ 18 格),換模型會讓它連同 `scoreWorkplaceWithCost` 的門檻
-  一起失效。
+- **不改成本模型的形狀。** `roadTileCost = 分子 / (speedLimit × lanes/2)`
+  維持不變,道路之間的相對快慢也維持不變。
+
+  > **已修訂（成本整數化，commit `95fdc5e`）。** 本節原本寫「分子 100 維持
+  > 不變」。審核發現本設計的硬約束「worker 與同步逐格精確相等」在浮點下
+  > **在數學上不可能成立** —— 加法沒有結合律，反向 Dijkstra 走同一組邊的
+  > 相反順序，總和必然差到 1e-15。分子改成 1800（所有分母的最小公倍數）
+  > 後每格成本都是整數（9 ~ 60），加法可交換，硬約束才成立。
+  >
+  > 這是純粹的單位換算：所有同尺度的量同步 ×18（九項服務預算、
+  > `dijkstraMaxBudget` 1080、`COMMUTE_SCORE` 的距離門檻 180/720、
+  > `FIRE.RESPONSE_SPEED` 36），涵蓋半徑、通勤評分、消防反應時間全部不變。
+  > 見 `RoadCostInteger.test.ts`。
 - **不動 `LaneGraph`。** 車輛尋路用的車道級圖維持原樣,見 §3 的取捨。
 - **不處理高架鐵路。** 閘門用的是 `hasAnyElevatedRoad`,捷運與地面共用 layers
   但 `roadType` 為 NONE,對道路可達性沒有貢獻。
@@ -97,7 +106,9 @@ wpDistCache.isStale  true
 若要擴充 buffer 補上 cell / via / roadType，再另建 cell-level adjacency，
 那實質上就是在建一張 `RoadCellGraph`，並不更簡單。
 
-換成本模型仍然是次要但真實的代價:`dijkstraMaxBudget: 60` 等調過的常數要重算。
+換成本模型仍然是次要但真實的代價:`dijkstraMaxBudget` 等調過的常數要重算。
+（成本整數化已經做過一次這種換算 —— 那次是純粹的 ×18 單位縮放，所有比值
+不變；改成車道級的通行時間模型不是，它會改變道路之間的相對快慢。）
 
 ---
 
@@ -147,12 +158,15 @@ export interface RoadCellGraph {
   /**
    * 走到 targets[j] 那一格要付的成本。
    *
-   * **Float64,不是 Float32。** 舊實作用的是 JS number（double），而硬約束是
-   * 「逐格精確相等」—— 用 Float32 會讓每一步都與舊版差約 8×10⁻⁸，而且更糟的是
-   * 成本存進 Float32Array、heap 卻拿著未捨入的 double 時，`cost[n] < cur.cost`
-   * 會誤判成過期，flood 就地靜默停止（審核發現）。多出來的 4 KB 不值得換這個。
+   * **整數**（成本整數化後每格是 9 ~ 60，見 `core/road/roadCost.ts`）。
+   * 這是硬約束「worker 與同步逐格精確相等」能成立的唯一理由 —— 浮點加法
+   * 沒有結合律，反向 Dijkstra 走同一組邊的相反順序，總和必然不同；換
+   * Float64 也一樣，那與精度無關。整數加法可交換，兩個方向必然位元相同。
+   *
+   * 順帶消掉了 Float32 的捨入陷阱：成本存進窄型別、heap 卻拿著未捨入的值時，
+   * `cost[n] < cur.cost` 會誤判成過期，flood 就地靜默停止。整數沒有這回事。
    */
-  readonly weights: Float64Array;
+  readonly weights: Uint16Array;
   /** 節點 i 的格子座標（附掛建築時要用）。 */
   readonly nodeX: Uint16Array;
   readonly nodeY: Uint16Array;
@@ -170,8 +184,8 @@ export function buildRoadCellGraph(lookup: UnifiedRoadLookup): RoadCellGraph;
 
 ```ts
 export interface FloodResult {
-  /** 每個節點的成本；未到達為 -1。**Float64** —— 見 `weights` 的說明。 */
-  readonly cost: Float64Array;
+  /** 每個節點的成本；未到達為 -1。**整數** —— 見 `weights` 的說明。 */
+  readonly cost: Int32Array;
 }
 
 export function floodRoadCellGraph(
@@ -267,8 +281,13 @@ Header (16 bytes)
  12  reserved    Uint32
 
 Nodes    nodeX Uint16[n], nodeY Uint16[n], nodeLevel Uint8[n]
-CSR      offsets Uint32[n+1], targets Uint32[edges], weights Float32[edges]
+CSR      offsets Uint32[n+1], targets Uint32[edges], weights Uint16[edges]
 ```
+
+`offsets` 之前要補對齊（`Uint32` 需要 4-byte 對齊，而 `nodeLevel` 的長度是 n，
+不保證是 4 的倍數）。`weights` 是 `Uint16`，只需要 2-byte 對齊，接在 `Uint32`
+段之後自然滿足 —— 這是成本整數化順帶簡化掉的一段：權重若是 `Float64` 就得
+另外補到 8 的倍數。
 
 `nodeKeys` **不序列化** —— worker 只在產出結果時需要 `"x,y"` 字串,而那可以從
 `nodeX/nodeY` 現組。省下 344 個字串的 structured clone。
@@ -277,7 +296,11 @@ CSR      offsets Uint32[n+1], targets Uint32[edges], weights Float32[edges]
 格子緩衝是兩件事 —— 圖是**怎麼走**,格子是**格子上有什麼**。
 
 版本欄位存在的理由:格式改了但 worker 沒更新時要**明確報錯**,而不是把
-`Uint32` 當 `Float32` 讀出一堆看似合理的距離。
+`Uint32` 當 `Uint16` 讀出一堆看似合理的距離。
+
+**空圖的 buffer 不是 0 bytes** —— 它有 16 bytes 的 header 加上一個
+`offsets[0]`。判斷「圖是空的」要讀 header 的 `nodeCount`，用 `byteLength === 0`
+永遠擋不到（審核發現）。
 
 ### 5.6 修改的地方
 
@@ -356,7 +379,7 @@ worker flood  344 節點 × 101 次（現行是 3600 格 × 101 次）
 | 有匝道時,依 `rampAscendDirection` 只在正確方向相連 | 匝道方向錯了會產生單向可達的假路 |
 | 門口鄉道 vs 兩格外高速:成本必須取高速那條 | BUG-102 的回歸 |
 | 超過 `maxBudget` 的格子不出現在結果 | 預算截斷 |
-| 序列化 → 反序列化後,圖與原圖逐欄位相等 | 格式錯位（把 Uint32 當 Float32 讀） |
+| 序列化 → 反序列化後,圖與原圖逐欄位相等 | 格式錯位（把 Uint32 當 Uint16 讀） |
 | 版本不符時 worker 回 ERROR 而不是亂算 | §7 |
 
 所有測試遵循專案的 TDD 規範:先寫紅燈測試,修好後還原修正確認轉紅。
