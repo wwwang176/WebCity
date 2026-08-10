@@ -3523,3 +3523,52 @@ runJobRelocation  改前：1474 ms／輪
 **下一個瓶頸換人了：** `computeCongestionFlow`。它是每隔數十 tick 一次的批次
 計算，單次 47 ms 直接就是一個掉幀。（先前記錄的 `advanceEdgeVehicles` 那一串
 仍在，但它是每幀均攤的穩態成本，不造成卡頓。）
+
+---
+
+## BUG-238 未修：公共建築完全沒有夜間燈光，也幾乎沒有窗
+
+**現象：** 入夜後住宅、商業、工業、辦公的窗戶會一格一格亮起來，招牌與燈頭
+會發光；而警局、消防局、醫院、學校、公園、電廠、水廠、垃圾場、汙水廠、
+墓園、各級車站與機場**整片是黑的**。它們不是「燈比較少」，是一盞都沒有。
+
+**原因：** 城市裡有兩條完全不同的建築渲染路徑，而只有一條接了 shader。
+
+| | 分區建築（R / C / I / Office） | 公共建築（civic / infra） |
+|---|---|---|
+| 材質 | `getBuildingMaterial()` — `ShaderMaterial`，`BUILDING_FRAG` | `MeshLambertMaterial`，`BuildingRenderer.ts` 裡手寫 **220 個** |
+| 幾何 | 程序化量體 + 四層 `InstancedLayer` | 20 個手寫 `buildXxx()`，實心 `BoxGeometry` |
+| 窗格 | 程序化，逐分區的立面規則 | 無 |
+| 夜間亮窗 | `isLitWindow` × `nightFactor`，吃 `aOccupancy` | 無 |
+| 招牌／燈頭自發光 | `PART_LAMP` → `emissive` | 無 —— 整個 `BuildingRenderer.ts` 裡 `emissive` 出現 **0 次** |
+| 白天玻璃反射 | `dayGlass` + 陽光鏡面 | 無 |
+
+唯一的例外是消防局的兩扇「塔窗」（`BuildingRenderer.ts:1029-1037`）：兩個
+0.10 × 0.10 × 0.01 的盒子，貼一塊平的粉色 `0xffcdd2`。它是幾何，不是窗
+——白天不反射，晚上不亮。
+
+**要講清楚的一件事：公共建築有「光照」，只是不會「發光」。**
+`MeshLambertMaterial` 吃場景的 directional + ambient，所以天黑時它們會跟著
+變暗，`castShadow` / `receiveShadow` 也都開著。缺的是自發光與窗戶，不是
+被照亮的能力。所以夜景裡它們是「一塊照不到光的深色量體」，而不是「消失」。
+
+**發現方式：** 使用者問「公共建築是不是沒有燈光與窗戶？」。
+
+**與既有 TODO 的關係：** `TODO.md:1547` 記著「建築材質是 ShaderMaterial 且
+沒有 include colorspace_fragment，所以顏色寫在顯示空間，而 Lambert 材質
+（地形、基礎設施）在線性空間」。那條與這條是同一個裂縫的兩面 —— 公共建築
+搬進 shader 的話，色彩空間的不一致會一起消失。反過來說，只要這兩條路徑
+並存，調色就永遠要在兩個空間裡比。
+
+**修的方向（尚未決定，也還沒排）：** 至少三種，成本差很多——
+
+1. **只補自發光。** 給每個 `buildXxx()` 的「該亮的那幾面」換成帶 emissive
+   的材質，夜裡跟著 `nightFactor` 亮。改動小，但 220 個材質要逐一決定哪些
+   該亮，而且窗戶仍然是沒有的。
+2. **把公共建築也搬進 `BUILDING_FRAG`。** 需要新的 `ZONE_CAT` 分類（公共
+   建築的立面語彙不是住宅也不是辦公），而且手寫幾何要改成能吃逐實例屬性
+   的形式 —— 目前它們是 `THREE.Group` 裡的獨立 `Mesh`，沒有 `aOccupancy`、
+   `aSeed`。這條同時解掉色彩空間。
+3. **折衷：新寫一個公共建築專用的 shader 材質**，共用 `BUILDING_FRAG` 的
+   夜間與色彩空間邏輯，但立面規則自己一套。
+

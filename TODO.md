@@ -1550,6 +1550,22 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
 
 ---
 
+## 公共建築的夜景（BUG-238）
+
+- [ ] **公共建築完全沒有夜間燈光，也幾乎沒有窗。** 警局／消防局／醫院／學校／
+      公園／電廠／水廠／垃圾場／汙水廠／墓園／車站／機場走的是另一條渲染
+      路徑：20 個手寫 `buildXxx()`、220 個 `MeshLambertMaterial` 實心盒子，
+      完全不經過 `BUILDING_FRAG`。`emissive` 在整個 `BuildingRenderer.ts`
+      裡出現 0 次。唯一的「窗」是消防局那兩個貼平色的塔窗盒子
+      （`BuildingRenderer.ts:1029-1037`）。
+      它們**有**光照（Lambert 吃 directional + ambient，天黑會跟著暗、
+      陰影也正常），缺的是自發光與窗格。詳見 BUGS.md BUG-238，那裡列了
+      三條修法與各自的成本。
+- [ ] 上面那條與 `colorspace_fragment` 那條是同一個裂縫的兩面 —— 公共建築
+      搬進 shader 的話，兩個色彩空間的不一致會一起消失。要動的話一起評估。
+
+---
+
 ## 遠景細節剔除（DETAIL_LOD）
 
 已做。縮到視錐高度 90 格以上就把 `propLayer` 與 `overheadLayer` 整層關掉，
