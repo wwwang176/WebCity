@@ -923,6 +923,11 @@ export class Game {
         // Then demolish ground-level items (markAllDirty called inside)
         const demolishedRoadCells = this.collectRoadCells(x1, y1, x2, y2);
         const { evictedCitizenIds, buildingCells } = this.demolish(x1, y1, x2, y2);
+        // 必須呼叫：workplace 距離的路網圖以 commuteCache.roadGeneration 為鍵
+        // 快取（SimulationLoop.getCellGraph），而 ElevationManager 自己沒有
+        // 事件機制。少了這一行，拆掉的橋還留在圖裡，而且是靜默的 —— 市民只是
+        // 「莫名其妙還走得到已經不存在的路」。見
+        // simulation/__tests__/ElevatedRoadInvalidatesGraph.test.ts。
         this.simLoop.markLaneGraphDirty([...elevatedKeys, ...demolishedRoadCells, ...buildingCells]);
         // Restore incremental AFTER demolish's markAllDirty (which sets full rebuild)
         if (anyElevatedRemoved) {
@@ -949,6 +954,8 @@ export class Game {
             );
             this.handleBuildResult(result, 'elevated road', () => {
               if (result.affectedCells) {
+                // 必須呼叫：理由同拆除那一處 —— 圖以 roadGeneration 為鍵，
+                // 少了它蓋好的橋不會進圖，市民莫名其妙找不到工作。
                 this.simLoop.markLaneGraphDirty(result.affectedCells, true);
                 this.dirty.markElevatedCellsDirty(result.affectedCells);
                 // Ramp connects to ground → update ground road visuals at affected positions
