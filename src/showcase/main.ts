@@ -20,7 +20,10 @@ import {
 import { GROUND_LAYERS } from '../renderer/geometry/buildings/propBands';
 import type { GeoBuilder, Density } from '../renderer/geometry/buildings/registry';
 import { ZoneType } from '../core/grid/types';
-import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
+import {
+  blockCells, matrixCells, neighbourSameRatio,
+  type PlacedCell, type ViewMode,
+} from './views';
 import { stampInstanceValues, floorRhythm01, type InstanceValues } from './instanceAttrs';
 import { createShowcaseGround } from './ground';
 import { DetailVisibility } from './detailVisibility';
@@ -28,7 +31,7 @@ import { appearanceOf } from '../renderer/BuildingAppearance';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
 import { placeCivic, civicTriangleReport, allMeshes, type CivicTris } from './civic';
-import { civicLayout } from './civicLayout';
+import { civicLayout, civicLayoutExtent } from './civicLayout';
 import { getCivicPlan, civicTypesDone } from '../renderer/geometry/civic/registry';
 import { getInfraConfig } from '../core/building/InfraConfig';
 
@@ -191,7 +194,7 @@ const CIVIC_LAYER_LABELS: Array<[string, keyof CivicTris]> = [
  * 它與下面的分區建築流程分開，因為兩者幾乎沒有共通的東西：沒有變體、沒有
  * 等級、沒有街廓、預算是逐格算的。硬塞進同一條路徑只會讓兩邊都長滿 if。
  */
-function renderCivic(): void {
+function renderCivic(fitCamera: boolean): void {
   const stats = document.getElementById('stats');
   const slots = civicLayout(civicTypesDone());
   if (slots.length === 0) {
@@ -230,6 +233,15 @@ function renderCivic(): void {
   }
 
   sceneManager.setCameraTarget(0, 0);
+  // **只在剛切進來時**框一次。每次重繪都框的話，使用者調一下住戶比例滑桿，
+  // 自己拉的縮放就被拉回去了。
+  if (fitCamera) {
+    const ext = civicLayoutExtent(slots);
+    // 等角視角下，一塊 w x h 的地在畫面上的高度大約是兩軸投影的和。乘 1.15
+    // 留一點邊 —— 剛好貼齊的話邊緣那一棟會頂到畫面。
+    const want = (ext.w + ext.h) * 0.62 * 1.15;
+    sceneManager.zoomCamera(want - (sceneManager.camera.top - sceneManager.camera.bottom));
+  }
 
   if (stats) {
     const sum = Object.values(total).reduce((a, b) => a + b, 0);
@@ -241,14 +253,19 @@ function renderCivic(): void {
   }
 }
 
+/** 上一次繪製的模式。只用來判斷「是不是剛切進 civic」，好只框一次鏡頭。 */
+let lastMode: ViewMode | null = null;
+
 function render(): void {
   clear();
   material.wireframe = state.wireframe;
 
   if (state.mode === 'civic') {
-    renderCivic();
+    renderCivic(lastMode !== 'civic');
+    lastMode = state.mode;
     return;
   }
+  lastMode = state.mode;
 
   let cells: PlacedCell[];
   if (state.mode === 'single') {

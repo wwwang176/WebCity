@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { civicLayout, CIVIC_LAYOUT_GAP, CIVIC_LAYOUT_ROW_LIMIT } from '../civicLayout';
+import {
+  civicLayout, civicLayoutExtent, CIVIC_LAYOUT_GAP, CIVIC_LAYOUT_ROW_LIMIT,
+} from '../civicLayout';
 import { civicTypesDone } from '../../renderer/geometry/civic/registry';
 import { getInfraConfig, type InfraType } from '../../core/building/InfraConfig';
 
@@ -126,5 +128,24 @@ describe('公共建築的排版', () => {
 
   it('should return nothing for an empty list', () => {
     expect(civicLayout([])).toEqual([]);
+    expect(civicLayoutExtent([])).toEqual({ w: 0, h: 0 });
+  });
+
+  it('should measure the extent including the footprints, not just the centres', () => {
+    // 只量中心的話，邊緣那一棟會有一半在畫面外 —— 而鏡頭就是照這個數字拉的。
+    const slots = civicLayout(['airport_l']);
+    expect(civicLayoutExtent(slots)).toEqual({ w: 9, h: 6 });
+  });
+
+  it('should cover every building in the extent it reports', () => {
+    const slots = civicLayout(MIXED);
+    const ext = civicLayoutExtent(slots);
+    for (const s of slots) {
+      const r = rect(s);
+      expect(Math.max(Math.abs(r.x0), Math.abs(r.x1)), `${s.type} 落在回報的範圍外`)
+        .toBeLessThanOrEqual(ext.w / 2 + 1e-9);
+      expect(Math.max(Math.abs(r.z0), Math.abs(r.z1)), `${s.type} 落在回報的範圍外`)
+        .toBeLessThanOrEqual(ext.h / 2 + 1e-9);
+    }
   });
 });

@@ -28,6 +28,33 @@ import {
  * （BUG-231 的地板顏色兩份、BUG-231 之後才收斂）。
  */
 
+/**
+ * `mergeGeometries`，但失敗時**丟例外**而不是回傳 null。
+ *
+ * three.js 的 `mergeGeometries` 在屬性集合不一致時只印一行 `console.error`
+ * 然後回傳 null —— 不丟例外。所以原本那個 `mergeGeometries(parts)!` 是在對
+ * TypeScript 說謊，而 null 會一路傳到 `new THREE.Mesh(geo, mat)` 才炸，
+ * 離現場很遠。
+ *
+ * 它真的發生過：機場把**飛機**（`position,normal,color`）與公車
+ * （`position,normal,color,uv`）停在同一塊地上，合併回傳 null，而每一條測試
+ * 都是綠的 —— 資料表測的是「不得丟例外」，而它真的沒丟。只有在瀏覽器裡開起來
+ * 才看得到。
+ *
+ * 訊息裡列出每一份的屬性集合：光說「合併失敗」的話，下一個人要自己去找是哪
+ * 一份不一樣。
+ */
+export function mergeOrThrow(
+  parts: THREE.BufferGeometry[], what: string,
+): THREE.BufferGeometry {
+  const merged = mergeGeometries(parts);
+  if (merged) return merged;
+  const sets = parts.map((g, i) => `#${i} {${Object.keys(g.attributes).sort().join(',')}}`);
+  throw new Error(
+    `${what} 的幾何合併失敗 —— 屬性集合不一致：${sets.join(' ')}`,
+  );
+}
+
 /** 空的但**有頂點色**的幾何。少了頂點色，shader 會把它當成 partType 0。 */
 function emptyTagged(part: number): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
@@ -110,7 +137,7 @@ export function assembleCivic(
   // 公園可能完全沒有量體（只有貼片與樹）。空陣列丟給 mergeGeometries 會回傳
   // null，而 null 一路傳到 `new THREE.Mesh` 才炸 —— 離現場很遠。
   if (parts.length === 0) return emptyTagged(PART_WALL);
-  return mergeGeometries(parts)!;
+  return mergeOrThrow(parts, '量體');
 }
 
 const layerY = (d: CivicDecal) =>
@@ -193,7 +220,7 @@ export function assembleDecals(
   });
 
   if (parts.length === 0) return emptyTagged(PART_GROUND);
-  return mergeGeometries(parts)!;
+  return mergeOrThrow(parts, '貼片');
 }
 
 /**
@@ -220,7 +247,7 @@ export function assembleFixtures(
 
   const parts = fixtures.flatMap(propGeometry);
   if (parts.length === 0) return emptyTagged(PART_FOLIAGE);
-  return mergeGeometries(parts)!;
+  return mergeOrThrow(parts, '共用矮物件');
 }
 
 /**
@@ -262,6 +289,10 @@ export function assembleVehicles(
 
   for (const v of vehicles) {
     const geo = VEHICLE_GEOMETRY[v.kind]();
+    // 車種之間的屬性集合本來就不一致：八種地面車帶 `uv`，飛機沒有。
+    // 車輛材質（`MeshLambertMaterial` + 頂點色）不取樣任何貼圖，所以 uv 是
+    // 純粹的死重 —— 一律丟掉，而不是替飛機補一份假的。
+    geo.deleteAttribute('uv');
     if (v.rotationY) geo.rotateY(v.rotationY);
     geo.translate(v.x, 0, v.z);
     geo.computeBoundingBox();
@@ -287,5 +318,5 @@ export function assembleVehicles(
     empty.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3));
     return empty;
   }
-  return mergeGeometries(parts)!;
+  return mergeOrThrow(parts, '車輛');
 }

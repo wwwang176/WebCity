@@ -77,6 +77,30 @@ export function civicLayout(types: readonly InfraType[]): CivicSlot[] {
 }
 
 /**
+ * 整批排完之後佔多大（格）。
+ *
+ * 展示區用它把鏡頭拉到剛好框住全部 —— 十九棟排出來有 18 × 30 格，而預設的
+ * 視錐是給 8×8 街廓訂的，不調的話一切到公共建築看到的是遠處一小撮。
+ *
+ * 算的是**含佔地**的範圍，不是中心點的範圍：只看中心的話，邊緣那一棟會有
+ * 一半在畫面外。
+ */
+export function civicLayoutExtent(slots: readonly CivicSlot[]): { w: number; h: number } {
+  if (slots.length === 0) return { w: 0, h: 0 };
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const s of slots) {
+    const cfg = getInfraConfig(s.type);
+    const w = cfg?.width ?? 1;
+    const h = cfg?.height ?? 1;
+    x0 = Math.min(x0, s.x - w / 2);
+    x1 = Math.max(x1, s.x + w / 2);
+    z0 = Math.min(z0, s.z - h / 2);
+    z1 = Math.max(z1, s.z + h / 2);
+  }
+  return { w: x1 - x0, h: z1 - z0 };
+}
+
+/**
  * 整批平移到原點。
  *
  * 展示區的鏡頭預設對著原點，而排版是從 (0, 0) 往正象限長的 —— 不平移的話

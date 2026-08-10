@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { assembleVehicles } from '../assemble';
+import { assembleVehicles, mergeOrThrow } from '../assemble';
 import { buildPoliceCarGeometry } from '../../policeCar';
 import { triangleCount } from '../../buildings/parts';
 import type { CivicVehicle, Footprint } from '../types';
@@ -95,6 +95,27 @@ describe('停放的車輛', () => {
     expect(geo.getAttribute('color'), '空幾何也要有 color —— 材質吃頂點色').toBeTruthy();
   });
 
+  /**
+   * 不同車種的幾何**屬性集合不一樣**。
+   *
+   * 飛機是 `position,normal,color`，八種地面車是 `position,normal,color,uv`。
+   * `mergeGeometries` 遇到不一致時**只印一行 console.error 然後回傳 null**
+   * —— 不丟例外。所以 `mergeGeometries(parts)!` 那個 `!` 是在對 TypeScript
+   * 說謊，而 null 會一路傳到瀏覽器裡的 `new THREE.Mesh` 才炸。
+   *
+   * 這正是它逃過所有測試的方式：資料表的「不得丟例外」是綠的（它真的沒丟），
+   * 只有真的開起來才看得到。機場是第一個把飛機與公車停在同一塊地上的建築。
+   */
+  it('should merge vehicles whose geometries carry different attributes', () => {
+    const geo = assembleVehicles([
+      { kind: 'airplane', x: 0, z: -0.3 },
+      { kind: 'bus', x: 0, z: 0.5 },
+    ], { w: 4, h: 4 });
+    expect(geo, 'mergeGeometries 回傳了 null').toBeTruthy();
+    expect(geo.getAttribute('position').count, '合併之後是空的').toBeGreaterThan(0);
+    expect(geo.getAttribute('color'), '合併之後掉了頂點色').toBeTruthy();
+  });
+
   it('should support every vehicle the city already has', () => {
     // 消防局要消防車、醫院要救護車、垃圾場要垃圾車 —— 後面幾批都吃得到。
     const kinds: CivicVehicle['kind'][] = [
@@ -104,5 +125,19 @@ describe('停放的車輛', () => {
       expect(() => assembleVehicles([car({ kind })], FOOT), `${kind} 建不出來`)
         .not.toThrow();
     }
+  });
+
+  /**
+   * 合併失敗要**大聲**失敗。
+   *
+   * `mergeGeometries` 的失敗是回傳 null，而 `!` 把它變成一個型別謊言。
+   * 加一顆假的、屬性湊不起來的幾何進去，應該當場丟例外而不是回傳 null。
+   */
+  it('should throw, not return null, when geometries cannot be merged', () => {
+    const bad = new THREE.BufferGeometry();
+    bad.setAttribute('position',
+      new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 0, 0, 0, 0, 1]), 3));
+    expect(() => mergeOrThrow([bad, buildPoliceCarGeometry()], '測試'))
+      .toThrow(/合併失敗/);
   });
 });
