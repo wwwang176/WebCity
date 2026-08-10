@@ -28,6 +28,7 @@ import { appearanceOf } from '../renderer/BuildingAppearance';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
 import { placeCivic, civicTriangleReport } from './civic';
+import { getCivicPlan } from '../renderer/geometry/civic/registry';
 import { getInfraConfig } from '../core/building/InfraConfig';
 
 const container = document.getElementById('scene')!;
@@ -187,8 +188,9 @@ function renderCivic(): void {
     return;
   }
 
-  const placed = placeCivic(state.civicType, sceneManager.scene, state.occupancy);
-  if (!placed) return;
+  const plan = getCivicPlan(state.civicType);
+  if (!plan) return;
+  const placed = placeCivic(plan, sceneManager.scene, state.occupancy);
   shown.push(...placed.meshes);
   // add() 會立刻套用目前的縮放狀態 —— 縮在遠景時動一下控制項會整批重畫，
   // 少了這一步細節就會全部冒回來。

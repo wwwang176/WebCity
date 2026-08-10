@@ -707,6 +707,15 @@ attribute float aHighlight;
 attribute vec3 aHighlightColor;
 attribute float aOccupancy;
 attribute vec3 aSeed;
+// 逐幾何的建築色。
+//
+// 實例化的建築走 instanceColor（InstancedMesh.setColorAt）；公共建築在遊戲
+// 裡是 Group 底下的普通 Mesh、展示區也是普通 Mesh，兩者都沒有 instanceColor，
+// 所以要靠這個屬性才有自己的顏色。以前那條路徑寫死 vec3(0.7) —— 不論警局
+// 還是消防局，牆一律是同一片灰。
+//
+// 注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+attribute vec3 aBldgColor;
 
 varying vec3 vNormal;
 varying vec3 vLocalPos;
@@ -740,7 +749,7 @@ void main() {
   #ifdef USE_INSTANCING_COLOR
     vBldgColor = instanceColor;
   #else
-    vBldgColor = vec3(0.7);
+    vBldgColor = aBldgColor;
   #endif
 
   #ifdef USE_INSTANCING

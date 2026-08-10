@@ -1,4 +1,5 @@
 import type { Volume } from '../buildings/massing/volume';
+import type { CivicColor } from './colors';
 
 /**
  * 公共建築的宣告式描述。
@@ -20,6 +21,28 @@ export interface Footprint {
   w: number;
   h: number;
 }
+
+/**
+ * 帶標籤的量體。
+ *
+ * `tag` 完全不影響幾何 —— `shapeOf` 看都不看它。它存在的理由是**測試讀得懂
+ * 這棟建築**：「瞭望塔要高過兩支翼」寫成 `find(v => v.tag === 'tower')` 是
+ * 一句話，寫成「第三個量體」則是在測試裡複製一份量體表的順序，而順序一改
+ * 測試就開始測錯東西。
+ *
+ * 沒有加進共用的 `Volume`：分區建築的量體是生成器產出的，沒有人手寫，
+ * 也就沒有東西可以標。
+ */
+export type CivicVolume = Volume & {
+  tag?: string;
+  /**
+   * 只有這一塊量體的顏色，蓋過 `CivicPlan.color`。
+   *
+   * 給重點用：醫院的紅十字、大學的金頂、車站的識別帶。整棟只有一個顏色的話，
+   * 這些東西只能跟牆同色 —— 而它們正是「一眼認出這是醫院」的那個東西。
+   */
+  color?: CivicColor;
+};
 
 /**
  * 一塊平鋪面。
@@ -58,6 +81,14 @@ export interface CivicPlan {
   /** 立面類別。`parts.ts` 的 `FACADE_*` 之一，決定 shader 走哪條立面分支。 */
   facade: number;
   /**
+   * 代表色 —— 牆的底色。
+   *
+   * 等角視角下顏色比剪影更早被認出來，所以警局是藍的、消防局是紅的。
+   * 實體在 `colors.ts`，這裡只是引用；兩邊各寫一份的話，改了顏色表而某一棟
+   * 沒跟著改，只表現為「那一棟顏色怪怪的」。
+   */
+  color: CivicColor;
+  /**
    * 交給 shader 的 `aSeed`：樓層節奏、窗戶相位、材質微調。
    *
    * 分區建築由座標雜湊產生（同一種建築在城市各處長得不一樣）；公共建築相反
@@ -65,13 +96,13 @@ export interface CivicPlan {
    */
   seed: readonly [number, number, number];
   /** 量體。castShadow，遠景不關。 */
-  massing: Volume[];
+  massing: CivicVolume[];
   /** 地面貼片。完全平，不投影，遠景**不關**（關掉會讓遠景整片地變空）。 */
   decals: CivicDecal[];
   /** 矮物件：樹、路燈、旗桿、垃圾桶、車輛。castShadow，遠景整層關掉。 */
-  props: Volume[];
+  props: CivicVolume[];
   /** 懸挑：雨棚、招牌、月台頂。castShadow，遠景整層關掉。 */
-  overhead: Volume[];
+  overhead: CivicVolume[];
 }
 
 /**
@@ -91,15 +122,20 @@ export const CIVIC_INSET = 0.02;
  * 分區建築的預算是逐棟的（`HOUSE: 400` / `TOWER: 800`），因為它們一格一棟。
  * 公共建築佔 4 到 54 格，套同一條線沒有意義。
  *
- * 每格 300 是刻意低於塔樓的 800：一座 3×3 的大學若每格都照塔樓的密度做，
- * 單棟就 7200 三角形，而畫面上它只有一棟。
+ * **物件與綠化的額度刻意開得比分區建築寬。** 分區建築鋪滿整張地圖，一棟多
+ * 十個三角形要乘上幾千棟；公共建築一座城市裡也就幾十棟，單棟多花的成本
+ * 幾乎量不到。所以「這裡多種幾棵樹」是划算的，而在住宅區同樣的想法會直接
+ * 打爆預算 —— 兩者的取捨本來就不同，用同一組數字才是錯的。
  *
- * **這四個數字是推的，不是量的。** 批 1 的六棟做完之後要用實測回頭校準
+ * 對照：分區建築的矮物件上限是每棟 320（`TRIANGLE_BUDGET.PROP`）。
+ *
+ * **這四個數字仍然是推的，不是量的。** 批 1 的六棟做完之後要用實測回頭校準
  * （計畫的 Task 11）。
  */
 export const CIVIC_TRIANGLE_BUDGET = {
-  MASSING_PER_CELL: 300,
-  DECAL_PER_CELL: 60,
-  PROP_PER_CELL: 120,
-  OVERHEAD_PER_CELL: 80,
+  MASSING_PER_CELL: 400,
+  DECAL_PER_CELL: 120,
+  /** 樹、灌木、路燈、長椅、花台、腳踏車架、停著的車。 */
+  PROP_PER_CELL: 400,
+  OVERHEAD_PER_CELL: 150,
 } as const;

@@ -7,7 +7,8 @@ import {
   tagPart, setGroundShade, PART_WALL, PART_GROUND, PART_FOLIAGE,
 } from '../buildings/parts';
 import { METRES_PER_CELL } from '../../../core/grid/constants';
-import { CIVIC_INSET, type CivicDecal, type Footprint } from './types';
+import { CIVIC_INSET, type CivicDecal, type CivicVolume, type Footprint } from './types';
+import { CIVIC_DEFAULT_COLOR, type CivicColor } from './colors';
 
 /**
  * 公共建築的量體與貼片組裝。
@@ -22,7 +23,25 @@ function emptyTagged(part: number): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
   tagPart(geo, part);
+  tagColor(geo, CIVIC_DEFAULT_COLOR);
   return geo;
+}
+
+/**
+ * 把建築色攤到每個頂點上（`aBldgColor`）。
+ *
+ * 逐**量體**寫而不是最後整份寫：醫院的紅十字、大學的金頂是單獨一塊量體的
+ * 顏色，而合併之後就分不出誰是誰了。與 `tagPart` 完全同一個道理。
+ */
+function tagColor(geo: THREE.BufferGeometry, c: CivicColor): void {
+  const count = geo.getAttribute('position').count;
+  const arr = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    arr[i * 3] = c[0];
+    arr[i * 3 + 1] = c[1];
+    arr[i * 3 + 2] = c[2];
+  }
+  geo.setAttribute('aBldgColor', new THREE.BufferAttribute(arr, 3));
 }
 
 /** 離佔地中心的最大距離，逐軸。非置中的量體會單邊外凸，寬度看不出來。 */
@@ -63,7 +82,7 @@ function assertInside(volumes: readonly Volume[], footprint: Footprint, inset: n
 
 /** 公共建築的量體轉幾何。越出佔地時丟例外。 */
 export function assembleCivic(
-  volumes: readonly Volume[], footprint: Footprint,
+  volumes: readonly CivicVolume[], footprint: Footprint, baseColor: CivicColor,
 ): THREE.BufferGeometry {
   assertInside(volumes, footprint, CIVIC_INSET);
 
@@ -71,6 +90,7 @@ export function assembleCivic(
   for (const v of volumes) {
     for (const g of shapeOf(v)) {
       tagPart(g, partOf(v));
+      tagColor(g, v.color ?? baseColor);
       parts.push(g);
     }
   }
@@ -127,6 +147,9 @@ export function assembleDecals(
     geo.translate(d.x, layerY(d), d.z);
     tagPart(geo, d.lawn ? PART_FOLIAGE : PART_GROUND);
     setGroundShade(geo, d.shade);
+    // 貼片的顏色由 PART_GROUND / PART_FOLIAGE 的分支決定，不吃 aBldgColor。
+    // 仍然要寫：屬性缺席時 WebGL 一律餵 0，而 `isFloor` 分支會讀到它。
+    tagColor(geo, CIVIC_DEFAULT_COLOR);
     return geo;
   });
 

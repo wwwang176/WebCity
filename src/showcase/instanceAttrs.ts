@@ -27,6 +27,7 @@ const ATTRIBUTES: ReadonlyArray<readonly [string, number]> = [
   ['aHighlightColor', 3],
   ['aOccupancy', 1],
   ['aSeed', 3],
+  ['aBldgColor', 3],
 ];
 
 export interface InstanceValues {
@@ -34,6 +35,13 @@ export interface InstanceValues {
   occupancy: number;
   /** 交給 shader 的 aSeed：樓層節奏、相位、材質偏好。 */
   seed: readonly [number, number, number];
+  /**
+   * 牆的底色（`aBldgColor`）。省略時給中性灰。
+   *
+   * 遊戲裡分區建築走 `InstancedMesh.setColorAt`，所以這個值只在展示區與
+   * 公共建築的路徑上用得到。
+   */
+  color?: readonly [number, number, number];
 }
 
 /**
@@ -50,16 +58,24 @@ export function floorRhythm01(
 }
 
 /** 把逐實例的值攤成逐頂點屬性，寫進這份幾何。 */
+const NEUTRAL_GREY = [0.7, 0.7, 0.7] as const;
+
 export function stampInstanceValues(geo: THREE.BufferGeometry, v: InstanceValues): void {
   const count = geo.getAttribute('position').count;
   for (const [name, size] of ATTRIBUTES) {
+    // `assembleCivic` 已經**逐量體**寫過 aBldgColor（醫院的紅十字、大學的
+    // 金頂是單獨一塊量體的顏色）。整份重寫一次會把那些覆寫全部抹平，
+    // 而畫面上只表現為「紅十字不見了」。
+    if (name === 'aBldgColor' && geo.hasAttribute('aBldgColor')) continue;
+
     const arr = new Float32Array(count * size);
     if (name === 'aOccupancy') arr.fill(v.occupancy);
-    if (name === 'aSeed') {
+    if (name === 'aSeed' || name === 'aBldgColor') {
+      const src = name === 'aSeed' ? v.seed : (v.color ?? NEUTRAL_GREY);
       for (let i = 0; i < count; i++) {
-        arr[i * 3] = v.seed[0];
-        arr[i * 3 + 1] = v.seed[1];
-        arr[i * 3 + 2] = v.seed[2];
+        arr[i * 3] = src[0]!;
+        arr[i * 3 + 1] = src[1]!;
+        arr[i * 3 + 2] = src[2]!;
       }
     }
     geo.setAttribute(name, new THREE.BufferAttribute(arr, size));

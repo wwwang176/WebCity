@@ -7,6 +7,8 @@ import {
 import type { Volume } from '../../buildings/massing/volume';
 
 const FOOT: Footprint = { w: 2, h: 2 };
+/** 顏色不是這個檔案在測的東西 —— 顏色的驗收在 `CivicColors.test.ts`。 */
+const GREY = [0.7, 0.7, 0.7] as const;
 
 const box = (o: Partial<Volume> = {}): Volume =>
   ({ x: 0, z: 0, w: 1, d: 1, y0: 0, y1: 0.5, ...o });
@@ -23,44 +25,44 @@ const decal = (o: Partial<CivicDecal> = {}): CivicDecal =>
  */
 describe('assembleCivic 的護欄', () => {
   it('should accept volumes inside the footprint', () => {
-    expect(() => assembleCivic([box({ w: 1.9, d: 1.9 })], FOOT)).not.toThrow();
+    expect(() => assembleCivic([box({ w: 1.9, d: 1.9 })], FOOT, GREY)).not.toThrow();
   });
 
   it('should throw when a volume leaves the footprint', () => {
     // 靜靜地壓到隔壁比當場炸掉難追一百倍 —— 與 `assemble()` 同一個理由。
-    expect(() => assembleCivic([box({ w: 2.4, d: 1 })], FOOT)).toThrow(/超出佔地/);
+    expect(() => assembleCivic([box({ w: 2.4, d: 1 })], FOOT, GREY)).toThrow(/超出佔地/);
   });
 
   it('should throw on an off-centre volume that pokes out one side', () => {
     // 包圍盒**寬度**看不出單邊外凸：這個量體只有 1 格寬，佔地有 2 格，
     // 但它的中心偏了 0.8，所以右緣在 1.3 —— 已經在隔壁格裡了。
     // 這正是 BUG-222 的形狀，所以量的是離中心的最大距離而不是寬度。
-    expect(() => assembleCivic([box({ x: 0.8, w: 1, d: 1 })], FOOT)).toThrow(/超出佔地/);
+    expect(() => assembleCivic([box({ x: 0.8, w: 1, d: 1 })], FOOT, GREY)).toThrow(/超出佔地/);
   });
 
   it('should measure the footprint per axis, not as a square', () => {
     // 2x3 的醫院在 z 方向有 3 格可用、x 方向只有 2 格。取單一個半徑的話，
     // 不是浪費掉長邊，就是讓短邊溢出。
     const tall: Footprint = { w: 2, h: 3 };
-    expect(() => assembleCivic([box({ w: 1.9, d: 2.9 })], tall)).not.toThrow();
-    expect(() => assembleCivic([box({ w: 2.9, d: 1.9 })], tall)).toThrow(/超出佔地/);
+    expect(() => assembleCivic([box({ w: 1.9, d: 2.9 })], tall, GREY)).not.toThrow();
+    expect(() => assembleCivic([box({ w: 2.9, d: 1.9 })], tall, GREY)).toThrow(/超出佔地/);
   });
 
   it('should reserve the inset', () => {
     // 剛好貼齊佔地邊界會與鄰格的東西共面 —— z-fighting 在靜態截圖上看不出來，
     // 一移動鏡頭就整片閃爍。
     const flush = 2 - CIVIC_INSET * 2;
-    expect(() => assembleCivic([box({ w: flush, d: flush })], FOOT)).not.toThrow();
-    expect(() => assembleCivic([box({ w: flush + 0.01, d: flush })], FOOT)).toThrow();
+    expect(() => assembleCivic([box({ w: flush, d: flush })], FOOT, GREY)).not.toThrow();
+    expect(() => assembleCivic([box({ w: flush + 0.01, d: flush })], FOOT, GREY)).toThrow();
   });
 
   it('should say how far out it went, in metres', () => {
     // 「超出佔地」四個字不夠用 —— 要知道差多少才改得動量體表。
-    expect(() => assembleCivic([box({ w: 3, d: 1 })], FOOT)).toThrow(/m/);
+    expect(() => assembleCivic([box({ w: 3, d: 1 })], FOOT, GREY)).toThrow(/m/);
   });
 
   it('should tag every vertex it emits', () => {
-    const geo = assembleCivic([box({ part: PART_WALL }), box({ x: 0.4, part: PART_ROOF })], FOOT);
+    const geo = assembleCivic([box({ part: PART_WALL }), box({ x: 0.4, part: PART_ROOF })], FOOT, GREY);
     const col = geo.getAttribute('color');
     expect(col, '沒有頂點色 —— shader 會把整棟當成 partType 0').toBeTruthy();
     expect(col.count).toBe(geo.getAttribute('position').count);
@@ -70,7 +72,7 @@ describe('assembleCivic 的護欄', () => {
     // 合併之後標籤混掉的話，屋頂會長出窗戶或牆會被當成屋頂上色。
     const geo = assembleCivic(
       [box({ z: -0.4, d: 0.5, part: PART_WALL }), box({ z: 0.4, d: 0.5, part: PART_ROOF })],
-      FOOT,
+      FOOT, GREY,
     );
     const col = geo.getAttribute('color');
     const tags = new Set<number>();
@@ -81,7 +83,7 @@ describe('assembleCivic 的護欄', () => {
   it('should return an empty tagged geometry for an empty plan', () => {
     // 公園可能完全沒有量體（只有貼片與樹）。空陣列丟給 mergeGeometries 會
     // 回傳 null，而 null 一路傳到 `new THREE.Mesh` 才炸。
-    const geo = assembleCivic([], FOOT);
+    const geo = assembleCivic([], FOOT, GREY);
     expect(geo.getAttribute('position').count).toBe(0);
     expect(geo.getAttribute('color')).toBeTruthy();
   });

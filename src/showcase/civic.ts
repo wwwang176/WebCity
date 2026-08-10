@@ -3,7 +3,7 @@ import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { GROUND_LAYERS } from '../renderer/geometry/buildings/propBands';
 import { assembleCivic, assembleDecals } from '../renderer/geometry/civic/assemble';
-import { getCivicPlan, civicTypesDone } from '../renderer/geometry/civic/registry';
+import { civicTypesDone } from '../renderer/geometry/civic/registry';
 import { CIVIC_TRIANGLE_BUDGET, type CivicPlan, type Footprint }
   from '../renderer/geometry/civic/types';
 import { getInfraConfig, type InfraType } from '../core/building/InfraConfig';
@@ -98,15 +98,15 @@ const LAYERS: ReadonlyArray<{
   },
   {
     key: 'massing', castShadow: true, culled: false, baseY: GROUND_LAYERS.BUILDING,
-    build: p => assembleCivic(p.massing, p.footprint),
+    build: p => assembleCivic(p.massing, p.footprint, p.color),
   },
   {
     key: 'prop', castShadow: true, culled: true, baseY: GROUND_LAYERS.BUILDING,
-    build: p => assembleCivic(p.props, p.footprint),
+    build: p => assembleCivic(p.props, p.footprint, p.color),
   },
   {
     key: 'overhead', castShadow: true, culled: true, baseY: GROUND_LAYERS.BUILDING,
-    build: p => assembleCivic(p.overhead, p.footprint),
+    build: p => assembleCivic(p.overhead, p.footprint, p.color),
   },
 ];
 
@@ -125,11 +125,8 @@ export interface PlacedCivic {
  * （BUG-230c 就是這個形狀）。
  */
 export function placeCivic(
-  type: InfraType, scene: THREE.Scene, occupancy: number,
-): PlacedCivic | null {
-  const plan = getCivicPlan(type);
-  if (!plan) return null;
-
+  plan: CivicPlan, scene: THREE.Scene, occupancy: number,
+): PlacedCivic {
   const material = getBuildingMaterial();
   const out: PlacedCivic = {
     meshes: [], culled: [],
