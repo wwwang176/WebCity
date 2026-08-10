@@ -38,14 +38,14 @@ describe('dragToOrbit', () => {
 
 describe('dragToPan', () => {
   it('should move the world opposite to the drag, so content follows the cursor', () => {
-    expect(dragToPan(100, 0, 60).x).toBeLessThan(0);
-    expect(dragToPan(0, 100, 60).z).toBeLessThan(0);
+    expect(dragToPan(100, 0, 60, 600).x).toBeLessThan(0);
+    expect(dragToPan(0, 100, 60, 600).z).toBeLessThan(0);
   });
 
   it('should move further per pixel when zoomed out', () => {
     // 沒有這個比例，拉遠之後平移會慢到像卡住。
-    const near = Math.abs(dragToPan(100, 0, 20).x);
-    const far = Math.abs(dragToPan(100, 0, 120).x);
+    const near = Math.abs(dragToPan(100, 0, 20, 600).x);
+    const far = Math.abs(dragToPan(100, 0, 120, 600).x);
     expect(far).toBeGreaterThan(near * 5);
   });
 });

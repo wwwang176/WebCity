@@ -275,11 +275,28 @@ void main() {
             smoothstep(0.30 - fwX, 0.30 + fwX, fracX) * smoothstep(0.70 + fwX, 0.70 - fwX, fracX)
           * smoothstep(0.30 - fwY, 0.30 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY);
 
-        // 一樓正中央開一道門，取代那一格窗
+        // 一樓開一道門。位置必須綁在**建築**上，不能只看格內偏移：以 fract
+        // 量到牆中央的距離對每一格都成立，所以一面牆 1.5–2.3 格、四面牆繞
+        // 一圈，一棟房子會長出六到八道門（BUG-233）。
+        //
+        // fragment shader 裡每棟固定的量只有格子座標與牆面法線，所以用格子
+        // 擲一面牆，再用格心對齊那面牆的中央。
+        vec2 bldgCell = floor(vWorldPos.xz + 0.5);
+        float wallCentre = (abs(n.x) > abs(n.z)) ? bldgCell.y : bldgCell.x;
+        float doorSide = floor(hash21(bldgCell * 3.1 + 7.0) * 4.0);
+        float thisSide = (abs(n.x) > abs(n.z))
+          ? (n.x > 0.0 ? 0.0 : 1.0)
+          : (n.z > 0.0 ? 2.0 : 3.0);
         bool doorRow = y < houseFloor;
-        float doorX = abs(fract(fx) - 0.5);
-        float doorMask = (doorRow && doorX < 0.18 && y < houseFloor * 0.78) ? 1.0 : 0.0;
-        winMask = doorRow ? 0.0 : winMask;
+        // 半寬照舊是 0.18 格，只是改成量世界座標而不是 fract —— 實際寬度
+        // 不變（0.93–1.4 m）。
+        bool onDoorWall = abs(doorSide - thisSide) < 0.5;
+        float doorMask = (doorRow && onDoorWall
+          && abs(wallU - wallCentre) < houseWin * 0.18
+          && y < houseFloor * 0.78) ? 1.0 : 0.0;
+        // 一樓其餘的地方照樣開窗。以前這裡是 winMask = 0 —— 整層一樓沒有窗，
+        // 所以它拿不到 windowMask：沒有玻璃、沒有天空反射，夜裡也永遠不亮。
+        winMask *= 1.0 - doorMask;
 
         vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 4.7;
         float period = 150.0 + hash21(wid + 99.0) * 150.0;

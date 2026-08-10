@@ -148,6 +148,30 @@ describe('the shader uses the thresholds the parts module defines', () => {
     expect(nightAt, '日夜係數還關在窗戶的判斷裡').toBeLessThan(windowAt);
   });
 
+  it('should open exactly one door on a low-density house', () => {
+    // `doorX = abs(fract(fx) - 0.5)` 對**每一格**都成立，所以註解寫的
+    // 「一樓正中央開一道門」實際上是每一格都開一道。一面牆 1.5–2.3 格
+    // （房子 6 m、一格 2.6–3.9 m）、四面牆繞一圈 —— 一棟房子六到八道
+    // 咖啡色的門（BUG-233）。
+    //
+    // 門必須同時綁在「哪一面牆」與「牆的中央」上，兩者都只能由建築的格子
+    // 決定，因為那是 fragment shader 裡唯一每棟固定的量。
+    expect(BUILDING_FRAG, '門的橫向位置還是只看 fract，等於每格一道')
+      .not.toContain('abs(fract(fx) - 0.5)');
+    expect(BUILDING_FRAG, '門沒有挑一面牆').toContain('doorSide');
+    expect(BUILDING_FRAG, '門沒有對齊牆的中央').toContain('wallCentre');
+  });
+
+  it('should still give the ground floor windows', () => {
+    // `winMask = doorRow ? 0.0 : winMask` 把整層一樓的窗戶歸零 —— 不是
+    // 「門那一格沒有窗」。一樓因此拿不到 windowMask：沒有玻璃、沒有日間
+    // 天空反射，`isLitWindow` 永遠是 false，夜裡一樓全暗。
+    expect(BUILDING_FRAG, '一樓的窗戶仍被整層歸零')
+      .not.toContain('winMask = doorRow ? 0.0 : winMask;');
+    expect(BUILDING_FRAG, '門沒有從窗戶遮罩裡扣掉，而是取代了它')
+      .toContain('winMask *= 1.0 - doorMask;');
+  });
+
   it('should at least be bracket-balanced', () => {
     // GLSL 在這裡編不了，所以編譯錯誤只會表現成**整片畫面空白**。括號平衡
     // 抓不到型別錯誤，但抓得到「編輯時切掉半個區塊」—— 而那是這個檔案最

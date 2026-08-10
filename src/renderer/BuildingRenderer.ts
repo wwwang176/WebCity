@@ -8,7 +8,7 @@ import {
   ZONE_TYPES, LEVELS, TARGET_HEIGHTS_M, heightKey, bucketKey,
   type Density, type GeoBuilder,
 } from './geometry/buildings/registry';
-import { getMassingVariants, VARIANT_COUNT, floorHeightOf } from './geometry/buildings/massing';
+import { getMassingVariants, VARIANT_COUNT, floorHeightOf, isRoundBodied } from './geometry/buildings/massing';
 import { FLOOR_HEIGHT_UNITS } from './geometry/buildings/massing/metrics';
 import { getGroundPropVariants } from './geometry/buildings/groundProps';
 import { getDecalVariants } from './geometry/buildings/decals';
@@ -21,6 +21,7 @@ import { getBuildingType } from '../core/building/types';
 import { ViewMode } from '../core/ViewMode';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
 import { disposeGroup } from './disposeGroup';
+import { detailHidden } from './detailLOD';
 import { InstancedLayer } from './InstancedLayer';
 import { PALETTE } from '../ColorPalette';
 import { ZONE_BLOCKER_COLORS, ACTIONABLE_BLOCKERS, type ZoneBlocker } from '../core/zone/ZoneBlocker';
@@ -28,6 +29,7 @@ import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '..
 
 /** 桶的初始容量。滿了就倍增（見 InstancedLayer）。 */
 const INITIAL_BUCKET_CAPACITY = 256;
+
 
 export class BuildingRenderer {
   // --- Persistent variant meshes (pre-allocated, never disposed until game exit) ---
@@ -59,6 +61,14 @@ export class BuildingRenderer {
      * 層序必須留在幾何裡），再加一次就會把標線推離鋪面。
      */
     baseY: number;
+    /**
+     * 牆體是圓的就跳過這一層。
+     *
+     * 只有懸挑要跳：雨遮與招牌都是平板，貼在圓弧牆上會穿出去或懸空 ——
+     * 與 BUG-226（雨遮貼在假想牆上）同一類，只是這次牆是彎的。矮物件站在
+     * 地上，牆彎不彎與它無關；鋪面更是完全在地面上。
+     */
+    skipWhenRound?: boolean;
   }> = [
     { layer: this.decalLayer, variants: getDecalVariants, castShadow: false, baseY: 0 },
     {
@@ -67,7 +77,7 @@ export class BuildingRenderer {
     },
     {
       layer: this.overheadLayer, variants: getOverheadVariants,
-      castShadow: true, baseY: GROUND_LAYERS.BUILDING,
+      castShadow: true, baseY: GROUND_LAYERS.BUILDING, skipWhenRound: true,
     },
   ];
 
@@ -176,8 +186,10 @@ export class BuildingRenderer {
       paletteSize: paletteFor(zoneType, level).length,
     });
     const rotation = (app.rotationQuarter * Math.PI) / 2;
+    const round = isRoundBodied(zoneType, density, level, app.variantIndex);
 
     for (const a of this.attachments) {
+      if (a.skipWhenRound && round) continue;
       const builders = a.variants(zoneType, density, level);
       if (builders.length === 0) continue;
       const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;
@@ -2701,6 +2713,8 @@ export class BuildingRenderer {
   }
 
   private _focusMode = false;
+  /** 縮到 DETAIL_LOD.HIDE_ABOVE 之外。與 `_focusMode` 各自獨立（見 applyLayerVisibility）。 */
+  private _detailHidden = false;
   private _whiteModelMesh: THREE.Mesh | null = null;
   private static _whiteModelMat: THREE.ShaderMaterial | null = null;
 
@@ -2743,10 +2757,43 @@ export class BuildingRenderer {
     return BuildingRenderer._whiteModelMat;
   }
 
+  /**
+   * 依鏡頭的縮放決定要不要畫矮物件與懸挑。每幀呼叫，成本是兩個比較。
+   *
+   * `frustumHeight` 是正交鏡頭的視錐高度（`camera.top - camera.bottom`），
+   * 單位是格。門檻與遲滯的理由見 `DETAIL_LOD`。
+   *
+   * 地面貼片不在內：它是平的鋪面，撐住「地面有東西」的觀感，關掉會讓遠景
+   * 整片地變空，工業區那塊柏油也會跟著消失。
+   */
+  updateDetailLOD(frustumHeight: number): void {
+    const hidden = detailHidden(frustumHeight, this._detailHidden);
+    if (hidden === this._detailHidden) return;
+    this._detailHidden = hidden;
+    this.applyLayerVisibility();
+  }
+
+  /**
+   * 把兩個獨立的閘門解析成三個附掛層的顯示狀態。
+   *
+   * 檢視模式與縮放是兩件事，任一方直接設 `visible` 都會踩到對方 ——
+   * 離開白模檢視時把三層設回 true，縮在遠景的鏡頭就會突然長回矮物件，
+   * 而使用者從頭到尾沒有動過滾輪。
+   */
+  private applyLayerVisibility(): void {
+    this.decalLayer.setVisible(!this._focusMode);
+    const detail = !this._focusMode && !this._detailHidden;
+    this.propLayer.setVisible(detail);
+    this.overheadLayer.setVisible(detail);
+  }
+
   /** Switch view mode — any non-NORMAL mode shows white model. */
   setViewMode(mode: ViewMode, scene?: THREE.Scene): void {
     const enabled = mode !== ViewMode.NORMAL;
     this._focusMode = enabled;
+    // 三個附掛層以前完全沒被 setViewMode 碰過，也沒有烘進白模，所以貼片、
+    // 樹與招牌會維持原色浮在白模上面（BUG-232）。
+    this.applyLayerVisibility();
 
     if (enabled && scene) {
       // Hide originals

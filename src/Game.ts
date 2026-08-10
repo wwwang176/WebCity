@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { SceneManager } from './renderer/SceneManager';
+import { dragToPan } from './renderer/cameraPan';
 import { TerrainRenderer } from './renderer/TerrainRenderer';
 import { RoadRenderer } from './renderer/RoadRenderer';
 import { BuildingRenderer } from './renderer/BuildingRenderer';
@@ -778,10 +779,14 @@ export class Game {
         this.sceneManager.orbitCamera(e.movementX * CAMERA_INPUT.ORBIT_SENSITIVITY, e.movementY * CAMERA_INPUT.ORBIT_SENSITIVITY);
         return;
       }
-      // Space + left-button drag → pan camera
-      if (this.spacePanning && (e.buttons & 1)) {
-        const scale = (this.sceneManager.camera.top - this.sceneManager.camera.bottom) / canvas.clientHeight;
-        this.sceneManager.panCamera(-e.movementX * scale, -e.movementY * scale);
+      // 右鍵拖曳，或 space + 左鍵拖曳 → 平移相機。
+      //
+      // 右鍵這條以前只存在於 mousedown 裡一個空的 if 加一句「handled in
+      // mousemove」的註解，而 mousemove 從來沒有處理過它（BUG-236）。
+      if ((e.buttons & 2) || (this.spacePanning && (e.buttons & 1))) {
+        const view = this.sceneManager.camera.top - this.sceneManager.camera.bottom;
+        const p = dragToPan(e.movementX, e.movementY, view, canvas.clientHeight);
+        this.sceneManager.panCamera(p.x, p.z);
         return;
       }
       const rect = canvas.getBoundingClientRect();
@@ -802,9 +807,6 @@ export class Game {
           y: Math.max(0, Math.min(h - 1, this.gridCursor.gridY)),
         };
         this.updatePlacementPreview();
-      }
-      if (e.button === 2) {
-        // Right-click camera pan handled in mousemove
       }
     });
 
@@ -1553,6 +1555,12 @@ export class Game {
     if (this.keys.has('s') || this.keys.has('arrowdown')) this.sceneManager.panCamera(0, panSpeed);
     if (this.keys.has('a') || this.keys.has('arrowleft')) this.sceneManager.panCamera(-panSpeed, 0);
     if (this.keys.has('d') || this.keys.has('arrowright')) this.sceneManager.panCamera(panSpeed, 0);
+
+    // 縮到遠景就把矮物件與懸挑整層關掉（見 DETAIL_LOD）。每幀的成本是兩個
+    // 比較，狀態沒變時直接返回。
+    this.buildingRenderer.updateDetailLOD(
+      this.sceneManager.camera.top - this.sceneManager.camera.bottom,
+    );
 
     // Simulation tick
     if (!this.paused) {

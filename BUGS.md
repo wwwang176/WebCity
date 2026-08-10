@@ -3099,3 +3099,264 @@ framebuffer 的數字直接被當成已編碼的顯示值。要先把地板轉�
 1.97 m 深（建築佔了 12 m 格子裡的 9 m），而標線是 1.6 m 寬 × 1.67 m 深，
 真實停車格是 2.5 × 5 m。那個深度現實中畫的是卸貨區分隔線或危險區斜紋，
 不是停車格。已記入 TODO。
+
+---
+
+## BUG-232 已修：`setViewMode` 沒有藏三個附掛層，貼片與樹會浮在白模上
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-232 | BuildingRenderer.setViewMode | 切到任何非 NORMAL 檢視時，`decalLayer` / `propLayer` / `overheadLayer` 維持原色顯示 —— 它們既沒有被藏起來，也沒有烘進白模 | Medium |
+
+**發現方式：** 使用者問「建築目前有 LOD 了嗎」。盤點顯示 `visible` 只有兩處會
+動：`InstancedLayer` 的空桶優化，以及 `setViewMode`。讀 `setViewMode` 時看到
+它藏的是 `variantMeshes`、`overlayMeshes`、`infraGroups` —— 三個附掛層一個
+都沒有。`buildWhiteModelMesh` 也只烘量體與基礎設施。
+
+這是階段 2B 把貼片、矮物件、懸挑從量體幾何拆成獨立圖層時漏掉的：在那之前
+它們是量體的一部分，藏量體就等於藏它們。拆開之後沒有人補上這一段。
+
+結果是切到污染、地價、鐵路聚焦那類檢視時，白模上會浮著全彩的鋪面、樹、
+招牌與雨遮 —— 而白模的用意正是把無關的東西壓成單色背景。
+
+**修法：** 檢視模式與縮放是兩個獨立的閘門，任一方直接設 `visible` 都會踩到
+對方，所以兩者都收斂到 `applyLayerVisibility()`：
+
+```
+decalLayer          = !focusMode
+prop / overheadLayer = !focusMode && !detailHidden
+```
+
+閘門本身放在 `InstancedLayer.setVisible()`，因為 `acquire()` 與 `release()`
+也會動 `visible` —— 閘門若只是呼叫端逐桶設一次，關著的時候蓋一棟新房子就會
+讓那一桶單獨冒出來。
+
+**回退驗證：** 拿掉 `setViewMode` 裡的 `applyLayerVisibility()` →
+「should hide decals, low props and overheads behind the white model」轉紅
+（`expected 'all' to be 'none'`）。
+
+**測試自己的漏洞（回退驗證抓到的）：** 判斷用的 helper 原本是布林
+「每個非空桶都畫嗎」。拿掉 `acquire` 的閘門時它**沒有轉紅** —— 漏閘門只讓
+新蓋的那一桶亮回來，其餘仍是關的，於是「不是全開」照樣成立。改成三態
+（`all` / `none` / `some`）之後才紅，訊息是 `expected 'some' to be 'none'`。
+布林的判斷在這裡是不夠的。
+
+---
+
+## BUG-233 已修：低密度住宅每一格都長出一道門，而且一樓完全沒有窗
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-233 | BuildingMaterial 的 RESIDENTIAL_LOW 分支 | 門的位置只看 `fract(fx)`，所以每一格都畫一道；同時一樓的 `winMask` 被無條件歸零 | Medium |
+
+**發現方式：** 使用者說「低密度住宅一樓的窗戶也要套用 GLSL，現在看起來是
+咖啡色色塊」。
+
+兩個獨立的缺陷疊在同一段五行的程式碼裡：
+
+```glsl
+bool doorRow = y < houseFloor;
+float doorX = abs(fract(fx) - 0.5);
+float doorMask = (doorRow && doorX < 0.18 && ...) ? 1.0 : 0.0;
+winMask = doorRow ? 0.0 : winMask;
+```
+
+1. `fract(fx)` 對**每一格**都成立，所以註解寫的「一樓正中央開一道門」實際上是
+   每一格都開一道。一格是 `windowWidth * 1.35` = 2.6–3.9 m，房子寬 6 m，
+   所以一面牆 1.5–2.3 格、四面牆繞一圈 —— 一棟房子六到八道門。使用者看到的
+   「咖啡色色塊」就是這些重複的 `doorColor`。
+2. `winMask = doorRow ? 0.0 : winMask` 把整層一樓的窗戶歸零，不是只有門那一格。
+   一樓因此拿不到 `windowMask`：沒有玻璃、沒有白天的天空反射，
+   `isLitWindow` 永遠是 false，夜裡一樓全暗。
+
+**修法：** fragment shader 裡每棟固定的量只有格子座標與牆面法線，所以用格子
+擲一面牆（`doorSide`）、用格心對齊那面牆的中央（`wallCentre`），門只開一道。
+一樓其餘的地方照常開窗，門從遮罩裡扣掉而不是取代它：`winMask *= 1.0 - doorMask`。
+門的實際寬度不變（0.93–1.4 m），只是從量 fract 改成量世界座標。
+
+**回退驗證：** 把 `winMask *= 1.0 - doorMask` 換回 `winMask = doorRow ? 0.0 : winMask`
+→「should still give the ground floor windows」轉紅。
+
+**寫的時候踩到的：** 註解裡用反引號包 GLSL 片段會把 TS 的 template literal
+切斷（`ERROR: Expected ";" but found "abs"`）。這是第二次了 —— 第一次是
+`windowMask`。而且註解裡若留著被禁的那串字，來源比對的測試會照樣抓到它。
+
+---
+
+## BUG-234 已修：陰影與物體底部分家，normalBias 是公尺級專案的預設值
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-234 | SceneManager.SCENE.SHADOW_NORMAL_BIAS | `0.02` 在 1 單位 = 12 公尺的專案裡等於 24 公分，地面陰影因此偏移 21 公分 | Medium |
+
+**發現方式：** 使用者說「建築貼地了，但陰影跟物體有點距離，例如小燈桿的陰影
+沒有貼在燈桿的底部」。
+
+`normalBias` 是把接收面的取樣點沿法線推出去的距離，單位是世界單位。地面法線
+朝上，所以取樣點被抬高 0.02 單位 = 24 公分：
+
+```
+太陽仰角 = atan(80 / √(50² + 50²)) = 48.5°
+地面位移 = 0.24 / tan(48.5°) = 21.2 公分
+```
+
+路燈柱子是半徑 0.07–0.09 m 的圓柱，直徑 14–18 公分 —— **陰影脫離的距離比
+柱子本身還粗**。
+
+`0.02` 是 three.js 範例的常見值，而那些場景是 1 單位 = 1 公尺，在那裡它等於
+2 公分。這個專案是 1 單位 = 12 公尺，搬過來時沒有換算。
+
+**排除的兩個嫌疑：** `GROUND_LAYERS.BUILDING` 只有 0.002 單位 = 2.4 公分，
+造成的位移不到 2 公分；`updateShadowCamera()` 每幀都跑，縮放時陰影相機有跟著
+收，所以不是陰影相機沒有更新。
+
+**修法：** 改成 `0.005`（6 公分），地面位移約 5 公分。不能歸零 —— 那會讓平坦
+地面長出自我遮蔽的條紋（shadow acne），所以測試同時擋兩個方向。
+
+**回退驗證：** 改回 0.02 → 兩條轉紅，量到 0.212 m，與手算一致。
+
+**沒有一起改、需要實機確認的：** `SHADOW_BIAS` 是**深度空間**的偏移，換算成
+世界距離要乘上陰影相機的深度範圍：`0.0005 × (200 - 1) ≈ 0.1 單位 ≈ 1.2 公尺`
+沿光軸。若這個推導成立，它是比 normalBias 更大的貢獻者，而根因是
+`SHADOW_NEAR: 1 / SHADOW_FAR: 200` 把深度範圍開得太寬（光源距焦點只有
+約 107 單位）。沒有一起改是因為**無法在測試環境渲染確認**，而猜錯的代價是
+整片地面長出 acne。已記入 TODO。
+
+**BUG-234 第一次沒修好 —— 我量錯了項。** 使用者回報「在 showcase 裡看，
+影子跟物體還是沒連接在一起」。原因有兩個，都在我的測試裡：
+
+1. **測試用 `SCENE.SUN_OFFSET` 算仰角，而太陽是會動的。** WeatherRenderer
+   每幀改寫 `sunOffset`（`sunY = 80 × max(0.1, sin(sunAngle))`），展示區的
+   預設時間 0.3 只有 19.7 度，不是常數暗示的 48.5 度。太陽越低 `tan` 越小，
+   偏移越大，所以我量的是最有利的那個配置。
+2. **只量了 `normalBias`，漏掉深度空間的 `bias`。** 後者的世界距離是
+   `bias × (far - near)`，而 near/far 寫死成 1 / 200 —— 199 格 = 2388 公尺
+   的深度範圍，光源距焦點卻只有約 107 格。
+
+實際的分帳（展示區預設時間）：
+
+```
+normalBias  0.005 × 12 / tan(19.7°)                     = 0.17 m   (9%)
+bias        0.0005 × 199 × 12 × 2cos(19.7°)             = 2.24 m   (91%)
+```
+
+**我修的是佔不到一成的那一項。** 測試綠燈是因為它問錯了問題。
+
+**第二次的修法：**
+
+- 算式抽成 `renderer/shadowFit.ts`（純算術）：`shadowDepthRange`、
+  `shadowOffsetMetres`、`sunElevationRad`。推導留在腦子裡是第一次修錯的
+  直接原因。
+- `updateShadowCamera()` 每幀把 near/far 收到投影者身上，不再寫死 1 / 200。
+  拉近看燈桿時深度範圍縮到不足一半，而那正是會盯著看的時候。
+- `SHADOW_BIAS` -0.0005 → **-0.00002**。防 acne 交給 `normalBias`，那是比較
+  新也比較不會造成 peter-panning 的做法。
+- 測試改成量**最壞情況的太陽**與**兩項的總和**，而不是正午的單項。
+
+修完之後展示區預設時間下是 0.23 m，其中 0.17 m 仍來自 `normalBias` ——
+再往下就是 acne 的取捨，而那沒有公式（它取決於陰影貼圖一個 texel 有多大，
+而 texel 隨縮放變）。所以展示區加了兩根 bias 滑桿，讓那個判斷回到眼睛上。
+
+**回退驗證：** 把 `SHADOW_BIAS` 改回 -0.0005 → 兩條轉紅，量到 1.82 m。
+
+---
+
+## BUG-235 已修：商業高密度的圓塔在參數化改造時被弄丟
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-235 | massing/prototypes.ts | 階段 2C-1 把 17 個手寫變體換成參數化生成器時，`makeComHighV2`（八角柱身 + 圓盤簷）沒有被搬過來 | Low |
+
+**發現方式：** 使用者說「原本的商業區有圓形的建築，我覺得圓形很有特色，
+為什麼拿掉了」。
+
+`git log -S CylinderGeometry` 找到 `19fcce5`，被刪的那一段是：
+
+```ts
+function makeComHighV2(): THREE.BufferGeometry {
+  const body = new THREE.CylinderGeometry(0.28, 0.3, 1.0, 8);   // 八角柱身
+  const cap  = new THREE.CylinderGeometry(0.32, 0.32, 0.05, 8); // 外挑圓盤簷
+}
+```
+
+新的八個組合器（`single` / `mainPlusWing` / `lShape` / `podiumTower` /
+`setback` / `notch` / `twin` / `splitSpan`）**產出的全是長方體**。圓柱這個
+形狀後來為了工業的煙囪與筒倉才回到 `VolumeShape`（`6fb3451`），但只有工業
+拿得到。
+
+**這是漏的，不是決定的。** 規格 `2026-08-09-parametric-massing-design.md`
+提到「圓柱」的只有兩處：住宅高的水塔、工業的筒倉，都是配件 —— 從頭到尾
+沒有討論過「圓形塔身」的去留。而驗收線（剪影種類、不對稱比例、三角形預算）
+不會因為少一根圓塔而變紅，所以測試全綠、東西沒了。與展示區的地板顏色
+（BUG-231）同一類：**沒有任何東西報錯，只是畫面少了一塊。**
+
+**修法：**
+
+- `roundTower(diameterFrac)` 組合器：柱身 + 外挑圓盤簷。寬深取**短邊**而不是
+  各自吃 `dims.w` / `dims.d` —— 兩者是分別抖動的，直接用會得到橢圓柱。
+- 圓盤簷放在**量體**裡而不是交給屋頂形式：`roofFor` 按 variantIndex 分層，
+  圓塔落在 `flat`（不產生任何屋頂量體），走屋頂那條路它永遠拿不到簷板。
+- `buildRoof` 的 `parapet` 與 `crown` 遇到圓形頂面時改出圓的 —— 四塊方牆圍在
+  圓塔外面是一個方框套著圓柱。
+- 使用者指定圓柱體不掛雨遮與招牌（兩者都是平板，貼在圓弧牆上會穿出去或
+  懸空）。`isRoundBodied()` 判斷的是**零件標籤**：`shape === 'cylinder'` 且
+  `part === PART_WALL`。工業的煙囪是 `PART_DETAIL`，所以廠房不會被誤判。
+  懸挑層跳過，矮物件與鋪面照舊。
+
+**原型表的順序也跟著動。** L3 原本五個原型（8 % 5 = 3，前三個各兩個變體），
+不對稱的 `offsetTower` 與 `L-tower` 剛好各兩個 = 4/8，壓在驗收線上。加上圓塔
+變六個（8 % 6 = 2，只有前兩個拿兩個），照原順序 `L-tower` 會掉到一個、不對稱
+比例跌到 3/8。把兩個不對稱原型並排在最前面才守得住 —— 這正是那張表表頭寫的
+規則。
+
+**回退驗證抓到一條空轉的測試。** 原本的「掃過圓塔的所有屋頂量體，斷言每一個
+都是圓的」在拿掉圓形分支之後**沒有轉紅**：圓塔落在 `flat`，那條分支回傳空
+陣列，迴圈一個都沒檢查到。改成直接呼叫 `buildRoof('parapet', 圓形頂, ...)`
+並先斷言 `out.length > 0` 之後才紅。這與 BUG-232 的三態 helper 是同一個教訓：
+**斷言之前要先確定真的有東西被檢查到。**
+
+三處回退各自轉紅：懸挑跳過、圓形屋頂、圓形（非橢圓）足跡。
+
+---
+
+## BUG-236 已修：右鍵拖曳平移只存在於註解裡
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-236 | Game.setupInput | `mousedown` 裡有一個空的 `if (e.button === 2)`，註解寫「handled in mousemove」，而 `mousemove` 從來沒有處理過右鍵 | Low |
+
+**發現方式：** 使用者說「主遊戲也跟展示區一樣，補上右鍵拖曳移動」。
+
+```js
+canvas.addEventListener('mousedown', (e) => {
+  ...
+  if (e.button === 2) {
+    // Right-click camera pan handled in mousemove
+  }
+});
+```
+
+`mousemove` 裡只有兩條平移路徑：中鍵 (`e.buttons & 4`，其實是 orbit) 與
+space + 左鍵 (`e.buttons & 1`)。**右鍵一次都沒有被接上。** 註解不是過期的
+描述，是一個從來沒有兌現的意圖 —— 空的 `if` 也不會被任何 linter 抓到，
+因為它「看起來像有意為之」。
+
+**修法：** `mousemove` 的平移條件改成 `(e.buttons & 2) || (spacePanning &&
+(e.buttons & 1))`，並刪掉那個空的 `if`。
+
+**順帶合併了兩份平移算式。** 遊戲用的是 `視錐高度 / canvas.clientHeight`，
+展示區的 `dragToPan` 分母寫死 **600** —— 等於假設畫布永遠 600 px 高，在其他
+高度下拖曳速度與游標對不上。同一個手勢兩份算式，而且只有在 600 px 高的視窗
+裡才會一致。兩者現在都吃 `renderer/cameraPan.ts`。
+
+判準只有一條：**游標按住的那一點要黏在游標下面** —— 拖 N 像素，世界就走
+「N 像素在目前縮放下代表的距離」。測試直接量這個（視錐 60 格、畫布 600 px
+→ 拖 100 px 必須剛好走 10 格）。
+
+**順手補的守衛：** 畫布還沒佈局完時 `clientHeight` 是 0。除以零會讓
+`cameraTarget` 變成 NaN，而 NaN 一旦進去就再也回不來 —— 畫面整個消失，
+而且沒有任何東西會報錯。
+
+**回退驗證：** 拿掉 `e.buttons & 2` → 接線測試轉紅；拿掉除零守衛 →
+「should survive a zero-height canvas」轉紅。
+

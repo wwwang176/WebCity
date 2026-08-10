@@ -67,6 +67,15 @@ export function buildRoof(
       return [];
 
     case 'parapet': {
+      // 圓塔上不能圍四塊方牆 —— 那是一個方框套著圓柱。改成一圈略微外挑的
+      // 簷板，也正是原本 makeComHighV2 的圓盤 cap。1.06 倍配上圓塔本身的
+      // 0.92 直徑係數，外緣仍落在基地短邊之內。
+      if (top.shape === 'cylinder') {
+        return [roof({
+          ...base, w: top.w * 1.06, d: top.d * 1.06,
+          y1: top.y1 + dims.floorHeight * 0.12, shape: 'cylinder',
+        })];
+      }
       // 女兒牆：沿著頂面四周一圈矮牆。用四塊而不是「大盒減小盒」——
       // 中間那一塊會與樓層頂面重疊。
       const t = Math.min(top.w, top.d) * 0.06;
@@ -81,10 +90,11 @@ export function buildRoof(
     }
 
     case 'crown':
-      // 頂部收分：再收一段細的。
+      // 頂部收分：再收一段細的。形狀跟著塔身走 —— 圓塔頂上放一塊方積木
+      // 就白費了整根圓柱。
       return [roof({
         ...base, w: top.w * 0.62, d: top.d * 0.62,
-        y1: top.y1 + dims.floorHeight * 0.5,
+        y1: top.y1 + dims.floorHeight * 0.5, shape: top.shape,
       })];
 
     case 'gable':

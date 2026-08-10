@@ -10,7 +10,7 @@ import { WeatherRenderer } from '../renderer/WeatherRenderer';
 import { Season } from '../core/climate/Climate';
 import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { TRIANGLE_BUDGET } from '../renderer/geometry/buildings/registry';
-import { getMassingVariants, VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
+import { getMassingVariants, VARIANT_COUNT, isRoundBodied } from '../renderer/geometry/buildings/massing';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { getGroundPropVariants } from '../renderer/geometry/buildings/groundProps';
 import { getDecalVariants } from '../renderer/geometry/buildings/decals';
@@ -23,6 +23,7 @@ import { ZoneType } from '../core/grid/types';
 import { blockCells, matrixCells, neighbourSameRatio, type PlacedCell } from './views';
 import { stampInstanceValues, floorRhythm01, type InstanceValues } from './instanceAttrs';
 import { createShowcaseGround } from './ground';
+import { DetailVisibility } from './detailVisibility';
 import { appearanceOf } from '../renderer/BuildingAppearance';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
@@ -40,12 +41,22 @@ const weather = new WeatherRenderer(sceneManager, 60);
 const material = getBuildingMaterial();
 const shown: THREE.Mesh[] = [];
 
+/**
+ * 遠景時關掉矮物件與懸挑 —— 與遊戲同一套門檻（見 `renderer/detailLOD`）。
+ *
+ * 遊戲那一側是整層 `InstancedLayer` 的閘門，展示區畫的是普通 Mesh，所以
+ * 兩邊的實作不同，但**門檻與遲滯共用一份**。不然縮放到某個位置時兩邊會
+ * 看到不一樣的東西，而那正是展示區唯一不該發生的事。
+ */
+const detailLOD = new DetailVisibility();
+
 function clear(): void {
   for (const m of shown) {
     sceneManager.scene.remove(m);
     m.geometry.dispose();
   }
   shown.length = 0;
+  detailLOD.clear();
 }
 
 /** 一次繪製的三角形統計。四層各自一格，因為它們各有各的預算與問題。 */
@@ -62,18 +73,23 @@ const ATTACHMENTS: ReadonlyArray<{
   castShadow: boolean;
   baseY: number;
   into: keyof Omit<Tris, 'massing'>;
+  /** 遠景時整層關掉。貼片不關 —— 它是平的鋪面，關掉會讓遠景整片地變空。 */
+  culled: boolean;
+  /** 牆體是圓的就跳過 —— 與 BuildingRenderer.attachments 的同名欄位對應。 */
+  skipWhenRound?: boolean;
 }> = [
   {
     variants: getDecalVariants, enabled: () => state.showDecals,
-    castShadow: false, baseY: 0, into: 'decal',
+    castShadow: false, baseY: 0, into: 'decal', culled: false,
   },
   {
     variants: getGroundPropVariants, enabled: () => state.showLowProps,
-    castShadow: true, baseY: GROUND_LAYERS.BUILDING, into: 'prop',
+    castShadow: true, baseY: GROUND_LAYERS.BUILDING, into: 'prop', culled: true,
   },
   {
     variants: getOverheadVariants, enabled: () => state.showOverhead,
-    castShadow: true, baseY: GROUND_LAYERS.BUILDING, into: 'overhead',
+    castShadow: true, baseY: GROUND_LAYERS.BUILDING, into: 'overhead', culled: true,
+    skipWhenRound: true,
   },
 ];
 
@@ -117,8 +133,12 @@ function place(cell: PlacedCell, seedByte: number): Tris {
   sceneManager.scene.add(mesh);
   shown.push(mesh);
 
+  // 圓塔不掛雨遮與招牌（平板貼不上圓弧牆）。遊戲那側同一條規則。
+  const round = isRoundBodied(cell.zoneType, cell.density, cell.level, cell.variantIndex);
+
   for (const a of ATTACHMENTS) {
     if (!a.enabled()) continue;
+    if (a.skipWhenRound && round) continue;
     const builders = a.variants(cell.zoneType, cell.density, cell.level);
     if (builders.length === 0) continue;
     const pi = Math.floor(app.propVariant01 * builders.length) % builders.length;
@@ -134,6 +154,9 @@ function place(cell: PlacedCell, seedByte: number): Tris {
     pmesh.position.set(cell.x, a.baseY, cell.z);
     sceneManager.scene.add(pmesh);
     shown.push(pmesh);
+    // add() 會立刻套用目前的縮放狀態 —— 縮在遠景時動一下控制項會整批重畫，
+    // 少了這一步細節就會全部冒回來。
+    if (a.culled) detailLOD.add(pmesh);
     tris[a.into] = triangleCount(pgeo);
   }
 
@@ -223,6 +246,8 @@ sceneManager.onUpdate((dt) => {
   elapsed += dt;
   // uTime 只驅動窗戶亮燈的隨機週期，一律照實時走。
   material.uniforms.uTime!.value = elapsed;
+
+  detailLOD.update(sceneManager.camera.top - sceneManager.camera.bottom);
 
   if (state.timeOverride === null) {
     weather.update(dt, 1, Season.SUMMER);

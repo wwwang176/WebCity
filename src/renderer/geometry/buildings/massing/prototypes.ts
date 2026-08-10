@@ -1,7 +1,7 @@
 import { ZoneType } from '../../../../core/grid/types';
 import {
   single, mainPlusWing, lShape, podiumTower, setback, notch, twin, splitSpan,
-  shedWithStack, siloRow,
+  shedWithStack, siloRow, roundTower,
   type Composer,
 } from './composers';
 
@@ -60,12 +60,23 @@ const TABLE: Record<number, Prototype[]> = {
     p('shop+annex', 2, mainPlusWing(0.35, 0.6)),
     p('courtyard', 3, notch(0.34)),
   ],
+  /**
+   * 圓塔排最後，而 `L-tower` 被提到 `podium` 前面 —— 兩件事是綁在一起的。
+   *
+   * L3 原本五個原型（8 % 5 = 3，前三個各兩個變體），不對稱的 offsetTower 與
+   * L-tower 剛好各拿兩個 = 4/8，壓在驗收線上。加上圓塔變成六個（8 % 6 = 2，
+   * 只有前兩個拿兩個），照原順序 L-tower 會掉到一個，不對稱比例跌到 3/8。
+   * 把兩個不對稱的原型並排在最前面才守得住。
+   */
   [ZoneType.COMMERCIAL_HIGH]: [
     p('offsetTower', 1, OFFSET_TOWER),
-    p('podium', 1, PODIUM),
     p('L-tower', 2, lShape(0.6)),
+    p('podium', 1, PODIUM),
     p('setback', 2, setback(3)),
     p('twin', 3, twin(0.22)),
+    // 完全旋轉對稱，所以放在末位：它拿到的是餘數分完之後剩下的一個變體。
+    // 圓塔是地標，八棟裡有一根就夠了。
+    p('roundTower', 3, roundTower(0.92)),
   ],
   /**
    * 工業的等級階梯不表現在高度上（現代廠房都是單層挑高、鋪滿基地，見
