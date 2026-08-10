@@ -78,6 +78,39 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
     }
   });
 
+  /**
+   * 車要停在鋪面上。
+   *
+   * 停在草地上的車是一眼就看得到的錯，而它在其他每一條驗收裡都合法：沒有
+   * 越界、沒有重疊、沒有超支。用**旋轉之後**的實際幾何算中心 —— 手寫一份
+   * 車輛尺寸表的話，哪天有人把消防車改長，這條檢查會繼續拿舊的數字算。
+   *
+   * 檢查中心而不是整台車：一顆輪子壓到鋪面邊緣是正常的，車**停在**草地上
+   * 才是錯的。
+   */
+  it('should park every vehicle on something paved', () => {
+    const hard = plan.decals.filter(d => (d.layer ?? 'base') === 'base' && !d.lawn);
+    for (const v of plan.vehicles) {
+      const geo = assembleVehicles([v], plan.footprint);
+      geo.computeBoundingBox();
+      const b = geo.boundingBox!;
+      const cx = (b.min.x + b.max.x) / 2;
+      const cz = (b.min.z + b.max.z) / 2;
+      const on = hard.some(d =>
+        Math.abs(cx - d.x) <= d.w / 2 + 1e-9 && Math.abs(cz - d.z) <= d.d / 2 + 1e-9);
+      expect(on, `${type} 的 ${v.kind} 停在草地上（或根本沒有鋪面）`).toBe(true);
+    }
+  });
+
+  it('should not paint a marking in grass', () => {
+    // `lawn` 走的是 `PART_FOLIAGE` 分支 —— 它整個不看 `shade`。所以一條標成
+    // `lawn` 的標線是**綠色的**，而 `shade: 1.0`（白漆）還好端端寫在那裡。
+    // 兩個欄位互相矛盾而沒有人報錯，是這個資料結構最安靜的失敗方式。
+    for (const d of plan.decals.filter(x => x.layer === 'mark')) {
+      expect(d.lawn, `${type} 有一條長在草裡的標線 —— 它會是綠的`).toBeFalsy();
+    }
+  });
+
   it('should keep the overhead layer above head height', () => {
     // 雨棚、月台頂、招牌都住在這一層，而它們全部要高過行人。2.2 m 是
     // `OVERHEAD_CLEARANCE`。低於它的東西在等角視角下看起來沒事，走近才發現
