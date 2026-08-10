@@ -13,6 +13,21 @@ export const SIMULATION = {
   MEDIUM_TICK_INTERVAL: 60,
   /** Ticks between job relocation checks */
   JOB_RELOCATION_INTERVAL: 60,
+  /**
+   * 換工作那一輪，每個 tick 最多做幾次距離查詢。
+   *
+   * 每個要換工作的市民都要一次 Dijkstra（家 → 所有可能的工作）。2436 人的
+   * 城市裡實測一次約 4.3 毫秒、整輪約 340 次 = 1474 毫秒 —— 全部擠在同一個
+   * tick 就是每隔幾秒卡一下（BUG-109）。
+   *
+   * 2 次 ≈ 9 毫秒，塞得進一個 60fps 的影格。整輪因此要 170 個 tick 才跑完，
+   * 比原本的 60 慢 —— 換工作在遊戲時間裡變慢是刻意接受的代價，而且下一輪
+   * 只在上一輪跑完之後才開始，所以它會自己節流。
+   *
+   * 這是止痛不是治本：總工作量沒有變。治本是讓 workplace 距離快取在有高架
+   * 道路時也能用（BUG-109 的正解，記在 TODO）。
+   */
+  JOB_RELOCATION_SLICE: 2,
   /** Number of random cells sampled per growth tick */
   GROWTH_ATTEMPTS: 20,
   /** Chance per attempt for burned building auto-clearance */

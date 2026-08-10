@@ -3360,3 +3360,86 @@ space + 左鍵 (`e.buttons & 1`)。**右鍵一次都沒有被接上。** 註解�
 **回退驗證：** 拿掉 `e.buttons & 2` → 接線測試轉紅；拿掉除零守衛 →
 「should survive a zero-height canvas」轉紅。
 
+---
+
+## BUG-109 止痛（非治本）：換工作那一輪切片化
+
+| ID | 位置 | 問題 | 嚴重度 |
+|---|---|---|---|
+| BUG-109 | SimulationLoop.runJobRelocation | 有任何一格高架道路就停用 workplace 距離快取，退回逐戶 Dijkstra，整輪擠在同一個 tick | High（實測） |
+
+**發現方式：** 使用者說「每 5~10 秒卡一下，每次 0.3~0.5 秒」，並提供了一份
+2146 人的存檔。**先不改程式碼，只查。**
+
+**量測（Chrome，實際載入該存檔）：**
+
+先猜自動存檔（每 100 tick），**猜錯了** —— trace 顯示 save worker 執行緒
+99.8% 閒置，存檔確實在背景。
+
+包住 `simLoop.tick` 逐 tick 計時之後：
+
+```
+tick % 60 === 4  →  966 → 1184 ms（30 秒內還在長）
+tick % 60 === 2  →  30 ms
+```
+
+`% 60 === 4` 是 `JOB_RELOCATION_INTERVAL`。單獨計時 `runJobRelocation()`
+= **1474 ms**。
+
+CPU profile（主執行緒 19 秒取樣）：
+
+```
+2481 ms  13.1%  checkNeighborsForTargets  RoadCoverageFlood.ts
+2240 ms  11.9%  ElevationManager.get
+1351 ms   7.1%  roadDistanceToTargets
+ 967 ms   5.1%  parsePosKeyUnsafe
+ 596 ms   3.2%  distanceLookup
+────────────────────────────────
+約 8.7 秒 ≈ 主執行緒的 46%
+```
+
+整條都是 Dijkstra。執行期狀態確認了原因：
+
+```
+hasAnyElevatedRoad : true   （60 格高架道路，0 格高架鐵路）
+wpDistCache.isReady: false
+wpDistCache.isStale: true
+```
+
+`SimulationLoop.ts:1195` 的 `canUseWpCache` 在有任何一格高架道路時為 false，
+而同一個條件也擋住 `requestUpdate` —— 快取不是「還沒算好」，是**不會去算**。
+341 個工作年齡市民 × 每人一次 Dijkstra ≈ 4.3 ms = 1474 ms。
+
+**修法（止痛）：** 總工作量不變，只是不再擠在同一個 tick。
+
+- `beginJobRelocation()` 回傳一個切片器，`runSlice(budget)` 每次最多做 `budget`
+  次距離查詢。`jobRelocationTick()` 改成「開一輪 + `runSlice(Infinity)`」——
+  **一份實作、兩個入口**，切片與一次跑完不可能給出不同決策。
+- 順序在開輪時定死（先所有走不到的，再所有通勤太長的），與原本兩輪迴圈等價，
+  但只算一次 `getTriggerReason`。順序不能亂 —— `occupancy` 邊走邊改，後面的
+  市民看得到前面的決定。
+- 被配額擋下而跳過的市民**不消耗預算**，否則配額用完後每一片都在空轉，
+  `pending` 永遠降不到 0。
+- `SIMULATION.JOB_RELOCATION_SLICE = 2`（≈ 9 ms／tick）。下一輪只在上一輪跑完
+  之後才開始，所以它自己節流：城市越大，輪與輪的間隔越長，每個 tick 的成本不變。
+
+**實測結果（同一份存檔、同樣的速度 5、30 秒）：**
+
+```
+改動前   tick % 60 === 4  →  966 ~ 1184 ms      長影格最高 582 ms
+改動後   最慢的 tick      →  49.2 ms            長影格（>60ms）= 0
+```
+
+**回退驗證抓到一個缺的測試。** 拿掉 `advanceJobRelocation()` 那一行時，
+562 條相關測試**全過** —— 沒有任何測試覆蓋「SimulationLoop 真的有推進這一輪」。
+刪掉它，換工作會完全靜默地停擺。這是切片化引入的**新失敗模式**：以前那一輪
+是「一個 tick 跑完」，刪掉呼叫至少會有東西壞掉；現在它會安靜地半途而廢。
+補了 `JobRelocationIsDriven.test.ts`（4 條），再回退才轉紅。
+
+**還沒修的：** 這只是止痛。治本仍是把高架層序列化進 workplace-distance worker
+的緩衝區，讓快取在有高架時也能用 —— 記在 TODO，需要先寫 spec。
+
+**順帶量到、下一個瓶頸：** `advanceEdgeVehicles` + `queryNearbyInto` +
+`findGapAhead` ≈ 主執行緒 12%。它是每幀均攤的穩態成本，不造成卡頓，但
+BUG-109 治本之後它就是最大的那一項。
+
