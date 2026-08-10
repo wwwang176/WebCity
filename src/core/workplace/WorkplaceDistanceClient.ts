@@ -27,10 +27,15 @@ export class WorkplaceDistanceClient {
     };
   }
 
+  /**
+   * @param graphBuffer 序列化的**轉置** RoadCellGraph。走訪規則（含樓層與
+   *   匝道）在建圖時就消化掉了，worker 不解讀樓層 —— 見 `WDWorkerRequest`。
+   */
   compute(
     gridWidth: number,
     gridHeight: number,
     gridBuffer: SharedArrayBuffer | ArrayBuffer,
+    graphBuffer: ArrayBuffer,
     workplaces: WorkplacePosition[],
     maxBudget: number,
   ): Promise<WorkplaceDistanceEntry[]> {
@@ -43,6 +48,7 @@ export class WorkplaceDistanceClient {
         gridWidth,
         gridHeight,
         gridBuffer,
+        graphBuffer,
         workplaces,
         maxBudget,
       } satisfies WDWorkerRequest);

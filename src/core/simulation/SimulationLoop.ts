@@ -38,6 +38,8 @@ import { relocationTick } from '../citizen/Relocation';
 import { beginJobRelocation, jobRelocationTick, DEFAULT_JOB_RELOCATION_CONFIG,
   type JobRelocationSlicer } from '../citizen/JobRelocation';
 import { roadDistanceToTargets } from '../service/RoadCoverageFlood';
+import { buildRoadCellGraph, transposeRoadCellGraph } from '../road/RoadCellGraph';
+import { serializeRoadCellGraph } from '../road/RoadCellGraphBuffer';
 import type { SchoolType, EnrolledCitizen } from '../service/EducationService';
 import { EDUCATION_PROGRESSION, MIN_SCHOOL_AGE, type EducationRule, type DeathContext } from '../citizen/CitizenManager';
 import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../transport/ModeChoice';
@@ -1207,10 +1209,20 @@ export class SimulationLoop {
       const srcBuf = this.state.grid.getBuffer();
       const copy = new ArrayBuffer(srcBuf.byteLength);
       new Uint8Array(copy).set(new Uint8Array(srcBuf));
-      this.wpDistCache.requestUpdate(
-        this.state.grid.width, this.state.grid.height,
-        copy, wpPositions, DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
-      );
+      // 圖是 worker 的走訪規則來源 —— 樓層與匝道在建圖時就消化掉了。
+      // 傳的是**轉置**圖：成本加在目的地那一格，用正向圖跑反向 flood 會付成
+      // 來源那格的價格（BUG-237）。
+      const lookup = this._roadLookup;
+      if (lookup) {
+        const graphBuffer = serializeRoadCellGraph(
+          transposeRoadCellGraph(buildRoadCellGraph(lookup)),
+        );
+        this.wpDistCache.requestUpdate(
+          this.state.grid.width, this.state.grid.height,
+          copy, graphBuffer, wpPositions, DEFAULT_JOB_RELOCATION_CONFIG.dijkstraMaxBudget,
+        );
+      }
+      // 沒有 lookup 就建不出圖，這一輪不請求更新，照常走同步指派。
     }
 
     // Build reachability map: use cache if ready, otherwise sync Dijkstra fallback

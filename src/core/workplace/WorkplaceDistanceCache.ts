@@ -1,5 +1,6 @@
 import type { WorkplaceDistanceClient } from './WorkplaceDistanceClient';
 import type { WorkplaceDistanceEntry, WorkplacePosition } from './WorkplaceDistanceTypes';
+import { graphBufferNodeCount } from '../road/RoadCellGraphBuffer';
 
 export enum CacheStatus {
   EMPTY = 'empty',
@@ -40,20 +41,31 @@ export class WorkplaceDistanceCache {
     this.invalidatedDuringBuild = false;
   }
 
-  /** Trigger async recomputation if not already computing. Returns false if skipped. */
+  /**
+   * Trigger async recomputation if not already computing. Returns false if skipped.
+   *
+   * @param graphBuffer 序列化的**轉置** RoadCellGraph（見 `WDWorkerRequest`）。
+   */
   requestUpdate(
     gridWidth: number,
     gridHeight: number,
     gridBuffer: SharedArrayBuffer | ArrayBuffer,
+    graphBuffer: ArrayBuffer,
     workplaces: WorkplacePosition[],
     maxBudget: number,
   ): boolean {
     if (!this.client) return false;
+    // 空圖代表城市還沒有路。送出去只會拿回一張空表，而空表會被 applyResult
+    // 標成 READY —— 全城變成互相到不了。寧可維持 EMPTY 走同步 fallback。
+    //
+    // 看 header 的 nodeCount，不是 byteLength：空圖的 buffer 有 16 bytes 的
+    // header 加一個 offsets[0]，長度是 20。
+    if (graphBufferNodeCount(graphBuffer) === 0) return false;
     if (this.status === CacheStatus.COMPUTING) return false;
     this.status = CacheStatus.COMPUTING;
     this.invalidatedDuringBuild = false;
 
-    this.client.compute(gridWidth, gridHeight, gridBuffer, workplaces, maxBudget)
+    this.client.compute(gridWidth, gridHeight, gridBuffer, graphBuffer, workplaces, maxBudget)
       .then(entries => this.applyResult(entries))
       .catch(() => {
         // Worker error — reset to empty so next tick retries
