@@ -6,10 +6,8 @@ import {
   assembleCivic, assembleDecals, assembleFixtures, assembleVehicles,
 } from '../renderer/geometry/civic/assemble';
 import { createVehicleMaterial } from '../renderer/vehicleMaterial';
-import { civicTypesDone } from '../renderer/geometry/civic/registry';
 import { CIVIC_TRIANGLE_BUDGET, type CivicPlan, type Footprint }
   from '../renderer/geometry/civic/types';
-import { getInfraConfig, type InfraType } from '../core/building/InfraConfig';
 import { stampInstanceValues } from './instanceAttrs';
 
 /**
@@ -60,29 +58,6 @@ export function civicTriangleReport(footprint: Footprint, tris: CivicTris): Civi
       overhead: tris.overhead > budget.overhead,
     },
   };
-}
-
-export interface CivicOption {
-  type: InfraType;
-  label: string;
-}
-
-/**
- * 下拉選單要列的種類。
- *
- * 只列**已經改造完成**的 —— 列出還沒改的話，選了會是一片空地而不會報錯，
- * 看起來像「壞了」而不像「還沒做」。
- *
- * 名稱取 `InfraConfig` 的，不另寫一份：手寫第二份表的話，改了遊戲裡的名字
- * 選單不會跟著改。
- */
-export function civicOptions(): CivicOption[] {
-  return civicTypesDone().map((type) => {
-    const cfg = getInfraConfig(type);
-    const name = cfg?.name ?? type;
-    const size = cfg ? `${cfg.width}×${cfg.height}` : '?';
-    return { type, label: `${name}（${size}）` };
-  });
 }
 
 /**
@@ -161,9 +136,14 @@ export function allMeshes(p: PlacedCivic): THREE.Mesh[] {
  * `occupancy` 在公共建築上是「有沒有電」，由展示區的滑桿頂替（見
  * `BUILDING_FRAG` 的 `powered`）。**每一層都要餵** `stampInstanceValues`
  * —— 只餵量體層的話，矮物件上的路燈永遠不亮（BUG-230c 就是這個形狀）。
+ *
+ * `slot` 是這一棟在展示區裡的佔地中心（格）。plan 的座標一律以自己的中心為
+ * 原點，所以擺放時整棟平移 —— **每一層都要**，車輛最容易漏（它不走那個
+ * 迴圈），而漏掉的那一層會留在原點，看起來像「某一棟的車停到別人家去了」。
  */
 export function placeCivic(
   plan: CivicPlan, scene: THREE.Scene, occupancy: number,
+  slot: { x: number; z: number } = { x: 0, z: 0 },
 ): PlacedCivic {
   const material = getBuildingMaterial();
   const out: PlacedCivic = {
@@ -183,7 +163,7 @@ export function placeCivic(
     const mesh = new THREE.Mesh(geo, material);
     mesh.castShadow = layer.castShadow;
     mesh.receiveShadow = true;
-    mesh.position.set(0, layer.baseY, 0);
+    mesh.position.set(slot.x, layer.baseY, slot.z);
     scene.add(mesh);
 
     out.building.push(mesh);
@@ -201,7 +181,7 @@ export function placeCivic(
     const vmesh = new THREE.Mesh(vehicleGeo, vehicleMaterial);
     vmesh.castShadow = true;
     vmesh.receiveShadow = true;
-    vmesh.position.set(0, GROUND_LAYERS.BUILDING, 0);
+    vmesh.position.set(slot.x, GROUND_LAYERS.BUILDING, slot.z);
     scene.add(vmesh);
     out.vehicles = vmesh;
     // 車跟著遠景一起關掉 —— 它與矮物件是同一個尺度的東西。

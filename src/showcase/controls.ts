@@ -6,8 +6,6 @@ import { densityFor, type ViewMode } from './views';
 import { VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
 import { ZONE_TYPES, LEVELS, type Density }
   from '../renderer/geometry/buildings/registry';
-import { civicOptions } from './civic';
-import type { InfraType } from '../core/building/InfraConfig';
 
 /** 0..1 的一天位置轉成 24 小時字面，滑桿才知道自己拖到幾點。 */
 function clockText(t: number): string {
@@ -52,13 +50,6 @@ export interface ControlState {
    * 全部八個太慢。
    */
   variantOverride: number | null;
-  /**
-   * `civic` 模式要看哪一種公共建築。
-   *
-   * `null` 表示還沒有任何一種改造完成 —— 選單會是空的，而畫面是空地。
-   * 那是正確的狀態，不是壞掉（見 `civicOptions`）。
-   */
-  civicType: InfraType | null;
 }
 
 const ZONE_NAMES: Record<number, string> = {
@@ -104,38 +95,12 @@ export function mountControls(
   const syncModeVisibility = () => {
     const civic = state.mode === 'civic';
     for (const el of zoneOnly) el.style.display = civic ? 'none' : '';
-    civicLabel.style.display = civic ? '' : 'none';
-    civicSel.style.display = civic ? '' : 'none';
   };
   modeSel.onchange = () => {
     state.mode = modeSel.value as ViewMode;
     syncModeVisibility();
     onChange();
   };
-
-  const civicLabel = document.createElement('label');
-  civicLabel.textContent = '公共建築';
-  const civicSel = document.createElement('select');
-  const options = civicOptions();
-  if (options.length === 0) {
-    const o = document.createElement('option');
-    o.textContent = '（還沒有改造完成的種類）';
-    civicSel.appendChild(o);
-    civicSel.disabled = true;
-  }
-  for (const opt of options) {
-    const o = document.createElement('option');
-    o.value = opt.type;
-    o.textContent = opt.label;
-    civicSel.appendChild(o);
-  }
-  state.civicType = options[0]?.type ?? null;
-  civicSel.onchange = () => {
-    state.civicType = civicSel.value as InfraType;
-    onChange();
-  };
-  host.appendChild(civicLabel);
-  host.appendChild(civicSel);
 
   const zoneSel = document.createElement('select');
   for (const z of ZONE_TYPES) {

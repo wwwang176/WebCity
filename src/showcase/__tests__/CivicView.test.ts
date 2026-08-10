@@ -1,10 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { civicTriangleReport, civicOptions, placeCivic, allMeshes } from '../civic';
+import { civicTriangleReport, placeCivic, allMeshes } from '../civic';
 import { CIVIC_TRIANGLE_BUDGET } from '../../renderer/geometry/civic/types';
-import { getCivicPlan, civicTypesDone } from '../../renderer/geometry/civic/registry';
 import { FACADE_CIVIC, PART_LAMP, ZONE_CAT } from '../../renderer/geometry/buildings/parts';
-import { getInfraConfig } from '../../core/building/InfraConfig';
 import type { CivicPlan } from '../../renderer/geometry/civic/types';
 
 const NO_TRIS = { massing: 0, decal: 0, prop: 0, overhead: 0 };
@@ -48,32 +46,6 @@ describe('civic 檢視的三角形統計', () => {
     // 四層各有各的預算與問題。一個總開關的話，「哪一層超支」只能用猜的。
     const r = civicTriangleReport({ w: 1, h: 1 }, { ...NO_TRIS, prop: 999 });
     expect(r.over).toEqual({ massing: false, decal: false, prop: true, overhead: false });
-  });
-});
-
-/**
- * 選單的內容會隨著改造進度變 —— 19 種是分批做的。所以這裡測的是**不變量**，
- * 不是某個時間點的清單：寫死清單的話，每做完一棟就要來改一次測試，而那種
- * 測試改久了就變成橡皮圖章。
- */
-describe('civic 檢視的下拉選單', () => {
-  it('should list exactly the types that have a plan', () => {
-    // 列出還沒改造的種類的話，選了會是一片空地而不會報錯 —— 看起來像
-    // 「壞了」而不像「還沒做」。
-    expect(civicOptions().map(o => o.type).sort()).toEqual([...civicTypesDone()].sort());
-    for (const o of civicOptions()) {
-      expect(getCivicPlan(o.type), `${o.type} 在選單裡卻沒有 plan`).toBeDefined();
-    }
-  });
-
-  it('should label every option with the name and footprint InfraConfig defines', () => {
-    // 名稱手寫第二份的話，改了 InfraConfig 的名字選單不會跟著改；
-    // 佔地要顯示是因為它決定了三角形預算，看統計時得知道現在看的是幾格。
-    for (const o of civicOptions()) {
-      const cfg = getInfraConfig(o.type)!;
-      expect(o.label, `${o.type} 的標籤沒有名稱`).toContain(cfg.name);
-      expect(o.label, `${o.type} 的標籤沒有佔地`).toContain(`${cfg.width}×${cfg.height}`);
-    }
   });
 });
 
@@ -196,6 +168,34 @@ describe('placeCivic 的四層', () => {
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
     const noShadow = placed.building.filter(m => !m.castShadow);
     expect(noShadow.length, '不投影的層數不是一層（貼片）').toBe(1);
+  });
+
+  /**
+   * 十九棟一起排出來時，每一棟的 plan 座標仍然以自己的佔地中心為原點 ——
+   * 所以擺放時要整棟平移。漏掉任何一層（車輛最容易漏，它不走那個迴圈）的話，
+   * 那一層會留在原點，看起來像「某一棟的樹跑到別人家去了」。
+   */
+  it('should move every layer to the slot it was given', () => {
+    const at = { x: 6, z: -4 };
+    const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8, at);
+    for (const m of allMeshes(placed)) {
+      expect(m.position.x, '有一層沒有跟著平移').toBeCloseTo(at.x, 6);
+      expect(m.position.z, '有一層沒有跟著平移').toBeCloseTo(at.z, 6);
+    }
+  });
+
+  it('should keep each layer at its own height when moved', () => {
+    // 平移只動水平面。把 y 也一起蓋掉的話，貼片會從地面浮起來，
+    // 或整棟沉進地裡。
+    const here = placeCivic(fullPlan(), new THREE.Scene(), 0.8);
+    const there = placeCivic(fullPlan(), new THREE.Scene(), 0.8, { x: 6, z: -4 });
+    expect(there.building.map(m => m.position.y))
+      .toEqual(here.building.map(m => m.position.y));
+  });
+
+  it('should stand at the origin when no slot is given', () => {
+    const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8);
+    expect(placed.building.every(m => m.position.x === 0 && m.position.z === 0)).toBe(true);
   });
 
   it('should skip a layer that has nothing in it', () => {
