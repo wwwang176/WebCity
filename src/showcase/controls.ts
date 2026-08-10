@@ -6,6 +6,8 @@ import { densityFor, type ViewMode } from './views';
 import { VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
 import { ZONE_TYPES, LEVELS, type Density }
   from '../renderer/geometry/buildings/registry';
+import { civicOptions } from './civic';
+import type { InfraType } from '../core/building/InfraConfig';
 
 /** 0..1 的一天位置轉成 24 小時字面，滑桿才知道自己拖到幾點。 */
 function clockText(t: number): string {
@@ -50,6 +52,13 @@ export interface ControlState {
    * 全部八個太慢。
    */
   variantOverride: number | null;
+  /**
+   * `civic` 模式要看哪一種公共建築。
+   *
+   * `null` 表示還沒有任何一種改造完成 —— 選單會是空的，而畫面是空地。
+   * 那是正確的狀態，不是壞掉（見 `civicOptions`）。
+   */
+  civicType: InfraType | null;
 }
 
 const ZONE_NAMES: Record<number, string> = {
@@ -58,7 +67,7 @@ const ZONE_NAMES: Record<number, string> = {
 };
 
 const MODE_NAMES: Record<ViewMode, string> = {
-  single: '單體', block: '街廓', matrix: '矩陣',
+  single: '單體', block: '街廓', matrix: '矩陣', civic: '公共建築',
 };
 
 export function mountControls(
@@ -66,23 +75,67 @@ export function mountControls(
 ): void {
   host.innerHTML = '';
 
-  const row = (label: string, el: HTMLElement) => {
+  /**
+   * 只在分區建築的模式下有意義的控制項。`civic` 模式下整組藏起來。
+   *
+   * 收在這裡而不是各自記一個變數：漏掉一個的話它會孤零零地留在面板上，
+   * 而使用者會花時間找「為什麼把等級調到 3 警局沒有變高」。
+   */
+  const zoneOnly: HTMLElement[] = [];
+
+  const row = (label: string, el: HTMLElement, zoneSpecific = true) => {
     const l = document.createElement('label');
     l.textContent = label;
     host.appendChild(l);
     host.appendChild(el);
+    if (zoneSpecific) zoneOnly.push(l, el);
   };
 
   const modeSel = document.createElement('select');
-  for (const m of ['single', 'block', 'matrix'] as ViewMode[]) {
+  for (const m of ['single', 'block', 'matrix', 'civic'] as ViewMode[]) {
     const o = document.createElement('option');
     o.value = m;
     o.textContent = MODE_NAMES[m];
     modeSel.appendChild(o);
   }
   modeSel.value = state.mode;
-  modeSel.onchange = () => { state.mode = modeSel.value as ViewMode; onChange(); };
-  row('檢視模式', modeSel);
+  row('檢視模式', modeSel, false);
+
+  const syncModeVisibility = () => {
+    const civic = state.mode === 'civic';
+    for (const el of zoneOnly) el.style.display = civic ? 'none' : '';
+    civicLabel.style.display = civic ? '' : 'none';
+    civicSel.style.display = civic ? '' : 'none';
+  };
+  modeSel.onchange = () => {
+    state.mode = modeSel.value as ViewMode;
+    syncModeVisibility();
+    onChange();
+  };
+
+  const civicLabel = document.createElement('label');
+  civicLabel.textContent = '公共建築';
+  const civicSel = document.createElement('select');
+  const options = civicOptions();
+  if (options.length === 0) {
+    const o = document.createElement('option');
+    o.textContent = '（還沒有改造完成的種類）';
+    civicSel.appendChild(o);
+    civicSel.disabled = true;
+  }
+  for (const opt of options) {
+    const o = document.createElement('option');
+    o.value = opt.type;
+    o.textContent = opt.label;
+    civicSel.appendChild(o);
+  }
+  state.civicType = options[0]?.type ?? null;
+  civicSel.onchange = () => {
+    state.civicType = civicSel.value as InfraType;
+    onChange();
+  };
+  host.appendChild(civicLabel);
+  host.appendChild(civicSel);
 
   const zoneSel = document.createElement('select');
   for (const z of ZONE_TYPES) {
@@ -241,4 +294,8 @@ export function mountControls(
   const stats = document.createElement('div');
   stats.id = 'stats';
   host.appendChild(stats);
+
+  // **必須在所有 row() 之後。** 它讀的是 `zoneOnly`，而那份清單是 row()
+  // 一路累積起來的 —— 提前呼叫只會藏到當下已經建好的那幾個。
+  syncModeVisibility();
 }

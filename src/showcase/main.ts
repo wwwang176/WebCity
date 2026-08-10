@@ -27,6 +27,8 @@ import { DetailVisibility } from './detailVisibility';
 import { appearanceOf } from '../renderer/BuildingAppearance';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
+import { placeCivic, civicTriangleReport } from './civic';
+import { getInfraConfig } from '../core/building/InfraConfig';
 
 const container = document.getElementById('scene')!;
 const sceneManager = new SceneManager(container);
@@ -169,12 +171,60 @@ const state: ControlState = {
   density: 'LOW', seedByte: 0, timeOverride: 0.3, occupancy: 0.85,
   wireframe: false, blockSize: 8,
   showDecals: true, showLowProps: true, showOverhead: true,
-  variantOverride: null,
+  variantOverride: null, civicType: null,
 };
+
+/**
+ * 公共建築的檢視。
+ *
+ * 它與下面的分區建築流程分開，因為兩者幾乎沒有共通的東西：沒有變體、沒有
+ * 等級、沒有街廓、預算是逐格算的。硬塞進同一條路徑只會讓兩邊都長滿 if。
+ */
+function renderCivic(): void {
+  const stats = document.getElementById('stats');
+  if (state.civicType === null) {
+    if (stats) stats.innerHTML = '還沒有任何公共建築改造完成。<br>（見 BUG-238）';
+    return;
+  }
+
+  const placed = placeCivic(state.civicType, sceneManager.scene, state.occupancy);
+  if (!placed) return;
+  shown.push(...placed.meshes);
+  // add() 會立刻套用目前的縮放狀態 —— 縮在遠景時動一下控制項會整批重畫，
+  // 少了這一步細節就會全部冒回來。
+  for (const m of placed.culled) detailLOD.add(m);
+
+  sceneManager.setCameraTarget(0, 0);
+
+  const cfg = getInfraConfig(state.civicType);
+  const report = civicTriangleReport(
+    cfg ? { w: cfg.width, h: cfg.height } : { w: 1, h: 1 },
+    placed.tris,
+  );
+  const rows: Array<[string, keyof typeof placed.tris]> = [
+    ['量體', 'massing'], ['貼片', 'decal'], ['矮物件', 'prop'], ['懸挑', 'overhead'],
+  ];
+  if (stats) {
+    stats.innerHTML =
+      `${cfg?.name ?? state.civicType}｜佔地 ${cfg?.width}×${cfg?.height}`
+      + `（${report.cells} 格）<br>`
+      + rows.map(([label, key]) =>
+        `<span class="${report.over[key] ? 'over' : ''}">`
+        + `${label} ${placed.tris[key]} 三角形（上限 ${report.budget[key]}）</span>`,
+      ).join('<br>')
+      + `<br>總計 ${Object.values(placed.tris).reduce((a, b) => a + b, 0)} 三角形<br>`
+      + `<span id="fps">—</span>`;
+  }
+}
 
 function render(): void {
   clear();
   material.wireframe = state.wireframe;
+
+  if (state.mode === 'civic') {
+    renderCivic();
+    return;
+  }
 
   let cells: PlacedCell[];
   if (state.mode === 'single') {

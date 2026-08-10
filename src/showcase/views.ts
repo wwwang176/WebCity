@@ -9,7 +9,11 @@ import {
 import { getMassingVariants, VARIANT_COUNT } from '../renderer/geometry/buildings/massing';
 import { ZoneType } from '../core/grid/types';
 
-export type ViewMode = 'single' | 'block' | 'matrix';
+/**
+ * `civic` 與其他三種不一樣：它畫的不是分區建築，所以分區／密度／等級／變體
+ * 四個控制項在那個模式下都沒有意義（見 `controls.ts` 的隱藏邏輯）。
+ */
+export type ViewMode = 'single' | 'block' | 'matrix' | 'civic';
 
 /**
  * 這個分區該用哪一個密度。
