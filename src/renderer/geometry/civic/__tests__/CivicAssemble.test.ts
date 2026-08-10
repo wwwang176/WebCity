@@ -1,16 +1,15 @@
 import { describe, it, expect } from 'vitest';
 import { assembleCivic, assembleDecals } from '../assemble';
-import { CIVIC_INSET, type CivicDecal, type Footprint } from '../types';
+import { CIVIC_INSET, type CivicDecal, type CivicVolume, type Footprint } from '../types';
 import {
   PART_WALL, PART_GROUND, PART_FOLIAGE, PART_ROOF, triangleCount,
 } from '../../buildings/parts';
-import type { Volume } from '../../buildings/massing/volume';
 
 const FOOT: Footprint = { w: 2, h: 2 };
 /** 顏色不是這個檔案在測的東西 —— 顏色的驗收在 `CivicColors.test.ts`。 */
 const GREY = [0.7, 0.7, 0.7] as const;
 
-const box = (o: Partial<Volume> = {}): Volume =>
+const box = (o: Partial<CivicVolume> = {}): CivicVolume =>
   ({ x: 0, z: 0, w: 1, d: 1, y0: 0, y1: 0.5, ...o });
 
 const decal = (o: Partial<CivicDecal> = {}): CivicDecal =>
@@ -86,6 +85,44 @@ describe('assembleCivic 的護欄', () => {
     const geo = assembleCivic([], FOOT, GREY);
     expect(geo.getAttribute('position').count).toBe(0);
     expect(geo.getAttribute('color')).toBeTruthy();
+  });
+});
+
+/**
+ * 離地的鋪面。
+ *
+ * `CivicDecal` 一律貼在地面（`GROUND_LAYERS` 是固定高度），所以醫院頂樓的
+ * 直升機坪、車站的月台面這種**有高度的鋪面**沒有辦法用貼片做。它們只能是
+ * 量體 —— 而量體本來沒有辦法帶「這塊鋪面多亮」。
+ *
+ * 明度住在頂點色的 B 通道（`setGroundShade`），與貼片同一個通道、同一個
+ * shader 分支 —— 各走一套的話，屋頂上的混凝土與地上的混凝土會是兩個顏色。
+ */
+describe('量體上的鋪面明度', () => {
+  it('should write the shade into the blue channel', () => {
+    const geo = assembleCivic([box({ part: PART_GROUND, shade: 0.8 })], FOOT, GREY);
+    const c = geo.getAttribute('color');
+    expect(c.getZ(0), '明度沒有寫進 B 通道').toBeCloseTo(0.8, 6);
+  });
+
+  it('should keep each volume on its own shade', () => {
+    // 直升機坪的深色甲板與白色 H 是同一份幾何裡的兩塊。整份一起寫的話
+    // H 就消失了 —— 與 `aBldgColor` 逐量體寫是完全一樣的道理。
+    const geo = assembleCivic([
+      box({ x: -0.3, w: 0.4, part: PART_GROUND, shade: 0.2 }),
+      box({ x: 0.3, w: 0.4, part: PART_GROUND, shade: 1.0 }),
+    ], FOOT, GREY);
+    const c = geo.getAttribute('color');
+    const seen = new Set<string>();
+    for (let i = 0; i < c.count; i++) seen.add(c.getZ(i).toFixed(2));
+    expect(seen, '兩塊鋪面的明度被寫成同一個').toEqual(new Set(['0.20', '1.00']));
+  });
+
+  it('should leave the channel alone when no shade is asked for', () => {
+    // 牆與屋頂不吃 B 通道。寫進去只是把一個沒有意義的值餵給 shader，
+    // 而哪天有人替牆加了一個讀 B 的分支，那個值會突然開始有作用。
+    const geo = assembleCivic([box()], FOOT, GREY);
+    expect(geo.getAttribute('color').getZ(0)).toBe(0);
   });
 });
 

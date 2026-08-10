@@ -43,6 +43,16 @@ export type CivicVolume = Volume & {
    * 這些東西只能跟牆同色 —— 而它們正是「一眼認出這是醫院」的那個東西。
    */
   color?: CivicColor;
+  /**
+   * 鋪面明度 0..1（0 = 柏油，1 = 磚鋪），只在 `part` 是 `PART_GROUND` 時有用。
+   *
+   * `CivicDecal` 一律貼在地面（`GROUND_LAYERS` 是固定高度），所以醫院頂樓的
+   * 直升機坪、車站的月台面這種**有高度的鋪面**做不成貼片，只能是量體。
+   *
+   * 明度寫在頂點色的 B 通道，與貼片同一個通道、走 shader 同一個 `isGround`
+   * 分支 —— 各走一套的話，屋頂上的混凝土與地上的混凝土會是兩個顏色。
+   */
+  shade?: number;
 };
 
 /**

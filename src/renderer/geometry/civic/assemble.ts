@@ -100,6 +100,9 @@ export function assembleCivic(
   for (const v of volumes) {
     for (const g of shapeOf(v)) {
       tagPart(g, partOf(v));
+      // **在 tagPart 之後。** `tagPart` 會重建整份 color 屬性（三個通道一起
+      // 歸零），所以順序反過來的話明度會被靜靜抹掉。
+      if (v.shade !== undefined) setGroundShade(g, v.shade);
       tagColor(g, v.color ?? baseColor);
       parts.push(g);
     }
