@@ -6,6 +6,9 @@ import { TRIANGLE_BUDGET, heightKey, type Density, type GeoBuilder } from './reg
 import { lowPropBand, type Band } from './propBands';
 import { SIDE_AXIS, type Side } from './decals';
 import { tagPart, PART_FOLIAGE, PART_DETAIL, PART_LAMP } from './parts';
+import {
+  columnarTree as plantColumnarTree, shrubBall as plantShrubBall,
+} from '../plants';
 
 /**
  * 矮物件層 —— 站在地上、行人會撞到的東西。
@@ -96,23 +99,16 @@ const planter = (b: Band, axis: Axis, sign: Sign, lengthFrac: number) =>
  *
  * 庭院帶最寬也只有 1.45 m，球狀樹冠塞不下；柱狀的樹冠窄、可以往上長，
  * 是這個尺寸下唯一還像樹的選擇。
+ *
+ * 樹本身住在 `geometry/plants` —— 公共建築的綠地共用同一棵。這裡只負責把
+ * 「環帶上的哪個位置」換算成座標與半徑，因為帶是**住宅這一側才有**的概念
+ * （公共建築佔 2×2 到 9×6 格，沒有環帶這回事）。
  */
 function columnarTree(
   b: Band, axis: Axis, sign: Sign, t: number, heightM: number,
 ): THREE.BufferGeometry[] {
-  const r = fit(b, 0.7);
-  const trunkH = M(heightM * 0.25);
-  const crownH = M(heightM * 0.75);
   const [x, z] = place(axis, sign, t, mid(b));
-
-  const trunk = new THREE.CylinderGeometry(M(0.09), M(0.12), trunkH, 5);
-  trunk.translate(x, trunkH / 2, z);
-  tagPart(trunk, PART_DETAIL); // 樹幹不是牆 —— 標 PART_WALL 會長出窗戶
-
-  const crown = new THREE.ConeGeometry(r, crownH, 6);
-  crown.translate(x, trunkH + crownH / 2, z);
-  tagPart(crown, PART_FOLIAGE);
-  return [trunk, crown];
+  return plantColumnarTree(x, z, heightM, fit(b, 0.7));
 }
 
 /**
@@ -127,14 +123,10 @@ function treeOn(b: Band, side: Side, t: number, heightM: number) {
   return columnarTree(b, axis, sign, t, heightM);
 }
 
-/** 矮灌木叢。 */
+/** 矮灌木叢。與樹一樣，球本身住在 `geometry/plants`。 */
 function shrub(b: Band, axis: Axis, sign: Sign, t: number, radiusM: number) {
-  const r = fit(b, radiusM, 0.95);
-  const geo = new THREE.SphereGeometry(r, 5, 4);
   const [x, z] = place(axis, sign, t, mid(b));
-  geo.translate(x, r, z);
-  tagPart(geo, PART_FOLIAGE);
-  return geo;
+  return plantShrubBall(x, z, fit(b, radiusM, 0.95));
 }
 
 /** 修剪灌木球：兩顆球疊在一根短柱上。 */

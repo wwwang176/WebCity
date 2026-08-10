@@ -3,6 +3,7 @@ import {
 } from '../../buildings/parts';
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
+import type { Plant } from '../../plants';
 import type { CivicPlan, CivicVolume, CivicDecal } from '../types';
 
 /**
@@ -129,32 +130,6 @@ function streetLamp(xm: number, zm: number): CivicVolume[] {
   ];
 }
 
-/**
- * 一棵樹：樹幹（深色細節）加樹冠（樹葉分支的綠）。
- *
- * `PART_FOLIAGE` 走 shader 的樹葉分支 —— 它自己有綠色與位置雜訊，不吃
- * `aBldgColor`，所以一棵樹不會變成靛藍色的。
- */
-function tree(xm: number, zm: number, hm = 6.0): CivicVolume[] {
-  const crown = hm * 0.45;
-  return [
-    {
-      tag: 'trunk', part: PART_DETAIL,
-      x: M(xm), z: M(zm), w: M(0.45), d: M(0.45), y0: 0, y1: M(hm - crown),
-    },
-    {
-      tag: 'crown', part: PART_FOLIAGE, shape: 'hip',
-      x: M(xm), z: M(zm), w: M(3.4), d: M(3.4), y0: M(hm - crown), y1: M(hm),
-    },
-  ];
-}
-
-/** 一叢矮灌木。比樹便宜得多，用來填草地與鋪面之間的邊界。 */
-const shrub = (xm: number, zm: number): CivicVolume => ({
-  tag: 'shrub', part: PART_FOLIAGE, shape: 'hip',
-  x: M(xm), z: M(zm), w: M(1.6), d: M(1.6), y0: 0, y1: M(1.1),
-});
-
 const props: CivicVolume[] = [
   // 停車場的路燈。只照門口的話，夜裡整片停車場是黑的 —— 而它佔了基地一半。
   ...streetLamp(-7.0, 5.0),
@@ -187,27 +162,6 @@ const props: CivicVolume[] = [
     x: M(-4.0), z: M(6.5), w: M(1.9), d: M(4.6), y0: 0, y1: M(1.5),
   },
 
-  // ── 綠化 ──────────────────────────────────────────────────
-  // 公共建築在一座城市裡也就幾十棟，所以單棟多花的三角形幾乎量不到 ——
-  // 同樣的想法在住宅區會直接打爆預算（那裡是幾千棟）。這是兩者取捨不同
-  // 的地方，見 `CIVIC_TRIANGLE_BUDGET` 的註解。
-  //
-  // 樹種在草地那一側，不種在停車場上 —— 車位上長一棵樹是最容易被看出來的
-  // 那種錯。
-  ...tree(7.0, 5.5, 6.5),
-  ...tree(9.6, 8.5, 5.5),
-  ...tree(7.0, 9.8, 6.0),
-  // 前庭兩側的行道樹。它們框住入口，讓門廊看起來是「主入口」而不是側門。
-  // ±9.8 而不是 ±10.5：樹冠有 3.4 m 寬，10.5 的話它的外緣在 12.2 m，
-  // 而可用範圍只到 11.76 m（護欄會擋下來）。
-  ...tree(-9.8, 1.6, 5.0),
-  ...tree(9.8, 1.6, 5.0),
-
-  // 草地與停車場交界的灌木叢，擋住兩塊鋪面的硬邊。
-  shrub(5.8, 4.4),
-  shrub(5.8, 7.2),
-  shrub(5.8, 10.0),
-
   // 入口兩側的花台。矮、貼著牆，是「有人在維護」的訊號。
   {
     tag: 'planter', part: PART_FOLIAGE, shape: 'hip',
@@ -239,6 +193,35 @@ const overhead: CivicVolume[] = [
 ];
 
 /**
+ * 綠化。
+ *
+ * 樹與灌木**與住宅的庭院共用同一份圖元**（`geometry/plants`）—— 一座城市裡
+ * 的樹該是同一種樹，而且改一邊要連動另一邊。這裡只給位置與尺寸。
+ *
+ * 它們自己一層，不與 `props` 合併：樹冠是圓錐、灌木是球（索引、帶 uv），
+ * `props` 走 `shapeOf`（非索引、無 uv），`mergeGeometries` 併不起來。
+ *
+ * 公共建築一座城市裡也就幾十棟，所以單棟多花的三角形幾乎量不到 —— 同樣的
+ * 想法在住宅區會直接打爆預算（那裡是幾千棟）。見 `CIVIC_TRIANGLE_BUDGET`。
+ *
+ * 樹種在草地那一側，不種在停車場上 —— 車位上長一棵樹是最容易被看出來的
+ * 那種錯。
+ */
+const plants: Plant[] = [
+  { kind: 'tree', x: M(7.0), z: M(5.5), heightM: 6.5, crownRadius: M(1.5) },
+  { kind: 'tree', x: M(9.6), z: M(8.5), heightM: 5.5, crownRadius: M(1.3) },
+  { kind: 'tree', x: M(7.0), z: M(9.8), heightM: 6.0, crownRadius: M(1.4) },
+  // 前庭兩側的行道樹。它們框住入口，讓門廊看起來是「主入口」而不是側門。
+  { kind: 'tree', x: M(-10.4), z: M(1.6), heightM: 5.0, crownRadius: M(1.2) },
+  { kind: 'tree', x: M(10.4), z: M(1.6), heightM: 5.0, crownRadius: M(1.2) },
+
+  // 草地與停車場交界的灌木叢，擋住兩塊鋪面的硬邊。
+  { kind: 'shrub', x: M(5.8), z: M(4.4), radius: M(0.8) },
+  { kind: 'shrub', x: M(5.8), z: M(7.2), radius: M(0.8) },
+  { kind: 'shrub', x: M(5.8), z: M(10.0), radius: M(0.8) },
+];
+
+/**
  * `aSeed`。
  *
  * `.x` 是樓層節奏，shader 端是 `mix(0.22, 0.30, aSeed.x)` —— 0.25 給出
@@ -264,4 +247,5 @@ export const policePlan: CivicPlan = {
   decals,
   props,
   overhead,
+  plants,
 };

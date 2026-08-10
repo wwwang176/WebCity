@@ -487,21 +487,16 @@ const FACADE_BODY: Record<number, string> = {
         wallColor = vBldgColor * 0.76;
       }
 
+      // 有電就整棟亮 —— 不擲骰子決定哪幾扇開。逐扇仍留一點亮度差，
+      // 否則整面牆會是一張平的發光板。
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 6.1;
-      float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phaseT = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phaseT) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      // 值班單位夜裡亮的窗比辦公樓多、比住宅少 —— 值班室與走廊燈亮著，
-      // 但整棟樓不會像上班時間那樣全開。
-      float litThreshCV = mix(0.92, 0.45, occ);
       vec3 winColor;
-      if (lit > litThreshCV) {
+      if (powered) {
         float w = hash21(wid + 77.7);
         // 偏冷白：公家建築用的是日光燈，不是住家的黃光。
         winColor = mix(vec3(0.92, 0.94, 0.88), vec3(0.82, 0.86, 0.80), w) * (0.82 + w * 0.14);
-        winBrightness = 0.6 + hash21(wid + 21.3) * 0.35;
-        isLitWindow = winMask > 0.5;
+        winBrightness = 0.78 + hash21(wid + 21.3) * 0.22;
+        isLitWindow = powered && winMask > 0.5;
       } else {
         winColor = vBldgColor * 0.24 + vec3(0.03, 0.05, 0.08);
       }
@@ -521,7 +516,7 @@ const FACADE_BODY: Record<number, string> = {
         color = mix(vBldgColor * 0.66, glassColor, glass);   // 石材柱 -> 玻璃
         windowMask = glass;
         // 門廳整夜亮著 —— 值班台在那裡。這是公家建築夜景的主角。
-        isLitWindow = glass > 0.5 && occ > 0.0;
+        isLitWindow = powered && glass > 0.5;
         winBrightness = 0.75 + hash21(lid + 4.1) * 0.3;
         // 門廳玻璃白天已經有自己的顏色與逐柱變化，整片換成統一的天空反射色
         // 會把那個變化抹掉，所以只取一部分（與商業低密度的落地窗同樣理由）。
@@ -553,19 +548,15 @@ const FACADE_BODY: Record<number, string> = {
             smoothstep(0.64 - fwY, 0.64 + fwY, fracY) * smoothstep(0.88 + fwY, 0.88 - fwY, fracY)
           * smoothstep(0.10 - fwX, 0.10 + fwX, fracX) * smoothstep(0.90 + fwX, 0.90 - fwX, fracX);
 
+        // 這些設施是 24 小時運轉的 —— 有電就整條高窗帶都亮。
         vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 8.3;
-        float wPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
-        float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
-        float wEpoch = floor((uTime + wPhase) / wPeriod);
-        float wLit = hash21(wid + wEpoch * 13.7);
-        // 這些設施是 24 小時運轉的，所以夜裡亮的比一般工廠多。
-        float litThreshUT = mix(0.95, 0.42, occ);
         vec3 winColor;
-        if (wLit > litThreshUT) {
+        if (powered) {
+          float w = hash21(wid + 77.7);
           // 金屬鹵素的冷白。
-          winColor = mix(vec3(0.90, 0.93, 0.84), vec3(0.76, 0.83, 0.74), wLit) * 0.88;
-          winBrightness = 0.65 + hash21(wid + 21.3) * 0.4;
-          isLitWindow = bandMask > 0.5;
+          winColor = mix(vec3(0.90, 0.93, 0.84), vec3(0.76, 0.83, 0.74), w) * 0.88;
+          winBrightness = 0.72 + hash21(wid + 21.3) * 0.28;
+          isLitWindow = powered && bandMask > 0.5;
         } else {
           winColor = vBldgColor * 0.22 + vec3(0.04, 0.05, 0.07);
         }
@@ -583,7 +574,7 @@ const FACADE_BODY: Record<number, string> = {
           windowMask = 1.0;
           // 警示燈不是玻璃 —— 白天不該變成一片藍，也不該有陽光鏡面。
           glassiness = 0.0;
-          // 它與住戶無關：設施停擺了警示燈還是亮的。
+          // 警示燈接的是緊急電源 —— 連停電都還亮著，所以它不看 powered。
           isLitWindow = true;
           winBrightness = 0.9;
         }
@@ -611,20 +602,15 @@ const FACADE_BODY: Record<number, string> = {
         : 0.0;
       vec3 wallColor = vBldgColor * 0.55;   // 細窗櫺
 
+      // 車站是城市夜景裡最亮的東西之一 —— 有電就整座站都亮。
+      // 停用的站（沒電）才暗，而那時它玻璃的反射色也該是冷的。
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.9;
-      float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phaseT = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phaseT) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      // 門檻壓得很低：末班車之前整座車站都是亮的。上限 0.6 是給停用的站
-      // （occ = 0）留的 —— 廢站不該還亮著。
-      float litThreshTR = mix(0.60, 0.12, occ);
       vec3 winColor;
-      if (lit > litThreshTR) {
+      if (powered) {
         float w = hash21(wid + 77.7);
         winColor = mix(vec3(0.94, 0.95, 0.90), vec3(0.86, 0.90, 0.86), w) * (0.86 + w * 0.12);
-        winBrightness = 0.8 + hash21(wid + 21.3) * 0.4;
-        isLitWindow = winMask > 0.5;
+        winBrightness = 0.85 + hash21(wid + 21.3) * 0.25;
+        isLitWindow = powered && winMask > 0.5;
       } else {
         winColor = vec3(0.38, 0.50, 0.60) * (0.6 + hash21(wid + 33.3) * 0.3);
       }
@@ -916,6 +902,10 @@ void main() {
     // Occupancy-adjusted lit threshold: fewer lit windows when building is less occupied
     // occ=0 → no windows lit at all (abandoned/burned/empty buildings)
     float occ = vOccupancy < 0.01 ? -1.0 : clamp(vOccupancy, 0.0, 1.0);
+    // 公共建築的夜間語意與分區建築不同：警局、消防局、醫院、車站在營運時
+    // 整棟都亮著，而它們變暗的原因是**停電**，不是「住戶變少」。所以那幾個
+    // 分支讀 occ 的方式是二值的，aOccupancy 在公共建築上載的是「有沒有電」。
+    bool powered = occ > 0.0;
 
 ${facadeChainGlsl()}
   }

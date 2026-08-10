@@ -1,5 +1,6 @@
 import type { Volume } from '../buildings/massing/volume';
 import type { CivicColor } from './colors';
+import type { Plant } from '../plants';
 
 /**
  * 公共建築的宣告式描述。
@@ -103,6 +104,18 @@ export interface CivicPlan {
   props: CivicVolume[];
   /** 懸挑：雨棚、招牌、月台頂。castShadow，遠景整層關掉。 */
   overhead: CivicVolume[];
+  /**
+   * 植栽 —— 樹與灌木。
+   *
+   * 與 `props` 分開是**必要的**，不是分類上的潔癖：樹冠是圓錐、灌木是球，
+   * 兩者用 `THREE` 的圖元產生，帶著 uv 而且是索引幾何；`props` 走
+   * `shapeOf`，產出的是非索引、沒有 uv 的稜台。`mergeGeometries` 要求
+   * 屬性集合一致，所以這兩種東西**合併不起來**，只能各自一層。
+   *
+   * 樹本身與住宅的庭院共用（`geometry/plants`）—— 一座城市裡的樹該是同一種樹。
+   * 三角形預算算在 `prop` 那一格，因為它們就是矮物件。
+   */
+  plants: Plant[];
 }
 
 /**

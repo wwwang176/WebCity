@@ -240,7 +240,8 @@ describe('公共建築的立面類別', () => {
         .toContain('windowMask');
       expect(branch, `${marker} 沒有 isLitWindow —— 夜裡一扇燈都不會亮`)
         .toContain('isLitWindow');
-      expect(branch, `${marker} 的亮燈沒有看 occ`).toContain('occ');
+      // 公共建築的閘門是「有沒有電」，不是住戶比例 —— 見下面那一組測試。
+      expect(branch, `${marker} 的亮燈沒有看有沒有電`).toContain('powered');
     }
   });
 });
@@ -290,5 +291,56 @@ describe('每個算出來的遮罩都要有去處', () => {
     }
     // 一個遮罩都沒檢查到就表示正規表示式與 GLSL 的寫法對不上了。
     expect(checked, '沒有掃到任何遮罩宣告 —— 正規表示式失效了').toBeGreaterThan(5);
+  });
+});
+
+/**
+ * 公共建築的夜間燈光語意與分區建築**不同**。
+ *
+ * 住宅與辦公樓是「住戶比例決定多少扇窗會亮」—— 半空的樓不該整排亮。
+ * 公共建築不是住的：警局、消防局、醫院、車站在營運時整棟都亮著，而它們
+ * 停擺的原因是**停電**，不是「住戶變少」。使用者的原話：「公共建築的晚上
+ * 燈光，只要有電就是全亮，不看住戶比例」。
+ *
+ * 所以那幾個分支讀 `occ` 的方式是二值的：> 0 就是有電，全亮；否則全暗。
+ * `aOccupancy` 在公共建築上載的是「有沒有電」，不是使用率。
+ */
+describe('公共建築有電就全亮', () => {
+  const POWERED = ['---- CIVIC', '---- UTILITY', '---- TRANSIT'];
+
+  function branchOf(marker: string): string {
+    const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
+    const at = wall.indexOf(marker);
+    const next = ['---- CIVIC', '---- UTILITY', '---- TRANSIT', '---- GREEN']
+      .map(m => wall.indexOf(m)).filter(p => p > at);
+    return wall.slice(at, next.length ? Math.min(...next) : undefined);
+  }
+
+  it('should not grade the lit windows by occupancy', () => {
+    // `mix(a, b, occ)` 就是「住戶比例決定亮多少」—— 那是住宅的規則。
+    for (const marker of POWERED) {
+      const branch = branchOf(marker);
+      expect(branch, `${marker} 還在用住戶比例調亮燈門檻`)
+        .not.toMatch(/litThresh\w*\s*=\s*mix\(/);
+    }
+  });
+
+  it('should still go dark without power', () => {
+    // 有電才亮。少了這個判斷，停電的建築在夜裡照樣燈火通明。
+    for (const marker of POWERED) {
+      const branch = branchOf(marker);
+      expect(branch, `${marker} 沒有看有沒有電`).toContain('powered');
+      expect(branch, `${marker} 的亮窗沒有吃 powered`).toMatch(/isLitWindow\s*=\s*powered/);
+    }
+  });
+
+  it('should define powered from occupancy in the shared preamble', () => {
+    // `occ` 的定義只有一份（`float occ = vOccupancy < 0.01 ? -1.0 : ...`），
+    // 所以 powered 也該只有一份 —— 三個分支各寫一次的話，改了一個就漂了。
+    const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
+    const decl = wall.indexOf('bool powered');
+    expect(decl, '找不到 powered 的宣告').toBeGreaterThan(-1);
+    expect(decl, 'powered 宣告在某個分支裡面，不是共用的前言')
+      .toBeLessThan(wall.indexOf('---- RESIDENTIAL LOW'));
   });
 });

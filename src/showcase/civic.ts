@@ -2,7 +2,9 @@ import * as THREE from 'three';
 import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { GROUND_LAYERS } from '../renderer/geometry/buildings/propBands';
-import { assembleCivic, assembleDecals } from '../renderer/geometry/civic/assemble';
+import {
+  assembleCivic, assembleDecals, assemblePlants,
+} from '../renderer/geometry/civic/assemble';
 import { civicTypesDone } from '../renderer/geometry/civic/registry';
 import { CIVIC_TRIANGLE_BUDGET, type CivicPlan, type Footprint }
   from '../renderer/geometry/civic/types';
@@ -82,8 +84,15 @@ export function civicOptions(): CivicOption[] {
   });
 }
 
-/** 四層各自的擺放規則。與 `main.ts` 的 `ATTACHMENTS` 逐項對應。 */
+/**
+ * 每一層各自的擺放規則。與 `main.ts` 的 `ATTACHMENTS` 逐項對應。
+ *
+ * 植栽自己一個 mesh 但算在 `prop` 的預算裡：樹冠是圓錐、灌木是球（索引、
+ * 帶 uv），量體走 `shapeOf`（非索引、無 uv），`mergeGeometries` 併不起來 ——
+ * 所以是兩個 mesh。但它們就是矮物件，沒有理由有第二個預算。
+ */
 const LAYERS: ReadonlyArray<{
+  /** 這一層的三角形算進哪一格預算。 */
   key: keyof CivicTris;
   build: (plan: CivicPlan) => THREE.BufferGeometry;
   castShadow: boolean;
@@ -103,6 +112,10 @@ const LAYERS: ReadonlyArray<{
   {
     key: 'prop', castShadow: true, culled: true, baseY: GROUND_LAYERS.BUILDING,
     build: p => assembleCivic(p.props, p.footprint, p.color),
+  },
+  {
+    key: 'prop', castShadow: true, culled: true, baseY: GROUND_LAYERS.BUILDING,
+    build: p => assemblePlants(p.plants, p.footprint),
   },
   {
     key: 'overhead', castShadow: true, culled: true, baseY: GROUND_LAYERS.BUILDING,
@@ -150,7 +163,8 @@ export function placeCivic(
 
     out.meshes.push(mesh);
     if (layer.culled) out.culled.push(mesh);
-    out.tris[layer.key] = triangleCount(geo);
+    // `+=` 而不是 `=` —— 植栽與矮物件共用 `prop` 這一格。
+    out.tris[layer.key] += triangleCount(geo);
   }
 
   return out;
