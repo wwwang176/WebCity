@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { getCivicPlan, civicTypesDone } from '../registry';
-import { assembleCivic, assembleDecals, assembleFixtures } from '../assemble';
+import {
+  assembleCivic, assembleDecals, assembleFixtures, assembleVehicles,
+} from '../assemble';
+import { overlapOf } from '../../buildings/massing/volume';
 import { CIVIC_TRIANGLE_BUDGET } from '../types';
 import { getInfraConfig } from '../../../../core/building/InfraConfig';
 import { PART_THRESHOLDS, triangleCount, ZONE_CAT } from '../../buildings/parts';
@@ -47,11 +50,43 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
   });
 
   it('should build every layer without leaving the footprint', () => {
+    // 六層全部要列。漏掉哪一層，那一層的越界就沒有人擋 —— 車輛就漏過一次：
+    // 一台停在邊界上的消防車有 6.7 m 長，轉了 90 度之後伸出去半格是很容易
+    // 寫出來的錯，而畫面上它只是「有點壓到隔壁」。
     expect(() => assembleCivic(plan.massing, plan.footprint, plan.color)).not.toThrow();
     expect(() => assembleCivic(plan.props, plan.footprint, plan.color)).not.toThrow();
     expect(() => assembleCivic(plan.overhead, plan.footprint, plan.color)).not.toThrow();
     expect(() => assembleDecals(plan.decals, plan.footprint)).not.toThrow();
     expect(() => assembleFixtures(plan.fixtures, plan.footprint)).not.toThrow();
+    expect(() => assembleVehicles(plan.vehicles, plan.footprint)).not.toThrow();
+  });
+
+  it('should not bury one massing volume inside another', () => {
+    // 重疊的量體會產生看不見的內部面 —— 白吃三角形，而且畫面上完全看不出來。
+    //
+    // 用立方公尺的容差而不是嚴格的 0：`M()` 是除以 12，所以「這一塊的右緣」
+    // 與「下一塊的左緣」是同一個實數的兩個不同算式，浮點下相差約 1e-17。
+    // 共邊本來就該是 0，但那個 0 在浮點裡拿不到。1 立方公厘不是「埋起來」。
+    for (let i = 0; i < plan.massing.length; i++) {
+      for (let j = i + 1; j < plan.massing.length; j++) {
+        const a = plan.massing[i]!;
+        const b = plan.massing[j]!;
+        const m3 = overlapOf(a, b) * METRES_PER_CELL ** 3;
+        expect(m3, `${type}：${a.tag ?? i} 與 ${b.tag ?? j} 重疊 ${m3.toFixed(3)} m3`)
+          .toBeLessThan(1e-6);
+      }
+    }
+  });
+
+  it('should keep the overhead layer above head height', () => {
+    // 雨棚、月台頂、招牌都住在這一層，而它們全部要高過行人。2.2 m 是
+    // `OVERHEAD_CLEARANCE`。低於它的東西在等角視角下看起來沒事，走近才發現
+    // 它切過人的頭。
+    for (const v of plan.overhead) {
+      const h = v.y0 * METRES_PER_CELL;
+      expect(h, `${type} 的 ${v.tag ?? '懸挑'} 只有 ${h.toFixed(1)} m 高 —— 會打到人`)
+        .toBeGreaterThan(2.2);
+    }
   });
 
   /** 這一條就是 BUG-238 本身 —— 做完了夜裡還是全黑的話它要轉紅。 */

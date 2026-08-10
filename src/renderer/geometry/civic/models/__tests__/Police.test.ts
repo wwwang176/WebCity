@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { policePlan } from '../police';
 import { FACADE_CIVIC, PART_ROOF, PART_LAMP } from '../../../buildings/parts';
-import { centroidOffset, overlapOf, topOf } from '../../../buildings/massing/volume';
+import { centroidOffset, topOf } from '../../../buildings/massing/volume';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
 
 const plan = policePlan;
@@ -35,24 +35,8 @@ describe('警局', () => {
       .toBeGreaterThan(0.05);
   });
 
-  it('should not bury one volume inside another', () => {
-    // 重疊的量體會產生看不見的內部面 —— 白吃三角形，而且畫面上完全看不出來。
-    //
-    // 用立方公尺的容差而不是嚴格的 0：`M()` 是除以 12，所以「長翼的右緣」
-    // （`M(-2) + M(14)/2`）與「短翼的左緣」（`M(8) − M(6)/2`）是同一個實數
-    // 的兩個不同算式，浮點下相差約 1e-17。共邊本來就該是 0，但那個 0 在
-    // 浮點裡拿不到。1 立方公厘不是「埋起來的面」。
-    const TOLERANCE_M3 = 1e-6;
-    for (let i = 0; i < plan.massing.length; i++) {
-      for (let j = i + 1; j < plan.massing.length; j++) {
-        const a = plan.massing[i]!;
-        const b = plan.massing[j]!;
-        const m3 = overlapOf(a, b) * METRES_PER_CELL ** 3;
-        expect(m3, `${a.tag ?? i} 與 ${b.tag ?? j} 重疊 ${m3.toFixed(3)} m3`)
-          .toBeLessThan(TOLERANCE_M3);
-      }
-    }
-  });
+  // 「量體不得互相埋起來」在 `CivicPlans.test.ts` 的資料表裡（每一棟都要），
+  // 所以這裡不再寫第二份。
 
   it('should stay at a believable height for a police station', () => {
     // 24 x 24 m 的基地上，塔太矮認不出是塔、太高就變成消防局的訓練塔。
