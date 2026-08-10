@@ -1552,6 +1552,30 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
 
 ## 公共建築的夜景（BUG-238）
 
+**進行中，分支 `feat/civic-building-facelift`。**
+規劃：`docs/superpowers/specs/2026-08-11-civic-building-facelift-design.md`
+計畫：`docs/superpowers/plans/2026-08-11-civic-building-facelift.md`
+
+- [x] **Task 0 — 立面 if 鏈改由 `ZONE_CAT` 生成。** 原本是手寫的六個門檻，
+      也就是 `ZONE_CAT` 的第二份資料。整份 shader 的差異只有一行
+      （`0.30000000000000004` → `0.3`，編譯後同一個 float）。
+      驗收靠 `building-frag-baseline.glsl` 的逐字元比對。
+- [x] **Task 1 — 四個公共立面類別**（`FACADE_CIVIC` 1.2 / `UTILITY` 1.4 /
+      `TRANSIT` 1.6 / `GREEN` 1.8，key 從 101 起跳避開 `ZoneType` 0–6）。
+      辦公那個無條件的 `else` 換成 `else if` —— 沒換的話公共建築會靜靜地
+      長出辦公的玻璃帷幕窗格。
+- [ ] Task 2 — `civic/` 基礎建設（`CivicPlan` / `assembleCivic` / registry）
+- [ ] Task 3 — showcase 的 civic 檢視模式
+- [ ] 批 1 — 民生服務 6 種（警局／消防局／醫院／小學／高中／大學）
+- [ ] 批 2–6 — 綠地、公用設施、交通站點、機場、遊戲整合（各自另立計畫）
+
+順手記下的小事（不在計畫裡，未排）：
+
+- [ ] `pickChain` 產生的色票門檻帶著浮點雜訊（`0.3333333333333333`）。
+      Task 0 的 `round6` 只修了分區門檻，沒動色票 —— 那是既有行為，
+      Task 0 的基準裡就有 3 處。純粹是可讀性，編譯後是同一個 float。
+
+
 - [ ] **公共建築完全沒有夜間燈光，也幾乎沒有窗。** 警局／消防局／醫院／學校／
       公園／電廠／水廠／垃圾場／汙水廠／墓園／車站／機場走的是另一條渲染
       路徑：20 個手寫 `buildXxx()`、220 個 `MeshLambertMaterial` 實心盒子，

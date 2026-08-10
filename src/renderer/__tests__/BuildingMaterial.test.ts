@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   BUILDING_VERT, BUILDING_FRAG, getBuildingMaterial, resetBuildingMaterial,
+  sortedFacadeKeys,
 } from '../BuildingMaterial';
 import { PART_THRESHOLDS } from '../geometry/buildings/parts';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from '../geometry/buildings/propBands';
@@ -101,8 +102,13 @@ describe('the shader uses the thresholds the parts module defines', () => {
     for (let i = 1; i < thresholds.length; i++) {
       expect(thresholds[i]!, `第 ${i} 個門檻沒有遞增`).toBeGreaterThan(thresholds[i - 1]!);
     }
-    // 最後一個分區走 else，所以門檻數比分區數少一個。
-    expect(thresholds.length).toBe(ZONE_TYPES.length - 1);
+    // 最後一個類別走 else，所以門檻數比類別數少一個。
+    //
+    // 用 `sortedFacadeKeys()` 而不是 `ZONE_TYPES`：這條鏈是由 `ZONE_CAT`
+    // 生成的，而 `ZONE_CAT` 除了六個分區還有公共建築的立面類別（`FACADE_*`）。
+    // `ZONE_TYPES` 是從高度表推導的「哪些分區有建築」，公共建築沒有高度表 ——
+    // 兩者本來就不是同一件事，只是在加公共類別之前碰巧一樣大。
+    expect(thresholds.length).toBe(sortedFacadeKeys().length - 1);
   });
 
   it('should let the shopfront glass take part in day and night', () => {

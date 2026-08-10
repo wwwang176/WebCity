@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 import {
   BUILDING_FRAG, sortedFacadeKeys, sortKeysByCat, facadeThresholds, facadeKeyOf,
 } from '../BuildingMaterial';
-import { ZONE_CAT } from '../geometry/buildings/parts';
+import {
+  ZONE_CAT, FACADE_CIVIC, FACADE_UTILITY, FACADE_TRANSIT, FACADE_GREEN,
+} from '../geometry/buildings/parts';
+import { roofPaletteFor } from '../ColorPalettes';
 import { ZoneType } from '../../core/grid/types';
 
 const BASELINE = readFileSync(
@@ -18,10 +21,16 @@ const BASELINE = readFileSync(
  * 同一張表兩份資料 —— 改了一邊不會有任何東西報錯，而錯的表現是「某個分區
  * 默默拿到別人的立面」。
  *
- * 這一輪只把生成方式統一，**不改變任何行為**。所以驗收標準取最嚴格的那一種：
- * 產生出來的原始碼一個 byte 都不變。
+ * 統一的那一輪不改變任何行為，所以驗收標準取最嚴格的那一種：產生出來的
+ * 原始碼一個 byte 都不變。
+ *
+ * **基準什麼時候該重新產生：** 只有在 shader 真的該變的時候（例如加一個
+ * 立面類別）。做法是暫時寫一個把 `BUILDING_FRAG` 寫進 fixture 的測試，跑完
+ * 刪掉，然後**逐行看 diff** —— 這一條的價值不在「shader 永遠不變」，而在
+ * 「每一次改變都被人看過」。改門檻的推導方式時它會抓到整條鏈的位移；
+ * 動某個分區的立面時它會抓到你不小心也碰到了別人的分支。
  */
-describe('生成的 shader 與手寫版逐字元相同', () => {
+describe('生成的 shader 與基準逐字元相同', () => {
   it('should emit a byte-identical fragment shader', () => {
     expect(BUILDING_FRAG).toBe(BASELINE);
   });
@@ -154,5 +163,132 @@ describe('少一張立面表要當場炸掉', () => {
     const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
     const opens = (wall.match(/\n    (?:else )?if \(vZoneCat|\n    else \{/g) ?? []).length;
     expect(opens, '立面分支數與 ZONE_CAT 的類別數對不上').toBe(sortedFacadeKeys().length);
+  });
+});
+
+describe('公共建築的立面類別', () => {
+  const CIVIC_KEYS = [FACADE_CIVIC, FACADE_UTILITY, FACADE_TRANSIT, FACADE_GREEN];
+
+  it('should not collide with any ZoneType', () => {
+    // ZoneType 是 0–6。撞號的話公共建築會覆蓋掉某個分區的 cat 與屋頂色票，
+    // 而 Record 的 key 相同只會靜靜地互相蓋掉，不會有任何東西報錯。
+    for (const k of CIVIC_KEYS) expect(k).toBeGreaterThan(100);
+    expect(new Set(CIVIC_KEYS).size, '公共類別之間撞號').toBe(CIVIC_KEYS.length);
+  });
+
+  it('should sit above every zone category', () => {
+    const zoneCats = Object.values(ZoneType)
+      .filter((z): z is number => typeof z === 'number' && z > 0)
+      .map(z => ZONE_CAT[z]!);
+    for (const k of CIVIC_KEYS) {
+      expect(ZONE_CAT[k], `公共類別 ${k} 沒有排在所有分區之後`)
+        .toBeGreaterThan(Math.max(...zoneCats));
+    }
+  });
+
+  /**
+   * 這是整輪最重要的一條。
+   *
+   * 立面鏈的最後一個分支原本是無條件的 `else` —— 辦公。加了 cat > 1.0 的
+   * 公共類別之後，若那個 else 沒有變成 else if，公共建築會**靜靜地**掉進
+   * 辦公的窗格分支：一座警局長出玻璃帷幕的辦公窗格，而不會有任何東西報錯。
+   */
+  it('should NOT fall through to the office branch', () => {
+    for (const k of CIVIC_KEYS) {
+      expect(facadeKeyOf(ZONE_CAT[k]!), `類別 ${k} 掉進了辦公分支`)
+        .not.toBe(ZoneType.OFFICE);
+      expect(facadeKeyOf(ZONE_CAT[k]!)).toBe(k);
+    }
+  });
+
+  it('should give the office branch a guard instead of the bare else', () => {
+    const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
+    const officeAt = wall.indexOf('---- OFFICE');
+    expect(officeAt, '找不到辦公分支').toBeGreaterThan(-1);
+    // 辦公之後還有分支 → 它不能再是無條件的 else
+    const afterOffice = wall.slice(officeAt);
+    expect(afterOffice, '辦公之後沒有公共分支').toContain('---- CIVIC');
+    const guard = wall.slice(officeAt).split('\n')[1]!;
+    expect(guard, `辦公仍是無條件的 else：${guard.trim()}`).toContain('vZoneCat <');
+  });
+
+  it('should end the chain with the last civic category, not office', () => {
+    const keys = sortedFacadeKeys();
+    expect(keys[keys.length - 1], '鏈的最後一個不是排序最大的公共類別')
+      .toBe(FACADE_GREEN);
+  });
+
+  it('should give every civic category its own roof palette', () => {
+    // 沒有色票會落到 FALLBACK_ROOF —— 四種公共建築的屋頂會一模一樣的中灰。
+    for (const k of CIVIC_KEYS) {
+      expect(roofPaletteFor(k), `類別 ${k} 沒有自己的屋頂色票`)
+        .not.toBe(roofPaletteFor(-1));
+    }
+  });
+
+  /** 這一條就是 BUG-238 本身 —— 做完了夜裡還是全黑的話它要轉紅。 */
+  it('should light something at night in every civic branch', () => {
+    const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
+    for (const marker of ['---- CIVIC', '---- UTILITY', '---- TRANSIT']) {
+      const at = wall.indexOf(marker);
+      expect(at, `找不到分支 ${marker}`).toBeGreaterThan(-1);
+      const next = ['---- CIVIC', '---- UTILITY', '---- TRANSIT', '---- GREEN']
+        .map(m => wall.indexOf(m))
+        .filter(p => p > at);
+      const branch = wall.slice(at, next.length ? Math.min(...next) : undefined);
+      expect(branch, `${marker} 沒有設 windowMask —— 白天沒有玻璃、夜裡不會亮`)
+        .toContain('windowMask');
+      expect(branch, `${marker} 沒有 isLitWindow —— 夜裡一扇燈都不會亮`)
+        .toContain('isLitWindow');
+      expect(branch, `${marker} 的亮燈沒有看 occ`).toContain('occ');
+    }
+  });
+});
+
+/**
+ * 把立面鏈切成每個類別一段。
+ *
+ * 切點是 `// ---- NAME ----` —— 那個註解由 `FACADE_COMMENT` 產生，所以它與
+ * 分支是同一份資料，不是另外維護的標記表。
+ */
+function facadeBranches(): Array<[string, string]> {
+  const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
+  const marks = [...wall.matchAll(/^ {4}\/\/ ---- ([A-Z ]+):/gm)];
+  return marks.map((m, i) => [
+    m[1]!.trim(),
+    wall.slice(m.index!, i + 1 < marks.length ? marks[i + 1]!.index! : undefined),
+  ]);
+}
+
+describe('每個算出來的遮罩都要有去處', () => {
+  it('should split the chain into one branch per category', () => {
+    // 切不出來的話下面那條會在零個分支上通過 —— 空迴圈永遠是綠的。
+    expect(facadeBranches().length).toBe(sortedFacadeKeys().length);
+  });
+
+  /**
+   * BUG-230a 的形狀：算好了遮罩、設了顏色，卻忘了寫 `windowMask =`。
+   * 那一塊玻璃白天沒有天空反射、夜裡永遠不亮，而且不會有任何東西報錯。
+   *
+   * 規則：分支裡宣告的每一個 `float ...Mask`，要嘛進 `windowMask`，要嘛被
+   * 明確地從別的遮罩裡扣掉 —— 住宅低密度的 `doorMask` 走的是後者，因為門是
+   * 實心的，不該當成玻璃。「算了但兩者都不是」就是 BUG-230a。
+   */
+  it('should feed every mask it computes into windowMask, or explicitly exclude it', () => {
+    let checked = 0;
+    for (const [name, branch] of facadeBranches()) {
+      for (const m of branch.matchAll(/float (\w+Mask)\s*=/g)) {
+        const mask = m[1]!;
+        // 模板字面值裡的 `\s` 就是 `s` —— 用 RegExp 組字串時反斜線必須寫兩個，
+        // 而寫錯只表現成「這條測試永遠通過」。所以改成先跳脫再組。
+        const feeds = new RegExp(String.raw`windowMask\s*=\s*${mask}\b`).test(branch);
+        const excluded = new RegExp(String.raw`\*=\s*1\.0\s*-\s*${mask}\b`).test(branch);
+        expect(feeds || excluded,
+          `${name} 算了 ${mask} 卻沒有讓它進 windowMask，也沒有明確排除`).toBe(true);
+        checked++;
+      }
+    }
+    // 一個遮罩都沒檢查到就表示正規表示式與 GLSL 的寫法對不上了。
+    expect(checked, '沒有掃到任何遮罩宣告 —— 正規表示式失效了').toBeGreaterThan(5);
   });
 });

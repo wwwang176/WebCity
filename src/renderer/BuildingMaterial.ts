@@ -1,5 +1,8 @@
 import * as THREE from 'three';
-import { PART_THRESHOLDS, ZONE_CAT } from './geometry/buildings/parts';
+import {
+  PART_THRESHOLDS, ZONE_CAT,
+  FACADE_CIVIC, FACADE_UTILITY, FACADE_TRANSIT, FACADE_GREEN,
+} from './geometry/buildings/parts';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from './geometry/buildings/propBands';
 import { roofPaletteFor, type RoofColor } from './ColorPalettes';
 import { ZoneType } from '../core/grid/types';
@@ -461,6 +464,197 @@ const FACADE_BODY: Record<number, string> = {
       float ao = smoothstep(0.0, 0.1, y);
       color *= 0.6 + 0.4 * ao;
     `,
+
+  [FACADE_CIVIC]: /* glsl */ `
+      // 公家建築：混凝土或磚石，窗比住宅大、比辦公稀疏，樓層之間有實體腰線。
+      // 一樓是挑高的門廳，所以窗格從門廳頂之上才開始 —— 直接從地面起算的話，
+      // 一座警局的一樓會長出跟三樓一樣的小窗，那正是它看起來不像公家建築的原因。
+      float portico = floorHeight * 1.35;
+      float fy = (y - portico) / floorHeight;
+      float fx = (wallU + phase) / (windowWidth * 1.15);
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      float winMask = (onWall && y > portico)
+        ? smoothstep(0.22 - fwX, 0.22 + fwX, fracX) * smoothstep(0.78 + fwX, 0.78 - fwX, fracX)
+        * smoothstep(0.20 - fwY, 0.20 + fwY, fracY) * smoothstep(0.74 + fwY, 0.74 - fwY, fracY)
+        : 0.0;
+
+      vec3 wallColor = vBldgColor * 0.93;
+      // 腰線：樓板位置的一條實體帶。公家建築的立面幾乎都有。
+      if (onWall && y > portico && (fracY > 0.86 || fracY < 0.08)) {
+        wallColor = vBldgColor * 0.76;
+      }
+
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 6.1;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phaseT = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phaseT) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      // 值班單位夜裡亮的窗比辦公樓多、比住宅少 —— 值班室與走廊燈亮著，
+      // 但整棟樓不會像上班時間那樣全開。
+      float litThreshCV = mix(0.92, 0.45, occ);
+      vec3 winColor;
+      if (lit > litThreshCV) {
+        float w = hash21(wid + 77.7);
+        // 偏冷白：公家建築用的是日光燈，不是住家的黃光。
+        winColor = mix(vec3(0.92, 0.94, 0.88), vec3(0.82, 0.86, 0.80), w) * (0.82 + w * 0.14);
+        winBrightness = 0.6 + hash21(wid + 21.3) * 0.35;
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vBldgColor * 0.24 + vec3(0.03, 0.05, 0.08);
+      }
+      color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
+
+      // 門廳：一整層樓高的落地玻璃，柱間分割，**不切樓層橫線**。
+      // 畫在窗格之後，所以它蓋掉落在同一段高度的東西。
+      if (onWall && y <= portico && y > 0.06) {
+        float bay = wallU / 0.34;
+        float bayU = fract(bay);
+        float fwB = fwidth(bay);
+        float glass = smoothstep(0.16 - fwB, 0.16 + fwB, bayU)
+                    * smoothstep(0.84 + fwB, 0.84 - fwB, bayU);
+        vec2 lid = vec2(floor(bay), 0.0) + floor(vWorldPos.xz + 0.5) * 4.3;
+        vec3 glassColor = mix(vec3(0.42, 0.52, 0.60), vec3(0.52, 0.62, 0.68), hash21(lid));
+        color = mix(vBldgColor * 0.66, glassColor, glass);   // 石材柱 -> 玻璃
+        windowMask = glass;
+        // 門廳整夜亮著 —— 值班台在那裡。這是公家建築夜景的主角。
+        isLitWindow = glass > 0.5 && occ > 0.0;
+        winBrightness = 0.75 + hash21(lid + 4.1) * 0.3;
+        // 門廳玻璃白天已經有自己的顏色與逐柱變化，整片換成統一的天空反射色
+        // 會把那個變化抹掉，所以只取一部分（與商業低密度的落地窗同樣理由）。
+        glassiness = 0.5;
+      }
+
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.62 + 0.38 * ao;
+    `,
+
+  [FACADE_UTILITY]: /* glsl */ `
+      // 公用設施：電廠、水廠、垃圾場、汙水廠。它們就是工業設施，只是歸市府管，
+      // 所以語彙沿用工業的浪板與高窗帶 —— 但沒有捲門（那是貨運廠房的東西），
+      // 換成常亮的警示燈帶。
+      if (onWall) {
+        float ridge = fract(y / 0.09);
+        float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
+        color = vBldgColor * (0.70 + shade * 0.20);
+
+        // 高窗帶：機具與管線佔滿下半段的牆，所以窗開在樓板線下方一條。
+        float fy = y / floorHeight;
+        float fx = (wallU + phase) / (windowWidth * 2.4);
+        float fracY = fract(fy);
+        float fracX = fract(fx);
+        float fwX = fwidth(fx);
+        float fwY = fwidth(fy);
+        float bandMask =
+            smoothstep(0.64 - fwY, 0.64 + fwY, fracY) * smoothstep(0.88 + fwY, 0.88 - fwY, fracY)
+          * smoothstep(0.10 - fwX, 0.10 + fwX, fracX) * smoothstep(0.90 + fwX, 0.90 - fwX, fracX);
+
+        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 8.3;
+        float wPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
+        float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
+        float wEpoch = floor((uTime + wPhase) / wPeriod);
+        float wLit = hash21(wid + wEpoch * 13.7);
+        // 這些設施是 24 小時運轉的，所以夜裡亮的比一般工廠多。
+        float litThreshUT = mix(0.95, 0.42, occ);
+        vec3 winColor;
+        if (wLit > litThreshUT) {
+          // 金屬鹵素的冷白。
+          winColor = mix(vec3(0.90, 0.93, 0.84), vec3(0.76, 0.83, 0.74), wLit) * 0.88;
+          winBrightness = 0.65 + hash21(wid + 21.3) * 0.4;
+          isLitWindow = bandMask > 0.5;
+        } else {
+          winColor = vBldgColor * 0.22 + vec3(0.04, 0.05, 0.07);
+        }
+        color = mix(color, winColor, bandMask);
+        windowMask = bandMask;
+
+        // 警示燈帶：高處一排常亮的紅點。**畫在高窗之後**，所以它蓋掉落在
+        // 同一段高度的高窗 —— 兩者疊在一起就是一扇長了紅點的窗。
+        float lampU = fract(wallU / 0.55);
+        float lampBand = smoothstep(0.40 - fwidth(y), 0.40 + fwidth(y), fracY)
+                       * smoothstep(0.46 + fwidth(y), 0.46 - fwidth(y), fracY);
+        float lampDot = lampBand * step(0.42, lampU) * step(lampU, 0.58);
+        if (lampDot > 0.5) {
+          color = vec3(0.35, 0.10, 0.08);
+          windowMask = 1.0;
+          // 警示燈不是玻璃 —— 白天不該變成一片藍，也不該有陽光鏡面。
+          glassiness = 0.0;
+          // 它與住戶無關：設施停擺了警示燈還是亮的。
+          isLitWindow = true;
+          winBrightness = 0.9;
+        }
+      } else {
+        color = vBldgColor * 0.76;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.65 + 0.35 * ao;
+    `,
+
+  [FACADE_TRANSIT]: /* glsl */ `
+      // 交通站點：玻璃幕與輕構造。月台與大廳整夜亮著 —— 車站是城市夜景裡
+      // 最亮的東西之一，比辦公樓亮得多。
+      float fy = y / (floorHeight * 1.1);
+      float fx = (wallU + phase) / (windowWidth * 0.75);
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      // 窗框很細 —— 車站的玻璃幕是大片的。
+      float winMask = onWall
+        ? smoothstep(0.06 - fwX, 0.06 + fwX, fracX) * smoothstep(0.94 + fwX, 0.94 - fwX, fracX)
+        * smoothstep(0.08 - fwY, 0.08 + fwY, fracY) * smoothstep(0.90 + fwY, 0.90 - fwY, fracY)
+        : 0.0;
+      vec3 wallColor = vBldgColor * 0.55;   // 細窗櫺
+
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.9;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phaseT = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phaseT) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      // 門檻壓得很低：末班車之前整座車站都是亮的。上限 0.6 是給停用的站
+      // （occ = 0）留的 —— 廢站不該還亮著。
+      float litThreshTR = mix(0.60, 0.12, occ);
+      vec3 winColor;
+      if (lit > litThreshTR) {
+        float w = hash21(wid + 77.7);
+        winColor = mix(vec3(0.94, 0.95, 0.90), vec3(0.86, 0.90, 0.86), w) * (0.86 + w * 0.12);
+        winBrightness = 0.8 + hash21(wid + 21.3) * 0.4;
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vec3(0.38, 0.50, 0.60) * (0.6 + hash21(wid + 33.3) * 0.3);
+      }
+      color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    `,
+
+  [FACADE_GREEN]: /* glsl */ `
+      // 綠地：公園與墓園。這裡幾乎沒有牆 —— 走到這個分支的是圍牆、擋土牆、
+      // 涼亭的柱間與管理室。
+      //
+      // **刻意不畫窗格。** 一個標籤分不出「管理室」與「圍牆」，而在圍牆上
+      // 開窗比在管理室上不開窗難看得多。公園的夜間存在感靠 PART_LAMP 的
+      // 庭園燈，不靠窗 —— 真實的公園入夜之後本來就是燈亮、房子暗。
+      if (onWall) {
+        // 石砌：水平砌縫加上世界座標的雜訊，避免一整面圍牆是死板的單色。
+        float course = fract(y / 0.055);
+        float joint = smoothstep(0.0, 0.05, course) * smoothstep(0.10, 0.05, course);
+        float grain = hash21(floor(vWorldPos.xz * 18.0)) * 0.06 - 0.03;
+        color = (vBldgColor * (0.86 - joint * 0.10) + grain);
+      } else {
+        color = vBldgColor * 0.82;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.68 + 0.32 * ao;
+    `,
 };
 
 /** 掛在每個分支 `if` 之前的註解。與 `FACADE_BODY` 分開，讓 body 保持純 GLSL。 */
@@ -471,6 +665,10 @@ const FACADE_COMMENT: Record<number, string> = {
   [ZoneType.COMMERCIAL_HIGH]: '    // ---- COMMERCIAL HIGH: dense glass curtain wall ----\n    ',
   [ZoneType.INDUSTRIAL]: '    // ---- INDUSTRIAL: corrugated metal, large doors ----\n    ',
   [ZoneType.OFFICE]: '    // ---- OFFICE: dense window grid ----\n    ',
+  [FACADE_CIVIC]: '    // ---- CIVIC: masonry, banded floors, tall lit lobby ----\n    ',
+  [FACADE_UTILITY]: '    // ---- UTILITY: corrugated metal, clerestory band, hazard lights ----\n    ',
+  [FACADE_TRANSIT]: '    // ---- TRANSIT: light glass envelope, lit all night ----\n    ',
+  [FACADE_GREEN]: '    // ---- GREEN: masonry walls only, no window grid ----\n    ',
 };
 
 /** 立面的 if 鏈。讀的是 varying `vZoneCat`，分支之間空一行。 */

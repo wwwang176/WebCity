@@ -48,7 +48,28 @@ export function tagPart(geo: THREE.BufferGeometry, part: number): void {
   geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
 }
 
-/** 分區類別常數（寫在頂點色 G 通道）。 */
+/**
+ * 公共建築的立面類別。
+ *
+ * 它們與 `ZoneType` 共用 `ZONE_CAT` 這張表，所以**編號不能相撞** ——
+ * `ZoneType` 是 0–6，這裡從 101 起跳。撞號的話後寫的那一筆會靜靜地蓋掉
+ * 前一筆，而表現只是「某一區的屋頂顏色怪怪的」。
+ *
+ * 公共建築沒有 `ZoneType`（它們的格子是基礎設施，不是分區），所以這幾個
+ * 數字不對應任何遊戲狀態 —— 它們只是頂點色 G 通道的編碼。
+ */
+export const FACADE_CIVIC = 101;
+export const FACADE_UTILITY = 102;
+export const FACADE_TRANSIT = 103;
+export const FACADE_GREEN = 104;
+
+/**
+ * 分區類別常數（寫在頂點色 G 通道）。
+ *
+ * shader 的立面 if 鏈與屋頂色票鏈**都由這張表生成**（見 `BuildingMaterial`
+ * 的 `catChainGlsl`）。加一列就會長出一個分支，所以 `FACADE_BODY` 也必須
+ * 跟著加 —— 少了會在模組載入時當場丟例外，不會靜靜地畫成純色牆。
+ */
 export const ZONE_CAT: Record<number, number> = {
   [ZoneType.RESIDENTIAL_LOW]:  0.0,
   [ZoneType.RESIDENTIAL_HIGH]: 0.2,
@@ -56,6 +77,10 @@ export const ZONE_CAT: Record<number, number> = {
   [ZoneType.COMMERCIAL_HIGH]:  0.6,
   [ZoneType.INDUSTRIAL]:       0.8,
   [ZoneType.OFFICE]:           1.0,
+  [FACADE_CIVIC]:              1.2,
+  [FACADE_UTILITY]:            1.4,
+  [FACADE_TRANSIT]:            1.6,
+  [FACADE_GREEN]:              1.8,
 };
 
 /**
