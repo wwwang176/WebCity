@@ -31,7 +31,11 @@ interface FireServiceJSON {
 
 /** Fire risk and ignition probability constants */
 export const FIRE = {
-  RESPONSE_SPEED: 2,
+  /**
+   * 反應時間 = 道路通行成本 / RESPONSE_SPEED，所以這個常數與 `roadTileCost`
+   * 同尺度。成本整數化時舊值 2 同步變成 36（×18），反應時間不變。
+   */
+  RESPONSE_SPEED: 36,
   FIRE_DURATION: 3,
   COVERED_DAMAGE: 0.10,
   UNCOVERED_DAMAGE: 0.80,

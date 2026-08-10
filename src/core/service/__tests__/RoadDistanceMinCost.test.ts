@@ -40,20 +40,22 @@ describe('roadDistanceToTargets reports the cheapest route', () => {
     // extra highway made no difference at all.
     //
     // Asserting only "smaller" would pass for any implementation that shaved a
-    // fraction off the wrong route. roadTileCost is deterministic, so both
-    // figures are exact: highway costs 0.5 per cell, rural 10/3 — the 6.7x tier
-    // spread that made the relax-time bug visible in the first place.
+    // fraction off the wrong route. roadTileCost is deterministic AND integral,
+    // so both figures are exact and comparable with .toBe: highway costs 9 per
+    // cell, rural 60 — the 6.7x tier spread that made the relax-time bug
+    // visible in the first place.
     const HIGHWAY_TILE = roadTileCost(RoadType.HIGHWAY);
     const RURAL_TILE = roadTileCost(RoadType.RURAL);
-    expect(HIGHWAY_TILE).toBeCloseTo(0.5, 9);
+    expect(HIGHWAY_TILE).toBe(9);
     expect(RURAL_TILE / HIGHWAY_TILE).toBeCloseTo(20 / 3, 9);
 
     const withoutStub = costTo(gridWith(false));
     const withStub = costTo(gridWith(true));
 
-    // Forced through the rural stub: 29/6. Free to use the highway stub: 4.
-    expect(withoutStub).toBeCloseTo(29 / 6, 9);
-    expect(withStub).toBeCloseTo(4, 9);
+    // Forced through the rural stub: 87 (= 29/6 舊制 × 18).
+    // Free to use the highway stub: 72 (= 4 × 18).
+    expect(withoutStub).toBe(87);
+    expect(withStub).toBe(72);
   });
 
   it('should still find targets reachable only by an expensive road', () => {

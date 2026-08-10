@@ -8,33 +8,18 @@
  * Faster/wider roads extend coverage further.
  */
 
-import { ROAD_CONFIGS, RoadType } from '../road/types';
+import { RoadType } from '../road/types';
 import { FOUR_NEIGHBORS, toPosKey, parsePosKeyUnsafe } from '../grid/GridHelpers';
 import type { ReadableGrid, SizedGrid } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
 import { GridCoverageArray, decodeCostRatio } from './GridCoverageArray';
 import { type UnifiedRoadLookup } from '../road/UnifiedRoadLookup';
 
-/** Service coverage budget constants */
-export const ROAD_COVERAGE = {
-  BASE_COST: 100,
-  GARBAGE_BUDGET: 80,
-  POLICE_BUDGET: 30,
-  FIRE_BUDGET: 30,
-  HEALTH_BUDGET: 40,
-  DEATHCARE_BUDGET: 35,
-  EDUCATION_ELEMENTARY_BUDGET: 20,
-  EDUCATION_HIGHSCHOOL_BUDGET: 30,
-  EDUCATION_UNIVERSITY_BUDGET: 45,
-} as const;
-
-/** Calculate traversal cost of a single road tile based on its type. */
-export function roadTileCost(roadType: number): number {
-  const config = ROAD_CONFIGS[roadType as RoadType];
-  if (!config || config.speedLimit === 0) return Infinity;
-  const laneFactor = config.lanes / 2; // 2-lane = 1×
-  return ROAD_COVERAGE.BASE_COST / (config.speedLimit * laneFactor);
-}
+// 成本與預算的唯一來源在 `core/road/roadCost.ts`（worker 也引用同一份）。
+// 這裡轉出去只是為了不動到既有的 import 路徑。
+export { ROAD_COVERAGE } from '../road/roadCost';
+import { roadTileCost } from '../road/roadCost';
+export { roadTileCost };
 
 // ── MinHeap (internal) ──────────────────────────────────────────────
 

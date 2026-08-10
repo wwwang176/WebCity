@@ -5,19 +5,15 @@
  * Worker → Main: { type: 'RESULT', requestId, entries }
  */
 
-import { ROAD_CONFIGS, RoadType } from '../core/road/types';
+import { RoadType } from '../core/road/types';
+// 成本函式與主執行緒共用同一份 —— worker 曾經有一份手抄複本，兩邊分別改
+// 就會悄悄分岔。`roadCost.ts` 是葉模組，不會把服務層拖進 worker bundle。
+import { roadTileCost } from '../core/road/roadCost';
 import { ZONE_ROAD_REACH } from '../core/grid/constants';
 import type { WDWorkerRequest, WDWorkerResponse, WorkplaceDistanceEntry, WorkplacePosition } from '../core/workplace/WorkplaceDistanceTypes';
 
 const BYTES_PER_CELL = 12;
 const FOUR_DIRS: readonly [number, number][] = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-
-function roadTileCost(roadType: number): number {
-  const config = ROAD_CONFIGS[roadType as RoadType];
-  if (!config || config.speedLimit === 0) return Infinity;
-  const laneFactor = config.lanes / 2;
-  return 100 / (config.speedLimit * laneFactor);
-}
 
 // ── MinHeap ────────────────────────────────────────────────────────
 
