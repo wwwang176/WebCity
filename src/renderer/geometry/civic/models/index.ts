@@ -8,6 +8,10 @@ import { highSchoolPlan } from './schoolHigh';
 import { universityPlan } from './schoolUniv';
 import { parkPlan } from './park';
 import { cemeteryPlan } from './cemetery';
+import { powerPlan } from './power';
+import { waterPlan } from './water';
+import { garbagePlan } from './garbage';
+import { sewagePlan } from './sewage';
 
 /**
  * 已經改造完成的公共建築。
@@ -35,6 +39,10 @@ export const CIVIC_MODELS: Partial<Record<InfraType, CivicPlan>> = {
   park: parkPlan,
   cemetery: cemeteryPlan,
   // 批 3：公用設施（電廠／水廠／垃圾場／汙水廠）
+  power: powerPlan,
+  water: waterPlan,
+  garbage: garbagePlan,
+  sewage: sewagePlan,
   // 批 4：交通站點（公車站／捷運站／火車站／渡輪碼頭）
   // 批 5：機場（小／中／大）
 };

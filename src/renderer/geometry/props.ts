@@ -297,7 +297,34 @@ export type PropSpec =
   | { kind: 'drum'; x: number; z: number; radius: number }
   | { kind: 'pipeRack'; x: number; z: number; axis: PropAxis; span: number }
   | { kind: 'gasBottles'; x: number; z: number; axis: PropAxis; radius: number }
-  | { kind: 'palletStack'; x: number; z: number; axis: PropAxis; depth: number };
+  | { kind: 'palletStack'; x: number; z: number; axis: PropAxis; depth: number }
+  | { kind: 'fence'; x: number; z: number; axis: PropAxis; length: number };
+
+/** 圍籬柱的間距（格）。2 m —— 再疏的話橫桿看起來是垂的。 */
+const FENCE_POST_SPACING = M(2.0);
+/** 圍籬柱的邊長。與 `fencePost` 裡的一致。 */
+const FENCE_POST_W = M(0.1);
+
+/**
+ * 一段圍籬：等距的柱子加一條橫桿。
+ *
+ * 柱數隨長度成長 —— 固定三根的話，一道 30 m 的圍籬中間會垂著兩條沒有支撐的
+ * 長桿。圖元本身（`fencePost` / `fenceRail`）與住宅那側共用。
+ */
+function fenceRun(
+  x: number, z: number, axis: PropAxis, length: number,
+): THREE.BufferGeometry[] {
+  const out: THREE.BufferGeometry[] = [fenceRail(x, z, axis, length)];
+  // 兩端的柱子往內縮半個柱寬，整段圍籬才**剛好**佔 `length` —— 柱心對齊
+  // 端點的話它會多伸出去半個柱寬，而兩道相接的圍籬就會在轉角互相插進去。
+  const run = length - FENCE_POST_W;
+  const spans = Math.max(1, Math.round(run / FENCE_POST_SPACING));
+  for (let i = 0; i <= spans; i++) {
+    const t = -run / 2 + (run * i) / spans;
+    out.push(axis === 'z' ? fencePost(x + t, z) : fencePost(x, z + t));
+  }
+  return out;
+}
 
 /** 這件物件的幾何。 */
 export function propGeometry(p: PropSpec): THREE.BufferGeometry[] {
@@ -319,6 +346,7 @@ export function propGeometry(p: PropSpec): THREE.BufferGeometry[] {
     case 'pipeRack': return pipeRack(p.x, p.z, p.axis, p.span);
     case 'gasBottles': return gasBottles(p.x, p.z, p.axis, p.radius);
     case 'palletStack': return palletStack(p.x, p.z, p.axis, p.depth);
+    case 'fence': return fenceRun(p.x, p.z, p.axis, p.length);
   }
 }
 
@@ -354,5 +382,7 @@ export function propExtent(p: PropSpec): { x: number; z: number } {
     case 'pipeRack': return along(p.span, M(0.08), p.axis);
     case 'gasBottles': return along(M(1.5), p.radius, p.axis);
     case 'palletStack': return along(M(1.2), p.depth / 2, p.axis);
+    // 柱子 0.1 m 見方，橫桿 0.06 m —— 厚度取柱子的半寬。
+    case 'fence': return along(p.length, M(0.05), p.axis);
   }
 }
