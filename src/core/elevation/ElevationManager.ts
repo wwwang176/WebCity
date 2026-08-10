@@ -68,6 +68,11 @@ export class ElevationManager {
   /**
    * Does the city contain any elevated ROAD anywhere?
    *
+   * **目前沒有 production 呼叫端。** 它原本只服務一件事：workplace 距離快取
+   * 的高架閘門（「有高架就別用快取」）。BUG-109 治本之後快取本身就是樓層
+   * 感知的，閘門已移除。保留是因為「城裡有沒有高架道路」本身是個合理的查詢，
+   * 但如果一直沒人用，刪掉它比留著誤導好。
+   *
    * Not hasAnySegment(): elevated RAIL lives in the same `layers` map with
    * roadType NONE, so asking the broader question let a single elevated metro
    * tile — which contributes nothing to road reachability — permanently

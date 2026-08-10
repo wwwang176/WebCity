@@ -262,8 +262,8 @@ export function attachAtSettledNode(
  * 那一格，所以正向邊 A→B 的價格是 cost(B)；在轉置圖上從 B 往外跑 Dijkstra，
  * 得到的正是每個 A 沿正向走到 B 的成本。
  *
- * 直接在正向圖上從 B 反向擴散會付成 cost(A) —— 那是現行
- * `reverseFloodFromWorkplace` 的做法，也是 BUG-237。
+ * 直接在正向圖上從 B 反向擴散會付成 cost(A) —— 那是舊的
+ * `reverseFloodFromWorkplace`（已隨本次改動刪除）的做法，也就是 BUG-237。
  */
 export function transposeRoadCellGraph(graph: RoadCellGraph): RoadCellGraph {
   const n = graph.nodeKeys.length;
