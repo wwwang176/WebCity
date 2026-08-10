@@ -15,6 +15,9 @@ import { sewagePlan } from './sewage';
 import {
   busStopPlan, metroStationPlan, trainStationPlan, ferryDockPlan,
 } from './transit';
+import {
+  airportSmallPlan, airportMediumPlan, airportLargePlan,
+} from './airport';
 
 /**
  * 已經改造完成的公共建築。
@@ -52,4 +55,7 @@ export const CIVIC_MODELS: Partial<Record<InfraType, CivicPlan>> = {
   train_station: trainStationPlan,
   ferry_dock: ferryDockPlan,
   // 批 5：機場（小／中／大）
+  airport_s: airportSmallPlan,
+  airport_m: airportMediumPlan,
+  airport_l: airportLargePlan,
 };

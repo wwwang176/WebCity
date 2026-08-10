@@ -171,7 +171,10 @@ export interface CivicVehicle {
 /** 有現成幾何的車種。 */
 export type CivicVehicleKind =
   | 'car' | 'policeCar' | 'ambulance' | 'firetruck'
-  | 'bus' | 'garbageTruck' | 'van' | 'truck';
+  | 'bus' | 'garbageTruck' | 'van' | 'truck'
+  // 停在機場停機坪上的飛機。與天上飛的是同一份幾何（`geometry/airplane`）
+  // —— 11.7 × 10.8 m，在 60 m 的小型機場上剛好是一架區間客機的尺度。
+  | 'airplane';
 
 /**
  * 量體要從佔地邊界內縮多少（格）。0.02 格 = 24 cm。

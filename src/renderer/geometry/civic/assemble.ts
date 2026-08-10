@@ -17,7 +17,7 @@ import { propGeometry, propExtent, type PropSpec } from '../props';
 import {
   buildCarGeometry, buildBusGeometry, buildTruckGeometry, buildFiretruckGeometry,
   buildPoliceCarGeometry, buildAmbulanceGeometry, buildGarbageTruckGeometry,
-  buildVanGeometry,
+  buildVanGeometry, buildAirplaneGeometry,
 } from '../index';
 
 /**
@@ -238,6 +238,7 @@ const VEHICLE_GEOMETRY: Record<CivicVehicleKind, () => THREE.BufferGeometry> = {
   garbageTruck: buildGarbageTruckGeometry,
   van: buildVanGeometry,
   truck: buildTruckGeometry,
+  airplane: buildAirplaneGeometry,
 };
 
 /**
