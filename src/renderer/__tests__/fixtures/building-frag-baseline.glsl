@@ -192,10 +192,22 @@ void main() {
     // Occupancy-adjusted lit threshold: fewer lit windows when building is less occupied
     // occ=0 → no windows lit at all (abandoned/burned/empty buildings)
     float occ = vOccupancy < 0.01 ? -1.0 : clamp(vOccupancy, 0.0, 1.0);
-    // 公共建築的夜間語意與分區建築不同：警局、消防局、醫院、車站在營運時
-    // 整棟都亮著，而它們變暗的原因是**停電**，不是「住戶變少」。所以那幾個
-    // 分支讀 occ 的方式是二值的，aOccupancy 在公共建築上載的是「有沒有電」。
+    // 公共建築的夜間語意與分區建築不同：它們不是住的，所以「多少人住在裡面」
+    // 對它們沒有意義 —— 變暗的原因是**停電**。aOccupancy 在公共建築上載的
+    // 因此是「有沒有電」，而不是使用率。
     bool powered = occ > 0.0;
+    // 有電的時候，亮窗的門檻。這是住宅那條規則在住戶比例 85% 時的值：
+    // 住宅高密度是 mix(0.95, 0.4, occ)，代入 0.85 得 0.4825 —— 也就是
+    // 大約一半的窗亮著，而不是「85% 的窗亮著」。
+    //
+    // 這兩件事差很多：85% 亮看起來仍然像一張發光的板子，一半亮才看得出
+    // 「有的開有的關」。使用者看過畫面之後指定的就是後者。
+    //
+    // 哪幾扇亮會隨 uTime 的 epoch 換（見各分支），週期 150-300 秒 ——
+    // 那個「開開關關」是慢的，與住宅同一個節奏。
+    //
+    // 注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+    float civicDark = 0.4825;
 
     // ---- RESIDENTIAL LOW: painted siding, no window grid ----
     if (vZoneCat < 0.1) {
@@ -558,16 +570,20 @@ void main() {
         wallColor = vBldgColor * 0.76;
       }
 
-      // 有電就整棟亮 —— 不擲骰子決定哪幾扇開。逐扇仍留一點亮度差，
-      // 否則整面牆會是一張平的發光板。
+      // 有電時約 85% 的窗亮著，而且哪幾扇亮會隨時間換 —— 值班室換班、
+      // 有人下班關燈。整棟全亮看起來像一張發光的板子，不像一棟建築。
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 6.1;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phaseT = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phaseT) / period);
+      bool lit = powered && hash21(wid + epoch * 13.7) > civicDark;
       vec3 winColor;
-      if (powered) {
+      if (lit) {
         float w = hash21(wid + 77.7);
         // 偏冷白：公家建築用的是日光燈，不是住家的黃光。
         winColor = mix(vec3(0.92, 0.94, 0.88), vec3(0.82, 0.86, 0.80), w) * (0.82 + w * 0.14);
         winBrightness = 0.78 + hash21(wid + 21.3) * 0.22;
-        isLitWindow = powered && winMask > 0.5;
+        isLitWindow = winMask > 0.5;
       } else {
         winColor = vBldgColor * 0.24 + vec3(0.03, 0.05, 0.08);
       }
@@ -620,15 +636,21 @@ void main() {
             smoothstep(0.64 - fwY, 0.64 + fwY, fracY) * smoothstep(0.88 + fwY, 0.88 - fwY, fracY)
           * smoothstep(0.10 - fwX, 0.10 + fwX, fracX) * smoothstep(0.90 + fwX, 0.90 - fwX, fracX);
 
-        // 這些設施是 24 小時運轉的 —— 有電就整條高窗帶都亮。
+        // 這些設施是 24 小時運轉的，所以亮得比一般廠房多 —— 但仍有幾跨是
+        // 暗的（維修中、沒在用的機組），而且會隨時間換。
         vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 8.3;
+        float wPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
+        float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
+        float wEpoch = floor((uTime + wPhase) / wPeriod);
+        // 24 小時運轉，但窗本來就少 —— 比公家機關再亮一點。
+        bool wOn = powered && hash21(wid + wEpoch * 13.7) > civicDark * 0.8;
         vec3 winColor;
-        if (powered) {
+        if (wOn) {
           float w = hash21(wid + 77.7);
           // 金屬鹵素的冷白。
           winColor = mix(vec3(0.90, 0.93, 0.84), vec3(0.76, 0.83, 0.74), w) * 0.88;
           winBrightness = 0.72 + hash21(wid + 21.3) * 0.28;
-          isLitWindow = powered && bandMask > 0.5;
+          isLitWindow = bandMask > 0.5;
         } else {
           winColor = vBldgColor * 0.22 + vec3(0.04, 0.05, 0.07);
         }
@@ -675,15 +697,20 @@ void main() {
         : 0.0;
       vec3 wallColor = vBldgColor * 0.55;   // 細窗櫺
 
-      // 車站是城市夜景裡最亮的東西之一 —— 有電就整座站都亮。
-      // 停用的站（沒電）才暗，而那時它玻璃的反射色也該是冷的。
+      // 車站是城市夜景裡最亮的東西之一，所以暗掉的比例比別人小一半 ——
+      // 但不是零：月台盡頭、沒開的閘門那幾格是暗的。
       vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.9;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phaseT = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phaseT) / period);
+      // 車站是城市夜景裡最亮的東西之一，暗掉的比例只有別人的一半。
+      bool lit = powered && hash21(wid + epoch * 13.7) > civicDark * 0.5;
       vec3 winColor;
-      if (powered) {
+      if (lit) {
         float w = hash21(wid + 77.7);
         winColor = mix(vec3(0.94, 0.95, 0.90), vec3(0.86, 0.90, 0.86), w) * (0.86 + w * 0.12);
         winBrightness = 0.85 + hash21(wid + 21.3) * 0.25;
-        isLitWindow = powered && winMask > 0.5;
+        isLitWindow = winMask > 0.5;
       } else {
         winColor = vec3(0.38, 0.50, 0.60) * (0.6 + hash21(wid + 33.3) * 0.3);
       }

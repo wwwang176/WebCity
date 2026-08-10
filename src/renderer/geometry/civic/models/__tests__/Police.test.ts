@@ -140,7 +140,27 @@ describe('警局', () => {
     // 自訂量體只剩下共用圖元裡真的沒有的東西。
     const custom = new Set(plan.props.map(v => v.tag));
     expect(custom, '自訂量體裡混進了共用圖元有的東西')
-      .toEqual(new Set(['porchLamp', 'car', 'bench']));
+      .toEqual(new Set(['porchLamp', 'bench']));
+  });
+
+  /**
+   * 使用者：「巡邏車看起來是一個方塊而已，是不是有車輛的物件可以參考?」
+   *
+   * 有。停著的警車與街上巡邏的警車必須是同一台 —— 兩者長得不一樣是最容易
+   * 被看出來的不一致。
+   */
+  it('should park real police cars, not grey boxes', () => {
+    expect(plan.vehicles.some(v => v.kind === 'policeCar'), '沒有警車').toBe(true);
+    expect(plan.props.some(v => v.tag === 'car'), '還留著手畫的車')
+      .toBe(false);
+  });
+
+  it('should point the parked cars down the bays', () => {
+    // 停車格是沿 z 排的，車輛幾何原本車頭朝 +x —— 不轉的話車是橫著停的，
+    // 而且會壓過兩三條分隔線。
+    for (const v of plan.vehicles) {
+      expect(v.rotationY, `${v.kind} 沒有轉向停車格`).toBeCloseTo(Math.PI / 2, 6);
+    }
   });
 
   it('should not tag the lamp posts as glowing', () => {

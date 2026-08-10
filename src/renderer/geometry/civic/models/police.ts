@@ -4,6 +4,7 @@ import {
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
 import type { PropSpec } from '../../props';
+import type { CivicVehicle } from '../types';
 import type { CivicPlan, CivicVolume, CivicDecal } from '../types';
 
 /**
@@ -134,16 +135,6 @@ const props: CivicVolume[] = [
     x: M(1.6), z: M(-1.5), w: M(0.4), d: M(0.4), y0: M(3.4), y1: M(3.75),
   },
 
-  // 停在格子裡的兩台巡邏車。PART_DETAIL —— 標成 PART_WALL 的話車身會長出窗格。
-  {
-    tag: 'car', part: PART_DETAIL,
-    x: M(-9.6), z: M(6.5), w: M(1.9), d: M(4.6), y0: 0, y1: M(1.5),
-  },
-  {
-    tag: 'car', part: PART_DETAIL,
-    x: M(-4.0), z: M(6.5), w: M(1.9), d: M(4.6), y0: 0, y1: M(1.5),
-  },
-
   // 前庭的兩張長椅。共用圖元裡沒有長椅，所以它留在這裡。
   {
     tag: 'bench', part: PART_DETAIL,
@@ -153,6 +144,23 @@ const props: CivicVolume[] = [
     tag: 'bench', part: PART_DETAIL,
     x: M(4.6), z: M(2.4), w: M(1.8), d: M(0.6), y0: M(0.35), y1: M(0.5),
   },
+];
+
+/**
+ * 停在停車場裡的巡邏車。
+ *
+ * 用的是城市裡開著的那一台的**同一份幾何**（`geometry/policeCar`）——
+ * 停著的警車與街上巡邏的警車長得不一樣，是最容易被看出來的那種不一致。
+ * 這裡原本是兩個灰色方塊。
+ *
+ * 車頭朝 +z（轉 90 度）：停車格是沿 z 排的，不轉的話車是橫著停的、
+ * 而且會壓過兩三條分隔線。
+ */
+const vehicles: CivicVehicle[] = [
+  { kind: 'policeCar', x: M(-9.6), z: M(6.5), rotationY: Math.PI / 2 },
+  { kind: 'policeCar', x: M(-4.0), z: M(6.5), rotationY: Math.PI / 2 },
+  // 一台巡邏用的廂型車，讓車隊看起來不是複製貼上的。
+  { kind: 'van', x: M(-6.8), z: M(6.5), rotationY: Math.PI / 2 },
 ];
 
 const overhead: CivicVolume[] = [
@@ -245,4 +253,5 @@ export const policePlan: CivicPlan = {
   props,
   overhead,
   fixtures,
+  vehicles,
 };

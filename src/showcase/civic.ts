@@ -3,8 +3,9 @@ import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { stampZoneCategory, ZONE_CAT, triangleCount } from '../renderer/geometry/buildings/parts';
 import { GROUND_LAYERS } from '../renderer/geometry/buildings/propBands';
 import {
-  assembleCivic, assembleDecals, assembleFixtures,
+  assembleCivic, assembleDecals, assembleFixtures, assembleVehicles,
 } from '../renderer/geometry/civic/assemble';
+import { createVehicleMaterial } from '../renderer/vehicleMaterial';
 import { civicTypesDone } from '../renderer/geometry/civic/registry';
 import { CIVIC_TRIANGLE_BUDGET, type CivicPlan, type Footprint }
   from '../renderer/geometry/civic/types';
@@ -123,26 +124,50 @@ const LAYERS: ReadonlyArray<{
   },
 ];
 
+/**
+ * 停放的車輛用的材質。
+ *
+ * 一份就夠 —— 展示區一次只畫一棟建築。實體在 `renderer/vehicleMaterial`，
+ * 與 `VehicleRenderer` 共用同一個工廠：各寫一份的話，哪天有人替車輛改了
+ * 材質，停在停車場的那幾台會靜靜地留在舊的樣子。
+ */
+let vehicleMaterial: THREE.MeshLambertMaterial | null = null;
+
 export interface PlacedCivic {
-  meshes: THREE.Mesh[];
+  /**
+   * 走建築 shader 的那些層（貼片、量體、矮物件、懸挑）。
+   *
+   * 與 `vehicles` **在型別上分開**，不是分類上的潔癖：這一批全部要餵
+   * `stampZoneCategory` 與 `stampInstanceValues`，而車輛**絕對不能**被餵
+   * —— 那兩個會蓋掉 `color` 裡真正的 RGB。混在同一個陣列裡的話，總有一天
+   * 有人寫一個 `for (const m of meshes)` 就把警車變成一塊灰。
+   */
+  building: THREE.Mesh[];
+  /** 停放的車輛。走車輛材質。沒有車時是 `null`。 */
+  vehicles: THREE.Mesh | null;
   /** 遠景時要關掉的那些。`main.ts` 的 `DetailVisibility` 吃它。 */
   culled: THREE.Mesh[];
   tris: CivicTris;
 }
 
+/** 場景裡所有的 mesh —— 呼叫端要一次清乾淨時用。 */
+export function allMeshes(p: PlacedCivic): THREE.Mesh[] {
+  return p.vehicles ? [...p.building, p.vehicles] : [...p.building];
+}
+
 /**
  * 把一棟公共建築放進場景。
  *
- * `occupancy` 由展示區的滑桿頂替遊戲的實際使用率。**四層都要餵**
- * `stampInstanceValues` —— 只餵量體層的話，矮物件上的路燈與招牌永遠不亮
- * （BUG-230c 就是這個形狀）。
+ * `occupancy` 在公共建築上是「有沒有電」，由展示區的滑桿頂替（見
+ * `BUILDING_FRAG` 的 `powered`）。**每一層都要餵** `stampInstanceValues`
+ * —— 只餵量體層的話，矮物件上的路燈永遠不亮（BUG-230c 就是這個形狀）。
  */
 export function placeCivic(
   plan: CivicPlan, scene: THREE.Scene, occupancy: number,
 ): PlacedCivic {
   const material = getBuildingMaterial();
   const out: PlacedCivic = {
-    meshes: [], culled: [],
+    building: [], vehicles: null, culled: [],
     tris: { massing: 0, decal: 0, prop: 0, overhead: 0 },
   };
 
@@ -161,10 +186,28 @@ export function placeCivic(
     mesh.position.set(0, layer.baseY, 0);
     scene.add(mesh);
 
-    out.meshes.push(mesh);
+    out.building.push(mesh);
     if (layer.culled) out.culled.push(mesh);
-    // `+=` 而不是 `=` —— 植栽與矮物件共用 `prop` 這一格。
+    // `+=` 而不是 `=` —— 共用矮物件與自訂矮物件共用 `prop` 這一格。
     out.tris[layer.key] += triangleCount(geo);
+  }
+
+  // 停放的車輛。**不走上面那個迴圈** —— 它們用車輛材質，而且不能被
+  // `stampZoneCategory` / `stampInstanceValues` 碰：那兩個會蓋掉 `color`
+  // 裡真正的 RGB，把一台白藍相間的警車變成一塊灰。
+  const vehicleGeo = assembleVehicles(plan.vehicles, plan.footprint);
+  if (vehicleGeo.getAttribute('position').count > 0) {
+    vehicleMaterial ??= createVehicleMaterial();
+    const vmesh = new THREE.Mesh(vehicleGeo, vehicleMaterial);
+    vmesh.castShadow = true;
+    vmesh.receiveShadow = true;
+    vmesh.position.set(0, GROUND_LAYERS.BUILDING, 0);
+    scene.add(vmesh);
+    out.vehicles = vmesh;
+    // 車跟著遠景一起關掉 —— 它與矮物件是同一個尺度的東西。
+    out.culled.push(vmesh);
+  } else {
+    vehicleGeo.dispose();
   }
 
   return out;

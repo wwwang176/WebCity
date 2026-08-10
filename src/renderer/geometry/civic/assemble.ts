@@ -7,9 +7,18 @@ import {
   tagPart, setGroundShade, PART_WALL, PART_GROUND, PART_FOLIAGE,
 } from '../buildings/parts';
 import { METRES_PER_CELL } from '../../../core/grid/constants';
-import { CIVIC_INSET, type CivicDecal, type CivicVolume, type Footprint } from './types';
+import {
+  CIVIC_INSET,
+  type CivicDecal, type CivicVolume, type CivicVehicle, type CivicVehicleKind,
+  type Footprint,
+} from './types';
 import { CIVIC_DEFAULT_COLOR, type CivicColor } from './colors';
 import { propGeometry, propExtent, type PropSpec } from '../props';
+import {
+  buildCarGeometry, buildBusGeometry, buildTruckGeometry, buildFiretruckGeometry,
+  buildPoliceCarGeometry, buildAmbulanceGeometry, buildGarbageTruckGeometry,
+  buildVanGeometry,
+} from '../index';
 
 /**
  * 公共建築的量體與貼片組裝。
@@ -182,5 +191,71 @@ export function assembleFixtures(
 
   const parts = fixtures.flatMap(propGeometry);
   if (parts.length === 0) return emptyTagged(PART_FOLIAGE);
+  return mergeGeometries(parts)!;
+}
+
+/**
+ * 車種 → 幾何。
+ *
+ * 這張表是唯一的對應，寫死在別處的話就會出現「停著的救護車其實是廂型車」
+ * 這種只有一個人看得出來的錯。
+ */
+const VEHICLE_GEOMETRY: Record<CivicVehicleKind, () => THREE.BufferGeometry> = {
+  car: buildCarGeometry,
+  policeCar: buildPoliceCarGeometry,
+  ambulance: buildAmbulanceGeometry,
+  firetruck: buildFiretruckGeometry,
+  bus: buildBusGeometry,
+  garbageTruck: buildGarbageTruckGeometry,
+  van: buildVanGeometry,
+  truck: buildTruckGeometry,
+};
+
+/**
+ * 停放的車輛轉幾何。
+ *
+ * **不 `tagPart`、不 `tagColor`。** 車輛的 `color` 屬性裝的是真正的 RGB，
+ * 蓋掉的話車身的白藍會變成零件標籤。它們走的是車輛材質，不是建築 shader。
+ *
+ * 護欄與量體同一條，範圍量的是**旋轉之後**的包圍盒 —— 車轉了 90 度之後
+ * 佔的方向就換了，用原本的長寬檢查會放行一台其實伸出去的車。
+ *
+ * 註：`computeBoundingBox()` 寫在旋轉之前或之後其實都對 —— three.js 的
+ * `applyMatrix4` 在 `boundingBox` 已存在時會自己重算。這一行的位置不承重，
+ * 承重的是「拿來檢查的是旋轉後的那個 box」。
+ */
+export function assembleVehicles(
+  vehicles: readonly CivicVehicle[], footprint: Footprint,
+): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const bounds: Volume[] = [];
+
+  for (const v of vehicles) {
+    const geo = VEHICLE_GEOMETRY[v.kind]();
+    if (v.rotationY) geo.rotateY(v.rotationY);
+    geo.translate(v.x, 0, v.z);
+    geo.computeBoundingBox();
+    const box = geo.boundingBox!;
+    bounds.push({
+      x: (box.min.x + box.max.x) / 2,
+      z: (box.min.z + box.max.z) / 2,
+      w: box.max.x - box.min.x,
+      d: box.max.z - box.min.z,
+      y0: 0,
+      y1: 0,
+    });
+    parts.push(geo);
+  }
+
+  assertInside(bounds, footprint, CIVIC_INSET);
+
+  if (parts.length === 0) {
+    const empty = new THREE.BufferGeometry();
+    empty.setAttribute('position', new THREE.BufferAttribute(new Float32Array(0), 3));
+    // 材質吃頂點色，所以空幾何也要有 color —— 少了它 mergeGeometries 之後
+    // 的屬性集合會與有車的情況不一致。
+    empty.setAttribute('color', new THREE.BufferAttribute(new Float32Array(0), 3));
+    return empty;
+  }
   return mergeGeometries(parts)!;
 }

@@ -298,14 +298,15 @@ describe('每個算出來的遮罩都要有去處', () => {
  * 公共建築的夜間燈光語意與分區建築**不同**。
  *
  * 住宅與辦公樓是「住戶比例決定多少扇窗會亮」—— 半空的樓不該整排亮。
- * 公共建築不是住的：警局、消防局、醫院、車站在營運時整棟都亮著，而它們
- * 停擺的原因是**停電**，不是「住戶變少」。使用者的原話：「公共建築的晚上
- * 燈光，只要有電就是全亮，不看住戶比例」。
+ * 公共建築不是住的，所以「多少人住在裡面」對它們沒有意義：變暗的原因是
+ * **停電**。`aOccupancy` 在公共建築上載的因此是「有沒有電」。
  *
- * 所以那幾個分支讀 `occ` 的方式是二值的：> 0 就是有電，全亮；否則全暗。
- * `aOccupancy` 在公共建築上載的是「有沒有電」，不是使用率。
+ * 但有電也不是**全亮** —— 使用者看過畫面之後的修正：「公共設施好像不用
+ * 全亮燈，改成住戶比例 85% 的樣子，是不是會有的開有的關? 或開開關關的
+ * 效果?」。整棟全亮看起來像一張發光的板子，不像一棟建築。所以固定約 85%
+ * 亮，而且哪幾扇亮會隨時間換。
  */
-describe('公共建築有電就全亮', () => {
+describe('公共建築有電才亮，而且不是全亮', () => {
   const POWERED = ['---- CIVIC', '---- UTILITY', '---- TRANSIT'];
 
   function branchOf(marker: string): string {
@@ -325,12 +326,68 @@ describe('公共建築有電就全亮', () => {
     }
   });
 
+  it('should leave some windows dark instead of lighting them all', () => {
+    // 整棟全亮看起來像一張發光的板子。使用者看過畫面之後的修正。
+    for (const marker of POWERED) {
+      const branch = branchOf(marker);
+      expect(branch, `${marker} 是整棟全亮 —— 沒有暗的窗`).toContain('civicDark');
+    }
+  });
+
+  /**
+   * 暗掉的比例要**看得出來**。
+   *
+   * 第一版寫了 0.15（85% 亮），使用者看了畫面說「好像不會有的開有的關」——
+   * 85% 亮仍然像一張發光的板子。實際要的是住宅那條規則在住戶比例 85% 時的
+   * 樣子：`mix(0.95, 0.4, 0.85)` ≈ 0.48，也就是大約一半亮。
+   *
+   * 這條測試釘住那個區間：太低會變回全亮，太高會讓建築整棟看起來像沒電。
+   */
+  it('should keep the dark fraction in a range you can actually see', () => {
+    const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
+    const m = wall.match(/float civicDark = ([0-9.]+);/);
+    expect(m, '找不到 civicDark 的值').toBeTruthy();
+    const dark = Number(m![1]);
+    expect(dark, `${dark} 太低 —— 幾乎全亮，看不出有的開有的關`).toBeGreaterThan(0.3);
+    expect(dark, `${dark} 太高 —— 整棟看起來像沒電`).toBeLessThan(0.7);
+  });
+
+  it('should match what the residential rule gives at 85% occupancy', () => {
+    // 使用者的原話是「改成住戶比例 85% 的樣子」。住宅高密度是
+    // `mix(0.95, 0.4, occ)` —— 這裡的值要對得上，否則註解在說謊。
+    const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
+    const dark = Number(wall.match(/float civicDark = ([0-9.]+);/)![1]);
+    const residentialAt85 = 0.95 + (0.4 - 0.95) * 0.85;
+    expect(dark, '與住宅在 85% 住戶時的門檻對不上').toBeCloseTo(residentialAt85, 3);
+  });
+
+  it('should make which windows are lit change over time', () => {
+    // 「開開關關的效果」靠的是 epoch：每隔一段時間重擲一次哪幾扇亮。
+    // 少了它，暗的那幾扇會永遠是同樣那幾扇 —— 那是一張靜止的貼圖。
+    for (const marker of POWERED) {
+      const branch = branchOf(marker);
+      expect(branch, `${marker} 的亮窗不會隨時間換`).toMatch(/[eE]poch/);
+      expect(branch, `${marker} 沒有讀 uTime`).toContain('uTime');
+    }
+  });
+
+  it('should define the dark fraction once, in the shared preamble', () => {
+    // 三個分支各寫一個 0.15 的話，調亮度要記得改三個地方。
+    const wall = BUILDING_FRAG.slice(BUILDING_FRAG.indexOf('=== WALL'));
+    const decl = wall.indexOf('float civicDark');
+    expect(decl, '找不到 civicDark 的宣告').toBeGreaterThan(-1);
+    expect(decl, 'civicDark 宣告在某個分支裡面，不是共用的前言')
+      .toBeLessThan(wall.indexOf('---- RESIDENTIAL LOW'));
+    expect((wall.match(/float civicDark/g) ?? []).length, 'civicDark 宣告了不只一次')
+      .toBe(1);
+  });
+
   it('should still go dark without power', () => {
     // 有電才亮。少了這個判斷，停電的建築在夜裡照樣燈火通明。
     for (const marker of POWERED) {
       const branch = branchOf(marker);
       expect(branch, `${marker} 沒有看有沒有電`).toContain('powered');
-      expect(branch, `${marker} 的亮窗沒有吃 powered`).toMatch(/isLitWindow\s*=\s*powered/);
+      expect(branch, `${marker} 的亮窗沒有吃 powered`).toMatch(/powered && hash21|isLitWindow\s*=\s*powered/);
     }
   });
 

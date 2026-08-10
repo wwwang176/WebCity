@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { civicTriangleReport, civicOptions, placeCivic } from '../civic';
+import { civicTriangleReport, civicOptions, placeCivic, allMeshes } from '../civic';
 import { CIVIC_TRIANGLE_BUDGET } from '../../renderer/geometry/civic/types';
 import { getCivicPlan, civicTypesDone } from '../../renderer/geometry/civic/registry';
 import { FACADE_CIVIC, PART_LAMP, ZONE_CAT } from '../../renderer/geometry/buildings/parts';
@@ -89,16 +89,34 @@ describe('placeCivic 的四層', () => {
     props: [{ x: 0.6, z: 0.6, w: 0.2, d: 0.2, y0: 0, y1: 0.3, part: PART_LAMP }],
     overhead: [{ x: 0, z: 0.6, w: 0.8, d: 0.3, y0: 0.4, y1: 0.45 }],
     fixtures: [{ kind: 'tree', x: -0.6, z: 0.6, heightM: 5, crownRadius: 0.1 }],
+    vehicles: [{ kind: 'policeCar', x: 0.5, z: -0.5 }],
   });
 
   it('should build every layer', () => {
-    // 五個 mesh、四格預算：植栽自己一個 mesh（圓錐與球併不進稜台），
-    // 但它就是矮物件，所以三角形算在 prop 那一格。
+    // 五個建築 mesh、四格預算：共用矮物件自己一個 mesh（圓錐與球併不進
+    // 稜台），但它就是矮物件，所以三角形算在 prop 那一格。
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    expect(placed.meshes.length, '有一層沒有建出來').toBe(5);
+    expect(placed.building.length, '有一層沒有建出來').toBe(5);
     for (const key of ['massing', 'decal', 'prop', 'overhead'] as const) {
       expect(placed.tris[key], `${key} 是空的`).toBeGreaterThan(0);
     }
+  });
+
+  it('should keep the parked vehicles out of the building meshes', () => {
+    // 車輛走別的材質，而且**絕對不能**被 stampZoneCategory 碰 —— 那會把
+    // color 裡真正的 RGB 蓋成零件標籤，一台白藍相間的警車變成一塊灰。
+    const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
+    expect(placed.vehicles, '沒有停車').not.toBeNull();
+    expect(placed.building).not.toContain(placed.vehicles);
+    expect(placed.vehicles!.geometry.getAttribute('aOccupancy'),
+      '車輛被餵了建築的逐實例屬性').toBeUndefined();
+    expect(allMeshes(placed).length).toBe(placed.building.length + 1);
+  });
+
+  it('should report no vehicle mesh when nothing is parked', () => {
+    const placed = placeCivic({ ...fullPlan(), vehicles: [] }, new THREE.Scene(), 0.8)!;
+    expect(placed.vehicles).toBeNull();
+    expect(allMeshes(placed).length).toBe(placed.building.length);
   });
 
   it('should count shared fixtures into the prop budget, not a fifth one', () => {
@@ -117,7 +135,7 @@ describe('placeCivic 的四層', () => {
    */
   it('should stamp the per-instance attributes on every layer', () => {
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    for (const m of placed.meshes) {
+    for (const m of placed.building) {
       for (const name of ['aOccupancy', 'aSeed', 'aHighlight', 'aHighlightColor']) {
         expect(m.geometry.getAttribute(name), `某一層少了 ${name}`).toBeTruthy();
       }
@@ -130,7 +148,7 @@ describe('placeCivic 的四層', () => {
   it('should stamp the facade category on every layer', () => {
     // 少了的話那一層的 vZoneCat 是 0 —— 走進住宅低密度的立面分支。
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    for (const m of placed.meshes) {
+    for (const m of placed.building) {
       expect(m.geometry.getAttribute('color').getY(0), '某一層沒有蓋上立面類別')
         .toBeCloseTo(ZONE_CAT[FACADE_CIVIC]!, 6);
     }
@@ -139,7 +157,7 @@ describe('placeCivic 的四層', () => {
   it('should carry the building colour into every layer', () => {
     // 少了的話 shader 讀到 aBldgColor = 0 —— 整棟是黑的。
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    const massing = placed.meshes[1]!;   // 順序：貼片、量體、自訂矮物件、共用矮物件、懸挑
+    const massing = placed.building[1]!;   // 順序：貼片、量體、自訂矮物件、共用矮物件、懸挑
     const a = massing.geometry.getAttribute('aBldgColor');
     expect(a, '量體層沒有 aBldgColor').toBeTruthy();
     // Float32 存不下 0.2 —— 逐位比對會在一個與顏色無關的理由上失敗。
@@ -158,7 +176,7 @@ describe('placeCivic 的四層', () => {
       { x: 0.3, z: 0, w: 0.4, d: 0.4, y0: 0, y1: 0.5, color: [1, 0, 0] },
     ];
     const placed = placeCivic(p, new THREE.Scene(), 0.8)!;
-    const a = placed.meshes[1]!.geometry.getAttribute('aBldgColor');
+    const a = placed.building[1]!.geometry.getAttribute('aBldgColor');
     const seen = new Set<string>();
     for (let i = 0; i < a.count; i++) {
       seen.add([a.getX(i), a.getY(i), a.getZ(i)].map(v => v.toFixed(2)).join(','));
@@ -169,22 +187,24 @@ describe('placeCivic 的四層', () => {
   it('should cull only the prop and overhead layers', () => {
     // 貼片不關 —— 它是平的鋪面，關掉會讓遠景整片地變空。量體當然也不關。
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    expect(placed.culled.length, '矮物件、植栽、懸挑三層要跟著遠景關掉').toBe(3);
+    expect(placed.culled.length, '自訂矮物件、共用矮物件、懸挑、車輛四層要跟著遠景關掉')
+      .toBe(4);
   });
 
   it('should not cast shadows from the decal layer', () => {
     // 平的鋪面投影會在自己底下畫出一圈黑邊。
     const placed = placeCivic(fullPlan(), new THREE.Scene(), 0.8)!;
-    const noShadow = placed.meshes.filter(m => !m.castShadow);
+    const noShadow = placed.building.filter(m => !m.castShadow);
     expect(noShadow.length, '不投影的層數不是一層（貼片）').toBe(1);
   });
 
   it('should skip a layer that has nothing in it', () => {
     // 公園沒有懸挑。空幾何仍然建出 mesh 的話是白吃一次 draw call。
     const placed = placeCivic(
-      { ...fullPlan(), overhead: [], props: [], fixtures: [] }, new THREE.Scene(), 0.8,
+      { ...fullPlan(), overhead: [], props: [], fixtures: [], vehicles: [] },
+      new THREE.Scene(), 0.8,
     )!;
-    expect(placed.meshes.length).toBe(2);
+    expect(placed.building.length).toBe(2);
     expect(placed.culled.length).toBe(0);
   });
 });

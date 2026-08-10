@@ -119,7 +119,38 @@ export interface CivicPlan {
    * 三角形預算仍算在 `prop` 那一格 —— 它們就是矮物件。
    */
   fixtures: PropSpec[];
+  /**
+   * 停在基地上的車輛。
+   *
+   * 用的是城市裡開著的那些車的**同一份幾何**（`geometry/policeCar` 等）——
+   * 停在警局停車場的警車與街上巡邏的警車長得不一樣，是最容易被看出來的
+   * 那種不一致。
+   *
+   * 它們自己一層而且用**別的材質**：車輛走
+   * `MeshLambertMaterial({ vertexColors })`，RGB 直接寫在 `color` 屬性上；
+   * 建築 shader 把 `color` 讀成（零件標籤, 分區, 地面明度）。混在一起的話，
+   * 一台白藍相間的警車會被當成 `partType = 0.102`，落進金屬細節的分支變成
+   * 一塊灰。
+   *
+   * 三角形不算進任何一格建築預算 —— 它們是車，不是建築的一部分。
+   */
+  vehicles: CivicVehicle[];
 }
+
+/** 停在基地上的一台車。 */
+export interface CivicVehicle {
+  kind: CivicVehicleKind;
+  /** 車輛中心。單位是格。 */
+  x: number;
+  z: number;
+  /** 車頭朝向，弧度。0 = +x（幾何原本的朝向）。 */
+  rotationY?: number;
+}
+
+/** 有現成幾何的車種。 */
+export type CivicVehicleKind =
+  | 'car' | 'policeCar' | 'ambulance' | 'firetruck'
+  | 'bus' | 'garbageTruck' | 'van' | 'truck';
 
 /**
  * 量體要從佔地邊界內縮多少（格）。0.02 格 = 24 cm。

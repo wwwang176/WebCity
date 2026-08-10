@@ -27,7 +27,7 @@ import { DetailVisibility } from './detailVisibility';
 import { appearanceOf } from '../renderer/BuildingAppearance';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
-import { placeCivic, civicTriangleReport } from './civic';
+import { placeCivic, civicTriangleReport, allMeshes } from './civic';
 import { getCivicPlan } from '../renderer/geometry/civic/registry';
 import { getInfraConfig } from '../core/building/InfraConfig';
 
@@ -191,7 +191,7 @@ function renderCivic(): void {
   const plan = getCivicPlan(state.civicType);
   if (!plan) return;
   const placed = placeCivic(plan, sceneManager.scene, state.occupancy);
-  shown.push(...placed.meshes);
+  shown.push(...allMeshes(placed));
   // add() 會立刻套用目前的縮放狀態 —— 縮在遠景時動一下控制項會整批重畫，
   // 少了這一步細節就會全部冒回來。
   for (const m of placed.culled) detailLOD.add(m);
