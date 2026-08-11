@@ -1,5 +1,5 @@
 import {
-  FACADE_UTILITY, PART_ROOF, PART_DETAIL, PART_LAMP, PART_GROUND, PART_SHELL,
+  FACADE_UTILITY, PART_ROOF, PART_DETAIL, PART_LAMP, PART_WATER, PART_SHELL,
 } from '../../buildings/parts';
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
@@ -38,17 +38,26 @@ const HOUSE_TOP = M(7.0);
 const HOUSE_ROOF = M(7.4);
 const TOWER_TOP = M(15.0);
 
-/** 池水的明度。深色 —— 池壁（`PART_DETAIL`）才有東西可以對比。 */
-const WATER_SHADE = 0.1;
+/**
+ * 池水的明度（`PART_WATER` 的 B 通道：0 = 最深、1 = 最淺）。
+ *
+ * 走水的分支而不是地面的。地面的色譜是柏油到磚鋪 —— **全是灰的** ——
+ * 所以原本 `PART_GROUND` + 0.1 的四座池在截圖裡是四個黑洞，而這一棟的
+ * 辨識剪影就是那四個圓。
+ *
+ * 一槽水不是「自己畫一條河」（BUG-244）：河是地形的，槽裡的水是這座廠
+ * 自己的東西。淺色 —— 這裡出去的是自來水，要與汙水廠的深色池分得開。
+ */
+const WATER_SHADE = 0.45;
 /**
  * 儲水塔的白。乾淨的水 —— 它是這一格唯一不吃廠區色的量體。
  *
- * 塔身與塔頂**都**走 `PART_SHELL`。使用者要了兩次白色，兩次都拿到灰的：
+ * 塔身與塔頂**都**走 `PART_SHELL`，而且顏色是**純白**。使用者要了兩次白色，
  * 塔身當時是牆，被 `FACADE_UTILITY` 壓成 0.70～0.90 倍再加一條高窗帶；
  * 塔頂走 `PART_GROUND`，而那條的色譜上限只到磚鋪的 `vec3(0.60, 0.58, 0.55)`
  * —— `shade: 0.95` 也只是中灰。兩條路都畫不出白色，而且都不會報錯。
  */
-const TOWER_WHITE = [0.94, 0.95, 0.96] as const;
+const TOWER_WHITE = [1.0, 1.0, 1.0] as const;
 
 /** 池的直徑（公尺）與四個圓心。2×2，中間讓出一條十字通道。 */
 const TANK_DIA = 6.6;
@@ -65,7 +74,7 @@ const massing: CivicVolume[] = [
       x: M(x), z: M(z), w: M(TANK_DIA), d: M(TANK_DIA), y0: 0, y1: TANK_TOP,
     },
     {
-      tag: 'tankWater', part: PART_GROUND, shade: WATER_SHADE, shape: 'cylinder',
+      tag: 'tankWater', part: PART_WATER, shade: WATER_SHADE, shape: 'cylinder',
       x: M(x), z: M(z), w: M(5.8), d: M(5.8), y0: TANK_TOP, y1: M(4.72),
     },
   ]),

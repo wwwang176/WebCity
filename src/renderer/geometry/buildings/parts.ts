@@ -46,6 +46,19 @@ export const PART_GROUND = 0.7;
 export const PART_SHELL = 0.9;
 export const PART_ROOF = 1.0;
 
+/**
+ * 塗裝外殼的明度係數：側面 `BASE`，朝上的面再加 `TOP`。
+ *
+ * **`BASE` 一定要 ≥ 1。** 白色被畫成灰色的機制就是這個係數 —— 牆是
+ * `vBldgColor * 0.70~0.90`、`PART_DETAIL` 是寫死的 0.42~0.58。外殼如果也
+ * 小於 1，`PART_SHELL` 只是把一個灰換成另一個灰，而這一版**第一次寫的
+ * 正是 0.90**：截圖裡的白水塔是米灰色的。
+ *
+ * 頂面再提亮是因為八邊形的殼在等角視角下側面的明暗差本來就小，
+ * 不提亮的話整根讀成一片沒有厚度的板子。
+ */
+export const SHELL_LIFT = { BASE: 1.06, TOP: 0.14 } as const;
+
 /** shader 用來把 R 通道切段的門檻。 */
 export const PART_THRESHOLDS = {
   /** 低於此值且法線朝上者視為屋頂（讓平頂不必特別標記）。 */

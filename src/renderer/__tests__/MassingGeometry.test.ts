@@ -395,6 +395,41 @@ describe('cooling tower volumes', () => {
     expect(b.min.y).toBeCloseTo(0, 6);
     expect(b.max.y).toBeCloseTo(1.2, 6);
   });
+
+  /**
+   * **這一座才是使用者看到的破口。**
+   *
+   * 「發電廠的煙囪好像只畫單面? 會看到破口」—— 第一輪我把它讀成煙囪，
+   * 而煙囪走的是 `CylinderGeometry`，本來就有頂蓋，沒事。真正破的是冷卻塔：
+   * `LatheGeometry` 的輪廓從底走到頂就停了，**上下都沒有蓋**，也就是一根
+   * 開口的管子。建築材質是 `FrontSide`，所以視角一高、看得進管口的時候，
+   * 對面的內壁被背面剔除 —— 看到的是穿過去的背景，塔就變成兩片破掉的殼。
+   *
+   * （真實的冷卻塔頂上確實是開的，所以「補一片平蓋」是錯的答案：那會讓它
+   * 讀成一個筒倉。要的是使用者說的**凹槽** —— 輪廓在頂端折進去再往下，
+   * 那一段的法線跟著朝向軸心，於是俯視看到的是內壁而不是背景。）
+   */
+  it('should close the top with a recess instead of leaving a hole', () => {
+    const geo = assemble([{ ...box, shape: 'cooling' }]);
+    const pos = geo.getAttribute('position');
+    const nrm = geo.getAttribute('normal');
+    let inward = 0;
+    let floor = 0;
+    for (let t = 0; t < pos.count / 3; t++) {
+      let cx = 0, cz = 0, nx = 0, ny = 0, nz = 0;
+      for (let e = 0; e < 3; e++) {
+        const i = t * 3 + e;
+        cx += pos.getX(i) / 3; cz += pos.getZ(i) / 3;
+        nx += nrm.getX(i) / 3; ny += nrm.getY(i) / 3; nz += nrm.getZ(i) / 3;
+      }
+      const r = Math.hypot(cx - box.x, cz - box.z);
+      const radial = r < 1e-9 ? 0 : ((cx - box.x) * nx + (cz - box.z) * nz) / r;
+      if (radial < -0.5) inward++;
+      if (ny > 0.9 && r < box.w / 4) floor++;
+    }
+    expect(inward, '塔口沒有朝內的內壁 —— 俯視會直接看穿').toBeGreaterThan(0);
+    expect(floor, '凹槽沒有底 —— 那還是一個洞').toBeGreaterThan(0);
+  });
 });
 
 /**

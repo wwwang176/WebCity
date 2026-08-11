@@ -3,7 +3,7 @@ import {
   BUILDING_VERT, BUILDING_FRAG, getBuildingMaterial, resetBuildingMaterial,
   sortedFacadeKeys,
 } from '../BuildingMaterial';
-import { PART_THRESHOLDS } from '../geometry/buildings/parts';
+import { PART_THRESHOLDS, SHELL_LIFT } from '../geometry/buildings/parts';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from '../geometry/buildings/propBands';
 import { roofPaletteFor } from '../ColorPalettes';
 import { ZONE_TYPES } from '../geometry/buildings/registry';
@@ -77,6 +77,21 @@ describe('the shader uses the thresholds the parts module defines', () => {
     expect(shell, '外殼沒有照量體自己的顏色畫').toContain('vBldgColor');
     expect(shell, '外殼長了窗戶').not.toContain('winMask');
     expect(shell, '外殼會自己發光 —— 那是 PART_LAMP 的事').not.toContain('emissive');
+  });
+
+  /**
+   * 外殼不准把顏色壓暗。
+   *
+   * 這是同一個 bug 的第二層：`PART_SHELL` 加進來之後白塔**還是**米灰的，
+   * 因為那條分支自己寫了 `vBldgColor * 0.90`。牆是 0.70~0.90、
+   * `PART_DETAIL` 是寫死的 0.42~0.58 —— 係數小於 1 的話這條新分支只是把
+   * 一個灰換成另一個灰，而截圖前沒有任何東西會說出來。
+   */
+  it('should not darken a shell below the colour it was given', () => {
+    expect(SHELL_LIFT.BASE, '外殼的明度係數 < 1 —— 白色還是會畫成灰色')
+      .toBeGreaterThanOrEqual(1);
+    expect(BUILDING_FRAG, 'shader 沒有用 SHELL_LIFT，那是第二份資料')
+      .toContain(`${SHELL_LIFT.BASE} + ${SHELL_LIFT.TOP} * max(n.y, 0.0)`);
   });
 
   it('should branch on the shell tag before it reaches the wall branch', () => {

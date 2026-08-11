@@ -1,5 +1,5 @@
 import {
-  FACADE_UTILITY, PART_ROOF, PART_DETAIL, PART_LAMP, PART_GROUND,
+  FACADE_UTILITY, PART_ROOF, PART_DETAIL, PART_LAMP, PART_WATER,
 } from '../../buildings/parts';
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
@@ -12,15 +12,21 @@ import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types'
  * 辨識特徵：**四座並排的方形曝氣池**、一座圓形沉澱池、控制樓。方池是最強的
  * 那一個 —— 水廠是一排圓的，這裡是一排方的，兩者在等角視角下立刻分得開。
  *
- * 池子走 `PART_GROUND` + `shade`：它們是**水面**，不是牆。
+ * 池子走 `PART_WATER` + `shade`：它們是**水面**，不是牆，也不是鋪面。
  */
 
 const BASIN_TOP = M(2.4);
 const CTRL_TOP = M(6.6);
 const CTRL_ROOF = M(7.0);
 
-/** 池水的明度。比水廠更暗 —— 這裡的水本來就是髒的。 */
-const WATER_SHADE = 0.06;
+/**
+ * 汙水的明度（`PART_WATER` 的 B 通道：0 = 最深、1 = 最淺）。
+ *
+ * 走水的分支而不是地面的：地面的色譜是柏油到磚鋪，全是灰的，所以一池水在
+ * 那條路上只能是一個黑洞。低到 0.12 是刻意的 —— 兩廠並排時，池水的明暗是
+ * 它們唯一不共用的東西。
+ */
+const WATER_SHADE = 0.12;
 /** 池壁厚度（公尺）。水面比池壁內縮這麼多，才看得出「有一圈邊」。 */
 const RIM = 0.5;
 
@@ -37,7 +43,7 @@ const massing: CivicVolume[] = [
       x: M(x), z: M(BASIN_Z), w: M(BASIN_W), d: M(BASIN_D), y0: 0, y1: BASIN_TOP,
     },
     {
-      tag: 'basinWater', part: PART_GROUND, shade: WATER_SHADE,
+      tag: 'basinWater', part: PART_WATER, shade: WATER_SHADE,
       x: M(x), z: M(BASIN_Z),
       w: M(BASIN_W - RIM * 2), d: M(BASIN_D - RIM * 2),
       y0: BASIN_TOP, y1: M(2.52),
@@ -50,7 +56,7 @@ const massing: CivicVolume[] = [
     x: M(-6.0), z: M(5.4), w: M(9.0), d: M(9.0), y0: 0, y1: M(2.8),
   },
   {
-    tag: 'clarifierWater', part: PART_GROUND, shade: WATER_SHADE, shape: 'cylinder',
+    tag: 'clarifierWater', part: PART_WATER, shade: WATER_SHADE, shape: 'cylinder',
     x: M(-6.0), z: M(5.4), w: M(8.0), d: M(8.0), y0: M(2.8), y1: M(2.92),
   },
 

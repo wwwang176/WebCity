@@ -4,7 +4,7 @@ import { waterPlan } from '../water';
 import { garbagePlan } from '../garbage';
 import { sewagePlan } from '../sewage';
 import {
-  FACADE_UTILITY, PART_GROUND, PART_LAMP, PART_ROOF, PART_SHELL,
+  FACADE_UTILITY, PART_GROUND, PART_LAMP, PART_ROOF, PART_SHELL, PART_WATER,
 } from '../../../buildings/parts';
 import { TERRAIN_COLORS } from '../../../../terrainColors';
 import { TerrainType } from '../../../../../core/grid/types';
@@ -71,11 +71,27 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
     expect(base.every(d => !d.lawn), '廠區鋪了草地').toBe(true);
   });
 
+  /**
+   * 水面走水的分支，覆土走地面的分支。
+   *
+   * 兩者標成牆的話 `FACADE_UTILITY` 會在它們身上畫一條高窗帶 —— 那是第一版
+   * 這條測試在守的東西，而它把兩者一起塞進 `PART_GROUND`。
+   *
+   * 截圖之後才看得出那還不夠：地面的色譜是柏油到磚鋪，**全是灰的**，
+   * 所以 `shade: 0.1` 的池水是四個黑洞。`PART_WATER` 就是為這件事加的
+   * （BUG-243），只是當時只用在渡輪碼頭的港池上，而那片水後來拿掉了。
+   *
+   * 一槽水**不是**「自己畫一條河」（BUG-244）：河是地形的，而槽裡的水是
+   * 這座廠自己的東西 —— 它就是這一棟在做的事。
+   */
   it('should keep every water surface and earth mound out of the wall branch', () => {
-    // 水面與覆土標成牆的話，`FACADE_UTILITY` 會在它們身上畫一條高窗帶。
     for (const v of plan.massing) {
-      const isSurface = /Water|mound/.test(v.tag ?? '');
-      if (isSurface) expect(v.part, `${v.tag} 會長出高窗帶`).toBe(PART_GROUND);
+      const tag = v.tag ?? '';
+      if (/Water/.test(tag)) {
+        expect(v.part, `${tag} 是灰的 —— 一池水讀起來像一個黑洞`).toBe(PART_WATER);
+      } else if (/mound/.test(tag)) {
+        expect(v.part, `${tag} 會長出高窗帶`).toBe(PART_GROUND);
+      }
     }
   });
 
@@ -100,10 +116,12 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   });
 
   it('should give every shaded surface an actual shade', () => {
-    // `PART_GROUND` 而沒有 `shade` 的話 B 通道是 0 —— 那是柏油黑，
+    // 沒有 `shade` 的話 B 通道是 0 —— 地面那是柏油黑、水面那是最深的深水，
     // 而不是「我想要的那個顏色」。這個錯完全不會報。
-    for (const v of plan.massing.filter(v => v.part === PART_GROUND)) {
-      expect(v.shade, `${v.tag} 是 PART_GROUND 卻沒有明度`).toBeGreaterThan(0);
+    const shaded = plan.massing.filter(v =>
+      v.part === PART_GROUND || v.part === PART_WATER);
+    for (const v of shaded) {
+      expect(v.shade, `${v.tag} 吃 B 通道卻沒有明度`).toBeGreaterThan(0);
     }
   });
 

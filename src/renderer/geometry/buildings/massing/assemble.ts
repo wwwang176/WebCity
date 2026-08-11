@@ -154,6 +154,20 @@ function coolingTower(v: Volume): THREE.BufferGeometry {
   const widest = Math.max(...profile.map(p => p.x));
   for (const p of profile) p.x = (p.x / widest) * 0.5;
 
+  // 塔口折進去再往下 —— **這一段修的正是使用者說的那個破口。**
+  //
+  // 原本輪廓走到頂就停了，上下都沒有蓋，也就是一根開口的管子。建築材質是
+  // `FrontSide`，所以視角一高、看得進管口的時候，對面的內壁被背面剔除，
+  // 看到的是穿過去的背景 —— 整座塔讀成兩片破掉的殼。（使用者說的是「煙囪」，
+  // 而煙囪走 `CylinderGeometry`、本來就有頂蓋，沒事；破的一直是這兩座。）
+  //
+  // 補一片平蓋是錯的答案：真實的冷卻塔頂上就是開的，蓋起來它會變成筒倉。
+  // 折回去的這一段法線朝向軸心，所以俯視看到的是**內壁**，而那正是凹槽。
+  const lip = profile[profile.length - 1]!.x;
+  profile.push(new THREE.Vector2(lip * 0.86, 1));
+  profile.push(new THREE.Vector2(lip * 0.86, 0.94));
+  profile.push(new THREE.Vector2(0, 0.94));
+
   return lathe(profile, v);
 }
 

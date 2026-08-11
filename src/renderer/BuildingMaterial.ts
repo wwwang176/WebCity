@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import {
-  PART_THRESHOLDS, ZONE_CAT,
+  PART_THRESHOLDS, SHELL_LIFT, ZONE_CAT,
   FACADE_CIVIC, FACADE_UTILITY, FACADE_TRANSIT, FACADE_GREEN,
 } from './geometry/buildings/parts';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from './geometry/buildings/propBands';
@@ -894,9 +894,10 @@ void main() {
     // 塗裝過的殼。這裡**不加任何花紋**：一支煙囪、一座水塔的說服力來自
     // 它的剪影與那一片乾淨的顏色，多畫一條線都是雜訊。
     //
-    // 朝上的面亮一點：八邊形的殼在等角視角下，側面的明暗差本來就小，
-    // 頂面不提亮的話整根讀成一片沒有厚度的板子。
-    float lift = 0.90 + 0.10 * max(n.y, 0.0);
+    // 係數在 parts.ts 的 SHELL_LIFT，而且**必須 ≥ 1** —— 小於 1 的話這條
+    // 分支只是把一個灰換成另一個灰，白色照樣畫成米灰（第一版寫 0.90，
+    // 截圖抓到的）。注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+    float lift = ${glslFloat(SHELL_LIFT.BASE)} + ${glslFloat(SHELL_LIFT.TOP)} * max(n.y, 0.0);
     color = vBldgColor * lift * lighting;
   } else if (isWater) {
     // 深水 → 淺水由 B 通道決定（河 0.0、港池 0.4）。波光是兩道不同頻率的
