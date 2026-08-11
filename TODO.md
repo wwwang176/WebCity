@@ -1618,10 +1618,15 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
       矮物件改成「基礎 + 斜率」—— 純逐格的模型在 1×1 的公園上不成立，
       它整塊基地就是矮物件。
 - [ ] **批 6 — 遊戲整合。** 目前十九種只在 showcase 裡看得到；`BuildingRenderer`
-      仍走舊的手寫 `MeshLambertMaterial` 路徑。已知的迴歸：
-      `HighlightManager.applyTintToGroup` 對 `ShaderMaterial` 兩個分支都不中
-      —— 高亮會靜默失效，而且 clone 出來的材質收不到 `uTime`，被高亮過的
-      建築窗戶會凍結在某個亮燈狀態。
+      仍走舊的手寫 `MeshLambertMaterial` 路徑。兩個已知的迴歸：
+  - [ ] `HighlightManager.applyTintToGroup` 對 `ShaderMaterial` 兩個分支都不中
+        —— 高亮會靜默失效，而且 clone 出來的材質收不到 `uTime`，被高亮過的
+        建築窗戶會凍結在某個亮燈狀態。
+  - [ ] **機場的裝飾幾何與 `AirplaneAnimator` 的路徑表對不上（BUG-239）。**
+        小型機場的動畫跑道在 z = +1.20（前側），批 5 的跑道帶在 z ∈ [−2, −0.83]
+        （後側）—— 接上去的那一刻飛機會沿著航廈屋頂降落。大型機場的動畫端還有
+        兩條平行跑道，裝飾幾何只有一條。另外靜態停放的飛機不在動畫端的
+        `occupiedGates` 裡，會被動畫飛機停在身上。三條修法見 BUGS.md。
 
 順手記下的小事（不在計畫裡，未排）：
 
