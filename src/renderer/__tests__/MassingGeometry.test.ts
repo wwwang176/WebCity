@@ -397,6 +397,96 @@ describe('cooling tower volumes', () => {
   });
 });
 
+/**
+ * 煙囪的**口**。
+ *
+ * 使用者：「發電廠的煙囪好像只畫單面? 會看到破口 是不是可以做凹槽」。
+ * 圓柱的頂是一片實心的圓盤 —— 從等角視角俯視，一支 25 m 的煙囪最顯眼的
+ * 就是那一片平蓋，而真的煙囪頂上是一個洞。
+ *
+ * 凹槽做不出來的原因是形狀庫裡全是**實心凸體**：兩個同心圓柱疊起來，
+ * 外筒的頂蓋會把內筒整個蓋住；而把外筒改成無蓋的管子也沒用 —— 建築材質是
+ * `FrontSide`，管子的內壁法線朝外，俯視時會被背面剔除，看到的是「穿過去」。
+ *
+ * 所以這個形狀的實體是一件事：**凹槽的內壁法線要朝軸心**。旋轉體
+ * （`LatheGeometry`）給得出來，因為輪廓折回去的那一段會把法線一起帶過去。
+ */
+describe('stack volumes', () => {
+  const box: Volume = { x: 0.2, z: -0.1, w: 0.4, d: 0.4, y0: 0, y1: 2.0 };
+
+  /** 逐三角形的重心、法線，以及法線的徑向分量（正 = 朝外，負 = 朝軸心）。 */
+  function faces(geo: THREE.BufferGeometry) {
+    const pos = geo.getAttribute('position');
+    const nrm = geo.getAttribute('normal');
+    const out: Array<{ y: number; r: number; radial: number; ny: number }> = [];
+    for (let t = 0; t < pos.count / 3; t++) {
+      let cx = 0, cy = 0, cz = 0, nx = 0, ny = 0, nz = 0;
+      for (let e = 0; e < 3; e++) {
+        const i = t * 3 + e;
+        cx += pos.getX(i) / 3; cy += pos.getY(i) / 3; cz += pos.getZ(i) / 3;
+        nx += nrm.getX(i) / 3; ny += nrm.getY(i) / 3; nz += nrm.getZ(i) / 3;
+      }
+      const dx = cx - box.x;
+      const dz = cz - box.z;
+      const r = Math.hypot(dx, dz);
+      out.push({ y: cy, r, radial: r < 1e-9 ? 0 : (dx * nx + dz * nz) / r, ny });
+    }
+    return out;
+  }
+
+  it('should hollow out a mouth you can see into', () => {
+    const geo = assemble([{ ...box, shape: 'stack' }]);
+    const all = faces(geo);
+
+    // 凹槽的內壁：法線朝軸心。少了它，「凹槽」只是頂蓋上畫了一圈深色。
+    const inner = all.filter(f => f.radial < -0.5);
+    expect(inner.length, '煙囪沒有朝內的面 —— 那是一片實心的頂蓋')
+      .toBeGreaterThan(0);
+
+    // 而且它要在**上面**。整支塔身都朝內的話那是把煙囪翻過來了。
+    const lowest = Math.min(...inner.map(f => f.y));
+    expect((lowest - box.y0) / (box.y1 - box.y0), '凹槽從塔身中段就開始了')
+      .toBeGreaterThan(0.7);
+
+    // 槽底要在管口之下 —— 齊平的話俯視看到的仍然是一片平的。
+    const floor = all.filter(f => f.ny > 0.9 && f.r < box.w / 4);
+    expect(floor.length, '凹槽沒有底').toBeGreaterThan(0);
+    const depth = box.y1 - Math.max(...floor.map(f => f.y));
+    expect(depth / (box.y1 - box.y0), '凹槽太淺，俯視看不出是個洞')
+      .toBeGreaterThan(0.05);
+  });
+
+  it('should cap the shaft with a ring, not a disc', () => {
+    const geo = assemble([{ ...box, shape: 'stack' }]);
+    const top = faces(geo).filter(f =>
+      f.ny > 0.9 && Math.abs(f.y - box.y1) < 1e-6);
+    expect(top.length, '管口沒有環').toBeGreaterThan(0);
+    // 環的內緣離軸心要有一段距離 —— 是 0 的話那就是一片圓盤。
+    const inner = Math.min(...top.map(f => f.r));
+    expect(inner / (box.w / 2), '管口是實心的圓盤').toBeGreaterThan(0.2);
+  });
+
+  it('should fill the box it declared', () => {
+    // 與其他形狀同一條規矩：量體算出來的邊界就是幾何真正佔的地方，
+    // 否則 `maxAbsOf` 擋不住越界。
+    const geo = assemble([{ ...box, shape: 'stack' }]);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect(b.max.x - b.min.x).toBeCloseTo(0.4, 6);
+    expect((b.max.x + b.min.x) / 2).toBeCloseTo(box.x, 6);
+    expect((b.max.z + b.min.z) / 2).toBeCloseTo(box.z, 6);
+    expect(b.min.y).toBeCloseTo(0, 6);
+    expect(b.max.y).toBeCloseTo(2.0, 6);
+  });
+
+  it('should merge with the other shapes', () => {
+    expect(() => assemble([
+      { ...box, shape: 'stack' },
+      { x: 0, z: 0, w: 0.2, d: 0.2, y0: 0, y1: 0.5 },
+    ])).not.toThrow();
+  });
+});
+
 describe('massing variety', () => {
   it('should give every bucket eight distinct silhouettes', () => {
     // 這是本階段的主要條件。兩個變體長一樣就等於少一個變體。

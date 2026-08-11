@@ -1,5 +1,5 @@
 import {
-  FACADE_UTILITY, PART_ROOF, PART_DETAIL, PART_LAMP, PART_GROUND,
+  FACADE_UTILITY, PART_ROOF, PART_DETAIL, PART_LAMP, PART_GROUND, PART_SHELL,
 } from '../../buildings/parts';
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
@@ -9,8 +9,9 @@ import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types'
 /**
  * 抽水廠 —— 2×2 格 = 24 × 24 m。
  *
- * 辨識特徵：三座圓形沉澱池（品字形）、一支**白色**的立式儲水塔、抽水機房。
- * 圓槽是最強的那一個 —— 電廠是冷卻塔、汙水廠是方池，只有這裡是一排圓的。
+ * 辨識特徵：**四座圓形沉澱池**（2×2，中間留出十字通道）、一支白色的立式
+ * 儲水塔、橫在南緣的抽水機房。圓槽是最強的那一個 —— 電廠是冷卻塔、
+ * 汙水廠是方池，只有這裡是一片圓的。
  *
  * **這一格裡沒有水。** 中間試過一版把河畫進基地（北端一條水面貼片加護岸、
  * 取水口、攔汙柵），使用者：「抽水站是建立在陸地上的，所以不需要再抽水站
@@ -18,6 +19,18 @@ import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types'
  * 畫的（`TERRAIN_COLORS[WATER]`），這一格自己畫一條，就是兩份各說各話的水。
  *
  * 河還是留在它的顏色裡：廠區的主色取自地形水面的色相（見 `colors.ts`）。
+ *
+ * 河拿掉之後北端整條空了出來，使用者：「抽水站的布局可以改一下，現在空間
+ * 變大了」。原本三座池全擠在西北、機房縮在東南，是水岸那一版的殘留 ——
+ * 東北角一大片沒有東西。現在改成正交的配置：
+ *
+ * ```
+ *   z−  ○ ○      四座池，2×2，中間十字通道
+ *       ○ ○
+ *       ────────
+ *       機房 ▏塔   南緣一整條
+ *   z+  ─── 前庭 ───
+ * ```
  */
 
 const TANK_TOP = M(4.6);
@@ -27,128 +40,148 @@ const TOWER_TOP = M(15.0);
 
 /** 池水的明度。深色 —— 池壁（`PART_DETAIL`）才有東西可以對比。 */
 const WATER_SHADE = 0.1;
-/** 儲水塔的白。乾淨的水 —— 它是這一格唯一不吃廠區色的量體。 */
+/**
+ * 儲水塔的白。乾淨的水 —— 它是這一格唯一不吃廠區色的量體。
+ *
+ * 塔身與塔頂**都**走 `PART_SHELL`。使用者要了兩次白色，兩次都拿到灰的：
+ * 塔身當時是牆，被 `FACADE_UTILITY` 壓成 0.70～0.90 倍再加一條高窗帶；
+ * 塔頂走 `PART_GROUND`，而那條的色譜上限只到磚鋪的 `vec3(0.60, 0.58, 0.55)`
+ * —— `shade: 0.95` 也只是中灰。兩條路都畫不出白色，而且都不會報錯。
+ */
 const TOWER_WHITE = [0.94, 0.95, 0.96] as const;
 
-/** 三座池的圓心。品字形，不是排成一列 —— 一列讀起來是三個一樣的東西。 */
-const TANKS = [[-7.8, -5.4], [0.1, -5.4], [-7.8, 2.2]] as const;
+/** 池的直徑（公尺）與四個圓心。2×2，中間讓出一條十字通道。 */
+const TANK_DIA = 6.6;
+const TANKS = [
+  [-4.0, -8.0], [4.0, -8.0],
+  [-4.0, -0.8], [4.0, -0.8],
+] as const;
 
 const massing: CivicVolume[] = [
   ...TANKS.flatMap(([x, z]): CivicVolume[] => [
     {
       // 池壁。金屬灰的環 —— 它與水面的明度差就是「這是一個池子」。
       tag: 'tankWall', part: PART_DETAIL, shape: 'cylinder',
-      x: M(x), z: M(z), w: M(7.4), d: M(7.4), y0: 0, y1: TANK_TOP,
+      x: M(x), z: M(z), w: M(TANK_DIA), d: M(TANK_DIA), y0: 0, y1: TANK_TOP,
     },
     {
       tag: 'tankWater', part: PART_GROUND, shade: WATER_SHADE, shape: 'cylinder',
-      x: M(x), z: M(z), w: M(6.6), d: M(6.6), y0: TANK_TOP, y1: M(4.72),
+      x: M(x), z: M(z), w: M(5.8), d: M(5.8), y0: TANK_TOP, y1: M(4.72),
     },
   ]),
 
-  // ── 抽水機房。x [4, 11]、z [−1, 8] ──────────────────────────
+  // ── 抽水機房。南緣的西半，x [−10.6, 0.6]、z [3.4, 8.0] ────────
   {
     tag: 'pumpHouse',
-    x: M(7.5), z: M(3.5), w: M(7.0), d: M(9.0), y0: 0, y1: HOUSE_TOP,
+    x: M(-5.0), z: M(5.7), w: M(11.2), d: M(4.6), y0: 0, y1: HOUSE_TOP,
   },
   {
     tag: 'pumpRoof', part: PART_ROOF,
-    x: M(7.5), z: M(3.5), w: M(7.6), d: M(9.6), y0: HOUSE_TOP, y1: HOUSE_ROOF,
+    x: M(-5.0), z: M(5.7), w: M(11.8), d: M(5.2), y0: HOUSE_TOP, y1: HOUSE_ROOF,
   },
 
-  // ── 立式儲水塔。廠區裡唯一有高度的東西。 ────────────────────
-  // 站在三座池與機房之間僅存的那塊空地上 —— 塔的圓與池的圓不得互相插入，
-  // 那會是看不見的內部面。
-  // 塔身與塔頂都是**白的**。使用者：「水塔應該是白色系，看起來比較乾淨」。
-  // 塔身用逐量體的顏色覆寫（牆的分支讀 `aBldgColor`）；塔頂不能走
-  // `PART_ROOF` —— 那條吃的是公用設施共用的屋頂色票（鍍鋅、舊鍍鋅、鏽紅），
-  // 一頂鏽紅的蓋子扣在白塔上會變成整座廠區最顯眼的東西。
+  // ── 立式儲水塔。廠區裡唯一有高度的東西，站在機房旁邊。 ────────
+  // 塔身與塔頂都是白的，而且都走 `PART_SHELL` —— 見 `TOWER_WHITE`。
   {
-    tag: 'tower', shape: 'cylinder', color: TOWER_WHITE,
-    x: M(1.0), z: M(6.4), w: M(4.6), d: M(4.6), y0: 0, y1: TOWER_TOP,
+    tag: 'tower', part: PART_SHELL, color: TOWER_WHITE, shape: 'cylinder',
+    x: M(7.4), z: M(5.7), w: M(5.0), d: M(5.0), y0: 0, y1: TOWER_TOP,
   },
   {
-    tag: 'towerCap', part: PART_GROUND, shade: 0.95, shape: 'cylinder',
-    x: M(1.0), z: M(6.4), w: M(5.0), d: M(5.0), y0: TOWER_TOP, y1: M(15.6),
+    tag: 'towerCap', part: PART_SHELL, color: TOWER_WHITE, shape: 'cylinder',
+    x: M(7.4), z: M(5.7), w: M(5.4), d: M(5.4), y0: TOWER_TOP, y1: M(15.6),
   },
   {
     tag: 'beacon', part: PART_LAMP, shape: 'cylinder',
-    x: M(1.0), z: M(6.4), w: M(0.8), d: M(0.8), y0: M(15.6), y1: M(16.2),
+    x: M(7.4), z: M(5.7), w: M(0.8), d: M(0.8), y0: M(15.6), y1: M(16.2),
   },
 ];
 
 const decals: CivicDecal[] = [
-  // 廠區混凝土：z [−12, 9]
-  { tag: 'yard', x: 0, z: M(-1.5), w: M(24.0), d: M(21.0), shade: 0.55 },
-  // 大門前的柏油：z [9, 12]
-  { x: 0, z: M(10.5), w: M(24.0), d: M(3.0), shade: 0.0 },
+  // 廠區混凝土：z [−12, 8.4]
+  { tag: 'yard', x: 0, z: M(-1.8), w: M(24.0), d: M(20.4), shade: 0.55 },
+  // 大門前的柏油：z [8.4, 12]
+  { x: 0, z: M(10.2), w: M(24.0), d: M(3.6), shade: 0.0 },
+  // 十字通道。池與池之間那兩條縫要看得出是**通道**而不是縫。
+  //
+  // 走標線層而不是底層：底層彼此不得重疊（它們同高，會 z-fighting），
+  // 而這兩條本來就是畫在廠區混凝土**上**的動線 —— 真實廠區的走道就是漆的。
+  { x: 0, z: M(-4.0), w: M(1.4), d: M(15.6), shade: 0.3, layer: 'mark' },
+  { x: 0, z: M(-4.4), w: M(22.0), d: M(1.4), shade: 0.3, layer: 'mark' },
 ];
 
 // 大門的車道標線。
 for (let i = 0; i < 3; i++) {
   decals.push({
-    x: M(-8.0 + i * 8.0), z: M(10.5), w: M(0.15), d: M(2.6),
+    x: M(-8.0 + i * 8.0), z: M(10.2), w: M(0.15), d: M(2.6),
     shade: 1.0, layer: 'mark',
   });
 }
 
-/** 池與池之間的管線走道。`geometry/props` 的 `pipeRack` 太矮，這是架高的。 */
+/**
+ * 池與池之間的管線走道。`geometry/props` 的 `pipeRack` 太矮，這是架高的。
+ *
+ * 四座池排成 2×2 之後這件事才成立：走道要**跨過通道落在對面的池緣上**，
+ * 而三座品字形的時候沒有兩座是正對的。
+ */
 const props: CivicVolume[] = [
-  {
+  ...([-8.0, -0.8] as const).map((z): CivicVolume => ({
     tag: 'walkway', part: PART_DETAIL,
-    x: M(-3.85), z: M(-5.4), w: M(0.7), d: M(0.5), y0: M(4.4), y1: M(4.7),
-  },
-  {
+    x: 0, z: M(z), w: M(2.0), d: M(0.5), y0: M(4.4), y1: M(4.7),
+  })),
+  ...([-4.0, 4.0] as const).map((x): CivicVolume => ({
     tag: 'walkway', part: PART_DETAIL,
-    x: M(-7.8), z: M(-1.6), w: M(0.5), d: M(0.6), y0: M(4.4), y1: M(4.7),
-  },
+    x: M(x), z: M(-4.4), w: M(0.5), d: M(2.0), y0: M(4.4), y1: M(4.7),
+  })),
 ];
 
 const overhead: CivicVolume[] = [
+  // 機房大門的雨庇。
   {
     tag: 'canopy',
-    x: M(3.8), z: M(3.5), w: M(1.6), d: M(4.0), y0: M(3.4), y1: M(3.8),
+    x: M(-5.0), z: M(8.6), w: M(4.0), d: M(1.6), y0: M(3.4), y1: M(3.8),
   },
 ];
 
 const fixtures: PropSpec[] = [
-  { kind: 'fence', x: 0, z: M(-11.4), axis: 'z', length: M(22.0) },
-  { kind: 'fence', x: M(-11.4), z: 0, axis: 'x', length: M(22.0) },
-  { kind: 'fence', x: M(11.4), z: 0, axis: 'x', length: M(22.0) },
+  { kind: 'fence', x: 0, z: M(-11.5), axis: 'z', length: M(22.0) },
+  { kind: 'fence', x: M(-11.5), z: 0, axis: 'x', length: M(22.0) },
+  { kind: 'fence', x: M(11.5), z: 0, axis: 'x', length: M(22.0) },
 
-  // 沿著三座池之間那條縫（x ∈ [−4.1, −3.6] 之外）—— 原本從 −4.6 起算，
-  // 而那已經在西側那座池的池壁裡。
-  { kind: 'pipeRack', x: M(-1.8), z: M(1.4), axis: 'z', span: M(3.6) },
-  // 只有一道管架。改成水岸配置之後，三座池 + 機房 + 塔 + 取水口把地填滿了，
-  // 第二道無論擺在哪裡都會插進某個量體 —— 硬塞的下場就是它從池壁裡長出來。
-  { kind: 'drum', x: M(-2.0), z: M(7.6), radius: M(0.4) },
-  { kind: 'drum', x: M(-1.0), z: M(7.6), radius: M(0.4) },
-  { kind: 'gasBottles', x: M(-2.0), z: M(9.4), axis: 'z', radius: M(0.24) },
+  // 工業雜項全部排在池群之外那三條帶上：中央通道、東側、西側。
+  // 硬塞進池與池之間的下場前一版示範過 —— 管架會從池壁裡長出來。
+  // `axis: 'x'` 才是沿 z 展開的那一個（見 `props.ts` 的約定）—— 寫成
+  // `'z'` 的話管架會沿 x 攤開四公尺，直接長進西邊那座池的池壁裡。
+  { kind: 'pipeRack', x: 0, z: M(-8.0), axis: 'x', span: M(4.0) },
+  { kind: 'pipeRack', x: M(10.2), z: M(-2.0), axis: 'x', span: M(4.0) },
+  { kind: 'drum', x: M(10.2), z: M(1.4), radius: M(0.42) },
+  { kind: 'drum', x: M(10.2), z: M(2.6), radius: M(0.42) },
+  { kind: 'gasBottles', x: M(-9.6), z: M(-1.0), axis: 'z', radius: M(0.24) },
 
-  { kind: 'lamp', x: M(-10.6), z: M(-5.4), heightM: 5.5 },
-  { kind: 'lamp', x: M(10.6), z: M(-6.2), heightM: 5.5 },
-  { kind: 'lamp', x: M(10.6), z: M(7.4), heightM: 5.5 },
+  { kind: 'lamp', x: M(-9.6), z: M(-8.0), heightM: 5.5 },
+  { kind: 'lamp', x: M(9.8), z: M(-8.0), heightM: 5.5 },
+  { kind: 'lamp', x: M(11.0), z: M(6.0), heightM: 5.5 },
 
-  { kind: 'hedge', x: M(-6.0), z: M(11.4), axis: 'z', length: M(9.0), depth: M(0.6), heightM: 1.2 },
-  { kind: 'tree', x: M(-10.4), z: M(9.4), heightM: 6.0, crownRadius: M(1.0) },
-  { kind: 'tree', x: M(8.4), z: M(9.4), heightM: 5.4, crownRadius: M(0.9) },
-  { kind: 'shrub', x: M(-2.6), z: M(9.4), radius: M(0.8) },
+  { kind: 'hedge', x: M(-6.0), z: M(11.5), axis: 'z', length: M(9.0), depth: M(0.5), heightM: 1.2 },
+  { kind: 'tree', x: M(-10.6), z: M(10.2), heightM: 6.0, crownRadius: M(1.0) },
+  { kind: 'tree', x: M(9.4), z: M(10.2), heightM: 5.4, crownRadius: M(0.9) },
+  { kind: 'shrub', x: M(-1.0), z: M(10.6), radius: M(0.8) },
 
-  { kind: 'signPost', x: M(8.4), z: M(11.0), axis: 'z' },
-  { kind: 'hydrant', x: M(10.8), z: M(4.0) },
-  { kind: 'bollard', x: M(-2.0), z: M(11.2), radius: M(0.12) },
-  { kind: 'bollard', x: M(7.0), z: M(11.2), radius: M(0.12) },
+  { kind: 'signPost', x: M(2.6), z: M(11.2), axis: 'z' },
+  { kind: 'hydrant', x: M(11.0), z: M(2.0) },
+  { kind: 'bollard', x: M(1.0), z: M(11.4), radius: M(0.12) },
+  { kind: 'bollard', x: M(4.4), z: M(11.4), radius: M(0.12) },
 ];
 
 /**
  * 大門前的兩台廠車。
  *
- * 原本停在機房那一側的「柏油車道」上 —— 而那條車道與機房是同一塊地，
- * 卡車有一半在牆裡面（`CivicPlans` 那條「不准卡進任何東西」抓到的）。
+ * 停在前庭那一條柏油上 —— 廠區其餘的地全被四座池、機房與塔佔滿了，
+ * 而原本停在「機房那一側的車道」上的版本，卡車有一半在牆裡面
+ * （`CivicPlans` 那條「不准卡進任何東西」抓到的）。
  */
 const vehicles: CivicVehicle[] = [
-  { kind: 'truck', x: M(-6.6), z: M(10.0) },
-  { kind: 'van', x: M(2.4), z: M(10.0) },
+  { kind: 'truck', x: M(-6.4), z: M(9.9) },
+  { kind: 'van', x: M(6.0), z: M(9.9) },
 ];
 
 const SEED = [0.55, 0.72, 0.3] as const;

@@ -53,6 +53,40 @@ describe('the shader uses the thresholds the parts module defines', () => {
     expect(detailAt).toBeLessThan(wallAt);
   });
 
+  /**
+   * 指定顏色的量體要真的拿到那個顏色。
+   *
+   * 使用者要了兩次白色的水塔，兩次都拿到灰的。原因不在資料 —— 塔身一直
+   * 帶著 `color: [0.94, 0.95, 0.96]`，而測試也一直在驗那個陣列。問題是
+   * **shader 沒有一個照著它畫的分支**：
+   *
+   * - 牆會被 `FACADE_UTILITY` 壓成 `vBldgColor * 0.70~0.90`，再加一條高窗帶
+   *   與一排紅色警示燈；
+   * - `PART_DETAIL` 直接寫死一片金屬灰（`vec3(m, m*1.02, m*1.06)`），
+   *   `vBldgColor` 連讀都沒讀 —— 在它上面指定顏色等於沒指定；
+   * - `PART_GROUND` 的色譜上限是 `vec3(0.60, 0.58, 0.55)` 的磚鋪，
+   *   `shade: 1.0` 也只到中灰。
+   *
+   * 三條路都到不了白色，而且**沒有一條會報錯**。`PART_SHELL` 是缺的那一條：
+   * 塗裝過的殼（水塔、煙囪、儲槽），照量體自己的顏色畫，不長窗也不發光。
+   */
+  it('should paint a shell in the colour the volume asked for', () => {
+    const start = BUILDING_FRAG.indexOf('} else if (isShell)');
+    expect(start, 'shader 沒有外殼分支').toBeGreaterThan(-1);
+    const shell = BUILDING_FRAG.slice(start, BUILDING_FRAG.indexOf('} else if', start + 10));
+    expect(shell, '外殼沒有照量體自己的顏色畫').toContain('vBldgColor');
+    expect(shell, '外殼長了窗戶').not.toContain('winMask');
+    expect(shell, '外殼會自己發光 —— 那是 PART_LAMP 的事').not.toContain('emissive');
+  });
+
+  it('should branch on the shell tag before it reaches the wall branch', () => {
+    // 落到牆的分支就是高窗帶加警示燈 —— 一支長了窗戶的煙囪。
+    const shellAt = BUILDING_FRAG.indexOf('isShell');
+    const wallAt = BUILDING_FRAG.indexOf('=== WALL');
+    expect(shellAt).toBeGreaterThan(-1);
+    expect(shellAt).toBeLessThan(wallAt);
+  });
+
   it('should give low-density residential a window grid, not just siding lines', () => {
     // 這個分支原本只有水平壁板線，所以近看沒有任何細節可看。
     const branch = BUILDING_FRAG.slice(

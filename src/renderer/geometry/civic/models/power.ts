@@ -1,5 +1,5 @@
 import {
-  FACADE_UTILITY, PART_ROOF, PART_DETAIL, PART_LAMP,
+  FACADE_UTILITY, PART_ROOF, PART_DETAIL, PART_LAMP, PART_SHELL,
 } from '../../buildings/parts';
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
@@ -32,17 +32,25 @@ const STACK_TOP = M(25.0);
 const COOL_TOP = M(17.0);
 const COOL_DIA = 9.6;
 
+/**
+ * 清水混凝土。冷卻塔與煙囪的殼。
+ *
+ * 它們原本走 `PART_DETAIL` —— 窗戶是沒了，但那條分支寫死一片偏藍的金屬灰
+ * （m ≈ 0.42–0.58），`vBldgColor` 連讀都沒讀。於是這一棟唯一的辨識剪影是
+ * 深灰的，而冷卻塔在現實裡是很亮的一坨混凝土 —— 它遠遠就看得到，靠的正是
+ * 那個亮度。`PART_SHELL` 是照著這個顏色畫的那一條路。
+ */
+const CONCRETE = [0.80, 0.79, 0.76] as const;
+
 const massing: CivicVolume[] = [
   // ── 兩座冷卻塔。這一棟的剪影就是它們。 ──────────────────────
   // 一大一小：等大的兩座讀起來是複製貼上，而真實廠區的機組本來就分期蓋。
-  // 兩座都走 `PART_DETAIL`，理由與煙囪同一個：冷卻塔是清水混凝土的殼，
-  // 上面一條高窗帶會讓它讀起來像一棟很奇怪的樓。
   {
-    tag: 'coolingTower', part: PART_DETAIL, shape: 'cooling',
+    tag: 'coolingTower', part: PART_SHELL, color: CONCRETE, shape: 'cooling',
     x: M(-6.0), z: M(-6.0), w: M(COOL_DIA), d: M(COOL_DIA), y0: 0, y1: COOL_TOP,
   },
   {
-    tag: 'coolingTower', part: PART_DETAIL, shape: 'cooling',
+    tag: 'coolingTower', part: PART_SHELL, color: CONCRETE, shape: 'cooling',
     x: M(4.6), z: M(-6.6), w: M(8.4), d: M(8.4), y0: 0, y1: M(14.6),
   },
 
@@ -60,15 +68,20 @@ const massing: CivicVolume[] = [
   // ── 煙囪。冷卻塔冒的是水氣，燒的那一支還是要有。 ──────────────
   // 使用者：「電廠的煙囪我覺得不需要窗戶，就單純煙囪就好」。它原本沒有標
   // `part`，也就是**牆** —— 而 `FACADE_UTILITY` 的牆會在上面畫一條高窗帶。
-  // `PART_DETAIL` 正是為這種東西存在的（水塔、管架、煙囪），它不畫窗也不發光。
+  //
+  // 然後：「煙囪好像只畫單面? 會看到破口 是不是可以做凹槽」。圓柱的頂是一片
+  // 實心的圓盤，而 25 m 高的東西在等角視角下最先看到的就是它的頂。
+  // `shape: 'stack'` 把頂做成一圈環加一個凹下去的管口 —— 見 `assemble.ts`
+  // 的 `chimney`：凹槽的內壁法線朝軸心，所以俯視看得進去而不是穿過去。
   {
-    tag: 'stack', part: PART_DETAIL, shape: 'cylinder',
+    tag: 'stack', part: PART_SHELL, color: CONCRETE, shape: 'stack',
     x: M(10.0), z: M(-0.6), w: M(3.0), d: M(3.0), y0: 0, y1: STACK_TOP,
   },
   // 航警燈。夜裡的電廠就是天上那顆紅點 —— 而它本來就該在那裡。
+  // 站在管口的**環**上（x 偏 1.05 m），不是懸在洞的正中央。
   {
     tag: 'beacon', part: PART_LAMP, shape: 'cylinder',
-    x: M(10.0), z: M(-0.6), w: M(1.0), d: M(1.0), y0: STACK_TOP, y1: M(25.6),
+    x: M(11.05), z: M(-0.6), w: M(0.5), d: M(0.5), y0: STACK_TOP, y1: M(25.6),
   },
 ];
 

@@ -7,7 +7,6 @@ import { topOf } from '../../../buildings/massing/volume';
 import { civicColorOf } from '../../colors';
 import { CIVIC_INSET } from '../../types';
 import { propExtent } from '../../../props';
-import { assembleVehicles } from '../../assemble';
 import { TRACK_WIDTH } from '../../../../TrackRenderer';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
 import type { CivicPlan } from '../../types';
@@ -284,28 +283,39 @@ describe('渡輪碼頭', () => {
   const EDGE = 0.5;   // 佔地前緣（格）＝ 岸線
 
   /**
-   * 碼頭邊要有一艘船。
+   * 泊位**空著**。
    *
-   * 使用者：「渡船口的形象要改一下，看不出來是渡船」。這是最直接的一條 ——
-   * 消防局停消防車、機場停飛機，碼頭當然停船，而它用的是航線上跑的同一份
-   * 幾何（`buildFerryGeometry`）。
+   * 使用者：「渡船口船移除，然後重新布局一下」。這與公車站是同一條理由：
+   * 城市裡的渡輪是 `FerryAnimator` 開著的真船，會照航線靠泊 —— 碼頭邊再擺
+   * 一艘不會動的，就變成一艘永遠佔著泊位的船擋住真的那艘。
    *
-   * 船要靠在**佔地的最前緣**：`isShorePosition` 保證那條線的另一邊是水，
-   * 所以停在那裡的船讀起來是靠在岸邊。停在中間的話它是廣場上的一個展示品。
+   * 而且水在**隔壁那一格**（`isShorePosition`：這一格是陸地，四鄰有一格是
+   * 水），所以靜態的船只能停在佔地前緣的鋪面上 —— 在展示區裡它讀起來是
+   * 一艘擱淺的船。
+   *
+   * 船拿掉之後，「這裡是碼頭」要由碼頭自己講：甲板、雨棚、跳板、繫纜樁、
+   * 標誌燈。下面那幾條就是在守這件事。
    */
-  it('should moor a ferry against the shoreline edge', () => {
-    const boat = ferryDockPlan.vehicles.find(v => v.kind === 'ferry');
-    expect(boat, '碼頭沒有船').toBeTruthy();
-    const geo = assembleVehicles([boat!], ferryDockPlan.footprint);
-    geo.computeBoundingBox();
-    const b = geo.boundingBox!;
-    const gap = m(EDGE - b.max.z);
-    expect(gap, `船離岸線 ${gap.toFixed(1)} m —— 那是停在廣場上`).toBeLessThan(1.0);
-    expect(b.max.z, '船開出佔地了').toBeLessThanOrEqual(EDGE);
-    // 而且要在甲板**外面** —— 壓在甲板上的是一艘擱淺的船。
-    expect(b.min.z, '船壓在碼頭甲板上').toBeGreaterThanOrEqual(quay.z + quay.d / 2);
-    // 一艘看得出是船的船。9.6 m 的船身在 12 m 的格子裡佔掉大半，那是刻意的。
-    expect(m(b.max.x - b.min.x), '船太小，讀不出是渡輪').toBeGreaterThan(7);
+  it('should leave the berth for the ferries that actually sail', () => {
+    expect(ferryDockPlan.vehicles, '泊位上停了一艘不會動的船').toEqual([]);
+  });
+
+  it('should shelter the berth with a canopy on posts', () => {
+    // 空的甲板是一塊鋪面。雨棚是「旅客在這裡等船」的訊號 —— 它撐起了
+    // 船拿掉之後這一格最大的一塊空白。
+    const canopy = ferryDockPlan.overhead.find(v => v.tag === 'berthCanopy')!;
+    const posts = ferryDockPlan.props.filter(v => v.tag === 'canopyPost');
+    expect(canopy, '泊位沒有雨棚').toBeTruthy();
+    expect(posts.length, '雨棚沒有柱子').toBeGreaterThanOrEqual(4);
+    for (const p of posts) {
+      expect(p.y0, '柱子沒有站在甲板上').toBeCloseTo(quay.y1, 9);
+      expect(p.y1, '柱子沒有頂到雨棚').toBeCloseTo(canopy.y0, 9);
+      // 而且要**站在甲板上** —— 懸在甲板外的柱子是插在水裡的。
+      expect(Math.abs(p.x), `柱子 x=${p.x} 站到甲板外了`)
+        .toBeLessThanOrEqual(quay.w / 2);
+      expect(Math.abs(p.z - quay.z), `柱子 z=${p.z} 站到甲板外了`)
+        .toBeLessThanOrEqual(quay.d / 2);
+    }
   });
 
   /**
@@ -352,10 +362,14 @@ describe('渡輪碼頭', () => {
   });
 
   it('should give the ferry something to tie up to', () => {
+    // 船不停在這裡了，繫纜樁反而更重要 —— 它是空甲板上唯一在說
+    // 「這條邊會靠船」的東西。
     const moorings = ferryDockPlan.props.filter(v => v.tag === 'mooring');
-    expect(moorings.length, '沒有繫纜樁').toBeGreaterThanOrEqual(2);
+    expect(moorings.length, '沒有繫纜樁').toBeGreaterThanOrEqual(3);
     for (const v of moorings) {
       expect(v.y0, '繫纜樁沉在甲板裡').toBeCloseTo(quay.y1, 9);
+      // 排在**靠岸線那一半**的甲板上。散在甲板中間的話那是幾根路障。
+      expect(v.z, `繫纜樁 z=${v.z} 排在甲板內側`).toBeGreaterThan(quay.z);
     }
   });
 });

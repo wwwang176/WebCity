@@ -129,7 +129,12 @@ void main() {
   // 有一半的說服力來自它旁邊那片藍色。
   bool isWater = vPartType > 0.55
     && vPartType < 0.65;
-  bool isRoof = vPartType > 0.8 || (n.y > 0.85 && vPartType < 0.1);
+  // 塗裝過的殼：水塔、煙囪、儲槽、冷卻塔。唯一照著量體自己的顏色畫的分支 ——
+  // 牆會被立面規則壓暗並加上高窗帶，而 isDetail 寫死一片金屬灰，
+  // 在那上面指定顏色等於沒指定。
+  bool isShell = vPartType > 0.85
+    && vPartType < 0.95;
+  bool isRoof = vPartType > 0.95 || (n.y > 0.85 && vPartType < 0.1);
   bool isFloor = n.y < -0.85;
 
   vec3 color;
@@ -160,6 +165,14 @@ void main() {
     // 略帶藍的中灰金屬，靠種子微調明度，避免整片設備同一個顏色
     float m = 0.42 + vSeed.z * 0.16;
     color = vec3(m, m * 1.02, m * 1.06) * lighting;
+  } else if (isShell) {
+    // 塗裝過的殼。這裡**不加任何花紋**：一支煙囪、一座水塔的說服力來自
+    // 它的剪影與那一片乾淨的顏色，多畫一條線都是雜訊。
+    //
+    // 朝上的面亮一點：八邊形的殼在等角視角下，側面的明暗差本來就小，
+    // 頂面不提亮的話整根讀成一片沒有厚度的板子。
+    float lift = 0.90 + 0.10 * max(n.y, 0.0);
+    color = vBldgColor * lift * lighting;
   } else if (isWater) {
     // 深水 → 淺水由 B 通道決定（河 0.0、港池 0.4）。波光是兩道不同頻率的
     // 正弦相乘，隨 uTime 走 —— 靜止的藍色塊在等角視角下看起來是藍地板。

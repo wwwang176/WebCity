@@ -4,7 +4,7 @@ import { waterPlan } from '../water';
 import { garbagePlan } from '../garbage';
 import { sewagePlan } from '../sewage';
 import {
-  FACADE_UTILITY, PART_GROUND, PART_LAMP, PART_ROOF, PART_DETAIL,
+  FACADE_UTILITY, PART_GROUND, PART_LAMP, PART_ROOF, PART_SHELL,
 } from '../../../buildings/parts';
 import { TERRAIN_COLORS } from '../../../../terrainColors';
 import { TerrainType } from '../../../../../core/grid/types';
@@ -80,19 +80,22 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   });
 
   /**
-   * 煙囪與塔身也不准長窗戶。
+   * 煙囪與塔身也不准長窗戶，而且要**畫成清水混凝土**。
    *
    * 使用者：「電廠的煙囪我覺得不需要窗戶，就單純煙囪就好」。這是同一個錯的
    * 第三種形狀：不標 `part` 就是牆，而 `FACADE_UTILITY` 的牆會在上面畫一條
    * 高窗帶 —— 覆土、水面、煙囪、冷卻塔全都中過。
    *
-   * `PART_DETAIL` 正是為這種東西存在的（`parts.ts` 的原話：水塔、冷氣機、
-   * 天線、管架、煙囪）。
+   * 第一版改成了 `PART_DETAIL`，窗戶是沒了，但那條分支寫死一片偏藍的金屬灰
+   * （`vec3(m, m*1.02, m*1.06)`，m ≈ 0.42–0.58），`vBldgColor` 連讀都沒讀。
+   * 於是冷卻塔 —— 這一棟唯一的辨識剪影 —— 是深灰的，而它應該是混凝土。
+   * `PART_SHELL` 才是照著量體自己的顏色畫的那一條。
    */
   it('should not put windows on a chimney or a tower shell', () => {
     for (const v of plan.massing) {
       if (!/stack|coolingTower/.test(v.tag ?? '')) continue;
-      expect(v.part, `${v.tag} 會長出高窗帶`).toBe(PART_DETAIL);
+      expect(v.part, `${v.tag} 會長出高窗帶`).toBe(PART_SHELL);
+      expect(v.color, `${v.tag} 沒有自己的顏色 —— 它會跟著廠區`).toBeDefined();
     }
   });
 
@@ -134,11 +137,19 @@ describe('電廠', () => {
     expect(towers[0]!.w).not.toBeCloseTo(towers[1]!.w, 3);
   });
 
+  /**
+   * 煙囪頂上是一個**洞**，不是一片平蓋。
+   *
+   * 使用者：「發電廠的煙囪好像只畫單面? 會看到破口 是不是可以做凹槽」。
+   * 25 m 的東西在等角視角下最先看到的就是它的頂，而圓柱的頂是實心圓盤。
+   * `shape: 'stack'` 是為此新增的旋轉體（見 `MassingGeometry.test.ts` 的
+   * 「stack volumes」—— 那裡測的是幾何真的凹下去、內壁法線真的朝軸心）。
+   */
   it('should still raise a chimney above everything', () => {
     // 冷卻塔冒的是水氣。燒的那一支還是要有，而且它是全場最高的東西。
     expect(stacks.length, '沒有煙囪').toBe(1);
     for (const s of stacks) {
-      expect(s.shape, '煙囪不是圓的').toBe('cylinder');
+      expect(s.shape, '煙囪的頂是一片實心圓盤').toBe('stack');
       expect(m(s.y1), '煙囪太矮').toBeGreaterThan(18);
       expect(s.y1, '煙囪沒有高過冷卻塔')
         .toBeGreaterThan(Math.max(...towers.map(t => t.y1)));
@@ -161,6 +172,11 @@ describe('電廠', () => {
       expect(b.part).toBe(PART_LAMP);
       const host = stacks.find(s => Math.abs(s.z - b.z) < 1e-9)!;
       expect(b.y0, '航警燈沒有站在煙囪頂上').toBeCloseTo(host.y1, 9);
+      // 站在管口的環上，不是懸在洞的正中央。
+      expect(Math.abs(b.x - host.x) - b.w / 2, '航警燈架在煙囪的洞上')
+        .toBeGreaterThan(0);
+      expect(Math.abs(b.x - host.x) + b.w / 2, '航警燈掛到煙囪外面去了')
+        .toBeLessThan(host.w / 2);
     }
   });
 
@@ -237,15 +253,29 @@ describe('水廠', () => {
       .toBeLessThan(20);
   });
 
+  /**
+   * 白色的水塔。
+   *
+   * 使用者說了兩次：「水塔應該是白色系，看起來比較乾淨」、「抽水站的水塔
+   * 改成白色，頂部也白色」。兩次都拿到灰的，而**資料一直是對的** ——
+   * 塔身一直帶著 `[0.94, 0.95, 0.96]`，這條測試的前一版驗的也正是那個陣列。
+   *
+   * 畫不出來的是 shader：塔身是牆，被 `FACADE_UTILITY` 壓成 0.70～0.90 倍
+   * 再加一條高窗帶；塔頂走 `PART_GROUND`，而那條的色譜上限只到
+   * `vec3(0.60, 0.58, 0.55)` 的磚鋪 —— `shade: 0.95` 也只是中灰。
+   *
+   * 所以這一條改成驗**畫得出來的那條路**：兩者都要走 `PART_SHELL`
+   * （唯一照量體自己的顏色畫的分支），而且顏色要真的接近白。
+   */
   it('should keep the water tower white', () => {
-    // 使用者：「水塔應該是白色系，看起來比較乾淨」。塔身要有自己的顏色
-    // 覆寫（否則它跟著廠區的藍），塔頂不能走共用的屋頂色票（那組有鏽紅）。
-    const tower = tagged(waterPlan, 'tower')[0]!;
-    expect(tower.color, '塔身沒有自己的顏色 —— 它會跟著廠區').toBeDefined();
-    expect(Math.min(...tower.color!), '塔身不夠白').toBeGreaterThan(0.85);
-    const cap = tagged(waterPlan, 'towerCap')[0]!;
-    expect(cap.part, '塔頂走回共用屋頂色票 —— 那組有鏽紅').not.toBe(PART_ROOF);
-    expect(cap.shade!, '塔頂不夠白').toBeGreaterThan(0.85);
+    for (const tag of ['tower', 'towerCap']) {
+      const v = tagged(waterPlan, tag)[0]!;
+      expect(v, `沒有 ${tag}`).toBeTruthy();
+      expect(v.part, `${tag} 沒有走塗裝外殼 —— 那條路畫不出白色`).toBe(PART_SHELL);
+      expect(v.part, `${tag} 走回共用屋頂色票 —— 那組有鏽紅`).not.toBe(PART_ROOF);
+      expect(v.color, `${tag} 沒有自己的顏色 —— 它會跟著廠區`).toBeDefined();
+      expect(Math.min(...v.color!), `${tag} 不夠白`).toBeGreaterThan(0.85);
+    }
   });
 
   it('should raise one storage tower above the tanks', () => {

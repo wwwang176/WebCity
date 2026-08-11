@@ -16,7 +16,8 @@ import { PART_WALL } from '../parts';
  * ±x 與 ±z 上），所以 `maxAbsOf`、`overlapOf`、`rasterise` 不必知道它是圓的。
  */
 export type VolumeShape =
-  'box' | 'gable' | 'hip' | 'shed' | 'sawtooth' | 'cylinder' | 'dome' | 'cooling';
+  'box' | 'gable' | 'hip' | 'shed' | 'sawtooth'
+  | 'cylinder' | 'dome' | 'cooling' | 'stack';
 
 export interface Volume {
   /** 中心 */

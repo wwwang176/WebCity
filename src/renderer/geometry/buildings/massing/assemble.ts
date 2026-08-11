@@ -154,6 +154,48 @@ function coolingTower(v: Volume): THREE.BufferGeometry {
   const widest = Math.max(...profile.map(p => p.x));
   for (const p of profile) p.x = (p.x / widest) * 0.5;
 
+  return lathe(profile, v);
+}
+
+/**
+ * 煙囪：塔身微收，頂上一圈環，環的內側**凹下去**。
+ *
+ * 使用者：「發電廠的煙囪好像只畫單面? 會看到破口 是不是可以做凹槽」。
+ * 圓柱的頂是一片實心的圓盤，而真的煙囪頂上是一個洞 —— 25 m 高的東西在等角
+ * 視角下最先看到的就是它的頂。
+ *
+ * 凹槽用兩個同心圓柱做不出來：外筒的頂蓋會把內筒整個蓋掉。把外筒改成無蓋的
+ * 管子也沒用 —— 建築材質是 `FrontSide`，管壁的法線朝外，俯視時內側被背面
+ * 剔除，看到的是「穿過去」（那正是使用者說的「破口」）。
+ *
+ * 旋轉體給得出來：輪廓在頂端折回去往下走，那一段的法線跟著朝向軸心，
+ * 所以俯視看得到的是凹槽的**內壁**而不是它的背面。
+ */
+function chimney(v: Volume): THREE.BufferGeometry {
+  /** 管口內緣的半徑（佔宣告寬度的一半的幾成）。 */
+  const BORE = 0.26;
+  /** 塔身收到頂端剩多少 —— 真實煙囪都是微微收的。 */
+  const COLLAR = 0.44;
+  /** 凹槽的深度，佔全高的比例。 */
+  const DEPTH = 0.12;
+  return lathe([
+    new THREE.Vector2(0.5, 0),            // 底座
+    new THREE.Vector2(COLLAR, 1 - DEPTH * 0.7), // 微收的塔身
+    new THREE.Vector2(COLLAR, 1),         // 管口外緣
+    new THREE.Vector2(BORE, 1),           // 管口的環
+    new THREE.Vector2(BORE, 1 - DEPTH),   // 凹槽內壁（法線朝軸心）
+    new THREE.Vector2(0, 1 - DEPTH),      // 槽底
+  ], v);
+}
+
+/**
+ * 一條輪廓轉一圈。`cooling` 與 `stack` 共用。
+ *
+ * 與 `cylinder` 同一條路徑（去 uv → 攤平 → 縮放 → 重算法線 → 位移），
+ * 順序不能換：非等比縮放會扭曲既有的法線。輪廓的 x ∈ [0, 0.5]、y ∈ [0, 1]，
+ * 縮放之後剛好填滿宣告的盒子。
+ */
+function lathe(profile: THREE.Vector2[], v: Volume): THREE.BufferGeometry {
   const src = new THREE.LatheGeometry(profile, CYLINDER_SIDES);
   src.deleteAttribute('uv');
   const geo = src.toNonIndexed();
@@ -184,6 +226,8 @@ export function shapeOf(v: Volume): THREE.BufferGeometry[] {
       return [dome(v)];
     case 'cooling':
       return [coolingTower(v)];
+    case 'stack':
+      return [chimney(v)];
     case 'gable':
       return alongZ
         ? [frustum(v, v.w, v.d * RIDGE, 0, 0)]

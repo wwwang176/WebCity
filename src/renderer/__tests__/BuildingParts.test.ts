@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import {
-  PART_WALL, PART_DETAIL, PART_FOLIAGE, PART_GROUND, PART_ROOF, PART_THRESHOLDS,
+  PART_WALL, PART_DETAIL, PART_FOLIAGE, PART_GROUND, PART_ROOF, PART_SHELL,
+  PART_WATER, PART_LAMP, PART_THRESHOLDS,
   tagPart, ZONE_CAT, stampZoneCategory, setGroundShade, triangleCount,
 } from '../geometry/buildings/parts';
 import { ZoneType } from '../../core/grid/types';
@@ -68,6 +69,59 @@ describe('part tags sit in the buckets the shader cuts', () => {
 
   it('should classify roof as roof', () => {
     expect(PART_ROOF).toBeGreaterThan(PART_THRESHOLDS.ROOF_MIN);
+  });
+
+  /**
+   * 每個標籤只能落進**一個**桶。
+   *
+   * 前面那幾條是一個標籤一條、手寫的，所以新增一個標籤時沒有任何東西會問
+   * 「它跟別人撞了嗎」。`PART_SHELL` 加進來的時候正是這個處境：它要塞進
+   * 一段沒有人用的號碼，而塞錯的表現是「水塔忽然變成屋頂色」——
+   * 那在畫面上看起來只是「顏色怪怪的」。
+   *
+   * 這條把 shader 的門檻**照抄成述詞**，然後要求分類是一對一的。
+   */
+  it('should put every tag in exactly one bucket', () => {
+    const t = PART_THRESHOLDS;
+    const buckets: Record<string, (p: number) => boolean> = {
+      wall: p => p < t.ROOF_BY_NORMAL,
+      shell: p => p > t.SHELL_MIN && p < t.SHELL_MAX,
+      detail: p => p > t.ROOF_BY_NORMAL && p < t.LAMP_MIN,
+      lamp: p => p > t.LAMP_MIN && p < t.FOLIAGE_MIN,
+      foliage: p => p > t.FOLIAGE_MIN && p < t.FOLIAGE_MAX,
+      water: p => p > t.WATER_MIN && p < t.WATER_MAX,
+      ground: p => p > t.GROUND_MIN && p < t.GROUND_MAX,
+      roof: p => p > t.ROOF_MIN,
+    };
+    const want: Record<string, number> = {
+      wall: PART_WALL, shell: PART_SHELL, detail: PART_DETAIL, lamp: PART_LAMP,
+      foliage: PART_FOLIAGE, water: PART_WATER, ground: PART_GROUND, roof: PART_ROOF,
+    };
+    for (const [name, value] of Object.entries(want)) {
+      const hit = Object.entries(buckets).filter(([, f]) => f(value)).map(([k]) => k);
+      expect(hit, `${name} (${value}) 落進 ${hit.length} 個桶`).toEqual([name]);
+    }
+  });
+
+  /**
+   * 標籤與門檻之間要留得下浮點誤差。
+   *
+   * 頂點色是 Float32，而這些數字要在 TS 端寫進屬性、在 GLSL 端拿字面值比較。
+   * 兩邊都只有約 7 位有效數字，所以標籤壓在門檻上是不行的 —— 而「差一點點」
+   * 的表現是某些三角形走錯分支，也就是一根柱子上零星幾片別的顏色。
+   */
+  it('should leave slack between every tag and its bucket walls', () => {
+    const t = PART_THRESHOLDS;
+    const walls = Object.values(t);
+    for (const [name, value] of Object.entries({
+      PART_WALL, PART_SHELL, PART_DETAIL, PART_LAMP,
+      PART_FOLIAGE, PART_WATER, PART_GROUND, PART_ROOF,
+    })) {
+      for (const w of walls) {
+        expect(Math.abs(value - w), `${name} 離門檻 ${w} 太近`)
+          .toBeGreaterThan(0.02);
+      }
+    }
   });
 });
 

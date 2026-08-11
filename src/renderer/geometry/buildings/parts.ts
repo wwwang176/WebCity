@@ -30,6 +30,20 @@ export const PART_FOLIAGE = 0.5;
 export const PART_WATER = 0.6;
 /** 地面貼片：柏油、鋪面、標線。完全平，行人走在上面。 */
 export const PART_GROUND = 0.7;
+/**
+ * 塗裝過的殼：水塔、煙囪、儲槽、冷卻塔。
+ *
+ * 這是唯一**照著量體自己的顏色畫**的標籤 —— 其他每一條路都會把顏色吃掉：
+ *
+ * - 牆走分區的立面規則。`FACADE_UTILITY` 會把它壓成 0.70～0.90 倍，
+ *   再加一條高窗帶與一排紅色警示燈（一支長了窗戶的煙囪）。
+ * - `PART_DETAIL` 寫死一片金屬灰，`vBldgColor` 連讀都沒讀 ——
+ *   在它上面指定顏色**等於沒指定**，而且不會有任何東西報錯。
+ * - `PART_GROUND` 的色譜上限只到 `vec3(0.60, 0.58, 0.55)` 的磚鋪。
+ *
+ * 使用者要了兩次白色的水塔，兩次都拿到灰的，就是因為三條路都到不了白色。
+ */
+export const PART_SHELL = 0.9;
 export const PART_ROOF = 1.0;
 
 /** shader 用來把 R 通道切段的門檻。 */
@@ -45,7 +59,16 @@ export const PART_THRESHOLDS = {
   WATER_MAX: 0.65,
   GROUND_MIN: 0.65,
   GROUND_MAX: 0.8,
-  ROOF_MIN: 0.8,
+  /**
+   * 塗裝外殼。夾在鋪面與屋頂之間 —— 那一段原本是空號。
+   *
+   * 放在這裡而不是塞進 0.1～0.25 那幾段之間：那邊最寬只剩 0.025 的空隙，
+   * 而頂點色是 Float32、GLSL 的 highp 也只有約 7 位有效數字。這裡上下各
+   * 留 0.05，與其他每一段一樣寬。
+   */
+  SHELL_MIN: 0.85,
+  SHELL_MAX: 0.95,
+  ROOF_MIN: 0.95,
 } as const;
 
 export function tagPart(geo: THREE.BufferGeometry, part: number): void {
