@@ -57,9 +57,11 @@ describe.each(SIZES)('%s機場的航路表', (_label, size, type) => {
   });
 
   it('should leave the terminal somewhere to stand', () => {
-    // 航廈帶從佔地後緣到 `termFront`。12 m 是一棟航廈的最小深度。
+    // 航廈帶從佔地後緣到 `termFront`。10 m 是一棟航廈的最小深度 ——
+    // 60 m 寬 × 10 m 深的航廈完全站得住，而小型機場只有 48 m 的總深度要
+    // 分給跑道、滑行道、停機坪與航廈。
     const depth = layout.termFront - (-halfH);
-    expect(m(depth), `航廈只剩 ${m(depth).toFixed(1)} m 深`).toBeGreaterThan(12);
+    expect(m(depth), `航廈只剩 ${m(depth).toFixed(1)} m 深`).toBeGreaterThan(10);
   });
 
   it('should leave the apron deep enough for an aeroplane', () => {

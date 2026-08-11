@@ -11,6 +11,7 @@ import {
   allFlightPaths, allGates, runwayCentrelines, taxiwayX, apronLaneZ,
   type Vec2,
 } from '../../../../airportPaths';
+import { airportLayout } from '../airport';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
 import type { AirportSize } from '../../../../../core/transport/AirportSystem';
 import type { CivicPlan, CivicVolume } from '../../types';
@@ -28,7 +29,9 @@ const PLANS = [
 ] as const;
 
 /** 一塊軸對齊矩形蓋不蓋得到某個點。 */
-const covers = (d: { x: number; z: number; w: number; d: number }, p: Vec2) =>
+interface Box { x: number; z: number; w: number; d: number }
+
+const covers = (d: Box, p: Vec2) =>
   Math.abs(p.x - d.x) <= d.w / 2 + 1e-9 && Math.abs(p.z - d.z) <= d.d / 2 + 1e-9;
 
 /**
@@ -210,11 +213,83 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
     // 大型機場的兩條航路共用中間那個機位。直接串起來的話它會出現兩次，
     // 而「每個機位一條空橋」就會多畫一條疊在一起的。
     const bridges = plan.props.filter(v => v.tag === 'jetBridge');
+    expect(bridges.length, '空橋數與機位數對不上').toBe(allGates(size).length);
+  });
+
+  /**
+   * 停機坪上的三樣東西不准互相卡到：飛機、空橋、地勤車。
+   *
+   * 使用者：「空橋跟工程車好像重疊了，飛機停妥後也會跟空橋卡到」。三者原本
+   * 全部擠在航廈牆與機位之間那條 0.7 m 的縫裡 —— 而每一條既有的驗收都是綠的，
+   * 因為沒有任何一條在問「它們彼此會不會撞在一起」。
+   *
+   * 飛機的佔地用**實際的幾何**算：手寫一份尺寸表的話，哪天有人把機身改長，
+   * 這條檢查會繼續拿舊的數字算。
+   */
+  it('should keep the aeroplanes, the jet bridges and the ground crew apart', () => {
+    /** 一架停在機位上的飛機佔的矩形。機頭朝航廈，所以長邊沿 z。 */
+    const standBox = (g: Vec2) => {
+      const geo = assembleVehicles(
+        [{ kind: 'airplane', x: g.x, z: g.z, rotationY: Math.PI / 2 }],
+        { w: 99, h: 99 });
+      geo.computeBoundingBox();
+      const b = geo.boundingBox!;
+      return {
+        x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2,
+        w: b.max.x - b.min.x, d: b.max.z - b.min.z,
+      };
+    };
+    const vehicleBox = (v: (typeof plan.vehicles)[number]) => {
+      const geo = assembleVehicles([v], { w: 99, h: 99 });
+      geo.computeBoundingBox();
+      const b = geo.boundingBox!;
+      return {
+        x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2,
+        w: b.max.x - b.min.x, d: b.max.z - b.min.z,
+      };
+    };
+    const hits = (a: Box, b: Box) =>
+      Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 1e-9
+      && Math.abs(a.z - b.z) < (a.d + b.d) / 2 - 1e-9;
+
+    const stands = allGates(size).map(g => ({ what: `機位 ${g.x} 的飛機`, box: standBox(g) }));
+    const bridges = plan.props.filter(v => v.tag === 'jetBridge')
+      .map(v => ({ what: `空橋 ${v.x.toFixed(2)}`, box: v }));
+    const crew = plan.vehicles.filter(v => v.tag === 'groundCrew')
+      .map(v => ({ what: `地勤 ${v.kind}`, box: vehicleBox(v) }));
+
+    for (const a of bridges) {
+      for (const b of stands) expect(hits(a.box, b.box), `${a.what} 卡到 ${b.what}`).toBe(false);
+      for (const c of crew) expect(hits(a.box, c.box), `${a.what} 卡到 ${c.what}`).toBe(false);
+    }
+    for (const c of crew) {
+      for (const b of stands) expect(hits(c.box, b.box), `${c.what} 卡到 ${b.what}`).toBe(false);
+    }
+  });
+
+  it('should tuck the jet bridges and the ground crew against the terminal wall', () => {
+    // 它們唯一站得住的地方是航廈牆與機尾之間那條縫。跑到縫外面的話，
+    // 不是插進航廈就是擋在飛機滑進來的路上。
+    const layout = airportLayout(size, h);
+    const gateZ = allGates(size)[0]!.z;
+    for (const v of plan.props.filter(x => x.tag === 'jetBridge')) {
+      expect(v.z - v.d / 2, '空橋插進航廈').toBeGreaterThanOrEqual(layout.termFront - 1e-9);
+      expect(v.z + v.d / 2, '空橋伸進機位').toBeLessThan(gateZ);
+    }
+    for (const v of plan.vehicles.filter(x => x.tag === 'groundCrew')) {
+      expect(v.z, '地勤車沒有貼著航廈').toBeLessThan(gateZ);
+      expect(v.z, '地勤車插進航廈').toBeGreaterThan(layout.termFront);
+    }
+  });
+
+  it('should stand each jet bridge beside its gate, not in front of it', () => {
+    // 使用者：「空橋應該是在飛機停靠點的旁邊」。正對機位的話，飛機一停妥
+    // 就插在空橋裡。
     const gates = allGates(size);
-    expect(bridges.length, '空橋數與機位數對不上').toBe(gates.length);
-    for (const g of gates) {
-      expect(bridges.some(b => Math.abs(b.x - g.x) < 1e-9),
-        `機位 ${g.x} 沒有空橋`).toBe(true);
+    const bridges = plan.props.filter(v => v.tag === 'jetBridge');
+    for (const b of bridges) {
+      const onCentre = gates.some(g => Math.abs(g.x - b.x) < 1e-9);
+      expect(onCentre, `空橋 ${b.x.toFixed(2)} 正對著機位`).toBe(false);
     }
   });
 
@@ -244,8 +319,11 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   it('should park light-coloured ground vehicles by the terminal', () => {
     // 使用者：「航廈附近也可以放一些工作車輛(淺色)」。深色的地勤車在深色的
     // 柏油上看不出來，而地勤車實際上就是淺色的。
-    const service = plan.vehicles.filter(v => v.tint !== undefined);
+    const service = plan.vehicles.filter(v => v.tag === 'groundCrew');
     expect(service.length, '航廈附近沒有工作車輛').toBeGreaterThanOrEqual(2);
+    for (const v of service) {
+      expect(v.tint, `${v.kind} 沒有指定顏色`).toBeDefined();
+    }
     for (const v of service) {
       const lum = ((v.tint! >> 16 & 0xff) + (v.tint! >> 8 & 0xff) + (v.tint! & 0xff)) / 3;
       expect(lum, `${v.kind} 的地勤車不夠淺`).toBeGreaterThan(180);

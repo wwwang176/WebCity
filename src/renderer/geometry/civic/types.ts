@@ -161,6 +161,15 @@ export interface CivicPlan {
 /** 停在基地上的一台車。 */
 export interface CivicVehicle {
   kind: CivicVehicleKind;
+  /**
+   * 這台車在這棟建築裡的角色。與 `CivicVolume.tag` 完全同一個道理：
+   * **測試要讀得懂這份 plan**。
+   *
+   * 「機場的地勤車不准卡到空橋」寫成 `v.tag === 'groundCrew'` 是一句話；
+   * 靠「有沒有設 `tint`」來認的話，陸側那台也有 `tint`，於是測試會去檢查
+   * 一台停在航廈後方、與空橋八竿子打不著的貨車（實際踩到過）。
+   */
+  tag?: string;
   /** 車輛中心。單位是格。 */
   x: number;
   z: number;

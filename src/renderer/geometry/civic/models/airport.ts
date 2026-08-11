@@ -45,8 +45,24 @@ import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types'
 
 /** 跑道中線到跑道帶後緣的距離（格）。大型機場兩條中線相距 1.4 格，所以不能更寬。 */
 const RUNWAY_HALF = 0.7;
-/** 停機位中心到航廈牆面的淨距（格）。飛機停在機位上時機身佔 0.9 格。 */
-const GATE_CLEAR = 0.55;
+/**
+ * 停機位中心到航廈牆面的淨距（格）。
+ *
+ * 飛機停在機位上時機身**沿 z 佔 0.98 格**（11.7 m），也就是機尾伸到機位中心
+ * 後方 0.49 格。原本這個值是 0.55 —— 牆與機尾之間只剩 0.06 格（0.7 m），
+ * 放什麼都會卡：空橋卡到飛機、地勤車卡到空橋。
+ *
+ * 0.75 讓那條縫有 0.26 格（3.1 m），剛好放得下一道空橋與一台地勤車，而且
+ * 兩者都在飛機的**外面**。代價是航廈帶淺了 0.2 格 —— 小型機場因此是 10.9 m
+ * 深，仍然是一棟站得住的航廈。
+ */
+const GATE_CLEAR = 0.75;
+/**
+ * 航廈牆與機尾之間那條縫的深度（格）。空橋與地勤車都住在這裡。
+ *
+ * 它必須小於 `GATE_CLEAR − 0.49`，否則就伸進飛機裡了。
+ */
+const APRON_GAP = 0.24;
 /** 跑道邊燈與滑行道中線燈的間距（公尺）。 */
 const LIGHT_SPACING = 10;
 /** 一顆燈的邊長（公尺）。 */
@@ -267,15 +283,24 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     massing.push(light('taxiwayLight', x, laneZ));
   }
 
-  // ── 空橋。每個機位一條，從航廈前緣伸向飛機。 ────────────────
+  // ── 空橋。每個機位一道，站在機位**旁邊**。 ──────────────────
   //
-  // **高度跟著飛機走，不是跟著行人淨空走。** 原本它掛在 `overhead` 層，而那一
-  // 層有「要高過 2.2 m 行人淨空」的規則 —— 於是空橋停在 4.6 m，遠遠飄在
-  // 1.44 m 高的機身上方，接不到任何一扇門。空橋接的是飛機，不是路人，所以它
-  // 搬到 `props`，高度由機身頂端推導。
+  // 兩件原本是錯的：
+  //
+  // 1. **高度**。它掛在 `overhead` 層，而那一層有「要高過 2.2 m 行人淨空」的
+  //    規則 —— 於是空橋停在 4.6 m，遠遠飄在 1.44 m 高的機身上方。空橋接的是
+  //    飛機不是路人，所以搬到 `props`，高度由機身頂端推導。
+  // 2. **位置**。它與機位同一個 x、朝著飛機伸過去 —— 而飛機就停在那裡。
+  //    使用者：「空橋應該是在飛機停靠點的旁邊」。現在它沿 x 擺在航廈牆與
+  //    機尾之間那條縫裡，並往旁邊偏半個機位間距。
+  const gateSpacing = gates.length > 1
+    ? Math.abs(gates[1]!.x - gates[0]!.x)
+    : 0.6;
+  const gapZ = termFront + APRON_GAP / 2;
   const jetBridges: CivicVolume[] = gates.map((g): CivicVolume => ({
     tag: 'jetBridge',
-    x: g.x, z: (termFront + g.z) / 2 - 0.06, w: 0.18, d: GATE_CLEAR - 0.1,
+    x: g.x + gateSpacing / 2, z: gapZ,
+    w: gateSpacing * 0.55, d: APRON_GAP * 0.5,
     y0: M(JET_BRIDGE_DECK), y1: M(JET_BRIDGE_DECK + 0.35),
   }));
   const overhead: CivicVolume[] = [];
@@ -326,20 +351,20 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     ({ kind: 'airplane', x, z: gateZ, rotationY: Math.PI / 2 }));
   // 陸側（航廈後方）的接駁車與貨車。
   vehicles.push(
-    { kind: 'bus', x: -spec.w * 0.22, z: -halfH + 0.62 },
-    { kind: 'truck', x: spec.w * 0.22, z: -halfH + 0.62, tint: 0xcfd8dc },
+    { kind: 'bus', tag: 'landside', x: -spec.w * 0.22, z: -halfH + 0.62 },
+    { kind: 'truck', tag: 'landside', x: spec.w * 0.22, z: -halfH + 0.62, tint: 0xcfd8dc },
   );
-  // 停機坪側的**地勤車輛**。淺色是機場地勤的實際樣子，也讓它們在深色的
-  // 柏油上讀得出來。停在航廈牆邊那條縫（機位與航廈之間）—— 那裡動畫飛機
-  // 不會經過，而它正是地勤車該待的地方。
-  const serviceZ = (termFront + gateZ) / 2;
-  for (const [i, g] of gates.entries()) {
-    vehicles.push({
-      kind: i % 2 === 0 ? 'van' : 'truck',
-      x: g.x + 0.42, z: serviceZ,
-      tint: i % 2 === 0 ? 0xeceff1 : 0xdce3e6,
-    });
-  }
+  // 停機坪側的**地勤車輛**。淺色是機場地勤的實際樣子，也讓它們在深色的柏油
+  // 上讀得出來。使用者：「看能不能把工程車放到建築旁邊就好」——
+  // 停在機位列的**兩端**，貼著航廈牆：那裡既不在任何一個機位上，也不在任何
+  // 一道空橋旁邊。原本它們逐機位擺在 `g.x + 0.42`，而那個位置正好落在**下一個**
+  // 機位的空橋底下。
+  const rowLeft = Math.min(...gates.map(g => g.x));
+  const rowRight = Math.max(...gates.map(g => g.x));
+  vehicles.push(
+    { kind: 'van', tag: 'groundCrew', x: rowLeft - gateSpacing * 1.25, z: gapZ, tint: 0xeceff1 },
+    { kind: 'truck', tag: 'groundCrew', x: rowRight + gateSpacing * 1.25, z: gapZ, tint: 0xdce3e6 },
+  );
 
   // ── 共用矮物件 ────────────────────────────────────────────
   const fixtures: PropSpec[] = [
