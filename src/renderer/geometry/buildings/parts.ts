@@ -20,6 +20,14 @@ export const PART_DETAIL = 0.2;
  */
 export const PART_LAMP = 0.3;
 export const PART_FOLIAGE = 0.5;
+/**
+ * 水面：河、渡輪碼頭的港池、抽水廠的取水口。
+ *
+ * 與 `PART_GROUND` 分開是必要的。水原本是「一塊很暗的鋪面」（`shade` 0.02），
+ * 而地面分支的色譜是柏油到磚鋪 —— 全是灰的。使用者：「渡船口的形象要改一下，
+ * 看不出來是渡船」，而一座碼頭有一半的說服力來自它旁邊那片**藍色**的水。
+ */
+export const PART_WATER = 0.6;
 /** 地面貼片：柏油、鋪面、標線。完全平，行人走在上面。 */
 export const PART_GROUND = 0.7;
 export const PART_ROOF = 1.0;
@@ -31,7 +39,10 @@ export const PART_THRESHOLDS = {
   /** 細節與燈具的分界。低於它是冷的金屬，高於它會發光。 */
   LAMP_MIN: 0.25,
   FOLIAGE_MIN: 0.35,
-  FOLIAGE_MAX: 0.65,
+  FOLIAGE_MAX: 0.55,
+  /** 水面。夾在草地與鋪面之間那一段。 */
+  WATER_MIN: 0.55,
+  WATER_MAX: 0.65,
   GROUND_MIN: 0.65,
   GROUND_MAX: 0.8,
   ROOF_MIN: 0.8,

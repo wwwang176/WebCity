@@ -91,6 +91,25 @@ const NOSE_CLEAR = 0.06;
 const PLANE_NOSE = 0.456;
 /** 陸側車道的深度（格）。接駁車、雨庇與行道樹全部住在這條帶上。 */
 const LANDSIDE = 0.28;
+/**
+ * 空橋的長度（格）。
+ *
+ * 使用者：「長度應該要*2，寬度/1.5，且是在飛機的左側(看起來像在飛機機頭旁邊)」。
+ *
+ * 上一版的長度剛好停在機頭前（`GATE_CLEAR − 機頭 − 淨距` = 2.8 m），而那是
+ * 因為它與機位同一條中線 —— 再長就插進機頭。改到左舷之後那個限制沒有了：
+ * 現在它**開過機頭**，沿著機身走一段，這才是空橋接登機門的樣子。
+ *
+ * 5.6 m 停在機翼前緣之前 1.9 m —— 停機坪上唯一還算寬的那塊空地。
+ */
+const BRIDGE_LEN = (GATE_CLEAR - PLANE_NOSE - NOSE_CLEAR) * 2;
+/**
+ * 空橋中心線離機位中心線的側向偏移（格）。
+ *
+ * 飛機停妥時機頭朝 −z，所以**左舷是 −x**（up × forward = (0,1,0) × (0,0,−1)）。
+ * 0.16 格 = 1.9 m：機身半寬 0.72 m 加上橋寬的一半，兩者之間還留 0.5 m。
+ */
+const BRIDGE_SIDE = -0.16;
 
 interface AirportSpec {
   type: InfraType;
@@ -320,18 +339,19 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
   const gateSpacing = gates.length > 1
     ? Math.abs(gates[1]!.x - gates[0]!.x)
     : 0.6;
-  const bridgeTip = gateZ - PLANE_NOSE - NOSE_CLEAR;
+  const bridgeTip = termFront + BRIDGE_LEN;
+  const bridgeW = Math.min(0.16, gateSpacing * 0.4) / 1.5;
   const jetBridges: CivicVolume[] = gates.flatMap((g): CivicVolume[] => [
     {
       tag: 'jetBridge',
-      x: g.x, z: (termFront + bridgeTip) / 2,
-      w: Math.min(0.16, gateSpacing * 0.4), d: bridgeTip - termFront,
+      x: g.x + BRIDGE_SIDE, z: (termFront + bridgeTip) / 2,
+      w: bridgeW, d: BRIDGE_LEN,
       y0: M(JET_BRIDGE_DECK), y1: M(JET_BRIDGE_DECK + 0.35),
     },
     {
       // 前端的支撐腳。少了它，橋面是一塊浮在 1 m 高的板子。
       tag: 'jetBridgeLeg', part: PART_DETAIL,
-      x: g.x, z: bridgeTip - 0.03,
+      x: g.x + BRIDGE_SIDE, z: bridgeTip - 0.03,
       w: 0.05, d: 0.05, y0: 0, y1: M(JET_BRIDGE_DECK),
     },
   ]);

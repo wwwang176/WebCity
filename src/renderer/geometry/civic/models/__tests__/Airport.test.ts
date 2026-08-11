@@ -55,6 +55,45 @@ function boxOf(v: Parameters<typeof assembleVehicles>[0][number]) {
 const standBox = (g: Vec2) =>
   boxOf({ kind: 'airplane', x: g.x, z: g.z, rotationY: Math.PI / 2 });
 
+/** 掃描的切片寬（格）。0.04 ≈ 0.5 m —— 比空橋窄，切得開機頭與機翼。 */
+const SLICE = 0.04;
+
+/**
+ * 一架停在機位上的飛機，**逐 z 切片**的 x 範圍。
+ *
+ * 包圍盒在這一棟上不夠用：飛機的包圍盒是 10.8 × 11.7 m 的一個方框，而機頭
+ * 那一段其實只有 1.4 m 寬的機身 —— 兩側都是空的。空橋要停在機頭**旁邊**，
+ * 用包圍盒判斷的話它會被誤判成插進飛機裡。
+ *
+ * 掃的是實際幾何的頂點，不是一份手寫的輪廓表。
+ */
+function planeProfile(g: Vec2): Map<number, { x0: number; x1: number }> {
+  const geo = assembleVehicles(
+    [{ kind: 'airplane', x: g.x, z: g.z, rotationY: Math.PI / 2 }], { w: 99, h: 99 });
+  const pos = geo.getAttribute('position');
+  const out = new Map<number, { x0: number; x1: number }>();
+  for (let i = 0; i < pos.count; i++) {
+    const k = Math.floor(pos.getZ(i) / SLICE);
+    const cur = out.get(k);
+    const x = pos.getX(i);
+    if (cur) { cur.x0 = Math.min(cur.x0, x); cur.x1 = Math.max(cur.x1, x); }
+    else out.set(k, { x0: x, x1: x });
+  }
+  return out;
+}
+
+/** 一塊矩形有沒有碰到那架飛機的**實際**輪廓。 */
+function hitsPlane(box: Box, g: Vec2): boolean {
+  const bx0 = box.x - box.w / 2;
+  const bx1 = box.x + box.w / 2;
+  for (const [k, span] of planeProfile(g)) {
+    const z0 = k * SLICE;
+    if (z0 + SLICE <= box.z - box.d / 2 || z0 >= box.z + box.d / 2) continue;
+    if (bx1 > span.x0 + 1e-9 && bx0 < span.x1 - 1e-9) return true;
+  }
+  return false;
+}
+
 /**
  * 飛機在地面上會經過的每一個航點。
  *
@@ -246,18 +285,25 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
       Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 1e-9
       && Math.abs(a.z - b.z) < (a.d + b.d) / 2 - 1e-9;
 
-    const stands = allGates(size).map(g => ({ what: `機位 ${g.x} 的飛機`, box: standBox(g) }));
-    const bridges = plan.props.filter(v => v.tag === 'jetBridge')
-      .map(v => ({ what: `空橋 ${v.x.toFixed(2)}`, box: v }));
+    const gates = allGates(size);
+    const bridges = [...plan.props.filter(v => v.tag === 'jetBridge'),
+      ...plan.props.filter(v => v.tag === 'jetBridgeLeg')]
+      .map(v => ({ what: `${v.tag} ${v.x.toFixed(2)}`, box: v }));
     const crew = plan.vehicles.filter(v => v.tag === 'groundCrew')
       .map(v => ({ what: `地勤 ${v.kind}`, box: boxOf(v) }));
 
+    // 飛機用**實際輪廓**比，不用包圍盒：空橋刻意停在機頭旁邊那條空的地方，
+    // 而那塊地在包圍盒裡是「飛機」。
     for (const a of bridges) {
-      for (const b of stands) expect(hits(a.box, b.box), `${a.what} 卡到 ${b.what}`).toBe(false);
+      for (const g of gates) {
+        expect(hitsPlane(a.box, g), `${a.what} 卡到機位 ${g.x} 的飛機`).toBe(false);
+      }
       for (const c of crew) expect(hits(a.box, c.box), `${a.what} 卡到 ${c.what}`).toBe(false);
     }
     for (const c of crew) {
-      for (const b of stands) expect(hits(c.box, b.box), `${c.what} 卡到 ${b.what}`).toBe(false);
+      for (const g of gates) {
+        expect(hitsPlane(c.box, g), `${c.what} 卡到機位 ${g.x} 的飛機`).toBe(false);
+      }
     }
   });
 
@@ -286,23 +332,35 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
    * 機頭的位置由**實際的幾何**算，不是拿模型檔裡的常數再抄一次：
    * `airport.ts` 的 `PLANE_NOSE` 抄錯了或機身改長了，這條就會紅。
    */
-  it('should reach from the terminal wall out to the aeroplane nose', () => {
+  it('should reach from the terminal wall down the aeroplane port side', () => {
     const term = tagged(plan, 'terminal')[0]!;
     const wall = term.z + term.d / 2;
     for (const g of allGates(size)) {
       const b = plan.props.find(v =>
-        v.tag === 'jetBridge' && Math.abs(v.x - g.x) < 1e-9);
-      expect(b, `機位 ${g.x} 沒有正對的空橋`).toBeTruthy();
+        v.tag === 'jetBridge' && Math.abs(v.x - g.x) < 0.35 && v.x < g.x);
+      expect(b, `機位 ${g.x} 沒有空橋`).toBeTruthy();
       expect(b!.z - b!.d / 2, '空橋的根部沒有接在航廈的牆上')
         .toBeCloseTo(wall, 9);
 
+      // 使用者：「且是在飛機的左側(看起來像在飛機機頭旁邊)」。飛機停妥時
+      // 機頭朝 −z，所以左舷是 −x。
+      expect(b!.x, '空橋不在飛機的左舷').toBeLessThan(g.x);
+      // 而且要**開過機頭**：停在機頭前面的話它擋在飛機滑進來的路上，
+      // 讀起來也是「頂著機頭」而不是「靠在機身旁邊」。
       const nose = standBox(g).z0;
       const tip = b!.z + b!.d / 2;
-      expect(tip, '空橋插進機頭').toBeLessThanOrEqual(nose + 1e-9);
-      expect(m(nose - tip), `空橋停在機頭前 ${m(nose - tip).toFixed(1)} m —— 接不到門`)
-        .toBeLessThan(2.0);
+      expect(tip, '空橋停在機頭前面，沒有沿著機身走').toBeGreaterThan(nose);
       expect(b!.d, '空橋不是一條伸出去的臂，是一塊貼著牆的板')
-        .toBeGreaterThan(b!.w);
+        .toBeGreaterThan(b!.w * 2);
+    }
+  });
+
+  it('should keep the bridge slender enough to read as a bridge', () => {
+    // 使用者：「長度應該要*2，寬度/1.5」。一條又短又寬的臂讀起來是雨遮。
+    for (const b of plan.props.filter(v => v.tag === 'jetBridge')) {
+      expect(m(b.d), `空橋只有 ${m(b.d).toFixed(1)} m 長`).toBeGreaterThan(5);
+      expect(m(b.w), `空橋有 ${m(b.w).toFixed(1)} m 寬 —— 那是一座天橋`)
+        .toBeLessThan(1.6);
     }
   });
 

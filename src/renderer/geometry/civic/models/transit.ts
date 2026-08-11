@@ -260,17 +260,21 @@ export const trainStationPlan: CivicPlan = {
   seed: [0.44, 0.15, 0.66],
   massing: [
     {
+      // 使用者：「火車站建築應該可以低一點」。原本站房 7.6 m、屋脊 9.6 m
+      // —— 在一塊 12 m 的地上那是三層樓，而它旁邊的公車站只有 2.9 m。
+      // 現在是 5.6 m + 屋脊 7.2 m：仍然是四座交通站點裡最高的，但讀起來是
+      // 一棟平房車站而不是一座塔。
       tag: 'hall',
-      x: 0, z: M(-3.8), w: M(9.0), d: M(3.4), y0: 0, y1: M(7.6),
+      x: 0, z: M(-3.8), w: M(9.0), d: M(3.4), y0: 0, y1: M(5.6),
     },
     {
       tag: 'hallRoof', part: PART_ROOF, shape: 'gable',
-      x: 0, z: M(-3.75), w: M(9.6), d: M(3.9), y0: M(7.6), y1: M(9.6),
+      x: 0, z: M(-3.75), w: M(9.6), d: M(3.9), y0: M(5.6), y1: M(7.2),
     },
     // 站房正面（朝月台那一側）的大鐘。火車站的辨識訊號，而且夜裡它會亮。
     {
       tag: 'clock', part: PART_LAMP,
-      x: 0, z: M(-2.0), w: M(1.4), d: M(0.2), y0: M(5.4), y1: M(6.6),
+      x: 0, z: M(-2.0), w: M(1.4), d: M(0.2), y0: M(3.9), y1: M(5.1),
     },
     // 月台。走廊的另一側，整條沿著軌道。
     {
@@ -319,14 +323,38 @@ export const trainStationPlan: CivicPlan = {
 
 // ===== 渡輪碼頭 =====
 
-const ferryTotem = totem(M(-4.9), M(-0.6), 2.2);
+const ferryTotem = totem(M(-4.9), M(-5.0), 2.2);
 
 /**
- * 渡輪碼頭 —— 候船室、伸進水裡的棧橋、航道標誌燈。
+ * 渡輪碼頭 —— 候船室、碼頭平台、**一艘靠在旁邊的渡輪**。
  *
- * 它是四座裡唯一**地是水**的一座：基地的一半鋪的是深色水面貼片，棧橋架在
- * 上面。那個對比是它的全部 —— 少了水，候船室就只是一間小房子。
+ * 使用者：「渡船口的形象要改一下，看不出來是渡船」。原本它是一間小房子加
+ * 一條伸進深灰色地面的棧橋 —— 而那片「水」是 `PART_GROUND` 的最暗端，
+ * 也就是柏油。從上面看，它與一間蓋在停車場邊的小屋沒有差別。
+ *
+ * 三件事一起補：
+ *
+ * 1. **水是水。** 港池走 `PART_WATER`（新的零件類別）—— 會動的藍，不是
+ *    灰階鋪面的最暗端。這一格有一半是水，所以這是最大的一件。
+ * 2. **船。** 停一艘渡輪在碼頭邊，用的是航線上跑的同一份幾何
+ *    （`geometry/ferry`）。消防局停消防車、機場停飛機，碼頭當然停船。
+ * 3. **跳板。** 從碼頭平台接到船舷。少了它，船只是停在旁邊的一個物件；
+ *    有了它，這一格在講一件事：人從這裡上船。
+ *
+ * ```
+ *   z−  ┌──────────────┐
+ *       │   候船室       │
+ *       ├──────────────┤
+ *       │  碼頭平台 ┃跳板 │
+ *       │ ~~~~~~~~~~~~~ │
+ *   z+  │ ~~~ 🚢 渡輪 ~~ │
+ *       └──────────────┘
+ * ```
  */
+
+/** 碼頭平台的面高（公尺）。船舷與跳板都接在這個高度。 */
+const QUAY_TOP = 0.7;
+
 export const ferryDockPlan: CivicPlan = {
   footprint: { w: 1, h: 1 },
   facade: FACADE_TRANSIT,
@@ -335,60 +363,74 @@ export const ferryDockPlan: CivicPlan = {
   massing: [
     {
       tag: 'terminal',
-      x: 0, z: M(-3.4), w: M(8.0), d: M(4.4), y0: 0, y1: M(5.0),
+      x: 0, z: M(-3.9), w: M(8.4), d: M(3.2), y0: 0, y1: M(4.4),
     },
     {
       tag: 'terminalRoof', part: PART_ROOF,
-      x: 0, z: M(-3.3), w: M(8.6), d: M(4.6), y0: M(5.0), y1: M(5.4),
+      x: 0, z: M(-3.9), w: M(9.0), d: M(3.5), y0: M(4.4), y1: M(4.8),
     },
-    // 棧橋。架在水上的鋪面 —— 標成牆的話這 0.7 m 高的甲板會長出窗戶。
+    // 碼頭平台。架高的鋪面 —— 標成牆的話這 0.7 m 高的台子會長出窗戶。
     {
-      tag: 'jetty', part: PART_GROUND, shade: 0.48,
-      x: 0, z: M(2.3), w: M(5.0), d: M(6.6), y0: 0, y1: M(0.7),
+      tag: 'quay', part: PART_GROUND, shade: 0.48,
+      x: 0, z: M(-1.5), w: M(11.0), d: M(1.6), y0: 0, y1: M(QUAY_TOP),
     },
-    // 航道標誌燈。棧橋盡頭那一點光是碼頭夜裡唯一的東西。
+    // 航道標誌燈。碼頭夜裡唯一的一點光，站在平台的右端。
     {
       tag: 'navLight', part: PART_LAMP,
-      x: M(2.0), z: M(5.0), w: M(0.5), d: M(0.5), y0: M(3.4), y1: M(3.9),
+      x: M(4.6), z: M(-1.5), w: M(0.5), d: M(0.5), y0: M(3.4), y1: M(3.9),
     },
     ferryTotem.panel,
   ],
   decals: [
-    // 陸側鋪面：z [−6, −1]
-    { x: 0, z: M(-3.5), w: M(12.0), d: M(5.0), shade: 0.62 },
-    // 水面：z [−1, 6]。深色 —— 它與棧橋的明度差就是「這裡是水」。
-    { x: 0, z: M(2.5), w: M(12.0), d: M(7.0), shade: 0.02 },
+    // 陸側鋪面：z [−6, −0.7]
+    { x: 0, z: M(-3.35), w: M(12.0), d: M(5.3), shade: 0.62 },
+    // 港池：z [−0.7, 6]。`water` 讓它走 PART_WATER —— 這一格有一半是水，
+    // 而水是不是藍的，決定了這一格看不看得出是碼頭。
+    { tag: 'harbour', water: true, x: 0, z: M(2.65), w: M(12.0), d: M(6.7), shade: 0.42 },
   ],
   props: [
     ferryTotem.post,
     // 標誌燈的桿。
     {
       tag: 'mast', part: PART_DETAIL,
-      x: M(2.0), z: M(5.0), w: M(0.2), d: M(0.2), y0: M(0.7), y1: M(3.4),
+      x: M(4.6), z: M(-1.5), w: M(0.2), d: M(0.2), y0: M(QUAY_TOP), y1: M(3.4),
+    },
+    // 跳板。從平台的前緣接到船舷 —— 這一塊是「從這裡上船」的全部。
+    {
+      tag: 'gangway', part: PART_DETAIL,
+      x: M(-1.6), z: M(-0.15), w: M(1.6), d: M(1.1),
+      y0: M(QUAY_TOP - 0.2), y1: M(QUAY_TOP - 0.05),
     },
     // 繫纜樁。渡輪要綁在什麼東西上。
-    ...([[-2.0, 1.4], [-2.0, 4.4], [2.0, 1.4]] as const)
-      .map(([x, z]): CivicVolume => ({
-        tag: 'mooring', part: PART_DETAIL, shape: 'cylinder',
-        x: M(x), z: M(z), w: M(0.44), d: M(0.44), y0: M(0.7), y1: M(1.3),
-      })),
+    ...([-4.0, 1.2] as const).map((x): CivicVolume => ({
+      tag: 'mooring', part: PART_DETAIL, shape: 'cylinder',
+      x: M(x), z: M(-0.95), w: M(0.44), d: M(0.44),
+      y0: M(QUAY_TOP), y1: M(QUAY_TOP + 0.6),
+    })),
   ],
   overhead: [
-    // 候船室到棧橋的有蓋通道。
+    // 候船室到碼頭平台的有蓋通道。
     {
-      tag: 'gangway',
-      x: 0, z: M(-0.6), w: M(3.0), d: M(1.6), y0: M(2.6), y1: M(2.9),
+      tag: 'canopy',
+      x: 0, z: M(-2.6), w: M(3.6), d: M(1.4), y0: M(2.6), y1: M(2.9),
     },
   ],
   fixtures: [
-    { kind: 'lamp', x: M(-4.6), z: M(3.0), heightM: 4.0 },
-    { kind: 'lamp', x: M(4.6), z: M(3.0), heightM: 4.0 },
-    { kind: 'bin', x: M(3.6), z: M(-1.8), radius: M(0.26) },
-    { kind: 'signPost', x: M(-3.4), z: M(-0.8), axis: 'z' },
-    { kind: 'tree', x: M(-4.8), z: M(-4.6), heightM: 5.0, crownRadius: M(0.8) },
-    { kind: 'tree', x: M(4.8), z: M(-4.6), heightM: 5.0, crownRadius: M(0.8) },
-    { kind: 'bollard', x: M(-1.2), z: M(-1.4), radius: M(0.11) },
-    { kind: 'bollard', x: M(1.2), z: M(-1.4), radius: M(0.11) },
+    { kind: 'lamp', x: M(-4.6), z: M(-1.4), heightM: 4.0 },
+    { kind: 'bin', x: M(3.4), z: M(-2.4), radius: M(0.26) },
+    { kind: 'signPost', x: M(-3.0), z: M(-1.9), axis: 'z' },
+    { kind: 'tree', x: M(-4.8), z: M(-4.7), heightM: 5.0, crownRadius: M(0.8) },
+    { kind: 'tree', x: M(4.8), z: M(-4.7), heightM: 5.0, crownRadius: M(0.8) },
+    { kind: 'bollard', x: M(-1.2), z: M(-2.5), radius: M(0.11) },
+    { kind: 'bollard', x: M(1.2), z: M(-2.5), radius: M(0.11) },
   ],
-  vehicles: [],
+  /**
+   * 靠在碼頭邊的渡輪。
+   *
+   * 沿 x 停（不轉向）：船身 9 m，橫著停在 12 m 的格子裡剩不到 1.5 m 的
+   * 餘裕，而 `assembleVehicles` 的佔地護欄會當場擋下來。
+   */
+  vehicles: [
+    { kind: 'ferry', x: 0, z: M(1.8) },
+  ],
 };

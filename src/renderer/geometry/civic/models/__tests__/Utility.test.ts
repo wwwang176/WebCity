@@ -3,7 +3,9 @@ import { powerPlan } from '../power';
 import { waterPlan } from '../water';
 import { garbagePlan } from '../garbage';
 import { sewagePlan } from '../sewage';
-import { FACADE_UTILITY, PART_GROUND, PART_LAMP } from '../../../buildings/parts';
+import { FACADE_UTILITY, PART_GROUND, PART_LAMP, PART_ROOF } from '../../../buildings/parts';
+import { TERRAIN_COLORS } from '../../../../terrainColors';
+import { TerrainType } from '../../../../../core/grid/types';
 import { topOf } from '../../../buildings/massing/volume';
 import { civicColorOf } from '../../colors';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
@@ -91,14 +93,36 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
 
 describe('電廠', () => {
   const stacks = tagged(powerPlan, 'stack');
+  const towers = tagged(powerPlan, 'coolingTower');
 
-  it('should raise two chimneys of different heights', () => {
-    // 等高的兩支讀起來是一對柱子。一高一矮才是煙囪。
-    expect(stacks.length, '煙囪不是兩支').toBe(2);
-    expect(stacks[0]!.y1).not.toBeCloseTo(stacks[1]!.y1, 3);
+  /**
+   * 冷卻塔是這一棟的辨識訊號。
+   *
+   * 使用者：「發電廠的形象也要改一下 現在看不出是電廠」。原本的剪影是兩支
+   * 圓柱煙囪加一棟廠房，而旁邊的水廠是一支圓柱水塔加一棟機房 —— 兩者又
+   * 共用同一組立面色票。城市裡沒有第二種建築是**有腰的旋轉體**，所以那個
+   * 形狀本身就是「這是電廠」。
+   */
+  it('should stand two cooling towers of different sizes', () => {
+    expect(towers.length, '冷卻塔不是兩座').toBe(2);
+    for (const t of towers) {
+      expect(t.shape, '冷卻塔不是有腰的 —— 那是一個筒倉').toBe('cooling');
+      expect(m(t.y1), '冷卻塔太矮').toBeGreaterThan(12);
+      expect(t.w, '冷卻塔不是正圓').toBeCloseTo(t.d, 9);
+      // 又高又細的話那是煙囪。真實冷卻塔的高徑比在 1.5～2 之間。
+      expect((t.y1 - t.y0) / t.w, '冷卻塔太瘦').toBeLessThan(2.2);
+    }
+    expect(towers[0]!.w).not.toBeCloseTo(towers[1]!.w, 3);
+  });
+
+  it('should still raise a chimney above everything', () => {
+    // 冷卻塔冒的是水氣。燒的那一支還是要有，而且它是全場最高的東西。
+    expect(stacks.length, '沒有煙囪').toBe(1);
     for (const s of stacks) {
       expect(s.shape, '煙囪不是圓的').toBe('cylinder');
       expect(m(s.y1), '煙囪太矮').toBeGreaterThan(18);
+      expect(s.y1, '煙囪沒有高過冷卻塔')
+        .toBeGreaterThan(Math.max(...towers.map(t => t.y1)));
     }
   });
 
@@ -111,7 +135,7 @@ describe('電廠', () => {
   });
 
   it('should put a warning light on top of each chimney', () => {
-    // 夜裡的電廠就是天上那兩顆紅點。
+    // 夜裡的電廠就是天上那顆紅點。
     const beacons = tagged(powerPlan, 'beacon');
     expect(beacons.length, '航警燈不足').toBe(stacks.length);
     for (const b of beacons) {
@@ -191,11 +215,41 @@ describe('水廠', () => {
       .toBeGreaterThan(river.z - river.d / 2);
   });
 
-  it('should be green', () => {
-    // 使用者：「抽水廠要以綠色系的顏色為主」。
-    const [r, g, b] = waterPlan.color;
-    expect(g, '抽水廠不是綠的').toBeGreaterThan(r);
-    expect(g, '抽水廠不是綠的').toBeGreaterThan(b);
+  /**
+   * 廠區的顏色取自**河**。
+   *
+   * 使用者：「抽水站的主顏色參考河流的顏色」。比的是**色相與地形水面一致**，
+   * 不是一個寫死的十六進位值 —— 哪天地形的水改色，這條會要求抽水廠跟著改，
+   * 而那正是「參考河流的顏色」的意思。
+   */
+  it('should take its colour from the river', () => {
+    const hueOf = (r: number, g: number, b: number) => {
+      const max = Math.max(r, g, b);
+      const min = Math.min(r, g, b);
+      const d = max - min;
+      if (d < 1e-6) return -1;
+      const h = max === r ? ((g - b) / d) % 6
+        : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      return ((h * 60) + 360) % 360;
+    };
+    const river = TERRAIN_COLORS[TerrainType.WATER]!;
+    const want = hueOf(
+      ((river >> 16) & 0xff) / 255, ((river >> 8) & 0xff) / 255, (river & 0xff) / 255);
+    const got = hueOf(...waterPlan.color as [number, number, number]);
+    const diff = Math.abs(((got - want + 540) % 360) - 180);
+    expect(diff, `抽水廠是 ${got.toFixed(0)}°，河是 ${want.toFixed(0)}°`)
+      .toBeLessThan(20);
+  });
+
+  it('should keep the water tower white', () => {
+    // 使用者：「水塔應該是白色系，看起來比較乾淨」。塔身要有自己的顏色
+    // 覆寫（否則它跟著廠區的藍），塔頂不能走共用的屋頂色票（那組有鏽紅）。
+    const tower = tagged(waterPlan, 'tower')[0]!;
+    expect(tower.color, '塔身沒有自己的顏色 —— 它會跟著廠區').toBeDefined();
+    expect(Math.min(...tower.color!), '塔身不夠白').toBeGreaterThan(0.85);
+    const cap = tagged(waterPlan, 'towerCap')[0]!;
+    expect(cap.part, '塔頂走回共用屋頂色票 —— 那組有鏽紅').not.toBe(PART_ROOF);
+    expect(cap.shade!, '塔頂不夠白').toBeGreaterThan(0.85);
   });
 
   it('should raise one storage tower above the tanks', () => {

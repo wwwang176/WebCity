@@ -111,7 +111,7 @@ void main() {
   vec3 lighting = indirect + direct;
   float directRatio = length(direct) / max(length(lighting), 0.001);
 
-  bool isFoliage = vPartType > 0.35 && vPartType < 0.65;
+  bool isFoliage = vPartType > 0.35 && vPartType < 0.55;
   // 金屬／深色細節：水塔、冷氣機、天線、管架。不畫窗戶，也不吃分區的
   // 立面規則 —— 否則屋頂上的設備會長出一格一格的窗。
   bool isDetail = vPartType > 0.1
@@ -124,6 +124,11 @@ void main() {
   // 柏油地面上長出一格一格的窗。
   bool isGround = vPartType > 0.65
     && vPartType < 0.8;
+  // 水面。與地面分支分開是必要的：地面的色譜是柏油到磚鋪，全是灰的，
+  // 所以「很暗的鋪面」是這套 shader 畫得出來最接近水的東西 —— 而一座碼頭
+  // 有一半的說服力來自它旁邊那片藍色。
+  bool isWater = vPartType > 0.55
+    && vPartType < 0.65;
   bool isRoof = vPartType > 0.8 || (n.y > 0.85 && vPartType < 0.1);
   bool isFloor = n.y < -0.85;
 
@@ -155,6 +160,17 @@ void main() {
     // 略帶藍的中灰金屬，靠種子微調明度，避免整片設備同一個顏色
     float m = 0.42 + vSeed.z * 0.16;
     color = vec3(m, m * 1.02, m * 1.06) * lighting;
+  } else if (isWater) {
+    // 深水 → 淺水由 B 通道決定（河 0.0、港池 0.4）。波光是兩道不同頻率的
+    // 正弦相乘，隨 uTime 走 —— 靜止的藍色塊在等角視角下看起來是藍地板。
+    vec3 deep = vec3(0.05, 0.18, 0.34);
+    vec3 shallow = vec3(0.13, 0.42, 0.66);
+    float wave = sin(vWorldPos.x * 7.0 + uTime * 0.55)
+      * sin(vWorldPos.z * 5.0 - uTime * 0.41);
+    color = mix(deep, shallow, clamp(vGroundShade + 0.28 + wave * 0.16, 0.0, 1.0));
+    color *= lighting;
+    // 水面會反天空。比玻璃弱得多，但少了它，夜裡的水是一塊純黑。
+    glassiness = 0.35;
   } else if (isGround) {
     // 柏油 -> 混凝土 -> 磚鋪，由頂點的 B 通道決定。加一點世界座標雜訊，
     // 否則一整片鋪面是死板的單一色塊。

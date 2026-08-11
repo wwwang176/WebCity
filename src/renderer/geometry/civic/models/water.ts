@@ -40,8 +40,15 @@ const TOWER_TOP = M(15.0);
 
 /** 池水的明度。深色 —— 池壁（`PART_DETAIL`）才有東西可以對比。 */
 const WATER_SHADE = 0.1;
-/** 河面的明度。比池水更暗 —— 那是一整片開放水域，不是一個池子。 */
-const RIVER_SHADE = 0.02;
+/**
+ * 河面的明度。
+ *
+ * 走 `PART_WATER`（`water: true`），所以這個值不再是「灰階多暗」而是
+ * 「深水到淺水」—— 0 是河心的深藍。
+ */
+const RIVER_SHADE = 0.0;
+/** 儲水塔的白。乾淨的水 —— 它是這一格唯一不吃廠區色的量體。 */
+const TOWER_WHITE = [0.94, 0.95, 0.96] as const;
 /** 岸線。水在它北邊，廠區在它南邊。 */
 const BANK_Z = -6.5;
 
@@ -98,12 +105,16 @@ const massing: CivicVolume[] = [
   // ── 立式儲水塔。廠區裡唯一有高度的東西。 ────────────────────
   // 站在三座池與機房之間僅存的那塊空地上 —— 塔的圓與池的圓不得互相插入，
   // 那會是看不見的內部面。
+  // 塔身與塔頂都是**白的**。使用者：「水塔應該是白色系，看起來比較乾淨」。
+  // 塔身用逐量體的顏色覆寫（牆的分支讀 `aBldgColor`）；塔頂不能走
+  // `PART_ROOF` —— 那條吃的是公用設施共用的屋頂色票（鍍鋅、舊鍍鋅、鏽紅），
+  // 一頂鏽紅的蓋子扣在白塔上會變成整座廠區最顯眼的東西。
   {
-    tag: 'tower', shape: 'cylinder',
+    tag: 'tower', shape: 'cylinder', color: TOWER_WHITE,
     x: M(1.2), z: M(5.4), w: M(4.6), d: M(4.6), y0: 0, y1: TOWER_TOP,
   },
   {
-    tag: 'towerCap', part: PART_ROOF, shape: 'cylinder',
+    tag: 'towerCap', part: PART_GROUND, shade: 0.95, shape: 'cylinder',
     x: M(1.2), z: M(5.4), w: M(5.0), d: M(5.0), y0: TOWER_TOP, y1: M(15.6),
   },
   {
@@ -114,7 +125,7 @@ const massing: CivicVolume[] = [
 
 const decals: CivicDecal[] = [
   // 河面：z [−12, −6.5]。深色 —— 它與護岸的明度差就是「這裡是水」。
-  { tag: 'river', x: 0, z: M(-9.25), w: M(24.0), d: M(5.5), shade: RIVER_SHADE },
+  { tag: 'river', water: true, x: 0, z: M(-9.25), w: M(24.0), d: M(5.5), shade: RIVER_SHADE },
   // 廠區混凝土：z [−6.5, 8]
   { tag: 'yard', x: 0, z: M(0.75), w: M(24.0), d: M(14.5), shade: 0.55 },
   // 大門前的柏油：z [8, 12]
@@ -159,8 +170,11 @@ const fixtures: PropSpec[] = [
   { kind: 'fence', x: M(-11.4), z: M(2.5), axis: 'x', length: M(17.0) },
   { kind: 'fence', x: M(11.4), z: M(2.5), axis: 'x', length: M(17.0) },
 
-  { kind: 'pipeRack', x: M(-2.6), z: M(1.5), axis: 'z', span: M(4.0) },
-  { kind: 'pipeRack', x: M(2.4), z: M(-6.0), axis: 'x', span: M(1.2) },
+  // 沿著三座池之間那條縫（x ∈ [−4.1, −3.6] 之外）—— 原本從 −4.6 起算，
+  // 而那已經在西側那座池的池壁裡。
+  { kind: 'pipeRack', x: M(-1.8), z: M(1.4), axis: 'z', span: M(3.6) },
+  // 只有一道管架。改成水岸配置之後，三座池 + 機房 + 塔 + 取水口把地填滿了，
+  // 第二道無論擺在哪裡都會插進某個量體 —— 硬塞的下場就是它從池壁裡長出來。
   { kind: 'drum', x: M(-2.0), z: M(7.6), radius: M(0.4) },
   { kind: 'drum', x: M(-1.0), z: M(7.6), radius: M(0.4) },
   { kind: 'gasBottles', x: M(2.6), z: M(8.0), axis: 'z', radius: M(0.24) },

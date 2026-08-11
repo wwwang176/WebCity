@@ -849,6 +849,11 @@ void main() {
   // 柏油地面上長出一格一格的窗。
   bool isGround = vPartType > ${glslFloat(PART_THRESHOLDS.GROUND_MIN)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.GROUND_MAX)};
+  // 水面。與地面分支分開是必要的：地面的色譜是柏油到磚鋪，全是灰的，
+  // 所以「很暗的鋪面」是這套 shader 畫得出來最接近水的東西 —— 而一座碼頭
+  // 有一半的說服力來自它旁邊那片藍色。
+  bool isWater = vPartType > ${glslFloat(PART_THRESHOLDS.WATER_MIN)}
+    && vPartType < ${glslFloat(PART_THRESHOLDS.WATER_MAX)};
   bool isRoof = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_MIN)} || (n.y > 0.85 && vPartType < ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)});
   bool isFloor = n.y < -0.85;
 
@@ -880,6 +885,17 @@ void main() {
     // 略帶藍的中灰金屬，靠種子微調明度，避免整片設備同一個顏色
     float m = 0.42 + vSeed.z * 0.16;
     color = vec3(m, m * 1.02, m * 1.06) * lighting;
+  } else if (isWater) {
+    // 深水 → 淺水由 B 通道決定（河 0.0、港池 0.4）。波光是兩道不同頻率的
+    // 正弦相乘，隨 uTime 走 —— 靜止的藍色塊在等角視角下看起來是藍地板。
+    vec3 deep = vec3(0.05, 0.18, 0.34);
+    vec3 shallow = vec3(0.13, 0.42, 0.66);
+    float wave = sin(vWorldPos.x * 7.0 + uTime * 0.55)
+      * sin(vWorldPos.z * 5.0 - uTime * 0.41);
+    color = mix(deep, shallow, clamp(vGroundShade + 0.28 + wave * 0.16, 0.0, 1.0));
+    color *= lighting;
+    // 水面會反天空。比玻璃弱得多，但少了它，夜裡的水是一塊純黑。
+    glassiness = 0.35;
   } else if (isGround) {
     // 柏油 -> 混凝土 -> 磚鋪，由頂點的 B 通道決定。加一點世界座標雜訊，
     // 否則一整片鋪面是死板的單一色塊。

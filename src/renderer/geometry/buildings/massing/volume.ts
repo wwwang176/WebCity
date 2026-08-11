@@ -15,7 +15,8 @@ import { PART_WALL } from '../parts';
  * 在等角視角下就已經讀得出圓。它仍然填滿宣告的 w × d 盒子（八邊形有頂點落在
  * ±x 與 ±z 上），所以 `maxAbsOf`、`overlapOf`、`rasterise` 不必知道它是圓的。
  */
-export type VolumeShape = 'box' | 'gable' | 'hip' | 'shed' | 'sawtooth' | 'cylinder';
+export type VolumeShape =
+  'box' | 'gable' | 'hip' | 'shed' | 'sawtooth' | 'cylinder' | 'dome' | 'cooling';
 
 export interface Volume {
   /** 中心 */

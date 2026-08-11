@@ -103,7 +103,8 @@ const fixtures: PropSpec[] = [
   { kind: 'drum', x: M(-0.9), z: M(10.8), radius: M(0.42) },
   { kind: 'palletStack', x: M(2.0), z: M(10.2), axis: 'z', depth: M(1.0) },
   { kind: 'palletStack', x: M(3.6), z: M(10.2), axis: 'z', depth: M(1.0) },
-  { kind: 'pipeRack', x: M(1.4), z: M(-2.4), axis: 'z', span: M(5.0) },
+  // 傾卸棚之外（棚的前緣在 z = −1）。原本跨在 z = −2.4，也就是在棚子裡。
+  { kind: 'pipeRack', x: M(1.4), z: M(-0.2), axis: 'z', span: M(3.4) },
 
   { kind: 'lamp', x: M(-10.8), z: M(1.0), heightM: 6.0 },
   { kind: 'lamp', x: M(-1.0), z: M(1.0), heightM: 6.0 },
@@ -117,7 +118,7 @@ const fixtures: PropSpec[] = [
 
   // 與兩根擋車柱同一條線（x = −3.2）—— 原本站在 −2.4，也就是站在垃圾車
   // 停放通道裡。
-  { kind: 'signPost', x: M(-3.2), z: M(6.0), axis: 'z' },
+  { kind: 'signPost', x: M(-3.2), z: M(3.0), axis: 'z' },
   { kind: 'hydrant', x: M(-10.8), z: M(9.8) },
   { kind: 'bollard', x: M(-3.2), z: M(4.0), radius: M(0.12) },
   { kind: 'bollard', x: M(-3.2), z: M(8.0), radius: M(0.12) },

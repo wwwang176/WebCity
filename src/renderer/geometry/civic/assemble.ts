@@ -4,7 +4,7 @@ import { shapeOf } from '../buildings/massing/assemble';
 import { partOf, type Volume } from '../buildings/massing/volume';
 import { GROUND_LAYERS } from '../buildings/massing/metrics';
 import {
-  tagPart, setGroundShade, PART_WALL, PART_GROUND, PART_FOLIAGE,
+  tagPart, setGroundShade, PART_WALL, PART_GROUND, PART_FOLIAGE, PART_WATER,
 } from '../buildings/parts';
 import { METRES_PER_CELL } from '../../../core/grid/constants';
 import {
@@ -19,6 +19,7 @@ import {
   buildCarGeometry, buildBusGeometry, buildTruckGeometry, buildFiretruckGeometry,
   buildPoliceCarGeometry, buildAmbulanceGeometry, buildGarbageTruckGeometry,
   buildVanGeometry, buildAirplaneGeometry, buildAirplaneVTailGeometry,
+  buildFerryGeometry,
 } from '../index';
 
 /**
@@ -212,7 +213,7 @@ export function assembleDecals(
     // **轉在平移之前** —— 反過來的話它會繞原點轉，整條跑道會甩到別的地方去。
     if (d.rotationY) geo.rotateY(d.rotationY);
     geo.translate(d.x, layerY(d), d.z);
-    tagPart(geo, d.lawn ? PART_FOLIAGE : PART_GROUND);
+    tagPart(geo, d.lawn ? PART_FOLIAGE : d.water ? PART_WATER : PART_GROUND);
     setGroundShade(geo, d.shade);
     // 貼片的顏色由 PART_GROUND / PART_FOLIAGE 的分支決定，不吃 aBldgColor。
     // 仍然要寫：屬性缺席時 WebGL 一律餵 0，而 `isFloor` 分支會讀到它。
@@ -267,6 +268,7 @@ const VEHICLE_CONFIG_KEY: Record<CivicVehicleKind, string> = {
   van: 'van',
   truck: 'truck',
   airplane: 'airplane',
+  ferry: 'ferry',
 };
 
 /**
@@ -353,6 +355,7 @@ const VEHICLE_PARTS: Record<
     { geo: buildAirplaneGeometry() },
     { geo: buildAirplaneVTailGeometry(), tint: PARKED_TAIL_TINT },
   ],
+  ferry: () => [{ geo: buildFerryGeometry() }],
 };
 
 /**

@@ -105,6 +105,66 @@ function cylinder(v: Volume): THREE.BufferGeometry {
 }
 
 /**
+ * 半球：圓頂。
+ *
+ * 與 `cylinder` 同一條路徑（THREE 圖元 → 去 uv → 攤平 → 重算法線 → 縮放），
+ * 理由也一樣：`SphereGeometry` 的纏繞方向本來就是外向的，而它帶 uv 又是索引
+ * 幾何，不先攤平就與 `frustum` 的產物合併不起來。
+ *
+ * 分段數與圓柱同為 8：兩者常常疊在一起（圓頂坐在筒身上），邊數不同的話
+ * 接縫會露出來。垂直分 4 段 —— 再少就會讀成一頂斗笠。
+ */
+function dome(v: Volume): THREE.BufferGeometry {
+  const src = new THREE.SphereGeometry(
+    0.5, CYLINDER_SIDES, 4, 0, Math.PI * 2, 0, Math.PI / 2,
+  );
+  src.deleteAttribute('uv');
+  const geo = src.toNonIndexed();
+  src.dispose();
+  // 半球的 y ∈ [0, 0.5]，要撐滿宣告的 [y0, y1]。
+  geo.scale(v.w, (v.y1 - v.y0) * 2, v.d);
+  geo.computeVertexNormals();
+  geo.translate(v.x, v.y0, v.z);
+  return geo;
+}
+
+/**
+ * 冷卻塔：**有腰的**旋轉體。
+ *
+ * 電廠在低多邊形城市裡最好認的剪影就是它，而那個形狀的實體只有一件事 ——
+ * 中段比上下都窄。圓柱是直的、稜台是單調收放，兩個都做不出腰，所以這是
+ * 唯一需要自己給側面輪廓的形狀。
+ *
+ * 用 `LatheGeometry` 把輪廓轉一圈。輪廓取雙曲線 r(t) = √(1 + ((t − w) / c)²)，
+ * 正規化成「最寬處剛好填滿宣告的盒子」—— 與其他形狀一樣，量體算出來的邊界
+ * 就是幾何真正佔的地方。
+ */
+function coolingTower(v: Volume): THREE.BufferGeometry {
+  /** 腰在高度的幾成。0.65 ≈ 實際冷卻塔的比例。 */
+  const WAIST = 0.65;
+  /** 雙曲線的收斂速度。愈小腰愈細。 */
+  const C = 0.85;
+  const RINGS = 6;
+  const profile: THREE.Vector2[] = [];
+  for (let i = 0; i <= RINGS; i++) {
+    const t = i / RINGS;
+    profile.push(new THREE.Vector2(Math.sqrt(1 + ((t - WAIST) / C) ** 2), t));
+  }
+  // 最寬的一圈（底座）正規化成半徑 0.5，這樣縮放之後剛好填滿盒子。
+  const widest = Math.max(...profile.map(p => p.x));
+  for (const p of profile) p.x = (p.x / widest) * 0.5;
+
+  const src = new THREE.LatheGeometry(profile, CYLINDER_SIDES);
+  src.deleteAttribute('uv');
+  const geo = src.toNonIndexed();
+  src.dispose();
+  geo.scale(v.w, v.y1 - v.y0, v.d);
+  geo.computeVertexNormals();
+  geo.translate(v.x, v.y0, v.z);
+  return geo;
+}
+
+/**
  * 一個量體的幾何。一份量體可能產出多份幾何（鋸齒天窗是一排）。
  *
  * 匯出是給 `geometry/civic/` 用的 —— 公共建築用同一組圖元，但護欄不同
@@ -120,6 +180,10 @@ export function shapeOf(v: Volume): THREE.BufferGeometry[] {
       return [frustum(v, v.w, v.d, 0, 0)];
     case 'cylinder':
       return [cylinder(v)];
+    case 'dome':
+      return [dome(v)];
+    case 'cooling':
+      return [coolingTower(v)];
     case 'gable':
       return alongZ
         ? [frustum(v, v.w, v.d * RIDGE, 0, 0)]

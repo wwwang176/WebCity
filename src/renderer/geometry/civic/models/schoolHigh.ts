@@ -254,8 +254,10 @@ const fixtures: PropSpec[] = [
   { kind: 'flagpole', x: M(10.4), z: M(-1.8), axis: 'z' },
   { kind: 'signPost', x: M(-9.0), z: M(-1.6), axis: 'z' },
   { kind: 'bin', x: M(2.6), z: M(-1.6), radius: M(0.26) },
-  { kind: 'bikeRack', x: M(-8.0), z: M(-9.2), axis: 'z' },
-  { kind: 'bikeRack', x: M(-8.0), z: M(-9.9), axis: 'z' },
+  // 校舍**之外**（x > 1、z ∈ [−8, −3] 那塊空地）—— 原本擺在 (−8, −9.2)，
+  // 而那個位置在教室樓的牆裡面。
+  { kind: 'bikeRack', x: M(10.4), z: M(-5.4), axis: 'z' },
+  { kind: 'bikeRack', x: M(10.4), z: M(-6.1), axis: 'z' },
   { kind: 'mailbox', x: M(-10.2), z: M(-9.4) },
   ...([-6.0, -2.0, 2.0, 6.0] as const).map((x) => ({
     kind: 'bollard' as const, x: M(x), z: M(-1.4), radius: M(0.11),

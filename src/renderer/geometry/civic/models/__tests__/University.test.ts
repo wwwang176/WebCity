@@ -81,30 +81,42 @@ describe('大學', () => {
 
   // ── 圓頂 ──────────────────────────────────────────────────
 
-  it('should stack a dome out of shrinking drums', () => {
-    const drums = tagged('dome');
-    expect(drums.length, '圓頂不是疊起來的').toBeGreaterThanOrEqual(3);
-    for (const d of drums) {
-      expect(d.shape, '圓頂的一段不是圓的').toBe('cylinder');
-      expect(d.part, '圓頂會長出窗戶 —— 它要走屋頂分支').toBe(PART_ROOF);
+  /**
+   * 圓頂是**半球**，坐在一段鼓座上。
+   *
+   * 使用者：「圓頂我覺得要改一下，要看起來是半球形」。原本是一疊愈往上愈窄
+   * 的八角柱 —— 遠景讀得出圓頂，走近是四層台階。
+   *
+   * 半球的高度必然是直徑的一半，所以鼓座不是裝飾：少了它，圓頂會扁到讀不出
+   * 「這一棟有圓頂」。
+   */
+  it('should cap the dome with a hemisphere on a drum', () => {
+    const dome = one('dome');
+    const drum = one('domeDrum');
+    expect(dome.shape, '圓頂不是半球').toBe('dome');
+    expect(drum.shape, '鼓座不是圓的').toBe('cylinder');
+    for (const v of [dome, drum]) {
+      expect(v.part, '圓頂會長出窗戶 —— 它要走屋頂分支').toBe(PART_ROOF);
     }
-    // 由下往上一段比一段窄，而且**站在**前一段上。
-    const stack = [...drums].sort((a, b) => a.y0 - b.y0);
-    for (let i = 1; i < stack.length; i++) {
-      expect(stack[i]!.w, '圓頂上寬下窄了').toBeLessThan(stack[i - 1]!.w);
-      expect(stack[i]!.y0, '圓頂的一段浮在半空')
-        .toBeCloseTo(stack[i - 1]!.y1, 9);
-    }
+    expect(dome.y0, '半球浮在鼓座上方').toBeCloseTo(drum.y1, 9);
+    expect(dome.w, '半球與鼓座不同寬 —— 接縫會露出來').toBeCloseTo(drum.w, 9);
+    expect(dome.w, '半球不是正圓').toBeCloseTo(dome.d, 9);
+    // 半球的高度就是半徑。壓扁或拉長的話它不再是半球。
+    expect(dome.y1 - dome.y0, '半球被壓扁或拉長了').toBeCloseTo(dome.w / 2, 6);
+    // 而鼓座要有真正的高度 —— 一圈 0.2 m 的邊不算鼓座。
+    expect(m(drum.y1 - drum.y0), '鼓座太矮，圓頂會扁得讀不出來').toBeGreaterThan(2);
   });
 
   it('should centre the dome on the block it sits on', () => {
     // 偏一邊的圓頂讀起來像是後來加蓋的。
-    const drums = tagged('dome');
     const host = ranges.find(r => z1(r) < 0)!;
-    for (const d of drums) {
+    for (const d of [one('dome'), one('domeDrum')]) {
       expect(d.x, '圓頂沒有置中').toBeCloseTo(host.x, 9);
       expect(d.z, '圓頂沒有置中').toBeCloseTo(host.z, 9);
     }
+    // 而且要整個落在那一棟上面 —— 伸出去的話它懸空。
+    expect(one('dome').w / 2, '圓頂比它坐的那一棟還寬')
+      .toBeLessThanOrEqual(host.d / 2 + 1e-9);
   });
 
   it('should light the lantern at the top', () => {
@@ -115,37 +127,31 @@ describe('大學', () => {
       .toBeGreaterThanOrEqual(Math.max(...tagged('dome').map(d => d.y1)) - 1e-9);
   });
 
-  // ── 鐘塔 ──────────────────────────────────────────────────
-
-  it('should make the clock tower the tallest thing on site', () => {
-    // 遠景時整所大學只剩鐘塔的剪影。被圓頂蓋過去就白做了。
-    const cap = one('towerCap');
-    expect(cap.y1, '鐘塔不是最高的').toBeCloseTo(topOf(plan.massing), 9);
-    expect(cap.y1, '鐘塔沒有高過圓頂')
-      .toBeGreaterThan(Math.max(...tagged('dome').map(d => d.y1)));
-  });
-
-  it('should show the clock on two opposite faces', () => {
-    // 只有一面的鐘塔從另一邊看就只是一根柱子。
-    const faces = tagged('clockFace');
-    expect(faces.length, '鐘面不到兩面').toBeGreaterThanOrEqual(2);
-    for (const f of faces) expect(f.part, '鐘面不會亮').toBe(PART_LAMP);
-    const tower = one('tower');
-    expect(faces.some(f => f.z > tower.z), '沒有朝南的鐘面').toBe(true);
-    expect(faces.some(f => f.z < tower.z), '沒有朝北的鐘面').toBe(true);
-  });
-
-  it('should stand the tower on a range, not in the courtyard', () => {
-    const tower = one('tower');
-    const host = ranges.find(r =>
-      x0(r) <= x0(tower) + 1e-9 && x1(r) >= x1(tower) - 1e-9
-      && z0(r) <= z0(tower) + 1e-9 && z1(r) >= z1(tower) - 1e-9)!;
-    expect(host, '鐘塔沒有站在任何一棟樓上').toBeTruthy();
+  /**
+   * 場上只有**一個**制高點。
+   *
+   * 使用者：「大學保留圓頂，移除另一個高塔」。原本圓頂在北棟、鐘塔在南棟，
+   * 兩座 24 m 與 27 m 的東西隔著方庭對望 —— 遠景讀起來是兩棟不同的建築，
+   * 而不是一所大學。
+   */
+  it('should raise the dome and nothing else', () => {
+    const lantern = one('finial');
+    expect(lantern.y1, '圓頂的頂尖不是全場最高的')
+      .toBeCloseTo(topOf(plan.massing), 9);
+    for (const v of plan.massing) {
+      if (v.tag === 'finial' || v.tag === 'dome' || v.tag === 'domeDrum') continue;
+      // 比的是鼓座的**頂**：屋頂上的空調機組與圓頂坐在同一片屋頂上，
+      // 拿鼓座的底比的話它們會被判成「第二座塔」。
+      expect(v.y1, `${v.tag} 高過圓頂 —— 場上不該有第二座塔`)
+        .toBeLessThan(one('domeDrum').y1 + 1e-9);
+    }
   });
 
   it('should stay at a believable height for a university', () => {
+    // 拆掉 27 m 的鐘塔之後，最高點是圓頂的頂尖。下限跟著降到 20 m ——
+    // 再低的話它在遠景與旁邊的高中分不出來（高中壓在 20 m 以下）。
     const top = m(topOf(plan.massing));
-    expect(top).toBeGreaterThan(24);
+    expect(top).toBeGreaterThan(20);
     expect(top).toBeLessThan(36);
   });
 

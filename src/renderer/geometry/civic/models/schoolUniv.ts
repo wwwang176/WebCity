@@ -41,24 +41,27 @@ const NORTH_Z = M(-12.5);
 /** 南棟的中心。鐘塔疊在它正上方。 */
 const SOUTH_Z = M(9.5);
 
-const TOWER_TOP = M(26.0);
-const TOWER_CAP = M(27.2);
-
 /**
- * 圓頂 —— 一疊愈往上愈窄的八角柱。
+ * 圓頂 —— **鼓座 + 半球**。
  *
- * `cylinder` 在等角視角下已經讀得出圓，堆四層就讀得出圓頂。走 `PART_ROOF`
- * 而不是 `PART_WALL`：牆的分支會在它身上畫窗格，而一個長滿窗戶的圓頂看起來
- * 就只是一個有點怪的塔。
+ * 使用者：「大學保留圓頂，移除另一個高塔，但圓頂我覺得要改一下，要看起來是
+ * 半球形」。原本它是一疊愈往上愈窄的八角柱（8.4 → 7.6 → 5.6 → 3.4 m），
+ * 遠景讀得出「圓頂」，走近就是四層邊緣分明的台階。
+ *
+ * 現在半球走 `shape: 'dome'`（`shapeOf` 新增的形狀），而下面墊一段鼓座 ——
+ * 直接把半球扣在屋頂上的話它太扁：半球的高度必然只有直徑的一半，而圓頂的
+ * 高度是這一棟的剪影。鼓座同時是真實圓頂的做法（採光層就在那一圈）。
+ *
+ * 兩段都走 `PART_ROOF` 而不是 `PART_WALL`：牆的分支會在它身上畫窗格，
+ * 而一個長滿窗戶的圓頂看起來就只是一個有點怪的塔。
+ *
+ * 直徑不得超過北棟的深度（9 m）。
  */
-const DOME: ReadonlyArray<readonly [number, number, number]> = [
-  // [直徑 m, 底 m, 頂 m]。最寬的一段不得超過北棟的深度（9 m）。
-  [8.4, 14.5, 18.0],
-  [7.6, 18.0, 20.4],
-  [5.6, 20.4, 22.4],
-  [3.4, 22.4, 23.8],
-];
-const DOME_TOP = M(23.8);
+const DOME_DIA = 8.4;
+const DRUM_BASE = M(14.5);
+const DRUM_TOP = M(18.0);
+/** 半球的高度 = 半徑。 */
+const DOME_TOP_M = 18.0 + DOME_DIA / 2;
 
 const massing: CivicVolume[] = [
   // ── 四棟圍成方庭 ──────────────────────────────────────────
@@ -94,32 +97,22 @@ const massing: CivicVolume[] = [
   })),
 
   // ── 圓頂 ──────────────────────────────────────────────────
-  ...DOME.map(([dia, y0, y1]): CivicVolume => ({
-    tag: 'dome', part: PART_ROOF, shape: 'cylinder',
-    x: 0, z: NORTH_Z, w: M(dia), d: M(dia), y0: M(y0), y1: M(y1),
-  })),
+  {
+    tag: 'domeDrum', part: PART_ROOF, shape: 'cylinder',
+    x: 0, z: NORTH_Z, w: M(DOME_DIA), d: M(DOME_DIA),
+    y0: DRUM_BASE, y1: DRUM_TOP,
+  },
+  {
+    tag: 'dome', part: PART_ROOF, shape: 'dome',
+    x: 0, z: NORTH_Z, w: M(DOME_DIA), d: M(DOME_DIA),
+    y0: DRUM_TOP, y1: M(DOME_TOP_M),
+  },
   {
     // 頂尖的燈籠。夜裡圓頂只剩它還看得見。
     tag: 'finial', part: PART_LAMP, shape: 'cylinder',
-    x: 0, z: NORTH_Z, w: M(1.2), d: M(1.2), y0: DOME_TOP, y1: M(24.9),
+    x: 0, z: NORTH_Z, w: M(1.2), d: M(1.2),
+    y0: M(DOME_TOP_M), y1: M(DOME_TOP_M + 1.4),
   },
-
-  // ── 鐘塔 ──────────────────────────────────────────────────
-  {
-    tag: 'tower',
-    x: 0, z: SOUTH_Z, w: M(6.0), d: M(6.0), y0: RANGE_ROOF, y1: TOWER_TOP,
-  },
-  {
-    // 四坡尖頂。比塔身寬一圈才看得出是「頂」。
-    tag: 'towerCap', part: PART_ROOF, shape: 'hip',
-    x: 0, z: SOUTH_Z, w: M(6.6), d: M(6.6), y0: TOWER_TOP, y1: TOWER_CAP,
-  },
-  // 南北兩面鐘。只有一面的話從另一邊看它就只是一根柱子。
-  ...([-1, 1] as const).map((side): CivicVolume => ({
-    tag: 'clockFace', part: PART_LAMP,
-    x: 0, z: SOUTH_Z + side * M(3.1), w: M(2.6), d: M(0.2),
-    y0: M(21.6), y1: M(23.0),
-  })),
 
   // ── 屋頂設備 ──────────────────────────────────────────────
   ...([-11, 11] as const).map((x): CivicVolume => ({
@@ -209,7 +202,7 @@ const fixtures: PropSpec[] = [
   // 步道兩側的矮籬，把草地與路分開。
   ...([-1, 1] as const).map(sx => ({
     kind: 'hedge' as const,
-    x: M(sx * 1.7), z: M(-1.0), axis: 'x' as const,
+    x: M(sx * 2.4), z: M(-1.0), axis: 'x' as const,
     length: M(13.0), depth: M(0.5), heightM: 0.8,
   })),
   { kind: 'shrub', x: M(-3.0), z: M(4.6), radius: M(0.7) },

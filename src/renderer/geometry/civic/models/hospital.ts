@@ -234,7 +234,7 @@ const fixtures: PropSpec[] = [
   { kind: 'lamp', x: M(-8.0), z: M(16.6), heightM: 4.5 },
   { kind: 'lamp', x: M(1.6), z: M(16.6), heightM: 4.5 },
 
-  { kind: 'flagpole', x: M(-11.2), z: M(4.0), axis: 'z' },
+  { kind: 'flagpole', x: M(-11.2), z: M(6.4), axis: 'z' },
   { kind: 'signPost', x: M(1.2), z: M(6.2), axis: 'z' },
   { kind: 'hydrant', x: M(11.4), z: M(5.2) },
   { kind: 'bin', x: M(-3.6), z: M(6.0), radius: M(0.28) },

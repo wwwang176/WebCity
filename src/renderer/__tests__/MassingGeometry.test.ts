@@ -299,6 +299,104 @@ describe('cylinder volumes', () => {
   });
 });
 
+describe('dome volumes', () => {
+  /**
+   * 圓頂要是**半球**，不是一疊愈往上愈窄的鼓。
+   *
+   * 使用者：「圓頂我覺得要改一下，要看起來是半球形」。堆四層八角柱在遠景
+   * 讀得出「圓頂」，走近就是四層邊緣分明的台階。
+   *
+   * 「像不像半球」在幾何上有一個可以直接量的性質：**任一高度的半徑等於
+   * `√(1 − y²)`**。堆疊的鼓在一層之內半徑是常數，所以這條會抓到它。
+   */
+  const box: Volume = { x: 0.2, z: -0.1, w: 0.4, d: 0.4, y0: 0.5, y1: 0.7 };
+
+  it('should fill the box it declared', () => {
+    const geo = assemble([{ ...box, shape: 'dome' }]);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect(b.min.x).toBeCloseTo(0, 6);
+    expect(b.max.x).toBeCloseTo(0.4, 6);
+    expect(b.min.z).toBeCloseTo(-0.3, 6);
+    expect(b.max.z).toBeCloseTo(0.1, 6);
+    // 底面貼著 y0、頂點剛好碰到 y1 —— 半球是「宣告的盒子的上半」。
+    expect(b.min.y).toBeCloseTo(0.5, 6);
+    expect(b.max.y).toBeCloseTo(0.7, 6);
+  });
+
+  it('should curve like a hemisphere, not step like a stack of drums', () => {
+    const geo = assemble([{ ...box, shape: 'dome' }]);
+    // 逐頂點檢查而不是逐高度取樣：8 邊 × 4 段的半球只有五圈頂點，取樣高度
+    // 落在圈與圈之間就什麼都量不到（而那讀起來像「這個形狀是空的」）。
+    const pos = geo.getAttribute('position');
+    const seen = new Set<string>();
+    for (let i = 0; i < pos.count; i++) {
+      const y = (pos.getY(i) - box.y0) / (box.y1 - box.y0);
+      const r = Math.hypot(pos.getX(i) - box.x, pos.getZ(i) - box.z) / (box.w / 2);
+      // 八邊形的頂點落在外接圓上，邊的中點落在內切圓上（差 cos(π/8) ≈ 0.924），
+      // 所以容差要吃得下那個差。
+      expect(r * r + y * y, `頂點 (r=${r.toFixed(2)}, y=${y.toFixed(2)}) 不在球面上`)
+        .toBeGreaterThan(0.82);
+      expect(r * r + y * y).toBeLessThan(1.01);
+      seen.add(y.toFixed(3));
+    }
+    // 而且真的分了好幾層 —— 一個圓盤也滿足上面那條。
+    expect(seen.size, '半球只有一圈頂點，那是一個蓋子').toBeGreaterThanOrEqual(4);
+  });
+
+  it('should merge with the other shapes', () => {
+    // `mergeGeometries` 要求屬性集合一致。圓柱那條路徑踩過這個坑（索引 + uv），
+    // 半球走的是同一個 THREE 圖元，所以同一個坑就在旁邊等著。
+    expect(() => assemble([
+      { ...box, shape: 'dome' },
+      { x: 0, z: 0, w: 0.2, d: 0.2, y0: 0, y1: 0.5 },
+    ])).not.toThrow();
+  });
+});
+
+describe('cooling tower volumes', () => {
+  /**
+   * 冷卻塔的**腰**。
+   *
+   * 使用者：「發電廠的形象也要改一下 現在看不出是電廠」。電廠在低多邊形城市
+   * 裡最好認的剪影就是雙曲線的冷卻塔 —— 而那個形狀的實體只有一件事：
+   * **中段比上下都窄**。圓柱與稜台都做不到（一個是直的，一個是單調收放），
+   * 所以這條測的就是那個腰。
+   */
+  const box: Volume = { x: 0, z: 0, w: 0.6, d: 0.6, y0: 0, y1: 1.2 };
+
+  it('should pinch in at the waist', () => {
+    const geo = assemble([{ ...box, shape: 'cooling' }]);
+    const pos = geo.getAttribute('position');
+    const ring = (lo: number, hi: number) => {
+      let r = 0;
+      for (let i = 0; i < pos.count; i++) {
+        const t = (pos.getY(i) - box.y0) / (box.y1 - box.y0);
+        if (t < lo || t > hi) continue;
+        r = Math.max(r, Math.hypot(pos.getX(i) - box.x, pos.getZ(i) - box.z));
+      }
+      return r;
+    };
+    // 取樣窗要吃得下浮點誤差：頂圈的 t 算出來可能是 1.0000000000000002，
+    // 而 `t > 1.0` 會把它整圈丟掉（量到的半徑是 0，訊息看起來像「塔口不見了」）。
+    const foot = ring(-0.01, 0.08);
+    const waist = ring(0.55, 0.75);
+    const lip = ring(0.9, 1.01);
+    expect(waist, '腰沒有比底座窄 —— 那是一根柱子').toBeLessThan(foot * 0.85);
+    expect(lip, '塔口沒有比腰寬 —— 那是一個漏斗').toBeGreaterThan(waist * 1.05);
+    expect(lip, '塔口比底座還寬 —— 那是一個喇叭').toBeLessThan(foot);
+  });
+
+  it('should fill the box it declared', () => {
+    const geo = assemble([{ ...box, shape: 'cooling' }]);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect(b.max.x - b.min.x).toBeCloseTo(0.6, 6);
+    expect(b.min.y).toBeCloseTo(0, 6);
+    expect(b.max.y).toBeCloseTo(1.2, 6);
+  });
+});
+
 describe('massing variety', () => {
   it('should give every bucket eight distinct silhouettes', () => {
     // 這是本階段的主要條件。兩個變體長一樣就等於少一個變體。

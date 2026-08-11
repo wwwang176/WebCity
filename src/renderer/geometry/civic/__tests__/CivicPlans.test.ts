@@ -7,7 +7,7 @@ import { overlapOf } from '../../buildings/massing/volume';
 import { propExtent } from '../../props';
 import { CIVIC_TRIANGLE_BUDGET } from '../types';
 import { getInfraConfig } from '../../../../core/building/InfraConfig';
-import { PART_THRESHOLDS, triangleCount, ZONE_CAT } from '../../buildings/parts';
+import { PART_THRESHOLDS, triangleCount, ZONE_CAT, PART_GROUND } from '../../buildings/parts';
 import { METRES_PER_CELL } from '../../../../core/grid/constants';
 import type { Volume } from '../../buildings/massing/volume';
 
@@ -148,6 +148,45 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
         const hit = span(a.b.min.x, a.b.max.x, c.b.min.x, c.b.max.x)
           && span(a.b.min.z, a.b.max.z, c.b.min.z, c.b.max.z);
         expect(hit, `${type} 的 ${a.v.kind} 與 ${c.v.kind} 停在同一格`).toBe(false);
+      }
+    }
+  });
+
+  /**
+   * 共用圖元也不准長在量體裡。
+   *
+   * 「車不准卡進東西」那條抓的是車，而路燈、樹、管架、圍籬走的是另一層
+   * （`fixtures`）—— 同一個錯在那一層完全沒有人擋。一支從廠房的牆裡長出來的
+   * 路燈與一台停在土丘裡的垃圾車是同一件事。
+   *
+   * 三條例外，每一條都是「那樣才對」而不是「先放過」：
+   *
+   * - **離地的量體不算。** 樹冠伸到 11 m 高的屋簷底下、花圃站在 20 m 高的
+   *   塔頂帽子下面 —— 那些在平面上重疊，在空間裡差了十幾公尺。
+   * - **`PART_GROUND` 的量體不算。** 月台、碼頭平台、停機坪甲板是給人站的
+   *   鋪面：站在上面的路燈是對的。
+   * - **點狀圖元只比中心。** 樹的 `propExtent` 回報的是**樹冠**半徑，而樹幹
+   *   才是它佔的地。線狀的（管架、綠籬、單車架）則整條都要比 —— 一條穿牆
+   *   而過的管架，中心可能好端端地在牆外。
+   */
+  it('should not grow a fixture inside a building', () => {
+    const span = (a0: number, a1: number, b0: number, b1: number) =>
+      Math.min(a1, b1) - Math.max(a0, b0) > 1e-9;
+    /** 這些是「一根站在地上的東西」，佔地就是它自己那一點。 */
+    const POINTY = new Set(['tree', 'shrub', 'topiary', 'flowerBed', 'lamp',
+      'bin', 'bollard', 'hydrant', 'mailbox', 'drum']);
+    const GROUND_LEVEL = 0.5 / METRES_PER_CELL;
+
+    for (const f of plan.fixtures) {
+      // 圍籬沿著佔地邊界跑一整條，本來就會經過牆邊。
+      if (f.kind === 'fence') continue;
+      const e = POINTY.has(f.kind) ? { x: 0, z: 0 } : propExtent(f);
+      for (const [i, v] of [...plan.massing, ...plan.props].entries()) {
+        if (v.y0 > GROUND_LEVEL) continue;
+        if (v.part === PART_GROUND) continue;
+        const hit = span(f.x - e.x, f.x + e.x, v.x - v.w / 2, v.x + v.w / 2)
+          && span(f.z - e.z, f.z + e.z, v.z - v.d / 2, v.z + v.d / 2);
+        expect(hit, `${type} 的 ${f.kind} 長在 ${v.tag ?? i} 裡`).toBe(false);
       }
     }
   });

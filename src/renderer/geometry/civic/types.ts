@@ -93,6 +93,12 @@ export interface CivicDecal {
   /** 草地。走 `PART_FOLIAGE` 拿到綠色，而不是 `PART_GROUND` 的灰階。 */
   lawn?: boolean;
   /**
+   * 水面。走 `PART_WATER` 拿到會動的藍，而不是「一塊很暗的鋪面」。
+   *
+   * `shade` 仍然有用：0 是深水（河），高一點是港池。
+   */
+  water?: boolean;
+  /**
    * 繞 y 軸轉多少（弧度）。**只有 `mark` 層准轉。**
    *
    * 跑道是橢圓的、滑行道的停機線是斜的 —— 兩者都做不成軸對齊的矩形。轉向
@@ -199,7 +205,10 @@ export type CivicVehicleKind =
   | 'bus' | 'garbageTruck' | 'van' | 'truck'
   // 停在機場停機坪上的飛機。與天上飛的是同一份幾何（`geometry/airplane`）
   // —— 11.7 × 10.8 m，在 60 m 的小型機場上剛好是一架區間客機的尺度。
-  | 'airplane';
+  | 'airplane'
+  // 停在渡輪碼頭的渡輪。與航線上跑的是同一份幾何（`geometry/ferry`）——
+  // 9 × 2.6 m，在 12 m 的碼頭上是一艘正在靠泊的小型渡輪。
+  | 'ferry';
 
 /**
  * 量體要從佔地邊界內縮多少（格）。0.02 格 = 24 cm。
