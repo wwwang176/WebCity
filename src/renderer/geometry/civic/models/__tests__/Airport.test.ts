@@ -5,6 +5,7 @@ import {
 import { FACADE_TRANSIT, PART_LAMP } from '../../../buildings/parts';
 import { topOf } from '../../../buildings/massing/volume';
 import { assembleVehicles } from '../../assemble';
+import { buildAirplaneGeometry } from '../../../index';
 import { civicColorOf } from '../../colors';
 import {
   allFlightPaths, allGates, runwayCentrelines, taxiwayX, apronLaneZ,
@@ -208,7 +209,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   it('should bridge exactly the gates the flight paths use', () => {
     // 大型機場的兩條航路共用中間那個機位。直接串起來的話它會出現兩次，
     // 而「每個機位一條空橋」就會多畫一條疊在一起的。
-    const bridges = plan.overhead.filter(v => v.tag === 'jetBridge');
+    const bridges = plan.props.filter(v => v.tag === 'jetBridge');
     const gates = allGates(size);
     expect(bridges.length, '空橋數與機位數對不上').toBe(gates.length);
     for (const g of gates) {
@@ -218,6 +219,38 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   // ── 夜間語彙 ──────────────────────────────────────────────
+
+  /**
+   * 空橋要接得到機身的門。
+   *
+   * 它原本掛在 `overhead` 層，而那一層的規則是「要高過 2.2 m 的行人淨空」
+   * —— 於是空橋停在 4.6 m，遠遠飄在 1.44 m 高的機身上方。空橋接的是飛機，
+   * 不是路人。門高從**實際的飛機幾何**量，不寫死數字：哪天有人把飛機改高，
+   * 寫死的那個數字會繼續指向舊的高度。
+   */
+  it('should meet the aeroplane door, not float above it', () => {
+    const plane = buildAirplaneGeometry();
+    plane.computeBoundingBox();
+    const top = plane.boundingBox!.max.y;
+    const bridges = plan.props.filter(v => v.tag === 'jetBridge');
+    expect(bridges.length, '沒有空橋').toBeGreaterThan(0);
+    for (const b of bridges) {
+      expect(b.y0, `空橋橋面 ${m(b.y0).toFixed(1)} m 飄在機身上方`)
+        .toBeLessThan(top);
+      expect(b.y1, '空橋沉在地面下').toBeGreaterThan(top * 0.4);
+    }
+  });
+
+  it('should park light-coloured ground vehicles by the terminal', () => {
+    // 使用者：「航廈附近也可以放一些工作車輛(淺色)」。深色的地勤車在深色的
+    // 柏油上看不出來，而地勤車實際上就是淺色的。
+    const service = plan.vehicles.filter(v => v.tint !== undefined);
+    expect(service.length, '航廈附近沒有工作車輛').toBeGreaterThanOrEqual(2);
+    for (const v of service) {
+      const lum = ((v.tint! >> 16 & 0xff) + (v.tint! >> 8 & 0xff) + (v.tint! & 0xff)) / 3;
+      expect(lum, `${v.kind} 的地勤車不夠淺`).toBeGreaterThan(180);
+    }
+  });
 
   it('should light the runway, the thresholds and the taxiway', () => {
     for (const tag of ['runwayLight', 'thresholdLight', 'taxiwayLight']) {

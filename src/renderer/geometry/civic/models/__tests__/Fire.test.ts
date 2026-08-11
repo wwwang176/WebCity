@@ -4,6 +4,7 @@ import { FACADE_CIVIC, PART_DETAIL, PART_LAMP } from '../../../buildings/parts';
 import { topOf } from '../../../buildings/massing/volume';
 import { propExtent } from '../../../props';
 import { civicColorOf } from '../../colors';
+import { civicVehicleTint } from '../../assemble';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
 
 const plan = firePlan;
@@ -151,6 +152,27 @@ describe('消防局', () => {
     expect(beacons.length, '門楣上沒有燈').toBeGreaterThanOrEqual(doors.length);
     expect(plan.fixtures.filter(f => f.kind === 'lamp').length, '前庭的路燈太少')
       .toBeGreaterThanOrEqual(3);
+  });
+
+  /**
+   * 消防車要比消防局**暗**。
+   *
+   * 使用者：「消防車應該是暗紅色的」。原因比「比較好看」具體：消防車原本
+   * 與消防局的牆是**同一個紅**（兩邊都是 `0xd32f2f`）—— 一台停在牆前面的
+   * 車與牆同色，等於沒有車。
+   *
+   * 比的是與這一棟建築的關係，不是一個寫死的十六進位值：哪天有人調了消防局
+   * 的紅，這條測試會跟著要求車也調。
+   */
+  it('should be darker than the station it parks at', () => {
+    const truck = civicVehicleTint('firetruck');
+    const lum = (r: number, g: number, b: number) => 0.299 * r + 0.587 * g + 0.114 * b;
+    const truckLum = lum(
+      (truck >> 16) & 0xff, (truck >> 8) & 0xff, truck & 0xff);
+    const [wr, wg, wb] = plan.color;
+    const wallLum = lum(wr * 255, wg * 255, wb * 255);
+    expect(truckLum, '消防車與消防局的牆一樣亮 —— 停在牆前就看不見了')
+      .toBeLessThan(wallLum * 0.85);
   });
 
   it('should park real fire engines', () => {

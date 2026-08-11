@@ -66,29 +66,69 @@ describe('高中', () => {
     }
   });
 
-  it('should make an oval, not a circle and not a line', () => {
-    // 圓形不是跑道，直線也不是。長短軸要有明顯的差。
+  /**
+   * 圓角矩形，不是橢圓。
+   *
+   * 使用者：「操場應該是圓角矩形(現在是橢圓形)」。真實的操場是**四段直道**
+   * 加四個轉彎；橢圓沒有任何一段是直的，跑起來像一個蛋。
+   *
+   * 測「有沒有直道」而不是「像不像矩形」：直道的實體就是「好幾段連續的線
+   * 方向完全相同」，而那正是橢圓做不到的事。
+   */
+  it('should have four straights, not be one endless curve', () => {
+    const outer = TRACK.lanes[0]!;
+    const dirs = outer.map(s => s.rotationY);
+    /** 這個方向上有幾段完全同向。 */
+    const runOf = (want: number) =>
+      dirs.filter(d => Math.abs(Math.atan2(Math.sin(d - want), Math.cos(d - want)))
+        < 1e-6).length;
+    for (const [name, want] of [
+      ['+x', 0], ['−x', Math.PI], ['+z', -Math.PI / 2], ['−z', Math.PI / 2],
+    ] as const) {
+      expect(runOf(want), `${name} 方向沒有直道 —— 這是橢圓不是圓角矩形`)
+        .toBeGreaterThanOrEqual(3);
+    }
+  });
+
+  it('should round the corners rather than square them off', () => {
+    // 直角的操場跑不了 —— 而且那是球場不是跑道。
+    expect(TRACK.r, '轉角半徑是 0，那是一個方框').toBeGreaterThan(0);
+    expect(TRACK.r, '轉角半徑等於半寬，那又變回橢圓了').toBeLessThan(TRACK.b);
+    const outer = TRACK.lanes[0]!;
+    const curved = outer.filter(s =>
+      Math.min(...[0, Math.PI, Math.PI / 2, -Math.PI / 2].map(w =>
+        Math.abs(Math.atan2(Math.sin(s.rotationY - w), Math.cos(s.rotationY - w)))))
+      > 1e-6);
+    expect(curved.length, '沒有任何一段是彎的').toBeGreaterThanOrEqual(8);
+  });
+
+  it('should be longer than it is wide', () => {
     const outer = TRACK.lanes[0]!;
     const xs = outer.map(s => s.x);
     const zs = outer.map(s => s.z);
     const a = (Math.max(...xs) - Math.min(...xs)) / 2;
     const b = (Math.max(...zs) - Math.min(...zs)) / 2;
-    expect(Math.max(a, b) / Math.min(a, b), '跑道太圓了').toBeGreaterThan(1.15);
-    expect(m(Math.min(a, b)), '跑道短軸太短，跑不起來').toBeGreaterThan(5);
+    expect(a / b, '跑道太方了').toBeGreaterThan(1.15);
+    expect(m(b), '跑道太窄，跑不起來').toBeGreaterThan(5);
   });
 
   it('should nest the lanes without crossing them', () => {
     // 兩條車道線交叉的話那不是跑道，是一團線。
     //
-    // 比的是**橢圓半徑**（(x/a)² + (z/b)²）而不是到中心的直線距離：橢圓上
-    // 「離中心最遠」的點在長軸、「最近」的點在短軸，所以內圈長軸上的點比
-    // 外圈短軸上的點更遠離中心 —— 用直線距離比，一條正確的內圈會被判成
+    // 比的是**到外框的距離**（逐軸），不是到中心的直線距離：圓角矩形上
+    // 「離中心最遠」的點在角上、「最近」的點在直道中央，所以內圈直道上的點
+    // 比外圈轉角上的點更靠近中心 —— 用直線距離比，一條正確的內圈會被判成
     // 「跑到外面去了」。
     const [outer, inner] = TRACK.lanes;
-    const r = (s: { x: number; z: number }) =>
-      ((s.x - TRACK.x) / TRACK.a) ** 2 + ((s.z - TRACK.z) / TRACK.b) ** 2;
-    expect(Math.max(...inner!.map(r)), '內圈跑到外圈外面去了')
-      .toBeLessThan(Math.min(...outer!.map(r)));
+    for (const s of inner!) {
+      expect(Math.abs(s.x - TRACK.x), '內圈在 x 方向跑到外圈外面')
+        .toBeLessThanOrEqual(TRACK.a - TRACK.lane + 1e-9);
+      expect(Math.abs(s.z - TRACK.z), '內圈在 z 方向跑到外圈外面')
+        .toBeLessThanOrEqual(TRACK.b - TRACK.lane + 1e-9);
+    }
+    // 而外圈真的要摸到宣告的外框，否則「內圈比較小」是廢話。
+    expect(Math.max(...outer!.map(s => Math.abs(s.x - TRACK.x))))
+      .toBeCloseTo(TRACK.a, 6);
   });
 
   it('should keep the whole track on the grass', () => {
@@ -148,10 +188,11 @@ describe('高中', () => {
 
   it('should keep the fixtures off the running surface', () => {
     // 種在跑道上的樹跟種在消防車道上的樹是同一個笑話。
+    // 圓角矩形的外框是逐軸的：只要有一軸在框外就安全。
     for (const f of plan.fixtures) {
-      const nx = (f.x - TRACK.x) / TRACK.a;
-      const nz = (f.z - TRACK.z) / TRACK.b;
-      expect(nx * nx + nz * nz, `${f.kind} 站在跑道圈裡`).toBeGreaterThan(1);
+      const outside = Math.abs(f.x - TRACK.x) > TRACK.a
+        || Math.abs(f.z - TRACK.z) > TRACK.b;
+      expect(outside, `${f.kind} 站在跑道圈裡`).toBe(true);
     }
   });
 });

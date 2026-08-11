@@ -13,11 +13,12 @@ import {
   type Footprint,
 } from './types';
 import { CIVIC_DEFAULT_COLOR, type CivicColor } from './colors';
+import { VEHICLE_CONFIG } from '../../vehicleConfig';
 import { propGeometry, propExtent, type PropSpec } from '../props';
 import {
   buildCarGeometry, buildBusGeometry, buildTruckGeometry, buildFiretruckGeometry,
   buildPoliceCarGeometry, buildAmbulanceGeometry, buildGarbageTruckGeometry,
-  buildVanGeometry, buildAirplaneGeometry,
+  buildVanGeometry, buildAirplaneGeometry, buildAirplaneVTailGeometry,
 } from '../index';
 
 /**
@@ -251,22 +252,135 @@ export function assembleFixtures(
 }
 
 /**
+ * 車種 → `VEHICLE_CONFIG` 的鍵。
+ *
+ * 兩邊的命名不一樣（`policeCar` 對 `police_car`），所以需要這張表 —— 但它
+ * 只是改名，顏色仍然由 `VEHICLE_CONFIG` 說了算。
+ */
+const VEHICLE_CONFIG_KEY: Record<CivicVehicleKind, string> = {
+  car: 'car',
+  policeCar: 'police_car',
+  ambulance: 'ambulance',
+  firetruck: 'firetruck',
+  bus: 'bus',
+  garbageTruck: 'garbage_truck',
+  van: 'van',
+  truck: 'truck',
+  airplane: 'airplane',
+};
+
+/**
+ * `VEHICLE_CONFIG.color === −1` 的車種停著時用的定色。
+ *
+ * 那個 −1 的意思是「開在路上時逐台從色盤隨機挑」，而隨機需要一個 vehicle id
+ * —— 停著的車沒有。公共建築又不做變體（三間警局必須長得一樣），所以這裡給
+ * 定值。淺色是刻意的：這幾種在公共建築上的角色是**工作車輛**（機場的地勤車、
+ * 廠區的貨車），而工作車輛就是淺色的。
+ */
+const PARKED_TINT: Partial<Record<CivicVehicleKind, number>> = {
+  car: 0xb0bec5,
+  van: 0xeceff1,
+  truck: 0xcfd8dc,
+  airplane: 0xf5f5f5,
+};
+
+/**
+ * 停著的車該是什麼顏色。
+ *
+ * **停著的車與開在路上的同型車必須同色。** 這件事原本是壞的：車輛幾何把
+ * 車身的頂點色寫成 (1, 1, 1)，真正的顏色是 `VehicleRenderer` 用
+ * `setColorAt` 的逐實例色乘上去的 —— 而 `assembleVehicles` 產出的是普通
+ * `Mesh`，沒有逐實例色。於是停在消防局門口的消防車是**白的**，而街上跑的
+ * 是紅的。使用者看到的那台「不夠暗紅」的消防車其實根本沒有顏色。
+ */
+export function civicVehicleTint(kind: CivicVehicleKind): number {
+  const cfg = VEHICLE_CONFIG[VEHICLE_CONFIG_KEY[kind]];
+  if (cfg && cfg.color !== -1) return cfg.color;
+  return PARKED_TINT[kind] ?? 0xbdbdbd;
+}
+
+/** 把顏色乘進頂點色 —— 與 `VehicleRenderer` 的逐實例色是同一個運算。 */
+function tintVehicle(geo: THREE.BufferGeometry, hex: number): void {
+  const r = ((hex >> 16) & 0xff) / 255;
+  const g = ((hex >> 8) & 0xff) / 255;
+  const b = (hex & 0xff) / 255;
+  const attr = geo.getAttribute('color') as THREE.BufferAttribute;
+  const arr = attr.array as Float32Array;
+  for (let i = 0; i < attr.count; i++) {
+    arr[i * 3] = (arr[i * 3] ?? 1) * r;
+    arr[i * 3 + 1] = (arr[i * 3 + 1] ?? 1) * g;
+    arr[i * 3 + 2] = (arr[i * 3 + 2] ?? 1) * b;
+  }
+}
+
+/**
  * 車種 → 幾何。
  *
  * 這張表是唯一的對應，寫死在別處的話就會出現「停著的救護車其實是廂型車」
  * 這種只有一個人看得出來的錯。
  */
-const VEHICLE_GEOMETRY: Record<CivicVehicleKind, () => THREE.BufferGeometry> = {
-  car: buildCarGeometry,
-  policeCar: buildPoliceCarGeometry,
-  ambulance: buildAmbulanceGeometry,
-  firetruck: buildFiretruckGeometry,
-  bus: buildBusGeometry,
-  garbageTruck: buildGarbageTruckGeometry,
-  van: buildVanGeometry,
-  truck: buildTruckGeometry,
-  airplane: buildAirplaneGeometry,
+/**
+ * 飛機的垂直尾翼顏色。
+ *
+ * `VehicleRenderer` 給每一台飛機從 `AIRLINE_TAIL_COLORS` 挑一個尾翼色 ——
+ * 那需要一個 vehicle id，而停著的飛機沒有。所以這裡給定值，理由與
+ * `PARKED_TINT` 相同。深藍是最不會與淺色機身撞在一起的一個。
+ */
+export const PARKED_TAIL_TINT = 0x1e5aa8;
+
+/**
+ * 車種 → 幾何的**每一塊**，以及那一塊自己的顏色。
+ *
+ * 回傳陣列而不是單一幾何，是因為飛機不只一塊：`VehicleRenderer` 把機身與
+ * **垂直尾翼**畫成兩個 instanced mesh，好讓尾翼有自己的塗裝色。只取機身的話
+ * 停在停機坪上的飛機沒有尾翼 —— 而那是使用者一眼就看到的（「飛機少了垂直
+ * 尾翼」）。
+ *
+ * `tint` 是這一塊自己的顏色；沒有的話吃整台車的顏色。
+ */
+const VEHICLE_PARTS: Record<
+  CivicVehicleKind, () => Array<{ geo: THREE.BufferGeometry; tint?: number }>
+> = {
+  car: () => [{ geo: buildCarGeometry() }],
+  policeCar: () => [{ geo: buildPoliceCarGeometry() }],
+  ambulance: () => [{ geo: buildAmbulanceGeometry() }],
+  firetruck: () => [{ geo: buildFiretruckGeometry() }],
+  bus: () => [{ geo: buildBusGeometry() }],
+  garbageTruck: () => [{ geo: buildGarbageTruckGeometry() }],
+  van: () => [{ geo: buildVanGeometry() }],
+  truck: () => [{ geo: buildTruckGeometry() }],
+  airplane: () => [
+    { geo: buildAirplaneGeometry() },
+    { geo: buildAirplaneVTailGeometry(), tint: PARKED_TAIL_TINT },
+  ],
 };
+
+/**
+ * 一台車的每一塊，已經上好色、放在原點。
+ *
+ * 抽出來是為了讓展示區的**飛行中**飛機也走同一條路：它要的是一台上好色的
+ * 飛機，但不要停放位置、也不要佔地護欄。各做一份的話，天上飛的與停著的
+ * 塗裝會不一樣 —— 而那正是這一整批一直在避免的事。
+ */
+export function vehiclePieces(
+  kind: CivicVehicleKind, tint?: number,
+): THREE.BufferGeometry[] {
+  return VEHICLE_PARTS[kind]().map(({ geo, tint: partTint }) => {
+    // 車種之間的屬性集合本來就不一致：八種地面車帶 `uv`，飛機沒有。
+    // 車輛材質（`MeshLambertMaterial` + 頂點色）不取樣任何貼圖，所以 uv 是
+    // 純粹的死重 —— 一律丟掉，而不是替飛機補一份假的。
+    geo.deleteAttribute('uv');
+    tintVehicle(geo, partTint ?? tint ?? civicVehicleTint(kind));
+    return geo;
+  });
+}
+
+/** 一台上好色的完整車輛，合併成一份幾何、放在原點。 */
+export function civicVehicleGeometry(
+  kind: CivicVehicleKind, tint?: number,
+): THREE.BufferGeometry {
+  return mergeOrThrow(vehiclePieces(kind, tint), `車輛 ${kind}`);
+}
 
 /**
  * 停放的車輛轉幾何。
@@ -288,15 +402,14 @@ export function assembleVehicles(
   const bounds: Volume[] = [];
 
   for (const v of vehicles) {
-    const geo = VEHICLE_GEOMETRY[v.kind]();
-    // 車種之間的屬性集合本來就不一致：八種地面車帶 `uv`，飛機沒有。
-    // 車輛材質（`MeshLambertMaterial` + 頂點色）不取樣任何貼圖，所以 uv 是
-    // 純粹的死重 —— 一律丟掉，而不是替飛機補一份假的。
-    geo.deleteAttribute('uv');
-    if (v.rotationY) geo.rotateY(v.rotationY);
-    geo.translate(v.x, 0, v.z);
-    geo.computeBoundingBox();
-    const box = geo.boundingBox!;
+    const box = new THREE.Box3();
+    for (const geo of vehiclePieces(v.kind, v.tint)) {
+      if (v.rotationY) geo.rotateY(v.rotationY);
+      geo.translate(v.x, 0, v.z);
+      geo.computeBoundingBox();
+      box.union(geo.boundingBox!);
+      parts.push(geo);
+    }
     bounds.push({
       x: (box.min.x + box.max.x) / 2,
       z: (box.min.z + box.max.z) / 2,
@@ -305,7 +418,6 @@ export function assembleVehicles(
       y0: 0,
       y1: 0,
     });
-    parts.push(geo);
   }
 
   assertInside(bounds, footprint, CIVIC_INSET);

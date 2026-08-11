@@ -1,7 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { assembleVehicles, mergeOrThrow } from '../assemble';
+import {
+  assembleVehicles, mergeOrThrow, civicVehicleTint, PARKED_TAIL_TINT,
+} from '../assemble';
+import { VEHICLE_CONFIG } from '../../../vehicleConfig';
 import { buildPoliceCarGeometry } from '../../policeCar';
+import { buildAirplaneGeometry, buildAirplaneVTailGeometry } from '../../index';
 import { triangleCount } from '../../buildings/parts';
 import type { CivicVehicle, Footprint } from '../types';
 
@@ -114,6 +118,119 @@ describe('停放的車輛', () => {
     expect(geo, 'mergeGeometries 回傳了 null').toBeTruthy();
     expect(geo.getAttribute('position').count, '合併之後是空的').toBeGreaterThan(0);
     expect(geo.getAttribute('color'), '合併之後掉了頂點色').toBeTruthy();
+  });
+
+  /**
+   * 停著的車與開在路上的同型車必須**同色**。
+   *
+   * 這件事原本是壞的，而且完全沒有徵兆：車輛幾何把車身的頂點色寫成 (1, 1, 1)，
+   * 真正的顏色是 `VehicleRenderer` 用 `setColorAt` 的逐實例色乘上去的 ——
+   * 而 `assembleVehicles` 產出的是普通 `Mesh`，沒有逐實例色。於是停在消防局
+   * 門口的消防車是**白的**。
+   *
+   * 使用者說「消防車應該是暗紅色的」，而真相是它根本沒有顏色。
+   */
+  it('should paint a parked vehicle the colour that type drives in', () => {
+    const named: Array<[CivicVehicle['kind'], string]> = [
+      ['policeCar', 'police_car'], ['ambulance', 'ambulance'],
+      ['firetruck', 'firetruck'], ['bus', 'bus'], ['garbageTruck', 'garbage_truck'],
+    ];
+    for (const [kind, key] of named) {
+      expect(civicVehicleTint(kind), `${kind} 停著與開著不同色`)
+        .toBe(VEHICLE_CONFIG[key]!.color);
+    }
+  });
+
+  it('should give a colour even to the types that drive in random ones', () => {
+    // `VEHICLE_CONFIG.color === −1` 是「逐台從色盤隨機挑」，而隨機需要一個
+    // vehicle id —— 停著的車沒有。公共建築又不做變體，所以要有定值。
+    for (const kind of ['car', 'van', 'truck', 'airplane'] as const) {
+      expect(civicVehicleTint(kind), `${kind} 沒有定色`).toBeGreaterThan(0);
+    }
+  });
+
+  it('should actually put the colour on the geometry', () => {
+    // 消防車車身的頂點色是 (1, 1, 1)。沒有乘上去的話它是白的。
+    const geo = assembleVehicles([car({ kind: 'firetruck' })], { w: 2, h: 2 });
+    const c = geo.getAttribute('color');
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < c.count; i++) { r += c.getX(i); g += c.getY(i); b += c.getZ(i); }
+    expect(r / Math.max(g, 1e-6), '消防車不是紅的').toBeGreaterThan(1.6);
+    expect(r / Math.max(b, 1e-6), '消防車不是紅的').toBeGreaterThan(1.6);
+  });
+
+  it('should let a plan override the tint', () => {
+    // 機場的地勤貨車是淺色的，而街上跑的貨車是隨機色盤。
+    const plain = assembleVehicles([car({ kind: 'truck' })], { w: 2, h: 2 });
+    const white = assembleVehicles(
+      [car({ kind: 'truck', tint: 0xffffff })], { w: 2, h: 2 });
+    const sum = (g: THREE.BufferGeometry) => {
+      const a = g.getAttribute('color');
+      let t = 0;
+      for (let i = 0; i < a.count; i++) t += a.getX(i) + a.getY(i) + a.getZ(i);
+      return t;
+    };
+    expect(sum(white), '覆寫的顏色沒有生效').toBeGreaterThan(sum(plain));
+  });
+
+  /**
+   * 飛機不只機身。
+   *
+   * `VehicleRenderer` 把它畫成兩個 instanced mesh：機身與**垂直尾翼** ——
+   * 分開是為了讓尾翼有自己的塗裝色。只取 `buildAirplaneGeometry()` 的話停在
+   * 停機坪上的飛機沒有尾翼，而那是一眼就看得到的（使用者：「飛機少了垂直
+   * 尾翼」）。
+   *
+   * 與警車、消防車同一條原則：停著的與開著的必須是同一台。
+   */
+  it('should give the parked aeroplane its vertical tail', () => {
+    const parked = assembleVehicles(
+      [{ kind: 'airplane', x: 0, z: 0 }], { w: 4, h: 4 });
+    expect(triangleCount(parked), '停著的飛機少了尾翼')
+      .toBe(triangleCount(buildAirplaneGeometry())
+        + triangleCount(buildAirplaneVTailGeometry()));
+  });
+
+  it('should paint the tail fin in its own colour', () => {
+    // 尾翼與機身同色的話，那個「兩塊」就白分了 —— 而航空公司的塗裝就是
+    // 靠尾翼認的。
+    //
+    // 比的是「尾翼那幾個顏色**確實出現在**成品裡」。「整台不只一個顏色」
+    // 擋不住這件事：機身本來就有窗與機翼好幾種色，尾翼跟著機身上色也照樣
+    // 通過（實測過）。
+    const tail = buildAirplaneVTailGeometry();
+    const tc = tail.getAttribute('color');
+    const r = ((PARKED_TAIL_TINT >> 16) & 0xff) / 255;
+    const g = ((PARKED_TAIL_TINT >> 8) & 0xff) / 255;
+    const b = (PARKED_TAIL_TINT & 0xff) / 255;
+    const want = new Set<string>();
+    for (let i = 0; i < tc.count; i++) {
+      want.add([tc.getX(i) * r, tc.getY(i) * g, tc.getZ(i) * b]
+        .map(v => v.toFixed(3)).join(','));
+    }
+
+    const geo = assembleVehicles([{ kind: 'airplane', x: 0, z: 0 }], { w: 4, h: 4 });
+    const c = geo.getAttribute('color');
+    const got = new Set<string>();
+    for (let i = 0; i < c.count; i++) {
+      got.add([c.getX(i), c.getY(i), c.getZ(i)].map(v => v.toFixed(3)).join(','));
+    }
+    for (const w of want) {
+      expect(got.has(w), `尾翼沒有塗上自己的顏色（缺 ${w}）`).toBe(true);
+    }
+  });
+
+  it('should measure the aeroplane bounds across both pieces', () => {
+    // 護欄只看機身的話，尾翼可以伸出佔地而沒有人擋。
+    const tail = buildAirplaneVTailGeometry();
+    tail.computeBoundingBox();
+    const body = buildAirplaneGeometry();
+    body.computeBoundingBox();
+    const geo = assembleVehicles(
+      [{ kind: 'airplane', x: 0, z: 0 }], { w: 4, h: 4 });
+    geo.computeBoundingBox();
+    expect(geo.boundingBox!.max.y, '尾翼沒有算進包圍盒')
+      .toBeGreaterThanOrEqual(Math.max(tail.boundingBox!.max.y, body.boundingBox!.max.y) - 1e-9);
   });
 
   it('should support every vehicle the city already has', () => {

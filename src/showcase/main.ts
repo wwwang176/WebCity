@@ -32,6 +32,7 @@ import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
 import { placeCivic, civicTriangleReport, allMeshes, type CivicTris } from './civic';
 import { civicLayout, civicLayoutExtent } from './civicLayout';
+import { ShowcasePlanes, type PlaneField } from './planes';
 import { getCivicPlan, civicTypesDone } from '../renderer/geometry/civic/registry';
 import { getInfraConfig } from '../core/building/InfraConfig';
 
@@ -57,7 +58,22 @@ const shown: THREE.Mesh[] = [];
  */
 const detailLOD = new DetailVisibility();
 
+/**
+ * 機場的起降動畫。
+ *
+ * 使用者：「showcase 幫我補上飛機動畫，我比較好比較」。比較的對象是貼片 ——
+ * 飛機真的落在跑道上嗎、真的沿著滑行道走嗎、真的停進機位嗎。跑的是遊戲裡
+ * **同一個** `AirplaneAnimator`。
+ */
+const planes = new ShowcasePlanes(sceneManager.scene);
+
+/** `civicTypesDone()` 的種類名 → 動畫端的機場尺寸。 */
+const AIRPORT_SIZE_OF: Partial<Record<string, 'SMALL' | 'MEDIUM' | 'LARGE'>> = {
+  airport_s: 'SMALL', airport_m: 'MEDIUM', airport_l: 'LARGE',
+};
+
 function clear(): void {
+  planes.clear();
   for (const m of shown) {
     sceneManager.scene.remove(m);
     m.geometry.dispose();
@@ -204,6 +220,7 @@ function renderCivic(fitCamera: boolean): void {
 
   const rows: string[] = [];
   const total: CivicTris = { massing: 0, decal: 0, prop: 0, overhead: 0 };
+  const fields: PlaneField[] = [];
 
   for (const slot of slots) {
     const plan = getCivicPlan(slot.type);
@@ -213,6 +230,9 @@ function renderCivic(fitCamera: boolean): void {
     // add() 會立刻套用目前的縮放狀態 —— 縮在遠景時動一下控制項會整批重畫，
     // 少了這一步細節就會全部冒回來。
     for (const m of placed.culled) detailLOD.add(m);
+
+    const size = AIRPORT_SIZE_OF[slot.type];
+    if (size) fields.push({ size, x: slot.x, z: slot.z });
 
     const cfg = getInfraConfig(slot.type);
     const report = civicTriangleReport(plan.footprint, placed.tris);
@@ -231,6 +251,8 @@ function renderCivic(fitCamera: boolean): void {
       + (over.length > 0 ? `　${over.join('　')}` : ''),
     );
   }
+
+  planes.setFields(fields);
 
   sceneManager.setCameraTarget(0, 0);
   // **只在剛切進來時**框一次。每次重繪都框的話，使用者調一下住戶比例滑桿，
@@ -339,6 +361,9 @@ sceneManager.onUpdate((dt) => {
   material.uniforms.uTime!.value = elapsed;
 
   detailLOD.update(sceneManager.camera.top - sceneManager.camera.bottom);
+  // 飛機只在 civic 模式有東西可跑 —— `clear()` 已經把機場清掉，這裡照跑
+  // 也只是空轉。
+  planes.update(dt);
 
   if (state.timeOverride === null) {
     weather.update(dt, 1, Season.SUMMER);

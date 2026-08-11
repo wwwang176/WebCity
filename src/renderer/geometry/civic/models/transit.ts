@@ -99,8 +99,10 @@ export const busStopPlan: CivicPlan = {
     { kind: 'bollard', x: M(-4.0), z: M(2.6), radius: M(0.11) },
     { kind: 'bollard', x: M(4.0), z: M(2.6), radius: M(0.11) },
   ],
-  // 停靠中的公車。7.2 m 沿著路邊停 —— 橫著停的話它有一半在人行道上。
-  vehicles: [{ kind: 'bus', x: 0, z: M(4.4) }],
+  // **不停公車。** 使用者：「公車站本來就會有公車在路上跑，所以公車站內不
+  // 需要放公車」。城市裡的公車是 `VehicleRenderer` 開著的真車 —— 站牌前再擺
+  // 一台靜態的，就變成一台永遠停在那裡不走的公車擋住真的那台。
+  vehicles: [],
 };
 
 // ===== 捷運站 =====

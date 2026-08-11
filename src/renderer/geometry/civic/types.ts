@@ -166,6 +166,14 @@ export interface CivicVehicle {
   z: number;
   /** 車頭朝向，弧度。0 = +x（幾何原本的朝向）。 */
   rotationY?: number;
+  /**
+   * 車身顏色，蓋過 `civicVehicleTint(kind)` 的預設。
+   *
+   * 預設值來自 `VEHICLE_CONFIG` —— 停著的車與開在路上的同型車必須同色。
+   * 這個欄位是給「同一種車在這裡有別的角色」用的：機場的地勤貨車是淺色的，
+   * 而街上跑的貨車是隨機色盤。
+   */
+  tint?: number;
 }
 
 /** 有現成幾何的車種。 */

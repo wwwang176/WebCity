@@ -53,6 +53,14 @@ const LIGHT_SPACING = 10;
 const LIGHT_W = 0.5;
 /** 標線寬（格）。 */
 const LINE_W = 0.04;
+/**
+ * 空橋橋面的高度（公尺）。
+ *
+ * 機身（`buildAirplaneGeometry`）從 −0.06 到 1.44 m —— 這個模型的飛機是壓扁
+ * 的低多邊形，不是實際比例。空橋要接得到門，所以跟著**機身**走而不是跟著
+ * 行人淨空走。1.0 m 落在機身高度的中段。
+ */
+const JET_BRIDGE_DECK = 1.0;
 
 interface AirportSpec {
   type: InfraType;
@@ -260,14 +268,21 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
   }
 
   // ── 空橋。每個機位一條，從航廈前緣伸向飛機。 ────────────────
-  const overhead: CivicVolume[] = gates.map((g): CivicVolume => ({
+  //
+  // **高度跟著飛機走，不是跟著行人淨空走。** 原本它掛在 `overhead` 層，而那一
+  // 層有「要高過 2.2 m 行人淨空」的規則 —— 於是空橋停在 4.6 m，遠遠飄在
+  // 1.44 m 高的機身上方，接不到任何一扇門。空橋接的是飛機，不是路人，所以它
+  // 搬到 `props`，高度由機身頂端推導。
+  const jetBridges: CivicVolume[] = gates.map((g): CivicVolume => ({
     tag: 'jetBridge',
     x: g.x, z: (termFront + g.z) / 2 - 0.06, w: 0.18, d: GATE_CLEAR - 0.1,
-    y0: M(4.6), y1: M(5.2),
+    y0: M(JET_BRIDGE_DECK), y1: M(JET_BRIDGE_DECK + 0.35),
   }));
+  const overhead: CivicVolume[] = [];
 
   // ── 自訂矮物件 ────────────────────────────────────────────
   const props: CivicVolume[] = [
+    ...jetBridges,
     // 航廈後方（陸側）的旅客雨庇柱。
     ...spread(spec.w * 0.3, 0, 1.0).map((x): CivicVolume => ({
       tag: 'canopyPost', part: PART_DETAIL,
@@ -309,11 +324,22 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
 
   const vehicles: CivicVehicle[] = remoteStands.map((x): CivicVehicle =>
     ({ kind: 'airplane', x, z: gateZ, rotationY: Math.PI / 2 }));
-  // 地勤車停在航廈後方的陸側，離所有航路都遠。
+  // 陸側（航廈後方）的接駁車與貨車。
   vehicles.push(
     { kind: 'bus', x: -spec.w * 0.22, z: -halfH + 0.62 },
-    { kind: 'truck', x: spec.w * 0.22, z: -halfH + 0.62 },
+    { kind: 'truck', x: spec.w * 0.22, z: -halfH + 0.62, tint: 0xcfd8dc },
   );
+  // 停機坪側的**地勤車輛**。淺色是機場地勤的實際樣子，也讓它們在深色的
+  // 柏油上讀得出來。停在航廈牆邊那條縫（機位與航廈之間）—— 那裡動畫飛機
+  // 不會經過，而它正是地勤車該待的地方。
+  const serviceZ = (termFront + gateZ) / 2;
+  for (const [i, g] of gates.entries()) {
+    vehicles.push({
+      kind: i % 2 === 0 ? 'van' : 'truck',
+      x: g.x + 0.42, z: serviceZ,
+      tint: i % 2 === 0 ? 0xeceff1 : 0xdce3e6,
+    });
+  }
 
   // ── 共用矮物件 ────────────────────────────────────────────
   const fixtures: PropSpec[] = [

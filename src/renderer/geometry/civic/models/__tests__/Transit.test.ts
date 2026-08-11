@@ -112,11 +112,27 @@ describe('公車站', () => {
       .toBeLessThanOrEqual(roof.d / 2);
   });
 
-  it('should pull a real bus into the bay', () => {
-    // 7.2 m 的公車橫著停的話它有一半在人行道上。
-    const bus = busStopPlan.vehicles.find(v => v.kind === 'bus')!;
-    expect(bus, '站牌前沒有公車').toBeTruthy();
-    expect(bus.rotationY ?? 0, '公車橫著停').toBeCloseTo(0, 6);
+  /**
+   * 站牌前**不擺**靜態公車。
+   *
+   * 使用者：「公車站本來就會有公車在路上跑，所以公車站內不需要放公車」。
+   * 城市裡的公車是 `VehicleRenderer` 開著的真車，會照路線停靠 —— 站牌前再擺
+   * 一台不會動的，就變成一台永遠停在那裡擋住真車的公車。
+   *
+   * 這與消防局停消防車、機場停飛機不一樣：那兩種車**平常就停在基地上**，
+   * 而公車平常在路上。
+   */
+  it('should leave the bay for the buses that actually drive', () => {
+    expect(busStopPlan.vehicles, '站牌前擺了一台不會動的公車').toEqual([]);
+  });
+
+  it('should still mark the bay so it reads as a stop', () => {
+    // 車不擺了，但停靠彎與黃線要留著 —— 那才是「這裡是站牌」的訊號。
+    const bay = busStopPlan.decals.find(d =>
+      (d.layer ?? 'base') === 'base' && d.shade < 0.2);
+    expect(bay, '沒有停靠彎').toBeTruthy();
+    expect(busStopPlan.decals.some(d => d.layer === 'mark' && d.shade > 0.7),
+      '停靠彎沒有標線').toBe(true);
   });
 });
 

@@ -41,22 +41,68 @@ export interface TrackSegment {
 }
 
 /**
- * 用短直線逼近一圈橢圓。
+ * 一圈**圓角矩形**的外框點。
+ *
+ * 不是橢圓。使用者：「操場應該是圓角矩形(現在是橢圓形)」—— 而那也是對的：
+ * 真實的操場是四段直道加四個轉彎，不是一條處處在彎的曲線。差別在畫面上很
+ * 明顯：橢圓沒有任何一段是直的，跑起來像一個蛋。
+ *
+ * 直道各切成 `STRAIGHT_SEGS` 段，讓每一段的長度與轉角的弧段相近 —— 一整條
+ * 直道畫成一段的話，它與轉角的線寬看起來會不一樣（同樣的 `d`，長度差十倍）。
+ */
+function roundedRectOutline(
+  cx: number, cz: number, a: number, b: number, r: number,
+): Array<{ x: number; z: number }> {
+  const pts: Array<{ x: number; z: number }> = [];
+  const ax = a - r;
+  const bz = b - r;
+  /** 四個轉角的圓心與起始角，順著走一圈。 */
+  const corners = [
+    { x: ax, z: bz, from: 0 },
+    { x: -ax, z: bz, from: Math.PI / 2 },
+    { x: -ax, z: -bz, from: Math.PI },
+    { x: ax, z: -bz, from: (Math.PI * 3) / 2 },
+  ];
+  for (const c of corners) {
+    // 進這個轉角之前的直道。起點是上一個轉角的出口。
+    for (let i = 0; i < STRAIGHT_SEGS; i++) {
+      const t = i / STRAIGHT_SEGS;
+      const prev = corners[(corners.indexOf(c) + 3) % 4]!;
+      const from = {
+        x: prev.x + r * Math.cos(prev.from + Math.PI / 2),
+        z: prev.z + r * Math.sin(prev.from + Math.PI / 2),
+      };
+      const to = {
+        x: c.x + r * Math.cos(c.from),
+        z: c.z + r * Math.sin(c.from),
+      };
+      pts.push({
+        x: cx + from.x + (to.x - from.x) * t,
+        z: cz + from.z + (to.z - from.z) * t,
+      });
+    }
+    // 轉角的四分之一圓弧。
+    for (let i = 0; i < CORNER_SEGS; i++) {
+      const t = c.from + (Math.PI / 2) * (i / CORNER_SEGS);
+      pts.push({ x: cx + c.x + r * Math.cos(t), z: cz + c.z + r * Math.sin(t) });
+    }
+  }
+  return pts;
+}
+
+/**
+ * 把一圈外框點接成短直線段。
  *
  * 每一段的中心是**弦的中點**、長度是弦長、方向由弦決定 —— 所以相鄰兩段的
  * 端點會**剛好**重合（測試逐段檢查這件事）。用切線長度而不是弦長的話每一段
- * 都會多出一點，一整圈下來是二十個小交叉。
+ * 都會多出一點，一整圈下來是一堆小交叉。
  *
  * `rotationY = atan2(−dz, dx)`：`rotateY(θ)` 把局部 +x 轉到
  * (cos θ, 0, −sin θ)，要它對齊 (dx, dz) 就得取這個角。
  */
-function oval(cx: number, cz: number, a: number, b: number, n: number): TrackSegment[] {
-  const pts = Array.from({ length: n }, (_, i) => {
-    const t = (i / n) * Math.PI * 2;
-    return { x: cx + a * Math.cos(t), z: cz + b * Math.sin(t) };
-  });
+function chain(pts: Array<{ x: number; z: number }>): TrackSegment[] {
   return pts.map((p, i) => {
-    const q = pts[(i + 1) % n]!;
+    const q = pts[(i + 1) % pts.length]!;
     const dx = q.x - p.x;
     const dz = q.z - p.z;
     return {
@@ -68,8 +114,10 @@ function oval(cx: number, cz: number, a: number, b: number, n: number): TrackSeg
   });
 }
 
-/** 段數。20 段的橢圓在等角視角下已經看不出是多邊形。 */
-const TRACK_SEGMENTS = 20;
+/** 一條直道切成幾段。 */
+const STRAIGHT_SEGS = 4;
+/** 一個轉角的四分之一圓弧切成幾段。 */
+const CORNER_SEGS = 4;
 
 /**
  * 跑道。外圈與內圈兩條線 —— 一條線讀起來是「地上畫了一個橢圓」，
@@ -80,11 +128,17 @@ const TRACK_SEGMENTS = 20;
 export const TRACK = {
   x: 0,
   z: M(8.0),
+  /** 外圈的半長（x）。 */
   a: M(10.0),
+  /** 外圈的半寬（z）。 */
   b: M(7.6),
+  /** 轉角半徑。小於半寬 —— 等於半寬的話四個角就連成一圈，那又變回橢圓了。 */
+  r: M(4.4),
+  /** 兩圈之間的距離。 */
+  lane: M(1.2),
   lanes: [
-    oval(0, M(8.0), M(10.0), M(7.6), TRACK_SEGMENTS),
-    oval(0, M(8.0), M(8.8), M(6.4), TRACK_SEGMENTS),
+    chain(roundedRectOutline(0, M(8.0), M(10.0), M(7.6), M(4.4))),
+    chain(roundedRectOutline(0, M(8.0), M(8.8), M(6.4), M(3.4))),
   ],
 };
 
