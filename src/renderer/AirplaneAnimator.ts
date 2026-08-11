@@ -10,6 +10,7 @@ import type { Airport, AirportSize } from '../core/transport/AirportSystem';
 import { getAirportDimensions } from '../core/transport/AirportSystem';
 import { getRotatedSize } from '../core/building/InfraConfig';
 import type { VehicleAnimator } from './VehicleAnimator';
+import { getFlightPaths, type Vec2 } from './airportPaths';
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -81,112 +82,9 @@ const ROLL_WAIT_TIME = 1.0;
 /** Pause on runway before takeoff — waiting for ATC clearance (seconds). */
 const LINEUP_WAIT_TIME = 1.0;
 
-// ── Per-size waypoint definitions (local coords, rotation=0) ────
-
-interface Vec2 { x: number; z: number }
-
-interface SizeFlightPaths {
-  approachStart: Vec2;
-  threshold: Vec2;
-  /** Roll stop: before right junction, leaving arc space. */
-  rollStop: Vec2;
-  /** Right taxiway junction on runway. */
-  rightJunction: Vec2;
-  /** Top of right taxiway at apron level. */
-  rightTaxiTop: Vec2;
-  /** Z level for horizontal apron taxi. */
-  apronZ: number;
-  /** Left taxiway top at apron level. */
-  leftTaxiTop: Vec2;
-  /** Left taxiway junction on runway. */
-  leftJunction: Vec2;
-  /** Short distance onto runway from leftJunction (for arc detection). */
-  runwayEntry: Vec2;
-  gates: Vec2[];
-  takeoffEnd: Vec2;
-  climbEnd: Vec2;
-  /** Arc radius for taxiway turns. */
-  arcRadius: number;
-  /** Smaller arc radius for the gate approach turn. */
-  gateRadius: number;
-}
-
-// SMALL (5×4): left taxi x=-1.80, right taxi x=+1.80 (old Medium layout)
-const SMALL_PATHS: SizeFlightPaths = {
-  approachStart:   { x: -11.3, z: 1.20 },
-  threshold:       { x: -2.00, z: 1.20 },
-  rollStop:        { x: 1.30, z: 1.20 },
-  rightJunction:   { x: 1.80, z: 1.20 },
-  rightTaxiTop:    { x: 1.80, z: -0.10 },
-  apronZ:          -0.10,
-  leftTaxiTop:     { x: -1.80, z: -0.10 },
-  leftJunction:    { x: -1.80, z: 1.20 },
-  runwayEntry:     { x: -1.30, z: 1.20 },
-  gates:           [{ x: -0.60, z: -0.34 }, { x: 0, z: -0.34 }, { x: 0.60, z: -0.34 }],
-  takeoffEnd:      { x: 2.25, z: 1.20 },
-  climbEnd:        { x: 7.0, z: 1.20 },
-  arcRadius:       0.35,
-  gateRadius:      0.20,
-};
-
-// MEDIUM (7×4): left taxi x=-2.80, right taxi x=+2.80
-const MEDIUM_PATHS: SizeFlightPaths = {
-  approachStart:   { x: -12.3, z: 1.20 },
-  threshold:       { x: -3.00, z: 1.20 },
-  rollStop:        { x: 2.10, z: 1.20 },
-  rightJunction:   { x: 2.80, z: 1.20 },
-  rightTaxiTop:    { x: 2.80, z: -0.10 },
-  apronZ:          -0.10,
-  leftTaxiTop:     { x: -2.80, z: -0.10 },
-  leftJunction:    { x: -2.80, z: 1.20 },
-  runwayEntry:     { x: -2.10, z: 1.20 },
-  gates:           [{ x: -0.90, z: -0.34 }, { x: -0.30, z: -0.34 }, { x: 0.30, z: -0.34 }, { x: 0.90, z: -0.34 }],
-  takeoffEnd:      { x: 3.25, z: 1.20 },
-  climbEnd:        { x: 8.0, z: 1.20 },
-  arcRadius:       0.50,
-  gateRadius:      0.20,
-};
-
-// LARGE (9×6): left taxi x=-3.80, right taxi x=+3.80
-const LARGE_PATH_A: SizeFlightPaths = {
-  approachStart:   { x: -13.3, z: 0.80 },
-  threshold:       { x: -4.00, z: 0.80 },
-  rollStop:        { x: 3.10, z: 0.80 },
-  rightJunction:   { x: 3.80, z: 0.80 },
-  rightTaxiTop:    { x: 3.80, z: -0.80 },
-  apronZ:          -0.80,
-  leftTaxiTop:     { x: -3.80, z: -0.80 },
-  leftJunction:    { x: -3.80, z: 0.80 },
-  runwayEntry:     { x: -3.10, z: 0.80 },
-  gates:           [{ x: -0.50, z: -1.28 }, { x: 0.20, z: -1.28 }],
-  takeoffEnd:      { x: 4.25, z: 0.80 },
-  climbEnd:        { x: 9.0, z: 0.80 },
-  arcRadius:       0.65,
-  gateRadius:      0.43,
-};
-
-const LARGE_PATH_B: SizeFlightPaths = {
-  approachStart:   { x: -13.3, z: 2.20 },
-  threshold:       { x: -4.00, z: 2.20 },
-  rollStop:        { x: 3.10, z: 2.20 },
-  rightJunction:   { x: 3.80, z: 2.20 },
-  rightTaxiTop:    { x: 3.80, z: -0.80 },
-  apronZ:          -0.80,
-  leftTaxiTop:     { x: -3.80, z: -0.80 },
-  leftJunction:    { x: -3.80, z: 2.20 },
-  runwayEntry:     { x: -3.10, z: 2.20 },
-  gates:           [{ x: 0.20, z: -1.28 }, { x: 0.90, z: -1.28 }],
-  takeoffEnd:      { x: 4.25, z: 2.20 },
-  climbEnd:        { x: 9.0, z: 2.20 },
-  arcRadius:       0.65,
-  gateRadius:      0.43,
-};
-
-function getFlightPaths(size: AirportSize, pathIndex: number): SizeFlightPaths {
-  if (size === 'SMALL') return SMALL_PATHS;
-  if (size === 'MEDIUM') return MEDIUM_PATHS;
-  return pathIndex === 0 ? LARGE_PATH_A : LARGE_PATH_B;
-}
+// 航路表已搬到 `airportPaths.ts` —— 它現在是整個專案唯一的一份機場配置。
+// 裝飾幾何（`civic/models/airport.ts`）從同一份表推導跑道帶、滑行道標線與
+// 停機位，所以兩邊不可能再各自畫一座機場（BUG-239）。
 
 // ── Coordinate transform ─────────────────────────────────────────
 
