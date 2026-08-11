@@ -4,7 +4,15 @@ import { RailType, TrackDirection } from '../core/rail/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
 
-const TRACK_WIDTH = 0.15;
+/**
+ * 碴床的寬度（格）。軌道貼著**格心**畫，所以它佔的是 |z| ≤ TRACK_WIDTH / 2。
+ *
+ * 匯出是因為火車站的幾何要讓開這條帶：`canPlaceTransportStop` 規定火車站
+ * 蓋在 `railType ≠ 0` 的格子上，而 `placeTransportStopOnGrid` 只改
+ * buildingId/reserved/zoneType —— 軌道還在，這裡照畫。站房蓋在上面的話，
+ * 真的鋼軌會從站房的地板穿出來。
+ */
+export const TRACK_WIDTH = 0.15;
 const RAIL_Y = 0.035;
 const TIE_Y = 0.03;
 const BALLAST_Y = 0.022;

@@ -7,6 +7,7 @@ import { topOf } from '../../../buildings/massing/volume';
 import { civicColorOf } from '../../colors';
 import { CIVIC_INSET } from '../../types';
 import { propExtent } from '../../../props';
+import { TRACK_WIDTH } from '../../../../TrackRenderer';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
 import type { CivicPlan } from '../../types';
 
@@ -146,16 +147,50 @@ describe('捷運站', () => {
     expect(mouth.shade!, '階梯口不夠暗，看起來像鋪面').toBeLessThan(0.15);
   });
 
-  it('should raise the lift shaft above the entrance', () => {
-    // 一樣高的話兩者併成一個方盒。
-    const lift = tagged(metroStationPlan, 'lift')[0]!;
-    const entrance = tagged(metroStationPlan, 'entrance')[0]!;
-    expect(lift.y1, '電梯井沒有比出入口高').toBeGreaterThan(entrance.y1 * 1.2);
+  /**
+   * 四面都下得去。
+   *
+   * 使用者：「地鐵站的形象也要改一下，要看起來像可以從四面下樓的通道建築」。
+   * 這一條問的是「四個方向**各有一個**入口」，而不是「有四個入口」——
+   * 四個全擠在同一邊也是四個。
+   */
+  it('should let people down from all four sides', () => {
+    const mouths = tagged(metroStationPlan, 'stairMouth');
+    expect(mouths.length, '階梯口不是四個').toBe(4);
+    const dir = (v: { x: number; z: number }) =>
+      Math.abs(v.x) > Math.abs(v.z) ? (v.x > 0 ? 'E' : 'W') : (v.z > 0 ? 'S' : 'N');
+    expect(new Set(mouths.map(dir)).size, '四個階梯口沒有各朝一個方向').toBe(4);
+    for (const v of mouths) {
+      expect(v.part, '階梯口不是洞').toBe(PART_GROUND);
+      expect(v.shade!, '階梯口不夠暗，看起來像鋪面').toBeLessThan(0.15);
+    }
   });
 
-  it('should rail off the stairs', () => {
-    expect(metroStationPlan.props.filter(v => v.tag === 'rail').length, '階梯口沒有欄杆')
-      .toBe(2);
+  it('should run every stair mouth out to the pavement', () => {
+    // 四個口圍在通道旁邊的話，「四面下樓」是假的：人走到通道邊會發現
+    // 那裡只是一塊深色的地。每一個都要從通道的牆一路接到人行道。
+    const concourse = tagged(metroStationPlan, 'concourse')[0]!;
+    const edge = 0.5 - CIVIC_INSET;
+    for (const v of tagged(metroStationPlan, 'stairMouth')) {
+      const along = Math.abs(v.x) > Math.abs(v.z)
+        ? { c: Math.abs(v.x), half: v.w / 2, wall: concourse.w / 2 }
+        : { c: Math.abs(v.z), half: v.d / 2, wall: concourse.d / 2 };
+      expect(along.c - along.half, '階梯口沒有接到通道的牆')
+        .toBeCloseTo(along.wall, 6);
+      expect(m(edge - (along.c + along.half)), '階梯口沒有通到人行道')
+        .toBeLessThan(1.5);
+    }
+  });
+
+  it('should rail off every stair mouth', () => {
+    // 一個沒有欄杆的洞是地上的一塊污漬。
+    const rails = metroStationPlan.props.filter(v => v.tag === 'rail');
+    expect(rails.length, '欄杆不是每個口兩道').toBe(8);
+    for (const v of tagged(metroStationPlan, 'stairMouth')) {
+      const beside = rails.filter(r =>
+        Math.abs(r.x - v.x) <= v.w / 2 + 1e-9 && Math.abs(r.z - v.z) <= v.d / 2 + 1e-9);
+      expect(beside.length, `(${v.x}, ${v.z}) 的階梯口沒有兩道欄杆`).toBe(2);
+    }
   });
 });
 
@@ -168,29 +203,56 @@ describe('火車站', () => {
     }
   });
 
-  it('should lay two parallel rails on ballast', () => {
-    // 一條軌道不是鐵路。兩條平行的亮線才是。
-    const rails = trainStationPlan.props.filter(v => v.tag === 'rail');
-    expect(rails.length, '軌道不是兩條').toBe(2);
-    expect(rails[0]!.z).not.toBeCloseTo(rails[1]!.z, 3);
-    expect(rails[0]!.w).toBeCloseTo(rails[1]!.w, 9);
-    // 軌距要像軌距。1.5 m 以下讀起來是兩條貼在一起的線。
-    const gauge = m(Math.abs(rails[0]!.z - rails[1]!.z));
-    expect(gauge, `軌距 ${gauge.toFixed(1)} m`).toBeGreaterThan(0.6);
-    expect(gauge).toBeLessThan(2.0);
+  /**
+   * 火車站不畫自己的鐵軌，而且要讓開真的那一條。
+   *
+   * 使用者：「我記得好像會蓋在鐵軌邊緣? 所以不用畫出鐵軌吧? 你查證看看」。
+   * 查了：比「邊緣」更強 —— `canPlaceTransportStop` 規定火車站蓋在
+   * `railType ≠ 0` 的格子**上**，`placeTransportStopOnGrid` 只改
+   * buildingId／reserved／zoneType，所以軌道還在那一格裡，`TrackRenderer`
+   * 照樣畫碴床、枕木與鋼軌，貼著**格心**。
+   *
+   * 於是這一條守兩件事：不准自己畫一條（會與真的那條各在各的位置），
+   * 也不准蓋在它上面（列車會從大廳裡開過去）。走廊寬度直接取
+   * `TrackRenderer` 的 `TRACK_WIDTH` —— 抄一個數字的話，那邊調寬了這邊
+   * 不會知道。
+   */
+  it('should leave the real track a clear corridor', () => {
+    expect(trainStationPlan.props.filter(v => v.tag === 'rail').length,
+      '火車站自己畫了鋼軌 —— TrackRenderer 已經在同一格畫過了').toBe(0);
+
+    const half = TRACK_WIDTH;   // 碴床半寬的兩倍：車體比軌距寬
+    const all = [
+      ...trainStationPlan.massing, ...trainStationPlan.props,
+      ...trainStationPlan.overhead,
+    ];
+    for (const v of all) {
+      const clear = v.z - v.d / 2 >= half - 1e-9 || v.z + v.d / 2 <= -half + 1e-9;
+      expect(clear, `${v.tag} 蓋在軌道走廊上 —— 真的鋼軌會從它裡面穿出來`)
+        .toBe(true);
+    }
+    for (const f of trainStationPlan.fixtures) {
+      const e = propExtent(f);
+      const clear = f.z - e.z >= half - 1e-9 || f.z + e.z <= -half + 1e-9;
+      expect(clear, `${f.kind} 站在軌道走廊上`).toBe(true);
+    }
+  });
+
+  it('should put the hall and the platform on opposite sides of the track', () => {
+    // 同一側的話中間那條走廊是站區的邊界，而不是「軌道從站中間穿過去」。
+    const hall = tagged(trainStationPlan, 'hall')[0]!;
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    expect(Math.sign(hall.z), '站房與月台在軌道的同一側')
+      .not.toBe(Math.sign(platform.z));
   });
 
   it('should raise the platform beside the track', () => {
     const platform = tagged(trainStationPlan, 'platform')[0]!;
-    const rails = trainStationPlan.props.filter(v => v.tag === 'rail');
     expect(platform.part).toBe(PART_GROUND);
     const h = m(platform.y1 - platform.y0);
     expect(h, `月台只有 ${h.toFixed(2)} m 高 —— 那是一塊鋪面`).toBeGreaterThan(0.5);
-    // 月台要在軌道**旁邊**，不是壓在軌道上。
-    for (const r of rails) {
-      expect(Math.abs(r.z - platform.z), '月台蓋在軌道上')
-        .toBeGreaterThan(platform.d / 2);
-    }
+    // 而且要沿著軌道走滿整格 —— 只有一小段的話那是一塊台階。
+    expect(m(platform.w), '月台太短，停不下一節車廂').toBeGreaterThan(10);
   });
 
   it('should hang a lit clock on the front', () => {

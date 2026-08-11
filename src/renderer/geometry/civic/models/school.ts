@@ -184,8 +184,11 @@ const fixtures: PropSpec[] = [
  * `assembleVehicles` 只擋佔地邊界，擋不了這個）。
  */
 const vehicles: CivicVehicle[] = [
-  { kind: 'bus', x: M(-3.0), z: M(4.8) },
-  { kind: 'van', x: M(5.4), z: M(4.8) },
+  // z = 5.2：接送區的中間。原本停在 4.8，車身前緣壓進門口那排灌木
+  // （z ∈ [2.7, 4.1]）——「車停在樹叢裡」。往後挪到擋車柱（z = 6.4）之前
+  // 那條 2.2 m 的縫的正中間。
+  { kind: 'bus', x: M(-3.0), z: M(5.2) },
+  { kind: 'van', x: M(5.4), z: M(5.2) },
 ];
 
 /**

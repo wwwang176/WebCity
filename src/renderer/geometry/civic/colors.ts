@@ -43,7 +43,11 @@ export const CIVIC_COLORS: Partial<Record<InfraType, CivicColor>> = {
   garbage: rgb(0x6b6242),
   sewage: rgb(0x607d8b),        // 藍灰
   power: rgb(0x8d8d8d),         // 廠房灰
-  water: rgb(0x4d8fac),         // 水藍
+  // 抽水廠是綠的。使用者：「抽水廠要以綠色系的顏色為主」。原本是水藍
+  // （0x4d8fac）—— 而它旁邊的汙水廠是藍灰、下面的水面貼片也是藍的，
+  // 三個藍疊在一起讀不出層次。綠色是自來水事業的實際識別色，而且與公園的
+  // 草綠（0x4caf50）明顯不同：這是偏暗的青綠。
+  water: rgb(0x3f8a68),         // 水務綠
 
   // ── 交通站點 ──
   bus_stop: rgb(0xff9800),      // 公車橘

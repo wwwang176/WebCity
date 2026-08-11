@@ -1,5 +1,5 @@
 import {
-  FACADE_CIVIC, PART_ROOF, PART_DETAIL, PART_LAMP, PART_GROUND,
+  FACADE_CIVIC, PART_DETAIL, PART_LAMP, PART_GROUND,
 } from '../../buildings/parts';
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
@@ -35,6 +35,19 @@ const PAD_DECK = M(24.62);
 const WING_TOP = M(11.0);
 const WING_ROOF = M(11.4);
 
+/**
+ * 屋頂平台的明度。
+ *
+ * 使用者：「醫院白色系」。牆本來就是醫療白（0xe8e8e8），問題出在**屋頂**：
+ * `PART_ROOF` 的顏色來自各分區共用的屋頂色盤，而公家建築那一組是深瀝青
+ * （0.26–0.38）—— 等角視角下看到的屋頂面積比牆大，於是整棟讀起來是深灰的。
+ *
+ * 醫院的屋頂是淺色隔熱層，所以這裡走 `PART_GROUND` + 高明度：那是這套
+ * shader 裡唯一「這一面的顏色由這一棟自己決定」的水平面分支，而頂樓的
+ * 停機坪甲板本來就是這樣畫的。
+ */
+const ROOF_SHADE = 0.95;
+
 /** 停機坪甲板的明度。深色柏油 —— H 才有東西可以對比。 */
 const PAD_SHADE = 0.18;
 /** H 標線的明度。與甲板的差距是它看不看得見的全部。 */
@@ -55,7 +68,7 @@ const massing: CivicVolume[] = [
     x: 0, z: M(-11.75), w: M(22.0), d: M(10.5), y0: 0, y1: MAIN_TOP,
   },
   {
-    tag: 'mainRoof', part: PART_ROOF,
+    tag: 'mainRoof', part: PART_GROUND, shade: ROOF_SHADE,
     x: 0, z: M(-11.75), w: M(22.6), d: M(11.1), y0: MAIN_TOP, y1: MAIN_ROOF,
   },
 
@@ -96,7 +109,7 @@ const massing: CivicVolume[] = [
     x: 0, z: M(-4.75), w: M(4.0), d: M(3.5), y0: 0, y1: M(5.0),
   },
   {
-    tag: 'corridorRoof', part: PART_ROOF,
+    tag: 'corridorRoof', part: PART_GROUND, shade: ROOF_SHADE,
     x: 0, z: M(-4.75), w: M(4.4), d: M(3.5), y0: M(5.0), y1: M(5.3),
   },
 
@@ -106,7 +119,7 @@ const massing: CivicVolume[] = [
     x: M(x), z: M(0.75), w: M(10.0), d: M(7.5), y0: 0, y1: WING_TOP,
   })),
   ...([-6, 6] as const).map((x): CivicVolume => ({
-    tag: 'wingRoof', part: PART_ROOF,
+    tag: 'wingRoof', part: PART_GROUND, shade: ROOF_SHADE,
     x: M(x), z: M(0.75), w: M(10.6), d: M(8.1), y0: WING_TOP, y1: WING_ROOF,
   })),
 

@@ -4,6 +4,7 @@ import {
   assembleCivic, assembleDecals, assembleFixtures, assembleVehicles,
 } from '../assemble';
 import { overlapOf } from '../../buildings/massing/volume';
+import { propExtent } from '../../props';
 import { CIVIC_TRIANGLE_BUDGET } from '../types';
 import { getInfraConfig } from '../../../../core/building/InfraConfig';
 import { PART_THRESHOLDS, triangleCount, ZONE_CAT } from '../../buildings/parts';
@@ -99,6 +100,55 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
       const on = hard.some(d =>
         Math.abs(cx - d.x) <= d.w / 2 + 1e-9 && Math.abs(cz - d.z) <= d.d / 2 + 1e-9);
       expect(on, `${type} 的 ${v.kind} 停在草地上（或根本沒有鋪面）`).toBe(true);
+    }
+  });
+
+  /**
+   * 而且不准卡進任何東西。
+   *
+   * 使用者：「垃圾掩埋場的綠色車輛擠到垃圾堆了」「汙水處理廠的卡車擠到汙水槽了」。
+   * 兩件是同一個洞：**沒有任何一條驗收在問「這台車停的位置有沒有別的東西」**。
+   * 「停在鋪面上」那條只看車的中心點落在哪塊貼片上 —— 一台整個埋進土丘裡的
+   * 垃圾車，中心點確實好端端地在鋪面上。
+   *
+   * 車的佔地用**實際的幾何**算（旋轉之後的包圍盒）：手寫一份車輛尺寸表的話，
+   * 哪天有人把卡車改長，這條檢查會繼續拿舊的數字算。
+   *
+   * `overhead` 不算 —— 雨棚本來就是給車停在底下的。樹也不算：樹冠在 6 m 高，
+   * 車停在樹下是對的。
+   */
+  it('should park every vehicle in the clear', () => {
+    const span = (a0: number, a1: number, b0: number, b1: number) =>
+      Math.min(a1, b1) - Math.max(a0, b0) > 1e-9;
+    const boxes = plan.vehicles.map((v) => {
+      const geo = assembleVehicles([v], plan.footprint);
+      geo.computeBoundingBox();
+      return { v, b: geo.boundingBox! };
+    });
+
+    for (const { v, b } of boxes) {
+      for (const [i, s] of [...plan.massing, ...plan.props].entries()) {
+        const hit = span(b.min.x, b.max.x, s.x - s.w / 2, s.x + s.w / 2)
+          && span(b.min.z, b.max.z, s.z - s.d / 2, s.z + s.d / 2)
+          && span(b.min.y, b.max.y, s.y0, s.y1);
+        expect(hit, `${type} 的 ${v.kind} 卡進 ${s.tag ?? i}`).toBe(false);
+      }
+      for (const f of plan.fixtures) {
+        if (f.kind === 'tree') continue;
+        const e = propExtent(f);
+        const hit = span(b.min.x, b.max.x, f.x - e.x, f.x + e.x)
+          && span(b.min.z, b.max.z, f.z - e.z, f.z + e.z);
+        expect(hit, `${type} 的 ${v.kind} 停在 ${f.kind} 上`).toBe(false);
+      }
+    }
+    for (let i = 0; i < boxes.length; i++) {
+      for (let j = i + 1; j < boxes.length; j++) {
+        const a = boxes[i]!;
+        const c = boxes[j]!;
+        const hit = span(a.b.min.x, a.b.max.x, c.b.min.x, c.b.max.x)
+          && span(a.b.min.z, a.b.max.z, c.b.min.z, c.b.max.z);
+        expect(hit, `${type} 的 ${a.v.kind} 與 ${c.v.kind} 停在同一格`).toBe(false);
+      }
     }
   });
 

@@ -234,8 +234,9 @@ const fixtures: PropSpec[] = [
   { kind: 'tree', x: M(11.0), z: M(4.0), heightM: 5.6, crownRadius: M(0.7) },
   { kind: 'tree', x: M(11.0), z: M(12.0), heightM: 5.6, crownRadius: M(0.7) },
 
-  { kind: 'shrub', x: M(-1.4), z: M(-1.6), radius: M(0.6) },
-  { kind: 'shrub', x: M(-3.4), z: M(-1.6), radius: M(0.6) },
+  // 擋車柱**之後**（z = −0.6）—— 原本在 −1.6，也就是在停車格裡。
+  { kind: 'shrub', x: M(-1.4), z: M(-0.6), radius: M(0.6) },
+  { kind: 'shrub', x: M(-3.4), z: M(-0.6), radius: M(0.6) },
   { kind: 'hedge', x: 0, z: M(16.9), axis: 'z', length: M(14.0), depth: M(0.6), heightM: 1.1 },
 
   { kind: 'flowerBed', x: M(-6.6), z: M(-8.6), radius: M(0.6) },
@@ -268,8 +269,11 @@ const fixtures: PropSpec[] = [
  */
 const vehicles: CivicVehicle[] = [
   { kind: 'bus', x: M(5.5), z: M(-6.5) },
-  { kind: 'car', x: M(-6.0), z: M(-1.8) },
-  { kind: 'van', x: M(-2.0), z: M(-1.8) },
+  // z = −2.25：車格夾在翼樓的前牆（z = −3.0）與擋車柱（z = −1.4）之間的
+  // 1.6 m 裡，而車身有 1.32 m —— 這條縫只放得下這一個 z。原本停在 −1.8，
+  // 整排車橫跨擋車柱與門口的灌木。
+  { kind: 'car', x: M(-6.0), z: M(-2.25) },
+  { kind: 'van', x: M(-2.0), z: M(-2.25) },
 ];
 
 /**

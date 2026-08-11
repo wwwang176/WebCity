@@ -173,13 +173,31 @@ describe('醫院', () => {
     }
   });
 
-  it('should roof every block it builds', () => {
-    // 少一片屋頂的話那一塊會走 `n.y > 0.85` 的自動判定 —— 拿得到屋頂色票，
-    // 但沒有屋簷，量體的邊緣是刀切的。
+  /**
+   * 每一塊量體都要有屋頂，而且是**白的**。
+   *
+   * 少一片屋頂的話那一塊會走 `n.y > 0.85` 的自動判定 —— 拿得到屋頂色票，
+   * 但沒有屋簷，量體的邊緣是刀切的。
+   *
+   * 而「拿得到屋頂色票」正是使用者說「醫院白色系」時看到的問題：公家建築
+   * 那組色票是深瀝青（最亮的一個也只有 0.38），所以一棟白牆的醫院從等角
+   * 視角看下去是深灰的。醫院的屋頂走 `PART_GROUND` + 高明度，顏色由這一棟
+   * 自己決定 —— 這條測的就是「沒有人把它改回共用色票」。
+   */
+  it('should cap every block with a white roof', () => {
     for (const tag of ['main', 'wing', 'corridor']) {
       expect(tagged(`${tag}Roof`).length, `${tag} 沒有屋頂`)
         .toBe(tagged(tag).length);
-      for (const r of tagged(`${tag}Roof`)) expect(r.part).toBe(PART_ROOF);
+      for (const r of tagged(`${tag}Roof`)) {
+        expect(r.part, `${tag}Roof 走回共用屋頂色票 —— 那組是深瀝青`)
+          .toBe(PART_GROUND);
+        expect(r.shade, `${tag}Roof 不夠白`).toBeGreaterThan(0.8);
+      }
+    }
+    // 而且不准有任何一片真的 `PART_ROOF` 混進來 —— 一棟白醫院上有一片
+    // 深灰的雨遮，那一片會變成整棟最顯眼的東西。
+    for (const v of [...plan.massing, ...plan.props, ...plan.overhead]) {
+      expect(v.part, `${v.tag} 是深色屋頂`).not.toBe(PART_ROOF);
     }
   });
 

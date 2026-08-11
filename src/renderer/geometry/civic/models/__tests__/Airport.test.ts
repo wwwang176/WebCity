@@ -34,6 +34,27 @@ interface Box { x: number; z: number; w: number; d: number }
 const covers = (d: Box, p: Vec2) =>
   Math.abs(p.x - d.x) <= d.w / 2 + 1e-9 && Math.abs(p.z - d.z) <= d.d / 2 + 1e-9;
 
+/** 一台車（或一架飛機）擺在某個位置時佔的矩形，由**實際的幾何**量出來。 */
+function boxOf(v: Parameters<typeof assembleVehicles>[0][number]) {
+  const geo = assembleVehicles([v], { w: 99, h: 99 });
+  geo.computeBoundingBox();
+  const b = geo.boundingBox!;
+  return {
+    x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2,
+    w: b.max.x - b.min.x, d: b.max.z - b.min.z,
+    z0: b.min.z, z1: b.max.z,
+  };
+}
+
+/**
+ * 一架停在機位上的飛機佔的矩形。機頭朝航廈（−z），所以長邊沿 z。
+ *
+ * 手寫一份尺寸表的話，哪天有人把機身改長，每一條用到它的檢查都會繼續拿
+ * 舊的數字算。
+ */
+const standBox = (g: Vec2) =>
+  boxOf({ kind: 'airplane', x: g.x, z: g.z, rotationY: Math.PI / 2 });
+
 /**
  * 飛機在地面上會經過的每一個航點。
  *
@@ -133,13 +154,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   it('should never park a static aeroplane on a working gate or taxiway', () => {
     const CLEAR = 0.45;
     for (const v of plan.vehicles) {
-      const geo = assembleVehicles([v], plan.footprint);
-      geo.computeBoundingBox();
-      const b = geo.boundingBox!;
-      const box = {
-        x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2,
-        w: b.max.x - b.min.x, d: b.max.z - b.min.z,
-      };
+      const box = boxOf(v);
       for (const g of allGates(size)) {
         expect(covers(box, g), `${v.kind} 停在機位 (${g.x}, ${g.z}) 上`).toBe(false);
       }
@@ -227,27 +242,6 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
    * 這條檢查會繼續拿舊的數字算。
    */
   it('should keep the aeroplanes, the jet bridges and the ground crew apart', () => {
-    /** 一架停在機位上的飛機佔的矩形。機頭朝航廈，所以長邊沿 z。 */
-    const standBox = (g: Vec2) => {
-      const geo = assembleVehicles(
-        [{ kind: 'airplane', x: g.x, z: g.z, rotationY: Math.PI / 2 }],
-        { w: 99, h: 99 });
-      geo.computeBoundingBox();
-      const b = geo.boundingBox!;
-      return {
-        x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2,
-        w: b.max.x - b.min.x, d: b.max.z - b.min.z,
-      };
-    };
-    const vehicleBox = (v: (typeof plan.vehicles)[number]) => {
-      const geo = assembleVehicles([v], { w: 99, h: 99 });
-      geo.computeBoundingBox();
-      const b = geo.boundingBox!;
-      return {
-        x: (b.min.x + b.max.x) / 2, z: (b.min.z + b.max.z) / 2,
-        w: b.max.x - b.min.x, d: b.max.z - b.min.z,
-      };
-    };
     const hits = (a: Box, b: Box) =>
       Math.abs(a.x - b.x) < (a.w + b.w) / 2 - 1e-9
       && Math.abs(a.z - b.z) < (a.d + b.d) / 2 - 1e-9;
@@ -256,7 +250,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
     const bridges = plan.props.filter(v => v.tag === 'jetBridge')
       .map(v => ({ what: `空橋 ${v.x.toFixed(2)}`, box: v }));
     const crew = plan.vehicles.filter(v => v.tag === 'groundCrew')
-      .map(v => ({ what: `地勤 ${v.kind}`, box: vehicleBox(v) }));
+      .map(v => ({ what: `地勤 ${v.kind}`, box: boxOf(v) }));
 
     for (const a of bridges) {
       for (const b of stands) expect(hits(a.box, b.box), `${a.what} 卡到 ${b.what}`).toBe(false);
@@ -282,14 +276,47 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
     }
   });
 
-  it('should stand each jet bridge beside its gate, not in front of it', () => {
-    // 使用者：「空橋應該是在飛機停靠點的旁邊」。正對機位的話，飛機一停妥
-    // 就插在空橋裡。
-    const gates = allGates(size);
-    const bridges = plan.props.filter(v => v.tag === 'jetBridge');
-    for (const b of bridges) {
-      const onCentre = gates.some(g => Math.abs(g.x - b.x) < 1e-9);
-      expect(onCentre, `空橋 ${b.x.toFixed(2)} 正對著機位`).toBe(false);
+  /**
+   * 空橋是一條**臂**：一端接航廈，一端停在機頭前。
+   *
+   * 使用者：「空橋還是沒對上，是不是應該是從建築物延伸出來，然後再機頭附近?」
+   * 兩端都要驗，因為前兩版各錯一端：第一版插進機身，第二版擺在機位旁邊
+   * 那條縫裡 —— 與航廈、與飛機都沒有接觸，看起來是停機坪上飄著的一塊板。
+   *
+   * 機頭的位置由**實際的幾何**算，不是拿模型檔裡的常數再抄一次：
+   * `airport.ts` 的 `PLANE_NOSE` 抄錯了或機身改長了，這條就會紅。
+   */
+  it('should reach from the terminal wall out to the aeroplane nose', () => {
+    const term = tagged(plan, 'terminal')[0]!;
+    const wall = term.z + term.d / 2;
+    for (const g of allGates(size)) {
+      const b = plan.props.find(v =>
+        v.tag === 'jetBridge' && Math.abs(v.x - g.x) < 1e-9);
+      expect(b, `機位 ${g.x} 沒有正對的空橋`).toBeTruthy();
+      expect(b!.z - b!.d / 2, '空橋的根部沒有接在航廈的牆上')
+        .toBeCloseTo(wall, 9);
+
+      const nose = standBox(g).z0;
+      const tip = b!.z + b!.d / 2;
+      expect(tip, '空橋插進機頭').toBeLessThanOrEqual(nose + 1e-9);
+      expect(m(nose - tip), `空橋停在機頭前 ${m(nose - tip).toFixed(1)} m —— 接不到門`)
+        .toBeLessThan(2.0);
+      expect(b!.d, '空橋不是一條伸出去的臂，是一塊貼著牆的板')
+        .toBeGreaterThan(b!.w);
+    }
+  });
+
+  it('should stand each jet bridge on a leg', () => {
+    // 橋面在 1 m 高。少了腳，它是一塊浮在停機坪上的板子。
+    const legs = plan.props.filter(v => v.tag === 'jetBridgeLeg');
+    expect(legs.length, '空橋沒有腳').toBe(allGates(size).length);
+    for (const leg of legs) {
+      expect(leg.y0, '腳沒有落地').toBeCloseTo(0, 9);
+      const deck = plan.props.find(v =>
+        v.tag === 'jetBridge' && Math.abs(v.x - leg.x) < 1e-9)!;
+      expect(leg.y1, '腳沒有頂到橋面').toBeCloseTo(deck.y0, 9);
+      expect(Math.abs(leg.z - deck.z), '腳沒有站在橋下')
+        .toBeLessThanOrEqual(deck.d / 2 + 1e-9);
     }
   });
 

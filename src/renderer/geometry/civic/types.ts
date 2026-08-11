@@ -63,6 +63,14 @@ export type CivicVolume = Volume & {
  * 長出窗戶。所以一律用 `PlaneGeometry`」。
  */
 export interface CivicDecal {
+  /**
+   * 這塊鋪面是什麼。**只給測試與讀者用**，不影響幾何。
+   *
+   * 與 `CivicVolume.tag` 同一個理由：一塊貼片在資料上只是「一個矩形加一個
+   * 明度」，而「哪一塊是水面」拿明度猜是猜不出來的 —— 抽水廠的河面 shade
+   * 0.02，門口的柏油 0.0，比它還暗。
+   */
+  tag?: string;
   /** 中心。 */
   x: number;
   z: number;

@@ -194,32 +194,57 @@ describe('墓園', () => {
     }
   });
 
-  it('should walk the path from the gate to the chapel', () => {
-    // 走不到禮拜堂的墓園是一片草皮。步道要從基地前緣一路接到禮拜堂。
-    const chapel = tagged(plan, 'chapel')[0]!;
+  it('should walk the path from the gate to the memorial', () => {
+    // 走不到頭的步道是一條裝飾線。步道要從基地前緣一路接到紀念碑。
+    const plinth = tagged(plan, 'plinth')[0]!;
     const path = base(plan).find(d => !d.lawn && d.d > d.w)!;
+    const court = base(plan).find(d => !d.lawn && d !== path)!;
     expect(path.z + path.d / 2, '步道沒有接到門口')
       .toBeGreaterThanOrEqual(plan.footprint.h / 2 - 1e-9);
-    expect(path.z - path.d / 2, '步道沒有接到禮拜堂')
-      .toBeLessThanOrEqual(chapel.z + chapel.d / 2 + 1e-9);
+    // 步道接到碑前廣場，碑站在廣場上 —— 中間斷一段的話那是「走到一半的路」。
+    expect(path.z - path.d / 2, '步道與碑前廣場之間斷了一段')
+      .toBeLessThanOrEqual(court.z + court.d / 2 + 1e-9);
+    expect(Math.abs(plinth.z - court.z) + plinth.d / 2, '紀念碑站在廣場外面')
+      .toBeLessThanOrEqual(court.d / 2 + 1e-9);
+    expect(Math.abs(plinth.x - court.x) + plinth.w / 2)
+      .toBeLessThanOrEqual(court.w / 2 + 1e-9);
   });
 
-  it('should gable the chapel roof', () => {
-    // 平頂的小房子讀起來是變電箱。山牆才是禮拜堂。
-    const roof = tagged(plan, 'chapelRoof')[0]!;
-    expect(roof.part).toBe(PART_ROOF);
-    expect(roof.shape, '禮拜堂是平頂的').toBe('gable');
+  /**
+   * 墓園裡沒有房子。
+   *
+   * 使用者：「墓園的造型，我認為可以在簡單一點，不一定要有建築?」拆掉禮拜堂
+   * 之後要有一條擋著它長回來 —— 而「有沒有建築」這件事在資料上就看得出來：
+   * **屋頂**。這一棟不該有任何一片 `PART_ROOF`，因為它沒有任何一棟需要蓋頂
+   * 的東西。
+   *
+   * 第二條是尺度：紀念碑最大的一階石台是 3.2 m 見方。留 16 m2 的上限 ——
+   * 超過那個尺寸的量體就不是一座碑，是一棟樓。
+   */
+  it('should not put a building in the graveyard', () => {
+    const all = [...plan.massing, ...plan.props, ...plan.overhead];
+    for (const v of all) {
+      expect(v.part, `${v.tag} 是屋頂 —— 墓園裡不該有需要蓋頂的東西`)
+        .not.toBe(PART_ROOF);
+    }
+    for (const v of plan.massing) {
+      const footprint = m(v.w) * m(v.d);
+      expect(footprint, `${v.tag} 佔了 ${footprint.toFixed(0)} m2 —— 那是一棟樓`)
+        .toBeLessThan(16);
+    }
   });
 
-  it('should light a cross above the chapel', () => {
+  it('should light a cross on top of the memorial', () => {
     // 夜裡整座墓園只剩這個十字。
     const cross = tagged(plan, 'cross');
-    const roof = tagged(plan, 'chapelRoof')[0]!;
+    const shaft = tagged(plan, 'shaft')[0]!;
     expect(cross.length, '十字不成形').toBeGreaterThanOrEqual(3);
     for (const c of cross) {
       expect(c.part, '十字不會亮').toBe(PART_LAMP);
-      expect(c.y0, '十字掛在屋頂下面').toBeGreaterThanOrEqual(roof.y1 - 1e-9);
+      expect(c.y0, '十字掛在石柱下面').toBeGreaterThanOrEqual(shaft.y1 - 1e-9);
     }
+    // 而且要看得到 —— 4 m 以下的十字被墓碑旁的樹擋住了。
+    expect(m(Math.max(...cross.map(c => c.y1))), '十字太矮').toBeGreaterThan(4.5);
   });
 
   it('should frame the entrance with piers and a lintel', () => {

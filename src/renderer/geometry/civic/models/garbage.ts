@@ -115,16 +115,26 @@ const fixtures: PropSpec[] = [
   { kind: 'tree', x: M(-2.0), z: M(-10.4), heightM: 6.5, crownRadius: M(1.0) },
   { kind: 'shrub', x: M(9.0), z: M(10.6), radius: M(0.8) },
 
-  { kind: 'signPost', x: M(-2.4), z: M(6.0), axis: 'z' },
+  // 與兩根擋車柱同一條線（x = −3.2）—— 原本站在 −2.4，也就是站在垃圾車
+  // 停放通道裡。
+  { kind: 'signPost', x: M(-3.2), z: M(6.0), axis: 'z' },
   { kind: 'hydrant', x: M(-10.8), z: M(9.8) },
   { kind: 'bollard', x: M(-3.2), z: M(4.0), radius: M(0.12) },
   { kind: 'bollard', x: M(-3.2), z: M(8.0), radius: M(0.12) },
 ];
 
-/** 停在場裡的垃圾車。這一棟最直接的辨識訊號 —— 而且它們本來就停在這裡。 */
+/**
+ * 停在場裡的垃圾車。這一棟最直接的辨識訊號 —— 而且它們本來就停在這裡。
+ *
+ * 使用者：「垃圾掩埋場的綠色車輛擠到垃圾堆了」。原本兩台橫著停在 x = 1.4，
+ * 而車身沿 x 有 6.7 m —— 右半截整個埋進第二座土丘（x ≥ 2.1）裡。
+ *
+ * 現在**縱著**停（`rotationY = π/2`），排在傾卸棚與土丘之間那條 5 m 寬的
+ * 通道上：那是場裡唯一容得下 6.7 m 車身的方向。
+ */
 const vehicles: CivicVehicle[] = [
-  { kind: 'garbageTruck', x: M(1.4), z: M(3.0) },
-  { kind: 'garbageTruck', x: M(1.4), z: M(6.4) },
+  { kind: 'garbageTruck', x: M(-1.6), z: M(4.2), rotationY: Math.PI / 2 },
+  { kind: 'garbageTruck', x: M(0.6), z: M(4.2), rotationY: Math.PI / 2 },
   { kind: 'truck', x: M(-6.0), z: M(1.4) },
 ];
 

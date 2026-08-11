@@ -119,7 +119,8 @@ const fixtures: PropSpec[] = [
 
 const vehicles: CivicVehicle[] = [
   { kind: 'truck', x: M(-6.0), z: M(6.0) },
-  { kind: 'van', x: M(1.0), z: M(8.4) },
+  // x = 4.4：原本停在 1.0，正好壓在大門那兩根擋車柱（x = ±1.2）上。
+  { kind: 'van', x: M(4.4), z: M(8.4) },
 ];
 
 /**

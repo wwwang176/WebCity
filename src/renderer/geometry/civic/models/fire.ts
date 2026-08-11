@@ -186,7 +186,9 @@ const fixtures: PropSpec[] = [
   { kind: 'lamp', x: M(-6.0), z: M(4.4), heightM: 4.5 },
   { kind: 'lamp', x: M(-0.8), z: M(4.4), heightM: 4.5 },
   { kind: 'lamp', x: M(-6.0), z: M(9.6), heightM: 4.5 },
-  { kind: 'lamp', x: M(6.0), z: M(5.6), heightM: 4.5 },
+  // 職務停車格**之間**（x ∈ [6.7, 8.5] 是兩格中間的縫）。原本站在 6.0，
+  // 也就是站在左邊那一格裡。
+  { kind: 'lamp', x: M(7.6), z: M(4.5), heightM: 4.5 },
 
   { kind: 'flagpole', x: M(11.2), z: M(4.0), axis: 'z' },
   { kind: 'signPost', x: M(4.6), z: M(5.0), axis: 'z' },
@@ -197,7 +199,8 @@ const fixtures: PropSpec[] = [
   { kind: 'hydrant', x: M(11.4), z: M(8.0) },
 
   { kind: 'bin', x: M(4.4), z: M(2.6), radius: M(0.28) },
-  { kind: 'bikeRack', x: M(5.4), z: M(3.6), axis: 'z' },
+  // 停車格之前（車格從 z = 3.8 起）—— 原本擺在 3.6，被職務車壓在下面。
+  { kind: 'bikeRack', x: M(5.4), z: M(2.2), axis: 'z' },
   { kind: 'bollard', x: M(-11.4), z: M(1.0), radius: M(0.11) },
   { kind: 'bollard', x: M(4.2), z: M(6.6), radius: M(0.11) },
   { kind: 'bollard', x: M(11.4), z: M(1.0), radius: M(0.11) },
@@ -210,8 +213,10 @@ const fixtures: PropSpec[] = [
  * 是樹與路燈那些長在地上的東西。
  */
 const vehicles: CivicVehicle[] = [
-  { kind: 'firetruck', x: DOOR_X[0]!, z: M(1.6), rotationY: Math.PI / 2 },
-  { kind: 'firetruck', x: DOOR_X[1]!, z: M(1.6), rotationY: Math.PI / 2 },
+  // z = 1.9：車尾要**整個**在捲門之外（門面在 z = −1.7）。原本停在 1.6，
+  // 車尾插進門板 7 cm —— 畫面上那是一台卡在門裡的消防車。
+  { kind: 'firetruck', x: DOOR_X[0]!, z: M(1.9), rotationY: Math.PI / 2 },
+  { kind: 'firetruck', x: DOOR_X[1]!, z: M(1.9), rotationY: Math.PI / 2 },
   // 隊長的公務車與勤務廂型車停在**側邊**的員工停車格 —— 三台一模一樣的
   // 消防車看起來像複製貼上，而把它們停在出車道上就變成擋路的東西。
   { kind: 'car', x: M(6.0), z: M(4.5), rotationY: Math.PI / 2 },

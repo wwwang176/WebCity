@@ -107,15 +107,61 @@ export const busStopPlan: CivicPlan = {
 
 // ===== 捷運站 =====
 
-const metroTotem = totem(M(-4.8), M(2.8), 2.2);
+const metroTotem = totem(M(4.6), M(4.6), 2.2);
 
 /**
- * 捷運站 —— 出入口與電梯井。
+ * 捷運站 —— 一座**四面都能下樓**的地面通道建築。
  *
- * 站體在地下，所以地面上只有「進去的地方」：一座階梯出入口、一支玻璃電梯井、
- * 一根識別柱。深色的階梯口（`PART_GROUND` + 極低的 `shade`）是「這裡有洞」
- * 的唯一訊號 —— 少了它，出入口就只是一個小盒子。
+ * 使用者：「地鐵站的形象也要改一下，要看起來像可以從四面下樓的通道建築」。
+ * 原本是「一座階梯出入口 + 一支電梯井」擠在基地的左半 —— 那是一個路邊的
+ * 小盒子，讀起來與變電箱差不多，而且只有一個方向進得去。
+ *
+ * 現在是一座站在格子正中央的玻璃通道，四個方向各伸出一道階梯口通到人行道：
+ *
+ * ```
+ *            ▓ 階梯口
+ *        ┌───────────┐
+ *      ▓ │   通道     │ ▓
+ *        └───────────┘
+ *            ▓          ● 識別柱（角落）
+ * ```
+ *
+ * 階梯口走 `PART_GROUND` + 極低的 `shade`：深色的洞是「這裡可以下去」的唯一
+ * 訊號。四個都朝著格子的邊 —— 圍在中間的話「四面下樓」是假的，人走到通道
+ * 旁邊會發現沒有入口。
  */
+
+/** 通道量體的半寬（公尺）。四道階梯口從這裡往外接。 */
+const CONCOURSE_HALF = 2.7;
+/** 階梯口的長度（公尺）。從通道的牆一路伸到人行道。 */
+const MOUTH_LEN = 2.4;
+/** 階梯口的寬度（公尺）。 */
+const MOUTH_W = 3.0;
+/** 階梯口中心離原點的距離。 */
+const MOUTH_C = CONCOURSE_HALF + MOUTH_LEN / 2;
+
+/** 四個方向的單位向量。順序就是 N / S / E / W。 */
+const DIRS = [[0, -1], [0, 1], [1, 0], [-1, 0]] as const;
+
+const metroMouths: CivicVolume[] = DIRS.map(([dx, dz]): CivicVolume => ({
+  tag: 'stairMouth', part: PART_GROUND, shade: 0.04,
+  x: M(dx * MOUTH_C), z: M(dz * MOUTH_C),
+  w: M(dx === 0 ? MOUTH_W : MOUTH_LEN),
+  d: M(dx === 0 ? MOUTH_LEN : MOUTH_W),
+  y0: 0, y1: M(0.1),
+}));
+
+/** 每道階梯口兩側的欄杆。少了它，那四塊深色只是地上的四塊污漬。 */
+const metroRails: CivicVolume[] = DIRS.flatMap(([dx, dz]) =>
+  ([-1, 1] as const).map((side): CivicVolume => ({
+    tag: 'rail', part: PART_DETAIL,
+    x: M(dx * MOUTH_C + (dx === 0 ? side * MOUTH_W / 2 : 0)),
+    z: M(dz * MOUTH_C + (dx === 0 ? 0 : side * MOUTH_W / 2)),
+    w: M(dx === 0 ? 0.12 : MOUTH_LEN),
+    d: M(dx === 0 ? MOUTH_LEN : 0.12),
+    y0: 0, y1: M(1.0),
+  })));
+
 export const metroStationPlan: CivicPlan = {
   footprint: { w: 1, h: 1 },
   facade: FACADE_TRANSIT,
@@ -123,79 +169,90 @@ export const metroStationPlan: CivicPlan = {
   seed: [0.36, 0.68, 0.5],
   massing: [
     {
-      tag: 'entrance',
-      x: M(-1.4), z: M(-1.6), w: M(6.4), d: M(5.2), y0: 0, y1: M(3.6),
+      // 玻璃通道。`FACADE_TRANSIT` 的立面就是整片玻璃 —— 夜裡它自己會亮，
+      // 而那正是「地下有東西」該有的樣子。
+      tag: 'concourse',
+      x: 0, z: 0, w: M(CONCOURSE_HALF * 2), d: M(CONCOURSE_HALF * 2),
+      y0: 0, y1: M(3.4),
     },
     {
-      tag: 'entranceRoof', part: PART_ROOF,
-      x: M(-1.4), z: M(-1.6), w: M(7.0), d: M(5.8), y0: M(3.6), y1: M(4.0),
+      tag: 'concourseRoof', part: PART_ROOF,
+      x: 0, z: 0, w: M(6.0), d: M(6.0), y0: M(3.4), y1: M(3.8),
     },
-    // 玻璃電梯井。比出入口高 —— 一樣高的話兩者併成一個方盒。
-    {
-      tag: 'lift',
-      x: M(3.4), z: M(-1.6), w: M(2.6), d: M(2.6), y0: 0, y1: M(5.4),
-    },
-    {
-      tag: 'liftCap', part: PART_ROOF,
-      x: M(3.4), z: M(-1.6), w: M(3.0), d: M(3.0), y0: M(5.4), y1: M(5.7),
-    },
-    // 階梯口。
-    {
-      tag: 'stairMouth', part: PART_GROUND, shade: 0.04,
-      x: M(-1.4), z: M(1.8), w: M(4.0), d: M(1.2), y0: 0, y1: M(0.1),
-    },
+    ...metroMouths,
     metroTotem.panel,
   ],
   decals: [
-    { x: 0, z: M(-2.0), w: M(12.0), d: M(8.0), shade: 0.62 },
-    { x: 0, z: M(4.0), w: M(12.0), d: M(4.0), shade: 0.5 },
-    // 出入口前的導盲磚帶。
-    { x: M(-1.4), z: M(3.0), w: M(4.0), d: M(0.4), shade: 0.9, layer: 'mark' },
+    // 整格的人行道鋪面。四個方向都要走得到，所以不分前後。
+    { x: 0, z: 0, w: M(12.0), d: M(12.0), shade: 0.62 },
+    // 四道階梯口外緣的導盲磚帶。
+    ...DIRS.map(([dx, dz]) => ({
+      x: M(dx * (MOUTH_C + MOUTH_LEN / 2 + 0.3)),
+      z: M(dz * (MOUTH_C + MOUTH_LEN / 2 + 0.3)),
+      w: M(dx === 0 ? MOUTH_W : 0.4),
+      d: M(dx === 0 ? 0.4 : MOUTH_W),
+      shade: 0.9, layer: 'mark' as const,
+    })),
   ],
   props: [
     metroTotem.post,
-    // 階梯口的欄杆。
-    ...([-3.5, 0.7] as const).map((x): CivicVolume => ({
-      tag: 'rail', part: PART_DETAIL,
-      x: M(x), z: M(1.8), w: M(0.12), d: M(1.2), y0: 0, y1: M(1.0),
-    })),
+    ...metroRails,
   ],
-  overhead: [
-    {
-      tag: 'canopy',
-      x: M(-1.4), z: M(2.4), w: M(4.6), d: M(1.4), y0: M(3.0), y1: M(3.3),
-    },
-  ],
+  overhead: [],
   fixtures: [
-    { kind: 'lamp', x: M(4.8), z: M(3.4), heightM: 4.5 },
-    { kind: 'bin', x: M(1.6), z: M(3.2), radius: M(0.26) },
-    { kind: 'bikeRack', x: M(3.0), z: M(-5.0), axis: 'z' },
-    { kind: 'bikeRack', x: M(3.0), z: M(-4.3), axis: 'z' },
+    // 全部站在**四個角**：四條軸線上是階梯口，站上去就擋住了。
+    { kind: 'lamp', x: M(4.6), z: M(-4.6), heightM: 4.5 },
+    { kind: 'lamp', x: M(-4.6), z: M(4.6), heightM: 4.5 },
     { kind: 'tree', x: M(-4.6), z: M(-4.6), heightM: 5.5, crownRadius: M(1.0) },
-    { kind: 'shrub', x: M(-2.6), z: M(4.8), radius: M(0.7) },
-    { kind: 'bollard', x: M(-4.4), z: M(5.0), radius: M(0.11) },
-    { kind: 'bollard', x: M(0.6), z: M(5.0), radius: M(0.11) },
+    { kind: 'bin', x: M(-3.2), z: M(-4.8), radius: M(0.26) },
+    { kind: 'bikeRack', x: M(4.8), z: M(3.2), axis: 'z' },
+    { kind: 'shrub', x: M(3.2), z: M(4.9), radius: M(0.6) },
+    { kind: 'bollard', x: M(-4.9), z: M(3.2), radius: M(0.11) },
+    { kind: 'bollard', x: M(-4.9), z: M(-3.2), radius: M(0.11) },
   ],
   vehicles: [],
 };
 
 // ===== 火車站 =====
 
-// 站房收窄到 8 m，兩側各讓出 1.7 m —— 識別柱、垃圾桶、單車架、樹全部
-// 站在那兩條帶上。第一版的站房 10.4 m 寬、6 m 深，幾乎吃滿整塊 1×1，
-// 於是識別柱與所有街道家具都埋在站房**內部**（看不見的內部面）。
-// 1×1 的教訓：先留出可以站人的地方，再決定房子多大。
-const trainTotem = totem(M(-4.9), M(-2.4), 2.2);
+const trainTotem = totem(M(-4.9), M(-2.6), 2.2);
 
 /**
- * 火車站 —— 站房、月台與一段軌道。
+ * 火車站 —— 站房與月台，**中間讓出一條真正的軌道走廊**。
  *
- * 四座裡唯一有「站體」的一座，所以它是最高的。月台走 `PART_GROUND` +
- * `shade`：它是**架高的鋪面**，標成牆的話那 0.9 m 高的台子會長出窗戶。
+ * 查證過的事實（`canPlaceTransportStop` + `placeTransportStopOnGrid` +
+ * `TrackRenderer`）：火車站不是蓋在鐵軌**旁邊**，是蓋在鐵軌**上** ——
+ * 放置規則要求那一格 `railType ≠ 0`，而寫入時只改 buildingId／reserved／
+ * zoneType，軌道原封不動留在格子裡。`TrackRenderer` 於是照樣在同一格畫出
+ * 碴床、枕木與兩條鋼軌，貼著**格心**、寬 `TRACK_WIDTH`。
  *
- * 軌道只畫兩條鋼軌加碎石帶。1×1 的地放不下一列車，但兩條平行的亮線已經
- * 足夠讓人讀出「這裡是鐵路」。
+ * 所以這一棟原本錯了兩次：
+ *
+ * 1. 它自己在 z = 4.4 / 5.2 畫了兩條鋼軌加一條道碴帶 —— 與真的那條各畫各的，
+ *    位置還不一樣。使用者：「所以不用畫出鐵軌吧?」對，不用。
+ * 2. 更嚴重的是，站房（z ∈ [−5.4, 0.6]）**蓋在格心上** —— 真的鋼軌會從
+ *    站房的地板穿出來，而列車會從大廳裡開過去。
+ *
+ * 現在的配置是「站房在軌道的一側、月台在另一側」，中間 ±TRACK_WIDTH 那條帶
+ * 一件東西都沒有：
+ *
+ * ```
+ *   z−  ┌──────────────┐
+ *       │   站房（大鐘）  │
+ *       ├──────────────┤
+ *       │ ← 真的軌道 →   │  ← 這條帶由 TrackRenderer 畫
+ *       ├──────────────┤
+ *   z+  │  月台（雨棚）   │
+ *       └──────────────┘
+ * ```
+ *
+ * 走廊只讓一個方向 —— 12 m 的格子上讓出十字的話，四個角各剩 4 m，站房就
+ * 蓋不起來了。玩家要把站轉到與軌道同向，這與其他有方向性的建築一樣。
  */
+
+/** 軌道走廊的半寬（公尺）。`TrackRenderer.TRACK_WIDTH` 是 0.15 格 = 1.8 m。 */
+const CORRIDOR_HALF = 1.8;
+
 export const trainStationPlan: CivicPlan = {
   footprint: { w: 1, h: 1 },
   facade: FACADE_TRANSIT,
@@ -204,60 +261,58 @@ export const trainStationPlan: CivicPlan = {
   massing: [
     {
       tag: 'hall',
-      x: 0, z: M(-2.4), w: M(8.0), d: M(6.0), y0: 0, y1: M(7.6),
+      x: 0, z: M(-3.8), w: M(9.0), d: M(3.4), y0: 0, y1: M(7.6),
     },
     {
       tag: 'hallRoof', part: PART_ROOF, shape: 'gable',
-      x: 0, z: M(-2.4), w: M(8.6), d: M(6.5), y0: M(7.6), y1: M(9.6),
+      x: 0, z: M(-3.75), w: M(9.6), d: M(3.9), y0: M(7.6), y1: M(9.6),
     },
-    // 站房正面的大鐘。火車站的辨識訊號，而且夜裡它會亮。
+    // 站房正面（朝月台那一側）的大鐘。火車站的辨識訊號，而且夜裡它會亮。
     {
       tag: 'clock', part: PART_LAMP,
-      x: 0, z: M(0.75), w: M(1.4), d: M(0.2), y0: M(5.4), y1: M(6.6),
+      x: 0, z: M(-2.0), w: M(1.4), d: M(0.2), y0: M(5.4), y1: M(6.6),
     },
-    // 月台。
+    // 月台。走廊的另一側，整條沿著軌道。
     {
       tag: 'platform', part: PART_GROUND, shade: 0.52,
-      x: 0, z: M(2.4), w: M(11.0), d: M(2.6), y0: 0, y1: M(0.9),
+      x: 0, z: M(3.3), w: M(11.0), d: M(2.6), y0: 0, y1: M(0.9),
     },
     trainTotem.panel,
   ],
   decals: [
-    // 站前廣場：z [−6, 1.1]
-    { x: 0, z: M(-2.45), w: M(12.0), d: M(7.1), shade: 0.62 },
-    // 道碴：z [3.7, 6]
-    { x: 0, z: M(4.85), w: M(12.0), d: M(2.3), shade: 0.24 },
+    // 站前廣場：z [−6, −1.8]
+    { x: 0, z: M(-3.9), w: M(12.0), d: M(4.2), shade: 0.62 },
+    // 軌道走廊：z [−1.8, 1.8]。碴色 —— 真的碴床只有 1.8 m 寬，兩側這一圈
+    // 是它的路權範圍。
+    { tag: 'corridor', x: 0, z: 0, w: M(12.0), d: M(CORRIDOR_HALF * 2), shade: 0.24 },
+    // 月台側：z [1.8, 6]
+    { x: 0, z: M(3.9), w: M(12.0), d: M(4.2), shade: 0.5 },
     // 月台邊緣的黃線。
-    { x: 0, z: M(3.5), w: M(11.0), d: M(0.2), shade: 0.95, layer: 'mark' },
+    { x: 0, z: M(2.2), w: M(11.0), d: M(0.2), shade: 0.95, layer: 'mark' },
   ],
   props: [
     trainTotem.post,
-    // 兩條鋼軌。
-    ...([4.4, 5.2] as const).map((z): CivicVolume => ({
-      tag: 'rail', part: PART_DETAIL,
-      x: 0, z: M(z), w: M(11.0), d: M(0.16), y0: 0, y1: M(0.16),
-    })),
-    // 月台雨棚的四根柱。
+    // 月台雨棚的四根柱。**沒有鋼軌** —— 那是 `TrackRenderer` 的事。
     ...([-4.2, -1.4, 1.4, 4.2] as const).map((x): CivicVolume => ({
       tag: 'canopyPost', part: PART_DETAIL,
-      x: M(x), z: M(2.4), w: M(0.18), d: M(0.18), y0: M(0.9), y1: M(3.0),
+      x: M(x), z: M(3.3), w: M(0.18), d: M(0.18), y0: M(0.9), y1: M(3.0),
     })),
   ],
   overhead: [
     {
       tag: 'platformCanopy',
-      x: 0, z: M(2.4), w: M(10.6), d: M(2.8), y0: M(3.0), y1: M(3.3),
+      x: 0, z: M(3.3), w: M(10.6), d: M(2.8), y0: M(3.0), y1: M(3.3),
     },
   ],
   fixtures: [
-    // 全部站在站房兩側那兩條 1.7 m 的帶上（|x| > 4）。
-    { kind: 'lamp', x: M(-5.0), z: M(0.6), heightM: 4.5 },
-    { kind: 'lamp', x: M(5.0), z: M(0.6), heightM: 4.5 },
-    { kind: 'bin', x: M(4.9), z: M(-5.0), radius: M(0.26) },
-    { kind: 'bikeRack', x: M(4.9), z: M(-3.2), axis: 'x' },
-    { kind: 'signPost', x: M(4.9), z: M(-1.2), axis: 'x' },
+    // 站房兩側那兩條 1.5 m 的帶，而且全部避開走廊（|z| > 1.8）。
+    { kind: 'lamp', x: M(5.0), z: M(-2.0), heightM: 4.5 },
+    { kind: 'lamp', x: M(-5.0), z: M(-4.0), heightM: 4.5 },
+    { kind: 'bikeRack', x: M(4.9), z: M(-3.4), axis: 'x' },
+    { kind: 'signPost', x: M(4.9), z: M(-4.4), axis: 'x' },
+    { kind: 'bin', x: M(-5.0), z: M(-2.2), radius: M(0.26) },
     { kind: 'tree', x: M(-4.9), z: M(-5.0), heightM: 5.0, crownRadius: M(0.7) },
-    { kind: 'shrub', x: M(-4.9), z: M(-0.6), radius: M(0.6) },
+    { kind: 'shrub', x: M(-5.0), z: M(5.2), radius: M(0.5) },
   ],
   vehicles: [],
 };

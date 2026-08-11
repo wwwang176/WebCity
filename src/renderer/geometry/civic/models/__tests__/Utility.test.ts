@@ -156,6 +156,48 @@ describe('水廠', () => {
     }
   });
 
+  /**
+   * 抽水廠蓋在水岸邊。
+   *
+   * 使用者：「抽水廠的形象想要改一下，抽水場一定是蓋在水岸邊」。這一條問的
+   * 是三件事，缺一件就不成立：
+   *
+   * 1. 基地上真的有一片**水**（一條明顯比廠區暗的貼片，貼著佔地的一邊）；
+   * 2. 岸邊有**護岸**（少了它，水面與鋪面只是兩塊換色的地板）；
+   * 3. 取水口**跨在岸線上** —— 整棟站在陸上的話那只是又一間廠房，
+   *    而「從水裡取水」正是這一棟存在的理由。
+   */
+  it('should stand on a water edge', () => {
+    const bases = waterPlan.decals.filter(d => (d.layer ?? 'base') === 'base');
+    const river = bases.find(d => d.tag === 'river')!;
+    const yard = bases.find(d => d.tag === 'yard')!;
+    expect(river, '基地上沒有水').toBeTruthy();
+    expect(river.shade, '水面不夠暗 —— 那讀起來是一塊鋪面').toBeLessThan(0.1);
+    expect(yard.shade - river.shade, '水面與鋪面分不出來').toBeGreaterThan(0.3);
+    expect(m(river.w), '水面沒有橫跨整個基地').toBeGreaterThan(20);
+    expect(Math.abs(river.z) + river.d / 2, '水面沒有貼著佔地的邊')
+      .toBeCloseTo(waterPlan.footprint.h / 2, 6);
+
+    const bank = river.z + river.d / 2;   // 岸線（水在它的 −z 側）
+    expect(tagged(waterPlan, 'quay').length, '岸邊沒有護岸').toBeGreaterThan(0);
+    for (const q of tagged(waterPlan, 'quay')) {
+      expect(Math.abs(q.z - bank), '護岸沒有沿著岸線').toBeLessThan(0.1);
+    }
+
+    const intake = tagged(waterPlan, 'intake')[0]!;
+    expect(intake, '沒有取水口').toBeTruthy();
+    expect(intake.z - intake.d / 2, '取水口沒有伸進水裡').toBeLessThan(bank);
+    expect(intake.z + intake.d / 2, '取水口整棟泡在水裡')
+      .toBeGreaterThan(river.z - river.d / 2);
+  });
+
+  it('should be green', () => {
+    // 使用者：「抽水廠要以綠色系的顏色為主」。
+    const [r, g, b] = waterPlan.color;
+    expect(g, '抽水廠不是綠的').toBeGreaterThan(r);
+    expect(g, '抽水廠不是綠的').toBeGreaterThan(b);
+  });
+
   it('should raise one storage tower above the tanks', () => {
     const tower = tagged(waterPlan, 'tower')[0]!;
     expect(tower, '沒有儲水塔').toBeTruthy();

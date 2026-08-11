@@ -77,6 +77,20 @@ const LINE_W = 0.04;
  * 行人淨空走。1.0 m 落在機身高度的中段。
  */
 const JET_BRIDGE_DECK = 1.0;
+/** 空橋前端與機頭之間留的淨距（格）。太大接不到，太小就插進機頭。 */
+const NOSE_CLEAR = 0.06;
+/**
+ * 機頭到機位中心的距離（格）。
+ *
+ * `buildAirplaneGeometry` 的機身 0.72 加上蛋形機頭 1.6 × 0.06。飛機停妥時
+ * 機頭朝著航廈（−z），所以機頭在 `gate.z − PLANE_NOSE`。
+ *
+ * 寫成常數是因為這個檔案不准 import 幾何（那會在載入時建一份 mesh），
+ * 而 `Airport.test.ts` 用**實際的幾何**驗這個值 —— 有人改了機身，那條會紅。
+ */
+const PLANE_NOSE = 0.456;
+/** 陸側車道的深度（格）。接駁車、雨庇與行道樹全部住在這條帶上。 */
+const LANDSIDE = 0.28;
 
 interface AirportSpec {
   type: InfraType;
@@ -218,8 +232,11 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
   }
 
   // ── 量體 ──────────────────────────────────────────────────
-  const termCz = (-halfH + termFront) / 2;
-  const termD = (termFront + halfH) * 0.78;
+  // 航廈**貼著停機坪帶**，把整條陸側車道讓到它後面。原本它置中在自己那條帶
+  // 裡，於是陸側只剩 1.2 m —— 接駁車、貨車、雨庇柱與行道樹全部埋在航廈的
+  // 牆裡（而每一條既有的驗收都是綠的）。
+  const termD = (termFront + halfH) - LANDSIDE;
+  const termCz = termFront - termD / 2;
   const termTop = spec.h >= 6 ? 15 : 11;
   // 塔台站在航廈左端**之外**。塞在航廈裡的話是 275 m3 的內部面。
   const towerX = -limX + 0.4;
@@ -283,76 +300,77 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     massing.push(light('taxiwayLight', x, laneZ));
   }
 
-  // ── 空橋。每個機位一道，站在機位**旁邊**。 ──────────────────
+  // ── 空橋。從航廈的牆伸出去，停在機頭前面。 ──────────────────
   //
-  // 兩件原本是錯的：
+  // 使用者：「空橋還是沒對上，是不是應該是從建築物延伸出來，然後再機頭附近?」
+  // 對。空橋是**一條臂**，兩端都要對上：根部接在航廈的外牆上，前端停在機頭
+  // 前一點點。前兩版各錯一端 ——
   //
-  // 1. **高度**。它掛在 `overhead` 層，而那一層有「要高過 2.2 m 行人淨空」的
-  //    規則 —— 於是空橋停在 4.6 m，遠遠飄在 1.44 m 高的機身上方。空橋接的是
-  //    飛機不是路人，所以搬到 `props`，高度由機身頂端推導。
-  // 2. **位置**。它與機位同一個 x、朝著飛機伸過去 —— 而飛機就停在那裡。
-  //    使用者：「空橋應該是在飛機停靠點的旁邊」。現在它沿 x 擺在航廈牆與
-  //    機尾之間那條縫裡，並往旁邊偏半個機位間距。
+  // 1. 第一版與機位同一個 x、朝飛機伸過去，而飛機就停在那裡（插進機身）。
+  // 2. 第二版改成沿 x 擺在牆與機尾之間那條縫裡、往旁邊偏半個機位 ——
+  //    不再卡到飛機，但它與航廈、與飛機**都沒有接觸**，讀起來是停機坪上
+  //    飄著的一塊板。
+  //
+  // 現在長度是算出來的：從 `termFront`（航廈的前牆）到 `gateZ − 機頭 − 淨距`。
+  // 機位往前挪、機身改長，它跟著變 —— 不是寫死的一個 d。
+  //
+  // 高度也是一起修好的：它原本掛在 `overhead` 層，而那一層有「要高過 2.2 m
+  // 行人淨空」的規則，於是空橋停在 4.6 m，遠遠飄在 1.44 m 高的機身上方。
+  // 空橋接的是飛機不是路人，所以它在 `props`，橋面高度跟著機身走。
   const gateSpacing = gates.length > 1
     ? Math.abs(gates[1]!.x - gates[0]!.x)
     : 0.6;
-  const gapZ = termFront + APRON_GAP / 2;
-  const jetBridges: CivicVolume[] = gates.map((g): CivicVolume => ({
-    tag: 'jetBridge',
-    x: g.x + gateSpacing / 2, z: gapZ,
-    w: gateSpacing * 0.55, d: APRON_GAP * 0.5,
-    y0: M(JET_BRIDGE_DECK), y1: M(JET_BRIDGE_DECK + 0.35),
-  }));
+  const bridgeTip = gateZ - PLANE_NOSE - NOSE_CLEAR;
+  const jetBridges: CivicVolume[] = gates.flatMap((g): CivicVolume[] => [
+    {
+      tag: 'jetBridge',
+      x: g.x, z: (termFront + bridgeTip) / 2,
+      w: Math.min(0.16, gateSpacing * 0.4), d: bridgeTip - termFront,
+      y0: M(JET_BRIDGE_DECK), y1: M(JET_BRIDGE_DECK + 0.35),
+    },
+    {
+      // 前端的支撐腳。少了它，橋面是一塊浮在 1 m 高的板子。
+      tag: 'jetBridgeLeg', part: PART_DETAIL,
+      x: g.x, z: bridgeTip - 0.03,
+      w: 0.05, d: 0.05, y0: 0, y1: M(JET_BRIDGE_DECK),
+    },
+  ]);
   const overhead: CivicVolume[] = [];
 
   // ── 自訂矮物件 ────────────────────────────────────────────
   const props: CivicVolume[] = [
     ...jetBridges,
-    // 航廈後方（陸側）的旅客雨庇柱。
+    // 航廈後方（陸側）的旅客雨庇柱。整條陸側帶只有 LANDSIDE 深，所以柱子
+    // 貼著外緣站 —— 站到 0.34 的話它們在航廈的牆**裡面**。
     ...spread(spec.w * 0.3, 0, 1.0).map((x): CivicVolume => ({
       tag: 'canopyPost', part: PART_DETAIL,
-      x, z: -halfH + 0.34, w: 0.025, d: 0.025, y0: 0, y1: M(4.2),
+      x, z: -halfH + 0.26, w: 0.025, d: 0.025, y0: 0, y1: M(4.2),
     })),
   ];
   overhead.push({
     tag: 'terminalCanopy',
-    x: 0, z: -halfH + 0.3, w: spec.w * 0.66, d: 0.28,
+    x: 0, z: -halfH + 0.21, w: spec.w * 0.66, d: 0.14,
     y0: M(4.2), y1: M(4.6),
   });
 
   /**
-   * 遠端機坪 —— 靜態飛機唯一能停的地方。
+   * **停機坪上沒有靜態飛機。**
    *
-   * `paths.gates` 上的每一個機位都是動畫飛機的目的地（而且它停 5 秒），所以
-   * 那裡**一架靜態飛機都不能放**：動畫端只避開其他動畫飛機，靜態的不在它的
-   * `occupiedGates` 裡，會被停在身上。
+   * 原本大型機場的兩側各停一架（小型與中型算出來就放不下）。三件事把它擠掉：
    *
-   * 安全的 x 是「機位群之外、又離縱向滑行道夠遠」那兩條帶。**小型與中型
-   * 算出來都是空的** —— 5 格與 7 格的停機坪被工作機位吃滿了，那就一架都不停。
-   * 硬塞的下場是飛機停在滑行道上，而那比空著難看得多。遊戲裡它們不會空 ——
-   * 動畫飛機會降落、滑進來、停 5 秒；只有 showcase 看得到那塊空地。
+   * 1. 機位那條線上的飛機，機尾會壓到橫向聯絡道的滑行道燈；
+   * 2. 往航廈挪就撞上地勤車那條服務帶 —— 停機坪只有 14.8 m 深，飛機 11.7 m，
+   *    剩下的 3.1 m 恰好就是服務帶的寬度，兩個都要就差 0.1 m；
+   * 3. 而它本來就是多餘的：`AirplaneAnimator` 會讓真的飛機降落、滑進來、
+   *    停 5 秒再推出去 —— 遊戲裡與 showcase 裡都是。一架永遠不動的靜態飛機
+   *    停在旁邊，只會讓人以為那一架壞了。
    */
-  const gateRight = Math.max(...gates.map(g => g.x)) + 0.5;
-  const gateLeft = Math.min(...gates.map(g => g.x)) - 0.5;
-  /** 飛機轉 90 度之後沿 x 佔 10.8 m ≈ 0.9 格，取半再留一點。 */
-  const PLANE_HALF = 0.5;
-  /** 機身邊緣到滑行道中線要留的淨距。翼尖不能伸進滑行道。 */
-  const TAXI_CLEAR = PLANE_HALF + 0.5;
-  const remoteStands: number[] = [];
-  for (const side of [-1, 1]) {
-    const inner = side > 0 ? gateRight : gateLeft;
-    const outer = side * (taxiX - TAXI_CLEAR);
-    const lo = Math.min(inner, outer);
-    const hi = Math.max(inner, outer);
-    if (hi - lo >= PLANE_HALF * 2) remoteStands.push((lo + hi) / 2);
-  }
-
-  const vehicles: CivicVehicle[] = remoteStands.map((x): CivicVehicle =>
-    ({ kind: 'airplane', x, z: gateZ, rotationY: Math.PI / 2 }));
-  // 陸側（航廈後方）的接駁車與貨車。
+  const vehicles: CivicVehicle[] = [];
+  // 陸側（航廈後方）的接駁車與貨車。z 由 `LANDSIDE` 推導 —— 寫死 0.62 的
+  // 話它們停在航廈的三樓。
   vehicles.push(
-    { kind: 'bus', tag: 'landside', x: -spec.w * 0.22, z: -halfH + 0.62 },
-    { kind: 'truck', tag: 'landside', x: spec.w * 0.22, z: -halfH + 0.62, tint: 0xcfd8dc },
+    { kind: 'bus', tag: 'landside', x: -spec.w * 0.26, z: -halfH + 0.15 },
+    { kind: 'truck', tag: 'landside', x: spec.w * 0.26, z: -halfH + 0.15, tint: 0xcfd8dc },
   );
   // 停機坪側的**地勤車輛**。淺色是機場地勤的實際樣子，也讓它們在深色的柏油
   // 上讀得出來。使用者：「看能不能把工程車放到建築旁邊就好」——
@@ -361,9 +379,10 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
   // 機位的空橋底下。
   const rowLeft = Math.min(...gates.map(g => g.x));
   const rowRight = Math.max(...gates.map(g => g.x));
+  const serviceZ = termFront + APRON_GAP / 2;
   vehicles.push(
-    { kind: 'van', tag: 'groundCrew', x: rowLeft - gateSpacing * 1.25, z: gapZ, tint: 0xeceff1 },
-    { kind: 'truck', tag: 'groundCrew', x: rowRight + gateSpacing * 1.25, z: gapZ, tint: 0xdce3e6 },
+    { kind: 'van', tag: 'groundCrew', x: rowLeft - gateSpacing * 1.25, z: serviceZ, tint: 0xeceff1 },
+    { kind: 'truck', tag: 'groundCrew', x: rowRight + gateSpacing * 1.25, z: serviceZ, tint: 0xdce3e6 },
   );
 
   // ── 共用矮物件 ────────────────────────────────────────────
@@ -371,23 +390,22 @@ export function buildAirport(spec: AirportSpec): CivicPlan {
     // 停機坪的高桿燈。站在橫向聯絡道與機位之間那條縫上。
     ...spread(limX, 0.5, 2.2).map((x): PropSpec =>
       ({ kind: 'lamp', x, z: (laneZ + gateZ) / 2, heightM: 8.0 })),
-    // 陸側前庭的燈。
-    ...spread(limX, 0.5, 2.2).map((x): PropSpec =>
-      ({ kind: 'lamp', x, z: -halfH + 0.15, heightM: 5.0 })),
+    // 陸側車道的燈。位置是**指定**的（兩端各一支），不走 `spread` ——
+    // `spread` 在小型機場算出來剛好是 ±1.1，而接駁車就停在那裡。
+    ...([-1, 1] as const).map((s): PropSpec =>
+      ({ kind: 'lamp', x: s * (limX - 0.6), z: -halfH + 0.15, heightM: 5.0 })),
     // 場區圍籬。機場的界線是它最真實的一件事。
     { kind: 'fence', x: -limX + 0.02, z: 0, axis: 'x', length: spec.h - 0.08 },
     { kind: 'fence', x: limX - 0.02, z: 0, axis: 'x', length: spec.h - 0.08 },
     { kind: 'fence', x: 0, z: halfH - 0.03, axis: 'z', length: spec.w - 0.08 },
-    // 陸側的綠化。全部在航廈**後方** —— 停機坪那一側是飛機在走的。
-    { kind: 'tree', x: -limX + 0.25, z: -halfH + 0.25, heightM: 6, crownRadius: 0.1 },
-    { kind: 'tree', x: limX - 0.25, z: -halfH + 0.25, heightM: 6, crownRadius: 0.1 },
-    { kind: 'hedge', x: 0, z: -halfH + 0.07, axis: 'z', length: spec.w * 0.4, depth: 0.05, heightM: 1.0 },
-    { kind: 'shrub', x: -spec.w * 0.2, z: -halfH + 0.2, radius: 0.07 },
-    { kind: 'shrub', x: spec.w * 0.2, z: -halfH + 0.2, radius: 0.07 },
-    { kind: 'flagpole', x: -spec.w * 0.3, z: -halfH + 0.2, axis: 'z' },
-    { kind: 'signPost', x: spec.w * 0.3, z: -halfH + 0.2, axis: 'z' },
-    { kind: 'bin', x: -0.35, z: -halfH + 0.18, radius: 0.024 },
-    { kind: 'bin', x: 0.35, z: -halfH + 0.18, radius: 0.024 },
+    // 陸側的綠化。全部在陸側車道那條帶上 —— 停機坪那一側是飛機在走的。
+    { kind: 'tree', x: -limX + 0.25, z: -halfH + 0.24, heightM: 6, crownRadius: 0.1 },
+    { kind: 'tree', x: limX - 0.25, z: -halfH + 0.24, heightM: 6, crownRadius: 0.1 },
+    { kind: 'hedge', x: 0, z: -halfH + 0.04, axis: 'z', length: spec.w * 0.4, depth: 0.03, heightM: 1.0 },
+    { kind: 'flagpole', x: -spec.w * 0.4, z: -halfH + 0.2, axis: 'z' },
+    { kind: 'signPost', x: spec.w * 0.4, z: -halfH + 0.2, axis: 'z' },
+    { kind: 'bin', x: -0.35, z: -halfH + 0.09, radius: 0.024 },
+    { kind: 'bin', x: 0.35, z: -halfH + 0.09, radius: 0.024 },
     { kind: 'bollard', x: -0.7, z: -halfH + 0.06, radius: 0.01 },
     { kind: 'bollard', x: 0.7, z: -halfH + 0.06, radius: 0.01 },
   ];
