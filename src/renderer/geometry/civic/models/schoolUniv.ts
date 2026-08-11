@@ -57,11 +57,21 @@ const SOUTH_Z = M(9.5);
  *
  * 直徑不得超過北棟的深度（9 m）。
  */
-const DOME_DIA = 8.4;
+/**
+ * 使用者：「大學圓頂的高度可以-30%」。
+ *
+ * 半球的高度**必然**是直徑的一半，所以「降低圓頂」只有兩條路：縮直徑，
+ * 或縮鼓座。兩條各走一半 —— 直徑 8.4 → 6.4、鼓座 3.5 → 2.2 m，整組
+ * （鼓座 + 半球）從 7.7 m 降到 5.4 m，剛好 −30%。
+ *
+ * 只縮鼓座的話它會低到讀不出「這是一座鼓」；只縮直徑的話圓頂會小得像
+ * 屋頂上的一個帽子。
+ */
+const DOME_DIA = 6.4;
 const DRUM_BASE = M(14.5);
-const DRUM_TOP = M(18.0);
+const DRUM_TOP = M(16.7);
 /** 半球的高度 = 半徑。 */
-const DOME_TOP_M = 18.0 + DOME_DIA / 2;
+const DOME_TOP_M = 16.7 + DOME_DIA / 2;
 
 const massing: CivicVolume[] = [
   // ── 四棟圍成方庭 ──────────────────────────────────────────
@@ -111,7 +121,7 @@ const massing: CivicVolume[] = [
     // 頂尖的燈籠。夜裡圓頂只剩它還看得見。
     tag: 'finial', part: PART_LAMP, shape: 'cylinder',
     x: 0, z: NORTH_Z, w: M(1.2), d: M(1.2),
-    y0: M(DOME_TOP_M), y1: M(DOME_TOP_M + 1.4),
+    y0: M(DOME_TOP_M), y1: M(DOME_TOP_M + 1.1),
   },
 
   // ── 屋頂設備 ──────────────────────────────────────────────

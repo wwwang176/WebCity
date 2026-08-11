@@ -91,7 +91,7 @@ export const LARGE_PATH_A: SizeFlightPaths = {
   leftTaxiTop:     { x: -3.80, z: -0.80 },
   leftJunction:    { x: -3.80, z: 0.80 },
   runwayEntry:     { x: -3.10, z: 0.80 },
-  gates:           [{ x: -0.50, z: -1.28 }, { x: 0.20, z: -1.28 }],
+  gates:           [{ x: -1.50, z: -1.28 }, { x: -0.50, z: -1.28 }],
   takeoffEnd:      { x: 4.25, z: 0.80 },
   climbEnd:        { x: 9.0, z: 0.80 },
   arcRadius:       0.65,
@@ -108,7 +108,7 @@ export const LARGE_PATH_B: SizeFlightPaths = {
   leftTaxiTop:     { x: -3.80, z: -0.80 },
   leftJunction:    { x: -3.80, z: 2.20 },
   runwayEntry:     { x: -3.10, z: 2.20 },
-  gates:           [{ x: 0.20, z: -1.28 }, { x: 0.90, z: -1.28 }],
+  gates:           [{ x: 0.50, z: -1.28 }, { x: 1.50, z: -1.28 }],
   takeoffEnd:      { x: 4.25, z: 2.20 },
   climbEnd:        { x: 9.0, z: 2.20 },
   arcRadius:       0.65,
@@ -156,8 +156,14 @@ export function apronLaneZ(size: AirportSize): number {
 /**
  * 所有航路會用到的停機位，去重之後由左至右。
  *
- * 大型機場的兩條航路各自有兩個機位，中間那個是共用的 —— 直接串起來的話它會
- * 出現兩次，而「每個機位一條空橋」就會多畫一條疊在一起的空橋。
+ * 去重是必要的：兩條航路可能共用同一個機位，直接串起來的話它會出現兩次，
+ * 而「每個機位一條空橋」就會多畫一條疊在一起的空橋。大型機場曾經是那樣
+ * （A 用 −0.5/0.2、B 用 0.2/0.9），所以四個機位裡只有三個是不同的。
+ *
+ * 現在兩條航路的機位**不重疊**，四個各自獨立，間距 1.0 格 = 12 m ——
+ * 使用者：「大型機場為什麼只有3個登機口? 可以改4個嗎? 然後每個停機位置
+ * 距離更開一點? 不然現在兩台會卡到」。0.7 格（8.4 m）比翼展（10.8 m）還窄，
+ * 兩架同時停就會翼尖疊翼尖，而大型機場的 `MAX_ACTIVE` 正好是 2。
  */
 export function allGates(size: AirportSize): Vec2[] {
   const seen = new Map<string, Vec2>();

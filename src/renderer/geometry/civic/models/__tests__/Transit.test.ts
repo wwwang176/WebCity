@@ -280,8 +280,8 @@ describe('火車站', () => {
 });
 
 describe('渡輪碼頭', () => {
-  const water = ferryDockPlan.decals.find(d => d.tag === 'harbour')!;
   const quay = tagged(ferryDockPlan, 'quay')[0]!;
+  const EDGE = 0.5;   // 佔地前緣（格）＝ 岸線
 
   /**
    * 碼頭邊要有一艘船。
@@ -290,60 +290,57 @@ describe('渡輪碼頭', () => {
    * 消防局停消防車、機場停飛機，碼頭當然停船，而它用的是航線上跑的同一份
    * 幾何（`buildFerryGeometry`）。
    *
-   * 船的佔地由**實際幾何**量出來，不是手寫的尺寸：船身改長，這條會跟著要求
-   * 重新安排港池。
+   * 船要靠在**佔地的最前緣**：`isShorePosition` 保證那條線的另一邊是水，
+   * 所以停在那裡的船讀起來是靠在岸邊。停在中間的話它是廣場上的一個展示品。
    */
-  it('should moor a ferry alongside the quay', () => {
+  it('should moor a ferry against the shoreline edge', () => {
     const boat = ferryDockPlan.vehicles.find(v => v.kind === 'ferry');
     expect(boat, '碼頭沒有船').toBeTruthy();
     const geo = assembleVehicles([boat!], ferryDockPlan.footprint);
     geo.computeBoundingBox();
     const b = geo.boundingBox!;
-    // 船要**浮在水上** —— 整艘都要落在港池那塊貼片裡。
-    expect(b.min.z, '船的一半擱在岸上')
-      .toBeGreaterThanOrEqual(water.z - water.d / 2 - 1e-9);
-    expect(b.max.z, '船開出佔地了').toBeLessThanOrEqual(water.z + water.d / 2 + 1e-9);
-    // 而且要靠在碼頭邊，不是停在港池中央。
-    const gap = m((b.min.z) - (quay.z + quay.d / 2));
-    expect(gap, `船離碼頭 ${gap.toFixed(1)} m —— 那是一艘經過的船`).toBeLessThan(3);
-    expect(gap, '船壓在碼頭上').toBeGreaterThan(0);
-    // 一艘看得出是船的船。9 m 的船身在 12 m 的格子裡佔掉大半，那是刻意的。
+    const gap = m(EDGE - b.max.z);
+    expect(gap, `船離岸線 ${gap.toFixed(1)} m —— 那是停在廣場上`).toBeLessThan(1.0);
+    expect(b.max.z, '船開出佔地了').toBeLessThanOrEqual(EDGE);
+    // 而且要在甲板**外面** —— 壓在甲板上的是一艘擱淺的船。
+    expect(b.min.z, '船壓在碼頭甲板上').toBeGreaterThanOrEqual(quay.z + quay.d / 2);
+    // 一艘看得出是船的船。9.6 m 的船身在 12 m 的格子裡佔掉大半，那是刻意的。
     expect(m(b.max.x - b.min.x), '船太小，讀不出是渡輪').toBeGreaterThan(7);
   });
 
-  it('should make the harbour read as water, not as tarmac', () => {
-    // 水面原本是 `PART_GROUND` + `shade` 0.02 —— 而地面分支的色譜是柏油到
-    // 磚鋪，全是灰的。也就是說那片「水」畫出來是柏油，而這一格有一半是它。
-    expect(water, '碼頭沒有水').toBeTruthy();
-    expect(water.water, '水面走的是鋪面分支 —— 它會是灰的').toBe(true);
-    expect(water.lawn, '水面長草').toBeFalsy();
-    const base = ferryDockPlan.decals.filter(d => (d.layer ?? 'base') === 'base');
-    const total = base.reduce((s, d) => s + d.w * d.d, 0);
-    expect((water.w * water.d) / total, '水面太小').toBeGreaterThan(0.4);
-    // 而且要通到佔地邊界 —— 一池被陸地圍起來的水是水塘，不是港。
-    expect(water.z + water.d / 2, '港池沒有通到外海')
-      .toBeGreaterThanOrEqual(0.5 - 1e-9);
+  /**
+   * 這一格裡**沒有水**。
+   *
+   * 使用者：「渡船口一樣道理」（承接抽水廠：蓋在陸地上的東西不要自己畫水）。
+   * 而這裡比抽水廠更明確：`Game.placeTransportStop` 用 `isShorePosition`
+   * 檢查，那個函式的定義就是「**這一格是陸地**，而且四鄰有一格是水」。
+   *
+   * 自己畫一片港池的下場與火車站畫假鐵軌一樣：兩份各說各話的水，而且永遠
+   * 不會對齊 —— 地形的水在哪裡由地圖決定。
+   */
+  it('should not paint water of its own', () => {
+    for (const d of ferryDockPlan.decals) {
+      expect(d.water, `${d.tag ?? '一塊貼片'} 在碼頭裡畫了水`).toBeFalsy();
+      expect(d.lawn, '碼頭鋪了草地').toBeFalsy();
+    }
   });
 
-  it('should build the quay along the shore', () => {
-    expect(quay.part, '碼頭平台會長出窗戶').toBe(PART_GROUND);
-    expect(quay.shade!, '平台與水一樣暗 —— 看不出有平台').toBeGreaterThan(0.2);
-    expect(m(quay.y1 - quay.y0), '平台與地面齊平 —— 那是一塊鋪面')
+  it('should build the quay right up to the shoreline', () => {
+    expect(quay.part, '碼頭甲板會長出窗戶').toBe(PART_GROUND);
+    expect(quay.shade!, '甲板與柏油一樣暗 —— 看不出有甲板').toBeGreaterThan(0.2);
+    expect(m(quay.y1 - quay.y0), '甲板與地面齊平 —— 那是一塊鋪面')
       .toBeGreaterThan(0.4);
-    // 平台的前緣就是岸線：中間空一段的話，船靠的是一段沒有東西的岸。
-    expect(quay.z + quay.d / 2, '平台與水之間有一條縫')
-      .toBeCloseTo(water.z - water.d / 2, 6);
+    // 甲板要靠在岸線那一側，不是縮在基地中間。
+    expect(m(EDGE - (quay.z + quay.d / 2)), '甲板離岸線太遠').toBeLessThan(4);
   });
 
-  it('should bridge the quay to the ferry with a gangway', () => {
+  it('should hang a gangway off the front of the quay', () => {
     // 少了跳板，船只是停在旁邊的一個物件；有了它，這一格在講「從這裡上船」。
     const ramp = ferryDockPlan.props.find(v => v.tag === 'gangway')!;
     expect(ramp, '沒有跳板').toBeTruthy();
-    expect(ramp.z - ramp.d / 2, '跳板沒有接在平台上')
-      .toBeLessThanOrEqual(quay.z + quay.d / 2 + 1e-9);
-    expect(ramp.z + ramp.d / 2, '跳板沒有伸到水面上')
-      .toBeGreaterThan(water.z - water.d / 2);
-    expect(m(ramp.y1), '跳板高過平台面 —— 上船要先爬上去')
+    expect(ramp.z + ramp.d / 2, '跳板沒有伸出甲板')
+      .toBeGreaterThan(quay.z + quay.d / 2);
+    expect(m(ramp.y1), '跳板高過甲板面 —— 上船要先爬上去')
       .toBeLessThanOrEqual(m(quay.y1) + 1e-9);
   });
 
@@ -358,7 +355,7 @@ describe('渡輪碼頭', () => {
     const moorings = ferryDockPlan.props.filter(v => v.tag === 'mooring');
     expect(moorings.length, '沒有繫纜樁').toBeGreaterThanOrEqual(2);
     for (const v of moorings) {
-      expect(v.y0, '繫纜樁沉在平台裡').toBeCloseTo(quay.y1, 9);
+      expect(v.y0, '繫纜樁沉在甲板裡').toBeCloseTo(quay.y1, 9);
     }
   });
 });

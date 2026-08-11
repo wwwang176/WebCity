@@ -35,12 +35,14 @@ const COOL_DIA = 9.6;
 const massing: CivicVolume[] = [
   // ── 兩座冷卻塔。這一棟的剪影就是它們。 ──────────────────────
   // 一大一小：等大的兩座讀起來是複製貼上，而真實廠區的機組本來就分期蓋。
+  // 兩座都走 `PART_DETAIL`，理由與煙囪同一個：冷卻塔是清水混凝土的殼，
+  // 上面一條高窗帶會讓它讀起來像一棟很奇怪的樓。
   {
-    tag: 'coolingTower', shape: 'cooling',
+    tag: 'coolingTower', part: PART_DETAIL, shape: 'cooling',
     x: M(-6.0), z: M(-6.0), w: M(COOL_DIA), d: M(COOL_DIA), y0: 0, y1: COOL_TOP,
   },
   {
-    tag: 'coolingTower', shape: 'cooling',
+    tag: 'coolingTower', part: PART_DETAIL, shape: 'cooling',
     x: M(4.6), z: M(-6.6), w: M(8.4), d: M(8.4), y0: 0, y1: M(14.6),
   },
 
@@ -56,8 +58,11 @@ const massing: CivicVolume[] = [
   },
 
   // ── 煙囪。冷卻塔冒的是水氣，燒的那一支還是要有。 ──────────────
+  // 使用者：「電廠的煙囪我覺得不需要窗戶，就單純煙囪就好」。它原本沒有標
+  // `part`，也就是**牆** —— 而 `FACADE_UTILITY` 的牆會在上面畫一條高窗帶。
+  // `PART_DETAIL` 正是為這種東西存在的（水塔、管架、煙囪），它不畫窗也不發光。
   {
-    tag: 'stack', shape: 'cylinder',
+    tag: 'stack', part: PART_DETAIL, shape: 'cylinder',
     x: M(10.0), z: M(-0.6), w: M(3.0), d: M(3.0), y0: 0, y1: STACK_TOP,
   },
   // 航警燈。夜裡的電廠就是天上那顆紅點 —— 而它本來就該在那裡。

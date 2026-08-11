@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { airportLayout } from '../airport';
+import { AIRPORT_PATH_COUNT } from '../../../../airportPaths';
+import { buildAirplaneGeometry } from '../../../index';
 import { getInfraConfig, type InfraType } from '../../../../../core/building/InfraConfig';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
 import type { AirportSize } from '../../../../../core/transport/AirportSystem';
@@ -86,6 +88,40 @@ describe.each(SIZES)('%s機場的航路表', (_label, size, type) => {
       expect(Math.abs(g.x), `機位 ${g.x} 壓在縱向滑行道上`)
         .toBeLessThan(layout.taxiX);
     }
+  });
+
+  /**
+   * 同時停得下的飛機，機位之間要放得下**翼展**。
+   *
+   * 使用者：「大型機場為什麼只有3個登機口? 可以改4個嗎? 然後每個停機位置
+   * 距離更開一點? 不然現在兩台會卡到」。大型機場的兩條航路原本共用中間那個
+   * 機位（A 用 −0.5/0.2、B 用 0.2/0.9），所以四個位置只有三個是不同的；
+   * 而 0.7 格（8.4 m）比翼展（10.8 m）還窄 —— 兩架同時停就是翼尖疊翼尖。
+   *
+   * 只對「同時會有兩架以上」的尺寸要求（`AIRPORT_PATH_COUNT > 1`）：小型與
+   * 中型一次只有一架，機位排密一點反而讓航廈那一排看起來忙。
+   *
+   * 翼展從**實際的幾何**量，不是抄一個數字：機翼改長，這條會要求機位跟著
+   * 拉開。
+   */
+  it('should space simultaneous gates at least a wingspan apart', () => {
+    if (AIRPORT_PATH_COUNT[size as AirportSize] < 2) return;
+    const plane = buildAirplaneGeometry();
+    plane.computeBoundingBox();
+    // 幾何朝 +x，翼展沿 z。停在機位上時它轉 90 度，所以翼展沿 x。
+    const span = plane.boundingBox!.max.z - plane.boundingBox!.min.z;
+    const xs = layout.gates.map(g => g.x).sort((a, b) => a - b);
+    for (let i = 1; i < xs.length; i++) {
+      const gap = xs[i]! - xs[i - 1]!;
+      expect(m(gap), `機位間距 ${m(gap).toFixed(1)} m，翼展 ${m(span).toFixed(1)} m`)
+        .toBeGreaterThanOrEqual(m(span));
+    }
+  });
+
+  it('should give the large airport four gates', () => {
+    // 兩條航路各兩個，而且**不共用** —— 共用的話兩架飛機會被指到同一格。
+    if (AIRPORT_PATH_COUNT[size as AirportSize] < 2) return;
+    expect(layout.gates.length, '大型機場的機位不是四個').toBe(4);
   });
 
   it('should keep every gate inside the plot', () => {

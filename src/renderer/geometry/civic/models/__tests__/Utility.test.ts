@@ -3,7 +3,9 @@ import { powerPlan } from '../power';
 import { waterPlan } from '../water';
 import { garbagePlan } from '../garbage';
 import { sewagePlan } from '../sewage';
-import { FACADE_UTILITY, PART_GROUND, PART_LAMP, PART_ROOF } from '../../../buildings/parts';
+import {
+  FACADE_UTILITY, PART_GROUND, PART_LAMP, PART_ROOF, PART_DETAIL,
+} from '../../../buildings/parts';
 import { TERRAIN_COLORS } from '../../../../terrainColors';
 import { TerrainType } from '../../../../../core/grid/types';
 import { topOf } from '../../../buildings/massing/volume';
@@ -74,6 +76,23 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
     for (const v of plan.massing) {
       const isSurface = /Water|mound/.test(v.tag ?? '');
       if (isSurface) expect(v.part, `${v.tag} 會長出高窗帶`).toBe(PART_GROUND);
+    }
+  });
+
+  /**
+   * 煙囪與塔身也不准長窗戶。
+   *
+   * 使用者：「電廠的煙囪我覺得不需要窗戶，就單純煙囪就好」。這是同一個錯的
+   * 第三種形狀：不標 `part` 就是牆，而 `FACADE_UTILITY` 的牆會在上面畫一條
+   * 高窗帶 —— 覆土、水面、煙囪、冷卻塔全都中過。
+   *
+   * `PART_DETAIL` 正是為這種東西存在的（`parts.ts` 的原話：水塔、冷氣機、
+   * 天線、管架、煙囪）。
+   */
+  it('should not put windows on a chimney or a tower shell', () => {
+    for (const v of plan.massing) {
+      if (!/stack|coolingTower/.test(v.tag ?? '')) continue;
+      expect(v.part, `${v.tag} 會長出高窗帶`).toBe(PART_DETAIL);
     }
   });
 
@@ -181,47 +200,24 @@ describe('水廠', () => {
   });
 
   /**
-   * 抽水廠蓋在水岸邊。
+   * 這一格裡**沒有水**。
    *
-   * 使用者：「抽水廠的形象想要改一下，抽水場一定是蓋在水岸邊」。這一條問的
-   * 是三件事，缺一件就不成立：
+   * 中間試過一版把河畫進基地（北端一條水面貼片加護岸、取水口、攔汙柵），
+   * 使用者：「抽水站是建立在陸地上的，所以不需要再抽水站裡面畫河」。
    *
-   * 1. 基地上真的有一片**水**（一條明顯比廠區暗的貼片，貼著佔地的一邊）；
-   * 2. 岸邊有**護岸**（少了它，水面與鋪面只是兩塊換色的地板）；
-   * 3. 取水口**跨在岸線上** —— 整棟站在陸上的話那只是又一間廠房，
-   *    而「從水裡取水」正是這一棟存在的理由。
+   * 而這與火車站畫假鐵軌是同一個錯：真的水是**地形**畫的
+   * （`TERRAIN_COLORS[WATER]`），這一格自己畫一條，就是兩份各說各話的水
+   * —— 而且它們永遠不會對齊，因為地形的水在哪裡由地圖決定。
    */
-  it('should stand on a water edge', () => {
-    const bases = waterPlan.decals.filter(d => (d.layer ?? 'base') === 'base');
-    const river = bases.find(d => d.tag === 'river')!;
-    const yard = bases.find(d => d.tag === 'yard')!;
-    expect(river, '基地上沒有水').toBeTruthy();
-    expect(river.shade, '水面不夠暗 —— 那讀起來是一塊鋪面').toBeLessThan(0.1);
-    expect(yard.shade - river.shade, '水面與鋪面分不出來').toBeGreaterThan(0.3);
-    expect(m(river.w), '水面沒有橫跨整個基地').toBeGreaterThan(20);
-    expect(Math.abs(river.z) + river.d / 2, '水面沒有貼著佔地的邊')
-      .toBeCloseTo(waterPlan.footprint.h / 2, 6);
-
-    const bank = river.z + river.d / 2;   // 岸線（水在它的 −z 側）
-    expect(tagged(waterPlan, 'quay').length, '岸邊沒有護岸').toBeGreaterThan(0);
-    for (const q of tagged(waterPlan, 'quay')) {
-      expect(Math.abs(q.z - bank), '護岸沒有沿著岸線').toBeLessThan(0.1);
+  it('should not paint a river of its own', () => {
+    for (const d of waterPlan.decals) {
+      expect(d.water, `${d.tag ?? '一塊貼片'} 在廠區裡畫了水`).toBeFalsy();
     }
-
-    const intake = tagged(waterPlan, 'intake')[0]!;
-    expect(intake, '沒有取水口').toBeTruthy();
-    expect(intake.z - intake.d / 2, '取水口沒有伸進水裡').toBeLessThan(bank);
-    expect(intake.z + intake.d / 2, '取水口整棟泡在水裡')
-      .toBeGreaterThan(river.z - river.d / 2);
+    for (const v of waterPlan.massing) {
+      expect(v.tag, '廠區裡還留著取水口').not.toMatch(/intake|screen|quay/);
+    }
   });
 
-  /**
-   * 廠區的顏色取自**河**。
-   *
-   * 使用者：「抽水站的主顏色參考河流的顏色」。比的是**色相與地形水面一致**，
-   * 不是一個寫死的十六進位值 —— 哪天地形的水改色，這條會要求抽水廠跟著改，
-   * 而那正是「參考河流的顏色」的意思。
-   */
   it('should take its colour from the river', () => {
     const hueOf = (r: number, g: number, b: number) => {
       const max = Math.max(r, g, b);
