@@ -29,8 +29,13 @@ const CTRL_ROOF = M(7.0);
  * 池水的顏色是它們唯一不共用的東西 —— 這裡是土色的，抽水廠是藍的。
  */
 const WATER_SHADE = 0.05;
-/** 池壁厚度（公尺）。水面比池壁內縮這麼多，才看得出「有一圈邊」。 */
-const RIM = 0.5;
+/**
+ * 水面的寬度佔池的幾成。
+ *
+ * 比池的內壁（`TUB.INNER`）再寬一點點，側面才埋進池壁裡 —— 窄了就是沿著
+ * 水面一圈看得穿到地面的縫，而那條縫只有在正上方看得到。
+ */
+const WATER_SPAN = 0.86;
 
 /** 四座曝氣池的中心。並排，等距 —— 那個節奏就是它的辨識訊號。 */
 const BASINS = [-8.4, -3.0, 2.4, 7.8];
@@ -41,25 +46,28 @@ const BASIN_Z = -5.6;
 const massing: CivicVolume[] = [
   ...BASINS.flatMap((x): CivicVolume[] => [
     {
-      tag: 'basinWall', part: PART_DETAIL,
+      // 開口的方池：四片牆圍成一圈。實心的盒子做不到「水面低於池緣」——
+      // 頂面是一片實心的面，水面壓到它下面就整個埋進量體裡了。
+      tag: 'basinWall', part: PART_DETAIL, shape: 'basin',
       x: M(x), z: M(BASIN_Z), w: M(BASIN_W), d: M(BASIN_D), y0: 0, y1: BASIN_TOP,
     },
     {
       tag: 'basinWater', part: PART_WATER, shade: WATER_SHADE,
       x: M(x), z: M(BASIN_Z),
-      w: M(BASIN_W - RIM * 2), d: M(BASIN_D - RIM * 2),
-      y0: BASIN_TOP, y1: M(2.52),
+      w: M(BASIN_W * WATER_SPAN), d: M(BASIN_D * WATER_SPAN),
+      y0: M(1.85), y1: M(1.97),
     },
   ]),
 
   // ── 圓形沉澱池。一排方的裡面放一個圓的，讀得出「這裡是另一段製程」。 ──
   {
-    tag: 'clarifierWall', part: PART_DETAIL, shape: 'cylinder',
+    tag: 'clarifierWall', part: PART_DETAIL, shape: 'tub',
     x: M(-6.0), z: M(5.4), w: M(9.0), d: M(9.0), y0: 0, y1: M(2.8),
   },
   {
     tag: 'clarifierWater', part: PART_WATER, shade: WATER_SHADE, shape: 'cylinder',
-    x: M(-6.0), z: M(5.4), w: M(8.0), d: M(8.0), y0: M(2.8), y1: M(2.92),
+    x: M(-6.0), z: M(5.4), w: M(9.0 * WATER_SPAN), d: M(9.0 * WATER_SPAN),
+    y0: M(2.15), y1: M(2.27),
   },
 
   // ── 控制樓。x [2, 11]、z [1.5, 9.5] ────────────────────────
@@ -92,13 +100,21 @@ for (const x of [-5.7, -0.3, 5.1]) {
   });
 }
 
-/** 池上的走道橋。汙水廠的剪影少了它就只是幾個水坑。 */
+/**
+ * 池上的走道橋。汙水廠的剪影少了它就只是幾個水坑。
+ *
+ * 柱子站在**池與池之間**那三條縫加東端的空地上，不是站在池心。池子挖空
+ * 之後這件事才看得出來：前一版的柱子在 `BASINS` 的每一個中心，實心的時候
+ * 整根埋在池壁裡看不到，現在它們會站在水裡。
+ */
+const POSTS = [-5.7, -0.3, 5.1, 10.45];
+
 const props: CivicVolume[] = [
   {
     tag: 'walkway', part: PART_DETAIL,
-    x: 0, z: M(-1.4), w: M(21.0), d: M(0.8), y0: M(2.6), y1: M(2.9),
+    x: M(0.15), z: M(-1.4), w: M(20.9), d: M(0.8), y0: M(2.6), y1: M(2.9),
   },
-  ...BASINS.map((x): CivicVolume => ({
+  ...POSTS.map((x): CivicVolume => ({
     tag: 'walkwayPost', part: PART_DETAIL,
     x: M(x), z: M(-1.4), w: M(0.3), d: M(0.3), y0: 0, y1: M(2.6),
   })),

@@ -17,6 +17,25 @@ const isLamp = (p: number) =>
 const partOf = (v: Volume) => v.part ?? 0;
 
 /**
+ * 開口容器：內部是**空的**，所以裝在裡面的東西不算被埋起來。
+ *
+ * `tub` 與 `basin` 是水槽（裝水面），`stack` 是煙囪（管口凹到接近底部，
+ * 裡面塞著一片深色的槽底）。這三個形狀的內容物看得到 —— 那正是它們存在的
+ * 理由 —— 而重疊檢查量的是包圍盒，它不知道容器是空的。
+ *
+ * 內容物在容器裡的**幾何**是否正確由各自的形狀測試顧（`MassingGeometry` 的
+ * tub / basin / stack，以及 `Utility.test.ts` 的水位與管口底色）。
+ */
+const OPEN_VESSEL = new Set(['tub', 'basin', 'stack']);
+
+function contains(vessel: Volume, inner: Volume): boolean {
+  if (!OPEN_VESSEL.has(vessel.shape ?? '')) return false;
+  return Math.abs(inner.x - vessel.x) + inner.w / 2 <= vessel.w / 2 + 1e-9
+    && Math.abs(inner.z - vessel.z) + inner.d / 2 <= vessel.d / 2 + 1e-9
+    && inner.y1 <= vessel.y1 + 1e-9;
+}
+
+/**
  * 這一條守的是「資料表測試在空表上是綠的」。
  *
  * `describe.each([])` 會整組**跳過**，不是失敗 —— 所以下面所有的驗收在還沒
@@ -72,6 +91,8 @@ describe.each(civicTypesDone())('%s 的 plan', (type) => {
       for (let j = i + 1; j < plan.massing.length; j++) {
         const a = plan.massing[i]!;
         const b = plan.massing[j]!;
+        // 一個裝在開口容器裡的話，重疊的是容器的空腔而不是實體。
+        if (contains(a, b) || contains(b, a)) continue;
         const m3 = overlapOf(a, b) * METRES_PER_CELL ** 3;
         expect(m3, `${type}：${a.tag ?? i} 與 ${b.tag ?? j} 重疊 ${m3.toFixed(3)} m3`)
           .toBeLessThan(1e-6);

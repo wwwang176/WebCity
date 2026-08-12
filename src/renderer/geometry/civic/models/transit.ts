@@ -218,7 +218,7 @@ export const metroStationPlan: CivicPlan = {
 const trainTotem = totem(M(-4.9), M(-2.6), 2.2);
 
 /**
- * 火車站 —— 站房與月台，**中間讓出一條真正的軌道走廊**。
+ * 火車站 —— 站房**站在月台上**，兩者同在軌道的一側。
  *
  * 查證過的事實（`canPlaceTransportStop` + `placeTransportStopOnGrid` +
  * `TrackRenderer`）：火車站不是蓋在鐵軌**旁邊**，是蓋在鐵軌**上** ——
@@ -226,28 +226,27 @@ const trainTotem = totem(M(-4.9), M(-2.6), 2.2);
  * zoneType，軌道原封不動留在格子裡。`TrackRenderer` 於是照樣在同一格畫出
  * 碴床、枕木與兩條鋼軌，貼著**格心**、寬 `TRACK_WIDTH`。
  *
- * 所以這一棟原本錯了兩次：
+ * 這一棟因此拆過三次：
  *
- * 1. 它自己在 z = 4.4 / 5.2 畫了兩條鋼軌加一條道碴帶 —— 與真的那條各畫各的，
- *    位置還不一樣。這一格不必自己畫鐵軌。
- * 2. 更嚴重的是，站房（z ∈ [−5.4, 0.6]）**蓋在格心上** —— 真的鋼軌會從
- *    站房的地板穿出來，而列車會從大廳裡開過去。
+ * 1. 它自己在 z = 4.4 / 5.2 畫了兩條鋼軌加一條道碴帶 —— 與真的那條各畫各的。
+ *    這一格不必自己畫鐵軌。
+ * 2. 站房蓋在格心上 —— 真的鋼軌會從站房的地板穿出來。改成「站房在軌道的
+ *    一側、月台在另一側」，但那樣兩棟各站各的：一棟房子旁邊有一塊月台。
+ * 3. 加一道跨站天橋把兩邊接起來。天橋確實是車站最好認的形象，但一塊 12 m
+ *    的地要同時塞下天橋、樓梯塔與兩道欄杆，月台被切成兩截 —— 而月台本來
+ *    就只有 2.6 m 深。
  *
- * 所以配置是「站房在軌道的一側、月台在另一側」，中間那條帶不能蓋東西。
- *
- * 但那樣兩棟就各站各的：一棟房子旁邊有一塊月台，讀起來不是一座車站。
- *
- * 連起來的唯一辦法是**跨過去**（軌道在格心，繞不過去），而那正好就是車站
- * 最好認的形象：**跨站的天橋**加落在月台上的樓梯塔。走廊因此不是禁建區，
- * 是**淨空包絡線**（`TRACK_CLEARANCE`） —— 真實車站的天橋本來就在軌道上方。
+ * 真實的小車站根本不跨線：站房就蓋在月台上，月台是它旁邊那一片鋪面加一道
+ * 雨遮。所以兩者現在同在軌道的一側，站房的底面**就是**月台的頂面 ——
+ * 「連在一起」不需要任何構造物。空出來的另一側是站前廣場。
  *
  * ```
  *   z−  ┌──────────────┐
- *       │ ▙ 站房（門廊 + 大鐘）│
- *       ├──────╫───────┤   ╫ = 天橋，橋面 5.6 m
- *       │ ← 真的軌道 → ╫  │  ← 這條帶由 TrackRenderer 畫
- *       ├──────╫───────┤
- *   z+  │  月台  ▉ 樓梯塔 │
+ *       │    站前廣場（識別柱）    │
+ *       ├──────────────┤  ← 走廊，由 TrackRenderer 畫
+ *       │ ← 真的軌道 →            │
+ *       ├──────────────┤
+ *   z+  │ ▔▔ 雨遮下的月台 ▔▔ │ 站房 │
  *       └──────────────┘
  * ```
  *
@@ -257,15 +256,19 @@ const trainTotem = totem(M(-4.9), M(-2.6), 2.2);
 
 /** 軌道走廊的半寬（公尺）。`TrackRenderer.TRACK_WIDTH` 是 0.15 格 = 1.8 m。 */
 const CORRIDOR_HALF = 1.8;
-/** 站房的簷高，也是天橋的橋面高 —— 天橋從站房的二樓層直接伸出去。 */
-const HALL_EAVE = 5.6;
-/** 天橋的橋面厚度上緣。 */
-const DECK_TOP = 6.0;
-/** 天橋與樓梯塔的中心 x。偏一側 —— 壓在正中央會擋住門廊與大鐘。 */
-const BRIDGE_X = 2.6;
-/** 月台的中心與深度（公尺）。樓梯塔要落在它上面。 */
-const PLATFORM_Z = 3.3;
-const PLATFORM_D = 2.6;
+/** 月台的中心與深度（公尺）。走廊的南緣一路到佔地邊界。 */
+const PLATFORM_Z = 3.75;
+const PLATFORM_D = 3.9;
+/** 月台面。站房從這個高度起算。 */
+const PLATFORM_TOP = 0.9;
+/** 站房的簷高（絕對高度，含月台）。 */
+const HALL_EAVE = 4.5;
+/** 站房佔月台的東端，x [0.3, 5.4]。 */
+const HALL_X = 2.85;
+const HALL_W = 5.1;
+/** 站房的中心與深度。整棟落在月台的範圍裡，不然它有一角是懸空的。 */
+const HALL_Z = 3.9;
+const HALL_D = 2.6;
 
 export const trainStationPlan: CivicPlan = {
   footprint: { w: 1, h: 1 },
@@ -273,50 +276,41 @@ export const trainStationPlan: CivicPlan = {
   color: civicColorOf('train_station'),
   seed: [0.44, 0.15, 0.66],
   massing: [
+    // 月台。走廊的南緣一路到佔地邊界，整條沿著軌道。
     {
-      // 原本站房 7.6 m、屋脊 9.6 m —— 在一塊 12 m 的地上那是三層樓，而它
-      // 旁邊的公車站只有 2.9 m。現在是 5.6 m + 屋脊 7.2 m：仍然是四座交通
-      // 站點裡最高的，但讀起來是一棟平房車站而不是一座塔。
+      // 明度要拉開站前那一片鋪面（0.5）。兩者一樣暗的話，月台在等角視角下
+      // 只是地上一塊顏色相同的方形 —— 「它高出來 0.9 m」完全看不出來。
+      tag: 'platform', part: PART_GROUND, shade: 0.78,
+      x: 0, z: M(PLATFORM_Z), w: M(11.2), d: M(PLATFORM_D),
+      y0: 0, y1: M(PLATFORM_TOP),
+    },
+    {
+      // 站房。坐在月台面上 —— 起點寫 0 的話它的下半截會埋在月台裡。
+      // 高度：簷口 4.5 m、屋脊 5.9 m。一塊 12 m 的地上再高就讀成一座塔，
+      // 而它旁邊的公車站只有 2.9 m。
       tag: 'hall',
-      x: 0, z: M(-3.75), w: M(9.0), d: M(3.0), y0: 0, y1: M(HALL_EAVE),
+      x: M(HALL_X), z: M(HALL_Z), w: M(HALL_W), d: M(HALL_D),
+      y0: M(PLATFORM_TOP), y1: M(HALL_EAVE),
     },
     {
-      // 山牆只在**兩端**出簷（w 9.6 > 9.0），z 向與站房齊平 —— 天橋從
-      // 簷口的正下方伸出去，出簷的話橋會從屋簷裡穿出來。
+      // 山牆只在**兩端**出簷（w 5.6 > 5.1），z 向與站房齊平：往月台那一側
+      // 出簷的話屋簷會壓在雨遮上，往站前那一側出簷的話它會越過佔地邊界。
       tag: 'hallRoof', part: PART_ROOF, shape: 'gable',
-      x: 0, z: M(-3.75), w: M(9.6), d: M(3.0), y0: M(HALL_EAVE), y1: M(7.2),
+      x: M(HALL_X), z: M(HALL_Z), w: M(5.6), d: M(HALL_D),
+      y0: M(HALL_EAVE), y1: M(5.9),
     },
-    // 站前的門廊。從站房的正面凸出來一截、比簷口再高一點 ——
-    // 「這裡是入口」在等角視角下只有靠凸出與高度講得清楚。
+    // 站前的門廊。從站房背向月台那一面凸出來一截 —— 那一面朝著格子的邊，
+    // 也就是路會接上來的地方。
     {
       tag: 'portal',
-      x: 0, z: M(-5.4), w: M(3.6), d: M(0.3), y0: 0, y1: M(HALL_EAVE),
+      x: M(HALL_X), z: M(5.43), w: M(2.4), d: M(0.46),
+      y0: M(PLATFORM_TOP), y1: M(HALL_EAVE),
     },
-    // 門廊上的大鐘。掛在**站前**那一面：大鐘是給要趕車的人看的，
-    // 朝月台那一側只有已經進站的人看得到。夜裡它會亮。
+    // 大鐘。掛在**朝月台**那一面：站房搬到月台上之後這一面才是它的正面，
+    // 等車的人與進站的列車看到的都是它。夜裡它會亮。
     {
       tag: 'clock', part: PART_LAMP,
-      x: 0, z: M(-5.62), w: M(1.4), d: M(0.14), y0: M(4.2), y1: M(5.4),
-    },
-    // 月台。走廊的另一側，整條沿著軌道。
-    {
-      tag: 'platform', part: PART_GROUND, shade: 0.52,
-      x: 0, z: M(PLATFORM_Z), w: M(11.0), d: M(PLATFORM_D), y0: 0, y1: M(0.9),
-    },
-    // 跨站天橋。從站房的簷口高度伸出去，跨過軌道落在樓梯塔上 ——
-    // 淨空 5.6 m > `TRACK_CLEARANCE`，列車從底下過。
-    {
-      tag: 'footbridge',
-      x: M(BRIDGE_X), z: M(0.525), w: M(2.4), d: M(5.55),
-      y0: M(HALL_EAVE), y1: M(DECK_TOP),
-    },
-    // 樓梯塔。天橋在月台這一端的落腳點 —— 少了它，橋是懸空斷掉的。
-    {
-      // 從**月台面**站上來，頂到橋面的底 —— 起點寫 0 的話它會埋進月台，
-      // 頂寫到橋面的上緣的話它會插進橋裡（兩者都是看不見的內部面）。
-      tag: 'stairTower',
-      x: M(BRIDGE_X), z: M(PLATFORM_Z), w: M(2.4), d: M(2.2),
-      y0: M(0.9), y1: M(HALL_EAVE),
+      x: M(HALL_X), z: M(2.47), w: M(1.2), d: M(0.14), y0: M(2.9), y1: M(3.9),
     },
     trainTotem.panel,
   ],
@@ -328,40 +322,43 @@ export const trainStationPlan: CivicPlan = {
     { tag: 'corridor', x: 0, z: 0, w: M(12.0), d: M(CORRIDOR_HALF * 2), shade: 0.24 },
     // 月台側：z [1.8, 6]
     { x: 0, z: M(3.9), w: M(12.0), d: M(4.2), shade: 0.5 },
-    // 月台邊緣的黃線。
-    { x: 0, z: M(2.2), w: M(11.0), d: M(0.2), shade: 0.95, layer: 'mark' },
+    // 月台邊緣的黃線不能畫在這裡：標線層貼著**地面**，而月台高 0.9 m ——
+    // 畫出來會落在月台腳邊的碴床上。它改成月台面上的一道薄帶（見 props）。
   ],
   props: [
     trainTotem.post,
-    // 月台雨棚的四根柱。**沒有鋼軌** —— 那是 `TrackRenderer` 的事。
-    // 位置避開樓梯塔（x ∈ [1.4, 3.8]），不然柱子會從塔裡長出來。
-    ...([-4.8, -3.4, -1.4, 0.6] as const).map((x): CivicVolume => ({
-      tag: 'canopyPost', part: PART_DETAIL,
-      x: M(x), z: M(PLATFORM_Z), w: M(0.18), d: M(0.18), y0: M(0.9), y1: M(3.0),
-    })),
-    // 天橋兩側的欄杆。少了它橋面是一塊浮在空中的板子。
-    ...([-1.1, 1.1] as const).map((dx): CivicVolume => ({
-      tag: 'bridgeRail', part: PART_DETAIL,
-      x: M(BRIDGE_X + dx), z: M(0.525), w: M(0.16), d: M(5.55),
-      y0: M(DECK_TOP), y1: M(6.9),
-    })),
+    // 月台邊緣的警示帶。壓在月台面上而不是走標線層 —— 標線層貼著地面。
+    {
+      tag: 'platformEdge', part: PART_GROUND, shade: 0.95,
+      x: 0, z: M(2.1), w: M(11.2), d: M(0.4),
+      y0: M(PLATFORM_TOP), y1: M(PLATFORM_TOP + 0.02),
+    },
+    // 雨遮的四根柱，站在月台上。**沒有鋼軌** —— 那是 `TrackRenderer` 的事。
+    ...([-4.8, -1.2] as const).flatMap((x): CivicVolume[] =>
+      ([2.2, 4.9] as const).map((z): CivicVolume => ({
+        tag: 'canopyPost', part: PART_DETAIL,
+        x: M(x), z: M(z), w: M(0.18), d: M(0.18),
+        y0: M(PLATFORM_TOP), y1: M(3.0),
+      }))),
   ],
   overhead: [
     {
-      // 只蓋到樓梯塔的西面（x = 1.4） —— 蓋過去的話雨棚會從塔裡穿出來。
+      // 月台的雨遮。從月台的西端一路蓋到站房的牆邊 —— 這一片就是「月台」
+      // 在等角視角下的全部，只蓋一小段的話剩下的空鋪面讀起來是廣場。
       tag: 'platformCanopy',
-      x: M(-2.0), z: M(PLATFORM_Z), w: M(6.8), d: M(2.8), y0: M(3.0), y1: M(3.3),
+      x: M(-2.6), z: M(3.6), w: M(6.0), d: M(3.4), y0: M(3.0), y1: M(3.3),
     },
   ],
   fixtures: [
-    // 站房兩側那兩條 1.5 m 的帶，而且全部避開走廊（|z| > 1.8）。
+    // 全部排在站前廣場那一條，而且避開走廊（|z| > 1.8）。月台那一側站滿了
+    // 站房、雨遮與柱子，塞不下地面物件。
     { kind: 'lamp', x: M(5.0), z: M(-2.6), heightM: 4.5 },
     { kind: 'lamp', x: M(-5.0), z: M(-4.0), heightM: 4.5 },
     { kind: 'bikeRack', x: M(4.9), z: M(-3.4), axis: 'x' },
     { kind: 'signPost', x: M(4.9), z: M(-4.6), axis: 'x' },
     { kind: 'bin', x: M(-5.0), z: M(-2.4), radius: M(0.26) },
     { kind: 'tree', x: M(-4.9), z: M(-5.0), heightM: 5.0, crownRadius: M(0.6) },
-    { kind: 'shrub', x: M(-5.0), z: M(5.0), radius: M(0.5) },
+    { kind: 'shrub', x: M(-2.0), z: M(-5.2), radius: M(0.5) },
   ],
   vehicles: [],
 };

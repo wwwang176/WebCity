@@ -17,7 +17,8 @@ import { PART_WALL } from '../parts';
  */
 export type VolumeShape =
   'box' | 'gable' | 'hip' | 'shed' | 'sawtooth'
-  | 'cylinder' | 'dome' | 'cooling' | 'stack';
+  | 'cylinder' | 'dome' | 'cooling' | 'stack'
+  | 'tub' | 'basin';
 
 export interface Volume {
   /** 中心 */

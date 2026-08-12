@@ -12,6 +12,7 @@ import { TerrainType } from '../../../../../core/grid/types';
 import { topOf } from '../../../buildings/massing/volume';
 import { civicColorOf } from '../../colors';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
+import { TUB, STACK } from '../../../buildings/massing/metrics';
 import type { CivicPlan } from '../../types';
 
 const m = (cells: number) => cells * METRES_PER_CELL;
@@ -110,7 +111,7 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
    */
   it('should not put windows on a chimney or a tower shell', () => {
     for (const v of plan.massing) {
-      if (!/stack|coolingTower/.test(v.tag ?? '')) continue;
+      if (!/stack|tankWall/.test(v.tag ?? '')) continue;
       expect(v.part, `${v.tag} 會長出高窗帶`).toBe(PART_SHELL);
       expect(v.color, `${v.tag} 沒有自己的顏色 —— 它會跟著廠區`).toBeDefined();
     }
@@ -123,6 +124,38 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
       v.part === PART_GROUND || v.part === PART_WATER);
     for (const v of shaded) {
       expect(v.shade, `${v.tag} 吃 B 通道卻沒有明度`).toBeGreaterThan(0);
+    }
+  });
+
+  /**
+   * 水面要**低於槽緣**。
+   *
+   * 前一版的水面貼在池壁的頂上（`y0 === wall.y1`），所以每一座池讀起來是
+   * 一個蓋著藍色蓋子的圓筒，而不是一個裝著水的槽。差別在那一圈**內壁**：
+   * 有它才看得出深度。
+   *
+   * 光把 y 調低沒有用 —— 池壁是實心的圓柱／方塊，水面壓到頂面之下就整個
+   * 埋進量體裡了。所以池壁同時改成開口容器（`tub` / `basin`），而這條測試
+   * 守的是兩者要**一起**成立：水面在槽底之上、槽緣之下。
+   */
+  it('should sink the water below the rim of its vessel', () => {
+    const waters = plan.massing.filter(v => v.part === PART_WATER);
+    for (const w of waters) {
+      const vessel = plan.massing.find(v =>
+        /Wall$/.test(v.tag ?? '') && v.x === w.x && v.z === w.z);
+      expect(vessel, `${w.tag} 沒有池壁`).toBeTruthy();
+      expect(vessel!.shape, `${w.tag} 的池壁是實心的 —— 水面會埋進去`)
+        .toMatch(/^(tub|basin)$/);
+      const drop = m(vessel!.y1 - w.y1);
+      expect(drop, `${w.tag} 的水面只比槽緣低 ${drop.toFixed(2)} m`)
+        .toBeGreaterThanOrEqual(0.3);
+      const floor = vessel!.y0 + (1 - TUB.DEPTH) * (vessel!.y1 - vessel!.y0);
+      expect(w.y0, `${w.tag} 的水面掉到槽底之下`).toBeGreaterThanOrEqual(floor);
+      // 水面要比內壁寬一點，側面才埋進池壁裡 —— 窄了就是四周留一圈看得穿
+      // 到地面的縫。
+      expect(w.w, `${w.tag} 與池壁之間有一條縫`)
+        .toBeGreaterThan(vessel!.w * TUB.INNER);
+      expect(w.w, `${w.tag} 漫出池壁外`).toBeLessThan(vessel!.w);
     }
   });
 
@@ -144,46 +177,62 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
 
 describe('電廠', () => {
   const stacks = tagged(powerPlan, 'stack');
-  const towers = tagged(powerPlan, 'coolingTower');
 
   /**
-   * 冷卻塔是這一棟的辨識訊號。
+   * 這一棟的剪影是**兩支煙囪**。
    *
-   * 沒有它，這一棟看不出是電廠。原本的剪影是兩支
-   * 圓柱煙囪加一棟廠房，而旁邊的水廠是一支圓柱水塔加一棟機房 —— 兩者又
-   * 共用同一組立面色票。城市裡沒有第二種建築是**有腰的旋轉體**，所以那個
-   * 形狀本身就是「這是電廠」。
+   * 冷卻塔（有腰的旋轉體）一度是它的辨識訊號 —— 城市裡沒有第二種建築是那個
+   * 形狀。但兩座塔在 24 m 的地上佔掉了整個北半，而它們的直徑接近 10 m，
+   * 在等角視角下是兩坨蓋住廠房的圓桶。改成兩支煙囪之後，剪影從「兩坨」
+   * 變成「兩根細的加一棟長的」，廠房的鋸齒屋頂才露得出來。
+   *
+   * 一高一矮：等高的兩支讀起來是複製貼上，而真實廠區的機組本來就分期蓋。
    */
-  it('should stand two cooling towers of different sizes', () => {
-    expect(towers.length, '冷卻塔不是兩座').toBe(2);
-    for (const t of towers) {
-      expect(t.shape, '冷卻塔不是有腰的 —— 那是一個筒倉').toBe('cooling');
-      expect(m(t.y1), '冷卻塔太矮').toBeGreaterThan(8);
-      expect(t.w, '冷卻塔不是正圓').toBeCloseTo(t.d, 9);
-      // 又高又細的話那是煙囪。真實冷卻塔的高徑比在 1.5～2 之間。
-      expect((t.y1 - t.y0) / t.w, '冷卻塔太瘦').toBeLessThan(2.2);
+  it('should raise two chimneys and no cooling towers', () => {
+    expect(tagged(powerPlan, 'coolingTower').length, '冷卻塔還在').toBe(0);
+    expect(stacks.length, '煙囪不是兩支').toBe(2);
+    for (const s of stacks) {
+      expect(s.shape, '煙囪的頂是一片實心圓盤').toBe('stack');
+      expect(s.w, '煙囪不是正圓').toBeCloseTo(s.d, 9);
+      // 上下界一起釘住高度 —— 只留下限的話，把它調回 25 m 不會有任何東西轉紅。
+      expect(m(s.y1), '煙囪太矮').toBeGreaterThan(12);
+      expect(m(s.y1), '煙囪又長回去了').toBeLessThanOrEqual(18);
     }
-    expect(towers[0]!.w).not.toBeCloseTo(towers[1]!.w, 3);
+    expect(stacks[0]!.y1, '兩支煙囪一樣高').not.toBeCloseTo(stacks[1]!.y1, 3);
   });
 
   /**
-   * 煙囪頂上是一個**洞**，不是一片平蓋。
+   * 管口要**幾乎凹到底**，而且槽底是深色的。
    *
    * 十幾公尺高的東西在等角視角下最先看到的就是它的頂，而圓柱的頂是實心
-   * 圓盤。`shape: 'stack'` 是為此新增的旋轉體（見 `MassingGeometry.test.ts`
-   * 的「stack volumes」—— 那裡測的是幾何真的凹下去、內壁法線真的朝軸心）。
+   * 圓盤（`shape: 'stack'` 就是為此新增的旋轉體）。但淺淺一圈凹槽還不夠：
+   * 管口的直徑只有塔身的一半，斜著看進去只看得到很小的一塊，凹槽淺的時候
+   * 那一塊仍然亮著，讀起來是頂蓋上的一道陰影而不是一個洞。
+   *
+   * 深度由幾何顧（見 `MassingGeometry.test.ts`），這裡顧的是**顏色**：
+   * 管壁跟著塔身走混凝土色的話，那個洞再深也是亮的 —— 管壁的法線是水平的，
+   * 拿到的光與塔身外側幾乎一樣，而這個引擎沒有環境光遮蔽。所以管口裡要有
+   * 一支深色的內襯，從槽底一路到管口。
    */
-  it('should still raise a chimney above everything', () => {
-    // 冷卻塔冒的是水氣。燒的那一支還是要有，而且它是全場最高的東西。
-    expect(stacks.length, '沒有煙囪').toBe(1);
+  it('should darken the bore of each chimney', () => {
     for (const s of stacks) {
-      expect(s.shape, '煙囪的頂是一片實心圓盤').toBe('stack');
-      // 上下界一起釘住降過的高度 —— 只留下限的話，把它調回 25 m 不會有
-      // 任何東西轉紅。
-      expect(m(s.y1), '煙囪太矮').toBeGreaterThan(15);
-      expect(m(s.y1), '煙囪又長回去了 —— 這一版是降過 30% 的').toBeLessThanOrEqual(18);
-      expect(s.y1, '煙囪沒有高過冷卻塔')
-        .toBeGreaterThan(Math.max(...towers.map(t => t.y1)));
+      const lining = tagged(powerPlan, 'boreLining')
+        .find(v => v.x === s.x && v.z === s.z);
+      expect(lining, '煙囪的管口沒有內襯').toBeTruthy();
+      expect(lining!.part, '內襯沒有走塗裝外殼 —— 那條路才照著顏色畫')
+        .toBe(PART_SHELL);
+      expect(Math.max(...lining!.color!), '內襯不夠暗 —— 那個洞會讀成一片平的')
+        .toBeLessThan(0.2);
+      // 它自己也要是開口的：實心圓柱的頂是一片圓盤，洞就只剩那麼深。
+      expect(lining!.shape, '內襯是實心的 —— 管口下面會蓋著一塊板子').toBe('tub');
+      // 塞在管口裡：比管口窄，從槽底一路頂到管口。
+      expect(lining!.w, '內襯比管口還寬 —— 它會從塔身穿出來')
+        .toBeLessThan(s.w * STACK.BORE * 2);
+      const bottom = s.y0 + (1 - STACK.DEPTH) * (s.y1 - s.y0);
+      expect(m(Math.abs(lining!.y0 - bottom)), '內襯不是從凹槽的底部開始')
+        .toBeLessThan(0.5);
+      expect(m(Math.abs(lining!.y1 - s.y1)), '內襯沒有頂到管口')
+        .toBeLessThan(0.5);
     }
   });
 
@@ -201,7 +250,10 @@ describe('電廠', () => {
     expect(beacons.length, '航警燈不足').toBe(stacks.length);
     for (const b of beacons) {
       expect(b.part).toBe(PART_LAMP);
-      const host = stacks.find(s => Math.abs(s.z - b.z) < 1e-9)!;
+      // 認最近的那一支。兩支煙囪同排的話，只比 z 會把兩顆燈都算到第一支頭上
+      // —— 而那條測試會是綠的。
+      const host = [...stacks].sort((p, q) =>
+        Math.hypot(p.x - b.x, p.z - b.z) - Math.hypot(q.x - b.x, q.z - b.z))[0]!;
       expect(b.y0, '航警燈沒有站在煙囪頂上').toBeCloseTo(host.y1, 9);
       // 站在管口的環上，不是懸在洞的正中央。
       expect(Math.abs(b.x - host.x) - b.w / 2, '航警燈架在煙囪的洞上')
@@ -226,23 +278,20 @@ describe('水廠', () => {
   const walls = tagged(waterPlan, 'tankWall');
 
   it('should lay out round settling tanks, not a row of them', () => {
-    // 圓的是水廠的辨識訊號。排成一列的話三座讀起來是同一個東西複製三次 ——
-    // 品字形才有配置。
+    // 圓的是水廠的辨識訊號。排成一列的話讀起來是同一個東西複製幾次 ——
+    // 2×2 才有配置。
     expect(walls.length, '沉澱池不到三座').toBeGreaterThanOrEqual(3);
-    for (const w of walls) expect(w.shape, '沉澱池不是圓的').toBe('cylinder');
+    for (const w of walls) expect(w.shape, '沉澱池不是開口的圓槽').toBe('tub');
     const xs = new Set(walls.map(w => w.x.toFixed(6)));
     const zs = new Set(walls.map(w => w.z.toFixed(6)));
-    expect(Math.min(xs.size, zs.size), '三座池排成一列').toBeGreaterThan(1);
+    expect(Math.min(xs.size, zs.size), '幾座池排成一列').toBeGreaterThan(1);
   });
 
-  it('should inset the water inside the tank wall', () => {
-    // 水面與池壁齊寬的話看不出有一圈邊，那就只是一個圓餅。
+  it('should give every tank its own water', () => {
     for (const w of walls) {
       const water = tagged(waterPlan, 'tankWater')
-        .find(v => v.x === w.x && v.z === w.z)!;
+        .find(v => v.x === w.x && v.z === w.z);
       expect(water, '這座池沒有水').toBeTruthy();
-      expect(water.w, '水面沒有比池壁窄').toBeLessThan(w.w);
-      expect(water.y0, '水面沒有浮在池壁頂').toBeCloseTo(w.y1, 9);
     }
   });
 
@@ -285,36 +334,35 @@ describe('水廠', () => {
   });
 
   /**
-   * 白色的水塔。
+   * 白色的池壁。這一格的辨識訊號是**四個大水桶**。
    *
-   * 塔身與塔頂都要白。前兩版都畫成灰的，而**資料一直是對的** ——
-   * 塔身一直帶著 `[0.94, 0.95, 0.96]`，這條測試的前一版驗的也正是那個陣列。
+   * 白色一直畫不出來，而且**資料一直是對的**：前兩版的儲水塔都帶著接近白的
+   * 陣列，測試驗的也正是那個陣列。畫不出來的是 shader —— 牆被
+   * `FACADE_UTILITY` 壓成 0.70～0.90 倍再加一條高窗帶；`PART_GROUND` 的色譜
+   * 上限只到 `vec3(0.60, 0.58, 0.55)` 的磚鋪，`shade: 0.95` 也只是中灰。
+   * 所以這一條驗的是**畫得出來的那條路**：`PART_SHELL` 是唯一照著量體自己的
+   * 顏色畫的分支。
    *
-   * 畫不出來的是 shader：塔身是牆，被 `FACADE_UTILITY` 壓成 0.70～0.90 倍
-   * 再加一條高窗帶；塔頂走 `PART_GROUND`，而那條的色譜上限只到
-   * `vec3(0.60, 0.58, 0.55)` 的磚鋪 —— `shade: 0.95` 也只是中灰。
-   *
-   * 所以這一條改成驗**畫得出來的那條路**：兩者都要走 `PART_SHELL`
-   * （唯一照量體自己的顏色畫的分支），而且顏色要真的接近白。
+   * 儲水塔本身已經拿掉了 —— 白色移到四座池的池壁上，而那正是「大水桶」的
+   * 全部：白的桶身、藍的水、低於桶緣的水位。
    */
-  it('should keep the water tower white', () => {
-    for (const tag of ['tower', 'towerCap']) {
-      const v = tagged(waterPlan, tag)[0]!;
-      expect(v, `沒有 ${tag}`).toBeTruthy();
-      expect(v.part, `${tag} 沒有走塗裝外殼 —— 那條路畫不出白色`).toBe(PART_SHELL);
-      expect(v.part, `${tag} 走回共用屋頂色票 —— 那組有鏽紅`).not.toBe(PART_ROOF);
-      expect(v.color, `${tag} 沒有自己的顏色 —— 它會跟著廠區`).toBeDefined();
-      expect(Math.min(...v.color!), `${tag} 不夠白`).toBeGreaterThan(0.85);
+  it('should paint the tanks white and keep the tower gone', () => {
+    expect(tagged(waterPlan, 'tower').length, '高塔還在').toBe(0);
+    expect(tagged(waterPlan, 'towerCap').length, '塔頂還在').toBe(0);
+    expect(walls.length, '沒有水桶').toBeGreaterThan(0);
+    for (const v of walls) {
+      expect(v.part, '池壁沒有走塗裝外殼 —— 那條路畫不出白色').toBe(PART_SHELL);
+      expect(v.part, '池壁走回共用屋頂色票 —— 那組有鏽紅').not.toBe(PART_ROOF);
+      expect(v.color, '池壁沒有自己的顏色 —— 它會跟著廠區').toBeDefined();
+      expect(Math.min(...v.color!), '池壁不夠白').toBeGreaterThan(0.85);
     }
   });
 
-  it('should raise one storage tower above the tanks', () => {
-    const tower = tagged(waterPlan, 'tower')[0]!;
-    expect(tower, '沒有儲水塔').toBeTruthy();
-    for (const w of walls) expect(tower.y1).toBeGreaterThan(w.y1 * 2);
-    // 上界一起釘住降過的高度 —— 只有下界的話，把它調回 15 m 不會有任何
-    // 東西轉紅（四座的最高點各不相同那條也照樣是綠的）。
-    expect(m(tower.y1), '儲水塔又長回去了').toBeLessThanOrEqual(11);
+  it('should stay a low plant now that the tower is gone', () => {
+    // 高塔拿掉之後最高的是機房的屋脊。上界釘住它 —— 少了這一條，把塔加回去
+    // 不會有任何東西轉紅（四座各不相同那條也照樣是綠的）。
+    expect(m(topOf(waterPlan.massing)), '水廠又長出一座塔')
+      .toBeLessThanOrEqual(9);
   });
 });
 
@@ -356,7 +404,7 @@ describe('汙水廠', () => {
     // 水廠是一排圓的、這裡是一排方的 —— 那個對比就是兩者的差別。
     expect(walls.length, '曝氣池不到四座').toBeGreaterThanOrEqual(4);
     for (const w of walls) {
-      expect(w.shape ?? 'box', '曝氣池是圓的 —— 那是水廠').toBe('box');
+      expect(w.shape, '曝氣池是圓的 —— 那是水廠').toBe('basin');
       expect(w.z, '曝氣池沒有排成一列').toBeCloseTo(walls[0]!.z, 9);
     }
     const xs = [...walls].map(w => w.x).sort((a, b) => a - b);
@@ -395,7 +443,7 @@ describe('汙水廠', () => {
   it('should add one round clarifier among the square ones', () => {
     const c = tagged(sewagePlan, 'clarifierWall')[0]!;
     expect(c, '沒有沉澱池').toBeTruthy();
-    expect(c.shape).toBe('cylinder');
+    expect(c.shape).toBe('tub');
   });
 });
 

@@ -245,44 +245,44 @@ describe('火車站', () => {
   });
 
   /**
-   * 站房與月台要**連在一起**。
+   * 站房**站在月台上**。
    *
-   * 原本站房在軌道北側、月台在南側，中間讓出走廊 —— 兩棟各自站著，讀起來
-   * 是「一棟房子旁邊有一塊月台」，不是一座車站。
+   * 前兩版都在拆這一棟：先是站房在軌道的一側、月台在另一側，中間讓出走廊
+   * —— 兩棟各自站著，讀起來是「一棟房子旁邊有一塊月台」。再來是加一道跨站
+   * 天橋把兩邊接起來，而那把一塊 12 m 的地塞進了天橋、樓梯塔與兩道欄杆，
+   * 月台被切成兩截。
    *
-   * 連起來的唯一方式是**跨過去**（軌道在格心，繞不過去），而那正好就是
-   * 車站最好認的形象：跨站的天橋 + 落在月台上的樓梯塔。
+   * 真實的小車站根本不跨線：站房就蓋在月台上，月台是它旁邊那一片鋪面加
+   * 一道雨遮。所以兩者現在同在軌道的一側，站房的底面**就是**月台的頂面 ——
+   * 「連在一起」不需要任何構造物，它們本來就是同一塊台子。
    */
-  it('should bridge the hall over to the platform', () => {
-    const deck = tagged(trainStationPlan, 'footbridge')[0]!;
-    const tower = tagged(trainStationPlan, 'stairTower')[0]!;
+  it('should stand the hall on the platform, not across the track', () => {
     const hall = tagged(trainStationPlan, 'hall')[0]!;
     const platform = tagged(trainStationPlan, 'platform')[0]!;
-    expect(deck, '沒有天橋').toBeTruthy();
-    expect(tower, '天橋沒有落腳的樓梯塔').toBeTruthy();
 
-    // 天橋要真的跨過走廊 —— 兩端各在軌道的一側。
-    expect(deck.z - deck.d / 2, '天橋沒有伸到站房那一側')
-      .toBeLessThan(-TRACK_WIDTH);
-    expect(deck.z + deck.d / 2, '天橋沒有伸到月台那一側')
-      .toBeGreaterThan(TRACK_WIDTH);
-    // 而且兩端要接得上：站房那一端貼著站房，月台那一端落在樓梯塔上。
-    expect(deck.z - deck.d / 2, '天橋與站房之間斷了一截')
-      .toBeLessThanOrEqual(hall.z + hall.d / 2 + 1e-9);
-    expect(Math.abs(deck.x - tower.x), '天橋與樓梯塔沒有對齊')
-      .toBeLessThan(deck.w / 2);
-    expect(tower.y1, '樓梯塔沒有頂到橋面').toBeGreaterThanOrEqual(deck.y0 - 1e-9);
-    // 樓梯塔站在月台上。
-    expect(Math.abs(tower.z - platform.z), '樓梯塔沒有落在月台上')
-      .toBeLessThanOrEqual(platform.d / 2);
+    expect(tagged(trainStationPlan, 'footbridge').length, '天橋還在').toBe(0);
+    expect(tagged(trainStationPlan, 'stairTower').length, '樓梯塔還在').toBe(0);
+
+    // 同一側 —— 隔著軌道的話它們永遠連不起來。
+    expect(Math.sign(hall.z), '站房與月台隔著軌道')
+      .toBe(Math.sign(platform.z));
+    // 站房的底面坐在月台面上。
+    expect(hall.y0, '站房沒有坐在月台上').toBeCloseTo(platform.y1, 9);
+    // 而且要整棟落在月台的範圍裡，不然它有一角是懸空的。
+    expect(hall.x - hall.w / 2, '站房的一角伸出月台外')
+      .toBeGreaterThanOrEqual(platform.x - platform.w / 2 - 1e-9);
+    expect(hall.x + hall.w / 2).toBeLessThanOrEqual(platform.x + platform.w / 2 + 1e-9);
+    expect(hall.z - hall.d / 2)
+      .toBeGreaterThanOrEqual(platform.z - platform.d / 2 - 1e-9);
+    expect(hall.z + hall.d / 2).toBeLessThanOrEqual(platform.z + platform.d / 2 + 1e-9);
   });
 
-  it('should put the hall and the platform on opposite sides of the track', () => {
-    // 同一側的話中間那條走廊是站區的邊界，而不是「軌道從站中間穿過去」。
+  it('should leave the platform room to stand on beside the hall', () => {
+    // 站房佔掉整片月台的話，那不是月台，是一棟蓋在台子上的房子。
     const hall = tagged(trainStationPlan, 'hall')[0]!;
     const platform = tagged(trainStationPlan, 'platform')[0]!;
-    expect(Math.sign(hall.z), '站房與月台在軌道的同一側')
-      .not.toBe(Math.sign(platform.z));
+    const free = m(platform.w) - m(hall.w);
+    expect(free, `月台只剩 ${free.toFixed(1)} m 站人`).toBeGreaterThan(5);
   });
 
   it('should raise the platform beside the track', () => {
@@ -294,12 +294,52 @@ describe('火車站', () => {
     expect(m(platform.w), '月台太短，停不下一節車廂').toBeGreaterThan(10);
   });
 
+  /**
+   * 月台要與旁邊的鋪面**分得開**。
+   *
+   * 它高出地面 0.9 m，但在等角視角下講這件事的只有側面那一道細邊，而那道邊
+   * 多半被站房與雨遮擋著。明度一樣的話，月台就只是地上一塊顏色相同的方形。
+   *
+   * 這與四座池在灰色的地面色譜上變成四個黑洞（BUG-243）是同一類：`shade`
+   * 是對的、色譜也是對的，錯在與旁邊那一塊分不開。
+   */
+  it('should tell the platform apart from the paving around it', () => {
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    const paving = trainStationPlan.decals
+      .filter(d => (d.layer ?? 'base') === 'base')
+      .map(d => d.shade ?? 0);
+    for (const s of paving) {
+      expect(Math.abs(platform.shade! - s), `月台與鋪面同樣是 ${s} 的灰`)
+        .toBeGreaterThan(0.1);
+    }
+  });
+
+  /**
+   * 架高的東西的頂面上不能用標線層。
+   *
+   * `layer: 'mark'` 貼著**地面**。月台高 0.9 m，所以畫在月台範圍裡的黃線會
+   * 落在月台腳邊的碴床上 —— 位置對、高度差了一整個月台。
+   */
+  it('should not paint markings where the platform stands', () => {
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    for (const d of trainStationPlan.decals) {
+      if ((d.layer ?? 'base') !== 'mark') continue;
+      const onIt = Math.abs(d.x - platform.x) < (d.w + platform.w) / 2
+        && Math.abs(d.z - platform.z) < (d.d + platform.d) / 2;
+      expect(onIt, '標線畫在月台的範圍裡 —— 它會落在月台腳邊').toBe(false);
+    }
+    // 月台面上的那一道邊緣帶要真的站在月台頂上。
+    const edge = trainStationPlan.props.find(v => v.tag === 'platformEdge')!;
+    expect(edge, '月台沒有邊緣警示帶').toBeTruthy();
+    expect(edge.y0, '邊緣帶沒有壓在月台面上').toBeCloseTo(platform.y1, 9);
+  });
+
   it('should hang a lit clock on the front', () => {
     const clock = tagged(trainStationPlan, 'clock')[0]!;
     const hall = tagged(trainStationPlan, 'hall')[0]!;
     expect(clock.part, '大鐘不會亮').toBe(PART_LAMP);
-    // 掛在**站前**那一面。大鐘是給還在趕車的人看的 —— 朝月台那一側的話
-    // 只有已經進站的人看得到，而他們已經不需要它了。
+    // 掛在**朝月台**那一面。站房移到月台上之後這一面才是它的正面：等車的人
+    // 與進站的列車看到的都是它，而背面朝著街道那一側只有一道山牆。
     expect(clock.z + clock.d / 2, '大鐘埋在牆裡')
       .toBeLessThanOrEqual(hall.z - hall.d / 2 + 1e-9);
   });
@@ -313,6 +353,19 @@ describe('火車站', () => {
       expect(p.y0, '柱子沒有站在月台上').toBeCloseTo(platform.y1, 9);
       expect(p.y1, '柱子沒有頂到雨棚').toBeCloseTo(canopy.y0, 9);
     }
+  });
+
+  it('should roof the whole open half of the platform', () => {
+    // 月台就是一道雨遮。只蓋住一小段的話，剩下那一大片空鋪面讀起來是廣場。
+    const canopy = trainStationPlan.overhead.find(v => v.tag === 'platformCanopy')!;
+    const hall = tagged(trainStationPlan, 'hall')[0]!;
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    expect(canopy, '月台沒有雨遮').toBeTruthy();
+    // 從月台的一端一路蓋到站房的牆邊 —— 中間斷開的話那是兩塊棚子。
+    expect(canopy.x - canopy.w / 2, '雨遮沒有蓋到月台的端點')
+      .toBeCloseTo(platform.x - platform.w / 2, 6);
+    expect(canopy.x + canopy.w / 2, '雨遮與站房之間留了一段沒蓋')
+      .toBeGreaterThanOrEqual(hall.x - hall.w / 2 - 1e-9);
   });
 });
 

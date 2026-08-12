@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { tagPart, PART_WALL } from '../parts';
-import { HALF_ENVELOPE } from './metrics';
+import { HALF_ENVELOPE, TUB, STACK } from './metrics';
 import { maxAbsOf, partOf, type Volume } from './volume';
 import { METRES_PER_CELL } from '../../../../core/grid/constants';
 
@@ -185,20 +185,60 @@ function coolingTower(v: Volume): THREE.BufferGeometry {
  * 所以俯視看得到的是凹槽的**內壁**而不是它的背面。
  */
 function chimney(v: Volume): THREE.BufferGeometry {
-  /** 管口內緣的半徑（佔宣告寬度的一半的幾成）。 */
-  const BORE = 0.26;
-  /** 塔身收到頂端剩多少 —— 真實煙囪都是微微收的。 */
-  const COLLAR = 0.44;
-  /** 凹槽的深度，佔全高的比例。 */
-  const DEPTH = 0.12;
+  const { BORE, COLLAR, DEPTH } = STACK;
   return lathe([
     new THREE.Vector2(0.5, 0),            // 底座
-    new THREE.Vector2(COLLAR, 1 - DEPTH * 0.7), // 微收的塔身
+    new THREE.Vector2(COLLAR, 0.86),      // 微收的塔身
     new THREE.Vector2(COLLAR, 1),         // 管口外緣
     new THREE.Vector2(BORE, 1),           // 管口的環
     new THREE.Vector2(BORE, 1 - DEPTH),   // 凹槽內壁（法線朝軸心）
     new THREE.Vector2(0, 1 - DEPTH),      // 槽底
   ], v);
+}
+
+/**
+ * 圓槽：開口的容器，內壁一路往下到槽底。
+ *
+ * 與煙囪的凹槽同一個做法、不同的用途 —— 這裡裝的是水，所以水面要**低於
+ * 槽緣**才讀得出深度。實心的圓柱做不到：頂面是一片實心的圓盤，水面壓到它
+ * 下面就整個埋進量體裡，資料是對的而畫面上什麼都沒有。
+ *
+ * 槽壁的厚度取 `TUB.INNER`，深度取 `TUB.DEPTH` —— 放水面的量體資料用的是
+ * 同一組數字。
+ */
+function tub(v: Volume): THREE.BufferGeometry {
+  const inner = 0.5 * TUB.INNER;
+  const floor = 1 - TUB.DEPTH;
+  return lathe([
+    new THREE.Vector2(0.5, 0),        // 槽底外緣
+    new THREE.Vector2(0.5, 1),        // 槽壁外側
+    new THREE.Vector2(inner, 1),      // 槽緣
+    new THREE.Vector2(inner, floor),  // 槽壁內側（法線朝軸心）
+    new THREE.Vector2(0, floor),      // 槽底
+  ], v);
+}
+
+/**
+ * 方池：`tub` 的矩形版，四片牆圍成一圈。
+ *
+ * 旋轉體轉不出矩形，而把盒子挖空要的是布林運算。四片實心的牆給得出同樣的
+ * 東西，而且更便宜：一片盒子朝池心的那一面本來就是**朝內**的正面，
+ * `FrontSide` 剔除不掉它。
+ *
+ * 兩片沿 x 的牆走滿全寬、兩片沿 z 的牆縮掉牆厚，四個角因此只屬於前者 ——
+ * 重疊的話那四個角會有兩層共面的皮。
+ */
+function basinWalls(v: Volume): THREE.BufferGeometry[] {
+  const tw = v.w * (1 - TUB.INNER) / 2;
+  const td = v.d * (1 - TUB.INNER) / 2;
+  const innerD = v.d - td * 2;
+  return [
+    ...([-1, 1] as const).map(s => frustum(
+      { ...v, z: v.z + s * (v.d - td) / 2, d: td }, v.w, td, 0, 0)),
+    ...([-1, 1] as const).map(s => frustum(
+      { ...v, x: v.x + s * (v.w - tw) / 2, w: tw, d: innerD },
+      tw, innerD, 0, 0)),
+  ];
 }
 
 /**
@@ -241,6 +281,10 @@ export function shapeOf(v: Volume): THREE.BufferGeometry[] {
       return [coolingTower(v)];
     case 'stack':
       return [chimney(v)];
+    case 'tub':
+      return [tub(v)];
+    case 'basin':
+      return basinWalls(v);
     case 'gable':
       return alongZ
         ? [frustum(v, v.w, v.d * RIDGE, 0, 0)]
