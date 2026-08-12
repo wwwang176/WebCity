@@ -3,7 +3,8 @@ import {
   BUILDING_VERT, BUILDING_FRAG, getBuildingMaterial, resetBuildingMaterial,
   sortedFacadeKeys,
 } from '../BuildingMaterial';
-import { PART_THRESHOLDS, SHELL_LIFT } from '../geometry/buildings/parts';
+import { PART_THRESHOLDS, SHELL_LIFT, WATER_BOB } from '../geometry/buildings/parts';
+import { METRES_PER_CELL } from '../../core/grid/constants';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from '../geometry/buildings/propBands';
 import { roofPaletteFor } from '../ColorPalettes';
 import { ZONE_TYPES } from '../geometry/buildings/registry';
@@ -56,7 +57,7 @@ describe('the shader uses the thresholds the parts module defines', () => {
   /**
    * 指定顏色的量體要真的拿到那個顏色。
    *
-   * 使用者要了兩次白色的水塔，兩次都拿到灰的。原因不在資料 —— 塔身一直
+   * 白色的水塔連續兩版都畫成灰的。原因不在資料 —— 塔身一直
    * 帶著 `color: [0.94, 0.95, 0.96]`，而測試也一直在驗那個陣列。問題是
    * **shader 沒有一個照著它畫的分支**：
    *
@@ -92,6 +93,24 @@ describe('the shader uses the thresholds the parts module defines', () => {
       .toBeGreaterThanOrEqual(1);
     expect(BUILDING_FRAG, 'shader 沒有用 SHELL_LIFT，那是第二份資料')
       .toContain(`${SHELL_LIFT.BASE} + ${SHELL_LIFT.TOP} * max(n.y, 0.0)`);
+  });
+
+  /**
+   * 水位是**真的**在動，不是只有顏色在動。
+   *
+   * fragment 端那道波光只改顏色，平面本身是靜止的 —— 一塊有花紋的地板。
+   * 要讓水位起伏只能在 vertex 端位移，而那需要頂點端也拿得到 `uTime`。
+   */
+  it('should make the water surface actually rise and fall', () => {
+    expect(BUILDING_VERT, '頂點端沒有時間，位移做不出來')
+      .toContain('uniform float uTime;');
+    expect(BUILDING_VERT, '水面沒有位移 —— 波光只是顏色').toContain('wPos.y +=');
+    expect(BUILDING_VERT, '位移沒有只挑水面')
+      .toContain(String(PART_THRESHOLDS.WATER_MIN));
+    // 只動朝上的面。連池壁一起動的話整個槽會跟著呼吸。
+    expect(BUILDING_VERT, '位移沒有只挑朝上的面').toContain('normal.y > 0.5');
+    expect(BUILDING_VERT, 'shader 沒有用 WATER_BOB，那是第二份資料')
+      .toContain(String(WATER_BOB.AMP_M / METRES_PER_CELL));
   });
 
   it('should branch on the shell tag before it reaches the wall branch', () => {

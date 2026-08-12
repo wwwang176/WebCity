@@ -42,7 +42,7 @@ describe('每一種公共建築都有代表色', () => {
     }
   });
 
-  /** 使用者的原話：「例如警察局就是藍色、消防局紅色等等」。 */
+  /** 警局藍、消防局紅 —— 這兩個是整組色票的錨點。 */
   it('should make the police station blue and the fire station red', () => {
     const [pr, pg, pb] = CIVIC_COLORS.police!;
     expect(pb, '警局不是藍的').toBeGreaterThan(pr);

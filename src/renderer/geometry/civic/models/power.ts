@@ -12,8 +12,8 @@ import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types'
  * 辨識特徵：**兩座冷卻塔**、一支高煙囪（頂上有紅色航警燈）、鋸齒屋頂的
  * 汽機廠房、變電場。
  *
- * 使用者：「發電廠的形象也要改一下 現在看不出是電廠」。原本的剪影是兩支
- * 圓柱煙囪加一棟廠房 —— 而那與旁邊的水廠（一支圓柱水塔加一棟機房）幾乎是
+ * 原本的剪影是兩支圓柱煙囪加一棟廠房 —— 而那與旁邊的水廠（一支圓柱水塔
+ * 加一棟機房）幾乎是
  * 同一個剪影，四座公用設施又共用同一組立面色票，於是「看不出是電廠」。
  *
  * 冷卻塔是電廠**獨有**的形狀：城市裡沒有第二種建築是有腰的旋轉體
@@ -24,12 +24,18 @@ import type { CivicPlan, CivicVolume, CivicDecal, CivicVehicle } from '../types'
  * 是同一家族。彼此的差別在**剪影**：冷卻塔／圓槽／土丘／方池。
  */
 
-const HALL_TOP = M(11.0);
-const HALL_ROOF = M(12.6);
+/**
+ * 全廠的高度**一律 ×0.7**。
+ *
+ * 動的是廠房、冷卻塔、煙囪與出線構架 —— 也就是剪影。變壓器與雨庇留著：
+ * 它們是人的尺度的東西，跟著縮只會讓開關場看起來像模型。
+ */
+const HALL_TOP = M(7.7);
+const HALL_ROOF = M(8.8);
 /** 高煙囪。航警燈疊在它上面。 */
-const STACK_TOP = M(25.0);
-/** 冷卻塔。底座直徑 9.6 m，高 17 m —— 塔身的比例接近真實的雙曲線塔。 */
-const COOL_TOP = M(17.0);
+const STACK_TOP = M(17.5);
+/** 冷卻塔。底座直徑 9.6 m，高 11.9 m。 */
+const COOL_TOP = M(11.9);
 const COOL_DIA = 9.6;
 
 /**
@@ -51,7 +57,7 @@ const massing: CivicVolume[] = [
   },
   {
     tag: 'coolingTower', part: PART_SHELL, color: CONCRETE, shape: 'cooling',
-    x: M(4.6), z: M(-6.6), w: M(8.4), d: M(8.4), y0: 0, y1: M(14.6),
+    x: M(4.6), z: M(-6.6), w: M(8.4), d: M(8.4), y0: 0, y1: M(10.2),
   },
 
   // ── 汽機廠房。冷卻塔前面那一排。 ────────────────────────────
@@ -66,11 +72,11 @@ const massing: CivicVolume[] = [
   },
 
   // ── 煙囪。冷卻塔冒的是水氣，燒的那一支還是要有。 ──────────────
-  // 使用者：「電廠的煙囪我覺得不需要窗戶，就單純煙囪就好」。它原本沒有標
-  // `part`，也就是**牆** —— 而 `FACADE_UTILITY` 的牆會在上面畫一條高窗帶。
+  // 煙囪不該有窗戶。它原本沒有標 `part`，也就是**牆** —— 而
+  // `FACADE_UTILITY` 的牆會在上面畫一條高窗帶。
   //
   // 然後：「煙囪好像只畫單面? 會看到破口 是不是可以做凹槽」。圓柱的頂是一片
-  // 實心的圓盤，而 25 m 高的東西在等角視角下最先看到的就是它的頂。
+  // 實心的圓盤，而這麼高的東西在等角視角下最先看到的就是它的頂。
   // `shape: 'stack'` 把頂做成一圈環加一個凹下去的管口 —— 見 `assemble.ts`
   // 的 `chimney`：凹槽的內壁法線朝軸心，所以俯視看得進去而不是穿過去。
   {
@@ -81,7 +87,7 @@ const massing: CivicVolume[] = [
   // 站在管口的**環**上（x 偏 1.05 m），不是懸在洞的正中央。
   {
     tag: 'beacon', part: PART_LAMP, shape: 'cylinder',
-    x: M(11.05), z: M(-0.6), w: M(0.5), d: M(0.5), y0: STACK_TOP, y1: M(25.6),
+    x: M(11.05), z: M(-0.6), w: M(0.5), d: M(0.5), y0: STACK_TOP, y1: M(18.1),
   },
 ];
 
@@ -114,11 +120,11 @@ const props: CivicVolume[] = [
   ...([3.0, 8.0] as const).flatMap((x): CivicVolume[] => [
     ...([-1.6, 1.6] as const).map((dz): CivicVolume => ({
       tag: 'gantryPost', part: PART_DETAIL,
-      x: M(x), z: M(9.4 + dz), w: M(0.4), d: M(0.4), y0: 0, y1: M(7.0),
+      x: M(x), z: M(9.4 + dz), w: M(0.4), d: M(0.4), y0: 0, y1: M(4.9),
     })),
     {
       tag: 'gantryBeam', part: PART_DETAIL,
-      x: M(x), z: M(9.4), w: M(0.4), d: M(3.6), y0: M(7.0), y1: M(7.4),
+      x: M(x), z: M(9.4), w: M(0.4), d: M(3.6), y0: M(4.9), y1: M(5.2),
     },
   ]),
 ];

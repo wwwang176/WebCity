@@ -9,7 +9,7 @@ import { BUILDING_VERT } from '../BuildingMaterial';
  * —— 它們**沒有** `instanceColor`，所以會落到 `#else` 分支。
  *
  * 那個分支以前寫死 `vec3(0.7)`：不論是警局還是消防局，牆一律是同一片灰。
- * 使用者要的「警察局藍色、消防局紅色」在那個寫法下做不到。
+ * 「警局藍、消防局紅」在那個寫法下做不到。
  */
 /**
  * 只切出決定 `vBldgColor` 的那一段。

@@ -17,8 +17,8 @@ const car = (o: Partial<CivicVehicle> = {}): CivicVehicle =>
 /**
  * 停在基地上的車輛。
  *
- * 使用者：「巡邏車看起來是一個方塊而已，是不是有車輛的物件可以參考?」
- * 有 —— `geometry/policeCar.ts` 一直都在，而且城市裡開著的警車就是它。
+ * 巡邏車原本只是一個方塊，而現成的幾何一直都在：`geometry/policeCar.ts`
+ * 就是城市裡開著的那台警車。
  * 停在警局停車場的那一台當然該是同一台。
  *
  * 車輛**不能**併進建築的 mesh：它們用 `MeshLambertMaterial({vertexColors})`，
@@ -128,7 +128,7 @@ describe('停放的車輛', () => {
    * 而 `assembleVehicles` 產出的是普通 `Mesh`，沒有逐實例色。於是停在消防局
    * 門口的消防車是**白的**。
    *
-   * 使用者說「消防車應該是暗紅色的」，而真相是它根本沒有顏色。
+   * 看起來像「消防車不夠暗紅」，而真相是它根本沒有顏色。
    */
   it('should paint a parked vehicle the colour that type drives in', () => {
     const named: Array<[CivicVehicle['kind'], string]> = [
@@ -178,8 +178,7 @@ describe('停放的車輛', () => {
    *
    * `VehicleRenderer` 把它畫成兩個 instanced mesh：機身與**垂直尾翼** ——
    * 分開是為了讓尾翼有自己的塗裝色。只取 `buildAirplaneGeometry()` 的話停在
-   * 停機坪上的飛機沒有尾翼，而那是一眼就看得到的（使用者：「飛機少了垂直
-   * 尾翼」）。
+   * 停機坪上的飛機沒有尾翼，而那是一眼就看得到的。
    *
    * 與警車、消防車同一條原則：停著的與開著的必須是同一台。
    */

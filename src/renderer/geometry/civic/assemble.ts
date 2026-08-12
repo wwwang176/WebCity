@@ -293,7 +293,7 @@ const PARKED_TINT: Partial<Record<CivicVehicleKind, number>> = {
  * 車身的頂點色寫成 (1, 1, 1)，真正的顏色是 `VehicleRenderer` 用
  * `setColorAt` 的逐實例色乘上去的 —— 而 `assembleVehicles` 產出的是普通
  * `Mesh`，沒有逐實例色。於是停在消防局門口的消防車是**白的**，而街上跑的
- * 是紅的。使用者看到的那台「不夠暗紅」的消防車其實根本沒有顏色。
+ * 是紅的。畫面上那台「不夠暗紅」的消防車其實根本沒有顏色。
  */
 export function civicVehicleTint(kind: CivicVehicleKind): number {
   const cfg = VEHICLE_CONFIG[VEHICLE_CONFIG_KEY[kind]];
@@ -335,8 +335,7 @@ export const PARKED_TAIL_TINT = 0x1e5aa8;
  *
  * 回傳陣列而不是單一幾何，是因為飛機不只一塊：`VehicleRenderer` 把機身與
  * **垂直尾翼**畫成兩個 instanced mesh，好讓尾翼有自己的塗裝色。只取機身的話
- * 停在停機坪上的飛機沒有尾翼 —— 而那是使用者一眼就看到的（「飛機少了垂直
- * 尾翼」）。
+ * 停在停機坪上的飛機沒有尾翼 —— 而那是一眼就看得到的。
  *
  * `tint` 是這一塊自己的顏色；沒有的話吃整台車的顏色。
  */

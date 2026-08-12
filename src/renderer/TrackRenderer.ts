@@ -13,6 +13,17 @@ import { injectHighlightShader, addHighlightAttribute } from './HighlightManager
  * 真的鋼軌會從站房的地板穿出來。
  */
 export const TRACK_WIDTH = 0.15;
+
+/**
+ * 軌道上方的淨空（格）。跨過軌道的東西下緣不得低於它。
+ *
+ * 「讓開軌道」其實是一個**淨空包絡線**，不是平面上的禁建區 —— 真實車站的
+ * 天橋、跨站站房、電車線橫擔全部跨在軌道上方。把它寫成禁建區的話，火車站
+ * 就只能是「軌道兩側各擺一棟、彼此不相連」的樣子 —— 那讀起來不是一座車站。
+ *
+ * 5.5 m 取電氣化路線的建築限界（車廂約 4 m，加上受電弓與導線的空間）。
+ */
+export const TRACK_CLEARANCE = 5.5 / 12;
 const RAIL_Y = 0.035;
 const TIE_Y = 0.03;
 const BALLAST_Y = 0.022;

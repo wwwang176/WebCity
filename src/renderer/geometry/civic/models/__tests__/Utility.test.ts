@@ -5,6 +5,7 @@ import { garbagePlan } from '../garbage';
 import { sewagePlan } from '../sewage';
 import {
   FACADE_UTILITY, PART_GROUND, PART_LAMP, PART_ROOF, PART_SHELL, PART_WATER,
+  WATER_MURK_MAX, WATER_BOB,
 } from '../../../buildings/parts';
 import { TERRAIN_COLORS } from '../../../../terrainColors';
 import { TerrainType } from '../../../../../core/grid/types';
@@ -98,9 +99,9 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
   /**
    * 煙囪與塔身也不准長窗戶，而且要**畫成清水混凝土**。
    *
-   * 使用者：「電廠的煙囪我覺得不需要窗戶，就單純煙囪就好」。這是同一個錯的
-   * 第三種形狀：不標 `part` 就是牆，而 `FACADE_UTILITY` 的牆會在上面畫一條
-   * 高窗帶 —— 覆土、水面、煙囪、冷卻塔全都中過。
+   * 煙囪不該有窗戶。這是同一個錯的第三種形狀：不標 `part` 就是牆，而
+   * `FACADE_UTILITY` 的牆會在上面畫一條高窗帶 —— 覆土、水面、煙囪、
+   * 冷卻塔全都中過。
    *
    * 第一版改成了 `PART_DETAIL`，窗戶是沒了，但那條分支寫死一片偏藍的金屬灰
    * （`vec3(m, m*1.02, m*1.06)`，m ≈ 0.42–0.58），`vBldgColor` 連讀都沒讀。
@@ -125,6 +126,16 @@ describe.each(PLANS)('%s', (_label, plan, type) => {
     }
   });
 
+  it('should keep the ripple inside the pool', () => {
+    // 水位起伏的振幅比水層本身還厚的話，水面會在池底之下與池壁之上來回
+    // 穿刺 —— 那看起來是水在漏。
+    for (const v of plan.massing.filter(v => v.part === PART_WATER)) {
+      const thick = m(v.y1 - v.y0);
+      expect(WATER_BOB.AMP_M, `${v.tag} 的水層只有 ${thick.toFixed(2)} m 厚`)
+        .toBeLessThanOrEqual(thick / 2);
+    }
+  });
+
   it('should light something without relying on office windows', () => {
     const lamps = [...plan.massing, ...plan.props].filter(v => v.part === PART_LAMP);
     expect(lamps.length, '廠區沒有自己的燈').toBeGreaterThan(0);
@@ -138,7 +149,7 @@ describe('電廠', () => {
   /**
    * 冷卻塔是這一棟的辨識訊號。
    *
-   * 使用者：「發電廠的形象也要改一下 現在看不出是電廠」。原本的剪影是兩支
+   * 沒有它，這一棟看不出是電廠。原本的剪影是兩支
    * 圓柱煙囪加一棟廠房，而旁邊的水廠是一支圓柱水塔加一棟機房 —— 兩者又
    * 共用同一組立面色票。城市裡沒有第二種建築是**有腰的旋轉體**，所以那個
    * 形狀本身就是「這是電廠」。
@@ -147,7 +158,7 @@ describe('電廠', () => {
     expect(towers.length, '冷卻塔不是兩座').toBe(2);
     for (const t of towers) {
       expect(t.shape, '冷卻塔不是有腰的 —— 那是一個筒倉').toBe('cooling');
-      expect(m(t.y1), '冷卻塔太矮').toBeGreaterThan(12);
+      expect(m(t.y1), '冷卻塔太矮').toBeGreaterThan(8);
       expect(t.w, '冷卻塔不是正圓').toBeCloseTo(t.d, 9);
       // 又高又細的話那是煙囪。真實冷卻塔的高徑比在 1.5～2 之間。
       expect((t.y1 - t.y0) / t.w, '冷卻塔太瘦').toBeLessThan(2.2);
@@ -158,17 +169,19 @@ describe('電廠', () => {
   /**
    * 煙囪頂上是一個**洞**，不是一片平蓋。
    *
-   * 使用者：「發電廠的煙囪好像只畫單面? 會看到破口 是不是可以做凹槽」。
-   * 25 m 的東西在等角視角下最先看到的就是它的頂，而圓柱的頂是實心圓盤。
-   * `shape: 'stack'` 是為此新增的旋轉體（見 `MassingGeometry.test.ts` 的
-   * 「stack volumes」—— 那裡測的是幾何真的凹下去、內壁法線真的朝軸心）。
+   * 十幾公尺高的東西在等角視角下最先看到的就是它的頂，而圓柱的頂是實心
+   * 圓盤。`shape: 'stack'` 是為此新增的旋轉體（見 `MassingGeometry.test.ts`
+   * 的「stack volumes」—— 那裡測的是幾何真的凹下去、內壁法線真的朝軸心）。
    */
   it('should still raise a chimney above everything', () => {
     // 冷卻塔冒的是水氣。燒的那一支還是要有，而且它是全場最高的東西。
     expect(stacks.length, '沒有煙囪').toBe(1);
     for (const s of stacks) {
       expect(s.shape, '煙囪的頂是一片實心圓盤').toBe('stack');
-      expect(m(s.y1), '煙囪太矮').toBeGreaterThan(18);
+      // 上下界一起釘住降過的高度 —— 只留下限的話，把它調回 25 m 不會有
+      // 任何東西轉紅。
+      expect(m(s.y1), '煙囪太矮').toBeGreaterThan(15);
+      expect(m(s.y1), '煙囪又長回去了 —— 這一版是降過 30% 的').toBeLessThanOrEqual(18);
       expect(s.y1, '煙囪沒有高過冷卻塔')
         .toBeGreaterThan(Math.max(...towers.map(t => t.y1)));
     }
@@ -237,7 +250,7 @@ describe('水廠', () => {
    * 這一格裡**沒有水**。
    *
    * 中間試過一版把河畫進基地（北端一條水面貼片加護岸、取水口、攔汙柵），
-   * 使用者：「抽水站是建立在陸地上的，所以不需要再抽水站裡面畫河」。
+   * 抽水廠蓋在陸地上，不必在基地裡畫河。
    *
    * 而這與火車站畫假鐵軌是同一個錯：真的水是**地形**畫的
    * （`TERRAIN_COLORS[WATER]`），這一格自己畫一條，就是兩份各說各話的水
@@ -274,8 +287,7 @@ describe('水廠', () => {
   /**
    * 白色的水塔。
    *
-   * 使用者說了兩次：「水塔應該是白色系，看起來比較乾淨」、「抽水站的水塔
-   * 改成白色，頂部也白色」。兩次都拿到灰的，而**資料一直是對的** ——
+   * 塔身與塔頂都要白。前兩版都畫成灰的，而**資料一直是對的** ——
    * 塔身一直帶著 `[0.94, 0.95, 0.96]`，這條測試的前一版驗的也正是那個陣列。
    *
    * 畫不出來的是 shader：塔身是牆，被 `FACADE_UTILITY` 壓成 0.70～0.90 倍
@@ -300,6 +312,9 @@ describe('水廠', () => {
     const tower = tagged(waterPlan, 'tower')[0]!;
     expect(tower, '沒有儲水塔').toBeTruthy();
     for (const w of walls) expect(tower.y1).toBeGreaterThan(w.y1 * 2);
+    // 上界一起釘住降過的高度 —— 只有下界的話，把它調回 15 m 不會有任何
+    // 東西轉紅（四座的最高點各不相同那條也照樣是綠的）。
+    expect(m(tower.y1), '儲水塔又長回去了').toBeLessThanOrEqual(11);
   });
 });
 
@@ -351,11 +366,21 @@ describe('汙水廠', () => {
     }
   });
 
-  it('should keep the sewage darker than the drinking water', () => {
-    // 兩廠並排時，池水的明暗是它們唯一不共用的東西。
+  /**
+   * 汙水是**土色**的，自來水是藍的。
+   *
+   * 前一版只要求「比自來水暗」，而水的色譜當時只有深藍到淺藍兩端 —— 再暗
+   * 也只是很深的藍，那條測試因此永遠是綠的卻換不到土色。色譜補了泥漿那一段
+   * 之後，這條改成問**落在哪一段**：兩座廠必須分別在轉折點的兩側，而那正是
+   * 「兩廠並排時分不分得出來」的實體。
+   */
+  it('should make the sewage muddy and the drinking water blue', () => {
     const dirty = tagged(sewagePlan, 'basinWater')[0]!;
     const clean = tagged(waterPlan, 'tankWater')[0]!;
-    expect(dirty.shade!, '汙水比自來水還乾淨').toBeLessThan(clean.shade!);
+    expect(dirty.shade!, '汙水不在泥漿那一段 —— 它會是藍的')
+      .toBeLessThan(WATER_MURK_MAX);
+    expect(clean.shade!, '自來水掉進泥漿那一段 —— 它會是土色的')
+      .toBeGreaterThan(WATER_MURK_MAX);
   });
 
   it('should bridge the basins with a walkway on posts', () => {

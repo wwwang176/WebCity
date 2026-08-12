@@ -313,7 +313,7 @@ describe('ground prop geometry', () => {
   });
 
   it('should put a tree on the lawn wherever the forecourt lays one', () => {
-    // 上一條的反向。少了它，「一棵樹都不種」也會過 —— 而使用者看到的正是
+    // 上一條的反向。少了它，「一棵樹都不種」也會過 —— 而畫面上看到的正是
     // 高密度與辦公區腳下那一塊空蕩蕩的草皮。
     for (const key of Object.keys(TARGET_HEIGHTS_M)) {
       const [zs, ds] = key.split(':');

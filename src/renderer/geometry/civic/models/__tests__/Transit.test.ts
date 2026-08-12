@@ -7,7 +7,7 @@ import { topOf } from '../../../buildings/massing/volume';
 import { civicColorOf } from '../../colors';
 import { CIVIC_INSET } from '../../types';
 import { propExtent } from '../../../props';
-import { TRACK_WIDTH } from '../../../../TrackRenderer';
+import { TRACK_WIDTH, TRACK_CLEARANCE } from '../../../../TrackRenderer';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
 import type { CivicPlan } from '../../types';
 
@@ -116,7 +116,6 @@ describe('公車站', () => {
   /**
    * 站牌前**不擺**靜態公車。
    *
-   * 使用者：「公車站本來就會有公車在路上跑，所以公車站內不需要放公車」。
    * 城市裡的公車是 `VehicleRenderer` 開著的真車，會照路線停靠 —— 站牌前再擺
    * 一台不會動的，就變成一台永遠停在那裡擋住真車的公車。
    *
@@ -150,7 +149,7 @@ describe('捷運站', () => {
   /**
    * 四面都下得去。
    *
-   * 使用者：「地鐵站的形象也要改一下，要看起來像可以從四面下樓的通道建築」。
+   * 它要讀成一座四面都能下樓的通道建築。
    * 這一條問的是「四個方向**各有一個**入口」，而不是「有四個入口」——
    * 四個全擠在同一邊也是四個。
    */
@@ -196,8 +195,8 @@ describe('捷運站', () => {
 
 describe('火車站', () => {
   it('should be the tallest of the four, but still a low building', () => {
-    // 四座裡唯一有「站體」的一座，所以它要最高 —— 但使用者：「火車站建築
-    // 應該可以低一點」。上限 8 m：一塊 12 m 的地上，超過那個高度的房子
+    // 四座裡唯一有「站體」的一座，所以它要最高 —— 但也要壓在 8 m 以內：
+    // 一塊 12 m 的地上，超過那個高度的房子
     // 在等角視角下的立面比它的屋頂還大，讀起來是一座塔。
     const top = topOf(trainStationPlan.massing);
     for (const [, other] of PLANS.filter(([, p]) => p !== trainStationPlan)) {
@@ -209,9 +208,8 @@ describe('火車站', () => {
   /**
    * 火車站不畫自己的鐵軌，而且要讓開真的那一條。
    *
-   * 使用者：「我記得好像會蓋在鐵軌邊緣? 所以不用畫出鐵軌吧? 你查證看看」。
-   * 查了：比「邊緣」更強 —— `canPlaceTransportStop` 規定火車站蓋在
-   * `railType ≠ 0` 的格子**上**，`placeTransportStopOnGrid` 只改
+   * 查過了，比「蓋在鐵軌邊緣」更強 —— `canPlaceTransportStop` 規定火車站
+   * 蓋在 `railType ≠ 0` 的格子**上**，`placeTransportStopOnGrid` 只改
    * buildingId／reserved／zoneType，所以軌道還在那一格裡，`TrackRenderer`
    * 照樣畫碴床、枕木與鋼軌，貼著**格心**。
    *
@@ -230,15 +228,53 @@ describe('火車站', () => {
       ...trainStationPlan.overhead,
     ];
     for (const v of all) {
-      const clear = v.z - v.d / 2 >= half - 1e-9 || v.z + v.d / 2 <= -half + 1e-9;
-      expect(clear, `${v.tag} 蓋在軌道走廊上 —— 真的鋼軌會從它裡面穿出來`)
-        .toBe(true);
+      const aside = v.z - v.d / 2 >= half - 1e-9 || v.z + v.d / 2 <= -half + 1e-9;
+      // 跨過去也可以，只要**跨得夠高**。走廊是淨空包絡線不是禁建區 ——
+      // 天橋與跨站站房本來就在軌道上方，而把它寫成禁建區的話，火車站就
+      // 只能是「兩側各擺一棟、彼此不相連」。
+      const above = v.y0 >= TRACK_CLEARANCE - 1e-9;
+      expect(aside || above,
+        `${v.tag} 蓋在軌道走廊上，而且沒有跨過去的淨空`).toBe(true);
     }
+    // 地面上的東西沒有「跨過去」這個選項。
     for (const f of trainStationPlan.fixtures) {
       const e = propExtent(f);
       const clear = f.z - e.z >= half - 1e-9 || f.z + e.z <= -half + 1e-9;
       expect(clear, `${f.kind} 站在軌道走廊上`).toBe(true);
     }
+  });
+
+  /**
+   * 站房與月台要**連在一起**。
+   *
+   * 原本站房在軌道北側、月台在南側，中間讓出走廊 —— 兩棟各自站著，讀起來
+   * 是「一棟房子旁邊有一塊月台」，不是一座車站。
+   *
+   * 連起來的唯一方式是**跨過去**（軌道在格心，繞不過去），而那正好就是
+   * 車站最好認的形象：跨站的天橋 + 落在月台上的樓梯塔。
+   */
+  it('should bridge the hall over to the platform', () => {
+    const deck = tagged(trainStationPlan, 'footbridge')[0]!;
+    const tower = tagged(trainStationPlan, 'stairTower')[0]!;
+    const hall = tagged(trainStationPlan, 'hall')[0]!;
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    expect(deck, '沒有天橋').toBeTruthy();
+    expect(tower, '天橋沒有落腳的樓梯塔').toBeTruthy();
+
+    // 天橋要真的跨過走廊 —— 兩端各在軌道的一側。
+    expect(deck.z - deck.d / 2, '天橋沒有伸到站房那一側')
+      .toBeLessThan(-TRACK_WIDTH);
+    expect(deck.z + deck.d / 2, '天橋沒有伸到月台那一側')
+      .toBeGreaterThan(TRACK_WIDTH);
+    // 而且兩端要接得上：站房那一端貼著站房，月台那一端落在樓梯塔上。
+    expect(deck.z - deck.d / 2, '天橋與站房之間斷了一截')
+      .toBeLessThanOrEqual(hall.z + hall.d / 2 + 1e-9);
+    expect(Math.abs(deck.x - tower.x), '天橋與樓梯塔沒有對齊')
+      .toBeLessThan(deck.w / 2);
+    expect(tower.y1, '樓梯塔沒有頂到橋面').toBeGreaterThanOrEqual(deck.y0 - 1e-9);
+    // 樓梯塔站在月台上。
+    expect(Math.abs(tower.z - platform.z), '樓梯塔沒有落在月台上')
+      .toBeLessThanOrEqual(platform.d / 2);
   });
 
   it('should put the hall and the platform on opposite sides of the track', () => {
@@ -262,8 +298,10 @@ describe('火車站', () => {
     const clock = tagged(trainStationPlan, 'clock')[0]!;
     const hall = tagged(trainStationPlan, 'hall')[0]!;
     expect(clock.part, '大鐘不會亮').toBe(PART_LAMP);
-    expect(clock.z - clock.d / 2, '大鐘埋在牆裡')
-      .toBeGreaterThanOrEqual(hall.z + hall.d / 2 - 1e-9);
+    // 掛在**站前**那一面。大鐘是給還在趕車的人看的 —— 朝月台那一側的話
+    // 只有已經進站的人看得到，而他們已經不需要它了。
+    expect(clock.z + clock.d / 2, '大鐘埋在牆裡')
+      .toBeLessThanOrEqual(hall.z - hall.d / 2 + 1e-9);
   });
 
   it('should carry the platform canopy on posts standing on the platform', () => {
@@ -285,8 +323,8 @@ describe('渡輪碼頭', () => {
   /**
    * 泊位**空著**。
    *
-   * 使用者：「渡船口船移除，然後重新布局一下」。這與公車站是同一條理由：
-   * 城市裡的渡輪是 `FerryAnimator` 開著的真船，會照航線靠泊 —— 碼頭邊再擺
+   * 這與公車站是同一條理由：城市裡的渡輪是 `FerryAnimator` 開著的真船，
+   * 會照航線靠泊 —— 碼頭邊再擺
    * 一艘不會動的，就變成一艘永遠佔著泊位的船擋住真的那艘。
    *
    * 而且水在**隔壁那一格**（`isShorePosition`：這一格是陸地，四鄰有一格是
@@ -321,7 +359,7 @@ describe('渡輪碼頭', () => {
   /**
    * 這一格裡**沒有水**。
    *
-   * 使用者：「渡船口一樣道理」（承接抽水廠：蓋在陸地上的東西不要自己畫水）。
+   * 與抽水廠同理：蓋在陸地上的東西不要自己畫水。
    * 而這裡比抽水廠更明確：`Game.placeTransportStop` 用 `isShorePosition`
    * 檢查，那個函式的定義就是「**這一格是陸地**，而且四鄰有一格是水」。
    *

@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import {
-  PART_THRESHOLDS, SHELL_LIFT, ZONE_CAT,
+  PART_THRESHOLDS, SHELL_LIFT, WATER_MURK_MAX, WATER_BOB, ZONE_CAT,
   FACADE_CIVIC, FACADE_UTILITY, FACADE_TRANSIT, FACADE_GREEN,
 } from './geometry/buildings/parts';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from './geometry/buildings/propBands';
 import { roofPaletteFor, type RoofColor } from './ColorPalettes';
 import { ZoneType } from '../core/grid/types';
+import { METRES_PER_CELL } from '../core/grid/constants';
 
 /**
  * 把 TS 數字寫成 GLSL 一定會當作 float 的形式 —— 整數在 GLSL 裡不是 float，
@@ -704,6 +705,9 @@ export const BUILDING_VERT = /* glsl */ `
 #include <common>
 #include <shadowmap_pars_vertex>
 
+// 頂點端也要時間 —— 水位的起伏是真的位移，不是 fragment 的花紋。
+uniform float uTime;
+
 attribute float aHighlight;
 attribute vec3 aHighlightColor;
 attribute float aOccupancy;
@@ -760,6 +764,18 @@ void main() {
   #endif
 
   vec4 wPos = world * vec4(position, 1.0);
+
+  // 水位上下起伏。**只動朝上的面** —— 連池壁一起動的話整個槽會跟著呼吸。
+  //
+  // fragment 端那道波光只是顏色，平面本身不動 —— 差別看得出來，所以真的
+  // 位移在這裡。相位吃世界座標，所以相鄰的兩座池不會同步。
+  if (vPartType > ${glslFloat(PART_THRESHOLDS.WATER_MIN)}
+    && vPartType < ${glslFloat(PART_THRESHOLDS.WATER_MAX)}
+    && normal.y > 0.5) {
+    wPos.y += sin(uTime * ${glslFloat(WATER_BOB.SPEED)}
+      + wPos.x * 5.0 + wPos.z * 3.3) * ${glslFloat(WATER_BOB.AMP_M / METRES_PER_CELL)};
+  }
+
   vWorldPos = wPos.xyz;
   vNormal = normalize(mat3(world) * normal);
   gl_Position = projectionMatrix * viewMatrix * wPos;
@@ -900,13 +916,24 @@ void main() {
     float lift = ${glslFloat(SHELL_LIFT.BASE)} + ${glslFloat(SHELL_LIFT.TOP)} * max(n.y, 0.0);
     color = vBldgColor * lift * lighting;
   } else if (isWater) {
-    // 深水 → 淺水由 B 通道決定（河 0.0、港池 0.4）。波光是兩道不同頻率的
-    // 正弦相乘，隨 uTime 走 —— 靜止的藍色塊在等角視角下看起來是藍地板。
+    // 色譜三段：**泥漿 → 深水 → 淺水**，由 B 通道挑。
+    //
+    // 原本只有深藍到淺藍兩端，而汙水是土色的 —— 那個顏色在藍色的色譜上
+    // 不存在，shade 調到 0 也只是很深的藍。轉折點在 parts.ts 的
+    // WATER_MURK_MAX，兩座廠的 shade 都對著它測。
+    //
+    // 波光是兩道不同頻率的正弦相乘，隨時間走 —— 靜止的色塊在等角視角下
+    // 看起來是一塊有顏色的地板，不是水。
+    vec3 murk = vec3(0.34, 0.27, 0.14);
     vec3 deep = vec3(0.05, 0.18, 0.34);
     vec3 shallow = vec3(0.13, 0.42, 0.66);
     float wave = sin(vWorldPos.x * 7.0 + uTime * 0.55)
       * sin(vWorldPos.z * 5.0 - uTime * 0.41);
-    color = mix(deep, shallow, clamp(vGroundShade + 0.28 + wave * 0.16, 0.0, 1.0));
+    float s = clamp(vGroundShade + wave * 0.1, 0.0, 1.0);
+    float murkMax = ${glslFloat(WATER_MURK_MAX)};
+    color = s < murkMax
+      ? mix(murk, deep, s / murkMax)
+      : mix(deep, shallow, (s - murkMax) / (1.0 - murkMax));
     color *= lighting;
     // 水面會反天空。比玻璃弱得多，但少了它，夜裡的水是一塊純黑。
     glassiness = 0.35;
@@ -956,7 +983,7 @@ void main() {
     // 大約一半的窗亮著，而不是「85% 的窗亮著」。
     //
     // 這兩件事差很多：85% 亮看起來仍然像一張發光的板子，一半亮才看得出
-    // 「有的開有的關」。使用者看過畫面之後指定的就是後者。
+    // 「有的開有的關」，而要的是後者。
     //
     // 哪幾扇亮會隨 uTime 的 epoch 換（見各分支），週期 150-300 秒 ——
     // 那個「開開關關」是慢的，與住宅同一個節奏。

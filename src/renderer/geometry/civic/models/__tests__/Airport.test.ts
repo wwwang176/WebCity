@@ -273,7 +273,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   /**
    * 停機坪上的三樣東西不准互相卡到：飛機、空橋、地勤車。
    *
-   * 使用者：「空橋跟工程車好像重疊了，飛機停妥後也會跟空橋卡到」。三者原本
+   * 空橋、工程車與停妥的飛機會互相卡到。三者原本
    * 全部擠在航廈牆與機位之間那條 0.7 m 的縫裡 —— 而每一條既有的驗收都是綠的，
    * 因為沒有任何一條在問「它們彼此會不會撞在一起」。
    *
@@ -325,8 +325,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   /**
    * 空橋是一條**臂**：一端接航廈，一端停在機頭前。
    *
-   * 使用者：「空橋還是沒對上，是不是應該是從建築物延伸出來，然後再機頭附近?」
-   * 兩端都要驗，因為前兩版各錯一端：第一版插進機身，第二版擺在機位旁邊
+   * 空橋要從建築延伸出來，接到機頭附近。兩端都要驗，因為前兩版各錯一端：第一版插進機身，第二版擺在機位旁邊
    * 那條縫裡 —— 與航廈、與飛機都沒有接觸，看起來是停機坪上飄著的一塊板。
    *
    * 機頭的位置由**實際的幾何**算，不是拿模型檔裡的常數再抄一次：
@@ -342,8 +341,8 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
       expect(b!.z - b!.d / 2, '空橋的根部沒有接在航廈的牆上')
         .toBeCloseTo(wall, 9);
 
-      // 使用者：「且是在飛機的左側(看起來像在飛機機頭旁邊)」。飛機停妥時
-      // 機頭朝 −z，所以左舷是 −x。
+      // 要在飛機的左舷（看起來像在機頭旁邊）。飛機停妥時機頭朝 −z，
+      // 所以左舷是 −x。
       expect(b!.x, '空橋不在飛機的左舷').toBeLessThan(g.x);
       // 而且要**開過機頭**：停在機頭前面的話它擋在飛機滑進來的路上，
       // 讀起來也是「頂著機頭」而不是「靠在機身旁邊」。
@@ -356,7 +355,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should keep the bridge slender enough to read as a bridge', () => {
-    // 使用者：「長度應該要*2，寬度/1.5」。一條又短又寬的臂讀起來是雨遮。
+    // 長度 ×2、寬度 ÷1.5：一條又短又寬的臂讀起來是雨遮。
     for (const b of plan.props.filter(v => v.tag === 'jetBridge')) {
       expect(m(b.d), `空橋只有 ${m(b.d).toFixed(1)} m 長`).toBeGreaterThan(5);
       expect(m(b.w), `空橋有 ${m(b.w).toFixed(1)} m 寬 —— 那是一座天橋`)
@@ -402,7 +401,7 @@ describe.each(PLANS)('%s', (_label, plan, type, size, w, h) => {
   });
 
   it('should park light-coloured ground vehicles by the terminal', () => {
-    // 使用者：「航廈附近也可以放一些工作車輛(淺色)」。深色的地勤車在深色的
+    // 航廈附近要有一些淺色的工作車輛。深色的地勤車在深色的
     // 柏油上看不出來，而地勤車實際上就是淺色的。
     const service = plan.vehicles.filter(v => v.tag === 'groundCrew');
     expect(service.length, '航廈附近沒有工作車輛').toBeGreaterThanOrEqual(2);

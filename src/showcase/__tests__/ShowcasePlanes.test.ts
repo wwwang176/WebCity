@@ -7,7 +7,7 @@ import { getAirportDimensions } from '../../core/transport/AirportSystem';
 /**
  * 展示區的飛機起降動畫。
  *
- * 使用者：「showcase 幫我補上飛機動畫，我比較好比較」。比較的對象是貼片 ——
+ * 展示區要有飛機動畫才比較得出來。比較的對象是貼片 ——
  * 飛機真的落在跑道上嗎、真的沿著滑行道走嗎、真的停進機位嗎。
  */
 describe('展示區的飛機', () => {
