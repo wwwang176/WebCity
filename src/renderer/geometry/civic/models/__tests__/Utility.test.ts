@@ -12,7 +12,7 @@ import { TerrainType } from '../../../../../core/grid/types';
 import { topOf } from '../../../buildings/massing/volume';
 import { civicColorOf } from '../../colors';
 import { METRES_PER_CELL } from '../../../../../core/grid/constants';
-import { TUB, STACK } from '../../../buildings/massing/metrics';
+import { TUB, COOL } from '../../../buildings/massing/metrics';
 import type { CivicPlan } from '../../types';
 
 const m = (cells: number) => cells * METRES_PER_CELL;
@@ -179,60 +179,108 @@ describe('電廠', () => {
   const stacks = tagged(powerPlan, 'stack');
 
   /**
-   * 這一棟的剪影是**兩支煙囪**。
+   * 這一棟的剪影是**一座粗的、有腰的塔**。
    *
-   * 冷卻塔（有腰的旋轉體）一度是它的辨識訊號 —— 城市裡沒有第二種建築是那個
-   * 形狀。但兩座塔在 24 m 的地上佔掉了整個北半，而它們的直徑接近 10 m，
-   * 在等角視角下是兩坨蓋住廠房的圓桶。改成兩支煙囪之後，剪影從「兩坨」
-   * 變成「兩根細的加一棟長的」，廠房的鋸齒屋頂才露得出來。
+   * 這個形狀換過三輪。兩支圓柱煙囪與旁邊的水廠幾乎同一個剪影（一根柱子加
+   * 一棟房子），而柱子到處都是；兩座冷卻塔的直徑接近 10 m，在 24 m 的地上
+   * 佔掉整個北半，等角視角下是兩坨蓋住廠房的圓桶。
    *
-   * 一高一矮：等高的兩支讀起來是複製貼上，而真實廠區的機組本來就分期蓋。
+   * 一座才成立：城市裡沒有第二種建築是**有腰的旋轉體**，所以那個形狀本身
+   * 就是「這是電廠」，而只放一座就留得下整個開關場。
    */
-  it('should raise two chimneys and no cooling towers', () => {
-    expect(tagged(powerPlan, 'coolingTower').length, '冷卻塔還在').toBe(0);
-    expect(stacks.length, '煙囪不是兩支').toBe(2);
-    for (const s of stacks) {
-      expect(s.shape, '煙囪的頂是一片實心圓盤').toBe('stack');
-      expect(s.w, '煙囪不是正圓').toBeCloseTo(s.d, 9);
-      // 上下界一起釘住高度 —— 只留下限的話，把它調回 25 m 不會有任何東西轉紅。
-      expect(m(s.y1), '煙囪太矮').toBeGreaterThan(12);
-      expect(m(s.y1), '煙囪又長回去了').toBeLessThanOrEqual(18);
-    }
-    expect(stacks[0]!.y1, '兩支煙囪一樣高').not.toBeCloseTo(stacks[1]!.y1, 3);
+  it('should raise a single thick waisted stack', () => {
+    expect(stacks.length, '煙囪不是一座').toBe(1);
+    const s = stacks[0]!;
+    expect(s.shape, '煙囪不是有腰的 —— 那是一根柱子').toBe('cooling');
+    expect(s.w, '煙囪不是正圓').toBeCloseTo(s.d, 9);
+    expect(m(s.w), '煙囪不夠粗').toBeGreaterThanOrEqual(10);
+    // 又高又細的話那又變回一根柱子。真實冷卻塔的高徑比在 1.5～2 之間。
+    expect((s.y1 - s.y0) / s.w, '煙囪太瘦').toBeLessThan(2.2);
+    // 上下界一起釘住高度 —— 只留下限的話調回去不會有任何東西轉紅。
+    expect(m(s.y1), '煙囪太矮').toBeGreaterThan(15);
+    expect(m(s.y1), '煙囪又長回去了').toBeLessThanOrEqual(22);
   });
 
   /**
-   * 管口要**幾乎凹到底**，而且槽底是深色的。
+   * 塔口要**凹得夠深**，而且裡面是深色的。
    *
-   * 十幾公尺高的東西在等角視角下最先看到的就是它的頂，而圓柱的頂是實心
-   * 圓盤（`shape: 'stack'` 就是為此新增的旋轉體）。但淺淺一圈凹槽還不夠：
-   * 管口的直徑只有塔身的一半，斜著看進去只看得到很小的一塊，凹槽淺的時候
-   * 那一塊仍然亮著，讀起來是頂蓋上的一道陰影而不是一個洞。
-   *
-   * 深度由幾何顧（見 `MassingGeometry.test.ts`），這裡顧的是**顏色**：
-   * 管壁跟著塔身走混凝土色的話，那個洞再深也是亮的 —— 管壁的法線是水平的，
-   * 拿到的光與塔身外側幾乎一樣，而這個引擎沒有環境光遮蔽。所以管口裡要有
-   * 一支深色的內襯，從槽底一路到管口。
+   * 深度由幾何顧（見 `MassingGeometry.test.ts` 的 `COOL.DEPTH`），這裡顧的是
+   * **顏色**：塔口內壁跟著塔身走混凝土色的話，那個口再深也是亮的 ——
+   * 內壁的法線是水平的，拿到的光與塔身外側幾乎一樣，而這個引擎沒有環境光
+   * 遮蔽。所以口裡要有一支深色的內襯，從凹槽的底一路到塔口。
    */
-  it('should darken the bore of each chimney', () => {
-    for (const s of stacks) {
-      const lining = tagged(powerPlan, 'boreLining')
-        .find(v => v.x === s.x && v.z === s.z);
-      expect(lining, '煙囪的管口沒有內襯').toBeTruthy();
-      expect(lining!.part, '內襯沒有走塗裝外殼 —— 那條路才照著顏色畫')
-        .toBe(PART_SHELL);
-      expect(Math.max(...lining!.color!), '內襯不夠暗 —— 那個洞會讀成一片平的')
-        .toBeLessThan(0.2);
-      // 它自己也要是開口的：實心圓柱的頂是一片圓盤，洞就只剩那麼深。
-      expect(lining!.shape, '內襯是實心的 —— 管口下面會蓋著一塊板子').toBe('tub');
-      // 塞在管口裡：比管口窄，從槽底一路頂到管口。
-      expect(lining!.w, '內襯比管口還寬 —— 它會從塔身穿出來')
-        .toBeLessThan(s.w * STACK.BORE * 2);
-      const bottom = s.y0 + (1 - STACK.DEPTH) * (s.y1 - s.y0);
-      expect(m(Math.abs(lining!.y0 - bottom)), '內襯不是從凹槽的底部開始')
-        .toBeLessThan(0.5);
-      expect(m(Math.abs(lining!.y1 - s.y1)), '內襯沒有頂到管口')
-        .toBeLessThan(0.5);
+  it('should darken the throat of the stack', () => {
+    const s = stacks[0]!;
+    const lining = tagged(powerPlan, 'throatLining')
+      .find(v => v.x === s.x && v.z === s.z);
+    expect(lining, '塔口沒有內襯').toBeTruthy();
+    expect(lining!.part, '內襯沒有走塗裝外殼 —— 那條路才照著顏色畫')
+      .toBe(PART_SHELL);
+    expect(Math.max(...lining!.color!), '內襯不夠暗 —— 那個口會讀成一片平的')
+      .toBeLessThan(0.2);
+    // 它自己也要是開口的：實心圓柱的頂是一片圓盤，口就只剩那麼深。
+    expect(lining!.shape, '內襯是實心的 —— 塔口下面會蓋著一塊板子').toBe('tub');
+    // 塞在塔口裡：比塔口窄，從凹槽的底一路頂到塔口。
+    expect(lining!.w, '內襯比塔口還寬 —— 它會從塔身穿出來')
+      .toBeLessThan(s.w * COOL.THROAT);
+    const bottom = s.y0 + (1 - COOL.DEPTH) * (s.y1 - s.y0);
+    expect(m(Math.abs(lining!.y0 - bottom)), '內襯不是從凹槽的底部開始')
+      .toBeLessThan(0.6);
+    expect(m(Math.abs(lining!.y1 - s.y1)), '內襯沒有頂到塔口')
+      .toBeLessThan(0.6);
+  });
+
+  /**
+   * 開關場：一排電桿，用**黑色的導線**接起來。
+   *
+   * 「電從這裡出去」是電廠一半的內容，而前一版只有三台變壓器加兩座門型
+   * 構架 —— 那是地上的幾個方塊，沒有任何東西在說它們彼此相連。
+   *
+   * 導線是這一段唯一真正在講話的東西：它把散落的設備串成一條線路，而且
+   * 那條線在等角視角下是**唯一**橫跨整個廠區的元素。
+   */
+  it('should string black wires between the pylons', () => {
+    const pylons = tagged(powerPlan, 'pylon');
+    const wires = powerPlan.props.filter(v => v.tag === 'wire');
+    expect(pylons.length, '電桿不夠多').toBeGreaterThanOrEqual(4);
+    for (const p of pylons) {
+      expect(m(p.y1), '電桿太矮 —— 高壓線要架在廠房之上').toBeGreaterThanOrEqual(8);
+    }
+    expect(wires.length, '導線不夠多').toBeGreaterThanOrEqual(8);
+    for (const w of wires) {
+      expect(w.part, '導線沒有走塗裝外殼 —— 那條路才畫得出黑色').toBe(PART_SHELL);
+      expect(Math.max(...w.color!), '導線不是黑的').toBeLessThan(0.15);
+      // 又細又長，而且是水平的。粗的話那是一根樑。
+      const thin = Math.min(m(w.w), m(w.d));
+      const long = Math.max(m(w.w), m(w.d));
+      expect(thin, `導線粗達 ${thin.toFixed(2)} m`).toBeLessThanOrEqual(0.15);
+      expect(long, '導線太短 —— 那是一截接頭').toBeGreaterThan(3);
+      expect(m(w.y1 - w.y0), '導線是垂下來的 —— 那是礙子串').toBeLessThanOrEqual(0.15);
+      expect(m(w.y0), '導線掛得太低 —— 人走得到').toBeGreaterThan(4);
+    }
+  });
+
+  /**
+   * 導線的兩端要真的**落在桿上**。
+   *
+   * 浮在空中的線段在其他每一條驗收裡都合法：夠細、夠長、夠黑、夠高。
+   * 而畫面上它是一根憑空開始、憑空結束的黑棒子。
+   */
+  it('should land both ends of every wire on something that holds it', () => {
+    const holders = [
+      ...tagged(powerPlan, 'pylon'),
+      ...powerPlan.props.filter(v => /gantry|crossarm/.test(v.tag ?? '')),
+    ];
+    for (const w of powerPlan.props.filter(v => v.tag === 'wire')) {
+      const alongX = w.w > w.d;
+      for (const end of [-1, 1] as const) {
+        const ex = alongX ? w.x + end * w.w / 2 : w.x;
+        const ez = alongX ? w.z : w.z + end * w.d / 2;
+        const held = holders.some(h =>
+          Math.abs(h.x - ex) <= h.w / 2 + 1e-9 && Math.abs(h.z - ez) <= h.d / 2 + 1e-9);
+        expect(held, `導線 (${m(ex).toFixed(1)}, ${m(ez).toFixed(1)}) 那一端沒有桿`)
+          .toBe(true);
+      }
     }
   });
 
@@ -255,11 +303,13 @@ describe('電廠', () => {
       const host = [...stacks].sort((p, q) =>
         Math.hypot(p.x - b.x, p.z - b.z) - Math.hypot(q.x - b.x, q.z - b.z))[0]!;
       expect(b.y0, '航警燈沒有站在煙囪頂上').toBeCloseTo(host.y1, 9);
-      // 站在管口的環上，不是懸在洞的正中央。
-      expect(Math.abs(b.x - host.x) - b.w / 2, '航警燈架在煙囪的洞上')
-        .toBeGreaterThan(0);
-      expect(Math.abs(b.x - host.x) + b.w / 2, '航警燈掛到煙囪外面去了')
-        .toBeLessThan(host.w / 2);
+      // 站在塔口的**環**上：內緣是塔口（掉進去），外緣是塔頂的外圈
+      // （掛到塔外面去）。塔頂比宣告的寬度窄，所以外界要用 `COOL.RIM`
+      // 而不是 `host.w / 2` —— 後者是底座的半徑，那一圈是空的。
+      expect(Math.abs(b.x - host.x) - b.w / 2, '航警燈架在塔口上')
+        .toBeGreaterThanOrEqual(host.w * COOL.THROAT / 2);
+      expect(Math.abs(b.x - host.x) + b.w / 2, '航警燈掛到塔外面去了')
+        .toBeLessThanOrEqual(host.w * COOL.RIM / 2);
     }
   });
 
@@ -270,7 +320,7 @@ describe('電廠', () => {
 
   it('should stand transformers in the switchyard', () => {
     expect(powerPlan.props.filter(v => v.tag === 'transformer').length)
-      .toBeGreaterThanOrEqual(3);
+      .toBeGreaterThanOrEqual(4);
   });
 });
 

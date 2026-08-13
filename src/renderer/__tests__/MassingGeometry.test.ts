@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { getMassingVariants, volumesFor } from '../geometry/buildings/massing';
 import { VARIANT_COUNT } from '../geometry/buildings/massing/dimensions';
-import { HALF_ENVELOPE, FLOOR_HEIGHT_UNITS, TUB }
+import { HALF_ENVELOPE, FLOOR_HEIGHT_UNITS, TUB, COOL }
   from '../geometry/buildings/massing/metrics';
 
 const MID_FLOOR = (FLOOR_HEIGHT_UNITS.MIN + FLOOR_HEIGHT_UNITS.MAX) / 2;
@@ -398,12 +398,10 @@ describe('cooling tower volumes', () => {
   });
 
   /**
-   * **畫面上那個破口是這一座，不是煙囪。**
+   * **等角視角下看得進去的破口是這一座。**
    *
-   * 「發電廠的煙囪好像只畫單面? 會看到破口」—— 第一輪我把它讀成煙囪，
-   * 而煙囪走的是 `CylinderGeometry`，本來就有頂蓋，沒事。真正破的是冷卻塔：
    * `LatheGeometry` 的輪廓從底走到頂就停了，**上下都沒有蓋**，也就是一根
-   * 開口的管子。建築材質是 `FrontSide`，所以視角一高、看得進管口的時候，
+   * 開口的管子。建築材質是 `FrontSide`，所以視角一高、看得進塔口的時候，
    * 對面的內壁被背面剔除 —— 看到的是穿過去的背景，塔就變成兩片破掉的殼。
    *
    * （真實的冷卻塔頂上確實是開的，所以「補一片平蓋」是錯的答案：那會讓它
@@ -415,21 +413,28 @@ describe('cooling tower volumes', () => {
     const pos = geo.getAttribute('position');
     const nrm = geo.getAttribute('normal');
     let inward = 0;
-    let floor = 0;
+    let floorY = -Infinity;
     for (let t = 0; t < pos.count / 3; t++) {
-      let cx = 0, cz = 0, nx = 0, ny = 0, nz = 0;
+      let cx = 0, cy = 0, cz = 0, nx = 0, ny = 0, nz = 0;
       for (let e = 0; e < 3; e++) {
         const i = t * 3 + e;
-        cx += pos.getX(i) / 3; cz += pos.getZ(i) / 3;
+        cx += pos.getX(i) / 3; cy += pos.getY(i) / 3; cz += pos.getZ(i) / 3;
         nx += nrm.getX(i) / 3; ny += nrm.getY(i) / 3; nz += nrm.getZ(i) / 3;
       }
       const r = Math.hypot(cx - box.x, cz - box.z);
       const radial = r < 1e-9 ? 0 : ((cx - box.x) * nx + (cz - box.z) * nz) / r;
       if (radial < -0.5) inward++;
-      if (ny > 0.9 && r < box.w / 4) floor++;
+      if (ny > 0.9 && r < box.w / 4) floorY = Math.max(floorY, cy);
     }
     expect(inward, '塔口沒有朝內的內壁 —— 俯視會直接看穿').toBeGreaterThan(0);
-    expect(floor, '凹槽沒有底 —— 那還是一個洞').toBeGreaterThan(0);
+    expect(floorY, '凹槽沒有底 —— 那還是一個洞').toBeGreaterThan(-Infinity);
+    // 而且要凹得夠深。塔口的直徑接近塔身的一半，斜著看進去只看得到很小的
+    // 一塊 —— 淺淺一圈在那個角度下讀起來是塔頂的一道紋路，不是一個口。
+    const depth = (box.y1 - floorY) / (box.y1 - box.y0);
+    // 下限寫死。只比 `COOL.DEPTH` 的話這一條是套套邏輯 —— 把常數調淺，
+    // 幾何跟著變淺，而測試照樣是綠的。
+    expect(depth, '塔口太淺').toBeGreaterThan(0.15);
+    expect(depth, '幾何沒有跟著 COOL.DEPTH 走').toBeCloseTo(COOL.DEPTH, 6);
   });
 });
 
@@ -583,7 +588,9 @@ describe('tub volumes', () => {
       f.ny > 0.9 && f.r < box.w / 2 * TUB.INNER * 0.9);
     expect(floor.length, '水槽沒有底 —— 俯視會直接看穿到地面').toBeGreaterThan(0);
     const depth = (box.y1 - Math.max(...floor.map(f => f.y))) / (box.y1 - box.y0);
-    expect(depth, '槽底不在該在的深度').toBeCloseTo(TUB.DEPTH, 6);
+    // 與塔口那一條同一個理由：下限要寫死，不然調淺常數就一起綠了。
+    expect(depth, '槽太淺 —— 水位低於槽緣就看不出來了').toBeGreaterThan(0.15);
+    expect(depth, '幾何沒有跟著 TUB.DEPTH 走').toBeCloseTo(TUB.DEPTH, 6);
   });
 
   it('should fill the box it declared', () => {

@@ -197,7 +197,7 @@ export class TrackRenderer {
   private ballastMesh: THREE.InstancedMesh | null = null;
   private readonly maxInstances = 32000;
 
-  build(scene: THREE.Scene, grid: Grid): void {
+  build(scene: THREE.Object3D, grid: Grid): void {
     this.dispose(scene);
 
     const cells: TrackCell[] = [];
@@ -230,7 +230,7 @@ export class TrackRenderer {
 
   // ── Ballast ────────────────────────────────────────────
 
-  private buildBallast(scene: THREE.Scene, cells: TrackCell[], extensions: Strip[]): void {
+  private buildBallast(scene: THREE.Object3D, cells: TrackCell[], extensions: Strip[]): void {
     const strips: Strip[] = [];
     const w = TRACK_WIDTH + 0.06;
 
@@ -259,7 +259,7 @@ export class TrackRenderer {
 
   // ── Rails ──────────────────────────────────────────────
 
-  private buildRails(scene: THREE.Scene, cells: TrackCell[], extensions: Strip[]): void {
+  private buildRails(scene: THREE.Object3D, cells: TrackCell[], extensions: Strip[]): void {
     const strips: Strip[] = [];
     const gauge = TRACK_WIDTH * 0.7;
     const rw = 0.012;
@@ -295,7 +295,7 @@ export class TrackRenderer {
 
   // ── Ties ───────────────────────────────────────────────
 
-  private buildTies(scene: THREE.Scene, cells: TrackCell[], extensions: Tie[]): void {
+  private buildTies(scene: THREE.Object3D, cells: TrackCell[], extensions: Tie[]): void {
     const ties: Tie[] = [];
     const spacing = 0.18;
 
@@ -357,7 +357,7 @@ export class TrackRenderer {
   // ── Shared helpers ─────────────────────────────────────
 
   private fillMesh(
-    scene: THREE.Scene, strips: Strip[],
+    scene: THREE.Object3D, strips: Strip[],
     geo: THREE.BoxGeometry, mat: THREE.MeshLambertMaterial, y: number,
   ): THREE.InstancedMesh {
     injectHighlightShader(mat);
@@ -422,7 +422,7 @@ export class TrackRenderer {
     return this._highlightCache;
   }
 
-  dispose(scene: THREE.Scene): void {
+  dispose(scene: THREE.Object3D): void {
     const meshes = [this.railMesh, this.tieMesh, this.ballastMesh];
     for (const mesh of meshes) {
       if (mesh) {

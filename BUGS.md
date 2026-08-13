@@ -4009,3 +4009,29 @@ stack，以及 `Utility.test.ts` 的水位與管口底色）。
 
 改成月台面上的一道 2 cm 薄帶（`platformEdge`，走 `props`）。凡是要貼在「架高
 的東西的頂面」上的線，都不能用標線層。
+
+## BUG-259 已修：展示區沒有畫真的那條軌道
+
+火車站蓋在軌道**上**（`canPlaceTransportStop` 要求 `railType ≠ 0`，而
+`placeTransportStopOnGrid` 只改 buildingId／reserved／zoneType），所以遊戲裡
+的鋼軌本來就從站中間穿過去 —— 那是 `TrackRenderer` 畫的，貼著格心。
+
+看不到的是**展示區**：那一頁只放建築，沒有 `TrackRenderer`，於是車站中間那條
+走廊是一片空的灰帶。而那讓「這一格不畫自己的鐵軌」（BUG-241）看起來像是漏畫
+—— 每次看截圖都會想再把鋼軌加回這一格，然後又踩回兩份鋼軌對不齊那個錯。
+
+補的是展示區（`showcase/track.ts`：一條七格長的直線軌道，中間那一格對準
+建築），不是建築。這一格仍然不准自己畫鋼軌。
+
+順帶把 `TrackRenderer.build` / `dispose` 的參數從 `THREE.Scene` 放寬成
+`THREE.Object3D` —— 軌道要放進一個可以整組位移的 group 裡。
+
+## BUG-260 已修：深度測試拿同一個常數比較，改常數兩邊一起動
+
+`should close the top with a recess` 驗的是「凹槽的深度等於 `COOL.DEPTH`」，
+而幾何也是照 `COOL.DEPTH` 生的 —— 把常數從 0.22 調成 0.06，幾何跟著變淺，
+測試照樣是綠的。回退驗證時抓到的。
+
+一條**只**比對常數的測試證明的是「幾何有照著常數走」，不是「那個值是對的」。
+兩件事都要：先寫死一個下限（凹槽不得淺於全高的 15%，再淺在等角視角下讀起來
+是塔頂的一道紋路），再比常數。`tub` 那一條有同樣的毛病，一起補了。

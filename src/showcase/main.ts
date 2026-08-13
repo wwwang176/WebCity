@@ -31,6 +31,7 @@ import { appearanceOf } from '../renderer/BuildingAppearance';
 import { mountControls, type ControlState } from './controls';
 import { attachCameraInput } from './cameraInput';
 import { placeCivic, civicTriangleReport, allMeshes, type CivicTris } from './civic';
+import { createShowcaseTrack } from './track';
 import { civicLayout, civicLayoutExtent } from './civicLayout';
 import { ShowcasePlanes, type PlaneField } from './planes';
 import { getCivicPlan, civicTypesDone } from '../renderer/geometry/civic/registry';
@@ -48,6 +49,14 @@ const weather = new WeatherRenderer(sceneManager, 60);
 
 const material = getBuildingMaterial();
 const shown: THREE.Mesh[] = [];
+/**
+ * 不是 mesh 的東西（目前只有火車站底下那條軌道）。
+ *
+ * `shown` 那條路徑會 `scene.remove(m)` 再 dispose 幾何，而 `remove` 只對
+ * **直接子物件**有效 —— 一組 group 的子節點丟進去的話，場景裡會留下一個
+ * 空殼，而下一次繪製再疊一組上去。
+ */
+const shownGroups: THREE.Object3D[] = [];
 
 /**
  * 遠景時關掉矮物件與懸挑 —— 與遊戲同一套門檻（見 `renderer/detailLOD`）。
@@ -79,6 +88,8 @@ function clear(): void {
     m.geometry.dispose();
   }
   shown.length = 0;
+  for (const g of shownGroups) sceneManager.scene.remove(g);
+  shownGroups.length = 0;
   detailLOD.clear();
 }
 
@@ -230,6 +241,15 @@ function renderCivic(fitCamera: boolean): void {
     // add() 會立刻套用目前的縮放狀態 —— 縮在遠景時動一下控制項會整批重畫，
     // 少了這一步細節就會全部冒回來。
     for (const m of placed.culled) detailLOD.add(m);
+
+    // 火車站底下那條**真的**軌道。它蓋在軌道上（`canPlaceTransportStop`
+    // 要求 `railType ≠ 0`），所以遊戲裡鋼軌本來就從站中間穿過去 —— 展示區
+    // 少的是 `TrackRenderer`，不是這一格漏畫。
+    if (slot.type === 'train_station') {
+      const track = createShowcaseTrack(slot);
+      sceneManager.scene.add(track);
+      shownGroups.push(track);
+    }
 
     const size = AIRPORT_SIZE_OF[slot.type];
     if (size) fields.push({ size, x: slot.x, z: slot.z });

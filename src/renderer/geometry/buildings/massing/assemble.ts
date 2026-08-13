@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { tagPart, PART_WALL } from '../parts';
-import { HALF_ENVELOPE, TUB, STACK } from './metrics';
+import { HALF_ENVELOPE, TUB, STACK, coolingProfile } from './metrics';
 import { maxAbsOf, partOf, type Volume } from './volume';
 import { METRES_PER_CELL } from '../../../../core/grid/constants';
 
@@ -135,40 +135,12 @@ function dome(v: Volume): THREE.BufferGeometry {
  * 中段比上下都窄。圓柱是直的、稜台是單調收放，兩個都做不出腰，所以這是
  * 唯一需要自己給側面輪廓的形狀。
  *
- * 用 `LatheGeometry` 把輪廓轉一圈。輪廓取雙曲線 r(t) = √(1 + ((t − w) / c)²)，
- * 正規化成「最寬處剛好填滿宣告的盒子」—— 與其他形狀一樣，量體算出來的邊界
- * 就是幾何真正佔的地方。
+ * 輪廓本身在 `metrics.ts`：塔口那一圈環的內外緣（`COOL.THROAT` / `COOL.RIM`）
+ * 是從同一條雙曲線算出來的，而量體資料要靠它們把航警燈放在環上。兩邊各算
+ * 一份的話，腰的參數一動，燈就會掉進塔口。
  */
 function coolingTower(v: Volume): THREE.BufferGeometry {
-  /** 腰在高度的幾成。0.65 ≈ 實際冷卻塔的比例。 */
-  const WAIST = 0.65;
-  /** 雙曲線的收斂速度。愈小腰愈細。 */
-  const C = 0.85;
-  const RINGS = 6;
-  const profile: THREE.Vector2[] = [];
-  for (let i = 0; i <= RINGS; i++) {
-    const t = i / RINGS;
-    profile.push(new THREE.Vector2(Math.sqrt(1 + ((t - WAIST) / C) ** 2), t));
-  }
-  // 最寬的一圈（底座）正規化成半徑 0.5，這樣縮放之後剛好填滿盒子。
-  const widest = Math.max(...profile.map(p => p.x));
-  for (const p of profile) p.x = (p.x / widest) * 0.5;
-
-  // 塔口折進去再往下 —— **這一段修的正是俯視時的那個破口。**
-  //
-  // 原本輪廓走到頂就停了，上下都沒有蓋，也就是一根開口的管子。建築材質是
-  // `FrontSide`，所以視角一高、看得進管口的時候，對面的內壁被背面剔除，
-  // 看到的是穿過去的背景 —— 整座塔讀成兩片破掉的殼。（煙囪走
-  // `CylinderGeometry`、本來就有頂蓋，沒事；破的一直是這兩座。）
-  //
-  // 補一片平蓋是錯的答案：真實的冷卻塔頂上就是開的，蓋起來它會變成筒倉。
-  // 折回去的這一段法線朝向軸心，所以俯視看到的是**內壁**，而那正是凹槽。
-  const lip = profile[profile.length - 1]!.x;
-  profile.push(new THREE.Vector2(lip * 0.86, 1));
-  profile.push(new THREE.Vector2(lip * 0.86, 0.94));
-  profile.push(new THREE.Vector2(0, 0.94));
-
-  return lathe(profile, v);
+  return lathe(coolingProfile().map(([r, y]) => new THREE.Vector2(r, y)), v);
 }
 
 /**

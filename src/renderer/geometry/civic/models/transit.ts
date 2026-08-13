@@ -1,5 +1,5 @@
 import {
-  FACADE_TRANSIT, PART_ROOF, PART_DETAIL, PART_LAMP, PART_GROUND,
+  FACADE_TRANSIT, PART_ROOF, PART_DETAIL, PART_LAMP, PART_GROUND, PART_SHELL,
 } from '../../buildings/parts';
 import { M } from '../../buildings/massing/metrics';
 import { civicColorOf } from '../colors';
@@ -269,6 +269,18 @@ const HALL_W = 5.1;
 /** 站房的中心與深度。整棟落在月台的範圍裡，不然它有一角是懸空的。 */
 const HALL_Z = 3.9;
 const HALL_D = 2.6;
+/** 電車線的柱子：站在月台邊那一條，讓開走廊。 */
+const MAST_X = [-4.4, -0.8, 2.8] as const;
+const MAST_Z = 2.0;
+/**
+ * 接觸線的高度（公尺）。
+ *
+ * 取 `TRACK_CLEARANCE` —— 那個常數就是電氣化路線的建築限界（車廂約 4 m，
+ * 加上受電弓與導線的空間）。低於它列車會撞到，而那是走廊那條驗收在守的。
+ */
+const WIRE_Y = 5.5;
+/** 接觸線的黑。走 `PART_SHELL` —— 那是唯一照著量體自己的顏色畫的分支。 */
+const WIRE = [0.05, 0.05, 0.06] as const;
 
 export const trainStationPlan: CivicPlan = {
   footprint: { w: 1, h: 1 },
@@ -330,23 +342,86 @@ export const trainStationPlan: CivicPlan = {
     // 月台邊緣的警示帶。壓在月台面上而不是走標線層 —— 標線層貼著地面。
     {
       tag: 'platformEdge', part: PART_GROUND, shade: 0.95,
-      x: 0, z: M(2.1), w: M(11.2), d: M(0.4),
+      x: 0, z: M(2.3), w: M(11.2), d: M(0.35),
       y0: M(PLATFORM_TOP), y1: M(PLATFORM_TOP + 0.02),
     },
     // 雨遮的四根柱，站在月台上。**沒有鋼軌** —— 那是 `TrackRenderer` 的事。
-    ...([-4.8, -1.2] as const).flatMap((x): CivicVolume[] =>
-      ([2.2, 4.9] as const).map((z): CivicVolume => ({
+    ...([-5.0, -0.6] as const).flatMap((x): CivicVolume[] =>
+      ([3.2, 4.9] as const).map((z): CivicVolume => ({
         tag: 'canopyPost', part: PART_DETAIL,
         x: M(x), z: M(z), w: M(0.18), d: M(0.18),
         y0: M(PLATFORM_TOP), y1: M(3.0),
       }))),
+
+    // ── 電車線 ────────────────────────────────────────────────
+    // 站房與月台都退到軌道的一側之後，這一格裡就沒有東西在講「軌道從這裡
+    // 穿過去」了 —— 而真的鋼軌就在格心（`TrackRenderer` 畫的）。電車線補的
+    // 正是這件事：柱子站在月台邊，懸臂伸過軌道上方，接觸線沿著軌道走滿整格。
+    //
+    // 它也是走廊那條驗收裡唯一走 `above` 分支的東西。走廊是**淨空包絡線**
+    // 不是禁建區，而 `TRACK_CLEARANCE` 取的就是電氣化路線的建築限界 ——
+    // 接觸線壓在那個高度上，列車從底下過。
+    ...MAST_X.flatMap((x): CivicVolume[] => [
+      {
+        tag: 'catenaryMast', part: PART_DETAIL,
+        x: M(x), z: M(MAST_Z), w: M(0.22), d: M(0.22),
+        y0: M(PLATFORM_TOP), y1: M(6.7),
+      },
+      {
+        // 懸臂。從柱子伸到軌道正上方 —— 短了的話接觸線是懸空掛著的。
+        tag: 'cantilever', part: PART_DETAIL,
+        x: M(x), z: M((MAST_Z - 0.2) / 2), w: M(0.18), d: M(MAST_Z + 0.2),
+        y0: M(WIRE_Y), y1: M(WIRE_Y + 0.2),
+      },
+    ]),
+    {
+      tag: 'contactWire', part: PART_SHELL, color: WIRE,
+      x: 0, z: 0, w: M(11.2), d: M(0.09), y0: M(WIRE_Y), y1: M(WIRE_Y + 0.09),
+    },
+
+    // ── 月台上的東西 ──────────────────────────────────────────
+    // 一塊空鋪面加一道雨遮讀起來是騎樓。長椅、垃圾桶與時刻表是「這裡有人在
+    // 等車」的訊號，而那正是月台與人行道的差別。
+    //
+    // 全部走 `props` 而不是 `fixtures`：地面物件站在 y = 0，放在月台的位置
+    // 上會有一半埋在月台裡。
+    ...([-3.8, -1.8] as const).map((x): CivicVolume => ({
+      tag: 'bench', part: PART_DETAIL,
+      x: M(x), z: M(4.7), w: M(1.6), d: M(0.5),
+      y0: M(PLATFORM_TOP), y1: M(1.35),
+    })),
+    {
+      tag: 'platformBin', part: PART_DETAIL,
+      x: M(-2.8), z: M(4.7), w: M(0.5), d: M(0.5),
+      y0: M(PLATFORM_TOP), y1: M(1.6),
+    },
+    {
+      // 時刻表。貼在站房朝月台那一面 —— 大鐘的旁邊。
+      tag: 'timetable', part: PART_DETAIL,
+      x: M(1.2), z: M(2.52), w: M(1.2), d: M(0.12), y0: M(1.9), y1: M(3.0),
+    },
+
+    // 月台盡頭的號誌機。這是「這是鐵路」最短的一句話 ——
+    // 夜裡它是月台盡頭那一點紅。
+    {
+      tag: 'signalMast', part: PART_DETAIL,
+      x: M(5.2), z: M(2.2), w: M(0.18), d: M(0.18),
+      y0: M(PLATFORM_TOP), y1: M(4.6),
+    },
+    {
+      tag: 'signalHead', part: PART_LAMP,
+      x: M(5.2), z: M(2.05), w: M(0.3), d: M(0.24), y0: M(3.6), y1: M(4.3),
+    },
   ],
   overhead: [
     {
       // 月台的雨遮。從月台的西端一路蓋到站房的牆邊 —— 這一片就是「月台」
       // 在等角視角下的全部，只蓋一小段的話剩下的空鋪面讀起來是廣場。
+      //
+      // z 向退到 2.8：月台邊那一條留給電車線的柱子，柱子穿過雨遮的話兩者
+      // 都讀不出來。真實月台的雨棚本來就不蓋到邊。
       tag: 'platformCanopy',
-      x: M(-2.6), z: M(3.6), w: M(6.0), d: M(3.4), y0: M(3.0), y1: M(3.3),
+      x: M(-2.6), z: M(4.05), w: M(6.0), d: M(2.5), y0: M(3.0), y1: M(3.3),
     },
   ],
   fixtures: [

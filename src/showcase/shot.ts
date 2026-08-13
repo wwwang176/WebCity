@@ -14,6 +14,7 @@ import { getBuildingMaterial } from '../renderer/BuildingMaterial';
 import { createShowcaseGround } from './ground';
 import { placeCivic } from './civic';
 import { getCivicPlan } from '../renderer/geometry/civic/registry';
+import { createShowcaseTrack } from './track';
 import { getInfraConfig, type InfraType } from '../core/building/InfraConfig';
 
 const q = new URLSearchParams(location.search);
@@ -32,6 +33,10 @@ getBuildingMaterial().uniforms.uTime!.value = num('u', 37);
 
 const plan = getCivicPlan(type);
 if (plan) placeCivic(plan, sceneManager.scene, 1);
+
+// 火車站蓋在軌道**上**，所以真的鋼軌會從站中間穿過去 —— 那條軌道是
+// `TrackRenderer` 畫的，而這一頁本來沒有它（見 `track.ts`）。
+if (type === 'train_station') sceneManager.scene.add(createShowcaseTrack());
 
 const cfg = getInfraConfig(type);
 sceneManager.setCameraTarget(0, 0);

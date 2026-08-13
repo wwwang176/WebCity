@@ -9,6 +9,7 @@ import { CIVIC_TRIANGLE_BUDGET } from '../types';
 import { getInfraConfig } from '../../../../core/building/InfraConfig';
 import { PART_THRESHOLDS, triangleCount, ZONE_CAT, PART_GROUND } from '../../buildings/parts';
 import { METRES_PER_CELL } from '../../../../core/grid/constants';
+import { TUB, STACK, COOL } from '../../buildings/massing/metrics';
 import type { Volume } from '../../buildings/massing/volume';
 
 const isLamp = (p: number) =>
@@ -26,13 +27,19 @@ const partOf = (v: Volume) => v.part ?? 0;
  * 內容物在容器裡的**幾何**是否正確由各自的形狀測試顧（`MassingGeometry` 的
  * tub / basin / stack，以及 `Utility.test.ts` 的水位與管口底色）。
  */
-const OPEN_VESSEL = new Set(['tub', 'basin', 'stack']);
+const OPEN_VESSEL: Record<string, number> = {
+  tub: TUB.DEPTH, basin: TUB.DEPTH, stack: STACK.DEPTH, cooling: COOL.DEPTH,
+};
 
 function contains(vessel: Volume, inner: Volume): boolean {
-  if (!OPEN_VESSEL.has(vessel.shape ?? '')) return false;
+  const depth = OPEN_VESSEL[vessel.shape ?? ''];
+  if (depth === undefined) return false;
+  // 空腔只有頂上那一段。低於槽底的東西是真的被埋起來了 —— 那一段是實心的。
+  const cavity = vessel.y1 - depth * (vessel.y1 - vessel.y0);
   return Math.abs(inner.x - vessel.x) + inner.w / 2 <= vessel.w / 2 + 1e-9
     && Math.abs(inner.z - vessel.z) + inner.d / 2 <= vessel.d / 2 + 1e-9
-    && inner.y1 <= vessel.y1 + 1e-9;
+    && inner.y1 <= vessel.y1 + 1e-9
+    && inner.y0 >= cavity - 1e-9;
 }
 
 /**

@@ -334,6 +334,88 @@ describe('火車站', () => {
     expect(edge.y0, '邊緣帶沒有壓在月台面上').toBeCloseTo(platform.y1, 9);
   });
 
+  /**
+   * 電車線：**唯一跨過軌道的東西**。
+   *
+   * 火車站蓋在軌道**上**（`canPlaceTransportStop` 要求 `railType ≠ 0`，而
+   * `placeTransportStopOnGrid` 不動 railType），所以真的鋼軌會從這一格的
+   * 格心穿過去 —— 那條軌道由 `TrackRenderer` 畫，這一格自己不畫。
+   *
+   * 站房與月台都退到軌道的一側之後，這一格裡就沒有任何東西在講「軌道從
+   * 這裡穿過去」了。電車線補的正是這件事：柱子站在月台邊，懸臂伸過軌道
+   * 上方，接觸線沿著軌道走滿整格。
+   *
+   * 而它也是走廊那條驗收裡唯一走 `above` 分支的東西 —— 走廊是**淨空包絡線**
+   * 不是禁建區，`TRACK_CLEARANCE` 取的就是電氣化路線的建築限界。
+   */
+  it('should hang the catenary over the track', () => {
+    const masts = trainStationPlan.props.filter(v => v.tag === 'catenaryMast');
+    const arms = trainStationPlan.props.filter(v => v.tag === 'cantilever');
+    const wires = trainStationPlan.props.filter(v => v.tag === 'contactWire');
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+
+    expect(masts.length, '電車線的柱子不夠').toBeGreaterThanOrEqual(3);
+    for (const p of masts) {
+      // 站在月台上，而且讓開走廊 —— 柱子沒有「跨過去」這個選項。
+      expect(p.y0, '柱子沒有站在月台上').toBeCloseTo(platform.y1, 9);
+      expect(Math.abs(p.z) - p.d / 2, '柱子站在軌道上')
+        .toBeGreaterThanOrEqual(TRACK_WIDTH - 1e-9);
+    }
+
+    expect(arms.length, '懸臂不夠').toBeGreaterThanOrEqual(3);
+    for (const a of arms) {
+      // 真的伸過軌道，而且高過建築限界。
+      expect(a.z - a.d / 2, '懸臂沒有伸到軌道上方').toBeLessThan(0);
+      expect(a.y0, '懸臂低於建築限界 —— 列車會撞到')
+        .toBeGreaterThanOrEqual(TRACK_CLEARANCE - 1e-9);
+    }
+
+    expect(wires.length, '沒有接觸線').toBeGreaterThan(0);
+    for (const w of wires) {
+      expect(Math.max(...w.color!), '接觸線不是黑的').toBeLessThan(0.15);
+      expect(w.y0, '接觸線低於建築限界')
+        .toBeGreaterThanOrEqual(TRACK_CLEARANCE - 1e-9);
+      // 沿著軌道走滿整格 —— 只有一小段的話那是一根掛在空中的棒子。
+      expect(m(w.w), '接觸線太短').toBeGreaterThan(10);
+      expect(Math.abs(w.z), '接觸線沒有走在軌道正上方').toBeLessThan(TRACK_WIDTH);
+    }
+  });
+
+  /**
+   * 月台上要有**人用得到的東西**。
+   *
+   * 一塊空鋪面加一道雨遮讀起來是騎樓。長椅、垃圾桶與時刻表是「這裡有人在
+   * 等車」的訊號，而那正是月台與人行道的差別。
+   *
+   * 全部走 `props` 而不是 `fixtures`：地面物件站在 y = 0，放在月台的位置上
+   * 會有一半埋在月台裡。
+   */
+  it('should furnish the platform for people waiting on it', () => {
+    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    const kit = trainStationPlan.props.filter(v =>
+      /bench|platformBin|timetable/.test(v.tag ?? ''));
+    expect(kit.length, '月台上什麼都沒有').toBeGreaterThanOrEqual(4);
+    for (const v of kit) {
+      expect(v.y0, `${v.tag} 埋在月台裡或浮在空中`)
+        .toBeGreaterThanOrEqual(platform.y1 - 1e-9);
+      const onDeck = Math.abs(v.x - platform.x) + v.w / 2 <= platform.w / 2 + 1e-9
+        && Math.abs(v.z - platform.z) + v.d / 2 <= platform.d / 2 + 1e-9;
+      expect(onDeck, `${v.tag} 站到月台外面去了`).toBe(true);
+    }
+    expect(trainStationPlan.props.some(v => v.tag === 'bench'), '月台沒有長椅')
+      .toBe(true);
+  });
+
+  it('should stand a lit signal at the end of the platform', () => {
+    // 號誌機是「這是鐵路」最短的一句話。燈頭會亮 —— 夜裡它是月台盡頭那一點紅。
+    const head = trainStationPlan.props.find(v => v.tag === 'signalHead')!;
+    const mast = trainStationPlan.props.find(v => v.tag === 'signalMast')!;
+    expect(head, '沒有號誌機').toBeTruthy();
+    expect(head.part, '號誌燈不會亮').toBe(PART_LAMP);
+    expect(head.y0, '燈頭沒有裝在桿上').toBeGreaterThan(mast.y0);
+    expect(head.y1, '燈頭高過桿頂').toBeLessThanOrEqual(mast.y1 + 1e-9);
+  });
+
   it('should hang a lit clock on the front', () => {
     const clock = tagged(trainStationPlan, 'clock')[0]!;
     const hall = tagged(trainStationPlan, 'hall')[0]!;

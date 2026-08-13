@@ -85,6 +85,62 @@ export const STACK = {
   DEPTH: 0.86,
 } as const;
 
+/** 冷卻塔的腰在高度的幾成。0.65 ≈ 實際冷卻塔的比例。 */
+const COOL_WAIST = 0.65;
+/** 雙曲線的收斂速度。愈小腰愈細。 */
+const COOL_C = 0.85;
+const COOL_RINGS = 6;
+/** 塔口折回去之後的內緣，佔塔頂外緣的幾成。 */
+const COOL_LIP = 0.86;
+
+/** 側面輪廓的半徑：r(t) = √(1 + ((t − waist) / c)²)。 */
+function coolRadius(t: number): number {
+  return Math.sqrt(1 + ((t - COOL_WAIST) / COOL_C) ** 2);
+}
+
+/** 最寬的一圈（底座）正規化成半徑 0.5，縮放之後剛好填滿宣告的盒子。 */
+const COOL_NORM = 0.5 / Math.max(
+  ...Array.from({ length: COOL_RINGS + 1 }, (_, i) => coolRadius(i / COOL_RINGS)));
+
+/**
+ * 冷卻塔的比例。
+ *
+ * `RIM` 與 `THROAT` 是**算出來的**而不是抄的：它們由雙曲線與 `COOL_LIP`
+ * 決定，而航警燈要站在兩者之間那一圈環上。手寫一組數字的話，哪天腰的參數
+ * 一動，燈就會掉進塔口或掛到塔外面 —— 而那不會有任何東西報錯。
+ */
+export const COOL = {
+  /** 塔口凹槽的深度，佔全高的比例。 */
+  DEPTH: 0.22,
+  /** 塔頂外緣的直徑，佔宣告寬度的幾成。 */
+  RIM: coolRadius(1) * COOL_NORM * 2,
+  /** 塔口的直徑佔比。 */
+  THROAT: coolRadius(1) * COOL_NORM * COOL_LIP * 2,
+} as const;
+
+/**
+ * 冷卻塔的側面輪廓：`[半徑, 高度]`，兩者都已正規化。
+ *
+ * 塔口折進去再往下 —— 這一段修的是俯視時的破口。輪廓走到頂就停的話，上下
+ * 都沒有蓋，也就是一根開口的管子；建築材質是 `FrontSide`，視角一高、看得進
+ * 塔口的時候，對面的內壁被背面剔除，看到的是穿過去的背景。
+ *
+ * 補一片平蓋是錯的答案：真實的冷卻塔頂上就是開的，蓋起來它會變成筒倉。
+ * 折回去的這一段法線朝向軸心，所以俯視看到的是**內壁**，而那正是凹槽。
+ */
+export function coolingProfile(): Array<[number, number]> {
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i <= COOL_RINGS; i++) {
+    const t = i / COOL_RINGS;
+    pts.push([coolRadius(t) * COOL_NORM, t]);
+  }
+  const lip = pts[pts.length - 1]![0] * COOL_LIP;
+  pts.push([lip, 1]);
+  pts.push([lip, 1 - COOL.DEPTH]);
+  pts.push([0, 1 - COOL.DEPTH]);
+  return pts;
+}
+
 /**
  * 貼著地面的東西該放多高（格）。
  *
