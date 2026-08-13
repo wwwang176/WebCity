@@ -31,12 +31,19 @@ export interface TrafficLight {
   roadFlags: number;
 }
 
-/** Traffic light configuration */
+/**
+ * Traffic light configuration
+ *
+ * 秒數是**實際秒數**，而車速是格／秒 —— 兩者沒有任何連結，所以車速一改，路口
+ * 的通行量就會無聲地跟著變（`EDGE_SPEED` 減半時，一次綠燈從 14 台掉到 7 台）。
+ * 真正要維持的是**放行台數**，驗收釘的也是那個，不是秒數本身
+ * （`JunctionThroughput.test.ts`）。
+ */
 export const TRAFFIC_LIGHT = {
   /** Default seconds per phase (standard intersection) */
-  PHASE_DURATION: 4,
+  PHASE_DURATION: 8,
   /** Seconds per phase for large intersections (4-way + FOUR_LANE or above) */
-  PHASE_DURATION_LARGE: 8,
+  PHASE_DURATION_LARGE: 16,
   /** All-red clearance duration between phase switches */
   CLEARANCE_DURATION: 1,
 } as const;
