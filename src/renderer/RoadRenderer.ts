@@ -38,6 +38,12 @@ const CAP = { road: 3, sidewalk: 4, marking: 14, centerLine: 2, curvedCL: 1, cro
  */
 export const STREET_LAMP_HEIGHT = 0.28;
 
+/** 路燈燈泡的半徑（格）。號誌的燈泡以它為上限。 */
+export const STREET_LAMP_BULB_RADIUS = 0.018;
+
+/** 路燈燈桿的顏色。號誌桿直接沿用 —— 路邊的金屬桿件應該是同一個顏色。 */
+export const STREET_LAMP_COLOR = 0x555555;
+
 export class RoadRenderer {
   private roadMesh: THREE.InstancedMesh | null = null;
   private sidewalkMesh: THREE.InstancedMesh | null = null;
@@ -163,13 +169,13 @@ export class RoadRenderer {
     const poleH = STREET_LAMP_HEIGHT;
     const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4);
     pole.translate(0, poleH / 2, 0);
-    const head = new THREE.SphereGeometry(0.018, 4, 3);
+    const head = new THREE.SphereGeometry(STREET_LAMP_BULB_RADIUS, 4, 3);
     head.translate(0, poleH + 0.01, 0);
     const merged = mergeGeometries([pole, head]);
     pole.dispose();
     head.dispose();
     if (merged) {
-      const lampMat = new THREE.MeshLambertMaterial({ color: 0x555555 });
+      const lampMat = new THREE.MeshLambertMaterial({ color: STREET_LAMP_COLOR });
       injectHighlightShader(lampMat);
       this.lampMesh = new THREE.InstancedMesh(merged, lampMat, this.maxRoads * CAP.lamp);
       this.lampMesh.count = 0;

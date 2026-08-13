@@ -2,10 +2,10 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { TrafficLightRenderer, signalMounts, SIGNAL, type SignalMount }
   from '../TrafficLightRenderer';
-import { STREET_LAMP_HEIGHT } from '../RoadRenderer';
+import { STREET_LAMP_HEIGHT, STREET_LAMP_BULB_RADIUS } from '../RoadRenderer';
 import { ROAD_WIDTHS } from '../RoadStripBuilder';
 import { SIDEWALK_WIDTH } from '../../core/traffic/SidewalkGraph';
-import { RoadType, RoadDirection, getLaneCount } from '../../core/road/types';
+import { RoadType, RoadDirection } from '../../core/road/types';
 import { LaneGraph, LANE_GEOMETRY, type Direction } from '../../core/traffic/LaneGraph';
 import { makeGridLookup } from '../../../tests/helpers/makeGridLookup';
 
@@ -37,8 +37,11 @@ const ALL = [
 
 const DIRS: Direction[] = ['north', 'south', 'east', 'west'];
 
-function mountsFor(roadType: number): SignalMount[] {
-  return signalMounts({ x: CX, y: CY, roadType });
+const ALL_WAYS = RoadDirection.NORTH | RoadDirection.SOUTH
+  | RoadDirection.EAST | RoadDirection.WEST;
+
+function mountsFor(roadType: number, roadFlags: number = ALL_WAYS): SignalMount[] {
+  return signalMounts({ x: CX, y: CY, roadType, roadFlags });
 }
 
 /** 這一支離路中心線多遠（垂直於車流方向的那一軸）。 */
@@ -139,17 +142,31 @@ describe('號誌的擺放', () => {
     }
   });
 
-  it.each(ALL)('should hang the head over the lanes it governs (%s)', (roadType) => {
-    // 燈頭要在該向車道的正上方：至少過第一條車道的中心，至多到最外側車道的邊。
-    const lanes = getLaneCount(roadType);
+  it.each(ALL)('should hang the whole head over the carriageway (%s)', (roadType) => {
+    // 燈頭至少要伸過第一條車道的中心，而且**整顆**在柏油路上方 —— 半顆探出
+    // 路緣的話，從等角視角看會像是掛在人行道上。
+    //
+    // 上界是路緣而不是「最外側車道的外緣」：橫臂縮到 `ARM_REACH` 之後，燈頭
+    // 本來就會落在車道與路緣之間，那是刻意的長度，不是跑出界。
     const laneWidth = LANE_GEOMETRY.LANE_WIDTH;
+    const kerb = ROAD_WIDTHS[roadType]! / 2;
     for (const m of mountsFor(roadType)) {
       const head = Math.abs(lateral(m, 'head'));
       // 容差是浮點的：位置是「格心 ± 偏移」算出來的，10 − 9.91 不會剛好是 0.09。
       expect(head, `${m.from} 的燈頭還沒到第一條車道上方`)
         .toBeGreaterThanOrEqual(laneWidth / 2 - 1e-9);
-      expect(head, `${m.from} 的燈頭超出該向車道的範圍`)
-        .toBeLessThanOrEqual(lanes * laneWidth);
+      expect(head + SIGNAL.HEAD_SIZE / 2, `${m.from} 的燈頭有一半探出路緣`)
+        .toBeLessThanOrEqual(kerb);
+    }
+  });
+
+  it.each(ALL)('should still reach past the kerb after the arm was shortened (%s)', (roadType) => {
+    // 橫臂縮短的下限：再短就吊在人行道上，那跟沒有橫臂一樣。
+    const kerb = ROAD_WIDTHS[roadType]! / 2;
+    for (const m of mountsFor(roadType)) {
+      const reach = Math.abs(lateral(m, 'pole')) - Math.abs(lateral(m, 'head'));
+      expect(reach, `${m.from} 的橫臂沒有把燈頭帶進路面`)
+        .toBeGreaterThan(Math.abs(lateral(m, 'pole')) - kerb);
     }
   });
 
@@ -168,6 +185,12 @@ describe('號誌的擺放', () => {
       expect(along(m), `${m.from} 那一支離停止線太遠`)
         .toBeCloseTo(SIGNAL.STOP_LINE, 9);
     }
+  });
+
+  it('should keep the bulb no larger than the street lamp\'s', () => {
+    // 號誌的燈泡比路燈還大顆的話，路口會變成一排大燈籠。
+    expect(SIGNAL.HEAD_SIZE, '燈泡比路燈的還大')
+      .toBeLessThanOrEqual(STREET_LAMP_BULB_RADIUS * 2);
   });
 
   it('should stand at least as tall as the street lamps beside it', () => {
@@ -190,10 +213,48 @@ describe('號誌的擺放', () => {
   });
 });
 
+/**
+ * 沒有路的那一邊不要立號誌。
+ *
+ * 號誌從三向路口起就會設（`syncTrafficLightsWithGrid` 的 `dirs >= 3`），而渲染端
+ * 原本固定畫四支 —— T 字路口那一支立在草地上，管著一條不存在的路。
+ */
+describe('T 字路口', () => {
+  const T = RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST;
+
+  it('should leave out the approach that has no road', () => {
+    const mounts = mountsFor(RoadType.FOUR_LANE, T);
+    expect(mounts.length, 'T 字路口還是畫了四支').toBe(3);
+    expect(mounts.some(m => m.from === 'west'), '西邊沒有路，卻立了一支').toBe(false);
+    for (const d of ['north', 'south', 'east'] as const) {
+      expect(mounts.some(m => m.from === d), `少了從${d}來的那一支`).toBe(true);
+    }
+  });
+
+  it('should add the fourth one back when the road is completed', () => {
+    const all = RoadDirection.NORTH | RoadDirection.SOUTH
+      | RoadDirection.EAST | RoadDirection.WEST;
+    expect(mountsFor(RoadType.FOUR_LANE, all).length, '補上西邊那條路之後沒有補上號誌')
+      .toBe(4);
+  });
+
+  it('should still place the ones it keeps exactly where the crossroads put them', () => {
+    // 少畫一支不能讓其餘幾支跟著位移 —— 位置只由方向決定，與有幾支無關。
+    const cross = new Map(mountsFor(RoadType.FOUR_LANE).map(m => [m.from, m]));
+    for (const m of mountsFor(RoadType.FOUR_LANE, T)) {
+      const same = cross.get(m.from)!;
+      expect(m.poleX, `${m.from} 的桿位移了`).toBeCloseTo(same.poleX, 9);
+      expect(m.poleZ, `${m.from} 的桿位移了`).toBeCloseTo(same.poleZ, 9);
+      expect(m.headX, `${m.from} 的燈頭位移了`).toBeCloseTo(same.headX, 9);
+      expect(m.headZ, `${m.from} 的燈頭位移了`).toBeCloseTo(same.headZ, 9);
+    }
+  });
+});
+
 describe('號誌的渲染', () => {
   const light = {
     x: CX, y: CY, phase: 0, timer: 1, phaseDuration: 4,
-    clearing: false, roadType: RoadType.FOUR_LANE,
+    clearing: false, roadType: RoadType.FOUR_LANE, roadFlags: ALL_WAYS,
   };
 
   function instanced(scene: THREE.Scene): THREE.InstancedMesh[] {

@@ -22,6 +22,13 @@ export interface TrafficLight {
    * 常數，那個常數對任何一種路都是錯的。
    */
   roadType: number;
+  /**
+   * 這一格接了哪幾個方向（`RoadDirection` 的位元）。
+   *
+   * 號誌從**三向**路口起就會設，而渲染端逐個進入方向立一支 —— 少了這個欄位，
+   * T 字路口會有一支立在草地上，管著一條不存在的路。
+   */
+  roadFlags: number;
 }
 
 /** Traffic light configuration */
@@ -41,13 +48,16 @@ export class TrafficLightSystem {
     x: number, y: number,
     phaseDuration: number = TRAFFIC_LIGHT.PHASE_DURATION,
     roadType: number = RoadType.TWO_LANE,
+    roadFlags: number = RoadDirection.NORTH | RoadDirection.SOUTH
+      | RoadDirection.EAST | RoadDirection.WEST,
   ): void {
     const key = toPosKey(x, y);
     if (this.lights.has(key)) return;
     // Stagger phase start by position hash to avoid all lights syncing
     const stagger = ((x * 7 + y * 13) % 10) / 10 * phaseDuration;
     this.lights.set(key, {
-      x, y, phase: 0, timer: stagger + 0.1, phaseDuration, clearing: false, roadType,
+      x, y, phase: 0, timer: stagger + 0.1, phaseDuration, clearing: false,
+      roadType, roadFlags,
     });
   }
 
@@ -177,12 +187,13 @@ export function syncTrafficLightsWithGrid(
 
     const existing = tls.getLight(x, y);
     if (!existing) {
-      tls.addLight(x, y, duration, cell.roadType);
+      tls.addLight(x, y, duration, cell.roadType, cell.roadFlags);
     } else {
-      // 就地改而不是重建：重建會把相位與計時器歸零，路口拓寬時所有方向會
-      // 同時跳一下。
+      // 就地改而不是重建：重建會把相位與計時器歸零，路口拓寬或補上一條路時
+      // 所有方向會同時跳一下。
       if (existing.phaseDuration !== duration) existing.phaseDuration = duration;
       if (existing.roadType !== cell.roadType) existing.roadType = cell.roadType;
+      if (existing.roadFlags !== cell.roadFlags) existing.roadFlags = cell.roadFlags;
     }
   });
 

@@ -269,3 +269,46 @@ describe('號誌帶的路寬', () => {
       .toBe(RoadType.SIX_LANE);
   });
 });
+
+/**
+ * 號誌也要帶著自己那一格接了哪幾個方向。
+ *
+ * 三向路口起就會設號誌（`dirs >= 3`），而渲染端要知道哪一邊沒有路，否則會在
+ * 草地上立一支管著不存在的路的號誌。
+ */
+describe('號誌帶的路口形狀', () => {
+  const NS_E = RoadDirection.NORTH | RoadDirection.SOUTH | RoadDirection.EAST;
+  const ALL = NS_E | RoadDirection.WEST;
+
+  function cross(grid: Grid, x: number, y: number, flags: number): void {
+    const t = RoadType.FOUR_LANE;
+    grid.setCell(x, y, { roadType: t, roadFlags: flags });
+    if (flags & RoadDirection.NORTH) grid.setCell(x, y - 1, { roadType: t, roadFlags: ALL });
+    if (flags & RoadDirection.SOUTH) grid.setCell(x, y + 1, { roadType: t, roadFlags: ALL });
+    if (flags & RoadDirection.WEST) grid.setCell(x - 1, y, { roadType: t, roadFlags: ALL });
+    if (flags & RoadDirection.EAST) grid.setCell(x + 1, y, { roadType: t, roadFlags: ALL });
+  }
+
+  it('should record which arms the junction actually has', () => {
+    const grid = new Grid(10, 10);
+    cross(grid, 5, 5, NS_E);
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)!.roadFlags, '號誌不知道西邊沒有路').toBe(NS_E);
+  });
+
+  it('should follow the junction when the missing arm is built', () => {
+    const grid = new Grid(10, 10);
+    cross(grid, 5, 5, NS_E);
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    const before = sys.getLight(5, 5)!;
+
+    cross(grid, 5, 5, ALL);
+    syncTrafficLightsWithGrid(grid, sys);
+
+    expect(sys.getLight(5, 5), '號誌被重建了 —— 相位會跳一下').toBe(before);
+    expect(sys.getLight(5, 5)!.roadFlags, '補上第四條路之後號誌還記著舊的形狀')
+      .toBe(ALL);
+  });
+});

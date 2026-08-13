@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { type TrafficLight } from '../core/traffic/TrafficLights';
-import { getLaneCount } from '../core/road/types';
+import { getLaneCount, RoadDirection } from '../core/road/types';
 import { LANE_GEOMETRY, type Direction } from '../core/traffic/LaneGraph';
 import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 import { ROAD_WIDTHS } from './RoadStripBuilder';
-import { STREET_LAMP_HEIGHT } from './RoadRenderer';
+import { STREET_LAMP_HEIGHT, STREET_LAMP_BULB_RADIUS, STREET_LAMP_COLOR }
+  from './RoadRenderer';
 
 /**
  * 路口號誌。
@@ -32,8 +33,15 @@ export const SIGNAL = {
   ARM_Y: POLE_H - 0.02,
   /** 燈頭的中心高度。吊在橫臂**底下**。 */
   HEAD_Y: POLE_H - 0.045,
-  /** 燈頭的邊長。 */
-  HEAD_SIZE: 0.036,
+  /** 燈頭的邊長。以路燈的燈泡為上限 —— 比路燈還大顆的話路口會變成一排燈籠。 */
+  HEAD_SIZE: STREET_LAMP_BULB_RADIUS,
+  /**
+   * 橫臂伸出去的比例：從路緣到該向車道中間的那段距離，只走這麼多。
+   *
+   * 走滿的話燈頭正好在車道中線上，但橫臂在等角視角下顯得過長。純粹是外觀值，
+   * 下限由「燈頭必須整顆在柏油路上方」守著。
+   */
+  ARM_REACH: 2 / 3,
   /** 桿的粗細。 */
   POLE_T: 0.016,
   /** 橫臂的粗細。 */
@@ -45,8 +53,6 @@ export const SIGNAL = {
    */
   STOP_LINE: 0.42,
 } as const;
-
-const POLE_COLOR = 0x333333;
 
 /** 一支號誌的擺放。座標與 `TrafficLight` 同一套（格，格心為原點）。 */
 export interface SignalMount {
@@ -63,11 +69,13 @@ export interface SignalMount {
 }
 
 /** 各方向的單位向量：從格心指向那個方向。 */
-const APPROACH: ReadonlyArray<{ dir: Direction; dx: number; dz: number; isNS: boolean }> = [
-  { dir: 'north', dx: 0, dz: -1, isNS: true },
-  { dir: 'south', dx: 0, dz: 1, isNS: true },
-  { dir: 'east', dx: 1, dz: 0, isNS: false },
-  { dir: 'west', dx: -1, dz: 0, isNS: false },
+const APPROACH: ReadonlyArray<{
+  dir: Direction; dx: number; dz: number; isNS: boolean; flag: number;
+}> = [
+  { dir: 'north', dx: 0, dz: -1, isNS: true, flag: RoadDirection.NORTH },
+  { dir: 'south', dx: 0, dz: 1, isNS: true, flag: RoadDirection.SOUTH },
+  { dir: 'east', dx: 1, dz: 0, isNS: false, flag: RoadDirection.EAST },
+  { dir: 'west', dx: -1, dz: 0, isNS: false, flag: RoadDirection.WEST },
 ];
 
 /**
@@ -79,19 +87,21 @@ const APPROACH: ReadonlyArray<{ dir: Direction; dx: number; dz: number; isNS: bo
  * 驗收拿真正的車道圖比對，不是再算一次（見 `TrafficLightPlacement.test.ts`）。
  */
 export function signalMounts(
-  light: { x: number; y: number; roadType: number },
+  light: { x: number; y: number; roadType: number; roadFlags: number },
 ): SignalMount[] {
   const width = ROAD_WIDTHS[light.roadType] ?? 0.6;
   // 桿站在人行道中線上 —— 路燈用的也是這條線（`RoadRenderer` 的 `half`）。
   const poleOffset = width / 2 + SIDEWALK_WIDTH / 2;
-  // 燈頭吊在該向所有車道的**中間**：車道由內往外排 0..lanes×LANE_WIDTH，
-  // 中點就是 lanes×LANE_WIDTH/2。單車道時剛好落在那條車道的中心線上。
+  // 該向所有車道的**中間**：車道由內往外排 0..lanes×LANE_WIDTH，中點就是
+  // lanes×LANE_WIDTH/2。單車道時剛好落在那條車道的中心線上。
   //
   // 不用最外側車道的外緣：六車道的 3×0.18 = 0.54 比路的半寬 0.475 還大
   // —— 車道模型與路寬模型在六車道上對不起來，取外緣會讓燈頭吊到路面外。
-  const headOffset = getLaneCount(light.roadType) * LANE_GEOMETRY.LANE_WIDTH / 2;
+  const laneMid = getLaneCount(light.roadType) * LANE_GEOMETRY.LANE_WIDTH / 2;
+  // 橫臂只走那段距離的 `ARM_REACH`，所以燈頭落在車道與路緣之間。
+  const headOffset = poleOffset - (poleOffset - laneMid) * SIGNAL.ARM_REACH;
 
-  return APPROACH.map(({ dir, dx, dz, isNS }) => {
+  return APPROACH.filter(a => (light.roadFlags & a.flag) !== 0).map(({ dir, dx, dz, isNS }) => {
     const perpX = dz;
     const perpZ = -dx;
     const alongX = light.x + dx * SIGNAL.STOP_LINE;
@@ -114,21 +124,37 @@ export class TrafficLightRenderer {
   private readonly maxLights = 2000; // 500 intersections × 4 indicators
   private lightCount = 0;
   private mounts: SignalMount[] = [];
+  /**
+   * 每一支號誌歸哪一盞燈（`build` 收到的那個陣列的索引）。
+   *
+   * 不能用「每盞四支」硬算：T 字路口只有三支，用固定步長的話從第一個 T 字
+   * 路口之後，所有號誌的顏色都會錯位一格。
+   */
+  private mountOwner: number[] = [];
   // Reusable per-frame colors
   private readonly _color = new THREE.Color();
   private readonly _green = new THREE.Color(0x00cc44);
   private readonly _red = new THREE.Color(0xdd2200);
+  private readonly _states: { ns: boolean; ew: boolean }[] = [];
 
   build(scene: THREE.Scene, lights: TrafficLight[]): void {
     this.dispose(scene);
     if (lights.length === 0) return;
 
     this.mounts = [];
-    for (const light of lights) this.mounts.push(...signalMounts(light));
+    this.mountOwner = [];
+    for (let li = 0; li < lights.length; li++) {
+      for (const m of signalMounts(lights[li]!)) {
+        this.mounts.push(m);
+        this.mountOwner.push(li);
+      }
+    }
     this.lightCount = Math.min(this.mounts.length, this.maxLights);
 
     const matrix = new THREE.Matrix4();
-    const poleMat = new THREE.MeshLambertMaterial({ color: POLE_COLOR });
+    // 桿與臂沿用路燈的顏色 —— 路邊的金屬桿件應該是同一個顏色，而各寫一個
+    // 十六進位數的話，哪天路燈改色，號誌會靜靜地留在舊的顏色。
+    const poleMat = new THREE.MeshLambertMaterial({ color: STREET_LAMP_COLOR });
 
     // 桿 —— 從地面立到 POLE_H
     const poleGeo = new THREE.BoxGeometry(SIGNAL.POLE_T, SIGNAL.POLE_H, SIGNAL.POLE_T);
@@ -189,19 +215,22 @@ export class TrafficLightRenderer {
     const GREEN = this._green;
     const RED = this._red;
 
-    let idx = 0;
+    // 逐盞算出這一幀該是什麼顏色，再照 `mountOwner` 發下去。
+    const states = this._states;
+    states.length = 0;
     for (const light of lights) {
-      if (idx + 4 > this.lightCount) break;
-
       // All red during clearance, otherwise phase-based
-      const nsGreen = !light.clearing && light.phase === 0;
-      const ewGreen = !light.clearing && light.phase === 1;
+      states.push({
+        ns: !light.clearing && light.phase === 0,
+        ew: !light.clearing && light.phase === 1,
+      });
+    }
 
-      // 順序與 `signalMounts` 的 `APPROACH` 一致：北、南、東、西。
-      for (let k = 0; k < 4; k++) {
-        color.copy((this.mounts[idx]!.isNS ? nsGreen : ewGreen) ? GREEN : RED);
-        this.lightMesh.setColorAt(idx++, color);
-      }
+    for (let idx = 0; idx < this.lightCount; idx++) {
+      const st = states[this.mountOwner[idx]!];
+      if (!st) break;
+      color.copy((this.mounts[idx]!.isNS ? st.ns : st.ew) ? GREEN : RED);
+      this.lightMesh.setColorAt(idx, color);
     }
 
     if (this.lightMesh.instanceColor) {
@@ -227,6 +256,7 @@ export class TrafficLightRenderer {
     this.armMesh = null;
     this.lightMesh = null;
     this.mounts = [];
+    this.mountOwner = [];
     this.lightCount = 0;
   }
 }
