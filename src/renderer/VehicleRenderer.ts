@@ -56,9 +56,34 @@ const COMMERCIAL_COLORS = [
 
 export class VehicleRenderer {
   private meshes = new Map<string, THREE.InstancedMesh>();
-  private readonly maxPerType = 500;
-  private readonly maxLights = 2000; // total vehicles across all types
+  /**
+   * 起始容量。不是上限 —— 不夠時 `grow` 會換一個更大的（見 BUG-261）。
+   *
+   * 寫死上限的話，越過的那些車照樣參與碰撞（`advanceEdgeVehicles` 走的是
+   * `traffic.vehicles`，與渲染無關），只是不畫：畫面上是一台車對著一段空白
+   * 煞車，過一兩秒那台看不見的車才憑空出現。而模擬端的上限是**全部車種
+   * 合計**，車種分佈由城市決定，所以渲染端沒有一個逐車種的數字是安全的。
+   */
+  private readonly initialPerType = 500;
   private _viewMode = ViewMode.NORMAL;
+
+  /**
+   * 視錐剔除用的鏡頭。`null` 就不剔除（展示區、測試等不帶鏡頭的呼叫端）。
+   *
+   * 判準是鏡頭的視錐，不是離鏡頭目標的固定距離。行人那邊是固定半徑
+   * （`cullPedestrians` 的 `CULL_RADIUS`），照抄的話鏡頭一拉遠，車就只出現在
+   * 畫面中央一小圈。
+   */
+  private cullCamera: THREE.Camera | null = null;
+
+  /**
+   * 視錐往外放寬的格數。
+   *
+   * 剛好切在畫面邊界的話，邊緣的車會在鏡頭平移時突然消失／出現。車有體積
+   * （公車、消防車比小客車長得多），而且會投影 —— 畫面外一點點的車，影子
+   * 可能落在畫面裡。
+   */
+  private readonly cullMargin = 2;
 
   // Airplane sub-meshes: separate InstancedMesh for vtail (random color) and nav lights (blink)
   private airplaneVTailMesh: THREE.InstancedMesh | null = null;
@@ -82,6 +107,9 @@ export class VehicleRenderer {
   private readonly _hlTranslation = new THREE.Matrix4();
   private readonly _tlMatrix = new THREE.Matrix4();
   private readonly _tlTranslation = new THREE.Matrix4();
+  private readonly _frustum = new THREE.Frustum();
+  private readonly _viewProjection = new THREE.Matrix4();
+  private readonly _cullSphere = new THREE.Sphere(new THREE.Vector3(), 0);
 
   build(scene: THREE.Scene): void {
     this.dispose(scene);
@@ -89,7 +117,7 @@ export class VehicleRenderer {
     for (const [type, cfg] of Object.entries(VEHICLE_CONFIG)) {
       const geometry = cfg.buildGeometry();
       const material = createVehicleMaterial();
-      const mesh = new THREE.InstancedMesh(geometry, material, this.maxPerType);
+      const mesh = new THREE.InstancedMesh(geometry, material, this.initialPerType);
       mesh.count = 0;
       mesh.castShadow = true;
       mesh.receiveShadow = true;
@@ -101,7 +129,7 @@ export class VehicleRenderer {
     // Airplane vertical tail: separate mesh for independent airline tail color
     const vtGeo = buildAirplaneVTailGeometry();
     const vtMat = createVehicleMaterial();
-    this.airplaneVTailMesh = new THREE.InstancedMesh(vtGeo, vtMat, this.maxPerType);
+    this.airplaneVTailMesh = new THREE.InstancedMesh(vtGeo, vtMat, this.initialPerType);
     this.airplaneVTailMesh.count = 0;
     this.airplaneVTailMesh.castShadow = true;
     this.airplaneVTailMesh.frustumCulled = false;
@@ -110,7 +138,7 @@ export class VehicleRenderer {
     // Airplane nav lights: separate mesh with MeshBasicMaterial (always bright)
     const navGeo = buildAirplaneNavLightsGeometry();
     const navMat = new THREE.MeshBasicMaterial({ vertexColors: true });
-    this.airplaneNavMesh = new THREE.InstancedMesh(navGeo, navMat, this.maxPerType);
+    this.airplaneNavMesh = new THREE.InstancedMesh(navGeo, navMat, this.initialPerType);
     this.airplaneNavMesh.count = 0;
     this.airplaneNavMesh.frustumCulled = false;
     scene.add(this.airplaneNavMesh);
@@ -146,7 +174,7 @@ export class VehicleRenderer {
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    this.headlightMesh = new THREE.InstancedMesh(hlGeo, this.headlightMaterial, this.maxLights);
+    this.headlightMesh = new THREE.InstancedMesh(hlGeo, this.headlightMaterial, this.initialPerType);
     this.headlightMesh.count = 0;
     this.headlightMesh.frustumCulled = false;
     this.headlightMesh.renderOrder = 10;
@@ -162,18 +190,85 @@ export class VehicleRenderer {
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
-    this.taillightMesh = new THREE.InstancedMesh(tlGeo, this.taillightMaterial, this.maxLights);
+    this.taillightMesh = new THREE.InstancedMesh(tlGeo, this.taillightMaterial, this.initialPerType);
     this.taillightMesh.count = 0;
     this.taillightMesh.frustumCulled = false;
     this.taillightMesh.renderOrder = 10;
     scene.add(this.taillightMesh);
   }
 
+  /**
+   * 設定視錐剔除用的鏡頭。傳 `null` 就畫全部。
+   *
+   * 每幀從鏡頭當下的矩陣重算視錐，所以平移、旋轉、縮放都會自動跟上 ——
+   * 呼叫端設一次就好。
+   */
+  setCullCamera(camera: THREE.Camera | null): void {
+    this.cullCamera = camera;
+  }
+
+  /**
+   * 這台車在畫面裡嗎。
+   *
+   * 用一顆半徑 `cullMargin` 的球去測而不是一個點：那顆球同時代表車的體積、
+   * 它的影子，以及邊緣的餘裕。
+   */
+  private inView(v: VehicleData): boolean {
+    const y = v.altitude ?? (v.elevation ? v.elevation * 0.6 : 0);
+    this._cullSphere.center.set(v.x, y, v.y);
+    this._cullSphere.radius = this.cullMargin;
+    return this._frustum.intersectsSphere(this._cullSphere);
+  }
+
+  /**
+   * 讓一個 `InstancedMesh` 至少容得下 `need` 個實例，不夠就換一個更大的。
+   *
+   * `InstancedMesh` 的容量在建構時就固定了（`instanceMatrix` 的長度），所以
+   * 「擴容」只能換一個新的接上場景。幾何與材質是**接手**過去的，不能 dispose
+   * —— 那會把還在用的緩衝區收掉。
+   *
+   * 倍增而不是剛好夠：車輛數每幀都在變，剛好夠的話尖峰附近會一直重建。
+   *
+   * `instanceColor` 不用搬。它是 `setColorAt` 第一次呼叫時才長出來的，而顏色
+   * 每幀都重寫一遍。
+   */
+  private grow(
+    mesh: THREE.InstancedMesh | null, need: number,
+  ): THREE.InstancedMesh | null {
+    if (!mesh || need <= mesh.instanceMatrix.count) return mesh;
+    let capacity = Math.max(mesh.instanceMatrix.count, 1);
+    while (capacity < need) capacity *= 2;
+
+    const bigger = new THREE.InstancedMesh(mesh.geometry, mesh.material, capacity);
+    bigger.count = 0;
+    bigger.castShadow = mesh.castShadow;
+    bigger.receiveShadow = mesh.receiveShadow;
+    bigger.frustumCulled = mesh.frustumCulled;
+    bigger.renderOrder = mesh.renderOrder;
+    bigger.visible = mesh.visible;
+    mesh.parent?.add(bigger);
+    mesh.removeFromParent();
+    return bigger;
+  }
+
   update(vehicles: VehicleData[], sunIntensity?: number, time?: number, simSpeed?: number): void {
     // Group vehicles by type (reuse Map + clear arrays instead of creating new ones)
     const groups = this._groups;
     for (const arr of groups.values()) arr.length = 0;
+
+    // 視錐在這裡算一次，整幀共用。鏡頭的矩陣在渲染迴圈裡是最新的。
+    const camera = this.cullCamera;
+    if (camera) {
+      camera.updateMatrixWorld();
+      this._frustum.setFromProjectionMatrix(this._viewProjection.multiplyMatrices(
+        camera.projectionMatrix, camera.matrixWorldInverse,
+      ));
+    }
+
+    // 剔除發生在分組時，所以下游全部跟著走：逐車種的數量、頭尾燈的數量、
+    // 擴容的判斷。在後面某一處另外過濾的話，那三個一定有一個會對不上。
     for (const v of vehicles) {
+      if (camera && !this.inView(v)) continue;
       let arr = groups.get(v.type);
       if (!arr) { arr = []; groups.set(v.type, arr); }
       arr.push(v);
@@ -191,9 +286,27 @@ export class VehicleRenderer {
     const tlMatrix = this._tlMatrix;
     const tlTranslation = this._tlTranslation;
 
-    for (const [type, mesh] of this.meshes) {
+    // 頭尾燈是一整批共用的，不像車身逐車種分開，所以要先數出這一幀要幾盞。
+    // 鐵路車廂不掛燈（`rail_carriage` 在下面被跳過）。
+    // 數的是剔除之後留下的那些（`groups`）而不是傳進來的整份。這只影響**容量**
+    // —— 燈的數量是繪製迴圈跑完之後才寫進 `count` 的，拿整份算不會多畫燈，
+    // 只是替看不見的車先配好位子。
+    let lightNeed = 0;
+    for (const [type, arr] of groups) if (type !== 'rail_carriage') lightNeed += arr.length;
+    this.headlightMesh = this.grow(this.headlightMesh, lightNeed);
+    this.taillightMesh = this.grow(this.taillightMesh, lightNeed);
+
+    // 機尾與航行燈**必須在主迴圈之前**擴容：垂直尾翼的顏色是在主迴圈裡逐架
+    // 寫進去的，之後才換 mesh 的話，那些顏色會留在被丟掉的那一個上面。
+    const planeNeed = groups.get('airplane')?.length ?? 0;
+    this.airplaneVTailMesh = this.grow(this.airplaneVTailMesh, planeNeed);
+    this.airplaneNavMesh = this.grow(this.airplaneNavMesh, planeNeed);
+
+    for (const [type, mesh0] of this.meshes) {
       const list = groups.get(type) ?? [];
-      const count = Math.min(list.length, this.maxPerType);
+      const mesh = this.grow(mesh0, list.length)!;
+      if (mesh !== mesh0) this.meshes.set(type, mesh);
+      const count = list.length;
       mesh.count = count;
 
       const cfg = VEHICLE_CONFIG[type];
@@ -270,7 +383,7 @@ export class VehicleRenderer {
 
         // Headlight/taillight matrices — skip for rail carriages only
         if (type === 'rail_carriage') continue;
-        if (lightIndex < this.maxLights && this.headlightMesh && this.taillightMesh) {
+        if (this.headlightMesh && this.taillightMesh) {
           const cosH = Math.cos(v.heading);
           const sinH = Math.sin(v.heading);
 
