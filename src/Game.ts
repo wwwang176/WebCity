@@ -699,6 +699,10 @@ export class Game {
     steps.push({ label: 'Building your city...', run: () => {
       this.terrainRenderer.build(this.sceneManager.scene, this.state.grid);
       this.vehicleRenderer.build(this.sceneManager.scene);
+      // 車輛的 mesh 是 frustumCulled = false（`InstancedMesh` 整組共用一個
+      // 包圍盒，three.js 沒辦法逐台判斷），所以逐台的視錐判斷得自己做，
+      // 否則滿載的 2000 台每一台每一幀都要算頂點，即使鏡頭在城市另一頭。
+      this.vehicleRenderer.setCullCamera(this.sceneManager.camera);
       this.pedestrianRenderer.build(this.sceneManager.scene);
       this.transportRouteRenderer.build(this.sceneManager.scene);
       this.metroTunnelRenderer.build(this.sceneManager.scene);

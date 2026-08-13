@@ -67,6 +67,24 @@ export class VehicleRenderer {
   private readonly initialPerType = 500;
   private _viewMode = ViewMode.NORMAL;
 
+  /**
+   * 視錐剔除用的鏡頭。`null` 就不剔除（展示區、測試等不帶鏡頭的呼叫端）。
+   *
+   * 判準是鏡頭的視錐，不是離鏡頭目標的固定距離。行人那邊是固定半徑
+   * （`cullPedestrians` 的 `CULL_RADIUS`），照抄的話鏡頭一拉遠，車就只出現在
+   * 畫面中央一小圈。
+   */
+  private cullCamera: THREE.Camera | null = null;
+
+  /**
+   * 視錐往外放寬的格數。
+   *
+   * 剛好切在畫面邊界的話，邊緣的車會在鏡頭平移時突然消失／出現。車有體積
+   * （公車、消防車比小客車長得多），而且會投影 —— 畫面外一點點的車，影子
+   * 可能落在畫面裡。
+   */
+  private readonly cullMargin = 2;
+
   // Airplane sub-meshes: separate InstancedMesh for vtail (random color) and nav lights (blink)
   private airplaneVTailMesh: THREE.InstancedMesh | null = null;
   private airplaneNavMesh: THREE.InstancedMesh | null = null;
@@ -89,6 +107,9 @@ export class VehicleRenderer {
   private readonly _hlTranslation = new THREE.Matrix4();
   private readonly _tlMatrix = new THREE.Matrix4();
   private readonly _tlTranslation = new THREE.Matrix4();
+  private readonly _frustum = new THREE.Frustum();
+  private readonly _viewProjection = new THREE.Matrix4();
+  private readonly _cullSphere = new THREE.Sphere(new THREE.Vector3(), 0);
 
   build(scene: THREE.Scene): void {
     this.dispose(scene);
@@ -177,6 +198,29 @@ export class VehicleRenderer {
   }
 
   /**
+   * 設定視錐剔除用的鏡頭。傳 `null` 就畫全部。
+   *
+   * 每幀從鏡頭當下的矩陣重算視錐，所以平移、旋轉、縮放都會自動跟上 ——
+   * 呼叫端設一次就好。
+   */
+  setCullCamera(camera: THREE.Camera | null): void {
+    this.cullCamera = camera;
+  }
+
+  /**
+   * 這台車在畫面裡嗎。
+   *
+   * 用一顆半徑 `cullMargin` 的球去測而不是一個點：那顆球同時代表車的體積、
+   * 它的影子，以及邊緣的餘裕。
+   */
+  private inView(v: VehicleData): boolean {
+    const y = v.altitude ?? (v.elevation ? v.elevation * 0.6 : 0);
+    this._cullSphere.center.set(v.x, y, v.y);
+    this._cullSphere.radius = this.cullMargin;
+    return this._frustum.intersectsSphere(this._cullSphere);
+  }
+
+  /**
    * 讓一個 `InstancedMesh` 至少容得下 `need` 個實例，不夠就換一個更大的。
    *
    * `InstancedMesh` 的容量在建構時就固定了（`instanceMatrix` 的長度），所以
@@ -211,7 +255,20 @@ export class VehicleRenderer {
     // Group vehicles by type (reuse Map + clear arrays instead of creating new ones)
     const groups = this._groups;
     for (const arr of groups.values()) arr.length = 0;
+
+    // 視錐在這裡算一次，整幀共用。鏡頭的矩陣在渲染迴圈裡是最新的。
+    const camera = this.cullCamera;
+    if (camera) {
+      camera.updateMatrixWorld();
+      this._frustum.setFromProjectionMatrix(this._viewProjection.multiplyMatrices(
+        camera.projectionMatrix, camera.matrixWorldInverse,
+      ));
+    }
+
+    // 剔除發生在分組時，所以下游全部跟著走：逐車種的數量、頭尾燈的數量、
+    // 擴容的判斷。在後面某一處另外過濾的話，那三個一定有一個會對不上。
     for (const v of vehicles) {
+      if (camera && !this.inView(v)) continue;
       let arr = groups.get(v.type);
       if (!arr) { arr = []; groups.set(v.type, arr); }
       arr.push(v);
@@ -231,8 +288,11 @@ export class VehicleRenderer {
 
     // 頭尾燈是一整批共用的，不像車身逐車種分開，所以要先數出這一幀要幾盞。
     // 鐵路車廂不掛燈（`rail_carriage` 在下面被跳過）。
+    // 數的是剔除之後留下的那些（`groups`）而不是傳進來的整份。這只影響**容量**
+    // —— 燈的數量是繪製迴圈跑完之後才寫進 `count` 的，拿整份算不會多畫燈，
+    // 只是替看不見的車先配好位子。
     let lightNeed = 0;
-    for (const v of vehicles) if (v.type !== 'rail_carriage') lightNeed++;
+    for (const [type, arr] of groups) if (type !== 'rail_carriage') lightNeed += arr.length;
     this.headlightMesh = this.grow(this.headlightMesh, lightNeed);
     this.taillightMesh = this.grow(this.taillightMesh, lightNeed);
 
