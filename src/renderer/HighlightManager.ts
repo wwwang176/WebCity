@@ -70,8 +70,13 @@ export class HighlightManager {
   // Infrastructure: original materials saved for restoration
   private infraTinted: { mesh: THREE.Mesh; original: THREE.Material }[] = [];
 
-  // Zone buildings: track which InstancedMeshes were modified for cleanup
-  private highlightedMeshes: THREE.InstancedMesh[] = [];
+  /**
+   * 寫過 `aHighlight` 的 mesh，`clear()` 要把它們歸零。
+   *
+   * 分區建築是 `InstancedMesh`（逐實例），公共建築是普通的 `Mesh`
+   * （逐頂點）—— 兩者在這裡沒有差別：都是把那一份陣列填 0。
+   */
+  private highlightedMeshes: (THREE.InstancedMesh | THREE.Mesh)[] = [];
 
   // Reusable temps
   private readonly _mat4 = new THREE.Matrix4();
@@ -130,12 +135,12 @@ export class HighlightManager {
 
     // Clear instance highlight attributes
     for (const mesh of this.highlightedMeshes) {
-      const attr = mesh.geometry.getAttribute('aHighlight') as THREE.InstancedBufferAttribute | undefined;
+      const attr = mesh.geometry.getAttribute('aHighlight') as THREE.BufferAttribute | undefined;
       if (attr) {
         (attr.array as Float32Array).fill(0);
         attr.needsUpdate = true;
       }
-      const colorAttr = mesh.geometry.getAttribute('aHighlightColor') as THREE.InstancedBufferAttribute | undefined;
+      const colorAttr = mesh.geometry.getAttribute('aHighlightColor') as THREE.BufferAttribute | undefined;
       if (colorAttr) {
         (colorAttr.array as Float32Array).fill(0);
         colorAttr.needsUpdate = true;
@@ -233,10 +238,42 @@ export class HighlightManager {
     }
   }
 
+  /**
+   * 一棟公共建築的高亮。
+   *
+   * 走 `aHighlight` / `aHighlightColor` —— 建築 shader 本來就吃這兩個屬性，
+   * 分區建築走的就是那條路。公共建築改用同一個 shader 之後，這裡原本的
+   * `MeshLambertMaterial` / `MeshBasicMaterial` 兩個分支**都不中**，
+   * 高亮會靜默失效。
+   *
+   * 而補上第三個分支也是錯的：clone 出來的材質是另一個 `ShaderMaterial`
+   * 實例，收不到每幀寫進單例的 `uTime` —— 被高亮過的那一棟窗戶會凍結在
+   * 某個亮燈狀態，而且再也不會動。
+   *
+   * 只有停放的車輛（走 `MeshLambertMaterial`）還走 clone 那條路。
+   */
   private applyTintToGroup(group: THREE.Group, color: number, intensity: number = 1.0): void {
     const tint = new THREE.Color(color);
     group.traverse((child) => {
       if (!(child instanceof THREE.Mesh)) return;
+
+      const attr = child.geometry.getAttribute('aHighlight');
+      if (attr) {
+        (attr.array as Float32Array).fill(intensity);
+        attr.needsUpdate = true;
+        const colorAttr = child.geometry.getAttribute('aHighlightColor');
+        if (colorAttr) {
+          const arr = colorAttr.array as Float32Array;
+          for (let i = 0; i < arr.length; i += 3) {
+            arr[i] = tint.r;
+            arr[i + 1] = tint.g;
+            arr[i + 2] = tint.b;
+          }
+          colorAttr.needsUpdate = true;
+        }
+        if (!this.highlightedMeshes.includes(child)) this.highlightedMeshes.push(child);
+        return;
+      }
 
       // If already tinted, retrieve original; otherwise save it
       const existing = this.infraTinted.find(e => e.mesh === child);

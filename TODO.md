@@ -1617,11 +1617,18 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
       實測最大值 × 約 1.5：量體 200／貼片 30／懸挑 20／矮物件 750 + 每格 140。
       矮物件改成「基礎 + 斜率」—— 純逐格的模型在 1×1 的公園上不成立，
       它整塊基地就是矮物件。
-- [ ] **批 6 — 遊戲整合。** 目前十九種只在 showcase 裡看得到；`BuildingRenderer`
-      仍走舊的手寫 `MeshLambertMaterial` 路徑。兩個已知的迴歸：
-  - [ ] `HighlightManager.applyTintToGroup` 對 `ShaderMaterial` 兩個分支都不中
-        —— 高亮會靜默失效，而且 clone 出來的材質收不到 `uTime`，被高亮過的
-        建築窗戶會凍結在某個亮燈狀態。
+- [x] **批 6 — 遊戲整合**（BUG-238 收尾）。十九種在遊戲裡也走 `CivicPlan`。
+  - [x] 擺放搬到 `renderer/geometry/civic/place.ts`，遊戲與展示區共用同一份
+        （`placeCivicPlan`）。`instanceAttrs.ts` 跟著從 `showcase/` 搬進
+        `renderer/geometry/civic/` —— 它已經不是展示區專用的了。
+  - [x] `BuildingRenderer.buildModel` 改走 plan，十九個手寫的 `buildXxx()`
+        連同 1 683 行一起刪掉。留著跑不到的第二份畫法只會被誤認成現役的。
+  - [x] `HighlightManager.applyTintToGroup` 改寫 `aHighlight` /
+        `aHighlightColor`（建築 shader 本來就吃這兩個屬性），不再 clone 材質
+        —— clone 出來的收不到 `uTime`，被高亮過的窗戶會凍結。
+  - [x] `snapToGround` 的渡輪碼頭例外拿掉。那是照著「基地裡有港池」那一版
+        寫的，而那片水在 BUG-244 就拿掉了 —— `isShorePosition` 要求碼頭
+        那一格是陸地。
   - [x] ~~機場的裝飾幾何與 `AirplaneAnimator` 的路徑表對不上（BUG-239）。~~
         已修：路徑表搬到 `renderer/airportPaths.ts` 成為單一事實來源，
         `buildAirport()` 從它推導跑道帶、滑行道、機位與空橋，不再自己決定

@@ -85,13 +85,16 @@ describe('buildings stand on the ground', () => {
   });
 
   it('should stand every public facility on the ground too', () => {
-    // 十九種基礎設施裡有十七種的幾何底部寫在 0.05（路面高度），捷運站寫在
+    // 手寫的那一版有十七種的幾何底部寫在 0.05（路面高度），捷運站寫在
     // 0.01 —— 全部浮空，與分區建築同一個成因。
+    //
+    // 十九種**全部**要查，渡輪碼頭也是：它曾經是唯一伸進水裡的一種，而那一版
+    // 在基地裡自己畫了港池。`isShorePosition` 的定義是「這一格是陸地，而且
+    // 四鄰有一格是水」—— 碼頭蓋在陸地上，水在隔壁那一格。
     const scene = new THREE.Scene();
     const renderer = new BuildingRenderer();
     let i = 0;
     for (const cfg of INFRA_CONFIGS) {
-      if (cfg.type === 'ferry_dock') continue; // 刻意伸進水裡
       renderer.addInfrastructure(scene, i * 12, 0, cfg.type, 0);
       i++;
     }
@@ -105,13 +108,17 @@ describe('buildings stand on the ground', () => {
     }
   });
 
-  it('should leave the ferry dock reaching into the water', () => {
-    // 水面在 −0.2。把碼頭壓到地面上等於讓它浮在水面。
+  it('should stand the ferry dock on the land it is actually built on', () => {
+    // 這一條原本反過來寫：碼頭要伸到水面（−0.2）之下，而 `snapToGround` 為此
+    // 開了一個例外。那是照著「基地裡有港池」那一版寫的，而那片水後來拿掉了
+    // （BUG-244）—— `isShorePosition` 要求碼頭那一格**是陸地**。
     const scene = new THREE.Scene();
     const renderer = new BuildingRenderer();
     renderer.addInfrastructure(scene, 0, 0, 'ferry_dock', 0);
     const group = scene.children.find(c => c instanceof THREE.Group)!;
-    expect(new THREE.Box3().setFromObject(group).min.y).toBeLessThan(0);
+    const minY = new THREE.Box3().setFromObject(group).min.y;
+    expect(minY, '碼頭陷到地面以下 —— 這一格是陸地').toBeGreaterThanOrEqual(0);
+    expect(minY * METRES_PER_CELL, '碼頭浮空').toBeLessThan(0.1);
   });
 
   it('should not leave a step between a building and its own forecourt', () => {

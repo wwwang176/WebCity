@@ -24,7 +24,7 @@ import {
   blockCells, matrixCells, neighbourSameRatio,
   type PlacedCell, type ViewMode,
 } from './views';
-import { stampInstanceValues, floorRhythm01, type InstanceValues } from './instanceAttrs';
+import { stampInstanceValues, floorRhythm01, type InstanceValues } from '../renderer/geometry/civic/instanceAttrs';
 import { createShowcaseGround } from './ground';
 import { DetailVisibility } from './detailVisibility';
 import { appearanceOf } from '../renderer/BuildingAppearance';

@@ -1,21 +1,21 @@
 import * as THREE from 'three';
-import { FLOOR_HEIGHT_UNITS } from '../renderer/geometry/buildings/massing/metrics';
-import { floorHeightOf } from '../renderer/geometry/buildings/massing';
-import type { Density } from '../renderer/geometry/buildings/registry';
+import { FLOOR_HEIGHT_UNITS } from '../buildings/massing/metrics';
+import { floorHeightOf } from '../buildings/massing';
+import type { Density } from '../buildings/registry';
 
 /**
- * 展示區用的逐實例屬性。
+ * 逐實例屬性。
  *
- * 遊戲把這些值放在 `InstancedBufferAttribute` 上，一棟建築一份。展示區畫的是
- * 普通的 `Mesh`，所以那些屬性**完全不存在** —— 而 WebGL 對沒有繫結的 attribute
- * 一律餵 0，於是展示區裡：
+ * 分區建築把這些值放在 `InstancedBufferAttribute` 上，一棟一份。公共建築畫的是
+ * 普通的 `Mesh`（每一棟的幾何都不一樣，實例化沒有意義），所以那些屬性
+ * **完全不存在** —— 而 WebGL 對沒有繫結的 attribute 一律餵 0，於是：
  *
  *   - `aSeed.x = 0` → 立面的樓層高度永遠是最小值，與量體真正的樓板線對不上
  *   - `aSeed.y = 0` → 每一棟的窗戶相位相同，整條街橫向對齊成一條線
  *   - `aOccupancy = 0` → shader 判定「沒有人」，所以**一扇燈都不會亮**
  *
- * 三者都不會報錯，只會讓展示區看到的東西與遊戲不同 —— 而「展示區看到的就是
- * 出貨的東西」是它唯一的價值。
+ * 三者都不會報錯，只會讓這一棟看起來「怪怪的」。第三個就是 BUG-238 的現象：
+ * 公共建築入夜之後整片是黑的。
  *
  * 這裡把同一份值攤到每個頂點上。非實例化的 `attribute` 就是逐頂點的，
  * 一份幾何一個值等於整棟建築共用，與遊戲的逐實例語意一致。
@@ -38,8 +38,8 @@ export interface InstanceValues {
   /**
    * 牆的底色（`aBldgColor`）。省略時給中性灰。
    *
-   * 遊戲裡分區建築走 `InstancedMesh.setColorAt`，所以這個值只在展示區與
-   * 公共建築的路徑上用得到。
+   * 分區建築走 `InstancedMesh.setColorAt`，所以這個值只在公共建築這條
+   * 路徑上用得到。
    */
   color?: readonly [number, number, number];
 }
