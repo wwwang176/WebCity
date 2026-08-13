@@ -1,7 +1,12 @@
 import * as THREE from 'three';
-import { PART_THRESHOLDS, ZONE_CAT } from './geometry/buildings/parts';
+import {
+  PART_THRESHOLDS, SHELL_LIFT, WATER_MURK_MAX, WATER_BOB, ZONE_CAT,
+  FACADE_CIVIC, FACADE_UTILITY, FACADE_TRANSIT, FACADE_GREEN,
+} from './geometry/buildings/parts';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from './geometry/buildings/propBands';
 import { roofPaletteFor, type RoofColor } from './ColorPalettes';
+import { ZoneType } from '../core/grid/types';
+import { METRES_PER_CELL } from '../core/grid/constants';
 
 /**
  * 把 TS 數字寫成 GLSL 一定會當作 float 的形式 —— 整數在 GLSL 裡不是 float，
@@ -24,6 +29,97 @@ function pickChain(palette: readonly RoofColor[]): string {
 }
 
 /**
+ * `ZONE_CAT` 依 cat 遞增排序後的 key。分支順序與門檻都由它推導。
+ */
+export function sortedFacadeKeys(): number[] {
+  return sortKeysByCat(ZONE_CAT);
+}
+
+/**
+ * 依 cat 遞增排序一張 cat 表的 key。
+ *
+ * 抽成獨立函式是為了測得到：`Object.entries` 對整數字串 key 是照**數值**
+ * 遞增列舉的，而 `ZONE_CAT` 現在的 key 順序剛好等於 cat 順序 —— 所以直接
+ * 用 `ZONE_CAT` 測的話，把 `.sort()` 整條拿掉也不會有任何測試轉紅。
+ * 要用一張 key 順序與 cat 順序不一致的表才測得出排序有沒有真的發生。
+ */
+export function sortKeysByCat(table: Record<number, number>): number[] {
+  return Object.entries(table)
+    .map(([k, cat]) => ({ key: Number(k), cat }))
+    .sort((a, b) => a.cat - b.cat)
+    .map(e => e.key);
+}
+
+/**
+ * 每個分支的上界 —— 相鄰兩個 cat 的中點。最後一個是 `Infinity`（GLSL 的 else）。
+ *
+ * 取中點而不是取下一個 cat：頂點色是 Float32，插值與往返可能讓 1.2 變成
+ * 1.1999999。門檻壓在兩個分區正中間，誤差要大到半個間距才會走錯分支。
+ */
+export function facadeThresholds(): number[] {
+  const cats = sortedFacadeKeys().map(k => ZONE_CAT[k]!);
+  return cats.map((c, i) => (
+    i === cats.length - 1 ? Infinity : round6((c + cats[i + 1]!) / 2)
+  ));
+}
+
+/**
+ * 中點修到 6 位小數。
+ *
+ * `(0.2 + 0.4) / 2` 是 `0.30000000000000004` —— 17 位有效數字，而 GLSL ES 1.00
+ * 的 highp float 只有約 7 位，那些尾數在編譯時就沒了。留著只會讓產生出來的
+ * shader 難讀，並且與人手寫的同一個數字對不起來。
+ *
+ * 6 位遠比分區間距（0.2）細，所以修完之後門檻仍嚴格落在兩個 cat 之間 ——
+ * 那件事由測試守，不是靠這個註解。
+ */
+function round6(v: number): number {
+  return Number(v.toFixed(6));
+}
+
+/**
+ * 給定 cat 值，這條 if 鏈會走進哪一個 key 的分支。
+ *
+ * 它是 GLSL 的 JS 分身，本身就是第二份資料 —— 所以測試會從產生出來的原始碼
+ * 把門檻數字挖回來與 `facadeThresholds()` 比對，讓這個迴圈閉合。
+ */
+export function facadeKeyOf(cat: number): number {
+  const keys = sortedFacadeKeys();
+  const th = facadeThresholds();
+  for (let i = 0; i < keys.length; i++) if (cat < th[i]!) return keys[i]!;
+  return keys[keys.length - 1]!;
+}
+
+/**
+ * 由 `ZONE_CAT` 產生一條 if 鏈。屋頂色票與立面共用這一個 —— 兩份手寫的門檻
+ * 表就是「改了一邊不會有任何東西報錯」的形狀。
+ *
+ * 這個函式**不排版**：`bodyOf` 與 `commentOf` 回傳的東西原樣輸出。它要能
+ * 產生與手寫版逐字元相同的結果，而排版是那個目標的相反面。
+ *
+ * @param varName 屋頂鏈讀的是函式參數 `zoneCat`，立面鏈讀的是 varying `vZoneCat`。
+ * @param join 屋頂鏈的分支之間是一個空格，立面鏈之間是一個空行。
+ */
+export function catChainGlsl(
+  bodyOf: (facadeKey: number) => string,
+  opts: {
+    varName?: string;
+    commentOf?: (facadeKey: number) => string;
+    join?: string;
+  } = {},
+): string {
+  const { varName = 'zoneCat', commentOf = () => '', join = ' ' } = opts;
+  const keys = sortedFacadeKeys();
+  const th = facadeThresholds();
+  return keys.map((key, i) => {
+    const guard = Number.isFinite(th[i]!)
+      ? `${i === 0 ? 'if' : 'else if'} (${varName} < ${glslFloat(th[i]!)}) `
+      : 'else ';
+    return `${commentOf(key)}${guard}{${bodyOf(key)}}`;
+  }).join(join);
+}
+
+/**
  * `getRoofColor` 的函式體，由 `ROOF_PALETTE_TABLE` 產生。
  *
  * 分區門檻取相鄰兩個 `ZONE_CAT` 的中點 —— 手寫的話門檻與分區常數是兩份資料，
@@ -31,16 +127,577 @@ function pickChain(palette: readonly RoofColor[]): string {
  * 陣列索引在 WebGL1 的 GLSL ES 1.00 需要常數索引，所以仍然展開成 if 鏈。
  */
 function roofColorGlsl(): string {
-  const zones = Object.entries(ZONE_CAT)
-    .map(([z, cat]) => ({ zone: Number(z), cat }))
-    .sort((a, b) => a.cat - b.cat);
+  return catChainGlsl(zone => `\n    c = ${pickChain(roofPaletteFor(zone))};\n  `);
+}
 
-  return zones.map(({ zone }, i) => {
-    const body = `\n    c = ${pickChain(roofPaletteFor(zone))};\n  `;
-    if (i === zones.length - 1) return `else {${body}}`;
-    const threshold = (zones[i]!.cat + zones[i + 1]!.cat) / 2;
-    return `${i === 0 ? 'if' : 'else if'} (zoneCat < ${glslFloat(threshold)}) {${body}} `;
-  }).join('');
+/**
+ * 每個分區的立面規則 —— `{` 與 `}` 之間的 GLSL。
+ *
+ * 這些分支原本直接寫在 `BUILDING_FRAG` 裡，門檻也是手寫的六個數字，
+ * 也就是 `ZONE_CAT` 的第二份資料。搬出來由 `catChainGlsl` 串接之後，
+ * 新增一個立面類別只要在 `ZONE_CAT` 與這兩張表各加一列 —— 而不是同時
+ * 記得去改一條藏在 340 行 GLSL 中間的 if 鏈。
+ */
+const FACADE_BODY: Record<number, string> = {
+  [ZoneType.RESIDENTIAL_LOW]: /* glsl */ `
+      color = vBldgColor * 0.9;
+      if (onWall) {
+        // 水平壁板（保留原本的質感）
+        float board = fract(y / 0.06);
+        float line = smoothstep(0.0, 0.06, board) * smoothstep(0.12, 0.06, board);
+        vec3 wallColor = vBldgColor * (0.88 - line * 0.06);
+
+        // 住宅的窗比公寓大而稀疏，一層一排
+        float houseFloor = floorHeight * 0.72;
+        float houseWin = windowWidth * 1.35;
+        float fy = y / houseFloor;
+        float fx = (wallU + phase) / houseWin;
+        float fracY = fract(fy);
+        float fracX = fract(fx);
+        float fwX = fwidth(fx);
+        float fwY = fwidth(fy);
+        float winMask =
+            smoothstep(0.30 - fwX, 0.30 + fwX, fracX) * smoothstep(0.70 + fwX, 0.70 - fwX, fracX)
+          * smoothstep(0.30 - fwY, 0.30 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY);
+
+        // 一樓開一道門。位置必須綁在**建築**上，不能只看格內偏移：以 fract
+        // 量到牆中央的距離對每一格都成立，所以一面牆 1.5–2.3 格、四面牆繞
+        // 一圈，一棟房子會長出六到八道門（BUG-233）。
+        //
+        // fragment shader 裡每棟固定的量只有格子座標與牆面法線，所以用格子
+        // 擲一面牆，再用格心對齊那面牆的中央。
+        vec2 bldgCell = floor(vWorldPos.xz + 0.5);
+        float wallCentre = (abs(n.x) > abs(n.z)) ? bldgCell.y : bldgCell.x;
+        float doorSide = floor(hash21(bldgCell * 3.1 + 7.0) * 4.0);
+        float thisSide = (abs(n.x) > abs(n.z))
+          ? (n.x > 0.0 ? 0.0 : 1.0)
+          : (n.z > 0.0 ? 2.0 : 3.0);
+        bool doorRow = y < houseFloor;
+        // 半寬照舊是 0.18 格，只是改成量世界座標而不是 fract —— 實際寬度
+        // 不變（0.93–1.4 m）。
+        bool onDoorWall = abs(doorSide - thisSide) < 0.5;
+        float doorMask = (doorRow && onDoorWall
+          && abs(wallU - wallCentre) < houseWin * 0.18
+          && y < houseFloor * 0.78) ? 1.0 : 0.0;
+        // 一樓其餘的地方照樣開窗。以前這裡是 winMask = 0 —— 整層一樓沒有窗，
+        // 所以它拿不到 windowMask：沒有玻璃、沒有天空反射，夜裡也永遠不亮。
+        winMask *= 1.0 - doorMask;
+
+        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 4.7;
+        float period = 150.0 + hash21(wid + 99.0) * 150.0;
+        float phaseT = hash21(wid * 2.71 + 47.0) * period;
+        float epoch = floor((uTime + phaseT) / period);
+        float lit = hash21(wid + epoch * 13.7);
+        float litThresh = mix(0.95, 0.45, occ);
+
+        vec3 winColor;
+        if (lit > litThresh) {
+          float w = hash21(wid + 77.7);
+          winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+          winBrightness = 0.6 + hash21(wid + 21.3) * 0.4;
+          isLitWindow = winMask > 0.5;
+        } else {
+          winColor = vBldgColor * 0.24 + vec3(0.03, 0.05, 0.08);
+        }
+
+        vec3 doorColor = vBldgColor * 0.35 + vec3(0.06, 0.03, 0.02);
+        color = mix(wallColor, winColor, winMask);
+        color = mix(color, doorColor, doorMask);
+        windowMask = winMask;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.65 + 0.35 * ao;
+    `,
+  [ZoneType.RESIDENTIAL_HIGH]: /* glsl */ `
+      float fy = y / floorHeight;
+      float fx = (wallU + phase) / windowWidth;
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      float winMask = onWall
+        ? smoothstep(0.2 - fwX, 0.2 + fwX, fracX) * smoothstep(0.8 + fwX, 0.8 - fwX, fracX)
+        * smoothstep(0.25 - fwY, 0.25 + fwY, fracY) * smoothstep(0.68 + fwY, 0.68 - fwY, fracY)
+        : 0.0;
+      vec3 wallColor = vBldgColor * 0.88;
+      if (onWall && (fracY > 0.92 || fracY < 0.08)) {
+        wallColor = vBldgColor * 0.72;
+      }
+      vec3 winColor;
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phase = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phase) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
+      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
+      float bEpoch = floor((uTime + bPhase) / bPeriod);
+      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
+      float litThreshRH = mix(0.95, 0.4, occ);
+      if (lit > litThreshRH) {
+        float w = hash21(wid + 77.7);
+        winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+        winBrightness = brightness;
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
+      }
+      color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    `,
+  [ZoneType.COMMERCIAL_LOW]: /* glsl */ `
+      if (onWall && y < ${glslFloat(SHOPFRONT_CEILING)}) {
+        // 落地窗：一整層樓高的玻璃，中間只有豎向窗框，**不切樓層橫線** ——
+        // 這正是它與樓上那些小窗長得不一樣的原因，要保留。
+        //
+        // 上緣用 SHOPFRONT_CEILING 而不是自己寫一個 0.22：雨遮就掛在這條線上，
+        // 兩邊各寫一份的話，雨遮會壓在落地窗中間。
+        float bay = wallU / 0.25;
+        float bayU = fract(bay);
+        float fwB = fwidth(bay);
+        float glass = smoothstep(0.06 - fwB, 0.06 + fwB, bayU)
+                    * smoothstep(0.94 + fwB, 0.94 - fwB, bayU);
+        vec2 wid = floor(vec2(bay, 0.0)) + floor(vWorldPos.xz + 0.5) * 3.7;
+        float r = hash21(wid);
+        vec3 glassColor = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
+        color = mix(vBldgColor * 0.6, glassColor, glass); // 窗框 -> 玻璃
+
+        // 這一扇的店今晚有沒有開。逐扇而不是逐棟 —— 一排店面全暗或全亮都不對。
+        float sPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
+        float sPhase = hash21(wid * 2.71 + 47.0) * sPeriod;
+        float sEpoch = floor((uTime + sPhase) / sPeriod);
+        float sLit = hash21(wid + sEpoch * 13.7);
+        // 店面比樓上的辦公室更常亮著 —— 一條商店街的夜景主角就是它。
+        float litThreshSF = mix(0.95, 0.25, occ);
+        if (sLit > litThreshSF) {
+          winBrightness = 0.7 + hash21(wid + 21.3) * 0.5;
+          isLitWindow = glass > 0.5;
+        }
+        windowMask = glass;
+        // 落地窗白天已經有自己的玻璃色與逐扇變化。整片換成統一的天空反射色
+        // 會把那個變化抹掉，所以只取一部分。
+        glassiness = 0.45;
+      } else if (onWall) {
+        // Upper wall — sparse small windows
+        float fy = y / (floorHeight * 1.2);
+        float fx = (wallU + phase) / (windowWidth * 1.1);
+        float fracY = fract(fy);
+        float fracX = fract(fx);
+        float fwX = fwidth(fracX);
+        float fwY = fwidth(fracY);
+        float winMask = smoothstep(0.3 - fwX, 0.3 + fwX, fracX) * smoothstep(0.7 + fwX, 0.7 - fwX, fracX)
+                      * smoothstep(0.3 - fwY, 0.3 + fwY, fracY) * smoothstep(0.65 + fwY, 0.65 - fwY, fracY);
+        vec3 wallColor = vBldgColor * 0.85;
+        vec3 winColor;
+        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.3;
+        float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phase = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phase) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
+      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
+      float bEpoch = floor((uTime + bPhase) / bPeriod);
+      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
+        float litThreshCL = mix(0.95, 0.5, occ);
+        if (lit > litThreshCL) {
+          winColor = mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8;
+          winBrightness = brightness;
+          isLitWindow = winMask > 0.5;
+        } else {
+          winColor = vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
+        }
+        color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
+      } else {
+        color = vBldgColor * 0.85;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    `,
+  [ZoneType.COMMERCIAL_HIGH]: /* glsl */ `
+      float fy = y / (floorHeight * 0.88);
+      float fx = (wallU + phase) / (windowWidth * 0.5);
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      float winMask = onWall
+        ? smoothstep(0.08 - fwX, 0.08 + fwX, fracX) * smoothstep(0.92 + fwX, 0.92 - fwX, fracX)
+        * smoothstep(0.12 - fwY, 0.12 + fwY, fracY) * smoothstep(0.82 + fwY, 0.82 - fwY, fracY)
+        : 0.0;
+      vec3 wallColor = vBldgColor * 0.5; // narrow mullions
+      vec3 winColor;
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phase = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phase) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
+      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
+      float bEpoch = floor((uTime + bPhase) / bPeriod);
+      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
+      float litThreshCH = mix(0.95, 0.3, occ);
+      if (lit > litThreshCH) {
+        float w = hash21(wid + 77.7);
+        winColor = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
+        winBrightness = brightness;
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
+      }
+      color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    `,
+  [ZoneType.INDUSTRIAL]: /* glsl */ `
+      if (onWall) {
+        // Horizontal corrugation ridges
+        float ridge = fract(y / 0.08);
+        float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
+        color = vBldgColor * (0.72 + shade * 0.18);
+
+        // 高窗帶。廠房的窗開得高 —— 下面那一段牆要靠著放料架與機具，所以
+        // 它不是一格一格的小窗，是一條沿著樓板線下方的長條窗。
+        // 靠既有的樓層節奏定位，所以一層樓的廠房與三層樓的都對得上。
+        float fy = y / floorHeight;
+        float fx = (wallU + phase) / (windowWidth * 2.2);
+        float fracY = fract(fy);
+        float fracX = fract(fx);
+        float fwX = fwidth(fx);
+        float fwY = fwidth(fy);
+        float bandMask =
+            smoothstep(0.62 - fwY, 0.62 + fwY, fracY) * smoothstep(0.86 + fwY, 0.86 - fwY, fracY)
+          * smoothstep(0.12 - fwX, 0.12 + fwX, fracX) * smoothstep(0.88 + fwX, 0.88 - fwX, fracX);
+
+        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 6.7;
+        float wPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
+        float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
+        float wEpoch = floor((uTime + wPhase) / wPeriod);
+        float wLit = hash21(wid + wEpoch * 13.7);
+        // 廠房夜裡亮的窗比住宅少 —— 只有值夜班的那幾跨。
+        float litThreshIN = mix(0.98, 0.6, occ);
+        vec3 winColor;
+        if (wLit > litThreshIN) {
+          // 偏冷白：廠房用的是金屬鹵素／LED，不是住家的黃光。
+          winColor = mix(vec3(0.90, 0.92, 0.80), vec3(0.78, 0.84, 0.72), wLit) * 0.85;
+          winBrightness = 0.6 + hash21(wid + 21.3) * 0.4;
+          isLitWindow = bandMask > 0.5;
+        } else {
+          winColor = vBldgColor * 0.22 + vec3(0.04, 0.05, 0.07);
+        }
+        color = mix(color, winColor, bandMask);
+        windowMask = bandMask;
+
+        // Large loading door at ground level
+        // **畫在高窗之後**，所以它蓋掉落在同一段高度的高窗 —— 矮樓層的廠房
+        // 高窗帶會落進捲門的高度範圍，兩者疊在一起就是一扇長了窗戶的捲門。
+        float doorU = fract(wallU / 0.35);
+        if (y < 0.18 && doorU > 0.12 && doorU < 0.88) {
+          color = vBldgColor * 0.4 + vec3(0.02, 0.02, 0.01);
+          // Horizontal door slats
+          float slat = fract(y / 0.03);
+          color *= 0.9 + 0.1 * step(0.5, slat);
+
+          // 有些捲門是開著的，裡面的燈光整片透出來。
+          // glassiness = 0：捲門會透光，但它不是玻璃 —— 白天不該變成一片藍，
+          // 也不該有陽光鏡面。
+          vec2 did = vec2(floor(wallU / 0.35), 0.0) + floor(vWorldPos.xz + 0.5) * 9.1;
+          float dPeriod = 200.0 + hash21(did + 5.0) * 200.0;
+          float dPhase = hash21(did * 1.7 + 13.0) * dPeriod;
+          float dEpoch = floor((uTime + dPhase) / dPeriod);
+          float dOpen = hash21(did + dEpoch * 3.3);
+          windowMask = 1.0;
+          glassiness = 0.0;
+          isLitWindow = dOpen > mix(0.99, 0.68, occ);
+          winBrightness = 0.8 + hash21(did + 4.4) * 0.4;
+        }
+      } else {
+        color = vBldgColor * 0.78;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.65 + 0.35 * ao;
+    `,
+  [ZoneType.OFFICE]: /* glsl */ `
+      float fy = y / floorHeight;
+      float fx = (wallU + phase) / (windowWidth * 0.625);
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      float winMask = onWall
+        ? smoothstep(0.15 - fwX, 0.15 + fwX, fracX) * smoothstep(0.85 + fwX, 0.85 - fwX, fracX)
+        * smoothstep(0.2 - fwY, 0.2 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY)
+        : 0.0;
+      vec3 wallColor = vBldgColor * 0.88;
+      if (onWall && (fracY > 0.92 || fracY < 0.08)) {
+        wallColor = vBldgColor * 0.7;
+      }
+      vec3 winColor;
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phase = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phase) / period);
+      float lit = hash21(wid + epoch * 13.7);
+      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
+      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
+      float bEpoch = floor((uTime + bPhase) / bPeriod);
+      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
+      float litThreshOF = mix(0.95, 0.35, occ);
+      if (lit > litThreshOF) {
+        float w = hash21(wid + 77.7);
+        winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
+        winBrightness = brightness;
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
+      }
+      color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    `,
+
+  [FACADE_CIVIC]: /* glsl */ `
+      // 公家建築：混凝土或磚石，窗比住宅大、比辦公稀疏，樓層之間有實體腰線。
+      // 一樓是挑高的門廳，所以窗格從門廳頂之上才開始 —— 直接從地面起算的話，
+      // 一座警局的一樓會長出跟三樓一樣的小窗，那正是它看起來不像公家建築的原因。
+      float portico = floorHeight * 1.35;
+      float fy = (y - portico) / floorHeight;
+      float fx = (wallU + phase) / (windowWidth * 1.15);
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      float winMask = (onWall && y > portico)
+        ? smoothstep(0.22 - fwX, 0.22 + fwX, fracX) * smoothstep(0.78 + fwX, 0.78 - fwX, fracX)
+        * smoothstep(0.20 - fwY, 0.20 + fwY, fracY) * smoothstep(0.74 + fwY, 0.74 - fwY, fracY)
+        : 0.0;
+
+      vec3 wallColor = vBldgColor * 0.93;
+      // 腰線：樓板位置的一條實體帶。公家建築的立面幾乎都有。
+      if (onWall && y > portico && (fracY > 0.86 || fracY < 0.08)) {
+        wallColor = vBldgColor * 0.76;
+      }
+
+      // 有電時約 85% 的窗亮著，而且哪幾扇亮會隨時間換 —— 值班室換班、
+      // 有人下班關燈。整棟全亮看起來像一張發光的板子，不像一棟建築。
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 6.1;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phaseT = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phaseT) / period);
+      bool lit = powered && hash21(wid + epoch * 13.7) > civicDark;
+      vec3 winColor;
+      if (lit) {
+        float w = hash21(wid + 77.7);
+        // 偏冷白：公家建築用的是日光燈，不是住家的黃光。
+        winColor = mix(vec3(0.92, 0.94, 0.88), vec3(0.82, 0.86, 0.80), w) * (0.82 + w * 0.14);
+        winBrightness = 0.78 + hash21(wid + 21.3) * 0.22;
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vBldgColor * 0.24 + vec3(0.03, 0.05, 0.08);
+      }
+      color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
+
+      // 門廳：一整層樓高的落地玻璃，柱間分割，**不切樓層橫線**。
+      // 畫在窗格之後，所以它蓋掉落在同一段高度的東西。
+      if (onWall && y <= portico && y > 0.06) {
+        float bay = wallU / 0.34;
+        float bayU = fract(bay);
+        float fwB = fwidth(bay);
+        float glass = smoothstep(0.16 - fwB, 0.16 + fwB, bayU)
+                    * smoothstep(0.84 + fwB, 0.84 - fwB, bayU);
+        vec2 lid = vec2(floor(bay), 0.0) + floor(vWorldPos.xz + 0.5) * 4.3;
+        vec3 glassColor = mix(vec3(0.42, 0.52, 0.60), vec3(0.52, 0.62, 0.68), hash21(lid));
+        color = mix(vBldgColor * 0.66, glassColor, glass);   // 石材柱 -> 玻璃
+        windowMask = glass;
+        // 門廳整夜亮著 —— 值班台在那裡。這是公家建築夜景的主角。
+        isLitWindow = powered && glass > 0.5;
+        winBrightness = 0.75 + hash21(lid + 4.1) * 0.3;
+        // 門廳玻璃白天已經有自己的顏色與逐柱變化，整片換成統一的天空反射色
+        // 會把那個變化抹掉，所以只取一部分（與商業低密度的落地窗同樣理由）。
+        glassiness = 0.5;
+      }
+
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.62 + 0.38 * ao;
+    `,
+
+  [FACADE_UTILITY]: /* glsl */ `
+      // 公用設施：電廠、水廠、垃圾場、汙水廠。它們就是工業設施，只是歸市府管，
+      // 所以語彙沿用工業的浪板與高窗帶 —— 但沒有捲門（那是貨運廠房的東西），
+      // 換成常亮的警示燈帶。
+      if (onWall) {
+        float ridge = fract(y / 0.09);
+        float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
+        color = vBldgColor * (0.70 + shade * 0.20);
+
+        // 高窗帶：機具與管線佔滿下半段的牆，所以窗開在樓板線下方一條。
+        float fy = y / floorHeight;
+        float fx = (wallU + phase) / (windowWidth * 2.4);
+        float fracY = fract(fy);
+        float fracX = fract(fx);
+        float fwX = fwidth(fx);
+        float fwY = fwidth(fy);
+        float bandMask =
+            smoothstep(0.64 - fwY, 0.64 + fwY, fracY) * smoothstep(0.88 + fwY, 0.88 - fwY, fracY)
+          * smoothstep(0.10 - fwX, 0.10 + fwX, fracX) * smoothstep(0.90 + fwX, 0.90 - fwX, fracX);
+
+        // 這些設施是 24 小時運轉的，所以亮得比一般廠房多 —— 但仍有幾跨是
+        // 暗的（維修中、沒在用的機組），而且會隨時間換。
+        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 8.3;
+        float wPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
+        float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
+        float wEpoch = floor((uTime + wPhase) / wPeriod);
+        // 24 小時運轉，但窗本來就少 —— 比公家機關再亮一點。
+        bool wOn = powered && hash21(wid + wEpoch * 13.7) > civicDark * 0.8;
+        vec3 winColor;
+        if (wOn) {
+          float w = hash21(wid + 77.7);
+          // 金屬鹵素的冷白。
+          winColor = mix(vec3(0.90, 0.93, 0.84), vec3(0.76, 0.83, 0.74), w) * 0.88;
+          winBrightness = 0.72 + hash21(wid + 21.3) * 0.28;
+          isLitWindow = bandMask > 0.5;
+        } else {
+          winColor = vBldgColor * 0.22 + vec3(0.04, 0.05, 0.07);
+        }
+        color = mix(color, winColor, bandMask);
+        windowMask = bandMask;
+
+        // 警示燈帶：高處一排常亮的紅點。**畫在高窗之後**，所以它蓋掉落在
+        // 同一段高度的高窗 —— 兩者疊在一起就是一扇長了紅點的窗。
+        float lampU = fract(wallU / 0.55);
+        float lampBand = smoothstep(0.40 - fwidth(y), 0.40 + fwidth(y), fracY)
+                       * smoothstep(0.46 + fwidth(y), 0.46 - fwidth(y), fracY);
+        float lampDot = lampBand * step(0.42, lampU) * step(lampU, 0.58);
+        if (lampDot > 0.5) {
+          color = vec3(0.35, 0.10, 0.08);
+          windowMask = 1.0;
+          // 警示燈不是玻璃 —— 白天不該變成一片藍，也不該有陽光鏡面。
+          glassiness = 0.0;
+          // 警示燈接的是緊急電源 —— 連停電都還亮著，所以它不看 powered。
+          isLitWindow = true;
+          winBrightness = 0.9;
+        }
+      } else {
+        color = vBldgColor * 0.76;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.65 + 0.35 * ao;
+    `,
+
+  [FACADE_TRANSIT]: /* glsl */ `
+      // 交通站點：玻璃幕與輕構造。月台與大廳整夜亮著 —— 車站是城市夜景裡
+      // 最亮的東西之一，比辦公樓亮得多。
+      float fy = y / (floorHeight * 1.1);
+      float fx = (wallU + phase) / (windowWidth * 0.75);
+      float fracY = fract(fy);
+      float fracX = fract(fx);
+      float fwX = fwidth(fx);
+      float fwY = fwidth(fy);
+      // 窗框很細 —— 車站的玻璃幕是大片的。
+      float winMask = onWall
+        ? smoothstep(0.06 - fwX, 0.06 + fwX, fracX) * smoothstep(0.94 + fwX, 0.94 - fwX, fracX)
+        * smoothstep(0.08 - fwY, 0.08 + fwY, fracY) * smoothstep(0.90 + fwY, 0.90 - fwY, fracY)
+        : 0.0;
+      vec3 wallColor = vBldgColor * 0.55;   // 細窗櫺
+
+      // 車站是城市夜景裡最亮的東西之一，所以暗掉的比例比別人小一半 ——
+      // 但不是零：月台盡頭、沒開的閘門那幾格是暗的。
+      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.9;
+      float period = 150.0 + hash21(wid + 99.0) * 150.0;
+      float phaseT = hash21(wid * 2.71 + 47.0) * period;
+      float epoch = floor((uTime + phaseT) / period);
+      // 車站是城市夜景裡最亮的東西之一，暗掉的比例只有別人的一半。
+      bool lit = powered && hash21(wid + epoch * 13.7) > civicDark * 0.5;
+      vec3 winColor;
+      if (lit) {
+        float w = hash21(wid + 77.7);
+        winColor = mix(vec3(0.94, 0.95, 0.90), vec3(0.86, 0.90, 0.86), w) * (0.86 + w * 0.12);
+        winBrightness = 0.85 + hash21(wid + 21.3) * 0.25;
+        isLitWindow = winMask > 0.5;
+      } else {
+        winColor = vec3(0.38, 0.50, 0.60) * (0.6 + hash21(wid + 33.3) * 0.3);
+      }
+      color = mix(wallColor, winColor, winMask);
+      windowMask = winMask;
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.6 + 0.4 * ao;
+    `,
+
+  [FACADE_GREEN]: /* glsl */ `
+      // 綠地：公園與墓園。這裡幾乎沒有牆 —— 走到這個分支的是圍牆、擋土牆、
+      // 涼亭的柱間與管理室。
+      //
+      // **刻意不畫窗格。** 一個標籤分不出「管理室」與「圍牆」，而在圍牆上
+      // 開窗比在管理室上不開窗難看得多。公園的夜間存在感靠 PART_LAMP 的
+      // 庭園燈，不靠窗 —— 真實的公園入夜之後本來就是燈亮、房子暗。
+      if (onWall) {
+        // 石砌：水平砌縫加上世界座標的雜訊，避免一整面圍牆是死板的單色。
+        float course = fract(y / 0.055);
+        float joint = smoothstep(0.0, 0.05, course) * smoothstep(0.10, 0.05, course);
+        float grain = hash21(floor(vWorldPos.xz * 18.0)) * 0.06 - 0.03;
+        color = (vBldgColor * (0.86 - joint * 0.10) + grain);
+      } else {
+        color = vBldgColor * 0.82;
+      }
+      color *= lighting;
+      float ao = smoothstep(0.0, 0.1, y);
+      color *= 0.68 + 0.32 * ao;
+    `,
+};
+
+/** 掛在每個分支 `if` 之前的註解。與 `FACADE_BODY` 分開，讓 body 保持純 GLSL。 */
+const FACADE_COMMENT: Record<number, string> = {
+  [ZoneType.RESIDENTIAL_LOW]: '    // ---- RESIDENTIAL LOW: painted siding, no window grid ----\n    ',
+  [ZoneType.RESIDENTIAL_HIGH]: '    // ---- RESIDENTIAL HIGH: medium-spaced windows ----\n    ',
+  [ZoneType.COMMERCIAL_LOW]: '    // ---- COMMERCIAL LOW: storefront glass bottom, simple wall above ----\n    ',
+  [ZoneType.COMMERCIAL_HIGH]: '    // ---- COMMERCIAL HIGH: dense glass curtain wall ----\n    ',
+  [ZoneType.INDUSTRIAL]: '    // ---- INDUSTRIAL: corrugated metal, large doors ----\n    ',
+  [ZoneType.OFFICE]: '    // ---- OFFICE: dense window grid ----\n    ',
+  [FACADE_CIVIC]: '    // ---- CIVIC: masonry, banded floors, tall lit lobby ----\n    ',
+  [FACADE_UTILITY]: '    // ---- UTILITY: corrugated metal, clerestory band, hazard lights ----\n    ',
+  [FACADE_TRANSIT]: '    // ---- TRANSIT: light glass envelope, lit all night ----\n    ',
+  [FACADE_GREEN]: '    // ---- GREEN: masonry walls only, no window grid ----\n    ',
+};
+
+/** 立面的 if 鏈。讀的是 varying `vZoneCat`，分支之間空一行。 */
+function facadeChainGlsl(): string {
+  return catChainGlsl(facadeBodyOf, {
+    varName: 'vZoneCat',
+    commentOf: key => FACADE_COMMENT[key] ?? '    ',
+    join: '\n\n',
+  });
+}
+
+/**
+ * 這個立面類別的 GLSL。少一張表就**當場炸掉**。
+ *
+ * 沒有這個 throw 的話，在 `ZONE_CAT` 加了類別卻忘了寫立面，結果是那一類
+ * 建築拿到一片沒有窗的純色牆 —— 畫面上看起來像「還沒做完」而不像「壞了」，
+ * 而它會一路活到有人截圖問為止。整條 if 鏈存在的理由就是消滅這種靜默，
+ * 所以它自己不能留一個靜默的預設值。
+ */
+function facadeBodyOf(key: number): string {
+  const body = FACADE_BODY[key];
+  if (body === undefined) {
+    throw new Error(
+      `立面類別 ${key} 在 ZONE_CAT 裡有 cat ${ZONE_CAT[key]} 卻沒有 FACADE_BODY`,
+    );
+  }
+  return body;
 }
 
 // ===== Building Shader =====
@@ -48,10 +705,22 @@ export const BUILDING_VERT = /* glsl */ `
 #include <common>
 #include <shadowmap_pars_vertex>
 
+// 頂點端也要時間 —— 水位的起伏是真的位移，不是 fragment 的花紋。
+uniform float uTime;
+
 attribute float aHighlight;
 attribute vec3 aHighlightColor;
 attribute float aOccupancy;
 attribute vec3 aSeed;
+// 逐幾何的建築色。
+//
+// 實例化的建築走 instanceColor（InstancedMesh.setColorAt）；公共建築在遊戲
+// 裡是 Group 底下的普通 Mesh、展示區也是普通 Mesh，兩者都沒有 instanceColor，
+// 所以要靠這個屬性才有自己的顏色。以前那條路徑寫死 vec3(0.7) —— 不論警局
+// 還是消防局，牆一律是同一片灰。
+//
+// 注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+attribute vec3 aBldgColor;
 
 varying vec3 vNormal;
 varying vec3 vLocalPos;
@@ -85,7 +754,7 @@ void main() {
   #ifdef USE_INSTANCING_COLOR
     vBldgColor = instanceColor;
   #else
-    vBldgColor = vec3(0.7);
+    vBldgColor = aBldgColor;
   #endif
 
   #ifdef USE_INSTANCING
@@ -95,6 +764,18 @@ void main() {
   #endif
 
   vec4 wPos = world * vec4(position, 1.0);
+
+  // 水位上下起伏。**只動朝上的面** —— 連池壁一起動的話整個槽會跟著呼吸。
+  //
+  // fragment 端那道波光只是顏色，平面本身不動 —— 差別看得出來，所以真的
+  // 位移在這裡。相位吃世界座標，所以相鄰的兩座池不會同步。
+  if (vPartType > ${glslFloat(PART_THRESHOLDS.WATER_MIN)}
+    && vPartType < ${glslFloat(PART_THRESHOLDS.WATER_MAX)}
+    && normal.y > 0.5) {
+    wPos.y += sin(uTime * ${glslFloat(WATER_BOB.SPEED)}
+      + wPos.x * 5.0 + wPos.z * 3.3) * ${glslFloat(WATER_BOB.AMP_M / METRES_PER_CELL)};
+  }
+
   vWorldPos = wPos.xyz;
   vNormal = normalize(mat3(world) * normal);
   gl_Position = projectionMatrix * viewMatrix * wPos;
@@ -184,6 +865,16 @@ void main() {
   // 柏油地面上長出一格一格的窗。
   bool isGround = vPartType > ${glslFloat(PART_THRESHOLDS.GROUND_MIN)}
     && vPartType < ${glslFloat(PART_THRESHOLDS.GROUND_MAX)};
+  // 水面。與地面分支分開是必要的：地面的色譜是柏油到磚鋪，全是灰的，
+  // 所以「很暗的鋪面」是這套 shader 畫得出來最接近水的東西 —— 而一座碼頭
+  // 有一半的說服力來自它旁邊那片藍色。
+  bool isWater = vPartType > ${glslFloat(PART_THRESHOLDS.WATER_MIN)}
+    && vPartType < ${glslFloat(PART_THRESHOLDS.WATER_MAX)};
+  // 塗裝過的殼：水塔、煙囪、儲槽、冷卻塔。唯一照著量體自己的顏色畫的分支 ——
+  // 牆會被立面規則壓暗並加上高窗帶，而 isDetail 寫死一片金屬灰，
+  // 在那上面指定顏色等於沒指定。
+  bool isShell = vPartType > ${glslFloat(PART_THRESHOLDS.SHELL_MIN)}
+    && vPartType < ${glslFloat(PART_THRESHOLDS.SHELL_MAX)};
   bool isRoof = vPartType > ${glslFloat(PART_THRESHOLDS.ROOF_MIN)} || (n.y > 0.85 && vPartType < ${glslFloat(PART_THRESHOLDS.ROOF_BY_NORMAL)});
   bool isFloor = n.y < -0.85;
 
@@ -215,6 +906,37 @@ void main() {
     // 略帶藍的中灰金屬，靠種子微調明度，避免整片設備同一個顏色
     float m = 0.42 + vSeed.z * 0.16;
     color = vec3(m, m * 1.02, m * 1.06) * lighting;
+  } else if (isShell) {
+    // 塗裝過的殼。這裡**不加任何花紋**：一支煙囪、一座水塔的說服力來自
+    // 它的剪影與那一片乾淨的顏色，多畫一條線都是雜訊。
+    //
+    // 係數在 parts.ts 的 SHELL_LIFT，而且**必須 ≥ 1** —— 小於 1 的話這條
+    // 分支只是把一個灰換成另一個灰，白色照樣畫成米灰（第一版寫 0.90，
+    // 截圖抓到的）。注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+    float lift = ${glslFloat(SHELL_LIFT.BASE)} + ${glslFloat(SHELL_LIFT.TOP)} * max(n.y, 0.0);
+    color = vBldgColor * lift * lighting;
+  } else if (isWater) {
+    // 色譜三段：**泥漿 → 深水 → 淺水**，由 B 通道挑。
+    //
+    // 原本只有深藍到淺藍兩端，而汙水是土色的 —— 那個顏色在藍色的色譜上
+    // 不存在，shade 調到 0 也只是很深的藍。轉折點在 parts.ts 的
+    // WATER_MURK_MAX，兩座廠的 shade 都對著它測。
+    //
+    // 波光是兩道不同頻率的正弦相乘，隨時間走 —— 靜止的色塊在等角視角下
+    // 看起來是一塊有顏色的地板，不是水。
+    vec3 murk = vec3(0.34, 0.27, 0.14);
+    vec3 deep = vec3(0.05, 0.18, 0.34);
+    vec3 shallow = vec3(0.13, 0.42, 0.66);
+    float wave = sin(vWorldPos.x * 7.0 + uTime * 0.55)
+      * sin(vWorldPos.z * 5.0 - uTime * 0.41);
+    float s = clamp(vGroundShade + wave * 0.1, 0.0, 1.0);
+    float murkMax = ${glslFloat(WATER_MURK_MAX)};
+    color = s < murkMax
+      ? mix(murk, deep, s / murkMax)
+      : mix(deep, shallow, (s - murkMax) / (1.0 - murkMax));
+    color *= lighting;
+    // 水面會反天空。比玻璃弱得多，但少了它，夜裡的水是一塊純黑。
+    glassiness = 0.35;
   } else if (isGround) {
     // 柏油 -> 混凝土 -> 磚鋪，由頂點的 B 通道決定。加一點世界座標雜訊，
     // 否則一整片鋪面是死板的單一色塊。
@@ -252,344 +974,24 @@ void main() {
     // Occupancy-adjusted lit threshold: fewer lit windows when building is less occupied
     // occ=0 → no windows lit at all (abandoned/burned/empty buildings)
     float occ = vOccupancy < 0.01 ? -1.0 : clamp(vOccupancy, 0.0, 1.0);
+    // 公共建築的夜間語意與分區建築不同：它們不是住的，所以「多少人住在裡面」
+    // 對它們沒有意義 —— 變暗的原因是**停電**。aOccupancy 在公共建築上載的
+    // 因此是「有沒有電」，而不是使用率。
+    bool powered = occ > 0.0;
+    // 有電的時候，亮窗的門檻。這是住宅那條規則在住戶比例 85% 時的值：
+    // 住宅高密度是 mix(0.95, 0.4, occ)，代入 0.85 得 0.4825 —— 也就是
+    // 大約一半的窗亮著，而不是「85% 的窗亮著」。
+    //
+    // 這兩件事差很多：85% 亮看起來仍然像一張發光的板子，一半亮才看得出
+    // 「有的開有的關」，而要的是後者。
+    //
+    // 哪幾扇亮會隨 uTime 的 epoch 換（見各分支），週期 150-300 秒 ——
+    // 那個「開開關關」是慢的，與住宅同一個節奏。
+    //
+    // 注意：這裡不能用反引號，整段 GLSL 住在一個模板字面值裡。
+    float civicDark = 0.4825;
 
-    // ---- RESIDENTIAL LOW: painted siding, no window grid ----
-    if (vZoneCat < 0.1) {
-      color = vBldgColor * 0.9;
-      if (onWall) {
-        // 水平壁板（保留原本的質感）
-        float board = fract(y / 0.06);
-        float line = smoothstep(0.0, 0.06, board) * smoothstep(0.12, 0.06, board);
-        vec3 wallColor = vBldgColor * (0.88 - line * 0.06);
-
-        // 住宅的窗比公寓大而稀疏，一層一排
-        float houseFloor = floorHeight * 0.72;
-        float houseWin = windowWidth * 1.35;
-        float fy = y / houseFloor;
-        float fx = (wallU + phase) / houseWin;
-        float fracY = fract(fy);
-        float fracX = fract(fx);
-        float fwX = fwidth(fx);
-        float fwY = fwidth(fy);
-        float winMask =
-            smoothstep(0.30 - fwX, 0.30 + fwX, fracX) * smoothstep(0.70 + fwX, 0.70 - fwX, fracX)
-          * smoothstep(0.30 - fwY, 0.30 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY);
-
-        // 一樓開一道門。位置必須綁在**建築**上，不能只看格內偏移：以 fract
-        // 量到牆中央的距離對每一格都成立，所以一面牆 1.5–2.3 格、四面牆繞
-        // 一圈，一棟房子會長出六到八道門（BUG-233）。
-        //
-        // fragment shader 裡每棟固定的量只有格子座標與牆面法線，所以用格子
-        // 擲一面牆，再用格心對齊那面牆的中央。
-        vec2 bldgCell = floor(vWorldPos.xz + 0.5);
-        float wallCentre = (abs(n.x) > abs(n.z)) ? bldgCell.y : bldgCell.x;
-        float doorSide = floor(hash21(bldgCell * 3.1 + 7.0) * 4.0);
-        float thisSide = (abs(n.x) > abs(n.z))
-          ? (n.x > 0.0 ? 0.0 : 1.0)
-          : (n.z > 0.0 ? 2.0 : 3.0);
-        bool doorRow = y < houseFloor;
-        // 半寬照舊是 0.18 格，只是改成量世界座標而不是 fract —— 實際寬度
-        // 不變（0.93–1.4 m）。
-        bool onDoorWall = abs(doorSide - thisSide) < 0.5;
-        float doorMask = (doorRow && onDoorWall
-          && abs(wallU - wallCentre) < houseWin * 0.18
-          && y < houseFloor * 0.78) ? 1.0 : 0.0;
-        // 一樓其餘的地方照樣開窗。以前這裡是 winMask = 0 —— 整層一樓沒有窗，
-        // 所以它拿不到 windowMask：沒有玻璃、沒有天空反射，夜裡也永遠不亮。
-        winMask *= 1.0 - doorMask;
-
-        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 4.7;
-        float period = 150.0 + hash21(wid + 99.0) * 150.0;
-        float phaseT = hash21(wid * 2.71 + 47.0) * period;
-        float epoch = floor((uTime + phaseT) / period);
-        float lit = hash21(wid + epoch * 13.7);
-        float litThresh = mix(0.95, 0.45, occ);
-
-        vec3 winColor;
-        if (lit > litThresh) {
-          float w = hash21(wid + 77.7);
-          winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
-          winBrightness = 0.6 + hash21(wid + 21.3) * 0.4;
-          isLitWindow = winMask > 0.5;
-        } else {
-          winColor = vBldgColor * 0.24 + vec3(0.03, 0.05, 0.08);
-        }
-
-        vec3 doorColor = vBldgColor * 0.35 + vec3(0.06, 0.03, 0.02);
-        color = mix(wallColor, winColor, winMask);
-        color = mix(color, doorColor, doorMask);
-        windowMask = winMask;
-      }
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.65 + 0.35 * ao;
-    }
-
-    // ---- RESIDENTIAL HIGH: medium-spaced windows ----
-    else if (vZoneCat < 0.3) {
-      float fy = y / floorHeight;
-      float fx = (wallU + phase) / windowWidth;
-      float fracY = fract(fy);
-      float fracX = fract(fx);
-      float fwX = fwidth(fx);
-      float fwY = fwidth(fy);
-      float winMask = onWall
-        ? smoothstep(0.2 - fwX, 0.2 + fwX, fracX) * smoothstep(0.8 + fwX, 0.8 - fwX, fracX)
-        * smoothstep(0.25 - fwY, 0.25 + fwY, fracY) * smoothstep(0.68 + fwY, 0.68 - fwY, fracY)
-        : 0.0;
-      vec3 wallColor = vBldgColor * 0.88;
-      if (onWall && (fracY > 0.92 || fracY < 0.08)) {
-        wallColor = vBldgColor * 0.72;
-      }
-      vec3 winColor;
-      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phase = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phase) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
-      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
-      float bEpoch = floor((uTime + bPhase) / bPeriod);
-      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      float litThreshRH = mix(0.95, 0.4, occ);
-      if (lit > litThreshRH) {
-        float w = hash21(wid + 77.7);
-        winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
-        winBrightness = brightness;
-        isLitWindow = winMask > 0.5;
-      } else {
-        winColor = vBldgColor * 0.22 + vec3(0.03, 0.05, 0.08);
-      }
-      color = mix(wallColor, winColor, winMask);
-      windowMask = winMask;
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.6 + 0.4 * ao;
-    }
-
-    // ---- COMMERCIAL LOW: storefront glass bottom, simple wall above ----
-    else if (vZoneCat < 0.5) {
-      if (onWall && y < ${glslFloat(SHOPFRONT_CEILING)}) {
-        // 落地窗：一整層樓高的玻璃，中間只有豎向窗框，**不切樓層橫線** ——
-        // 這正是它與樓上那些小窗長得不一樣的原因，要保留。
-        //
-        // 上緣用 SHOPFRONT_CEILING 而不是自己寫一個 0.22：雨遮就掛在這條線上，
-        // 兩邊各寫一份的話，雨遮會壓在落地窗中間。
-        float bay = wallU / 0.25;
-        float bayU = fract(bay);
-        float fwB = fwidth(bay);
-        float glass = smoothstep(0.06 - fwB, 0.06 + fwB, bayU)
-                    * smoothstep(0.94 + fwB, 0.94 - fwB, bayU);
-        vec2 wid = floor(vec2(bay, 0.0)) + floor(vWorldPos.xz + 0.5) * 3.7;
-        float r = hash21(wid);
-        vec3 glassColor = mix(vec3(0.45, 0.58, 0.68), vec3(0.55, 0.7, 0.78), r);
-        color = mix(vBldgColor * 0.6, glassColor, glass); // 窗框 -> 玻璃
-
-        // 這一扇的店今晚有沒有開。逐扇而不是逐棟 —— 一排店面全暗或全亮都不對。
-        float sPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
-        float sPhase = hash21(wid * 2.71 + 47.0) * sPeriod;
-        float sEpoch = floor((uTime + sPhase) / sPeriod);
-        float sLit = hash21(wid + sEpoch * 13.7);
-        // 店面比樓上的辦公室更常亮著 —— 一條商店街的夜景主角就是它。
-        float litThreshSF = mix(0.95, 0.25, occ);
-        if (sLit > litThreshSF) {
-          winBrightness = 0.7 + hash21(wid + 21.3) * 0.5;
-          isLitWindow = glass > 0.5;
-        }
-        windowMask = glass;
-        // 落地窗白天已經有自己的玻璃色與逐扇變化。整片換成統一的天空反射色
-        // 會把那個變化抹掉，所以只取一部分。
-        glassiness = 0.45;
-      } else if (onWall) {
-        // Upper wall — sparse small windows
-        float fy = y / (floorHeight * 1.2);
-        float fx = (wallU + phase) / (windowWidth * 1.1);
-        float fracY = fract(fy);
-        float fracX = fract(fx);
-        float fwX = fwidth(fracX);
-        float fwY = fwidth(fracY);
-        float winMask = smoothstep(0.3 - fwX, 0.3 + fwX, fracX) * smoothstep(0.7 + fwX, 0.7 - fwX, fracX)
-                      * smoothstep(0.3 - fwY, 0.3 + fwY, fracY) * smoothstep(0.65 + fwY, 0.65 - fwY, fracY);
-        vec3 wallColor = vBldgColor * 0.85;
-        vec3 winColor;
-        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 5.3;
-        float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phase = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phase) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
-      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
-      float bEpoch = floor((uTime + bPhase) / bPeriod);
-      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-        float litThreshCL = mix(0.95, 0.5, occ);
-        if (lit > litThreshCL) {
-          winColor = mix(vec3(0.9, 0.85, 0.6), vec3(0.8, 0.7, 0.45), lit) * 0.8;
-          winBrightness = brightness;
-          isLitWindow = winMask > 0.5;
-        } else {
-          winColor = vBldgColor * 0.25 + vec3(0.03, 0.04, 0.08);
-        }
-        color = mix(wallColor, winColor, winMask);
-      windowMask = winMask;
-      } else {
-        color = vBldgColor * 0.85;
-      }
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.6 + 0.4 * ao;
-    }
-
-    // ---- COMMERCIAL HIGH: dense glass curtain wall ----
-    else if (vZoneCat < 0.7) {
-      float fy = y / (floorHeight * 0.88);
-      float fx = (wallU + phase) / (windowWidth * 0.5);
-      float fracY = fract(fy);
-      float fracX = fract(fx);
-      float fwX = fwidth(fx);
-      float fwY = fwidth(fy);
-      float winMask = onWall
-        ? smoothstep(0.08 - fwX, 0.08 + fwX, fracX) * smoothstep(0.92 + fwX, 0.92 - fwX, fracX)
-        * smoothstep(0.12 - fwY, 0.12 + fwY, fracY) * smoothstep(0.82 + fwY, 0.82 - fwY, fracY)
-        : 0.0;
-      vec3 wallColor = vBldgColor * 0.5; // narrow mullions
-      vec3 winColor;
-      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phase = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phase) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
-      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
-      float bEpoch = floor((uTime + bPhase) / bPeriod);
-      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      float litThreshCH = mix(0.95, 0.3, occ);
-      if (lit > litThreshCH) {
-        float w = hash21(wid + 77.7);
-        winColor = mix(vec3(0.92, 0.88, 0.65), vec3(0.82, 0.72, 0.42), w) * (0.8 + w * 0.15);
-        winBrightness = brightness;
-        isLitWindow = winMask > 0.5;
-      } else {
-        winColor = vec3(0.35, 0.48, 0.58) * (0.6 + hash21(wid + 33.3) * 0.3);
-      }
-      color = mix(wallColor, winColor, winMask);
-      windowMask = winMask;
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.6 + 0.4 * ao;
-    }
-
-    // ---- INDUSTRIAL: corrugated metal, large doors ----
-    else if (vZoneCat < 0.9) {
-      if (onWall) {
-        // Horizontal corrugation ridges
-        float ridge = fract(y / 0.08);
-        float shade = smoothstep(0.0, 0.3, ridge) * smoothstep(1.0, 0.7, ridge);
-        color = vBldgColor * (0.72 + shade * 0.18);
-
-        // 高窗帶。廠房的窗開得高 —— 下面那一段牆要靠著放料架與機具，所以
-        // 它不是一格一格的小窗，是一條沿著樓板線下方的長條窗。
-        // 靠既有的樓層節奏定位，所以一層樓的廠房與三層樓的都對得上。
-        float fy = y / floorHeight;
-        float fx = (wallU + phase) / (windowWidth * 2.2);
-        float fracY = fract(fy);
-        float fracX = fract(fx);
-        float fwX = fwidth(fx);
-        float fwY = fwidth(fy);
-        float bandMask =
-            smoothstep(0.62 - fwY, 0.62 + fwY, fracY) * smoothstep(0.86 + fwY, 0.86 - fwY, fracY)
-          * smoothstep(0.12 - fwX, 0.12 + fwX, fracX) * smoothstep(0.88 + fwX, 0.88 - fwX, fracX);
-
-        vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 6.7;
-        float wPeriod = 150.0 + hash21(wid + 99.0) * 150.0;
-        float wPhase = hash21(wid * 2.71 + 47.0) * wPeriod;
-        float wEpoch = floor((uTime + wPhase) / wPeriod);
-        float wLit = hash21(wid + wEpoch * 13.7);
-        // 廠房夜裡亮的窗比住宅少 —— 只有值夜班的那幾跨。
-        float litThreshIN = mix(0.98, 0.6, occ);
-        vec3 winColor;
-        if (wLit > litThreshIN) {
-          // 偏冷白：廠房用的是金屬鹵素／LED，不是住家的黃光。
-          winColor = mix(vec3(0.90, 0.92, 0.80), vec3(0.78, 0.84, 0.72), wLit) * 0.85;
-          winBrightness = 0.6 + hash21(wid + 21.3) * 0.4;
-          isLitWindow = bandMask > 0.5;
-        } else {
-          winColor = vBldgColor * 0.22 + vec3(0.04, 0.05, 0.07);
-        }
-        color = mix(color, winColor, bandMask);
-        windowMask = bandMask;
-
-        // Large loading door at ground level
-        // **畫在高窗之後**，所以它蓋掉落在同一段高度的高窗 —— 矮樓層的廠房
-        // 高窗帶會落進捲門的高度範圍，兩者疊在一起就是一扇長了窗戶的捲門。
-        float doorU = fract(wallU / 0.35);
-        if (y < 0.18 && doorU > 0.12 && doorU < 0.88) {
-          color = vBldgColor * 0.4 + vec3(0.02, 0.02, 0.01);
-          // Horizontal door slats
-          float slat = fract(y / 0.03);
-          color *= 0.9 + 0.1 * step(0.5, slat);
-
-          // 有些捲門是開著的，裡面的燈光整片透出來。
-          // glassiness = 0：捲門會透光，但它不是玻璃 —— 白天不該變成一片藍，
-          // 也不該有陽光鏡面。
-          vec2 did = vec2(floor(wallU / 0.35), 0.0) + floor(vWorldPos.xz + 0.5) * 9.1;
-          float dPeriod = 200.0 + hash21(did + 5.0) * 200.0;
-          float dPhase = hash21(did * 1.7 + 13.0) * dPeriod;
-          float dEpoch = floor((uTime + dPhase) / dPeriod);
-          float dOpen = hash21(did + dEpoch * 3.3);
-          windowMask = 1.0;
-          glassiness = 0.0;
-          isLitWindow = dOpen > mix(0.99, 0.68, occ);
-          winBrightness = 0.8 + hash21(did + 4.4) * 0.4;
-        }
-      } else {
-        color = vBldgColor * 0.78;
-      }
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.65 + 0.35 * ao;
-    }
-
-    // ---- OFFICE: dense window grid ----
-    else {
-      float fy = y / floorHeight;
-      float fx = (wallU + phase) / (windowWidth * 0.625);
-      float fracY = fract(fy);
-      float fracX = fract(fx);
-      float fwX = fwidth(fx);
-      float fwY = fwidth(fy);
-      float winMask = onWall
-        ? smoothstep(0.15 - fwX, 0.15 + fwX, fracX) * smoothstep(0.85 + fwX, 0.85 - fwX, fracX)
-        * smoothstep(0.2 - fwY, 0.2 + fwY, fracY) * smoothstep(0.72 + fwY, 0.72 - fwY, fracY)
-        : 0.0;
-      vec3 wallColor = vBldgColor * 0.88;
-      if (onWall && (fracY > 0.92 || fracY < 0.08)) {
-        wallColor = vBldgColor * 0.7;
-      }
-      vec3 winColor;
-      vec2 wid = floor(vec2(fx, fy)) + floor(vWorldPos.xz + 0.5) * 7.13;
-      float period = 150.0 + hash21(wid + 99.0) * 150.0;
-      float phase = hash21(wid * 2.71 + 47.0) * period;
-      float epoch = floor((uTime + phase) / period);
-      float lit = hash21(wid + epoch * 13.7);
-      float bPeriod = 150.0 + hash21(wid + 55.0) * 150.0;
-      float bPhase = hash21(wid * 3.14 + 31.0) * bPeriod;
-      float bEpoch = floor((uTime + bPhase) / bPeriod);
-      float brightness = 0.5 + hash21(wid + bEpoch * 17.3) * 0.5;
-      float litThreshOF = mix(0.95, 0.35, occ);
-      if (lit > litThreshOF) {
-        float w = hash21(wid + 77.7);
-        winColor = mix(vec3(0.95, 0.88, 0.6), vec3(0.85, 0.75, 0.4), w) * (0.8 + w * 0.15);
-        winBrightness = brightness;
-        isLitWindow = winMask > 0.5;
-      } else {
-        winColor = vBldgColor * 0.2 + vec3(0.03, 0.05, 0.09);
-      }
-      color = mix(wallColor, winColor, winMask);
-      windowMask = winMask;
-      color *= lighting;
-      float ao = smoothstep(0.0, 0.1, y);
-      color *= 0.6 + 0.4 * ao;
-    }
+${facadeChainGlsl()}
   }
 
   // Apply shadow from directional light

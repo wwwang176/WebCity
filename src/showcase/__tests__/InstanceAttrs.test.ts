@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { stampInstanceValues, floorRhythm01 } from '../instanceAttrs';
+import { stampInstanceValues, floorRhythm01 } from '../../renderer/geometry/civic/instanceAttrs';
 import { BUILDING_VERT } from '../../renderer/BuildingMaterial';
 import { floorHeightOf, VARIANT_COUNT } from '../../renderer/geometry/buildings/massing';
 import { FLOOR_HEIGHT_UNITS } from '../../renderer/geometry/buildings/massing/metrics';

@@ -81,7 +81,7 @@ describe('what glows at night', () => {
   });
 
   it('should gate the glow on occupancy', () => {
-    // 使用者的條件：沒有人的建築不應該發光。
+    // 沒有人的建築不應該發光。
     const branch = BUILDING_FRAG.slice(
       BUILDING_FRAG.indexOf('} else if (isLamp)'),
       BUILDING_FRAG.indexOf('} else if (isDetail)'),

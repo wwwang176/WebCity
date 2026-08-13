@@ -28,7 +28,7 @@ export const VEHICLE_CONFIG: Record<string, VehicleTypeConfig> = {
   bus:            { color: 0xff9800, frontOffset: 0.30, rearOffset: 0.30, yPosition: 0.025, buildGeometry: buildBusGeometry },
   van:            { color: -1,       frontOffset: 0.135, rearOffset: 0.135, yPosition: 0.025, buildGeometry: buildVanGeometry },
   truck:          { color: -1,       frontOffset: 0.225, rearOffset: 0.225, yPosition: 0.025, buildGeometry: buildTruckGeometry },
-  firetruck:      { color: 0xd32f2f, frontOffset: 0.275, rearOffset: 0.275, yPosition: 0.025, buildGeometry: buildFiretruckGeometry },
+  firetruck:      { color: 0xb71c1c, frontOffset: 0.275, rearOffset: 0.275, yPosition: 0.025, buildGeometry: buildFiretruckGeometry },
   police_car:     { color: 0x1a237e, frontOffset: 0.12, rearOffset: 0.12, yPosition: 0.025, buildGeometry: buildPoliceCarGeometry },
   ambulance:      { color: 0xffffff, frontOffset: 0.15, rearOffset: 0.15, yPosition: 0.025, buildGeometry: buildAmbulanceGeometry },
   garbage_truck:  { color: 0x2e7d32, frontOffset: 0.225, rearOffset: 0.225, yPosition: 0.025, buildGeometry: buildGarbageTruckGeometry },

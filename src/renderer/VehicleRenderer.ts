@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createVehicleMaterial } from './vehicleMaterial';
 import { VEHICLE_CONFIG } from './vehicleConfig';
 import { buildAirplaneNavLightsGeometry, buildAirplaneVTailGeometry } from './geometry';
 import { ViewMode, getVehicleVisibility } from '../core/ViewMode';
@@ -87,7 +88,7 @@ export class VehicleRenderer {
 
     for (const [type, cfg] of Object.entries(VEHICLE_CONFIG)) {
       const geometry = cfg.buildGeometry();
-      const material = new THREE.MeshLambertMaterial({ vertexColors: true });
+      const material = createVehicleMaterial();
       const mesh = new THREE.InstancedMesh(geometry, material, this.maxPerType);
       mesh.count = 0;
       mesh.castShadow = true;
@@ -99,7 +100,7 @@ export class VehicleRenderer {
 
     // Airplane vertical tail: separate mesh for independent airline tail color
     const vtGeo = buildAirplaneVTailGeometry();
-    const vtMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const vtMat = createVehicleMaterial();
     this.airplaneVTailMesh = new THREE.InstancedMesh(vtGeo, vtMat, this.maxPerType);
     this.airplaneVTailMesh.count = 0;
     this.airplaneVTailMesh.castShadow = true;

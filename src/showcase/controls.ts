@@ -58,7 +58,7 @@ const ZONE_NAMES: Record<number, string> = {
 };
 
 const MODE_NAMES: Record<ViewMode, string> = {
-  single: '單體', block: '街廓', matrix: '矩陣',
+  single: '單體', block: '街廓', matrix: '矩陣', civic: '公共建築',
 };
 
 export function mountControls(
@@ -66,23 +66,41 @@ export function mountControls(
 ): void {
   host.innerHTML = '';
 
-  const row = (label: string, el: HTMLElement) => {
+  /**
+   * 只在分區建築的模式下有意義的控制項。`civic` 模式下整組藏起來。
+   *
+   * 收在這裡而不是各自記一個變數：漏掉一個的話它會孤零零地留在面板上，
+   * 而使用者會花時間找「為什麼把等級調到 3 警局沒有變高」。
+   */
+  const zoneOnly: HTMLElement[] = [];
+
+  const row = (label: string, el: HTMLElement, zoneSpecific = true) => {
     const l = document.createElement('label');
     l.textContent = label;
     host.appendChild(l);
     host.appendChild(el);
+    if (zoneSpecific) zoneOnly.push(l, el);
   };
 
   const modeSel = document.createElement('select');
-  for (const m of ['single', 'block', 'matrix'] as ViewMode[]) {
+  for (const m of ['single', 'block', 'matrix', 'civic'] as ViewMode[]) {
     const o = document.createElement('option');
     o.value = m;
     o.textContent = MODE_NAMES[m];
     modeSel.appendChild(o);
   }
   modeSel.value = state.mode;
-  modeSel.onchange = () => { state.mode = modeSel.value as ViewMode; onChange(); };
-  row('檢視模式', modeSel);
+  row('檢視模式', modeSel, false);
+
+  const syncModeVisibility = () => {
+    const civic = state.mode === 'civic';
+    for (const el of zoneOnly) el.style.display = civic ? 'none' : '';
+  };
+  modeSel.onchange = () => {
+    state.mode = modeSel.value as ViewMode;
+    syncModeVisibility();
+    onChange();
+  };
 
   const zoneSel = document.createElement('select');
   for (const z of ZONE_TYPES) {
@@ -241,4 +259,8 @@ export function mountControls(
   const stats = document.createElement('div');
   stats.id = 'stats';
   host.appendChild(stats);
+
+  // **必須在所有 row() 之後。** 它讀的是 `zoneOnly`，而那份清單是 row()
+  // 一路累積起來的 —— 提前呼叫只會藏到當下已經建好的那幾個。
+  syncModeVisibility();
 }

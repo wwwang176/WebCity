@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { tagPart, PART_WALL } from '../parts';
-import { HALF_ENVELOPE } from './metrics';
+import { HALF_ENVELOPE, TUB, STACK, coolingProfile } from './metrics';
 import { maxAbsOf, partOf, type Volume } from './volume';
 import { METRES_PER_CELL } from '../../../../core/grid/constants';
 
@@ -104,7 +104,141 @@ function cylinder(v: Volume): THREE.BufferGeometry {
   return geo;
 }
 
-function shapeOf(v: Volume): THREE.BufferGeometry[] {
+/**
+ * 半球：圓頂。
+ *
+ * 與 `cylinder` 同一條路徑（THREE 圖元 → 去 uv → 攤平 → 重算法線 → 縮放），
+ * 理由也一樣：`SphereGeometry` 的纏繞方向本來就是外向的，而它帶 uv 又是索引
+ * 幾何，不先攤平就與 `frustum` 的產物合併不起來。
+ *
+ * 分段數與圓柱同為 8：兩者常常疊在一起（圓頂坐在筒身上），邊數不同的話
+ * 接縫會露出來。垂直分 4 段 —— 再少就會讀成一頂斗笠。
+ */
+function dome(v: Volume): THREE.BufferGeometry {
+  const src = new THREE.SphereGeometry(
+    0.5, CYLINDER_SIDES, 4, 0, Math.PI * 2, 0, Math.PI / 2,
+  );
+  src.deleteAttribute('uv');
+  const geo = src.toNonIndexed();
+  src.dispose();
+  // 半球的 y ∈ [0, 0.5]，要撐滿宣告的 [y0, y1]。
+  geo.scale(v.w, (v.y1 - v.y0) * 2, v.d);
+  geo.computeVertexNormals();
+  geo.translate(v.x, v.y0, v.z);
+  return geo;
+}
+
+/**
+ * 冷卻塔：**有腰的**旋轉體。
+ *
+ * 電廠在低多邊形城市裡最好認的剪影就是它，而那個形狀的實體只有一件事 ——
+ * 中段比上下都窄。圓柱是直的、稜台是單調收放，兩個都做不出腰，所以這是
+ * 唯一需要自己給側面輪廓的形狀。
+ *
+ * 輪廓本身在 `metrics.ts`：塔口那一圈環的內外緣（`COOL.THROAT` / `COOL.RIM`）
+ * 是從同一條雙曲線算出來的，而量體資料要靠它們把航警燈放在環上。兩邊各算
+ * 一份的話，腰的參數一動，燈就會掉進塔口。
+ */
+function coolingTower(v: Volume): THREE.BufferGeometry {
+  return lathe(coolingProfile().map(([r, y]) => new THREE.Vector2(r, y)), v);
+}
+
+/**
+ * 煙囪：塔身微收，頂上一圈環，環的內側**凹下去**。
+ *
+ * 圓柱的頂是一片實心的圓盤，而真的煙囪頂上是一個洞 —— 十幾公尺高的東西
+ * 在等角視角下最先看到的就是它的頂。
+ *
+ * 凹槽用兩個同心圓柱做不出來：外筒的頂蓋會把內筒整個蓋掉。把外筒改成無蓋的
+ * 管子也沒用 —— 建築材質是 `FrontSide`，管壁的法線朝外，俯視時內側被背面
+ * 剔除，看到的是「穿過去」，也就是俯視時的那個破口。
+ *
+ * 旋轉體給得出來：輪廓在頂端折回去往下走，那一段的法線跟著朝向軸心，
+ * 所以俯視看得到的是凹槽的**內壁**而不是它的背面。
+ */
+function chimney(v: Volume): THREE.BufferGeometry {
+  const { BORE, COLLAR, DEPTH } = STACK;
+  return lathe([
+    new THREE.Vector2(0.5, 0),            // 底座
+    new THREE.Vector2(COLLAR, 0.86),      // 微收的塔身
+    new THREE.Vector2(COLLAR, 1),         // 管口外緣
+    new THREE.Vector2(BORE, 1),           // 管口的環
+    new THREE.Vector2(BORE, 1 - DEPTH),   // 凹槽內壁（法線朝軸心）
+    new THREE.Vector2(0, 1 - DEPTH),      // 槽底
+  ], v);
+}
+
+/**
+ * 圓槽：開口的容器，內壁一路往下到槽底。
+ *
+ * 與煙囪的凹槽同一個做法、不同的用途 —— 這裡裝的是水，所以水面要**低於
+ * 槽緣**才讀得出深度。實心的圓柱做不到：頂面是一片實心的圓盤，水面壓到它
+ * 下面就整個埋進量體裡，資料是對的而畫面上什麼都沒有。
+ *
+ * 槽壁的厚度取 `TUB.INNER`，深度取 `TUB.DEPTH` —— 放水面的量體資料用的是
+ * 同一組數字。
+ */
+function tub(v: Volume): THREE.BufferGeometry {
+  const inner = 0.5 * TUB.INNER;
+  const floor = 1 - TUB.DEPTH;
+  return lathe([
+    new THREE.Vector2(0.5, 0),        // 槽底外緣
+    new THREE.Vector2(0.5, 1),        // 槽壁外側
+    new THREE.Vector2(inner, 1),      // 槽緣
+    new THREE.Vector2(inner, floor),  // 槽壁內側（法線朝軸心）
+    new THREE.Vector2(0, floor),      // 槽底
+  ], v);
+}
+
+/**
+ * 方池：`tub` 的矩形版，四片牆圍成一圈。
+ *
+ * 旋轉體轉不出矩形，而把盒子挖空要的是布林運算。四片實心的牆給得出同樣的
+ * 東西，而且更便宜：一片盒子朝池心的那一面本來就是**朝內**的正面，
+ * `FrontSide` 剔除不掉它。
+ *
+ * 兩片沿 x 的牆走滿全寬、兩片沿 z 的牆縮掉牆厚，四個角因此只屬於前者 ——
+ * 重疊的話那四個角會有兩層共面的皮。
+ */
+function basinWalls(v: Volume): THREE.BufferGeometry[] {
+  const tw = v.w * (1 - TUB.INNER) / 2;
+  const td = v.d * (1 - TUB.INNER) / 2;
+  const innerD = v.d - td * 2;
+  return [
+    ...([-1, 1] as const).map(s => frustum(
+      { ...v, z: v.z + s * (v.d - td) / 2, d: td }, v.w, td, 0, 0)),
+    ...([-1, 1] as const).map(s => frustum(
+      { ...v, x: v.x + s * (v.w - tw) / 2, w: tw, d: innerD },
+      tw, innerD, 0, 0)),
+  ];
+}
+
+/**
+ * 一條輪廓轉一圈。`cooling` 與 `stack` 共用。
+ *
+ * 與 `cylinder` 同一條路徑（去 uv → 攤平 → 縮放 → 重算法線 → 位移），
+ * 順序不能換：非等比縮放會扭曲既有的法線。輪廓的 x ∈ [0, 0.5]、y ∈ [0, 1]，
+ * 縮放之後剛好填滿宣告的盒子。
+ */
+function lathe(profile: THREE.Vector2[], v: Volume): THREE.BufferGeometry {
+  const src = new THREE.LatheGeometry(profile, CYLINDER_SIDES);
+  src.deleteAttribute('uv');
+  const geo = src.toNonIndexed();
+  src.dispose();
+  geo.scale(v.w, v.y1 - v.y0, v.d);
+  geo.computeVertexNormals();
+  geo.translate(v.x, v.y0, v.z);
+  return geo;
+}
+
+/**
+ * 一個量體的幾何。一份量體可能產出多份幾何（鋸齒天窗是一排）。
+ *
+ * 匯出是給 `geometry/civic/` 用的 —— 公共建築用同一組圖元，但護欄不同
+ * （擋佔地邊界而不是行人包絡線）。圖元各寫一份的下場這個專案已經示範過
+ * （BUG-231 的地板顏色）。
+ */
+export function shapeOf(v: Volume): THREE.BufferGeometry[] {
   const alongZ = (v.facing ?? 0) % 2 === 0;
   const sign = (v.facing ?? 0) < 2 ? 1 : -1;
 
@@ -113,6 +247,16 @@ function shapeOf(v: Volume): THREE.BufferGeometry[] {
       return [frustum(v, v.w, v.d, 0, 0)];
     case 'cylinder':
       return [cylinder(v)];
+    case 'dome':
+      return [dome(v)];
+    case 'cooling':
+      return [coolingTower(v)];
+    case 'stack':
+      return [chimney(v)];
+    case 'tub':
+      return [tub(v)];
+    case 'basin':
+      return basinWalls(v);
     case 'gable':
       return alongZ
         ? [frustum(v, v.w, v.d * RIDGE, 0, 0)]

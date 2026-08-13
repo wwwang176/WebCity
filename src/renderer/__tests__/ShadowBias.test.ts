@@ -37,7 +37,7 @@ function offsetAt(dayFraction: number, padded = PADDED_DEFAULT): number {
 
 describe('shadow offset', () => {
   it('should stay small at the showcase default time, not just at noon', () => {
-    // 使用者是在展示區看到的，而展示區的 timeOverride 預設是 0.3。
+    // 這個問題是在展示區看到的，而展示區的 timeOverride 預設是 0.3。
     // 第一次修完之後這裡仍然是 2.4 公尺 —— 而當時的測試只量正午的
     // normalBias，得到 5 公分就放行了。
     expect(offsetAt(0.3), '展示區預設時間下陰影還是離物體很遠')

@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   BUILDING_VERT, BUILDING_FRAG, getBuildingMaterial, resetBuildingMaterial,
+  sortedFacadeKeys,
 } from '../BuildingMaterial';
-import { PART_THRESHOLDS } from '../geometry/buildings/parts';
+import { PART_THRESHOLDS, SHELL_LIFT, WATER_BOB } from '../geometry/buildings/parts';
+import { METRES_PER_CELL } from '../../core/grid/constants';
 import { FLOOR_HEIGHT_UNITS, SHOPFRONT_CEILING } from '../geometry/buildings/propBands';
 import { roofPaletteFor } from '../ColorPalettes';
 import { ZONE_TYPES } from '../geometry/buildings/registry';
@@ -50,6 +52,73 @@ describe('the shader uses the thresholds the parts module defines', () => {
     expect(detailAt).toBeGreaterThan(-1);
     expect(wallAt).toBeGreaterThan(-1);
     expect(detailAt).toBeLessThan(wallAt);
+  });
+
+  /**
+   * 指定顏色的量體要真的拿到那個顏色。
+   *
+   * 白色的水塔連續兩版都畫成灰的。原因不在資料 —— 塔身一直
+   * 帶著 `color: [0.94, 0.95, 0.96]`，而測試也一直在驗那個陣列。問題是
+   * **shader 沒有一個照著它畫的分支**：
+   *
+   * - 牆會被 `FACADE_UTILITY` 壓成 `vBldgColor * 0.70~0.90`，再加一條高窗帶
+   *   與一排紅色警示燈；
+   * - `PART_DETAIL` 直接寫死一片金屬灰（`vec3(m, m*1.02, m*1.06)`），
+   *   `vBldgColor` 連讀都沒讀 —— 在它上面指定顏色等於沒指定；
+   * - `PART_GROUND` 的色譜上限是 `vec3(0.60, 0.58, 0.55)` 的磚鋪，
+   *   `shade: 1.0` 也只到中灰。
+   *
+   * 三條路都到不了白色，而且**沒有一條會報錯**。`PART_SHELL` 是缺的那一條：
+   * 塗裝過的殼（水塔、煙囪、儲槽），照量體自己的顏色畫，不長窗也不發光。
+   */
+  it('should paint a shell in the colour the volume asked for', () => {
+    const start = BUILDING_FRAG.indexOf('} else if (isShell)');
+    expect(start, 'shader 沒有外殼分支').toBeGreaterThan(-1);
+    const shell = BUILDING_FRAG.slice(start, BUILDING_FRAG.indexOf('} else if', start + 10));
+    expect(shell, '外殼沒有照量體自己的顏色畫').toContain('vBldgColor');
+    expect(shell, '外殼長了窗戶').not.toContain('winMask');
+    expect(shell, '外殼會自己發光 —— 那是 PART_LAMP 的事').not.toContain('emissive');
+  });
+
+  /**
+   * 外殼不准把顏色壓暗。
+   *
+   * 這是同一個 bug 的第二層：`PART_SHELL` 加進來之後白塔**還是**米灰的，
+   * 因為那條分支自己寫了 `vBldgColor * 0.90`。牆是 0.70~0.90、
+   * `PART_DETAIL` 是寫死的 0.42~0.58 —— 係數小於 1 的話這條新分支只是把
+   * 一個灰換成另一個灰，而截圖前沒有任何東西會說出來。
+   */
+  it('should not darken a shell below the colour it was given', () => {
+    expect(SHELL_LIFT.BASE, '外殼的明度係數 < 1 —— 白色還是會畫成灰色')
+      .toBeGreaterThanOrEqual(1);
+    expect(BUILDING_FRAG, 'shader 沒有用 SHELL_LIFT，那是第二份資料')
+      .toContain(`${SHELL_LIFT.BASE} + ${SHELL_LIFT.TOP} * max(n.y, 0.0)`);
+  });
+
+  /**
+   * 水位是**真的**在動，不是只有顏色在動。
+   *
+   * fragment 端那道波光只改顏色，平面本身是靜止的 —— 一塊有花紋的地板。
+   * 要讓水位起伏只能在 vertex 端位移，而那需要頂點端也拿得到 `uTime`。
+   */
+  it('should make the water surface actually rise and fall', () => {
+    expect(BUILDING_VERT, '頂點端沒有時間，位移做不出來')
+      .toContain('uniform float uTime;');
+    expect(BUILDING_VERT, '水面沒有位移 —— 波光只是顏色').toContain('wPos.y +=');
+    expect(BUILDING_VERT, '位移沒有只挑水面')
+      .toContain(String(PART_THRESHOLDS.WATER_MIN));
+    // 只動朝上的面。連池壁一起動的話整個槽會跟著呼吸。
+    expect(BUILDING_VERT, '位移沒有只挑朝上的面').toContain('normal.y > 0.5');
+    expect(BUILDING_VERT, 'shader 沒有用 WATER_BOB，那是第二份資料')
+      .toContain(String(WATER_BOB.AMP_M / METRES_PER_CELL));
+  });
+
+  it('should branch on the shell tag before it reaches the wall branch', () => {
+    // 落到牆的分支就是高窗帶加警示燈 —— 一支長了窗戶的煙囪。
+    const shellAt = BUILDING_FRAG.indexOf('isShell');
+    const wallAt = BUILDING_FRAG.indexOf('=== WALL');
+    expect(shellAt).toBeGreaterThan(-1);
+    expect(shellAt).toBeLessThan(wallAt);
   });
 
   it('should give low-density residential a window grid, not just siding lines', () => {
@@ -101,8 +170,13 @@ describe('the shader uses the thresholds the parts module defines', () => {
     for (let i = 1; i < thresholds.length; i++) {
       expect(thresholds[i]!, `第 ${i} 個門檻沒有遞增`).toBeGreaterThan(thresholds[i - 1]!);
     }
-    // 最後一個分區走 else，所以門檻數比分區數少一個。
-    expect(thresholds.length).toBe(ZONE_TYPES.length - 1);
+    // 最後一個類別走 else，所以門檻數比類別數少一個。
+    //
+    // 用 `sortedFacadeKeys()` 而不是 `ZONE_TYPES`：這條鏈是由 `ZONE_CAT`
+    // 生成的，而 `ZONE_CAT` 除了六個分區還有公共建築的立面類別（`FACADE_*`）。
+    // `ZONE_TYPES` 是從高度表推導的「哪些分區有建築」，公共建築沒有高度表 ——
+    // 兩者本來就不是同一件事，只是在加公共類別之前碰巧一樣大。
+    expect(thresholds.length).toBe(sortedFacadeKeys().length - 1);
   });
 
   it('should let the shopfront glass take part in day and night', () => {

@@ -20,9 +20,67 @@ export const PART_DETAIL = 0.2;
  */
 export const PART_LAMP = 0.3;
 export const PART_FOLIAGE = 0.5;
+/**
+ * 水面：河、渡輪碼頭的港池、抽水廠的取水口。
+ *
+ * 與 `PART_GROUND` 分開是必要的。水原本是「一塊很暗的鋪面」（`shade` 0.02），
+ * 而地面分支的色譜是柏油到磚鋪 —— 全是灰的，所以一片水只能是一塊深灰的地。
+ */
+export const PART_WATER = 0.6;
 /** 地面貼片：柏油、鋪面、標線。完全平，行人走在上面。 */
 export const PART_GROUND = 0.7;
+/**
+ * 塗裝過的殼：水塔、煙囪、儲槽、冷卻塔。
+ *
+ * 這是唯一**照著量體自己的顏色畫**的標籤 —— 其他每一條路都會把顏色吃掉：
+ *
+ * - 牆走分區的立面規則。`FACADE_UTILITY` 會把它壓成 0.70～0.90 倍，
+ *   再加一條高窗帶與一排紅色警示燈（一支長了窗戶的煙囪）。
+ * - `PART_DETAIL` 寫死一片金屬灰，`vBldgColor` 連讀都沒讀 ——
+ *   在它上面指定顏色**等於沒指定**，而且不會有任何東西報錯。
+ * - `PART_GROUND` 的色譜上限只到 `vec3(0.60, 0.58, 0.55)` 的磚鋪。
+ *
+ * 白色的水塔因此畫不出來：三條路都到不了白。
+ */
+export const PART_SHELL = 0.9;
 export const PART_ROOF = 1.0;
+
+/**
+ * 塗裝外殼的明度係數：側面 `BASE`，朝上的面再加 `TOP`。
+ *
+ * **`BASE` 一定要 ≥ 1。** 白色被畫成灰色的機制就是這個係數 —— 牆是
+ * `vBldgColor * 0.70~0.90`、`PART_DETAIL` 是寫死的 0.42~0.58。外殼如果也
+ * 小於 1，`PART_SHELL` 只是把一個灰換成另一個灰，而**第一版寫的正是
+ * 0.90**：截圖裡的白水塔是米灰色的。
+ *
+ * 頂面再提亮是因為八邊形的殼在等角視角下側面的明暗差本來就小，
+ * 不提亮的話整根讀成一片沒有厚度的板子。
+ */
+export const SHELL_LIFT = { BASE: 1.06, TOP: 0.14 } as const;
+
+/**
+ * 水面色譜的第一個轉折：低於它是**泥漿**，高於它是水。
+ *
+ * 水的分支原本只有深藍到淺藍兩端，而汙水是土色的 —— 那個顏色在藍色的
+ * 色譜上不存在，`shade` 調到 0 也只是很深的藍。所以色譜改成三段：
+ * 泥漿 → 深水 → 淺水，而這個常數是第一段的上界。
+ *
+ * 匯出是為了讓兩座廠的 `shade` 測得到自己落在哪一段 —— 汙水廠必須在泥漿端、
+ * 抽水廠必須在水的那一端，而那正是「兩廠並排時分不分得出來」的實體。
+ */
+export const WATER_MURK_MAX = 0.35;
+
+/**
+ * 水面的起伏：振幅（公尺）與速度。
+ *
+ * fragment 那道波光只是**顏色**，平面本身不動 —— 那是一塊有花紋的地板。
+ * 要讓水位真的起伏只能在 **vertex** 端位移，所以 `BUILDING_VERT` 也要吃
+ * `uTime`。
+ *
+ * 振幅不得超過水層厚度的一半（由 `Utility.test.ts` 守）：再大的話水面會在
+ * 池底之下與池壁之上來回穿刺，而那看起來是水在漏。
+ */
+export const WATER_BOB = { AMP_M: 0.05, SPEED: 0.6 } as const;
 
 /** shader 用來把 R 通道切段的門檻。 */
 export const PART_THRESHOLDS = {
@@ -31,10 +89,22 @@ export const PART_THRESHOLDS = {
   /** 細節與燈具的分界。低於它是冷的金屬，高於它會發光。 */
   LAMP_MIN: 0.25,
   FOLIAGE_MIN: 0.35,
-  FOLIAGE_MAX: 0.65,
+  FOLIAGE_MAX: 0.55,
+  /** 水面。夾在草地與鋪面之間那一段。 */
+  WATER_MIN: 0.55,
+  WATER_MAX: 0.65,
   GROUND_MIN: 0.65,
   GROUND_MAX: 0.8,
-  ROOF_MIN: 0.8,
+  /**
+   * 塗裝外殼。夾在鋪面與屋頂之間 —— 那一段原本是空號。
+   *
+   * 放在這裡而不是塞進 0.1～0.25 那幾段之間：那邊最寬只剩 0.025 的空隙，
+   * 而頂點色是 Float32、GLSL 的 highp 也只有約 7 位有效數字。這裡上下各
+   * 留 0.05，與其他每一段一樣寬。
+   */
+  SHELL_MIN: 0.85,
+  SHELL_MAX: 0.95,
+  ROOF_MIN: 0.95,
 } as const;
 
 export function tagPart(geo: THREE.BufferGeometry, part: number): void {
@@ -48,7 +118,28 @@ export function tagPart(geo: THREE.BufferGeometry, part: number): void {
   geo.setAttribute('color', new THREE.BufferAttribute(arr, 3));
 }
 
-/** 分區類別常數（寫在頂點色 G 通道）。 */
+/**
+ * 公共建築的立面類別。
+ *
+ * 它們與 `ZoneType` 共用 `ZONE_CAT` 這張表，所以**編號不能相撞** ——
+ * `ZoneType` 是 0–6，這裡從 101 起跳。撞號的話後寫的那一筆會靜靜地蓋掉
+ * 前一筆，而表現只是「某一區的屋頂顏色怪怪的」。
+ *
+ * 公共建築沒有 `ZoneType`（它們的格子是基礎設施，不是分區），所以這幾個
+ * 數字不對應任何遊戲狀態 —— 它們只是頂點色 G 通道的編碼。
+ */
+export const FACADE_CIVIC = 101;
+export const FACADE_UTILITY = 102;
+export const FACADE_TRANSIT = 103;
+export const FACADE_GREEN = 104;
+
+/**
+ * 分區類別常數（寫在頂點色 G 通道）。
+ *
+ * shader 的立面 if 鏈與屋頂色票鏈**都由這張表生成**（見 `BuildingMaterial`
+ * 的 `catChainGlsl`）。加一列就會長出一個分支，所以 `FACADE_BODY` 也必須
+ * 跟著加 —— 少了會在模組載入時當場丟例外，不會靜靜地畫成純色牆。
+ */
 export const ZONE_CAT: Record<number, number> = {
   [ZoneType.RESIDENTIAL_LOW]:  0.0,
   [ZoneType.RESIDENTIAL_HIGH]: 0.2,
@@ -56,6 +147,10 @@ export const ZONE_CAT: Record<number, number> = {
   [ZoneType.COMMERCIAL_HIGH]:  0.6,
   [ZoneType.INDUSTRIAL]:       0.8,
   [ZoneType.OFFICE]:           1.0,
+  [FACADE_CIVIC]:              1.2,
+  [FACADE_UTILITY]:            1.4,
+  [FACADE_TRANSIT]:            1.6,
+  [FACADE_GREEN]:              1.8,
 };
 
 /**

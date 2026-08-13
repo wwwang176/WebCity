@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { getMassingVariants, volumesFor } from '../geometry/buildings/massing';
 import { VARIANT_COUNT } from '../geometry/buildings/massing/dimensions';
-import { HALF_ENVELOPE, FLOOR_HEIGHT_UNITS } from '../geometry/buildings/massing/metrics';
+import { HALF_ENVELOPE, FLOOR_HEIGHT_UNITS, TUB, COOL }
+  from '../geometry/buildings/massing/metrics';
 
 const MID_FLOOR = (FLOOR_HEIGHT_UNITS.MIN + FLOOR_HEIGHT_UNITS.MAX) / 2;
 import { rasterise, differenceRatio, centroidOffset, rotate90, type Volume }
@@ -256,7 +257,7 @@ function stacksIn(vs: readonly Volume[]): number {
 describe('industrial reads as industrial', () => {
   it('should raise a stack or silo above the roof on at least half the variants', () => {
     // 工業的等級階梯**不**表現在高度上（現代廠房都是單層挑高、鋪滿基地），
-    // 所以少了設備，工業就只是一個比較矮的商業盒子 —— 而那正是使用者看到的。
+    // 所以少了設備，工業就只是一個比較矮的商業盒子。
     for (const lv of LEVELS) {
       let withStack = 0;
       for (let vi = 0; vi < VARIANT_COUNT; vi++) {
@@ -296,6 +297,371 @@ describe('cylinder volumes', () => {
     expect(b.min.z).toBeCloseTo(-0.13, 6);
     expect(b.max.z).toBeCloseTo(0.03, 6);
     expect(b.max.y).toBeCloseTo(1, 6);
+  });
+});
+
+describe('dome volumes', () => {
+  /**
+   * 圓頂要是**半球**，不是一疊愈往上愈窄的鼓。
+   *
+   * 圓頂要讀成半球。堆四層八角柱在遠景讀得出「圓頂」，走近就是四層邊緣
+   * 分明的台階。
+   *
+   * 「像不像半球」在幾何上有一個可以直接量的性質：**任一高度的半徑等於
+   * `√(1 − y²)`**。堆疊的鼓在一層之內半徑是常數，所以這條會抓到它。
+   */
+  const box: Volume = { x: 0.2, z: -0.1, w: 0.4, d: 0.4, y0: 0.5, y1: 0.7 };
+
+  it('should fill the box it declared', () => {
+    const geo = assemble([{ ...box, shape: 'dome' }]);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect(b.min.x).toBeCloseTo(0, 6);
+    expect(b.max.x).toBeCloseTo(0.4, 6);
+    expect(b.min.z).toBeCloseTo(-0.3, 6);
+    expect(b.max.z).toBeCloseTo(0.1, 6);
+    // 底面貼著 y0、頂點剛好碰到 y1 —— 半球是「宣告的盒子的上半」。
+    expect(b.min.y).toBeCloseTo(0.5, 6);
+    expect(b.max.y).toBeCloseTo(0.7, 6);
+  });
+
+  it('should curve like a hemisphere, not step like a stack of drums', () => {
+    const geo = assemble([{ ...box, shape: 'dome' }]);
+    // 逐頂點檢查而不是逐高度取樣：8 邊 × 4 段的半球只有五圈頂點，取樣高度
+    // 落在圈與圈之間就什麼都量不到（而那讀起來像「這個形狀是空的」）。
+    const pos = geo.getAttribute('position');
+    const seen = new Set<string>();
+    for (let i = 0; i < pos.count; i++) {
+      const y = (pos.getY(i) - box.y0) / (box.y1 - box.y0);
+      const r = Math.hypot(pos.getX(i) - box.x, pos.getZ(i) - box.z) / (box.w / 2);
+      // 八邊形的頂點落在外接圓上，邊的中點落在內切圓上（差 cos(π/8) ≈ 0.924），
+      // 所以容差要吃得下那個差。
+      expect(r * r + y * y, `頂點 (r=${r.toFixed(2)}, y=${y.toFixed(2)}) 不在球面上`)
+        .toBeGreaterThan(0.82);
+      expect(r * r + y * y).toBeLessThan(1.01);
+      seen.add(y.toFixed(3));
+    }
+    // 而且真的分了好幾層 —— 一個圓盤也滿足上面那條。
+    expect(seen.size, '半球只有一圈頂點，那是一個蓋子').toBeGreaterThanOrEqual(4);
+  });
+
+  it('should merge with the other shapes', () => {
+    // `mergeGeometries` 要求屬性集合一致。圓柱那條路徑踩過這個坑（索引 + uv），
+    // 半球走的是同一個 THREE 圖元，所以同一個坑就在旁邊等著。
+    expect(() => assemble([
+      { ...box, shape: 'dome' },
+      { x: 0, z: 0, w: 0.2, d: 0.2, y0: 0, y1: 0.5 },
+    ])).not.toThrow();
+  });
+});
+
+describe('cooling tower volumes', () => {
+  /**
+   * 冷卻塔的**腰**。
+   *
+   * 沒有它，這一棟看不出是電廠。電廠在低多邊形城市
+   * 裡最好認的剪影就是雙曲線的冷卻塔 —— 而那個形狀的實體只有一件事：
+   * **中段比上下都窄**。圓柱與稜台都做不到（一個是直的，一個是單調收放），
+   * 所以這條測的就是那個腰。
+   */
+  const box: Volume = { x: 0, z: 0, w: 0.6, d: 0.6, y0: 0, y1: 1.2 };
+
+  it('should pinch in at the waist', () => {
+    const geo = assemble([{ ...box, shape: 'cooling' }]);
+    const pos = geo.getAttribute('position');
+    const ring = (lo: number, hi: number) => {
+      let r = 0;
+      for (let i = 0; i < pos.count; i++) {
+        const t = (pos.getY(i) - box.y0) / (box.y1 - box.y0);
+        if (t < lo || t > hi) continue;
+        r = Math.max(r, Math.hypot(pos.getX(i) - box.x, pos.getZ(i) - box.z));
+      }
+      return r;
+    };
+    // 取樣窗要吃得下浮點誤差：頂圈的 t 算出來可能是 1.0000000000000002，
+    // 而 `t > 1.0` 會把它整圈丟掉（量到的半徑是 0，訊息看起來像「塔口不見了」）。
+    const foot = ring(-0.01, 0.08);
+    const waist = ring(0.55, 0.75);
+    const lip = ring(0.9, 1.01);
+    expect(waist, '腰沒有比底座窄 —— 那是一根柱子').toBeLessThan(foot * 0.85);
+    expect(lip, '塔口沒有比腰寬 —— 那是一個漏斗').toBeGreaterThan(waist * 1.05);
+    expect(lip, '塔口比底座還寬 —— 那是一個喇叭').toBeLessThan(foot);
+  });
+
+  it('should fill the box it declared', () => {
+    const geo = assemble([{ ...box, shape: 'cooling' }]);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect(b.max.x - b.min.x).toBeCloseTo(0.6, 6);
+    expect(b.min.y).toBeCloseTo(0, 6);
+    expect(b.max.y).toBeCloseTo(1.2, 6);
+  });
+
+  /**
+   * **等角視角下看得進去的破口是這一座。**
+   *
+   * `LatheGeometry` 的輪廓從底走到頂就停了，**上下都沒有蓋**，也就是一根
+   * 開口的管子。建築材質是 `FrontSide`，所以視角一高、看得進塔口的時候，
+   * 對面的內壁被背面剔除 —— 看到的是穿過去的背景，塔就變成兩片破掉的殼。
+   *
+   * （真實的冷卻塔頂上確實是開的，所以「補一片平蓋」是錯的答案：那會讓它
+   * 讀成一個筒倉。要的是一個**凹槽** —— 輪廓在頂端折進去再往下，
+   * 那一段的法線跟著朝向軸心，於是俯視看到的是內壁而不是背景。）
+   */
+  it('should close the top with a recess instead of leaving a hole', () => {
+    const geo = assemble([{ ...box, shape: 'cooling' }]);
+    const pos = geo.getAttribute('position');
+    const nrm = geo.getAttribute('normal');
+    let inward = 0;
+    let floorY = -Infinity;
+    for (let t = 0; t < pos.count / 3; t++) {
+      let cx = 0, cy = 0, cz = 0, nx = 0, ny = 0, nz = 0;
+      for (let e = 0; e < 3; e++) {
+        const i = t * 3 + e;
+        cx += pos.getX(i) / 3; cy += pos.getY(i) / 3; cz += pos.getZ(i) / 3;
+        nx += nrm.getX(i) / 3; ny += nrm.getY(i) / 3; nz += nrm.getZ(i) / 3;
+      }
+      const r = Math.hypot(cx - box.x, cz - box.z);
+      const radial = r < 1e-9 ? 0 : ((cx - box.x) * nx + (cz - box.z) * nz) / r;
+      if (radial < -0.5) inward++;
+      if (ny > 0.9 && r < box.w / 4) floorY = Math.max(floorY, cy);
+    }
+    expect(inward, '塔口沒有朝內的內壁 —— 俯視會直接看穿').toBeGreaterThan(0);
+    expect(floorY, '凹槽沒有底 —— 那還是一個洞').toBeGreaterThan(-Infinity);
+    // 而且要凹得夠深。塔口的直徑接近塔身的一半，斜著看進去只看得到很小的
+    // 一塊 —— 淺淺一圈在那個角度下讀起來是塔頂的一道紋路，不是一個口。
+    const depth = (box.y1 - floorY) / (box.y1 - box.y0);
+    // 下限寫死。只比 `COOL.DEPTH` 的話這一條是套套邏輯 —— 把常數調淺，
+    // 幾何跟著變淺，而測試照樣是綠的。
+    expect(depth, '塔口太淺').toBeGreaterThan(0.15);
+    expect(depth, '幾何沒有跟著 COOL.DEPTH 走').toBeCloseTo(COOL.DEPTH, 6);
+  });
+});
+
+/**
+ * 煙囪的**口**。
+ *
+ * 圓柱的頂是一片實心的圓盤 —— 從等角視角俯視，一支十幾公尺高的煙囪最
+ * 顯眼的就是那一片平蓋，而真的煙囪頂上是一個洞。
+ *
+ * 凹槽做不出來的原因是形狀庫裡全是**實心凸體**：兩個同心圓柱疊起來，
+ * 外筒的頂蓋會把內筒整個蓋住；而把外筒改成無蓋的管子也沒用 —— 建築材質是
+ * `FrontSide`，管子的內壁法線朝外，俯視時會被背面剔除，看到的是「穿過去」。
+ *
+ * 所以這個形狀的實體是一件事：**凹槽的內壁法線要朝軸心**。旋轉體
+ * （`LatheGeometry`）給得出來，因為輪廓折回去的那一段會把法線一起帶過去。
+ */
+describe('stack volumes', () => {
+  const box: Volume = { x: 0.2, z: -0.1, w: 0.4, d: 0.4, y0: 0, y1: 2.0 };
+
+  /**
+   * 逐三角形的重心、法線、法線的徑向分量（正 = 朝外，負 = 朝軸心），
+   * 以及三個頂點的最高點。
+   *
+   * `ytop` 是必要的：旋轉體的每一段輪廓只產出**一排**四邊形，所以整片內壁
+   * 的重心全部落在那一段的中央 —— 拿重心問「凹槽從哪裡開始」永遠問不到管口。
+   */
+  function faces(geo: THREE.BufferGeometry) {
+    const pos = geo.getAttribute('position');
+    const nrm = geo.getAttribute('normal');
+    const out: Array<{ y: number; ytop: number; r: number; radial: number; ny: number }> = [];
+    for (let t = 0; t < pos.count / 3; t++) {
+      let cx = 0, cy = 0, cz = 0, nx = 0, ny = 0, nz = 0;
+      let ytop = -Infinity;
+      for (let e = 0; e < 3; e++) {
+        const i = t * 3 + e;
+        cx += pos.getX(i) / 3; cy += pos.getY(i) / 3; cz += pos.getZ(i) / 3;
+        nx += nrm.getX(i) / 3; ny += nrm.getY(i) / 3; nz += nrm.getZ(i) / 3;
+        ytop = Math.max(ytop, pos.getY(i));
+      }
+      const dx = cx - box.x;
+      const dz = cz - box.z;
+      const r = Math.hypot(dx, dz);
+      out.push({ y: cy, ytop, r, radial: r < 1e-9 ? 0 : (dx * nx + dz * nz) / r, ny });
+    }
+    return out;
+  }
+
+  it('should hollow out a mouth you can see into', () => {
+    const geo = assemble([{ ...box, shape: 'stack' }]);
+    const all = faces(geo);
+
+    // 凹槽的內壁：法線朝軸心。少了它，「凹槽」只是頂蓋上畫了一圈深色。
+    const inner = all.filter(f => f.radial < -0.5);
+    expect(inner.length, '煙囪沒有朝內的面 —— 那是一片實心的頂蓋')
+      .toBeGreaterThan(0);
+
+    // 內壁要從**管口**開始往下。接不到頂的話，凹槽是懸在塔身裡的一圈。
+    const highest = Math.max(...inner.map(f => f.ytop));
+    expect(highest, '凹槽沒有從管口開始').toBeCloseTo(box.y1, 6);
+
+    // 槽底要在管口之下 —— 齊平的話俯視看到的仍然是一片平的。
+    const floor = all.filter(f => f.ny > 0.9 && f.r < box.w / 4);
+    expect(floor.length, '凹槽沒有底').toBeGreaterThan(0);
+    const depth = box.y1 - Math.max(...floor.map(f => f.y));
+    // 而且要**幾乎到底**。淺淺一圈在等角視角下讀起來是頂蓋上的一道陰影，
+    // 不是一個洞：管口的直徑只有塔身的一半，斜著看進去的那一小塊要夠深，
+    // 深處的內壁才會全部落在背光面。
+    expect(depth / (box.y1 - box.y0), '凹槽太淺，俯視看不出是個洞')
+      .toBeGreaterThan(0.6);
+  });
+
+  it('should cap the shaft with a ring, not a disc', () => {
+    const geo = assemble([{ ...box, shape: 'stack' }]);
+    const top = faces(geo).filter(f =>
+      f.ny > 0.9 && Math.abs(f.y - box.y1) < 1e-6);
+    expect(top.length, '管口沒有環').toBeGreaterThan(0);
+    // 環的內緣離軸心要有一段距離 —— 是 0 的話那就是一片圓盤。
+    const inner = Math.min(...top.map(f => f.r));
+    expect(inner / (box.w / 2), '管口是實心的圓盤').toBeGreaterThan(0.2);
+  });
+
+  it('should fill the box it declared', () => {
+    // 與其他形狀同一條規矩：量體算出來的邊界就是幾何真正佔的地方，
+    // 否則 `maxAbsOf` 擋不住越界。
+    const geo = assemble([{ ...box, shape: 'stack' }]);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect(b.max.x - b.min.x).toBeCloseTo(0.4, 6);
+    expect((b.max.x + b.min.x) / 2).toBeCloseTo(box.x, 6);
+    expect((b.max.z + b.min.z) / 2).toBeCloseTo(box.z, 6);
+    expect(b.min.y).toBeCloseTo(0, 6);
+    expect(b.max.y).toBeCloseTo(2.0, 6);
+  });
+
+  it('should merge with the other shapes', () => {
+    expect(() => assemble([
+      { ...box, shape: 'stack' },
+      { x: 0, z: 0, w: 0.2, d: 0.2, y0: 0, y1: 0.5 },
+    ])).not.toThrow();
+  });
+});
+
+/**
+ * 開口容器：`tub`（圓）與 `basin`（方）。
+ *
+ * 一個水槽要讀成水槽，水面就得**低於槽緣**。而在實心的圓柱／方塊上做不到：
+ * 頂蓋是一片實心的面，水面壓到它下面就整個埋進量體裡看不見了 —— 資料是對的、
+ * 畫面上什麼都沒有，而且不會報錯。
+ *
+ * 所以這兩個形狀的實體與煙囪的凹槽同一件事：**內壁的法線要朝容器的中心**。
+ * 圓的靠旋轉體（輪廓折回去往下走），方的靠四片牆（一片盒子的內側面本來就
+ * 朝內）—— 兩者都不能是「把頂蓋拿掉的殼」，那在 `FrontSide` 下是穿過去。
+ */
+describe('tub volumes', () => {
+  const box: Volume = { x: 0.2, z: -0.1, w: 0.4, d: 0.4, y0: 0, y1: 0.5 };
+
+  function faces(geo: THREE.BufferGeometry) {
+    const pos = geo.getAttribute('position');
+    const nrm = geo.getAttribute('normal');
+    const out: Array<{ y: number; r: number; radial: number; ny: number }> = [];
+    for (let t = 0; t < pos.count / 3; t++) {
+      let cx = 0, cy = 0, cz = 0, nx = 0, ny = 0, nz = 0;
+      for (let e = 0; e < 3; e++) {
+        const i = t * 3 + e;
+        cx += pos.getX(i) / 3; cy += pos.getY(i) / 3; cz += pos.getZ(i) / 3;
+        nx += nrm.getX(i) / 3; ny += nrm.getY(i) / 3; nz += nrm.getZ(i) / 3;
+      }
+      const dx = cx - box.x;
+      const dz = cz - box.z;
+      const r = Math.hypot(dx, dz);
+      out.push({ y: cy, r, radial: r < 1e-9 ? 0 : (dx * nx + dz * nz) / r, ny });
+    }
+    return out;
+  }
+
+  it('should open the top so the water inside can be seen', () => {
+    const all = faces(assemble([{ ...box, shape: 'tub' }]));
+    // 槽口那一圈只到內壁為止。中心有朝上的面 = 一片頂蓋，水就埋在它下面。
+    const lid = all.filter(f =>
+      f.ny > 0.9 && Math.abs(f.y - box.y1) < 1e-6 && f.r < box.w / 2 * TUB.INNER * 0.9);
+    expect(lid.length, '水槽是封起來的 —— 水面會埋在頂蓋下面').toBe(0);
+
+    const inner = all.filter(f => f.radial < -0.5);
+    expect(inner.length, '水槽沒有朝內的槽壁').toBeGreaterThan(0);
+  });
+
+  it('should floor the tub below the rim', () => {
+    const all = faces(assemble([{ ...box, shape: 'tub' }]));
+    // 槽緣那一圈也朝上，所以要挑在內壁**以內**的：那一塊只可能是槽底。
+    const floor = all.filter(f =>
+      f.ny > 0.9 && f.r < box.w / 2 * TUB.INNER * 0.9);
+    expect(floor.length, '水槽沒有底 —— 俯視會直接看穿到地面').toBeGreaterThan(0);
+    const depth = (box.y1 - Math.max(...floor.map(f => f.y))) / (box.y1 - box.y0);
+    // 與塔口那一條同一個理由：下限要寫死，不然調淺常數就一起綠了。
+    expect(depth, '槽太淺 —— 水位低於槽緣就看不出來了').toBeGreaterThan(0.15);
+    expect(depth, '幾何沒有跟著 TUB.DEPTH 走').toBeCloseTo(TUB.DEPTH, 6);
+  });
+
+  it('should fill the box it declared', () => {
+    const geo = assemble([{ ...box, shape: 'tub' }]);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect(b.max.x - b.min.x).toBeCloseTo(0.4, 6);
+    expect((b.max.x + b.min.x) / 2).toBeCloseTo(box.x, 6);
+    expect(b.min.y).toBeCloseTo(0, 6);
+    expect(b.max.y).toBeCloseTo(0.5, 6);
+  });
+});
+
+describe('basin volumes', () => {
+  const box: Volume = { x: 0.05, z: -0.05, w: 0.4, d: 0.6, y0: 0, y1: 0.4 };
+
+  /** 逐三角形的重心與法線。 */
+  function faces(geo: THREE.BufferGeometry) {
+    const pos = geo.getAttribute('position');
+    const nrm = geo.getAttribute('normal');
+    const out: Array<{ x: number; y: number; z: number; nx: number; ny: number; nz: number }> = [];
+    for (let t = 0; t < pos.count / 3; t++) {
+      let cx = 0, cy = 0, cz = 0, nx = 0, ny = 0, nz = 0;
+      for (let e = 0; e < 3; e++) {
+        const i = t * 3 + e;
+        cx += pos.getX(i) / 3; cy += pos.getY(i) / 3; cz += pos.getZ(i) / 3;
+        nx += nrm.getX(i) / 3; ny += nrm.getY(i) / 3; nz += nrm.getZ(i) / 3;
+      }
+      out.push({ x: cx, y: cy, z: cz, nx, ny, nz });
+    }
+    return out;
+  }
+
+  it('should leave the middle open and wall it on four sides', () => {
+    const all = faces(assemble([{ ...box, shape: 'basin' }]));
+    const inW = box.w / 2 * TUB.INNER;
+    const inD = box.d / 2 * TUB.INNER;
+
+    // 中央不准有任何面 —— 有的話那是一個實心的方塊，水面埋在裡面。
+    const middle = all.filter(f =>
+      Math.abs(f.x - box.x) < inW * 0.8 && Math.abs(f.z - box.z) < inD * 0.8);
+    expect(middle.length, '方池是實心的 —— 水面會埋在頂面下面').toBe(0);
+
+    // 四面內壁，法線朝池心。少一面就是一道看得穿的缺口。
+    const sides = [
+      all.some(f => f.nx > 0.9 && f.x < box.x),
+      all.some(f => f.nx < -0.9 && f.x > box.x),
+      all.some(f => f.nz > 0.9 && f.z < box.z),
+      all.some(f => f.nz < -0.9 && f.z > box.z),
+    ];
+    expect(sides, '方池的內壁不是四面都有').toEqual([true, true, true, true]);
+  });
+
+  it('should fill the box it declared', () => {
+    const geo = assemble([{ ...box, shape: 'basin' }]);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox!;
+    expect(b.max.x - b.min.x).toBeCloseTo(0.4, 6);
+    expect(b.max.z - b.min.z).toBeCloseTo(0.6, 6);
+    expect((b.max.x + b.min.x) / 2).toBeCloseTo(box.x, 6);
+    expect((b.max.z + b.min.z) / 2).toBeCloseTo(box.z, 6);
+    expect(b.min.y).toBeCloseTo(0, 6);
+    expect(b.max.y).toBeCloseTo(0.4, 6);
+  });
+
+  it('should merge with the other shapes', () => {
+    expect(() => assemble([
+      { ...box, shape: 'basin' },
+      { ...box, shape: 'tub' },
+      { x: 0, z: 0, w: 0.2, d: 0.2, y0: 0, y1: 0.5 },
+    ])).not.toThrow();
   });
 });
 

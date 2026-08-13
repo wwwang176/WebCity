@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 import { ZoneType } from '../core/grid/types';
+// `parts` 只 import three 與 core/grid/types，所以這一條不會產生循環。
+import {
+  FACADE_CIVIC, FACADE_UTILITY, FACADE_TRANSIT, FACADE_GREEN,
+} from './geometry/buildings/parts';
 
 // ===== Color Palettes (realistic, zone-distinguishable) =====
 const BASE_PALETTES: Record<number, number[]> = {
@@ -126,6 +130,33 @@ const ROOF_PALETTE_TABLE: Record<number, readonly RoofColor[]> = {
     [0.30, 0.32, 0.35],
     [0.25, 0.28, 0.30],
     [0.35, 0.35, 0.38],
+  ],
+  // 公家：瀝青防水層與銅綠。公共建築的屋頂偏沉穩，而且常有年份 ——
+  // 銅綠是刻意的，一整條街的警局學校全是灰的話認不出它們是公家的。
+  [FACADE_CIVIC]: [
+    [0.26, 0.27, 0.29], // 深瀝青
+    [0.34, 0.34, 0.35], // 中灰防水層
+    [0.30, 0.42, 0.38], // 銅綠
+    [0.38, 0.36, 0.33], // 舊石棉
+  ],
+  // 公用設施：鍍鋅浪板與鏽。與工業的色票刻意接近 —— 電廠與水廠本來就是
+  // 工業設施，只是歸市府管。
+  [FACADE_UTILITY]: [
+    [0.48, 0.50, 0.52], // 鍍鋅
+    [0.38, 0.39, 0.41], // 舊鍍鋅
+    [0.46, 0.33, 0.24], // 鏽紅
+  ],
+  // 交通：白色薄膜與淺灰金屬。車站屋頂多是輕構造，所以比別人亮。
+  [FACADE_TRANSIT]: [
+    [0.72, 0.74, 0.76], // 白膜
+    [0.58, 0.62, 0.66], // 淺灰金屬
+    [0.50, 0.56, 0.62], // 玻璃頂棚
+  ],
+  // 綠地：木構與綠化屋頂。公園裡有屋頂的東西只有涼亭、管理室、廁所。
+  [FACADE_GREEN]: [
+    [0.30, 0.22, 0.15], // 深木
+    [0.42, 0.30, 0.20], // 杉木
+    [0.28, 0.38, 0.22], // 綠化屋頂
   ],
 };
 

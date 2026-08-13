@@ -4,7 +4,26 @@ import { RailType, TrackDirection } from '../core/rail/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
 
-const TRACK_WIDTH = 0.15;
+/**
+ * 碴床的寬度（格）。軌道貼著**格心**畫，所以它佔的是 |z| ≤ TRACK_WIDTH / 2。
+ *
+ * 匯出是因為火車站的幾何要讓開這條帶：`canPlaceTransportStop` 規定火車站
+ * 蓋在 `railType ≠ 0` 的格子上，而 `placeTransportStopOnGrid` 只改
+ * buildingId/reserved/zoneType —— 軌道還在，這裡照畫。站房蓋在上面的話，
+ * 真的鋼軌會從站房的地板穿出來。
+ */
+export const TRACK_WIDTH = 0.15;
+
+/**
+ * 軌道上方的淨空（格）。跨過軌道的東西下緣不得低於它。
+ *
+ * 「讓開軌道」其實是一個**淨空包絡線**，不是平面上的禁建區 —— 真實車站的
+ * 天橋、跨站站房、電車線橫擔全部跨在軌道上方。把它寫成禁建區的話，火車站
+ * 就只能是「軌道兩側各擺一棟、彼此不相連」的樣子 —— 那讀起來不是一座車站。
+ *
+ * 5.5 m 取電氣化路線的建築限界（車廂約 4 m，加上受電弓與導線的空間）。
+ */
+export const TRACK_CLEARANCE = 5.5 / 12;
 const RAIL_Y = 0.035;
 const TIE_Y = 0.03;
 const BALLAST_Y = 0.022;
@@ -178,7 +197,7 @@ export class TrackRenderer {
   private ballastMesh: THREE.InstancedMesh | null = null;
   private readonly maxInstances = 32000;
 
-  build(scene: THREE.Scene, grid: Grid): void {
+  build(scene: THREE.Object3D, grid: Grid): void {
     this.dispose(scene);
 
     const cells: TrackCell[] = [];
@@ -211,7 +230,7 @@ export class TrackRenderer {
 
   // ── Ballast ────────────────────────────────────────────
 
-  private buildBallast(scene: THREE.Scene, cells: TrackCell[], extensions: Strip[]): void {
+  private buildBallast(scene: THREE.Object3D, cells: TrackCell[], extensions: Strip[]): void {
     const strips: Strip[] = [];
     const w = TRACK_WIDTH + 0.06;
 
@@ -240,7 +259,7 @@ export class TrackRenderer {
 
   // ── Rails ──────────────────────────────────────────────
 
-  private buildRails(scene: THREE.Scene, cells: TrackCell[], extensions: Strip[]): void {
+  private buildRails(scene: THREE.Object3D, cells: TrackCell[], extensions: Strip[]): void {
     const strips: Strip[] = [];
     const gauge = TRACK_WIDTH * 0.7;
     const rw = 0.012;
@@ -276,7 +295,7 @@ export class TrackRenderer {
 
   // ── Ties ───────────────────────────────────────────────
 
-  private buildTies(scene: THREE.Scene, cells: TrackCell[], extensions: Tie[]): void {
+  private buildTies(scene: THREE.Object3D, cells: TrackCell[], extensions: Tie[]): void {
     const ties: Tie[] = [];
     const spacing = 0.18;
 
@@ -338,7 +357,7 @@ export class TrackRenderer {
   // ── Shared helpers ─────────────────────────────────────
 
   private fillMesh(
-    scene: THREE.Scene, strips: Strip[],
+    scene: THREE.Object3D, strips: Strip[],
     geo: THREE.BoxGeometry, mat: THREE.MeshLambertMaterial, y: number,
   ): THREE.InstancedMesh {
     injectHighlightShader(mat);
@@ -403,7 +422,7 @@ export class TrackRenderer {
     return this._highlightCache;
   }
 
-  dispose(scene: THREE.Scene): void {
+  dispose(scene: THREE.Object3D): void {
     const meshes = [this.railMesh, this.tieMesh, this.ballastMesh];
     for (const mesh of meshes) {
       if (mesh) {
