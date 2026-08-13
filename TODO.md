@@ -1042,6 +1042,11 @@
 - [ ] `CommuteTraffic.test.ts` 的 `should spawn vehicles at any hour` 在平行負載下
   偶發失敗（2026-08-10 全跑時紅一次，單獨跑 15 條全過）。與 `BirthAfterAgeing`
   同一類：時間敏感的測試在 325 個檔案並行時被排擠。
+- [ ] 這一類已經不只三支了。2026-08-13 全跑三次，紅的組合每次都不一樣：
+  `BirthAfterAgeing` ×2、`GroundPropLayer > should never scale a garden`、
+  `BuildingMaterial > should at least be bracket-balanced`，全部單獨跑是綠的，
+  紅的原因是 vitest 每條 5 秒的上限（那幾條單獨跑就要 0.9～4.2 秒）。逐條調
+  `timeout` 是在追症狀 —— 該處理的是這些測試為什麼要跑幾秒鐘。
 - [x] `tsc --noEmit` 有 329 個錯誤（約 70 個在 production code），`pnpm build` 目前在 main 上就失敗
 
 
@@ -1850,3 +1855,7 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
 - [ ] **下一個瓶頸是車流**：`advanceEdgeVehicles` + `queryNearbyInto` +
   `findGapAhead` ≈ 主執行緒 12%。每幀均攤，不造成卡頓。
 
+- [x] **BUG-262：車輛渲染的實例容量逐車種寫死 500**（見 BUGS.md）。模擬端的上限
+  是全部車種合計 2000，人口約 2400 以上時 `car` 就越過 500 —— 越過的照樣參與
+  碰撞，只是不畫，畫面上是一台車對著空白煞車、一兩秒後那台憑空出現。改成不夠
+  就加倍擴容。
