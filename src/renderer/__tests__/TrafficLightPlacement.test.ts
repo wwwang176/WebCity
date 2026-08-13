@@ -199,9 +199,12 @@ describe('號誌的擺放', () => {
       .toBeGreaterThanOrEqual(STREET_LAMP_HEIGHT);
   });
 
-  it('should hang the head below the arm, not float it above', () => {
-    expect(SIGNAL.HEAD_Y + SIGNAL.HEAD_SIZE / 2, '燈頭浮在橫臂上面')
-      .toBeLessThanOrEqual(SIGNAL.ARM_Y + 1e-9);
+  it('should hang the head off the arm, touching it', () => {
+    // 「在橫臂下面」不夠 —— 中間留一條縫的話，燈泡是浮在空中的。燈泡的尺寸
+    // 改過一次（縮成路燈燈泡那麼大），而 `HEAD_Y` 當時是寫死的數字，於是
+    // 縫就跑出來了。要求**貼合**，尺寸再改也不會鬆脫。
+    expect(SIGNAL.HEAD_Y + SIGNAL.HEAD_SIZE / 2, '燈泡與橫臂之間有一條縫')
+      .toBeCloseTo(SIGNAL.ARM_Y - SIGNAL.ARM_T / 2, 9);
     expect(SIGNAL.ARM_Y, '橫臂高過桿頂').toBeLessThanOrEqual(SIGNAL.POLE_H);
   });
 
@@ -294,6 +297,44 @@ describe('號誌的渲染', () => {
       got.push(`${p.x.toFixed(4)},${p.z.toFixed(4)}`);
     }
     expect(got.sort(), '畫出來的燈桿位置與擺放算出來的不一致').toEqual(want);
+  });
+
+  it('should end the arm exactly where the head hangs', () => {
+    // 上面那條顧的是高度，這條顧的是水平：橫臂的遠端必須落在燈泡的正上方，
+    // 否則燈泡是吊在半空中、旁邊有一根伸到別處的桿子。
+    const scene = new THREE.Scene();
+    new TrafficLightRenderer().build(scene, [light]);
+    const m4 = new THREE.Matrix4();
+    const p = new THREE.Vector3();
+
+    const meshes = instanced(scene);
+    const arm = meshes.find(mesh => {
+      mesh.getMatrixAt(0, m4);
+      return Math.abs(p.setFromMatrixPosition(m4).y - SIGNAL.ARM_Y) < 1e-6;
+    })!;
+    const head = meshes.find(mesh => {
+      mesh.getMatrixAt(0, m4);
+      return Math.abs(p.setFromMatrixPosition(m4).y - SIGNAL.HEAD_Y) < 1e-6;
+    })!;
+    expect(arm && head, '找不到橫臂或燈泡那一層').toBeTruthy();
+
+    const dir = new THREE.Vector3();
+    const pos = new THREE.Vector3();
+    const tip = new THREE.Vector3();
+    const hp = new THREE.Vector3();
+    for (let i = 0; i < arm.count; i++) {
+      arm.getMatrixAt(i, m4);
+      pos.setFromMatrixPosition(m4);
+      // 橫臂的幾何沿本地 +x 從原點長到 1，所以遠端是「起點 + 第一個基底向量」。
+      dir.set(m4.elements[0]!, m4.elements[1]!, m4.elements[2]!);
+      tip.copy(pos).add(dir);
+      head.getMatrixAt(i, m4);
+      hp.setFromMatrixPosition(m4);
+      // 容差到小數第 5 位：矩陣存在 `Float32Array` 裡，座標約 20 時單精度的
+      // eps 就有 2e-6，再嚴下去測的是浮點格式不是幾何。
+      expect(tip.x, `第 ${i} 支的橫臂遠端沒有對到燈泡`).toBeCloseTo(hp.x, 5);
+      expect(tip.z, `第 ${i} 支的橫臂遠端沒有對到燈泡`).toBeCloseTo(hp.z, 5);
+    }
   });
 
   it('should stretch each arm to reach its own head', () => {

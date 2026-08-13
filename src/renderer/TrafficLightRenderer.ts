@@ -26,15 +26,29 @@ import { STREET_LAMP_HEIGHT, STREET_LAMP_BULB_RADIUS, STREET_LAMP_COLOR }
  */
 const POLE_H = STREET_LAMP_HEIGHT + 0.04;
 
+/** 橫臂的高度。略低於桿頂，讓桿露出一小截。 */
+const ARM_Y = POLE_H - 0.02;
+
+/** 橫臂的粗細。 */
+const ARM_T = 0.012;
+
+/** 燈頭的邊長。以路燈的燈泡為上限 —— 比路燈還大顆的話路口會變成一排燈籠。 */
+const HEAD_SIZE = STREET_LAMP_BULB_RADIUS;
+
 /** 號誌的尺寸（格；1 格 = 12 m）。 */
 export const SIGNAL = {
   POLE_H,
-  /** 橫臂的高度。略低於桿頂，讓桿露出一小截。 */
-  ARM_Y: POLE_H - 0.02,
-  /** 燈頭的中心高度。吊在橫臂**底下**。 */
-  HEAD_Y: POLE_H - 0.045,
-  /** 燈頭的邊長。以路燈的燈泡為上限 —— 比路燈還大顆的話路口會變成一排燈籠。 */
-  HEAD_SIZE: STREET_LAMP_BULB_RADIUS,
+  ARM_Y,
+  ARM_T,
+  HEAD_SIZE,
+  /**
+   * 燈頭的中心高度。
+   *
+   * **從橫臂的底面算出來**，不是寫死 —— 寫死的話燈泡尺寸一改，兩者之間就會
+   * 冒出一條縫，而燈泡看起來是浮在空中的。這正是把燈泡縮成路燈那麼大時
+   * 發生的事：縫是 0.01 格（12 公分）。
+   */
+  HEAD_Y: ARM_Y - ARM_T / 2 - HEAD_SIZE / 2,
   /**
    * 橫臂伸出去的比例：從路緣到該向車道中間的那段距離，只走這麼多。
    *
@@ -44,8 +58,6 @@ export const SIGNAL = {
   ARM_REACH: 2 / 3,
   /** 桿的粗細。 */
   POLE_T: 0.016,
-  /** 橫臂的粗細。 */
-  ARM_T: 0.012,
   /**
    * 沿著行進方向離格心多遠。
    *
