@@ -34,11 +34,18 @@ export const DEFAULT_JOB_RELOCATION_CONFIG: JobRelocationConfig = {
   dijkstraMaxBudget: 1080,
 };
 
-/** Extract actual commute path length from a CachedRoute. */
+/**
+ * Extract actual commute path length from a CachedRoute.
+ *
+ * 兩個方向都算數：一台車只往一個方向開，所以快取條目常常只有一半，而通勤距離
+ * 兩個方向一樣長。只讀 morningPath 的話，只填了回程的人會變成「查不到長度」，
+ * 於是永遠不會因為通勤太遠而換工作 —— 換不換工作變成取決於當初隨機抽到哪個方向。
+ */
 export function getCommuteLength(route: CachedRoute): number | null {
-  if (route.status === 'failed') return null;
-  if (route.status !== 'ready' || !route.morningPath) return null;
-  return route.morningPath.reduce((sum, e) => sum + e.length, 0);
+  if (route.status !== 'ready') return null;
+  const path = route.morningPath ?? route.eveningPath;
+  if (!path) return null;
+  return path.reduce((sum, e) => sum + e.length, 0);
 }
 
 /** Determine if citizen should be considered and whether their route is confirmed failed. */
@@ -152,9 +159,13 @@ export function beginJobRelocation(
       while (cursor < ordered.length && spent < budget) {
         const { citizen, reason } = ordered[cursor++]!;
         if (reason !== 'failed' && nonUrgentCount >= maxNonUrgent) continue;
+        // 名單是開一輪的時候拍下來的，而一輪要跑幾十個 tick 才輪得到這一位。
+        // 中間拆掉那一棟住宅，這個人的 homeId 就成了 null（`Reconcile` 會清掉），
+        // 而底下是拿 `!` 直接送進 parsePosKeyUnsafe 的 —— 會丟例外。
+        if (citizen.homeId === null) continue;
         spent++;
     const currentPos = citizen.workplaceId!;
-    const homePos = parsePosKeyUnsafe(citizen.homeId!);
+    const homePos = parsePosKeyUnsafe(citizen.homeId);
 
     // Find current workplace's zoneType
     const currentCandidate = candidates.find(c => c.pos === currentPos);
