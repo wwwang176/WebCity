@@ -1539,9 +1539,9 @@ export class SimulationLoop {
   /**
    * 背景補完已經替每條路線丟給 worker 幾次。
    *
-   * 這是「worker 交不出答案就自己算」的計數器。worker 可以活著、可以回應，而每一
-   * 組起迄都回傳空的 —— 60×60 的城市實測就是這樣（BUG-267），同一組起迄主執行緒
-   * 找得到 131 段的路徑。沒有這個上限的話，補完會永遠停在排隊。
+   * 這是「worker 交不出答案就自己算」的計數器。worker 可以活著、可以回應，而每一組
+   * 起迄都回傳空的；生產環境沒有 COOP/COEP 就連 SharedArrayBuffer 都沒有，而
+   * `Game.ts` 建不起 worker 時是靜靜吞掉的。沒有這個上限，補完會永遠停在排隊。
    *
    * 路網一改就整個清掉：新蓋的那條路可能正好把它們接起來。
    */
@@ -1561,8 +1561,9 @@ export class SimulationLoop {
    *
    * `warmup` 只替真的要上路的那一小部分人算路徑，其餘的人留下 `pending` 記號
    * 交給這裡。**靠生成車輛是補不完的**：車輛一到上限 `spawnCommuteVehicles`
-   * 立刻 break，不再寫任何快取條目 —— 2 146 人的存檔實測跑到 653／1 752 就
-   * 停住不動，而預測車流少算了 5.4 倍，噪音汙染跟著整片掉下來。
+   * 立刻 break，不再寫任何快取條目 —— 2 146 人的存檔實測（pathfinding worker
+   * 正常運作）跑到 643／1 750 就停住不動，而預測車流少算了 5.4 倍，噪音汙染
+   * 跟著整片掉下來。補完接手之後 30 個 tick 回到 3 501，對上改前的 3 504。
    *
    * 兩個方向都要：預測車流算的是一整天的通勤量，早上一趟晚上一趟。只補一個
    * 方向的話讀數會少一半。
@@ -1619,9 +1620,8 @@ export class SimulationLoop {
           if (isMorning) morning = path; else evening = path;
           continue;
         }
-        // worker 是加速，不是依賴。排過幾次還是拿不到路徑就自己算 —— 實測
-        // 60×60 的城市裡 worker 對每一組起迄都回傳空的（見 BUGS.md），
-        // 一直排下去的話補完永遠不會結束。
+        // worker 是加速，不是依賴。排過幾次還是拿不到路徑就自己算 —— 一直排下去
+        // 的話，遇到交白卷的 worker 補完永遠不會結束。
         const tries = this.commuteFillAttempts.get(key) ?? 0;
         if (useWorker && tries < SIMULATION.COMMUTE_FILL_MAX_ATTEMPTS) {
           if (enqueueBudget <= 0) continue;

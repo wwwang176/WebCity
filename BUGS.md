@@ -4270,7 +4270,8 @@ x = +0.18。跨過中心線、在駕駛的**左手邊**、立在對向車道上�
 所以連帶影響地價與快樂度。
 
 **而且補不回來。** 車輛一到上限 `spawnCommuteVehicles` 立刻 break，不再寫任何快取
-條目 —— 實測跑 40 個 tick 停在 653／1 752 就不動了。這不是載入後的暫態。
+條目 —— pathfinding worker 完全正常運作的情況下實測跑 40 個 tick，停在 643／1 750
+就不動了。這不是載入後的暫態。
 
 下游還有兩處把「還沒算」讀成「算過了」：
 
@@ -4284,6 +4285,17 @@ x = +0.18。跨過中心線、在駕駛的**左手邊**、立在對向車道上�
 留下 `pending` 記號，再由 `advanceCommuteFill` 逐 tick 補完。`pending` 讓下游分得出
 「還沒算」與「算過了」。通勤長度改成兩個方向都算數。
 
+補完之後的實測（同一份存檔，worker 正常）：
+
+| tick | ready | 預測車流 | 平均密度 |
+|---|---|---|---|
+| 0（載入完成） | 351 | 351 | 2.69 |
+| 5 | 1 438 | 2 162 | 4.27 |
+| 30 | 1 751 | 3 501 | 4.62 |
+
+30 個 tick 補滿，1 倍速約 7.5 秒；`refCount 3 501` 對上改前的 3 504，密度 4.62 對上
+4.70。沒有 worker 時走主執行緒每 tick 2 條，慢得多但一樣會補完。
+
 ## BUG-266 已修：換工作跑到一半拆掉住宅就丟例外
 
 `beginJobRelocation` 開一輪的時候把名單拍下來，而一輪要跑幾十個 tick（每 tick 2 位）
@@ -4295,18 +4307,27 @@ null，而 `runSlice` 是拿 `parsePosKeyUnsafe(citizen.homeId!)` 直接用的 �
 確認了這件事 —— 替 workplaceId 寫的測試在拆掉防護之後仍然是綠的，所以那條測試刪了，
 防護也只留 homeId 這一邊。
 
-## BUG-267 未修：pathfinding worker 在真實大小的城市裡一條路徑都找不到
+## BUG-267 誤判，已撤回：pathfinding worker 沒有壞
 
-60×60、4 800 條車道邊的城市，worker 對**每一組**起迄都回傳空的變體陣列；主執行緒的
-`findLanePathVariants` 對同一組起迄找得到 4 個變體、第一條 131 段。24×24 的測試城市
-沒事，所以既有測試全綠。
+原本記為「worker 在 60×60 的城市對每一組起迄都回傳空的」。**不成立。** 重新量測：同一
+份存檔、同一個 worker，40 個 tick 之內回了 3 000 多筆，**沒有一筆是空的**，路線池從
+319 條長到 1 715 條。
 
-已排除的：`graphMapping` 有值（4 800 邊）、`collectPointIndices` 兩端都拿得到索引
-（60 個 exit、40 個 entry）、高程資料還原與否都一樣、`runBatch` 的版本守衛沒有觸發
-（同步假 worker 不可能在批次中間改圖）。所以問題在 SAB 上那份圖，或 `PooledAStar`
-本身 —— 主執行緒的 `laneAStar` 展開上限是 8 000 步，worker 端要確認是不是同一個量級。
+錯在量測腳本自己。當時的儀器是這樣裝的：
 
-**影響範圍比看起來大**：`spawnCommuteVehicles` 算不出路徑時唯一的退路就是這個 worker，
-所以在真實城市裡，載入之後才需要的路線（新市民、改過的路網）實際上算不出來。
-BUG-265 的補完因此不能把 worker 當依賴 —— 排過 `COMMUTE_FILL_MAX_ATTEMPTS` 次還是
-拿不到就退回主執行緒自己算。
+```js
+batcher.onResult = (_k, v) => { got = v; };        // 先做了一次單筆診斷，覆蓋掉真的處理器
+...
+const realOnResult = batcher.onResult;             // 這裡抓到的是上面那個樁，不是真的
+batcher.onResult = (k, v) => { count++; return realOnResult(k, v); };
+```
+
+第二層包裝抓到的是第一層留下的樁，結果永遠不會寫進路線池。量到的「worker 交白卷」
+是儀器自己造成的。
+
+留下的痕跡：`COMMUTE_FILL_MAX_ATTEMPTS`（排幾次拿不到就自己算）當初是為了這個不存在
+的 bug 加的。它本身仍然有價值 —— 生產環境沒有 COOP/COEP 就沒有 SharedArrayBuffer，
+`Game.ts` 建不起 worker 時是靜靜吞掉的 —— 所以留著，但驗收改由「worker 活著、會回應、
+每一組都交白卷」那條測試釘住，不是靠這個 bug 記錄。
+
+**教訓**：包裝別人的 callback 之前，先確認手上抓到的是原本那一個。

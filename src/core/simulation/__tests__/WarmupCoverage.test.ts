@@ -19,7 +19,8 @@ import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
  * 掉到 353，道路平均噪音密度 4.70 → 2.74，最高那一級的 49 格全部歸零。
  *
  * 而且補不回來：車輛一到上限，`spawnCommuteVehicles` 立刻 break，不再寫任何
- * 快取條目 —— 實測跑 40 個 tick 之後停在 653／1 752 就不動了。
+ * 快取條目 —— pathfinding worker 正常運作下實測跑 40 個 tick，停在 643／1 750
+ * 就不動了。
  *
  * 所以這裡釘三件事：warmup 之後沒有人是「查無此人」、背景會把路線補完、
  * 以及沒算到的人不會被下游當成「算過了，結果是這樣」。
@@ -162,7 +163,7 @@ describe('warmup 之後的快取覆蓋率', () => {
 
   it('should finish computing every commuter route in the background', async () => {
     // 車輛一到上限 `spawnCommuteVehicles` 就 break，所以靠生成車輛是補不完的
-    // —— 實測 2 146 人的存檔跑到 653／1 752 就停住。補完這件事要有自己的來源。
+    // —— 實測 2 146 人的存檔跑到 643／1 750 就停住。補完這件事要有自己的來源。
     const state = makeCity(120);
     const loop = makeLoop(state);
     loop.setPathfindingWorker(createSyncFakeWorker());
@@ -226,9 +227,8 @@ describe('warmup 之後的快取覆蓋率', () => {
   });
 
   it('should fill routes when the worker answers but never finds a path', async () => {
-    // worker 不是「有」或「沒有」兩種狀態。它可以活著、可以回應，但每一組起迄
-    // 都回傳空的 —— 實測 60×60 的城市就是這樣（見 BUGS.md），而主執行緒對同一
-    // 組起迄找得到 131 段的路徑。把 worker 當依賴的話，補完永遠不會結束。
+    // worker 不是「有」或「沒有」兩種狀態。它可以活著、可以回應，而每一組起迄
+    // 都回傳空的。把它當依賴的話，補完永遠停在排隊。
     const state = makeCity(120);
     const loop = makeLoop(state);
     loop.setPathfindingWorker(createEmptyAnswerWorker());
