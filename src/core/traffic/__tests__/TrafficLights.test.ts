@@ -224,3 +224,48 @@ describe('syncTrafficLightsWithGrid', () => {
     expect(sys.getLight(5, 5)).toBeUndefined();
   });
 });
+
+/**
+ * 號誌要帶著自己那一格的路寬。
+ *
+ * 渲染端得知道路緣在哪才放得下燈桿，而路緣的位置只由 `roadType` 決定：
+ * 四車道 0.425、六車道 0.475。`TrafficLight` 不帶這個欄位的話，渲染端只能
+ * 用一個常數 —— 那正是燈桿站在柏油路上的原因。
+ */
+describe('號誌帶的路寬', () => {
+  function majorCross(grid: Grid, x: number, y: number, roadType: number): void {
+    const all = RoadDirection.NORTH | RoadDirection.SOUTH
+      | RoadDirection.EAST | RoadDirection.WEST;
+    grid.setCell(x, y, { roadType, roadFlags: all });
+    grid.setCell(x, y - 1, { roadType, roadFlags: all });
+    grid.setCell(x, y + 1, { roadType, roadFlags: all });
+    grid.setCell(x - 1, y, { roadType, roadFlags: all });
+    grid.setCell(x + 1, y, { roadType, roadFlags: all });
+  }
+
+  it('should record the road type of the cell the signal stands on', () => {
+    const grid = new Grid(10, 10);
+    majorCross(grid, 5, 5, RoadType.FOUR_LANE);
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    expect(sys.getLight(5, 5)!.roadType, '號誌不知道自己站在多寬的路上')
+      .toBe(RoadType.FOUR_LANE);
+  });
+
+  it('should follow the road when it is upgraded under an existing signal', () => {
+    // 拓寬道路不會重建號誌（`syncTrafficLightsWithGrid` 只在不存在時 addLight），
+    // 所以既有的那一盞必須跟著改 —— 不然燈桿會留在舊路緣的位置上。
+    const grid = new Grid(10, 10);
+    majorCross(grid, 5, 5, RoadType.FOUR_LANE);
+    const sys = new TrafficLightSystem();
+    syncTrafficLightsWithGrid(grid, sys);
+    const before = sys.getLight(5, 5)!;
+
+    majorCross(grid, 5, 5, RoadType.SIX_LANE);
+    syncTrafficLightsWithGrid(grid, sys);
+
+    expect(sys.getLight(5, 5), '號誌被重建了 —— 相位會跳一下').toBe(before);
+    expect(sys.getLight(5, 5)!.roadType, '路拓寬了，號誌還記著舊的路寬')
+      .toBe(RoadType.SIX_LANE);
+  });
+});

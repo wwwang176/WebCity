@@ -30,6 +30,14 @@ const MARKING_Y = 0.052;
 /** Multipliers for max capacity per mesh type (relative to maxRoads). */
 const CAP = { road: 3, sidewalk: 4, marking: 14, centerLine: 2, curvedCL: 1, crosswalk: 6, stopLine: 2, lamp: 4, lampGlow: 4 } as const;
 
+/**
+ * 路燈的桿高（格）。
+ *
+ * 匯出是因為號誌以它為下限 —— 號誌矮過路燈的話，讀起來就不像號誌。各寫一個
+ * 數字的話，哪天路燈調高了，號誌會靜靜地變成路邊最矮的那根柱子。
+ */
+export const STREET_LAMP_HEIGHT = 0.28;
+
 export class RoadRenderer {
   private roadMesh: THREE.InstancedMesh | null = null;
   private sidewalkMesh: THREE.InstancedMesh | null = null;
@@ -152,7 +160,7 @@ export class RoadRenderer {
     this.stopLineTracker = new RoadInstanceTracker(this.stopLineMesh, this.maxRoads * CAP.stopLine);
 
     // Street lamps
-    const poleH = 0.28;
+    const poleH = STREET_LAMP_HEIGHT;
     const pole = new THREE.CylinderGeometry(0.008, 0.01, poleH, 4);
     pole.translate(0, poleH / 2, 0);
     const head = new THREE.SphereGeometry(0.018, 4, 3);

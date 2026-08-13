@@ -14,6 +14,14 @@ export interface TrafficLight {
   timer: number; // seconds remaining in current phase (or clearance)
   phaseDuration: number; // seconds per phase (varies by intersection size)
   clearing: boolean; // true during all-red clearance period
+  /**
+   * 這一格的路型。
+   *
+   * 渲染端要拿它算路緣在哪 —— 燈桿站在人行道上，而人行道的位置只由路寬決定
+   * （四車道的路緣在 0.425、六車道在 0.475）。少了這個欄位，渲染端只能用一個
+   * 常數，那個常數對任何一種路都是錯的。
+   */
+  roadType: number;
 }
 
 /** Traffic light configuration */
@@ -29,12 +37,18 @@ export const TRAFFIC_LIGHT = {
 export class TrafficLightSystem {
   private lights = new Map<string, TrafficLight>();
 
-  addLight(x: number, y: number, phaseDuration: number = TRAFFIC_LIGHT.PHASE_DURATION): void {
+  addLight(
+    x: number, y: number,
+    phaseDuration: number = TRAFFIC_LIGHT.PHASE_DURATION,
+    roadType: number = RoadType.TWO_LANE,
+  ): void {
     const key = toPosKey(x, y);
     if (this.lights.has(key)) return;
     // Stagger phase start by position hash to avoid all lights syncing
     const stagger = ((x * 7 + y * 13) % 10) / 10 * phaseDuration;
-    this.lights.set(key, { x, y, phase: 0, timer: stagger + 0.1, phaseDuration, clearing: false });
+    this.lights.set(key, {
+      x, y, phase: 0, timer: stagger + 0.1, phaseDuration, clearing: false, roadType,
+    });
   }
 
   removeLight(x: number, y: number): void {
@@ -163,9 +177,12 @@ export function syncTrafficLightsWithGrid(
 
     const existing = tls.getLight(x, y);
     if (!existing) {
-      tls.addLight(x, y, duration);
-    } else if (existing.phaseDuration !== duration) {
-      existing.phaseDuration = duration;
+      tls.addLight(x, y, duration, cell.roadType);
+    } else {
+      // 就地改而不是重建：重建會把相位與計時器歸零，路口拓寬時所有方向會
+      // 同時跳一下。
+      if (existing.phaseDuration !== duration) existing.phaseDuration = duration;
+      if (existing.roadType !== cell.roadType) existing.roadType = cell.roadType;
     }
   });
 
