@@ -5,18 +5,14 @@
  * Pure functions — no Three.js, no side effects.
  */
 
-import { RoadType, RoadDirection } from '../core/road/types';
+import {
+  RoadType, RoadDirection, ROAD_WIDTHS, getLaneCount, getLaneWidth,
+} from '../core/road/types';
 import { SIDEWALK_WIDTH, CW_OFFSET } from '../core/traffic/SidewalkGraph';
 import { STOP_LINE_OFFSET } from '../core/traffic/VehicleLookahead';
 
-export const ROAD_WIDTHS: Record<number, number> = {
-  [RoadType.RURAL]: 0.5,
-  [RoadType.TWO_LANE]: 0.6,
-  [RoadType.FOUR_LANE]: 0.85,
-  [RoadType.SIX_LANE]: 0.95,
-  [RoadType.HIGHWAY]: 0.95,
-  [RoadType.ONE_WAY]: 0.55,
-};
+/** 路寬的家在 `core/road/types`。這裡轉出去，既有的 import 不必動。 */
+export { ROAD_WIDTHS };
 
 export interface RoadCell {
   x: number;
@@ -226,6 +222,26 @@ export function buildSidewalkStrips(cells: RoadCell[]): SidewalkStrip[] {
   return strips;
 }
 
+/** 一條虛線在直路上分成幾段。L 形彎是 3 段，所以直路是上限。 */
+const DASHES_PER_DIVIDER = 4;
+
+/** 這種路的單向車道之間有幾條虛線（左右兩側合計）。只有一條車道時是中心虛線。 */
+function dividerCount(roadType: number): number {
+  const lanes = roadType === RoadType.ONE_WAY ? 1 : getLaneCount(roadType);
+  return lanes === 1 ? 1 : 2 * (lanes - 1);
+}
+
+/**
+ * 一格最多畫幾條車道虛線。
+ *
+ * 兩個 renderer 的 `InstancedMesh` 容量以它為準。**算出來而不是寫死**：
+ * `RoadInstanceTracker` 放不下時回傳 −1，呼叫端就整格跳過 —— 超出的虛線是
+ * 靜靜地消失，不會報錯。六車道從一格 8 條變成 16 條時就撞上了原本的 14。
+ */
+export const MAX_LANE_MARKINGS_PER_CELL = DASHES_PER_DIVIDER * Math.max(
+  ...Object.keys(ROAD_WIDTHS).map(t => dividerCount(Number(t))),
+);
+
 /** Generate lane marking positions for road cells. */
 export function buildLaneMarkingData(cells: RoadCell[]): LaneMarking[] {
   const markings: LaneMarking[] = [];
@@ -247,11 +263,19 @@ export function buildLaneMarkingData(cells: RoadCell[]): LaneMarking[] {
     const hasE = (r.roadFlags & RoadDirection.EAST) !== 0;
     const hasW = (r.roadFlags & RoadDirection.WEST) !== 0;
 
-    const isFourLane = r.roadType === RoadType.FOUR_LANE || r.roadType === RoadType.SIX_LANE
-      || r.roadType === RoadType.HIGHWAY;
-    const w = ROAD_WIDTHS[r.roadType] ?? 0.7;
-    const laneOffset = w / 4;
-    const offsets = isFourLane ? [-laneOffset, laneOffset] : [0];
+    // 虛線畫在相鄰兩條車道之間，位置從 `getLaneWidth` 來 —— 與車道圖同一個
+    // 來源。原本是 `路寬/4` 且不管幾車道都只畫一條：四車道剛好對上（兩條車道
+    // 時 `w/4` 正好等於車道寬），六車道則是一條虛線配三排車，而且那條線不在
+    // 任何兩排車之間。
+    //
+    // 單行道除外。它所有車道同向，但 `LaneGraph` 把車全排在中心線右側，只用到
+    // 半邊路面 —— 車道位置本身還沒對，虛線跟著它畫只會把錯的地方畫出來。維持
+    // 原本的中心虛線，等錨點修好再說（TODO.md）。
+    const laneWidth = getLaneWidth(r.roadType);
+    const offsets = dividerCount(r.roadType) === 1
+      ? [0]
+      : Array.from({ length: getLaneCount(r.roadType) - 1 }, (_, i) => (i + 1) * laneWidth)
+        .flatMap(o => [-o, o]);
 
     if (hasN && hasS) {
       const intN = intersections.has(`${r.x},${r.y - 1}`);

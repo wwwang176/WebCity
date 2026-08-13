@@ -5,7 +5,7 @@ import {
   LaneEdge,
   LANE_GEOMETRY,
 } from '../LaneGraph';
-import { RoadType, RoadDirection } from '../../road/types';
+import { RoadType, RoadDirection, getLaneWidth } from '../../road/types';
 import { makeGridLookup } from '../../../../tests/helpers/makeGridLookup';
 
 describe('LaneGraph', () => {
@@ -469,8 +469,13 @@ describe('LaneGraph', () => {
 
 describe('LANE_GEOMETRY constants', () => {
   it('lane width should be a small positive number', () => {
-    expect(LANE_GEOMETRY.LANE_WIDTH).toBeGreaterThan(0);
-    expect(LANE_GEOMETRY.LANE_WIDTH).toBeLessThan(1);
+    // 車道寬不再是這裡的常數 —— 它隨路型變（`getLaneWidth`），因為與路寬各算
+    // 各的會讓六車道的最外側車道跑到路面外。逐路型的驗收在
+    // `LaneWidthFitsRoad.test.ts`。
+    for (const t of [RoadType.TWO_LANE, RoadType.FOUR_LANE, RoadType.SIX_LANE]) {
+      expect(getLaneWidth(t)).toBeGreaterThan(0);
+      expect(getLaneWidth(t)).toBeLessThan(1);
+    }
   });
 
   it('bezier samples should be a positive integer', () => {

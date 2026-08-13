@@ -9,6 +9,7 @@ import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { RailType } from '../core/rail/types';
 import {
   ROAD_WIDTHS,
+  MAX_LANE_MARKINGS_PER_CELL,
   buildRoadStrips,
   buildSidewalkStrips,
   buildLaneMarkingData,
@@ -31,7 +32,7 @@ const RAMP_ANGLE = Math.atan2(LEVEL_HEIGHT, 1.0);
 const RAMP_LENGTH = Math.sqrt(1.0 + LEVEL_HEIGHT * LEVEL_HEIGHT);
 /** Max elevated cells per level (pre-allocated capacity). */
 const MAX_PER_LEVEL = 500;
-const CAP = { road: 3, sidewalk: 4, marking: 14, centerLine: 2, curvedCL: 1, lamp: 4, lampGlow: 4 } as const;
+const CAP = { road: 3, sidewalk: 4, marking: MAX_LANE_MARKINGS_PER_CELL, centerLine: 2, curvedCL: 1, lamp: 4, lampGlow: 4 } as const;
 
 interface ElevatedCell {
   x: number;

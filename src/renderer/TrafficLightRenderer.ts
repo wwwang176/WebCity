@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { type TrafficLight } from '../core/traffic/TrafficLights';
-import { getLaneCount, RoadDirection } from '../core/road/types';
-import { LANE_GEOMETRY, type Direction } from '../core/traffic/LaneGraph';
+import { getLaneCount, getLaneWidth, RoadDirection } from '../core/road/types';
+import { type Direction } from '../core/traffic/LaneGraph';
 import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 import { ROAD_WIDTHS } from './RoadStripBuilder';
 import { STREET_LAMP_HEIGHT, STREET_LAMP_BULB_RADIUS, STREET_LAMP_COLOR }
@@ -109,7 +109,7 @@ export function signalMounts(
   //
   // 不用最外側車道的外緣：六車道的 3×0.18 = 0.54 比路的半寬 0.475 還大
   // —— 車道模型與路寬模型在六車道上對不起來，取外緣會讓燈頭吊到路面外。
-  const laneMid = getLaneCount(light.roadType) * LANE_GEOMETRY.LANE_WIDTH / 2;
+  const laneMid = getLaneCount(light.roadType) * getLaneWidth(light.roadType) / 2;
   // 橫臂只走那段距離的 `ARM_REACH`，所以燈頭落在車道與路緣之間。
   const headOffset = poleOffset - (poleOffset - laneMid) * SIGNAL.ARM_REACH;
 
