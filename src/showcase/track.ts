@@ -18,8 +18,14 @@ import { TrackRenderer } from '../renderer/TrackRenderer';
  * 補的是展示區，不是建築：這一格仍然不准自己畫鋼軌，兩份鋼軌永遠對不齊。
  */
 
-/** 鋪幾格。奇數，車站落在正中央那一格；兩端各多鋪幾格才看得出它穿過去。 */
-export const TRACK_CELLS = 7;
+/**
+ * 鋪幾格。奇數，車站落在正中央那一格。
+ *
+ * 三格是下限也是上限：兩端各多一格才看得出軌道**穿過去**而不是停在佔地
+ * 邊界，而展示區的間距只有 `CIVIC_LAYOUT_GAP`（2 格）—— 再長一格，
+ * 連同兩端的延伸段就會有一條鐵軌從隔壁那一棟的屋頂穿出來。
+ */
+export const TRACK_CELLS = 3;
 
 /** 一條東西向的直線軌道。中間那一格就是車站站的地方。 */
 export function showcaseTrackGrid(): Grid {

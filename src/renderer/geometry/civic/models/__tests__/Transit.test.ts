@@ -277,6 +277,40 @@ describe('火車站', () => {
     expect(hall.z + hall.d / 2).toBeLessThanOrEqual(platform.z + platform.d / 2 + 1e-9);
   });
 
+  /**
+   * 兩側都是月台。
+   *
+   * 一條穿過去的軌道兩邊都停得了車，而只做一側的話另一側就只能是站前廣場
+   * —— 而那片廣場被軌道切在對岸，走不過去（天橋那一版試過了，12 m 的地
+   * 塞不下）。兩側各一座月台是這塊地唯一講得通的用法。
+   *
+   * 兩棟房子**對角**擺：主站房在一側的東端，候車室在另一側的西端。鏡像的話
+   * 兩邊讀起來是同一張圖貼兩次，而真實的雙側式月台本來就一大一小。
+   */
+  it('should serve both sides of the track', () => {
+    const main = tagged(trainStationPlan, 'platform')[0]!;
+    const far = tagged(trainStationPlan, 'sidePlatform')[0]!;
+    expect(far, '對側沒有月台').toBeTruthy();
+    expect(Math.sign(far.z), '兩座月台在軌道的同一側')
+      .not.toBe(Math.sign(main.z));
+    expect(far.part, '對側月台不是鋪面').toBe(PART_GROUND);
+    expect(far.y1, '兩座月台不一樣高').toBeCloseTo(main.y1, 9);
+    expect(m(far.w), '對側月台太短，停不下一節車廂').toBeGreaterThan(10);
+    // 讓開走廊 —— 月台沒有「跨過去」這個選項。
+    expect(Math.abs(far.z) - far.d / 2, '對側月台壓在軌道上')
+      .toBeGreaterThanOrEqual(TRACK_WIDTH - 1e-9);
+
+    // 對側要有自己的候車室，而且與主站房**對角** —— 同一端的話兩棟會擠在
+    // 一起，另一頭空一大片。
+    const shelter = tagged(trainStationPlan, 'shelter')[0]!;
+    const hall = tagged(trainStationPlan, 'hall')[0]!;
+    expect(shelter, '對側沒有候車室').toBeTruthy();
+    expect(shelter.y0, '候車室沒有坐在對側月台上').toBeCloseTo(far.y1, 9);
+    expect(Math.sign(shelter.x), '候車室與站房擠在同一端')
+      .not.toBe(Math.sign(hall.x));
+    expect(shelter.y1, '候車室比主站房還高').toBeLessThan(hall.y1);
+  });
+
   it('should leave the platform room to stand on beside the hall', () => {
     // 站房佔掉整片月台的話，那不是月台，是一棟蓋在台子上的房子。
     const hall = tagged(trainStationPlan, 'hall')[0]!;
@@ -391,16 +425,21 @@ describe('火車站', () => {
    * 會有一半埋在月台裡。
    */
   it('should furnish the platform for people waiting on it', () => {
-    const platform = tagged(trainStationPlan, 'platform')[0]!;
+    const decks = [
+      tagged(trainStationPlan, 'platform')[0]!,
+      tagged(trainStationPlan, 'sidePlatform')[0]!,
+    ];
     const kit = trainStationPlan.props.filter(v =>
       /bench|platformBin|timetable/.test(v.tag ?? ''));
     expect(kit.length, '月台上什麼都沒有').toBeGreaterThanOrEqual(4);
     for (const v of kit) {
+      // 兩座月台都算 —— 但要真的落在**其中一座**上，不是兩座的聯集。
+      const deck = decks.find(p =>
+        Math.abs(v.x - p.x) + v.w / 2 <= p.w / 2 + 1e-9
+        && Math.abs(v.z - p.z) + v.d / 2 <= p.d / 2 + 1e-9);
+      expect(deck, `${v.tag} 站到月台外面去了`).toBeTruthy();
       expect(v.y0, `${v.tag} 埋在月台裡或浮在空中`)
-        .toBeGreaterThanOrEqual(platform.y1 - 1e-9);
-      const onDeck = Math.abs(v.x - platform.x) + v.w / 2 <= platform.w / 2 + 1e-9
-        && Math.abs(v.z - platform.z) + v.d / 2 <= platform.d / 2 + 1e-9;
-      expect(onDeck, `${v.tag} 站到月台外面去了`).toBe(true);
+        .toBeGreaterThanOrEqual(deck!.y1 - 1e-9);
     }
     expect(trainStationPlan.props.some(v => v.tag === 'bench'), '月台沒有長椅')
       .toBe(true);

@@ -28,7 +28,7 @@ const TOTEM_PANEL = 1.0;
  * 整根標成發光的話，夜裡會看到一根從地上亮到頂的柱子（BUG-230 的教訓）。
  * 燈箱進 `massing`（遠景不關 —— 它是這一棟唯一的辨識物），柱身進 `props`。
  */
-function totem(x: number, z: number, postTop: number) {
+function totem(x: number, z: number, postTop: number, base = 0) {
   return {
     panel: {
       tag: 'totem', part: PART_LAMP,
@@ -36,8 +36,10 @@ function totem(x: number, z: number, postTop: number) {
       y0: M(postTop), y1: M(postTop + TOTEM_PANEL),
     } satisfies CivicVolume,
     post: {
+      // `base` 是柱腳的高度（公尺）。火車站兩側都鋪成月台之後這一格沒有
+      // 地面了，柱子從 0 起算會有 0.9 m 埋在月台裡。
       tag: 'totemPost', part: PART_DETAIL,
-      x, z, w: M(0.16), d: M(0.16), y0: 0, y1: M(postTop),
+      x, z, w: M(0.16), d: M(0.16), y0: M(base), y1: M(postTop),
     } satisfies CivicVolume,
   };
 }
@@ -215,10 +217,8 @@ export const metroStationPlan: CivicPlan = {
 
 // ===== 火車站 =====
 
-const trainTotem = totem(M(-4.9), M(-2.6), 2.2);
-
 /**
- * 火車站 —— 站房**站在月台上**，兩者同在軌道的一側。
+ * 火車站 —— **軌道兩側各一座月台**，站房與候車室對角站在上面。
  *
  * 查證過的事實（`canPlaceTransportStop` + `placeTransportStopOnGrid` +
  * `TrackRenderer`）：火車站不是蓋在鐵軌**旁邊**，是蓋在鐵軌**上** ——
@@ -237,18 +237,24 @@ const trainTotem = totem(M(-4.9), M(-2.6), 2.2);
  *    就只有 2.6 m 深。
  *
  * 真實的小車站根本不跨線：站房就蓋在月台上，月台是它旁邊那一片鋪面加一道
- * 雨遮。所以兩者現在同在軌道的一側，站房的底面**就是**月台的頂面 ——
- * 「連在一起」不需要任何構造物。空出來的另一側是站前廣場。
+ * 雨遮。站房的底面**就是**月台的頂面 —— 「連在一起」不需要任何構造物。
+ *
+ * 而一條穿過去的軌道**兩邊都停得了車**，所以另一側也是月台，不是站前廣場：
+ * 那片廣場被軌道切在對岸，走不過去（天橋那一版試過了，12 m 的地塞不下）。
+ * 兩棟房子對角擺 —— 鏡像的話兩邊讀起來是同一張圖貼兩次，而真實的雙側式
+ * 月台本來就一大一小。
  *
  * ```
- *   z−  ┌──────────────┐
- *       │    站前廣場（識別柱）    │
+ *   z−  │ 候車室 │ ▔▔ 雨遮 ▔▔ │  ← 對側月台
  *       ├──────────────┤  ← 走廊，由 TrackRenderer 畫
  *       │ ← 真的軌道 →            │
  *       ├──────────────┤
- *   z+  │ ▔▔ 雨遮下的月台 ▔▔ │ 站房 │
- *       └──────────────┘
+ *   z+  │ ▔▔ 雨遮 ▔▔ │ 站房 │  ← 主月台（電車線的柱子在這一側）
  * ```
+ *
+ * 兩側都鋪成月台之後這一格就**沒有地面了**，所以 `fixtures` 是空的：地面
+ * 物件站在 y = 0，擺進來會有一半埋在月台裡。月台上的東西（長椅、垃圾桶、
+ * 時刻表、識別柱）全部走 `props`，起點壓在月台面上。
  *
  * 走廊只讓一個方向 —— 12 m 的格子上讓出十字的話，四個角各剩 4 m，站房就
  * 蓋不起來了。玩家要把站轉到與軌道同向，這與其他有方向性的建築一樣。
@@ -256,6 +262,8 @@ const trainTotem = totem(M(-4.9), M(-2.6), 2.2);
 
 /** 軌道走廊的半寬（公尺）。`TrackRenderer.TRACK_WIDTH` 是 0.15 格 = 1.8 m。 */
 const CORRIDOR_HALF = 1.8;
+/** 識別柱：站在對側月台的東端，雨遮之外 —— 蓋在下面的話它會穿出棚頂。 */
+const trainTotem = totem(M(5.2), M(-3.9), 3.1, 0.9);
 /** 月台的中心與深度（公尺）。走廊的南緣一路到佔地邊界。 */
 const PLATFORM_Z = 3.75;
 const PLATFORM_D = 3.9;
@@ -269,7 +277,11 @@ const HALL_W = 5.1;
 /** 站房的中心與深度。整棟落在月台的範圍裡，不然它有一角是懸空的。 */
 const HALL_Z = 3.9;
 const HALL_D = 2.6;
-/** 電車線的柱子：站在月台邊那一條，讓開走廊。 */
+/** 對側的候車室。比站房矮一截、擺在另一端 —— 對角才讀得出主次。 */
+const SHELTER_X = -2.8;
+const SHELTER_W = 4.8;
+const SHELTER_EAVE = 3.5;
+/** 電車線的柱子：站在主月台邊那一條，讓開走廊。 */
 const MAST_X = [-4.4, -0.8, 2.8] as const;
 const MAST_Z = 2.0;
 /**
@@ -324,10 +336,29 @@ export const trainStationPlan: CivicPlan = {
       tag: 'clock', part: PART_LAMP,
       x: M(HALL_X), z: M(2.47), w: M(1.2), d: M(0.14), y0: M(2.9), y1: M(3.9),
     },
+    // 對側月台。與主月台同高同長 —— 一高一低的話讀起來是一塊台階。
+    // 對側月台。與主月台同高同長 —— 一高一低的話讀起來是一塊台階。
+    {
+      tag: 'sidePlatform', part: PART_GROUND, shade: 0.72,
+      x: 0, z: M(-PLATFORM_Z), w: M(11.2), d: M(PLATFORM_D),
+      y0: 0, y1: M(PLATFORM_TOP),
+    },
+    {
+      // 候車室。比站房矮 1 m、短 0.3 m，而且在另一端 —— 一樣大又對齊的話
+      // 兩邊是同一張圖貼兩次。
+      tag: 'shelter',
+      x: M(SHELTER_X), z: M(-3.9), w: M(SHELTER_W), d: M(2.4),
+      y0: M(PLATFORM_TOP), y1: M(SHELTER_EAVE),
+    },
+    {
+      tag: 'shelterRoof', part: PART_ROOF, shape: 'gable',
+      x: M(SHELTER_X), z: M(-3.9), w: M(5.3), d: M(2.4),
+      y0: M(SHELTER_EAVE), y1: M(4.4),
+    },
     trainTotem.panel,
   ],
   decals: [
-    // 站前廣場：z [−6, −1.8]
+    // 對側月台下面那一片：z [−6, −1.8]
     { x: 0, z: M(-3.9), w: M(12.0), d: M(4.2), shade: 0.62 },
     // 軌道走廊：z [−1.8, 1.8]。碴色 —— 真的碴床只有 1.8 m 寬，兩側這一圈
     // 是它的路權範圍。
@@ -345,9 +376,21 @@ export const trainStationPlan: CivicPlan = {
       x: 0, z: M(2.3), w: M(11.2), d: M(0.35),
       y0: M(PLATFORM_TOP), y1: M(PLATFORM_TOP + 0.02),
     },
-    // 雨遮的四根柱，站在月台上。**沒有鋼軌** —— 那是 `TrackRenderer` 的事。
+    {
+      tag: 'platformEdge', part: PART_GROUND, shade: 0.95,
+      x: 0, z: M(-2.3), w: M(11.2), d: M(0.35),
+      y0: M(PLATFORM_TOP), y1: M(PLATFORM_TOP + 0.02),
+    },
+    // 兩座雨遮各四根柱，站在各自的月台上。**沒有鋼軌** —— 那是
+    // `TrackRenderer` 的事。
     ...([-5.0, -0.6] as const).flatMap((x): CivicVolume[] =>
       ([3.2, 4.9] as const).map((z): CivicVolume => ({
+        tag: 'canopyPost', part: PART_DETAIL,
+        x: M(x), z: M(z), w: M(0.18), d: M(0.18),
+        y0: M(PLATFORM_TOP), y1: M(3.0),
+      }))),
+    ...([0.0, 4.0] as const).flatMap((x): CivicVolume[] =>
+      ([-3.2, -4.9] as const).map((z): CivicVolume => ({
         tag: 'canopyPost', part: PART_DETAIL,
         x: M(x), z: M(z), w: M(0.18), d: M(0.18),
         y0: M(PLATFORM_TOP), y1: M(3.0),
@@ -391,6 +434,11 @@ export const trainStationPlan: CivicPlan = {
       y0: M(PLATFORM_TOP), y1: M(1.35),
     })),
     {
+      tag: 'bench', part: PART_DETAIL,
+      x: M(2.4), z: M(-4.6), w: M(1.6), d: M(0.5),
+      y0: M(PLATFORM_TOP), y1: M(1.35),
+    },
+    {
       tag: 'platformBin', part: PART_DETAIL,
       x: M(-2.8), z: M(4.7), w: M(0.5), d: M(0.5),
       y0: M(PLATFORM_TOP), y1: M(1.6),
@@ -423,18 +471,17 @@ export const trainStationPlan: CivicPlan = {
       tag: 'platformCanopy',
       x: M(-2.6), z: M(4.05), w: M(6.0), d: M(2.5), y0: M(3.0), y1: M(3.3),
     },
+    {
+      // 對側的雨遮。從候車室的牆邊蓋到識別柱之前 —— 蓋過識別柱的話那根柱子
+      // 會從棚頂穿出來。
+      tag: 'sideCanopy',
+      x: M(2.1), z: M(-4.05), w: M(5.0), d: M(2.5), y0: M(3.0), y1: M(3.3),
+    },
   ],
-  fixtures: [
-    // 全部排在站前廣場那一條，而且避開走廊（|z| > 1.8）。月台那一側站滿了
-    // 站房、雨遮與柱子，塞不下地面物件。
-    { kind: 'lamp', x: M(5.0), z: M(-2.6), heightM: 4.5 },
-    { kind: 'lamp', x: M(-5.0), z: M(-4.0), heightM: 4.5 },
-    { kind: 'bikeRack', x: M(4.9), z: M(-3.4), axis: 'x' },
-    { kind: 'signPost', x: M(4.9), z: M(-4.6), axis: 'x' },
-    { kind: 'bin', x: M(-5.0), z: M(-2.4), radius: M(0.26) },
-    { kind: 'tree', x: M(-4.9), z: M(-5.0), heightM: 5.0, crownRadius: M(0.6) },
-    { kind: 'shrub', x: M(-2.0), z: M(-5.2), radius: M(0.5) },
-  ],
+  // **一件地面物件都沒有。** 兩側都鋪成月台之後這一格沒有地面了 ——
+  // `fixtures` 站在 y = 0，擺進來會有一半埋在月台裡。月台上的東西
+  // （長椅、垃圾桶、時刻表、識別柱）全部在 `props`，起點壓在月台面上。
+  fixtures: [],
   vehicles: [],
 };
 

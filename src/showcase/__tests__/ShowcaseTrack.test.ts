@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { showcaseTrackGrid, createShowcaseTrack, TRACK_CELLS } from '../track';
 import { RailType, TrackDirection } from '../../core/rail/types';
 import { TRACK_WIDTH } from '../../renderer/TrackRenderer';
+import { CIVIC_LAYOUT_GAP } from '../civicLayout';
 import { trainStationPlan } from '../../renderer/geometry/civic/models/transit';
 
 /**
@@ -35,6 +36,12 @@ describe('展示區的軌道', () => {
     // 只鋪車站那一格的話，軌道會在佔地邊界斷掉 —— 那讀起來是一段月台旁邊的
     // 裝飾，不是一條穿過去的線。
     expect(TRACK_CELLS, '軌道只有車站那一格').toBeGreaterThanOrEqual(3);
+    // 但也不能鋪太長：展示區的間距是 `CIVIC_LAYOUT_GAP`（2 格），所以隔壁
+    // 那一棟的邊緣離車站的格心只有 2.5 格 —— 軌道連同兩端的延伸段
+    // （`EDGE_EXTEND`，各 0.5 格）壓過去的話，會有一條鐵軌從別人的屋頂穿出來。
+    const reach = TRACK_CELLS / 2 + 0.5;
+    expect(reach, `軌道伸出 ${reach} 格，會壓到隔壁`)
+      .toBeLessThan(1 / 2 + CIVIC_LAYOUT_GAP);
     const grid = showcaseTrackGrid();
     for (let x = 0; x < TRACK_CELLS; x++) {
       expect(grid.getCell(x, 0)!.railType, `第 ${x} 格沒有軌道`)
