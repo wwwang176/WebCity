@@ -1427,7 +1427,16 @@ export class SimulationLoop {
   /** Pre-compute commute paths and spawn initial vehicles on load.
    *  Call after lane graph, road coverage, and power/water are ready.
    *  @param spawnRatio fraction of commuters to place on roads (0-1)
-   *  @param onProgress called with (0-1) for sub-progress updates */
+   *  @param onProgress called with (0-1) for sub-progress updates
+   *
+   * **只算現在真的要用的那幾條。** 這裡原本替每一位有工作的市民都算了雙向路徑，
+   * 而只有 `spawnRatio` 那一小部分會生成車輛 —— 2 146 人的存檔實測，1 805 位 ×
+   * 2 個方向 = 3 610 次 A*、每次約 8 ms，載入畫面卡 20 秒，其中八成是替現在
+   * 不上路的人算的。
+   *
+   * 沒算到的那些人不會出事：`spawnCommuteVehicles` 找不到路線時本來就會丟給
+   * pathfinding worker，下一 tick 再用 —— 那條路是非同步的，而且在別的執行緒上。
+   */
   async warmup(spawnRatio = 0.2, onProgress?: (ratio: number) => void): Promise<{ pathsComputed: number; vehiclesSpawned: number }> {
     this.ensureLaneGraph();
     if (!this._roadLookup) return { pathsComputed: 0, vehiclesSpawned: 0 };
@@ -1437,62 +1446,61 @@ export class SimulationLoop {
     let vehiclesSpawned = 0;
 
     for (let i = 0; i < citizens.length; i++) {
+      // Report sub-progress every 100 citizens.
+      //
+      // 放在迴圈**開頭**：底下的 `continue` 已經是多數情形（只有 spawnRatio
+      // 那一小部分會往下走），擺在結尾的話進度條大部分時間不會動。
+      if (i % 100 === 0 && onProgress) {
+        onProgress(i / citizens.length);
+        await new Promise(r => requestAnimationFrame(r));
+      }
+
       const c = citizens[i]!;
       if (!c.homeId || !c.workplaceId) continue;
+
+      // 先決定這一位現在上不上路，再決定要不要算路徑。反過來的話，八成的
+      // 搜尋是替不上路的人做的。
+      if (Math.random() >= spawnRatio) continue;
+
       const home = parsePosKey(c.homeId);
       const work = parsePosKey(c.workplaceId);
       if (!home || !work) continue;
 
-      // Compute morning path (home → work)
-      const morningKey = `${c.homeId}->${c.workplaceId}`;
-      let morningVariants = this.commuteCache.getRouteVariants(morningKey) ?? null;
-      if (!morningVariants) {
-        morningVariants = findLanePathVariants(this.laneGraph, this._roadLookup, home, work);
-        if (morningVariants.length > 0) {
-          this.commuteCache.setRouteVariants(morningKey, morningVariants);
+      // 一台車只往一個方向開，所以只需要那一個方向的路徑。
+      const toWork = Math.random() < 0.5;
+      const fromPos = toWork ? home : work;
+      const toPos = toWork ? work : home;
+      const routeKey = toWork
+        ? `${c.homeId}->${c.workplaceId}`
+        : `${c.workplaceId}->${c.homeId}`;
+
+      let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
+      if (!variants) {
+        variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromPos, toPos);
+        if (variants.length > 0) {
+          this.commuteCache.setRouteVariants(routeKey, variants);
         }
       }
+      if (!variants || variants.length === 0) continue;
 
-      // Compute evening path (work → home)
-      const eveningKey = `${c.workplaceId}->${c.homeId}`;
-      let eveningVariants = this.commuteCache.getRouteVariants(eveningKey) ?? null;
-      if (!eveningVariants) {
-        eveningVariants = findLanePathVariants(this.laneGraph, this._roadLookup, work, home);
-        if (eveningVariants.length > 0) {
-          this.commuteCache.setRouteVariants(eveningKey, eveningVariants);
-        }
-      }
+      const path = variants[Math.floor(Math.random() * variants.length)]!;
+      if (path.length === 0) continue;
 
-      const morningPath = morningVariants?.length ? morningVariants[Math.floor(Math.random() * morningVariants.length)]! : null;
-      const eveningPath = eveningVariants?.length ? eveningVariants[Math.floor(Math.random() * eveningVariants.length)]! : null;
-      if (!morningPath && !eveningPath) continue;
-
-      // Cache both directions for this citizen
+      // 只填走到的那個方向。另一個方向留 null —— 平常那條路
+      // （`spawnCommuteVehicles`）寫進來的也是這個形狀。
       this.commuteCache.set(c.id, {
         citizenId: c.id,
         homeId: c.homeId,
         workplaceId: c.workplaceId,
-        morningPath: morningPath && morningPath.length > 0 ? morningPath : null,
-        eveningPath: eveningPath && eveningPath.length > 0 ? eveningPath : null,
+        morningPath: toWork ? path : null,
+        eveningPath: toWork ? null : path,
         status: 'ready',
         generation: this.commuteCache.roadGeneration,
       });
       pathsComputed++;
 
-      // Spawn vehicle for a fraction of commuters (random direction)
-      if (Math.random() < spawnRatio) {
-        const spawnPath = Math.random() < 0.5 ? morningPath : eveningPath;
-        if (spawnPath && spawnPath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(spawnPath, c.id);
-          vehiclesSpawned++;
-        }
-      }
-
-      // Report sub-progress every 100 citizens
-      if (i % 100 === 0 && onProgress) {
-        onProgress(i / citizens.length);
-        await new Promise(r => requestAnimationFrame(r));
-      }
+      this.state.traffic.addVehicleOnEdges(path, c.id);
+      vehiclesSpawned++;
     }
 
     onProgress?.(1);
