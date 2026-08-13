@@ -59,6 +59,38 @@ export enum TrafficControl {
   ROUNDABOUT = 2,
 }
 
+/**
+ * 各路型的柏油寬度（格；1 格 = 12 m）。
+ *
+ * 放在 core 而不是渲染層：路面多寬決定了車開在哪，那是模擬的事實，不是畫法。
+ * 原本有兩份一模一樣的拷貝（`SidewalkGraph` 與 `RoadStripBuilder` 各一份），
+ * 而 core 的那份還是為了避免反向 import 才複製過去的。
+ */
+export const ROAD_WIDTHS: Record<number, number> = {
+  [RoadType.RURAL]: 0.5,
+  [RoadType.TWO_LANE]: 0.6,
+  [RoadType.FOUR_LANE]: 0.85,
+  [RoadType.SIX_LANE]: 0.95,
+  [RoadType.HIGHWAY]: 0.95,
+  [RoadType.ONE_WAY]: 0.55,
+};
+
+/**
+ * 一條車道有多寬（格）：把該向的半幅路面平分給它的車道。
+ *
+ * **算出來而不是一個常數。** 原本是寫死的 0.18，與 `ROAD_WIDTHS` 各算各的
+ * —— 六車道每向三條 = 0.54，而路面半寬只有 0.475，最外側那條車道有一部分在
+ * 路面外，而車子實際上就開在那裡：一台 0.125 寬的卡車會壓出路緣 45 公分。
+ *
+ * 單行道也切半幅。它所有車道同向，理論上整幅都能用，但 `LaneGraph` 是從中心線
+ * 往**行進方向的右側**排車道的 —— 給它整幅的話，最外側那條會排到路面外。單行道
+ * 因此只用到右半邊的柏油，左半邊是空的；那是錨點的問題，不是車道寬的問題，
+ * 記在 TODO.md。
+ */
+export function getLaneWidth(roadType: number): number {
+  return (ROAD_WIDTHS[roadType] ?? 0.6) / 2 / getLaneCount(roadType);
+}
+
 /** Get the number of directional lanes for a road type (lanes going one way). */
 export function getLaneCount(roadType: number): number {
   const config = ROAD_CONFIGS[roadType as RoadType];

@@ -1,4 +1,4 @@
-import { RoadType, RoadDirection, getLaneCount } from '../road/types';
+import { RoadType, RoadDirection, getLaneCount, getLaneWidth } from '../road/types';
 import { parsePosKeyUnsafe, euclideanDistance } from '../grid/GridHelpers';
 import { computeTurnControlPoint as computeTurnCP, approximateQuadraticBezierLength } from './BezierPath';
 import {
@@ -111,10 +111,13 @@ export function isIntersectionCell(roadFlags: number): boolean {
 }
 
 
-/** Lane geometry rendering constants */
+/**
+ * Lane geometry rendering constants
+ *
+ * 車道寬不在這裡 —— 它隨路型變，見 `road/types` 的 `getLaneWidth`。原本是這裡
+ * 一個寫死的 0.18，與路寬各算各的，結果六車道的最外側車道有一部分在路面外。
+ */
 export const LANE_GEOMETRY = {
-  /** Lateral offset per lane (cells) */
-  LANE_WIDTH: 0.18,
   /** Number of samples for Bezier length approximation */
   BEZIER_SAMPLES: 10,
 } as const;
@@ -267,7 +270,9 @@ export class LaneGraph {
     // For direction D with lane index L:
     //   perpendicular "right" of travel direction = lateral offset
     //   This separates opposing traffic and multi-lane same-direction traffic.
-    const LANE_WIDTH = LANE_GEOMETRY.LANE_WIDTH;
+    //
+    // 車道寬隨路型變 —— 六車道要在同樣的半幅路面裡塞三條，所以每條比四車道窄。
+    const LANE_WIDTH = getLaneWidth(cell.roadType);
 
     for (const { dir, flag } of DIR_FLAGS) {
       if (!(cell.roadFlags & flag)) continue;

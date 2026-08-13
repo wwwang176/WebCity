@@ -6,7 +6,7 @@
  * and transit_access edges.
  */
 
-import { RoadType, RoadDirection, countRoadDirections } from '../road/types';
+import { RoadType, RoadDirection, countRoadDirections, ROAD_WIDTHS } from '../road/types';
 import { MAX_BUILDING_WIDTH_M, METRES_PER_CELL } from '../grid/constants';
 import { toPosKey, parsePosKeyUnsafe, CARDINAL_DIRECTIONS, euclideanDistance } from '../grid/GridHelpers';
 
@@ -14,14 +14,8 @@ import { toPosKey, parsePosKeyUnsafe, CARDINAL_DIRECTIONS, euclideanDistance } f
 // Matches RoadRenderer.ts
 export const SIDEWALK_WIDTH = 0.14;
 
-export const ROAD_WIDTHS: Record<number, number> = {
-  [RoadType.RURAL]: 0.5,
-  [RoadType.TWO_LANE]: 0.6,
-  [RoadType.FOUR_LANE]: 0.85,
-  [RoadType.SIX_LANE]: 0.95,
-  [RoadType.HIGHWAY]: 0.95,
-  [RoadType.ONE_WAY]: 0.55,
-};
+/** 路寬的家在 `core/road/types`。這裡轉出去，既有的 import 不必動。 */
+export { ROAD_WIDTHS };
 
 /** Crosswalk offset from intersection center (matches RoadRenderer cwOffset) */
 export const CW_OFFSET = 0.35;

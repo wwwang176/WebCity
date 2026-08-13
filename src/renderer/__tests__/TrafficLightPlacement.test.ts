@@ -5,7 +5,7 @@ import { TrafficLightRenderer, signalMounts, SIGNAL, type SignalMount }
 import { STREET_LAMP_HEIGHT, STREET_LAMP_BULB_RADIUS } from '../RoadRenderer';
 import { ROAD_WIDTHS } from '../RoadStripBuilder';
 import { SIDEWALK_WIDTH } from '../../core/traffic/SidewalkGraph';
-import { RoadType, RoadDirection } from '../../core/road/types';
+import { RoadType, RoadDirection, getLaneWidth } from '../../core/road/types';
 import { LaneGraph, LANE_GEOMETRY, type Direction } from '../../core/traffic/LaneGraph';
 import { makeGridLookup } from '../../../tests/helpers/makeGridLookup';
 
@@ -148,7 +148,7 @@ describe('號誌的擺放', () => {
     //
     // 上界是路緣而不是「最外側車道的外緣」：橫臂縮到 `ARM_REACH` 之後，燈頭
     // 本來就會落在車道與路緣之間，那是刻意的長度，不是跑出界。
-    const laneWidth = LANE_GEOMETRY.LANE_WIDTH;
+    const laneWidth = getLaneWidth(roadType);
     const kerb = ROAD_WIDTHS[roadType]! / 2;
     for (const m of mountsFor(roadType)) {
       const head = Math.abs(lateral(m, 'head'));

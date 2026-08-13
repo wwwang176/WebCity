@@ -1,9 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { RoadType, RoadDirection } from '../../core/road/types';
+import {
+  RoadType, RoadDirection, ROAD_WIDTHS, getLaneCount, getLaneWidth,
+} from '../../core/road/types';
 import {
   buildCenterLineData,
   buildCurvedCenterLineData,
   buildLaneMarkingData,
+  MAX_LANE_MARKINGS_PER_CELL,
   type RoadCell,
   type CenterLine,
   type CurvedCenterLine,
@@ -204,5 +207,113 @@ describe('buildLaneMarkingData L-bend support', () => {
       const markings = buildLaneMarkingData(cells);
       expect(markings.length).toBeGreaterThan(0);
     }
+  });
+});
+
+/**
+ * 畫出來的虛線要落在車真正開的兩條車道中間。
+ *
+ * 原本虛線的位置是 `路寬/4`，而且不管幾車道都只畫**一條** —— 與車道圖用的
+ * 車道寬（當時是寫死的 0.18）是兩套獨立的數字。四車道剛好對上（`w/4` 正好
+ * 等於兩條車道時的車道寬），六車道則是「一條虛線、三排車」，而且那條線不在
+ * 任何兩排車之間。
+ *
+ * 兩邊現在都從 `getLaneWidth` 來。
+ */
+describe('虛線與車道', () => {
+  /** 一段東西向直路中間那格的虛線橫向位置（去重、取正值、由內而外）。 */
+  function dividers(roadType: RoadType): number[] {
+    const cells: RoadCell[] = [];
+    for (let x = 0; x < 3; x++) {
+      cells.push({
+        x, y: 0, roadType,
+        roadFlags: (x > 0 ? RoadDirection.WEST : 0) | (x < 2 ? RoadDirection.EAST : 0),
+      });
+    }
+    const mine = buildLaneMarkingData(cells).filter(m => m.srcX === 1);
+    // 去重不四捨五入：同一條虛線的每一段本來就是同一個值，截斷只會讓下面的
+    // 比較在小數第 7 位以後失真。
+    return [...new Set(mine.map(m => m.offsetPerp))]
+      .filter(o => o > 0)
+      .sort((a, b) => a - b);
+  }
+
+  /** 該向各車道的中心，由內而外。 */
+  function laneCentres(roadType: RoadType): number[] {
+    const w = getLaneWidth(roadType);
+    return Array.from({ length: getLaneCount(roadType) }, (_, i) => (i + 0.5) * w);
+  }
+
+  it('should draw one divider between every pair of adjacent lanes', () => {
+    for (const roadType of [RoadType.FOUR_LANE, RoadType.SIX_LANE, RoadType.HIGHWAY]) {
+      expect(dividers(roadType).length, `${roadType}：虛線數量不等於車道間隙數`)
+        .toBe(getLaneCount(roadType) - 1);
+    }
+  });
+
+  it('should put each divider exactly between the two lanes it separates', () => {
+    for (const roadType of [RoadType.FOUR_LANE, RoadType.SIX_LANE, RoadType.HIGHWAY]) {
+      const centres = laneCentres(roadType);
+      const lines = dividers(roadType);
+      lines.forEach((line, i) => {
+        const between = (centres[i]! + centres[i + 1]!) / 2;
+        expect(line, `${roadType}：第 ${i} 條虛線沒有落在兩排車中間`)
+          .toBeCloseTo(between, 9);
+      });
+    }
+  });
+
+  it('should keep the dashes on the asphalt', () => {
+    for (const roadType of [RoadType.FOUR_LANE, RoadType.SIX_LANE, RoadType.HIGHWAY]) {
+      const half = ROAD_WIDTHS[roadType]! / 2;
+      for (const line of dividers(roadType)) {
+        expect(line, `${roadType}：虛線畫到路面外`).toBeLessThan(half);
+      }
+    }
+  });
+
+  it('should still draw a dashed centre line on a single-lane-per-direction road', () => {
+    // 一條車道就沒有「車道之間」，那條虛線就是中心線本身。
+    const cells: RoadCell[] = [{
+      x: 0, y: 0, roadType: RoadType.TWO_LANE,
+      roadFlags: RoadDirection.EAST | RoadDirection.WEST,
+    }];
+    const offsets = new Set(buildLaneMarkingData(cells).map(m => m.offsetPerp));
+    expect([...offsets], '兩車道的虛線不在中心線上').toEqual([0]);
+  });
+});
+
+/**
+ * 虛線的實例容量要蓋得住實際畫出來的量。
+ *
+ * `RoadInstanceTracker` 放不下時回傳 −1，呼叫端整格跳過 —— 超出的虛線是靜靜地
+ * 消失，不會報錯。六車道從一格 8 條變成 16 條時就撞上了原本寫死的 14。
+ */
+describe('虛線的容量', () => {
+  const TWO_WAY_FLAGS = [
+    RoadDirection.NORTH | RoadDirection.SOUTH,
+    RoadDirection.EAST | RoadDirection.WEST,
+    RoadDirection.NORTH | RoadDirection.EAST,
+    RoadDirection.NORTH | RoadDirection.WEST,
+    RoadDirection.SOUTH | RoadDirection.EAST,
+    RoadDirection.SOUTH | RoadDirection.WEST,
+  ];
+
+  it('should never emit more markings for one cell than the cap allows', () => {
+    for (const roadType of Object.keys(ROAD_WIDTHS).map(Number)) {
+      for (const roadFlags of TWO_WAY_FLAGS) {
+        const n = buildLaneMarkingData([{ x: 0, y: 0, roadType, roadFlags }]).length;
+        expect(n, `路型 ${roadType}、旗標 ${roadFlags}：一格畫了 ${n} 條，超過上限`)
+          .toBeLessThanOrEqual(MAX_LANE_MARKINGS_PER_CELL);
+      }
+    }
+  });
+
+  it('should be tight enough to be worth having', () => {
+    // 上限開得太寬的話這條測試永遠是綠的。最寬的那種路必須真的用到它。
+    const worst = Math.max(...Object.keys(ROAD_WIDTHS).map(Number).flatMap(roadType =>
+      TWO_WAY_FLAGS.map(roadFlags =>
+        buildLaneMarkingData([{ x: 0, y: 0, roadType, roadFlags }]).length)));
+    expect(worst, '上限比任何一種路實際畫的都寬').toBe(MAX_LANE_MARKINGS_PER_CELL);
   });
 });
