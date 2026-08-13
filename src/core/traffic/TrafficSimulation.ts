@@ -65,8 +65,17 @@ export const TRAFFIC = {
   STALL_JITTER: 5,
   /** Density divisor per occupied cell for congestion calculation */
   DENSITY_CAPACITY_PER_CELL: 3,
-  /** Edge vehicle speed in world-units per second */
-  EDGE_SPEED: 7,
+  /**
+   * Edge vehicle speed in world-units per second
+   *
+   * 車輛是裝飾性的，移動與模擬時鐘脫鉤 —— 一格 12 公尺，所以 3.5 格／秒 換算
+   * 約 150 km/h，而路上標的是 50。那個倍率是刻意的：照時鐘算的話 1x 之下一個
+   * 遊戲日只有 6 秒（24 tick × 250 ms），車會慢到看不出在動。
+   *
+   * 整體快慢調這裡，不要動 `ROAD_CONFIGS` 的 `speedLimit` —— 速限同時是路徑
+   * 規劃的成本權重，動了它會連帶改變車流的選路。
+   */
+  EDGE_SPEED: 3.5,
   /** Speed limit that maps to base speed */
   REFERENCE_LIMIT: 50,
   /** Minimum distance between vehicles */
