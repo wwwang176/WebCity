@@ -48,7 +48,7 @@ import { TransportRouteRenderer } from './renderer/TransportRouteRenderer';
 import { MetroTunnelRenderer } from './renderer/MetroTunnelRenderer';
 import { type AirportSize } from './core/transport/AirportSystem';
 import { collectTransportVehicles } from './core/transport/collectTransportVehicles';
-import { collectTransportRoutes } from './core/transport/collectTransportRoutes';
+import { collectTransportRoutes, filterRoutesForViewMode } from './core/transport/collectTransportRoutes';
 import { PedestrianRenderer, cullPedestrians } from './renderer/PedestrianRenderer';
 import { INFRA_SERVICE_ACTIONS, type InfraServiceContext } from './core/building/InfraServiceActions';
 import { getInfraDetails as getInfraDetailsFromCtx, type InfraDetailContext } from './core/building/InfraDetails';
@@ -1822,11 +1822,7 @@ export class Game {
     const routeData = collectTransportRoutes({
       bus: this.state.bus, metro: this.state.metro, rail: this.state.rail, ferry: this.state.ferry,
     });
-    if (this.viewMode !== ViewMode.NORMAL) {
-      this.transportRouteRenderer.update([]);
-    } else {
-      this.transportRouteRenderer.update(routeData);
-    }
+    this.transportRouteRenderer.update(filterRoutesForViewMode(routeData, this.viewMode));
 
     // Update metro tunnel + train animation
     const vmOp = VIEW_MODE_OPACITY[this.viewMode];
@@ -1992,6 +1988,7 @@ export class Game {
     this.elevatedRoadRenderer.setViewMode(mode);
     this.trackRenderer.setViewMode(mode);
     this.levelCrossingRenderer.setViewMode(mode);
+    this.trafficLightRenderer.setViewMode(mode);
     this.vehicleRenderer.setViewMode(mode);
     this.weatherRenderer.setViewMode(mode);
     this.onUIUpdate?.();

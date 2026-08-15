@@ -2,9 +2,13 @@ import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { RoadRenderer } from '../RoadRenderer';
 import { ElevatedRoadRenderer } from '../ElevatedRoadRenderer';
+import { TrafficLightRenderer } from '../TrafficLightRenderer';
+import { BuildingRenderer } from '../BuildingRenderer';
+import { type TrafficLight } from '../../core/traffic/TrafficLights';
 import { Grid } from '../../core/grid/Grid';
 import { ElevationManager } from '../../core/elevation/ElevationManager';
 import { RoadType, RoadDirection } from '../../core/road/types';
+import { ZoneType } from '../../core/grid/types';
 import { RailType } from '../../core/rail/types';
 import { ViewMode } from '../../core/ViewMode';
 
@@ -134,6 +138,167 @@ describe('地面道路：切回正常視角要還原顏色', () => {
     expect(mat.opacity).toBe(1);
     expect(mat.depthWrite).toBe(true);
     expect(internals.roadMesh.renderOrder).toBe(0);
+  });
+});
+
+interface SignalInternals {
+  poleMesh: THREE.InstancedMesh;
+  armMesh: THREE.InstancedMesh;
+  lightMesh: THREE.InstancedMesh;
+}
+
+const SIGNAL_MESH_KEYS = ['poleMesh', 'armMesh', 'lightMesh'] as const;
+
+/** 一個四向路口的號誌。 */
+function trafficLight(x: number, y: number): TrafficLight {
+  return {
+    x, y, phase: 0, timer: 10, phaseDuration: 10, clearing: false,
+    roadType: RoadType.FOUR_LANE,
+    roadFlags: RoadDirection.NORTH | RoadDirection.SOUTH
+      | RoadDirection.EAST | RoadDirection.WEST,
+  };
+}
+
+function makeSignalRenderer(build = true) {
+  const scene = new THREE.Scene();
+  const lights = [trafficLight(3, 3), trafficLight(6, 3)];
+  const renderer = new TrafficLightRenderer();
+  if (build) renderer.build(scene, lights);
+  return { renderer, internals: renderer as unknown as SignalInternals, scene, lights };
+}
+
+interface BuildingInternals {
+  infraIndex: Map<string, THREE.Group>;
+  _whiteModelMesh: THREE.Mesh | null;
+}
+
+/** 一個公車站、一個火車站、一座警察局。 */
+function makeBuildingRenderer() {
+  const scene = new THREE.Scene();
+  const renderer = new BuildingRenderer();
+  renderer.build(scene, new Grid(16, 16));
+  renderer.addInfrastructure(scene, 2, 2, 'bus_stop', 0);
+  renderer.addInfrastructure(scene, 6, 2, 'train_station', 0);
+  renderer.addInfrastructure(scene, 10, 2, 'police', 0);
+  return { renderer, internals: renderer as unknown as BuildingInternals, scene };
+}
+
+function whiteModelVertexCount(internals: BuildingInternals): number {
+  const mesh = internals._whiteModelMesh;
+  if (!mesh) throw new Error('白模沒有建起來，這組情境等於沒測');
+  return mesh.geometry.getAttribute('position').count;
+}
+
+describe('白模', () => {
+  it('should actually bake a white model when the city has infrastructure', () => {
+    // 原本的實作把所有幾何原封不動丟給 mergeGeometries。基礎設施的模型有的帶
+    // uv、有的不帶，有的有 index、有的沒有 —— 合併會回 null，而那時候真正的
+    // 建築早就 visible = false 了。結果不是「白模化」，是整座城市消失。
+    const { renderer, internals, scene } = makeBuildingRenderer();
+
+    renderer.setViewMode(ViewMode.UNDERGROUND, scene);
+
+    const mesh = internals._whiteModelMesh;
+    expect(mesh, '白模沒有建起來 —— 建築已經隱藏了，畫面上什麼都不剩').not.toBeNull();
+    expect(mesh!.geometry.getAttribute('position').count).toBeGreaterThan(0);
+  });
+
+  it('should bake zone buildings and infrastructure together', () => {
+    // 兩者的幾何屬性不一樣，混在一起才是真正的城市。
+    const scene = new THREE.Scene();
+    const renderer = new BuildingRenderer();
+    renderer.build(scene, new Grid(16, 16));
+    renderer.addBuilding(1, 1, ZoneType.RESIDENTIAL_LOW, 'LOW', 2, false);
+    renderer.addInfrastructure(scene, 5, 5, 'police', 0);
+
+    renderer.setViewMode(ViewMode.UNDERGROUND, scene);
+
+    const internals = renderer as unknown as BuildingInternals;
+    expect(internals._whiteModelMesh, '住宅與基礎設施混在一起就合併失敗').not.toBeNull();
+  });
+});
+
+describe('聚焦中的那一種站點要保持原樣', () => {
+  it('should keep the focused stops in colour and white-model the rest', () => {
+    const { renderer, internals, scene } = makeBuildingRenderer();
+
+    renderer.setViewMode(ViewMode.BUS_FOCUS, scene);
+
+    expect(internals.infraIndex.get('2,2')!.visible, '公車聚焦時公車站被白模吃掉了').toBe(true);
+    expect(internals.infraIndex.get('6,2')!.visible, '火車站沒有白模化').toBe(false);
+    expect(internals.infraIndex.get('10,2')!.visible, '警察局沒有白模化').toBe(false);
+  });
+
+  it('should focus a different stop type per view mode', () => {
+    const { renderer, internals, scene } = makeBuildingRenderer();
+
+    renderer.setViewMode(ViewMode.RAIL_FOCUS, scene);
+
+    expect(internals.infraIndex.get('6,2')!.visible, '鐵路聚焦時火車站被白模吃掉了').toBe(true);
+    expect(internals.infraIndex.get('2,2')!.visible, '公車站在鐵路聚焦下還是原色').toBe(false);
+  });
+
+  it('should leave the focused stop out of the white model', () => {
+    // 留著原色又同時烘進白模的話，同一個站會有兩份幾何疊在一起互相閃爍。
+    const bus = makeBuildingRenderer();
+    bus.renderer.setViewMode(ViewMode.BUS_FOCUS, bus.scene);
+    const rail = makeBuildingRenderer();
+    rail.renderer.setViewMode(ViewMode.RAIL_FOCUS, rail.scene);
+
+    expect(
+      whiteModelVertexCount(bus.internals),
+      '公車聚焦的白模與鐵路聚焦一樣大 —— 公車站還是被烘進去了',
+    ).not.toBe(whiteModelVertexCount(rail.internals));
+  });
+
+  it('should put everything back when the focus ends', () => {
+    const { renderer, internals, scene } = makeBuildingRenderer();
+    renderer.setViewMode(ViewMode.BUS_FOCUS, scene);
+    renderer.setViewMode(ViewMode.NORMAL, scene);
+
+    for (const key of ['2,2', '6,2', '10,2']) {
+      expect(internals.infraIndex.get(key)!.visible, `${key} 沒有回到正常視角`).toBe(true);
+    }
+  });
+});
+
+describe('路口號誌：地下模式要跟著半透明', () => {
+  it('should dim the poles, arms and lamp heads', () => {
+    // 號誌是路邊的家具，跟路燈同一類 —— 地面壓成白模之後它們還是實心的話，
+    // 地下模式會看到一排浮在半透明馬路上的紅綠燈。
+    const { renderer, internals } = makeSignalRenderer();
+
+    renderer.setViewMode(ViewMode.UNDERGROUND);
+
+    for (const key of SIGNAL_MESH_KEYS) {
+      const mat = matOf(internals[key]);
+      expect(mat.transparent, `${key} 仍然是實心的`).toBe(true);
+      expect(mat.opacity).toBeLessThan(1);
+      expect(mat.depthWrite).toBe(false);
+      expect(internals[key].renderOrder).toBeGreaterThan(0);
+    }
+  });
+
+  it('should give the signals their colour back on the way out', () => {
+    const { renderer, internals } = makeSignalRenderer();
+    const before = SIGNAL_MESH_KEYS.map(k => matOf(internals[k]).color.getHex());
+
+    renderer.setViewMode(ViewMode.UNDERGROUND);
+    renderer.setViewMode(ViewMode.NORMAL);
+
+    const after = SIGNAL_MESH_KEYS.map(k => matOf(internals[k]).color.getHex());
+    expect(after, '號誌切回來之後顏色沒有還原').toEqual(before);
+    expect(matOf(internals.poleMesh).transparent).toBe(false);
+    expect(internals.poleMesh.renderOrder).toBe(0);
+  });
+
+  it('should dim signals rebuilt while already underground', () => {
+    // 改動路口會整個重建號誌，材質全是新的。
+    const { renderer, internals, scene, lights } = makeSignalRenderer(false);
+    renderer.setViewMode(ViewMode.UNDERGROUND);
+    renderer.build(scene, lights);
+
+    expect(matOf(internals.poleMesh).transparent, '地下模式中重建的號誌又變回實心').toBe(true);
   });
 });
 

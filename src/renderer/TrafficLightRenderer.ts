@@ -6,6 +6,8 @@ import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 import { ROAD_WIDTHS } from './RoadStripBuilder';
 import { STREET_LAMP_HEIGHT, STREET_LAMP_BULB_RADIUS, STREET_LAMP_COLOR }
   from './RoadRenderer';
+import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
+import { setMeshDim } from './ViewModeDim';
 
 /**
  * 路口號誌。
@@ -143,6 +145,7 @@ export class TrafficLightRenderer {
    * 路口之後，所有號誌的顏色都會錯位一格。
    */
   private mountOwner: number[] = [];
+  private viewMode: ViewMode = ViewMode.NORMAL;
   // Reusable per-frame colors
   private readonly _color = new THREE.Color();
   private readonly _green = new THREE.Color(0x00cc44);
@@ -214,6 +217,27 @@ export class TrafficLightRenderer {
     }
     this.lightMesh.instanceMatrix.needsUpdate = true;
     scene.add(this.lightMesh);
+
+    this.applyViewMode();
+  }
+
+  /**
+   * 號誌與路燈同一類路邊家具，所以跟著 `road` 的透明度走。
+   *
+   * 模式記在這裡是因為改動路口會整個 `build()` 重建 —— 材質全是新的，重建完
+   * 必須自己把視角套回去，否則玩家在地下模式改個路口就多出一排實心紅綠燈。
+   */
+  setViewMode(mode: ViewMode): void {
+    this.viewMode = mode;
+    this.applyViewMode();
+  }
+
+  private applyViewMode(): void {
+    const opacity = VIEW_MODE_OPACITY[this.viewMode].road;
+    // 桿與臂共用一份材質，重複套用是無害的：原色在第一次就記下來了。
+    for (const mesh of [this.poleMesh, this.armMesh, this.lightMesh]) {
+      if (mesh) setMeshDim(mesh, opacity);
+    }
   }
 
   /**

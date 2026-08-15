@@ -1898,3 +1898,10 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
   `ElevatedRoadRenderer` 沒有 `setViewMode`，`Game.applyViewMode` 也沒通知它。
   高架改為與地面共用 `VIEW_MODE_OPACITY[mode].road`；視角記在 renderer 上，
   重建（`ensureLevel`）與新增格子（橋墩／護欄）都會重新套用；路燈光暈直接關掉。
+- [x] **BUG-270：進入任何聚焦模式，全城建築整個消失**（見 BUGS.md）：
+  白模的 `mergeGeometries` 因為屬性集合不齊而回 null，但原本的網格已經隱藏了。
+  改成烘白模前先去索引、只留 position/normal。
+- [x] **BUG-271：路口號誌在聚焦模式下還是實心的**（見 BUGS.md）：
+  `TrafficLightRenderer` 補上 `setViewMode`，跟著 `road` 透明度走，重建自動套回。
+- [x] **BUG-272：路線連線畫在正常視角，一進聚焦反而全部消失**（見 BUGS.md）：
+  改為 `filterRoutesForViewMode`；聚焦中的站點不白模化（`getFocusedStopKind`）。

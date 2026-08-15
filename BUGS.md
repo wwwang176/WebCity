@@ -4368,3 +4368,42 @@ batcher.onResult = (k, v) => { count++; return realOnResult(k, v); };
   `ensureLevel` 每建一層就重新套用一次。
 - 路燈光暈是加色混合的，半透明蓋不住 —— focus 模式要直接關掉，否則地下模式的夜裡
   會看到一排飄在空中的光點。
+
+## BUG-270 已修：進入任何聚焦模式，全城建築整個消失
+
+`buildWhiteModelMesh` 把所有建築與基礎設施的幾何丟給 `mergeGeometries` 烘成一份白模。
+但那個函式要求每一份的屬性集合**完全相同**，而且索引要嘛全都有、要嘛全都沒有 ——
+城裡的模型並不齊：有的帶 uv、有的不帶，有的是索引幾何、有的不是。原本只刪掉
+`color`／`aHighlight`／`aHighlightColor`／`aOccupancy` 四個已知屬性就送進去。
+
+合併失敗回 `null`，而那一行是 `if (!merged) return;` —— 直接放棄。問題是**在那之前
+所有原本的網格已經 `visible = false` 了**：沒有白模，也沒有原本的建築，畫面上什麼
+都不剩。只要城裡有一棟基礎設施就會發生。
+
+修法：烘白模只需要形狀，所以每一份先去索引、只留 `position` 與 `normal`，其餘一律
+刪掉（`bakeForWhiteModel`）。
+
+## BUG-271 已修：路口號誌在聚焦模式下還是實心的
+
+`TrafficLightRenderer` 沒有 `setViewMode`，`Game.applyViewMode` 也沒通知它 —— 與
+BUG-269 的高架橋同一類漏接。號誌是路邊家具，跟路燈同一組 `road` 透明度。
+
+視角記在 renderer 上：改動路口會整個 `build()` 重建，材質全是新的，重建完必須自己
+把視角套回去，否則在地下模式改個路口就多出一排實心紅綠燈。
+
+## BUG-272 已修：路線連線畫在正常視角，一進聚焦反而全部消失
+
+`Game.updateRenderers` 原本是這樣：`viewMode !== NORMAL` 就 `update([])`，否則畫全部
+四套系統的線。方向完全相反 —— 玩家點進「公車」想看路網，看到的是一張沒有線的地圖；
+平常想看城市，卻被四色虛線蓋滿。
+
+改為 `filterRoutesForViewMode`：正常視角一條都不畫，聚焦某一種交通工具時只畫它自己
+的。轉乘聚焦仍然是空的 —— 它有自己那一組疊圖線（`Game.showTransferRoute`），再畫一次
+系統路線只會把要看的那一條蓋掉。
+
+同一批還做了：聚焦中的那一種站點不再白模化（`BuildingRenderer._focusExemptType`）。
+點進「公車」就是要看公車站在哪，把它跟其他建築一起漂白等於把要看的東西藏起來。隱藏
+與烘白模用的是同一個判斷（`isFocusExempt`），否則站點會有原色與白模兩份幾何疊著閃。
+
+哪個視角對應哪一種交通工具由 `TRANSPORT_FOCUS_MODES` 反推（`getFocusedStopKind`），
+不另外寫一張表 —— 兩張各寫一次的話，新增一種交通工具時漏掉的那一邊會靜靜地什麼都不做。

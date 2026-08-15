@@ -129,6 +129,21 @@ export function getTransportFocusMode(type: TransportStopKind): ViewMode {
   return TRANSPORT_FOCUS_MODES[type];
 }
 
+/**
+ * 這個視角聚焦的是哪一種交通工具（不是交通聚焦就回 null）。
+ *
+ * 由 `TRANSPORT_FOCUS_MODES` 反過來導出，不另外寫一張表 —— 兩張各寫一次的話，
+ * 新增一種交通工具時很容易只更新其中一張，而漏掉的那一邊會靜靜地什麼都不做。
+ */
+const FOCUSED_STOP_KIND = new Map<ViewMode, TransportStopKind>(
+  (Object.entries(TRANSPORT_FOCUS_MODES) as [TransportStopKind, ViewMode][])
+    .map(([kind, mode]) => [mode, kind]),
+);
+
+export function getFocusedStopKind(mode: ViewMode): TransportStopKind | null {
+  return FOCUSED_STOP_KIND.get(mode) ?? null;
+}
+
 /** Transport stop display names. */
 export const STOP_NAMES: Record<TransportStopKind, string> = {
   bus: 'Bus Stop', metro: 'Metro Station',

@@ -10,6 +10,7 @@ import type { RailSystem } from './RailSystem';
 import type { FerrySystem } from './FerrySystem';
 import type { TransportRoute } from './types';
 import { PALETTE } from '../../ColorPalette';
+import { ViewMode, getFocusedStopKind, type TransportStopKind } from '../ViewMode';
 
 /** 路線渲染資料 */
 export interface TransportRouteRenderData {
@@ -80,4 +81,24 @@ export function collectTransportRoutes(systems: RouteSystems): TransportRouteRen
   }
 
   return result;
+}
+
+const KIND_TO_SYSTEM: Record<TransportStopKind, TransportRouteRenderData['system']> = {
+  bus: 'BUS', metro: 'METRO', rail: 'RAIL', ferry: 'FERRY',
+};
+
+/**
+ * 這個視角該畫哪些路線連線。
+ *
+ * 路線圖是**進了聚焦才看的東西**：正常視角一條都不畫，聚焦某一種交通工具時只畫
+ * 它自己的。原本反過來 —— 正常視角畫滿四色虛線，一進聚焦就全部清掉，於是點進
+ * 「公車」想看路網的人，看到的是一張沒有線的地圖。
+ */
+export function filterRoutesForViewMode(
+  routes: readonly TransportRouteRenderData[], mode: ViewMode,
+): TransportRouteRenderData[] {
+  const kind = getFocusedStopKind(mode);
+  if (kind === null) return [];
+  const system = KIND_TO_SYSTEM[kind];
+  return routes.filter(r => r.system === system);
 }

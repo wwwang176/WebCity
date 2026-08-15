@@ -18,7 +18,8 @@ import { stampZoneCategory, ZONE_CAT } from './geometry/buildings/parts';
 import { ZoneType } from '../core/grid/types';
 import { getInfraConfig, getInfraConfigById, getRotatedSize, isZoneBuilding, type InfraType, type Rotation } from '../core/building/InfraConfig';
 import { getBuildingType } from '../core/building/types';
-import { ViewMode } from '../core/ViewMode';
+import { ViewMode, getFocusedStopKind } from '../core/ViewMode';
+import { TRANSPORT_TO_INFRA_TYPE } from '../core/transport/TransportPlacement';
 import { RESERVED_TO_ROTATION, MULTI_CELL_OCCUPIED, BURNED, ABANDONED } from '../core/building/InfraPlacement';
 import { getCivicPlan } from './geometry/civic/registry';
 import { placeCivicPlan } from './geometry/civic/place';
@@ -31,6 +32,30 @@ import { UTILITY_WARNING_COLORS, type UtilityWarning, type WarnedCell } from '..
 
 /** 桶的初始容量。滿了就倍增（見 InstancedLayer）。 */
 const INITIAL_BUCKET_CAPACITY = 256;
+
+/**
+ * 把一份幾何整理成可以合併的樣子：套上世界矩陣、去索引、只留位置與法線。
+ *
+ * `mergeGeometries` 要求每一份的屬性集合**完全相同**，而且索引要嘛全都有、要嘛
+ * 全都沒有。城裡的模型並不齊：有的帶 uv、有的不帶，有的是索引幾何、有的不是。
+ * 原本只刪掉幾個已知的屬性就丟進去合併，於是只要城裡有一棟基礎設施，合併就回
+ * null —— 而那時候真正的建築早就 `visible = false` 了，畫面上什麼都不剩
+ * （BUG-270）。白模只要形狀，所以其餘屬性一律不留。
+ */
+function bakeForWhiteModel(src: THREE.BufferGeometry, matrix: THREE.Matrix4): THREE.BufferGeometry {
+  const clone = src.clone();
+  let geo = clone;
+  if (geo.index) {
+    geo = geo.toNonIndexed();
+    clone.dispose();
+  }
+  for (const name of Object.keys(geo.attributes)) {
+    if (name !== 'position' && name !== 'normal') geo.deleteAttribute(name);
+  }
+  if (!geo.getAttribute('normal')) geo.computeVertexNormals();
+  geo.applyMatrix4(matrix);
+  return geo;
+}
 
 
 export class BuildingRenderer {
@@ -393,6 +418,7 @@ export class BuildingRenderer {
     this.buildModel(type, group);
     this.snapToGround(group);
 
+    group.userData['infraType'] = type;
     scene.add(group);
     this.infraGroups.push(group);
     this.infraIndex.set(`${x},${y}`, group);
@@ -798,6 +824,7 @@ export class BuildingRenderer {
       this.buildModel(inf.type, group);
       this.snapToGround(group);
 
+      group.userData['infraType'] = inf.type;
       scene.add(group);
       this.infraGroups.push(group);
       this.infraIndex.set(`${inf.x},${inf.y}`, group);
@@ -1045,6 +1072,18 @@ export class BuildingRenderer {
   /** 縮到 DETAIL_LOD.HIDE_ABOVE 之外。與 `_focusMode` 各自獨立（見 applyLayerVisibility）。 */
   private _detailHidden = false;
   private _whiteModelMesh: THREE.Mesh | null = null;
+
+  /**
+   * 聚焦中的那一種站點不白模化 —— 玩家點進「公車」就是要看公車站在哪，
+   * 把它跟其他建築一起漂白等於把要看的東西藏起來。
+   */
+  private _focusExemptType: InfraType | null = null;
+
+  /** 這一組是聚焦中的站點嗎？隱藏與烘白模用的是同一個判斷。 */
+  private isFocusExempt(group: THREE.Group): boolean {
+    return this._focusExemptType !== null
+      && group.userData['infraType'] === this._focusExemptType;
+  }
   private static _whiteModelMat: THREE.ShaderMaterial | null = null;
 
   private static getWhiteModelMat(): THREE.ShaderMaterial {
@@ -1120,6 +1159,8 @@ export class BuildingRenderer {
   setViewMode(mode: ViewMode, scene?: THREE.Scene): void {
     const enabled = mode !== ViewMode.NORMAL;
     this._focusMode = enabled;
+    const kind = getFocusedStopKind(mode);
+    this._focusExemptType = kind ? TRANSPORT_TO_INFRA_TYPE[kind] : null;
     // 三個附掛層以前完全沒被 setViewMode 碰過，也沒有烘進白模，所以貼片、
     // 樹與招牌會維持原色浮在白模上面（BUG-232）。
     this.applyLayerVisibility();
@@ -1128,7 +1169,7 @@ export class BuildingRenderer {
       // Hide originals
       for (const mesh of this.variantMeshes.values()) mesh.visible = false;
       for (const mesh of this.overlayMeshes) mesh.visible = false;
-      for (const group of this.infraGroups) group.visible = false;
+      for (const group of this.infraGroups) group.visible = this.isFocusExempt(group);
       if (this.lightSpotMesh) this.lightSpotMesh.visible = false;
 
       // Build merged white model mesh
@@ -1169,29 +1210,20 @@ export class BuildingRenderer {
 
     // Bake persistent variant meshes
     for (const mesh of this.variantMeshes.values()) {
-      const srcGeo = mesh.geometry;
       const count = mesh.count;
       for (let i = 0; i < count; i++) {
         mesh.getMatrixAt(i, mat4);
-        const clone = srcGeo.clone();
-        clone.applyMatrix4(mat4);
-        clone.deleteAttribute('color');
-        if (clone.hasAttribute('aHighlight')) clone.deleteAttribute('aHighlight');
-        if (clone.hasAttribute('aHighlightColor')) clone.deleteAttribute('aHighlightColor');
-        if (clone.hasAttribute('aOccupancy')) clone.deleteAttribute('aOccupancy');
-        geos.push(clone);
+        geos.push(bakeForWhiteModel(mesh.geometry, mat4));
       }
     }
 
     // Bake infra group meshes
     for (const group of this.infraGroups) {
+      if (this.isFocusExempt(group)) continue;
       group.traverse(child => {
         if (child instanceof THREE.Mesh) {
-          const clone = child.geometry.clone();
           child.updateWorldMatrix(true, false);
-          clone.applyMatrix4(child.matrixWorld);
-          clone.deleteAttribute('color');
-          geos.push(clone);
+          geos.push(bakeForWhiteModel(child.geometry, child.matrixWorld));
         }
       });
     }
