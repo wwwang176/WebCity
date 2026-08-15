@@ -359,6 +359,8 @@ export class Game {
   private highlightManager!: HighlightManager;
   /** Cached overlay building highlight cells (reapplied every frame). */
   private overlayHighlightCells: { x: number; y: number; color: number }[] = [];
+  /** 上一次重建通勤圖層時的統計版本。見 updateRenderers 的重建判斷。 */
+  private lastCommuteStatsVersion = -1;
   private transportRouteRenderer!: TransportRouteRenderer;
   /** Currently selected transfer route label for map overlay (null = none). */
   private selectedTransferRoute: string | null = null;
@@ -1695,6 +1697,18 @@ export class Game {
       this.utilityWarningsDirty = false;
       this.refreshUtilityWarnings();
     }
+    // 通勤圖層畫的是模擬迴圈每隔一段時間算出來的統計，不是格子上的欄位 ——
+    // 沒有任何 dirty 旗標會因為它更新而亮起來。統計換過一版就重建一次，否則
+    // 載入後開圖層拿到的是空快照，而蓋了捷運之後顏色也不會跟著變。
+    const commuteVersion = this.simLoop.getCommuteStatsVersion();
+    if (
+      commuteVersion !== this.lastCommuteStatsVersion
+      && this.overlayRenderer.getOverlay() === OverlayType.COMMUTE
+    ) {
+      this.lastCommuteStatsVersion = commuteVersion;
+      this.setOverlay(OverlayType.COMMUTE);
+    }
+
     const anyDirty = d.hasRoadChanges || d.hasElevatedChanges || d.tracks || d.crossings || d.buildings || d.terrain || d.trafficLights;
     if (!anyDirty) return;
 

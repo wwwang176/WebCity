@@ -547,6 +547,7 @@ export class SimulationLoop {
   }
 
   private commuteStats: CommuteStats = computeCommuteStats([], () => null, 0, 0);
+  private commuteStatsVersion = 0;
 
   /**
    * 重算全城通勤統計。
@@ -570,6 +571,18 @@ export class SimulationLoop {
       DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold,
       SIMULATION.COMMUTE_WORST_HOMES,
     );
+    this.commuteStatsVersion++;
+  }
+
+  /**
+   * 統計換過幾次。渲染端拿它判斷該不該重建通勤圖層。
+   *
+   * 圖層是**快照**：`setOverlay` 只在切換圖層或某個子系統重建時跑。沒有這個版本號
+   * 的話，載入後開圖層拿到的是空快照，而蓋了捷運之後顏色也不會跟著變 —— 要等到
+   * 城裡剛好有別的東西變動才會刷新。
+   */
+  getCommuteStatsVersion(): number {
+    return this.commuteStatsVersion;
   }
 
   /** 全城通勤統計。圖層與總覽面板讀的是同一份。 */
