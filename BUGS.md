@@ -4331,3 +4331,40 @@ batcher.onResult = (k, v) => { count++; return realOnResult(k, v); };
 每一組都交白卷」那條測試釘住，不是靠這個 bug 記錄。
 
 **教訓**：包裝別人的 callback 之前，先確認手上抓到的是原本那一個。
+
+## BUG-268 已修：切過 Metro Underground 再切回來，馬路變成灰色
+
+`RoadRenderer.setViewMode` 進 focus 模式時做四件事：轉半透明、降不透明度、關
+`depthWrite`、把材質顏色蓋成 `0xcccccc`。離開時只還原了前三件，顏色沒有人管，於是
+八個道路網格（路面、人行道、車道線、中線、彎道弧線、斑馬線、停止線、路燈）永遠停在
+那個灰色。
+
+路面看起來最明顯，是因為它另外有 per-instance 顏色（亮度約 0.25），而 InstancedMesh
+的 instance color 是**乘上**材質顏色的：原本 `0x3a3a3a × 0.25` 幾乎全黑，壞掉之後
+`0xcccccc × 0.25` 就是中灰。
+
+觸發的不只是 Metro Underground。Rail / Ferry / Bus 三個 focus 也都把 `road` 壓到
+`0.15`；點選任何建築或空地會呼叫 `applyViewMode(NORMAL)`，點選站牌會進 focus 模式 ——
+「點一下捷運站，再點空地」一樣中招。
+
+根因是顏色的定義只寫在建立材質的那一行，沒有第二份。修法不是在還原時把八個色碼再抄
+一次（那會與建構時的顏色不同步），而是新增 `renderer/ViewModeDim.ts`：第一次白模化
+之前把原色收進 `userData.baseColor`，還原時讀回來。`TerrainRenderer` 早就是對的
+（它明確寫回 `0xffffff` 與水的 `0x1565c0`），`TrackRenderer` 則是完全不碰顏色。
+
+## BUG-269 已修：地下模式看得到一整層不透明的高架橋
+
+`Game.applyViewMode` 通知 building / terrain / road / track / levelCrossing / vehicle
+/ weather 七個 renderer，**高架不在名單裡** —— `ElevatedRoadRenderer` 根本沒有
+`setViewMode`。地面的路壓成半透明之後，高架路仍然是實心的，把要看的隧道蓋住。
+
+高架與地面共用同一組 `VIEW_MODE_OPACITY[mode].road`：玩家看到的是同一條路，只是高度
+不同。三個容易漏掉的角落：
+
+- 橋墩與護欄是每格一個獨立 `Mesh`、共用一份材質。材質改一次全部跟著改，但
+  `renderOrder` 是逐一設定的，而且它們是在 `populateLevelCells` 裡現生的，套不到
+  切換視角那一輪。
+- 蓋一段高架路會整個 `build()` 重建，材質全是新的。視角因此記在 renderer 上，
+  `ensureLevel` 每建一層就重新套用一次。
+- 路燈光暈是加色混合的，半透明蓋不住 —— focus 模式要直接關掉，否則地下模式的夜裡
+  會看到一排飄在空中的光點。

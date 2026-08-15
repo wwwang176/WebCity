@@ -20,6 +20,8 @@ import {
 import { createDoubleArcGeometry } from './ArcGeometry';
 import { RoadInstanceTracker } from './RoadInstanceTracker';
 import { toPosKey, parsePosKeyUnsafe } from '../core/grid/GridHelpers';
+import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
+import { setMeshDim, setMaterialDim, DIM_RENDER_ORDER } from './ViewModeDim';
 
 /** Height per elevation level in world units. */
 const LEVEL_HEIGHT = 0.6;
@@ -122,6 +124,7 @@ export class ElevatedRoadRenderer {
   private levels = new Map<number, LevelData>();
   private gridWidth = 0;
   private gridHeight = 0;
+  private viewMode: ViewMode = ViewMode.NORMAL;
 
   constructor() { this.group.name = 'ElevatedRoads'; }
 
@@ -494,6 +497,8 @@ export class ElevatedRoadRenderer {
     }
 
     // ── Pillars (individual meshes, per cell) ──
+    // 這些是現在才生出來的網格，套不到 applyViewModeToLevel 那一輪。
+    const dimRenderOrder = this.isDimmed() ? DIM_RENDER_ORDER : 0;
     const geo = getSharedGeo();
     for (const c of allCells) {
       if (c.seg.isRamp) continue;
@@ -510,6 +515,7 @@ export class ElevatedRoadRenderer {
       mesh.scale.set(1, h, 1);
       mesh.position.set(c.x, bottomY + h / 2, c.y);
       mesh.castShadow = true;
+      mesh.renderOrder = dimRenderOrder;
       ld.group.add(mesh);
       ld.pillarMeshes.set(key, mesh);
     }
@@ -524,6 +530,7 @@ export class ElevatedRoadRenderer {
       const mesh = new THREE.Mesh(geo.rail, ld.railMat);
       mesh.position.set(c.x, baseY + ROAD_Y, c.y);
       mesh.receiveShadow = true;
+      mesh.renderOrder = dimRenderOrder;
       ld.group.add(mesh);
       ld.railMeshes.set(key, mesh);
     }
@@ -603,6 +610,7 @@ export class ElevatedRoadRenderer {
       railMeshes: new Map(),
     };
     this.levels.set(level, ld);
+    this.applyViewModeToLevel(ld);
     return ld;
   }
 
@@ -623,8 +631,45 @@ export class ElevatedRoadRenderer {
   // ─── Frame update ──────────────────────────────────────────────
 
   update(sunIntensity: number): void {
-    const opacity = Math.max(0, 0.75 * (1 - sunIntensity / 0.45));
+    // 光暈是加色混合的，壓半透明蓋不住它 —— focus 模式必須直接關掉，否則地下
+    // 模式的夜裡會看到一排飄在空中的光點。
+    const opacity = this.isDimmed() ? 0 : Math.max(0, 0.75 * (1 - sunIntensity / 0.45));
     for (const ld of this.levels.values()) ld.lampGlowMat.opacity = opacity;
+  }
+
+  // ─── View mode ─────────────────────────────────────────────────
+
+  private isDimmed(): boolean {
+    return VIEW_MODE_OPACITY[this.viewMode].road < 1.0;
+  }
+
+  /**
+   * 高架與地面道路共用同一組透明度 —— 玩家看到的是同一條路，只是高度不同。
+   *
+   * 模式記在這裡而不是只作用於當下的網格，是因為蓋一段高架路會整個重建：
+   * `ensureLevel` 每建一層就重新套用一次，重建才不會把已經白模化的視角打回原形。
+   */
+  setViewMode(mode: ViewMode): void {
+    this.viewMode = mode;
+    for (const ld of this.levels.values()) this.applyViewModeToLevel(ld);
+  }
+
+  private applyViewModeToLevel(ld: LevelData): void {
+    const opacity = VIEW_MODE_OPACITY[this.viewMode].road;
+    const dimmed = opacity < 1.0;
+    for (const mesh of [
+      ld.roadMesh, ld.sidewalkMesh, ld.markingMesh, ld.centerLineMesh, ld.curvedCLMesh, ld.lampMesh,
+    ]) {
+      setMeshDim(mesh, opacity);
+    }
+    // 橋墩與護欄是每格一個獨立的 Mesh，共用一份材質：材質改一次全部跟著改，
+    // 但繪製順序是逐一設定的。
+    setMaterialDim(ld.pillarMat, opacity);
+    setMaterialDim(ld.railMat, opacity);
+    const order = dimmed ? DIM_RENDER_ORDER : 0;
+    for (const m of ld.pillarMeshes.values()) m.renderOrder = order;
+    for (const m of ld.railMeshes.values()) m.renderOrder = order;
+    ld.lampGlowMesh.visible = !dimmed;
   }
 
   // ─── Disposal ──────────────────────────────────────────────────

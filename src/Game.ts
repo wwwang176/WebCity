@@ -1989,6 +1989,7 @@ export class Game {
     this.buildingRenderer.setViewMode(mode, this.sceneManager.scene);
     this.terrainRenderer.setViewMode(mode);
     this.roadRenderer.setViewMode(mode);
+    this.elevatedRoadRenderer.setViewMode(mode);
     this.trackRenderer.setViewMode(mode);
     this.levelCrossingRenderer.setViewMode(mode);
     this.vehicleRenderer.setViewMode(mode);

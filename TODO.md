@@ -1890,3 +1890,11 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
 - [x] **補完全城通勤路線約 30 個 tick**（1 倍速約 7.5 秒，2 146 人的存檔）。預測車流
   3 501 對上改前的 3 504。沒有 worker 時（生產環境缺 COOP/COEP）走主執行緒每 tick
   2 條，慢得多但一樣會補完。
+- [x] **BUG-268：切過 Metro Underground 再切回來，馬路變成灰色**（見 BUGS.md）：
+  `RoadRenderer.setViewMode` 白模化時蓋掉材質顏色，離開時只還原透明度不還原顏色。
+  新增 `renderer/ViewModeDim.ts` 統一記錄／還原原色（`userData.baseColor`）。
+  不只 Underground，Rail / Ferry / Bus focus 與「點選建築回到正常視角」都會踩到。
+- [x] **BUG-269：地下模式看得到一整層不透明的高架橋**（見 BUGS.md）：
+  `ElevatedRoadRenderer` 沒有 `setViewMode`，`Game.applyViewMode` 也沒通知它。
+  高架改為與地面共用 `VIEW_MODE_OPACITY[mode].road`；視角記在 renderer 上，
+  重建（`ensureLevel`）與新增格子（橋墩／護欄）都會重新套用；路燈光暈直接關掉。

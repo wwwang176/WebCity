@@ -4,6 +4,7 @@ import { Grid } from '../core/grid/Grid';
 import { RoadType, RoadDirection, ROAD_CONFIGS } from '../core/road/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
+import { setMeshDim } from './ViewModeDim';
 import { SIDEWALK_WIDTH } from '../core/traffic/SidewalkGraph';
 import {
   ROAD_WIDTHS,
@@ -580,18 +581,7 @@ export class RoadRenderer {
     ];
     for (const mesh of meshes) {
       if (!mesh) continue;
-      const mat = mesh.material as THREE.MeshLambertMaterial;
-      if (dimmed) {
-        mat.transparent = true;
-        mat.opacity = opacity;
-        mat.depthWrite = false;
-        mat.color.set(0xcccccc);
-      } else {
-        mat.transparent = false;
-        mat.opacity = 1.0;
-        mat.depthWrite = true;
-      }
-      mesh.renderOrder = dimmed ? 20 : 0;
+      setMeshDim(mesh, opacity);
     }
     if (this.lampGlowMesh) {
       this.lampGlowMesh.visible = !dimmed;
