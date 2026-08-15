@@ -31,7 +31,8 @@ import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } f
 import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
-import { TransitAccessField, estimateCommuteTime } from '../transport/TransitAccessField';
+import { TransitAccessField, estimateCommuteTime, estimateCommute } from '../transport/TransitAccessField';
+import { computeCommuteStats, type CommuteStats } from '../citizen/CommuteStats';
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
@@ -538,6 +539,55 @@ export class SimulationLoop {
     if (tick === 1 || (tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
       this.computeCongestionFlow();
     }
+
+    // 通勤統計（圖層與總覽面板共用）。與車流預測錯開一格，避免同一個 tick 做兩件重的事。
+    if (tick === 1 || (tick >= 3 && (tick - 3) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
+      this.refreshCommuteStats();
+    }
+  }
+
+  private commuteStats: CommuteStats = computeCommuteStats([], () => null, 0, 0);
+  private commuteStatsVersion = 0;
+
+  /**
+   * 重算全城通勤統計。
+   *
+   * 不進存檔 —— 它完全可以從現有狀態重算，存起來只會讓存檔格式多一塊要遷移的東西。
+   * 代價是讀檔後第一次慢速 tick 之前面板是空的。
+   */
+  private refreshCommuteStats(): void {
+    this.commuteStats = computeCommuteStats(
+      this.state.citizens.getCitizens(),
+      (c) => {
+        if (!c.homeId || !c.workplaceId) return null;
+        const home = parsePosKey(c.homeId);
+        const work = parsePosKey(c.workplaceId);
+        if (!home || !work) return null;
+        return estimateCommute(
+          home, work, this.state.traffic.getCongestionLevel(),
+          this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
+        );
+      },
+      DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold,
+      SIMULATION.COMMUTE_WORST_HOMES,
+    );
+    this.commuteStatsVersion++;
+  }
+
+  /**
+   * 統計換過幾次。渲染端拿它判斷該不該重建通勤圖層。
+   *
+   * 圖層是**快照**：`setOverlay` 只在切換圖層或某個子系統重建時跑。沒有這個版本號
+   * 的話，載入後開圖層拿到的是空快照，而蓋了捷運之後顏色也不會跟著變 —— 要等到
+   * 城裡剛好有別的東西變動才會刷新。
+   */
+  getCommuteStatsVersion(): number {
+    return this.commuteStatsVersion;
+  }
+
+  /** 全城通勤統計。圖層與總覽面板讀的是同一份。 */
+  getCommuteStats(): CommuteStats {
+    return this.commuteStats;
   }
 
   getState(): GameState {
@@ -1533,6 +1583,15 @@ export class SimulationLoop {
       this.state.traffic.addVehicleOnEdges(path, c.id);
       vehiclesSpawned++;
     }
+
+    // 統計在這裡先算一次。它不進存檔，所以載入完成的瞬間本來就是空的 —— 差別在
+    // 玩家什麼時候看得到：這裡還在載入畫面底下，而第一個 tick 已經是進了遊戲之後，
+    // 一進去就開通勤圖層會看到一張空白的地圖。
+    //
+    // 先建可及性圖，否則這一次算出來的通勤完全不含大眾運輸，第一個 tick 才會被
+    // 修正 —— 玩家會看到顏色在進遊戲後跳一次。
+    this.rebuildTransferGraphIfDirty();
+    this.refreshCommuteStats();
 
     onProgress?.(1);
     return { pathsComputed, vehiclesSpawned };

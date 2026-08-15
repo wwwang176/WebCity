@@ -3,6 +3,7 @@ import { gameSignals, getGame } from '../../store/gameStore';
 import { getTransitSystems } from '../../../core/transport/TransportRegistry';
 import { TransportType } from '../../../core/transport/types';
 import { UI_COLORS } from '../../constants';
+import { COMMUTE_BUCKET_EDGES } from '../../../core/citizen/CommuteStats';
 
 const TYPE_LABELS: Record<string, string> = {
   [TransportType.BUS]: 'Bus',
@@ -69,6 +70,30 @@ export function TrafficPage(props: { onClose?: () => void }) {
   }, undefined, {
     equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
   });
+
+  /**
+   * 通勤統計。與地圖上的 Commute 圖層讀同一份 —— 兩邊各算一次的話，地圖紅通通
+   * 而面板說一切良好，玩家不知道該信哪一個。
+   */
+  const commute = createMemo(() => {
+    gameSignals.tick();
+    const s = getGame().getCommuteStats();
+    return {
+      sampled: s.sampled, average: s.average, median: s.median,
+      overThreshold: s.overThreshold, buckets: s.buckets,
+      byMode: s.byMode, worst: s.worst,
+      threshold: getGame().commuteThreshold,
+    };
+  }, undefined, {
+    equals: (a, b) => JSON.stringify(a) === JSON.stringify(b),
+  });
+
+  const bucketLabels = () => {
+    const e = COMMUTE_BUCKET_EDGES;
+    return [`< ${e[0]}`, ...e.slice(1).map((v, i) => `${e[i]}–${v}`), `${e[e.length - 1]}+`];
+  };
+
+  const share = (n: number) => Math.round(n / Math.max(1, commute().sampled) * 100);
 
   const transitData = createMemo(() => {
     gameSignals.tick();
@@ -146,6 +171,104 @@ export function TrafficPage(props: { onClose?: () => void }) {
           <div class="sc-label">Peak Density</div>
         </div>
       </div>
+
+      <div class="section-title">Commute Time</div>
+      <Show
+        when={commute().sampled > 0}
+        fallback={<div style="font-size:12px;color:#667a90;padding:8px 0">No commuters yet</div>}
+      >
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="sc-value">{commute().median.toFixed(0)}</div>
+            <div class="sc-label">Median</div>
+          </div>
+          <div class="summary-card">
+            <div class="sc-value">{commute().average.toFixed(0)}</div>
+            <div class="sc-label">Average</div>
+          </div>
+          <div class="summary-card">
+            <div
+              class="sc-value"
+              style={`color:${share(commute().overThreshold) > 25 ? UI_COLORS.STATUS_BAD : commute().overThreshold > 0 ? UI_COLORS.STATUS_WARN : UI_COLORS.STATUS_GOOD}`}
+            >
+              {share(commute().overThreshold)}%
+            </div>
+            <div class="sc-label">Over {commute().threshold}</div>
+          </div>
+          <div class="summary-card">
+            <div class="sc-value stat-accent">{commute().sampled}</div>
+            <div class="sc-label">Commuters</div>
+          </div>
+        </div>
+
+        <table class="data-table">
+          <thead><tr><th>Commute</th><th style="text-align:right">Citizens</th><th>Share</th></tr></thead>
+          <tbody>
+            <For each={commute().buckets}>
+              {(count, i) => (
+                <tr>
+                  <td class="td-label">{bucketLabels()[i()]}</td>
+                  <td class="td-value" style="text-align:right">{count}</td>
+                  <td>
+                    <div class="cong-bar-bg">
+                      <div
+                        class="cong-bar"
+                        style={`width:${share(count)}%;background:${i() === commute().buckets.length - 1 ? UI_COLORS.STATUS_BAD : UI_COLORS.STATUS_GOOD}`}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+
+        <div class="section-title">How People Travel</div>
+        <table class="data-table">
+          <thead><tr><th>Mode</th><th style="text-align:right">Citizens</th><th style="text-align:right">Share</th></tr></thead>
+          <tbody>
+            <For each={Object.entries(commute().byMode).sort((a, b) => b[1] - a[1])}>
+              {(entry) => (
+                <tr>
+                  <td class="td-label">{entry[0]}</td>
+                  <td class="td-value" style="text-align:right">{entry[1]}</td>
+                  <td class="td-value" style="text-align:right">{share(entry[1])}%</td>
+                </tr>
+              )}
+            </For>
+          </tbody>
+        </table>
+
+        <Show when={commute().worst.length > 0}>
+          <div class="section-title">Worst Commutes</div>
+          <table class="data-table">
+            <thead><tr><th>Home</th><th style="text-align:right">Residents</th><th style="text-align:right">Commute</th></tr></thead>
+            <tbody>
+              <For each={commute().worst}>
+                {(w) => (
+                  <tr
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      const parts = w.pos.split(',');
+                      getGame().focusCell(Number(parts[0]), Number(parts[1]));
+                      props.onClose?.();
+                    }}
+                  >
+                    <td class="td-label">({w.pos})</td>
+                    <td class="td-value" style="text-align:right">{w.residents}</td>
+                    <td
+                      class="td-value"
+                      style={`text-align:right;color:${w.time > commute().threshold ? UI_COLORS.STATUS_BAD : UI_COLORS.STATUS_WARN}`}
+                    >
+                      {w.time.toFixed(0)}
+                    </td>
+                  </tr>
+                )}
+              </For>
+            </tbody>
+          </table>
+        </Show>
+      </Show>
 
       <div class="section-title">Top Congested Segments</div>
       <Show when={stats().topCongested.length > 0} fallback={<div style="font-size:12px;color:#667a90;padding:8px 0">No congestion data</div>}>

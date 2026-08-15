@@ -238,6 +238,18 @@ export class HighlightManager {
     }
   }
 
+  /** 同上，但顏色逐格查表 —— 漸層高亮下每一棟的顏色都不一樣。 */
+  private tintInfraGroupsByCellColor(
+    groups: readonly THREE.Group[], cellMap: ReadonlyMap<string, number>, intensity: number,
+  ): void {
+    for (const group of groups) {
+      const gx = Math.round(group.position.x);
+      const gz = Math.round(group.position.z);
+      const color = cellMap.get(`${gx},${gz}`);
+      if (color !== undefined) this.applyTintToGroup(group, color, intensity);
+    }
+  }
+
   /**
    * 一棟公共建築的高亮。
    *
@@ -338,10 +350,11 @@ export class HighlightManager {
     const cellMap = new Map<string, number>();
     for (const c of cells) cellMap.set(`${c.x},${c.y}`, c.color);
 
-    // Tint infra groups with average color (simplified: use first cell's color)
+    // 每一棟公共建築拿**自己那一格**的顏色。原本一律用 cells[0] —— 通勤圖層把
+    // 站牌標成青色、住宅標成漸層色，於是所有交通建築都被塗成第一個住宅格的
+    // 顏色，那一格通勤很糟的話就是全城的公共建築一起變紅。
     if (infraGroups.length > 0) {
-      const cellSet = new Set<string>(cellMap.keys());
-      this.tintInfraGroupsByCells(infraGroups, cellSet, cells[0]!.color, intensity);
+      this.tintInfraGroupsByCellColor(infraGroups, cellMap, intensity);
     }
 
     this.setInstanceHighlights(meshes,

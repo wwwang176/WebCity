@@ -32,7 +32,7 @@ pnpm dev
 - 車道級交通模擬 — Bezier 曲線車道、紅綠燈、壅塞、行人
 - 經濟系統 — 稅收、RCI 需求、預算、全球市場
 - 貨運鏈 — 工業生產、商業消費、鐵路/機場/公路進出口
-- 14 種地圖圖層 + 5 種聚焦視角（地下、公車、鐵路、渡輪、轉乘）
+- 15 種地圖圖層 + 5 種聚焦視角（地下、公車、鐵路、渡輪、轉乘）
 - 環境模擬 — 污染擴散、天然資源、四季氣候
 - 災害系統 — 地震、龍捲風、森林大火
 - 行政區/政策/城市特化
@@ -46,7 +46,7 @@ pnpm dev
 | 語言 | TypeScript |
 | 渲染 | Three.js (3D Low Poly) |
 | 建構 | Vite |
-| 測試 | Vitest (TDD, 374 檔 / 5600+ 測試) |
+| 測試 | Vitest (TDD, 382 檔 / 5700+ 測試) |
 | 套件管理 | pnpm |
 | 多執行緒 | Web Workers (模擬/交通/尋路) |
 | 資料同步 | SharedArrayBuffer + postMessage |
@@ -167,7 +167,7 @@ docs/                   # 遊戲機制 Wiki（22 份文件）
 | 文件 | 內容 |
 |------|------|
 | [模擬迴圈](docs/simulation-loop.md) | 遊戲時鐘、Tick 分層、完整執行順序 |
-| [覆蓋層](docs/overlay-system.md) | 14 種地圖覆蓋層視覺化 |
+| [覆蓋層](docs/overlay-system.md) | 15 種地圖覆蓋層視覺化、建築上色、繪製順序 |
 | [存檔系統](docs/save-system.md) | 序列化、差分壓縮、版本遷移、Worker |
 | [新手教程](docs/tutorial-system.md) | 9 步驟互動引導 |
 | [除錯工具與檢視模式](docs/debug-viewmode.md) | Debug Panel、6 種 ViewMode、各層透明度 |

@@ -16,6 +16,7 @@ const LAYER_SECTIONS = [
     title: 'City Data',
     items: [
       { key: OverlayType.TRAFFIC, label: '\u{1F697} Traffic' },
+      { key: OverlayType.COMMUTE, label: '\u{23F1} Commute' },
       { key: OverlayType.ZONE, label: '\u{1F3D7} Zones' },
       { key: OverlayType.LAND_VALUE, label: '\u{1F4B0} Land Value' },
       { key: OverlayType.POLLUTION, label: '\u{1F32B} Pollution' },

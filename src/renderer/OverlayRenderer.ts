@@ -17,6 +17,7 @@ export enum OverlayType {
   PARK = 'park',
   GARBAGE = 'garbage',
   DISTRICT = 'district',
+  COMMUTE = 'commute',
 }
 
 export interface ElevatedOverlayCell {
@@ -37,6 +38,20 @@ export class OverlayRenderer {
   private elevatedMesh: THREE.InstancedMesh | null = null;
   private currentOverlay: OverlayType = OverlayType.NONE;
   private readonly _reusableColor = new THREE.Color();
+
+  /**
+   * 地面覆蓋層的繪製順序。
+   *
+   * 建築材質是 `transparent: true`，所以建築、地面貼片與覆蓋層全在同一個透明
+   * 批次裡，而 three.js 對透明物件是按**物件中心點**到鏡頭的距離排序 —— 覆蓋層
+   * 是一整張蓋滿全圖的單一 mesh，中心點只有一個，所以鏡頭一轉前後關係就整批
+   * 翻面：地面貼片一下被半透明色塊蓋掉、一下又冒出來。
+   *
+   * 排在地面細節（預設 0）之前，貼片就畫在色塊上面，玩家同時看得到「這一格的
+   * 數值」與「這裡有什麼」。靠的是材質不寫深度 —— 寫了的話後面畫的貼片會被
+   * 深度測試擋掉。
+   */
+  private static readonly GROUND_RENDER_ORDER = -1;
 
   getOverlay(): OverlayType {
     return this.currentOverlay;
@@ -89,6 +104,7 @@ export class OverlayRenderer {
 
     this.mesh = new THREE.Mesh(geometry, material);
     this.mesh.position.set(w / 2 - 0.5, 0.1, h / 2 - 0.5);
+    this.mesh.renderOrder = OverlayRenderer.GROUND_RENDER_ORDER;
     scene.add(this.mesh);
 
     // Elevated overlay: per-cell quads above elevated road surfaces
@@ -153,6 +169,11 @@ export class OverlayRenderer {
     switch (type) {
       case OverlayType.TRAFFIC:
         return c.setHSL(0.33 - value * 0.33, 0.8, 0.5); // Green to red
+      // 通勤時間：綠（走得到、搭得到）→ 紅（超過這條線就會想換工作）。
+      // 刻度是絕對值不是相對最大值 —— 相對刻度會讓一座通勤全都很好的城市裡
+      // 最慢的那一格照樣被畫成紅色，紅色必須永遠代表「這裡的人真的過得不好」。
+      case OverlayType.COMMUTE:
+        return c.setHSL(0.33 - value * 0.33, 0.75, 0.45);
       case OverlayType.LAND_VALUE:
         return c.setHSL(0.6 - value * 0.6, 0.7, 0.5); // Blue to red
       case OverlayType.POLLUTION:

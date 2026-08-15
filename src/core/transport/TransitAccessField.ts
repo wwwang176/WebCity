@@ -138,6 +138,19 @@ export function estimateCommuteTime(
   routes: readonly FlatRoute[],
   waitFactor: number,
 ): number {
+  return estimateCommute(from, to, congestionLevel, field, routes, waitFactor).time;
+}
+
+/** 同上，但連「怎麼去」一起回報 —— 總覽面板要看交通方式的分布。 */
+export function estimateCommute(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+  congestionLevel: number,
+  field: TransitAccessField,
+  routes: readonly FlatRoute[],
+  waitFactor: number,
+): { time: number; mode: string } {
   const options = transitOptions(from, to, field, routes, waitFactor);
-  return chooseModeMultiModal(from, to, options, [], congestionLevel).time;
+  const choice = chooseModeMultiModal(from, to, options, [], congestionLevel);
+  return { time: choice.time, mode: choice.mode };
 }
