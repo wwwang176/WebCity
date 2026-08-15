@@ -71,6 +71,16 @@ import { getBuildReasonMessage, formatBuildFailure } from './core/grid/BuildReas
 import { getZoneBlocker, summariseZoneBlockers, ZONE_BLOCKER_MESSAGES, type ZoneBlocker, type ZoneBlockerDeps } from './core/zone/ZoneBlocker';
 import { collectBuildingUtilityWarnings } from './core/building/BuildingUtilityWarning';
 import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
+import { DEFAULT_JOB_RELOCATION_CONFIG } from './core/citizen/JobRelocation';
+import { getTransitSystems } from './core/transport/TransportRegistry';
+
+/**
+ * 通勤圖層的滿格值（tick）。
+ *
+ * 與換工作的門檻同一個數字：紅色代表「這裡的人已經在想換工作了」。刻度是絕對值
+ * 不是相對最大值 —— 相對刻度會讓一座通勤全都很好的城市裡最慢的那一格照樣變紅。
+ */
+const COMMUTE_OVERLAY_MAX = DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold;
 import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
 import { canPlaceTransportStop, findAdjacentRoadCell, placeTransportStopOnGrid, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
@@ -2420,7 +2430,14 @@ export class Game {
   private buildOverlayData(type: OverlayType): Map<string, number> | undefined {
     if (type === OverlayType.NONE) return undefined;
     const data = new Map<string, number>();
-    const ctx = this.state as OverlayBuildContext;
+    // 通勤圖層的資料不在 GameState 上 —— 它是模擬迴圈每隔一段時間算出來的統計。
+    const ctx: OverlayBuildContext = Object.assign(
+      Object.create(this.state) as OverlayBuildContext,
+      {
+        commuteByHome: this.simLoop.getCommuteStats().byHome,
+        commuteMax: COMMUTE_OVERLAY_MAX,
+      },
+    );
     this.state.grid.forEachCell((cell, x, y) => {
       const value = buildOverlayValue(ctx, type, cell, x, y);
       if (value > 0) data.set(`${x},${y}`, value);
@@ -2476,6 +2493,17 @@ export class Game {
   /** Compute and cache overlay building highlight cells. Applied every frame by reapplyOverlayHighlight(). */
   private computeOverlayHighlightCells(overlayType: OverlayType): void {
     this.overlayHighlightCells = [];
+
+    // 通勤圖層：標出所有大眾運輸站牌。「這片紅色離最近的站有多遠」正是這張圖
+    // 要回答的問題 —— 沒有站的位置，看到的紅色就是「這裡缺一條線」。
+    if (overlayType === OverlayType.COMMUTE) {
+      for (const { system } of getTransitSystems(this.state)) {
+        for (const stop of system.getStops()) {
+          this.overlayHighlightCells.push({ x: stop.x, y: stop.y, color: 0x00e5ff });
+        }
+      }
+      return;
+    }
 
     // Road-based services: green→yellow→red gradient
     const roadInfo = this.getRoadCostOverlay(overlayType);
@@ -2948,6 +2976,21 @@ export class Game {
   deselectBuilding(): void {
     this.selectedBuilding = null;
     this.onUIUpdate?.();
+  }
+
+  /** 全城通勤統計（圖層與總覽面板共用同一份）。 */
+  getCommuteStats() {
+    return this.simLoop.getCommuteStats();
+  }
+
+  /** 通勤圖層的滿格值，也是換工作的門檻 —— 面板要拿它標示「已經在想換工作」。 */
+  get commuteThreshold(): number {
+    return COMMUTE_OVERLAY_MAX;
+  }
+
+  /** 把鏡頭移到某一格（面板點擊「最糟的住宅區」時用）。 */
+  focusCell(x: number, y: number): void {
+    this.sceneManager.setCameraTarget(x, y);
   }
 
   getTrafficStats() {

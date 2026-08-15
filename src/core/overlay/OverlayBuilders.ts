@@ -25,6 +25,10 @@ export interface OverlayBuildContext {
   parks: { getCoverage(x: number, y: number): boolean };
   garbage: { getCoverage(x: number, y: number): boolean };
   districts: { getDistrictAt(x: number, y: number): { id: string } | null };
+  /** 住宅格 → 住戶的平均通勤時間（tick）。查不到代表那一格沒有通勤人口。 */
+  commuteByHome: ReadonlyMap<string, number>;
+  /** 通勤時間超過這個值就是滿格的紅色。 */
+  commuteMax: number;
   grid: { getCell(x: number, y: number): { terrainType: number } | null };
 }
 
@@ -95,6 +99,18 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
     ctx.parks.getCoverage(x, y) ? O.COVERAGE_VALUE : 0,
   garbage: (ctx, _cell, x, y) =>
     ctx.garbage.getCoverage(x, y) ? O.COVERAGE_VALUE : 0,
+
+  /**
+   * 住在這一格的人，通勤平均要多久。
+   *
+   * 沒有通勤人口的格子回 0（不上色），而不是回滿格 —— 空地與「通勤很短」在
+   * 視覺上必須分得開。
+   */
+  commute: (ctx, _cell, x, y) => {
+    const avg = ctx.commuteByHome.get(`${x},${y}`);
+    if (avg === undefined) return 0;
+    return Math.min(O.DISPLAY_MAX, Math.max(1, (avg / ctx.commuteMax) * O.DISPLAY_MAX));
+  },
 };
 
 /** Compute the overlay value for a single cell. Returns 0 for unknown/none types. */

@@ -26,6 +26,8 @@ function makeCtx(overrides: Partial<OverlayBuildContext> = {}): OverlayBuildCont
     garbage: { getCoverage: () => false },
     districts: { getDistrictAt: () => null },
     grid: { getCell: () => null },
+    commuteByHome: new Map<string, number>(),
+    commuteMax: 60,
     ...overrides,
   };
 }
@@ -156,5 +158,37 @@ describe('buildOverlayValue', () => {
 
   it('none overlay returns 0', () => {
     expect(buildOverlayValue(makeCtx(), 'none', makeCell(), 0, 0)).toBe(0);
+  });
+});
+
+describe('通勤圖層', () => {
+  /**
+   * 顏色的刻度是絕對值：紅色代表「這裡的人已經在想換工作了」。相對刻度的話，
+   * 一座通勤全都很好的城市裡最慢的那一格照樣會被畫成紅色。
+   */
+  const ctx = (byHome: [string, number][]) =>
+    makeCtx({ commuteByHome: new Map(byHome), commuteMax: 60 });
+
+  it('leaves a cell with no commuters uncoloured', () => {
+    expect(buildOverlayValue(ctx([]), 'commute', makeCell(), 3, 3)).toBe(0);
+  });
+
+  it('scales towards the maximum as the commute gets worse', () => {
+    const short = buildOverlayValue(ctx([['3,3', 15]]), 'commute', makeCell(), 3, 3);
+    const long = buildOverlayValue(ctx([['3,3', 45]]), 'commute', makeCell(), 3, 3);
+    expect(short).toBeLessThan(long);
+    expect(long).toBeLessThan(OVERLAY_SCALE.DISPLAY_MAX);
+  });
+
+  it('saturates at the threshold rather than growing without bound', () => {
+    const at = buildOverlayValue(ctx([['3,3', 60]]), 'commute', makeCell(), 3, 3);
+    const way = buildOverlayValue(ctx([['3,3', 400]]), 'commute', makeCell(), 3, 3);
+    expect(at).toBe(OVERLAY_SCALE.DISPLAY_MAX);
+    expect(way, '超過門檻之後還在變紅，看不出誰才是最糟的').toBe(OVERLAY_SCALE.DISPLAY_MAX);
+  });
+
+  it('keeps a very short commute visible', () => {
+    // 通勤 0 與「這一格沒有人住」在畫面上必須分得開，所以有住戶就至少上一點色。
+    expect(buildOverlayValue(ctx([['3,3', 0]]), 'commute', makeCell(), 3, 3)).toBeGreaterThan(0);
   });
 });

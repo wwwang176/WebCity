@@ -7,7 +7,7 @@ const OVERLAY_NAMES: Record<string, string> = {
   [OverlayType.POWER]: 'Power', [OverlayType.WATER]: 'Water', [OverlayType.ZONE]: 'Zones',
   [OverlayType.TRAFFIC]: 'Traffic', [OverlayType.POLLUTION]: 'Pollution', [OverlayType.LAND_VALUE]: 'Land Value',
   [OverlayType.POLICE]: 'Police', [OverlayType.FIRE]: 'Fire', [OverlayType.HEALTH]: 'Health',
-  [OverlayType.EDUCATION]: 'Education', [OverlayType.PARK]: 'Park', [OverlayType.GARBAGE]: 'Garbage', [OverlayType.DISTRICT]: 'Districts',
+  [OverlayType.EDUCATION]: 'Education', [OverlayType.PARK]: 'Park', [OverlayType.GARBAGE]: 'Garbage', [OverlayType.DISTRICT]: 'Districts', [OverlayType.COMMUTE]: 'Commute Time',
 };
 
 const FOCUS_NAMES: Record<string, string> = {

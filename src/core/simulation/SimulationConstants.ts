@@ -85,6 +85,8 @@ export const SIMULATION = {
   COMMUTE_FILL_ENQUEUE_PER_TICK: 32,
   /** 同一條路線最多試幾次就放棄，等下次路網改變。見 `commuteFillAttempts`。 */
   COMMUTE_FILL_MAX_ATTEMPTS: 3,
+  /** 總覽面板要列出通勤最久的幾個住宅區。夠指出問題，不會變成一頁座標。 */
+  COMMUTE_WORST_HOMES: 5,
   /** Commute sampling: minimum sample count */
   SAMPLE_COUNT_MIN: 50,
   /** Commute sampling: maximum sample count */

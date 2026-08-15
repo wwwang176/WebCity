@@ -17,6 +17,7 @@ export enum OverlayType {
   PARK = 'park',
   GARBAGE = 'garbage',
   DISTRICT = 'district',
+  COMMUTE = 'commute',
 }
 
 export interface ElevatedOverlayCell {
@@ -153,6 +154,11 @@ export class OverlayRenderer {
     switch (type) {
       case OverlayType.TRAFFIC:
         return c.setHSL(0.33 - value * 0.33, 0.8, 0.5); // Green to red
+      // 通勤時間：綠（走得到、搭得到）→ 紅（超過這條線就會想換工作）。
+      // 刻度是絕對值不是相對最大值 —— 相對刻度會讓一座通勤全都很好的城市裡
+      // 最慢的那一格照樣被畫成紅色，紅色必須永遠代表「這裡的人真的過得不好」。
+      case OverlayType.COMMUTE:
+        return c.setHSL(0.33 - value * 0.33, 0.75, 0.45);
       case OverlayType.LAND_VALUE:
         return c.setHSL(0.6 - value * 0.6, 0.7, 0.5); // Blue to red
       case OverlayType.POLLUTION:

@@ -31,7 +31,8 @@ import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } f
 import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
-import { TransitAccessField, estimateCommuteTime } from '../transport/TransitAccessField';
+import { TransitAccessField, estimateCommuteTime, estimateCommute } from '../transport/TransitAccessField';
+import { computeCommuteStats, type CommuteStats } from '../citizen/CommuteStats';
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
@@ -538,6 +539,42 @@ export class SimulationLoop {
     if (tick === 1 || (tick >= 2 && (tick - 2) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
       this.computeCongestionFlow();
     }
+
+    // 通勤統計（圖層與總覽面板共用）。與車流預測錯開一格，避免同一個 tick 做兩件重的事。
+    if (tick === 1 || (tick >= 3 && (tick - 3) % SIMULATION.MEDIUM_TICK_INTERVAL === 0)) {
+      this.refreshCommuteStats();
+    }
+  }
+
+  private commuteStats: CommuteStats = computeCommuteStats([], () => null, 0, 0);
+
+  /**
+   * 重算全城通勤統計。
+   *
+   * 不進存檔 —— 它完全可以從現有狀態重算，存起來只會讓存檔格式多一塊要遷移的東西。
+   * 代價是讀檔後第一次慢速 tick 之前面板是空的。
+   */
+  private refreshCommuteStats(): void {
+    this.commuteStats = computeCommuteStats(
+      this.state.citizens.getCitizens(),
+      (c) => {
+        if (!c.homeId || !c.workplaceId) return null;
+        const home = parsePosKey(c.homeId);
+        const work = parsePosKey(c.workplaceId);
+        if (!home || !work) return null;
+        return estimateCommute(
+          home, work, this.state.traffic.getCongestionLevel(),
+          this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
+        );
+      },
+      DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold,
+      SIMULATION.COMMUTE_WORST_HOMES,
+    );
+  }
+
+  /** 全城通勤統計。圖層與總覽面板讀的是同一份。 */
+  getCommuteStats(): CommuteStats {
+    return this.commuteStats;
   }
 
   getState(): GameState {
