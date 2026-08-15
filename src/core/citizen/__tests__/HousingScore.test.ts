@@ -106,24 +106,24 @@ describe('scorePollution', () => {
 });
 
 describe('scoreCommute', () => {
-  it('distance <= 5 returns +15', () => {
-    expect(scoreCommute('5,5', '7,8')).toBe(15); // manhattan = 5
-    expect(scoreCommute('5,5', '5,5')).toBe(15); // manhattan = 0
-    expect(scoreCommute('5,5', '10,5')).toBe(15); // manhattan = 5
+  // 通勤好不好看的是要花多久，不是隔多遠 —— 詳見 CommuteTimeScoring.test.ts。
+  it('a short commute returns +15', () => {
+    expect(scoreCommute(15)).toBe(15);
+    expect(scoreCommute(0)).toBe(15);
   });
 
-  it('distance > 20 returns -15', () => {
-    expect(scoreCommute('0,0', '15,10')).toBe(-15); // manhattan = 25
+  it('a long commute returns -15', () => {
+    expect(scoreCommute(61)).toBe(-15);
   });
 
-  it('mid-range distance returns intermediate score', () => {
-    const score = scoreCommute('0,0', '10,0'); // manhattan = 10
+  it('mid-range commute returns intermediate score', () => {
+    const score = scoreCommute(35);
     expect(score).toBeGreaterThan(-15);
     expect(score).toBeLessThan(15);
   });
 
-  it('null homeId returns 0', () => {
-    expect(scoreCommute(null, '5,5')).toBe(0);
+  it('unknown commute returns 0', () => {
+    expect(scoreCommute(null)).toBe(0);
   });
 });
 
@@ -229,8 +229,8 @@ describe('scoreHousing (integration)', () => {
     expect(HOUSING_SCORE.LEVEL_MATCH_NEAR).toBe(10);
     expect(HOUSING_SCORE.LEVEL_MATCH_FAR).toBe(-10);
     expect(HOUSING_SCORE.LAND_VALUE_MIDPOINT).toBe(128);
-    expect(HOUSING_SCORE.COMMUTE_NEAR).toBe(5);
-    expect(HOUSING_SCORE.COMMUTE_FAR).toBe(20);
+    expect(HOUSING_SCORE.COMMUTE_TIME_NEAR).toBe(15);
+    expect(HOUSING_SCORE.COMMUTE_TIME_FAR).toBe(60);
     expect(HOUSING_SCORE.SERVICE_MAX).toBe(6);
     expect(HOUSING_SCORE.PARK_BONUS).toBe(5);
   });

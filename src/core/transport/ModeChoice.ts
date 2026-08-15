@@ -81,6 +81,18 @@ export interface MultiModalChoice {
   mode: TransportMode;
   /** Non-null when a multi-leg transit route was chosen */
   multiLeg: MultiLegRoute | null;
+  /**
+   * 選中的那條路要花多久（tick）。
+   *
+   * 每一種走法要花多久本來就得算出來才比得出快慢 —— 這裡把它留下來。通勤時間
+   * 是市民對城市最直接的感受：距離、壅塞與大眾運輸都反映在同一個數字上，所以
+   * 換工作與搬家都拿它判斷，而不是拿直線距離（拿距離的話，住在捷運站旁邊跟住
+   * 在荒郊野外沒有差別）。
+   *
+   * 回報的是**實際選中**那一種的時間，不是最快那一種 —— 大眾運輸只要不比開車
+   * 慢過 1.5 倍就會被選，市民花掉的是那個比較慢的時間。
+   */
+  time: number;
 }
 
 /**
@@ -99,7 +111,8 @@ export function chooseModeMultiModal(
   const distance = dx + dy;
 
   if (distance <= MODE_CHOICE.WALK_MAX_DISTANCE) {
-    return { mode: TransportMode.WALK, multiLeg: null };
+    // 走路速度是一格一 tick，所以時間就是格數。
+    return { mode: TransportMode.WALK, multiLeg: null, time: distance };
   }
 
   const driveTime = distance * (1 + congestionLevel);
@@ -132,8 +145,8 @@ export function chooseModeMultiModal(
   }
 
   if (bestTime < threshold) {
-    return { mode: bestMode, multiLeg: bestMultiLeg };
+    return { mode: bestMode, multiLeg: bestMultiLeg, time: bestTime };
   }
 
-  return { mode: TransportMode.DRIVE, multiLeg: null };
+  return { mode: TransportMode.DRIVE, multiLeg: null, time: driveTime };
 }

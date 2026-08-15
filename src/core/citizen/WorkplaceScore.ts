@@ -1,6 +1,6 @@
 import { EducationLevel, type Citizen } from './types';
 import { ZoneType, isCommercialZone } from '../grid/types';
-import { scoreCommute } from './HousingScore';
+import { scoreCommute, straightLineCommuteTime, type CommuteTimeEstimator } from './HousingScore';
 
 export interface WorkplaceCandidate {
   pos: string;
@@ -64,14 +64,15 @@ export function scoreWorkplace(
   citizen: Citizen,
   workplacePos: string,
   zoneType: ZoneType,
+  estimate: CommuteTimeEstimator = straightLineCommuteTime,
 ): number {
   let score = 0;
 
   // Education-zone match
   score += scoreEducationMatch(citizen.education, zoneType);
 
-  // Commute distance from home (shared scoring function from HousingScore)
-  score += scoreCommute(citizen.homeId, workplacePos);
+  // 通勤時間（與住房評分共用同一把尺）
+  score += scoreCommute(citizen.homeId ? estimate(citizen.homeId, workplacePos) : null);
 
   return score;
 }
