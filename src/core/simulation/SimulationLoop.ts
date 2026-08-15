@@ -31,6 +31,7 @@ import { calculateAbandonmentStress, ABANDONMENT, type AbandonmentConditions } f
 import { isWorkingAge, type Citizen } from '../citizen/types';
 import { countOccupancy, assignWithPreference, assignWorkWithPreference } from '../citizen/OccupancyAssignment';
 import { buildHousingCandidates, buildWorkplaceCandidates } from '../citizen/BuildingCandidateBuilder';
+import { TransitAccessField, estimateCommuteTime } from '../transport/TransitAccessField';
 import { calculateCityHappinessContext } from '../citizen/CityHappinessContext';
 import { computeOccupancyRatios } from '../citizen/OccupancyRatio';
 import type { WorkplaceCandidate } from '../citizen/WorkplaceScore';
@@ -140,6 +141,25 @@ export class SimulationLoop {
   // Multi-modal transfer graph (rebuilt when transit network changes)
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
+  /** 每一格走得到哪些路線。與 transferGraph 同時重建。 */
+  private transitAccess = TransitAccessField.build([], SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED);
+
+  /**
+   * 這一趟通勤要花多久（tick）—— 住房評分、就業評分與換工作判斷共用同一把尺。
+   *
+   * 開車時間隨距離與壅塞上升，搭車時間由路網決定，兩者是同一個尺度。所以
+   * 「住得遠但住在站旁邊」與「住得近但天天塞車」比得出高下，而玩家蓋的運輸
+   * 建設會直接反映在市民的居住與就業選擇上。
+   */
+  private commuteTimeBetween = (fromPos: string, toPos: string): number | null => {
+    const a = parsePosKey(fromPos);
+    const b = parsePosKey(toPos);
+    if (!a || !b) return null;
+    return estimateCommuteTime(
+      a, b, this.state.traffic.getCongestionLevel(),
+      this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
+    );
+  };
   /** Transit structural version at the last transfer-graph rebuild. */
   private lastTransitVersion = -1;
   /** Transit stop/route topology version at the last transfer-tracker reset. */
@@ -1250,11 +1270,11 @@ export class SimulationLoop {
     const reachable = this.wpDistCache?.isReady
       ? this.buildWorkplaceReachabilityFromCache(workingAgeCitizens, workplaceCandidates)
       : this.buildWorkplaceReachability(workingAgeCitizens, workplaceCandidates);
-    assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable);
+    assignWorkWithPreference(workingAgeCitizens, workplaceCandidates, workOccupancy, reachable, this.commuteTimeBetween);
 
     // Then assign housing with preference scoring
     const homeOccupancy = countOccupancy(citizens, (c) => c.homeId);
-    assignWithPreference(citizens, housingCandidates, homeOccupancy);
+    assignWithPreference(citizens, housingCandidates, homeOccupancy, this.commuteTimeBetween);
 
     // Update occupancy ratios for rendering (must re-count AFTER assignments)
     this.occupancyRatios = computeOccupancyRatios(citizens, this.buildingPositions);
@@ -1408,6 +1428,11 @@ export class SimulationLoop {
       this.state.clock.tick,
       undefined,
       distanceLookup,
+      // 通勤要花多久 —— 開車、走路與大眾運輸都換算成同一個尺度的時間。
+      (c) => {
+        if (!c.homeId || !c.workplaceId) return NaN;
+        return this.commuteTimeBetween(c.homeId, c.workplaceId) ?? NaN;
+      },
     );
   }
 
@@ -1742,6 +1767,10 @@ export class SimulationLoop {
     buildStopRouteCache(
       this.flatRoutes, this.transferGraph,
       SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
+    );
+    // 可及性圖跟著路線一起重建 —— 評分與換工作判斷靠它把通勤時間壓成 O(1)。
+    this.transitAccess = TransitAccessField.build(
+      this.flatRoutes, SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED,
     );
     this.transferGraphDirty = false;
     this.lastTransitVersion = getTransitNetworkVersion(this.state);
