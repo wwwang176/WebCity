@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { TransportRouteRenderData } from '../core/transport/collectTransportRoutes';
+import { buildRoutePolyline } from '../core/transport/RouteArc';
 
 /**
  * Compute a numeric fingerprint of route data.
@@ -64,16 +65,9 @@ export class TransportRouteRenderer {
     for (const route of routes) {
       if (route.stops.length < 2) continue;
 
-      const points: THREE.Vector3[] = [];
-      for (const stop of route.stops) {
-        points.push(new THREE.Vector3(
-          stop.x,
-          TransportRouteRenderer.LINE_Y,
-          stop.y,
-        ));
-      }
-      // 環形路線：連回第一站
-      points.push(points[0]!.clone());
+      // 每一跳拱成拋物線，最後繞回第一站。弧的數學在 core，這裡只把點接起來。
+      const points = buildRoutePolyline(route.stops, TransportRouteRenderer.LINE_Y)
+        .map(p => new THREE.Vector3(p.x, p.y, p.z));
 
       const geometry = new THREE.BufferGeometry().setFromPoints(points);
       const material = new THREE.LineDashedMaterial({

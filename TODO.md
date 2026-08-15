@@ -1905,3 +1905,7 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
   `TrafficLightRenderer` 補上 `setViewMode`，跟著 `road` 透明度走，重建自動套回。
 - [x] **BUG-272：路線連線畫在正常視角，一進聚焦反而全部消失**（見 BUGS.md）：
   改為 `filterRoutesForViewMode`；聚焦中的站點不白模化（`getFocusedStopKind`）。
+- [x] **路線連線改成拋物線**：直線連線在密集路網上會糊成一團 —— 兩條共用同一段的
+  路線完全重疊。弧的數學放在 `core/transport/RouteArc`（純邏輯，禁 Three.js）：
+  水平投影仍是直線、端點落在站上、拱高照跳距等比但有上限（`ARC.RISE_MAX`）。
+  拱高與段數是外觀值，看實機再調。
