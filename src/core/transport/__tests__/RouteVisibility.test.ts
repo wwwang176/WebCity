@@ -31,10 +31,16 @@ const ALL_ROUTES: TransportRouteRenderData[] = [
   route(5, 'FERRY'),
 ];
 
-/** 每一種交通工具的 focus 模式，該留下哪些路線 id。 */
+/**
+ * 每一種交通工具的 focus 模式，該留下哪些路線 id。
+ *
+ * 捷運是空的：地下模式本來就有 `MetroTunnelRenderer` 畫出真正的隧道，地面再疊
+ * 一條直線虛線只是同一件事的第二種畫法。鐵路留著 —— 軌道畫的是路線的形狀，
+ * 連線畫的是停靠順序，兩者說的不是同一件事。
+ */
 const EXPECTED: [ViewMode, number[]][] = [
   [ViewMode.BUS_FOCUS, [1, 2]],
-  [ViewMode.UNDERGROUND, [3]],
+  [ViewMode.UNDERGROUND, []],
   [ViewMode.RAIL_FOCUS, [4]],
   [ViewMode.FERRY_FOCUS, [5]],
 ];
@@ -66,6 +72,12 @@ describe('哪個視角看得到路線連線', () => {
       expect(covered.has(mode), `${mode} 沒有對應的路線系統`).toBe(true);
       expect(getFocusedStopKind(mode), `${mode} 對不回任何一種交通工具`).not.toBeNull();
     }
+  });
+
+  it('should still know underground focuses the metro', () => {
+    // 不畫地面連線與「這個視角不聚焦捷運」是兩件事 —— 站點要不要保持原色是看
+    // 後者。兩件事混成一個判斷的話，地下模式的捷運站會跟著漂白。
+    expect(getFocusedStopKind(ViewMode.UNDERGROUND)).toBe('metro');
   });
 
   it('should not claim a focused vehicle for the plain views', () => {
