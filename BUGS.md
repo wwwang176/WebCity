@@ -4477,3 +4477,23 @@ BUG-269 的高架橋同一類漏接。號誌是路邊家具，跟路燈同一組
 排除掉的兩個嫌疑，記著免得下次重查：**不是 detail LOD**（`applyLayerVisibility`
 只把矮物件與懸挑綁在縮放門檻上，貼片層沒有），**不是視錐剔除**（`InstancedLayer`
 已經設了 `frustumCulled = false`）。
+
+## BUG-276 已修：漸層高亮下，所有公共建築被塗成同一個顏色
+
+`hoverHighlightGradient` 逐格查表把分區建築塗成各自的顏色，但基礎設施走的是另一
+條路：
+
+```ts
+// Tint infra groups with average color (simplified: use first cell's color)
+this.tintInfraGroupsByCells(infraGroups, cellSet, cells[0]!.color, intensity);
+```
+
+**整批基礎設施一律塗成陣列裡第一格的顏色。** 通勤圖層把站牌標成青色、住宅標成
+漸層色，於是所有交通建築、警局、電廠都被塗成第一個住宅格的顏色 —— 那一格通勤
+很糟的話，全城的公共建築一起變紅。
+
+警消／醫療／教育圖層也有，只是那裡的顏色全都來自同一組漸層，塗錯了看起來只是
+深淺不對，不像通勤圖層那樣一眼看穿。
+
+改成逐格查自己那一格的顏色（`tintInfraGroupsByCellColor`）。單色高亮那條路
+（`hoverHighlight`）不受影響，仍然共用原本的 `tintInfraGroupsByCells`。
