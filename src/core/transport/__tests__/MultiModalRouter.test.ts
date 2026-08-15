@@ -6,6 +6,7 @@ import {
   flattenSystems,
   type FlatRoute,
 } from '../MultiModalRouter';
+import { openFieldReach } from './openFieldReach';
 import { TransportType, type TransportStop } from '../types';
 
 function makeStop(x: number, y: number, id: number, type = TransportType.BUS): TransportStop {
@@ -31,7 +32,7 @@ function makeRoute(
 
 describe('buildTransferGraph', () => {
   it('returns empty graph for no routes', () => {
-    const graph = buildTransferGraph([], 3);
+    const graph = buildTransferGraph([], 3, openFieldReach);
     expect(graph.byStop.size).toBe(0);
   });
 
@@ -41,7 +42,7 @@ describe('buildTransferGraph', () => {
       makeRoute(2, TransportType.METRO, 3, [makeStop(10, 1, 3), makeStop(20, 0, 4)]),
     ];
     // (10,0) ↔ (10,1) distance 1 ≤ 3
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(2);
   });
 
@@ -49,7 +50,7 @@ describe('buildTransferGraph', () => {
     const routes: FlatRoute[] = [
       makeRoute(1, TransportType.BUS, 2, [makeStop(0, 0, 1), makeStop(2, 0, 2)]),
     ];
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(0);
   });
 
@@ -58,7 +59,7 @@ describe('buildTransferGraph', () => {
       makeRoute(1, TransportType.BUS, 2, [makeStop(0, 0, 1)]),
       makeRoute(2, TransportType.METRO, 3, [makeStop(10, 0, 2)]),
     ];
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(0);
   });
 
@@ -67,7 +68,7 @@ describe('buildTransferGraph', () => {
       makeRoute(1, TransportType.BUS, 2, [makeStop(10, 0, 1)]),
       makeRoute(2, TransportType.BUS, 2, [makeStop(10, 1, 2)]),
     ];
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(2);
   });
 
@@ -76,7 +77,7 @@ describe('buildTransferGraph', () => {
       makeRoute(1, TransportType.BUS, 2, [makeStop(5, 5, 1)]),
       makeRoute(2, TransportType.METRO, 3, [makeStop(5, 5, 2)]),
     ];
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(2);
   });
 });
@@ -85,7 +86,7 @@ describe('buildTransferGraph', () => {
 
 /** Build transfer graph AND pre-compute stop route cache in one step. */
 function buildGraphWithCache(routes: FlatRoute[], transferRange: number, walkSpeed = 1, waitFactor = 0.5, maxLegs = 7) {
-  const graph = buildTransferGraph(routes, transferRange);
+  const graph = buildTransferGraph(routes, transferRange, openFieldReach);
   buildStopRouteCache(routes, graph, walkSpeed, waitFactor, maxLegs);
   return graph;
 }
@@ -102,6 +103,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       [], { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
     expect(result).toEqual([]);
   });
@@ -114,6 +116,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     expect(result.length).toBeGreaterThanOrEqual(1);
@@ -135,6 +138,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     const fiveLegs = result.find(r => r.legs.length === 5);
@@ -161,6 +165,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 30, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     const sevenLegs = result.find(r => r.legs.length === 7);
@@ -182,6 +187,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, 3,
+      openFieldReach,
     );
     for (const route of result) {
       expect(route.legs.length).toBeLessThanOrEqual(3);
@@ -199,6 +205,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     const transfer = result.find(r => r.legs.length === 5);
@@ -218,6 +225,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
     // Only single-ride routes possible (no transfer edges)
     for (const route of result) {
@@ -234,6 +242,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
     expect(result).toEqual([]);
   });
@@ -247,6 +256,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     expect(result.length).toBeGreaterThan(0);
@@ -273,6 +283,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     expect(result.length).toBeGreaterThanOrEqual(2);
@@ -292,6 +303,7 @@ describe('findMultiModalRoutes', () => {
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
       WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
     // No 5-leg routes because metro is full
     const fiveLegs = result.find(r => r.legs.length === 5);

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { TransitAccessField, estimateCommuteTime } from '../TransitAccessField';
 import { TransportType, type TransportStop } from '../types';
 import type { FlatRoute } from '../MultiModalRouter';
+import { openFieldReach } from './openFieldReach';
 
 /**
  * 大眾運輸可及性圖。
@@ -33,7 +34,7 @@ const WALK_SPEED = 1;
 const WAIT_FACTOR = 0.5;
 
 function fieldFor(routes: FlatRoute[]) {
-  return TransitAccessField.build(routes, WALK_RANGE, WALK_SPEED);
+  return TransitAccessField.build(routes, WALK_RANGE, WALK_SPEED, openFieldReach);
 }
 
 describe('可及性圖', () => {

@@ -7,7 +7,7 @@
  */
 
 import { TransportType, type TransportStop } from './types';
-import { manhattanDistance } from '../grid/GridHelpers';
+import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
 import { computeRideDistance, getRouteDailyRiders, type TransitSystemInfo } from './TransitAvailability';
 
 // ── Types ───────────────────────────────────────────────────────
@@ -104,6 +104,7 @@ export function flattenSystems(systems: readonly TransitSystemInfo[]): FlatRoute
 export function buildTransferGraph(
   routes: readonly FlatRoute[],
   transferRange: number,
+  reach: StopReach,
 ): TransferGraph {
   const byStop = new Map<string, TransferEdge[]>();
 
@@ -123,7 +124,9 @@ export function buildTransferGraph(
       const b = all[j]!;
       if (a.ri === b.ri) continue; // same route → skip
 
-      const dist = manhattanDistance(a.stop.x, a.stop.y, b.stop.x, b.stop.y);
+      // 轉乘也是用走的，一樣照人行道量 —— 只差一條馬路的兩個站牌，直線是三格，
+      // 實際上得繞到路口。四個挑站的地方留一個用直線，就是留一個會不一致的縫。
+      const dist = walkDistanceToStop(reach, a.stop.x, a.stop.y, b.stop.x, b.stop.y, transferRange);
       if (dist > transferRange) continue;
 
       // Bidirectional edges
@@ -304,6 +307,7 @@ export function findMultiModalRoutes(
   _waitFactor: number,
   transferGraph: TransferGraph,
   _maxLegs: number,
+  reach: StopReach,
 ): MultiLegRoute[] {
   if (routes.length === 0) return [];
 
@@ -317,7 +321,10 @@ export function findMultiModalRoutes(
     if (eRoute.isFull) continue;
     for (let esi = 0; esi < eRoute.stops.length; esi++) {
       const entryStop = eRoute.stops[esi]!;
-      const walkToEntry = manhattanDistance(entryStop.x, entryStop.y, origin.x, origin.y);
+      // 沿人行道量，不是直線 —— 直線看不見馬路，會把住戶從對街「走」到站牌。
+      const walkToEntry = walkDistanceToStop(
+        reach, entryStop.x, entryStop.y, origin.x, origin.y, walkRange,
+      );
       if (walkToEntry > walkRange) continue;
 
       const firstWalkTime = walkToEntry / walkSpeed;
@@ -332,7 +339,9 @@ export function findMultiModalRoutes(
         const xRoute = routes[xri]!;
         for (let xsi = 0; xsi < xRoute.stops.length; xsi++) {
           const exitStop = xRoute.stops[xsi]!;
-          const walkFromExit = manhattanDistance(exitStop.x, exitStop.y, destination.x, destination.y);
+          const walkFromExit = walkDistanceToStop(
+            reach, exitStop.x, exitStop.y, destination.x, destination.y, walkRange,
+          );
           if (walkFromExit > walkRange) continue;
 
           const cached = cache.get(cacheKey(eri, esi, xri, xsi));

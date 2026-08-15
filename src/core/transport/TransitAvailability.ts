@@ -1,5 +1,5 @@
 import { TransportType, type TransportRoute, type TransportStop } from './types';
-import { manhattanDistance } from '../grid/GridHelpers';
+import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
 import type { AvailableTransport } from './ModeChoice';
 
 export interface TransitSystemInfo {
@@ -28,12 +28,17 @@ export function getRouteDailyRiders(route: TransportRoute): number {
  *
  * Estimated time is computed from actual route distances when available,
  * falling back to euclidean stop-to-stop distance.
+ *
+ * 「走得到」由 `reach` 定義，也就是沿人行道量。這裡曾經用曼哈頓距離，而曼哈頓
+ * 距離看不見馬路：對街的站牌只有兩格，於是住戶被算成搭得到，行人被派過去，到了
+ * 現場才發現行人只在路口過馬路，得繞一大圈。
  */
 export function findAvailableTransit(
   systems: readonly TransitSystemInfo[],
   origin: { x: number; y: number },
   destination: { x: number; y: number },
   walkRange: number,
+  reach: StopReach,
 ): AvailableTransport[] {
   const result: AvailableTransport[] = [];
 
@@ -49,8 +54,8 @@ export function findAvailableTransit(
 
       for (let i = 0; i < route.stops.length; i++) {
         const stop = route.stops[i]!;
-        const dOrigin = manhattanDistance(stop.x, stop.y, origin.x, origin.y);
-        const dDest = manhattanDistance(stop.x, stop.y, destination.x, destination.y);
+        const dOrigin = walkDistanceToStop(reach, stop.x, stop.y, origin.x, origin.y, walkRange);
+        const dDest = walkDistanceToStop(reach, stop.x, stop.y, destination.x, destination.y, walkRange);
         if (dOrigin <= walkRange && dOrigin < bestOriginDist) {
           bestOriginIdx = i;
           bestOriginDist = dOrigin;

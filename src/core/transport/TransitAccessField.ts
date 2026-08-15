@@ -1,6 +1,7 @@
-import { manhattanDistance, toPosKey } from '../grid/GridHelpers';
+import { toPosKey } from '../grid/GridHelpers';
 import { computeRideDistance } from './TransitAvailability';
 import { chooseModeMultiModal, type AvailableTransport } from './ModeChoice';
+import type { StopReach } from '../traffic/StopWalkReach';
 import type { FlatRoute } from './MultiModalRouter';
 
 /**
@@ -13,6 +14,11 @@ import type { FlatRoute } from './MultiModalRouter';
  * 精度換速度是刻意的 —— 它只回答「兩端碰不碰得到同一條路線」，不處理轉乘。真正
  * 派車時仍然走完整的多模式路由器；這張圖只用於評分與觸發判斷，那些地方要的是
  * 「這個人的通勤大概多痛苦」，不是精確路線。
+ *
+ * 「走得到」由 `StopReach` 定義，也就是沿著人行道量。這裡曾經自己在地圖上畫一個
+ * 曼哈頓菱形，而菱形看不見馬路 —— 對街那一格被算成兩格，但行人只在路口過馬路，
+ * 實際上得繞到路口再繞回來。結果是通勤時間被低估、住戶被配給對街的站牌，畫面上
+ * 出現繞大圈的行人。
  */
 
 /** 從某一格走得到的一個站。 */
@@ -33,13 +39,13 @@ export class TransitAccessField {
   private constructor() {}
 
   /**
-   * 從站牌往外掃 `walkRange`，把每一格走得到的路線記下來。
+   * 把每個站牌走得到的格子記下來，連同走到那一站要多久。
    *
    * 同一條路線只留最近的那一站 —— 留全部的話這張圖會膨脹成站數 × 覆蓋面積，
    * 而遠一點的那些站永遠不會被選中。
    */
   static build(
-    routes: readonly FlatRoute[], walkRange: number, walkSpeed: number,
+    routes: readonly FlatRoute[], walkRange: number, walkSpeed: number, reach: StopReach,
   ): TransitAccessField {
     const field = new TransitAccessField();
 
@@ -47,14 +53,8 @@ export class TransitAccessField {
       const stops = routes[ri]!.stops;
       for (let si = 0; si < stops.length; si++) {
         const s = stops[si]!;
-        for (let dy = -walkRange; dy <= walkRange; dy++) {
-          const rest = walkRange - Math.abs(dy);
-          for (let dx = -rest; dx <= rest; dx++) {
-            const x = s.x + dx, y = s.y + dy;
-            if (x < 0 || y < 0) continue;
-            const walkTime = manhattanDistance(s.x, s.y, x, y) / walkSpeed;
-            field.record(toPosKey(x, y), ri, si, walkTime);
-          }
+        for (const [cellKey, walkDistance] of reach.cellsWithin(s.x, s.y, walkRange)) {
+          field.record(cellKey, ri, si, walkDistance / walkSpeed);
         }
       }
     }
