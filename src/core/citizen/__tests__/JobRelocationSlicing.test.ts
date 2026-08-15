@@ -164,6 +164,26 @@ describe('job relocation slicing', () => {
     expect(slicer.pending).toBe(0);
   });
 
+  it('should survive a home demolished midway through the round', () => {
+    // 名單是開一輪的時候拍下來的，而一輪要跑幾十個 tick。玩家在中間拆掉一棟
+    // 住宅，這個人的 homeId 就變成 null（`Reconcile` 會清掉），而底下是拿 `!`
+    // 直接餵進 parsePosKeyUnsafe 的 —— 整個模擬迴圈會在那個 tick 丟例外。
+    const s = scenario();
+    const slicer = beginJobRelocation(
+      s.citizens, candidates, s.occupancy, s.cache, grid, 0,
+    );
+    slicer.runSlice(2);
+    for (const c of s.citizens) c.homeId = null;   // 那一排房子被拆了
+
+    let guard = 0;
+    expect(() => {
+      while (slicer.pending > 0) {
+        slicer.runSlice(2);
+        if (++guard > 100) throw new Error('切片沒有收斂');
+      }
+    }, '住宅在一輪中間被拆掉就丟例外').not.toThrow();
+  });
+
   it('should report pending work up front so the caller can size its slices', () => {
     const s = scenario();
     const slicer = beginJobRelocation(

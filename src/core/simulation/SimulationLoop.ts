@@ -500,6 +500,9 @@ export class SimulationLoop {
     // capped city, which used to strand the rebuild (see the method's comment).
     this.rebuildTransferGraphIfDirty();
 
+    // 補完還沒算的通勤路線。放在生成車輛之前，這一 tick 補到的路線立刻可用。
+    this.advanceCommuteFill();
+
     // Traffic - spawn commute vehicles (every tick)
     this.spawnVehicles();
 
@@ -1427,7 +1430,16 @@ export class SimulationLoop {
   /** Pre-compute commute paths and spawn initial vehicles on load.
    *  Call after lane graph, road coverage, and power/water are ready.
    *  @param spawnRatio fraction of commuters to place on roads (0-1)
-   *  @param onProgress called with (0-1) for sub-progress updates */
+   *  @param onProgress called with (0-1) for sub-progress updates
+   *
+   * **只算現在真的要用的那幾條。** 這裡原本替每一位有工作的市民都算了雙向路徑，
+   * 而只有 `spawnRatio` 那一小部分會生成車輛 —— 2 146 人的存檔實測，1 805 位 ×
+   * 2 個方向 = 3 610 次 A*、每次約 8 ms，載入畫面卡 20 秒，其中八成是替現在
+   * 不上路的人算的。
+   *
+   * 沒算到的那些人不會出事：`spawnCommuteVehicles` 找不到路線時本來就會丟給
+   * pathfinding worker，下一 tick 再用 —— 那條路是非同步的，而且在別的執行緒上。
+   */
   async warmup(spawnRatio = 0.2, onProgress?: (ratio: number) => void): Promise<{ pathsComputed: number; vehiclesSpawned: number }> {
     this.ensureLaneGraph();
     if (!this._roadLookup) return { pathsComputed: 0, vehiclesSpawned: 0 };
@@ -1437,68 +1449,234 @@ export class SimulationLoop {
     let vehiclesSpawned = 0;
 
     for (let i = 0; i < citizens.length; i++) {
+      // Report sub-progress every 100 citizens.
+      //
+      // 放在迴圈**開頭**：底下的 `continue` 已經是多數情形（只有 spawnRatio
+      // 那一小部分會往下走），擺在結尾的話進度條大部分時間不會動。
+      if (i % 100 === 0 && onProgress) {
+        onProgress(i / citizens.length);
+        await new Promise(r => requestAnimationFrame(r));
+      }
+
       const c = citizens[i]!;
       if (!c.homeId || !c.workplaceId) continue;
+
+      // 先決定這一位現在上不上路，再決定要不要算路徑。反過來的話，八成的
+      // 搜尋是替不上路的人做的。
+      if (Math.random() >= spawnRatio) {
+        this.markCommutePending(c);
+        continue;
+      }
+
       const home = parsePosKey(c.homeId);
       const work = parsePosKey(c.workplaceId);
-      if (!home || !work) continue;
+      if (!home || !work) { this.markCommutePending(c); continue; }
 
-      // Compute morning path (home → work)
-      const morningKey = `${c.homeId}->${c.workplaceId}`;
-      let morningVariants = this.commuteCache.getRouteVariants(morningKey) ?? null;
-      if (!morningVariants) {
-        morningVariants = findLanePathVariants(this.laneGraph, this._roadLookup, home, work);
-        if (morningVariants.length > 0) {
-          this.commuteCache.setRouteVariants(morningKey, morningVariants);
+      // 一台車只往一個方向開，所以只需要那一個方向的路徑。
+      const toWork = Math.random() < 0.5;
+      const fromPos = toWork ? home : work;
+      const toPos = toWork ? work : home;
+      const routeKey = toWork
+        ? `${c.homeId}->${c.workplaceId}`
+        : `${c.workplaceId}->${c.homeId}`;
+
+      let variants = this.commuteCache.getRouteVariants(routeKey) ?? null;
+      if (!variants) {
+        variants = findLanePathVariants(this.laneGraph, this._roadLookup, fromPos, toPos);
+        if (variants.length > 0) {
+          this.commuteCache.setRouteVariants(routeKey, variants);
         }
       }
+      if (!variants || variants.length === 0) { this.markCommutePending(c); continue; }
 
-      // Compute evening path (work → home)
-      const eveningKey = `${c.workplaceId}->${c.homeId}`;
-      let eveningVariants = this.commuteCache.getRouteVariants(eveningKey) ?? null;
-      if (!eveningVariants) {
-        eveningVariants = findLanePathVariants(this.laneGraph, this._roadLookup, work, home);
-        if (eveningVariants.length > 0) {
-          this.commuteCache.setRouteVariants(eveningKey, eveningVariants);
-        }
-      }
+      const path = variants[Math.floor(Math.random() * variants.length)]!;
+      if (path.length === 0) { this.markCommutePending(c); continue; }
 
-      const morningPath = morningVariants?.length ? morningVariants[Math.floor(Math.random() * morningVariants.length)]! : null;
-      const eveningPath = eveningVariants?.length ? eveningVariants[Math.floor(Math.random() * eveningVariants.length)]! : null;
-      if (!morningPath && !eveningPath) continue;
-
-      // Cache both directions for this citizen
+      // 只填走到的那個方向。另一個方向留 null —— 平常那條路
+      // （`spawnCommuteVehicles`）寫進來的也是這個形狀。
       this.commuteCache.set(c.id, {
         citizenId: c.id,
         homeId: c.homeId,
         workplaceId: c.workplaceId,
-        morningPath: morningPath && morningPath.length > 0 ? morningPath : null,
-        eveningPath: eveningPath && eveningPath.length > 0 ? eveningPath : null,
+        morningPath: toWork ? path : null,
+        eveningPath: toWork ? null : path,
         status: 'ready',
         generation: this.commuteCache.roadGeneration,
       });
       pathsComputed++;
 
-      // Spawn vehicle for a fraction of commuters (random direction)
-      if (Math.random() < spawnRatio) {
-        const spawnPath = Math.random() < 0.5 ? morningPath : eveningPath;
-        if (spawnPath && spawnPath.length > 0) {
-          this.state.traffic.addVehicleOnEdges(spawnPath, c.id);
-          vehiclesSpawned++;
-        }
-      }
-
-      // Report sub-progress every 100 citizens
-      if (i % 100 === 0 && onProgress) {
-        onProgress(i / citizens.length);
-        await new Promise(r => requestAnimationFrame(r));
-      }
+      this.state.traffic.addVehicleOnEdges(path, c.id);
+      vehiclesSpawned++;
     }
 
     onProgress?.(1);
     return { pathsComputed, vehiclesSpawned };
   }
 
+  /**
+   * 記下「這個人要通勤，但路徑還沒算」。
+   *
+   * 不留記號的話，下游分不出「還沒算」和「算過了，沒有通勤」。`JobRelocation`
+   * 查不到條目就改用曼哈頓直線距離猜通勤有多遠，於是載入之後的第一輪換工作是
+   * 拿猜的數字決定誰要換工作 —— 舊版 warmup 替所有人算好路徑時不會發生。
+   *
+   * 有條目的人不動：這裡只補空白，不覆蓋算過的結果。
+   */
+  private markCommutePending(c: { id: number; homeId: string | null; workplaceId: string | null }): void {
+    if (!c.homeId || !c.workplaceId) return;
+    if (this.commuteCache.get(c.id)) return;
+    this.commuteCache.set(c.id, {
+      citizenId: c.id,
+      homeId: c.homeId,
+      workplaceId: c.workplaceId,
+      morningPath: null,
+      eveningPath: null,
+      status: 'pending',
+      generation: this.commuteCache.roadGeneration,
+    });
+  }
+
+  /**
+   * 背景補完已經替每條路線丟給 worker 幾次。
+   *
+   * 這是「worker 交不出答案就自己算」的計數器。worker 可以活著、可以回應，而每一組
+   * 起迄都回傳空的；生產環境沒有 COOP/COEP 就連 SharedArrayBuffer 都沒有，而
+   * `Game.ts` 建不起 worker 時是靜靜吞掉的。沒有這個上限，補完會永遠停在排隊。
+   *
+   * 路網一改就整個清掉：新蓋的那條路可能正好把它們接起來。
+   */
+  private commuteFillAttempts = new Map<string, number>();
+  private commuteFillAttemptsGeneration = -1;
+
+  /** 目前這一格的通勤路線在快取裡是不是已經齊了（兩個方向、且是這一代路網）。 */
+  private commuteRouteSettled(entry: CachedRoute | undefined, generation: number): boolean {
+    if (!entry || entry.generation !== generation) return false;
+    // 算過而且確定走不通的，不要每個 tick 重算一次。
+    if (entry.status === 'failed') return true;
+    return entry.morningPath !== null && entry.eveningPath !== null;
+  }
+
+  /**
+   * 逐 tick 把還沒算路徑的通勤市民補完。
+   *
+   * `warmup` 只替真的要上路的那一小部分人算路徑，其餘的人留下 `pending` 記號
+   * 交給這裡。**靠生成車輛是補不完的**：車輛一到上限 `spawnCommuteVehicles`
+   * 立刻 break，不再寫任何快取條目 —— 2 146 人的存檔實測（pathfinding worker
+   * 正常運作）跑到 643／1 750 就停住不動，而預測車流少算了 5.4 倍，噪音汙染
+   * 跟著整片掉下來。補完接手之後 30 個 tick 回到 3 501，對上改前的 3 504。
+   *
+   * 兩個方向都要：預測車流算的是一整天的通勤量，早上一趟晚上一趟。只補一個
+   * 方向的話讀數會少一半。
+   *
+   * 大部分市民是**免費**補完的 —— 住同一棟、在同一處上班的人共用一條路線，
+   * 池子裡已經有就直接指過去。真的要算的那些才吃預算。
+   */
+  private advanceCommuteFill(): void {
+    if (!this._roadLookup) return;
+    const citizens = this.state.citizens.getCitizens();
+    if (citizens.length === 0) return;
+
+    const generation = this.commuteCache.roadGeneration;
+    if (this.commuteFillAttemptsGeneration !== generation) {
+      this.commuteFillAttempts.clear();
+      this.commuteFillAttemptsGeneration = generation;
+    }
+    const useWorker = this.pathBatcher !== null && this.graphMapping !== null;
+    // 兩份預算分開記。丟給 worker 只是排隊，主執行緒沒有在算，所以放得多；
+    // 自己算一次就是十幾毫秒，兩者共用一份預算的話，worker 交不出答案而退回
+    // 主執行緒的那些會一口氣在同一個 tick 裡算 32 次。
+    let enqueueBudget = SIMULATION.COMMUTE_FILL_ENQUEUE_PER_TICK;
+    let searchBudget = SIMULATION.COMMUTE_FILL_SEARCH_PER_TICK;
+    let enqueued = false;
+
+    for (const c of citizens) {
+      if (!c.homeId || !c.workplaceId) continue;
+      if (!isWorkingAge(c.age)) continue;
+
+      const entry = this.commuteCache.get(c.id);
+      if (this.commuteRouteSettled(entry, generation)) continue;
+
+      const home = parsePosKey(c.homeId);
+      const work = parsePosKey(c.workplaceId);
+      if (!home || !work) continue;
+
+      const morningKey = `${c.homeId}->${c.workplaceId}`;
+      const eveningKey = `${c.workplaceId}->${c.homeId}`;
+      const stale = entry !== undefined && entry.generation !== generation;
+      let morning = stale ? null : (entry?.morningPath ?? null);
+      let evening = stale ? null : (entry?.eveningPath ?? null);
+      let searched = false;
+
+      for (const [key, from, to, isMorning] of [
+        [morningKey, home, work, true],
+        [eveningKey, work, home, false],
+      ] as const) {
+        if (isMorning ? morning !== null : evening !== null) continue;
+
+        const variants = this.commuteCache.getRouteVariants(key);
+        if (variants && variants.length > 0) {
+          // 池子裡已經有了 —— 別人算過同一條路，指過去不用錢。
+          const path = variants[Math.floor(Math.random() * variants.length)]!;
+          if (isMorning) morning = path; else evening = path;
+          continue;
+        }
+        // worker 是加速，不是依賴。排過幾次還是拿不到路徑就自己算 —— 一直排下去
+        // 的話，遇到交白卷的 worker 補完永遠不會結束。
+        const tries = this.commuteFillAttempts.get(key) ?? 0;
+        if (useWorker && tries < SIMULATION.COMMUTE_FILL_MAX_ATTEMPTS) {
+          if (enqueueBudget <= 0) continue;
+          // 已經在 worker 手上的不算工作 —— 扣它的預算等於讓同一批人每個
+          // tick 重新排一次隊，把名額佔滿。
+          if (this.pathBatcher!.isPending(key)) continue;
+          const starts = this.collectPointIndices(from, 'exit');
+          const ends = this.collectPointIndices(to, 'entry');
+          if (starts.length === 0 || ends.length === 0) continue;
+          enqueueBudget--;
+          this.commuteFillAttempts.set(key, tries + 1);
+          this.pathBatcher!.enqueue(key, starts, ends, to);
+          enqueued = true;
+          continue;
+        }
+
+        if (searchBudget <= 0) continue;
+        searchBudget--;
+        searched = true;
+        this.commuteFillAttempts.set(key, tries + 1);
+        const computed = findLanePathVariants(this.laneGraph, this._roadLookup, from, to);
+        if (computed.length > 0) {
+          this.commuteCache.setRouteVariants(key, computed);
+          const path = computed[Math.floor(Math.random() * computed.length)]!;
+          if (isMorning) morning = path; else evening = path;
+        }
+      }
+
+      if (morning === null && evening === null) {
+        // 真的算過而且兩個方向都走不通，才標 failed —— 讓 JobRelocation 去處理，
+        // 而不是每個 tick 重算一次同一條算不出來的路。預算用完而沒算的不算數。
+        // worker 那條路不標：答案還在別的執行緒上。
+        if (searched) {
+          this.commuteCache.set(c.id, {
+            citizenId: c.id, homeId: c.homeId, workplaceId: c.workplaceId,
+            morningPath: null, eveningPath: null,
+            status: 'failed', generation,
+          });
+        }
+        continue;
+      }
+
+      this.commuteCache.set(c.id, {
+        citizenId: c.id,
+        homeId: c.homeId,
+        workplaceId: c.workplaceId,
+        morningPath: morning,
+        eveningPath: evening,
+        status: 'ready',
+        generation,
+      });
+    }
+
+    if (enqueued) this.pathBatcher!.flush(100);
+  }
 
   /** Immediately remove service vehicles of a given type (e.g. when facility demolished). */
   removeServiceVehicles(serviceType: ServiceVehicleType): void {

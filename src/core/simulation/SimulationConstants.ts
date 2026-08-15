@@ -72,6 +72,19 @@ export const SIMULATION = {
   SPAWN_SPREAD_TICKS: 8,
   /** Minimum commute spawns per tick */
   MIN_SPAWN_PER_TICK: 5,
+  /**
+   * 背景補完通勤路線時，每個 tick 允許的**同步**路徑搜尋次數。
+   *
+   * 一次 `findLanePathVariants` 在 2 146 人的城市量到約 16 毫秒（內部最多跑
+   * 4 次 A*），而一個 tick 在 1 倍速是 250 毫秒 —— 2 次就吃掉一成多。沒有
+   * pathfinding worker 時（生產環境缺 COOP/COEP 就沒有 SharedArrayBuffer）
+   * 只剩這條路，所以慢是刻意的：補得完比補得快重要。
+   */
+  COMMUTE_FILL_SEARCH_PER_TICK: 2,
+  /** 有 worker 時每個 tick 排進去的路線數。排隊本身很便宜，算的人在別的執行緒。 */
+  COMMUTE_FILL_ENQUEUE_PER_TICK: 32,
+  /** 同一條路線最多試幾次就放棄，等下次路網改變。見 `commuteFillAttempts`。 */
+  COMMUTE_FILL_MAX_ATTEMPTS: 3,
   /** Commute sampling: minimum sample count */
   SAMPLE_COUNT_MIN: 50,
   /** Commute sampling: maximum sample count */
