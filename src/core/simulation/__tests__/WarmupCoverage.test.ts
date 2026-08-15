@@ -4,7 +4,7 @@ import { SimulationLoop } from '../SimulationLoop';
 import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { ElevationManager } from '../../elevation/ElevationManager';
-import { beginJobRelocation, getCommuteLength } from '../../citizen/JobRelocation';
+import { beginJobRelocation } from '../../citizen/JobRelocation';
 import { CommuteCache } from '../../traffic/CommuteCache';
 import { ZoneType } from '../../grid/types';
 import type { LaneEdge } from '../../traffic/LaneGraph';
@@ -280,26 +280,14 @@ describe('下游怎麼看待「還沒算」的市民', () => {
     ).pending;
   }
 
-  it('should put a citizen with no cache entry into the relocation pool', () => {
-    // 這是既有行為，也是下面那條的對照組：查無此人 → 用曼哈頓距離猜。
+  it('should judge a citizen the same way whether or not the route is computed', () => {
+    // 換工作看的是通勤要花多久，與「系統算好那條路線了沒」無關。
+    //
+    // 這兩個以前會走到不同的規則：沒有快取條目走曼哈頓距離、有條目走路徑長度。
+    // 於是把載入時的快取覆蓋率補滿之後，所有人都換了一套規則 —— 而那一套的
+    // 門檻永遠不成立，整個機制就靜靜地停擺了（見 JobRelocationTrigger.test.ts）。
     expect(relocationPool(null), '查無此人卻沒有進換工作名單').toBe(1);
-  });
-
-  it('should not guess a job change for a route that is merely not computed yet', () => {
-    // 「還沒算」跟「算過了，很遠」是兩件事。前者不該讓人換工作。
-    expect(relocationPool({ status: 'pending', morningPath: null }), '拿還沒算的路線去猜換工作')
-      .toBe(0);
-  });
-
-  it('should read commute length from whichever direction was cached', () => {
-    // 一台車只往一個方向開，所以快取條目常常只有一半。通勤長度兩個方向一樣長，
-    // 只填了晚上那一半的人不該變成「查不到長度」。
-    const edge = { length: 7 } as LaneEdge;
-    const evening = {
-      citizenId: 1, homeId: '1,1', workplaceId: '5,5',
-      morningPath: null, eveningPath: [edge, edge],
-      status: 'ready' as const, generation: 0,
-    };
-    expect(getCommuteLength(evening), '只有回程路徑就讀不到通勤長度').toBe(14);
+    expect(relocationPool({ status: 'pending', morningPath: null }), '還沒算好就被放過')
+      .toBe(1);
   });
 });

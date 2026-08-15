@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   jobRelocationTick,
-  getCommuteLength,
+
   type JobRelocationConfig,
   DEFAULT_JOB_RELOCATION_CONFIG,
   type WorkplaceCandidateWithZone,
@@ -63,27 +63,6 @@ function makeCacheMap(entries: [number, CachedRoute][], roadGeneration = 0): { g
   return { get: (id: number) => map.get(id), roadGeneration };
 }
 
-describe('getCommuteLength', () => {
-  it('returns null for failed routes', () => {
-    expect(getCommuteLength(makeRoute({ status: 'failed' }))).toBeNull();
-  });
-
-  it('returns null when morningPath is null', () => {
-    expect(getCommuteLength(makeRoute({ status: 'ready', morningPath: null }))).toBeNull();
-  });
-
-  it('returns sum of edge lengths', () => {
-    const route = makeRoute({
-      status: 'ready',
-      morningPath: [
-        { id: 'a', from: {} as any, to: {} as any, length: 10, type: 'straight' },
-        { id: 'b', from: {} as any, to: {} as any, length: 20, type: 'straight' },
-      ],
-    });
-    expect(getCommuteLength(route)).toBe(30);
-  });
-});
-
 describe('jobRelocationTick', () => {
   // Grid: road along y=0, buildings along y=1
   // Home at (5,1), current work at (40,1), better work at (6,1)
@@ -91,7 +70,6 @@ describe('jobRelocationTick', () => {
 
   const config: JobRelocationConfig = {
     ...DEFAULT_JOB_RELOCATION_CONFIG,
-    commuteLengthThreshold: 100,
     scoreGap: 5,
     maxRelocateRatio: 1.0, // allow all for testing
   };

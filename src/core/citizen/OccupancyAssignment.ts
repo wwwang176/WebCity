@@ -1,5 +1,5 @@
 import type { Citizen } from './types';
-import { type HousingCandidate, scoreHousing } from './HousingScore';
+import { type HousingCandidate, type CommuteTimeEstimator, scoreHousing } from './HousingScore';
 import { type WorkplaceCandidate, scoreWorkplace } from './WorkplaceScore';
 
 export interface BuildingSlot {
@@ -94,6 +94,7 @@ export function assignWithPreference(
   citizens: readonly Citizen[],
   candidates: readonly HousingCandidate[],
   occupancy: Map<string, number>,
+  estimate?: CommuteTimeEstimator,
 ): void {
   // Build available pool once — reusable across citizens
   const pool: HousingCandidate[] = [];
@@ -120,7 +121,7 @@ export function assignWithPreference(
     for (const c of pool) {
       if (count >= _scoredBuf.length) _scoredBuf.push({ candidate: c, score: 0 });
       else { _scoredBuf[count]!.candidate = c; }
-      _scoredBuf[count]!.score = scoreHousing(citizen, c);
+      _scoredBuf[count]!.score = scoreHousing(citizen, c, estimate);
       count++;
     }
 
@@ -144,6 +145,7 @@ export function assignWorkWithPreference(
   candidates: readonly WorkplaceCandidate[],
   occupancy: Map<string, number>,
   reachable?: ReadonlyMap<string, ReadonlySet<string>>,
+  estimate?: CommuteTimeEstimator,
 ): void {
   const pool: WorkplaceCandidate[] = [];
 
@@ -173,7 +175,7 @@ export function assignWorkWithPreference(
     for (const c of pool) {
       if (count >= _scoredBuf.length) _scoredBuf.push({ candidate: c, score: 0 });
       else { _scoredBuf[count]!.candidate = c; }
-      _scoredBuf[count]!.score = scoreWorkplace(citizen, c.pos, c.zoneType);
+      _scoredBuf[count]!.score = scoreWorkplace(citizen, c.pos, c.zoneType, estimate);
       count++;
     }
 

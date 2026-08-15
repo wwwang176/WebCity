@@ -14,7 +14,9 @@ export interface WorkplaceCandidateWithZone {
 }
 
 export interface JobRelocationConfig {
-  commuteLengthThreshold: number;
+  /** 通勤超過幾 tick 就想換工作。 */
+  commuteTimeThreshold: number;
+  /** 估不出通勤時間時的保底：直線距離超過幾格算太遠。 */
   manhattanFallback: number;
   happinessThreshold: number;
   scoreGap: number;
@@ -24,7 +26,15 @@ export interface JobRelocationConfig {
 }
 
 export const DEFAULT_JOB_RELOCATION_CONFIG: JobRelocationConfig = {
-  commuteLengthThreshold: 500,
+  /**
+   * 實測六種城市加一份真實存檔的通勤時間分布定出來的：住商混合的小鎮中位數
+   * 11、緊湊城市 24.7、真實存檔 42.9、分區而沒有大眾運輸的城市 70.2、塞爆的
+   * 城市 108，而家與公司都在站旁邊的捷運族不管住多遠都在 34 以內。
+   *
+   * 60 這條線讓小鎮與緊湊城市幾乎不觸發、規劃糟的城市約四成的人想換工作，
+   * 而捷運族一個都不會被抓 —— 這正是「住得遠但住在站附近」要成立的條件。
+   */
+  commuteTimeThreshold: 60,
   manhattanFallback: 15,
   happinessThreshold: 35,
   scoreGap: 15,
@@ -34,39 +44,43 @@ export const DEFAULT_JOB_RELOCATION_CONFIG: JobRelocationConfig = {
   dijkstraMaxBudget: 1080,
 };
 
-/**
- * Extract actual commute path length from a CachedRoute.
- *
- * 兩個方向都算數：一台車只往一個方向開，所以快取條目常常只有一半，而通勤距離
- * 兩個方向一樣長。只讀 morningPath 的話，只填了回程的人會變成「查不到長度」，
- * 於是永遠不會因為通勤太遠而換工作 —— 換不換工作變成取決於當初隨機抽到哪個方向。
- */
-export function getCommuteLength(route: CachedRoute): number | null {
-  if (route.status !== 'ready') return null;
-  const path = route.morningPath ?? route.eveningPath;
-  if (!path) return null;
-  return path.reduce((sum, e) => sum + e.length, 0);
-}
+/** 這一趟通勤要花多久（tick）。估不出來時回傳非有限值。 */
+export type CommuteTimeOf = (citizen: Citizen) => number;
 
-/** Determine if citizen should be considered and whether their route is confirmed failed. */
+/**
+ * 這個人該不該考慮換工作，以及是不是緊急。
+ *
+ * 只有一條主要規則：**通勤要花多久**。距離仍然有代價（開車時間隨距離與壅塞上升），
+ * 但那個代價可以被大眾運輸抵銷，所以「住得遠但住在站旁邊」不會被逼著換工作，
+ * 而「住得近但天天塞車」會。
+ *
+ * 舊版是兩條互斥的規則 —— 有快取路線就看路徑長度、沒有就看直線距離。兩個門檻
+ * 都沒在篩人（路徑長度 500 在 60×60 的城市裡永遠不成立；直線距離 15 命中 99.9%），
+ * 而且規則取決於系統剛好算好了沒：修好載入時的快取覆蓋率之後，所有人都落進
+ * 「有路線」那一邊，整個機制就靜靜地停擺了。
+ */
 function getTriggerReason(
   citizen: Citizen,
   cache: { get(id: number): CachedRoute | undefined; roadGeneration: number },
   config: JobRelocationConfig,
-): 'none' | 'failed' | 'long_commute' | 'unhappy' | 'manhattan_fallback' {
+  commuteTimeOf: CommuteTimeOf,
+): 'none' | 'failed' | 'long_commute' | 'unhappy' {
   const route = cache.get(citizen.id);
 
   if (route) {
     if (route.status === 'failed') return 'failed';
-    // Stale route — road network changed; commute path will be recalculated
-    // gradually via isExpired(). Don't treat as failed (would trigger mass firing).
+    // 路網剛改過，快取還沒重算。當成「走不到」會引發一波集體失業。
     if (route.generation !== cache.roadGeneration) return 'none';
-    const len = getCommuteLength(route);
-    if (len !== null && len > config.commuteLengthThreshold) return 'long_commute';
+  }
+
+  const time = commuteTimeOf(citizen);
+  if (Number.isFinite(time)) {
+    if (time > config.commuteTimeThreshold) return 'long_commute';
   } else {
+    // 估不出時間（路網剛建好、還沒有可及性圖）時的保底。
     const home = parsePosKeyUnsafe(citizen.homeId!);
     const work = parsePosKeyUnsafe(citizen.workplaceId!);
-    if (manhattanDistance(home.x, home.y, work.x, work.y) > config.manhattanFallback) return 'manhattan_fallback';
+    if (manhattanDistance(home.x, home.y, work.x, work.y) > config.manhattanFallback) return 'long_commute';
   }
 
   if (citizen.happiness < config.happinessThreshold) return 'unhappy';
@@ -127,6 +141,7 @@ export function beginJobRelocation(
   currentTick: number,
   config?: Partial<JobRelocationConfig>,
   distanceLookup?: DistanceLookup,
+  commuteTimeOf: CommuteTimeOf = () => NaN,
 ): JobRelocationSlicer {
   const cfg: JobRelocationConfig = config
     ? { ...DEFAULT_JOB_RELOCATION_CONFIG, ...config }
@@ -138,7 +153,7 @@ export function beginJobRelocation(
   if (candidates.length > 0) {
     for (const c of citizens) {
       if (c.workplaceId === null || c.homeId === null || !isWorkingAge(c.age)) continue;
-      const reason = getTriggerReason(c, cache, cfg);
+      const reason = getTriggerReason(c, cache, cfg, commuteTimeOf);
       if (reason === 'none') continue;
       (reason === 'failed' ? urgent : nonUrgent).push({ citizen: c, reason });
     }
@@ -280,9 +295,10 @@ export function jobRelocationTick(
   currentTick: number,
   config?: Partial<JobRelocationConfig>,
   distanceLookup?: DistanceLookup,
+  commuteTimeOf?: CommuteTimeOf,
 ): { count: number; relocatedIds: number[] } {
   const slicer = beginJobRelocation(
-    citizens, candidates, occupancy, cache, grid, currentTick, config, distanceLookup,
+    citizens, candidates, occupancy, cache, grid, currentTick, config, distanceLookup, commuteTimeOf,
   );
   const relocatedIds = slicer.runSlice(Infinity);
   return { count: relocatedIds.length, relocatedIds };
