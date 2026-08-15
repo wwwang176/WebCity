@@ -1584,6 +1584,15 @@ export class SimulationLoop {
       vehiclesSpawned++;
     }
 
+    // 統計在這裡先算一次。它不進存檔，所以載入完成的瞬間本來就是空的 —— 差別在
+    // 玩家什麼時候看得到：這裡還在載入畫面底下，而第一個 tick 已經是進了遊戲之後，
+    // 一進去就開通勤圖層會看到一張空白的地圖。
+    //
+    // 先建可及性圖，否則這一次算出來的通勤完全不含大眾運輸，第一個 tick 才會被
+    // 修正 —— 玩家會看到顏色在進遊戲後跳一次。
+    this.rebuildTransferGraphIfDirty();
+    this.refreshCommuteStats();
+
     onProgress?.(1);
     return { pathsComputed, vehiclesSpawned };
   }
