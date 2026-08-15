@@ -2494,9 +2494,25 @@ export class Game {
   private computeOverlayHighlightCells(overlayType: OverlayType): void {
     this.overlayHighlightCells = [];
 
-    // 通勤圖層：標出所有大眾運輸站牌。「這片紅色離最近的站有多遠」正是這張圖
-    // 要回答的問題 —— 沒有站的位置，看到的紅色就是「這裡缺一條線」。
+    /**
+     * 通勤圖層：住宅**建築**依住戶的平均通勤時間上色，與警消覆蓋同一套語彙。
+     *
+     * 畫在建築上而不是地面上，是因為地面會被建築本身擋住 —— 密集住宅區看到的
+     * 是屋頂，不是地上的顏色。
+     *
+     * 站牌另外標成青色。「這片紅色離最近的站有多遠」正是這張圖要回答的問題：
+     * 沒有站的位置看到的紅色，就是「這裡缺一條線」。
+     */
     if (overlayType === OverlayType.COMMUTE) {
+      const byHome = this.simLoop.getCommuteStats().byHome;
+      for (const [key, time] of byHome) {
+        const i = key.indexOf(',');
+        const cx = Number(key.slice(0, i));
+        const cy = Number(key.slice(i + 1));
+        const ratio = Math.min(1, time / COMMUTE_OVERLAY_MAX);
+        const tier = Math.min(9, Math.floor(ratio * 10));
+        this.overlayHighlightCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
+      }
       for (const { system } of getTransitSystems(this.state)) {
         for (const stop of system.getStops()) {
           this.overlayHighlightCells.push({ x: stop.x, y: stop.y, color: 0x00e5ff });
