@@ -217,9 +217,29 @@ export class WeatherRenderer {
       this._dirNight, this._dirSunrise, this._dirDay, this._dirSunset,
       this.sceneManager.directionalLight.color);
 
+    /**
+     * 太陽高度的下限。沉到地平線以下的話光會從底下往上打，建築的下緣會亮起來，
+     * 所以它永遠停在這裡而不是真的落下去。代價是夜裡的方向被凍在仰角九度。
+     */
+    const SUN_ELEVATION_FLOOR = 0.1;
+    /** 太陽爬到這個高度因子，陰影就是實心的。 */
+    const SHADOW_FULL_AT = 0.30;
+
+    // ── 陰影的濃度跟著太陽高度走 ──
+    //
+    // 不能跟著亮度曲線走：那是兩套時程。亮度從 SR_START(0.19) 就開始爬，但上面
+    // 那個下限讓太陽在 `sunFactor` 超過 0.1 之前（約 t=0.266）一直凍在同一個
+    // 位置。照亮度給濃度的話，影子會在太陽還沒開始動的時候就浮出來、在原地僵著，
+    // 等太陽脫離下限才忽然開始縮 —— 畫面上就是「天亮了一陣子，影子才開始動」。
+    //
+    // 綁在 `sunFactor` 上，影子只在太陽真的在移動的區間裡才看得見。夜裡
+    // `sunFactor` 是 0，濃度也是 0，那條仰角九度、整晚不轉向的長拖影因此不會出現。
+    this.sceneManager.directionalLight.shadow.intensity = Math.min(1, Math.max(0,
+      (sunFactor - SUN_ELEVATION_FLOOR) / (SHADOW_FULL_AT - SUN_ELEVATION_FLOOR)));
+
     // Sun position based on time
     const sunX = 50 * Math.cos(sunAngle);
-    const sunY = 80 * Math.max(0.1, sunFactor);
+    const sunY = 80 * Math.max(SUN_ELEVATION_FLOOR, sunFactor);
     const sunZ = 50;
     this.sceneManager.sunOffset.set(sunX, sunY, sunZ);
 
