@@ -652,8 +652,10 @@ describe('District integration', () => {
   it('district policy costs should be added to budget expenses', () => {
     const state = createGameState(20, 20);
     const d = state.districts.createDistrict('TestDistrict');
-    state.policies.setPolicyLevel(d.id, PolicyType.NO_HEAVY_INDUSTRY, 1); // cost 150
-    state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 1); // cost 100
+    // 費用跟著分區格數走，而限制型條例不收費 —— 沒有格子、或只開限制型的話，
+    // 政策支出恆為 0，這條斷言就沒有內容。
+    for (let x = 5; x < 15; x++) state.districts.addCellToDistrict(d.id, x, 5);
+    state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 2);
 
     const loop = new SimulationLoop(state);
     // Run enough ticks to trigger income calculation

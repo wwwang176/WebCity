@@ -5,6 +5,7 @@ import type { DistrictLookup } from '../PolicyManager';
 import { setSpecialization, getSpecialization, getSpecializationBonus, SPECIALIZATION_BONUSES } from '../Specialization';
 import { CitySpecialization, CitySpecType } from '../CitySpecialization';
 import { PolicyType, Specialization, type District } from '../types';
+import { POLICY_BILLING, policyCost } from '../PolicyBilling';
 import { ZoneType } from '../../grid/types';
 
 describe('DistrictManager', () => {
@@ -166,11 +167,6 @@ describe('PolicyManager', () => {
     expect(pm.isPolicyActive(district.id, PolicyType.TOURISM)).toBe(false);
   });
 
-  it('should return policy cost', () => {
-    const cost = pm.getPolicyCost(PolicyType.NO_HEAVY_INDUSTRY);
-    expect(cost).toBeGreaterThan(0);
-  });
-
   it('NO_HEAVY_INDUSTRY should block industrial buildings', () => {
     const district = dm.createDistrict('Clean Zone');
     pm.setPolicyLevel(district.id, PolicyType.NO_HEAVY_INDUSTRY, 1);
@@ -199,20 +195,27 @@ describe('PolicyManager', () => {
     }
   });
 
-  it('should get all policy costs', () => {
+  it('POLICY_CONFIG should name every PolicyType', () => {
+    // 價錢已經不在這張表上 —— 它跟著規模走，由 POLICY_BILLING 算。這裡只剩名字，
+    // 而名字是 UI 唯一的來源，缺一個就會在畫面上看到 enum 的原字串。
     for (const policyType of Object.values(PolicyType)) {
-      const cost = pm.getPolicyCost(policyType);
-      expect(cost).toBeTypeOf('number');
-      expect(cost).toBeGreaterThan(0);
+      const cfg = POLICY_CONFIG[policyType];
+      expect(cfg, `${policyType} 沒有設定`).toBeDefined();
+      expect(cfg.name, `${policyType} 沒有名字`).toBeTruthy();
     }
   });
 
-  it('POLICY_CONFIG should contain name and cost for every PolicyType', () => {
-    for (const policyType of Object.values(PolicyType)) {
-      const cfg = POLICY_CONFIG[policyType];
-      expect(cfg).toBeDefined();
-      expect(cfg.name).toBeTruthy();
-      expect(cfg.cost).toBeGreaterThan(0);
+  it('should charge a scale-dependent price for every billable policy', () => {
+    // 取代舊的「每條政策都有一個正數價錢」。限制型條例現在刻意不收費，所以那個
+    // 問法已經不成立 —— 改成問:凡是列了計費基數的，價錢就必須跟著規模動。
+    const small = { population: 100, districtCells: 10 };
+    const big = { population: 10_000, districtCells: 400 };
+    const billable = Object.keys(POLICY_BILLING) as PolicyType[];
+    expect(billable.length, '沒有任何條例收費，這條測試等於空轉').toBeGreaterThan(0);
+    for (const type of billable) {
+      expect(policyCost(type, 1, small), `${type} 在小規模下不收錢`).toBeGreaterThan(0);
+      expect(policyCost(type, 1, big), `${type} 的費用不隨規模變動`)
+        .toBeGreaterThan(policyCost(type, 1, small));
     }
   });
 

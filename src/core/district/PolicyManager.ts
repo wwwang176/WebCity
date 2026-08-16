@@ -9,16 +9,15 @@ export interface DistrictLookup {
 /** Consolidated per-policy-type configuration (OCP-friendly). */
 export interface PolicyTypeConfig {
   name: string;
-  cost: number;
 }
 
 /** Single source of truth for all policy type parameters. */
 export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
-  [PolicyType.NO_HEAVY_INDUSTRY]: { name: 'No Heavy Industry', cost: 150 },
-  [PolicyType.ENCOURAGE_RECYCLING]: { name: 'Encourage Recycling', cost: 100 },
-  [PolicyType.HIGH_DENSITY_BAN]: { name: 'High Density Ban', cost: 120 },
-  [PolicyType.ORGANIC_FOOD]: { name: 'Organic Food', cost: 80 },
-  [PolicyType.TOURISM]: { name: 'Tourism Promotion', cost: 200 },
+  [PolicyType.NO_HEAVY_INDUSTRY]: { name: 'No Heavy Industry' },
+  [PolicyType.ENCOURAGE_RECYCLING]: { name: 'Encourage Recycling' },
+  [PolicyType.HIGH_DENSITY_BAN]: { name: 'High Density Ban' },
+  [PolicyType.ORGANIC_FOOD]: { name: 'Organic Food' },
+  [PolicyType.TOURISM]: { name: 'Tourism Promotion' },
 };
 
 /**
@@ -202,7 +201,6 @@ export class PolicyManager {
       id: `policy_${this.nextPolicyId++}`,
       name: cfg.name,
       type: policyType,
-      cost: cfg.cost,
       level: clamped,
     };
     district.policies.push(policy);
@@ -224,10 +222,6 @@ export class PolicyManager {
 
   isPolicyActive(districtId: string, policyType: PolicyType): boolean {
     return this.getPolicyLevel(districtId, policyType) > 0;
-  }
-
-  getPolicyCost(policyType: PolicyType): number {
-    return POLICY_CONFIG[policyType].cost;
   }
 
   /**

@@ -41,10 +41,14 @@ function buildCity() {
   const s2 = state.metro.addStation(20, 12);
   state.metro.createLine([s1, s2], 2);
 
-  // A district with an implemented, active policy, so policyCost is non-zero.
+  // A district with a BILLABLE policy, so policyCost is non-zero.
+  //
+  // 限制型條例（禁重工業、禁高密度）現在刻意不收費 —— 它們的代價是機會成本。
+  // 拿它們當夾具的話 policyCost 恆為 0，這支測試的不變量就沒有東西可驗。
+  // 費用也跟著分區格數走，所以格子要夠多。
   const district = state.districts.createDistrict('Downtown');
-  state.districts.addCellToDistrict(district.id, 14, 9);
-  state.policies.setPolicyLevel(district.id, PolicyType.NO_HEAVY_INDUSTRY, 1);
+  for (let x = 10; x < 20; x++) state.districts.addCellToDistrict(district.id, x, 9);
+  state.policies.setPolicyLevel(district.id, PolicyType.ENCOURAGE_RECYCLING, 2);
 
   // Utilities, so the power/water maintenance rows are non-zero.
   placeInfraOnGrid(state.grid, 2, 11, 'power', 0);

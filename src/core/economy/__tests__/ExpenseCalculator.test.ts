@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../ExpenseCalculator';
 import { PolicyType } from '../../district/types';
+import { policyCost } from '../../district/PolicyBilling';
 
 /**
  * 計費看得到的形狀。刻意不用 `as any[]` —— 那個 cast 讓 `active` 換成 `level` 時
@@ -10,51 +11,66 @@ type BillableDistrict = Parameters<typeof calculateDistrictPolicyCost>[0][number
 
 describe('ExpenseCalculator', () => {
   describe('calculateDistrictPolicyCost', () => {
+    // 夾具改用回收 —— 限制型條例（禁重工業、禁高密度）現在刻意不收費，用它們當
+    // 夾具的話「有沒有收到錢」全部量到 0，測不出東西。
+    const POP = 1000;
+    const CELLS = 50;
+    const recyclingCost = (level: 1 | 2 | 3) =>
+      policyCost(PolicyType.ENCOURAGE_RECYCLING, level, { population: POP, districtCells: CELLS });
+
     it('returns 0 when no districts exist', () => {
-      expect(calculateDistrictPolicyCost([])).toBe(0);
+      expect(calculateDistrictPolicyCost([], POP)).toBe(0);
     });
 
     it('returns 0 when no policies are active', () => {
-      // Must use a REAL, implemented PolicyType. The fixture used to say
-      // 'heavy_traffic_ban', which is not a PolicyType at all — so it was
-      // filtered out as unimplemented and this case would have passed with
-      // `active` ignored entirely, guarding nothing.
       const districts = [{
-        policies: [
-          { type: PolicyType.NO_HEAVY_INDUSTRY, level: 0, cost: 150 },
-        ],
+        cells: { size: CELLS },
+        policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 0 }],
       }] satisfies BillableDistrict[];
-      expect(calculateDistrictPolicyCost(districts)).toBe(0);
+      expect(calculateDistrictPolicyCost(districts, POP)).toBe(0);
     });
 
     it('bills the same policy once it is switched on', () => {
       // Paired positive control: without it, "returns 0" is satisfiable by a
       // calculator that returns 0 for everything.
       const districts = [{
-        policies: [
-          { type: PolicyType.NO_HEAVY_INDUSTRY, level: 1, cost: 150 },
-        ],
+        cells: { size: CELLS },
+        policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
       }] satisfies BillableDistrict[];
-      expect(calculateDistrictPolicyCost(districts)).toBe(150);
+      expect(calculateDistrictPolicyCost(districts, POP)).toBeCloseTo(recyclingCost(2), 6);
     });
 
     it('sums costs of active policies across districts', () => {
-      // Real PolicyType values: only implemented policies are billable, so a
-      // placeholder type would now (correctly) cost nothing.
       const districts = [
         {
+          cells: { size: CELLS },
           policies: [
-            { type: PolicyType.NO_HEAVY_INDUSTRY, level: 1, cost: 50 },
-            { type: PolicyType.HIGH_DENSITY_BAN, level: 0, cost: 100 },
+            { type: PolicyType.ENCOURAGE_RECYCLING, level: 1 },
+            { type: PolicyType.HIGH_DENSITY_BAN, level: 1 },
           ],
         },
         {
-          policies: [
-            { type: PolicyType.HIGH_DENSITY_BAN, level: 1, cost: 30 },
-          ],
+          cells: { size: CELLS },
+          policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 3 }],
         },
       ] satisfies BillableDistrict[];
-      expect(calculateDistrictPolicyCost(districts)).toBe(80);
+      // 禁高密度不收費，所以合計只有兩條回收。
+      expect(calculateDistrictPolicyCost(districts, POP))
+        .toBeCloseTo(recyclingCost(1) + recyclingCost(3), 6);
+    });
+
+    it('scales with each district own size', () => {
+      // 同一條政策、同一級，分區畫大一倍費用就跳一倍。這是整個改動的重點。
+      const one = [{
+        cells: { size: 10 },
+        policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
+      }] satisfies BillableDistrict[];
+      const two = [{
+        cells: { size: 20 },
+        policies: [{ type: PolicyType.ENCOURAGE_RECYCLING, level: 2 }],
+      }] satisfies BillableDistrict[];
+      expect(calculateDistrictPolicyCost(two, POP))
+        .toBeCloseTo(calculateDistrictPolicyCost(one, POP) * 2, 6);
     });
   });
 

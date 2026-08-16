@@ -33,7 +33,10 @@ export function buildEconomyBreakdownContext(
     // Power and water are itemised as their own rows above, so this must be the
     // civic total MINUS them. Passing the full total double-charged the panel.
     serviceCost: getCivicMaintenanceCostExcludingUtilities(state),
-    policyCost: calculateDistrictPolicyCost(state.districts.getAllDistricts()),
+    policyCost: calculateDistrictPolicyCost(
+      state.districts.getAllDistricts(),
+      state.citizens.getPopulation(),
+    ),
     elevatedMaintenance: elevationManager ? calculateElevatedMaintenance(elevationManager) : 0,
     revenueMultiplier: state.citySpec.getBonus().revenueMultiplier,
   };

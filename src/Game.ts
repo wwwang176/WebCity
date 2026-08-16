@@ -102,7 +102,6 @@ import { rebuildElevatedRailNetwork } from './core/elevation/ElevatedRailBuilder
 import { UnifiedRoadLookup } from './core/road/UnifiedRoadLookup';
 import { canAdvanceThrough } from './core/traffic/CanAdvance';
 import { getTotalServiceMaintenanceCost } from './core/service/ServiceRegistry';
-import { calculateDistrictPolicyCost } from './core/economy/ExpenseCalculator';
 import { calculateElevatedMaintenance } from './core/elevation/ElevationMaintenance';
 
 export type PlacementMode = 'ground' | 'elevated';

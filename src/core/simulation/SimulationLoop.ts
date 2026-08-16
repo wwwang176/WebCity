@@ -993,7 +993,10 @@ export class SimulationLoop {
     this.state.budget.expenses = calculateTotalExpenses({
       roadMaintenance: this.countRoadTiles() * ECONOMY.ROAD_MAINTENANCE_PER_TILE,
       serviceCost: getTotalServiceMaintenanceCost(this.state),
-      policyCost: calculateDistrictPolicyCost(this.state.districts.getAllDistricts()),
+      policyCost: calculateDistrictPolicyCost(
+        this.state.districts.getAllDistricts(),
+        this.state.citizens.getPopulation(),
+      ),
       transportCost: getTotalTransportOperatingCost(this.state),
       elevatedMaintenance: this._elevationManager
         ? calculateElevatedMaintenance(this._elevationManager) : 0,

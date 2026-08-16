@@ -3,6 +3,11 @@ import { PolicyType } from '../types';
 import { POLICY_CONFIG, POLICY_EFFECTS, IMPLEMENTED_POLICY_TYPES, POLICY_ZONE_RESTRICTIONS, isPolicyImplemented, PolicyManager } from '../PolicyManager';
 import { ZoneType } from '../../grid/types';
 import { calculateDistrictPolicyCost } from '../../economy/ExpenseCalculator';
+import { policyCost } from '../PolicyBilling';
+
+/** 計費夾具共用的規模。分區格數要跟 fixture 的 `cells.size` 一致。 */
+const POP = 1000;
+const SCALE = { population: POP, districtCells: 50 };
 
 /**
  * Three of the five district policies — ENCOURAGE_RECYCLING, ORGANIC_FOOD and
@@ -46,33 +51,48 @@ describe('policies are charged only when they do something', () => {
     // is not in either effect table. Deleting the guard makes this fail; a real
     // policy losing its effect would then start billing for nothing again.
     const districts = [{
+      cells: { size: 50 },
       policies: [
-        { level: 1, cost: 999, type: 'NOT_A_REAL_POLICY' as PolicyType },
-        { level: 1, cost: POLICY_CONFIG[PolicyType.TOURISM].cost, type: PolicyType.TOURISM },
+        { level: 1, type: 'NOT_A_REAL_POLICY' as PolicyType },
+        { level: 1, type: PolicyType.TOURISM },
       ],
     }];
 
-    expect(calculateDistrictPolicyCost(districts))
-      .toBe(POLICY_CONFIG[PolicyType.TOURISM].cost);
+    expect(calculateDistrictPolicyCost(districts, POP))
+      .toBeCloseTo(policyCost(PolicyType.TOURISM, 1, SCALE), 6);
   });
 
-  it('should still bill implemented policies', () => {
+  it('should not bill restriction policies at all', () => {
+    // 限制型條例（禁重工業、禁高密度）以前一起收 150 + 120。它們的代價是機會成本
+    // —— 該區長不出高稅收的建築 —— 而不是市府掏錢。再收一次是雙重懲罰，而且那個
+    // 數字沒有來由。
     const districts = [{
+      cells: { size: 50 },
       policies: [
-        { level: 1, cost: POLICY_CONFIG[PolicyType.NO_HEAVY_INDUSTRY].cost, type: PolicyType.NO_HEAVY_INDUSTRY },
-        { level: 1, cost: POLICY_CONFIG[PolicyType.HIGH_DENSITY_BAN].cost, type: PolicyType.HIGH_DENSITY_BAN },
+        { level: 1, type: PolicyType.NO_HEAVY_INDUSTRY },
+        { level: 1, type: PolicyType.HIGH_DENSITY_BAN },
       ],
     }];
 
-    expect(calculateDistrictPolicyCost(districts)).toBe(150 + 120);
+    expect(calculateDistrictPolicyCost(districts, POP)).toBe(0);
+  });
+
+  it('should still bill a policy that costs money', () => {
+    // 反面控制:上一條「不收費」單獨看的話，一個永遠回 0 的計算器也會通過。
+    const districts = [{
+      cells: { size: 50 },
+      policies: [{ level: 2, type: PolicyType.ENCOURAGE_RECYCLING }],
+    }];
+    expect(calculateDistrictPolicyCost(districts, POP)).toBeGreaterThan(0);
   });
 
   it('should not bill an inactive implemented policy', () => {
     const districts = [{
-      policies: [{ level: 0, cost: 150, type: PolicyType.NO_HEAVY_INDUSTRY }],
+      cells: { size: 50 },
+      policies: [{ level: 0, type: PolicyType.ENCOURAGE_RECYCLING }],
     }];
 
-    expect(calculateDistrictPolicyCost(districts)).toBe(0);
+    expect(calculateDistrictPolicyCost(districts, POP)).toBe(0);
   });
 
   it('should leave construction untouched for every non-zoning policy', () => {
@@ -93,12 +113,12 @@ describe('policies are charged only when they do something', () => {
     }
   });
 
-  it('should price every policy type, implemented or not', () => {
-    // Unimplemented policies still load from old saves and still need a name
-    // and a price to be displayed and removed.
+  it('should name every policy type, implemented or not', () => {
+    // Unimplemented policies still load from old saves and still need a name to
+    // be displayed and removed. 價錢已經不在這張表上 —— 它跟著規模走。
     for (const t of Object.values(PolicyType)) {
       expect(POLICY_CONFIG[t]).toBeDefined();
-      expect(POLICY_CONFIG[t].cost).toBeGreaterThan(0);
+      expect(POLICY_CONFIG[t].name).toBeTruthy();
     }
   });
 

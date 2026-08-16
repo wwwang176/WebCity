@@ -22,8 +22,6 @@ export interface Policy {
   id: string;
   name: string;
   type: PolicyType;
-  /** 每期費用。之後會改成由計費表依規模算出來，屆時這一欄刪除。 */
-  cost: number;
   /**
    * 強度。0 = 關閉。
    *

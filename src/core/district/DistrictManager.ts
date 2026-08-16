@@ -159,7 +159,7 @@ export class DistrictManager {
         cells: new Set(sd.cells ?? []),
         taxRateOverride: sd.taxRateOverride,
         policies: (sd.policies ?? []).map((p) => ({
-          id: p.id, name: p.name, type: p.type, cost: p.cost,
+          id: p.id, name: p.name, type: p.type,
           // 舊存檔只有 `active`。掉成 0 的話玩家讀檔會發現政策全被關掉了，而畫面上
           // 沒有任何東西說明為什麼；一律轉成 1 則會讓舊數字不在第一格的政策靜靜地
           // 變弱，所以走 `levelForLegacyActive`。

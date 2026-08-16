@@ -24,9 +24,9 @@ const OFFERED_POLICY_TYPES = [...IMPLEMENTED_POLICY_TYPES];
 function policyLabel(pt: PolicyType): string {
   const cfg = POLICY_CONFIG[pt];
   if (!cfg) return pt;
-  return isPolicyImplemented(pt)
-    ? `${cfg.name} ($${cfg.cost})`
-    : `${cfg.name} (retired — no effect)`;
+  // 費用不再是政策身上的常數 —— 它跟著分區規模走，所以顯示要等 UI 那一步接上
+  // 規模才有意義。
+  return isPolicyImplemented(pt) ? cfg.name : `${cfg.name} (retired — no effect)`;
 }
 
 export function DistrictModal(props: { open: boolean; onClose: () => void }) {
