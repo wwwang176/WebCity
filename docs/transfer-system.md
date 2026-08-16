@@ -30,7 +30,7 @@ MultiModalRouter          TransferTracker          TransferOverlayPanel
 `MultiModalRouter.buildTransferGraph()` 在不同路線的站點之間建立雙向邊：
 
 - 只連接**不同路線**的站點（防止同路線轉乘）
-- 連接條件：曼哈頓距離 ≤ `transferRange`
+- 連接條件：**沿人行道**的距離 ≤ `transferRange`（不是直線 —— 只隔一條馬路的兩個站牌，直線是 3 格，實際上得繞到路口）
 - 回傳 `TransferGraph { byStop: Map<stopKey, TransferEdge[]> }`
 
 ### 圖的重建時機
@@ -46,23 +46,24 @@ SimulationLoop 維護 `transferGraphDirty` 旗標，當大眾運輸路線變更�
 - 使用**深度優先搜尋 (DFS)** 探索轉乘鏈
 - 最大乘車段數: `maxRides = (maxLegs - 1) / 2`（預設 3 段）
 - 避免重複使用同一路線
-- 跳過滿載路線（容量檢查）
+- 跳過擠不上去的路線（載重 ≥ 1.5）
 - 快取格式: `"entryRI:entrySI>exitRI:exitSI"` → `StopToStopRoute`
 
 ### 扁平路線 (FlatRoute)
 
 路線被扁平化為 `FlatRoute[]`，包含：
 - `segDists`: 段距離陣列，用於距離插值
-- `frequency`: 發車頻率，用於等待時間計算
+- `headway`: 班距（整圈時間 ÷ 車輛數）—— 加車會讓它變短
+- `loadFactor`: 載重率 —— 等車時間隨它上升，超過 1.5 就擠不上去
 
 ---
 
 ## 多模式路線搜尋
 
-`findMultiModalRoutes(origin, destination, walkRange)` — 每位市民的查詢（O(n²) 站點 × 快取查詢）：
+`findMultiModalRoutes(origin, destination, ...)` — 每位市民的查詢（O(n²) 站點 × 快取查詢）：
 
-1. 找出起點附近（步行距離 ≤ `walkRange`）的所有入站站點
-2. 找出終點附近的所有出站站點
+1. 找出起點附近的所有入站站點（沿人行道的距離 ≤ **該運具的**步行上限）
+2. 找出終點附近的所有出站站點（同上）
 3. 對每個（入站、出站）組合查詢預計算快取
 4. 回傳最多 20 條結果，按 `totalTime` 升序排序
 
@@ -74,12 +75,18 @@ SimulationLoop 維護 `transferGraphDirty` 旗標，當大眾運輸路線變更�
 
 | 類型 | 說明 | 時間估算 |
 |------|------|---------|
-| `walk` | 步行段（起點→站點 或 站點→站點） | 距離 / WALK_SPEED |
+| `walk` | 步行段（起點→站點 或 站點→站點） | 沿人行道的距離 / WALK_SPEED |
 | `ride` | 乘車段 | 等待時間 + 搭乘時間 |
 
 乘車段包含：`transitType`（運輸類型）、`routeIdx`（路線索引）、`boardStopIdx`（上車站）、`alightStopIdx`（下車站）。
 
-等待時間 = `frequency × AVERAGE_WAIT_FACTOR (0.5)`
+等待時間 = `班距 × AVERAGE_WAIT_FACTOR (0.5) × 擁擠倍率`
+
+班距 = 整圈時間 ÷ 車輛數，擁擠倍率從載重 0.8 起爬升到 4 倍。所以加車同時縮短班距
+與稀釋載重 —— 等車時間降兩次。詳見 transport-system.md。
+
+`MultiLegRoute` 另外帶一個 `walkTime`（所有 walk 腿的總和）：比較時要對走路多收一份
+不情願，回報時不收。
 
 ---
 
@@ -88,11 +95,11 @@ SimulationLoop 維護 `transferGraphDirty` 旗標，當大眾運輸路線變更�
 `chooseModeMultiModal()` 擴展原有模式選擇，加入多模式轉乘比較：
 
 ```
-1. 曼哈頓距離 ≤ 3 → 步行 (WALK)
+1. 直線距離 ≤ 3 格 → 直接走路 (WALK)
 2. 計算開車時間 = 距離 × (1 + 壅塞率)
 3. 門檻 = 開車時間 × 1.5
-4. 評估單一大眾運輸選項: estimatedTime < 門檻
-5. 評估多模式轉乘選項: multiModalRoutes[0].totalTime < 門檻
+4. 每一種走法的成本 = 總時間 + 走路時間 × (不情願權重 − 1)
+5. 單一運具與轉乘路線**全部**放在同一把尺上比（加權後名次可能與名目不同）
 6. 選擇最佳選項（最短時間）：多模式 > 單一運輸 > 開車
 7. 回傳 { mode, multiLeg: MultiLegRoute | null }
 ```
@@ -215,9 +222,10 @@ TransferOverlayPanel 作為左側面板堆疊的一員，與 BuildingPanel 和 C
 
 | 常數 | 值 | 說明 |
 |------|-----|------|
-| `WALK_TO_STOP_RANGE` | 5 | 步行到站的最大距離 |
-| `WALK_SPEED` | 1 | 步行速度（單位/tick） |
-| `AVERAGE_WAIT_FACTOR` | 0.5 | 等待時間 = frequency × factor |
+| 步行到站上限 | 公車 4 / 渡輪 6 / 捷運・火車 8 | 見 `core/transport/WalkRange` |
+| `WALK_KMH` / `DRIVE_REFERENCE_KMH` | 9 / 30 | 兩者相除得到 `WALK_SPEED = 0.3` 格/tick |
+| 步行不情願權重 | 無 2.0 / 國小 1.6 / 高中 1.2 / 大學 0.8 | 見 `core/citizen/WalkWillingness` |
+| `AVERAGE_WAIT_FACTOR` | 0.5 | 等待時間 = 班距 × factor × 擁擠倍率 |
 | `MAX_TRIP_LEGS` | 7 | 最大路線腿數（3 段乘車） |
 | `TRANSFER_WALK_RANGE` | 3 | 轉乘圖的站點連接距離 |
 
