@@ -1,4 +1,6 @@
-import { createSignal, createEffect, createMemo, type Accessor } from 'solid-js';
+import { createSignal, createEffect, createMemo, For, Show, type Accessor } from 'solid-js';
+import { listPolicyExpenses } from '../../../core/economy/ExpenseCalculator';
+import { POLICY_CONFIG } from '../../../core/district/PolicyManager';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { PopChart } from '../../charts/PopChart';
 import { EconChart } from '../../charts/EconChart';
@@ -11,6 +13,7 @@ export function EconomyPage(props: EconomyPageProps) {
   const [incomeTax, setIncomeTax] = createSignal(9);
   const [businessTax, setBusinessTax] = createSignal(9);
   const [version, setVersion] = createSignal(0);
+  const [policyOpen, setPolicyOpen] = createSignal(false);
 
   createEffect(() => {
     if (props.open) {
@@ -54,6 +57,13 @@ export function EconomyPage(props: EconomyPageProps) {
       + b.serviceCost + b.policyCost + b.elevatedMaintenance;
   };
   const balance = () => totalIncome() - totalExpenses();
+
+  // 逐條政策支出。人口與這一列的總額用同一個來源，兩者才加得起來。
+  const policyLines = () => {
+    const st = state();
+    return listPolicyExpenses(
+      st.districts.getAllDistricts(), st.ordinances, st.citizens.getPopulation());
+  };
 
   const onIncomeTaxChange = (e: Event) => {
     const rate = parseInt((e.target as HTMLInputElement).value, 10);
@@ -124,7 +134,34 @@ export function EconomyPage(props: EconomyPageProps) {
           <tr><td class="td-label">Water Plants</td><td class="td-expense" style="text-align:right">-${breakdown().waterCost}</td></tr>
           <tr><td class="td-label">Transport Operations</td><td class="td-expense" style="text-align:right">-${breakdown().transportCost}</td></tr>
           <tr><td class="td-label">Civic Services</td><td class="td-expense" style="text-align:right">-${breakdown().serviceCost.toFixed(1)}</td></tr>
-          <tr><td class="td-label">District Policies</td><td class="td-expense" style="text-align:right">-${breakdown().policyCost.toFixed(1)}</td></tr>
+          <tr
+            onClick={() => setPolicyOpen(v => !v)}
+            style={{ cursor: policyLines().length > 0 ? 'pointer' : 'default' }}
+            title={policyLines().length > 0 ? '展開逐條政策支出' : undefined}
+          >
+            <td class="td-label">
+              {policyLines().length > 0 ? (policyOpen() ? '\u25BE ' : '\u25B8 ') : ''}Policies
+            </td>
+            <td class="td-expense" style="text-align:right">-${breakdown().policyCost.toFixed(1)}</td>
+          </tr>
+          {/* 只給一個總額的話，「政策從 $800 漲到 $4,200」會是一個玩家事後才
+              發現的坑。看得見才做得了決定 —— 這也是這套設計不設預算上限的
+              前提:上限會替玩家自動砍掉政策，而且砍得無聲無息。 */}
+          <Show when={policyOpen()}>
+            <For each={policyLines()}>
+              {(line) => (
+                <tr>
+                  <td class="td-label" style="padding-left:18px;color:#888;font-size:11px">
+                    {line.districtName ?? 'City'} · {POLICY_CONFIG[line.type]?.name ?? line.type}
+                    {' '}{'\u25CF'.repeat(line.level)}
+                  </td>
+                  <td class="td-expense" style="text-align:right;color:#888;font-size:11px">
+                    -${line.cost.toFixed(1)}
+                  </td>
+                </tr>
+              )}
+            </For>
+          </Show>
           <tr><td class="td-label">Elevated Maintenance</td><td class="td-expense" style="text-align:right">-${breakdown().elevatedMaintenance.toFixed(1)}</td></tr>
           <tr><td class="td-label">Loan Interest ({(state().budget.loanInterestRate * 100).toFixed(0)}%)</td><td class="td-expense" style="text-align:right">-${breakdown().loanInterest.toFixed(1)}</td></tr>
         </tbody>

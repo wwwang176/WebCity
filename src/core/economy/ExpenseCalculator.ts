@@ -1,5 +1,6 @@
 import { policyCost } from '../district/PolicyBilling';
-import type { PolicyType } from '../district/types';
+import type { PolicyScopeKind } from '../district/PolicyScope';
+import { PolicyType } from '../district/types';
 
 /**
  * Calculate total cost of active district policies.
@@ -67,4 +68,51 @@ export function calculateTotalExpenses(breakdown: ExpenseBreakdown): number {
     + breakdown.policyCost
     + breakdown.transportCost
     + breakdown.elevatedMaintenance;
+}
+
+/** 預算面板上的一行政策支出。 */
+export interface PolicyExpenseLine {
+  type: PolicyType;
+  scope: PolicyScopeKind;
+  /** 全城條例是 null。 */
+  districtName: string | null;
+  level: number;
+  cost: number;
+}
+
+/**
+ * 逐條列出本期政策支出。
+ *
+ * 預算面板只給一個總額的話，「政策從 $800 漲到 $4,200」會是一個玩家事後才發現的坑。
+ * 看得見才做得了決定 —— 這也是這套設計不設預算上限的前提:上限會替玩家自動砍掉
+ * 政策，而且砍得無聲無息。
+ *
+ * 合計必須等於 `totalPolicyExpense`（同一個 `population`）—— 明細跟帳對不起來的話，
+ * 玩家看到的解釋是假的。費用為 0 的不列:限制型條例本來就不收費，列一行 $0 會讓
+ * 玩家以為那是「免費的好處」。
+ */
+export function listPolicyExpenses(
+  districts: readonly {
+    name: string;
+    cells: { size: number };
+    policies: readonly { type: PolicyType; level: number }[];
+  }[],
+  ordinances: { getLevel(t: PolicyType): number },
+  population: number,
+): PolicyExpenseLine[] {
+  const out: PolicyExpenseLine[] = [];
+  for (const d of districts) {
+    for (const p of d.policies) {
+      const cost = policyCost(p.type, p.level, { population, districtCells: d.cells.size });
+      if (cost === 0) continue;
+      out.push({ type: p.type, scope: 'district', districtName: d.name, level: p.level, cost });
+    }
+  }
+  for (const type of Object.values(PolicyType)) {
+    const level = ordinances.getLevel(type);
+    const cost = policyCost(type, level, { population, districtCells: 0 });
+    if (cost === 0) continue;
+    out.push({ type, scope: 'city', districtName: null, level, cost });
+  }
+  return out;
 }
