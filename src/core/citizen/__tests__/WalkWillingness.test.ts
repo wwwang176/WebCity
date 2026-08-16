@@ -15,11 +15,21 @@ import { EducationLevel } from '../types';
  */
 
 describe('步行的不情願權重', () => {
-  it('should always make walking feel longer than it takes', () => {
-    for (const level of Object.values(EducationLevel)) {
-      expect(walkWeightOf(level), `${level} 的步行權重不到 1，走路變成一種享受`)
-        .toBeGreaterThan(1);
-    }
+  it('should make walking feel longer than it takes for most people', () => {
+    // 交通工程的慣例：對一般人來說走路的代價超過它花掉的時間。
+    expect(walkWeightOf(EducationLevel.NONE)).toBeGreaterThan(1);
+    expect(walkWeightOf(EducationLevel.ELEMENTARY)).toBeGreaterThan(1);
+    expect(walkWeightOf(EducationLevel.HIGH_SCHOOL)).toBeGreaterThan(1);
+  });
+
+  it('should make a graduate actively prefer walking', () => {
+    // 低於 1 是刻意的：受過高等教育的人在意健康與環境，寧可走路，即使慢一點。
+    // 整條階梯因此跨過 1.0 ——「勉強忍受」與「主動選擇」是兩種不同的態度，
+    // 而玩家蓋大學就是在把市民從前者推向後者。
+    expect(
+      walkWeightOf(EducationLevel.UNIVERSITY),
+      '大學畢業者只是比較能忍，還不到主動選擇走路',
+    ).toBeLessThan(1);
   });
 
   it('should make the educated more willing to walk', () => {
@@ -31,10 +41,15 @@ describe('步行的不情願權重', () => {
       .toBeLessThan(walkWeightOf(EducationLevel.NONE));
   });
 
-  it('should stay within a believable band', () => {
-    // 低於 1 走路變享受，高於 3 等於沒有人肯走到站牌 —— 大眾運輸整個失效。
+  it('should stay within a band where the number still does something', () => {
+    // 上界 3：再高就沒有人肯走到站牌，大眾運輸整個失效。
+    // 下界 0.8：實測 0.8 時不塞車也走滿捷運的 8 格上限，再低下去行為完全一樣 ——
+    // 那不是一個更強的設定，只是一個看起來不同的數字。
     for (const level of Object.values(EducationLevel)) {
-      expect(walkWeightOf(level)).toBeLessThanOrEqual(3);
+      expect(walkWeightOf(level), `${level} 的權重超出有意義的範圍`)
+        .toBeLessThanOrEqual(3);
+      expect(walkWeightOf(level), `${level} 的權重低到再調也沒有差別`)
+        .toBeGreaterThanOrEqual(0.8);
     }
   });
 
