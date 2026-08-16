@@ -3,6 +3,7 @@ import { TransitAccessField, estimateCommuteTime } from '../TransitAccessField';
 import { TransportType, type TransportStop } from '../types';
 import type { FlatRoute } from '../MultiModalRouter';
 import { openFieldReach } from './openFieldReach';
+import { walkRangeFor, WALK_RANGE_BY_TYPE } from '../WalkRange';
 
 /** 中性的模式選擇參數：走路一格一 tick、不加不情願權重。 */
 function neutral(congestionLevel: number) {
@@ -35,7 +36,6 @@ function verticalLine(
   return { routeId, type, speed, stops, segDists: null, headway: frequency, loadFactor: 0 };
 }
 
-const WALK_RANGE = 5;
 const WALK_SPEED = 1;
 const WAIT_FACTOR = 0.5;
 
@@ -61,8 +61,24 @@ describe('可及性圖', () => {
   });
 
   it('should report nothing beyond walking range', () => {
+    // 距離從上限推出來，不寫死 —— 寫死的話上限一調就變成「這個數字剛好還在範圍
+    // 內」，測試看起來仍然在驗邊界，實際上驗的是另一件事。
+    const beyond = walkRangeFor(TransportType.METRO) + 1;
     const f = fieldFor([line]);
-    expect(f.at(40, 12), '離站 10 格還走得到').toHaveLength(0);
+    expect(f.at(30 + beyond, 12), `離站 ${beyond} 格還走得到`).toHaveLength(0);
+  });
+
+  it('should cut coverage at the per-mode limit, not the scan radius', () => {
+    // 掃描一律用最寬的半徑，再由運具自己的上限截斷。只有上限小於掃描半徑的運具
+    // 驗得到那道截斷 —— 拿捷運驗的話，擋掉遠處那一格的其實是掃描範圍本身，把
+    // 截斷整個拿掉測試也不會紅。
+    const busLimit = walkRangeFor(TransportType.BUS);
+    expect(busLimit, '公車上限沒有小於掃描半徑，這個測試驗不到截斷')
+      .toBeLessThan(WALK_RANGE_BY_TYPE.WIDEST);
+
+    const f = fieldFor([verticalLine(2, 30, 0, 60, 6, 1, 10, TransportType.BUS)]);
+    expect(f.at(30 + busLimit, 12), '公車上限內反而查不到').toHaveLength(1);
+    expect(f.at(30 + busLimit + 1, 12), '超過公車上限還走得到').toHaveLength(0);
   });
 
   it('should not blow up on a city with no transit', () => {

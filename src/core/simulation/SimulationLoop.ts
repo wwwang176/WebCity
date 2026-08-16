@@ -48,7 +48,7 @@ import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../tr
 import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenSystems, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
-import { TransportMode } from '../transport/types';
+import { TransportMode, type TransportStop } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTransitNetworkVersion, getTransitTopologyVersion, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, countRoadTiles, findNearRoad, type ReadableGrid } from '../grid/GridHelpers';
@@ -2787,10 +2787,15 @@ export class SimulationLoop {
     });
   }
 
+  /**
+   * 帶著完整的 `TransportStop`，因為 `type` 決定願意為它走多遠。用結構型別把欄位
+   * 挑掉的話，`type` 會在編譯期消失，挑站就退回全域的 `FALLBACK` —— 那讀起來像
+   * 公車與捷運的服務範圍一樣大。
+   */
   private findNearestStop(
-    stops: readonly { x: number; y: number; passengers: number; dailyRiders: number }[],
+    stops: readonly TransportStop[],
     pos: { x: number; y: number },
-  ): { x: number; y: number; passengers: number; dailyRiders: number } | null {
+  ): TransportStop | null {
     return findNearestReachableStop(stops, pos, this.stopReach);
   }
 

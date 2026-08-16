@@ -14,20 +14,20 @@ import { TransportType } from './types';
  */
 export const WALK_RANGE_BY_TYPE = {
   BY_TYPE: {
-    [TransportType.BUS]: 4,
-    [TransportType.METRO]: 8,
-    [TransportType.RAIL]: 8,
-    [TransportType.FERRY]: 6,
-    [TransportType.AIRPORT]: 8,
+    [TransportType.BUS]: 5,
+    [TransportType.METRO]: 12,
+    [TransportType.RAIL]: 12,
+    [TransportType.FERRY]: 9,
+    [TransportType.AIRPORT]: 12,
   } as Record<TransportType, number>,
-  FALLBACK: 5,
+  FALLBACK: 8,
   /**
    * 最寬的那一個。
    *
    * 站牌的步行涵蓋範圍是一站算一次、算過就快取，快取的鍵含半徑 —— 各運具各用各的
    * 半徑會讓同一個站牌算好幾份。統一用最寬的算一次，各運具再各自截斷。
    */
-  WIDEST: 8,
+  WIDEST: 12,
 } as const;
 
 /** 這種運具的步行上限（格）。 */
