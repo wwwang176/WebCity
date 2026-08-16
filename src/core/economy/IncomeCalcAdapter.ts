@@ -38,13 +38,13 @@ export function buildIncomeCalcDeps(state: GameState): IncomeCalcDeps {
     forEachCell: (fn) => state.grid.forEachCell(fn),
     taxRates: state.taxRates,
     getResidentEducations: (key) => educationsByHome.get(key) ?? EMPTY_EDUCATIONS,
-    getRevenueMultiplier: (x, y) => {
+    getRevenueMultiplier: (x, y, zoneType) => {
       const district = state.districts.getDistrictAt(x, y);
       if (!district) return 1;
       // Specialization and policy compose: a tourist district that also
       // specialises in tourism gets both, which is the point of paying twice.
       return getSpecializationBonus(district.specialization).revenueMultiplier
-        * state.policies.getRevenueMultiplier(district.id);
+        * state.policies.getRevenueMultiplier(district.id, zoneType);
     },
     isPowered: (x, y) => state.power.isPowered(x, y),
     getFreightSupply: (x, y) => state.freight.getSupplyStatus(x, y),

@@ -5,6 +5,7 @@ import {
   IMPLEMENTED_POLICY_TYPES, isPolicyImplemented,
 } from '../PolicyManager';
 import { PolicyType } from '../types';
+import { ZoneType } from '../../grid/types';
 import { calculateLandValue } from '../../economy/LandValue';
 
 /**
@@ -70,16 +71,18 @@ describe('Encourage Recycling cuts what the district throws away', () => {
   });
 });
 
+// 觀光的效果是 `revenue`（全分區一視同仁），所以下面傳哪一個分區類型都一樣 ——
+// 挑商業只是因為它是觀光最直覺的受益者。
 describe('Tourism Promotion raises what the district earns', () => {
   it('should raise the revenue multiplier', () => {
     const { policies, id } = districtWith(PolicyType.TOURISM);
-    expect(policies.getRevenueMultiplier(id)).toBeGreaterThan(1);
+    expect(policies.getRevenueMultiplier(id, ZoneType.COMMERCIAL_LOW)).toBeGreaterThan(1);
   });
 
   it('should change nothing without the policy, or outside a district', () => {
-    expect(districtWith().policies.getRevenueMultiplier('any')).toBe(1);
+    expect(districtWith().policies.getRevenueMultiplier('any', ZoneType.COMMERCIAL_LOW)).toBe(1);
     const { policies } = districtWith(PolicyType.TOURISM);
-    expect(policies.getRevenueMultiplier(null)).toBe(1);
+    expect(policies.getRevenueMultiplier(null, ZoneType.COMMERCIAL_LOW)).toBe(1);
   });
 });
 
@@ -124,8 +127,8 @@ describe('policies stack per district, not city-wide', () => {
 
     expect(mgr.getGarbageMultiplier(green.id)).toBeLessThan(1);
     expect(mgr.getGarbageMultiplier(resort.id)).toBe(1);
-    expect(mgr.getRevenueMultiplier(resort.id)).toBeGreaterThan(1);
-    expect(mgr.getRevenueMultiplier(green.id)).toBe(1);
+    expect(mgr.getRevenueMultiplier(resort.id, ZoneType.COMMERCIAL_LOW)).toBeGreaterThan(1);
+    expect(mgr.getRevenueMultiplier(green.id, ZoneType.COMMERCIAL_LOW)).toBe(1);
   });
 
   it('should let one district carry several policies at once', () => {
@@ -133,7 +136,7 @@ describe('policies stack per district, not city-wide', () => {
       PolicyType.ENCOURAGE_RECYCLING, PolicyType.TOURISM, PolicyType.ORGANIC_FOOD,
     );
     expect(policies.getGarbageMultiplier(id)).toBeLessThan(1);
-    expect(policies.getRevenueMultiplier(id)).toBeGreaterThan(1);
+    expect(policies.getRevenueMultiplier(id, ZoneType.COMMERCIAL_LOW)).toBeGreaterThan(1);
     expect(policies.getLandValueBonus(id)).toBeGreaterThan(0);
   });
 });

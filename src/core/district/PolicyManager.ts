@@ -43,14 +43,23 @@ export const POLICY_ZONE_RESTRICTIONS: Partial<Record<PolicyType, ReadonlySet<Zo
  * Each is deliberately a small effect on a number the player can already read
  * off a panel, so "did that policy do anything?" is answerable by looking.
  */
-export const POLICY_EFFECTS: Partial<Record<PolicyType, {
+export interface PolicyEffect {
   /** Multiplier on garbage produced in the district. */
   garbage?: number;
-  /** Multiplier on tax revenue from buildings in the district. */
+  /** Multiplier on tax revenue from every building in the district. */
   revenue?: number;
   /** Flat addition to land value before the usual clamp. */
   landValue?: number;
-}>> = {
+  /**
+   * 只作用在特定分區類型的收入乘數。
+   *
+   * `revenue` 是全分區一視同仁,做不出「只扣商業」—— 而多數條例的代價本來就落在
+   * 特定產業上:回收增加的是商家的處理成本,跟住戶無關。
+   */
+  revenueByZone?: Partial<Record<ZoneType, number>>;
+}
+
+export const POLICY_EFFECTS: Partial<Record<PolicyType, PolicyEffect>> = {
   [PolicyType.ENCOURAGE_RECYCLING]: { garbage: 0.65 },
   [PolicyType.TOURISM]: { revenue: 1.2 },
   [PolicyType.ORGANIC_FOOD]: { landValue: 6 },
@@ -153,7 +162,7 @@ export class PolicyManager {
    */
   private effect(
     districtId: string | null,
-    pick: (e: NonNullable<(typeof POLICY_EFFECTS)[PolicyType]>) => number | undefined,
+    pick: (e: PolicyEffect) => number | undefined,
     identity: number,
     combine: (a: number, b: number) => number,
   ): number {
@@ -175,9 +184,10 @@ export class PolicyManager {
     return this.effect(districtId, e => e.garbage, 1, (a, b) => a * b);
   }
 
-  /** Multiplier on tax revenue from buildings in this district. */
-  getRevenueMultiplier(districtId: string | null): number {
-    return this.effect(districtId, e => e.revenue, 1, (a, b) => a * b);
+  /** Multiplier on tax revenue from buildings of this zone type in this district. */
+  getRevenueMultiplier(districtId: string | null, zoneType: ZoneType): number {
+    const flat = this.effect(districtId, e => e.revenue, 1, (a, b) => a * b);
+    return flat * this.effect(districtId, e => e.revenueByZone?.[zoneType], 1, (a, b) => a * b);
   }
 
   /** Flat land-value bonus for cells in this district. */

@@ -39,8 +39,13 @@ interface CellLike {
 export interface BuildingIncomeDeps {
   taxRates: { residential: number; business: number };
   getResidentEducations: (posKey: string) => Iterable<EducationLevel>;
-  /** Optional per-building revenue multiplier (e.g. district specialization). */
-  getRevenueMultiplier?: (x: number, y: number) => number;
+  /**
+   * Optional per-building revenue multiplier (e.g. district specialization).
+   *
+   * 帶 `zoneType` 是為了讓條例的收入代價能只落在特定產業上 —— 少了它，「只扣商業」
+   * 會平均攤在住宅、商業、工業、辦公身上。
+   */
+  getRevenueMultiplier?: (x: number, y: number, zoneType: ZoneType) => number;
   /** Optional power check — unpowered buildings produce zero income. Defaults to true. */
   isPowered?: (x: number, y: number) => boolean;
   /** Optional freight supply status with ratio. */
@@ -82,12 +87,12 @@ export function calculateBuildingIncome(
       salarySum += ECONOMY.CITIZEN_BASE_INCOME * getEducationSalaryMultiplier(edu);
     }
     let income = salarySum * getResidentialLevelMultiplier(btype.level as 1 | 2 | 3) * ((deps.taxRates.residential ?? DEFAULT_TAX_RATE) / 100);
-    if (deps.getRevenueMultiplier) income *= deps.getRevenueMultiplier(x, y);
+    if (deps.getRevenueMultiplier) income *= deps.getRevenueMultiplier(x, y, btype.zoneType);
     return income;
   }
 
   let income = (btype.companyIncome ?? 0) * getBuildingLevelMultiplier(btype.level) * ((deps.taxRates.business ?? DEFAULT_TAX_RATE) / 100);
-  if (deps.getRevenueMultiplier) income *= deps.getRevenueMultiplier(x, y);
+  if (deps.getRevenueMultiplier) income *= deps.getRevenueMultiplier(x, y, btype.zoneType);
   if (deps.getWorkerCount && btype.workers > 0) {
     income *= Math.min(1, deps.getWorkerCount(posKey) / btype.workers);
   }
