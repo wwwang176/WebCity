@@ -53,8 +53,11 @@ describe('分區覆蓋層的配色', () => {
     expect(dist, `兩個分區畫成同一個顏色（#${a.r},${a.g},${a.b}）`).toBeGreaterThan(0.2);
   });
 
-  it('should spread district colours across the hue circle', () => {
-    // 只有兩個顏色不夠 —— 分區數量沒有上限，相鄰的兩區要分得開。
+  it('should read the value as a hue, so spread-out values stay spread out', () => {
+    // 這條測的是 renderer 這一半:值有沒有被當成色相。值本身分不分得開是 builder
+    // 的責任，由 `OverlayBuilders.test.ts` 的
+    // `keeps consecutively created districts far apart` 守著 —— 兩邊都要有，因為
+    // 兩邊各自壞掉都會讓分區看起來一樣。
     const values = [20, 35, 50, 65, 80, 95];
     const g = build(
       OverlayType.DISTRICT,
