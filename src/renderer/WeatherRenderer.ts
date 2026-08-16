@@ -212,7 +212,6 @@ export class WeatherRenderer {
     const moonBase = 0.08;
     this._sunIntensity = moonBase + brightness * (this.baseDirectionalIntensity - moonBase);
     this.sceneManager.directionalLight.intensity = this._sunIntensity;
-    this.sceneManager.directionalLight.castShadow = brightness > 0.05;
     this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
       this._dirNight, this._dirSunrise, this._dirDay, this._dirSunset,
       this.sceneManager.directionalLight.color);
@@ -234,8 +233,13 @@ export class WeatherRenderer {
     //
     // 綁在 `sunFactor` 上，影子只在太陽真的在移動的區間裡才看得見。夜裡
     // `sunFactor` 是 0，濃度也是 0，那條仰角九度、整晚不轉向的長拖影因此不會出現。
-    this.sceneManager.directionalLight.shadow.intensity = Math.min(1, Math.max(0,
+    const shadowStrength = Math.min(1, Math.max(0,
       (sunFactor - SUN_ELEVATION_FLOOR) / (SHADOW_FULL_AT - SUN_ELEVATION_FLOOR)));
+    this.sceneManager.directionalLight.shadow.intensity = shadowStrength;
+    // 濃度歸零就把整個 shadow pass 停掉 —— 全透明的影子仍然要每幀重畫一張
+    // 2048² 深度圖（空地圖上量到約 0.24 ms/幀，滿城市會等比例放大）。兩者綁在
+    // 同一個數字上，所以不會出現「關掉了卻還看得見」或「看不見卻還在畫」。
+    this.sceneManager.directionalLight.castShadow = shadowStrength > 0;
 
     // Sun position based on time
     const sunX = 50 * Math.cos(sunAngle);

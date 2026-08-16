@@ -62,6 +62,24 @@ describe('影子的濃度', () => {
     const { w, light } = harness();
     w.setDayFraction(0.5);
     expect(light.shadow.intensity, '正午的影子不是實心的').toBe(1);
+    expect(light.castShadow, '正午沒在畫影子').toBe(true);
+  });
+
+  it('should keep the shadow pass in step with the shadow', () => {
+    // 濃度 0 卻還開著 castShadow，就是每幀白畫一張 2048² 深度圖；反過來則是
+    // 影子該看得見卻被關掉。兩者綁同一個數字，兩邊都不該發生。
+    const { w, light } = harness();
+    let off = 0, on = 0;
+    for (let i = 0; i < STEPS; i++) {
+      const t = i / STEPS;
+      w.setDayFraction(t);
+      const lit = light.shadow.intensity > 0;
+      expect(light.castShadow, `t=${t.toFixed(3)}：shadow pass 與影子濃度對不上`)
+        .toBe(lit);
+      if (lit) on++; else off++;
+    }
+    expect(off, '整天都在畫影子，夜裡沒有省到').toBeGreaterThan(0);
+    expect(on, '整天都沒在畫影子').toBeGreaterThan(0);
   });
 
   it('should fade rather than pop', () => {
