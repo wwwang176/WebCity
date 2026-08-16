@@ -105,13 +105,18 @@ B 每張地圖配置一條 `Uint8Array(totalCells)`,全零,地圖產生時不撒
 - **成本**:小到中。缺的只有規則,不是資料
 - **風險**:石油沒有地形錨點,要嘛新撒、要嘛砍掉這個專精
 
-### E · 條例系統(SimCity 的優點)
+### E · 條例系統(SimCity 的優點) —— **已實作**
+
+> 見 `docs/district-policy-system.md` 與 `docs/superpowers/plans/2026-08-17-district-ordinances.md`。
+> 分級、雙向效果、依規模計費、全城範圍都已落地;條例目錄本身（賭場、壅塞費、
+> 育兒補貼等）另開計畫。
+
 
 分區 = 「這裡適用哪些法規」,並且**法規也可以是全城的**。
 
 - **玩家的決策**:每一條都是取捨,不是價目表
 - **要新做的**:全城條例的概念(目前 0 命中,只有分區政策)、一批有代價的條例
-- **能重用的**:`PolicyManager` 的形狀已經對了 —— `POLICY_CONFIG`(名稱與費用)、
+- **能重用的**:`PolicyManager` 的形狀已經對了 —— `POLICY_CONFIG`(名稱)、
   `POLICY_EFFECTS`(效果表)、`isPolicyImplemented`(沒效果就不上架、也不收費)。
   加一條條例約等於加一列表格
 - **成本**:小

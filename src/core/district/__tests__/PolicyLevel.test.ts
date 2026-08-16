@@ -85,10 +85,14 @@ describe('舊存檔的遷移', () => {
     expect(load({ ...base, level: 3, active: false })).toBe(3);
   });
 
-  it('should land an old policy on the tier that reproduces what it used to do', () => {
+  it('should land an old policy on the tier that keeps its benefit', () => {
     // 分級之前每條政策只有一組數字。一律轉成 level 1 的話，那組數字剛好不在第一格
     // 的政策就會在讀檔當下靜靜地變弱 —— 回收原本是 garbage 0.65，而 0.65 是新表的
     // 第 2 級。玩家沒有動任何東西，垃圾量卻變差了。
+    //
+    // 這條只保證**好處**的量級不變。新表每一級都多了代價（回收扣商業收入、觀光
+    // 加犯罪、有機食品扣商業收入），那些代價對舊存檔一樣生效 —— 那正是這次改造
+    // 的目的:沒有純好處的條例。下一條把那件事寫成斷言。
     // 兩條政策放在不同分區 —— 同一區的話效果會相乘（回收現在也扣商業收入），
     // 量到的就不是「觀光自己有沒有變」了。
     const dm = DistrictManager.fromJSON({
@@ -111,6 +115,33 @@ describe('舊存檔的遷移', () => {
       .toBeCloseTo(0.65, 6);
     expect(pm.getRevenueMultiplier('district_2', ZoneType.COMMERCIAL_LOW), '舊存檔的觀光變了')
       .toBeCloseTo(1.2, 6);
+  });
+
+  it('should apply the new downsides to an old save as well', () => {
+    // 舊存檔的政策不會被豁免。這是刻意的:條例的重點是取捨，如果讀進來的政策
+    // 永遠停在「只有好處」的舊版本，舊城市就會永遠比新城市划算。
+    //
+    // 寫成斷言而不是留在註解裡，是因為它看起來很像遷移漏掉了東西 —— 沒有這一條，
+    // 下一個讀到上面那支測試的人會以為代價沒生效是 bug。
+    const dm = DistrictManager.fromJSON({
+      nextId: 3,
+      districts: [
+        {
+          id: 'district_1', name: 'Green', cells: ['1,1'], specialization: 'NONE',
+          policies: [{ id: 'p1', name: 'R', type: PolicyType.ENCOURAGE_RECYCLING, cost: 100, active: true }],
+        },
+        {
+          id: 'district_2', name: 'Resort', cells: ['2,2'], specialization: 'NONE',
+          policies: [{ id: 'p2', name: 'T', type: PolicyType.TOURISM, cost: 200, active: true }],
+        },
+      ],
+    } as never);
+    const pm = new PolicyManager(dm);
+
+    expect(pm.getRevenueMultiplier('district_1', ZoneType.COMMERCIAL_LOW),
+      '舊存檔的回收沒有吃到商業收入的代價').toBeLessThan(1);
+    expect(pm.getCrimeBonus('district_2'), '舊存檔的觀光沒有吃到犯罪的代價')
+      .toBeGreaterThan(0);
   });
 });
 

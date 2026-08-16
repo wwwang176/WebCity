@@ -1,4 +1,3 @@
-import { isPolicyImplemented } from '../district/PolicyManager';
 import { policyCost } from '../district/PolicyBilling';
 import type { PolicyType } from '../district/types';
 
@@ -23,7 +22,10 @@ export function calculateDistrictPolicyCost(
   let total = 0;
   for (const district of districts) {
     for (const policy of district.policies) {
-      if (!isPolicyImplemented(policy.type)) continue;
+      // 這裡曾經另外擋一道 `isPolicyImplemented`。它是多餘的:`policyCost` 對沒有
+      // 計費條目的型別回 0，而每一個計費條目都對應到一條真的有效果的條例 ——
+      // 那個前提由 `PolicyBilling.test.ts` 的
+      // `should only bill policies the simulation actually reads` 守著。
       total += policyCost(policy.type, policy.level, {
         population,
         districtCells: district.cells.size,

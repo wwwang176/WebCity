@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { policyCost, POLICY_BILLING } from '../PolicyBilling';
-import { POLICY_ZONE_RESTRICTIONS, maxLevel } from '../PolicyManager';
+import { POLICY_ZONE_RESTRICTIONS, isPolicyImplemented, maxLevel } from '../PolicyManager';
 import { calculateDistrictPolicyCost } from '../../economy/ExpenseCalculator';
 import { PolicyType } from '../types';
+import { POLICY_SCOPE } from '../PolicyScope';
 
 /**
  * 固定費用在大城市等於免費 —— 早期是限制，後期是無感。改成跟著它服務的規模走，
@@ -47,6 +48,45 @@ describe('條例的計費', () => {
     for (const [type, billing] of entries) {
       expect(billing!.perUnit.length, `${type} 的計費級數與效果級數對不上`)
         .toBe(maxLevel(type as PolicyType));
+    }
+  });
+
+  it('should only bill policies the simulation actually reads', () => {
+    // ExpenseCalculator 曾經另外擋一道 isPolicyImplemented。那道守衛拿掉之後測試
+    // 不會紅 —— 因為它本來就是多餘的:policyCost 對沒有計費條目的型別回 0，而每
+    // 一個計費條目都對應到一條真的有效果的條例。把那個前提寫成斷言，多餘的守衛
+    // 就可以刪掉，而不是留一段沒有人能證明有用的防禦碼。
+    for (const type of Object.keys(POLICY_BILLING) as PolicyType[]) {
+      expect(isPolicyImplemented(type), `${type} 收錢卻對模擬沒有效果`).toBe(true);
+    }
+  });
+
+  it('should bill on the scale that matches its scope', () => {
+    // 第一版這條是拿表格的 `basis` 去驗表格自己的行為 —— 永遠成立，把 basis 改錯
+    // 也不會紅。真正該釘住的是「基數必須跟範圍一致」:
+    //
+    // - 全城條例沒有分區格數可言（呼叫端固定傳 0），用 districtCells 計費就等於
+    //   免費。
+    // - 分區條例用人口計費的話，畫一格跟畫一百格收一樣多，「跟著它服務的規模走」
+    //   整個失效。
+    const base = { population: 100, districtCells: 100 };
+    const morePeople = { population: 1000, districtCells: 100 };
+    const moreCells = { population: 100, districtCells: 1000 };
+
+    const entries = Object.entries(POLICY_BILLING);
+    expect(entries.length, '計費表是空的，這條測試等於空轉').toBeGreaterThan(0);
+    for (const [type] of entries) {
+      const t = type as PolicyType;
+      const b = policyCost(t, 1, base);
+      const p = policyCost(t, 1, morePeople);
+      const c = policyCost(t, 1, moreCells);
+      if (POLICY_SCOPE[t] === 'city') {
+        expect(p, `${type} 是全城條例卻不隨人口變`).toBeGreaterThan(b);
+        expect(c, `${type} 是全城條例卻隨分區格數變 —— 全城沒有格數可言`).toBe(b);
+      } else {
+        expect(c, `${type} 是分區條例卻不隨格數變`).toBeGreaterThan(b);
+        expect(p, `${type} 是分區條例卻隨人口變 —— 畫一格跟畫一百格會收一樣多`).toBe(b);
+      }
     }
   });
 
