@@ -390,16 +390,7 @@ export class SimulationLoop {
 
     // ── Slot 1: Power / Water / Sewage coverage ──
     if (slowSlot === 1) {
-      this.infraPositions.clear();
-      for (const p of this.state.power.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
-      for (const p of this.state.water.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
-      for (const p of this.state.sewage.getTreatmentPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
-      this.state.power.calculateDemand(this.state.grid);
-      this.state.power.calculateCoverage(this.state.grid, this.infraPositions);
-      this.state.water.calculateDemand(this.state.grid);
-      this.state.water.calculateCoverage(this.state.grid, this.infraPositions);
-      this.state.sewage.calculateDemand(this.state.grid);
-      this.state.sewage.calculateCoverage(this.state.grid, this.infraPositions);
+      this.recalculateUtilityCoverage();
     }
 
     // ── Slot 2: Civic services + fire + service vehicles ──
@@ -1887,6 +1878,30 @@ export class SimulationLoop {
       this.lastTransitTopologyVersion = topology;
       this.transferTracker.clearBuildings();
     }
+  }
+
+  /**
+   * 重算電、水、汙水的涵蓋範圍與需求。
+   *
+   * `isPowered` / `isSupplied` 只是查這裡填好的快取，自己不算任何東西。平常六個
+   * tick 輪到一次就夠了，但剛蓋好的那一格在上一次重算時還不存在 —— 面板會照實
+   * 回報缺水缺電，要等下一輪才消失，暫停時則永遠不會消失（BUG-284）。所以放置與
+   * 拆除的路徑要自己叫一次。
+   *
+   * 三者共用同一份基礎設施座標，所以綁在一起 —— 分開叫的話呼叫端得記得三個都要
+   * 叫，而漏掉的那一個不會有任何徵兆。
+   */
+  recalculateUtilityCoverage(): void {
+    this.infraPositions.clear();
+    for (const p of this.state.power.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
+    for (const p of this.state.water.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
+    for (const p of this.state.sewage.getTreatmentPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
+    this.state.power.calculateDemand(this.state.grid);
+    this.state.power.calculateCoverage(this.state.grid, this.infraPositions);
+    this.state.water.calculateDemand(this.state.grid);
+    this.state.water.calculateCoverage(this.state.grid, this.infraPositions);
+    this.state.sewage.calculateDemand(this.state.grid);
+    this.state.sewage.calculateCoverage(this.state.grid, this.infraPositions);
   }
 
   markLaneGraphDirty(affectedCells?: string[], skipUnreachableCheck = false): void {

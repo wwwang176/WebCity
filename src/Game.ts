@@ -1448,9 +1448,16 @@ export class Game {
     }
   }
 
-  /** Immediately recalculate road-based coverage after placing/removing a service building. */
+  /**
+   * Immediately recalculate road-based coverage after placing/removing a service building.
+   *
+   * 電、水、汙水在 switch 外面無條件重算。它們跟其他服務不一樣：這裡問的不是
+   * 「這種設施的服務範圍變了嗎」，而是「剛動過的那一格有沒有水電」—— 蓋任何東西
+   * 都會讓一個新的格子出現，而它不在上一次算好的集合裡（BUG-284）。
+   */
   private recalculateServiceCoverage(infraType: InfraType): void {
     const grid = this.state.grid;
+    this.simLoop.recalculateUtilityCoverage();
     switch (infraType) {
       case 'police': this.state.police.recalculateCoverage(grid); break;
       case 'fire': this.state.fire.recalculateCoverage(grid); break;
@@ -1533,6 +1540,10 @@ export class Game {
     // 往外量。這裡不通知的話，新站牌要等玩家隨手動一次道路才進得了圖，在那之前
     // 它服務不到任何人。刻意不走 markLaneGraphDirty：設施不改變路網。
     this.simLoop.applyBuildingChange([`${x},${y}`]);
+    // 面板馬上就會被問「這個站有沒有水電」，而水電是查快取的，六個 tick 才重算
+    // 一次（BUG-284）。刻意不塞進 applyBuildingChange：那支連建商蓋房子也會走，
+    // 每次成長 tick 都多跑一次全圖 BFS 太貴，而玩家沒點任何東西也看不到差別。
+    this.simLoop.recalculateUtilityCoverage();
     const infraType = airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!;
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
     this.audioManager.playSfx(SoundType.BUILD);
@@ -1578,6 +1589,7 @@ export class Game {
     }
     // 同 placeInfra：不通知的話這片機場在人行道圖裡不存在。
     this.simLoop.applyBuildingChange(airportCells);
+    this.simLoop.recalculateUtilityCoverage();
     this.invalidateZoneBlockers();
     this.audioManager.playSfx(SoundType.BUILD);
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);

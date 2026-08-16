@@ -4629,3 +4629,27 @@ BUG-280 把 `updateCells` 變成道路編輯的主要路徑，這條的曝光度
 
 `findNearestReachableStop`（`transport/StopChoice.ts`）因此沒有任何產品呼叫端，整支
 刪掉 —— 留著等於留著一把「再挑一次」的工具在旁邊。
+
+## BUG-284 已修：公共建設剛蓋好就顯示缺水缺電
+
+`isPowered` / `isSupplied` 不計算任何東西，只是查一個快取的 Set。那個 Set 只在
+`SimulationLoop` 的 slot 1 重建，而 slot 是六個一輪 —— 剛蓋好的那一格在上一次重算時
+還不存在，所以不在集合裡。
+
+放置的路徑本來就有「立刻重算」的機制（`Game.recalculateServiceCoverage`），警察、
+消防、垃圾、醫院、學校、墓園、公園全都在裡面，**只有電和水漏掉**。汙水有一行，但叫
+的是 `updateConnectedPlants`，不是重算涵蓋範圍。
+
+而且那個 switch 是照「放了什麼」分支的，對電水來說本來就分錯了：問題不在蓋了電廠，
+而是**蓋了任何東西，那一格都還不在集合裡**。所以要無條件重算。
+
+延遲最多六個 tick（速度 1 是 1.5 秒，速度 10 是 0.15 秒），**暫停時永遠不會消失**
+—— `GameClock.shouldTick` 在 `paused || speed === 0` 時直接回 false，沒有 tick 就
+沒有重算。
+
+不只是顯示問題：`isFacilityOperational` 拿的是同一個數字，所以那幾個 tick 裡設施是
+真的沒在運作。
+
+修法是把 slot 1 那段抽成 `SimulationLoop.recalculateUtilityCoverage()`，slot 1 與放置
+／拆除的路徑都叫它。成本不必擔心 —— 它本來就每六個 tick 跑一次，速度 10 時等於每
+150 ms 一次；玩家點一下多跑一次，比遊戲本來持續在花的還少。
