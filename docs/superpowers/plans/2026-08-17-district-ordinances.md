@@ -50,6 +50,27 @@
 
 新增檔案刻意拆開:計費、範圍分類、全城狀態、UI 純邏輯是四件會各自長大的事,塞進已經 214 行的 `PolicyManager.ts` 只會讓它變得難改。
 
+## 測試夾具的兩個陷阱
+
+這兩件事讓一整批「看起來合理」的接線測試其實從來沒有跑到要驗的那條路:
+
+**一、地價與電力需求都跳過沒有建築的格子。** `updateLandValue`
+(`SimulationLoop.ts:1122`)與 `PowerGrid.calculateDemand`(`PowerGrid.ts:141`)開頭
+都是 `if (cell.buildingId === 0) return;`。只畫道路與 zoning 是長不出建築的 ——
+`BuildingGrowth.ts:36-46` 要求該格有電有水,而測試城市沒有電廠水廠。所以要
+**直接種建築**:`state.grid.setCell(x, y, { zoneType, buildingId })`,住宅用 1、商業
+用 7、工業用 13(見 `Simulation.test.ts:292` 的既有用法)。這樣做同時避開了成長路徑
+的隨機性。
+
+**二、`getPopulation()` 是市民陣列的長度,新遊戲是 0。** 以人口計費的條例在人口 0
+時費用是 0,任何「費用有沒有進帳」的斷言都會變成空測試。要造人口就呼叫
+`state.citizens.restoreCitizen({}, 0)`,`CitizenManager.setPopulationForTest` **不存在**。
+
+排程:`clock.advance()` 先進位,所以第一次 `loop.tick()` 拿到的是 tick 1。
+`updateLandValue` 在 tick 2 跑(之後每 60),`calculateIncome` 在 `slowSlot === 5`
+跑(tick 5、11、…)。**跑六次 `tick()` 就同時涵蓋這兩者**,而且短到不會被成長與
+遷居的隨機性汙染。
+
 ## 任務順序為什麼是這樣
 
 Task 1 先做收入乘數的分區類型,是因為分級的效果表從第一天就要用 `revenueByZone`
@@ -71,7 +92,7 @@ Task 2~4 中間的每一步都編不過。
 
 **Files:**
 - Modify: `src/core/district/PolicyManager.ts:46-57`(`POLICY_EFFECTS` 抽出具名型別)、`:179-181`(`getRevenueMultiplier`)
-- Modify: `src/core/economy/IncomeCalculator.ts:41`(`BuildingIncomeDeps.getRevenueMultiplier`)、`:85`、`:90`(兩個呼叫處)
+- Modify: `src/core/economy/IncomeCalculator.ts:43`(`BuildingIncomeDeps.getRevenueMultiplier`)、`:85`、`:90`(兩個呼叫處)
 - Modify: `src/core/economy/IncomeCalcAdapter.ts:41-49`
 - Test: `src/core/economy/__tests__/RevenueByZone.test.ts`(新增)
 
@@ -92,45 +113,47 @@ import { DistrictManager } from '../../district/DistrictManager';
 import { PolicyManager, POLICY_EFFECTS } from '../../district/PolicyManager';
 import { PolicyType } from '../../district/types';
 import { calculateBuildingIncome } from '../IncomeCalculator';
-import { getBuildingType } from '../../building/BuildingTypes';
+import { getBuildingType } from '../../building/types';
+
+/**
+ * 暫時把某一條政策的效果換掉。測的是機制，不是某一條政策現在剛好長什麼樣 ——
+ * 綁死在真實條目上的話，之後調整那條政策的數字就會誤傷這支測試。
+ *
+ * `POLICY_EFFECTS` 的值在 Task 3 會從單一物件變成陣列。這個 helper 是屆時唯一
+ * 要改的地方。
+ */
+function withEffect(type: PolicyType, effect: unknown, body: () => void) {
+  const saved = POLICY_EFFECTS[type];
+  (POLICY_EFFECTS as Record<string, unknown>)[type] = effect;
+  try { body(); } finally { (POLICY_EFFECTS as Record<string, unknown>)[type] = saved; }
+}
 
 describe('收入乘數認得分區類型', () => {
   it('should apply a zone-scoped multiplier only to that zone', () => {
     const dm = new DistrictManager();
     const d = dm.createDistrict('D');
     const pm = new PolicyManager(dm);
-    // 暫時往表裡插一條只扣商業的效果，測的是機制不是某一條政策。
-    const saved = POLICY_EFFECTS[PolicyType.TOURISM];
-    (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.TOURISM] = {
-      revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.5 },
-    };
-    try {
+    withEffect(PolicyType.TOURISM, { revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.5 } }, () => {
       pm.applyPolicy(d.id, PolicyType.TOURISM);
       expect(pm.getRevenueMultiplier(d.id, ZoneType.COMMERCIAL_LOW), '商業沒有被扣').toBe(0.5);
       expect(pm.getRevenueMultiplier(d.id, ZoneType.RESIDENTIAL_LOW), '住宅也被扣了').toBe(1);
-    } finally {
-      (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.TOURISM] = saved;
-    }
+    });
   });
 
   it('should hand the building zone type to the multiplier', () => {
     // 這條抓的是接線:簽章改了但呼叫端沒傳，PolicyManager 的單元測試照樣會過。
-    // 找一棟真的住宅建築來問，才不會測到一個不存在的 buildingId。
-    let id = 0, zoneOfBuilding = -1;
-    for (let i = 1; i < 300 && !id; i++) {
-      const bt = getBuildingType(i);
-      if (bt && bt.zoneType === ZoneType.RESIDENTIAL_LOW) { id = i; zoneOfBuilding = bt.zoneType; }
-    }
-    expect(id, '找不到任何住宅建築，這條測試等於空轉').toBeGreaterThan(0);
+    // buildingId 1 是 Small House（RESIDENTIAL_LOW），見 building/types.ts:24。
+    const HOUSE = 1;
+    const expected = getBuildingType(HOUSE)!.zoneType;
 
     const seen: number[] = [];
     calculateBuildingIncome({
       taxRates: { residential: 10, business: 10 },
       getResidentEducations: () => [],
       getRevenueMultiplier: (_x, _y, zoneType) => { seen.push(zoneType); return 1; },
-    }, 3, 4, id);
+    }, 3, 4, HOUSE);
 
-    expect(seen, 'getRevenueMultiplier 沒有收到分區類型').toEqual([zoneOfBuilding]);
+    expect(seen, 'getRevenueMultiplier 沒有收到分區類型').toEqual([expected]);
   });
 });
 ```
@@ -185,7 +208,7 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, PolicyEffect>> = {
 
 - [ ] **Step 5: 一路改到 `IncomeCalculator` 與 `IncomeCalcAdapter`**
 
-`IncomeCalculator.ts` 第 41 行:
+`IncomeCalculator.ts` 第 43 行:
 
 ```ts
   /** Optional per-building revenue multiplier (e.g. district specialization). */
@@ -482,6 +505,7 @@ Run: `npx tsc --noEmit`
 
 | 檔案 | 內容 |
 |---|---|
+| `src/core/economy/__tests__/RevenueByZone.test.ts` | **Task 1 自己剛寫的那支**,裡面有 `pm.applyPolicy(...)`。漏掉它 Task 2 就編不過 |
 | `src/core/district/__tests__/District.test.ts` | `applyPolicy` 呼叫 |
 | `src/core/district/__tests__/PolicyEffects.test.ts` | 9 個 `applyPolicy`,外加直接寫 `d.policies[0].active = false` 的休眠測試 → 改成 `.level = 0` |
 | `src/core/district/__tests__/PolicyEffectiveness.test.ts` | 2 個 `applyPolicy`,多個 mock policy 用 `{ active, cost }` → 改 `{ level, cost }` |
@@ -640,9 +664,17 @@ Run: `npx vitest run src/core/district/__tests__/PolicyLevel.test.ts`
 Expected: PASS(11 條)
 
 Run: `npx vitest run && npx tsc --noEmit`
-既有的 `PolicyEffects.test.ts` 會因為回收第 1 級變成 `garbage: 0.85`(原本單一值
-`0.65`)而失敗 —— 那些測試呼叫的是 `applyPolicy`(現在是 `setPolicyLevel(..., 1)`)。
-把它們改成明確設 level 2,或把期望值改成第一級的數字;**擇一,不要兩者都做**。
+兩處會壞,都要改:
+
+1. `PolicyEffects.test.ts` 會因為回收第 1 級變成 `garbage: 0.85`(原本單一值 `0.65`)
+   而失敗。把它們改成明確設 level 2,或把期望值改成第一級的數字;**擇一,不要兩者
+   都做**。
+2. **Task 1 寫的 `RevenueByZone.test.ts` 的 `withEffect` 塞的是單一物件**。`effect()`
+   現在讀 `[level - 1]`,物件的 `[0]` 是 `undefined`,乘數會變成 1 而不是 0.5 ——
+   這是執行期失敗,`tsc` 抓不到(那裡有強制 cast)。把塞進去的值改成陣列:
+   ```ts
+   withEffect(PolicyType.TOURISM, [{ revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.5 } }], () => {
+   ```
 
 - [ ] **Step 6: revert-verify**
 
@@ -731,23 +763,39 @@ import { ZoneType } from '../../grid/types';
 /**
  * 表格改了不等於模擬會讀。這條走完整條路:設政策 → 跑地價 → 讀回格子。
  * 只測 PolicyManager 的話，SimulationLoop 完全沒接也會全綠。
+ *
+ * 建築是**直接種進格子**的。`updateLandValue` 開頭就 `if (cell.buildingId === 0)
+ * return`，而成長路徑要求該格有電有水（`BuildingGrowth.ts:36-46`）—— 只畫道路與
+ * zoning 的話那一格永遠沒有建築，兩組都拿到初始值，測試會變成「相等」而不是
+ * 「更低」。
+ *
+ * 只跑六個 tick:`updateLandValue` 在 tick 2 跑，六個 tick 夠了，而且短到不會被
+ * 成長與遷居的隨機性汙染。
  */
 describe('條例的犯罪代價真的進到地價', () => {
+  const SHOP = 7;   // Small Shop（COMMERCIAL_LOW），見 building/types.ts
+
+  const landValueAt = (withPolicy: boolean) => {
+    const state = createGameState(30, 30);
+    const loop = new SimulationLoop(state);
+    for (let x = 5; x < 15; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
+    for (let x = 6; x < 14; x++) {
+      state.grid.setCell(x, 11, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: SHOP });
+    }
+    const d = state.districts.createDistrict('D');
+    for (let x = 6; x < 14; x++) state.districts.addCellToDistrict(d.id, x, 11);
+    if (withPolicy) state.policies.setPolicyLevel(d.id, PolicyType.TOURISM, 1);
+
+    for (let i = 0; i < 6; i++) loop.tick();
+    return state.grid.getCell(10, 11)!.landValue;
+  };
+
   it('should lower land value inside the district that took the policy', () => {
-    const make = (withPolicy: boolean) => {
-      const state = createGameState(30, 30);
-      const loop = new SimulationLoop(state);
-      for (let x = 5; x < 15; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
-      for (let x = 6; x < 14; x++) state.grid.setCell(x, 11, { zoneType: ZoneType.COMMERCIAL_LOW });
-
-      const d = state.districts.createDistrict('D');
-      for (let x = 6; x < 14; x++) state.districts.addCellToDistrict(d.id, x, 11);
-      if (withPolicy) state.policies.setPolicyLevel(d.id, PolicyType.TOURISM, 1);
-
-      for (let i = 0; i < 24; i++) loop.tick();
-      return state.grid.getCell(10, 11)!.landValue;
-    };
-    expect(make(true), '開了帶犯罪代價的政策，地價卻沒有變差').toBeLessThan(make(false));
+    const plain = landValueAt(false);
+    // 正向控制：地價根本沒算的話，兩組都是 0，`toBeLessThan` 也會是 false ——
+    // 但錯的理由完全不同，分開講才看得出來是哪一種壞。
+    expect(plain, '地價沒有被算過，這條測試等於空轉').toBeGreaterThan(0);
+    expect(landValueAt(true), '開了帶犯罪代價的政策，地價卻沒有變差').toBeLessThan(plain);
   });
 });
 ```
@@ -1023,8 +1071,13 @@ Run: `npx tsc --noEmit`
 
 | 檔案 | 衝突 | 怎麼改 |
 |---|---|---|
-| `District.test.ts:169` | 要求每個 `POLICY_CONFIG` 價格 > 0 | 那張表不再有價格,刪掉這條;改成驗 `POLICY_BILLING` 的 `perUnit` 全部 > 0 |
-| `PolicyEffectiveness.test.ts` | 要求限制型政策仍收 150 + 120 | 限制型現在免費,期望值改 0,並在測試裡寫明為什麼 |
+| `District.test.ts:169` | 讀 `pm.getPolicyCost(...)` | getter 已刪,改讀 `policyCost(type, 1, scale)` |
+| `District.test.ts:202-207` | 另一個 `getPolicyCost` 迴圈 | 同上 |
+| `District.test.ts:210-215` | 斷言每個 `POLICY_CONFIG[t].cost > 0` | 那張表不再有價格。改成驗 `POLICY_BILLING` 每個 `perUnit` 全部 > 0 |
+| `PolicyEffectiveness.test.ts:44-75` | 三個 `calculateDistrictPolicyCost` 少人口參數,而且 fixture 沒有 `cells` | 補人口、給每個 fixture 加 `cells: { size: N }` |
+| `PolicyEffectiveness.test.ts:51,56,62,63,101` | 讀 `POLICY_CONFIG[...].cost` | 改讀 `policyCost(...)` |
+| `PolicyEffectiveness.test.ts:67` | 要求限制型政策仍收 150 + 120 | 限制型現在免費,期望值改 0,並在測試裡寫明為什麼 |
+| `src/Game.ts:105` | 死 import(整個檔案沒有用到 `calculateDistrictPolicyCost`) | 直接刪掉這一行 |
 | `EconomyPanelMatchesBudget.test.ts` | 用 `NO_HEAVY_INDUSTRY` 保證 `policyCost` 非零 | 換成 `ENCOURAGE_RECYCLING`,並確保該分區有格子 |
 | `Simulation.test.ts` | 計費分區沒有任何 cells,總政策費會是 0 | 給那個分區加格子 |
 | `ExpenseCalculator.test.ts` | 4 個呼叫少第二參數,mock policy 有 `cost` | 補人口、mock 改成 `{ type, level }` 且外層有 `cells` |
@@ -1161,44 +1214,63 @@ describe('全城條例', () => {
 
 ```ts
 import { describe, it, expect } from 'vitest';
-import { createGameState } from '../GameState';
+import { createGameState, type GameState } from '../GameState';
 import { SimulationLoop } from '../SimulationLoop';
+import { buildEconomyBreakdownContext } from '../../economy/EconomyBreakdownContext';
 import { PolicyType } from '../../district/types';
 import { ZoneType } from '../../grid/types';
 
-function city() {
+const HOUSE = 1;   // Small House（RESIDENTIAL_LOW）
+
+/**
+ * 建築直接種進格子、人口直接造。
+ *
+ * `PowerGrid.calculateDemand` 只算 `buildingId > 0` 的格子，而建築成長要求該格
+ * 有電有水 —— 沒有電廠水廠的測試城市長不出任何東西，需求會是 0，正向控制就先掛了。
+ * 人口同理:`getPopulation()` 是市民陣列的長度，新遊戲是 0，而節能法規是按人口
+ * 計費的，人口 0 時費用恆為 0。
+ */
+function city(): { state: GameState; loop: SimulationLoop } {
   const state = createGameState(30, 30);
   for (let x = 5; x < 20; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
-  for (let x = 6; x < 19; x++) state.grid.setCell(x, 11, { zoneType: ZoneType.RESIDENTIAL_LOW });
+  for (let x = 6; x < 19; x++) {
+    state.grid.setCell(x, 11, { zoneType: ZoneType.RESIDENTIAL_LOW, buildingId: HOUSE });
+  }
+  for (let i = 0; i < 200; i++) state.citizens.restoreCitizen({}, 0);
   return { state, loop: new SimulationLoop(state) };
 }
 
+const policyExpense = (state: GameState) =>
+  buildEconomyBreakdownContext(state, null).policyCost;
+
 describe('全城條例真的接進模擬', () => {
   it('should lower total power demand', () => {
-    const before = (() => { const { state, loop } = city();
-      for (let i = 0; i < 30; i++) loop.tick(); return state.power.getDemand(); })();
-    const after = (() => { const { state, loop } = city();
-      state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 3);
-      for (let i = 0; i < 30; i++) loop.tick(); return state.power.getDemand(); })();
-    expect(before, '沒有需求可比，這條測試等於空轉').toBeGreaterThan(0);
-    expect(after, '節能法規沒有降低電力需求').toBeLessThan(before);
+    const demandOf = (level: number) => {
+      const { state, loop } = city();
+      state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, level);
+      for (let i = 0; i < 6; i++) loop.tick();
+      return state.power.getDemand();
+    };
+    const plain = demandOf(0);
+    expect(plain, '沒有電力需求可比，這條測試等於空轉').toBeGreaterThan(0);
+    expect(demandOf(3), '節能法規沒有降低電力需求').toBeLessThan(plain);
   });
 
   it('should show up as an expense in the budget', () => {
-    const { state, loop } = city();
-    state.citizens.setPopulationForTest?.(5000);
-    const plain = loop.getExpenseBreakdown().policyCost;
+    const { state } = city();
+    const plain = policyExpense(state);
     state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 3);
-    expect(loop.getExpenseBreakdown().policyCost, '全城條例沒有進預算')
-      .toBeGreaterThan(plain);
+    const withOrdinance = policyExpense(state);
+    expect(withOrdinance, '全城條例沒有進預算').toBeGreaterThan(plain);
+    expect(withOrdinance - plain)
+      .toBeCloseTo(state.ordinances.totalCost(state.citizens.getPopulation()), 6);
   });
 });
 ```
 
-> 實作時先確認 `SimulationLoop` 取得支出明細的公開方法名稱與 `CitizenManager` 設定
-> 人口的測試用途方法。沒有對應方法的話,改成跑滿一個預算週期後讀
-> `state.budget` 的支出欄位 —— **不要**改成直接呼叫 `calculateDistrictPolicyCost`,
-> 那樣就繞過了要驗的那條線。
+> `SimulationLoop.getExpenseBreakdown()` **不存在** —— 支出是 `calculateIncome()`
+> (private)寫進 `state.budget.expenses` 的。所以這裡走 `buildEconomyBreakdownContext`,
+> 那是預算面板實際讀的同一條路。迴圈那一條由 Task 8 的測試守住。
 
 - [ ] **Step 2: 跑測試確認失敗**
 
@@ -1339,9 +1411,28 @@ export class CityOrdinances {
 
 - [ ] **Step 6: 接進 `GameState`、`Serializer`、模擬**
 
+0. **先把政策總支出抽成一個函式**,`ExpenseCalculator.ts`:
+
+```ts
+/**
+ * 本期政策總支出:分區條例加全城條例。
+ *
+ * 抽出來是因為它有兩個消費端 —— 模擬迴圈的預算與預算面板的明細。兩邊各寫一次
+ * 加法的話,加了全城條例只改到一邊,面板與帳本就會靜靜地差一個數字。
+ */
+export function totalPolicyExpense(
+  districts: readonly { cells: { size: number }; policies: readonly { level: number; type: PolicyType }[] }[],
+  ordinances: { totalCost(population: number): number },
+  population: number,
+): number {
+  return calculateDistrictPolicyCost(districts, population) + ordinances.totalCost(population);
+}
+```
+
 1. `GameState.ts`:介面加 `ordinances: CityOrdinances;`,建立處加 `ordinances: new CityOrdinances(),`
-2. `Serializer.ts`:`SerializedState`(第 37 行的那個型別,**不叫 `SaveData`**)加
-   `ordinances?: ReturnType<CityOrdinances['toJSON']>;`;第 159 行附近加
+2. `Serializer.ts`:`SerializedState`(第 37 行的那個型別,**不叫 `SaveData`**,而且
+   **沒有 export** —— 要在同一個檔案裡改)加
+   `ordinances?: ReturnType<CityOrdinances['toJSON']>;`;第 160 行附近加
    `ordinances: state.ordinances.toJSON(),`;第 287 行附近加
    `state.ordinances.restore(saved.ordinances);`
 3. `PowerGrid.calculateDemand` 加第二參數(預設 1,現有四個呼叫端不必改):
@@ -1357,8 +1448,8 @@ export class CityOrdinances {
 4. `SimulationLoop.ts:1899`:
    `this.state.power.calculateDemand(this.state.grid, this.state.ordinances.getPowerDemandMultiplier())`
    `Game.ts:675` 同樣處理
-5. `SimulationLoop.ts:996` 與 `EconomyBreakdownContext.ts:36` 的 `policyCost` 加上
-   `+ state.ordinances.totalCost(population)`
+5. `SimulationLoop.ts:996` 與 `EconomyBreakdownContext.ts:36` 都改成呼叫
+   `totalPolicyExpense(...)` —— 兩邊共用同一個函式,不各自寫一次加法
 6. `IncomeCalcAdapter` 的 `getRevenueMultiplier` 乘上
    `state.ordinances.getRevenueMultiplier(zoneType)` —— 全城條例對每一格都生效,
    包含不屬於任何分區的格子,所以要在 `if (!district) return 1` **之前**乘
@@ -1592,6 +1683,7 @@ describe('政策支出明細', () => {
   it('should list one line per active policy, district and city alike', () => {
     const ord = new CityOrdinances();
     ord.setLevel(PolicyType.ENERGY_REGULATION, 2);
+    // 人口不能是 0 —— 節能法規按人口計費，人口 0 的話那一行的 cost 是 0 而被跳過。
     const lines = listPolicyExpenses(districts() as never, ord, 1000);
     expect(lines).toHaveLength(2);
     expect(lines.find(l => l.scope === 'district')!.districtName).toBe('Downtown');
@@ -1605,27 +1697,48 @@ describe('政策支出明細', () => {
   });
 
   it('should sum to exactly what the budget charges', () => {
-    // 明細跟帳對不起來的話，玩家看到的解釋是假的。所以比的是模擬迴圈實際算出來的
-    // 那個數字，不是把同一條公式再算一次。
-    const state = createGameState(30, 30);
-    const loop = new SimulationLoop(state);
-    const d = state.districts.createDistrict('Downtown');
-    for (let x = 5; x < 15; x++) state.districts.addCellToDistrict(d.id, x, 5);
-    state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 2);
-    state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 2);
+    // 明細跟帳對不起來的話，玩家看到的解釋是假的。所以比的是**模擬迴圈實際寫進
+    // 預算的那個數字**，不是把同一條公式再算一次。
+    //
+    // 人口必須造出來:節能法規按人口計費，人口 0 的話全城那一段恆為 0，刪掉
+    // listPolicyExpenses 的全城迴圈也不會被抓到。
+    const build = (on: boolean) => {
+      const state = createGameState(30, 30);
+      const loop = new SimulationLoop(state);
+      for (let i = 0; i < 200; i++) state.citizens.restoreCitizen({}, 0);
+      const d = state.districts.createDistrict('Downtown');
+      for (let x = 5; x < 15; x++) state.districts.addCellToDistrict(d.id, x, 5);
+      if (on) {
+        state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 2);
+        state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 2);
+      }
+      // calculateIncome 在 slowSlot 5 跑，六個 tick 剛好涵蓋一次。
+      for (let i = 0; i < 6; i++) loop.tick();
+      return { state, expenses: state.budget.expenses };
+    };
 
-    const population = state.citizens.getPopulation();
+    const off = build(false);
+    const on = build(true);
+    const charged = on.expenses - off.expenses;
+
     const lines = listPolicyExpenses(
-      state.districts.getAllDistricts() as never, state.ordinances, population);
+      on.state.districts.getAllDistricts() as never,
+      on.state.ordinances,
+      on.state.citizens.getPopulation(),
+    );
     const sum = lines.reduce((a, l) => a + l.cost, 0);
 
+    expect(lines.filter(l => l.scope === 'city'), '沒有全城條例，全城那一段是空測試')
+      .toHaveLength(1);
     expect(sum, '明細合計是 0，這條測試等於空轉').toBeGreaterThan(0);
-    expect(sum).toBeCloseTo(loop.getExpenseBreakdown().policyCost, 6);
+    expect(sum, '明細合計跟預算實際多收的錢對不起來').toBeCloseTo(charged, 6);
   });
 });
 ```
 
-> `loop.getExpenseBreakdown()` 的實際名稱在 Task 6 已經查過,沿用同一個。
+> 兩座城市除了政策以外完全一樣,而且沒有電廠水廠 —— 沒有電就長不出建築,所以
+> 六個 tick 內成長與遷居不會動,差額只可能來自政策。`SimulationLoop.getExpenseBreakdown()`
+> 不存在,支出是寫進 `state.budget.expenses` 的。
 
 - [ ] **Step 2: 跑測試確認失敗**
 
@@ -1699,8 +1812,9 @@ Run: `npx eslint src/core/district/ src/core/economy/ src/ui/modals/`
 - [ ] **Step 7: revert-verify**
 
 兩次:
-1. `listPolicyExpenses` 的全城迴圈刪掉 → `should sum to exactly what the budget charges` 與
-   `should list one line per active policy` 轉紅
+1. `listPolicyExpenses` 的全城迴圈刪掉 → `should sum to exactly what the budget charges`
+   的「沒有全城條例，全城那一段是空測試」那條斷言與合計斷言都轉紅，
+   `should list one line per active policy` 也轉紅
 2. 分區那一段的 `districtCells: d.cells.size` 改成 `districtCells: 1` →
    `should sum to exactly what the budget charges` 轉紅
 
