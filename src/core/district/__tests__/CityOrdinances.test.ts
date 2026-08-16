@@ -43,6 +43,44 @@ describe('全城條例', () => {
     expect(pm.getPolicyLevel(d.id, PolicyType.ENERGY_REGULATION), '全城條例被設進了分區').toBe(0);
   });
 
+  it('should refuse a city ordinance smuggled in through a save', () => {
+    // 存檔是使用者能編輯的檔案。setPolicyLevel 擋得住正常路徑，但 fromJSON 是
+    // 另一條進得來的門 —— 從那裡塞一條全城條例進分區，收入效果會被套兩次
+    // （全城一次、分區一次），費用也會被收兩次。
+    const dm = DistrictManager.fromJSON({
+      nextId: 2,
+      districts: [{
+        id: 'district_1', name: 'D', cells: ['1,1'], specialization: 'NONE',
+        policies: [{
+          id: 'p1', name: 'Energy Regulation',
+          type: PolicyType.ENERGY_REGULATION, level: 3,
+        }],
+      }],
+    } as never);
+    const pm = new PolicyManager(dm);
+    expect(pm.getPolicyLevel('district_1', PolicyType.ENERGY_REGULATION),
+      '全城條例從存檔溜進了分區').toBe(0);
+    expect(dm.getDistrict('district_1')!.policies,
+      '全城條例還留在分區的政策清單裡').toHaveLength(0);
+  });
+
+  it('should keep district policies when dropping a smuggled ordinance', () => {
+    // 反面控制:整批丟掉的話上面那條也會過，但玩家的分區政策就沒了。
+    const dm = DistrictManager.fromJSON({
+      nextId: 2,
+      districts: [{
+        id: 'district_1', name: 'D', cells: ['1,1'], specialization: 'NONE',
+        policies: [
+          { id: 'p1', name: 'E', type: PolicyType.ENERGY_REGULATION, level: 3 },
+          { id: 'p2', name: 'R', type: PolicyType.ENCOURAGE_RECYCLING, level: 2 },
+        ],
+      }],
+    } as never);
+    const pm = new PolicyManager(dm);
+    expect(pm.getPolicyLevel('district_1', PolicyType.ENCOURAGE_RECYCLING),
+      '分區政策被一起丟掉了').toBe(2);
+  });
+
   it('should clamp what it stores', () => {
     const o = new CityOrdinances();
     o.setLevel(PolicyType.ENERGY_REGULATION, 99);

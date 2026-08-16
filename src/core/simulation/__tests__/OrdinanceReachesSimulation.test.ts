@@ -68,6 +68,10 @@ describe('全城條例真的接進模擬', () => {
       .toBeLessThan(1);
     expect(state.ordinances.getRevenueMultiplier(ZoneType.RESIDENTIAL_LOW), '住宅也被扣了')
       .toBe(1);
+    // 工業扣得比商業重 —— 製程改造比換一批冷氣貴得多。只驗「兩個都 < 1」的話，
+    // 把工業誤套成商業的倍率也會過。
+    expect(state.ordinances.getRevenueMultiplier(ZoneType.INDUSTRIAL), '工業與商業被扣得一樣多')
+      .toBeLessThan(state.ordinances.getRevenueMultiplier(ZoneType.COMMERCIAL_LOW));
   });
 
   it('should apply outside any district too', () => {

@@ -1,5 +1,6 @@
 import { PolicyType } from './types';
-import { POLICY_CONFIG, maxLevel } from './PolicyManager';
+import { POLICY_CONFIG, IMPLEMENTED_POLICY_TYPES, maxLevel } from './PolicyManager';
+import { isDistrictScoped } from './PolicyScope';
 import { policyCost, type PolicyScale } from './PolicyBilling';
 
 /**
@@ -52,7 +53,7 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
     '垃圾 −35%　·　商業收入 −8%',
     '垃圾 −55%　·　商業收入 −18%',
   ],
-  [PolicyType.TOURISM]: ['稅收 +20%　·　犯罪率上升'],
+  [PolicyType.TOURISM]: ['收入 +20%　·　犯罪率上升'],
   [PolicyType.ORGANIC_FOOD]: ['地價 +6　·　商業收入 −5%'],
   [PolicyType.ENERGY_REGULATION]: [
     '電力需求 −8%　·　商業收入 −1%、工業收入 −2%',
@@ -77,4 +78,15 @@ export function districtPolicyTotal(
   let total = 0;
   for (const p of policies) total += policyCost(p.type, p.level, scale);
   return total;
+}
+
+/**
+ * 分區面板該提供哪些條例。
+ *
+ * 全城條例濾掉 —— 列出來玩家會按，按了沒反應（`setPolicyLevel` 會擋），那比看不到
+ * 更糟。這份清單本來寫在 `DistrictModal` 裡，搬過來是為了測得到:寫在那邊的話，
+ * filter 拿掉不會有任何測試轉紅。
+ */
+export function districtOfferedPolicies(): PolicyType[] {
+  return [...IMPLEMENTED_POLICY_TYPES].filter(isDistrictScoped);
 }

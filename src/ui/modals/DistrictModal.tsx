@@ -1,10 +1,10 @@
 import { createSignal, createEffect, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
-import { POLICY_CONFIG, IMPLEMENTED_POLICY_TYPES, isPolicyImplemented } from '../../core/district/PolicyManager';
-import { isDistrictScoped } from '../../core/district/PolicyScope';
+import { POLICY_CONFIG, isPolicyImplemented } from '../../core/district/PolicyManager';
 import {
   nextPolicyLevel, policyButtonText, policyEffectSummary, districtPolicyTotal,
+  districtOfferedPolicies,
 } from '../../core/district/PolicyPresentation';
 import type { PolicyType } from '../../core/district/types';
 
@@ -24,8 +24,8 @@ import type { PolicyType } from '../../core/district/types';
  * was the third and fourth copy of data POLICY_CONFIG already holds.
  */
 // 全城條例不列在這裡 —— 列出來玩家會按，按了沒反應（setPolicyLevel 會擋），
-// 那比看不到更糟。它們在 City Ordinances 面板。
-const OFFERED_POLICY_TYPES = [...IMPLEMENTED_POLICY_TYPES].filter(isDistrictScoped);
+// 那比看不到更糟。它們在 City Ordinances 面板。清單本身在 core，那裡測得到。
+const OFFERED_POLICY_TYPES = districtOfferedPolicies();
 
 function retiredLabel(pt: PolicyType): string {
   return `${POLICY_CONFIG[pt]?.name ?? pt} (retired — no effect)`;
@@ -83,6 +83,7 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
             // enabled state until the modal was closed and reopened.
             const levelOf = (pt: PolicyType) => {
               version();
+              gameSignals.tick();
               return (d.policies as { type: PolicyType; level: number }[])
                 .find(p => p.type === pt)?.level ?? 0;
             };
@@ -100,8 +101,12 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
             // it, changed nothing on screen until the modal was closed and
             // reopened — and the cell count is the only feedback the paint tool
             // gives.
-            const name = () => { version(); return d.name; };
-            const cellCount = () => { version(); return d.cells.size; };
+            // 這幾個 memo 除了本地 version() 之外還要讀 gameSignals.tick():
+            // <For> 會重用同一個 District 物件，所以外層 districts() 追蹤全域 tick
+            // 對這裡沒有幫助。少了它，玩家一邊開著面板一邊畫分區，格數與費用會
+            // 停在舊值，直到切換某條政策或關掉重開。
+            const name = () => { version(); gameSignals.tick(); return d.name; };
+            const cellCount = () => { version(); gameSignals.tick(); return d.cells.size; };
             const scale = () => ({
               population: getGame().getState().citizens.getPopulation(),
               districtCells: cellCount(),

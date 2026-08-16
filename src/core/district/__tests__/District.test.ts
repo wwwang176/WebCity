@@ -203,6 +203,10 @@ describe('PolicyManager', () => {
       expect(cfg, `${policyType} 沒有設定`).toBeDefined();
       expect(cfg.name, `${policyType} 沒有名字`).toBeTruthy();
     }
+    // 名字必須各不相同 —— 全部叫同一個字也會通過「有名字」，但玩家看到的是五顆
+    // 一模一樣的按鈕。
+    const names = Object.values(PolicyType).map(t => POLICY_CONFIG[t].name);
+    expect(new Set(names).size, `有兩條條例同名:${names.join(', ')}`).toBe(names.length);
   });
 
   it('should charge a scale-dependent price for every billable policy', () => {

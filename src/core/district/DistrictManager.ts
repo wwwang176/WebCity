@@ -2,6 +2,7 @@ import { toPosKey } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
 import { District, Policy, Specialization } from './types';
 import { clampLevel, levelForLegacyActive, maxLevel } from './PolicyManager';
+import { isDistrictScoped } from './PolicyScope';
 import type { TaxRates } from '../economy/Tax';
 
 /**
@@ -158,7 +159,10 @@ export class DistrictManager {
         name: sd.name,
         cells: new Set(sd.cells ?? []),
         taxRateOverride: sd.taxRateOverride,
-        policies: (sd.policies ?? []).map((p) => ({
+        // 全城條例不該出現在分區的政策清單裡。`setPolicyLevel` 擋得住正常路徑，
+        // 但存檔是另一條進得來的門 —— 從那裡塞一條進來，收入效果會被套兩次
+        // （全城一次、分區一次），費用也會被收兩次。
+        policies: (sd.policies ?? []).filter((p) => isDistrictScoped(p.type)).map((p) => ({
           id: p.id, name: p.name, type: p.type,
           // 舊存檔只有 `active`。掉成 0 的話玩家讀檔會發現政策全被關掉了，而畫面上
           // 沒有任何東西說明為什麼；一律轉成 1 則會讓舊數字不在第一格的政策靜靜地
