@@ -50,7 +50,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     const result = findAvailableTransit(
-      [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, WALK_RANGE, reach,
+      [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, WALK_RANGE, reach, WALK_SPEED, WAIT_FACTOR,
     );
     expect(result.length, '同一側兩端都在站旁邊卻搭不到，這條測試等於沒測')
       .toBeGreaterThan(0);
@@ -63,7 +63,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     const result = findAvailableTransit(
-      [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, WALK_RANGE, reach,
+      [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, WALK_RANGE, reach, WALK_SPEED, WAIT_FACTOR,
     );
     expect(
       result,

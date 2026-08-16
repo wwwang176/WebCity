@@ -26,12 +26,17 @@ export function getRouteDailyRiders(route: TransportRoute): number {
  * A transit route is "available" if it has stops within walkRange
  * of both origin and destination, AND has remaining capacity.
  *
- * Estimated time is computed from actual route distances when available,
- * falling back to euclidean stop-to-stop distance.
- *
  * 「走得到」由 `reach` 定義，也就是沿人行道量。這裡曾經用曼哈頓距離，而曼哈頓
  * 距離看不見馬路：對街的站牌只有兩格，於是住戶被算成搭得到，行人被派過去，到了
  * 現場才發現行人只在路口過馬路，得繞一大圈。
+ *
+ * 估計時間是**整趟**：走到站 + 等車 + 乘車 + 走到目的地。
+ *
+ * 這裡曾經只回報乘車那一段，而這個數字會直接跟開車時間比大小 —— 一條班距 40
+ * tick、站牌在五格外的公車，看起來會跟「門口就有、班班準點」一樣好。它因此幾乎
+ * 永遠贏過開車，也永遠贏過含走路與等車的轉乘路線（`chooseModeMultiModal` 是先看
+ * 單一運具、更快才換過去）。結果是實際派車的那條路徑對步行距離完全不收費，唯一
+ * 擋住「走很遠去搭公車」的只剩下 `walkRange` 那個硬門檻。
  */
 export function findAvailableTransit(
   systems: readonly TransitSystemInfo[],
@@ -39,6 +44,8 @@ export function findAvailableTransit(
   destination: { x: number; y: number },
   walkRange: number,
   reach: StopReach,
+  walkSpeed: number,
+  waitFactor: number,
 ): AvailableTransport[] {
   const result: AvailableTransport[] = [];
 
@@ -67,8 +74,12 @@ export function findAvailableTransit(
       }
 
       if (bestOriginIdx < 0 || bestDestIdx < 0) continue;
+
+      const walkTime = (bestOriginDist + bestDestDist) / walkSpeed;
+
+      // 同一站上下車 = 沒有真的搭到，但走到站牌的那段路仍然花掉了。
       if (bestOriginIdx === bestDestIdx) {
-        result.push({ type: sys.type, estimatedTime: 0 });
+        result.push({ type: sys.type, estimatedTime: walkTime });
         continue;
       }
 
@@ -76,7 +87,11 @@ export function findAvailableTransit(
       const rideDistance = computeRideDistance(
         route.stops, bestOriginIdx, bestDestIdx, segDists,
       );
-      result.push({ type: sys.type, estimatedTime: rideDistance / sys.speed });
+      const wait = route.frequency * waitFactor;
+      result.push({
+        type: sys.type,
+        estimatedTime: walkTime + wait + rideDistance / sys.speed,
+      });
     }
   }
 

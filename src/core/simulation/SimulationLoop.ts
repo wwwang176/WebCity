@@ -2504,6 +2504,7 @@ export class SimulationLoop {
     return findAvailableTransit(
       this.getTransitSystemInfos(), origin, destination,
       SIMULATION.WALK_TO_STOP_RANGE, this.stopReach,
+      SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
   }
 
