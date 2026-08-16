@@ -43,15 +43,36 @@ export class WeatherRenderer {
   private readonly baseDirectionalIntensity = 0.8;
   private readonly baseHemiIntensity = 0.3;
 
+  /**
+   * 地圖之外的底色，以及它在夜裡剩下多少。
+   *
+   * 這片色塊不是天空 —— 等角正交視角下它佔掉螢幕很大一塊。原本它吃的是天色
+   * 關鍵影格，於是日落時整個畫面被 `_sunsetSky`（飽和橘紅）蓋滿，城市反而看
+   * 不見。色相因此固定成一個去飽和的冷灰藍，只有明度隨晝夜走。
+   *
+   * 這裡改的是**背景**，不是光：hemisphere 光仍然吃 `skyColor`，所以日落打在
+   * 建築頂面上的暖調沒有受影響。
+   */
+  private readonly _backdropDay = new THREE.Color(0xaeb8c2);
+  private readonly _backdropNight = new THREE.Color(0x2c333a);
+  private readonly _scratchBackdrop = new THREE.Color();
+
   // Colour keyframes — reusable (avoids 15 new Color() per frame)
   private readonly _nightSky   = new THREE.Color(0x0a0a2e);
   private readonly _sunriseSky = new THREE.Color(0x8899cc);
   private readonly _sunsetSky  = new THREE.Color(0xff4422);
-  private readonly _ambNight   = new THREE.Color(0x2244aa);
+  /**
+   * 夜間的環境光與月光。
+   *
+   * 原本是 `0x2244aa` / `0x3355aa` —— 藍是紅的五倍，乘完之後紅色通道只剩
+   * 7%，城市裡所有暖色在夜裡直接變黑。單純調高亮度只會讓畫面更藍，所以連同
+   * 去飽和一起改：仍然偏藍（夜的味道在這裡），但不再把其他兩個通道壓死。
+   */
+  private readonly _ambNight   = new THREE.Color(0x5a72b8);
   private readonly _ambSunrise = new THREE.Color(0x99aacc);
   private readonly _ambDay     = new THREE.Color(0xfff8f0);
   private readonly _ambSunset  = new THREE.Color(0xffaa66);
-  private readonly _dirNight   = new THREE.Color(0x3355aa);
+  private readonly _dirNight   = new THREE.Color(0x6b83c4);
   private readonly _dirSunrise = new THREE.Color(0xccaaff);
   private readonly _dirDay     = new THREE.Color(0xfffff0);
   private readonly _dirSunset  = new THREE.Color(0xff5522);
@@ -147,7 +168,9 @@ export class WeatherRenderer {
     const SS_END   = 0.88; // sunset → night complete (extended for slower decay)
 
     // ── Brightness: 6-segment ramp matching colour keyframes ──
-    const NIGHT_FLOOR = 0.225;
+    // 夜間的下限。抬高它是為了看得見地形與建築；顏色的去飽和（見 `_ambNight`）
+    // 是同一件事的另一半 —— 只動這個數字會讓夜裡更藍，不會更看得清楚。
+    const NIGHT_FLOOR = 0.30;
     const PEAK_BRIGHTNESS = 0.6;
     let brightness: number;
     if (t < SR_START || t >= SS_END) {
@@ -165,10 +188,19 @@ export class WeatherRenderer {
     }
 
     // ── Sky colour ──
+    // 仍然算出來，但只餵給 hemisphere 光 —— 背景走下面那個固定色相。
     const skyColor = this._scratchSky;
     this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
       this._nightSky, this._sunriseSky, this.baseSkyColor, this._sunsetSky, skyColor);
-    (this.sceneManager.scene.background as THREE.Color).copy(skyColor);
+
+    // ── Backdrop：色相固定，只有明度隨晝夜走 ──
+    // 日夜兩端各自寫成色票，而不是拿白天那個乘一個係數 —— `THREE.Color` 的
+    // 十六進位是 sRGB，運算卻在線性空間，乘 0.3 看起來會是 0.58。兩端直接指定，
+    // 眼睛看到的就是這裡寫的。
+    const nightToDay = (brightness - NIGHT_FLOOR) / (1 - NIGHT_FLOOR);
+    (this.sceneManager.scene.background as THREE.Color).copy(
+      this._scratchBackdrop.copy(this._backdropNight).lerp(this._backdropDay, nightToDay),
+    );
 
     // ── Ambient light ──
     this.sceneManager.ambientLight.intensity = 0.05 + brightness * (this.baseAmbientIntensity - 0.05);
@@ -180,14 +212,38 @@ export class WeatherRenderer {
     const moonBase = 0.08;
     this._sunIntensity = moonBase + brightness * (this.baseDirectionalIntensity - moonBase);
     this.sceneManager.directionalLight.intensity = this._sunIntensity;
-    this.sceneManager.directionalLight.castShadow = brightness > 0.05;
     this.timeBlend(t, SR_START, SR_PEAK, SR_END, SS_START, SS_PEAK, SS_END,
       this._dirNight, this._dirSunrise, this._dirDay, this._dirSunset,
       this.sceneManager.directionalLight.color);
 
+    /**
+     * 太陽高度的下限。沉到地平線以下的話光會從底下往上打，建築的下緣會亮起來，
+     * 所以它永遠停在這裡而不是真的落下去。代價是夜裡的方向被凍在仰角九度。
+     */
+    const SUN_ELEVATION_FLOOR = 0.1;
+    /** 太陽爬到這個高度因子，陰影就是實心的。 */
+    const SHADOW_FULL_AT = 0.30;
+
+    // ── 陰影的濃度跟著太陽高度走 ──
+    //
+    // 不能跟著亮度曲線走：那是兩套時程。亮度從 SR_START(0.19) 就開始爬，但上面
+    // 那個下限讓太陽在 `sunFactor` 超過 0.1 之前（約 t=0.266）一直凍在同一個
+    // 位置。照亮度給濃度的話，影子會在太陽還沒開始動的時候就浮出來、在原地僵著，
+    // 等太陽脫離下限才忽然開始縮 —— 畫面上就是「天亮了一陣子，影子才開始動」。
+    //
+    // 綁在 `sunFactor` 上，影子只在太陽真的在移動的區間裡才看得見。夜裡
+    // `sunFactor` 是 0，濃度也是 0，那條仰角九度、整晚不轉向的長拖影因此不會出現。
+    const shadowStrength = Math.min(1, Math.max(0,
+      (sunFactor - SUN_ELEVATION_FLOOR) / (SHADOW_FULL_AT - SUN_ELEVATION_FLOOR)));
+    this.sceneManager.directionalLight.shadow.intensity = shadowStrength;
+    // 濃度歸零就把整個 shadow pass 停掉 —— 全透明的影子仍然要每幀重畫一張
+    // 2048² 深度圖（空地圖上量到約 0.24 ms/幀，滿城市會等比例放大）。兩者綁在
+    // 同一個數字上，所以不會出現「關掉了卻還看得見」或「看不見卻還在畫」。
+    this.sceneManager.directionalLight.castShadow = shadowStrength > 0;
+
     // Sun position based on time
     const sunX = 50 * Math.cos(sunAngle);
-    const sunY = 80 * Math.max(0.1, sunFactor);
+    const sunY = 80 * Math.max(SUN_ELEVATION_FLOOR, sunFactor);
     const sunZ = 50;
     this.sceneManager.sunOffset.set(sunX, sunY, sunZ);
 
