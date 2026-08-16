@@ -19,6 +19,7 @@ import { OverviewModal } from './modals/OverviewModal';
 import { LayersModal } from './modals/LayersModal';
 import { CitySpecModal } from './modals/CitySpecModal';
 import { DistrictModal } from './modals/DistrictModal';
+import { CityOrdinanceModal } from './modals/CityOrdinanceModal';
 import { TransitModal } from './modals/TransitModal';
 import { DebugModal } from './modals/DebugModal';
 import { SettingsModal } from './modals/SettingsModal';
@@ -78,6 +79,7 @@ function GameUIRoot() {
       <LayersModal open={openModal() === 'layers'} onClose={closeModal} />
       <CitySpecModal open={openModal() === 'cityspec'} onClose={closeModal} />
       <DistrictModal open={openModal() === 'district'} onClose={closeModal} />
+      <CityOrdinanceModal open={openModal() === 'ordinances'} onClose={closeModal} />
       <TransitModal open={openModal() === 'transit'} onClose={closeModal} />
       <DebugModal open={openModal() === 'debug'} onClose={closeModal} />
       <SettingsModal onOpenDebug={() => toggleModal('debug')} />

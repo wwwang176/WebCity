@@ -2,6 +2,10 @@ import { createSignal, createEffect, For, Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { Modal } from './Modal';
 import { POLICY_CONFIG, IMPLEMENTED_POLICY_TYPES, isPolicyImplemented } from '../../core/district/PolicyManager';
+import { isDistrictScoped } from '../../core/district/PolicyScope';
+import {
+  nextPolicyLevel, policyButtonText, policyEffectSummary, districtPolicyTotal,
+} from '../../core/district/PolicyPresentation';
 import type { PolicyType } from '../../core/district/types';
 
 /**
@@ -19,14 +23,12 @@ import type { PolicyType } from '../../core/district/types';
  * Both lists are derived: the hand-written POLICY_TYPES / POLICY_LABELS pair
  * was the third and fourth copy of data POLICY_CONFIG already holds.
  */
-const OFFERED_POLICY_TYPES = [...IMPLEMENTED_POLICY_TYPES];
+// 全城條例不列在這裡 —— 列出來玩家會按，按了沒反應（setPolicyLevel 會擋），
+// 那比看不到更糟。它們在 City Ordinances 面板。
+const OFFERED_POLICY_TYPES = [...IMPLEMENTED_POLICY_TYPES].filter(isDistrictScoped);
 
-function policyLabel(pt: PolicyType): string {
-  const cfg = POLICY_CONFIG[pt];
-  if (!cfg) return pt;
-  // 費用不再是政策身上的常數 —— 它跟著分區規模走，所以顯示要等 UI 那一步接上
-  // 規模才有意義。
-  return isPolicyImplemented(pt) ? cfg.name : `${cfg.name} (retired — no effect)`;
+function retiredLabel(pt: PolicyType): string {
+  return `${POLICY_CONFIG[pt]?.name ?? pt} (retired — no effect)`;
 }
 
 export function DistrictModal(props: { open: boolean; onClose: () => void }) {
@@ -42,19 +44,19 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
     return getGame().getState().districts.getAllDistricts();
   };
 
-  const togglePolicy = (districtId: string, policyType: PolicyType) => {
+  const cyclePolicy = (districtId: string, policyType: PolicyType) => {
     const game = getGame();
     const state = game.getState();
     // A retired policy can only ever be REMOVED. Routing it through the normal
-    // toggle would re-apply one stored as `active: false` — which is how a
-    // legacy save could end up with a policy the player could see but never
-    // get rid of.
+    // cycle would re-apply one stored at level 0 — which is how a legacy save
+    // could end up with a policy the player could see but never get rid of.
     if (!isPolicyImplemented(policyType)) {
       state.policies.removePolicy(districtId, policyType);
-    } else if (state.policies.isPolicyActive(districtId, policyType)) {
-      state.policies.removePolicy(districtId, policyType);
     } else {
-      state.policies.setPolicyLevel(districtId, policyType, 1);
+      // 按一次進一級，到頂再按回到 0 —— 一顆按鈕就走得完全部等級。
+      const next = nextPolicyLevel(
+        state.policies.getPolicyLevel(districtId, policyType), policyType);
+      state.policies.setPolicyLevel(districtId, policyType, next);
     }
     // A build policy decides whether zoned cells in this district can develop
     // at all, and the overlay says so. Nothing else here can see that change,
@@ -79,9 +81,10 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
             // at all: removing a retired policy updated the state and the
             // billing, while the button kept its tick, its colour and its
             // enabled state until the modal was closed and reopened.
-            const activePolicies = () => {
+            const levelOf = (pt: PolicyType) => {
               version();
-              return new Set(d.policies.filter((p: any) => p.level > 0).map((p: any) => p.type));
+              return (d.policies as { type: PolicyType; level: number }[])
+                .find(p => p.type === pt)?.level ?? 0;
             };
             // Offered ∪ whatever this district already carries — the union is
             // what lets a retired policy from an old save be switched off.
@@ -99,29 +102,45 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
             // gives.
             const name = () => { version(); return d.name; };
             const cellCount = () => { version(); return d.cells.size; };
+            const scale = () => ({
+              population: getGame().getState().citizens.getPopulation(),
+              districtCells: cellCount(),
+            });
+            // 本區合計。費用跟著格數走，所以把分區畫大一倍這個數字就跳一倍。
+            const total = () => Math.round(districtPolicyTotal(
+              d.policies as { type: PolicyType; level: number }[], scale()));
             return (
               <div style="background:#1a2233;border-radius:6px;padding:8px 10px;margin-bottom:8px">
                 <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
                   <strong style="color:#e0e0e0">{name()}</strong>
                   <span style="color:#888;font-size:11px">{cellCount()} cells</span>
                 </div>
-                <div style="font-size:12px;color:#aaa;margin-bottom:4px">Policies:</div>
+                <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+                  <span style="font-size:12px;color:#aaa">Policies:</span>
+                  <Show when={total() > 0}>
+                    <span style="font-size:11px;color:#ce93d8">本區 ${total()}/期</span>
+                  </Show>
+                </div>
                 <div style="display:flex;flex-wrap:wrap;gap:4px">
                   <For each={listedPolicies()}>
                     {(pt) => {
-                      const isActive = () => activePolicies().has(pt as any);
+                      const level = () => levelOf(pt);
+                      const isActive = () => level() > 0;
                       const retired = () => !isPolicyImplemented(pt);
+                      const label = () => retired()
+                        ? retiredLabel(pt)
+                        : policyButtonText(pt, level(), scale());
                       // A retired policy is only listed at all because this
                       // district carries it, so it is always removable — even
                       // one stored as `active: false`, which the previous
                       // `retired && !isActive` rule left permanently stuck.
                       return (
                         <button
-                          onClick={() => togglePolicy(d.id, pt)}
+                          onClick={() => cyclePolicy(d.id, pt)}
                           title={retired()
                             ? 'This policy has no effect and is no longer charged. Click to remove it.'
-                            : undefined}
-                          aria-label={policyLabel(pt)}
+                            : policyEffectSummary(pt, Math.max(1, level()))}
+                          aria-label={label()}
                           style={{
                             'font-size': '11px', padding: '3px 8px', 'border-radius': '4px',
                             border: `1px solid ${isActive() ? (retired() ? '#a1887f' : '#ab47bc') : '#444'}`,
@@ -131,7 +150,7 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
                             opacity: retired() ? '0.6' : '1',
                           }}
                         >
-                          {isActive() ? '\u2713 ' : ''}{policyLabel(pt)}
+                          {label()}
                         </button>
                       );
                     }}
