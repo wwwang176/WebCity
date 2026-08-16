@@ -54,7 +54,7 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
     } else if (state.policies.isPolicyActive(districtId, policyType)) {
       state.policies.removePolicy(districtId, policyType);
     } else {
-      state.policies.applyPolicy(districtId, policyType);
+      state.policies.setPolicyLevel(districtId, policyType, 1);
     }
     // A build policy decides whether zoned cells in this district can develop
     // at all, and the overlay says so. Nothing else here can see that change,
@@ -81,7 +81,7 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
             // enabled state until the modal was closed and reopened.
             const activePolicies = () => {
               version();
-              return new Set(d.policies.filter((p: any) => p.active).map((p: any) => p.type));
+              return new Set(d.policies.filter((p: any) => p.level > 0).map((p: any) => p.type));
             };
             // Offered ∪ whatever this district already carries — the union is
             // what lets a retired policy from an old save be switched off.

@@ -351,7 +351,7 @@ describe('Serializer — districts, policies, specialization, market', () => {
     const state = createGameState(20, 20);
     const d = state.districts.createDistrict('NoFactories');
     state.districts.addCellToDistrict(d.id, 5, 5);
-    state.policies.applyPolicy(d.id, PolicyType.NO_HEAVY_INDUSTRY);
+    state.policies.setPolicyLevel(d.id, PolicyType.NO_HEAVY_INDUSTRY, 1);
     expect(state.policies.canBuildInDistrict(d.id, ZoneType.INDUSTRIAL)).toBe(false);
 
     const restored = deserializeGameState(serializeGameState(state));
@@ -413,12 +413,12 @@ describe('Serializer — districts, policies, specialization, market', () => {
   it('should not collide policy ids created after a load', () => {
     const state = createGameState(20, 20);
     const d = state.districts.createDistrict('D');
-    state.policies.applyPolicy(d.id, PolicyType.NO_HEAVY_INDUSTRY);
+    state.policies.setPolicyLevel(d.id, PolicyType.NO_HEAVY_INDUSTRY, 1);
     const firstId = d.policies[0]!.id;
 
     const restored = deserializeGameState(serializeGameState(state));
     const rd = restored.districts.getAllDistricts()[0]!;
-    restored.policies.applyPolicy(rd.id, PolicyType.TOURISM);
+    restored.policies.setPolicyLevel(rd.id, PolicyType.TOURISM, 1);
 
     const newPolicy = rd.policies.find(p => p.type === PolicyType.TOURISM)!;
     expect(newPolicy.id).not.toBe(firstId);

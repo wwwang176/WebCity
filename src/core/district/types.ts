@@ -22,8 +22,16 @@ export interface Policy {
   id: string;
   name: string;
   type: PolicyType;
+  /** 每期費用。之後會改成由計費表依規模算出來，屆時這一欄刪除。 */
   cost: number;
-  active: boolean;
+  /**
+   * 強度。0 = 關閉。
+   *
+   * 用一個等級欄位而不是三個 enum 成員（LIGHT / MEDIUM / HEAVY），是因為互斥必須
+   * 自動成立 —— 分成三個成員的話，「不能同時開輕度和重度」會變成另一份要手動
+   * 維護的檢查，而漏掉的那一條不會有任何徵兆。一個欄位只能是一個值。
+   */
+  level: 0 | 1 | 2 | 3;
 }
 
 export interface District {

@@ -47,8 +47,8 @@ describe('policies are charged only when they do something', () => {
     // policy losing its effect would then start billing for nothing again.
     const districts = [{
       policies: [
-        { active: true, cost: 999, type: 'NOT_A_REAL_POLICY' as PolicyType },
-        { active: true, cost: POLICY_CONFIG[PolicyType.TOURISM].cost, type: PolicyType.TOURISM },
+        { level: 1, cost: 999, type: 'NOT_A_REAL_POLICY' as PolicyType },
+        { level: 1, cost: POLICY_CONFIG[PolicyType.TOURISM].cost, type: PolicyType.TOURISM },
       ],
     }];
 
@@ -59,8 +59,8 @@ describe('policies are charged only when they do something', () => {
   it('should still bill implemented policies', () => {
     const districts = [{
       policies: [
-        { active: true, cost: POLICY_CONFIG[PolicyType.NO_HEAVY_INDUSTRY].cost, type: PolicyType.NO_HEAVY_INDUSTRY },
-        { active: true, cost: POLICY_CONFIG[PolicyType.HIGH_DENSITY_BAN].cost, type: PolicyType.HIGH_DENSITY_BAN },
+        { level: 1, cost: POLICY_CONFIG[PolicyType.NO_HEAVY_INDUSTRY].cost, type: PolicyType.NO_HEAVY_INDUSTRY },
+        { level: 1, cost: POLICY_CONFIG[PolicyType.HIGH_DENSITY_BAN].cost, type: PolicyType.HIGH_DENSITY_BAN },
       ],
     }];
 
@@ -69,7 +69,7 @@ describe('policies are charged only when they do something', () => {
 
   it('should not bill an inactive implemented policy', () => {
     const districts = [{
-      policies: [{ active: false, cost: 150, type: PolicyType.NO_HEAVY_INDUSTRY }],
+      policies: [{ level: 0, cost: 150, type: PolicyType.NO_HEAVY_INDUSTRY }],
     }];
 
     expect(calculateDistrictPolicyCost(districts)).toBe(0);
@@ -86,7 +86,7 @@ describe('policies are charged only when they do something', () => {
     for (const type of nonZoning) {
       const district = { id: 'd1', policies: [] as { type: PolicyType; active: boolean }[] };
       const mgr = new PolicyManager({ getDistrict: () => district as never });
-      mgr.applyPolicy('d1', type);
+      mgr.setPolicyLevel('d1', type, 1);
       for (const zone of numericZones()) {
         expect(mgr.canBuildInDistrict('d1', zone), `${type} blocked zone ${zone}`).toBe(true);
       }
@@ -119,7 +119,7 @@ describe('policies are charged only when they do something', () => {
     for (const type of restricting) {
       const district = { id: 'd1', policies: [] as { type: PolicyType; active: boolean }[] };
       const mgr = new PolicyManager({ getDistrict: () => district as never });
-      mgr.applyPolicy('d1', type);
+      mgr.setPolicyLevel('d1', type, 1);
 
       expect(isPolicyImplemented(type)).toBe(true);
       const blocked = POLICY_ZONE_RESTRICTIONS[type]!;

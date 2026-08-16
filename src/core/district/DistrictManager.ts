@@ -1,7 +1,17 @@
 import { toPosKey } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
 import { District, Policy, Specialization } from './types';
+import { clampLevel, maxLevel } from './PolicyManager';
 import type { TaxRates } from '../economy/Tax';
+
+/**
+ * 存檔裡的政策。舊存檔沒有 `level`，只有 `active`。
+ *
+ * 兩個欄位都宣告成可選是為了讓 `fromJSON` 能同時吃兩種形狀 —— 讀存檔的程式碼
+ * 是唯一該知道舊格式長什麼樣的地方。
+ */
+export type SerializedPolicy =
+  Omit<Policy, 'level'> & { level?: number; active?: boolean };
 
 /** Wire format for a single district. `cells` is a Set at runtime. */
 export interface SerializedDistrict {
@@ -9,7 +19,7 @@ export interface SerializedDistrict {
   name: string;
   cells: string[];
   taxRateOverride?: TaxRates;
-  policies: Policy[];
+  policies: SerializedPolicy[];
   specialization: Specialization;
 }
 
@@ -148,7 +158,13 @@ export class DistrictManager {
         name: sd.name,
         cells: new Set(sd.cells ?? []),
         taxRateOverride: sd.taxRateOverride,
-        policies: (sd.policies ?? []).map((p) => ({ ...p })),
+        policies: (sd.policies ?? []).map((p) => ({
+          id: p.id, name: p.name, type: p.type, cost: p.cost,
+          // 舊存檔只有 `active`。掉成 0 的話玩家讀檔會發現政策全被關掉了，而畫面上
+          // 沒有任何東西說明為什麼。新格式的 `level` 是權威（存過一次的檔案不該被
+          // 舊欄位蓋回去），但一樣要夾 —— 存檔是能被編輯的。
+          level: clampLevel(p.level ?? (p.active ? 1 : 0), maxLevel(p.type)),
+        })),
         specialization: sd.specialization ?? Specialization.NONE,
       };
       mgr.districts.set(district.id, district);

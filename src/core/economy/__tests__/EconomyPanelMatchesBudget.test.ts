@@ -44,7 +44,7 @@ function buildCity() {
   // A district with an implemented, active policy, so policyCost is non-zero.
   const district = state.districts.createDistrict('Downtown');
   state.districts.addCellToDistrict(district.id, 14, 9);
-  state.policies.applyPolicy(district.id, PolicyType.NO_HEAVY_INDUSTRY);
+  state.policies.setPolicyLevel(district.id, PolicyType.NO_HEAVY_INDUSTRY, 1);
 
   // Utilities, so the power/water maintenance rows are non-zero.
   placeInfraOnGrid(state.grid, 2, 11, 'power', 0);

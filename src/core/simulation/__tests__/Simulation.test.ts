@@ -623,7 +623,7 @@ describe('District integration', () => {
     // Create district and apply NO_HEAVY_INDUSTRY policy
     const d = state.districts.createDistrict('GreenZone');
     state.districts.addCellToDistrict(d.id, 5, 5);
-    state.policies.applyPolicy(d.id, PolicyType.NO_HEAVY_INDUSTRY);
+    state.policies.setPolicyLevel(d.id, PolicyType.NO_HEAVY_INDUSTRY, 1);
 
     // Set up conditions for building growth at (5,5): road + zone + power + water
     state.grid.setCell(5, 4, { roadType: 2, roadFlags: 0x0F });
@@ -641,7 +641,7 @@ describe('District integration', () => {
     const state = createGameState(20, 20);
     const d = state.districts.createDistrict('Suburbs');
     state.districts.addCellToDistrict(d.id, 3, 3);
-    state.policies.applyPolicy(d.id, PolicyType.HIGH_DENSITY_BAN);
+    state.policies.setPolicyLevel(d.id, PolicyType.HIGH_DENSITY_BAN, 1);
 
     expect(state.policies.canBuildInDistrict(d.id, ZoneType.RESIDENTIAL_HIGH)).toBe(false);
     expect(state.policies.canBuildInDistrict(d.id, ZoneType.COMMERCIAL_HIGH)).toBe(false);
@@ -652,8 +652,8 @@ describe('District integration', () => {
   it('district policy costs should be added to budget expenses', () => {
     const state = createGameState(20, 20);
     const d = state.districts.createDistrict('TestDistrict');
-    state.policies.applyPolicy(d.id, PolicyType.NO_HEAVY_INDUSTRY); // cost 150
-    state.policies.applyPolicy(d.id, PolicyType.ENCOURAGE_RECYCLING); // cost 100
+    state.policies.setPolicyLevel(d.id, PolicyType.NO_HEAVY_INDUSTRY, 1); // cost 150
+    state.policies.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 1); // cost 100
 
     const loop = new SimulationLoop(state);
     // Run enough ticks to trigger income calculation

@@ -10,12 +10,12 @@ import type { PolicyType } from '../district/types';
  * not diagnose (BUG-091).
  */
 export function calculateDistrictPolicyCost(
-  districts: readonly { policies: readonly { active: boolean; cost: number; type: PolicyType }[] }[],
+  districts: readonly { policies: readonly { level: number; cost: number; type: PolicyType }[] }[],
 ): number {
   let total = 0;
   for (const district of districts) {
     for (const policy of district.policies) {
-      if (policy.active && isPolicyImplemented(policy.type)) total += policy.cost;
+      if (policy.level > 0 && isPolicyImplemented(policy.type)) total += policy.cost;
     }
   }
   return total;

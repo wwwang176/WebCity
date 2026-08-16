@@ -150,13 +150,13 @@ describe('PolicyManager', () => {
 
   it('should apply a policy to a district', () => {
     const district = dm.createDistrict('Test');
-    pm.applyPolicy(district.id, PolicyType.NO_HEAVY_INDUSTRY);
+    pm.setPolicyLevel(district.id, PolicyType.NO_HEAVY_INDUSTRY, 1);
     expect(pm.isPolicyActive(district.id, PolicyType.NO_HEAVY_INDUSTRY)).toBe(true);
   });
 
   it('should remove a policy from a district', () => {
     const district = dm.createDistrict('Test');
-    pm.applyPolicy(district.id, PolicyType.ENCOURAGE_RECYCLING);
+    pm.setPolicyLevel(district.id, PolicyType.ENCOURAGE_RECYCLING, 1);
     pm.removePolicy(district.id, PolicyType.ENCOURAGE_RECYCLING);
     expect(pm.isPolicyActive(district.id, PolicyType.ENCOURAGE_RECYCLING)).toBe(false);
   });
@@ -173,14 +173,14 @@ describe('PolicyManager', () => {
 
   it('NO_HEAVY_INDUSTRY should block industrial buildings', () => {
     const district = dm.createDistrict('Clean Zone');
-    pm.applyPolicy(district.id, PolicyType.NO_HEAVY_INDUSTRY);
+    pm.setPolicyLevel(district.id, PolicyType.NO_HEAVY_INDUSTRY, 1);
     expect(pm.canBuildInDistrict(district.id, ZoneType.INDUSTRIAL)).toBe(false);
     expect(pm.canBuildInDistrict(district.id, ZoneType.COMMERCIAL_LOW)).toBe(true);
   });
 
   it('HIGH_DENSITY_BAN should block high density zones', () => {
     const district = dm.createDistrict('Low Rise');
-    pm.applyPolicy(district.id, PolicyType.HIGH_DENSITY_BAN);
+    pm.setPolicyLevel(district.id, PolicyType.HIGH_DENSITY_BAN, 1);
     expect(pm.canBuildInDistrict(district.id, ZoneType.RESIDENTIAL_HIGH)).toBe(false);
     expect(pm.canBuildInDistrict(district.id, ZoneType.COMMERCIAL_HIGH)).toBe(false);
     expect(pm.canBuildInDistrict(district.id, ZoneType.RESIDENTIAL_LOW)).toBe(true);
@@ -191,7 +191,7 @@ describe('PolicyManager', () => {
     const district = dm.createDistrict('Test');
     // Verify each restriction entry blocks the right zones
     for (const [policyType, blockedZones] of Object.entries(POLICY_ZONE_RESTRICTIONS)) {
-      pm.applyPolicy(district.id, policyType as PolicyType);
+      pm.setPolicyLevel(district.id, policyType as PolicyType, 1);
       for (const zone of blockedZones!) {
         expect(pm.canBuildInDistrict(district.id, zone)).toBe(false);
       }
@@ -221,8 +221,8 @@ describe('PolicyManager', () => {
     const pm2 = new PolicyManager(dm2);
     const d1 = dm.createDistrict('A');
     const d2 = dm2.createDistrict('B');
-    pm.applyPolicy(d1.id, PolicyType.TOURISM);
-    pm2.applyPolicy(d2.id, PolicyType.TOURISM);
+    pm.setPolicyLevel(d1.id, PolicyType.TOURISM, 1);
+    pm2.setPolicyLevel(d2.id, PolicyType.TOURISM, 1);
     // Both should start from 1 independently
     expect(d1.policies[0]!.id).toMatch(/^policy_1$/);
     expect(d2.policies[0]!.id).toMatch(/^policy_1$/);
@@ -240,7 +240,7 @@ describe('PolicyManager', () => {
       getDistrict: (id: string) => (id === 'mock_1' ? mockDistrict : undefined),
     };
     const mockPm = new PolicyManager(mockLookup);
-    mockPm.applyPolicy('mock_1', PolicyType.TOURISM);
+    mockPm.setPolicyLevel('mock_1', PolicyType.TOURISM, 1);
     expect(mockPm.isPolicyActive('mock_1', PolicyType.TOURISM)).toBe(true);
     expect(mockPm.isPolicyActive('nonexistent', PolicyType.TOURISM)).toBe(false);
   });

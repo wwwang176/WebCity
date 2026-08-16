@@ -98,6 +98,27 @@ export function isPolicyImplemented(type: PolicyType): boolean {
   return IMPLEMENTED_POLICY_TYPES.has(type);
 }
 
+/**
+ * 把任意數字夾成合法的等級。
+ *
+ * 存檔是使用者能編輯的檔案，而 `Policy.level` 宣告成 `0 | 1 | 2 | 3` —— 沒有夾住
+ * 的話，`-1` / `4` / 小數 / `NaN` 會直接破壞那個不變量，而 TypeScript 只在編譯期
+ * 看得到它。`Math.max(0, NaN)` 仍是 `NaN`，所以非有限數要先擋掉。
+ */
+export function clampLevel(level: number, max: number): Policy['level'] {
+  if (!Number.isFinite(level)) return 0;
+  return Math.max(0, Math.min(max, Math.floor(level))) as Policy['level'];
+}
+
+/**
+ * 這個條例最高幾級。
+ *
+ * 之後會改成從 `POLICY_EFFECTS` 的長度推導 —— 手寫的那份一定會跟表走散。
+ */
+export function maxLevel(_type: PolicyType): number {
+  return 3;
+}
+
 export class PolicyManager {
   private districtLookup: DistrictLookup;
   private nextPolicyId = 1;
@@ -106,23 +127,26 @@ export class PolicyManager {
     this.districtLookup = districtLookup;
   }
 
-  applyPolicy(districtId: string, policyType: PolicyType): void {
+  /**
+   * 設定某個分區裡某條政策的強度。0 = 關閉。
+   *
+   * 已經存在的條目就地改等級，不新增第二筆 —— 互斥靠的就是「一個型別只有一筆
+   * 紀錄，而那筆紀錄只有一個等級」。
+   *
+   * 等級 0 且原本沒有條目時什麼都不做:留一筆 level 0 的紀錄只是垃圾，而且會讓
+   * 「這個分區有哪些政策」的計數變得不準。
+   */
+  setPolicyLevel(districtId: string, policyType: PolicyType, level: number): void {
     const district = this.districtLookup.getDistrict(districtId);
     if (!district) return;
+    const clamped = clampLevel(level, maxLevel(policyType));
 
-    // Don't add duplicate policies — but DO re-enable a dormant one.
-    //
-    // Deduplicating by type alone meant a policy stored with `active: false`
-    // could never be turned back on: applyPolicy saw the type and returned,
-    // isPolicyActive reported false because of the flag, and the modal drew the
-    // switch as off. The player could press it for ever. (removePolicy deletes
-    // the entry outright, so this only arises from a save — but a save is
-    // exactly where it would be permanent.)
     const existing = district.policies.find((p) => p.type === policyType);
     if (existing) {
-      existing.active = true;
+      existing.level = clamped;
       return;
     }
+    if (clamped === 0) return;
 
     const cfg = POLICY_CONFIG[policyType];
     const policy: Policy = {
@@ -130,9 +154,16 @@ export class PolicyManager {
       name: cfg.name,
       type: policyType,
       cost: cfg.cost,
-      active: true,
+      level: clamped,
     };
     district.policies.push(policy);
+  }
+
+  /** 這個分區這條政策開到第幾級。沒有分區、沒有那條政策都是 0。 */
+  getPolicyLevel(districtId: string | null, policyType: PolicyType): number {
+    if (!districtId) return 0;
+    return this.districtLookup.getDistrict(districtId)
+      ?.policies.find((p) => p.type === policyType)?.level ?? 0;
   }
 
   removePolicy(districtId: string, policyType: PolicyType): void {
@@ -143,10 +174,7 @@ export class PolicyManager {
   }
 
   isPolicyActive(districtId: string, policyType: PolicyType): boolean {
-    const district = this.districtLookup.getDistrict(districtId);
-    if (!district) return false;
-
-    return district.policies.some((p) => p.type === policyType && p.active);
+    return this.getPolicyLevel(districtId, policyType) > 0;
   }
 
   getPolicyCost(policyType: PolicyType): number {
@@ -172,7 +200,7 @@ export class PolicyManager {
 
     let out = identity;
     for (const policy of district.policies) {
-      if (!policy.active) continue;
+      if (policy.level === 0) continue;
       const value = pick(POLICY_EFFECTS[policy.type] ?? {});
       if (value !== undefined) out = combine(out, value);
     }

@@ -27,7 +27,7 @@ describe('收入乘數認得分區類型', () => {
     const d = dm.createDistrict('D');
     const pm = new PolicyManager(dm);
     withEffect(PolicyType.TOURISM, { revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.5 } }, () => {
-      pm.applyPolicy(d.id, PolicyType.TOURISM);
+      pm.setPolicyLevel(d.id, PolicyType.TOURISM, 1);
       expect(pm.getRevenueMultiplier(d.id, ZoneType.COMMERCIAL_LOW), '商業沒有被扣').toBe(0.5);
       expect(pm.getRevenueMultiplier(d.id, ZoneType.RESIDENTIAL_LOW), '住宅也被扣了').toBe(1);
     });
@@ -39,7 +39,7 @@ describe('收入乘數認得分區類型', () => {
     const d = dm.createDistrict('D');
     const pm = new PolicyManager(dm);
     withEffect(PolicyType.TOURISM, { revenue: 1.2 }, () => {
-      pm.applyPolicy(d.id, PolicyType.TOURISM);
+      pm.setPolicyLevel(d.id, PolicyType.TOURISM, 1);
       for (const z of [ZoneType.COMMERCIAL_LOW, ZoneType.RESIDENTIAL_LOW, ZoneType.INDUSTRIAL]) {
         expect(pm.getRevenueMultiplier(d.id, z), `分區類型 ${z} 沒有吃到全域乘數`).toBeCloseTo(1.2, 6);
       }

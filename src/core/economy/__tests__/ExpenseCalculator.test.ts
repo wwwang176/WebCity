@@ -2,6 +2,12 @@ import { describe, it, expect } from 'vitest';
 import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../ExpenseCalculator';
 import { PolicyType } from '../../district/types';
 
+/**
+ * 計費看得到的形狀。刻意不用 `as any[]` —— 那個 cast 讓 `active` 換成 `level` 時
+ * 型別檢查整個靜音，兩條測試是跑起來才發現壞掉的。
+ */
+type BillableDistrict = Parameters<typeof calculateDistrictPolicyCost>[0][number];
+
 describe('ExpenseCalculator', () => {
   describe('calculateDistrictPolicyCost', () => {
     it('returns 0 when no districts exist', () => {
@@ -14,12 +20,10 @@ describe('ExpenseCalculator', () => {
       // filtered out as unimplemented and this case would have passed with
       // `active` ignored entirely, guarding nothing.
       const districts = [{
-        id: 'd1',
-        name: 'Test',
         policies: [
-          { type: PolicyType.NO_HEAVY_INDUSTRY, active: false, cost: 150 },
+          { type: PolicyType.NO_HEAVY_INDUSTRY, level: 0, cost: 150 },
         ],
-      }] as any[];
+      }] satisfies BillableDistrict[];
       expect(calculateDistrictPolicyCost(districts)).toBe(0);
     });
 
@@ -27,12 +31,10 @@ describe('ExpenseCalculator', () => {
       // Paired positive control: without it, "returns 0" is satisfiable by a
       // calculator that returns 0 for everything.
       const districts = [{
-        id: 'd1',
-        name: 'Test',
         policies: [
-          { type: PolicyType.NO_HEAVY_INDUSTRY, active: true, cost: 150 },
+          { type: PolicyType.NO_HEAVY_INDUSTRY, level: 1, cost: 150 },
         ],
-      }] as any[];
+      }] satisfies BillableDistrict[];
       expect(calculateDistrictPolicyCost(districts)).toBe(150);
     });
 
@@ -41,19 +43,17 @@ describe('ExpenseCalculator', () => {
       // placeholder type would now (correctly) cost nothing.
       const districts = [
         {
-          id: 'd1',
           policies: [
-            { type: PolicyType.NO_HEAVY_INDUSTRY, active: true, cost: 50 },
-            { type: PolicyType.HIGH_DENSITY_BAN, active: false, cost: 100 },
+            { type: PolicyType.NO_HEAVY_INDUSTRY, level: 1, cost: 50 },
+            { type: PolicyType.HIGH_DENSITY_BAN, level: 0, cost: 100 },
           ],
         },
         {
-          id: 'd2',
           policies: [
-            { type: PolicyType.HIGH_DENSITY_BAN, active: true, cost: 30 },
+            { type: PolicyType.HIGH_DENSITY_BAN, level: 1, cost: 30 },
           ],
         },
-      ] as any[];
+      ] satisfies BillableDistrict[];
       expect(calculateDistrictPolicyCost(districts)).toBe(80);
     });
   });

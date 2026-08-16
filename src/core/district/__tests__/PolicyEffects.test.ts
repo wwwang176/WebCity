@@ -25,7 +25,7 @@ function districtWith(...policies: PolicyType[]): { policies: PolicyManager; id:
   const districts = new DistrictManager();
   const d = districts.createDistrict('Test');
   const mgr = new PolicyManager(districts);
-  for (const p of policies) mgr.applyPolicy(d.id, p);
+  for (const p of policies) mgr.setPolicyLevel(d.id, p, 1);
   return { policies: mgr, id: d.id };
 }
 
@@ -122,8 +122,8 @@ describe('policies stack per district, not city-wide', () => {
     const green = districts.createDistrict('Green');
     const resort = districts.createDistrict('Resort');
     const mgr = new PolicyManager(districts);
-    mgr.applyPolicy(green.id, PolicyType.ENCOURAGE_RECYCLING);
-    mgr.applyPolicy(resort.id, PolicyType.TOURISM);
+    mgr.setPolicyLevel(green.id, PolicyType.ENCOURAGE_RECYCLING, 1);
+    mgr.setPolicyLevel(resort.id, PolicyType.TOURISM, 1);
 
     expect(mgr.getGarbageMultiplier(green.id)).toBeLessThan(1);
     expect(mgr.getGarbageMultiplier(resort.id)).toBe(1);
@@ -153,9 +153,11 @@ describe('a dormant policy can be switched back on', () => {
     const districts = new DistrictManager();
     const d = districts.createDistrict('Test');
     const mgr = new PolicyManager(districts);
-    mgr.applyPolicy(d.id, PolicyType.ENCOURAGE_RECYCLING);
-    // What a save carrying a disabled policy restores.
-    d.policies[0]!.active = false;
+    mgr.setPolicyLevel(d.id, PolicyType.ENCOURAGE_RECYCLING, 1);
+    // What a save carrying a disabled policy restores. Written directly rather
+    // than through setPolicyLevel because the point is to reproduce the stored
+    // shape, not the path that produces it.
+    d.policies[0]!.level = 0;
     return { districts, mgr, id: d.id, district: d };
   }
 
@@ -167,7 +169,7 @@ describe('a dormant policy can be switched back on', () => {
 
   it('should become active when applied again', () => {
     const { mgr, id } = districtWithDormantPolicy();
-    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    mgr.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, 1);
     expect(mgr.isPolicyActive(id, PolicyType.ENCOURAGE_RECYCLING)).toBe(true);
     expect(mgr.getGarbageMultiplier(id)).toBeLessThan(1);
   });
@@ -176,16 +178,16 @@ describe('a dormant policy can be switched back on', () => {
     // The dedup this replaces was there for a reason: two entries would be
     // billed twice and their effects compounded.
     const { mgr, id, district } = districtWithDormantPolicy();
-    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
-    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    mgr.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, 1);
+    mgr.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, 1);
     expect(district.policies.filter(p => p.type === PolicyType.ENCOURAGE_RECYCLING)).toHaveLength(1);
   });
 
   it('should leave an already-active policy exactly as it was', () => {
     const { mgr, id, district } = districtWithDormantPolicy();
-    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    mgr.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, 1);
     const before = { ...district.policies[0]! };
-    mgr.applyPolicy(id, PolicyType.ENCOURAGE_RECYCLING);
+    mgr.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, 1);
     expect(district.policies[0]).toEqual(before);
   });
 });
