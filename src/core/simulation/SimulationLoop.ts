@@ -1140,16 +1140,17 @@ export class SimulationLoop {
 
       // Industrial zones are less affected by their own pollution
       const pollutionFactor = cell.zoneType === ZoneType.INDUSTRIAL ? SIMULATION.INDUSTRIAL_POLLUTION_FACTOR : 1;
+      const districtId = this.state.districts.getDistrictAt(x, y)?.id ?? null;
       const value = calculateLandValue({
         serviceCoverage,
         parkProximity,
         waterfront,
         pollution: (pollution.ground + pollution.water) * pollutionFactor,
         noise: pollution.noise * pollutionFactor,
-        crimeRate: this.getAvgCrime(),
-        policyBonus: this.state.policies.getLandValueBonus(
-          this.state.districts.getDistrictAt(x, y)?.id ?? null,
-        ),
+        // 條例可以往兩個方向動這一格:加地價（有機食品）也加犯罪（觀光）。
+        // 分區只查一次 —— 這是逐格跑的。
+        crimeRate: this.getAvgCrime() + this.state.policies.getCrimeBonus(districtId),
+        policyBonus: this.state.policies.getLandValueBonus(districtId),
       });
 
       // Write land value, service coverage, and noise to grid (avoid temp object)

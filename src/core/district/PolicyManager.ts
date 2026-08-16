@@ -57,6 +57,13 @@ export interface PolicyEffect {
    * 特定產業上:回收增加的是商家的處理成本,跟住戶無關。
    */
   revenueByZone?: Partial<Record<ZoneType, number>>;
+  /**
+   * 加到該區犯罪率上的量。正值是代價，單位同 `calculateLandValue` 的 `crimeRate`。
+   *
+   * `PoliceService` 只提供 `getCrimeReduction` —— 整個模擬沒有任何東西能讓犯罪
+   * **上升**，所以「+收入 +犯罪」這類取捨做不出來。這一欄是那個缺口。
+   */
+  crime?: number;
 }
 
 /**
@@ -78,8 +85,10 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
     // 減 55%，代價 18% → 0.327
     { garbage: 0.45, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.82, [ZoneType.COMMERCIAL_HIGH]: 0.82 } },
   ],
-  [PolicyType.TOURISM]: [{ revenue: 1.2 }],
-  [PolicyType.ORGANIC_FOOD]: [{ landValue: 6 }],
+  // 觀光帶人潮，人潮帶治安問題 —— 這是它的代價，不是市府掏的錢。
+  [PolicyType.TOURISM]: [{ revenue: 1.2, crime: 4 }],
+  // 有機食品讓這一區更宜居，代價是商家的進貨成本。
+  [PolicyType.ORGANIC_FOOD]: [{ landValue: 6, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95 } }],
 };
 
 /**
@@ -252,6 +261,11 @@ export class PolicyManager {
   /** Flat land-value bonus for cells in this district. */
   getLandValueBonus(districtId: string | null): number {
     return this.effect(districtId, e => e.landValue, 0, (a, b) => a + b);
+  }
+
+  /** 該區因條例而增加的犯罪率。沒有分區就是 0。 */
+  getCrimeBonus(districtId: string | null): number {
+    return this.effect(districtId, e => e.crime, 0, (a, b) => a + b);
   }
 
   /**
