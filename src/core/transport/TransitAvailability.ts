@@ -104,22 +104,28 @@ export function findAvailableTransit(
       if (bestOriginIdx < 0 || bestDestIdx < 0) continue;
 
       const walkTime = (bestOriginDist + bestDestDist) / walkSpeed;
+      const boardStop = route.stops[bestOriginIdx]!;
+      const alightStop = route.stops[bestDestIdx]!;
 
       // 同一站上下車 = 沒有真的搭到，但走到站牌的那段路仍然花掉了。
       if (bestOriginIdx === bestDestIdx) {
-        result.push({ type: sys.type, estimatedTime: walkTime, walkTime });
+        result.push({ type: sys.type, estimatedTime: walkTime, walkTime, boardStop, alightStop });
         continue;
       }
 
       const rideDistance = computeRideDistance(
         route.stops, bestOriginIdx, bestDestIdx, segDists,
       );
+      // 帶著這兩站一起回去。派車時重挑一次「最近的站」會挑到別條路線上，而時間
+      // 是照這兩站估的 —— 人會被記到他沒搭的那條路線頭上（BUG-283）。
       result.push({
         type: sys.type,
         estimatedTime: walkTime
           + expectedWait(headway, waitFactor, loadFactor)
           + rideDistance / sys.speed,
         walkTime,
+        boardStop,
+        alightStop,
       });
     }
   }

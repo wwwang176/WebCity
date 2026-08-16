@@ -1,4 +1,4 @@
-import { TransportMode, TransportType } from './types';
+import { TransportMode, TransportType, type TransportStop } from './types';
 import type { MultiLegRoute } from './MultiModalRouter';
 
 /** Mode choice configuration constants */
@@ -20,6 +20,18 @@ export interface AvailableTransport {
    * 數字就沒辦法只加權其中一段。
    */
   walkTime: number;
+  /**
+   * 這個估計是照哪兩站算的。
+   *
+   * 派車與計數要照著它走。選完運具之後再挑一次「最近的站」會挑到別條路線的站 ——
+   * 挑站的條件（沿人行道最近）跟選路線的條件（整趟最快）不是同一件事，各挑各的
+   * 一定會分岔（BUG-283）。
+   *
+   * 可選，是因為只驗算術的呼叫端（以及只做評分、不派車的可及性圖）不需要它。
+   * 產品裡真正會派出行人的那條路徑由 `findAvailableTransit` 產生，它一定填。
+   */
+  boardStop?: TransportStop;
+  alightStop?: TransportStop;
 }
 
 /**
@@ -100,6 +112,12 @@ export interface MultiModalChoice {
    * 慢過 1.5 倍就會被選，市民花掉的是那個比較慢的時間。
    */
   time: number;
+  /**
+   * 選中單一運具時，該上哪一站、下哪一站。走路、開車與轉乘路線時為 `null`
+   * ——轉乘的上下車站在 `multiLeg.legs` 裡，一段一組。
+   */
+  boardStop: TransportStop | null;
+  alightStop: TransportStop | null;
 }
 
 export interface ModeChoiceParams {
@@ -142,7 +160,10 @@ export function chooseModeMultiModal(
 
   if (distance <= MODE_CHOICE.WALK_MAX_DISTANCE) {
     // 這麼近就直接走 —— 不比較，因為開車去隔壁本來就不合理。
-    return { mode: TransportMode.WALK, multiLeg: null, time: distance / walkSpeed };
+    return {
+      mode: TransportMode.WALK, multiLeg: null, time: distance / walkSpeed,
+      boardStop: null, alightStop: null,
+    };
   }
 
   const driveTime = distance * (1 + congestionLevel);
@@ -153,6 +174,9 @@ export function chooseModeMultiModal(
   let bestTime = Infinity;
   let bestMode: TransportMode = TransportMode.DRIVE;
   let bestMultiLeg: MultiLegRoute | null = null;
+  // 跟著贏家一起換，不然會留著上一個候選的站 —— 那等於把人記到他沒搭的路線上。
+  let bestBoard: TransportStop | null = null;
+  let bestAlight: TransportStop | null = null;
 
   for (const t of singleTransit) {
     const mode = transportTypeToMode(t.type);
@@ -163,6 +187,8 @@ export function chooseModeMultiModal(
       bestTime = t.estimatedTime;
       bestMode = mode;
       bestMultiLeg = null;
+      bestBoard = t.boardStop ?? null;
+      bestAlight = t.alightStop ?? null;
     }
   }
 
@@ -177,11 +203,20 @@ export function chooseModeMultiModal(
     bestMode = (firstRide?.transitType && transportTypeToMode(firstRide.transitType))
       ?? TransportMode.BUS;
     bestMultiLeg = route;
+    // 轉乘路線的上下車站在各段 leg 裡，這兩個欄位只描述單一運具。
+    bestBoard = null;
+    bestAlight = null;
   }
 
   if (bestCost < threshold) {
-    return { mode: bestMode, multiLeg: bestMultiLeg, time: bestTime };
+    return {
+      mode: bestMode, multiLeg: bestMultiLeg, time: bestTime,
+      boardStop: bestBoard, alightStop: bestAlight,
+    };
   }
 
-  return { mode: TransportMode.DRIVE, multiLeg: null, time: driveTime };
+  return {
+    mode: TransportMode.DRIVE, multiLeg: null, time: driveTime,
+    boardStop: null, alightStop: null,
+  };
 }

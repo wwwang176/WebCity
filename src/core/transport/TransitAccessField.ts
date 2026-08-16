@@ -124,6 +124,8 @@ function transitOptions(
       type: route.type,
       estimatedTime: walkTime + wait + rideDistance / route.speed,
       walkTime,
+      boardStop: route.stops[a.stopIdx],
+      alightStop: route.stops[b.stopIdx],
     });
   }
   return options;

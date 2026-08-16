@@ -4600,3 +4600,32 @@ BUG-280 把 `updateCells` 變成道路編輯的主要路徑，這條的曝光度
 
 改成隨邊的增刪一起維護一個 Set，`getEdgeIds` 直接回傳。全量重建時要一併清空 ——
 否則上一代的 id 會留著，退休掃描會認為那些已經不存在的路還在。
+
+## BUG-283 已修：搭車的人被記到別條路線的站
+
+`findAvailableTransit` 逐條路線找出走得到的上下車站，用那兩站算出估計時間，回報之後
+就把站丟掉，只留下「這是公車」。`spawnCommuteVehicles` 決定搭公車以後，再用
+`findNearestStop(transitSystem.getStops(), fromPos)` 重新挑一次站 —— 而它搜的是**整個
+系統的所有站**，不是估計時間所依據的那條路線。
+
+只有一條公車路線的時候兩者一致，所以測試與早期城市都看不出來。路線一多就會分岔：
+挑到的最近站可能在另一條路線上，於是
+
+- `dailyRiders` 加到了他沒搭的那條路線頭上。`getRouteRiders` 把它加總成載重，
+  `loadFactor` → 擁擠等待 → `isOverCapacity`，兩條路線的擁擠程度同時被扭曲：真正
+  在載客的那條看起來很空，旁邊那條看起來爆滿。
+- 第一哩／最後一哩的行人被派去走向一個他不會上車的站。玩家看到的是有人走到某個
+  站牌然後消失。
+
+面板上的 Riders/Week 也是同一個數字（`smoothedDailyRiders × 7`），所以顯示跟模擬
+是一起錯的，對不出來。
+
+修法是不要重挑：`findAvailableTransit` 本來就算出了上下車站，把它一起帶回來（
+`AvailableTransport.boardStop` / `alightStop`），`chooseModeMultiModal` 跟著選中的
+那個候選一起帶出來，派車與計數直接用它。重挑本身就是 bug —— 挑站的條件（沿人行道
+最近）跟選路線的條件（整趟最快）不是同一件事，各挑各的一定會分岔。
+
+第一哩／最後一哩的行人也一起改了：走去的站就是他要上車的那一站。
+
+`findNearestReachableStop`（`transport/StopChoice.ts`）因此沒有任何產品呼叫端，整支
+刪掉 —— 留著等於留著一把「再挑一次」的工具在旁邊。

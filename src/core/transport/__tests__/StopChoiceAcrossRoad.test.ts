@@ -2,7 +2,6 @@ import { describe, it, expect } from 'vitest';
 import { findAvailableTransit, type TransitSystemInfo } from '../TransitAvailability';
 import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, type FlatRoute } from '../MultiModalRouter';
 import { SidewalkStopReach } from '../../traffic/StopWalkReach';
-import { findNearestReachableStop } from '../StopChoice';
 import { cityWithMainRoad } from '../../traffic/__tests__/gridCityFixture';
 import { TransportType, type TransportStop, type TransportRoute } from '../types';
 
@@ -22,7 +21,6 @@ function stop(id: number, x: number, y: number): TransportStop {
   };
 }
 
-const WALK_RANGE = 5;
 const WALK_SPEED = 1;
 const WAIT_FACTOR = 0.5;
 const TICKS_PER_DAY = 24;
@@ -87,28 +85,26 @@ describe('挑站牌不跨越馬路', () => {
     expect(result, '轉乘路線把住戶從馬路對面走到站牌').toEqual([]);
   });
 
-  it('should pick a reachable stop over a nearer one across the road', () => {
-    // 住在 (12,9)：對街的 (12,11) 直線只有 2 格，同側的 (9,9) 要 3 格。
-    // 用直線量的話對街永遠贏，行人於是被派去繞路口。
+  it('should board at the same-side stop, not the nearer one across the road', () => {
+    // 住在 (12,9)：對街的 (12,11) 直線只有 2 格，同側的 (9,9) 要 3 格。用直線量
+    // 的話對街永遠贏，行人於是被派去繞路口。回報的上車站就是行人會走去的那一站。
     const { graph } = cityWithMainRoad(8);
     const reach = new SidewalkStopReach(graph);
-    const stops = [stop(1, 12, 11), stop(2, 9, 9)];
+    const acrossRoad = stop(1, 12, 11);
+    const sameSide = stop(2, 9, 9);
+    const nearWork = stop(3, 4, 9);
+    const route = {
+      id: 1, stops: [acrossRoad, sameSide, nearWork], vehicles: 4, operatingCost: 0,
+    } as TransportRoute;
 
-    const picked = findNearestReachableStop(stops, { x: 12, y: 9 }, reach);
+    const [option] = findAvailableTransit(
+      [{ type: TransportType.BUS, speed: 2, routes: [route] }],
+      { x: 12, y: 9 }, { x: 5, y: 9 }, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
+    );
 
-    expect(picked, '一站都沒挑到').not.toBeNull();
-    expect(picked!.id, '挑了對街那一站 —— 行人得繞到路口再繞回來').toBe(2);
-  });
-
-  it('should pick nothing when every stop is across the road', () => {
-    // 走不到任何一站是有意義的答案：這個人搭不到車，該開車。
-    const { graph } = cityWithMainRoad(8);
-    const reach = new SidewalkStopReach(graph);
-
-    expect(
-      findNearestReachableStop(SOUTH_STOPS, { x: 12, y: 9 }, reach),
-      '硬挑了一站走不到的給他',
-    ).toBeNull();
+    expect(option, '同一側走得到卻沒有回報任何路線').toBeDefined();
+    expect(option!.boardStop?.id, '挑了對街那一站 —— 行人得繞到路口再繞回來')
+      .toBe(sameSide.id);
   });
 
   it('should still build walk legs on the stop side', () => {

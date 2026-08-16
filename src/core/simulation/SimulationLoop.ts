@@ -48,8 +48,8 @@ import { chooseMode, chooseModeMultiModal, type AvailableTransport } from '../tr
 import { buildTransferGraph, buildStopRouteCache, findMultiModalRoutes, flattenSystems, type TransferGraph, type FlatRoute } from '../transport/MultiModalRouter';
 import { calculateCitizenHealth, type HealthFactors } from '../citizen/CitizenHealth';
 import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../service/HealthService';
-import { TransportMode, type TransportStop } from '../transport/types';
-import { getSystemForMode, getTransitSystems, getTransitNetworkVersion, getTransitTopologyVersion, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
+import { TransportMode } from '../transport/types';
+import { getTransitSystems, getTransitNetworkVersion, getTransitTopologyVersion, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
 import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, countRoadTiles, findNearRoad, type ReadableGrid } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
@@ -74,7 +74,6 @@ import { WALK_DISUTILITY, walkWeightOf } from '../citizen/WalkWillingness';
 import { EducationLevel } from '../citizen/types';
 import type { ModeChoiceParams } from '../transport/ModeChoice';
 import { SidewalkStopReach } from '../traffic/StopWalkReach';
-import { findNearestReachableStop } from '../transport/StopChoice';
 import { WALK_RANGE_BY_TYPE } from '../transport/WalkRange';
 import { TRADE } from '../traffic/FreightSystem';
 import { spawnFreightVehicles, rebuildActiveFreight, type FreightSpawnContext } from '../traffic/FreightVehicleSpawner';
@@ -2308,7 +2307,7 @@ export class SimulationLoop {
         SIMULATION.AVERAGE_WAIT_FACTOR, this.transferGraph, SIMULATION.MAX_TRIP_LEGS,
         this.stopReach,
       );
-      const { mode, multiLeg } = chooseModeMultiModal(
+      const { mode, multiLeg, boardStop, alightStop } = chooseModeMultiModal(
         fromPos, toPos, availableTransport, multiModalRoutes,
         this.modeChoiceFor(citizen.education),
       );
@@ -2338,25 +2337,20 @@ export class SimulationLoop {
               });
             }
           } else {
-            // Single-transit: first-mile + last-mile
-            const transitSystem2 = getSystemForMode(this.state, mode);
-            if (transitSystem2) {
-              const originStop = this.findNearestStop(transitSystem2.getStops(), fromPos);
-              const destStop = this.findNearestStop(transitSystem2.getStops(), toPos);
-              if (originStop) {
-                this.pendingTrips.push({
-                  fromX: fromPos.x, fromY: fromPos.y,
-                  toX: originStop.x, toY: originStop.y,
-                  tripType: PedestrianTripType.FIRST_MILE, count: 1,
-                });
-              }
-              if (destStop) {
-                this.pendingTrips.push({
-                  fromX: destStop.x, fromY: destStop.y,
-                  toX: toPos.x, toY: toPos.y,
-                  tripType: PedestrianTripType.LAST_MILE, count: 1,
-                });
-              }
+            // 走去他真正要上車的那一站 —— 這兩站就是估計時間所依據的那兩站。
+            if (boardStop) {
+              this.pendingTrips.push({
+                fromX: fromPos.x, fromY: fromPos.y,
+                toX: boardStop.x, toY: boardStop.y,
+                tripType: PedestrianTripType.FIRST_MILE, count: 1,
+              });
+            }
+            if (alightStop) {
+              this.pendingTrips.push({
+                fromX: alightStop.x, fromY: alightStop.y,
+                toX: toPos.x, toY: toPos.y,
+                tripType: PedestrianTripType.LAST_MILE, count: 1,
+              });
             }
           }
         }
@@ -2382,12 +2376,10 @@ export class SimulationLoop {
             this.transferTracker.recordTransfer(label);
             this.transferTracker.recordBuilding(label, citizen.homeId!, citizen.workplaceId!);
           }
-        } else {
-          const transitSystem = getSystemForMode(this.state, mode);
-          if (transitSystem) {
-            const nearest = this.findNearestStop(transitSystem.getStops(), fromPos);
-            if (nearest) { nearest.dailyRiders++; }
-          }
+        } else if (boardStop) {
+          // 記在他上車的那一站。這裡曾經改用「整個系統裡最近的站」重挑一次，於是
+          // 同運具多條路線時，人被記到他沒搭的那條路線頭上（BUG-283）。
+          boardStop.dailyRiders++;
         }
         continue;
       }
@@ -2785,18 +2777,6 @@ export class SimulationLoop {
       totalActivePeds: this.state.pedestrianManager.agents.length,
       transferEdgeCount: this.transferGraph.byStop.size,
     });
-  }
-
-  /**
-   * 帶著完整的 `TransportStop`，因為 `type` 決定願意為它走多遠。用結構型別把欄位
-   * 挑掉的話，`type` 會在編譯期消失，挑站就退回全域的 `FALLBACK` —— 那讀起來像
-   * 公車與捷運的服務範圍一樣大。
-   */
-  private findNearestStop(
-    stops: readonly TransportStop[],
-    pos: { x: number; y: number },
-  ): TransportStop | null {
-    return findNearestReachableStop(stops, pos, this.stopReach);
   }
 
 }
