@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { DistrictManager } from '../DistrictManager';
-import { PolicyManager } from '../PolicyManager';
+import { PolicyManager, POLICY_EFFECTS, maxLevel, type PolicyEffect } from '../PolicyManager';
 import { PolicyType } from '../types';
 
 /**
@@ -82,5 +82,60 @@ describe('舊存檔的遷移', () => {
   it('should prefer an explicit level over the legacy flag', () => {
     // 新格式兩個欄位都在時，level 是權威 —— 不然存過一次的檔案會被舊欄位蓋回去。
     expect(load({ ...base, level: 3, active: false })).toBe(3);
+  });
+});
+
+/** 這一級一共扣了多少收入（跨所有分區類型取最重的那一個）。 */
+function revenueCost(e: PolicyEffect): number {
+  let worst = 1 - (e.revenue ?? 1);
+  for (const m of Object.values(e.revenueByZone ?? {})) worst = Math.max(worst, 1 - m);
+  return worst;
+}
+
+describe('分級的效果', () => {
+  it('should get stronger with level', () => {
+    const { pm, id } = fresh();
+    pm.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, 1);
+    const light = pm.getGarbageMultiplier(id);
+    pm.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, 3);
+    const heavy = pm.getGarbageMultiplier(id);
+    expect(heavy, '重度沒有比輕度更能減垃圾').toBeLessThan(light);
+  });
+
+  it('should charge an accelerating price for each step', () => {
+    // 代價加速上升才有「找得到的最佳點」。線性的話分級只是一根沒有決策的滑桿 ——
+    // 最高級永遠是最划算的，那就不是選擇。
+    //
+    // 用 revenueCost 而不是直接讀 `revenue`，因為代價可能只落在特定分區類型上。
+    const tiers = POLICY_EFFECTS[PolicyType.ENCOURAGE_RECYCLING]!;
+    expect(tiers.length, '回收只有一級，這條測試等於空轉').toBeGreaterThan(1);
+    const ratios = tiers.map(t => revenueCost(t) / (1 - (t.garbage ?? 1)));
+    for (let i = 1; i < ratios.length; i++) {
+      expect(ratios[i]!, `第 ${i + 1} 級的單位代價（${ratios[i]!.toFixed(3)}）沒有比前一級（${ratios[i - 1]!.toFixed(3)}）高`)
+        .toBeGreaterThan(ratios[i - 1]!);
+    }
+  });
+
+  it('should derive maxLevel from the table, not a hand-kept number', () => {
+    // 手寫的那份一定會跟表走散，而走散的那天不會有任何徵兆。
+    expect(maxLevel(PolicyType.ENCOURAGE_RECYCLING))
+      .toBe(POLICY_EFFECTS[PolicyType.ENCOURAGE_RECYCLING]!.length);
+    expect(maxLevel(PolicyType.TOURISM)).toBe(1);
+  });
+
+  it('should clamp a level above what the table offers', () => {
+    const { pm, id } = fresh();
+    pm.setPolicyLevel(id, PolicyType.TOURISM, 3);
+    expect(pm.getPolicyLevel(id, PolicyType.TOURISM), '單級條例被設到第 3 級').toBe(1);
+  });
+
+  it('should read the tier matching the level, not always the first', () => {
+    const { pm, id } = fresh();
+    const tiers = POLICY_EFFECTS[PolicyType.ENCOURAGE_RECYCLING]!;
+    for (const [i, tier] of tiers.entries()) {
+      pm.setPolicyLevel(id, PolicyType.ENCOURAGE_RECYCLING, i + 1);
+      expect(pm.getGarbageMultiplier(id), `第 ${i + 1} 級讀到的不是第 ${i + 1} 格`)
+        .toBeCloseTo(tier.garbage ?? 1, 6);
+    }
   });
 });

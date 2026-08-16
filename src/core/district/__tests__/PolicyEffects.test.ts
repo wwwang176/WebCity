@@ -127,8 +127,12 @@ describe('policies stack per district, not city-wide', () => {
 
     expect(mgr.getGarbageMultiplier(green.id)).toBeLessThan(1);
     expect(mgr.getGarbageMultiplier(resort.id)).toBe(1);
+    // 觀光的收入加成只落在觀光區。回收現在也動收入（它扣商業），所以這裡比的是
+    // 「一邊往上、一邊往下」，不是「一邊有、一邊沒有」。
     expect(mgr.getRevenueMultiplier(resort.id, ZoneType.COMMERCIAL_LOW)).toBeGreaterThan(1);
-    expect(mgr.getRevenueMultiplier(green.id, ZoneType.COMMERCIAL_LOW)).toBe(1);
+    expect(mgr.getRevenueMultiplier(green.id, ZoneType.COMMERCIAL_LOW)).toBeLessThan(1);
+    // 住宅完全不受回收的代價影響 —— 那是商家的處理成本。
+    expect(mgr.getRevenueMultiplier(green.id, ZoneType.RESIDENTIAL_LOW)).toBe(1);
   });
 
   it('should let one district carry several policies at once', () => {

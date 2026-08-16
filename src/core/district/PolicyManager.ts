@@ -59,10 +59,27 @@ export interface PolicyEffect {
   revenueByZone?: Partial<Record<ZoneType, number>>;
 }
 
-export const POLICY_EFFECTS: Partial<Record<PolicyType, PolicyEffect>> = {
-  [PolicyType.ENCOURAGE_RECYCLING]: { garbage: 0.65 },
-  [PolicyType.TOURISM]: { revenue: 1.2 },
-  [PolicyType.ORGANIC_FOOD]: { landValue: 6 },
+/**
+ * 每個條例每一級做什麼。索引 0 是第 1 級;二元條例只放一格。
+ *
+ * 回收原本是一條純好處 —— 付得起就一定開,那不是決策,是價目表。現在每一級都同時
+ * 扣商業收入,而且**單位代價逐級上升**:第三級每減 1% 垃圾要付的收入代價比第一級
+ * 高,所以最強的那一級不會自動是最好的選擇。
+ *
+ * 代價落在 `revenueByZone` 而不是 `revenue`:回收增加的是商家的處理成本,跟住戶
+ * 無關。
+ */
+export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>> = {
+  [PolicyType.ENCOURAGE_RECYCLING]: [
+    // 減 15% 垃圾，代價 2% 商業收入 → 單位代價 0.133
+    { garbage: 0.85, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.98, [ZoneType.COMMERCIAL_HIGH]: 0.98 } },
+    // 減 35%，代價 8% → 0.229
+    { garbage: 0.65, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.92, [ZoneType.COMMERCIAL_HIGH]: 0.92 } },
+    // 減 55%，代價 18% → 0.327
+    { garbage: 0.45, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.82, [ZoneType.COMMERCIAL_HIGH]: 0.82 } },
+  ],
+  [PolicyType.TOURISM]: [{ revenue: 1.2 }],
+  [PolicyType.ORGANIC_FOOD]: [{ landValue: 6 }],
 };
 
 /**
@@ -113,10 +130,13 @@ export function clampLevel(level: number, max: number): Policy['level'] {
 /**
  * 這個條例最高幾級。
  *
- * 之後會改成從 `POLICY_EFFECTS` 的長度推導 —— 手寫的那份一定會跟表走散。
+ * 由效果表的長度推導,不手寫 —— 手寫的那份一定會跟表走散,而走散的那天不會有任何
+ * 徵兆:多出來的那一級會靜靜地套用最後一格的效果。
+ *
+ * 沒有效果表條目的（限制型條例）是二元的,最高 1 級。
  */
-export function maxLevel(_type: PolicyType): number {
-  return 3;
+export function maxLevel(type: PolicyType): number {
+  return POLICY_EFFECTS[type]?.length ?? 1;
 }
 
 export class PolicyManager {
@@ -201,7 +221,8 @@ export class PolicyManager {
     let out = identity;
     for (const policy of district.policies) {
       if (policy.level === 0) continue;
-      const value = pick(POLICY_EFFECTS[policy.type] ?? {});
+      const tier = POLICY_EFFECTS[policy.type]?.[policy.level - 1];
+      const value = tier && pick(tier);
       if (value !== undefined) out = combine(out, value);
     }
     return out;
@@ -212,10 +233,20 @@ export class PolicyManager {
     return this.effect(districtId, e => e.garbage, 1, (a, b) => a * b);
   }
 
-  /** Multiplier on tax revenue from buildings of this zone type in this district. */
+  /**
+   * Multiplier on tax revenue from buildings of this zone type in this district.
+   *
+   * `revenue`（全分區一視同仁）與 `revenueByZone`（只打特定產業）在同一趟裡合成。
+   * 分成兩次 `effect()` 呼叫會查兩次分區、掃兩次政策，而這是逐棟建築、每次收入
+   * 計算都會走的路。
+   */
   getRevenueMultiplier(districtId: string | null, zoneType: ZoneType): number {
-    const flat = this.effect(districtId, e => e.revenue, 1, (a, b) => a * b);
-    return flat * this.effect(districtId, e => e.revenueByZone?.[zoneType], 1, (a, b) => a * b);
+    return this.effect(districtId, (e) => {
+      const flat = e.revenue;
+      const byZone = e.revenueByZone?.[zoneType];
+      if (flat === undefined && byZone === undefined) return undefined;
+      return (flat ?? 1) * (byZone ?? 1);
+    }, 1, (a, b) => a * b);
   }
 
   /** Flat land-value bonus for cells in this district. */
