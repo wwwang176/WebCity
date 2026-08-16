@@ -36,6 +36,35 @@ type OverlayBuilder = (ctx: OverlayBuildContext, cell: OverlayCell, x: number, y
 
 const O = OVERLAY_SCALE;
 
+/** 黃金比例的共軛。乘上它取小數部分，就是那條前 N 項永遠分得最開的低差異序列。 */
+const GOLDEN_RATIO_CONJUGATE = 0.618033988749895;
+
+/**
+ * 分區在覆蓋層上的數值。渲染端把它當**色相**用（value / 100）。
+ *
+ * 用流水號走黃金比例展開，不用雜湊。分區 id 的形狀是 `district_${nextId++}`
+ * （`recoverNextId` 也是這樣讀的），所以玩家連續畫出來的幾區必然是連號 —— 而
+ * 均勻雜湊把連號變成亂數，亂數就會撞在一起：八個分區裡有將近三成機率出現兩個
+ * 肉眼分不開的色相。黃金比例序列沒有這個問題，前 N 項就是那 N 個裡分得最開的
+ * 一組。
+ *
+ * 回傳值落在 (0, 100]:0 會被 `buildOverlayData` 當成「這一格沒東西」丟掉。
+ */
+export function districtOverlayValue(id: string): number {
+  const seq = /(\d+)$/.exec(id);
+  let n: number;
+  if (seq) {
+    n = Number(seq[1]);
+  } else {
+    // 沒有流水號的 id（測試夾具、將來可能的自訂 id）退回雜湊 —— 分不開總比
+    // 全部同色好。
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (Math.imul(h, 31) + id.charCodeAt(i)) >>> 0;
+    n = h;
+  }
+  return 1 + ((n * GOLDEN_RATIO_CONJUGATE) % 1) * 99;
+}
+
 /**
  * Data-driven overlay value builders. Adding a new overlay type only
  * requires adding an entry here (OCP).
@@ -80,10 +109,7 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
 
   district: (ctx, _cell, x, y) => {
     const d = ctx.districts.getDistrictAt(x, y);
-    if (!d) return 0;
-    let hash = 0;
-    for (let i = 0; i < d.id.length; i++) hash = (hash * 31 + d.id.charCodeAt(i)) & 0xff;
-    return Math.max(20, hash % 100);
+    return d ? districtOverlayValue(d.id) : 0;
   },
 
   // Coverage overlays (boolean getCoverage pattern)

@@ -74,26 +74,32 @@ export class OverlayRenderer {
     const geometry = new THREE.PlaneGeometry(w, h, w, h);
     geometry.rotateX(-Math.PI / 2);
 
-    const colors = new Float32Array((w + 1) * (h + 1) * 3);
-    const alphas = new Float32Array((w + 1) * (h + 1));
+    // 頂點色帶第四個分量。three.js 看到 itemSize 4 的 color 屬性就會啟用逐頂點
+    // 透明度；只有 RGB 的話材質就只剩一個統一的 `opacity`，於是**值為 0 的格子
+    // 也照樣被塗**成 `getColor(type, 0)`，整張地圖蓋一層均勻的色。
+    //
+    // 濃度是二元的，不隨數值等比縮放：多數圖層的數值是分類而非強度 —— 缺電是
+    // 15、供電不足是 50、正常是 100。等比縮放會讓最該看到的紅色警告淡到幾乎
+    // 不見，而「一切正常」反而最顯眼。
+    const colors = new Float32Array((w + 1) * (h + 1) * 4);
 
     for (let j = 0; j <= h; j++) {
       for (let i = 0; i <= w; i++) {
-        const idx = j * (w + 1) + i;
+        const idx = (j * (w + 1) + i) * 4;
         const gx = Math.min(i, w - 1);
         const gy = Math.min(j, h - 1);
         const value = data?.get(`${gx},${gy}`) ?? 0;
         const normalized = Math.min(1, Math.max(0, value / 100));
 
         const color = this.getColor(type, normalized);
-        colors[idx * 3] = color.r;
-        colors[idx * 3 + 1] = color.g;
-        colors[idx * 3 + 2] = color.b;
-        alphas[idx] = normalized * 0.6;
+        colors[idx] = color.r;
+        colors[idx + 1] = color.g;
+        colors[idx + 2] = color.b;
+        colors[idx + 3] = value > 0 ? 1 : 0;
       }
     }
 
-    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
 
     const material = new THREE.MeshBasicMaterial({
       vertexColors: true,
@@ -205,6 +211,11 @@ export class OverlayRenderer {
         return c.setRGB(0.1, value, 0.2);
       case OverlayType.GARBAGE:
         return c.setRGB(value * 0.5, value * 0.4, 0.1);
+      // 分區的數值是身分不是強度 —— builder 給每個分區一個 20–99 的雜湊值，
+      // 這裡把它當色相用。分區數量沒有上限，用色相環才分得開相鄰的兩區；
+      // 換成明度或單一色相的深淺，第三個分區就跟第一個看起來一樣了。
+      case OverlayType.DISTRICT:
+        return c.setHSL(value, 0.7, 0.5);
       default:
         return c.setRGB(0.5, 0.5, 0.5);
     }
