@@ -23,12 +23,13 @@ function stop(x: number, y: number, id: number): TransportStop {
 const WALK_RANGE = 5;
 const WALK_SPEED = 1;
 const WAIT_FACTOR = 0.5;
+const TICKS_PER_DAY = 24;
 
-/** 兩站相距 8 格的公車路線。 */
+/** 兩站的公車路線。車輛數決定班距 —— 整圈時間 ÷ 車輛數。 */
 function busLine(
   originStop: { x: number; y: number },
   destStop: { x: number; y: number },
-  frequency: number,
+  vehicles = 2,
 ): TransitSystemInfo {
   return {
     type: TransportType.BUS,
@@ -36,13 +37,13 @@ function busLine(
     routes: [{
       id: 1, type: TransportType.BUS,
       stops: [stop(originStop.x, originStop.y, 1), stop(destStop.x, destStop.y, 2)],
-      vehicles: 2, frequency, operatingCost: 0,
+      vehicles, operatingCost: 0,
     }],
   };
 }
 
 function timeOf(sys: TransitSystemInfo, origin: { x: number; y: number }, dest: { x: number; y: number }): number {
-  const result = findAvailableTransit([sys], origin, dest, WALK_RANGE, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+  const result = findAvailableTransit([sys], origin, dest, WALK_RANGE, openFieldReach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY);
   expect(result, '這條路線搭不到，測試等於沒測').toHaveLength(1);
   return result[0]!.estimatedTime;
 }
@@ -60,10 +61,11 @@ describe('單一運具的估計時間', () => {
   });
 
   it('should cost more when the service is infrequent', () => {
-    const frequent = timeOf(busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 2), home, work);
-    const rare = timeOf(busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 40), home, work);
+    // 班距由車輛數決定：同一條路線，車少班次就疏。
+    const frequent = timeOf(busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 8), home, work);
+    const rare = timeOf(busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 1), home, work);
 
-    expect(rare, '班距從 2 拉到 40，估計時間卻沒有變 —— 等車沒有被算進去')
+    expect(rare, '車從 8 台減到 1 台，估計時間卻沒有變 —— 等車沒有被算進去')
       .toBeGreaterThan(frequent);
   });
 
@@ -84,7 +86,7 @@ describe('單一運具的估計時間', () => {
   it('should still report zero-ish when origin and destination share a stop', () => {
     // 同一站上下車等於沒搭到 —— 但走到站牌的那段路仍然要算。
     const sys = busLine({ x: 1, y: 0 }, { x: 19, y: 0 }, 4);
-    const result = findAvailableTransit([sys], { x: 0, y: 0 }, { x: 2, y: 0 }, WALK_RANGE, openFieldReach, WALK_SPEED, WAIT_FACTOR);
+    const result = findAvailableTransit([sys], { x: 0, y: 0 }, { x: 2, y: 0 }, WALK_RANGE, openFieldReach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY);
     expect(result).toHaveLength(1);
     expect(result[0]!.estimatedTime, '同站上下車卻回報 0，走到站的路憑空消失').toBeGreaterThan(0);
   });

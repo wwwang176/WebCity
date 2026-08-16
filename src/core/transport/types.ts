@@ -38,8 +38,10 @@ export interface TransportRoute {
   type: TransportType;
   stops: TransportStop[];
   vehicles: number;
-  frequency: number;
   operatingCost: number;
+  // 班距不是欄位。它是「整圈時間 ÷ 車輛數」，由 RouteLoad.computeHeadway 在使用處
+  // 算出來 —— 存成欄位的話每個動到路線的地方都得記得重算，而加車那條路就漏了：
+  // 加車只把容量上限往上推，等車一秒都沒有變短。
   /** True if the route is suspended due to road disconnection. */
   suspended?: boolean;
 }

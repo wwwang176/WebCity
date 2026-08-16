@@ -1848,7 +1848,7 @@ export class SimulationLoop {
 
     if (!this.isTransferGraphDirty()) return;
     const systems = this.getTransitSystemInfos();
-    this.flatRoutes = flattenSystems(systems);
+    this.flatRoutes = flattenSystems(systems, this.state.clock.ticksPerDay);
     this.transferGraph = buildTransferGraph(
       this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE, this.stopReach,
     );
@@ -2504,7 +2504,7 @@ export class SimulationLoop {
     return findAvailableTransit(
       this.getTransitSystemInfos(), origin, destination,
       SIMULATION.WALK_TO_STOP_RANGE, this.stopReach,
-      SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR,
+      SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, this.state.clock.ticksPerDay,
     );
   }
 

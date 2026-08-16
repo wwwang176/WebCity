@@ -25,6 +25,7 @@ function stop(id: number, x: number, y: number): TransportStop {
 const WALK_RANGE = 5;
 const WALK_SPEED = 1;
 const WAIT_FACTOR = 0.5;
+const TICKS_PER_DAY = 24;
 
 /** 站牌都在路南；(12,9) 與 (4,9) 在路北，正對面。 */
 const SOUTH_STOPS = [stop(1, 12, 11), stop(2, 4, 11)];
@@ -40,7 +41,7 @@ function busSystem(): TransitSystemInfo {
 function busFlatRoute(): FlatRoute {
   return {
     routeId: 1, type: TransportType.BUS, speed: 2, stops: SOUTH_STOPS,
-    segDists: null, frequency: 10, isFull: false,
+    segDists: null, headway: 10, loadFactor: 0,
   };
 }
 
@@ -50,7 +51,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     const result = findAvailableTransit(
-      [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, WALK_RANGE, reach, WALK_SPEED, WAIT_FACTOR,
+      [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, WALK_RANGE, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
     );
     expect(result.length, '同一側兩端都在站旁邊卻搭不到，這條測試等於沒測')
       .toBeGreaterThan(0);
@@ -63,7 +64,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     const result = findAvailableTransit(
-      [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, WALK_RANGE, reach, WALK_SPEED, WAIT_FACTOR,
+      [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, WALK_RANGE, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
     );
     expect(
       result,

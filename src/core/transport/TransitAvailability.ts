@@ -1,5 +1,6 @@
 import { TransportType, type TransportRoute, type TransportStop } from './types';
 import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
+import { routeService, expectedWait, isOverCapacity } from './RouteLoad';
 import type { AvailableTransport } from './ModeChoice';
 
 export interface TransitSystemInfo {
@@ -19,6 +20,24 @@ export function getRouteDailyRiders(route: TransportRoute): number {
     total += route.stops[i]!.dailyRiders;
   }
   return total;
+}
+
+/**
+ * 這條路線的常態載客量，用來判斷有多擠。
+ *
+ * `dailyRiders` 是**今天到現在為止**的累計，每天歸零 —— 直接拿它當載重的話，每天
+ * 早上每條路線看起來都是空的，擁擠代價要到傍晚才出現，然後隔天再歸零。取它與
+ * 跨日平滑值的較大者：既有的路線用平滑值，新開或正在爆量的路線用今天的實數。
+ */
+export function getRouteRiders(route: TransportRoute): number {
+  let daily = 0;
+  let smoothed = 0;
+  for (let i = 0; i < route.stops.length; i++) {
+    const s = route.stops[i]!;
+    daily += s.dailyRiders;
+    smoothed += s.smoothedDailyRiders;
+  }
+  return Math.max(daily, smoothed);
 }
 
 /**
@@ -46,14 +65,19 @@ export function findAvailableTransit(
   reach: StopReach,
   walkSpeed: number,
   waitFactor: number,
+  ticksPerDay: number,
 ): AvailableTransport[] {
   const result: AvailableTransport[] = [];
 
   for (const sys of systems) {
     for (const route of sys.routes) {
-      // Capacity check: full routes are unavailable
-      const cap = sys.vehicleCapacity ?? 0;
-      if (cap > 0 && getRouteDailyRiders(route) >= route.vehicles * cap) continue;
+      const segDists = sys.getSegmentDistances?.(route.id) ?? null;
+      const { headway, loadFactor } = routeService(
+        route, getRouteRiders(route), sys.vehicleCapacity ?? 0, sys.speed, segDists, ticksPerDay,
+      );
+      // 擠不上去的路線對這個人不存在。這條線之前的形式是「一整天的人次 ≥
+      // 車輛數 × 座位數」—— 累計量比瞬間量，天花板低了一個數量級。
+      if (isOverCapacity(loadFactor)) continue;
 
       // Find nearest origin and destination stops within walk range
       let bestOriginIdx = -1, bestOriginDist = Infinity;
@@ -83,14 +107,14 @@ export function findAvailableTransit(
         continue;
       }
 
-      const segDists = sys.getSegmentDistances?.(route.id) ?? null;
       const rideDistance = computeRideDistance(
         route.stops, bestOriginIdx, bestDestIdx, segDists,
       );
-      const wait = route.frequency * waitFactor;
       result.push({
         type: sys.type,
-        estimatedTime: walkTime + wait + rideDistance / sys.speed,
+        estimatedTime: walkTime
+          + expectedWait(headway, waitFactor, loadFactor)
+          + rideDistance / sys.speed,
       });
     }
   }

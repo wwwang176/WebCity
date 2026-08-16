@@ -23,7 +23,7 @@ function stop(id: number, x: number, y: number): TransportStop {
 function busRoute(stops: TransportStop[]): FlatRoute {
   return {
     routeId: 1, type: TransportType.BUS, speed: 2, stops,
-    segDists: null, frequency: 10, isFull: false,
+    segDists: null, headway: 10, loadFactor: 0,
   };
 }
 

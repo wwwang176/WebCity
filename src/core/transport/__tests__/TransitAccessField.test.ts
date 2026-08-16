@@ -26,7 +26,7 @@ function verticalLine(
 ): FlatRoute {
   const stops: TransportStop[] = [];
   for (let y = y0, i = 0; y <= y1; y += gap, i++) stops.push(stop(routeId * 100 + i, x, y, type));
-  return { routeId, type, speed, stops, segDists: null, frequency, isFull: false };
+  return { routeId, type, speed, stops, segDists: null, headway: frequency, loadFactor: 0 };
 }
 
 const WALK_RANGE = 5;

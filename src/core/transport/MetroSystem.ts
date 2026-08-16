@@ -32,8 +32,6 @@ export class MetroSystem extends BaseTransportSystem {
 
   createLine(stations: TransportStop[], trainCount = 1): TransportRoute {
     const route = this.createRoute(stations, trainCount);
-    // Metro lines have frequency based on station count * 3 (not * 2)
-    route.frequency = stations.length * 3;
     return route;
   }
 
