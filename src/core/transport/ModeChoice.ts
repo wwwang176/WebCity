@@ -13,6 +13,13 @@ export interface AvailableTransport {
   type: TransportType;
   /** Estimated travel time using this transport mode (in ticks). */
   estimatedTime: number;
+  /**
+   * 其中有多少是走路。
+   *
+   * 分開帶著，是因為比較時要對走路多收一份不情願，而回報時不能收 —— 揉成一個
+   * 數字就沒辦法只加權其中一段。
+   */
+  walkTime: number;
 }
 
 /**
@@ -95,6 +102,28 @@ export interface MultiModalChoice {
   time: number;
 }
 
+export interface ModeChoiceParams {
+  /** 0 = 暢通。開車時間隨它上升。 */
+  congestionLevel: number;
+  /**
+   * 步行速度（格/tick）。開車的參考速度是「一格一 tick」，所以這個數字就是
+   * 走路對開車的速度比 —— 走路本來就該花比較久穿越同一格。
+   */
+  walkSpeed: number;
+  /**
+   * 步行時間放大幾倍來比較。走一分鐘比坐一分鐘難熬。
+   *
+   * 只影響**比較**：回報的 `time` 一律是實際花掉的時間。兩者混在一起的話，
+   * 通勤統計與通勤圖層上會出現一個沒有任何人真的花掉的數字。
+   */
+  walkWeight: number;
+}
+
+/** 一種走法在市民心裡的成本 —— 走路那一段多收一份不情願。 */
+function perceived(totalTime: number, walkTime: number, walkWeight: number): number {
+  return totalTime + walkTime * (walkWeight - 1);
+}
+
 /**
  * Extended mode choice that considers multi-modal (transfer) routes
  * alongside single-transit and driving options.
@@ -104,47 +133,53 @@ export function chooseModeMultiModal(
   destination: { x: number; y: number },
   singleTransit: AvailableTransport[],
   multiModalRoutes: MultiLegRoute[],
-  congestionLevel: number,
+  params: ModeChoiceParams,
 ): MultiModalChoice {
+  const { congestionLevel, walkSpeed, walkWeight } = params;
   const dx = Math.abs(destination.x - origin.x);
   const dy = Math.abs(destination.y - origin.y);
   const distance = dx + dy;
 
   if (distance <= MODE_CHOICE.WALK_MAX_DISTANCE) {
-    // 走路速度是一格一 tick，所以時間就是格數。
-    return { mode: TransportMode.WALK, multiLeg: null, time: distance };
+    // 這麼近就直接走 —— 不比較，因為開車去隔壁本來就不合理。
+    return { mode: TransportMode.WALK, multiLeg: null, time: distance / walkSpeed };
   }
 
   const driveTime = distance * (1 + congestionLevel);
   const threshold = driveTime * MODE_CHOICE.TRANSIT_TIME_MULTIPLIER_THRESHOLD;
 
-  // Best single-transit option
+  // 比較用加權後的成本，回報用實際時間 —— 兩個數字要分開帶著。
+  let bestCost = Infinity;
   let bestTime = Infinity;
   let bestMode: TransportMode = TransportMode.DRIVE;
   let bestMultiLeg: MultiLegRoute | null = null;
 
   for (const t of singleTransit) {
     const mode = transportTypeToMode(t.type);
-    if (mode !== null && t.estimatedTime < bestTime) {
+    if (mode === null) continue;
+    const cost = perceived(t.estimatedTime, t.walkTime, walkWeight);
+    if (cost < bestCost) {
+      bestCost = cost;
       bestTime = t.estimatedTime;
       bestMode = mode;
       bestMultiLeg = null;
     }
   }
 
-  // Best multi-modal option (already sorted by totalTime, [0] is best)
-  if (multiModalRoutes.length > 0) {
-    const best = multiModalRoutes[0]!;
-    if (best.totalTime < bestTime) {
-      bestTime = best.totalTime;
-      const firstRide = best.legs.find(l => l.type === 'ride');
-      bestMode = (firstRide?.transitType && transportTypeToMode(firstRide.transitType))
-        ?? TransportMode.BUS;
-      bestMultiLeg = best;
-    }
+  // 轉乘路線按名目時間排序，但加權後名次可能不同 —— 全部比過，否則兩種走法
+  // 等於放在不同的尺上。
+  for (const route of multiModalRoutes) {
+    const cost = perceived(route.totalTime, route.walkTime, walkWeight);
+    if (cost >= bestCost) continue;
+    bestCost = cost;
+    bestTime = route.totalTime;
+    const firstRide = route.legs.find(l => l.type === 'ride');
+    bestMode = (firstRide?.transitType && transportTypeToMode(firstRide.transitType))
+      ?? TransportMode.BUS;
+    bestMultiLeg = route;
   }
 
-  if (bestTime < threshold) {
+  if (bestCost < threshold) {
     return { mode: bestMode, multiLeg: bestMultiLeg, time: bestTime };
   }
 

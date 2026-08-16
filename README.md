@@ -46,7 +46,7 @@ pnpm dev
 | 語言 | TypeScript |
 | 渲染 | Three.js (3D Low Poly) |
 | 建構 | Vite |
-| 測試 | Vitest (TDD, 382 檔 / 5700+ 測試) |
+| 測試 | Vitest (TDD, 394 檔 / 5700+ 測試) |
 | 套件管理 | pnpm |
 | 多執行緒 | Web Workers (模擬/交通/尋路) |
 | 資料同步 | SharedArrayBuffer + postMessage |

@@ -159,6 +159,14 @@ GameState 集中管理所有遊戲子系統的狀態：
 - 產生通勤車輛
 - 服務車輛巡邏
 
+兩張圖都是**增量**重建：知道動了哪幾格就只重算那一圈，只有「不知道動了哪裡」
+（存檔載入、初次建圖）才整張重來。兩者用各自的髒格集合 —— 車道圖跑完會把自己那份
+清掉，共用的話人行道圖永遠只看到空集合。
+
+蓋建築與蓋交通設施不走這條路（它們不改變路網，拖著通勤快取一起重算太貴），改由
+`applyBuildingChange` 把那幾格折進人行道圖。漏掉的話新蓋的站牌在圖裡沒有門節點，
+行人走不進去。
+
 ### 8. 大眾運輸 (每 tick)
 - 公車、地鐵、鐵路、渡輪、機場系統 tick
 - 貨運 tick
@@ -218,7 +226,7 @@ src/core/simulation/SimulationConstants.ts
 | 稅率 | `BUSINESS_TAX_BASELINE`, `BUSINESS_TAX_PENALTY_PER_POINT` | 商業稅懲罰閾值 |
 | 貨運 | `FREIGHT_CAP_RATIO`, `FREIGHT_TRUCKS_PER_THROUGHPUT` | 貨運車輛配額與吞吐量比 |
 | 廢棄壓力 | `SERVICE_MAX_RES`, `SERVICE_MAX_NON_RES` | 住宅/非住宅的服務正規化最大值 |
-| 其他 | `DEFAULT_HAPPINESS`, `CELL_VALUE_MAX`, `WALK_TO_STOP_RANGE`, `INDUSTRIAL_POLLUTION_FACTOR`, `EXPORT_DEMAND`, `FALLBACK_RESIDENTS`, `SHOPPING_POP_THRESHOLD` | 預設幸福度、格子值上限、步行至站牌範圍等 |
+| 其他 | `DEFAULT_HAPPINESS`, `CELL_VALUE_MAX`, `WALK_KMH`/`DRIVE_REFERENCE_KMH`, `INDUSTRIAL_POLLUTION_FACTOR`, `EXPORT_DEMAND`, `FALLBACK_RESIDENTS`, `SHOPPING_POP_THRESHOLD` | 預設幸福度、格子值上限、步行速度等（步行到站的上限已依運具分開，見 `core/transport/WalkRange`） |
 
 ### 使用方式
 

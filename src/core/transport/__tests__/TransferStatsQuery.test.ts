@@ -69,7 +69,7 @@ describe('computeTransferStats', () => {
   it('counts multi-ride routes and builds breakdown', () => {
     const cache = new Map();
     cache.set('route1', {
-      totalTime: 10,
+      totalTime: 10, walkTime: 0,
       legs: [
         { type: 'walk', fromX: 0, fromY: 0, toX: 1, toY: 1 },
         { type: 'ride', fromX: 1, fromY: 1, toX: 5, toY: 5, transitType: 'BUS' },
@@ -96,14 +96,14 @@ describe('computeTransferStats', () => {
   it('sorts breakdown by weeklyUse descending', () => {
     const cache = new Map();
     cache.set('r1', {
-      totalTime: 10,
+      totalTime: 10, walkTime: 0,
       legs: [
         { type: 'ride', fromX: 0, fromY: 0, toX: 1, toY: 1, transitType: 'BUS' },
         { type: 'ride', fromX: 1, fromY: 1, toX: 2, toY: 2, transitType: 'METRO' },
       ],
     });
     cache.set('r2', {
-      totalTime: 5,
+      totalTime: 5, walkTime: 0,
       legs: [
         { type: 'ride', fromX: 0, fromY: 0, toX: 1, toY: 1, transitType: 'RAIL' },
         { type: 'ride', fromX: 1, fromY: 1, toX: 2, toY: 2, transitType: 'FERRY' },
@@ -135,7 +135,7 @@ describe('findTransferRouteStops', () => {
     const label = `${TRANSIT_ICONS.BUS}\u2192${TRANSIT_ICONS.METRO}`;
     const cache = new Map();
     cache.set('route1', {
-      totalTime: 10,
+      totalTime: 10, walkTime: 0,
       legs: [
         { type: 'walk', fromX: 0, fromY: 0, toX: 1, toY: 1 },
         { type: 'ride', fromX: 1, fromY: 1, toX: 5, toY: 5, transitType: 'BUS' },

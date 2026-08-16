@@ -7,8 +7,10 @@
  */
 
 import { TransportType, type TransportStop } from './types';
-import { manhattanDistance } from '../grid/GridHelpers';
-import { computeRideDistance, getRouteDailyRiders, type TransitSystemInfo } from './TransitAvailability';
+import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
+import { computeRideDistance, getRouteRiders, type TransitSystemInfo } from './TransitAvailability';
+import { expectedWait, isOverCapacity, routeService } from './RouteLoad';
+import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -34,6 +36,8 @@ export interface MultiLegRoute {
   legs: TransitLeg[];
   /** Sum of all legs' estimatedTime */
   totalTime: number;
+  /** 其中有多少是走路 —— 比較時要多收一份不情願，回報時不收。 */
+  walkTime: number;
 }
 
 export interface TransferEdge {
@@ -66,8 +70,10 @@ export interface FlatRoute {
   speed: number;
   stops: readonly TransportStop[];
   segDists: number[] | null;
-  frequency: number;
-  isFull: boolean;
+  /** 班距（tick）：整圈時間 ÷ 車輛數。加車會讓它變短。 */
+  headway: number;
+  /** 載重率。等車時間隨它上升，過了 `CROWDING.REFUSE_LOAD` 就擠不上去。 */
+  loadFactor: number;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -78,21 +84,24 @@ function sk(ri: number, si: number): string {
 
 // ── flattenSystems ──────────────────────────────────────────────
 
-export function flattenSystems(systems: readonly TransitSystemInfo[]): FlatRoute[] {
+export function flattenSystems(
+  systems: readonly TransitSystemInfo[],
+  ticksPerDay: number,
+): FlatRoute[] {
   const result: FlatRoute[] = [];
   for (const sys of systems) {
     for (const route of sys.routes) {
       if (route.suspended) continue;
-      const cap = sys.vehicleCapacity ?? 0;
-      const isFull = cap > 0 && getRouteDailyRiders(route) >= route.vehicles * cap;
+      const segDists = sys.getSegmentDistances?.(route.id) ?? null;
       result.push({
         routeId: route.id,
         type: sys.type,
         speed: sys.speed,
         stops: route.stops,
-        segDists: sys.getSegmentDistances?.(route.id) ?? null,
-        frequency: route.frequency,
-        isFull,
+        segDists,
+        ...routeService(
+          route, getRouteRiders(route), sys.vehicleCapacity ?? 0, sys.speed, segDists, ticksPerDay,
+        ),
       });
     }
   }
@@ -104,6 +113,7 @@ export function flattenSystems(systems: readonly TransitSystemInfo[]): FlatRoute
 export function buildTransferGraph(
   routes: readonly FlatRoute[],
   transferRange: number,
+  reach: StopReach,
 ): TransferGraph {
   const byStop = new Map<string, TransferEdge[]>();
 
@@ -123,7 +133,9 @@ export function buildTransferGraph(
       const b = all[j]!;
       if (a.ri === b.ri) continue; // same route → skip
 
-      const dist = manhattanDistance(a.stop.x, a.stop.y, b.stop.x, b.stop.y);
+      // 轉乘也是用走的，一樣照人行道量 —— 只差一條馬路的兩個站牌，直線是三格，
+      // 實際上得繞到路口。四個挑站的地方留一個用直線，就是留一個會不一致的縫。
+      const dist = walkDistanceToStop(reach, a.stop.x, a.stop.y, b.stop.x, b.stop.y, transferRange);
       if (dist > transferRange) continue;
 
       // Bidirectional edges
@@ -197,7 +209,7 @@ export function buildStopRouteCache(
     for (const edge of edges) {
       if (usedRoutes.has(edge.toRI)) continue;
       const targetRoute = routes[edge.toRI]!;
-      if (targetRoute.isFull) continue;
+      if (isOverCapacity(targetRoute.loadFactor)) continue;
 
       const targetStop = targetRoute.stops[edge.toSI]!;
       const transferWalkTime = edge.walkDistance / walkSpeed;
@@ -208,7 +220,7 @@ export function buildStopRouteCache(
         estimatedTime: transferWalkTime,
       };
 
-      const waitTime = targetRoute.frequency * waitFactor;
+      const waitTime = expectedWait(targetRoute.headway, waitFactor, targetRoute.loadFactor);
 
       for (let ai = 0; ai < targetRoute.stops.length; ai++) {
         if (ai === edge.toSI) continue;
@@ -250,11 +262,11 @@ export function buildStopRouteCache(
   // For each entry stop, explore all reachable exits
   for (let ri = 0; ri < routes.length; ri++) {
     const route = routes[ri]!;
-    if (route.isFull) continue;
+    if (isOverCapacity(route.loadFactor)) continue;
 
     for (let si = 0; si < route.stops.length; si++) {
       const entryStop = route.stops[si]!;
-      const waitTime = route.frequency * waitFactor;
+      const waitTime = expectedWait(route.headway, waitFactor, route.loadFactor);
 
       // Single ride: board at (ri,si), alight at (ri,ai)
       for (let ai = 0; ai < route.stops.length; ai++) {
@@ -299,11 +311,11 @@ export function findMultiModalRoutes(
   routes: readonly FlatRoute[],
   origin: { x: number; y: number },
   destination: { x: number; y: number },
-  walkRange: number,
   walkSpeed: number,
   _waitFactor: number,
   transferGraph: TransferGraph,
   _maxLegs: number,
+  reach: StopReach,
 ): MultiLegRoute[] {
   if (routes.length === 0) return [];
 
@@ -314,11 +326,16 @@ export function findMultiModalRoutes(
   // For each entry stop near origin × each exit stop near destination, lookup cache
   for (let eri = 0; eri < routes.length; eri++) {
     const eRoute = routes[eri]!;
-    if (eRoute.isFull) continue;
+    if (isOverCapacity(eRoute.loadFactor)) continue;
     for (let esi = 0; esi < eRoute.stops.length; esi++) {
       const entryStop = eRoute.stops[esi]!;
-      const walkToEntry = manhattanDistance(entryStop.x, entryStop.y, origin.x, origin.y);
-      if (walkToEntry > walkRange) continue;
+      // 沿人行道量，不是直線 —— 直線看不見馬路，會把住戶從對街「走」到站牌。
+      // 上限依運具而定：人願意為捷運多走，為公車不肯。
+      const entryLimit = walkRangeFor(eRoute.type);
+      const walkToEntry = walkDistanceToStop(
+        reach, entryStop.x, entryStop.y, origin.x, origin.y, WALK_RANGE_BY_TYPE.WIDEST,
+      );
+      if (walkToEntry > entryLimit) continue;
 
       const firstWalkTime = walkToEntry / walkSpeed;
       const firstWalkLeg: TransitLeg = {
@@ -332,8 +349,10 @@ export function findMultiModalRoutes(
         const xRoute = routes[xri]!;
         for (let xsi = 0; xsi < xRoute.stops.length; xsi++) {
           const exitStop = xRoute.stops[xsi]!;
-          const walkFromExit = manhattanDistance(exitStop.x, exitStop.y, destination.x, destination.y);
-          if (walkFromExit > walkRange) continue;
+          const walkFromExit = walkDistanceToStop(
+            reach, exitStop.x, exitStop.y, destination.x, destination.y, WALK_RANGE_BY_TYPE.WIDEST,
+          );
+          if (walkFromExit > walkRangeFor(xRoute.type)) continue;
 
           const cached = cache.get(cacheKey(eri, esi, xri, xsi));
           if (!cached) continue;
@@ -346,9 +365,13 @@ export function findMultiModalRoutes(
             estimatedTime: lastWalkTime,
           };
 
+          const legs = [firstWalkLeg, ...cached.legs, lastWalkLeg];
           results.push({
-            legs: [firstWalkLeg, ...cached.legs, lastWalkLeg],
+            legs,
             totalTime: firstWalkTime + cached.totalTime + lastWalkTime,
+            // 中間那幾段可能還有轉乘步行，所以是把 walk 腿全部加起來，
+            // 不是只算頭尾兩段。
+            walkTime: legs.reduce((s, l) => l.type === 'walk' ? s + l.estimatedTime : s, 0),
           });
 
           if (results.length >= MAX_RESULTS) break;

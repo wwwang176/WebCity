@@ -51,7 +51,7 @@ import { loadRatioToDeathMultiplier, uncoveredPollutionMultiplier } from '../ser
 import { TransportMode } from '../transport/types';
 import { getSystemForMode, getTransitSystems, getTransitNetworkVersion, getTransitTopologyVersion, getTotalTransportOperatingCost, tickAllTransportSystems } from '../transport/TransportRegistry';
 import { getTotalServiceMaintenanceCost, tickAllCivicServices, collectFacilityOperationalStatus, type FacilityOpEntry } from '../service/ServiceRegistry';
-import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, manhattanDistance, countRoadTiles, findNearRoad, type ReadableGrid } from '../grid/GridHelpers';
+import { parsePosKey, parsePosKeyUnsafe, toPosKey, FOUR_NEIGHBORS, countRoadTiles, findNearRoad, type ReadableGrid } from '../grid/GridHelpers';
 import { ZONE_ROAD_REACH } from '../grid/constants';
 import type { ResidentialShoppingStatus } from '../economy/ShoppingAccess';
 import { applyFireDamage } from '../service/FireDamageProcessor';
@@ -70,6 +70,12 @@ import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicl
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
 import { PedestrianTripType } from '../traffic/PedestrianAgent';
+import { WALK_DISUTILITY, walkWeightOf } from '../citizen/WalkWillingness';
+import { EducationLevel } from '../citizen/types';
+import type { ModeChoiceParams } from '../transport/ModeChoice';
+import { SidewalkStopReach } from '../traffic/StopWalkReach';
+import { findNearestReachableStop } from '../transport/StopChoice';
+import { WALK_RANGE_BY_TYPE } from '../transport/WalkRange';
 import { TRADE } from '../traffic/FreightSystem';
 import { spawnFreightVehicles, rebuildActiveFreight, type FreightSpawnContext } from '../traffic/FreightVehicleSpawner';
 import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
@@ -132,6 +138,15 @@ export class SimulationLoop {
 
   // Sidewalk graph: built alongside laneGraph
   private sidewalkGraphDirty = true;
+  /**
+   * Cells whose SIDEWALKS need rebuilding.
+   *
+   * Separate from `dirtyRoadCells` because rebuildLaneGraph clears that set at
+   * the end of its own run, and rebuildSidewalkGraph goes second — sharing it
+   * meant the sidewalk graph always saw an empty set and fell back to rebuilding
+   * all of it.
+   */
+  private dirtySidewalkCells: Set<string> | null = null;
 
   // Walking trip pool: rebuilt each rush period from commute mode distribution
   private walkingTripPool: WalkingTripPool = { trips: [], totalWeight: 0, prefixSums: [] };
@@ -142,8 +157,13 @@ export class SimulationLoop {
   // Multi-modal transfer graph (rebuilt when transit network changes)
   private transferGraph: TransferGraph = { byStop: new Map(), stopRouteCache: new Map() };
   private transferGraphDirty = true;
+  /**
+   * 站牌沿人行道走得到哪些格子。算過的留著 —— 重算的觸發條件對「玩家調整班次」
+   * 也成立，而那跟人行道一點關係都沒有。
+   */
+  private stopReach!: SidewalkStopReach;
   /** 每一格走得到哪些路線。與 transferGraph 同時重建。 */
-  private transitAccess = TransitAccessField.build([], SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED);
+  private transitAccess!: TransitAccessField;
 
   /**
    * 這一趟通勤要花多久（tick）—— 住房評分、就業評分與換工作判斷共用同一把尺。
@@ -157,10 +177,26 @@ export class SimulationLoop {
     const b = parsePosKey(toPos);
     if (!a || !b) return null;
     return estimateCommuteTime(
-      a, b, this.state.traffic.getCongestionLevel(),
+      a, b, this.modeChoiceFor(),
       this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
   };
+
+  /**
+   * 這位市民怎麼權衡各種走法。
+   *
+   * 沒有指定市民時用預設的不情願權重 —— 住房評分是拿「一間房子對這一位市民好不好」
+   * 在問，那裡確實有市民；而通勤統計是整城的分布，用哪一位的脾氣都不對，用平均。
+   */
+  private modeChoiceFor(education?: EducationLevel): ModeChoiceParams {
+    return {
+      congestionLevel: this.state.traffic.getCongestionLevel(),
+      walkSpeed: SIMULATION.WALK_SPEED,
+      walkWeight: education === undefined
+        ? WALK_DISUTILITY.FALLBACK
+        : walkWeightOf(education),
+    };
+  }
   /** Transit structural version at the last transfer-graph rebuild. */
   private lastTransitVersion = -1;
   /** Transit stop/route topology version at the last transfer-tracker reset. */
@@ -290,6 +326,10 @@ export class SimulationLoop {
 
   constructor(state: GameState) {
     this.state = state;
+    // 欄位初始設定跑在建構式主體之前，那時 this.state 還沒指定 —— 所以這兩個
+    // 要在這裡建，不能寫成欄位初始值。
+    this.stopReach = new SidewalkStopReach(state.sidewalkGraph);
+    this.transitAccess = TransitAccessField.build([], SIMULATION.WALK_SPEED, this.stopReach);
     // The current day/month have already had their blocks run — either by the
     // session that produced this save, or (for a new game at tick 0) because no
     // time has elapsed yet. Both blocks belong to day/month *transitions*.
@@ -564,7 +604,7 @@ export class SimulationLoop {
         const work = parsePosKey(c.workplaceId);
         if (!home || !work) return null;
         return estimateCommute(
-          home, work, this.state.traffic.getCongestionLevel(),
+          home, work, this.modeChoiceFor(c.education),
           this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
         );
       },
@@ -645,7 +685,7 @@ export class SimulationLoop {
       this.wpDistCache?.invalidate();
       // Incrementally update sidewalk graph for new/removed buildings
       if (result.affectedCells.length > 0) {
-        this.applyBuildingRemoval(result.affectedCells);
+        this.applyBuildingChange(result.affectedCells);
       }
     }
   }
@@ -1590,6 +1630,11 @@ export class SimulationLoop {
     //
     // 先建可及性圖，否則這一次算出來的通勤完全不含大眾運輸，第一個 tick 才會被
     // 修正 —— 玩家會看到顏色在進遊戲後跳一次。
+    //
+    // 人行道圖又要更早：站牌的涵蓋範圍是沿著人行道量出來的，圖還是空的時候每個
+    // 站牌都服務不到任何人。載入時只有 ensureLaneGraph 被呼叫過，人行道圖要等到
+    // 第一個 tick 才建。
+    this.ensureSidewalkGraph();
     this.rebuildTransferGraphIfDirty();
     this.refreshCommuteStats();
 
@@ -1821,16 +1866,16 @@ export class SimulationLoop {
 
     if (!this.isTransferGraphDirty()) return;
     const systems = this.getTransitSystemInfos();
-    this.flatRoutes = flattenSystems(systems);
-    this.transferGraph = buildTransferGraph(this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE);
+    this.flatRoutes = flattenSystems(systems, this.state.clock.ticksPerDay);
+    this.transferGraph = buildTransferGraph(
+      this.flatRoutes, SIMULATION.TRANSFER_WALK_RANGE, this.stopReach,
+    );
     buildStopRouteCache(
       this.flatRoutes, this.transferGraph,
       SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
     );
     // 可及性圖跟著路線一起重建 —— 評分與換工作判斷靠它把通勤時間壓成 O(1)。
-    this.transitAccess = TransitAccessField.build(
-      this.flatRoutes, SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED,
-    );
+    this.transitAccess = TransitAccessField.build(this.flatRoutes, SIMULATION.WALK_SPEED, this.stopReach);
     this.transferGraphDirty = false;
     this.lastTransitVersion = getTransitNetworkVersion(this.state);
 
@@ -1865,9 +1910,11 @@ export class SimulationLoop {
     this.wpDistCache?.invalidate();
     if (affectedCells) {
       if (!this.dirtyRoadCells) this.dirtyRoadCells = new Set();
+      if (!this.dirtySidewalkCells) this.dirtySidewalkCells = new Set();
       for (const cellKey of affectedCells) {
         this.commuteCache.invalidateCell(cellKey);
         this.dirtyRoadCells.add(cellKey);
+        this.dirtySidewalkCells.add(cellKey);
       }
       // Invalidate pedestrian path cache for affected cells
       this.state.pedestrianManager.invalidateCells(affectedCells);
@@ -2055,10 +2102,15 @@ export class SimulationLoop {
     this.pathWorker.postMessage(msg);
   }
 
+  /** Build the sidewalk graph now if it is stale. */
+  ensureSidewalkGraph(): void {
+    if (!this.sidewalkGraphDirty) return;
+    this.rebuildSidewalkGraph();
+    this.sidewalkGraphDirty = false;
+  }
+
   private rebuildSidewalkGraph(): void {
     const grid = this.state.grid;
-    const roadCellKeys: string[] = [];
-    const buildingCellKeys: string[] = [];
     const gridLookup = {
       getCell: (x: number, y: number) => {
         const cell = grid.getCell(x, y);
@@ -2072,25 +2124,45 @@ export class SimulationLoop {
       },
     };
 
-    grid.forEachCell((cell, x, y) => {
-      if (cell.roadType !== RoadType.NONE) {
-        roadCellKeys.push(toPosKey(x, y));
-      } else if (cell.buildingId > 0) {
-        buildingCellKeys.push(toPosKey(x, y));
-      }
-    });
-
-    this.state.sidewalkGraph.buildFromGrid(gridLookup, roadCellKeys, buildingCellKeys);
-    // Re-link the EXISTING pedestrianManager to the rebuilt graph.
-    //
-    // This used to construct a new one, discarding every walking pedestrian and
-    // the whole path cache. markLaneGraphDirty always sets sidewalkGraphDirty,
-    // and it fires on road build, road demolish, any other demolish and on
-    // rezoning over existing buildings — so every one of those edits made the
-    // pedestrians on screen vanish and forced an immediate storm of multi-target
-    // A* to refill. It also reset levelCrossings to null, which would have
-    // silently un-wired BUG-105 on the first edit (BUG-104).
-    this.state.pedestrianManager.setSidewalkGraph(this.state.sidewalkGraph);
+    // 只重算動過的那幾格 —— 這裡原本一律走 buildFromGrid，而它會丟掉全圖的節點
+    // 與邊再從頭生成一次：60×60 全鋪滿實測 80~130 ms，且觸發條件是每一次道路
+    // 編輯。SidewalkGraph.updateCells 早就寫好也有測試，只是從來沒有人呼叫它。
+    const dirty = this.dirtySidewalkCells;
+    if (dirty && dirty.size > 0) {
+      const cells = [...dirty];
+      this.state.sidewalkGraph.updateCells(gridLookup, cells);
+      // 只有這些格子附近的站牌需要重新量步行範圍。呼叫它同時把世代對齊，
+      // 否則安全網會把整份快取一起丟掉，精準失效就白做了。
+      this.stopReach.invalidateNear(cells, WALK_RANGE_BY_TYPE.WIDEST);
+      this.state.pedestrianManager.invalidateCells(cells);
+    } else {
+      const roadCellKeys: string[] = [];
+      const buildingCellKeys: string[] = [];
+      grid.forEachCell((cell, x, y) => {
+        if (cell.roadType !== RoadType.NONE) {
+          roadCellKeys.push(toPosKey(x, y));
+        } else if (cell.buildingId > 0) {
+          buildingCellKeys.push(toPosKey(x, y));
+        }
+      });
+      this.state.sidewalkGraph.buildFromGrid(gridLookup, roadCellKeys, buildingCellKeys);
+      // Re-link the EXISTING pedestrianManager to the rebuilt graph.
+      //
+      // This used to construct a new one, discarding every walking pedestrian and
+      // the whole path cache. markLaneGraphDirty always sets sidewalkGraphDirty,
+      // and it fires on road build, road demolish, any other demolish and on
+      // rezoning over existing buildings — so every one of those edits made the
+      // pedestrians on screen vanish and forced an immediate storm of multi-target
+      // A* to refill. It also reset levelCrossings to null, which would have
+      // silently un-wired BUG-105 on the first edit (BUG-104).
+      //
+      // Only on this branch: the graph instance never changes, so the real effect
+      // of the call is clearing the path cache — which is right after a full
+      // rebuild and wrong after an incremental one, where invalidateCells has
+      // already dropped exactly the routes that died.
+      this.state.pedestrianManager.setSidewalkGraph(this.state.sidewalkGraph);
+    }
+    this.dirtySidewalkCells = null;
 
     // Retire agents whose remaining route contains an edge the rebuilt graph no
     // longer owns — the pedestrian mirror of retireVehiclesOnDeadEdges, and for
@@ -2126,8 +2198,14 @@ export class SimulationLoop {
    * rebuildSidewalkGraph never ran for it and the retirement sweep never saw
    * it: an agent walking to the door of a house the growth tick had just razed
    * carried on walking there for up to DESPAWN_TIMEOUT (BUG-161).
+   *
+   * 蓋交通設施也走這裡。人行道圖的重建旗標只由 `markLaneGraphDirty` 設定，而蓋
+   * 站牌刻意不呼叫它 —— 設施不改變路網，拖著 lane graph 與通勤快取一起重算太貴。
+   * 於是站牌被關在門外：它在圖裡沒有門節點，行人走不進去，涵蓋範圍也量不出來，
+   * 要等玩家隨手動一次道路才補得上。名字從 Removal 改成 Change，是因為它一直
+   * 都是「照 grid 重算這幾格」，蓋跟拆走的是同一條路。
    */
-  applyBuildingRemoval(affectedCells: string[]): void {
+  applyBuildingChange(affectedCells: string[]): void {
     if (affectedCells.length === 0) return;
     const grid = this.state.grid;
     this.state.sidewalkGraph.updateCells({
@@ -2137,6 +2215,8 @@ export class SimulationLoop {
         return { roadType: c.roadType, roadFlags: c.roadFlags, railType: c.railType, buildingId: c.buildingId };
       },
     }, affectedCells);
+    // 建築動了，附近站牌的步行範圍也就變了 —— 門節點是行人走進站牌的唯一入口。
+    this.stopReach.invalidateNear(affectedCells, WALK_RANGE_BY_TYPE.WIDEST);
     this.state.pedestrianManager.clearPathCache();
     this.retireStrandedPedestrians();
   }
@@ -2224,12 +2304,13 @@ export class SimulationLoop {
       const availableTransport = this.getAvailableTransit(fromPos, toPos);
       const congestion = this.state.traffic.getCongestionLevel();
       const multiModalRoutes = findMultiModalRoutes(
-        this.flatRoutes, fromPos, toPos,
-        SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED,
+        this.flatRoutes, fromPos, toPos, SIMULATION.WALK_SPEED,
         SIMULATION.AVERAGE_WAIT_FACTOR, this.transferGraph, SIMULATION.MAX_TRIP_LEGS,
+        this.stopReach,
       );
       const { mode, multiLeg } = chooseModeMultiModal(
-        fromPos, toPos, availableTransport, multiModalRoutes, congestion,
+        fromPos, toPos, availableTransport, multiModalRoutes,
+        this.modeChoiceFor(citizen.education),
       );
 
       if (mode !== TransportMode.DRIVE) {
@@ -2436,7 +2517,10 @@ export class SimulationLoop {
     origin: { x: number; y: number },
     destination: { x: number; y: number },
   ): AvailableTransport[] {
-    return findAvailableTransit(this.getTransitSystemInfos(), origin, destination, SIMULATION.WALK_TO_STOP_RANGE);
+    return findAvailableTransit(
+      this.getTransitSystemInfos(), origin, destination, this.stopReach,
+      SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, this.state.clock.ticksPerDay,
+    );
   }
 
   /**
@@ -2707,16 +2791,7 @@ export class SimulationLoop {
     stops: readonly { x: number; y: number; passengers: number; dailyRiders: number }[],
     pos: { x: number; y: number },
   ): { x: number; y: number; passengers: number; dailyRiders: number } | null {
-    let best: { x: number; y: number; passengers: number; dailyRiders: number } | null = null;
-    let bestDist = Infinity;
-    for (const s of stops) {
-      const dist = manhattanDistance(s.x, s.y, pos.x, pos.y);
-      if (dist < bestDist) {
-        bestDist = dist;
-        best = s;
-      }
-    }
-    return best;
+    return findNearestReachableStop(stops, pos, this.stopReach);
   }
 
 }

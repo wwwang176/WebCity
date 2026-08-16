@@ -1401,10 +1401,12 @@ export class Game {
 
     // Auto-demolish zone buildings in the footprint (evict citizens)
     const { w, h } = getRotatedSize(cfg.width, cfg.height, this.currentRotation);
+    const footprint: string[] = [];
     for (let dy = 0; dy < h; dy++) {
       for (let dx = 0; dx < w; dx++) {
         const cx = x + dx;
         const cy = y + dy;
+        footprint.push(`${cx},${cy}`);
         const cell = this.state.grid.getCell(cx, cy);
         if (cell && cell.buildingId !== 0 && isZoneBuilding(cell.buildingId)) {
           this.state.citizens.evictBuilding(`${cx},${cy}`, this.state.clock.tick);
@@ -1421,6 +1423,9 @@ export class Game {
 
     // Place on grid (multi-cell)
     placeInfraOnGrid(this.state.grid, x, y, type, this.currentRotation);
+    // 讓人行道圖看見這棟樓。蓋設施刻意不呼叫 markLaneGraphDirty（設施不改變
+    // 路網），所以這裡不通知就沒有人會通知 —— 樓沒有門節點，行人穿過它走。
+    this.simLoop.applyBuildingChange(footprint);
 
     // Register with service layer at top-left coordinates (matches expandFootprint expectation)
     const actions = INFRA_SERVICE_ACTIONS[type];
@@ -1524,6 +1529,10 @@ export class Game {
     // drawn underneath it — BUG-111, in a fourth path.
     this.buildingRenderer.removeZoneOverlay(x, y);
     this.invalidateZoneBlockers();
+    // 站牌在人行道圖裡就是一棟建築的四個門 —— 行人靠門走進去，涵蓋範圍也從門
+    // 往外量。這裡不通知的話，新站牌要等玩家隨手動一次道路才進得了圖，在那之前
+    // 它服務不到任何人。刻意不走 markLaneGraphDirty：設施不改變路網。
+    this.simLoop.applyBuildingChange([`${x},${y}`]);
     const infraType = airportInfra ?? TRANSPORT_TO_INFRA_TYPE[type]!;
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);
     this.audioManager.playSfx(SoundType.BUILD);
@@ -1560,9 +1569,15 @@ export class Game {
       getInfraConfig(infraType)?.width ?? 1, getInfraConfig(infraType)?.height ?? 1,
       this.currentRotation,
     );
+    const airportCells: string[] = [];
     for (let dy = 0; dy < ah; dy++) {
-      for (let dx = 0; dx < aw; dx++) this.buildingRenderer.removeZoneOverlay(x + dx, y + dy);
+      for (let dx = 0; dx < aw; dx++) {
+        this.buildingRenderer.removeZoneOverlay(x + dx, y + dy);
+        airportCells.push(`${x + dx},${y + dy}`);
+      }
     }
+    // 同 placeInfra：不通知的話這片機場在人行道圖裡不存在。
+    this.simLoop.applyBuildingChange(airportCells);
     this.invalidateZoneBlockers();
     this.audioManager.playSfx(SoundType.BUILD);
     this.buildingRenderer.addInfrastructure(this.sceneManager.scene, x, y, infraType, ROTATION_RESERVED[this.currentRotation]);

@@ -3,6 +3,17 @@ import { chooseModeMultiModal } from '../ModeChoice';
 import { TransportMode, TransportType } from '../types';
 import type { MultiLegRoute, TransitLeg } from '../MultiModalRouter';
 
+/**
+ * 中性的模式選擇參數：走路一格一 tick、不加不情願權重。
+ *
+ * 這一檔驗的是選擇邏輯本身的算術。步行速度與權重的效果由
+ * `WalkCostInModeChoice.test.ts` 單獨驗。
+ */
+function neutral(congestionLevel: number) {
+  return { congestionLevel, walkSpeed: 1, walkWeight: 1 };
+}
+
+
 function walkLeg(fx: number, fy: number, tx: number, ty: number, time: number): TransitLeg {
   return { type: 'walk', fromX: fx, fromY: fy, toX: tx, toY: ty, estimatedTime: time };
 }
@@ -18,16 +29,17 @@ function rideLeg(
 }
 
 function makeMultiLeg(legs: TransitLeg[], totalTime: number): MultiLegRoute {
-  return { legs, totalTime };
+  const walkTime = legs.reduce((s, l) => l.type === 'walk' ? s + l.estimatedTime : s, 0);
+  return { legs, totalTime, walkTime };
 }
 
 describe('chooseModeMultiModal', () => {
   it('walks for short distances', () => {
     const result = chooseModeMultiModal(
       { x: 0, y: 0 }, { x: 1, y: 1 },
-      [{ type: TransportType.BUS, estimatedTime: 1 }],
+      [{ type: TransportType.BUS, estimatedTime: 1, walkTime: 0 }],
       [],
-      0,
+      neutral(0),
     );
     expect(result.mode).toBe(TransportMode.WALK);
     expect(result.multiLeg).toBeNull();
@@ -38,9 +50,9 @@ describe('chooseModeMultiModal', () => {
     // single transit time=20 > 15 → drive
     const result = chooseModeMultiModal(
       { x: 0, y: 0 }, { x: 10, y: 0 },
-      [{ type: TransportType.BUS, estimatedTime: 20 }],
+      [{ type: TransportType.BUS, estimatedTime: 20, walkTime: 0 }],
       [],
-      0,
+      neutral(0),
     );
     expect(result.mode).toBe(TransportMode.DRIVE);
     expect(result.multiLeg).toBeNull();
@@ -50,9 +62,9 @@ describe('chooseModeMultiModal', () => {
     // distance=10, driveTime=10*(1+0.5)=15, threshold=22.5
     const result = chooseModeMultiModal(
       { x: 0, y: 0 }, { x: 10, y: 0 },
-      [{ type: TransportType.METRO, estimatedTime: 8 }],
+      [{ type: TransportType.METRO, estimatedTime: 8, walkTime: 0 }],
       [],
-      0.5,
+      neutral(0.5),
     );
     expect(result.mode).toBe(TransportMode.METRO);
     expect(result.multiLeg).toBeNull();
@@ -71,9 +83,9 @@ describe('chooseModeMultiModal', () => {
     // single transit=25, multi-modal=10 → multi-modal wins
     const result = chooseModeMultiModal(
       { x: 0, y: 0 }, { x: 20, y: 0 },
-      [{ type: TransportType.BUS, estimatedTime: 25 }],
+      [{ type: TransportType.BUS, estimatedTime: 25, walkTime: 0 }],
       [multi],
-      0,
+      neutral(0),
     );
     expect(result.mode).toBe(TransportMode.BUS); // primary = first ride type
     expect(result.multiLeg).toBe(multi);
@@ -92,9 +104,9 @@ describe('chooseModeMultiModal', () => {
     // single=12, multi=21 → single wins
     const result = chooseModeMultiModal(
       { x: 0, y: 0 }, { x: 20, y: 0 },
-      [{ type: TransportType.METRO, estimatedTime: 12 }],
+      [{ type: TransportType.METRO, estimatedTime: 12, walkTime: 0 }],
       [multi],
-      0,
+      neutral(0),
     );
     expect(result.mode).toBe(TransportMode.METRO);
     expect(result.multiLeg).toBeNull();
@@ -111,9 +123,9 @@ describe('chooseModeMultiModal', () => {
     // single=20 > 15, multi=52 > 15 → drive
     const result = chooseModeMultiModal(
       { x: 0, y: 0 }, { x: 10, y: 0 },
-      [{ type: TransportType.BUS, estimatedTime: 20 }],
+      [{ type: TransportType.BUS, estimatedTime: 20, walkTime: 0 }],
       [multi],
-      0,
+      neutral(0),
     );
     expect(result.mode).toBe(TransportMode.DRIVE);
     expect(result.multiLeg).toBeNull();
@@ -124,7 +136,7 @@ describe('chooseModeMultiModal', () => {
       { x: 0, y: 0 }, { x: 10, y: 0 },
       [],
       [],
-      0,
+      neutral(0),
     );
     expect(result.mode).toBe(TransportMode.DRIVE);
   });

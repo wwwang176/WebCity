@@ -209,7 +209,6 @@ export abstract class BaseTransportSystem {
       type: this.config.type,
       stops,
       vehicles: vehicleCount,
-      frequency: stops.length * 2,
       operatingCost: vehicleCount * this.config.operatingCostPerVehicle,
     };
     this.routes.push(route);

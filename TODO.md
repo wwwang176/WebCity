@@ -1926,3 +1926,28 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
   `hoverHighlightGradient` 對基礎設施一律用 `cells[0].color`，改成逐格查表。
 - [x] **BUG-277：通勤圖層是死的快照**（見 BUGS.md）：統計更新不會亮起任何 dirty
   旗標，圖層因此不會重建。補上統計版本號，`updateRenderers` 比對後重建。
+- [x] **BUG-278：步行距離用直線量，看不見馬路**（見 BUGS.md）：四個挑站牌的地方
+  （`TransitAccessField.build`、`findAvailableTransit`、`findMultiModalRoutes`、
+  `findNearestStop`）全部改用新的 `SidewalkStopReach` —— 從站牌的門節點在人行道圖
+  上跑有界 Dijkstra。行人只在路口過馬路是設計，繞路本身沒錯；錯的是模擬把住戶配給
+  對街的站牌。代價是公車涵蓋範圍縮到 52~56%，「站牌蓋在路口旁」因此成為有後果的
+  決定。轉乘步行（`buildTransferGraph`）一併改掉 —— 留一個用直線就是留一個縫。
+- [x] **BUG-279：新蓋的交通設施與公共建築進不了人行道圖**（見 BUGS.md）：
+  `placeTransportStop` / `placeInfra` / `placeAirport` 都補上 `applyBuildingChange`
+  （原 `applyBuildingRemoval`，改名是因為它一直都是「照 grid 重算這幾格」）。
+  `warmup` 補上 `ensureSidewalkGraph`。
+- [x] **BUG-280：每一次道路編輯都重建整張人行道圖**（見 BUGS.md）：改走既有但從
+  未被呼叫的 `updateCells`。不能沿用 `dirtyRoadCells`（`rebuildLaneGraph` 會先把它
+  清掉），改用獨立的 `dirtySidewalkCells`。84~159 ms → 0.24~0.42 ms。
+- [x] **BUG-281：拆格子留下指向已刪節點的殘邊**（見 BUGS.md）：反向邊是拿組出來的
+  id 比對的，而 id 早就含了種類與路寬，永遠對不上。改成直接比對終點。
+- [x] **BUG-282：getEdgeIds 每次都掃全圖**（見 BUGS.md）：改成隨增刪維護 Set。
+
+### 這一輪留下的、還沒處理的
+- [ ] **通勤上限 `WALK_TO_STOP_RANGE = 5` 要不要調**：涵蓋範圍縮了約一半，現有存檔
+  的公車載客率會明顯下降。決定是維持 5、讓玩家學會把站牌蓋在路口附近，實機玩過
+  再看要不要動。
+- [ ] **`SidewalkGraph.findNearestNode` 仍是全圖線性掃描**（兩萬個節點）。只在
+  「格子裡沒有門節點」時才會走到，BUG-279 修完之後那條路徑幾乎不會發生，但它還在。
+- [ ] **`findPathMultiTarget` 的 open set 是線性找最小值**（O(n²)）。行人路徑快取
+  擋掉大部分成本，還沒成為瓶頸。

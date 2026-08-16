@@ -175,7 +175,7 @@ describe('vehicles are retired exactly when their edges die', () => {
     // Raze the destination the way the growth tick does: clear the cell, then
     // hand the same incremental update to the graph.
     state.grid.setCell(20, 4, { zoneType: 0, buildingId: 0, reserved: 0 });
-    loop.applyBuildingRemoval(['20,4']);
+    loop.applyBuildingChange(['20,4']);
 
     expect(agent!.state).toBe(PedestrianState.ARRIVED);
   });
@@ -195,7 +195,7 @@ describe('vehicles are retired exactly when their edges die', () => {
     expect(agent).toBeDefined();
 
     state.grid.setCell(24, 6, { zoneType: 0, buildingId: 0, reserved: 0 });
-    loop.applyBuildingRemoval(['24,6']);
+    loop.applyBuildingChange(['24,6']);
 
     expect(agent!.state).not.toBe(PedestrianState.ARRIVED);
   });

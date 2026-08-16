@@ -2,8 +2,12 @@
  * SidewalkGraph — sidewalk network graph for pedestrian pathfinding.
  *
  * Generates sidewalk nodes along road edges (where no adjacent road exists)
- * and connects them with sidewalk, crosswalk, level_crossing, building_access,
- * and transit_access edges.
+ * and connects them with sidewalk, crosswalk, level_crossing, building_access
+ * and building_wall edges.
+ *
+ * 站牌沒有自己的節點種類：它在這張圖裡就是一棟 1×1 建築，四個門節點靠
+ * building_access 接上路邊。`transit_stop` / `transit_access` 這兩種曾經宣告在
+ * 型別裡（連這段註解都寫著會產生），但沒有一行程式碼建立過它們 —— 已移除。
  */
 
 import { RoadType, RoadDirection, countRoadDirections, ROAD_WIDTHS } from '../road/types';
@@ -46,10 +50,10 @@ export interface SidewalkNode {
   id: string;
   position: { x: number; y: number };
   cellKey: string;
-  type: 'sidewalk' | 'crosswalk_wait' | 'building_entrance' | 'building_corner' | 'transit_stop';
+  type: 'sidewalk' | 'building_entrance' | 'building_corner';
   /**
    * The road tier whose width put this node where it is, or 0 for nodes not
-   * placed off a carriageway (doors, corners, transit stops).
+   * placed off a carriageway (doors and corners).
    *
    * Node ids are `cellKey:side` and say nothing about position, but position
    * comes from ROAD_WIDTHS[roadType] — so this is carried here and folded into
@@ -63,7 +67,7 @@ export interface SidewalkEdge {
   from: SidewalkNode;
   to: SidewalkNode;
   length: number;
-  type: 'sidewalk' | 'crosswalk' | 'level_crossing' | 'building_access' | 'building_wall' | 'transit_access';
+  type: 'sidewalk' | 'crosswalk' | 'level_crossing' | 'building_access' | 'building_wall';
   /** The intersection cell that controls this crosswalk/bridge (for traffic light query) */
   intersectionCellKey?: string;
 }
@@ -140,13 +144,28 @@ export class SidewalkGraph {
   private nodes = new Map<string, SidewalkNode>();
   private adjacency = new Map<string, SidewalkEdge[]>();
   private cellNodes = new Map<string, string[]>();
+  /** 所有還活著的邊 id，隨增刪維護 —— 見 getEdgeIds。 */
+  private readonly edgeIds = new Set<string>();
+  private generation = 0;
+
+  /**
+   * Bumped on every structural change.
+   *
+   * Anything that caches a graph-derived answer compares this to decide whether
+   * its answer is still valid. Callers that know WHICH cells moved should
+   * invalidate precisely; this is the safety net for the ones that forget, and
+   * for wholesale rebuilds where "which cells" is every cell.
+   */
+  get version(): number { return this.generation; }
 
   // ── Build ──
 
   buildFromGrid(grid: GridLookup, roadCellKeys: string[], buildingCellKeys: string[] = []): void {
+    this.generation++;
     this.nodes.clear();
     this.adjacency.clear();
     this.cellNodes.clear();
+    this.edgeIds.clear();
 
     // Pass 1: generate nodes for each road cell
     for (const key of roadCellKeys) {
@@ -170,6 +189,7 @@ export class SidewalkGraph {
   }
 
   updateCells(grid: GridLookup, affectedCellKeys: string[]): void {
+    this.generation++;
     // Collect affected cells + their neighbors (same as LaneGraph pattern)
     const toRebuild = new Set<string>();
     for (const key of affectedCellKeys) {
@@ -278,17 +298,12 @@ export class SidewalkGraph {
   /**
    * Every live edge id.
    *
-   * Retirement only wants the id set, and getAllEdges already builds one
-   * internally on the way to producing the array — so asking it for the array
-   * and then rebuilding the same set meant three full-size allocations where
-   * one does.
+   * 隨著邊的增刪一起維護，而不是每次呼叫掃一遍鄰接表。呼叫端是行人的退休掃描，
+   * 而它跑在每一次道路編輯上：60×60 全鋪滿約十萬條邊，掃一遍要 12 ms —— 在
+   * `updateCells` 只花 0.3 ms 的旁邊，等於整個增量重建都白做了。
    */
-  getEdgeIds(): Set<string> {
-    const ids = new Set<string>();
-    for (const edges of this.adjacency.values()) {
-      for (const e of edges) ids.add(e.id);
-    }
-    return ids;
+  getEdgeIds(): ReadonlySet<string> {
+    return this.edgeIds;
   }
 
   /** Max search radius for findNearestNode (cells). Beyond this, return null. */
@@ -298,7 +313,6 @@ export class SidewalkGraph {
     let best: SidewalkNode | null = null;
     let bestDist = Infinity;
     for (const node of this.nodes.values()) {
-      if (node.type === 'transit_stop') continue;
       const d = euclideanDistance(bx, by, node.position.x, node.position.y);
       if (d < bestDist) {
         bestDist = d;
@@ -762,10 +776,10 @@ export class SidewalkGraph {
 
     // Avoid duplicates
     const aEdges = this.adjacency.get(a.id)!;
-    if (!aEdges.some(e => e.id === edgeAB.id)) aEdges.push(edgeAB);
+    if (!aEdges.some(e => e.id === edgeAB.id)) { aEdges.push(edgeAB); this.edgeIds.add(edgeAB.id); }
 
     const bEdges = this.adjacency.get(b.id)!;
-    if (!bEdges.some(e => e.id === edgeBA.id)) bEdges.push(edgeBA);
+    if (!bEdges.some(e => e.id === edgeBA.id)) { bEdges.push(edgeBA); this.edgeIds.add(edgeBA.id); }
   }
 
   private removeCellData(cellKey: string): void {
@@ -774,12 +788,24 @@ export class SidewalkGraph {
       // Remove edges from this node
       const edges = this.adjacency.get(nodeId) ?? [];
       for (const edge of edges) {
-        // Remove reverse edge from the other node
+        this.edgeIds.delete(edge.id);
+        // 反向那一條由對面持有，也得刪掉。
+        //
+        // 原本是拿 `${to.id}→${nodeId}` 組出反向 id 去比對，但 id 裡還含有邊的
+        // 種類與兩端的路寬（BUG-159、BUG-160 先後折進去的），所以那個 findIndex
+        // 一次都沒有命中過 —— 對面手上永遠留著一條指向已刪節點的邊，A* 走得過去，
+        // 行人於是走在已經不存在的人行道上。
+        //
+        // 改成直接看終點是誰。同一對節點之間可能有不只一條邊（斑馬線與平交道就
+        // 會重疊在同一對上），指向被刪節點的通通要走，所以是迴圈不是 findIndex。
         const otherEdges = this.adjacency.get(edge.to.id);
         if (otherEdges) {
-          const reverseId = `${edge.to.id}→${nodeId}`;
-          const idx = otherEdges.findIndex(e => e.id === reverseId);
-          if (idx >= 0) otherEdges.splice(idx, 1);
+          for (let i = otherEdges.length - 1; i >= 0; i--) {
+            const back = otherEdges[i]!;
+            if (back.to.id !== nodeId) continue;
+            this.edgeIds.delete(back.id);
+            otherEdges.splice(i, 1);
+          }
         }
       }
       this.adjacency.delete(nodeId);

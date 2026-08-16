@@ -5,6 +5,7 @@ import { ZoneType } from '../../grid/types';
 import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
+import { getInfraBuildingId } from '../../building/InfraConfig';
 
 /**
  * Helper: set up a minimal city with residential + commercial buildings
@@ -313,7 +314,14 @@ describe('Transport Mode Choice Integration', () => {
   });
 
   it('should skip car spawn when metro station covers commute', () => {
-    // Add metro stations near home and workplace
+    // Add metro stations near home and workplace.
+    //
+    // 車站要真的放上 grid。「走得到哪些格子」是沿人行道量的，而車站在人行道圖裡
+    // 的身分就是一棟建築的門節點 —— 只呼叫 addStation 的話，那個座標在圖裡什麼
+    // 都沒有，服務不到任何人。遊戲裡蓋車站一定會同時寫 grid（placeTransportStop），
+    // 所以這是把 fixture 對齊實際行為，不是遷就實作。
+    state.grid.setCell(1, 2, { buildingId: getInfraBuildingId('metro_station') });
+    state.grid.setCell(15, 2, { buildingId: getInfraBuildingId('metro_station') });
     const stationA = state.metro.addStation(1, 2); // near residential
     const stationB = state.metro.addStation(15, 2); // near commercial
     state.metro.createLine([stationA, stationB], 1);

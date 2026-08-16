@@ -6,6 +6,8 @@ import {
   flattenSystems,
   type FlatRoute,
 } from '../MultiModalRouter';
+import { openFieldReach } from './openFieldReach';
+import { CROWDING } from '../RouteLoad';
 import { TransportType, type TransportStop } from '../types';
 
 function makeStop(x: number, y: number, id: number, type = TransportType.BUS): TransportStop {
@@ -17,21 +19,24 @@ function makeRoute(
   type: TransportType,
   speed: number,
   stops: TransportStop[],
-  opts?: { segDists?: number[]; frequency?: number; isFull?: boolean },
+  opts?: { segDists?: number[]; headway?: number; loadFactor?: number },
 ): FlatRoute {
   return {
     routeId, type, speed, stops,
     segDists: opts?.segDists ?? null,
-    frequency: opts?.frequency ?? 10,
-    isFull: opts?.isFull ?? false,
+    headway: opts?.headway ?? 10,
+    loadFactor: opts?.loadFactor ?? 0,
   };
 }
+
+/** 擠到上不去的載重。 */
+const PACKED = CROWDING.REFUSE_LOAD;
 
 // ── buildTransferGraph ──────────────────────────────────────────
 
 describe('buildTransferGraph', () => {
   it('returns empty graph for no routes', () => {
-    const graph = buildTransferGraph([], 3);
+    const graph = buildTransferGraph([], 3, openFieldReach);
     expect(graph.byStop.size).toBe(0);
   });
 
@@ -41,7 +46,7 @@ describe('buildTransferGraph', () => {
       makeRoute(2, TransportType.METRO, 3, [makeStop(10, 1, 3), makeStop(20, 0, 4)]),
     ];
     // (10,0) ↔ (10,1) distance 1 ≤ 3
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(2);
   });
 
@@ -49,7 +54,7 @@ describe('buildTransferGraph', () => {
     const routes: FlatRoute[] = [
       makeRoute(1, TransportType.BUS, 2, [makeStop(0, 0, 1), makeStop(2, 0, 2)]),
     ];
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(0);
   });
 
@@ -58,7 +63,7 @@ describe('buildTransferGraph', () => {
       makeRoute(1, TransportType.BUS, 2, [makeStop(0, 0, 1)]),
       makeRoute(2, TransportType.METRO, 3, [makeStop(10, 0, 2)]),
     ];
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(0);
   });
 
@@ -67,7 +72,7 @@ describe('buildTransferGraph', () => {
       makeRoute(1, TransportType.BUS, 2, [makeStop(10, 0, 1)]),
       makeRoute(2, TransportType.BUS, 2, [makeStop(10, 1, 2)]),
     ];
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(2);
   });
 
@@ -76,7 +81,7 @@ describe('buildTransferGraph', () => {
       makeRoute(1, TransportType.BUS, 2, [makeStop(5, 5, 1)]),
       makeRoute(2, TransportType.METRO, 3, [makeStop(5, 5, 2)]),
     ];
-    const graph = buildTransferGraph(routes, 3);
+    const graph = buildTransferGraph(routes, 3, openFieldReach);
     expect(graph.byStop.size).toBe(2);
   });
 });
@@ -85,7 +90,7 @@ describe('buildTransferGraph', () => {
 
 /** Build transfer graph AND pre-compute stop route cache in one step. */
 function buildGraphWithCache(routes: FlatRoute[], transferRange: number, walkSpeed = 1, waitFactor = 0.5, maxLegs = 7) {
-  const graph = buildTransferGraph(routes, transferRange);
+  const graph = buildTransferGraph(routes, transferRange, openFieldReach);
   buildStopRouteCache(routes, graph, walkSpeed, waitFactor, maxLegs);
   return graph;
 }
@@ -101,7 +106,8 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache([], TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       [], { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
     expect(result).toEqual([]);
   });
@@ -113,7 +119,8 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     expect(result.length).toBeGreaterThanOrEqual(1);
@@ -134,7 +141,8 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     const fiveLegs = result.find(r => r.legs.length === 5);
@@ -160,7 +168,8 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 30, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     const sevenLegs = result.find(r => r.legs.length === 7);
@@ -181,7 +190,8 @@ describe('findMultiModalRoutes', () => {
     // maxLegs=3 → only single-ride routes
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, 3,
+      WALK_SPEED, WAIT_FACTOR, graph, 3,
+      openFieldReach,
     );
     for (const route of result) {
       expect(route.legs.length).toBeLessThanOrEqual(3);
@@ -198,7 +208,8 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     const transfer = result.find(r => r.legs.length === 5);
@@ -217,7 +228,8 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
     // Only single-ride routes possible (no transfer edges)
     for (const route of result) {
@@ -228,12 +240,13 @@ describe('findMultiModalRoutes', () => {
   it('skips full routes', () => {
     const routes: FlatRoute[] = [
       makeRoute(1, TransportType.BUS, 2,
-        [makeStop(1, 0, 1), makeStop(9, 0, 2)], { isFull: true }),
+        [makeStop(1, 0, 1), makeStop(9, 0, 2)], { loadFactor: PACKED }),
     ];
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
     expect(result).toEqual([]);
   });
@@ -241,12 +254,13 @@ describe('findMultiModalRoutes', () => {
   it('includes walk and wait time in total time estimate', () => {
     const routes: FlatRoute[] = [
       makeRoute(1, TransportType.BUS, 2,
-        [makeStop(2, 0, 1), makeStop(8, 0, 2)], { segDists: [10, 10], frequency: 10 }),
+        [makeStop(2, 0, 1), makeStop(8, 0, 2)], { segDists: [10, 10], headway: 10 }),
     ];
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     expect(result.length).toBeGreaterThan(0);
@@ -272,7 +286,8 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
 
     expect(result.length).toBeGreaterThanOrEqual(2);
@@ -286,12 +301,13 @@ describe('findMultiModalRoutes', () => {
       makeRoute(1, TransportType.BUS, 2,
         [makeStop(1, 0, 1), makeStop(10, 0, 2)], { segDists: [10, 10] }),
       makeRoute(2, TransportType.METRO, 3,
-        [makeStop(10, 1, 3), makeStop(19, 0, 4)], { segDists: [10, 10], isFull: true }),
+        [makeStop(10, 1, 3), makeStop(19, 0, 4)], { segDists: [10, 10], loadFactor: PACKED }),
     ];
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      openFieldReach,
     );
     // No 5-leg routes because metro is full
     const fiveLegs = result.find(r => r.legs.length === 5);
@@ -310,20 +326,33 @@ describe('flattenSystems', () => {
       routes: [{
         id: 1, type: TransportType.BUS,
         stops: [makeStop(0, 0, 1), makeStop(10, 0, 2)],
-        vehicles: 2, frequency: 4, operatingCost: 100,
+        vehicles: 2, operatingCost: 100,
       }],
       getSegmentDistances: () => [10, 10],
     }];
-    const flat = flattenSystems(systems);
+    const flat = flattenSystems(systems, 24);
     expect(flat).toHaveLength(1);
     expect(flat[0]!.routeId).toBe(1);
     expect(flat[0]!.type).toBe(TransportType.BUS);
     expect(flat[0]!.speed).toBe(2);
     expect(flat[0]!.segDists).toEqual([10, 10]);
-    expect(flat[0]!.isFull).toBe(false);
+    expect(flat[0]!.loadFactor).toBe(0);
   });
 
-  it('marks full routes', () => {
+  it('halves the headway when the fleet doubles', () => {
+    // 加車真正買到的東西。班距原本寫死成站數的倍數，加車一秒也沒有變短。
+    const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
+    const sys = (vehicles: number) => [{
+      type: TransportType.BUS, speed: 2, vehicleCapacity: 50,
+      routes: [{ id: 1, type: TransportType.BUS, stops, vehicles, operatingCost: 100 }],
+      getSegmentDistances: () => [10, 10],
+    }];
+    const two = flattenSystems(sys(2), 24)[0]!.headway;
+    const four = flattenSystems(sys(4), 24)[0]!.headway;
+    expect(four).toBeCloseTo(two / 2);
+  });
+
+  it('measures load against what the fleet carries in a day', () => {
     const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
     stops[0]!.dailyRiders = 100;
     const systems = [{
@@ -332,12 +361,26 @@ describe('flattenSystems', () => {
       vehicleCapacity: 50,
       routes: [{
         id: 1, type: TransportType.BUS, stops,
-        vehicles: 2, frequency: 4, operatingCost: 100,
+        vehicles: 2, operatingCost: 100,
       }],
+      getSegmentDistances: () => [10, 10],
     }];
-    const flat = flattenSystems(systems);
-    // 2 vehicles × 50 cap = 100, dailyRiders = 100 → full
-    expect(flat[0]!.isFull).toBe(true);
+    const flat = flattenSystems(systems, 24);
+    // 整圈 20 格 / 速度 2 = 10 tick → 一天 2.4 圈；2 台 × 50 座 × 2.4 = 240 人次。
+    // 舊模型拿 100 人次去比「2 台 × 50 座 = 100」，這條線在這裡就滿了。
+    expect(flat[0]!.loadFactor).toBeCloseTo(100 / 240);
+    expect(flat[0]!.loadFactor, '一天才 100 人次就算滿了').toBeLessThan(1);
+  });
+
+  it('refuses a route that really is over capacity', () => {
+    const stops = [makeStop(0, 0, 1), makeStop(10, 0, 2)];
+    stops[0]!.dailyRiders = 1000;
+    const systems = [{
+      type: TransportType.BUS, speed: 2, vehicleCapacity: 50,
+      routes: [{ id: 1, type: TransportType.BUS, stops, vehicles: 2, operatingCost: 100 }],
+      getSegmentDistances: () => [10, 10],
+    }];
+    expect(flattenSystems(systems, 24)[0]!.loadFactor).toBeGreaterThan(CROWDING.REFUSE_LOAD);
   });
 
   it('skips suspended routes', () => {
@@ -347,11 +390,11 @@ describe('flattenSystems', () => {
       routes: [{
         id: 1, type: TransportType.BUS,
         stops: [makeStop(0, 0, 1)],
-        vehicles: 1, frequency: 4, operatingCost: 100,
+        vehicles: 1, operatingCost: 100,
         suspended: true,
       }],
     }];
-    const flat = flattenSystems(systems);
+    const flat = flattenSystems(systems, 24);
     expect(flat).toHaveLength(0);
   });
 });

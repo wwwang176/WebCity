@@ -93,12 +93,31 @@ export const SIMULATION = {
   SAMPLE_COUNT_MAX: 300,
   /** Commute sampling: eligible commuters per sample */
   SAMPLE_DIVISOR: 5,
-  /** Walking distance to transit stop (cells) */
-  WALK_TO_STOP_RANGE: 5,
+  // 步行到站的上限已經依運具分開，見 core/transport/WalkRange —— 一個全域數字
+  // 意味著公車站與捷運站的服務範圍一模一樣，而現實剛好相反。
   /** Max Manhattan distance for transfer walks between stops of different routes */
   TRANSFER_WALK_RANGE: 3,
-  /** Walk speed in cells/tick for mode-choice time estimation */
-  WALK_SPEED: 1,
+  /**
+   * 開車的參考速度（km/h）。模型裡「一格一 tick」就是這個速度。
+   *
+   * 這**不是速限**，是門到門的實際平均：路口、轉彎、找車位都算在內。速限是 50
+   * （高速公路 100），但沒有人以速限完成一趟通勤。壅塞那一項
+   * （`driveTime = 距離 × (1 + 壅塞)`）疊在這個平均之上，代表的是比平常更塞。
+   *
+   * 這個數字是整個時間尺度的分母。實測（見下）：拿速限當參考的話，走路貴到只有
+   * 住在站牌隔壁的人肯搭大眾運輸，運輸系統形同虛設。
+   */
+  DRIVE_REFERENCE_KMH: 30,
+  /** 走路速度（km/h）。 */
+  WALK_KMH: 9,
+  /**
+   * 走路速度（格/tick）。
+   *
+   * 由上面兩個推導，不要各寫一個數字。這個值曾經是 1 —— 也就是走路跟開車一樣快，
+   * 走一格到站牌跟開車走那一格成本相同。走遠路去搭車因此完全免費，唯一擋住它的
+   * 是步行上限那個硬門檻。
+   */
+  WALK_SPEED: 9 / 30,
   /** Maximum legs per multi-modal trip (walk counts as a leg) */
   MAX_TRIP_LEGS: 7,
   /** Average wait = headway × this factor */

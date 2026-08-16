@@ -180,7 +180,6 @@ export class RailSystem extends BaseTransportSystem {
       : RAIL.FREIGHT_CAPACITY;
 
     const route = this.createRoute(stations, trainCount);
-    route.frequency = stations.length * 4;
     this.lineServiceTypes.set(route.id, serviceType);
 
     // Store precomputed paths

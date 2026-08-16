@@ -1,6 +1,9 @@
-import { manhattanDistance, toPosKey } from '../grid/GridHelpers';
+import { toPosKey } from '../grid/GridHelpers';
 import { computeRideDistance } from './TransitAvailability';
-import { chooseModeMultiModal, type AvailableTransport } from './ModeChoice';
+import { chooseModeMultiModal, type AvailableTransport, type ModeChoiceParams } from './ModeChoice';
+import type { StopReach } from '../traffic/StopWalkReach';
+import { expectedWait, isOverCapacity } from './RouteLoad';
+import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 import type { FlatRoute } from './MultiModalRouter';
 
 /**
@@ -13,6 +16,11 @@ import type { FlatRoute } from './MultiModalRouter';
  * 精度換速度是刻意的 —— 它只回答「兩端碰不碰得到同一條路線」，不處理轉乘。真正
  * 派車時仍然走完整的多模式路由器；這張圖只用於評分與觸發判斷，那些地方要的是
  * 「這個人的通勤大概多痛苦」，不是精確路線。
+ *
+ * 「走得到」由 `StopReach` 定義，也就是沿著人行道量。這裡曾經自己在地圖上畫一個
+ * 曼哈頓菱形，而菱形看不見馬路 —— 對街那一格被算成兩格，但行人只在路口過馬路，
+ * 實際上得繞到路口再繞回來。結果是通勤時間被低估、住戶被配給對街的站牌，畫面上
+ * 出現繞大圈的行人。
  */
 
 /** 從某一格走得到的一個站。 */
@@ -33,28 +41,26 @@ export class TransitAccessField {
   private constructor() {}
 
   /**
-   * 從站牌往外掃 `walkRange`，把每一格走得到的路線記下來。
+   * 把每個站牌走得到的格子記下來，連同走到那一站要多久。
    *
    * 同一條路線只留最近的那一站 —— 留全部的話這張圖會膨脹成站數 × 覆蓋面積，
    * 而遠一點的那些站永遠不會被選中。
    */
   static build(
-    routes: readonly FlatRoute[], walkRange: number, walkSpeed: number,
+    routes: readonly FlatRoute[], walkSpeed: number, reach: StopReach,
   ): TransitAccessField {
     const field = new TransitAccessField();
 
     for (let ri = 0; ri < routes.length; ri++) {
-      const stops = routes[ri]!.stops;
-      for (let si = 0; si < stops.length; si++) {
-        const s = stops[si]!;
-        for (let dy = -walkRange; dy <= walkRange; dy++) {
-          const rest = walkRange - Math.abs(dy);
-          for (let dx = -rest; dx <= rest; dx++) {
-            const x = s.x + dx, y = s.y + dy;
-            if (x < 0 || y < 0) continue;
-            const walkTime = manhattanDistance(s.x, s.y, x, y) / walkSpeed;
-            field.record(toPosKey(x, y), ri, si, walkTime);
-          }
+      const route = routes[ri]!;
+      // 願意為這種運具走多遠。掃描一律用最寬的半徑（涵蓋範圍的快取以半徑為鍵，
+      // 各運具各掃一次會讓同一個站牌算好幾份），再由運具自己的上限截斷。
+      const limit = walkRangeFor(route.type);
+      for (let si = 0; si < route.stops.length; si++) {
+        const s = route.stops[si]!;
+        for (const [cellKey, walkDistance] of reach.cellsWithin(s.x, s.y, WALK_RANGE_BY_TYPE.WIDEST)) {
+          if (walkDistance > limit) continue;
+          field.record(cellKey, ri, si, walkDistance / walkSpeed);
         }
       }
     }
@@ -109,13 +115,15 @@ function transitOptions(
     const b = toAccess.find(t => t.routeIdx === a.routeIdx);
     if (!b || b.stopIdx === a.stopIdx) continue;
     const route = routes[a.routeIdx];
-    if (!route || route.isFull) continue;
+    if (!route || isOverCapacity(route.loadFactor)) continue;
 
     const rideDistance = computeRideDistance(route.stops, a.stopIdx, b.stopIdx, route.segDists);
-    const wait = route.frequency * waitFactor;
+    const wait = expectedWait(route.headway, waitFactor, route.loadFactor);
+    const walkTime = a.walkTime + b.walkTime;
     options.push({
       type: route.type,
-      estimatedTime: a.walkTime + wait + rideDistance / route.speed + b.walkTime,
+      estimatedTime: walkTime + wait + rideDistance / route.speed,
+      walkTime,
     });
   }
   return options;
@@ -133,24 +141,24 @@ function transitOptions(
 export function estimateCommuteTime(
   from: { x: number; y: number },
   to: { x: number; y: number },
-  congestionLevel: number,
+  choice: ModeChoiceParams,
   field: TransitAccessField,
   routes: readonly FlatRoute[],
   waitFactor: number,
 ): number {
-  return estimateCommute(from, to, congestionLevel, field, routes, waitFactor).time;
+  return estimateCommute(from, to, choice, field, routes, waitFactor).time;
 }
 
 /** 同上，但連「怎麼去」一起回報 —— 總覽面板要看交通方式的分布。 */
 export function estimateCommute(
   from: { x: number; y: number },
   to: { x: number; y: number },
-  congestionLevel: number,
+  choice: ModeChoiceParams,
   field: TransitAccessField,
   routes: readonly FlatRoute[],
   waitFactor: number,
 ): { time: number; mode: string } {
   const options = transitOptions(from, to, field, routes, waitFactor);
-  const choice = chooseModeMultiModal(from, to, options, [], congestionLevel);
-  return { time: choice.time, mode: choice.mode };
+  const picked = chooseModeMultiModal(from, to, options, [], choice);
+  return { time: picked.time, mode: picked.mode };
 }
