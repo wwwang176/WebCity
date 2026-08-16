@@ -8,6 +8,33 @@
 
 **Tech Stack:** TypeScript、Vitest、Solid.js(UI)。`src/core/` 禁止 import Three.js。
 
+---
+
+## 執行結果（2026-08-17 完成）
+
+八個 task 全部完成，每個 task 收尾時 `tsc --noEmit` 與全套測試都是綠的。測試從
+399 檔 / 5809 條長到 409 檔 / 5898 條。
+
+| Task | commit |
+|---|---|
+| 1 收入乘數認得分區類型 | `23c7cf5` |
+| 2 `level` 取代 `active` | `b81d95c` |
+| — BUG-288 舊存檔的回收讀進來就變弱 | `b16d2ec` |
+| 3 效果表分級 | `e1a1053` |
+| 4 犯罪槓桿 | `4d12d12` |
+| 5 依規模計費 | `50e5535` |
+| 6 全城條例 + 節能法規 | `4c43fa0` |
+| 7 條例 UI | `0a87b03` |
+| 8 預算逐條明細 | `6743327` |
+| — 審查回饋（測試強化、BUG-289） | `a5a36af`、`1c467b5` |
+
+計畫本身經過兩輪外部審查改寫（`0bcd512`）。第一輪抓到任務順序會讓中間狀態編不過;
+第二輪抓到一整批接線測試從來沒跑到要驗的路 —— 地價與電力需求都跳過 `buildingId === 0`
+的格子，而建築成長要求水電，測試城市裡根本長不出建築。
+
+實作期間另外查出並修掉兩個缺陷:BUG-288（舊存檔的回收遷移到錯的等級）與 BUG-289
+（存檔能繞過範圍檢查，效果與費用被算兩次）。
+
 ## Global Constraints
 
 - **TDD 強制**:每個 task 先寫失敗測試,再寫實作。實作完成後做 revert-verify —— 暫時把守衛拿掉,確認測試轉紅;沒轉紅表示測試無效,要修測試或刪掉沒有理由存在的程式碼。
@@ -102,7 +129,7 @@ Task 2~4 中間的每一步都編不過。
   - `PolicyManager.getRevenueMultiplier(districtId: string | null, zoneType: ZoneType): number`
   - `BuildingIncomeDeps.getRevenueMultiplier?: (x: number, y: number, zoneType: ZoneType) => number`
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 建立 `src/core/economy/__tests__/RevenueByZone.test.ts`:
 
@@ -158,12 +185,12 @@ describe('收入乘數認得分區類型', () => {
 });
 ```
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `npx vitest run src/core/economy/__tests__/RevenueByZone.test.ts`
 Expected: FAIL — `getRevenueMultiplier` 多了一個參數 / `seen` 是 `[undefined]`
 
-- [ ] **Step 3: 把 `POLICY_EFFECTS` 的行內型別抽成 `PolicyEffect`**
+- [x] **Step 3: 把 `POLICY_EFFECTS` 的行內型別抽成 `PolicyEffect`**
 
 `PolicyManager.ts`,把第 46–57 行改成:
 
@@ -196,7 +223,7 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, PolicyEffect>> = {
 改成 `(e: PolicyEffect) => number | undefined` —— 原本那個型別在 Task 3 把表改成
 陣列之後會變成 `PolicyEffect[]`,`e.garbage` 會對陣列取不存在的欄位。
 
-- [ ] **Step 4: 改 `getRevenueMultiplier`**
+- [x] **Step 4: 改 `getRevenueMultiplier`**
 
 ```ts
   /** Multiplier on tax revenue from buildings of this zone type in this district. */
@@ -206,7 +233,7 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, PolicyEffect>> = {
   }
 ```
 
-- [ ] **Step 5: 一路改到 `IncomeCalculator` 與 `IncomeCalcAdapter`**
+- [x] **Step 5: 一路改到 `IncomeCalculator` 與 `IncomeCalcAdapter`**
 
 `IncomeCalculator.ts` 第 43 行:
 
@@ -233,14 +260,14 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, PolicyEffect>> = {
     },
 ```
 
-- [ ] **Step 6: 修既有呼叫端**
+- [x] **Step 6: 修既有呼叫端**
 
 Run: `npx tsc --noEmit`
 已知會打到 `src/core/district/__tests__/PolicyEffects.test.ts` 的 6 個單參數呼叫
 (第 76、80、82、127、128、136 行)。全部補上第二個參數,並 import `ZoneType`。
 `tsc` 會列出其他漏網的。
 
-- [ ] **Step 7: 跑測試**
+- [x] **Step 7: 跑測試**
 
 Run: `npx vitest run src/core/economy/__tests__/RevenueByZone.test.ts`
 Expected: PASS(2 條)
@@ -248,13 +275,13 @@ Expected: PASS(2 條)
 Run: `npx vitest run && npx tsc --noEmit`
 Expected: 401 檔全過、型別乾淨
 
-- [ ] **Step 8: revert-verify**
+- [x] **Step 8: revert-verify**
 
 把 Step 5 的 `btype.zoneType` 改回不傳(`deps.getRevenueMultiplier(x, y)`,並把型別
 改成第三參數可選),`should hand the building zone type to the multiplier` 必須轉紅。
 確認後改回來。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 訊息主旨:`feat(economy): 收入乘數認得分區類型`
 
@@ -285,7 +312,7 @@ Expected: 401 檔全過、型別乾淨
   - `PolicyManager.isPolicyActive(districtId: string, type: PolicyType): boolean`(保留,等價於 `level > 0`)
   - `PolicyManager.applyPolicy` **刪除**(等價於 `setPolicyLevel(id, type, 1)`);`removePolicy` 保留
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 建立 `src/core/district/__tests__/PolicyLevel.test.ts`:
 
@@ -359,12 +386,12 @@ describe('舊存檔的遷移', () => {
 });
 ```
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyLevel.test.ts`
 Expected: FAIL — `pm.setPolicyLevel is not a function`
 
-- [ ] **Step 3: 改型別**
+- [x] **Step 3: 改型別**
 
 `src/core/district/types.ts`:
 
@@ -386,7 +413,7 @@ export interface Policy {
 }
 ```
 
-- [ ] **Step 4: 改 `PolicyManager`**
+- [x] **Step 4: 改 `PolicyManager`**
 
 刪掉 `applyPolicy`,換成:
 
@@ -447,7 +474,7 @@ export function maxLevel(_type: PolicyType): number {
 }
 ```
 
-- [ ] **Step 5: 加存檔遷移**
+- [x] **Step 5: 加存檔遷移**
 
 `DistrictManager.ts`。先把 `SerializedDistrict.policies` 的型別放寬成同時容納兩種形狀:
 
@@ -479,7 +506,7 @@ export interface SerializedDistrict {
 
 `import { clampLevel, maxLevel } from './PolicyManager';`
 
-- [ ] **Step 6: 改所有呼叫端**
+- [x] **Step 6: 改所有呼叫端**
 
 `ExpenseCalculator.ts` 的參數型別與判斷:
 
@@ -514,7 +541,7 @@ Run: `npx tsc --noEmit`
 | `src/core/save/__tests__/Save.test.ts` | 3 個 |
 | `src/core/simulation/__tests__/Simulation.test.ts` | 4 個 |
 
-- [ ] **Step 7: 跑測試**
+- [x] **Step 7: 跑測試**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyLevel.test.ts`
 Expected: PASS(6 條)
@@ -522,14 +549,14 @@ Expected: PASS(6 條)
 Run: `npx vitest run && npx tsc --noEmit`
 Expected: 402 檔全過
 
-- [ ] **Step 8: revert-verify**
+- [x] **Step 8: revert-verify**
 
 三次,每次只改一處:
 1. 遷移的 `p.active ? 1 : 0` 改成 `0` → `should turn an old active:true into level 1` 轉紅
 2. 遷移拿掉 `clampLevel(...)` 直接用 `p.level ?? ...` → `should clamp a corrupt level` 轉紅
 3. `setPolicyLevel` 的 `existing.level = clamped` 改成 `district.policies.push(...)` → `should hold only one level per type` 轉紅
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 訊息主旨:`refactor(district): 政策用強度取代開關`
 
@@ -547,7 +574,7 @@ Expected: 402 檔全過
   - `POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>>`(索引 0 = level 1)
   - `maxLevel(type: PolicyType): number` — 由陣列長度推導
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 追加到 `PolicyLevel.test.ts`:
 
@@ -608,12 +635,12 @@ describe('分級的效果', () => {
 });
 ```
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyLevel.test.ts`
 Expected: FAIL — `tiers.length` 是 `undefined` / `POLICY_EFFECTS[...]` 不是陣列
 
-- [ ] **Step 3: 改表**
+- [x] **Step 3: 改表**
 
 ```ts
 /**
@@ -647,7 +674,7 @@ export function maxLevel(type: PolicyType): number {
 
 `NON_ZONE_IMPLEMENTED_POLICY_TYPES` 不必改 —— 它讀的是 `Object.keys(POLICY_EFFECTS)`。
 
-- [ ] **Step 4: 改 `effect()` 讀對應等級**
+- [x] **Step 4: 改 `effect()` 讀對應等級**
 
 ```ts
     for (const policy of district.policies) {
@@ -658,7 +685,7 @@ export function maxLevel(type: PolicyType): number {
     }
 ```
 
-- [ ] **Step 5: 跑測試**
+- [x] **Step 5: 跑測試**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyLevel.test.ts`
 Expected: PASS(11 條)
@@ -676,14 +703,14 @@ Run: `npx vitest run && npx tsc --noEmit`
    withEffect(PolicyType.TOURISM, [{ revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.5 } }], () => {
    ```
 
-- [ ] **Step 6: revert-verify**
+- [x] **Step 6: revert-verify**
 
 三次:
 1. 回收第三級的 `revenueByZone` 全改成 `0.98` → `should charge an accelerating price` 轉紅
 2. `maxLevel` 改回 `return 3` → `should derive maxLevel from the table` 與 `should clamp a level above what the table offers` 轉紅
 3. `effect()` 的 `?.[policy.level - 1]` 改成 `?.[0]` → `should read the tier matching the level` 轉紅
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 訊息主旨:`feat(district): 條例分三級，代價逐級加速`
 
@@ -705,7 +732,7 @@ Run: `npx vitest run && npx tsc --noEmit`
   - `PolicyEffect.crime?: number`(加法,單位同 `calculateLandValue` 的 `crimeRate`)
   - `PolicyManager.getCrimeBonus(districtId: string | null): number`
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 建立 `src/core/district/__tests__/PolicyTradeoff.test.ts`:
 
@@ -800,12 +827,12 @@ describe('條例的犯罪代價真的進到地價', () => {
 });
 ```
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyTradeoff.test.ts src/core/simulation/__tests__/PolicyCrimeReachesLandValue.test.ts`
 Expected: FAIL — `pm.getCrimeBonus is not a function`
 
-- [ ] **Step 3: 加 `crime` 到效果表與 getter**
+- [x] **Step 3: 加 `crime` 到效果表與 getter**
 
 `PolicyEffect` 加一欄:
 
@@ -835,7 +862,7 @@ getter:
   }
 ```
 
-- [ ] **Step 4: 接進地價**
+- [x] **Step 4: 接進地價**
 
 `SimulationLoop.ts` 第 1149 行。**注意那一段的 `policyBonus` 已經查過一次分區**,
 不要查兩次:
@@ -853,14 +880,14 @@ getter:
       });
 ```
 
-- [ ] **Step 5: 跑測試**
+- [x] **Step 5: 跑測試**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyTradeoff.test.ts src/core/simulation/__tests__/PolicyCrimeReachesLandValue.test.ts`
 Expected: PASS(4 條)
 
 Run: `npx vitest run && npx tsc --noEmit`
 
-- [ ] **Step 6: revert-verify**
+- [x] **Step 6: revert-verify**
 
 兩次:
 1. `TOURISM` 的 `crime: 4` 拿掉 → `should have at least one downside`、
@@ -868,7 +895,7 @@ Run: `npx vitest run && npx tsc --noEmit`
 2. Step 4 的 `+ getCrimeBonus(districtId)` 拿掉 → **只有** `should lower land value inside the district` 轉紅
    (這一條證明接線測試不是空的)
 
-- [ ] **Step 7: 提交**
+- [x] **Step 7: 提交**
 
 訊息主旨:`feat(district): 條例可以有代價，新增犯罪槓桿`
 
@@ -902,7 +929,7 @@ Run: `npx vitest run && npx tsc --noEmit`
   - `policyCost(type: PolicyType, level: number, scale: PolicyScale): number`
   - `calculateDistrictPolicyCost(districts, population)` — 多一個參數
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 建立 `src/core/district/__tests__/PolicyBilling.test.ts`:
 
@@ -971,12 +998,12 @@ describe('預算真的照這張表收錢', () => {
 });
 ```
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyBilling.test.ts`
 Expected: FAIL — 找不到模組 `../PolicyBilling`
 
-- [ ] **Step 3: 建立 `PolicyBilling.ts`**
+- [x] **Step 3: 建立 `PolicyBilling.ts`**
 
 ```ts
 import { PolicyType } from './types';
@@ -1031,7 +1058,7 @@ export function policyCost(type: PolicyType, level: number, scale: PolicyScale):
 }
 ```
 
-- [ ] **Step 4: 改 `ExpenseCalculator`**
+- [x] **Step 4: 改 `ExpenseCalculator`**
 
 ```ts
 export function calculateDistrictPolicyCost(
@@ -1055,7 +1082,7 @@ export function calculateDistrictPolicyCost(
 }
 ```
 
-- [ ] **Step 5: 刪掉 `cost`,改所有呼叫端**
+- [x] **Step 5: 刪掉 `cost`,改所有呼叫端**
 
 1. `types.ts`:`Policy` 刪 `cost`
 2. `PolicyManager.ts`:`PolicyTypeConfig` 刪 `cost`;`POLICY_CONFIG` 五條只留 `name`;
@@ -1082,14 +1109,14 @@ Run: `npx tsc --noEmit`
 | `Simulation.test.ts` | 計費分區沒有任何 cells,總政策費會是 0 | 給那個分區加格子 |
 | `ExpenseCalculator.test.ts` | 4 個呼叫少第二參數,mock policy 有 `cost` | 補人口、mock 改成 `{ type, level }` 且外層有 `cells` |
 
-- [ ] **Step 6: 跑測試**
+- [x] **Step 6: 跑測試**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyBilling.test.ts`
 Expected: PASS(7 條)
 
 Run: `npx vitest run && npx tsc --noEmit`
 
-- [ ] **Step 7: revert-verify**
+- [x] **Step 7: revert-verify**
 
 三次:
 1. 回收的 `perUnit` 改成 `[9, 9, 9]` → `should cost more at a higher level` 轉紅
@@ -1097,7 +1124,7 @@ Run: `npx vitest run && npx tsc --noEmit`
    `should charge nothing for a district with no cells` 轉紅
 3. `ExpenseCalculator` 改回加總一個寫死的常數 → `should bill exactly what policyCost says` 轉紅
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 訊息主旨:`feat(district): 條例費用跟著規模走，限制型不收費`
 
@@ -1134,7 +1161,7 @@ Run: `npx vitest run && npx tsc --noEmit`
   - `GameState.ordinances: CityOrdinances`
   - `PowerGrid.calculateDemand(grid: Grid, demandMultiplier?: number): void`
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 建立 `src/core/district/__tests__/CityOrdinances.test.ts`:
 
@@ -1272,12 +1299,12 @@ describe('全城條例真的接進模擬', () => {
 > (private)寫進 `state.budget.expenses` 的。所以這裡走 `buildEconomyBreakdownContext`,
 > 那是預算面板實際讀的同一條路。迴圈那一條由 Task 8 的測試守住。
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `npx vitest run src/core/district/__tests__/CityOrdinances.test.ts`
 Expected: FAIL — 找不到模組
 
-- [ ] **Step 3: 新增 `ENERGY_REGULATION`**
+- [x] **Step 3: 新增 `ENERGY_REGULATION`**
 
 `types.ts` 的 `PolicyType` 加 `ENERGY_REGULATION = 'ENERGY_REGULATION'`。
 
@@ -1305,7 +1332,7 @@ Expected: FAIL — 找不到模組
 
 `PolicyBilling.ts` 加 `[PolicyType.ENERGY_REGULATION]: { basis: 'population', perUnit: [0.08, 0.22, 0.5] }`。
 
-- [ ] **Step 4: 建立 `PolicyScope.ts`**
+- [x] **Step 4: 建立 `PolicyScope.ts`**
 
 ```ts
 import { PolicyType } from './types';
@@ -1336,7 +1363,7 @@ export const POLICY_SCOPE: Record<PolicyType, 'district' | 'city'> = {
     if (POLICY_SCOPE[policyType] !== 'district') return;
 ```
 
-- [ ] **Step 5: 建立 `CityOrdinances.ts`**
+- [x] **Step 5: 建立 `CityOrdinances.ts`**
 
 ```ts
 import { ZoneType } from '../grid/types';
@@ -1409,7 +1436,7 @@ export class CityOrdinances {
 `restore` 走 `setLevel` 而不是直接塞 Map —— 存檔是能被編輯的,範圍檢查與夾值必須在
 讀進來時也成立。
 
-- [ ] **Step 6: 接進 `GameState`、`Serializer`、模擬**
+- [x] **Step 6: 接進 `GameState`、`Serializer`、模擬**
 
 0. **先把政策總支出抽成一個函式**,`ExpenseCalculator.ts`:
 
@@ -1454,14 +1481,14 @@ export function totalPolicyExpense(
    `state.ordinances.getRevenueMultiplier(zoneType)` —— 全城條例對每一格都生效,
    包含不屬於任何分區的格子,所以要在 `if (!district) return 1` **之前**乘
 
-- [ ] **Step 7: 跑測試**
+- [x] **Step 7: 跑測試**
 
 Run: `npx vitest run src/core/district/__tests__/CityOrdinances.test.ts src/core/simulation/__tests__/OrdinanceReachesSimulation.test.ts`
 Expected: PASS(10 條)
 
 Run: `npx vitest run && npx tsc --noEmit`
 
-- [ ] **Step 8: revert-verify**
+- [x] **Step 8: revert-verify**
 
 四次:
 1. `CityOrdinances.setLevel` 的範圍檢查拿掉 → `should refuse a district policy` 轉紅
@@ -1469,7 +1496,7 @@ Run: `npx vitest run && npx tsc --noEmit`
 3. `Serializer` 的 `restore` 那一行拿掉 → `should round-trip through a real save` 轉紅
 4. `calculateDemand` 的 `* demandMultiplier` 拿掉 → `should lower total power demand` 轉紅
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 訊息主旨:`feat(district): 條例可以是全城的，並加上節能法規`
 
@@ -1496,7 +1523,7 @@ Run: `npx vitest run && npx tsc --noEmit`
   - `nextPolicyLevel(current: number, type: PolicyType): number`
   - `policyButtonText(type: PolicyType, level: number, scale: PolicyScale): string`
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 建立 `src/core/district/__tests__/PolicyPresentation.test.ts`:
 
@@ -1548,12 +1575,12 @@ describe('按鈕上的字', () => {
 });
 ```
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyPresentation.test.ts`
 Expected: FAIL — 找不到模組
 
-- [ ] **Step 3: 建立 `PolicyPresentation.ts`**
+- [x] **Step 3: 建立 `PolicyPresentation.ts`**
 
 ```ts
 import { PolicyType } from './types';
@@ -1583,7 +1610,7 @@ export function policyButtonText(type: PolicyType, level: number, scale: PolicyS
 }
 ```
 
-- [ ] **Step 4: 接進 `DistrictModal`**
+- [x] **Step 4: 接進 `DistrictModal`**
 
 `policyLabel` 換成 `policyButtonText`;`togglePolicy` 換成:
 
@@ -1608,14 +1635,14 @@ export function policyButtonText(type: PolicyType, level: number, scale: PolicyS
 
 分區標題列加一行本區合計:所有政策的 `policyCost` 加總。
 
-- [ ] **Step 5: 建立 `CityOrdinanceModal.tsx`**
+- [x] **Step 5: 建立 `CityOrdinanceModal.tsx`**
 
 照 `DistrictModal` 的體例,列出 `POLICY_SCOPE` 裡 `'city'` 的條例。每一條一列:名稱、
 一排等級點、效果與代價寫在同一行、右邊是本期費用。頂端顯示合計。
 
 **效果與代價要寫在同一行**,不是 tooltip —— 取捨是玩法,藏起來就沒有取捨。
 
-- [ ] **Step 6: 跑測試**
+- [x] **Step 6: 跑測試**
 
 Run: `npx vitest run src/core/district/__tests__/PolicyPresentation.test.ts`
 Expected: PASS(6 條)
@@ -1623,14 +1650,14 @@ Expected: PASS(6 條)
 Run: `npx vitest run && npx tsc --noEmit`
 Run: `npx eslint src/core/district/ src/ui/modals/DistrictModal.tsx src/ui/modals/CityOrdinanceModal.tsx`
 
-- [ ] **Step 7: revert-verify**
+- [x] **Step 7: revert-verify**
 
 兩次:
 1. `nextPolicyLevel` 改成 `current > 0 ? 0 : 1` → `should walk every level then return to off` 轉紅
 2. `policyButtonText` 的 `policyCost(...)` 換成 `POLICY_BILLING[type]?.perUnit[level-1] ?? 0`
    (不乘規模)→ `should show the current cost, not a fixed price` 轉紅
 
-- [ ] **Step 8: 手動驗收**
+- [x] **Step 8: 手動驗收**
 
 ```bash
 pnpm dev
@@ -1640,7 +1667,7 @@ pnpm dev
 2. 把分區畫大一倍,確認按鈕上的金額跟著變
 3. 開 City Ordinances → 調節能法規 → 確認 Overview 的電力需求下降、預算的政策支出上升
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 訊息主旨:`feat(ui): 條例可以調強度，按鈕顯示等級與本期費用`
 
@@ -1662,7 +1689,7 @@ pnpm dev
   - `interface PolicyExpenseLine { type: PolicyType; scope: 'district' | 'city'; districtName: string | null; level: number; cost: number }`
   - `listPolicyExpenses(districts, ordinances, population): PolicyExpenseLine[]`
 
-- [ ] **Step 1: 寫失敗測試**
+- [x] **Step 1: 寫失敗測試**
 
 建立 `src/core/economy/__tests__/PolicyExpenseBreakdown.test.ts`:
 
@@ -1740,12 +1767,12 @@ describe('政策支出明細', () => {
 > 六個 tick 內成長與遷居不會動,差額只可能來自政策。`SimulationLoop.getExpenseBreakdown()`
 > 不存在,支出是寫進 `state.budget.expenses` 的。
 
-- [ ] **Step 2: 跑測試確認失敗**
+- [x] **Step 2: 跑測試確認失敗**
 
 Run: `npx vitest run src/core/economy/__tests__/PolicyExpenseBreakdown.test.ts`
 Expected: FAIL — `listPolicyExpenses` is not exported
 
-- [ ] **Step 3: 實作**
+- [x] **Step 3: 實作**
 
 ```ts
 export interface PolicyExpenseLine {
@@ -1794,22 +1821,22 @@ export function listPolicyExpenses(
 }
 ```
 
-- [ ] **Step 4: 跑測試**
+- [x] **Step 4: 跑測試**
 
 Run: `npx vitest run src/core/economy/__tests__/PolicyExpenseBreakdown.test.ts`
 Expected: PASS(3 條)
 
-- [ ] **Step 5: 接進預算 UI**
+- [x] **Step 5: 接進預算 UI**
 
 `grep -rn "policyCost" src/ui/` 找出預算分頁,在既有的 Policies 那一列下加一個可展開的
 小節,逐行顯示 `{districtName ?? 'City'} · {name} ●×level — $cost`。
 
-- [ ] **Step 6: 全套驗證**
+- [x] **Step 6: 全套驗證**
 
 Run: `npx vitest run && npx tsc --noEmit`
 Run: `npx eslint src/core/district/ src/core/economy/ src/ui/modals/`
 
-- [ ] **Step 7: revert-verify**
+- [x] **Step 7: revert-verify**
 
 兩次:
 1. `listPolicyExpenses` 的全城迴圈刪掉 → `should sum to exactly what the budget charges`
@@ -1818,7 +1845,7 @@ Run: `npx eslint src/core/district/ src/core/economy/ src/ui/modals/`
 2. 分區那一段的 `districtCells: d.cells.size` 改成 `districtCells: 1` →
    `should sum to exactly what the budget charges` 轉紅
 
-- [ ] **Step 8: 更新文件與提交**
+- [x] **Step 8: 更新文件與提交**
 
 - `docs/districts-options.md` 標註選項 E 已落地,以及它實際做成什麼樣子
 - `docs/` 新增條例系統的說明(照既有 `*-system.md` 的體例):範圍怎麼判、分級怎麼定價、
