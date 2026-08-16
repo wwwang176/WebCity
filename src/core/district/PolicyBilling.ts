@@ -32,6 +32,8 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.ENCOURAGE_RECYCLING]: { basis: 'districtCells', perUnit: [1.5, 4, 9] },
   [PolicyType.TOURISM]: { basis: 'districtCells', perUnit: [3] },
   [PolicyType.ORGANIC_FOOD]: { basis: 'districtCells', perUnit: [2] },
+  // 全城條例沒有分區格數可言 —— 它服務的是整座城市，所以按人口收。
+  [PolicyType.ENERGY_REGULATION]: { basis: 'population', perUnit: [0.08, 0.22, 0.5] },
 };
 
 function unitsOf(basis: BillingBasis, scale: PolicyScale): number {

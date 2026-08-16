@@ -39,11 +39,15 @@ export function buildIncomeCalcDeps(state: GameState): IncomeCalcDeps {
     taxRates: state.taxRates,
     getResidentEducations: (key) => educationsByHome.get(key) ?? EMPTY_EDUCATIONS,
     getRevenueMultiplier: (x, y, zoneType) => {
+      // 全城條例對每一格都生效，包含不屬於任何分區的格子 —— 那正是它「全城」的
+      // 意思，所以要在提早 return 之前乘。
+      const cityWide = state.ordinances.getRevenueMultiplier(zoneType);
       const district = state.districts.getDistrictAt(x, y);
-      if (!district) return 1;
+      if (!district) return cityWide;
       // Specialization and policy compose: a tourist district that also
       // specialises in tourism gets both, which is the point of paying twice.
-      return getSpecializationBonus(district.specialization).revenueMultiplier
+      return cityWide
+        * getSpecializationBonus(district.specialization).revenueMultiplier
         * state.policies.getRevenueMultiplier(district.id, zoneType);
     },
     isPowered: (x, y) => state.power.isPowered(x, y),

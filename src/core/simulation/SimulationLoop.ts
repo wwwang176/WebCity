@@ -62,7 +62,7 @@ import { syncTrafficDensityToGrid } from '../environment/SyncTrafficDensity';
 import { collectTradePositions, type TradePosition } from '../traffic/FreightTradeCollector';
 import { calculateZoneIncomes } from '../economy/IncomeCalculator';
 import { buildIncomeCalcDeps } from '../economy/IncomeCalcAdapter';
-import { calculateDistrictPolicyCost, calculateTotalExpenses } from '../economy/ExpenseCalculator';
+import { totalPolicyExpense, calculateTotalExpenses } from '../economy/ExpenseCalculator';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 import { randomInt } from '../utils/random';
 import { findAvailableTransit } from '../transport/TransitAvailability';
@@ -993,8 +993,9 @@ export class SimulationLoop {
     this.state.budget.expenses = calculateTotalExpenses({
       roadMaintenance: this.countRoadTiles() * ECONOMY.ROAD_MAINTENANCE_PER_TILE,
       serviceCost: getTotalServiceMaintenanceCost(this.state),
-      policyCost: calculateDistrictPolicyCost(
+      policyCost: totalPolicyExpense(
         this.state.districts.getAllDistricts(),
+        this.state.ordinances,
         this.state.citizens.getPopulation(),
       ),
       transportCost: getTotalTransportOperatingCost(this.state),
@@ -1900,7 +1901,7 @@ export class SimulationLoop {
     for (const p of this.state.power.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
     for (const p of this.state.water.getPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
     for (const p of this.state.sewage.getTreatmentPlants()) this.infraPositions.add(toPosKey(p.x, p.y));
-    this.state.power.calculateDemand(this.state.grid);
+    this.state.power.calculateDemand(this.state.grid, this.state.ordinances.getPowerDemandMultiplier());
     this.state.power.calculateCoverage(this.state.grid, this.infraPositions);
     this.state.water.calculateDemand(this.state.grid);
     this.state.water.calculateCoverage(this.state.grid, this.infraPositions);

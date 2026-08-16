@@ -22,6 +22,7 @@ import { SewageService } from '../service/SewageService';
 import { DeathCareService } from '../service/DeathCareService';
 import { DistrictManager } from '../district/DistrictManager';
 import { PolicyManager } from '../district/PolicyManager';
+import { CityOrdinances } from '../district/CityOrdinances';
 import { CitySpecialization } from '../district/CitySpecialization';
 import { GlobalMarket } from '../economy/GlobalMarket';
 import { BusSystem } from '../transport/BusSystem';
@@ -60,6 +61,8 @@ export interface GameState {
   deathCare: DeathCareService;
   districts: DistrictManager;
   policies: PolicyManager;
+  /** 全城條例。沒有分區，所以不掛在 DistrictManager 底下。 */
+  ordinances: CityOrdinances;
   citySpec: CitySpecialization;
   globalMarket: GlobalMarket;
   bus: BusSystem;
@@ -133,6 +136,7 @@ export function createGameState(width = DEFAULT_GRID_SIZE, height = DEFAULT_GRID
     deathCare: new DeathCareService(),
     districts: dm,
     policies: new PolicyManager(dm),
+    ordinances: new CityOrdinances(),
     citySpec: new CitySpecialization(),
     globalMarket: new GlobalMarket(),
     bus: new BusSystem(),

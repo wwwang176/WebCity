@@ -33,6 +33,23 @@ export function calculateDistrictPolicyCost(
   return total;
 }
 
+/**
+ * 本期政策總支出:分區條例加全城條例。
+ *
+ * 抽出來是因為它有兩個消費端 —— 模擬迴圈的預算與預算面板。兩邊各寫一次加法的話，
+ * 加了全城條例只改到一邊，面板與帳本就會靜靜地差一個數字。
+ */
+export function totalPolicyExpense(
+  districts: readonly {
+    cells: { size: number };
+    policies: readonly { level: number; type: PolicyType }[];
+  }[],
+  ordinances: { totalCost(population: number): number },
+  population: number,
+): number {
+  return calculateDistrictPolicyCost(districts, population) + ordinances.totalCost(population);
+}
+
 export interface ExpenseBreakdown {
   roadMaintenance: number;
   serviceCost: number;

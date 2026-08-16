@@ -1,5 +1,6 @@
 import { Policy, PolicyType, type District } from './types';
 import { ZoneType } from '../grid/types';
+import { isDistrictScoped } from './PolicyScope';
 
 /** Minimal interface for district lookup (DIP). */
 export interface DistrictLookup {
@@ -18,6 +19,7 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.HIGH_DENSITY_BAN]: { name: 'High Density Ban' },
   [PolicyType.ORGANIC_FOOD]: { name: 'Organic Food' },
   [PolicyType.TOURISM]: { name: 'Tourism Promotion' },
+  [PolicyType.ENERGY_REGULATION]: { name: 'Energy Regulation' },
 };
 
 /**
@@ -63,6 +65,13 @@ export interface PolicyEffect {
    * **上升**，所以「+收入 +犯罪」這類取捨做不出來。這一欄是那個缺口。
    */
   crime?: number;
+  /**
+   * 全城電力總需求的乘數。
+   *
+   * 這是一個**城市級的池子** —— 只在半個城市要求節能，省下來的電照樣進同一張
+   * 電網，所以「在哪裡」不是決策。帶這個欄位的條例必然是全城範圍。
+   */
+  powerDemand?: number;
 }
 
 /**
@@ -88,6 +97,15 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   [PolicyType.TOURISM]: [{ revenue: 1.2, crime: 4 }],
   // 有機食品讓這一區更宜居，代價是商家的進貨成本。
   [PolicyType.ORGANIC_FOOD]: [{ landValue: 6, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.95, [ZoneType.COMMERCIAL_HIGH]: 0.95 } }],
+  /**
+   * 節能法規。作用在電網的**總需求**上，代價落在商業與工業:設備更新與製程改造
+   * 的成本由業者吸收。工業扣得比商業重 —— 製程改造比換一批冷氣貴得多。
+   */
+  [PolicyType.ENERGY_REGULATION]: [
+    { powerDemand: 0.92, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.99, [ZoneType.COMMERCIAL_HIGH]: 0.99, [ZoneType.INDUSTRIAL]: 0.98 } },
+    { powerDemand: 0.82, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.97, [ZoneType.COMMERCIAL_HIGH]: 0.97, [ZoneType.INDUSTRIAL]: 0.94 } },
+    { powerDemand: 0.70, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.94, [ZoneType.COMMERCIAL_HIGH]: 0.94, [ZoneType.INDUSTRIAL]: 0.88 } },
+  ],
 };
 
 /**
@@ -185,6 +203,8 @@ export class PolicyManager {
    * 「這個分區有哪些政策」的計數變得不準。
    */
   setPolicyLevel(districtId: string, policyType: PolicyType, level: number): void {
+    // 全城條例畫在分區上沒有意義，而且兩邊都設得進去的話效果會無聲地加倍。
+    if (!isDistrictScoped(policyType)) return;
     const district = this.districtLookup.getDistrict(districtId);
     if (!district) return;
     const clamped = clampLevel(level, maxLevel(policyType));

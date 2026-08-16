@@ -24,6 +24,7 @@ import { AirportSystem } from '../transport/AirportSystem';
 import { HighwayConnection } from '../traffic/HighwayConnection';
 import { DistrictManager } from '../district/DistrictManager';
 import { PolicyManager } from '../district/PolicyManager';
+import { CityOrdinances } from '../district/CityOrdinances';
 import { CitySpecialization } from '../district/CitySpecialization';
 import { GlobalMarket } from '../economy/GlobalMarket';
 import { CURRENT_SAVE_VERSION, runMigrations, migrateSavedCitizens } from './migrations';
@@ -79,6 +80,7 @@ interface SerializedState {
   highwayConnection?: ReturnType<HighwayConnection['toJSON']>;
   districts?: ReturnType<DistrictManager['toJSON']>;
   policies?: ReturnType<PolicyManager['toJSON']>;
+  ordinances?: ReturnType<CityOrdinances['toJSON']>;
   citySpec?: ReturnType<CitySpecialization['toJSON']>;
   globalMarket?: ReturnType<GlobalMarket['toJSON']>;
   elevation?: Array<{ x: number; y: number; level: number; data: import('../elevation/types').ElevatedSegment }>;
@@ -158,6 +160,7 @@ export function snapshotGameState(
     highwayConnection: state.highwayConnection.toJSON(),
     districts: state.districts.toJSON(),
     policies: state.policies.toJSON(),
+    ordinances: state.ordinances.toJSON(),
     citySpec: state.citySpec.toJSON(),
     globalMarket: state.globalMarket.toJSON(),
     elevation: extra?.elevationManager?.toJSON(),
@@ -285,6 +288,7 @@ export function deserializeGameState(json: string): GameState & { _extra?: Deser
     state.policies = new PolicyManager(state.districts);
   }
   state.policies.restore(saved.policies);
+  state.ordinances.restore(saved.ordinances);
   if (saved.citySpec) {
     state.citySpec = CitySpecialization.fromJSON(saved.citySpec);
   }

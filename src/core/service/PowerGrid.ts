@@ -138,7 +138,13 @@ export class PowerGrid {
     return this.powered;
   }
 
-  calculateDemand(grid: Grid): void {
+  /**
+   * 重算全城電力總需求。
+   *
+   * `demandMultiplier` 是全城條例（節能法規）的省電幅度。預設 1，所以沒有帶條例
+   * 的呼叫端不必改。
+   */
+  calculateDemand(grid: Grid, demandMultiplier = 1): void {
     let demand = 0;
     grid.forEachCell((cell) => {
       if (cell.buildingId <= 0) return;
@@ -148,7 +154,7 @@ export class PowerGrid {
         bt?.residents ?? 0, bt?.workers ?? 0, cell.reserved,
       );
     });
-    this.totalDemand = demand;
+    this.totalDemand = demand * demandMultiplier;
   }
 
   isPowered(x: number, y: number): boolean {

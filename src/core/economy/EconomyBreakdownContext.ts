@@ -14,7 +14,7 @@ import { buildIncomeCalcDeps } from './IncomeCalcAdapter';
 import { countRoadTiles } from '../grid/GridHelpers';
 import { getUtilityMaintenanceCost, getCivicMaintenanceCostExcludingUtilities } from '../service/ServiceRegistry';
 import { getTotalTransportOperatingCost } from '../transport/TransportRegistry';
-import { calculateDistrictPolicyCost } from './ExpenseCalculator';
+import { totalPolicyExpense } from './ExpenseCalculator';
 import { calculateElevatedMaintenance } from '../elevation/ElevationMaintenance';
 
 export function buildEconomyBreakdownContext(
@@ -33,8 +33,9 @@ export function buildEconomyBreakdownContext(
     // Power and water are itemised as their own rows above, so this must be the
     // civic total MINUS them. Passing the full total double-charged the panel.
     serviceCost: getCivicMaintenanceCostExcludingUtilities(state),
-    policyCost: calculateDistrictPolicyCost(
+    policyCost: totalPolicyExpense(
       state.districts.getAllDistricts(),
+      state.ordinances,
       state.citizens.getPopulation(),
     ),
     elevatedMaintenance: elevationManager ? calculateElevatedMaintenance(elevationManager) : 0,

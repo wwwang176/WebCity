@@ -6,6 +6,7 @@ export enum PolicyType {
   HIGH_DENSITY_BAN = 'HIGH_DENSITY_BAN',
   ORGANIC_FOOD = 'ORGANIC_FOOD',
   TOURISM = 'TOURISM',
+  ENERGY_REGULATION = 'ENERGY_REGULATION',
 }
 
 export enum Specialization {
