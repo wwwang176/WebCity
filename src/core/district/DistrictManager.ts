@@ -1,7 +1,7 @@
 import { toPosKey } from '../grid/GridHelpers';
 import { recoverNextId } from '../utils/recoverNextId';
 import { District, Policy, Specialization } from './types';
-import { clampLevel, maxLevel } from './PolicyManager';
+import { clampLevel, levelForLegacyActive, maxLevel } from './PolicyManager';
 import type { TaxRates } from '../economy/Tax';
 
 /**
@@ -161,9 +161,15 @@ export class DistrictManager {
         policies: (sd.policies ?? []).map((p) => ({
           id: p.id, name: p.name, type: p.type, cost: p.cost,
           // 舊存檔只有 `active`。掉成 0 的話玩家讀檔會發現政策全被關掉了，而畫面上
-          // 沒有任何東西說明為什麼。新格式的 `level` 是權威（存過一次的檔案不該被
-          // 舊欄位蓋回去），但一樣要夾 —— 存檔是能被編輯的。
-          level: clampLevel(p.level ?? (p.active ? 1 : 0), maxLevel(p.type)),
+          // 沒有任何東西說明為什麼；一律轉成 1 則會讓舊數字不在第一格的政策靜靜地
+          // 變弱，所以走 `levelForLegacyActive`。
+          //
+          // 新格式的 `level` 是權威（存過一次的檔案不該被舊欄位蓋回去），但一樣要
+          // 夾 —— 存檔是能被編輯的。
+          level: clampLevel(
+            p.level ?? levelForLegacyActive(p.type, p.active),
+            maxLevel(p.type),
+          ),
         })),
         specialization: sd.specialization ?? Specialization.NONE,
       };

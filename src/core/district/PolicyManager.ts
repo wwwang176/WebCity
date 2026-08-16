@@ -131,6 +131,26 @@ export function isPolicyImplemented(type: PolicyType): boolean {
  * 的話，`-1` / `4` / 小數 / `NaN` 會直接破壞那個不變量，而 TypeScript 只在編譯期
  * 看得到它。`Math.max(0, NaN)` 仍是 `NaN`，所以非有限數要先擋掉。
  */
+/**
+ * 分級之前的 `active: true` 對應到現在的第幾級。
+ *
+ * 分級之前每條政策只有一組數字。一律轉成 level 1 的話，那組數字剛好不在第一格的
+ * 政策就會在讀檔當下靜靜地變弱 —— 回收原本是 `garbage: 0.65`，而 0.65 是新表的
+ * **第 2 級**;轉成 level 1 的玩家沒有動任何東西，垃圾量卻從減 35% 掉到減 15%，
+ * 而且多了 2% 的商業收入代價。
+ *
+ * 沒有列在這裡的就是 1 —— 它們的舊數字本來就在第一格。
+ */
+const LEGACY_ACTIVE_LEVEL: Partial<Record<PolicyType, number>> = {
+  [PolicyType.ENCOURAGE_RECYCLING]: 2,
+};
+
+/** 舊存檔的 `active` 旗標對應到的等級。 */
+export function levelForLegacyActive(type: PolicyType, active: boolean | undefined): number {
+  if (!active) return 0;
+  return LEGACY_ACTIVE_LEVEL[type] ?? 1;
+}
+
 export function clampLevel(level: number, max: number): Policy['level'] {
   if (!Number.isFinite(level)) return 0;
   return Math.max(0, Math.min(max, Math.floor(level))) as Policy['level'];

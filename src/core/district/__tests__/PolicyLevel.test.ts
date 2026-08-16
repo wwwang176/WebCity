@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { DistrictManager } from '../DistrictManager';
 import { PolicyManager, POLICY_EFFECTS, maxLevel, type PolicyEffect } from '../PolicyManager';
 import { PolicyType } from '../types';
+import { ZoneType } from '../../grid/types';
 
 /**
  * 條例的強度用一個等級欄位表示，不是三個 enum 成員（LIGHT / MEDIUM / HEAVY）。
@@ -61,9 +62,9 @@ describe('舊存檔的遷移', () => {
     return new PolicyManager(dm).getPolicyLevel('district_1', PolicyType.ENCOURAGE_RECYCLING);
   }
 
-  it('should turn an old active:true into level 1', () => {
+  it('should never turn an old active:true policy off', () => {
     // 掉成 0 的話，玩家讀檔會發現政策全被關掉了，而畫面上沒有任何東西說明為什麼。
-    expect(load({ ...base, active: true })).toBe(1);
+    expect(load({ ...base, active: true })).toBeGreaterThan(0);
   });
 
   it('should turn an old active:false into level 0', () => {
@@ -82,6 +83,34 @@ describe('舊存檔的遷移', () => {
   it('should prefer an explicit level over the legacy flag', () => {
     // 新格式兩個欄位都在時，level 是權威 —— 不然存過一次的檔案會被舊欄位蓋回去。
     expect(load({ ...base, level: 3, active: false })).toBe(3);
+  });
+
+  it('should land an old policy on the tier that reproduces what it used to do', () => {
+    // 分級之前每條政策只有一組數字。一律轉成 level 1 的話，那組數字剛好不在第一格
+    // 的政策就會在讀檔當下靜靜地變弱 —— 回收原本是 garbage 0.65，而 0.65 是新表的
+    // 第 2 級。玩家沒有動任何東西，垃圾量卻變差了。
+    // 兩條政策放在不同分區 —— 同一區的話效果會相乘（回收現在也扣商業收入），
+    // 量到的就不是「觀光自己有沒有變」了。
+    const dm = DistrictManager.fromJSON({
+      nextId: 3,
+      districts: [
+        {
+          id: 'district_1', name: 'Green', cells: ['1,1'], specialization: 'NONE',
+          policies: [{ id: 'p1', name: 'R', type: PolicyType.ENCOURAGE_RECYCLING, cost: 100, active: true }],
+        },
+        {
+          id: 'district_2', name: 'Resort', cells: ['2,2'], specialization: 'NONE',
+          policies: [{ id: 'p2', name: 'T', type: PolicyType.TOURISM, cost: 200, active: true }],
+        },
+      ],
+    } as never);
+    const pm = new PolicyManager(dm);
+
+    // 分級之前的效果:回收 garbage 0.65、觀光 revenue 1.2。
+    expect(pm.getGarbageMultiplier('district_1'), '舊存檔的回收讀進來之後變弱了')
+      .toBeCloseTo(0.65, 6);
+    expect(pm.getRevenueMultiplier('district_2', ZoneType.COMMERCIAL_LOW), '舊存檔的觀光變了')
+      .toBeCloseTo(1.2, 6);
   });
 });
 

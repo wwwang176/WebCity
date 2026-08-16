@@ -1985,3 +1985,23 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
 - [ ] **`OverlayRenderer` 的高架層仍然沒有逐格透明度**。`instanceColor` 只有三個
   分量，three.js 沒有 instance alpha；高架格是明確列舉出來的，值為 0 的格子不會進
   清單，所以目前不成問題。
+
+## 條例系統（2026-08-17）
+
+計畫：`docs/superpowers/plans/2026-08-17-district-ordinances.md`（經 Codex 兩輪審查改寫）
+
+- [x] Task 1：收入乘數認得分區類型（`revenueByZone`）
+- [x] Task 2：`Policy.level` 取代 `active`，存檔遷移
+- [x] Task 3：`POLICY_EFFECTS` 分級，`maxLevel` 由表推導
+- [x] Task 4：`crime` 槓桿 —— 條例可以有代價
+- [x] BUG-288：舊存檔的回收遷移到正確的等級
+- [ ] Task 5：依規模計費，刪 `Policy.cost`
+- [ ] Task 6：全城條例 + 節能法規
+- [ ] Task 7：條例 UI（分級按鈕、全城條例面板）
+- [ ] Task 8：預算面板逐條列出政策支出
+
+### 環境問題（開發中遇到，尚未查明）
+- [ ] **派 Codex 背景審查會弄壞 `node_modules/.bin`**。兩次審查結束後 `npx vitest`
+  都開始報「找不到指令」，`node_modules/.bin/` 整個消失，而且 `.pnpm` 也缺檔案，
+  要 `rm -rf node_modules && pnpm install` 才修得好。推測是 Codex 在主 repo 或
+  它自己開的 worktree 裡跑了安裝指令。之後派工要明確禁止它動 `node_modules`。
