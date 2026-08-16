@@ -10,6 +10,7 @@ import { TransportType, type TransportStop } from './types';
 import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
 import { computeRideDistance, getRouteRiders, type TransitSystemInfo } from './TransitAvailability';
 import { expectedWait, isOverCapacity, routeService } from './RouteLoad';
+import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 
 // ── Types ───────────────────────────────────────────────────────
 
@@ -35,6 +36,8 @@ export interface MultiLegRoute {
   legs: TransitLeg[];
   /** Sum of all legs' estimatedTime */
   totalTime: number;
+  /** 其中有多少是走路 —— 比較時要多收一份不情願，回報時不收。 */
+  walkTime: number;
 }
 
 export interface TransferEdge {
@@ -308,7 +311,6 @@ export function findMultiModalRoutes(
   routes: readonly FlatRoute[],
   origin: { x: number; y: number },
   destination: { x: number; y: number },
-  walkRange: number,
   walkSpeed: number,
   _waitFactor: number,
   transferGraph: TransferGraph,
@@ -328,10 +330,12 @@ export function findMultiModalRoutes(
     for (let esi = 0; esi < eRoute.stops.length; esi++) {
       const entryStop = eRoute.stops[esi]!;
       // 沿人行道量，不是直線 —— 直線看不見馬路，會把住戶從對街「走」到站牌。
+      // 上限依運具而定：人願意為捷運多走，為公車不肯。
+      const entryLimit = walkRangeFor(eRoute.type);
       const walkToEntry = walkDistanceToStop(
-        reach, entryStop.x, entryStop.y, origin.x, origin.y, walkRange,
+        reach, entryStop.x, entryStop.y, origin.x, origin.y, WALK_RANGE_BY_TYPE.WIDEST,
       );
-      if (walkToEntry > walkRange) continue;
+      if (walkToEntry > entryLimit) continue;
 
       const firstWalkTime = walkToEntry / walkSpeed;
       const firstWalkLeg: TransitLeg = {
@@ -346,9 +350,9 @@ export function findMultiModalRoutes(
         for (let xsi = 0; xsi < xRoute.stops.length; xsi++) {
           const exitStop = xRoute.stops[xsi]!;
           const walkFromExit = walkDistanceToStop(
-            reach, exitStop.x, exitStop.y, destination.x, destination.y, walkRange,
+            reach, exitStop.x, exitStop.y, destination.x, destination.y, WALK_RANGE_BY_TYPE.WIDEST,
           );
-          if (walkFromExit > walkRange) continue;
+          if (walkFromExit > walkRangeFor(xRoute.type)) continue;
 
           const cached = cache.get(cacheKey(eri, esi, xri, xsi));
           if (!cached) continue;
@@ -361,9 +365,13 @@ export function findMultiModalRoutes(
             estimatedTime: lastWalkTime,
           };
 
+          const legs = [firstWalkLeg, ...cached.legs, lastWalkLeg];
           results.push({
-            legs: [firstWalkLeg, ...cached.legs, lastWalkLeg],
+            legs,
             totalTime: firstWalkTime + cached.totalTime + lastWalkTime,
+            // 中間那幾段可能還有轉乘步行，所以是把 walk 腿全部加起來，
+            // 不是只算頭尾兩段。
+            walkTime: legs.reduce((s, l) => l.type === 'walk' ? s + l.estimatedTime : s, 0),
           });
 
           if (results.length >= MAX_RESULTS) break;

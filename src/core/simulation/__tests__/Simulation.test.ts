@@ -15,6 +15,7 @@ import { BURNED } from '../../building/InfraPlacement';
 import { getBuildingLevelMultiplier } from '../../economy/TaxMultipliers';
 import { getBuildingType } from '../../building/types';
 import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
+import { WALK_RANGE_BY_TYPE } from '../../transport/WalkRange';
 
 /** Add power+water plants adjacent to a position so buildings there get utilities. */
 function provideUtilities(state: GameState, x: number, y: number): void {
@@ -96,7 +97,7 @@ describe('SIMULATION config constants', () => {
   });
 
   it('walk to stop range should be positive', () => {
-    expect(SIMULATION.WALK_TO_STOP_RANGE).toBeGreaterThan(0);
+    expect(WALK_RANGE_BY_TYPE.FALLBACK).toBeGreaterThan(0);
   });
 
   it('industrial pollution factor should be between 0 and 1', () => {

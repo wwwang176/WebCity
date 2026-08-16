@@ -27,14 +27,21 @@ function busRoute(stops: TransportStop[]): FlatRoute {
   };
 }
 
-const RANGE = 5;
+/** 捷運的步行上限比公車寬（8 vs 4）—— 人願意為捷運多走。 */
+function metroRoute(stops: TransportStop[]): FlatRoute {
+  return {
+    routeId: 1, type: TransportType.METRO, speed: 3, stops,
+    segDists: null, headway: 10, loadFactor: 0,
+  };
+}
+
 const SPEED = 1;
 
 describe('涵蓋範圍不跨越馬路', () => {
   it('should cover a home on the same side of the road', () => {
     const { graph } = cityWithMainRoad(8);
     const route = busRoute([stop(1, 12, 11), stop(2, 4, 11)]);
-    const field = TransitAccessField.build([route], RANGE, SPEED, new SidewalkStopReach(graph));
+    const field = TransitAccessField.build([route], SPEED, new SidewalkStopReach(graph));
 
     expect(field.at(13, 11).length, '同一側的隔壁格算不到，這條測試等於沒測')
       .toBeGreaterThan(0);
@@ -45,7 +52,7 @@ describe('涵蓋範圍不跨越馬路', () => {
     // 回來 —— 遠超過 5 格的步行上限，這個住戶其實搭不到這班公車。
     const { graph } = cityWithMainRoad(8);
     const route = busRoute([stop(1, 12, 11), stop(2, 4, 11)]);
-    const field = TransitAccessField.build([route], RANGE, SPEED, new SidewalkStopReach(graph));
+    const field = TransitAccessField.build([route], SPEED, new SidewalkStopReach(graph));
 
     expect(
       field.at(12, 9),
@@ -58,18 +65,33 @@ describe('涵蓋範圍不跨越馬路', () => {
     // 「站牌蓋在哪」因此成為一個有後果的決定。
     const { graph } = cityWithMainRoad(8);
     const route = busRoute([stop(1, 9, 11), stop(2, 4, 11)]);
-    const field = TransitAccessField.build([route], RANGE, SPEED, new SidewalkStopReach(graph));
+    const field = TransitAccessField.build([route], SPEED, new SidewalkStopReach(graph));
 
     expect(field.at(9, 9).length, '緊鄰路口的站牌，對面仍然算不到').toBeGreaterThan(0);
   });
 
   it('should charge the real walking distance, not the straight line', () => {
+    // 同一個位置換成捷運站：上限 8 格，容得下繞路口的 7.44 格 —— 所以對面這次
+    // 算得到，但它記下的是真的走了多遠，不是直線的兩格。
     const { graph } = cityWithMainRoad(8);
-    const route = busRoute([stop(1, 12, 11), stop(2, 4, 11)]);
-    const field = TransitAccessField.build([route], 12, SPEED, new SidewalkStopReach(graph));
+    const route = metroRoute([stop(1, 12, 11), stop(2, 4, 11)]);
+    const field = TransitAccessField.build([route], SPEED, new SidewalkStopReach(graph));
 
     const across = field.at(12, 9)[0];
-    expect(across, '把上限放寬到 12 格之後，對面應該算得到').toBeDefined();
+    expect(across, '捷運的上限是 8 格，繞路口的 7.44 格應該進得來').toBeDefined();
     expect(across!.walkTime, '走到對面的時間被當成直線的 2 格').toBeGreaterThan(6);
+  });
+
+  it('should let people walk further for a metro than for a bus', () => {
+    // 完全同一個位置、同一張圖，差別只在運具。
+    const { graph } = cityWithMainRoad(8);
+    const stops = [stop(1, 12, 11), stop(2, 4, 11)];
+    const reach = new SidewalkStopReach(graph);
+
+    const byBus = TransitAccessField.build([busRoute(stops)], SPEED, reach);
+    const byMetro = TransitAccessField.build([metroRoute(stops)], SPEED, reach);
+
+    expect(byBus.at(12, 9), '公車的服務範圍延伸到馬路對面了').toHaveLength(0);
+    expect(byMetro.at(12, 9).length, '捷運與公車的服務範圍一模一樣').toBeGreaterThan(0);
   });
 });

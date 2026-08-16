@@ -51,7 +51,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     const result = findAvailableTransit(
-      [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, WALK_RANGE, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
+      [busSystem()], { x: 13, y: 11 }, { x: 5, y: 11 }, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
     );
     expect(result.length, '同一側兩端都在站旁邊卻搭不到，這條測試等於沒測')
       .toBeGreaterThan(0);
@@ -64,7 +64,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     const result = findAvailableTransit(
-      [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, WALK_RANGE, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
+      [busSystem()], { x: 12, y: 9 }, { x: 4, y: 9 }, reach, WALK_SPEED, WAIT_FACTOR, TICKS_PER_DAY,
     );
     expect(
       result,
@@ -81,7 +81,7 @@ describe('挑站牌不跨越馬路', () => {
 
     const result = findMultiModalRoutes(
       routes, { x: 12, y: 9 }, { x: 4, y: 9 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, transferGraph, 7, reach,
+      WALK_SPEED, WAIT_FACTOR, transferGraph, 7, reach,
     );
 
     expect(result, '轉乘路線把住戶從馬路對面走到站牌').toEqual([]);
@@ -94,7 +94,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
     const stops = [stop(1, 12, 11), stop(2, 9, 9)];
 
-    const picked = findNearestReachableStop(stops, { x: 12, y: 9 }, reach, WALK_RANGE);
+    const picked = findNearestReachableStop(stops, { x: 12, y: 9 }, reach);
 
     expect(picked, '一站都沒挑到').not.toBeNull();
     expect(picked!.id, '挑了對街那一站 —— 行人得繞到路口再繞回來').toBe(2);
@@ -106,7 +106,7 @@ describe('挑站牌不跨越馬路', () => {
     const reach = new SidewalkStopReach(graph);
 
     expect(
-      findNearestReachableStop(SOUTH_STOPS, { x: 12, y: 9 }, reach, WALK_RANGE),
+      findNearestReachableStop(SOUTH_STOPS, { x: 12, y: 9 }, reach),
       '硬挑了一站走不到的給他',
     ).toBeNull();
   });
@@ -120,7 +120,7 @@ describe('挑站牌不跨越馬路', () => {
 
     const result = findMultiModalRoutes(
       routes, { x: 13, y: 11 }, { x: 5, y: 11 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, transferGraph, 7, reach,
+      WALK_SPEED, WAIT_FACTOR, transferGraph, 7, reach,
     );
 
     expect(result.length, '同一側也走不到，這條測試等於沒測').toBeGreaterThan(0);

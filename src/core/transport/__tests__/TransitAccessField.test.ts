@@ -4,6 +4,12 @@ import { TransportType, type TransportStop } from '../types';
 import type { FlatRoute } from '../MultiModalRouter';
 import { openFieldReach } from './openFieldReach';
 
+/** 中性的模式選擇參數：走路一格一 tick、不加不情願權重。 */
+function neutral(congestionLevel: number) {
+  return { congestionLevel, walkSpeed: 1, walkWeight: 1 };
+}
+
+
 /**
  * 大眾運輸可及性圖。
  *
@@ -34,7 +40,7 @@ const WALK_SPEED = 1;
 const WAIT_FACTOR = 0.5;
 
 function fieldFor(routes: FlatRoute[]) {
-  return TransitAccessField.build(routes, WALK_RANGE, WALK_SPEED, openFieldReach);
+  return TransitAccessField.build(routes, WALK_SPEED, openFieldReach);
 }
 
 describe('可及性圖', () => {
@@ -79,14 +85,14 @@ describe('通勤時間估計', () => {
 
   it('should fall back to driving with no transit at all', () => {
     const f = fieldFor([]);
-    const t = estimateCommuteTime({ x: 0, y: 0 }, { x: 20, y: 0 }, 0.5, f, [], WAIT_FACTOR);
+    const t = estimateCommuteTime({ x: 0, y: 0 }, { x: 20, y: 0 }, neutral(0.5), f, [], WAIT_FACTOR);
     expect(t, '開車時間 = 直線距離 × (1 + 壅塞)').toBe(30);
   });
 
   it('should charge more for the same trip when the roads are jammed', () => {
     const f = fieldFor([]);
-    const clear = estimateCommuteTime({ x: 0, y: 0 }, { x: 20, y: 0 }, 0, f, [], WAIT_FACTOR);
-    const jammed = estimateCommuteTime({ x: 0, y: 0 }, { x: 20, y: 0 }, 1, f, [], WAIT_FACTOR);
+    const clear = estimateCommuteTime({ x: 0, y: 0 }, { x: 20, y: 0 }, neutral(0), f, [], WAIT_FACTOR);
+    const jammed = estimateCommuteTime({ x: 0, y: 0 }, { x: 20, y: 0 }, neutral(1), f, [], WAIT_FACTOR);
     expect(jammed).toBeGreaterThan(clear);
   });
 
@@ -95,8 +101,8 @@ describe('通勤時間估計', () => {
     const f = fieldFor([line]);
     const home = { x: 31, y: 6 };
     const work = { x: 29, y: 54 };
-    const withTransit = estimateCommuteTime(home, work, 0.3, f, [line], WAIT_FACTOR);
-    const noTransit = estimateCommuteTime(home, work, 0.3, fieldFor([]), [], WAIT_FACTOR);
+    const withTransit = estimateCommuteTime(home, work, neutral(0.3), f, [line], WAIT_FACTOR);
+    const noTransit = estimateCommuteTime(home, work, neutral(0.3), fieldFor([]), [], WAIT_FACTOR);
 
     expect(withTransit, '兩端都在站旁邊，通勤時間卻沒有變短').toBeLessThan(noTransit);
     expect(withTransit).toBeLessThan(40);
@@ -106,7 +112,7 @@ describe('通勤時間估計', () => {
     const f = fieldFor([line]);
     const home = { x: 31, y: 6 };   // 站旁
     const work = { x: 55, y: 54 };  // 荒郊
-    const t = estimateCommuteTime(home, work, 0.3, f, [line], WAIT_FACTOR);
+    const t = estimateCommuteTime(home, work, neutral(0.3), f, [line], WAIT_FACTOR);
     const drive = (Math.abs(55 - 31) + Math.abs(54 - 6)) * 1.3;
     expect(t, '只有一端有站也算得到好處').toBeCloseTo(drive, 5);
   });
@@ -116,7 +122,7 @@ describe('通勤時間估計', () => {
     const a = verticalLine(1, 30, 0, 20, 6);
     const b = verticalLine(2, 30, 40, 60, 6);
     const f = fieldFor([a, b]);
-    const t = estimateCommuteTime({ x: 30, y: 6 }, { x: 30, y: 54 }, 0.3, f, [a, b], WAIT_FACTOR);
+    const t = estimateCommuteTime({ x: 30, y: 6 }, { x: 30, y: 54 }, neutral(0.3), f, [a, b], WAIT_FACTOR);
     expect(t).toBeCloseTo(48 * 1.3, 5);
   });
 
@@ -125,13 +131,13 @@ describe('通勤時間估計', () => {
     const frequent = verticalLine(1, 30, 0, 60, 6, 3, 2);
     const rare = verticalLine(1, 30, 0, 60, 6, 3, 40);
     const home = { x: 30, y: 6 }, work = { x: 30, y: 54 };
-    const tFrequent = estimateCommuteTime(home, work, 0.3, fieldFor([frequent]), [frequent], WAIT_FACTOR);
-    const tRare = estimateCommuteTime(home, work, 0.3, fieldFor([rare]), [rare], WAIT_FACTOR);
+    const tFrequent = estimateCommuteTime(home, work, neutral(0.3), fieldFor([frequent]), [frequent], WAIT_FACTOR);
+    const tRare = estimateCommuteTime(home, work, neutral(0.3), fieldFor([rare]), [rare], WAIT_FACTOR);
     expect(tRare, '班距沒有反映在通勤時間上').toBeGreaterThan(tFrequent);
   });
 
   it('should walk for a trip that is short enough', () => {
     const f = fieldFor([]);
-    expect(estimateCommuteTime({ x: 0, y: 0 }, { x: 1, y: 1 }, 0.5, f, [], WAIT_FACTOR)).toBe(2);
+    expect(estimateCommuteTime({ x: 0, y: 0 }, { x: 1, y: 1 }, neutral(0.5), f, [], WAIT_FACTOR)).toBe(2);
   });
 });

@@ -356,7 +356,7 @@ describe('ModeChoice', () => {
     // distance = 10, driveTime = 10 * (1 + 0) = 10
     // transit time = 8, threshold = 10 * 1.5 = 15, 8 < 15 => transit
     const available: AvailableTransport[] = [
-      { type: TransportType.METRO, estimatedTime: 8 },
+      { type: TransportType.METRO, estimatedTime: 8, walkTime: 0 },
     ];
     const mode = chooseMode(
       { x: 0, y: 0 },
@@ -371,7 +371,7 @@ describe('ModeChoice', () => {
     // distance = 10, driveTime = 10 * (1 + 0) = 10
     // transit time = 20, threshold = 10 * 1.5 = 15, 20 >= 15 => drive
     const available: AvailableTransport[] = [
-      { type: TransportType.BUS, estimatedTime: 20 },
+      { type: TransportType.BUS, estimatedTime: 20, walkTime: 0 },
     ];
     const mode = chooseMode(
       { x: 0, y: 0 },
@@ -387,7 +387,7 @@ describe('ModeChoice', () => {
     // driveTime = 10 * (1 + 0.8) = 18
     // transit time = 12, threshold = 18 * 1.5 = 27, 12 < 27 => transit
     const available: AvailableTransport[] = [
-      { type: TransportType.BUS, estimatedTime: 12 },
+      { type: TransportType.BUS, estimatedTime: 12, walkTime: 0 },
     ];
     const mode = chooseMode(
       { x: 0, y: 0 },
@@ -400,8 +400,8 @@ describe('ModeChoice', () => {
 
   it('should choose the best transit option among multiple', () => {
     const available: AvailableTransport[] = [
-      { type: TransportType.BUS, estimatedTime: 12 },
-      { type: TransportType.METRO, estimatedTime: 6 },
+      { type: TransportType.BUS, estimatedTime: 12, walkTime: 0 },
+      { type: TransportType.METRO, estimatedTime: 6, walkTime: 0 },
     ];
     const mode = chooseMode(
       { x: 0, y: 0 },
@@ -414,7 +414,7 @@ describe('ModeChoice', () => {
 
   it('should prefer walking over transit for short distance', () => {
     const available: AvailableTransport[] = [
-      { type: TransportType.BUS, estimatedTime: 1 },
+      { type: TransportType.BUS, estimatedTime: 1, walkTime: 0 },
     ];
     const mode = chooseMode(
       { x: 0, y: 0 },

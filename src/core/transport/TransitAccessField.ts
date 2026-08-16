@@ -1,8 +1,9 @@
 import { toPosKey } from '../grid/GridHelpers';
 import { computeRideDistance } from './TransitAvailability';
-import { chooseModeMultiModal, type AvailableTransport } from './ModeChoice';
+import { chooseModeMultiModal, type AvailableTransport, type ModeChoiceParams } from './ModeChoice';
 import type { StopReach } from '../traffic/StopWalkReach';
 import { expectedWait, isOverCapacity } from './RouteLoad';
+import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 import type { FlatRoute } from './MultiModalRouter';
 
 /**
@@ -46,15 +47,19 @@ export class TransitAccessField {
    * 而遠一點的那些站永遠不會被選中。
    */
   static build(
-    routes: readonly FlatRoute[], walkRange: number, walkSpeed: number, reach: StopReach,
+    routes: readonly FlatRoute[], walkSpeed: number, reach: StopReach,
   ): TransitAccessField {
     const field = new TransitAccessField();
 
     for (let ri = 0; ri < routes.length; ri++) {
-      const stops = routes[ri]!.stops;
-      for (let si = 0; si < stops.length; si++) {
-        const s = stops[si]!;
-        for (const [cellKey, walkDistance] of reach.cellsWithin(s.x, s.y, walkRange)) {
+      const route = routes[ri]!;
+      // 願意為這種運具走多遠。掃描一律用最寬的半徑（涵蓋範圍的快取以半徑為鍵，
+      // 各運具各掃一次會讓同一個站牌算好幾份），再由運具自己的上限截斷。
+      const limit = walkRangeFor(route.type);
+      for (let si = 0; si < route.stops.length; si++) {
+        const s = route.stops[si]!;
+        for (const [cellKey, walkDistance] of reach.cellsWithin(s.x, s.y, WALK_RANGE_BY_TYPE.WIDEST)) {
+          if (walkDistance > limit) continue;
           field.record(cellKey, ri, si, walkDistance / walkSpeed);
         }
       }
@@ -114,9 +119,11 @@ function transitOptions(
 
     const rideDistance = computeRideDistance(route.stops, a.stopIdx, b.stopIdx, route.segDists);
     const wait = expectedWait(route.headway, waitFactor, route.loadFactor);
+    const walkTime = a.walkTime + b.walkTime;
     options.push({
       type: route.type,
-      estimatedTime: a.walkTime + wait + rideDistance / route.speed + b.walkTime,
+      estimatedTime: walkTime + wait + rideDistance / route.speed,
+      walkTime,
     });
   }
   return options;
@@ -134,24 +141,24 @@ function transitOptions(
 export function estimateCommuteTime(
   from: { x: number; y: number },
   to: { x: number; y: number },
-  congestionLevel: number,
+  choice: ModeChoiceParams,
   field: TransitAccessField,
   routes: readonly FlatRoute[],
   waitFactor: number,
 ): number {
-  return estimateCommute(from, to, congestionLevel, field, routes, waitFactor).time;
+  return estimateCommute(from, to, choice, field, routes, waitFactor).time;
 }
 
 /** 同上，但連「怎麼去」一起回報 —— 總覽面板要看交通方式的分布。 */
 export function estimateCommute(
   from: { x: number; y: number },
   to: { x: number; y: number },
-  congestionLevel: number,
+  choice: ModeChoiceParams,
   field: TransitAccessField,
   routes: readonly FlatRoute[],
   waitFactor: number,
 ): { time: number; mode: string } {
   const options = transitOptions(from, to, field, routes, waitFactor);
-  const choice = chooseModeMultiModal(from, to, options, [], congestionLevel);
-  return { time: choice.time, mode: choice.mode };
+  const picked = chooseModeMultiModal(from, to, options, [], choice);
+  return { time: picked.time, mode: picked.mode };
 }

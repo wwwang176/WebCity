@@ -5,6 +5,7 @@ import { RoadType, RoadDirection } from '../../road/types';
 import { UnifiedRoadLookup } from '../../road/UnifiedRoadLookup';
 import { ElevationManager } from '../../elevation/ElevationManager';
 import type { SidewalkStopReach } from '../../traffic/StopWalkReach';
+import { WALK_RANGE_BY_TYPE } from '../../transport/WalkRange';
 
 /**
  * 改一格道路，只重算那一格附近的人行道。
@@ -119,6 +120,24 @@ describe('人行道圖的增量重建', () => {
       reach.cellsWithin(1, 1, 5),
       '遠處蓋了一棟房子，全城站牌的步行範圍都被丟掉重算',
     ).toBe(far);
+  });
+
+  it('should invalidate stop coverage as far out as the widest walk range', () => {
+    // 失效半徑要蓋得住最寬的那一個運具（捷運 8 格），不是某一個運具的上限。
+    // 用窄的半徑失效，5~8 格之間的站牌會保留過期的涵蓋範圍。
+    const state = gridCity();
+    const loop = makeLoop(state);
+    const reach = (loop as unknown as { stopReach: SidewalkStopReach }).stopReach;
+    const stale = reach.cellsWithin(1, 1, WALK_RANGE_BY_TYPE.WIDEST);
+
+    // 距離 7 格：超過公車的 4 格，但在捷運的 8 格之內
+    state.grid.setCell(8, 1, { buildingId: 1 });
+    loop.applyBuildingChange(['8,1']);
+
+    expect(
+      reach.cellsWithin(1, 1, WALK_RANGE_BY_TYPE.WIDEST),
+      '七格外的改動沒有讓這個站牌重算 —— 捷運的涵蓋範圍過期了',
+    ).not.toBe(stale);
   });
 
   it('should rebuild everything when no cells are named', () => {

@@ -1,9 +1,12 @@
 import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
+import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
+import type { TransportType } from './types';
 
 /** 挑站牌只需要座標，其餘欄位由呼叫端決定。 */
 export interface StopLike {
   x: number;
   y: number;
+  type?: TransportType;
 }
 
 /**
@@ -20,12 +23,12 @@ export function findNearestReachableStop<T extends StopLike>(
   stops: readonly T[],
   pos: { x: number; y: number },
   reach: StopReach,
-  walkRange: number,
 ): T | null {
   let best: T | null = null;
   let bestDist = Infinity;
   for (const s of stops) {
-    const dist = walkDistanceToStop(reach, s.x, s.y, pos.x, pos.y, walkRange);
+    const dist = walkDistanceToStop(reach, s.x, s.y, pos.x, pos.y, WALK_RANGE_BY_TYPE.WIDEST);
+    if (dist > (s.type ? walkRangeFor(s.type) : WALK_RANGE_BY_TYPE.FALLBACK)) continue;
     if (dist < bestDist) {
       bestDist = dist;
       best = s;

@@ -9,6 +9,7 @@ import { getInfraBuildingId } from '../../building/InfraConfig';
 import { SidewalkStopReach } from '../../traffic/StopWalkReach';
 import { SIMULATION } from '../SimulationConstants';
 import type { WalkingTripPool } from '../../traffic/PedestrianManager';
+import { WALK_RANGE_BY_TYPE } from '../../transport/WalkRange';
 
 /**
  * 派出去的行人，一定走得到目的地。
@@ -110,7 +111,7 @@ describe('派出去的步行都走得到', () => {
     for (let i = 0; i < 40; i++) loop.tick();
 
     const reach = new SidewalkStopReach(state.sidewalkGraph);
-    const limit = SIMULATION.WALK_TO_STOP_RANGE;
+    const limit = WALK_RANGE_BY_TYPE.WIDEST;
 
     for (const trip of tripPoolOf(loop).trips) {
       const walkable = reach.cellsWithin(trip.fromX, trip.fromY, limit)

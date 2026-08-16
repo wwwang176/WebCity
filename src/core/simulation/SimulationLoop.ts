@@ -70,8 +70,12 @@ import { ServiceVehicleManager, type ServiceFacilityProvider, type ServiceVehicl
 import { SidewalkGraph } from '../traffic/SidewalkGraph';
 import { PedestrianManager, getMaxPedestrians, buildTripPool, sampleTrip, type AggregatedTrip, type WalkingTripPool } from '../traffic/PedestrianManager';
 import { PedestrianTripType } from '../traffic/PedestrianAgent';
+import { WALK_DISUTILITY, walkWeightOf } from '../citizen/WalkWillingness';
+import { EducationLevel } from '../citizen/types';
+import type { ModeChoiceParams } from '../transport/ModeChoice';
 import { SidewalkStopReach } from '../traffic/StopWalkReach';
 import { findNearestReachableStop } from '../transport/StopChoice';
+import { WALK_RANGE_BY_TYPE } from '../transport/WalkRange';
 import { TRADE } from '../traffic/FreightSystem';
 import { spawnFreightVehicles, rebuildActiveFreight, type FreightSpawnContext } from '../traffic/FreightVehicleSpawner';
 import { HIGHWAY_EXTERNAL } from '../traffic/HighwayConnection';
@@ -173,10 +177,26 @@ export class SimulationLoop {
     const b = parsePosKey(toPos);
     if (!a || !b) return null;
     return estimateCommuteTime(
-      a, b, this.state.traffic.getCongestionLevel(),
+      a, b, this.modeChoiceFor(),
       this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
     );
   };
+
+  /**
+   * 這位市民怎麼權衡各種走法。
+   *
+   * 沒有指定市民時用預設的不情願權重 —— 住房評分是拿「一間房子對這一位市民好不好」
+   * 在問，那裡確實有市民；而通勤統計是整城的分布，用哪一位的脾氣都不對，用平均。
+   */
+  private modeChoiceFor(education?: EducationLevel): ModeChoiceParams {
+    return {
+      congestionLevel: this.state.traffic.getCongestionLevel(),
+      walkSpeed: SIMULATION.WALK_SPEED,
+      walkWeight: education === undefined
+        ? WALK_DISUTILITY.FALLBACK
+        : walkWeightOf(education),
+    };
+  }
   /** Transit structural version at the last transfer-graph rebuild. */
   private lastTransitVersion = -1;
   /** Transit stop/route topology version at the last transfer-tracker reset. */
@@ -309,9 +329,7 @@ export class SimulationLoop {
     // 欄位初始設定跑在建構式主體之前，那時 this.state 還沒指定 —— 所以這兩個
     // 要在這裡建，不能寫成欄位初始值。
     this.stopReach = new SidewalkStopReach(state.sidewalkGraph);
-    this.transitAccess = TransitAccessField.build(
-      [], SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED, this.stopReach,
-    );
+    this.transitAccess = TransitAccessField.build([], SIMULATION.WALK_SPEED, this.stopReach);
     // The current day/month have already had their blocks run — either by the
     // session that produced this save, or (for a new game at tick 0) because no
     // time has elapsed yet. Both blocks belong to day/month *transitions*.
@@ -586,7 +604,7 @@ export class SimulationLoop {
         const work = parsePosKey(c.workplaceId);
         if (!home || !work) return null;
         return estimateCommute(
-          home, work, this.state.traffic.getCongestionLevel(),
+          home, work, this.modeChoiceFor(c.education),
           this.transitAccess, this.flatRoutes, SIMULATION.AVERAGE_WAIT_FACTOR,
         );
       },
@@ -1857,9 +1875,7 @@ export class SimulationLoop {
       SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, SIMULATION.MAX_TRIP_LEGS,
     );
     // 可及性圖跟著路線一起重建 —— 評分與換工作判斷靠它把通勤時間壓成 O(1)。
-    this.transitAccess = TransitAccessField.build(
-      this.flatRoutes, SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED, this.stopReach,
-    );
+    this.transitAccess = TransitAccessField.build(this.flatRoutes, SIMULATION.WALK_SPEED, this.stopReach);
     this.transferGraphDirty = false;
     this.lastTransitVersion = getTransitNetworkVersion(this.state);
 
@@ -2117,7 +2133,7 @@ export class SimulationLoop {
       this.state.sidewalkGraph.updateCells(gridLookup, cells);
       // 只有這些格子附近的站牌需要重新量步行範圍。呼叫它同時把世代對齊，
       // 否則安全網會把整份快取一起丟掉，精準失效就白做了。
-      this.stopReach.invalidateNear(cells, SIMULATION.WALK_TO_STOP_RANGE);
+      this.stopReach.invalidateNear(cells, WALK_RANGE_BY_TYPE.WIDEST);
       this.state.pedestrianManager.invalidateCells(cells);
     } else {
       const roadCellKeys: string[] = [];
@@ -2200,7 +2216,7 @@ export class SimulationLoop {
       },
     }, affectedCells);
     // 建築動了，附近站牌的步行範圍也就變了 —— 門節點是行人走進站牌的唯一入口。
-    this.stopReach.invalidateNear(affectedCells, SIMULATION.WALK_TO_STOP_RANGE);
+    this.stopReach.invalidateNear(affectedCells, WALK_RANGE_BY_TYPE.WIDEST);
     this.state.pedestrianManager.clearPathCache();
     this.retireStrandedPedestrians();
   }
@@ -2288,13 +2304,13 @@ export class SimulationLoop {
       const availableTransport = this.getAvailableTransit(fromPos, toPos);
       const congestion = this.state.traffic.getCongestionLevel();
       const multiModalRoutes = findMultiModalRoutes(
-        this.flatRoutes, fromPos, toPos,
-        SIMULATION.WALK_TO_STOP_RANGE, SIMULATION.WALK_SPEED,
+        this.flatRoutes, fromPos, toPos, SIMULATION.WALK_SPEED,
         SIMULATION.AVERAGE_WAIT_FACTOR, this.transferGraph, SIMULATION.MAX_TRIP_LEGS,
         this.stopReach,
       );
       const { mode, multiLeg } = chooseModeMultiModal(
-        fromPos, toPos, availableTransport, multiModalRoutes, congestion,
+        fromPos, toPos, availableTransport, multiModalRoutes,
+        this.modeChoiceFor(citizen.education),
       );
 
       if (mode !== TransportMode.DRIVE) {
@@ -2502,8 +2518,7 @@ export class SimulationLoop {
     destination: { x: number; y: number },
   ): AvailableTransport[] {
     return findAvailableTransit(
-      this.getTransitSystemInfos(), origin, destination,
-      SIMULATION.WALK_TO_STOP_RANGE, this.stopReach,
+      this.getTransitSystemInfos(), origin, destination, this.stopReach,
       SIMULATION.WALK_SPEED, SIMULATION.AVERAGE_WAIT_FACTOR, this.state.clock.ticksPerDay,
     );
   }
@@ -2776,7 +2791,7 @@ export class SimulationLoop {
     stops: readonly { x: number; y: number; passengers: number; dailyRiders: number }[],
     pos: { x: number; y: number },
   ): { x: number; y: number; passengers: number; dailyRiders: number } | null {
-    return findNearestReachableStop(stops, pos, this.stopReach, SIMULATION.WALK_TO_STOP_RANGE);
+    return findNearestReachableStop(stops, pos, this.stopReach);
   }
 
 }

@@ -1,6 +1,7 @@
 import { TransportType, type TransportRoute, type TransportStop } from './types';
 import { walkDistanceToStop, type StopReach } from '../traffic/StopWalkReach';
 import { routeService, expectedWait, isOverCapacity } from './RouteLoad';
+import { walkRangeFor, WALK_RANGE_BY_TYPE } from './WalkRange';
 import type { AvailableTransport } from './ModeChoice';
 
 export interface TransitSystemInfo {
@@ -61,7 +62,6 @@ export function findAvailableTransit(
   systems: readonly TransitSystemInfo[],
   origin: { x: number; y: number },
   destination: { x: number; y: number },
-  walkRange: number,
   reach: StopReach,
   walkSpeed: number,
   waitFactor: number,
@@ -70,6 +70,9 @@ export function findAvailableTransit(
   const result: AvailableTransport[] = [];
 
   for (const sys of systems) {
+    // 願意為這種運具走多遠。涵蓋範圍一律用最寬的半徑算一次（快取的鍵含半徑），
+    // 再由這裡截斷 —— 各運具各算一份的話，同一個站牌會被重算好幾次。
+    const walkRange = walkRangeFor(sys.type);
     for (const route of sys.routes) {
       const segDists = sys.getSegmentDistances?.(route.id) ?? null;
       const { headway, loadFactor } = routeService(
@@ -85,8 +88,9 @@ export function findAvailableTransit(
 
       for (let i = 0; i < route.stops.length; i++) {
         const stop = route.stops[i]!;
-        const dOrigin = walkDistanceToStop(reach, stop.x, stop.y, origin.x, origin.y, walkRange);
-        const dDest = walkDistanceToStop(reach, stop.x, stop.y, destination.x, destination.y, walkRange);
+        const scan = WALK_RANGE_BY_TYPE.WIDEST;
+        const dOrigin = walkDistanceToStop(reach, stop.x, stop.y, origin.x, origin.y, scan);
+        const dDest = walkDistanceToStop(reach, stop.x, stop.y, destination.x, destination.y, scan);
         if (dOrigin <= walkRange && dOrigin < bestOriginDist) {
           bestOriginIdx = i;
           bestOriginDist = dOrigin;
@@ -103,7 +107,7 @@ export function findAvailableTransit(
 
       // 同一站上下車 = 沒有真的搭到，但走到站牌的那段路仍然花掉了。
       if (bestOriginIdx === bestDestIdx) {
-        result.push({ type: sys.type, estimatedTime: walkTime });
+        result.push({ type: sys.type, estimatedTime: walkTime, walkTime });
         continue;
       }
 
@@ -115,6 +119,7 @@ export function findAvailableTransit(
         estimatedTime: walkTime
           + expectedWait(headway, waitFactor, loadFactor)
           + rideDistance / sys.speed,
+        walkTime,
       });
     }
   }

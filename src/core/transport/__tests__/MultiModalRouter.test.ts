@@ -106,7 +106,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache([], TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       [], { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
     expect(result).toEqual([]);
@@ -119,7 +119,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
 
@@ -141,7 +141,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
 
@@ -168,7 +168,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 30, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
 
@@ -190,7 +190,7 @@ describe('findMultiModalRoutes', () => {
     // maxLegs=3 → only single-ride routes
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, 3,
+      WALK_SPEED, WAIT_FACTOR, graph, 3,
       openFieldReach,
     );
     for (const route of result) {
@@ -208,7 +208,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
 
@@ -228,7 +228,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
     // Only single-ride routes possible (no transfer edges)
@@ -245,7 +245,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
     expect(result).toEqual([]);
@@ -259,7 +259,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
 
@@ -286,7 +286,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 10, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
 
@@ -306,7 +306,7 @@ describe('findMultiModalRoutes', () => {
     const graph = buildGraphWithCache(routes, TRANSFER_RANGE);
     const result = findMultiModalRoutes(
       routes, { x: 0, y: 0 }, { x: 20, y: 0 },
-      WALK_RANGE, WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
+      WALK_SPEED, WAIT_FACTOR, graph, MAX_LEGS,
       openFieldReach,
     );
     // No 5-leg routes because metro is full
