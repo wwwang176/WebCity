@@ -234,16 +234,12 @@ function ToolGroupComponent(props: {
               }}
             </For>
             <div class="tb-sep-v" />
+            {/* 一顆就夠。全城與分區是同一件事的兩個層級，開的本來就是同一個面板，
+                只是停在不同的範圍上 —— 而那個範圍面板自己會挑:選取中的分區優先，
+                沒有選取就停在全城。兩顆按鈕等於逼玩家先決定一件面板會替他決定的事。 */}
             <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}>
               <span class="tb-icon">{'\u{1F4CB}'}</span>
-              <span style={{ color: '#ab47bc' }}>Districts</span>
-            </button>
-            {/* 兩顆按鈕開的是同一個面板，只是停在不同的範圍上。標籤用範圍而不是
-                功能名 —— 全城與分區是同一件事的兩個層級，用兩個功能名會讓玩家
-                以為那是兩套機制。 */}
-            <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('ordinances'); }}>
-              <span class="tb-icon">{'\u{1F3D9}'}</span>
-              <span style={{ color: '#ab47bc' }}>City</span>
+              <span style={{ color: '#ab47bc' }}>Policies</span>
             </button>
           </>
         )}
@@ -303,6 +299,9 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
     // 收起來了，而換模式正是這支筆刷的日常。畫分區、鋪路、劃地全都是「挑一個設定
     // 再到地圖上動手」的循環。
     if (target instanceof HTMLCanvasElement) return;
+    // 面板裡的操作也不算 —— 在條例面板裡切分區跟手上拿著什麼工具是兩回事，
+    // 關掉面板之後子選單卻收起來了，玩家得再點一次才能繼續畫。
+    if (target?.closest('[role="dialog"]')) return;
     setOpenGroup(null);
   };
   document.addEventListener('click', closeOnOutsideClick);

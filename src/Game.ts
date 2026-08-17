@@ -2632,6 +2632,12 @@ export class Game {
   }
 
   setOverlay(type: OverlayType): void {
+    // 分區圖層一關掉就放掉選取。少了分區圖層，地圖上看不到分區的顏色，也看不到
+    // 選取的白框（`refreshDistrictSelection` 只在拿著筆刷時畫）—— 留著一個看不見的
+    // 選取，下一次回到筆刷時第一筆會畫進一個玩家早就忘記的分區。
+    if (type !== OverlayType.DISTRICT && this.activeDistrictId) {
+      this.setActiveDistrict(null);
+    }
     const data = this.buildOverlayData(type);
     const elevated = this.buildElevatedOverlayData(type);
     // 分區圖層才有名稱標籤 —— 其他圖層畫的是強度，沒有東西可以命名。

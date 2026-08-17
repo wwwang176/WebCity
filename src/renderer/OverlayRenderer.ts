@@ -305,7 +305,7 @@ const LABEL_HEIGHT = 1.2;
  * 固定。分區名稱是地圖上的標示，不是場景裡的物件 —— 拉近看城市細節時，名稱跟著
  * 放大只會擋住你正要看的東西。
  */
-const LABEL_WORLD_HEIGHT = 0.72;
+const LABEL_WORLD_HEIGHT = 0.95;
 
 /** `LABEL_WORLD_HEIGHT` 是在這個可視範圍下量的。跟 `SCENE.FRUSTUM_SIZE` 是同一個數。 */
 const LABEL_REFERENCE_FRUSTUM = 60;
