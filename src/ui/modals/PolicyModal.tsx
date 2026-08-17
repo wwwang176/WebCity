@@ -197,6 +197,9 @@ export function PolicyModal(props: {
               // 改完名字側邊欄還是舊的，直到關掉面板重開。
               const name = () => { version(); gameSignals.tick(); return d.name; };
               const swatch = () => { version(); return swatchCssFor(d.colorIndex); };
+              // 格數是這一列唯一說得出「這一區在地圖上還在不在」的東西。0 格的分區
+              // 在地圖上沒有任何格子可以點，側邊欄是唯一碰得到它的地方。
+              const cells = () => { version(); gameSignals.tick(); return d.cells.size; };
               return (
                 <button
                   class="overview-nav-item"
@@ -211,6 +214,12 @@ export function PolicyModal(props: {
                     }}
                   />
                   <span>{name()}</span>
+                  <span style={{
+                    'margin-left': 'auto', 'font-size': '10px',
+                    color: cells() === 0 ? '#a1655f' : '#667',
+                  }}>
+                    {cells() === 0 ? 'empty' : cells()}
+                  </span>
                 </button>
               );
             }}
@@ -240,6 +249,19 @@ export function PolicyModal(props: {
               />
             </Show>
             <span style="font-size:12px;color:#ce93d8;white-space:nowrap">This cycle: ${total()}</span>
+            {/* 刪除放在標題列而不是清單最後面:格子被扣光的分區在地圖上點不到，
+                側邊欄是唯一碰得到它的地方，而那時候唯一想做的事就是刪掉它 ——
+                為此滾過十六條條例是說不過去的。
+                旁邊沒有任何會連按的按鈕，所以不會誤觸。 */}
+            <Show when={!isCity()}>
+              <button
+                onClick={removeDistrict}
+                title="Delete this district and the policies set on it. Erasing its cells alone keeps them."
+                style="background:transparent;border:1px solid #5d3a3a;color:#e57373;border-radius:4px;font-size:11px;padding:2px 8px;cursor:pointer;white-space:nowrap"
+              >
+                Delete
+              </button>
+            </Show>
           </div>
           <div style="font-size:11px;color:#777;margin-bottom:10px">{paneSubtitle()}</div>
 
@@ -263,15 +285,6 @@ export function PolicyModal(props: {
                   />
                 )}
               </For>
-              {/* 刪除放在最右邊，離色票有一段距離 —— 它旁邊全是可以隨便按的東西，
-                  而它是這個面板裡唯一按下去會不見的。 */}
-              <button
-                onClick={removeDistrict}
-                title="Delete this district and its policies"
-                style="margin-left:auto;background:transparent;border:1px solid #5d3a3a;color:#e57373;border-radius:4px;font-size:11px;padding:2px 8px;cursor:pointer"
-              >
-                Delete district
-              </button>
             </div>
           </Show>
 
@@ -296,6 +309,7 @@ export function PolicyModal(props: {
               </div>
             )}
           </For>
+
         </div>
       </div>
     </Modal>

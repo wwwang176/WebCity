@@ -126,7 +126,7 @@ function ActiveDistrictChip(props: { onOpenModal?: (id: string) => void }) {
       <button
         class="tb-btn"
         onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}
-        title="Editing this district — click to open its policies"
+        title="Open this district's policies"
       >
         <span
           class="tb-icon"

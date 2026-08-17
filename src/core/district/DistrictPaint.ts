@@ -10,6 +10,27 @@ import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 export type DistrictPaintMode = 'replace' | 'add' | 'subtract';
 
 /**
+ * 一次筆刷動作實際改了什麼。
+ *
+ * 呼叫端要拿它說話。搶格子是對的（一格只屬於一個分區），錯的是不出聲 —— 玩家拖一塊
+ * 蓋到別區上，二十幾格轉手了，畫面上只有顏色悄悄變了。扣除掃到別區則是什麼都不會
+ * 發生，那個靜默失敗是這支筆刷最難懂的一件事。
+ */
+export interface DistrictPaintResult {
+  /** 這一區多出來的格數。本來就是它的不算。 */
+  added: number;
+  /** 這一區被拿掉的格數。 */
+  removed: number;
+  /**
+   * 矩形裡屬於別區的格數，分區 id → 格數。
+   *
+   * 併入與取代下是「搶過來的」，扣除下是「掃到但沒動的」—— 同一份資料，呼叫端
+   * 照模式決定怎麼講。
+   */
+  fromOthers: Map<string, number>;
+}
+
+/**
  * 把一個矩形套用到某個分區上。
  *
  * 兩個角哪個先畫都可以，這裡自己正規化 —— 呼叫端記得排序是遲早會漏的一件事。
@@ -22,9 +43,10 @@ export type DistrictPaintMode = 'replace' | 'add' | 'subtract';
  * 本來就維持「一格只屬於一個分區」，而那正是重疊處該有的行為:一格屬於兩個分區的
  * 話，收入乘數與費用都會算兩次。
  */
-/** 一次滑鼠操作要做的事:撿起一個分區，或是畫。 */
+/** 一次滑鼠操作要做的事:撿起一個分區、放掉手上的，或是畫。 */
 export type DistrictGesture =
   | { kind: 'select'; districtId: string }
+  | { kind: 'deselect' }
   | { kind: 'paint' };
 
 /**
@@ -33,21 +55,25 @@ export type DistrictGesture =
  * 少了「點一下＝選取」，玩家要換成編輯另一區只剩一條路:打開條例面板從側邊選 ——
  * 而地圖上明明就看得到那一區。分區的顏色與名稱畫在圖層上，點它是最直覺的動作。
  *
- * 點在自己這一區身上仍然是畫。單格點擊是「從這一區挖掉一格」唯一的手勢，改成選取
- * 的話扣除模式就再也扣不掉一格。
+ * 點自己這一區是放掉選取（點起來、改一改、再點一次放掉）—— 但**扣除模式除外**:
+ * 拿著橡皮擦點自己的格子，意思沒有歧義就是擦掉那一格，而單格擦除沒有別的手勢做得到。
+ * 併入模式下點自己的格子本來就不會有任何改變，取代模式下則是會把整區縮成一格 ——
+ * 兩者都不是玩家點下去想要的東西。
  *
- * 拖出範圍永遠是畫，即使起點落在別區身上 —— 拖一大塊卻只換到一個選取，玩家會以為
- * 筆刷壞了。
+ * 拖出範圍永遠是畫，即使起點落在別區或自己身上 —— 拖一大塊卻只換到一次選取切換，
+ * 玩家會以為筆刷壞了。
  */
 export function resolveDistrictGesture(
   districts: Pick<DistrictManager, 'getDistrictAt'>,
   activeDistrictId: string | null,
   x1: number, y1: number, x2: number, y2: number,
+  mode: DistrictPaintMode,
 ): DistrictGesture {
   if (x1 !== x2 || y1 !== y2) return { kind: 'paint' };
   const under = districts.getDistrictAt(x1, y1);
-  if (!under || under.id === activeDistrictId) return { kind: 'paint' };
-  return { kind: 'select', districtId: under.id };
+  if (!under) return { kind: 'paint' };
+  if (under.id !== activeDistrictId) return { kind: 'select', districtId: under.id };
+  return mode === 'subtract' ? { kind: 'paint' } : { kind: 'deselect' };
 }
 
 export function paintDistrictRect(
@@ -55,12 +81,31 @@ export function paintDistrictRect(
   districtId: string,
   x1: number, y1: number, x2: number, y2: number,
   mode: DistrictPaintMode,
-): void {
+): DistrictPaintResult {
+  const result: DistrictPaintResult = { added: 0, removed: 0, fromOthers: new Map() };
   const district = districts.getDistrict(districtId);
-  if (!district) return;
+  if (!district) return result;
 
   const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
   const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+
+  // 誰的格子被動到，要在畫下去之前數 —— 畫完就查不出來了。
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      const owner = districts.getDistrictAt(x, y);
+      if (owner && owner.id !== districtId) {
+        result.fromOthers.set(owner.id, (result.fromOthers.get(owner.id) ?? 0) + 1);
+      } else if (mode === 'subtract') {
+        if (owner) result.removed++;
+      } else if (!owner) {
+        result.added++;
+      }
+    }
+  }
+  // 併入與取代會把別區的格子搶過來，那些也是這一區新增的。扣除不會。
+  if (mode !== 'subtract') {
+    for (const n of result.fromOthers.values()) result.added += n;
+  }
 
   if (mode === 'replace') {
     // 先清空這一區。逐格走 `removeCellFromDistrict` 而不是直接清 Set —— 反向索引
@@ -78,4 +123,5 @@ export function paintDistrictRect(
       else districts.addCellToDistrict(districtId, x, y);
     }
   }
+  return result;
 }

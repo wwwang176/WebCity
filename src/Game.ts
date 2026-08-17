@@ -39,7 +39,7 @@ import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { paintDistrictRect, resolveDistrictGesture, type DistrictPaintMode } from './core/district/DistrictPaint';
+import { paintDistrictRect, resolveDistrictGesture, type DistrictPaintMode, type DistrictPaintResult } from './core/district/DistrictPaint';
 import { districtOutline } from './core/district/DistrictOutline';
 import { DistrictSelectionRenderer } from './renderer/DistrictSelectionRenderer';
 import { nextDistrictName } from './core/district/DistrictNaming';
@@ -918,7 +918,16 @@ export class Game {
     switch (key) {
       case 'q': this.sceneManager.rotateCamera(-Math.PI / 4); break;
       case 'e': this.sceneManager.rotateCamera(Math.PI / 4); break;
-      case 'escape': this.setTool('select'); this.dragStart = null; break;
+      case 'escape':
+        // 拿著分區筆刷時 Esc 先放掉選取，不直接跳回 select —— 放掉選取才能開下一區，
+        // 那是這支筆刷上最常做的一件事，不該逼玩家把工具也換掉再換回來。
+        if (this.currentTool === 'district' && this.hasActiveDistrict()) {
+          this.clearDistrictSelection();
+        } else {
+          this.setTool('select');
+        }
+        this.dragStart = null;
+        break;
       case 'r': this.cycleRotation(); break;
       case 'p': this.togglePause(); break;
       case '+':
@@ -1387,11 +1396,15 @@ export class Game {
    */
   private applyDistrictGesture(x1: number, y1: number, x2: number, y2: number): void {
     const gesture = resolveDistrictGesture(
-      this.state.districts, this.activeDistrictId, x1, y1, x2, y2);
+      this.state.districts, this.activeDistrictId, x1, y1, x2, y2, this.districtPaintMode);
     if (gesture.kind === 'select') {
       this.setActiveDistrict(gesture.districtId);
       this.showNotification(
         `Now editing ${this.state.districts.getDistrict(gesture.districtId)!.name}`, 2);
+      return;
+    }
+    if (gesture.kind === 'deselect') {
+      this.clearDistrictSelection();
       return;
     }
     // 取代與扣除改的是「現有的那一區」。手上沒有分區時它們無事可做，而順手開一個
@@ -1417,13 +1430,40 @@ export class Game {
       const id = this.createNewDistrict();
       this.showNotification(`Started ${this.state.districts.getDistrict(id)!.name}`, 2);
     }
-    paintDistrictRect(
+    const result = paintDistrictRect(
       this.state.districts, this.activeDistrictId!, x1, y1, x2, y2, this.districtPaintMode);
+    this.reportDistrictPaint(result);
     this.dirty.terrain = true;
     // 外框是照著格子畫的，畫完不重建的話它會停在上一筆的形狀。
     this.refreshDistrictSelection();
     // Painting a district brings its build policies to bear on these cells.
     this.invalidateZoneBlockers();
+  }
+
+  /**
+   * 把筆刷剛才做的事說出來。
+   *
+   * 兩件事在畫面上看不出來:併入從別區搶了格子（顏色悄悄換了一片），以及扣除掃到
+   * 別區時什麼都沒發生（靜默失敗）。兩者都會讓玩家以為筆刷壞了。
+   */
+  private reportDistrictPaint(result: DistrictPaintResult): void {
+    const others = [...result.fromOthers.entries()]
+      .map(([id, count]) => ({ name: this.state.districts.getDistrict(id)?.name, count }))
+      .filter(o => o.name);
+    if (others.length === 0) return;
+    const total = others.reduce((sum, o) => sum + o.count, 0);
+    const whose = others.length === 1
+      ? others[0]!.name
+      : `${others.length} other districts`;
+
+    if (this.districtPaintMode === 'subtract') {
+      // 扣除只動選取中的那一區。掃到別區時完全沒有反應，那是這支筆刷最難懂的一件事。
+      if (result.removed === 0) {
+        this.showNotification(`Those cells belong to ${whose} — select it to edit it.`, 4);
+      }
+      return;
+    }
+    this.showNotification(`Took ${total} cell${total === 1 ? '' : 's'} from ${whose}`, 3);
   }
 
   /** 之後畫的分區筆刷要套用在哪一區。面板側邊選誰，筆刷就畫誰。 */
