@@ -6,6 +6,7 @@ import { ZONE_BLOCKER_COLORS } from '../../core/zone/ZoneBlocker';
 import { UI_COLORS } from '../constants';
 import { STAGE_NAMES } from './citizenLabels';
 import { citizenName } from '../../core/citizen/CitizenName';
+import { buildingName } from '../../core/building/BuildingName';
 
 const ZONE_NAMES: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
@@ -263,6 +264,9 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
     return '\u2605'.repeat(stars) + '\u2606'.repeat(5 - stars);
   };
   const zoneName = () => ZONE_NAMES[props.sel.zoneType] ?? 'Unknown';
+  // 建築的名字從座標算，所以升級、改建、存讀檔都不會換人 —— 除非分區真的變了。
+  const name = () => buildingName(
+    props.sel.x, props.sel.y, props.sel.zoneType, getGame().getState().citySeed);
 
   const citizens = () => {
     gameSignals.tick(); // refresh on tick so lifeStage/education stay current
@@ -276,7 +280,8 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
 
   return (
     <>
-      <div class="bp-title">{bt().name}</div>
+      <div class="bp-title">{name()}</div>
+      <div class="bp-subtitle">{bt().name}</div>
       <div class="bp-row">Level <span>{level()}</span></div>
       <div class="bp-row">Land <span>{landStars()}</span></div>
       <Show when={bt().residents > 0}>

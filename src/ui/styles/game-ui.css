@@ -282,7 +282,11 @@
 #building-panel.visible { display: block; }
 #citizen-detail-panel { min-width: 180px; }
 #building-panel .bp-title {
-  font-size: 14px; font-weight: 600; color: #e4eaf4; margin-bottom: 6px;
+  font-size: 14px; font-weight: 600; color: #e4eaf4;
+}
+/* 建築的種類降成副標 —— 名字才是這棟房子，種類是它屬於哪一類。 */
+#building-panel .bp-subtitle {
+  font-size: 11px; color: #8899b0; margin-bottom: 6px;
 }
 #building-panel .bp-row, #citizen-detail-panel .bp-row {
   font-size: 12px; color: #8899b0; margin: 3px 0;

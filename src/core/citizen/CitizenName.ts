@@ -1,3 +1,5 @@
+import { hash32 } from '../utils/hash32';
+
 /**
  * 市民的名字。
  *
@@ -53,20 +55,10 @@ export const FAMILY_NAMES: readonly string[] = [
  * 把 id 打散。
  *
  * 直接 `id % 表長` 會讓連號的 id 拿到連號的名字，而市民 id 就是流水號 —— 同一棟樓
- * 的住戶會照名字表的順序排下來，一看就是假的。這是 splitmix32 的 finalizer，把低位
- * 的變化擴散到所有位元上。
+ * 的住戶會照名字表的順序排下來，一看就是假的。雜湊與建築的名字共用一份
+ * （`utils/hash32`），因為「城市種子要用乘的」那條性質兩邊都要成立。
  */
-function scramble(id: number, salt: number, citySeed: number): number {
-  // 位元運算自己會做 ToInt32，負數、小數、超過 32 位元的 id 都在這裡被收乾淨 ——
-  // 所以沒有另外夾一次範圍。夾了也沒有測試守得到，只是換一個名字而已。
-  //
-  // 城市種子先乘一顆奇質數再混進去。直接相加的話，種子只差 1 的兩座城市會拿到
-  // 幾乎一樣的名單 —— id 也是連號的，兩邊的差會互相抵消。
-  let h = (Math.imul(citySeed, 0x27220a95) ^ id ^ salt) >>> 0;
-  h = Math.imul(h ^ (h >>> 16), 0x21f0aaad) >>> 0;
-  h = Math.imul(h ^ (h >>> 15), 0x735a2d97) >>> 0;
-  return (h ^ (h >>> 15)) >>> 0;
-}
+const scramble = hash32;
 
 /** 名。`citySeed` 見檔頭:同一個 id 在不同城市要是不同的人。 */
 export function citizenGivenName(id: number, citySeed = 0): string {
