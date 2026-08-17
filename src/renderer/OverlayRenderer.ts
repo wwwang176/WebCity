@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { Grid } from '../core/grid/Grid';
+import { DISTRICT_COLOR, DISTRICT_LABEL_LIGHTNESS } from '../core/district/DistrictPalette';
 
 export enum OverlayType {
   NONE = 'none',
@@ -229,7 +230,7 @@ export class OverlayRenderer {
       // 這裡把它當色相用。分區數量沒有上限，用色相環才分得開相鄰的兩區；
       // 換成明度或單一色相的深淺，第三個分區就跟第一個看起來一樣了。
       case OverlayType.DISTRICT:
-        return c.setHSL(value, 0.7, 0.5);
+        return c.setHSL(value, DISTRICT_COLOR.saturation, DISTRICT_COLOR.lightness);
       default:
         return c.setRGB(0.5, 0.5, 0.5);
     }
@@ -296,7 +297,7 @@ function makeLabelSprite(label: DistrictLabel): THREE.Sprite {
   canvas.height = 64;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = `hsl(${(label.value / 100) * 360} 70% 32%)`;
+  ctx.fillStyle = `hsl(${(label.value / 100) * 360} ${DISTRICT_COLOR.saturation * 100}% ${DISTRICT_LABEL_LIGHTNESS * 100}%)`;
   ctx.globalAlpha = 0.85;
   roundRect(ctx, 0, 0, canvas.width, canvas.height, 10);
   ctx.fill();

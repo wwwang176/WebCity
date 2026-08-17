@@ -17,23 +17,37 @@ export interface DistrictSwatch {
   css: string;
 }
 
-/** 色票數量。八個在色相環上分得開，也塞得進面板一列。 */
-const SWATCH_COUNT = 8;
+/**
+ * 圖層、面板色塊、標籤底色共用的飽和度與亮度。
+ *
+ * 三個地方原本各寫各的（圖層 `setHSL(v, 0.7, 0.5)`、面板 CSS、標籤 canvas），調一次
+ * 要記得改三個地方，而漏掉哪一個不會有任何徵兆 —— 只會看起來「怪怪的」。
+ *
+ * 飽和度壓到 0.45:分區的顏色是要能長時間看著的底色，不是警示。
+ */
+export const DISTRICT_COLOR = { saturation: 0.45, lightness: 0.55 } as const;
 
-/** 圖層與面板共用的飽和度與亮度，跟 `OverlayRenderer.getColor` 對齊。 */
-const SATURATION = 0.7;
-const LIGHTNESS = 0.5;
+/** 標籤底色比色塊暗一階，白字才壓得住。 */
+export const DISTRICT_LABEL_LIGHTNESS = 0.3;
 
-export const DISTRICT_SWATCHES: readonly DistrictSwatch[] = Array.from(
-  { length: SWATCH_COUNT },
-  (_, i) => {
-    const value = 1 + (i * 99) / SWATCH_COUNT;
-    return {
-      value,
-      css: `hsl(${(value / 100) * 360} ${SATURATION * 100}% ${LIGHTNESS * 100}%)`,
-    };
-  },
-);
+const SATURATION = DISTRICT_COLOR.saturation;
+const LIGHTNESS = DISTRICT_COLOR.lightness;
+
+/**
+ * 八個色相。刻意避開 80–150 度那一段。
+ *
+ * 那一段是草地的顏色。飽和度壓低之後，落在那裡的色票鋪在地圖上幾乎看不見 ——
+ * 均勻切色相環的版本裡有兩個色票（93 度與 137 度）就是這樣化在草地裡。
+ *
+ * 顏色是玩家在地圖上認出「這是哪一區」的線索，看不見的色票等於少了一個選項。
+ */
+const SWATCH_HUES = [352, 20, 42, 66, 172, 196, 224, 288] as const;
+
+export const DISTRICT_SWATCHES: readonly DistrictSwatch[] = SWATCH_HUES.map((hue) => ({
+  // 圖層的數值就是色相除以 3.6。存這個數字而不是色相，是因為那條管線只認它。
+  value: hue / 3.6,
+  css: `hsl(${hue} ${SATURATION * 100}% ${LIGHTNESS * 100}%)`,
+}));
 
 /** 這個索引有對應的色票嗎。存檔是可以編輯的，超出範圍要退回預設。 */
 export function isValidSwatchIndex(index: number | undefined): boolean {

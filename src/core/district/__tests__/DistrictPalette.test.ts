@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { DISTRICT_SWATCHES, isValidSwatchIndex, swatchCssFor } from '../DistrictPalette';
+import {
+  DISTRICT_SWATCHES, isValidSwatchIndex, swatchCssFor,
+  DISTRICT_COLOR, DISTRICT_LABEL_LIGHTNESS,
+} from '../DistrictPalette';
 import { districtOverlayValue, districtLabelAnchors } from '../../overlay/OverlayBuilders';
 
 /**
@@ -91,5 +94,47 @@ describe('圖層上的名稱', () => {
       d('district_2', 'B', ['9,9']),
     ]);
     expect(anchors.map(a => a.name)).toEqual(['A', 'B']);
+  });
+});
+
+describe('三個地方共用同一組飽和度與亮度', () => {
+  it('should build the swatch css from the shared constants', () => {
+    // 圖層（setHSL）、面板色塊（CSS）、標籤底色（canvas）走三條不同的路。任何一
+    // 個自己寫死數字的話，調色時漏掉它不會有任何徵兆 —— 只會看起來怪怪的。
+    for (const s of DISTRICT_SWATCHES) {
+      const m = /hsl\([\d.]+ ([\d.]+)% ([\d.]+)%\)/.exec(s.css)!;
+      expect(Number(m[1]), '色塊的飽和度不是共用的那個').toBeCloseTo(DISTRICT_COLOR.saturation * 100, 6);
+      expect(Number(m[2]), '色塊的亮度不是共用的那個').toBeCloseTo(DISTRICT_COLOR.lightness * 100, 6);
+    }
+  });
+
+  it('should keep the label darker than the swatch so white text holds up', () => {
+    expect(DISTRICT_LABEL_LIGHTNESS, '標籤底色沒有比色塊暗，白字會糊掉')
+      .toBeLessThan(DISTRICT_COLOR.lightness);
+  });
+
+  it('should stay a background colour, not a warning colour', () => {
+    // 分區的顏色是要能長時間看著的底色。飽和度爬回去的話整張地圖會很吵。
+    expect(DISTRICT_COLOR.saturation).toBeLessThanOrEqual(0.5);
+  });
+});
+
+describe('色相避開草地', () => {
+  it('should keep every swatch out of the grass band', () => {
+    // 80–150 度是草地的顏色。飽和度壓低之後，落在那裡的色票鋪在地圖上幾乎看不見
+    // —— 均勻切色相環的版本裡有兩個色票就是這樣化掉的。
+    for (const s of DISTRICT_SWATCHES) {
+      const hue = (s.value / 100) * 360;
+      const inGrass = hue >= 80 && hue <= 150;
+      expect(inGrass, `色相 ${Math.round(hue)} 度落在草地那一段，鋪在地圖上看不見`)
+        .toBe(false);
+    }
+  });
+
+  it('should still spread them around the wheel', () => {
+    // 反面控制:八個色票全擠在同一個色相也會通過上面那條。
+    const hues = DISTRICT_SWATCHES.map(s => (s.value / 100) * 360).sort((a, b) => a - b);
+    expect(hues[hues.length - 1]! - hues[0]!, '所有色票擠在同一段色相裡')
+      .toBeGreaterThan(180);
   });
 });
