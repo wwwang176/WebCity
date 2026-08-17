@@ -5198,3 +5198,19 @@ Confirm → New Game → Start Game，新局的圖表是空的。
 高架與斜坡不必另外處理:兩者都是在這個基準上再加 `elevation × LEVEL_HEIGHT`，基準
 對了就一起對了。斜坡的傾角補償 `0.025×(1−cos θ)` 沒有動 —— 嚴格說應該是
 `0.025×(1/cos θ−1)`，但在 31° 的坡上兩者只差 0.0006 格，不值得為它冒險。
+
+## BUG-308 已修：小孩與退休老人在面板上被寫成「Unemployed」
+
+總覽的兩頁都只把**工作年齡**的人算進失業:`SummaryPage` 用 `isWorkingAge(age)`、
+`DemographicsPage` 用 `lifeStage === ADULT`。而市民面板對任何 `workplaceId === null`
+的人一律印 Unemployed —— 嬰兒、學生、退休的老人全都算進去。
+
+於是一座總覽寫著「Full employment、662 個職缺」的城市，點開住宅一看滿滿的
+Unemployed。兩邊的**數字都沒錯**，錯的是面板用了一個它自己定義的詞。
+
+抽成 `core/citizen/CitizenPresentation.citizenWorkLabel`，兩個面板共用:
+
+- 有工作 → 寫在哪裡工作
+- 超過 `ADULT_MAX` → `Retired`
+- 工作年齡且沒工作 → `Unemployed`（**與總覽數的是同一群人**，有測試逐歲比對）
+- 其餘 → 有在上學是 `Student`，否則 `Too young to work`

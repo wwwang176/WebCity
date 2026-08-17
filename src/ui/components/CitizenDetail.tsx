@@ -1,6 +1,7 @@
 import { Show } from 'solid-js';
 import { getGame } from '../store/gameStore';
 import { citizenName } from '../../core/citizen/CitizenName';
+import { citizenWorkLabel } from '../../core/citizen/CitizenPresentation';
 
 export function CitizenDetail(props: { citizenId: number | null }) {
   const citizen = () => {
@@ -20,7 +21,7 @@ export function CitizenDetail(props: { citizenId: number | null }) {
           <div class="cd-row">Happiness <span>{c().happiness}</span></div>
           <div class="cd-row">Health <span>{c().health}</span></div>
           <div class="cd-row">Home <span>{c().homeId ?? 'Homeless'}</span></div>
-          <div class="cd-row">Work <span>{c().workplaceId ?? 'Unemployed'}</span></div>
+          <div class="cd-row">Work <span>{citizenWorkLabel(c())}</span></div>
         </div>
       )}
     </Show>

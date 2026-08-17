@@ -3,6 +3,7 @@ import { gameSignals, getGame } from '../store/gameStore';
 
 import { STAGE_NAMES, EDU_NAMES } from './citizenLabels';
 import { citizenName } from '../../core/citizen/CitizenName';
+import { citizenWorkLabel } from '../../core/citizen/CitizenPresentation';
 
 export function CitizenDetailPanel(props: { panelOrder?: number }) {
   const citizenId = () => gameSignals.selectedCitizenId();
@@ -40,7 +41,7 @@ export function CitizenDetailPanel(props: { panelOrder?: number }) {
               <div class="bp-row">Happiness <span>{c().happiness}</span></div>
               <div class="bp-row">Health <span>{c().health}</span></div>
               <div class="bp-row">Home <span>{c().homeId ?? 'Homeless'}</span></div>
-              <div class="bp-row">Work <span>{c().workplaceId ?? 'Unemployed'}</span></div>
+              <div class="bp-row">Work <span>{citizenWorkLabel(c())}</span></div>
             </>
           )}
         </Show>
