@@ -698,3 +698,13 @@
   color: #888;
 }
 #tutorial-overlay .tut-btns .tut-dismiss:hover { background: #444; color: #fff; }
+
+/* 條例面板 —— 沿用 overview 的左右分欄。側邊列的是範圍（全城／各分區），
+   不是頁籤，所以分區多的時候要能捲。 */
+#policy-modal .overview-sidebar {
+  overflow-y: auto;
+  max-height: 60vh;
+}
+#policy-modal .overview-nav-item span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

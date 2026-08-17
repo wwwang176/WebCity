@@ -148,14 +148,15 @@ function ToolGroupComponent(props: {
         {props.group.id === 'district' && (
           <>
             <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}>
-              <span class="tb-icon">{'\u2699'}</span>
-              <span style={{ color: '#ab47bc' }}>Manage</span>
-            </button>
-            {/* 全城條例不需要先畫一塊地，但它跟分區條例是同一套機制，所以放在
-                同一組工具裡 —— 分開放的話玩家不會把兩者聯想在一起。 */}
-            <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('ordinances'); }}>
               <span class="tb-icon">{'\u{1F4CB}'}</span>
-              <span style={{ color: '#ab47bc' }}>Ordinances</span>
+              <span style={{ color: '#ab47bc' }}>Districts</span>
+            </button>
+            {/* 兩顆按鈕開的是同一個面板，只是停在不同的範圍上。標籤用範圍而不是
+                功能名 —— 全城與分區是同一件事的兩個層級，用兩個功能名會讓玩家
+                以為那是兩套機制。 */}
+            <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('ordinances'); }}>
+              <span class="tb-icon">{'\u{1F3D9}'}</span>
+              <span style={{ color: '#ab47bc' }}>City</span>
             </button>
           </>
         )}

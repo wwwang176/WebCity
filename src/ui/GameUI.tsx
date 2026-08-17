@@ -18,8 +18,7 @@ import { CitizenDetailPanel } from './components/CitizenDetailPanel';
 import { OverviewModal } from './modals/OverviewModal';
 import { LayersModal } from './modals/LayersModal';
 import { CitySpecModal } from './modals/CitySpecModal';
-import { DistrictModal } from './modals/DistrictModal';
-import { CityOrdinanceModal } from './modals/CityOrdinanceModal';
+import { PolicyModal } from './modals/PolicyModal';
 import { TransitModal } from './modals/TransitModal';
 import { DebugModal } from './modals/DebugModal';
 import { SettingsModal } from './modals/SettingsModal';
@@ -78,8 +77,12 @@ function GameUIRoot() {
       <OverviewModal open={openModal() === 'overview'} onClose={closeModal} />
       <LayersModal open={openModal() === 'layers'} onClose={closeModal} />
       <CitySpecModal open={openModal() === 'cityspec'} onClose={closeModal} />
-      <DistrictModal open={openModal() === 'district'} onClose={closeModal} />
-      <CityOrdinanceModal open={openModal() === 'ordinances'} onClose={closeModal} />
+      {/* 同一個面板，兩個入口:分區那顆進來停在第一個分區，條例那顆停在全城。 */}
+      <PolicyModal
+        open={openModal() === 'district' || openModal() === 'ordinances'}
+        initial={openModal() === 'ordinances' ? 'city' : 'district'}
+        onClose={closeModal}
+      />
       <TransitModal open={openModal() === 'transit'} onClose={closeModal} />
       <DebugModal open={openModal() === 'debug'} onClose={closeModal} />
       <SettingsModal onOpenDebug={() => toggleModal('debug')} />
