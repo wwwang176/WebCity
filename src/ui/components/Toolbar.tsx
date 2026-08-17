@@ -8,7 +8,8 @@ import { PALETTE, toCSS } from '../../ColorPalette';
 
 
 interface SubTool { tool: ToolType; label: string; key: string; color: string; icon: string }
-interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[] }
+/** `tool` 是給只有一支工具的群組用的:群組本身就是那個工具，沒有子按鈕可以挑。 */
+interface ToolGroup { id: string; label: string; icon: string; color: string; items: SubTool[]; tool?: ToolType }
 
 const ZONE_GROUP: ToolGroup = {
   id: 'zone', label: 'Zones', icon: '\u{1F3D8}', color: UI_COLORS.STATUS_GOOD,
@@ -71,16 +72,27 @@ const TRANSPORT_GROUP: ToolGroup = {
   ],
 };
 
+/**
+ * 分區只有一支筆刷，所以整個群組就是那個工具 —— 沒有另外一顆 Paint 可以挑。
+ *
+ * 原本有。它跟下面那排模式按鈕都是「按了就拿起筆刷」，於是「哪一顆是亮的」沒有
+ * 一致的意思:Paint 說的是工具，Add 說的是動作，兩個同時亮著卻在回答不同的問題。
+ */
 const DISTRICT_GROUP: ToolGroup = {
   id: 'district', label: 'District', icon: '\u{1F3F3}', color: '#ab47bc',
-  items: [
-    { tool: 'district', label: 'Paint', key: '', color: '#ab47bc', icon: '\u{1F58C}' },
-  ],
+  tool: 'district',
+  items: [],
 };
 
 /**
- * 分區筆刷的三種模式。顏色跟拖曳預覽的高亮一致 —— 兩處對不起來的話，玩家會
- * 以為預覽的顏色代表別的東西。
+ * 下一次拖曳會做什麼。四個動詞，永遠剛好一個亮著。
+ *
+ * 工具列在拖曳畫布上只該回答這一個問題。「選了誰」歸地圖上的白框，「剛才發生了
+ * 什麼」歸當下的提示 —— 三件事擠在同一排就是原本那排按鈕難懂的原因。
+ *
+ * New 是模式不是動作:點了它就亮著等你拖，拖完分區成立、選取跟著成立，亮的自然
+ * 跑到 Add。顏色跟拖曳預覽一致 —— 兩處對不起來的話，玩家會以為預覽的顏色代表
+ * 別的東西。
  */
 const DISTRICT_MODES = [
   { mode: 'add' as const, label: 'Add', icon: '\uFF0B', color: '#ab47bc',
@@ -128,7 +140,9 @@ function ToolGroupComponent(props: {
   onSelectTool: (tool: ToolType) => void;
   onOpenModal?: (id: string) => void;
 }) {
-  const isChildActive = () => props.group.items.some(i => i.tool === gameSignals.currentTool());
+  const isChildActive = () =>
+    props.group.items.some(i => i.tool === gameSignals.currentTool())
+    || props.group.tool === gameSignals.currentTool();
   const isOpen = () => props.openGroup === props.group.id;
 
   return (
@@ -136,7 +150,12 @@ function ToolGroupComponent(props: {
       <button
         class="tb-group-btn"
         classList={{ active: isChildActive() }}
-        onClick={(e) => { e.stopPropagation(); props.onToggleGroup(props.group.id); }}
+        onClick={(e) => {
+          e.stopPropagation();
+          props.onToggleGroup(props.group.id);
+          // 只有一支工具的群組，展開它就等於拿起它 —— 底下沒有別的東西可以挑。
+          if (props.group.tool) props.onSelectTool(props.group.tool);
+        }}
       >
         <span class="tb-icon">{props.group.icon}</span>
         <span style={{ color: props.group.color }}>{props.group.label}</span>
@@ -174,37 +193,39 @@ function ToolGroupComponent(props: {
         )}
         {props.group.id === 'district' && (
           <>
-            {/* New 是「放掉手上那一區」，所以沒有選取時它已經做完了 —— 灰掉的 New
-                本身就在說「下一筆拖曳會開新的」，不必另外擺一格狀態顯示。 */}
+            {/* New 是四個動詞裡的第一個，不是一顆「按了會做事」的按鈕:點了它就
+                亮著等你拖，拖完分區成立、選取跟著成立，亮的自然跑到 Add。
+
+                所以它不停用 —— 沒有選取的時候它正是現在生效的那個模式。 */}
             <button
               class="tb-btn"
-              disabled={!activeDistrict()}
-              style={!activeDistrict() ? 'opacity:0.35;cursor:not-allowed' : undefined}
+              classList={{ active: !activeDistrict() }}
               onClick={(e) => { e.stopPropagation(); getGame().clearDistrictSelection(); }}
-              title={activeDistrict()
-                ? 'Let go of this district — the next rectangle you drag becomes a new one'
-                : 'Nothing selected — the next rectangle you drag already becomes a new district'}
+              title="The next rectangle you drag becomes a new district"
             >
               <span class="tb-icon">{'\u2795'}</span>
               <span style={{ color: '#ab47bc' }}>New</span>
             </button>
-            <div class="tb-sep-v" />
-            {/* 筆刷模式。取代與扣除是修邊界用的 —— 少了它們，畫錯一次只能
-                重開一局，因為分區沒有任何擦除的辦法。
+            {/* 其餘三個動詞改的都是「選取中的那一區」，沒有選取時無事可做。停用
+                而不是讓它們能按 —— 按了什麼都不會發生，比按不下去更難懂。
 
-                它們改的是「現有的那一區」，所以手上沒有分區時要停用 —— 能按卻
-                什麼都不會發生，比按不下去更難懂。 */}
+                取代與扣除是修邊界用的:少了它們，畫錯一次只能重開一局。 */}
             <For each={DISTRICT_MODES}>
               {(m) => {
-                const off = () => m.mode !== 'add' && !activeDistrict();
+                const off = () => !activeDistrict();
                 return (
                   <button
                     class="tb-btn"
-                    classList={{ active: gameSignals.districtPaintMode() === m.mode }}
+                    classList={{ active: !off() && gameSignals.districtPaintMode() === m.mode }}
                     disabled={off()}
                     style={off() ? 'opacity:0.35;cursor:not-allowed' : undefined}
-                    onClick={(e) => { e.stopPropagation(); getGame().setDistrictPaintMode(m.mode); }}
-                    title={off() ? 'Pick a district first — click one on the map, or press New' : m.hint}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // 挑一個動詞就等於拿起筆刷 —— 這一排沒有別的東西是「工具」。
+                      getGame().setTool('district');
+                      getGame().setDistrictPaintMode(m.mode);
+                    }}
+                    title={off() ? 'Click a district on the map first' : m.hint}
                   >
                     <span class="tb-icon">{m.icon}</span>
                     <span style={{ color: m.color }}>{m.label}</span>
