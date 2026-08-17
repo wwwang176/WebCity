@@ -29,6 +29,7 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.SURVEILLANCE_NETWORK]: { name: 'Surveillance Network' },
   [PolicyType.PAY_AS_YOU_THROW]: { name: 'Pay As You Throw' },
   [PolicyType.WATER_CONSERVATION]: { name: 'Water Conservation' },
+  [PolicyType.SEWAGE_STANDARDS]: { name: 'Sewage Standards' },
 };
 
 /**
@@ -83,6 +84,8 @@ export interface PolicyEffect {
   powerDemand?: number;
   /** 全城逐格用水需求乘數。 */
   waterDemand?: number;
+  /** 全城逐格汙水排放乘數。 */
+  sewageLoad?: number;
 }
 
 /**
@@ -166,6 +169,12 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
     { waterDemand: 0.92, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.99, [ZoneType.COMMERCIAL_HIGH]: 0.99, [ZoneType.INDUSTRIAL]: 0.98 } },
     { waterDemand: 0.82, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.97, [ZoneType.COMMERCIAL_HIGH]: 0.97, [ZoneType.INDUSTRIAL]: 0.94 } },
     { waterDemand: 0.70, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.94, [ZoneType.COMMERCIAL_HIGH]: 0.94, [ZoneType.INDUSTRIAL]: 0.88 } },
+  ],
+  // 排放標準壓在製程上，所以代價只落在工業 —— 家戶端換的是水龍頭，工廠端換的
+  // 是整條處理線。
+  [PolicyType.SEWAGE_STANDARDS]: [
+    { sewageLoad: 0.85, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.96 } },
+    { sewageLoad: 0.70, revenueByZone: { [ZoneType.INDUSTRIAL]: 0.90 } },
   ],
 };
 

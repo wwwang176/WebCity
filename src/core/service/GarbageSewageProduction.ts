@@ -52,6 +52,12 @@ export function produceGarbageAndSewage(
    * district policy. Defaults to 1 so callers with no districts are unaffected.
    */
   getGarbageMultiplier: OccupancyLookup = () => 1,
+  /**
+   * 這一格排放的汙水乘數 —— 汙水處理標準。預設 1，沒有條例的呼叫端不受影響。
+   *
+   * 跟垃圾一樣是逐格的:排放發生在建築上，全城條例只是對每一格都給同一個數字。
+   */
+  getSewageMultiplier: OccupancyLookup = () => 1,
 ): { sewage: number } {
   let sewage = 0;
   sewageService.clearSewageCells();
@@ -84,7 +90,7 @@ export function produceGarbageAndSewage(
     // Sewage: uses building capacity (pipe sizing based on spec)
     const waterDemand = calculateZoneDemand(WATER_CONSUMPTION, zt, bt.residents, bt.workers);
     const sewageRate = SEWAGE_ZONE_RATE[cell.zoneType] ?? 0;
-    const sewageAmount = waterDemand * sewageRate;
+    const sewageAmount = waterDemand * sewageRate * getSewageMultiplier(x, y);
     if (sewageAmount > 0) {
       sewageService.reportSewage(x, y, sewageAmount);
     }

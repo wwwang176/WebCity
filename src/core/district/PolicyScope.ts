@@ -37,6 +37,7 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   [PolicyType.SURVEILLANCE_NETWORK]: 'city',
   [PolicyType.PAY_AS_YOU_THROW]: 'city',
   [PolicyType.WATER_CONSERVATION]: 'city',
+  [PolicyType.SEWAGE_STANDARDS]: 'city',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */

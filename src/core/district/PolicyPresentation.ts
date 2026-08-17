@@ -91,6 +91,10 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
     'Water demand \u221218%  \u00B7  Commercial revenue \u22123%, industrial \u22126%',
     'Water demand \u221230%  \u00B7  Commercial revenue \u22126%, industrial \u221212%',
   ],
+  [PolicyType.SEWAGE_STANDARDS]: [
+    'Sewage \u221215%  \u00B7  Industrial revenue \u22124%',
+    'Sewage \u221230%  \u00B7  Industrial revenue \u221210%',
+  ],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */

@@ -121,6 +121,7 @@ export function tickAllCivicServices(state: GameState): void {
     // 那正是它「全城」的意思。
     (x, y) => state.policies.getGarbageMultiplier(state.districts.getDistrictAt(x, y)?.id ?? null)
       * state.ordinances.getGarbageMultiplier(),
+    () => state.ordinances.getSewageLoadMultiplier(),
   );
   state.garbage.tick();
   state.sewage.tick(production.sewage);

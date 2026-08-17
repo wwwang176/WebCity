@@ -67,6 +67,11 @@ export class CityOrdinances {
     return this.effect(e => e.waterDemand, 1, (a, b) => a * b);
   }
 
+  /** 全城條例對每一格汙水排放量的乘數。 */
+  getSewageLoadMultiplier(): number {
+    return this.effect(e => e.sewageLoad, 1, (a, b) => a * b);
+  }
+
   /** 全城條例加到犯罪率上的量。正值是代價。 */
   getCrimeBonus(): number {
     return this.effect(e => e.crime, 0, (a, b) => a + b);
