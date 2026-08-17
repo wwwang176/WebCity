@@ -106,6 +106,15 @@ const DISTRICT_MODES = [
 const ALL_GROUPS = [ZONE_GROUP, ROAD_GROUP, CIVIC_GROUP, UTILITY_GROUP, TRANSPORT_GROUP, DISTRICT_GROUP];
 
 /**
+ * 手上正拿著分區筆刷嗎。
+ *
+ * 那一排動詞回答的是「我下一次拖曳會做什麼」，沒拿著筆刷時答案是「以上皆非」——
+ * 亮著的按鈕就成了假話。工具可以在子選單還開著的時候被換掉:關掉分區圖層會把筆刷
+ * 一起放下（`Game.leaveDistrictEditing`），而鍵盤切圖層不經過工具列的關閉處理。
+ */
+const holdingDistrictBrush = () => gameSignals.currentTool() === 'district';
+
+/**
  * 筆刷現在畫進哪一區。分區被合併掉之後 id 還在，但那一區已經不存在了。
  *
  * 工具列不顯示它 —— 地圖上的白框與名稱已經說了同一件事，而且說在玩家正在看的地方。
@@ -199,7 +208,7 @@ function ToolGroupComponent(props: {
                 所以它不停用 —— 沒有選取的時候它正是現在生效的那個模式。 */}
             <button
               class="tb-btn"
-              classList={{ active: !activeDistrict() }}
+              classList={{ active: holdingDistrictBrush() && !activeDistrict() }}
               onClick={(e) => { e.stopPropagation(); getGame().clearDistrictSelection(); }}
               title="The next rectangle you drag becomes a new district"
             >
@@ -212,7 +221,7 @@ function ToolGroupComponent(props: {
                 取代與扣除是修邊界用的:少了它們，畫錯一次只能重開一局。 */}
             <For each={DISTRICT_MODES}>
               {(m) => {
-                const off = () => !activeDistrict();
+                const off = () => !holdingDistrictBrush() || !activeDistrict();
                 return (
                   <button
                     class="tb-btn"
