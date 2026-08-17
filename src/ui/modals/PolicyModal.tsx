@@ -148,6 +148,25 @@ export function PolicyModal(props: {
     setVersion(v => v + 1);
   };
 
+  /**
+   * 刪掉整個分區。
+   *
+   * 把格子扣光不會讓分區消失（它身上的條例設定不該因為擦掉一次就消失），所以要有
+   * 一條明確的路徑，不然側邊欄會慢慢積滿碰不到的名字。
+   */
+  const removeDistrict = () => {
+    const d = selectedDistrict();
+    if (!d) return;
+    const game = getGame();
+    game.getState().districts.deleteDistrict(d.id);
+    // 刪掉的可能正是筆刷手上那一區 —— 不放掉的話工具列會停在一個不存在的名字上。
+    if (game.activeDistrictId === d.id) game.setActiveDistrict(null);
+    game.notifyDistrictPolicyChanged();
+    game.refreshOverlay();
+    setPane({ kind: 'city' });
+    setVersion(v => v + 1);
+  };
+
   const paneTitle = () => isCity() ? 'City Ordinances' : (selectedDistrict()?.name ?? '');
   const paneSubtitle = () => isCity()
     ? 'Billed per resident — the bill grows with the city.'
@@ -244,6 +263,15 @@ export function PolicyModal(props: {
                   />
                 )}
               </For>
+              {/* 刪除放在最右邊，離色票有一段距離 —— 它旁邊全是可以隨便按的東西，
+                  而它是這個面板裡唯一按下去會不見的。 */}
+              <button
+                onClick={removeDistrict}
+                title="Delete this district and its policies"
+                style="margin-left:auto;background:transparent;border:1px solid #5d3a3a;color:#e57373;border-radius:4px;font-size:11px;padding:2px 8px;cursor:pointer"
+              >
+                Delete district
+              </button>
             </div>
           </Show>
 

@@ -3,7 +3,7 @@ import { policyCost, POLICY_BILLING } from '../PolicyBilling';
 import { POLICY_ZONE_RESTRICTIONS, isPolicyImplemented, maxLevel } from '../PolicyManager';
 import { calculateDistrictPolicyCost } from '../../economy/ExpenseCalculator';
 import { PolicyType } from '../types';
-import { POLICY_SCOPE } from '../PolicyScope';
+import { POLICY_SCOPE, isDistrictScoped } from '../PolicyScope';
 
 /**
  * 固定費用在大城市等於免費 —— 早期是限制，後期是無感。改成跟著它服務的規模走，
@@ -115,6 +115,24 @@ describe('預算真的照這張表收錢', () => {
     // 分區格數是計費基數 —— 沒有格子就沒有東西要服務。
     const empty = [{ cells: { size: 0 }, policies: districts[0]!.policies }];
     expect(calculateDistrictPolicyCost(empty, 10_000)).toBe(0);
+  });
+
+  it('should charge nothing for any district policy once the cells are gone', () => {
+    // 上面那條只驗了一條條例。把一區的格子全部扣光是玩家做得到的事，而那個分區
+    // 會留在清單上（它身上的條例設定不該因為擦掉一次就消失）—— 留著卻繼續收費
+    // 的話，帳單上會出現一筆對應不到地圖上任何東西的支出。
+    //
+    // 這是對**全部**分區條例的要求:哪天有人給某一條配上 flat 或 population 的
+    // 計費基準，空分區就會開始無聲地收錢。
+    const districtScoped = Object.values(PolicyType).filter(isDistrictScoped);
+    expect(districtScoped.length, '一條分區條例都沒有，這條測試在空轉')
+      .toBeGreaterThan(5);
+    for (const type of districtScoped) {
+      for (let level = 1; level <= maxLevel(type); level++) {
+        expect(policyCost(type, level, { population: 10_000, districtCells: 0 }),
+          `${type} Lv${level} 在沒有格子的分區上還在收費`).toBe(0);
+      }
+    }
   });
 
   it('should charge nothing for a policy that is off', () => {

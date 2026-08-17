@@ -101,6 +101,27 @@ export class DistrictManager {
     district.name = name;
   }
 
+  /**
+   * 整個分區刪掉，連同它身上的條例。
+   *
+   * 筆刷把一區的格子扣光時分區會留下來 —— 它身上的條例設定不該因為擦掉一次就消失
+   * （見 `DistrictPaint` 的測試）。但那代表清單上會慢慢積滿沒有格子、也碰不到的
+   * 名字，所以要有一條明確的刪除路徑。
+   *
+   * 逐格索引跟著清。這件事**沒有測試守得到** —— `getDistrictAt` 有 `?? null`、
+   * `addCellToDistrict` 對舊主人用 `?.`，兩邊都吃得下指向已刪分區的索引，所以清不清
+   * 在行為上看不出差別，只差在那些鍵會一直留著。留著它是為了維持「逐格索引是純衍生
+   * 狀態」這個不變式（`fromJSON` 就是照這個前提整個重建的），而不是下游靠著它。
+   */
+  deleteDistrict(id: string): void {
+    const district = this.districts.get(id);
+    if (!district) return;
+    for (const key of district.cells) {
+      if (this.cellToDistrict.get(key) === id) this.cellToDistrict.delete(key);
+    }
+    this.districts.delete(id);
+  }
+
   mergeDistricts(id1: string, id2: string): District {
     const d1 = this.districts.get(id1);
     const d2 = this.districts.get(id2);

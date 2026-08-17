@@ -390,3 +390,73 @@ describe('色票與名字的存檔往返', () => {
     expect(dm.getDistrict(d.id)!.colorIndex).toBeUndefined();
   });
 });
+
+describe('刪掉一個分區', () => {
+  /**
+   * 玩家可以把一區的格子扣光。那個分區會留下來（它身上的條例設定不該因為擦掉一次
+   * 就消失），但留下來就得有辦法清掉 —— 不然條例面板的側邊欄會慢慢積滿再也碰不到
+   * 的名字。
+   */
+  it('should take the district off the list', () => {
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    dm.createDistrict('B');
+    dm.deleteDistrict(a.id);
+    expect(dm.getDistrict(a.id)).toBeUndefined();
+    expect(dm.getAllDistricts().map(d => d.name), 'B 也被掃到了').toEqual(['B']);
+  });
+
+  it('should hand its cells back to nobody', () => {
+    // 刪掉一區之後，它的格子要變回無主的 —— 筆刷的點選與分區條例的逐格查詢走的
+    // 都是 `getDistrictAt`。
+    //
+    // 注意這條**守不到** `deleteDistrict` 裡清索引的那個迴圈:`getDistrictAt` 自己
+    // 有 `?? null`，索引留著髒資料它也照樣回 null。那個迴圈是維持「逐格索引是純
+    // 衍生狀態」這個不變式，不是這裡的行為靠著它。
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    dm.addCellToDistrict(a.id, 3, 4);
+    dm.deleteDistrict(a.id);
+    expect(dm.getDistrictAt(3, 4), '格子還指著被刪掉的分區').toBeNull();
+  });
+
+  it('should let another district claim those cells afterwards', () => {
+    // 上一條只驗了查詢，這條驗寫入。同樣守不到清索引的迴圈 ——
+    // `addCellToDistrict` 對舊主人用的是 `?.`。
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    dm.addCellToDistrict(a.id, 3, 4);
+    dm.deleteDistrict(a.id);
+    const b = dm.createDistrict('B');
+    dm.addCellToDistrict(b.id, 3, 4);
+    expect(dm.getDistrictAt(3, 4)?.id).toBe(b.id);
+  });
+
+  it('should leave other districts alone', () => {
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    const b = dm.createDistrict('B');
+    dm.addCellToDistrict(a.id, 0, 0);
+    dm.addCellToDistrict(b.id, 1, 1);
+    dm.deleteDistrict(a.id);
+    expect(dm.getDistrictAt(1, 1)?.id, 'B 的格子跟著被清掉了').toBe(b.id);
+  });
+
+  it('should do nothing for an id that is not there', () => {
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    dm.addCellToDistrict(a.id, 0, 0);
+    expect(() => dm.deleteDistrict('district_999')).not.toThrow();
+    expect(dm.getAllDistricts().length).toBe(1);
+    expect(dm.getDistrictAt(0, 0)?.id).toBe(a.id);
+  });
+
+  it('should not come back after a save round-trip', () => {
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    dm.createDistrict('B');
+    dm.deleteDistrict(a.id);
+    const back = DistrictManager.fromJSON(dm.toJSON());
+    expect(back.getAllDistricts().map(d => d.name)).toEqual(['B']);
+  });
+});
