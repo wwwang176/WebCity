@@ -70,13 +70,14 @@ function cityAsSeenByNewcomers(crime: number): CityAttractiveness {
 
 describe('條例的犯罪效果走到外地人眼前', () => {
   it('should show newcomers the crime rate the ordinances actually produce', () => {
-    // 不用等值比對:基礎犯罪是人口 × 0.02，而犯罪本來就會影響人口，所以兩次
-    // 執行的基礎值會差個零點幾。條例那一項是 40，容許 ±1 仍然精確得多。
+    // 不比兩次執行的差:基礎犯罪是人口 × 0.02，而犯罪本來就會影響人口，兩次跑的
+    // 基礎值不會一樣。改成各自釘一個區間 —— 條例那一項固定是 40，基礎值在這座
+    // 二十來人、沒有警察局的城市裡怎麼漂都不到 3。
     const plain = cityAsSeenByNewcomers(0);
     const scary = cityAsSeenByNewcomers(40);
-    const delta = scary.crimeRate - plain.crimeRate;
-    expect(delta, '外地人看到的犯罪率沒有反映條例').toBeGreaterThan(39);
-    expect(delta, '外地人看到的犯罪率被多加了東西').toBeLessThan(41);
+    expect(plain.crimeRate, '沒開條例，基礎犯罪卻不小 —— 這條測試的區間站不住').toBeLessThan(3);
+    expect(scary.crimeRate, '外地人看到的犯罪率沒有反映條例').toBeGreaterThanOrEqual(40);
+    expect(scary.crimeRate, '外地人看到的犯罪率被多加了東西').toBeLessThan(43);
   });
 
   it('should make the city less attractive, not just less happy', () => {

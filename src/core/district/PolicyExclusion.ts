@@ -14,8 +14,24 @@ const EXCLUSIVE_GROUPS: readonly (readonly PolicyType[])[] = [
   [PolicyType.LEGALIZE_GAMBLING, PolicyType.NIGHT_ECONOMY, PolicyType.CURFEW],
 ];
 
+/** 條例 → 它屬於第幾組。不屬於任何組的就不在這張表裡。 */
+export const EXCLUSIVE_GROUP_OF: ReadonlyMap<PolicyType, number> = new Map(
+  EXCLUSIVE_GROUPS.flatMap((g, i) => g.map(t => [t, i] as const)),
+);
+
 /** 同組的其他條例。不屬於任何組的話是空陣列。 */
 export function conflictsWith(type: PolicyType): readonly PolicyType[] {
   const group = EXCLUSIVE_GROUPS.find(g => g.includes(type));
   return group ? group.filter(t => t !== type) : [];
+}
+
+/**
+ * 這條條例在它那一組裡的位置。不屬於任何組的話是 -1。
+ *
+ * 存檔要靠它決定同組衝突時留哪一條。用存檔陣列的順序不行 —— 同一個手改過的檔案
+ * 換個排列就讀出不同結果，玩家沒有辦法知道發生了什麼事。
+ */
+export function exclusiveGroupRank(type: PolicyType): number {
+  const group = EXCLUSIVE_GROUPS.find(g => g.includes(type));
+  return group ? group.indexOf(type) : -1;
 }

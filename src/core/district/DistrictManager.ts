@@ -3,7 +3,7 @@ import { recoverNextId } from '../utils/recoverNextId';
 import { District, Policy, PolicyType, Specialization } from './types';
 import { clampLevel, levelForLegacyActive, maxLevel } from './PolicyManager';
 import { isDistrictScoped } from './PolicyScope';
-import { conflictsWith } from './PolicyExclusion';
+import { exclusiveGroupRank, EXCLUSIVE_GROUP_OF } from './PolicyExclusion';
 import type { TaxRates } from '../economy/Tax';
 
 /**
@@ -178,14 +178,32 @@ export class DistrictManager {
         })),
         specialization: sd.specialization ?? Specialization.NONE,
       };
+      // 同一個 PolicyType 只能有一筆。兩筆不在彼此的互斥組裡，所以下面的檢查會
+      // 放行 —— 而 `PolicyManager.effect` 是逐筆疊乘的，setter 與 UI 卻只操作
+      // `find()` 找到的第一筆:畫面上關掉了，效果還在。
+      const byType = new Map<PolicyType, Policy>();
+      for (const p of district.policies) {
+        const prev = byType.get(p.type);
+        if (!prev || p.level > prev.level) byType.set(p.type, p);
+      }
+      district.policies = [...byType.values()];
+
       // 互斥組在存檔這條路上也要重跑。`setPolicyLevel` 擋得住正常操作，但手改一次
       // 存檔就能讓賭場與宵禁同時生效 —— 那是效果表算不出來的組合。
-      // 保留宣告順序上的第一條，其餘關掉:規則要是確定的，不能看存檔的排列順序。
-      const seenGroups = new Set<PolicyType>();
+      //
+      // 留哪一條由 `exclusiveGroupRank`（組內的宣告順序）決定，不是存檔的排列順序:
+      // 同一個檔案換個排列就讀出不同結果的話，玩家沒有辦法知道發生了什麼事。
+      const winners = new Map<number, Policy>();
       for (const p of district.policies) {
         if (p.level === 0) continue;
-        if (seenGroups.has(p.type)) { p.level = 0; continue; }
-        for (const other of conflictsWith(p.type)) seenGroups.add(other);
+        const rank = exclusiveGroupRank(p.type);
+        if (rank < 0) continue;
+        const groupKey = EXCLUSIVE_GROUP_OF.get(p.type)!;
+        const held = winners.get(groupKey);
+        if (!held) { winners.set(groupKey, p); continue; }
+        const loser = exclusiveGroupRank(held.type) <= rank ? p : held;
+        if (loser === held) winners.set(groupKey, p);
+        loser.level = 0;
       }
       mgr.districts.set(district.id, district);
       // Rebuild the reverse index rather than persisting it — it is pure derived state.

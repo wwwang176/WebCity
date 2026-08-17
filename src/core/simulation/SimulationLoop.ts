@@ -984,7 +984,19 @@ export class SimulationLoop {
    * 是 `value -= crimeRate * CRIME_PENALTY`），疊越多層賺越多。
    */
   private getCityCrime(): number {
-    return Math.max(0, this.getAvgCrime() + this.state.ordinances.getCrimeBonus());
+    return Math.max(0, this.getRawCityCrime());
+  }
+
+  /**
+   * 全城犯罪率，還沒夾值。
+   *
+   * 逐格的消費端要用這個 —— 夾值只能做一次，而且要在全城與分區都加完之後。先夾
+   * 全城那一半的話，基礎 1 加上監視器網路的 −100 會先變成 0，賭場的 +120 再加
+   * 上去就是 120;全部加完再夾是 21。同一格在地價那條線看到 21、在棄置那條線
+   * 看到 120，兩套系統對同一件事有兩個答案。
+   */
+  private getRawCityCrime(): number {
+    return this.getAvgCrime() + this.state.ordinances.getCrimeBonus();
   }
 
   private countVacantHomes(): number {
@@ -1253,7 +1265,7 @@ export class SimulationLoop {
       isWatered: (x, y) => this.state.water.isSupplied(x, y),
       getFreightSupplyRatio: (x, y) => this.state.freight.getSupplyStatus(x, y).ratio,
       getFreightSurplusRatio: () => this.state.freight.getSurplusRatio(),
-      baseCrime: this.getCityCrime(),
+      baseCrime: this.getRawCityCrime(),
       businessTax: this.state.taxRates.business ?? DEFAULT_TAX_RATE,
       residentialTax: this.state.taxRates.residential ?? DEFAULT_TAX_RATE,
       stressMap: this.abandonmentStress,

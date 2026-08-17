@@ -96,3 +96,30 @@ describe('存檔也要重跑互斥', () => {
     expect(kept.length, '不同組的政策被一起丟掉了').toBe(2);
   });
 });
+
+describe('存檔的互斥結果不能看排列順序', () => {
+  const kept = (order: PolicyType[]) => {
+    const d = saveWith(order.map(t => ({ type: t, level: 1 })));
+    return d.getDistrict('district_1')!.policies.filter(p => p.level > 0).map(p => p.type);
+  };
+
+  it('should keep the same one whichever way round the save lists them', () => {
+    // 存檔是可以手改的，順序不該決定哪一條活下來 —— 同一個檔案在不同版本的遊戲
+    // 讀出不同結果，玩家沒有辦法知道發生了什麼事。
+    expect(kept([PolicyType.LEGALIZE_GAMBLING, PolicyType.CURFEW]))
+      .toEqual(kept([PolicyType.CURFEW, PolicyType.LEGALIZE_GAMBLING]));
+  });
+
+  it('should collapse two entries of the same policy into one', () => {
+    // 同一個 PolicyType 兩筆不在彼此的互斥組裡，所以互斥檢查放行 —— 而 effect()
+    // 是逐筆疊乘的，setter 與 UI 卻只操作 find() 找到的第一筆。畫面上關掉了，
+    // 效果還在。
+    const d = saveWith([
+      { type: PolicyType.ENCOURAGE_RECYCLING, level: 3 },
+      { type: PolicyType.ENCOURAGE_RECYCLING, level: 2 },
+    ]);
+    const rows = d.getDistrict('district_1')!.policies
+      .filter(p => p.type === PolicyType.ENCOURAGE_RECYCLING);
+    expect(rows.length, '同一條政策在存檔裡有兩筆，讀進來還是兩筆').toBe(1);
+  });
+});

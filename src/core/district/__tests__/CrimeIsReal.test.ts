@@ -152,6 +152,19 @@ describe('犯罪走到棄置壓力', () => {
       '全城條例把犯罪飆到 200 也沒有房子撐不住').toBeGreaterThan(0);
   });
 
+  it('should add the two scopes up before deciding the crime is gone', () => {
+    // 夾值只能做一次，而且要在全城與分區都加完之後。
+    //
+    // 先夾全城那一半的話:基礎 1 + 全城 −100 會先變成 0，分區的 +120 再加上去就是
+    // 120 —— 遠超過棄置門檻 30。全部加完再夾是 max(0, 1 − 100 + 120) = 21，房子
+    // 撐得住。同一格在地價那條線看到 21、在棄置這條線看到 120，兩套系統對同一件
+    // 事有兩個答案。
+    const n = abandonedAfter((state, districtId, run) => {
+      withCityCrime(state, -100, () => withDistrictCrime(state, districtId, 120, run));
+    });
+    expect(n, '全城的減量被提早夾成 0，分區的加量才會把房子壓垮').toBe(0);
+  });
+
   it('should push buildings towards abandonment inside the district that asked for it', () => {
     expect(abandonedAfter((state, id, run) => withDistrictCrime(state, id, 200, run)),
       '分區條例把犯罪飆到 200 也沒有房子撐不住').toBeGreaterThan(0);
