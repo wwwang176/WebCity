@@ -9,6 +9,7 @@ import { CommuteCache } from '../../traffic/CommuteCache';
 import { ZoneType } from '../../grid/types';
 import type { LaneEdge } from '../../traffic/LaneGraph';
 import { createSyncFakeWorker } from '../../traffic/__tests__/SyncFakeWorker';
+import { useSeededRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
  * 載入之後，模擬讀到的城市要跟載入之前一樣大。
@@ -123,6 +124,11 @@ function totalRefCount(loop: SimulationLoop): number {
 }
 
 describe('warmup 之後的快取覆蓋率', () => {
+  // 覆蓋率是在固定的 tick 預算下量的，而那個預算會被建築成長、解僱、車輛抖動的
+  // 骰子推來推去 —— 24 個種子跑下來有 2 個會讓「接得上路網的人」少算到一個。
+  // 預算收緊是這幾條測試的訊號來源，不能放寬;能拿掉的是抽樣的干擾。
+  useSeededRandom();
+
   it('should leave no commuting citizen unknown to the cache', async () => {
     const state = makeCity(120);
     const loop = makeLoop(state);
@@ -217,9 +223,14 @@ describe('warmup 之後的快取覆蓋率', () => {
     const loop = makeLoop(state);
     loop.setPathfindingWorker(createSyncFakeWorker());
     await loop.warmup(0);   // 一台車都不生成，覆蓋率只能靠背景補完
-    // 12 個 tick：8 組起迄、16 條路線，一個 tick 的名額就排得完好幾條。再跑下去
-    // 這座沒有服務的小城會開始解僱市民，量到的就不是覆蓋率了。
-    for (let t = 0; t < 12; t++) loop.tick();
+    // 4 個 tick：8 組起迄、16 條路線，健康的話兩個 tick 就排完了（實測每一顆種子
+    // 都是 2）。留一倍餘裕，而白試也扣名額的話速度會掉到每個 tick 兩條，16 條要
+    // 八個 tick —— 那個差距正是這條測試要抓的。
+    //
+    // 原本量的是第 12 個 tick，那超過了。這座沒有服務的小城從第 5 個 tick 左右
+    // 開始解僱市民，被解僱的人快取條目就沒了 —— 量到的是解僱不是覆蓋率，而且
+    // 24 顆種子裡有 2 顆會剛好少一個人（23／24），長期都被當成偶發在忍。
+    for (let t = 0; t < 4; t++) loop.tick();
 
     const covered = normal.filter(id => loop.commuteCache.get(id)?.status === 'ready').length;
     expect(covered, `接得上路網的人被前面接不上的人卡住（${covered}／${normal.length}）`)

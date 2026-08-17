@@ -6,6 +6,7 @@ import { createGameState, type GameState } from '../../simulation/GameState';
 import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { ZoneType } from '../../grid/types';
 import { toPosKey } from '../../grid/GridHelpers';
+import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
  * 全城條例原本只碰得到 powerDemand 與 revenue —— crime / landValue / garbage 的
@@ -26,6 +27,10 @@ function withCityEffect(tiers: PolicyEffect[], body: (o: CityOrdinances) => void
     (POLICY_EFFECTS as Record<string, unknown>)[type] = saved;
   }
 }
+
+// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
+// 車輛抖動都在擲骰子。建城時另外重設序列，讓 A/B 從同一點出發。
+useSeededRandom();
 
 describe('全城條例的三個新槓桿', () => {
   it('should expose a city crime bonus', () => {
@@ -54,6 +59,9 @@ const SHOP = 7;
 const WORKERS_PER_SHOP = 100;
 
 function cityWithShops() {
+  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
+  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  reseedRandom();
   const state = createGameState(30, 30);
   const loop = new SimulationLoop(state);
   for (let x = 5; x < 15; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });

@@ -6,6 +6,8 @@ import { POLICY_EFFECTS, type PolicyEffect } from '../PolicyManager';
 import { PolicyType } from '../types';
 import { ZoneType } from '../../grid/types';
 import { toPosKey } from '../../grid/GridHelpers';
+import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
+import { HAPPINESS } from '../../citizen/Happiness';
 
 /**
  * 條例上寫著 Crime +12，玩家在犯罪圖層、幸福度、棄置壓力上卻一點也看不到 ——
@@ -14,12 +16,19 @@ import { toPosKey } from '../../grid/GridHelpers';
  * 這裡量的是犯罪真正的四個出口，不是地價。
  */
 
+// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
+// 車輛抖動都在擲骰子。`city()` 另外在每次建城時重設序列，讓 A/B 從同一點出發。
+useSeededRandom();
+
 /** Small House（RESIDENTIAL_LOW）。 */
 const HOUSE = 1;
 /** Small Shop（COMMERCIAL_LOW）。 */
 const SHOP = 7;
 
 function city(): { state: GameState; loop: SimulationLoop } {
+  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
+  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  reseedRandom();
   const state = createGameState(30, 30);
   for (let x = 5; x < 20; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
   for (let x = 6; x < 19; x++) {
@@ -119,10 +128,13 @@ describe('犯罪走到幸福度', () => {
     const plain = avgHappinessWith(0);
     const withCrime = avgHappinessWith(60);
     expect(plain, '幸福度已經是 0，再低也看不出來').toBeGreaterThan(0);
-    // 要求一個明確的差距，不是「比較小」就好:通勤時間帶 ±0.8 的隨機抖動，
-    // 兩個平均值本來就不會相等，只寫 toBeLessThan 的話沒有接線也有一半機率會過。
-    // 犯罪的幸福度懲罰上限是 −10，遠大於那個抖動。
-    expect(plain - withCrime, '犯罪飆高，居民卻一樣開心').toBeGreaterThan(5);
+    // 綁在常數上而不是「比較小」:上了種子之後兩次執行只差條例這一項，差距就是
+    // 犯罪懲罰本身。犯罪 60 超過最高門檻，拿到的是最重的那一級。
+    //
+    // 只寫 toBeLessThan 的話沒有接線也有一半機率會過 —— 那正是這條測試上種子之前
+    // 的樣子。
+    const worst = HAPPINESS.CRIME_MODIFIERS[0]!.modifier;
+    expect(plain - withCrime, '犯罪飆高，居民卻一樣開心').toBeCloseTo(-worst, 6);
   });
 });
 

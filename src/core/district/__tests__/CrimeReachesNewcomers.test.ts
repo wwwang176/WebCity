@@ -8,6 +8,7 @@ import { POLICY_EFFECTS, type PolicyEffect } from '../PolicyManager';
 import { PolicyType } from '../types';
 import { ZoneType } from '../../grid/types';
 import { toPosKey } from '../../grid/GridHelpers';
+import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
  * 條例的犯罪效果要走到「外地人要不要搬進來」這條線。
@@ -35,6 +36,9 @@ const HOUSE = 1;
 const SHOP = 7;
 
 function city(): { state: GameState; loop: SimulationLoop } {
+  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
+  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  reseedRandom();
   const state = createGameState(30, 30);
   for (let x = 5; x < 25; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
   for (let x = 6; x < 24; x++) {
@@ -67,6 +71,10 @@ function cityAsSeenByNewcomers(crime: number): CityAttractiveness {
   if (!last) throw new Error('migrationTick 一次都沒有被呼叫，這條測試等於空轉');
   return last;
 }
+
+// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
+// 車輛抖動都在擲骰子。建城時另外重設序列，讓 A/B 從同一點出發。
+useSeededRandom();
 
 describe('條例的犯罪效果走到外地人眼前', () => {
   it('should show newcomers the crime rate the ordinances actually produce', () => {
@@ -107,6 +115,8 @@ describe('條例的犯罪效果走到外地人眼前', () => {
     const a = cityAsSeenByNewcomers(0);
     const b = cityAsSeenByNewcomers(0);
     expect(a.crimeRate, '沒開條例，外地人看到的犯罪率卻是個大數字').toBeLessThan(5);
-    expect(Math.abs(a.crimeRate - b.crimeRate), '同樣的城市兩次差很多').toBeLessThan(1);
+    // 上了種子而且每次建城都重設序列，所以兩次執行是逐字相同的。差一點點就表示
+    // 有東西在 A/B 之間漏了狀態。
+    expect(a.crimeRate, '同樣的城市兩次跑出不一樣的犯罪率').toBe(b.crimeRate);
   });
 });

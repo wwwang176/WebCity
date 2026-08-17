@@ -4,6 +4,7 @@ import { SimulationLoop } from '../../simulation/SimulationLoop';
 import { PolicyType } from '../types';
 import { POLICY_SCOPE } from '../PolicyScope';
 import { ZoneType } from '../../grid/types';
+import { useSeededRandom, reseedRandom } from '../../__tests__/helpers/seededRandom';
 
 /**
  * 工業排放管制。
@@ -20,6 +21,9 @@ import { ZoneType } from '../../grid/types';
 const FACTORY = 13;
 
 function industrialCity(): { state: GameState; loop: SimulationLoop; districtId: string } {
+  // A/B 的兩座城市要從同一個亂數狀態出發。不重設的話第二次接續第一次留下的
+  // 序列，兩座城市會自己走岔，量到的是那個岔而不是條例。
+  reseedRandom();
   const state = createGameState(40, 40);
   for (let x = 2; x < 38; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
   // 兩座工廠，離得夠遠。擠成一排的話擴散會疊到上限（實測 195 封頂），開不開條例
@@ -47,6 +51,10 @@ function pollutionAt(level: number) {
     outside: { ground: og, noise: onoise },
   };
 }
+
+// 整個檔案都上種子:每一條測試都在比較兩座城市，而 tick 裡的建築成長、解僱、
+// 車輛抖動都在擲骰子。建城時另外重設序列，讓 A/B 從同一點出發。
+useSeededRandom();
 
 describe('工業排放管制', () => {
   it('should clean up the ground inside the district that asked for it', () => {
