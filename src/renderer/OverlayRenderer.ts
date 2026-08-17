@@ -82,6 +82,7 @@ export class OverlayRenderer {
 
     if (type === OverlayType.NONE) return;
 
+    // 尺寸由 `updateLabelScale` 給 —— 建完先套一次，不然第一幀之前是零大小。
     if (labels?.length) this.buildLabels(scene, labels);
 
     const w = grid.width;
@@ -253,6 +254,23 @@ export class OverlayRenderer {
     }
   }
 
+  /**
+   * 讓標籤在螢幕上維持固定大小。
+   *
+   * 這是正交相機，縮放做在可視範圍上（`camera.top - camera.bottom`），所以世界裡
+   * 固定大小的東西在螢幕上會隨著拉近而變大。分區名稱不該這樣 —— 它是地圖上的
+   * 標示，不是場景裡的物件。世界尺度因此要跟可視範圍等比。
+   */
+  updateLabelScale(camera: THREE.OrthographicCamera): void {
+    if (this.labelSprites.length === 0) return;
+    const frustum = camera.top - camera.bottom;
+    const height = LABEL_WORLD_HEIGHT * (frustum / LABEL_REFERENCE_FRUSTUM);
+    for (const sprite of this.labelSprites) {
+      const aspect = (sprite.userData.aspect as number) || 1;
+      sprite.scale.set(height * aspect, height, 1);
+    }
+  }
+
   dispose(scene: THREE.Scene): void {
     for (const s of this.labelSprites) {
       scene.remove(s);
@@ -281,6 +299,18 @@ export class OverlayRenderer {
 const LABEL_HEIGHT = 1.2;
 
 /**
+ * 標籤在**參考可視範圍**下的世界高度（格）。
+ *
+ * 只是個基準:`updateLabelScale` 會照目前的可視範圍等比換算，讓標籤在螢幕上的大小
+ * 固定。分區名稱是地圖上的標示，不是場景裡的物件 —— 拉近看城市細節時，名稱跟著
+ * 放大只會擋住你正要看的東西。
+ */
+const LABEL_WORLD_HEIGHT = 0.72;
+
+/** `LABEL_WORLD_HEIGHT` 是在這個可視範圍下量的。跟 `SCENE.FRUSTUM_SIZE` 是同一個數。 */
+const LABEL_REFERENCE_FRUSTUM = 60;
+
+/**
  * 把名字畫成一張貼圖。
  *
  * 底色用該分區的圖層顏色，字用白色加深色描邊 —— 色相環轉一圈總有幾個顏色會讓
@@ -299,7 +329,7 @@ function makeLabelSprite(label: DistrictLabel): THREE.Sprite {
   const ctx = canvas.getContext('2d')!;
 
   ctx.fillStyle = `hsl(${(label.value / 100) * 360} ${DISTRICT_COLOR.saturation * 100}% ${DISTRICT_LABEL_LIGHTNESS * 100}%)`;
-  ctx.globalAlpha = 0.85;
+  ctx.globalAlpha = 0.55;
   roundRect(ctx, 0, 0, canvas.width, canvas.height, 10);
   ctx.fill();
   ctx.globalAlpha = 1;
@@ -316,11 +346,13 @@ function makeLabelSprite(label: DistrictLabel): THREE.Sprite {
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: texture, transparent: true, depthTest: false,
+    // 整張貼圖再壓一次透明度:名稱是疊在地圖上的標示，蓋掉底下的地形就本末倒置。
+    // 字仍然帶深色描邊，淡下去之後才不會糊在底色裡。
+    map: texture, transparent: true, depthTest: false, opacity: 0.8,
   }));
-  // 高度固定，寬度照貼圖比例 —— 名字長就寬一點，字不會被壓扁。
-  const height = 2.2;
-  sprite.scale.set(height * (canvas.width / canvas.height), height, 1);
+  // 寬度照貼圖比例 —— 名字長就寬一點，字不會被壓扁。實際尺寸由
+  // `updateLabelScale` 決定，它才知道現在的可視範圍。
+  sprite.userData.aspect = canvas.width / canvas.height;
   return sprite;
 }
 

@@ -1772,6 +1772,8 @@ export class Game {
     this.buildingRenderer.updateDetailLOD(
       this.sceneManager.camera.top - this.sceneManager.camera.bottom,
     );
+    // 分區名稱在螢幕上維持固定大小 —— 它是地圖上的標示，不是場景裡的物件。
+    this.overlayRenderer.updateLabelScale(this.sceneManager.camera);
 
     // Simulation tick
     if (!this.paused) {
@@ -2641,6 +2643,8 @@ export class Game {
       : undefined;
     this.overlayRenderer.setOverlay(
       type, this.sceneManager.scene, this.state.grid, data, elevated, labels);
+    // 標籤的尺寸是照可視範圍算的。等下一幀才套的話，切圖層的那一幀會閃一下。
+    this.overlayRenderer.updateLabelScale(this.sceneManager.camera);
     this.computeOverlayHighlightCells(type);
     this.updatePlacementPreview();
     this.onUIUpdate?.();

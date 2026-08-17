@@ -3,7 +3,7 @@ import { recoverNextId } from '../utils/recoverNextId';
 import { District, Policy, PolicyType, Specialization } from './types';
 import { clampLevel, levelForLegacyActive, maxLevel } from './PolicyManager';
 import { isDistrictScoped } from './PolicyScope';
-import { isValidSwatchIndex } from './DistrictPalette';
+import { isValidSwatchIndex, nextSwatchIndex } from './DistrictPalette';
 import { exclusiveGroupRank, EXCLUSIVE_GROUP_OF } from './PolicyExclusion';
 import type { TaxRates } from '../economy/Tax';
 
@@ -43,11 +43,22 @@ export class DistrictManager {
       id: `district_${this.nextId++}`,
       name,
       cells: new Set<string>(),
+      colorIndex: this.freeSwatch(),
       policies: [],
       specialization: Specialization.NONE,
     };
     this.districts.set(district.id, district);
     return district;
+  }
+
+  /**
+   * 目前沒人用（或用得最少）的色票。
+   *
+   * 分區一建立就配好顏色 —— 不配的話它會落在 id 雜湊出來的色相上，那個色相不在
+   * 色票裡，玩家也沒得「改回原本那個」。
+   */
+  private freeSwatch(): number {
+    return nextSwatchIndex(this.getAllDistricts().map(d => d.colorIndex));
   }
 
   getDistrict(id: string): District | undefined {
@@ -145,6 +156,8 @@ export class DistrictManager {
       id: `district_${this.nextId++}`,
       name: `${original.name} (Split)`,
       cells: new Set<string>(),
+      // 切出來的也是一個新分區，玩家一樣要在地圖上分得出它跟原本那一區。
+      colorIndex: this.freeSwatch(),
       policies: [],
       specialization: Specialization.NONE,
     };

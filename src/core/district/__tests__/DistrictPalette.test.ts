@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import {
-  DISTRICT_SWATCHES, isValidSwatchIndex, swatchCssFor,
+  DISTRICT_SWATCHES, isValidSwatchIndex, swatchCssFor, nextSwatchIndex,
   DISTRICT_COLOR, DISTRICT_LABEL_LIGHTNESS,
 } from '../DistrictPalette';
+import { DistrictManager } from '../DistrictManager';
 import { districtOverlayValue, districtLabelAnchors } from '../../overlay/OverlayBuilders';
 
 /**
@@ -136,5 +137,98 @@ describe('色相避開草地', () => {
     const hues = DISTRICT_SWATCHES.map(s => (s.value / 100) * 360).sort((a, b) => a - b);
     expect(hues[hues.length - 1]! - hues[0]!, '所有色票擠在同一段色相裡')
       .toBeGreaterThan(180);
+  });
+});
+
+describe('新分區馬上配一個顏色', () => {
+  /**
+   * 沒配的話它會落在黃金比例雜湊出來的色相上 —— 那個色相不在八個色票裡，也可能
+   * 落進草地那一段（80–150 度）看不見。而且玩家沒得「改回原本那個」，因為原本
+   * 那個不是色票。
+   */
+  it('should hand out a colour nobody is using', () => {
+    const first = nextSwatchIndex([]);
+    expect(isValidSwatchIndex(first)).toBe(true);
+    expect(nextSwatchIndex([first]), '第二區拿到跟第一區一樣的').not.toBe(first);
+  });
+
+  it('should keep consecutive districts far apart on the wheel', () => {
+    // 玩家連續畫出來的分區拿到的是連續發配的色票。照索引順序發的話，前兩區會拿到
+    // 相鄰的色相（352 度與 20 度）—— 那是這八個裡最像的一對。
+    const hueOf = (i: number) => (DISTRICT_SWATCHES[i]!.value / 100) * 360;
+    const gap = (a: number, b: number) => {
+      const d = Math.abs(hueOf(a) - hueOf(b));
+      return Math.min(d, 360 - d);
+    };
+    const handed: number[] = [];
+    for (let n = 0; n < DISTRICT_SWATCHES.length; n++) handed.push(nextSwatchIndex(handed));
+    for (let i = 1; i < handed.length; i++) {
+      expect(gap(handed[i - 1]!, handed[i]!),
+        `連續發出的第 ${i} 與第 ${i + 1} 個色票色相只差 ${Math.round(gap(handed[i - 1]!, handed[i]!))} 度`)
+        .toBeGreaterThan(60);
+    }
+    expect(new Set(handed).size, '八次發配沒有把八個色票都發完').toBe(DISTRICT_SWATCHES.length);
+  });
+
+  it('should fill a gap left by a deleted district', () => {
+    const first = nextSwatchIndex([]);
+    const second = nextSwatchIndex([first]);
+    // 第一區被刪掉，它的顏色要能被拿回來用。
+    expect(nextSwatchIndex([second])).toBe(first);
+  });
+
+  it('should wrap once every colour is taken', () => {
+    const all = DISTRICT_SWATCHES.map((_, i) => i);
+    expect(isValidSwatchIndex(nextSwatchIndex(all)), '八區之後就配不出顏色了').toBe(true);
+  });
+
+  it('should pick the least crowded colour when it has to repeat', () => {
+    // 全部用過一輪之後，重複用最少的那個。單純取模的話會一直疊在同一個上。
+    const all = DISTRICT_SWATCHES.map((_, i) => i);
+    const twice = [0, 1, 2, 3, 4, 5];
+    const picked = nextSwatchIndex([...all, ...twice]);
+    expect(twice, '挑了一個已經用兩次的，而還有只用過一次的').not.toContain(picked);
+  });
+
+  it('should ignore what a hand-edited save could carry', () => {
+    // 存檔是可以編輯的。這條只驗「不會炸、也不會回一個壞索引」——
+    // 它**守不到**過濾壞索引那一行:挑的是用最少的，而雜散的鍵永遠 ≥ 那些
+    // 沒被碰過的 0，算不算進去結果都一樣。
+    expect(nextSwatchIndex([undefined, -1, 999, 1.5, NaN])).toBe(0);
+  });
+});
+
+describe('分區一建立就有顏色', () => {
+  it('should give a brand new district a swatch', () => {
+    const dm = new DistrictManager();
+    const d = dm.createDistrict('A');
+    expect(isValidSwatchIndex(d.colorIndex), '新分區沒有配到色票').toBe(true);
+  });
+
+  it('should not hand the same colour to the next one', () => {
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    const b = dm.createDistrict('B');
+    expect(b.colorIndex, '連續兩區同色').not.toBe(a.colorIndex);
+  });
+
+  it('should reuse a colour freed by a deleted district', () => {
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    dm.createDistrict('B');
+    dm.deleteDistrict(a.id);
+    expect(dm.createDistrict('C').colorIndex, '刪掉之後那個顏色沒有被放回去')
+      .toBe(a.colorIndex);
+  });
+
+  it('should give a split-off district its own colour', () => {
+    // 切出來的也是一個新分區，玩家一樣要在地圖上分得出它。
+    const dm = new DistrictManager();
+    const a = dm.createDistrict('A');
+    dm.addCellToDistrict(a.id, 0, 0);
+    dm.addCellToDistrict(a.id, 1, 0);
+    const split = dm.splitDistrict(a.id, new Set(['1,0']));
+    expect(isValidSwatchIndex(split.colorIndex), '切出來的分區沒有配到色票').toBe(true);
+    expect(split.colorIndex, '切出來的跟原本的同色').not.toBe(a.colorIndex);
   });
 });

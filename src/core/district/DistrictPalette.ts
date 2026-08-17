@@ -55,6 +55,42 @@ export function isValidSwatchIndex(index: number | undefined): boolean {
     && index >= 0 && index < DISTRICT_SWATCHES.length;
 }
 
+/**
+ * 發配色票的順序。不是 0、1、2、3。
+ *
+ * 玩家連續畫出來的分區拿的是連續發配的色票，而色票是照色相排的 —— 照索引順序發的話，
+ * 前兩區必然拿到相鄰的兩個色相（352 度與 20 度），那是這八個裡最像的一對。
+ *
+ * 這串是位元反轉序:每次都跳到目前最大的那個空隙中間，所以無論停在第幾個，已發出去
+ * 的那幾個都是散開的。等於黃金比例序列的離散版 —— 舊的雜湊色相本來就是為了同一件事。
+ */
+const SWATCH_HANDOUT_ORDER = [0, 4, 2, 6, 1, 5, 3, 7] as const;
+
+/**
+ * 一個新分區該配哪一個色票。
+ *
+ * 分區一建立就要有顏色。沒配的話它會落在 id 雜湊出來的色相上 —— 那個色相不在這八個
+ * 裡面，可能落進草地那一段看不見，而且玩家沒得「改回原本那個」，因為原本那個不是
+ * 色票。
+ *
+ * 先給沒人用的。八個都用掉之後給重複次數最少的 —— 單純取模會一直疊在同一個上，
+ * 而刪掉一區之後那個顏色也該被放回去。
+ */
+export function nextSwatchIndex(existing: readonly (number | undefined)[]): number {
+  const used = new Array<number>(DISTRICT_SWATCHES.length).fill(0);
+  for (const index of existing) {
+    // 壞掉的索引不算用掉了。這件事**沒有測試守得到** —— 下面找的是「用最少的」，
+    // 而雜散的鍵永遠 ≥ 那些沒被碰過的 0，所以算不算進去結果都一樣。留著是因為
+    // 這裡改成別的挑法（取模、輪流、取最多）時它就會開始有影響。
+    if (isValidSwatchIndex(index)) used[index!]!++;
+  }
+  let best: number = SWATCH_HANDOUT_ORDER[0]!;
+  for (const i of SWATCH_HANDOUT_ORDER) {
+    if (used[i]! < used[best]!) best = i;
+  }
+  return best;
+}
+
 /** 面板上要把哪一個色塊畫成選取狀態。沒有選過就回 undefined。 */
 export function swatchCssFor(index: number | undefined): string | undefined {
   return isValidSwatchIndex(index) ? DISTRICT_SWATCHES[index!]!.css : undefined;
