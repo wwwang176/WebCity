@@ -1,6 +1,7 @@
-import { createSignal, createEffect, createMemo, For, Show, type Accessor } from 'solid-js';
+import { createSignal, createEffect, createMemo, Index, Show } from 'solid-js';
 import { listPolicyExpenses } from '../../../core/economy/ExpenseCalculator';
 import { POLICY_CONFIG } from '../../../core/district/PolicyManager';
+import { policyLevelLabel } from '../../../core/district/PolicyPresentation';
 import { gameSignals, getGame } from '../../store/gameStore';
 import { PopChart } from '../../charts/PopChart';
 import { EconChart } from '../../charts/EconChart';
@@ -59,11 +60,14 @@ export function EconomyPage(props: EconomyPageProps) {
   const balance = () => totalIncome() - totalExpenses();
 
   // 逐條政策支出。人口與這一列的總額用同一個來源，兩者才加得起來。
-  const policyLines = () => {
+  //
+  // 用 memo:同一次算出來的結果 JSX 裡讀三次（兩次 length、一次列表），而
+  // `listPolicyExpenses` 每次都重新掃過所有分區的所有政策。
+  const policyLines = createMemo(() => {
     const st = state();
     return listPolicyExpenses(
       st.districts.getAllDistricts(), st.ordinances, st.citizens.getPopulation());
-  };
+  });
 
   const onIncomeTaxChange = (e: Event) => {
     const rate = parseInt((e.target as HTMLInputElement).value, 10);
@@ -148,19 +152,24 @@ export function EconomyPage(props: EconomyPageProps) {
               發現的坑。看得見才做得了決定 —— 這也是這套設計不設預算上限的
               前提:上限會替玩家自動砍掉政策，而且砍得無聲無息。 */}
           <Show when={policyOpen()}>
-            <For each={policyLines()}>
+            {/* `Index` 而不是 `For`。`listPolicyExpenses` 每個 tick 都回傳一批
+                新物件，而 `For` 是照參考比對的 —— 於是每秒六次把所有列整批拆掉
+                重建，畫面上就是一直在閃。`Index` 認位置，列留著、只換裡面的字。 */}
+            <Index each={policyLines()}>
               {(line) => (
                 <tr>
                   <td class="td-label" style="padding-left:18px;color:#888;font-size:11px">
-                    {line.districtName ?? 'City'} · {POLICY_CONFIG[line.type]?.name ?? line.type}
-                    {' '}{'\u25CF'.repeat(line.level)}
+                    {line().districtName ?? 'City'} · {POLICY_CONFIG[line().type]?.name ?? line().type}
+                    {/* 跟強度按鈕講同一套話。原本畫的是圓點，玩家得自己猜那兩個
+                        圓點對應到面板上的哪一格。 */}
+                    {' · '}{policyLevelLabel(line().type, line().level)}
                   </td>
                   <td class="td-expense" style="text-align:right;color:#888;font-size:11px">
-                    -${line.cost.toFixed(1)}
+                    -${line().cost.toFixed(1)}
                   </td>
                 </tr>
               )}
-            </For>
+            </Index>
           </Show>
           <tr><td class="td-label">Elevated Maintenance</td><td class="td-expense" style="text-align:right">-${breakdown().elevatedMaintenance.toFixed(1)}</td></tr>
           <tr><td class="td-label">Loan Interest ({(state().budget.loanInterestRate * 100).toFixed(0)}%)</td><td class="td-expense" style="text-align:right">-${breakdown().loanInterest.toFixed(1)}</td></tr>

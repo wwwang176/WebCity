@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   nextPolicyLevel, policyButtonText, policyEffectSummary, districtPolicyTotal,
-  districtOfferedPolicies,
+  districtOfferedPolicies, policyLevelLabel,
 } from '../PolicyPresentation';
 import { maxLevel, POLICY_EFFECTS, POLICY_CONFIG } from '../PolicyManager';
 import { POLICY_SCOPE } from '../PolicyScope';
@@ -181,5 +181,40 @@ describe('分區面板只列分區條例', () => {
     }
     expect(offered, '回收沒有被列出來').toContain(PolicyType.ENCOURAGE_RECYCLING);
     expect(offered, '禁重工業沒有被列出來').toContain(PolicyType.NO_HEAVY_INDUSTRY);
+  });
+});
+
+describe('等級的名字', () => {
+  /**
+   * 強度按鈕、帳本的逐條支出，講的必須是同一套話。
+   *
+   * 帳本原本畫的是 `●●○`，而面板上寫的是 Light／Medium／Heavy —— 同一條政策在
+   * 兩個地方長得不一樣，玩家得自己猜那兩個圓點對應到哪一格。
+   */
+  it('should call level 0 off', () => {
+    expect(policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, 0)).toBe('Off');
+  });
+
+  it('should name the tiers of a multi-level policy', () => {
+    // 三級的用三個字，不是 L/M/H —— 縮寫要把游標停上去才知道是什麼。
+    expect(maxLevel(PolicyType.ENCOURAGE_RECYCLING)).toBe(3);
+    expect(policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, 1)).toBe('Light');
+    expect(policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, 2)).toBe('Medium');
+    expect(policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, 3)).toBe('Heavy');
+  });
+
+  it('should just say on for a policy that only has one level', () => {
+    // 單級的沒有強度可言。硬套 Light 會讓玩家以為還有更重的可以開。
+    expect(maxLevel(PolicyType.TOURISM)).toBe(1);
+    expect(policyLevelLabel(PolicyType.TOURISM, 1)).toBe('On');
+  });
+
+  it('should not fall off the end for a level a save could carry', () => {
+    // 存檔是可以編輯的。回 undefined 的話帳本那一列會印出「undefined」。
+    for (const level of [99, -1, 1.5, NaN]) {
+      const label = policyLevelLabel(PolicyType.ENCOURAGE_RECYCLING, level);
+      expect(typeof label, `${level} 的標籤不是字串`).toBe('string');
+      expect(label.length, `${level} 的標籤是空的`).toBeGreaterThan(0);
+    }
   });
 });

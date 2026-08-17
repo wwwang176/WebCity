@@ -108,6 +108,29 @@ export function policyEffectSummary(type: PolicyType, level: number): string {
   return EFFECT_SUMMARY[type]?.[level - 1] ?? '';
 }
 
+/**
+ * 強度按鈕上的字。
+ *
+ * 寫完整的字而不是 L／M／H:縮寫要把游標停上去才知道是什麼，而且單級條例用兩個
+ * 符號、三級用三個字母的話，同一個面板裡會有兩套語言要學。
+ *
+ * 單級的條例說「On」不說「Light」—— 沒有更重的可以開，寫 Light 會讓玩家一直在找
+ * 那個不存在的下一格。
+ */
+const TIER_NAMES = ['Light', 'Medium', 'Heavy'] as const;
+
+/**
+ * 這一級叫什麼。強度按鈕與帳本的逐條支出共用 —— 兩邊各寫各的話，同一條政策在面板上
+ * 是「Medium」、在帳本上是「●●○」，玩家得自己猜那兩個圓點對應到哪一格。
+ */
+export function policyLevelLabel(type: PolicyType, level: number): string {
+  if (!(level >= 1)) return 'Off';          // NaN 也走這裡
+  if (maxLevel(type) <= 1) return 'On';
+  // 存檔是可以編輯的。夾住而不是回 undefined —— 那會讓帳本印出「undefined」。
+  const i = Math.min(Math.floor(level), TIER_NAMES.length) - 1;
+  return TIER_NAMES[i]!;
+}
+
 /** 一個分區所有條例本期的費用合計。 */
 export function districtPolicyTotal(
   policies: readonly { type: PolicyType; level: number }[],

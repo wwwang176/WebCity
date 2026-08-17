@@ -1,6 +1,6 @@
 import { For, Show } from 'solid-js';
 import { POLICY_CONFIG, maxLevel } from '../../core/district/PolicyManager';
-import { policyEffectSummary } from '../../core/district/PolicyPresentation';
+import { policyEffectSummary, policyLevelLabel } from '../../core/district/PolicyPresentation';
 import { policyCost, type PolicyScale } from '../../core/district/PolicyBilling';
 import type { PolicyType } from '../../core/district/types';
 
@@ -13,16 +13,6 @@ import type { PolicyType } from '../../core/district/types';
  * 效果與代價寫在名字底下同一列，不是 tooltip。取捨是玩法，藏起來就沒有取捨。
  */
 
-/**
- * 強度按鈕上的字。
- *
- * 寫完整的字而不是 L／M／H:縮寫要把游標停上去才知道是什麼，而且單級條例用
- * ○／● 兩個符號、三級用三個字母的話，同一個面板裡會有兩套語言要學。
- *
- * 縮寫本來是舊面板 420px 擠出來的，全城與分區合併之後右側有 512px、最長的條例
- * 名字佔 165px，剩下的空間放得下完整的字。
- */
-const TIER_NAMES = ['Light', 'Medium', 'Heavy'];
 
 export interface PolicyRowProps {
   type: PolicyType;
@@ -80,7 +70,7 @@ export function PolicyRow(props: PolicyRowProps) {
                     'font-weight': props.level === lv ? '600' : '400',
                   }}
                 >
-                  {lv === 0 ? 'Off' : (max() > 1 ? TIER_NAMES[lv - 1] : 'On')}
+                  {policyLevelLabel(props.type, lv)}
                 </button>
               )}
             </For>
