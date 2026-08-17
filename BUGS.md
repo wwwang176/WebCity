@@ -5262,3 +5262,19 @@ Unemployed。兩邊的**數字都沒錯**，錯的是面板用了一個它自己
 弧的光帶。
 
 順帶把「每一盞燈朝哪裡」也一起釘住:光暈的半圓往哪邊開全靠它，而它原本根本不存在。
+
+## BUG-312 已修：房子緊鄰高架時，車直接從空中的橋面出發
+
+建築找「附近有哪些路可以出門」用的是 `UnifiedRoadLookup.getAllKeysAtPosition`，
+那個方法回的是**所有樓層**的道路格。於是一棟緊鄰高架橋的房子會直接掛到橋面上的
+車道連接點 —— 車憑空出現在二樓的橋上開走，看起來像飛上去的。
+
+橋面沒有出入口:它與正下方的地面格之間沒有任何連結，上下橋只能走匝道。所以建築
+能碰到的只有 level 0。
+
+新增 `UnifiedRoadLookup.getGroundKeyAtPosition`，並把兩個各自抄了一份掃描迴圈的
+呼叫端（`LaneGraphPathfinder` 的同步路徑、`SimulationLoop.collectPointIndices` 的
+worker 批次路徑）收斂到同一支 `findBuildingAccessPoints` —— 規則只留一份，兩條
+管線不會再各自漂移。
+
+橋本身照舊能開:車從地面上匝道、過橋、下匝道，這條反向對照也在測試裡。

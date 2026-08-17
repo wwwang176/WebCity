@@ -28,15 +28,24 @@ const REFERENCE_SPEED_LIMIT = 50;
 const VARIANT_COUNT = 4;
 
 /**
- * Collect LaneGraph connection points of a specific type (entry/exit) for any
- * road cell within Chebyshev `ZONE_ROAD_REACH` of the building position (bx, by).
+ * Collect the LaneGraph connection points a building at (bx, by) can drive onto
+ * or off — every point of the requested type on a **ground** road cell within
+ * Chebyshev `ZONE_ROAD_REACH`.
  *
  * Buildings may sit one empty tile back from a road (the inner ring — see
  * `src/core/grid/constants.ts`), so scanning only 4 orthogonal neighbours would
  * miss inner-ring homes/workplaces and make their commute path generation fail.
  * We instead scan a (2·reach+1)² box around the building cell.
+ *
+ * Elevated levels are excluded. A viaduct has no driveways: the only way on or
+ * off it is a ramp, and the deck is not connected to the cell underneath it at
+ * all. Taking every level here let a house beside a bridge attach straight to
+ * the deck, so its car appeared in mid-air and drove off (BUG-312).
+ *
+ * Both path producers go through this — `findLanePath` here, and the worker
+ * batch's `collectPointIndices` in SimulationLoop — so the rule lives once.
  */
-function collectNearbyConnectionPoints(
+export function findBuildingAccessPoints(
   graph: LaneGraph,
   bx: number, by: number,
   lookup: UnifiedRoadLookup,
@@ -45,13 +54,11 @@ function collectNearbyConnectionPoints(
   const results: ConnectionPoint[] = [];
   for (let dy = -ZONE_ROAD_REACH; dy <= ZONE_ROAD_REACH; dy++) {
     for (let dx = -ZONE_ROAD_REACH; dx <= ZONE_ROAD_REACH; dx++) {
-      // Check every level at this position (ground + elevated roads).
-      const keys = lookup.getAllKeysAtPosition(bx + dx, by + dy);
-      for (const key of keys) {
-        const pts = graph.getConnectionPoints(key);
-        for (const pt of pts) {
-          if (pt.type === pointType) results.push(pt);
-        }
+      const key = lookup.getGroundKeyAtPosition(bx + dx, by + dy);
+      if (!key) continue;
+      const pts = graph.getConnectionPoints(key);
+      for (const pt of pts) {
+        if (pt.type === pointType) results.push(pt);
       }
     }
   }
@@ -64,7 +71,7 @@ function findNearbyExitPoints(
   bx: number, by: number,
   lookup: UnifiedRoadLookup,
 ): ConnectionPoint[] {
-  return collectNearbyConnectionPoints(graph, bx, by, lookup, 'exit');
+  return findBuildingAccessPoints(graph, bx, by, lookup, 'exit');
 }
 
 /** Find LaneGraph entry points near a building (scans Chebyshev ZONE_ROAD_REACH). */
@@ -73,7 +80,7 @@ function findNearbyEntryPoints(
   bx: number, by: number,
   lookup: UnifiedRoadLookup,
 ): ConnectionPoint[] {
-  return collectNearbyConnectionPoints(graph, bx, by, lookup, 'entry');
+  return findBuildingAccessPoints(graph, bx, by, lookup, 'entry');
 }
 
 function manhattanDist(a: { x: number; y: number }, b: { x: number; y: number }): number {

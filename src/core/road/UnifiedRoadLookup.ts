@@ -124,6 +124,21 @@ export class UnifiedRoadLookup {
     return result;
   }
 
+  /**
+   * The ground road cell key at (x, y), or null if there is no road on the
+   * ground there.
+   *
+   * This is what a building can reach. A viaduct deck has no driveway and is
+   * not connected to the cell below it, so anything asking "which road does
+   * this building open onto" wants this rather than `getAllKeysAtPosition`.
+   */
+  getGroundKeyAtPosition(x: number, y: number): string | null {
+    if (x < 0 || y < 0 || x >= this.grid.width || y >= this.grid.height) return null;
+    const cell = this.grid.getCell(x, y);
+    if (!cell || cell.roadType === RoadType.NONE) return null;
+    return toPosKey(x, y);
+  }
+
   /** Get ALL road cell keys (ground + elevated). */
   getAllCellKeys(): string[] {
     const keys: string[] = [];

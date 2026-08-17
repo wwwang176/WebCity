@@ -20,6 +20,10 @@ function makeRoadLookup(cellKeys: string[]): UnifiedRoadLookup {
       }
       return result;
     },
+    getGroundKeyAtPosition(x: number, y: number): string | null {
+      const groundKey = `${x},${y}`;
+      return keySet.has(groundKey) ? groundKey : null;
+    },
     getCellByKey(): null { return null; },
   } as unknown as UnifiedRoadLookup;
 }

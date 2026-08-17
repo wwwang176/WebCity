@@ -1224,6 +1224,9 @@
 
 ### 已修
 
+- [x] **建築只從地面上路**（BUG-312）。緊鄰高架的房子原本會直接掛到橋面的車道點，
+      車憑空出現在二樓。新增 `UnifiedRoadLookup.getGroundKeyAtPosition`，並把同步
+      與 worker 兩條各自抄了一份掃描迴圈的呼叫端收斂到 `findBuildingAccessPoints`。
 - [x] **換道成本**（`Pathfinding.laneEdgeCost`）。原本換道邊只比直行貴 2%（幾何長度
       0.9178 vs 0.9000），但成本同時除以 `0.95^lane`，內側每層快 5%——所以
       「換到 lane 0」比「留在 lane 1」**更便宜**（0.9178 < 0.9474）。實測筆直的

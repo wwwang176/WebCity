@@ -12,7 +12,7 @@ import { ZoneType, TerrainType, isResidentialZone, isCommercialZone, zoneToRCI }
 import { RoadType } from '../road/types';
 import { getLaneCount } from '../road/types';
 import { LaneGraph, type LaneEdge } from '../traffic/LaneGraph';
-import { findLanePath, findLanePathVariants } from '../traffic/LaneGraphPathfinder';
+import { findLanePath, findLanePathVariants, findBuildingAccessPoints } from '../traffic/LaneGraphPathfinder';
 import { CommuteCache, type CachedRoute } from '../traffic/CommuteCache';
 import { LaneGraphBuffer, type GraphMapping } from '../traffic/LaneGraphBuffer';
 import { PathRequestBatcher } from '../traffic/PathRequestBatcher';
@@ -2525,25 +2525,13 @@ export class SimulationLoop {
   ): number[] {
     if (!this.graphMapping || !this._roadLookup) return [];
     const mapping = this.graphMapping;
-    const lookup = this._roadLookup;
-    const reach = ZONE_ROAD_REACH;
     const results: number[] = [];
-    const suffix = pointType;
 
-    for (let dy = -reach; dy <= reach; dy++) {
-      for (let dx = -reach; dx <= reach; dx++) {
-        const keys = lookup.getAllKeysAtPosition(pos.x + dx, pos.y + dy);
-        for (const key of keys) {
-          // Check all points in this cell that match the desired type
-          const pts = this.laneGraph.getConnectionPoints(key);
-          for (const pt of pts) {
-            if (pt.type === suffix) {
-              const idx = mapping.pointIdToIndex.get(pt.id);
-              if (idx !== undefined) results.push(idx);
-            }
-          }
-        }
-      }
+    // Same collector the synchronous findLanePath uses, so the worker and the
+    // main thread agree on which cells a building opens onto — ground only.
+    for (const pt of findBuildingAccessPoints(this.laneGraph, pos.x, pos.y, this._roadLookup, pointType)) {
+      const idx = mapping.pointIdToIndex.get(pt.id);
+      if (idx !== undefined) results.push(idx);
     }
     return results;
   }
