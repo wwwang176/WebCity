@@ -4984,6 +4984,21 @@ New 因此不是「按了會做事」的按鈕，是第四個模式:點了它就
 那一排回答的是「我下一次拖曳會做什麼」，沒拿著筆刷時答案是「以上皆非」，所以四顆
 的亮暗都加上 `holdingDistrictBrush()`。子選單維持開著不動 —— 它開著沒有害處。
 
+### 側邊頁籤跟著捲
+
+條例面板的側邊頁籤會被捲出畫面。那一整套「側邊固定、只有右邊捲」的規則掛在
+`#overview-modal` 這個 id 上，條例面板沒吃到 —— 於是整個 `.modal-panel` 在捲。
+條例有十六條，那是天天會遇到的事。
+
+規則改成掛在版面上（`.modal-panel:has(.overview-layout)`），之後任何用同一套版面的
+面板都自動吃得到，不必記得把 id 加進去。
+
+順手修掉一個一直都在的截斷:`.modal-body` 的高度寫的是 `calc(70vh - 54px)`，而表頭
+實際是 60.7px —— 面板底部有 8px 一直被切掉（`overflow: hidden` 讓它切得無聲無息）。
+改成表頭多高由表頭自己決定、剩下的用 `flex: 1` 全給 body，那個常數就不見了。
+`.overview-layout` 也從 `height: 100%` 改成 `flex: 1`:百分比高度要父層有明確高度，
+而 body 現在是撐出來的。
+
 實作那一格時又踩了一次 Solid 的物件 reference 陷阱（BUG-296 那個的變形）:`<Show>`
 的 callback 形式對 `when` 的值做了 memo，而 District 物件的 reference 從頭到尾不變，
 於是 `{(d) => d().name}` 只在掛載時讀一次 —— chip 停在「District 1 / 0 格」，改名、

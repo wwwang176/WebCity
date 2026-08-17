@@ -494,25 +494,41 @@
 #mute-btn:hover { color: #c0d0e8; }
 #mute-btn.muted { color: #ef5350; }
 
-/* ===== Overview Modal (wide sidebar layout) ===== */
-#overview-modal .modal-panel {
-  min-width: 720px; max-width: 820px; width: 92vw;
+/* ===== Sidebar layout (Overview, Policies) ===== */
+/* 規則掛在版面上而不是某個 modal 的 id —— 條例面板本來漏了這一段，於是整個
+   面板一起捲，側邊頁籤跟著被捲出畫面。條例有十六條，那是天天會遇到的事。 */
+.modal-panel:has(.overview-layout) {
   overflow: hidden;
+  display: flex; flex-direction: column;
 }
-#overview-modal .modal-body {
+.modal-body:has(.overview-layout) {
   padding: 0;
   display: flex;
-  height: calc(70vh - 54px);
+  /* 表頭多高由表頭自己決定，剩下的全給 body。原本寫的是 calc(70vh - 54px)，
+     而表頭實際是 60.7px —— 面板底部有 8px 一直被切掉。 */
+  flex: 1;
+  /* flex item 的最小高度預設是內容高度。不歸零的話 .overview-content 永遠
+     撐得開，捲軸不會出現。 */
+  min-height: 0;
   overflow: hidden;
 }
+
+#overview-modal .modal-panel {
+  min-width: 720px; max-width: 820px; width: 92vw;
+}
 .overview-layout {
-  display: flex; width: 100%; height: 100%;
+  display: flex; width: 100%;
+  /* 不用 height: 100% —— 百分比高度要父層有明確高度，而 .modal-body 現在是
+     flex: 1 撐出來的。跟著用 flex 才吃得到那個高度。 */
+  flex: 1; min-height: 0;
 }
 .overview-sidebar {
   width: 156px; min-width: 156px;
   border-right: 1px solid rgba(100,180,255,0.08);
   padding: 8px 0;
   display: flex; flex-direction: column; gap: 2px;
+  /* 分區數量沒有上限，多到裝不下時側邊欄自己捲，不牽動右邊的內容。 */
+  overflow-y: auto;
 }
 .overview-nav-item {
   display: flex; align-items: center; gap: 8px;
