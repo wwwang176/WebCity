@@ -13,8 +13,15 @@ import type { PolicyType } from '../../core/district/types';
  * 效果與代價寫在名字底下同一列，不是 tooltip。取捨是玩法，藏起來就沒有取捨。
  */
 
-/** 三級條例的按鈕標籤。按鈕只有 28px 寬，放得下一個字母。 */
-const TIER_LABELS = ['L', 'M', 'H'];
+/**
+ * 強度按鈕上的字。
+ *
+ * 寫完整的字而不是 L／M／H:縮寫要把游標停上去才知道是什麼，而且單級條例用
+ * ○／● 兩個符號、三級用三個字母的話，同一個面板裡會有兩套語言要學。
+ *
+ * 縮寫本來是舊面板 420px 擠出來的，全城與分區合併之後右側有 512px、最長的條例
+ * 名字佔 165px，剩下的空間放得下完整的字。
+ */
 const TIER_NAMES = ['Light', 'Medium', 'Heavy'];
 
 export interface PolicyRowProps {
@@ -62,18 +69,18 @@ export function PolicyRow(props: PolicyRowProps) {
               {(lv) => (
                 <button
                   onClick={() => props.onSetLevel(lv)}
-                  aria-label={lv === 0 ? 'Off' : (max() > 1 ? TIER_NAMES[lv - 1]! : 'On')}
                   aria-pressed={props.level === lv}
                   title={lv === 0 ? 'Off' : policyEffectSummary(props.type, lv)}
                   style={{
-                    'font-size': '11px', width: '28px', padding: '2px 0',
-                    'border-radius': '4px', cursor: 'pointer',
+                    'font-size': '11px', padding: '3px 9px',
+                    'border-radius': '4px', cursor: 'pointer', 'white-space': 'nowrap',
                     border: `1px solid ${props.level === lv ? '#ab47bc' : '#444'}`,
                     background: props.level === lv ? '#ab47bc33' : '#222',
                     color: props.level === lv ? '#ce93d8' : '#777',
+                    'font-weight': props.level === lv ? '600' : '400',
                   }}
                 >
-                  {lv === 0 ? '○' : (max() > 1 ? TIER_LABELS[lv - 1] : '●')}
+                  {lv === 0 ? 'Off' : (max() > 1 ? TIER_NAMES[lv - 1] : 'On')}
                 </button>
               )}
             </For>
