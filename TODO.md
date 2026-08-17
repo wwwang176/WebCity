@@ -1224,6 +1224,9 @@
 
 ### 已修
 
+- [x] **路口淨空**（BUG-313）。車不再貼著前車停在路口正中央把橫向車流鎖死;進去
+      之前先確認車尾出得來，否則停在停止線上。`LaneEdge.insideJunction` 在建圖時
+      標好，自由車流時判斷會在第一行回頭，實測 0.057 ms/frame @ 2000 台。
 - [x] **建築只從地面上路**（BUG-312）。緊鄰高架的房子原本會直接掛到橋面的車道點，
       車憑空出現在二樓。新增 `UnifiedRoadLookup.getGroundKeyAtPosition`，並把同步
       與 worker 兩條各自抄了一份掃描迴圈的呼叫端收斂到 `findBuildingAccessPoints`。

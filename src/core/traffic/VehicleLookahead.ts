@@ -63,6 +63,58 @@ export function findGapAhead(
 }
 
 /**
+ * How far a vehicle may advance without parking itself inside an intersection.
+ * Returns Infinity when the box ahead can be cleared (or there is none).
+ *
+ * Car-following alone only asks where the vehicle ahead stopped, so when that
+ * vehicle stops just past an intersection its follower creeps right up and
+ * stops in the middle of the box. The next green then hands the cross direction
+ * a junction with a stationary car in it, and the whole crossroads locks up.
+ *
+ * The question to ask before entering is whether the vehicle can come out the
+ * other side. Distances here are measured from the vehicle's CENTRE along the
+ * path, matching `edgeProgress`:
+ *
+ *   room          how far the centre may advance before touching the car ahead
+ *   [enter, exit] the run of edges marked `insideJunction`
+ *
+ * The tail clears the box when `centre - halfLen >= exit`, so entering is safe
+ * exactly when `room >= exit + halfLen`. Otherwise stop at the same stop line
+ * a red light would use.
+ *
+ * `room` is the caller's already-computed following distance, so the common
+ * free-flowing case costs one comparison — there is no walk at all unless a
+ * vehicle is close enough ahead to matter.
+ */
+export function findBlockedJunctionDistance(
+  v: LookaheadVehicle,
+  edgePath: readonly LaneEdge[],
+  room: number,
+): number {
+  if (room >= LOOKAHEAD_DISTANCE) return Infinity;
+
+  let dist = 0;
+  let enter = -1;
+  let exit = 0;
+
+  for (let ei = v.edgeIndex; ei < edgePath.length && dist <= LOOKAHEAD_DISTANCE; ei++) {
+    const edge = edgePath[ei]!;
+    const start = dist;
+    dist += edge.length - (ei === v.edgeIndex ? v.edgeProgress : 0);
+    if (edge.insideJunction) {
+      if (enter < 0) enter = start;
+      exit = dist;
+    } else if (enter >= 0) {
+      break;
+    }
+  }
+
+  if (enter <= 0) return Infinity;  // 前方沒有路口，或者車已經在路口裡了 —— 只能開出去
+  if (room >= exit + v.length / 2) return Infinity;
+  return Math.max(0, enter - v.length / 2 - STOP_LINE_OFFSET);
+}
+
+/**
  * Find the distance to the nearest red light along the edge path.
  * Returns Infinity if no red light is found within LOOKAHEAD_DISTANCE.
  */

@@ -29,6 +29,18 @@ export interface LaneEdge {
   type: 'straight' | 'turn' | 'lane_change' | 'merge';
   /** Cell key of the intersection cell skipped by cross-intersection turn edges. */
   viaCellKey?: string;
+  /**
+   * This edge lies inside an intersection cell - the box that has to stay clear.
+   *
+   * Set for edges traversing a cell with 3 or more road directions: within-cell
+   * edges of that cell, and the cross-intersection turn edges that span it. NOT
+   * set on the boundary hops into and out of the cell, nor on L-bends: a bend
+   * has no cross traffic to block, so queueing through one is fine.
+   *
+   * Marked here rather than looked up per frame - `VehicleLookahead` reads it
+   * once per edge for every vehicle, every render frame.
+   */
+  insideJunction?: boolean;
 }
 
 // ── Helpers ──
@@ -341,16 +353,18 @@ export class LaneGraph {
 
     const dirLanes = getLaneCount(cell.roadType);
     const activeDirections = DIR_FLAGS.filter(d => cell.roadFlags & d.flag);
+    // Everything generated for this cell that stays inside it is "in the box".
+    const junction = isIntersectionCell(cell.roadFlags);
 
     // Track which turn pairs are handled by cross-intersection edges
     // so within-cell turn edges can be skipped for those pairs.
-    const handledTurns = this.generateCrossIntersectionTurns(grid, cellKey, x, y, activeDirections, dirLanes);
+    const handledTurns = this.generateCrossIntersectionTurns(grid, cellKey, x, y, activeDirections, dirLanes, junction);
 
-    this.generateStraightEdges(grid, cellKey, x, y, cell, activeDirections, dirLanes, handledTurns);
+    this.generateStraightEdges(grid, cellKey, x, y, cell, activeDirections, dirLanes, junction, handledTurns);
 
     // Lane change edges (within cell, same direction, adjacent lanes)
     if (dirLanes > 1) {
-      this.generateLaneChangeEdges(cellKey, activeDirections, dirLanes);
+      this.generateLaneChangeEdges(cellKey, activeDirections, dirLanes, junction);
     }
   }
 
@@ -366,6 +380,7 @@ export class LaneGraph {
     x: number, y: number,
     activeDirections: typeof DIR_FLAGS,
     dirLanes: number,
+    junction: boolean,
   ): Set<string> {
     const handled = new Set<string>();
 
@@ -432,6 +447,7 @@ export class LaneGraph {
                 length: refLength,
                 type: 'turn',
                 viaCellKey: cellKey,
+                ...(junction ? { insideJunction: true } : {}),
               });
             }
           }
@@ -451,6 +467,7 @@ export class LaneGraph {
     cell: { roadType: RoadType; roadFlags: number },
     activeDirections: typeof DIR_FLAGS,
     dirLanes: number,
+    junction: boolean,
     handledTurns?: Set<string>,
   ): void {
     // Within-cell traversal edges: entry[otherDir] → exit[dir]
@@ -496,6 +513,7 @@ export class LaneGraph {
               bezierControl: [cp],
               length: refLength,
               type: 'turn',
+              ...(junction ? { insideJunction: true } : {}),
             });
           } else {
             const length = euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y);
@@ -505,6 +523,7 @@ export class LaneGraph {
               to: toPt,
               length: Math.max(length, 0.1),
               type: 'straight',
+              ...(junction ? { insideJunction: true } : {}),
             });
           }
         }
@@ -551,6 +570,7 @@ export class LaneGraph {
     cellKey: string,
     activeDirections: typeof DIR_FLAGS,
     dirLanes: number,
+    junction: boolean,
   ): void {
     // For each (entryDir, exitDir) traversal pair, add adjacent-lane change edges.
     // At L-bends/turns, lane_change edges use the same uniform length as the
@@ -583,6 +603,7 @@ export class LaneGraph {
               const length = isTurn ? refLength
                 : Math.max(euclideanDistance(fromPt.position.x, fromPt.position.y, toPt.position.x, toPt.position.y), 0.3);
               const edge: LaneEdge = { id: edgeId, from: fromPt, to: toPt, length, type: 'lane_change' };
+              if (junction) edge.insideJunction = true;
               if (isTurn) edge.bezierControl = [this.computeTurnControlPoint(fromPt, toPt)];
               this.edges.push(edge);
             }
@@ -599,6 +620,7 @@ export class LaneGraph {
               const length2 = isTurn ? refLength
                 : Math.max(euclideanDistance(fromPt2.position.x, fromPt2.position.y, toPt2.position.x, toPt2.position.y), 0.3);
               const edge2: LaneEdge = { id: edgeId2, from: fromPt2, to: toPt2, length: length2, type: 'lane_change' };
+              if (junction) edge2.insideJunction = true;
               if (isTurn) edge2.bezierControl = [this.computeTurnControlPoint(fromPt2, toPt2)];
               this.edges.push(edge2);
             }

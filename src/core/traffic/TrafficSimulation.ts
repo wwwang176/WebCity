@@ -1,7 +1,7 @@
 import { RoadType, ROAD_CONFIGS } from '../road/types';
 import type { LaneEdge } from './LaneGraph';
 import { interpolateEdgePosition, interpolateEdgeTangent, interpolateEdgePositionInto, interpolateEdgeTangentInto } from './EdgeInterpolation';
-import { findGapAhead, findRedLightDistance, type EdgeEntry } from './VehicleLookahead';
+import { findGapAhead, findRedLightDistance, findBlockedJunctionDistance, type EdgeEntry } from './VehicleLookahead';
 import { SpatialHash, type SpatialEntry } from './SpatialHash';
 import { findCrossEdgeGap, CROSS_EDGE } from './CrossEdgeCollision';
 import { pickWeighted } from '../utils/random';
@@ -513,7 +513,11 @@ export class TrafficSimulation {
       // (the front car is already stopped for the light — no need to double-stop).
       const gapRoom = Math.max(0, Math.min(gap, crossGap) - MIN_GAP);
       const effectiveRedLight = gap < redLightDist ? Infinity : redLightDist;
-      const obstacle = Math.min(gapRoom, effectiveRedLight);
+      // Not subject to the follow-the-leader override above: the whole point is
+      // that the leader is close and we must stop at the line anyway, so that
+      // the box stays clear for the cross direction.
+      const junctionStop = findBlockedJunctionDistance(v, ep, gapRoom);
+      const obstacle = Math.min(gapRoom, effectiveRedLight, junctionStop);
 
       let targetSpeed: number;
       if (obstacle <= 0) {
