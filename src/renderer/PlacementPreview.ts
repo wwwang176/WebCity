@@ -79,6 +79,8 @@ export class PlacementPreview {
     grid: Grid,
     funds: number,
     groundwaterFn?: (x: number, y: number) => number,
+    /** 這一格頭上有沒有高架 —— 橋下不蓋房子，預覽要跟實際規則一致。 */
+    hasElevatedAbove?: (x: number, y: number) => boolean,
   ): void {
     const cfg = getInfraConfig(type);
     if (!cfg) { this.hide(); return; }
@@ -101,7 +103,7 @@ export class PlacementPreview {
     this.currentRotation = rotation;
 
     // Check placement validity
-    const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn);
+    const check = canPlaceInfra(grid, gridX, gridY, type, rotation, groundwaterFn, undefined, hasElevatedAbove);
     const valid = check.ok && funds >= cfg.cost;
 
     this.material.color.set(valid ? GREEN : RED);

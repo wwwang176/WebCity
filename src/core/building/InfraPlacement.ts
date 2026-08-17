@@ -46,7 +46,7 @@ export function isPrimaryCellReserved(reserved: number): boolean {
 
 export type PlaceResult =
   | { ok: true }
-  | { ok: false; reason: 'OUT_OF_BOUNDS' | 'WATER_TILE' | 'TILE_OCCUPIED' | 'UNKNOWN_TYPE' | 'NO_GROUNDWATER' | 'NEED_RAIL_TRACK' | 'NEED_ADJACENT_WATER' | 'NOT_ADJACENT_TO_ROAD' | 'INFRASTRUCTURE_EXISTS' };
+  | { ok: false; reason: 'OUT_OF_BOUNDS' | 'WATER_TILE' | 'TILE_OCCUPIED' | 'UNKNOWN_TYPE' | 'NO_GROUNDWATER' | 'NEED_RAIL_TRACK' | 'NEED_ADJACENT_WATER' | 'NOT_ADJACENT_TO_ROAD' | 'INFRASTRUCTURE_EXISTS' | 'UNDER_ELEVATED_ROAD' };
 
 /**
  * Check whether an infrastructure building can be placed at (x, y) with given rotation.
@@ -61,6 +61,13 @@ export function canPlaceInfra(
   rotation: Rotation,
   groundwaterFn?: (x: number, y: number) => number,
   overrideSize?: { width: number; height: number },
+  /**
+   * 這一格頭上有沒有高架路段。
+   *
+   * 選填，因為高架不在格子上 —— 它住在 `ElevationManager` 裡，而這個模組只拿得到
+   * `Grid`。不傳就等於這座城市沒有高架（`WaterPlantSites` 之類的呼叫端就是如此）。
+   */
+  hasElevatedAbove?: (x: number, y: number) => boolean,
 ): PlaceResult {
   const cfg = getInfraConfig(type);
   if (!cfg) return { ok: false, reason: 'UNKNOWN_TYPE' };
@@ -79,6 +86,9 @@ export function canPlaceInfra(
       const cell = grid.getCell(cx, cy);
       if (!cell) return { ok: false, reason: 'OUT_OF_BOUNDS' };
       if (cell.terrainType === TerrainType.WATER) return { ok: false, reason: 'WATER_TILE' };
+      // 橋下不蓋房子。整片佔地都要淨空 —— 只有一角在橋下也不行，房子不會為了橋
+      // 讓出一個角。
+      if (hasElevatedAbove?.(cx, cy)) return { ok: false, reason: 'UNDER_ELEVATED_ROAD' };
       if (cell.roadType !== RoadType.NONE) return { ok: false, reason: 'TILE_OCCUPIED' };
       if (cell.buildingId !== 0 && isInfrastructureBuilding(cell.buildingId)) {
         return { ok: false, reason: 'INFRASTRUCTURE_EXISTS' };

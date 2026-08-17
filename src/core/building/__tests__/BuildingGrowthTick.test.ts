@@ -40,6 +40,7 @@ function makeDeps(overrides: Partial<BuildingGrowthTickDeps> = {}): BuildingGrow
     rciDemand: { residential: 1, commercial: 1, industrial: 1 },
     isPowered: () => true,
     isWatered: () => true,
+    hasElevatedAbove: () => false,
     getDistrictAt: () => null,
     canBuildInDistrict: () => true,
     clearPendingDeathAt: vi.fn(),

@@ -1203,10 +1203,20 @@ export class Game {
    * turn. The information — isPowered / isWatered / road reach / demand — all
    * existed; nothing carried it to the screen.
    */
+  /**
+   * 高架壓在這一格上嗎。
+   *
+   * 蓋公共建築、建商長房子、以及「這塊地為什麼不長東西」的診斷，三個地方都問這一
+   * 個問題 —— 各問各的話，總有一個會漏掉，而漏掉的那個就是玩家會撞上的。
+   */
+  private elevatedAt = (x: number, y: number): boolean =>
+    this.elevationManager.hasElevatedSegment(x, y);
+
   private zoneBlockerDeps = (): ZoneBlockerDeps => ({
     isPowered: (cx: number, cy: number) => this.state.power.isPowered(cx, cy),
     isWatered: (cx: number, cy: number) => this.state.water.isSupplied(cx, cy),
     rciDemand: this.state.rciDemand,
+    hasElevatedAbove: this.elevatedAt,
     canBuildHere: (cx: number, cy: number, zoneType: ZoneType) => {
       const d = this.state.districts.getDistrictAt(cx, cy);
       return !d || this.state.policies.canBuildInDistrict(d.id, zoneType);
@@ -1562,7 +1572,9 @@ export class Game {
 
     // Validate multi-cell placement
     const groundwaterFn = (cx: number, cy: number) => getGroundwaterLevel(this.state.grid, cx, cy);
-    const check = canPlaceInfra(this.state.grid, x, y, type, this.currentRotation, groundwaterFn);
+    const check = canPlaceInfra(
+      this.state.grid, x, y, type, this.currentRotation, groundwaterFn,
+      undefined, this.elevatedAt);
     if (!check.ok) {
       // Name what was refused. Road failures already read "Cannot build road:
       // ..."; the placement paths printed the bare reason, so a water plant
@@ -1729,7 +1741,9 @@ export class Game {
     const infraType = AIRPORT_TOOL_INFRA[this.currentTool]!;
 
     // Validate footprint — standard canPlaceInfra (correct dimensions from InfraConfig)
-    const check = canPlaceInfra(this.state.grid, x, y, infraType, this.currentRotation);
+    const check = canPlaceInfra(
+      this.state.grid, x, y, infraType, this.currentRotation,
+      undefined, undefined, this.elevatedAt);
     if (!check.ok) {
       this.state.budget.funds += cost;
       this.showNotification(formatBuildFailure(getInfraConfig(infraType)?.name ?? 'Airport', check.reason));
@@ -2447,6 +2461,7 @@ export class Game {
         this.state.grid,
         this.state.budget.funds,
         groundwaterFn,
+        this.elevatedAt,
       );
 
       // Coverage preview overwrites overlay with merged data (existing + new)

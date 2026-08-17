@@ -20,7 +20,8 @@ export type ZoneBlocker =
   | 'NO_WATER'
   | 'DISTRICT_POLICY'
   | 'NO_DEMAND'
-  | 'RAIL_IN_THE_WAY';
+  | 'RAIL_IN_THE_WAY'
+  | 'UNDER_ELEVATED_ROAD';
 
 export interface ZoneBlockerDeps {
   isPowered(x: number, y: number): boolean;
@@ -28,6 +29,8 @@ export interface ZoneBlockerDeps {
   rciDemand: { residential: number; commercial: number; industrial: number };
   /** District policy gate, if the cell is in a district. */
   canBuildHere?(x: number, y: number, zoneType: ZoneType): boolean;
+  /** 這一格頭上有沒有高架路段。沒填就等於頭上是天空。 */
+  hasElevatedAbove?(x: number, y: number): boolean;
 }
 
 /**
@@ -53,6 +56,8 @@ export function getZoneBlocker(
   if (cell.buildingId !== 0) return null;
 
   if (cell.railType !== RailType.NONE) return 'RAIL_IN_THE_WAY';
+  // 跟鐵軌同一級的「這裡就是不能蓋」，而且同樣要拆掉別的東西才解得開。
+  if (deps.hasElevatedAbove?.(x, y)) return 'UNDER_ELEVATED_ROAD';
 
   // Three separate road questions, and they call for three different actions.
   // isNearRoad accepts any road within the Chebyshev reach; getMaxDensity
@@ -88,6 +93,7 @@ export const ZONE_BLOCKER_MESSAGES: Record<ZoneBlocker, string> = {
   DISTRICT_POLICY: 'Blocked by district policy',
   NO_DEMAND: 'No demand for this zone',
   RAIL_IN_THE_WAY: 'Rail track in the way',
+  UNDER_ELEVATED_ROAD: 'Under an elevated road',
 };
 
 /**
@@ -106,13 +112,14 @@ export const ZONE_BLOCKER_COLORS: Record<ZoneBlocker, number> = {
   NO_WATER: 0x29b6f6,
   DISTRICT_POLICY: 0xab47bc,
   RAIL_IN_THE_WAY: 0xff6d00,
+  UNDER_ELEVATED_ROAD: 0xff6d00,
   NO_DEMAND: 0x555555,
 };
 
 /** Blockers worth drawing an icon for — a player can act on each of these. */
 export const ACTIONABLE_BLOCKERS: ReadonlySet<ZoneBlocker> = new Set<ZoneBlocker>([
   'NO_ROAD', 'ROAD_TOO_SMALL', 'NO_POWER', 'NO_WATER', 'DISTRICT_POLICY',
-  'RAIL_IN_THE_WAY',
+  'RAIL_IN_THE_WAY', 'UNDER_ELEVATED_ROAD',
 ]);
 
 /** Count each blocker across the map — for a city-wide "12 cells have no power" line. */
@@ -121,7 +128,7 @@ export function summariseZoneBlockers(
 ): Record<ZoneBlocker, number> {
   const out: Record<ZoneBlocker, number> = {
     NO_ROAD: 0, ROAD_TOO_SMALL: 0, NO_POWER: 0, NO_WATER: 0,
-    DISTRICT_POLICY: 0, NO_DEMAND: 0, RAIL_IN_THE_WAY: 0,
+    DISTRICT_POLICY: 0, NO_DEMAND: 0, RAIL_IN_THE_WAY: 0, UNDER_ELEVATED_ROAD: 0,
   };
   grid.forEachCell((cell, x, y) => {
     if (cell.zoneType === ZoneType.NONE || cell.buildingId !== 0) return;

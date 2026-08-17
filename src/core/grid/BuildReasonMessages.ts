@@ -17,6 +17,7 @@ export const BUILD_REASON_MESSAGES: Record<string, string> = {
   AIRPORT_OUT_OF_BOUNDS: 'Airport area is out of bounds',
   AIRPORT_AREA_OCCUPIED: 'Airport area is not fully clear',
   NOT_ADJACENT_TO_ROAD: 'Must be built adjacent to a road',
+  UNDER_ELEVATED_ROAD: 'Nothing can be built under an elevated road',
   // Elevated / ramp reasons
   START_NOT_ON_ROAD: 'Must start on an existing road',
   PATH_TOO_SHORT: 'Not enough space for ramp',

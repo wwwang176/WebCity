@@ -28,7 +28,7 @@ export interface BuildingGrowthTickDeps {
   };
 
   /** Delegate to BuildingGrowth.tryGrow (mutates grid on success). */
-  tryGrow(x: number, y: number, conditions: { hasPower: boolean; hasWater: boolean; rciDemand: { residential: number; commercial: number; industrial: number } }): boolean;
+  tryGrow(x: number, y: number, conditions: { hasPower: boolean; hasWater: boolean; rciDemand: { residential: number; commercial: number; industrial: number }; underElevated: boolean }): boolean;
 
   /** Current RCI demand snapshot. */
   rciDemand: { residential: number; commercial: number; industrial: number };
@@ -36,6 +36,10 @@ export interface BuildingGrowthTickDeps {
   /** Per-cell utility checks. */
   isPowered(x: number, y: number): boolean;
   isWatered(x: number, y: number): boolean;
+
+  /** 這一格頭上有沒有高架路段（含高架鐵路）。橋下不長房子。 */
+  hasElevatedAbove(x: number, y: number): boolean;
+
 
   /** District/policy restrictions. */
   getDistrictAt(x: number, y: number): { id: string } | null;
@@ -79,7 +83,7 @@ export function buildingGrowthTick(deps: BuildingGrowthTickDeps): BuildingGrowth
     getDistrictAt, canBuildInDistrict,
     clearPendingDeathAt, clearPendingGarbageAt,
     growthAttempts, burnedClearanceChance,
-    getBuildingLevel, randomInt, randomFloat,
+    getBuildingLevel, randomInt, randomFloat, hasElevatedAbove,
   } = deps;
 
   const result: BuildingGrowthTickResult = {
@@ -93,6 +97,7 @@ export function buildingGrowthTick(deps: BuildingGrowthTickDeps): BuildingGrowth
     hasPower: true,
     hasWater: true,
     rciDemand,
+    underElevated: false,
   };
 
   for (let i = 0; i < growthAttempts; i++) {
@@ -118,6 +123,7 @@ export function buildingGrowthTick(deps: BuildingGrowthTickDeps): BuildingGrowth
     if (cell.reserved === ABANDONED && isZoneBuilding(cell.buildingId)) {
       conditions.hasPower = isPowered(x, y);
       conditions.hasWater = isWatered(x, y);
+      conditions.underElevated = hasElevatedAbove(x, y);
       const rciType = zoneToRCI(cell.zoneType);
       if (!conditions.hasPower || !conditions.hasWater || !rciType || rciDemand[rciType] <= 0) continue;
 
@@ -151,6 +157,7 @@ export function buildingGrowthTick(deps: BuildingGrowthTickDeps): BuildingGrowth
 
       conditions.hasPower = isPowered(x, y);
       conditions.hasWater = isWatered(x, y);
+      conditions.underElevated = hasElevatedAbove(x, y);
       if (tryGrow(x, y, conditions)) {
         result.changed = true;
         result.affectedCells.push(toPosKey(x, y));

@@ -5151,3 +5151,25 @@ Confirm → New Game → Start Game，新局的圖表是空的。
 `TerrainRenderer` 有同一個病但只犯在**高度**上（第 54-66 行同樣的 `頂點(i,j) ← 格(i,j)`）：
 地形顏色走 DataTexture + NearestFilter，對位是對的，但起伏與它造成的明暗偏西北半格。
 還沒修，見 TODO。
+
+## BUG-306 已修：高架下方可以蓋房子
+
+實測醫院蓋得進高架橋底下。
+
+`canPlaceInfra` 只看格子上的東西 —— 地形、道路、鐵軌、既有建築 —— 而高架路段**不在
+格子上**，它住在 `ElevationManager` 裡。所以每一條檢查都通過，房子就蓋在橋下了。
+建商長出來的房子（`BuildingGrowth.canGrow`）同樣沒有問過這件事。
+
+三個入口一起補，因為少擋一個就等於沒擋：
+
+- `canPlaceInfra` 多一個選填的 `hasElevatedAbove`，佔地**每一格**都問（只有一角在
+  橋下也不行）。理由碼 `UNDER_ELEVATED_ROAD`。
+- `GrowthConditions` 多一個 `underElevated`，跟 `hasPower`／`hasWater` 一樣由呼叫端
+  算好傳進來。
+- `ZoneBlocker` 多一個 `UNDER_ELEVATED_ROAD`。它的存在理由就是「跟 `canGrow` 問同一
+  組條件」，漏掉的話玩家會看到一塊寫著「沒問題」卻永遠不長東西的地。
+
+判斷用 `hasElevatedSegment`（含高架鐵路），不是 `hasElevatedRoadAt` —— 高架鐵路一樣
+是壓在頭上的結構。
+
+三個入口在 `Game` 裡共用同一個 `elevatedAt` —— 各問各的話，總有一個會漂走。

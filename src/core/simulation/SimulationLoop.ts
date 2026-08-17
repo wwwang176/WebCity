@@ -650,6 +650,7 @@ export class SimulationLoop {
       rciDemand: this.state.rciDemand,
       isPowered: (x, y) => this.state.power.isPowered(x, y),
       isWatered: (x, y) => this.state.water.isSupplied(x, y),
+      hasElevatedAbove: (x, y) => this._elevationManager?.hasElevatedSegment(x, y) ?? false,
       getDistrictAt: (x, y) => this.state.districts.getDistrictAt(x, y),
       canBuildInDistrict: (id, zt) => this.state.policies.canBuildInDistrict(id, zt),
       clearPendingDeathAt: (x, y) => this.state.deathCare.clearPendingAt(x, y),

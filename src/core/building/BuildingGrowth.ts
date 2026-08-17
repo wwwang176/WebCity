@@ -17,6 +17,13 @@ export interface GrowthConditions {
   hasPower: boolean;
   hasWater: boolean;
   rciDemand: RCIDemand;
+  /**
+   * 這一格頭上有沒有高架路段。橋下不長房子。
+   *
+   * 由呼叫端算好傳進來，跟 `hasPower`／`hasWater` 一樣 —— 高架不在格子上，這個
+   * 類別只拿得到 `Grid`。沒填就等於頭上是天空。
+   */
+  underElevated?: boolean;
 }
 
 export class BuildingGrowth {
@@ -32,6 +39,7 @@ export class BuildingGrowth {
     if (cell.zoneType === ZoneType.NONE) return false;
     if (cell.buildingId !== 0) return false;
     if (cell.railType !== RailType.NONE) return false;
+    if (conditions.underElevated) return false;
 
     // Must have road connection (Chebyshev reach matches ZoneManager)
     if (!isNearRoad(this.grid, x, y, ZONE_ROAD_REACH)) return false;
