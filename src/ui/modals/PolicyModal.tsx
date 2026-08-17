@@ -7,6 +7,8 @@ import {
   policiesByCategory, districtPolicyTotal, RETIRED_CATEGORY,
 } from '../../core/district/PolicyPresentation';
 import type { PolicyType } from '../../core/district/types';
+import { sanitiseDistrictName, DISTRICT_NAME_MAX } from '../../core/district/DistrictNaming';
+import { DISTRICT_SWATCHES, swatchCssFor } from '../../core/district/DistrictPalette';
 
 /**
  * 條例面板。
@@ -128,6 +130,24 @@ export function PolicyModal(props: {
     setVersion(v => v + 1);
   };
 
+  const rename = (raw: string) => {
+    const d = selectedDistrict();
+    if (!d) return;
+    getGame().getState().districts.renameDistrict(d.id, sanitiseDistrictName(raw, d.name));
+    // 圖層上的標籤是拿名字畫的，不重畫的話地圖上還是舊名字。
+    getGame().refreshOverlay();
+    setVersion(v => v + 1);
+  };
+
+  const recolour = (index: number) => {
+    const d = selectedDistrict();
+    if (!d) return;
+    getGame().getState().districts.setDistrictColor(d.id, index);
+    // 圖層是拿分區顏色畫的，換色之後要重畫一次才看得到。
+    getGame().refreshOverlay();
+    setVersion(v => v + 1);
+  };
+
   const paneTitle = () => isCity() ? 'City Ordinances' : (selectedDistrict()?.name ?? '');
   const paneSubtitle = () => isCity()
     ? 'Billed per resident — the bill grows with the city.'
@@ -152,16 +172,29 @@ export function PolicyModal(props: {
             <span>City</span>
           </button>
           <For each={districts()}>
-            {(d) => (
-              <button
-                class="overview-nav-item"
-                classList={{ active: !isCity() && selectedDistrict()?.id === d.id }}
-                onClick={() => selectDistrict(d.id)}
-              >
-                <span class="nav-icon">{'\u{1F3F3}'}</span>
-                <span>{d.name}</span>
-              </button>
-            )}
+            {(d) => {
+              // 名字與顏色要透過會追蹤 version() 的 memo 讀。<For> 重用同一個
+              // District 物件，所以這個 body 不會重跑 —— 直接寫 {d.name} 的話，
+              // 改完名字側邊欄還是舊的，直到關掉面板重開。
+              const name = () => { version(); gameSignals.tick(); return d.name; };
+              const swatch = () => { version(); return swatchCssFor(d.colorIndex); };
+              return (
+                <button
+                  class="overview-nav-item"
+                  classList={{ active: !isCity() && selectedDistrict()?.id === d.id }}
+                  onClick={() => selectDistrict(d.id)}
+                >
+                  <span
+                    class="nav-icon"
+                    style={{
+                      width: '10px', height: '10px', 'border-radius': '3px',
+                      background: swatch() ?? '#667', display: 'inline-block',
+                    }}
+                  />
+                  <span>{name()}</span>
+                </button>
+              );
+            }}
           </For>
           <Show when={districts().length === 0}>
             <div style="padding:8px 14px;font-size:11px;color:#667;line-height:1.5">
@@ -171,11 +204,48 @@ export function PolicyModal(props: {
         </nav>
 
         <div class="overview-content">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
-            <strong style="color:#e0e0e0;font-size:14px">{paneTitle()}</strong>
-            <span style="font-size:12px;color:#ce93d8">This cycle: ${total()}</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:2px">
+            <Show
+              when={!isCity()}
+              fallback={<strong style="color:#e0e0e0;font-size:14px">{paneTitle()}</strong>}
+            >
+              {/* 名字直接可以改，不用先按一顆編輯鈕 —— 分區的名字是玩家在地圖上
+                  唯一認得出這是哪一區的線索，改名不該是藏起來的功能。 */}
+              <input
+                value={paneTitle()}
+                maxLength={DISTRICT_NAME_MAX}
+                aria-label="District name"
+                onInput={(e) => rename(e.currentTarget.value)}
+                onBlur={(e) => { e.currentTarget.value = paneTitle(); }}
+                style="background:transparent;border:none;border-bottom:1px dashed #445;color:#e0e0e0;font-size:14px;font-weight:600;padding:2px 0;outline:none;min-width:0;flex:1"
+              />
+            </Show>
+            <span style="font-size:12px;color:#ce93d8;white-space:nowrap">This cycle: ${total()}</span>
           </div>
           <div style="font-size:11px;color:#777;margin-bottom:10px">{paneSubtitle()}</div>
+
+          <Show when={!isCity()}>
+            {/* 色票。圖層上就是這個顏色 —— 色塊的色相跟圖層算出來的是同一個數字，
+                有測試釘著。 */}
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+              <span style="font-size:11px;color:#777">Colour</span>
+              <For each={DISTRICT_SWATCHES}>
+                {(sw, i) => (
+                  <button
+                    onClick={() => recolour(i())}
+                    aria-label={`Colour ${i() + 1}`}
+                    aria-pressed={selectedDistrict()?.colorIndex === i()}
+                    style={{
+                      width: '18px', height: '18px', 'border-radius': '4px',
+                      cursor: 'pointer', background: sw.css,
+                      border: selectedDistrict()?.colorIndex === i()
+                        ? '2px solid #fff' : '1px solid #0006',
+                    }}
+                  />
+                )}
+              </For>
+            </div>
+          </Show>
 
           <For each={groups()}>
             {(group) => (

@@ -360,3 +360,33 @@ describe('CitySpecialization', () => {
     expect(cs.getCurrent()).toBe(CitySpecType.NONE);
   });
 });
+
+describe('色票與名字的存檔往返', () => {
+  it('should carry the colour and the name through a save', () => {
+    const dm = new DistrictManager();
+    const d = dm.createDistrict('Riverside');
+    dm.setDistrictColor(d.id, 3);
+    const back = DistrictManager.fromJSON(dm.toJSON());
+    const r = back.getDistrict(d.id)!;
+    expect(r.name).toBe('Riverside');
+    expect(r.colorIndex, '選過的顏色讀檔之後不見了').toBe(3);
+  });
+
+  it('should drop a colour index a hand-edited save could not have', () => {
+    const dm = new DistrictManager();
+    const d = dm.createDistrict('A');
+    const json = dm.toJSON();
+    json.districts[0]!.colorIndex = 999;
+    const back = DistrictManager.fromJSON(json);
+    expect(back.getDistrict(d.id)!.colorIndex,
+      '壞掉的索引留了下來，那一區會從圖層上消失').toBeUndefined();
+  });
+
+  it('should refuse a broken index at the setter too', () => {
+    const dm = new DistrictManager();
+    const d = dm.createDistrict('A');
+    dm.setDistrictColor(d.id, 2);
+    dm.setDistrictColor(d.id, -1);
+    expect(dm.getDistrict(d.id)!.colorIndex).toBeUndefined();
+  });
+});

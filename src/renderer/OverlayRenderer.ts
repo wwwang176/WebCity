@@ -20,6 +20,16 @@ export enum OverlayType {
   COMMUTE = 'commute',
 }
 
+/** 圖層上的一個分區名稱標籤。 */
+export interface DistrictLabel {
+  name: string;
+  /** 分區的中心格。 */
+  x: number;
+  y: number;
+  /** 這一區的圖層數值（1–100）—— 標籤的底色用它，跟腳下的色塊對得起來。 */
+  value: number;
+}
+
 export interface ElevatedOverlayCell {
   x: number;
   y: number;
@@ -37,6 +47,7 @@ export class OverlayRenderer {
   private mesh: THREE.Mesh | null = null;
   private elevatedMesh: THREE.InstancedMesh | null = null;
   private currentOverlay: OverlayType = OverlayType.NONE;
+  private readonly labelSprites: THREE.Sprite[] = [];
   private readonly _reusableColor = new THREE.Color();
 
   /**
@@ -63,11 +74,14 @@ export class OverlayRenderer {
     grid: Grid,
     data?: Map<string, number>,
     elevatedCells?: ElevatedOverlayCell[],
+    labels?: DistrictLabel[],
   ): void {
     this.dispose(scene);
     this.currentOverlay = type;
 
     if (type === OverlayType.NONE) return;
+
+    if (labels?.length) this.buildLabels(scene, labels);
 
     const w = grid.width;
     const h = grid.height;
@@ -221,7 +235,30 @@ export class OverlayRenderer {
     }
   }
 
+  /**
+   * 名稱標籤。
+   *
+   * 用 sprite 而不是 DOM:sprite 跟著場景走，開關圖層時跟色塊一起生一起滅，不必
+   * 每一幀把世界座標投影回螢幕。
+   */
+  private buildLabels(scene: THREE.Scene, labels: DistrictLabel[]): void {
+    for (const label of labels) {
+      const sprite = makeLabelSprite(label);
+      // 疊在色塊上方一點，不然會被地面 z-fight 吃掉。
+      sprite.position.set(label.x + 0.5, LABEL_HEIGHT, label.y + 0.5);
+      scene.add(sprite);
+      this.labelSprites.push(sprite);
+    }
+  }
+
   dispose(scene: THREE.Scene): void {
+    for (const s of this.labelSprites) {
+      scene.remove(s);
+      s.material.map?.dispose();
+      s.material.dispose();
+    }
+    this.labelSprites.length = 0;
+
     if (this.mesh) {
       scene.remove(this.mesh);
       this.mesh.geometry.dispose();
@@ -235,4 +272,64 @@ export class OverlayRenderer {
       this.elevatedMesh = null;
     }
   }
+}
+
+
+/** 標籤浮在地面上方的高度。低於色塊的話會被地面吃掉。 */
+const LABEL_HEIGHT = 1.2;
+
+/**
+ * 把名字畫成一張貼圖。
+ *
+ * 底色用該分區的圖層顏色，字用白色加深色描邊 —— 色相環轉一圈總有幾個顏色會讓
+ * 純白的字看不清楚。
+ */
+function makeLabelSprite(label: DistrictLabel): THREE.Sprite {
+  const pad = 12;
+  const font = 'bold 44px sans-serif';
+  const measure = document.createElement('canvas').getContext('2d')!;
+  measure.font = font;
+  const textWidth = measure.measureText(label.name).width;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil(textWidth) + pad * 2;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d')!;
+
+  ctx.fillStyle = `hsl(${(label.value / 100) * 360} 70% 32%)`;
+  ctx.globalAlpha = 0.85;
+  roundRect(ctx, 0, 0, canvas.width, canvas.height, 10);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.font = font;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 5;
+  ctx.strokeStyle = 'rgba(0,0,0,0.75)';
+  ctx.strokeText(label.name, canvas.width / 2, canvas.height / 2);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(label.name, canvas.width / 2, canvas.height / 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture, transparent: true, depthTest: false,
+  }));
+  // 高度固定，寬度照貼圖比例 —— 名字長就寬一點，字不會被壓扁。
+  const height = 2.2;
+  sprite.scale.set(height * (canvas.width / canvas.height), height, 1);
+  return sprite;
+}
+
+function roundRect(
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
 }

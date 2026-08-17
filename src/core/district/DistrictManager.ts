@@ -3,6 +3,7 @@ import { recoverNextId } from '../utils/recoverNextId';
 import { District, Policy, PolicyType, Specialization } from './types';
 import { clampLevel, levelForLegacyActive, maxLevel } from './PolicyManager';
 import { isDistrictScoped } from './PolicyScope';
+import { isValidSwatchIndex } from './DistrictPalette';
 import { exclusiveGroupRank, EXCLUSIVE_GROUP_OF } from './PolicyExclusion';
 import type { TaxRates } from '../economy/Tax';
 
@@ -19,6 +20,7 @@ export type SerializedPolicy =
 export interface SerializedDistrict {
   id: string;
   name: string;
+  colorIndex?: number;
   cells: string[];
   taxRateOverride?: TaxRates;
   policies: SerializedPolicy[];
@@ -86,6 +88,13 @@ export class DistrictManager {
     return this.districts.get(id) ?? null;
   }
 
+  /** 換色票。索引壞掉就當成沒選過 —— 存檔是可以編輯的。 */
+  setDistrictColor(id: string, colorIndex: number | undefined): void {
+    const district = this.districts.get(id);
+    if (!district) return;
+    district.colorIndex = isValidSwatchIndex(colorIndex) ? colorIndex : undefined;
+  }
+
   renameDistrict(id: string, name: string): void {
     const district = this.districts.get(id);
     if (!district) return;
@@ -142,6 +151,7 @@ export class DistrictManager {
       districts: this.getAllDistricts().map((d) => ({
         id: d.id,
         name: d.name,
+        colorIndex: d.colorIndex,
         cells: [...d.cells],
         taxRateOverride: d.taxRateOverride,
         policies: d.policies.map((p) => ({ ...p })),
@@ -160,6 +170,7 @@ export class DistrictManager {
         name: sd.name,
         cells: new Set(sd.cells ?? []),
         taxRateOverride: sd.taxRateOverride,
+        colorIndex: isValidSwatchIndex(sd.colorIndex) ? sd.colorIndex : undefined,
         // 全城條例不該出現在分區的政策清單裡。`setPolicyLevel` 擋得住正常路徑，
         // 但存檔是另一條進得來的門 —— 從那裡塞一條進來，收入效果會被套兩次
         // （全城一次、分區一次），費用也會被收兩次。

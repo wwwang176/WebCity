@@ -40,6 +40,7 @@ import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { paintDistrictRect, type DistrictPaintMode } from './core/district/DistrictPaint';
+import { nextDistrictName } from './core/district/DistrictNaming';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
@@ -71,7 +72,7 @@ import { computeTunnelSegments } from './core/transport/MetroTunnelPath';
 import { getBuildReasonMessage, formatBuildFailure } from './core/grid/BuildReasonMessages';
 import { getZoneBlocker, summariseZoneBlockers, ZONE_BLOCKER_MESSAGES, type ZoneBlocker, type ZoneBlockerDeps } from './core/zone/ZoneBlocker';
 import { collectBuildingUtilityWarnings } from './core/building/BuildingUtilityWarning';
-import { buildOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
+import { buildOverlayValue, districtLabelAnchors, districtOverlayValue, type OverlayBuildContext } from './core/overlay/OverlayBuilders';
 import { DEFAULT_JOB_RELOCATION_CONFIG } from './core/citizen/JobRelocation';
 import { getTransitSystems } from './core/transport/TransportRegistry';
 
@@ -1397,8 +1398,10 @@ export class Game {
   }
 
   createNewDistrict(name?: string): string {
-    const count = this.state.districts.getAllDistricts().length;
-    const d = this.state.districts.createDistrict(name ?? `District ${count + 1}`);
+    // 挑第一個沒被用掉的號碼，不是「目前幾個分區 + 1」—— 合併會讓數量變少，於是
+    // 合併過一次之後再開新的就可能跟既有的撞名（BUG-296）。
+    const existing = this.state.districts.getAllDistricts().map(d => d.name);
+    const d = this.state.districts.createDistrict(name ?? nextDistrictName(existing));
     this.activeDistrictId = d.id;
     return d.id;
   }
@@ -2476,10 +2479,29 @@ export class Game {
     return TOOL_TO_ZONE[this.currentTool] !== undefined;
   }
 
+  /**
+   * 用同一個圖層重畫一次。
+   *
+   * 分區換名字或換顏色之後要叫 —— 圖層是拿分區的顏色與名字畫的，不重畫的話玩家
+   * 在面板上改完，地圖上還是舊的。
+   */
+  refreshOverlay(): void {
+    const current = this.overlayRenderer.getOverlay();
+    if (current !== OverlayType.NONE) this.setOverlay(current);
+  }
+
   setOverlay(type: OverlayType): void {
     const data = this.buildOverlayData(type);
     const elevated = this.buildElevatedOverlayData(type);
-    this.overlayRenderer.setOverlay(type, this.sceneManager.scene, this.state.grid, data, elevated);
+    // 分區圖層才有名稱標籤 —— 其他圖層畫的是強度，沒有東西可以命名。
+    const labels = type === OverlayType.DISTRICT
+      ? districtLabelAnchors(this.state.districts.getAllDistricts()).map(a => ({
+          name: a.name, x: a.x, y: a.y,
+          value: districtOverlayValue(this.state.districts.getDistrict(a.id)!),
+        }))
+      : undefined;
+    this.overlayRenderer.setOverlay(
+      type, this.sceneManager.scene, this.state.grid, data, elevated, labels);
     this.computeOverlayHighlightCells(type);
     this.updatePlacementPreview();
     this.onUIUpdate?.();

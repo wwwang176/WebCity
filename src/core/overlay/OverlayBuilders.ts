@@ -4,6 +4,8 @@
  */
 import { OVERLAY_SCALE } from './CoverageOverlay';
 import { getGroundwaterLevel } from '../grid/Terrain';
+import { DISTRICT_SWATCHES, isValidSwatchIndex } from '../district/DistrictPalette';
+import { parsePosKeyUnsafe } from '../grid/GridHelpers';
 
 /** Minimal cell shape needed by overlay builders. */
 export interface OverlayCell {
@@ -24,7 +26,9 @@ export interface OverlayBuildContext {
   education: { getCoverage(x: number, y: number): boolean };
   parks: { getCoverage(x: number, y: number): boolean };
   garbage: { getCoverage(x: number, y: number): boolean };
-  districts: { getDistrictAt(x: number, y: number): { id: string } | null };
+  districts: {
+    getDistrictAt(x: number, y: number): { id: string; colorIndex?: number } | null;
+  };
   policies: { getCrimeBonus(districtId: string | null): number };
   ordinances: { getCrimeBonus(): number };
   /** 住宅格 → 住戶的平均通勤時間（tick）。查不到代表那一格沒有通勤人口。 */
@@ -53,7 +57,15 @@ const GOLDEN_RATIO_CONJUGATE = 0.618033988749895;
  * 回傳值落在 [1, 100):0 會被 `buildOverlayData` 當成「這一格沒東西」丟掉，而
  * 100 會讓 `setHSL` 的色相繞回 0，跟下限撞色。
  */
-export function districtOverlayValue(id: string): number {
+export function districtOverlayValue(
+  district: { id: string; colorIndex?: number },
+): number {
+  // 玩家選過顏色就用那一個。色票存的就是圖層數值，不必再換算 —— 換算漏掉
+  // 一邊的話，面板上的色塊跟地圖上的顏色就是會不一樣。
+  if (isValidSwatchIndex(district.colorIndex)) {
+    return DISTRICT_SWATCHES[district.colorIndex!]!.value;
+  }
+  const id = district.id;
   const cached = DISTRICT_VALUE_CACHE.get(id);
   if (cached !== undefined) return cached;
 
@@ -130,7 +142,7 @@ export const OVERLAY_BUILDERS: Record<string, OverlayBuilder> = {
 
   district: (ctx, _cell, x, y) => {
     const d = ctx.districts.getDistrictAt(x, y);
-    return d ? districtOverlayValue(d.id) : 0;
+    return d ? districtOverlayValue(d) : 0;
   },
 
   // Coverage overlays (boolean getCoverage pattern)
@@ -170,4 +182,29 @@ export function buildOverlayValue(
 ): number {
   const builder = OVERLAY_BUILDERS[type];
   return builder ? builder(ctx, cell, x, y) : 0;
+}
+
+/**
+ * 圖層上每個分區的名稱要標在哪裡。
+ *
+ * 取格子座標的平均。沒有格子的分區不給標籤 —— 硬算會得到 NaN，標籤會飛到畫面外。
+ */
+export function districtLabelAnchors(
+  districts: readonly { id: string; name: string; cells: ReadonlySet<string> }[],
+): { id: string; name: string; x: number; y: number }[] {
+  const out: { id: string; name: string; x: number; y: number }[] = [];
+  for (const d of districts) {
+    if (d.cells.size === 0) continue;
+    let sx = 0, sy = 0;
+    for (const key of d.cells) {
+      const { x, y } = parsePosKeyUnsafe(key);
+      sx += x; sy += y;
+    }
+    out.push({
+      id: d.id, name: d.name,
+      x: Math.round(sx / d.cells.size),
+      y: Math.round(sy / d.cells.size),
+    });
+  }
+  return out;
 }

@@ -46,6 +46,13 @@ export interface Policy {
 export interface District {
   id: string;
   name: string;
+  /**
+   * 玩家選的色票索引。沒選過就是 undefined，圖層退回從 id 雜湊出來的顏色。
+   *
+   * 存索引而不是顏色本身:色票是固定的一組，存索引的話調整那組顏色時舊存檔會跟著
+   * 更新，而存下來的色碼會永遠停在舊的那一版。
+   */
+  colorIndex?: number;
   cells: Set<string>;
   taxRateOverride?: TaxRates;
   policies: Policy[];
