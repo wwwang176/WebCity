@@ -169,6 +169,19 @@ describe('點一下是選取，拖曳才是畫', () => {
     expect(resolveDistrictGesture(districts, a, 0, 0, 1, 1, 'add'), '拖過自己被當成放掉選取')
       .toEqual({ kind: 'paint' });
   });
+
+  it('should treat a straight drag as a drag, not a click', () => {
+    // 只沿著一個軸拖也是拖。上面那些起訖點 x 與 y 都變了，所以把「x 變了**或**
+    // y 變了」寫成「而且」也照樣通過 —— 而畫一條一格寬的長條是常見動作。
+    const { districts, a, b } = world();
+    expect(resolveDistrictGesture(districts, a, 5, 5, 8, 5, 'add'), '水平拖被當成點擊')
+      .toEqual({ kind: 'paint' });
+    expect(resolveDistrictGesture(districts, a, 5, 5, 5, 8, 'add'), '垂直拖被當成點擊')
+      .toEqual({ kind: 'paint' });
+    // 起點落在自己身上的直線拖曳，同樣不該變成放掉選取。
+    expect(resolveDistrictGesture(districts, a, 0, 0, 3, 0, 'add')).toEqual({ kind: 'paint' });
+    void b;
+  });
 });
 
 describe('不存在的分區', () => {

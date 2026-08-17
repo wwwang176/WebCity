@@ -1,4 +1,4 @@
-import { createEffect, createSignal, onMount } from 'solid-js';
+import { createEffect, createSignal, onCleanup, onMount } from 'solid-js';
 import { UI_COLORS } from '../constants';
 import { fitCanvas } from './fitCanvas';
 import { drawChartTooltip, drawChartCursor, hoveredIndex } from './chartTooltip';
@@ -59,7 +59,13 @@ export function PopChart(props: { history: ChartHistory; range: ChartRange }) {
     ], at);
   };
 
-  onMount(() => draw());
+  onMount(() => {
+    draw();
+    // 視窗大小或螢幕的裝置像素比變了，點陣圖就對不上了 —— 而重畫只由資料、
+    // 範圍與游標觸發，遊戲暫停時三者都不會動，圖會一直糊著。
+    window.addEventListener('resize', draw);
+    onCleanup(() => window.removeEventListener('resize', draw));
+  });
   createEffect(() => {
     // 追蹤:歷史整包換掉（每天一次）、範圍切換、游標移動都要重畫。
     props.history;

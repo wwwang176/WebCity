@@ -2069,3 +2069,15 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
 - [ ] **`BirthAfterAgeing.test.ts` 對機器負載敏感**。5 秒 timeout，單獨跑 1 秒內
   結束，但瀏覽器分頁在 60fps 跑遊戲時整套會從 20 秒變 64 秒，那兩條就會 timeout。
   不是缺陷，但它是「機器夠快」才會綠的測試。
+
+### Codex 審查（e75aeee..HEAD）留下的
+- [ ] **`paintDistrictRect` 接受越界座標**。唯一的 UI 路徑在 `Game` 裡先夾過，所以
+  玩家操作是安全的;但這個匯出的 core API 拿不到地圖尺寸，直接餵 `(-1,-1)` 會把無效
+  的格子寫進 `DistrictManager` 並存檔。要修得把尺寸傳進來，那會動到所有呼叫端。
+- [ ] **忙碌的城市會頻繁重建整張圖層**。`rebuildDirtySubsystems` 尾端在任何子系統
+  dirty 的那一幀會重跑 `setOverlay`，而那會 dispose 並重配 200×200 的 PlaneGeometry
+  與所有分區的文字貼圖。空城實測是 0 次／224 幀（有 `if (!anyDirty) return` 擋著），
+  但城市一忙 `d.buildings` 會常亮。要修得給圖層自己的 dirty 判斷。
+- [ ] **範圍是按樣本數裁的，不是按日曆天**。`bucketChartSeries` 把 `spec.days` 當成
+  「最後 N 筆」，而 `history.days` 的實際值不參與判斷。目前採樣每幀都跑、天數不會跳，
+  所以碰不到;但如果之後改成節流或背景分頁採樣，Week 就可能裝著幾十天前的資料。

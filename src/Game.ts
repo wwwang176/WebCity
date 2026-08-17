@@ -1493,6 +1493,13 @@ export class Game {
   /** 之後畫的分區筆刷要套用在哪一區。面板側邊選誰，筆刷就畫誰。 */
   setActiveDistrict(id: string | null): void {
     this.activeDistrictId = id;
+    // 沒有選取時模式一律回到併入。取代與扣除改的是「現有的那一區」，手上沒有分區時
+    // 它們無事可做 —— 而工具列會把沒有選取畫成「New 亮著」，等於承諾下一筆會開新的
+    // 分區。停在扣除模式的話那個承諾是假的:拖下去只會拿到「Pick a district first」。
+    //
+    // 放在這裡而不是各個呼叫端:刪除分區、關掉圖層、點自己那一區、工具列的 New，
+    // 四條路都走這個方法，漏掉任何一條就會留下同一個矛盾。
+    if (id === null) this.districtPaintMode = 'add';
     this.refreshDistrictSelection();
     this.onUIUpdate?.();
   }

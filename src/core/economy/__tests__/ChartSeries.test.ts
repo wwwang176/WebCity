@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  emptyChartHistory, appendChartDay, bucketChartSeries, CHART_RANGES,
+  emptyChartHistory, appendChartDay, bucketChartSeries, CHART_RANGES, CHART_HISTORY_DAYS,
   type ChartRange, type ChartHistory,
 } from '../ChartSeries';
 
@@ -11,7 +11,13 @@ import {
  * 往左邊衝。時間軸要跟著遊戲的時間走，不是跟著畫面。
  */
 
-const sample = (n: number) => ({ pop: n, happiness: n, funds: n, income: n, expenses: n });
+/**
+ * 五條序列**刻意給不同的值**。全部設成同一個數字的話，把 population 寫進全部五條
+ * 序列這種接錯法，長度、平均與所有預期值都會完全一樣，測試看不出來。
+ */
+const sample = (n: number) => ({
+  pop: n, happiness: n + 1000, funds: n + 2000, income: n + 3000, expenses: n + 4000,
+});
 
 /** 從第 0 天開始連續記 `days` 天，第 d 天的值都是 d。 */
 function fill(days: number, keep = 400): ChartHistory {
@@ -32,12 +38,22 @@ describe('依日採樣', () => {
     h = appendChartDay(h, 3, sample(20), 400);
     expect(h.days.length, '同一天記了兩筆').toBe(1);
     expect(h.pop[0], '沒有更新成最新的值').toBe(20);
+    expect(h.funds[0], 'funds 讀到的不是 funds').toBe(2020);
   });
 
   it('should drop the oldest once it is full', () => {
     const h = fill(10, 4);
     expect(h.days).toEqual([6, 7, 8, 9]);
     expect(h.pop).toEqual([6, 7, 8, 9]);
+  });
+
+  it('should cap at a year by default, without being told', () => {
+    // 上面那條每次都明講 `keep`，所以**正式路徑用的預設值完全沒被測到** ——
+    // 把它拿掉，遊戲跑久了歷史會無限成長，而測試照樣全綠。
+    let h = emptyChartHistory();
+    for (let d = 0; d < CHART_HISTORY_DAYS + 25; d++) h = appendChartDay(h, d, sample(d));
+    expect(h.days.length, '沒有裁到預設上限').toBe(CHART_HISTORY_DAYS);
+    expect(h.days[h.days.length - 1], '裁掉的是新的那一頭').toBe(CHART_HISTORY_DAYS + 24);
   });
 
   it('should keep every series the same length', () => {
@@ -86,6 +102,8 @@ describe('併成要畫的點', () => {
     const out = bucketChartSeries(fill(30), 'week');
     expect(out.pop.length).toBe(7);
     expect(out.pop, '週的範圍不該做平均').toEqual([23, 24, 25, 26, 27, 28, 29]);
+    // 每條序列讀的是自己那一欄。全部指向 pop 的話這裡會全部相等。
+    expect(out.income, 'income 讀到的不是 income').toEqual([3023, 3024, 3025, 3026, 3027, 3028, 3029]);
   });
 
   it('should average within a bucket, not sum', () => {
@@ -95,7 +113,7 @@ describe('併成要畫的點', () => {
     const spec = CHART_RANGES.year;
     const last = out.income[out.income.length - 1]!;
     const firstDayOfLastBucket = 360 - spec.bucketDays;
-    const expected = (firstDayOfLastBucket + 359) / 2;
+    const expected = (firstDayOfLastBucket + 359) / 2 + 3000;
     expect(last).toBeCloseTo(expected, 6);
   });
 

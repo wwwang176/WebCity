@@ -73,6 +73,13 @@ export function getGame(): Game {
 export function initGameStore(game: Game): void {
   gameRef = game;
 
+  // 圖表歷史是模組層級的，而載入存檔與開新遊戲**不會重新載入頁面** —— `main.ts`
+  // 直接 `new Game` 再呼叫這裡。不清掉的話新城市會繼承上一座城市的人口與資金曲線，
+  // 而且 `lastChartDay` 停在舊的天數:新局從第 0 天開始，那一筆會接在第 47 天後面，
+  // 時間軸就不再是遞增的（提示會說最新的那一根是「Day 0」）。
+  setChartHistory(emptyChartHistory());
+  lastChartDay = -1;
+
   game.setOnUIUpdate(() => {
     const state = game.getState();
     const clock = state.clock;

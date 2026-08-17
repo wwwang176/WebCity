@@ -5089,3 +5089,41 @@ canvas 上的 `width`／`height` 屬性也拿掉了 —— 尺寸由 CSS 決定�
 
 `bucketChartSeries` 順帶回傳每一根結束在哪一天 —— 沒有時間軸的話那個提示只能寫
 「第 3 根」，而玩家關心的是第幾天。
+
+## BUG-302 已修：圖表歷史跨局殘留
+
+`chartHistory` 與 `lastChartDay` 是模組層級的，而**載入存檔與開新遊戲不會重新載入
+頁面** —— `main.ts` 直接 `new Game` 再呼叫 `initGameStore`，那裡沒有清掉它們。
+
+新城市因此繼承上一座城市的人口與資金曲線。更糟的是 `lastChartDay` 停在舊的天數:新局
+從第 0 天開始，那一筆會接在第 47 天後面，時間軸不再遞增 —— hover 提示會說最新的那一根
+是「Day 0」，而它左邊那根寫著「Day 47」。
+
+舊版（每幀採樣、沒有時間軸）也一樣沒清，只是看不出來:曲線接在一起像是同一條。改成
+逐日採樣之後日期標籤把它揭穿了。
+
+修法是 `initGameStore` 開頭重設兩者。實測路徑:Settings → Return to Main Menu →
+Confirm → New Game → Start Game，新局的圖表是空的。
+
+## BUG-303 已修：放掉選取沒有重設筆刷模式，New 亮著卻建立不了分區
+
+選一區、切到 Subtract 或 Replace，然後刪掉那一區或關掉分區圖層 —— 兩條路都只做
+`setActiveDistrict(null)`，`districtPaintMode` 還停在 subtract。
+
+工具列因為沒有選取而把 **New 畫成亮著**（意思是「下一筆拖曳會建立新分區」），但
+`applyDistrictGesture` 的守衛會擋掉非 add 模式的無選取拖曳，玩家拿到的是
+「Pick a district first」。亮著的按鈕在說謊。
+
+修法放在 `setActiveDistrict`:`id === null` 就把模式打回 add。刪除分區、關掉圖層、
+點自己那一區、工具列的 New 四條路都走這個方法 —— 放在各個呼叫端的話，漏掉任何一條
+就會留下同一個矛盾。
+
+## BUG-304 已修：條例面板的範圍與全域選取只有單向同步
+
+- 面板裡點 City 只改本地的 `pane`，不清 `activeDistrictId`。側邊欄寫著 City，地圖上
+  的白框與筆刷卻還在那一區。
+- 反方向也不通:那個 effect 讀的是 `game.activeDistrictId` 這個**普通欄位**，沒有訂閱
+  `gameSignals.activeDistrictId()`。面板開著時選取被外面清掉（關圖層、鍵盤切圖層、
+  刪掉分區），側邊欄會停在一個已經不是作用中的分區上。
+
+順帶刪掉 `initial` 這個 prop —— 全城與分區的兩顆按鈕併成一顆之後就沒有人讀它了。

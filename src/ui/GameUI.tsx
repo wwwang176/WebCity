@@ -80,7 +80,6 @@ function GameUIRoot() {
       {/* 同一個面板，兩個入口:分區那顆進來停在第一個分區，條例那顆停在全城。 */}
       <PolicyModal
         open={openModal() === 'district' || openModal() === 'ordinances'}
-        initial={openModal() === 'ordinances' ? 'city' : 'district'}
         onClose={closeModal}
       />
       <TransitModal open={openModal() === 'transit'} onClose={closeModal} />

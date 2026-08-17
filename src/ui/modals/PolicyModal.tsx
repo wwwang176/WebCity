@@ -26,8 +26,6 @@ type Pane = { kind: 'city' } | { kind: 'district'; id: string };
 export function PolicyModal(props: {
   open: boolean;
   onClose: () => void;
-  /** 從哪一個工具列按鈕進來的。分區那顆進來就直接停在第一個分區上。 */
-  initial: 'city' | 'district';
 }) {
   const [version, setVersion] = createSignal(0);
   const [pane, setPane] = createSignal<Pane>({ kind: 'city' });
@@ -40,15 +38,16 @@ export function PolicyModal(props: {
 
   createEffect(() => {
     if (!props.open) return;
+    // **訂閱** signal，不是讀 `game.activeDistrictId` 那個普通欄位。面板開著的時候
+    // 選取可能被外面清掉（關圖層、鍵盤切圖層、刪掉分區），讀普通欄位的話這個 effect
+    // 不會再跑，側邊欄就停在一個已經不是作用中的分區上。
+    const active = gameSignals.activeDistrictId();
     setVersion(v => v + 1);
     const game = getGame();
     // 已經在畫某一區的話就停在那一區 —— 玩家剛畫完打開面板，想看的是那一區。
-    const active = game.activeDistrictId;
     const districts = game.getState().districts.getAllDistricts();
-    const target = districts.find(d => d.id === active) ?? districts[0];
-    setPane(props.initial === 'district' && target
-      ? { kind: 'district', id: target.id }
-      : { kind: 'city' });
+    const target = districts.find(d => d.id === active);
+    setPane(target ? { kind: 'district', id: target.id } : { kind: 'city' });
   });
 
   /**
@@ -182,10 +181,12 @@ export function PolicyModal(props: {
     >
       <div class="overview-layout">
         <nav class="overview-sidebar">
+          {/* 切到全城也要放掉選取。只改本地的 pane 的話，側邊欄寫著 City，而地圖上
+              的白框與筆刷都還在那一區 —— 兩邊各說各話。 */}
           <button
             class="overview-nav-item"
             classList={{ active: isCity() }}
-            onClick={() => setPane({ kind: 'city' })}
+            onClick={() => { setPane({ kind: 'city' }); getGame().setActiveDistrict(null); }}
           >
             <span class="nav-icon">{'\u{1F3D9}'}</span>
             <span>City</span>
