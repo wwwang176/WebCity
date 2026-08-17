@@ -193,6 +193,16 @@ export class OverlayRenderer {
     scene.add(mesh);
   }
 
+  /**
+   * 一個圖層數值（0–100）在這張圖層上的顏色。
+   *
+   * 給地面**以外**的東西用 —— 建築壓在色塊上，只看得到屋頂的街廓要拿同一個顏色
+   * 才說得出腳下那一格是什麼。顏色不能兩邊各算一次:改了一邊另一邊就不一樣。
+   */
+  colorFor(type: OverlayType, value: number): number {
+    return this.getColor(type, Math.min(1, Math.max(0, value / 100))).getHex();
+  }
+
   /** Returns a reusable Color — caller must read r/g/b before calling again. */
   private getColor(type: OverlayType, value: number): THREE.Color {
     const c = this._reusableColor;

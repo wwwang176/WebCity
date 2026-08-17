@@ -2655,7 +2655,7 @@ export class Game {
       type, this.sceneManager.scene, this.state.grid, data, elevated, labels);
     // 標籤的尺寸是照可視範圍算的。等下一幀才套的話，切圖層的那一幀會閃一下。
     this.overlayRenderer.updateLabelScale(this.sceneManager.camera);
-    this.computeOverlayHighlightCells(type);
+    this.computeOverlayHighlightCells(type, data);
     this.leaveDistrictEditing(type);
     this.updatePlacementPreview();
     this.onUIUpdate?.();
@@ -2756,9 +2756,12 @@ export class Game {
    * **製造點**。製造點畫在後面是因為 `hoverHighlightGradient` 的格子表是後寫贏 ——
    * 消防局自己也在自己的涵蓋範圍裡，先畫的話那一格會是漸層的綠色，不是藍色。
    */
-  private computeOverlayHighlightCells(overlayType: OverlayType): void {
+  private computeOverlayHighlightCells(
+    overlayType: OverlayType,
+    data?: ReadonlyMap<string, number>,
+  ): void {
     this.overlayHighlightCells = [];
-    this.computeOverlayResultHighlights(overlayType);
+    this.computeOverlayResultHighlights(overlayType, data);
     this.appendOverlaySourceHighlights(overlayType);
   }
 
@@ -2789,7 +2792,37 @@ export class Game {
     }
   }
 
-  private computeOverlayResultHighlights(overlayType: OverlayType): void {
+  private computeOverlayResultHighlights(
+    overlayType: OverlayType,
+    data?: ReadonlyMap<string, number>,
+  ): void {
+    /**
+     * 用地與土地價值：建築拿它腳下那一格的顏色。
+     *
+     * 這兩張圖層的資訊全在地面上，而建築正好蓋在地面上 —— 蓋滿房子的街廓只看得到
+     * 屋頂。色塊還沒對位的時候勉強看得出來（顏色露在建築的東南邊半格），對位修好
+     * 之後就整片被蓋住了。
+     *
+     * 顏色跟地面同一套，由 `OverlayRenderer.colorFor` 給:各算各的話，改了色階就
+     * 會有一邊沒跟上。數值直接用圖層算好的那一份，不重跑一次全圖。
+     */
+    if (overlayType === OverlayType.ZONE || overlayType === OverlayType.LAND_VALUE) {
+      if (!data) return;
+      const grid = this.state.grid;
+      for (const [key, value] of data) {
+        const i = key.indexOf(',');
+        const cx = Number(key.slice(0, i));
+        const cy = Number(key.slice(i + 1));
+        const cell = grid.getCell(cx, cy);
+        if (!cell || cell.buildingId === 0) continue;
+        if (!isZoneBuilding(cell.buildingId) && !isInfrastructureBuilding(cell.buildingId)) continue;
+        this.overlayHighlightCells.push({
+          x: cx, y: cy, color: this.overlayRenderer.colorFor(overlayType, value),
+        });
+      }
+      return;
+    }
+
     /**
      * 通勤圖層：住宅**建築**依住戶的平均通勤時間上色，與警消覆蓋同一套語彙。
      *
