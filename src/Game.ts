@@ -2632,12 +2632,6 @@ export class Game {
   }
 
   setOverlay(type: OverlayType): void {
-    // 分區圖層一關掉就放掉選取。少了分區圖層，地圖上看不到分區的顏色，也看不到
-    // 選取的白框（`refreshDistrictSelection` 只在拿著筆刷時畫）—— 留著一個看不見的
-    // 選取，下一次回到筆刷時第一筆會畫進一個玩家早就忘記的分區。
-    if (type !== OverlayType.DISTRICT && this.activeDistrictId) {
-      this.setActiveDistrict(null);
-    }
     const data = this.buildOverlayData(type);
     const elevated = this.buildElevatedOverlayData(type);
     // 分區圖層才有名稱標籤 —— 其他圖層畫的是強度，沒有東西可以命名。
@@ -2652,8 +2646,26 @@ export class Game {
     // 標籤的尺寸是照可視範圍算的。等下一幀才套的話，切圖層的那一幀會閃一下。
     this.overlayRenderer.updateLabelScale(this.sceneManager.camera);
     this.computeOverlayHighlightCells(type);
+    this.leaveDistrictEditing(type);
     this.updatePlacementPreview();
     this.onUIUpdate?.();
+  }
+
+  /**
+   * 分區圖層一關掉，選取與筆刷都放下。
+   *
+   * 那個圖層是**唯一**看得到分區的地方 —— 顏色、名稱、選取的白框全靠它。關掉它還
+   * 握著筆刷的話，下一筆畫出來的是玩家看不見的東西:選取看不見（第一筆會畫進一個
+   * 早就忘記的分區），新分區也看不見。
+   *
+   * 三件事一起回到一致的狀態，工具列的子選單跟著收起來才是對的 —— 手上已經沒有那
+   * 支筆刷了。
+   */
+  private leaveDistrictEditing(type: OverlayType): void {
+    if (type === OverlayType.DISTRICT) return;
+    if (this.activeDistrictId) this.setActiveDistrict(null);
+    // `setTool` 只在有對應圖層時才回頭呼叫 `setOverlay`，而 select 沒有 —— 不會遞迴。
+    if (this.currentTool === 'district') this.setTool('select');
   }
 
   toggleOverlay(type: OverlayType): void {
