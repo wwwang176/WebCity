@@ -5,6 +5,7 @@ import { CHART_HISTORY_LENGTH } from '../constants';
 import { Season } from '../../core/climate/Climate';
 import { OverlayType } from '../../renderer/OverlayRenderer';
 import { calculateBalance } from '../../core/economy/Budget';
+import type { DistrictPaintMode } from '../../core/district/DistrictPaint';
 
 // --- High-frequency signals (updated every updateUI call) ---
 const [date, setDate] = createSignal('Day 1');
@@ -28,6 +29,8 @@ const [placementMode, setPlacementMode] = createSignal<PlacementMode>('ground');
 const [elevationLevel, setElevationLevel] = createSignal(1);
 const [selectedTransferRoute, setSelectedTransferRoute] = createSignal<string | null>(null);
 const [selectedCitizenId, setSelectedCitizenId] = createSignal<number | null>(null);
+const [districtPaintMode, setDistrictPaintMode] = createSignal<DistrictPaintMode>('add');
+const [activeDistrictId, setActiveDistrictId] = createSignal<string | null>(null);
 
 // --- Throttled tick signal for modal live-refresh (fixed ~6 updates/sec regardless of FPS) ---
 const [tick, setTick] = createSignal(0);
@@ -48,6 +51,7 @@ export const gameSignals = {
   currentRotation, rciDemand, chartHistory, econHistory,
   viewMode, tick, powerSupply, powerDemand, placementMode, elevationLevel, selectedTransferRoute,
   selectedCitizenId, setSelectedCitizenId,
+  districtPaintMode, activeDistrictId,
 };
 
 // --- Game instance reference ---
@@ -103,6 +107,8 @@ export function initGameStore(game: Game): void {
       setPowerSupply(state.power.getSupply());
       setPowerDemand(Math.round(state.power.getDemand()));
       setPlacementMode(game.getPlacementMode());
+      setDistrictPaintMode(game.districtPaintMode);
+      setActiveDistrictId(game.activeDistrictId);
       setElevationLevel(game.getElevationLevel());
       setSelectedTransferRoute(game.getSelectedTransferRoute());
       if (state.rciDemand) {

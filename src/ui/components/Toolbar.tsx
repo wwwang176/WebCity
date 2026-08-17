@@ -78,6 +78,19 @@ const DISTRICT_GROUP: ToolGroup = {
   ],
 };
 
+/**
+ * 分區筆刷的三種模式。顏色跟拖曳預覽的高亮一致 —— 兩處對不起來的話，玩家會
+ * 以為預覽的顏色代表別的東西。
+ */
+const DISTRICT_MODES = [
+  { mode: 'add' as const, label: 'Add', icon: '\uFF0B', color: '#ab47bc',
+    hint: 'Drag a rectangle to merge it into this district' },
+  { mode: 'replace' as const, label: 'Replace', icon: '\u25A3', color: '#42a5f5',
+    hint: 'This district becomes exactly the rectangle you drag' },
+  { mode: 'subtract' as const, label: 'Subtract', icon: '\u2212', color: '#ef5350',
+    hint: 'Drag a rectangle to carve it out of this district' },
+];
+
 const ALL_GROUPS = [ZONE_GROUP, ROAD_GROUP, CIVIC_GROUP, UTILITY_GROUP, TRANSPORT_GROUP, DISTRICT_GROUP];
 
 function ToolButton(props: { item: SubTool; onClick: (tool: ToolType) => void }) {
@@ -147,6 +160,31 @@ function ToolGroupComponent(props: {
         )}
         {props.group.id === 'district' && (
           <>
+            <button
+              class="tb-btn"
+              onClick={(e) => { e.stopPropagation(); getGame().createNewDistrict(); getGame().setTool('district'); }}
+              title="Start a new district — the brush paints into it from now on"
+            >
+              <span class="tb-icon">{'\u2795'}</span>
+              <span style={{ color: '#ab47bc' }}>New</span>
+            </button>
+            <div class="tb-sep-v" />
+            {/* 筆刷模式。取代與扣除是修邊界用的 —— 少了它們，畫錯一次只能
+                重開一局，因為分區沒有任何擦除的辦法。 */}
+            <For each={DISTRICT_MODES}>
+              {(m) => (
+                <button
+                  class="tb-btn"
+                  classList={{ active: gameSignals.districtPaintMode() === m.mode }}
+                  onClick={(e) => { e.stopPropagation(); getGame().setDistrictPaintMode(m.mode); }}
+                  title={m.hint}
+                >
+                  <span class="tb-icon">{m.icon}</span>
+                  <span style={{ color: m.color }}>{m.label}</span>
+                </button>
+              )}
+            </For>
+            <div class="tb-sep-v" />
             <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}>
               <span class="tb-icon">{'\u{1F4CB}'}</span>
               <span style={{ color: '#ab47bc' }}>Districts</span>

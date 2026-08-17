@@ -39,11 +39,26 @@ export function PolicyModal(props: {
   createEffect(() => {
     if (!props.open) return;
     setVersion(v => v + 1);
-    const first = getGame().getState().districts.getAllDistricts()[0];
-    setPane(props.initial === 'district' && first
-      ? { kind: 'district', id: first.id }
+    const game = getGame();
+    // 已經在畫某一區的話就停在那一區 —— 玩家剛畫完打開面板，想看的是那一區。
+    const active = game.activeDistrictId;
+    const districts = game.getState().districts.getAllDistricts();
+    const target = districts.find(d => d.id === active) ?? districts[0];
+    setPane(props.initial === 'district' && target
+      ? { kind: 'district', id: target.id }
       : { kind: 'city' });
   });
+
+  /**
+   * 側邊選誰，筆刷就畫誰。
+   *
+   * 少了這一條，玩家在面板裡點了 Docklands、關掉面板繼續畫，格子還是進 Riverside
+   * —— 而畫面上沒有任何東西說明為什麼。
+   */
+  const selectDistrict = (id: string) => {
+    setPane({ kind: 'district', id });
+    getGame().setActiveDistrict(id);
+  };
 
   const population = () => { version(); return getGame().getState().citizens.getPopulation(); };
 
@@ -141,7 +156,7 @@ export function PolicyModal(props: {
               <button
                 class="overview-nav-item"
                 classList={{ active: !isCity() && selectedDistrict()?.id === d.id }}
-                onClick={() => setPane({ kind: 'district', id: d.id })}
+                onClick={() => selectDistrict(d.id)}
               >
                 <span class="nav-icon">{'\u{1F3F3}'}</span>
                 <span>{d.name}</span>

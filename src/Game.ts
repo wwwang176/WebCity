@@ -39,6 +39,7 @@ import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
+import { paintDistrictRect, type DistrictPaintMode } from './core/district/DistrictPaint';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
 import { HighlightManager } from './renderer/HighlightManager';
@@ -174,6 +175,13 @@ const ZONE_PREVIEW_COLORS: Record<string, number> = {
   zone_r: PALETTE.ZONE.RES_LOW, zone_rh: PALETTE.ZONE.RES_HIGH,
   zone_c: PALETTE.ZONE.COM_LOW, zone_ch: PALETTE.ZONE.COM_HIGH,
   zone_i: PALETTE.ZONE.IND_PREVIEW, zone_o: PALETTE.ZONE.OFFICE_PREVIEW,
+};
+
+/** 分區筆刷三種模式的拖曳預覽顏色。 */
+const DISTRICT_PREVIEW_COLORS: Record<DistrictPaintMode, number> = {
+  add: 0xab47bc,
+  replace: 0x42a5f5,
+  subtract: 0xef5350,
 };
 
 /** Key-to-tool bindings (OCP: add new keyboard shortcuts here). */
@@ -468,6 +476,13 @@ export class Game {
   private airplaneAnimator = new AirplaneAnimator();
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
+  /**
+   * 分區筆刷的模式。
+   *
+   * 預設是併入 —— 玩家第一次拿到筆刷時想做的是「把這塊也算進來」，取代與扣除
+   * 是修邊界時才用得到的。
+   */
+  districtPaintMode: DistrictPaintMode = 'add';
   currentRotation: Rotation = 0; // infrastructure placement rotation (R key cycles)
   viewMode: ViewMode = ViewMode.NORMAL;
 
@@ -1358,21 +1373,27 @@ export class Game {
   }
 
   private paintDistrict(x1: number, y1: number, x2: number, y2: number): void {
-    // Create a new district if none is active
-    if (!this.activeDistrictId) {
-      const count = this.state.districts.getAllDistricts().length;
-      const d = this.state.districts.createDistrict(`District ${count + 1}`);
-      this.activeDistrictId = d.id;
+    // 沒有選定的分區就開一個。原本這裡只在 activeDistrictId 是 null 時建立，而它
+    // 建立之後永遠不會被重設，也沒有任何 UI 呼叫 createNewDistrict —— 於是整場
+    // 遊戲只做得出一個分區（BUG-295）。
+    if (!this.activeDistrictId || !this.state.districts.getDistrict(this.activeDistrictId)) {
+      this.createNewDistrict();
     }
-    const { minX, maxX, minY, maxY } = normalizeRect(x1, y1, x2, y2);
-    for (let y = minY; y <= maxY; y++) {
-      for (let x = minX; x <= maxX; x++) {
-        this.state.districts.addCellToDistrict(this.activeDistrictId, x, y);
-      }
-    }
+    paintDistrictRect(
+      this.state.districts, this.activeDistrictId!, x1, y1, x2, y2, this.districtPaintMode);
     this.dirty.terrain = true;
     // Painting a district brings its build policies to bear on these cells.
     this.invalidateZoneBlockers();
+  }
+
+  /** 之後畫的分區筆刷要套用在哪一區。面板側邊選誰，筆刷就畫誰。 */
+  setActiveDistrict(id: string | null): void {
+    this.activeDistrictId = id;
+  }
+
+  setDistrictPaintMode(mode: DistrictPaintMode): void {
+    this.districtPaintMode = mode;
+    this.onUIUpdate?.();
   }
 
   createNewDistrict(name?: string): string {
@@ -2292,6 +2313,10 @@ export class Game {
           }
         }
       }
+    } else if (this.dragStart && this.currentTool === 'district') {
+      // 分區筆刷本來沒有拖曳預覽 —— 玩家是盲畫，放開才知道畫到哪。
+      // 顏色分三種:併入紫、取代藍、扣除紅。
+      this.highlightDragRange(DISTRICT_PREVIEW_COLORS[this.districtPaintMode]);
     } else if (this.dragStart && this.isZoneTool()) {
       this.highlightDragRange(ZONE_PREVIEW_COLORS[this.currentTool] ?? 0xffffff);
     } else if (this.dragStart && this.isDragBuildTool()) {
