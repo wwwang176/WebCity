@@ -227,7 +227,8 @@ describe('三個槓桿真的接進模擬', () => {
       if (mult !== 1) state.ordinances.setLevel(PolicyType.ENERGY_REGULATION, 1);
       for (let i = 0; i < 12; i++) loop.tick();
       (POLICY_EFFECTS as Record<string, unknown>)[PolicyType.ENERGY_REGULATION] = saved;
-      return state.garbage.getTotalGarbage();
+      // 沒有垃圾場，所以產出全部堆在 getUncollected 裡。
+      return state.garbage.getUncollected();
     };
     const plain = garbageWith(1);
     expect(plain, '沒有垃圾可比，這條測試等於空轉').toBeGreaterThan(0);
@@ -236,9 +237,9 @@ describe('三個槓桿真的接進模擬', () => {
 });
 ```
 
-> `state.garbage` 取得總垃圾量的方法名稱先確認 —— `GarbageService` 上找
-> `getTotalGarbage` 或等價的 getter。沒有的話改成把該格的垃圾量讀出來，
-> **不要**改成直接呼叫 `getGarbageMultiplier`，那樣就繞過了要驗的那條線。
+> `GarbageService.getUncollected()` 已查證存在（`GarbageService.ts:233`）。測試城市
+> 沒有垃圾場，所以產出全部留在那裡。**不要**改成直接呼叫 `getGarbageMultiplier`，
+> 那樣就繞過了要驗的那條線。
 
 - [ ] **Step 2: 跑測試確認失敗**
 
@@ -272,9 +273,13 @@ Expected: FAIL — `o.getCrimeBonus is not a function`
 
 ```ts
         // 分區與全城的效果相加 —— 兩個範圍是獨立的決策，不是二選一。
-        crimeRate: this.getAvgCrime()
+        //
+        // 夾在 0 以上:`calculateLandValue` 是 `value -= crimeRate * CRIME_PENALTY`，
+        // 負的犯罪率會直接變成地價加成。宵禁疊上監視器網路就能把犯罪壓成負數，
+        // 那時候「治安好」會變成「憑空多出地價」，而且疊越多層賺越多。
+        crimeRate: Math.max(0, this.getAvgCrime()
           + this.state.policies.getCrimeBonus(districtId)
-          + this.state.ordinances.getCrimeBonus(),
+          + this.state.ordinances.getCrimeBonus()),
         policyBonus: this.state.policies.getLandValueBonus(districtId)
           + this.state.ordinances.getLandValueBonus(),
 ```
@@ -548,6 +553,8 @@ Expected:全過。既有的不變量測試（取捨、計費基數、說明）�
 
 ```ts
 import { CityOrdinances } from '../CityOrdinances';
+import { createGameState } from '../../simulation/GameState';
+import { SimulationLoop } from '../../simulation/SimulationLoop';
 
 describe('全城條例', () => {
   it('should let the surveillance network trade privacy for safety', () => {
@@ -562,6 +569,33 @@ describe('全城條例', () => {
     o.setLevel(PolicyType.PAY_AS_YOU_THROW, 2);
     expect(o.getGarbageMultiplier(), '隨袋徵收沒有減少垃圾').toBeLessThan(1);
     expect(o.getLandValueBonus(), '隨袋徵收沒有代價').toBeLessThan(0);
+  });
+
+  it('should not let stacked crime reductions create land value out of nothing', () => {
+    // `calculateLandValue` 是 `value -= crimeRate * CRIME_PENALTY` —— 犯罪率變負
+    // 會直接變成地價加成，而且宵禁疊上監視器網路可以一直疊下去。Task 1 在
+    // SimulationLoop 那裡夾了 0，這條走真的路徑驗它。
+    const build = (stack: boolean) => {
+      const state = createGameState(30, 30);
+      const loop = new SimulationLoop(state);
+      for (let x = 5; x < 15; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
+      for (let x = 6; x < 14; x++) {
+        state.grid.setCell(x, 11, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+      }
+      const d = state.districts.createDistrict('D');
+      for (let x = 6; x < 14; x++) state.districts.addCellToDistrict(d.id, x, 11);
+      if (stack) {
+        state.policies.setPolicyLevel(d.id, PolicyType.CURFEW, 2);
+        state.ordinances.setLevel(PolicyType.SURVEILLANCE_NETWORK, 2);
+      }
+      for (let i = 0; i < 6; i++) loop.tick();
+      return state.grid.getCell(10, 11)!.landValue;
+    };
+    // 兩條加起來是 −23，遠超過一座空城的平均犯罪率 —— 沒有夾值的話地價會被推高。
+    const plain = build(false);
+    expect(plain, '地價沒有被算過，這條測試等於空轉').toBeGreaterThan(0);
+    expect(build(true), '疊了兩條減犯罪的條例之後地價憑空變高了')
+      .toBeLessThanOrEqual(plain);
   });
 
   it('should bill both of them per resident', () => {
@@ -640,6 +674,8 @@ Run: `npx vitest run && npx tsc --noEmit`
    `PolicyTradeoff` 的 downside 不變量都轉紅
 2. `PAY_AS_YOU_THROW` 的 `basis` 改成 `'districtCells'` →
    `PolicyBilling.test.ts` 的 `should bill on the scale that matches its scope` 轉紅
+3. `SimulationLoop` 的 `Math.max(0, ...)` 拿掉 →
+   `should not let stacked crime reductions create land value out of nothing` 轉紅
 
 - [ ] **Step 6: 提交**
 
@@ -849,7 +885,7 @@ describe('汙水處理標準', () => {
       const { state, loop } = city();
       state.ordinances.setLevel(PolicyType.SEWAGE_STANDARDS, level);
       for (let i = 0; i < 12; i++) loop.tick();
-      return state.sewage.getTotalSewage();
+      return state.sewage.getProduced();
     };
     const plain = sewageOf(0);
     expect(plain, '沒有汙水可比，這條測試等於空轉').toBeGreaterThan(0);
@@ -858,9 +894,13 @@ describe('汙水處理標準', () => {
 });
 ```
 
-> `state.sewage` 取得總汙水量的方法名稱先確認。沒有現成 getter 的話，改成讀
-> `calculateGarbageAndSewage` 的回傳值 `{ sewage }` —— **不要**改成直接呼叫
-> `getSewageMultiplier`。
+> `SewageService.getProduced()` 已查證存在（`SewageService.ts:257`）—— 它回傳的正是
+> `tick(sewageProduced)` 收到的量，也就是產生路徑的出口。**不要**改成
+> `getDemand()`:那是從 `getCellDemandAt` 另外算的，跟產生路徑無關，乘數不會反映
+> 在上面。
+
+> 汙水那一行的 `waterDemand` 是**區域變數**（`calculateZoneDemand(WATER_CONSUMPTION,…)`），
+> 只餵給汙水。乘它不會影響 `WaterNetwork.getDemand()` —— 兩條路徑是獨立的。
 
 - [ ] **Step 2: 跑測試確認失敗**
 
@@ -870,7 +910,7 @@ describe('汙水處理標準', () => {
 
 `CityOrdinances` 加 `getSewageMultiplier()`。
 
-`calculateGarbageAndSewage` 的參數列加一個:
+`produceGarbageAndSewage` 的參數列加一個:
 
 ```ts
   /**
@@ -971,7 +1011,8 @@ describe('工業排放管制', () => {
       const state = createGameState(30, 30);
       const loop = new SimulationLoop(state);
       for (let x = 5; x < 25; x++) {
-        state.grid.setCell(x, 10, { roadType: 4, roadFlags: 0b1111, trafficDensity: 200 });
+        // RoadType.HIGHWAY = 5（4 是 SIX_LANE）。噪音要夠大才量得到。
+        state.grid.setCell(x, 10, { roadType: 5, roadFlags: 0b1111, trafficDensity: 200 });
       }
       state.ordinances.setLevel(PolicyType.INDUSTRIAL_EMISSION_CONTROL, level);
       for (let i = 0; i < 6; i++) loop.tick();
@@ -984,7 +1025,7 @@ describe('工業排放管制', () => {
 });
 ```
 
-> `roadType: 4` 是不是高速公路要先確認;沒有噪音的話換一個會產生噪音的 roadType。
+> `RoadType.HIGHWAY = 5` 已查證（`road/types.ts:7`）。
 
 - [ ] **Step 2: 跑測試確認失敗**
 
