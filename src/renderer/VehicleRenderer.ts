@@ -3,6 +3,10 @@ import { createVehicleMaterial } from './vehicleMaterial';
 import { VEHICLE_CONFIG } from './vehicleConfig';
 import { buildAirplaneNavLightsGeometry, buildAirplaneVTailGeometry } from './geometry';
 import { ViewMode, getVehicleVisibility } from '../core/ViewMode';
+import { ROAD_SURFACE_Y, LEVEL_HEIGHT } from './surfaceHeights';
+
+/** 車燈離路面多高。原本寫成 0.055 的絕對高度，那是舊的車身基準加 0.03。 */
+const LIGHT_ABOVE_SURFACE = 0.03;
 
 /** Airline body colors (vivid, multiplied with near-white vertex colors). */
 const AIRLINE_BODY_COLORS = [
@@ -214,7 +218,7 @@ export class VehicleRenderer {
    * 它的影子，以及邊緣的餘裕。
    */
   private inView(v: VehicleData): boolean {
-    const y = v.altitude ?? (v.elevation ? v.elevation * 0.6 : 0);
+    const y = v.altitude ?? (v.elevation ? v.elevation * LEVEL_HEIGHT : 0);
     this._cullSphere.center.set(v.x, y, v.y);
     this._cullSphere.radius = this.cullMargin;
     return this._frustum.intersectsSphere(this._cullSphere);
@@ -335,7 +339,7 @@ export class VehicleRenderer {
         }
         // Elevated road: add elevation height
         if (v.elevation && v.elevation > 0) {
-          yPos += v.elevation * 0.6;
+          yPos += v.elevation * LEVEL_HEIGHT;
         }
         // Ramp pitch compensation: restore normal-direction offset lost to tilt
         if (v.pitch) {
@@ -392,7 +396,11 @@ export class VehicleRenderer {
           const hlX = vx + cosH * fOff;
           const hlZ = vz - sinH * fOff;
           // Light Y: airplane follows altitude; others use base + elevation
-          let lightY = type === 'airplane' ? yPos + 0.01 : 0.055 + (v.elevation ? v.elevation * 0.6 : 0);
+          // 車燈的高度是相對於路面量的 —— 車身抬到柏油表面之後，燈也要跟著抬，
+          // 不然大燈會縮進保險桿裡。
+          let lightY = type === 'airplane'
+            ? yPos + 0.01
+            : ROAD_SURFACE_Y + LIGHT_ABOVE_SURFACE + (v.elevation ? v.elevation * LEVEL_HEIGHT : 0);
           if (v.pitch && type !== 'airplane') lightY += 0.025 * (1 - Math.cos(v.pitch));
           hlMatrix.makeRotationY(v.heading);
           // Apply pitch rotation to headlights (ramp vehicles + airplanes)

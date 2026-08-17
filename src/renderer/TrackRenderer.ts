@@ -3,6 +3,7 @@ import { Grid } from '../core/grid/Grid';
 import { RailType, TrackDirection } from '../core/rail/types';
 import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { injectHighlightShader, addHighlightAttribute } from './HighlightManager';
+import { RAIL_Y, RAIL_THICKNESS } from './surfaceHeights';
 
 /**
  * 碴床的寬度（格）。軌道貼著**格心**畫，所以它佔的是 |z| ≤ TRACK_WIDTH / 2。
@@ -24,7 +25,6 @@ export const TRACK_WIDTH = 0.15;
  * 5.5 m 取電氣化路線的建築限界（車廂約 4 m，加上受電弓與導線的空間）。
  */
 export const TRACK_CLEARANCE = 5.5 / 12;
-const RAIL_Y = 0.035;
 const TIE_Y = 0.03;
 const BALLAST_Y = 0.022;
 
@@ -288,7 +288,7 @@ export class TrackRenderer {
     strips.push(...extensions);
 
     if (strips.length === 0) return;
-    const geo = new THREE.BoxGeometry(1, 0.015, 1);
+    const geo = new THREE.BoxGeometry(1, RAIL_THICKNESS, 1);
     const mat = new THREE.MeshLambertMaterial({ color: RAIL_COLOR });
     this.railMesh = this.fillMesh(scene, strips, geo, mat, RAIL_Y);
   }

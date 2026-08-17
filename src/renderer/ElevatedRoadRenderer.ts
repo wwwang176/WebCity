@@ -25,10 +25,9 @@ import { ViewMode, VIEW_MODE_OPACITY } from '../core/ViewMode';
 import { setMeshDim, setMaterialDim, DIM_RENDER_ORDER } from './ViewModeDim';
 
 /** Height per elevation level in world units. */
-const LEVEL_HEIGHT = 0.6;
+
 const PILLAR_W = 0.08;
-const ROAD_Y = 0.025;
-const SIDEWALK_Y = 0.028;
+import { ROAD_Y, SIDEWALK_Y, ROAD_SLAB_THICKNESS, LEVEL_HEIGHT } from './surfaceHeights';
 const MARKING_Y = 0.052;
 const PILLAR_COLOR = 0x888888;
 const RAMP_ANGLE = Math.atan2(LEVEL_HEIGHT, 1.0);
@@ -91,7 +90,7 @@ function isSharedGeo(geo: THREE.BufferGeometry): boolean {
 
 function getSharedGeo() {
   if (_sharedGeo) return _sharedGeo;
-  const road = new THREE.BoxGeometry(1, 0.05, 1);
+  const road = new THREE.BoxGeometry(1, ROAD_SLAB_THICKNESS, 1);
   const sw = new THREE.PlaneGeometry(1, 1); sw.rotateX(-Math.PI / 2);
   const mk = new THREE.BoxGeometry(0.01, 0.005, 0.1);
   const cl = new THREE.BoxGeometry(0.01, 0.005, 1);

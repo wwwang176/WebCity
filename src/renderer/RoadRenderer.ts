@@ -26,8 +26,7 @@ import { toPosKey, parsePosKeyUnsafe } from '../core/grid/GridHelpers';
 // Re-export for backwards compatibility
 export { ROAD_WIDTHS } from './RoadStripBuilder';
 
-const ROAD_Y = 0.025;
-const SIDEWALK_Y = 0.028;
+import { ROAD_Y, SIDEWALK_Y, ROAD_SLAB_THICKNESS } from './surfaceHeights';
 const MARKING_Y = 0.052;
 
 /** Multipliers for max capacity per mesh type (relative to maxRoads). */
@@ -89,7 +88,7 @@ export class RoadRenderer {
     this.maxRoads = Math.min(Math.ceil(gridW * gridH * 0.4), 20000);
 
     // Road surface
-    const roadGeo = new THREE.BoxGeometry(1, 0.05, 1);
+    const roadGeo = new THREE.BoxGeometry(1, ROAD_SLAB_THICKNESS, 1);
     const roadMat = new THREE.MeshLambertMaterial({ color: 0x3a3a3a });
     injectHighlightShader(roadMat);
     this.roadMesh = new THREE.InstancedMesh(roadGeo, roadMat, this.maxRoads * CAP.road);
