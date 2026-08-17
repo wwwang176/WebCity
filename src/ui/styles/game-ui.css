@@ -500,6 +500,9 @@
 .modal-panel:has(.overview-layout) {
   overflow: hidden;
   display: flex; flex-direction: column;
+  /* 高度固定，不隨內容長短伸縮。側邊頁籤切一下面板就跳一次高度，而頁籤本身也
+     跟著上下移動 —— 連點兩個頁籤會點到第三個。短內容底下留白是划算的交換。 */
+  height: 70vh;
 }
 .modal-body:has(.overview-layout) {
   padding: 0;
