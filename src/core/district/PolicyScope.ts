@@ -32,6 +32,10 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   [PolicyType.CURFEW]: 'district',
   [PolicyType.HERITAGE_PRESERVATION]: 'district',
   [PolicyType.INDUSTRY_SUBSIDY]: 'district',
+  // 這兩條回答的是「要不要、多強」:監視器裝在哪幾條街不是玩家在決定的，
+  // 垃圾費也不會只向某一區收。套到全城永遠不會更糟，那就該是全城的。
+  [PolicyType.SURVEILLANCE_NETWORK]: 'city',
+  [PolicyType.PAY_AS_YOU_THROW]: 'city',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */

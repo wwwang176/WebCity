@@ -5,6 +5,9 @@ import { POLICY_SCOPE } from '../PolicyScope';
 import { policyEffectSummary } from '../PolicyPresentation';
 import { PolicyType } from '../types';
 import { ZoneType } from '../../grid/types';
+import { CityOrdinances } from '../CityOrdinances';
+import { createGameState } from '../../simulation/GameState';
+import { SimulationLoop } from '../../simulation/SimulationLoop';
 
 /**
  * 目錄的形狀。個別條例的數字會被平衡調動，所以這裡守的是「加一條條例不能漏掉哪
@@ -70,6 +73,58 @@ describe('新條例的分區類型針對性', () => {
     expect(tier.landValue!, '歷史保存沒有加地價').toBeGreaterThan(0);
     for (const z of [ZoneType.COMMERCIAL_LOW, ZoneType.RESIDENTIAL_LOW]) {
       expect(tier.revenueByZone![z]!, `分區類型 ${z} 沒有付代價`).toBeLessThan(1);
+    }
+  });
+});
+
+describe('全城條例', () => {
+  it('should let the surveillance network trade privacy for safety', () => {
+    const o = new CityOrdinances();
+    o.setLevel(PolicyType.SURVEILLANCE_NETWORK, 2);
+    expect(o.getCrimeBonus(), '監視器沒有降低犯罪').toBeLessThan(0);
+    expect(o.getLandValueBonus(), '監視器沒有代價 —— 被監視是有感覺的').toBeLessThan(0);
+  });
+
+  it('should let pay-as-you-throw trade convenience for less garbage', () => {
+    const o = new CityOrdinances();
+    o.setLevel(PolicyType.PAY_AS_YOU_THROW, 2);
+    expect(o.getGarbageMultiplier(), '隨袋徵收沒有減少垃圾').toBeLessThan(1);
+    expect(o.getLandValueBonus(), '隨袋徵收沒有代價').toBeLessThan(0);
+  });
+
+  it('should not let stacked crime reductions create land value out of nothing', () => {
+    // `calculateLandValue` 是 `value -= crimeRate * CRIME_PENALTY` —— 犯罪率變負
+    // 會直接變成地價加成，而且宵禁疊上監視器網路可以一直疊下去。夾值做在
+    // SimulationLoop，這條走真的路徑驗它。
+    const build = (stack: boolean) => {
+      const state = createGameState(30, 30);
+      const loop = new SimulationLoop(state);
+      for (let x = 5; x < 15; x++) state.grid.setCell(x, 10, { roadType: 1, roadFlags: 0b1111 });
+      for (let x = 6; x < 14; x++) {
+        state.grid.setCell(x, 11, { zoneType: ZoneType.COMMERCIAL_LOW, buildingId: 7 });
+      }
+      const d = state.districts.createDistrict('D');
+      for (let x = 6; x < 14; x++) state.districts.addCellToDistrict(d.id, x, 11);
+      if (stack) {
+        state.policies.setPolicyLevel(d.id, PolicyType.CURFEW, 2);
+        state.ordinances.setLevel(PolicyType.SURVEILLANCE_NETWORK, 2);
+      }
+      for (let i = 0; i < 6; i++) loop.tick();
+      return state.grid.getCell(10, 11)!.landValue;
+    };
+    // 兩條加起來是 −23，遠超過一座空城的平均犯罪率 —— 沒有夾值的話地價會被推高。
+    const plain = build(false);
+    expect(plain, '地價沒有被算過，這條測試等於空轉').toBeGreaterThan(0);
+    expect(build(true), '疊了兩條減犯罪的條例之後地價憑空變高了')
+      .toBeLessThanOrEqual(plain);
+  });
+
+  it('should bill both of them per resident', () => {
+    // 全城條例的 districtCells 恆為 0 —— 用格數計費就等於免費。這條由
+    // PolicyBilling.test.ts 的範圍檢查守著，這裡只是把新條例納入它的迴圈。
+    for (const t of [PolicyType.SURVEILLANCE_NETWORK, PolicyType.PAY_AS_YOU_THROW]) {
+      expect(POLICY_BILLING[t]!.basis, `${t} 不是按人口計費`).toBe('population');
+      expect(POLICY_SCOPE[t], `${t} 不是全城條例`).toBe('city');
     }
   });
 });

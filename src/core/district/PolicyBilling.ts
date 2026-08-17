@@ -39,6 +39,8 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.CURFEW]: { basis: 'districtCells', perUnit: [1.5, 4] },
   [PolicyType.HERITAGE_PRESERVATION]: { basis: 'districtCells', perUnit: [3] },
   [PolicyType.INDUSTRY_SUBSIDY]: { basis: 'districtCells', perUnit: [3, 7] },
+  [PolicyType.SURVEILLANCE_NETWORK]: { basis: 'population', perUnit: [0.06, 0.15] },
+  [PolicyType.PAY_AS_YOU_THROW]: { basis: 'population', perUnit: [0.05, 0.12] },
 };
 
 function unitsOf(basis: BillingBasis, scale: PolicyScale): number {

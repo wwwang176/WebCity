@@ -25,6 +25,8 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.CURFEW]: { name: 'Curfew' },
   [PolicyType.HERITAGE_PRESERVATION]: { name: 'Heritage Preservation' },
   [PolicyType.INDUSTRY_SUBSIDY]: { name: 'Industry Subsidy' },
+  [PolicyType.SURVEILLANCE_NETWORK]: { name: 'Surveillance Network' },
+  [PolicyType.PAY_AS_YOU_THROW]: { name: 'Pay As You Throw' },
 };
 
 /**
@@ -142,6 +144,17 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
   [PolicyType.INDUSTRY_SUBSIDY]: [
     { revenueByZone: { [ZoneType.INDUSTRIAL]: 1.12 }, landValue: -4 },
     { revenueByZone: { [ZoneType.INDUSTRIAL]: 1.25 }, landValue: -9 },
+  ],
+
+  // 治安換隱私。地價的代價是刻意的 —— 少了它這條就變成「花錢買治安」的價目表。
+  [PolicyType.SURVEILLANCE_NETWORK]: [
+    { crime: -6, landValue: -2 },
+    { crime: -13, landValue: -5 },
+  ],
+  // 垃圾費隨袋徵收。少了垃圾，多了居民的不滿。
+  [PolicyType.PAY_AS_YOU_THROW]: [
+    { garbage: 0.78, landValue: -3 },
+    { garbage: 0.58, landValue: -7 },
   ],
 };
 

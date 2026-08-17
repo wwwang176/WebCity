@@ -78,6 +78,14 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
     'Industrial revenue +12%  \u00B7  Land value \u22124',
     'Industrial revenue +25%  \u00B7  Land value \u22129',
   ],
+  [PolicyType.SURVEILLANCE_NETWORK]: [
+    'Crime \u22126  \u00B7  Land value \u22122',
+    'Crime \u221213  \u00B7  Land value \u22125',
+  ],
+  [PolicyType.PAY_AS_YOU_THROW]: [
+    'Garbage \u221222%  \u00B7  Land value \u22123',
+    'Garbage \u221242%  \u00B7  Land value \u22127',
+  ],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */
