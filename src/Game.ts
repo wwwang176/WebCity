@@ -40,6 +40,8 @@ import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
 import { paintDistrictRect, resolveDistrictGesture, type DistrictPaintMode } from './core/district/DistrictPaint';
+import { districtOutline } from './core/district/DistrictOutline';
+import { DistrictSelectionRenderer } from './renderer/DistrictSelectionRenderer';
 import { nextDistrictName } from './core/district/DistrictNaming';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
@@ -177,6 +179,9 @@ const ZONE_PREVIEW_COLORS: Record<string, number> = {
   zone_c: PALETTE.ZONE.COM_LOW, zone_ch: PALETTE.ZONE.COM_HIGH,
   zone_i: PALETTE.ZONE.IND_PREVIEW, zone_o: PALETTE.ZONE.OFFICE_PREVIEW,
 };
+
+/** 選取中分區的外框顏色。白色 —— 八個色票裡沒有它，不會跟任何一區的顏色混淆。 */
+const DISTRICT_SELECTION_COLOR = 0xffffff;
 
 /** 分區筆刷三種模式的拖曳預覽顏色。 */
 const DISTRICT_PREVIEW_COLORS: Record<DistrictPaintMode, number> = {
@@ -477,6 +482,8 @@ export class Game {
   private airplaneAnimator = new AirplaneAnimator();
   previewCost: number | null = null; // estimated cost during road drag
   activeDistrictId: string | null = null; // currently selected district for painting
+  /** 選取中分區的外框。+/− 改的是這一區，所以它必須在地圖上看得見。 */
+  private districtSelection = new DistrictSelectionRenderer();
   /**
    * 分區筆刷的模式。
    *
@@ -1413,6 +1420,8 @@ export class Game {
     paintDistrictRect(
       this.state.districts, this.activeDistrictId!, x1, y1, x2, y2, this.districtPaintMode);
     this.dirty.terrain = true;
+    // 外框是照著格子畫的，畫完不重建的話它會停在上一筆的形狀。
+    this.refreshDistrictSelection();
     // Painting a district brings its build policies to bear on these cells.
     this.invalidateZoneBlockers();
   }
@@ -1420,24 +1429,40 @@ export class Game {
   /** 之後畫的分區筆刷要套用在哪一區。面板側邊選誰，筆刷就畫誰。 */
   setActiveDistrict(id: string | null): void {
     this.activeDistrictId = id;
+    this.refreshDistrictSelection();
     this.onUIUpdate?.();
   }
 
   /**
-   * 工具列的 New。
+   * 工具列的 New：放掉手上的分區。
    *
-   * 一顆按鈕做完整件事:開一個分區、選起來、切回併入模式、拿起筆刷。原本這裡只
-   * 呼叫 createNewDistrict，而畫面上沒有任何地方顯示作用中的分區 —— 新分區沒有
-   * 格子，圖層上畫不出東西，於是按下去看起來完全沒反應（BUG-297）。
+   * 這裡不建立任何東西 —— 新分區是「下一筆拖曳」建立的。先開一個空分區的話畫面上
+   * 沒有任何痕跡（它沒有格子，圖層畫不出東西），按下去看起來就是沒反應，而連按
+   * 幾次只會留下一串清不掉的空分區（BUG-297）。
    *
-   * 模式要跟著切回併入:停在扣除模式時新分區是空的，怎麼拖都不會有東西出現。
+   * 模式要跟著切回併入:停在扣除模式時手上什麼都沒有，怎麼拖都不會有東西出現。
    */
-  startNewDistrict(): void {
-    const id = this.createNewDistrict();
+  clearDistrictSelection(): void {
     this.districtPaintMode = 'add';
     this.setTool('district');
-    this.showNotification(
-      `${this.state.districts.getDistrict(id)!.name} — drag on the map to paint it`, 3);
+    this.setActiveDistrict(null);
+    this.showNotification('Drag on the map to create a new district', 3);
+  }
+
+  /**
+   * 選取中的分區在地圖上的外框。
+   *
+   * 只在拿著分區筆刷時畫 —— 其他工具下那圈白框跟手邊的事沒有關係，只是噪音。
+   */
+  private refreshDistrictSelection(): void {
+    const district = this.currentTool === 'district' && this.activeDistrictId
+      ? this.state.districts.getDistrict(this.activeDistrictId)
+      : undefined;
+    this.districtSelection.setSelection(
+      this.sceneManager.scene,
+      district ? districtOutline(district.cells) : [],
+      DISTRICT_SELECTION_COLOR,
+    );
   }
 
   setDistrictPaintMode(mode: DistrictPaintMode): void {
@@ -2006,6 +2031,8 @@ export class Game {
     if (autoOverlay) {
       this.setOverlay(autoOverlay);
     }
+    // 外框只在拿著分區筆刷時畫 —— 換走工具就要收掉。
+    this.refreshDistrictSelection();
     this.updatePlacementPreview();
     this.onUIUpdate?.();
   }

@@ -246,7 +246,8 @@ export class OverlayRenderer {
     for (const label of labels) {
       const sprite = makeLabelSprite(label);
       // 疊在色塊上方一點，不然會被地面 z-fight 吃掉。
-      sprite.position.set(label.x + 0.5, LABEL_HEIGHT, label.y + 0.5);
+      // 格子中心落在整數上（建築、游標、分區外框都是），不是 +0.5 的角上。
+      sprite.position.set(label.x, LABEL_HEIGHT, label.y);
       scene.add(sprite);
       this.labelSprites.push(sprite);
     }

@@ -113,9 +113,10 @@ function ActiveDistrictChip(props: { onOpenModal?: (id: string) => void }) {
     <Show
       when={activeDistrict()}
       fallback={
-        <span class="tb-btn" style="opacity:0.6;cursor:default" title="Click a district on the map, or press New">
+        <span class="tb-btn" style="opacity:0.75;cursor:default" title="Drag a rectangle to create a district, or click one on the map to edit it">
           <span class="tb-icon">{'\u{1F3F3}'}</span>
-          <span style={{ color: '#888' }}>No district</span>
+          <span style={{ color: '#888' }}>New district</span>
+          <span class="tb-key">drag</span>
         </span>
       }
     >
@@ -214,8 +215,8 @@ function ToolGroupComponent(props: {
             <div class="tb-sep-v" />
             <button
               class="tb-btn"
-              onClick={(e) => { e.stopPropagation(); getGame().startNewDistrict(); }}
-              title="Start a new district — the brush paints into it from now on"
+              onClick={(e) => { e.stopPropagation(); getGame().clearDistrictSelection(); }}
+              title="Let go of the current district — the next rectangle you drag becomes a new one"
             >
               <span class="tb-icon">{'\u2795'}</span>
               <span style={{ color: '#ab47bc' }}>New</span>
