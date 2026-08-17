@@ -59,6 +59,29 @@ describe('buildingName', () => {
     }
   });
 
+  it('should rename a building when it upgrades', () => {
+    // 升級會換掉建築本體（`buildingId` 是另一款），所以名字也換 —— 那是一間更大的
+    // 新店開在同一塊地上，不是同一間變大。
+    const before = buildingName(6, 9, ZoneType.COMMERCIAL_LOW, CITY, 10);
+    const after = buildingName(6, 9, ZoneType.COMMERCIAL_LOW, CITY, 11);
+    expect(after).not.toBe(before);
+  });
+
+  it('should keep the name while the building stays the same', () => {
+    // 沒升級就不能改名 —— 面板每次重畫都換一個店名的話沒有人受得了。
+    expect(buildingName(6, 9, ZoneType.COMMERCIAL_LOW, CITY, 10))
+      .toBe(buildingName(6, 9, ZoneType.COMMERCIAL_LOW, CITY, 10));
+  });
+
+  it('should still name each upgrade in the zone style', () => {
+    // 換名字不是換風格。三級商業建築都還是商店名。
+    const templates = BUILDING_NAME_TEMPLATES[ZoneType.COMMERCIAL_LOW]!;
+    for (let id = 1; id < 40; id++) {
+      const name = buildingName(2, 2, ZoneType.COMMERCIAL_LOW, CITY, id);
+      expect(matchesSomeTemplate(name, templates), `${name}`).toBe(true);
+    }
+  });
+
   it('should give different zones different names on the same plot', () => {
     // 一塊地改建之後要換名字 —— 同一格上的工廠與公寓不是同一間。
     const names = new Set(ZONES.map(z => buildingName(5, 5, z, CITY)));

@@ -264,9 +264,10 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
     return '\u2605'.repeat(stars) + '\u2606'.repeat(5 - stars);
   };
   const zoneName = () => ZONE_NAMES[props.sel.zoneType] ?? 'Unknown';
-  // 建築的名字從座標算，所以升級、改建、存讀檔都不會換人 —— 除非分區真的變了。
+  // 名字從座標、分區與建築款式算 —— 存讀檔不會換，升級會（那是換了一棟）。
   const name = () => buildingName(
-    props.sel.x, props.sel.y, props.sel.zoneType, getGame().getState().citySeed);
+    props.sel.x, props.sel.y, props.sel.zoneType,
+    getGame().getState().citySeed, props.sel.buildingType.id);
 
   const citizens = () => {
     gameSignals.tick(); // refresh on tick so lifeStage/education stay current

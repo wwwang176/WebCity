@@ -9,8 +9,8 @@ import { hash32 } from '../utils/hash32';
  * 房子，每棟多背一個字串就是幾百 KB，而名字只是給玩家看的裝飾。舊存檔一載入就有
  * 名字，不必寫遷移。
  *
- * 名字跟著**用途**走。一塊地拆掉重蓋成別的分區，名字也會換 —— 同一格上的工廠與
- * 公寓不是同一間。等級升上去不換名字:那是同一間店變大，不是換了一間。
+ * 名字跟著**那一棟建築**走:分區換了會換，升級也會換 —— 升級是把整棟拆掉換成另一
+ * 款，那是一間更大的新店開在同一塊地上。
  *
  * 重複是允許的。一座城市裡有兩間 Rowan Market 很正常，玩家真正要分辨的是位置。
  */
@@ -72,18 +72,34 @@ function plotKey(x: number, y: number): number {
   return (Math.imul(x | 0, 0x2545f491) ^ (y | 0)) >>> 0;
 }
 
-/** 這一格上這種用途的建築叫什麼。 */
+/**
+ * 這一格上這一棟建築叫什麼。
+ *
+ * `buildingId` 是建築的款式（`BUILDING_TYPES` 的 id）。升級會換掉款式，名字因此跟
+ * 著換;不給的話（空地、還沒蓋的預覽）就只看分區。
+ */
 export function buildingName(
-  x: number, y: number, zoneType: number, citySeed = 0,
+  x: number, y: number, zoneType: number, citySeed = 0, buildingId = 0,
 ): string {
   const templates = BUILDING_NAME_TEMPLATES[zoneType] ?? FALLBACK_TEMPLATES;
   const key = plotKey(x, y);
+  // 分區與款式一起決定「這是哪一棟」。互斥或就夠 —— `hash32` 的 finalizer 會把
+  // 一個位元的差擴散到整個雜湊上，所以連號的款式不會拿到相近的名字。
+  //
+  // 不同的 (分區, 款式) 組合可能撞出同一個 variant，那沒有關係:樣板是另外照
+  // 分區選的，撞到的兩棟本來就長在不同用途的地上。
+  //
+  // 分區其實只在「還沒蓋」（buildingId = 0）時起作用 —— 有建築的時候款式本身
+  // 就唯一決定了分區。**這一半沒有測試守得到**:拿掉 zoneType 之後所有測試照樣
+  // 全綠，因為樣板清單本來就是照分區選的，名字仍然分得開。留著是為了讓空地的
+  // 預設名字也跟著分區走。
+  const variant = zoneType ^ buildingId;
 
   // 三個欄位各一顆鹽。共用一顆的話樣板、姓、名詞會鎖在一起，一個樣板永遠只配
   // 一個詞 —— 城裡的 Foundry 就會全部叫 Granite Foundry。
-  const template = templates[hash32(key, zoneType ^ 0x5f356495, citySeed) % templates.length]!;
-  const family = FAMILY_NAMES[hash32(key, zoneType ^ 0x1b873593, citySeed) % FAMILY_NAMES.length]!;
-  const noun = BUILDING_NOUNS[hash32(key, zoneType ^ 0xcc9e2d51, citySeed) % BUILDING_NOUNS.length]!;
+  const template = templates[hash32(key, variant ^ 0x5f356495, citySeed) % templates.length]!;
+  const family = FAMILY_NAMES[hash32(key, variant ^ 0x1b873593, citySeed) % FAMILY_NAMES.length]!;
+  const noun = BUILDING_NOUNS[hash32(key, variant ^ 0xcc9e2d51, citySeed) % BUILDING_NOUNS.length]!;
 
   return template.replace('{family}', family).replace('{noun}', noun);
 }
