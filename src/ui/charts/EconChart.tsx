@@ -1,5 +1,6 @@
 import { createEffect, onMount } from 'solid-js';
 import { CHART_HISTORY_LENGTH, UI_COLORS } from '../constants';
+import { fitCanvas } from './fitCanvas';
 
 const ECON_MAX = CHART_HISTORY_LENGTH;
 
@@ -25,9 +26,10 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
 
   const draw = () => {
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const w = canvas.width, h = canvas.height;
+    // 點陣圖尺寸要對齊畫面上的實際大小，否則瀏覽器直接放大那張圖，文字就糊了。
+    const fit = fitCanvas(canvas);
+    if (!fit) return;
+    const { ctx, w, h } = fit;
     ctx.clearRect(0, 0, w, h);
 
     if (props.history.funds.length < 2) {
@@ -100,5 +102,6 @@ export function EconChart(props: { history: { funds: number[]; income: number[];
     draw();
   });
 
-  return <canvas ref={canvas} class="modal-chart" width={480} height={100} />;
+  // 尺寸由 CSS 決定，點陣圖由 `fitCanvas` 對齊。
+  return <canvas ref={canvas} class="modal-chart" />;
 }

@@ -1,5 +1,6 @@
 import { createEffect, onMount } from 'solid-js';
 import { CHART_HISTORY_LENGTH, UI_COLORS } from '../constants';
+import { fitCanvas } from './fitCanvas';
 
 const CHART_MAX = CHART_HISTORY_LENGTH;
 
@@ -8,9 +9,10 @@ export function PopChart(props: { history: { pop: number[]; happiness: number[] 
 
   const draw = () => {
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const w = canvas.width, h = canvas.height;
+    // 點陣圖尺寸要對齊畫面上的實際大小，否則瀏覽器直接放大那張圖，文字就糊了。
+    const fit = fitCanvas(canvas);
+    if (!fit) return;
+    const { ctx, w, h } = fit;
     ctx.clearRect(0, 0, w, h);
 
     if (props.history.pop.length < 2) {
@@ -56,5 +58,7 @@ export function PopChart(props: { history: { pop: number[]; happiness: number[] 
     draw();
   });
 
-  return <canvas ref={canvas} class="modal-chart" width={480} height={80} />;
+  // 不給 width/height —— 尺寸由 CSS 決定，點陣圖由 `fitCanvas` 對齊。寫在這裡
+  // 只會多一個對不上的真相來源（原本寫 80，而 CSS 是 100）。
+  return <canvas ref={canvas} class="modal-chart" />;
 }
