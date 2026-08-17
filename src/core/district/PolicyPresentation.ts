@@ -62,6 +62,22 @@ const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
   ],
   [PolicyType.NO_HEAVY_INDUSTRY]: ['No industry here  \u00B7  Gives up the industrial tax base'],
   [PolicyType.HIGH_DENSITY_BAN]: ['No high density here  \u00B7  Gives up the high-density tax base'],
+  [PolicyType.LEGALIZE_GAMBLING]: ['Commercial revenue +35%  \u00B7  Crime +12'],
+  [PolicyType.NIGHT_ECONOMY]: [
+    'Commercial revenue +12%  \u00B7  Crime +4',
+    'Commercial revenue +25%  \u00B7  Crime +10',
+  ],
+  [PolicyType.CURFEW]: [
+    'Crime \u22125  \u00B7  Commercial revenue \u221210%',
+    'Crime \u221210  \u00B7  Commercial revenue \u221222%',
+  ],
+  [PolicyType.HERITAGE_PRESERVATION]: [
+    'Land value +12  \u00B7  Commercial revenue \u22128%, housing \u22126%',
+  ],
+  [PolicyType.INDUSTRY_SUBSIDY]: [
+    'Industrial revenue +12%  \u00B7  Land value \u22124',
+    'Industrial revenue +25%  \u00B7  Land value \u22129',
+  ],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */

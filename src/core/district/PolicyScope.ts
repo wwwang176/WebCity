@@ -25,6 +25,13 @@ export const POLICY_SCOPE: Record<PolicyType, PolicyScopeKind> = {
   // 電網的總需求是一個城市級的池子 —— 只在半個城市要求節能，省下來的電照樣進
   // 同一張電網。
   [PolicyType.ENERGY_REGULATION]: 'city',
+  // 這五條回答的都是「在哪裡」:夜生活放在哪一區、哪一區要保存、補貼給哪一片
+  // 工業地。套到全城就沒有選址可言了。
+  [PolicyType.LEGALIZE_GAMBLING]: 'district',
+  [PolicyType.NIGHT_ECONOMY]: 'district',
+  [PolicyType.CURFEW]: 'district',
+  [PolicyType.HERITAGE_PRESERVATION]: 'district',
+  [PolicyType.INDUSTRY_SUBSIDY]: 'district',
 };
 
 /** 這個條例畫在分區上有意義嗎？ */

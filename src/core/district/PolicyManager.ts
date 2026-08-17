@@ -20,6 +20,11 @@ export const POLICY_CONFIG: Record<PolicyType, PolicyTypeConfig> = {
   [PolicyType.ORGANIC_FOOD]: { name: 'Organic Food' },
   [PolicyType.TOURISM]: { name: 'Tourism Promotion' },
   [PolicyType.ENERGY_REGULATION]: { name: 'Energy Regulation' },
+  [PolicyType.LEGALIZE_GAMBLING]: { name: 'Legalize Gambling' },
+  [PolicyType.NIGHT_ECONOMY]: { name: 'Night Economy' },
+  [PolicyType.CURFEW]: { name: 'Curfew' },
+  [PolicyType.HERITAGE_PRESERVATION]: { name: 'Heritage Preservation' },
+  [PolicyType.INDUSTRY_SUBSIDY]: { name: 'Industry Subsidy' },
 };
 
 /**
@@ -105,6 +110,38 @@ export const POLICY_EFFECTS: Partial<Record<PolicyType, readonly PolicyEffect[]>
     { powerDemand: 0.92, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.99, [ZoneType.COMMERCIAL_HIGH]: 0.99, [ZoneType.INDUSTRIAL]: 0.98 } },
     { powerDemand: 0.82, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.97, [ZoneType.COMMERCIAL_HIGH]: 0.97, [ZoneType.INDUSTRIAL]: 0.94 } },
     { powerDemand: 0.70, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.94, [ZoneType.COMMERCIAL_HIGH]: 0.94, [ZoneType.INDUSTRIAL]: 0.88 } },
+  ],
+
+  /**
+   * 賭場與宵禁是刻意設計的一對:同一塊地只能選一邊。賭場把夜生活放出來換錢，
+   * 宵禁把它關掉換治安。
+   */
+  [PolicyType.LEGALIZE_GAMBLING]: [
+    { revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 1.35, [ZoneType.COMMERCIAL_HIGH]: 1.35 }, crime: 12 },
+  ],
+  // 賭場的溫和版，分兩級。第二級的每 1% 收入要付的犯罪比第一級高。
+  [PolicyType.NIGHT_ECONOMY]: [
+    { revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 1.12, [ZoneType.COMMERCIAL_HIGH]: 1.12 }, crime: 4 },
+    { revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 1.25, [ZoneType.COMMERCIAL_HIGH]: 1.25 }, crime: 10 },
+  ],
+  [PolicyType.CURFEW]: [
+    { crime: -5, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.90, [ZoneType.COMMERCIAL_HIGH]: 0.90 } },
+    { crime: -10, revenueByZone: { [ZoneType.COMMERCIAL_LOW]: 0.78, [ZoneType.COMMERCIAL_HIGH]: 0.78 } },
+  ],
+  // 限高與外觀規範對誰都一樣，所以住宅也付代價 —— 只是比商業輕。
+  [PolicyType.HERITAGE_PRESERVATION]: [
+    {
+      landValue: 12,
+      revenueByZone: {
+        [ZoneType.COMMERCIAL_LOW]: 0.92, [ZoneType.COMMERCIAL_HIGH]: 0.92,
+        [ZoneType.RESIDENTIAL_LOW]: 0.94, [ZoneType.RESIDENTIAL_HIGH]: 0.94,
+      },
+    },
+  ],
+  // 補貼換來的是工廠擴張，代價落在地價上 —— 沒有人想住在旁邊。
+  [PolicyType.INDUSTRY_SUBSIDY]: [
+    { revenueByZone: { [ZoneType.INDUSTRIAL]: 1.12 }, landValue: -4 },
+    { revenueByZone: { [ZoneType.INDUSTRIAL]: 1.25 }, landValue: -9 },
   ],
 };
 

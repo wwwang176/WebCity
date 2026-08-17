@@ -34,6 +34,11 @@ export const POLICY_BILLING: Partial<Record<PolicyType, {
   [PolicyType.ORGANIC_FOOD]: { basis: 'districtCells', perUnit: [2] },
   // 全城條例沒有分區格數可言 —— 它服務的是整座城市，所以按人口收。
   [PolicyType.ENERGY_REGULATION]: { basis: 'population', perUnit: [0.08, 0.22, 0.5] },
+  [PolicyType.LEGALIZE_GAMBLING]: { basis: 'districtCells', perUnit: [4] },
+  [PolicyType.NIGHT_ECONOMY]: { basis: 'districtCells', perUnit: [2, 5] },
+  [PolicyType.CURFEW]: { basis: 'districtCells', perUnit: [1.5, 4] },
+  [PolicyType.HERITAGE_PRESERVATION]: { basis: 'districtCells', perUnit: [3] },
+  [PolicyType.INDUSTRY_SUBSIDY]: { basis: 'districtCells', perUnit: [3, 7] },
 };
 
 function unitsOf(basis: BillingBasis, scale: PolicyScale): number {
