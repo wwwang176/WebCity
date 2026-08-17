@@ -1,10 +1,9 @@
-import { createSignal, onCleanup, For, Show } from 'solid-js';
+import { createSignal, onCleanup, For } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 import { RCIBar } from './RCIBar';
 import type { ToolType, PlacementMode } from '../../Game';
 import { UI_COLORS } from '../constants';
 import { PALETTE, toCSS } from '../../ColorPalette';
-import { swatchCssFor } from '../../core/district/DistrictPalette';
 // AirportSize import removed — airport tools now use separate ToolType entries
 
 
@@ -94,7 +93,12 @@ const DISTRICT_MODES = [
 
 const ALL_GROUPS = [ZONE_GROUP, ROAD_GROUP, CIVIC_GROUP, UTILITY_GROUP, TRANSPORT_GROUP, DISTRICT_GROUP];
 
-/** 筆刷現在畫進哪一區。分區被合併掉之後 id 還在，但那一區已經不存在了。 */
+/**
+ * 筆刷現在畫進哪一區。分區被合併掉之後 id 還在，但那一區已經不存在了。
+ *
+ * 工具列不顯示它 —— 地圖上的白框與名稱已經說了同一件事，而且說在玩家正在看的地方。
+ * 這裡只用來決定哪幾顆按鈕按得下去。
+ */
 function activeDistrict() {
   const id = gameSignals.activeDistrictId();
   if (!id) return undefined;
@@ -102,45 +106,6 @@ function activeDistrict() {
   return getGame().getState().districts.getDistrict(id);
 }
 
-/**
- * 工具列上的「現在編輯哪一區」。
- *
- * 這是分區筆刷唯一顯示狀態的地方。少了它，New 開出來的分區沒有格子，圖層上畫不出
- * 任何東西，按鈕看起來就是死的 —— 而下一筆會畫進哪一區也完全無從得知。
- */
-function ActiveDistrictChip(props: { onOpenModal?: (id: string) => void }) {
-  return (
-    <Show
-      when={activeDistrict()}
-      fallback={
-        <span class="tb-btn" style="opacity:0.75;cursor:default" title="Drag a rectangle to create a district, or click one on the map to edit it">
-          <span class="tb-icon">{'\u{1F3F3}'}</span>
-          <span style={{ color: '#888' }}>New district</span>
-          <span class="tb-key">drag</span>
-        </span>
-      }
-    >
-      {/* 名稱、顏色、格數都要各自重讀一次 activeDistrict()。<Show> 的 callback 形式
-          會對 when 的值做 memo，而 District 物件的 reference 從頭到尾不變 —— 寫成
-          {(d) => d().name} 的話，改名、換色、繼續畫格子這裡通通不會動。 */}
-      <button
-        class="tb-btn"
-        onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}
-        title="Open this district's policies"
-      >
-        <span
-          class="tb-icon"
-          style={{
-            width: '10px', height: '10px', 'border-radius': '3px', 'align-self': 'center',
-            background: swatchCssFor(activeDistrict()?.colorIndex) ?? '#ab47bc',
-          }}
-        />
-        <span style={{ color: '#ce93d8' }}>{activeDistrict()?.name}</span>
-        <span class="tb-key">{activeDistrict()?.cells.size}</span>
-      </button>
-    </Show>
-  );
-}
 
 function ToolButton(props: { item: SubTool; onClick: (tool: ToolType) => void }) {
   return (
@@ -209,14 +174,16 @@ function ToolGroupComponent(props: {
         )}
         {props.group.id === 'district' && (
           <>
-            {/* 現在畫進哪一區。少了這一格，New 按下去畫面上不會有任何改變 ——
-                新分區沒有格子，圖層上也畫不出東西（BUG-297）。 */}
-            <ActiveDistrictChip onOpenModal={props.onOpenModal} />
-            <div class="tb-sep-v" />
+            {/* New 是「放掉手上那一區」，所以沒有選取時它已經做完了 —— 灰掉的 New
+                本身就在說「下一筆拖曳會開新的」，不必另外擺一格狀態顯示。 */}
             <button
               class="tb-btn"
+              disabled={!activeDistrict()}
+              style={!activeDistrict() ? 'opacity:0.35;cursor:not-allowed' : undefined}
               onClick={(e) => { e.stopPropagation(); getGame().clearDistrictSelection(); }}
-              title="Let go of the current district — the next rectangle you drag becomes a new one"
+              title={activeDistrict()
+                ? 'Let go of this district — the next rectangle you drag becomes a new one'
+                : 'Nothing selected — the next rectangle you drag already becomes a new district'}
             >
               <span class="tb-icon">{'\u2795'}</span>
               <span style={{ color: '#ab47bc' }}>New</span>
@@ -309,6 +276,12 @@ export function Toolbar(props: { onOpenModal: (id: string) => void }) {
   const closeOnOutsideClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement | null;
     if (target?.closest('#toolbar')) return;
+    // 點地圖不算「點到外面」—— 那是在用剛剛挑的工具，不是把選單撥掉。
+    //
+    // 分區筆刷上這件事最明顯:選一個模式、在地圖上拖一塊、想換個模式，子選單卻已經
+    // 收起來了，而換模式正是這支筆刷的日常。畫分區、鋪路、劃地全都是「挑一個設定
+    // 再到地圖上動手」的循環。
+    if (target instanceof HTMLCanvasElement) return;
     setOpenGroup(null);
   };
   document.addEventListener('click', closeOnOutsideClick);

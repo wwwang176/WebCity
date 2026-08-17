@@ -1443,15 +1443,21 @@ export class Game {
   /**
    * 把筆刷剛才做的事說出來。
    *
-   * 兩件事在畫面上看不出來:併入從別區搶了格子（顏色悄悄換了一片），以及扣除掃到
-   * 別區時什麼都沒發生（靜默失敗）。兩者都會讓玩家以為筆刷壞了。
+   * **每一筆都要說**，不只是有搶到格子的那些。工具列上原本有一格顯示選取中的分區，
+   * 拿掉了 —— 地圖上的白框與名稱已經說了同一件事，而且說在玩家正在看的地方。
+   * 唯一補不上的是選取的分區在畫面外時:選了 Riverside、鏡頭移開、拖一塊，四十格
+   * 就無聲地加了進去。那一句「Riverside +40 cells」講的正是這件事，而且是在剛畫完、
+   * 還來得及扣回去的時候。
    */
   private reportDistrictPaint(result: DistrictPaintResult): void {
+    const district = this.state.districts.getDistrict(this.activeDistrictId!);
+    if (!district) return;
+    const name = district.name;
+
     const others = [...result.fromOthers.entries()]
       .map(([id, count]) => ({ name: this.state.districts.getDistrict(id)?.name, count }))
       .filter(o => o.name);
-    if (others.length === 0) return;
-    const total = others.reduce((sum, o) => sum + o.count, 0);
+    const taken = others.reduce((sum, o) => sum + o.count, 0);
     const whose = others.length === 1
       ? others[0]!.name
       : `${others.length} other districts`;
@@ -1459,11 +1465,29 @@ export class Game {
     if (this.districtPaintMode === 'subtract') {
       // 扣除只動選取中的那一區。掃到別區時完全沒有反應，那是這支筆刷最難懂的一件事。
       if (result.removed === 0) {
-        this.showNotification(`Those cells belong to ${whose} — select it to edit it.`, 4);
+        this.showNotification(others.length > 0
+          ? `Those cells belong to ${whose} — select it to edit it.`
+          : `${name} had nothing there to remove.`, 4);
+        return;
       }
+      this.showNotification(`${name} −${result.removed} cells`, 3);
       return;
     }
-    this.showNotification(`Took ${total} cell${total === 1 ? '' : 's'} from ${whose}`, 3);
+
+    const took = taken > 0 ? ` (${taken} taken from ${whose})` : '';
+
+    // 取代會把矩形外的格子一起丟掉，而那個數字不在 result 裡 —— 報「+N」會漏講
+    // 掉了多少。這個模式要說的本來就是結果:這一區現在有多大。
+    if (this.districtPaintMode === 'replace') {
+      this.showNotification(`${name} is now ${district.cells.size} cells${took}`, 3);
+      return;
+    }
+
+    if (result.added === 0) {
+      this.showNotification(`${name} already covered that.`, 3);
+      return;
+    }
+    this.showNotification(`${name} +${result.added} cells${took}`, 3);
   }
 
   /** 之後畫的分區筆刷要套用在哪一區。面板側邊選誰，筆刷就畫誰。 */
