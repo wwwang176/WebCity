@@ -4,6 +4,7 @@ import { RCIBar } from './RCIBar';
 import type { ToolType, PlacementMode } from '../../Game';
 import { UI_COLORS } from '../constants';
 import { PALETTE, toCSS } from '../../ColorPalette';
+import { swatchCssFor } from '../../core/district/DistrictPalette';
 // AirportSize import removed — airport tools now use separate ToolType entries
 
 
@@ -93,6 +94,53 @@ const DISTRICT_MODES = [
 
 const ALL_GROUPS = [ZONE_GROUP, ROAD_GROUP, CIVIC_GROUP, UTILITY_GROUP, TRANSPORT_GROUP, DISTRICT_GROUP];
 
+/** 筆刷現在畫進哪一區。分區被合併掉之後 id 還在，但那一區已經不存在了。 */
+function activeDistrict() {
+  const id = gameSignals.activeDistrictId();
+  if (!id) return undefined;
+  gameSignals.tick();   // 一邊畫一邊看格數，數字要跟著動
+  return getGame().getState().districts.getDistrict(id);
+}
+
+/**
+ * 工具列上的「現在編輯哪一區」。
+ *
+ * 這是分區筆刷唯一顯示狀態的地方。少了它，New 開出來的分區沒有格子，圖層上畫不出
+ * 任何東西，按鈕看起來就是死的 —— 而下一筆會畫進哪一區也完全無從得知。
+ */
+function ActiveDistrictChip(props: { onOpenModal?: (id: string) => void }) {
+  return (
+    <Show
+      when={activeDistrict()}
+      fallback={
+        <span class="tb-btn" style="opacity:0.6;cursor:default" title="Click a district on the map, or press New">
+          <span class="tb-icon">{'\u{1F3F3}'}</span>
+          <span style={{ color: '#888' }}>No district</span>
+        </span>
+      }
+    >
+      {/* 名稱、顏色、格數都要各自重讀一次 activeDistrict()。<Show> 的 callback 形式
+          會對 when 的值做 memo，而 District 物件的 reference 從頭到尾不變 —— 寫成
+          {(d) => d().name} 的話，改名、換色、繼續畫格子這裡通通不會動。 */}
+      <button
+        class="tb-btn"
+        onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}
+        title="Editing this district — click to open its policies"
+      >
+        <span
+          class="tb-icon"
+          style={{
+            width: '10px', height: '10px', 'border-radius': '3px', 'align-self': 'center',
+            background: swatchCssFor(activeDistrict()?.colorIndex) ?? '#ab47bc',
+          }}
+        />
+        <span style={{ color: '#ce93d8' }}>{activeDistrict()?.name}</span>
+        <span class="tb-key">{activeDistrict()?.cells.size}</span>
+      </button>
+    </Show>
+  );
+}
+
 function ToolButton(props: { item: SubTool; onClick: (tool: ToolType) => void }) {
   return (
     <button
@@ -160,9 +208,13 @@ function ToolGroupComponent(props: {
         )}
         {props.group.id === 'district' && (
           <>
+            {/* 現在畫進哪一區。少了這一格，New 按下去畫面上不會有任何改變 ——
+                新分區沒有格子，圖層上也畫不出東西（BUG-297）。 */}
+            <ActiveDistrictChip onOpenModal={props.onOpenModal} />
+            <div class="tb-sep-v" />
             <button
               class="tb-btn"
-              onClick={(e) => { e.stopPropagation(); getGame().createNewDistrict(); getGame().setTool('district'); }}
+              onClick={(e) => { e.stopPropagation(); getGame().startNewDistrict(); }}
               title="Start a new district — the brush paints into it from now on"
             >
               <span class="tb-icon">{'\u2795'}</span>
@@ -170,19 +222,27 @@ function ToolGroupComponent(props: {
             </button>
             <div class="tb-sep-v" />
             {/* 筆刷模式。取代與扣除是修邊界用的 —— 少了它們，畫錯一次只能
-                重開一局，因為分區沒有任何擦除的辦法。 */}
+                重開一局，因為分區沒有任何擦除的辦法。
+
+                它們改的是「現有的那一區」，所以手上沒有分區時要停用 —— 能按卻
+                什麼都不會發生，比按不下去更難懂。 */}
             <For each={DISTRICT_MODES}>
-              {(m) => (
-                <button
-                  class="tb-btn"
-                  classList={{ active: gameSignals.districtPaintMode() === m.mode }}
-                  onClick={(e) => { e.stopPropagation(); getGame().setDistrictPaintMode(m.mode); }}
-                  title={m.hint}
-                >
-                  <span class="tb-icon">{m.icon}</span>
-                  <span style={{ color: m.color }}>{m.label}</span>
-                </button>
-              )}
+              {(m) => {
+                const off = () => m.mode !== 'add' && !activeDistrict();
+                return (
+                  <button
+                    class="tb-btn"
+                    classList={{ active: gameSignals.districtPaintMode() === m.mode }}
+                    disabled={off()}
+                    style={off() ? 'opacity:0.35;cursor:not-allowed' : undefined}
+                    onClick={(e) => { e.stopPropagation(); getGame().setDistrictPaintMode(m.mode); }}
+                    title={off() ? 'Pick a district first — click one on the map, or press New' : m.hint}
+                  >
+                    <span class="tb-icon">{m.icon}</span>
+                    <span style={{ color: m.color }}>{m.label}</span>
+                  </button>
+                );
+              }}
             </For>
             <div class="tb-sep-v" />
             <button class="tb-btn" onClick={(e) => { e.stopPropagation(); props.onOpenModal?.('district'); }}>

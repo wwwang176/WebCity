@@ -39,7 +39,7 @@ import type { TransportStop, TransportRoute } from './core/transport/types';
 import { classifyVehicleType } from './core/traffic/VehicleClassification';
 import type { ServiceVehicleType } from './core/traffic/TrafficSimulation';
 import { getInfraConfig, getInfraConfigById, getInfraBuildingId, getRotatedSize, isInfrastructureBuilding, isInfraType, isZoneBuilding, type InfraType, type Rotation } from './core/building/InfraConfig';
-import { paintDistrictRect, type DistrictPaintMode } from './core/district/DistrictPaint';
+import { paintDistrictRect, resolveDistrictGesture, type DistrictPaintMode } from './core/district/DistrictPaint';
 import { nextDistrictName } from './core/district/DistrictNaming';
 import { canPlaceInfra, placeInfraOnGrid, removeInfraFromGrid, findPrimaryCell, forEachMultiCell, ROTATION_RESERVED, ABANDONED } from './core/building/InfraPlacement';
 import { PlacementPreview } from './renderer/PlacementPreview';
@@ -973,8 +973,7 @@ export class Game {
         break;
       }
       case 'district':
-        this.paintDistrict(x1, y1, x2, y2);
-        this.audioManager.playSfx(SoundType.ZONE);
+        this.applyDistrictGesture(x1, y1, x2, y2);
         break;
       default: {
         // Data-driven road building (OCP: add new road types in TOOL_TO_ROAD_TYPE)
@@ -1373,12 +1372,43 @@ export class Game {
     }
   }
 
+  /**
+   * 分區筆刷的一次操作。點一下是撿起一個分區，拖一塊才是畫。
+   *
+   * 少了「點一下＝選取」，要換成編輯另一區只剩打開條例面板從側邊選這一條路 ——
+   * 而那一區的名稱與顏色明明就畫在地圖上。
+   */
+  private applyDistrictGesture(x1: number, y1: number, x2: number, y2: number): void {
+    const gesture = resolveDistrictGesture(
+      this.state.districts, this.activeDistrictId, x1, y1, x2, y2);
+    if (gesture.kind === 'select') {
+      this.setActiveDistrict(gesture.districtId);
+      this.showNotification(
+        `Now editing ${this.state.districts.getDistrict(gesture.districtId)!.name}`, 2);
+      return;
+    }
+    // 取代與扣除改的是「現有的那一區」。手上沒有分區時它們無事可做，而順手開一個
+    // 空分區來扣除只會留下垃圾 —— 工具列也會把這兩顆停用，這裡是第二道。
+    if (!this.hasActiveDistrict() && this.districtPaintMode !== 'add') {
+      this.showNotification('Pick a district first — click one on the map, or press New.', 3);
+      return;
+    }
+    this.paintDistrict(x1, y1, x2, y2);
+    this.audioManager.playSfx(SoundType.ZONE);
+  }
+
+  /** 作用中的分區還在嗎。存檔載入或分區被合併掉之後，id 會指向不存在的東西。 */
+  private hasActiveDistrict(): boolean {
+    return !!this.activeDistrictId && !!this.state.districts.getDistrict(this.activeDistrictId);
+  }
+
   private paintDistrict(x1: number, y1: number, x2: number, y2: number): void {
     // 沒有選定的分區就開一個。原本這裡只在 activeDistrictId 是 null 時建立，而它
     // 建立之後永遠不會被重設，也沒有任何 UI 呼叫 createNewDistrict —— 於是整場
     // 遊戲只做得出一個分區（BUG-295）。
-    if (!this.activeDistrictId || !this.state.districts.getDistrict(this.activeDistrictId)) {
-      this.createNewDistrict();
+    if (!this.hasActiveDistrict()) {
+      const id = this.createNewDistrict();
+      this.showNotification(`Started ${this.state.districts.getDistrict(id)!.name}`, 2);
     }
     paintDistrictRect(
       this.state.districts, this.activeDistrictId!, x1, y1, x2, y2, this.districtPaintMode);
@@ -1390,6 +1420,24 @@ export class Game {
   /** 之後畫的分區筆刷要套用在哪一區。面板側邊選誰，筆刷就畫誰。 */
   setActiveDistrict(id: string | null): void {
     this.activeDistrictId = id;
+    this.onUIUpdate?.();
+  }
+
+  /**
+   * 工具列的 New。
+   *
+   * 一顆按鈕做完整件事:開一個分區、選起來、切回併入模式、拿起筆刷。原本這裡只
+   * 呼叫 createNewDistrict，而畫面上沒有任何地方顯示作用中的分區 —— 新分區沒有
+   * 格子，圖層上畫不出東西，於是按下去看起來完全沒反應（BUG-297）。
+   *
+   * 模式要跟著切回併入:停在扣除模式時新分區是空的，怎麼拖都不會有東西出現。
+   */
+  startNewDistrict(): void {
+    const id = this.createNewDistrict();
+    this.districtPaintMode = 'add';
+    this.setTool('district');
+    this.showNotification(
+      `${this.state.districts.getDistrict(id)!.name} — drag on the map to paint it`, 3);
   }
 
   setDistrictPaintMode(mode: DistrictPaintMode): void {
@@ -1402,7 +1450,7 @@ export class Game {
     // 合併過一次之後再開新的就可能跟既有的撞名（BUG-296）。
     const existing = this.state.districts.getAllDistricts().map(d => d.name);
     const d = this.state.districts.createDistrict(name ?? nextDistrictName(existing));
-    this.activeDistrictId = d.id;
+    this.setActiveDistrict(d.id);
     return d.id;
   }
 

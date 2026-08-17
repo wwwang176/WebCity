@@ -22,6 +22,34 @@ export type DistrictPaintMode = 'replace' | 'add' | 'subtract';
  * 本來就維持「一格只屬於一個分區」，而那正是重疊處該有的行為:一格屬於兩個分區的
  * 話，收入乘數與費用都會算兩次。
  */
+/** 一次滑鼠操作要做的事:撿起一個分區，或是畫。 */
+export type DistrictGesture =
+  | { kind: 'select'; districtId: string }
+  | { kind: 'paint' };
+
+/**
+ * 同一支筆刷上，點一下跟拖一塊是兩件事。
+ *
+ * 少了「點一下＝選取」，玩家要換成編輯另一區只剩一條路:打開條例面板從側邊選 ——
+ * 而地圖上明明就看得到那一區。分區的顏色與名稱畫在圖層上，點它是最直覺的動作。
+ *
+ * 點在自己這一區身上仍然是畫。單格點擊是「從這一區挖掉一格」唯一的手勢，改成選取
+ * 的話扣除模式就再也扣不掉一格。
+ *
+ * 拖出範圍永遠是畫，即使起點落在別區身上 —— 拖一大塊卻只換到一個選取，玩家會以為
+ * 筆刷壞了。
+ */
+export function resolveDistrictGesture(
+  districts: Pick<DistrictManager, 'getDistrictAt'>,
+  activeDistrictId: string | null,
+  x1: number, y1: number, x2: number, y2: number,
+): DistrictGesture {
+  if (x1 !== x2 || y1 !== y2) return { kind: 'paint' };
+  const under = districts.getDistrictAt(x1, y1);
+  if (!under || under.id === activeDistrictId) return { kind: 'paint' };
+  return { kind: 'select', districtId: under.id };
+}
+
 export function paintDistrictRect(
   districts: DistrictManager,
   districtId: string,
