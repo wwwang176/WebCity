@@ -83,8 +83,8 @@ describe('效果摘要', () => {
   it('should state both the benefit and the price on the same line', () => {
     // 取捨是玩法，藏在 tooltip 裡就沒有取捨。玩家要在按下去之前看得到代價。
     const summary = policyEffectSummary(PolicyType.ENCOURAGE_RECYCLING, 3);
-    expect(summary, '沒有講好處').toMatch(/垃圾/);
-    expect(summary, '沒有講代價').toMatch(/收入/);
+    expect(summary, '沒有講好處').toMatch(/Garbage/);
+    expect(summary, '沒有講代價').toMatch(/revenue/i);
   });
 
   it('should say nothing for a level that is off', () => {
@@ -123,12 +123,13 @@ describe('效果摘要', () => {
       for (let lv = 1; lv <= maxLevel(type); lv++) {
         const tier = POLICY_EFFECTS[type]?.[lv - 1];
         const text = policyEffectSummary(type, lv);
-        if (tier?.garbage !== undefined) expect(text, `${type} 動了垃圾卻沒說`).toContain('垃圾');
-        if (tier?.landValue !== undefined) expect(text, `${type} 動了地價卻沒說`).toContain('地價');
-        if (tier?.crime !== undefined) expect(text, `${type} 動了犯罪卻沒說`).toContain('犯罪');
-        if (tier?.powerDemand !== undefined) expect(text, `${type} 動了電力卻沒說`).toContain('電力');
+        if (tier?.garbage !== undefined) expect(text, `${type} 動了垃圾卻沒說`).toContain('Garbage');
+        if (tier?.landValue !== undefined) expect(text, `${type} 動了地價卻沒說`).toContain('Land value');
+        if (tier?.crime !== undefined) expect(text, `${type} 動了犯罪卻沒說`).toContain('Crime');
+        if (tier?.powerDemand !== undefined) expect(text, `${type} 動了電力卻沒說`).toContain('Power demand');
         if (tier?.revenue !== undefined || tier?.revenueByZone) {
-          expect(text, `${type} 動了收入卻沒說`).toContain('收入');
+          // 句首會是 Revenue，句中是 revenue —— 比對詞不是比對大小寫。
+          expect(text, `${type} 動了收入卻沒說`).toMatch(/revenue/i);
         }
       }
     }

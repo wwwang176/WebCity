@@ -19,7 +19,9 @@ import { PolicyType } from '../../core/district/types';
 const CITY_ORDINANCES = (Object.values(PolicyType) as PolicyType[])
   .filter(t => POLICY_SCOPE[t] === 'city');
 
-const TIER_LABELS = ['輕', '中', '重'];
+/** 三級條例的按鈕標籤。按鈕只有 28px 寬，放得下一個字母。 */
+const TIER_LABELS = ['L', 'M', 'H'];
+const TIER_NAMES = ['Light', 'Medium', 'Heavy'];
 
 export function CityOrdinanceModal(props: { open: boolean; onClose: () => void }) {
   const [version, setVersion] = createSignal(0);
@@ -54,7 +56,7 @@ export function CityOrdinanceModal(props: { open: boolean; onClose: () => void }
       style={{ 'min-width': '420px', 'max-width': '520px' }}
     >
       <div style="display:flex;justify-content:flex-end;font-size:12px;color:#ce93d8;margin-bottom:8px">
-        本期合計 ${grandTotal()}
+        This cycle: ${grandTotal()}
       </div>
       <For each={CITY_ORDINANCES}>
         {(type) => {
@@ -74,9 +76,9 @@ export function CityOrdinanceModal(props: { open: boolean; onClose: () => void }
                     {(lv) => (
                       <button
                         onClick={() => setLevel(type, lv)}
-                        aria-label={lv === 0 ? '關閉' : `第 ${lv} 級`}
+                        aria-label={lv === 0 ? 'Off' : (max > 1 ? TIER_NAMES[lv - 1]! : 'On')}
                         aria-pressed={level() === lv}
-                        title={lv === 0 ? '關閉' : policyEffectSummary(type, lv)}
+                        title={lv === 0 ? 'Off' : policyEffectSummary(type, lv)}
                         style={{
                           'font-size': '11px', width: '28px', padding: '2px 0',
                           'border-radius': '4px', cursor: 'pointer',
@@ -93,7 +95,7 @@ export function CityOrdinanceModal(props: { open: boolean; onClose: () => void }
               </div>
               <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:4px">
                 <span style="font-size:11px;color:#aaa">
-                  {level() > 0 ? policyEffectSummary(type, level()) : '尚未啟用'}
+                  {level() > 0 ? policyEffectSummary(type, level()) : 'Not in effect'}
                 </span>
                 <Show when={cost() > 0}>
                   <span style="font-size:11px;color:#ce93d8;white-space:nowrap">${cost()}</span>
@@ -104,7 +106,7 @@ export function CityOrdinanceModal(props: { open: boolean; onClose: () => void }
         }}
       </For>
       <div style="font-size:11px;color:#777;margin-top:4px">
-        全城條例按人口計費 —— 城市長大，帳單跟著長。
+        City ordinances are billed per resident — the bill grows with the city.
       </div>
     </Modal>
   );

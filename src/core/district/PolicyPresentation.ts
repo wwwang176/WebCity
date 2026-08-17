@@ -49,19 +49,19 @@ export function policyButtonText(type: PolicyType, level: number, scale: PolicyS
  */
 const EFFECT_SUMMARY: Partial<Record<PolicyType, readonly string[]>> = {
   [PolicyType.ENCOURAGE_RECYCLING]: [
-    '垃圾 −15%　·　商業收入 −2%',
-    '垃圾 −35%　·　商業收入 −8%',
-    '垃圾 −55%　·　商業收入 −18%',
+    'Garbage \u221215%  \u00B7  Commercial revenue \u22122%',
+    'Garbage \u221235%  \u00B7  Commercial revenue \u22128%',
+    'Garbage \u221255%  \u00B7  Commercial revenue \u221218%',
   ],
-  [PolicyType.TOURISM]: ['收入 +20%　·　犯罪率上升'],
-  [PolicyType.ORGANIC_FOOD]: ['地價 +6　·　商業收入 −5%'],
+  [PolicyType.TOURISM]: ['Revenue +20%  \u00B7  Crime rises'],
+  [PolicyType.ORGANIC_FOOD]: ['Land value +6  \u00B7  Commercial revenue \u22125%'],
   [PolicyType.ENERGY_REGULATION]: [
-    '電力需求 −8%　·　商業收入 −1%、工業收入 −2%',
-    '電力需求 −18%　·　商業收入 −3%、工業收入 −6%',
-    '電力需求 −30%　·　商業收入 −6%、工業收入 −12%',
+    'Power demand \u22128%  \u00B7  Commercial revenue \u22121%, industrial \u22122%',
+    'Power demand \u221218%  \u00B7  Commercial revenue \u22123%, industrial \u22126%',
+    'Power demand \u221230%  \u00B7  Commercial revenue \u22126%, industrial \u221212%',
   ],
-  [PolicyType.NO_HEAVY_INDUSTRY]: ['這一區蓋不了工業　·　少掉工業的稅基'],
-  [PolicyType.HIGH_DENSITY_BAN]: ['這一區蓋不了高密度　·　少掉高密度的稅基'],
+  [PolicyType.NO_HEAVY_INDUSTRY]: ['No industry here  \u00B7  Gives up the industrial tax base'],
+  [PolicyType.HIGH_DENSITY_BAN]: ['No high density here  \u00B7  Gives up the high-density tax base'],
 };
 
 /** 這個條例這一級做什麼。等級 0 回空字串。 */

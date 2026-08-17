@@ -123,7 +123,7 @@ export function DistrictModal(props: { open: boolean; onClose: () => void }) {
                 <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
                   <span style="font-size:12px;color:#aaa">Policies:</span>
                   <Show when={total() > 0}>
-                    <span style="font-size:11px;color:#ce93d8">本區 ${total()}/期</span>
+                    <span style="font-size:11px;color:#ce93d8">${total()}/cycle</span>
                   </Show>
                 </div>
                 <div style="display:flex;flex-wrap:wrap;gap:4px">
