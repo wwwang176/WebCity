@@ -302,10 +302,14 @@ export function buildSidewalkStrips(cells: RoadCell[]): SidewalkStrip[] {
       horizW = (hasE || hasW) ? (ROAD_WIDTHS[(nE ?? nW)?.roadType ?? r.roadType] ?? ownW) : ownW;
     }
 
-    // 彎道只有外側需要路緣 —— 內側兩邊都是路。半徑取到柏油外緣再加半條路緣，
-    // 與直路的 `capH`／`capV` 是同一個算法。
+    // 彎道只有外側需要路緣 —— 內側兩邊都是路。
+    //
+    // 半徑取到**柏油外緣**，不是外緣再加半條路緣。直路的路緣是騎在柏油邊上的
+    // （`x = ±vHalf`），內半條壓在路面那塊板子底下看不見，所以露出來的只有
+    // `SIDEWALK_WIDTH/2`。整條擺到柏油外面的話，彎道的路緣會**看起來寬一倍**，
+    // 而且每一種路寬都一樣寬一倍。
     if (isLBend(r.roadFlags)) {
-      const radius = 0.5 + ownW / 2 + SIDEWALK_WIDTH / 2;
+      const radius = 0.5 + ownW / 2;
       for (const seg of arcBand(r, radius, SIDEWALK_WIDTH, BEND_KERB_SEGMENTS)) {
         strips.push({ ...seg, srcX: r.x, srcY: r.y });
       }

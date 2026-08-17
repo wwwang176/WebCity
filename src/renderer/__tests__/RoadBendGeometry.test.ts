@@ -126,7 +126,8 @@ describe('L 形彎的路面', () => {
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     const strips = buildSidewalkStrips([cell(NE)]);
-    const mid = 0.5 + half + SIDEWALK_WIDTH / 2;
+    // 路緣騎在柏油邊緣上，中心就是柏油外緣。
+    const mid = 0.5 + half;
     const eps = 1e-6;
 
     for (const rad of [mid - SIDEWALK_WIDTH / 2 + eps, mid, mid + SIDEWALK_WIDTH / 2 - eps]) {
@@ -178,22 +179,24 @@ describe('L 形彎的路緣', () => {
     const strips = buildSidewalkStrips([cell(NE)]);
     expect(strips).toHaveLength(BEND_KERB_SEGMENTS);
     for (const s of strips) {
-      // 外緣準確 —— 路緣的外側就是玩家看到的街廓邊界。
-      expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH, 9);
+      // 外緣準確 —— 路緣的外側就是玩家看到的街廓邊界。內半條壓在柏油底下，
+      // 跟直路一樣。
+      expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH / 2, 9);
       expect(s.sx).toBeGreaterThanOrEqual(SIDEWALK_WIDTH - 1e-9);
       expect(s.sx).toBeLessThan(SIDEWALK_WIDTH + 0.03);
     }
   });
 
-  it('should sit on the outside, only just overlapping the asphalt', () => {
-    // 內緣往內咬進柏油一點點是**故意的** —— 補內側的量往那裡塞，順便把兩條帶子
-    // 之間可能殘留的接縫蓋掉。咬太深就變成路緣壓在車道上了。
+  it('should keep its inner half under the asphalt, like a straight kerb does', () => {
+    // 直路的路緣有一半壓在路面底下（路緣的平面在 y=0.028，路面那塊板子佔 0 到
+    // 0.05）。彎道照做，露出來的才會一樣寬。埋得比半條還深也不對 —— 那是補內側
+    // 的量失控，路緣會看起來比直路窄。
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
     const c = turnCentre(NE);
     for (const s of buildSidewalkStrips([cell(NE)])) {
-      const innerEdge = radius(s, c) - s.sx / 2;
-      expect(innerEdge).toBeGreaterThan(0.5 + half - 0.02);
-      expect(innerEdge).toBeLessThanOrEqual(0.5 + half + 1e-9);
+      const buried = (0.5 + half) - (radius(s, c) - s.sx / 2);
+      expect(buried).toBeGreaterThanOrEqual(SIDEWALK_WIDTH / 2 - 1e-9);
+      expect(buried).toBeLessThan(SIDEWALK_WIDTH / 2 + 0.01);
     }
   });
 
@@ -211,7 +214,7 @@ describe('L 形彎的路緣', () => {
     const strips = buildSidewalkStrips([cell(flags)]);
     expect(strips).toHaveLength(BEND_KERB_SEGMENTS);
     for (const s of strips) {
-      expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH, 9);
+      expect(radius(s, c) + s.sx / 2).toBeCloseTo(0.5 + half + SIDEWALK_WIDTH / 2, 9);
     }
   });
 
@@ -250,7 +253,7 @@ describe('L 形彎的路緣石不能凸出去', () => {
     // 凸出量是 R×(1/cos(θ/2)−1)。段數太少的話那是一圈看得見的扇貝邊，接在
     // 直路的路緣上特別明顯:直路是一條直線，彎道卻鼓出來一塊。
     const half = ROAD_WIDTHS[RoadType.TWO_LANE]! / 2;
-    const nominal = 0.5 + half + SIDEWALK_WIDTH;
+    const nominal = 0.5 + half + SIDEWALK_WIDTH / 2;
     const c = turnCentre(NE);
     for (const s of buildSidewalkStrips([cell(NE)])) {
       // 容許量取路緣寬的 5% —— 再多就看得出來了。
@@ -320,6 +323,39 @@ describe('路燈', () => {
     for (const l of buildLampPositions([{ x: 4, y: 7, roadType: RoadType.TWO_LANE, roadFlags: NE }])) {
       expect(l.srcX).toBe(4);
       expect(l.srcY).toBe(7);
+    }
+  });
+});
+
+describe('彎道的路緣石看起來要跟直路一樣寬', () => {
+  const TYPES = [RoadType.RURAL, RoadType.TWO_LANE, RoadType.FOUR_LANE, RoadType.SIX_LANE,
+    RoadType.HIGHWAY, RoadType.ONE_WAY];
+
+  /** 直路上露在柏油外面的那一截路緣有多寬。 */
+  function visibleOnStraight(type: number): number {
+    const w = ROAD_WIDTHS[type]!;
+    const strip = buildSidewalkStrips([cell(NS, type)]).find(s => s.x > 0)!;
+    return strip.x + strip.sx / 2 - w / 2;
+  }
+
+  it.each(TYPES)('should bury half the kerb under the asphalt on a straight (%i)', (type) => {
+    // 直路的路緣是**騎在柏油邊緣上**的:strip 的中心就在 ±路寬/2，內半條壓在路面
+    // 底下（路緣的平面在 y=0.028，而路面那塊板子佔 0 到 0.05）。所以看得見的只有
+    // 半條 —— 這是這一條測試存在的理由，彎道必須照著同一套來。
+    expect(visibleOnStraight(type)).toBeCloseTo(SIDEWALK_WIDTH / 2, 9);
+  });
+
+  it.each(TYPES)('should show exactly as much kerb on a bend (%i)', (type) => {
+    // 原本彎道的整條路緣都擺在柏油外面，於是露出 0.14 而直路只露 0.07 —— 正好兩倍，
+    // 每一種路寬都一樣。
+    const w = ROAD_WIDTHS[type]!;
+    const asphaltEdge = 0.5 + w / 2;
+    const c = turnCentre(NE);
+    const want = visibleOnStraight(type);
+    for (const s of buildSidewalkStrips([cell(NE, type)])) {
+      const visible = Math.hypot(s.x - c.cx, s.z - c.cz) + s.sx / 2 - asphaltEdge;
+      expect(visible, `路寬 ${w}:彎道露出 ${visible.toFixed(4)}，直路露出 ${want.toFixed(4)}`)
+        .toBeCloseTo(want, 2);
     }
   });
 });
