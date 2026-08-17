@@ -5,6 +5,7 @@ import type { SelectedZoneBuilding, SelectedInfraBuilding, SelectedTransportStop
 import { ZONE_BLOCKER_COLORS } from '../../core/zone/ZoneBlocker';
 import { UI_COLORS } from '../constants';
 import { STAGE_NAMES } from './citizenLabels';
+import { citizenName } from '../../core/citizen/CitizenName';
 
 const ZONE_NAMES: Record<number, string> = {
   [ZoneType.RESIDENTIAL_LOW]: 'Residential (Low)',
@@ -322,7 +323,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           <Index each={citizens().residents}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c().id)}>
-                Citizen #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
+                {citizenName(c().id)} #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
               </div>
             )}
           </Index>
@@ -332,7 +333,7 @@ function ZoneBuildingInfo(props: { sel: SelectedZoneBuilding }) {
           <Index each={citizens().workers}>
             {(c) => (
               <div class="bp-citizen" onClick={() => setSelectedCitizen(c().id)}>
-                Citizen #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
+                {citizenName(c().id)} #{c().id} - {STAGE_NAMES[c().lifeStage] ?? c().lifeStage}
               </div>
             )}
           </Index>

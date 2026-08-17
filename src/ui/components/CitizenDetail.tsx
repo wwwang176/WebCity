@@ -1,5 +1,6 @@
 import { Show } from 'solid-js';
 import { getGame } from '../store/gameStore';
+import { citizenName } from '../../core/citizen/CitizenName';
 
 export function CitizenDetail(props: { citizenId: number | null }) {
   const citizen = () => {
@@ -12,7 +13,7 @@ export function CitizenDetail(props: { citizenId: number | null }) {
     <Show when={citizen()}>
       {(c) => (
         <div class="bp-citizen-detail" style={{ display: 'block' }}>
-          <div class="cd-name">Citizen #{c().id}</div>
+          <div class="cd-name">{citizenName(c().id)} <span style="color:#667a90">#{c().id}</span></div>
           <div class="cd-row">Stage <span>{c().lifeStage}</span></div>
           <div class="cd-row">Education <span>{c().education}</span></div>
 

@@ -2,6 +2,7 @@ import { Show } from 'solid-js';
 import { gameSignals, getGame } from '../store/gameStore';
 
 import { STAGE_NAMES, EDU_NAMES } from './citizenLabels';
+import { citizenName } from '../../core/citizen/CitizenName';
 
 export function CitizenDetailPanel(props: { panelOrder?: number }) {
   const citizenId = () => gameSignals.selectedCitizenId();
@@ -22,7 +23,7 @@ export function CitizenDetailPanel(props: { panelOrder?: number }) {
     <Show when={visible()}>
       <div id="citizen-detail-panel" class="g-panel visible" style={{ order: props.panelOrder ?? 0 }}>
         <div class="g-panel-header">
-          <span class="g-panel-title">Citizen #{citizenId()}</span>
+          <span class="g-panel-title">{citizenName(citizenId()!)} #{citizenId()}</span>
           <button
             style={{
               background: 'none', border: 'none', color: '#667a90', cursor: 'pointer',
