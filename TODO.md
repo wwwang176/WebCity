@@ -2065,11 +2065,27 @@ BUG-219（升級把庭院的樹一起拉高 1.75 倍）、BUG-220（辦公區 15
   目前只有 tooltip 說了這件事。要不要加確認，等實際玩過再決定 —— 畫分區是高頻
   動作，每次都問會很煩。
 
+### 圖層的製造點（藍色）
+- [ ] **五張圖層沒有可以指的製造點**:車流、汙染、土地價值、用地、分區。前四張的
+  來源是整座城市共同的結果，硬指一棟會誤導；汙染看起來最像有來源，但遊戲裡的
+  `PollutionSource` 包含**每一格工業建築與每一條有車流的路**（見
+  `GridPollutionSources`），全標藍等於把路網整個點亮。要做的話得先決定只標玩家
+  自己蓋的那幾種設施（發電廠、掩埋場、汙水廠、機場），並想清楚漏掉工業區會不會
+  反而讓玩家找錯地方。
+- [ ] **`Game.appendOverlaySourceHighlights` 沒有測試守著**。哪張圖層讀哪一批設施、
+  多格建築的佔地怎麼展開，都在 `OverlaySources` 裡且有測試；但「算出來的格子真的
+  被推進 `overlayHighlightCells`、而且推在結果之後」這段接線在 `Game.ts` 上，
+  而 `Game` 至今沒有任何測試（要先解決 jsdom + Three.js 的建構成本）。
+
 ### 測試環境
 - [ ] **有測試對機器負載敏感，而且不只一條**。`BirthAfterAgeing.test.ts` 是已知的
   兩條（5 秒 timeout，單獨跑 1 秒內結束，但瀏覽器分頁在 60fps 跑遊戲時整套會從 20 秒
   變 64 秒）。合併回 main 那次另外倒過 5 條與 2 條，**當下沒有抓到檔名**，重跑就全綠 ——
   所以受影響的範圍比已知的那兩條更大。
+  後來在 `src/renderer` 抓到了檔名，錯誤訊息都是 `Test timed out in 5000ms`，連跑三次
+  倒的是不同的組合:`BuildingAppearance` / `BuildingCapacity` / `BuildingMaterial` /
+  `GroundPropLayer` / `GroundProps` / `MassingGeometry` / `civic/CivicPlans` /
+  `civic/models/Airport`。這些測試在建幾何，單獨跑都是毫秒級。
   要處理的話有兩條路:把 timeout 調高（治標，但那些測試本來就不該花 5 秒），或找出
   慢在哪裡。在那之前，跑全套前先把跑著遊戲的瀏覽器分頁關掉。
 

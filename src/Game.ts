@@ -86,6 +86,9 @@ import { getTransitSystems } from './core/transport/TransportRegistry';
  */
 const COMMUTE_OVERLAY_MAX = DEFAULT_JOB_RELOCATION_CONFIG.commuteTimeThreshold;
 import { getCoverageService, OVERLAY_SCALE } from './core/overlay/CoverageOverlay';
+import {
+  overlaySourceCells, hasOverlaySources, OVERLAY_SOURCE_COLOR, type OverlaySourceContext,
+} from './core/overlay/OverlaySources';
 import { getTrafficStats as computeTrafficStats } from './core/traffic/TrafficStats';
 import { canPlaceTransportStop, findAdjacentRoadCell, placeTransportStopOnGrid, TRANSPORT_TO_INFRA_TYPE } from './core/transport/TransportPlacement';
 import { generateTerrain } from './core/grid/TerrainGenerator';
@@ -2746,18 +2749,52 @@ export class Game {
     }
   }
 
-  /** Compute and cache overlay building highlight cells. Applied every frame by reapplyOverlayHighlight(). */
+  /**
+   * Compute and cache overlay building highlight cells. Applied every frame by reapplyOverlayHighlight().
+   *
+   * 兩層:先是這張圖層的**結果**（誰被涵蓋、誰通勤很久、誰沒電），再蓋上影響的
+   * **製造點**。製造點畫在後面是因為 `hoverHighlightGradient` 的格子表是後寫贏 ——
+   * 消防局自己也在自己的涵蓋範圍裡，先畫的話那一格會是漸層的綠色，不是藍色。
+   */
   private computeOverlayHighlightCells(overlayType: OverlayType): void {
     this.overlayHighlightCells = [];
+    this.computeOverlayResultHighlights(overlayType);
+    this.appendOverlaySourceHighlights(overlayType);
+  }
 
+  /**
+   * 影響的製造點:藍色。
+   *
+   * 圖層畫的是結果，而結果不會說該去動哪一棟建築 —— 一片沒有涵蓋的紅色，可能是
+   * 缺一座新的局，也可能是既有那一座蓋得太遠。藍色標的就是那些顏色的來源。
+   *
+   * 通勤圖層的站牌先用了這個語彙，這裡把它推到每一張有設施可指的圖層。哪些圖層
+   * 有、指哪一批設施，都在 `OverlaySources`。
+   */
+  private appendOverlaySourceHighlights(overlayType: OverlayType): void {
+    if (!hasOverlaySources(overlayType)) return;
+    const stops: { x: number; y: number }[] = [];
+    for (const { system } of getTransitSystems(this.state)) {
+      for (const stop of system.getStops()) stops.push({ x: stop.x, y: stop.y });
+    }
+    // 站牌散在各個運輸系統裡，不是 GameState 上的一個欄位 —— 跟 buildOverlayData
+    // 的通勤統計一樣，掛在 state 前面補上去。
+    const ctx = Object.assign(
+      Object.create(this.state) as OverlaySourceContext,
+      { transitStops: stops },
+    );
+    const cells = overlaySourceCells(this.state.grid, ctx, overlayType);
+    for (const c of cells) {
+      this.overlayHighlightCells.push({ x: c.x, y: c.y, color: OVERLAY_SOURCE_COLOR });
+    }
+  }
+
+  private computeOverlayResultHighlights(overlayType: OverlayType): void {
     /**
      * 通勤圖層：住宅**建築**依住戶的平均通勤時間上色，與警消覆蓋同一套語彙。
      *
      * 畫在建築上而不是地面上，是因為地面會被建築本身擋住 —— 密集住宅區看到的
      * 是屋頂，不是地上的顏色。
-     *
-     * 站牌另外標成青色。「這片紅色離最近的站有多遠」正是這張圖要回答的問題：
-     * 沒有站的位置看到的紅色，就是「這裡缺一條線」。
      */
     if (overlayType === OverlayType.COMMUTE) {
       const byHome = this.simLoop.getCommuteStats().byHome;
@@ -2768,11 +2805,6 @@ export class Game {
         const ratio = Math.min(1, time / COMMUTE_OVERLAY_MAX);
         const tier = Math.min(9, Math.floor(ratio * 10));
         this.overlayHighlightCells.push({ x: cx, y: cy, color: Game.COV_GRADIENT[tier]! });
-      }
-      for (const { system } of getTransitSystems(this.state)) {
-        for (const stop of system.getStops()) {
-          this.overlayHighlightCells.push({ x: stop.x, y: stop.y, color: 0x00e5ff });
-        }
       }
       return;
     }
@@ -2834,9 +2866,11 @@ export class Game {
       // not where to go instead. Selecting the water tool opens this overlay
       // (TOOL_TO_OVERLAY), so this is where the answer belongs.
       if (water.getPlants().length === 0) {
+        // 用製造點的藍色 —— 這裡指的正是「淨水廠可以蓋在哪」，跟其他圖層上的
+        // 藍色是同一件事，只是那座廠還不存在。
         const sites = findWaterPlantSites(this.state.grid);
         for (const s of sites) {
-          this.overlayHighlightCells.push({ x: s.x, y: s.y, color: 0x00e5ff });
+          this.overlayHighlightCells.push({ x: s.x, y: s.y, color: OVERLAY_SOURCE_COLOR });
         }
         if (sites.length === 0) {
           this.showNotification(
